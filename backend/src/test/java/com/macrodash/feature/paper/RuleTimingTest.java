@@ -84,7 +84,9 @@ class RuleTimingTest {
     }
 
     @Test
-    @DisplayName("고르기(한국): 지정 시각은 다음 거래일의 09:10~15:19 KST 안(개장 10분 뒤부터) — 종가 단일가 시간(15:20)은 범위 밖이라 시가로, 기본 설정은 시가")
+    @DisplayName("고르기(한국): 지정 시각은 다음 거래일의 09:10~15:19 KST 안(개장 10분 뒤부터), 기본 설정은 시가. 지정 시각 설정이 닫히면(종가 단일가 시간 15:20·"
+            + "지정 시각 없음·짧은 장의 범위 밖) 시가가 아니라 그 세션 첫 분 09:10 지정 시각으로 내고 사유를 남김(ADR 0031 — R4). 그 첫 분도 지난 세션 도중의 "
+            + "결정만 시가")
     void choosesForTheKrSession() {
         LocalDate d = LocalDate.of(2026, 12, 1);
         Instant night = Instant.parse("2026-12-01T13:30:00Z");
@@ -92,9 +94,51 @@ class RuleTimingTest {
         assertThat(new RuleTiming("AT_MINUTE", LocalTime.of(9, 10)).choose(d, night, KR, true))
                 .isEqualTo(new RuleTiming.Chosen("AT_MINUTE", LocalTime.of(9, 10), null));
         RuleTiming.Chosen auction = new RuleTiming("AT_MINUTE", LocalTime.of(15, 20)).choose(d, night, KR, true);
-        assertThat(auction.timing()).isEqualTo("NEXT_OPEN");
-        assertThat(auction.note()).contains("09:10~15:19 KST").contains("기본 시점(NEXT_OPEN)");
+        assertThat(auction.timing()).as("시가(개장 단일가)로 돌아가지 않음").isEqualTo("AT_MINUTE");
+        assertThat(auction.at()).isEqualTo(LocalTime.of(9, 10));
+        assertThat(auction.note()).contains("AT_MINUTE 15:20").contains("09:10~15:19 KST").contains("첫 분(AT_MINUTE 09:10 KST)")
+                .doesNotContain("NEXT_OPEN");
+        RuleTiming.Chosen missing = new RuleTiming("AT_MINUTE", null).choose(d, night, KR, true);
+        assertThat(missing.timing()).isEqualTo("AT_MINUTE");
+        assertThat(missing.at()).isEqualTo(LocalTime.of(9, 10));
+        assertThat(missing.note()).contains("지정 시각이 없음");
+        RuleTiming.Chosen during = new RuleTiming("AT_MINUTE", LocalTime.of(14, 30)).choose(d, Instant.parse("2026-12-02T05:30:00Z"), KR, true);
+        assertThat(during.timing()).as("12-02 14:30 KST의 결정 — 14:30도 첫 분 09:10도 지남").isEqualTo("NEXT_OPEN");
+        assertThat(during.note()).contains("이미 지남").contains("기본 시점(NEXT_OPEN)");
         assertThat(new RuleTiming("NEXT_CLOSE", null).choose(d, night, KR, true)).isEqualTo(new RuleTiming.Chosen("NEXT_CLOSE", null, null));
+        assertThat(RuleTiming.reissueAt(LocalDate.of(2026, 12, 2), KR)).isEqualTo(LocalTime.of(9, 10));
+    }
+
+    @Test
+    @DisplayName("고르기(한국 장 시간 변경일 — 설정 kr.calendar.openTimeOverrides): 수능일(10:00~16:30)·2027-01-04(10:00~15:30)의 09:10 설정은 기본 시점이 "
+            + "아니라 그날 첫 분 10:10으로 옮기고 사유를 남김. 짧게 끝나는 날(09:00~14:30)의 15:00 설정은 그 세션 첫 분 09:10으로 냄. 다시 내기 시각도 그날 첫 분")
+    void movesToTheFirstMinuteOnShiftedKrDays() {
+        LocalDate exam = LocalDate.of(2026, 11, 19);
+        LocalDate newYear = LocalDate.of(2027, 1, 4);
+        LocalDate shortDay = LocalDate.of(2026, 12, 3);
+        TradingCalendar shifted = new KrxCalendar(KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), List.of(),
+                Map.of(exam, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(16, 30)),
+                        newYear, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(15, 30)),
+                        shortDay, new KrxCalendar.Hours(LocalTime.of(9, 0), LocalTime.of(14, 30))));
+        RuleTiming nineTen = new RuleTiming("AT_MINUTE", LocalTime.of(9, 10));
+        RuleTiming.Chosen moved = nineTen.choose(LocalDate.of(2026, 11, 18), Instant.parse("2026-11-18T13:30:00Z"), shifted, true);
+        assertThat(moved.timing()).isEqualTo("AT_MINUTE");
+        assertThat(moved.at()).as("수능일 10:00 개장 + 10분").isEqualTo(LocalTime.of(10, 10));
+        assertThat(moved.note()).contains("AT_MINUTE 09:10").contains("10:10 KST").contains("그날 첫 분").doesNotContain("NEXT_OPEN");
+        RuleTiming.Chosen january = nineTen.choose(LocalDate.of(2026, 12, 30), Instant.parse("2026-12-30T13:30:00Z"), shifted, true);
+        assertThat(january.at()).as("2027-01-04 10:00 개장 + 10분").isEqualTo(LocalTime.of(10, 10));
+        assertThat(nineTen.choose(LocalDate.of(2026, 11, 19), Instant.parse("2026-11-19T13:30:00Z"), shifted, true))
+                .as("변경일 다음 보통 날은 그대로").isEqualTo(new RuleTiming.Chosen("AT_MINUTE", LocalTime.of(9, 10), null));
+        RuleTiming.Chosen late = new RuleTiming("AT_MINUTE", LocalTime.of(15, 0)).choose(LocalDate.of(2026, 12, 2),
+                Instant.parse("2026-12-02T13:30:00Z"), shifted, true);
+        assertThat(late.timing()).isEqualTo("AT_MINUTE");
+        assertThat(late.at()).as("14:30 마감 날 — 15:00은 범위(09:10~14:19) 밖, 그 세션 첫 분").isEqualTo(LocalTime.of(9, 10));
+        assertThat(late.note()).contains("09:10~14:19 KST");
+        assertThat(RuleTiming.reissueAt(exam, shifted)).isEqualTo(LocalTime.of(10, 10));
+        assertThat(RuleTiming.reissueAt(newYear, shifted)).isEqualTo(LocalTime.of(10, 10));
+        assertThat(new RuleTiming("AT_MINUTE", LocalTime.of(10, 47)).reissuesAtMinute()).isTrue();
+        assertThat(new RuleTiming("NEXT_OPEN", null).reissuesAtMinute()).isFalse();
+        assertThat(new RuleTiming("NEXT_CLOSE", null).reissuesAtMinute()).isFalse();
     }
 
     @Test

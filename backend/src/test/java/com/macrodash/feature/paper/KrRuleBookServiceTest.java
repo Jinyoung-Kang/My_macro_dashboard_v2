@@ -198,7 +198,8 @@ class KrRuleBookServiceTest {
     @Test
     @DisplayName("체결 시각 설정(ADR 0027 결정 5): kr.rules.timing이 AT_MINUTE(10:47)이면 그 결정의 주문 전부가 다음 거래일의 그 분(AT_MINUTE + target_local), "
             + "만료는 기준일 + 3거래일 그대로, 결정 기록에 timing·timingSetting. 기본 설정이면 NEXT_OPEN 그대로이고 timingSetting 칸이 없음. 받는 범위 밖 시각"
-            + "(손으로 고친 행의 15:25)이면 시가로 내고 사유를 남김")
+            + "(손으로 고친 행의 15:25)이면 시가가 아니라 다음 거래일 첫 분(09:10) 지정 시각으로 내고 사유를 남김(ADR 0031 — R4). 개장이 늦은 날(수능일 10:00 "
+            + "개장)의 09:10 설정은 그날 첫 분 10:10으로 옮김")
     void ruleTimingSettingSetsTheOrderTiming() {
         Decision standard = decideAt(FRI, "22:30");
         assertThat(ordersOf(standard)).allSatisfy(o -> {
@@ -227,13 +228,28 @@ class KrRuleBookServiceTest {
         rules.put("timingAtKst", "15:25");
         Decision closed = decideAt(FRI, "22:30");
         assertThat(ordersOf(closed)).isNotEmpty().allSatisfy(o -> {
-            assertThat(o.timing()).isEqualTo(PaperBooks.NEXT_OPEN);
-            assertThat(o.targetLocal()).isNull();
+            assertThat(o.timing()).as("시가(개장 단일가)로 돌아가지 않음").isEqualTo(PaperBooks.AT_MINUTE);
+            assertThat(o.targetLocal()).isEqualTo(java.time.LocalTime.of(9, 10));
         });
-        assertThat(closed.response().path("timing").asString()).isEqualTo(PaperBooks.NEXT_OPEN);
+        assertThat(closed.response().path("timing").asString()).isEqualTo("AT_MINUTE 09:10");
         assertThat(closed.response().path("timingSetting").asString()).isEqualTo("AT_MINUTE 15:25");
         assertThat(closed.response().path("notes").toString()).contains("체결 시각 설정(AT_MINUTE 15:25)").contains("09:10~15:19 KST")
-                .contains("기본 시점(NEXT_OPEN)");
+                .contains("첫 분(AT_MINUTE 09:10 KST)").doesNotContain("기본 시점(NEXT_OPEN)");
+
+        // 개장이 늦은 날 — 목표 세션 11-02를 수능일처럼 10:00~16:30으로 두면 09:10 설정은 그날 첫 분 10:10으로 옮김(시가 아님).
+        store.decisions.clear();
+        store.orders.clear();
+        rules.put("timingAtKst", "09:10");
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr").get("calendar")).set("openTimeOverrides",
+                PaperFixtures.MAPPER.readTree("{\"2026-11-02\":{\"open\":\"10:00\",\"close\":\"16:30\"}}"));
+        Decision shifted = decideAt(FRI, "22:30");
+        assertThat(ordersOf(shifted)).isNotEmpty().allSatisfy(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+            assertThat(o.targetLocal()).isEqualTo(java.time.LocalTime.of(10, 10));
+        });
+        assertThat(shifted.response().path("timing").asString()).isEqualTo("AT_MINUTE 10:10");
+        assertThat(shifted.response().path("notes").toString()).contains("체결 시각 설정(AT_MINUTE 09:10)").contains("10:10")
+                .contains("그날 첫 분");
     }
 
     @Test

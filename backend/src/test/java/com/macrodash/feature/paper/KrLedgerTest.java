@@ -875,6 +875,53 @@ class KrLedgerTest {
         }
 
         @Test
+        @DisplayName("규칙 주문 다시 내기(ADR 0031 — R4): 지금 설정이 kr.rules.timing = AT_MINUTE이면 시가가 아니라 다음 거래일 첫 분(개장 10분 뒤 — 09:10) 지정 "
+                + "시각 주문으로 다시 냄. 다음 거래일이 개장이 늦은 날(수능일 10:00)이면 그날 첫 분 10:10")
+        void unfilledRuleOrderIsReissuedAtTheNextFirstMinute() {
+            book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);
+            tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr");
+            ((tools.jackson.databind.node.ObjectNode) kr.get("rules")).put("timing", "AT_MINUTE").put("timingAtKst", "09:10");
+            LocalDate expires = LocalDate.of(2026, 11, 5);
+            long rule = store.insertOrder(new Order(0, BOOK2, 9L, "005930", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE,
+                    RuleBookService.SOURCE_RULE, "PENDING", null, PaperFixtures.MAPPER.readTree("{\"rule\":\"K7\"}"), D, CREATED, expires,
+                    null, java.time.LocalTime.of(9, 10)));
+            KrQuotes.Timed none = new KrQuotes.Timed(KrQuotes.TIMED_NO_BARS, null, kst("2026-11-03T21:50"), Map.of(), Map.of(), Map.of());
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D1, none)));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            openedAt(payload, "005930", 70_000);
+
+            process(payload, COLLECTED_D1);
+
+            Order closed = store.orders.get(rule);
+            assertThat(closed.status()).isEqualTo(PaperBooks.ORDER_EXPIRED);
+            Order again = store.ordersOf(BOOK2).stream().filter(o -> o.reason() != null && o.reason().has(UsTimedFills.REISSUED_FROM))
+                    .findFirst().orElseThrow();
+            assertThat(again.timing()).as("개장 단일가로 돌아가지 않음").isEqualTo(PaperBooks.AT_MINUTE);
+            assertThat(again.targetLocal()).as("다음 거래일(11-04) 첫 분").isEqualTo(java.time.LocalTime.of(9, 10));
+            assertThat(again.asOfTradingDate()).isEqualTo(D1);
+            assertThat(again.expiresOn()).isEqualTo(expires);
+            assertThat(again.source()).isEqualTo(RuleBookService.SOURCE_RULE);
+            assertThat(again.reason().path(UsTimedFills.REISSUED_TIMING).asString()).isEqualTo("AT_MINUTE 09:10");
+            assertThat(closed.rejectReason()).contains("다음 거래일 첫 분 지정 시각(AT_MINUTE 09:10) 주문 " + again.id() + "로 다시 냄");
+            assertThat(KrTimedLadder.targetOn(again, D2, run().calendar())).isEqualTo(kst("2026-11-04T09:10"));
+
+            // 다음 거래일이 수능일처럼 10:00 개장이면 그날 첫 분 10:10.
+            store.orders.clear();
+            ((tools.jackson.databind.node.ObjectNode) kr.get("calendar")).set("openTimeOverrides",
+                    PaperFixtures.MAPPER.readTree("{\"2026-11-04\":{\"open\":\"10:00\",\"close\":\"16:30\"}}"));
+            long shifted = store.insertOrder(new Order(0, BOOK2, 9L, "005930", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE,
+                    RuleBookService.SOURCE_RULE, "PENDING", null, null, D, CREATED, expires, null, java.time.LocalTime.of(9, 10)));
+            store.states.put(BOOK2, new BookState(BOOK2, 2_000_000, 2_000_000, 0, 0, null, null, null, null));
+
+            process(payload, COLLECTED_D1);
+
+            Order exam = store.ordersOf(BOOK2).stream().filter(o -> o.reason() != null
+                    && o.reason().path(UsTimedFills.REISSUED_FROM).asLong() == shifted).findFirst().orElseThrow();
+            assertThat(exam.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+            assertThat(exam.targetLocal()).as("수능일 10:00 개장 + 10분").isEqualTo(java.time.LocalTime.of(10, 10));
+        }
+
+        @Test
         @DisplayName("매시(AT_1000)는 그 시각 봉 시가·출처 TOSS_1M_AT, 종가(NEXT_CLOSE)는 마감 봉 종가·TOSS_1M_CLOSE, 시가 매도가 먼저 — 시각 순으로 체결")
         void hourlyAndCloseFillAtTheirBars() {
             book(BOOK2, PaperBooks.KIND_CLAUDE, 2_000_000);

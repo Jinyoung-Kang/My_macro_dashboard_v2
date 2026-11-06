@@ -12,6 +12,7 @@ import com.macrodash.analytics.KrxCorporateActions.Listing;
 import com.macrodash.analytics.KrxCorporateActions.Presence;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.SplitDetector;
+import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.TrailingStop;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -1610,8 +1611,11 @@ public class PaperLedgerService {
 
     /**
      * 시각을 지정한 한국 <b>규칙 주문</b>(출처 RULE — 설정 {@code kr.rules.timing}, ADR 0027 결정 5)이 목표 세션에서 체결되지 못했을 때
-     * ({@link PaperMarket.FillChoice#unfillable} — 그날 1분봉 없음·T 뒤 거래 없음·마감 봉 없음) 그 행을 사유와 함께 만료로 닫고, 기본 시점(다음 거래일
-     * 시가)의 새 대기 주문으로 다시 냅니다 — 같은 결정 번호·같은 크기, 기준 거래일 = 이 관측치의 세션(그다음 거래일 시가에 체결), 만료 = 원래 만료일.
+     * ({@link PaperMarket.FillChoice#unfillable} — 그날 1분봉 없음·T 뒤 거래 없음·마감 봉 없음) 그 행을 사유와 함께 만료로 닫고, 새 대기 주문으로 다시
+     * 냅니다 — 같은 결정 번호·같은 크기, 기준 거래일 = 이 관측치의 세션(그다음 거래일에 체결), 만료 = 원래 만료일. 다시 내는 시점은 지금 설정을 따릅니다
+     * (ADR 0031 — R4): {@code kr.rules.timing = AT_MINUTE}이면 다음 거래일 첫 분(개장 + 10분, 그날 달력 — 보통 날 09:10·수능일 10:10)의 지정 시각
+     * ({@link RuleTiming#reissueAt}), 그 밖(되돌린 설정 포함)이면 예전처럼 다음 거래일 시가. 개장 단일가로 돌아가지 않아 '개장 10분 전 체결 없음'과 실제
+     * 계좌의 맞추기 시각이 그대로입니다. 다음 거래일을 달력에서 셀 수 없으면(그해 공휴일 모름) 시가로 냅니다.
      * 한국 책은 만료가 기준일 + 3거래일이라 그대로 두면 사흘 동안 풀리지 않는 대기 주문으로 남습니다. 원래 만료일이 이 세션 이하면(수명이 끝남) 다시
      * 내지 않고 기다림으로 둡니다(만료 정리가 닫음). Claude 주문·스탑 주문·시가 주문은 대상이 아닙니다(미국 {@link UsTimedFills}의 다시 내기와 같은 뜻).
      *
@@ -1629,14 +1633,27 @@ public class PaperLedgerService {
         basis.put(UsTimedFills.REISSUED_TIMING, order.targetLocal() == null ? order.timing()
                 : order.timing() + " " + FreeTiming.label(order.targetLocal()));
         basis.put(UsTimedFills.REISSUED_BECAUSE, reason);
+        LocalTime first = RuleTiming.kr(run.settingsBody).reissuesAtMinute() ? krReissueAt(run) : null;
         long reissued = store.insertOrder(new Order(0, order.bookCode(), order.decisionId(), order.ticker(), order.side(), order.qty(),
-                order.targetWeightPct(), order.sellFraction(), PaperBooks.NEXT_OPEN, order.source(), PaperBooks.ORDER_PENDING, null,
-                basis, run.session, null, order.expiresOn(), null));
-        String text = reason + " — 다음 거래일 시가 주문 " + reissued + "로 다시 냄";
+                order.targetWeightPct(), order.sellFraction(), first == null ? PaperBooks.NEXT_OPEN : PaperBooks.AT_MINUTE, order.source(),
+                PaperBooks.ORDER_PENDING, null, basis, run.session, null, order.expiresOn(), null, first));
+        String text = reason + " — " + (first == null ? "다음 거래일 시가 주문 " : "다음 거래일 첫 분 지정 시각(AT_MINUTE "
+                + FreeTiming.label(first) + ") 주문 ") + reissued + "로 다시 냄";
         store.markOrderStatus(order.id(), PaperBooks.ORDER_EXPIRED, text);
         run.expired++;
         run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 만료 — " + text);
         return true;
+    }
+
+    /** 한국 규칙 주문 다시 내기의 지정 시각 — 이 관측치 세션의 다음 거래일 첫 분({@link RuleTiming#reissueAt}). 달력에서 셀 수 없으면 null(시가로 냄). */
+    private static LocalTime krReissueAt(BookRun run) {
+        try {
+            TradingCalendar calendar = run.market.calendar();
+            return RuleTiming.reissueAt(calendar.nextTradingDay(run.session), calendar);
+        } catch (CalendarUnavailableException e) {
+            run.note("다음 거래일을 달력에서 셀 수 없어(" + e.getMessage() + ") 규칙 주문을 시가로 다시 냄");
+            return null;
+        }
     }
 
     /**
