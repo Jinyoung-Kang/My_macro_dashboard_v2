@@ -13,11 +13,12 @@
 #   2. git fetch → main 체크아웃 → origin/main으로 fast-forward. 서버에서 고친 파일이 있거나 갈라졌으면 멈춥니다.
 #      받은 main에서 이 스크립트가 바뀌었으면 새 판으로 처음부터 한 번 다시 돕니다(QA-145).
 #   3. 화면 왼쪽 아래 버전(APP_VERSION·APP_UPDATED). 실제 매매(ADR 0028)가 꺼져(OFF) 있지 않고 — 켜짐(LIVE)뿐 아니라 미체결을 취소하는 끄는 중(STOPPING)·
-#      이상 멈춤(HALTED)도 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~09:35·15:15~15:35 KST — 시가 맞추기·시가 뒤 마무리·종가)이면 멈춥니다 —
+#      이상 멈춤(HALTED)도 셈(OPS-5) — 지금이 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체: 시가 맞추기·개장 10분 뒤 맞추기·장중 스탑 매도·종가,
+#      ADR 0033 초안)이면 멈춥니다 —
 #      창이 지난 뒤 다시 돌리거나, 알고 진행할 때만 REALTRADE_DEPLOY_OK=1. 빌드가 길어 6의 기동 직전에 한 번 더 봅니다.
 #      상태는 postgres의 real_trade_config를 읽기만 하고(표가 없으면 통과), 읽지 못하면 경고만 하고 계속합니다.
-#      장 시간 변경일(같은 psql 호출로 읽는 모의 설정 kr.calendar.openTimeOverrides의 오늘 값 — 예 수능 10:00~16:30)은 개장 −15분~+35분·
-#      마감 −15분~+5분, 그 설정을 읽지 못했거나 모양이 틀리면 보수 창(평일 08:45~10:35·15:15~16:35)으로 봅니다.
+#      장 시간 변경일(같은 psql 호출로 읽는 모의 설정 kr.calendar.openTimeOverrides의 오늘 값 — 예 수능 10:00~16:30)은 개장 −15분 ~
+#      마감 +5분, 그 설정을 읽지 못했거나 모양이 틀리면 보수 창(평일 08:45~16:35)으로 봅니다.
 #   4. 이미지를 하나씩 빌드: backend → frontend → collector → browser(베이스 이미지 보안 패치까지 --pull). browser는 차단 통과 수집 계층의
 #      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널을 빌드 때 받음).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
@@ -131,32 +132,33 @@ SELECT 'none';
 \endif
 SQL
 }
-# 한국 거래 창 — 평일 08:45~09:35(시가 단일가의 시가 맞추기·시가 뒤 마무리), 15:15~15:35(종가) KST. 장 시간 변경일(모의 설정
-# kr.calendar.openTimeOverrides — 예 2026-11-19 수능 10:00~16:30)은 같은 여유로 개장 −15분~+35분·마감 −15분~+5분(09:45~10:35·16:15~16:35),
-# 그 설정을 읽지 못했거나 모양이 틀리면 둘을 합친 보수 창(평일 08:45~10:35·15:15~16:35)입니다. 이 창 안에서 백엔드·수집기를 다시 만들면
-# 보내던 주문의 결과를 놓쳐 '모름'(UNKNOWN) 처리·이상 멈춤으로 이어질 수 있습니다. 휴장일도 평일이면 창으로 봅니다(넘기려면 REALTRADE_DEPLOY_OK=1).
+# 한국 거래 창 — 평일 08:45~15:35 KST, 정규장 전체(시가 맞추기 08:50·개장 10분 뒤 맞추기 09:10~09:13·장중 스탑 매도는 장중 아무 때나 3분 창 —
+# ADR 0033 초안). 장 시간 변경일(모의 설정 kr.calendar.openTimeOverrides — 예 2026-11-19 수능 10:00~16:30)은 같은 여유로 개장 −15분 ~ 마감 +5분
+# (09:45~16:35), 그 설정을 읽지 못했거나 모양이 틀리면 둘을 합친 보수 창(평일 08:45~16:35)입니다. 이 창 안에서 백엔드·수집기를 다시 만들면
+# 보내던 주문의 결과를 놓쳐 '모름'(UNKNOWN) 처리·이상 멈춤으로 이어지거나 장중 스탑 매도가 다음 날로 밀릴 수 있습니다. 휴장일도 평일이면 창으로
+# 봅니다(넘기려면 REALTRADE_DEPLOY_OK=1).
 kr_hhmm() {
     printf '%02d:%02d' $(($1 / 60)) $(($1 % 60))
 }
-# $1 = realtrade_state의 장 시간 변경 칸(빈 값 | "HH:MM HH:MM" | 그 밖). kr_win(자정부터의 분 — 아침 시작·끝, 마감 시작·끝)과 알림 글 kr_win_text를 정합니다.
+# $1 = realtrade_state의 장 시간 변경 칸(빈 값 | "HH:MM HH:MM" | 그 밖). kr_win(자정부터의 분 — 창 시작·끝)과 알림 글 kr_win_text를 정합니다.
 kr_trade_window_for() {
     local hours="$1" re='^([01][0-9]|2[0-3]):[0-5][0-9] ([01][0-9]|2[0-3]):[0-5][0-9]$' open close
     if [ -z "$hours" ]; then
-        kr_win=(525 575 915 935)
-        kr_win_text="평일 08:45~09:35·15:15~15:35 KST"
+        kr_win=(525 935)
+        kr_win_text="평일 08:45~15:35 KST(정규장 전체 — 장중 스탑 매도)"
         return 0
     fi
     if [[ "$hours" =~ $re ]]; then
         open=$((10#${hours:0:2} * 60 + 10#${hours:3:2}))
         close=$((10#${hours:6:2} * 60 + 10#${hours:9:2}))
         if [ "$open" -lt "$close" ]; then
-            kr_win=($((open - 15)) $((open + 35)) $((close - 15)) $((close + 5)))
-            kr_win_text="오늘 장 시간 변경 ${hours% *}~${hours#* } — $(kr_hhmm "${kr_win[0]}")~$(kr_hhmm "${kr_win[1]}")·$(kr_hhmm "${kr_win[2]}")~$(kr_hhmm "${kr_win[3]}") KST"
+            kr_win=($((open - 15)) $((close + 5)))
+            kr_win_text="오늘 장 시간 변경 ${hours% *}~${hours#* } — $(kr_hhmm "${kr_win[0]}")~$(kr_hhmm "${kr_win[1]}") KST(정규장 전체)"
             return 0
         fi
     fi
-    kr_win=(525 635 915 995)
-    kr_win_text="오늘 장 시간 변경(paper_settings의 kr.calendar.openTimeOverrides)을 읽지 못했거나 모양이 틀려 보수 창 — 평일 08:45~10:35·15:15~16:35 KST"
+    kr_win=(525 995)
+    kr_win_text="오늘 장 시간 변경(paper_settings의 kr.calendar.openTimeOverrides)을 읽지 못했거나 모양이 틀려 보수 창 — 평일 08:45~16:35 KST"
 }
 in_kr_trade_window() {
     local now dow hm
@@ -165,7 +167,7 @@ in_kr_trade_window() {
     hm="${now#* }"
     hm=$((10#${hm:0:2} * 60 + 10#${hm:2:2}))
     [ "$dow" -le 5 ] || return 1
-    { [ "$hm" -ge "${kr_win[0]}" ] && [ "$hm" -le "${kr_win[1]}" ]; } || { [ "$hm" -ge "${kr_win[2]}" ] && [ "$hm" -le "${kr_win[3]}" ]; }
+    [ "$hm" -ge "${kr_win[0]}" ] && [ "$hm" -le "${kr_win[1]}" ]
 }
 # $1 = before-build(빌드 전 — 켜짐·읽지 못함도 알림) | before-up(기동 직전 — 창 안일 때만 말함)
 realtrade_guard() {
@@ -178,7 +180,7 @@ realtrade_guard() {
         none | 0) return 0 ;;
         '' | *[!0-9]*)
             [ "$1" != "before-build" ] ||
-                echo "경고: 실제 매매 상태(real_trade_config)를 읽지 못했습니다 — 꺼져 있지 않으면(켜짐·끄는 중·이상 멈춤) 한국 거래 창(평일 08:45~09:35·15:15~15:35 KST, 장 시간 변경일은 개장 −15분~+35분·마감 −15분~+5분) 밖에서 배포하세요."
+                echo "경고: 실제 매매 상태(real_trade_config)를 읽지 못했습니다 — 꺼져 있지 않으면(켜짐·끄는 중·이상 멈춤) 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체, 장 시간 변경일은 개장 −15분 ~ 마감 +5분) 밖에서 배포하세요."
             return 0 ;;
     esac
     kr_trade_window_for "$hours"

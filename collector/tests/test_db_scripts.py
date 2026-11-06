@@ -380,6 +380,30 @@ def test_QA_복원은_실제_매매_기록을_비우고_설정을_꺼짐으로_�
     assert "__real_trade_rows__" not in result.stdout + result.stderr
 
 
+def test_복원_halt는_오늘까지의_ISA_스탑_지시를_건너뜀으로_닫는다(database_url, scratch_db, tmp_path):
+    """R13(ADR 0033 초안) — 백업 뒤에 이미 알린 장중 스탑을 복원한 DB가 다시 알리지 않게, 오늘(KST)까지의 PLANNED 스탑 지시만 닫습니다."""
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute("INSERT INTO manual_accounts(code, label, market, source_book, state, started_at, start_cash)"
+                     " VALUES ('isa', 'ISA', 'KR', 'kr_rules', 'ACTIVE', now(), 1000)")
+        conn.execute(
+            "INSERT INTO manual_stop_instructions(account, session, paper_order_id, symbol, quantity, timing, target_at, status) VALUES"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date, 1, '000000', 1, 'MARKET', now(), 'PLANNED'),"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date - 1, 2, '000000', 1, 'NEXT_CLOSE', now(), 'PLANNED'),"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date + 3, 3, '000000', 1, 'AT_MINUTE', now(), 'PLANNED'),"
+            " ('isa', (now() AT TIME ZONE 'Asia/Seoul')::date, 4, '000000', 1, 'MARKET', now(), 'RECORDED')")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    with psycopg.connect(db_url) as conn:
+        rows = conn.execute("SELECT paper_order_id, status, reason ->> 'autoNote' FROM manual_stop_instructions ORDER BY paper_order_id").fetchall()
+    assert rows == [(1, "SKIPPED", "restored"), (2, "SKIPPED", "restored"), (3, "PLANNED", None), (4, "RECORDED", None)]
+
+
 @pytest.mark.parametrize("mode", ["wipe", "HALT", "clear;"])
 def test_RESTORE_REAL_TRADE가_halt·clear가_아니면_시작하지_않는다(database_url, scratch_db, tmp_path, mode):
     name, db_url = scratch_db
