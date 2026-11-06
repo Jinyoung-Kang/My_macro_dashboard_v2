@@ -2055,10 +2055,14 @@ const DECISION_KIND: Record<string, string> = {
   INITIAL: "초기 결정",
   // 계좌2 장중 확인 결정(단계 2) — 세션당 한 번, 재시도 없음.
   CHECKPOINT: "장중 확인",
-  // 자유 시점 판의 장중 판단(ADR 0027) — 세션마다 계좌별 최대 두 번, 재시도 없음.
+  // 자유 시점 판의 장중 판단(ADR 0027·0031) — 세션마다 계좌별 최대 세 번(설정 기본 2), 재시도 없음.
   INTRADAY_1: "장중 판단 1",
   INTRADAY_2: "장중 판단 2",
+  INTRADAY_3: "장중 판단 3",
 };
+
+/** 자유 시점 판의 장중 판단 결정 종류인가(INTRADAY_<순번> — 순번을 하나씩 적지 않음). */
+export const isIntradayKind = (kind: string | null | undefined): boolean => typeof kind === "string" && /^INTRADAY_\d+$/.test(kind);
 
 /** 결정 종류 이름. 모르는 값은 받은 글자 그대로. */
 export const decisionKindLabel = (kind: string | null | undefined) => labelOf(DECISION_KIND, kind);
@@ -2073,13 +2077,13 @@ const DECISION_STATUS: Record<string, { label: string; tone: BadgeTone }> = {
 };
 
 /**
- * 결정 상태 배지. 모르는 상태는 받은 글자 그대로(지어내지 않음). 장중 확인 결정(kind CHECKPOINT)의 실패(형식 오류·거절·API 오류)는 '(재시도 없음)'을
- * 붙입니다 — 정기·출발 결정의 API 오류는 한 번 다시 부르지만 장중 확인은 세션당 한 번이라 다시 부르지 않습니다.
+ * 결정 상태 배지. 모르는 상태는 받은 글자 그대로(지어내지 않음). 장중 확인 결정(kind CHECKPOINT)과 장중 판단 결정(INTRADAY_<순번>)의 실패(형식 오류·
+ * 거절·API 오류)는 '(재시도 없음)'을 붙입니다 — 정기·출발 결정의 API 오류는 한 번 다시 부르지만 장중 확인·판단은 순번마다 한 번이라 다시 부르지 않습니다.
  */
 export function decisionStatusBadge(status: string | null | undefined, kind?: string | null): Badge {
   const known = status ? DECISION_STATUS[status] : undefined;
   const label = known?.label ?? status ?? EMPTY;
-  const once = kind === "CHECKPOINT" || kind === "INTRADAY_1" || kind === "INTRADAY_2";
+  const once = kind === "CHECKPOINT" || isIntradayKind(kind);
   const noRetry = once && status !== null && status !== undefined && CLAUDE_FAILED_STATUSES.includes(status);
   return { key: status ?? "unknown", label: noRetry ? `${label}(재시도 없음)` : label, className: TONE[known?.tone ?? "muted"] };
 }

@@ -139,7 +139,8 @@ public class ClaudeBookService {
     static final int DEFAULT_DAILY_CALL_CAP = 30;
     /**
      * 일일 호출 상한의 최댓값 — 설정 실수(600)로 하루 비용이 백 배가 되지 않게. 50에서 100으로 넓혔습니다(ADR 0027 결정 9 — 자유 시점 판을 켜는 저장에서
-     * 상한 60·예약 20: 네 계좌 × (결정 1 + 재시도 1 + 장중 판단 2) = 정기 호출 하루 최대 16). 기본값({@value #DEFAULT_DAILY_CALL_CAP})은 그대로입니다.
+     * 상한 60·예약 20). ADR 0031 초안(장중 판단 최대 3)은 상한 70·예약 30을 저장합니다 — 네 계좌의 정기 호출(결정 1 + 재시도 1 + 장중 판단 3, KST 하루에
+     * 미국 두 세션이 걸침) 하루 최악 EST 22·EDT 26회가 예약 안에 듭니다. 기본값({@value #DEFAULT_DAILY_CALL_CAP})은 그대로입니다.
      */
     static final int MAX_DAILY_CALL_CAP = 100;
 
@@ -877,9 +878,11 @@ public class ClaudeBookService {
      */
     static int claude2CallsInCycle(PaperStore store, LocalDate asOf) {
         int calls = 0;
-        // 자유 시점 판의 장중 판단(INTRADAY_1·INTRADAY_2 — ADR 0027 결정 3, 재시도 없음)도 같은 결정 주기의 호출입니다. 끈 판에는 그 행이 없습니다.
-        for (String kind : List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL, RuleBookService.CHECKPOINT,
-                RuleBookService.INTRADAY_1, RuleBookService.INTRADAY_2)) {
+        // 자유 시점 판의 장중 판단(순번마다 한 종류 — RuleBookService.INTRADAY_KINDS, ADR 0027 결정 3·ADR 0031 초안 최대 3, 재시도 없음)도 같은 결정
+        // 주기의 호출입니다. 끈 판에는 그 행이 없습니다. 종류를 하나씩 적지 않습니다(순번이 늘면 소상한이 적게 세지 않게).
+        List<String> kinds = new ArrayList<>(List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL, RuleBookService.CHECKPOINT));
+        kinds.addAll(RuleBookService.INTRADAY_KINDS);
+        for (String kind : kinds) {
             Optional<Decision> row = store.decisionFor(PaperBooks.CLAUDE2, asOf, kind);
             if (row.isPresent() && row.get().model() != null) {
                 calls += 1 + row.get().retryCount();

@@ -358,6 +358,39 @@ class PaperIntradayJobTest {
     }
 
     @Test
+    @DisplayName("셋째 장중 판단(INTRADAY_3 — 세션당 3): 계좌2 소상한이 셋째도 셈 — 결정 1 + 장중 판단 둘(3회) 뒤 소상한 3이면 셋째는 EXPIRED CYCLE_CAP, "
+            + "소상한 4면 INTRADAY_3 결정 행으로 부르고 주기 호출은 4회")
+    void claude2CycleCapCountsTheThirdJudgment() {
+        store.intradayPlans.clear();
+        ((ObjectNode) store.settings.body()).put(FreeTimingSettings.US_INTRADAY_MAX, 3);
+        for (int slot = 1; slot <= 2; slot++) {
+            store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, D, RuleBookService.intradayKind(slot), null, "NO_TRADE",
+                    "claude-sonnet-5-5", 0, 1, null, 20.0, null, null, null, null, null, null, List.of(), false, 1L, 0, "{}")).orElseThrow();
+        }
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, D)).as("결정 1 + 장중 판단 둘").isEqualTo(3);
+        group("claude2").put("maxCallsPerCycle", 3);
+        plan(PaperBooks.CLAUDE2, 3, TEN, "HOURLY", List.of(), morning2, false);
+        PaperIntradayJob job = job(true);
+
+        runAt(job, T.plus(Duration.ofMinutes(3)));
+        assertThat(sent).isEmpty();
+        assertThat(row(PaperBooks.CLAUDE2, 3).status()).isEqualTo(PaperBooks.CHECKPOINT_EXPIRED);
+        assertThat(row(PaperBooks.CLAUDE2, 3).reason()).startsWith("CYCLE_CAP — ").contains("지금 3회");
+
+        store.intradayPlans.clear();
+        group("claude2").put("maxCallsPerCycle", 4);
+        plan(PaperBooks.CLAUDE2, 3, TEN, "HOURLY", List.of(), morning2, false);
+        runAt(job, T.plus(Duration.ofMinutes(4)));
+        assertThat(sent).hasSize(1);
+        JsonNode basis = MAPPER.readTree(sent.get(0)[1]).get("1_basis");
+        assertThat(basis.get("decisionKind").asString()).isEqualTo(RuleBookService.INTRADAY_3);
+        assertThat(basis.get("maxPerSession").asInt()).isEqualTo(3);
+        assertThat(decision(PaperBooks.CLAUDE2, 3).kind()).isEqualTo(RuleBookService.INTRADAY_3);
+        assertThat(row(PaperBooks.CLAUDE2, 3).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+        assertThat(ClaudeBookService.claude2CallsInCycle(store, D)).as("결정 1 + 장중 판단 셋").isEqualTo(4);
+    }
+
+    @Test
     @DisplayName("운영자가 당긴 판단(manual)은 수동 문턱(상한 − 정기 작업 몫 예약)으로 — 예약 행은 부르는 사용량에서 수동 행은 EXPIRED CALL_CAP")
     void manualPlansUseTheManualThreshold() {
         store.intradayPlans.clear();

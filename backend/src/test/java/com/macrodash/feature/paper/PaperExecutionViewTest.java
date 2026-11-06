@@ -397,6 +397,37 @@ class PaperExecutionViewTest {
     }
 
     @Test
+    @DisplayName("자유 시점 판의 셋째 장중 판단(INTRADAY_3 — ADR 0031 초안)이 낸 주문도 메뉴 줄에서 뺌 — 주문 줄·감사한 주문 수에는 셈(종류를 목록으로 셈)")
+    void thirdIntradayJudgmentOrdersLeaveMenuRows() {
+        LocalDate mon = LocalDate.of(2026, 11, 2);
+        long morning = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE, mon,
+                RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null,
+                MAPPER.createObjectNode(), null, null, null, true, 5L, 0)).orElseThrow();
+        assertThat(morning).as("시험 주문(claudeOrder)의 결정 번호").isEqualTo(1L);
+        long answer = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE, mon,
+                RuleBookService.INTRADAY_3, null, "OK", "claude-sonnet-5-5", 0, 1, null, null, null, null, null,
+                MAPPER.createObjectNode(), null, null, null, false, 5L, 0)).orElseThrow();
+        audited(mon, PaperBooks.BUY, 100.0, 99.0, null, 10);
+        audited(mon, PaperBooks.BUY, 100.0, 99.5, null, 10);
+        LocalDate session = UsPaperMarket.INSTANCE.calendar().nextTradingDay(mon);
+        long judged = store.insertOrder(new Order(0, PaperBooks.CLAUDE, answer, "AAPL", PaperBooks.BUY, null, 5.0, null,
+                "NEXT_OBSERVATION", "CLAUDE", "FILLED", null, null, mon, et(session, 12, 40), session, null));
+        ObjectNode cf = MAPPER.createObjectNode();
+        ExecutionAudit.TIMINGS.forEach(cf::putNull);
+        cf.set("NEXT_OBSERVATION", price(101.0, et(session, 13, 57), "QUOTES_OBSERVATION"));
+        cf.set("NEXT_OPEN", price(98.0, et(session, 9, 30), "Y1M_AT"));
+        store.mergeOrderExec(new OrderExec(judged, PaperBooks.CLAUDE, "NEXT_OBSERVATION", null, cf, 75, null, null));
+
+        Map<String, Object> out = query.execution(PaperBooks.CLAUDE, 50);
+        assertThat((List<?>) out.get("orders")).as("주문 줄에는 그대로").hasSize(3);
+        JsonNode summary = MAPPER.valueToTree(out).path("summary");
+        assertThat(summary.path("audited").asInt()).isEqualTo(3);
+        JsonNode open = summary.path("timings").get(0);
+        assertThat(open.path("excludedNoBaseline").asInt() + open.path("excludedNoPrice").asInt() + open.path("n").asInt())
+                .as("메뉴 줄은 아침 주문 둘만").isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("고른 시점(M1): 출발일 종가로 다시 출발하며 취소한 출발 주문은 notFilled에도 세지 않음(사후 체결로 바뀌었고 감사 행이 없음 — 사용자 결정 2026-11-02)")
     void chosenSkipsRestartedStartOrders() {
         activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
