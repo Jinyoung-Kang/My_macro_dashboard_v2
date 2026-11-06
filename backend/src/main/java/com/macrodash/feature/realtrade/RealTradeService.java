@@ -74,6 +74,8 @@ public class RealTradeService {
     static final BigDecimal LOSS_LIMIT_MAX = new BigDecimal("50");
     /** 켜기 창 예상 목록에서 '다음 시가'를 찾는 최대 날 수. */
     static final int NEXT_SESSION_SEARCH_DAYS = 14;
+    /** 상태 응답의 {@code serverEnabled.reason} — 수집기 매매 스위치 상태를 읽지 못함({@code collector}는 null — RT3-UI-1). */
+    static final String REASON_STATUS_UNREADABLE = "status-unreadable";
 
     private static final String KR = RealTradeStore.MARKET_KR;
     private static final String US = RealTradeStore.MARKET_US;
@@ -142,7 +144,9 @@ public class RealTradeService {
 
     // ------------------------------------------------------------------ 상태
     /**
-     * {@code GET /api/realtrade/status?market=KR|US}(명세 §7.2). {@code serverTime}은 이 응답을 만든 서버 시각(화면이 정기 작업 멈춤을 브라우저 시계가
+     * {@code GET /api/realtrade/status?market=KR|US}(명세 §7.2). {@code serverEnabled.collector}는 수집기 매매 스위치 — 참·거짓, 읽지 못했으면
+     * (연결 실패·시간 초과·수집기 안의 예외) null과 {@code reason} {@value #REASON_STATUS_UNREADABLE}(꺼짐과 구분 — RT3-UI-1).
+     * {@code serverTime}은 이 응답을 만든 서버 시각(화면이 정기 작업 멈춤을 브라우저 시계가
      * 아니라 이 값과 견줌), {@code jobStartedAt}은 정기 작업을 시작한 시각(꺼져 있으면 null — 주기를 한 번도 끝내지 못했을 때의 기준),
      * {@code cancelGaveUpOrders}는 취소를 상한까지 보내고 포기한 미종료 행 수, {@code unresolvedOrders}는 결과 모름이고 토스 주문 번호를 모르는 미종료
      * 행 수입니다(둘 다 건수만 — 사람이 토스증권 앱에서 확인할 것, 표 준비 전이면 null).
@@ -156,10 +160,11 @@ public class RealTradeService {
         out.put("supported", supported);
         out.put("serverTime", iso(clock.instant()));
         Reply<Status> status = client.status();
+        boolean known = status.ok() && status.value().known();
         Map<String, Object> server = new LinkedHashMap<>();
-        server.put("collector", status.ok() && status.value().enabled());
+        server.put("collector", known ? status.value().enabled() : null);   // null = 수집기 상태를 읽지 못함(꺼짐과 다름 — RT3-UI-1)
         server.put("backend", enabled);
-        server.put("reason", status.ok() ? status.value().reason() : status.reason());
+        server.put("reason", known ? status.value().reason() : REASON_STATUS_UNREADABLE);
         out.put("serverEnabled", server);
         if (!store.ready()) {
             out.put("message", "실제 매매 표가 아직 없습니다 — 수집기가 마이그레이션(V24)을 적용한 뒤 다시 보세요.");
@@ -378,7 +383,8 @@ public class RealTradeService {
             plan = RealTradePlanner.sync(targets.weightPct(), equity.get(), account, blocked, BigDecimal.ZERO, rules.withRequireSellable(true),
                     true);
         }
-        job.notePreflight(preflight.value(), account, equity.get(), uncapped.get(), now);
+        // 상태의 마지막 사전 조회(lastPreflight)는 쓰지 않음 — 그 '지금 총액'은 정기 작업이 미체결 매수가 잡은 금액을 되돌린 값이라, 되돌림 없는 이
+        // 값으로 덮으면 기준 대비 손익·멈춤선이 거짓 손실로 보임(RT3-UI-2). 화면은 이 응답의 equity를 씀.
         List<String> warnings = new ArrayList<>();
         if (!targets.complete()) {
             warnings.add("targets-incomplete");
@@ -451,7 +457,10 @@ public class RealTradeService {
     }
 
     // ------------------------------------------------------------------ 켜기
-    /** {@code POST /api/realtrade/enable}(명세 §7.2) — OFF → LIVE, sync_pending·기준 평가액(지금 E)·기준 총액(지금 상한 없는 총액)·따라 하는 책과 세대. */
+    /**
+     * {@code POST /api/realtrade/enable}(명세 §7.2) — OFF → LIVE, sync_pending·기준 평가액·기준 총액(지금 상한 없는 총액 + 그때 토스 미체결 매수가 잡은
+     * 금액 — {@link #baseline})·따라 하는 책과 세대.
+     */
     public Map<String, Object> enable(CurrentUser user, EnableRequest body) {
         requireOwner(user);
         if (body == null) {
@@ -753,20 +762,39 @@ public class RealTradeService {
     private record Baseline(BigDecimal equity, BigDecimal total) {
     }
 
-    /** 지금 새로 읽은 기준(켜기·기준 다시 잡기) — 한 번의 사전 조회로 E0와 U0를 함께. */
+    /**
+     * 지금 새로 읽은 기준(켜기·기준 다시 잡기) — 토스 미체결 목록 + 한 번의 사전 조회로 E0와 U0를 함께. U0는 상한 없는 총액에 그때 미체결 목록의 매수
+     * (앱 주문 포함)가 잡은 금액(남은 수량 × 상한가)을 되돌린 값이고(RT3-BE-4 — 손실 판정의 '지금 값'과 같은 정의: 미체결 매수가 매수 가능 금액을 잡아
+     * 낮아진 만큼 U0가 낮게 잡히면 그 주문이 끝난 뒤 손실 한도가 그만큼 늦게 걸림), E0는 그 값에 안전 상한을 적용한 값입니다. 미체결 목록을 못 읽거나
+     * 미체결 매수의 수량·상한가를 모르면 502 {@code preflight-failed}.
+     */
     private Baseline baseline(Limits limits) {
-        Reply<Preflight> preflight = client.preflight(Set.of(), Set.of());
+        Reply<List<CollectorTradeClient.BrokerOrder>> open = client.openOrders();
+        if (!open.ok()) {
+            throw new RealTradeException(502, "preflight-failed", "토스 미체결 목록을 읽지 못했습니다(" + open.reason() + ") — 잠시 뒤 다시 하세요.");
+        }
+        Reply<Preflight> preflight = client.preflight(RealTradePlanner.openBuySymbols(open.value()), Set.of());
         if (!preflight.ok()) {
             throw new RealTradeException(502, "preflight-failed", "토스 계좌를 새로 읽지 못했습니다(" + preflight.reason() + ") — 잠시 뒤 다시 하세요.");
         }
-        Account account = RealTradePlanner.account(preflight.value(), List.of());
+        Account account = RealTradePlanner.account(preflight.value(), open.value());
+        BigDecimal cap = BigDecimal.valueOf(limits.maxEquityKrw());
         Optional<BigDecimal> total = RealTradePlanner.equity(account, null);
-        Optional<BigDecimal> equity = RealTradePlanner.equity(account, BigDecimal.valueOf(limits.maxEquityKrw()));
-        if (equity.isEmpty() || total.isEmpty() || equity.get().signum() <= 0) {
+        Optional<BigDecimal> equity = RealTradePlanner.equity(account, cap);
+        if (equity.isEmpty() || total.isEmpty()) {
             throw new RealTradeException(502, "preflight-failed", "운용 평가액을 정하지 못했습니다(보유 가격을 모름) — 잠시 뒤 다시 하세요.");
         }
-        job.notePreflight(preflight.value(), account, equity.get(), total.get(), clock.instant());
-        return new Baseline(equity.get().setScale(2, RoundingMode.HALF_UP), total.get().setScale(2, RoundingMode.HALF_UP));
+        Optional<BigDecimal> held = RealTradePlanner.openBuyHold(open.value(), account::upper);
+        if (held.isEmpty()) {
+            throw new RealTradeException(502, "preflight-failed", "토스 미체결 매수의 수량·상한가를 모릅니다 — 잠시 뒤 다시 하세요.");
+        }
+        BigDecimal lossTotal = total.get().add(held.get());
+        BigDecimal lossEquity = lossTotal.min(cap);
+        if (lossEquity.signum() <= 0) {
+            throw new RealTradeException(502, "preflight-failed", "운용 평가액을 정하지 못했습니다(보유 가격을 모름) — 잠시 뒤 다시 하세요.");
+        }
+        job.notePreflight(preflight.value(), account, equity.get(), lossTotal, clock.instant());
+        return new Baseline(lossEquity.setScale(2, RoundingMode.HALF_UP), lossTotal.setScale(2, RoundingMode.HALF_UP));
     }
 
     /** 비밀번호 잠금(명세 §7.1) — 마지막 성공 뒤 연속 실패가 {@value #PASSWORD_MAX_FAILURES}번 이상이고 마지막 실패가 30분 안이면 거절. */

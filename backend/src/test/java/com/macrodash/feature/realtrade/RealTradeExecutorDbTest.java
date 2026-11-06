@@ -277,7 +277,8 @@ class RealTradeExecutorDbTest {
                 broker("T-EARLY", A, "BUY", "DAY", "FILLED", "5", "5", kst("2026-11-06T09:59:50"), null),     // 시각 밖
                 broker("T-TIF", A, "BUY", "OPG", "FILLED", "5", "5", kst("2026-11-06T10:00:02"), null))));    // TIF 다름
         clock.set(kst("2026-11-06T10:07:30"));
-        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow())).isZero();
+        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()))
+                .isEqualTo(new RealTradeExecutor.Resolution(0, false));
         OrderRow bound = store.order(unknown.id()).orElseThrow();
         assertThat(bound.sendOutcome()).isEqualTo("ACCEPTED");
         assertThat(bound.outcomeCode()).isEqualTo("reconciled");
@@ -293,7 +294,7 @@ class RealTradeExecutorDbTest {
         when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "read-timeout", null));
         executor.send(mirror(101, 100, "BUY", 5), cfg);
         clock.set(kst("2026-11-06T10:07:30"));
-        assertThat(executor.resolveUnknown(clock.now, null)).isEqualTo(1);
+        assertThat(executor.resolveUnknown(clock.now, null)).isEqualTo(new RealTradeExecutor.Resolution(1, false));
         assertThat(store.config("KR").orElseThrow().state()).isEqualTo("LIVE");
 
         // 켜짐이면 멈춤

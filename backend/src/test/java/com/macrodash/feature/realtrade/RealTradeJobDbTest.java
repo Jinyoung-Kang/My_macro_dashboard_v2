@@ -957,6 +957,207 @@ class RealTradeJobDbTest {
         verify(client, never()).cancelOrder(anyString());
     }
 
+    // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
+    @Test
+    @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
+    void outsideWindowRejectsDoNotHalt() {
+        Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
+        clock.set(kst("2026-11-06T10:00"));
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.ACCEPTED, "T-1", null, 200));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, 541L, 540L, B, "BUY", 1, "DAY", d("20000"), 1),
+                cfg);
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.NOT_SENT, null, "outside-window", null));
+        for (long root = 550; root < 556; root += 2) {
+            executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, root + 1, root, A, "BUY", 1, "DAY",
+                    d("50000"), 1), cfg);
+        }
+        when(client.openOrders()).thenReturn(Reply.of(List.of(broker("T-1", B, "BUY", "DAY", "PENDING", "1", "0", clock.now, null))));
+
+        run("10:00:10");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        verify(client, never()).cancelOrder(anyString());
+    }
+
+    @Test
+    @DisplayName("RT3-MON-4: 시가 맞추기 묶음 전송 중 앞 주문이 길어져 시가 창 끝(08:58:30)을 넘기면 남은 주문은 보내지 않고 놓침 — 멈춤 없이 마무리가 DAY로 메움")
+    void syncStopsSendingWhenWindowCloses() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0, B, 30.0), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        when(client.placeOrder(anyString())).thenAnswer(inv -> {
+            clock.set(kst("2026-11-06T08:58:31"));   // 첫 주문의 수집기 검사·전송이 끝나니 창 끝을 넘김
+            return new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200);
+        });
+
+        run("08:57:00");
+
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + C + " OPG 100");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+
+        when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "OPG", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("10000000", Map.of(), Map.of(A, "50000", B, "20000"));
+        run("09:00:40");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + C + " OPG 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 93");
+
+        run("09:31");
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> assertThat(e.detail().path("missed").asInt()).isEqualTo(2));
+    }
+
+    @Test
+    @DisplayName("RT3-MON-4: 시가 창 끝 − 60초 뒤에 시작한 첫 시도는 OPG를 보내지 않고 묶음만 만듦(회전율 검사·sync_pending 그대로) — 마무리가 DAY로 메움")
+    void lateSyncStartBuildsBatchWithoutOpg() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0), List.of());
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+
+        run("08:57:40");
+
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(cfg().syncPending()).as("묶음을 만들며 sync_pending을 끔(켜기 뒤 첫 묶음)").isFalse();
+
+        run("09:00:40");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("BUY " + A + " DAY 100");
+    }
+
+    @Test
+    @DisplayName("RT3-MON-4: 시가 창 끝 − 60초 뒤에는 창 안 재시도도 시작하지 않음(마무리가 메움)")
+    void lateSyncRetryNotStarted() {
+        syncWithRetryableReject();
+
+        run("08:57:45");
+
+        verify(client, times(2)).placeOrder(anyString());
+    }
+
+    @Test
+    @DisplayName("RT3-MON-4: 장중 따라 하기 — 앞 주문의 전송이 길어져 다음 주문의 창이 닫히면 보내지 않고 놓침")
+    void mirrorSkipsWhenWindowClosesDuringSend() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("10000000", Map.of(), Map.of(A, "50000", B, "20000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(dueFor(1001, 1000, A, "BUY", kst("2026-11-06T10:00")),
+                dueFor(1011, 1010, B, "BUY", kst("2026-11-06T10:00"))));
+        when(paper.weightAfter(eq(BOOK), eq(1001L), any())).thenReturn(Optional.of(new WeightAfter(1001, A, "BUY", 20.0, 1e7, true,
+                List.of(1001L), List.of())));
+        when(paper.weightAfter(eq(BOOK), eq(1011L), any())).thenReturn(Optional.of(new WeightAfter(1011, B, "BUY", 10.0, 1e7, true,
+                List.of(1011L), List.of())));
+        when(client.placeOrder(anyString())).thenAnswer(inv -> {
+            clock.set(kst("2026-11-06T10:03:05"));   // 창 [10:00, 10:03]이 첫 전송 도중에 닫힘
+            return new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200);
+        });
+
+        run("10:02:50");
+
+        assertThat(sentBodies()).hasSize(1);
+        run("15:19:40");
+        assertThat(events("WINDOW_SUMMARY")).filteredOn(e -> e.detail().path("window").asString().equals("MIRROR")).singleElement()
+                .satisfies(e -> assertThat(e.detail().path("missed").asInt()).isEqualTo(1));
+    }
+
+    // ------------------------------------------------------------------ 끄는 중의 결과 모름(RT3-BE-1)
+    /** 10:00에 장중 따라 하기 A 5주가 결과 모름(토스 장애) — 실제로는 주문이 생겼다고 봄. 돌려주는 값은 그 주문이 토스 목록에 보일 때의 모습. */
+    private CollectorTradeClient.BrokerOrder unknownMirrorBuy() {
+        Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
+        clock.set(kst("2026-11-06T10:00"));
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "collector-timeout", null));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, 1101L, 1100L, A, "BUY", 5, "DAY", d("50000"),
+                1), cfg);
+        Instant firstSent = store.recentOrders("KR", 1).getFirst().firstSentAt();
+        return broker("T-LATE", A, "BUY", "DAY", "PENDING", "5", "0", firstSent.plusSeconds(1), null);
+    }
+
+    @Test
+    @DisplayName("RT3-BE-1: 끄는 중 — 결과 모름 행의 대조가 토스 목록을 못 읽으면 OFF로 넘기지 않고, 다음 주기에 목록이 돌아와 후보 하나로 묶이면 같은 주기에 취소")
+    void stoppingWaitsForReconcileThenCancelsBound() {
+        CollectorTradeClient.BrokerOrder late = unknownMirrorBuy();
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
+        when(client.openOrders()).thenReturn(Reply.failed("collector-timeout"));
+
+        run("10:07:30");   // 재전송 창(7분) + 여유(20초)가 지남 — 대조할 차례인데 목록을 못 읽음
+
+        assertThat(cfg().state()).as("대조를 끝내지 못함 — 끄는 중 그대로").isEqualTo("STOPPING");
+        assertThat(events("STOPPED")).isEmpty();
+
+        when(client.openOrders()).thenReturn(Reply.of(List.of(late)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(late)));
+        run("10:07:40");
+
+        assertThat(store.recentOrders("KR", 1).getFirst().tossOrderId()).isEqualTo("T-LATE");
+        verify(client).cancelOrder("T-LATE");
+        assertThat(cfg().state()).isEqualTo("STOPPING");
+    }
+
+    @Test
+    @DisplayName("RT3-BE-1: 꺼짐(OFF)에서 대조로 늦게 묶인 이 기능의 토스 주문은 취소(꺼진 뒤에도 대조·추적·취소를 이어 감)")
+    void offCancelsLateBoundOrder() {
+        CollectorTradeClient.BrokerOrder late = unknownMirrorBuy();
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_OFF), 1L));
+        when(client.openOrders()).thenReturn(Reply.of(List.of(late)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(late)));
+
+        run("10:07:30");
+
+        assertThat(store.recentOrders("KR", 1).getFirst().tossOrderId()).isEqualTo("T-LATE");
+        verify(client).cancelOrder("T-LATE");
+        assertThat(cfg().state()).isEqualTo("OFF");
+        verify(client, times(1)).placeOrder(anyString());
+    }
+
+    @Test
+    @DisplayName("RT3-BE-1: 끄는 중 — 목록을 읽은 대조가 후보를 정하지 못한 결과 모름 행만 남으면 OFF, 남은 수는 STOPPED 이벤트에")
+    void stoppingFinishesWithUnresolvedCount() {
+        unknownMirrorBuy();
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
+
+        run("10:07:30");   // 목록은 읽었고 후보 0개 — 끄는 중에는 멈추지 않고 사람 확인으로 남김
+
+        assertThat(cfg().state()).isEqualTo("OFF");
+        assertThat(events("STOPPED")).singleElement().satisfies(e -> assertThat(e.detail().path("unresolved").asInt()).isEqualTo(1));
+    }
+
+    // ------------------------------------------------------------------ 수집기 스위치가 꺼짐(OPS-3)
+    @Test
+    @DisplayName("OPS-3: 켜짐인데 수집기가 매매 스위치가 꺼졌다고 분명히 답하면 이상 멈춤(collector-disabled) — 다시 켤 때 멈춤 해제를 거치게, 이 기능의 미체결 취소")
+    void collectorSwitchedOffHalts() {
+        syncBuy100();
+        when(client.status()).thenReturn(Reply.of(new CollectorTradeClient.Status(false, "disabled", null, false, Instant.EPOCH)));
+        when(client.openOrders()).thenReturn(Reply.of(List.of(broker("T-1", A, "BUY", "OPG", "PENDING", "100", "0", clock.now, null))));
+
+        run("08:52");
+
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("collector-disabled");
+        assertThat(events("HALT")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("reason").asString()).isEqualTo("collector-disabled");
+            assertThat(e.detail().path("code").asString()).isEqualTo("disabled");
+            assertThat(e.notifies()).isTrue();
+        });
+        verify(client).cancelOrder("T-1");
+    }
+
+    @Test
+    @DisplayName("OPS-3: 수집기 상태를 읽지 못함(연결 실패)·한도 해석 실패는 멈추지 않고 그 주기만 건너뜀")
+    void collectorStatusUnreadableSkipsWithoutHalt() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0), List.of());
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"),
+                Reply.of(new CollectorTradeClient.Status(false, "limits-unreadable", null, false, Instant.EPOCH)));
+
+        run("08:51");
+        run("08:51:10");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        verify(client, never()).placeOrder(anyString());
+    }
+
     // ------------------------------------------------------------------ 하루 한도(RT-CONTRACT-3)
     @Test
     @DisplayName("하루 건수 한도 — 오늘 주문 목록(앱 주문 포함)으로 남은 건수를 세어 그만큼만 보내고 나머지는 미룸(수집기가 거절할 주문을 보내지 않음)")

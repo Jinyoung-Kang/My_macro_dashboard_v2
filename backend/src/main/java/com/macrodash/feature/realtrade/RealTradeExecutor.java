@@ -249,13 +249,13 @@ class RealTradeExecutor {
      * 멈춤이 걸리면(대조 실패·같은 번호·멱등 충돌) 남은 행은 다시 보내지 않습니다.
      *
      * @param planned 부르는 쪽이 읽은 설정(켜짐이 아니거나 null이면 재전송 없이 대조만 — 대조 실패로 멈추지도 않음)
-     * @return 대조로 정하지 못한(재전송 창이 끝난) 행 수
+     * @return 대조로 정하지 못한(재전송 창이 끝난) 행 수와, 대조할 행이 있었는데 토스 목록을 읽지 못했는가
      */
-    int resolveUnknown(Instant now, Config planned) {
+    Resolution resolveUnknown(Instant now, Config planned) {
         List<OrderRow> unknown = store.unfinishedOrders(MARKET).stream()
                 .filter(row -> RealTradeStore.OUTCOME_UNKNOWN.equals(row.sendOutcome())).toList();
         if (unknown.isEmpty()) {
-            return 0;
+            return new Resolution(0, false);
         }
         boolean live = planned != null && RealTradeStore.STATE_LIVE.equals(planned.state());
         Lists lists = new Lists();
@@ -279,7 +279,14 @@ class RealTradeExecutor {
             }
             halted |= result == Reconciled.HALTED;
         }
-        return unresolved;
+        return new Resolution(unresolved, lists.failed());
+    }
+
+    /**
+     * 결과 모름 처리 한 번의 결과 — 대조로 정하지 못한 행 수와, 재전송 창이 끝난 행을 대조하려 했는데 토스 목록(미체결·오늘)을 읽지 못했는가. 목록을 못
+     * 읽은 주기에는 끄는 중을 OFF로 넘기지 않습니다(RT3-BE-1 — 결과 모름 행마다 두 목록을 실제로 읽은 대조가 한 번은 있어야 꺼짐).
+     */
+    record Resolution(int unresolved, boolean listsFailed) {
     }
 
     /**
@@ -335,6 +342,11 @@ class RealTradeExecutor {
                 }
             }
             return orders;
+        }
+
+        /** 읽으려 했는데 읽지 못함(읽지 않았으면 false). */
+        boolean failed() {
+            return tried && orders == null;
         }
     }
 
@@ -523,6 +535,7 @@ class RealTradeExecutor {
 
     /**
      * 끄기 정리가 끝났는가 — 미종료 행이 없거나, 남은 것이 모두 재전송 창이 끝난 결과 모름 행(토스 주문 번호를 몰라 취소할 수 없음 — 사람이 앱에서 확인)뿐.
+     * 시각만 보므로, 정기 작업은 그 주기의 대조가 토스 목록을 읽었을 때만({@link Resolution#listsFailed}가 거짓) 이것으로 끄는 중을 끝냅니다(RT3-BE-1).
      */
     boolean cleanupDone(Instant now) {
         for (OrderRow row : store.unfinishedOrders(MARKET)) {

@@ -375,6 +375,25 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("RT3-BE-4: 미체결 매수가 잡은 금액 — 토스 미체결 목록(앱 주문 포함)의 국내 매수(방향 모름 포함) 남은 수량 × 상한가, 수량·상한가를 모르면 모름")
+    void openBuyHold() {
+        List<CollectorTradeClient.BrokerOrder> open = List.of(
+                todayOrder("o1", A, "BUY", "10", "4", null, null, "KRW"),                // 남은 6 × 91,000
+                todayOrder("o2", B, "SELL", "5", "0", null, null, "KRW"),               // 매도 — 매수 가능 금액을 잡지 않음
+                todayOrder("o3", C, null, "2", null, null, null, "KRW"),                // 방향 모름 → 매수로 셈, 체결 수량 없음 → 남은 2 × 1,300
+                todayOrder("o4", A, "BUY", "3", "3", null, null, "KRW"),                // 남은 0
+                todayOrder("o5", B, "BUY", "1", "0", null, null, "USD"));               // 국내 아님
+        Map<String, BigDecimal> uppers = Map.of(A, d("91000"), C, d("1300"));
+        assertThat(RealTradePlanner.openBuySymbols(open)).containsExactlyInAnyOrder(A, C);
+        assertThat(RealTradePlanner.openBuyHold(open, uppers::get)).hasValueSatisfying(v -> assertThat(v).isEqualByComparingTo("548600"));
+        assertThat(RealTradePlanner.openBuyHold(List.of(), s -> null)).hasValueSatisfying(v -> assertThat(v).isEqualByComparingTo("0"));
+        assertThat(RealTradePlanner.openBuyHold(open, Map.of(A, d("91000"))::get)).as("상한가 모름").isEmpty();
+        CollectorTradeClient.BrokerOrder noQuantity = new CollectorTradeClient.BrokerOrder("o6", A, "BUY", "LIMIT", "DAY", "PENDING", null,
+                null, null, null, null, null, Instant.EPOCH, null, null, "KRW");
+        assertThat(RealTradePlanner.openBuyHold(List.of(noQuantity), uppers::get)).as("수량 모름").isEmpty();
+    }
+
+    @Test
     @DisplayName("매도 가능 수량을 물을 종목 — 계획의 매도와 매도 가능 수량을 몰라 건너뛴 종목만")
     void sellSymbolsForSecondRead() {
         Account account = new Acct().cash("10000000").hold(C, "10", "1000").hold(B, "100", "10000").sellable(B, null).quote(A, "70000")

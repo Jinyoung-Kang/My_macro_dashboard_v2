@@ -247,7 +247,9 @@ class ApiIntegrationTest {
         assertThat(status.path("market").asString()).isEqualTo("KR");
         assertThat(status.path("supported").asBoolean()).isTrue();
         assertThat(status.path("serverEnabled").path("backend").asBoolean(true)).as("REAL_TRADE_ENABLED 기본 꺼짐").isFalse();
-        assertThat(status.path("serverEnabled").path("collector").asBoolean(true)).isFalse();
+        assertThat(status.path("serverEnabled").path("collector").isNull()).as("수집기 없음 — 읽지 못함은 꺼짐(false)이 아니라 모름(null), RT3-UI-1")
+                .isTrue();
+        assertThat(status.path("serverEnabled").path("reason").asString()).isEqualTo("status-unreadable");
         assertThat(status.toString()).doesNotContain("clientOrderId", "tossOrderId", "requestBody");
         assertThat(authorizedGet("/api/realtrade/status?market=US").path("supported").asBoolean(true)).isFalse();
         assertThat(authorizedExchange("/api/realtrade/status?market=JP", HttpMethod.GET).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);

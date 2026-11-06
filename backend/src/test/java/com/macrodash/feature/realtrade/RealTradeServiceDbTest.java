@@ -463,13 +463,121 @@ class RealTradeServiceDbTest {
                 .containsExactly("SELL " + A + " 10", "BUY " + C + " 100");
         assertThat((BigDecimal) out.get("turnoverPct")).isEqualByComparingTo("60.00");
         rejects(() -> service(true).preview("US", BOOK), 400, "not-supported");
-        assertThat(job.lastPreflight()).as("화면용 마지막 사전 조회").isNotNull();
-        assertThat(job.lastPreflight().total()).isEqualByComparingTo("10000000");
+        assertThat(job.lastPreflight()).as("예상 목록은 상태의 마지막 사전 조회를 쓰지 않음(RT3-UI-2 — 정기 작업·기준 잡기만)").isNull();
         @SuppressWarnings("unchecked")
         ArgumentCaptor<java.util.Collection<String>> sells = ArgumentCaptor.forClass(java.util.Collection.class);
         verify(client, times(2)).preflight(any(), sells.capture());
         assertThat(sells.getAllValues().get(0)).as("첫 조회 — 매도 가능 수량 없이").isEmpty();
         assertThat(sells.getAllValues().get(1)).as("매도 후보만 다시(정기 작업과 같은 두 단계)").containsExactly(A);
+    }
+
+    @Test
+    @DisplayName("RT3-UI-2: 켜짐에 예상 목록(설정 바꾸기·멈춤 해제 창)을 열어도 정기 작업이 남긴 마지막 사전 조회(미체결 매수 되돌림 포함 총액)를 덮지 않음")
+    void previewKeepsJobPreflight() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.sessionHours(any())).thenAnswer(inv -> {
+            LocalDate date = inv.getArgument(0);
+            return Optional.of(new SessionHours(date, true, date.atTime(9, 0).atZone(RealTradeFixtures.SEOUL).toInstant(),
+                    date.atTime(15, 30).atZone(RealTradeFixtures.SEOUL).toInstant()));
+        });
+        when(paper.openTargets(eq(BOOK), any())).thenAnswer(inv -> Optional.of(new OpenTargets(BOOK, inv.getArgument(1), Map.of(C, 50.0),
+                Map.of(), 1e7, 0, List.of(), List.of())));
+        sellableOnlyWhenAsked(clock.now, "9000000");
+        Preflight fromJob = new Preflight(clock.now.minusSeconds(30), d("8350000"), List.of(new Holding(A, "합성", d("10"), d("100000"))),
+                Map.of(A, new Quote(d("100000"), d("130000"), null)), Map.of());
+        job.notePreflight(fromJob, RealTradePlanner.account(fromJob, List.of()), d("9350000"), d("10000000"), clock.now.minusSeconds(30));
+        RealTradeJob.PreflightView before = job.lastPreflight();
+
+        assertThat(service(true).preview("KR", BOOK)).containsEntry("ok", true);
+
+        assertThat(job.lastPreflight()).isSameAs(before);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> last = (Map<String, Object>) service(true).status("KR").get("lastPreflight");
+        assertThat((BigDecimal) last.get("total")).isEqualByComparingTo("10000000");
+    }
+
+    // ------------------------------------------------------------------ 수집기 상태를 읽지 못함(RT3-UI-1)
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> serverEnabled(Map<String, Object> status) {
+        return (Map<String, Object>) status.get("serverEnabled");
+    }
+
+    @Test
+    @DisplayName("RT3-UI-1: 상태 — 수집기 상태를 읽지 못하면 serverEnabled.collector는 null(모름)·사유 status-unreadable, 꺼졌다고 답하면 false와 그 사유")
+    void statusSeparatesUnreadableFromDisabled() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        RealTradeService svc = service(true);
+
+        when(client.status()).thenReturn(Reply.failed("collector-timeout"));
+        Map<String, Object> unreadable = svc.status("KR");
+        assertThat(serverEnabled(unreadable)).containsEntry("collector", null).containsEntry("backend", true)
+                .containsEntry("reason", "status-unreadable");
+        assertThat(unreadable).containsEntry("state", "LIVE");
+
+        when(client.status()).thenReturn(Reply.of(new CollectorTradeClient.Status(false, "disabled", null, false, Instant.EPOCH)));
+        assertThat(serverEnabled(svc.status("KR"))).containsEntry("collector", false).containsEntry("reason", "disabled");
+
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
+        assertThat(serverEnabled(svc.status("KR"))).containsEntry("collector", true).containsEntry("reason", null);
+    }
+
+    @Test
+    @DisplayName("RT3-UI-1: 상태 — 수집기가 답했지만 스위치 상태를 모르는 본문(ok:false — 수집기 안의 예외)도 null(모름)·status-unreadable")
+    void statusUnknownCollectorBodyIsUnreadable() {
+        when(client.status()).thenReturn(Reply.of(new CollectorTradeClient.Status(false, "internal", null, false, null, false)));
+        assertThat(serverEnabled(service(true).status("KR"))).containsEntry("collector", null).containsEntry("reason", "status-unreadable");
+    }
+
+    // ------------------------------------------------------------------ 기준 총액과 미체결 매수(RT3-BE-4)
+    /** 사전 조회 — 보유 A 10주(현재가 100,000)·현금 9,000,000, 시세에 C(상한가 65,000)는 C를 물을 때만. */
+    private void preflightWithC(String cash) {
+        when(client.preflight(any(), any())).thenAnswer(inv -> {
+            java.util.Collection<?> symbols = inv.getArgument(0);
+            Map<String, Quote> quotes = symbols.contains(C)
+                    ? Map.of(A, new Quote(d("100000"), d("130000"), null), C, new Quote(d("50000"), d("65000"), null))
+                    : Map.of(A, new Quote(d("100000"), d("130000"), null));
+            return Reply.of(new Preflight(clock.now, d(cash), List.of(new Holding(A, "합성", d("10"), d("100000"))), quotes, Map.of()));
+        });
+    }
+
+    @Test
+    @DisplayName("RT3-BE-4: 켜기 — 그때 토스 미체결 목록의 매수(앱 주문 포함)가 잡은 금액(남은 수량 × 상한가)을 기준 총액·기준 평가액에 되돌림(매도 미체결은 아님)")
+    void enableAddsBackOpenBuysToBaseline() {
+        when(client.openOrders()).thenReturn(Reply.of(List.of(
+                RealTradeFixtures.broker("X-9", C, "BUY", "DAY", "PENDING", "10", "4", clock.now, null),     // 남은 6주 × 65,000 = 390,000
+                RealTradeFixtures.broker("X-8", A, "SELL", "DAY", "PENDING", "3", "0", clock.now, null))));  // 매도 — 매수 가능 금액을 잡지 않음
+        preflightWithC("9000000");
+
+        service(true).enable(OWNER, enable("실제 매매 켜기", RIGHT, 0));
+
+        Config cfg = store.config("KR").orElseThrow();
+        assertThat(cfg.baselineTotal()).as("9,000,000 + 1,000,000 + 390,000").isEqualByComparingTo("10390000");
+        assertThat(cfg.baselineEquity()).isEqualByComparingTo("10390000");
+        verify(client).preflight(eq(new java.util.TreeSet<>(List.of(C))), any());
+        assertThat(job.lastPreflight().total()).as("화면의 지금 총액도 같은 정의").isEqualByComparingTo("10390000");
+    }
+
+    @Test
+    @DisplayName("RT3-BE-4: 기준 다시 잡기도 앱 미체결 매수를 되돌림, 미체결 목록을 못 읽거나 상한가를 모르면 502 preflight-failed(기준을 쓰지 않음)")
+    void rebaselineAddsBackOpenBuysOrRefuses() {
+        Config live = RealTradeFixtures.live(store, false, d("10000000"));
+        RealTradeService svc = service(true);
+        preflightWithC("9000000");
+
+        when(client.openOrders()).thenReturn(Reply.failed("collector-timeout"));
+        rejects(() -> svc.update(OWNER, new RealTradeService.UpdateRequest("KR", null, null, true, "설정 바꾸기", RIGHT, live.version())),
+                502, "preflight-failed");
+
+        when(client.openOrders()).thenReturn(Reply.of(List.of(RealTradeFixtures.broker("X-9", "051910", "BUY", "DAY", "PENDING", "2", "0",
+                clock.now, null))));
+        rejects(() -> svc.update(OWNER, new RealTradeService.UpdateRequest("KR", null, null, true, "설정 바꾸기", RIGHT, live.version())),
+                502, "preflight-failed");
+        assertThat(store.config("KR").orElseThrow().baselineTotal()).isNull();
+
+        when(client.openOrders()).thenReturn(Reply.of(List.of(RealTradeFixtures.broker("X-9", C, "BUY", "DAY", "PENDING", "10", "0",
+                clock.now, null))));
+        svc.update(OWNER, new RealTradeService.UpdateRequest("KR", null, null, true, "설정 바꾸기", RIGHT, live.version()));
+        assertThat(store.config("KR").orElseThrow().baselineTotal()).as("10,000,000 + 10 × 65,000").isEqualByComparingTo("10650000");
     }
 
     /** 사전 조회 — 보유 A 10주(책에 없음)·현금, 매도 가능 수량은 sell 목록에 A가 있을 때만 돌려줌(수집기와 같음). */

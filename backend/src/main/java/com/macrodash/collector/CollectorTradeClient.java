@@ -142,11 +142,35 @@ public class CollectorTradeClient {
     public record Limits(long maxOrderKrw, int maxOrdersPerDay, long maxBuyKrwPerDay, long maxEquityKrw) {
     }
 
+    /** 켜졌다고 답했는데 한도 네 값을 읽지 못함(이 클래스가 붙이는 사유 — 수집기 스위치는 켜져 있음). */
+    public static final String REASON_LIMITS_UNREADABLE = "limits-unreadable";
+    /**
+     * 수집기가 매매 스위치가 꺼졌다고 분명히 알리는 사유({@code settings.toss_trading_disabled_reason}·서비스 토큰 없이 뜬 수집기) — 본문이
+     * {@code ok:false}여도 {@code enabled:false}와 이 사유면 스위치 상태를 안 것으로 봅니다(그 밖의 {@code ok:false} — 수집기 안의 예외
+     * {@code internal} 등 — 는 모름).
+     */
+    static final Set<String> SWITCH_OFF_REASONS = Set.of("disabled", "account-disabled", "no-service-token", "limits-invalid");
+
     /**
      * 수집기 매매 스위치 상태. 꺼져 있으면 {@code enabled=false}와 사유({@code disabled}·{@code account-disabled}·{@code no-service-token}·
      * {@code limits-invalid}, 켜졌는데 한도를 읽지 못하면 {@code limits-unreadable}). {@code limits}는 켜졌을 때만.
+     * {@code known}은 수집기가 스위치 상태를 답했는가 — 본문 {@code ok:false}(수집기 안의 예외 등)이거나 {@code enabled}가 참거짓이 아니면 false
+     * (모름 — RT3-UI-1, 화면은 '꺼짐'이 아니라 '확인 안 됨'). 읽기 자체가 실패하면 {@link Reply#failed}입니다.
      */
-    public record Status(boolean enabled, String reason, Limits limits, boolean tokenContention, Instant serverTime) {
+    public record Status(boolean enabled, String reason, Limits limits, boolean tokenContention, Instant serverTime, boolean known) {
+
+        /** 스위치 상태를 안 응답(시험·기존 호출). */
+        public Status(boolean enabled, String reason, Limits limits, boolean tokenContention, Instant serverTime) {
+            this(enabled, reason, limits, tokenContention, serverTime, true);
+        }
+
+        /**
+         * 수집기가 매매 스위치가 꺼졌다고 분명히 답함 — 모름({@code known=false})도, 한도 해석 실패({@code limits-unreadable} — 수집기는
+         * 켜졌다고 답함)도 아님(OPS-3 — 정기 작업이 켜짐에서 이것을 보면 이상 멈춤).
+         */
+        public boolean switchedOff() {
+            return known && !enabled && !REASON_LIMITS_UNREADABLE.equals(reason);
+        }
     }
 
     /** 그날 토스 장 운영 정보(통합 모드). 휴장이면 {@code today}가 null, 세션 안의 단일가 시각은 결손이면 null. */
@@ -251,8 +275,10 @@ public class CollectorTradeClient {
         JsonNode body = reply.value();
         try {
             boolean ok = body.path("ok").asBoolean(false);
-            boolean enabled = ok && body.path("enabled").isBoolean() && body.path("enabled").asBoolean();
+            boolean answered = body.path("enabled").isBoolean();
+            boolean enabled = ok && answered && body.path("enabled").asBoolean();
             String reason = code(body.get("reason"));
+            boolean known = answered && (ok || (!body.path("enabled").asBoolean() && reason != null && SWITCH_OFF_REASONS.contains(reason)));
             boolean contention = body.path("tokenContention").isBoolean() && body.path("tokenContention").asBoolean();
             Instant serverTime = instant(body.get("serverTime"));
             Limits limits = null;
@@ -260,12 +286,12 @@ public class CollectorTradeClient {
                 limits = limits(body.get("limits"));
                 if (limits == null) {
                     enabled = false;
-                    reason = "limits-unreadable";
+                    reason = REASON_LIMITS_UNREADABLE;
                 }
             } else if (reason == null) {
                 reason = ok ? "disabled" : "collector-not-ok";
             }
-            return Reply.of(new Status(enabled, reason, limits, contention, serverTime));
+            return Reply.of(new Status(enabled, reason, limits, contention, serverTime, known));
         } catch (RuntimeException e) {
             return badResponse("GET /toss/trading/status", e);
         }

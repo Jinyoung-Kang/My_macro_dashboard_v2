@@ -348,6 +348,43 @@ class CollectorTradeClientTest {
     }
 
     @Test
+    @DisplayName("RT3-UI-1·OPS-3: 상태 — 스위치 상태를 안 응답(known)과 모르는 응답(본문 ok:false 수집기 안의 예외·enabled 없음)을 구분, '분명히 꺼짐'은 한도 해석 실패가 아님")
+    void statusKnownAndSwitchedOff() {
+        body = "{\"ok\":true,\"enabled\":false,\"reason\":\"disabled\",\"limits\":null,\"tokenContention\":false}";
+        CollectorTradeClient.Status off = client().status().value();
+        assertThat(off.known()).isTrue();
+        assertThat(off.switchedOff()).isTrue();
+
+        body = "{\"ok\":false,\"enabled\":false,\"reason\":\"no-service-token\"}";
+        CollectorTradeClient.Status noToken = client().status().value();
+        assertThat(noToken.known()).as("서비스 토큰 없이 뜬 수집기 — 꺼짐이 분명").isTrue();
+        assertThat(noToken.switchedOff()).isTrue();
+
+        body = "{\"ok\":false,\"enabled\":true,\"reason\":\"internal\"}";
+        CollectorTradeClient.Status internal = client().status().value();
+        assertThat(internal.enabled()).isFalse();
+        assertThat(internal.known()).as("수집기 안의 예외 — 스위치 상태 모름").isFalse();
+        assertThat(internal.switchedOff()).isFalse();
+
+        body = "{\"ok\":false,\"enabled\":false,\"reason\":\"internal\"}";
+        assertThat(client().status().value().known()).isFalse();
+
+        body = "{\"ok\":true,\"reason\":null}";
+        assertThat(client().status().value().known()).as("enabled가 참거짓이 아님").isFalse();
+
+        body = "{\"ok\":true,\"enabled\":true,\"limits\":{\"maxOrderKrw\":0}}";
+        CollectorTradeClient.Status unreadable = client().status().value();
+        assertThat(unreadable.known()).isTrue();
+        assertThat(unreadable.switchedOff()).as("한도 해석 실패 — 수집기는 켜졌다고 답함").isFalse();
+
+        body = "{\"ok\":true,\"enabled\":true,\"reason\":null,\"limits\":{\"maxOrderKrw\":3000000,\"maxOrdersPerDay\":40,"
+                + "\"maxBuyKrwPerDay\":20000000,\"maxEquityKrw\":50000000},\"tokenContention\":false}";
+        CollectorTradeClient.Status on = client().status().value();
+        assertThat(on.known()).isTrue();
+        assertThat(on.switchedOff()).isFalse();
+    }
+
+    @Test
     @DisplayName("RT2-FE-1: 상태 읽기는 따로 짧은 시간 초과(5초) — 수집기가 멈춰도 상태 API가 오래 묶이지 않음, 다른 읽기는 그대로")
     void statusHasShortReadTimeout() {
         assertThat(CollectorTradeClient.STATUS_READ_TIMEOUT).isEqualTo(Duration.ofSeconds(5));

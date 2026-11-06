@@ -72,12 +72,15 @@ import java.util.function.BiFunction;
  *
  * <p>한 주기(명세 §7.3)
  * <ol>
- *   <li>남은 SENDING 정리 → 진행 중 주문 추적(상태와 무관하게 늘) → 결과 모름 재전송·대조.</li>
- *   <li>끄는 중(STOPPING)·멈춤(HALTED)이면 이 기능의 미체결 취소만, 정리가 끝나면 STOPPING → OFF.</li>
+ *   <li>남은 SENDING 정리 → 진행 중 주문 추적(상태와 무관하게 늘) → 결과 모름 재전송·대조(대조는 꺼짐에서도).</li>
+ *   <li>끄는 중(STOPPING)·멈춤(HALTED)이면 이 기능의 미체결 취소만, 정리가 끝나면(그 주기의 대조가 토스 목록을 읽었을 때만) STOPPING → OFF. 꺼짐(OFF)에서도
+ *       대조로 늦게 묶인 이 기능의 토스 주문은 취소.</li>
  *   <li>켜짐(LIVE)이 아니면 끝. 따라 하는 책이 운용 중이 아니거나 세대가 다르면 이상 멈춤. 옛 책·세대의 미체결은 취소.</li>
- *   <li>수집기 스위치·토큰 경합·같은 오류 반복 확인 → 오늘 토스 장 운영 정보·쉬는 날 판정(그날 첫 창 3분 전에 한 번) → 창 3분 전 토큰 예열.</li>
+ *   <li>수집기 스위치(꺼졌다고 분명히 답하면 이상 멈춤, 읽지 못하면 그 주기만 건너뜀)·토큰 경합·같은 오류 반복 확인 → 오늘 토스 장 운영 정보·쉬는 날
+ *       판정(그날 첫 창 3분 전에 한 번) → 창 3분 전 토큰 예열.</li>
  *   <li>창마다 새 사전 조회(매도 가능 수량은 팔 종목만 — 시가 맞추기류는 두 단계) + 오늘 주문 목록(수집기 하루 한도의 남은 몫) → 손실 한도(넘으면 매수만
- *       멈춤) → 계획({@link RealTradePlanner}) → 선점·SENDING·전송·결과({@link RealTradeExecutor}). 창이 끝나면 창 요약 이벤트(접수·체결·놓침·건너뜀·막힘·미룸).</li>
+ *       멈춤) → 계획({@link RealTradePlanner}) → 선점·SENDING·전송·결과({@link RealTradeExecutor}). 보내기 직전마다 지금 시각으로 그 창이 아직 열려 있는지
+ *       다시 보고, 닫혔으면 보내지 않고 놓침으로 둡니다(RT3-MON-4). 창이 끝나면 창 요약 이벤트(접수·체결·놓침·건너뜀·막힘·미룸).</li>
  *   <li>알림 대기 이벤트를 텔레그램으로(건수·상태·사유 코드만 — {@link RealTradeNotices}). 못 보내면 다음 주기에 다시.</li>
  * </ol>
  *
@@ -113,16 +116,29 @@ class RealTradeJob {
     static final String HALT_BOOK_NOT_ACTIVE = "book-not-active";
     static final String HALT_TOKEN = "token-contention";
     static final String HALT_REPEATED = "repeated-error";
+    /**
+     * 켜짐인데 수집기가 매매 스위치가 꺼졌다고 분명히 답함(OPS-3 — 비상 끄기 3단계 등). 멈춰 두면 수집기 스위치를 다시 켜도 멈춤 해제(확인 글자 + 비밀번호)를
+     * 거쳐야 주문이 나갑니다. 상태를 읽지 못한 것(연결 실패·시간 초과·수집기 안의 예외)과 한도 해석 실패는 멈추지 않고 그 주기만 건너뜁니다.
+     */
+    static final String HALT_COLLECTOR_DISABLED = "collector-disabled";
+    /** 수집기의 창 밖 안 보냄 사유(토스로 나가지 않음). */
+    static final String CODE_OUTSIDE_WINDOW = "outside-window";
+    /**
+     * 시가 맞추기는 창 끝 − 이만큼 뒤에 시작한 시도에서 OPG를 보내지 않습니다(RT3-MON-4 — 사전 조회 두 단계와 미체결·오늘 목록 읽기가 수집기 OPG 마감 전에
+     * 끝나지 않을 수 있음). 그날 묶음이 없으면 묶음은 만들어(회전율 검사 포함) 시가 뒤 마무리가 시장가 DAY로 메우게 하고, 묶음이 있으면 재시도를 하지 않습니다.
+     */
+    static final Duration SYNC_LATE_START = Duration.ofSeconds(60);
     /** 모의 주문 상태 — 취소됨(모의 장부의 글자와 같음). */
     static final String PAPER_CANCELLED = "CANCELLED";
 
     /**
-     * '같은 오류 3회'에 세지 않는 사유(명세 §7.3 — 종목 단위 건너뜀·429, 수집기 한도 거절, 그리고 이 기능이 붙인 기록 코드). 한도 거절(1건·하루 건수·하루
-     * 매수)은 계획이 미리 줄이지만(하루 한도 — {@link RealTradePlanner#dailyUsage}, 매도 가격 여유) 사전 조회와 전송 사이의 가격·주문 변화로 남을 수 있고,
-     * 그것으로 이상 멈춤(이미 접수된 주문까지 취소)을 하지 않습니다.
+     * '같은 오류 3회'에 세지 않는 사유(명세 §7.3 — 종목 단위 건너뜀·429, 수집기 한도 거절, 수집기 창 밖 안 보냄, 그리고 이 기능이 붙인 기록 코드). 한도
+     * 거절(1건·하루 건수·하루 매수)은 계획이 미리 줄이지만(하루 한도 — {@link RealTradePlanner#dailyUsage}, 매도 가격 여유) 사전 조회와 전송 사이의 가격·주문
+     * 변화로 남을 수 있고, 창 밖 안 보냄({@value #CODE_OUTSIDE_WINDOW} — 토스로 나가지 않음)은 늦게 끝난 계획·전송의 시각 탓이라(RT3-MON-4 — 보내기 직전
+     * 창 검사가 막지만 백엔드와 수집기의 창 끝 사이 여유가 30초뿐), 그것으로 이상 멈춤(이미 접수된 주문까지 취소)을 하지 않습니다.
      */
     static final Set<String> REPEAT_EXEMPT = Set.of("rate-limited", "opposite-pending-order-exists", "over-order-limit",
-            "over-daily-orders", "over-daily-buy",
+            "over-daily-orders", "over-daily-buy", CODE_OUTSIDE_WINDOW,
             RealTradeExecutor.CODE_INTERRUPTED, RealTradeExecutor.CODE_RECONCILED, RealTradeExecutor.CODE_OPERATOR_RESOLVED);
     /** 새 키(시도 2)로 다시 보내도 되는 거절·안 보냄 사유(지나가는 장애) — 같은 결과가 나올 것이 뻔한 한도·창·형식 거절은 다시 보내지 않습니다. */
     static final Set<String> RETRYABLE = Set.of("rate-limited", "collector-unreachable", "token-failed", "timeout",
@@ -301,16 +317,18 @@ class RealTradeJob {
             executor.track(now, d.windows);
             // 추적 뒤에 읽음 — 추적이 이상 멈춤을 걸었거나 그사이 끄기가 커밋됐으면 결과 모름을 다시 보내지 않게(RT-BE-4, 실행기가 보내기 직전에도 다시 확인)
             Config cfg = store.configOrOff(MARKET);
-            executor.resolveUnknown(now, cfg);
+            RealTradeExecutor.Resolution resolution = executor.resolveUnknown(now, cfg);
             cfg = store.configOrOff(MARKET);
-            if (RealTradeStore.STATE_STOPPING.equals(cfg.state()) || RealTradeStore.STATE_HALTED.equals(cfg.state())) {
-                executor.cancelOpen(now, row -> true);
-                if (RealTradeStore.STATE_STOPPING.equals(cfg.state()) && executor.cleanupDone(now)) {
+            if (!live(cfg)) {
+                // 끄는 중·멈춤은 이 기능의 미체결 취소를 따라감. 꺼짐(OFF)에서도 토스 주문 번호가 있는 미종료 행이 있으면 취소 — 끄는 중에 대조를 끝내지
+                // 못한 결과 모름 행이 꺼진 뒤 대조로 늦게 묶인 것(RT3-BE-1, 정상이면 꺼짐에 그런 행은 없음). 대조 목록을 못 읽은 주기에는 OFF로 넘기지 않음.
+                boolean stopping = RealTradeStore.STATE_STOPPING.equals(cfg.state());
+                if (stopping || RealTradeStore.STATE_HALTED.equals(cfg.state()) || executor.openBrokerOrders() > 0) {
+                    executor.cancelOpen(now, row -> true);
+                }
+                if (stopping && !resolution.listsFailed() && executor.cleanupDone(now)) {
                     finishStopping();
                 }
-                return;
-            }
-            if (!live(cfg)) {
                 return;
             }
             Config following = cfg;
@@ -326,8 +344,13 @@ class RealTradeJob {
                 return;
             }
             Reply<Status> status = client.status();
+            if (status.ok() && status.value().switchedOff()) {
+                // 수집기가 매매 스위치가 꺼졌다고 분명히 답함(비상 끄기 등) — 다시 켤 때 확인 글자 + 비밀번호를 거치게 이상 멈춤(OPS-3)
+                executor.halt(HALT_COLLECTOR_DISABLED, Map.of("code", String.valueOf(status.value().reason())));
+                return;
+            }
             if (!status.ok() || !status.value().enabled() || status.value().limits() == null) {
-                return;   // 수집기 스위치가 꺼짐 — 주문 없음(멈춤 아님, 화면은 '서버에서 꺼짐')
+                return;   // 수집기 상태를 읽지 못함·한도 해석 실패 — 주문 없음(멈춤 아님, 화면은 '확인 안 됨')
             }
             if (status.value().tokenContention()) {
                 executor.halt(HALT_TOKEN, Map.of());
@@ -549,10 +572,15 @@ class RealTradeJob {
     }
 
     // ------------------------------------------------------------------ 시가 맞추기
+    /**
+     * 시가 맞추기 창 안의 한 주기 — 그날 묶음이 없으면 만들고 보내고, 있으면 창 안 재시도. 창 끝 − {@link #SYNC_LATE_START} 뒤에 시작한 시도는 OPG를 보내지
+     * 않습니다(묶음이 없으면 묶음만 만들어 마무리가 메우게, 있으면 재시도 없음 — RT3-MON-4).
+     */
     private void runSync(Cycle c) {
+        boolean late = !c.now.isBefore(c.day.windows.sync().end().minus(SYNC_LATE_START));
         Optional<Batch> existing = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC);
         if (existing.isPresent()) {
-            if (!stale(c, existing.get())) {
+            if (!stale(c, existing.get()) && !late) {
                 retrySync(c, existing.get());
             }
             return;
@@ -561,7 +589,10 @@ class RealTradeJob {
             return;
         }
         c.day.lastSyncTry = c.now;
-        createBatchAndSend(c, RealTradeStore.PURPOSE_SYNC, "OPG", RealTradePlanner.WINDOW_SYNC);
+        if (late) {
+            log.warn("시가 맞추기 창 끝이 가까워 OPG를 보내지 않음 — 묶음만 만들고 시가 뒤 마무리가 메움");
+        }
+        createBatchAndSend(c, RealTradeStore.PURPOSE_SYNC, "OPG", RealTradePlanner.WINDOW_SYNC, !late);
     }
 
     /**
@@ -570,8 +601,10 @@ class RealTradeJob {
      * 목표가 앞 묶음과 거의 같은 것). 묶음을 만들면서(같은 트랜잭션) {@code sync_pending}을 끕니다 — 단 1건 상한·현금·하루 한도로 그날 다 못 맞춘 남은
      * 몫({@link #LEFTOVER_SKIPS})이 있으면, sync_pending을 켠 일 뒤 {@value #SYNC_PENDING_MAX_BATCHES}번째 묶음까지는 켜 둡니다(켜기 창에서 확인한
      * 같은 재조정의 남은 몫이 다음 날 회전율 멈춤이 되지 않게 — 그 뒤로는 끔).
+     *
+     * @param send false면 묶음만 만들고 보내지 않음(계획한 주문은 놓침 — 창 끝이 가까워 시작한 시가 맞추기, 시가 뒤 마무리가 메움)
      */
-    private void createBatchAndSend(Cycle c, String purpose, String timeInForce, String window) {
+    private void createBatchAndSend(Cycle c, String purpose, String timeInForce, String window, boolean send) {
         Optional<OpenTargets> found = paper.openTargets(c.cfg.sourceBook(), c.today);
         if (found.isEmpty()) {
             c.day.skip(window, "targets-unavailable", "*");
@@ -621,6 +654,10 @@ class RealTradeJob {
         log.info("시가 맞추기 묶음 — 주문 {}건·건너뜀 {}건·회전율 {}%{}", plan.orders().size(), plan.skipped().size(), plan.turnoverPct(),
                 c.cfg.syncPending() ? "(남은 몫 — 회전율 예외 유지)" : "");
         recordSkips(c, window, plan.skipped(), null);
+        if (!send) {
+            plan.orders().forEach(o -> c.day.miss(window, o.symbol()));
+            return;
+        }
         sendBatchOrders(c, plan.orders(), locked.batch(), purpose, timeInForce);
     }
 
@@ -811,7 +848,7 @@ class RealTradeJob {
         if (existing.isEmpty()) {
             if (c.day.windows.sync() == null && !throttled(c.day.lastFollowupTry, c.now)) {
                 c.day.lastFollowupTry = c.now;
-                createBatchAndSend(c, RealTradeStore.PURPOSE_SYNC_FOLLOWUP, "DAY", RealTradePlanner.WINDOW_FOLLOWUP);
+                createBatchAndSend(c, RealTradeStore.PURPOSE_SYNC_FOLLOWUP, "DAY", RealTradePlanner.WINDOW_FOLLOWUP, true);
             }
             return;
         }
@@ -868,13 +905,19 @@ class RealTradeJob {
 
     /**
      * 묶음 주문을 차례로(계획 순서 — 매도 먼저) 보냅니다. 종목·용도마다 시도 1, 앞 시도가 지나가는 장애로 거절·안 보냄이거나(마무리는) 종료에 덜 체결이면
-     * 시도 2를 남은 수량만큼. 멈춤·끄기가 끼어들면 나머지를 보내지 않습니다.
+     * 시도 2를 남은 수량만큼. 멈춤·끄기가 끼어들면 나머지를 보내지 않습니다. 보내기 직전마다 지금 시각({@code clock})으로 그 용도의 창(시가 맞추기 —
+     * 시가 맞추기 창, 마무리 — 마무리 창)이 아직 열려 있는지 다시 보고, 닫혔으면 그 주문부터 보내지 않고 놓침으로 둡니다(RT3-MON-4 — 앞 주문의 수집기
+     * 검사·전송이 길어져 수집기 창 끝을 넘긴 주문이 창 밖 안 보냄으로 쌓이지 않게. 시가 맞추기에서 놓친 종목은 시가 뒤 마무리가 메움).
      *
      * @return 행을 쓴 수
      */
     private int sendBatchOrders(Cycle c, List<Order> orders, Batch batch, String purpose, String timeInForce) {
         boolean partialRetry = !RealTradeStore.PURPOSE_SYNC.equals(purpose);
+        boolean sync = RealTradeStore.PURPOSE_SYNC.equals(purpose);
+        Window win = sync ? c.day.windows.sync() : c.day.windows.followup();
+        String window = sync ? RealTradePlanner.WINDOW_SYNC : RealTradePlanner.WINDOW_FOLLOWUP;
         int written = 0;
+        boolean closed = false;
         for (Order o : orders) {
             List<OrderRow> rows = store.ordersForBatch(batch.id());
             int attempt = nextAttempt(rows, o.symbol(), purpose, partialRetry);
@@ -883,6 +926,14 @@ class RealTradeJob {
             }
             int quantity = attempt == 2 ? Math.min(o.quantity(), remaining(rows, o.symbol(), purpose)) : o.quantity();
             if (quantity < 1) {
+                continue;
+            }
+            if (!closed && (win == null || clock.instant().isAfter(win.end()))) {
+                closed = true;
+                log.warn("{} 창이 보내는 도중에 닫힘 — 남은 주문은 보내지 않고 놓침으로", window);
+            }
+            if (closed) {
+                c.day.miss(window, o.symbol());
                 continue;
             }
             Sent sent = executor.send(new Send(c.today, purpose, batch.id(), null, null, o.symbol(), o.side(), quantity, timeInForce,
@@ -898,8 +949,8 @@ class RealTradeJob {
     }
 
     // ------------------------------------------------------------------ 장중 따라 하기
-    /** 장중 따라 하기 하나의 대상. */
-    private record Due(DueOrder order, String window, int attempt, List<OrderRow> rows) {
+    /** 장중 따라 하기 하나의 대상 — {@code win}은 그 주문의 창(보내기 직전에 다시 봄). */
+    private record Due(DueOrder order, String window, Window win, int attempt, List<OrderRow> rows) {
     }
 
     /**
@@ -950,7 +1001,7 @@ class RealTradeJob {
                 }
                 continue;
             }
-            due.add(new Due(o, window, attempt, rows));
+            due.add(new Due(o, window, win, attempt, rows));
         }
         if (due.isEmpty()) {
             return;
@@ -995,6 +1046,11 @@ class RealTradeJob {
                     : planned.quantity();
             if (quantity < 1) {
                 c.day.handledRoots.add(root);
+                continue;
+            }
+            if (clock.instant().isAfter(x.win().end())) {   // 앞 주문의 전송이 길어져 이 주문의 창이 닫힘 — 보내지 않고 놓침(RT3-MON-4)
+                log.warn("장중 따라 하기 창이 보내기 전에 닫힘 — 놓침으로");
+                c.day.miss(x.window(), key);
                 continue;
             }
             Sent sent = executor.send(new Send(c.today, RealTradeStore.PURPOSE_MIRROR, null, o.orderId(), root, planned.symbol(),

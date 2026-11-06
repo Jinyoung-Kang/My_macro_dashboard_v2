@@ -679,6 +679,52 @@ final class RealTradePlanner {
         return Optional.of(new DailyUsage(count, bought));
     }
 
+    // ------------------------------------------------------------------ 미체결 매수가 잡은 금액(손실 한도의 기준 — RT3-BE-4)
+    /** 미체결 목록에서 매수 가능 금액을 잡는 주문(국내 KRW이고 매도가 아님 — 방향을 모르면 매수로 셈, {@link #dailyUsage}와 같음)인가. */
+    private static boolean holdsBuyingPower(CollectorTradeClient.BrokerOrder o) {
+        return "KRW".equals(o.currency()) && !SELL.equals(o.side());
+    }
+
+    /** {@link #openBuyHold}가 상한가를 알아야 하는 종목 — 토스 미체결 목록(앱 주문 포함)의 매수 종목. */
+    static Set<String> openBuySymbols(Collection<CollectorTradeClient.BrokerOrder> open) {
+        Set<String> out = new TreeSet<>();
+        for (CollectorTradeClient.BrokerOrder o : open) {
+            if (holdsBuyingPower(o) && o.symbol() != null) {
+                out.add(o.symbol());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 토스 미체결 목록(앱 주문 포함)의 매수가 잡은 금액 — Σ (수량 − 체결 수량) × 상한가. 손실 판정의 '지금 값'이 이 기능의 미체결 매수에 되돌리는 금액과
+     * 같은 식이며(명세 §12.5), 켜기·기준 다시 잡기의 기준 총액 U0에 더합니다. 남은 수량이 0 이하인 주문은 건너뛰고, 수량·종목·상한가를 모르는 매수가
+     * 있으면 empty(기준을 정하지 않음).
+     *
+     * @param upper 종목 → 상한가(모르면 null) — {@link #openBuySymbols}의 종목이 필요합니다
+     */
+    static Optional<BigDecimal> openBuyHold(Collection<CollectorTradeClient.BrokerOrder> open, Function<String, BigDecimal> upper) {
+        BigDecimal held = BigDecimal.ZERO;
+        for (CollectorTradeClient.BrokerOrder o : open) {
+            if (!holdsBuyingPower(o)) {
+                continue;
+            }
+            if (o.quantity() == null) {
+                return Optional.empty();
+            }
+            BigDecimal remaining = o.quantity().subtract(o.filledQuantity() == null ? BigDecimal.ZERO : o.filledQuantity());
+            if (remaining.signum() <= 0) {
+                continue;
+            }
+            BigDecimal unit = o.symbol() == null ? null : upper.apply(o.symbol());
+            if (!positive(unit)) {
+                return Optional.empty();
+            }
+            held = held.add(remaining.multiply(unit));
+        }
+        return Optional.of(held);
+    }
+
     /** {@link #dailyUsage}가 상한가를 알아야 하는 종목 — 오늘 국내 주문 가운데 진행 중인 매수(방향 모름 포함)의 종목. */
     static Set<String> dailyUpperSymbols(Collection<CollectorTradeClient.BrokerOrder> today, Set<String> openOrderIds) {
         Set<String> out = new TreeSet<>();
