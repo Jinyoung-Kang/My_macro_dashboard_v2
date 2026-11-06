@@ -107,7 +107,17 @@ final class KrExecutionAudit {
         if ((!open && KrTimedLadder.hourly(timing) == null) || !usable(order, session, timed, calendar)) {
             return null;
         }
-        Instant target = targetAt(timing, order.createdAt(), session, calendar);
+        return fromTarget(order, targetAt(timing, order.createdAt(), session, calendar), session, timed, calendar,
+                open ? RUNG_OPEN : RUNG_AT);
+    }
+
+    /**
+     * 기준 시각 T 하나의 반사실 — 저장본의 T 창(라벨 T+1~T+5)에서 R1(라벨 T+1 봉 — 칸 {@code exactRung})·R2(창 안 첫 거래 봉 — {@value #RUNG_NEXT}).
+     * T가 그날 개장 전·종가 단일가 시간·생성 + 60초 이전이거나, 창이 다 지나기 전에 받은 칸·창이 없는 칸이면 null. 칸을 쓸 수 있는지({@link #usable})는
+     * 부르는 쪽이 먼저 봅니다.
+     */
+    private static Price fromTarget(Order order, Instant target, LocalDate session, Timed timed, TradingCalendar calendar,
+                                    String exactRung) {
         if (target == null || target.isBefore(calendar.openInstant(session))
                 || !target.isBefore(calendar.closeInstant(session).minus(KrTimedLadder.CLOSING_AUCTION))) {
             return null;                                   // 장 시간 변경일 — 개장 전·종가 단일가 시각
@@ -136,7 +146,7 @@ final class KrExecutionAudit {
                 continue;
             }
             boolean exact = first.equals(bar.label());
-            return new Price(bar.open().doubleValue(), start, exact ? (open ? RUNG_OPEN : RUNG_AT) : RUNG_NEXT);
+            return new Price(bar.open().doubleValue(), start, exact ? exactRung : RUNG_NEXT);
         }
         return null;
     }
