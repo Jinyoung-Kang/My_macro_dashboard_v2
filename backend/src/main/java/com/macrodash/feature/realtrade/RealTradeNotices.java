@@ -45,7 +45,7 @@ final class RealTradeNotices {
             case RealTradeStore.EVENT_BUYS_PAUSED -> title("매수 멈춤") + "\n사유: " + code(detail, "reason");
             case RealTradeStore.EVENT_SKIP_DAY -> title("오늘 쉼") + "\n사유: " + code(detail, "reason");
             case RealTradeStore.EVENT_WINDOW_SUMMARY -> title(windowLabel(detail)) + "\n" + counts(detail);
-            case RealTradeStore.EVENT_ENABLE -> title("켜짐") + "\n다음 시가 맞추기부터 따라 합니다";
+            case RealTradeStore.EVENT_ENABLE -> title("켜짐") + "\n다음 맞추기부터 따라 합니다";
             case RealTradeStore.EVENT_DISABLE -> title("끄기") + "\n새 주문 멈춤 · 미체결 취소 중";
             case EVENT_STOPPED -> title("꺼짐") + "\n" + stopped(detail) + unresolved(detail);
             case EVENT_STOP_SELL -> title("스탑 매도") + "\n보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "

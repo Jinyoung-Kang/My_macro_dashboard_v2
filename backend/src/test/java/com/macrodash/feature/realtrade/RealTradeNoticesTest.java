@@ -36,7 +36,7 @@ class RealTradeNoticesTest {
         expected.put("HALT", "<b>[실제 매매] 멈춤</b>\n사유: unknown-order");
         expected.put("BUYS_PAUSED", "<b>[실제 매매] 매수 멈춤</b>\n사유: unknown-order");
         expected.put("SKIP_DAY", "<b>[실제 매매] 오늘 쉼</b>\n사유: unknown-order");
-        expected.put("ENABLE", "<b>[실제 매매] 켜짐</b>\n다음 시가 맞추기부터 따라 합니다");
+        expected.put("ENABLE", "<b>[실제 매매] 켜짐</b>\n다음 맞추기부터 따라 합니다");
         expected.put("DISABLE", "<b>[실제 매매] 끄기</b>\n새 주문 멈춤 · 미체결 취소 중");
         expected.put("UPDATE", "<b>[실제 매매] 설정 바뀜</b>");
         expected.put("RESUME", "<b>[실제 매매] 멈춤 해제</b>");
@@ -57,9 +57,13 @@ class RealTradeNoticesTest {
                 .isEqualTo("<b>[실제 매매] 비밀번호 틀림</b>\n연속 5회 · 30분 잠금");
         assertThat(RealTradeNotices.text(event("SKIPPED", Map.of("reason", "opposite-pending", "count", 2))))
                 .isEqualTo("<b>[실제 매매] 건너뜀</b>\n사유: opposite-pending · 2건");
+        assertThat(RealTradeNotices.text(event("STOP_SELL", Map.of("sent", 2, "blocked", 1, "missed", 0))))
+                .as("장중 스탑 매도(ADR 0033) — 건수만").isEqualTo("<b>[실제 매매] 스탑 매도</b>\n보냄 2 · 막힘 1 · 놓침 0");
+        assertThat(RealTradeNotices.text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3))))
+                .isEqualTo("<b>[실제 매매] 개장 10분 뒤 맞추기</b>\n접수 3 · 체결 0 · 놓침 0 · 건너뜀 0 · 막힘 0 · 미룸 0");
 
         for (String kind : List.of("HALT", "WINDOW_SUMMARY", "SKIPPED", "PASSWORD_FAILED", "STOPPED", "CANCEL_GAVE_UP", "SKIP_DAY", "ENABLE",
-                "SOMETHING_NEW")) {
+                "STOP_SELL", "SOMETHING_NEW")) {
             String text = RealTradeNotices.text(event(kind, Map.of("reason", "x")));
             assertThat(text).as(kind).isNotNull().doesNotContain("005930", "37주", "1234567", "1,234,567", "TOSS-ORDER-1", "99887766", "70000");
             assertThat(text.codePoints().noneMatch(cp -> Character.getType(cp) == Character.OTHER_SYMBOL)).as(kind + " 이모지 없음").isTrue();

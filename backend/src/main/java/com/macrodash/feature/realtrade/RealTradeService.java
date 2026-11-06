@@ -310,8 +310,10 @@ public class RealTradeService {
 
     // ------------------------------------------------------------------ 켜기 창 예상 목록
     /**
-     * {@code GET /api/realtrade/preview?market=KR&sourceBook=…}(명세 §7.2) — 지금 새로 읽은 계좌와 그 책의 '다음 시가' 목표로 시가 맞추기(§2·§3.1)를
-     * 계산한 예상. 실제 주문은 다음 시가 맞추기 창에서 그때 값으로 다시 계산합니다. 읽지 못하면 {@code ok:false}와 사유.
+     * {@code GET /api/realtrade/preview?market=KR&sourceBook=…}(명세 §7.2) — 지금 새로 읽은 계좌와 그 책의 다음 맞추기 목표로 맞추기(§2·§3.1)를
+     * 계산한 예상. 다음 맞추기는 그 세션의 일일 맞추기 시각이 있으면(ADR 0033 초안 결정 1 — {@link PaperMirrorService#dailySyncAt}) 그 시각 시장가
+     * 맞추기(목표 {@link PaperMirrorService#targetsAt}, 응답 {@code syncAt}), 없으면 시가 맞추기(목표 {@link PaperMirrorService#openTargets},
+     * {@code syncAt:null})입니다. 실제 주문은 다음 맞추기 창에서 그때 값으로 다시 계산합니다. 읽지 못하면 {@code ok:false}와 사유.
      *
      * <p>사전 조회는 정기 작업과 같은 두 단계입니다(RT-CONTRACT-5) — 매도 가능 수량 없이 읽어 계획하고, 매도 후보가 나오면 그 종목만 매도 가능 수량을 물어
      * 다시 읽은 값으로 다시 계획합니다(매도는 매도 가능 수량까지 — 수집기 사전 조회가 그 목록에서 실패하면 켜기 전에 드러남). 다음 시가가 오늘이면 수집기
@@ -330,11 +332,12 @@ public class RealTradeService {
         }
         Limits limits = status.value().limits();
         Instant now = clock.instant();
-        LocalDate session = nextOpenSession(now);
+        LocalDate session = nextSyncSession(book, now);
         if (session == null) {
             return previewFailed("calendar-unknown");
         }
-        Optional<OpenTargets> found = paper.openTargets(book, session);
+        Optional<Instant> syncAt = paper.dailySyncAt(book, session);
+        Optional<OpenTargets> found = syncAt.isPresent() ? paper.targetsAt(book, session, syncAt.get()) : paper.openTargets(book, session);
         if (found.isEmpty()) {
             return previewFailed("targets-unavailable");
         }
@@ -402,6 +405,7 @@ public class RealTradeService {
         out.put("ok", true);
         out.put("sourceBook", book);
         out.put("session", session.toString());
+        out.put("syncAt", syncAt.map(RealTradeService::iso).orElse(null));
         out.put("equity", equity.get());
         List<Map<String, Object>> orders = new ArrayList<>();
         for (Order o : plan.orders()) {
@@ -440,8 +444,11 @@ public class RealTradeService {
         return out;
     }
 
-    /** '다음 시가' 세션 — 오늘 개장 전이면 오늘, 아니면 모의 한국 달력의 다음 거래일. 달력이 모르면 null. */
-    private LocalDate nextOpenSession(Instant now) {
+    /**
+     * 다음 맞추기 세션 — 오늘 개장 전이거나 오늘의 일일 맞추기 시각(ADR 0033 초안 — 개장 10분 뒤 시각 맞추기) 전이면 오늘, 아니면 모의 한국 달력의 다음
+     * 거래일. 달력이 모르면 null.
+     */
+    private LocalDate nextSyncSession(String book, Instant now) {
         LocalDate date = LocalDate.ofInstant(now, Kst.ZONE);
         for (int i = 0; i <= NEXT_SESSION_SEARCH_DAYS; i++) {
             LocalDate d = date.plusDays(i);
@@ -449,7 +456,10 @@ public class RealTradeService {
             if (hours.isEmpty()) {
                 return null;
             }
-            if (hours.get().tradingDay() && (i > 0 || now.isBefore(hours.get().open()))) {
+            if (!hours.get().tradingDay()) {
+                continue;
+            }
+            if (i > 0 || now.isBefore(hours.get().open()) || paper.dailySyncAt(book, d).map(now::isBefore).orElse(false)) {
                 return d;
             }
         }

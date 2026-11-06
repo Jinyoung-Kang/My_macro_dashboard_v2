@@ -472,6 +472,27 @@ class RealTradeServiceDbTest {
     }
 
     @Test
+    @DisplayName("켜기 창 예상 목록 — 따라 하는 책이 개장 10분 뒤 시각 맞추기면 그 시각까지의 목표(targetsAt)로, 응답에 맞추기 시각(ADR 0033)")
+    void previewUsesTimedSync() {
+        Instant now = clock.now;
+        when(paper.sessionHours(any())).thenAnswer(inv -> {
+            LocalDate date = inv.getArgument(0);
+            return Optional.of(new SessionHours(date, true, date.atTime(9, 0).atZone(RealTradeFixtures.SEOUL).toInstant(),
+                    date.atTime(15, 30).atZone(RealTradeFixtures.SEOUL).toInstant()));
+        });
+        when(paper.dailySyncAt(eq(BOOK), any())).thenAnswer(inv -> Optional.of(((LocalDate) inv.getArgument(1)).atTime(9, 10)
+                .atZone(RealTradeFixtures.SEOUL).toInstant()));
+        when(paper.targetsAt(eq(BOOK), any(), any())).thenAnswer(inv -> Optional.of(new OpenTargets(BOOK, inv.getArgument(1),
+                Map.of(C, 50.0), Map.of(), 1e7, 0, List.of(), List.of())));
+        sellableOnlyWhenAsked(now, "9000000");
+
+        Map<String, Object> out = service(true).preview("KR", BOOK);
+        assertThat(out).containsEntry("ok", true);
+        assertThat((String) out.get("syncAt")).isNotNull().endsWith("Z");
+        verify(paper, never()).openTargets(anyString(), any());
+    }
+
+    @Test
     @DisplayName("RT3-UI-2: 켜짐에 예상 목록(설정 바꾸기·멈춤 해제 창)을 열어도 정기 작업이 남긴 마지막 사전 조회(미체결 매수 되돌림 포함 총액)를 덮지 않음")
     void previewKeepsJobPreflight() {
         RealTradeFixtures.live(store, false, d("10000000"));
