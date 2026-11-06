@@ -4,6 +4,7 @@ import com.macrodash.Kst;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.Fill;
+import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.Json;
 import tools.jackson.databind.JsonNode;
@@ -93,7 +94,7 @@ final class PaperNotifications {
         JsonNode r = d.response();
         List<String> blocks = new ArrayList<>();
         List<String> head = new ArrayList<>();
-        head.add("기준일 " + d.asOfTradingDate() + " · " + kindName(d.kind()) + " · " + statusName(d.status())
+        head.add("기준일 " + d.asOfTradingDate() + " · " + kindName(d.kind()) + originTail(r) + " · " + statusName(d.status())
                 + (d.retryCount() > 0 ? "(재시도 " + d.retryCount() + "회)" : ""));
         String action = Json.asText(r, "action");
         if (action != null) {
@@ -217,6 +218,19 @@ final class PaperNotifications {
             // 자유 시점 판의 장중 판단(INTRADAY_<순번> — 종류 목록의 순서가 순번).
             default -> RuleBookService.intraday(kind) ? "장중 판단 " + (RuleBookService.INTRADAY_KINDS.indexOf(kind) + 1) : kind;
         };
+    }
+
+    /**
+     * 코드가 만든 장중 판단의 꼬리(ADR 0031 초안 — 응답 {@code checkpoint.origin}) — 보장이면 '(코드 보장)', 사건이면 '(사건)', 그 밖(예약·다음 예약·
+     * 운영자·장중 판단이 아닌 결정)은 없음.
+     */
+    static String originTail(JsonNode response) {
+        JsonNode checkpoint = response == null ? null : response.get("checkpoint");
+        String origin = checkpoint != null && checkpoint.isObject() ? Json.asText(checkpoint, "origin") : null;
+        if (IntradayPlan.ORIGIN_GUARANTEE.equals(origin)) {
+            return "(코드 보장)";
+        }
+        return IntradayPlan.ORIGIN_EVENT.equals(origin) ? "(사건)" : "";
     }
 
     static String statusName(String status) {

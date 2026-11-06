@@ -46,6 +46,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * 같습니다 — 계좌·순번마다 한 행, 응답 결정 종류 {@code INTRADAY_<순번>}, 그 계좌의 자유 시점 판 파이프라인, 예약 행은 정기 문턱·당긴 행은 수동 문턱,
  * 응답 시점 셋({@link FreeTiming#INTRADAY_TIMINGS})과 다음 판단 예약({@code nextCheckpoint}). 한국에는 결정 주기 소상한이 없습니다(하루 상한만).
  *
+ * <p>보장 1회(ADR 0031 초안 결정 4 — 설정 {@value IntradayPolicy#KR_MIN} ≥ 1일 때만)는 미국과 같은 규칙({@link IntradayScheduler#guarantee})이고 보장 시각은
+ * 개장 + 150분(보통 날 11:30 KST, 수능일 12:30 KST), 피드는 감시 1분봉입니다.
+ *
  * <p>REPLACE 검증의 신선도는 그 세션 결정의 순간으로 셉니다(입력 동결 — 한국 장중 확인 작업과 같은 까닭, QA-172). 멈추려면 세션당 횟수 설정
  * ({@value FreeTimingSettings#KR_INTRADAY_MAX})을 0으로 두거나 계좌를 일시정지합니다. 자기 잠금으로 겹치지 않고, 작업 기록 이름은 {@link #JOB}입니다.
  */
@@ -69,6 +72,7 @@ public class PaperKrIntradayJob {
     private final Clock clock;
     private final PaperMarkets markets;
     private final IntradayPlanner planner;
+    private final IntradayScheduler scheduler;
     private final ReentrantLock running = new ReentrantLock();
     private final Map<String, String> waiting = new HashMap<>();
     private final Set<String> called = new HashSet<>();
@@ -92,6 +96,7 @@ public class PaperKrIntradayJob {
         this.clock = clock;
         this.markets = new PaperMarkets(store, reader);
         this.planner = new IntradayPlanner(store);
+        this.scheduler = new IntradayScheduler(store, ledger, mapper);
     }
 
     /** 정기 실행 — 꺼져 있으면 아무것도 하지 않습니다. 예외는 로그로만 남깁니다. */
@@ -128,16 +133,30 @@ public class PaperKrIntradayJob {
             return new PaperIntradayJob.Outcome(0, Map.of(), null);
         }
         Instant started = clock.instant();
+        Map<String, String> changes = new LinkedHashMap<>();
+        String error = null;
+        MarketRun run = null;
+        // 보장 1회(ADR 0031 초안 결정 4 — 설정 kr.intradayMinPerSession ≥ 1일 때만, 기본 꺼짐): 그때만 실행(달력 — 수능일 개장 변경 포함)을 엶.
+        SettingsRow current = store.settings().orElse(null);
+        if (current != null && IntradayScheduler.guaranteeWanted(BOOKS, current.body())) {
+            try {
+                MarketRun opened = markets.open(KrPaperMarket.INSTANCE);
+                run = opened;
+                changes.putAll(scheduler.guarantee(BOOKS, opened.settingsRow().orElse(null), opened.calendar(), true, started,
+                        (code, source) -> guaranteeBlocked(code, opened)));
+            } catch (RuntimeException e) {
+                error = "보장 판단: " + e;
+                log.warn("한국 장중 판단 보장 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+            }
+        }
         List<IntradayPlan> planned = store.plannedIntradayPlans(BOOKS);
         if (planned.isEmpty()) {
             waiting.clear();
             called.clear();
-            return new PaperIntradayJob.Outcome(0, Map.of(), null);
+        } else if (run == null) {
+            run = markets.open(KrPaperMarket.INSTANCE);
         }
-        MarketRun run = markets.open(KrPaperMarket.INSTANCE);
-        SettingsRow row = run.settingsRow().orElse(null);
-        Map<String, String> changes = new LinkedHashMap<>();
-        String error = null;
+        SettingsRow row = run == null ? null : run.settingsRow().orElse(null);
         for (IntradayPlan p : planned) {
             String key = PaperIntradayJob.key(p);
             try {
@@ -168,6 +187,25 @@ public class PaperKrIntradayJob {
             }
         }
         return new PaperIntradayJob.Outcome(planned.size(), changes, error);
+    }
+
+    /**
+     * 보장 행을 넣지 않을 까닭({@link IntradayScheduler.Gate}) — 자유 시점 판 파이프라인 없음, 하루 정기 문턱(한국에는 결정 주기 소상한이 없음). 넣어도
+     * 되면 null.
+     */
+    private String guaranteeBlocked(String code, MarketRun run) {
+        ClaudeDecisionPipeline pipeline = claude.freeTimingPipeline(code, run);
+        if (pipeline == null) {
+            return PaperIntradayJob.NO_PIPELINE;
+        }
+        SettingsRow row = run.settingsRow().orElse(null);
+        if (row == null) {
+            return PaperIntradayJob.INTRADAY_OFF;
+        }
+        if (pipeline.callsLeft(Kst.today(clock), ClaudeSettings.intraday(row.body()), true) <= 0) {
+            return PaperCheckpointJob.CALL_CAP;
+        }
+        return null;
     }
 
     /** 행 하나 — 바꾼 상태 문구, 기다리면 null. */
@@ -381,7 +419,7 @@ public class PaperKrIntradayJob {
         return id;
     }
 
-    /** 판단 결정 응답의 {@code checkpoint} 칸 — 그 계획(세션·순번·시각·피드·그 세션의 결정·수동 여부)과 감시 저장본 지연. */
+    /** 판단 결정 응답의 {@code checkpoint} 칸 — 그 계획(세션·순번·시각·피드·그 세션의 결정·수동 여부·출처·사건)과 감시 저장본 지연(미국과 같음). */
     private ObjectNode request(IntradayPlan p, Integer lag) {
         ObjectNode request = mapper.createObjectNode();
         request.put("session", p.sessionDate().toString());
@@ -391,6 +429,10 @@ public class PaperKrIntradayJob {
         request.put("sourceDecisionId", p.sourceDecisionId());
         request.put("manual", p.manual());
         request.put("lagSeconds", lag);
+        request.put("origin", p.origin());
+        if (p.trigger() != null) {
+            request.set("trigger", p.trigger());
+        }
         return request;
     }
 

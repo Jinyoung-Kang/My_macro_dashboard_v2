@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static com.macrodash.feature.paper.PaperFixtures.MAPPER;
@@ -434,6 +435,87 @@ class PaperIntradayJobTest {
         body.put("effort", "xhigh");
         body.remove(IntradayPolicy.EFFORT);
         assertThat(ClaudeBookService.ClaudeSettings.intraday(body).effort()).isEqualTo("xhigh");
+    }
+
+    // ------------------------------------------------------------------ 보장 1회(ADR 0031 초안 결정 4)
+    /** 그 세션의 자유 시점 판 결정(수동, 판 표시 free — 정기 결정보다 늦게 냄) — 보장 행이 붙는 결정. */
+    private long freeDecision(String code) {
+        store.dbNow = T.plusSeconds(60);
+        long id = store.insertDecisionIfAbsent(new Decision(0, code, D, RuleBookService.MANUAL, null, "NO_TRADE", "claude-sonnet-5-5", 0,
+                1, null, 20.0, null, null, null, null, null, null, List.of(), true, 1L, 0,
+                "{\"1_basis\":{\"selectionAsOf\":\"2026-10-23\",\"variant\":\"" + PacketBuilder.VARIANT_FREE + "\"}}")).orElseThrow();
+        store.dbNow = clock.now;
+        return id;
+    }
+
+    @Test
+    @DisplayName("보장 1회(intradayMinPerSession 1): 세션 중간(12:30 ET)까지 예약이 없으면 주기가 두 계좌에 보장 행(12:31·출처 GUARANTEE·시간별 관측치·그 세션의 "
+            + "자유 시점 판 결정)을 넣고 작업 기록에 남김 → 창 안에서 정기 문턱으로 부름(수동 문턱이 0이어도), 결정 응답 checkpoint.origin GUARANTEE·알림 "
+            + "'장중 판단 1(코드 보장)'. 같은 분·부른 뒤에는 다시 넣지 않고, 보장이 꺼져 있으면(기본) 아무것도 넣지 않음")
+    void guaranteesOneJudgmentByMidSession() {
+        store.intradayPlans.clear();
+        long free1 = freeDecision(PaperBooks.CLAUDE);
+        long free2 = freeDecision(PaperBooks.CLAUDE2);
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.put("apiDailyCallCap", 5).put("apiScheduledReserve", 5);
+        PaperIntradayJob job = job(true);
+        Instant mid = Instant.parse("2026-11-02T17:30:20Z");   // 12:30:20 ET
+
+        runAt(job, mid);
+        assertThat(store.intradayPlans).as("보장 꺼짐(기본 0)").isEmpty();
+        assertThat(store.jobRuns).isEmpty();
+
+        body.put(IntradayPolicy.US_MIN, 1);
+        runAt(job, Instant.parse("2026-11-02T17:29:30Z"));
+        assertThat(store.intradayPlans).as("12:30 ET 전").isEmpty();
+        PaperIntradayJob.Outcome outcome = runAt(job, mid);
+        assertThat(outcome.changes()).containsEntry("claude 2026-11-02 #1", "PLANNED GUARANTEE 12:31 ET")
+                .containsEntry("claude2 2026-11-02 #1", "PLANNED GUARANTEE 12:31 ET");
+        assertThat(store.jobRuns).hasSize(1);
+        IntradayPlan made = row(PaperBooks.CLAUDE, 1);
+        assertThat(made.atLocal()).isEqualTo(LocalTime.of(12, 31));
+        assertThat(made.origin()).isEqualTo(IntradayPlan.ORIGIN_GUARANTEE);
+        assertThat(made.manual()).isFalse();
+        assertThat(made.feed()).isEqualTo(ExecutionSection.FEED_HOURLY);
+        assertThat(made.sourceDecisionId()).isEqualTo(free1);
+        assertThat(row(PaperBooks.CLAUDE2, 1).sourceDecisionId()).isEqualTo(free2);
+        runAt(job, mid.plusSeconds(30));
+        assertThat(store.intradayPlans).as("같은 분 — 다시 넣지 않음").hasSize(2);
+        assertThat(sent).isEmpty();
+
+        runAt(job, Instant.parse("2026-11-02T17:33:10Z"));
+        assertThat(sent).as("정기 문턱(상한 5) — 수동 문턱 0이어도 부름").hasSize(2);
+        Decision d = decision(PaperBooks.CLAUDE, 1);
+        assertThat(d.response().path("checkpoint").path("origin").asString()).isEqualTo(IntradayPlan.ORIGIN_GUARANTEE);
+        assertThat(d.response().path("checkpoint").has("trigger")).as("사건 없음").isFalse();
+        assertThat(PaperNotifications.decision(d, store.books.get(PaperBooks.CLAUDE), List.of(), Map.of(), null))
+                .contains("장중 판단 1(코드 보장)");
+        assertThat(row(PaperBooks.CLAUDE, 1).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+
+        runAt(job, Instant.parse("2026-11-02T18:10:00Z"));
+        assertThat(store.intradayPlans).as("부른 뒤 — 다시 넣지 않음").hasSize(2);
+        assertThat(sent).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("보장을 넣지 않음: 계좌2가 꺼짐·계좌2 소상한에 닿음·하루 정기 문턱에 닿음 — 넣으면 창 시작에 놓침으로 끝나 순번만 쓰므로 미리 봄")
+    void guaranteeSkipsWhatTheCallWouldRefuse() {
+        store.intradayPlans.clear();
+        freeDecision(PaperBooks.CLAUDE);
+        freeDecision(PaperBooks.CLAUDE2);
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.put(IntradayPolicy.US_MIN, 1);
+        group("claude2").put("enabled", false);
+        PaperIntradayJob job = job(true);
+        runAt(job, Instant.parse("2026-11-02T17:30:20Z"));
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE2, E)).as("계좌2 꺼짐").isEmpty();
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, E)).hasSize(1);
+
+        store.intradayPlans.clear();
+        group("claude2").put("enabled", true).put("maxCallsPerCycle", 1);
+        body.put("apiDailyCallCap", 0);
+        runAt(job, Instant.parse("2026-11-02T17:31:20Z"));
+        assertThat(store.intradayPlans).as("소상한 1(결정 1회로 닿음)·하루 상한 0").isEmpty();
     }
 
     // ------------------------------------------------------------------ 자료

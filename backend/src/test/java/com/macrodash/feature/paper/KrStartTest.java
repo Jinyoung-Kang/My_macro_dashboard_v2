@@ -1021,6 +1021,54 @@ class KrStartTest {
         assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE2, E).get(1).reason()).isEqualTo(PaperCheckpointJob.NO_WATCH_SNAPSHOT);
     }
 
+    @Test
+    @DisplayName("한국 보장 1회(kr.intradayMinPerSession 1 — ADR 0031 초안 결정 4): 밤 결정이 장중 판단을 예약하지 않은 세션 — 11:30 KST 전에는 넣지 않고, "
+            + "11:30에 두 계좌에 보장 행(11:31·감시 1분봉·출처 GUARANTEE·밤 결정)을 넣음 → 그 계획의 감시 저장본이 오면 정기 문턱으로 한 번 부름(결정 응답 "
+            + "checkpoint.origin GUARANTEE), 부른 뒤에는 다시 넣지 않음")
+    void krGuaranteesOneJudgmentByMidSession() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        Decision night = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED).orElseThrow();
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).as("밤 결정은 예약하지 않음").isEmpty();
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr")).put("intradayMinPerSession", 1);
+        PaperKrIntradayJob intraday = intradayJob();
+        int calls = fake.requests.size();
+
+        clock.set(kst("2026-12-02T11:29"));
+        store.dbNow = kst("2026-12-02T11:29");
+        assertThat(intraday.run().changes()).as("11:30 KST 전").isEmpty();
+        clock.set(kst("2026-12-02T11:30"));
+        store.dbNow = kst("2026-12-02T11:30");
+        assertThat(intraday.run().changes()).containsEntry(PaperBooks.KR_CLAUDE + " " + E + " #1", "PLANNED GUARANTEE 11:31 KST")
+                .containsEntry(PaperBooks.KR_CLAUDE2 + " " + E + " #1", "PLANNED GUARANTEE 11:31 KST");
+        com.macrodash.store.PaperStore.IntradayPlan made = store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(0);
+        assertThat(made.origin()).isEqualTo(com.macrodash.store.PaperStore.IntradayPlan.ORIGIN_GUARANTEE);
+        assertThat(made.feed()).isEqualTo(ExecutionSection.FEED_MINUTE);
+        assertThat(made.manual()).isFalse();
+        assertThat(made.sourceDecisionId()).isEqualTo(night.id());
+        assertThat(made.variant()).isEqualTo(KrPacketBuilder.KR_FREE_FIXED_RULES_VERSION);
+
+        watchKrPlans(kst("2026-12-02T11:31:40"), PaperBooks.KR_CLAUDE + " 11:31 1", PaperBooks.KR_CLAUDE2 + " 11:31 1");
+        fake.answer(intradayReply("KEEP", null)).answer(intradayReply("KEEP", null));
+        clock.set(kst("2026-12-02T11:34"));
+        store.dbNow = kst("2026-12-02T11:34");
+        intraday.run();
+        assertThat(fake.requests).hasSize(calls + 2);
+        Decision judged = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        assertThat(judged.response().path("checkpoint").path("origin").asString())
+                .isEqualTo(com.macrodash.store.PaperStore.IntradayPlan.ORIGIN_GUARANTEE);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.status()).containsExactly("1 DONE");
+
+        clock.set(kst("2026-12-02T12:10"));
+        store.dbNow = kst("2026-12-02T12:10");
+        intraday.run();
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).as("부른 뒤 — 다시 넣지 않음").hasSize(1);
+        assertThat(fake.requests).hasSize(calls + 2);
+    }
+
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
     private LocalDate closeE() {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();

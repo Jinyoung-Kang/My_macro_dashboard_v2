@@ -58,6 +58,9 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li><b>응답</b>: KEEP·REPLACE는 장중 확인과 같습니다(예상 상태로 검증, 기준 시각이 남은 대기 주문만 대신함). 주문 시점은
  *       {@link FreeTiming#INTRADAY_TIMINGS}(장중 시장가·그날 남은 지정 시각·그날 종가). 응답의 {@code nextCheckpoint}는 다음 순번의 계획 행을 넣거나
  *       바꿉니다({@link IntradayPlanner#next} — 순번을 다 썼거나 규칙에 맞지 않으면 버리고 사유를 남김, 계좌가 운용 중이 아니면 쓰지 않음).</li>
+     <li><b>보장</b>(ADR 0031 초안 결정 4 — 설정 {@value IntradayPolicy#US_MIN} ≥ 1일 때만, 기본 0): 주기마다 먼저 {@link IntradayScheduler#guarantee}가
+ *       세션 중간(개장 + 180분, 보통 날 12:30 ET)까지 남은 예약·부른 판단이 없는 계좌에 보장 행(출처 GUARANTEE, 시간별 관측치)을 넣고, 그 행은 예약 행처럼
+ *       정기 문턱으로 부릅니다. 넣은 행은 작업 기록의 바뀐 행에 남습니다.</li>
  * </ul>
  *
  * <p>자기 잠금으로 겹치지 않고, 결정 작업·장중 확인 작업의 잠금을 쓰지 않습니다. 작업 기록({@code paper_job_runs}, 이름 {@value #JOB})은 행 상태를 바꾼
@@ -88,6 +91,7 @@ public class PaperIntradayJob {
     private final ObjectMapper mapper;
     private final Clock clock;
     private final IntradayPlanner planner;
+    private final IntradayScheduler scheduler;
     private final TradingCalendar calendar = UsPaperMarket.INSTANCE.calendar();
     private final ReentrantLock running = new ReentrantLock();
     /** 창 안에서 자료를 기다린 행 → 그 사유(창 끝의 EXPIRED 사유). 재기동하면 비어 WINDOW_MISSED로 남습니다. */
@@ -114,6 +118,7 @@ public class PaperIntradayJob {
         this.mapper = mapper;
         this.clock = clock;
         this.planner = new IntradayPlanner(store);
+        this.scheduler = new IntradayScheduler(store, ledger, mapper);
     }
 
     /**
@@ -164,15 +169,22 @@ public class PaperIntradayJob {
             return new Outcome(0, Map.of(), null);
         }
         Instant started = clock.instant();
+        SettingsRow row = store.settings().orElse(null);
+        Map<String, String> changes = new LinkedHashMap<>();
+        String error = null;
+        // 보장 1회(ADR 0031 초안 결정 4 — 설정 intradayMinPerSession ≥ 1일 때만, 기본 꺼짐): 세션 중간까지 예약이 없으면 한 행을 넣고, 아래가 그 행을
+        // 다른 예약처럼 부름(정기 문턱).
+        try {
+            changes.putAll(scheduler.guarantee(BOOKS, row, calendar, false, started, (code, source) -> guaranteeBlocked(code, source, row)));
+        } catch (RuntimeException e) {
+            error = "보장 판단: " + e;
+            log.warn("장중 판단 보장 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+        }
         List<IntradayPlan> planned = store.plannedIntradayPlans(BOOKS);
         if (planned.isEmpty()) {
             waiting.clear();
             called.clear();
-            return new Outcome(0, Map.of(), null);
         }
-        SettingsRow row = store.settings().orElse(null);
-        Map<String, String> changes = new LinkedHashMap<>();
-        String error = null;
         for (IntradayPlan p : planned) {
             try {
                 String change = handle(p, row);
@@ -202,6 +214,29 @@ public class PaperIntradayJob {
             }
         }
         return new Outcome(planned.size(), changes, error);
+    }
+
+    /**
+     * 보장 행을 넣지 않을 까닭({@link IntradayScheduler.Gate}) — 그 행을 부를 때 막힐 것을 미리 봅니다: 계좌2 꺼짐({@code claude2.enabled}), 자유 시점 판
+     * 파이프라인 없음, 계좌2 소상한, 하루 정기 문턱. 넣어도 되면 null.
+     */
+    private String guaranteeBlocked(String code, Decision source, SettingsRow row) {
+        Claude2Settings book2 = Claude2Settings.from(row.body());
+        if (PaperBooks.CLAUDE2.equals(code) && !book2.enabled()) {
+            return INTRADAY_OFF;
+        }
+        ClaudeDecisionPipeline pipeline = claude.freeTimingPipeline(code);
+        if (pipeline == null) {
+            return NO_PIPELINE;
+        }
+        if (pipeline.profile().callCapKey() != null
+                && ClaudeBookService.claude2CallsInCycle(store, source.asOfTradingDate()) >= book2.maxCallsPerCycle()) {
+            return CYCLE_CAP;
+        }
+        if (pipeline.callsLeft(Kst.today(clock), ClaudeSettings.intraday(row.body()), true) <= 0) {
+            return PaperCheckpointJob.CALL_CAP;
+        }
+        return null;
     }
 
     /** 행의 열쇠 — '계좌 세션 #순번'(메모리·작업 기록). */
@@ -461,7 +496,10 @@ public class PaperIntradayJob {
         return id;
     }
 
-    /** 판단 결정 응답의 {@code checkpoint} 칸 — 그 계획(세션·순번·시각·피드·그 세션의 결정·수동 여부)과 감시 저장본 지연. */
+    /**
+     * 판단 결정 응답의 {@code checkpoint} 칸 — 그 계획(세션·순번·시각·피드·그 세션의 결정·수동 여부·출처·사건)과 감시 저장본 지연. 출처는 예약
+     * (RESERVED)·다음 예약(NEXT)·운영자(MANUAL)·보장(GUARANTEE)·사건(EVENT), 사건은 있을 때만.
+     */
     private ObjectNode request(IntradayPlan p, Integer lag) {
         ObjectNode request = mapper.createObjectNode();
         request.put("session", p.sessionDate().toString());
@@ -471,6 +509,10 @@ public class PaperIntradayJob {
         request.put("sourceDecisionId", p.sourceDecisionId());
         request.put("manual", p.manual());
         request.put("lagSeconds", lag);
+        request.put("origin", p.origin());
+        if (p.trigger() != null) {
+            request.set("trigger", p.trigger());
+        }
         return request;
     }
 

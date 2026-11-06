@@ -65,7 +65,7 @@ public class IntradayManualService {
         this.markets = markets;
         this.ledger = ledger;
         this.config = config;
-        this.scheduler = new IntradayScheduler(store, mapper);
+        this.scheduler = new IntradayScheduler(store, ledger, mapper);
         this.clock = clock;
     }
 

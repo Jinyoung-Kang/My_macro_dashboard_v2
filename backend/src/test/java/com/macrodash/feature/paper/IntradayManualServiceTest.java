@@ -232,6 +232,8 @@ class IntradayManualServiceTest {
 
         assertThat(intraday.get("session")).isEqualTo("2026-11-02");
         assertThat(intraday.get("maxPerSession")).isEqualTo(2);
+        assertThat(intraday.get("minPerSession")).as("보장 꺼짐(기본 0)").isEqualTo(0);
+        assertThat(intraday.get("events")).isEqualTo(false);
         List<Map<String, Object>> books = (List<Map<String, Object>>) intraday.get("books");
         assertThat(books).extracting(b -> b.get("book") + " " + b.get("freeTiming")).containsExactly("claude true", "claude2 true");
         List<Map<String, Object>> plans = (List<Map<String, Object>>) books.get(0).get("plans");
@@ -242,7 +244,13 @@ class IntradayManualServiceTest {
             assertThat(p.get("manual")).isEqualTo(true);
             assertThat(p.get("status")).isEqualTo("PLANNED");
             assertThat(p.get("decisionId")).isNull();
+            assertThat(p.get("origin")).as("운영자가 당긴 예약").isEqualTo("MANUAL");
+            assertThat(p).containsEntry("trigger", null);
         });
+        ((ObjectNode) store.settings.body()).put(IntradayPolicy.US_MIN, 1).put(IntradayPolicy.US_EVENTS, true);
+        Map<String, Object> on = (Map<String, Object>) query.status().get("intraday");
+        assertThat(on.get("minPerSession")).isEqualTo(1);
+        assertThat(on.get("events")).isEqualTo(true);
         assertThat((List<?>) books.get(1).get("plans")).as("계좌2는 스위치만 켜져 있고 예약 없음").isEmpty();
 
         // 스위치를 모두 끄고 계획 행도 없으면 칸이 없음 — 스위치를 꺼도 남은 계획 행이 있는 계좌는 보임.

@@ -516,14 +516,16 @@ public class PaperQueryService {
     }
 
     /**
-     * 자유 시점 판의 장중 판단 묶음(ADR 0027 결정 3) — {@code {session, maxPerSession, books:[{book, freeTiming, plans:[{slot, at(그 시장 현지 시각
-     * 'HH:MM'), feed, watch, question, manual, status, reason, decisionId, lagSeconds, calledAtKst}]}]}}. {@code session}은 지금 진행 중이거나 다음인
+     * 자유 시점 판의 장중 판단 묶음(ADR 0027 결정 3·ADR 0031 초안) — {@code {session, maxPerSession, minPerSession(보장 — 0이면 꺼짐), events(사건 당김
+     * 스위치), books:[{book, freeTiming, plans:[{slot, at(그 시장 현지 시각 'HH:MM'), feed, watch, question, manual, status, reason, decisionId,
+     * lagSeconds, calledAtKst, origin(RESERVED·NEXT·MANUAL·GUARANTEE·EVENT), trigger(사건 — 없으면 null)}]}]}}. {@code session}은 지금 진행 중이거나 다음인
      * 세션, 계좌는 그 시장의 Claude 계좌 가운데 스위치가 켜져 있거나 그 세션의 계획 행이 있는 것만입니다. 그런 계좌가 없으면 null(칸을 넣지 않음 —
      * 스위치가 꺼진 응답은 이 묶음이 생기기 전과 같음). 달력이 그 해를 모르면 세션은 null이고 계획은 빈 목록입니다.
      */
     private Map<String, Object> intradayStatus(MarketRun market) {
         boolean kr = korea(market);
         FreeTimingSettings free = FreeTimingSettings.from(market.settingsBody());
+        IntradayPolicy policy = IntradayPolicy.from(market.settingsBody());
         LocalDate session;
         try {
             session = market.calendar().nextTradingDay(market.calendar().lastCompletedSession(clock.instant()));
@@ -552,6 +554,8 @@ public class PaperQueryService {
                 row.put("decisionId", p.intradayDecisionId());
                 row.put("lagSeconds", p.lagSeconds());
                 row.put("calledAtKst", p.calledAt() == null ? null : stamp(p.calledAt()));
+                row.put("origin", p.origin());
+                row.put("trigger", p.trigger());
                 rows.add(row);
             }
             Map<String, Object> book = new LinkedHashMap<>();
@@ -566,6 +570,9 @@ public class PaperQueryService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("session", session == null ? null : session.toString());
         out.put("maxPerSession", max);
+        List<String> codes = kr ? PaperKrIntradayJob.BOOKS : PaperIntradayJob.BOOKS;
+        out.put("minPerSession", policy.minPerSession(codes.get(0)));
+        out.put("events", policy.events(codes.get(0)));
         out.put("books", books);
         return out;
     }
