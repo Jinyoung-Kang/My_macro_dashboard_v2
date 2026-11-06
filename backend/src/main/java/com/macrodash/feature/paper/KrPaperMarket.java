@@ -74,9 +74,9 @@ final class KrPaperMarket implements PaperMarket {
     static final LocalTime COLLECT_AFTER = LocalTime.of(20, 30);
     /**
      * 늦음 여유 — 다음 수집 예정({@link #COLLECT_AFTER})에서 이만큼 지나면 늦음(명세 §4-9 'C1a에서 정한 것' 2시간 5분). 수집기 slow는 1시간마다
-     * 돌아(COLLECTOR_SLOW_INTERVAL 기본 3600초, 위상은 수집기 기동 시각) 24시간 서버(ADR 0023)에서는 20:30 뒤 첫 slow가 21:30 전, 그 다음
-     * slow가 22:30 전에 돕니다 — 둘이 연달아 새 저장본을 내지 못한 뒤가 늦음입니다(밤에만 켜던 AWS 서버에서는 '기동 직후 slow와 그 다음
-     * slow'였고 값은 같음). 두 번째 slow가 22:2x에 시작해 오래 걸리면(slow 시간 상한 600초) 받기 전 몇 분 늦음으로 보일 수 있습니다.
+     * 돌아(COLLECTOR_SLOW_INTERVAL 기본 3600초 — 2026-11부터 매시 :15 고정, 수집기 {@code settings.SLOW_AT_MINUTE}) 24시간 서버(ADR 0023)에서는
+     * 20:30 뒤 첫 slow가 21:15, 그 다음 slow가 22:15에 돕니다 — 둘이 연달아 새 저장본을 내지 못한 뒤가 늦음입니다(밤에만 켜던 AWS 서버에서는
+     * '기동 직후 slow와 그 다음 slow'였고 값은 같음). 두 번째 slow가 오래 걸리면(slow 시간 상한 600초) 받기 전 몇 분 늦음으로 보일 수 있습니다.
      */
     static final Duration QUOTES_LATE_MARGIN = Duration.ofMinutes(125);
     /** 결정 시각·기한 기본값(KST, K6 — 설정 {@code kr.decisionTimeKst}·{@code kr.decisionDeadlineKst}의 기본값과 같음). */

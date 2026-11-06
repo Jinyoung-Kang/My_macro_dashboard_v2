@@ -26,7 +26,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -70,6 +70,42 @@ scheduler: BackgroundScheduler | None = None
 # polite 속도군의 틱 — 이 간격으로 "때가 된 태스크가 있나"만 봅니다(외부 호출 없음). 지터는 틱이 정각에 맞물리지 않게 하는 정도.
 POLITE_TICK_SECONDS = 300
 POLITE_TICK_JITTER_SECONDS = 120
+
+# 고정 위상 군(slow 매시 :15 · session 매 5분 :20초)이 늦게 깨어도 돌 수 있는 여유(초) — APScheduler 3.11의 기본은 1초라, 스케줄러가 조금만 늦어도
+# 그 회차를 통째로 건너뜁니다(slow면 미국 결정이 한 시간 밀림). slow는 15분(다음 회차 전에 끝날 여유), session은 2분(주기 5분보다 짧게).
+SLOW_MISFIRE_GRACE_SECONDS = 900
+SESSION_MISFIRE_GRACE_SECONDS = 120
+
+
+def slow_first_run(now: datetime, last_quotes_at: datetime | None, at_minute: int) -> datetime | None:
+    """
+    기동 직후 slow 한 번을 돌릴 시각 — 돌리면 ``now``, 아니면 None(그때는 ``next_run_time`` 인자를 아예 넘기지 않음 — APScheduler 3.11에서
+    None은 작업을 일시정지로 등록합니다). 다음 고정 시각(매시 ``at_minute``분)까지 ``SLOW_STARTUP_GAP_MINUTES``분보다 많이 남았고, 관측치
+    (``paper.quotes``) 저장본이 그보다 오래됐거나 없을 때만 돕니다.
+
+    이유: 실행 감사의 관측치 사슬(백엔드 PaperExecutionAuditJob)은 5분마다 관측치 저장본을 하나씩 이어 증명하는데, 재기동 직후 한 번이 고정 시각
+    몇 분 앞뒤에 저장본을 하나 더 만들면 감사가 그 사이 저장본을 놓쳐 그 뒤 대기 주문의 계좌1식 기준이 끝까지 비게 됩니다. 정시 직후(:15 회차가 막
+    돈 뒤)·정시 직전(곧 돎)에는 기다리고, 그 밖(저장본이 오래됨)에는 바로 채웁니다.
+    """
+    gap = timedelta(minutes=settings.SLOW_STARTUP_GAP_MINUTES)
+    fixed = now.replace(minute=at_minute, second=0, microsecond=0)
+    if fixed < now:
+        fixed += timedelta(hours=1)
+    if fixed - now <= gap:
+        return None
+    if last_quotes_at is not None and now - last_quotes_at <= gap:
+        return None
+    return now
+
+
+def _last_quotes_at() -> datetime | None:
+    """관측치 저장본(paper.quotes — 수집기 표)의 수집 시각. 없거나 읽지 못하면 None(그때는 시각 규칙만으로 정함)."""
+    try:
+        snapshot = store.read_snapshot(catalog.SNAP_PAPER_QUOTES)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("관측치 저장본을 읽지 못해 slow 첫 실행을 시각으로만 정합니다: %s", exc)
+        return None
+    return None if snapshot is None else snapshot.collected_at
 
 # 내부 서비스 간 호출용 토큰. make setup이 무작위 값으로 채웁니다.
 # 비어 있으면 기동하지 않습니다 — COLLECTOR_ALLOW_NO_TOKEN=1을 명시했을 때만 경고하고 기동합니다.
@@ -134,22 +170,32 @@ async def lifespan(app: FastAPI):
     global scheduler
     if settings.scheduler_enabled():
         scheduler = BackgroundScheduler(timezone="UTC")
+        now = datetime.now(tz=ZoneInfo("UTC"))
         # session: 계좌2 장중 확인 감시(paper_watch_us) — 확인 시각 앞뒤가 아니면 태스크가 외부를 부르지 않고 끝납니다.
         for group in ("fast", "slow", "weekly", "session"):
             seconds = settings.interval_seconds(group)
-            scheduler.add_job(
-                _run_group_job,
-                "interval",
-                seconds=seconds,
-                args=[group],
-                id=f"collect-{group}",
-                max_instances=1,
-                coalesce=True,
+            common = {"args": [group], "id": f"collect-{group}", "max_instances": 1, "coalesce": True}
+            slow_minute = settings.slow_at_minute() if group == "slow" else None
+            session_second = settings.session_at_second() if group == "session" else None
+            if slow_minute is not None:
+                # slow는 매시 :15(실험 조건 — ADR 0018). 기동 직후 한 번은 slow_first_run이 정하고, 돌지 않을 때는 next_run_time을 아예 넘기지
+                # 않습니다(None은 일시정지).
+                first = slow_first_run(now, _last_quotes_at(), slow_minute)
+                if first is not None:
+                    common["next_run_time"] = first
+                scheduler.add_job(_run_group_job, "cron", minute=slow_minute, second=0, timezone="UTC",
+                                  misfire_grace_time=SLOW_MISFIRE_GRACE_SECONDS, **common)
+                logger.info("스케줄 등록: slow 매시 :%02d(기동 직후 %s)", slow_minute, "바로 한 번" if first else "다음 정시까지 기다림")
+            elif session_second is not None:
+                # session은 매 5분 :20초 — 개장(09:30 ET·09:00 KST)에서 5분 격자. 기동 직후 한 번은 그대로(확인·감시 시각 밖이면 외부 호출 없음).
+                scheduler.add_job(_run_group_job, "cron", minute="*/5", second=session_second, timezone="UTC",
+                                  misfire_grace_time=SESSION_MISFIRE_GRACE_SECONDS, next_run_time=now, **common)
+                logger.info("스케줄 등록: session 매 5분 :%02d초", session_second)
+            else:
                 # 기동 직후 한 번씩 돌립니다. 싼 것부터(fast → slow → weekly → session)
                 # 처리해야 가장 자주 보는 데이터가 먼저 채워집니다.
-                next_run_time=datetime.now(tz=ZoneInfo("UTC")),
-            )
-            logger.info("스케줄 등록: %s 주기 %d초", group, seconds)
+                scheduler.add_job(_run_group_job, "interval", seconds=seconds, next_run_time=now, **common)
+                logger.info("스케줄 등록: %s 주기 %d초", group, seconds)
         # polite(차단 통과 수집 계층 — ADR 0026): 틱마다 때가 된 태스크만 실행합니다. next_run_time을 주지 않아 기동 직후에는 돌지 않고
         # (첫 틱은 한 주기 뒤), 틱 자체도 매번 0~POLITE_TICK_JITTER_SECONDS초 늦춰 정각에 맞물리지 않게 합니다. 태스크의 실행 시각은
         # 이 틱이 아니라 태스크마다 무작위로 정한 다음 실행 시각(표 fetch_schedule)이 정합니다.

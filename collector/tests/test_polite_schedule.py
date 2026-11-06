@@ -221,6 +221,8 @@ def test_스케줄러의_polite_틱은_기동_직후에_돌지_않는다(monkeyp
     monkeypatch.setattr(main, "API_TOKEN", "test-token")
     monkeypatch.setattr(settings, "scheduler_enabled", lambda: True)
     monkeypatch.setattr(main, "BackgroundScheduler", FakeScheduler)
+    monkeypatch.setattr(main, "_last_quotes_at", lambda: None)
+    monkeypatch.setattr(main, "slow_first_run", lambda now, last, minute: now)
 
     async def enter_and_exit() -> None:
         async with main.lifespan(main.app):
@@ -234,6 +236,7 @@ def test_스케줄러의_polite_틱은_기동_직후에_돌지_않는다(monkeyp
     assert "next_run_time" not in tick, "다른 군은 기동 직후 한 번 돌지만 polite 틱은 한 주기 뒤에 처음 돕니다"
     assert (tick["trigger"], tick["seconds"], tick["jitter"]) == ("interval", 300, 120)
     assert tick["max_instances"] == 1 and tick["func"] is main._run_polite_job
+    # slow의 기동 직후 한 번은 slow_first_run이 정함(여기서는 돌게 스텁 — 규칙은 test_group_schedule)
     assert all("next_run_time" in by_id[f"collect-{group}"] for group in ("fast", "slow", "weekly", "session"))
 
 

@@ -98,6 +98,25 @@ def interval_seconds(group: str) -> int:
         return defaults[group]
 
 
+# slow 군의 고정 위상(2026-11 — 실험 조건, ADR 0018): 주기가 기본(1시간)이면 기동 시각이 아니라 매시 이 분 0초(UTC 기준 분 — KST·ET도 시차가
+# 정시라 같은 분)에 돕니다. 그래서 미국 확정 종가 관측치는 마감 + 15~20분, NEXT_OBSERVATION의 개장 뒤 첫 관측치는 10:15 ET 전후로 일정합니다.
+SLOW_AT_MINUTE = 15
+# 기동 직후 slow 한 번의 문턱(분) — 다음 고정 시각까지 이보다 많이 남았고 관측치(paper.quotes) 저장본이 이보다 오래됐을 때만 바로 돕니다(main.slow_first_run).
+SLOW_STARTUP_GAP_MINUTES = 15
+# session 군의 고정 위상 — 주기가 기본(5분)이면 매 5분(:00·:05·…) 이 초에 돕니다(개장 09:30 ET·09:00 KST에서 5분 격자, 감시 저장본과 맞춤).
+SESSION_AT_SECOND = 20
+
+
+def slow_at_minute() -> int | None:
+    """slow 군을 고정할 분 — 주기가 기본(3600초)이면 ``SLOW_AT_MINUTE``, 주기를 바꾼 실험 스택(COLLECTOR_SLOW_INTERVAL)이면 None(예전처럼 interval)."""
+    return SLOW_AT_MINUTE if interval_seconds("slow") == 60 * 60 else None
+
+
+def session_at_second() -> int | None:
+    """session 군을 고정할 초 — 주기가 기본(300초)이면 ``SESSION_AT_SECOND``, 주기를 바꿨으면(COLLECTOR_SESSION_INTERVAL) None(예전처럼 interval)."""
+    return SESSION_AT_SECOND if interval_seconds("session") == 5 * 60 else None
+
+
 RUN_LOG_RETENTION_DAYS = 90
 
 
