@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -576,6 +577,67 @@ class PaperExecutionAuditJobTest {
                     .isEqualTo(c0.toString());
             assertThat(run.detail().path(PaperExecutionAuditJob.CHAIN).path("previous").isNull()).as("처음 고리").isTrue();
         });
+    }
+
+    // ------------------------------------------------------------------ 계좌1 자유 시점 판 주문의 계좌1식 기준(QA-300)
+    /** 미국 계좌1 자유 시점 판 주문(ADR 0027 — 분 단위 지정 시각 10:47, 만료 = 목표 세션 E 하루, 기준 거래일 MON, 생성 MON_DECIDED 22:31Z). */
+    private long freeTimingOrder(String ticker) {
+        Order base = claudeOrder(ticker, PaperBooks.BUY, PaperBooks.AT_MINUTE, "PENDING", MON, MON_DECIDED);
+        return store.insertOrder(new Order(0, PaperBooks.CLAUDE, base.decisionId(), base.ticker(), base.side(), null,
+                base.targetWeightPct(), null, base.timing(), base.source(), base.status(), null, null, base.asOfTradingDate(),
+                base.createdAt(), TUE, null, java.time.LocalTime.of(10, 47)));
+    }
+
+    /** 주문 전 저장본(처음 고리) → 주문 뒤 E 개장 전 저장본(② 기준 거래일 봉) → E 10:10 저장본(통과) 차례로 한 실행씩. 마지막 저장본 시각을 돌려줍니다. */
+    private Instant chainUpToTheFirstPassingSnapshot() {
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:40:00Z");
+        Instant c2 = et(TUE, 10, 10);
+        observed(quotes(c0, bar("AAPL", PaperFixtures.FRI, 97, MON, 98)));
+        job(true, c0.plusSeconds(120)).run();
+        runsBetween(c0, c1, 1);
+        observed(quotes(c1, bar("AAPL", PaperFixtures.FRI, 97, MON, 98)));
+        job(true, c1.plusSeconds(120)).run();
+        runsBetween(c1, c2, 1);
+        observed(quotes(c2, bar("AAPL", MON, 98, TUE, 103.5)));
+        job(true, c2.plusSeconds(120)).run();
+        return c2;
+    }
+
+    @Test
+    @Disabled("QA-300 재현 — 수정 전에는 계좌1 주문의 계좌1식 기준을 실제 체결에서만 옮겨(시점이 NEXT_OBSERVATION일 때만) 자유 시점 판 주문은 늘 null. fix(QA-300)에서 켭니다")
+    @DisplayName("QA-300: 미국 계좌1 자유 시점 판 주문도 계좌2처럼 관측치 사슬로 계좌1식 기준을 받는다 — 증명된 첫 통과 저장본의 종가, 한 번 쓴 값은 그대로")
+    void qa300BookOneFreeTimingOrderGetsTheChainBaseline() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);   // 운영처럼 계좌2가 출발함 — 사슬은 지금도 셈
+        long id = freeTimingOrder("AAPL");
+
+        Instant c2 = chainUpToTheFirstPassingSnapshot();
+
+        JsonNode baseline = cf(id).get("NEXT_OBSERVATION");
+        assertThat(baseline.path("raw").asDouble()).isEqualTo(103.5);
+        assertThat(baseline.path("at").asString()).isEqualTo(c2.toString());
+        assertThat(baseline.path("rung").asString()).isEqualTo(ExecutionAudit.RUNG_OBSERVATION);
+
+        Instant c3 = et(TUE, 10, 20);
+        runsBetween(c2, c3, 1);
+        observed(quotes(c3, bar("AAPL", MON, 98, TUE, 110.0)));
+        job(true, c3.plusSeconds(120)).run();
+        assertThat(cf(id).get("NEXT_OBSERVATION").path("raw").asDouble()).as("첫 통과 저장본의 값 그대로").isEqualTo(103.5);
+    }
+
+    @Test
+    @Disabled("QA-300 재현 — 수정 전에는 사슬을 계좌2 조건으로만 세어 계좌2가 없으면 계좌1 기준을 증명할 수 없음. fix(QA-300)에서 켭니다")
+    @DisplayName("QA-300: 계좌2 행이 없어도 claude.freeTiming이 켜졌으면 관측치 사슬을 세어 계좌1 자유 시점 판 주문의 기준을 증명한다")
+    void qa300ChainIsCountedWhenBookOneFreeTimingIsOn() {
+        store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
+        long id = freeTimingOrder("AAPL");
+
+        chainUpToTheFirstPassingSnapshot();
+
+        assertThat(store.jobRuns).as("저장본마다 고리 하나 — 셋")
+                .filteredOn(run -> run.detail().has(PaperExecutionAuditJob.CHAIN)).hasSize(3);
+        assertThat(cf(id).get("NEXT_OBSERVATION").path("raw").asDouble()).isEqualTo(103.5);
     }
 
     @Test

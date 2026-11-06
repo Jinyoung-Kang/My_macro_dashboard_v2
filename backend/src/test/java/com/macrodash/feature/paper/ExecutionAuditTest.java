@@ -5,6 +5,7 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -276,6 +277,56 @@ class ExecutionAuditTest {
         assertThat(all.values()).containsOnlyNulls();
         assertThat(ExecutionAudit.auditedBooks()).as("미국 Claude 계좌 — 계좌1·계좌2(정의 순)")
                 .containsExactly(PaperBooks.CLAUDE, PaperBooks.CLAUDE2);
+    }
+
+    // ------------------------------------------------------------------ 계좌1식 기준은 주문 시점으로(QA-300)
+    /** 미국 계좌1 자유 시점 판 주문(ADR 0027 결정 2 — 목표 세션 E 하루짜리라 만료 = E, 분 단위 지정 시각이면 그 시각). */
+    private static Order freeTiming(String timing, Instant createdAt, LocalTime at) {
+        Order o = buy(timing, MON, createdAt);
+        return new Order(7, o.bookCode(), o.decisionId(), o.ticker(), o.side(), o.qty(), o.targetWeightPct(),
+                o.sellFraction(), o.timing(), o.source(), o.status(), o.rejectReason(), o.reason(), o.asOfTradingDate(),
+                o.createdAt(), TUE, null, at);
+    }
+
+    /** 화요일(E) 10:15 ET 관측치 — AAPL 봉 날짜가 E(기준 거래일 뒤)라 ①②④를 통과합니다. */
+    private static final PaperMarketData.Quotes PASSING = quotes(et(TUE, 10, 15), bar("AAPL", MON, 98, TUE, 103.5));
+
+    @Test
+    @Disabled("QA-300 재현 — 수정 전에는 계좌1 주문을 늘 실제 체결(fromFill)로 봐 null. fix(QA-300)에서 켭니다")
+    @DisplayName("QA-300: 미국 계좌1 자유 시점 판 주문(분 단위 지정 시각·장중 시장가·하루짜리 종가·시가)은 첫 통과 관측치가 증명되면 계좌2처럼 계좌1식 기준(그 관측 종가)을 받고, 증명이 없으면 null")
+    void qa300FreeTimingBookOneOrdersGetTheObservationBaseline() {
+        Price expected = new Price(103.5, et(TUE, 10, 15), ExecutionAudit.RUNG_OBSERVATION);
+        for (Order order : List.of(freeTiming(PaperBooks.AT_MINUTE, MON_DECIDED, LocalTime.of(10, 47)),
+                freeTiming(PaperBooks.MARKET, et(TUE, 10, 5), null),
+                freeTiming(PaperBooks.NEXT_CLOSE, MON_DECIDED, null),
+                freeTiming(PaperBooks.NEXT_OPEN, MON_DECIDED, null))) {
+            assertThat(ExecutionAudit.counterfactuals(order, null, null, PASSING, US, true).get(ExecutionAudit.NEXT_OBSERVATION))
+                    .as(order.timing()).isEqualTo(expected);
+            assertThat(ExecutionAudit.counterfactuals(order, null, null, PASSING, US, false).get(ExecutionAudit.NEXT_OBSERVATION))
+                    .as(order.timing() + " — 첫 저장본임을 증명하지 못함").isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("QA-300 불변(수정 전후 같음): 끈 판 계좌1 주문은 증명 여부와 상관없이 그대로 — NEXT_OBSERVATION은 실제 체결 원가격, 만료가 기준일 + 3거래일인 종가 주문은 null, 계좌2 주문은 증명된 첫 관측치만")
+    void offBoardBookOneBaselineIsUnchanged() {
+        var fill = observationFill(7, "AAPL", PaperBooks.BUY, 10, 100.0, et(TUE, 9, 58), TUE);
+        for (boolean proven : new boolean[]{false, true}) {
+            assertThat(ExecutionAudit.counterfactuals(MON_ORDER, fill, null, PASSING, US, proven).get(ExecutionAudit.NEXT_OBSERVATION))
+                    .as("계좌1 NEXT_OBSERVATION — 증명 " + proven)
+                    .isEqualTo(new Price(100.0, et(TUE, 9, 58), ExecutionAudit.RUNG_OBSERVATION));
+            Order close = buy(PaperBooks.NEXT_CLOSE, MON, MON_DECIDED);
+            assertThat(close.expiresOn()).isEqualTo(UsMarketCalendar.addTradingDays(MON, 3));
+            assertThat(ExecutionAudit.counterfactuals(close, null, null, PASSING, US, proven).get(ExecutionAudit.NEXT_OBSERVATION))
+                    .as("끈 판 계좌1 종가 주문 — 증명 " + proven).isNull();
+        }
+        Order book2 = buy(PaperBooks.AT_1000, MON, MON_DECIDED);
+        Order claude2 = new Order(7, PaperBooks.CLAUDE2, book2.decisionId(), book2.ticker(), book2.side(), null,
+                book2.targetWeightPct(), null, book2.timing(), book2.source(), book2.status(), null, null, MON, MON_DECIDED, TUE, null);
+        assertThat(ExecutionAudit.counterfactuals(claude2, null, null, PASSING, US, true).get(ExecutionAudit.NEXT_OBSERVATION))
+                .isEqualTo(new Price(103.5, et(TUE, 10, 15), ExecutionAudit.RUNG_OBSERVATION));
+        assertThat(ExecutionAudit.counterfactuals(claude2, null, null, PASSING, US, false).get(ExecutionAudit.NEXT_OBSERVATION))
+                .isNull();
     }
 
     // ------------------------------------------------------------------ 늦게 풂(late_resolved)
