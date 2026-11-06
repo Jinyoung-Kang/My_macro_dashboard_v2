@@ -125,6 +125,10 @@ class ManualAccountJob {
     static final String AUTO_NOT_NOTIFIED = "not-notified";
     /** 스탑 지시 자동 기록 메모 — 그 주문 기준 시각의 1분봉 창이 없어 그 세션 종가로 어림. */
     static final String AUTO_CLOSE_FALLBACK = "close-fallback";
+    /** 스탑 지시를 적지 않고 건너뛴 사유 — 그다음 날 아침({@link #STOP_RECORD_GIVE_UP})까지 가격을 구하지 못함(사용자가 장부에 직접 적음). */
+    static final String AUTO_NO_PRICE = "no-price";
+    /** 스탑 지시 자동 기록을 기다리는 끝 — 그 세션 다음 날 이 시각(KST). 그 뒤에는 어림하거나 건너뛰어 다음 세션 지시를 막아 두지 않습니다. */
+    static final LocalTime STOP_RECORD_GIVE_UP = LocalTime.of(7, 0);
     /** 스탑 지시를 찾는 KST 시각 범위(정규장 — 장 시간 변경일 10:00~16:30 포함, 그 안에서 그날 달력의 개장~마감만). */
     static final LocalTime STOP_SCAN_FROM = LocalTime.of(8, 30);
     static final LocalTime STOP_SCAN_UNTIL = LocalTime.of(17, 0);
@@ -463,17 +467,20 @@ class ManualAccountJob {
             BigDecimal price = ladder.map(PaperMirrorService.LadderPrice::price).orElse(null);
             boolean unfillable = ladder.map(PaperMirrorService.LadderPrice::unfillable).orElse(false);
             boolean fallback = false;
-            if (price == null && ladder.map(PaperMirrorService.LadderPrice::noWindow).orElse(false)
+            // 사다리 값을 그다음 날 아침까지 못 구함(모의 주문이 지워짐 등) — 같은 어림을 쓰고, 그래도 없으면 적지 않고 건너뜀(다음 지시를 막아 두지 않게)
+            boolean overdue = !now.isBefore(s.session().plusDays(1).atTime(STOP_RECORD_GIVE_UP).atZone(Kst.ZONE).toInstant());
+            if (price == null && !unfillable && (overdue || ladder.map(PaperMirrorService.LadderPrice::noWindow).orElse(false))
                     && paper.openPrices(s.session(), Set.of(s.symbol())).containsKey(s.symbol())) {
                 price = paper.lastPrices(Set.of(s.symbol())).get(s.symbol());   // 밤 관측치에 그 세션이 들어옴 — 그 종가로 어림
                 fallback = price != null;
             }
-            if (price == null && !unfillable) {
+            if (price == null && !unfillable && !overdue) {
                 continue;
             }
             BigDecimal chosen = price;
             boolean closeFallback = fallback;
-            Integer done = store.lockAccount(CODE, acc -> acc == null || !acc.active() ? 0 : recordStop(s.id(), chosen, closeFallback));
+            String skipNote = unfillable ? AUTO_HALTED : AUTO_NO_PRICE;
+            Integer done = store.lockAccount(CODE, acc -> acc == null || !acc.active() ? 0 : recordStop(s.id(), chosen, closeFallback, skipNote));
             changed += done == null ? 0 : done;
         }
         if (changed > 0) {
@@ -483,8 +490,8 @@ class ManualAccountJob {
         return changed;
     }
 
-    /** 잠금 안 — 스탑 지시 하나를 다시 읽어 적거나(보유까지로 줄임) 건너뜁니다. 바꿨으면 1. */
-    private int recordStop(long id, BigDecimal price, boolean closeFallback) {
+    /** 잠금 안 — 스탑 지시 하나를 다시 읽어 적거나(보유까지로 줄임) 건너뜁니다({@code skipNote} — 가격이 없을 때의 사유). 바꿨으면 1. */
+    private int recordStop(long id, BigDecimal price, boolean closeFallback, String skipNote) {
         StopInstruction s = store.stopInstruction(id).filter(StopInstruction::planned).orElse(null);
         if (s == null) {
             return 0;
@@ -495,7 +502,7 @@ class ManualAccountJob {
         }
         if (price == null || price.signum() <= 0) {
             return store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
-                    Map.of("skippedBy", "AUTO", "autoNote", AUTO_HALTED)) ? 1 : 0;
+                    Map.of("skippedBy", "AUTO", "autoNote", skipNote)) ? 1 : 0;
         }
         List<Entry> entries = store.ledger(CODE).stream().map(Entry::of).toList();
         BigDecimal wanted = BigDecimal.valueOf(s.quantity());

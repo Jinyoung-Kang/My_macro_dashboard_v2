@@ -648,6 +648,29 @@ class ManualAccountJobDbTest {
     }
 
     @Test
+    @DisplayName("스탑 지시 사다리 값을 그다음 날 07:00까지 못 구하면(모의 주문이 지워짐 등) 적지 않고 건너뜀(no-price) — 다음 지시를 막아 두지 않음")
+    void stopRecordGivesUpNextMorning() {
+        timedPlanned(List.of());
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
+        stopCycleAt("2026-11-09T11:30");
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of());
+        when(paper.pricesAt(eq(E), eq(LocalTime.of(9, 10)), any())).thenReturn(Map.of(
+                A, new PaperMirrorService.LadderPrice(d("10100"), false, false),
+                B, new PaperMirrorService.LadderPrice(d("20100"), false, false),
+                CASH, new PaperMirrorService.LadderPrice(d("100000"), false, false)));
+        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.empty());
+
+        cycleAt("2026-11-09T23:00");
+        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
+        cycleAt("2026-11-10T07:05");
+        assertThat(stops()).singleElement().satisfies(stop -> {
+            assertThat(stop.status()).isEqualTo("SKIPPED");
+            assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_NO_PRICE);
+        });
+        assertThat(store.ledger("isa").stream().filter(r -> r.stopInstructionId() != null)).isEmpty();
+    }
+
+    @Test
     @DisplayName("스탑 주기만(30초)은 스탑 지시만 보고, 정기 작업 한 번은 interval-ms가 지났을 때 전체 — 시작 전 계좌는 아무것도 하지 않음")
     void stopCycleOnlyScansStops() {
         stopCycleAt("2026-11-09T11:30");
