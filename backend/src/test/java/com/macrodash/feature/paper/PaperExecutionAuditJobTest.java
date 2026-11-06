@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.OrderExec;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -605,7 +604,6 @@ class PaperExecutionAuditJobTest {
     }
 
     @Test
-    @Disabled("QA-300 재현 — 수정 전에는 계좌1 주문의 계좌1식 기준을 실제 체결에서만 옮겨(시점이 NEXT_OBSERVATION일 때만) 자유 시점 판 주문은 늘 null. fix(QA-300)에서 켭니다")
     @DisplayName("QA-300: 미국 계좌1 자유 시점 판 주문도 계좌2처럼 관측치 사슬로 계좌1식 기준을 받는다 — 증명된 첫 통과 저장본의 종가, 한 번 쓴 값은 그대로")
     void qa300BookOneFreeTimingOrderGetsTheChainBaseline() {
         activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);   // 운영처럼 계좌2가 출발함 — 사슬은 지금도 셈
@@ -626,7 +624,6 @@ class PaperExecutionAuditJobTest {
     }
 
     @Test
-    @Disabled("QA-300 재현 — 수정 전에는 사슬을 계좌2 조건으로만 세어 계좌2가 없으면 계좌1 기준을 증명할 수 없음. fix(QA-300)에서 켭니다")
     @DisplayName("QA-300: 계좌2 행이 없어도 claude.freeTiming이 켜졌으면 관측치 사슬을 세어 계좌1 자유 시점 판 주문의 기준을 증명한다")
     void qa300ChainIsCountedWhenBookOneFreeTimingIsOn() {
         store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
@@ -638,6 +635,92 @@ class PaperExecutionAuditJobTest {
         assertThat(store.jobRuns).as("저장본마다 고리 하나 — 셋")
                 .filteredOn(run -> run.detail().has(PaperExecutionAuditJob.CHAIN)).hasSize(3);
         assertThat(cf(id).get("NEXT_OBSERVATION").path("raw").asDouble()).isEqualTo(103.5);
+    }
+
+    /** 배포 전 코드가 남긴 고리(범위 표시 없음)를 작업 기록에 넣습니다. */
+    private void oldLink(Instant collectedAt, Instant previous, boolean adjacent, Integer runs) {
+        ObjectNode chain = MAPPER.createObjectNode().put("collectedAt", collectedAt.toString());
+        if (previous == null) {
+            chain.putNull("previous");
+        } else {
+            chain.put("previous", previous.toString());
+        }
+        chain.put("adjacent", adjacent);
+        if (runs == null) {
+            chain.putNull("runsBetween");
+        } else {
+            chain.put("runsBetween", runs);
+        }
+        ObjectNode detail = MAPPER.createObjectNode();
+        detail.set(PaperExecutionAuditJob.CHAIN, chain);
+        store.recordJobRun(PaperExecutionAuditJob.JOB, collectedAt.plusSeconds(60), collectedAt.plusSeconds(61), "OK", detail);
+    }
+
+    @Test
+    @DisplayName("QA-300 범위 표시(순수): 계좌1 주문은 지나는 고리 가운데 E 개장 이후 고리가 범위 표시를 가져야 증명 — 지금 고리·E 개장 전 고리는 표시가 없어도 되고, 조건 없음(null)은 지금과 같음")
+    void chainProvenNeedsTheOrderScopeAfterTheTargetOpen() {
+        Instant created = Instant.parse("2026-10-26T22:31:00Z");
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:40:00Z");          // E(10-27) 개장 전
+        Instant c2 = et(TUE, 10, 10);                               // E 개장 뒤
+        Instant c3 = et(TUE, 11, 10);
+        Instant open = et(TUE, 9, 30);
+        Map<Instant, PaperExecutionAuditJob.ChainLink> links = new TreeMap<>();
+        links.put(c0, new PaperExecutionAuditJob.ChainLink(c0, null, false, null, false));
+        links.put(c1, new PaperExecutionAuditJob.ChainLink(c1, c0, true, 1, false));
+        links.put(c2, new PaperExecutionAuditJob.ChainLink(c2, c1, true, 1, false));
+        links.put(c3, new PaperExecutionAuditJob.ChainLink(c3, c2, true, 1, true));
+
+        assertThat(PaperExecutionAuditJob.chainProven(created, c2, links, open)).as("지금 고리(c2)는 표시가 없어도 — 이번 실행이 봄")
+                .isTrue();
+        assertThat(PaperExecutionAuditJob.chainProven(created, c3, links, open)).as("E 개장 뒤 옛 고리 c2를 지남").isFalse();
+        assertThat(PaperExecutionAuditJob.chainProven(created, c3, links, null)).as("조건 없음(계좌2 주문)").isTrue();
+        assertThat(PaperExecutionAuditJob.chainProven(created, c3, links)).as("세 인자 판 = 조건 없음").isTrue();
+        links.put(c2, new PaperExecutionAuditJob.ChainLink(c2, c1, true, 1, true));
+        assertThat(PaperExecutionAuditJob.chainProven(created, c3, links, open)).as("c1은 E 개장 전 — 표시 없어도 됨").isTrue();
+    }
+
+    @Test
+    @DisplayName("QA-300 배포 전 고리: E 개장 뒤에 배포 전 코드가 남긴 고리를 지나면 계좌1 자유 시점 판 주문의 기준은 끝까지 null(그 저장본에서 이 주문을 보지 않았음) — 같은 고리로 계좌2 주문은 지금처럼 채움, 새 고리는 범위 표시를 단다")
+    void oldLinksAfterTheTargetOpenDoNotProveBookOneOrders() {
+        long book2 = book2Order("AAPL");
+        long book1 = freeTimingOrder("AAPL");
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:40:00Z");
+        Instant c2 = et(TUE, 10, 10);
+        oldLink(c0, null, false, null);
+        oldLink(c1, c0, true, 1);
+        oldLink(c2, c1, true, 1);                                   // 배포 전 코드가 E 10:10 저장본을 봄(계좌1 주문은 실제 체결로만 봤음)
+
+        Instant c3 = et(TUE, 11, 10);
+        runsBetween(c2, c3, 1);
+        observed(quotes(c3, bar("AAPL", MON, 98, TUE, 104.0)));
+        job(true, c3.plusSeconds(120)).run();
+
+        assertThat(lastChain().path(PaperExecutionAuditJob.SCOPE).asString()).isEqualTo(PaperExecutionAuditJob.SCOPE_ORDER);
+        assertThat(lastChain().path("adjacent").asBoolean()).isTrue();
+        assertThat(cf(book1).get("NEXT_OBSERVATION").isNull()).as("c2에서 통과했을 수 있음 — 뒤 저장본 값으로 채우지 않음").isTrue();
+        assertThat(cf(book2).get("NEXT_OBSERVATION").path("raw").asDouble()).as("계좌2 — 배포 전 코드도 관측치로 봄").isEqualTo(104.0);
+    }
+
+    @Test
+    @DisplayName("QA-300 배포 전 고리: E 개장 전의 옛 고리는 계좌1 자유 시점 판 주문의 증명을 막지 않는다(E 개장 전 저장본에는 E 봉이 없어 ④를 통과할 수 없음)")
+    void oldLinksBeforeTheTargetOpenStillProveBookOneOrders() {
+        activeBook(store, PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, 100_000, null);
+        long id = freeTimingOrder("AAPL");
+        Instant c0 = Instant.parse("2026-10-26T22:20:00Z");
+        Instant c1 = Instant.parse("2026-10-26T22:40:00Z");
+        oldLink(c0, null, false, null);
+        oldLink(c1, c0, true, 1);
+
+        Instant c2 = et(TUE, 10, 10);
+        runsBetween(c1, c2, 1);
+        observed(quotes(c2, bar("AAPL", MON, 98, TUE, 103.5)));
+        job(true, c2.plusSeconds(120)).run();
+
+        assertThat(cf(id).get("NEXT_OBSERVATION").path("raw").asDouble()).isEqualTo(103.5);
+        assertThat(PaperExecutionAuditJob.chainLinks(store).get(c1).orderScope()).as("옛 기록은 표시 없음으로 읽음").isFalse();
+        assertThat(PaperExecutionAuditJob.chainLinks(store).get(c2).orderScope()).isTrue();
     }
 
     @Test

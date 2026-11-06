@@ -5,7 +5,6 @@ import com.macrodash.analytics.UsMarketCalendar;
 import com.macrodash.feature.paper.ExecutionAudit.Price;
 import com.macrodash.feature.paper.ExecutionAuditFixtures.Bars;
 import com.macrodash.store.PaperStore.Order;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -292,7 +291,6 @@ class ExecutionAuditTest {
     private static final PaperMarketData.Quotes PASSING = quotes(et(TUE, 10, 15), bar("AAPL", MON, 98, TUE, 103.5));
 
     @Test
-    @Disabled("QA-300 재현 — 수정 전에는 계좌1 주문을 늘 실제 체결(fromFill)로 봐 null. fix(QA-300)에서 켭니다")
     @DisplayName("QA-300: 미국 계좌1 자유 시점 판 주문(분 단위 지정 시각·장중 시장가·하루짜리 종가·시가)은 첫 통과 관측치가 증명되면 계좌2처럼 계좌1식 기준(그 관측 종가)을 받고, 증명이 없으면 null")
     void qa300FreeTimingBookOneOrdersGetTheObservationBaseline() {
         Price expected = new Price(103.5, et(TUE, 10, 15), ExecutionAudit.RUNG_OBSERVATION);

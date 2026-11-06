@@ -56,8 +56,9 @@ import java.util.Optional;
  * ({@code paper_job_runs}, 이름 {@value #JOB})은 무엇이든 새로 썼을 때(감사 행·새 사슬 고리)와 오류일 때만 남깁니다(5분마다 쌓이면 다른 작업 기록을 밀어냄) — 실행 시간은
  * 그 기록의 시작·끝 시각으로 잽니다(명세 §14-1 — 길면 리스크 점검 뒤에 붙이는 판으로). 예외는 삼키고 로그만 남깁니다(스케줄러로 던지지 않음).
  *
- * <p><b>계좌2 주문의 계좌1식 기준</b>(NEXT_OBSERVATION, 명세 §14-1·ADR 0022 결정 4 — M1의 P_cf): 체결 조건 ①②④를 통과한 <b>첫</b> {@code paper.quotes}
- * 저장본의 그 종목 종가입니다({@link ExecutionAudit#fromObservation}). 저장본은 최신 한 건만 남으므로(V1 snapshots) 이 작업은 자기가 본 저장본이
+ * <p><b>시각 지정 주문의 계좌1식 기준</b>(NEXT_OBSERVATION, 명세 §14-1·ADR 0022 결정 4 — M1의 P_cf; 계좌2의 주문과 계좌1 자유 시점 판 주문 —
+ * {@link ExecutionAudit#observationBaseline}, QA-300): 체결 조건 ①②④를 통과한 <b>첫</b> {@code paper.quotes} 저장본의 그 종목 종가입니다
+ * ({@link ExecutionAudit#fromObservation}). 저장본은 최신 한 건만 남으므로(V1 snapshots) 이 작업은 자기가 본 저장본이
  * 빠짐없이 이어졌음을 증명할 때만 적고, 증명하지 못하면 null로 둡니다 — 뒤 저장본의 값으로 채우지 않습니다. 증명은 <b>관측치 사슬</b>입니다:
  * <ol>
  *   <li>새 관측치 저장본(수집 시각 c)을 처음 본 실행은 사슬 고리 {@code quotesChain = {collectedAt: c, previous: p, adjacent, runsBetween}}을 작업 기록에
@@ -73,10 +74,17 @@ import java.util.Optional;
  * </ol>
  * 남는 가정은 두 가지입니다 — 수집기 실행 기록이 빠지지 않음(기록 쓰기가 실패하면 수집기는 로그만 남김), 백엔드·수집기·DB 시계가 같음(같은 호스트).
  *
- * <p>사슬은 <b>계좌2 행이 있고 설정 {@code claude2.enabled}가 켜졌거나 계좌2가 이미 출발했을 때만</b> 셉니다({@link #chainWanted}) — 계좌2 주문은 출발
- * (INITIAL — 켠 뒤에만 생김)부터라 사슬이 그 앞에서 시작하면 증명은 그대로이고, 배포만으로는(계좌2 행이 없거나 꺼진 채 시작 전) 작업 기록이 늘지 않습니다
- * (ADR 0022 — 배포로 바뀌는 것 없음). 사슬 계산이 실패하면 그 실행은 계좌2 기준을 보지 않고({@code chain = null}) 감사는 그대로 하며, 기록에
- * {@code chainError}를 남깁니다 — 계좌2 전용 증명이 계좌1 측정을 막지 않게. 켠 뒤 첫 감사 전에 출발 주문이 생기면 그 주문 뒤 첫 저장본이 처음 고리라
+ * <p><b>배포 전 고리의 범위</b>(QA-300): 2026-11 배포 전 코드는 계좌1 주문을 관측치로 보지 않았으므로(늘 실제 체결에서), 그 코드가 기록한 고리의
+ * 저장본에서 계좌1 주문이 ①②④를 통과했는지 모릅니다. 그래서 새 고리는 {@code scope = "order"}(주문 시점으로 기준을 가르는 코드가 기록함)를 달고,
+ * 계좌1 주문의 증명은 지나는 고리(지금 고리 제외) 가운데 목표 세션 E 개장 이후에 수집한 고리가 모두 이 표시를 가졌을 때만 참입니다
+ * ({@link #chainProven(Instant, Instant, Map, Instant)}). E 개장 전 저장본에는 E 봉이 없어 ④를 통과할 수 없으므로(장부의 NEXT_OBSERVATION 체결과 같은
+ * 가정) 그 고리는 표시가 없어도 됩니다. 계좌2 주문은 배포 전 코드도 관측치로 봤으므로 이 조건이 없습니다.
+ *
+ * <p>사슬은 <b>설정 {@code claude.freeTiming}이 켜졌거나(계좌1 자유 시점 판 주문의 기준 — QA-300), 계좌2 행이 있고 설정 {@code claude2.enabled}가
+ * 켜졌거나 계좌2가 이미 출발했을 때만</b> 셉니다({@link #chainWanted}) — 그 주문들은 켠 뒤에만 생기므로 사슬이 그 앞에서 시작하면 증명은 그대로이고,
+ * 배포만으로는(두 스위치가 꺼졌고 계좌2 행이 없거나 시작 전) 작업 기록이 늘지 않습니다(ADR 0022 — 배포로 바뀌는 것 없음). 계좌1 자유 시점 판을 끈 뒤
+ * 남은 하루짜리 주문은 계좌2 조건이 사슬을 셀 때만 기준을 받습니다(운영은 계좌2가 출발해 늘 셈). 사슬 계산이 실패하면 그 실행은 시각 지정 주문의
+ * 계좌1식 기준을 보지 않고({@code chain = null}) 감사는 그대로 하며, 기록에 {@code chainError}를 남깁니다 — 사슬 증명이 나머지 측정을 막지 않게. 켠 뒤 첫 감사 전에 출발 주문이 생기면 그 주문 뒤 첫 저장본이 처음 고리라
  * 증명되지 않으므로, 계좌2 출발(정기·수동)은 그 출발이 읽은 관측치의 고리가 기록된 뒤에만 냅니다({@link #chainNotReady} — 결정 작업이 봄, 리뷰 F2 ⓑ).
  *
  * <p>{@code dashboard.paper.enabled=false}(로컬 v2 — {@code PAPER_ENABLED=false})면 아무것도 읽거나 쓰지 않습니다. 수동 실행 경로는 없습니다.
@@ -124,11 +132,21 @@ public class PaperExecutionAuditJob {
         this.clock = clock;
     }
 
+    /** 작업 기록 고리의 범위 표시 칸과 값 — 주문 시점으로 기준을 가르는 코드가 기록한 고리(클래스 설명 '배포 전 고리의 범위'). */
+    static final String SCOPE = "scope";
+    static final String SCOPE_ORDER = "order";
+
     /**
      * 관측치 사슬의 고리 하나(클래스 설명) — 저장본 수집 시각, 그 전에 기록한 고리의 수집 시각(없으면 null), 둘 사이에 다른 저장이 없었음이 증명됐나,
-     * 그 사이 시작한 관측치 태스크 실행 수(모르면 null).
+     * 그 사이 시작한 관측치 태스크 실행 수(모르면 null), 주문 시점으로 기준을 가르는 코드가 기록한 고리인가({@value #SCOPE} = {@value #SCOPE_ORDER} —
+     * 그 표시가 없는 옛 기록은 거짓).
      */
-    record ChainLink(Instant collectedAt, Instant previous, boolean adjacent, Integer runsBetween) {
+    record ChainLink(Instant collectedAt, Instant previous, boolean adjacent, Integer runsBetween, boolean orderScope) {
+
+        /** 이 코드가 새로 기록하는 고리(범위 표시 있음). */
+        ChainLink(Instant collectedAt, Instant previous, boolean adjacent, Integer runsBetween) {
+            this(collectedAt, previous, adjacent, runsBetween, true);
+        }
 
         Map<String, Object> view() {
             Map<String, Object> out = new LinkedHashMap<>();
@@ -136,6 +154,9 @@ public class PaperExecutionAuditJob {
             out.put("previous", previous == null ? null : previous.toString());
             out.put("adjacent", adjacent);
             out.put("runsBetween", runsBetween);
+            if (orderScope) {
+                out.put(SCOPE, SCOPE_ORDER);
+            }
             return out;
         }
     }
@@ -147,6 +168,17 @@ public class PaperExecutionAuditJob {
      * @param links 수집 시각 → 고리(이번 실행의 새 고리 포함)
      */
     static boolean chainProven(Instant created, Instant current, Map<Instant, ChainLink> links) {
+        return chainProven(created, current, links, null);
+    }
+
+    /**
+     * {@link #chainProven(Instant, Instant, Map)}에 배포 전 고리의 범위 조건을 더한 것(클래스 설명) — 지나는 고리 가운데 지금 고리를 뺀 것(그 저장본에서
+     * 그 주문을 이미 봤어야 하는 고리)으로서 수집 시각이 {@code scopedFrom} 이후(포함)인 고리는 {@link ChainLink#orderScope}여야 합니다. 지금 고리는 이번
+     * 실행이 그 저장본으로 그 주문을 보므로 표시가 없어도 됩니다.
+     *
+     * @param scopedFrom 이 시각 이후의 고리는 범위 표시가 있어야 함 — null이면 조건 없음(계좌2 주문)
+     */
+    static boolean chainProven(Instant created, Instant current, Map<Instant, ChainLink> links, Instant scopedFrom) {
         if (created == null || current == null) {
             return false;
         }
@@ -155,6 +187,9 @@ public class PaperExecutionAuditJob {
             ChainLink link = links.get(at);
             if (link == null || !link.adjacent() || link.previous() == null) {
                 return false;
+            }
+            if (scopedFrom != null && !at.equals(current) && !at.isBefore(scopedFrom) && !link.orderScope()) {
+                return false;                              // 배포 전 코드가 기록한 E 개장 뒤 고리 — 그 저장본에서 이 주문을 보지 않았음
             }
             at = link.previous();
         }
@@ -214,7 +249,7 @@ public class PaperExecutionAuditJob {
             bars = reader.quietly(() -> reader.read(Datasets.SNAP_PAPER_BARS_US, Datasets.MAX_AGE_BARS_US, null))
                     .orElse(null);
             quotes = reader.quietly(() -> marketData.quotes(UsPaperMarket.INSTANCE)).orElse(null);
-            // 관측치 사슬(계좌2 기준의 증명) — 계좌2가 켜졌거나 출발했을 때만, 실패해도 감사는 그대로(클래스 설명).
+            // 관측치 사슬(시각 지정 주문의 계좌1식 기준의 증명) — 계좌1 자유 시점 판이 켜졌거나 계좌2가 켜졌거나 출발했을 때만, 실패해도 감사는 그대로(클래스 설명).
             Map<Instant, ChainLink> chain = null;
             if (quotes != null) {
                 try {
@@ -224,13 +259,13 @@ public class PaperExecutionAuditJob {
                         if (link != null && link.isNew()) {
                             links.put(link.collectedAt(), link.link());
                         }
-                        // 고리를 아직 셀 수 없으면(c를 쓴 실행의 기록 전) 이번에는 계좌2 기준을 보지 않습니다(link == null).
+                        // 고리를 아직 셀 수 없으면(c를 쓴 실행의 기록 전) 이번에는 계좌1식 기준을 보지 않습니다(link == null).
                         chain = link == null ? null : links;
                     }
                 } catch (RuntimeException e) {
                     link = null;
                     chainError = e.getClass().getSimpleName() + " " + e.getMessage();
-                    log.warn("모의 매매 실행 감사 — 관측치 사슬을 세지 못해 이번에는 계좌2 기준을 보지 않습니다: {}", chainError);
+                    log.warn("모의 매매 실행 감사 — 관측치 사슬을 세지 못해 이번에는 시각 지정 주문의 계좌1식 기준을 보지 않습니다: {}", chainError);
                 }
             }
             JsonNode payload = bars == null ? null : bars.payload();
@@ -249,10 +284,15 @@ public class PaperExecutionAuditJob {
     }
 
     /**
-     * 관측치 사슬을 셀 때인가(클래스 설명) — 계좌2 행이 있고 시작 전이 아니거나(출발함·일시정지 — 남은 주문의 기준을 이어 봄), 시작 전이면 지금 설정의
-     * {@code claude2.enabled}가 켜졌을 때. 설정 행이 없으면 기본값(꺼짐)입니다.
+     * 관측치 사슬을 셀 때인가(클래스 설명) — 지금 설정의 {@code claude.freeTiming}이 켜졌거나(계좌1 자유 시점 판 주문의 기준 — QA-300), 계좌2 행이 있고
+     * 시작 전이 아니거나(출발함·일시정지 — 남은 주문의 기준을 이어 봄), 시작 전이면 지금 설정의 {@code claude2.enabled}가 켜졌을 때. 설정 행이 없으면
+     * 기본값(모두 꺼짐)입니다.
      */
     private boolean chainWanted() {
+        JsonNode body = store.settings().map(PaperStore.SettingsRow::body).orElse(null);
+        if (FreeTimingSettings.from(body).on(PaperBooks.CLAUDE)) {
+            return true;
+        }
         Optional<Book> book = store.book(PaperBooks.CLAUDE2);
         if (book.isEmpty()) {
             return false;
@@ -260,7 +300,7 @@ public class PaperExecutionAuditJob {
         if (!PaperBooks.NOT_STARTED.equals(book.get().status())) {
             return true;
         }
-        return Claude2Settings.from(store.settings().map(PaperStore.SettingsRow::body).orElse(null)).enabled();
+        return Claude2Settings.from(body).enabled();
     }
 
     /** 이번 실행의 고리 — 새 고리면 {@code isNew}(작업 기록에 남김), 이미 기록한 저장본이면 그 고리. */
@@ -327,7 +367,8 @@ public class PaperExecutionAuditJob {
             JsonNode runsBetween = chain.get("runsBetween");
             out.put(at, new ChainLink(at, instant(chain.path("previous").asString(null)),
                     chain.path("adjacent").asBoolean(false),
-                    runsBetween == null || !runsBetween.isNumber() ? null : runsBetween.intValue()));
+                    runsBetween == null || !runsBetween.isNumber() ? null : runsBetween.intValue(),
+                    SCOPE_ORDER.equals(chain.path(SCOPE).asString(null))));
         }
         return out;
     }
@@ -346,7 +387,7 @@ public class PaperExecutionAuditJob {
     /**
      * 대상 계좌마다 주문을 보고 감사 행을 합칩니다(한 트랜잭션 안).
      *
-     * @param chain 관측치 사슬(이번 고리 포함) — 이번 실행에 계좌2 기준을 볼 수 없으면 null
+     * @param chain 관측치 사슬(이번 고리 포함) — 이번 실행에 시각 지정 주문의 계좌1식 기준을 볼 수 없으면 null
      */
     private Outcome audit(Instant now, JsonNode barsPayload, Quotes quotes, TradingCalendar calendar,
                           Map<Instant, ChainLink> chain) {
@@ -381,9 +422,9 @@ public class PaperExecutionAuditJob {
             for (Order order : audited) {
                 orders++;
                 ExecFill fill = fills.get(order.id());
-                // 계좌2 주문의 계좌1식 기준 — 지금 관측치가 첫 통과 저장본일 수 있음을 사슬로 증명했을 때만(클래스 설명).
-                boolean first = chain != null && quotes != null
-                        && chainProven(order.createdAt(), quotes.collectedAt(), chain);
+                // 시각 지정 주문의 계좌1식 기준 — 지금 관측치가 첫 통과 저장본일 수 있음을 사슬로 증명했을 때만(클래스 설명).
+                boolean first = ExecutionAudit.observationBaseline(order, calendar) && chain != null && quotes != null
+                        && chainProven(order.createdAt(), quotes.collectedAt(), chain, scopedFrom(order, calendar));
                 Map<String, Price> prices = ExecutionAudit.counterfactuals(order, fill == null ? null : fill.fill(),
                         barsPayload, quotes, calendar, first);
                 Boolean late = ExecutionAudit.lateResolved(order, fill, calendar);
@@ -414,6 +455,18 @@ public class PaperExecutionAuditJob {
             }
         }
         return new Outcome(orders, rows, values, null, null);
+    }
+
+    /**
+     * 그 주문의 증명에서 범위 표시가 있어야 하는 고리의 시작(클래스 설명 '배포 전 고리의 범위') — 계좌2(시각 지정 체결 책)의 주문은 null(조건 없음),
+     * 그 밖은 목표 세션 E의 개장 시각. E를 모르면 모든 고리에 표시를 요구합니다.
+     */
+    private static Instant scopedFrom(Order order, TradingCalendar calendar) {
+        if (PaperBooks.find(order.bookCode()).map(PaperBooks.Definition::timed).orElse(false)) {
+            return null;
+        }
+        LocalDate session = ExecutionAudit.targetSession(order, calendar);
+        return session == null ? Instant.MIN : calendar.openInstant(session);
     }
 
     /** 그 행의 그 시점에 이미 값이 들었나(null·없음이 아님). */
@@ -453,7 +506,7 @@ public class PaperExecutionAuditJob {
             detail.put(CHAIN, link.view());   // 새로 본 관측치 저장본의 고리(클래스 설명 — 다음 실행·재기동 뒤에도 이 기록으로 이음)
         }
         if (chainError != null) {
-            detail.put("chainError", chainError);   // 사슬을 세지 못함 — 이번 실행은 계좌2 기준을 보지 않음(감사 결과는 그대로)
+            detail.put("chainError", chainError);   // 사슬을 세지 못함 — 이번 실행은 시각 지정 주문의 계좌1식 기준을 보지 않음(감사 결과는 그대로)
         }
         if (outcome.error() != null) {
             detail.put("error", outcome.error());

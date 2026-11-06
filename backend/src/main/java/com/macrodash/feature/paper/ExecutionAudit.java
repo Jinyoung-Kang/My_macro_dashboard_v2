@@ -49,11 +49,12 @@ import java.util.Map;
  * <p><b>NEXT_CLOSE</b>는 관측치({@code paper.quotes})가 E 확정 종가를 보일 때만 — 그 종목 봉 날짜가 E이고 이어받은 봉이 아니며 그 저장본이
  * {@link UsPaperMarket#closeAvailable}(E 마감 + 15분 뒤 수집)일 때 그 종가({@value #RUNG_CLOSE}, 시각 = E 마감). 다음 세션이 열린 뒤의 저장본은
  * 마지막 봉이 E가 아니라 쓰지 않습니다(조정 이력에서 꺼내지 않음 — 배당락이 지난 값을 바꿈).
- * <b>NEXT_OBSERVATION</b>(계좌1식 기준)은 계좌1 주문(시점 NEXT_OBSERVATION)의 실제 체결 원가격(슬리피지 전 {@code raw_price}, 시각 = 그
- * 관측치 수집 시각, {@value #RUNG_OBSERVATION})에서 옮깁니다(§14-1 '계좌1 주문은 실제 체결 행에서'). 시각 지정 체결 계좌(계좌2)의 주문은 체결 조건
- * ①②④(주문 뒤 수집·이어 쓴 봉 아님·봉 날짜 &gt; 기준 거래일)를 통과한 <b>첫</b> {@code paper.quotes} 저장본의 그 종목 종가입니다
- * ({@link #fromObservation}) — 그 저장본이 첫째라는 증명은 작업이 합니다({@link PaperExecutionAuditJob}의 '관측치 사슬' — 증명하지 못하면 null, 뒤
- * 저장본의 값으로 채우지 않음). 계좌1의 NEXT_CLOSE 주문은 null입니다.
+ * <b>NEXT_OBSERVATION</b>(계좌1식 기준)은 시점이 NEXT_OBSERVATION인 주문(끈 판 계좌1)이면 그 실제 체결 원가격(슬리피지 전 {@code raw_price}, 시각 =
+ * 그 관측치 수집 시각, {@value #RUNG_OBSERVATION})에서 옮깁니다(§14-1 '계좌1 주문은 실제 체결 행에서'). 시각 지정 주문(계좌2의 주문과 계좌1 자유 시점
+ * 판 주문 — {@link #observationBaseline}, QA-300)은 체결 조건 ①②④(주문 뒤 수집·이어 쓴 봉 아님·봉 날짜 &gt; 기준 거래일)를 통과한 <b>첫</b>
+ * {@code paper.quotes} 저장본의 그 종목 종가입니다({@link #fromObservation}) — 그 저장본이 첫째라는 증명은 작업이 합니다
+ * ({@link PaperExecutionAuditJob}의 '관측치 사슬' — 증명하지 못하면 null, 뒤 저장본의 값으로 채우지 않음). 끈 판 계좌1의 NEXT_CLOSE 주문(만료 =
+ * 기준일 + 3거래일)은 null입니다.
  *
  * <p><b>지연</b>({@link #lagSeconds}) = 그 세션을 받은 시각 − (기준 종목 SPY 마지막 봉 시작 + 60초). 받은 시각이 그 세션 날의 정규장(미국 달력의
  * 개장 ~ 마감 — 조기 폐장일은 13:00까지) 안일 때만 셉니다 — 수집기는 달력을 몰라 조기 폐장을 구분하지 못하므로 저장본의 재료로 다시 셉니다.
@@ -266,7 +267,38 @@ final class ExecutionAudit {
     }
 
     /**
-     * 계좌2 주문의 NEXT_OBSERVATION(계좌1식 기준) 반사실 — 그 관측치가 체결 조건 ①②④를 통과하면(주문 뒤 수집, 그 종목 봉이 이어 쓴 봉이 아니고 봉 날짜가
+     * 계좌1식 기준(NEXT_OBSERVATION)을 첫 통과 관측치({@link #fromObservation} — 작업의 관측치 사슬이 증명할 때만)로 셀 주문인가 — 책 정의가 아니라
+     * 주문의 체결 시점으로 가릅니다(QA-300, 명세 2026-11-05 §10 '기준 반사실을 주문 단위로'). 판정 순서:
+     * <ol>
+     *   <li>시각 지정 체결 책(계좌2 — {@link PaperBooks.Definition#timed})의 주문이면 참(지금까지와 같음).</li>
+     *   <li>시점이 다음 관측치(NEXT_OBSERVATION)면 거짓 — 그 주문의 실제 체결 원가격({@link #fromFill}).</li>
+     *   <li>시각 지정 시점(시가·매시·장중 시장가·분 단위 지정 시각 — {@link UsTimedFills#timed})이면 참.</li>
+     *   <li>종가(NEXT_CLOSE)는 만료일이 목표 세션 E인 하루짜리 주문(계좌1 자유 시점 판 — ADR 0027 결정 2)일 때만 참. 끈 판 계좌1 종가 주문(만료 =
+     *       기준일 + 3거래일)은 거짓이라 지금처럼 null입니다.</li>
+     *   <li>그 밖은 거짓.</li>
+     * </ol>
+     * 끈 판 계좌1 주문(NEXT_OBSERVATION·종가)은 모두 거짓이라 감사 행이 바이트까지 그대로입니다.
+     */
+    static boolean observationBaseline(Order order, TradingCalendar calendar) {
+        if (PaperBooks.find(order.bookCode()).map(PaperBooks.Definition::timed).orElse(false)) {
+            return true;
+        }
+        String timing = order.timing();
+        if (NEXT_OBSERVATION.equals(timing)) {
+            return false;
+        }
+        if (UsTimedFills.timed(timing)) {
+            return true;
+        }
+        if (PaperBooks.NEXT_CLOSE.equals(timing)) {
+            LocalDate session = targetSession(order, calendar);
+            return session != null && session.equals(order.expiresOn());
+        }
+        return false;
+    }
+
+    /**
+     * 시각 지정 주문({@link #observationBaseline})의 NEXT_OBSERVATION(계좌1식 기준) 반사실 — 그 관측치가 체결 조건 ①②④를 통과하면(주문 뒤 수집, 그 종목 봉이 이어 쓴 봉이 아니고 봉 날짜가
      * 기준 거래일 뒤) 그 종가(원가격, 시각 = 저장본 수집 시각, {@value #RUNG_OBSERVATION}). 계좌1의 시간별 체결과 같은 조건이고 ③(NEXT_CLOSE의 확정
      * 종가)은 보지 않습니다 — 계좌1식 기준은 NEXT_OBSERVATION이라 늘 통과. 이 저장본이 그런 저장본 가운데 <b>첫째</b>인지는 이 함수가 보지 않습니다(작업의
      * 관측치 사슬 — 증명한 때만 부름). 통과하지 못하면 null.
@@ -322,19 +354,19 @@ final class ExecutionAudit {
     }
 
     /**
-     * {@link #counterfactuals(Order, Fill, JsonNode, Quotes, TradingCalendar)}에 계좌2 주문의 계좌1식 기준을 더한 것 — 시각 지정 체결 계좌(계좌2)의
-     * 주문이면 NEXT_OBSERVATION은 {@code firstObservation}(이 관측치가 ①②④를 통과한 첫 저장본임을 작업이 증명함)일 때만 {@link #fromObservation}, 아니면
-     * null. 그 밖의 주문은 실제 체결에서({@link #fromFill}).
+     * {@link #counterfactuals(Order, Fill, JsonNode, Quotes, TradingCalendar)}에 시각 지정 주문의 계좌1식 기준을 더한 것 — 기준을 관측치로 세는 주문
+     * ({@link #observationBaseline} — 계좌2의 주문, 계좌1 자유 시점 판 주문)이면 NEXT_OBSERVATION은 {@code firstObservation}(이 관측치가 ①②④를 통과한 첫
+     * 저장본임을 작업이 증명함)일 때만 {@link #fromObservation}, 아니면 null. 그 밖의 주문은 실제 체결에서({@link #fromFill}).
      */
     static Map<String, Price> counterfactuals(Order order, Fill fill, JsonNode barsPayload, Quotes quotes,
                                               TradingCalendar calendar, boolean firstObservation) {
         LocalDate session = targetSession(order, calendar);
-        boolean timedBook = PaperBooks.find(order.bookCode()).map(PaperBooks.Definition::timed).orElse(false);
+        boolean observation = observationBaseline(order, calendar);
         Map<String, Price> out = new LinkedHashMap<>();
         for (String timing : TIMINGS) {
             Price price;
             if (NEXT_OBSERVATION.equals(timing)) {
-                price = timedBook ? (firstObservation ? fromObservation(order, quotes) : null) : fromFill(order, fill);
+                price = observation ? (firstObservation ? fromObservation(order, quotes) : null) : fromFill(order, fill);
             } else if (PaperBooks.NEXT_CLOSE.equals(timing)) {
                 price = fromQuotes(order, session, quotes, calendar);
             } else {
