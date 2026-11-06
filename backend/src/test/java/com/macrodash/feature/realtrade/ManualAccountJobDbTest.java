@@ -512,6 +512,149 @@ class ManualAccountJobDbTest {
         assertThat(store.instructions("isa", E).get(1).reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_OPEN_FALLBACK);
     }
 
+    // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 초안 결정 7)
+    private static final Instant STOP_T = kst("2026-11-09T11:32");
+
+    private void stopCycleAt(String local) {
+        clock.set(kst(local));
+        job.stopCycle(clock.instant());
+    }
+
+    private List<ManualAccountStore.StopInstruction> stops() {
+        return store.stopInstructions("isa", E);
+    }
+
+    /** D 밤에 E 09:10 지시(A 40주 매수 등)를 만들어 둔 계좌 — ISA 장부 A 10주. */
+    private void timedPlanned(List<Long> coveredStops) {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        timedTargets(List.of(), coveredStops);
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("장중 STOP이면 30초 주기에 스탑 지시 하나(수량 = 장부 + 지시 시각이 지난 적지 않은 지시 증감), 같은 주문에 하나, 즉시 알림 한 통 — 종목·이름·수량만")
+    void stopInstructionAndImmediateNotice() {
+        timedPlanned(List.of());
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
+        org.mockito.Mockito.clearInvocations(telegram);
+
+        stopCycleAt("2026-11-09T11:30:10");
+
+        assertThat(stops()).singleElement().satisfies(stop -> {
+            assertThat(stop.paperOrderId()).isEqualTo(31L);
+            assertThat(stop.quantity()).as("장부 10주 + 09:10 매수 지시 40주(아직 적지 않음)").isEqualTo(50);
+            assertThat(stop.timing()).isEqualTo("MARKET");
+            assertThat(stop.targetAt()).isEqualTo(STOP_T);
+            assertThat(stop.notifiedAt()).isNotNull();
+        });
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(telegram).send(text.capture());
+        assertThat(text.getValue()).startsWith("<b>[ISA 계좌] 11/09(월) 스탑 매도 지시</b>").contains("\n매도 " + A + " 합성전자 50주\n")
+                .contains("지금 시장가로 매도하세요(개장 10분 전이면 09:10 이후)").doesNotContain("원", "9,700", "10000");
+
+        stopCycleAt("2026-11-09T11:30:40");
+        assertThat(stops()).hasSize(1);
+        verify(telegram, times(1)).send(anyString());
+    }
+
+    @Test
+    @DisplayName("그날 지시 목표에 반영된(흡수된) STOP은 스탑 지시가 생기지 않고, 개장 전·마감 뒤·시작 전에는 보지 않음")
+    void coveredStopMakesNoInstruction() {
+        timedPlanned(List.of(31L));
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "AT_MINUTE", SYNC_AT)));
+        stopCycleAt("2026-11-09T09:10:10");
+        assertThat(stops()).isEmpty();
+
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(32L, A, "MARKET", STOP_T)));
+        stopCycleAt("2026-11-09T08:59");
+        stopCycleAt("2026-11-09T15:31");
+        assertThat(stops()).as("정규장 밖").isEmpty();
+        stopCycleAt("2026-11-09T11:30");
+        assertThat(stops()).as("밤 지시 뒤에 생긴 STOP은 스탑 지시").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("종가 STOP(15:20 뒤 감지)은 '종가 단일가(15:20~15:30)에 시장가' 글(R12)")
+    void closingStopText() {
+        timedPlanned(List.of());
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(new DueOrder(41L, 41L, A, "SELL", "NEXT_CLOSE", "STOP",
+                kst("2026-11-09T15:30"), kst("2026-11-09T15:20"), true, null, null, null)));
+        org.mockito.Mockito.clearInvocations(telegram);
+        stopCycleAt("2026-11-09T15:21");
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(telegram).send(text.capture());
+        assertThat(text.getValue()).contains("종가 단일가(15:20~15:30)에 시장가로 매도하세요").doesNotContain("지금 시장가");
+        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.timing()).isEqualTo("NEXT_CLOSE"));
+    }
+
+    @Test
+    @DisplayName("마감까지 알리지 못한 스탑 지시는 SKIPPED(not-notified) — 장부에 적지 않고 다음 세션 지시를 막지 않음")
+    void unnotifiedStopIsSkippedAtClose() {
+        timedPlanned(List.of());
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
+        when(telegram.configured()).thenReturn(false);
+        stopCycleAt("2026-11-09T11:30");
+        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.notifiedAt()).isNull());
+        stopCycleAt("2026-11-09T15:31");
+        assertThat(stops()).singleElement().satisfies(stop -> {
+            assertThat(stop.status()).isEqualTo("SKIPPED");
+            assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_NOT_NOTIFIED);
+        });
+        assertThat(store.ledger("isa").stream().filter(r -> r.stopInstructionId() != null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("알린 스탑 지시 자동 기록 — 그 세션 앞 지시가 적힌 뒤 그 모의 주문 사다리 값·기준 시각으로, 적히기 전에는 다음 세션 지시를 만들지 않음")
+    void stopAutoRecordAfterDaily() {
+        timedPlanned(List.of());
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
+        stopCycleAt("2026-11-09T11:30");
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of());
+        targets(E2, Map.of(B, 30.0), Map.of(B, 20_000.0, CASH, 100_000.0), true);
+        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.of(new PaperMirrorService.LadderPrice(d("9700"), false, false)));
+
+        cycleAt("2026-11-09T21:20");
+        assertThat(stops()).as("09:10 지시가 아직 적히지 않음 — 스탑 기록 대기").allSatisfy(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
+
+        when(paper.pricesAt(eq(E), eq(LocalTime.of(9, 10)), any())).thenReturn(Map.of(
+                A, new PaperMirrorService.LadderPrice(d("10100"), false, false),
+                B, new PaperMirrorService.LadderPrice(d("20100"), false, false),
+                CASH, new PaperMirrorService.LadderPrice(d("100000"), false, false)));
+        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.empty());
+        cycleAt("2026-11-09T21:30");
+        assertThat(lines(E)).allSatisfy(l -> assertThat(l).endsWith("RECORDED"));
+        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
+        assertThat(store.session("isa", E2)).as("알린 스탑 지시가 적히기 전 — 다음 지시 대기").isEmpty();
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_RECORD);
+
+        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.of(new PaperMirrorService.LadderPrice(d("9700"), false, false)));
+        cycleAt("2026-11-09T21:40");
+        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.status()).isEqualTo("RECORDED"));
+        LedgerRow sell = store.ledger("isa").stream().filter(r -> r.stopInstructionId() != null).findFirst().orElseThrow();
+        assertThat(sell.kind()).isEqualTo("SELL");
+        assertThat(sell.quantity()).isEqualByComparingTo("50");
+        assertThat(sell.price()).isEqualByComparingTo("9700");
+        assertThat(sell.at()).isEqualTo(STOP_T);
+        assertThat(sell.source()).isEqualTo("AUTO");
+        assertThat(ManualAccountLedger.firstInvalid(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList())).isNull();
+        assertThat(store.session("isa", E2)).as("스탑까지 적힌 같은 주기에 다음 지시").isPresent();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> shown = (List<Map<String, Object>>) service().view().get("stopInstructions");
+        assertThat(shown).singleElement().satisfies(row -> {
+            assertThat(row).containsEntry("symbol", A).containsEntry("quantity", 50).containsEntry("status", "RECORDED");
+            assertThat(row).doesNotContainKey("price");
+        });
+    }
+
+    @Test
+    @DisplayName("스탑 주기만(30초)은 스탑 지시만 보고, 정기 작업 한 번은 interval-ms가 지났을 때 전체 — 시작 전 계좌는 아무것도 하지 않음")
+    void stopCycleOnlyScansStops() {
+        stopCycleAt("2026-11-09T11:30");
+        assertThat(stops()).isEmpty();
+        verify(paper, never()).dueOrders(anyString(), any(), any());
+    }
+
     private ManualAccountService service() {
         return new ManualAccountService(store, paper, job, clock);
     }

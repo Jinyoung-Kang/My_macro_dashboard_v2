@@ -3,6 +3,7 @@ package com.macrodash.feature.realtrade;
 import com.macrodash.Kst;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
+import com.macrodash.store.ManualAccountStore.StopInstruction;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -83,6 +84,49 @@ final class ManualAccountNotices {
         }
         out.append('\n').append("장전 동시호가(").append(hhmm(start.minusMinutes(AUCTION_MINUTES))).append('~').append(hhmm(start))
                 .append(")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 다르게 매매했으면 화면에서 고치세요.");
+        return out.toString();
+    }
+
+    /** 종가 단일가 시간 — 정규장 마감 이만큼 전부터(보통 15:20~15:30, 장 시간 변경일은 그 마감 기준). */
+    private static final long CLOSING_AUCTION_MINUTES = 10;
+    /** 장중 체결 첫 분 — 개장 이만큼 뒤(보통 09:10 — ADR 0031·0033 초안). */
+    private static final long OPEN_OFFSET_MINUTES = 10;
+
+    /**
+     * 장중 스탑 매도 지시 글(ADR 0033 초안 결정 7 — ADR 0029 결정 4의 예외 안: 종목 코드·이름·수량만, 금액·기준가·평가액 없음). 제목 'MM/DD(요일) 스탑 매도
+     * 지시', 장중 STOP 줄 다음에 '지금 시장가로 매도'(개장 10분 전이면 그 시각 이후), 종가 STOP({@code NEXT_CLOSE}) 줄 다음에 '종가 단일가(15:20~15:30)에
+     * 시장가로 매도'(통합 검토 R12 — 장 시간 변경일은 그날 마감 기준).
+     *
+     * @param open  그 세션 개장(KST 벽시계, 모르면 09:00)
+     * @param close 그 세션 마감(KST 벽시계, 모르면 15:30)
+     */
+    static String stop(LocalDate session, LocalTime open, LocalTime close, List<StopInstruction> items, Map<String, String> names) {
+        LocalTime start = (open == null ? LocalTime.of(9, 0) : open).plusMinutes(OPEN_OFFSET_MINUTES);
+        LocalTime end = close == null ? LocalTime.of(15, 30) : close;
+        StringBuilder intraday = new StringBuilder();
+        StringBuilder closing = new StringBuilder();
+        for (StopInstruction s : items) {
+            if (s.symbol() == null || !SYMBOL.matcher(s.symbol()).matches() || s.quantity() <= 0) {
+                continue;
+            }
+            StringBuilder line = "NEXT_CLOSE".equals(s.timing()) ? closing : intraday;
+            line.append('\n').append("매도 ").append(s.symbol());
+            String name = names.get(s.symbol());
+            if (name != null && !name.isBlank()) {
+                line.append(' ').append(escape(name.strip()));
+            }
+            line.append(' ').append(s.quantity()).append("주");
+        }
+        StringBuilder out = new StringBuilder(title(session, "스탑 매도 지시", false));
+        if (!intraday.isEmpty()) {
+            out.append(intraday).append('\n').append("규칙 계좌가 트레일링 스탑으로 팔았습니다 — 지금 시장가로 매도하세요(개장 10분 전이면 ")
+                    .append(hhmm(start)).append(" 이후).");
+        }
+        if (!closing.isEmpty()) {
+            out.append(closing).append('\n').append("규칙 계좌가 트레일링 스탑으로 오늘 종가에 팝니다 — 종가 단일가(")
+                    .append(hhmm(end.minusMinutes(CLOSING_AUCTION_MINUTES))).append('~').append(hhmm(end)).append(")에 시장가로 매도하세요.");
+        }
+        out.append('\n').append("다르게 매매했으면 화면에서 고치세요.");
         return out.toString();
     }
 

@@ -17,6 +17,8 @@ import com.macrodash.store.ManualAccountStore.Account;
 import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.LedgerValues;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
+import com.macrodash.store.ManualAccountStore.NewStopInstruction;
+import com.macrodash.store.ManualAccountStore.StopInstruction;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +34,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -80,6 +83,15 @@ import java.util.concurrent.locks.ReentrantLock;
  *       다시 계산했더니 지시가 없으면(NONE) 그 세션 개장 전까지 '할 매매가 없음' 한 통.</li>
  * </ol>
  *
+ * <p><b>장중 스탑 지시</b>(ADR 0033 초안 결정 7 — V28 {@code manual_stop_instructions}): {@code dashboard.manual.stop-interval-ms}(30초)마다 — 위 네
+ * 단계는 그중 {@code interval-ms}(10분)이 지난 주기에만 — 규칙 계좌의 오늘 STOP 매도 대기 주문({@link PaperMirrorService#dueOrders} — 장중 감시·밤 대체,
+ * 지금 + 5분 안의 것)마다 그 주문이 그날 지시 목표에 반영된 것(세션 기록 {@value #DETAIL_COVERED_STOPS})이 아니면 스탑 지시 하나(모의 주문 하나에 하나 —
+ * UNIQUE)를 씁니다. 수량은 ISA 장부 보유 + 그날 아직 적지 않은 지시 증감 가운데 지시 시각이 지난 것의 정수 부분이고, 1주도 없으면 쓰지 않습니다. 알리지
+ * 않은 스탑 지시는 바로 한 통으로 알리고(종목 코드·이름·수량만 — 종가 STOP은 '종가 단일가 시장가' 글, ADR 0029 결정 4의 예외 안), 그 세션 마감까지 못
+ * 알리면 SKIPPED(not-notified — 적지 않음, 다음 날 지시가 '책에 없는 보유'로 팖). 알린 스탑 지시는 그 모의 주문과 같은 1분봉 사다리 값
+ * ({@link PaperMirrorService#orderLadderPrice})으로 그 주문 기준 시각에 자동 기록하고(그 세션 앞 지시가 모두 적힌 뒤), 1분봉 창이 아예 없으면 그 세션
+ * 종가로 어림합니다. 알린 스탑 지시가 적히기 전에는 다음 세션 지시를 만들지 않습니다(같은 종목을 '책에 없는 보유'로 다시 팔라고 하지 않게).
+ *
  * <p>로그에는 세션·건수·사유 코드만 남깁니다(종목·수량·금액 없음). 예상 못 한 예외·오류는 클래스 이름만 남기고 다음 주기에 다시 봅니다(던지면 전용
  * 스케줄러가 뒤 주기를 모두 건너뜀).
  */
@@ -107,6 +119,17 @@ class ManualAccountJob {
      */
     static final String DETAIL_TARGET_AT = "targetAt";
     static final String DETAIL_COVERED_STOPS = "coveredStopOrderIds";
+    /** 스탑 지시를 만들 모의 STOP 주문 — 따라 할 시각이 지금 + 이 안(종가 STOP은 종가 단일가 시작 5분 전부터 알림). */
+    static final Duration STOP_LOOKAHEAD = Duration.ofMinutes(5);
+    /** 스탑 지시를 적지 않고 건너뛴 사유(근거의 autoNote) — 그 세션 마감까지 알리지 못함. */
+    static final String AUTO_NOT_NOTIFIED = "not-notified";
+    /** 스탑 지시 자동 기록 메모 — 그 주문 기준 시각의 1분봉 창이 없어 그 세션 종가로 어림. */
+    static final String AUTO_CLOSE_FALLBACK = "close-fallback";
+    /** 스탑 지시를 찾는 KST 시각 범위(정규장 — 장 시간 변경일 10:00~16:30 포함, 그 안에서 그날 달력의 개장~마감만). */
+    static final LocalTime STOP_SCAN_FROM = LocalTime.of(8, 30);
+    static final LocalTime STOP_SCAN_UNTIL = LocalTime.of(17, 0);
+    /** 스탑 지시가 받는 모의 주문 시점(V28 CHECK — 시가 STOP은 다음 시가 지시에 들어감). */
+    static final Set<String> STOP_TIMINGS = Set.of("MARKET", "AT_MINUTE", "NEXT_CLOSE");
     /** 세션 계산 기록(detail)의 '다시 계산' 표시와 '할 매매 없음' 알림 시각 키. */
     static final String DETAIL_RECALCULATED = "recalculated";
     static final String DETAIL_RECALC_NOTICE_AT = "recalcNoticeAt";
@@ -147,23 +170,33 @@ class ManualAccountJob {
     private final boolean paperEnabled;
     private final boolean schedulerEnabled;
     private final long intervalMs;
+    private final long stopIntervalMs;
     private final ReentrantLock running = new ReentrantLock();
 
     private ScheduledExecutorService scheduler;
     private volatile Waiting waiting;
     private volatile Instant lastCycleAt;
+    /** 위 네 단계(자동 기록·못 만듦·지시·알림)를 마지막으로 돈 시각 — 스탑 주기 사이에는 {@code interval-ms}가 지났을 때만. */
+    private Instant lastFullAt;
 
     @Autowired
     ManualAccountJob(ManualAccountStore store, PaperMirrorService paper, PaperTelegram telegram, ObjectMapper mapper,
                      @Value("${dashboard.paper.enabled:true}") boolean paperEnabled,
                      @Value("${dashboard.scheduler.enabled:true}") boolean schedulerEnabled,
-                     @Value("${dashboard.manual.interval-ms:600000}") long intervalMs) {
-        this(store, paper, telegram, mapper, Clock.systemUTC(), paperEnabled, schedulerEnabled, intervalMs);
+                     @Value("${dashboard.manual.interval-ms:600000}") long intervalMs,
+                     @Value("${dashboard.manual.stop-interval-ms:30000}") long stopIntervalMs) {
+        this(store, paper, telegram, mapper, Clock.systemUTC(), paperEnabled, schedulerEnabled, intervalMs, stopIntervalMs);
     }
 
-    /** 시험용 — 시계를 정합니다. */
+    /** 시험용 — 시계를 정합니다(스탑 주기 30초). */
     ManualAccountJob(ManualAccountStore store, PaperMirrorService paper, PaperTelegram telegram, ObjectMapper mapper, Clock clock,
                      boolean paperEnabled, boolean schedulerEnabled, long intervalMs) {
+        this(store, paper, telegram, mapper, clock, paperEnabled, schedulerEnabled, intervalMs, 30_000);
+    }
+
+    /** 시험용 — 시계와 스탑 주기를 정합니다. */
+    ManualAccountJob(ManualAccountStore store, PaperMirrorService paper, PaperTelegram telegram, ObjectMapper mapper, Clock clock,
+                     boolean paperEnabled, boolean schedulerEnabled, long intervalMs, long stopIntervalMs) {
         this.store = store;
         this.paper = paper;
         this.telegram = telegram;
@@ -172,6 +205,7 @@ class ManualAccountJob {
         this.paperEnabled = paperEnabled;
         this.schedulerEnabled = schedulerEnabled;
         this.intervalMs = Math.max(10_000, intervalMs);
+        this.stopIntervalMs = Math.max(5_000, Math.min(stopIntervalMs, this.intervalMs));
     }
 
     /** 정기 작업이 도는 서버인가(모의 매매 정기 작업·스케줄러가 모두 켜짐). */
@@ -205,8 +239,8 @@ class ManualAccountJob {
             thread.setDaemon(true);
             return thread;
         });
-        scheduler.scheduleWithFixedDelay(this::tick, INITIAL_DELAY_MS, intervalMs, TimeUnit.MILLISECONDS);
-        log.info("ISA 계좌 정기 작업 켜짐 — {}ms마다(전용 단일 스레드)", intervalMs);
+        scheduler.scheduleWithFixedDelay(this::tick, INITIAL_DELAY_MS, stopIntervalMs, TimeUnit.MILLISECONDS);
+        log.info("ISA 계좌 정기 작업 켜짐 — 스탑 지시 {}ms·나머지 {}ms마다(전용 단일 스레드)", stopIntervalMs, intervalMs);
     }
 
     @PreDestroy
@@ -225,10 +259,16 @@ class ManualAccountJob {
         }
     }
 
-    /** 스케줄러가 부르는 한 번 — 무엇을 던져도 잡고 이어 갑니다. */
+    /** 스케줄러가 부르는 한 번 — 무엇을 던져도 잡고 이어 갑니다. {@code interval-ms}가 지났으면 한 주기 전체, 아니면 스탑 지시만. */
     void tick() {
         try {
-            cycle(clock.instant());
+            Instant now = clock.instant();
+            if (lastFullAt == null || !now.isBefore(lastFullAt.plusMillis(intervalMs))) {
+                cycle(now);
+                lastFullAt = now;
+            } else {
+                stopCycle(now);
+            }
             lastCycleAt = clock.instant();
         } catch (RuntimeException e) {
             log.warn("ISA 계좌 정기 작업 실패 — 다음 주기에 다시: {}", e.getClass().getSimpleName());
@@ -250,12 +290,237 @@ class ManualAccountJob {
                 return;
             }
             autoRecord(now);
+            stopRecord(now);
             markUnavailable(account, now);
             plan(now);
             notifyPending(now);
+            stopScan(account, now);
+            stopNotify(now);
         } finally {
             running.unlock();
         }
+    }
+
+    /** 스탑 지시만(30초 주기 — 클래스 설명) — 앞 주기가 도는 중이면 건너뜁니다. */
+    void stopCycle(Instant now) {
+        if (!store.ready() || !running.tryLock()) {
+            return;
+        }
+        try {
+            Account account = store.account(CODE).orElse(null);
+            if (account == null || !account.active()) {
+                return;
+            }
+            stopScan(account, now);
+            stopNotify(now);
+        } finally {
+            running.unlock();
+        }
+    }
+
+    // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 초안 결정 7)
+    /**
+     * 오늘 규칙 계좌 STOP 매도 대기 주문마다 스탑 지시 하나(클래스 설명) — 거래일 정규장(개장 ~ 마감) 안이고 계좌가 그 전에 시작했을 때만. 그날 지시 목표에
+     * 반영한 STOP(세션 기록 {@value #DETAIL_COVERED_STOPS})은 지시가 이미 팔게 하므로 쓰지 않습니다. 만든 지시 수.
+     */
+    int stopScan(Account account, Instant now) {
+        LocalTime clockTime = now.atZone(Kst.ZONE).toLocalTime();
+        if (clockTime.isBefore(STOP_SCAN_FROM) || clockTime.isAfter(STOP_SCAN_UNTIL)) {
+            return 0;   // 정규장(장 시간 변경일 포함) 밖 — 30초마다 모의 달력을 열지 않게
+        }
+        LocalDate today = now.atZone(Kst.ZONE).toLocalDate();
+        SessionHours hours = ManualAccountCalendar.hours(paper, today);
+        if (hours == null || !hours.tradingDay() || hours.open() == null || hours.close() == null || now.isBefore(hours.open())
+                || now.isAfter(hours.close()) || account.startedAt() == null || now.isBefore(account.startedAt())) {
+            return 0;
+        }
+        List<PaperMirrorService.DueOrder> stops = paper.dueOrders(SOURCE_BOOK, today, now.plus(STOP_LOOKAHEAD)).stream()
+                .filter(PaperMirrorService.DueOrder::stop).filter(o -> o.supported() && o.target() != null && o.ticker() != null
+                        && STOP_TIMINGS.contains(o.timing())).toList();
+        if (stops.isEmpty()) {
+            return 0;
+        }
+        Set<Long> covered = new java.util.HashSet<>();
+        store.session(CODE, today).map(ManualAccountStore.SessionRow::detail).map(d -> d.path(DETAIL_COVERED_STOPS))
+                .ifPresent(ids -> ids.forEach(id -> covered.add(id.asLong())));
+        int made = 0;
+        for (PaperMirrorService.DueOrder o : stops) {
+            if (covered.contains(o.orderId()) || store.stopInstructionForOrder(CODE, o.orderId()).isPresent()) {
+                continue;
+            }
+            Boolean wrote = store.lockAccount(CODE, acc -> {
+                if (acc == null || !acc.active() || store.stopInstructionForOrder(CODE, o.orderId()).isPresent()) {
+                    return false;
+                }
+                int quantity = stopQuantity(today, o.ticker(), now);
+                if (quantity < 1) {
+                    return false;
+                }
+                Map<String, Object> reason = new LinkedHashMap<>();
+                reason.put("paperOrderId", o.orderId());
+                reason.put("trigger", "TRAILING_STOP");
+                reason.put("mirrorAt", o.mirrorAt() == null ? null : o.mirrorAt().toString());
+                boolean inserted = store.insertStopInstruction(CODE, new NewStopInstruction(today, o.orderId(), o.ticker(), quantity, o.timing(),
+                        o.target(), mapper.valueToTree(reason))).isPresent();
+                if (inserted) {
+                    store.bumpVersion(CODE);
+                }
+                return inserted;
+            });
+            if (Boolean.TRUE.equals(wrote)) {
+                made++;
+            }
+        }
+        if (made > 0) {
+            log.info("ISA 계좌 스탑 지시 — 세션 {} · {}건", today, made);
+        }
+        return made;
+    }
+
+    /** 잠금 안 — 그 종목의 ISA 장부 보유 + 그날 아직 적지 않은 지시 가운데 지시 시각(없으면 개장)이 지난 것의 증감, 정수 부분. */
+    private int stopQuantity(LocalDate session, String symbol, Instant now) {
+        State state = ManualAccountLedger.replay(store.ledger(CODE).stream().map(Entry::of).toList());
+        BigDecimal held = state.holdings().containsKey(symbol) ? state.holdings().get(symbol).quantity() : BigDecimal.ZERO;
+        SessionHours hours = ManualAccountCalendar.hours(paper, session);
+        for (Instruction i : store.instructions(CODE, session)) {
+            if (!i.planned() || !symbol.equals(i.symbol()) || !store.ledgerForInstruction(i.id()).isEmpty()) {
+                continue;
+            }
+            Instant at = targetAt(i) != null ? targetAt(i) : hours == null ? null : hours.open();
+            if (at == null || at.isAfter(now)) {
+                continue;
+            }
+            BigDecimal delta = BigDecimal.valueOf(i.quantity());
+            held = ManualAccountStore.SIDE_SELL.equals(i.side()) ? held.subtract(delta) : held.add(delta);
+        }
+        BigDecimal whole = held.setScale(0, RoundingMode.FLOOR);
+        return whole.signum() <= 0 ? 0 : whole.min(BigDecimal.valueOf(Integer.MAX_VALUE)).intValue();
+    }
+
+    /**
+     * 알리지 않은 스탑 지시를 세션마다 한 통으로 바로 알립니다(종목 코드·이름·수량만 — {@link ManualAccountNotices#stop}). 그 세션 마감이 지나도록 알리지
+     * 못한 지시는 SKIPPED({@value #AUTO_NOT_NOTIFIED} — 적지 않음). 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시.
+     */
+    void stopNotify(Instant now) {
+        Map<LocalDate, List<StopInstruction>> bySession = new TreeMap<>();
+        for (StopInstruction s : store.plannedStopInstructions(CODE)) {
+            if (s.notifiedAt() == null) {
+                bySession.computeIfAbsent(s.session(), k -> new ArrayList<>()).add(s);
+            }
+        }
+        for (Map.Entry<LocalDate, List<StopInstruction>> e : bySession.entrySet()) {
+            SessionHours hours = ManualAccountCalendar.hours(paper, e.getKey());
+            if (hours == null || hours.close() == null || !now.isBefore(hours.close())) {
+                int skipped = store.lockAccount(CODE, acc -> {
+                    int n = 0;
+                    for (StopInstruction s : e.getValue()) {
+                        if (store.updateStopInstructionStatus(s.id(), ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
+                                Map.of("skippedBy", "AUTO", "autoNote", AUTO_NOT_NOTIFIED))) {
+                            n++;
+                        }
+                    }
+                    if (n > 0) {
+                        store.bumpVersion(CODE);
+                    }
+                    return n;
+                });
+                if (skipped > 0) {
+                    log.warn("ISA 계좌 스탑 지시 — 세션 {} 마감까지 알리지 못해 건너뜀 · {}건", e.getKey(), skipped);
+                }
+                continue;
+            }
+            if (!telegram.configured()) {
+                continue;
+            }
+            Set<String> symbols = new TreeSet<>();
+            e.getValue().forEach(s -> symbols.add(s.symbol()));
+            Map<String, String> names = new HashMap<>(paper.names(symbols));
+            if (!sendText(ManualAccountNotices.stop(e.getKey(), ManualAccountNotices.wallClock(hours.open()),
+                    ManualAccountNotices.wallClock(hours.close()), e.getValue(), names))) {
+                return;
+            }
+            store.markStopNotified(e.getValue().stream().map(StopInstruction::id).toList(), now);
+        }
+    }
+
+    /**
+     * 알린 스탑 지시의 자동 기록(클래스 설명) — 그 모의 주문과 같은 1분봉 사다리 값으로 그 주문 기준 시각에, 그 세션의 그 시각 이하 지시가 모두 적힌 뒤.
+     * 사용자가 먼저 묶은 행이 있으면 RECORDED(USER), 그날 1분봉이 없거나 T 뒤 거래가 없으면 SKIPPED(halted), 1분봉 창이 아예 없으면 밤 관측치에 그 세션이
+     * 들어온 뒤 그 종가로 어림({@value #AUTO_CLOSE_FALLBACK}). 바꾼 지시 수.
+     */
+    int stopRecord(Instant now) {
+        int changed = 0;
+        for (StopInstruction s : store.plannedStopInstructions(CODE)) {
+            if (s.notifiedAt() == null || now.isBefore(s.targetAt())) {
+                continue;
+            }
+            boolean dailyWaiting = store.instructions(CODE, s.session()).stream().anyMatch(i -> i.planned()
+                    && !Optional.ofNullable(targetAt(i)).orElse(Instant.MIN).isAfter(s.targetAt()));
+            if (dailyWaiting) {
+                continue;   // 그 세션 앞 지시가 먼저 적혀야 보유가 맞음
+            }
+            Optional<PaperMirrorService.LadderPrice> ladder = paper.orderLadderPrice(SOURCE_BOOK, s.paperOrderId());
+            BigDecimal price = ladder.map(PaperMirrorService.LadderPrice::price).orElse(null);
+            boolean unfillable = ladder.map(PaperMirrorService.LadderPrice::unfillable).orElse(false);
+            boolean fallback = false;
+            if (price == null && ladder.map(PaperMirrorService.LadderPrice::noWindow).orElse(false)
+                    && paper.openPrices(s.session(), Set.of(s.symbol())).containsKey(s.symbol())) {
+                price = paper.lastPrices(Set.of(s.symbol())).get(s.symbol());   // 밤 관측치에 그 세션이 들어옴 — 그 종가로 어림
+                fallback = price != null;
+            }
+            if (price == null && !unfillable) {
+                continue;
+            }
+            BigDecimal chosen = price;
+            boolean closeFallback = fallback;
+            Integer done = store.lockAccount(CODE, acc -> acc == null || !acc.active() ? 0 : recordStop(s.id(), chosen, closeFallback));
+            changed += done == null ? 0 : done;
+        }
+        if (changed > 0) {
+            store.bumpVersion(CODE);
+            log.info("ISA 계좌 스탑 지시 자동 기록 — {}건", changed);
+        }
+        return changed;
+    }
+
+    /** 잠금 안 — 스탑 지시 하나를 다시 읽어 적거나(보유까지로 줄임) 건너뜁니다. 바꿨으면 1. */
+    private int recordStop(long id, BigDecimal price, boolean closeFallback) {
+        StopInstruction s = store.stopInstruction(id).filter(StopInstruction::planned).orElse(null);
+        if (s == null) {
+            return 0;
+        }
+        if (!store.ledgerForStopInstruction(id).isEmpty()) {
+            return store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_RECORDED, ManualAccountStore.STATUS_PLANNED,
+                    Map.of("recordedBy", "USER")) ? 1 : 0;
+        }
+        if (price == null || price.signum() <= 0) {
+            return store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
+                    Map.of("skippedBy", "AUTO", "autoNote", AUTO_HALTED)) ? 1 : 0;
+        }
+        List<Entry> entries = store.ledger(CODE).stream().map(Entry::of).toList();
+        BigDecimal wanted = BigDecimal.valueOf(s.quantity());
+        BigDecimal max = ManualAccountLedger.minHoldingFrom(entries, s.symbol(), s.targetAt(), ManualAccountStore.KIND_SELL)
+                .setScale(0, RoundingMode.FLOOR);
+        BigDecimal quantity = wanted.min(max.max(BigDecimal.ZERO));
+        if (quantity.signum() <= 0) {
+            return store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
+                    Map.of("skippedBy", "AUTO", "autoNote", "no-holding")) ? 1 : 0;
+        }
+        boolean reduced = quantity.compareTo(wanted) < 0;
+        String clock = ManualAccountNotices.hhmm(s.targetAt().atZone(Kst.ZONE).toLocalTime());
+        String note = (closeFallback ? "스탑 지시대로 자동 기록 — " + clock + " 1분봉이 없어 그 세션 종가로 어림(수수료·세금 0 어림)"
+                : "스탑 지시대로 자동 기록(규칙 계좌 스탑과 같은 " + clock + " 1분봉 값, 수수료·세금 0 어림)")
+                + (reduced ? " — 보유가 모자라 " + quantity.toPlainString() + "주로 줄임" : "");
+        store.insertLedger(CODE, new LedgerValues(s.targetAt(), ManualAccountStore.KIND_SELL, s.symbol(), quantity, price, null,
+                BigDecimal.ZERO, BigDecimal.ZERO, null, ManualAccountStore.SOURCE_AUTO, note, id));
+        Map<String, Object> patch = new LinkedHashMap<>();
+        patch.put("recordedBy", "AUTO");
+        if (reduced) {
+            patch.put("autoNote", "reduced-holding");
+        } else if (closeFallback) {
+            patch.put("autoNote", AUTO_CLOSE_FALLBACK);
+        }
+        return store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_RECORDED, ManualAccountStore.STATUS_PLANNED, patch) ? 1 : 0;
     }
 
     // ------------------------------------------------------------------ 자동 기록(§3)
@@ -498,8 +763,9 @@ class ManualAccountJob {
             waitFor(session, WAIT_CALENDAR, now);
             return;
         }
-        if (store.plannedBefore(CODE, session)) {
-            waitFor(session, WAIT_RECORD, now);
+        if (store.plannedBefore(CODE, session) || store.plannedStopInstructions(CODE).stream()
+                .anyMatch(s -> s.notifiedAt() != null && s.session().isBefore(session))) {
+            waitFor(session, WAIT_RECORD, now);   // 알린 스탑 지시도 적혀야 함 — 같은 종목을 '책에 없는 보유'로 다시 팔라고 하지 않게
             return;
         }
         Optional<BookInfo> book = paper.book(SOURCE_BOOK);

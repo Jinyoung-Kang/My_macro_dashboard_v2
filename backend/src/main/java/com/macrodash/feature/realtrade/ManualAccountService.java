@@ -10,6 +10,7 @@ import com.macrodash.feature.realtrade.ManualAccountLedger.State;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Account;
 import com.macrodash.store.ManualAccountStore.Instruction;
+import com.macrodash.store.ManualAccountStore.StopInstruction;
 import com.macrodash.store.ManualAccountStore.LedgerRow;
 import com.macrodash.store.ManualAccountStore.LedgerValues;
 import com.macrodash.store.ManualAccountStore.SessionRow;
@@ -151,6 +152,7 @@ public class ManualAccountService {
             out.put("instructions", null);
             out.put("pendingInstructions", List.of());
             out.put("recentInstructions", List.of());
+            out.put("stopInstructions", List.of());
             out.put("ledger", List.of());
             if (!ready) {
                 out.put("message", NOT_READY);
@@ -168,12 +170,14 @@ public class ManualAccountService {
         // 최신 세션보다 앞 세션의 PLANNED 지시 — 처리(체결 고치기·건너뜀)해야 다음 지시를 만듦
         List<Instruction> pending = planned.stream().filter(i -> latest.isEmpty() || i.session().isBefore(latest.get().session())).toList();
         List<Instruction> recent = store.recentInstructions(CODE, INSTRUCTIONS_SHOWN);
+        List<StopInstruction> stops = store.recentStopInstructions(CODE, INSTRUCTIONS_SHOWN);
         List<LedgerRow> shown = store.recentLedger(CODE, LEDGER_SHOWN);
 
         Set<String> symbols = new TreeSet<>(state.holdings().keySet());
         current.forEach(i -> symbols.add(i.symbol()));
         pending.forEach(i -> symbols.add(i.symbol()));
         recent.forEach(i -> symbols.add(i.symbol()));
+        stops.forEach(i -> symbols.add(i.symbol()));
         shown.stream().map(LedgerRow::symbol).filter(Objects::nonNull).forEach(symbols::add);
         Map<String, String> names = paper.names(symbols);
         Map<String, BigDecimal> last = paper.lastPrices(state.holdings().keySet());
@@ -247,6 +251,9 @@ public class ManualAccountService {
         List<Map<String, Object>> recentItems = new ArrayList<>();
         recent.forEach(i -> recentItems.add(instruction(i, names, true)));
         out.put("recentInstructions", recentItems);
+        List<Map<String, Object>> stopItems = new ArrayList<>();
+        stops.forEach(i -> stopItems.add(stopInstruction(i, names)));
+        out.put("stopInstructions", stopItems);
         List<Map<String, Object>> ledger = new ArrayList<>();
         shown.forEach(r -> ledger.add(ledgerRow(r, names)));
         out.put("ledger", ledger);
@@ -328,6 +335,24 @@ public class ManualAccountService {
         return out;
     }
 
+    /** 장중 스탑 매도 지시 하나(ADR 0033 초안 결정 7) — 종목·수량·체결 시점·기준 시각·상태·즉시 알림 시각과 자동 기록 메모(금액 없음). */
+    private static Map<String, Object> stopInstruction(StopInstruction i, Map<String, String> names) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", i.id());
+        out.put("session", i.session().toString());
+        out.put("symbol", i.symbol());
+        out.put("name", names.get(i.symbol()));
+        out.put("side", i.side());
+        out.put("quantity", i.quantity());
+        out.put("timing", i.timing());
+        out.put("targetAt", iso(i.targetAt()));
+        out.put("status", i.status());
+        out.put("notifiedAt", iso(i.notifiedAt()));
+        JsonNode note = i.reason() == null ? null : i.reason().get("autoNote");
+        out.put("autoNote", note != null && note.isString() ? note.asString() : null);
+        return out;
+    }
+
     private static Map<String, Object> ledgerRow(LedgerRow r, Map<String, String> names) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", r.id());
@@ -344,6 +369,7 @@ public class ManualAccountService {
         out.put("tax", plain(r.tax()));
         out.put("source", r.source());
         out.put("instructionId", r.instructionId());
+        out.put("stopInstructionId", r.stopInstructionId());
         out.put("note", r.note());
         return out;
     }
