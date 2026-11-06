@@ -2612,6 +2612,48 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("되돌리기 SQL(scripts/rollback/intraday-slot3.sql — ADR 0031 되돌리기 2단계, 통합 검토 R6): 순번 3인 PLANNED 행만 SUPERSEDED(사유 ROLLBACK)로 "
+            + "닫고 순번 1·2 예약·끝난 순번 3·다른 계좌의 끝난 행은 그대로, 두 번째 실행은 0행 — 뒤에 남은 PLANNED는 옛 코드가 부를 수 있는 순번(1·2)뿐. 시험 뒤 되돌림")
+    void rollbackClosesSlotThreePlans() throws Exception {
+        Path file = Path.of("../scripts/rollback/intraday-slot3.sql");
+        assumeTrue(Files.exists(file), "scripts/rollback/intraday-slot3.sql을 찾을 수 없습니다");
+        String sql = Files.readString(file);
+        class Rollback extends RuntimeException {
+        }
+        store.insertBookIfAbsent(book(BOOK, "되돌리기 시험"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "되돌리기 시험 2"));
+        LocalDate session = DAY.plusDays(3);
+        assertThatThrownBy(() -> store.atomically(() -> {
+            long morning = decision(BOOK, DAY, "SCHEDULED");
+            long third = decision(OTHER_BOOK, DAY, "INTRADAY_3");
+            long otherMorning = decision(OTHER_BOOK, DAY, "SCHEDULED");
+            for (int slot = 1; slot <= 3; slot++) {
+                store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, slot, LocalTime.of(9 + slot * 2, 0),
+                        "HOURLY", List.of(), "예약", "ft-2", false, morning, null));
+            }
+            store.markIntradayPlan(BOOK, session, 1, "PLANNED", "DONE", null, null, null, CLOSE);
+            store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session.plusDays(1), 3, LocalTime.of(14, 0), "MINUTE",
+                    List.of("SPY"), "사건", "ft-2", false, morning, null, PaperStore.IntradayPlan.ORIGIN_EVENT, null));
+            store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(OTHER_BOOK, session, 3, LocalTime.of(13, 0), "HOURLY",
+                    List.of(), "부른 셋째", "ft-2", false, otherMorning, null));
+            store.markIntradayPlan(OTHER_BOOK, session, 3, "PLANNED", "DONE", null, third, null, CLOSE);
+
+            assertThat(jdbc.update(sql)).as("순번 3인 PLANNED 둘").isEqualTo(2);
+            assertThat(store.intradayPlans(BOOK, session)).extracting(p -> p.slot() + " " + p.status())
+                    .containsExactly("1 DONE", "2 PLANNED", "3 SUPERSEDED");
+            assertThat(store.intradayPlans(BOOK, session).get(2).reason()).startsWith("ROLLBACK — ");
+            assertThat(store.intradayPlans(BOOK, session.plusDays(1))).extracting(p -> p.slot() + " " + p.status() + " " + p.origin())
+                    .containsExactly("3 SUPERSEDED EVENT");
+            assertThat(store.intradayPlans(OTHER_BOOK, session)).extracting(p -> p.slot() + " " + p.status()).as("끝난 셋째 그대로")
+                    .containsExactly("3 DONE");
+            assertThat(store.plannedIntradayPlans(List.of(BOOK, OTHER_BOOK))).extracting(PaperStore.IntradayPlan::slot)
+                    .as("옛 코드가 부를 수 있는 순번만").containsExactly(2);
+            assertThat(jdbc.update(sql)).as("두 번째 실행 — 바뀌는 행 없음").isZero();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
     @DisplayName("V27 전 DB(paper_intraday_plans.origin 없음)는 준비 안 됨 — 백엔드만 새로 띄운 배포(QA-016)에서 계획 행 조회의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
     void readyRequiresV27() {
         class Rollback extends RuntimeException {
