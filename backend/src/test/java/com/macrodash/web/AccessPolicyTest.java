@@ -94,6 +94,27 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("ISA 계좌 경로(/api/manual/isa, ADR 0029)는 모두 운영자만 — 다른 증권사 실제 계좌의 장부 GET도, 시작·장부 고침·지시 건너뜀 POST도")
+    void manualAccountRoutesAreOwnerOnly() throws ClassNotFoundException {
+        java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/manual/")).toList();
+        java.util.List<String> listed = AccessPolicy.routes().keySet().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/manual/")).toList();
+        assertThat(declared).as("컨트롤러가 여는 ISA 계좌 경로").containsExactlyInAnyOrder("GET /api/manual/isa",
+                "POST /api/manual/isa/start", "POST /api/manual/isa/ledger", "POST /api/manual/isa/ledger/{id}/delete",
+                "POST /api/manual/isa/instructions/{id}/skip");
+        assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
+        listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.OWNER));
+        assertThat(AccessPolicy.required("GET", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);
+        assertThat(AccessPolicy.required("HEAD", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);
+        for (String path : java.util.List.of("/api/manual/isa/start", "/api/manual/isa/ledger", "/api/manual/isa/ledger/7/delete",
+                "/api/manual/isa/instructions/7/skip")) {
+            assertThat(AccessPolicy.required("POST", path)).as("POST " + path).isEqualTo(AccessPolicy.Access.OWNER);
+        }
+        assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).as("유료 회원도 못 봄").isFalse();
+    }
+
+    @Test
     @DisplayName("운영자는 모든 등급 경로를, 무료 회원은 운영·유료 경로를 못 쓴다")
     void allows() {
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).isFalse();

@@ -267,6 +267,23 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `POST /api/realtrade/update` | 본문 `{market:"KR", sourceBook?, lossLimitPct?, rebaseline?, confirm:"설정 바꾸기", password, version}` — 켜짐에서만. 방식이 바뀌면 옛 책 미체결 취소·`sync_pending` → `{ok, state, version}` |
 | `POST /api/realtrade/resume` | 본문 `{market:"KR", confirm:"멈춤 해제", password, version}` — 이상 멈춤 → 켜짐(`sync_pending`) 또는 켜짐의 매수 멈춤 해제 → `{ok, state, version}` |
 
+### ISA 계좌(연결되지 않은 다른 증권사 계좌 — 지시 + 직접 매매, 운영자 전용 — [ADR 0029](adr/0029-isa-manual-account.md))
+
+증권사 연결·주문·계좌 조회는 없습니다. 백엔드는 장부(`manual_ledger` — 정본)와 한국 규칙 계좌의 다음 시가 매매 지시(`manual_instructions`)만 들고, 사용자가 직접
+매매합니다. 정기 작업(10분, 모의 매매 정기 작업이 도는 서버에서만)이 규칙 계좌 결정 뒤 지시를 만들어 텔레그램으로 알리고(종목 코드·이름·수량만), 그 세션 밤에 같은
+시가 사다리로 장부에 자동 기록합니다(수수료·세금 0). 쓰기는 장부 작업이라 비밀번호가 없습니다. 거절은 `{ok:false, error, message}` — 400 `invalid-request`·
+`ledger-invalid`(현금·보유가 음수가 되는 장부), 404 `not-found`, 409 `already-started`·`not-started`·`already-recorded`(직접 입력한 체결이 이미 묶인 지시에
+새 행을 묶음 — 다시 읽고 그 행을 고침). 금액·수량은 숫자, 시각은 ISO-8601(UTC `Z`)입니다. 계약은
+[명세 §5](specs/2026-11-06-isa-manual-account.md).
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/manual/isa` | `{available, started, serverTime, account:{code, label, market, sourceBook, sourceLabel, state, startedAt, startCash(시작 시각의 입금 행 합 — 장부 기준)}, job:{enabled, lastCycleAt}, summary:{cash, marketValue, equity, netDeposit(시작 현금 포함 Σ입금 − Σ출금), profitLoss, profitLossPct, unpriced[]}\|null, holdings:[{symbol, name, quantity, avgPrice, lastPrice, marketValue, weightPct}], instructions:{session, status(PLANNED·NONE·UNAVAILABLE), open(그 세션 개장 시각, 모르면 null), reason(그 세션 행의 사유 코드 — 못 만듦이면 `record-pending`·`timed-orders`·`decision-pending` 등, 없으면 null), ledgerChanged(그 세션 08:00 뒤 장부가 바뀌어 지시가 고치기 전 장부 기준), items:[{id, symbol, name, side, quantity, refPrice, weightPct, status(PLANNED·RECORDED·SKIPPED·SUPERSEDED), notifiedNightAt, notifiedMorningAt}]}\|null, pendingInstructions:[{id, session, …items와 같은 칸}](최신 세션보다 앞 세션의 PLANNED 지시 — 체결을 넣거나 건너뛰어야 다음 지시를 만듦), recentInstructions:[{id, session, …items와 같은 칸}](최근 30), ledger:[{id, at, kind, symbol, name, quantity, price, amount(입출금은 입출금액, 매수·매도는 수량 × 체결가), fee, tax, source(AUTO·USER), instructionId, note}](최근 200), notes:[…]}` — 표가 없으면 `available:false`와 `message`(안내 글), 시작 전이면 `started:false`·`summary:null`. 가격을 모르는 보유가 있으면 `unpriced`에 담고 손익은 null. 자동 기록은 그 세션에 거래가 없어(거래량 0·정지) 시가가 다시 오지 않을 종목을 SKIPPED(`halted`), 지시 뒤 휴장이 된 세션을 모두 SKIPPED(`not-trading`)로 둡니다 |
+| `POST /api/manual/isa/start` | 본문 `{cash, startedAt?(ISO, 오프셋 없으면 KST — 비우면 지금을 초 단위로 자른 시각), buys:[{symbol, quantity, price}]}` — 한 번만(409 `already-started`), 시작 현금(DEPOSIT)과 시작 매수(BUY)를 한 트랜잭션으로 → `{ok}` |
+| `POST /api/manual/isa/ledger` | 본문 `{id?, kind(DEPOSIT·WITHDRAW·BUY·SELL·ADJUST), symbol?, quantity?, price?, amount?, fee?, tax?, at?, note?, instructionId?}` — `id`가 있으면 그 행을 고치고(자동 기록 행은 USER가 됨), 없으면 추가. 지시에 묶으면 그 지시는 RECORDED — 그 지시에 자동 기록 행만 있으면 같은 트랜잭션에서 지우고 이 행으로 바꿈(사용자 입력 우선), 직접 입력한 행이 이미 있으면 409 `already-recorded` → `{ok, id}`. 장부를 바꾸는 쓰기(이 경로·삭제·자동 기록 행을 지우는 건너뜀)는 다음 세션 지시가 이미 있으면 그 세션 08:00 전에는 그 지시(묶인 행 없는 PLANNED)와 세션 행을 지워 정기 작업이 고친 장부로 다시 만들고 알림을 다시 보내게 하고('다시 계산'), 08:00 뒤에는 지우지 않고 `instructions.ledgerChanged`만 참으로 둡니다 |
+| `POST /api/manual/isa/ledger/{id}/delete` | 장부 행 삭제(지시에 묶인 마지막 행이면 그 지시는 SKIPPED) → `{ok}` |
+| `POST /api/manual/isa/instructions/{id}/skip` | 지시 건너뜀(장부에 쓰지 않음 — 자동 기록만 있는 RECORDED는 그 행을 지움, 직접 입력한 행이 묶였으면 400) → `{ok}` |
+
 ### 모의 매매(미국·한국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16)), V17의 `paper_fills.bar_at` 열과 `paper_order_exec`, V18의 `paper_checkpoints`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).

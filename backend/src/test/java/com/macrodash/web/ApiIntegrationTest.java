@@ -272,6 +272,102 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("ISA 계좌(ADR 0029): 회원은 GET·POST 모두 403(required=OWNER), 운영자는 시작 전 GET 200(started=false), 시작 한 번 → 다시 시작 409 "
+            + "already-started, 음수 장부 400 ledger-invalid, 읽지 못한 본문 400 invalid-request, 없는 행·지시 404 not-found — 값은 합성")
+    void manualAccountRoutes() {
+        cleanManualAccount();
+        try {
+            HttpHeaders member = new HttpHeaders();
+            member.add(HttpHeaders.COOKIE, login(MEMBER, "test-password"));
+            member.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<JsonNode> denied = rest.exchange(url("/api/manual/isa"), HttpMethod.GET, new HttpEntity<>(null, member), JsonNode.class);
+            assertThat(denied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+            assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
+            for (String path : List.of("/api/manual/isa/start", "/api/manual/isa/ledger", "/api/manual/isa/ledger/1/delete",
+                    "/api/manual/isa/instructions/1/skip")) {
+                assertThat(rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of("cash", 1), member), String.class)
+                        .getStatusCode()).as("회원 POST " + path).isEqualTo(HttpStatus.FORBIDDEN);
+            }
+
+            JsonNode before = authorizedGet("/api/manual/isa");
+            assertThat(before.path("available").asBoolean()).isTrue();
+            assertThat(before.path("started").asBoolean(true)).isFalse();
+            assertThat(before.path("account").path("code").asString()).isEqualTo("isa");
+            assertThat(before.path("account").path("sourceBook").asString()).isEqualTo("kr_rules");
+            assertThat(before.path("summary").isNull()).isTrue();
+            assertThat(before.path("job").path("enabled").asBoolean(true)).as("모의 매매 정기 작업이 꺼진 시험 서버").isFalse();
+
+            HttpHeaders owner = new HttpHeaders();
+            owner.add(HttpHeaders.COOKIE, sessionCookie);
+            owner.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<JsonNode> notStarted = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("kind", "DEPOSIT", "amount", 1000), owner), JsonNode.class);
+            assertThat(notStarted.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(notStarted.getBody().path("error").asString()).isEqualTo("not-started");
+
+            Map<String, Object> start = Map.of("cash", 50_000, "startedAt", "2026-11-02T14:55",
+                    "buys", List.of(Map.of("symbol", "005930", "quantity", 2, "price", 10_000)));
+            ResponseEntity<JsonNode> started = rest.exchange(url("/api/manual/isa/start"), HttpMethod.POST, new HttpEntity<>(start, owner),
+                    JsonNode.class);
+            assertThat(started.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(started.getBody().path("ok").asBoolean()).isTrue();
+            ResponseEntity<JsonNode> again = rest.exchange(url("/api/manual/isa/start"), HttpMethod.POST, new HttpEntity<>(start, owner),
+                    JsonNode.class);
+            assertThat(again.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(again.getBody().path("ok").asBoolean(true)).isFalse();
+            assertThat(again.getBody().path("error").asString()).isEqualTo("already-started");
+
+            JsonNode view = authorizedGet("/api/manual/isa");
+            assertThat(view.path("started").asBoolean()).isTrue();
+            assertThat(view.path("summary").path("cash").decimalValue()).isEqualByComparingTo("30000");
+            assertThat(view.path("summary").path("netDeposit").decimalValue()).isEqualByComparingTo("50000");
+            assertThat(view.path("holdings").get(0).path("symbol").asString()).isEqualTo("005930");
+            assertThat(view.path("ledger").size()).isEqualTo(2);
+            assertThat(view.path("instructions").isNull()).isTrue();
+
+            ResponseEntity<JsonNode> oversell = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST, new HttpEntity<>(Map.of(
+                    "kind", "SELL", "symbol", "005930", "quantity", 3, "price", 10_000, "at", "2026-11-03T09:00"), owner), JsonNode.class);
+            assertThat(oversell.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(oversell.getBody().path("error").asString()).isEqualTo("ledger-invalid");
+            HttpHeaders raw = new HttpHeaders();
+            raw.add(HttpHeaders.COOKIE, sessionCookie);
+            raw.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<JsonNode> unreadable = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST,
+                    new HttpEntity<>("{\"kind\":\"BUY\",\"quantity\":\"many\"}", raw), JsonNode.class);
+            assertThat(unreadable.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(unreadable.getBody().path("error").asString()).isEqualTo("invalid-request");
+            ResponseEntity<JsonNode> missing = rest.exchange(url("/api/manual/isa/ledger/999999999/delete"), HttpMethod.POST,
+                    new HttpEntity<>(null, owner), JsonNode.class);
+            assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(missing.getBody().path("error").asString()).isEqualTo("not-found");
+            ResponseEntity<JsonNode> noInstruction = rest.exchange(url("/api/manual/isa/instructions/999999999/skip"), HttpMethod.POST,
+                    new HttpEntity<>(null, owner), JsonNode.class);
+            assertThat(noInstruction.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            ResponseEntity<JsonNode> badId = rest.exchange(url("/api/manual/isa/ledger/abc/delete"), HttpMethod.POST,
+                    new HttpEntity<>(null, owner), JsonNode.class);
+            assertThat(badId.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(badId.getBody().path("error").asString()).isEqualTo("invalid-request");
+
+            ResponseEntity<JsonNode> added = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST, new HttpEntity<>(Map.of(
+                    "kind", "DEPOSIT", "amount", 1_000, "at", "2026-11-03T10:00", "note", "합성 입금"), owner), JsonNode.class);
+            assertThat(added.getStatusCode()).isEqualTo(HttpStatus.OK);
+            long id = added.getBody().path("id").asLong();
+            assertThat(rest.exchange(url("/api/manual/isa/ledger/" + id + "/delete"), HttpMethod.POST, new HttpEntity<>(null, owner),
+                    JsonNode.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+        } finally {
+            cleanManualAccount();
+        }
+    }
+
+    /** ISA 계좌 표를 비웁니다(합성 값만 쓰는 시험 — 장부가 지시를, 모두가 계좌를 참조하는 순서). */
+    private void cleanManualAccount() {
+        jdbc.update("DELETE FROM manual_ledger");
+        jdbc.update("DELETE FROM manual_instructions");
+        jdbc.update("DELETE FROM manual_sessions");
+        jdbc.update("DELETE FROM manual_accounts");
+    }
+
+    @Test
     @DisplayName("QA-093: 판정 기록 시각은 설정값을 따른다 — AWS 데모(평일 08:50–18:00 운영)는 18시 전에 기록해야 쌓인다")
     void regimeRecordHourFollowsConfiguration() {
         JsonNode log = authorizedGet("/api/analytics/regime/log");

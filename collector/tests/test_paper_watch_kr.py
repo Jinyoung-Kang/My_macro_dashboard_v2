@@ -312,10 +312,13 @@ def test_한국_감시_저장본을_읽는_백엔드_코드는_한국_장중_확
                                "backend/src/main/java/com/macrodash/feature/paper/PaperKrIntradayJob.java",
                                "backend/src/main/java/com/macrodash/feature/paper/PaperMarketData.java",
                                "backend/src/main/java/com/macrodash/store/Datasets.java"]
+    # 메서드 참조(::watchKr)도 부르는 것으로 셉니다. PaperMirrorService는 실제 매매의 장중 따라 하기가 '그 주문 뒤 예상 비중'을 셀 때(weightAfter —
+    # KrExpectedState와 같은 가격 고르기, ADR 0028)만 읽습니다 — 장중 판단 입력과 같은 쓰임이고 ISA 평가(lastPrices)는 밤 종가만 씁니다(ADR 0029).
     callers = sorted(path.relative_to(ROOT).as_posix() for path in (ROOT / "backend/src/main/java").rglob("*.java")
-                     if ".watchKr()" in path.read_text(encoding="utf-8"))
+                     if ".watchKr()" in (text := path.read_text(encoding="utf-8")) or "::watchKr" in text)
     assert callers == ["backend/src/main/java/com/macrodash/feature/paper/PaperKrCheckpointJob.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperKrIntradayJob.java",
+                       "backend/src/main/java/com/macrodash/feature/paper/PaperMirrorService.java",
                        "backend/src/main/java/com/macrodash/feature/paper/PaperQueryService.java"]
 
 

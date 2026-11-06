@@ -16,10 +16,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,6 +31,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
@@ -121,6 +124,18 @@ public class PaperMirrorService {
         }
     }
 
+    /**
+     * 그 책의 그 거래일 정기 결정(규칙 계좌의 {@code REBALANCE}·{@code SCHEDULED}·{@code INITIAL} — ISA 계좌, ADR 0029 명세 §2)과 그 거래일의 한국 결정
+     * 기한(그 실행 설정 판의 {@code kr.decisionDeadlineKst} — 기본 D+1 01:00). 결정 행이 없으면 {@code decisionId}·{@code kind}·{@code status}가 null입니다.
+     * 최종(OK·NO_TRADE·SKIPPED 또는 기한 지남)인가는 받는 쪽이 정합니다.
+     */
+    public record DecisionState(LocalDate date, Long decisionId, String kind, String status, Instant deadline) {
+    }
+
+    /** {@link #decisionState}가 찾는 정기 결정 종류(앞이 먼저). */
+    private static final List<String> SCHEDULED_KINDS = List.of(RuleBookService.REBALANCE, RuleBookService.SCHEDULED,
+            RuleBookService.INITIAL);
+
     /** 다시 낸 주문 사슬을 거슬러 오르는 최대 단계(그 이상은 고리로 보고 멈춤). */
     static final int MAX_REISSUE_DEPTH = 32;
 
@@ -206,6 +221,164 @@ public class PaperMirrorService {
     public List<String> cashLikeTickers() {
         return List.copyOf(run().settings().cashLikeTickers());
     }
+
+    // ------------------------------------------------------------------ ISA 계좌 읽기 도우미(ADR 0029 — 읽기만, 장부 쓰기 없음)
+    /**
+     * 그 책의 그 거래일 정기 결정과 결정 기한({@link DecisionState}). 한국 책이 아니거나 표가 없으면 empty.
+     */
+    public Optional<DecisionState> decisionState(String code, LocalDate date) {
+        Objects.requireNonNull(date, "date");
+        if (krBook(code) == null) {
+            return Optional.empty();
+        }
+        MarketRun run = run();
+        Instant deadline = KrPaperMarket.decisionWindow(run, run.settingsBody(), date).deadline();
+        for (String kind : SCHEDULED_KINDS) {
+            Optional<PaperStore.Decision> decision = store.decisionFor(code, date, kind);
+            if (decision.isPresent()) {
+                return Optional.of(new DecisionState(date, decision.get().id(), decision.get().kind(), decision.get().status(), deadline));
+            }
+        }
+        return Optional.of(new DecisionState(date, null, null, null, deadline));
+    }
+
+    /**
+     * 세션 {@code session}의 시가 — 모의 장부가 그 세션 관측치로 시가 주문을 체결할 때와 같은 사다리({@link KrFills} — '개장 + 1분' 1분봉 시가(거래량 &gt; 0)
+     * → 토스 일봉 시가, 1분봉 FAILED는 결정 기한 뒤 수집본까지 기다림)로 밤 관측치({@code paper.kr.quotes})에서 고른 값. 관측치에 그 세션 봉이 없거나(아직
+     * 수집 전·이어받은 항목·거래량 0) 사다리가 기다리는 종목은 결과에 없습니다(짐작하지 않음). 달력이 모르거나 거래일이 아니면 빈 표.
+     */
+    public Map<String, BigDecimal> openPrices(LocalDate session, Collection<String> tickers) {
+        Objects.requireNonNull(session, "session");
+        if (tickers == null || tickers.isEmpty() || !store.ready()) {
+            return Map.of();
+        }
+        MarketRun run = run();
+        try {
+            TradingCalendar calendar = run.calendar();
+            if (!calendar.isTradingDay(session)) {
+                return Map.of();
+            }
+            LocalDate previous = calendar.previousTradingDay(session);
+            Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
+            if (quotes == null) {
+                return Map.of();
+            }
+            Map<String, BigDecimal> out = new TreeMap<>();
+            for (String ticker : new TreeSet<>(tickers)) {
+                Bar bar = ticker == null ? null : quotes.bars().get(ticker);
+                if (bar == null || bar.kr() == null) {
+                    continue;
+                }
+                // 장부의 시가 주문과 같은 판정을 받는 가상 주문 — 기준일 P(그 세션 전 거래일), 생성 시각은 관측치보다 앞(조건 ①·⑤를 늘 지남).
+                Order probe = new Order(0, null, null, ticker, PaperBooks.BUY, null, null, null, PaperBooks.NEXT_OPEN,
+                        RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, previous, Instant.EPOCH, null, null);
+                Bar chosen = run.fillBar(probe, bar, quotes.collectedAt(), calendar, run.settingsBody()).bar();
+                if (chosen == null || !session.equals(chosen.date()) || chosen.kr() == null || chosen.kr().choice() == null) {
+                    continue;
+                }
+                out.put(ticker, chosen.kr().choice().price());
+            }
+            return out;
+        } catch (CalendarUnavailableException e) {
+            return Map.of();
+        }
+    }
+
+    /** {@link #openUnfillable}의 사유 — 그 세션에 거래가 없어(거래량 0·정지) 시가가 다시 오지 않음. */
+    public static final String OPEN_HALTED = "halted";
+
+    /**
+     * 세션 {@code session}의 시가가 <b>다시 오지 않을</b> 종목 → 사유({@link #OPEN_HALTED}) — {@link #openPrices}와 짝(ISA 계좌 자동 기록, ADR 0029 명세 §3).
+     * 이번에 새로 받은(이어받지 않은) 밤 관측치에서 (가) 그 세션 봉이 거래량 0(정지일)이고 그 수집이 그 세션 밤 결정 기한 뒤이거나 그 세션 뒤의 봉이 이미
+     * 있거나, (나) 그 세션 봉이 없거나 관측 봉이 아닌데(거래량 0·모름) 그 세션 뒤의 관측 봉이 이미 있는 종목입니다 — 모의 장부의 체결 봉 고르기
+     * ({@link KrFills#choose})는 그런 날을 건너뛰고 다음 관측 봉의 시가로 체결하므로 그 세션 시가는 어느 관측치에서도 나오지 않습니다. 짐작하지 않습니다 —
+     * 관측치가 없거나 이어받은 항목이거나 기한 전 수집본의 거래량 0(다음 수집에서 바뀔 수 있음)·물량 모름이면 결과에 없습니다(기다림). 달력이 모르거나
+     * 거래일이 아니면 빈 표.
+     */
+    public Map<String, String> openUnfillable(LocalDate session, Collection<String> tickers) {
+        Objects.requireNonNull(session, "session");
+        if (tickers == null || tickers.isEmpty() || !store.ready()) {
+            return Map.of();
+        }
+        MarketRun run = run();
+        try {
+            if (!run.calendar().isTradingDay(session)) {
+                return Map.of();
+            }
+            Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
+            if (quotes == null) {
+                return Map.of();
+            }
+            Instant deadline = KrPaperMarket.decisionWindow(run, run.settingsBody(), session).deadline();
+            boolean afterDeadline = quotes.collectedAt() != null && deadline != null && !quotes.collectedAt().isBefore(deadline);
+            Map<String, String> out = new TreeMap<>();
+            for (String ticker : new TreeSet<>(tickers)) {
+                Bar bar = ticker == null ? null : quotes.bars().get(ticker);
+                if (bar == null || bar.stale() || bar.kr() == null) {
+                    continue;
+                }
+                KrQuotes.Day day = bar.kr().day(session).orElse(null);
+                boolean laterBar = bar.kr().days().stream().anyMatch(d -> d.date().isAfter(session));
+                boolean laterObserved = bar.kr().days().stream().anyMatch(d -> d.date().isAfter(session) && d.observed());
+                boolean halted = day != null && day.volume() != null && day.volume() == 0 && (afterDeadline || laterBar);
+                boolean skipped = (day == null || !day.observed()) && laterObserved;
+                if (halted || skipped) {
+                    out.put(ticker, OPEN_HALTED);
+                }
+            }
+            return out;
+        } catch (CalendarUnavailableException e) {
+            return Map.of();
+        }
+    }
+
+    /**
+     * 마지막 가격 — 밤 관측치의 그 종목 종가(이어받은 항목이면 그 이어받은 값). 없는 종목은 결과에 없습니다(짐작하지 않음). 한국 감시 1분봉 저장본은
+     * 장중 판단 입력 전용이라 여기서 읽지 않습니다(평가는 직전 종가 기준).
+     */
+    public Map<String, BigDecimal> lastPrices(Collection<String> tickers) {
+        if (tickers == null || tickers.isEmpty() || !store.ready()) {
+            return Map.of();
+        }
+        MarketRun run = run();
+        Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
+        Map<String, BigDecimal> out = new TreeMap<>();
+        for (String ticker : new TreeSet<>(tickers)) {
+            if (ticker == null) {
+                continue;
+            }
+            Bar bar = quotes == null ? null : quotes.bars().get(ticker);
+            if (bar == null) {
+                continue;
+            }
+            BigDecimal exact = bar.kr() == null ? null : bar.kr().last().close();
+            if (exact != null && exact.signum() > 0) {
+                out.put(ticker, exact);
+            } else if (Double.isFinite(bar.close()) && bar.close() > 0) {
+                out.put(ticker, BigDecimal.valueOf(bar.close()));
+            }
+        }
+        return out;
+    }
+
+    /** 한국 종목 이름(화면 표시용 — {@link PaperMarketData#krNames}: 관측치의 토스 이름 → 금융위 유니버스 이름). 모르는 종목은 결과에 없습니다. */
+    public Map<String, String> names(Collection<String> tickers) {
+        if (tickers == null || tickers.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> all = reader.quietly(marketData::krNames);
+        if (all == null || all.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> out = new TreeMap<>();
+        for (String ticker : tickers) {
+            if (ticker != null && all.containsKey(ticker)) {
+                out.put(ticker, all.get(ticker));
+            }
+        }
+        return out;
+    }
+
 
     // ------------------------------------------------------------------ 목표
     /**

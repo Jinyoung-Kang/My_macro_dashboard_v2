@@ -516,6 +516,58 @@
       "fuzz": false
     },
     {
+      "m": "GET",
+      "p": "/api/manual/isa"
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/start",
+      "body": {
+        "cash": "int",
+        "startedAt": "str",
+        "buys": "list"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/ledger",
+      "body": {
+        "id": "int",
+        "kind": "enum",
+        "symbol": "str",
+        "quantity": "int",
+        "price": "int",
+        "amount": "int",
+        "fee": "int",
+        "tax": "int",
+        "at": "str",
+        "note": "str",
+        "instructionId": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/ledger/{id}/delete",
+      "path": {
+        "id": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/instructions/{id}/skip",
+      "path": {
+        "id": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
       "m": "POST",
       "p": "/api/detail/summary",
       "body": {

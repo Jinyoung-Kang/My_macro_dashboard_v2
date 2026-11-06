@@ -1,0 +1,462 @@
+package com.macrodash.store;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import java.math.BigDecimal;
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+/**
+ * 연결되지 않은 다른 증권사 계좌(ISA 계좌 — ADR 0029, 명세 docs/specs/2026-11-06-isa-manual-account.md §6)의 표({@code manual_*}, V25) — 백엔드가 쓰는
+ * 표(ADR 0008). 이 표들의 JDBC는 <b>전부 여기</b>에 있고, 부르는 곳은 {@code feature.realtrade}의 ISA 계좌 클래스뿐입니다(ArchitectureRulesTest가 막음).
+ *
+ * <p><b>잠금</b>: {@link #lockAccount}가 계좌 행을 {@code SELECT … FOR UPDATE}로 잡은 트랜잭션 안에서 받은 일을 돌립니다 — 안에서 부르는 이 저장소의
+ * 문장이 같은 연결·트랜잭션에 합류하므로, 장부를 다시 읽어 검사하고 행을 쓰는 일이 화면의 고침과 정기 작업의 자동 기록 사이에서 섞이지 않습니다.
+ *
+ * <p>값의 모양: 돈·수량·가격은 {@link BigDecimal}(DB NUMERIC 그대로), 시각은 {@link Instant}, 거래일은 {@link LocalDate}, JSON 열은 {@link JsonNode}.
+ * 비어 있을 수 있는 열은 null입니다(0으로 채우지 않음). 실제 계좌 값이라 레코드의 {@code toString}에 금액·수량을 싣지 않습니다(로그로 새지 않게).
+ */
+@Repository
+public class ManualAccountStore {
+
+    // ------------------------------------------------------------------ 값(DB CHECK와 같은 문자열)
+    public static final String MARKET_KR = "KR";
+    public static final String STATE_ACTIVE = "ACTIVE";
+    public static final String STATE_PAUSED = "PAUSED";
+
+    public static final String KIND_DEPOSIT = "DEPOSIT";
+    public static final String KIND_WITHDRAW = "WITHDRAW";
+    public static final String KIND_BUY = "BUY";
+    public static final String KIND_SELL = "SELL";
+    public static final String KIND_ADJUST = "ADJUST";
+
+    public static final String SOURCE_AUTO = "AUTO";
+    public static final String SOURCE_USER = "USER";
+
+    public static final String SIDE_BUY = "BUY";
+    public static final String SIDE_SELL = "SELL";
+
+    public static final String STATUS_PLANNED = "PLANNED";
+    public static final String STATUS_RECORDED = "RECORDED";
+    public static final String STATUS_SKIPPED = "SKIPPED";
+    public static final String STATUS_SUPERSEDED = "SUPERSEDED";
+
+    public static final String SESSION_NONE = "NONE";
+    public static final String SESSION_PLANNED = "PLANNED";
+    public static final String SESSION_UNAVAILABLE = "UNAVAILABLE";
+
+    // ------------------------------------------------------------------ 레코드
+    /** 계좌 행. {@code recalcSession}은 장부 고침이 이미 알린 지시를 지운 다음 세션(다시 만들 때 알림 머리에 '다시 계산'), 없으면 null. */
+    public record Account(String code, String label, String market, String sourceBook, String state, Instant startedAt,
+                          BigDecimal startCash, int version, LocalDate recalcSession, Instant createdAt, Instant updatedAt) {
+
+        public boolean active() {
+            return STATE_ACTIVE.equals(state);
+        }
+
+        @Override
+        public String toString() {
+            return "Account[code=" + code + ", state=" + state + ", version=" + version + "]";
+        }
+    }
+
+    /** 장부 행 하나(V25 {@code manual_ledger}의 모든 칸). */
+    public record LedgerRow(long id, String account, Instant at, String kind, String symbol, BigDecimal quantity, BigDecimal price,
+                            BigDecimal amount, BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note,
+                            Instant createdAt, Instant updatedAt) {
+
+        @Override
+        public String toString() {
+            return "LedgerRow[id=" + id + ", kind=" + kind + ", source=" + source + ", instructionId=" + instructionId + "]";
+        }
+    }
+
+    /** 새로 쓰거나 고칠 장부 행의 값(번호·시각 칸 없음). 수수료·세금이 null이면 0으로 씁니다. */
+    public record LedgerValues(Instant at, String kind, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal amount,
+                               BigDecimal fee, BigDecimal tax, Long instructionId, String source, String note) {
+
+        public LedgerValues {
+            Objects.requireNonNull(at, "at");
+            Objects.requireNonNull(kind, "kind");
+            Objects.requireNonNull(source, "source");
+        }
+
+        @Override
+        public String toString() {
+            return "LedgerValues[kind=" + kind + ", source=" + source + ", instructionId=" + instructionId + "]";
+        }
+    }
+
+    /** 지시 행 하나(V25 {@code manual_instructions}의 모든 칸). */
+    public record Instruction(long id, String account, LocalDate session, String symbol, String side, int quantity, BigDecimal refPrice,
+                              BigDecimal weightPct, JsonNode reason, String status, Instant notifiedNightAt, Instant notifiedMorningAt,
+                              Instant createdAt, Instant updatedAt) {
+
+        public boolean planned() {
+            return STATUS_PLANNED.equals(status);
+        }
+
+        @Override
+        public String toString() {
+            return "Instruction[id=" + id + ", session=" + session + ", side=" + side + ", status=" + status + "]";
+        }
+    }
+
+    /** 새 지시 행의 값. */
+    public record NewInstruction(LocalDate session, String symbol, String side, int quantity, BigDecimal refPrice, BigDecimal weightPct,
+                                 JsonNode reason) {
+
+        @Override
+        public String toString() {
+            return "NewInstruction[session=" + session + ", side=" + side + "]";
+        }
+    }
+
+    /** 세션 행 하나(V25 {@code manual_sessions}). {@code ledgerChangedAt}은 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않은 시각(없으면 null). */
+    public record SessionRow(String account, LocalDate session, String state, Long decisionId, JsonNode detail, Instant ledgerChangedAt,
+                             Instant createdAt) {
+    }
+
+    private static final String ACCOUNT_COLUMNS = "code, label, market, source_book, state, started_at, start_cash, version, recalc_session, "
+            + "created_at, updated_at";
+    private static final String LEDGER_COLUMNS = "id, account, at, kind, symbol, quantity, price, amount, fee, tax, instruction_id, source, "
+            + "note, created_at, updated_at";
+    private static final String INSTRUCTION_COLUMNS = "id, account, session, symbol, side, quantity, ref_price, weight_pct, reason, status, "
+            + "notified_night_at, notified_morning_at, created_at, updated_at";
+    private static final String SESSION_COLUMNS = "account, session, state, decision_id, detail, ledger_changed_at, created_at";
+
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper mapper;
+    private final SchemaCheck schema;
+    /** 같은 DataSource의 트랜잭션 — 안에서 부르는 이 저장소의 문장이 같은 연결에 합류합니다. */
+    private final TransactionTemplate transactions;
+
+    public ManualAccountStore(JdbcTemplate jdbc, ObjectMapper mapper, SchemaCheck schema) {
+        this.jdbc = jdbc;
+        this.mapper = mapper;
+        this.schema = schema;
+        this.transactions = new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()));
+    }
+
+    /** 표가 있는가. 수집기가 아직 V25를 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중'). */
+    public boolean ready() {
+        return schema.tableExists("manual_accounts") && schema.tableExists("manual_ledger")
+                && schema.tableExists("manual_instructions") && schema.tableExists("manual_sessions");
+    }
+
+    /**
+     * 쓰기 여러 개를 한 트랜잭션으로 — 안에서 예외가 나면 모두 되돌리고 그 예외를 그대로 던집니다. 이미 트랜잭션 안이면 거기에 합류합니다.
+     * 안에서 DB 오류를 잡고 계속 쓰면 안 됩니다(PostgreSQL은 오류가 난 트랜잭션의 나머지 문장을 거절함).
+     */
+    public <T> T atomically(Supplier<T> work) {
+        return transactions.execute(status -> work.get());
+    }
+
+    // ------------------------------------------------------------------ 계좌
+    public Optional<Account> account(String code) {
+        return jdbc.query("SELECT " + ACCOUNT_COLUMNS + " FROM manual_accounts WHERE code = ?", accountMapper(), code).stream().findFirst();
+    }
+
+    /**
+     * 계좌 행을 잡은 트랜잭션 안에서 일을 돌립니다(클래스 설명의 잠금). 행이 없으면 {@code work}가 null을 받습니다(잡을 행이 없음 — 시작 전).
+     * {@code work}가 던진 예외는 트랜잭션을 되돌리고 그대로 나갑니다.
+     */
+    public <T> T lockAccount(String code, Function<Account, T> work) {
+        return atomically(() -> {
+            Account current = jdbc.query("SELECT " + ACCOUNT_COLUMNS + " FROM manual_accounts WHERE code = ? FOR UPDATE", accountMapper(), code)
+                    .stream().findFirst().orElse(null);
+            return work.apply(current);
+        });
+    }
+
+    /** 계좌를 만듭니다. 같은 코드가 이미 있으면 아무것도 하지 않고 false(시작은 한 번만). */
+    public boolean insertAccount(String code, String label, String market, String sourceBook, Instant startedAt, BigDecimal startCash) {
+        return jdbc.update("INSERT INTO manual_accounts (code, label, market, source_book, state, started_at, start_cash) "
+                        + "VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?) ON CONFLICT (code) DO NOTHING",
+                code, label, market, sourceBook, Timestamp.from(startedAt), startCash) == 1;
+    }
+
+    /** 장부·지시가 바뀌었음을 계좌 버전에 남깁니다. */
+    public void bumpVersion(String code) {
+        jdbc.update("UPDATE manual_accounts SET version = version + 1, updated_at = now() WHERE code = ?", code);
+    }
+
+    /** 다시 계산할 세션 표시를 남기거나({@code session}) 지웁니다(null). */
+    public void setRecalcSession(String code, LocalDate session) {
+        jdbc.update("UPDATE manual_accounts SET recalc_session = ?, updated_at = now() WHERE code = ?", ps -> {
+            if (session == null) {
+                ps.setNull(1, Types.DATE);
+            } else {
+                ps.setDate(1, Date.valueOf(session));
+            }
+            ps.setString(2, code);
+        });
+    }
+
+    // ------------------------------------------------------------------ 장부
+    /** 그 계좌의 장부 전부 — 시각 → 번호 순. */
+    public List<LedgerRow> ledger(String code) {
+        return jdbc.query("SELECT " + LEDGER_COLUMNS + " FROM manual_ledger WHERE account = ? ORDER BY at, id", ledgerMapper(), code);
+    }
+
+    /** 최근 장부 행 — 시각이 늦은 것부터. */
+    public List<LedgerRow> recentLedger(String code, int limit) {
+        return jdbc.query("SELECT " + LEDGER_COLUMNS + " FROM manual_ledger WHERE account = ? ORDER BY at DESC, id DESC LIMIT ?",
+                ledgerMapper(), code, limit);
+    }
+
+    public Optional<LedgerRow> ledgerRow(long id) {
+        return jdbc.query("SELECT " + LEDGER_COLUMNS + " FROM manual_ledger WHERE id = ?", ledgerMapper(), id).stream().findFirst();
+    }
+
+    /** 그 지시에 묶인 장부 행. */
+    public List<LedgerRow> ledgerForInstruction(long instructionId) {
+        return jdbc.query("SELECT " + LEDGER_COLUMNS + " FROM manual_ledger WHERE instruction_id = ? ORDER BY id", ledgerMapper(), instructionId);
+    }
+
+    /** 장부 행을 씁니다 — 새 번호. */
+    public long insertLedger(String code, LedgerValues v) {
+        Long id = jdbc.query("INSERT INTO manual_ledger (account, at, kind, symbol, quantity, price, amount, fee, tax, instruction_id, source, "
+                        + "note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                ps -> {
+                    ps.setString(1, code);
+                    bindLedger(ps, 2, v);
+                }, (rs, rowNum) -> rs.getLong("id")).stream().findFirst().orElseThrow();
+        return id;
+    }
+
+    /** 장부 행을 고칩니다(모든 값 칸). 그 계좌의 행이 없으면 false. */
+    public boolean updateLedger(String code, long id, LedgerValues v) {
+        return jdbc.update("UPDATE manual_ledger SET at = ?, kind = ?, symbol = ?, quantity = ?, price = ?, amount = ?, fee = ?, tax = ?, "
+                + "instruction_id = ?, source = ?, note = ?, updated_at = now() WHERE id = ? AND account = ?", ps -> {
+                    bindLedger(ps, 1, v);
+                    ps.setLong(12, id);
+                    ps.setString(13, code);
+                }) == 1;
+    }
+
+    /** 장부 행을 지웁니다. 그 계좌의 행이 없으면 false. */
+    public boolean deleteLedger(String code, long id) {
+        return jdbc.update("DELETE FROM manual_ledger WHERE id = ? AND account = ?", id, code) == 1;
+    }
+
+    // ------------------------------------------------------------------ 지시
+    public Optional<Instruction> instruction(long id) {
+        return jdbc.query("SELECT " + INSTRUCTION_COLUMNS + " FROM manual_instructions WHERE id = ?", instructionMapper(), id).stream().findFirst();
+    }
+
+    /** 그 세션의 지시 — 만든 순서(매도 → 매수, 현금성 매수 마지막). */
+    public List<Instruction> instructions(String code, LocalDate session) {
+        return jdbc.query("SELECT " + INSTRUCTION_COLUMNS + " FROM manual_instructions WHERE account = ? AND session = ? ORDER BY id",
+                instructionMapper(), code, Date.valueOf(session));
+    }
+
+    /** 아직 장부에 적히지 않은(PLANNED) 지시 — 세션 → 번호 순. */
+    public List<Instruction> plannedInstructions(String code) {
+        return jdbc.query("SELECT " + INSTRUCTION_COLUMNS + " FROM manual_instructions WHERE account = ? AND status = 'PLANNED' "
+                + "ORDER BY session, id", instructionMapper(), code);
+    }
+
+    /** 최근 지시 — 늦게 만든 것부터. */
+    public List<Instruction> recentInstructions(String code, int limit) {
+        return jdbc.query("SELECT " + INSTRUCTION_COLUMNS + " FROM manual_instructions WHERE account = ? ORDER BY id DESC LIMIT ?",
+                instructionMapper(), code, limit);
+    }
+
+    /** 그 세션보다 앞선 세션에 아직 PLANNED인 지시가 있는가(앞 지시의 체결 기록 대기). */
+    public boolean plannedBefore(String code, LocalDate session) {
+        Boolean exists = jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM manual_instructions WHERE account = ? AND status = 'PLANNED' "
+                + "AND session < ?)", Boolean.class, code, Date.valueOf(session));
+        return Boolean.TRUE.equals(exists);
+    }
+
+    /** 지시 행을 씁니다 — 같은 (계좌, 세션, 종목)이 이미 있으면 아무것도 하지 않고 empty. */
+    public Optional<Long> insertInstruction(String code, NewInstruction n) {
+        return jdbc.query("INSERT INTO manual_instructions (account, session, symbol, side, quantity, ref_price, weight_pct, reason) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (account, session, symbol) DO NOTHING RETURNING id",
+                ps -> {
+                    ps.setString(1, code);
+                    ps.setDate(2, Date.valueOf(n.session()));
+                    ps.setString(3, n.symbol());
+                    ps.setString(4, n.side());
+                    ps.setInt(5, n.quantity());
+                    ps.setBigDecimal(6, n.refPrice());
+                    ps.setBigDecimal(7, n.weightPct());
+                    ps.setString(8, json(n.reason()));
+                }, (rs, rowNum) -> rs.getLong("id")).stream().findFirst();
+    }
+
+    /**
+     * 그 세션의 PLANNED 지시 가운데 묶인 장부 행이 없는 것을 지우고 지운 행을 돌려줍니다(장부 고침 뒤 다시 계산 — 같은 (계좌, 세션, 종목) 유일 제약이라
+     * 상태만 바꾸면 다시 만든 지시가 들어가지 못함).
+     */
+    public List<Instruction> deleteUnlinkedPlanned(String code, LocalDate session) {
+        return jdbc.query("DELETE FROM manual_instructions i WHERE i.account = ? AND i.session = ? AND i.status = 'PLANNED' "
+                        + "AND NOT EXISTS (SELECT 1 FROM manual_ledger l WHERE l.instruction_id = i.id) RETURNING " + INSTRUCTION_COLUMNS,
+                instructionMapper(), code, Date.valueOf(session));
+    }
+
+    /**
+     * 지시 상태를 바꿉니다. {@code reasonPatch}가 있으면 근거 JSON에 덧붙입니다(같은 키는 덮어씀). {@code expected}가 있으면 그 상태일 때만 바꿉니다.
+     *
+     * @return 바꿨으면 true
+     */
+    public boolean updateInstructionStatus(long id, String status, String expected, Map<String, ?> reasonPatch) {
+        String patch = reasonPatch == null || reasonPatch.isEmpty() ? "{}" : mapper.writeValueAsString(reasonPatch);
+        if (expected == null) {
+            return jdbc.update("UPDATE manual_instructions SET status = ?, reason = reason || ?::jsonb, updated_at = now() WHERE id = ?",
+                    status, patch, id) == 1;
+        }
+        return jdbc.update("UPDATE manual_instructions SET status = ?, reason = reason || ?::jsonb, updated_at = now() "
+                + "WHERE id = ? AND status = ?", status, patch, id, expected) == 1;
+    }
+
+    /** 밤 알림을 보낸 시각을 남깁니다(아직 없는 행만). */
+    public int markNotifiedNight(Collection<Long> ids, Instant at) {
+        return markNotified("notified_night_at", ids, at);
+    }
+
+    /** 아침 알림을 보낸 시각을 남깁니다(아직 없는 행만). */
+    public int markNotifiedMorning(Collection<Long> ids, Instant at) {
+        return markNotified("notified_morning_at", ids, at);
+    }
+
+    private int markNotified(String column, Collection<Long> ids, Instant at) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        Long[] array = ids.toArray(new Long[0]);
+        return jdbc.update("UPDATE manual_instructions SET " + column + " = ?, updated_at = now() WHERE id = ANY (?) AND " + column
+                + " IS NULL", ps -> {
+                    ps.setTimestamp(1, Timestamp.from(at));
+                    ps.setArray(2, ps.getConnection().createArrayOf("bigint", array));
+                });
+    }
+
+    // ------------------------------------------------------------------ 세션
+    public Optional<SessionRow> session(String code, LocalDate session) {
+        return jdbc.query("SELECT " + SESSION_COLUMNS + " FROM manual_sessions WHERE account = ? AND session = ?", sessionMapper(), code,
+                Date.valueOf(session)).stream().findFirst();
+    }
+
+    /** 가장 늦은 세션 행. */
+    public Optional<SessionRow> latestSession(String code) {
+        return jdbc.query("SELECT " + SESSION_COLUMNS + " FROM manual_sessions WHERE account = ? ORDER BY session DESC LIMIT 1",
+                sessionMapper(), code).stream().findFirst();
+    }
+
+    /** 세션 행을 씁니다 — 이미 있으면 아무것도 하지 않고 false(같은 세션을 되풀이하지 않게). */
+    public boolean insertSession(String code, LocalDate session, String state, Long decisionId, JsonNode detail) {
+        return jdbc.update("INSERT INTO manual_sessions (account, session, state, decision_id, detail) VALUES (?, ?, ?, ?, ?::jsonb) "
+                + "ON CONFLICT (account, session) DO NOTHING", ps -> {
+                    ps.setString(1, code);
+                    ps.setDate(2, Date.valueOf(session));
+                    ps.setString(3, state);
+                    if (decisionId == null) {
+                        ps.setNull(4, Types.BIGINT);
+                    } else {
+                        ps.setLong(4, decisionId);
+                    }
+                    ps.setString(5, json(detail));
+                }) == 1;
+    }
+
+    /** 세션 행을 지웁니다(장부 고침 뒤 다시 계산 — 정기 작업이 다시 만듦). 없으면 false. */
+    public boolean deleteSession(String code, LocalDate session) {
+        return jdbc.update("DELETE FROM manual_sessions WHERE account = ? AND session = ?", code, Date.valueOf(session)) == 1;
+    }
+
+    /** 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않음을 남깁니다. 없는 세션이면 false. */
+    public boolean markLedgerChanged(String code, LocalDate session, Instant at) {
+        return jdbc.update("UPDATE manual_sessions SET ledger_changed_at = ? WHERE account = ? AND session = ?", Timestamp.from(at), code,
+                Date.valueOf(session)) == 1;
+    }
+
+    /** 세션 행의 계산 기록(detail)에 덧붙입니다(같은 키는 덮어씀). 없는 세션이면 false. */
+    public boolean patchSessionDetail(String code, LocalDate session, Map<String, ?> patch) {
+        return jdbc.update("UPDATE manual_sessions SET detail = detail || ?::jsonb WHERE account = ? AND session = ?",
+                mapper.writeValueAsString(patch), code, Date.valueOf(session)) == 1;
+    }
+
+    // ------------------------------------------------------------------ 보조
+    private void bindLedger(PreparedStatement ps, int start, LedgerValues v) throws SQLException {
+        ps.setTimestamp(start, Timestamp.from(v.at()));
+        ps.setString(start + 1, v.kind());
+        ps.setString(start + 2, v.symbol());
+        ps.setBigDecimal(start + 3, v.quantity());
+        ps.setBigDecimal(start + 4, v.price());
+        ps.setBigDecimal(start + 5, v.amount());
+        ps.setBigDecimal(start + 6, v.fee() == null ? BigDecimal.ZERO : v.fee());
+        ps.setBigDecimal(start + 7, v.tax() == null ? BigDecimal.ZERO : v.tax());
+        if (v.instructionId() == null) {
+            ps.setNull(start + 8, Types.BIGINT);
+        } else {
+            ps.setLong(start + 8, v.instructionId());
+        }
+        ps.setString(start + 9, v.source());
+        ps.setString(start + 10, v.note());
+    }
+
+    private String json(JsonNode node) {
+        return node == null ? "{}" : mapper.writeValueAsString(node);
+    }
+
+    private static RowMapper<Account> accountMapper() {
+        return (rs, rowNum) -> new Account(rs.getString("code"), rs.getString("label"), rs.getString("market"), rs.getString("source_book"),
+                rs.getString("state"), instant(rs, "started_at"), rs.getBigDecimal("start_cash"), rs.getInt("version"),
+                date(rs, "recalc_session"), instant(rs, "created_at"), instant(rs, "updated_at"));
+    }
+
+    private static RowMapper<LedgerRow> ledgerMapper() {
+        return (rs, rowNum) -> new LedgerRow(rs.getLong("id"), rs.getString("account"), instant(rs, "at"), rs.getString("kind"),
+                rs.getString("symbol"), rs.getBigDecimal("quantity"), rs.getBigDecimal("price"), rs.getBigDecimal("amount"),
+                rs.getBigDecimal("fee"), rs.getBigDecimal("tax"), rs.getObject("instruction_id", Long.class), rs.getString("source"),
+                rs.getString("note"), instant(rs, "created_at"), instant(rs, "updated_at"));
+    }
+
+    private RowMapper<Instruction> instructionMapper() {
+        return (rs, rowNum) -> new Instruction(rs.getLong("id"), rs.getString("account"), rs.getDate("session").toLocalDate(),
+                rs.getString("symbol"), rs.getString("side"), rs.getInt("quantity"), rs.getBigDecimal("ref_price"),
+                rs.getBigDecimal("weight_pct"), json(rs, "reason"), rs.getString("status"), instant(rs, "notified_night_at"),
+                instant(rs, "notified_morning_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
+    }
+
+    private RowMapper<SessionRow> sessionMapper() {
+        return (rs, rowNum) -> new SessionRow(rs.getString("account"), rs.getDate("session").toLocalDate(), rs.getString("state"),
+                rs.getObject("decision_id", Long.class), json(rs, "detail"), instant(rs, "ledger_changed_at"), instant(rs, "created_at"));
+    }
+
+    private JsonNode json(ResultSet rs, String column) throws SQLException {
+        String raw = rs.getString(column);
+        return raw == null ? null : mapper.readTree(raw);
+    }
+
+    private static LocalDate date(ResultSet rs, String column) throws SQLException {
+        Date date = rs.getDate(column);
+        return date == null ? null : date.toLocalDate();
+    }
+
+    private static Instant instant(ResultSet rs, String column) throws SQLException {
+        Timestamp timestamp = rs.getTimestamp(column);
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+}

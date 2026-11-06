@@ -1,0 +1,97 @@
+package com.macrodash.feature.realtrade;
+
+import com.macrodash.Kst;
+import com.macrodash.store.ManualAccountStore;
+import com.macrodash.store.ManualAccountStore.Instruction;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.TextStyle;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+/**
+ * ISA 계좌 지시 알림 글(ADR 0029 결정 4 — 명세 §4, 사용자 결정 2026-11-06 'ISA 지시에 한해 종목 코드·이름·수량 포함'). 글은 고정 문구 + 줄마다 방향·종목
+ * 코드·이름·수량뿐이고 <b>금액·평가액·현금·기준가를 쓰지 않습니다</b> — 지시 행에 무엇이 들어 있든 여기서 읽는 칸은 방향·종목 코드(코드 모양일 때만)·수량
+ * (정수)·세션 날짜뿐입니다. 서식은 모의 알림과 같은 텔레그램 HTML(한 줄 안의 {@code <b>}만, 이름은 엔티티로 바꿔 넣음 — {@code PaperTelegram}이 서식
+ * 거절 때 평문으로 다시 보냄). 이모지 없음. 토스 실제 매매 알림({@link RealTradeNotices} — 건수·상태만)과 다른 예외입니다.
+ */
+final class ManualAccountNotices {
+
+    private ManualAccountNotices() {
+    }
+
+    static final String PREFIX = "[ISA 계좌] ";
+    private static final Pattern SYMBOL = Pattern.compile("^[0-9][0-9A-Z]{5}$");
+    /** 장전 동시호가 길이 — 개장 30분 전부터(보통 08:30~09:00, 장 시간 변경일은 그 개장 시각 기준). */
+    private static final long AUCTION_MINUTES = 30;
+
+    /**
+     * 지시 글.
+     *
+     * @param session 매매할 세션(제목의 날짜)
+     * @param open    그 세션 개장 시각(KST 벽시계 — 장전 동시호가 안내), 모르면 null(기본 09:00)
+     * @param items   지시(만든 순서 — 매도 → 매수)
+     * @param names   종목 코드 → 이름(모르면 코드만)
+     */
+    static String text(LocalDate session, LocalTime open, List<Instruction> items, Map<String, String> names) {
+        return text(session, open, items, names, false);
+    }
+
+    /**
+     * 지시 글 — {@code recalculated}면 장부를 고쳐 다시 계산한 지시(ISA-R4 — 제목에 '(다시 계산)'과 앞서 보낸 지시 대신이라는 줄).
+     */
+    static String text(LocalDate session, LocalTime open, List<Instruction> items, Map<String, String> names, boolean recalculated) {
+        LocalTime start = open == null ? LocalTime.of(9, 0) : open;
+        StringBuilder out = new StringBuilder(title(session, recalculated));
+        if (recalculated) {
+            out.append('\n').append("장부가 바뀌어 다시 계산한 지시입니다 — 앞서 보낸 지시 대신 이 지시를 따르세요.");
+        }
+        for (Instruction i : items) {
+            if (i.symbol() == null || !SYMBOL.matcher(i.symbol()).matches() || i.quantity() <= 0) {
+                continue;
+            }
+            String side = ManualAccountStore.SIDE_SELL.equals(i.side()) ? "매도" : ManualAccountStore.SIDE_BUY.equals(i.side()) ? "매수" : null;
+            if (side == null) {
+                continue;
+            }
+            String name = names.get(i.symbol());
+            out.append('\n').append(side).append(' ').append(i.symbol());
+            if (name != null && !name.isBlank()) {
+                out.append(' ').append(escape(name.strip()));
+            }
+            out.append(' ').append(i.quantity()).append("주");
+        }
+        out.append('\n').append("장전 동시호가(").append(hhmm(start.minusMinutes(AUCTION_MINUTES))).append('~').append(hhmm(start))
+                .append(")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 다르게 매매했으면 화면에서 고치세요.");
+        return out.toString();
+    }
+
+    /** 장부를 고쳐 다시 계산했더니 그 세션에 할 매매가 없음(앞서 보낸 지시를 내지 않게 — ISA-R4). 종목·수량도 없습니다. */
+    static String noTrades(LocalDate session) {
+        return title(session, true) + "\n장부가 바뀌어 다시 계산했더니 이 세션 시가에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.";
+    }
+
+    private static String title(LocalDate session, boolean recalculated) {
+        return "<b>" + PREFIX + String.format(Locale.ROOT, "%02d/%02d", session.getMonthValue(), session.getDayOfMonth()) + '('
+                + session.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.KOREAN) + ") 시가 매매 지시" + (recalculated ? "(다시 계산)" : "")
+                + "</b>";
+    }
+
+    /** 개장 순간 → KST 벽시계(모르면 null). */
+    static LocalTime wallClock(Instant open) {
+        return open == null ? null : open.atZone(Kst.ZONE).toLocalTime();
+    }
+
+    private static String hhmm(LocalTime time) {
+        return String.format(Locale.ROOT, "%02d:%02d", time.getHour(), time.getMinute());
+    }
+
+    /** 텔레그램 HTML 엔티티(종목 이름에 &·&lt;·&gt;가 있어도 서식이 깨지지 않게). */
+    private static String escape(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+}

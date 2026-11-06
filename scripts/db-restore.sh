@@ -17,8 +17,9 @@
 # RESTORE_REAL_TRADE  복원한 DB의 실제 매매 표(ADR 0028)를 어떻게 둘지. 표가 없는 백업(V24 전)이면 둘 다 아무것도 하지 않습니다.
 #   halt(기본)  real_trade_config에서 OFF가 아닌 행을 HALTED·halt_reason='restored'(version + 1)로(꺼진 행은 그대로). 백업 시점 뒤에 토스로 나간 실제 주문의
 #               기록이 빠진 채 따라 하기가 이어지지 않게 — 해제는 운영자가 화면에서(확인 글자 + 비밀번호). make restore·서버 복원
-#   clear       real_trade_orders·real_trade_batches·real_trade_events를 비우고 설정은 꺼짐(OFF, 기준 평가액 등 비움)으로.
-#               QA 스택 복원(scripts/qa/qa-stack.sh restore)이 씁니다 — 운영 백업의 실제 계좌 주문 기록을 QA DB에 남기지 않음
+#   clear       real_trade_orders·real_trade_batches·real_trade_events를 비우고 설정은 꺼짐(OFF, 기준 평가액 등 비움)으로. ISA 계좌 표
+#               (manual_ledger·manual_instructions·manual_sessions·manual_accounts, ADR 0029 — 다른 증권사 실제 계좌의 장부)도 비웁니다(표가 없으면 건너뜀).
+#               QA 스택 복원(scripts/qa/qa-stack.sh restore)이 씁니다 — 운영 백업의 실제 계좌 주문 기록·장부를 QA DB에 남기지 않음
 #   이 단계가 실패하면 복원 전체를 되돌립니다(멈추지 못한 채로 복원하지 않음).
 #
 # 예전 `make restore`는 데이터가 있는 DB에 덤프를 그대로 부었습니다. 덤프에는 기존 표를 지우는
@@ -120,6 +121,19 @@ real_trade_sql() {
            SET state = 'OFF', baseline_equity = NULL, baseline_total = NULL, buys_paused = false, sync_pending = false,
                halt_reason = NULL, halt_detail = NULL, version = version + 1, updated_at = now(), updated_by = NULL;
         GET DIAGNOSTICS n = ROW_COUNT;
+    END IF;
+    -- ISA 계좌(ADR 0029): 장부가 지시를, 장부·지시·세션이 계좌를 참조하므로 장부 → 지시 → 세션 → 계좌 순서로 지웁니다.
+    IF to_regclass('public.manual_ledger') IS NOT NULL THEN
+        DELETE FROM public.manual_ledger;
+    END IF;
+    IF to_regclass('public.manual_instructions') IS NOT NULL THEN
+        DELETE FROM public.manual_instructions;
+    END IF;
+    IF to_regclass('public.manual_sessions') IS NOT NULL THEN
+        DELETE FROM public.manual_sessions;
+    END IF;
+    IF to_regclass('public.manual_accounts') IS NOT NULL THEN
+        DELETE FROM public.manual_accounts;
     END IF;
 SQL
     else

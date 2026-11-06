@@ -251,9 +251,10 @@ class ArchitectureRulesTest {
     private static final String REALTRADE = "com.macrodash.feature.realtrade";
     /** 실제 매매만 쓰는 기반 클래스(ADR 0028 명세 §7.1) — 다른 패키지가 참조하면 실제 주문 경로가 밖으로 새는 것입니다. */
     private static final List<String> REALTRADE_ONLY = List.of("com.macrodash.store.RealTradeStore",
-            "com.macrodash.collector.CollectorTradeClient");
+            "com.macrodash.collector.CollectorTradeClient", "com.macrodash.store.ManualAccountStore");
     /** feature.realtrade가 쓸 수 있는 우리 클래스(그 중첩 레코드 포함)와 패키지(명세 §7.1 허용 목록). */
     private static final List<String> REALTRADE_ALLOWED_CLASSES = List.of("com.macrodash.store.RealTradeStore",
+            "com.macrodash.store.ManualAccountStore",
             "com.macrodash.collector.CollectorTradeClient", "com.macrodash.feature.paper.PaperMirrorService",
             "com.macrodash.feature.paper.PaperTelegram", "com.macrodash.feature.auth.AuthService", "com.macrodash.Kst");
     private static final List<String> REALTRADE_ALLOWED_PACKAGES = List.of("com.macrodash.config.", "com.macrodash.support.",
