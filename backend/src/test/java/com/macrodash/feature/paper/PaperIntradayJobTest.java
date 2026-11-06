@@ -92,7 +92,7 @@ class PaperIntradayJobTest {
         answer = ok(reply("KEEP", null));
         when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenAnswer(invocation -> {
             sent.add(new String[]{invocation.getArgument(1), invocation.getArgument(2),
-                    MAPPER.writeValueAsString(invocation.getArgument(3))});
+                    MAPPER.writeValueAsString(invocation.getArgument(3)), invocation.getArgument(4)});
             return answer;
         });
         settings = PaperFixtures.settings(store);
@@ -405,6 +405,35 @@ class PaperIntradayJobTest {
         assertThat(row(PaperBooks.CLAUDE2, 1).status()).as("예약 행은 정기 문턱(상한 5)").isEqualTo(PaperBooks.CHECKPOINT_DONE);
         assertThat(sent).hasSize(1);
         assertThat(MAPPER.readTree(sent.get(0)[1]).get("1_basis").get("manual").asBoolean()).isFalse();
+    }
+
+    @Test
+    @DisplayName("effort(ADR 0031 초안 결정 6): 장중 판단은 intradayEffort(medium)로 부르고 결정 행의 사용 기록도 medium — 키가 없으면 effort(high). 결정·"
+            + "복기가 읽는 설정(ClaudeSettings.from)은 그대로 high이고 fallbacks는 같음")
+    void intradayJudgmentsUseTheIntradayEffort() {
+        store.intradayPlans.clear();
+        plan(PaperBooks.CLAUDE, 1, TEN, "HOURLY", List.of(), morning1, false);
+        PaperIntradayJob job = job(true);
+        runAt(job, T.plus(Duration.ofMinutes(3)));
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0)[3]).as("intradayEffort 없음 — effort 그대로").isEqualTo("high");
+        assertThat(decision(PaperBooks.CLAUDE, 1).usage().path("effort").asString()).isEqualTo("high");
+
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.put(IntradayPolicy.EFFORT, "medium");
+        plan(PaperBooks.CLAUDE2, 1, TEN, "HOURLY", List.of(), morning2, false);
+        runAt(job, T.plus(Duration.ofMinutes(4)));
+        assertThat(sent).hasSize(2);
+        assertThat(sent.get(1)[3]).isEqualTo("medium");
+        assertThat(decision(PaperBooks.CLAUDE2, 1).usage().path("effort").asString()).isEqualTo("medium");
+        assertThat(ClaudeBookService.ClaudeSettings.from(body).effort()).as("결정·재시도·복기·프레임 제안").isEqualTo("high");
+        assertThat(ClaudeBookService.ClaudeSettings.intraday(body).fallbacks()).isEqualTo(ClaudeBookService.ClaudeSettings.from(body).fallbacks());
+
+        body.put(IntradayPolicy.EFFORT, "ultra");
+        assertThat(ClaudeBookService.ClaudeSettings.intraday(body).effort()).as("목록 밖 — effort를 따름").isEqualTo("high");
+        body.put("effort", "xhigh");
+        body.remove(IntradayPolicy.EFFORT);
+        assertThat(ClaudeBookService.ClaudeSettings.intraday(body).effort()).isEqualTo("xhigh");
     }
 
     // ------------------------------------------------------------------ 자료

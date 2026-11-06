@@ -254,6 +254,22 @@ public class ClaudeBookService {
                     : PaperSettingsService.DEFAULT_API_SCHEDULED_RESERVE;
             return new ClaudeSettings(model.strip(), normalized, dailyCap, scheduledReserve, fallbacks);
         }
+
+        /** effort만 바꾼 설정 — 모델·상한·예약·{@link #fallbacks}는 그대로. */
+        ClaudeSettings withEffort(String other) {
+            return new ClaudeSettings(model, other, dailyCallCap, scheduledReserve, fallbacks);
+        }
+
+        /**
+         * 장중 판단 호출의 설정(ADR 0031 초안 결정 6 — 사용자 결정 2026-11-06 '결정·복기는 high, 장중 판단만 medium') — {@link #from}에 effort만
+         * {@value IntradayPolicy#EFFORT}(받는 값일 때)로 바꿉니다. 키가 없거나 목록 밖이면 결정과 같은 {@code effort}입니다. {@link #fallbacks}는
+         * {@link #from} 그대로라(새 키는 넣지 않음) 결정 응답의 {@code settings.fallbacks}가 이 키가 생기기 전과 같습니다. 결정·재시도·주간 복기·프레임
+         * 제안은 이 함수를 쓰지 않습니다.
+         */
+        static ClaudeSettings intraday(JsonNode body) {
+            ClaudeSettings base = from(body);
+            return base.withEffort(IntradayPolicy.effort(body, base.effort()));
+        }
     }
 
     /** "시작" 결과 — 초기 결정과 그 사후 체결. */

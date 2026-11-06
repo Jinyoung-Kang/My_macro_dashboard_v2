@@ -238,7 +238,8 @@ public class PaperKrIntradayJob {
         Integer lag = measured != null && measured.isNumber() ? measured.asInt() : null;
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(KrPaperMarket.INSTANCE));
 
-        ClaudeSettings claudeSettings = ClaudeSettings.from(row.body());
+        // 장중 판단만의 effort(intradayEffort — 두 책 공통, 없으면 effort, ADR 0031 초안 결정 6).
+        ClaudeSettings claudeSettings = ClaudeSettings.intraday(row.body());
         LocalDate today = Kst.today(clock);
         boolean scheduled = !p.manual();
         if (pipeline.callsLeft(today, claudeSettings, scheduled) <= 0) {

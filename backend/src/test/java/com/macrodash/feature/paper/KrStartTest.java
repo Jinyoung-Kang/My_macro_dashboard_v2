@@ -904,6 +904,8 @@ class KrStartTest {
                 && java.time.LocalTime.of(13, 30).equals(o.targetLocal())).findFirst().orElseThrow();
         PaperKrIntradayJob intraday = intradayJob();
         int calls = fake.requests.size();
+        // 장중 판단만 medium(공유 키 intradayEffort — ADR 0031 초안 결정 6), 밤 결정은 effort(high) 그대로.
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).put(IntradayPolicy.EFFORT, "medium");
 
         clock.set(kst("2026-12-02T09:11"));
         assertThat(intraday.run().changes()).as("창 시작(T + 2분) 전").isEmpty();
@@ -923,6 +925,8 @@ class KrStartTest {
         KrClaudeFixtures.Request request = fake.requests.get(calls);
         assertThat(request.system()).as("밤 결정과 같은 시스템 프롬프트(켠 판)").isEqualTo(fake.requests.get(calls - 2).system())
                 .contains("## 장중 판단(고정)");
+        assertThat(request.effort()).as("장중 판단은 intradayEffort").isEqualTo("medium");
+        assertThat(fake.requests.get(calls - 2).effort()).as("밤 결정은 effort").isEqualTo("high");
         assertThat(request.schema().toString()).contains("nextCheckpoint=").contains("AT_MINUTE").contains("KEEP")
                 .doesNotContain("AT_1000").doesNotContain("stance");
         Decision d = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();

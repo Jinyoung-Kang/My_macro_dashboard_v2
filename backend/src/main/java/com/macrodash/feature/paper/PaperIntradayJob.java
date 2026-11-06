@@ -296,7 +296,8 @@ public class PaperIntradayJob {
                         + " — 지금 " + cycle + "회)");
             }
         }
-        ClaudeSettings claudeSettings = ClaudeSettings.from(row.body());
+        // 장중 판단만의 effort(intradayEffort — 없으면 effort, ADR 0031 초안 결정 6). 하루 상한·예약은 결정과 같음.
+        ClaudeSettings claudeSettings = ClaudeSettings.intraday(row.body());
         LocalDate today = Kst.today(clock);
         boolean scheduled = !p.manual();
         if (pipeline.callsLeft(today, claudeSettings, scheduled) <= 0) {
