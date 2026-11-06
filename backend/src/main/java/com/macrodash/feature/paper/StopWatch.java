@@ -142,6 +142,27 @@ final class StopWatch {
         return new Check(grid, price, at);
     }
 
+    /**
+     * 항목의 마지막 거래 봉 가격(격자와 상관없이 — 장중 판단 사건의 입력, {@link IntradayScheduler#detect}) — 그 세션의 이어받지 않은 항목이 아니면 가격 null.
+     * {@code grid}는 null입니다.
+     */
+    static Check latest(JsonNode entry, LocalDate session, TradingCalendar calendar, boolean korea) {
+        if (!usable(entry, session)) {
+            return new Check(null, null, null);
+        }
+        Double price = null;
+        Instant at = null;
+        for (JsonNode bar : Json.array(entry, "bars")) {
+            Instant time = barTime(bar, session, calendar, korea);
+            Double close = Json.asDouble(bar, "c");
+            if (time != null && close != null && close > 0 && traded(bar, korea) && (at == null || time.isAfter(at))) {
+                price = close;
+                at = time;
+            }
+        }
+        return new Check(null, price, at);
+    }
+
     /** 격자 G의 판정(클래스 설명) — 앞 격자와 그 격자 가격이 모두 스탑가 이하이면 TRIGGER. */
     static Evaluation evaluate(JsonNode entry, Instant grid, double stopPrice, LocalDate session, TradingCalendar calendar,
                                boolean korea) {

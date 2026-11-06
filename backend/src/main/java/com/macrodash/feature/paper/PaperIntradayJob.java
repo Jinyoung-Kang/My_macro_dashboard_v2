@@ -61,6 +61,9 @@ import java.util.concurrent.locks.ReentrantLock;
      <li><b>보장</b>(ADR 0031 초안 결정 4 — 설정 {@value IntradayPolicy#US_MIN} ≥ 1일 때만, 기본 0): 주기마다 먼저 {@link IntradayScheduler#guarantee}가
  *       세션 중간(개장 + 180분, 보통 날 12:30 ET)까지 남은 예약·부른 판단이 없는 계좌에 보장 행(출처 GUARANTEE, 시간별 관측치)을 넣고, 그 행은 예약 행처럼
  *       정기 문턱으로 부릅니다. 넣은 행은 작업 기록의 바뀐 행에 남습니다.</li>
+ *   <li><b>사건</b>(ADR 0031 초안 결정 7 — 설정 {@value IntradayPolicy#US_EVENTS}가 켜져 있고 장중 스탑 감시({@code stopWatch.mode})가 SHADOW·ON일 때만,
+ *       기본 꺼짐): 그다음 {@link IntradayScheduler#events}가 새 감시 저장본({@code paper.stopwatch.us})의 사건(보유 ±4%·SPY ±1.5%·스탑 2% 안)으로
+ *       가장 이른 남은 예약을 당기거나 사건 행(출처 EVENT, 감시 1분봉)을 넣습니다 — 그 행도 정기 문턱입니다.</li>
  * </ul>
  *
  * <p>자기 잠금으로 겹치지 않고, 결정 작업·장중 확인 작업의 잠금을 쓰지 않습니다. 작업 기록({@code paper_job_runs}, 이름 {@value #JOB})은 행 상태를 바꾼
@@ -180,6 +183,15 @@ public class PaperIntradayJob {
             error = "보장 판단: " + e;
             log.warn("장중 판단 보장 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
         }
+        // 사건(ADR 0031 초안 결정 7 — 설정 intradayEvents·장중 스탑 감시 SHADOW·ON일 때만, 기본 꺼짐): 새 감시 저장본의 사건이 남은 예약을 당기거나 행을
+        // 넣고, 아래가 그 행을 부름(정기 문턱).
+        try {
+            changes.putAll(scheduler.events(BOOKS, row, calendar, false, started, (code, source) -> guaranteeBlocked(code, source, row),
+                    eventSource(row)));
+        } catch (RuntimeException e) {
+            error = "사건 판단: " + e;
+            log.warn("장중 판단 사건 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+        }
         List<IntradayPlan> planned = store.plannedIntradayPlans(BOOKS);
         if (planned.isEmpty()) {
             waiting.clear();
@@ -237,6 +249,39 @@ public class PaperIntradayJob {
             return PaperCheckpointJob.CALL_CAP;
         }
         return null;
+    }
+
+    /**
+     * 사건 판정의 입력({@link IntradayScheduler.EventSource}) — 미국 장중 스탑 감시 저장본(조용히 읽음), 보유(현금성 빼고, 저장된 최고가), 그 설정의
+     * 스탑 비율. 설정은 처음 쓸 때 읽습니다(사건이 꺼져 있으면 읽지 않음).
+     */
+    private IntradayScheduler.EventSource eventSource(SettingsRow row) {
+        return new IntradayScheduler.EventSource() {
+            private PaperSettings settings;
+
+            private PaperSettings settings() {
+                if (settings == null) {
+                    settings = PaperSettings.from(row == null ? null : row.body(), UsPaperMarket.INSTANCE);
+                }
+                return settings;
+            }
+
+            @Override
+            public Optional<Snapshot> monitor() {
+                return reader.quietly(() -> marketData.stopWatch(false));
+            }
+
+            @Override
+            public List<IntradayScheduler.Held> held(String code, LocalDate session) {
+                return IntradayScheduler.held(store.positions(code), settings(), Set.of(), calendar.previousTradingDay(session),
+                        PaperStore.Position::highWatermark);
+            }
+
+            @Override
+            public double stopPct() {
+                return settings().trailingStopPct();
+            }
+        };
     }
 
     /** 행의 열쇠 — '계좌 세션 #순번'(메모리·작업 기록). */

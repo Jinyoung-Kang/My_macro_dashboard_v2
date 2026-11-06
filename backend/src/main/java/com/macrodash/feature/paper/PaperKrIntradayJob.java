@@ -136,17 +136,38 @@ public class PaperKrIntradayJob {
         Map<String, String> changes = new LinkedHashMap<>();
         String error = null;
         MarketRun run = null;
-        // 보장 1회(ADR 0031 초안 결정 4 — 설정 kr.intradayMinPerSession ≥ 1일 때만, 기본 꺼짐): 그때만 실행(달력 — 수능일 개장 변경 포함)을 엶.
+        // 보장 1회(ADR 0031 초안 결정 4 — 설정 kr.intradayMinPerSession ≥ 1일 때만, 기본 꺼짐)·사건(결정 7 — kr.intradayEvents가 켜져 있고 한국 장중
+        // 스탑 감시가 SHADOW·ON일 때만, 기본 꺼짐): 그때만 실행(달력 — 수능일 개장 변경 포함)을 엶.
         SettingsRow current = store.settings().orElse(null);
-        if (current != null && IntradayScheduler.guaranteeWanted(BOOKS, current.body())) {
+        boolean guaranteeOn = current != null && IntradayScheduler.guaranteeWanted(BOOKS, current.body());
+        boolean eventsOn = current != null && IntradayScheduler.eventsWanted(BOOKS, current.body(), true);
+        if (guaranteeOn || eventsOn) {
+            MarketRun opened = null;
             try {
-                MarketRun opened = markets.open(KrPaperMarket.INSTANCE);
+                opened = markets.open(KrPaperMarket.INSTANCE);
                 run = opened;
-                changes.putAll(scheduler.guarantee(BOOKS, opened.settingsRow().orElse(null), opened.calendar(), true, started,
-                        (code, source) -> guaranteeBlocked(code, opened)));
             } catch (RuntimeException e) {
-                error = "보장 판단: " + e;
-                log.warn("한국 장중 판단 보장 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+                error = "실행 열기: " + e;
+                log.warn("한국 장중 판단 실행 열기 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+            }
+            MarketRun ready = opened;
+            if (ready != null && guaranteeOn) {
+                try {
+                    changes.putAll(scheduler.guarantee(BOOKS, ready.settingsRow().orElse(null), ready.calendar(), true, started,
+                            (code, source) -> guaranteeBlocked(code, ready)));
+                } catch (RuntimeException e) {
+                    error = "보장 판단: " + e;
+                    log.warn("한국 장중 판단 보장 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+                }
+            }
+            if (ready != null && eventsOn) {
+                try {
+                    changes.putAll(scheduler.events(BOOKS, ready.settingsRow().orElse(null), ready.calendar(), true, started,
+                            (code, source) -> guaranteeBlocked(code, ready), eventSource(ready)));
+                } catch (RuntimeException e) {
+                    error = "사건 판단: " + e;
+                    log.warn("한국 장중 판단 사건 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
+                }
             }
         }
         List<IntradayPlan> planned = store.plannedIntradayPlans(BOOKS);
@@ -206,6 +227,47 @@ public class PaperKrIntradayJob {
             return PaperCheckpointJob.CALL_CAP;
         }
         return null;
+    }
+
+    /**
+     * 사건 판정의 입력({@link IntradayScheduler.EventSource}) — 한국 장중 스탑 감시 저장본(조용히 읽음), 보유(현금성·미처리 기업행위 보유 빼고, 장중 스탑
+     * 감시와 같은 유효 최고가 — {@link PaperStopWatchJob#krWatermark}), 그 실행 설정의 스탑 비율.
+     */
+    private IntradayScheduler.EventSource eventSource(MarketRun run) {
+        return new IntradayScheduler.EventSource() {
+            @Override
+            public Optional<Snapshot> monitor() {
+                return reader.quietly(() -> marketData.stopWatch(true));
+            }
+
+            @Override
+            public List<IntradayScheduler.Held> held(String code, LocalDate session) {
+                List<PaperStore.Position> positions = store.positions(code);
+                if (positions.isEmpty()) {
+                    return List.of();
+                }
+                PaperSettings settings = run.settings();
+                Set<String> holds = new HashSet<>();
+                store.corpActionHolds(code).forEach(hold -> holds.add(hold.ticker()));
+                Set<String> codes = new java.util.TreeSet<>();
+                LocalDate from = null;
+                for (PaperStore.Position p : positions) {
+                    codes.add(p.ticker());
+                    if (p.fillRefDate() != null && (from == null || p.fillRefDate().isBefore(from))) {
+                        from = p.fillRefDate();
+                    }
+                }
+                LocalDate since = from;
+                KrConfirmed confirmed = reader.quietly(() -> run.confirmedPrices(marketData, codes, settings, since));
+                return IntradayScheduler.held(positions, settings, holds, run.calendar().previousTradingDay(session),
+                        p -> PaperStopWatchJob.krWatermark(p, confirmed.of(p.ticker()), session));
+            }
+
+            @Override
+            public double stopPct() {
+                return run.settings().trailingStopPct();
+            }
+        };
     }
 
     /** 행 하나 — 바꾼 상태 문구, 기다리면 null. */

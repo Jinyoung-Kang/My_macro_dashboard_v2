@@ -1075,6 +1075,47 @@ class KrStartTest {
         assertThat(fake.requests).hasSize(calls + 2);
     }
 
+    @Test
+    @DisplayName("한국 사건(kr.intradayEvents·kr.stopWatch.mode SHADOW — ADR 0031 초안 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 "
+            + "069500 +1.75% → 두 계좌에 사건 행(지금 + 1분·감시 1분봉·출처 EVENT·밤 결정)을 넣음 — 보유의 유효 최고가(금융위 확정 시세)를 읽어도 막히지 않음")
+    void krEventsAddAJudgment() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        Decision night = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.SCHEDULED).orElseThrow();
+        tools.jackson.databind.node.ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("contract", 1).put("market", "KR").put("reference", "069500").put("fetchedAt", "2026-12-02T01:05:20Z");
+        tools.jackson.databind.node.ObjectNode index = payload.putObject("tickers").putObject("069500");
+        index.put("session", E.toString());
+        index.putObject("prevClose").put("raw", 40_000).put("adjusted", 40_000);
+        index.putObject("day").putObject("first").put("label", "09:01").put("o", 40_100);
+        index.putArray("bars").addObject().put("label", "10:05").put("o", 40_650).put("h", 40_720).put("l", 40_640).put("c", 40_700)
+                .put("v", 900);
+        KrFixtures.stub(reader, Datasets.SNAP_PAPER_STOPWATCH_KR, KrFixtures.snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload,
+                kst("2026-12-02T10:05:20")));
+        PaperKrIntradayJob intraday = intradayJob();
+        clock.set(kst("2026-12-02T10:05:40"));
+        store.dbNow = kst("2026-12-02T10:05:40");
+        assertThat(intraday.run().changes()).as("사건 꺼짐(기본)").isEmpty();
+
+        tools.jackson.databind.node.ObjectNode kr = (tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr");
+        kr.put("intradayEvents", true);
+        ((tools.jackson.databind.node.ObjectNode) kr.get("stopWatch")).put("mode", "SHADOW");
+        assertThat(intraday.run().changes()).containsEntry(PaperBooks.KR_CLAUDE + " " + E + " #1",
+                "PLANNED EVENT 10:06 KST — INDEX_MOVE 069500 UP +1.75%").containsEntry(PaperBooks.KR_CLAUDE2 + " " + E + " #1",
+                "PLANNED EVENT 10:06 KST — INDEX_MOVE 069500 UP +1.75%");
+        com.macrodash.store.PaperStore.IntradayPlan made = store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(0);
+        assertThat(made.origin()).isEqualTo(com.macrodash.store.PaperStore.IntradayPlan.ORIGIN_EVENT);
+        assertThat(made.feed()).isEqualTo(ExecutionSection.FEED_MINUTE);
+        assertThat(made.sourceDecisionId()).isEqualTo(night.id());
+        assertThat(made.trigger().get("events").get(0).get("barKst").asString()).isEqualTo("10:05");
+        clock.set(kst("2026-12-02T10:06:30"));
+        store.dbNow = kst("2026-12-02T10:06:30");
+        assertThat(intraday.run().changes()).as("같은 저장본·같은 사건 — 다시 쓰지 않음").isEmpty();
+    }
+
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
     private LocalDate closeE() {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();

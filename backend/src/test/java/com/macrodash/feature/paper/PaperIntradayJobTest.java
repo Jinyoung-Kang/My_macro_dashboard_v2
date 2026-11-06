@@ -532,6 +532,56 @@ class PaperIntradayJobTest {
     }
 
     @Test
+    @DisplayName("사건(intradayEvents·장중 스탑 감시 SHADOW — ADR 0031 초안 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 SPY −1.6% → 두 계좌에 "
+            + "사건 행(지금 + 1분·감시 1분봉·출처 EVENT)을 넣고 작업 기록에 남김 → 그 계획의 감시 저장본이 오면 정기 문턱으로 부름(패킷 1_basis.origin EVENT·"
+            + "3_request.trigger, 결정 응답 checkpoint.origin EVENT·알림 꼬리 '(사건)')")
+    void eventsAddAJudgment() {
+        store.intradayPlans.clear();
+        long free1 = freeDecision(PaperBooks.CLAUDE);
+        freeDecision(PaperBooks.CLAUDE2);
+        ObjectNode payload = MAPPER.createObjectNode();
+        payload.put("contract", 1).put("market", "US").put("reference", "SPY").put("fetchedAt", "2026-11-02T15:04:20Z");
+        ObjectNode spy = payload.putObject("tickers").putObject("SPY");
+        spy.put("session", E.toString()).put("prevClose", 600.0);
+        spy.putObject("day").putObject("first").put("t", "2026-11-02T14:30:00+00:00").put("c", 599.0);
+        spy.putArray("bars").addObject().put("t", "2026-11-02T15:03:00+00:00").put("c", 590.4);
+        when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
+                null, Instant.parse("2026-11-02T15:04:20Z"))));
+        PaperIntradayJob job = job(true);
+
+        runAt(job, T.plus(Duration.ofMinutes(5)));
+        verify(marketData, never()).stopWatch(false);
+        assertThat(store.intradayPlans).as("사건 꺼짐(기본)").isEmpty();
+
+        ObjectNode body = (ObjectNode) store.settings.body();
+        body.put(IntradayPolicy.US_EVENTS, true);
+        ((ObjectNode) body.get("stopWatch")).put("mode", "SHADOW");
+        PaperIntradayJob.Outcome outcome = runAt(job, T.plus(Duration.ofMinutes(5)).plusSeconds(10));
+        assertThat(outcome.changes()).containsEntry("claude 2026-11-02 #1", "PLANNED EVENT 10:06 ET — INDEX_MOVE SPY DOWN -1.60%")
+                .containsEntry("claude2 2026-11-02 #1", "PLANNED EVENT 10:06 ET — INDEX_MOVE SPY DOWN -1.60%");
+        assertThat(store.jobRuns).hasSize(1);
+        IntradayPlan made = row(PaperBooks.CLAUDE, 1);
+        assertThat(made.feed()).isEqualTo(ExecutionSection.FEED_MINUTE);
+        assertThat(made.watch()).containsExactly("SPY");
+        assertThat(made.origin()).isEqualTo(IntradayPlan.ORIGIN_EVENT);
+        assertThat(made.sourceDecisionId()).isEqualTo(free1);
+
+        when(marketData.watchUs()).thenReturn(Optional.of(watch(Instant.parse("2026-11-02T15:06:30Z"),
+                identity(PaperBooks.CLAUDE, LocalTime.of(10, 6), 1), identity(PaperBooks.CLAUDE2, LocalTime.of(10, 6), 1))));
+        runAt(job, Instant.parse("2026-11-02T15:08:10Z"));
+        assertThat(sent).hasSize(2);
+        JsonNode packet = MAPPER.readTree(sent.get(0)[1]);
+        assertThat(packet.get("1_basis").get("origin").asString()).isEqualTo("EVENT");
+        assertThat(packet.get("3_request").get("trigger").get("events").get(0).get("ticker").asString()).isEqualTo("SPY");
+        assertThat(packet.get("3_request").get("question").asString()).isEqualTo(IntradayScheduler.EVENT_QUESTION);
+        Decision d = decision(PaperBooks.CLAUDE, 1);
+        assertThat(d.response().path("checkpoint").path("origin").asString()).isEqualTo(IntradayPlan.ORIGIN_EVENT);
+        assertThat(PaperNotifications.decision(d, store.books.get(PaperBooks.CLAUDE), List.of(), Map.of(), null))
+                .contains("장중 판단 1(사건)");
+        assertThat(row(PaperBooks.CLAUDE, 1).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
+    }
+
+    @Test
     @DisplayName("보장을 넣지 않음: 계좌2가 꺼짐·계좌2 소상한에 닿음·하루 정기 문턱에 닿음 — 넣으면 창 시작에 놓침으로 끝나 순번만 쓰므로 미리 봄")
     void guaranteeSkipsWhatTheCallWouldRefuse() {
         store.intradayPlans.clear();
