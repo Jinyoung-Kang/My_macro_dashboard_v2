@@ -210,7 +210,8 @@ jobs:
         # Vultr 서버(ADR 0023)의 덧붙임. 접속은 Tailscale 하나라 공개 리스너가 없습니다 — caddy를 포함해 모든 포트가 127.0.0.1
         # (tailscale serve가 루프백 8201로 넘김), 잠금화면 gate·CloudFront 비밀 헤더·대역 파일 없음, Tailscale 주소(PUBLIC_ORIGIN)가
         # 비면 해석부터 실패, 로그인 유지(로컬의 로그인 없는 운영자 열람 끔 — ADR 0016)·Secure 쿠키 기본값·메일 끔·데모 열람 토큰 없음·
-        # 화면은 같은 출처(/)·postgres 30초·국면 기록 23시. 로컬 실행에는 쓰지 않는 파일이라 다른 잡이 읽지 않습니다. 값은 모두 가짜이고,
+        # 화면은 같은 출처(/)·postgres 30초·백엔드 90초·수집기 30초(실제 매매의 보내던 주문이 끝나게 — OPS-2)·국면 기록 23시.
+        # 로컬 실행에는 쓰지 않는 파일이라 다른 잡이 읽지 않습니다. 값은 모두 가짜이고,
         # --env-file /dev/null로 다른 값은 읽지 않습니다. 아래 env는 서버 .env에 로컬 값과 옛 AWS 서버(ADR 0019, 2026-11-03 삭제)의 공개 주소
         # 값이 섞여 들어온 경우를 흉내 냅니다 — 덧붙임이 덮어쓰거나 읽지 않아야 통과합니다.
         env:
@@ -238,6 +239,8 @@ jobs:
             echo "::error::PUBLIC_ORIGIN이 비어도 해석됨 — 화면 주소 없이 떠 로그인할 수 없음"; exit 1
           fi
           jq -e '.services.postgres | (.image | startswith("postgres:")) and .stop_grace_period == "30s"' "$RUNNER_TEMP/vultr.json"
+          # 실제 매매(ADR 0028) — 백엔드 종료 훅 60초 + 주문 읽기 25초, 수집기 주문 예산 20초보다 길게(compose는 90s를 1m30s로 풂, OPS-2)
+          jq -e '.services.backend.stop_grace_period == "1m30s" and .services.collector.stop_grace_period == "30s"' "$RUNNER_TEMP/vultr.json"
           jq -e '.services.backend.environment | .COOKIE_SECURE == "true" and .DASHBOARD_LOCAL_NO_LOGIN == "false" and .MAIL_HOST == ""' "$RUNNER_TEMP/vultr.json"
           jq -e '.services.backend.environment | .FRONTEND_ORIGIN == "http://localhost:8201,http://127.0.0.1:8201,https://my-macro-app.ci.ts.net" and .FRONTEND_PORT == "8201" and .PUBLIC_URL == "https://my-macro-app.ci.ts.net" and .PUBLIC_ORIGIN == "https://my-macro-app.ci.ts.net" and .SERVER_FORWARDHEADERSSTRATEGY == "native"' "$RUNNER_TEMP/vultr.json"
           jq -e '.services.backend.environment | has("DASHBOARD_DEMO_VIEWER_TOKEN") | not' "$RUNNER_TEMP/vultr.json"

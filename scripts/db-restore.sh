@@ -17,6 +17,10 @@
 # RESTORE_REAL_TRADE  복원한 DB의 실제 매매 표(ADR 0028)를 어떻게 둘지. 표가 없는 백업(V24 전)이면 둘 다 아무것도 하지 않습니다.
 #   halt(기본)  real_trade_config에서 OFF가 아닌 행을 HALTED·halt_reason='restored'(version + 1)로(꺼진 행은 그대로). 백업 시점 뒤에 토스로 나간 실제 주문의
 #               기록이 빠진 채 따라 하기가 이어지지 않게 — 해제는 운영자가 화면에서(확인 글자 + 비밀번호). make restore·서버 복원
+#               이 멈춤은 백업 쪽 상태만 봅니다. 그래서 같은 트랜잭션에서 복원 전(지금) DB의 상태도 읽어 두었다가 둘을 견주어 알립니다(OPS-4):
+#               지금 DB에서 꺼져 있지 않던(LIVE·STOPPING·HALTED) 시장이 복원한 DB에서 꺼짐(OFF·행 없음 — 켜기 전·V24 전 백업)이면 경고,
+#               지금 DB에서 끝나지 않았던 실제 주문 가운데 복원한 DB에 없는(백업 뒤에 나간) 것이 있으면 경고 — 둘 다 이 기능이 그 주문을 더
+#               취소하지 않으니 토스증권 앱에서 직접 확인·취소하라는 뜻입니다. 건수·종목은 찍지 않습니다(시장과 상태만).
 #   clear       real_trade_orders·real_trade_batches·real_trade_events를 비우고 설정은 꺼짐(OFF, 기준 평가액 등 비움)으로. ISA 계좌 표
 #               (manual_ledger·manual_instructions·manual_sessions·manual_accounts, ADR 0029 — 다른 증권사 실제 계좌의 장부)도 비웁니다(표가 없으면 건너뜀).
 #               QA 스택 복원(scripts/qa/qa-stack.sh restore)이 씁니다 — 운영 백업의 실제 계좌 주문 기록·장부를 QA DB에 남기지 않음
@@ -98,12 +102,36 @@ echo "2/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니
 # 새로 만드는 public 스키마의 소유자·권한은 PostgreSQL 15+ 기본값과 같게 맞춥니다.
 committed_marker="__restore_committed__"
 real_trade_marker="__real_trade_rows__"
+real_trade_off_marker="__real_trade_was_on__"
+real_trade_lost_marker="__real_trade_lost_open__"
+
+# 스키마를 지우기 전(같은 트랜잭션), 지금 DB의 실제 매매 상태를 임시 표에 옮겨 둡니다(halt만 — OPS-4). 임시 표는 pg_temp라 DROP SCHEMA public의
+# 영향을 받지 않고 COMMIT·되돌림 때 사라집니다. 지금 DB에 표가 없으면 비어 있습니다. 덤프 앞이라 psql 메타 명령을 쓰지 않습니다(\restrict 덤프).
+real_trade_prev_sql() {
+    [ "$real_trade_mode" = "halt" ] || return 0
+    # shellcheck disable=SC2016  # $real_trade_prev$는 PostgreSQL의 달러 따옴표입니다
+    cat <<'SQL'
+CREATE TEMP TABLE restore_real_trade_prev (market text NOT NULL, state text, client_order_id text) ON COMMIT DROP;
+DO $real_trade_prev$
+BEGIN
+    IF to_regclass('public.real_trade_config') IS NOT NULL THEN
+        INSERT INTO pg_temp.restore_real_trade_prev(market, state)
+        SELECT market, state FROM public.real_trade_config WHERE state <> 'OFF';
+    END IF;
+    IF to_regclass('public.real_trade_orders') IS NOT NULL THEN
+        INSERT INTO pg_temp.restore_real_trade_prev(market, client_order_id)
+        SELECT market, client_order_id FROM public.real_trade_orders WHERE NOT terminal;
+    END IF;
+END
+$real_trade_prev$;
+SQL
+}
 
 # 덤프를 적재한 뒤, COMMIT 전에 넣는 실제 매매 표 처리(위 RESTORE_REAL_TRADE). 덤프는 search_path를 비워 두므로 표 이름에 public.을 붙입니다.
 # 바꾼 설정 행 수를 트랜잭션 안 설정 값으로 넘겨 끝에 \echo로 찍습니다(표가 없으면 0).
 real_trade_sql() {
     # shellcheck disable=SC2016  # $real_trade$는 PostgreSQL의 달러 따옴표입니다
-    printf 'DO $real_trade$\nDECLARE n integer := 0;\nBEGIN\n'
+    printf 'DO $real_trade$\nDECLARE n integer := 0; was_on text; lost boolean := false;\nBEGIN\n'
     if [ "$real_trade_mode" = "clear" ]; then
         # 주문이 묶음을 참조하므로 주문 → 묶음 순서로 지웁니다.
         cat <<'SQL'
@@ -145,16 +173,42 @@ SQL
          WHERE state <> 'OFF';
         GET DIAGNOSTICS n = ROW_COUNT;
     END IF;
+    -- 복원 전 DB와 견줌(OPS-4, 위 real_trade_prev_sql). 복원한 DB에 표가 없으면(V24 전 백업) 모두 꺼짐·없음으로 봅니다.
+    IF to_regclass('public.real_trade_config') IS NOT NULL THEN
+        SELECT string_agg(p.market || ':' || p.state, ',' ORDER BY p.market) INTO was_on
+          FROM pg_temp.restore_real_trade_prev p
+         WHERE p.state IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM public.real_trade_config c WHERE c.market = p.market AND c.state <> 'OFF');
+    ELSE
+        SELECT string_agg(p.market || ':' || p.state, ',' ORDER BY p.market) INTO was_on
+          FROM pg_temp.restore_real_trade_prev p WHERE p.state IS NOT NULL;
+    END IF;
+    IF to_regclass('public.real_trade_orders') IS NOT NULL THEN
+        SELECT EXISTS (SELECT 1 FROM pg_temp.restore_real_trade_prev p
+                        WHERE p.client_order_id IS NOT NULL
+                          AND NOT EXISTS (SELECT 1 FROM public.real_trade_orders o
+                                           WHERE o.client_order_id = p.client_order_id AND NOT o.terminal)) INTO lost;
+    ELSE
+        SELECT EXISTS (SELECT 1 FROM pg_temp.restore_real_trade_prev p WHERE p.client_order_id IS NOT NULL) INTO lost;
+    END IF;
+    PERFORM set_config('macrodash.real_trade_was_on', coalesce(was_on, '-'), true);
+    PERFORM set_config('macrodash.real_trade_lost', CASE WHEN lost THEN '1' ELSE '0' END, true);
 SQL
     fi
     printf "    PERFORM set_config('macrodash.real_trade_rows', n::text, true);\nEND\n\$real_trade\$;\n"
     printf "SELECT current_setting('macrodash.real_trade_rows') AS real_trade_rows \\\\gset\n"
     printf '\\echo %s :real_trade_rows\n' "$real_trade_marker"
+    if [ "$real_trade_mode" = "halt" ]; then
+        printf "SELECT current_setting('macrodash.real_trade_was_on') AS real_trade_was_on, current_setting('macrodash.real_trade_lost') AS real_trade_lost \\\\gset\n"
+        printf '\\echo %s :real_trade_was_on\n' "$real_trade_off_marker"
+        printf '\\echo %s :real_trade_lost\n' "$real_trade_lost_marker"
+    fi
 }
 
 output="$({
     printf "SET lock_timeout = '30s';\n"
     printf "BEGIN;\n"
+    real_trade_prev_sql
     printf "DROP SCHEMA public CASCADE;\n"
     printf "CREATE SCHEMA public AUTHORIZATION pg_database_owner;\n"
     printf "GRANT USAGE ON SCHEMA public TO PUBLIC;\n"
@@ -178,4 +232,17 @@ case "$real_trade_rows" in
             echo "참고: 실제 매매 설정 ${real_trade_rows}개 시장을 이상 멈춤(restored)으로 바꿨습니다(ADR 0028) — 화면 '실제 계좌' 탭에서 확인한 뒤 멈춤 해제 또는 끄기."
         fi ;;
 esac
+# OPS-4: 복원 전 DB와 견준 결과(halt만). 값은 시장:상태 목록(없으면 -)과 0·1뿐입니다.
+if [ "$real_trade_mode" = "halt" ]; then
+    real_trade_was_on="$(sed -n "s/^$real_trade_off_marker //p" <<< "$output" | tail -n 1)"
+    real_trade_lost="$(sed -n "s/^$real_trade_lost_marker //p" <<< "$output" | tail -n 1)"
+    if [[ "$real_trade_was_on" =~ ^(KR|US):[A-Z]+(,(KR|US):[A-Z]+)*$ ]]; then
+        echo "경고: 복원 전 DB에서 실제 매매가 꺼져 있지 않았는데(${real_trade_was_on//,/ }) 복원한 백업에는 그 상태가 없어 꺼짐(OFF)입니다 — 켜기 전(또는 V24 전) 백업입니다(ADR 0028)."
+        echo "   이 기능은 그 시장의 미체결을 더 추적·취소하지 않습니다. 토스증권 앱에서 미체결 주문을 직접 확인·취소하고, 다시 켤 때는 화면의 켜기(확인 글자 + 비밀번호)부터 합니다."
+    fi
+    if [ "$real_trade_lost" = "1" ]; then
+        echo "경고: 복원 전 DB에서 끝나지 않았던 실제 주문 가운데 복원한 DB에 없는 것이 있습니다(백업 뒤에 나간 주문 — ADR 0028)."
+        echo "   이 기능은 그 주문을 더 추적·취소하지 않습니다. 토스증권 앱에서 미체결 주문을 직접 확인·취소하세요."
+    fi
+fi
 echo "   되돌리려면: make restore F=$safety"

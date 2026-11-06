@@ -14,12 +14,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
+import yaml
 
 from tests import fake_server_tools as tools
 
@@ -440,7 +444,7 @@ def test_RT2_COL_1_deploy는_켜진_시장_수와_오늘의_장_시간_변경을
     # 장 시간 변경 질의가 실패해도 켜진 시장 수는 내고(그때 bad — 보수 창), 실패를 '꺼짐'으로 읽지 않음.
     assert "\\set rt_hours bad" in sql and "\\set ON_ERROR_STOP 0" in sql and "\\set ON_ERROR_STOP 1" in sql
     assert sql.index("\\set rt_hours bad") < sql.index("\\set ON_ERROR_STOP 0") < sql.index("public.paper_settings") \
-        < sql.index("\\set ON_ERROR_STOP 1") < sql.index("FROM public.real_trade_config WHERE state = 'LIVE'")
+        < sql.index("\\set ON_ERROR_STOP 1") < sql.index("FROM public.real_trade_config WHERE state <> 'OFF'")   # OPS-5 — 끄는 중·이상 멈춤도 셈
 
 
 # --------------------------------------------------------------------------- backup-s3.sh
@@ -852,3 +856,249 @@ def test_firewall은_API가_거절하면_규칙을_바꾸지_않고_콘솔을_�
     assert "Access Control" in result.stderr
     assert [c.split(" ")[1] for c in _api_calls(pc)] == ["GET"]
     assert [r["subnet"] for r in _rules(pc) if r["port"] == "22"] == [OLD_IP]
+
+
+# --------------------------------------------------------------------------- 실제 매매 운영(RT3 — OPS-1·2·3·5)
+# OPS-5: 배포 가드는 꺼지지 않은(LIVE·STOPPING·HALTED) 시장을 셉니다 — 끄는 중·이상 멈춤도 이 기능의 미체결 취소를 보내, 거래 창 안에서
+# 다시 만들면 보내던 취소가 끊깁니다. 가짜 docker 시험은 psql 응답을 흉내 내므로, 질의 자체는 진짜 PostgreSQL에서 돌려 봅니다.
+def _deploy_state_sql() -> str:
+    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    start = text.index("\n", text.index("<<'SQL'")) + 1   # 여기 문서 줄(<<'SQL' || true)의 다음 줄부터
+    return text[start:text.index("\nSQL\n", start)] + "\n"
+
+
+@pytest.fixture()
+def rt_db(database_url):
+    """deploy.sh의 상태 질의를 돌릴 이 시험 전용 DB(저장소 마이그레이션 적용). psql 클라이언트가 없으면 건너뜁니다(CI에는 있음)."""
+    if shutil.which("psql") is None:
+        pytest.skip("psql 클라이언트가 없어 deploy.sh 상태 질의 시험을 건너뜁니다.")
+    import psycopg
+
+    from app import migrations
+
+    name = f"deploy_{uuid.uuid4().hex[:10]}"
+    with psycopg.connect(database_url, autocommit=True) as admin:
+        admin.execute(f'CREATE DATABASE "{name}"')
+    db_url = urlparse(database_url)._replace(path=f"/{name}").geturl()
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        migrations.apply_pending(conn, migrations.discover(ROOT / "db" / "migrations"))
+        conn.execute("DELETE FROM paper_settings")
+    try:
+        yield name, db_url
+    finally:
+        with psycopg.connect(database_url, autocommit=True) as admin:
+            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+def _rt_set(db_url: str, sql: str, params: tuple = ()) -> None:
+    import psycopg
+
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute(sql, params)
+
+
+def _run_state_sql(database_url: str, db_name: str) -> subprocess.CompletedProcess:
+    """deploy.sh가 postgres 컨테이너 안에서 부르는 것과 같은 psql 옵션으로 질의를 돌립니다(접속만 TCP)."""
+    url = urlparse(database_url)
+    env = {**os.environ, "PGPASSWORD": url.password or "", "PGHOST": url.hostname or "localhost", "PGPORT": str(url.port or 5432)}
+    return subprocess.run(["psql", "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", "-U", url.username or "macro", "-d", db_name],
+                          input=_deploy_state_sql(), env=env, capture_output=True, text=True, timeout=60)
+
+
+@pytest.mark.parametrize("kr_state,expected", [(None, "0"), ("OFF", "0"), ("LIVE", "1"), ("STOPPING", "1"), ("HALTED", "1")])
+def test_OPS5_deploy의_상태_질의는_끄는_중과_이상_멈춤도_꺼지지_않은_시장으로_센다(database_url, rt_db, kr_state, expected):
+    name, db_url = rt_db
+    _rt_set(db_url, "INSERT INTO real_trade_config(market, state) VALUES ('US', 'OFF')")
+    if kr_state is not None:
+        _rt_set(db_url, "INSERT INTO real_trade_config(market, state, source_book, book_generation, halt_reason)"
+                        " VALUES ('KR', %s, 'kr_rules', '2026-10-30', %s)",
+                (kr_state, "restored" if kr_state == "HALTED" else None))
+
+    result = _run_state_sql(database_url, name)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected, "끄는 중·이상 멈춤도 미체결 취소를 보내 거래 창 배포를 막아야 합니다(OPS-5)"
+
+
+def test_OPS5_deploy의_상태_질의는_끄는_중에도_오늘의_장_시간_변경을_함께_낸다(database_url, rt_db):
+    name, db_url = rt_db
+    _rt_set(db_url, "INSERT INTO real_trade_config(market, state, source_book, book_generation)"
+                    " VALUES ('KR', 'STOPPING', 'kr_rules', '2026-10-30')")
+    _rt_set(db_url, "INSERT INTO paper_settings(id, version, body) VALUES (1, 1, jsonb_build_object('kr', jsonb_build_object("
+                    "'calendar', jsonb_build_object('openTimeOverrides', jsonb_build_object("
+                    "to_char(now() AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'), jsonb_build_object('open', '10:00', 'close', '16:30'))))))")
+
+    result = _run_state_sql(database_url, name)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "1 10:00 16:30"
+
+
+def test_OPS5_deploy는_꺼지지_않은_시장이_있으면_끄는_중과_이상_멈춤까지_거래_창에서_멈춘다고_알린다(server, rt_fakes):
+    result = _deploy(server, rt_fakes, FAKE_KST_NOW="1 0850", FAKE_RT_OUT="1")
+    assert result.returncode != 0
+    assert "끄는 중" in result.stderr and "이상 멈춤" in result.stderr and "미체결 취소" in result.stderr
+    assert "먼저 화면의 끄기" in result.stderr, "비상 끄기는 화면 끄기가 먼저(OPS-3)"
+    assert _builds(_docker_calls(rt_fakes)) == []
+
+
+# OPS-2: 기본 정지 유예 10초면 배포·복원·재부팅이 백엔드의 종료 훅(진행 중인 주기를 기다림)과 수집기의 주문 POST를 SIGKILL로 자릅니다.
+# 덧붙임의 값이 코드의 상수보다 긴지 대조합니다(상수를 바꾸면 이 시험이 함께 봄).
+def _duration_seconds(value: str) -> float:
+    match = re.fullmatch(r"(?:(\d+)m)?(?:(\d+)s)?", value.strip())
+    assert match and value.strip(), f"모르는 시간 모양: {value!r}"
+    return int(match.group(1) or 0) * 60 + int(match.group(2) or 0)
+
+
+def test_OPS2_Vultr_덧붙임은_백엔드와_수집기가_보내던_실제_주문을_끝낼_때까지_정지를_기다린다():
+    services = yaml.safe_load((ROOT / "compose.vultr.yml").read_text(encoding="utf-8"))["services"]
+    job = (ROOT / "backend/src/main/java/com/macrodash/feature/realtrade/RealTradeJob.java").read_text(encoding="utf-8")
+    client = (ROOT / "backend/src/main/java/com/macrodash/collector/CollectorTradeClient.java").read_text(encoding="utf-8")
+    trade = (ROOT / "collector/app/services/toss_trade.py").read_text(encoding="utf-8")
+    shutdown_wait = int(re.search(r"\bSHUTDOWN_WAIT_SECONDS\s*=\s*(\d+)\s*;", job).group(1))
+    order_read = int(re.search(r"\bORDER_READ_SECONDS\s*=\s*(\d+)\s*;", client).group(1))
+    order_budget = float(re.search(r"^ORDER_BUDGET_SECONDS\s*=\s*([\d.]+)", trade, re.M).group(1))
+
+    backend = _duration_seconds(str(services["backend"].get("stop_grace_period", "10s")))
+    collector = _duration_seconds(str(services["collector"].get("stop_grace_period", "10s")))
+
+    assert backend > shutdown_wait + order_read, "종료 훅 대기 + 주문 읽기 상한보다 길어야 보내던 주문의 결과를 기록합니다"
+    assert collector > order_budget, "수집기 주문 한 건 예산보다 길어야 토스로 나간 주문의 응답을 돌려줍니다"
+
+
+# OPS-1: 서버 .env 다시 전달(docs/DEVELOPMENT.md §7 '서버 .env 전달'의 첫 명령)을 가짜 ssh로 그대로 돌립니다. 서버에만 있는 줄 — 토스 키·텔레그램·
+# Tailscale 신원·토스 스위치·실제 매매 여섯 줄·브라우저 비밀 등 — 은 서버의 값 그대로 남아야 하고(로컬의 빈 줄·다른 값으로 덮지 않음), 값은 PC를
+# 거치지 않으며, 지금 .env는 먼저 백업됩니다.
+_FAKE_SSH = ('#!/usr/bin/env bash\n'
+             '# 가짜 ssh — 호스트 이름을 남기고, 원격 명령을 서버 역할 폴더를 HOME으로 둔 이 기계의 bash로 돌립니다(stdin은 그대로).\n'
+             'printf "%s\\n" "$1" >> "$FAKE_SSH_LOG"; shift\n'
+             'cd "$FAKE_SERVER_HOME" && HOME="$FAKE_SERVER_HOME" exec bash -c "$*"\n')
+
+
+def _env_redelivery_block() -> str:
+    text = (ROOT / "docs/DEVELOPMENT.md").read_text(encoding="utf-8")
+    start = text.index("### 서버 .env 전달")
+    section = text[start:text.index("\n### ", start + 1)]
+    begin = section.index("```bash\n") + len("```bash\n")
+    return section[begin:section.index("\n```", begin)] + "\n"
+
+
+def _env_names(text: str) -> list[str]:
+    return [m.group(1) for m in re.finditer(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=", text, re.M)]
+
+
+def _env_values(text: str) -> dict[str, str]:
+    values = {}
+    for line in text.splitlines():
+        m = re.match(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+        if m:
+            values[m.group(1)] = m.group(2)
+    return values
+
+
+def _server_only_names() -> list[str]:
+    """.env.vultr.example의 '서버 전용' 칸 이름 + 서버 밖에 두지 않는 토스 키(실제 매매 켜기 점검표)."""
+    text = (ROOT / ".env.vultr.example").read_text(encoding="utf-8")
+    names = _env_names(text[text.index("# ── 서버 전용 ──"):])
+    assert {"TAILNET_OWNER_LOGIN", "TOSS_TRADING_ENABLED", "REAL_TRADE_ENABLED", "TELEGRAM_BOT_TOKEN"} <= set(names)
+    return names + ["TOSS_CLIENT_ID", "TOSS_CLIENT_SECRET"]
+
+
+def _redeliver(tmp_path: Path, local_env: str, server_env: str | None) -> tuple[subprocess.CompletedProcess, Path, Path]:
+    pc, home = tmp_path / "pc", tmp_path / "server-home"
+    repo = home / "My_macro_dashboard_v2"
+    pc.mkdir()
+    repo.mkdir(parents=True)
+    (tmp_path / "tmp").mkdir()
+    (pc / ".env").write_text(local_env, encoding="utf-8")
+    if server_env is not None:
+        (repo / ".env").write_text(server_env, encoding="utf-8")
+        (repo / ".env").chmod(0o600)
+    bin_dir, log = tmp_path / "ssh-bin", tmp_path / "ssh.log"
+    tools._write_exec(bin_dir / "ssh", _FAKE_SSH)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_SERVER_HOME": str(home), "FAKE_SSH_LOG": str(log),
+           "TMPDIR": str(tmp_path / "tmp")}
+    result = subprocess.run(["bash", "-c", _env_redelivery_block()], cwd=pc, env=env, capture_output=True, text=True, timeout=60)
+    assert log.read_text(encoding="utf-8").split() == ["ubuntu@my-macro-app"], "Tailscale SSH 한 번"
+    assert list((tmp_path / "tmp").iterdir()) == [], "PC의 걸러 낸 사본은 지웁니다"
+    return result, repo, pc
+
+
+def _deploy_unwanted_patterns() -> list[str]:
+    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    loop = text[text.index("for name in DATABASE_PORT"):text.index("; do", text.index("for name in DATABASE_PORT"))]
+    return [w.strip("'") for w in loop.replace("\\\n", " ").split()[3:]]
+
+
+def test_OPS1_서버_env를_다시_전달해도_서버_전용_줄은_서버의_값_그대로_남고_먼저_백업한다(tmp_path):
+    server_only = _server_only_names()
+    server_values = {n: f"server-{n.lower().replace('_', '-')}-value" for n in server_only}
+    server_env = ("OWNER_EMAIL=owner@example.invalid\nAPP_PASSWORD=old-app-password-value\nFRED_API_KEY=fred-old-value\n"
+                  + "".join(f"{n}={v}\n" for n, v in server_values.items()))
+    # 로컬 .env — 서버 전용 이름은 빈 값(.env.example 모양 — 토스 키는 로컬에 두지 않음)이거나 다른 값, 적지 않는 이름·PC 전용 값이 섞여 있고 끝 줄바꿈이 없음
+    local_env = (f"OWNER_EMAIL=owner@example.invalid\nAPP_PASSWORD={SECRET}\nFRED_API_KEY=fred-new-value\n"
+                 "DATABASE_PORT=5434\nBACKEND_PORT=8082\nCOLLECTOR_PORT=8002\nFRONTEND_PORT=3002\nLOCAL_NO_LOGIN=true\nFRONTEND_ORIGIN=http://x\n"
+                 "PUBLIC_URL=http://x\nAWS_INSTANCE_ID=i-0123456789abcdef0\nPAPER_ENABLED=false\nCOOKIE_SECURE=false\n"
+                 "TAILNET_DOMAIN=example.ts.net\nVULTR_API_KEY=pc-vultr-key-value\nTAILSCALE_AUTH_KEY=pc-tailscale-key-value\n"
+                 "TOSS_CLIENT_ID=\nTOSS_CLIENT_SECRET=\nTOSS_TRADING_ENABLED=local-should-not-win\nREAL_TRADE_ENABLED=\n"
+                 "TELEGRAM_BOT_TOKEN=local-telegram-should-not-win\nexport BROWSER_FETCH_TOKEN=local-browser-should-not-win")
+
+    result, repo, _ = _redeliver(tmp_path, local_env, server_env)
+
+    assert result.returncode == 0, result.stderr
+    new_text = (repo / ".env").read_text(encoding="utf-8")
+    names = _env_names(new_text)
+    assert len(names) == len(set(names)), f"같은 이름이 두 번: {sorted(n for n in names if names.count(n) > 1)}"
+    values = _env_values(new_text)
+    for name in server_only:
+        assert values.get(name) == server_values[name], f"{name}: 서버 전용 줄은 서버의 값 그대로(OPS-1)"
+    assert values["FRED_API_KEY"] == "fred-new-value" and values["APP_PASSWORD"] == SECRET, "로컬에서 옮기는 줄은 로컬 값"
+    assert "PAPER_ENABLED" not in values and "COOKIE_SECURE" not in values, "로컬의 false는 옮기지 않음(서버는 비우면 켜짐·Secure)"
+    for pattern in _deploy_unwanted_patterns():
+        assert not any(re.fullmatch(pattern, n) for n in names), f"deploy.sh가 막는 이름이 들어감: {pattern}"
+    assert (repo / ".env").stat().st_mode & 0o777 == 0o600
+    backups = sorted(repo.glob(".env.bak-*"))
+    assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == server_env, "바꾸기 전 서버 .env를 그대로 떠 둠"
+    assert backups[0].stat().st_mode & 0o777 == 0o600
+    assert not (repo / ".env.new").exists()
+    output = result.stdout + result.stderr
+    for value in [SECRET, *server_values.values(), "pc-vultr-key-value"]:
+        assert value not in output, "값은 화면에 찍지 않습니다"
+    assert "경고" not in output, "빠진 이름 없음"
+
+
+def test_OPS1_서버에서_일부러_적은_PAPER_ENABLED와_COOKIE_SECURE는_남고_빠지는_이름은_이름만_알린다(tmp_path):
+    server_env = ("APP_PASSWORD=old\nCOMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nPAPER_ENABLED=false\nCOOKIE_SECURE=false\n"
+                  "KIS_APP_KEY=server-kis-key-value\nTOSS_CLIENT_SECRET=server-toss-secret-value\n")
+    local_env = f"APP_PASSWORD={SECRET}\nPAPER_ENABLED=false\nCOOKIE_SECURE=false\n"
+
+    result, repo, _ = _redeliver(tmp_path, local_env, server_env)
+
+    values = _env_values((repo / ".env").read_text(encoding="utf-8"))
+    assert values["PAPER_ENABLED"] == "false" and values["COOKIE_SECURE"] == "false", "정비 때 서버에서 적은 값은 서버 것 그대로"
+    assert values["TOSS_CLIENT_SECRET"] == "server-toss-secret-value" and values["APP_PASSWORD"] == SECRET
+    assert "KIS_APP_KEY" not in values
+    output = result.stdout + result.stderr
+    assert "경고" in output and "KIS_APP_KEY" in output, "새 .env에서 빠진 이름을 알림"
+    assert "server-kis-key-value" not in output and "server-toss-secret-value" not in output
+    assert len(list(repo.glob(".env.bak-*"))) == 1, "되살릴 수 있게 백업"
+
+
+def test_OPS1_서버_env가_없으면_다시_전달하지_않고_아무것도_만들지_않는다(tmp_path):
+    result, repo, _ = _redeliver(tmp_path, f"APP_PASSWORD={SECRET}\n", None)
+    assert "서버 .env가 없습니다" in result.stderr
+    assert sorted(p.name for p in repo.iterdir()) == []
+
+
+# OPS-3: 수집기 스위치(비상 끄기 3단계)를 끈 뒤 켜진(LIVE) 상태가 남으면, 스위치를 되돌리고 배포하는 것만으로 확인 글자·비밀번호 없이 주문이
+# 다시 나갔습니다. 백엔드는 이제 그때 이상 멈춤(collector-disabled)으로 두고, 문서는 다시 켤 때 스위치를 되돌린 뒤 화면의 멈춤 해제를 거치게 적습니다.
+def test_OPS3_비상_끄기는_화면_끄기가_먼저이고_수집기_스위치를_끈_뒤에는_멈춤_해제로_다시_켠다고_적는다():
+    text = (ROOT / "docs/DEVELOPMENT.md").read_text(encoding="utf-8")
+    start = text.index("**비상 끄기**")
+    section = text[start:text.index("\n### ", start)]
+    assert section.index("1. 화면") < section.index("2. 화면이 안 열리면") < section.index("3. 그래도 안 되면")
+    assert "collector-disabled" in section, "수집기 스위치를 끄면 백엔드가 이상 멈춤으로 둠"
+    assert "멈춤 해제" in section and "확인 글자" in section, "다시 켤 때는 화면의 멈춤 해제(확인 글자 + 비밀번호)"
+    assert "'켜는 순서' 2부터" not in section, "스위치를 되돌리고 배포만 하면 확인 없이 매매가 이어진다는 옛 안내"
+    step3 = section[section.index("3. 그래도 안 되면"):section.index("4. ", section.index("3. 그래도 안 되면"))]
+    assert "/toss/trading/status" in step3, "3단계 뒤 수집기 스위치가 꺼졌는지(enabled false·reason disabled) 확인"

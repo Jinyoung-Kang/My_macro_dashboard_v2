@@ -430,3 +430,110 @@ def test_실제_매매_설정을_멈추지_못하면_복원_전체를_되돌린�
     assert result.returncode != 0
     assert "복원했습니다" not in result.stdout
     assert _real_trade_config(db_url, "state, source_book") == [("KR", "LIVE", "after-backup"), ("US", "OFF", None)]
+
+
+# ------------------------------------------------------------------------ OPS-4: 복원 전(지금) DB와 견줌
+# halt의 멈춤은 백업 쪽 상태만 봅니다. 켜기 전(또는 V24 전) 백업을 복원하면 조용히 꺼짐(OFF)이 되고, 지금 DB가 추적하던 토스 미체결은
+# 이 기능이 더 취소하지 않습니다. 복원은 같은 트랜잭션에서 지금 DB의 상태를 읽어 두었다가 그때 경고합니다(시장:상태만 — 건수·종목 없음).
+_OPS4_ORDER_ID = "11111111-1111-1111-1111-111111111111"
+
+
+def _turn_on_after_backup(db_url: str, kr_state: str) -> None:
+    """백업 뒤에 켜고(또는 끄는 중·이상 멈춤) 시가 맞추기 주문 하나가 토스에 접수된 채 끝나지 않은 지금 DB."""
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO real_trade_config(market, state, source_book, book_generation, halt_reason, version)"
+            " VALUES ('KR', %s, 'kr_rules', '2026-10-30', %s, 5)"
+            " ON CONFLICT (market) DO UPDATE SET state = EXCLUDED.state, source_book = EXCLUDED.source_book,"
+            " book_generation = EXCLUDED.book_generation, halt_reason = EXCLUDED.halt_reason",
+            (kr_state, "repeated-error" if kr_state == "HALTED" else None))
+        batch_id = conn.execute(
+            "INSERT INTO real_trade_batches(market, session, kind, source_book) VALUES ('KR', '2026-11-10', 'SYNC', 'kr_rules')"
+            " ON CONFLICT (market, session, kind) DO UPDATE SET updated_at = now() RETURNING id").fetchone()[0]
+        conn.execute(
+            "INSERT INTO real_trade_orders(market, session, purpose, batch_id, source_book, book_generation, symbol, side,"
+            " quantity, time_in_force, client_order_id, request_body, send_outcome, first_sent_at)"
+            " VALUES ('KR', '2026-11-10', 'SYNC', %s, 'kr_rules', '2026-10-30', '000000', 'BUY', 1, 'OPG', %s, '{}', 'ACCEPTED', now())",
+            (batch_id, _OPS4_ORDER_ID))
+
+
+@pytest.mark.parametrize("kr_state", ["LIVE", "STOPPING", "HALTED"])
+def test_OPS4_켜기_전_백업을_복원하면_복원_전_DB가_꺼져_있지_않았다고_경고한다(database_url, scratch_db, tmp_path, kr_state):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _set(db_url, "INSERT INTO real_trade_config(market, state) VALUES ('US', 'OFF')")      # 켜기 전 — KR 행 없음(꺼짐)
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _turn_on_after_backup(db_url, kr_state)
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _real_trade_config(db_url, "state") == [("US", "OFF")]                          # 백업 그대로 — 꺼짐(새 주문 없음)
+    assert f"경고: 복원 전 DB에서 실제 매매가 꺼져 있지 않았는데(KR:{kr_state})" in result.stdout
+    assert "끝나지 않았던 실제 주문 가운데 복원한 DB에 없는 것" in result.stdout
+    assert "토스증권 앱에서 미체결 주문을 직접 확인·취소" in result.stdout
+    assert _OPS4_ORDER_ID not in result.stdout + result.stderr and "000000" not in result.stdout + result.stderr
+    assert "__real_trade_" not in result.stdout + result.stderr
+
+
+def test_OPS4_V24_전_백업을_복원해도_복원_전_DB가_켜져_있었다고_경고한다(database_url, scratch_db, tmp_path):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _set(db_url, "DROP TABLE real_trade_orders, real_trade_batches, real_trade_events, real_trade_config")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _set(db_url, (ROOT / "db" / "migrations" / "V24__real_trade.sql").read_text(encoding="utf-8"))   # 그 뒤 V24 적용·켜기
+    _turn_on_after_backup(db_url, "LIVE")
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    with psycopg.connect(db_url) as conn:
+        assert conn.execute("SELECT to_regclass('public.real_trade_config')").fetchone()[0] is None   # 백업 그대로 — 표 없음
+    assert "경고: 복원 전 DB에서 실제 매매가 꺼져 있지 않았는데(KR:LIVE)" in result.stdout
+    assert "끝나지 않았던 실제 주문 가운데 복원한 DB에 없는 것" in result.stdout
+
+
+def test_OPS4_백업_뒤에_나간_주문만_없으면_멈춤과_함께_그_주문만_경고한다(database_url, scratch_db, tmp_path):
+    """켜진 뒤의 백업(06:45) → 그 뒤 시가 맞추기 주문(08:50) → 복원: 시장은 이상 멈춤(restored)이 되지만 그 주문의 기록은 없습니다."""
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _seed_real_trade(db_url, "LIVE")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _turn_on_after_backup(db_url, "LIVE")
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _real_trade_config(db_url, "state, halt_reason") == [("KR", "HALTED", "restored"), ("US", "OFF", None)]
+    assert "실제 매매 설정 1개 시장을 이상 멈춤(restored)으로" in result.stdout
+    assert "꺼져 있지 않았는데" not in result.stdout, "시장은 이상 멈춤이라 그 경고는 아님"
+    assert "끝나지 않았던 실제 주문 가운데 복원한 DB에 없는 것" in result.stdout
+
+
+def test_OPS4_복원한_DB가_지금_DB의_미체결을_그대로_추적하면_경고하지_않는다(database_url, scratch_db, tmp_path):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path)
+    _seed_real_trade(db_url, "LIVE")                                                         # 끝나지 않은 주문 하나 포함
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "경고" not in result.stdout + result.stderr
+
+
+def test_OPS4_QA_복원은_지금_DB와_견주지_않는다(database_url, scratch_db, tmp_path):
+    name, db_url = scratch_db
+    env = _real_trade_env(database_url, name, tmp_path, RESTORE_REAL_TRADE="clear")
+    assert _run(BACKUP, env=env).returncode == 0
+    backup_file = _backups(tmp_path)[0]
+    _turn_on_after_backup(db_url, "LIVE")
+
+    result = _run(RESTORE, str(backup_file), "--yes", env=env)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "경고" not in result.stdout + result.stderr

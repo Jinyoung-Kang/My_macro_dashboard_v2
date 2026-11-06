@@ -38,11 +38,13 @@
 #   · 브라우저 컨테이너(browser — 차단 통과 수집 계층의 계층 2, ADR 0026)를 더함: 포트 없음, 수집기와만 통하는 망 fetchnet, 서버 .env의
 #     BROWSER_FETCH_URL·BROWSER_FETCH_TOKEN이 둘 다 있을 때만 수집기가 부름(기반 파일은 빈 값 고정이라 여기서만 켤 수 있음)
 #   · 국면 판정 기록은 23시(AWS와 같은 값 — 24시간이라 시각 제약은 없지만 기록 시점을 바꾸지 않음), postgres는 꺼질 때 30초까지 기다림
-#     (재부팅·업데이트 때 복구부터 하지 않게)
+#     (재부팅·업데이트 때 복구부터 하지 않게). 백엔드는 90초·수집기는 30초까지 기다림 — 실제 매매(ADR 0028)의 보내던 주문·취소가 끝나고
+#     기록될 때까지(OPS-2, 아래 각 서비스)
 # 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v2_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
 #   127.0.0.1의 기본값(3000/8080/8000/5432), AI 엔진·모의 매매(PAPER_ENABLED)·읽기 모드는 .env 그대로
 # 서버 .env(이름은 .env.vultr.example): 로컬 .env에서 포트 네 줄·COOKIE_SECURE·LOCAL_NO_LOGIN·FRONTEND_ORIGIN·PUBLIC_URL·AWS_INSTANCE_ID·
-#   VULTR_*·TAILSCALE_*·TAILNET_DOMAIN·PAPER_ENABLED를 빼고 COMPOSE_FILE·AWS_BACKUP_BUCKET·PUBLIC_ORIGIN을 더한 것. 운영본은 이 서버 한 곳이라
+#   VULTR_*·TAILSCALE_*·TAILNET_DOMAIN·PAPER_ENABLED를 빼고 COMPOSE_FILE·AWS_BACKUP_BUCKET·PUBLIC_ORIGIN을 더한 것. 다시 전달할 때 서버 전용 줄(토스 키·
+#   텔레그램·TAILNET_OWNER_LOGIN·토스·실제 매매 스위치와 한도·브라우저 비밀 등)은 서버의 지금 .env에서 이어 붙입니다(docs/DEVELOPMENT.md §7 — OPS-1). 운영본은 이 서버 한 곳이라
 #   PAPER_ENABLED는 적지 않음(켜짐) — 정비 때 일부러 끌 때만 서버에서 false를 적고, deploy.sh가 그때 '주의'를 찍음(ADR 0019·0020·0023, QA-194)
 # =============================================================================
 services:
@@ -52,6 +54,10 @@ services:
     stop_grace_period: 30s
 
   collector:
+    # 실제 매매(ADR 0028)의 주문 POST는 수집기 안에서 한 건 20초 예산(ORDER_BUDGET_SECONDS — 검사와 401 뒤 한 번 더)입니다. 기본 10초에
+    # SIGKILL을 맞으면 토스로 나간 주문의 응답을 백엔드에 돌려주지 못해 결과 모름(UNKNOWN)이 됩니다 — 배포·복원·재부팅이 다시 만들 때
+    # uvicorn이 받던 요청을 끝내도록 그보다 길게 줍니다(OPS-2). 바꾸면 collector/tests/test_vultr_scripts.py의 대조 시험이 함께 봅니다.
+    stop_grace_period: 30s
     environment:
       # 토스 실제 계좌 읽기 전용 조회(ADR 0025) — 서버 .env에 TOSS_ACCOUNT_ENABLED=true가 있을 때만 켬(비면 꺼짐). 기반 파일은 보간 없는 "false"라
       # 이 덧붙임을 읽는 곳(운영 서버)에서만 켤 수 있습니다. 백엔드는 이 이름을 받지 않습니다(켜짐 여부는 수집기 응답의 enabled).
@@ -72,6 +78,10 @@ services:
     networks: [default, fetchnet]
 
   backend:
+    # 실제 매매(ADR 0028)의 종료 훅(RealTradeJob.stop)은 새 전송을 막고 진행 중인 주기를 60초(SHUTDOWN_WAIT_SECONDS)까지 기다립니다 — 그 안의
+    # 주문 POST 읽기 상한은 25초(CollectorTradeClient.ORDER_READ_SECONDS). 기본 10초면 그 전에 SIGKILL을 맞아 보내던 주문의 결과를 기록하지
+    # 못하고 다음 기동 때 결과 모름(UNKNOWN)으로 정리됩니다. 둘보다 길게 줍니다(OPS-2 — 대조 시험이 Java 상수와 비교).
+    stop_grace_period: 90s
     environment:
       # 늘 로그인 화면을 거침 — 보간 없는 값이라 서버 .env의 LOCAL_NO_LOGIN이 끼어들 자리가 없다(ADR 0016)
       DASHBOARD_LOCAL_NO_LOGIN: "false"
