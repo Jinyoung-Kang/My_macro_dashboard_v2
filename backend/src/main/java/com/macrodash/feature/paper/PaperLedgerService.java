@@ -767,7 +767,41 @@ public class PaperLedgerService {
             run.holdings.remove(holding.ticker);
             run.removed.add(holding.ticker);
         }
-        run.filled++;
+        if (PaperBooks.SOURCE_STOP.equals(order.source())) {
+            stopFilled(run, order, bar.date(), terms.price());   // 대기 STOP(장중 감시의 종가 STOP 등) — 즉시 스탑과 같은 재진입 금지
+        } else {
+            run.filled++;
+        }
+    }
+
+    /**
+     * 대기 STOP 주문이 체결됐을 때(미국 시간별 체결·시각 지정 체결 2b — 장중 감시의 STOP, ADR 0032 결정 6)의 재진입 금지 — 체결한 날(목표 세션 E)부터
+     * {@code lockoutTradingDays}거래일. 이 관측치의 남은 매수(시간별·2b)가 보도록 실행 상태에도 넣습니다. 즉시 스탑({@link #checkStops})과 같은 기한·뜻입니다.
+     */
+    static void stopFilled(BookRun run, PaperStore store, Order order, LocalDate fillDay, double price) {
+        LocalDate until = TrailingStop.lockoutUntil(run.market.calendar(), fillDay, run.settings.lockoutTradingDays());
+        store.upsertLockout(new Lockout(run.book.code(), order.ticker(), until, stopLockoutText(order, fillDay, price)));
+        run.lockouts.put(order.ticker(), until);
+        run.timedLockouts.put(order.ticker(), until);
+        run.stopped++;
+        run.note("주문 " + order.id() + " " + order.ticker() + " 트레일링 스탑 체결(" + stopModeLabel(order) + ") — 재진입 금지 " + until
+                + "까지(체결한 날부터)");
+    }
+
+    private void stopFilled(BookRun run, Order order, LocalDate fillDay, double price) {
+        stopFilled(run, store, order, fillDay, price);
+    }
+
+    /** STOP 근거의 감지 방식 이름 — 장중 감시({@value PaperStopWatchJob#STOP_MODE})면 '장중 감시', 아니면 '스탑 주문'. */
+    private static String stopModeLabel(Order order) {
+        return StopWatch.intradayStop(order) ? "장중 감시" : "스탑 주문";
+    }
+
+    /** 대기 STOP 체결의 재진입 금지 사유 한 줄 — 비율·최고가·스탑가와 체결일·체결가. */
+    static String stopLockoutText(Order order, LocalDate fillDay, double price) {
+        return "트레일링 스탑 −%s%%(%s): 최고가 %s · 스탑가 %s → %s 체결 %s".formatted(won(positive(order.reason(), "stopPct")),
+                stopModeLabel(order), won(positive(order.reason(), "highWatermark")), won(positive(order.reason(), "stopPrice")),
+                fillDay, won(price));
     }
 
     /** 매도 수량(수량 주문은 보유까지, 비율 주문은 보유 × 비율 — null이면 전량). 수량·비율이 0 이하면 그 주문을 취소하고 −1. */
@@ -1303,6 +1337,10 @@ public class PaperLedgerService {
 
     /** 스탑 판정 근거 — 금융위 확정 종가가 아직 없어 잠정 판정대로 집행함. */
     static final String STOP_BASIS_PROVISIONAL = "PROVISIONAL";
+    /** 스탑 판정 근거 — 장중 감시가 장중 1분봉 가격으로 판정함(ADR 0032 결정 6 — 금융위 확정 종가 재판정 없음). */
+    static final String STOP_BASIS_INTRADAY = PaperStopWatchJob.STOP_MODE;
+    private static final StopCheck INTRADAY_STOP_CHECK = new StopCheck(STOP_BASIS_INTRADAY, null, null,
+            "장중 감시 STOP — 장중 실제 가격(토스 1분봉)으로 판정해 금융위 종가로 다시 판정하지 않음");
     /** 스탑 취소 사유의 머리 — 확정 종가가 스탑가 위. */
     static final String STOP_NOT_CONFIRMED = "STOP_NOT_CONFIRMED";
     /**
@@ -1369,8 +1407,9 @@ public class PaperLedgerService {
     /** 체결한 스탑의 재진입 금지 — 체결한 날(그 시가 봉 날짜)부터 {@code kr.lockoutTradingDays}거래일(K30 — 감지한 날이 아님). */
     private void stopLockout(BookRun run, Order order, StopCheck stop, Bar bar, double price) {
         LocalDate until = TrailingStop.lockoutUntil(run.market.calendar(), bar.date(), run.settings.lockoutTradingDays());
-        store.upsertLockout(new Lockout(run.book.code(), order.ticker(), until,
-                "트레일링 스탑 −%s%%: 최고가 %s → %s 잠정 종가 %s(판정 %s) · %s 시가 %s 체결".formatted(
+        store.upsertLockout(new Lockout(run.book.code(), order.ticker(), until, StopWatch.intradayStop(order)
+                ? stopLockoutText(order, bar.date(), price)
+                : "트레일링 스탑 −%s%%: 최고가 %s → %s 잠정 종가 %s(판정 %s) · %s 시가 %s 체결".formatted(
                         won(positive(order.reason(), "stopPct")), won(positive(order.reason(), "highWatermark")),
                         order.asOfTradingDate(), won(positive(order.reason(), "observedPrice")), stop.basis(), bar.date(),
                         won(price))));
@@ -1448,7 +1487,8 @@ public class PaperLedgerService {
         if (!holding.verified) {
             return;
         }
-        StopCheck stop = PaperBooks.SOURCE_STOP.equals(order.source()) ? rejudgeStop(run, order) : null;
+        StopCheck stop = !PaperBooks.SOURCE_STOP.equals(order.source()) ? null
+                : StopWatch.intradayStop(order) ? INTRADAY_STOP_CHECK : rejudgeStop(run, order);
         if (stop != null && stop.cancelReason() != null) {
             store.updateOrderReason(order.id(), withFields(order, stop.fields()));
             cancel(run, order, stop.cancelReason());   // 확정 종가가 감지를 뒷받침하지 않음 — 재진입 금지 없음(K30)

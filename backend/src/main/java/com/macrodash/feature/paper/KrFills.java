@@ -129,10 +129,12 @@ final class KrFills {
      * ⑤ 그날 체결가의 순간이 주문 생성보다 뒤인가 — 시가는 그날 개장 순간(그 실행 달력 — 장 시간 변경일 포함), 매시·장중 시장가·종가는 그 기준 시각
      * ({@link KrTimedLadder#targetOn} — 장중 확인이 E 장중에 낸 주문은 그 뒤 시각만 그날 체결, 단계 2b). 시가 체결가는 봉 날짜 개장(09:00) 단일가라, 다음
      * 세션 개장 뒤에 만든 주문(기준일 D, 생성 D+1 10:00 — 수동 결정 등)이 결정 뒤 정보를 본 채 그 전 시각의 시가로 체결되지 않게 합니다(미국은 체결가가
-     * 관측치 자체라 ①로 충분 — 묶음 C 리뷰). 스탑({@code STOP})은 감지 근거가 기준일 종가(그날 15:30에 공개)라 그 다음 시가에 팔 수 있던 정보이므로 보지 않습니다.
+     * 관측치 자체라 ①로 충분 — 묶음 C 리뷰). 밤에 감지한 스탑({@code STOP})은 감지 근거가 기준일 종가(그날 15:30에 공개)라 그 다음 시가에 팔 수 있던 정보이므로
+     * 보지 않습니다. 장중 감시가 낸 STOP({@link StopWatch#intradayStop} — ADR 0032)은 그 근거가 장중 가격이라 이 우회가 맞지 않아 일반 검사를 거칩니다(만들 때
+     * 기준 시각이 생성 + 60초 뒤라 보통 통과).
      */
     static boolean opensAfterOrder(Order order, LocalDate barDate, TradingCalendar calendar) {
-        if (PaperBooks.SOURCE_STOP.equals(order.source()) || order.createdAt() == null) {
+        if ((PaperBooks.SOURCE_STOP.equals(order.source()) && !StopWatch.intradayStop(order)) || order.createdAt() == null) {
             return true;
         }
         Instant target = KrTimedLadder.targetOn(order, barDate, calendar);

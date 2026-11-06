@@ -826,7 +826,13 @@ final class UsTimedFills {
             run.removed.add(holding.ticker);
             pass.touched.remove(holding.ticker);
         }
-        run.filled++;
+        if (PaperBooks.SOURCE_STOP.equals(order.source())) {
+            // 장중 감시 STOP(ADR 0032 결정 6) — 즉시 스탑과 같은 재진입 금지(목표 세션 E부터). 2b의 T 순 적용이라 같은 W 안에서 이 STOP의 T보다 늦은
+            // 매수는 재진입 금지로 취소되고, 이른 매수는 이미 체결됐습니다.
+            PaperLedgerService.stopFilled(run, store, order, due.session(), terms.price());
+        } else {
+            run.filled++;
+        }
         return Status.DONE;
     }
 

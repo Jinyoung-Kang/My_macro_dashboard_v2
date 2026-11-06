@@ -247,6 +247,15 @@ final class StopWatch {
         return new Target(PaperBooks.MARKET, t, null);
     }
 
+    /**
+     * 장중 감시가 낸 STOP인가(출처 {@code STOP}, 근거 {@code stopMode = INTRADAY_WATCH} — {@link PaperStopWatchJob}). 장부는 이 STOP에 금융위 재판정을 하지
+     * 않고(장중 실제 가격으로 판정함), 늦은 주문 가드(⑤)를 그대로 씁니다. 밤·시간별 경로가 낸 STOP과 손으로 넣은 STOP은 아닙니다.
+     */
+    static boolean intradayStop(com.macrodash.store.PaperStore.Order order) {
+        return order != null && PaperBooks.SOURCE_STOP.equals(order.source())
+                && PaperStopWatchJob.STOP_MODE.equals(Json.asText(order.reason(), "stopMode"));
+    }
+
     // ------------------------------------------------------------------ 저장본 읽기
     /** 봉의 시각 — 미국은 {@code t}(봉 시작 ISO), 한국은 그 세션 날짜의 {@code label}(봉 끝 'HH:MM', 서울). 읽을 수 없으면 null. */
     static Instant barTime(JsonNode bar, LocalDate session, TradingCalendar calendar, boolean korea) {
