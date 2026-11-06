@@ -2,6 +2,7 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.KrxCalendar;
+import com.macrodash.analytics.SessionWindows;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -44,6 +46,9 @@ import java.util.function.Supplier;
  *       관측치·감시 저장본은 {@link StoreReader#quietly}로만 읽습니다(수집을 깨우지 않음). 달력이 모르는 날이면 그 계산을 하지 않습니다(빈 값·거짓).</li>
  *   <li><b>시가 목표</b>({@link #openTargets}): 책의 보유 + 그 세션 시가에 체결될 모든 대기 주문(출처를 거르지 않음 — Claude·규칙·스탑·출발)을 마지막
  *       가격으로 {@link ExpectedState#simulate}한 비중. 그 주문들은 시가 맞추기가 흡수합니다.</li>
+ *   <li><b>시각 맞추기</b>(ADR 0033 초안 — {@link #dailySyncAt}·{@link #targetsAt}·{@link #pendingStopSymbols}): 따라 하는 책이 개장 10분 뒤 지정
+ *       시각으로 체결하면 실제 매매·ISA가 시가 단일가 대신 그 시각 시장가로 맞추는 시각과 그 시각까지의 목표(시각 지정 STOP은 흡수하지 않음), 매수 전에
+ *       뺄 대기 STOP 종목. ISA 자동 기록의 사다리 가격은 {@link #pricesAt}·{@link #orderLadderPrice}.</li>
  *   <li><b>장중 주문</b>({@link #dueOrders}·{@link #weightAfter}): 그 세션의 시각 지정 대기 주문과, 그 주문 기준 시각까지의 모든 대기 주문(시가 포함)을
  *       {@link KrExpectedState}와 같은 가격 고르기로 체결했다고 본 뒤의 그 종목 비중.</li>
  *   <li><b>선점</b>({@link #claim}): 장부 잠금({@link PaperLedgerService#exclusively}) 안에서 그 주문이 아직 대기이고 따라 할 시각이 지났는지 다시 보고 받은
@@ -85,13 +90,20 @@ public class PaperMirrorService {
      * ({@link #complete}).
      */
     public record OpenTargets(String book, LocalDate session, Map<String, Double> weightPct, Map<String, Double> price, double nav,
-                              double cash, List<Long> absorbedOrderIds, List<Long> unpricedOrderIds) {
+                              double cash, List<Long> absorbedOrderIds, List<Long> unpricedOrderIds, List<Long> stopOrderIds) {
 
         public OpenTargets {
             weightPct = Map.copyOf(weightPct);
             price = Map.copyOf(price);
             absorbedOrderIds = List.copyOf(absorbedOrderIds);
             unpricedOrderIds = List.copyOf(unpricedOrderIds);
+            stopOrderIds = List.copyOf(stopOrderIds);
+        }
+
+        /** 시각 지정 STOP을 따로 두지 않는 목표(시가 목표 — {@link #openTargets}). */
+        public OpenTargets(String book, LocalDate session, Map<String, Double> weightPct, Map<String, Double> price, double nav,
+                           double cash, List<Long> absorbedOrderIds, List<Long> unpricedOrderIds) {
+            this(book, session, weightPct, price, nav, cash, absorbedOrderIds, unpricedOrderIds, List.of());
         }
 
         /** 흡수한 주문을 모두 계산에 넣었는가. */
@@ -108,6 +120,23 @@ public class PaperMirrorService {
      */
     public record DueOrder(long orderId, long rootOrderId, String ticker, String side, String timing, String source, Instant target,
                            Instant mirrorAt, boolean supported, Double targetWeightPct, Double sellFraction, Integer qty) {
+
+        /**
+         * 스탑 매도인가 — 출처 STOP의 매도(장중 감시·밤 대체·손으로 넣은 STOP 모두, ADR 0033). 실제 매매는 이 주문의 비중을 셈하지 않고 정수 보유 전량을
+         * 팔고(그 뒤 비중 0), 일일 맞추기 묶음이 흡수하지 않습니다(묶음이 실패해도 손절이 나가게 — 통합 검토 R3).
+         */
+        public boolean stop() {
+            return PaperBooks.SOURCE_STOP.equals(source) && PaperBooks.SELL.equals(side);
+        }
+    }
+
+    /**
+     * ISA 계좌 자동 기록의 사다리 가격 하나(ADR 0033 — {@link #pricesAt}·{@link #orderLadderPrice}). {@code price}가 있으면 모의 장부가 같은 주문을
+     * 체결할 값(1분봉 사다리 — 원가격), {@code unfillable}이면 그 세션 자료로는 체결하지 않음(그날 1분봉 없음·T 뒤 거래 없음 — 거래 정지 등),
+     * {@code noWindow}면 그 세션 1분봉 저장본에 그 종목·시각의 창이 아예 없음(그 시각의 모의 주문이 없던 종목 — 수집기가 받지 않음). 셋 다 아니면 기다림
+     * (결과에 넣지 않음).
+     */
+    public record LadderPrice(BigDecimal price, boolean unfillable, boolean noWindow) {
     }
 
     /**
@@ -333,6 +362,103 @@ public class PaperMirrorService {
     }
 
     /**
+     * 세션 {@code session}의 분 단위 지정 시각 {@code at}(KST) 체결가 — 모의 장부가 그 세션·그 시각의 지정 시각 주문을 체결할 때와 같은 사다리
+     * ({@link KrFills} → {@link KrTimedLadder} — 1분봉 창 첫 거래 봉 시가 → 창 뒤 첫 거래 봉 시가)로 밤 관측치와 시각 지정 1분봉 저장본
+     * ({@code paper.kr.timed})에서 고른 값(ISA 계좌 일일 맞추기 지시의 자동 기록 — ADR 0033 결정 7). 종목마다 {@link LadderPrice}이고, 기다리는 종목은 결과에
+     * 없습니다(짐작하지 않음). 달력이 모르거나 거래일이 아니면 빈 표.
+     */
+    public Map<String, LadderPrice> pricesAt(LocalDate session, LocalTime at, Collection<String> tickers) {
+        Objects.requireNonNull(session, "session");
+        Objects.requireNonNull(at, "at");
+        if (tickers == null || tickers.isEmpty() || !store.ready()) {
+            return Map.of();
+        }
+        MarketRun run = run();
+        try {
+            TradingCalendar calendar = run.calendar();
+            if (!calendar.isTradingDay(session)) {
+                return Map.of();
+            }
+            LocalDate previous = calendar.previousTradingDay(session);
+            Quotes quotes = timedQuotes(run);
+            if (quotes == null) {
+                return Map.of();
+            }
+            Map<String, LadderPrice> out = new TreeMap<>();
+            for (String ticker : new TreeSet<>(tickers)) {
+                // 장부의 지정 시각 주문과 같은 판정을 받는 가상 주문 — 기준일 P(그 세션 전 거래일), 생성 시각은 관측치보다 앞(조건 ①·⑤를 늘 지남).
+                Order probe = new Order(0, null, null, ticker, PaperBooks.SELL, null, null, null, PaperBooks.AT_MINUTE,
+                        RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, previous, Instant.EPOCH, null, null, at);
+                LadderPrice price = ladder(run, quotes, probe, session, calendar);
+                if (price != null) {
+                    out.put(ticker, price);
+                }
+            }
+            return out;
+        } catch (CalendarUnavailableException e) {
+            return Map.of();
+        }
+    }
+
+    /**
+     * 그 책 주문 하나의 체결가 — 모의 장부가 그 주문(상태와 상관없이 주문 칸 그대로)을 체결할 사다리 값(ISA 계좌 스탑 지시의 자동 기록 — ADR 0033 결정 7,
+     * {@link LadderPrice}). 그 책의 주문이 아니거나 시각 지정 시점이 아니거나 목표 세션·관측치를 모르거나 기다리는 중이면 empty.
+     */
+    public Optional<LadderPrice> orderLadderPrice(String code, long orderId) {
+        if (krBook(code) == null) {
+            return Optional.empty();
+        }
+        Order order = store.order(orderId).filter(o -> code.equals(o.bookCode())).orElse(null);
+        if (order == null || !KrTimedLadder.timed(order.timing())) {
+            return Optional.empty();
+        }
+        MarketRun run = run();
+        try {
+            TradingCalendar calendar = run.calendar();
+            LocalDate session = ExecutionAudit.targetSession(order, calendar);
+            Quotes quotes = session == null ? null : timedQuotes(run);
+            if (quotes == null) {
+                return Optional.empty();
+            }
+            return Optional.ofNullable(ladder(run, quotes, order, session, calendar));
+        } catch (CalendarUnavailableException e) {
+            return Optional.empty();
+        }
+    }
+
+    /** 밤 관측치에 시각 지정 1분봉(그리고 금융위 시장 구분)을 붙인 것 — 장부 체결과 같은 입력({@link MarketRun#withListings}). 없으면 null. */
+    private Quotes timedQuotes(MarketRun run) {
+        return reader.quietly(() -> marketData.quotes(run).map(q -> run.withListings(q, marketData))).orElse(null);
+    }
+
+    /** 그 주문의 그 세션 사다리 값({@link LadderPrice}), 기다림이면 null. */
+    private static LadderPrice ladder(MarketRun run, Quotes quotes, Order order, LocalDate session, TradingCalendar calendar) {
+        Bar bar = order.ticker() == null ? null : quotes.bars().get(order.ticker());
+        if (bar == null || bar.kr() == null) {
+            return null;
+        }
+        KrQuotes.Timed timed = bar.kr().timedOn(session);
+        if (timed != null && KrQuotes.TIMED_NO_BARS.equals(timed.status())) {
+            return new LadderPrice(null, true, false);
+        }
+        Instant target = KrTimedLadder.targetOn(order, session, calendar);
+        String key = target == null || PaperBooks.NEXT_CLOSE.equals(order.timing()) ? null
+                : KrTimedLadder.label(target.atZone(KrxCalendar.SEOUL).toLocalTime());
+        if (key != null && (timed == null || (KrQuotes.TIMED_OK.equals(timed.status()) && !timed.windows().containsKey(key)))) {
+            return new LadderPrice(null, false, true);
+        }
+        PaperMarket.FillChoice choice = run.fillBar(order, bar, quotes.collectedAt(), calendar, run.settingsBody());
+        if (choice.bar() != null) {
+            Bar chosen = choice.bar();
+            if (!session.equals(chosen.date()) || chosen.kr() == null || chosen.kr().choice() == null) {
+                return new LadderPrice(null, true, false);   // 그 세션에 거래가 없어 장부가 다음 관측 봉으로 넘어감 — 그 세션 값은 오지 않음
+            }
+            return new LadderPrice(chosen.kr().choice().price(), false, false);
+        }
+        return choice.unfillable() ? new LadderPrice(null, true, false) : null;
+    }
+
+    /**
      * 마지막 가격 — 밤 관측치의 그 종목 종가(이어받은 항목이면 그 이어받은 값). 없는 종목은 결과에 없습니다(짐작하지 않음). 한국 감시 1분봉 저장본은
      * 장중 판단 입력 전용이라 여기서 읽지 않습니다(평가는 직전 종가 기준).
      */
@@ -433,10 +559,122 @@ public class PaperMirrorService {
                     weights.put(p.ticker(), p.qty() * at / expected.nav() * 100);
                 }
             }
-            return Optional.of(new OpenTargets(code, session, weights, expected.price(), expected.nav(), expected.cash(),
-                    due.stream().map(Order::id).sorted().toList(), expected.unpriced()));
+            // 시각 지정 STOP(장중 감시·밤 대체)은 비중에는 반영하되 흡수하지 않음 — 실제 매매의 스탑 매도 경로가 따로 팖(통합 검토 R3). 시가 STOP은
+            // 따로 팔 길(장중 따라 하기 목록)이 없으므로 예전처럼 흡수합니다.
+            List<Long> stops = due.stream().filter(o -> !PaperBooks.NEXT_OPEN.equals(o.timing()) && PaperBooks.SOURCE_STOP.equals(o.source())
+                    && PaperBooks.SELL.equals(o.side())).map(Order::id).sorted().toList();
+            List<Long> absorbed = due.stream().map(Order::id).filter(id -> !stops.contains(id)).sorted().toList();
+            return Optional.of(new OpenTargets(code, session, weights, expected.price(), expected.nav(), expected.cash(), absorbed,
+                    expected.unpriced(), stops));
         } catch (CalendarUnavailableException e) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * 시각 맞추기의 목표(ADR 0033 결정 1·3) — 장부 상태·보유 + 그 세션 시가 주문 + 그 세션의 시각 지정 대기 주문(매시·장중 시장가·분 단위 지정 시각·종가,
+     * 출처를 거르지 않음) 가운데 기준 시각이 {@code at} 이하인 것을 마지막 가격으로 체결했다고 본 비중. 같은 시각은 장부와 같이 매도 먼저, 현금성 매수
+     * 마지막입니다. 시각 지정 STOP 매도는 비중에 반영하지만 {@link OpenTargets#absorbedOrderIds}에 넣지 않고 {@link OpenTargets#stopOrderIds}에 둡니다
+     * (실제 매매의 스탑 매도 경로가 따로 팖 — 묶음이 실패해도 손절이 나가게). {@code at}이 개장이고 시각 지정 주문이 없으면 {@link #openTargets}와 같은
+     * 값입니다. 빈 값의 조건은 {@link #openTargets}와 같습니다.
+     */
+    public Optional<OpenTargets> targetsAt(String code, LocalDate session, Instant at) {
+        Objects.requireNonNull(session, "session");
+        Objects.requireNonNull(at, "at");
+        return targets(code, session, at);
+    }
+
+    /**
+     * 그 책의 그 세션 일일 맞추기 시각(ADR 0033 결정 1) — 있으면 실제 매매·ISA가 시가 단일가 대신 그 시각 시장가로 맞춥니다. 없으면(empty) 예전 시가
+     * 맞추기입니다.
+     * <ul>
+     *   <li>한국 책이 아니거나 운용 중이 아니거나 거래일이 아니거나 달력이 모르면 empty.</li>
+     *   <li>그 세션 시가에 장부가 체결할 결정 주문(출처 STOP이 아닌 시가 주문)이 하나라도 있으면 empty — 예전 판으로 낸 주문이 남은 날(전환일)은 예전
+     *       시가 맞추기로 모의·실제·ISA가 같은 때에 맞춥니다.</li>
+     *   <li>규칙 계좌: 그 세션의 대기 결정 주문 가운데 분 단위 지정 시각 주문이 있으면 그 가장 이른 기준 시각(실제 주문 먼저 — 통합 검토 R11). 없으면 지금
+     *       설정({@code kr.rules.timing})이 {@code AT_MINUTE}일 때 그 결정이 냈을 시각({@link RuleTiming#choose} — 장 시간 변경일은 그날 첫 분),
+     *       그 밖의 설정이면 empty.</li>
+     *   <li>Claude 계좌: 자유 시점 판({@code kr.claude.freeTiming}·{@code kr.claude2.freeTiming})이 켜져 있으면 그 세션 첫 분(개장 +
+     *       {@link SessionWindows#OPEN_OFFSET}), 꺼져 있으면 empty.</li>
+     * </ul>
+     */
+    public Optional<Instant> dailySyncAt(String code, LocalDate session) {
+        Objects.requireNonNull(session, "session");
+        Book book = krBook(code);
+        if (book == null || !PaperBooks.ACTIVE.equals(book.status())) {
+            return Optional.empty();
+        }
+        MarketRun run = run();
+        try {
+            TradingCalendar calendar = run.calendar();
+            if (!calendar.isTradingDay(session)) {
+                return Optional.empty();
+            }
+            Instant first = SessionWindows.first(calendar, session);
+            Instant earliest = null;
+            for (Order o : store.ordersByStatus(code, PaperBooks.ORDER_PENDING)) {
+                if (!PaperBooks.ORDER_PENDING.equals(o.status()) || PaperBooks.SOURCE_STOP.equals(o.source())
+                        || !session.equals(ExecutionAudit.targetSession(o, calendar))
+                        || (o.expiresOn() != null && o.expiresOn().isBefore(session))) {
+                    continue;
+                }
+                if (PaperBooks.NEXT_OPEN.equals(o.timing())) {
+                    if (KrFills.opensAfterOrder(o, session, calendar)) {
+                        return Optional.empty();   // 그 세션 시가에 체결될 결정 주문 — 예전 시가 맞추기(전환일)
+                    }
+                    continue;
+                }
+                if (PaperBooks.KR_RULES.equals(code) && PaperBooks.AT_MINUTE.equals(o.timing())) {
+                    Instant target = KrTimedLadder.targetOn(o, session, calendar);
+                    if (target != null && !target.isBefore(first) && (earliest == null || target.isBefore(earliest))) {
+                        earliest = target;
+                    }
+                }
+            }
+            if (!PaperBooks.KR_RULES.equals(code)) {
+                return FreeTimingSettings.from(run.settingsBody()).on(code) ? Optional.of(first) : Optional.empty();
+            }
+            if (earliest != null) {
+                return Optional.of(earliest);
+            }
+            RuleTiming timing = RuleTiming.kr(run.settingsBody());
+            if (!PaperBooks.AT_MINUTE.equals(timing.timing())) {
+                return Optional.empty();
+            }
+            LocalDate asOf = calendar.previousTradingDay(session);
+            RuleTiming.Chosen chosen = timing.choose(asOf, calendar.closeInstant(asOf), calendar, true);
+            if (!PaperBooks.AT_MINUTE.equals(chosen.timing()) || chosen.at() == null) {
+                return Optional.empty();
+            }
+            return Optional.of(FreeTiming.at(session, chosen.at(), calendar));
+        } catch (CalendarUnavailableException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 그 책의 대기 STOP 매도 가운데 목표 세션이 {@code session}인 것의 종목(ADR 0033 결정 4) — 실제 매매가 매수를 보내기 직전(묶음 재시도·마무리·장중
+     * 따라 하기) 이 종목을 뺍니다(방금 판 종목을 재시도가 다시 사지 않게 — 통합 검토 R2). 출처 STOP의 모든 시점(시가·장중 시장가·지정 시각·종가)을
+     * 봅니다. 한국 책이 아니거나 달력이 모르면 빈 집합.
+     */
+    public Set<String> pendingStopSymbols(String code, LocalDate session) {
+        Objects.requireNonNull(session, "session");
+        if (krBook(code) == null) {
+            return Set.of();
+        }
+        try {
+            TradingCalendar calendar = run().calendar();
+            Set<String> out = new TreeSet<>();
+            for (Order o : store.ordersByStatus(code, PaperBooks.ORDER_PENDING)) {
+                if (PaperBooks.ORDER_PENDING.equals(o.status()) && PaperBooks.SOURCE_STOP.equals(o.source())
+                        && PaperBooks.SELL.equals(o.side()) && o.ticker() != null
+                        && session.equals(ExecutionAudit.targetSession(o, calendar))) {
+                    out.add(o.ticker());
+                }
+            }
+            return Set.copyOf(out);
+        } catch (CalendarUnavailableException e) {
+            return Set.of();
         }
     }
 
