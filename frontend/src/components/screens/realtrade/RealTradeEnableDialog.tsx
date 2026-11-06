@@ -23,6 +23,7 @@ import {
   LOSS_LIMIT,
   parseLossLimit,
   PREFLIGHT_CHECKLIST,
+  previewTimingText,
   realTradeErrorCode,
   realTradeErrorText,
   sideLabel,
@@ -123,7 +124,7 @@ export function RealTradeEnableDialog({
 const DESCRIPTION: Readonly<Record<RealTradeDialogMode, string>> = {
   enable: "토스증권 실제 계좌의 원화 자산 전부가 고른 모의 한국 책을 따라 자동으로 사고팝니다. 끄기는 언제든 확인 없이 바로 됩니다.",
   update: "따라 하는 방식·손실 한도·기준 평가액 중 바꿀 것만 고릅니다. 방식을 바꾸면 옛 책 따라 하기를 바로 멈추고 이 기능의 미체결을 취소합니다.",
-  resume: "멈춘 사유를 토스증권 앱에서 확인한 뒤 푸세요. 풀면 다음 시가 맞추기에서 보유를 책 비중에 다시 맞춥니다.",
+  resume: "멈춘 사유를 토스증권 앱에서 확인한 뒤 푸세요. 풀면 다음 맞추기에서 보유를 책 비중에 다시 맞춥니다.",
 };
 
 function RealTradeForm({
@@ -437,7 +438,7 @@ function turnoverText(value: unknown): string {
   return pct === null ? EMPTY : `${formatNumber(pct, 1)}%`;
 }
 
-/** 예상 목록 — 지금 값으로 계산한 '팔 종목·살 종목'. 실제 주문은 다음 시가 맞추기에서 그때 값으로 다시 계산합니다. */
+/** 예상 목록 — 지금 값으로 계산한 '팔 종목·살 종목'. 실제 주문은 다음 맞추기에서 그때 값으로 다시 계산합니다. */
 function PreviewSection({
   preview,
   bookLabel,
@@ -464,8 +465,8 @@ function PreviewSection({
       {data?.ok === true && (
         <>
           <p className="text-xs leading-relaxed text-text-3">
-            운용 평가액 {formatWon(data.equity)} · 회전율 {turnoverText(data.turnoverPct)} · 지금 값으로 계산한 예상이고, 실제 주문은 다음 시가
-            맞추기에서 그때 보유·가격으로 다시 계산합니다.
+            운용 평가액 {formatWon(data.equity)} · 회전율 {turnoverText(data.turnoverPct)} · 다음 맞추기 {previewTimingText(data.syncAt)} · 지금
+            값으로 계산한 예상이고, 실제 주문은 다음 맞추기에서 그때 보유·가격으로 다시 계산합니다.
           </p>
           <DataTable
             caption="예상 주문"

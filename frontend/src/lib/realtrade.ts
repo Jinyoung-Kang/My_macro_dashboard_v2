@@ -54,7 +54,7 @@ export const LOSS_LIMIT = { min: 1, max: 50, default: 15 } as const;
 
 /** 켜기 창 경고(명세 §8 문구 그대로). */
 export const ENABLE_WARNINGS: readonly string[] = [
-  "원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 시가에 팔립니다",
+  "원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 맞추기(보통 개장 10분 뒤 09:10, 시가 맞추기 날은 08:50)에서 팔립니다",
   "켠 동안 앱에서 국내 주식을 직접 사고팔지 마세요",
   "모의와 달리 실제 돈이 움직입니다",
 ];
@@ -580,12 +580,16 @@ export function limitRows(limits: RealTradeLimits | null | undefined): { label: 
 
 const PURPOSE: Readonly<Record<string, string>> = {
   SYNC: "시가 맞추기",
-  SYNC_FOLLOWUP: "시가 뒤 마무리",
+  SYNC_AT: "개장 10분 뒤 맞추기",
+  SYNC_FOLLOWUP: "맞추기(시장가)",
   MIRROR: "장중 따라 하기",
   NEXT_CLOSE: "종가 따라 하기",
 };
 
-/** 용도·창 종류(시가 맞추기·시가 뒤 마무리·장중 따라 하기). 모르는 값은 원문. */
+/**
+ * 용도·창 종류(시가 맞추기·개장 10분 뒤 맞추기·맞추기 시장가·장중 따라 하기). 모르는 값은 원문. SYNC_FOLLOWUP은 시가 뒤 마무리와 개장 10분 뒤
+ * 맞추기 날의 시장가 주문이 함께 쓰는 용도라 '맞추기(시장가)'로 적습니다(ADR 0033 초안).
+ */
 export function purposeLabel(purpose: string | null | undefined): string {
   return labelOf(PURPOSE, purpose);
 }
@@ -694,6 +698,18 @@ export function windowText(window: RealTradeWindow | string | null | undefined):
   return `${name} ${kstClock(window.start)}~${kstClock(window.end)}`;
 }
 
+/**
+ * 켜기 창 예상 목록의 다음 맞추기 방식("개장 10분 뒤 맞추기 09:10 시장가"·"시가 맞추기(시가 단일가)") — 예상 응답의 `syncAt`으로(ADR 0033 초안).
+ * 시각을 읽지 못하면 시각 없이.
+ */
+export function previewTimingText(syncAt: string | null | undefined): string {
+  if (typeof syncAt !== "string" || syncAt.trim() === "") {
+    return "시가 맞추기(시가 단일가)";
+  }
+  const clock = kstClock(syncAt);
+  return clock === EMPTY ? "개장 10분 뒤 맞추기(시장가)" : `개장 10분 뒤 맞추기 ${clock.slice(0, 5)} 시장가`;
+}
+
 const EVENT_KIND: Readonly<Record<string, string>> = {
   ENABLE: "켜기",
   DISABLE: "끄기",
@@ -708,6 +724,7 @@ const EVENT_KIND: Readonly<Record<string, string>> = {
   RESTORED: "복원 뒤 멈춤",
   CANCEL_GAVE_UP: "취소 못 함(토스증권 앱에서 직접 취소)",
   SKIPPED: "건너뜀",
+  STOP_SELL: "스탑 매도",
 };
 
 /** 이벤트 종류 이름표. 모르는 값은 원문. */
@@ -717,6 +734,8 @@ export function eventKindLabel(kind: string | null | undefined): string {
 
 /** 창 요약 건수(명세 §7.3 — 접수·체결·놓침·건너뜀·막힘·미룸) — detail 키와 이름표. */
 const EVENT_COUNTS: readonly [string, string][] = [
+  // 스탑 매도(STOP_SELL — ADR 0033 초안) 보냄·막힘·놓침
+  ["sent", "보냄"],
   ["accepted", "접수"],
   ["filled", "체결"],
   ["missed", "놓침"],
@@ -757,6 +776,7 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
 
 const SKIP_REASON: Readonly<Record<string, string>> = {
   "opposite-pending": "반대 방향 미체결 있음",
+  "pending-stop": "따라 하는 책의 오늘 대기 스탑 종목 — 매수 안 함",
   "deferred-cash": "매수 가능 금액 부족으로 미룸",
   capped: "1건 상한까지만",
   "timing-unsupported": "모르는 체결 시점",

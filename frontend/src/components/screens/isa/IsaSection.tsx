@@ -30,6 +30,7 @@ import {
   sessionStatusLabel,
   sideLabel,
   symbolText,
+  targetClock,
   tradeGuide,
   unavailableText,
   unpricedText,
@@ -38,7 +39,7 @@ import { liveKey, liveSecondsText, liveShown } from "@/lib/livePrices";
 import type { IsaInstructionItem, IsaLedgerRow, IsaOkResponse, IsaResponse } from "@/lib/types/isa";
 import { IsaLedgerDialog, type IsaLedgerTarget } from "./IsaLedgerDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
-import { IsaHoldingsTable, IsaInstructionsTable, IsaLedgerTable, IsaRecentInstructionsTable } from "./IsaTables";
+import { IsaHoldingsTable, IsaInstructionsTable, IsaLedgerTable, IsaRecentInstructionsTable, IsaStopInstructionsTable } from "./IsaTables";
 import { postDeleteLedger, postSkipInstruction, sendIsa } from "./isaRequests";
 
 /** 다시 읽는 주기 — 장부는 밤 결정·자동 기록·사용자 고침 때만 바뀝니다(개요와 같은 1분). */
@@ -202,8 +203,8 @@ export function IsaSection() {
               item,
               row: ledgerRowForInstruction(data.ledger, item.id),
               session,
-              // 개장 시각은 최신 세션 것만 압니다 — 지난 세션 지시는 그 세션 09:00으로.
-              open: session !== null && session === latest ? (data.instructions?.open ?? null) : null,
+              // 개장 10분 뒤 시각 맞추기 지시면 그 시각(자동 기록 행과 같은 시각), 아니면 개장 시각 — 개장 시각은 최신 세션 것만 압니다(지난 세션은 09:00).
+              open: item.targetAt ?? (session !== null && session === latest ? (data.instructions?.open ?? null) : null),
             });
           }}
           onSkip={(item) => {
@@ -298,7 +299,11 @@ function StartedBody({
   const instructions = data.instructions ?? null;
   const pending = data.pendingInstructions ?? [];
   const recent = data.recentInstructions ?? [];
+  const stops = data.stopInstructions ?? [];
   const [recentOpen, setRecentOpen] = useState(false);
+  const timedAt = targetClock(instructions?.targetAt);
+  const timed = timedAt !== null;
+  const instructionsTitle = timed ? "다음 매매 지시" : "다음 시가 매매 지시";
   const notes = cleanNotes(data.notes);
 
   return (
@@ -344,16 +349,16 @@ function StartedBody({
       </Card>
 
       <Card
-        title="다음 시가 매매 지시"
+        title={instructionsTitle}
         subtitle={
           instructions?.session
-            ? `${sessionLabel(instructions.session)} 시가 · ${sessionStatusLabel(instructions.status)}`
+            ? `${sessionLabel(instructions.session)} ${timed ? `${timedAt} 이후 시장가` : "시가"} · ${sessionStatusLabel(instructions.status)}`
             : "아직 다음 세션의 지시가 없습니다"
         }
       >
         <div className="flex flex-col gap-3">
           {!instructions && (
-            <p className="text-sm text-text-2">한국 규칙 계좌의 밤 결정(22:30)이 끝나면 10분 안에 다음 시가의 지시를 만듭니다.</p>
+            <p className="text-sm text-text-2">한국 규칙 계좌의 밤 결정(22:30)이 끝나면 10분 안에 다음 세션의 지시(시가 또는 개장 10분 뒤)를 만듭니다.</p>
           )}
           {instructions?.ledgerChanged === true && <Banner tone="warn">{LEDGER_CHANGED_TEXT}</Banner>}
           {instructions?.status === "NONE" && (
@@ -362,8 +367,8 @@ function StartedBody({
           {instructions?.status === "UNAVAILABLE" && <Banner tone="warn">{unavailableText(instructions.reason)}</Banner>}
           {instructions && (instructions.items ?? []).length > 0 && (
             <>
-              <IsaInstructionsTable rows={instructions.items ?? []} onFix={onFix} onSkip={onSkip} disabled={busy} />
-              <p className="text-xs leading-relaxed text-text-3">{tradeGuide(instructions.open)}</p>
+              <IsaInstructionsTable rows={instructions.items ?? []} onFix={onFix} onSkip={onSkip} disabled={busy} caption={instructionsTitle} />
+              <p className="text-xs leading-relaxed text-text-3">{tradeGuide(instructions.open, instructions.targetAt)}</p>
             </>
           )}
           {recent.length > 0 && (
@@ -378,6 +383,20 @@ function StartedBody({
           )}
         </div>
       </Card>
+
+      {stops.length > 0 && (
+        <Card
+          title="장중 스탑 매도 지시"
+          subtitle="규칙 계좌가 트레일링 스탑으로 판 종목 — 감지 즉시 텔레그램으로 알리고(종목·수량만), 그날 밤 규칙 계좌와 같은 1분봉 값으로 장부에 자동 기록합니다"
+        >
+          <div className="flex flex-col gap-3">
+            <IsaStopInstructionsTable rows={stops} />
+            <p className="text-xs leading-relaxed text-text-3">
+              장중 시장가는 알림을 받으면 바로(개장 10분 전이면 09:10 이후), 종가 단일가는 15:20~15:30에 시장가로 매도하세요. 다르게 매매했으면 장부의 그 자동 기록 행을 고치세요.
+            </p>
+          </div>
+        </Card>
+      )}
 
       {pending.length > 0 && (
         <Card

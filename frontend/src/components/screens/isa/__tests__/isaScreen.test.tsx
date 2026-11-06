@@ -598,6 +598,49 @@ describe("리뷰 결함 — 개장 시각(ISA-R6)", () => {
   });
 });
 
+describe("개장 10분 뒤 시각 맞추기와 장중 스탑 지시(ADR 0033 초안)", () => {
+  it("지시에 targetAt이 있으면 '다음 매매 지시'·'09:10 이후 시장가' 안내, 체결 고치기 기본 시각은 09:10", async () => {
+    const at = "2026-11-10T00:10:00Z";
+    reads[ISA_PATH] = () => Promise.resolve(started({
+      instructions: {
+        session: "2026-11-10", status: "PLANNED", items: ITEMS.map((item) => ({ ...item, targetAt: at })),
+        open: "2026-11-10T09:00:00+09:00", reason: null, ledgerChanged: false, targetAt: at,
+      },
+    }));
+    renderIsa();
+    expect(await inRegion().findByRole("table", { name: "다음 매매 지시" })).toBeTruthy();
+    expect(inRegion().getByText(/09:10 이후 시장가로 내면 규칙 계좌와 같은 때\(09:10\)에 체결됩니다/)).toBeTruthy();
+    expect(inRegion().queryByText(/장전 동시호가/)).toBeNull();
+    fireEvent.click(inRegion().getByRole("button", { name: "체결 고치기 — 합성화학 222220" }));
+    expect((within(dialog()).getByLabelText("시각(서울)") as HTMLInputElement).value).toBe("2026-11-10T09:10");
+  });
+
+  it("장중 스탑 지시 표 — 종목·매도 수량·방식(장중 시장가·종가 단일가)·기준 시각·상태·알림·메모, 금액 칸 없음", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({
+      stopInstructions: [
+        {
+          id: 3, session: "2026-11-09", symbol: "222220", name: "합성화학", side: "SELL", quantity: 50, timing: "MARKET",
+          targetAt: "2026-11-09T11:32:00+09:00", status: "PLANNED", notifiedAt: "2026-11-09T11:30:10+09:00", autoNote: null,
+        },
+        {
+          id: 2, session: "2026-11-06", symbol: "111110", name: "합성전자", side: "SELL", quantity: 4, timing: "NEXT_CLOSE",
+          targetAt: "2026-11-06T15:30:00+09:00", status: "SKIPPED", notifiedAt: null, autoNote: "not-notified",
+        },
+      ],
+    }));
+    renderIsa();
+    const stops = await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
+    const first = within(stops).getAllByRole("row").find((row) => row.textContent?.includes("합성화학")) as HTMLElement;
+    expect(first.textContent).toContain("장중 시장가");
+    expect(first.textContent).toContain("알림 11/09 11:30");
+    const second = within(stops).getAllByRole("row").find((row) => row.textContent?.includes("합성전자")) as HTMLElement;
+    expect(second.textContent).toContain("종가 단일가 시장가");
+    expect(second.textContent).toContain("마감까지 알리지 못해 건너뜀");
+    expect(second.textContent).toContain("보내기 전");
+    expect(stops.textContent).not.toContain("원");
+  });
+});
+
 describe("리뷰 결함 — 고치기의 시각 원문(ISA-API-1)", () => {
   it("시작 시각을 비우고 시작한 행(초·소수초)의 수수료만 고치면 시각 원문을 그대로 보낸다", async () => {
     const original = "2026-11-06T05:55:37.123456Z";

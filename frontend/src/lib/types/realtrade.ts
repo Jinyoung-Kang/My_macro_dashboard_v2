@@ -86,7 +86,7 @@ export interface RealTradePreflight {
  */
 export interface RealTradeOrderRow {
   session?: string | null;
-  /** SYNC(시가 맞추기)·SYNC_FOLLOWUP(시가 뒤 마무리)·MIRROR(장중 따라 하기). */
+  /** SYNC(시가 맞추기)·SYNC_FOLLOWUP(시가 뒤 마무리·개장 10분 뒤 맞추기의 시장가 주문)·MIRROR(장중 따라 하기·장중 스탑 매도). */
   purpose: string | null;
   symbol: string | null;
   name?: string | null;
@@ -178,7 +178,7 @@ export interface RealTradeStatusResponse {
   books: RealTradeBook[] | null;
 }
 
-/** 켜기 창 예상 목록의 주문 한 줄 — 지금 값으로 계산한 예상(실제 주문은 다음 시가 맞추기에서 그때 값으로 다시 계산). */
+/** 켜기 창 예상 목록의 주문 한 줄 — 지금 값으로 계산한 예상(실제 주문은 다음 맞추기에서 그때 값으로 다시 계산). */
 export interface RealTradePreviewOrder {
   symbol: string;
   name: string | null;
@@ -194,11 +194,18 @@ export interface RealTradePreviewSkipped {
   reason?: string | null;
 }
 
-/** `GET /api/realtrade/preview?market=KR&sourceBook=…` — 지금 preflight + 그 책의 '다음 시가' 목표로 계산한 예상 목록(명세 §2·§3.1). */
+/**
+ * `GET /api/realtrade/preview?market=KR&sourceBook=…` — 지금 preflight + 그 책의 다음 맞추기 목표로 계산한 예상 목록(명세 §2·§3.1). 다음 맞추기가
+ * 개장 10분 뒤 시각 맞추기면 `syncAt`(ISO)이 그 시각이고 목표는 그 시각까지의 모의 주문을 반영합니다(ADR 0033 초안), 시가 맞추기면 null.
+ */
 export interface RealTradePreviewResponse {
   ok: boolean;
   /** ok가 거짓일 때의 사유 코드 — 명세에 없는 선택 칸. */
   reason?: string | null;
+  /** 예상의 세션(YYYY-MM-DD). */
+  session?: string | null;
+  /** 다음 맞추기 시각(ISO) — 개장 10분 뒤 시각 맞추기면 그 시각, 시가 맞추기면 null. */
+  syncAt?: string | null;
   equity: RealTradeDecimal;
   orders: RealTradePreviewOrder[] | null;
   skipped: (RealTradePreviewSkipped | string)[] | null;

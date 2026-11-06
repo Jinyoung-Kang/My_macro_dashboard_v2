@@ -690,7 +690,7 @@ describe("켜기 창", () => {
     expect((within(dialog).getByLabelText("손실 한도(%)") as HTMLInputElement).value).toBe("15");
     expect(within(dialog).getByText("30,000,000원")).toBeTruthy();   // 운용 평가액 상한
     expect(within(dialog).getByText("40건")).toBeTruthy();
-    expect(within(dialog).getByText("원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 시가에 팔립니다")).toBeTruthy();
+    expect(within(dialog).getByText("원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 맞추기(보통 개장 10분 뒤 09:10, 시가 맞추기 날은 08:50)에서 팔립니다")).toBeTruthy();
     expect(within(dialog).getByText("켠 동안 앱에서 국내 주식을 직접 사고팔지 마세요")).toBeTruthy();
     expect(within(dialog).getByText("모의와 달리 실제 돈이 움직입니다")).toBeTruthy();
     expect(within(dialog).getByText(/투자자 지시 거래소를 '통합'/)).toBeTruthy();
@@ -743,7 +743,7 @@ describe("켜기 창", () => {
     });
     // 결과가 나온 뒤 창이 닫히고 안내.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/켰습니다 — 다음 시가 맞추기/)).toBeTruthy();
+    expect(await inRegion().findByText(/켰습니다 — 다음 맞추기/)).toBeTruthy();
   });
 
   it("예상 목록을 받지 못하면 켤 수 없다 — 이유와 다시 계산", async () => {

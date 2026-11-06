@@ -74,8 +74,32 @@ export interface IsaInstructionItem {
   refPrice: IsaDecimal;
   weightPct: IsaDecimal;
   status: string;
+  /** 개장 10분 뒤 시각 맞추기 지시면 그 시각(ISO — '그 시각 이후 시장가', ADR 0033 초안), 시가 지시면 null. */
+  targetAt?: string | null;
   notifiedNightAt: string | null;
   notifiedMorningAt: string | null;
+}
+
+/**
+ * 장중 스탑 매도 지시 한 줄(ADR 0033 초안 — 규칙 계좌의 STOP 주문 하나에 하나). 감지 즉시 텔레그램으로 종목 코드·이름·수량만 알리고, 그 모의 주문과
+ * 같은 1분봉 값으로 그 기준 시각에 자동 기록합니다. 금액은 싣지 않습니다.
+ */
+export interface IsaStopInstruction {
+  id: number;
+  session: string | null;
+  symbol: string;
+  name: string | null;
+  side: string;
+  quantity: IsaDecimal;
+  /** MARKET·AT_MINUTE(장중 시장가)·NEXT_CLOSE(종가 단일가 시장가). */
+  timing: string | null;
+  /** 그 모의 STOP 주문의 기준 시각(ISO). */
+  targetAt: string | null;
+  status: string;
+  /** 즉시 알림을 보낸 시각(보내기 전 null). */
+  notifiedAt: string | null;
+  /** 자동 기록·건너뜀 메모(not-notified·close-fallback·halted 등). */
+  autoNote?: string | null;
 }
 
 /** 다음 세션의 지시 묶음 — 세션(YYYY-MM-DD)·세션 상태(NONE '지시 없음'·PLANNED·UNAVAILABLE '못 만듦')·지시 목록. */
@@ -89,6 +113,8 @@ export interface IsaInstructions {
   reason?: string | null;
   /** 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않음(그 세션 08:00 뒤의 장부 쓰기) — 화면은 수량을 다시 확인하라고 경고합니다. */
   ledgerChanged?: boolean | null;
+  /** 개장 10분 뒤 시각 맞추기 지시면 그 시각(ISO — 보통 09:10, ADR 0033 초안), 시가 지시면 null. */
+  targetAt?: string | null;
 }
 
 /** 장부 한 줄(명세 §1·§6) — 금액(amount)은 입출금이면 입출금액, 매수·매도면 수량×체결가. 수량·가격은 매수·매도·조정. */
@@ -105,6 +131,8 @@ export interface IsaLedgerRow {
   tax: IsaDecimal;
   source: string | null;
   instructionId: number | null;
+  /** 장중 스탑 지시대로 자동 기록한 행이면 그 지시 번호(없으면 null·없음). */
+  stopInstructionId?: number | null;
   note: string | null;
 }
 
@@ -121,6 +149,8 @@ export interface IsaResponse {
   pendingInstructions?: IsaInstructionItem[] | null;
   /** 최근 지시(최근 30). */
   recentInstructions?: IsaInstructionItem[] | null;
+  /** 장중 스탑 매도 지시(최근 30 — ADR 0033 초안). */
+  stopInstructions?: IsaStopInstruction[] | null;
   /** 장부(최근 200). */
   ledger?: IsaLedgerRow[] | null;
   notes?: string[] | null;

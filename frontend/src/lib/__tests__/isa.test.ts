@@ -51,6 +51,10 @@ import {
   symbolText,
   timeSortValue,
   toNumber,
+  stopNoteLabel,
+  stopNotifiedText,
+  stopTimingLabel,
+  targetClock,
   tradeGuide,
   unavailableText,
   unpricedText,
@@ -473,3 +477,27 @@ describe("실시간 평가(명세 2026-11-06-us-costs-backfill §6)", () => {
     expect(timeSortValue("모름")).toBeNull();
   });
 });
+
+describe("개장 10분 뒤 시각 맞추기·장중 스탑 지시(ADR 0033 초안)", () => {
+  it("tradeGuide — targetAt이 있으면 'HH:MM 이후 시장가', 없으면 장전 동시호가 글 그대로", () => {
+    expect(tradeGuide("2026-11-10T09:00:00+09:00", "2026-11-10T00:10:00Z")).toMatch(/^09:10 이후 시장가로 내면 규칙 계좌와 같은 때\(09:10\)에 체결됩니다/);
+    expect(tradeGuide("2026-11-19T10:00:00+09:00", "2026-11-19T10:10:00+09:00")).toContain("10:10 이후 시장가");
+    expect(tradeGuide("2026-11-10T09:00:00+09:00", null)).toMatch(/^장전 동시호가\(08:30~09:00\)/);
+    expect(tradeGuide(null, "모름")).toMatch(/^장전 동시호가/);
+    expect(targetClock("2026-11-10T00:10:00Z")).toBe("09:10");
+    expect(targetClock(null)).toBeNull();
+  });
+
+  it("스탑 지시 — 방식·메모·알림 이름표, 모르는 값은 받은 글자", () => {
+    expect(stopTimingLabel("MARKET")).toBe("장중 시장가");
+    expect(stopTimingLabel("AT_MINUTE")).toBe("장중 시장가");
+    expect(stopTimingLabel("NEXT_CLOSE")).toBe("종가 단일가 시장가");
+    expect(stopTimingLabel("NEW")).toBe("NEW");
+    expect(stopTimingLabel(null)).toBe("—");
+    expect(stopNoteLabel("close-fallback")).toBe("1분봉이 없어 그날 종가로 어림");
+    expect(stopNoteLabel(null)).toBe("—");
+    expect(stopNotifiedText({ notifiedAt: "2026-11-09T11:30:10+09:00" })).toBe("알림 11/09 11:30");
+    expect(stopNotifiedText({ notifiedAt: null })).toBe("보내기 전");
+  });
+});
+

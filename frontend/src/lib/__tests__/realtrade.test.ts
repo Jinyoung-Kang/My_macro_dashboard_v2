@@ -27,6 +27,7 @@ import {
   EMERGENCY_STEPS,
   enableBlock,
   eventDetailText,
+  eventKindLabel,
   formatSignedWon,
   formatWon,
   haltReasonLabel,
@@ -49,6 +50,7 @@ import {
   serverSwitchText,
   serverUnknownText,
   showDisable,
+  previewTimingText,
   skippedText,
   sourceBookLabel,
   toNumber,
@@ -360,7 +362,8 @@ describe("표기", () => {
 
   it("창 한 줄 — 종류 이름표와 시각, 글자 하나면 그대로", () => {
     expect(windowText({ kind: "SYNC", start: "08:50:30", end: "08:58:30" })).toBe("시가 맞추기 08:50:30~08:58:30");
-    expect(windowText({ purpose: "SYNC_FOLLOWUP", start: "09:00:30", end: "09:30:00" })).toBe("시가 뒤 마무리 09:00:30~09:30");
+    expect(windowText({ purpose: "SYNC_FOLLOWUP", start: "09:00:30", end: "09:30:00" })).toBe("맞추기(시장가) 09:00:30~09:30");
+    expect(windowText({ kind: "SYNC_AT", start: "09:10:00", end: "09:13:00" })).toBe("개장 10분 뒤 맞추기 09:10~09:13");
     expect(windowText({ kind: "NEW_KIND", start: null, end: null })).toBe("NEW_KIND —~—");
     expect(windowText("08:50 시가")).toBe("08:50 시가");
   });
@@ -391,6 +394,14 @@ describe("표기", () => {
     );
     expect(skippedText({ symbol: "000660", reason: "new-code" })).toBe("000660 — new-code");
     expect(skippedText("글자 하나")).toBe("글자 하나");
+    expect(skippedText({ symbol: "000660", reason: "pending-stop" })).toBe("000660 — 따라 하는 책의 오늘 대기 스탑 종목 — 매수 안 함(pending-stop)");
+  });
+
+  it("개장 10분 뒤 맞추기·장중 스탑 매도(ADR 0033 초안) — 이름표·건수 줄·예상 목록의 맞추기 방식", () => {
+    expect(eventKindLabel("STOP_SELL")).toBe("스탑 매도");
+    expect(eventDetailText({ sent: 2, blocked: 1, missed: 0, date: "2026-11-10", symbol: "005930" }, "STOP_SELL")).toBe("보냄 2 · 놓침 0 · 막힘 1");
+    expect(previewTimingText("2026-11-10T00:10:00Z")).toBe("개장 10분 뒤 맞추기 09:10 시장가");
+    expect(previewTimingText(null)).toBe("시가 맞추기(시가 단일가)");
   });
 });
 

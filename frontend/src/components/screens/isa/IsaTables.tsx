@@ -19,11 +19,14 @@ import {
   sessionLabel,
   sideLabel,
   sourceLabel,
+  stopNoteLabel,
+  stopNotifiedText,
+  stopTimingLabel,
   symbolText,
   timeSortValue,
   toNumber,
 } from "@/lib/isa";
-import type { IsaInstructionItem, IsaLedgerRow } from "@/lib/types/isa";
+import type { IsaInstructionItem, IsaLedgerRow, IsaStopInstruction } from "@/lib/types/isa";
 
 /*
  * 표 정렬(명세 docs/specs/2026-11-06-us-costs-backfill.md §5) — 숫자·글 열마다 sortValue를 두어 머리를 누르면 오름 → 내림(lib/dataTable nextSort,
@@ -190,6 +193,32 @@ const RECENT_COLUMNS: readonly Column<IsaInstructionItem>[] = [
   { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
   { key: "notified", header: "알림", cell: (row) => notifiedText(row) },
 ];
+
+const STOP_COLUMNS: readonly Column<IsaStopInstruction>[] = [
+  { key: "session", header: "세션", cell: (row) => sessionLabel(row.session ?? null), sortValue: (row) => row.session ?? null },
+  { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true, sortValue: (row) => symbolSort(row.symbol, row.name) },
+  { key: "quantity", header: "매도 수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
+  { key: "timing", header: "방식", cell: (row) => stopTimingLabel(row.timing), sortValue: (row) => labelSort(stopTimingLabel(row.timing)) },
+  { key: "targetAt", header: "규칙 계좌 기준 시각", cell: (row) => formatKst(row.targetAt), sortValue: (row) => timeSortValue(row.targetAt) },
+  { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
+  { key: "notified", header: "알림", cell: (row) => stopNotifiedText(row) },
+  { key: "note", header: "메모", cell: (row) => stopNoteLabel(row.autoNote) },
+];
+
+/** 장중 스탑 매도 지시(최근 30 — ADR 0033 초안) — 누를 수 없는 표(자동 기록 행은 장부에서 고침). */
+export function IsaStopInstructionsTable({ rows }: { rows: readonly IsaStopInstruction[] }) {
+  return (
+    <DataTable
+      caption="장중 스탑 매도 지시"
+      columns={STOP_COLUMNS}
+      rows={rows}
+      rowKey={(row) => String(row.id)}
+      emptyText="스탑 지시 없음"
+      maxHeight={360}
+      scrollHint="overflow"
+    />
+  );
+}
 
 /** 지난 지시(최근 30) — 누를 수 없는 표. */
 export function IsaRecentInstructionsTable({ rows }: { rows: readonly IsaInstructionItem[] }) {

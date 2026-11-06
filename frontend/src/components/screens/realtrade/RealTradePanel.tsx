@@ -291,8 +291,8 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
       <RealTradeEvents rows={status.events ?? []} />
 
       <p className="text-xs leading-relaxed text-text-3">
-        켠 동안 토스증권 앱에서 국내 주식을 직접 사고팔지 마세요 — 앱에서 산 국내 주식은 다음 시가 맞추기에서 팔리고, 원화를 넣으면 다음 맞추기에 투자됩니다.
-        텔레그램 알림은 건수·상태만 보냅니다.
+        켠 동안 토스증권 앱에서 국내 주식을 직접 사고팔지 마세요 — 앱에서 산 국내 주식은 다음 맞추기에서 팔리고, 원화를 넣으면 다음 맞추기에 투자됩니다.
+        모의 책이 장중 스탑으로 팔면 이 계좌도 그 시각부터 3분 안에 시장가로 팝니다(개장 10분 전에는 팔지 않음). 텔레그램 알림은 건수·상태만 보냅니다.
       </p>
     </>
   );

@@ -17,6 +17,7 @@ import type {
   IsaLedgerRow,
   IsaStartBuy,
   IsaStartRequest,
+  IsaStopInstruction,
   IsaSummary,
   IsaUnpriced,
 } from "./types/isa";
@@ -26,7 +27,7 @@ export const ISA_BANNER = "연결되지 않은 다른 증권사 계좌 — 이 �
 
 /** 카드의 출처 한 줄. */
 export const ISA_SOURCE =
-  "이 대시보드의 ISA 계좌 장부(PostgreSQL manual_*) — 지시는 한국 규칙 계좌의 다음 시가 목표 비중(대시보드 계산), 평가는 실시간 가격(표시 전용 — 못 받은 종목은 밤 관측치 종가)";
+  "이 대시보드의 ISA 계좌 장부(PostgreSQL manual_*) — 지시는 한국 규칙 계좌의 다음 맞추기(시가 또는 개장 10분 뒤) 목표 비중·장중 스탑(대시보드 계산), 평가는 실시간 가격(표시 전용 — 못 받은 종목은 밤 관측치 종가)";
 
 /** 자동 기록의 비용 안내(명세 §1 — 수수료·세금은 사용자가 고칠 때만). */
 export const COST_NOTE = "비용 0으로 어림 — 지시대로 자동 기록한 행은 수수료·세금을 0으로 적습니다. 실제 체결과 다르면 장부에서 고치세요.";
@@ -43,11 +44,21 @@ function openClock(open: string | null | undefined): string | null {
   return input === "" ? null : input.slice(11, 16);
 }
 
+/** 시각 맞추기 지시의 시각(ISO) → 서울 벽시계 "HH:mm"(예 "09:10"). 없거나 못 읽으면 null. */
+export function targetClock(targetAt: string | null | undefined): string | null {
+  return openClock(targetAt);
+}
+
 /**
  * 지시 칸의 매매 안내(텔레그램 글과 같은 뜻 — 명세 §4). 동시호가 구간은 그 세션 개장 시각(instructions.open)의 30분 전부터 개장까지
- * — 장 시간 변경일(수능일 10:00 개장 등)에도 맞게. 개장 시각을 모르면 보통 날(08:30~09:00).
+ * — 장 시간 변경일(수능일 10:00 개장 등)에도 맞게. 개장 시각을 모르면 보통 날(08:30~09:00). 개장 10분 뒤 시각 맞추기 지시
+ * (instructions.targetAt — ADR 0033 초안)면 'HH:MM 이후 시장가' 안내입니다.
  */
-export function tradeGuide(open: string | null | undefined): string {
+export function tradeGuide(open: string | null | undefined, targetAt?: string | null): string {
+  const at = openClock(targetAt);
+  if (at !== null) {
+    return `${at} 이후 시장가로 내면 규칙 계좌와 같은 때(${at})에 체결됩니다. 장중 스탑이 걸리면 텔레그램으로 따로 알립니다. 그날 밤 그 시각의 1분봉 값으로 장부에 자동 기록하니, 다르게 매매했으면 '체결 고치기'로 고치세요.`;
+  }
   const end = openClock(open) ?? DEFAULT_OPEN;
   const minutes = (Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - AUCTION_MINUTES + 24 * 60) % (24 * 60);
   const start = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
@@ -72,10 +83,45 @@ export function unavailableText(reason: string | null | undefined): string {
     case "record-pending":
       return "이 세션의 지시를 만들지 못했습니다 — 앞 세션 지시의 체결 기록이 남아 있습니다. 앞 세션 지시를 체결 고치기·건너뜀으로 처리하세요(아래 '처리 안 된 지난 지시'). 이번 세션은 매매하지 않습니다.";
     case "timed-orders":
-      return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다 — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
+      return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다(지시 시각 — 시가·개장 10분 뒤 — 밖의 주문) — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
     default:
       return "이 세션의 지시를 만들지 못했습니다 — 이번 세션은 매매하지 않고 다음 결정을 기다립니다. 까닭이 있으면 요약 칸의 안내에 적혀 있습니다.";
   }
+}
+
+const STOP_TIMING: Readonly<Record<string, string>> = {
+  MARKET: "장중 시장가",
+  AT_MINUTE: "장중 시장가",
+  NEXT_CLOSE: "종가 단일가 시장가",
+};
+
+/** 장중 스탑 지시의 매도 방식 — 장중 시장가·종가 단일가 시장가(15:20~15:30). 모르는 값은 받은 글자 그대로. */
+export function stopTimingLabel(timing: string | null | undefined): string {
+  if (typeof timing !== "string" || timing.trim() === "") {
+    return EMPTY;
+  }
+  return STOP_TIMING[timing] ?? timing;
+}
+
+const STOP_NOTE: Readonly<Record<string, string>> = {
+  "not-notified": "마감까지 알리지 못해 건너뜀",
+  "close-fallback": "1분봉이 없어 그날 종가로 어림",
+  halted: "그날 거래 없음(정지)",
+  "no-holding": "보유 없음",
+  "reduced-holding": "보유까지로 줄여 적음",
+};
+
+/** 장중 스탑 지시의 자동 기록·건너뜀 메모. 없으면 "—", 모르는 값은 받은 글자 그대로. */
+export function stopNoteLabel(note: string | null | undefined): string {
+  if (typeof note !== "string" || note.trim() === "") {
+    return EMPTY;
+  }
+  return STOP_NOTE[note] ?? note;
+}
+
+/** 장중 스탑 지시의 알림 칸 — 보낸 시각("알림 11:32"), 보내기 전이면 "—". */
+export function stopNotifiedText(item: Pick<IsaStopInstruction, "notifiedAt">): string {
+  return typeof item.notifiedAt === "string" && item.notifiedAt.trim() !== "" ? `알림 ${kstShort(item.notifiedAt)}` : "보내기 전";
 }
 
 /** 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않았을 때(instructions.ledgerChanged)의 경고. */
