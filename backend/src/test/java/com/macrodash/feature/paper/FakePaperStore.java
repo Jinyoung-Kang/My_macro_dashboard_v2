@@ -1381,16 +1381,17 @@ class FakePaperStore extends PaperStore {
         return code + "|" + session + "|" + slot;
     }
 
-    /** PaperStore와 같은 규칙 — 없으면 PLANNED로 넣고, PLANNED 행만 이번 값으로 바꾸며, 끝난 행은 그대로(false). 순번은 1·2뿐(V23 CHECK). */
+    /** PaperStore와 같은 규칙 — 없으면 PLANNED로 넣고, PLANNED·SUPERSEDED 행만 이번 값(출처·사건 포함)으로 바꾸며, 끝난 행은 그대로(false). 순번은 1~3(V27 CHECK). */
     @Override
     public boolean upsertPlannedIntradayPlan(IntradayPlan row) {
         if (!decisions.containsKey(row.sourceDecisionId())) {
             throw new org.springframework.dao.DataIntegrityViolationException("paper_intraday_plans_source_decision_id_fkey: "
                     + row.sourceDecisionId());
         }
-        if (row.slot() < 1 || row.slot() > 2 || row.atLocal().getSecond() != 0) {
+        if (row.slot() < 1 || row.slot() > 3 || row.atLocal().getSecond() != 0
+                || !PaperStore.IntradayPlan.ORIGINS.contains(row.origin())) {
             throw new org.springframework.dao.DataIntegrityViolationException("paper_intraday_plans CHECK: 순번 " + row.slot()
-                    + " · 시각 " + row.atLocal());
+                    + " · 시각 " + row.atLocal() + " · 출처 " + row.origin());
         }
         String key = intradayKey(row.bookCode(), row.sessionDate(), row.slot());
         IntradayPlan existing = intradayPlans.get(key);
@@ -1401,7 +1402,23 @@ class FakePaperStore extends PaperStore {
                 row.watch(), row.question(), row.variant(), row.manual(), row.sourceDecisionId(), row.requestedByDecisionId(),
                 existing == null ? null : existing.intradayDecisionId(), "PLANNED", null,
                 existing == null ? null : existing.lagSeconds(), existing == null ? null : existing.calledAt(),
-                existing == null ? dbNow : existing.createdAt(), dbNow));
+                existing == null ? dbNow : existing.createdAt(), dbNow, row.origin(),
+                row.trigger() == null || row.trigger().isNull() ? null : row.trigger()));
+        return true;
+    }
+
+    /** PaperStore와 같은 규칙 — PLANNED 행에만 사건을 붙임(출처 그대로). */
+    @Override
+    public boolean attachIntradayTrigger(String code, LocalDate session, int slot, JsonNode trigger) {
+        String key = intradayKey(code, session, slot);
+        IntradayPlan p = intradayPlans.get(key);
+        if (p == null || !"PLANNED".equals(p.status())) {
+            return false;
+        }
+        intradayPlans.put(key, new IntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), p.atLocal(), p.feed(), p.watch(),
+                p.question(), p.variant(), p.manual(), p.sourceDecisionId(), p.requestedByDecisionId(), p.intradayDecisionId(),
+                p.status(), p.reason(), p.lagSeconds(), p.calledAt(), p.createdAt(), dbNow, p.origin(),
+                trigger == null || trigger.isNull() ? null : trigger));
         return true;
     }
 
@@ -1428,7 +1445,7 @@ class FakePaperStore extends PaperStore {
         }
         intradayPlans.put(key, new IntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), p.atLocal(), p.feed(), p.watch(),
                 p.question(), p.variant(), p.manual(), p.sourceDecisionId(), p.requestedByDecisionId(), intradayDecisionId, status,
-                reason, lagSeconds, calledAt, p.createdAt(), dbNow));
+                reason, lagSeconds, calledAt, p.createdAt(), dbNow, p.origin(), p.trigger()));
         return 1;
     }
 

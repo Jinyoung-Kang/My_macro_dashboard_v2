@@ -347,22 +347,47 @@ public class PaperStore {
      * @param intradayDecisionId    응답 결정(부르기 전·놓침은 null)
      * @param status                PLANNED · DONE · EXPIRED · SKIPPED · SUPERSEDED
      * @param lagSeconds            그 판단이 읽은 감시 저장본의 지연(모르면 null — 0으로 채우지 않음)
+     * @param origin                그 행을 누가 만들었나(V27 — ADR 0031 초안): {@value #ORIGIN_RESERVED}(결정의 예약)·{@value #ORIGIN_NEXT}(장중 판단의
+     *                              다음 예약)·{@value #ORIGIN_MANUAL}(운영자)·{@value #ORIGIN_GUARANTEE}(코드의 보장 1회)·{@value #ORIGIN_EVENT}(사건)
+     * @param trigger               사건이 당기거나 더한 판단의 사건 목록·원래 시각(없으면 null)
      */
     public record IntradayPlan(String bookCode, LocalDate sessionDate, int slot, LocalTime atLocal, String feed,
                                List<String> watch, String question, String variant, boolean manual, long sourceDecisionId,
                                Long requestedByDecisionId, Long intradayDecisionId, String status, String reason,
-                               Integer lagSeconds, Instant calledAt, Instant createdAt, Instant updatedAt) {
+                               Integer lagSeconds, Instant calledAt, Instant createdAt, Instant updatedAt, String origin,
+                               JsonNode trigger) {
+
+        public static final String ORIGIN_RESERVED = "RESERVED";
+        public static final String ORIGIN_NEXT = "NEXT";
+        public static final String ORIGIN_MANUAL = "MANUAL";
+        public static final String ORIGIN_GUARANTEE = "GUARANTEE";
+        public static final String ORIGIN_EVENT = "EVENT";
+        /** 출처 값(V27 CHECK와 같은 글자·순서). */
+        public static final List<String> ORIGINS = List.of(ORIGIN_RESERVED, ORIGIN_NEXT, ORIGIN_MANUAL, ORIGIN_GUARANTEE, ORIGIN_EVENT);
 
         public IntradayPlan {
             watch = watch == null ? List.of() : List.copyOf(watch);
+            origin = origin == null ? ORIGIN_RESERVED : origin;
         }
 
-        /** 넣을 PLANNED 행 — 상태·사유·응답 결정·지연·시각은 저장소가 정합니다. */
+        /**
+         * 넣을 PLANNED 행 — 상태·사유·응답 결정·지연·시각은 저장소가 정합니다. 출처는 V27의 채우기와 같은 규칙입니다(운영자 행이면
+         * {@value #ORIGIN_MANUAL}, 장중 판단이 예약했으면 {@value #ORIGIN_NEXT}, 그 밖은 {@value #ORIGIN_RESERVED}).
+         */
         public static IntradayPlan planned(String bookCode, LocalDate sessionDate, int slot, LocalTime atLocal, String feed,
                                            List<String> watch, String question, String variant, boolean manual,
                                            long sourceDecisionId, Long requestedByDecisionId) {
+            String origin = manual ? ORIGIN_MANUAL : requestedByDecisionId != null ? ORIGIN_NEXT : ORIGIN_RESERVED;
+            return planned(bookCode, sessionDate, slot, atLocal, feed, watch, question, variant, manual, sourceDecisionId,
+                    requestedByDecisionId, origin, null);
+        }
+
+        /** 출처·사건을 정해 넣을 PLANNED 행(코드가 만든 보장·사건 행). */
+        public static IntradayPlan planned(String bookCode, LocalDate sessionDate, int slot, LocalTime atLocal, String feed,
+                                           List<String> watch, String question, String variant, boolean manual,
+                                           long sourceDecisionId, Long requestedByDecisionId, String origin, JsonNode trigger) {
             return new IntradayPlan(bookCode, sessionDate, slot, atLocal, feed, watch, question, variant, manual,
-                    sourceDecisionId, requestedByDecisionId, null, "PLANNED", null, null, null, null, null);
+                    sourceDecisionId, requestedByDecisionId, null, "PLANNED", null, null, null, null, null, origin, trigger);
         }
 
         /**
@@ -786,7 +811,8 @@ public class PaperStore {
      * {@code paper_orders.ledger_hold_reason} 열, V17이 더하는 {@code paper_fills.bar_at} 열과 {@code paper_order_exec} 테이블, V18의
      * {@code paper_checkpoints} 테이블(계좌2 장중 확인 — 결정 종류 CHECKPOINT·시점 MARKET과 같은 파일), V19가 바꾼 그 표의 {@code at_local} 열,
      * V22가 더하는 {@code paper_orders.target_local} 열(분 단위 지정 시각 — 주문 조회가 모두 이 열을 읽음), V23의 {@code paper_intraday_plans} 테이블
-     * (자유 시점 판의 장중 판단 계획 — 결정 종류 INTRADAY_*와 같은 파일)로 봅니다.
+     * (자유 시점 판의 장중 판단 계획 — 결정 종류 INTRADAY_*와 같은 파일), V26의 {@code paper_cost_adjustments} 테이블, V27이 더하는
+     * {@code paper_intraday_plans.origin} 열(계획 행 조회가 모두 이 열을 읽음 — 순번 3·INTRADAY_3과 같은 파일)로 봅니다.
      * V8만 있는 DB(백엔드만 새로 띄운 경우, QA-016)에서 참이면
      * 트랙레코드 읽기·쓰기가 {@code group_code}·{@code data_source} 열과 새 기본키에서, 결정 읽기·쓰기가 {@code packet_text} 열에서,
      * 사용량 읽기·쓰기가 추정 비용 열에서, 주간 복기 작업·화면이 없는 테이블에서, 책 읽기·쓰기가 시장·통화 열에서, 복기·메모
@@ -806,7 +832,8 @@ public class PaperStore {
                 && schema.columnExists("paper_checkpoints", "at_local")
                 && schema.columnExists("paper_orders", "target_local")
                 && schema.tableExists("paper_intraday_plans")
-                && schema.tableExists("paper_cost_adjustments");
+                && schema.tableExists("paper_cost_adjustments")
+                && schema.columnExists("paper_intraday_plans", "origin");
     }
 
     /**
@@ -1726,24 +1753,27 @@ public class PaperStore {
     // ------------------------------------------------------------------ 장중 판단 계획(V23 — 자유 시점 판, ADR 0027 결정 3·4)
     private static final String INTRADAY_PLAN_COLUMNS = "book_code, session_date, slot, at_local, feed, watch, question, variant, "
             + "manual, source_decision_id, requested_by_decision_id, intraday_decision_id, status, reason, lag_seconds, called_at, "
-            + "created_at, updated_at";
+            + "created_at, updated_at, origin, trigger";
 
     /**
      * 장중 판단 예약을 그 세션·순번의 PLANNED 행으로 넣거나 바꿉니다(계좌·세션·순번마다 한 행). 이미 행이 있으면 <b>PLANNED이거나 SUPERSEDED일
      * 때만</b> 시각·피드·감시 목록·질문·판·수동 표시·아침 결정·예약한 장중 판단을 이번 값으로 바꾸고 PLANNED로 둡니다(뒤 결정이나
      * {@code nextCheckpoint}·수동 당김이 그 순번을 대신함 — 뒤 결정이 닫은 SUPERSEDED 행은 부른 적이 없는 예약이라 다시 쓸 수 있음).
-     * DONE·EXPIRED·SKIPPED인 행은 그대로 둡니다 — 끝난 판단을 되살리지 않게. 상태·사유·응답 결정·지연·부른 시각은 받은 값을 보지 않습니다.
+     * 출처·사건(V27)도 그때 이번 값으로 바꿉니다. DONE·EXPIRED·SKIPPED인 행은 그대로 둡니다 — 끝난 판단을 되살리지 않게. 상태·사유·응답 결정·지연·
+     * 부른 시각은 받은 값을 보지 않습니다.
      *
      * @return 넣었거나 바꿨으면 true, 끝난 행이라 그대로 두었으면 false
      */
     public boolean upsertPlannedIntradayPlan(IntradayPlan row) {
+        String trigger = jsonOrNull(row.trigger());
         return jdbc.update("INSERT INTO paper_intraday_plans (book_code, session_date, slot, at_local, feed, watch, question, "
-                        + "variant, manual, source_decision_id, requested_by_decision_id, status) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED') "
+                        + "variant, manual, source_decision_id, requested_by_decision_id, status, origin, trigger) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED', ?, CAST(? AS jsonb)) "
                         + "ON CONFLICT (book_code, session_date, slot) DO UPDATE SET at_local = EXCLUDED.at_local, "
                         + "feed = EXCLUDED.feed, watch = EXCLUDED.watch, question = EXCLUDED.question, variant = EXCLUDED.variant, "
                         + "manual = EXCLUDED.manual, source_decision_id = EXCLUDED.source_decision_id, "
                         + "requested_by_decision_id = EXCLUDED.requested_by_decision_id, status = 'PLANNED', reason = NULL, "
+                        + "origin = EXCLUDED.origin, trigger = EXCLUDED.trigger, "
                         + "updated_at = now() WHERE paper_intraday_plans.status IN ('PLANNED', 'SUPERSEDED')",
                 ps -> {
                     ps.setString(1, row.bookCode());
@@ -1757,7 +1787,31 @@ public class PaperStore {
                     ps.setBoolean(9, row.manual());
                     ps.setLong(10, row.sourceDecisionId());
                     setLong(ps, 11, row.requestedByDecisionId());
+                    ps.setString(12, row.origin());
+                    ps.setString(13, trigger);
                 }) == 1;
+    }
+
+    /**
+     * 그 계좌·세션·순번의 PLANNED 계획 행에 사건(V27 {@code trigger})을 붙입니다 — 사건이 이미 있는 예약을 당기지 않고 그대로 쓸 때. 끝난 행·닫힌 행은
+     * 그대로입니다(부른 판단의 이유를 뒤에서 바꾸지 않게). 출처는 바꾸지 않습니다.
+     *
+     * @return 붙였으면 true(PLANNED 행이 없으면 false)
+     */
+    public boolean attachIntradayTrigger(String code, LocalDate session, int slot, JsonNode trigger) {
+        String json = jsonOrNull(trigger);
+        return jdbc.update("UPDATE paper_intraday_plans SET trigger = CAST(? AS jsonb), updated_at = now() "
+                + "WHERE book_code = ? AND session_date = ? AND slot = ? AND status = 'PLANNED'", ps -> {
+                    ps.setString(1, json);
+                    ps.setString(2, code);
+                    ps.setDate(3, Date.valueOf(session));
+                    ps.setInt(4, slot);
+                }) == 1;
+    }
+
+    /** JSON 칸에 쓸 글 — null·JSON null이면 SQL NULL(칸을 비움). */
+    private String jsonOrNull(JsonNode node) {
+        return node == null || node.isNull() || node.isMissingNode() ? null : mapper.writeValueAsString(node);
     }
 
     /** 그 계좌·세션의 장중 판단 계획 행 전부, 순번 순. */
@@ -1829,7 +1883,7 @@ public class PaperStore {
                 (rs, rowNum) -> rs.getInt("lag_seconds"), code, feed, limit);
     }
 
-    private static RowMapper<IntradayPlan> intradayPlanMapper() {
+    private RowMapper<IntradayPlan> intradayPlanMapper() {
         return (rs, rowNum) -> {
             java.sql.Array watch = rs.getArray("watch");
             List<String> tickers = watch == null ? List.of() : List.of((String[]) watch.getArray());
@@ -1838,7 +1892,8 @@ public class PaperStore {
                     rs.getString("variant"), rs.getBoolean("manual"), rs.getLong("source_decision_id"),
                     rs.getObject("requested_by_decision_id", Long.class), rs.getObject("intraday_decision_id", Long.class),
                     rs.getString("status"), rs.getString("reason"), rs.getObject("lag_seconds", Integer.class),
-                    instant(rs, "called_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
+                    instant(rs, "called_at"), instant(rs, "created_at"), instant(rs, "updated_at"), rs.getString("origin"),
+                    json(rs, "trigger"));
         };
     }
 

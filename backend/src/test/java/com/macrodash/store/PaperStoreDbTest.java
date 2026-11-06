@@ -2386,8 +2386,8 @@ class PaperStoreDbTest {
                 null, 1, null, null, null, null, null, null, null, null, null, false, 1L, 0)))
                 .as("순번마다 한 번 — UNIQUE(book, d, kind)").isEmpty();
         assertThat(decision(BOOK, DAY, "CHECKPOINT")).as("끈 판의 장중 확인 종류는 그대로").isPositive();
-        assertThatThrownBy(() -> jdbc.update("UPDATE paper_decisions SET kind = 'INTRADAY_3' WHERE id = ?", second))
-                .as("순번은 둘뿐").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_decisions SET kind = 'INTRADAY_4' WHERE id = ?", second))
+                .as("순번은 셋까지(V27 — 순번 3은 v27IntradayThreeAndOrigin)").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
 
         assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 1, LocalTime.of(10, 47), "MINUTE",
                 List.of("SPY", "NVDA"), "갭 유지?", "ft-1", false, morning, null))).isTrue();
@@ -2448,10 +2448,10 @@ class PaperStoreDbTest {
                 + p.atLocal()).containsExactly("1 DONE null 10:47", "2 PLANNED null 13:30");
         assertThat(store.supersedeIntradayPlans(BOOK, session, 2, "뒤 결정이 대신함")).isEqualTo(1);
 
-        // CHECK: 순번 1·2, 분 단위, 피드·상태 값.
+        // CHECK: 순번 1~3(V27), 분 단위, 피드·상태 값.
         LocalDate next = session.plusDays(1);
-        assertThatThrownBy(() -> store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, next, 3, LocalTime.of(10, 0),
-                "MINUTE", List.of(), null, "ft-1", false, morning, null))).as("순번 3")
+        assertThatThrownBy(() -> store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, next, 4, LocalTime.of(10, 0),
+                "MINUTE", List.of(), null, "ft-1", false, morning, null))).as("순번 4")
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThatThrownBy(() -> store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, next, 1,
                 LocalTime.of(10, 0, 30), "MINUTE", List.of(), null, "ft-1", false, morning, null))).as("초가 있는 시각")
@@ -2513,6 +2513,116 @@ class PaperStoreDbTest {
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(jdbc.queryForObject(constraints, String.class)).as("되돌린 뒤").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("V27(ADR 0031 초안): 결정 종류 INTRADAY_3·계획 순번 3(넷째는 막힘), 계획 행 출처(기본 RESERVED — 운영자 MANUAL·다음 예약 NEXT·코드의 "
+            + "GUARANTEE·EVENT, 모르는 값은 막힘)와 사건 JSON — 넣기·바꾸기는 PLANNED·SUPERSEDED 행만 출처·사건도 바꾸고 끝난 행은 그대로, 사건 붙이기는 "
+            + "PLANNED 행만. 시험 뒤 INTRADAY_3 행은 책과 함께 지움(V18·V23 재실행이 막히지 않게)")
+    void v27IntradayThreeAndOrigin() {
+        store.insertBookIfAbsent(book(BOOK, "자유 시점 시험"));
+        LocalDate session = DAY.plusDays(3);
+        long morning = decision(BOOK, DAY, "SCHEDULED");
+        long first = decision(BOOK, DAY, "INTRADAY_1");
+        long third = decision(BOOK, DAY, "INTRADAY_3");
+        assertThat(third).as("순번 3의 결정 종류").isPositive();
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_decisions SET kind = 'INTRADAY_4' WHERE id = ?", third))
+                .as("넷째 순번은 없음").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        // 출처 — 옛 모양의 planned(...)는 V27 채우기와 같은 규칙, 코드가 만든 행은 출처·사건을 정해 넣음.
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 1, LocalTime.of(9, 50), "MINUTE",
+                List.of("SPY"), null, "ft-2", false, morning, null))).isTrue();
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 2, LocalTime.of(11, 0), "MINUTE",
+                List.of(), null, "ft-2", true, morning, null))).isTrue();
+        tools.jackson.databind.node.ObjectNode trigger = MAPPER.createObjectNode();
+        trigger.put("originalAt", "13:30");
+        trigger.putArray("events").addObject().put("type", "INDEX_MOVE").put("ticker", "SPY");
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 3, LocalTime.of(12, 30), "MINUTE",
+                List.of("SPY"), "사건", "ft-2", false, morning, null, PaperStore.IntradayPlan.ORIGIN_EVENT, trigger))).isTrue();
+        List<PaperStore.IntradayPlan> rows = store.intradayPlans(BOOK, session);
+        assertThat(rows).extracting(p -> p.slot() + " " + p.origin()).containsExactly("1 RESERVED", "2 MANUAL", "3 EVENT");
+        assertThat(rows.get(0).trigger()).as("사건 없음 — NULL").isNull();
+        assertThat(rows.get(2).trigger().path("originalAt").asString()).isEqualTo("13:30");
+        assertThat(rows.get(2).trigger().path("events").get(0).path("type").asString()).isEqualTo("INDEX_MOVE");
+        assertThat(store.plannedIntradayPlans(List.of(BOOK))).extracting(PaperStore.IntradayPlan::slot).containsExactly(1, 2, 3);
+        assertThatThrownBy(() -> jdbc.update("UPDATE paper_intraday_plans SET origin = 'OTHER' WHERE book_code = ?", BOOK))
+                .as("모르는 출처").isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session.plusDays(1), 4,
+                LocalTime.of(10, 0), "MINUTE", List.of(), null, "ft-2", false, morning, null))).as("순번 4")
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+        // 사건 붙이기 — PLANNED 행만(출처 그대로), 없는 행·끝난 행은 false.
+        assertThat(store.attachIntradayTrigger(BOOK, session, 1, trigger)).isTrue();
+        assertThat(store.intradayPlans(BOOK, session).get(0)).extracting(PaperStore.IntradayPlan::origin, p -> p.trigger().path("originalAt").asString())
+                .containsExactly("RESERVED", "13:30");
+        assertThat(store.markIntradayPlan(BOOK, session, 1, "PLANNED", "DONE", null, first, 30, CLOSE)).isEqualTo(1);
+        assertThat(store.attachIntradayTrigger(BOOK, session, 1, null)).as("끝난 행").isFalse();
+        assertThat(store.intradayPlans(BOOK, session).get(0).trigger()).as("끝난 행의 사건 그대로").isNotNull();
+        assertThat(store.attachIntradayTrigger(BOOK, session.plusDays(1), 1, trigger)).as("없는 행").isFalse();
+
+        // 다시 예약(nextCheckpoint·당김) — PLANNED 행의 출처·사건도 이번 값으로, 끝난 행은 그대로.
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 3, LocalTime.of(14, 0), "HOURLY",
+                List.of(), null, "ft-2", false, morning, first))).isTrue();
+        assertThat(store.intradayPlans(BOOK, session).get(2)).extracting(PaperStore.IntradayPlan::origin, PaperStore.IntradayPlan::trigger)
+                .containsExactly("NEXT", null);
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 1, LocalTime.of(10, 0), "MINUTE",
+                List.of(), null, "ft-2", false, morning, null, PaperStore.IntradayPlan.ORIGIN_GUARANTEE, null))).as("끝난 행").isFalse();
+        assertThat(store.intradayPlans(BOOK, session).get(0).origin()).isEqualTo("RESERVED");
+        assertThat(store.supersedeIntradayPlans(BOOK, session, 2, "뒤 결정이 대신함")).isEqualTo(2);
+        assertThat(store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 2, LocalTime.of(12, 30), "MINUTE",
+                List.of(), null, "ft-2", false, morning, null, PaperStore.IntradayPlan.ORIGIN_GUARANTEE, null))).as("SUPERSEDED 순번은 다시 씀")
+                .isTrue();
+        assertThat(store.intradayPlans(BOOK, session)).extracting(p -> p.slot() + " " + p.status() + " " + p.origin())
+                .containsExactly("1 DONE RESERVED", "2 PLANNED GUARANTEE", "3 SUPERSEDED NEXT");
+        assertThat(store.recentIntradayPlans(BOOK, 5)).extracting(PaperStore.IntradayPlan::origin)
+                .containsExactly("RESERVED", "GUARANTEE", "NEXT");
+    }
+
+    @Test
+    @DisplayName("V27의 출처 채우기 — 옛 코드가 넣은 행(출처 칸을 모름 → 기본 RESERVED)은 운영자 행이면 MANUAL, 장중 판단이 예약했으면 NEXT, 코드가 적은 "
+            + "출처는 그대로이고 다시 실행해도 같음. 시험 뒤 되돌림")
+    void v27BackfillsOriginOnce() throws Exception {
+        Path v27 = Path.of("../db/migrations/V27__paper_intraday_three.sql");
+        assumeTrue(Files.exists(v27), "db/migrations/V27__paper_intraday_three.sql을 찾을 수 없습니다");
+        String sql = Files.readString(v27);
+        class Rollback extends RuntimeException {
+        }
+        store.insertBookIfAbsent(book(BOOK, "자유 시점 시험"));
+        LocalDate session = DAY.plusDays(3);
+        assertThatThrownBy(() -> store.atomically(() -> {
+            long morning = decision(BOOK, DAY, "SCHEDULED");
+            long first = decision(BOOK, DAY, "INTRADAY_1");
+            String oldInsert = "INSERT INTO paper_intraday_plans (book_code, session_date, slot, at_local, feed, variant, manual, "
+                    + "source_decision_id, requested_by_decision_id, status) VALUES (?, ?, ?, CAST(? AS time), 'MINUTE', 'ft-1', ?, ?, ?, 'PLANNED')";
+            jdbc.update(oldInsert, BOOK, java.sql.Date.valueOf(session), 1, "10:00", false, morning, null);
+            jdbc.update(oldInsert, BOOK, java.sql.Date.valueOf(session), 2, "11:00", true, morning, null);
+            jdbc.update(oldInsert, BOOK, java.sql.Date.valueOf(session), 3, "12:00", false, morning, first);
+            assertThat(store.intradayPlans(BOOK, session)).extracting(PaperStore.IntradayPlan::origin)
+                    .as("옛 코드가 넣은 행 — 기본값").containsExactly("RESERVED", "RESERVED", "RESERVED");
+            for (int round = 0; round < 2; round++) {
+                jdbc.execute(sql);
+                assertThat(store.intradayPlans(BOOK, session)).extracting(PaperStore.IntradayPlan::origin)
+                        .containsExactly("RESERVED", "MANUAL", "NEXT");
+            }
+            jdbc.update("UPDATE paper_intraday_plans SET origin = 'GUARANTEE', manual = TRUE WHERE book_code = ? AND slot = 1", BOOK);
+            jdbc.execute(sql);
+            assertThat(store.intradayPlans(BOOK, session).get(0).origin()).as("코드가 적은 출처는 그대로").isEqualTo("GUARANTEE");
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
+    @DisplayName("V27 전 DB(paper_intraday_plans.origin 없음)는 준비 안 됨 — 백엔드만 새로 띄운 배포(QA-016)에서 계획 행 조회의 SQL 오류 대신 안내 문구, 시험 뒤 되돌림")
+    void readyRequiresV27() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V27까지 적용했는가").isTrue();
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE paper_intraday_plans DROP COLUMN origin");
+            assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("출처 칸이 없으면 준비 안 됨").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(new PaperStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("되돌린 뒤").isTrue();
     }
 
     @Test
