@@ -15,7 +15,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - 숫자·화면 원칙: [docs/PRINCIPLES.md](docs/PRINCIPLES.md)
 - 설계 결정과 지키는 방법: [docs/adr/README.md](docs/adr/README.md)
 - API 경로(`RouteInventoryTest`·`endpoints.test.ts`가 이 문서와 대조): [docs/API.md](docs/API.md)
-- 수집 태스크 42개와 소스별 한계: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
+- 수집 태스크 44개와 소스별 한계: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
 - 지난 리뷰·QA의 결함 목록과 남은 위험: [docs/reviews/](docs/reviews/) · [docs/qa/](docs/qa/) (결함 번호 `QA-###`)
 - **v2 프로그램**(순서·사용자 결정 V1~V8·AWS 교체 절차): [docs/specs/2026-10-26-v2-program-plan.md](docs/specs/2026-10-26-v2-program-plan.md) ·
   [0단계 체크리스트](docs/specs/2026-10-26-v2-step0-fork.md) · [UI/UX 설계](docs/specs/2026-10-26-v2-ui-design.md)(1단계 — 토큰·셸 시안 승인 뒤 홈 → 모의매매(미국)) ·
@@ -30,7 +30,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   모의 매매 정기 작업은 여기 한 곳)**. 24시간, 접속은 Tailscale 하나(공개 TCP 포트 0, 잠금화면 없음):
   화면 `https://my-macro-app.<tailnet>.ts.net`, 셸 `ssh ubuntu@my-macro-app`(Tailscale SSH), 비상용 `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>`(22는 PC IP만).
   **서버에서는 `make up` 대신 `bash scripts/vultr/deploy.sh`**(4 GB — 이미지를 하나씩 빌드), PC에서 `bash scripts/vultr/instance.sh status`·PC IP가 바뀌면
-  `firewall-pc-ip.sh`. Vultr ID·IP·tailnet 이름·버킷 이름은 `.env`·메모리에만. 백업은 매일 06:45·일 23:00 KST에 S3 `db/vultr/`(cron).
+  `firewall-pc-ip.sh`. Vultr ID·IP·tailnet 이름·버킷 이름은 `.env`·메모리에만. 백업은 매일 08:00·일 23:00 KST에 S3 `db/vultr/`(cron — 2026-11-08 배포 때 서버 crontab `0 23 * * *`로 옮김, 그 전 06:45).
   AWS 계정에는 포트폴리오 데모(portfolio-*)가 그대로 있다 — 건드리지 않는다.
 - QA·실험용 별도 스택: `bash scripts/qa/qa-stack.sh up|restore F=…|down` (compose 프로젝트 `my_macrodash_v2_qa`,
   포트 13002/18082/18002/15434·프록시 18890 — v3 QA(`macrodash_qa`, 13000…)·v1 QA(`my_macrodash_qa`, 13001…)와 겹치지 않음, 새 비밀값 `.env.qa`, 외부 호출은 차단 프록시). 성능 측정: `ENV_FILE=.env.qa bash scripts/bench-api.sh`(QA 스택), `scripts/qa/k6/`.
@@ -50,11 +50,12 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **모의 매매 상태는 Vultr 서버 한 곳에만**(ADR 0019·0020·0023) — 2026-11-03 02:30 KST부터(그 전은 AWS EC2 `my-macro-app` — 같은 날 지움). **이 폴더의 `.env`는 `PAPER_ENABLED=false` 고정**.
   두 곳에서 정기 작업(리스크 점검·결정·체결)이 동시에 돌면 안 된다(서버 v1도 다시 올리지 않는다).
   로컬 `.env`를 서버로 보낼 때는 DEVELOPMENT §7 '서버 `.env` 전달' 절차대로 — 그 줄과 포트 네 줄 등은 빼고, 서버 전용 줄(토스 키·텔레그램·`PAPER_KR_START_DATE`·실제 매매 여섯 줄 등, `.env.vultr.example`)은 서버의 지금 값을 그대로 이어 붙인다.
-- **체결 시점 자유화(ADR 0027)의 스위치는 모두 기본 꺼짐** — 네 Claude 계좌의 `*.freeTiming`(분 단위 지정 시각 `AT_MINUTE` + 장중 판단)과 규칙 계좌의 `rules.timing`·`kr.rules.timing`.
-  끈 판의 프롬프트·스키마·패킷 고정본은 바이트까지 그대로여야 한다(고정본 시험). **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다**(상한 60·예약 20·`claude2.maxCallsPerCycle` 4 이상·`claude.checkpoint` 끔을 함께).
-- **실제 계좌(토스, ADR 0025·0028) 자료는 모의 장부·패킷·프롬프트·로그·시험 자료·커밋·QA 기록·텔레그램에 넣지 않는다.** 조회는 서버(Vultr)에서만 켜고
-  (`TOSS_ACCOUNT_ENABLED` — 로컬 compose는 `"false"` 고정), 주문은 ADR 0028의 길(수집기 `toss_trade.py` 전용 세션, 세 스위치 `TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`(로컬·QA compose는 `"false"` 고정)·화면)로만 —
-  그 밖의 쓰기 경로는 새 ADR과 사용자 승인 없이 만들지 않는다(공유 토스 세션 가드와 쓰기 금지 시험을 풀면 그것이 결정). 실제 매매 기록은 `real_trade_*` 표에만, 텔레그램은 상태·건수·사유 코드만. 예외: 연결되지 않은 ISA 계좌(ADR 0029 — 장부·지시만, 주문 없음)의 매매 지시 알림은 종목 코드·이름·수량만 넣는다(금액·평가액 없음).
+- **체결 시점 자유화(ADR 0027·0031)의 스위치는 모두 기본 꺼짐** — 네 Claude 계좌의 `*.freeTiming`(분 단위 지정 시각 `AT_MINUTE` — 개장 10분 뒤부터, 미국 09:40~15:54 ET·한국 09:10~15:19 + 장중 판단)과 규칙 계좌의 `rules.timing`·`kr.rules.timing`,
+  장중 판단 최소·사건·effort(`intradayMinPerSession`·`intradayEvents`·`intradayEffort`, 한국 `kr.` 키), 장중 스탑 감시(`stopWatch.mode`·`kr.stopWatch.mode` = OFF·SHADOW·ON, ADR 0032).
+  끈 판의 프롬프트·스키마·패킷 고정본은 바이트까지 그대로여야 한다(고정본 시험). **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다**(상한 70·예약 30·`claude2.maxCallsPerCycle` 5 이상·`claude.checkpoint` 끔을 함께 — ADR 0031).
+- **실제 계좌(토스, ADR 0025·0028·0033) 자료는 모의 장부·패킷·프롬프트·로그·시험 자료·커밋·QA 기록·텔레그램에 넣지 않는다.** 조회는 서버(Vultr)에서만 켜고
+  (`TOSS_ACCOUNT_ENABLED` — 로컬 compose는 `"false"` 고정), 주문은 ADR 0028의 길(수집기 `toss_trade.py` 전용 세션 — ADR 0033의 개장 10분 뒤 시각 맞추기·장중 스탑 매도도 이 길과 같은 한도, 세 스위치 `TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`(로컬·QA compose는 `"false"` 고정)·화면)로만 —
+  그 밖의 쓰기 경로는 새 ADR과 사용자 승인 없이 만들지 않는다(공유 토스 세션 가드와 쓰기 금지 시험을 풀면 그것이 결정). 실제 매매 기록은 `real_trade_*` 표에만, 텔레그램은 상태·건수·사유 코드만. 예외: 연결되지 않은 ISA 계좌(ADR 0029·0033 — 장부·지시만, 주문 없음)의 매매 지시·장중 스탑 지시 알림은 종목 코드·이름·수량만 넣는다(금액·평가액 없음).
   **에이전트는 실제 매매 끄기(`POST /api/realtrade/disable`) 외의 켜기류 API(enable·update·resume)를 부르지 않는다** — 켜기는 사용자가 화면에서 확인 글자와 비밀번호로.
 - 날짜는 `Kst.today()`(Java)·KST 기준. `LocalDate.now()`를 쓰지 않는다(서버 TZ는 UTC).
 - **이모지를 쓰지 않는다**(2026-10-31 사용자 지시) — 화면·코드·주석·문서·스크립트 출력·커밋 메시지 모두. 화면은 `components/ui/icons`의 SVG와 글, 스크립트는 ✓·✗와
