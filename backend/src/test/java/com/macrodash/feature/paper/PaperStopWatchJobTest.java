@@ -225,6 +225,68 @@ class PaperStopWatchJobTest {
     }
 
     @Test
+    @DisplayName("쉰 회차가 있어도 다음 저장본으로 그 사이 격자를 판정 — 10:25·10:30 두 번 아래였다가 10:35에 회복해도 10:30 격자로 STOP")
+    void missedGridsAreJudgedFromTheNextSnapshot() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(10, 20, 20), et(10, 20, 21), Map.of("AAA", new double[]{99, 99}), et(10, 19, 0));
+        job.run();
+        assertThat(stops()).isEmpty();
+
+        // 10:25 회차는 쉼(slow 군) — 10:35 저장본에 10:20~10:29 봉은 91, 10:30~10:34 봉은 99
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("fetchedAt", et(10, 35, 20).toString());
+        Map<Instant, Double> bars = new LinkedHashMap<>();
+        for (Instant at = et(9, 30, 0); !at.isAfter(et(10, 34, 0)); at = at.plus(Duration.ofMinutes(1))) {
+            bars.put(at, !at.isBefore(et(10, 20, 0)) && at.isBefore(et(10, 30, 0)) ? 91.0 : 99.0);
+        }
+        payload.putObject("tickers").set("AAA", StopWatchTest.usEntry(DAY, bars, 99.0, null));
+        when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
+                null, et(10, 35, 21))));
+        clock.now = et(10, 35, 40);
+
+        PaperStopWatchJob.Outcome outcome = job.run().get(0);
+
+        assertThat(outcome.grids()).containsExactly(et(10, 25, 0), et(10, 30, 0), et(10, 35, 0));
+        assertThat(stops()).singleElement().satisfies(o ->
+                assertThat(o.reason().path("checks").get(1).path("grid").asString()).isEqualTo(et(10, 30, 0).toString()));
+    }
+
+    @Test
+    @DisplayName("한국 0.2주 무상증자형 갭 −17%(첫 봉 시가 41,500 ≤ 전일 원시 종가 50,000 × 0.85)는 주문 없이 가드 기록, 달력이 그해를 모르면 오류 없이 건너뜀")
+    void koreaGapGuardAndUnknownCalendar() {
+        settings("OFF", "ON");
+        clock.now = kst(10, 20, 40);
+        store.books.put(PaperBooks.KR_RULES, new Book(PaperBooks.KR_RULES, PaperBooks.KIND_RULES, "한국 규칙", 100_000_000,
+                LocalDate.of(2026, 10, 30), PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE, Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.states.put(PaperBooks.KR_RULES, new BookState(PaperBooks.KR_RULES, 1000, 1000, 0, 0, null, null, null, null));
+        store.upsertPosition(new Position(PaperBooks.KR_RULES, "005930", 10, 48_000, LocalDate.of(2026, 11, 2), PaperFixtures.FRI_CLOSE,
+                55_000, PaperFixtures.FRI_CLOSE, null, null, false, PREV, 50_000, null));
+        when(marketData.krConfirmed(anyCollection(), anyCollection(), any())).thenReturn(KrConfirmed.NONE);
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("fetchedAt", kst(10, 20, 20).toString());
+        Map<String, Double> bars = new LinkedHashMap<>();
+        for (int m = 6; m <= 20; m++) {
+            bars.put(String.format("10:%02d", m), 41_000.0);
+        }
+        payload.putObject("tickers").set("005930", StopWatchTest.krEntry(DAY, bars, List.of(), 41_500.0, 50_000.0, 50_000.0));
+        when(marketData.stopWatch(true)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload, "json", "ok", null,
+                kst(10, 20, 21))));
+
+        PaperStopWatchJob.Outcome outcome = job.run().get(1);
+
+        assertThat(stops()).isEmpty();
+        assertThat(outcome.guards()).singleElement().satisfies(g -> assertThat((String) g.get("reason")).contains("41500", "50000"));
+        assertThat(store.recentJobRuns(5)).singleElement().satisfies(r -> assertThat(r.job()).isEqualTo("kr.stopwatch"));
+
+        clock.now = ZonedDateTime.of(LocalDate.of(2028, 1, 4), LocalTime.of(10, 20, 40), KrxCalendar.SEOUL).toInstant();
+        PaperStopWatchJob.Outcome unknown = job.run().get(1);
+        assertThat(unknown.error()).isNull();
+        assertThat(unknown.skipped()).startsWith(CalendarGaps.NO_CALENDAR);
+    }
+
+    @Test
     @DisplayName("한국 — 최고가는 저장 값과 금융위 확정 종가(전날까지) 중 큰 값, 미처리 기업행위 보유는 보지 않음, STOP은 kr.stopwatch로 기록")
     void koreaWatermarkAndHolds() {
         settings("OFF", "ON");

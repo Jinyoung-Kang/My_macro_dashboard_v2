@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.TrailingStop;
@@ -88,6 +89,8 @@ public class PaperStopWatchJob {
     private final ReentrantLock running = new ReentrantLock();
     /** 시장 코드 → 이 프로세스가 본 것(재기동하면 비어 가장 최근 격자부터). */
     private final Map<String, MarketState> states = new HashMap<>();
+    /** 시장 코드 → 마지막으로 남긴 오류(같은 오류를 되풀이해 남기지 않게). */
+    private final Map<String, String> lastErrors = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** 한 시장의 프로세스 메모리 — 세션이 바뀌면 새로 엽니다. */
     private static final class MarketState {
@@ -145,8 +148,14 @@ public class PaperStopWatchJob {
         try {
             for (Outcome outcome : run()) {
                 if (outcome.error() != null) {
-                    log.warn("장중 스탑 감시({}) 실패 — 다음 주기에 다시 봅니다: {}", outcome.market(), outcome.error());
-                } else if (!outcome.orders().isEmpty()) {
+                    // 같은 오류는 바뀔 때만 남깁니다 — 판정에 실패한 저장본은 다음 주기에 다시 보므로(아래 lastFetched) 20초마다 같은 줄이 쌓이지 않게.
+                    if (!outcome.error().equals(lastErrors.put(outcome.market(), outcome.error()))) {
+                        log.warn("장중 스탑 감시({}) 실패 — 다음 주기에 다시 봅니다: {}", outcome.market(), outcome.error());
+                    }
+                    continue;
+                }
+                lastErrors.remove(outcome.market());
+                if (!outcome.orders().isEmpty()) {
                     log.info("장중 스탑 감시({}): STOP {}건 {}", outcome.market(), outcome.orders().size(), outcome.orders());
                 }
             }
@@ -165,6 +174,9 @@ public class PaperStopWatchJob {
             for (PaperMarket market : markets.all()) {
                 try {
                     out.add(runMarket(market));
+                } catch (CalendarUnavailableException e) {
+                    // 그 시장 달력이 지금 해를 모름(공휴일 목록 없음 — 명세 K35) — 판정하지 않고 넘어갑니다(대체 경로가 지킴). 20초마다 경고를 쌓지 않습니다.
+                    out.add(Outcome.skip(market.code(), null, CalendarGaps.NO_CALENDAR + " — " + e.getMessage()));
                 } catch (RuntimeException e) {
                     out.add(new Outcome(market.code(), null, null, List.of(), List.of(), List.of(), List.of(), null, e.toString()));
                 }
@@ -243,8 +255,8 @@ public class PaperStopWatchJob {
         if (state.lastGrid == null && grids.size() > 1) {
             grids = List.of(grids.get(grids.size() - 1));   // 재기동 직후 — 가장 최근 격자만
         }
-        state.lastFetched = fetchedText;
         if (grids.isEmpty()) {
+            state.lastFetched = fetchedText;
             return Outcome.skip(code, mode.name(), "판정할 새 격자 없음");
         }
         JsonNode payload = snapshot.payload();
@@ -265,6 +277,7 @@ public class PaperStopWatchJob {
             return null;
         });
         state.lastGrid = grids.get(grids.size() - 1);
+        state.lastFetched = fetchedText;   // 판정을 마친 뒤에만 — 판정 중 예외면 다음 주기에 같은 저장본을 다시 봄
         Outcome outcome = new Outcome(code, mode.name(), null, grids, orders, would, guards, null, null);
         if (!orders.isEmpty() || !would.isEmpty() || !guards.isEmpty()) {
             record(definition, started, outcome);
