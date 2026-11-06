@@ -46,9 +46,10 @@ class AccessPolicyTest {
                 "/api/paper/reviews/2026-10-31", "/api/paper/notes", "/api/paper/decisions")) {
             assertThat(AccessPolicy.required("GET", path)).as("GET " + path).isEqualTo(AccessPolicy.Access.OWNER);
         }
-        // 쓰기·실행 POST(F1b — 초기화·리스크 점검·수동 결정·출발·복기 실행·메모 쓰기).
+        // 쓰기·실행 POST(F1b — 초기화·리스크 점검·수동 결정·출발·복기 실행·메모 쓰기, ADR 0030 — 미국 체결 비용 소급).
         for (String path : java.util.List.of("/api/paper/init", "/api/paper/run/risk", "/api/paper/run/decision",
-                "/api/paper/run/initial-decision", "/api/paper/reviews/run", "/api/paper/notes")) {
+                "/api/paper/run/initial-decision", "/api/paper/reviews/run", "/api/paper/notes",
+                "/api/paper/admin/cost-backfill")) {
             assertThat(AccessPolicy.required("POST", path)).as("POST " + path).isEqualTo(AccessPolicy.Access.OWNER);
         }
     }

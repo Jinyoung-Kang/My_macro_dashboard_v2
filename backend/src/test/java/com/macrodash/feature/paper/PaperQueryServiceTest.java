@@ -121,20 +121,20 @@ class PaperQueryServiceTest {
         assertThat(claude2.get("stats")).isNull();
         Map<String, Object> spy = books.get(3);
         assertThat(spy.get("benchmark")).isNull();
-        assertThat(spy.get("cash")).isEqualTo(450.25);
-        assertThat(spy.get("returnPct")).as("상태의 순자산 99,950.25 기준").isEqualTo(-0.05);
+        assertThat(spy.get("cash")).isEqualTo(350.7);   // 사후 체결 수수료 99.55(ADR 0030)
+        assertThat(spy.get("returnPct")).as("상태의 순자산 99,850.70 기준").isEqualTo(-0.15);
         assertThat(spy.get("positions")).isEqualTo(1);
         assertThat(spy.get("staleCount")).isEqualTo(0);
         Map<String, Object> stats = (Map<String, Object>) spy.get("stats");
         assertThat(stats.get("sampleDays")).isEqualTo(1);
-        assertThat(stats.get("cumReturnPct")).isEqualTo(1.05);   // 99,950.25 → 101,000
+        assertThat(stats.get("cumReturnPct")).isEqualTo(1.15);   // 99,850.70 → 101,000
         assertThat(stats.get("cagrPct")).as("표본 20일 미만").isNull();
 
         Map<String, Object> nav = (Map<String, Object>) overview.get("navSeries");
         assertThat((List<String>) nav.get("dates")).containsExactly("2026-10-23", "2026-10-26");
         Map<String, List<Double>> series = (Map<String, List<Double>>) nav.get("books");
-        assertThat(series.get("bench_spy")).containsExactly(99_950.25, 101_000.0);
-        assertThat(series.get("bench_mix")).containsExactly(99_950.29, null);   // 520.285 + 119 × 500 + 484 × 82.5
+        assertThat(series.get("bench_spy")).containsExactly(99_850.7, 101_000.0);
+        assertThat(series.get("bench_mix")).containsExactly(99_850.81, null);   // 420.805 + 119 × 500 + 484 × 82.5
         assertThat(series.get("rules")).containsExactly(null, null);
         assertThat(series.get("claude2")).as("출발 전 — 100으로 채우지 않음").containsExactly(null, null);
 

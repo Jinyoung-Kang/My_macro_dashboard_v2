@@ -210,16 +210,19 @@ public class PacketBuilder {
      * {@code epsSmallBase}·{@code epsCurrency}에서 약 40이 더 붙습니다. {@code news.maxPerDay}를 기본보다 올리거나 {@code news.keywords}에
      * 긴 구절(60자까지)을 넣으면 넘을 수 있습니다(경고 로그만). 1b는 실적 대상을 8b와 같은 25종목으로 두어 따로 늘지 않습니다
      * ({@link #calendar}). 컨센서스 층을 켠 판 6은 {@link #TARGET_TOKENS_CONSENSUS}로 잽니다(이 값은 판 5와 한국 패킷 예산 그대로).
+     * ADR 0030(2026-11-06)의 미국 비용 문장 한 줄과 {@code 12_hardRules}의 {@code commissionBp}·{@code slippageBp}·{@code sellRegFees} 칸이 약
+     * 150토큰을 더해(시험 패킷 약 35,575 — 35,500을 넘음) <b>35,700</b>으로 올렸습니다(여유 약 125).
      */
-    static final int TARGET_TOKENS = 35_500;
+    static final int TARGET_TOKENS = 35_700;
     /**
      * 컨센서스 층을 켠 판 6의 목표 크기(E1b — 명세 §4-12 '{@code TARGET_TOKENS}는 다시 잰다'). 위 가장 큰 모양(판 5 약 35,425)에 1b 거시
      * 6줄의 컨센서스 층을 가장 크게 더한 모양 — 한 줄은 붙이고(가장 긴 자릿수 −130.875B 꼴 + 결정 전 발표치라 {@code actual} 열이 생김 +
      * 이어받은 날 주의), 다섯 줄은 사유가 가장 긴 '같은 이름 두 줄'(가장 긴 대응 이름 금리 결정 — 칸 다섯 null + notes 한 줄) — 이면 1b가
      * 약 798 → 1,274로 늘어 시험 패킷이 약 35,900, 여유 약 100입니다(PacketBuilderTest.fitsTokenBudgetWithConsensus, 2026-10-28). 줄마다
-     * 붙인 보통 모양이면 늘어나는 몫은 약 250입니다. 넘으면 경고 로그만(판 5와 같음).
+     * 붙인 보통 모양이면 늘어나는 몫은 약 250입니다. 넘으면 경고 로그만(판 5와 같음). ADR 0030의 미국 비용 칸·문장(약 150토큰)으로 시험 패킷이
+     * 약 36,050이 되어 <b>36,200</b>으로 올렸습니다(여유 약 150).
      */
-    static final int TARGET_TOKENS_CONSENSUS = 36_000;
+    static final int TARGET_TOKENS_CONSENSUS = 36_200;
 
     // ------------------------------------------------------------------ 계좌 변형(계좌2 명세 §9-2·§9-6)
     /** 미국 Claude 계좌2 패킷의 변형 이름({@code 1_basis.variant} — 계좌 프로필의 {@link ClaudeBookProfile#packetVariant}). */
@@ -2276,6 +2279,8 @@ public class PacketBuilder {
         if (!initial) {
             lines.add("9_portfolio.pendingOrders(앞선 결정의 대기 주문): " + PENDING_SUPERSEDED + ".");
         }
+        PaperSettings.UsCostRates costs = paper.usCosts() == null ? PaperSettings.UsCostRates.defaults() : paper.usCosts();
+        lines.add(costLine(costs, paper.slippageBp()));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("noCashBounds", NO_CASH_BOUNDS);
         out.put("lines", lines);
@@ -2287,6 +2292,14 @@ public class PacketBuilder {
         out.put("minHoldTradingDaysForSell", limits.minHoldTradingDaysForSell());
         out.put("trailingStopPct", decimal(paper.trailingStopPct(), 4));
         out.put("lockoutTradingDays", paper.lockoutTradingDays());
+        // 체결 비용(ADR 0030 — 한국 패킷의 commissionBp·slippageBp·sellTax와 같은 모양, 미국 매도 제비용은 sellRegFees).
+        out.put("commissionBp", decimal(costs.commissionBp(), 4));
+        out.put("slippageBp", decimal(paper.slippageBp(), 4));
+        Map<String, Object> regFees = new LinkedHashMap<>();
+        regFees.put("secPerMillion", decimal(costs.secPerMillion(), 4));
+        regFees.put("tafPerShare", decimal(costs.tafPerShare(), 6));
+        regFees.put("tafMaxPerTrade", decimal(costs.tafMaxPerTrade(), 2));
+        out.put("sellRegFees", regFees);
         out.put("cashLikeTickers", paper.cashLikeTickers());
         out.put("etfTickers", List.copyOf(new TreeSet<>(ruleSettings.etfs())));
         out.put("lockedOut", List.copyOf(lockedOut));
@@ -2298,6 +2311,17 @@ public class PacketBuilder {
         // 유니버스는 수백 종목이라 한 줄 문자열로(배열이면 따옴표·쉼표로 크기가 두 배).
         out.put("universe", String.join(",", universe));
         return out;
+    }
+
+    /**
+     * 미국 비용 문장(12_hardRules — ADR 0030, 한국 패킷의 비용 문장과 같은 자리): 수수료·슬리피지·매도 제비용과 반올림 규칙. 수량 문장(매수 수량은
+     * 수수료 포함 1주 유출로 나눈 정수 주)도 함께 적습니다 — 장부가 그렇게 체결합니다.
+     */
+    static String costLine(PaperSettings.UsCostRates costs, double slippageBp) {
+        return "비용: 수수료 " + plain(costs.commissionBp()) + "bp(매수·매도 각각, 센트 반올림)·슬리피지 " + plain(slippageBp)
+                + "bp(체결가에 얹음), 매도 제비용 SEC $" + plain(costs.secPerMillion()) + "/백만 달러 + FINRA TAF $"
+                + plain(costs.tafPerShare(), 6) + "/주(1건 상한 $" + plain(costs.tafMaxPerTrade(), 2)
+                + ") — 제비용은 센트 올림, 비용은 현금에서 뺌. 매수 수량은 목표 금액 ÷ (1주 체결가 × (1 + 수수료율)) 내림.";
     }
 
     /**

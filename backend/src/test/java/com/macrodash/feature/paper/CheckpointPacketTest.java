@@ -419,4 +419,24 @@ class CheckpointPacketTest {
                 .as("개장 전 — 받는 범위의 첫 분 09:31부터").containsExactly(Instant.parse("2026-11-02T14:31:00Z"),
                         Instant.parse("2026-11-02T20:54:00Z"));
     }
+
+    @Test
+    @DisplayName("ADR 0030: 장중 확인·판단 패킷(MINUTE·HOURLY·자유 시점 MINUTE)에서 바뀐 것은 4_portfolio.expected.note의 어림 설명 문구뿐('슬리피지·수수료·매도 제비용 빼고 어림') — 되돌리면 ADR 0030 전 고정본과 바이트까지 같다")
+    void onlyTheEstimateNoteChangedForCosts() {
+        String now = "(슬리피지·수수료·매도 제비용 빼고 어림)";
+        String before = "(슬리피지 빼고 어림)";
+        String minute = CheckpointPacket.build(inputs("MINUTE", Optional.of(watch(FETCHED, watchTickers())),
+                List.of(60, 70)), MAPPER).text();
+        String hourly = CheckpointPacket.build(inputs("HOURLY", Optional.empty(), List.of()), MAPPER).text();
+        String free = CheckpointPacket.build(freeInputs(2, 2, false), MAPPER).text();
+        for (String text : List.of(minute, hourly, free)) {
+            assertThat(text.split(java.util.regex.Pattern.quote(now), -1)).as("어림 문구 한 번").hasSize(2);
+        }
+        assertThat(Golden.sha256(minute.replace(now, before)))
+                .isEqualTo("abfbeafb164199cb8480708ba235908016081edd5ca6b9e543127419cc765adc");
+        assertThat(Golden.sha256(hourly.replace(now, before)))
+                .isEqualTo("724b321e601b68ac3d0a7cc9c278cbea35e4074fc7d90ec6dc731c482b001232");
+        assertThat(Golden.sha256(free.replace(now, before)))
+                .isEqualTo("8ecb6f8daa49dc68340593b5ca401607c27caf729bfe0fe5504f0004a593289c");
+    }
 }

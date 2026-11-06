@@ -25,6 +25,8 @@ BACKEND_TABLES = (
     "paper_reviews",
     # 한국 책 확정 조정(V14, v2 2단계 K29) — 금융위 확정가는 수집기가 받고, 조정 행은 백엔드 장부만 씁니다.
     "paper_fill_confirmations",
+    # 미국 체결 비용 소급 조정(V26, ADR 0030) — 조정 행은 백엔드 장부만 씁니다. 수집기는 읽지도 쓰지도 않습니다.
+    "paper_cost_adjustments",
     # 미국 Claude 계좌2 실행 감사(V17, ADR 0022) — 1분봉은 수집기가 받고, 주문별 감사 행은 백엔드만 씁니다.
     "paper_order_exec",
     # 미국 Claude 계좌2 장중 확인(V18, ADR 0022 단계 2) — 계획·결과는 백엔드만 씁니다. 수집기는 감시 범위를 읽기만 합니다.

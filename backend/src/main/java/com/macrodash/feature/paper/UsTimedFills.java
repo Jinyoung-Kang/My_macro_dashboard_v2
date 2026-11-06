@@ -966,7 +966,7 @@ final class UsTimedFills {
 
     private static FillTerms.SlippageInPrice terms(BookRun run, Order order, Look look) {
         String source = look.barAt() != null ? Datasets.SNAP_PAPER_BARS_US : PaperBooks.SOURCE_QUOTES;
-        return FillTerms.SlippageInPrice.ofRaw(order.side(), look.raw(), run.settings.slippageBp(), source);
+        return FillTerms.SlippageInPrice.ofRaw(order.side(), look.raw(), run.settings, source);
     }
 
     private void record(BookRun run, Order order, int qty, FillTerms terms, FillTerms.Costs costs, LocalDate session,

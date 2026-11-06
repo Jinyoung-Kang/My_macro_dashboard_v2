@@ -208,8 +208,8 @@ final class TestKrMarket implements PaperMarket {
     @Override
     public FillTerms fill(PaperStore.Order order, PaperMarketData.Bar bar, PaperSettings settings,
                           TradingCalendar calendar) {
-        FillTerms.SlippageInPrice base = FillTerms.SlippageInPrice.ofClose(order.side(), bar, settings.slippageBp(),
-                QUOTES_DATASET);
+        FillTerms.SlippageInPrice base = FillTerms.SlippageInPrice.of(order.side(), bar.close(), settings.slippageBp(),
+                QUOTES_DATASET, com.macrodash.analytics.UsCosts.Rates.ZERO);
         if (!costColumns) {
             return base;
         }

@@ -1017,10 +1017,10 @@ class RuleBookServiceTest {
 
         RuleBookService.StartResult result = rules.start();
 
-        // 목표 CCC 10%(최고 점수 0.8333) · BBB 8%(0.6667). CCC 10,000 / 100.05 → 99주, BBB 8,000 / 50.025 → 159주,
-        // SHY (100,000 − 10,005 − 8,004 = 81,991 → 81.991% − 0.5%p) 81,491 / 80.04 → 1,018주
+        // 목표 CCC 10%(최고 점수 0.8333) · BBB 8%(0.6667). CCC 10,000 / (100.05 × 1.001 — 수수료 10bp 포함, ADR 0030) → 99주,
+        // BBB 8,000 / (50.025 × 1.001) → 159주, SHY (100,000 − 10,005 − 8,004 = 81,991 → 81.991% − 0.5%p) 81,491 / (80.04 × 1.001) → 1,017주
         assertThat(result.fills()).extracting(Fill::ticker, Fill::qty).containsExactly(tuple("CCC", 99),
-                tuple("BBB", 159), tuple("SHY", 1018));
+                tuple("BBB", 159), tuple("SHY", 1017));
         assertThat(result.fills()).allSatisfy(f -> {
             assertThat(f.backfill()).isTrue();
             assertThat(f.observedAt()).isEqualTo(FRI_CLOSE);
@@ -1076,8 +1076,8 @@ class RuleBookServiceTest {
 
         assertThat(store.books.get(PaperBooks.RULES).status()).isEqualTo("ACTIVE");
         assertThat(store.books.get(PaperBooks.RULES).startedOn()).isEqualTo(FRI);
-        // 100,000 − 99 × 100.05 − 159 × 50.025 − 1,018 × 80.04
-        assertThat(store.states.get(PaperBooks.RULES).cash()).isCloseTo(660.355, within(1e-6));
+        // 100,000 − 99 × 100.05 − 수수료 9.90 − 159 × 50.025 − 수수료 7.95 − 1,017 × 80.04 − 수수료 81.40(ADR 0030)
+        assertThat(store.states.get(PaperBooks.RULES).cash()).isCloseTo(641.145, within(1e-6));
         assertThat(store.navSeries(PaperBooks.RULES)).singleElement().satisfies(row -> {
             assertThat(row.tradingDate()).isEqualTo(FRI);
             assertThat(row.pricesFinal()).isTrue();

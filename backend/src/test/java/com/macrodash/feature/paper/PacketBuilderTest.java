@@ -995,10 +995,10 @@ class PacketBuilderTest {
     // ------------------------------------------------------------------ 고정본(2단계 묶음 A 기준선)
     /** 미국 초기 패킷(10-23 INITIAL, 메모 하나)의 SHA-256 — 고정본 packet-us-initial.json 글자의 해시. */
     private static final String GOLDEN_INITIAL_SHA256 =
-            "79c940270ed0ec5b00e8e7cf7429fc611269ccd16f55995117c94fc91c32ca4e";
+            "564cf01936ed892033796dc157e39e79346306a452eb857832c317f3c7f916a1";
     /** 미국 정기 패킷(10-26 SCHEDULED, 운용 중인 Claude 책)의 SHA-256 — 고정본 packet-us-scheduled.json 글자의 해시. */
     private static final String GOLDEN_SCHEDULED_SHA256 =
-            "313757e080ffd731655c070c54bc81ee96b23bb1debdce335b323e17eeb17860";
+            "bdfb3fe4a6c3af2f16965d4c43e90b78150e9525e2c20e6b2642a983835e0673";
 
     @Test
     @DisplayName("계좌1 장중 확인(CHECKPOINT, 사용자 결정 2026-11-02) — 정기 패킷과 같고 0_instructions에 장중 확인 줄 하나와 decisionKind만 다름")
@@ -1110,10 +1110,10 @@ class PacketBuilderTest {
 
     /** 컨센서스 층을 켠 미국 초기 패킷(판 6)의 SHA-256 — 고정본 packet-us-v6-initial.json 글자의 해시. */
     private static final String GOLDEN_V6_INITIAL_SHA256 =
-            "86b297016ec9a2ee4360b46c04805f033ec625fda904404869c612ebdea8fe92";
+            "b0c57aea718effe05cf8de0da560317c70ad40f87eef943e29f2d756128e464b";
     /** 컨센서스 층을 켠 미국 정기 패킷(판 6)의 SHA-256 — 고정본 packet-us-v6-scheduled.json 글자의 해시. */
     private static final String GOLDEN_V6_SCHEDULED_SHA256 =
-            "291f3cbb84934bd7681692a3680717f24c28f69a6915a7833e6e34d3f7fc62cb";
+            "c4bf388e5bd6645bd89e53ee71e64fda1aa28cc34c02281c87f8668078e0fd34";
 
     @Test
     @DisplayName("고정본(판 6, E1b): calendar.consensus를 켜면 미국 초기·정기 패킷이 packetVersion 6 — 1b_calendar에 컨센서스 층이 붙고 다른 섹션은 판 5와 같다")
@@ -1356,9 +1356,9 @@ class PacketBuilderTest {
 
     /** 계좌2 초기(INITIAL — 사후 체결 없는 정기 조립)·정기 패킷의 SHA-256 — 고정본 packet-us-claude2-*.json 글자의 해시. */
     private static final String GOLDEN_CLAUDE2_INITIAL_SHA256 =
-            "a95d2849759359c02da59e42da910dc77893f8f287d1686663222ffd9a10a9c8";
+            "35a2478c74ff36c24ff679f7630f49fc126503e2b6892d8ba0cfbda0e491328b";
     private static final String GOLDEN_CLAUDE2_SCHEDULED_SHA256 =
-            "8a2d6849e50037141204d93cf4955d96923ab95f763d503166e7609da9222d89";
+            "efc2bc0a8cc4a4d07fd947b4c4a693949bedf48a3d77f2b76f60368adeed87cf";
 
     @Test
     @DisplayName("고정본(계좌2 명세 §9): 계좌2 출발(INITIAL, initial=false — 사후 체결 문장 없음)·정기 패킷 — 계좌1과 같은 시장 입력으로 조립해 계좌 비의존 섹션 일곱이 같고, 계좌1 패킷은 고정본 그대로")
@@ -3341,5 +3341,81 @@ class PacketBuilderTest {
         earnings.put("items", items);
         earnings.put("covered", 600);
         return payload;
+    }
+
+    // ------------------------------------------------------------------ ADR 0030 — 미국 비용 칸·문장
+    /** ADR 0030 전 고정본 글자의 SHA-256(비용 칸·문장을 빼면 이 값과 바이트까지 같아야 함). */
+    private static final Map<String, String> BEFORE_COSTS_SHA256 = Map.of(
+            "initial", "79c940270ed0ec5b00e8e7cf7429fc611269ccd16f55995117c94fc91c32ca4e",
+            "scheduled", "313757e080ffd731655c070c54bc81ee96b23bb1debdce335b323e17eeb17860",
+            "v6-initial", "86b297016ec9a2ee4360b46c04805f033ec625fda904404869c612ebdea8fe92",
+            "v6-scheduled", "291f3cbb84934bd7681692a3680717f24c28f69a6915a7833e6e34d3f7fc62cb",
+            "claude2-initial", "a95d2849759359c02da59e42da910dc77893f8f287d1686663222ffd9a10a9c8",
+            "claude2-scheduled", "8a2d6849e50037141204d93cf4955d96923ab95f763d503166e7609da9222d89",
+            "claude2-c2-scheduled", "f6c715284df1ec5c09c3fa4121aaa553e1e34e44d25cd6290da8e21df9871e4a",
+            "ft-claude-scheduled", "0b584a98d8f76fb55be9fe9346108db574654dc51cf6cd37790d68bbe22e6559",
+            "ft-claude2-scheduled", "798c55ba4b58273fcf0cf339a867437026fee2b255823f98d03e297f7fb3d2e4");
+
+    /** 패킷에서 ADR 0030의 비용 칸(12_hardRules의 commissionBp·slippageBp·sellRegFees)과 비용 문장(lines 마지막 줄)을 뺀 글자. */
+    private static String withoutCosts(Packet packet) {
+        ObjectNode body = (ObjectNode) packet.body().deepCopy();
+        ObjectNode rules = (ObjectNode) body.get(PacketBuilder.HARD_RULES);
+        assertThat(rules.get("commissionBp").decimalValue()).isEqualByComparingTo("10");
+        assertThat(rules.get("slippageBp").decimalValue()).isEqualByComparingTo("5");
+        assertThat(rules.get("sellRegFees").toString())
+                .isEqualTo("{\"secPerMillion\":20.6,\"tafPerShare\":0.000195,\"tafMaxPerTrade\":9.79}");
+        rules.remove(List.of("commissionBp", "slippageBp", "sellRegFees"));
+        tools.jackson.databind.node.ArrayNode lines = (tools.jackson.databind.node.ArrayNode) rules.get("lines");
+        assertThat(lines.get(lines.size() - 1).asString()).isEqualTo(PacketBuilder.costLine(
+                PaperSettings.defaults().usCosts(), PaperSettings.DEFAULT_SLIPPAGE_BP));
+        lines.remove(lines.size() - 1);
+        return MAPPER.writeValueAsString(body);
+    }
+
+    @Test
+    @DisplayName("ADR 0030: 미국 Claude 패킷(계좌1 초기·정기, 판 6, 계좌2 출발·정기·장중 확인 판, 자유 시점 판 둘)에서 바뀐 것은 12_hardRules의 비용 칸(commissionBp·slippageBp·sellRegFees)과 비용 문장 한 줄뿐 — 빼면 ADR 0030 전 고정본과 바이트까지 같다")
+    void usCostFieldsAreTheOnlyPacketChange() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        Map<String, Packet> packets = new java.util.LinkedHashMap<>();
+        packets.put("initial", builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings));
+        activeClaude();
+        packets.put("scheduled", builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings));
+        notStartedClaude2();
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        packets.put("claude2-initial", builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.INITIAL, 0));
+        store.books.remove(PaperBooks.CLAUDE2);
+        activeClaude2();
+        packets.put("claude2-scheduled", builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2, RuleBookService.SCHEDULED, 0));
+        packets.put("claude2-c2-scheduled", builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2_C2,
+                RuleBookService.SCHEDULED, 0));
+        packets.put("ft-claude2-scheduled", builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE2_FT,
+                RuleBookService.SCHEDULED, 0));
+        packets.put("ft-claude-scheduled", builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE_FT,
+                RuleBookService.SCHEDULED, 0));
+        packets.forEach((name, packet) -> assertThat(Golden.sha256(withoutCosts(packet))).as(name)
+                .isEqualTo(BEFORE_COSTS_SHA256.get(name)));
+    }
+
+    @Test
+    @DisplayName("ADR 0030: 컨센서스 판 6 패킷도 비용 칸·문장만 바뀜 — 빼면 ADR 0030 전 고정본과 같다. 비율을 바꾸면 그 판의 값이 칸·문장에 실린다")
+    void usCostFieldsFollowTheSettings() {
+        store.insertNote(new Note(0, NoteService.MARKET, FRI, TUE, "금요일 시황", "10년물 4.6%·브렌트 88", false, null));
+        consensusOn();
+        ObjectNode body = (ObjectNode) store.settings.body();
+        assertThat(Golden.sha256(withoutCosts(builder.build(FRI, RuleBookService.INITIAL, true, 0, store.settings))))
+                .isEqualTo(BEFORE_COSTS_SHA256.get("v6-initial"));
+        activeClaude();
+        assertThat(Golden.sha256(withoutCosts(builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings))))
+                .isEqualTo(BEFORE_COSTS_SHA256.get("v6-scheduled"));
+
+        body.put("commissionBp", 2.5);
+        ((ObjectNode) body.get("regFees")).put("secPerMillion", 0).put("tafPerShare", 0.000166).put("tafMaxPerTrade", 8.3);
+        JsonNode rules = builder.build(MON, RuleBookService.SCHEDULED, false, 0, store.settings).body()
+                .get(PacketBuilder.HARD_RULES);
+        assertThat(rules.get("commissionBp").decimalValue()).isEqualByComparingTo("2.5");
+        assertThat(rules.get("sellRegFees").toString())
+                .isEqualTo("{\"secPerMillion\":0,\"tafPerShare\":0.000166,\"tafMaxPerTrade\":8.3}");
+        String last = rules.get("lines").get(rules.get("lines").size() - 1).asString();
+        assertThat(last).startsWith("비용: 수수료 2.5bp").contains("SEC $0/백만 달러").contains("TAF $0.000166/주(1건 상한 $8.3)");
     }
 }

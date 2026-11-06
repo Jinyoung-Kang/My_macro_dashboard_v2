@@ -110,7 +110,7 @@ public final class AccessPolicy {
                 "POST /api/paper/books/{code}/status",
                 "POST /api/paper/books/{code}/reset", "POST /api/paper/books/{code}/restart-at-start-close",
                 "POST /api/paper/run/kr-claude2-start",
-                "POST /api/paper/run/risk", "GET /api/paper/track-record",
+                "POST /api/paper/run/risk", "POST /api/paper/admin/cost-backfill", "GET /api/paper/track-record",
                 "POST /api/paper/run/rerank", "GET /api/paper/decisions", "GET /api/paper/decisions/{id}",
                 "POST /api/paper/run/decision", "POST /api/paper/run/initial-decision", "POST /api/paper/run/intraday",
                 "GET /api/paper/settings", "POST /api/paper/settings", "GET /api/paper/settings/history");

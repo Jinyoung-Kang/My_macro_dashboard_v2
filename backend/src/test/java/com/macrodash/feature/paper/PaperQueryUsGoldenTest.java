@@ -66,6 +66,10 @@ class PaperQueryUsGoldenTest {
         body.remove("slippageBp");
         ((ObjectNode) body.get("blend")).remove("minTargetPct");
         body.remove("rules");
+        // 미국 체결 비용 비율 0(ADR 0030 전 장부) — 벤치마크 사후 체결 현금이 이 고정본을 뜬 때와 같게(응답 모양이 그대로인지를 보는 시험).
+        // 비용을 낸 장부의 숫자는 장부 고정본 ledger-us-week-costs.txt가 봅니다.
+        body.put("commissionBp", 0);
+        ((ObjectNode) body.get("regFees")).put("secPerMillion", 0).put("tafPerShare", 0).put("tafMaxPerTrade", 0);
         store.initSettingsIfAbsent(body);
 
         PaperMarketData marketData = mock(PaperMarketData.class);

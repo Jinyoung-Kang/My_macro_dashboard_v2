@@ -251,6 +251,11 @@ class PaperNotifyJobTest {
                 "equity_close", true, T0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(PaperNotifications.fill(backfill, us, null, Map.of(), "")).contains("시점 — · 가격 출처 equity_close · 사후 체결")
                 .contains("3주 @ $580.12 = $1,740.36");
+        // 미국 매도 비용(ADR 0030) — SEC fee·FINRA TAF는 '세금'이 아니라 '제비용'
+        Fill usSell = new Fill(2, 2, PaperBooks.CLAUDE, "BBB", "SELL", 100, 91.85405, 92.0, 5, 9_185.405, T0, LocalDate.of(2026, 11, 2),
+                "paper.quotes", false, T0, new BigDecimal("9.19"), new BigDecimal("0.21"), BigDecimal.ZERO);
+        assertThat(PaperNotifications.fill(usSell, us, null, Map.of(), "")).contains("수수료 $9.19 · 제비용 $0.21")
+                .doesNotContain("세금");
     }
 
     // QA-168: 사용자 보고(2026-11-03) — 결정 알림의 요약·주문 없음 사유가 '…'로 잘려 옴(요약 400자·사유 200자 상한, 응답 스키마는 1,200·600자).

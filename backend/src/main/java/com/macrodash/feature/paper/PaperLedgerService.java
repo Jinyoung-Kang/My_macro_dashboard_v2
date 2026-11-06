@@ -1871,7 +1871,7 @@ public class PaperLedgerService {
      * @param baseNav     매수 금액의 기준 순자산. 다리마다 바뀌는 순자산이 아니라 체결 전 값입니다 — 슬리피지만큼 순자산이 줄어
      *                    뒤 다리일수록 덜 사는 일이 없게(벤치마크 60/40이 처음 정한 비중대로)
      * @param closes      종목 → 그날 종가와 출처(얼린 출발일 종가 — {@link PaperAdminService#startClose})
-     * @param settings    슬리피지·현금성 종목
+     * @param settings    슬리피지·미국 비용 요율·현금성 종목
      */
     public record BackfillRequest(Book book, LocalDate tradingDate, String source, Long decisionId, double cash,
                                   double baseNav, List<BackfillLeg> legs,
@@ -1893,8 +1893,9 @@ public class PaperLedgerService {
      * 미국 책만 받습니다(거래일·마감 시각은 미국 달력 — 한국은 출발일 사후 체결이 없음, 명세 K28). 다른 시장 책이면 아무것도 쓰지
      * 않고 {@link IllegalArgumentException}.
      *
-     * <p>순서는 관측치 처리와 같습니다: 매도 → 현금성이 아닌 매수 → 현금성 매수({@link #fill}의 이유). 체결가는 종가에 슬리피지,
-     * 매수 수량은 {@code baseNav × 목표 비중}을 체결가로 나눠 내림(현금보다 많이 사지 않음 — 줄였으면 근거에 {@code cashLimited}).
+     * <p>순서는 관측치 처리와 같습니다: 매도 → 현금성이 아닌 매수 → 현금성 매수({@link #fill}의 이유). 체결가는 종가에 슬리피지, 비용 칸은
+     * 수수료·매도 제비용(관측치 체결과 같은 {@link FillTerms.SlippageInPrice} — ADR 0030, 요청의 설정 판), 매수 수량은 {@code baseNav × 목표
+     * 비중}을 수수료 포함 1주 유출로 나눠 내림(현금보다 많이 사지 않음 — 현금 한도도 수수료 포함, 줄였으면 근거에 {@code cashLimited}).
      * 주문은 출처 그대로 {@code BACKFILL}·{@code FILLED}로 남기고(생성 = 그날 마감 1초 전, 기준 거래일 = 그 전 거래일 — 기록에서
      * 주문이 관측치보다 앞서 보이게), 체결은 {@code is_backfill = true}·관측 시각 = 그날 마감·가격 출처 = 종가의 출처입니다.
      *
@@ -1915,7 +1916,6 @@ public class PaperLedgerService {
         String code = r.book().code();
         LocalDate day = r.tradingDate();
         Instant close = market.calendar().closeInstant(day);
-        double bp = r.settings().slippageBp();
         Map<String, Position> held = new TreeMap<>();
         store.positions(code).forEach(p -> held.put(p.ticker(), p));
         double cash = r.cash();
@@ -1935,10 +1935,11 @@ public class PaperLedgerService {
                     continue;
                 }
                 int qty = PaperLedger.sellQty(position.qty(), leg.sellFraction());
-                double price = price6(PaperLedger.fillPrice(raw.close(), PaperLedger.Side.SELL, bp));
-                double gross = gross(qty, price);
-                fills.add(backfillFill(market, r, leg, leg.reason(), qty, price, raw, gross, close));
-                cash = PaperLedger.round4(cash + gross);
+                FillTerms.SlippageInPrice terms = FillTerms.SlippageInPrice.ofRaw(PaperBooks.SELL, raw.close(), r.settings(),
+                        raw.source());
+                FillTerms.Costs costs = terms.costs(qty);
+                fills.add(backfillFill(market, r, leg, leg.reason(), qty, terms, raw, costs, close));
+                cash = PaperLedger.round4(cash + costs.cashDelta());
                 int left = position.qty() - qty;
                 if (left == 0) {
                     held.remove(ticker);
@@ -1953,14 +1954,16 @@ public class PaperLedgerService {
                 }
                 continue;
             }
-            double price = price6(PaperLedger.fillPrice(raw.close(), PaperLedger.Side.BUY, bp));
+            FillTerms.SlippageInPrice terms = FillTerms.SlippageInPrice.ofRaw(PaperBooks.BUY, raw.close(), r.settings(),
+                    raw.source());
+            double price = terms.price();
             double weight = leg.targetWeightPct() == null ? 0 : leg.targetWeightPct();
-            int wanted = PaperLedger.buyQty(r.baseNav() * weight / 100.0, price);
+            int wanted = terms.affordableQty(r.baseNav() * weight / 100.0);
             if (wanted <= 0) {
                 skipped.add(Map.entry(ticker, ticker + " 종가(" + raw.close() + ")로는 1주도 살 수 없습니다"));
                 continue;
             }
-            int qty = Math.min(wanted, PaperLedger.buyQty(cash, price));
+            int qty = Math.min(wanted, terms.affordableQty(cash));   // 현금 한도도 수수료 포함 유출로
             if (qty <= 0) {
                 skipped.add(Map.entry(ticker, "현금이 모자라 1주도 살 수 없습니다(현금 " + money(cash) + ")"));
                 continue;
@@ -1974,9 +1977,9 @@ public class PaperLedgerService {
                 limited.put("filledQty", qty);
                 reason = limited;
             }
-            double gross = gross(qty, price);
-            fills.add(backfillFill(market, r, leg, reason, qty, price, raw, gross, close));
-            cash = PaperLedger.round4(cash - gross);
+            FillTerms.Costs costs = terms.costs(qty);
+            fills.add(backfillFill(market, r, leg, reason, qty, terms, raw, costs, close));
+            cash = PaperLedger.round4(cash + costs.cashDelta());
             Position before = held.get(ticker);
             Position after = before == null
                     ? new Position(code, ticker, qty, PaperLedger.round4(price), day, close, PaperLedger.round4(price),
@@ -2022,7 +2025,7 @@ public class PaperLedgerService {
     }
 
     private Fill backfillFill(PaperMarket market, BackfillRequest r, BackfillLeg leg, JsonNode reason, int qty,
-                              double price, PaperMarketData.SourcedClose raw, double gross, Instant close) {
+                              FillTerms terms, PaperMarketData.SourcedClose raw, FillTerms.Costs costs, Instant close) {
         String code = r.book().code();
         String side = PaperBooks.SELL.equals(leg.side()) ? PaperBooks.SELL : PaperBooks.BUY;
         long orderId = store.insertOrder(new Order(0, code, r.decisionId(), leg.ticker(), side, null,
@@ -2030,16 +2033,19 @@ public class PaperLedgerService {
                 PaperBooks.SELL.equals(side) ? leg.sellFraction() : null, PaperBooks.BACKFILL, r.source(),
                 PaperBooks.ORDER_FILLED, null, reason, market.calendar().previousTradingDay(r.tradingDate()),
                 close.minusSeconds(1), null, close));
-        Fill fill = new Fill(0, orderId, code, leg.ticker(), side, qty, price, raw.close(), r.settings().slippageBp(),
-                gross, close, r.tradingDate(), raw.source(), true, null);
+        // 비용 칸(수수료·매도 제비용 — ADR 0030)도 체결 행에 그대로 남깁니다(관측치 체결과 같은 칸).
+        Fill fill = new Fill(0, orderId, code, leg.ticker(), side, qty, terms.price(), raw.close(), terms.slippageBp(),
+                costs.gross(), close, r.tradingDate(), raw.source(), true, null, costs.fee(), costs.tax(),
+                costs.slippageCost());
         long fillId = store.insertFill(fill);
-        return new Fill(fillId, orderId, code, leg.ticker(), side, qty, price, raw.close(), r.settings().slippageBp(),
-                gross, close, r.tradingDate(), raw.source(), true, null);
+        return new Fill(fillId, orderId, code, leg.ticker(), side, qty, terms.price(), raw.close(), terms.slippageBp(),
+                costs.gross(), close, r.tradingDate(), raw.source(), true, null, costs.fee(), costs.tax(),
+                costs.slippageCost());
     }
 
     /**
-     * 체결 행 한 줄 — 체결가·관측가·출처·슬리피지 기록값은 시장의 체결 조건({@link FillTerms}), 금액·비용 칸(수수료·세금·슬리피지 금액 —
-     * 한국 체결, 미국은 0)은 그 수량의 {@link FillTerms.Costs}. 현금 변화({@link FillTerms.Costs#cashDelta})에 든 비용이 체결 행에도 그대로
+     * 체결 행 한 줄 — 체결가·관측가·출처·슬리피지 기록값은 시장의 체결 조건({@link FillTerms}), 금액·비용 칸(한국 수수료·세금·슬리피지 금액,
+     * 미국 수수료·매도 제비용 — ADR 0030)은 그 수량의 {@link FillTerms.Costs}. 현금 변화({@link FillTerms.Costs#cashDelta})에 든 비용이 체결 행에도 그대로
      * 남습니다(C2b — 그 전에는 0이 아닌 비용 칸을 받으면 버리지 않고 그 책을 되돌렸음). 관측 시각은 그 관측치의 수집 시각, 관측일은 그 봉 날짜입니다.
      */
     private void recordFill(BookRun run, long orderId, String ticker, String side, int qty, FillTerms terms,

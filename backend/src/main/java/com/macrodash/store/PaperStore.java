@@ -225,6 +225,60 @@ public class PaperStore {
     }
 
     /**
+     * 소급 비용 조정 한 행({@code paper_cost_adjustments}, V26 — ADR 0030, 명세 2026-11-06-us-costs-backfill.md §2). 체결 하나에 한 행이고(기본키
+     * {@code fill_id}) 체결 행은 그대로입니다 — 당시 수량·체결가는 바꾸지 않고 비용만 더합니다. {@code fee} = 수수료, {@code tax} = 매도 제비용,
+     * {@code cashDelta} = −(fee + tax)(늘 0 이하 — 계좌 현금·그 거래일부터의 순자산 줄에 더한 값), {@code fillDate} = 그 체결이 장부에 반영된 거래일
+     * ({@code paper_fills.observation_date}), {@code settingsVersion} = 계산에 쓴 설정 판(행이 없었으면 null), {@code rates} = 쓴 비율. 금액은 DB 열과
+     * 같은 소수 4자리로 맞춰 둡니다 — 비용 음수·현금 차이 양수·자리 넘침은 받지 않습니다(DB CHECK와 같은 규칙).
+     *
+     * @param createdAt 쓴 시각 — 넣을 때 null이면 DB의 now()
+     */
+    public record CostAdjustment(long fillId, String bookCode, String market, BigDecimal fee, BigDecimal tax,
+                                 BigDecimal cashDelta, LocalDate fillDate, Integer settingsVersion, JsonNode rates,
+                                 String reason, Instant createdAt) {
+
+        /** 미국 체결 비용 소급의 사유({@code reason}). */
+        public static final String REASON_US_BACKFILL = "us-cost-backfill";
+
+        public CostAdjustment {
+            if (bookCode == null || bookCode.isBlank()) {
+                throw new IllegalArgumentException("소급 조정의 책이 없습니다");
+            }
+            if (!Book.MARKET_US.equals(market) && !Book.MARKET_KR.equals(market)) {
+                throw new IllegalArgumentException("소급 조정의 시장은 US·KR만입니다(DB CHECK): " + market);
+            }
+            fee = Fill.cost(fee, "fee");
+            tax = Fill.cost(tax, "tax");
+            if (cashDelta == null) {
+                throw new IllegalArgumentException("cash_delta 값이 없습니다(비용이 없으면 0)");
+            }
+            if (cashDelta.signum() > 0) {
+                throw new IllegalArgumentException("소급 비용의 현금 차이는 0 이하입니다(DB CHECK): " + cashDelta);
+            }
+            try {
+                cashDelta = cashDelta.setScale(Fill.COST_SCALE, java.math.RoundingMode.UNNECESSARY);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException("cash_delta는 소수 " + Fill.COST_SCALE + "자리까지입니다: " + cashDelta);
+            }
+            if (fillDate == null) {
+                throw new IllegalArgumentException("소급 조정의 체결 거래일이 없습니다");
+            }
+            if (reason == null || reason.isBlank()) {
+                throw new IllegalArgumentException("소급 조정의 사유가 없습니다");
+            }
+        }
+    }
+
+    /**
+     * 비용 소급의 대상 체결 한 건 — 비용 칸이 비었고(수수료·세금 0) 조정 행이 없는 체결. 금액은 저장 열 그대로 십진수로 읽습니다(체결가 6자리·체결
+     * 금액 4자리 — double을 거치지 않음). {@code createdAt}은 체결 행을 쓴 시각 — 그 체결 때 유효했던 설정 판을 찾는 데 씁니다
+     * ({@link #settingsInForceAt}).
+     */
+    public record CostBackfillFill(long fillId, String bookCode, String ticker, String side, int qty, BigDecimal price,
+                                   BigDecimal gross, LocalDate observationDate, Instant createdAt) {
+    }
+
+    /**
      * 아직 확정 조정 행이 없는 체결과 그 주문의 체결 시점({@code paper_orders.timing}) — 확정가가 시가({@code NEXT_OPEN} → 금융위
      * {@code mkp})인지 종가({@code NEXT_CLOSE} → {@code clpr})인지를 가릅니다.
      */
@@ -751,7 +805,8 @@ public class PaperStore {
                 && schema.columnExists("paper_fills", "bar_at") && schema.tableExists("paper_order_exec")
                 && schema.columnExists("paper_checkpoints", "at_local")
                 && schema.columnExists("paper_orders", "target_local")
-                && schema.tableExists("paper_intraday_plans");
+                && schema.tableExists("paper_intraday_plans")
+                && schema.tableExists("paper_cost_adjustments");
     }
 
     /**
@@ -1378,6 +1433,103 @@ public class PaperStore {
                         rs.getBigDecimal("slippage_cost"), rs.getBigDecimal("cash_delta"), rs.getString("source"),
                         instant(rs, "reconciled_at")),
                 code);
+    }
+
+    // ------------------------------------------------------------------ 소급 비용 조정(V26 — ADR 0030)
+    /**
+     * 비용 소급의 대상 — 그 책의 체결 가운데 비용 칸이 비었고({@code fee = 0 AND tax = 0}) 소급 조정 행이 없는 것, 체결 번호 순. 새 비용으로 이미
+     * 체결된 행(비용 칸이 있음)과 이미 조정한 행은 빠집니다(두 번 돌려도 한 번).
+     */
+    public List<CostBackfillFill> costBackfillTargets(String code) {
+        return jdbc.query("SELECT f.id, f.book_code, f.ticker, f.side, f.qty, f.price, f.gross, f.observation_date, "
+                        + "f.created_at FROM paper_fills f LEFT JOIN paper_cost_adjustments a ON a.fill_id = f.id "
+                        + "WHERE f.book_code = ? AND f.fee = 0 AND f.tax = 0 AND a.fill_id IS NULL ORDER BY f.id",
+                (rs, rowNum) -> new CostBackfillFill(rs.getLong("id"), rs.getString("book_code"), rs.getString("ticker"),
+                        rs.getString("side"), rs.getInt("qty"), rs.getBigDecimal("price"), rs.getBigDecimal("gross"),
+                        date(rs, "observation_date"), instant(rs, "created_at")),
+                code);
+    }
+
+    /**
+     * 소급 조정 한 행을 넣습니다 — 그 체결에 이미 있으면(체결마다 한 행, 기본키 {@code fill_id}) 아무것도 바꾸지 않고 false. 부르는 쪽은 true일
+     * 때만 같은 트랜잭션에서 현금·순자산 줄을 옮깁니다(두 번 돌려도 현금이 두 번 움직이지 않음).
+     *
+     * @return 새로 넣었으면 true
+     */
+    public boolean insertCostAdjustmentIfAbsent(CostAdjustment a) {
+        String rates = a.rates() == null ? null : mapper.writeValueAsString(a.rates());
+        return jdbc.update("INSERT INTO paper_cost_adjustments (fill_id, book_code, market, fee, tax, cash_delta, fill_date, "
+                        + "settings_version, rates, reason, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(CAST(? AS jsonb), '{}'::jsonb), ?, "
+                        + "COALESCE(CAST(? AS timestamptz), now())) ON CONFLICT (fill_id) DO NOTHING",
+                ps -> {
+                    ps.setLong(1, a.fillId());
+                    ps.setString(2, a.bookCode());
+                    ps.setString(3, a.market());
+                    ps.setBigDecimal(4, a.fee());
+                    ps.setBigDecimal(5, a.tax());
+                    ps.setBigDecimal(6, a.cashDelta());
+                    setDate(ps, 7, a.fillDate());
+                    if (a.settingsVersion() == null) {
+                        ps.setNull(8, Types.INTEGER);
+                    } else {
+                        ps.setInt(8, a.settingsVersion());
+                    }
+                    ps.setString(9, rates);
+                    ps.setString(10, a.reason());
+                    setInstant(ps, 11, a.createdAt());
+                }) == 1;
+    }
+
+    /** 한 책의 소급 조정 행, 체결 번호 순. */
+    public List<CostAdjustment> costAdjustments(String code) {
+        return jdbc.query("SELECT fill_id, book_code, market, fee, tax, cash_delta, fill_date, settings_version, "
+                        + "rates::text AS rates, reason, created_at FROM paper_cost_adjustments WHERE book_code = ? "
+                        + "ORDER BY fill_id",
+                (rs, rowNum) -> new CostAdjustment(rs.getLong("fill_id"), rs.getString("book_code"), rs.getString("market"),
+                        rs.getBigDecimal("fee"), rs.getBigDecimal("tax"), rs.getBigDecimal("cash_delta"),
+                        date(rs, "fill_date"), rs.getObject("settings_version", Integer.class), json(rs, "rates"),
+                        rs.getString("reason"), instant(rs, "created_at")),
+                code);
+    }
+
+    /**
+     * 그 책의 거래일 {@code from} 이후(포함) 순자산 줄마다 현금·순자산에 {@code delta}를 더하고 노출(평가액 ÷ 순자산 × 100, 소수 4자리)을 다시
+     * 셉니다 — 소급 비용(명세 §2: 날짜 d의 줄에 fill_date ≤ d인 조정의 현금 차이 합). 평가액·확정 표시는 그대로입니다. 줄을 지우거나 만들지
+     * 않습니다.
+     *
+     * @return 바꾼 줄 수
+     */
+    public int shiftNavFrom(String code, LocalDate from, BigDecimal delta) {
+        return jdbc.update("UPDATE paper_nav_daily SET nav = nav + ?, cash = cash + ?, "
+                        + "exposure_pct = CASE WHEN nav + ? > 0 THEN round(equity_value / (nav + ?) * 100, 4) ELSE 0 END "
+                        + "WHERE book_code = ? AND trading_date >= ?",
+                ps -> {
+                    ps.setBigDecimal(1, delta);
+                    ps.setBigDecimal(2, delta);
+                    ps.setBigDecimal(3, delta);
+                    ps.setBigDecimal(4, delta);
+                    ps.setString(5, code);
+                    setDate(ps, 6, from);
+                });
+    }
+
+    /**
+     * 그 책 상태의 현금·순자산에 {@code delta}를 더하고 노출을 다시 셉니다(평가액·멱등 키·마지막 순자산 거래일은 그대로) — 소급 비용(명세 §2).
+     *
+     * @return 상태 행이 있어 바꿨으면 true
+     */
+    public boolean shiftStateCash(String code, BigDecimal delta) {
+        return jdbc.update("UPDATE paper_book_state SET cash = cash + ?, nav = nav + ?, "
+                        + "exposure_pct = CASE WHEN nav + ? > 0 THEN round(equity_value / (nav + ?) * 100, 4) ELSE 0 END, "
+                        + "updated_at = now() WHERE book_code = ?",
+                ps -> {
+                    ps.setBigDecimal(1, delta);
+                    ps.setBigDecimal(2, delta);
+                    ps.setBigDecimal(3, delta);
+                    ps.setBigDecimal(4, delta);
+                    ps.setString(5, code);
+                }) == 1;
     }
 
     private static Fill fillOf(ResultSet rs) throws SQLException {

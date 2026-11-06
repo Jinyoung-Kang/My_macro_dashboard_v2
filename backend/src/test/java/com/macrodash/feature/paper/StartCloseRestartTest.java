@@ -108,7 +108,7 @@ class StartCloseRestartTest {
                     assertThat(o.status()).isEqualTo(PaperBooks.ORDER_CANCELLED);
                     assertThat(o.rejectReason()).isEqualTo(StartCloseRestart.CANCEL_REASON);
                 });
-        // 8,000 ÷ 150.075 = 53.3 → 53주, 7,000 ÷ 90.045 = 77.7 → 77주
+        // 8,000 ÷ (150.075 × 1.001 — 수수료 10bp 포함, ADR 0030) = 53.3 → 53주, 7,000 ÷ (90.045 × 1.001) = 77.7 → 77주
         List<Fill> fills = store.fillsOf(PaperBooks.CLAUDE2);
         assertThat(fills).extracting(Fill::ticker, Fill::qty, Fill::price, Fill::rawPrice, Fill::backfill, Fill::observedAt)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("XLV", 53, 150.075, 150.0, true, FRI_CLOSE),
@@ -123,7 +123,9 @@ class StartCloseRestartTest {
             assertThat(o.reason().path("thesis").asString()).endsWith("근거");
         });
         BookState state = store.states.get(PaperBooks.CLAUDE2);
-        double cash = PaperLedger.round4(100_000 - 53 * 150.075 - 77 * 90.045);
+        // 수수료 7.95(7,953.975 × 10bp)·6.93(6,933.465 × 10bp)도 현금에서(사후 체결 비용 칸)
+        assertThat(fills).extracting(f -> f.fee().toPlainString()).containsExactly("7.9500", "6.9300");
+        double cash = PaperLedger.round4(100_000 - 53 * 150.075 - 7.95 - 77 * 90.045 - 6.93);
         assertThat(state.cash()).isEqualTo(cash);
         assertThat(state.nav()).isEqualTo(PaperLedger.round4(cash + 53 * 150 + 77 * 90));
         assertThat(state.lastProcessedCollectedAt()).as("이미 처리한 관측치를 다시 처리하지 않음").isEqualTo(MON_INTRADAY);

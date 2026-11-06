@@ -265,7 +265,7 @@ class PaperQueryKrBooksTest {
     }
 
     @Test
-    @DisplayName("미국 계좌의 체결·보유 응답은 키 목록이 예전 그대로 — 한국 칸(비용·확정·기업행위)이 붙지 않음")
+    @DisplayName("미국 계좌의 체결·보유 응답 키 목록 — 체결에는 미국 비용 칸(fee·tax·소급 조정 — ADR 0030)만 더해지고 한국 칸(슬리피지 비용·실효 bp·확정·기업행위)은 붙지 않음")
     @SuppressWarnings("unchecked")
     void usRowsKeepTheirKeys() {
         store.books.put("claude", new Book("claude", PaperBooks.KIND_CLAUDE, "Claude 재량 책", 100_000, PaperFixtures.FRI,
@@ -280,9 +280,10 @@ class PaperQueryKrBooksTest {
                 PaperFixtures.MON_INTRADAY, PaperFixtures.MON, "equity_close", false, PaperFixtures.MON_INTRADAY));
 
         Map<String, Object> fills = query.fills("claude", 50);
-        assertThat(fills.keySet()).containsExactly("available", "fills");
+        assertThat(fills.keySet()).containsExactly("available", "costAdjustmentTotal", "fills");
         assertThat(rows(fills).get(0).keySet()).containsExactly("id", "orderId", "ticker", "side", "qty", "price", "rawPrice",
-                "slippageBp", "gross", "observedAtKst", "observationDate", "priceSource", "backfill");
+                "slippageBp", "gross", "observedAtKst", "observationDate", "priceSource", "backfill", "fee", "tax",
+                "costAdjustment");
         Map<String, Object> positions = query.positions("claude");
         assertThat(((List<Map<String, Object>>) positions.get("positions")).get(0).keySet()).containsExactly("ticker", "qty",
                 "avgCost", "lastPrice", "lastPriceAtKst", "marketValue", "weightPct", "unrealizedPct", "highWatermark",

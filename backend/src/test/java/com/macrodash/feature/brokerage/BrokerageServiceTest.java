@@ -220,7 +220,7 @@ class BrokerageServiceTest {
         assertThat(view.currency()).isEqualTo("KRW");
         assertThat(view.accountLabel()).isEqualTo("토스증권 종합매매");
         assertThat(view.accountCount()).isEqualTo(1);
-        assertThat(view.fetchedAtKst()).isEqualTo("2026-11-05 14:03");
+        assertThat(view.fetchedAtKst()).isEqualTo("2026-11-05 14:03:12");
         assertThat(view.ageSeconds()).isEqualTo(60L);
         assertThat(view.isStale()).isFalse();
         assertThat(view.staleReason()).isNull();
@@ -473,8 +473,8 @@ class BrokerageServiceTest {
         assertThat(view.available()).isTrue();
         assertThat(view.isStale()).isTrue();
         assertThat(view.staleReason()).isEqualTo(State.RATE_LIMITED);
-        assertThat(view.staleSinceKst()).isEqualTo("2026-11-05 14:05");
-        assertThat(view.fetchedAtKst()).isEqualTo("2026-11-05 14:03");
+        assertThat(view.staleSinceKst()).isEqualTo("2026-11-05 14:05:00");
+        assertThat(view.fetchedAtKst()).isEqualTo("2026-11-05 14:03:12");
         assertThat(view.message()).isEqualTo(BrokerageService.STALE_MESSAGE);
         assertThat(view.holdings()).extracting(HoldingRow::symbol).containsExactly("005930");
         assertThat(json(view).path("staleReason").asString()).isEqualTo("RATE_LIMITED");

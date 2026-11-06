@@ -567,9 +567,13 @@ class UsTimedFillsTest {
                     bar("SHY", MON, 82.0, TUE, 82.0));
 
             assertThat(fillOf(sell).qty()).isEqualTo(100);
-            assertThat(fillOf(aapl).qty()).as("2,000 + 4,997.5 = 6,997.5 → 60 × 100.05 = 6,003").isEqualTo(60);
-            // 남은 현금 994.5 → SHY 30주(82.041 × 30 = 2,461) 중 12주만(현금성 마지막)
-            assertThat(fillOf(shy).qty()).isEqualTo(12);
+            assertThat(fillOf(aapl).qty()).as("2,000 + 4,997.5 − 수수료 5.00 − 제비용 0.13 = 6,992.37 → 60 × 100.05 = 6,003")
+                    .isEqualTo(60);
+            // 남은 현금 6,992.37 − 6,003 − 수수료 6.00 = 983.37 → SHY 30주(82.041 × 30 = 2,461) 중 11주만(현금성 마지막, 수수료 포함 유출 — ADR 0030)
+            assertThat(fillOf(shy).qty()).isEqualTo(11);
+            assertThat(fillOf(sell).fee()).as("시각 지정 매도도 수수료").isEqualByComparingTo("5.00");
+            assertThat(fillOf(sell).tax()).as("SEC 0.11 + TAF 0.02").isEqualByComparingTo("0.13");
+            assertThat(fillOf(aapl).fee()).isEqualByComparingTo("6.00");
         }
 
         @Test
@@ -720,8 +724,8 @@ class UsTimedFillsTest {
             assertThat(noQuote.priceStale()).isTrue();
             assertThat(fillOf(msft)).isNotNull();
             assertThat(fillOf(aapl)).isNotNull();
-            assertThat(store.states.get(BOOK).nav()).as("현금 + 10 × 99 + 2 × 400")
-                    .isCloseTo(100_000 - 10 * 100.05 - 2 * 400.2 + 10 * 99 + 2 * 400, offset(1e-6));
+            assertThat(store.states.get(BOOK).nav()).as("현금(수수료 1.00·0.80 뺌 — ADR 0030) + 10 × 99 + 2 × 400")
+                    .isCloseTo(100_000 - 10 * 100.05 - 1.00 - 2 * 400.2 - 0.80 + 10 * 99 + 2 * 400, offset(1e-6));
         }
     }
 

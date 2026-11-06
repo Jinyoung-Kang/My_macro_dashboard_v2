@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -171,13 +172,15 @@ class PaperLedgerServiceTest {
 
             ledger.process(quotes(MON_INTRADAY, bar("AAA", FRI, 99, MON, 100)));
 
-            // 10,000 / 100.05 = 99.95 → 99주, 99 × 100.05 = 9,904.95
+            // 10,000 / (100.05 × 1.001 — 수수료 10bp 포함, ADR 0030) = 99.8 → 99주, 99 × 100.05 = 9,904.95, 수수료 9.90
             Fill fill = fills().get(0);
             assertThat(fill.qty()).isEqualTo(99);
             assertThat(fill.gross()).isEqualTo(9_904.95);
+            assertThat(fill.fee()).isEqualByComparingTo("9.90");
+            assertThat(fill.tax()).as("매수에는 매도 제비용 없음").isEqualByComparingTo("0");
             BookState state = store.states.get(BOOK);
-            assertThat(state.cash()).isEqualTo(90_095.05);
-            assertThat(state.nav()).isCloseTo(99_995.05, offset(1e-6));
+            assertThat(state.cash()).isEqualTo(90_085.15);
+            assertThat(state.nav()).isCloseTo(99_985.15, offset(1e-6));
             assertThat(state.lastProcessedCollectedAt()).isEqualTo(MON_INTRADAY);
             Position position = store.positions(BOOK).get(0);
             assertThat(position.qty()).isEqualTo(99);
@@ -212,9 +215,10 @@ class PaperLedgerServiceTest {
 
             Outcome outcome = ledger.process(quotes(MON_INTRADAY, bar("BBB", FRI, 50, MON, 50)));
 
-            // 10,000 / 50.025 = 199.9 → 199주
+            // 10,000 / (50.025 × 1.001 — 수수료 10bp 포함, ADR 0030) = 199.7 → 199주
             assertThat(fills()).singleElement().satisfies(f -> assertThat(f.qty()).isEqualTo(199));
-            assertThat(store.states.get(BOOK).cash()).isEqualTo(45.025);   // 10,000 − 199 × 50.025
+            // 10,000 − 199 × 50.025(9,954.975) − 수수료 9.95
+            assertThat(store.states.get(BOOK).cash()).isEqualTo(35.075);
             assertThat(outcome.notes()).anyMatch(note -> note.contains("cashLimited") && note.contains("199"));
             var reason = order(store, id).reason();
             assertThat(reason.path("cashLimited").asBoolean()).isTrue();
@@ -245,12 +249,13 @@ class PaperLedgerServiceTest {
 
             ledger.process(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 100), bar("BBB", FRI, 50, MON, 50)));
 
-            // 매도: 100 × 99.95 = 9,995 → 현금 10,995. 매수: 10,995 / 50.025 = 219.79 → 219주 = 10,955.475
+            // 매도: 100 × 99.95 = 9,995 − 수수료 10.00 − 제비용 0.23(SEC 0.21 + TAF 0.02) → 현금 10,984.77.
+            // 매수: 10,984.77 / (50.025 × 1.001) = 219.4 → 219주 = 10,955.475 + 수수료 10.96 → 현금 18.335
             assertThat(fills()).extracting(Fill::side, Fill::ticker, Fill::qty)
                     .containsExactly(org.assertj.core.groups.Tuple.tuple("SELL", "AAA", 100),
                             org.assertj.core.groups.Tuple.tuple("BUY", "BBB", 219));
             assertThat(store.positions(BOOK)).extracting(Position::ticker).containsExactly("BBB");
-            assertThat(store.states.get(BOOK).cash()).isEqualTo(39.525);
+            assertThat(store.states.get(BOOK).cash()).isEqualTo(18.335);
         }
 
         @Test
@@ -292,13 +297,13 @@ class PaperLedgerServiceTest {
 
             ledger.process(quotes(MON_INTRADAY, bar("AAA", FRI, 100, MON, 100), bar("SHY", FRI, 80, MON, 80)));
 
-            // AAA: 6,000 / 100.05 → 59주 = 5,902.95 → 현금 4,097.05. SHY: 순자산 9,997.05 × 60% / 80.04 = 74주를 원하지만
-            // 현금으로는 51주(4,082.04)뿐 — SHY가 먼저였다면 AAA가 40주로 줄었을 것입니다.
+            // AAA: 6,000 / (100.05 × 1.001) → 59주 = 5,902.95 + 수수료 5.90 → 현금 4,091.15. SHY: 순자산 9,991.15 × 60% / (80.04 × 1.001)
+            // = 74주를 원하지만 현금으로는 51주(4,082.04 + 수수료 4.08)뿐 — SHY가 먼저였다면 AAA가 줄었을 것입니다.
             assertThat(fills()).extracting(Fill::ticker, Fill::qty).containsExactly(
                     org.assertj.core.groups.Tuple.tuple("AAA", 59), org.assertj.core.groups.Tuple.tuple("SHY", 51));
             assertThat(order(store, aaa).reason()).as("종목 매수는 줄지 않음").isNull();
             assertThat(order(store, shy).reason().path("cashLimited").asBoolean()).isTrue();
-            assertThat(store.states.get(BOOK).cash()).isEqualTo(15.01);
+            assertThat(store.states.get(BOOK).cash()).isEqualTo(5.03);
         }
     }
 
@@ -328,7 +333,8 @@ class PaperLedgerServiceTest {
                     store.books.get(PaperBooks.RULES), FRI, "RULE", 7L, 10_000, 10_000, legs, closes,
                     PaperSettings.defaults()));
 
-            // 매도 BBB 10 × 49.975 = 499.75 → 현금 10,499.75. AAA 5,000 / 100.05 → 49주 = 4,902.45, SHY 3,000 / 80.04 → 37주.
+            // 매도 BBB 10 × 49.975 = 499.75 − 수수료 0.50 − 제비용 0.03 → 현금 10,499.22. AAA 5,000 / (100.05 × 1.001) → 49주 = 4,902.45
+            // + 수수료 4.90, SHY 3,000 / (80.04 × 1.001) → 37주 = 2,961.48 + 수수료 2.96 → 현금 2,627.43(사후 체결도 비용 칸 — ADR 0030).
             assertThat(result.fills()).extracting(Fill::side, Fill::ticker, Fill::qty).containsExactly(
                     org.assertj.core.groups.Tuple.tuple("SELL", "BBB", 10),
                     org.assertj.core.groups.Tuple.tuple("BUY", "AAA", 49),
@@ -337,7 +343,11 @@ class PaperLedgerServiceTest {
                 assertThat(skip.getKey()).isEqualTo("ZZZ");
                 assertThat(skip.getValue()).contains("종가가 없습니다");
             });
-            assertThat(result.cash()).isEqualTo(2_635.82);
+            assertThat(result.cash()).isEqualTo(2_627.43);
+            assertThat(result.fills()).extracting(f -> f.fee().toPlainString(), f -> f.tax().toPlainString())
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple("0.5000", "0.0300"),
+                            org.assertj.core.groups.Tuple.tuple("4.9000", "0.0000"),
+                            org.assertj.core.groups.Tuple.tuple("2.9600", "0.0000"));
             List<Fill> saved = store.fillsOf(PaperBooks.RULES);
             assertThat(saved).allSatisfy(f -> {
                 assertThat(f.backfill()).isTrue();
@@ -357,7 +367,7 @@ class PaperLedgerServiceTest {
             assertThat(store.navSeries(PaperBooks.RULES)).singleElement().satisfies(row -> {
                 assertThat(row.tradingDate()).isEqualTo(FRI);
                 assertThat(row.pricesFinal()).isTrue();
-                assertThat(row.nav()).isEqualTo(2_635.82 + 49 * 100 + 37 * 80);
+                assertThat(row.nav()).isEqualTo(2_627.43 + 49 * 100 + 37 * 80);
             });
             BookState state = store.states.get(PaperBooks.RULES);
             assertThat(state.lastProcessedCollectedAt()).as("출발일 뒤 관측치를 다시 처리하게").isEqualTo(FRI_CLOSE);
@@ -412,7 +422,10 @@ class PaperLedgerServiceTest {
             assertThat(fill.price()).isCloseTo(91.9 * 0.9995, offset(1e-9));
             assertThat(fill.orderId()).isEqualTo(stop.id());
             assertThat(store.positions(BOOK)).isEmpty();
-            assertThat(store.states.get(BOOK).cash()).isEqualTo(PaperLedgerService.gross(100, fill.price()));
+            // 스탑 매도도 수수료·매도 제비용(ADR 0030): 9,185.405 − 수수료 9.19 − SEC 0.19 − TAF 0.02
+            assertThat(fill.fee()).isEqualByComparingTo("9.19");
+            assertThat(fill.tax()).isEqualByComparingTo("0.21");
+            assertThat(store.states.get(BOOK).cash()).isEqualTo(9_176.005);
 
             // 관측일 + 20거래일 = 2026-11-23까지(그날 포함) 다시 사지 않음
             assertThat(UsMarketCalendar.addTradingDays(MON, 20)).isEqualTo(LocalDate.of(2026, 11, 23));
@@ -446,9 +459,9 @@ class PaperLedgerServiceTest {
                             org.assertj.core.groups.Tuple.tuple("BUY", "BBB", 10));
             assertThat(order(store, other).status()).as("스탑 매도 대금으로 체결").isEqualTo("FILLED");
             assertThat(store.positions(BOOK)).extracting(Position::ticker).containsExactly("BBB");
-            // 50 × 90.9545 − 10 × 50.025
-            assertThat(store.states.get(BOOK).cash()).isCloseTo(PaperLedgerService.gross(50, 91 * 0.9995)
-                    - PaperLedgerService.gross(10, 50.025), offset(1e-6));
+            // 50 × 90.9545(4,547.725) − 수수료 4.55 − 제비용 0.11(SEC 0.10 + TAF 0.01) − 10 × 50.025 − 수수료 0.50
+            assertThat(store.states.get(BOOK).cash()).isCloseTo(PaperLedgerService.gross(50, 91 * 0.9995) - 4.55 - 0.11
+                    - PaperLedgerService.gross(10, 50.025) - 0.50, offset(1e-6));
         }
 
         @Test
@@ -792,8 +805,27 @@ class PaperLedgerServiceTest {
      * 더해도(시장·통화) 같은 글자가 나와야 하므로.
      */
     @Test
-    @DisplayName("고정본(묶음 A 기준선): 미국 네 책의 사후 체결·관측치 처리(체결·스탑·분할·만료·재진입 금지·현금 부족·평가·순자산)·작업 기록이 바이트까지 같다")
+    @DisplayName("고정본(묶음 A 기준선): 미국 네 책의 사후 체결·관측치 처리(체결·스탑·분할·만료·재진입 금지·현금 부족·평가·순자산)·작업 기록이 바이트까지 같다 — 미국 비용 비율 0(ADR 0030 전과 같은 장부)")
     void goldenUsLedgerWeek() {
+        // 미국 비용 비율을 모두 0으로 둔 설정 행 — ADR 0030 전 장부(비용 칸 없음)와 바이트까지 같아야 합니다(비율 0 = 이 묶음 전 식).
+        ObjectNode body = (ObjectNode) PaperFixtures.settings(store).defaultsJson();
+        body.put("commissionBp", 0);
+        ObjectNode reg = (ObjectNode) body.get("regFees");
+        reg.put("secPerMillion", 0);
+        reg.put("tafPerShare", 0);
+        reg.put("tafMaxPerTrade", 0);
+        store.initSettingsIfAbsent(body);
+        Golden.assertMatches("ledger-us-week.txt", usLedgerWeek(PaperSettings.from(body), false));
+    }
+
+    @Test
+    @DisplayName("고정본(ADR 0030): 같은 한 주를 기본 미국 비용(수수료 10bp·SEC $20.60/백만·TAF $0.000195/주·상한 $9.79)으로 — 사후 체결·관측치 체결·스탑·현금 부족 매수의 수수료·매도 제비용 칸과 현금")
+    void goldenUsLedgerWeekWithCosts() {
+        Golden.assertMatches("ledger-us-week-costs.txt", usLedgerWeek(PaperSettings.defaults(), true));
+    }
+
+    /** 미국 장부 한 주(위 두 고정본의 재료) — {@code costs}면 체결 줄에 비용 칸(fee·tax)을 함께 적습니다. */
+    private String usLedgerWeek(PaperSettings backfillSettings, boolean costs) {
         // 규칙 책 — 시작 전, 사후 체결로 출발
         store.books.put(PaperBooks.RULES, new com.macrodash.store.PaperStore.Book(PaperBooks.RULES,
                 PaperBooks.KIND_RULES, PaperBooks.RULES_LABEL, 100_000, null, PaperBooks.NOT_STARTED, FRI_CLOSE));
@@ -832,7 +864,7 @@ class PaperLedgerServiceTest {
                 new PaperLedgerService.BackfillLeg("BBB", "BUY", 25.0, null, null)), Map.of(
                 "AAA", new PaperMarketData.SourcedClose(100, PaperBooks.SOURCE_HISTORY),
                 "BBB", new PaperMarketData.SourcedClose(50, PaperBooks.SOURCE_QUOTES),
-                "SHY", new PaperMarketData.SourcedClose(82, PaperBooks.SOURCE_HISTORY)), PaperSettings.defaults()));
+                "SHY", new PaperMarketData.SourcedClose(82, PaperBooks.SOURCE_HISTORY)), backfillSettings));
         out.append("== backfill rules ").append(FRI).append(" cash=").append(backfill.cash()).append(" nav=")
                 .append(backfill.valuation().nav()).append(" skipped=").append(backfill.skipped()).append('\n');
 
@@ -909,7 +941,11 @@ class PaperLedgerServiceTest {
                     .append(" price=").append(f.price()).append(" raw=").append(f.rawPrice()).append(" bp=")
                     .append(f.slippageBp()).append(" gross=").append(f.gross()).append(" observedAt=")
                     .append(f.observedAt()).append(" date=").append(f.observationDate()).append(" source=")
-                    .append(f.priceSource()).append(" backfill=").append(f.backfill()).append('\n');
+                    .append(f.priceSource()).append(" backfill=").append(f.backfill());
+            if (costs) {
+                out.append(" fee=").append(f.fee().toPlainString()).append(" tax=").append(f.tax().toPlainString());
+            }
+            out.append('\n');
         }
         for (var run : store.jobRuns) {
             out.append("job #").append(run.id()).append(' ').append(run.job()).append(" started=")
@@ -917,7 +953,7 @@ class PaperLedgerServiceTest {
                     .append(run.outcome()).append(" detail=")
                     .append(PaperFixtures.MAPPER.writeValueAsString(run.detail())).append('\n');
         }
-        Golden.assertMatches("ledger-us-week.txt", out.toString().stripTrailing());
+        return out.toString().stripTrailing();
     }
 
     /** 관측치 하나를 리스크 작업(정기 실행 경로)으로 — 작업 시계는 수집 30초 뒤. 결과와 책마다 상태 한 줄. */

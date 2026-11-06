@@ -48,6 +48,8 @@ class FakePaperStore extends PaperStore {
     TreeMap<Long, Fill> fills = new TreeMap<>();
     /** 체결 번호 → 확정 조정 행({@code paper_fill_confirmations}, V14 — 체결마다 한 행, 체결을 지우면 함께). */
     TreeMap<Long, FillConfirmation> confirmations = new TreeMap<>();
+    /** 체결 번호 → 소급 비용 조정 행({@code paper_cost_adjustments}, V26 — 체결마다 한 행, 체결을 지우면 함께). */
+    TreeMap<Long, CostAdjustment> costAdjustments = new TreeMap<>();
     /** 주문 번호 → 실행 감사 행({@code paper_order_exec}, V17 — 주문마다 한 행, 주문을 지우면 함께). */
     TreeMap<Long, OrderExec> execs = new TreeMap<>();
     /** 체결 번호 → 체결 봉({@code paper_fills.bar_at}·{@code fill_rung}, V17 — 체결 레코드에 없는 칸, 시험이 넣음). */
@@ -479,6 +481,72 @@ class FakePaperStore extends PaperStore {
     @Override
     public List<FillConfirmation> fillConfirmations(String code) {
         return confirmations.values().stream().filter(c -> c.bookCode().equals(code)).toList();
+    }
+
+    // ------------------------------------------------------------------ 소급 비용 조정(V26)
+    @Override
+    public List<CostBackfillFill> costBackfillTargets(String code) {
+        return fills.values().stream()
+                .filter(f -> f.bookCode().equals(code) && f.fee().signum() == 0 && f.tax().signum() == 0
+                        && !costAdjustments.containsKey(f.id()))
+                .map(f -> new CostBackfillFill(f.id(), f.bookCode(), f.ticker(), f.side(), f.qty(),
+                        java.math.BigDecimal.valueOf(f.price()).setScale(6, java.math.RoundingMode.HALF_UP),
+                        java.math.BigDecimal.valueOf(f.gross()).setScale(4, java.math.RoundingMode.HALF_UP),
+                        f.observationDate(), f.createdAt()))
+                .toList();
+    }
+
+    /** 체결이 없으면 외래키 위반, 이미 있으면 false(기본키 fill_id — ON CONFLICT DO NOTHING). */
+    @Override
+    public boolean insertCostAdjustmentIfAbsent(CostAdjustment a) {
+        if (!fills.containsKey(a.fillId())) {
+            throw new org.springframework.dao.DataIntegrityViolationException("paper_cost_adjustments_fill_id_fkey: "
+                    + a.fillId());
+        }
+        if (costAdjustments.containsKey(a.fillId())) {
+            return false;
+        }
+        costAdjustments.put(a.fillId(), new CostAdjustment(a.fillId(), a.bookCode(), a.market(), a.fee(), a.tax(),
+                a.cashDelta(), a.fillDate(), a.settingsVersion(), a.rates(), a.reason(),
+                a.createdAt() == null ? dbNow : a.createdAt()));
+        return true;
+    }
+
+    @Override
+    public List<CostAdjustment> costAdjustments(String code) {
+        return costAdjustments.values().stream().filter(a -> a.bookCode().equals(code)).toList();
+    }
+
+    @Override
+    public int shiftNavFrom(String code, LocalDate from, java.math.BigDecimal delta) {
+        TreeMap<LocalDate, NavRow> rows = nav.getOrDefault(code, new TreeMap<>());
+        int changed = 0;
+        for (Map.Entry<LocalDate, NavRow> e : new ArrayList<>(rows.tailMap(from, true).entrySet())) {
+            NavRow r = e.getValue();
+            java.math.BigDecimal navAfter = java.math.BigDecimal.valueOf(r.nav()).add(delta);
+            double exposure = navAfter.signum() > 0 ? java.math.BigDecimal.valueOf(r.equityValue()).multiply(
+                    java.math.BigDecimal.valueOf(100)).divide(navAfter, 4, java.math.RoundingMode.HALF_UP).doubleValue() : 0;
+            rows.put(e.getKey(), new NavRow(r.bookCode(), r.tradingDate(), navAfter.doubleValue(),
+                    java.math.BigDecimal.valueOf(r.cash()).add(delta).doubleValue(), r.equityValue(), exposure,
+                    r.pricesFinal()));
+            changed++;
+        }
+        return changed;
+    }
+
+    @Override
+    public boolean shiftStateCash(String code, java.math.BigDecimal delta) {
+        BookState s = states.get(code);
+        if (s == null) {
+            return false;
+        }
+        java.math.BigDecimal navAfter = java.math.BigDecimal.valueOf(s.nav()).add(delta);
+        double exposure = navAfter.signum() > 0 ? java.math.BigDecimal.valueOf(s.equityValue()).multiply(
+                java.math.BigDecimal.valueOf(100)).divide(navAfter, 4, java.math.RoundingMode.HALF_UP).doubleValue() : 0;
+        states.put(code, new BookState(code, java.math.BigDecimal.valueOf(s.cash()).add(delta).doubleValue(),
+                navAfter.doubleValue(), s.equityValue(), exposure, s.lastObservedAt(), s.lastProcessedCollectedAt(),
+                s.lastNavTradingDate(), dbNow));
+        return true;
     }
 
     // ------------------------------------------------------------------ 실행 감사(V17)
@@ -1401,6 +1469,7 @@ class FakePaperStore extends PaperStore {
         ledgerHoldMarks.keySet().removeIf(id -> !orders.containsKey(id));
         fills.values().removeIf(f -> f.bookCode().equals(code));
         confirmations.keySet().removeIf(id -> !fills.containsKey(id));
+        costAdjustments.keySet().removeIf(id -> !fills.containsKey(id));
         execs.keySet().removeIf(id -> !orders.containsKey(id));
         positions.remove(code);
         corpHolds.remove(code);
@@ -1416,6 +1485,7 @@ class FakePaperStore extends PaperStore {
                             Map<String, TreeMap<String, String>> corpHolds, Map<String, TreeMap<String, Long>> refVolumes,
                             Map<String, TreeMap<String, Lockout>> lockouts, TreeMap<Long, Order> orders,
                             TreeMap<Long, LedgerHold> ledgerHoldMarks, TreeMap<Long, Fill> fills, TreeMap<Long, FillConfirmation> confirmations,
+                            TreeMap<Long, CostAdjustment> costAdjustments,
                             TreeMap<Long, OrderExec> execs, TreeMap<String, Checkpoint> checkpoints,
                             TreeMap<String, IntradayPlan> intradayPlans, Map<String, TreeMap<LocalDate, NavRow>> nav,
                             List<JobRun> jobRuns, Map<String, StartPrice> startPrices, SettingsRow settings,
@@ -1429,6 +1499,7 @@ class FakePaperStore extends PaperStore {
             this(new TreeMap<>(s.books), new TreeMap<>(s.states), deep(s.positions), deep(s.corpHolds),
                     deep(s.refVolumes), deep(s.lockouts),
                     new TreeMap<>(s.orders), new TreeMap<>(s.ledgerHoldMarks), new TreeMap<>(s.fills), new TreeMap<>(s.confirmations),
+                    new TreeMap<>(s.costAdjustments),
                     new TreeMap<>(s.execs), new TreeMap<>(s.checkpoints), new TreeMap<>(s.intradayPlans), deep(s.nav),
                     new ArrayList<>(s.jobRuns),
                     new TreeMap<>(s.startPrices), s.settings, deepDates(s.trackRecords), new TreeMap<>(s.selections),
@@ -1448,6 +1519,7 @@ class FakePaperStore extends PaperStore {
             s.ledgerHoldMarks = ledgerHoldMarks;
             s.fills = fills;
             s.confirmations = confirmations;
+            s.costAdjustments = costAdjustments;
             s.execs = execs;
             s.checkpoints = checkpoints;
             s.intradayPlans = intradayPlans;

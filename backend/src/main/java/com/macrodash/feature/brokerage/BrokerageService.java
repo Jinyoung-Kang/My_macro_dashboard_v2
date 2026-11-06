@@ -133,8 +133,8 @@ public class BrokerageService {
                 : Math.max(0L, Duration.between(fetchedAt.toInstant(), clock.instant()).getSeconds());
         String closedFrom = text(payload.path("closedFrom"));
         return new BrokerageAccountView(true, State.OK, stale ? STALE_MESSAGE : null, side.market(), side.currency(),
-                label(payload), count(payload.path("accountCount")), display(fetchedAt),
-                display(time(payload.path("staleSince"))), ageSeconds, stale, stale ? reason : null,
+                label(payload), count(payload.path("accountCount")), displaySeconds(fetchedAt),
+                displaySeconds(time(payload.path("staleSince"))), ageSeconds, stale, stale ? reason : null,
                 upstreamCode(payload), decimal(data.path("buyingPower")), summary(data.path("summary")),
                 List.copyOf(holdings), List.copyOf(openOrders), List.copyOf(closedOrders),
                 closedFrom != null && DATE.matcher(closedFrom).matches() ? closedFrom : null,
@@ -268,8 +268,16 @@ public class BrokerageService {
         }
     }
 
+    /** 받은 시각·이전 값 시각만 초까지(새로고침 주기 기능의 '기준 시각', ADR 0030). 주문 시각과 공용 {@code Kst.DISPLAY}(분까지)는 그대로. */
+    private static final java.time.format.DateTimeFormatter DISPLAY_SECONDS =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(Kst.ZONE);
+
     private static String display(OffsetDateTime at) {
         return at == null ? null : Kst.DISPLAY.format(at);
+    }
+
+    private static String displaySeconds(OffsetDateTime at) {
+        return at == null ? null : DISPLAY_SECONDS.format(at);
     }
 
     private static String text(JsonNode node) {

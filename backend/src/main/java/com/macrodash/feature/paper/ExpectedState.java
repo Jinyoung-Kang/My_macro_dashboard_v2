@@ -31,7 +31,7 @@ import java.util.TreeMap;
  * 장부의 그 판정이 마지막 방어선입니다.
  *
  * <ul>
- *   <li><b>가격</b>(원가격, 슬리피지 빼고 어림): 1분봉 저장본의 T 창 R1·R2({@link ExecutionAudit#fromBars} — 장부 2b와 같은 판정) → 감시 저장본의 그 종목
+ *   <li><b>가격</b>(원가격, 슬리피지·수수료·매도 제비용 빼고 어림 — ADR 0030 뒤에도 어림은 그대로): 1분봉 저장본의 T 창 R1·R2({@link ExecutionAudit#fromBars} — 장부 2b와 같은 판정) → 감시 저장본의 그 종목
  *       E 세션 T 창 첫 거래 봉 시가(완성된 봉만) → 마지막 가격(관측치 종가, 없으면 보유의 마지막 평가 가격). 셋 다 없으면 그 주문은 체결로 보지 않고
  *       {@code unpriced}에 적습니다(없는 숫자를 만들지 않음).</li>
  *   <li><b>순서</b>: 장부 2b({@code UsTimedFills.byMarketTime})와 같이 기준 시각 순이고, 같은 기준 시각 안에서만 매도 먼저 — 뒤 시각 매도의 대금은
@@ -121,7 +121,7 @@ final class ExpectedState {
             out.put("assumedFills", fills);
             out.put("unpriced", unpriced);
             out.put("note", "추정 — 기준 시각이 지난 대기 주문을 그 시각 1분봉(없으면 감시 봉·마지막 가격) 원가격으로 체결했다고 본 장부"
-                    + "(슬리피지 빼고 어림). 실제 체결은 장부가 T 순으로 하고 현금 부족·거래 없음은 장부가 판정한다");
+                    + "(슬리피지·수수료·매도 제비용 빼고 어림). 실제 체결은 장부가 T 순으로 하고 현금 부족·거래 없음은 장부가 판정한다");
             return out;
         }
     }

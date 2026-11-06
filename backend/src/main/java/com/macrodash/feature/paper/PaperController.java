@@ -27,6 +27,7 @@ import java.util.Map;
  *  POST /api/paper/books/{code}/status            {"status":"ACTIVE"|"PAUSED"}
  *  POST /api/paper/books/{code}/reset             {"confirm":"<code>"}
  *  POST /api/paper/run/risk?market=US            리스크 점검 한 번(설정과 상관없이 — 그 시장 장부 실패 기억을 지우고, 시장 US·KR, 없으면 US)
+ *  POST /api/paper/admin/cost-backfill            {"market":"US","confirm":"비용 소급"} 미국 체결 비용의 과거 소급(ADR 0030 — 두 번 돌려도 한 번)
  *  GET  /api/paper/track-record?asOf=             13F 트랙레코드·순위·선정·수집 진행률(없으면 가장 최근 계산)
  *  POST /api/paper/run/rerank                     {"asOf"?} 트랙레코드 수동 재계산(선정은 그대로)
  * </pre>
@@ -66,6 +67,10 @@ public class PaperController {
 
     /** 수동 재계산의 기준일(yyyy-MM-dd). 없으면 마지막 완료 세션. */
     public record RerankRequest(String asOf) {
+    }
+
+    /** 미국 체결 비용 소급 — 시장(US만)과 확인 문구('비용 소급'). */
+    public record CostBackfillRequest(String market, String confirm) {
     }
 
     @GetMapping("/status")
@@ -209,6 +214,47 @@ public class PaperController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", outcome.errors().isEmpty());
         out.put("outcome", outcome);
+        return out;
+    }
+
+    /**
+     * 미국 체결 비용의 과거 소급({@link PaperAdminService#costBackfill} — ADR 0030, 명세 2026-11-06 §2). 본문 {@code {"market":"US",
+     * "confirm":"비용 소급"}} → {@code {ok, market, books:[{code, fills, fee, tax, cashDelta}], navRowsUpdated, versions:[{settingsVersion, rates,
+     * fills}], zeroCostFills}}(모의 자료라 금액을 실음). 비율은 체결마다 그때 유효했던 설정 판. 시장·확인 문구가 다르면 400. 장부 잠금 안 한
+     * 트랜잭션이고, 이미 조정한 체결·새 비용으로 체결된 행은 건너뜁니다.
+     */
+    @PostMapping("/admin/cost-backfill")
+    public Map<String, Object> costBackfill(@RequestBody(required = false) CostBackfillRequest body) {
+        if (!query.ready()) {
+            return notReady();
+        }
+        UsCostBackfill.Result result = admin.costBackfill(body == null ? null : body.market(),
+                body == null ? null : body.confirm());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("market", result.market());
+        List<Map<String, Object>> books = new ArrayList<>();
+        for (UsCostBackfill.BookResult book : result.books()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("code", book.code());
+            row.put("fills", book.fills());
+            row.put("fee", book.fee().doubleValue());
+            row.put("tax", book.tax().doubleValue());
+            row.put("cashDelta", book.cashDelta().doubleValue());
+            books.add(row);
+        }
+        out.put("books", books);
+        out.put("navRowsUpdated", result.navRowsUpdated());
+        List<Map<String, Object>> versions = new ArrayList<>();
+        for (UsCostBackfill.VersionUsed version : result.versions()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("settingsVersion", version.settingsVersion());
+            row.put("rates", version.rates());
+            row.put("fills", version.fills());
+            versions.add(row);
+        }
+        out.put("versions", versions);
+        out.put("zeroCostFills", result.zeroCostFills());
         return out;
     }
 

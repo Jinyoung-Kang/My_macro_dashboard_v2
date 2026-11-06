@@ -1,6 +1,7 @@
 package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.PaperLedger;
+import com.macrodash.analytics.UsCosts;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
 
 import java.math.BigDecimal;
@@ -11,9 +12,9 @@ import java.util.Objects;
  * 체결 금액·비용 칸·현금 변화. 시장 묶음의 {@link PaperMarket#fill}이 만들고, 장부({@code PaperLedgerService})가 이것으로 체결 행·현금·
  * 보유 평단을 씁니다 — 장부는 체결가를 직접 셈하지 않습니다.
  *
- * <p>미국은 슬리피지를 체결가에 얹고 비용 칸이 없습니다({@link SlippageInPrice} — 이 묶음 전 {@code PaperLedger.fillPrice}·
- * {@code PaperLedgerService.price6}·{@code gross} 그대로, 고정본 바이트 그대로). 한국은 체결가 = 관측가이고 수수료·세금·슬리피지가 비용
- * 칸입니다(K31 — {@code KrxCosts}, C2b).
+ * <p>미국은 슬리피지를 체결가에 얹고({@link SlippageInPrice} — 이 묶음 전 {@code PaperLedger.fillPrice}·{@code PaperLedgerService.price6}·
+ * {@code gross} 그대로) 수수료·매도 제비용(SEC fee·FINRA TAF)이 비용 칸입니다(ADR 0030 — {@code UsCosts}, 요율이 0이면 이 묶음 전 현금 흐름
+ * 그대로). 한국은 체결가 = 관측가이고 수수료·세금·슬리피지가 비용 칸입니다(K31 — {@code KrxCosts}, C2b).
  */
 interface FillTerms {
 
@@ -105,8 +106,8 @@ interface FillTerms {
      * 체결 한 건의 금액.
      *
      * @param gross        체결 금액({@code paper_fills.gross}) = 수량 × 체결가(소수 4자리)
-     * @param fee          수수료 칸({@code paper_fills.fee}, 미국 0)
-     * @param tax          세금 칸({@code paper_fills.tax}, 미국 0)
+     * @param fee          수수료 칸({@code paper_fills.fee} — 한국 수수료, 미국 매매 수수료)
+     * @param tax          세금 칸({@code paper_fills.tax} — 한국 매도세, 미국 매도 제비용 SEC fee + FINRA TAF)
      * @param slippageCost 슬리피지 비용 칸({@code paper_fills.slippage_cost}, 미국 0 — 미국은 체결가에 들어 있음)
      * @param cashDelta    계좌 현금 변화(매수는 음수) — 장부가 반올림해 더함
      */
@@ -121,46 +122,79 @@ interface FillTerms {
     }
 
     /**
-     * 슬리피지를 체결가에 얹는 체결(미국 D9) — 체결가 = 관측 종가 × (1 ± bp)를 저장 열(NUMERIC(18,6)) 자리로, 수량 = 예산 ÷ 체결가 내림,
-     * 체결 금액 = 수량 × 체결가(4자리), 비용 칸 없음. 이 묶음 전 장부의 식 그대로입니다.
+     * 슬리피지를 체결가에 얹는 체결(미국 D9) — 체결가 = 관측 종가 × (1 ± bp)를 저장 열(NUMERIC(18,6)) 자리로, 체결 금액 = 수량 × 체결가(4자리),
+     * 비용 칸 = 수수료·매도 제비용({@link UsCosts} — ADR 0030, 그 실행 설정 판의 요율), 수량 = 비용 포함 유출이 예산 안인 최대 정수 주.
+     * 요율이 모두 0이면 이 묶음 전 장부의 식(비용 칸 없음, 수량 = 예산 ÷ 체결가 내림) 그대로입니다.
      *
-     * @param side 주문 방향(BUY·SELL — 매도가 아니면 매수 쪽으로 얹음, 장부가 매수·매도를 따로 부르던 것과 같음)
+     * @param side  주문 방향(BUY·SELL — 매도가 아니면 매수 쪽으로 얹음, 장부가 매수·매도를 따로 부르던 것과 같음)
+     * @param rates 미국 비용 요율(설정 {@code commissionBp}·{@code regFees.*}의 그 실행 판 — {@link PaperSettings#usCosts})
      */
-    record SlippageInPrice(String side, double price, double rawPrice, String priceSource, double slippageBp)
-            implements FillTerms {
+    record SlippageInPrice(String side, double price, double rawPrice, String priceSource, double slippageBp,
+                           UsCosts.Rates rates) implements FillTerms {
+
+        public SlippageInPrice {
+            Objects.requireNonNull(rates, "미국 비용 요율이 없습니다");
+        }
 
         /**
          * 봉의 종가에 슬리피지를 얹은 체결.
          *
          * @throws IllegalArgumentException 종가 ≤ 0·슬리피지 범위 밖({@link PaperLedger#fillPrice})
+         * @throws IllegalStateException    설정에 미국 비용 요율이 없음(미국 시장 판으로 읽지 않은 설정)
          */
-        static SlippageInPrice ofClose(String side, Bar bar, double slippageBp, String priceSource) {
-            PaperLedger.Side direction = PaperBooks.SELL.equals(side) ? PaperLedger.Side.SELL : PaperLedger.Side.BUY;
-            double price = PaperLedgerService.price6(PaperLedger.fillPrice(bar.close(), direction, slippageBp));
-            return new SlippageInPrice(side, price, bar.close(), priceSource, slippageBp);
+        static SlippageInPrice ofClose(String side, Bar bar, PaperSettings settings, String priceSource) {
+            return ofRaw(side, bar.close(), settings, priceSource);
         }
 
         /**
-         * 원가격에 슬리피지를 얹은 체결 — 미국 시각 지정 체결(1분봉 봉 시가·관측 종가, {@code UsTimedFills})이 씁니다. 식은 {@link #ofClose}와 같습니다.
+         * 원가격에 슬리피지를 얹은 체결 — 미국 시각 지정 체결(1분봉 봉 시가·관측 종가, {@code UsTimedFills})·사후 체결(출발일 종가)이 씁니다. 식은
+         * {@link #ofClose}와 같습니다.
+         *
+         * @throws IllegalArgumentException 원가격 ≤ 0·슬리피지 범위 밖({@link PaperLedger#fillPrice})
+         * @throws IllegalStateException    설정에 미국 비용 요율이 없음(미국 시장 판으로 읽지 않은 설정)
+         */
+        static SlippageInPrice ofRaw(String side, double raw, PaperSettings settings, String priceSource) {
+            PaperSettings.UsCostRates costs = settings.usCosts();
+            if (costs == null) {
+                throw new IllegalStateException("미국 비용 요율이 없는 설정입니다 — 미국 시장 판으로 읽은 설정을 넘기세요"
+                        + "(PaperSettings.from(body, US))");
+            }
+            return of(side, raw, settings.slippageBp(), priceSource, costs.rates());
+        }
+
+        /**
+         * 원가격·슬리피지·요율을 직접 받은 체결(식은 {@link #ofRaw}와 같음) — 설정을 거치지 않는 시험용 시장이 요율 0({@link UsCosts.Rates#ZERO})으로 씁니다.
          *
          * @throws IllegalArgumentException 원가격 ≤ 0·슬리피지 범위 밖({@link PaperLedger#fillPrice})
          */
-        static SlippageInPrice ofRaw(String side, double raw, double slippageBp, String priceSource) {
+        static SlippageInPrice of(String side, double raw, double slippageBp, String priceSource, UsCosts.Rates rates) {
             PaperLedger.Side direction = PaperBooks.SELL.equals(side) ? PaperLedger.Side.SELL : PaperLedger.Side.BUY;
             double price = PaperLedgerService.price6(PaperLedger.fillPrice(raw, direction, slippageBp));
-            return new SlippageInPrice(side, price, raw, priceSource, slippageBp);
+            return new SlippageInPrice(side, price, raw, priceSource, slippageBp, rates);
         }
 
+        /** 예산으로 살 수 있는 정수 주 — 수수료가 없으면 이 묶음 전 식(예산 ÷ 체결가 내림), 있으면 수수료 포함 유출이 예산 안. */
         @Override
         public int affordableQty(double budget) {
-            return PaperLedger.buyQty(budget, price);
+            if (rates.commissionBp().signum() == 0) {
+                return PaperLedger.buyQty(budget, price);
+            }
+            if (!Double.isFinite(budget)) {
+                throw new IllegalArgumentException("목표 금액이(가) 숫자가 아닙니다: " + budget);
+            }
+            return UsCosts.affordableQty(BigDecimal.valueOf(budget), BigDecimal.valueOf(price), rates);
         }
 
         @Override
         public Costs costs(int qty) {
             double gross = PaperLedgerService.gross(qty, price);
-            return new Costs(gross, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                    PaperBooks.SELL.equals(side) ? gross : -gross);
+            boolean sell = PaperBooks.SELL.equals(side);
+            if (rates.zero()) {
+                return new Costs(gross, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, sell ? gross : -gross);
+            }
+            UsCosts.Costs costs = UsCosts.of(sell ? PaperLedger.Side.SELL : PaperLedger.Side.BUY, qty,
+                    BigDecimal.valueOf(price), BigDecimal.valueOf(gross), rates);
+            return new Costs(gross, costs.commission(), costs.tax(), BigDecimal.ZERO, costs.cashFlow().doubleValue());
         }
     }
 }

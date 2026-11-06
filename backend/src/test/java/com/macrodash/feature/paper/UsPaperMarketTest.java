@@ -160,9 +160,13 @@ class UsPaperMarketTest {
     }
 
     @Test
-    @DisplayName("체결 조건(결정 d10) = 이 묶음 전 장부 식 — 체결가 price6(fillPrice(종가, 방향, bp)), 관측가 = 종가, 출처 paper.quotes, 수량 buyQty(예산, 체결가), 금액 gross(수량, 체결가), 비용 칸 0")
+    @DisplayName("체결 조건(결정 d10) = 이 묶음 전 장부 식 — 미국 비용 비율 0이면 체결가 price6(fillPrice(종가, 방향, bp)), 관측가 = 종가, 출처 paper.quotes, 수량 buyQty(예산, 체결가), 금액 gross(수량, 체결가), 비용 칸 0")
     void fillUsesTheLegacyLedgerFormula() {
-        PaperSettings settings = PaperSettings.defaults();
+        tools.jackson.databind.node.ObjectNode body = PaperFixtures.MAPPER.createObjectNode();
+        body.put("commissionBp", 0);
+        body.putObject("regFees").put("secPerMillion", 0).put("tafPerShare", 0).put("tafMaxPerTrade", 0);
+        PaperSettings settings = PaperSettings.from(body);
+        assertThat(settings.usCosts().rates().zero()).isTrue();
         PaperMarketData.Bar bar = PaperFixtures.bar("AAA", FRI, 123.456789);
         for (String side : List.of(PaperBooks.BUY, PaperBooks.SELL)) {
             PaperStore.Order order = new PaperStore.Order(1, PaperBooks.CLAUDE, null, "AAA", side, null, 10.0, null,
@@ -183,8 +187,49 @@ class UsPaperMarketTest {
             double gross = PaperLedgerService.gross(7, legacy);
             assertThat(costs.gross()).isEqualTo(gross);
             assertThat(costs.cashDelta()).isEqualTo(PaperBooks.SELL.equals(side) ? gross : -gross);
-            assertThat(List.of(costs.fee(), costs.tax(), costs.slippageCost())).as("미국은 비용 칸 0(슬리피지는 체결가에)")
+            assertThat(List.of(costs.fee(), costs.tax(), costs.slippageCost())).as("비율 0 — 비용 칸 0(슬리피지는 체결가에)")
                     .allSatisfy(v -> assertThat(v).isEqualByComparingTo("0"));
+        }
+    }
+
+    @Test
+    @DisplayName("미국 체결 비용(ADR 0030) — 기본 설정이면 체결가·금액은 그대로, 수수료 10bp(센트 반올림)·매도 제비용(SEC 올림 + TAF 올림)이 비용 칸, 현금은 매수 −(금액 + 수수료)·매도 +(금액 − 수수료 − 제비용), 수량은 수수료 포함 1주 유출로")
+    void fillChargesUsCosts() {
+        PaperSettings settings = PaperSettings.defaults();
+        PaperMarketData.Bar bar = PaperFixtures.bar("AAA", FRI, 123.456789);
+        for (String side : List.of(PaperBooks.BUY, PaperBooks.SELL)) {
+            PaperStore.Order order = new PaperStore.Order(1, PaperBooks.CLAUDE, null, "AAA", side, null, 10.0, null,
+                    OrderValidator.NEXT_OBSERVATION, "CLAUDE", PaperBooks.ORDER_PENDING, null, null, FRI.minusDays(1),
+                    Instant.parse("2026-10-22T00:00:00Z"), null, null);
+            FillTerms terms = US.fill(order, bar, settings, US.calendar());
+            boolean sell = PaperBooks.SELL.equals(side);
+            double legacy = PaperLedgerService.price6(com.macrodash.analytics.PaperLedger.fillPrice(123.456789,
+                    sell ? com.macrodash.analytics.PaperLedger.Side.SELL : com.macrodash.analytics.PaperLedger.Side.BUY,
+                    settings.slippageBp()));
+            assertThat(terms.price()).as("체결가 정의는 그대로").isEqualTo(legacy);
+            FillTerms.Costs costs = terms.costs(700);
+            double gross = PaperLedgerService.gross(700, legacy);
+            assertThat(costs.gross()).isEqualTo(gross);
+            java.math.BigDecimal g = java.math.BigDecimal.valueOf(gross);
+            java.math.BigDecimal fee = g.multiply(java.math.BigDecimal.TEN).divide(java.math.BigDecimal.valueOf(10_000), 2,
+                    java.math.RoundingMode.HALF_UP);
+            assertThat(costs.fee()).isEqualByComparingTo(fee);
+            assertThat(costs.slippageCost()).isEqualByComparingTo("0");
+            if (sell) {
+                java.math.BigDecimal sec = g.multiply(new java.math.BigDecimal("20.6"))
+                        .divide(java.math.BigDecimal.valueOf(1_000_000), 2, java.math.RoundingMode.CEILING);
+                // TAF 700 × 0.000195 = 0.1365 → 0.14
+                assertThat(costs.tax()).isEqualByComparingTo(sec.add(new java.math.BigDecimal("0.14")));
+                assertThat(costs.cashDelta()).isEqualTo(g.subtract(fee).subtract(costs.tax()).doubleValue());
+            } else {
+                assertThat(costs.tax()).as("매수에는 제비용 없음").isEqualByComparingTo("0");
+                assertThat(costs.cashDelta()).isEqualTo(g.add(fee).negate().doubleValue());
+            }
+            // 10,000 / (체결가 × 1.001) 내림 — 수수료 없는 식보다 적거나 같음
+            int qty = terms.affordableQty(10_000);
+            assertThat(qty).isEqualTo(java.math.BigDecimal.valueOf(10_000).divide(java.math.BigDecimal.valueOf(legacy)
+                    .multiply(new java.math.BigDecimal("1.001")), 0, java.math.RoundingMode.FLOOR).intValueExact());
+            assertThat(terms.costs(qty).cashDelta()).as("수수료 포함 유출이 예산 안").isGreaterThanOrEqualTo(sell ? 0 : -10_000);
         }
     }
 

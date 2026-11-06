@@ -114,6 +114,8 @@ public class PaperAdminService {
     private final PaperMarkets markets;
     /** 출발일 종가로 다시 출발(사용자 결정 2026-11-02 — {@link StartCloseRestart}). */
     private final StartCloseRestart restart;
+    /** 미국 체결 비용의 과거 소급(ADR 0030 — {@link UsCostBackfill}). */
+    private final UsCostBackfill costBackfill;
     /** 출발일 종가·벤치마크 사후 체결·옛 시그니처의 시장(클래스 설명). */
     private static final PaperMarket US = UsPaperMarket.INSTANCE;
 
@@ -142,6 +144,7 @@ public class PaperAdminService {
         this.config = config;
         this.mapper = mapper;
         this.clock = clock;
+        this.costBackfill = new UsCostBackfill(store, ledger, mapper, clock);
     }
 
     /**
@@ -487,6 +490,16 @@ public class PaperAdminService {
     /** {@link #restartAtStartClose(String, String)}의 한국 가격 출처를 정해서(금융위 {@code FSC}·토스 {@code TOSS}, null이면 금융위). */
     public StartCloseRestart.Result restartAtStartClose(String code, String confirm, String krPriceSource) {
         return restart.restart(code, confirm, krPriceSource);
+    }
+
+    /**
+     * 미국 체결 비용의 과거 소급({@link UsCostBackfill} — ADR 0030 결정 2). 시장은 {@code US}만, 확인 문구는 {@value UsCostBackfill#CONFIRM}.
+     *
+     * @throws com.macrodash.support.InvalidRequestException 시장·확인 문구가 다름, 비율이 모두 0
+     */
+    UsCostBackfill.Result costBackfill(String market, String confirm) {
+        requireReady();
+        return costBackfill.run(market, confirm);
     }
 
     // ------------------------------------------------------------------ 사후 체결

@@ -92,7 +92,7 @@ class PaperAdminServiceTest {
         assertThat(store.settings.body().path("slippageBp").asDouble()).isEqualTo(5);
         assertThat(store.settings.body().path("trackRecord").path("candidateCiks").size()).isEqualTo(27);
 
-        // 체결가 500.25, 100,000 / 500.25 = 199.9 → 199주 = 99,549.75 → 현금 450.25
+        // 체결가 500.25, 100,000 / (500.25 × 1.001 — 수수료 10bp 포함, ADR 0030) = 199.7 → 199주 = 99,549.75 + 수수료 99.55 → 현금 350.70
         List<Fill> spyFills = store.fillsOf("bench_spy");
         assertThat(spyFills).singleElement().satisfies(f -> {
             assertThat(f.ticker()).isEqualTo("SPY");
@@ -100,6 +100,8 @@ class PaperAdminServiceTest {
             assertThat(f.price()).isEqualTo(500.25);
             assertThat(f.rawPrice()).isEqualTo(500);
             assertThat(f.gross()).isEqualTo(99_549.75);
+            assertThat(f.fee()).as("벤치마크 사후 체결도 수수료").isEqualByComparingTo("99.55");
+            assertThat(f.tax()).isEqualByComparingTo("0");
             assertThat(f.backfill()).isTrue();
             assertThat(f.priceSource()).isEqualTo("equity_close");
             assertThat(f.observedAt()).as("출발일 16:00 ET").isEqualTo(FRI_CLOSE);
@@ -115,14 +117,14 @@ class PaperAdminServiceTest {
         assertThat(order.filledAt()).isEqualTo(FRI_CLOSE);
 
         BookState spy = store.states.get("bench_spy");
-        assertThat(spy.cash()).isEqualTo(450.25);
-        assertThat(spy.nav()).as("종가로 평가: 199 × 500 + 450.25").isEqualTo(99_950.25);
+        assertThat(spy.cash()).isEqualTo(350.7);
+        assertThat(spy.nav()).as("종가로 평가: 199 × 500 + 350.70").isEqualTo(99_850.7);
         assertThat(spy.lastProcessedCollectedAt()).as("출발일 전 저장본을 나중에 처리하지 않게").isEqualTo(FRI_CLOSE);
         assertThat(spy.lastNavTradingDate()).isEqualTo(FRI);
         assertThat(store.navSeries("bench_spy")).singleElement().satisfies(row -> {
             assertThat(row.tradingDate()).isEqualTo(FRI);
             assertThat(row.pricesFinal()).isTrue();
-            assertThat(row.nav()).isEqualTo(99_950.25);
+            assertThat(row.nav()).isEqualTo(99_850.7);
         });
         Book book = store.books.get("bench_spy");
         assertThat(book.status()).isEqualTo("ACTIVE");
@@ -132,10 +134,11 @@ class PaperAdminServiceTest {
         assertThat(position.fillRefClose()).isEqualTo(500);
         assertThat(position.lastPrice()).isEqualTo(500);
 
-        // SPY 60%: 60,000 / 500.25 → 119주, SHY 40%: 40,000 / 82.54125 → 484주
+        // SPY 60%: 60,000 / (500.25 × 1.001) → 119주, SHY 40%: 40,000 / (82.54125 × 1.001) → 484주
         assertThat(store.fillsOf("bench_mix")).extracting(Fill::ticker, Fill::qty).containsExactly(
                 org.assertj.core.groups.Tuple.tuple("SPY", 119), org.assertj.core.groups.Tuple.tuple("SHY", 484));
-        assertThat(store.states.get("bench_mix").cash()).isEqualTo(520.285);   // 100,000 − 59,529.75 − 39,949.965
+        // 100,000 − 59,529.75 − 수수료 59.53 − 39,949.965 − 수수료 39.95
+        assertThat(store.states.get("bench_mix").cash()).isEqualTo(420.805);
 
         // 규칙·Claude 계좌1·계좌2는 현금만 든 '시작 전' — 계좌2는 사후 체결 없이 앞으로 체결로 출발(ADR 0022 결정 2 — 정기 결정 창의 INITIAL)
         for (String code : List.of("rules", "claude", "claude2")) {
@@ -205,10 +208,10 @@ class PaperAdminServiceTest {
         admin(AFTER_START).init();
 
         ledger.process(quotes(FRI_CLOSE.minusSeconds(3600), bar("SPY", FRI, 490)));
-        assertThat(store.states.get("bench_spy").nav()).isEqualTo(99_950.25);
+        assertThat(store.states.get("bench_spy").nav()).isEqualTo(99_850.7);
 
         ledger.process(quotes(MON_INTRADAY, bar("SPY", FRI, 500, MON, 510), bar("SHY", FRI, 82.5, MON, 82.6)));
-        assertThat(store.states.get("bench_spy").nav()).isEqualTo(199 * 510 + 450.25);
+        assertThat(store.states.get("bench_spy").nav()).isEqualTo(199 * 510 + 350.7);
         assertThat(store.positions("bench_spy").get(0).fillRefDate()).as("장중 관측치는 기준을 옮기지 않음").isEqualTo(FRI);
     }
 
@@ -355,7 +358,7 @@ class PaperAdminServiceTest {
         assertThat(result.backfilled()).isTrue();
         assertThat(store.fillsOf("bench_spy")).hasSize(1);
         assertThat(store.navSeries("bench_spy")).extracting(NavRow::tradingDate).containsExactly(FRI);
-        assertThat(store.states.get("bench_spy").nav()).isEqualTo(99_950.25);
+        assertThat(store.states.get("bench_spy").nav()).isEqualTo(99_850.7);
         assertThat(store.books.get("bench_spy").status()).isEqualTo("ACTIVE");
         assertThat(store.fillsOf("bench_mix")).as("다른 책은 그대로").hasSize(2);
     }
@@ -418,7 +421,7 @@ class PaperAdminServiceTest {
         assertThat(store.fillsOf("bench_mix")).extracting(Fill::ticker, Fill::qty, Fill::rawPrice).containsExactly(
                 org.assertj.core.groups.Tuple.tuple("SPY", 119, 500.0),
                 org.assertj.core.groups.Tuple.tuple("SHY", 484, 82.5));
-        assertThat(store.states.get("bench_mix").cash()).isEqualTo(520.285);
+        assertThat(store.states.get("bench_mix").cash()).isEqualTo(420.805);
         assertThat(store.startPrices.get("SHY").close()).isEqualTo(82.5);
     }
 

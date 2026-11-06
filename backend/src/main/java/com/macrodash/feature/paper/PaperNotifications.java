@@ -56,13 +56,14 @@ final class PaperNotifications {
                 + esc(sideName(f.side()) + " " + ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ " + money(f.price(), korea, true)
                 + " = " + money(f.gross(), korea, false)));
         List<String> details = new ArrayList<>();
-        // 비용 칸(0이 아닌 것만 — 미국은 슬리피지가 체결가에 들어 있어 비용 칸이 0이고 bp만 적음).
+        // 비용 칸(0이 아닌 것만 — 미국은 슬리피지가 체결가에 들어 있어 슬리피지 칸이 0이고 bp만 적음. 미국 수수료·매도 제비용(SEC fee + FINRA
+        // TAF — 세금 칸에 저장)은 ADR 0030부터 칸에 있음, 이름은 화면·패킷처럼 '제비용').
         List<String> costs = new ArrayList<>();
         if (f.fee() != null && f.fee().signum() != 0) {
             costs.add("수수료 " + money(f.fee().doubleValue(), korea, false));
         }
         if (f.tax() != null && f.tax().signum() != 0) {
-            costs.add("세금 " + money(f.tax().doubleValue(), korea, false));
+            costs.add((korea ? "세금 " : "제비용 ") + money(f.tax().doubleValue(), korea, false));
         }
         if (f.slippageCost() != null && f.slippageCost().signum() != 0) {
             costs.add("슬리피지 " + money(f.slippageCost().doubleValue(), korea, false));

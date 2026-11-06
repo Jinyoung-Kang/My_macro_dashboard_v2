@@ -41,11 +41,13 @@ import java.util.function.DoublePredicate;
  * @param blend              두 기관 그룹 섞기(D27) — 규칙 책·기관 선정이 읽는 값
  * @param rules              규칙 책의 {@code rules.*} 묶음(매일 남는 현금 SHY 기준) — 규칙 책이 읽는 값
  * @param costRates          한국 체결 비용 요율({@code kr.commissionBp}·{@code kr.tax.*} — 한국 장부의 비용 칸, C2b). 한국 시장(KR)만 읽고
- *                           다른 시장은 null — 미국은 수수료·세금이 모형에 없음(슬리피지는 체결가에)
+ *                           다른 시장은 null
+ * @param usCosts            미국 체결 비용 요율(최상위 {@code commissionBp}·{@code regFees.*} — ADR 0030, 미국 장부의 비용 칸). 미국 시장(US)만
+ *                           읽고 다른 시장은 null. 슬리피지는 그대로 체결가에 얹습니다
  */
 public record PaperSettings(double slippageBp, double trailingStopPct, int lockoutTradingDays,
                             List<String> cashLikeTickers, GateIndicator.Thresholds gate, List<String> fallbacks,
-                            Blend blend, Rules rules, CostRates costRates) {
+                            Blend blend, Rules rules, CostRates costRates, UsCostRates usCosts) {
 
     public static final double DEFAULT_SLIPPAGE_BP = 5;
     public static final double DEFAULT_TRAILING_STOP_PCT = 8;
@@ -66,7 +68,8 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
     static PaperSettings defaults(PaperMarket market) {
         return new PaperSettings(DEFAULT_SLIPPAGE_BP, DEFAULT_TRAILING_STOP_PCT, DEFAULT_LOCKOUT_TRADING_DAYS,
                 market.defaultCashLike(), GateIndicator.Thresholds.defaults(), List.of(), Blend.defaults(),
-                Rules.defaults(), CostRates.readsCostRates(market) ? CostRates.defaults() : null);
+                Rules.defaults(), CostRates.readsCostRates(market) ? CostRates.defaults() : null,
+                UsCostRates.readsUsCosts(market) ? UsCostRates.defaults() : null);
     }
 
     /** 스탑을 걸지 않는 현금성 종목인가. */
@@ -122,7 +125,88 @@ public record PaperSettings(double slippageBp, double trailingStopPct, int locko
         Rules rules = Rules.from(scoped);
         return new PaperSettings(slippage, stop, (int) lockout, cashLike, thresholds, fallbacks, Blend.from(body),
                 new Rules(rules.parkCashThresholdPct(), rules.fallbacks().stream().map(key -> prefix + key).toList()),
-                CostRates.readsCostRates(market) ? CostRates.from(scoped, prefix) : null);
+                CostRates.readsCostRates(market) ? CostRates.from(scoped, prefix) : null,
+                UsCostRates.readsUsCosts(market) ? UsCostRates.from(body) : null);
+    }
+
+    /**
+     * 미국 체결 비용 요율(ADR 0030, 명세 2026-11-06-us-costs-backfill.md §1) — 설정 최상위 {@code commissionBp}(미국 키는 접두어 없음 — 슬리피지
+     * 선례)와 {@code regFees} 묶음. 키가 없거나 범위 밖이면 그 키만 기본값(수수료 10bp·SEC $20.60/백만·TAF $0.000195/주·상한 $9.79)으로 읽고
+     * {@link #fallbacks}에 남깁니다 — 장부 키의 fallbacks와 따로 둡니다(이 키가 생기기 전 설정 행도 기본값으로 돌고, 설정 화면·상태가 그 사실을 보임).
+     * 읽는 범위(수수료 0 이상 10,000bp 미만 등)는 설정 API(0~100bp·0~1000·0~0.01·0~100)보다 넓습니다.
+     *
+     * <p><b>판</b>: 체결은 그 체결을 쓰는 실행이 읽은 설정 판으로 셉니다(한국 비용 요율과 같은 규칙) — 비율을 바꾸면 그 뒤 체결부터.
+     *
+     * @param commissionBp   매매 수수료(bp, 매수·매도 각각)
+     * @param secPerMillion  SEC fee(매도 금액 $1,000,000당 달러)
+     * @param tafPerShare    FINRA TAF(매도 1주당 달러)
+     * @param tafMaxPerTrade TAF 1건 상한(달러)
+     */
+    public record UsCostRates(double commissionBp, double secPerMillion, double tafPerShare, double tafMaxPerTrade,
+                              List<String> fallbacks) {
+
+        /** 토스 미국 매매 수수료(이 계좌 적용률 0.1% — 토스 Open API 2026-11-06, 명세 §0). */
+        public static final double DEFAULT_COMMISSION_BP = 10;
+        /** SEC Section 31 fee(2026-04-04부터 매도 $1,000,000당 $20.60 — SEC Fee Rate Advisory 2026-2). */
+        public static final double DEFAULT_SEC_PER_MILLION = 20.60;
+        /** FINRA TAF(2026 — 매도 1주당 $0.000195). */
+        public static final double DEFAULT_TAF_PER_SHARE = 0.000195;
+        /** FINRA TAF 1건 상한(2026 — $9.79). */
+        public static final double DEFAULT_TAF_MAX_PER_TRADE = 9.79;
+
+        public UsCostRates {
+            fallbacks = List.copyOf(fallbacks);
+        }
+
+        /** 미국 시장(US)만 비용 요율을 읽습니다(클래스 설명의 {@link PaperSettings#usCosts}). */
+        static boolean readsUsCosts(PaperMarket market) {
+            return com.macrodash.store.PaperStore.Book.MARKET_US.equals(market.code());
+        }
+
+        /** 설정 행이 없을 때 — 기본 비율(fallbacks 없음). */
+        static UsCostRates defaults() {
+            return new UsCostRates(DEFAULT_COMMISSION_BP, DEFAULT_SEC_PER_MILLION, DEFAULT_TAF_PER_SHARE,
+                    DEFAULT_TAF_MAX_PER_TRADE, List.of());
+        }
+
+        /** 설정 본문 전체에서 읽습니다(최상위 {@code commissionBp}, {@code regFees.*}). */
+        static UsCostRates from(JsonNode body) {
+            List<String> fallbacks = new ArrayList<>();
+            double commission = number(body, "commissionBp", DEFAULT_COMMISSION_BP, v -> v >= 0 && v < 10_000, fallbacks);
+            JsonNode reg = Json.child(body, "regFees");
+            List<String> regFallbacks = new ArrayList<>();
+            double sec = number(reg, "secPerMillion", DEFAULT_SEC_PER_MILLION, v -> v >= 0 && v < 1_000_000, regFallbacks);
+            double taf = number(reg, "tafPerShare", DEFAULT_TAF_PER_SHARE, v -> v >= 0 && v < 1, regFallbacks);
+            double tafMax = number(reg, "tafMaxPerTrade", DEFAULT_TAF_MAX_PER_TRADE, v -> v >= 0 && v < 10_000, regFallbacks);
+            regFallbacks.forEach(key -> fallbacks.add("regFees." + key));
+            return new UsCostRates(commission, sec, taf, tafMax, fallbacks);
+        }
+
+        /** 한 체결에 쓰는 요율 판(십진수 — 설정 값의 글자 그대로, 예 20.6·0.000195). */
+        public com.macrodash.analytics.UsCosts.Rates rates() {
+            return new com.macrodash.analytics.UsCosts.Rates(BigDecimal.valueOf(commissionBp),
+                    BigDecimal.valueOf(secPerMillion), BigDecimal.valueOf(tafPerShare), BigDecimal.valueOf(tafMaxPerTrade));
+        }
+
+        /** 쓴 비율의 기록({@code paper_cost_adjustments.rates}·패킷 — 키 이름은 설정 키 그대로, 넣은 순서 고정). */
+        public java.util.Map<String, Object> view() {
+            java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("commissionBp", BigDecimal.valueOf(commissionBp));
+            out.put("secPerMillion", BigDecimal.valueOf(secPerMillion));
+            out.put("tafPerShare", BigDecimal.valueOf(tafPerShare));
+            out.put("tafMaxPerTrade", BigDecimal.valueOf(tafMaxPerTrade));
+            return out;
+        }
+
+        private static double number(JsonNode node, String key, double fallback, DoublePredicate valid,
+                                     List<String> fallbacks) {
+            Double value = Json.asDouble(node, key);
+            if (value == null || !Double.isFinite(value) || !valid.test(value)) {
+                fallbacks.add(key);
+                return fallback;
+            }
+            return value;
+        }
     }
 
     /**

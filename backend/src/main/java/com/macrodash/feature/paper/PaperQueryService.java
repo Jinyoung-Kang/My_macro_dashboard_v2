@@ -479,6 +479,8 @@ public class PaperQueryService {
             List<String> fallbacks = new ArrayList<>(current.settings().fallbacks());
             fallbacks.addAll(current.settings().blend().fallbacks());
             fallbacks.addAll(current.settings().rules().fallbacks());
+            // 미국 체결 비용(commissionBp·regFees.* — ADR 0030) — 이 키가 생기기 전 행은 기본 비율로 읽음.
+            fallbacks.addAll(current.settings().usCosts().fallbacks());
             // 계좌1 장중 확인(claude.checkpoint·claude.checkpointAtEt) — 손으로 고친 행의 범위 밖 시각을 작업이 12:00 ET로 읽는 것도(QA-182).
             market.settingsRow().ifPresent(row -> fallbacks.addAll(Claude1Checkpoint.from(row.body()).fallbacks()));
             out.put("settingsFallbacks", fallbacks);
@@ -1246,7 +1248,8 @@ public class PaperQueryService {
 
     /**
      * GET /api/paper/books/{code}/fills?limit= (1–500, 최근 순). 한국 계좌({@link #krFills})는 {@code confirmationTotal}과 행마다 비용 칸·실효 비용 bp·
-     * 확정 조정·확정 상태가 더 붙고, 미국 계좌는 예전 그대로입니다.
+     * 확정 조정·확정 상태가 더 붙습니다. 미국 계좌는 맨 위 {@code costAdjustmentTotal}(그 계좌 전체의 소급 비용 조정 — ADR 0030)과 행마다 비용 칸
+     * {@code fee}·{@code tax}(한국과 같은 이름 — 수수료·매도 제비용, 달러)·{@code costAdjustment}(소급 조정 행 — 없으면 null)가 붙습니다.
      */
     public Map<String, Object> fills(String code, int limit) {
         if (!ready()) {
@@ -1266,9 +1269,23 @@ public class PaperQueryService {
                 bars.put(f.fill().id(), f);
             }
         }
+        Map<Long, PaperStore.CostAdjustment> adjustments = new HashMap<>();
+        BigDecimal adjustedFee = BigDecimal.ZERO;
+        BigDecimal adjustedTax = BigDecimal.ZERO;
+        BigDecimal adjustedCash = BigDecimal.ZERO;
+        for (PaperStore.CostAdjustment a : store.costAdjustments(code)) {
+            adjustments.put(a.fillId(), a);
+            adjustedFee = adjustedFee.add(a.fee());
+            adjustedTax = adjustedTax.add(a.tax());
+            adjustedCash = adjustedCash.add(a.cashDelta());
+        }
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Fill f : recent) {
             Map<String, Object> row = fillRow(f);
+            row.put("fee", money(f.fee()));
+            row.put("tax", money(f.tax()));
+            PaperStore.CostAdjustment adjustment = adjustments.get(f.id());
+            row.put("costAdjustment", adjustment == null ? null : costAdjustmentRow(adjustment));
             if (timed) {
                 PaperStore.ExecFill bar = bars.get(f.id());
                 String rung = bar == null ? null : bar.fillRung();
@@ -1278,10 +1295,34 @@ public class PaperQueryService {
             }
             rows.add(row);
         }
+        Map<String, Object> total = new LinkedHashMap<>();
+        total.put("rows", adjustments.size());
+        total.put("fee", adjustments.isEmpty() ? null : money(adjustedFee));
+        total.put("tax", adjustments.isEmpty() ? null : money(adjustedTax));
+        total.put("cashDelta", adjustments.isEmpty() ? null : money(adjustedCash));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
+        out.put("costAdjustmentTotal", total);
         out.put("fills", rows);
         return out;
+    }
+
+    /** 소급 비용 조정 행의 화면 표시(ADR 0030 — 당시 수량·체결가는 그대로, 비용만 더함). */
+    static final String COST_ADJUSTMENT_NOTE = "비용 소급 — 수량은 당시 그대로";
+
+    /** 소급 비용 조정 한 행(미국 체결 목록) — 수수료·매도 제비용·현금 차이(달러, 소수 2자리)·반영 거래일·쓴 설정 판과 비율·쓴 시각·표시. */
+    private static Map<String, Object> costAdjustmentRow(PaperStore.CostAdjustment a) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("fee", money(a.fee()));
+        row.put("tax", money(a.tax()));
+        row.put("cashDelta", money(a.cashDelta()));
+        row.put("fillDate", text(a.fillDate()));
+        row.put("settingsVersion", a.settingsVersion());
+        row.put("rates", a.rates());
+        row.put("reason", a.reason());
+        row.put("createdAtKst", stamp(a.createdAt()));
+        row.put("note", COST_ADJUSTMENT_NOTE);
+        return row;
     }
 
     /** 한국 체결의 확정 상태 — 확정 조정 행 있음 · 금융위가 그날을 아직 내지 않음 · 그날을 냈는데 행 없음(명세 §4-1 'C3'). */
@@ -1373,7 +1414,7 @@ public class PaperQueryService {
         return row;
     }
 
-    /** 원 금액(비용 칸·현금 차이 — 저장은 소수 4자리) → 소수 2자리. */
+    /** 금액(비용 칸·현금 차이 — 저장은 소수 4자리, 한국 원·미국 달러) → 소수 2자리. */
     private static Double money(BigDecimal value) {
         return value == null ? null : round2(value.doubleValue());
     }
