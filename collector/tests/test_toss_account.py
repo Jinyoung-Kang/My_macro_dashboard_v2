@@ -7,7 +7,7 @@ tests/test_toss_account.py
      네트워크 전에 TossReadOnlyViolation이다(HTTPAdapter.send 기록기로 '한 번도 보내지 않음'을 본다). AST로 쓰기 호출이 토큰
      발급 하나뿐인지, 계좌 모듈에는 없는지도 본다.
   2. 계좌 경로의 401은 expired-token·token-revoked·invalid-token일 때만, 10분에 한 번만 재발급한다. 429는 잠들지 않는다.
-  3. 기다리지 않는 single-flight, 성공 60초 캐시, 실패 뒤 이전 값(받은 지 30분까지)·30초 쉼, 호출이 모두 성공해야 바꿈.
+  3. 기다리지 않는 single-flight, 성공 10초 캐시(ADR 0030 — 갱신 시작부터, 여유 1초), 실패 뒤 이전 값(받은 지 30분까지)·30초 쉼, 호출이 모두 성공해야 바꿈.
   4. 원화(KR)·달러(US)로 나누고 맞지 않는 항목은 세기만 한다. 모르는 값은 None이다(0으로 바꾸지 않음).
   5. 토스 오류 message·예외 문구·계좌번호·accountSeq·orderId는 응답과 로그에 없다.
   6. 꺼져 있거나 서비스 토큰이 없으면 토스를 부르지 않는다.
@@ -643,20 +643,22 @@ def test_끝난_주문은_3쪽까지만_받고_남으면_closedTruncated(fake, e
 # ==============================================================================
 # 6. 캐시 — TTL·이전 값·쉼·모두 성공해야 바꿈·기다리지 않는 갱신
 # ==============================================================================
-def test_60초_캐시와_실패_뒤_이전_값·30초_쉼·30분_뒤_버림(fake, enabled, clock):
+def test_10초_캐시와_실패_뒤_이전_값·30초_쉼·30분_뒤_버림(fake, enabled, clock):
+    assert toss_account.SUCCESS_TTL_SECONDS == 10.0          # ADR 0030(ADR 0025 결정 3 개정) — 60초에서 줄임
+    assert toss_account.TTL_SLACK_SECONDS == 1.0             # 화면 10초 주기의 흔들림 여유
     first = toss_account.get_account()
     calls = len(fake.data_calls())
     assert calls == 7
 
-    clock.advance(59)                                       # 60초 안 — 부르지 않음
+    clock.advance(8)                                        # 9초 안 — 부르지 않음
     assert toss_account.get_account() == first and len(fake.data_calls()) == calls
 
-    clock.advance(2)                                        # 61초 — 갱신했는데 holdings가 500
+    clock.advance(2)                                        # 10초 — 갱신했는데 holdings가 500
     fake.routes["/api/v1/holdings"] = (500, _error("internal-error", CANARY))
     stale = toss_account.get_account()
     assert (stale["ok"], stale["isStale"], stale["reason"], stale["errorCode"]) == (
         True, True, "upstream-error", "internal-error")
-    assert stale["fetchedAt"] == first["fetchedAt"] and stale["staleSince"] == Clock.kst(61)
+    assert stale["fetchedAt"] == first["fetchedAt"] and stale["staleSince"] == Clock.kst(10)
     assert stale["sides"] == first["sides"]
     assert len(fake.data_calls()) == calls + 1              # accountSeq는 기억(/accounts 다시 안 부름), holdings에서 멈춤
 
@@ -665,7 +667,7 @@ def test_60초_캐시와_실패_뒤_이전_값·30초_쉼·30분_뒤_버림(fake
 
     clock.advance(2)                                        # 31초 — 다시 시도, 또 실패: staleSince는 첫 실패 그대로
     again = toss_account.get_account()
-    assert len(fake.data_calls()) == calls + 2 and again["staleSince"] == Clock.kst(61)
+    assert len(fake.data_calls()) == calls + 2 and again["staleSince"] == Clock.kst(10)
 
     clock.advance(30 * 60)                                  # 받은 지 30분이 넘음 — 이전 값을 버림
     gone = toss_account.get_account()
@@ -676,6 +678,29 @@ def test_60초_캐시와_실패_뒤_이전_값·30초_쉼·30분_뒤_버림(fake
     clock.advance(31)
     fresh = toss_account.get_account()
     assert (fresh["ok"], fresh["isStale"], fresh["staleSince"], fresh["reason"]) == (True, False, None, None)
+
+
+def test_캐시_나이는_갱신을_시작한_시각부터_세고_주기_흔들림에_1초_여유(fake, enabled, clock):
+    """갱신에 1초 걸려도 첫 요청 10초 뒤의 요청은 새로 읽는다 — 끝난 시각부터 세면 화면 10초 주기에서 약 20초마다 바뀜(리뷰 지적)."""
+    def slow(params, headers):
+        clock.advance(1)
+        return 200, _fixture("account_holdings.json")
+
+    fake.routes["/api/v1/holdings"] = slow
+    first = toss_account.get_account()                      # 0초 시작 → 1초 받음
+    assert first["fetchedAt"] == Clock.kst(1)               # 받은 시각은 끝난 시각 그대로
+    calls = len(fake.data_calls())
+
+    clock.advance(9)                                        # 시작부터 10초(받은 뒤 9초) — 새로 읽음(accountSeq는 기억)
+    second = toss_account.get_account()                     # 10초 시작 → 11초 받음
+    assert len(fake.data_calls()) > calls and second["fetchedAt"] == Clock.kst(11)
+    calls = len(fake.data_calls())
+
+    clock.advance(7.5)                                      # 시작부터 8.5초 — 9초 안이라 캐시
+    assert toss_account.get_account() == second and len(fake.data_calls()) == calls
+    clock.advance(0.6)                                      # 시작부터 9.1초 — 흔들림 여유를 넘음, 새로 읽음
+    toss_account.get_account()
+    assert len(fake.data_calls()) > calls
 
 
 def test_갱신은_호출이_모두_성공해야_바꾼다(fake, enabled, clock):

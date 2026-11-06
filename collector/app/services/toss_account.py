@@ -19,7 +19,9 @@ app/services/toss_account.py
     accountSeq(:func:`account_seq`).
 
 캐시(명세 §2)
-  - 성공은 60초 동안 그대로 씁니다. 갱신은 호출이 **모두** 성공해야 캐시를 바꿉니다(새 값과 옛 값을 섞지 않음).
+  - 성공은 10초 동안 그대로 씁니다(ADR 0030 — 화면 새로고침 주기, 그 전 60초). 나이는 갱신을 **시작한** 시각부터 세고, 화면 주기의 흔들림(타이머·
+    네트워크)에 1초 여유를 둡니다 — 시작부터 9초가 지난 요청은 새로 읽으므로 10초 주기 요청마다 새 값입니다(끝난 시각부터 세면 약 20초마다 바뀜).
+    갱신은 호출이 **모두** 성공해야 캐시를 바꿉니다(새 값과 옛 값을 섞지 않음).
   - 갱신이 실패하면 직전 성공값 전체를 ``isStale``로 보이되, 받은 지 30분이 지나면 버립니다. 실패 직후 30초는 다시 부르지 않습니다.
   - 갱신은 한 번에 하나이고 **기다리지 않습니다** — 갱신 중에 온 요청은 지금 캐시(없으면 ``reason: "refreshing"``)를 바로 받습니다.
 """
@@ -39,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
 
-SUCCESS_TTL_SECONDS = 60.0
+SUCCESS_TTL_SECONDS = 10.0             # ADR 0030(ADR 0025 결정 3 개정) — 갱신 한 번에 토스 5~7회라 호출 한도 안
+TTL_SLACK_SECONDS = 1.0                # 화면 10초 주기의 흔들림 여유 — 갱신 시작부터 9초 지나면 새로 읽음
 STALE_MAX_SECONDS = 30 * 60.0          # 받은 시각부터 — 이보다 오래된 성공값은 이전 값으로도 보이지 않음
 FAILURE_BACKOFF_SECONDS = 30.0
 REFRESH_BUDGET_SECONDS = 12.0          # 갱신 한 번 전체. 넘으면 남은 호출을 하지 않고 실패(reason "timeout")
@@ -139,7 +142,7 @@ class AccountUnavailable(Exception):
 
 class _State:
     def __init__(self) -> None:
-        self.entry: dict | None = None          # {"data", "mono"(받은 시각, 단조), "fetchedAt"(KST 문자열)}
+        self.entry: dict | None = None          # {"data", "mono"(갱신을 시작한 시각, 단조), "fetchedAt"(받은 시각, KST 문자열)}
         self.failure: _Failure | None = None    # 마지막 갱신이 실패했으면 그 사유(성공하면 비움)
         self.failed_mono: float | None = None
         self.stale_since: str | None = None     # 마지막 성공 뒤 첫 실패 시각
@@ -224,10 +227,11 @@ def _failure_view(entry: dict | None) -> dict:
 
 
 def _cached_view(now: float) -> dict | None:
-    """캐시로 답할 차례면 그 응답(새 값 60초 안, 또는 실패 뒤 30초 안), 갱신할 차례면 None."""
+    """캐시로 답할 차례면 그 응답(새 값 — 갱신 시작부터 10초에서 여유 1초를 뺀 9초 안, 또는 실패 뒤 30초 안), 갱신할 차례면 None."""
     with _state_lock:
         entry = _usable_entry(now)
-        if entry is not None and _state.failure is None and now - entry["mono"] < SUCCESS_TTL_SECONDS:
+        if entry is not None and _state.failure is None \
+                and now - entry["mono"] < SUCCESS_TTL_SECONDS - TTL_SLACK_SECONDS:
             return _data_view(entry, None, None)
         if _state.failure is not None and now - _state.failed_mono < FAILURE_BACKOFF_SECONDS:
             return _failure_view(entry)
@@ -243,8 +247,9 @@ def _in_flight_view(now: float) -> dict:
         return _data_view(entry, _state.failure, _state.stale_since)
 
 
-def _record_success(data: dict) -> dict:
-    entry = {"data": data, "mono": _monotonic(), "fetchedAt": _stamp()}
+def _record_success(data: dict, started: float) -> dict:
+    """``started``는 갱신을 시작한 단조 시각 — 캐시 나이를 여기서부터 셉니다(``fetchedAt``은 받은 시각 그대로)."""
+    entry = {"data": data, "mono": started, "fetchedAt": _stamp()}
     with _state_lock:
         _state.entry = entry
         _state.failure = _state.failed_mono = _state.stale_since = None
@@ -283,6 +288,7 @@ def get_account() -> dict:
         view = _cached_view(_monotonic())   # 확인과 잠금 사이에 다른 요청의 갱신이 끝났을 수 있습니다
         if view is not None:
             return view
+        started = _monotonic()
         try:
             data = _refresh()
         except _Failure as failure:
@@ -290,7 +296,7 @@ def get_account() -> dict:
         except Exception as exc:  # noqa: BLE001 — 예상 못 한 응답 형식·코드 결함. 예외 문구는 싣지 않습니다
             logger.warning("토스 계좌 갱신 중 예상 못 한 예외: %s", type(exc).__name__)
             return _record_failure(_Failure("internal"))
-        return _record_success(data)
+        return _record_success(data, started)
     finally:
         _refresh_lock.release()
 
