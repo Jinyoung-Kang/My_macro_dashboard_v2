@@ -477,3 +477,49 @@ def test_QA202_다시_받기_실패가_섞이면_결과_문구가_직전_칸을_
     assert detail == "1/2 종목·세션, 실패 1(직전 OK 칸 유지 1)"
     sessions = _payload(store)["sessions"][E]
     assert sessions["005930"] == old and sessions["000660"]["status"] == "OK"
+
+
+# --------------------------------------------------------------------------- QA-301
+# 한국 실행 감사 몫이 분 단위 지정 시각(AT_MINUTE) 주문의 창을 싣지 않음 — 수집기 kr_audit_orders가 target_local을 읽지 않아 감사 몫은 장중 시장가
+# 창만 더하고, 칸을 다시 받으면 그때의 대기 주문으로 창을 통째로 다시 만들어 체결·취소된 지정 시각 주문의 창이 사라짐(미국은 최근 8일 주문의 지정 시각을 읽음).
+def _kr_minute_order(store, status: str, at: str = "10:47") -> None:
+    """한국 계좌1의 지정 시각 주문 한 건(기준 거래일 11-02 → E = 11-03, 하루 전에 만듦) — 실제 DB 읽기(store.kr_audit_orders)로 범위를 받습니다."""
+    with store.connection() as conn:
+        conn.execute(
+            "INSERT INTO paper_books (code, kind, label, initial_cash, started_on, status, market, currency) "
+            "VALUES ('kr_claude', 'CLAUDE', 'kr_claude', 100000000, %s, 'ACTIVE', 'KR', 'KRW')", (date(2026, 10, 30),))
+        conn.execute(
+            "INSERT INTO paper_orders (book_code, ticker, side, timing, source, status, as_of_trading_date, target_local, created_at) "
+            "VALUES ('kr_claude', '005930', 'BUY', 'AT_MINUTE', 'CLAUDE', %s, %s, %s::time, now() - interval '1 day')",
+            (status, date(2026, 11, 2), at))
+
+
+@pytest.mark.xfail(strict=True, reason="QA-301 재현 — 감사 몫이 지정 시각을 읽지 않음(fix(QA-301)에서 표시를 뗌)")
+@pytest.mark.parametrize("status", ["FILLED", "CANCELLED"])
+def test_QA301_체결되거나_취소된_지정_시각_주문의_창도_감사_몫으로_싣는다(store, toss, status):
+    # FILLED — 장부가 이미 체결(대기 목록에서 빠짐). CANCELLED — 장중 판단 REPLACE가 E 15:40 전에 취소해 장부 몫으로는 창을 받은 적이 없음.
+    _kr_minute_order(store, status)
+    toss.pages[("005930", E)] = _session(E)
+
+    tasks.task_kr_paper_timed()
+
+    windows = _payload(store)["sessions"][E]["005930"]["windows"]
+    assert [b["label"] for b in windows.get("10:47", [])] == ["10:48", "10:49", "10:50", "10:51", "10:52"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-301 재현 — 다시 받을 때 지정 시각 창을 잃음(fix(QA-301)에서 표시를 뗌)")
+def test_QA301_다시_받을_때_체결된_지정_시각_주문의_창을_잃지_않는다(store, toss):
+    # 대기 중에 장부 몫으로 받은 칸(10:47 창 있음, 개장 창 09:00 없음 — 2c 전 모양)을 주문이 체결된 뒤 감사 몫이 다시 받음.
+    _kr_minute_order(store, "FILLED")
+    held = {"status": "OK", "reason": None, "fetchedAt": "2026-11-03T14:30:00+00:00",
+            "windows": {**{f"{hour}:00": [] for hour in range(10, 16)}, "10:47": [{"label": "10:48", "open": 71_048.0, "volume": 100}]},
+            "firstAfter": {}, "closes": {}}
+    store.put_snapshot(catalog.SNAP_KR_PAPER_TIMED, {"contract": 1, "source": kr_paper_timed.KR_TIMED_SOURCE,
+                                                     "sessions": {E: {"005930": held}}})
+    toss.pages[("005930", E)] = _session(E)
+
+    tasks.task_kr_paper_timed()
+
+    assert toss.calls, "개장 창이 없어 다시 받음"
+    windows = _payload(store)["sessions"][E]["005930"]["windows"]
+    assert "09:00" in windows and "10:47" in windows
