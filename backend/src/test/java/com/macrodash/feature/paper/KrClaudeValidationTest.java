@@ -207,6 +207,22 @@ class KrClaudeValidationTest {
     }
 
     @Test
+    @DisplayName("대기 장중 감시 STOP(ADR 0032 결정 8) — 그 종목의 새 매수는 재진입 금지와 같게 LOCKED_OUT, 감시를 켜기 전의 밤 감지 STOP(근거에 stopMode 없음)은 그대로")
+    void pendingWatchStopBlocksNewBuys() {
+        tools.jackson.databind.node.ObjectNode watch = MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE);
+        store.insertOrder(new com.macrodash.store.PaperStore.Order(0, PaperBooks.KR_CLAUDE, null, "000660", PaperBooks.SELL, null, null, null,
+                PaperBooks.MARKET, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, D.minusDays(1), kst("2026-11-03T10:22:20"), D,
+                null));
+        store.insertOrder(new com.macrodash.store.PaperStore.Order(0, PaperBooks.KR_CLAUDE, null, "207940", PaperBooks.SELL, null, null, null,
+                PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode().put("trigger", "TRAILING_STOP"),
+                D, kst("2026-11-03T21:59"), D.plusDays(3), null));
+
+        Plan plan = plan(false, attempt(packet(), "000660", "BUY", 3.0, "207940", "BUY", 1.3), view(), quotes());
+
+        assertThat(reasons(plan)).containsExactly(OrderValidator.LOCKED_OUT, "OK");
+    }
+
+    @Test
     @DisplayName("한국 칸 — 패킷 12_hardRules의 유니버스·ETF·재진입 금지(+ 지금 장부)·체결할 수 없는 종목(+ 지금 장부의 기업행위 보류), 기준 가격은 관측치의 기준 거래일 종가, 요율은 kr.*, 가격 없음 집합은 비움")
     void checksReadThePacketAndTheLedger() {
         view();

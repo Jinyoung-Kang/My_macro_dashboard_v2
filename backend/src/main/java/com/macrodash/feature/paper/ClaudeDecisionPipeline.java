@@ -947,7 +947,10 @@ final class ClaudeDecisionPipeline {
         return out;
     }
 
-    /** 다음 세션(주문이 체결될 날)에도 재진입 금지인 종목 — 장부가 체결 때 보는 날과 같습니다. */
+    /**
+     * 다음 세션(주문이 체결될 날)에도 재진입 금지인 종목 — 장부가 체결 때 보는 날과 같습니다. 장중 감시가 낸 대기 STOP 종목도 넣습니다(ADR 0032 결정 8 —
+     * 반영되면 재진입 금지가 걸릴 종목이라 새 매수는 헛주문, {@link StopWatch#pendingWatchStops}).
+     */
     private Set<String> lockedOut(LocalDate asOf) {
         LocalDate fillDay = market.calendar().nextTradingDay(asOf);
         Set<String> out = new TreeSet<>();
@@ -956,6 +959,7 @@ final class ClaudeDecisionPipeline {
                 out.add(lockout.ticker());
             }
         }
+        out.addAll(StopWatch.pendingWatchStops(store.ordersByStatus(book(), PaperBooks.ORDER_PENDING)));
         return out;
     }
 

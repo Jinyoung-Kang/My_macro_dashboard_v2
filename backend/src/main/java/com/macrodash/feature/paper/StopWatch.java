@@ -256,6 +256,24 @@ final class StopWatch {
                 && PaperStopWatchJob.STOP_MODE.equals(Json.asText(order.reason(), "stopMode"));
     }
 
+    /**
+     * 장중 감시 기능이 낸 대기 STOP 매도(장중 감시 {@value PaperStopWatchJob#STOP_MODE}·한국 밤 대체 {@code NIGHT_FALLBACK} — 감시가 ON일 때만 생김)의
+     * 종목. Claude 검증기가 이 종목의 새 매수를 재진입 금지와 같게 거절합니다(ADR 0032 결정 8 — 감지와 장부 반영 사이에 낸 매수가 반영 때 재진입 금지로
+     * 취소되는 헛주문을 미리 막음). 감시를 켜기 전부터 있던 한국 밤 감지 STOP(근거에 stopMode 없음)은 넣지 않습니다(끈 판 동작 그대로).
+     */
+    static java.util.Set<String> pendingWatchStops(List<com.macrodash.store.PaperStore.Order> pending) {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        for (com.macrodash.store.PaperStore.Order order : pending) {
+            String mode = Json.asText(order.reason(), "stopMode");
+            if (PaperBooks.SOURCE_STOP.equals(order.source()) && PaperBooks.SELL.equals(order.side())
+                    && PaperBooks.ORDER_PENDING.equals(order.status()) && order.ticker() != null
+                    && (PaperStopWatchJob.STOP_MODE.equals(mode) || PaperLedgerService.STOP_MODE_NIGHT_FALLBACK.equals(mode))) {
+                out.add(order.ticker());
+            }
+        }
+        return out;
+    }
+
     // ------------------------------------------------------------------ 저장본 읽기
     /** 봉의 시각 — 미국은 {@code t}(봉 시작 ISO), 한국은 그 세션 날짜의 {@code label}(봉 끝 'HH:MM', 서울). 읽을 수 없으면 null. */
     static Instant barTime(JsonNode bar, LocalDate session, TradingCalendar calendar, boolean korea) {

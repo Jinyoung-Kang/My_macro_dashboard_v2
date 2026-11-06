@@ -496,6 +496,22 @@ class KrRuleBookServiceTest {
     }
 
     @Test
+    @DisplayName("대기 장중 감시 STOP(ADR 0032 결정 8) — 그 종목은 매수 후보에서 '대기 중인 매도 주문'으로 빠지고 사지 않음(같은 시가에 사고팔지 않는 기존 규칙)")
+    void pendingWatchStopKeepsTheCandidateOut() {
+        tools.jackson.databind.node.ObjectNode watch = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE);
+        store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, "005930", PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, LocalDate.of(2026, 10, 30), kst("2026-11-02T10:22:20"), R, null));
+
+        Decision decision = decideAt(R, "22:30");
+
+        assertThat(ordersOf(decision)).noneMatch(o -> o.ticker().equals("005930") && PaperBooks.BUY.equals(o.side()));
+        assertThat(decision.response().path("skipped")).anySatisfy(row -> {
+            assertThat(row.path("ticker").asString()).isEqualTo("005930");
+            assertThat(row.path("reason").asString()).contains("대기 중인 매도 주문");
+        });
+    }
+
+    @Test
     @DisplayName("거래정지 — 그 실행 관측치의 KRX 매매정지(또는 D 봉 거래량 0) 종목은 '거래정지'로 빠짐")
     void suspendedFromTheRunQuotes() {
         com.macrodash.store.Snapshot snapshot = KrRulesFixtures.quotes(R);
