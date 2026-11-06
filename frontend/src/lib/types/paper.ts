@@ -2205,6 +2205,16 @@ export interface PaperIntradayPlan {
   decisionId?: number | null;
   lagSeconds?: number | null;
   calledAtKst?: string | null;
+  /** 누가 만든 행인가(ADR 0031 초안) — RESERVED(결정의 예약) · NEXT(장중 판단의 다음 예약) · MANUAL(운영자) · GUARANTEE(코드의 보장) · EVENT(사건). */
+  origin?: string | null;
+  /** 사건이 당기거나 더한 판단의 사건 목록·원래 시각(없으면 null). */
+  trigger?: PaperIntradayTrigger | null;
+}
+
+/** 장중 판단 계획 행의 사건(trigger) — 사건 목록과 당기기 전 원래 시각. 모르는 칸은 그대로 둡니다. */
+export interface PaperIntradayTrigger {
+  originalAt?: string | null;
+  events?: { type?: string | null; ticker?: string | null }[] | null;
 }
 
 /** 상태 응답 intraday.books[] — 계좌 하나의 스위치와 그 세션의 계획 행. */
@@ -2218,6 +2228,10 @@ export interface PaperIntradayBook {
 export interface PaperIntradayStatus {
   session?: string | null;
   maxPerSession?: number | null;
+  /** 세션당 최소 장중 판단 수(1이면 세션 중간까지 예약이 없을 때 코드가 한 번 넣음, 0이면 꺼짐). */
+  minPerSession?: number | null;
+  /** 사건(보유·지수 변동, 스탑 근접)이 장중 판단을 당기는가. */
+  events?: boolean | null;
   books?: PaperIntradayBook[] | null;
 }
 

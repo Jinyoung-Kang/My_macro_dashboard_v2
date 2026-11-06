@@ -67,6 +67,7 @@ export function IntradayPlansPanel({
               <span className={`mr-2 inline-flex rounded-control px-1.5 py-0.5 ${row.badge.className}`}>{row.badge.label}</span>
               <span>{row.text}</span>
               {row.question && <span className="text-muted"> — {row.question}</span>}
+              {row.trigger && <span className="block text-muted">{row.trigger}</span>}
               {row.reason && <span className="block text-muted">사유: {row.reason}</span>}
             </li>
           ))}

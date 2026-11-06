@@ -22,6 +22,22 @@ const FEED: Record<string, string> = {
   HOURLY: "시간별 관측치",
 };
 
+/** 계획 행을 누가 만들었나(ADR 0031 초안) — 결정의 예약(RESERVED)은 따로 적지 않고, 운영자 행(MANUAL)은 '수동' 표시로 보입니다. */
+const ORIGIN: Record<string, string | null> = {
+  RESERVED: null,
+  MANUAL: null,
+  NEXT: "다음 예약",
+  GUARANTEE: "코드 보장",
+  EVENT: "사건",
+};
+
+/** 사건 종류(ADR 0031 초안 — 보유 종목 ±4%·지수 ±1.5%·트레일링 스탑 2% 안). 모르는 종류는 받은 글자 그대로. */
+const EVENT_TYPE: Record<string, string> = {
+  HELD_MOVE: "보유 종목 변동",
+  INDEX_MOVE: "지수 변동",
+  NEAR_STOP: "스탑 근접",
+};
+
 /** 장중 판단 사유 코드 가운데 장중 확인과 뜻이 다른 것. */
 const INTRADAY_REASON: Record<string, string> = {
   INTRADAY_OFF: "세션당 장중 판단 횟수 설정이 0이거나 그 계좌가 꺼져 있음",
@@ -46,10 +62,12 @@ export interface IntradayPlanRow {
   /** 사유(없으면 null) — 놓침·건너뜀·대신함의 까닭. */
   reason: string | null;
   question: string | null;
+  /** 사건이 당기거나 더한 판단이면 그 사건 — '사건: 지수 변동 SPY · 원래 13:30'(없으면 null). */
+  trigger: string | null;
 }
 
 export interface IntradayBookView {
-  /** '2026-11-02 세션 · 세션당 2번까지' */
+  /** '2026-11-02 세션 · 세션당 2번까지'(보장·사건을 켰으면 ' · 최소 1번(세션 중간 보장) · 사건 당김'을 덧붙임) */
   summary: string;
   /** 그 계좌의 스위치가 켜져 있나(꺼져 있으면 남은 계획만 보이는 상태). */
   on: boolean;
@@ -68,13 +86,27 @@ function planRow(plan: PaperIntradayPlan, market: PaperMarketCode): IntradayPlan
   const watch = (plan.watch ?? []).filter((ticker) => typeof ticker === "string" && ticker.length > 0);
   if (watch.length > 0) parts.push(watch.join(", "));
   if (plan.manual) parts.push("수동");
+  const origin = plan.origin ? (plan.origin in ORIGIN ? ORIGIN[plan.origin] : plan.origin) : null;
+  if (origin) parts.push(origin);
   return {
     key: `${plan.slot ?? "?"}`,
     text: parts.join(" · "),
     badge: intradayStatusBadge(plan.status),
     reason: plan.reason ? intradayReasonText(plan.reason, market) : null,
     question: plan.question ?? null,
+    trigger: triggerText(plan.trigger),
   };
+}
+
+/** 사건 한 줄 — 사건 종류·티커와 당기기 전 원래 시각. 사건이 없으면 null. */
+function triggerText(trigger: PaperIntradayPlan["trigger"]): string | null {
+  if (!trigger) return null;
+  const events = (trigger.events ?? [])
+    .map((event) => [event?.type ? (EVENT_TYPE[event.type] ?? event.type) : null, event?.ticker ?? null].filter(Boolean).join(" "))
+    .filter((text) => text.length > 0);
+  const parts = events.length > 0 ? [`사건: ${events.join(", ")}`] : [];
+  if (trigger.originalAt) parts.push(`원래 ${trigger.originalAt}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /**
@@ -95,8 +127,10 @@ export function intradayBookView(
     : max !== null && max <= 0
       ? "세션당 장중 판단 횟수 설정이 0입니다."
       : null;
+  const min = typeof intraday.minPerSession === "number" && intraday.minPerSession > 0 ? intraday.minPerSession : null;
+  const extras = [min !== null ? `최소 ${min}번(세션 중간 보장)` : null, intraday.events === true ? "사건 당김" : null].filter(Boolean);
   return {
-    summary: `${intraday.session ?? EMPTY} 세션 · 세션당 ${max === null ? EMPTY : `${max}번`}까지`,
+    summary: [`${intraday.session ?? EMPTY} 세션 · 세션당 ${max === null ? EMPTY : `${max}번`}까지`, ...extras].join(" · "),
     on,
     rows: (entry.plans ?? []).map((plan) => planRow(plan, market)),
     blocked,

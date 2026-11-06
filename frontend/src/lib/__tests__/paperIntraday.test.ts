@@ -62,6 +62,53 @@ describe("장중 판단 묶음", () => {
     expect(view?.rows[0].text).toBe("1번째 · 09:10 KST · 감시 1분봉");
   });
 
+  it("셋째 판단·호출 이유(ADR 0031 초안): 다음 예약·코드 보장·사건은 줄에 적고(결정의 예약은 따로 적지 않음), 사건 내용과 원래 시각을 한 줄로, 보장·사건 스위치는 요약에", () => {
+    const view = intradayBookView(
+      {
+        session: "2026-11-09",
+        maxPerSession: 3,
+        minPerSession: 1,
+        events: true,
+        books: [
+          {
+            book: "claude",
+            freeTiming: true,
+            plans: [
+              { slot: 1, at: "10:00", feed: "HOURLY", status: "DONE", origin: "RESERVED" },
+              { slot: 2, at: "11:00", feed: "HOURLY", status: "DONE", origin: "NEXT" },
+              { slot: 3, at: "12:31", feed: "HOURLY", status: "PLANNED", origin: "GUARANTEE", trigger: null },
+            ],
+          },
+        ],
+      },
+      "claude",
+      "US",
+    );
+    expect(view?.summary).toBe("2026-11-09 세션 · 세션당 3번까지 · 최소 1번(세션 중간 보장) · 사건 당김");
+    expect(view?.rows.map((row) => row.text)).toEqual([
+      "1번째 · 10:00 ET · 시간별 관측치",
+      "2번째 · 11:00 ET · 시간별 관측치 · 다음 예약",
+      "3번째 · 12:31 ET · 시간별 관측치 · 코드 보장",
+    ]);
+    expect(view?.rows.every((row) => row.trigger === null)).toBe(true);
+    const second = intradayBookView({ session: "2026-11-09", maxPerSession: 3, books: [
+      { book: "claude2", freeTiming: true, plans: [
+        { slot: 1, at: "10:20", feed: "MINUTE", watch: ["SPY"], status: "PLANNED", origin: "EVENT",
+          trigger: { originalAt: "13:30", events: [{ type: "INDEX_MOVE", ticker: "SPY" }, { type: "NEW_KIND", ticker: null }] } },
+        { slot: 2, at: "14:00", feed: "HOURLY", status: "PLANNED", manual: true, origin: "MANUAL" },
+        { slot: 3, at: "15:00", feed: "HOURLY", status: "PLANNED", origin: "OTHER" },
+      ] },
+    ] }, "claude2", "US");
+    expect(second?.summary).toBe("2026-11-09 세션 · 세션당 3번까지");
+    expect(second?.rows.map((row) => row.text)).toEqual([
+      "1번째 · 10:20 ET · 감시 1분봉 · SPY · 사건",
+      "2번째 · 14:00 ET · 시간별 관측치 · 수동",
+      "3번째 · 15:00 ET · 시간별 관측치 · OTHER",
+    ]);
+    expect(second?.rows[0].trigger).toBe("사건: 지수 변동 SPY, NEW_KIND · 원래 13:30");
+    expect(second?.rows[1].trigger).toBeNull();
+  });
+
   it("사유·상태 이름 — 장중 판단만의 코드는 따로, 나머지는 장중 확인과 같은 표", () => {
     expect(intradayReasonText("INTRADAY_OFF — 세션당 장중 판단 횟수 설정이 0이거나 그 계좌가 꺼져 있음")).toContain("(INTRADAY_OFF)");
     expect(intradayReasonText("OUT_OF_RANGE — …")).toContain("받는 범위 밖");
