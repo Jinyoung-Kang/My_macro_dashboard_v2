@@ -35,6 +35,9 @@ import java.util.Set;
  *   <li><b>종가</b>({@code NEXT_CLOSE}): 마감 단일가 봉 종가({@value #RUNG_CLOSE}, 시각 = 그날 마감) — 라벨은 마감 시각, NXT 종목이면 + 1분(G2). NXT 여부를
  *       모르면 null. 마감 + 10분 전에 받은 칸이면 null(마감 봉을 덮지 못함).</li>
  * </ul>
+ * <b>분 단위 지정 시각 주문의 자기 시각</b>(키 {@value #OWN_MINUTE} — 그 시점의 주문에만): T = 그 주문의 지정 시각({@code target_local}), 매시와 같은
+ * 사다리(R1 {@value #RUNG_AT}·R2)와 조건입니다. 장중 판단이 대신해 취소한 주문도 '그대로 두었으면'의 값을 남깁니다(ADR 0027 결정 3의 효과 측정 —
+ * 수집기가 체결·취소된 주문의 창도 싣게 된 뒤 — QA-301). 다른 시점 주문의 반사실 키는 {@link #TIMINGS} 그대로이고 화면·API는 {@link #TIMINGS}만 그립니다.
  * 대체(창 밖 늦은 봉·토스 일봉 값)는 반사실에 쓰지 않습니다(미국 §14-1과 같은 '대체 없음'). 아래가 하나라도 어긋나면 그 시점은 null입니다 — T &gt; 주문 생성 +
  * 60초(⑤), 그 종목·세션 칸이 받음({@code OK})이고 주문 뒤에 받았으며(⑧), 창이 다 지난 뒤(T + {@link #WINDOW_DONE} — ⑦ 완성 봉)에 받은 칸.
  *
@@ -52,6 +55,9 @@ final class KrExecutionAudit {
     /** 반사실을 적는 시점 전부, 응답·요약 순서 — 계좌1식 기준(시가) + 매시 여섯 + 종가. 이름은 V17 {@code paper_orders.timing} CHECK 글자. */
     static final List<String> TIMINGS = List.of(PaperBooks.NEXT_OPEN, PaperBooks.AT_1000, PaperBooks.AT_1100, PaperBooks.AT_1200,
             PaperBooks.AT_1300, PaperBooks.AT_1400, PaperBooks.AT_1500, PaperBooks.NEXT_CLOSE);
+
+    /** 분 단위 지정 시각 주문의 자기 시각 반사실 키 — 그 주문에만 덧붙입니다(V22 {@code paper_orders.timing} CHECK 글자). */
+    static final String OWN_MINUTE = PaperBooks.AT_MINUTE;
 
     /** 사다리 칸(반사실 JSON의 {@code rung}) — 한국 체결 출처와 같은 글자. */
     static final String RUNG_OPEN = KrQuotes.SOURCE_1M_OPEN;
@@ -152,6 +158,16 @@ final class KrExecutionAudit {
     }
 
     /**
+     * 분 단위 지정 시각 주문의 자기 시각 반사실 — 그 주문의 지정 시각 창의 R1·R2(클래스 설명). 그 시점의 주문이 아니거나 시각이 없거나 못 구하면 null.
+     */
+    static Price fromOwnMinute(Order order, LocalDate session, Timed timed, TradingCalendar calendar) {
+        if (!PaperBooks.AT_MINUTE.equals(order.timing()) || !usable(order, session, timed, calendar)) {
+            return null;
+        }
+        return fromTarget(order, targetAt(order, session, calendar), session, timed, calendar, RUNG_AT);
+    }
+
+    /**
      * 종가 반사실 — 마감 단일가 봉 종가(클래스 설명). 못 구하면 null.
      *
      * @param nxt 그 종목이 NXT 종목인가(지금 관측치의 종목 칸, 모르면 null)
@@ -176,8 +192,8 @@ final class KrExecutionAudit {
     }
 
     /**
-     * 주문 하나의 반사실 전부 — {@link #TIMINGS} 순서의 시점 → 가격(못 구하면 null). 상태가 없는 계산이고, 한 번 쓴 값을 지키는 것은 저장 쪽입니다
-     * ({@code PaperStore.mergeOrderExec}).
+     * 주문 하나의 반사실 전부 — {@link #TIMINGS} 순서의 시점 → 가격(못 구하면 null), 분 단위 지정 시각 주문이면 끝에 {@value #OWN_MINUTE}(자기 시각)를
+     * 덧붙입니다. 상태가 없는 계산이고, 한 번 쓴 값을 지키는 것은 저장 쪽입니다({@code PaperStore.mergeOrderExec}).
      *
      * @param timed 그 종목의 E 칸(없으면 null)
      * @param nxt   그 종목이 NXT 종목인가(모르면 null)
@@ -188,6 +204,9 @@ final class KrExecutionAudit {
         for (String timing : TIMINGS) {
             out.put(timing, PaperBooks.NEXT_CLOSE.equals(timing) ? fromClose(order, session, timed, nxt, calendar)
                     : fromWindow(order, timing, session, timed, calendar));
+        }
+        if (PaperBooks.AT_MINUTE.equals(order.timing())) {
+            out.put(OWN_MINUTE, fromOwnMinute(order, session, timed, calendar));
         }
         return out;
     }

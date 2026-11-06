@@ -167,6 +167,25 @@ class PaperKrExecutionAuditJobTest {
     }
 
     @Test
+    @DisplayName("분 단위 지정 시각 주문의 행에는 자기 시각 반사실(AT_MINUTE)이 함께 실리고(취소된 주문도), 다른 주문의 행에는 그 키가 없다")
+    void ownMinuteKeyOnlyOnMinuteOrders() {
+        long minute = store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE2, 1L, "005930", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.AT_MINUTE, "CLAUDE", "CANCELLED", null, null, D, DECIDED, D.plusDays(5), null, java.time.LocalTime.of(10, 47)));
+        long open = order(PaperBooks.KR_CLAUDE, "005930", PaperBooks.NEXT_OPEN, D, DECIDED);
+        Map<String, List<Bar1m>> windows = new LinkedHashMap<>(night(false).windows());
+        windows.put("10:47", List.of(bar("10:48", 71_480, 30)));
+        timed("005930", new Timed(KrQuotes.TIMED_OK, null, NIGHT, windows, Map.of(), night(false).closes()));
+        nxt("005930", true);
+
+        job(true, NIGHT.plusSeconds(600)).run();
+
+        assertThat(cf(minute).path(KrExecutionAudit.OWN_MINUTE).path("raw").asDouble()).isEqualTo(71_480);
+        assertThat(cf(minute).path(KrExecutionAudit.OWN_MINUTE).path("rung").asString()).isEqualTo(KrExecutionAudit.RUNG_AT);
+        assertThat(store.execs.get(minute).targetAt()).isEqualTo(kst("2026-11-03T10:47"));
+        assertThat(cf(open).has(KrExecutionAudit.OWN_MINUTE)).isFalse();
+    }
+
+    @Test
     @DisplayName("늦게 풂 — 계좌2 체결이 생기면 한 번(결정 기한 E+1 01:00 뒤 관측치로 체결이면 참), 계좌1은 null · 감사 폭 밖 주문은 보지 않음 · 장부 표는 쓰지 않음")
     void lateAndWindow() {
         long book1 = order(PaperBooks.KR_CLAUDE, "005930", PaperBooks.NEXT_OPEN, D, DECIDED);

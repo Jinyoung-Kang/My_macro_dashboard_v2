@@ -162,6 +162,64 @@ class KrExecutionAuditTest {
         assertThat(KrExecutionAudit.choosesTiming(PaperBooks.KR_CLAUDE)).isFalse();
     }
 
+    /** 분 단위 지정 시각 주문(밤 결정 — 목표 세션 E의 그 시각, 시각이 없으면 null). */
+    private static Order minute(String book, LocalTime at, Instant createdAt) {
+        return new Order(1, book, 1L, "005930", PaperBooks.BUY, null, 5.0, null, PaperBooks.AT_MINUTE, "CLAUDE", PaperBooks.ORDER_PENDING,
+                null, null, D, createdAt, LocalDate.of(2026, 11, 6), null, at);
+    }
+
+    @Test
+    @DisplayName("분 단위 지정 시각 주문은 자기 시각 반사실(AT_MINUTE)을 끝에 덧붙임 — 그 시각 창의 R1·R2(대체 없음), 창 없음·시각 없음·생성 + 60초 이전·창이 다 지나기 전·종가 단일가면 null, 다른 시점 주문의 키는 TIMINGS 그대로")
+    void ownMinuteCounterfactual() {
+        Map<String, List<Bar1m>> windows = new LinkedHashMap<>();
+        windows.put("10:47", List.of(bar("10:48", 71_480, 30), bar("10:49", 71_490, 5)));
+        windows.put("13:12", List.of(bar("13:13", 73_120, 0), bar("13:15", 73_150, 8)));
+        windows.put("15:20", List.of(bar("15:21", 75_200, 8)));
+        Timed timed = new Timed(KrQuotes.TIMED_OK, null, NIGHT, windows, Map.of("13:12", bar("13:30", 73_300, 9)), Map.of());
+
+        Map<String, Price> cf = KrExecutionAudit.counterfactuals(minute(PaperBooks.KR_CLAUDE, LocalTime.of(10, 47), DECIDED), timed, true,
+                CALENDAR);
+        List<String> keys = new java.util.ArrayList<>(KrExecutionAudit.TIMINGS);
+        keys.add(KrExecutionAudit.OWN_MINUTE);
+        assertThat(cf.keySet()).containsExactlyElementsOf(keys);
+        assertThat(cf.get(KrExecutionAudit.OWN_MINUTE)).isEqualTo(new Price(71_480, kst("2026-11-03T10:47"), KrExecutionAudit.RUNG_AT));
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE2, LocalTime.of(13, 12), DECIDED), E, timed, CALENDAR))
+                .as("R1 거래 없음 → 창 안 첫 거래 봉(창 뒤 대체 봉은 쓰지 않음)")
+                .isEqualTo(new Price(73_150, kst("2026-11-03T13:14"), KrExecutionAudit.RUNG_NEXT));
+
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(11, 11), DECIDED), E, timed, CALENDAR))
+                .as("창 없음").isNull();
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, null, DECIDED), E, timed, CALENDAR)).as("시각 없음").isNull();
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE2, LocalTime.of(10, 47), kst("2026-11-03T10:46:30")), E, timed,
+                CALENDAR)).as("T ≤ 생성 + 60초(장중 판단이 막 낸 주문)").isNull();
+        Timed early = new Timed(KrQuotes.TIMED_OK, null, kst("2026-11-03T10:52:59"), windows, Map.of(), Map.of());
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(10, 47), DECIDED), E, early, CALENDAR))
+                .as("창이 다 지나기 전(T + 6분)에 받은 칸").isNull();
+        Timed done = new Timed(KrQuotes.TIMED_OK, null, kst("2026-11-03T10:53"), windows, Map.of(), Map.of());
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(10, 47), DECIDED), E, done, CALENDAR)).isNotNull();
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(15, 20), DECIDED), E, timed, CALENDAR))
+                .as("종가 단일가 시간(15:20~)").isNull();
+        assertThat(KrExecutionAudit.fromOwnMinute(order(PaperBooks.KR_CLAUDE2, PaperBooks.AT_1300, DECIDED), E, timed, CALENDAR))
+                .as("지정 시각 주문이 아님").isNull();
+        assertThat(KrExecutionAudit.counterfactuals(order(PaperBooks.KR_CLAUDE2, PaperBooks.MARKET, kst("2026-11-03T10:30")), timed, true,
+                CALENDAR).keySet()).as("다른 시점 주문 — 키 그대로(끈 판 행 불변)").containsExactlyElementsOf(KrExecutionAudit.TIMINGS);
+    }
+
+    @Test
+    @DisplayName("장 시간 변경일(10:00~16:30)의 분 단위 지정 시각 — 16:10은 받고(종가 단일가 16:20 앞), 16:20은 null, 09:30(개장 전)도 null")
+    void ownMinuteOnShiftedHours() {
+        TradingCalendar shifted = new KrxCalendar(KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), List.of(),
+                Map.of(E, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(16, 30))));
+        Map<String, List<Bar1m>> windows = Map.of("16:10", List.of(bar("16:11", 76_100, 10)), "16:20", List.of(bar("16:21", 76_200, 10)),
+                "09:30", List.of(bar("09:31", 70_300, 10)));
+        Timed timed = new Timed(KrQuotes.TIMED_OK, null, NIGHT, windows, Map.of(), Map.of());
+
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(16, 10), DECIDED), E, timed, shifted))
+                .isEqualTo(new Price(76_100, kst("2026-11-03T16:10"), KrExecutionAudit.RUNG_AT));
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(16, 20), DECIDED), E, timed, shifted)).isNull();
+        assertThat(KrExecutionAudit.fromOwnMinute(minute(PaperBooks.KR_CLAUDE, LocalTime.of(9, 30), DECIDED), E, timed, shifted)).isNull();
+    }
+
     private static ExecFill fill(String source, Instant observedAt) {
         Fill fill = new Fill(0, 1, PaperBooks.KR_CLAUDE2, "005930", PaperBooks.BUY, 10, 71_000, 71_000, 5, 710_000, observedAt, E,
                 source, false, null);
