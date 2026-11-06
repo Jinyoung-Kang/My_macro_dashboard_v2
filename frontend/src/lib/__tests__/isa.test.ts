@@ -452,8 +452,16 @@ describe("실시간 평가(명세 2026-11-06-us-costs-backfill §6)", () => {
     expect(unknownCash.equity).toBeNull();
     expect(unknownCash.profitLoss).toBeNull();
     expect(unknownCash.holdings[0].weightPct).toBeNull();
-    const zeroDeposit = isaValuation(HOLDINGS, { ...SUMMARY, netDeposit: 0 }, { "111110": { price: 13_000, at: null } });
+    // 순입금 0·음수는 손익률만 null — 가격 모르는 보유가 없는 두 종목으로 재서 이 조건 하나만 보게 함(손익은 값이 있음).
+    const priced = HOLDINGS.slice(0, 2);
+    const zeroDeposit = isaValuation(priced, { ...SUMMARY, netDeposit: 0, unpriced: [] }, { "111110": { price: 13_000, at: null } });
+    expect(zeroDeposit.profitLoss).toBe(1_200_000 + 1_300_000 + 2_650_000);
     expect(zeroDeposit.profitLossPct).toBeNull();
+    const negativeDeposit = isaValuation(priced, { ...SUMMARY, netDeposit: -1, unpriced: [] }, { "111110": { price: 13_000, at: null } });
+    expect(negativeDeposit.profitLoss).toBe(1_200_000 + 1_300_000 + 2_650_000 + 1);
+    expect(negativeDeposit.profitLossPct).toBeNull();
+    const pricedUnknownCash = isaValuation(priced, { ...SUMMARY, cash: null, unpriced: [] }, { "111110": { price: 13_000, at: null } });
+    expect(pricedUnknownCash.profitLoss).toBeNull();
     expect(isaValuation(null, null, {})).toMatchObject({ holdings: [], equity: null, live: 0, close: 0, unpriced: [] });
   });
 

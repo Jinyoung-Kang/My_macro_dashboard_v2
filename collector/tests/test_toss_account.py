@@ -703,6 +703,26 @@ def test_캐시_나이는_갱신을_시작한_시각부터_세고_주기_흔들�
     assert len(fake.data_calls()) > calls
 
 
+def test_30분_이전_값_창은_갱신_시작이_아니라_받은_시각부터(fake, enabled, clock):
+    """갱신에 5초 걸리면(받은 시각 +5초) 시작부터 1,802초 — 받은 지 29분 57초 — 에는 이전 값이 아직 보이고, 받은 지 30분을 넘기면 버림(명세 §2)."""
+    def slow(params, headers):
+        clock.advance(5)
+        return 200, _fixture("account_holdings.json")
+
+    fake.routes["/api/v1/holdings"] = slow
+    first = toss_account.get_account()                      # 0초 시작 → 5초 받음
+    assert first["fetchedAt"] == Clock.kst(5)
+    fake.routes["/api/v1/holdings"] = (500, _error("internal-error", CANARY))
+
+    clock.advance(1802 - 5)                                 # 시작부터 1,802초 = 받은 지 1,797초
+    stale = toss_account.get_account()
+    assert (stale["ok"], stale["isStale"], stale["fetchedAt"]) == (True, True, Clock.kst(5))
+
+    clock.advance(31)                                       # 받은 지 1,828초 — 30분을 넘김(실패 뒤 30초 쉼도 지남)
+    gone = toss_account.get_account()
+    assert (gone["ok"], gone["sides"], gone["fetchedAt"]) == (False, None, None)
+
+
 def test_갱신은_호출이_모두_성공해야_바꾼다(fake, enabled, clock):
     first = toss_account.get_account()
     clock.advance(61)

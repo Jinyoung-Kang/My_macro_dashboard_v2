@@ -495,7 +495,7 @@ public class PaperAdminService {
     /**
      * 미국 체결 비용의 과거 소급({@link UsCostBackfill} — ADR 0030 결정 2). 시장은 {@code US}만, 확인 문구는 {@value UsCostBackfill#CONFIRM}.
      *
-     * @throws com.macrodash.support.InvalidRequestException 시장·확인 문구가 다름, 비율이 모두 0
+     * @throws com.macrodash.support.InvalidRequestException 시장·확인 문구가 다름
      */
     UsCostBackfill.Result costBackfill(String market, String confirm) {
         requireReady();

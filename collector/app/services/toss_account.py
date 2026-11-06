@@ -142,7 +142,9 @@ class AccountUnavailable(Exception):
 
 class _State:
     def __init__(self) -> None:
-        self.entry: dict | None = None          # {"data", "mono"(갱신을 시작한 시각, 단조), "fetchedAt"(받은 시각, KST 문자열)}
+        # {"data", "mono"(갱신을 시작한 시각, 단조 — 10초 캐시), "receivedMono"(받은 시각, 단조 — 30분 이전 값 창),
+        #  "fetchedAt"(받은 시각, KST 문자열)}
+        self.entry: dict | None = None
         self.failure: _Failure | None = None    # 마지막 갱신이 실패했으면 그 사유(성공하면 비움)
         self.failed_mono: float | None = None
         self.stale_since: str | None = None     # 마지막 성공 뒤 첫 실패 시각
@@ -213,7 +215,7 @@ def _data_view(entry: dict, failure: _Failure | None, stale_since: str | None) -
 def _usable_entry(now: float) -> dict | None:
     """받은 지 30분 안의 성공값. 지났으면 버립니다. ``_state_lock`` 안에서 부릅니다."""
     entry = _state.entry
-    if entry is not None and now - entry["mono"] > STALE_MAX_SECONDS:
+    if entry is not None and now - entry["receivedMono"] > STALE_MAX_SECONDS:
         _state.entry = entry = None
     return entry
 
@@ -248,8 +250,8 @@ def _in_flight_view(now: float) -> dict:
 
 
 def _record_success(data: dict, started: float) -> dict:
-    """``started``는 갱신을 시작한 단조 시각 — 캐시 나이를 여기서부터 셉니다(``fetchedAt``은 받은 시각 그대로)."""
-    entry = {"data": data, "mono": started, "fetchedAt": _stamp()}
+    """``started``는 갱신을 시작한 단조 시각 — 10초 캐시 나이를 여기서부터 셉니다. 30분 이전 값 창과 ``fetchedAt``은 받은 시각부터."""
+    entry = {"data": data, "mono": started, "receivedMono": _monotonic(), "fetchedAt": _stamp()}
     with _state_lock:
         _state.entry = entry
         _state.failure = _state.failed_mono = _state.stale_since = None
