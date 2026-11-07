@@ -499,6 +499,14 @@ class RealTradeJob {
             return day;
         }
         DayState fresh = new DayState(today);
+        // 그날 스탑 매도 알림에 이미 센 뿌리(놓침·막힘)를 되살립니다(QA-321) — 다시 띄운 작업이 같은 놓침을 또 알리지 않게. 이벤트가 많은 날에도 빠지지 않게
+        // 최근 몇 건이 아니라 그날 그 종류를 읽습니다.
+        for (Event e : store.eventsSince(MARKET, RealTradeNotices.EVENT_STOP_SELL, today.atStartOfDay(Kst.ZONE).toInstant())) {
+            JsonNode detail = e.detail();
+            if (detail != null && today.toString().equals(detail.path("date").asString(""))) {
+                detail.path(STOP_ROOTS).forEach(root -> fresh.stopMissCounted.add(root.asLong()));
+            }
+        }
         for (Event e : store.recentEvents(MARKET, 50)) {
             JsonNode detail = e.detail();
             if (detail == null || !today.toString().equals(detail.path("date").asString(""))) {
@@ -1063,16 +1071,29 @@ class RealTradeJob {
             detail.put("blocked", tally.blocked);
             detail.put("missed", tally.missed);
             detail.put("date", c.today.toString());
+            if (!tally.roots.isEmpty()) {
+                detail.put(STOP_ROOTS, List.copyOf(tally.roots));   // 이번에 놓침·막힘으로 센 모의 주문 뿌리 번호(다시 띄운 뒤 되살림 — 알림 글은 건수만)
+            }
             store.addEvent(MARKET, RealTradeNotices.EVENT_STOP_SELL, null, detail, true);
             log.info("실제 매매 스탑 매도 — 보냄 {} · 막힘 {} · 놓침 {}", tally.sent, tally.blocked, tally.missed);
         }
     }
 
-    /** 한 주기의 스탑 매도 건수(알림 — 종목·수량 없음). */
+    /** 스탑 매도 이벤트 근거의 칸 — 그 주기에 놓침·막힘으로 센 모의 주문 뿌리 번호(QA-321, {@link #dayFor}가 되살림). */
+    static final String STOP_ROOTS = "roots";
+
+    /** 한 주기의 스탑 매도 건수(알림 — 종목·수량 없음)와 놓침·막힘으로 센 뿌리. */
     private static final class StopTally {
         int sent;
         int blocked;
         int missed;
+        final Set<Long> roots = new TreeSet<>();
+    }
+
+    /** 창이 끝난 스탑 뿌리를 볼 때 한 주기에 한 번만 읽는 실제 계좌 보유(QA-321). */
+    private static final class EndedStops {
+        boolean read;
+        Account account;
     }
 
     private void mirrorOrders(Cycle c, List<DueOrder> upcoming, StopTally tally) {
@@ -1084,6 +1105,7 @@ class RealTradeJob {
                 .orElse(Set.of());
         Instant syncAt = w.syncAt();
         List<Due> due = new ArrayList<>();
+        EndedStops ended = new EndedStops();
         for (DueOrder o : upcoming) {
             boolean stop = o.stop();
             if ((!stop && absorbed.contains(o.orderId())) || (o.supported() && (o.mirrorAt() == null || o.mirrorAt().isAfter(c.now)))) {
@@ -1111,11 +1133,16 @@ class RealTradeJob {
             boolean deferred = DEFERRED_SKIPS.stream().anyMatch(reason -> windowSkips.getOrDefault(reason, Set.of()).contains("root:" + root));
             if (win == null || c.now.isAfter(win.end())) {
                 if (rows.isEmpty() && !c.day.handledRoots.contains(root)) {
+                    if (stop && !c.day.stopMissCounted.contains(root) && stopAlreadyFlat(c, o, upcoming, ended)) {
+                        c.day.handledRoots.add(root);   // 팔 보유가 없음 — 묶음이 팔았거나 처음부터 없음(다시 띄운 뒤에도 놓침이 아님, QA-321)
+                        continue;
+                    }
                     if (!deferred) {
                         c.day.miss(window, "root:" + root);   // 미룬 뿌리는 창 요약이 '미룸'으로 셈(두 번 세지 않음)
                     }
                     if (stop && c.day.stopMissCounted.add(root)) {
                         tally.missed++;   // 스탑은 미룬 채(하루 한도) 창이 끝나도 놓침으로 알림(QA-303)
+                        tally.roots.add(root);
                     }
                 }
                 continue;
@@ -1177,6 +1204,7 @@ class RealTradeJob {
                     c.day.handledRoots.add(root);   // 이미 맞음·구조적 건너뜀 — 그날 다시 보지 않음
                     if (stop && stopBlocked(plan, f.account(), o.ticker()) && c.day.stopMissCounted.add(root)) {
                         tally.blocked++;   // 팔 보유가 있는데 구조적 건너뜀으로 그날 닫은 스탑은 막힘으로 알림(QA-303)
+                        tally.roots.add(root);
                     }
                 }
                 continue;
@@ -1199,6 +1227,7 @@ class RealTradeJob {
                 c.day.miss(x.window(), key);
                 if (stop && c.day.stopMissCounted.add(root)) {
                     tally.missed++;
+                    tally.roots.add(root);
                 }
                 continue;
             }
@@ -1243,6 +1272,32 @@ class RealTradeJob {
     private static boolean stopBlocked(Plan plan, Account account, String symbol) {
         return symbol != null && account.held(symbol).compareTo(BigDecimal.ONE) >= 0
                 && plan.skipped().stream().anyMatch(s -> !RealTradePlanner.SKIP_FRACTION.equals(s.reason()));
+    }
+
+    /**
+     * 창이 끝나도록 이 기능의 MIRROR 행이 없는 스탑 뿌리를 놓침으로 세기 전에(QA-321) — 실제 계좌에 그 종목 정수 보유가 없으면(1주 미만) 팔 것이 없어 이미
+     * 맞음입니다(그날 시각 맞추기 묶음이 목표 0으로 팔았거나 처음부터 들지 않음). 그 판단은 메모리({@code handledRoots})에만 있어 백엔드를 다시 띄우면 사라져,
+     * 예전에는 다시 띄운 첫 주기가 묶음이 이미 판 스탑을 놓침으로 알렸습니다. 계좌는 그 주기에 한 번만 읽고(창이 끝난 스탑 종목만 — 매도 가능 수량은 묻지
+     * 않음), 읽지 못하면 오늘 그 종목 매도 행이 그 스탑 기준 시각 뒤에 체결됐는지로 봅니다. 보유가 남았으면(하루 한도로 미룬 채 끝남 등) 예전처럼 놓침입니다.
+     */
+    private boolean stopAlreadyFlat(Cycle c, DueOrder o, List<DueOrder> upcoming, EndedStops ended) {
+        if (o.ticker() == null) {
+            return false;
+        }
+        if (!ended.read) {
+            ended.read = true;
+            Set<String> symbols = new TreeSet<>();
+            upcoming.stream().filter(DueOrder::stop).map(DueOrder::ticker).filter(Objects::nonNull).forEach(symbols::add);
+            Reply<Preflight> reply = client.preflight(symbols, Set.of());
+            ended.account = reply.ok() ? RealTradePlanner.account(reply.value(), List.of()) : null;
+        }
+        if (ended.account != null) {
+            return ended.account.held(o.ticker()).compareTo(BigDecimal.ONE) < 0;
+        }
+        Instant from = o.target();
+        return store.ordersOn(MARKET, c.today).stream().anyMatch(row -> RealTradePlanner.SELL.equals(row.side())
+                && o.ticker().equals(row.symbol()) && row.filledQuantity() != null && row.filledQuantity().signum() > 0
+                && (from == null || row.createdAt() == null || !row.createdAt().isBefore(from)));
     }
 
     /** 따라 하는 책의 오늘 대기 STOP 종목인가 — 보내기 직전마다 다시 읽음(ADR 0033 결정 4). */

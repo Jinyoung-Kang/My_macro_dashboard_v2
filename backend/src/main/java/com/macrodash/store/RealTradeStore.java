@@ -589,6 +589,12 @@ public class RealTradeStore {
         return jdbc.update("UPDATE real_trade_events SET notified_at = ? WHERE id = ? AND notified_at IS NULL", Timestamp.from(at), id) == 1;
     }
 
+    /** 그 시장 그 종류의 이벤트 가운데 {@code since}(DB 시각) 뒤의 것, 번호 순. */
+    public List<Event> eventsSince(String market, String kind, Instant since) {
+        return jdbc.query("SELECT " + EVENT_COLUMNS + " FROM real_trade_events WHERE market = ? AND kind = ? AND at >= ? ORDER BY id",
+                eventMapper(), market, kind, Timestamp.from(since));
+    }
+
     /** 그 시장의 최근 이벤트 {@code limit}개, 최근 것부터. */
     public List<Event> recentEvents(String market, int limit) {
         return jdbc.query("SELECT " + EVENT_COLUMNS + " FROM real_trade_events WHERE market = ? ORDER BY id DESC LIMIT ?",
