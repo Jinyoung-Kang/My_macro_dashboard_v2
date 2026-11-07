@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -220,6 +221,28 @@ class PaperStopWatchJobTest {
         assertThat(late.late()).contains("15분");
         assertThat(stops()).isEmpty();
         clock.now = et(10, 41, 0);
+        assertThat(job.run().get(0).late()).as("세션에 한 번").isNull();
+        assertThat(store.recentJobRuns(5)).hasSize(1);
+    }
+
+    @Test
+    @Disabled("QA-319 재현 — 수정 전에는 미국 :15:20 회차가 slow 군 때문에 쉬어(정상) 10:17~10:20 사이 저장본 나이가 7분을 넘으면 '15분 넘게 늦음'을 "
+            + "남기고 그 세션 한 번짜리 표시를 써 버림. fix(QA-319)에서 켭니다")
+    @DisplayName("QA-319: 저장본이 7분 넘었지만 15분 안이면(미국 :15:20 회차 쉼) 늦음을 남기지 않고, 실제로 15분 넘게 늦을 때 세션에 한 번 남김")
+    void lateOnlyWhenTheSnapshotIsReallyLate() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(10, 10, 20), et(10, 10, 21), Map.of("AAA", new double[]{99, 99}), et(10, 9, 0));
+
+        clock.now = et(10, 18, 0);   // 저장본 나이 7분 39초 — 판정은 하지 않지만 늦음도 아님
+        PaperStopWatchJob.Outcome rest = job.run().get(0);
+        assertThat(rest.late()).isNull();
+        assertThat(store.recentJobRuns(5)).isEmpty();
+
+        clock.now = et(10, 26, 0);   // 15분 39초 — 늦음
+        assertThat(job.run().get(0).late()).contains("15분");
+        clock.now = et(10, 27, 0);
         assertThat(job.run().get(0).late()).as("세션에 한 번").isNull();
         assertThat(store.recentJobRuns(5)).hasSize(1);
     }
