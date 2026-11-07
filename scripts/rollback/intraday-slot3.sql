@@ -17,7 +17,9 @@
 -- 여러 번 돌려도 같습니다(두 번째부터 0행, SELECT는 같은 결과). 쓰는 표는 백엔드 표(paper_intraday_plans)이고, 이 파일은 운영자가 손으로 한 번 돌립니다.
 --
 -- 실행(그 서버의 저장소 최상위에서 — 운영 DB에 쓰는 명령이라 사용자 확인 뒤에):
---   docker compose exec -T postgres psql -U "$DATABASE_USER" -d "$DATABASE_NAME" -v ON_ERROR_STOP=1 < scripts/rollback/intraday-slot3.sql
+--   docker compose exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1' < scripts/rollback/intraday-slot3.sql
+-- 작은따옴표 안의 변수는 서버 셸이 아니라 컨테이너 안의 sh가 compose가 넣은 POSTGRES_USER·POSTGRES_DB로 풉니다(scripts/vultr/deploy.sh와 같은 꼴 —
+-- 서버 셸은 .env를 읽지 않아 $DATABASE_USER·$DATABASE_NAME으로 쓰면 빈 값이 되고 psql이 role "root"로 붙어 실패함, QA-332).
 -- 시험: backend PaperStoreDbTest.rollbackClosesSlotThreePlans·rollbackCountsSlotThreeDecisions(테스트 DB에서 이 파일을 그대로 돌림).
 UPDATE paper_intraday_plans
    SET status = 'SUPERSEDED',
