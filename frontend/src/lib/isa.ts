@@ -275,7 +275,6 @@ export function symbolText(symbol: string | null | undefined, name: string | nul
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-/** 세션 날짜 "YYYY-MM-DD" → "11/09(월)". 알아볼 수 없으면 받은 글자 그대로, 없으면 "—". */
 /**
  * 지시 한 줄의 매매 시점 머리 — 세션이 있으면 '11/10(화) 시가 ' 또는 개장 10분 뒤 시각 맞추기 지시(targetAt — ADR 0033)면 '11/10(화) 09:10 이후 시장가 ',
  * 세션이 없으면(다음 세션 지시 표 — 칸 제목이 세션을 적음) 빈 글자. 건너뜀 확인 창이 씁니다(QA-324 — 예전에는 시각 맞추기 지시도 '시가').
@@ -294,6 +293,7 @@ export const PENDING_INSTRUCTIONS_GUIDE =
   "실제로 매매했으면 '체결 고치기'로 수량·체결가를, 매매하지 않았으면 '건너뜀'을 누르세요. 그 세션 시가(개장 10분 뒤 시각 맞추기 지시는 그 시각의 "
   + "1분봉 값)가 들어오면 지시대로 자동 기록합니다.";
 
+/** 세션 날짜 "YYYY-MM-DD" → "11/09(월)". 알아볼 수 없으면 받은 글자 그대로, 없으면 "—". */
 export function sessionLabel(session: string | null | undefined): string {
   if (typeof session !== "string" || session.trim() === "") {
     return EMPTY;
