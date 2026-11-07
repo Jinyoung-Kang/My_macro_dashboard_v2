@@ -10,6 +10,7 @@ import com.macrodash.feature.paper.PaperMirrorService;
 import com.macrodash.feature.paper.PaperMirrorService.BookInfo;
 import com.macrodash.feature.paper.PaperMirrorService.DueOrder;
 import com.macrodash.feature.paper.PaperMirrorService.OpenTargets;
+import com.macrodash.feature.paper.PaperMirrorService.SessionHours;
 import com.macrodash.feature.paper.PaperMirrorService.WeightAfter;
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.feature.realtrade.RealTradeExecutor.Result;
@@ -28,6 +29,7 @@ import com.macrodash.store.RealTradeStore.Batch;
 import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
+import com.macrodash.store.RealTradeStore.Valuation;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,6 +86,9 @@ import java.util.function.BiFunction;
  *   <li>창마다 새 사전 조회(매도 가능 수량은 팔 종목만 — 시가 맞추기류는 두 단계) + 오늘 주문 목록(수집기 하루 한도의 남은 몫) → 손실 한도(넘으면 매수만
  *       멈춤) → 계획({@link RealTradePlanner}) → 선점·SENDING·전송·결과({@link RealTradeExecutor}). 보내기 직전마다 지금 시각으로 그 창이 아직 열려 있는지
  *       다시 보고, 닫혔으면 보내지 않고 놓침으로 둡니다(RT3-MON-4). 창이 끝나면 창 요약 이벤트(접수·체결·놓침·건너뜀·막힘·미룸).</li>
+ *   <li>마지막 운용 평가액(2026-11-08 — {@link #refreshValuation}): 창 안 사전 조회가 남긴 값을 V29 표에 저장하고(재기동 뒤 다시 읽음), 마지막 거래일
+ *       마감 뒤 값이 없으면 창 밖에서 읽기 전용 사전 조회로 한 번 읽습니다(상태와 무관 — 휴장일·토스 점검 동안에도 화면이 마지막 값을 보이게). 주문·손실
+ *       판정은 이 값을 쓰지 않습니다.</li>
  *   <li>알림 대기 이벤트를 텔레그램으로(건수·상태·사유 코드만 — {@link RealTradeNotices}). 못 보내면 다음 주기에 다시.</li>
  * </ol>
  *
@@ -108,6 +113,14 @@ class RealTradeJob {
     /** 종가 요약은 정규장 끝 + 이만큼 뒤(종가 단일가 체결을 본 뒤). */
     static final Duration CLOSE_SUMMARY_DELAY = Duration.ofMinutes(3);
     static final long INITIAL_DELAY_MS = 15_000;
+    /** 마감 뒤 운용 평가액 읽기({@link #refreshValuation}) — 거래일 마감 + 이만큼 뒤의 값이 그날 마감 값입니다. */
+    static final Duration VALUATION_AFTER_CLOSE = Duration.ofMinutes(10);
+    /** 마감 뒤 읽기가 실패하면(토스 점검·수집기 꺼짐 등) 이만큼 뒤 다시. */
+    static final Duration VALUATION_RETRY = Duration.ofMinutes(15);
+    /** 거래일 개장 이만큼 전부터 마감 뒤까지는 마감 뒤 읽기를 하지 않음(창 안 사전 조회가 맡음 — 토스 호출을 늘리지 않게). */
+    static final Duration VALUATION_QUIET_BEFORE_OPEN = Duration.ofMinutes(30);
+    /** 마지막 거래일 마감을 찾아 거슬러 보는 날 수(연휴). */
+    static final int VALUATION_LOOKBACK_DAYS = 14;
     static final long SHUTDOWN_WAIT_SECONDS = 60;
     static final int NOTIFY_PER_CYCLE = 5;
     static final int REPEATED_ERROR_LIMIT = 3;
@@ -186,6 +199,12 @@ class RealTradeJob {
     /** 화면용(상태 API) — 오늘 창과 쉬는 사유, 마지막 사전 조회, 마지막으로 주기를 끝낸 시각. */
     private volatile TodayView todayView;
     private volatile PreflightView lastPreflight;
+    /** 저장하지 않은 새 사전 조회가 있음 — 주기 끝에 주문 흐름·트랜잭션 밖에서 V29 표에 씀({@link #persistValuation}). */
+    private volatile boolean valuationDirty;
+    /** 저장된 마지막 운용 평가액을 한 번 읽어 봄(작업 스레드만). */
+    private boolean valuationLoaded;
+    /** 마감 뒤 읽기를 마지막으로 시도한 시각(작업 스레드만). */
+    private Instant valuationTriedAt;
     private volatile Instant lastCycleAt;
     /** 정기 작업을 시작한 시각(화면용 — 주기를 한 번도 끝내지 못해도 멈춤 판정의 기준이 되게, RT2-FE-2). */
     private volatile Instant startedAt;
@@ -195,8 +214,9 @@ class RealTradeJob {
     }
 
     /**
-     * 마지막으로 토스에서 새로 읽은 값(화면용 — 저장하지 않음). {@code equity}는 안전 상한을 적용한 E, {@code total}은 손실 판정의 '지금 값'(상한 없는
-     * 총액 — 정기 작업은 이 기능의 미체결 매수가 잡은 금액을 되돌린 값, 모르면 null).
+     * 마지막으로 토스에서 새로 읽은 값(화면용). {@code equity}는 안전 상한을 적용한 E, {@code total}은 손실 판정의 '지금 값'(상한 없는
+     * 총액 — 정기 작업은 이 기능의 미체결 매수가 잡은 금액을 되돌린 값, 모르면 null). 금액 셋과 시각은 V29 표에도 남고(2026-11-08), 재기동 뒤 그 표에서
+     * 되살린 값은 {@code holdings}가 비어 있습니다(보유는 저장하지 않음).
      */
     record PreflightView(Instant fetchedAt, BigDecimal equity, BigDecimal total, BigDecimal cashBuyingPower, List<Position> holdings) {
     }
@@ -241,6 +261,7 @@ class RealTradeJob {
     void notePreflight(Preflight preflight, Account account, BigDecimal equity, BigDecimal total, Instant now) {
         lastPreflight = new PreflightView(preflight.fetchedAt() != null ? preflight.fetchedAt() : now, equity, total,
                 preflight.cashBuyingPowerKrw(), List.copyOf(account.positions().values()));
+        valuationDirty = true;
     }
 
     /** 마지막으로 주기를 (예외 없이) 끝낸 시각 — 정기 작업이 꺼져 있거나(백엔드 스위치·스케줄러) 아직 한 번도 끝내지 않았으면 null. */
@@ -403,6 +424,7 @@ class RealTradeJob {
             }
         } finally {
             try {
+                valuation(now);
                 notifyPending(now);
             } finally {
                 running.unlock();
@@ -1413,24 +1435,12 @@ class RealTradeJob {
             }
             reserved = reserved.add(upper.multiply(BigDecimal.valueOf(row.quantity())));
         }
-        BigDecimal held = BigDecimal.ZERO;
-        for (OrderRow row : unfinished) {
-            if (!RealTradePlanner.BUY.equals(row.side()) || row.tossOrderId() == null) {
-                continue;
-            }
-            BigDecimal filled = row.filledQuantity() == null ? BigDecimal.ZERO : row.filledQuantity();
-            BigDecimal remaining = BigDecimal.valueOf(row.quantity()).subtract(filled);
-            if (remaining.signum() <= 0) {
-                continue;
-            }
-            BigDecimal unit = account.upper(row.symbol()) != null ? account.upper(row.symbol()) : row.refPrice();
-            if (unit == null) {
-                log.warn("미체결 매수의 상한가·기준가를 모름 — 이번 주기는 보내지 않음");
-                return null;
-            }
-            held = held.add(remaining.multiply(unit));
+        Optional<BigDecimal> held = heldByUnfinishedBuys(account, unfinished);
+        if (held.isEmpty()) {
+            log.warn("미체결 매수의 상한가·기준가를 모름 — 이번 주기는 보내지 않음");
+            return null;
         }
-        BigDecimal lossTotal = total.get().add(held);
+        BigDecimal lossTotal = total.get().add(held.get());
         Set<String> blocked = new HashSet<>();
         unfinished.forEach(row -> blocked.add(row.symbol()));
         notePreflight(reply.value(), account, equity.get(), lossTotal, c.now);
@@ -1480,6 +1490,155 @@ class RealTradeJob {
         int orders = Math.max(0, limits.maxOrdersPerDay() - usage.get().orders());
         BigDecimal buy = BigDecimal.valueOf(limits.maxBuyKrwPerDay()).subtract(usage.get().buyKrw()).max(BigDecimal.ZERO);
         return Optional.of(new DailyRoom(orders, buy));
+    }
+
+    /**
+     * 손실 판정용 '지금 총액'에 되돌릴 금액 — 이 기능의 미종료 매수 가운데 토스가 접수한 것의 남은 수량 × 상한가(모르면 기준가). 토스가 미체결 매수에
+     * 매수 가능 금액을 잡아도 손실로 보지 않게({@link #fresh}). 하나라도 단가를 모르면 empty.
+     */
+    private static Optional<BigDecimal> heldByUnfinishedBuys(Account account, List<OrderRow> unfinished) {
+        BigDecimal held = BigDecimal.ZERO;
+        for (OrderRow row : unfinished) {
+            if (!RealTradePlanner.BUY.equals(row.side()) || row.tossOrderId() == null) {
+                continue;
+            }
+            BigDecimal filled = row.filledQuantity() == null ? BigDecimal.ZERO : row.filledQuantity();
+            BigDecimal remaining = BigDecimal.valueOf(row.quantity()).subtract(filled);
+            if (remaining.signum() <= 0) {
+                continue;
+            }
+            BigDecimal unit = account.upper(row.symbol()) != null ? account.upper(row.symbol()) : row.refPrice();
+            if (unit == null) {
+                return Optional.empty();
+            }
+            held = held.add(remaining.multiply(unit));
+        }
+        return Optional.of(held);
+    }
+
+    // ------------------------------------------------------------------ 마지막 운용 평가액(2026-11-08)
+    /**
+     * 마지막 운용 평가액(클래스 설명) — 저장된 값을 처음 한 번 되살리고({@link #lastPreflight}가 비었을 때만 — 보유는 저장하지 않아 빈 목록), 마지막 거래일
+     * 마감 뒤 값이 없으면 읽고({@link #refreshValuation}), 새 값을 저장합니다({@link #persistValuation}). 주기 끝(잠금 안, 주문 흐름·트랜잭션 밖)에서
+     * 부르며 무엇이 실패해도 주기를 깨지 않습니다 — 화면용이고 주문·손실 판정은 이 값을 쓰지 않습니다. V29 표가 없으면(백엔드만 먼저 띄운 배포) 아무것도
+     * 하지 않습니다(예전처럼 메모리만).
+     */
+    private void valuation(Instant now) {
+        try {
+            if (!store.valuationReady()) {
+                return;
+            }
+            if (!valuationLoaded) {
+                valuationLoaded = true;
+                if (lastPreflight == null) {
+                    store.valuation(MARKET).ifPresent(v -> lastPreflight = new PreflightView(v.fetchedAt(), v.equity(), v.total(),
+                            v.cashBuyingPower(), List.of()));
+                }
+            }
+            refreshValuation(now);
+            persistValuation();
+        } catch (RuntimeException e) {
+            log.warn("운용 평가액 저장·마감 뒤 읽기 실패 — 다음 주기에 다시: {}", e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * 마감 뒤 읽기 — 마지막 거래일(모의 한국 달력) 마감 + {@link #VALUATION_AFTER_CLOSE} 뒤에 읽은 값이 없고, 지금이 거래일 장중(개장 −
+     * {@link #VALUATION_QUIET_BEFORE_OPEN} ~ 마감 + {@link #VALUATION_AFTER_CLOSE})이 아니면 {@link #VALUATION_RETRY}마다 한 번 읽기 전용 사전 조회를
+     * 합니다(매도 가능 수량 없음 — 주문 없음, 상태와 무관 — 꺼짐에서도). 그래서 휴장일에는 마지막 거래일 마감 뒤 값이 보입니다. 끄는 중·이상 멈춤이면
+     * 하지 않습니다(그때 토스 호출을 늘리지 않게). 실패(토스 점검·수집기 매매 스위치 꺼짐 등)는 로그 한 줄뿐 — 멈춤·알림·이벤트가 없고 마지막 값은 그대로.
+     */
+    private void refreshValuation(Instant now) {
+        Instant mark = lastCloseMark(now);
+        if (mark == null || quietForValuation(now)) {
+            return;
+        }
+        PreflightView current = lastPreflight;
+        if (current != null && current.fetchedAt() != null && !current.fetchedAt().isBefore(mark)) {
+            return;
+        }
+        if (valuationTriedAt != null && now.isBefore(valuationTriedAt.plus(VALUATION_RETRY))) {
+            return;
+        }
+        Config cfg = store.configOrOff(MARKET);
+        if (RealTradeStore.STATE_STOPPING.equals(cfg.state()) || RealTradeStore.STATE_HALTED.equals(cfg.state())) {
+            return;
+        }
+        valuationTriedAt = now;
+        Reply<Status> status = client.status();
+        if (!status.ok() || !status.value().enabled() || status.value().limits() == null || status.value().tokenContention()) {
+            log.info("마감 뒤 운용 평가액 읽기 건너뜀 — 수집기 매매 상태가 켜짐으로 확인되지 않음, {}분 뒤 다시", VALUATION_RETRY.toMinutes());
+            return;
+        }
+        List<OrderRow> unfinished = store.unfinishedOrders(MARKET);
+        Set<String> ask = new TreeSet<>();
+        unfinished.stream().filter(row -> RealTradePlanner.BUY.equals(row.side())).forEach(row -> ask.add(row.symbol()));
+        Reply<Preflight> reply = client.preflight(ask, List.of());
+        if (!reply.ok()) {
+            log.info("마감 뒤 운용 평가액 읽기 실패 — {}분 뒤 다시 ({})", VALUATION_RETRY.toMinutes(), reply.reason());
+            return;
+        }
+        Account account = RealTradePlanner.account(reply.value(), List.of());
+        Optional<BigDecimal> total = RealTradePlanner.equity(account, null);
+        Optional<BigDecimal> equity = RealTradePlanner.equity(account, BigDecimal.valueOf(status.value().limits().maxEquityKrw()));
+        if (total.isEmpty() || equity.isEmpty()) {
+            log.info("마감 뒤 운용 평가액을 정하지 못함(보유 가격 모름) — {}분 뒤 다시", VALUATION_RETRY.toMinutes());
+            return;
+        }
+        BigDecimal lossTotal = heldByUnfinishedBuys(account, unfinished).map(total.get()::add).orElse(null);
+        notePreflight(reply.value(), account, equity.get(), lossTotal, now);
+        log.info("마감 뒤 운용 평가액을 읽음");
+    }
+
+    /** 새 사전 조회를 V29 표에 씁니다 — 표시를 먼저 내려 그사이 새로 온 사전 조회는 다음 주기에 다시 씀. 실패하면 다음 주기에 다시. */
+    private void persistValuation() {
+        if (!valuationDirty) {
+            return;
+        }
+        valuationDirty = false;
+        PreflightView view = lastPreflight;
+        if (view == null || view.fetchedAt() == null || view.equity() == null) {
+            return;
+        }
+        try {
+            store.saveValuation(new Valuation(MARKET, view.fetchedAt(), view.equity(), view.total(), view.cashBuyingPower()));
+        } catch (RuntimeException e) {
+            valuationDirty = true;
+            throw e;
+        }
+    }
+
+    /**
+     * 마지막 거래일 마감 + {@link #VALUATION_AFTER_CLOSE} 가운데 {@code now} 이전의 가장 늦은 것(모의 한국 달력 — 오늘부터 {@link #VALUATION_LOOKBACK_DAYS}일
+     * 거슬러). 달력이 모르는 날을 만나면 null(마감 뒤 읽기를 하지 않음).
+     */
+    Instant lastCloseMark(Instant now) {
+        LocalDate day = LocalDate.ofInstant(now, Kst.ZONE);
+        for (int i = 0; i <= VALUATION_LOOKBACK_DAYS; i++, day = day.minusDays(1)) {
+            Optional<SessionHours> hours = paper.sessionHours(day);
+            if (hours.isEmpty()) {
+                return null;
+            }
+            SessionHours h = hours.get();
+            if (h.tradingDay() && h.close() != null) {
+                Instant mark = h.close().plus(VALUATION_AFTER_CLOSE);
+                if (!mark.isAfter(now)) {
+                    return mark;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 거래일 장중(개장 − {@link #VALUATION_QUIET_BEFORE_OPEN} ~ 마감 + {@link #VALUATION_AFTER_CLOSE}) — 마감 뒤 읽기를 하지 않음. 달력이 모르면 장중으로 봄. */
+    boolean quietForValuation(Instant now) {
+        Optional<SessionHours> today = paper.sessionHours(LocalDate.ofInstant(now, Kst.ZONE));
+        if (today.isEmpty()) {
+            return true;
+        }
+        SessionHours h = today.get();
+        return h.tradingDay() && h.open() != null && h.close() != null && !now.isBefore(h.open().minus(VALUATION_QUIET_BEFORE_OPEN))
+                && now.isBefore(h.close().plus(VALUATION_AFTER_CLOSE));
     }
 
     private Rules rules(Cycle c, Fresh f) {

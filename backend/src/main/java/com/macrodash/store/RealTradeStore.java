@@ -220,6 +220,23 @@ public class RealTradeStore {
         }
     }
 
+    /**
+     * 마지막 운용 평가액(V29 {@code real_trade_valuation} — 2026-11-08, 휴장일·재기동 뒤에도 화면에 보이게). 정기 작업이 토스에서 새로 읽을 때마다
+     * 바꾸며, 주문·손실 판정은 이 값을 쓰지 않습니다.
+     *
+     * @param equity          운용 평가액 E(안전 상한 적용)
+     * @param total           상한 없는 총액(손실 판정의 '지금 값' — 모르면 null)
+     * @param cashBuyingPower 원화 매수 가능 금액(모르면 null)
+     */
+    public record Valuation(String market, Instant fetchedAt, BigDecimal equity, BigDecimal total, BigDecimal cashBuyingPower) {
+
+        public Valuation {
+            Objects.requireNonNull(market, "market");
+            Objects.requireNonNull(fetchedAt, "fetchedAt");
+            Objects.requireNonNull(equity, "equity");
+        }
+    }
+
     private static final String CONFIG_COLUMNS = "market, state, source_book, book_generation, loss_limit_pct, baseline_equity, "
             + "baseline_total, buys_paused, sync_pending, halt_reason, halt_detail, version, updated_at, updated_by";
     private static final String ORDER_COLUMNS = "id, market, session, purpose, batch_id, source_book, book_generation, "
@@ -659,6 +676,29 @@ public class RealTradeStore {
                     rs.getString("source_book"), json(rs, "targets"), absorbed, rs.getBigDecimal("equity"),
                     instant(rs, "created_at"), instant(rs, "updated_at"));
         };
+    }
+
+    // ------------------------------------------------------------------ 마지막 운용 평가액(V29)
+    /** V29 표가 있는가 — 백엔드만 먼저 새로 띄운 배포에서는 false(그때는 저장·복원 없이 예전처럼 메모리만). 실제 매매 준비({@link #ready})와 따로 봅니다. */
+    public boolean valuationReady() {
+        return schema.tableExists("real_trade_valuation");
+    }
+
+    /** 그 시장의 마지막 운용 평가액 — 없으면 empty. */
+    public Optional<Valuation> valuation(String market) {
+        return jdbc.query("SELECT market, fetched_at, equity, total, cash_buying_power FROM real_trade_valuation WHERE market = ?",
+                (rs, n) -> new Valuation(rs.getString("market"), instant(rs, "fetched_at"), rs.getBigDecimal("equity"),
+                        rs.getBigDecimal("total"), rs.getBigDecimal("cash_buying_power")), market).stream().findFirst();
+    }
+
+    /** 마지막 운용 평가액을 바꿉니다 — 읽은 시각이 지금 행보다 이르면 바꾸지 않습니다(늦게 끝난 옛 조회가 새 값을 덮지 않게). */
+    public void saveValuation(Valuation v) {
+        Objects.requireNonNull(v, "v");
+        jdbc.update("INSERT INTO real_trade_valuation (market, fetched_at, equity, total, cash_buying_power, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, now()) ON CONFLICT (market) DO UPDATE SET fetched_at = EXCLUDED.fetched_at, "
+                + "equity = EXCLUDED.equity, total = EXCLUDED.total, cash_buying_power = EXCLUDED.cash_buying_power, updated_at = now() "
+                + "WHERE real_trade_valuation.fetched_at <= EXCLUDED.fetched_at",
+                v.market(), Timestamp.from(v.fetchedAt()), v.equity(), v.total(), v.cashBuyingPower());
     }
 
     private JsonNode json(ResultSet rs, String column) throws SQLException {

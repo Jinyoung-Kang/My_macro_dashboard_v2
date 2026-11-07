@@ -4,6 +4,7 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.NewOrder;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.OutcomeWrite;
+import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -63,6 +64,7 @@ class RealTradeStoreDbTest {
         jdbc.update("DELETE FROM real_trade_batches");
         jdbc.update("DELETE FROM real_trade_events");
         jdbc.update("DELETE FROM real_trade_config");
+        jdbc.update("DELETE FROM real_trade_valuation");
     }
 
     private static NewOrder mirror(long paperOrderId, long rootId, int attempt) {
@@ -369,6 +371,31 @@ class RealTradeStoreDbTest {
         store.addEvent("US", RealTradeStore.EVENT_PASSWORD_FAILED, 7L, Map.of(), false);
         assertThat(store.passwordFailuresSinceLastSuccess(start)).as("시장과 상관없이 셈").hasSize(1);
         assertThat(store.passwordFailuresSinceLastSuccess(Instant.now().plusSeconds(60))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("마지막 운용 평가액(V29) — 시장마다 한 행, 새 값으로 바꾸되 읽은 시각이 지금 행보다 이르면 덮지 않음")
+    void valuationKeepsLatest() {
+        assertThat(store.valuationReady()).as("make db-test로 V29까지 적용했는가").isTrue();
+        assertThat(store.valuation("KR")).isEmpty();
+        Instant t1 = Instant.parse("2026-11-06T06:40:00Z");
+        store.saveValuation(new Valuation("KR", t1, new BigDecimal("1000.50"), null, new BigDecimal("200")));
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> {
+            assertThat(v.fetchedAt()).isEqualTo(t1);
+            assertThat(v.equity()).isEqualByComparingTo("1000.50");
+            assertThat(v.total()).as("모르면 null 그대로").isNull();
+            assertThat(v.cashBuyingPower()).isEqualByComparingTo("200");
+        });
+
+        store.saveValuation(new Valuation("KR", t1.minusSeconds(60), new BigDecimal("1"), new BigDecimal("1"), new BigDecimal("1")));
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> assertThat(v.equity()).as("늦게 끝난 옛 조회").isEqualByComparingTo("1000.50"));
+
+        store.saveValuation(new Valuation("KR", t1.plusSeconds(60), new BigDecimal("2000"), new BigDecimal("2500"), new BigDecimal("300")));
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> {
+            assertThat(v.fetchedAt()).isEqualTo(t1.plusSeconds(60));
+            assertThat(v.total()).isEqualByComparingTo("2500");
+        });
+        assertThat(store.valuation("US")).isEmpty();
     }
 
     private static void sleep(long millis) {

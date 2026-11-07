@@ -7,7 +7,7 @@
  * (지금 값 − 기준)과 손실 멈춤선뿐입니다(`realTradePnl` — 기준 상한 없는 총액 baselineTotal이 오면 총액 기준, 없으면 운용 평가액 기준).
  * 모르는 값은 "—"이고 0으로 채우지 않습니다.
  */
-import { EMPTY, formatNumber, formatSigned } from "./format";
+import { EMPTY, formatKstSeconds, formatNumber, formatSigned } from "./format";
 import type {
   RealTradeEvent,
   RealTradeLimits,
@@ -529,6 +529,27 @@ export interface RealTradePnl {
   now: number | null;
   /** 기준 값 — total이면 baselineTotal, equity면 baselineEquity. */
   base: number | null;
+}
+
+/**
+ * '운용 평가액' 타일의 설명 줄 — 토스에서 읽은 시각(초까지)과, 그날 정규장 마감 뒤에 읽은 값이면 '그날 마감 뒤 값', 아니고 읽은 날이 오늘(KST — 서버 시각,
+ * 없으면 지금)보다 이전이면 '이전 값'(2026-11-08 — 휴장일·토스 점검 중에도 마지막 값이 보이게 백엔드가 저장). 읽은 적이 없으면 그렇게 적습니다.
+ */
+export function preflightNote(
+  preflight: Pick<RealTradePreflight, "fetchedAt" | "afterClose"> | null | undefined,
+  serverTime?: string | null,
+): string {
+  if (!preflight?.fetchedAt) {
+    return "아직 토스에서 읽은 적 없음";
+  }
+  const read = formatKstSeconds(preflight.fetchedAt);
+  const base = `토스에서 읽은 시각 ${read}`;
+  if (preflight.afterClose === true) {
+    return `${base} · 그날 마감 뒤 값`;
+  }
+  const readDay = /^\d{4}-\d{2}-\d{2}/.exec(read)?.[0];
+  const today = /^\d{4}-\d{2}-\d{2}/.exec(formatKstSeconds(serverTime || new Date()))?.[0];
+  return readDay && today && readDay < today ? `${base} · 이전 값` : base;
 }
 
 /**

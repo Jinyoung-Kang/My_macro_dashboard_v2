@@ -646,4 +646,27 @@ class RealTradeServiceDbTest {
         assertThat(next).hasSize(2);
         verify(client, times(1)).todayOrders();
     }
+
+    @Test
+    @DisplayName("상태 — 마지막 사전 조회에 '그날 마감 뒤 값' 표시(afterClose — 모의 한국 달력: 마감 뒤·휴장일은 참, 장중은 거짓, 달력이 모르면 null)")
+    void statusMarksAfterClose() {
+        service(true).enable(OWNER, enable("실제 매매 켜기", RIGHT, 0));
+        LocalDate day = LocalDate.ofInstant(clock.now, com.macrodash.Kst.ZONE);
+
+        when(paper.sessionHours(day)).thenReturn(Optional.of(new PaperMirrorService.SessionHours(day, true, clock.now.minusSeconds(7200),
+                clock.now.minusSeconds(60))));
+        assertThat(lastPreflight()).containsEntry("afterClose", true);
+        when(paper.sessionHours(day)).thenReturn(Optional.of(new PaperMirrorService.SessionHours(day, true, clock.now.minusSeconds(7200),
+                clock.now.plusSeconds(60))));
+        assertThat(lastPreflight()).containsEntry("afterClose", false);
+        when(paper.sessionHours(day)).thenReturn(Optional.of(new PaperMirrorService.SessionHours(day, false, null, null)));
+        assertThat(lastPreflight()).containsEntry("afterClose", true);
+        when(paper.sessionHours(day)).thenReturn(Optional.empty());
+        assertThat(lastPreflight()).containsEntry("afterClose", null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> lastPreflight() {
+        return (Map<String, Object>) service(true).status("KR").get("lastPreflight");
+    }
 }

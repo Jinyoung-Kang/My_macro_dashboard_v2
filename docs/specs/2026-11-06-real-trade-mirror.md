@@ -159,6 +159,10 @@
   `filled_at TIMESTAMPTZ`, `first_sent_at`, `last_sent_at`, `send_count SMALLINT NOT NULL DEFAULT 0`, `cancel_requested_at`, `cancel_outcome TEXT`, `created_at`, `updated_at`.
   유일: `(market, paper_root_order_id, purpose, attempt) WHERE paper_root_order_id IS NOT NULL`, `(batch_id, symbol, purpose, attempt) WHERE batch_id IS NOT NULL`.
 - 놓침·건너뜀은 주문 행이 아니라 이벤트(`WINDOW_SUMMARY`의 detail)로 남긴다.
+- `real_trade_valuation`(V29, 2026-11-08): `market TEXT PK`, `fetched_at TIMESTAMPTZ NOT NULL`, `equity NUMERIC(20,2) NOT NULL`(E — 안전 상한 적용), `total NUMERIC(20,2)`(상한 없는
+  총액), `cash_buying_power NUMERIC(20,2)`, `updated_at`. 정기 작업이 사전 조회 때마다 바꾸고(읽은 시각이 지금 행보다 이르면 덮지 않음) 재기동 뒤 상태 응답의 `lastPreflight`로
+  되살린다. 마지막 거래일 마감 + 10분 뒤 값이 없으면 거래일 장중(개장 30분 전 ~ 마감 10분 뒤)이 아닐 때 15분마다 읽기 전용 사전 조회(매도 가능 수량 없음)를 한 번 시도 —
+  끄는 중·이상 멈춤이면 하지 않고 실패는 로그만. 보유·계좌 식별자는 두지 않는다. 주문·손실 판정은 이 표를 읽지 않는다. QA 복원은 비운다.
 
 ## 7. 백엔드 계약
 
@@ -178,7 +182,7 @@
 - `GET /api/realtrade/status?market=KR|US` → 키(순서): `available`, `market`, `supported`(KR만 true), `serverEnabled`{`collector`,`backend`,`reason`}, `state`, `sourceBook`, `sourceLabel`, `lossLimitPct`,
   `baselineEquity`, `baselineTotal`, `buysPaused`, `haltReason`, `unfinishedOrders`(토스 주문 번호가 있는 이 기능의 미종료 행 수), `cancelGaveUpOrders`(미종료이고 취소를 포기한 행 수),
   `unresolvedOrders`(미종료·UNKNOWN·토스 주문 번호 없는 행 수 — 셋 다 건수만), `version`, `limits`, `today`{`date`,`skipReason`,`windows`[{`kind`,`start`,`end`}]}, `serverTime`(응답을 만든 서버 시각),
-  `jobStartedAt`(정기 작업 시작 — 꺼져 있으면 null), `jobLastCycleAt`(예외 없이 끝낸 마지막 주기 — 꺼져 있으면 null), `lastPreflight`{`fetchedAt`,`equity`,`total`,`cashBuyingPower`,`holdings`},
+  `jobStartedAt`(정기 작업 시작 — 꺼져 있으면 null), `jobLastCycleAt`(예외 없이 끝낸 마지막 주기 — 꺼져 있으면 null), `lastPreflight`{`fetchedAt`,`afterClose`(2026-11-08 — 그날 정규장 마감 뒤에 읽은 값인가, 휴장일 true, 달력이 모르면 null),`equity`,`total`,`cashBuyingPower`,`holdings`}(마지막 값은 아래 §6 `real_trade_valuation`에서 되살림 — 그때 `holdings`는 빈 목록),
   `orders`(최근 50 — orderId·client_order_id 없음), `events`(최근 30), `books`.
 - `GET /api/realtrade/preview?market=KR&sourceBook=kr_rules` → 켜기 창의 예상 목록: 지금 preflight + 그 책의 '다음 시가' 목표로 §2·§3.1 계산 — `{"ok","equity","orders":[{"symbol","name","side","quantity","estAmount"}],"skipped":[…],"turnoverPct","warnings":[…]}`.
 - `POST /api/realtrade/enable` 본문 `{"market","sourceBook","lossLimitPct","confirm","password","version"}` — confirm은 정확히 `실제 매매 켜기`. 서버 두 스위치가 켜져 있어야 함. 성공하면 LIVE·`sync_pending=true`·

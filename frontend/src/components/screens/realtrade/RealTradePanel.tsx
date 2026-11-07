@@ -3,7 +3,7 @@
 import { StatGrid, StatTile } from "@/components/patterns";
 import { Banner, Button, Card, ErrorState, Freshness, Loading } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { deltaColor, formatKstSeconds, formatNumber, formatPercent, formatSigned } from "@/lib/format";
+import { deltaColor, formatNumber, formatPercent, formatSigned } from "@/lib/format";
 import {
   bookStatusLabel,
   CANCEL_BLOCKED_TEXT,
@@ -20,6 +20,7 @@ import {
   jobStallText,
   jobStalled,
   lossLimitText,
+  preflightNote,
   REAL_TRADE_SOURCE,
   realTradeChip,
   realTradePnl,
@@ -242,7 +243,7 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
           value={equity}
           format={(value) => formatNumber(value, 0)}
           unit="원"
-          note={status.lastPreflight?.fetchedAt ? `토스에서 읽은 시각 ${formatKstSeconds(status.lastPreflight.fetchedAt)}` : "아직 토스에서 읽은 적 없음"}
+          note={preflightNote(status.lastPreflight, status.serverTime)}
           emptyReason="아직 읽은 값 없음"
         />
         <StatTile

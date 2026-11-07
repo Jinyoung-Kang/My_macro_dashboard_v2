@@ -21,6 +21,7 @@ import com.macrodash.store.RealTradeStore.Batch;
 import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
+import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -1817,5 +1818,128 @@ class RealTradeJobDbTest {
         verify(client, never()).placeOrder(anyString());
         assertThat(store.recentOrders("KR", 10)).isEmpty();
         verify(paper, times(1)).claim(anyString(), anyLong(), any(), any());
+    }
+
+    // ------------------------------------------------------------------ 마지막 운용 평가액(2026-11-08 — 휴장일·재기동 뒤에도 화면에)
+    /** 11-02(월)~11-06(금) 거래일 09:00~15:30, 11-07·11-08 주말 — 마감 뒤 읽기가 거슬러 보는 모의 한국 달력. */
+    private void week() {
+        for (int day = 2; day <= 8; day++) {
+            LocalDate date = LocalDate.of(2026, 11, day);
+            String ymd = date.toString();
+            when(paper.sessionHours(date)).thenReturn(Optional.of(day <= 6
+                    ? new SessionHours(date, true, kst(ymd + "T09:00"), kst(ymd + "T15:30"))
+                    : new SessionHours(date, false, null, null)));
+        }
+    }
+
+    private void at(String local) {
+        clock.set(kst(local));
+        job.cycle(clock.now);
+    }
+
+    @Test
+    @DisplayName("운용 평가액 — 창 안 사전 조회 값(E·상한 없는 총액·매수 가능 금액·읽은 시각)을 V29 표에 남김")
+    void valuationPersistedFromCycle() {
+        cappedBaseline("20000000", "450");   // 총액 2,900만, 안전 상한 1,000만
+
+        run("08:51");
+
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> {
+            assertThat(v.equity()).isEqualByComparingTo("10000000");
+            assertThat(v.total()).isEqualByComparingTo("29000000");
+            assertThat(v.cashBuyingPower()).isEqualByComparingTo("20000000");
+            assertThat(v.fetchedAt()).isEqualTo(kst("2026-11-06T08:51"));
+        });
+    }
+
+    @Test
+    @DisplayName("운용 평가액 — 다시 띄운 작업은 저장된 값을 보유 없이 되살리고, 그 값이 마지막 마감 뒤 값이면 토스를 부르지 않음")
+    void valuationRestoredAfterRestart() {
+        week();
+        store.saveValuation(new Valuation("KR", kst("2026-11-05T15:41"), d("12000000"), d("15000000"), d("3000000")));
+
+        at("2026-11-06T08:40");
+
+        RealTradeJob.PreflightView view = job.lastPreflight();
+        assertThat(view).isNotNull();
+        assertThat(view.fetchedAt()).isEqualTo(kst("2026-11-05T15:41"));
+        assertThat(view.equity()).isEqualByComparingTo("12000000");
+        assertThat(view.total()).isEqualByComparingTo("15000000");
+        assertThat(view.cashBuyingPower()).isEqualByComparingTo("3000000");
+        assertThat(view.holdings()).as("보유는 저장하지 않음").isEmpty();
+        verify(client, never()).preflight(any(), any());
+    }
+
+    @Test
+    @DisplayName("운용 평가액 — 휴장일(토)에 마지막 거래일 마감 뒤 값이 없으면 읽기 전용 사전 조회 한 번(꺼짐에서도, 매도 가능 수량 없음), 읽은 뒤에는 다시 부르지 않음")
+    void holidayReadsOnceAfterClose() {
+        week();
+        store.saveValuation(new Valuation("KR", kst("2026-11-06T09:05"), d("1"), d("1"), d("1")));   // 금요일 장중 값
+        clock.set(kst("2026-11-07T12:00"));
+        preflight("3000000", Map.of(A, new String[]{"10", "50000"}), Map.of());
+
+        at("2026-11-07T12:00");
+
+        verify(client, times(1)).preflight(eq(Set.of()), eq(List.of()));
+        assertThat(job.lastPreflight().equity()).isEqualByComparingTo("3500000");
+        assertThat(job.lastPreflight().total()).isEqualByComparingTo("3500000");
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> {
+            assertThat(v.equity()).isEqualByComparingTo("3500000");
+            assertThat(v.fetchedAt()).isEqualTo(kst("2026-11-07T12:00"));
+        });
+
+        at("2026-11-07T12:30");
+        at("2026-11-08T12:00");
+        verify(client, times(1)).preflight(any(), any());
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.recentEvents("KR", 10)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("운용 평가액 — 토스 점검(사전 조회 실패)이면 마지막 값을 그대로 두고 15분 뒤 다시, 멈춤·이벤트·알림 없음, 점검이 끝나면 새 값")
+    void holidayMaintenanceKeepsLastValueAndRetries() {
+        week();
+        store.saveValuation(new Valuation("KR", kst("2026-11-06T09:05"), d("12000000"), d("15000000"), d("3000000")));
+        when(client.preflight(any(), any())).thenReturn(Reply.failed("upstream-error"));
+
+        at("2026-11-07T12:00");
+        assertThat(job.lastPreflight().equity()).isEqualByComparingTo("12000000");
+        assertThat(job.lastPreflight().fetchedAt()).isEqualTo(kst("2026-11-06T09:05"));
+        at("2026-11-07T12:10");
+        verify(client, times(1)).preflight(any(), any());
+        at("2026-11-07T12:15");
+        verify(client, times(2)).preflight(any(), any());
+        assertThat(store.configOrOff("KR").state()).isEqualTo(RealTradeStore.STATE_OFF);
+        assertThat(store.recentEvents("KR", 10)).isEmpty();
+        verify(telegram, never()).send(anyString());
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> assertThat(v.fetchedAt()).isEqualTo(kst("2026-11-06T09:05")));
+
+        clock.set(kst("2026-11-07T12:30"));
+        preflight("3000000", Map.of(), Map.of());
+        at("2026-11-07T12:30");
+        assertThat(job.lastPreflight().equity()).isEqualByComparingTo("3000000");
+        assertThat(store.valuation("KR")).hasValueSatisfying(v -> assertThat(v.fetchedAt()).isEqualTo(kst("2026-11-07T12:30")));
+    }
+
+    @Test
+    @DisplayName("운용 평가액 — 거래일 장중(개장 30분 전 ~ 마감 10분 뒤)·이상 멈춤에는 마감 뒤 읽기를 하지 않고, 마감 10분 뒤 꺼짐이면 한 번")
+    void noAfterCloseReadDuringSessionOrHalt() {
+        week();
+        store.saveValuation(new Valuation("KR", kst("2026-11-05T10:00"), d("12000000"), d("15000000"), d("3000000")));   // 목요일 장중 값
+        clock.set(kst("2026-11-06T08:30"));
+        preflight("3000000", Map.of(), Map.of());
+
+        at("2026-11-06T08:30");
+        at("2026-11-06T14:00");
+        at("2026-11-06T15:39");
+        verify(client, never()).preflight(any(), any());
+
+        store.lockConfig("KR", c -> store.updateConfig(c.withState(RealTradeStore.STATE_HALTED).withHalt("restored", null), 1L));
+        at("2026-11-06T15:41");
+        verify(client, never()).preflight(any(), any());
+
+        store.lockConfig("KR", c -> store.updateConfig(c.withState(RealTradeStore.STATE_OFF).withHalt(null, null), 1L));
+        at("2026-11-06T15:42");
+        verify(client, times(1)).preflight(any(), any());
     }
 }

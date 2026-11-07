@@ -69,6 +69,7 @@ final class RealTradeFixtures {
         jdbc.update("DELETE FROM real_trade_batches");
         jdbc.update("DELETE FROM real_trade_events");
         jdbc.update("DELETE FROM real_trade_config");
+        jdbc.update("DELETE FROM real_trade_valuation");
     }
 
     /** 한국 설정을 켜짐(따라 하는 책 {@link #BOOK}, 세대 {@link #GENERATION})으로. */

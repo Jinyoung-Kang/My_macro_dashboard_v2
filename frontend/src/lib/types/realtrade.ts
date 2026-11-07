@@ -69,6 +69,11 @@ export interface RealTradePreflightHolding {
 /** 마지막으로 토스에서 새로 읽은 값(운용 평가액 E·원화 매수 가능 금액·국내 보유) — 아직 없으면 null. */
 export interface RealTradePreflight {
   fetchedAt: string | null;
+  /**
+   * 그 값을 그날(KST) 정규장 마감 뒤에 읽었는가(모의 한국 달력 — 그날이 휴장이면 true, 달력이 모르면 null). 2026-11-08 백엔드가 더하는 칸이라 없을 수
+   * 있습니다. 백엔드는 마지막 값을 저장해 다시 띄워도·휴장일·토스 점검 중에도 보이고, 마지막 거래일 마감 뒤 값이 없으면 창 밖에서 한 번 읽습니다.
+   */
+  afterClose?: boolean | null;
   equity: RealTradeDecimal;
   /**
    * 상한 없는 총액(원화 매수 가능 금액 + 국내 보유 평가액 — 안전 상한 `maxEquityKrw`를 적용하기 전) — 손실 한도 판정의 '지금 값'.

@@ -321,6 +321,8 @@ def _seed_real_trade(db_url: str, kr_state: str = "LIVE") -> None:
             " VALUES ('KR', '2026-11-09', 'SYNC', %s, 'kr_claude2', '2026-10-30', '000000', 'BUY', 1, 'OPG',"
             " '00000000-0000-0000-0000-000000000000', '{}', 'ACCEPTED', now())", (batch_id,))
         conn.execute("INSERT INTO real_trade_events(market, kind) VALUES ('KR', 'ENABLE')")
+        if conn.execute("SELECT to_regclass('public.real_trade_valuation')").fetchone()[0] is not None:   # V29 — 마지막 운용 평가액
+            conn.execute("INSERT INTO real_trade_valuation(market, fetched_at, equity) VALUES ('KR', now(), 1.00)")
 
 
 def _real_trade_counts(db_url: str) -> tuple[int, int, int]:
@@ -372,6 +374,8 @@ def test_QA_복원은_실제_매매_기록을_비우고_설정을_꺼짐으로_�
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert _real_trade_counts(db_url) == (0, 0, 0)
+    with psycopg.connect(db_url) as conn:                   # V29 마지막 운용 평가액도 비움
+        assert conn.execute("SELECT count(*) FROM real_trade_valuation").fetchone()[0] == 0
     assert _real_trade_config(db_url, "state, baseline_equity, buys_paused, sync_pending, halt_reason, version") == [
         ("KR", "OFF", None, False, False, None, 4),
         ("US", "OFF", None, False, False, None, 8),

@@ -196,7 +196,7 @@ public class RealTradeService {
         out.put("jobLastCycleAt", iso(job.lastCycleAt()));
         out.put("jobStartedAt", iso(job.startedAt()));
         RealTradeJob.PreflightView preflight = supported ? job.lastPreflight() : null;
-        out.put("lastPreflight", preflight == null ? null : preflight(preflight));
+        out.put("lastPreflight", preflight == null ? null : preflight(preflight, afterClose(preflight.fetchedAt())));
         Map<String, String> names = new HashMap<>();
         if (preflight != null) {
             preflight.holdings().forEach(p -> names.put(p.symbol(), p.name()));
@@ -242,9 +242,26 @@ public class RealTradeService {
         return out;
     }
 
-    private static Map<String, Object> preflight(RealTradeJob.PreflightView view) {
+    /**
+     * 그 시각이 그날(KST) 정규장 마감 뒤인가 — 모의 한국 달력으로(휴장일·토스 점검 동안 화면이 '마감 뒤 값'을 적게, 2026-11-08). 그날이 휴장이면
+     * 장중 값이 아니므로 참, 달력이 모르면 null(화면은 아무것도 붙이지 않음).
+     */
+    private Boolean afterClose(Instant fetchedAt) {
+        if (fetchedAt == null) {
+            return null;
+        }
+        Optional<SessionHours> hours = paper.sessionHours(LocalDate.ofInstant(fetchedAt, Kst.ZONE));
+        if (hours.isEmpty()) {
+            return null;
+        }
+        SessionHours h = hours.get();
+        return !h.tradingDay() || (h.close() != null && !fetchedAt.isBefore(h.close()));
+    }
+
+    private static Map<String, Object> preflight(RealTradeJob.PreflightView view, Boolean afterClose) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("fetchedAt", iso(view.fetchedAt()));
+        out.put("afterClose", afterClose);
         out.put("equity", view.equity());
         out.put("total", view.total());
         out.put("cashBuyingPower", view.cashBuyingPower());

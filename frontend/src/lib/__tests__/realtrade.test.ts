@@ -15,6 +15,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  preflightNote,
   baselineDelta,
   cancelBlocked,
   cancelGaveUpCount,
@@ -507,5 +508,31 @@ describe("RT3-UI-3: 끄기 뒤 표시는 다시 켜짐으로 돌아오면 지운
     expect(nextDisableSentMark(sent, { state: "SOMETHING_NEW", version: 9 })).toBe(sent);
     const seen = { version: 4, sawOff: true };
     expect(nextDisableSentMark(seen, { state: "OFF", version: 5 })).toBe(seen);
+  });
+});
+
+describe("운용 평가액 설명 줄 — 휴장일·토스 점검 중에도 마지막 값(2026-11-08)", () => {
+  it("읽은 적이 없으면 그렇게", () => {
+    expect(preflightNote(null)).toBe("아직 토스에서 읽은 적 없음");
+    expect(preflightNote({ fetchedAt: null })).toBe("아직 토스에서 읽은 적 없음");
+  });
+  it("그날 마감 뒤에 읽은 값이면 '그날 마감 뒤 값'(휴장일에 보는 금요일 마감 뒤 값)", () => {
+    expect(preflightNote({ fetchedAt: "2026-11-06T06:41:02Z", afterClose: true }, "2026-11-07T03:00:00Z")).toBe(
+      "토스에서 읽은 시각 2026-11-06 15:41:02 · 그날 마감 뒤 값",
+    );
+  });
+  it("장중에 읽은 값을 다음 날 보면 '이전 값', 같은 날이면 시각만", () => {
+    expect(preflightNote({ fetchedAt: "2026-11-06T00:10:05Z", afterClose: false }, "2026-11-07T03:00:00Z")).toBe(
+      "토스에서 읽은 시각 2026-11-06 09:10:05 · 이전 값",
+    );
+    expect(preflightNote({ fetchedAt: "2026-11-06T00:10:05Z", afterClose: false }, "2026-11-06T03:00:00Z")).toBe(
+      "토스에서 읽은 시각 2026-11-06 09:10:05",
+    );
+  });
+  it("afterClose가 없는 옛 응답·달력이 모름(null)이면 날짜로만 가름", () => {
+    expect(preflightNote({ fetchedAt: "2026-11-06T00:10:05Z" }, "2026-11-06T14:59:59Z")).toBe("토스에서 읽은 시각 2026-11-06 09:10:05");
+    expect(preflightNote({ fetchedAt: "2026-11-06T00:10:05Z", afterClose: null }, "2026-11-06T15:00:00Z")).toBe(
+      "토스에서 읽은 시각 2026-11-06 09:10:05 · 이전 값",
+    );
   });
 });

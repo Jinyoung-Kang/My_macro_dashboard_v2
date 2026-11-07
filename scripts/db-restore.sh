@@ -23,7 +23,8 @@
 #               취소하지 않으니 토스증권 앱에서 직접 확인·취소하라는 뜻입니다. 건수·종목은 찍지 않습니다(시장과 상태만).
 #               같은 트랜잭션에서 ISA 계좌의 오늘(KST)까지 PLANNED 장중 스탑 지시(manual_stop_instructions, ADR 0033)도 건너뜀(restored)으로
 #               닫습니다 — 백업 뒤에 이미 알린 스탑을 다시 알리지 않게.
-#   clear       real_trade_orders·real_trade_batches·real_trade_events를 비우고 설정은 꺼짐(OFF, 기준 평가액 등 비움)으로. ISA 계좌 표
+#   clear       real_trade_orders·real_trade_batches·real_trade_events·real_trade_valuation(마지막 운용 평가액, V29)을 비우고 설정은 꺼짐(OFF,
+#               기준 평가액 등 비움)으로. ISA 계좌 표
 #               (manual_ledger·manual_stop_instructions·manual_instructions·manual_sessions·manual_accounts, ADR 0029·0033 — 다른 증권사 실제 계좌의
 #               장부)도 비웁니다(표가 없으면 건너뜀).
 #               QA 스택 복원(scripts/qa/qa-stack.sh restore)이 씁니다 — 운영 백업의 실제 계좌 주문 기록·장부를 QA DB에 남기지 않음
@@ -146,6 +147,10 @@ real_trade_sql() {
     END IF;
     IF to_regclass('public.real_trade_events') IS NOT NULL THEN
         DELETE FROM public.real_trade_events;
+    END IF;
+    -- 마지막 운용 평가액(V29, 2026-11-08) — 실제 계좌 금액이라 QA 스택에 남기지 않습니다.
+    IF to_regclass('public.real_trade_valuation') IS NOT NULL THEN
+        DELETE FROM public.real_trade_valuation;
     END IF;
     IF to_regclass('public.real_trade_config') IS NOT NULL THEN
         UPDATE public.real_trade_config
