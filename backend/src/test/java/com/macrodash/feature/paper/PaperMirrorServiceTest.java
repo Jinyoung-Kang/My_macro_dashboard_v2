@@ -13,6 +13,7 @@ import com.macrodash.store.PaperStore.LedgerHold;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -598,6 +599,52 @@ class PaperMirrorServiceTest {
         assertThat(service().pendingStopSymbols(BOOK, S)).containsExactly(A);
         assertThat(service().pendingStopSymbols(BOOK, LocalDate.of(2026, 11, 9))).containsExactly(B);
         assertThat(service().pendingStopSymbols("nope", S)).isEmpty();
+    }
+
+    // QA-328: 2차 리뷰 재검증 R2V-2 — 목표 세션이 지난 대기 STOP이 다음 세션 목표·대기 STOP 종목에서 빠짐. targets(시가·시각 지정 주문)와
+    // pendingStopSymbols가 목표 세션 = 그 세션인 주문만 봐서, P 09:10 밤 대체 STOP(기준 P2, 만료 P2 + 3거래일)으로 실제 계좌가 P에 A를 판 뒤 모의
+    // 장부가 그 STOP을 아직 체결하지 못했으면(장부가 기다리지 않는 보류·그날 봉 없음 등으로 S 맞추기가 돌 때) S 09:10 묶음이 장부 보유대로 A를 다시
+    // 사고 매수 직전 확인도 막지 않음. 뒤에 모의가 P 09:10 값으로 체결하면 실제 계좌는 다음 묶음에서 다시 팖(실제 돈 왕복).
+    @Test
+    @Disabled("QA-328 재현 — 수정 전에는 목표 세션이 지난 대기 STOP이 S 목표·S 대기 STOP 종목에서 빠짐. fix(QA-328)에서 켭니다")
+    @DisplayName("목표 세션이 지난 대기 STOP(P 09:10 밤 대체 STOP — 아직 대기)은 S 목표에서 그 종목 비중 0·흡수 아님(stopOrderIds), 그 주문 뒤 비중에도 들고 "
+            + "S 대기 STOP 종목에 듦 — 만료된 STOP·STOP 아닌 매도는 아님, 장중 주문 목록에는 넣지 않음(QA-328)")
+    void staleStopCountsForTheNextSession() {
+        position(A, 100, 10_000);
+        position(B, 50, 20_000);
+        position(C, 100, 5_000);
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000, C, 5_000);
+        ObjectNode night = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+        long stale = order(A, PaperBooks.SELL, null, null, PaperBooks.AT_MINUTE, PaperBooks.SOURCE_STOP, P2, kst("2026-11-04T21:15"),
+                LocalTime.of(9, 10), night);
+        // 만료가 P인 P 감시 STOP — S에는 체결될 수 없음(S 밤 처리의 만료가 닫음)
+        ObjectNode watch = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE);
+        store.insertOrder(new Order(0, BOOK, null, C, PaperBooks.SELL, null, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP,
+                PaperBooks.ORDER_PENDING, null, watch, P2, kst("2026-11-05T10:20"), P, null));
+        order(B, PaperBooks.SELL, null, 1.0, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P2, kst("2026-11-04T22:40"),
+                LocalTime.of(10, 0), null);                                                                    // 목표 세션이 지난 결정 매도
+        long halfA = order(A, PaperBooks.SELL, null, 0.5, PaperBooks.MARKET, PacketBuilder.SOURCE_CLAUDE, P, kst("2026-11-06T10:00"),
+                null, null);                                                                                   // S 장중 확인의 A 절반 매도
+
+        OpenTargets at0910 = service().targetsAt(BOOK, S, kst("2026-11-06T09:10")).orElseThrow();
+        assertThat(at0910.weightPct()).as("S 09:10 묶음이 A를 다시 사지 않음 — 만료된 C STOP·결정 매도는 그대로").doesNotContainKey(A)
+                .containsKeys(B, C);
+        assertThat(at0910.stopOrderIds()).containsExactly(stale);
+        assertThat(at0910.absorbedOrderIds()).doesNotContain(stale);
+        assertThat(at0910.complete()).isTrue();
+        OpenTargets atOpen = service().openTargets(BOOK, S).orElseThrow();
+        assertThat(atOpen.weightPct()).as("시가 맞추기 날도 같음").doesNotContainKey(A).containsKeys(B, C);
+        assertThat(atOpen.stopOrderIds()).containsExactly(stale);
+        assertThat(atOpen.absorbedOrderIds()).isEmpty();
+
+        WeightAfter afterHalf = service().weightAfter(BOOK, halfA, kst("2026-11-06T10:02")).orElseThrow();
+        assertThat(afterHalf.assumedOrderIds()).as("지난 STOP이 먼저 A를 모두 팖 — 절반 매도는 팔 보유가 없음").containsExactly(stale);
+        assertThat(afterHalf.weightPct()).isZero();
+
+        assertThat(service().pendingStopSymbols(BOOK, S)).containsExactly(A);
+        assertThat(service().pendingStopSymbols(BOOK, P)).containsExactly(A, C);
+        assertThat(service().dueOrders(BOOK, S, kst("2026-11-06T15:30"))).as("스탑 매도 경로는 다시 팔지 않음 — S 장중 주문은 절반 매도뿐")
+                .extracting(DueOrder::orderId).containsExactly(halfA);
     }
 
     @Test
