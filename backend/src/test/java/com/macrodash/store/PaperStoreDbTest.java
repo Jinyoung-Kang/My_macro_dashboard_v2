@@ -2,6 +2,7 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -2651,6 +2652,66 @@ class PaperStoreDbTest {
             assertThat(jdbc.update(sql)).as("두 번째 실행 — 바뀌는 행 없음").isZero();
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
+    }
+
+    @Test
+    @Disabled("QA-311 재현 — 수정 전에는 되돌리기 SQL이 순번 3 예약만 닫고 남는 INTRADAY_3 결정 행을 보여 주지 않아, 그 행을 정기 결정으로 읽는 옛 코드로 "
+            + "그대로 되돌림(다음 결정 패킷의 8b watchlist가 빔). fix(QA-311)에서 켭니다")
+    @DisplayName("QA-311 되돌리기 SQL(scripts/rollback/intraday-slot3.sql): 순번 3 예약을 닫은 뒤 남는 INTRADAY_3 결정 행을 계좌별로 셈(행 수·처음·마지막 "
+            + "기준 거래일 — 한 줄이라도 있으면 revert 커밋에 호환 줄). 결정 행은 지우거나 바꾸지 않고, 없으면 세는 줄이 없으며, 두 번째 실행도 같은 결과. 시험 뒤 되돌림")
+    void rollbackCountsSlotThreeDecisions() throws Exception {
+        Path file = Path.of("../scripts/rollback/intraday-slot3.sql");
+        assumeTrue(Files.exists(file), "scripts/rollback/intraday-slot3.sql을 찾을 수 없습니다");
+        String sql = Files.readString(file);
+        class Rollback extends RuntimeException {
+        }
+        store.insertBookIfAbsent(book(BOOK, "되돌리기 시험"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "되돌리기 시험 2"));
+        LocalDate session = DAY.plusDays(3);
+        assertThatThrownBy(() -> store.atomically(() -> {
+            long morning = decision(BOOK, DAY, "SCHEDULED");
+            assertThat(script(sql)).as("INTRADAY_3 결정 행이 없으면 세는 줄 없음").containsExactly("UPDATE 0");
+            long first = decision(OTHER_BOOK, DAY, "INTRADAY_3");
+            long second = decision(OTHER_BOOK, session, "INTRADAY_3");
+            decision(OTHER_BOOK, session, "INTRADAY_2");
+            store.upsertPlannedIntradayPlan(PaperStore.IntradayPlan.planned(BOOK, session, 3, LocalTime.of(13, 0), "HOURLY", List.of(),
+                    "예약", "ft-2", false, morning, null));
+
+            String counted = OTHER_BOOK + " 2 " + DAY + " " + session;
+            assertThat(script(sql)).containsExactly("UPDATE 1", counted);
+            assertThat(script(sql)).as("두 번째 실행 — 닫을 행 없음, 세는 줄은 같음").containsExactly("UPDATE 0", counted);
+            assertThat(jdbc.queryForList("SELECT id FROM paper_decisions WHERE kind = 'INTRADAY_3' ORDER BY id", Long.class))
+                    .as("결정 행은 그대로").containsExactly(first, second);
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+    }
+
+    /** SQL 파일을 그대로 한 번 돌린 결과를 차례로 — 바뀐 행 수는 'UPDATE n', 결과 집합은 줄마다 칸을 공백으로 이은 글자(psql로 돌릴 때 보이는 것). */
+    private List<String> script(String sql) {
+        return jdbc.execute((org.springframework.jdbc.core.StatementCallback<List<String>>) statement -> {
+            List<String> out = new ArrayList<>();
+            boolean rows = statement.execute(sql);
+            while (true) {
+                if (rows) {
+                    try (java.sql.ResultSet rs = statement.getResultSet()) {
+                        int columns = rs.getMetaData().getColumnCount();
+                        while (rs.next()) {
+                            List<String> cells = new ArrayList<>();
+                            for (int i = 1; i <= columns; i++) {
+                                cells.add(String.valueOf(rs.getObject(i)));
+                            }
+                            out.add(String.join(" ", cells));
+                        }
+                    }
+                } else if (statement.getUpdateCount() == -1) {
+                    break;
+                } else {
+                    out.add("UPDATE " + statement.getUpdateCount());
+                }
+                rows = statement.getMoreResults();
+            }
+            return out;
+        });
     }
 
     @Test
