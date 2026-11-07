@@ -99,5 +99,12 @@ ADR 0027은 네 Claude 계좌가 정규장 안의 분 단위 시각(`AT_MINUTE`,
 - medium의 판단 질 차이는 재지 않았다.
 - 보장 행의 미국 피드는 시간별 관측치라, 그 판단이 보는 가격은 최대 15분 넘게 늦다(12:31 판단은 12:15 ET 관측치).
 - 되돌리기: 1단계는 설정만(장중 판단 최소 0·최대 2·사건 꺼짐·`intradayEffort`는 `effort`와 같은 값으로 — 설정 API는 키를 지우지 않음, 예산 60·20·4, 규칙 계좌 기본 시점).
-  2단계는 1단계 → 순번 3 예약을 닫는 SQL(`scripts/rollback/intraday-slot3.sql` — 옛 코드는 순번 3을 부르지 못함, 시험 `PaperStoreDbTest.rollbackClosesSlotThreePlans`) → `git revert` → 거래 창 밖 배포.
+  2단계는 1단계 → 순번 3 예약을 닫는 SQL(`scripts/rollback/intraday-slot3.sql` — 옛 코드는 순번 3을 부르지 못함, 끝의 SELECT가 계좌별 `INTRADAY_3` 결정 행 수를 보여 줌,
+  시험 `PaperStoreDbTest.rollbackClosesSlotThreePlans`·`rollbackCountsSlotThreeDecisions`) → `git revert`(그 SELECT가 한 줄이라도 내면 같은 커밋에 아래 호환 줄) → 거래 창 밖 배포.
   V27은 남겨도 된다(더하기만 — 옛 upsert는 새 칸을 몰라 넣는 행은 기본 `RESERVED`).
+  순번 3 결정 행(`INTRADAY_3`)은 남는다 — 실험 기록이고 주문·체결이 그 행을 가리켜 지우거나 종류를 바꾸지 않는다(CHECK·유일성 때문에 옮길 종류도 없음). 옛 코드(`7d166f4a`)는 장중 판단 종류를
+  `INTRADAY_1`·`INTRADAY_2`로만 알아(`RuleBookService.intraday`) 그 행을 정기 결정으로 읽는다: 다음 결정 패킷의 직전 결정(`PacketBuilder.priorDecisionKind` — 같은 d의 아침 결정보다 늦어 맨 앞에 와
+  8b watchlist가 비고 `10_recentDecisions`에 자세 없는 줄), 주간 복기의 결정(host), 실행 기록 메뉴 줄(`ExecutionView`), 계좌2 소상한(`claude2CallsInCycle` — 덜 셈). 그래서 revert 커밋에 호환 줄을
+  남긴다(QA-311): `RuleBookService.intraday`를 `kind != null && kind.startsWith("INTRADAY_")`로(패킷의 직전 결정·주간 복기가 이것을 씀), `ExecutionView`의 장중 판단 종류 목록과
+  `ClaudeBookService.claude2CallsInCycle`의 종류 목록에 `"INTRADAY_3"`을 더한다. `INTRADAY_MAX`·`intradayKind`는 2 그대로다(순번 3 예약은 SQL이 닫음). 화면 이름표(`paper.ts`·`PaperNotifications`)는
+  없어도 종류 글자가 그대로 보일 뿐이다.

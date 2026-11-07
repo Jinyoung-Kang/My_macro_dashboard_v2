@@ -2,7 +2,6 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -2639,7 +2638,9 @@ class PaperStoreDbTest {
                     List.of(), "부른 셋째", "ft-2", false, otherMorning, null));
             store.markIntradayPlan(OTHER_BOOK, session, 3, "PLANNED", "DONE", null, third, null, CLOSE);
 
-            assertThat(jdbc.update(sql)).as("순번 3인 PLANNED 둘").isEqualTo(2);
+            String counted = OTHER_BOOK + " 1 " + DAY + " " + DAY;
+            assertThat(script(sql)).as("순번 3인 PLANNED 둘 — 남는 INTRADAY_3 결정 행(계좌2의 하나)을 셈(QA-311)")
+                    .containsExactly("UPDATE 2", counted);
             assertThat(store.intradayPlans(BOOK, session)).extracting(p -> p.slot() + " " + p.status())
                     .containsExactly("1 DONE", "2 PLANNED", "3 SUPERSEDED");
             assertThat(store.intradayPlans(BOOK, session).get(2).reason()).startsWith("ROLLBACK — ");
@@ -2649,14 +2650,12 @@ class PaperStoreDbTest {
                     .containsExactly("3 DONE");
             assertThat(store.plannedIntradayPlans(List.of(BOOK, OTHER_BOOK))).extracting(PaperStore.IntradayPlan::slot)
                     .as("옛 코드가 부를 수 있는 순번만").containsExactly(2);
-            assertThat(jdbc.update(sql)).as("두 번째 실행 — 바뀌는 행 없음").isZero();
+            assertThat(script(sql)).as("두 번째 실행 — 바뀌는 행 없음").containsExactly("UPDATE 0", counted);
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
     }
 
     @Test
-    @Disabled("QA-311 재현 — 수정 전에는 되돌리기 SQL이 순번 3 예약만 닫고 남는 INTRADAY_3 결정 행을 보여 주지 않아, 그 행을 정기 결정으로 읽는 옛 코드로 "
-            + "그대로 되돌림(다음 결정 패킷의 8b watchlist가 빔). fix(QA-311)에서 켭니다")
     @DisplayName("QA-311 되돌리기 SQL(scripts/rollback/intraday-slot3.sql): 순번 3 예약을 닫은 뒤 남는 INTRADAY_3 결정 행을 계좌별로 셈(행 수·처음·마지막 "
             + "기준 거래일 — 한 줄이라도 있으면 revert 커밋에 호환 줄). 결정 행은 지우거나 바꾸지 않고, 없으면 세는 줄이 없으며, 두 번째 실행도 같은 결과. 시험 뒤 되돌림")
     void rollbackCountsSlotThreeDecisions() throws Exception {
