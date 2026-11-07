@@ -639,6 +639,30 @@ describe("개장 10분 뒤 시각 맞추기와 장중 스탑 지시(ADR 0033 초
     expect(second.textContent).toContain("보내기 전");
     expect(stops.textContent).not.toContain("원");
   });
+
+  // QA-314(리뷰 XC-4): 카드 아래 안내가 '개장 10분 전이면 09:10 이후'·'종가 단일가는 15:20~15:30'으로 고정이라, 장 시간 변경일(2026-11-19 수능 10:00~16:30)에는
+  // 텔레그램 글(그날 마감 기준 16:20~16:30)과 달리 장중 지시를 10:10 전에, 종가 STOP을 연속 매매 중인 15:20에 내게 안내함.
+  it.fails("장 시간 변경일의 스탑 지시 — 매도 창은 그 세션 시각(첫 분 10:10 이후 · 종가 단일가 16:20~16:30), 고정 시각 09:10·15:20~15:30을 적지 않음", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({
+      stopInstructions: [
+        {
+          id: 5, session: "2026-11-19", symbol: "222220", name: "합성화학", side: "SELL", quantity: 50, timing: "AT_MINUTE",
+          targetAt: "2026-11-19T01:10:00Z", status: "PLANNED", notifiedAt: "2026-11-19T09:58:00+09:00", autoNote: null,
+        },
+        {
+          id: 4, session: "2026-11-19", symbol: "111110", name: "합성전자", side: "SELL", quantity: 4, timing: "NEXT_CLOSE",
+          targetAt: "2026-11-19T16:30:00+09:00", status: "PLANNED", notifiedAt: "2026-11-19T16:21:10+09:00", autoNote: null,
+        },
+      ],
+    }));
+    renderIsa();
+    const stops = await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
+    expect(rowOf("장중 스탑 매도 지시", "합성화학").textContent).toContain("10:10 이후");
+    expect(rowOf("장중 스탑 매도 지시", "합성전자").textContent).toContain("16:20~16:30");
+    const card = stops.closest("section") ?? region();
+    expect(card.textContent).not.toContain("15:20~15:30에");
+    expect(card.textContent).not.toContain("09:10 이후");
+  });
 });
 
 describe("리뷰 결함 — 고치기의 시각 원문(ISA-API-1)", () => {
