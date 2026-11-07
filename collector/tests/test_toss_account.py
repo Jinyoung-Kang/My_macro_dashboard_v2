@@ -7,7 +7,8 @@ tests/test_toss_account.py
      네트워크 전에 TossReadOnlyViolation이다(HTTPAdapter.send 기록기로 '한 번도 보내지 않음'을 본다). AST로 쓰기 호출이 토큰
      발급 하나뿐인지, 계좌 모듈에는 없는지도 본다.
   2. 계좌 경로의 401은 expired-token·token-revoked·invalid-token일 때만, 10분에 한 번만 재발급한다. 429는 잠들지 않는다.
-  3. 기다리지 않는 single-flight, 성공 10초 캐시(ADR 0030 — 갱신 시작부터, 여유 1초), 실패 뒤 이전 값(받은 지 30분까지)·30초 쉼, 호출이 모두 성공해야 바꿈.
+  3. 기다리지 않는 single-flight, 성공 10초 캐시(ADR 0030 — 갱신 시작부터, 여유 1초), 실패 뒤 이전 값(다음 성공까지 — 2026-11-08, 그 전 30분)·30초 쉼,
+     호출이 모두 성공해야 바꿈.
   4. 원화(KR)·달러(US)로 나누고 맞지 않는 항목은 세기만 한다. 모르는 값은 None이다(0으로 바꾸지 않음).
   5. 토스 오류 message·예외 문구·계좌번호·accountSeq·orderId는 응답과 로그에 없다.
   6. 꺼져 있거나 서비스 토큰이 없으면 토스를 부르지 않는다.
@@ -643,7 +644,7 @@ def test_끝난_주문은_3쪽까지만_받고_남으면_closedTruncated(fake, e
 # ==============================================================================
 # 6. 캐시 — TTL·이전 값·쉼·모두 성공해야 바꿈·기다리지 않는 갱신
 # ==============================================================================
-def test_10초_캐시와_실패_뒤_이전_값·30초_쉼·30분_뒤_버림(fake, enabled, clock):
+def test_10초_캐시와_실패_뒤_이전_값·30초_쉼·30분이_지나도_이전_값(fake, enabled, clock):
     assert toss_account.SUCCESS_TTL_SECONDS == 10.0          # ADR 0030(ADR 0025 결정 3 개정) — 60초에서 줄임
     assert toss_account.TTL_SLACK_SECONDS == 1.0             # 화면 10초 주기의 흔들림 여유
     first = toss_account.get_account()
@@ -669,10 +670,11 @@ def test_10초_캐시와_실패_뒤_이전_값·30초_쉼·30분_뒤_버림(fake
     again = toss_account.get_account()
     assert len(fake.data_calls()) == calls + 2 and again["staleSince"] == Clock.kst(10)
 
-    clock.advance(30 * 60)                                  # 받은 지 30분이 넘음 — 이전 값을 버림
-    gone = toss_account.get_account()
-    assert (gone["ok"], gone["isStale"], gone["sides"], gone["fetchedAt"], gone["reason"]) == (
-        False, False, None, None, "upstream-error")
+    clock.advance(30 * 60)                                  # 받은 지 30분이 넘어도 이전 값 그대로(2026-11-08 — 그 전에는 버림)
+    kept = toss_account.get_account()
+    assert (kept["ok"], kept["isStale"], kept["fetchedAt"], kept["reason"], kept["staleSince"]) == (
+        True, True, first["fetchedAt"], "upstream-error", Clock.kst(10))
+    assert kept["sides"] == first["sides"]
 
     fake.routes["/api/v1/holdings"] = (200, _fixture("account_holdings.json"))
     clock.advance(31)
@@ -703,8 +705,9 @@ def test_캐시_나이는_갱신을_시작한_시각부터_세고_주기_흔들�
     assert len(fake.data_calls()) > calls
 
 
-def test_30분_이전_값_창은_갱신_시작이_아니라_받은_시각부터(fake, enabled, clock):
-    """갱신에 5초 걸리면(받은 시각 +5초) 시작부터 1,802초 — 받은 지 29분 57초 — 에는 이전 값이 아직 보이고, 받은 지 30분을 넘기면 버림(명세 §2)."""
+def test_휴장일·토스_점검_동안_이전_값은_다음_성공까지(fake, enabled, clock):
+    """받은 뒤 사흘 동안 토스가 점검(maintenance)으로 답해도 마지막 표를 받은 시각과 함께 이전 값으로 보이고, 점검이 끝나면 새 값(2026-11-08 사용자 결정 —
+    ADR 0025 결정 3 개정, 그 전에는 받은 지 30분 뒤 버림)."""
     def slow(params, headers):
         clock.advance(5)
         return 200, _fixture("account_holdings.json")
@@ -712,15 +715,22 @@ def test_30분_이전_값_창은_갱신_시작이_아니라_받은_시각부터(
     fake.routes["/api/v1/holdings"] = slow
     first = toss_account.get_account()                      # 0초 시작 → 5초 받음
     assert first["fetchedAt"] == Clock.kst(5)
-    fake.routes["/api/v1/holdings"] = (500, _error("internal-error", CANARY))
+    fake.routes["/api/v1/holdings"] = (503, _error("maintenance", CANARY))
 
-    clock.advance(1802 - 5)                                 # 시작부터 1,802초 = 받은 지 1,797초
+    clock.advance(1828)                                     # 받은 지 30분을 넘김
     stale = toss_account.get_account()
-    assert (stale["ok"], stale["isStale"], stale["fetchedAt"]) == (True, True, Clock.kst(5))
+    assert (stale["ok"], stale["isStale"], stale["fetchedAt"], stale["errorCode"]) == (True, True, Clock.kst(5), "maintenance")
+    assert stale["sides"] == first["sides"]
 
-    clock.advance(31)                                       # 받은 지 1,828초 — 30분을 넘김(실패 뒤 30초 쉼도 지남)
-    gone = toss_account.get_account()
-    assert (gone["ok"], gone["sides"], gone["fetchedAt"]) == (False, None, None)
+    clock.advance(3 * 24 * 3600)                            # 사흘 뒤에도 점검 — 그대로 이전 값
+    later = toss_account.get_account()
+    assert (later["ok"], later["isStale"], later["fetchedAt"]) == (True, True, Clock.kst(5))
+
+    fake.routes["/api/v1/holdings"] = (200, _fixture("account_holdings.json"))
+    clock.advance(31)                                       # 점검이 끝남 — 새 값
+    fresh = toss_account.get_account()
+    assert (fresh["ok"], fresh["isStale"], fresh["staleSince"]) == (True, False, None)
+    assert fresh["fetchedAt"] != Clock.kst(5)
 
 
 def test_갱신은_호출이_모두_성공해야_바꾼다(fake, enabled, clock):

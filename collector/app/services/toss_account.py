@@ -22,7 +22,8 @@ app/services/toss_account.py
   - 성공은 10초 동안 그대로 씁니다(ADR 0030 — 화면 새로고침 주기, 그 전 60초). 나이는 갱신을 **시작한** 시각부터 세고, 화면 주기의 흔들림(타이머·
     네트워크)에 1초 여유를 둡니다 — 시작부터 9초가 지난 요청은 새로 읽으므로 10초 주기 요청마다 새 값입니다(끝난 시각부터 세면 약 20초마다 바뀜).
     갱신은 호출이 **모두** 성공해야 캐시를 바꿉니다(새 값과 옛 값을 섞지 않음).
-  - 갱신이 실패하면 직전 성공값 전체를 ``isStale``로 보이되, 받은 지 30분이 지나면 버립니다. 실패 직후 30초는 다시 부르지 않습니다.
+  - 갱신이 실패하면 직전 성공값 전체를 ``isStale``로 다음 성공까지 보입니다(2026-11-08 — 휴장일·토스 점검 중에도 마지막 표, 그 전에는 받은 지
+    30분 뒤 버림). 메모리에만 있어 수집기를 다시 띄우면 빕니다. 실패 직후 30초는 다시 부르지 않습니다.
   - 갱신은 한 번에 하나이고 **기다리지 않습니다** — 갱신 중에 온 요청은 지금 캐시(없으면 ``reason: "refreshing"``)를 바로 받습니다.
 """
 from __future__ import annotations
@@ -43,7 +44,6 @@ KST = ZoneInfo("Asia/Seoul")
 
 SUCCESS_TTL_SECONDS = 10.0             # ADR 0030(ADR 0025 결정 3 개정) — 갱신 한 번에 토스 5~7회라 호출 한도 안
 TTL_SLACK_SECONDS = 1.0                # 화면 10초 주기의 흔들림 여유 — 갱신 시작부터 9초 지나면 새로 읽음
-STALE_MAX_SECONDS = 30 * 60.0          # 받은 시각부터 — 이보다 오래된 성공값은 이전 값으로도 보이지 않음
 FAILURE_BACKOFF_SECONDS = 30.0
 REFRESH_BUDGET_SECONDS = 12.0          # 갱신 한 번 전체. 넘으면 남은 호출을 하지 않고 실패(reason "timeout")
 CONNECT_TIMEOUT_SECONDS = 3.0
@@ -142,8 +142,7 @@ class AccountUnavailable(Exception):
 
 class _State:
     def __init__(self) -> None:
-        # {"data", "mono"(갱신을 시작한 시각, 단조 — 10초 캐시), "receivedMono"(받은 시각, 단조 — 30분 이전 값 창),
-        #  "fetchedAt"(받은 시각, KST 문자열)}
+        # {"data", "mono"(갱신을 시작한 시각, 단조 — 10초 캐시), "fetchedAt"(받은 시각, KST 문자열)}
         self.entry: dict | None = None
         self.failure: _Failure | None = None    # 마지막 갱신이 실패했으면 그 사유(성공하면 비움)
         self.failed_mono: float | None = None
@@ -213,11 +212,12 @@ def _data_view(entry: dict, failure: _Failure | None, stale_since: str | None) -
 
 
 def _usable_entry(now: float) -> dict | None:
-    """받은 지 30분 안의 성공값. 지났으면 버립니다. ``_state_lock`` 안에서 부릅니다."""
-    entry = _state.entry
-    if entry is not None and now - entry["receivedMono"] > STALE_MAX_SECONDS:
-        _state.entry = entry = None
-    return entry
+    """
+    마지막 성공값 — 나이와 상관없이 다음 성공까지 둡니다(2026-11-08 사용자 결정, ADR 0025 결정 3 개정 — 그 전에는 받은 지 30분 뒤 버림).
+    휴장일·토스 점검(``maintenance``) 동안에도 마지막으로 읽은 표를 받은 시각(``fetchedAt``)과 함께 '이전 값'으로 보이게. 메모리에만 있어
+    수집기를 다시 띄우면 비고, DB·스냅숏·백업에는 없습니다. ``_state_lock`` 안에서 부릅니다(``now``는 부르는 쪽 모양을 맞추려고 받음).
+    """
+    return _state.entry
 
 
 def _failure_view(entry: dict | None) -> dict:
@@ -250,8 +250,8 @@ def _in_flight_view(now: float) -> dict:
 
 
 def _record_success(data: dict, started: float) -> dict:
-    """``started``는 갱신을 시작한 단조 시각 — 10초 캐시 나이를 여기서부터 셉니다. 30분 이전 값 창과 ``fetchedAt``은 받은 시각부터."""
-    entry = {"data": data, "mono": started, "receivedMono": _monotonic(), "fetchedAt": _stamp()}
+    """``started``는 갱신을 시작한 단조 시각 — 10초 캐시 나이를 여기서부터 셉니다. ``fetchedAt``은 받은 시각입니다."""
+    entry = {"data": data, "mono": started, "fetchedAt": _stamp()}
     with _state_lock:
         _state.entry = entry
         _state.failure = _state.failed_mono = _state.stale_since = None
