@@ -77,6 +77,12 @@ describe("계좌 설명 — 스탑·체결 문장이 감시 스위치와 규칙 
     expect(rows["kr.stopWatch.mode"]).toBe("켬(ON — 장중 감시 주문)");
   });
 
+  // QA-313 뒤 리뷰: 출발 결정의 주문은 kr.rules.timing과 상관없이 다음 KR 거래일 시가(KrRuleBookService — NEXT_OPEN 고정)인데 매수 문장('재선정일과
+  // 출발 때만 삽니다 … 체결 시점은 설정 kr.rules.timing을 따릅니다')이 출발 주문도 설정을 따르는 것처럼 적음.
+  it.fails("한국 — 규칙 계좌 매수 문장은 출발 결정의 주문만 kr.rules.timing과 상관없이 시가라고 적음", () => {
+    expect(text("kr_rules", "buy")).toContain("출발 결정의 주문만 이 설정과 상관없이 다음 KR 거래일 시가 주문입니다");
+  });
+
   it("미국 — 규칙 계좌 체결은 rules.timing, 스탑은 stopWatch.mode 두 경우(계좌2도 '1분봉이 아니라 시간별 관측치'라 적지 않음), 지금 설정에 그 키", () => {
     expect(text("rules", "buy")).toContain("체결 시점은 설정 rules.timing을 따릅니다");
     expect(text("rules", "sell")).toContain("설정 stopWatch.mode를 따릅니다");
