@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -470,6 +471,31 @@ class StopWatchFallbackTest {
                 assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
             });
             assertThat(outcome.expired()).isEqualTo(1);
+        }
+
+        @Test
+        @Disabled("QA-320 재현 — 수정 전에는 밤 대체 STOP(AT_MINUTE 09:10)의 재진입 금지 사유가 '… 시가 P 체결'로 남음. fix(QA-320)에서 켭니다")
+        @DisplayName("ON — 밤 대체 STOP이 다음 거래일 09:10에 체결되면 재진입 금지 사유는 '지정 시각 09:10 … 체결'(시가 아님, QA-320)")
+        void nightFallbackLockoutNamesTheMinute() {
+            mode("ON", null);
+            watched("000660");
+            nightD1(91_000);
+            assertThat(stops()).singleElement().satisfies(o -> assertThat(o.targetLocal()).isEqualTo(LocalTime.of(9, 10)));
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D2, new KrQuotes.Timed(KrQuotes.TIMED_OK, null,
+                    kst("2026-11-04T21:50"), Map.of("09:10", List.of(new KrQuotes.Bar1m("09:11", java.math.BigDecimal.valueOf(90_200), 300L))),
+                    Map.of(), Map.of()))));
+
+            KrFixtures.Payload night = new KrFixtures.Payload(D2);
+            night.code("005930", kst("2026-11-04T21:57")).bar(D1, 99_000, 91_000, 2_000).bar(D2, 90_000, 90_500, 3_000)
+                    .minute("OK", "09:01", 90_000, 100);
+            ledger.process(run(), KrQuotes.parse(night.snapshot(kst("2026-11-04T22:01"))).orElseThrow());
+
+            assertThat(store.fillsOf(BOOK)).singleElement().satisfies(f -> assertThat(f.priceSource()).isEqualTo(KrTimedLadder.SOURCE_AT));
+            assertThat(store.lockouts(BOOK)).singleElement().satisfies(l -> {
+                assertThat(l.reason()).containsPattern(D2 + " 지정 시각 09:10 [0-9.]+ 체결");
+                assertThat(l.reason()).doesNotContain("시가");
+                assertThat(l.reason()).contains("판정 PROVISIONAL");
+            });
         }
 
         @Test
