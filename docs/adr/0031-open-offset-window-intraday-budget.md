@@ -100,7 +100,8 @@ ADR 0027은 네 Claude 계좌가 정규장 안의 분 단위 시각(`AT_MINUTE`,
 - 보장 행의 미국 피드는 시간별 관측치라, 그 판단이 보는 가격은 최대 15분 넘게 늦다(12:31 판단은 12:15 ET 관측치).
 - 되돌리기: 1단계는 설정만(장중 판단 최소 0·최대 2·사건 꺼짐·`intradayEffort`는 `effort`와 같은 값으로 — 설정 API는 키를 지우지 않음, 예산 60·20·4, 규칙 계좌 기본 시점).
   2단계는 1단계 → 순번 3 예약을 닫는 SQL(`scripts/rollback/intraday-slot3.sql` — 옛 코드는 순번 3을 부르지 못함, 끝의 SELECT가 계좌별 `INTRADAY_3` 결정 행 수를 보여 줌,
-  시험 `PaperStoreDbTest.rollbackClosesSlotThreePlans`·`rollbackCountsSlotThreeDecisions`) → `git revert`(그 SELECT가 한 줄이라도 내면 같은 커밋에 아래 호환 줄) → 거래 창 밖 배포.
+  시험 `PaperStoreDbTest.rollbackClosesSlotThreePlans`·`rollbackCountsSlotThreeDecisions`) → 알렸지만 아직 적지 않은 ISA 스탑 지시가 0인지 확인(읽기 전용 SELECT와 0이 아닐 때의
+  두 길은 ADR 0033 '되돌리기' — 옛 코드는 그 지시를 몰라 이미 판 주식을 다시 팔라고 알림, QA-333) → `git revert`(그 SELECT가 한 줄이라도 내면 같은 커밋에 아래 호환 줄) → 거래 창 밖 배포.
   V27은 남겨도 된다(더하기만 — 옛 upsert는 새 칸을 몰라 넣는 행은 기본 `RESERVED`).
   순번 3 결정 행(`INTRADAY_3`)은 남는다 — 실험 기록이고 주문·체결이 그 행을 가리켜 지우거나 종류를 바꾸지 않는다(CHECK·유일성 때문에 옮길 종류도 없음). 옛 코드(`7d166f4a`)는 장중 판단 종류를
   `INTRADAY_1`·`INTRADAY_2`로만 알아(`RuleBookService.intraday`) 그 행을 정기 결정으로 읽는다: 다음 결정 패킷의 직전 결정(`PacketBuilder.priorDecisionKind` — 같은 d의 아침 결정보다 늦어 맨 앞에 와

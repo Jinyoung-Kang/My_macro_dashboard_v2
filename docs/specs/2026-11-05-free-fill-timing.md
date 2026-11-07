@@ -403,6 +403,8 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 
 1. 설정만(몇 초): `intradayMinPerSession`·`kr.intradayMinPerSession` 0, `intradayEvents`·`kr.intradayEvents` 꺼짐, `intradayMaxPerSession`·`kr.intradayMaxPerSession` 2, `intradayEffort`는 `effort`와 같은 값
    (설정 API는 키를 지우지 않음), 예산 60·20·4, 규칙 계좌 기본 시점(`rules.timing` `NEXT_OBSERVATION`·`kr.rules.timing` `NEXT_OPEN`).
-2. 코드: 1 → `scripts/rollback/intraday-slot3.sql`(순번 3 `PLANNED` 행을 닫음 — 옛 코드는 순번 3을 부르지 못함, 끝의 SELECT가 남는 `INTRADAY_3` 결정 행을 계좌별로 셈) → `git revert`
+2. 코드: 1 → `scripts/rollback/intraday-slot3.sql`(순번 3 `PLANNED` 행을 닫음 — 옛 코드는 순번 3을 부르지 못함, 끝의 SELECT가 남는 `INTRADAY_3` 결정 행을 계좌별로 셈) →
+   알렸지만 아직 적지 않은 ISA 스탑 지시(`manual_stop_instructions`의 `PLANNED`·`notified_at` 있음)가 0인지 읽기 전용으로 확인(0이 아니면 자동 기록을 기다리거나 사용자가 ISA 장부에
+   직접 적은 뒤 — 명령과 두 길은 ADR 0033 '되돌리기', 옛 코드는 그 지시를 몰라 이미 판 주식을 다시 팔라고 알림, QA-333) → `git revert`
    (그 SELECT가 한 줄이라도 내면 같은 커밋에 호환 줄 — `RuleBookService.intraday`를 `INTRADAY_` 접두로, `ExecutionView`·`claude2CallsInCycle`의 종류 목록에 `INTRADAY_3`, QA-311·ADR 0031 '되돌리기' —
    없으면 옛 코드가 그 행을 정기 결정으로 읽어 다음 결정 패킷의 8b watchlist가 빔) → 거래 창 밖 배포. V27은 남겨도 됩니다.
