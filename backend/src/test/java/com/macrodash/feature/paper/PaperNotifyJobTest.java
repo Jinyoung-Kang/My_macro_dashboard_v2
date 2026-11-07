@@ -5,6 +5,7 @@ import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -358,5 +359,57 @@ class PaperNotifyJobTest {
         });
         assertThat(busy.send("글")).isEqualTo("HTTP 429 — Too Many Requests");
         assertThat(calls[0]).isEqualTo(1);
+    }
+
+    // QA-312: 리뷰 XC-2 — 장중 감시(ADR 0032)가 마감 10분 전 뒤에 낸 종가 STOP(NEXT_CLOSE, 만료 = 감지한 그 세션)을 주문·체결 알림이 '다음 거래일 종가'
+    // (미국 '다음 세션 종가')로 적음. 실제로는 그날 종가에 팔리고 같은 알림의 근거 메모는 '그날 종가 매도'라 한 통 안에서 말이 엇갈림.
+    @Test
+    @Disabled("QA-312 재현 — 수정 전에는 timingName이 시점 이름만 보아 감시 종가 STOP을 '다음 거래일 종가'로 적음. fix(QA-312)에서 켭니다")
+    @DisplayName("QA-312 장중 감시 STOP의 시점 이름 — 종가 STOP은 '그날 종가', 시장가 STOP은 기준 시각(생성 + 60초 뒤 첫 분, 그 시장 시각)까지. "
+            + "결정의 종가·밤 대체 지정 시각·감시 밖 STOP은 그대로")
+    void qa312WatchStopTimingIsSameSession() {
+        Book kr = store.books.get(PaperBooks.KR_CLAUDE2);
+        Book us = store.books.get(PaperBooks.CLAUDE);
+        Map<String, String> names = Map.of("005930", "삼성전자");
+        LocalDate session = LocalDate.of(2026, 11, 3);
+        ObjectNode watch = MAPPER.createObjectNode().put("trigger", "TRAILING_STOP").put("stopMode", PaperStopWatchJob.STOP_MODE)
+                .put("note", "장중 감시 트레일링 스탑 −10%: 15:15 61000 · 15:20 60900 KST 두 번 모두 스탑가 61200(최고가 68000) 이하 → 그날 종가 매도");
+        // 한국 15:21:30 KST 감지(마감 10분 전 뒤) → NEXT_CLOSE, 만료 = 그 세션
+        Order krClose = new Order(11, PaperBooks.KR_CLAUDE2, null, "005930", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T06:21:30Z"), session, null);
+        assertThat(PaperNotifications.order(krClose, kr, names, null)).contains("매도 삼성전자(005930) 전량 · 그날 종가")
+                .contains("그날 종가 매도").doesNotContain("다음 거래일");
+        Fill krFill = new Fill(21, 11, PaperBooks.KR_CLAUDE2, "005930", "SELL", 10, 60_800, 60_800, 0, 608_000, T0, session,
+                KrTimedLadder.SOURCE_AT, false, T0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        assertThat(PaperNotifications.fill(krFill, kr, krClose, names, null)).contains("시점 그날 종가 · ").doesNotContain("다음 거래일");
+        // 미국 15:56:10 ET 감지 → NEXT_CLOSE
+        Order usClose = new Order(12, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T20:56:10Z"), session, null);
+        assertThat(PaperNotifications.orderLine(usClose, Map.of(), false)).isEqualTo("매도 AAPL 전량 · 그날 종가");
+        // 장중 시장가 STOP — 기준 시각 T = (생성 + 60초)를 분으로 내린 뒤 + 1분(ExecutionAudit.marketTarget), 그 시장 시각으로
+        Order krMarket = new Order(13, PaperBooks.KR_CLAUDE2, null, "005930", "SELL", null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T01:05:10Z"), session, null);
+        assertThat(PaperNotifications.timingName(krMarket, true)).isEqualTo("장중 시장가 10:07 KST");
+        Order usMarket = new Order(14, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T15:22:30Z"), session, null);
+        assertThat(PaperNotifications.timingName(usMarket, false)).isEqualTo("장중 시장가 10:24 ET");
+
+        // 그대로인 것 — 결정이 낸 다음 거래일 종가, 밤 대체 STOP(다음 거래일 첫 분 지정 시각), 감시 근거가 없는 종가 STOP, 장중 확인의 시장가
+        Order decided = new Order(15, PaperBooks.KR_CLAUDE2, 5L, "005930", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
+                PaperBooks.KIND_CLAUDE, PaperBooks.ORDER_PENDING, null, null, session, Instant.parse("2026-11-03T13:40:00Z"),
+                LocalDate.of(2026, 11, 4), null);
+        assertThat(PaperNotifications.timingName(decided, true)).isEqualTo("다음 거래일 종가");
+        Order night = new Order(16, PaperBooks.KR_CLAUDE2, null, "005930", "SELL", null, null, null, PaperBooks.AT_MINUTE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
+                MAPPER.createObjectNode().put("stopMode", PaperLedgerService.STOP_MODE_NIGHT_FALLBACK), session,
+                Instant.parse("2026-11-03T13:30:00Z"), LocalDate.of(2026, 11, 6), null, java.time.LocalTime.of(9, 10));
+        assertThat(PaperNotifications.timingName(night, true)).isEqualTo("지정 시각 09:10 KST");
+        Order plainStop = new Order(17, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode().put("trigger", "TRAILING_STOP"), session,
+                T0, LocalDate.of(2026, 11, 4), null);
+        assertThat(PaperNotifications.timingName(plainStop, false)).isEqualTo("다음 세션 종가");
+        Order checkpoint = new Order(18, PaperBooks.CLAUDE, 6L, "AAPL", "SELL", null, null, null, PaperBooks.MARKET,
+                PaperBooks.KIND_CLAUDE, PaperBooks.ORDER_PENDING, null, null, session, Instant.parse("2026-11-03T15:22:30Z"), session, null);
+        assertThat(PaperNotifications.timingName(checkpoint, false)).isEqualTo("장중 시장가");
     }
 }
