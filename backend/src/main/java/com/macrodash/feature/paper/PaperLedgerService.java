@@ -1858,8 +1858,10 @@ public class PaperLedgerService {
     }
 
     /**
-     * 감시가 그 세션의 그 종목을 지켜봤는가(그 시장 감시가 ON일 때만 — {@link StopWatch#covered}). 갭 가드의 장부 전일 종가는 그 보유의 분할 기준일이 그 세션
-     * 직전 거래일일 때의 기준 종가입니다(감시 작업과 같은 값).
+     * 감시가 그 세션의 그 종목을 지켜봤는가(그 시장 감시가 ON일 때만 — {@link StopWatch#covered}). 갭 가드의 장부 전일 종가는 이번 관측치 시작 때 저장돼
+     * 있던 기준일이 그 세션 직전 거래일일 때의 저장된 기준 종가입니다 — 감시 작업이 읽은 보유 레코드 그대로(QA-305). 마감 뒤 관측치는 이 처리의 가격 갱신
+     * ({@link #refresh})이 기준일을 그날로 옮긴 뒤 스탑을 보므로, 갱신된 값을 쓰면 장부 전일 종가가 없어져 감시가 하루 종일 가드로 뺀 종목(Yahoo 전일 종가
+     * 불일치)을 덮음으로 읽고 종가 스탑을 건너뛰었습니다.
      */
     private static boolean watchCovers(BookRun run, Holding holding, LocalDate session) {
         if (run.stopWatch == null) {
@@ -1876,7 +1878,7 @@ public class PaperLedgerService {
         } catch (CalendarUnavailableException e) {
             return false;
         }
-        Double ledgerPrev = previous.equals(holding.fillRefDate) ? holding.fillRefClose : null;
+        Double ledgerPrev = previous.equals(holding.sinceAtStart) ? holding.refCloseAtStart : null;
         return StopWatch.covered(payload, holding.ticker, session, run.at, calendar, run.market.auctionFills(), ledgerPrev);
     }
 
@@ -2365,6 +2367,8 @@ public class PaperLedgerService {
         boolean opened;
         /** 한국: 이번 관측치 시작 때의 since 날짜(최고가를 올리는 확정 종가의 첫 날 — 새 보유는 체결 봉 날짜). */
         final LocalDate sinceAtStart;
+        /** 이번 관측치 시작 때의 기준 종가(저장된 {@code fill_ref_close}) — 장중 감시 작업이 갭 가드에 쓴 값({@link #watchCovers}). */
+        final double refCloseAtStart;
         /**
          * 이번 관측치로 가격을 갱신하기 전의 평가 가격(분할을 반영한 단위) — 미국 시각 지정 체결이 T 시각의 순자산을 셀 때 그 종목의 T 창 가격이
          * 없으면 씁니다(W의 관측가로 T의 수량을 정하지 않게, 명세 2026-10-30 §10-3). 이번 2b에서 산 보유는 그 체결 원가격.
@@ -2386,6 +2390,7 @@ public class PaperLedgerService {
             this.fillRefClose = p.fillRefClose();
             this.splitNote = p.splitNote();
             this.sinceAtStart = p.fillRefDate();
+            this.refCloseAtStart = p.fillRefClose();
             this.priceBefore = valuationPrice();
         }
 
@@ -2403,6 +2408,7 @@ public class PaperLedgerService {
             this.fillRefDate = fillRefDate;
             this.fillRefClose = fillRefClose;
             this.sinceAtStart = fillRefDate;
+            this.refCloseAtStart = fillRefClose;
             this.priceBefore = lastPrice;
         }
 

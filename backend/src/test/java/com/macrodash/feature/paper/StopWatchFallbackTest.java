@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -111,7 +110,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-305 재현 — 수정 전에는 16:15 관측치가 기준일을 그날로 옮긴 뒤 덮음 판정이 장부 전일 종가 없이 가드를 봐 불일치 가드가 빠지고, 덮음으로 종가 스탑을 건너뜀. fix(QA-305)에서 켭니다")
         @DisplayName("ON — 감시가 하루 종일 갭 가드로 뺀 종목(Yahoo 전일 종가 103 ≠ 장부 전일 종가 100)은 16:15 확정 종가 관측치에서도 덮지 않아 종가 스탑(QA-305)")
         void guardedTickerKeepsTheCloseFallback() {
             mode("ON");
