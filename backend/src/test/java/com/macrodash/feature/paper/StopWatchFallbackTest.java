@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -474,7 +473,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-320 재현 — 수정 전에는 밤 대체 STOP(AT_MINUTE 09:10)의 재진입 금지 사유가 '… 시가 P 체결'로 남음. fix(QA-320)에서 켭니다")
         @DisplayName("ON — 밤 대체 STOP이 다음 거래일 09:10에 체결되면 재진입 금지 사유는 '지정 시각 09:10 … 체결'(시가 아님, QA-320)")
         void nightFallbackLockoutNamesTheMinute() {
             mode("ON", null);

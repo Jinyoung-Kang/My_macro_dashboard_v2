@@ -1524,16 +1524,35 @@ public class PaperLedgerService {
         LocalDate until = TrailingStop.lockoutUntil(run.market.calendar(), bar.date(), run.settings.lockoutTradingDays());
         store.upsertLockout(new Lockout(run.book.code(), order.ticker(), until, StopWatch.intradayStop(order)
                 ? stopLockoutText(order, bar.date(), price)
-                : "트레일링 스탑 −%s%%: 최고가 %s → %s 잠정 종가 %s(판정 %s) · %s 시가 %s 체결".formatted(
+                : "트레일링 스탑 −%s%%: 최고가 %s → %s 잠정 종가 %s(판정 %s) · %s %s%s 체결".formatted(
                         won(positive(order.reason(), "stopPct")), won(positive(order.reason(), "highWatermark")),
                         order.asOfTradingDate(), won(positive(order.reason(), "observedPrice")), stop.basis(), bar.date(),
-                        won(price))));
+                        fillWhen(order), won(price))));
         run.lockouts.put(order.ticker(), until);
         run.stopped++;
         run.note("주문 " + order.id() + " " + order.ticker() + " 트레일링 스탑 체결 — 판정 " + stop.basis()
                 + (stop.confirmedClose() == null ? "" : "(금융위 " + order.asOfTradingDate() + " 종가 "
                 + stop.confirmedClose().stripTrailingZeros().toPlainString() + "원)")
                 + ", 재진입 금지 " + until + "까지(체결한 날부터)");
+    }
+
+    /**
+     * 밤 경로 STOP 체결의 재진입 금지 사유에 적을 체결 시점(뒤에 체결가가 붙음 — QA-320): 시가는 '시가 ', 밤 대체 STOP의 지정 시각은 '지정 시각 09:10 ',
+     * 종가는 '종가 ', 장중 시장가는 '장중 시장가 13:19 '(기준 분), 그 밖은 빈 글자. 예전에는 모두 '시가'로 적어 다음 거래일 09:10에 체결한 밤 대체 STOP이
+     * 같은 화면의 주문 행('지정 시각 09:10 KST')과 어긋났습니다. 감시를 켜기 전 시가 STOP의 글은 그대로입니다.
+     */
+    private static String fillWhen(Order order) {
+        if (PaperBooks.NEXT_OPEN.equals(order.timing())) {
+            return "시가 ";
+        }
+        if (PaperBooks.NEXT_CLOSE.equals(order.timing())) {
+            return "종가 ";
+        }
+        LocalTime at = intradayTime(order);
+        if (at == null) {
+            return "";
+        }
+        return (PaperBooks.MARKET.equals(order.timing()) ? "장중 시장가 " : "지정 시각 ") + FreeTiming.label(at) + " ";
     }
 
     /**
