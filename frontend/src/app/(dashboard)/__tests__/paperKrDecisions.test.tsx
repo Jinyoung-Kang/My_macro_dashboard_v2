@@ -311,7 +311,7 @@ describe("자료", () => {
   });
 
   // QA-313(리뷰 FW-2): 한국 규칙 결정의 주문 안내가 '다음 KR 거래일 시가에 체결'만 적어, kr.rules.timing을 지정 시각·종가로 저장한 뒤에는 틀림.
-  it.fails("규칙 계좌 결정의 주문 안내 — 체결 시점은 kr.rules.timing을 따름(기본 시가)", async () => {
+  it("규칙 계좌 결정의 주문 안내 — 체결 시점은 kr.rules.timing을 따름(기본 시가)", async () => {
     render(<PaperPage market="KR" initialTab="decisions" />);
     const detail = await expand("2026-10-30 출발(초기 결정)");
     expect(within(detail).getByText(/체결 시점은 설정 kr\.rules\.timing을 따릅니다/)).toBeTruthy();

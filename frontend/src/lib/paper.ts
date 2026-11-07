@@ -371,6 +371,23 @@ export interface AccountProfile {
   decisionNote?: string;
 }
 
+/**
+ * 미국 트레일링 스탑의 감지·체결 문장(규칙 계좌 — 계좌1·계좌2는 '규칙 계좌와 같음') — 장중 스탑 감시 스위치 stopWatch.mode(ADR 0032)의 두 경우를 함께
+ * 적습니다(QA-313 — 예전에는 '장부가 관측치마다'만 적어 켠 뒤 틀렸음). 감시 판정·시점은 백엔드 StopWatch·PaperStopWatchJob, 덮지 못한 종목의 시간별
+ * 대체는 PaperLedgerService.checkStops(HOURLY_FALLBACK).
+ */
+const US_STOP =
+  "감지·체결은 설정 stopWatch.mode를 따릅니다. 끔(OFF)·기록만(SHADOW)이면 장부가 시간별 관측치마다 보고 걸리면 그 관측가로 팝니다. "
+  + "켬(ON)이면 정규장 5분 감시(1분봉)에서 두 번 이어 스탑가 이하일 때 그 세션 안에 팝니다(감지 + 60초 뒤 첫 분의 1분봉 — 개장 10분 뒤 "
+  + "전이면 그 첫 분, 마감 5분 전부터는 그날 종가). 시간별 관측치는 그때 감시가 덮지 못한 종목(수집 실패·기업행위 갭 가드)만 봅니다.";
+
+/** 장중 스탑 감시 스위치(stopWatch.mode)의 지금 값 이름표. */
+const US_STOP_WATCH_LABELS = {
+  OFF: "끔(OFF — 시간별 관측치 스탑만)",
+  SHADOW: "기록만(SHADOW — 시간별 관측치 스탑만)",
+  ON: "켬(ON — 장중 감시 주문)",
+};
+
 /** 시작 방법이 같은 두 벤치마크의 정의 한 줄. */
 const BENCHMARK_START =
   "개요의 '초기화'로 시작합니다 — 출발일 종가를 받은 뒤 초기화하면 그 종가로 사후 체결하고, 종가가 아직 없으면 '시작 전'(현금만)으로 남습니다.";
@@ -395,14 +412,16 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         key: "buy",
         label: "매수",
         text: "재선정일(분기 13F 공시 기한 다음 거래일)과 시작 때만 삽니다 — 풀 기관이 최소 기관 수 이상 신규 편입하거나 주식 수를 "
-          + "30% 이상 늘린 종목을 점수(기관 가중 × 확신도) 순으로 골라, 종목·ETF 비중 상한 안에서 배분합니다.",
+          + "30% 이상 늘린 종목을 점수(기관 가중 × 확신도) 순으로 골라, 종목·ETF 비중 상한 안에서 배분합니다. 체결 시점은 설정 "
+          + "rules.timing을 따릅니다 — 기본은 다음 시간별 관측치(NEXT_OBSERVATION)이고, 다음 세션 시가(NEXT_OPEN)·지정 시각(AT_MINUTE — "
+          + "rules.timingAtEt)·확정 종가(NEXT_CLOSE)를 고르면 그 결정의 주문 전부를 그 시각에 냅니다(그날 체결되지 못한 시가·지정 시각 주문은 "
+          + "다음 관측치 주문으로 다시 냄).",
       },
       {
         key: "sell",
         label: "매도·리스크",
-        text: "보유 종목을 풀 기관이 최소 기관 수 이상 전량 매도하면 전량 매도합니다. 장부가 관측치마다 트레일링 스탑(최고가 대비 설정 "
-          + "비율만큼 떨어지면 전량 매도, 그 뒤 재진입 금지)을 봅니다 — 현금성 종목은 제외. 일시정지 중에는 스탑도 보지 않습니다(최고가만 "
-          + "따라감).",
+        text: "보유 종목을 풀 기관이 최소 기관 수 이상 전량 매도하면 전량 매도합니다. 트레일링 스탑(최고가 대비 설정 비율만큼 떨어지면 전량 "
+          + "매도, 그 뒤 재진입 금지)은 현금성 종목을 빼고 봅니다 — " + US_STOP + " 일시정지 중에는 스탑도 보지 않습니다(최고가만 따라감).",
       },
       {
         key: "cash",
@@ -429,7 +448,19 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
       { key: "maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },
       { key: "blend.allocation", label: "배분 방식" },
+      {
+        key: "rules.timing",
+        label: "체결 시점",
+        labels: {
+          NEXT_OBSERVATION: "다음 시간별 관측치(NEXT_OBSERVATION)",
+          NEXT_OPEN: "다음 세션 시가(NEXT_OPEN)",
+          AT_MINUTE: "다음 세션 지정 시각(AT_MINUTE)",
+          NEXT_CLOSE: "다음 세션 확정 종가(NEXT_CLOSE)",
+        },
+      },
+      { key: "rules.timingAtEt", label: "지정 시각(뉴욕 — AT_MINUTE일 때)" },
       { key: "trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "stopWatch.mode", label: "장중 스탑 감시", labels: US_STOP_WATCH_LABELS },
       { key: "lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: "거래일" },
       { key: "parkCashInShy", label: "남는 현금을 SHY에" },
       { key: "rules.parkCashThresholdPct", label: "SHY 매수 기준(순자산 대비)", unit: "%" },
@@ -460,7 +491,8 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         key: "sell",
         label: "매도·리스크",
         text: "재량 매도는 최소 보유 거래일이 지난 종목만 통과합니다(현금성 종목은 예외). 트레일링 스탑(최고가 대비 설정 비율만큼 "
-          + "떨어지면 전량 매도, 재진입 금지)은 장부가 따로 적용합니다 — 현금성 종목은 제외. 호출 실패·형식 오류인 날은 재량 주문이 없고 "
+          + "떨어지면 전량 매도, 재진입 금지)은 장부가 따로 적용합니다 — 현금성 종목은 제외, 감지·체결은 규칙 계좌와 같습니다(설정 "
+          + "stopWatch.mode — 끄면 시간별 관측치, 켜면 정규장 5분 감시가 그 세션 안에 팖). 호출 실패·형식 오류인 날은 재량 주문이 없고 "
           + "스탑만 돕니다. 일시정지 중에는 스탑도 보지 않습니다(최고가만 따라감).",
       },
       {
@@ -496,6 +528,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "maxDiscretionaryOrdersPerMonth", label: "월 재량 주문 상한", unit: "건" },
       { key: "minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: "거래일" },
       { key: "trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "stopWatch.mode", label: "장중 스탑 감시", labels: US_STOP_WATCH_LABELS },
       { key: "lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: "거래일" },
       { key: "cashLikeTickers", label: "현금성 종목" },
     ],
@@ -528,7 +561,8 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       {
         key: "sell",
         label: "매도·리스크",
-        text: "재량 매도·트레일링 스탑·재진입 금지는 계좌1과 같습니다 — 스탑은 1분봉이 아니라 시간별 관측치로 봅니다. 시각 지정 주문이 남은 "
+        text: "재량 매도·트레일링 스탑·재진입 금지는 계좌1과 같습니다 — 스탑 감지는 설정 stopWatch.mode를 따라, 끄면 시간별 관측치로만 "
+          + "보고 켜면 정규장 5분 감시(1분봉)가 먼저 봅니다(감시가 덮지 못한 종목만 시간별 관측치). 시각 지정 주문이 남은 "
           + "관측치는 그 회차 1분봉 저장본을 기다렸다가(상한은 설정) 처리해, 앞 시각의 매도보다 스탑이 먼저 돌지 않게 합니다. 그래도 기준 시각이 "
           + "지난 주문이 풀리지 않은 종목은 그 관측치의 스탑 판정을 건너뛰고 다음 관측치 가격으로 다시 봅니다 — 그만큼 스탑이 늦거나, 그 사이 "
           + "가격이 돌아오면 걸리지 않을 수 있습니다. 일시정지 중에는 스탑도 보지 않습니다(최고가만 따라감).",
@@ -574,6 +608,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "maxDiscretionaryOrdersPerMonth", label: "월 재량 주문 상한", unit: "건" },
       { key: "minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: "거래일" },
       { key: "trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "stopWatch.mode", label: "장중 스탑 감시", labels: US_STOP_WATCH_LABELS },
       { key: "lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: "거래일" },
       { key: "slippageBp", label: "체결 슬리피지(미국 계좌 공통 — 시점과 무관)", unit: "bp" },
     ],

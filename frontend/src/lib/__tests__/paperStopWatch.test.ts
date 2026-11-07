@@ -59,7 +59,7 @@ describe("계좌 설명 — 스탑·체결 문장이 감시 스위치와 규칙 
   const text = (code: string, key: string) => accountProfile(code)?.definitions.find((d) => d.key === key)?.text ?? "";
   const keys = (code: string) => accountProfile(code)?.settings.map((spec) => spec.key) ?? [];
 
-  it.fails("한국 — 규칙 계좌 체결은 kr.rules.timing(지정 시각은 확정 조정 없음), 규칙·계좌1 스탑은 kr.stopWatch.mode 두 경우, 지금 설정에 그 키", () => {
+  it("한국 — 규칙 계좌 체결은 kr.rules.timing(지정 시각은 확정 조정 없음), 규칙·계좌1 스탑은 kr.stopWatch.mode 두 경우, 지금 설정에 그 키", () => {
     expect(text("kr_rules", "buy")).toContain("체결 시점은 설정 kr.rules.timing을 따릅니다");
     expect(text("kr_rules", "buy")).toContain("확정 조정하지 않으며");
     for (const code of ["kr_rules", "kr_claude"]) {
@@ -77,7 +77,7 @@ describe("계좌 설명 — 스탑·체결 문장이 감시 스위치와 규칙 
     expect(rows["kr.stopWatch.mode"]).toBe("켬(ON — 장중 감시 주문)");
   });
 
-  it.fails("미국 — 규칙 계좌 체결은 rules.timing, 스탑은 stopWatch.mode 두 경우(계좌2도 '1분봉이 아니라 시간별 관측치'라 적지 않음), 지금 설정에 그 키", () => {
+  it("미국 — 규칙 계좌 체결은 rules.timing, 스탑은 stopWatch.mode 두 경우(계좌2도 '1분봉이 아니라 시간별 관측치'라 적지 않음), 지금 설정에 그 키", () => {
     expect(text("rules", "buy")).toContain("체결 시점은 설정 rules.timing을 따릅니다");
     expect(text("rules", "sell")).toContain("설정 stopWatch.mode를 따릅니다");
     expect(text("rules", "sell")).toContain("그 세션 안에 팝니다");

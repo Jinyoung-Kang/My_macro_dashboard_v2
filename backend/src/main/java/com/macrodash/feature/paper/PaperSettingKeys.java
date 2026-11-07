@@ -372,7 +372,8 @@ final class PaperSettingKeys {
             integer("kr.maxPositions", 1, 100, false, "한국 매수 뒤 최대 종목 수(현금성 제외) — Claude 검증기"),
             integer("kr.maxDiscretionaryOrdersPerMonth", 0, 200, false, "한국 Claude 재량 주문 월 상한"),
             integer("kr.minHoldTradingDaysForSell", 0, 60, false, "한국 Claude 재량 매도 전 최소 보유 거래일(KRX 거래일, 스탑 제외)"),
-            number("kr.trailingStopPct", 1, 50, true, "한국 트레일링 스탑(%) — 밤 잠정 평가가로 감지해 다음 거래일 시가 매도(K30)"),
+            number("kr.trailingStopPct", 1, 50, true, "한국 트레일링 스탑(%) — kr.stopWatch.mode가 OFF·SHADOW면 밤 잠정 평가가로 감지해 다음 거래일 "
+                    + "시가 매도(K30), ON이면 장중 감시가 그 세션 안에 팔고 감시가 덮지 못한 종목만 밤 감지 뒤 다음 거래일 첫 분(개장 10분 뒤) 지정 시각 매도"),
             integer("kr.lockoutTradingDays", 0, 250, true, "한국 스탑 뒤 재진입 금지(KRX 거래일)"),
             choice(StopWatchMode.KR_KEY, StopWatchMode.OPTIONS, true,
                     "한국 장중 스탑 감시(ADR 0032 초안, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 토스 1분봉으로 "

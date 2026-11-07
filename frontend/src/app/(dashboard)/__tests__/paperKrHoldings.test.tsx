@@ -374,7 +374,7 @@ describe("자료", () => {
 
   // QA-313(리뷰 FW-2·XC-3): 주문 카드 부제가 '한국 주문은 다음 KR 거래일 시가에 체결'·'밤 잠정 종가로 감지해 다음 거래일 시가'만 적어, 규칙 계좌 체결 시점
   // (kr.rules.timing)·장중 스탑 감시(kr.stopWatch.mode)를 켠 뒤에는 틀림.
-  it.fails("주문 카드 부제 — 체결은 '체결 시점' 칸의 시점(규칙 계좌는 kr.rules.timing), 스탑은 kr.stopWatch.mode의 두 경우", async () => {
+  it("주문 카드 부제 — 체결은 '체결 시점' 칸의 시점(규칙 계좌는 kr.rules.timing), 스탑은 kr.stopWatch.mode의 두 경우", async () => {
     render(<PaperPage market="KR" initialTab="holdings" />);
     await screen.findByRole("table", { name: "주문" });
     expect(screen.getByText(/규칙 계좌의 시점은 설정 kr\.rules\.timing/)).toBeTruthy();

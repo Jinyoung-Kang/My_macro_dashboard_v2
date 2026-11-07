@@ -10,10 +10,36 @@
  */
 import type { AccountProfile, PaperTabKey } from "./paper";
 
-/** 결정·체결 시점의 공통 문장 — 한국 계좌는 네 계좌 모두 다음 KR 거래일 시가(KRX 시가 단일가)에 체결합니다. */
+/** 결정·체결 시점의 공통 문장 — 한국 Claude 계좌1의 주문은 다음 KR 거래일 시가(KRX 시가 단일가)에 체결합니다. */
 const KR_FILL =
   "주문은 다음 KR 거래일 시가(KRX 시가 단일가 — 잠정가는 토스증권 1분봉 개장 봉, 확정가는 금융위원회)에 체결하고, 금융위 값이 들어오면 "
   + "체결 행은 그대로 둔 채 '확정 조정' 행으로 현금·평단을 맞춥니다.";
+
+/**
+ * 한국 규칙 계좌의 체결 문장 — 시점은 설정 kr.rules.timing(ADR 0027·0031, 백엔드 RuleTiming)을 따릅니다. 기본(시가)은 계좌1과 같고, 지정 시각·종가는
+ * 계좌2의 매시·종가와 같은 체결입니다(KrTimedLadder). 두 경우를 함께 적고 지금 값은 settings의 kr.rules.timing·kr.rules.timingAtKst 행이 적습니다(QA-313 —
+ * 예전에는 KR_FILL만 적어 지정 시각을 저장한 뒤 틀렸음).
+ */
+const KR_RULES_FILL =
+  "체결 시점은 설정 kr.rules.timing을 따릅니다. 기본(시가 NEXT_OPEN)이면 " + KR_FILL + " 지정 시각(AT_MINUTE)이면 그 결정의 주문 전부를 "
+  + "다음 KR 거래일 kr.rules.timingAtKst 분(그날 개장 10분 뒤가 더 늦으면 그 첫 분)에 시작한 토스 1분봉 시가로 체결하고 확정 조정하지 "
+  + "않으며(금융위에 그 시각 값이 없음), 종가(NEXT_CLOSE)면 KRX 종가 단일가 1분봉으로 체결해 금융위 종가로 확정 조정합니다. 그날 체결되지 "
+  + "못한 지정 시각·종가 주문은 다시 냅니다(지정 시각이면 다음 거래일 첫 분, 종가면 다음 거래일 시가).";
+
+/**
+ * 한국 트레일링 스탑의 감지·체결 문장(규칙 계좌·Claude 계좌1 — 계좌2는 '계좌1과 같음') — 장중 스탑 감시 스위치 kr.stopWatch.mode(ADR 0032)의 두 경우를
+ * 함께 적습니다(QA-313 — 예전에는 밤 감지만 적어 켠 뒤 틀렸음). 감시 판정·시점은 백엔드 StopWatch·PaperStopWatchJob, 덮지 못한 종목의 밤 대체는
+ * PaperLedgerService(NIGHT_FALLBACK).
+ */
+const KR_STOP =
+  "트레일링 스탑의 감지·체결은 설정 kr.stopWatch.mode를 따릅니다. 끔(OFF)·기록만(SHADOW)이면 밤 잠정 평가가로 감지해 다음 거래일 시가에 "
+  + "팔고, 그때 감지한 날의 금융위 확정 종가로 다시 판정합니다(스탑가 위면 취소). 켬(ON)이면 정규장 5분 감시(토스 1분봉)에서 두 번 이어 "
+  + "스탑가 이하일 때 그 세션 안에 팝니다 — 감지 + 60초 뒤 첫 분의 1분봉 시가(개장 10분 뒤 전이면 그 첫 분, 마감 10분 전부터는 그날 종가 "
+  + "단일가)로 체결하고 확정가로 다시 판정하지 않습니다. 감시가 덮지 못한 종목(수집 실패·기업행위 갭 가드)만 밤 잠정 평가가로 감지해 다음 "
+  + "거래일 첫 분(개장 10분 뒤)의 지정 시각에 팔고 금융위 확정 종가로 다시 판정합니다.";
+
+/** 장중 스탑 감시 스위치(kr.stopWatch.mode)의 지금 값 이름표. */
+const KR_STOP_WATCH_LABELS = { OFF: "끔(OFF — 밤 스탑만)", SHADOW: "기록만(SHADOW — 밤 스탑만)", ON: "켬(ON — 장중 감시 주문)" };
 
 /** 한국 Claude 계좌2의 체결 문장(단계 2a — 체결 시점 메뉴). 시가는 계좌1과 같고, 매시·종가는 목표 세션의 토스 1분봉입니다. */
 const KR_CLAUDE2_FILL =
@@ -48,13 +74,13 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         label: "매수",
         text: "재선정일(설정 주기 — 기본 그 달 첫 KR 거래일)과 출발 때만 삽니다 — 재무(ROE > 0, 금융업 코드 표 밖 회사는 부채비율 상한)·"
           + "거래정지·재진입 금지를 거른 후보 상위 종목을 설정 배분(동일 비중 또는 점수 비례)으로 삽니다. 재선정일 결정이 게이트·기한으로 "
-          + "빠지면 다음 KR 결정일에 그날 자료로 다시 선정합니다(따라잡기). " + KR_FILL,
+          + "빠지면 다음 KR 결정일에 그날 자료로 다시 선정합니다(따라잡기). " + KR_RULES_FILL,
       },
       {
         key: "sell",
         label: "매도·리스크",
-        text: "매일 20일 누적이 둘 다 0보다 작으면 팔고, 재선정일에는 후보 밖 보유를 팝니다. 트레일링 스탑(최고가 대비 설정 비율 — 밤 잠정 "
-          + "평가가로 감지해 다음 거래일 시가에 체결, 그때 확정 종가로 다시 판정)과 재진입 금지는 장부가 적용합니다 — 현금성 제외.",
+        text: "매일 20일 누적이 둘 다 0보다 작으면 팔고, 재선정일에는 후보 밖 보유를 팝니다. 트레일링 스탑(최고가 대비 설정 비율)과 재진입 "
+          + "금지는 장부가 적용합니다 — 현금성 제외. " + KR_STOP,
       },
       {
         key: "cash",
@@ -85,7 +111,18 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         label: "재선정 주기",
         labels: { MONTHLY_FIRST: "그 달 첫 KR 거래일(MONTHLY_FIRST)", TWICE_MONTHLY: "월 2회(TWICE_MONTHLY)" },
       },
+      {
+        key: "kr.rules.timing",
+        label: "체결 시점",
+        labels: {
+          NEXT_OPEN: "다음 거래일 시가(NEXT_OPEN)",
+          AT_MINUTE: "다음 거래일 지정 시각(AT_MINUTE)",
+          NEXT_CLOSE: "다음 거래일 종가(NEXT_CLOSE)",
+        },
+      },
+      { key: "kr.rules.timingAtKst", label: "지정 시각(KST — AT_MINUTE일 때)" },
       { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "kr.stopWatch.mode", label: "장중 스탑 감시", labels: KR_STOP_WATCH_LABELS },
       { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
       { key: "kr.rules.parkCashThresholdPct", label: "153130 매수 기준(순자산 대비)", unit: "%" },
       { key: "kr.minOrderNotional", label: "최소 주문 금액", unit: "원" },
@@ -112,9 +149,8 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       {
         key: "sell",
         label: "매도·리스크",
-        text: "재량 매도는 최소 보유 거래일(KRX)이 지난 종목만 통과합니다(현금성 예외). 트레일링 스탑·재진입 금지는 장부가 따로 적용합니다 — "
-          + "다음 거래일 시가에 체결하고 확정 종가로 다시 판정합니다. 호출 실패·형식 오류인 날은 재량 주문이 없고, 기한이 지나면 그 세션은 "
-          + "부르지 않습니다.",
+        text: "재량 매도는 최소 보유 거래일(KRX)이 지난 종목만 통과합니다(현금성 예외). 트레일링 스탑·재진입 금지는 장부가 따로 적용합니다. "
+          + KR_STOP + " 호출 실패·형식 오류인 날은 재량 주문이 없고, 기한이 지나면 그 세션은 부르지 않습니다.",
       },
       {
         key: "cash",
@@ -142,6 +178,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.maxDiscretionaryOrdersPerMonth", label: "월 재량 주문 상한", unit: "건" },
       { key: "kr.minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: " KR 거래일" },
       { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "kr.stopWatch.mode", label: "장중 스탑 감시", labels: KR_STOP_WATCH_LABELS },
       { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
       { key: "kr.cashLikeTickers", label: "현금성 종목" },
     ],
@@ -207,6 +244,7 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "kr.maxDiscretionaryOrdersPerMonth", label: "월 재량 주문 상한", unit: "건" },
       { key: "kr.minHoldTradingDaysForSell", label: "재량 매도 전 최소 보유", unit: " KR 거래일" },
       { key: "kr.trailingStopPct", label: "트레일링 스탑", unit: "%" },
+      { key: "kr.stopWatch.mode", label: "장중 스탑 감시", labels: KR_STOP_WATCH_LABELS },
       { key: "kr.lockoutTradingDays", label: "스탑 뒤 재진입 금지", unit: " KR 거래일" },
       { key: "kr.cashLikeTickers", label: "현금성 종목" },
     ],
