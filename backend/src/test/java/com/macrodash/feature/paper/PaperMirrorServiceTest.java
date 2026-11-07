@@ -13,7 +13,6 @@ import com.macrodash.store.PaperStore.LedgerHold;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -408,7 +407,6 @@ class PaperMirrorServiceTest {
     // 봉이 없어 P 목표 시각 지정 주문(기준일 P2)은 ①이 '기준일 뒤 관측 봉 없음(거래정지 등)'으로 쉬는 주문으로 보고, 실제 계좌의 S 09:10 묶음이 그
     // 주문 전 장부 보유로 P에 이미 체결한 실제 매매를 되돌림(뒤에 모의가 P 자료로 체결하면 다음 묶음이 다시 함 — 실제 돈 왕복).
     @Test
-    @Disabled("QA-331 재현 — 수정 전에는 P 낮에 다시 저장된 P2 자료 저장본만 처리해도 장부가 P를 반영했다고 봄. fix(QA-331)에서 켭니다")
     @DisplayName("장부 반영 — 마지막 처리 저장본은 수집 시각이 아니라 담은 자료의 세션(20:30 규칙)으로 셈: P 낮에 다시 저장된 P2 자료만 처리했으면 거짓, "
             + "P 자료를 담은 밤·새벽 저장본이면 참(QA-331)")
     void ledgerCaughtUpCountsTheSessionTheSnapshotHolds() {

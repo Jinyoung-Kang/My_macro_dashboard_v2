@@ -222,7 +222,9 @@ public class PaperMirrorService {
     /**
      * 그 책의 모의 장부가 세션 {@code session} 전 거래일(P)까지 반영했는가(명세 §3 '쉬는 경우') — 장부가 P의 관측치(또는 그 뒤)를 처리했고, 한국 결정 게이트
      * ①과 같은 판정({@link KrDecisionGates#ledger} — P 기준)으로 기준일 &lt; P인 대기 주문 중 장부가 아직 일하는 것(1분봉을 기다리는 P 이전의 시각 지정
-     * 주문 등)이 없을 때만 참입니다. 장부가 그 관측치로 체결할 수 없는 주문(거래정지·기업행위·그날 보류 표시)은 기다리지 않습니다. 그런 대기가 남아 있으면
+     * 주문 등)이 없을 때만 참입니다. 마지막 처리 저장본이 어느 세션의 관측치인지는 수집 시각의 세션이 아니라 그 저장본이 담은 자료의 세션
+     * ({@link KrPaperMarket#targetSession} — 수집기 {@code kr_target_session}과 같은 20:30 규칙)으로 셉니다: P 낮에 다시 저장된 저장본(1분봉 개장 봉 재요청
+     * 등)은 P−1 자료라 P를 반영한 것이 아닙니다(QA-331 — 수집 시각으로 세면 그 저장본에 P 봉이 없어 P 목표 주문을 ①이 쉬는 주문으로 보고 참이 됨). 장부가 그 관측치로 체결할 수 없는 주문(거래정지·기업행위·그날 보류 표시)은 기다리지 않습니다. 그런 대기가 남아 있으면
      * 시가 목표(그 세션 시가 주문만 봄)가 나중에 장부에 들어올 체결을 빠뜨리므로 그날은 쉽니다. 한국 책이 아니거나 상태가 없거나 달력이 모르면 거짓.
      */
     public boolean ledgerCaughtUp(String code, LocalDate session) {
@@ -238,7 +240,7 @@ public class PaperMirrorService {
                 return false;
             }
             LocalDate previous = calendar.previousTradingDay(session);
-            if (calendar.currentOrLastSession(state.lastProcessedCollectedAt()).isBefore(previous)) {
+            if (KrPaperMarket.targetSession(state.lastProcessedCollectedAt(), calendar).isBefore(previous)) {
                 return false;
             }
             Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(run));
