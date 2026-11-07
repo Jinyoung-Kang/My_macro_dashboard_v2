@@ -95,13 +95,41 @@ const STOP_TIMING: Readonly<Record<string, string>> = {
   NEXT_CLOSE: "종가 단일가 시장가",
 };
 
-/** 장중 스탑 지시의 매도 방식 — 장중 시장가·종가 단일가 시장가(15:20~15:30). 모르는 값은 받은 글자 그대로. */
+/** 장중 스탑 지시의 매도 방식 — 장중 시장가·종가 단일가 시장가(그 세션 마감 10분 전~마감 — stopWindowText). 모르는 값은 받은 글자 그대로. */
 export function stopTimingLabel(timing: string | null | undefined): string {
   if (typeof timing !== "string" || timing.trim() === "") {
     return EMPTY;
   }
   return STOP_TIMING[timing] ?? timing;
 }
+
+/** 종가 단일가 길이 — 정규장 마감 10분 전부터(텔레그램 글 ManualAccountNotices·백엔드 SessionWindows.KR_CLOSING_AUCTION과 같음). */
+const CLOSING_AUCTION_MINUTES = 10;
+
+/**
+ * 장중 스탑 지시 한 줄의 매도 창 — 그 세션 시각에서 셉니다(QA-314 — 예전에는 카드 안내가 09:10·15:20~15:30 고정이라 장 시간 변경일에 틀렸음).
+ * 종가 단일가(NEXT_CLOSE)는 기준 시각(서버 targetAt — 그 세션 마감)의 10분 전부터 마감까지('16:20~16:30' — 수능일), 장중 시장가(MARKET·AT_MINUTE)는
+ * 기준 시각 이후('10:10 이후' — 개장 10분 뒤 전에 걸린 스탑은 그 세션 첫 분). 텔레그램 글(ManualAccountNotices.stop)과 같은 시각입니다. 기준 시각이나
+ * 방식을 모르면 "—"(시각을 지어내지 않음).
+ */
+export function stopWindowText(item: Pick<IsaStopInstruction, "timing" | "targetAt">): string {
+  const at = openClock(item.targetAt);
+  if (at === null) {
+    return EMPTY;
+  }
+  if (item.timing === "NEXT_CLOSE") {
+    const minutes = (Number(at.slice(0, 2)) * 60 + Number(at.slice(3, 5)) - CLOSING_AUCTION_MINUTES + 24 * 60) % (24 * 60);
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}~${at}`;
+  }
+  return item.timing === "MARKET" || item.timing === "AT_MINUTE" ? `${at} 이후` : EMPTY;
+}
+
+/**
+ * 장중 스탑 카드 아래 안내 — 시각은 줄마다의 매도 창(stopWindowText)이 그 세션 시각으로 적으므로 여기에는 고정 시각을 넣지 않습니다(QA-314).
+ */
+export const STOP_GUIDE =
+  "장중 시장가는 알림을 받으면 바로(개장 10분 뒤 전에 걸린 스탑은 그 시각 이후), 종가 단일가는 마감 10분 전부터 마감까지 시장가로 매도하세요 — "
+  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 다르게 매매했으면 장부의 그 자동 기록 행을 고치세요.";
 
 const STOP_NOTE: Readonly<Record<string, string>> = {
   "not-notified": "마감까지 알리지 못해 건너뜀",

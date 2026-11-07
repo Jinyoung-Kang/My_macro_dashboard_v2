@@ -53,7 +53,9 @@ import {
   toNumber,
   stopNoteLabel,
   stopNotifiedText,
+  STOP_GUIDE,
   stopTimingLabel,
+  stopWindowText,
   targetClock,
   tradeGuide,
   unavailableText,
@@ -498,6 +500,18 @@ describe("개장 10분 뒤 시각 맞추기·장중 스탑 지시(ADR 0033 초�
     expect(stopNoteLabel(null)).toBe("—");
     expect(stopNotifiedText({ notifiedAt: "2026-11-09T11:30:10+09:00" })).toBe("알림 11/09 11:30");
     expect(stopNotifiedText({ notifiedAt: null })).toBe("보내기 전");
+  });
+
+  // QA-314: 매도 창은 그 줄의 기준 시각(서버 targetAt)에서 셈 — 장 시간 변경일(2026-11-19 10:00~16:30)도 그날 시각, 고정 09:10·15:20~15:30이 아님.
+  it("stopWindowText — 종가 단일가는 마감 10분 전~마감, 장중 시장가는 기준 시각 이후, 모르면 '—'", () => {
+    expect(stopWindowText({ timing: "NEXT_CLOSE", targetAt: "2026-11-06T15:30:00+09:00" })).toBe("15:20~15:30");
+    expect(stopWindowText({ timing: "NEXT_CLOSE", targetAt: "2026-11-19T07:30:00Z" })).toBe("16:20~16:30");
+    expect(stopWindowText({ timing: "AT_MINUTE", targetAt: "2026-11-19T01:10:00Z" })).toBe("10:10 이후");
+    expect(stopWindowText({ timing: "AT_MINUTE", targetAt: "2026-11-09T09:10:00+09:00" })).toBe("09:10 이후");
+    expect(stopWindowText({ timing: "MARKET", targetAt: "2026-11-09T11:32:00+09:00" })).toBe("11:32 이후");
+    expect(stopWindowText({ timing: "MARKET", targetAt: null })).toBe("—");
+    expect(stopWindowText({ timing: "NEW", targetAt: "2026-11-09T11:32:00+09:00" })).toBe("—");
+    expect(STOP_GUIDE).not.toMatch(/\d{2}:\d{2}/);
   });
 });
 

@@ -29,6 +29,7 @@ import {
   sessionLabel,
   sessionStatusLabel,
   sideLabel,
+  STOP_GUIDE,
   symbolText,
   targetClock,
   tradeGuide,
@@ -391,9 +392,7 @@ function StartedBody({
         >
           <div className="flex flex-col gap-3">
             <IsaStopInstructionsTable rows={stops} />
-            <p className="text-xs leading-relaxed text-text-3">
-              장중 시장가는 알림을 받으면 바로(개장 10분 전이면 09:10 이후), 종가 단일가는 15:20~15:30에 시장가로 매도하세요. 다르게 매매했으면 장부의 그 자동 기록 행을 고치세요.
-            </p>
+            <p className="text-xs leading-relaxed text-text-3">{STOP_GUIDE}</p>
           </div>
         </Card>
       )}
