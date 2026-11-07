@@ -12,6 +12,7 @@ import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.TransientDataAccessResourceException;
@@ -761,6 +762,56 @@ class PaperIntradayJobTest {
         assertThat(second.watch()).containsExactly("BBB");
         assertThat(second.requestedByDecisionId()).isEqualTo(decision(PaperBooks.CLAUDE, 1).id());
         assertThat(second.status()).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+    }
+
+    @Test
+    @Disabled("QA-309 재현 — 수정 전에는 nextCheckpoint가 다음 순번만 보고 그대로 남는 셋째 예약을 보지 않아, 셋째 뒤·셋째와 20분 안 시각으로 둘째를 바꿈"
+            + "(순번 순 ≠ 시각 순, 두 호출 창이 겹침). fix(QA-309)에서 켭니다")
+    @DisplayName("QA-309: 세 예약(10:00·12:00·13:00, 세션당 3) — 첫 판단의 nextCheckpoint는 둘째만 대신하므로 그대로 남는 셋째(13:00)보다 20분 이상 앞이어야 함. "
+            + "셋째 뒤(13:10·13:30)·셋째와 20분 안(12:45)은 버리고 행은 그대로(순번 순 = 시각 순·간격 20분), 12:40은 받음. 패킷 nextCheckpoint의 끝은 "
+            + "셋째 − 20분(12:40)이고 그대로 남는 예약(laterReserved)이 실림")
+    void nextCheckpointKeepsTheLaterReservation() {
+        ((ObjectNode) store.settings.body()).put(FreeTimingSettings.US_INTRADAY_MAX, 3);
+        plan(PaperBooks.CLAUDE, 2, LocalTime.of(12, 0), "HOURLY", List.of(), morning1, false);
+        plan(PaperBooks.CLAUDE, 3, LocalTime.of(13, 0), "HOURLY", List.of(), morning1, false);
+        answer = ok(reply("KEEP", next("13:10", "HOURLY", "[]")));
+        PaperIntradayJob job = job(true);
+        runAt(job, T.plus(Duration.ofMinutes(3)));
+
+        JsonNode options = MAPPER.readTree(sent.get(0)[1]).get("1_basis").get("nextCheckpoint");
+        assertThat(options.get("available").asBoolean()).isTrue();
+        assertThat(options.get("firstEt").asString()).isEqualTo("10:20");
+        assertThat(options.get("lastEt").asString()).as("그대로 남는 셋째 13:00 − 20분").isEqualTo("12:40");
+        assertThat(options.get("replaces").toString()).isEqualTo("{\"atEt\":\"12:00\",\"origin\":\"RESERVED\"}");
+        assertThat(options.get("laterReserved").toString()).isEqualTo("{\"atEt\":\"13:00\",\"origin\":\"RESERVED\"}");
+        JsonNode view = decision(PaperBooks.CLAUDE, 1).response().path("intradayPlan");
+        assertThat(view.path("planned").size()).as("셋째 뒤 — 버림").isZero();
+        assertThat(view.path("rejected").get(0).path("reason").asString()).startsWith("CHECKPOINT_INVALID").contains("13:00");
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, E)).extracting(p -> p.slot() + " " + p.status() + " " + p.atLocal())
+                .containsExactly("1 DONE 10:00", "2 PLANNED 12:00", "3 PLANNED 13:00");
+
+        // 계좌2 — 셋째와 20분 안(12:45)도 버림.
+        plan(PaperBooks.CLAUDE2, 1, TEN, "HOURLY", List.of(), morning2, false);
+        plan(PaperBooks.CLAUDE2, 2, LocalTime.of(12, 0), "HOURLY", List.of(), morning2, false);
+        plan(PaperBooks.CLAUDE2, 3, LocalTime.of(13, 0), "HOURLY", List.of(), morning2, false);
+        answer = ok(reply("KEEP", next("12:45", "HOURLY", "[]")));
+        runAt(job, T.plus(Duration.ofMinutes(4)));
+        JsonNode close = decision(PaperBooks.CLAUDE2, 1).response().path("intradayPlan");
+        assertThat(close.path("planned").size()).isZero();
+        assertThat(close.path("rejected").get(0).path("reason").asString()).startsWith("CHECKPOINT_INVALID").contains("13:00");
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE2, E)).extracting(p -> p.slot() + " " + p.status() + " " + p.atLocal())
+                .containsExactly("1 DONE 10:00", "2 PLANNED 12:00", "3 PLANNED 13:00");
+
+        // 계획 쓰기 규칙만(같은 행에서): 셋째 − 20분(12:40)은 받고, 셋째 20분 뒤보다 늦은 13:30도 버림(간격 검사만으로는 못 거름).
+        IntradayPlanner planner = new IntradayPlanner(store);
+        Instant now = T.plus(Duration.ofMinutes(5));
+        IntradayPlanner.Plan edge = planner.next(ClaudeBookProfile.US_CLAUDE_FT, MAPPER.readTree("{\"nextCheckpoint\":"
+                + next("12:40", "HOURLY", "[]") + "}"), E, 1, UsPaperMarket.INSTANCE.calendar(), java.util.Set.of("AAA"), 3, now, MAPPER);
+        assertThat(edge.verdict().accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(12, 40));
+        IntradayPlanner.Plan after = planner.next(ClaudeBookProfile.US_CLAUDE_FT, MAPPER.readTree("{\"nextCheckpoint\":"
+                + next("13:30", "HOURLY", "[]") + "}"), E, 1, UsPaperMarket.INSTANCE.calendar(), java.util.Set.of("AAA"), 3, now, MAPPER);
+        assertThat(after.verdict().accepted()).isEmpty();
+        assertThat(after.verdict().rejected()).extracting(IntradayRequest.Rejected::reason).singleElement().asString().contains("13:00");
     }
 
     // ------------------------------------------------------------------ 재시도 없음
