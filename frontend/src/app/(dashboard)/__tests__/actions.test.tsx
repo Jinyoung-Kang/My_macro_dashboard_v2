@@ -84,19 +84,29 @@ afterEach(() => {
 });
 
 describe("AI 엔진 테스트", () => {
+  // QA-329: 호출 버튼은 첫 그림부터 있고(꺼진 채) 엔진 목록(enabled)이 와야 켜짐 — findByRole은 꺼진 버튼을 바로 돌려줘, 병렬 부하에서 목록이 오기 전에
+  // 누르면 클릭이 무시되어 apiPost 0회로 가끔 실패했음(QA-326과 같은 부하 경합). 켜질 때까지 기다린 뒤 누르고, 부름·'호출 중…'도 waitFor로 확인.
+  async function enabledCallButton(): Promise<HTMLButtonElement> {
+    const button = (await screen.findByRole("button", { name: "선택 모델 호출" })) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+    return button;
+  }
+
   it("누르면 선택한 엔진·프롬프트로 부르고, 그동안 '호출 중…'", async () => {
     const reply = deferred<unknown>();
     api.apiPost.mockReturnValue(reply.promise);
     render(<AiEngineSection />);
-    const button = await screen.findByRole("button", { name: "선택 모델 호출" });
+    const button = await enabledCallButton();
 
     fireEvent.click(button);
 
-    expect(api.apiPost).toHaveBeenCalledWith(
-      "/api/ai/test?engineId=auto&prompt=" +
-        encodeURIComponent("한국어로 한 문장만 답하십시오: 지금 연결이 정상인지 알려 주세요."),
-    );
-    expect((screen.getByRole("button", { name: "호출 중…" }) as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => {
+      expect(api.apiPost).toHaveBeenCalledWith(
+        "/api/ai/test?engineId=auto&prompt=" +
+          encodeURIComponent("한국어로 한 문장만 답하십시오: 지금 연결이 정상인지 알려 주세요."),
+      );
+      expect((screen.getByRole("button", { name: "호출 중…" }) as HTMLButtonElement).disabled).toBe(true);
+    });
     await act(async () => reply.resolve({ status: true, response: "정상입니다", provider: "cerebras", latencyMs: 120, pipelineStep: "직접" }));
     expect(await screen.findByText("정상입니다")).toBeTruthy();
     expect((screen.getByRole("button", { name: "선택 모델 호출" }) as HTMLButtonElement).disabled).toBe(false);
@@ -106,7 +116,7 @@ describe("AI 엔진 테스트", () => {
     api.apiPost.mockRejectedValue(new Error("HTTP 502 — 엔진 응답 없음"));
     render(<AiEngineSection />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "선택 모델 호출" }));
+    fireEvent.click(await enabledCallButton());
 
     expect(await screen.findByText("HTTP 502 — 엔진 응답 없음")).toBeTruthy();
   });
@@ -118,7 +128,7 @@ describe("AI 엔진 테스트", () => {
     });
     render(<AiEngineSection />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "선택 모델 호출" }));
+    fireEvent.click(await enabledCallButton());
 
     expect(await screen.findByText("Anthropic — Claude Haiku 5.5 API Key 누락")).toBeTruthy();
     expect(screen.getByText(/'자동 탐색'을 고르면/)).toBeTruthy();
