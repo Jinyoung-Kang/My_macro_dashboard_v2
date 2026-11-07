@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -85,8 +86,57 @@ class StopWatchFallbackTest {
                     null, et(TUE, 11, 0).plusSeconds(21))));
         }
 
+        /** {@code ticker}를 09:30부터 {@code until}(봉 시작)까지 99로 지켜본 감시 저장본 — 받은 시각 {@code fetchedAt}, Yahoo 전일 종가 {@code prevClose}. */
+        private void watchedUntil(String ticker, Instant until, Instant fetchedAt, double prevClose) {
+            Map<Instant, Double> bars = new LinkedHashMap<>();
+            for (Instant at = et(TUE, 9, 30); !at.isAfter(until); at = at.plus(Duration.ofMinutes(1))) {
+                bars.put(at, 99.0);
+            }
+            ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("fetchedAt", fetchedAt.toString());
+            payload.putObject("tickers").set(ticker, StopWatchTest.usEntry(TUE, bars, 99.0, prevClose));
+            when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
+                    null, fetchedAt.plusSeconds(1))));
+        }
+
+        /** 16:15 ET 확정 종가 관측치(그날 종가 90 ≤ 스탑가 92)를 16:17 시계의 장부로 처리합니다. */
+        private Outcome closeObservation() {
+            PaperLedgerService closing = new PaperLedgerService(store, marketData, MAPPER,
+                    new PaperCheckpointJobTest.MovableClock(et(TUE, 16, 17)));
+            return closing.process(quotes(et(TUE, 16, 15), bar("AAA", MON, 100.0, TUE, 90.0)));
+        }
+
         private List<Order> stops() {
             return store.orders.values().stream().filter(o -> PaperBooks.SOURCE_STOP.equals(o.source())).toList();
+        }
+
+        @Test
+        @Disabled("QA-305 재현 — 수정 전에는 16:15 관측치가 기준일을 그날로 옮긴 뒤 덮음 판정이 장부 전일 종가 없이 가드를 봐 불일치 가드가 빠지고, 덮음으로 종가 스탑을 건너뜀. fix(QA-305)에서 켭니다")
+        @DisplayName("ON — 감시가 하루 종일 갭 가드로 뺀 종목(Yahoo 전일 종가 103 ≠ 장부 전일 종가 100)은 16:15 확정 종가 관측치에서도 덮지 않아 종가 스탑(QA-305)")
+        void guardedTickerKeepsTheCloseFallback() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 103.0);
+
+            closeObservation();
+
+            assertThat(stops()).as("관측치 처리가 기준일을 그날로 옮긴 뒤에도 감시 작업이 본 기준값(월 종가 100)으로 가드를 판정")
+                    .singleElement().satisfies(o -> {
+                        assertThat(o.timing()).isEqualTo(PaperBooks.IMMEDIATE);
+                        assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+                        assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK);
+                    });
+        }
+
+        @Test
+        @DisplayName("ON — 가드를 통과해 15:55 격자까지 지켜본 종목은 16:15 확정 종가 관측치에서 감시에 맡김(대조)")
+        void watchedTickerIsLeftToTheWatchAtTheClose() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 100.0);
+
+            Outcome outcome = closeObservation();
+
+            assertThat(stops()).isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("장중 감시에 맡김"));
         }
 
         @Test
