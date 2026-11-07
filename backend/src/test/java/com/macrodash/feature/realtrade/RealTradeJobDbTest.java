@@ -23,6 +23,7 @@ import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -911,6 +912,81 @@ class RealTradeJobDbTest {
         run("09:10:40");
         run("09:11:20");
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).filteredOn(x -> x.startsWith("SELL")).hasSize(1);
+    }
+
+    // ------------------------------------------------------------------ 회전율 멈춤과 스탑(QA-302)
+    /** 스탑이 걸린 계좌 — A 100주 × 50,000(E의 50%)·B 200주 × 20,000(40%)·현금 1,000,000, E = 10,000,000. 현금성은 10,000원(상한가 13,000). */
+    private void stoppedAccount() {
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}, B, new String[]{"200", "20000"}), Map.of(CASH_LIKE, "10000"));
+    }
+
+    @Test
+    @Disabled("QA-302 재현 — 수정 전에는 스탑 매도와 그 대금의 현금성 매수가 회전율(180%)에 들어가 이상 멈춤. fix(QA-302)에서 켭니다")
+    @DisplayName("QA-302: 시각 맞추기 날 09:10 대체 스탑(A·B, E의 90%)과 그 대금으로 사는 현금성 매수는 회전율 멈춤을 걸지 않음 — sync_pending이 꺼져 있어도 스탑 매도가 나가고 켜짐 유지")
+    void qa302StopSellsDoNotTripTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(CASH_LIKE, 90.0), List.of(), List.of(661L, 662L));
+        stoppedAccount();
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A, B));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(661, A, "AT_MINUTE", SYNC_AT),
+                stopDue(662, B, "AT_MINUTE", SYNC_AT)));
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + B + " DAY 200", "SELL " + A + " DAY 100", "BUY " + CASH_LIKE + " DAY 76");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+    }
+
+    @Test
+    @Disabled("QA-302 재현 — 수정 전에는 시가 묶음이 흡수한 NEXT_OPEN 스탑(E의 90%)이 회전율에 들어가 이상 멈춤. fix(QA-302)에서 켭니다")
+    @DisplayName("QA-302: 시가 맞추기 날 묶음이 흡수한 NEXT_OPEN 스탑도 회전율 멈춤을 걸지 않음 — OPG 매도가 나가고 켜짐 유지")
+    void qa302OpgAbsorbedStopsDoNotTripTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        targets(Map.of(CASH_LIKE, 90.0), List.of(671L, 672L));
+        stoppedAccount();
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A, B));
+
+        run("08:51");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + B + " OPG 200", "SELL " + A + " OPG 100", "BUY " + CASH_LIKE + " OPG 76");
+    }
+
+    @Test
+    @DisplayName("QA-302 대조: 스탑이 없으면 같은 목표(매도 90% + 현금성 매수 90%)는 그대로 회전율 이상 멈춤 — 묶음·주문 없음")
+    void qa302NonStopSellsStillTripTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(CASH_LIKE, 90.0), List.of(), List.of());
+        stoppedAccount();
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-302 재현 — 수정 전에는 스탑 몫까지 세어 회전율이 180%. fix(QA-302)에서 켭니다")
+    @DisplayName("QA-302: 스탑 대금으로 보는 현금성 매수는 스탑 매도 금액까지만 — 스탑 A(50%) + 스탑 아닌 B 매도(40%) + 현금성 매수(90%)는 80%로 이상 멈춤")
+    void qa302StopFundedCashLikeOnlyUpToStopProceeds() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(CASH_LIKE, 90.0), List.of(), List.of(661L));
+        stoppedAccount();
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A));
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        assertThat(cfg().haltDetail().path("turnoverPct").decimalValue()).as("180% − 스탑 50% − 현금성 중 스탑 대금 50%")
+                .isEqualByComparingTo("80.00");
+        verify(client, never()).placeOrder(anyString());
     }
 
     @Test
