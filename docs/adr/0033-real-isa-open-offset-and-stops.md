@@ -15,7 +15,7 @@
     묶음이 실패해도 스탑(`stopSellsWhenBatchFails`)·묶음과 스탑이 더 팔지 않음(`batchAndStopDoNotOversell`), 스탑은 회전율 멈춤에 세지 않음(`qa302*` — 스탑이 아닌 몫은 그대로 멈춤
     `qa302NonStopSellsStillTripTurnover`, `RealTradePlannerTest.turnoverWithoutStops`), 미룬 채 끝난 스탑은 놓침·구조적으로 닫은 스탑은 막힘(`qa303*`), 대기 STOP 종목 매수 없음(`pendingStopBlocksBuys`·`pendingStopBlocksDeferredRetry`),
     장부 밀림 날 스탑만(`ledgerBehindStopsOnly`)·장 시간 불일치 날 스탑 없음(`hoursMismatchNoStops`)), `RealTradeServiceDbTest.previewUsesTimedSync`, `RealTradeNoticesTest`(건수만),
-    `PaperMirrorServiceTest`(`targetsAtIncludesTimedUpToT`·`targetsAtMatchesOpenTargetsAndCashLikeLast`·`dailySyncAtForRules`·`dailySyncAtLateOpenDay`·`dailySyncAtForClaude`·`pendingStopSymbols`·`ladderPrices`).
+    `PaperMirrorServiceTest`(`targetsAtIncludesTimedUpToT`·`targetsAtMatchesOpenTargetsAndCashLikeLast`·`dailySyncAtForRules`·`dailySyncAtLateOpenDay`·`dailySyncAtForClaude`·`pendingStopSymbols`·`staleStopCountsForTheNextSession`·`ladderPrices`).
   - ISA: `ManualAccountJobDbTest`(시각 맞추기 지시·자동 기록·open-fallback, 스탑 지시와 즉시 알림·흡수한 STOP은 지시 없음·종가 STOP 글·마감까지 못 알린 지시·자동 기록 순서·다음 날 07:00 포기·30초 주기),
     `ManualAccountNoticesTest.timedSyncText`·`stopTexts`(금액 글자 없음), `ManualAccountStopStoreDbTest`(`readyRequiresV28`·`oneInstructionPerPaperOrder`·`checks`·**`oldStatementsStillWork`**(옛 코드의 `ON CONFLICT` 문장이 V28 뒤에도 통과)·`ledgerLinksAndCascade`),
     화면 `isa.test.ts`·`isaScreen.test.tsx`·`realtrade.test.ts`·`realTradeScreen.test.tsx`.
@@ -74,14 +74,18 @@
   창 3분 전까지 주기마다 시각을 다시 세고, 따라 하는 책·세대가 바뀌면 다시 센다. 묶음 종류·주문 용도는 시가 뒤 마무리와 같다(DB CHECK 그대로). 기준 시각이 T 이하인 모의 주문은 묶음 몫이라
   따로 따라 하지 않는다 — 묶음을 만들지 못하고 창을 넘기면 그 주문들도 놓침이다.
 - **목표**(`PaperMirrorService.targetsAt`): 보유 + 그 세션 시가 주문 + 기준 시각이 T 이하인 시각 지정 주문. 시각 지정 STOP(`MARKET`·`AT_MINUTE`·`NEXT_CLOSE`)은 비중에 반영하되 흡수하지 않고
-  `stopOrderIds`로 따로 돌려준다. 시가 경로(`openTargets`)는 바이트까지 그대로다. 옛 `NEXT_OPEN` STOP(감시를 켜지 않은 한국 밤 스탑)은 따로 갈 길이 없어 지금처럼 묶음이 흡수한다.
+  `stopOrderIds`로 따로 돌려준다. 시가 경로(`openTargets`)는 아래 '목표 세션이 지난 대기 STOP'만 더 본다. 옛 `NEXT_OPEN` STOP(감시를 켜지 않은 한국 밤 스탑)은 따로 갈 길이 없어 지금처럼 묶음이 흡수한다.
+- **목표 세션이 지난 대기 STOP**(QA-328): 그 세션 1분봉을 기다리거나 장부가 보류해(기업행위·그날 봉 없음·거래정지) 목표 세션이 지났는데도 대기인 STOP 매도(만료 전)는 다음 세션들의
+  시가·시각 맞추기 목표와 그 주문 뒤 비중에서 그 종목을 개장에 팔렸다고 보고(비중 0, 흡수하지 않고 `stopOrderIds`), 대기 STOP 종목(`pendingStopSymbols`)에도 넣는다 — 실제 계좌는
+  그 세션에 이미 따라 팔았는데 장부 보유대로 다음 묶음이 다시 사지 않게. 장중 주문 목록(`dueOrders`)·선점에는 넣지 않아 스탑 매도 경로가 다시 팔지 않고, 남은 실제 보유는 묶음이 목표 0으로 판다.
+  1분봉을 기다리는 경우는 장부 밀림(`ledgerCaughtUp=false`)으로 그날 묶음이 쉬므로, 실제로 걸리는 것은 장부가 기다리지 않는 보류다.
 - **스탑 매도**: 비중을 셈하지 않고(가격을 몰라도) 그때 다시 읽은 정수 보유 전량을 매도 가능 수량·1건 상한까지 판다. 창은 [max(T, 장중 시작, 정규장 시작 + 10분), min(시작 + 3분, 장중 끝)]이고
   종가 STOP은 그날 종가 창이다. 같은 뿌리 최대 2회 — 시도 1이 체결이 있는 채 끝났으면 새로 읽은 수량으로 시도 2를 보낸다(보유가 남았을 때만). 진행 중인 이 기능의 주문이 있으면 다음 주기로 미룬다.
   손실 한도로 매수가 멈춘 동안에도 판다. 장부가 밀린 날(`ledgerCaughtUp=false`)에도 스탑만은 보내고(묶음·장중 따라 하기 없음), 토스 장 시간이 모의 달력과 다른 날은 스탑도 보내지 않는다.
   이벤트는 `STOP_SELL`(보냄·막힘·놓침 건수만) — 놓침에는 하루 한도로 미룬 채 창이 끝난 뿌리도 들고(창 요약은 미룸으로만 셈), 막힘에는 토스 거절·안 보냄과 팔 보유가 있는데
   구조적 건너뜀(매도 가능 수량 0·가격 모름 등)으로 그날 닫은 뿌리가 든다(QA-303 — 뿌리마다 한 번). 창이 끝난 뿌리는 그 주기에 한 번 읽은 실제 계좌에 그 종목 정수 보유가 없으면
   놓침이 아니고(묶음이 팔았거나 처음부터 없음), 센 뿌리 번호를 이벤트 근거(`roots`)에 남겨 백엔드를 다시 띄워도 같은 놓침을 다시 알리지 않는다(QA-321).
-- **매수 직전 확인**: 대기 STOP 종목(`PaperMirrorService.pendingStopSymbols`)을 매수마다 DB에서 다시 읽고, 걸리면 건너뜀 사유 `pending-stop`으로 창 요약에 센다.
+- **매수 직전 확인**: 대기 STOP 종목(`PaperMirrorService.pendingStopSymbols` — 목표 세션이 지난 만료 전 STOP 포함, QA-328)을 매수마다 DB에서 다시 읽고, 걸리면 건너뜀 사유 `pending-stop`으로 창 요약에 센다.
 - **ISA 지시**: `manual_instructions`에는 시각 칸이 없어 다음 지시의 시각을 지시 근거와 세션 상세의 `targetAt`에 둔다(마이그레이션 없음). 그 지시 목표에 반영된 시각 지정 STOP은 세션 상세의
   `coveredStopOrderIds`에 적고 따로 스탑 지시를 만들지 않는다. 자동 기록은 그 시각이 지난 뒤 그 시각의 1분봉 사다리 값으로 하고, 창이 없는 종목은 그 세션 시가로 어림한다(`open-fallback`).
   STOP은 시가 날·시각 맞추기 날 모두 '시가 밖 시점 주문'(`timed-orders`) 판정에서 빼므로 밤 대체 STOP이 ISA 지시를 막지 않는다. 앞 세션에 알린 스탑 지시가 아직 적히지 않았으면 다음 지시를 만들지 않는다

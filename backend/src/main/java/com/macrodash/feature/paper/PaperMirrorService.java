@@ -49,6 +49,10 @@ import java.util.function.Supplier;
  *   <li><b>시각 맞추기</b>(ADR 0033 — {@link #dailySyncAt}·{@link #targetsAt}·{@link #pendingStopSymbols}): 따라 하는 책이 개장 10분 뒤 지정
  *       시각으로 체결하면 실제 매매·ISA가 시가 단일가 대신 그 시각 시장가로 맞추는 시각과 그 시각까지의 목표(시각 지정 STOP은 흡수하지 않음), 매수 전에
  *       뺄 대기 STOP 종목. ISA 자동 기록의 사다리 가격은 {@link #pricesAt}·{@link #orderLadderPrice}.</li>
+ *   <li><b>목표 세션이 지난 대기 STOP</b>(QA-328 — {@link #staleStop}): 그 세션 자료를 기다리거나 장부가 보류해 아직 대기인 지난 STOP 매도(만료 전)는 다음
+ *       세션들의 목표에서 그 종목 비중 0(흡수하지 않고 {@link OpenTargets#stopOrderIds})·그 주문 뒤 비중·대기 STOP 종목에 듭니다 — 실제 계좌는 그 세션에
+ *       이미 따라 팔았고, 모의는 뒤에 그 세션 값으로 체결합니다. 장중 주문({@link #dueOrders})·선점에는 넣지 않아 스탑 매도 경로가 다시 팔지 않고, 남은 실제
+ *       보유는 일일 맞추기 묶음이 목표 0으로 팝니다.</li>
  *   <li><b>장중 주문</b>({@link #dueOrders}·{@link #weightAfter}): 그 세션의 시각 지정 대기 주문과, 그 주문 기준 시각까지의 모든 대기 주문(시가 포함)을
  *       {@link KrExpectedState}와 같은 가격 고르기로 체결했다고 본 뒤의 그 종목 비중.</li>
  *   <li><b>선점</b>({@link #claim}): 장부 잠금({@link PaperLedgerService#exclusively}) 안에서 그 주문이 아직 대기이고 따라 할 시각이 지났는지 다시 보고 받은
@@ -100,7 +104,7 @@ public class PaperMirrorService {
             stopOrderIds = List.copyOf(stopOrderIds);
         }
 
-        /** 시각 지정 STOP을 따로 두지 않는 목표(시가 목표 — {@link #openTargets}). */
+        /** STOP을 따로 두지 않는 목표(흡수하지 않는 STOP이 없을 때). */
         public OpenTargets(String book, LocalDate session, Map<String, Double> weightPct, Map<String, Double> price, double nav,
                            double cash, List<Long> absorbedOrderIds, List<Long> unpricedOrderIds) {
             this(book, session, weightPct, price, nav, cash, absorbedOrderIds, unpricedOrderIds, List.of());
@@ -511,6 +515,7 @@ public class PaperMirrorService {
      * 시가 맞추기의 목표(명세 §3.1, {@link OpenTargets}) — 장부 상태·보유 + 목표 세션이 {@code session}이고 그 세션 시가에 체결될 대기 주문(시가 주문 —
      * 출처를 거르지 않음, 그 세션 개장 뒤에 만든 주문은 장부도 다음 시가에 체결하므로 뺌, 만료된 것도 뺌)을 마지막 가격(밤 관측치의 종가 → 보유의 마지막
      * 평가 가격)으로 체결했다고 본 장부. 순서는 장부 시가 체결과 같이 매도 먼저, 매수는 현금성(설정 {@code kr.cashLikeTickers})을 마지막에.
+     * 목표 세션이 지난 대기 STOP(QA-328)은 그 종목 비중 0으로 보되 흡수하지 않습니다({@link OpenTargets#stopOrderIds} — {@link #targets}).
      * 한국 책이 아니거나 상태가 없거나 거래일이 아니거나 달력이 모르거나 예상 순자산이 0 이하이면 empty — 빈 목표로 '모두 팔기'를 계산하지 않게.
      */
     public Optional<OpenTargets> openTargets(String code, LocalDate session) {
@@ -521,7 +526,8 @@ public class PaperMirrorService {
     /**
      * 목표 계산의 본체 — 장부 상태·보유 + 그 세션 시가 주문({@link #openOrders}) + {@code cutoff}가 있으면 그 세션의 시각 지정 대기 주문 가운데 기준 시각이
      * {@code cutoff} 이하인 것(장부 체결 조건 ⑤를 지나는 것만 — 현금성 매수는 같은 시각 마지막)을 마지막 가격으로 체결했다고 본 장부. {@code cutoff}가
-     * null이면 시가 주문만 봅니다({@link #openTargets} — 시가 맞추기).
+     * null이면 시가 주문만 봅니다({@link #openTargets} — 시가 맞추기). 어느 쪽이든 목표 세션이 지난 대기 STOP({@link #staleStops} — QA-328)은 그 세션
+     * 개장에 팔렸다고 보고 {@link OpenTargets#stopOrderIds}에 둡니다.
      */
     private Optional<OpenTargets> targets(String code, LocalDate session, Instant cutoff) {
         if (krBook(code) == null) {
@@ -539,14 +545,16 @@ public class PaperMirrorService {
             }
             List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
             Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
+            Map<String, Position> held = new TreeMap<>();
+            Map<String, Double> price = new HashMap<>();
+            ledgerPositions(store.positions(code), held, price);
             Map<Long, Instant> targets = new HashMap<>();
             List<Order> due = openOrders(pending, session, run, targets);
             if (cutoff != null) {
                 due.addAll(timedOrders(pending, session, run, cutoff, targets));
             }
-            Map<String, Position> held = new TreeMap<>();
-            Map<String, Double> price = new HashMap<>();
-            ledgerPositions(store.positions(code), held, price);
+            List<Order> stale = staleStops(pending, session, calendar, held, targets);
+            due.addAll(stale);
             ExpectedState.State expected = ExpectedState.simulate(state.cash(), held, price, new ArrayList<>(due), targets, session,
                     cutoff != null ? cutoff : calendar.openInstant(session), lastPrice(quotes));
             if (!(expected.nav() > 0)) {
@@ -560,9 +568,10 @@ public class PaperMirrorService {
                 }
             }
             // 시각 지정 STOP(장중 감시·밤 대체)은 비중에는 반영하되 흡수하지 않음 — 실제 매매의 스탑 매도 경로가 따로 팖(통합 검토 R3). 시가 STOP은
-            // 따로 팔 길(장중 따라 하기 목록)이 없으므로 예전처럼 흡수합니다.
-            List<Long> stops = due.stream().filter(o -> !PaperBooks.NEXT_OPEN.equals(o.timing()) && PaperBooks.SOURCE_STOP.equals(o.source())
-                    && PaperBooks.SELL.equals(o.side())).map(Order::id).sorted().toList();
+            // 따로 팔 길(장중 따라 하기 목록)이 없으므로 예전처럼 흡수합니다. 목표 세션이 지난 STOP(QA-328)은 시점과 상관없이 흡수하지 않습니다 — 그 세션
+            // 묶음·스탑 경로가 이미 따라 했고, 이 세션 묶음은 목표 0으로 남은 보유만 팖.
+            List<Long> stops = due.stream().filter(o -> stale.contains(o) || (!PaperBooks.NEXT_OPEN.equals(o.timing())
+                    && PaperBooks.SOURCE_STOP.equals(o.source()) && PaperBooks.SELL.equals(o.side()))).map(Order::id).sorted().toList();
             List<Long> absorbed = due.stream().map(Order::id).filter(id -> !stops.contains(id)).sorted().toList();
             return Optional.of(new OpenTargets(code, session, weights, expected.price(), expected.nav(), expected.cash(), absorbed,
                     expected.unpriced(), stops));
@@ -575,8 +584,8 @@ public class PaperMirrorService {
      * 시각 맞추기의 목표(ADR 0033 결정 1·3) — 장부 상태·보유 + 그 세션 시가 주문 + 그 세션의 시각 지정 대기 주문(매시·장중 시장가·분 단위 지정 시각·종가,
      * 출처를 거르지 않음) 가운데 기준 시각이 {@code at} 이하인 것을 마지막 가격으로 체결했다고 본 비중. 같은 시각은 장부와 같이 매도 먼저, 현금성 매수
      * 마지막입니다. 시각 지정 STOP 매도는 비중에 반영하지만 {@link OpenTargets#absorbedOrderIds}에 넣지 않고 {@link OpenTargets#stopOrderIds}에 둡니다
-     * (실제 매매의 스탑 매도 경로가 따로 팖 — 묶음이 실패해도 손절이 나가게). {@code at}이 개장이고 시각 지정 주문이 없으면 {@link #openTargets}와 같은
-     * 값입니다. 빈 값의 조건은 {@link #openTargets}와 같습니다.
+     * (실제 매매의 스탑 매도 경로가 따로 팖 — 묶음이 실패해도 손절이 나가게). 목표 세션이 지난 대기 STOP도 비중 0·{@link OpenTargets#stopOrderIds}입니다
+     * (QA-328). {@code at}이 개장이고 시각 지정 주문이 없으면 {@link #openTargets}와 같은 값입니다. 빈 값의 조건은 {@link #openTargets}와 같습니다.
      */
     public Optional<OpenTargets> targetsAt(String code, LocalDate session, Instant at) {
         Objects.requireNonNull(session, "session");
@@ -653,8 +662,9 @@ public class PaperMirrorService {
     }
 
     /**
-     * 그 책의 대기 STOP 매도 가운데 목표 세션이 {@code session}인 것의 종목(ADR 0033 결정 4) — 실제 매매가 매수를 보내기 직전(묶음 재시도·마무리·장중
-     * 따라 하기) 이 종목을 뺍니다(방금 판 종목을 재시도가 다시 사지 않게 — 통합 검토 R2). 출처 STOP의 모든 시점(시가·장중 시장가·지정 시각·종가)을
+     * 그 책의 대기 STOP 매도 가운데 목표 세션이 {@code session}인 것과 목표 세션이 지났는데 아직 대기인 것(만료 전 — {@link #staleStop}, QA-328)의 종목(ADR
+     * 0033 결정 4) — 실제 매매가 매수를 보내기 직전(묶음 재시도·마무리·장중 따라 하기) 이 종목을 뺍니다(방금 판 종목을 재시도가 다시 사지 않게 — 통합
+     * 검토 R2, 지난 세션에 따라 판 종목을 장부가 그 STOP을 체결하기 전에 다시 사지 않게). 출처 STOP의 모든 시점(시가·장중 시장가·지정 시각·종가)을
      * 봅니다. 한국 책이 아니거나 달력이 모르면 빈 집합.
      */
     public Set<String> pendingStopSymbols(String code, LocalDate session) {
@@ -666,9 +676,9 @@ public class PaperMirrorService {
             TradingCalendar calendar = run().calendar();
             Set<String> out = new TreeSet<>();
             for (Order o : store.ordersByStatus(code, PaperBooks.ORDER_PENDING)) {
-                if (PaperBooks.ORDER_PENDING.equals(o.status()) && PaperBooks.SOURCE_STOP.equals(o.source())
+                if ((PaperBooks.ORDER_PENDING.equals(o.status()) && PaperBooks.SOURCE_STOP.equals(o.source())
                         && PaperBooks.SELL.equals(o.side()) && o.ticker() != null
-                        && session.equals(ExecutionAudit.targetSession(o, calendar))) {
+                        && session.equals(ExecutionAudit.targetSession(o, calendar))) || staleStop(o, session, calendar)) {
                     out.add(o.ticker());
                 }
             }
@@ -681,7 +691,8 @@ public class PaperMirrorService {
     /**
      * 목표 세션이 {@code session}인 시가 밖 대기 주문 가운데 따라 할 시각({@link DueOrder#mirrorAt})이 {@code now} 이하인 것, 따라 할 수 없는 시점의 주문은
      * 시각과 상관없이 모두(받는 쪽이 건너뜀으로 남김) — 따라 할 시각 순, 같은 시각은 매도 먼저·번호 순. 한국 책이 아니거나 달력이 모르면 빈 목록.
-     * 시가 주문은 시가 맞추기가 흡수하므로 넣지 않습니다.
+     * 시가 주문은 시가 맞추기가 흡수하므로 넣지 않습니다. 목표 세션이 지난 대기 STOP({@link #staleStop} — QA-328)도 넣지 않습니다 — 스탑 매도 경로는
+     * 그 세션에 이미 따라 했고(선점도 목표 세션 = 오늘만), 이 세션에는 목표 비중 0·매수 직전 확인으로만 들어 남은 보유는 일일 맞추기 묶음이 팝니다.
      */
     public List<DueOrder> dueOrders(String code, LocalDate session, Instant now) {
         Objects.requireNonNull(session, "session");
@@ -717,7 +728,8 @@ public class PaperMirrorService {
     }
 
     /**
-     * 그 주문 뒤 그 종목의 예상 비중(명세 §3.2, {@link WeightAfter}) — 장부 상태·보유 + 그 주문의 목표 세션 E의 시가 주문({@link #openTargets}와 같은 대상) +
+     * 그 주문 뒤 그 종목의 예상 비중(명세 §3.2, {@link WeightAfter}) — 장부 상태·보유 + 그 주문의 목표 세션 E의 시가 주문({@link #openTargets}와 같은 대상 —
+     * 목표 세션이 지난 대기 STOP은 E 개장에 팔렸다고 봄, QA-328) +
      * E의 시각 지정 대기 주문 가운데 기준 시각이 그 주문의 기준 시각 T 이하인 것(그 주문 포함, 출처를 거르지 않음)을 {@link KrExpectedState}와 같은 가격
      * 고르기({@link KrExpectedState#pricer} — 감시 저장본({@code now} 전에 받은 것) → 밤 관측치 → 보유의 마지막 평가 가격)로 체결했다고 본 장부.
      * 그 주문이 이 책의 대기 주문이 아니거나 기준 시각을 모르거나 상태가 없거나 예상 순자산이 0 이하이면 empty.
@@ -741,6 +753,9 @@ public class PaperMirrorService {
                 return Optional.empty();
             }
             List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING);
+            Map<String, Position> held = new TreeMap<>();
+            Map<String, Double> price = new HashMap<>();
+            ledgerPositions(store.positions(code), held, price);
             Map<Long, Instant> targets = new HashMap<>();
             List<Order> due = openOrders(pending, session, run, targets);
             for (Order o : pending) {
@@ -753,12 +768,10 @@ public class PaperMirrorService {
                     targets.put(o.id(), target);
                 }
             }
+            due.addAll(staleStops(pending, session, calendar, held, targets));
             JsonNode watch = reader.quietly(marketData::watchKr)
                     .filter(s -> s.collectedAt() != null && !s.collectedAt().isAfter(now)).map(Snapshot::payload).orElse(null);
             Quotes quotes = reader.quietly(() -> marketData.quotes(run)).orElse(null);
-            Map<String, Position> held = new TreeMap<>();
-            Map<String, Double> price = new HashMap<>();
-            ledgerPositions(store.positions(code), held, price);
             ExpectedState.State expected = ExpectedState.simulate(state.cash(), held, price, due, targets, session, now,
                     KrExpectedState.pricer(now, watch, quotes));
             if (!(expected.nav() > 0)) {
@@ -907,6 +920,46 @@ public class PaperMirrorService {
             out.add(o);
             boolean cashLikeBuy = PaperBooks.BUY.equals(o.side()) && run.settings().cashLike(o.ticker());
             targets.put(o.id(), cashLikeBuy ? target.plusNanos(1) : target);
+        }
+        return out;
+    }
+
+    /**
+     * 목표 세션이 {@code session} 앞인데 아직 대기인 STOP 매도인가(QA-328) — 만료 전(만료일이 없거나 {@code session} 이후)인 것만. 그 세션 1분봉을
+     * 기다리는 밤 대체 STOP, 장부가 기업행위·그날 봉 없음·거래정지로 보류한 STOP 등입니다. 실제 계좌는 그 목표 세션에 이미 따라 팔았고(묶음 목표 0·스탑
+     * 매도 경로), 모의는 뒤에 그 세션 값으로 체결합니다 — 그사이 다음 세션 묶음·매수가 장부 보유대로 그 종목을 다시 사지 않게 그 세션의 STOP으로 봅니다.
+     * 만료일이 지난 것(그 세션이 만료인 감시 STOP)은 다음 밤 처리의 만료가 닫을 뿐 체결되지 않으므로 넣지 않습니다.
+     *
+     * @throws CalendarUnavailableException 달력이 그 기준 거래일의 다음 거래일을 모름
+     */
+    private static boolean staleStop(Order o, LocalDate session, TradingCalendar calendar) {
+        if (!PaperBooks.ORDER_PENDING.equals(o.status()) || !PaperBooks.SOURCE_STOP.equals(o.source()) || !PaperBooks.SELL.equals(o.side())
+                || o.ticker() == null || (o.expiresOn() != null && o.expiresOn().isBefore(session))) {
+            return false;
+        }
+        LocalDate target = ExecutionAudit.targetSession(o, calendar);
+        return target != null && target.isBefore(session);
+    }
+
+    /**
+     * 목표 세션이 지난 대기 STOP({@link #staleStop}) 가운데 장부가 그 종목을 든 것 — 기준 시각을 그 세션 개장으로 {@code targets}에 넣습니다(같은 시각의
+     * 다른 주문보다 매도 먼저 — {@link ExpectedState#simulate}의 순서). 장부가 들지 않은 종목의 STOP은 팔 것이 없어 비중을 바꾸지 않으므로 넣지 않습니다
+     * (가격을 몰라 목표가 불완전해지지 않게).
+     */
+    private static List<Order> staleStops(List<Order> pending, LocalDate session, TradingCalendar calendar, Map<String, Position> held,
+                                          Map<Long, Instant> targets) {
+        Instant open = calendar.openInstant(session);
+        List<Order> out = new ArrayList<>();
+        for (Order o : pending) {
+            if (!staleStop(o, session, calendar)) {
+                continue;
+            }
+            Position position = held.get(o.ticker());
+            if (position == null || position.qty() <= 0) {
+                continue;
+            }
+            out.add(o);
+            targets.put(o.id(), open);
         }
         return out;
     }

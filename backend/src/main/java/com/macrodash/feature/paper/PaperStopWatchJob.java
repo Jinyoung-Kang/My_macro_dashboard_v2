@@ -317,8 +317,9 @@ public class PaperStopWatchJob {
             if (PaperBooks.SOURCE_STOP.equals(order.source()) && PaperBooks.SELL.equals(order.side())) {
                 LocalDate target = ExecutionAudit.targetSession(order, calendar);
                 if (target != null && target.isBefore(session)) {
-                    // 목표 세션이 지난 STOP(그 세션 자료를 기다림·그날 정지라 다음 관측 봉으로 넘어감 등, QA-318) — 실제 계좌는 그 세션에 이미 따라 했고 오늘
-                    // 대기 STOP으로 보지 않으므로 오늘 감시 STOP을 막지 않습니다. 둘 다 체결되면 늦은 쪽은 체결 때 보유가 없어 취소됩니다.
+                    // 목표 세션이 지난 STOP(그 세션 자료를 기다림·그날 정지라 다음 관측 봉으로 넘어감 등, QA-318) — 실제 계좌의 스탑 매도 경로는 그 세션에
+                    // 이미 따라 했고 그 STOP을 오늘 장중 주문으로 다시 팔지 않으므로(오늘은 목표 비중 0·매수 막기만 — PaperMirrorService, QA-328) 오늘 감시
+                    // STOP을 막지 않습니다. 둘 다 체결되면 늦은 쪽은 체결 때 보유가 없어 취소됩니다.
                     continue;
                 }
                 stopPending.add(order.ticker());

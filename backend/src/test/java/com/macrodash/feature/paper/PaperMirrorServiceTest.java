@@ -13,7 +13,6 @@ import com.macrodash.store.PaperStore.LedgerHold;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -586,7 +585,7 @@ class PaperMirrorServiceTest {
     }
 
     @Test
-    @DisplayName("대기 STOP 종목 — 그 세션이 목표인 출처 STOP 매도만(다음 세션 STOP·STOP 아닌 매도는 아님)")
+    @DisplayName("대기 STOP 종목 — 그 세션이 목표인 출처 STOP 매도와 목표 세션이 지난 만료 전 STOP(다음 세션 STOP·STOP 아닌 매도는 아님)")
     void pendingStopSymbols() {
         order(A, PaperBooks.SELL, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP, P, kst("2026-11-06T10:20"), null, null);
         order(B, PaperBooks.SELL, null, null, PaperBooks.AT_MINUTE, PaperBooks.SOURCE_STOP, S, kst("2026-11-06T21:30"),
@@ -597,7 +596,8 @@ class PaperMirrorServiceTest {
         store.markOrderStatus(filled, PaperBooks.ORDER_FILLED, null);
 
         assertThat(service().pendingStopSymbols(BOOK, S)).containsExactly(A);
-        assertThat(service().pendingStopSymbols(BOOK, LocalDate.of(2026, 11, 9))).containsExactly(B);
+        assertThat(service().pendingStopSymbols(BOOK, LocalDate.of(2026, 11, 9))).as("S가 목표인 A STOP도 만료 전이면 듦(QA-328)")
+                .containsExactlyInAnyOrder(A, B);
         assertThat(service().pendingStopSymbols("nope", S)).isEmpty();
     }
 
@@ -606,7 +606,6 @@ class PaperMirrorServiceTest {
     // 장부가 그 STOP을 아직 체결하지 못했으면(장부가 기다리지 않는 보류·그날 봉 없음 등으로 S 맞추기가 돌 때) S 09:10 묶음이 장부 보유대로 A를 다시
     // 사고 매수 직전 확인도 막지 않음. 뒤에 모의가 P 09:10 값으로 체결하면 실제 계좌는 다음 묶음에서 다시 팖(실제 돈 왕복).
     @Test
-    @Disabled("QA-328 재현 — 수정 전에는 목표 세션이 지난 대기 STOP이 S 목표·S 대기 STOP 종목에서 빠짐. fix(QA-328)에서 켭니다")
     @DisplayName("목표 세션이 지난 대기 STOP(P 09:10 밤 대체 STOP — 아직 대기)은 S 목표에서 그 종목 비중 0·흡수 아님(stopOrderIds), 그 주문 뒤 비중에도 들고 "
             + "S 대기 STOP 종목에 듦 — 만료된 STOP·STOP 아닌 매도는 아님, 장중 주문 목록에는 넣지 않음(QA-328)")
     void staleStopCountsForTheNextSession() {
@@ -642,7 +641,7 @@ class PaperMirrorServiceTest {
         assertThat(afterHalf.weightPct()).isZero();
 
         assertThat(service().pendingStopSymbols(BOOK, S)).containsExactly(A);
-        assertThat(service().pendingStopSymbols(BOOK, P)).containsExactly(A, C);
+        assertThat(service().pendingStopSymbols(BOOK, P)).containsExactlyInAnyOrder(A, C);
         assertThat(service().dueOrders(BOOK, S, kst("2026-11-06T15:30"))).as("스탑 매도 경로는 다시 팔지 않음 — S 장중 주문은 절반 매도뿐")
                 .extracting(DueOrder::orderId).containsExactly(halfA);
     }
