@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -226,8 +225,6 @@ class PaperStopWatchJobTest {
     }
 
     @Test
-    @Disabled("QA-319 재현 — 수정 전에는 미국 :15:20 회차가 slow 군 때문에 쉬어(정상) 10:17~10:20 사이 저장본 나이가 7분을 넘으면 '15분 넘게 늦음'을 "
-            + "남기고 그 세션 한 번짜리 표시를 써 버림. fix(QA-319)에서 켭니다")
     @DisplayName("QA-319: 저장본이 7분 넘었지만 15분 안이면(미국 :15:20 회차 쉼) 늦음을 남기지 않고, 실제로 15분 넘게 늦을 때 세션에 한 번 남김")
     void lateOnlyWhenTheSnapshotIsReallyLate() {
         settings("ON", "OFF");

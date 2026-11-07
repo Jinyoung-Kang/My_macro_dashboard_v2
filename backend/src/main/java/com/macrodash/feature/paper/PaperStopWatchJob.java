@@ -237,8 +237,12 @@ public class PaperStopWatchJob {
                 && !snapshot.collectedAt().isBefore(now.minusSeconds(Datasets.MAX_AGE_STOPWATCH))
                 && !fetched.isBefore(calendar.openInstant(session));
         if (!fresh) {
+            // 7분 신선도는 '판정할지'에만 씁니다. 늦음 기록은 저장본의 실제 나이로(QA-319) — 미국 :15:20 회차는 slow 군 때문에 쉬는 것이 정상이라 그 사이
+            // 저장본 나이가 7~10분이고, 그때 남기면 매일 거짓 기록이 되고 세션에 한 번짜리 표시를 써 버려 그 뒤의 진짜 끊김을 남기지 못했습니다.
+            boolean stale = snapshot == null || snapshot.collectedAt() == null || fetched == null
+                    || fetched.isBefore(calendar.openInstant(session)) || snapshot.collectedAt().isBefore(now.minus(LATE));
             String late = null;
-            if (!state.lateNoted && now.isAfter(firstGrid.plus(LATE)) && !now.isAfter(end)) {
+            if (stale && !state.lateNoted && now.isAfter(firstGrid.plus(LATE)) && !now.isAfter(end)) {
                 state.lateNoted = true;
                 late = "감시 저장본이 " + LATE.toMinutes() + "분 넘게 늦음(" + (snapshot == null ? "없음"
                         : "마지막 " + com.macrodash.Kst.stamp(snapshot.collectedAt())) + ") — 대체 경로(시간별·밤 스탑)가 지킴";
