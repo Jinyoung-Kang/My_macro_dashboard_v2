@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -123,6 +124,22 @@ class StopWatchFallbackTest {
                         assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED);
                         assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK);
                     });
+        }
+
+        @Test
+        @Disabled("QA-307 재현 — 수정 전에는 마지막 감시 회차(15:55:20)를 놓쳐 15:55 격자를 판정하지 못한 날도 16:15 관측치가 덮음으로 보고 종가 스탑을 건너뜀. fix(QA-307)에서 켭니다")
+        @DisplayName("ON — 마지막 감시 회차를 놓쳐 15:50:20 저장본(마지막 봉 15:49)뿐이면 16:15 확정 종가 관측치는 덮지 않아 종가 스탑(QA-307)")
+        void missedLastGridKeepsTheCloseFallback() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 49), et(TUE, 15, 50).plusSeconds(20), 100.0);
+
+            closeObservation();
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.IMMEDIATE);
+                assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK);
+            });
         }
 
         @Test
@@ -244,17 +261,23 @@ class StopWatchFallbackTest {
             return new MarketRun(KR, KR.openCalendar(KrFixtures.inputs(body, KrFixtures.holidays(2026, 2027))), store.settings);
         }
 
-        /** D1 세션을 15:15까지 지켜본 감시 저장본(갭 가드 통과). */
+        /** D1 세션을 마지막 격자 15:20까지 지켜본 감시 저장본(갭 가드 통과). */
         private void watched(String code) {
+            watched(code, kst("2026-11-03T15:20:20"), "15:05", "15:15", "15:20");
+        }
+
+        /** D1 세션의 봉(끝 라벨 {@code labels}, 93,000)을 담아 {@code fetchedAt}에 받은 감시 저장본(갭 가드 통과). */
+        private void watched(String code, Instant fetchedAt, String... labels) {
             Map<String, Double> bars = new LinkedHashMap<>();
-            bars.put("15:05", 93_000.0);
-            bars.put("15:15", 93_000.0);
+            for (String label : labels) {
+                bars.put(label, 93_000.0);
+            }
             ObjectNode entry = StopWatchTest.krEntry(D1, bars, List.of(), 99_000.0, 100_000.0, 100_000.0);
             ObjectNode payload = MAPPER.createObjectNode();
-            payload.put("fetchedAt", kst("2026-11-03T15:20:20").toString());
+            payload.put("fetchedAt", fetchedAt.toString());
             payload.putObject("tickers").set(code, entry);
             when(marketData.stopWatch(true)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload, "json", "ok",
-                    null, kst("2026-11-03T15:20:21"))));
+                    null, fetchedAt.plusSeconds(1))));
         }
 
         private Outcome nightD1(double close) {
@@ -277,6 +300,22 @@ class StopWatchFallbackTest {
 
             assertThat(stops()).isEmpty();
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("밤 스탑을 장중 감시에 맡김"));
+        }
+
+        @Test
+        @Disabled("QA-307 재현 — 수정 전에는 마지막 감시 회차(15:20:20)를 놓쳐 15:20 격자를 판정하지 못한 날도 밤 감지가 덮음으로 보고 밤 스탑을 다음 세션 감시에 맡김. fix(QA-307)에서 켭니다")
+        @DisplayName("ON — 마지막 감시 회차를 놓쳐 15:15:20 저장본(마지막 봉 끝 15:15)뿐이면 밤 감지는 덮지 않아 다음 거래일 09:10 NIGHT_FALLBACK(QA-307)")
+        void missedLastGridKeepsTheNightFallback() {
+            mode("ON", null);
+            watched("005930", kst("2026-11-03T15:15:20"), "15:05", "15:15");
+
+            nightD1(91_000);
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+                assertThat(o.targetLocal()).isEqualTo(LocalTime.of(9, 10));
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+            });
         }
 
         @Test

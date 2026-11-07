@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -272,6 +273,25 @@ class StopWatchTest {
             entry.put("isStale", true);
             assertThat(StopWatch.covered(payload("005930", entry), "005930", DAY, kst(DAY, 21, 0, 0), KR, true, null)).isFalse();
             assertThat(StopWatch.covered(null, "005930", DAY, kst(DAY, 21, 0, 0), KR, true, null)).isFalse();
+        }
+
+        @Test
+        @Disabled("QA-307 재현 — 수정 전에는 격자 끝 뒤 판정이 격자 끝 − 10분 뒤 표본만 보아, 마지막 회차를 놓쳐 마지막 격자를 판정하지 못한 날도 덮음으로 봄. fix(QA-307)에서 켭니다")
+        @DisplayName("격자 끝 뒤 판정(미국 16:15·한국 밤)은 마지막 격자(15:55 ET·15:20 KST)의 가격이 있을 때만 덮음 — 마지막 회차를 놓친 날은 덮지 않음(QA-307)")
+        void afterTheGridEndNeedsTheLastGrid() {
+            JsonNode missed = payload("AAA", usEntry(DAY, usMinutes(et(9, 30), et(15, 49), 100, 0), 100.0, 100.0));
+            assertThat(StopWatch.covered(missed, "AAA", DAY, et(15, 50), US, false, 100.0)).as("장중(격자 끝 앞)은 그대로").isTrue();
+            assertThat(StopWatch.covered(missed, "AAA", DAY, et(16, 15), US, false, 100.0))
+                    .as("15:50:20 저장본(마지막 봉 15:49)뿐 — 15:55 격자 [15:50, 15:54] 봉 없음").isFalse();
+            JsonNode judged = payload("AAA", usEntry(DAY, usMinutes(et(9, 30), et(15, 54), 100, 0), 100.0, 100.0));
+            assertThat(StopWatch.covered(judged, "AAA", DAY, et(16, 15), US, false, 100.0)).isTrue();
+
+            Map<String, Double> bars = new java.util.LinkedHashMap<>();
+            bars.put("15:12", 50_000.0);
+            bars.put("15:15", 50_000.0);
+            JsonNode krMissed = payload("005930", krEntry(DAY, bars, List.of(), 50_000.0, 50_000.0, 50_000.0));
+            assertThat(StopWatch.covered(krMissed, "005930", DAY, kst(DAY, 21, 0, 0), KR, true, null))
+                    .as("15:15:20 저장본(마지막 봉 끝 15:15)뿐 — 15:20 격자 (15:15, 15:20] 봉 없음").isFalse();
         }
     }
 
