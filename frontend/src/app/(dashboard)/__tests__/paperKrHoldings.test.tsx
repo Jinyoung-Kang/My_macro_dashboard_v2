@@ -372,6 +372,15 @@ describe("자료", () => {
     expect(within(stop).getByText(/감지 2026-11-03 잠정 종가 68,500원\(KRX\+NXT 통합가\)/)).toBeTruthy();
   });
 
+  // QA-313(리뷰 FW-2·XC-3): 주문 카드 부제가 '한국 주문은 다음 KR 거래일 시가에 체결'·'밤 잠정 종가로 감지해 다음 거래일 시가'만 적어, 규칙 계좌 체결 시점
+  // (kr.rules.timing)·장중 스탑 감시(kr.stopWatch.mode)를 켠 뒤에는 틀림.
+  it.fails("주문 카드 부제 — 체결은 '체결 시점' 칸의 시점(규칙 계좌는 kr.rules.timing), 스탑은 kr.stopWatch.mode의 두 경우", async () => {
+    render(<PaperPage market="KR" initialTab="holdings" />);
+    await screen.findByRole("table", { name: "주문" });
+    expect(screen.getByText(/규칙 계좌의 시점은 설정 kr\.rules\.timing/)).toBeTruthy();
+    expect(screen.getByText(/트레일링 스탑은 설정 kr\.stopWatch\.mode를 따릅니다/)).toBeTruthy();
+  });
+
   it("순자산 기록 — 최근 거래일부터, 잠정 줄은 작업 기록의 사유, 확정 줄은 '확정(금융위 종가)'", async () => {
     render(<PaperPage market="KR" initialTab="holdings" />);
     const table = await screen.findByRole("table", { name: "순자산 기록" });

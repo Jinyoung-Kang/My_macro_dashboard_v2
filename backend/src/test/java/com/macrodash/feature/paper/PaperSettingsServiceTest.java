@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.NewsEvents;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -414,6 +415,18 @@ class PaperSettingsServiceTest {
         assertThat(counts.intradayMax(PaperBooks.KR_CLAUDE2)).isZero();
         assertThat(counts.intradayMax(PaperBooks.RULES)).isZero();
         update("intradayMaxPerSession", 2, "kr.intradayMaxPerSession", 2);
+    }
+
+    // QA-313: 리뷰 XC-3 — 설정 설명 kr.trailingStopPct가 '밤 잠정 평가가로 감지해 다음 거래일 시가 매도'만 적어, kr.stopWatch.mode=ON을 저장한 뒤에는
+    // 장중 감시가 그 세션 안에 팔고 덮지 못한 종목만 다음 거래일 첫 분에 파는 실제 동작과 다름.
+    @Test
+    @Disabled("QA-313 재현 — 수정 전에는 kr.trailingStopPct 설명이 감시 스위치를 말하지 않음. fix(QA-313)에서 켭니다")
+    @DisplayName("QA-313 kr.trailingStopPct 설명은 kr.stopWatch.mode의 두 경우를 함께 적음 — OFF·SHADOW는 밤 감지 뒤 다음 거래일 시가, ON은 장중 감시와 덮지 못한 "
+            + "종목의 다음 거래일 첫 분")
+    void qa313KrStopDescriptionFollowsTheWatchSwitch() {
+        String description = PaperSettingKeys.find("kr.trailingStopPct").orElseThrow().description();
+        assertThat(description).contains("kr.stopWatch.mode가 OFF·SHADOW면 밤 잠정 평가가로 감지해 다음 거래일 시가 매도")
+                .contains("ON이면 장중 감시가 그 세션 안에 팔고").contains("다음 거래일 첫 분(개장 10분 뒤) 지정 시각 매도");
     }
 
     @Test
