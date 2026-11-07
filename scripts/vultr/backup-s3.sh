@@ -3,7 +3,7 @@
 # scripts/vultr/backup-s3.sh — Vultr 서버의 DB를 백업해 S3에 올립니다(ADR 0023). scripts/aws/backup-s3.sh에서 갈라냈습니다.
 #
 # cron(서버의 ubuntu 사용자, 서버 시간대는 UTC): 매일 23:00 UTC = 08:00 KST(미국 결정 뒤 — 겨울(EST)에는 결정이 07시대까지 밀릴 수 있어
-# 2026-11-08에 06:45에서 옮김, 한국 첫 주문 앞)와 일요일 14:00 UTC = 23:00 KST(주간 복기 뒤). 서버는 24시간 켜져 있습니다:
+# 2026-11-07에 06:45에서 옮김, 한국 첫 주문 앞)와 일요일 14:00 UTC = 23:00 KST(주간 복기 뒤). 서버는 24시간 켜져 있습니다:
 #   0 23 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 #   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup

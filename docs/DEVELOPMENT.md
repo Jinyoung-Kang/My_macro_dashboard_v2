@@ -539,7 +539,7 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
 
 ```bash
 # 서버(ubuntu) — 매일 23:00 UTC(08:00 KST — 미국 결정 뒤)와 일요일 14:00 UTC(23:00 KST). 서버 시간대는 UTC라 서머타임과 무관
-# (2026-11-08까지는 매일 21:45 UTC = 06:45 KST — 겨울(EST)에는 미국 결정이 07시대까지 밀릴 수 있어 옮김). 기존 줄을 지우고 다시 넣어 여러 번 돌려도 같음
+# (2026-11-07 배포 전까지는 매일 21:45 UTC = 06:45 KST — 겨울(EST)에는 미국 결정이 07시대까지 밀릴 수 있어 옮김). 기존 줄을 지우고 다시 넣어 여러 번 돌려도 같음
 (crontab -l 2>/dev/null | grep -v 'scripts/vultr/backup-s3.sh'; echo '0 23 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh'; echo '0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh') | crontab -
 journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 ```

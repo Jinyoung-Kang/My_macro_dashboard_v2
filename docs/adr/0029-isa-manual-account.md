@@ -3,7 +3,7 @@
 - 상태: 채택 (2026-11-06, 사용자 요청과 승인 — "이 프로젝트와 연동하지 않은 다른 증권계좌(현금 1,000만 원)를 한국 '규칙 계좌' 메커니즘으로 운용. [한국]-[실제 계좌] 옆에 'ISA 계좌'.
   화면을 보거나 텔레그램 알림으로 내가 직접 매매", 질문 답 "지시대로 자동 기록 + 다르면 고침 · ISA만 종목·수량 포함 · 밤 결정 직후 + 아침 08:00 · 안내 목록대로 산 것으로 시작", 계획 승인).
   계약은 [명세](../specs/2026-11-06-isa-manual-account.md).
-  **일부 개정 — [ADR 0033](0033-real-isa-open-offset-and-stops.md)(2026-11-06 결정, 2026-11-08 배포 예정)**: 결정 1·3 — 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날의 지시는 '09:10 이후 시장가'이고
+  **일부 개정 — [ADR 0033](0033-real-isa-open-offset-and-stops.md)(2026-11-06 결정, 2026-11-07 배포)**: 결정 1·3 — 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날의 지시는 '09:10 이후 시장가'이고
   자동 기록은 그 분의 1분봉 사다리 값, 결정 4 — 텔레그램 예외에 장중 스탑 지시(감지 즉시, 종목 코드·이름·수량만 — 금액 없음)를 더함, 결정 5 — V28 `manual_stop_instructions`·`manual_ledger.stop_instruction_id`(더하기만).
   나머지 결정(주문 없음·분리)은 그대로다.
 - 지키는 방법: 백엔드 `ManualAccountPlannerTest`·`ManualAccountLedgerTest`·`ManualAccountNoticesTest`·`ManualAccountServiceDbTest`·`ManualAccountJobDbTest`·`ManualAccountPaperReadsTest`(지시 계산·자동 기록·알림 글에 금액 없음), `ArchitectureRulesTest.realtradeIsIsolated`(허용 목록에 `store.ManualAccountStore`),
