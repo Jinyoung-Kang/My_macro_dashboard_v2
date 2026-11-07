@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -266,11 +267,16 @@ class StopWatchFallbackTest {
 
         /** D1 세션의 봉(끝 라벨 {@code labels}, 93,000)을 담아 {@code fetchedAt}에 받은 감시 저장본(갭 가드 통과). */
         private void watched(String code, Instant fetchedAt, String... labels) {
+            watched(code, D1, fetchedAt, 93_000.0, labels);
+        }
+
+        /** {@code session} 세션의 봉(끝 라벨 {@code labels}, 가격 {@code price})을 담아 {@code fetchedAt}에 받은 감시 저장본(갭 가드 통과). */
+        private void watched(String code, LocalDate session, Instant fetchedAt, double price, String... labels) {
             Map<String, Double> bars = new LinkedHashMap<>();
             for (String label : labels) {
-                bars.put(label, 93_000.0);
+                bars.put(label, price);
             }
-            ObjectNode entry = StopWatchTest.krEntry(D1, bars, List.of(), 99_000.0, 100_000.0, 100_000.0);
+            ObjectNode entry = StopWatchTest.krEntry(session, bars, List.of(), 99_000.0, 100_000.0, 100_000.0);
             ObjectNode payload = MAPPER.createObjectNode();
             payload.put("fetchedAt", fetchedAt.toString());
             payload.putObject("tickers").set(code, entry);
@@ -279,9 +285,14 @@ class StopWatchFallbackTest {
         }
 
         private Outcome nightD1(double close) {
+            return d1Observation(close, COLLECTED_D1);
+        }
+
+        /** 세션 D1 관측치(005930 — D1 잠정 종가 {@code close})를 {@code collected}에 저장한 것으로 처리 — 다음 세션 장중의 다시 저장(QA-317)도 같은 본문. */
+        private Outcome d1Observation(double close, Instant collected) {
             KrFixtures.Payload payload = new KrFixtures.Payload(D1);
             payload.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 99_000, close, 2_000).minute("OK", "09:01", 99_000, 100);
-            return ledger.process(run(), KrQuotes.parse(payload.snapshot(COLLECTED_D1)).orElseThrow());
+            return ledger.process(run(), KrQuotes.parse(payload.snapshot(collected)).orElseThrow());
         }
 
         private List<Order> stops() {
@@ -369,6 +380,78 @@ class StopWatchFallbackTest {
             nightD1(91_000);
 
             assertThat(stops()).singleElement().satisfies(o -> assertThat(o.targetLocal()).isEqualTo(LocalTime.of(10, 10)));
+        }
+
+        @Test
+        @Disabled("QA-317 재현 — 수정 전에는 D2 장중에 다시 저장된 D1 관측치가 밤에 감시에 맡긴 보유를 다시 판정해(지금 감시 저장본은 D2라 덮지 않음) "
+                + "NEXT_OPEN STOP을 내고, 그 STOP이 D2 밤에 주문을 만든 시각보다 이른 D2 시가로 체결됨. fix(QA-317)에서 켭니다")
+        @DisplayName("ON — D1 밤에 감시에 맡긴 보유는 D2 장중에 다시 저장된 D1 관측치로 다시 판정하지 않음 — STOP·체결 없음(QA-317)")
+        void daytimeResaveDoesNotRejudgeTheNight() {
+            mode("ON", null);
+            watched("005930");
+            nightD1(91_000);
+            assertThat(stops()).as("D1 밤 — 감시에 맡김").isEmpty();
+
+            // D2 13:17 — 금융위 값이 낮에 들어와 수집 범위가 늘어 세션 D1 관측치가 다시 저장됨. 감시 저장본은 D2이고 가격은 스탑가 위로 돌아옴.
+            watched("005930", D2, kst("2026-11-04T13:15:20"), 97_000.0, "13:05", "13:10", "13:15");
+            d1Observation(91_000, kst("2026-11-04T13:17"));
+            assertThat(stops()).as("D1 봉은 D1 밤이 이미 판정함").isEmpty();
+
+            KrFixtures.Payload night = new KrFixtures.Payload(D2);
+            night.code("005930", kst("2026-11-04T21:57")).bar(D1, 99_000, 91_000, 2_000).bar(D2, 97_000, 97_500, 3_000)
+                    .minute("OK", "09:01", 97_000, 100);
+            ledger.process(run(), KrQuotes.parse(night.snapshot(kst("2026-11-04T22:01"))).orElseThrow());
+            assertThat(store.fillsOf(BOOK)).as("D2 시가로 팔지 않음").isEmpty();
+            assertThat(store.positions(BOOK)).singleElement().satisfies(p -> assertThat(p.ticker()).isEqualTo("005930"));
+            assertThat(store.lockouts(BOOK)).isEmpty();
+        }
+
+        @Test
+        @Disabled("QA-317 재현 — 수정 전에는 다음 거래일 첫 분이 지난 뒤 처음 처리한 D1 관측치의 대체 스탑이 NEXT_OPEN이라 주문 전의 D2 시가로 "
+                + "체결될 수 있음. fix(QA-317)에서 켭니다")
+        @DisplayName("ON — 다음 세션 첫 분이 지난 뒤 처음 처리한 D1 관측치는 감시가 지금 세션을 지켜보지 않는 종목만 그 세션 장중 시장가 STOP(시가 아님, QA-317)")
+        void lateFirstProcessingStopsAtTheNextMinute() {
+            mode("ON", null);
+            watched("000660", D2, kst("2026-11-04T13:15:20"), 97_000.0, "13:05", "13:10", "13:15");   // 005930은 지금 감시에 없음
+
+            Outcome outcome = d1Observation(91_000, kst("2026-11-04T13:17"));
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                assertThat(o.asOfTradingDate()).isEqualTo(D1);
+                assertThat(o.createdAt()).isEqualTo(kst("2026-11-04T13:17"));
+                assertThat(ExecutionAudit.marketTarget(o.createdAt())).isEqualTo(kst("2026-11-04T13:19"));
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+                assertThat(o.reason().path("detection").asString()).contains("13:19 KST");
+            });
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("13:19"));
+        }
+
+        @Test
+        @Disabled("QA-317 재현 — 수정 전에는 감시가 지금 세션 D2를 지켜보는 종목에도 D1 잠정 종가 한 번으로 NEXT_OPEN STOP을 냄. fix(QA-317)에서 켭니다")
+        @DisplayName("ON — 다음 세션 첫 분이 지난 뒤 처음 처리한 D1 관측치라도 감시가 지금 세션을 지켜보는 종목은 감시에 맡김(QA-317)")
+        void lateFirstProcessingLeavesAWatchedTickerToTheWatch() {
+            mode("ON", null);
+            watched("005930", D2, kst("2026-11-04T13:15:20"), 97_000.0, "13:05", "13:10", "13:15");
+
+            Outcome outcome = d1Observation(91_000, kst("2026-11-04T13:17"));
+
+            assertThat(stops()).isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("감시가 지금 세션 " + D2));
+        }
+
+        @Test
+        @Disabled("QA-317 재현 — 수정 전에는 다음 세션 장이 끝난 뒤 처음 처리한 D1 관측치가 NEXT_OPEN STOP을 냄(이미 지난 D2 시가로 체결될 수 있음). "
+                + "fix(QA-317)에서 켭니다")
+        @DisplayName("ON — 다음 세션 장이 끝난 뒤 처음 처리한 D1 관측치는 대체 STOP을 내지 않고 그 세션 밤 관측치에 맡김(QA-317)")
+        void processingAfterTheNextCloseWaitsForItsNight() {
+            mode("ON", null);
+            watched("000660", D2, kst("2026-11-04T15:20:20"), 97_000.0, "15:05", "15:15", "15:20");
+
+            Outcome outcome = d1Observation(91_000, kst("2026-11-04T16:00"));
+
+            assertThat(stops()).isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains(D2 + " 장이 끝난 뒤"));
         }
 
         @Test
