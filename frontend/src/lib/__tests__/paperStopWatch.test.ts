@@ -50,6 +50,15 @@ describe("주문 표 — 장중 감시 STOP의 체결 시점(QA-312)", () => {
     expect(timingLabel("NEXT_CLOSE", "US", null, { source: "STOP", reason: "{}" })).toBe("다음 종가");
     expect(timingLabel("NEXT_CLOSE", "US")).toBe("다음 종가");
   });
+
+  // QA-327: 2차 리뷰 재검증 R2V-1 — 다음 세션 첫 분이 지난 처리(QA-317)가 낸 한국 밤 대체 STOP(stopMode NIGHT_FALLBACK)의 종가·장중 시장가는 처리한
+  // 그 세션에 팔리는데(목표 세션 = 만든 그날), 주문 표가 '다음 종가'·'장중 시장가(확인 직후 첫 분)'로 적음 — 같은 행의 근거는 '그날(…) 종가 단일가'.
+  it.fails("첫 분이 지난 처리의 밤 대체 STOP — 종가는 '그날 종가', 시장가는 '장중 시장가(감지 직후 첫 분)'(QA-327)", () => {
+    const night = { source: "STOP", reason: { trigger: "TRAILING_STOP", stopMode: "NIGHT_FALLBACK" } };
+    expect(timingLabel("NEXT_CLOSE", "KR", null, night)).toBe("그날 종가");
+    expect(timingLabel("MARKET", "KR", null, night)).toBe("장중 시장가(감지 직후 첫 분)");
+    expect(timingLabel("AT_MINUTE", "KR", "09:10", night)).toBe("지정 시각 09:10 KST");
+  });
 });
 
 // QA-313: 리뷰 FW-2·XC-3 — 계좌 설명의 스탑·체결 문장이 장중 스탑 감시 스위치(stopWatch.mode·kr.stopWatch.mode)와 규칙 계좌 체결 시점(rules.timing·

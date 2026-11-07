@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -223,6 +224,8 @@ class StopWatchFallbackTest {
 
         private FakePaperStore store;
         private PaperMarketData marketData;
+        /** 장부의 지금 시각 — 관측치를 처리하는 시각(늦은 처리는 수집 시각보다 뒤, QA-327). */
+        private PaperCheckpointJobTest.MovableClock clock;
         private PaperLedgerService ledger;
 
         private static Instant kst(String dateTime) {
@@ -235,7 +238,8 @@ class StopWatchFallbackTest {
             marketData = mock(PaperMarketData.class);
             when(marketData.fscMarkets(anyCollection())).thenReturn(Map.of("005930", "KOSPI"));
             when(marketData.krConfirmed(anyCollection(), anyCollection(), any())).thenReturn(KrConfirmed.NONE);
-            ledger = new PaperLedgerService(store, marketData, MAPPER);
+            clock = new PaperCheckpointJobTest.MovableClock(COLLECTED_D1);
+            ledger = new PaperLedgerService(store, marketData, MAPPER, clock);
             store.books.put(BOOK, new Book(BOOK, PaperBooks.KIND_RULES, BOOK, 100_000_000, D, PaperBooks.ACTIVE, kst("2026-11-02T22:30"),
                     "KR", "KRW"));
             store.states.put(BOOK, new BookState(BOOK, 0, 0, 0, 0, null, null, null, null));
@@ -289,6 +293,12 @@ class StopWatchFallbackTest {
 
         /** 세션 D1 관측치(005930 — D1 잠정 종가 {@code close})를 {@code collected}에 저장한 것으로 처리 — 다음 세션 장중의 다시 저장(QA-317)도 같은 본문. */
         private Outcome d1Observation(double close, Instant collected) {
+            return d1Observation(close, collected, collected);
+        }
+
+        /** {@link #d1Observation(double, Instant)}를 장부 시계 {@code processed}에 처리(수집 뒤 늦게 돈 처리 — QA-327). */
+        private Outcome d1Observation(double close, Instant collected, Instant processed) {
+            clock.now = processed;
             KrFixtures.Payload payload = new KrFixtures.Payload(D1);
             payload.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 99_000, close, 2_000).minute("OK", "09:01", 99_000, 100);
             return ledger.process(run(), KrQuotes.parse(payload.snapshot(collected)).orElseThrow());
@@ -432,6 +442,76 @@ class StopWatchFallbackTest {
 
             assertThat(stops()).isEmpty();
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("감시가 지금 세션 " + D2));
+        }
+
+        // QA-327: 2차 리뷰 재검증 R2V-1 — 늦은 밤 스탑 경로(QA-317)가 시각을 관측치의 수집 시각(run.at)으로 판정해, 백엔드가 밤새 꺼졌다가 다음 세션
+        // 장중에 처음 처리한 D1 밤 관측치는 첫 분 검사를 통과한 채 D2 09:10 지정 시각 STOP(생성 = D1 22:01)이 되어 D2 밤에 주문을 만든 시각(D2 10:00)보다
+        // 이른 09:10 값으로 체결·재진입 금지(실제 계좌는 09:10~09:13 창이 지난 뒤에야 봐서 놓침). 늦은 장중 시장가도 T가 수집 + 2분이라 5분 주기 처리가
+        // T 뒤에 주문을 쓸 수 있고, 늦은 종가·시장가 대체 STOP의 알림 시점 이름은 '다음 거래일 종가'·'장중 시장가'로 남음.
+        @Test
+        @Disabled("QA-327 재현 — 수정 전에는 늦은 밤 스탑이 수집 시각으로 판정해 D2 10:00에 D2 09:10 지정 시각 STOP을 냄. fix(QA-327)에서 켭니다")
+        @DisplayName("ON — 백엔드가 밤새 꺼졌다가 D2 10:00에 처음 처리한 D1 밤 관측치는 처리 시각으로 판정 — 감시가 지금 세션을 지켜보면 맡기고, 주문 전 "
+                + "시각(09:10)에 체결되는 지정 시각 STOP을 내지 않음(QA-327)")
+        void outageFirstProcessingJudgesAtTheProcessingTime() {
+            mode("ON", null);
+            // 수집기는 계속 돌아 지금 감시 저장본은 D2 것(005930 97,000 — 스탑가 92,000 위)
+            watched("005930", D2, kst("2026-11-04T09:55:20"), 97_000.0, "09:45", "09:50", "09:55");
+
+            Outcome outcome = d1Observation(91_000, COLLECTED_D1, kst("2026-11-04T10:00"));
+
+            assertThat(stops()).as("D2 10:00에 D2 09:10 지정 시각 STOP을 만들지 않음").isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("감시가 지금 세션 " + D2));
+
+            // D2 밤 — 09:10 1분봉은 스탑가 아래(90,200)였지만 그 시각에는 주문이 없었음
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D2, new KrQuotes.Timed(KrQuotes.TIMED_OK, null,
+                    kst("2026-11-04T21:50"), Map.of("09:10", List.of(new KrQuotes.Bar1m("09:11", java.math.BigDecimal.valueOf(90_200), 300L))),
+                    Map.of(), Map.of()))));
+            clock.now = kst("2026-11-04T22:03");
+            KrFixtures.Payload night = new KrFixtures.Payload(D2);
+            night.code("005930", kst("2026-11-04T21:57")).bar(D1, 99_000, 91_000, 2_000).bar(D2, 90_000, 97_500, 3_000)
+                    .minute("OK", "09:01", 90_000, 100);
+            ledger.process(run(), KrQuotes.parse(night.snapshot(kst("2026-11-04T22:01"))).orElseThrow());
+
+            assertThat(store.fillsOf(BOOK)).as("주문을 만들기 전 시각(09:10)의 값으로 팔지 않음").isEmpty();
+            assertThat(store.lockouts(BOOK)).isEmpty();
+        }
+
+        @Test
+        @Disabled("QA-327 재현 — 수정 전에는 늦은 장중 시장가 대체 STOP의 생성·기준 시각을 수집 시각(13:17 → T 13:19)에서 셈. fix(QA-327)에서 켭니다")
+        @DisplayName("ON — D2 13:17에 수집한 D1 관측치를 5분 뒤(13:22)에 처음 처리하면 장중 시장가 대체 STOP의 생성·기준 시각은 처리 시각에서 셈"
+                + "(T 13:24 — 처리 뒤), 알림 시점 이름은 '장중 시장가 13:24 KST'(QA-327)")
+        void lateMarketFallbackCountsFromTheProcessingTime() {
+            mode("ON", null);
+            watched("000660", D2, kst("2026-11-04T13:20:20"), 97_000.0, "13:10", "13:15", "13:20");   // 005930은 지금 감시에 없음
+            Instant processed = kst("2026-11-04T13:22");
+
+            d1Observation(91_000, kst("2026-11-04T13:17"), processed);
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+                assertThat(o.createdAt()).as("주문을 만든 시각 = 처리 시각").isEqualTo(processed);
+                assertThat(ExecutionAudit.marketTarget(o.createdAt())).isEqualTo(kst("2026-11-04T13:24"))
+                        .isAfter(processed.plus(ExecutionAudit.AFTER_CREATED));
+                assertThat(o.reason().path("detection").asString()).contains("13:24 KST");
+                assertThat(PaperNotifications.timingName(o, true)).isEqualTo("장중 시장가 13:24 KST");
+            });
+        }
+
+        @Test
+        @Disabled("QA-327 재현 — 수정 전에는 늦은 종가 대체 STOP(그날 종가)의 알림 시점 이름이 '다음 거래일 종가'. fix(QA-327)에서 켭니다")
+        @DisplayName("ON — D2 종가 단일가 시간(15:22)에 처음 처리한 D1 관측치의 대체 STOP은 그날(D2) 종가 — 알림 시점 이름도 '그날 종가'(QA-327)")
+        void lateCloseFallbackIsNamedTheSameDay() {
+            mode("ON", null);
+            watched("000660", D2, kst("2026-11-04T15:20:20"), 97_000.0, "15:10", "15:15", "15:20");   // 005930은 지금 감시에 없음
+
+            d1Observation(91_000, kst("2026-11-04T15:21"), kst("2026-11-04T15:22"));
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
+                assertThat(o.reason().path("detection").asString()).contains("그날(" + D2 + ") 종가 단일가");
+                assertThat(PaperNotifications.timingName(o, true)).isEqualTo("그날 종가");
+            });
         }
 
         @Test
