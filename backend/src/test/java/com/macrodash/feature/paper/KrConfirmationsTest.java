@@ -622,6 +622,33 @@ class KrConfirmationsTest {
                 .isEqualTo(287_538 + 714_000);
     }
 
+    // QA-336: KrConfirmations.stateMovedPast가 마지막 처리 저장본을 수집 시각의 세션(currentOrLastSession)으로 셈(QA-331과 같은 꼴 — 3차 리뷰가 제안만 함).
+    // D+1 밤 저장본을 처리한 뒤 D+2 낮(10:15)에 다시 저장된 D+1 자료 저장본(수집기 kr_target_session — 20:30 전 수집은 전 거래일)을 처리하면, 그 수집 시각의
+    // 세션은 D+2라 'D+1 마감이 아님'으로 보고 금융위 D+1 행이 들어와도 D+1 줄을 확정으로 다시 쓰지 않음 → D+2 밤 관측치가 D+2 줄을 쓰면 확정 조정은 마지막
+    // 줄만 다시 쓰므로 D+1 줄이 잠정으로 영구히 남음.
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-336 재현 — 수정 전: 낮에 다시 저장된 D+1 자료 저장본을 처리한 장부를 D+2 세션으로 봐 D+1 줄을 확정하지 않음")
+    @DisplayName("QA-336 확정 순자산 줄의 '장부가 그 줄 D 마감인가'는 마지막 처리 저장본이 담은 자료의 세션(20:30 규칙)으로 — D+2 낮에 다시 저장된 D+1 자료를 "
+            + "처리했어도 금융위 D+1 행이 들어오면 D+1 줄이 확정")
+    void qa336ReSavedSnapshotStillCountsAsTheSessionItHolds() {
+        book(1_000_000);
+        order("005930", PaperBooks.BUY, 10, D, CREATED);
+        process(nightD1("005930", 71_300), COLLECTED_D1);
+        Instant reSaved = kst("2026-11-04T10:15");                       // D+2 낮 — 자료는 D+1까지(1분봉 개장 봉 재요청 등)
+        process(nightD1("005930", 71_300), reSaved);
+        assertThat(store.states.get(BOOK).lastProcessedCollectedAt()).as("장부가 다시 저장된 저장본을 처리함").isEqualTo(reSaved);
+        assertThat(navOn(D1).pricesFinal()).isFalse();
+        fsc("005930", KrConfirmed.SOURCE_FSC, D1, day(D1, 71_200L, 71_000, 5_000_000, "KOSPI"));
+
+        Outcome outcome = confirm();
+
+        assertThat(outcome.notes()).noneSatisfy(note -> assertThat(note).contains("마지막으로 처리한 관측치의 세션이 2026-11-04"));
+        NavRow line = navOn(D1);
+        assertThat(line.pricesFinal()).as("D+1 자료까지 처리한 장부 — D+1 마감").isTrue();
+        assertThat(line.cash()).isEqualTo(287_538);
+        assertThat(line.nav()).isEqualTo(997_538);
+    }
+
     /** 한국 Claude 계좌2의 매시 체결 한 건(장부를 거치지 않음 — 현금·보유 그대로, 확정 판정만 봄): 기준일 {@code asOf}, 체결일 {@code day}. */
     private Fill hourlyFill(String side, LocalDate asOf, LocalDate day, Instant observedAt) {
         long orderId = store.insertOrder(new Order(0, BOOK, null, "005930", side, 10, null, null, PaperBooks.AT_1000, "CLAUDE",
