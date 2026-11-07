@@ -304,12 +304,22 @@ public class PaperStopWatchJob {
         if (positions.isEmpty()) {
             return;
         }
-        List<Order> pending = store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING);
+        List<Order> pending = new ArrayList<>();
         Set<String> stopPending = new TreeSet<>();
-        for (Order order : pending) {
+        for (Order order : store.ordersByStatus(book.code(), PaperBooks.ORDER_PENDING)) {
+            if (order.expiresOn() != null && order.expiresOn().isBefore(session)) {
+                continue;   // 만료일이 지난 대기 주문 — 다음 밤 만료가 닫을 뿐 체결될 수 없음(QA-318)
+            }
             if (PaperBooks.SOURCE_STOP.equals(order.source()) && PaperBooks.SELL.equals(order.side())) {
+                LocalDate target = ExecutionAudit.targetSession(order, calendar);
+                if (target != null && target.isBefore(session)) {
+                    // 목표 세션이 지난 STOP(그 세션 자료를 기다림·그날 정지라 다음 관측 봉으로 넘어감 등, QA-318) — 실제 계좌는 그 세션에 이미 따라 했고 오늘
+                    // 대기 STOP으로 보지 않으므로 오늘 감시 STOP을 막지 않습니다. 둘 다 체결되면 늦은 쪽은 체결 때 보유가 없어 취소됩니다.
+                    continue;
+                }
                 stopPending.add(order.ticker());
             }
+            pending.add(order);
         }
         Set<String> held = new HashSet<>();
         if (korea) {

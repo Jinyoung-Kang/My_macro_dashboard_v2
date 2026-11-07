@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -448,8 +447,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-318 재현 — 수정 전에는 그 세션 자료로 체결할 수 없는 감시 STOP(만료 = 그 세션)이 대기로 남아 밤 대체 스탑을 막고 다음 세션 "
-                + "감시까지 막음. fix(QA-318)에서 켭니다")
         @DisplayName("ON — 그 세션에 체결할 수 없는(그날 1분봉 없음) 감시 STOP은 밤에 만료로 닫고, 감시가 덮지 못했으면 다음 거래일 첫 분 NIGHT_FALLBACK(QA-318)")
         void unfillableWatchStopIsClosedAndFallsBack() {
             mode("ON", null);

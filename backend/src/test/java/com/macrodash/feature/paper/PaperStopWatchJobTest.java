@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -327,8 +326,6 @@ class PaperStopWatchJobTest {
     }
 
     @Test
-    @Disabled("QA-318 재현 — 수정 전에는 지난 세션에 체결하지 못한 감시 STOP(만료 = 그 세션)·지난 세션이 목표인 밤 대체 STOP·만료가 지난 전량 매도가 "
-            + "오늘 세션 내내 감시 STOP을 막음. fix(QA-318)에서 켭니다")
     @DisplayName("한국 — 체결될 수 없는 대기 주문(만료가 지난 감시 STOP·전량 매도)과 지난 세션이 목표인 STOP은 오늘 감시를 막지 않음(QA-318)")
     void staleOrdersDoNotBlockTodaysWatch() {
         settings("OFF", "ON");

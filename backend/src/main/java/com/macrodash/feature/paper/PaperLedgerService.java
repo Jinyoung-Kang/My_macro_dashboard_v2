@@ -1276,9 +1276,13 @@ public class PaperLedgerService {
         double stopPct = run.settings.trailingStopPct();
         Set<String> waiting = new TreeSet<>();
         for (Order order : store.ordersByStatus(run.book.code(), PaperBooks.ORDER_PENDING)) {
-            if (PaperBooks.SOURCE_STOP.equals(order.source())) {
-                waiting.add(order.ticker());
+            if (!PaperBooks.SOURCE_STOP.equals(order.source())) {
+                continue;
             }
+            if (closedUnfillableStop(run, order)) {
+                continue;
+            }
+            waiting.add(order.ticker());
         }
         for (Holding holding : run.holdings.values()) {
             if (!holding.verified || holding.corpHold != null || holding.assessed == Kind.PENDING
@@ -1342,6 +1346,33 @@ public class PaperLedgerService {
                     + won(holding.highWatermark) + " → " + last.date() + " 잠정 종가 " + won(close) + "("
                     + last.priceSource() + ") ≤ 스탑가 " + won(stopPrice) + " — " + when.note() + "(만료 " + expires + ")");
         }
+    }
+
+    /**
+     * 장중 감시 기능이 낸 STOP(장중 감시 {@code INTRADAY_WATCH}·밤 대체 {@code NIGHT_FALLBACK})이 이번 처리에서 그 목표 세션 자료로는 만료까지 체결하지 않음
+     * ({@link BookRun#unfillable} — 그날 1분봉 없음·T 뒤 정규장 거래 없음·마감 봉 없음)으로 표시됐으면 사유와 함께 만료로 닫습니다(QA-318). 그대로 두면
+     * 한국 만료는 다음 밤 관측치 처리 때만 돌아 다음 세션 내내 대기로 남고, 이 밤의 대체 스탑(waiting)과 다음 세션 감시 STOP을 모두 막았습니다. 닫은 뒤
+     * 이 밤의 감지가 덮음을 다시 봅니다(감시가 덮지 못했으면 다음 거래일 첫 분 대체). 기다림(1분봉 FAILED·NXT 여부 모름 — 자료가 오면 체결)과 감시를 켜기
+     * 전부터 있던 밤 감지 STOP(근거에 stopMode 없음)은 그대로 둡니다.
+     *
+     * @return 닫았으면 참
+     */
+    private boolean closedUnfillableStop(BookRun run, Order order) {
+        String unfillable = run.unfillable.get(order.id());
+        String mode = Json.asText(order.reason(), "stopMode");
+        if (unfillable == null || !(PaperStopWatchJob.STOP_MODE.equals(mode) || STOP_MODE_NIGHT_FALLBACK.equals(mode))) {
+            return false;
+        }
+        LocalDate target = KrExecutionAudit.targetSession(order, run.market.calendar());
+        if (target == null || target.isAfter(run.session)) {
+            return false;
+        }
+        String text = unfillable + " — 목표 세션 " + target + " 자료로는 체결할 수 없어 닫음(밤 스탑이 덮음을 다시 봄)";
+        store.markOrderStatus(order.id(), PaperBooks.ORDER_EXPIRED, text);
+        run.unfillable.remove(order.id());
+        run.expired++;
+        run.note("주문 " + order.id() + " " + order.side() + " " + order.ticker() + " 만료 — " + text);
+        return true;
     }
 
     /**
