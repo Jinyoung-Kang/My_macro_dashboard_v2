@@ -17,6 +17,7 @@ import {
   calendarLine,
   CLAUDE2_EXPOSURE_KEY,
   claude2BarsLine,
+  stopWatchLine,
   claude2CheckpointLine,
   claudeExposureChart,
   earningsLine,
@@ -276,6 +277,8 @@ export function OverviewSection({
   const barsLine = !korea && status.data?.available ? claude2BarsLine(status.data.claude2, book2?.label) : null;
   // 그 아래 '오늘 장중 확인' 한 줄(단계 2 — 상태 응답 claude2.checkpoint). 1분봉 줄과 같은 규칙(출발한 계좌2만, 칸이 없는 백엔드면 줄 없음).
   const checkpointLine = barsLine && status.data?.available ? claude2CheckpointLine(status.data.claude2) : null;
+  // 장중 스탑 감시 살아 있음 신호(ADR 0032 — 상태 응답 stopWatch, 스위치가 꺼졌으면 칸이 없어 줄 없음).
+  const watchLine = status.data?.available ? stopWatchLine(status.data.stopWatch, market) : null;
   // 미국 '장부 관측치' 카드의 출처(한국 개요는 이 카드 대신 한국 수집 상태 카드 — 출처를 그 카드가 적음).
   const observationSource = [
     PAPER_SOURCES.quotes,
@@ -635,6 +638,7 @@ export function OverviewSection({
       )}
 
       <Card title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
+        {watchLine && <p aria-label="장중 스탑 감시" className="mb-2 text-xs text-muted">{watchLine}</p>}
         <Table<PaperJobRun>
           label="작업 기록"
           // 미국 개요 응답의 작업 기록은 한국 kr.* 줄도 담아(미국 응답 글자 그대로 — x3) 화면에서 그 시장 줄만 남깁니다.

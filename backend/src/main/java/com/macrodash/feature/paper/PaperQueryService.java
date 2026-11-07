@@ -98,27 +98,37 @@ public class PaperQueryService {
     private final Clock clock;
     /** 이 서비스가 아는 시장 — 계좌 코드 경로가 책의 시장 묶음을 찾는 목록이고, 결정 목록이 받는 책 코드의 출처. */
     private final PaperMarkets markets;
+    /** 장중 스탑 감시 작업의 지금 상태(프로세스 메모리 — 상태 응답 {@code stopWatch}). */
+    private final StopWatchStatus stopWatch;
 
     @Autowired
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
-                      PaperConfig config, PaperMarkets markets) {
-        this(store, marketData, reader, settings, config, Clock.systemUTC(), markets);
+                      PaperConfig config, PaperMarkets markets, StopWatchStatus stopWatch) {
+        this(store, marketData, reader, settings, config, Clock.systemUTC(), markets, stopWatch);
     }
 
     /** 테스트용 — 시계를 움직입니다(시장 목록은 운영 목록). */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock) {
-        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader));
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader), new StopWatchStatus());
+    }
+
+    /** 테스트용 — 시계와 장중 스탑 감시의 지금 상태를 바꿉니다(시장 목록은 운영 목록). */
+    PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
+                      PaperConfig config, Clock clock, StopWatchStatus stopWatch) {
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader), stopWatch);
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다(시장 격리 시험이 시험용 한국 시장을 넣음). */
     PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader, PaperSettingsService settings,
                       PaperConfig config, Clock clock, List<PaperMarket> markets) {
-        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader, markets));
+        this(store, marketData, reader, settings, config, clock, new PaperMarkets(store, reader, markets), new StopWatchStatus());
     }
 
     private PaperQueryService(PaperStore store, PaperMarketData marketData, StoreReader reader,
-                              PaperSettingsService settings, PaperConfig config, Clock clock, PaperMarkets markets) {
+                              PaperSettingsService settings, PaperConfig config, Clock clock, PaperMarkets markets,
+                              StopWatchStatus stopWatch) {
+        this.stopWatch = stopWatch;
         this.store = store;
         this.marketData = marketData;
         this.reader = reader;
@@ -511,6 +521,55 @@ public class PaperQueryService {
             if (intraday != null) {
                 out.put("intraday", intraday);
             }
+            // 장중 스탑 감시(ADR 0032) — 스위치가 SHADOW·ON이거나 이 프로세스의 감시 작업이 그 시장을 본 상태가 있을 때만(꺼진 응답은 그대로).
+            Map<String, Object> watch = stopWatchStatus(market);
+            if (watch != null) {
+                out.put("stopWatch", watch);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 장중 스탑 감시 묶음(ADR 0032 — 감시 작업 살아 있음 신호, {@link StopWatchStatus}) — {@code {mode(설정의 지금 값), session, sinceKst(이 프로세스가 그
+     * 세션 상태를 연 시각), lastCycleAtKst, lastSkipped, lastJudgedGrid(그 시장 현지 'HH:MM'), lastJudgedAtKst, snapshot:{collectedAtKst, ageSeconds}|null,
+     * counts:{cyclesJudged, gridsJudged, tickersJudged, stops, wouldStops, guarded}|null}}. 작업이 이 프로세스에서 그 시장을 본 적이 없으면(로컬·재기동 직후)
+     * 작업 칸은 null입니다(0으로 채우지 않음). 스위치가 꺼졌고 그런 상태도 없으면 null(칸을 넣지 않음).
+     */
+    private Map<String, Object> stopWatchStatus(MarketRun market) {
+        StopWatchMode mode = StopWatchMode.of(market.settingsBody(), korea(market));
+        StopWatchStatus.View view = stopWatch.view(market.code()).orElse(null);
+        if (!mode.watching() && view == null) {
+            return null;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", mode.name());
+        out.put("session", view == null || view.session() == null ? null : view.session().toString());
+        out.put("sinceKst", view == null || view.sessionOpenedAt() == null ? null : stamp(view.sessionOpenedAt()));
+        out.put("lastCycleAtKst", view == null || view.lastCycleAt() == null ? null : stamp(view.lastCycleAt()));
+        out.put("lastSkipped", view == null ? null : view.lastSkipped());
+        out.put("lastJudgedGrid", view == null || view.lastJudgedGrid() == null ? null
+                : FreeTiming.label(view.lastJudgedGrid().atZone(market.calendar().zone()).toLocalTime()));
+        out.put("lastJudgedAtKst", view == null || view.lastJudgedAt() == null ? null : stamp(view.lastJudgedAt()));
+        if (view == null || view.snapshotCollectedAt() == null) {
+            out.put("snapshot", null);
+        } else {
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("collectedAtKst", stamp(view.snapshotCollectedAt()));
+            snapshot.put("ageSeconds", Math.max(0, Duration.between(view.snapshotCollectedAt(), clock.instant()).getSeconds()));
+            out.put("snapshot", snapshot);
+        }
+        if (view == null) {
+            out.put("counts", null);
+        } else {
+            Map<String, Object> counts = new LinkedHashMap<>();
+            counts.put("cyclesJudged", view.cyclesJudged());
+            counts.put("gridsJudged", view.gridsJudged());
+            counts.put("tickersJudged", view.tickersJudged());
+            counts.put("stops", view.stops());
+            counts.put("wouldStops", view.wouldStops());
+            counts.put("guarded", view.guarded());
+            out.put("counts", counts);
         }
         return out;
     }

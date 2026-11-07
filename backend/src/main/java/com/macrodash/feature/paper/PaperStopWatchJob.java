@@ -48,6 +48,12 @@ import java.util.concurrent.locks.ReentrantLock;
  * 기록({@code paper_job_runs}, 이름 {@value #JOB}·{@code kr.}{@value #JOB})에만 남기며(종목마다 그 세션에 한 번), ON이면 STOP 주문을 냅니다. 기록은
  * 주문을 냈거나·'걸렸을 것'·갭 가드 제외·오류·세션 중 저장본이 늦은 첫 회차일 때만 남깁니다(20초마다 쌓이지 않게).
  *
+ * <p><b>살아 있음 신호</b>(조용한 날과 '돌지 않음'을 가르게): 회차마다 시장별 지금 상태(스위치·마지막 회차 시각과 쉰 사유·마지막 판정 격자·마지막으로
+ * 읽은 감시 저장본의 수집 시각·그 세션의 판정 회차·격자·계좌 종목·STOP·'걸렸을 것'·갭 가드 수)를 {@link StopWatchStatus}에 두고 상태 응답이 보입니다.
+ * 그리고 정규장이 끝난 뒤(판정 창 끝 — 마감 + {@link #AFTER_CLOSE}) 첫 회차에 그 세션의 수를 작업 기록 {@value #SUMMARY_JOB}(한국
+ * {@code kr.}{@value #SUMMARY_JOB}) 한 줄로 남깁니다 — SHADOW·ON인 거래일만, 세션마다 한 번(상세 {@code tradingDate}로 이미 있는지 봄). 이 프로세스가 그
+ * 세션 판정 창을 보지 못했으면(마감 뒤 기동) 셀 것이 없어 남기지 않고, 세션 중에 열었으면 {@code partial}로 적습니다.
+ *
  * <p><b>판정하는 격자</b>: 지난 회차에 본 마지막 격자 뒤부터 저장본이 받은 시각까지의 격자(첫 판정 격자 = 개장 + 10분 — 개장 10분 전에는 팔지 않음, 끝 =
  * 장 끝 여유 앞). 재기동(또는 세션 중 스위치 켬) 직후 — 그 세션 상태를 첫 판정 격자 뒤에 연 경우 — 에는 가장 최근 격자 하나만 봅니다. 개장 전부터 떠 있던
  * 프로세스가 세션 첫 판정 전 회차를 놓친 것은 재기동이 아니므로 첫 판정 격자부터 판정합니다(QA-306). 한 종목에서 처음 걸린 격자로 주문을 냅니다.
@@ -76,6 +82,8 @@ public class PaperStopWatchJob {
     static final Duration LATE = Duration.ofMinutes(15);
     /** 장 마감 뒤에도 이만큼은 마지막 격자의 저장본을 기다립니다. */
     static final Duration AFTER_CLOSE = Duration.ofMinutes(5);
+    /** 세션 요약 작업 기록의 이름 — 시장의 작업 기록 접두어를 붙여 씁니다(미국 그대로, 한국 kr.). */
+    static final String SUMMARY_JOB = JOB + ".summary";
 
     private static final Logger log = LoggerFactory.getLogger(PaperStopWatchJob.class);
 
@@ -87,6 +95,7 @@ public class PaperStopWatchJob {
     private final ObjectMapper mapper;
     private final Clock clock;
     private final PaperMarkets markets;
+    private final StopWatchStatus status;
     private final ReentrantLock running = new ReentrantLock();
     /** 시장 코드 → 이 프로세스가 본 것(세션 중 재기동하면 비어 가장 최근 격자부터). */
     private final Map<String, MarketState> states = new HashMap<>();
@@ -103,17 +112,36 @@ public class PaperStopWatchJob {
         boolean lateNoted;
         final Set<String> shadowSeen = new HashSet<>();
         final Set<String> guardSeen = new HashSet<>();
+        // ---- 살아 있음 신호(클래스 설명) — 그 세션의 수
+        int cyclesJudged;
+        int gridsJudged;
+        int stops;
+        int wouldStops;
+        int guarded;
+        final Set<String> judged = new HashSet<>();
+        Instant lastJudgedAt;
+        /** 마지막으로 읽은 감시 저장본의 수집 시각(세션이 바뀌어도 남김 — 마지막으로 읽은 값). */
+        Instant snapshotCollectedAt;
+        /** 그 세션 요약을 남겼거나 남기지 않기로 정함. */
+        boolean summaryDone;
     }
 
     @Autowired
     PaperStopWatchJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
-                      PaperConfig config, ObjectMapper mapper) {
-        this(store, reader, marketData, ledger, config, mapper, Clock.systemUTC(), new PaperMarkets(store, reader));
+                      PaperConfig config, ObjectMapper mapper, StopWatchStatus status) {
+        this(store, reader, marketData, ledger, config, mapper, Clock.systemUTC(), new PaperMarkets(store, reader), status);
     }
 
     /** 테스트용 — 시계와 시장 목록을 바꿉니다. */
     PaperStopWatchJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
                       PaperConfig config, ObjectMapper mapper, Clock clock, PaperMarkets markets) {
+        this(store, reader, marketData, ledger, config, mapper, clock, markets, new StopWatchStatus());
+    }
+
+    /** 테스트용 — 시계·시장 목록과 지금 상태를 바꿉니다. */
+    PaperStopWatchJob(PaperStore store, StoreReader reader, PaperMarketData marketData, PaperLedgerService ledger,
+                      PaperConfig config, ObjectMapper mapper, Clock clock, PaperMarkets markets, StopWatchStatus status) {
+        this.status = status;
         this.store = store;
         this.reader = reader;
         this.marketData = marketData;
@@ -175,14 +203,20 @@ public class PaperStopWatchJob {
         try {
             List<Outcome> out = new ArrayList<>();
             for (PaperMarket market : markets.all()) {
+                Outcome outcome;
                 try {
-                    out.add(runMarket(market));
+                    outcome = runMarket(market);
                 } catch (CalendarUnavailableException e) {
                     // 그 시장 달력이 지금 해를 모름(공휴일 목록 없음 — 명세 K35) — 판정하지 않고 넘어갑니다(대체 경로가 지킴). 20초마다 경고를 쌓지 않습니다.
-                    out.add(Outcome.skip(market.code(), null, CalendarGaps.NO_CALENDAR + " — " + e.getMessage()));
+                    outcome = Outcome.skip(market.code(), null, CalendarGaps.NO_CALENDAR + " — " + e.getMessage());
                 } catch (RuntimeException e) {
-                    out.add(new Outcome(market.code(), null, null, List.of(), List.of(), List.of(), List.of(), null, e.toString()));
+                    outcome = new Outcome(market.code(), null, null, List.of(), List.of(), List.of(), List.of(), null, e.toString());
                 }
+                if (outcome.mode() == null) {
+                    // 스위치를 읽기 전에 멈춘 회차(쉼·달력 없음)·오류 — 지금 상태가 있으면 마지막 회차 시각과 사유만(꺼진 시장은 칸을 만들지 않음).
+                    status.cycled(market.code(), clock.instant(), outcome.error() != null ? "오류 — " + outcome.error() : outcome.skipped());
+                }
+                out.add(outcome);
             }
             return out;
         } finally {
@@ -203,11 +237,20 @@ public class PaperStopWatchJob {
         StopWatchMode mode = StopWatchMode.of(row == null ? null : row.body(), korea);
         if (!mode.watching()) {
             states.remove(code);
+            status.clear(code);
             return Outcome.skip(code, mode.name(), "스위치 꺼짐(" + StopWatchMode.key(korea) + " OFF)");
         }
+        Instant now = clock.instant();
+        Outcome outcome = watch(definition, korea, mode, now);
+        publish(code, mode, now, outcome);
+        return outcome;
+    }
+
+    /** 켜진 시장 한 회차(클래스 설명) — 세션 상태를 열고, 판정 창 안이면 새 감시 저장본의 새 격자를 판정합니다. */
+    private Outcome watch(PaperMarket definition, boolean korea, StopWatchMode mode, Instant now) {
+        String code = definition.code();
         MarketRun run = markets.open(definition);
         TradingCalendar calendar = run.calendar();
-        Instant now = clock.instant();
         LocalDate session = now.atZone(calendar.zone()).toLocalDate();
         if (!calendar.isTradingDay(session)) {
             return Outcome.skip(code, mode.name(), "거래일 아님");
@@ -225,13 +268,29 @@ public class PaperStopWatchJob {
             state.lateNoted = false;
             state.shadowSeen.clear();
             state.guardSeen.clear();
+            state.cyclesJudged = 0;
+            state.gridsJudged = 0;
+            state.stops = 0;
+            state.wouldStops = 0;
+            state.guarded = 0;
+            state.judged.clear();
+            state.lastJudgedAt = null;
+            state.summaryDone = false;
         }
-        if (now.isBefore(firstGrid) || now.isAfter(calendar.closeInstant(session).plus(AFTER_CLOSE))) {
+        Instant windowEnd = calendar.closeInstant(session).plus(AFTER_CLOSE);
+        if (now.isAfter(windowEnd)) {
+            summarize(definition, mode, state, session, firstGrid, windowEnd, now);
+            return Outcome.skip(code, mode.name(), "판정 창 밖");
+        }
+        if (now.isBefore(firstGrid)) {
             return Outcome.skip(code, mode.name(), "판정 창 밖");
         }
         Instant started = now;
         Optional<Snapshot> found = reader.quietly(() -> marketData.stopWatch(korea));
         Snapshot snapshot = found.orElse(null);
+        if (snapshot != null && snapshot.collectedAt() != null) {
+            state.snapshotCollectedAt = snapshot.collectedAt();
+        }
         Instant fetched = snapshot == null ? null : instant(Json.asText(snapshot.payload(), "fetchedAt"));
         boolean fresh = fetched != null && snapshot.collectedAt() != null
                 && !snapshot.collectedAt().isBefore(now.minusSeconds(Datasets.MAX_AGE_STOPWATCH))
@@ -290,11 +349,66 @@ public class PaperStopWatchJob {
         });
         state.lastGrid = grids.get(grids.size() - 1);
         state.lastFetched = fetchedText;   // 판정을 마친 뒤에만 — 판정 중 예외면 다음 주기에 같은 저장본을 다시 봄
+        state.cyclesJudged++;
+        state.gridsJudged += grids.size();
+        state.stops += orders.size();
+        state.wouldStops += would.size();
+        state.guarded += guards.size();
+        state.lastJudgedAt = now;
         Outcome outcome = new Outcome(code, mode.name(), null, grids, orders, would, guards, null, null);
         if (!orders.isEmpty() || !would.isEmpty() || !guards.isEmpty()) {
             record(definition, started, outcome);
         }
         return outcome;
+    }
+
+    /** 켜진 시장 한 회차의 지금 상태를 {@link StopWatchStatus}에 — 판정했으면 쉰 사유 없음, 오류면 그 글. */
+    private void publish(String code, StopWatchMode mode, Instant now, Outcome outcome) {
+        MarketState state = states.get(code);
+        String skipped = outcome.error() != null ? "오류 — " + outcome.error() : outcome.late() != null ? outcome.late() : outcome.skipped();
+        if (state == null) {
+            status.put(code, new StopWatchStatus.View(mode.name(), null, null, now, skipped, null, null, null, 0, 0, 0, 0, 0, 0));
+            return;
+        }
+        status.put(code, new StopWatchStatus.View(mode.name(), state.session, state.openedAt, now, skipped, state.lastGrid,
+                state.lastJudgedAt, state.snapshotCollectedAt, state.cyclesJudged, state.gridsJudged, state.judged.size(), state.stops,
+                state.wouldStops, state.guarded));
+    }
+
+    /**
+     * 세션 요약 한 줄(클래스 설명 '살아 있음 신호') — 판정 창이 끝난 뒤 첫 회차에 한 번. 이 프로세스가 그 세션 판정 창을 보지 못했으면(창 끝 뒤에 상태를
+     * 엶) 남기지 않고, 같은 세션의 줄이 이미 있으면(재기동) 다시 남기지 않습니다. 기록에 실패하면 다음 회차에 다시 봅니다.
+     */
+    private void summarize(PaperMarket market, StopWatchMode mode, MarketState state, LocalDate session, Instant firstGrid,
+                           Instant windowEnd, Instant now) {
+        if (state.summaryDone) {
+            return;
+        }
+        String job = market.jobName(SUMMARY_JOB);
+        if (state.openedAt.isAfter(windowEnd) || !store.jobRunsFor(job, session).isEmpty()) {
+            state.summaryDone = true;
+            return;
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("market", market.code());
+        detail.put("mode", mode.name());
+        detail.put("tradingDate", session.toString());
+        detail.put("since", state.openedAt.toString());
+        detail.put("partial", state.openedAt.isAfter(firstGrid));
+        detail.put("cyclesJudged", state.cyclesJudged);
+        detail.put("gridsJudged", state.gridsJudged);
+        detail.put("tickersJudged", state.judged.size());
+        detail.put("stops", state.stops);
+        detail.put("wouldStops", state.wouldStops);
+        detail.put("guarded", state.guarded);
+        detail.put("lastJudgedGrid", state.lastGrid == null ? null : state.lastGrid.toString());
+        detail.put("lastSnapshotCollectedAt", state.snapshotCollectedAt == null ? null : state.snapshotCollectedAt.toString());
+        try {
+            store.recordJobRun(job, now, clock.instant(), "OK", mapper.valueToTree(detail));
+            state.summaryDone = true;
+        } catch (RuntimeException e) {
+            log.warn("장중 스탑 감시 세션 요약 기록 실패 — 다음 회차에 다시: {}", e.toString());
+        }
     }
 
     /** 책 하나(트랜잭션 안) — 보유마다 판정하고 ON이면 STOP을 냅니다(클래스 설명). */
@@ -352,6 +466,7 @@ public class PaperStopWatchJob {
             if (!guard.known()) {
                 continue;
             }
+            state.judged.add(book.code() + "|" + ticker);
             double watermark = korea ? krWatermark(position, confirmed.of(ticker), session) : position.highWatermark();
             double stopPrice = TrailingStop.stopPrice(watermark, stopPct);
             StopWatch.Evaluation hit = null;

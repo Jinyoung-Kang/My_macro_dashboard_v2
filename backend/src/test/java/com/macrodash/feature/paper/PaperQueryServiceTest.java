@@ -1014,4 +1014,35 @@ class PaperQueryServiceTest {
     }
 
     private static final java.time.LocalDate TUE_EXPIRY = java.time.LocalDate.of(2026, 10, 29);
+
+    @Test
+    @DisplayName("상태 — 장중 스탑 감시 묶음(살아 있음 신호)은 스위치가 켜졌거나 작업 상태가 있을 때만, 작업이 보지 않았으면 작업 칸 null(0 아님), "
+            + "본 뒤에는 판정 격자(그 시장 시각)·저장본 나이·그 세션의 수")
+    void stopWatchStatusBlock() {
+        StopWatchStatus watch = new StopWatchStatus();
+        PaperQueryService withWatch = new PaperQueryService(store, marketData, PaperFixtures.quietReader(), PaperFixtures.settings(store),
+                PaperFixtures.config(), NOW, watch);
+        store.initSettingsIfAbsent(PaperFixtures.settings(store).defaultsJson());
+        assertThat(withWatch.status()).as("기본 OFF — 칸이 없음(응답 그대로)").doesNotContainKey("stopWatch");
+
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("stopWatch")).put("mode", "SHADOW");
+        tools.jackson.databind.JsonNode idle = PaperFixtures.MAPPER.valueToTree(withWatch.status().get("stopWatch"));
+        assertThat(idle.toString()).isEqualTo("{\"mode\":\"SHADOW\",\"session\":null,\"sinceKst\":null,\"lastCycleAtKst\":null,"
+                + "\"lastSkipped\":null,\"lastJudgedGrid\":null,\"lastJudgedAtKst\":null,\"snapshot\":null,\"counts\":null}");
+
+        Instant grid = Instant.parse("2026-10-26T14:20:00Z");   // 10:20 ET(서머타임)
+        watch.put("US", new StopWatchStatus.View("SHADOW", java.time.LocalDate.of(2026, 10, 26), Instant.parse("2026-10-26T13:00:00Z"),
+                Instant.parse("2026-10-26T20:59:40Z"), "판정 창 밖", grid, grid.plusSeconds(40), Instant.parse("2026-10-26T20:55:21Z"),
+                70, 76, 12, 0, 1, 2));
+        tools.jackson.databind.JsonNode view = PaperFixtures.MAPPER.valueToTree(withWatch.status().get("stopWatch"));
+        assertThat(view.toString()).isEqualTo("{\"mode\":\"SHADOW\",\"session\":\"2026-10-26\",\"sinceKst\":\"2026-10-26 22:00 KST\","
+                + "\"lastCycleAtKst\":\"2026-10-27 05:59 KST\",\"lastSkipped\":\"판정 창 밖\",\"lastJudgedGrid\":\"10:20\","
+                + "\"lastJudgedAtKst\":\"2026-10-26 23:20 KST\",\"snapshot\":{\"collectedAtKst\":\"2026-10-27 05:55 KST\",\"ageSeconds\":279},"
+                + "\"counts\":{\"cyclesJudged\":70,\"gridsJudged\":76,\"tickersJudged\":12,\"stops\":0,\"wouldStops\":1,\"guarded\":2}}");
+
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("stopWatch")).put("mode", "OFF");
+        assertThat(PaperFixtures.MAPPER.valueToTree(withWatch.status().get("stopWatch")).path("mode").asString())
+                .as("꺼졌어도 이 프로세스의 작업 상태가 남아 있으면(끈 뒤 작업이 아직 돌지 않음) 보임").isEqualTo("OFF");
+        assertThat(query.status()).as("상태가 없는 서비스 — 꺼짐이면 칸 없음").doesNotContainKey("stopWatch");
+    }
 }

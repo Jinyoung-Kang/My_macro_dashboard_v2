@@ -495,6 +495,31 @@ export interface PaperStatusResponse {
    * 자유 시점 판의 장중 판단(ADR 0027) — 그 시장의 스위치가 하나라도 켜져 있거나 그 세션의 계획 행이 있을 때만 옵니다(없으면 칸이 없음).
    */
   intraday?: PaperIntradayStatus | null;
+  /**
+   * 장중 스탑 감시(ADR 0032) 작업의 지금 상태 — 그 시장의 스위치가 SHADOW·ON이거나 서버 프로세스의 감시 작업이 그 시장을 본 상태가 있을 때만
+   * 옵니다(없으면 칸이 없음). 서버 메모리라 재기동 직후·정기 작업이 꺼진 서버에서는 mode 밖의 칸이 null입니다.
+   */
+  stopWatch?: PaperStopWatchStatus | null;
+}
+
+/** 상태 응답 stopWatch — 장중 스탑 감시 작업 살아 있음 신호(조용한 날과 '돌지 않음'을 가르게). 시각은 KST 문자열, 격자는 그 시장 현지 'HH:MM'. */
+export interface PaperStopWatchStatus {
+  mode: "OFF" | "SHADOW" | "ON" | string;
+  session: string | null;
+  sinceKst: string | null;
+  lastCycleAtKst: string | null;
+  lastSkipped: string | null;
+  lastJudgedGrid: string | null;
+  lastJudgedAtKst: string | null;
+  snapshot: { collectedAtKst: string | null; ageSeconds: number | null } | null;
+  counts: {
+    cyclesJudged: number;
+    gridsJudged: number;
+    tickersJudged: number;
+    stops: number;
+    wouldStops: number;
+    guarded: number;
+  } | null;
 }
 
 /**

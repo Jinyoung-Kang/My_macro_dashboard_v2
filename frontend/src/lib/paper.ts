@@ -73,6 +73,7 @@ import type {
   PaperSettingKey,
   PaperSettingsResponse,
   PaperSettingsSaveResult,
+  PaperStopWatchStatus,
   PaperStats,
   PaperStatusResponse,
   PaperTrackRecordCandidate,
@@ -3494,6 +3495,29 @@ export function claude2BarsLine(group: PaperClaude2Status | null | undefined, la
   if (!bars.collectedAtKst) return `${head}: 저장본 없음(받은 시각·지연 ${EMPTY})`;
   const lag = isNumber(bars.lagSeconds) ? formatLatency(bars.lagSeconds * 1000) : EMPTY;
   return `${head}: 받은 시각 ${formatKst(bars.collectedAtKst)} · ${formatAge(bars.ageSeconds)} · 지연 ${lag}(SPY 마지막 봉 끝 → 받은 시각)`;
+}
+
+// ---------------------------------------------------------------- 장중 스탑 감시 살아 있음 신호(ADR 0032 — 상태 응답 stopWatch)
+
+/**
+ * 작업 기록 카드 위 한 줄 — 장중 스탑 감시 작업이 그 시장을 언제 마지막으로 봤고(쉰 사유), 어느 격자까지 판정했고, 감시 저장본이 얼마나 됐고, 그 세션에
+ * 몇 번 판정했는지. 작업 기록은 주문·걸렸을 것·갭 가드·늦음일 때만 남아 조용한 날과 '돌지 않음'이 같아 보이던 것을 가릅니다. 칸이 없으면(스위치 꺼짐)
+ * null, 작업 상태가 없으면(서버 재기동 직후·정기 작업이 꺼진 서버) 그렇다고 적습니다(0으로 채우지 않음).
+ */
+export function stopWatchLine(status: PaperStopWatchStatus | null | undefined, market: PaperMarketCode): string | null {
+  if (!status) return null;
+  const head = `장중 스탑 감시 ${status.mode}`;
+  if (!status.lastCycleAtKst) return `${head}: 이 서버 프로세스의 감시 작업 상태 없음(재기동 직후이거나 정기 작업이 꺼짐)`;
+  const zone = market === "KR" ? "KST" : "ET";
+  const parts = [`마지막 회차 ${formatKst(status.lastCycleAtKst)}${status.lastSkipped ? `(${status.lastSkipped})` : ""}`];
+  parts.push(status.lastJudgedGrid ? `마지막 판정 격자 ${status.lastJudgedGrid} ${zone}` : "이 세션 판정 격자 없음");
+  if (status.snapshot?.collectedAtKst) parts.push(`감시 저장본 ${formatAge(status.snapshot.ageSeconds)}`);
+  const counts = status.counts;
+  if (counts) {
+    parts.push(`${status.session ?? EMPTY} 판정 ${counts.cyclesJudged}회·격자 ${counts.gridsJudged}·종목 ${counts.tickersJudged}`
+      + ` · STOP ${counts.stops} · 걸렸을 것 ${counts.wouldStops} · 갭 가드 ${counts.guarded}`);
+  }
+  return `${head}: ${parts.join(" · ")}`;
 }
 
 // ---------------------------------------------------------------- 계좌2 장중 확인(단계 2 — 계좌2 명세 §5-2·§13-3)

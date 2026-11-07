@@ -3,7 +3,7 @@
  * 보이고, 묶음 제목이 키 이름 대신 '장중 스탑 감시'로 나오는지(lib/paper 순수 함수). 값은 모두 합성 값입니다.
  */
 import { describe, expect, it } from "vitest";
-import { accountProfile, accountSettingRows, settingGroups, timingLabel } from "../paper";
+import { accountProfile, accountSettingRows, settingGroups, stopWatchLine, timingLabel } from "../paper";
 import type { PaperSettingsResponse } from "../types";
 
 describe("설정 탭 — 장중 스탑 감시 스위치", () => {
@@ -110,3 +110,29 @@ describe("계좌 설명 — 스탑·체결 문장이 감시 스위치와 규칙 
   });
 });
 
+describe("작업 기록 카드 — 장중 스탑 감시 살아 있음 신호(상태 응답 stopWatch)", () => {
+  it("칸이 없으면(스위치 꺼짐) 줄 없음, 작업 상태가 없으면 그렇다고 적음(0으로 채우지 않음)", () => {
+    expect(stopWatchLine(undefined, "US")).toBeNull();
+    expect(stopWatchLine(null, "KR")).toBeNull();
+    expect(stopWatchLine({
+      mode: "SHADOW", session: null, sinceKst: null, lastCycleAtKst: null, lastSkipped: null, lastJudgedGrid: null,
+      lastJudgedAtKst: null, snapshot: null, counts: null,
+    }, "US")).toBe("장중 스탑 감시 SHADOW: 이 서버 프로세스의 감시 작업 상태 없음(재기동 직후이거나 정기 작업이 꺼짐)");
+  });
+
+  it("마지막 회차(쉰 사유)·마지막 판정 격자(그 시장 시각)·감시 저장본 나이·그 세션의 수", () => {
+    expect(stopWatchLine({
+      mode: "ON", session: "2026-11-09", sinceKst: "2026-11-09 08:50 KST", lastCycleAtKst: "2026-11-09 10:21 KST",
+      lastSkipped: "이미 본 저장본", lastJudgedGrid: "10:20", lastJudgedAtKst: "2026-11-09 10:20 KST",
+      snapshot: { collectedAtKst: "2026-11-09 10:20 KST", ageSeconds: 39 },
+      counts: { cyclesJudged: 14, gridsJudged: 15, tickersJudged: 6, stops: 1, wouldStops: 0, guarded: 2 },
+    }, "KR")).toBe("장중 스탑 감시 ON: 마지막 회차 2026-11-09 10:21(이미 본 저장본) · 마지막 판정 격자 10:20 KST · 감시 저장본 39초 전"
+      + " · 2026-11-09 판정 14회·격자 15·종목 6 · STOP 1 · 걸렸을 것 0 · 갭 가드 2");
+    expect(stopWatchLine({
+      mode: "SHADOW", session: "2026-11-09", sinceKst: "2026-11-09 23:00 KST", lastCycleAtKst: "2026-11-09 23:00 KST",
+      lastSkipped: "판정 창 밖", lastJudgedGrid: null, lastJudgedAtKst: null, snapshot: null,
+      counts: { cyclesJudged: 0, gridsJudged: 0, tickersJudged: 0, stops: 0, wouldStops: 0, guarded: 0 },
+    }, "US")).toBe("장중 스탑 감시 SHADOW: 마지막 회차 2026-11-09 23:00(판정 창 밖) · 이 세션 판정 격자 없음"
+      + " · 2026-11-09 판정 0회·격자 0·종목 0 · STOP 0 · 걸렸을 것 0 · 갭 가드 0");
+  });
+});

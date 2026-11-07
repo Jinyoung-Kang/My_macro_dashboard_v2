@@ -221,7 +221,8 @@ class PaperStopWatchJobTest {
         assertThat(stops()).isEmpty();
         clock.now = et(10, 41, 0);
         assertThat(job.run().get(0).late()).as("세션에 한 번").isNull();
-        assertThat(store.recentJobRuns(5)).hasSize(1);
+        // 16:06(판정 창 끝 16:05 뒤)의 회차는 그 세션 요약 한 줄도 남김(살아 있음 신호) — 늦음 기록은 하나
+        assertThat(store.recentJobRuns(5)).extracting(r -> r.job()).containsExactlyInAnyOrder("stopwatch", "stopwatch.summary");
     }
 
     @Test
@@ -430,5 +431,141 @@ class PaperStopWatchJobTest {
             assertThat(o.reason().path("note").asString()).contains("KST");
         });
         assertThat(store.recentJobRuns(5)).singleElement().satisfies(r -> assertThat(r.job()).isEqualTo("kr.stopwatch"));
+    }
+
+    // ------------------------------------------------------------------ 살아 있음 신호(조용한 날과 '돌지 않음'을 가르게)
+
+    private PaperStopWatchJob jobWith(StopWatchStatus status) {
+        PaperLedgerService ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        return new PaperStopWatchJob(store, reader, marketData, ledger, PaperFixtures.config(), PaperFixtures.MAPPER, clock,
+                new PaperMarkets(store, reader, List.of(UsPaperMarket.INSTANCE, KrPaperMarket.INSTANCE)), status);
+    }
+
+    @Test
+    @DisplayName("지금 상태 — 쉰 회차는 시각·사유만, 판정한 회차는 판정 격자·저장본 수집 시각·그 세션의 회차·격자·계좌 종목·STOP 수, 끄면 지움")
+    void liveStatusPerMarket() {
+        StopWatchStatus status = new StopWatchStatus();
+        PaperStopWatchJob watched = jobWith(status);
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        hold(PaperBooks.RULES, "BBB", 100, PREV, 99);
+        usSnapshot(et(10, 20, 20), et(10, 20, 21), Map.of("AAA", new double[]{99, 91}, "BBB", new double[]{99, 93}), et(10, 19, 0));
+
+        clock.now = et(9, 0, 0);
+        watched.run();
+        assertThat(status.view("US")).hasValueSatisfying(v -> {
+            assertThat(v.mode()).isEqualTo("ON");
+            assertThat(v.session()).isEqualTo(DAY);
+            assertThat(v.sessionOpenedAt()).isEqualTo(et(9, 0, 0));
+            assertThat(v.lastCycleAt()).isEqualTo(et(9, 0, 0));
+            assertThat(v.lastSkipped()).isEqualTo("판정 창 밖");
+            assertThat(v.cyclesJudged()).isZero();
+            assertThat(v.snapshotCollectedAt()).as("창 밖에서는 저장본을 읽지 않음").isNull();
+        });
+        assertThat(status.view("KR")).as("한국은 계좌가 없어 쉼 — 칸을 만들지 않음").isEmpty();
+
+        clock.now = et(10, 20, 40);
+        PaperStopWatchJob.Outcome judged = watched.run().get(0);
+        assertThat(judged.grids()).hasSizeGreaterThan(1).last().isEqualTo(et(10, 20, 0));
+        assertThat(status.view("US")).hasValueSatisfying(v -> {
+            assertThat(v.lastSkipped()).isNull();
+            assertThat(v.lastJudgedGrid()).isEqualTo(et(10, 20, 0));
+            assertThat(v.lastJudgedAt()).isEqualTo(et(10, 20, 40));
+            assertThat(v.snapshotCollectedAt()).isEqualTo(et(10, 20, 21));
+            assertThat(v.cyclesJudged()).isOne();
+            assertThat(v.gridsJudged()).isEqualTo(judged.grids().size());
+            assertThat(v.tickersJudged()).isEqualTo(2);
+            assertThat(v.stops()).isOne();
+            assertThat(v.wouldStops()).isZero();
+        });
+
+        clock.now = et(10, 21, 0);
+        watched.run();
+        assertThat(status.view("US")).hasValueSatisfying(v -> {
+            assertThat(v.lastCycleAt()).isEqualTo(et(10, 21, 0));
+            assertThat(v.lastSkipped()).isEqualTo("이미 본 저장본");
+            assertThat(v.cyclesJudged()).as("쉰 회차는 세지 않음").isOne();
+            assertThat(v.lastJudgedGrid()).isEqualTo(et(10, 20, 0));
+        });
+
+        ((ObjectNode) store.settings.body().get("stopWatch")).put("mode", "OFF");
+        watched.run();
+        assertThat(status.view("US")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("세션 요약 — 판정 창이 끝난 뒤 첫 회차에 stopwatch.summary 한 줄(그 세션의 수, 세션 중 열었으면 partial), 다음 회차·재기동에도 한 줄")
+    void sessionSummaryOncePerSession() {
+        settings("SHADOW", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(10, 20, 20), et(10, 20, 21), Map.of("AAA", new double[]{99, 91}), et(10, 19, 0));
+        clock.now = et(10, 20, 40);   // 세션 중 기동 — 가장 최근 격자 하나만
+        assertThat(job.run().get(0).wouldStop()).hasSize(1);
+
+        clock.now = et(16, 5, 0);
+        job.run();
+        assertThat(store.recentJobRuns("stopwatch.summary", 5)).as("판정 창(마감 + 5분) 안 — 아직").isEmpty();
+
+        clock.now = et(16, 5, 20);
+        job.run();
+        assertThat(store.recentJobRuns("stopwatch.summary", 5)).singleElement().satisfies(r -> {
+            assertThat(r.outcome()).isEqualTo("OK");
+            assertThat(r.detail().path("market").asString()).isEqualTo("US");
+            assertThat(r.detail().path("mode").asString()).isEqualTo("SHADOW");
+            assertThat(r.detail().path("tradingDate").asString()).isEqualTo(DAY.toString());
+            assertThat(r.detail().path("since").asString()).isEqualTo(et(10, 20, 40).toString());
+            assertThat(r.detail().path("partial").asBoolean()).isTrue();
+            assertThat(r.detail().path("cyclesJudged").asInt()).isOne();
+            assertThat(r.detail().path("gridsJudged").asInt()).isOne();
+            assertThat(r.detail().path("tickersJudged").asInt()).isOne();
+            assertThat(r.detail().path("wouldStops").asInt()).isOne();
+            assertThat(r.detail().path("stops").asInt()).isZero();
+            assertThat(r.detail().path("guarded").asInt()).isZero();
+            assertThat(r.detail().path("lastJudgedGrid").asString()).isEqualTo(et(10, 20, 0).toString());
+            assertThat(r.detail().path("lastSnapshotCollectedAt").asString()).isEqualTo(et(10, 20, 21).toString());
+        });
+        clock.now = et(16, 5, 40);
+        job.run();
+        clock.now = et(20, 0, 0);
+        job.run();
+        assertThat(store.recentJobRuns("stopwatch.summary", 5)).as("세션에 한 번").hasSize(1);
+
+        // 재기동 — 판정 창 끝 전에 연 새 프로세스도 같은 세션의 줄이 이미 있으면 남기지 않음
+        PaperStopWatchJob restarted = jobWith(new StopWatchStatus());
+        clock.now = et(15, 59, 0);
+        restarted.run();
+        clock.now = et(16, 6, 0);
+        restarted.run();
+        assertThat(store.recentJobRuns("stopwatch.summary", 5)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("세션 요약 — 마감 뒤 기동(그 세션 판정 창을 못 봄)·거래일 아님·스위치 꺼짐은 남기지 않고, 한국은 kr.stopwatch.summary")
+    void sessionSummaryConditions() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        clock.now = et(16, 30, 0);
+        job.run();
+        clock.now = ZonedDateTime.of(LocalDate.of(2026, 11, 8), LocalTime.of(17, 0), UsMarketCalendar.NEW_YORK).toInstant();
+        assertThat(job.run().get(0).skipped()).isEqualTo("거래일 아님");
+        assertThat(store.recentJobRuns(10)).isEmpty();
+
+        ((ObjectNode) store.settings.body().get("stopWatch")).put("mode", "OFF");
+        ((ObjectNode) store.settings.body().get("kr").get("stopWatch")).put("mode", "ON");
+        store.books.put(PaperBooks.KR_RULES, new Book(PaperBooks.KR_RULES, PaperBooks.KIND_RULES, "한국 규칙", 100_000_000,
+                LocalDate.of(2026, 10, 30), PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE, Book.MARKET_KR, Book.CURRENCY_KRW));
+        clock.now = kst(8, 50, 0);   // 개장 전에 엶 — partial 아님
+        job.run();
+        clock.now = kst(15, 35, 20);
+        job.run();
+        assertThat(store.recentJobRuns(10)).singleElement().satisfies(r -> {
+            assertThat(r.job()).isEqualTo("kr.stopwatch.summary");
+            assertThat(r.detail().path("market").asString()).isEqualTo("KR");
+            assertThat(r.detail().path("partial").asBoolean()).isFalse();
+            assertThat(r.detail().path("cyclesJudged").asInt()).isZero();
+            assertThat(r.detail().path("lastJudgedGrid").isNull()).isTrue();
+        });
     }
 }
