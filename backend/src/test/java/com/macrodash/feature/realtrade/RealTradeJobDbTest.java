@@ -23,7 +23,6 @@ import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -598,6 +597,36 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("QA-302: 스탑 몫을 뺀 목표 변화량 — 대기 STOP 종목이 줄어든 몫과, 현금성이 늘어난 몫 가운데 그만큼을 뺌(스탑이 없으면 예전 값)")
+    void qa302TargetDriftWithoutStops() {
+        Set<String> cashLike = Set.of(CASH_LIKE);
+        assertThat(RealTradeJob.targetDrift(Map.of(A, 35.0, C, 65.0), Map.of(C, 65.0, CASH_LIKE, 35.0), Set.of(A), cashLike))
+                .as("70 − 스탑 35 − 현금성 35").contains(new BigDecimal("0.00"));
+        assertThat(RealTradeJob.targetDrift(Map.of(A, 20.0, B, 50.0), Map.of(CASH_LIKE, 70.0), Set.of(A), cashLike))
+                .as("140 − 스탑 20 − 현금성 중 20 — 스탑이 아닌 B와 그 대금의 현금성은 그대로").contains(new BigDecimal("100.00"));
+        assertThat(RealTradeJob.targetDrift(Map.of(A, 70.0), Map.of(B, 70.0), Set.of(), cashLike)).contains(new BigDecimal("140.00"));
+        assertThat(RealTradeJob.targetDrift(Map.of(A, 50.0), Map.of(A, Double.NaN), Set.of(A), cashLike)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-302: 켠 뒤 두 번째 묶음 — 스탑(A)과 그 대금의 현금성 매수를 빼면 목표가 앞 묶음과 같은 남은 몫이라 회전율·목표 변화량 모두 예외 안, 보냄")
+    void qa302LeftoverBatchDriftWithoutStops() {
+        enableEvent();
+        priorBatch(SESSION.minusDays(1), Map.of(A, 35.0, C, 65.0));
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(C, 65.0, CASH_LIKE, 35.0), List.of(681L));
+        preflight("6500000", Map.of(A, new String[]{"70", "50000"}), Map.of(C, "40000", CASH_LIKE, "10000"));
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A));
+
+        run("08:51");
+
+        // 회전율 134.8%(A 매도 35% + C 매수 64.8% + 현금성 35%) → 스탑 몫을 빼면 64.8%, 목표 변화량 70 → 스탑 몫을 빼면 0
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " OPG 70", "BUY " + C + " OPG 125");
+    }
+
+    @Test
     @DisplayName("RT2-1: 켠 뒤 첫 묶음은 켜기 전 묶음과 목표가 달라도 회전율 예외(켜기 창에서 확인한 재조정)")
     void firstBatchAfterEnableIgnoresOlderTargets() {
         priorBatch(SESSION.minusDays(3), Map.of(A, 70.0));
@@ -921,7 +950,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-302 재현 — 수정 전에는 스탑 매도와 그 대금의 현금성 매수가 회전율(180%)에 들어가 이상 멈춤. fix(QA-302)에서 켭니다")
     @DisplayName("QA-302: 시각 맞추기 날 09:10 대체 스탑(A·B, E의 90%)과 그 대금으로 사는 현금성 매수는 회전율 멈춤을 걸지 않음 — sync_pending이 꺼져 있어도 스탑 매도가 나가고 켜짐 유지")
     void qa302StopSellsDoNotTripTurnover() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -941,7 +969,31 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-302 재현 — 수정 전에는 시가 묶음이 흡수한 NEXT_OPEN 스탑(E의 90%)이 회전율에 들어가 이상 멈춤. fix(QA-302)에서 켭니다")
+    @DisplayName("QA-302: 묶음보다 먼저 스탑 경로가 판 스탑(진행 중)의 대금으로 사는 현금성 매수도 회전율 멈춤을 걸지 않음 — 진행 중인 스탑 매도를 취소하지 않음")
+    void qa302StopsSentBeforeBatchDoNotTripTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, SESSION, SYNC_AT)).thenReturn(Optional.empty());
+        stoppedAccount();
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A, B));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(661, A, "AT_MINUTE", SYNC_AT),
+                stopDue(662, B, "AT_MINUTE", SYNC_AT)));
+
+        run("09:10:05");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + A + " DAY 100", "SELL " + B + " DAY 200");
+
+        timedTargets(Map.of(CASH_LIKE, 90.0), List.of(), List.of(661L, 662L));
+        run("09:10:40");
+
+        // 계획의 회전율은 현금성 90%뿐(A·B는 이 기능 주문 진행 중) — 먼저 보낸 스탑 900만 원까지 빼면 0
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        verify(client, never()).cancelOrder(anyString());
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + A + " DAY 100", "SELL " + B + " DAY 200", "BUY " + CASH_LIKE + " DAY 76");
+    }
+
+    @Test
     @DisplayName("QA-302: 시가 맞추기 날 묶음이 흡수한 NEXT_OPEN 스탑도 회전율 멈춤을 걸지 않음 — OPG 매도가 나가고 켜짐 유지")
     void qa302OpgAbsorbedStopsDoNotTripTurnover() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -972,7 +1024,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-302 재현 — 수정 전에는 스탑 몫까지 세어 회전율이 180%. fix(QA-302)에서 켭니다")
     @DisplayName("QA-302: 스탑 대금으로 보는 현금성 매수는 스탑 매도 금액까지만 — 스탑 A(50%) + 스탑 아닌 B 매도(40%) + 현금성 매수(90%)는 80%로 이상 멈춤")
     void qa302StopFundedCashLikeOnlyUpToStopProceeds() {
         RealTradeFixtures.live(store, false, d("10000000"));

@@ -290,6 +290,46 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("QA-302: 이상 멈춤용 회전율 — 대기 STOP 종목의 매도와, 그 스탑 매도 금액까지의 현금성 매수를 뺌(주문은 그대로, 스탑이 없으면 같은 계획)")
+    void turnoverWithoutStops() {
+        Map<String, Double> weights = Map.of(CASH_LIKE, 90.0);
+        Account account = new Acct().cash("1000000").hold(A, "100", "50000").hold(B, "200", "20000").quote(CASH_LIKE, "10000").build();
+        Plan plan = sync(weights, account);
+        assertThat(plan.turnoverPct()).as("A 50% + B 40% + 현금성 90%").isEqualByComparingTo("180.00");
+
+        Plan both = RealTradePlanner.withoutStops(plan, weights, account, Set.of(), RULES, true, Set.of(A, B), null);
+        assertThat(both.turnoverPct()).as("스탑 90% + 그 대금의 현금성 90%").isEqualByComparingTo("0.00");
+        assertThat(both.turnoverExceeded()).isFalse();
+        assertThat(both.orders()).isEqualTo(plan.orders());
+        assertThat(both.skipped()).isEqualTo(plan.skipped());
+
+        Plan one = RealTradePlanner.withoutStops(plan, weights, account, Set.of(), RULES, true, Set.of(A), null);
+        assertThat(one.turnoverPct()).as("180 − 스탑 50 − 현금성 중 50 — 스탑이 아닌 B와 그 대금의 현금성은 셈").isEqualByComparingTo("80.00");
+        assertThat(one.turnoverExceeded()).isTrue();
+
+        assertThat(RealTradePlanner.withoutStops(plan, weights, account, Set.of(), RULES, true, Set.of(), null)).isSameAs(plan);
+
+        // 아직 목표에 남아 사는 쪽인 스탑 종목(그 뒤 시각의 STOP)은 빼지 않음 — A 목표 60%(120주)라 20주 매수, B 매도 40%
+        Map<String, Double> later = Map.of(A, 60.0);
+        Plan buying = sync(later, account);
+        assertThat(RealTradePlanner.withoutStops(buying, later, account, Set.of(), RULES, true, Set.of(A), null).turnoverPct())
+                .isEqualByComparingTo(buying.turnoverPct()).isEqualByComparingTo("50.00");
+
+        // 스탑 매도 경로가 묶음보다 먼저 판 스탑 종목(이 기능 주문 진행 중 — blocked)은 계획의 회전율에 없음 — 그 대금(stopProceeds)까지 현금성 매수를 뺌
+        Plan blocked = RealTradePlanner.sync(weights, E, account, Set.of(A, B), BigDecimal.ZERO, RULES, true);
+        assertThat(blocked.turnoverPct()).as("현금성 90%만").isEqualByComparingTo("90.00");
+        assertThat(RealTradePlanner.withoutStops(blocked, weights, account, Set.of(A, B), RULES, true, Set.of(A, B), null).turnoverPct())
+                .as("계획 밖 스탑 대금을 모르면 현금성은 그대로").isEqualByComparingTo("90.00");
+        assertThat(RealTradePlanner.withoutStops(blocked, weights, account, Set.of(A, B), RULES, true, Set.of(A, B), d("9000000"))
+                .turnoverPct()).as("먼저 판 스탑 900만 원까지 현금성 매수를 뺌").isEqualByComparingTo("0.00");
+        Plan halfBlocked = RealTradePlanner.sync(weights, E, account, Set.of(A), BigDecimal.ZERO, RULES, true);
+        assertThat(RealTradePlanner.withoutStops(halfBlocked, weights, account, Set.of(A), RULES, true, Set.of(A, B), d("5000000"))
+                .turnoverPct()).as("130 − 스탑 B 40 − 현금성 중 (B 40 + 먼저 판 A 50)").isEqualByComparingTo("0.00");
+        assertThat(RealTradePlanner.withoutStops(halfBlocked, weights, account, Set.of(A), RULES, true, Set.of(B), null).turnoverPct())
+                .as("A가 스탑이 아니면 130 − 40 − 40").isEqualByComparingTo("50.00");
+    }
+
+    @Test
     @DisplayName("한 창 안 순서 — 매도(현금성 먼저) → 매수(현금성 마지막)")
     void ordering() {
         Account account = new Acct().cash("10000000").hold(C, "10", "1000").hold(CASH_LIKE, "10", "100000").quote(A, "10000")

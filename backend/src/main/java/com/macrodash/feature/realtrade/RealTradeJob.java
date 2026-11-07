@@ -626,9 +626,10 @@ class RealTradeJob {
 
     /**
      * 그날 시가 맞추기 묶음을 만들고(목표 비중·흡수한 모의 주문·E 고정) 보냅니다. 목표가 없거나 불완전하면 보내지 않습니다(빈 목표로 '모두 팔기'를 하지 않게).
-     * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 예외는 {@link #turnoverHalt}(켜기·방식 바꾸기·멈춤 해제 뒤 첫 묶음, 그리고 남은 몫으로 이어 준 묶음 중
-     * 목표가 앞 묶음과 거의 같은 것). 묶음을 만들면서(같은 트랜잭션) {@code sync_pending}을 끕니다 — 단 1건 상한·현금·하루 한도로 그날 다 못 맞춘 남은
-     * 몫({@link #LEFTOVER_SKIPS})이 있으면, sync_pending을 켠 일 뒤 {@value #SYNC_PENDING_MAX_BATCHES}번째 묶음까지는 켜 둡니다(켜기 창에서 확인한
+     * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 회전율은 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)를 빼고 셉니다
+     * ({@link RealTradePlanner#withoutStops}, QA-302 — 보내는 주문에는 그대로 있음), 예외는 {@link #turnoverHalt}(켜기·방식 바꾸기·멈춤 해제 뒤 첫
+     * 묶음, 그리고 남은 몫으로 이어 준 묶음 중 목표가 앞 묶음과 거의 같은 것). 묶음을 만들면서(같은 트랜잭션) {@code sync_pending}을 끕니다 — 단 1건
+     * 상한·현금·하루 한도로 그날 다 못 맞춘 남은 몫({@link #LEFTOVER_SKIPS})이 있으면, sync_pending을 켠 일 뒤 {@value #SYNC_PENDING_MAX_BATCHES}번째 묶음까지는 켜 둡니다(켜기 창에서 확인한
      * 같은 재조정의 남은 몫이 다음 날 회전율 멈춤이 되지 않게 — 그 뒤로는 끔).
      *
      * @param send false면 묶음만 만들고 보내지 않음(계획한 주문은 놓침 — 창 끝이 가까워 시작한 시가 맞추기, 시가 뒤 마무리가 메움)
@@ -657,10 +658,17 @@ class RealTradeJob {
         Plan plan = planned0.plan();
         Optional<Instant> start = c.cfg.syncPending() ? followStart() : Optional.empty();
         if (plan.turnoverExceeded()) {
-            Map<String, Object> halt = turnoverHalt(c.cfg, start, plan, weightPct);
-            if (halt != null) {
-                executor.halt(HALT_TURNOVER, halt);
-                return;
+            // 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)는 회전율 멈춤에 세지 않음(ADR 0033 결정 3, QA-302) — 스탑이
+            // 멈춤을 걸면 같은 주기의 스탑 매도 경로까지 서서 손절이 사라짐. 보낼 주문은 그대로(묶음도 스탑 종목을 목표 0으로 팖 — 겹쳐도 더 팔 수 없음).
+            Set<String> stops = paper.pendingStopSymbols(c.cfg.sourceBook(), c.today);
+            Plan counted = RealTradePlanner.withoutStops(plan, weightPct, f.account(), f.blocked(), rules(c, f), true, stops,
+                    stopProceeds(c, stops));
+            if (counted.turnoverExceeded()) {
+                Map<String, Object> halt = turnoverHalt(c.cfg, start, counted, weightPct, stops, c.cashLike);
+                if (halt != null) {
+                    executor.halt(HALT_TURNOVER, halt);
+                    return;
+                }
             }
         }
         boolean leftover = plan.skipped().stream().anyMatch(s -> LEFTOVER_SKIPS.contains(s.reason()));
@@ -697,7 +705,30 @@ class RealTradeJob {
     }
 
     /**
+     * 계획 밖의 스탑 대금(QA-302 — {@link RealTradePlanner#withoutStops}) — 이 기능의 오늘 행 가운데 대기 STOP 종목의 매도로 토스가 접수한 것의 금액(진행
+     * 중이면 수량, 끝났으면 체결 수량 × 기준가). 묶음보다 먼저 스탑 매도 경로가 판 몫(묶음 생성이 늦어진 시각 맞추기 날)은 계획의 회전율에 없지만 그 대금이
+     * 현금성 매수가 되므로 여기서 셉니다. 결과 모름(토스 주문 번호 없음) 행은 세지 않습니다.
+     */
+    private BigDecimal stopProceeds(Cycle c, Set<String> stops) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (stops.isEmpty()) {
+            return sum;
+        }
+        for (OrderRow row : store.ordersOn(MARKET, c.today)) {
+            if (!RealTradePlanner.SELL.equals(row.side()) || !stops.contains(row.symbol()) || row.tossOrderId() == null
+                    || row.refPrice() == null) {
+                continue;
+            }
+            BigDecimal quantity = row.terminal() ? Objects.requireNonNullElse(row.filledQuantity(), BigDecimal.ZERO)
+                    : BigDecimal.valueOf(row.quantity());
+            sum = sum.add(quantity.multiply(row.refPrice()));
+        }
+        return sum;
+    }
+
+    /**
      * 회전율이 한도를 넘은 묶음을 멈출지(명세 §3.1·§12.2, RT2-1) — 멈추면 HALT 이벤트에 실을 값, 보내도 되면 null. 묶음을 만들기 전에(잠금 밖) 셉니다.
+     * {@code plan}의 회전율은 스탑 몫을 뺀 값({@link RealTradePlanner#withoutStops})이고, 목표 변화량도 같은 기준으로 셉니다(QA-302).
      * <ul>
      *   <li>{@code sync_pending}이 아니면 멈춤.</li>
      *   <li>sync_pending을 켠 마지막 일 뒤 첫 묶음(그 뒤에 만든 묶음이 아직 없음 — 켜기 창에서 확인한 재조정)이면 보냄. 그 일을 최근 이벤트에서 못 찾으면
@@ -706,7 +737,8 @@ class RealTradeJob {
      *       회전율 한도 이하일 때만 보냄 — 같은 목표의 남은 몫(변화량 ≈ 0)은 통과하고, 새 재조정이나 엉망인 목표는 {@code targetDriftPct}와 함께 멈춤.</li>
      * </ul>
      */
-    private Map<String, Object> turnoverHalt(Config cfg, Optional<Instant> start, Plan plan, Map<String, Double> weightPct) {
+    private Map<String, Object> turnoverHalt(Config cfg, Optional<Instant> start, Plan plan, Map<String, Double> weightPct, Set<String> stops,
+                                             Set<String> cashLike) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("turnoverPct", plan.turnoverPct());
         if (!cfg.syncPending()) {
@@ -720,7 +752,7 @@ class RealTradeJob {
         if (start.isPresent() && (previousAt == null || previousAt.isBefore(start.get()))) {
             return null;
         }
-        Optional<BigDecimal> drift = targetDrift(weights(previous.get()), weightPct);
+        Optional<BigDecimal> drift = targetDrift(weights(previous.get()), weightPct, stops, cashLike);
         if (drift.isPresent() && drift.get().compareTo(RealTradePlanner.TURNOVER_LIMIT_PCT) <= 0) {
             log.info("남은 몫 묶음 — 회전율 {}%지만 목표 변화량 {}%라 회전율 예외 유지", plan.turnoverPct(), drift.get());
             return null;
@@ -731,15 +763,31 @@ class RealTradeJob {
 
     /** 목표 변화량(%p) — Σ|지금 − 앞| (합집합 종목, 없는 종목은 0%). 유한하지 않은 비중이 있으면 empty(멈춤으로 셈). */
     static Optional<BigDecimal> targetDrift(Map<String, Double> previous, Map<String, Double> now) {
+        return targetDrift(previous, now, Set.of(), Set.of());
+    }
+
+    /**
+     * 스탑 몫을 뺀 목표 변화량(%p, QA-302 — {@link RealTradePlanner#withoutStops}와 같은 기준) — Σ|지금 − 앞|에서 대기 STOP 종목이 줄어든 몫과, 현금성
+     * 종목이 늘어난 몫 가운데 그 줄어든 몫까지를 뺀 값. 스탑이 없으면 {@link #targetDrift(Map, Map)}와 같습니다.
+     */
+    static Optional<BigDecimal> targetDrift(Map<String, Double> previous, Map<String, Double> now, Set<String> stops, Set<String> cashLike) {
         Set<String> symbols = new TreeSet<>(previous.keySet());
         symbols.addAll(now.keySet());
         double sum = 0;
+        double stopDrop = 0;
+        double cashRise = 0;
         for (String symbol : symbols) {
             double before = previous.get(symbol) == null ? 0 : previous.get(symbol);
             double after = now.get(symbol) == null ? 0 : now.get(symbol);
             sum += Math.abs(after - before);
+            if (stops.contains(symbol) && after < before) {
+                stopDrop += before - after;
+            } else if (cashLike.contains(symbol) && after > before) {
+                cashRise += after - before;
+            }
         }
-        return Double.isFinite(sum) ? Optional.of(BigDecimal.valueOf(sum).setScale(2, RoundingMode.HALF_UP)) : Optional.empty();
+        double drift = sum - stopDrop - Math.min(cashRise, stopDrop);
+        return Double.isFinite(drift) ? Optional.of(BigDecimal.valueOf(drift).setScale(2, RoundingMode.HALF_UP)) : Optional.empty();
     }
 
     /**
@@ -996,9 +1044,11 @@ class RealTradeJob {
      *
      * <p><b>스탑 매도</b>({@link DueOrder#stop} — ADR 0033 초안 결정 2·3): 그 주문 뒤 비중을 셈하지 않고(가격을 몰라도 손절이 사라지지 않게) 목표 0으로
      * 정수 보유 전량을 그때 다시 읽은 매도 가능 수량·1건 상한까지 팝니다. 창은 {@link RealTradePlanner#stopWindow}(개장 10분 전에는 팔지 않음), 묶음이
-     * 흡수했다고 적혀 있어도 따로 봅니다(묶음이 실패해도 손절이 나가게 — 두 길 모두 목표 0이라 겹쳐도 더 팔 수 없음). 시도 1이 체결로 끝났는데 새 계획에
-     * 아직 1주 이상 팔 것이 남으면(1건 상한) 시도 2를 새로 읽은 수량으로 냅니다(뿌리당 최대 2 — DB 그대로). 매수 멈춤과 상관없습니다. 주기마다 보냄·막힘·
-     * 놓침이 있으면 스탑 매도 이벤트(건수만 — 알림)를 남깁니다.
+     * 흡수했다고 적혀 있어도 따로 봅니다(묶음이 사전 조회 실패 등으로 만들어지지 못해도 손절이 나가게 — 두 길 모두 목표 0이라 겹쳐도 더 팔 수 없음). 묶음의
+     * 회전율 멈춤은 스탑 몫(대기 STOP 종목의 매도와 그 대금의 현금성 매수)을 세지 않으므로 스탑이 멈춤을 걸어 이 경로를 세우지 않습니다(QA-302). 다른
+     * 사유의 이상 멈춤(스탑이 아닌 몫의 회전율 초과·토큰 경합 등)은 멈춤 해제까지 이 경로도 멈춥니다(HALTED는 아무것도 보내지 않음). 시도 1이 체결로
+     * 끝났는데 새 계획에 아직 1주 이상 팔 것이 남으면(1건 상한) 시도 2를 새로 읽은 수량으로 냅니다(뿌리당 최대 2 — DB 그대로). 매수 멈춤과 상관없습니다.
+     * 주기마다 보냄·막힘·놓침이 있으면 스탑 매도 이벤트(건수만 — 알림)를 남깁니다.
      *
      * <p>매수를 보내기 직전에는 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지 않습니다(ADR 0033 초안 결정 4).
      */

@@ -12,7 +12,8 @@
   실제 계좌·ISA가 따르는 STOP 주문을 만듦). 계약은 [실제 매매 명세](../specs/2026-11-06-real-trade-mirror.md) §13과 [ISA 명세](../specs/2026-11-06-isa-manual-account.md) §11.
 - 지키는 방법:
   - 실제 매매: `RealTradePlannerTest.timedSyncWindows`·`stopWindow`, `RealTradeJobDbTest`(시각 맞추기 묶음·묶음 몫·창 끝 놓침, 스탑 정수 보유 전량·매수 멈춤 중에도·개장 10분 하한·놓침·시도 2,
-    묶음이 실패해도 스탑(`stopSellsWhenBatchFails`)·묶음과 스탑이 더 팔지 않음(`batchAndStopDoNotOversell`), 대기 STOP 종목 매수 없음(`pendingStopBlocksBuys`·`pendingStopBlocksDeferredRetry`),
+    묶음이 실패해도 스탑(`stopSellsWhenBatchFails`)·묶음과 스탑이 더 팔지 않음(`batchAndStopDoNotOversell`), 스탑은 회전율 멈춤에 세지 않음(`qa302*` — 스탑이 아닌 몫은 그대로 멈춤
+    `qa302NonStopSellsStillTripTurnover`, `RealTradePlannerTest.turnoverWithoutStops`), 대기 STOP 종목 매수 없음(`pendingStopBlocksBuys`·`pendingStopBlocksDeferredRetry`),
     장부 밀림 날 스탑만(`ledgerBehindStopsOnly`)·장 시간 불일치 날 스탑 없음(`hoursMismatchNoStops`)), `RealTradeServiceDbTest.previewUsesTimedSync`, `RealTradeNoticesTest`(건수만),
     `PaperMirrorServiceTest`(`targetsAtIncludesTimedUpToT`·`targetsAtMatchesOpenTargetsAndCashLikeLast`·`dailySyncAtForRules`·`dailySyncAtLateOpenDay`·`dailySyncAtForClaude`·`pendingStopSymbols`·`ladderPrices`).
   - ISA: `ManualAccountJobDbTest`(시각 맞추기 지시·자동 기록·open-fallback, 스탑 지시와 즉시 알림·흡수한 STOP은 지시 없음·종가 STOP 글·마감까지 못 알린 지시·자동 기록 순서·다음 날 07:00 포기·30초 주기),
@@ -33,7 +34,9 @@
 2. **장중 스탑 매도**: 따라 하는 책의 STOP 주문(장중 감시가 낸 것과 밤 대체 경로)을 따라, 기준 시각 T부터 T + 3분 안에 그때 다시 읽은 매도 가능 수량까지 시장가로
    판다. 주문은 기존 수집기 `toss_trade.py`의 주문 경로·가드·한도로만 나간다 — 새 쓰기 경로는 없다. 손실 한도 멈춤은 매수만 막으므로 손절은 막히지 않는다.
 3. **STOP은 묶음 목표에 반영하되 흡수하지 않는다.** 일일 맞추기 묶음이 사전 조회 실패 등으로 창을 넘겨도 스탑 매도 경로는 따로 돌아 손절이 나간다. 두 길 모두 목표
-   보유가 0이라 겹쳐도 더 팔 수 없다.
+   보유가 0이라 겹쳐도 더 팔 수 없다. 묶음의 회전율 멈춤(60%)은 따라 하는 책의 대기 STOP 종목의 매도와, 그 대금(묶음의 스탑 매도 + 스탑 경로가 먼저 보낸 스탑 매도)까지의
+   현금성 매수를 빼고 센다(QA-302) — 스탑이 멈춤을 걸면 같은 주기의 스탑 경로까지 서서 손절이 사라지기 때문이다. 시가 맞추기 날 묶음이 흡수하는 `NEXT_OPEN` STOP도 같다.
+   스탑이 아닌 몫이 60%를 넘으면 예전처럼 이상 멈춤이고, 이상 멈춤(사유와 상관없이) 동안에는 스탑 매도도 나가지 않는다.
 4. **매수 직전 대기 STOP 종목을 뺀다.** 묶음 재시도·마무리·따라 하기 매수를 보내기 직전에 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지
    않는다(방금 판 종목을 재시도가 다시 사지 않게).
 5. **배포와 함께 바로 켠다**(사용자 결정 2026-11-06). 실제 계좌의 장중 스탑은 한국 감시 스위치(`kr.stopWatch.mode=ON`)와 실제 매매 상태(켜짐)를 함께 따른다 —

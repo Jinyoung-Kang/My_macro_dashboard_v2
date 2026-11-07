@@ -355,6 +355,56 @@ final class RealTradePlanner {
     }
 
     /**
+     * 이상 멈춤 판정에 쓰는 회전율(ADR 0033 결정 3, QA-302) — {@code plan}({@link #sync}를 같은 비중·계좌·{@code blocked}·규칙·임계값으로 부른 계획,
+     * 범위 없음)의 회전율 금액에서 대기 STOP 종목의 <b>매도</b> 몫과, 현금성 종목의 <b>매수</b> 몫 가운데 스탑 대금(그 스탑 매도 금액 +
+     * {@code stopProceeds})까지를 뺀 계획을 돌려줍니다. 스탑 매도는 손절이라 회전율 멈춤의 대상이 아니고(멈추면 같은 주기의 스탑 매도 경로까지 서서 손절이
+     * 사라짐), 책이 그 대금으로 사는 현금성(규칙 계좌의 남는 현금 몫)도 같은 몫으로 봅니다 — 스탑 대금보다 많은 현금성 매수와 스탑이 아닌 종목의 매매는
+     * 그대로 셉니다. 종목마다의 차이 금액은 다른 종목과 상관없으므로 {@link #sync}를 그 종목 하나의 범위로 다시 불러 셉니다. 주문·건너뜀은 바꾸지 않고,
+     * 스탑 종목이 없으면 {@code plan} 그대로입니다.
+     *
+     * @param stopProceeds 계획 밖의 스탑 대금 — 오늘 스탑 매도 경로가 묶음보다 먼저 보낸 스탑 종목 매도(진행 중이면 이 기능 주문 진행 중이라, 끝났으면
+     *                     보유에서 빠져 계획의 회전율에 없음). null이면 0.
+     */
+    static Plan withoutStops(Plan plan, Map<String, Double> weightPct, Account account, Set<String> blocked, Rules rules, boolean threshold,
+                             Set<String> stopSymbols, BigDecimal stopProceeds) {
+        if (stopSymbols == null || stopSymbols.isEmpty()) {
+            return plan;
+        }
+        BigDecimal stopSells = BigDecimal.ZERO;
+        BigDecimal cashBuys = BigDecimal.ZERO;
+        Set<String> symbols = new TreeSet<>(stopSymbols);
+        symbols.addAll(rules.cashLike());
+        for (String symbol : symbols) {
+            BigDecimal amount = sync(weightPct, plan.equity(), account, blocked, BigDecimal.ZERO, rules, threshold, Set.of(symbol), null)
+                    .turnoverAmount();
+            if (amount.signum() <= 0) {
+                continue;
+            }
+            boolean buy = buys(symbol, weightPct.get(symbol), plan.equity(), account);
+            if (!buy && stopSymbols.contains(symbol)) {
+                stopSells = stopSells.add(amount);
+            } else if (buy && rules.cashLike().contains(symbol)) {
+                cashBuys = cashBuys.add(amount);
+            }
+        }
+        BigDecimal funding = stopProceeds == null ? stopSells : stopSells.add(stopProceeds.max(BigDecimal.ZERO));
+        BigDecimal counted = plan.turnoverAmount().subtract(stopSells).subtract(cashBuys.min(funding)).max(BigDecimal.ZERO);
+        return new Plan(plan.orders(), plan.skipped(), counted, plan.equity());
+    }
+
+    /** {@link #sync}가 그 종목을 사는 쪽으로 정하는가(차이가 양수 — 회전율에 들어간 종목만 부르므로 차이는 1주 이상 벌어져 있음). */
+    private static boolean buys(String symbol, Double weightPct, BigDecimal equity, Account account) {
+        BigDecimal price = account.price(symbol);
+        BigDecimal target = weightPct != null && price != null ? targetQuantity(weightPct, equity, price) : BigDecimal.ZERO;
+        return difference(target, account.held(symbol), account.pendingOf(symbol)).signum() > 0;
+    }
+
+    /** 차이 = 목표 − 보유 − 미체결 매수 + 미체결 매도(명세 §2). */
+    private static BigDecimal difference(BigDecimal target, BigDecimal held, Pending pending) {
+        return target.subtract(held).subtract(pending.buy()).add(pending.sell());
+    }
+
+    /**
      * 매도 가능 수량을 물어야 할 종목 — 계획의 매도 주문과 매도 가능 수량을 몰라 건너뛴 종목. 정기 작업은 먼저 매도 가능 수량 없이 계획한 뒤(정수 보유로 어림)
      * 이 종목만 다시 물어 매도 수량을 자릅니다(수집기 사전 조회 시간 예산 — 명세 §5.2).
      */
@@ -433,7 +483,7 @@ final class RealTradePlanner {
             skipped.add(new Skip(symbol, name, SKIP_PENDING_UNKNOWN));
             return null;
         }
-        BigDecimal diff = target.subtract(held).subtract(pending.buy()).add(pending.sell());
+        BigDecimal diff = difference(target, held, pending);
         String side = diff.compareTo(ONE) >= 0 ? BUY : diff.compareTo(ONE.negate()) <= 0 ? SELL : null;
         if (side == null) {
             if (fractional && target.signum() == 0 && (onlySide == null || SELL.equals(onlySide))) {
