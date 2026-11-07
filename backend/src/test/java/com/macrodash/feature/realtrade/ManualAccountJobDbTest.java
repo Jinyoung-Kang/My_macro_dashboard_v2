@@ -14,7 +14,6 @@ import com.macrodash.store.ManualAccountStore.LedgerRow;
 import com.macrodash.store.ManualAccountStore.LedgerValues;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -561,8 +560,6 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @Disabled("QA-322 재현 — 수정 전에는 스탑 지시 수량이 그날 지시만 더해, 아직 적히지 않은 앞 세션 지시(매수)를 빼먹어 지시가 없거나 모자라고, "
-            + "스탑 기록도 그 지시를 기다리지 않음. fix(QA-322)에서 켭니다")
     @DisplayName("QA-322: 앞 세션 지시가 아직 적히지 않았으면 다음 세션 장중 스탑 지시 수량에 그 지시를 더하고(장부에 없는 종목도), 스탑 기록은 그 지시를 기다림")
     void stopQuantityCountsEarlierSessionInstructions() {
         timedPlanned(List.of());   // E 09:10 지시: B 15주·A 40주·현금성 1주 매수 — E 1분봉 값을 못 구해 PLANNED 그대로

@@ -86,10 +86,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>장중 스탑 지시</b>(ADR 0033 결정 7 — V28 {@code manual_stop_instructions}): {@code dashboard.manual.stop-interval-ms}(30초)마다 — 위 네
  * 단계는 그중 {@code interval-ms}(10분)이 지난 주기에만 — 규칙 계좌의 오늘 STOP 매도 대기 주문({@link PaperMirrorService#dueOrders} — 장중 감시·밤 대체,
  * 지금 + 5분 안의 것)마다 그 주문이 그날 지시 목표에 반영된 것(세션 기록 {@value #DETAIL_COVERED_STOPS})이 아니면 스탑 지시 하나(모의 주문 하나에 하나 —
- * UNIQUE)를 씁니다. 수량은 ISA 장부 보유 + 그날 아직 적지 않은 지시 증감 가운데 지시 시각이 지난 것의 정수 부분이고, 1주도 없으면 쓰지 않습니다. 알리지
+ * UNIQUE)를 씁니다. 수량은 ISA 장부 보유 + 그 세션 이하의 아직 적지 않은 지시(앞 세션 지시 포함) 증감 가운데 지시 시각이 지난 것의 정수 부분이고, 1주도 없으면 쓰지 않습니다. 알리지
  * 않은 스탑 지시는 바로 한 통으로 알리고(종목 코드·이름·수량만 — 종가 STOP은 '종가 단일가 시장가' 글, ADR 0029 결정 4의 예외 안), 그 세션 마감까지 못
  * 알리면 SKIPPED(not-notified — 적지 않음, 다음 날 지시가 '책에 없는 보유'로 팖). 알린 스탑 지시는 그 모의 주문과 같은 1분봉 사다리 값
- * ({@link PaperMirrorService#orderLadderPrice})으로 그 주문 기준 시각에 자동 기록하고(그 세션 앞 지시가 모두 적힌 뒤), 1분봉 창이 아예 없으면 그 세션
+ * ({@link PaperMirrorService#orderLadderPrice})으로 그 주문 기준 시각에 자동 기록하고(그 세션 이하의 앞 지시가 모두 적힌 뒤), 1분봉 창이 아예 없으면 그 세션
  * 종가로 어림합니다. 알린 스탑 지시가 적히기 전에는 다음 세션 지시를 만들지 않습니다(같은 종목을 '책에 없는 보유'로 다시 팔라고 하지 않게).
  *
  * <p>로그에는 세션·건수·사유 코드만 남깁니다(종목·수량·금액 없음). 예상 못 한 예외·오류는 클래스 이름만 남기고 다음 주기에 다시 봅니다(던지면 전용
@@ -381,15 +381,20 @@ class ManualAccountJob {
         return made;
     }
 
-    /** 잠금 안 — 그 종목의 ISA 장부 보유 + 그날 아직 적지 않은 지시 가운데 지시 시각(없으면 개장)이 지난 것의 증감, 정수 부분. */
+    /**
+     * 잠금 안 — 그 종목의 ISA 장부 보유 + 그 세션 이하의 아직 적지 않은 지시(PLANNED, 묶인 장부 행 없음) 가운데 지시 시각(없으면 그 지시 세션의 개장)이 지난
+     * 것의 증감, 정수 부분. 앞 세션 지시도 셉니다(QA-322 — 그 세션 1분봉·밤 관측치가 늦어 다음 세션 장중까지 PLANNED로 남으면, 예전에는 그날 지시만 더해
+     * 앞 세션에 산 종목의 스탑 지시가 없거나 모자랐음 — ADR 0033의 '지시 시각이 지난 아직 적지 않은 지시').
+     */
     private int stopQuantity(LocalDate session, String symbol, Instant now) {
         State state = ManualAccountLedger.replay(store.ledger(CODE).stream().map(Entry::of).toList());
         BigDecimal held = state.holdings().containsKey(symbol) ? state.holdings().get(symbol).quantity() : BigDecimal.ZERO;
-        SessionHours hours = ManualAccountCalendar.hours(paper, session);
-        for (Instruction i : store.instructions(CODE, session)) {
-            if (!i.planned() || !symbol.equals(i.symbol()) || !store.ledgerForInstruction(i.id()).isEmpty()) {
+        Map<LocalDate, SessionHours> hoursBySession = new HashMap<>();
+        for (Instruction i : store.plannedInstructions(CODE)) {
+            if (i.session().isAfter(session) || !symbol.equals(i.symbol()) || !store.ledgerForInstruction(i.id()).isEmpty()) {
                 continue;
             }
+            SessionHours hours = hoursBySession.computeIfAbsent(i.session(), d -> ManualAccountCalendar.hours(paper, d));
             Instant at = targetAt(i) != null ? targetAt(i) : hours == null ? null : hours.open();
             if (at == null || at.isAfter(now)) {
                 continue;
@@ -458,10 +463,10 @@ class ManualAccountJob {
             if (s.notifiedAt() == null || now.isBefore(s.targetAt())) {
                 continue;
             }
-            boolean dailyWaiting = store.instructions(CODE, s.session()).stream().anyMatch(i -> i.planned()
-                    && !Optional.ofNullable(targetAt(i)).orElse(Instant.MIN).isAfter(s.targetAt()));
+            boolean dailyWaiting = store.plannedInstructions(CODE).stream().anyMatch(i -> !i.session().isAfter(s.session())
+                    && (i.session().isBefore(s.session()) || !Optional.ofNullable(targetAt(i)).orElse(Instant.MIN).isAfter(s.targetAt())));
             if (dailyWaiting) {
-                continue;   // 그 세션 앞 지시가 먼저 적혀야 보유가 맞음
+                continue;   // 그 세션 이하의 앞 지시(앞 세션 지시 포함 — QA-322)가 먼저 적혀야 보유가 맞음
             }
             Optional<PaperMirrorService.LadderPrice> ladder = paper.orderLadderPrice(SOURCE_BOOK, s.paperOrderId());
             BigDecimal price = ladder.map(PaperMirrorService.LadderPrice::price).orElse(null);
