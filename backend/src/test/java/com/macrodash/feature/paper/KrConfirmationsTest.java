@@ -627,7 +627,6 @@ class KrConfirmationsTest {
     // 세션은 D+2라 'D+1 마감이 아님'으로 보고 금융위 D+1 행이 들어와도 D+1 줄을 확정으로 다시 쓰지 않음 → D+2 밤 관측치가 D+2 줄을 쓰면 확정 조정은 마지막
     // 줄만 다시 쓰므로 D+1 줄이 잠정으로 영구히 남음.
     @Test
-    @org.junit.jupiter.api.Disabled("QA-336 재현 — 수정 전: 낮에 다시 저장된 D+1 자료 저장본을 처리한 장부를 D+2 세션으로 봐 D+1 줄을 확정하지 않음")
     @DisplayName("QA-336 확정 순자산 줄의 '장부가 그 줄 D 마감인가'는 마지막 처리 저장본이 담은 자료의 세션(20:30 규칙)으로 — D+2 낮에 다시 저장된 D+1 자료를 "
             + "처리했어도 금융위 D+1 행이 들어오면 D+1 줄이 확정")
     void qa336ReSavedSnapshotStillCountsAsTheSessionItHolds() {

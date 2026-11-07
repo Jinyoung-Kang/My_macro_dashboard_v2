@@ -353,6 +353,9 @@ final class KrConfirmations {
 
     /**
      * 장부 상태가 그 줄의 거래일 D 마감이 아닌 까닭(맞으면 null) — 마지막으로 처리한 관측치의 세션이 D가 아니거나 D 뒤 체결이 있음({@link #rewriteNav}).
+     * 마지막 처리 저장본의 세션은 수집 시각의 세션이 아니라 그 저장본이 담은 자료의 세션({@link KrPaperMarket#targetSession} — 수집기
+     * {@code kr_target_session}과 같은 20:30 규칙)입니다: D+1 낮에 다시 저장된 D 자료 저장본(1분봉 개장 봉 재요청 등)을 처리한 장부는 아직 D 마감입니다
+     * (QA-336 — 수집 시각으로 세면 D+1로 봐 금융위 D 행이 들어와도 D 줄을 확정하지 않고, D+1 밤 줄이 생기면 그 줄은 잠정으로 영구히 남음. QA-331과 같은 꼴).
      */
     private String stateMovedPast(MarketRun run, Book book, BookState state, LocalDate day) {
         if (state.lastProcessedCollectedAt() == null) {
@@ -360,7 +363,7 @@ final class KrConfirmations {
         }
         LocalDate session;
         try {
-            session = run.calendar().currentOrLastSession(state.lastProcessedCollectedAt());
+            session = KrPaperMarket.targetSession(state.lastProcessedCollectedAt(), run.calendar());
         } catch (com.macrodash.analytics.CalendarUnavailableException e) {
             return "마지막 관측치의 세션을 셀 수 없음(" + e.getMessage() + ")";
         }
