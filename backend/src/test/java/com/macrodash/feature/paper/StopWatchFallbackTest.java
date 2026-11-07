@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -127,7 +126,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-307 재현 — 수정 전에는 마지막 감시 회차(15:55:20)를 놓쳐 15:55 격자를 판정하지 못한 날도 16:15 관측치가 덮음으로 보고 종가 스탑을 건너뜀. fix(QA-307)에서 켭니다")
         @DisplayName("ON — 마지막 감시 회차를 놓쳐 15:50:20 저장본(마지막 봉 15:49)뿐이면 16:15 확정 종가 관측치는 덮지 않아 종가 스탑(QA-307)")
         void missedLastGridKeepsTheCloseFallback() {
             mode("ON");
@@ -303,7 +301,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-307 재현 — 수정 전에는 마지막 감시 회차(15:20:20)를 놓쳐 15:20 격자를 판정하지 못한 날도 밤 감지가 덮음으로 보고 밤 스탑을 다음 세션 감시에 맡김. fix(QA-307)에서 켭니다")
         @DisplayName("ON — 마지막 감시 회차를 놓쳐 15:15:20 저장본(마지막 봉 끝 15:15)뿐이면 밤 감지는 덮지 않아 다음 거래일 09:10 NIGHT_FALLBACK(QA-307)")
         void missedLastGridKeepsTheNightFallback() {
             mode("ON", null);

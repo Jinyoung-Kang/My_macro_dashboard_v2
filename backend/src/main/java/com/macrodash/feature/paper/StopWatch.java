@@ -32,7 +32,8 @@ import java.util.List;
  *       장부의 전일 종가({@code fill_ref_close})가 {@value #US_CLOSE_MISMATCH}배 넘게 다를 때도 뺍니다. 뺀 종목은 밤·시간별 경로(기업행위·분할 판정 뒤
  *       스탑)가 맡습니다. 가드를 판단할 자료(첫 봉·전일 종가)가 없으면 '모름' — 감시가 그 종목을 판정하지 않습니다.</li>
  *   <li><b>덮음</b>({@link #covered}): 장부의 대체 경로(미국 시간별·한국 밤 스탑)가 그 종목을 건너뛰어도 되는가 — 그 세션 항목이 이어받지 않은 새
- *       값이고, 가드가 판단되어 빼지 않았고, min(그 시각, 격자 끝) − {@link #COVER_WINDOW} 이후의 거래 표본이 있을 때.</li>
+ *       값이고, 가드가 판단되어 빼지 않았고, 그 시각 − {@link #COVER_WINDOW} 이후의 거래 표본이 있을 때. 격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤)은
+ *       마지막 격자(격자 끝)의 가격이 있을 때만 — 마지막 감시 회차를 놓쳐 그 격자를 판정하지 못한 날은 대체 경로가 맡습니다(QA-307).</li>
  *   <li><b>주문 시점</b>({@link #target}): T = 감지(주문 생성) + 60초 뒤 첫 분({@link ExecutionAudit#marketTarget} — 늦은 주문 가드 ⑤를 지킴). T가 그
  *       세션 첫 분(개장 + 10분) 앞이면 그 첫 분의 지정 시각, 장 끝 여유 안(미국 15:55·한국 15:20 뒤)이면 종가, 그 밖은 장중 시장가.</li>
  * </ul>
@@ -242,7 +243,11 @@ final class StopWatch {
             return false;
         }
         Instant end = gridEnd(calendar, session, korea);
-        Instant since = (at.isBefore(end) ? at : end).minus(COVER_WINDOW);
+        if (!at.isBefore(end)) {
+            // 격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤) — 마지막 격자의 가격이 있어야(마지막 회차가 그 격자를 판정할 수 있었어야) 덮음(QA-307).
+            return price(entry, end, session, calendar, korea).price() != null;
+        }
+        Instant since = at.minus(COVER_WINDOW);
         for (JsonNode bar : Json.array(entry, "bars")) {
             Instant time = barTime(bar, session, calendar, korea);
             Double close = Json.asDouble(bar, "c");
