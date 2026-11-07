@@ -76,6 +76,14 @@ class ManualAccountNoticesTest {
     }
 
     @Test
+    @DisplayName("QA-324: 시각 맞추기 세션의 '할 매매 없음'(다시 계산)은 제목 '09:10 매매 지시'·'이 세션에 할 매매가 없습니다' — 시각이 없으면 시가 글 그대로")
+    void timedNoTradesText() {
+        assertThat(ManualAccountNotices.noTrades(MONDAY, LocalTime.of(9, 10))).isEqualTo("<b>[ISA 계좌] 11/09(월) 09:10 매매 지시(다시 계산)</b>\n"
+                + "장부가 바뀌어 다시 계산했더니 이 세션에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.");
+        assertThat(ManualAccountNotices.noTrades(MONDAY, null)).isEqualTo(ManualAccountNotices.noTrades(MONDAY));
+    }
+
+    @Test
     @DisplayName("시각 맞추기 지시(ADR 0033) — 제목 '11/09(월) 09:10 매매 지시', 끝줄 '09:10 이후 시장가'·장중 스탑 따로 알림, 금액 없음")
     void timedSyncText() {
         String text = ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), LocalTime.of(9, 10),

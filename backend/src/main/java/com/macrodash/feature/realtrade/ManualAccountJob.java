@@ -973,7 +973,14 @@ class ManualAccountJob {
                 || !row.detail().path(DETAIL_RECALCULATED).asBoolean(false) || row.detail().has(DETAIL_RECALC_NOTICE_AT)) {
             return true;
         }
-        if (!sendText(ManualAccountNotices.noTrades(next.date()))) {
+        Instant syncAt = null;
+        try {
+            String text = row.detail().path(DETAIL_TARGET_AT).asString(null);
+            syncAt = text == null || text.isBlank() ? null : Instant.parse(text);
+        } catch (RuntimeException e) {
+            syncAt = null;   // 읽지 못하면 시가 글(그 세션 기록의 시각을 지어내지 않음)
+        }
+        if (!sendText(ManualAccountNotices.noTrades(next.date(), syncAt == null ? null : syncAt.atZone(Kst.ZONE).toLocalTime()))) {
             return false;
         }
         store.patchSessionDetail(CODE, next.date(), Map.of(DETAIL_RECALC_NOTICE_AT, now.toString()));

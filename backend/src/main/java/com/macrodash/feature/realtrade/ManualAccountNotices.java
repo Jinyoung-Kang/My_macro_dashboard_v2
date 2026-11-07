@@ -132,7 +132,18 @@ final class ManualAccountNotices {
 
     /** 장부를 고쳐 다시 계산했더니 그 세션에 할 매매가 없음(앞서 보낸 지시를 내지 않게 — ISA-R4). 종목·수량도 없습니다. */
     static String noTrades(LocalDate session) {
-        return title(session, true) + "\n장부가 바뀌어 다시 계산했더니 이 세션 시가에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.";
+        return noTrades(session, null);
+    }
+
+    /**
+     * {@link #noTrades(LocalDate)}에 지시 시각을 — 개장 10분 뒤 시각 맞추기 세션(세션 기록 {@code targetAt}, ADR 0033 결정 7)이면 제목 '11/10(화) 09:10 매매
+     * 지시(다시 계산)'와 '이 세션에 할 매매가 없습니다'(QA-324 — 예전에는 그날도 '시가 매매 지시'·'이 세션 시가에'), {@code at}이 null이면 시가 글 그대로.
+     */
+    static String noTrades(LocalDate session, LocalTime at) {
+        if (at == null) {
+            return title(session, true) + "\n장부가 바뀌어 다시 계산했더니 이 세션 시가에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.";
+        }
+        return title(session, hhmm(at) + " 매매 지시", true) + "\n장부가 바뀌어 다시 계산했더니 이 세션에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.";
     }
 
     private static String title(LocalDate session, boolean recalculated) {

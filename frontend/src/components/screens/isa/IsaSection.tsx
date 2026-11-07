@@ -16,6 +16,7 @@ import {
   COST_NOTE,
   formatShares,
   formatWon,
+  instructionWhenText,
   ISA_BANNER,
   ISA_SOURCE,
   isaBasisNote,
@@ -26,6 +27,7 @@ import {
   kindLabel,
   LEDGER_CHANGED_TEXT,
   ledgerRowForInstruction,
+  PENDING_INSTRUCTIONS_GUIDE,
   sessionLabel,
   sessionStatusLabel,
   sideLabel,
@@ -261,7 +263,7 @@ export function IsaSection() {
         title="지시 건너뜀"
         description={
           skipItem
-            ? `${skipItem.session ? `${sessionLabel(skipItem.session)} 시가 ` : ""}${sideLabel(skipItem.side)} ${symbolText(skipItem.symbol, skipItem.name)} ${formatShares(skipItem.quantity)}주 지시를 건너뜀으로 둡니다 — 장부에 쓰지 않습니다(매매하지 않았을 때). 되돌릴 수 없습니다.`
+            ? `${instructionWhenText(skipItem)}${sideLabel(skipItem.side)} ${symbolText(skipItem.symbol, skipItem.name)} ${formatShares(skipItem.quantity)}주 지시를 건너뜀으로 둡니다 — 장부에 쓰지 않습니다(매매하지 않았을 때). 되돌릴 수 없습니다.`
             : undefined
         }
         confirmLabel="건너뜀"
@@ -411,9 +413,7 @@ function StartedBody({
               caption="처리 안 된 지난 지시"
               withSession
             />
-            <p className="text-xs leading-relaxed text-text-3">
-              실제로 매매했으면 &apos;체결 고치기&apos;로 수량·체결가를, 매매하지 않았으면 &apos;건너뜀&apos;을 누르세요. 그 세션 시가가 들어오면 지시대로 자동 기록합니다.
-            </p>
+            <p className="text-xs leading-relaxed text-text-3">{PENDING_INSTRUCTIONS_GUIDE}</p>
           </div>
         </Card>
       )}

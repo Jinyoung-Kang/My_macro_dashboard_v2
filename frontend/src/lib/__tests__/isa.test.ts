@@ -60,6 +60,8 @@ import {
   tradeGuide,
   unavailableText,
   unpricedText,
+  instructionWhenText,
+  PENDING_INSTRUCTIONS_GUIDE,
 } from "../isa";
 import type { IsaHolding, IsaInstructionItem, IsaLedgerRow, IsaSummary } from "../types/isa";
 
@@ -500,6 +502,17 @@ describe("개장 10분 뒤 시각 맞추기·장중 스탑 지시(ADR 0033)", ()
     expect(stopNoteLabel(null)).toBe("—");
     expect(stopNotifiedText({ notifiedAt: "2026-11-09T11:30:10+09:00" })).toBe("알림 11/09 11:30");
     expect(stopNotifiedText({ notifiedAt: null })).toBe("보내기 전");
+  });
+
+  // QA-324: 리뷰 TXT-7 — 스탑 지시 메모의 no-price(다음 날 07:00까지 값 없음)·restored(DB 복원 멈춤)가 영어 글자 그대로 보이고, 개장 10분 뒤 시각 맞추기
+  // 지시의 건너뜀 확인 창·'처리 안 된 지난 지시' 안내가 '시가'라고만 적었음.
+  it("스탑 지시 메모 no-price·restored는 우리말, 시각 맞추기 지시의 건너뜀 머리는 'HH:MM 이후 시장가', 지난 지시 안내는 두 경우", () => {
+    expect(stopNoteLabel("no-price")).toBe("값을 구하지 못해 건너뜀(다음 날 07:00)");
+    expect(stopNoteLabel("restored")).toBe("DB 복원으로 건너뜀");
+    expect(instructionWhenText({ session: "2026-11-10", targetAt: "2026-11-10T00:10:00Z" })).toBe("11/10(화) 09:10 이후 시장가 ");
+    expect(instructionWhenText({ session: "2026-11-06", targetAt: null })).toBe("11/06(금) 시가 ");
+    expect(instructionWhenText({ session: null, targetAt: "2026-11-10T00:10:00Z" })).toBe("");
+    expect(PENDING_INSTRUCTIONS_GUIDE).toContain("그 세션 시가(개장 10분 뒤 시각 맞추기 지시는 그 시각의 1분봉 값)가 들어오면");
   });
 
   // QA-314: 매도 창은 그 줄의 기준 시각(서버 targetAt)에서 셈 — 장 시간 변경일(2026-11-19 10:00~16:30)도 그날 시각, 고정 09:10·15:20~15:30이 아님.

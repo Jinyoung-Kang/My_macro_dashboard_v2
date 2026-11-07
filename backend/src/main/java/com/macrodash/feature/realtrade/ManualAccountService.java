@@ -258,7 +258,8 @@ public class ManualAccountService {
         shown.forEach(r -> ledger.add(ledgerRow(r, names)));
         out.put("ledger", ledger);
 
-        notes.add("자동 기록은 지시대로 규칙 계좌와 같은 시가에 수수료·세금 0으로 적습니다 — 실제 체결과 다르면 고치세요.");
+        notes.add("자동 기록은 지시대로 규칙 계좌와 같은 값 — 시가 지시는 그 세션 시가, 개장 10분 뒤 시각 맞추기 지시·장중 스탑 지시는 그 시각의 1분봉 값 — "
+                + "에 수수료·세금 0으로 적습니다 — 실제 체결과 다르면 고치세요.");
         if (!acc.active()) {
             notes.add("계좌가 멈춤 상태라 지시를 만들거나 자동 기록하지 않습니다.");
         }
