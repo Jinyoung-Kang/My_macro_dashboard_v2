@@ -8,6 +8,8 @@ tests/test_group_schedule.py
   2. slow의 기동 직후 한 번은 slow_first_run이 정합니다 — 다음 :15까지 15분 넘게 남았고 관측치(paper.quotes)가 15분보다 오래됐거나 없을 때만.
      돌지 않을 때는 next_run_time 인자를 아예 넘기지 않습니다(None은 일시정지로 등록됨). fast·weekly·session은 지금처럼 기동 직후 한 번.
   3. 주기 환경변수를 바꾼 실험 스택(COLLECTOR_SLOW_INTERVAL·COLLECTOR_SESSION_INTERVAL)은 예전처럼 interval입니다. /status 주기 표는 그대로.
+  4. 관측치가 신선해 slow 전체를 다시 돌지 않는데 이번 회차(가장 최근 :15부터)의 slow 실행이 중간에 끊겼으면, 그 회차에 이미 끝난 태스크와 관측치
+     (paper_quotes)를 건너뛰고 남은 태스크만 곧바로 한 번 돕니다(QA-308 — 1분봉·한국 밤 관측치를 한 시간 놓치지 않게).
 
 외부 네트워크·DB에 나가지 않습니다(스케줄러는 가짜, 저장본 읽기는 스텁).
 """
@@ -52,8 +54,11 @@ def test_고정_위상_상수():
     assert main.SLOW_MISFIRE_GRACE_SECONDS == 900 and main.SESSION_MISFIRE_GRACE_SECONDS == 120
 
 
-def _jobs(monkeypatch, *, first_run=None, quotes_at=None) -> dict[str, dict]:
-    """lifespan을 가짜 스케줄러로 한 번 띄우고 등록한 작업(id → add_job 인자)을 돌려줍니다."""
+def _jobs(monkeypatch, *, first_run=None, quotes_at=None, now=None, done=None) -> dict[str, dict]:
+    """
+    lifespan을 가짜 스케줄러로 한 번 띄우고 등록한 작업(id → add_job 인자)을 돌려줍니다. ``now``를 주면 기동 시각을 그 시각으로 고정하고,
+    ``done``은 '이번 회차에 끝나지 않은 slow 실행'을 읽는 저장 계층 함수(store.unfinished_group_tasks)의 스텁입니다(기본 — 없음).
+    """
     jobs: list[dict] = []
 
     class FakeScheduler:
@@ -78,8 +83,16 @@ def _jobs(monkeypatch, *, first_run=None, quotes_at=None) -> dict[str, dict]:
     monkeypatch.setattr(settings, "scheduler_enabled", lambda: True)
     monkeypatch.setattr(main, "BackgroundScheduler", FakeScheduler)
     monkeypatch.setattr(main, "_last_quotes_at", lambda: quotes_at)
+    monkeypatch.setattr(app_store, "unfinished_group_tasks", done or (lambda group, since: None), raising=False)
     if first_run is not None:
         monkeypatch.setattr(main, "slow_first_run", first_run)
+    if now is not None:
+        class FixedNow(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+
+        monkeypatch.setattr(main, "datetime", FixedNow)
 
     async def enter_and_exit() -> None:
         async with main.lifespan(main.app):
@@ -157,3 +170,33 @@ def test_관측치_저장본을_읽지_못하면_시각_규칙만(monkeypatch):
     assert main._last_quotes_at() is None
     monkeypatch.setattr(app_store, "read_snapshot", lambda name: None)
     assert main._last_quotes_at() is None
+
+
+# 21:15 KST(12:15 UTC) 회차가 7번째 태스크 paper_quotes까지 저장한 뒤 끊긴 경우 — 그 회차에 끝난 태스크
+_DONE_BEFORE_CUT = frozenset({"fred_series", "fed_liquidity", "krx_futures", "sector_history", "fx_history", "equity_history",
+                              "paper_quotes"})
+
+
+@pytest.mark.xfail(strict=True, reason="QA-308 재현 — 수정 전에는 관측치가 신선하면 끊긴 :15 회차의 남은 slow 태스크를 다음 :15까지 돌리지 않음")
+def test_QA308_관측치_저장_뒤_끊긴_slow_회차는_남은_태스크만_곧바로_다시_돈다(monkeypatch):
+    # 한국 거래일 21:16:40 KST 재기동(배포·OOM 뒤 재시작) — 관측치는 30초 전(21:16:10)이라 slow 전체는 다시 돌지 않음(감사 사슬)
+    monkeypatch.delenv("COLLECTOR_SLOW_INTERVAL", raising=False)
+    seen = []
+    jobs = _jobs(monkeypatch, quotes_at=_at(12, 16, 10), now=_at(12, 16, 40),
+                 done=lambda group, since: seen.append((group, since)) or _DONE_BEFORE_CUT)
+
+    assert "next_run_time" not in jobs["collect-slow"], "관측치 저장본을 하나 더 만들지 않음"
+    resume = jobs["collect-slow-resume"]
+    assert resume["trigger"] == "date" and resume["func"] is main._run_group_job and resume["args"] == ["slow"]
+    assert resume["run_date"] == _at(12, 16, 40) and resume["misfire_grace_time"] == main.SLOW_MISFIRE_GRACE_SECONDS
+    skip = resume["kwargs"]["skip"]
+    assert _DONE_BEFORE_CUT <= skip and "paper_quotes" in skip
+    assert not {"paper_bars_us", "kr_paper_timed", "kr_paper_quotes", "kr_paper_flows"} & skip, "남은 태스크(1분봉·한국 밤 관측치)는 곧바로"
+    assert seen == [("slow", _at(12, 15))], "이번 회차(가장 최근 :15) 뒤에 시작한 slow 실행만 봄"
+
+
+def test_slow_회차가_끝났으면_남은_태스크_실행을_등록하지_않는다(monkeypatch):
+    monkeypatch.delenv("COLLECTOR_SLOW_INTERVAL", raising=False)
+    jobs = _jobs(monkeypatch, quotes_at=_at(12, 16, 10), now=_at(12, 16, 40), done=lambda group, since: None)
+    assert "collect-slow-resume" not in jobs
+    assert "next_run_time" not in jobs["collect-slow"]
