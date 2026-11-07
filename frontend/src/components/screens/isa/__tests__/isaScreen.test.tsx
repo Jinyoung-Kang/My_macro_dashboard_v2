@@ -894,6 +894,15 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
 
   const latest = () => FakeEventSource.instances[FakeEventSource.instances.length - 1];
 
+  /**
+   * 화면이 연 연결 — 보유 표가 먼저 그려지고 연결은 그 뒤 효과에서 열려, 병렬 부하에서는 표를 찾은 직후에 아직 없을 수 있습니다. 'prices'를 듣는
+   * 쪽이 붙을 때까지 기다린 뒤 돌려줍니다(act 밖에서 — act 안에서 기다리면 효과가 act가 끝날 때까지 돌지 않음).
+   */
+  const opened = async (): Promise<FakeEventSource> => {
+    await waitFor(() => expect(FakeEventSource.instances.at(-1)?.listeners.get("prices")?.length ?? 0).toBeGreaterThan(0));
+    return latest();
+  };
+
   it("탭 머리에 주기 상자(실시간 시세와 같은 값)와 기준 시각 — 가격을 받기 전에는 '—'와 직전 종가 평가, 보유 가격 칸에 '직전 종가'", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
@@ -903,7 +912,7 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
     expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 —");
     expect(inRegion().getByText("실시간 가격을 아직 받지 못해 서버가 준 직전 종가(밤 관측치)로 평가")).toBeTruthy();
     // 보유 종목의 실시간 가격을 고른 주기로(SSE) — 국내 종목 열쇠.
-    const url = new URL(latest().url);
+    const url = new URL((await opened()).url);
     expect(url.pathname).toBe("/api/live/prices/stream");
     expect(url.searchParams.get("items")).toBe("KR:111110,KR:222220,KR:333330");
     expect(url.searchParams.get("interval")).toBe("3600");
@@ -913,15 +922,16 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
 
     // 주기를 바꾸면 그 주기로 다시 잇습니다(다른 화면의 실시간 시세와 같은 값).
     fireEvent.change(select, { target: { value: "10" } });
-    expect(new URL(latest().url).searchParams.get("interval")).toBe("10");
+    await waitFor(() => expect(new URL(latest().url).searchParams.get("interval")).toBe("10"));
     expect(window.localStorage.getItem("live.priceRefreshSeconds")).toBe("10");
   });
 
   it("실시간 가격을 받으면 평가액·손익·비중을 다시 센다 — 못 받은 종목은 직전 종가, 기준 시각은 받은 가격의 시각 중 가장 이른 것(초까지)", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
+    const stream1 = await opened();
     await act(async () => {
-      latest().emit("prices", {
+      stream1.emit("prices", {
         available: true,
         prices: {
           fetchedAt: "2026-11-09T05:31:10Z",
@@ -955,8 +965,9 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
     expect(rowOf("다음 시가 매매 지시", "합성화학 222220").textContent).toContain("53,000원");
 
     // 두 종목을 받으면 기준 시각은 더 이른 쪽.
+    const stream2 = await opened();
     await act(async () => {
-      latest().emit("prices", {
+      stream2.emit("prices", {
         available: true,
         prices: {
           fetchedAt: "2026-11-09T05:31:20Z",
@@ -974,8 +985,9 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
     expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,200,000원");
 
     // 가격을 몰랐던 종목까지 받으면 손익 = 평가액 − 순입금: 1,200,000 + 1,300,000 + 2,700,000 + 95,000 − 5,000,000.
+    const stream3 = await opened();
     await act(async () => {
-      latest().emit("prices", {
+      stream3.emit("prices", {
         available: true,
         prices: {
           fetchedAt: "2026-11-09T05:31:30Z",
@@ -997,15 +1009,17 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
   it("다음 응답에서 빠진(missing) 종목은 멈춘 값이라 직전 종가로 평가한다(QA-184 계약)", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
+    const stream4 = await opened();
     await act(async () => {
-      latest().emit("prices", {
+      stream4.emit("prices", {
         available: true,
         prices: { fetchedAt: "2026-11-09T05:31:10Z", items: { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") }, missing: [], errors: {} },
       });
     });
     expect(rowOf("ISA 계좌 보유", "합성전자 111110").textContent).toContain("13,000원실시간 14:31:05");
+    const stream5 = await opened();
     await act(async () => {
-      latest().emit("prices", {
+      stream5.emit("prices", {
         available: true,
         prices: { fetchedAt: "2026-11-09T05:31:20Z", items: { "KR:222220": krPrice("222220", 54_000, "2026-11-09T05:31:15Z") }, missing: [], errors: {} },
       });
@@ -1021,15 +1035,17 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
   it("연결이 닫히면(disconnected) 받은 값을 실시간으로 쓰지 않고 서버 값(직전 종가)으로 — 실시간 0종목", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
+    const stream6 = await opened();
     await act(async () => {
-      latest().emit("prices", {
+      stream6.emit("prices", {
         available: true,
         prices: { fetchedAt: "2026-11-09T05:31:10Z", items: { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") }, missing: [], errors: {} },
       });
     });
     expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,150,000원");
+    const live = await opened();
     act(() => {
-      const source = latest();
+      const source = live;
       source.readyState = 2;
       source.onerror?.();
     });
