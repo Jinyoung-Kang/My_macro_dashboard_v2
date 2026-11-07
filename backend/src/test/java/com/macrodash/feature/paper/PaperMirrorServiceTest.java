@@ -13,6 +13,7 @@ import com.macrodash.store.PaperStore.LedgerHold;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -400,6 +401,33 @@ class PaperMirrorServiceTest {
         store.states.remove(BOOK);
         assertThat(service().ledgerCaughtUp(BOOK, S)).isFalse();
         assertThat(service().ledgerCaughtUp("nope", S)).isFalse();
+    }
+
+    // QA-331: 3차 리뷰 R3-SB-2 — ledgerCaughtUp이 마지막 처리 저장본을 수집 시각의 세션(currentOrLastSession)으로 판정함. P 낮(10:15)에 다시
+    // 저장된 P2 자료 저장본(수집기 kr_target_session — 20:30 전 수집은 전 거래일)만 처리했는데도 S 맞추기가 장부가 P를 반영했다고 봄. 그 저장본에는 P
+    // 봉이 없어 P 목표 시각 지정 주문(기준일 P2)은 ①이 '기준일 뒤 관측 봉 없음(거래정지 등)'으로 쉬는 주문으로 보고, 실제 계좌의 S 09:10 묶음이 그
+    // 주문 전 장부 보유로 P에 이미 체결한 실제 매매를 되돌림(뒤에 모의가 P 자료로 체결하면 다음 묶음이 다시 함 — 실제 돈 왕복).
+    @Test
+    @Disabled("QA-331 재현 — 수정 전에는 P 낮에 다시 저장된 P2 자료 저장본만 처리해도 장부가 P를 반영했다고 봄. fix(QA-331)에서 켭니다")
+    @DisplayName("장부 반영 — 마지막 처리 저장본은 수집 시각이 아니라 담은 자료의 세션(20:30 규칙)으로 셈: P 낮에 다시 저장된 P2 자료만 처리했으면 거짓, "
+            + "P 자료를 담은 밤·새벽 저장본이면 참(QA-331)")
+    void ledgerCaughtUpCountsTheSessionTheSnapshotHolds() {
+        LocalDate p3 = LocalDate.of(2026, 11, 3);
+        Instant nextDawn = kst("2026-11-06T00:30");                                    // P 자료의 늦은 저장본(자정 넘김)
+        KrFixtures.Payload night = new KrFixtures.Payload(P);
+        night.code(A, nextDawn).bar(P2, 10_000, 10_000, 1_000).bar(P, 10_100, 10_100, 1_000).minute("OK", "09:01", 10_100, 100);
+        when(marketData.quotes(any())).thenReturn(KrQuotes.parse(night.snapshot(nextDawn)));
+        state(1_000_000, nextDawn);
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("P 자료 저장본을 처리함").isTrue();
+
+        Instant reSaved = kst("2026-11-05T10:15");                                     // P 낮 재저장 — 자료는 P2까지
+        KrFixtures.Payload day = new KrFixtures.Payload(P2);
+        day.code(A, reSaved).bar(p3, 9_900, 9_900, 1_000).bar(P2, 10_000, 10_000, 1_000).minute("OK", "09:01", 10_000, 100);
+        when(marketData.quotes(any())).thenReturn(KrQuotes.parse(day.snapshot(reSaved)));
+        state(1_000_000, reSaved);
+        order(A, PaperBooks.BUY, 5.0, null, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P2, kst("2026-11-04T22:40"),
+                LocalTime.of(9, 10), null);                                                                       // 목표 세션 P — 장부에 P 봉이 없어 대기
+        assertThat(service(kst("2026-11-06T09:07")).ledgerCaughtUp(BOOK, S)).as("P 봉이 없는 저장본만 처리함 — P를 반영하지 않음").isFalse();
     }
 
     @Test
