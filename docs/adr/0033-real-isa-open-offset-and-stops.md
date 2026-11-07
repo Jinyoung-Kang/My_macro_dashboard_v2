@@ -13,7 +13,7 @@
 - 지키는 방법:
   - 실제 매매: `RealTradePlannerTest.timedSyncWindows`·`stopWindow`, `RealTradeJobDbTest`(시각 맞추기 묶음·묶음 몫·창 끝 놓침, 스탑 정수 보유 전량·매수 멈춤 중에도·개장 10분 하한·놓침·시도 2,
     묶음이 실패해도 스탑(`stopSellsWhenBatchFails`)·묶음과 스탑이 더 팔지 않음(`batchAndStopDoNotOversell`), 스탑은 회전율 멈춤에 세지 않음(`qa302*` — 스탑이 아닌 몫은 그대로 멈춤
-    `qa302NonStopSellsStillTripTurnover`, `RealTradePlannerTest.turnoverWithoutStops`), 대기 STOP 종목 매수 없음(`pendingStopBlocksBuys`·`pendingStopBlocksDeferredRetry`),
+    `qa302NonStopSellsStillTripTurnover`, `RealTradePlannerTest.turnoverWithoutStops`), 미룬 채 끝난 스탑은 놓침·구조적으로 닫은 스탑은 막힘(`qa303*`), 대기 STOP 종목 매수 없음(`pendingStopBlocksBuys`·`pendingStopBlocksDeferredRetry`),
     장부 밀림 날 스탑만(`ledgerBehindStopsOnly`)·장 시간 불일치 날 스탑 없음(`hoursMismatchNoStops`)), `RealTradeServiceDbTest.previewUsesTimedSync`, `RealTradeNoticesTest`(건수만),
     `PaperMirrorServiceTest`(`targetsAtIncludesTimedUpToT`·`targetsAtMatchesOpenTargetsAndCashLikeLast`·`dailySyncAtForRules`·`dailySyncAtLateOpenDay`·`dailySyncAtForClaude`·`pendingStopSymbols`·`ladderPrices`).
   - ISA: `ManualAccountJobDbTest`(시각 맞추기 지시·자동 기록·open-fallback, 스탑 지시와 즉시 알림·흡수한 STOP은 지시 없음·종가 STOP 글·마감까지 못 알린 지시·자동 기록 순서·다음 날 07:00 포기·30초 주기),
@@ -78,7 +78,8 @@
 - **스탑 매도**: 비중을 셈하지 않고(가격을 몰라도) 그때 다시 읽은 정수 보유 전량을 매도 가능 수량·1건 상한까지 판다. 창은 [max(T, 장중 시작, 정규장 시작 + 10분), min(시작 + 3분, 장중 끝)]이고
   종가 STOP은 그날 종가 창이다. 같은 뿌리 최대 2회 — 시도 1이 체결이 있는 채 끝났으면 새로 읽은 수량으로 시도 2를 보낸다(보유가 남았을 때만). 진행 중인 이 기능의 주문이 있으면 다음 주기로 미룬다.
   손실 한도로 매수가 멈춘 동안에도 판다. 장부가 밀린 날(`ledgerCaughtUp=false`)에도 스탑만은 보내고(묶음·장중 따라 하기 없음), 토스 장 시간이 모의 달력과 다른 날은 스탑도 보내지 않는다.
-  이벤트는 `STOP_SELL`(보냄·막힘·놓침 건수만).
+  이벤트는 `STOP_SELL`(보냄·막힘·놓침 건수만) — 놓침에는 하루 한도로 미룬 채 창이 끝난 뿌리도 들고(창 요약은 미룸으로만 셈), 막힘에는 토스 거절·안 보냄과 팔 보유가 있는데
+  구조적 건너뜀(매도 가능 수량 0·가격 모름 등)으로 그날 닫은 뿌리가 든다(QA-303 — 뿌리마다 한 번).
 - **매수 직전 확인**: 대기 STOP 종목(`PaperMirrorService.pendingStopSymbols`)을 매수마다 DB에서 다시 읽고, 걸리면 건너뜀 사유 `pending-stop`으로 창 요약에 센다.
 - **ISA 지시**: `manual_instructions`에는 시각 칸이 없어 다음 지시의 시각을 지시 근거와 세션 상세의 `targetAt`에 둔다(마이그레이션 없음). 그 지시 목표에 반영된 시각 지정 STOP은 세션 상세의
   `coveredStopOrderIds`에 적고 따로 스탑 지시를 만들지 않는다. 자동 기록은 그 시각이 지난 뒤 그 시각의 1분봉 사다리 값으로 하고, 창이 없는 종목은 그 세션 시가로 어림한다(`open-fallback`).

@@ -1048,7 +1048,9 @@ class RealTradeJob {
      * 회전율 멈춤은 스탑 몫(대기 STOP 종목의 매도와 그 대금의 현금성 매수)을 세지 않으므로 스탑이 멈춤을 걸어 이 경로를 세우지 않습니다(QA-302). 다른
      * 사유의 이상 멈춤(스탑이 아닌 몫의 회전율 초과·토큰 경합 등)은 멈춤 해제까지 이 경로도 멈춥니다(HALTED는 아무것도 보내지 않음). 시도 1이 체결로
      * 끝났는데 새 계획에 아직 1주 이상 팔 것이 남으면(1건 상한) 시도 2를 새로 읽은 수량으로 냅니다(뿌리당 최대 2 — DB 그대로). 매수 멈춤과 상관없습니다.
-     * 주기마다 보냄·막힘·놓침이 있으면 스탑 매도 이벤트(건수만 — 알림)를 남깁니다.
+     * 주기마다 보냄·막힘·놓침이 있으면 스탑 매도 이벤트(건수만 — 알림)를 남깁니다 — 놓침은 창이 끝나도록 행이 없는 뿌리(하루 한도로 미룬 채 끝난 것
+     * 포함 — 창 요약은 그것을 미룸으로만 셈), 막힘은 토스 거절·안 보냄과, 팔 보유가 있는데 구조적 건너뜀(매도 가능 수량 0 등)으로 그날 닫은 뿌리입니다
+     * (놓침과 구조적 막힘은 뿌리마다 한 번 — QA-303).
      *
      * <p>매수를 보내기 직전에는 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지 않습니다(ADR 0033 초안 결정 4).
      */
@@ -1108,10 +1110,12 @@ class RealTradeJob {
             Map<String, Set<String>> windowSkips = c.day.skipped.getOrDefault(window, Map.of());
             boolean deferred = DEFERRED_SKIPS.stream().anyMatch(reason -> windowSkips.getOrDefault(reason, Set.of()).contains("root:" + root));
             if (win == null || c.now.isAfter(win.end())) {
-                if (rows.isEmpty() && !c.day.handledRoots.contains(root) && !deferred) {
-                    c.day.miss(window, "root:" + root);
+                if (rows.isEmpty() && !c.day.handledRoots.contains(root)) {
+                    if (!deferred) {
+                        c.day.miss(window, "root:" + root);   // 미룬 뿌리는 창 요약이 '미룸'으로 셈(두 번 세지 않음)
+                    }
                     if (stop && c.day.stopMissCounted.add(root)) {
-                        tally.missed++;
+                        tally.missed++;   // 스탑은 미룬 채(하루 한도) 창이 끝나도 놓침으로 알림(QA-303)
                     }
                 }
                 continue;
@@ -1171,6 +1175,9 @@ class RealTradeJob {
             if (plan.orders().isEmpty()) {
                 if (plan.skipped().stream().noneMatch(s -> TRANSIENT_SKIPS.contains(s.reason()))) {
                     c.day.handledRoots.add(root);   // 이미 맞음·구조적 건너뜀 — 그날 다시 보지 않음
+                    if (stop && stopBlocked(plan, f.account(), o.ticker()) && c.day.stopMissCounted.add(root)) {
+                        tally.blocked++;   // 팔 보유가 있는데 구조적 건너뜀으로 그날 닫은 스탑은 막힘으로 알림(QA-303)
+                    }
                 }
                 continue;
             }
@@ -1227,6 +1234,15 @@ class RealTradeJob {
                 default -> blocked.add(planned.symbol());   // 안 보냄 — 시도 2 조건이면 다음 주기
             }
         }
+    }
+
+    /**
+     * 주문 없이 그날 닫은 스탑을 막힘으로 셀지(QA-303) — 정수 보유가 1주 이상인데 소수 부분이 아닌 건너뜀(가격 모름·매도 가능 수량 0·모름·1건 상한·반대
+     * 방향 미체결 등)으로 닫았을 때. 보유가 없거나(이미 팔림) 건너뜀 없이 빈 계획(이미 맞음)은 세지 않습니다.
+     */
+    private static boolean stopBlocked(Plan plan, Account account, String symbol) {
+        return symbol != null && account.held(symbol).compareTo(BigDecimal.ONE) >= 0
+                && plan.skipped().stream().anyMatch(s -> !RealTradePlanner.SKIP_FRACTION.equals(s.reason()));
     }
 
     /** 따라 하는 책의 오늘 대기 STOP 종목인가 — 보내기 직전마다 다시 읽음(ADR 0033 초안 결정 4). */

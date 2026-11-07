@@ -23,7 +23,6 @@ import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -912,7 +911,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-303 재현 — 수정 전에는 하루 건수 한도로 미룬 채 창이 끝난 스탑을 놓침으로 세지 않아 STOP_SELL이 없음. fix(QA-303)에서 켭니다")
     @DisplayName("QA-303: 하루 건수 한도를 다 쓴 날 스탑이 미룸으로 창(T + 3분)을 넘기면 STOP_SELL 놓침 1(한 번만), 장중 창 요약은 미룸 1·놓침 0(두 번 세지 않음)")
     void qa303DeferredStopExpiryCountsAsMissed() {
         when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 2, 999_999_999L,
@@ -947,7 +945,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-303 재현 — 수정 전에는 매도 가능 수량 0 같은 구조적 건너뜀으로 그날 닫힌 스탑을 막힘으로 세지 않아 STOP_SELL이 없음. fix(QA-303)에서 켭니다")
     @DisplayName("QA-303: 보유는 있는데 매도 가능 수량이 0이라 스탑을 그날 닫으면 STOP_SELL 막힘 1(한 번만) — 놓침으로 또 세지 않음")
     void qa303StructurallySkippedStopCountsAsBlocked() {
         RealTradeFixtures.live(store, false, d("10000000"));
