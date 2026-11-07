@@ -380,3 +380,133 @@ def test_QA255_후속_timeout_0도_예산_안으로_줄인다():
     yahoo = _yahoo_module()
     fitted, clamped = yahoo._fit(0, 30, 5.0)
     assert (fitted, clamped) == (5.0, True)
+
+
+# ==============================================================================
+# QA-335 — Yahoo가 연결을 거절하거나 5xx로 답하면 crumb·쿠키·시세 요청이 종목·폴백마다 되풀이됨(QA 스택 실측: 한 회차에 약 6,000번)
+# ==============================================================================
+class _Deny502:
+    """
+    CONNECT·GET·POST 모두 바로 502로 답하는 서버 — 프록시 자리면 QA 스택 차단 프록시(scripts/qa/blackhole-proxy.py)의 기본 block 모드와 같고
+    (curl은 CONNECT 거절을 연결 오류로 올림), 직접 부르면 Yahoo가 HTTP 502로 답하는 경우입니다. 받은 요청 수를 셉니다.
+    """
+
+    def __init__(self) -> None:
+        owner = self
+        self.hits = 0
+        self._lock = threading.Lock()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def _deny(self):
+                with owner._lock:
+                    owner.hits += 1
+                try:
+                    self.send_response(502, "QA blackhole")
+                    self.send_header("Content-Length", "0")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                except OSError:
+                    pass
+
+            do_CONNECT = do_GET = do_POST = _deny
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.port = self.server.server_address[1]
+        self.url = f"http://127.0.0.1:{self.port}/v8/finance/chart/AAA"
+        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _reset_yfinance_cookie_state() -> None:
+    # yfinance 싱글턴은 crumb 전략을 실패마다 basic ↔ csrf로 바꿔 둡니다 — 다음 시험이 같은 출발점에서 시작하게.
+    from yfinance.data import YfData
+
+    data = YfData()
+    data._cookie_strategy = "basic"
+    data._cookie = None
+    data._crumb = None
+
+
+@pytest.fixture()
+def deny_proxy(monkeypatch):
+    server = _Deny502()
+    proxy = f"http://127.0.0.1:{server.port}"
+    monkeypatch.setattr(yf.config.network, "proxy", proxy)
+    for name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
+        monkeypatch.setenv(name, proxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(app_http, "RETRY_RESERVE_SECONDS", RESERVE)
+    yahoo = _yahoo_module()
+    yahoo.reset_for_tests()
+    _reset_yfinance_cookie_state()
+    yield server
+    server.close()
+    yahoo.reset_for_tests()
+    yahoo.session().proxies = {}
+    _reset_yfinance_cookie_state()
+
+
+@pytest.fixture()
+def yahoo_502(monkeypatch):
+    for name in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    yahoo = _yahoo_module()
+    yahoo.reset_for_tests()
+    monkeypatch.setattr(yahoo.session(), "proxies", {})
+    server = _Deny502()
+    yield server
+    server.close()
+    yahoo.reset_for_tests()
+
+
+def _guarded(fn, budget: float = 20.0):
+    guard = app_http.TaskGuard(deadline=time.monotonic() + budget)
+    return app_http.run_guarded(guard, fn)
+
+
+@pytest.mark.xfail(strict=True, reason="QA-335 — 수정 전: 연결 실패·5xx는 래치에 세지 않아(시간 초과만 셈) crumb·쿠키·시세 요청이 종목·폴백마다 되풀이됨")
+def test_QA335_연결이_거절되면_Yahoo를_닫아_한_회차의_요청_폭주를_멈춘다(deny_proxy):
+    import os
+
+    from app.services import sector
+
+    yahoo = _yahoo_module()
+    limit = getattr(yahoo, "FAILURE_LIMIT", 5)
+    # 이미 나간 요청(다운로드 풀의 다른 종목 스레드)은 막지 못하므로 동시 자리만큼 여유를 둡니다 — 수정 전에는 이 회차에 약 140번.
+    bound = limit + (os.cpu_count() or 2) + 2
+
+    _bars, reason, _ = _guarded(lambda: market.minute_bars([f"T{i}" for i in range(10)], "1d"))
+    closed = yahoo.unavailable_reason()
+    assert closed and "Yahoo 연결 실패" in closed, f"연결 실패가 이어졌는데 Yahoo를 닫지 않음(사유: {reason})"
+
+    # 같은 회차의 다음 Yahoo 태스크들 — 보내지 않고 닫힌 이유를 사유로(빈 응답·버전 불일치 의심이 아니라)
+    _prices, reason2 = _guarded(lambda: market.latest_minute_prices([f"T{i}" for i in range(10)]))
+    error = _guarded(lambda: sector.collect_daily_closes([f"S{i}" for i in range(10)], period="3mo"))["error"]
+    _cur, _prev, reason3 = _guarded(lambda: market.last_two_closes("CL=F"))
+    for text in (reason2, error, reason3):
+        assert text and "Yahoo 연결 실패" in text and "버전 불일치" not in text, text
+    assert deny_proxy.hits <= bound, f"Yahoo로 {deny_proxy.hits}번 보냄(상한 {bound})"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-335 — 수정 전: 응답이 오기만 하면(상태 코드와 상관없이) 셈을 비워 5xx가 이어져도 닫지 않음")
+def test_QA335_HTTP_5xx가_이어져도_Yahoo를_닫는다(yahoo_502):
+    yahoo = _yahoo_module()
+    limit = getattr(yahoo, "FAILURE_LIMIT", 5)
+    for _ in range(limit):
+        assert yahoo.session().get(yahoo_502.url, timeout=5).status_code == 502
+    reason = yahoo.unavailable_reason()
+    assert reason and "Yahoo 연결 실패" in reason and "HTTP 502" in reason, reason
+    with pytest.raises(yahoo.YahooNoResponse):
+        yahoo.session().get(yahoo_502.url, timeout=5)
+    assert yahoo_502.hits == limit

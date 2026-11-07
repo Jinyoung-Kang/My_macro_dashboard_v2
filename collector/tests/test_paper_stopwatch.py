@@ -265,6 +265,19 @@ def test_미국_창_밖·주말·보유_없음·slow_군·래치면_묻지_않�
     assert spark.calls == []
 
 
+@pytest.mark.xfail(strict=True, reason="QA-335 — 수정 전: 미국 감시는 거부 래치만 보고 yfinance 쪽 Yahoo 래치(무응답·연결 실패)를 보지 않음")
+def test_QA335_미국_Yahoo_래치가_닫혀_있으면_spark도_묻지_않고_그_사유로_저장본_유지(store, spark, monkeypatch):
+    from app import yahoo
+
+    _us_setup(store)
+    _us_clock(monkeypatch, _ny(11, 0, 20))
+    for _ in range(yahoo.NO_RESPONSE_LIMIT):
+        yahoo._note_timeout()
+    with pytest.raises(EmptyResult, match="기존 저장본 유지 \\(Yahoo 응답 없음"):
+        tasks.task_paper_stopwatch_us()
+    assert spark.calls == []
+
+
 def test_미국_SPY_먼저_한_묶음으로_받아_저장하고_같은_세션만_잇는다(store, spark, monkeypatch):
     _us_setup(store)
     spark.results = {s: _spark_result(s, _minutes(_ny(9, 30), _ny(10, 59))) for s in ("SPY", "AAPL", "MSFT")}
