@@ -539,6 +539,18 @@ def test_session_군_실행은_그_군만_고르고_비면_0개(store, monkeypat
     assert tasks.run_group("session") == {"group": "session", "okCount": 0, "failCount": 0, "results": []}
 
 
+def test_QA308_군_실행은_skip의_태스크를_고르지_않는다(store, monkeypatch):
+    calls = []
+    monkeypatch.setattr(tasks.runner, "ALL_TASKS", (
+        tasks.Task("t_first", "slow", lambda: calls.append("first") or "ok", ""),
+        tasks.Task("t_quotes", "slow", lambda: calls.append("quotes") or "ok", ""),
+        tasks.Task("t_rest", "slow", lambda: calls.append("rest") or "ok", ""),
+    ))
+    result = tasks.run_group("slow", skip=frozenset({"t_first", "t_quotes"}))
+    assert calls == ["rest"] and result["group"] == "slow" and [row["task"] for row in result["results"]] == ["t_rest"]
+    assert store.read_last_run()["group_name"] == "slow", "이어 돈 실행도 slow 회차 기록 — 또 끊기면 다음 기동이 모아 봄"
+
+
 def test_collect는_session_군을_받고_status_주기에_session이_있다(monkeypatch):
     from fastapi.testclient import TestClient
 

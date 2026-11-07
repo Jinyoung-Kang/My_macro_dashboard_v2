@@ -49,6 +49,42 @@ def test_slow_첫_실행은_다음_15분까지_15분_넘게_남고_관측치가_
     assert got == (now if runs else None)
 
 
+@pytest.mark.parametrize(("now", "quotes_age_minutes", "done", "expected"), [
+    (_at(12, 16, 40), 0.5, {"fred_series", "paper_quotes"}, {"fred_series", "paper_quotes"}),   # 관측치 저장 뒤 끊김 — 남은 것만 바로
+    (_at(12, 16, 40), 0.5, {"fred_series"}, {"fred_series", "paper_quotes"}),                   # 관측치는 늘 건너뜀(회차마다 하나)
+    (_at(12, 16, 40), 0.5, None, None),                                                         # 회차가 끝났음
+    (_at(12, 16, 40), 40, {"fred_series"}, None),                                               # 관측치가 오래됨 — slow 전체가 바로 돎
+    (_at(12, 6), 3, {"fred_series", "paper_quotes"}, None),                                     # 곧 :15 회차가 다 돎
+    (_at(12, 15), 0.5, {"paper_quotes"}, None),                                                 # 바로 그 :15
+])
+def test_QA308_끊긴_slow_회차를_이어_돌_때_건너뛸_태스크(now, quotes_age_minutes, done, expected):
+    last = now - timedelta(minutes=quotes_age_minutes)
+    got = main.slow_resume_skip(now, last, settings.SLOW_AT_MINUTE, None if done is None else frozenset(done))
+    assert got == (None if expected is None else frozenset(expected))
+
+
+def test_이번_slow_회차의_시작은_가장_최근_15분():
+    assert main.slow_cycle_start(_at(12, 16, 40), 15) == _at(12, 15)
+    assert main.slow_cycle_start(_at(12, 15), 15) == _at(12, 15)
+    assert main.slow_cycle_start(_at(12, 14, 59), 15) == _at(11, 15)
+
+
+def test_군_실행_작업은_skip을_넘긴다(monkeypatch):
+    seen = []
+    monkeypatch.setattr(main.tasks, "run_group", lambda group, skip=frozenset(): seen.append((group, skip)))
+    main._run_group_job("slow", skip=frozenset({"paper_quotes"}))
+    main._run_group_job("fast")
+    assert seen == [("slow", frozenset({"paper_quotes"})), ("fast", frozenset())]
+
+
+def test_끊긴_회차를_읽지_못하면_이어_돌지_않는다(monkeypatch):
+    def boom(group, since):
+        raise RuntimeError("시험 — DB 없음")
+
+    monkeypatch.setattr(app_store, "unfinished_group_tasks", boom)
+    assert main._slow_done_this_cycle(_at(12, 16, 40), 15) is None
+
+
 def test_고정_위상_상수():
     assert settings.SLOW_AT_MINUTE == 15 and settings.SLOW_STARTUP_GAP_MINUTES == 15 and settings.SESSION_AT_SECOND == 20
     assert main.SLOW_MISFIRE_GRACE_SECONDS == 900 and main.SESSION_MISFIRE_GRACE_SECONDS == 120
@@ -177,7 +213,6 @@ _DONE_BEFORE_CUT = frozenset({"fred_series", "fed_liquidity", "krx_futures", "se
                               "paper_quotes"})
 
 
-@pytest.mark.xfail(strict=True, reason="QA-308 재현 — 수정 전에는 관측치가 신선하면 끊긴 :15 회차의 남은 slow 태스크를 다음 :15까지 돌리지 않음")
 def test_QA308_관측치_저장_뒤_끊긴_slow_회차는_남은_태스크만_곧바로_다시_돈다(monkeypatch):
     # 한국 거래일 21:16:40 KST 재기동(배포·OOM 뒤 재시작) — 관측치는 30초 전(21:16:10)이라 slow 전체는 다시 돌지 않음(감사 사슬)
     monkeypatch.delenv("COLLECTOR_SLOW_INTERVAL", raising=False)

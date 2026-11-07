@@ -339,9 +339,9 @@ def _mark_group(label: str, selected: list[Task], delta: int) -> bool:
     return True
 
 
-def run_group(group: str | None = None, task_name: str | None = None) -> dict:
+def run_group(group: str | None = None, task_name: str | None = None, skip: frozenset[str] = frozenset()) -> dict:
     """
-    작업군 또는 단일 태스크를 1회 실행합니다.
+    작업군 또는 단일 태스크를 1회 실행합니다. ``skip``의 태스크는 고르지 않습니다(기동 때 끊긴 slow 회차의 남은 태스크만 돌 때 — main.slow_resume_skip).
 
     반환: {"group","okCount","failCount","elapsedSeconds","results":[...]}
     """
@@ -351,6 +351,7 @@ def run_group(group: str | None = None, task_name: str | None = None) -> dict:
         selected = list(ALL_TASKS)
     else:
         selected = [task for task in ALL_TASKS if task.speed == group]
+    selected = [task for task in selected if task.name not in skip]
 
     label = task_name or group or "all"
     if not selected:

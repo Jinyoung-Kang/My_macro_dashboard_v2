@@ -102,6 +102,7 @@ def interval_seconds(group: str) -> int:
 # 정시라 같은 분)에 돕니다. 그래서 미국 확정 종가 관측치는 마감 + 15~20분, NEXT_OBSERVATION의 개장 뒤 첫 관측치는 10:15 ET 전후로 일정합니다.
 SLOW_AT_MINUTE = 15
 # 기동 직후 slow 한 번의 문턱(분) — 다음 고정 시각까지 이보다 많이 남았고 관측치(paper.quotes) 저장본이 이보다 오래됐을 때만 바로 돕니다(main.slow_first_run).
+# 관측치가 신선한데 이번 회차의 slow 실행이 끊겼으면 남은 태스크만 바로 돕니다(main.slow_resume_skip — 다음 고정 시각이 이 문턱 안이면 그 회차에 맡김).
 SLOW_STARTUP_GAP_MINUTES = 15
 # session 군의 고정 위상 — 주기가 기본(5분)이면 매 5분(:00·:05·…) 이 초에 돕니다(개장 09:30 ET·09:00 KST에서 5분 격자, 감시 저장본과 맞춤).
 SESSION_AT_SECOND = 20

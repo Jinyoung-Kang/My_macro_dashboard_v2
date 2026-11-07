@@ -164,6 +164,35 @@ def test_startup_cleanup_keeps_live_runs_of_other_processes(store):
     assert store.read_last_run()["status"] == "running"
 
 
+def test_QA308_기동_때_이번_회차의_끝나지_않은_slow_실행에서_끝난_태스크를_모은다(store):
+    """
+    store.unfinished_group_tasks — since 뒤에 시작한 그 군의 가장 최근 실행이 끝나지 않았으면(running·interrupted) 그 회차 실행들에서 끝난
+    태스크 이름들, 끝났거나 없으면 None. 상태가 아니라 finished_at으로 봅니다(배포로 호스트 이름이 바뀌면 'running'이 그대로 남음).
+    """
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(minutes=5)
+    assert store.unfinished_group_tasks("slow", since) is None, "실행 없음"
+
+    old = store.start_run("slow")                     # 지난 회차 — since 앞에 시작, 끝나지 않음
+    store.record_task_run(old, "fred_series", speed="slow", status="ok", started_at=now, duration_ms=1)
+    with store.connection() as conn:
+        conn.execute("UPDATE collector_runs SET started_at = now() - interval '70 minutes' WHERE id = %s", (old,))
+    assert store.unfinished_group_tasks("slow", since) is None, "지난 회차 실행은 보지 않음"
+
+    cut = store.start_run("slow")                     # 이번 회차 — paper_quotes까지 끝내고 끊김
+    for task in ("fred_series", "paper_quotes"):
+        store.record_task_run(cut, task, speed="slow", status="ok", started_at=now, duration_ms=1)
+    store.start_run("fast")                           # 다른 군은 보지 않음
+    assert store.unfinished_group_tasks("slow", since) == frozenset({"fred_series", "paper_quotes"})
+
+    resumed = store.start_run("slow")                 # 이어 돈 실행도 끊김 — 그 회차에 끝난 태스크를 모두 모음
+    store.record_task_run(resumed, "paper_bars_us", speed="slow", status="error", started_at=now, duration_ms=1)
+    assert store.unfinished_group_tasks("slow", since) == frozenset({"fred_series", "paper_quotes", "paper_bars_us"})
+
+    store.finish_run(resumed, status="partial", ok_count=0, fail_count=1)
+    assert store.unfinished_group_tasks("slow", since) is None, "가장 최근 실행이 끝났으면 이어 돌 것 없음"
+
+
 def test_run_details_are_redacted_when_stored_and_served(store):
     """
     SEC-05. 실패 사유(detail)는 상태 화면에 그대로 나가고 복사됩니다. 로그에서만 가리던

@@ -1170,6 +1170,27 @@ def mark_stale_runs_interrupted() -> int:
     return len(stale)
 
 
+def unfinished_group_tasks(group: str, since: datetime) -> frozenset[str] | None:
+    """
+    ``since`` 뒤에 시작한 그 군(``group_name``)의 실행 가운데 가장 최근 것이 끝나지 않았으면(``finished_at`` 없음 — 'running'·'interrupted') 그 실행들에서
+    이미 끝난 태스크 이름들, 아니면(실행이 없거나 가장 최근 것이 끝남) None. **수집기 기동 시에만** 부릅니다 — 그때 끝나지 않은 실행은 앞 프로세스가
+    회차 중간에 끝난 것입니다(배포로 컨테이너를 새로 만들면 호스트 이름이 바뀌어 mark_stale_runs_interrupted가 'running'을 그대로 둘 수 있어 상태가
+    아니라 finished_at으로 봅니다). 이어 돈 실행이 또 끊겼어도 그 회차에 끝난 태스크를 모두 모읍니다(main.slow_resume_skip — QA-308).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT id, finished_at FROM collector_runs WHERE group_name = %s AND started_at >= %s ORDER BY id DESC",
+            (group, since),
+        ).fetchall()
+        if not rows or rows[0]["finished_at"] is not None:
+            return None
+        done = conn.execute(
+            "SELECT DISTINCT task FROM collector_task_runs WHERE run_id = ANY(%s)",
+            ([row["id"] for row in rows],),
+        ).fetchall()
+    return frozenset(row["task"] for row in done)
+
+
 def _left_by_previous_process(run: dict) -> bool:
     """이 호스트에서 지금 프로세스와 같은 PID로 남은 기록인지 (기동 시 판정 전용)."""
     same_host = (run.get("host") or socket.gethostname()) == socket.gethostname()

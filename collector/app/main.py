@@ -88,14 +88,54 @@ def slow_first_run(now: datetime, last_quotes_at: datetime | None, at_minute: in
     돈 뒤)·정시 직전(곧 돎)에는 기다리고, 그 밖(저장본이 오래됨)에는 바로 채웁니다.
     """
     gap = timedelta(minutes=settings.SLOW_STARTUP_GAP_MINUTES)
-    fixed = now.replace(minute=at_minute, second=0, microsecond=0)
-    if fixed < now:
-        fixed += timedelta(hours=1)
-    if fixed - now <= gap:
+    if _next_slow_at(now, at_minute) - now <= gap:
         return None
     if last_quotes_at is not None and now - last_quotes_at <= gap:
         return None
     return now
+
+
+# 끊긴 slow 회차를 이어 돌 때 늘 건너뛰는 태스크 — 관측치 저장본은 회차마다 하나(실행 감사의 관측치 사슬, slow_first_run 설명).
+SLOW_RESUME_ALWAYS_SKIP = frozenset({"paper_quotes"})
+
+
+def _next_slow_at(now: datetime, at_minute: int) -> datetime:
+    """다음 고정 시각(매시 ``at_minute``분 — ``now``와 같으면 ``now``)."""
+    fixed = now.replace(minute=at_minute, second=0, microsecond=0)
+    return fixed if fixed >= now else fixed + timedelta(hours=1)
+
+
+def slow_cycle_start(now: datetime, at_minute: int) -> datetime:
+    """이번 slow 회차의 시작 — ``now`` 이하의 가장 최근 매시 ``at_minute``분."""
+    fixed = now.replace(minute=at_minute, second=0, microsecond=0)
+    return fixed if fixed <= now else fixed - timedelta(hours=1)
+
+
+def slow_resume_skip(now: datetime, last_quotes_at: datetime | None, at_minute: int,
+                     done: frozenset[str] | None) -> frozenset[str] | None:
+    """
+    기동 직후 slow 전체를 돌지 않기로 했는데(slow_first_run이 None) 이번 회차의 slow 실행이 중간에 끊겼으면(``done`` — 그 회차에 이미 끝난 태스크,
+    store.unfinished_group_tasks) 남은 태스크만 곧바로 한 번 돌 때 건너뛸 태스크(``done`` + 관측치 ``paper_quotes``), 돌지 않으면 None(QA-308).
+
+    이유: slow_first_run은 관측치(paper.quotes) 신선도만 봅니다. 그런데 paper_quotes는 slow 회차의 7번째(시작 뒤 1~2분)라, 그 뒤 재기동(배포 up -d,
+    OOM·크래시 뒤 재시작)이 회차를 끊으면 관측치는 신선해도 남은 태스크(미국 1분봉 paper_bars_us, 한국 kr_paper_timed·kr_paper_quotes·kr_paper_flows …)가
+    다음 정시까지 한 시간 돌지 않습니다 — 규칙 계좌 시각 지정 체결·감시 STOP 체결이 한 시간 밀리고, 한국 22:30 결정 앞의 밤 관측치가 22:15 한 번만 남습니다.
+    관측치는 건너뛰어 회차마다 저장본 하나(감사 사슬)를 지킵니다. 다음 정시가 ``SLOW_STARTUP_GAP_MINUTES``분 안이면 그 회차에 맡깁니다.
+    """
+    if done is None or slow_first_run(now, last_quotes_at, at_minute) is not None:
+        return None
+    if _next_slow_at(now, at_minute) - now <= timedelta(minutes=settings.SLOW_STARTUP_GAP_MINUTES):
+        return None
+    return frozenset(done) | SLOW_RESUME_ALWAYS_SKIP
+
+
+def _slow_done_this_cycle(now: datetime, at_minute: int) -> frozenset[str] | None:
+    """이번 slow 회차에 끝나지 않은 실행이 있으면 그 회차에 끝난 태스크(store.unfinished_group_tasks). 읽지 못하면 None(이어 돌지 않음 — 다음 정시가 메움)."""
+    try:
+        return store.unfinished_group_tasks("slow", slow_cycle_start(now, at_minute))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("끊긴 slow 회차를 읽지 못해 남은 태스크를 이어 돌지 않습니다: %s", exc)
+        return None
 
 
 def _last_quotes_at() -> datetime | None:
@@ -180,12 +220,20 @@ async def lifespan(app: FastAPI):
             if slow_minute is not None:
                 # slow는 매시 :15(실험 조건 — ADR 0018). 기동 직후 한 번은 slow_first_run이 정하고, 돌지 않을 때는 next_run_time을 아예 넘기지
                 # 않습니다(None은 일시정지).
-                first = slow_first_run(now, _last_quotes_at(), slow_minute)
+                quotes_at = _last_quotes_at()
+                first = slow_first_run(now, quotes_at, slow_minute)
                 if first is not None:
                     common["next_run_time"] = first
                 scheduler.add_job(_run_group_job, "cron", minute=slow_minute, second=0, timezone="UTC",
                                   misfire_grace_time=SLOW_MISFIRE_GRACE_SECONDS, **common)
                 logger.info("스케줄 등록: slow 매시 :%02d(기동 직후 %s)", slow_minute, "바로 한 번" if first else "다음 정시까지 기다림")
+                # 관측치 저장 뒤 끊긴 이번 회차 — 남은 태스크만 곧바로 한 번(QA-308, slow_resume_skip).
+                skip = None if first is not None else slow_resume_skip(now, quotes_at, slow_minute,
+                                                                         _slow_done_this_cycle(now, slow_minute))
+                if skip is not None and any(task.speed == "slow" and task.name not in skip for task in tasks.ALL_TASKS):
+                    scheduler.add_job(_run_group_job, "date", run_date=now, args=["slow"], kwargs={"skip": skip},
+                                      id="collect-slow-resume", max_instances=1, misfire_grace_time=SLOW_MISFIRE_GRACE_SECONDS)
+                    logger.info("스케줄 등록: 끊긴 slow 회차의 남은 태스크를 바로 한 번(건너뜀 %d개 — 관측치 포함)", len(skip))
             elif session_second is not None:
                 # session은 매 5분 :20초 — 개장(09:30 ET·09:00 KST)에서 5분 격자. 기동 직후 한 번은 그대로(확인·감시 시각 밖이면 외부 호출 없음).
                 scheduler.add_job(_run_group_job, "cron", minute="*/5", second=session_second, timezone="UTC",
@@ -233,9 +281,9 @@ app.add_middleware(webguard.CrossSiteRequestGuard)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 
-def _run_group_job(group: str) -> None:
+def _run_group_job(group: str, skip: frozenset[str] = frozenset()) -> None:
     try:
-        tasks.run_group(group)
+        tasks.run_group(group, skip=skip)
     except Exception as exc:  # noqa: BLE001
         logger.exception("스케줄 수집 실패 (%s): %s", group, exc)
 

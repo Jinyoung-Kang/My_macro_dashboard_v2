@@ -17,7 +17,7 @@
 | `fast` | 5분 | `scraper_markets` | TradingView·Yahoo 참고 시세 |
 | | | `macro_collected` | 매크로 카드 전 지표 (환율·국채·원자재·지수) |
 | | | `radar_rankings` | 국내 수급 랭킹 (이력 누적) |
-| `slow` | 1시간 — 매시 :15 고정(2026-11-08부터, UTC 기준 분이라 KST·ET도 :15; 기동 직후 한 번은 다음 :15까지 15분 넘게 남고 `paper.quotes`가 15분보다 오래됐을 때만 — `main.slow_first_run`, 주기 환경변수를 바꾸면 예전처럼 기동 시각 위상) | `fred_series` | FRED 금리·신용 시계열 (이력 누적) |
+| `slow` | 1시간 — 매시 :15 고정(2026-11-08부터, UTC 기준 분이라 KST·ET도 :15; 기동 직후 한 번은 다음 :15까지 15분 넘게 남고 `paper.quotes`가 15분보다 오래됐을 때만 — `main.slow_first_run`; 관측치가 신선한데 이번 회차의 slow 실행이 끊겼으면 그 회차에 끝난 태스크와 `paper_quotes`를 건너뛰고 남은 태스크만 바로 한 번 — `main.slow_resume_skip`, QA-308; 주기 환경변수를 바꾸면 예전처럼 기동 시각 위상) | `fred_series` | FRED 금리·신용 시계열 (이력 누적) |
 | | | `fed_liquidity` | 연준 순유동성 (이력 누적) |
 | | | `krx_futures` | KRX 선물·미결제약정 (이력 누적) |
 | | | `sector_history` | 섹터·자산군 ETF 종가 |
