@@ -13,6 +13,7 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,7 +22,8 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * 모의 매매 텔레그램 알림의 글(사용자 요청 2026-11-02 — 체결 한 건마다 한 통, 결정마다 요약 한 통(그 결정이 낸 새 주문 포함), 결정 없이 생긴 주문 한 통).
+ * 모의 매매 텔레그램 알림의 글(사용자 요청 2026-11-02 — 결정마다 요약 한 통(그 결정이 낸 새 주문 포함). 체결과 결정 없이 생긴 주문은 2026-11-07
+ * 사용자 요청으로 계좌·트랜잭션 묶음마다 한 통 — {@link #fills}·{@link #orders}, 묶기는 {@link PaperNotifyJob}).
  * 글은 서버 값 그대로이고(없는 숫자를 만들지 않음 — 모르면 '—'), 금액은 그 계좌 통화(미국 달러 소수 둘째, 한국 원 정수), 시각은 KST, 한국 종목은 이름(코드)로
  * 적습니다. 이모지를 쓰지 않습니다. DB·네트워크를 읽지 않는 순수 함수입니다.
  * 모델이 쓴 글(요약·주문 없음 사유·장중 확인 사유)과 주문 근거는 자르지 않습니다(QA-168 — 길면 보내는 쪽이 여러 통으로 나눔). 자르는 것은 진단 글인
@@ -46,44 +48,114 @@ final class PaperNotifications {
     private static final Pattern SENTENCE_END = Pattern.compile("(?<=(?:[가-힣\\]\\)%]|%p)\\.)[ \\t]+");
 
     /**
-     * 체결 한 건.
+     * 체결 한 묶음 — 한 계좌가 한 장부 트랜잭션에서 낸 체결(사용자 요청 2026-11-07 — 체결 한 건마다 한 통이 헷갈림, {@link PaperNotifyJob}이 묶음).
+     * 제목 줄에 건수(매도·매수), 체결마다 한 줄(매도 먼저, 같은 쪽은 번호 순 — 스탑 주문의 체결은 '스탑' 표시), 합계 한 줄(매도 합·매수 합·비용 합과
+     * 0이 아닌 비용 칸, 미국 슬리피지는 체결가에 들어 있어 bp만), 체결일·가격 출처·기록 시각 한 줄, 링크 한 줄. 가격 출처·사후 체결이 묶음 안에서 갈리면
+     * 끝 줄 대신 그 체결 줄에 적습니다. 줄을 자르지 않고 한 체결이 한 줄이라, 길면 보내는 쪽이 줄 경계에서 여러 통으로 나눕니다(QA-168).
      *
-     * @param order    그 체결의 주문(없으면 null — 시점을 모름)
+     * @param fills    한 계좌의 체결(번호 순, 하나 이상)
+     * @param orders   체결의 주문(주문 번호 → 주문, 없는 주문은 시점을 모름 — '—')
      * @param names    한국 종목 이름(코드 → 이름, 없으면 코드만)
      * @param linkBase 화면 주소의 앞부분(서버 공개 주소 — 없으면 링크 줄 없음)
      */
-    static String fill(Fill f, Book book, Order order, Map<String, String> names, String linkBase) {
+    static String fills(List<Fill> fills, Book book, Map<Long, Order> orders, Map<String, String> names, String linkBase) {
+        if (fills.isEmpty()) {
+            throw new IllegalArgumentException("체결 묶음이 비었습니다");
+        }
         boolean korea = korea(book);
+        Fill first = fills.get(0);
+        List<Fill> sells = fills.stream().filter(f -> PaperBooks.SELL.equals(f.side())).toList();
+        List<Fill> buys = fills.stream().filter(f -> PaperBooks.BUY.equals(f.side())).toList();
+        List<Fill> others = fills.stream().filter(f -> !PaperBooks.SELL.equals(f.side()) && !PaperBooks.BUY.equals(f.side())).toList();
+        List<String> counts = new ArrayList<>();
+        if (!sells.isEmpty()) {
+            counts.add("매도 " + sells.size());
+        }
+        if (!buys.isEmpty()) {
+            counts.add("매수 " + buys.size());
+        }
+        if (!others.isEmpty()) {
+            counts.add("기타 " + others.size());
+        }
+        boolean oneSource = fills.stream().map(f -> f.priceSource() == null ? EMPTY : f.priceSource()).distinct().count() == 1;
+        boolean allBackfill = fills.stream().allMatch(Fill::backfill);
+        boolean someBackfill = fills.stream().anyMatch(Fill::backfill);
+        List<String> lines = new ArrayList<>();
+        for (List<Fill> side : List.of(sells, buys, others)) {
+            for (Fill f : side) {
+                Order order = orders == null ? null : orders.get(f.orderId());
+                String timing = timingName(order, korea);
+                lines.add("- " + sideName(f.side()) + " " + ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ "
+                        + money(f.price(), korea, true) + " = " + money(f.gross(), korea, false) + " · " + (timing == null ? EMPTY : timing)
+                        + (order != null && PaperBooks.SOURCE_STOP.equals(order.source()) ? " · 스탑" : "")
+                        + (oneSource ? "" : " · 출처 " + (f.priceSource() == null ? EMPTY : f.priceSource()))
+                        + (someBackfill && !allBackfill && f.backfill() ? " · 사후 체결" : ""));
+            }
+        }
         List<String> blocks = new ArrayList<>();
-        blocks.add(bold("[모의매매 체결] " + label(book, f.bookCode()) + " (" + marketName(book) + ")") + "\n"
-                + esc(sideName(f.side()) + " " + ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ " + money(f.price(), korea, true)
-                + " = " + money(f.gross(), korea, false)));
+        blocks.add(bold("[모의매매 체결] " + label(book, first.bookCode()) + " (" + marketName(book) + ") · " + fills.size() + "건("
+                + String.join("·", counts) + ")") + "\n" + esc(String.join("\n", lines)));
         List<String> details = new ArrayList<>();
-        // 비용 칸(0이 아닌 것만 — 미국은 슬리피지가 체결가에 들어 있어 슬리피지 칸이 0이고 bp만 적음. 미국 수수료·매도 제비용(SEC fee + FINRA
-        // TAF — 세금 칸에 저장)은 ADR 0030부터 칸에 있음, 이름은 화면·패킷처럼 '제비용').
-        List<String> costs = new ArrayList<>();
-        if (f.fee() != null && f.fee().signum() != 0) {
-            costs.add("수수료 " + money(f.fee().doubleValue(), korea, false));
-        }
-        if (f.tax() != null && f.tax().signum() != 0) {
-            costs.add((korea ? "세금 " : "제비용 ") + money(f.tax().doubleValue(), korea, false));
-        }
-        if (f.slippageCost() != null && f.slippageCost().signum() != 0) {
-            costs.add("슬리피지 " + money(f.slippageCost().doubleValue(), korea, false));
-        } else if (f.slippageBp() > 0) {
-            costs.add("슬리피지 " + plain(f.slippageBp()) + "bp(가격에 포함)");
-        }
-        if (!costs.isEmpty()) {
-            details.add("비용 " + String.join(" · ", costs));
-        }
-        String timing = timingName(order, korea);
-        details.add("시점 " + (timing == null ? EMPTY : timing) + " · 가격 출처 " + (f.priceSource() == null ? EMPTY : f.priceSource())
-                + (f.backfill() ? " · 사후 체결" : ""));
-        details.add("체결일 " + (f.observationDate() == null ? EMPTY : f.observationDate()) + " · 기록 "
-                + (f.createdAt() == null ? EMPTY : Kst.stamp(f.createdAt())));
+        details.add(totals(sells, buys, fills, korea));
+        List<LocalDate> dates = fills.stream().map(Fill::observationDate).filter(java.util.Objects::nonNull).sorted().distinct().toList();
+        String date = dates.isEmpty() ? EMPTY : dates.size() == 1 ? dates.get(0).toString()
+                : dates.get(0) + "~" + dates.get(dates.size() - 1);
+        details.add("체결일 " + date + (oneSource ? " · 가격 출처 " + (first.priceSource() == null ? EMPTY : first.priceSource()) : "")
+                + (allBackfill ? " · 사후 체결" : "") + " · 기록 " + (first.createdAt() == null ? EMPTY : Kst.stamp(first.createdAt())));
         blocks.add(esc(String.join("\n", details)));
         link(blocks, linkBase, book, "holdings");
         return String.join("\n\n", blocks);
+    }
+
+    /**
+     * 체결 묶음의 합계 한 줄 — 매도 합·매수 합(있는 쪽만), 비용 합과 0이 아닌 칸(수수료·세금(미국은 SEC fee + FINRA TAF '제비용' — ADR 0030)·
+     * 슬리피지 금액). 미국은 슬리피지가 체결가에 들어 있어 슬리피지 칸이 0이고 bp만 적습니다(묶음 안에서 갈리면 범위).
+     */
+    private static String totals(List<Fill> sells, List<Fill> buys, List<Fill> all, boolean korea) {
+        List<String> parts = new ArrayList<>();
+        if (!sells.isEmpty()) {
+            parts.add("매도 합 " + money(grossSum(sells), korea, false));
+        }
+        if (!buys.isEmpty()) {
+            parts.add("매수 합 " + money(grossSum(buys), korea, false));
+        }
+        BigDecimal fee = BigDecimal.ZERO;
+        BigDecimal tax = BigDecimal.ZERO;
+        BigDecimal slippage = BigDecimal.ZERO;
+        java.util.TreeSet<Double> inPriceBp = new java.util.TreeSet<>();
+        for (Fill f : all) {
+            fee = fee.add(f.fee());
+            tax = tax.add(f.tax());
+            slippage = slippage.add(f.slippageCost());
+            if (f.slippageCost().signum() == 0 && f.slippageBp() > 0) {
+                inPriceBp.add(f.slippageBp());
+            }
+        }
+        List<String> costs = new ArrayList<>();
+        if (fee.signum() != 0) {
+            costs.add("수수료 " + money(fee.doubleValue(), korea, false));
+        }
+        if (tax.signum() != 0) {
+            costs.add((korea ? "세금 " : "제비용 ") + money(tax.doubleValue(), korea, false));
+        }
+        if (slippage.signum() != 0) {
+            costs.add("슬리피지 " + money(slippage.doubleValue(), korea, false));
+        }
+        if (!costs.isEmpty()) {
+            parts.add("비용 합 " + money(fee.add(tax).add(slippage).doubleValue(), korea, false) + "(" + String.join(" · ", costs) + ")");
+        }
+        if (!inPriceBp.isEmpty()) {
+            parts.add("슬리피지 " + plain(inPriceBp.first()) + (inPriceBp.size() > 1 ? "~" + plain(inPriceBp.last()) : "") + "bp(가격에 포함)");
+        }
+        return parts.isEmpty() ? "합계 " + EMPTY : String.join(" · ", parts);
+    }
+
+    private static double grossSum(List<Fill> fills) {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (Fill f : fills) {
+            sum = sum.add(BigDecimal.valueOf(f.gross()));
+        }
+        return sum.doubleValue();
     }
 
     /**
@@ -141,19 +213,56 @@ final class PaperNotifications {
         return String.join("\n\n", blocks);
     }
 
-    /** 결정 없이 생긴 주문 하나(스탑 매도 등). */
+    /** 결정 없이 생긴 주문 하나(스탑 매도 등) — 한 건짜리 묶음({@link #orders}). */
     static String order(Order o, Book book, Map<String, String> names, String linkBase) {
+        return orders(List.of(o), book, names, linkBase);
+    }
+
+    /**
+     * 결정 없이 생긴 주문 한 묶음 — 한 계좌가 한 트랜잭션에서 낸 주문(스탑 매도 등 — 사용자 요청 2026-11-07, {@link PaperNotifyJob}이 묶음).
+     * 한 건이면 예전 한 통 그대로(제목·주문 줄·근거), 여러 건이면 제목에 건수, 주문마다 한 줄, 근거는 종목마다 한 줄입니다. 출처가 모두 같으면 제목에
+     * ('스탑'), 갈리면 그 주문 줄에 적습니다.
+     *
+     * @param orders 한 계좌의 주문(번호 순, 하나 이상)
+     */
+    static String orders(List<Order> orders, Book book, Map<String, String> names, String linkBase) {
+        if (orders.isEmpty()) {
+            throw new IllegalArgumentException("주문 묶음이 비었습니다");
+        }
         boolean korea = korea(book);
+        Order first = orders.get(0);
+        boolean oneSource = orders.stream().map(o -> o.source() == null ? "" : o.source()).distinct().count() == 1;
+        String title = "[모의매매 주문] " + label(book, first.bookCode()) + " (" + marketName(book) + ")"
+                + (oneSource ? sourceTag(first.source()) : "") + (orders.size() > 1 ? " · " + orders.size() + "건" : "");
         List<String> blocks = new ArrayList<>();
-        blocks.add(bold("[모의매매 주문] " + label(book, o.bookCode()) + " (" + marketName(book) + ")"
-                + (PaperBooks.SOURCE_STOP.equals(o.source()) ? " · 스탑" : o.source() == null ? "" : " · " + o.source()))
-                + "\n" + esc(orderLine(o, names, korea)));
-        String note = o.reason() == null ? null : firstText(o.reason(), "note", "summary", "trigger", "basis");
-        if (note != null) {
-            blocks.add(section("근거", paragraphs(note)));
+        if (orders.size() == 1) {
+            blocks.add(bold(title) + "\n" + esc(orderLine(first, names, korea)));
+            String note = first.reason() == null ? null : firstText(first.reason(), "note", "summary", "trigger", "basis");
+            if (note != null) {
+                blocks.add(section("근거", paragraphs(note)));
+            }
+        } else {
+            List<String> lines = new ArrayList<>();
+            List<String> notes = new ArrayList<>();
+            for (Order o : orders) {
+                lines.add("- " + orderLine(o, names, korea) + (oneSource ? "" : sourceTag(o.source())));
+                String note = o.reason() == null ? null : firstText(o.reason(), "note", "summary", "trigger", "basis");
+                if (note != null) {
+                    notes.add("- " + ticker(o.ticker(), names, korea) + ": " + paragraphs(note));
+                }
+            }
+            blocks.add(bold(title) + "\n" + esc(String.join("\n", lines)));
+            if (!notes.isEmpty()) {
+                blocks.add(section("근거", String.join("\n", notes)));
+            }
         }
         link(blocks, linkBase, book, "holdings");
         return String.join("\n\n", blocks);
+    }
+
+    /** 주문 출처의 꼬리 — 스탑이면 ' · 스탑', 없으면 없음, 그 밖은 출처 그대로. */
+    private static String sourceTag(String source) {
+        return PaperBooks.SOURCE_STOP.equals(source) ? " · 스탑" : source == null ? "" : " · " + source;
     }
 
     /** 주문 한 줄 — 쪽·종목·크기·시점·상태(대기가 아니면). */

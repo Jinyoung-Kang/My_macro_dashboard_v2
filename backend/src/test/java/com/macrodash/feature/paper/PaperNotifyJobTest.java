@@ -27,7 +27,8 @@ import static org.mockito.Mockito.mock;
 
 /**
  * 모의 매매 텔레그램 알림(사용자 요청 2026-11-02 — {@link PaperNotifyJob}·{@link PaperNotifications}·{@link PaperTelegram}).
- *  - 처음 켜면 지금 자리에서 시작(지난 일은 보내지 않음), 그 뒤 결정(요약·새 주문)·결정 없는 주문·체결을 일어난 순서로 한 통씩, 일어난 지 60초 지난 것만
+ *  - 처음 켜면 지금 자리에서 시작(지난 일은 보내지 않음), 그 뒤 결정(요약·새 주문)·결정 없는 주문·체결을 일어난 순서로, 일어난 지 60초 지난 것만
+ *  - 체결과 결정 없는 주문은 계좌·트랜잭션(만든 시각) 묶음마다 한 통(사용자 요청 2026-11-07), 결정은 결정마다 한 통 — 자리는 묶음 단위로만 옮김
  *  - 한 통이 실패하면 그 주기를 멈추고 거기까지만 자리를 옮김 → 다음 주기에 그 통부터
  *  - 설정 notify.telegram을 끄면 보내지 않고 자리만 옮김
  *  - 글: 미국 달러·한국 원, 한국 종목 이름(코드), 시점 이름, 링크(공개 주소가 있을 때만), 토큰은 실패 사유에 나오지 않음
@@ -145,15 +146,14 @@ class PaperNotifyJobTest {
                 "- 매수 삼성전자(005930) 목표 8% · 다음 거래일 10:00 KST",
                 "",
                 "https://example.invalid/paper/kr/decisions"));
-        assertThat(sent.get(1)).startsWith(String.join("\n",
-                        "<b>[모의매매 체결] 한국 Claude 계좌2 (한국)</b>",
-                        "매수 삼성전자(005930) 10주 @ 71,000원 = 710,000원",
-                        "",
-                        "비용 수수료 106원 · 슬리피지 355원",
-                        "시점 다음 거래일 10:00 KST · 가격 출처 TOSS_1M_AT",
-                        "체결일 2026-11-03 · 기록 "))
-                .doesNotContain("KST KST")
-                .endsWith("\n\nhttps://example.invalid/paper/kr/holdings");
+        assertThat(sent.get(1)).isEqualTo(String.join("\n",
+                "<b>[모의매매 체결] 한국 Claude 계좌2 (한국) · 1건(매수 1)</b>",
+                "- 매수 삼성전자(005930) 10주 @ 71,000원 = 710,000원 · 다음 거래일 10:00 KST",
+                "",
+                "매수 합 710,000원 · 비용 합 461원(수수료 106원 · 슬리피지 355원)",
+                "체결일 2026-11-03 · 가격 출처 TOSS_1M_AT · 기록 2026-11-03 23:02 KST",
+                "",
+                "https://example.invalid/paper/kr/holdings"));
         clock.now = at.plusSeconds(300);
         assertThat(job.run().sent()).as("다시 보내지 않음").isZero();
         assertThat(sent).hasSize(2);
@@ -175,8 +175,8 @@ class PaperNotifyJobTest {
         PaperNotifyJob.Outcome retried = job.run();
         assertThat(retried.sent()).isEqualTo(2);
         assertThat(sent.get(0)).startsWith("<b>[모의매매 주문] Claude 계좌1 (미국) · 스탑</b>\n매도 AAPL 전량 · 다음 세션 시가");
-        assertThat(sent.get(1)).contains("매도 AAPL 10주 @ $229.85 = $2,298.50").contains("슬리피지 5bp(가격에 포함)")
-                .contains("시점 다음 세션 시가");
+        assertThat(sent.get(1)).contains("- 매도 AAPL 10주 @ $229.85 = $2,298.50 · 다음 세션 시가 · 스탑")
+                .contains("매도 합 $2,298.50 · 슬리피지 5bp(가격에 포함)");
     }
 
     @Test
@@ -249,12 +249,12 @@ class PaperNotifyJobTest {
         assertThat(PaperNotifications.timingName((com.macrodash.store.PaperStore.Order) null, false)).isNull();
         Fill backfill = new Fill(1, 1, PaperBooks.CLAUDE, "SPY", "BUY", 3, 580.12, 580.0, 5, 1_740.36, T0, LocalDate.of(2026, 10, 23),
                 "equity_close", true, T0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
-        assertThat(PaperNotifications.fill(backfill, us, null, Map.of(), "")).contains("시점 — · 가격 출처 equity_close · 사후 체결")
-                .contains("3주 @ $580.12 = $1,740.36");
+        assertThat(PaperNotifications.fills(List.of(backfill), us, Map.of(), Map.of(), "")).contains("- 매수 SPY 3주 @ $580.12 = $1,740.36 · —\n")
+                .contains("체결일 2026-10-23 · 가격 출처 equity_close · 사후 체결 · 기록 ");
         // 미국 매도 비용(ADR 0030) — SEC fee·FINRA TAF는 '세금'이 아니라 '제비용'
         Fill usSell = new Fill(2, 2, PaperBooks.CLAUDE, "BBB", "SELL", 100, 91.85405, 92.0, 5, 9_185.405, T0, LocalDate.of(2026, 11, 2),
                 "paper.quotes", false, T0, new BigDecimal("9.19"), new BigDecimal("0.21"), BigDecimal.ZERO);
-        assertThat(PaperNotifications.fill(usSell, us, null, Map.of(), "")).contains("수수료 $9.19 · 제비용 $0.21")
+        assertThat(PaperNotifications.fills(List.of(usSell), us, Map.of(), Map.of(), "")).contains("비용 합 $9.40(수수료 $9.19 · 제비용 $0.21)")
                 .doesNotContain("세금");
     }
 
@@ -379,7 +379,8 @@ class PaperNotifyJobTest {
                 .contains("그날 종가 매도").doesNotContain("다음 거래일");
         Fill krFill = new Fill(21, 11, PaperBooks.KR_CLAUDE2, "005930", "SELL", 10, 60_800, 60_800, 0, 608_000, T0, session,
                 KrTimedLadder.SOURCE_AT, false, T0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
-        assertThat(PaperNotifications.fill(krFill, kr, krClose, names, null)).contains("시점 그날 종가 · ").doesNotContain("다음 거래일");
+        assertThat(PaperNotifications.fills(List.of(krFill), kr, Map.of(11L, krClose), names, null)).contains(" · 그날 종가 · 스탑\n")
+                .doesNotContain("다음 거래일");
         // 미국 15:56:10 ET 감지 → NEXT_CLOSE
         Order usClose = new Order(12, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
                 PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, session, Instant.parse("2026-11-03T20:56:10Z"), session, null);
@@ -409,5 +410,240 @@ class PaperNotifyJobTest {
         Order checkpoint = new Order(18, PaperBooks.CLAUDE, 6L, "AAPL", "SELL", null, null, null, PaperBooks.MARKET,
                 PaperBooks.KIND_CLAUDE, PaperBooks.ORDER_PENDING, null, null, session, Instant.parse("2026-11-03T15:22:30Z"), session, null);
         assertThat(PaperNotifications.timingName(checkpoint, false)).isEqualTo("장중 시장가");
+    }
+
+    // ------------------------------------------------------------------ 묶음(사용자 요청 2026-11-07 — 체결·결정 없는 주문은 계좌·트랜잭션마다 한 통)
+
+    /** 비용 칸을 정해 넣는 체결 — 만든 시각 {@code at}이 같으면 한 트랜잭션(DB now())으로 봄. */
+    private long fill(String book, long orderId, String ticker, int qty, double price, double bp, String source, Instant at, String fee,
+                      String tax, String slip) {
+        String side = store.orders.get(orderId).side();
+        return store.insertFill(new Fill(0, orderId, book, ticker, side, qty, price, price, bp, qty * price, at, LocalDate.of(2026, 11, 3),
+                source, false, at, new BigDecimal(fee), new BigDecimal(tax), new BigDecimal(slip)));
+    }
+
+    private long lastCursor(String field) {
+        return store.jobRuns.get(store.jobRuns.size() - 1).detail().path("cursor").path(field).asLong();
+    }
+
+    @Test
+    @DisplayName("묶음 — 한 트랜잭션의 두 계좌는 두 통, 한 계좌의 두 트랜잭션도 두 통, 자리는 마지막 묶음의 가장 큰 체결 번호")
+    void fillsGroupedPerBookAndTransaction() {
+        job.run();
+        Instant t1 = T0.plusSeconds(60);
+        long a1 = order(PaperBooks.CLAUDE, 999L, "SPY", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t1);
+        long a2 = order(PaperBooks.CLAUDE, 999L, "QQQ", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t1);
+        long b1 = order(PaperBooks.KR_CLAUDE2, 999L, "005930", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t1);
+        long c1 = order(PaperBooks.CLAUDE, 999L, "IWM", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t1);
+        long c2 = order(PaperBooks.CLAUDE, 999L, "DIA", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t1);
+        fill(PaperBooks.CLAUDE, a1, "SPY", 1, 580.0, t1);
+        fill(PaperBooks.CLAUDE, a2, "QQQ", 1, 500.0, t1);
+        fill(PaperBooks.KR_CLAUDE2, b1, "005930", 10, 71_000, t1);
+        fill(PaperBooks.CLAUDE, c1, "IWM", 1, 220.0, t1.plusSeconds(300));
+        long last = fill(PaperBooks.CLAUDE, c2, "DIA", 1, 430.0, t1.plusSeconds(310));
+        clock.now = t1.plusSeconds(600);
+        PaperNotifyJob.Outcome outcome = job.run();
+        assertThat(outcome.sent()).isEqualTo(4);
+        assertThat(sent.get(0)).startsWith("<b>[모의매매 체결] Claude 계좌1 (미국) · 2건(매수 2)</b>\n- 매수 SPY 1주 @ $580.00 = $580.00 · 다음 세션 시가\n"
+                + "- 매수 QQQ 1주 @ $500.00 = $500.00 · 다음 세션 시가\n\n매수 합 $1,080.00 · 슬리피지 5bp(가격에 포함)\n");
+        assertThat(sent.get(1)).startsWith("<b>[모의매매 체결] 한국 Claude 계좌2 (한국) · 1건(매수 1)</b>\n- 매수 삼성전자(005930) 10주");
+        assertThat(sent.get(2)).startsWith("<b>[모의매매 체결] Claude 계좌1 (미국) · 1건(매수 1)</b>\n- 매수 IWM ");
+        assertThat(sent.get(3)).startsWith("<b>[모의매매 체결] Claude 계좌1 (미국) · 1건(매수 1)</b>\n- 매수 DIA ");
+        assertThat(lastCursor("fillId")).isEqualTo(last);
+        clock.now = t1.plusSeconds(900);
+        assertThat(job.run().sent()).as("다시 보내지 않음").isZero();
+    }
+
+    @Test
+    @DisplayName("묶음 — 한국 밤 한 계좌의 매도·매수(스탑 포함)는 한 통: 매도 먼저, 합계 줄(매도 합·매수 합·비용 합과 칸), 체결일·출처·기록 한 번, 링크 한 번")
+    void krNightBatchIsOneMessage() {
+        job.run();
+        Instant detected = T0.plusSeconds(30);
+        Instant ledger = T0.plusSeconds(60);
+        long stop = store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE2, null, "000660", "SELL", null, null, null, PaperBooks.AT_MINUTE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
+                MAPPER.createObjectNode().put("stopMode", PaperLedgerService.STOP_MODE_NIGHT_FALLBACK).put("note", "밤 잠정 종가 스탑"),
+                LocalDate.of(2026, 11, 2), detected, LocalDate.of(2026, 11, 5), null, java.time.LocalTime.of(9, 10)));
+        long buy = order(PaperBooks.KR_CLAUDE2, 999L, "005930", "BUY", PaperBooks.AT_1000, "CLAUDE", detected);
+        long sell = order(PaperBooks.KR_CLAUDE2, 999L, "035420", "SELL", PaperBooks.NEXT_OPEN, "CLAUDE", detected);
+        String at = KrTimedLadder.SOURCE_AT;
+        fill(PaperBooks.KR_CLAUDE2, buy, "005930", 10, 71_000, 0, at, ledger, "106", "0", "355");
+        fill(PaperBooks.KR_CLAUDE2, stop, "000660", 5, 200_000, 0, at, ledger, "150", "2000", "500");
+        long last = fill(PaperBooks.KR_CLAUDE2, sell, "035420", 2, 150_000, 0, at, ledger, "45", "600", "150");
+        clock.now = T0.plusSeconds(300);
+        assertThat(job.run().sent()).isEqualTo(2);
+        assertThat(sent.get(0)).as("결정 없는 스탑 주문 — 한 건짜리 묶음은 예전 한 통 그대로")
+                .startsWith("<b>[모의매매 주문] 한국 Claude 계좌2 (한국) · 스탑</b>\n매도 000660 전량 · 지정 시각 09:10 KST\n\n<b>근거</b>\n밤 잠정 종가 스탑");
+        assertThat(sent.get(1)).isEqualTo(String.join("\n",
+                "<b>[모의매매 체결] 한국 Claude 계좌2 (한국) · 3건(매도 2·매수 1)</b>",
+                "- 매도 000660 5주 @ 200,000원 = 1,000,000원 · 지정 시각 09:10 KST · 스탑",
+                "- 매도 035420 2주 @ 150,000원 = 300,000원 · 다음 거래일 시가",
+                "- 매수 삼성전자(005930) 10주 @ 71,000원 = 710,000원 · 다음 거래일 10:00 KST",
+                "",
+                "매도 합 1,300,000원 · 매수 합 710,000원 · 비용 합 3,906원(수수료 301원 · 세금 2,600원 · 슬리피지 1,005원)",
+                "체결일 2026-11-03 · 가격 출처 TOSS_1M_AT · 기록 2026-11-03 23:01 KST",
+                "",
+                "https://example.invalid/paper/kr/holdings"));
+        assertThat(lastCursor("fillId")).isEqualTo(last);
+        assertThat(lastCursor("orderId")).isEqualTo(stop);
+    }
+
+    @Test
+    @DisplayName("묶음 — 미국 비용 합(수수료·제비용, 슬리피지는 체결가에 든 bp 범위), 가격 출처가 갈리면 체결 줄마다")
+    void usBatchCosts() {
+        job.run();
+        Instant t = T0.plusSeconds(60);
+        long sell = order(PaperBooks.CLAUDE, 999L, "BBB", "SELL", PaperBooks.NEXT_OPEN, "CLAUDE", t);
+        long buy = order(PaperBooks.CLAUDE, 999L, "SPY", "BUY", PaperBooks.AT_1400, "CLAUDE", t);
+        fill(PaperBooks.CLAUDE, buy, "SPY", 3, 580.12, 10, "paper.bars.us", t, "0", "0", "0");
+        fill(PaperBooks.CLAUDE, sell, "BBB", 100, 91.8541, 5, "paper.quotes", t, "9.19", "0.21", "0");
+        clock.now = T0.plusSeconds(300);
+        assertThat(job.run().sent()).isOne();
+        assertThat(sent.get(0)).isEqualTo(String.join("\n",
+                "<b>[모의매매 체결] Claude 계좌1 (미국) · 2건(매도 1·매수 1)</b>",
+                "- 매도 BBB 100주 @ $91.8541 = $9,185.41 · 다음 세션 시가 · 출처 paper.quotes",
+                "- 매수 SPY 3주 @ $580.12 = $1,740.36 · 다음 세션 14:00 ET · 출처 paper.bars.us",
+                "",
+                "매도 합 $9,185.41 · 매수 합 $1,740.36 · 비용 합 $9.40(수수료 $9.19 · 제비용 $0.21) · 슬리피지 5~10bp(가격에 포함)",
+                "체결일 2026-11-03 · 기록 2026-11-03 23:01 KST",
+                "",
+                "https://example.invalid/paper/us/holdings"));
+    }
+
+    @Test
+    @DisplayName("묶음 — 결정 없는 주문도 계좌·트랜잭션마다 한 통(건수·주문 줄·종목별 근거), 다른 계좌는 따로")
+    void ordersWithoutDecisionBatch() {
+        job.run();
+        Instant detected = Instant.parse("2026-11-03T06:21:30Z");
+        LocalDate session = LocalDate.of(2026, 11, 3);
+        List<Long> ids = new ArrayList<>();
+        for (String ticker : List.of("005930", "000660")) {
+            ids.add(store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE2, null, ticker, "SELL", null, null, null, PaperBooks.NEXT_CLOSE,
+                    PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE)
+                    .put("note", ticker + " 두 격자 모두 스탑가 아래 → 그날 종가 매도"), session, detected, session, null)));
+        }
+        long us = store.insertOrder(new Order(0, PaperBooks.CLAUDE, null, "AAPL", "SELL", null, null, null, PaperBooks.NEXT_OPEN,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, null, session, detected, session, null));
+        clock.now = T0.plusSeconds(300);
+        assertThat(job.run().sent()).isEqualTo(2);
+        assertThat(sent.get(0)).isEqualTo(String.join("\n",
+                "<b>[모의매매 주문] 한국 Claude 계좌2 (한국) · 스탑 · 2건</b>",
+                "- 매도 삼성전자(005930) 전량 · 그날 종가",
+                "- 매도 000660 전량 · 그날 종가",
+                "",
+                "<b>근거</b>",
+                "- 삼성전자(005930): 005930 두 격자 모두 스탑가 아래 → 그날 종가 매도",
+                "- 000660: 000660 두 격자 모두 스탑가 아래 → 그날 종가 매도",
+                "",
+                "https://example.invalid/paper/kr/holdings"));
+        assertThat(sent.get(1)).isEqualTo(String.join("\n",
+                "<b>[모의매매 주문] Claude 계좌1 (미국) · 스탑</b>",
+                "매도 AAPL 전량 · 다음 세션 시가",
+                "",
+                "https://example.invalid/paper/us/holdings"));
+        assertThat(lastCursor("orderId")).isEqualTo(us);
+    }
+
+    @Test
+    @DisplayName("묶음 — 읽기 상한(500행)에 걸린 끝 묶음과 아직 안 지난 행이 이어지는 묶음은 다음 주기로(일부만 보내지 않음), 긴 묶음은 줄을 잃지 않고 여러 조각")
+    void partialFetchNeverSplitsBatch() {
+        job.run();
+        Instant t1 = T0.plusSeconds(60);
+        Instant t2 = T0.plusSeconds(120);
+        long firstBatchLast = 0;
+        for (int i = 0; i < 3; i++) {
+            long o = order(PaperBooks.CLAUDE, 999L, "A" + i, "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t1);
+            firstBatchLast = fill(PaperBooks.CLAUDE, o, "A" + i, 1, 10.0, t1);
+        }
+        long secondBatchLast = 0;
+        int big = PaperNotifyJob.FETCH_LIMIT - 2;
+        for (int i = 0; i < big; i++) {
+            long o = order(PaperBooks.CLAUDE, 999L, "B" + i, "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t2);
+            secondBatchLast = fill(PaperBooks.CLAUDE, o, "B" + i, 1, 10.0, t2);
+        }
+        clock.now = T0.plusSeconds(600);
+        assertThat(job.run().sent()).as("둘째 묶음은 읽기 상한 너머로 이어짐 — 첫 묶음만").isOne();
+        assertThat(sent).singleElement().satisfies(m -> assertThat(m).contains("· 3건(매수 3)"));
+        assertThat(lastCursor("fillId")).isEqualTo(firstBatchLast);
+
+        sent.clear();
+        PaperNotifyJob.Outcome second = job.run();
+        assertThat(second.sent()).as("한 통(보내는 쪽이 조각으로 나눔)").isOne();
+        assertThat(sent.size()).isGreaterThan(1).isEqualTo(PaperTelegram.parts(String.join("\n", sent)).size());
+        assertThat(sent).allSatisfy(part -> assertThat(part.length()).isLessThanOrEqualTo(PaperTelegram.MAX_CHARS));
+        String joined = String.join("\n", sent);
+        assertThat(joined).startsWith("<b>[모의매매 체결] Claude 계좌1 (미국) · " + big + "건(매수 " + big + ")</b>\n");
+        assertThat(joined.lines().filter(line -> line.startsWith("- 매수 B")).count()).isEqualTo(big);
+        assertThat(lastCursor("fillId")).isEqualTo(secondBatchLast);
+
+        // 아직 안 지난 행이 이어지는 묶음(시각을 넣는 길의 작은 어긋남 — 2초 안) — 앞 행만 지났어도 묶음째 기다림
+        sent.clear();
+        Instant t3 = T0.plusSeconds(1_000);
+        long x = order(PaperBooks.CLAUDE, 999L, "X", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t3);
+        long y = order(PaperBooks.CLAUDE, 999L, "Y", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t3);
+        fill(PaperBooks.CLAUDE, x, "X", 1, 10.0, t3);
+        long yFill = fill(PaperBooks.CLAUDE, y, "Y", 1, 10.0, t3.plusMillis(1_500));
+        clock.now = t3.plusSeconds(PaperNotifyJob.SETTLE_SECONDS).plusMillis(500);
+        assertThat(job.run().sent()).isZero();
+        assertThat(lastCursor("fillId")).isEqualTo(secondBatchLast);
+        clock.now = t3.plusSeconds(PaperNotifyJob.SETTLE_SECONDS + 2);
+        assertThat(job.run().sent()).isOne();
+        assertThat(sent).singleElement().satisfies(m -> assertThat(m).contains("· 2건(매수 2)").contains("- 매수 X ").contains("- 매수 Y "));
+        assertThat(lastCursor("fillId")).isEqualTo(yFill);
+    }
+
+    @Test
+    @DisplayName("묶음 — 실패하면 자리를 그 묶음 앞에 두고 다음 주기에 묶음째 다시, 설정을 끄면 묶음마다 하나로 세고 자리만 옮김")
+    void batchFailureAndMute() {
+        job.run();
+        Instant t = T0.plusSeconds(60);
+        long cursorBefore = lastCursor("fillId");
+        long o1 = order(PaperBooks.CLAUDE, 999L, "SPY", "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", t);
+        long o2 = order(PaperBooks.CLAUDE, 999L, "QQQ", "SELL", PaperBooks.NEXT_OPEN, "CLAUDE", t);
+        fill(PaperBooks.CLAUDE, o1, "SPY", 1, 580.0, t);
+        long last = fill(PaperBooks.CLAUDE, o2, "QQQ", 1, 500.0, t);
+        clock.now = T0.plusSeconds(300);
+        failNext = 1;
+        PaperNotifyJob.Outcome failed = job.run();
+        assertThat(failed.sent()).isZero();
+        assertThat(failed.error()).startsWith("HTTP 429");
+        assertThat(lastCursor("fillId")).isEqualTo(cursorBefore);
+        assertThat(job.run().sent()).isOne();
+        assertThat(sent).singleElement().satisfies(m -> assertThat(m).contains("· 2건(매도 1·매수 1)").contains("- 매도 QQQ").contains("- 매수 SPY"));
+        assertThat(lastCursor("fillId")).isEqualTo(last);
+
+        ((ObjectNode) store.settings.body()).putObject("notify").put("telegram", false);
+        Instant later = T0.plusSeconds(400);
+        for (String ticker : List.of("IWM", "DIA", "TLT")) {
+            long o = order(PaperBooks.CLAUDE, 999L, ticker, "BUY", PaperBooks.NEXT_OPEN, "CLAUDE", later);
+            last = fill(PaperBooks.CLAUDE, o, ticker, 1, 100.0, later);
+        }
+        long stop = order(PaperBooks.CLAUDE, null, "GLD", "SELL", PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP, later);
+        clock.now = T0.plusSeconds(700);
+        PaperNotifyJob.Outcome muted = job.run();
+        assertThat(muted.sent()).isZero();
+        assertThat(muted.muted()).as("체결 묶음 하나 + 주문 묶음 하나").isEqualTo(2);
+        assertThat(lastCursor("fillId")).isEqualTo(last);
+        assertThat(lastCursor("orderId")).isEqualTo(stop);
+        assertThat(sent).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("묶기 규칙 — 같은 책·만든 시각 2초 안·번호가 이어진 행만 한 묶음, 만든 시각이 없는 행은 혼자")
+    void batchingRule() {
+        Instant t = Instant.parse("2026-11-03T13:00:00Z");
+        record Row(long id, String book, Instant at) {
+        }
+        List<Row> rows = List.of(new Row(1, "a", t), new Row(2, "a", t.plusSeconds(2)), new Row(3, "a", t.plusSeconds(3)),
+                new Row(4, "b", t.plusSeconds(3)), new Row(5, "a", t.plusSeconds(3)), new Row(6, "a", null), new Row(7, "a", null));
+        List<PaperNotifyJob.Batch<Row>> batches = PaperNotifyJob.batches(rows, 500, t.plusSeconds(3_600), Row::book, Row::at, Row::id);
+        assertThat(batches).extracting(PaperNotifyJob.Batch::lastId).containsExactly(2L, 3L, 4L, 5L, 6L, 7L);
+        assertThat(batches.get(0).rows()).hasSize(2);
+        assertThat(PaperNotifyJob.batches(rows.subList(0, 3), 3, t.plusSeconds(3_600), Row::book, Row::at, Row::id))
+                .as("읽은 행이 상한으로 꽉 차면 끝 묶음은 미룸").extracting(PaperNotifyJob.Batch::lastId).containsExactly(2L);
+        assertThat(PaperNotifyJob.batches(rows.subList(0, 2), 2, t.plusSeconds(3_600), Row::book, Row::at, Row::id))
+                .as("꽉 찬 읽기가 묶음 하나뿐이면 그대로(멈춰 서지 않게)").extracting(PaperNotifyJob.Batch::lastId).containsExactly(2L);
+        assertThat(PaperNotifyJob.batches(rows, 500, t.plusSeconds(1), Row::book, Row::at, Row::id))
+                .as("지나지 않은 행(2번)이 이어지는 묶음은 미룸").isEmpty();
     }
 }

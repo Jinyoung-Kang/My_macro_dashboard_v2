@@ -299,7 +299,7 @@ final class PaperSettingKeys {
             shared(of("claude.schemaV3", Type.BOOLEAN, false,
                     "Claude 결정 스키마 v3(bearCase, 3단계 — 2단계 K37, 두 책 공통). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
             shared(of(PaperNotifyJob.SETTING, Type.BOOLEAN, false,
-                    "텔레그램 알림(사용자 요청 2026-11-02, 두 책 공통, 기본 켬) — 체결 한 건마다·결정마다 요약(새 주문 포함)·결정 없는 주문(스탑 등)을 "
+                    "텔레그램 알림(사용자 요청 2026-11-02, 두 책 공통, 기본 켬) — 결정마다 요약(새 주문 포함), 체결·결정 없는 주문(스탑 등)은 계좌·장부 처리마다 한 통으로 "
                             + "서버 .env의 TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID로 보냄. 끄면 보내지 않고 읽은 자리만 옮김(다시 켜도 지난 일은 안 옴)")),
             shared(of("claude.figureCheck", Type.BOOLEAN, false,
                     "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 책 공통, 결정마다 호출 +1 — "
