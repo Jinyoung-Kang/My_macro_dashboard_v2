@@ -23,6 +23,7 @@ import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -908,6 +909,76 @@ class RealTradeJobDbTest {
         run("11:01:40");
         run("11:02:20");
         verify(client, times(2)).placeOrder(anyString());   // 시도 2가 끝 — 남은 보유는 다음 날 맞추기가 '책에 없는 보유'로 팖
+    }
+
+    @Test
+    @Disabled("QA-303 재현 — 수정 전에는 하루 건수 한도로 미룬 채 창이 끝난 스탑을 놓침으로 세지 않아 STOP_SELL이 없음. fix(QA-303)에서 켭니다")
+    @DisplayName("QA-303: 하루 건수 한도를 다 쓴 날 스탑이 미룸으로 창(T + 3분)을 넘기면 STOP_SELL 놓침 1(한 번만), 장중 창 요약은 미룸 1·놓침 0(두 번 세지 않음)")
+    void qa303DeferredStopExpiryCountsAsMissed() {
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 2, 999_999_999L,
+                999_999_999L)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(
+                broker("X-1", "000270", "SELL", "DAY", "FILLED", "1", "1", clock.now, clock.now),
+                broker("X-2", "000270", "SELL", "DAY", "FILLED", "1", "1", clock.now, clock.now))));
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(691, A, "MARKET", kst("2026-11-06T11:00"))));
+
+        run("11:00:10");
+        run("11:01:10");
+        run("11:02:10");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("STOP_SELL")).as("창 안에서는 미룸 — 다음 주기에 다시 봄").isEmpty();
+
+        run("11:03:30");
+        run("11:04:00");
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("missed").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("blocked").asInt()).isZero();
+            assertThat(e.detail().path("sent").asInt()).isZero();
+        });
+
+        run("15:19:40");
+        assertThat(events("WINDOW_SUMMARY")).filteredOn(e -> e.detail().path("window").asString().equals("MIRROR")).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.detail().path("deferred").asInt()).isEqualTo(1);
+                    assertThat(e.detail().path("missed").asInt()).isZero();
+                });
+    }
+
+    @Test
+    @Disabled("QA-303 재현 — 수정 전에는 매도 가능 수량 0 같은 구조적 건너뜀으로 그날 닫힌 스탑을 막힘으로 세지 않아 STOP_SELL이 없음. fix(QA-303)에서 켭니다")
+    @DisplayName("QA-303: 보유는 있는데 매도 가능 수량이 0이라 스탑을 그날 닫으면 STOP_SELL 막힘 1(한 번만) — 놓침으로 또 세지 않음")
+    void qa303StructurallySkippedStopCountsAsBlocked() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(client.preflight(any(), any())).thenReturn(Reply.of(new Preflight(clock.now, d("1000000"),
+                List.of(new Holding(A, "합성" + A, d("100"), d("50000"))), Map.of(A, new Quote(d("50000"), d("65000"), null)),
+                Map.of(A, d("0")))));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(692, A, "MARKET", kst("2026-11-06T11:00"))));
+
+        run("11:00:10");
+        run("11:00:40");
+        run("11:03:30");
+
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("blocked").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("missed").asInt()).isZero();
+        });
+    }
+
+    @Test
+    @DisplayName("QA-303 대조: 스탑 종목의 보유가 이미 없으면(묶음이 먼저 팖 등) 가격을 몰라 건너뛰어도 STOP_SELL 막힘으로 세지 않음")
+    void qa303FlatStopIsNotBlocked() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("6000000", Map.of(), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(693, A, "MARKET", kst("2026-11-06T11:00"))));
+
+        run("11:00:10");
+        run("11:03:30");
+
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("STOP_SELL")).isEmpty();
     }
 
     @Test
