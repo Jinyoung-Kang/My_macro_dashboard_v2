@@ -49,7 +49,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * 주문을 냈거나·'걸렸을 것'·갭 가드 제외·오류·세션 중 저장본이 늦은 첫 회차일 때만 남깁니다(20초마다 쌓이지 않게).
  *
  * <p><b>판정하는 격자</b>: 지난 회차에 본 마지막 격자 뒤부터 저장본이 받은 시각까지의 격자(첫 판정 격자 = 개장 + 10분 — 개장 10분 전에는 팔지 않음, 끝 =
- * 장 끝 여유 앞). 재기동 직후에는 가장 최근 격자 하나만 봅니다. 한 종목에서 처음 걸린 격자로 주문을 냅니다.
+ * 장 끝 여유 앞). 재기동(또는 세션 중 스위치 켬) 직후 — 그 세션 상태를 첫 판정 격자 뒤에 연 경우 — 에는 가장 최근 격자 하나만 봅니다. 개장 전부터 떠 있던
+ * 프로세스가 세션 첫 판정 전 회차를 놓친 것은 재기동이 아니므로 첫 판정 격자부터 판정합니다(QA-306). 한 종목에서 처음 걸린 격자로 주문을 냅니다.
  *
  * <p><b>주문</b>(ON): 매도·수량 없음(체결 때 보유 전량)·출처 {@code STOP}·대기, 결정 없음, 기준 거래일 = 그 세션 전 거래일(목표 세션 = 그 세션), 생성 =
  * 이 작업의 시각, 만료 = 그 세션, 시점은 {@link StopWatch#target}(감지 + 60초 뒤 첫 분 — 보통 장중 시장가, 장 끝 여유 안이면 종가). 근거에
@@ -87,7 +88,7 @@ public class PaperStopWatchJob {
     private final Clock clock;
     private final PaperMarkets markets;
     private final ReentrantLock running = new ReentrantLock();
-    /** 시장 코드 → 이 프로세스가 본 것(재기동하면 비어 가장 최근 격자부터). */
+    /** 시장 코드 → 이 프로세스가 본 것(세션 중 재기동하면 비어 가장 최근 격자부터). */
     private final Map<String, MarketState> states = new HashMap<>();
     /** 시장 코드 → 마지막으로 남긴 오류(같은 오류를 되풀이해 남기지 않게). */
     private final Map<String, String> lastErrors = new java.util.concurrent.ConcurrentHashMap<>();
@@ -95,6 +96,8 @@ public class PaperStopWatchJob {
     /** 한 시장의 프로세스 메모리 — 세션이 바뀌면 새로 엽니다. */
     private static final class MarketState {
         LocalDate session;
+        /** 이 세션 상태를 연 시각 — 첫 판정 격자 뒤면 재기동(또는 세션 중 스위치 켬) 직후(클래스 설명 '판정하는 격자'). */
+        Instant openedAt;
         Instant lastGrid;
         String lastFetched;
         boolean lateNoted;
@@ -211,17 +214,20 @@ public class PaperStopWatchJob {
         }
         Instant firstGrid = StopWatch.firstJudgedGrid(calendar, session);
         Instant end = StopWatch.gridEnd(calendar, session, korea);
-        if (now.isBefore(firstGrid) || now.isAfter(calendar.closeInstant(session).plus(AFTER_CLOSE))) {
-            return Outcome.skip(code, mode.name(), "판정 창 밖");
-        }
+        // 세션 상태는 판정 창 검사 앞에서 엽니다 — 20초마다 하루 종일 돌므로 프로세스가 떠 있었다면 개장 전에 열리고, 첫 판정 격자 뒤에 열렸으면
+        // 재기동(또는 세션 중 켬) 직후입니다(QA-306).
         MarketState state = states.computeIfAbsent(code, k -> new MarketState());
         if (!session.equals(state.session)) {
             state.session = session;
+            state.openedAt = now;
             state.lastGrid = null;
             state.lastFetched = null;
             state.lateNoted = false;
             state.shadowSeen.clear();
             state.guardSeen.clear();
+        }
+        if (now.isBefore(firstGrid) || now.isAfter(calendar.closeInstant(session).plus(AFTER_CLOSE))) {
+            return Outcome.skip(code, mode.name(), "판정 창 밖");
         }
         Instant started = now;
         Optional<Snapshot> found = reader.quietly(() -> marketData.stopWatch(korea));
@@ -252,8 +258,10 @@ public class PaperStopWatchJob {
                 grids.add(g);
             }
         }
-        if (state.lastGrid == null && grids.size() > 1) {
-            grids = List.of(grids.get(grids.size() - 1));   // 재기동 직후 — 가장 최근 격자만
+        if (state.lastGrid == null && state.openedAt.isAfter(firstGrid) && grids.size() > 1) {
+            // 재기동(세션 중 켬) 직후 — 이 프로세스가 앞 격자를 봤는지 모르므로 가장 최근 격자만. 개장 전부터 연 세션에서 첫 판정 전 회차를
+            // 놓친 것(수집 쉼·거부)은 여기 들지 않고 빠진 격자를 09:40(한국 09:10)부터 차례로 판정합니다(QA-306).
+            grids = List.of(grids.get(grids.size() - 1));
         }
         if (grids.isEmpty()) {
             state.lastFetched = fetchedText;

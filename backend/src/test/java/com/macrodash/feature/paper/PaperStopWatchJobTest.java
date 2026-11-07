@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -255,7 +254,6 @@ class PaperStopWatchJobTest {
     }
 
     @Test
-    @Disabled("QA-306 재현 — 수정 전에는 세션 상태를 첫 판정 격자 뒤 첫 판정 때 열어, 세션 첫 판정 전 회차를 놓친 경우도 재기동으로 보고 가장 최근 격자만 판정함. fix(QA-306)에서 켭니다")
     @DisplayName("개장 전부터 떠 있던 프로세스가 세션 첫 판정 전 회차들을 놓쳐도 다음 저장본으로 09:40부터 판정 — 09:35~09:49 아래였다가 09:50에 회복해도 09:45 격자로 STOP(QA-306)")
     void missedFirstGridsOfTheSessionAreJudged() {
         settings("ON", "OFF");
