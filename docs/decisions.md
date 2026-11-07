@@ -586,3 +586,10 @@
 - 선택: 같은 책·번호가 이어지고 만든 시각(`created_at` — 체결은 DB `now()`라 한 트랜잭션이 같은 값)이 2초 안인 행을 한 묶음으로, 체결 묶음은 매도 먼저 체결마다 한 줄 + 합계 줄. 보낸 자리는 묶음의 마지막 번호로만 옮기고, 500행까지 읽어 끝 묶음이 읽기 상한·아직 안 지난 행으로 이어지면 다음 주기로 미룸.
 - 이유: 새 칸·DB 판 없이 트랜잭션 경계를 읽을 수 있고(60초 지난 트랜잭션은 다 보임), 묶음 일부만 보내 자리가 어긋나는 일이 없음. 긴 묶음은 보내는 쪽이 줄 경계에서 나눔(QA-168).
 - 대가: 서로 다른 트랜잭션의 행이 번호에서 엇갈리면 묶음이 나뉘어 통이 늘 수 있고(빠지거나 겹치지는 않음), 한 묶음이 500행보다 크면 거기서 나눠 보냄.
+
+## 2026-11-07 · minimatch 취약점(GHSA-g3hv-75wg-m249)은 `overrides`로 10 계열만 11.0.5로 고정
+
+- 문제: Dependabot 알림 #3 — frontend의 minimatch 10.2.6(dev, eslint 10.14.0·@eslint/config-array·typescript-estree가 끌어옴)에 glob 조각 증폭 DoS(medium). 수정판은 11.0.1부터, 세 부모는 최신판도 `^10`.
+- 원인: 부모 쪽 수정판이 아직 없음. eslint-plugin-import 등의 minimatch 3.1.5는 취약 범위(>= 7) 밖이고, 11로 바꾸면 그 플러그인의 `require('minimatch')(…)` 호출이 깨짐.
+- 선택: `"minimatch@^10": "11.0.5"`로 10 계열만 바꿈(사용자 요청 '고쳐줘'). 새 간접 의존성 `@isaacs/nonrecursive-glob-match` 1.1.0(minimatch와 같은 관리자)이 함께 들어옴. 10-08 postcss-selector-parser 건은 강제하지 않았던 것과 다름.
+- 이유: 세 부모가 쓰는 API(`minimatch()`·`new Minimatch(p, {dot})`·`.match(path, partial)`)가 11에 그대로 있고, lint 결과(검사 파일 388·메시지·켜진 규칙 61)가 바꾸기 전과 같음. 운영 이미지(`npm ci --omit=dev`)에는 없음. 부모가 `^11`을 선언하면 이 줄을 지움.
