@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -251,6 +252,46 @@ class PaperStopWatchJobTest {
         assertThat(outcome.grids()).containsExactly(et(10, 25, 0), et(10, 30, 0), et(10, 35, 0));
         assertThat(stops()).singleElement().satisfies(o ->
                 assertThat(o.reason().path("checks").get(1).path("grid").asString()).isEqualTo(et(10, 30, 0).toString()));
+    }
+
+    @Test
+    @Disabled("QA-306 재현 — 수정 전에는 세션 상태를 첫 판정 격자 뒤 첫 판정 때 열어, 세션 첫 판정 전 회차를 놓친 경우도 재기동으로 보고 가장 최근 격자만 판정함. fix(QA-306)에서 켭니다")
+    @DisplayName("개장 전부터 떠 있던 프로세스가 세션 첫 판정 전 회차들을 놓쳐도 다음 저장본으로 09:40부터 판정 — 09:35~09:49 아래였다가 09:50에 회복해도 09:45 격자로 STOP(QA-306)")
+    void missedFirstGridsOfTheSessionAreJudged() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        clock.now = et(8, 0, 0);
+        assertThat(job.run().get(0).skipped()).contains("창 밖");
+
+        // 09:40:20~09:50:20 회차는 없음(spark 거부 뒤 쉼) — 09:55:20 저장본에 09:35~09:49 봉은 91, 그 밖은 99
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("fetchedAt", et(9, 55, 20).toString());
+        Map<Instant, Double> bars = new LinkedHashMap<>();
+        for (Instant at = et(9, 30, 0); !at.isAfter(et(9, 54, 0)); at = at.plus(Duration.ofMinutes(1))) {
+            bars.put(at, !at.isBefore(et(9, 35, 0)) && at.isBefore(et(9, 50, 0)) ? 91.0 : 99.0);
+        }
+        payload.putObject("tickers").set("AAA", StopWatchTest.usEntry(DAY, bars, 99.0, null));
+        when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
+                null, et(9, 55, 21))));
+        clock.now = et(9, 55, 40);
+
+        PaperStopWatchJob.Outcome outcome = job.run().get(0);
+
+        assertThat(outcome.grids()).containsExactly(et(9, 40, 0), et(9, 45, 0), et(9, 50, 0), et(9, 55, 0));
+        assertThat(stops()).singleElement().satisfies(o ->
+                assertThat(o.reason().path("checks").get(1).path("grid").asString()).isEqualTo(et(9, 45, 0).toString()));
+    }
+
+    @Test
+    @DisplayName("세션 중 재기동(그 세션 상태를 첫 판정 격자 뒤에 엶)은 가장 최근 격자 하나만 판정(대조)")
+    void restartJudgesOnlyTheLatestGrid() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(10, 20, 20), et(10, 20, 21), Map.of("AAA", new double[]{99, 99}), et(10, 19, 0));
+
+        assertThat(job.run().get(0).grids()).containsExactly(et(10, 20, 0));
     }
 
     @Test
