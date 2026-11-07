@@ -54,3 +54,10 @@ f841596142ddde11e49e1869d989ad9b31664d20:.github/workflows/ci.yml:generic-api-ke
 # 65d62543: CI 'Vultr 덧붙임 해석' 단계의 가짜 GATE_SECRET(ci-gate-secret-…) — 위 f8415961(AWS 단계)과 같은 시험 값을 옮긴 것으로, 서버 .env에
 # 섞여 들어온 AWS 값을 Vultr 덧붙임이 읽지 않는지 보려고 둔다. 로컬 .env 값과 대조해 일치 0건(2026-11-03).
 65d62543dc861063e00de28235d38b03bcbca601:.github/workflows/ci.yml:generic-api-key:286
+
+# 2026-11-07 intraday-timing 브랜치: 한국 켠 판 고정본(packet-kr-ft-*)의 매크로 카드 항목 키("kospi200_night_scraped") — 위 183fc20·16b83a7과
+# 같은 데이터셋 키 문자열이다(진짜 비밀 아님). 체결 창 개장+10분·장중 판단·감시 글로 고정본을 다시 만들 때마다 지문이 새로 생김.
+b918c1e0fdf8723e7e82e794a41139a18db1fcd8:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
+7b2c46059fdfec965770f14129f43eb06706bc72:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
+877eb1517dda44d6c5935a76ccd221337b902805:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
+135ddba700f91158178fdd8eb27f0ccc1fbdb682:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-scheduled.json:generic-api-key:1
