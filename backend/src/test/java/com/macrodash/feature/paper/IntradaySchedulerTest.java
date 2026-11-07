@@ -7,7 +7,6 @@ import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.IntradayPlan;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -92,7 +91,7 @@ class IntradaySchedulerTest {
     // ------------------------------------------------------------------ 순수 판정
     @Test
     @DisplayName("보장 시각 G: 개장 기준(미국 + 180분 = 12:30 ET, 한국 + 150분 = 11:30 KST, 수능일 10:00 개장이면 12:30 KST) — 미국 조기 폐장일(13:00 마감)은 "
-            + "받는 범위 끝 12:30 − 1분 = 12:29로 자름")
+            + "받는 범위 끝 12:30 − 10분 = 12:20으로 자름(QA-310)")
     void guaranteeTimeIsOpenRelative() {
         assertThat(IntradayScheduler.guaranteeAt(MON, US, false)).isEqualTo(et(MON, 12, 30, 0));
         assertThat(IntradayScheduler.guaranteeAt(KR_DAY, KR, true)).isEqualTo(kst(KR_DAY, 11, 30, 0));
@@ -101,14 +100,12 @@ class IntradaySchedulerTest {
                 Map.of(exam, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(16, 30))));
         assertThat(IntradayScheduler.guaranteeAt(exam, shifted, true)).isEqualTo(kst(exam, 12, 30, 0));
         LocalDate early = LocalDate.of(2026, 11, 27);
-        assertThat(IntradayScheduler.guaranteeAt(early, US, false)).as("추수감사절 다음 날 13:00 마감").isEqualTo(et(early, 12, 29, 0));
+        assertThat(IntradayScheduler.guaranteeAt(early, US, false)).as("추수감사절 다음 날 13:00 마감").isEqualTo(et(early, 12, 20, 0));
         assertThat(IntradayScheduler.guaranteeTime(List.of(), early, US, false, et(early, 12, 29, 20), 1, 3))
                 .as("그날도 한 번 — 범위 끝 12:30").isEqualTo(LocalTime.of(12, 30));
     }
 
     @Test
-    @Disabled("QA-310 재현 — 수정 전에는 조기 폐장일 보장 시각이 받는 범위 끝 − 1분(12:29)이라 12:29:00~12:29:59에 시작한 주기만 보장 행을 넣음"
-            + "(긴 호출 하나에 밀리면 그 세션 보장이 생기지 않음). fix(QA-310)에서 켭니다")
     @DisplayName("QA-310: 미국 조기 폐장일(13:00 마감 — 받는 범위 끝 12:30)의 보장 시각은 범위 끝 − 10분(12:20 ET) — 12:20:00~12:29:59에 시작한 어느 주기든 "
             + "보장 행을 넣음(1분 창 하나가 아니라 10분 — 장중 판단 작업의 긴 호출 하나에 밀려도 기회가 남음), 12:30부터는 범위 밖. 결정 패킷의 보장 시각도 12:20. "
             + "보통 날·한국은 그대로")

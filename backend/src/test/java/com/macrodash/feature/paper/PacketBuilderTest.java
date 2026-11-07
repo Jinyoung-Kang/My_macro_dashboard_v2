@@ -1658,7 +1658,7 @@ class PacketBuilderTest {
         assertThat(intraday.get("guarantee").isNull()).isTrue();
         assertThat(intraday.get("events").isNull()).isTrue();
 
-        // 보장(최소 1)·사건 — 보장 시각은 개장 기준(E 11-02 EST 12:30 ET = 11-03 02:30 KST), 조기 폐장일은 받는 범위 끝 − 1분(12:29), 횟수 0이면 둘 다 없음.
+        // 보장(최소 1)·사건 — 보장 시각은 개장 기준(E 11-02 EST 12:30 ET = 11-03 02:30 KST), 조기 폐장일은 받는 범위 끝 − 10분(12:20 — QA-310), 횟수 0이면 둘 다 없음.
         JsonNode rules = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
                 FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 3, 1, true)))
                 .get("intraday");
@@ -1669,7 +1669,7 @@ class PacketBuilderTest {
         JsonNode earlyRules = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 11, 25),
                 FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 3, 1, false)))
                 .get("intraday");
-        assertThat(earlyRules.get("guarantee").get("atEt").asString()).as("조기 폐장일 — 받는 범위 끝 12:30 − 1분").isEqualTo("12:29");
+        assertThat(earlyRules.get("guarantee").get("atEt").asString()).as("조기 폐장일 — 받는 범위 끝 12:30 − 10분").isEqualTo("12:20");
         assertThat(earlyRules.get("events").isNull()).isTrue();
         JsonNode none = MAPPER.valueToTree(PacketBuilder.toNode(ExecutionSection.build(LocalDate.of(2026, 10, 30),
                 FreeTiming.DECISION_TIMINGS, UsMarketCalendar.CALENDAR, 5, true, store, PaperBooks.CLAUDE2, false, true, 0, 1, true)))

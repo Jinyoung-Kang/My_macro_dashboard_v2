@@ -45,7 +45,8 @@ import java.util.function.ToDoubleFunction;
  * 가장 이른 PLANNED 행을 고르고, 새 행은 끝난 순번 가운데 가장 큰 것 + 1을 씁니다(뒤 결정이 닫은 SUPERSEDED 순번은 다시 씀).
  *
  * <p><b>보장</b>(설정 {@value IntradayPolicy#US_MIN}·{@value IntradayPolicy#KR_MIN} ≥ 1, 기본 0 — 사용자 결정 2026-11-06 '최소 1'): 보장 시각 G(개장
- * 기준 — 미국 + {@link #GUARANTEE_AFTER_OPEN_US}, 보통 날 12:30 ET · 한국 + {@link #GUARANTEE_AFTER_OPEN_KR}, 보통 날 11:30 KST, 받는 범위 끝 − 1분으로 자름)가
+ * 기준 — 미국 + {@link #GUARANTEE_AFTER_OPEN_US}, 보통 날 12:30 ET · 한국 + {@link #GUARANTEE_AFTER_OPEN_KR}, 보통 날 11:30 KST, 받는 범위 끝 −
+ * {@link #GUARANTEE_BEFORE_LAST}로 자름)가
  * 지났는데 그 세션에 남은 예약(PLANNED)이 없고 부른 판단(DONE)이 최소 횟수보다 적으면, 순번이 남았을 때 한 행을 넣습니다 — 시각 = max(G, 지금 + 1분,
  * 끝난 판단 시각 + {@link IntradayRequest#MIN_GAP}), 받는 범위 안일 때만. 출처 {@value PaperStore.IntradayPlan#ORIGIN_GUARANTEE}, 수동 아님(정기 문턱으로
  * 셈), 피드는 운영자 새 행과 같음(미국 시간별 관측치 — 감시 목록 없이도 되는 피드, 한국 감시 1분봉). 그 계좌의 스위치가 켜져 있고 그 세션의 자유 시점 판
@@ -75,6 +76,12 @@ final class IntradayScheduler {
     static final Duration GUARANTEE_AFTER_OPEN_US = Duration.ofMinutes(180);
     /** 한국 보장 시각 = 개장 + 이만큼(보통 날 11:30 KST, 수능일 12:30 KST). */
     static final Duration GUARANTEE_AFTER_OPEN_KR = Duration.ofMinutes(150);
+    /**
+     * 보장 시각은 받는 범위 끝보다 늦어도 이만큼 앞(미국 조기 폐장일 13:00 마감 — 범위 끝 12:30이면 12:20 ET, QA-310). 넣을 시각 '지금 + 1분'이 범위 안에
+     * 드는 주기가 이 길이만큼 남아, 장중 판단 작업(한 줄·60초 간격)의 긴 호출(최대 300초) 하나에 밀려도 보장 행을 넣을 기회가 남습니다 — 범위 끝 − 1분이면
+     * 그 1분에 시작한 주기 하나뿐이었음.
+     */
+    static final Duration GUARANTEE_BEFORE_LAST = Duration.ofMinutes(10);
     /** 보장 행의 질문. */
     static final String GUARANTEE_QUESTION = "코드가 부른 보장 판단 — 이 세션에 장중 판단이 아직 없어 세션 중간에 한 번 본다(대기 주문과 보유를 그대로 둘지)";
 
@@ -249,12 +256,13 @@ final class IntradayScheduler {
     // ------------------------------------------------------------------ 보장 1회(ADR 0031 초안 결정 4)
 
     /**
-     * 그 세션의 보장 시각 G — 개장 + 오프셋(미국 180분·한국 150분). 받는 범위 끝({@link IntradayRequest#window}) − {@link #AHEAD}보다 늦으면 그 시각
-     * (미국 조기 폐장일 13:00 마감이면 범위 끝 12:30 − 1분 = 12:29 — 그때 넣는 행의 시각 '지금 + 1분'이 범위 안에 들게).
+     * 그 세션의 보장 시각 G — 개장 + 오프셋(미국 180분·한국 150분). 받는 범위 끝({@link IntradayRequest#window}) − {@link #GUARANTEE_BEFORE_LAST}보다
+     * 늦으면 그 시각(미국 조기 폐장일 13:00 마감이면 범위 끝 12:30 − 10분 = 12:20 — 12:20~12:29:59에 시작한 어느 주기든 넣는 행의 시각 '지금 + 1분'이
+     * 범위 안에 들게, QA-310).
      */
     static Instant guaranteeAt(LocalDate session, TradingCalendar calendar, boolean korea) {
         Instant at = calendar.openInstant(session).plus(korea ? GUARANTEE_AFTER_OPEN_KR : GUARANTEE_AFTER_OPEN_US);
-        Instant latest = IntradayRequest.window(session, calendar, korea).last().minus(AHEAD);
+        Instant latest = IntradayRequest.window(session, calendar, korea).last().minus(GUARANTEE_BEFORE_LAST);
         return at.isAfter(latest) ? latest : at;
     }
 
