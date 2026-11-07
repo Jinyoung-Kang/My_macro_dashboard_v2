@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -444,6 +445,34 @@ class StopWatchFallbackTest {
 
             assertThat(stops()).isEmpty();
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains(D2 + " 장이 끝난 뒤"));
+        }
+
+        @Test
+        @Disabled("QA-318 재현 — 수정 전에는 그 세션 자료로 체결할 수 없는 감시 STOP(만료 = 그 세션)이 대기로 남아 밤 대체 스탑을 막고 다음 세션 "
+                + "감시까지 막음. fix(QA-318)에서 켭니다")
+        @DisplayName("ON — 그 세션에 체결할 수 없는(그날 1분봉 없음) 감시 STOP은 밤에 만료로 닫고, 감시가 덮지 못했으면 다음 거래일 첫 분 NIGHT_FALLBACK(QA-318)")
+        void unfillableWatchStopIsClosedAndFallsBack() {
+            mode("ON", null);
+            watched("000660");   // 005930은 감시가 덮지 못함
+            ObjectNode reason = MAPPER.createObjectNode();
+            reason.put("trigger", "TRAILING_STOP");
+            reason.put("stopMode", PaperStopWatchJob.STOP_MODE);
+            long watch = store.insertOrder(new Order(0, BOOK, null, "005930", PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                    PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, reason, D, kst("2026-11-03T10:00"), D1, null));
+            KrQuotes.Timed none = new KrQuotes.Timed(KrQuotes.TIMED_NO_BARS, null, kst("2026-11-03T21:50"), Map.of(), Map.of(), Map.of());
+            when(marketData.krTimed()).thenReturn(Map.of("005930", Map.of(D1, none)));
+
+            Outcome outcome = nightD1(91_000);
+
+            assertThat(store.orders.get(watch).status()).isEqualTo(PaperBooks.ORDER_EXPIRED);
+            assertThat(store.orders.get(watch).rejectReason()).contains("1분봉 없음").contains("체결할 수 없어");
+            assertThat(stops()).filteredOn(o -> PaperBooks.ORDER_PENDING.equals(o.status())).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+                assertThat(o.targetLocal()).isEqualTo(LocalTime.of(9, 10));
+                assertThat(o.asOfTradingDate()).isEqualTo(D1);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+            });
+            assertThat(outcome.expired()).isEqualTo(1);
         }
 
         @Test

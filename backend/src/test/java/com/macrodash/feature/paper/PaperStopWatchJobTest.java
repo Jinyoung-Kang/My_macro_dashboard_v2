@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -323,6 +324,53 @@ class PaperStopWatchJobTest {
         PaperStopWatchJob.Outcome unknown = job.run().get(1);
         assertThat(unknown.error()).isNull();
         assertThat(unknown.skipped()).startsWith(CalendarGaps.NO_CALENDAR);
+    }
+
+    @Test
+    @Disabled("QA-318 재현 — 수정 전에는 지난 세션에 체결하지 못한 감시 STOP(만료 = 그 세션)·지난 세션이 목표인 밤 대체 STOP·만료가 지난 전량 매도가 "
+            + "오늘 세션 내내 감시 STOP을 막음. fix(QA-318)에서 켭니다")
+    @DisplayName("한국 — 체결될 수 없는 대기 주문(만료가 지난 감시 STOP·전량 매도)과 지난 세션이 목표인 STOP은 오늘 감시를 막지 않음(QA-318)")
+    void staleOrdersDoNotBlockTodaysWatch() {
+        settings("OFF", "ON");
+        clock.now = kst(10, 20, 40);
+        store.books.put(PaperBooks.KR_RULES, new Book(PaperBooks.KR_RULES, PaperBooks.KIND_RULES, "한국 규칙", 100_000_000,
+                LocalDate.of(2026, 10, 30), PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE, Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.states.put(PaperBooks.KR_RULES, new BookState(PaperBooks.KR_RULES, 1000, 1000, 0, 0, null, null, null, null));
+        when(marketData.krConfirmed(anyCollection(), anyCollection(), any())).thenReturn(KrConfirmed.NONE);
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("fetchedAt", kst(10, 20, 20).toString());
+        ObjectNode entries = payload.putObject("tickers");
+        Map<String, Double> bars = new LinkedHashMap<>();
+        for (int m = 6; m <= 20; m++) {
+            bars.put(String.format("10:%02d", m), 45_000.0);   // 아침 내내 스탑가 50,600 한참 아래
+        }
+        LocalDate thu = LocalDate.of(2026, 11, 5);
+        for (String code : List.of("005930", "000660", "035720")) {
+            store.upsertPosition(new Position(PaperBooks.KR_RULES, code, 10, 48_000, LocalDate.of(2026, 11, 2), PaperFixtures.FRI_CLOSE,
+                    55_000, PaperFixtures.FRI_CLOSE, null, null, false, PREV, 50_500, null));
+            entries.set(code, StopWatchTest.krEntry(DAY, bars, List.of(), 50_000.0, 50_500.0, 50_500.0));
+        }
+        ObjectNode watch = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE);
+        ObjectNode night = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+        // 금요일 11-06 감시 STOP(만료 11-06) — 11-06 밤에 체결하지 못해(T 뒤 거래 없음) 월요일에도 대기(한국 만료는 다음 밤 관측치 처리 때만 돎).
+        store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, "005930", PaperBooks.SELL, null, null, null, PaperBooks.MARKET,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, watch, thu, ZonedDateTime.of(PREV, LocalTime.of(13, 0),
+                KrxCalendar.SEOUL).toInstant(), PREV, null));
+        // 목표 세션이 11-06인 밤 대체 STOP(만료 기준일 + 3거래일 — 아직 지나지 않음) — 11-06 09:10 값으로만 팔 수 있음.
+        store.insertOrder(new Order(0, PaperBooks.KR_RULES, null, "000660", PaperBooks.SELL, null, null, null, PaperBooks.AT_MINUTE,
+                PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, night, thu, ZonedDateTime.of(thu, LocalTime.of(21, 15),
+                KrxCalendar.SEOUL).toInstant(), LocalDate.of(2026, 11, 10), null, LocalTime.of(9, 10)));
+        // 만료가 지난(11-06) 전량 매도 규칙 주문 — 다음 밤 만료가 닫을 뿐 체결될 수 없음.
+        store.insertOrder(new Order(0, PaperBooks.KR_RULES, 7L, "035720", PaperBooks.SELL, null, null, null, PaperBooks.NEXT_OPEN,
+                RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, LocalDate.of(2026, 11, 3),
+                ZonedDateTime.of(LocalDate.of(2026, 11, 3), LocalTime.of(22, 30), KrxCalendar.SEOUL).toInstant(), PREV, null));
+        when(marketData.stopWatch(true)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload, "json", "ok", null,
+                kst(10, 20, 21))));
+
+        job.run();
+
+        assertThat(stops()).filteredOn(o -> DAY.equals(o.expiresOn())).extracting(Order::ticker)
+                .containsExactlyInAnyOrder("005930", "000660", "035720");
     }
 
     @Test
