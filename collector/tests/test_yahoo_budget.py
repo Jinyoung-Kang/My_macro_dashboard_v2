@@ -475,7 +475,6 @@ def _guarded(fn, budget: float = 20.0):
     return app_http.run_guarded(guard, fn)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-335 — 수정 전: 연결 실패·5xx는 래치에 세지 않아(시간 초과만 셈) crumb·쿠키·시세 요청이 종목·폴백마다 되풀이됨")
 def test_QA335_연결이_거절되면_Yahoo를_닫아_한_회차의_요청_폭주를_멈춘다(deny_proxy):
     import os
 
@@ -499,7 +498,6 @@ def test_QA335_연결이_거절되면_Yahoo를_닫아_한_회차의_요청_폭�
     assert deny_proxy.hits <= bound, f"Yahoo로 {deny_proxy.hits}번 보냄(상한 {bound})"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-335 — 수정 전: 응답이 오기만 하면(상태 코드와 상관없이) 셈을 비워 5xx가 이어져도 닫지 않음")
 def test_QA335_HTTP_5xx가_이어져도_Yahoo를_닫는다(yahoo_502):
     yahoo = _yahoo_module()
     limit = getattr(yahoo, "FAILURE_LIMIT", 5)
@@ -510,3 +508,23 @@ def test_QA335_HTTP_5xx가_이어져도_Yahoo를_닫는다(yahoo_502):
     with pytest.raises(yahoo.YahooNoResponse):
         yahoo.session().get(yahoo_502.url, timeout=5)
     assert yahoo_502.hits == limit
+
+
+def test_QA335_정상_응답은_실패_셈을_비우고_5xx는_닫힌_래치를_풀지_않는다():
+    yahoo = _yahoo_module()
+    yahoo.reset_for_tests()
+    try:
+        for _ in range(yahoo.FAILURE_LIMIT - 1):
+            yahoo._note_failure("ConnectionError")
+        yahoo._note_response()            # 살아 있는 Yahoo의 답(2xx·3xx·4xx — crumb 401 포함)
+        for _ in range(yahoo.FAILURE_LIMIT - 1):
+            yahoo._note_failure("ConnectionError")
+        assert yahoo.unavailable_reason() is None, "정상 응답 사이의 실패가 이어진 것으로 셈"
+
+        yahoo.reset_for_tests()
+        _close_latch(yahoo)               # 시간 초과로 닫힘 — 사유 머리는 예전 그대로
+        yahoo._note_server_error(503)     # 닫히기 전에 나간 요청이 늦게 5xx를 받음 — 쓸 수 없는 답이라 풀지 않음
+        reason = yahoo.unavailable_reason()
+        assert reason and reason.startswith(f"Yahoo 응답 없음 — 연달아 {yahoo.NO_RESPONSE_LIMIT}번 시간 초과"), reason
+    finally:
+        yahoo.reset_for_tests()

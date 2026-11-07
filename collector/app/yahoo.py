@@ -17,9 +17,15 @@ yfinance는 자기 curl_cffi 세션(프로세스에 하나 — ``yfinance.data.Y
    (예외로 끊으면 yfinance가 그 종목의 결과를 끝없이 기다림).
 3) 무응답 래치 — Yahoo 요청이 연달아 ``NO_RESPONSE_LIMIT``번 시간 초과로 끝나면 ``NO_RESPONSE_LATCH_SECONDS`` 동안 Yahoo로 보내지 않고
    바로 실패합니다(:class:`YahooNoResponse`). 1)이 예산 때문에 줄인 timeout으로 끝난 요청은 세지 않습니다(출처가 아니라 그 태스크의
-   남은 시간 때문). 응답이 하나라도 오면(상태 코드와 상관없이) 셈을 비우고 닫힌 래치도 풉니다. 기한이 지난 뒤 첫 요청이 또 시간 초과면
+   남은 시간 때문). 응답이 하나라도 오면(5xx는 아래) 셈을 비우고 닫힌 래치도 풉니다. 기한이 지난 뒤 첫 요청이 또 시간 초과면
    바로 다시 닫습니다. 예산이 없는 화면 경로도 닫힌 동안은 기다리지 않습니다. 출처 거부 래치(``http.YAHOO_HOST`` — 403·429)와 따로
    둡니다: 응답 없음은 거부가 아니라 실행 기록에 '거부됨'으로 적지 않습니다.
+   연결 실패(연결 거절·DNS·TLS·프록시 CONNECT 거절 — curl ``ConnectionError``·``ProxyError``)나 HTTP 5xx로 연달아 ``FAILURE_LIMIT``번
+   끝나도 같은 래치를 닫습니다(QA-335, 사유 'Yahoo 연결 실패 — …'). yfinance는 crumb·쿠키를 받지 못하면(연결 실패도 5xx도) 요청마다
+   전략을 바꿔(basic ↔ csrf) 다시 받고, 받은 응답이 4xx·5xx면 한 번 더 받은 뒤 다시 보내, 출처가 끊긴 동안 한 회차에 수천 번을
+   보냈습니다(QA 스택 차단 프록시 실측 약 6,000번 — 시간 초과만 세던 래치는 닫히지 않았고 사유는 '빈 응답 — 버전 불일치를 의심'이었음).
+   5xx 응답은 '응답이 옴'이지만 쓸 수 없는 답이라 시간 초과 셈만 비우고 닫힌 래치는 풀지 않으며, 2xx·3xx·4xx 응답(살아 있는 Yahoo
+   — crumb 401 등)은 두 셈을 모두 비우고 닫힌 래치도 풉니다.
 
 부르는 쪽(services.market·sector)은 보내기 전에 :func:`unavailable_reason`을 보고, 받은 표가 비었을 때도 이것을 먼저 사유로 씁니다 —
 yfinance는 이 예외를 삼키고 빈 표를 돌려줘, 그대로 두면 사유가 '라이브러리 버전 불일치를 의심'으로 보였습니다. 두 예외는 curl_cffi
@@ -47,6 +53,11 @@ logger = logging.getLogger(__name__)
 NO_RESPONSE_LIMIT = 3
 # 닫아 두는 시간 — fast 태스크 주기(5분)보다 짧아, 다음 주기에는 한 번 다시 물어봅니다.
 NO_RESPONSE_LATCH_SECONDS = 120.0
+# 연결 실패나 HTTP 5xx로 연달아 이만큼 끝나면 같은 래치를 닫습니다(QA-335 — 모듈 설명 3). crumb 받기 한 번이 실패 셋 안팎을 내므로(쿠키·crumb·
+# 시세) 보통 첫 시세 요청 한두 번 안에 닫힙니다. 정상 Yahoo는 4xx·2xx로 답해 셈이 이어지지 않습니다.
+FAILURE_LIMIT = 5
+# 연결 실패로 세는 예외 — 응답을 받지 못한 것(시간 초과는 따로 셈). ProxyError는 ConnectionError의 하위가 아니라 따로 둡니다.
+_CONNECTION_FAILURES = (curl_exceptions.ConnectionError, curl_exceptions.ProxyError)
 
 
 class YahooBudgetExhausted(curl_exceptions.Timeout):
@@ -54,38 +65,59 @@ class YahooBudgetExhausted(curl_exceptions.Timeout):
 
 
 class YahooNoResponse(curl_exceptions.Timeout):
-    """Yahoo가 연달아 응답하지 않아 잠시 닫혀 있음 — 보내지 않았습니다."""
+    """Yahoo가 연달아 응답하지 않거나(시간 초과) 연결 오류·서버 오류로 끝나(QA-335) 잠시 닫혀 있음 — 보내지 않았습니다."""
 
 
 _lock = threading.Lock()
 _timeouts_in_row = 0
+_failures_in_row = 0
 _closed_until: float | None = None
+# 닫힌 래치의 사유 머리(시간 초과·연결 실패) — 닫을 때 정합니다.
+_closed_head: str | None = None
 
 
 def _now() -> float:
     return time.monotonic()
 
 
-def _closed_message(left: float) -> str:
-    return f"Yahoo 응답 없음 — 연달아 {NO_RESPONSE_LIMIT}번 시간 초과, {left:.0f}초 더 Yahoo 요청을 멈춤"
+def _timeout_head() -> str:
+    return f"Yahoo 응답 없음 — 연달아 {NO_RESPONSE_LIMIT}번 시간 초과"
+
+
+def _failure_head(last: str) -> str:
+    return f"Yahoo 연결 실패 — 연달아 {FAILURE_LIMIT}번 연결 오류·서버 오류(마지막 {last})"
+
+
+def _closed_message(left: float, head: str | None = None) -> str:
+    return f"{head or _timeout_head()}, {left:.0f}초 더 Yahoo 요청을 멈춤"
 
 
 def _budget_message(left: float) -> str:
     return f"태스크 시간 예산이 {max(left, 0.0):.0f}초 남아 Yahoo 요청을 보내지 않음"
 
 
-def _closed_left() -> float | None:
-    """래치가 닫혀 있으면 남은 초, 아니면 None. 기한이 지난 래치는 여기서 풉니다."""
-    global _closed_until
+def _closed_state() -> tuple[float, str] | None:
+    """래치가 닫혀 있으면 (남은 초, 사유 머리), 아니면 None. 기한이 지난 래치는 여기서 풉니다."""
+    global _closed_until, _closed_head
     with _lock:
         if _closed_until is None:
             return None
         left = _closed_until - _now()
         if left > 0:
-            return left
+            return left, _closed_head or _timeout_head()
         _closed_until = None
-    logger.info("Yahoo 무응답 래치 기한이 지나 다시 요청합니다")
+        _closed_head = None
+    logger.info("Yahoo 래치(무응답·연결 실패) 기한이 지나 다시 요청합니다")
     return None
+
+
+def closed_reason() -> str | None:
+    """
+    Yahoo 래치(무응답·연결 실패)가 닫혀 있으면 그 사유 한 줄, 아니면 None — 태스크 예산은 보지 않습니다. yfinance 밖의 길로 같은 Yahoo를 부르는
+    태스크(미국 장중 스탑 감시의 spark — 공용 requests 세션, 예산은 그 층이 봄)가 봅니다(QA-335).
+    """
+    closed = _closed_state()
+    return None if closed is None else _closed_message(*closed)
 
 
 def _budget_left_if_short() -> float | None:
@@ -102,9 +134,9 @@ def unavailable_reason() -> str | None:
 
     부르는 쪽이 yfinance를 부르기 전과, 받은 표가 비었을 때 사유를 고르기 전에 봅니다(모듈 설명 맨 끝).
     """
-    closed = _closed_left()
+    closed = closed_reason()
     if closed is not None:
-        return _closed_message(closed)
+        return closed
     short = _budget_left_if_short()
     if short is not None:
         return _budget_message(short)
@@ -112,32 +144,59 @@ def unavailable_reason() -> str | None:
 
 
 def _note_timeout() -> None:
-    global _timeouts_in_row, _closed_until
+    global _timeouts_in_row, _closed_until, _closed_head
     with _lock:
         _timeouts_in_row += 1
         if _timeouts_in_row < NO_RESPONSE_LIMIT or _closed_until is not None:
             return
         _closed_until = _now() + NO_RESPONSE_LATCH_SECONDS
+        _closed_head = _timeout_head()
         count = _timeouts_in_row
     logger.warning("Yahoo가 연달아 %d번 응답하지 않아 %d초 동안 Yahoo 요청을 멈춥니다", count, int(NO_RESPONSE_LATCH_SECONDS))
 
 
-def _note_response() -> None:
-    global _timeouts_in_row, _closed_until
+def _note_failure(what: str) -> None:
+    """연결 실패·HTTP 5xx 한 번(``what`` — 예외 이름이나 'HTTP 502'). 연달아 FAILURE_LIMIT번이면 래치를 닫습니다(QA-335)."""
+    global _failures_in_row, _closed_until, _closed_head
+    with _lock:
+        _failures_in_row += 1
+        if _failures_in_row < FAILURE_LIMIT or _closed_until is not None:
+            return
+        _closed_until = _now() + NO_RESPONSE_LATCH_SECONDS
+        _closed_head = _failure_head(what)
+        count = _failures_in_row
+    logger.warning("Yahoo 요청이 연달아 %d번 연결 오류·서버 오류(마지막 %s)로 끝나 %d초 동안 Yahoo 요청을 멈춥니다",
+                   count, what, int(NO_RESPONSE_LATCH_SECONDS))
+
+
+def _note_server_error(status: int) -> None:
+    """HTTP 5xx 응답 — 응답은 왔으니 시간 초과 셈은 비우고, 쓸 수 없는 답이라 실패로 셉니다(닫힌 래치는 풀지 않음)."""
+    global _timeouts_in_row
     with _lock:
         _timeouts_in_row = 0
+    _note_failure(f"HTTP {status}")
+
+
+def _note_response() -> None:
+    global _timeouts_in_row, _failures_in_row, _closed_until, _closed_head
+    with _lock:
+        _timeouts_in_row = 0
+        _failures_in_row = 0
         reopened = _closed_until is not None
         _closed_until = None
+        _closed_head = None
     if reopened:
-        logger.info("Yahoo가 다시 응답해 무응답 래치를 풉니다")
+        logger.info("Yahoo가 다시 응답해 래치(무응답·연결 실패)를 풉니다")
 
 
 def reset_for_tests() -> None:
     """래치와 셈을 비웁니다. 시험 사이의 격리용입니다 — 운영에서는 기한과 응답으로만 풉니다."""
-    global _timeouts_in_row, _closed_until
+    global _timeouts_in_row, _failures_in_row, _closed_until, _closed_head
     with _lock:
         _timeouts_in_row = 0
+        _failures_in_row = 0
         _closed_until = None
+        _closed_head = None
 
 
 def _fit(timeout, default, allowed: float) -> tuple[float | tuple[float, float], bool]:
@@ -164,9 +223,9 @@ class BudgetedSession(curl_requests.Session):
     """yfinance가 쓰는 curl_cffi 세션 — 보내기 전 무응답 래치·태스크 예산을 보고, 받은 뒤 래치의 셈을 고칩니다(모듈 설명 1·3)."""
 
     def request(self, method, url, *args, **kwargs):
-        closed = _closed_left()
+        closed = _closed_state()
         if closed is not None:
-            raise YahooNoResponse(_closed_message(closed))
+            raise YahooNoResponse(_closed_message(*closed))
         clamped = False
         left = http.time_left()
         if left is not None:
@@ -182,7 +241,14 @@ class BudgetedSession(curl_requests.Session):
             if not clamped:          # 이 태스크의 남은 시간 때문에 끝난 것은 출처의 무응답이 아닙니다
                 _note_timeout()
             raise
-        _note_response()
+        except _CONNECTION_FAILURES as exc:
+            _note_failure(type(exc).__name__)      # 연결 거절·프록시 CONNECT 거절·DNS·TLS(QA-335)
+            raise
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int) and status >= 500:
+            _note_server_error(status)
+        else:
+            _note_response()
         return response
 
 

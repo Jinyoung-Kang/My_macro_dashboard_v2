@@ -18,7 +18,7 @@ app/tasks/paper_stopwatch.py
   (미국 마감 뒤 관측치의 종가 스탑·한국 밤 스탑)가 그날 끝을 맡습니다(StopWatch.covered — QA-307).
 [미국 쉼] slow 군이 Yahoo를 쓰는 동안(runner.slow_yahoo_busy — 매시 :15 관측치·1분봉) 이번 회차를 쉽니다(통합 검토 R7 — 429 경합으로 장부 관측치를
   잃지 않게). 쉬어도 다음 회차가 그날 1분봉을 통째로 받으므로(spark range=1d) 빠진 격자는 백엔드가 그 저장본으로 판정합니다. 공용 Yahoo 래치나 spark
-  호스트 래치가 닫혀 있으면 묻지 않고, 이 회차가 거부를 받으면 다음 두 회차를 쉽니다.
+  호스트 래치, yfinance 쪽 Yahoo 래치(무응답·연결 실패 — app.yahoo, QA-335)가 닫혀 있으면 묻지 않고, 이 회차가 거부를 받으면 다음 두 회차를 쉽니다.
 [받는 법] 미국: Yahoo spark(``v7/finance/spark``, range=1d·interval=1m — 20종목 한 요청, 2026-11-06 실측: 종가만·봉 시각은 시작 epoch, 진행 중인 봉은
   분에 맞지 않는 시각) — yfinance 종목별 요청의 약 1/20. 한국: 토스 1분봉(원시가, 200개 한 쪽 — 개장 봉까지 닿게)과, 그 세션에 처음 보는 종목은
   토스 일봉 원시·수정 각 1쪽(전일 종가 — 백엔드 갭 가드). 실행당 호출 상한 ``KR_CALL_BUDGET``(1분봉 먼저), 호출 사이 0.1초, ``KR_TIME_BUDGET``초가
@@ -47,7 +47,7 @@ import time
 from datetime import date, datetime, time as clock_time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from .. import catalog, http, krcalendar, store
+from .. import catalog, http, krcalendar, store, yahoo
 from ..services import live_prices
 from ..services import toss as toss_service
 
@@ -288,6 +288,9 @@ def task_paper_stopwatch_us() -> str:
         latched = http.active_rejection(host)
         if latched is not None:
             raise EmptyResult(f"0/{len(tickers)} 종목 — 기존 저장본 유지 ({latched})")
+    closed = yahoo.closed_reason()     # yfinance 쪽 Yahoo 래치(무응답·연결 실패 — QA-335): 같은 Yahoo가 끊긴 동안은 spark도 묻지 않음
+    if closed is not None:
+        raise EmptyResult(f"0/{len(tickers)} 종목 — 기존 저장본 유지 ({closed})")
 
     try:
         series, reason = _fetch_spark(tickers)
