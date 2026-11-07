@@ -843,6 +843,34 @@ describe("보유·체결 — 계좌2 칸", () => {
     expect(headersOf(orders)).toEqual(["낸 시각", "종목", "방향", "크기", "체결 시점", "출처", "상태", "기준 거래일", "만료", "체결 시각", "근거"]);
     expect(api.apiGetShared.mock.calls.map(([path]) => path)).not.toContain("/api/paper/books/claude/execution?limit=50");
   });
+
+  // QA-312(리뷰 XC-2) 뒤 리뷰: 계좌2 주문 표가 timingLabel에 주문 행(출처·근거)을 넘기는 부분을 화면 시험이 막지 않아, 넘기지 않아도 시험이 초록이었음 —
+  // 그러면 장중 감시(ADR 0032)가 낸 STOP이 '다음 종가'(실제로는 감지한 그날 종가)·'장중 시장가(확인 직후 첫 분)'로 돌아감. 값은 합성 값입니다.
+  it("계좌2 주문 표의 체결 시점 — 장중 감시 STOP은 감지한 그 세션('그날 종가'·'장중 시장가(감지 직후 첫 분)'), 장중 확인 시장가는 그대로", async () => {
+    const order = (id: number, ticker: string, timing: string, source: string, reason: unknown) => ({
+      id, ticker, side: "SELL", qty: null, targetWeightPct: null, sellFraction: null, timing, source, status: "PENDING", rejectReason: null,
+      reason, asOfTradingDate: "2026-11-04", createdAtKst: "2026-11-05 05:57", expiresOn: "2026-11-04", filledAtKst: null,
+    });
+    const watch = (note: string) => ({ trigger: "TRAILING_STOP", stopMode: "INTRADAY_WATCH", stopPct: 8, stopPrice: 92, note });
+    reads["/api/paper/books/claude2/orders"] = () => Promise.resolve({ available: true, orders: [
+      order(74, "CCC", "NEXT_CLOSE", "STOP", watch("장중 감시 트레일링 스탑 −8%: 15:50 91.8 · 15:55 91.5 ET 두 번 모두 스탑가 92(최고가 100) 이하 → 그날 종가 매도")),
+      order(75, "DDD", "MARKET", "STOP", watch("장중 감시 트레일링 스탑 −8%: 10:30 91.8 · 10:35 91.5 ET 두 번 모두 스탑가 92(최고가 100) 이하 → 10:37 ET 시장가 매도")),
+      // 감시 밖 — 장중 확인 결정이 낸 시장가
+      order(76, "EEE", "MARKET", "CLAUDE", { thesis: "근거", labels: ["사실"], invalidation: "조건" }),
+    ] });
+    reads["/api/paper/books/claude2/execution"] = () => Promise.resolve(execution("claude2", [], []));
+    render(<PaperPage initialTab="holdings" />);
+    await settled();
+    fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "claude2" } });
+    await settled();
+
+    const orders = screen.getByRole("table", { name: "주문" });
+    const timing = headersOf(orders).indexOf("체결 시점·목표 시각");
+    const timingOf = (ticker: string) => rowsOf(orders).find((cells) => cells[1].startsWith(ticker))?.[timing];
+    expect(timingOf("CCC")).toBe("그날 종가목표 —값 없음");
+    expect(timingOf("DDD")).toBe("장중 시장가(감지 직후 첫 분)목표 —값 없음");
+    expect(timingOf("EEE")).toBe("장중 시장가(확인 직후 첫 분)목표 —값 없음");
+  });
 });
 
 describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·주문 표", () => {

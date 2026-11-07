@@ -7,7 +7,7 @@
  *  - 오류: 표마다 오류 + 다시 시도(누르면 그 표만 다시 읽음)
  *  - 자료: 원 단위 정수 칸, 세 배지('기업행위 확인 필요'·'가격 없음'·'금융위 확정 미보정(ETF)'), 확정 행의 확정가·차이·현금 차이,
  *    실효 비용 bp, 확정 조정 합계, 스탑 근거(확정값으로 낮춘 최고가·stopBasisNote), 잠정 사유(작업 기록 메모), 확정 조정 '주의',
- *    리셋 확인 창의 한국 문구(사후 체결 없음 — 한 계좌만이면 다시 출발하지 않음)
+ *    리셋 확인 창의 한국 문구(사후 체결 없음 — 한 계좌만이면 다시 출발하지 않음), 장중 감시 STOP의 체결 시점 칸('그날 종가'·'장중 시장가(감지 직후 첫 분)')
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,6 +84,21 @@ const STOP_ORDER = {
 };
 
 const ORDERS = { available: true, orders: [STOP_ORDER] };
+
+/** 장중 스탑 감시(ADR 0032)가 낸 STOP — 근거 stopMode INTRADAY_WATCH, 만료 = 감지한 그 세션(PaperStopWatchJob). 값은 합성 값입니다. */
+function watchStop(id: number, ticker: string, timing: string, createdAtKst: string, note: string) {
+  return {
+    id, ticker, side: "SELL", qty: null, targetWeightPct: null, sellFraction: null, timing, source: "STOP", status: "PENDING",
+    rejectReason: null,
+    reason: { trigger: "TRAILING_STOP", stopMode: "INTRADAY_WATCH", stopPct: 8, highWatermark: 75_000, stopPrice: 69_000,
+      observedPrice: 68_800, barDate: "2026-11-04", note },
+    asOfTradingDate: "2026-11-04", createdAtKst, expiresOn: "2026-11-04", filledAtKst: null,
+  };
+}
+const WATCH_CLOSE_STOP = watchStop(32, "000660", "NEXT_CLOSE", "2026-11-04 15:22 KST",
+  "장중 감시 트레일링 스탑 −8%: 15:15 68,900 · 15:20 68,800 KST 두 번 모두 스탑가 69,000(최고가 75,000) 이하 → 그날 종가 매도");
+const WATCH_MARKET_STOP = watchStop(33, "005930", "MARKET", "2026-11-04 10:06 KST",
+  "장중 감시 트레일링 스탑 −8%: 10:00 68,900 · 10:05 68,800 KST 두 번 모두 스탑가 69,000(최고가 75,000) 이하 → 10:07 KST 시장가 매도");
 
 const FILLS = {
   available: true,
@@ -370,6 +385,20 @@ describe("자료", () => {
     expect(within(stop).getByText("스탑 취소 — 확정 종가가 뒷받침하지 않음")).toBeTruthy();
     expect(within(stop).getByText(/확정값으로 낮춘 최고가 72,000원 · 재판정: 금융위 주식시세 확정 종가 70,000원/)).toBeTruthy();
     expect(within(stop).getByText(/감지 2026-11-03 잠정 종가 68,500원\(KRX\+NXT 통합가\)/)).toBeTruthy();
+  });
+
+  // QA-312(리뷰 XC-2) 뒤 리뷰: 주문 표가 timingLabel에 주문 행(출처·근거)을 넘기는 부분을 화면 시험이 막지 않아, 넘기지 않아도 시험이 초록이었음 —
+  // 그러면 감시 STOP이 '다음 종가'(실제로는 감지한 그날 종가)·'장중 시장가(확인 직후 첫 분)'로 돌아감.
+  it("주문 표 — 장중 감시 STOP의 체결 시점은 감지한 그 세션('그날 종가'·'장중 시장가(감지 직후 첫 분)'), 밤 스탑은 그대로", async () => {
+    reads["/api/paper/books/kr_rules/orders"] = () =>
+      Promise.resolve({ available: true, orders: [WATCH_MARKET_STOP, WATCH_CLOSE_STOP, STOP_ORDER] });
+    render(<PaperPage market="KR" initialTab="holdings" />);
+    const table = await screen.findByRole("table", { name: "주문" });
+    expect(within(rowOf(table, "000660")).getByText("그날 종가")).toBeTruthy();
+    expect(within(rowOf(table, "005930")).getByText("장중 시장가(감지 직후 첫 분)")).toBeTruthy();
+    expect(within(rowOf(table, "035420")).getByText("다음 거래일 시가")).toBeTruthy();
+    expect(within(table).queryByText("다음 종가")).toBeNull();
+    expect(within(table).queryByText("장중 시장가(확인 직후 첫 분)")).toBeNull();
   });
 
   // QA-313(리뷰 FW-2·XC-3): 주문 카드 부제가 '한국 주문은 다음 KR 거래일 시가에 체결'·'밤 잠정 종가로 감지해 다음 거래일 시가'만 적어, 규칙 계좌 체결 시점

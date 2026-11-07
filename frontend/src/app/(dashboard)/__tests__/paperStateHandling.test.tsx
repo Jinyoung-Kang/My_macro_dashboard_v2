@@ -9,6 +9,7 @@
  *  - 숫자 null은 "—"(0.00으로 채우지 않음), 가격 없는 보유는 배지 — 개요는 계좌 행 + 계좌 비교 표(예전 카드의 칸)
  *  - 책 초기화는 확인 창에서 책 코드를 정확히 입력해야 눌린다(창은 결과가 나온 뒤 닫힘)
  *  - 주문 표의 근거는 문장(reason.text)을 자르지 않고 먼저 — 없으면 키: 값 요약, 전체 JSON은 title, 근거가 없으면 "—"(값 없음)
+ *  - 주문 표의 체결 시점 칸 — 장중 감시가 낸 STOP은 감지한 그 세션('그날 종가'·'장중 시장가(감지 직후 첫 분)'), 감시 밖 주문은 시점 이름 그대로
  *  - 보유 표 정렬(종목·수량·평가액·비중·평가 손익 — 모르는 값은 맨 뒤), 재진입 금지 표의 행
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -541,6 +542,51 @@ describe("주문 근거", () => {
     const nullCells = within(screen.getByText("NUL").closest("tr") as HTMLElement).getAllByRole("cell");
     expect(nullCells[nullCells.length - 1].textContent).toBe(NONE);
     expect(nullCells[nullCells.length - 1].querySelector("[title]")).toBeNull();
+  });
+});
+
+describe("주문 체결 시점", () => {
+  // QA-312(리뷰 XC-2) 뒤 리뷰: 주문 표가 timingLabel에 주문 행(출처·근거)을 넘기는 부분을 화면 시험이 막지 않아, 넘기지 않아도 시험이 초록이었음 —
+  // 그러면 장중 감시(ADR 0032)가 낸 STOP이 '다음 종가'(실제로는 감지한 그날 종가)·'장중 시장가(확인 직후 첫 분)'로 돌아감. 값은 합성 값입니다.
+  it("체결 시점 칸 — 장중 감시 STOP은 감지한 그 세션('그날 종가'·'장중 시장가(감지 직후 첫 분)'), 감시 밖 주문은 그대로", async () => {
+    const active = {
+      ...INITIALIZED,
+      books: INITIALIZED.books.map((entry) => (entry.code === "rules" ? { ...entry, status: "ACTIVE", startedOn: "2026-10-23" } : entry)),
+    };
+    const order = (id: number, ticker: string, timing: string, source: string, reason: unknown) => ({
+      id, ticker, side: "SELL", qty: null, targetWeightPct: null, sellFraction: null, timing, source, status: "PENDING",
+      rejectReason: null, reason, asOfTradingDate: "2026-11-04", createdAtKst: "2026-11-05 05:57", expiresOn: "2026-11-04", filledAtKst: null,
+    });
+    const watch = (note: string) => ({ trigger: "TRAILING_STOP", stopMode: "INTRADAY_WATCH", stopPct: 8, stopPrice: 92, note });
+    reads["/api/paper/overview"] = () => Promise.resolve(active);
+    reads["/api/paper/books/rules/positions"] = () =>
+      Promise.resolve({ available: true, book: active.books[0], cash: 100000, lockouts: [], positions: [] });
+    reads["/api/paper/books/rules/orders"] = () => Promise.resolve({
+      available: true,
+      orders: [
+        order(1, "AAA", "NEXT_CLOSE", "STOP", watch("장중 감시 트레일링 스탑 −8%: 15:50 91.8 · 15:55 91.5 ET 두 번 모두 스탑가 92(최고가 100) 이하 → 그날 종가 매도")),
+        order(2, "BBB", "MARKET", "STOP", watch("장중 감시 트레일링 스탑 −8%: 10:30 91.8 · 10:35 91.5 ET 두 번 모두 스탑가 92(최고가 100) 이하 → 10:37 ET 시장가 매도")),
+        // 감시 밖 — 규칙 결정의 종가 주문, 시간별 관측치 스탑(근거에 stopMode 없음)
+        order(3, "CCC", "NEXT_CLOSE", "RULE", { rule: "R3", signal: "SELL", text: "전량 매도 신호" }),
+        order(4, "DDD", "NEXT_OBSERVATION", "STOP", { trigger: "TRAILING_STOP", stopPct: 8, stopPrice: 92 }),
+      ],
+    });
+    reads["/api/paper/books/rules/fills"] = () => Promise.resolve({ available: true, fills: [] });
+
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
+
+    const table = await screen.findByRole("table", { name: "주문" });
+    await within(table).findByText("AAA");
+    const timingOf = (ticker: string) => {
+      const header = within(table).getAllByRole("columnheader").map((th) => th.textContent).indexOf("체결 시점");
+      const row = within(table).getAllByRole("row").find((tr) => tr.textContent?.includes(ticker)) as HTMLElement;
+      return within(row).getAllByRole("cell")[header].textContent;
+    };
+    expect(timingOf("AAA")).toBe("그날 종가");
+    expect(timingOf("BBB")).toBe("장중 시장가(감지 직후 첫 분)");
+    expect(timingOf("CCC")).toBe("다음 종가");
+    expect(timingOf("DDD")).toBe("다음 관측치");
   });
 });
 
