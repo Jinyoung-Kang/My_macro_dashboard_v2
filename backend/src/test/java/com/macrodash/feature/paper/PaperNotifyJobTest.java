@@ -5,7 +5,6 @@ import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.Fill;
 import com.macrodash.store.PaperStore.Order;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -364,7 +363,6 @@ class PaperNotifyJobTest {
     // QA-312: 리뷰 XC-2 — 장중 감시(ADR 0032)가 마감 10분 전 뒤에 낸 종가 STOP(NEXT_CLOSE, 만료 = 감지한 그 세션)을 주문·체결 알림이 '다음 거래일 종가'
     // (미국 '다음 세션 종가')로 적음. 실제로는 그날 종가에 팔리고 같은 알림의 근거 메모는 '그날 종가 매도'라 한 통 안에서 말이 엇갈림.
     @Test
-    @Disabled("QA-312 재현 — 수정 전에는 timingName이 시점 이름만 보아 감시 종가 STOP을 '다음 거래일 종가'로 적음. fix(QA-312)에서 켭니다")
     @DisplayName("QA-312 장중 감시 STOP의 시점 이름 — 종가 STOP은 '그날 종가', 시장가 STOP은 기준 시각(생성 + 60초 뒤 첫 분, 그 시장 시각)까지. "
             + "결정의 종가·밤 대체 지정 시각·감시 밖 STOP은 그대로")
     void qa312WatchStopTimingIsSameSession() {
