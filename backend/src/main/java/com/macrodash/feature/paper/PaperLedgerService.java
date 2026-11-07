@@ -1271,9 +1271,16 @@ public class PaperLedgerService {
      * 근거에 최고가·스탑 비율·스탑가·관측가와 그 출처를 남기고, 체결 때 그 값으로 다시 판정합니다({@link #rejudgeStop}). 그 종목에 대기 중인 스탑
      * 주문이 있으면 다시 내지 않습니다(같은 밤 다시 쓴 저장본). 현금성·미처리 기업행위·판정 대기·이번 관측치에 새 항목이 없는 보유는 보지 않습니다.
      * 운용 중인 규칙·Claude 책만(벤치마크·일시정지는 스탑 없음 — 미국과 같음).
+     *
+     * <p>감시를 켠 시장({@link BookRun#stopWatch})의 감지 시각은 이 관측치의 수집 시각과 지금(이 처리를 돌리는 시각) 가운데 늦은 쪽입니다(QA-327) — 대체 STOP의
+     * 시점({@link #nightFallback})·지금 세션의 덮음·주문의 생성 시각을 모두 이 시각으로 셉니다. 수집 시각만 보면 백엔드가 밤새 꺼졌다가 다음 세션 장중에
+     * 처음 처리한 밤 관측치가 첫 분 검사를 통과해 그 첫 분 지정 시각 STOP(주문을 만든 시각보다 이른 시각에 체결 — 실제 계좌는 그 창이 지난 뒤에야 봄)이
+     * 되고, 늦은 장중 시장가의 기준 시각(생성 + 60초 뒤 첫 분)이 처리(5분 주기)보다 앞설 수 있었습니다. 감시를 켜지 않은 시장은 예전 그대로 수집 시각입니다.
      */
     private void detectStops(BookRun run) {
         double stopPct = run.settings.trailingStopPct();
+        Instant now = clock.instant();
+        Instant detectedAt = run.stopWatch == null || !now.isAfter(run.at) ? run.at : now;
         Set<String> waiting = new TreeSet<>();
         for (Order order : store.ordersByStatus(run.book.code(), PaperBooks.ORDER_PENDING)) {
             if (!PaperBooks.SOURCE_STOP.equals(order.source())) {
@@ -1315,7 +1322,7 @@ public class PaperLedgerService {
                         + " ≤ 스탑가 " + won(stopPrice) + ")");
                 continue;
             }
-            NightStop when = run.stopWatch == null ? NightStop.NEXT_OPEN : nightFallback(run, holding, last.date());
+            NightStop when = run.stopWatch == null ? NightStop.NEXT_OPEN : nightFallback(run, holding, last.date(), detectedAt);
             if (when.skip() != null) {
                 run.note(holding.ticker + " 밤 스탑 주문을 내지 않음 — " + when.skip() + "(" + last.date() + " 잠정 종가 " + won(close)
                         + " ≤ 스탑가 " + won(stopPrice) + ")");
@@ -1340,7 +1347,7 @@ public class PaperLedgerService {
             LocalDate expires = run.market.calendar().addTradingDays(last.date(), RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
             long id = store.insertOrder(new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, null, null, null,
                     when.timing(), PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
-                    mapper.valueToTree(reason), last.date(), run.at, expires, null, when.targetLocal()));
+                    mapper.valueToTree(reason), last.date(), detectedAt, expires, null, when.targetLocal()));
             waiting.add(holding.ticker);
             run.note("주문 " + id + " " + holding.ticker + " 트레일링 스탑 감지 −" + trim(stopPct) + "%: 최고가 "
                     + won(holding.highWatermark) + " → " + last.date() + " 잠정 종가 " + won(close) + "("
@@ -1393,29 +1400,33 @@ public class PaperLedgerService {
      * 감시를 켠 한국 시장의 밤 대체 STOP 시점(ADR 0032 결정 7) — 감지한 세션 D 다음 거래일 S의 첫 분(개장 + 10분, 그날 달력 — 보통 날 09:10·수능일
      * 10:10, {@link RuleTiming#reissueAt}) 지정 시각. 다음 거래일을 달력에서 셀 수 없으면 예전처럼 다음 거래일 시가로 냅니다.
      *
-     * <p>그 첫 분이 이미 생성 + 60초 안으로 지났으면(처리가 S 장중이나 뒤에 돎 — 백엔드가 밤새 꺼졌다가 켜짐, D 관측치를 S 장중에 처음 받음) 시가로 내지
-     * 않습니다(QA-317 — 대체 STOP은 ⑤ 늦은 주문 검사를 건너뛰므로 S 시가 주문이 주문을 만든 시각보다 이른 S 시가로 체결됨): S 장이 끝났으면 내지 않고 S 밤
+     * <p>그 첫 분이 이미 감지 + 60초 안으로 지났으면(처리가 S 장중이나 뒤에 돎 — 백엔드가 밤새 꺼졌다가 켜짐, D 관측치를 S 장중에 처음 받음) 그 첫 분·시가로
+     * 내지 않습니다(QA-317 — 대체 STOP은 ⑤ 늦은 주문 검사를 건너뛰므로 주문을 만든 시각보다 이른 시각으로 체결됨): S 장이 끝났으면 내지 않고 S 밤
      * 관측치가 S 종가로 다시 판정하게 두고, 감시가 지금 S의 그 종목을 지켜보면({@link #watchCovers}) 감시에 맡기고, 아니면 감시 STOP과 같은 시점
-     * ({@link StopWatch#target} — 감지 + 60초 뒤 첫 분 장중 시장가, 종가 단일가 시간이면 그날 종가)으로 냅니다.
+     * ({@link StopWatch#target} — 감지 + 60초 뒤 첫 분 장중 시장가, 종가 단일가 시간이면 그날 종가)으로 냅니다. 감지 시각은 수집 시각이 아니라 이 처리의
+     * 시각입니다({@link #detectStops} — QA-327: 수집 시각으로 판정하면 밤새 꺼졌던 백엔드가 S 장중에 처음 처리한 D 밤 관측치가 첫 분 검사를 통과하고,
+     * 지금 감시 저장본은 이미 S 것이라 D의 덮음도 읽지 못해 S 첫 분 지정 시각 STOP이 그 첫 분 뒤에 생겼음).
+     *
+     * @param detectedAt 감지 시각 — 이 관측치의 수집 시각과 이 처리의 시각 가운데 늦은 쪽
      */
-    private static NightStop nightFallback(BookRun run, Holding holding, LocalDate detected) {
+    private static NightStop nightFallback(BookRun run, Holding holding, LocalDate barDate, Instant detectedAt) {
         TradingCalendar calendar = run.market.calendar();
         try {
-            LocalDate next = calendar.nextTradingDay(detected);
+            LocalDate next = calendar.nextTradingDay(barDate);
             LocalTime first = RuleTiming.reissueAt(next, calendar);
             Instant firstAt = java.time.ZonedDateTime.of(next, first, calendar.zone()).toInstant();
-            if (firstAt.isAfter(run.at.plus(ExecutionAudit.AFTER_CREATED))) {
+            if (firstAt.isAfter(detectedAt.plus(ExecutionAudit.AFTER_CREATED))) {
                 String at = FreeTiming.label(first);
                 return new NightStop(PaperBooks.AT_MINUTE, first, true, "다음 거래일 첫 분 " + at + " 지정 시각(AT_MINUTE)",
                         "다음 거래일 첫 분 " + at + " 매도", null);
             }
-            if (!run.at.isBefore(calendar.closeInstant(next))) {
+            if (!detectedAt.isBefore(calendar.closeInstant(next))) {
                 return NightStop.skipped("다음 거래일 " + next + " 장이 끝난 뒤의 처리 — " + next + " 밤 관측치가 그날 종가로 다시 판정");
             }
-            if (watchCovers(run, holding, next)) {
+            if (watchCovers(run, holding, next, detectedAt)) {
                 return NightStop.skipped("다음 거래일 첫 분이 지나 감시가 지금 세션 " + next + "을 지켜봄 — 장중 감시에 맡김");
             }
-            StopWatch.Target target = StopWatch.target(run.at, next, calendar, true);
+            StopWatch.Target target = StopWatch.target(detectedAt, next, calendar, true);
             String clock = FreeTiming.label(target.at().atZone(calendar.zone()).toLocalTime());
             if (PaperBooks.NEXT_CLOSE.equals(target.timing())) {
                 return new NightStop(PaperBooks.NEXT_CLOSE, null, true, "다음 거래일 첫 분이 지나 그날(" + next + ") 종가 단일가",
@@ -1963,8 +1974,16 @@ public class PaperLedgerService {
      * 세션 동안 장부({@code paper_positions})에 있던 이 책의 보유만 판정합니다. 한국 장부는 밤에 한 번 쓰므로 그 세션에 연 보유(이 처리가 새로 산 보유 —
      * {@link Holding#opened}, 늦게 돈 처리가 앞서 쓴 그날 보유 — 연 날이 그 세션 이후)는 감시가 본 적이 없어 덮지 않음입니다. 미국은 장부가 관측치마다
      * 보유를 쓰고 감시가 다음 회차부터 판정하므로 이 조건을 두지 않습니다.
+     *
+     * <p>판정 시각은 이 관측치의 수집 시각입니다 — 첫 분이 지난 한국 밤 감지가 지금 세션의 덮음을 볼 때만 이 처리의 시각을 받습니다
+     * ({@link #watchCovers(BookRun, Holding, LocalDate, Instant)}, QA-327).
      */
     private static boolean watchCovers(BookRun run, Holding holding, LocalDate session) {
+        return watchCovers(run, holding, session, run.at);
+    }
+
+    /** {@link #watchCovers(BookRun, Holding, LocalDate)}를 판정 시각 {@code at}(그 시각 − 10분 뒤의 거래 표본을 봄 — {@link StopWatch#covered})으로. */
+    private static boolean watchCovers(BookRun run, Holding holding, LocalDate session, Instant at) {
         if (run.stopWatch == null) {
             return false;
         }
@@ -1983,7 +2002,7 @@ public class PaperLedgerService {
             return false;
         }
         Double ledgerPrev = previous.equals(holding.sinceAtStart) ? holding.refCloseAtStart : null;
-        return StopWatch.covered(payload, holding.ticker, session, run.at, calendar, run.market.auctionFills(), ledgerPrev);
+        return StopWatch.covered(payload, holding.ticker, session, at, calendar, run.market.auctionFills(), ledgerPrev);
     }
 
     // ------------------------------------------------------------------ 5. 평가·저장

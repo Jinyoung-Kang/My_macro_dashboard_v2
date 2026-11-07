@@ -177,8 +177,9 @@ final class PaperNotifications {
      * 주문의 체결 시점 이름 — 분 단위 지정 시각({@value PaperBooks#AT_MINUTE})은 그 주문의 시각까지 적습니다('지정 시각 10:47 ET'). 아침(밤) 결정의
      * 주문이면 다음 세션의, 장중 판단의 주문이면 그날의 시각이라 세션 말은 붙이지 않습니다. 장중 감시가 낸 STOP({@link StopWatch#intradayStop} —
      * ADR 0032)은 감지한 그 세션에 팔리므로 종가는 '그날 종가', 시장가는 기준 시각까지('장중 시장가 10:07 KST' — {@link ExecutionAudit#marketTarget})
-     * 적습니다(QA-312 — 시점 이름만 보면 '다음 거래일 종가'가 되어 같은 알림의 근거 메모 '그날 종가 매도'와 엇갈림). 만료일·기준일로 가리지 않는 것은
-     * 결정의 종가 주문도 만료일이 목표 세션이라 구분되지 않기 때문입니다. 그 밖은 {@link #timingName(String, boolean)}.
+     * 적습니다(QA-312 — 시점 이름만 보면 '다음 거래일 종가'가 되어 같은 알림의 근거 메모 '그날 종가 매도'와 엇갈림). 다음 세션 첫 분이 지난 처리가 낸
+     * 한국 밤 대체 STOP의 장중 시장가·종가도 처리한 그 세션에 팔려 같게 적습니다({@link StopWatch#sameSessionStop}, QA-327). 만료일·기준일로 가리지
+     * 않는 것은 결정의 종가 주문도 만료일이 목표 세션이라 구분되지 않기 때문입니다. 그 밖은 {@link #timingName(String, boolean)}.
      */
     static String timingName(Order order, boolean korea) {
         if (order == null) {
@@ -189,7 +190,7 @@ final class PaperNotifications {
                     : "지정 시각 " + String.format(Locale.ROOT, "%02d:%02d", order.targetLocal().getHour(),
                             order.targetLocal().getMinute()) + (korea ? " KST" : " ET");
         }
-        if (StopWatch.intradayStop(order)) {
+        if (StopWatch.sameSessionStop(order)) {
             if (PaperBooks.NEXT_CLOSE.equals(order.timing())) {
                 return "그날 종가";
             }

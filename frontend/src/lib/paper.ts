@@ -1318,23 +1318,31 @@ const labelOf = (table: Record<string, string>, value: string | null | undefined
   value ? (table[value] ?? value) : EMPTY;
 
 export const sideLabel = (side: string | null | undefined) => labelOf(SIDE, side);
-/** 장중 감시가 낸 STOP인가(출처 STOP, 근거 stopMode INTRADAY_WATCH — ADR 0032, 백엔드 StopWatch.intradayStop과 같은 규칙). */
-const isWatchStop = (order: { source?: string | null; reason?: unknown } | null | undefined): boolean =>
-  order?.source === "STOP" && isRecord(order.reason) && order.reason.stopMode === "INTRADAY_WATCH";
+/**
+ * 만든 그 세션에 파는 STOP인가 — 장중 감시가 낸 STOP(출처 STOP, 근거 stopMode INTRADAY_WATCH — ADR 0032)과, 다음 세션 첫 분이 지난 처리가 낸 한국 밤
+ * 대체 STOP(stopMode NIGHT_FALLBACK)의 종가·장중 시장가(QA-327 — 목표 세션 = 만든 그날; 보통의 밤 대체 STOP은 다음 거래일 첫 분 지정 시각). 백엔드
+ * StopWatch.sameSessionStop과 같은 규칙입니다.
+ */
+const isSameSessionStop = (timing: string | null | undefined, order: { source?: string | null; reason?: unknown } | null | undefined): boolean => {
+  if (order?.source !== "STOP" || !isRecord(order.reason)) return false;
+  const mode = order.reason.stopMode;
+  return mode === "INTRADAY_WATCH" || (mode === "NIGHT_FALLBACK" && (timing === "MARKET" || timing === "NEXT_CLOSE"));
+};
 
 /**
- * 체결 시점 이름 — 매시 시점(AT_*)은 시장의 시각(미국 ET·한국 KST), 시장을 주지 않으면 미국. 주문의 출처·근거를 넘기면 장중 감시가 낸 STOP은 감지한
- * 그 세션의 이름으로 적습니다(QA-312 — 종가는 '그날 종가', 시장가는 '장중 시장가(감지 직후 첫 분)'; 텔레그램 알림 PaperNotifications.timingName과 같음).
+ * 체결 시점 이름 — 매시 시점(AT_*)은 시장의 시각(미국 ET·한국 KST), 시장을 주지 않으면 미국. 주문의 출처·근거를 넘기면 만든 그 세션에 파는 STOP(장중
+ * 감시 STOP·첫 분이 지난 처리의 밤 대체 STOP)은 그 세션의 이름으로 적습니다(QA-312·QA-327 — 종가는 '그날 종가', 시장가는 '장중 시장가(감지 직후 첫
+ * 분)'; 텔레그램 알림 PaperNotifications.timingName과 같음).
  */
 export const timingLabel = (
   timing: string | null | undefined,
   market: PaperMarketCode = "US",
   /** 분 단위 지정 시각(AT_MINUTE)의 그 시장 현지 시각 'HH:MM' — 있으면 '지정 시각 10:47 ET'. */
   targetLocal?: string | null,
-  /** 그 주문의 출처·근거(주문 행) — 장중 감시 STOP을 가릴 때만 읽습니다. */
+  /** 그 주문의 출처·근거(주문 행) — 만든 그 세션에 파는 STOP을 가릴 때만 읽습니다. */
   order?: { source?: string | null; reason?: unknown } | null,
 ) => {
-  if (isWatchStop(order)) {
+  if (isSameSessionStop(timing, order)) {
     if (timing === "NEXT_CLOSE") return "그날 종가";
     if (timing === "MARKET") return "장중 시장가(감지 직후 첫 분)";
   }

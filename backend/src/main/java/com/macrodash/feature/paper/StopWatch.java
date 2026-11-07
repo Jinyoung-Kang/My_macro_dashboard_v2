@@ -283,6 +283,21 @@ final class StopWatch {
     }
 
     /**
+     * 만든 그 세션에 파는 STOP인가 — 장중 감시 STOP({@link #intradayStop}, 시점과 상관없이), 그리고 한국 밤 대체 STOP({@code stopMode NIGHT_FALLBACK})의
+     * 장중 시장가·종가(QA-327). 밤 대체 STOP은 보통 다음 거래일 첫 분 지정 시각이고, 장중 시장가·종가는 다음 세션 첫 분이 지난 처리(QA-317)만 내며 그 목표
+     * 세션은 처리한(만든) 그날입니다. 알림·화면의 시점 이름이 이 STOP의 종가를 '다음 거래일 종가' 대신 '그날 종가'로, 시장가를 기준 시각까지 적습니다.
+     * 장부의 재판정·⑤ 우회는 {@link #intradayStop}만 봅니다(밤 대체 STOP은 시점과 상관없이 금융위 재판정).
+     */
+    static boolean sameSessionStop(com.macrodash.store.PaperStore.Order order) {
+        if (intradayStop(order)) {
+            return true;
+        }
+        return order != null && PaperBooks.SOURCE_STOP.equals(order.source())
+                && PaperLedgerService.STOP_MODE_NIGHT_FALLBACK.equals(Json.asText(order.reason(), "stopMode"))
+                && (PaperBooks.MARKET.equals(order.timing()) || PaperBooks.NEXT_CLOSE.equals(order.timing()));
+    }
+
+    /**
      * 장중 감시 기능이 낸 대기 STOP 매도(장중 감시 {@value PaperStopWatchJob#STOP_MODE}·한국 밤 대체 {@code NIGHT_FALLBACK} — 감시가 ON일 때만 생김)의
      * 종목. Claude 검증기가 이 종목의 새 매수를 재진입 금지와 같게 거절합니다(ADR 0032 결정 8 — 감지와 장부 반영 사이에 낸 매수가 반영 때 재진입 금지로
      * 취소되는 헛주문을 미리 막음). 감시를 켜기 전부터 있던 한국 밤 감지 STOP(근거에 stopMode 없음)은 넣지 않습니다(끈 판 동작 그대로).

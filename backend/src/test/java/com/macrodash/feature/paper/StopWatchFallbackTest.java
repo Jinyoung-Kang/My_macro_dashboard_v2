@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -449,7 +448,6 @@ class StopWatchFallbackTest {
         // 이른 09:10 값으로 체결·재진입 금지(실제 계좌는 09:10~09:13 창이 지난 뒤에야 봐서 놓침). 늦은 장중 시장가도 T가 수집 + 2분이라 5분 주기 처리가
         // T 뒤에 주문을 쓸 수 있고, 늦은 종가·시장가 대체 STOP의 알림 시점 이름은 '다음 거래일 종가'·'장중 시장가'로 남음.
         @Test
-        @Disabled("QA-327 재현 — 수정 전에는 늦은 밤 스탑이 수집 시각으로 판정해 D2 10:00에 D2 09:10 지정 시각 STOP을 냄. fix(QA-327)에서 켭니다")
         @DisplayName("ON — 백엔드가 밤새 꺼졌다가 D2 10:00에 처음 처리한 D1 밤 관측치는 처리 시각으로 판정 — 감시가 지금 세션을 지켜보면 맡기고, 주문 전 "
                 + "시각(09:10)에 체결되는 지정 시각 STOP을 내지 않음(QA-327)")
         void outageFirstProcessingJudgesAtTheProcessingTime() {
@@ -477,7 +475,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-327 재현 — 수정 전에는 늦은 장중 시장가 대체 STOP의 생성·기준 시각을 수집 시각(13:17 → T 13:19)에서 셈. fix(QA-327)에서 켭니다")
         @DisplayName("ON — D2 13:17에 수집한 D1 관측치를 5분 뒤(13:22)에 처음 처리하면 장중 시장가 대체 STOP의 생성·기준 시각은 처리 시각에서 셈"
                 + "(T 13:24 — 처리 뒤), 알림 시점 이름은 '장중 시장가 13:24 KST'(QA-327)")
         void lateMarketFallbackCountsFromTheProcessingTime() {
@@ -499,7 +496,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-327 재현 — 수정 전에는 늦은 종가 대체 STOP(그날 종가)의 알림 시점 이름이 '다음 거래일 종가'. fix(QA-327)에서 켭니다")
         @DisplayName("ON — D2 종가 단일가 시간(15:22)에 처음 처리한 D1 관측치의 대체 STOP은 그날(D2) 종가 — 알림 시점 이름도 '그날 종가'(QA-327)")
         void lateCloseFallbackIsNamedTheSameDay() {
             mode("ON", null);
