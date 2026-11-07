@@ -1862,9 +1862,17 @@ public class PaperLedgerService {
      * 있던 기준일이 그 세션 직전 거래일일 때의 저장된 기준 종가입니다 — 감시 작업이 읽은 보유 레코드 그대로(QA-305). 마감 뒤 관측치는 이 처리의 가격 갱신
      * ({@link #refresh})이 기준일을 그날로 옮긴 뒤 스탑을 보므로, 갱신된 값을 쓰면 장부 전일 종가가 없어져 감시가 하루 종일 가드로 뺀 종목(Yahoo 전일 종가
      * 불일치)을 덮음으로 읽고 종가 스탑을 건너뛰었습니다.
+     *
+     * <p>덮음은 책마다입니다(QA-316): 감시 저장본은 모든 한국 책 보유의 합집합이라 종목만 보면 다른 책이 든 같은 종목도 덮음이 되지만, 감시 작업은 그
+     * 세션 동안 장부({@code paper_positions})에 있던 이 책의 보유만 판정합니다. 한국 장부는 밤에 한 번 쓰므로 그 세션에 연 보유(이 처리가 새로 산 보유 —
+     * {@link Holding#opened}, 늦게 돈 처리가 앞서 쓴 그날 보유 — 연 날이 그 세션 이후)는 감시가 본 적이 없어 덮지 않음입니다. 미국은 장부가 관측치마다
+     * 보유를 쓰고 감시가 다음 회차부터 판정하므로 이 조건을 두지 않습니다.
      */
     private static boolean watchCovers(BookRun run, Holding holding, LocalDate session) {
         if (run.stopWatch == null) {
+            return false;
+        }
+        if (run.market.auctionFills() && (holding.opened || (holding.openedOn != null && !holding.openedOn.isBefore(session)))) {
             return false;
         }
         JsonNode payload = run.stopWatch.get();

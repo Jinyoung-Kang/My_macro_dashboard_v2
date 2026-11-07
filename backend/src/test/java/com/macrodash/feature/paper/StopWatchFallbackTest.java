@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -336,8 +335,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-316 재현 — 수정 전에는 감시 저장본에 다른 한국 책이 든 같은 종목이 있으면 이 책이 그 세션에 새로 산 보유도 덮음으로 읽어 "
-                + "밤 대체 스탑을 건너뜀. fix(QA-316)에서 켭니다")
         @DisplayName("ON — 그 세션에 이 책이 새로 산 종목은 감시 저장본에 같은 종목(다른 책 보유)이 있어도 덮지 않아 다음 거래일 09:10 NIGHT_FALLBACK(QA-316)")
         void boughtThatSessionKeepsTheNightFallback() {
             mode("ON", null);
