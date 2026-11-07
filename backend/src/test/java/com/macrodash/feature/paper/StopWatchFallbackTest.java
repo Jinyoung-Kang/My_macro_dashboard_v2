@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -383,8 +382,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-317 재현 — 수정 전에는 D2 장중에 다시 저장된 D1 관측치가 밤에 감시에 맡긴 보유를 다시 판정해(지금 감시 저장본은 D2라 덮지 않음) "
-                + "NEXT_OPEN STOP을 내고, 그 STOP이 D2 밤에 주문을 만든 시각보다 이른 D2 시가로 체결됨. fix(QA-317)에서 켭니다")
         @DisplayName("ON — D1 밤에 감시에 맡긴 보유는 D2 장중에 다시 저장된 D1 관측치로 다시 판정하지 않음 — STOP·체결 없음(QA-317)")
         void daytimeResaveDoesNotRejudgeTheNight() {
             mode("ON", null);
@@ -407,8 +404,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-317 재현 — 수정 전에는 다음 거래일 첫 분이 지난 뒤 처음 처리한 D1 관측치의 대체 스탑이 NEXT_OPEN이라 주문 전의 D2 시가로 "
-                + "체결될 수 있음. fix(QA-317)에서 켭니다")
         @DisplayName("ON — 다음 세션 첫 분이 지난 뒤 처음 처리한 D1 관측치는 감시가 지금 세션을 지켜보지 않는 종목만 그 세션 장중 시장가 STOP(시가 아님, QA-317)")
         void lateFirstProcessingStopsAtTheNextMinute() {
             mode("ON", null);
@@ -428,7 +423,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-317 재현 — 수정 전에는 감시가 지금 세션 D2를 지켜보는 종목에도 D1 잠정 종가 한 번으로 NEXT_OPEN STOP을 냄. fix(QA-317)에서 켭니다")
         @DisplayName("ON — 다음 세션 첫 분이 지난 뒤 처음 처리한 D1 관측치라도 감시가 지금 세션을 지켜보는 종목은 감시에 맡김(QA-317)")
         void lateFirstProcessingLeavesAWatchedTickerToTheWatch() {
             mode("ON", null);
@@ -441,8 +435,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-317 재현 — 수정 전에는 다음 세션 장이 끝난 뒤 처음 처리한 D1 관측치가 NEXT_OPEN STOP을 냄(이미 지난 D2 시가로 체결될 수 있음). "
-                + "fix(QA-317)에서 켭니다")
         @DisplayName("ON — 다음 세션 장이 끝난 뒤 처음 처리한 D1 관측치는 대체 STOP을 내지 않고 그 세션 밤 관측치에 맡김(QA-317)")
         void processingAfterTheNextCloseWaitsForItsNight() {
             mode("ON", null);

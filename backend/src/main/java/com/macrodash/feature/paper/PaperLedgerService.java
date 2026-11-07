@@ -1294,6 +1294,12 @@ public class PaperLedgerService {
             if (!last.observed() || last.close() == null) {
                 continue;   // 정지일(거래량 0)·거래량 모름 — 그날 종가가 관측이 아님
             }
+            if (run.stopWatch != null && !holding.opened && holding.sinceAtStart != null && !holding.sinceAtStart.isBefore(last.date())) {
+                // 이 보유의 그 봉은 앞선 처리(그 세션 밤)가 이미 판정함(since가 그 봉까지 옴) — 다음 세션 장중에 다시 저장된 같은 세션 관측치(수집 범위가
+                // 늘어 낮에 다시 저장)로 다시 판정하지 않습니다(QA-317). 지금 감시 저장본은 다음 세션 것이라 덮음을 다시 볼 수 없고, 맡겼으면 다음 세션
+                // 감시가, STOP을 냈으면 대기 STOP이 지킵니다. 수집기는 그 세션 20:30 뒤에 받은 종목의 일봉을 다시 부르지 않아 같은 봉입니다.
+                continue;
+            }
             double close = last.close().doubleValue();
             if (!TrailingStop.triggered(holding.highWatermark, close, stopPct)) {
                 continue;
@@ -1305,7 +1311,12 @@ public class PaperLedgerService {
                         + " ≤ 스탑가 " + won(stopPrice) + ")");
                 continue;
             }
-            LocalTime fallbackAt = run.stopWatch == null ? null : nightFallbackAt(run, last.date());
+            NightStop when = run.stopWatch == null ? NightStop.NEXT_OPEN : nightFallback(run, holding, last.date());
+            if (when.skip() != null) {
+                run.note(holding.ticker + " 밤 스탑 주문을 내지 않음 — " + when.skip() + "(" + last.date() + " 잠정 종가 " + won(close)
+                        + " ≤ 스탑가 " + won(stopPrice) + ")");
+                continue;
+            }
             Map<String, Object> reason = new LinkedHashMap<>();
             reason.put("trigger", "TRAILING_STOP");
             reason.put("stopPct", stopPct);
@@ -1314,41 +1325,76 @@ public class PaperLedgerService {
             reason.put("observedPrice", close);
             reason.put("observedSource", last.priceSource());
             reason.put("barDate", last.date().toString());
-            if (fallbackAt == null) {
-                reason.put("detection", "밤 잠정 종가 — 다음 거래일 시가(NEXT_OPEN) 매도, 체결 때 금융위 " + last.date()
+            if (when.fallback()) {
+                reason.put("stopMode", STOP_MODE_NIGHT_FALLBACK);
+                reason.put("detection", "밤 잠정 종가(장중 감시가 덮지 못한 종목) — " + when.detection() + " 매도, 체결 때 금융위 " + last.date()
                         + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
             } else {
-                reason.put("stopMode", STOP_MODE_NIGHT_FALLBACK);
-                reason.put("detection", "밤 잠정 종가(장중 감시가 덮지 못한 종목) — 다음 거래일 첫 분 " + FreeTiming.label(fallbackAt)
-                        + " 지정 시각(AT_MINUTE) 매도, 체결 때 금융위 " + last.date() + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
+                reason.put("detection", "밤 잠정 종가 — 다음 거래일 시가(NEXT_OPEN) 매도, 체결 때 금융위 " + last.date()
+                        + " 종가로 다시 판정(스탑가 위면 STOP_NOT_CONFIRMED 취소)");
             }
             LocalDate expires = run.market.calendar().addTradingDays(last.date(), RuleBookService.ORDER_EXPIRY_TRADING_DAYS);
             long id = store.insertOrder(new Order(0, run.book.code(), null, holding.ticker, PaperBooks.SELL, null, null, null,
-                    fallbackAt == null ? PaperBooks.NEXT_OPEN : PaperBooks.AT_MINUTE, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
-                    mapper.valueToTree(reason), last.date(), run.at, expires, null, fallbackAt));
+                    when.timing(), PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null,
+                    mapper.valueToTree(reason), last.date(), run.at, expires, null, when.targetLocal()));
             waiting.add(holding.ticker);
             run.note("주문 " + id + " " + holding.ticker + " 트레일링 스탑 감지 −" + trim(stopPct) + "%: 최고가 "
                     + won(holding.highWatermark) + " → " + last.date() + " 잠정 종가 " + won(close) + "("
-                    + last.priceSource() + ") ≤ 스탑가 " + won(stopPrice) + " — " + (fallbackAt == null ? "다음 거래일 시가 매도"
-                    : "다음 거래일 첫 분 " + FreeTiming.label(fallbackAt) + " 매도") + "(만료 " + expires + ")");
+                    + last.priceSource() + ") ≤ 스탑가 " + won(stopPrice) + " — " + when.note() + "(만료 " + expires + ")");
         }
     }
 
     /**
-     * 감시를 켠 한국 시장의 밤 대체 STOP 시각(ADR 0032 결정 7) — 감지한 세션 D 다음 거래일의 첫 분(개장 + 10분, 그날 달력 — 보통 날 09:10·수능일 10:10,
-     * {@link RuleTiming#reissueAt}). 그 시각이 이미 생성 + 60초 안으로 지났거나(밤 처리가 다음 세션까지 밀림) 다음 거래일을 달력에서 셀 수 없으면 null —
-     * 예전처럼 다음 거래일 시가로 냅니다.
+     * 밤 스탑 주문의 시점 — 시점·지정 시각(AT_MINUTE만), 감시 대체 여부({@code stopMode NIGHT_FALLBACK}), 근거의 시점 글, 작업 기록의 시점 글, 내지 않는
+     * 사유(있으면 주문 없음 — QA-317).
      */
-    private static LocalTime nightFallbackAt(BookRun run, LocalDate detected) {
+    private record NightStop(String timing, LocalTime targetLocal, boolean fallback, String detection, String note, String skip) {
+
+        /** 감시를 켜지 않은 시장(또는 달력을 몰라 시각을 셀 수 없음) — 예전처럼 다음 거래일 시가. */
+        static final NightStop NEXT_OPEN = new NightStop(PaperBooks.NEXT_OPEN, null, false, null, "다음 거래일 시가 매도", null);
+
+        static NightStop skipped(String reason) {
+            return new NightStop(null, null, false, null, null, reason);
+        }
+    }
+
+    /**
+     * 감시를 켠 한국 시장의 밤 대체 STOP 시점(ADR 0032 결정 7) — 감지한 세션 D 다음 거래일 S의 첫 분(개장 + 10분, 그날 달력 — 보통 날 09:10·수능일
+     * 10:10, {@link RuleTiming#reissueAt}) 지정 시각. 다음 거래일을 달력에서 셀 수 없으면 예전처럼 다음 거래일 시가로 냅니다.
+     *
+     * <p>그 첫 분이 이미 생성 + 60초 안으로 지났으면(처리가 S 장중이나 뒤에 돎 — 백엔드가 밤새 꺼졌다가 켜짐, D 관측치를 S 장중에 처음 받음) 시가로 내지
+     * 않습니다(QA-317 — 대체 STOP은 ⑤ 늦은 주문 검사를 건너뛰므로 S 시가 주문이 주문을 만든 시각보다 이른 S 시가로 체결됨): S 장이 끝났으면 내지 않고 S 밤
+     * 관측치가 S 종가로 다시 판정하게 두고, 감시가 지금 S의 그 종목을 지켜보면({@link #watchCovers}) 감시에 맡기고, 아니면 감시 STOP과 같은 시점
+     * ({@link StopWatch#target} — 감지 + 60초 뒤 첫 분 장중 시장가, 종가 단일가 시간이면 그날 종가)으로 냅니다.
+     */
+    private static NightStop nightFallback(BookRun run, Holding holding, LocalDate detected) {
+        TradingCalendar calendar = run.market.calendar();
         try {
-            TradingCalendar calendar = run.market.calendar();
             LocalDate next = calendar.nextTradingDay(detected);
-            LocalTime at = RuleTiming.reissueAt(next, calendar);
-            Instant target = java.time.ZonedDateTime.of(next, at, calendar.zone()).toInstant();
-            return target.isAfter(run.at.plus(ExecutionAudit.AFTER_CREATED)) ? at : null;
+            LocalTime first = RuleTiming.reissueAt(next, calendar);
+            Instant firstAt = java.time.ZonedDateTime.of(next, first, calendar.zone()).toInstant();
+            if (firstAt.isAfter(run.at.plus(ExecutionAudit.AFTER_CREATED))) {
+                String at = FreeTiming.label(first);
+                return new NightStop(PaperBooks.AT_MINUTE, first, true, "다음 거래일 첫 분 " + at + " 지정 시각(AT_MINUTE)",
+                        "다음 거래일 첫 분 " + at + " 매도", null);
+            }
+            if (!run.at.isBefore(calendar.closeInstant(next))) {
+                return NightStop.skipped("다음 거래일 " + next + " 장이 끝난 뒤의 처리 — " + next + " 밤 관측치가 그날 종가로 다시 판정");
+            }
+            if (watchCovers(run, holding, next)) {
+                return NightStop.skipped("다음 거래일 첫 분이 지나 감시가 지금 세션 " + next + "을 지켜봄 — 장중 감시에 맡김");
+            }
+            StopWatch.Target target = StopWatch.target(run.at, next, calendar, true);
+            String clock = FreeTiming.label(target.at().atZone(calendar.zone()).toLocalTime());
+            if (PaperBooks.NEXT_CLOSE.equals(target.timing())) {
+                return new NightStop(PaperBooks.NEXT_CLOSE, null, true, "다음 거래일 첫 분이 지나 그날(" + next + ") 종가 단일가",
+                        next + " 종가 매도", null);
+            }
+            return new NightStop(target.timing(), target.targetLocal(), true, "다음 거래일 첫 분이 지나 그 세션(" + next + ") 장중 시장가 "
+                    + clock + " KST", next + " 장중 시장가 " + clock + " KST 매도", null);
         } catch (CalendarUnavailableException e) {
             run.note("다음 거래일을 달력에서 셀 수 없어(" + e.getMessage() + ") 밤 대체 스탑을 시가로 냄");
-            return null;
+            return NightStop.NEXT_OPEN;
         }
     }
 
