@@ -23,6 +23,7 @@ import com.macrodash.store.RealTradeStore.Event;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -976,6 +977,52 @@ class RealTradeJobDbTest {
 
         verify(client, never()).placeOrder(anyString());
         assertThat(events("STOP_SELL")).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-321 재현 — 수정 전에는 다시 띄운 작업이 창이 끝난 스탑 뿌리를 MIRROR 행 없음·처리 안 됨으로 보아, 09:10 묶음이 이미 판 스탑을 "
+            + "STOP_SELL 놓침 1로 알리고 장중 창 요약에도 놓침 1을 셈. fix(QA-321)에서 켭니다")
+    @DisplayName("QA-321: 묶음이 이미 판 스탑은 백엔드를 다시 띄운 뒤에도 STOP_SELL 놓침으로 알리지 않고 장중 창 요약 놓침도 0")
+    void qa321RestartDoesNotReportBatchSoldStopAsMissed() {
+        RealTradeFixtures.live(store, true, d("6000000"));
+        timedTargets(Map.of(B, 10.0), List.of(), List.of(641L));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(B, "20000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(641, A, "AT_MINUTE", SYNC_AT)));
+        run("09:10:05");
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", A, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", B, "BUY", "DAY", "FILLED", "30", "30", clock.now, clock.now)));
+        preflight("6000000", Map.of(B, new String[]{"30", "20000"}), Map.of());
+        run("09:10:40");
+        run("09:11:20");
+        run("09:14:00");
+        assertThat(events("STOP_SELL")).as("묶음이 판 스탑 — 스탑 경로는 이미 맞음").isEmpty();
+
+        clock.set(kst("2026-11-06T11:00:00"));
+        RealTradeJob restarted = new RealTradeJob(store, executor, client, paper, telegram, RealTradeFixtures.MAPPER, clock, true, false, 10_000);
+        restarted.cycle(clock.now);
+        assertThat(events("STOP_SELL")).as("다시 띄운 뒤에도 놓침이 아님 — 그 종목 정수 보유 0").isEmpty();
+        clock.set(kst("2026-11-06T15:19:40"));
+        restarted.cycle(clock.now);
+        assertThat(events("WINDOW_SUMMARY")).filteredOn(e -> e.detail().path("window").asString().equals("MIRROR"))
+                .allSatisfy(e -> assertThat(e.detail().path("missed").asInt()).isZero());
+    }
+
+    @Test
+    @Disabled("QA-321 재현 — 수정 전에는 이미 알린 스탑 놓침을 백엔드를 다시 띄운 뒤 한 번 더 알림. fix(QA-321)에서 켭니다")
+    @DisplayName("QA-321: 이미 알린 스탑 놓침은 백엔드를 다시 띄워도 STOP_SELL을 다시 남기지 않음(그날 센 뿌리는 이벤트에서 되살림)")
+    void qa321RestartKeepsCountedMissOnce() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(621, A, "MARKET", kst("2026-11-06T10:00"))));
+        run("10:03:30");
+        run("10:04:00");
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> assertThat(e.detail().path("missed").asInt()).isEqualTo(1));
+
+        clock.set(kst("2026-11-06T10:20:00"));
+        RealTradeJob restarted = new RealTradeJob(store, executor, client, paper, telegram, RealTradeFixtures.MAPPER, clock, true, false, 10_000);
+        restarted.cycle(clock.now);
+        restarted.cycle(kst("2026-11-06T10:20:30"));
+        assertThat(events("STOP_SELL")).as("같은 놓침을 다시 알리지 않음").hasSize(1);
     }
 
     @Test
