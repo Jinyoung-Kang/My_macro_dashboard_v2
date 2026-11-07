@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.function.ToDoubleFunction;
 
 /**
- * 장중 판단 계획 행을 결정 응답 밖에서 넣거나 당기는 규칙(자유 시점 판 — ADR 0027 결정 3·ADR 0031 초안 결정 4, 명세
+ * 장중 판단 계획 행을 결정 응답 밖에서 넣거나 당기는 규칙(자유 시점 판 — ADR 0027 결정 3·ADR 0031 결정 4, 명세
  * docs/specs/2026-11-05-free-fill-timing.md §7) — 운영자 당김({@link IntradayManualService})과 코드의 보장 1회({@link #guarantee} — 장중 판단 작업
  * {@link PaperIntradayJob}·{@link PaperKrIntradayJob}이 주기마다)가 씁니다. 결정의 예약·장중 판단의 다음 예약은 {@link IntradayPlanner}가 씁니다.
  *
@@ -253,7 +253,7 @@ final class IntradayScheduler {
         return Optional.ofNullable(latest);
     }
 
-    // ------------------------------------------------------------------ 보장 1회(ADR 0031 초안 결정 4)
+    // ------------------------------------------------------------------ 보장 1회(ADR 0031 결정 4)
 
     /**
      * 그 세션의 보장 시각 G — 개장 + 오프셋(미국 180분·한국 150분). 받는 범위 끝({@link IntradayRequest#window}) − {@link #GUARANTEE_BEFORE_LAST}보다
@@ -387,7 +387,7 @@ final class IntradayScheduler {
         return out;
     }
 
-    // ------------------------------------------------------------------ 사건(ADR 0031 초안 결정 7 — 단순판, 통합 검토 R10)
+    // ------------------------------------------------------------------ 사건(ADR 0031 결정 7 — 단순판, 통합 검토 R10)
 
     /** 감시 저장본이 이보다 오래되면 사건을 만들지 않습니다(감시는 5분마다 — 두 회차를 놓치면 묵은 자료). */
     static final Duration MONITOR_MAX_AGE = Duration.ofMinutes(10);

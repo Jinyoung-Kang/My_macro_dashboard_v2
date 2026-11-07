@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * 장중 판단 사건({@link IntradayScheduler#events} — ADR 0031 초안 결정 7, 단순판 — 통합 검토 R10): 순수 판정({@link IntradayScheduler#detect}의 문턱·
+ * 장중 판단 사건({@link IntradayScheduler#events} — ADR 0031 결정 7, 단순판 — 통합 검토 R10): 순수 판정({@link IntradayScheduler#detect}의 문턱·
  * 자료 조건, {@link IntradayScheduler#planEvents}의 걸음)과 FakePaperStore 위의 처리(스위치·당김·붙임·새 행·버림·세션에 한 번·문).
  *
  * <p>미국 세션 2026-11-09(월, EST — 개장 14:30Z, 받는 범위 09:40~15:30 ET), 한국 2026-12-02(수).

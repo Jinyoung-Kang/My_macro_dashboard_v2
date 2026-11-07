@@ -21,7 +21,7 @@
 #               지금 DB에서 꺼져 있지 않던(LIVE·STOPPING·HALTED) 시장이 복원한 DB에서 꺼짐(OFF·행 없음 — 켜기 전·V24 전 백업)이면 경고,
 #               지금 DB에서 끝나지 않았던 실제 주문 가운데 복원한 DB에 없는(백업 뒤에 나간) 것이 있으면 경고 — 둘 다 이 기능이 그 주문을 더
 #               취소하지 않으니 토스증권 앱에서 직접 확인·취소하라는 뜻입니다. 건수·종목은 찍지 않습니다(시장과 상태만).
-#               같은 트랜잭션에서 ISA 계좌의 오늘(KST)까지 PLANNED 장중 스탑 지시(manual_stop_instructions, ADR 0033 초안)도 건너뜀(restored)으로
+#               같은 트랜잭션에서 ISA 계좌의 오늘(KST)까지 PLANNED 장중 스탑 지시(manual_stop_instructions, ADR 0033)도 건너뜀(restored)으로
 #               닫습니다 — 백업 뒤에 이미 알린 스탑을 다시 알리지 않게.
 #   clear       real_trade_orders·real_trade_batches·real_trade_events를 비우고 설정은 꺼짐(OFF, 기준 평가액 등 비움)으로. ISA 계좌 표
 #               (manual_ledger·manual_stop_instructions·manual_instructions·manual_sessions·manual_accounts, ADR 0029·0033 — 다른 증권사 실제 계좌의
@@ -199,7 +199,7 @@ SQL
     END IF;
     PERFORM set_config('macrodash.real_trade_was_on', coalesce(was_on, '-'), true);
     PERFORM set_config('macrodash.real_trade_lost', CASE WHEN lost THEN '1' ELSE '0' END, true);
-    -- ISA 계좌 장중 스탑 지시(ADR 0033 초안, R13): 오늘(KST)까지의 PLANNED 지시를 건너뜀(restored)으로 닫습니다 — 백업 시점 뒤에 이미 알린 스탑을
+    -- ISA 계좌 장중 스탑 지시(ADR 0033, R13): 오늘(KST)까지의 PLANNED 지시를 건너뜀(restored)으로 닫습니다 — 백업 시점 뒤에 이미 알린 스탑을
     -- 복원한 DB가 다시 알리지 않게(알림 시각이 백업에 없을 수 있음). 장부·다음 시가 지시는 그대로입니다. V28 전 백업이면 표가 없어 건너뜁니다.
     IF to_regclass('public.manual_stop_instructions') IS NOT NULL THEN
         UPDATE public.manual_stop_instructions

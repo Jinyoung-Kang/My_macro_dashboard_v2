@@ -74,14 +74,14 @@ export interface IsaInstructionItem {
   refPrice: IsaDecimal;
   weightPct: IsaDecimal;
   status: string;
-  /** 개장 10분 뒤 시각 맞추기 지시면 그 시각(ISO — '그 시각 이후 시장가', ADR 0033 초안), 시가 지시면 null. */
+  /** 개장 10분 뒤 시각 맞추기 지시면 그 시각(ISO — '그 시각 이후 시장가', ADR 0033), 시가 지시면 null. */
   targetAt?: string | null;
   notifiedNightAt: string | null;
   notifiedMorningAt: string | null;
 }
 
 /**
- * 장중 스탑 매도 지시 한 줄(ADR 0033 초안 — 규칙 계좌의 STOP 주문 하나에 하나). 감지 즉시 텔레그램으로 종목 코드·이름·수량만 알리고, 그 모의 주문과
+ * 장중 스탑 매도 지시 한 줄(ADR 0033 — 규칙 계좌의 STOP 주문 하나에 하나). 감지 즉시 텔레그램으로 종목 코드·이름·수량만 알리고, 그 모의 주문과
  * 같은 1분봉 값으로 그 기준 시각에 자동 기록합니다. 금액은 싣지 않습니다.
  */
 export interface IsaStopInstruction {
@@ -113,7 +113,7 @@ export interface IsaInstructions {
   reason?: string | null;
   /** 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않음(그 세션 08:00 뒤의 장부 쓰기) — 화면은 수량을 다시 확인하라고 경고합니다. */
   ledgerChanged?: boolean | null;
-  /** 개장 10분 뒤 시각 맞추기 지시면 그 시각(ISO — 보통 09:10, ADR 0033 초안), 시가 지시면 null. */
+  /** 개장 10분 뒤 시각 맞추기 지시면 그 시각(ISO — 보통 09:10, ADR 0033), 시가 지시면 null. */
   targetAt?: string | null;
 }
 
@@ -149,7 +149,7 @@ export interface IsaResponse {
   pendingInstructions?: IsaInstructionItem[] | null;
   /** 최근 지시(최근 30). */
   recentInstructions?: IsaInstructionItem[] | null;
-  /** 장중 스탑 매도 지시(최근 30 — ADR 0033 초안). */
+  /** 장중 스탑 매도 지시(최근 30 — ADR 0033). */
   stopInstructions?: IsaStopInstruction[] | null;
   /** 장부(최근 200). */
   ledger?: IsaLedgerRow[] | null;

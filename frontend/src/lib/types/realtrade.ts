@@ -196,7 +196,7 @@ export interface RealTradePreviewSkipped {
 
 /**
  * `GET /api/realtrade/preview?market=KR&sourceBook=…` — 지금 preflight + 그 책의 다음 맞추기 목표로 계산한 예상 목록(명세 §2·§3.1). 다음 맞추기가
- * 개장 10분 뒤 시각 맞추기면 `syncAt`(ISO)이 그 시각이고 목표는 그 시각까지의 모의 주문을 반영합니다(ADR 0033 초안), 시가 맞추기면 null.
+ * 개장 10분 뒤 시각 맞추기면 `syncAt`(ISO)이 그 시각이고 목표는 그 시각까지의 모의 주문을 반영합니다(ADR 0033), 시가 맞추기면 null.
  */
 export interface RealTradePreviewResponse {
   ok: boolean;

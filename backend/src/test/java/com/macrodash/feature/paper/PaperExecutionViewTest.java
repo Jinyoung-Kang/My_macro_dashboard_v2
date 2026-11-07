@@ -397,7 +397,7 @@ class PaperExecutionViewTest {
     }
 
     @Test
-    @DisplayName("자유 시점 판의 셋째 장중 판단(INTRADAY_3 — ADR 0031 초안)이 낸 주문도 메뉴 줄에서 뺌 — 주문 줄·감사한 주문 수에는 셈(종류를 목록으로 셈)")
+    @DisplayName("자유 시점 판의 셋째 장중 판단(INTRADAY_3 — ADR 0031)이 낸 주문도 메뉴 줄에서 뺌 — 주문 줄·감사한 주문 수에는 셈(종류를 목록으로 셈)")
     void thirdIntradayJudgmentOrdersLeaveMenuRows() {
         LocalDate mon = LocalDate.of(2026, 11, 2);
         long morning = store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE, mon,

@@ -381,7 +381,7 @@ def test_QA_복원은_실제_매매_기록을_비우고_설정을_꺼짐으로_�
 
 
 def test_복원_halt는_오늘까지의_ISA_스탑_지시를_건너뜀으로_닫는다(database_url, scratch_db, tmp_path):
-    """R13(ADR 0033 초안) — 백업 뒤에 이미 알린 장중 스탑을 복원한 DB가 다시 알리지 않게, 오늘(KST)까지의 PLANNED 스탑 지시만 닫습니다."""
+    """R13(ADR 0033) — 백업 뒤에 이미 알린 장중 스탑을 복원한 DB가 다시 알리지 않게, 오늘(KST)까지의 PLANNED 스탑 지시만 닫습니다."""
     name, db_url = scratch_db
     env = _real_trade_env(database_url, name, tmp_path)
     with psycopg.connect(db_url, autocommit=True) as conn:

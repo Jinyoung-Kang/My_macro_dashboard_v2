@@ -453,7 +453,7 @@ class CheckpointPacketTest {
     }
 
     @Test
-    @DisplayName("고정본(자유 시점 판 장중 판단 — 사건이 당긴 판단, ADR 0031 초안): 1_basis.origin EVENT·남은 횟수(세션당 3 − 순번 1 = 2), 3_request.trigger"
+    @DisplayName("고정본(자유 시점 판 장중 판단 — 사건이 당긴 판단, ADR 0031): 1_basis.origin EVENT·남은 횟수(세션당 3 − 순번 1 = 2), 3_request.trigger"
             + "(원래 시각 originalAtEt·사건 목록 그대로·규칙 한 줄)와 사건 설명 줄, nextCheckpoint.replaces(다음 순번의 남은 예약 — 시각·출처). 보장 판단은 "
             + "그 설명 줄, 운영자 판단은 예전 설명 줄 그대로")
     void goldenFreeEventMinute() {

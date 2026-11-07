@@ -22,7 +22,7 @@ final class RealTradeNotices {
     static final String EVENT_SKIPPED = "SKIPPED";
     /** 취소를 상한까지 보내도 이 기능의 토스 주문이 살아 있음 — 사람이 앱에서 취소(건수만). */
     static final String EVENT_CANCEL_GAVE_UP = "CANCEL_GAVE_UP";
-    /** 장중 스탑 매도(ADR 0033 초안 결정 2) — 한 주기의 보냄·막힘·놓침 건수만(종목·수량 없음). */
+    /** 장중 스탑 매도(ADR 0033 결정 2) — 한 주기의 보냄·막힘·놓침 건수만(종목·수량 없음). */
     static final String EVENT_STOP_SELL = "STOP_SELL";
 
     private static final Pattern CODE = Pattern.compile("^[a-z0-9-]{1,40}$");

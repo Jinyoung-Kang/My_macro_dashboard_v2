@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 /**
  * 실제 매매의 순수 계산(ADR 0028 — 명세 docs/specs/2026-11-06-real-trade-mirror.md §2·§3) — 입력 레코드를 받아 결과 레코드를 돌려주고 DB·네트워크·시계를
  * 모릅니다(시험이 사례 표로 고정). 정하는 것: 운용 평가액, 목표 수량과 보낼 수량, 건너뜀 사유, 상한가 기준 현금 확인, 1건 상한, 시가 맞추기 임계값,
- * 회전율, 한 창 안 순서, 그날 창 네 가지(시각 맞추기 날은 시가 맞추기 대신 시각 맞추기 창 — ADR 0033 초안), 쉬는 날 판정.
+ * 회전율, 한 창 안 순서, 그날 창 네 가지(시각 맞추기 날은 시가 맞추기 대신 시각 맞추기 창 — ADR 0033), 쉬는 날 판정.
  *
  * <ul>
  *   <li><b>운용 평가액 E</b> = min(원화 매수 가능 금액 + 국내 보유 전부의 평가액, 안전 상한) — 보유 하나라도 가격을 모르면 정하지 않습니다(모르면 보내지 않음).</li>
@@ -53,7 +53,7 @@ final class RealTradePlanner {
     static final String WINDOW_MIRROR = "MIRROR";
     static final String WINDOW_CLOSE = "NEXT_CLOSE";
     /**
-     * 시각 맞추기 창(ADR 0033 초안 결정 1) — 따라 하는 책이 개장 10분 뒤 지정 시각으로 체결하는 날, 시가 단일가 맞추기 대신 그 시각 T부터 시장가(DAY)로
+     * 시각 맞추기 창(ADR 0033 결정 1) — 따라 하는 책이 개장 10분 뒤 지정 시각으로 체결하는 날, 시가 단일가 맞추기 대신 그 시각 T부터 시장가(DAY)로
      * 묶음을 만들고 보내는 창 [T, T + {@link #TIMED_SYNC_LENGTH}]. 묶음 종류·주문 용도는 시가 뒤 마무리와 같습니다(DB CHECK 그대로).
      */
     static final String WINDOW_SYNC_AT = "SYNC_AT";
@@ -116,7 +116,7 @@ final class RealTradePlanner {
     static final String SKIP_WEIGHT = "weight-unknown";
     static final String SKIP_SYMBOL = "symbol-unsupported";
     /**
-     * 따라 하는 책에 그 종목의 오늘 대기 STOP 매도가 있어 매수를 보내지 않음(ADR 0033 초안 결정 4 — 묶음 재시도·마무리·장중 따라 하기의 매수를 보내기
+     * 따라 하는 책에 그 종목의 오늘 대기 STOP 매도가 있어 매수를 보내지 않음(ADR 0033 결정 4 — 묶음 재시도·마무리·장중 따라 하기의 매수를 보내기
      * 직전에 다시 읽음, 방금 판 종목을 다시 사지 않게).
      */
     static final String SKIP_PENDING_STOP = "pending-stop";
@@ -825,7 +825,7 @@ final class RealTradePlanner {
     /**
      * 그날 창(명세 §3 표, 토스 장 운영 정보로). 단일가 시각이 없으면 그 경로는 null(시가 맞추기 — 프리마켓 단일가 시작, 장중·종가 — 종가 단일가 시작).
      * {@code intraday}는 장중 따라 하기가 쓸 수 있는 전체 범위([정규장 시작 + 30초, 종가 단일가 시작 − 30초]). {@code syncAt}이 있으면 시각 맞추기 날
-     * (ADR 0033 초안 결정 1)이라 {@code sync}가 null이고 {@code followup}이 시각 맞추기 창({@value #WINDOW_SYNC_AT})입니다.
+     * (ADR 0033 결정 1)이라 {@code sync}가 null이고 {@code followup}이 시각 맞추기 창({@value #WINDOW_SYNC_AT})입니다.
      */
     record Day(LocalDate date, Window sync, Window followup, Window intraday, Window close, Instant regularStart,
                Instant closingAuctionStart, Instant regularEnd, Instant syncAt) {
@@ -853,7 +853,7 @@ final class RealTradePlanner {
     }
 
     /**
-     * 토스 장 운영 정보 → 그날 창. {@code syncAt}(모의 공개 창의 일일 맞추기 시각 — ADR 0033 초안 결정 1)이 있으면 시가 단일가 맞추기 창 없이 마무리 창
+     * 토스 장 운영 정보 → 그날 창. {@code syncAt}(모의 공개 창의 일일 맞추기 시각 — ADR 0033 결정 1)이 있으면 시가 단일가 맞추기 창 없이 마무리 창
      * 자리에 시각 맞추기 창 [max(T, 정규장 시작 + 30초), min(T + {@link #TIMED_SYNC_LENGTH}, 장중 끝)]을 둡니다 — 그 창이 비면(T가 장중 끝 뒤) 시가
      * 맞추기 날로 셉니다(되돌리기용으로 남긴 경로). null이면 지금과 같습니다. 정규장이 없으면(휴장) null.
      */
@@ -893,7 +893,7 @@ final class RealTradePlanner {
     }
 
     /**
-     * 스탑 매도 하나의 창(ADR 0033 초안 결정 2) — 종가 STOP은 그날 종가 창, 그 밖은 시작 = max(따라 할 시각, 장중 시작, 정규장 시작 +
+     * 스탑 매도 하나의 창(ADR 0033 결정 2) — 종가 STOP은 그날 종가 창, 그 밖은 시작 = max(따라 할 시각, 장중 시작, 정규장 시작 +
      * {@link SessionWindows#OPEN_OFFSET}), 끝 = min(시작 + 3분, 장중 끝). 모의 쪽이 개장 10분 전 시각의 STOP을 내더라도 실제로는 개장 10분 전에 팔지 않게
      * 하는 방어입니다(사용자 결정 2026-11-06 — 개장 10분 전에는 팔지 않음). 경로가 없거나 창이 비면 null(놓침).
      */

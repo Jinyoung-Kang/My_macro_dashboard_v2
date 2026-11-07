@@ -240,7 +240,7 @@ class PaperSettingsServiceTest {
 
         List<String> leaves = new ArrayList<>();
         collectLeaves(service.defaultsJson(), "", leaves);
-        // 장중 판단만의 effort(ADR 0031 초안)는 기본 본문에 없는 유일한 키 — 없으면 effort를 따름(IntradayPolicy.effort).
+        // 장중 판단만의 effort(ADR 0031)는 기본 본문에 없는 유일한 키 — 없으면 effort를 따름(IntradayPolicy.effort).
         leaves.add(IntradayPolicy.EFFORT);
         assertThat(listed).as("기본값 본문의 키 + 장중 판단 effort = 화면에서 바꿀 수 있는 키").containsExactlyInAnyOrderElementsOf(leaves);
 
@@ -337,7 +337,7 @@ class PaperSettingsServiceTest {
         assertThat(FreeTimingSettings.from(null)).isEqualTo(FreeTimingSettings.OFF);
         assertThat(FreeTimingSettings.key(PaperBooks.KR_CLAUDE2)).isEqualTo("kr.claude2.freeTiming");
         assertThat(FreeTimingSettings.key(PaperBooks.RULES)).as("규칙 계좌의 체결 시각은 다른 키").isNull();
-        // 세션마다 계좌별 장중 판단 횟수 — 기본 2, 저장 0~3(ADR 0031 초안), 시장마다 따로.
+        // 세션마다 계좌별 장중 판단 횟수 — 기본 2, 저장 0~3(ADR 0031), 시장마다 따로.
         assertThat(defaults.path("intradayMaxPerSession").asInt()).isEqualTo(2);
         assertThat(defaults.path("kr").path("intradayMaxPerSession").asInt()).isEqualTo(2);
         assertThat(PaperSettingKeys.find("intradayMaxPerSession").orElseThrow()).extracting(PaperSettingKeys.Spec::min,
@@ -416,6 +416,16 @@ class PaperSettingsServiceTest {
         update("intradayMaxPerSession", 2, "kr.intradayMaxPerSession", 2);
     }
 
+    // QA-315: 리뷰 XC-1 — 설정 화면(GET /api/paper/settings의 keys[].description)이 이미 채택된 ADR 0031·0032·0033을 '초안'으로 적었음.
+    @Test
+    @DisplayName("QA-315 설정 설명에는 '초안' 표시가 없음 — 실제 돈과 대조군을 바꾸는 키의 결정(ADR 0031·0032·0033)은 채택됨")
+    void qa315DescriptionsCarryNoDraftMarker() {
+        assertThat(PaperSettingKeys.ALL).isNotEmpty().allSatisfy(spec -> assertThat(spec.description()).as(spec.key()).doesNotContain("초안"));
+        assertThat(PaperSettingKeys.find("stopWatch.mode").orElseThrow().description()).contains("(ADR 0032, 기본 OFF)");
+        assertThat(PaperSettingKeys.find("kr.stopWatch.mode").orElseThrow().description()).contains("ADR 0033)");
+        assertThat(PaperSettingKeys.find("intradayMaxPerSession").orElseThrow().description()).contains("(ADR 0027·0031 —");
+    }
+
     // QA-313: 리뷰 XC-3 — 설정 설명 kr.trailingStopPct가 '밤 잠정 평가가로 감지해 다음 거래일 시가 매도'만 적어, kr.stopWatch.mode=ON을 저장한 뒤에는
     // 장중 감시가 그 세션 안에 팔고 덮지 못한 종목만 다음 거래일 첫 분에 파는 실제 동작과 다름.
     @Test
@@ -428,7 +438,7 @@ class PaperSettingsServiceTest {
     }
 
     @Test
-    @DisplayName("장중 스탑 감시·장중 판단 최소·사건·effort 키(ADR 0031·0032 초안): 기본은 지금 동작(OFF·0·꺼짐·effort 없음), 형·범위·시장·규칙 계좌 영향, "
+    @DisplayName("장중 스탑 감시·장중 판단 최소·사건·effort 키(ADR 0031·0032): 기본은 지금 동작(OFF·0·꺼짐·effort 없음), 형·범위·시장·규칙 계좌 영향, "
             + "키가 없는 옛 행은 같은 값으로 읽고 판 그대로, 감시 스위치는 그 시장 규칙 계좌 경고")
     void stopWatchAndIntradayPolicyKeys() {
         JsonNode defaults = service.defaultsJson();

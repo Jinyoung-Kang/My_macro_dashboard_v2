@@ -62,7 +62,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>한 주기
  * <ol>
  *   <li><b>자동 기록</b>(§3): 개장이 지난 세션의 PLANNED 지시를 그 세션 시가({@link PaperMirrorService#openPrices} — 모의 장부와 같은 사다리)로 장부에
- *       적습니다. 시각 맞추기 날의 지시(근거 {@value #DETAIL_TARGET_AT} — ADR 0033 초안 결정 7)는 그 시각이 지난 뒤 그 시각의 1분봉 사다리
+ *       적습니다. 시각 맞추기 날의 지시(근거 {@value #DETAIL_TARGET_AT} — ADR 0033 결정 7)는 그 시각이 지난 뒤 그 시각의 1분봉 사다리
  *       ({@link PaperMirrorService#pricesAt} — 규칙 계좌 체결과 같은 값)로, 장부 시각도 그 시각으로 적고, 그 시각의 1분봉 창이 아예 없는 종목은 그 세션
  *       시가로 어림해 적습니다({@value #AUTO_OPEN_FALLBACK}). 그 밖은 아래와 같습니다 — 장부에
  *       적습니다(AUTO, 수수료·세금 0 → RECORDED). 사용자가 먼저 그 지시에 묶어 넣은 행이 있으면 적지 않고 RECORDED. 시가를 아직 못 구한 종목은 PLANNED로
@@ -74,7 +74,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li><b>지시 만들기</b>(§2): 다음 세션 E(개장 전)의 지시가 아직 없고, 앞 세션 지시가 모두 적혔고, 규칙 계좌의 D(E 전 거래일) 정기 결정이 최종
  *       (OK·NO_TRADE·SKIPPED 또는 기한 지남)이고, 규칙 계좌 장부가 D까지 반영했고({@link PaperMirrorService#ledgerCaughtUp}), 시가 목표가 완전할 때
  *       ({@link OpenTargets#complete}) {@link ManualAccountPlanner}로 계산해 세션 행과 지시 행을 한 트랜잭션으로 씁니다. 지시가 없으면 NONE(알리지 않음).
- *       규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날({@link PaperMirrorService#dailySyncAt} — ADR 0033 초안 결정 7)은 그 시각까지의 모의 주문을
+ *       규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날({@link PaperMirrorService#dailySyncAt} — ADR 0033 결정 7)은 그 시각까지의 모의 주문을
  *       반영한 목표({@link PaperMirrorService#targetsAt})로 '그 시각 이후 시장가' 지시를 만듭니다. 그 목표에 들지 않는 시가 밖 시점 대기 주문(STOP 매도
  *       제외 — 스탑 지시가 따로 맡음)이 있으면 목표가 그 결정을 담지 못하므로 만들지 않습니다(사유 {@code timed-orders} — 개장 뒤 못 만듦). 장부 고침이 이미 알린 지시를 지운 세션
  *       ({@link ManualAccountService} — 그 세션 08:00 전)을 다시 만들면 '다시 계산'으로 표시합니다.</li>
@@ -83,7 +83,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *       다시 계산했더니 지시가 없으면(NONE) 그 세션 개장 전까지 '할 매매가 없음' 한 통.</li>
  * </ol>
  *
- * <p><b>장중 스탑 지시</b>(ADR 0033 초안 결정 7 — V28 {@code manual_stop_instructions}): {@code dashboard.manual.stop-interval-ms}(30초)마다 — 위 네
+ * <p><b>장중 스탑 지시</b>(ADR 0033 결정 7 — V28 {@code manual_stop_instructions}): {@code dashboard.manual.stop-interval-ms}(30초)마다 — 위 네
  * 단계는 그중 {@code interval-ms}(10분)이 지난 주기에만 — 규칙 계좌의 오늘 STOP 매도 대기 주문({@link PaperMirrorService#dueOrders} — 장중 감시·밤 대체,
  * 지금 + 5분 안의 것)마다 그 주문이 그날 지시 목표에 반영된 것(세션 기록 {@value #DETAIL_COVERED_STOPS})이 아니면 스탑 지시 하나(모의 주문 하나에 하나 —
  * UNIQUE)를 씁니다. 수량은 ISA 장부 보유 + 그날 아직 적지 않은 지시 증감 가운데 지시 시각이 지난 것의 정수 부분이고, 1주도 없으면 쓰지 않습니다. 알리지
@@ -111,7 +111,7 @@ class ManualAccountJob {
     /** 자동 기록이 건너뛴 사유(지시 근거의 autoNote). */
     static final String AUTO_HALTED = PaperMirrorService.OPEN_HALTED;
     static final String AUTO_NOT_TRADING = "not-trading";
-    /** 자동 기록 메모 — 지시 시각의 1분봉 창이 아예 없어(그 시각 규칙 계좌 주문이 없던 종목) 그 세션 시가로 어림해 적음(ADR 0033 초안 결정 7). */
+    /** 자동 기록 메모 — 지시 시각의 1분봉 창이 아예 없어(그 시각 규칙 계좌 주문이 없던 종목) 그 세션 시가로 어림해 적음(ADR 0033 결정 7). */
     static final String AUTO_OPEN_FALLBACK = "open-fallback";
     /**
      * 지시 근거·세션 계산 기록의 키 — 그 지시를 낼 시각(시각 맞추기 날 — 따라 하는 책의 일일 맞추기 시각, ISO). 없으면 예전 시가 지시(시가 사다리
@@ -322,7 +322,7 @@ class ManualAccountJob {
         }
     }
 
-    // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 초안 결정 7)
+    // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 결정 7)
     /**
      * 오늘 규칙 계좌 STOP 매도 대기 주문마다 스탑 지시 하나(클래스 설명) — 거래일 정규장(개장 ~ 마감) 안이고 계좌가 그 전에 시작했을 때만. 그날 지시 목표에
      * 반영한 STOP(세션 기록 {@value #DETAIL_COVERED_STOPS})은 지시가 이미 팔게 하므로 쓰지 않습니다. 만든 지시 수.
@@ -602,7 +602,7 @@ class ManualAccountJob {
     }
 
     /**
-     * 시각 맞추기 지시의 자동 기록 가격(ADR 0033 초안 결정 7) — 그 시각의 1분봉 사다리({@link PaperMirrorService#pricesAt}), 그날 1분봉이 없거나 T 뒤
+     * 시각 맞추기 지시의 자동 기록 가격(ADR 0033 결정 7) — 그 시각의 1분봉 사다리({@link PaperMirrorService#pricesAt}), 그날 1분봉이 없거나 T 뒤
      * 거래가 없으면 다시 오지 않음(halted), 그 시각의 창이 아예 없는 종목(그 시각 규칙 계좌 주문이 없던 종목 — 수집기가 받지 않음)은 밤 관측치의 그
      * 세션 시가로 어림(그 세션 시가도 다시 오지 않으면 halted). 그 밖은 기다림(결과에 없음).
      */
@@ -796,7 +796,7 @@ class ManualAccountJob {
             return;
         }
         Instant until = next.close() != null ? next.close() : Instant.MAX;
-        // 시각 맞추기 날(ADR 0033 초안 결정 7) — 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하면 그 시각까지의 모의 주문을 반영한 목표로 '그 시각 이후
+        // 시각 맞추기 날(ADR 0033 결정 7) — 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하면 그 시각까지의 모의 주문을 반영한 목표로 '그 시각 이후
         // 시장가' 지시. 아니면 예전 시가 목표.
         Instant syncAt = paper.dailySyncAt(SOURCE_BOOK, session).orElse(null);
         OpenTargets targets = (syncAt != null ? paper.targetsAt(SOURCE_BOOK, session, syncAt) : paper.openTargets(SOURCE_BOOK, session))
@@ -808,7 +808,7 @@ class ManualAccountJob {
         }
         boolean timed = paper.dueOrders(SOURCE_BOOK, session, until).stream().anyMatch(o -> !o.stop() && !covered.contains(o.orderId()));
         if (timed) {
-            // 그 결정의 주문이 지시 시각 밖 시점에 체결됨 — 목표가 그 결정을 담지 못함. STOP 매도는 스탑 지시가 따로 맡음(ADR 0033 초안 결정 7).
+            // 그 결정의 주문이 지시 시각 밖 시점에 체결됨 — 목표가 그 결정을 담지 못함. STOP 매도는 스탑 지시가 따로 맡음(ADR 0033 결정 7).
             waitFor(session, WAIT_TIMED, now);
             return;
         }

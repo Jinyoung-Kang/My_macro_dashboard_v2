@@ -1544,7 +1544,7 @@ class PacketBuilderTest {
         assertThat(ft1.body().get(PacketBuilder.EXECUTION).get("menu")).isEqualTo(execution.get("menu"));
         assertThat(PacketBuilder.marketSectionsSha256(ft1.body(), MAPPER)).isEqualTo(PacketBuilder.marketSectionsSha256(book1.body(), MAPPER));
 
-        // 보장·사건(ADR 0031 초안 결정 4·7)을 켜면 13_execution.intraday에만 그 칸이 실림 — 사건은 그 시장 장중 스탑 감시가 SHADOW·ON일 때만(자료가 감시
+        // 보장·사건(ADR 0031 결정 4·7)을 켜면 13_execution.intraday에만 그 칸이 실림 — 사건은 그 시장 장중 스탑 감시가 SHADOW·ON일 때만(자료가 감시
         // 저장본). 끈 판 패킷은 그대로.
         ObjectNode body = (ObjectNode) store.settings.body();
         body.put(IntradayPolicy.US_MIN, 1).put(IntradayPolicy.US_EVENTS, true);

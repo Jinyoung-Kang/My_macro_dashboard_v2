@@ -420,7 +420,7 @@ class ManualAccountJobDbTest {
         verify(telegram, never()).send(anyString());
     }
 
-    // ------------------------------------------------------------------ 시각 맞추기 날(ADR 0033 초안 결정 7)
+    // ------------------------------------------------------------------ 시각 맞추기 날(ADR 0033 결정 7)
     private static final Instant SYNC_AT = kst("2026-11-09T09:10");
 
     private void timedTargets(List<Long> absorbed, List<Long> stops) {
@@ -512,7 +512,7 @@ class ManualAccountJobDbTest {
         assertThat(store.instructions("isa", E).get(1).reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_OPEN_FALLBACK);
     }
 
-    // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 초안 결정 7)
+    // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 결정 7)
     private static final Instant STOP_T = kst("2026-11-09T11:32");
 
     private void stopCycleAt(String local) {

@@ -317,7 +317,7 @@ def _builds(calls: list[str]) -> list[str]:
     return [c for c in calls if c.startswith("compose build")]
 
 
-# 창은 정규장 전체(08:45~15:35 — 개장 10분 뒤 맞추기·장중 스탑 매도, ADR 0033 초안).
+# 창은 정규장 전체(08:45~15:35 — 개장 10분 뒤 맞추기·장중 스탑 매도, ADR 0033).
 @pytest.mark.parametrize("now", ["3 0850", "1 0845", "1 0935", "5 1520", "2 1515", "4 1535", "2 0936", "3 1200", "4 1400", "3 1514"])
 def test_deploy는_실제_매매가_켜져_있고_한국_거래_창이면_빌드_전에_멈춘다(server, rt_fakes, now):
     result = _deploy(server, rt_fakes, FAKE_KST_NOW=now, FAKE_RT_OUT="1")
@@ -375,7 +375,7 @@ def test_deploy는_빌드하는_동안_거래_창에_들어오면_기동_직전�
 
 
 # RT2-COL-1: 장 시간이 바뀐 날(2026-11-19 수능 10:00~16:30 등)에는 같은 psql 호출이 켜진 시장 수 뒤에 모의 설정
-# kr.calendar.openTimeOverrides의 오늘 값을 붙여 냅니다("1 10:00 16:30"). 창은 개장 −15분 ~ 마감 +5분(09:45~16:35 — 정규장 전체, ADR 0033 초안),
+# kr.calendar.openTimeOverrides의 오늘 값을 붙여 냅니다("1 10:00 16:30"). 창은 개장 −15분 ~ 마감 +5분(09:45~16:35 — 정규장 전체, ADR 0033),
 # 그 설정을 읽지 못했거나 모양이 틀리면("1 bad" 등) 보수 합집합 창(평일 08:45~16:35)입니다.
 @pytest.mark.parametrize("now", ["4 0955", "4 1005", "4 1625", "4 0945", "4 1035", "4 1615", "4 1635", "4 1300", "4 1530"])
 def test_RT2_COL_1_deploy는_장_시간_변경일이면_옮긴_한국_거래_창에서_빌드_전에_멈춘다(server, rt_fakes, now):

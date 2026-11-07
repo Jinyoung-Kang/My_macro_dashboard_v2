@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * 장중 판단 보장 1회({@link IntradayScheduler} — ADR 0031 초안 결정 4) — 순수 판정(보장 시각·넣을 시각·순번)과 FakePaperStore 위의 넣기(스위치·계좌·
+ * 장중 판단 보장 1회({@link IntradayScheduler} — ADR 0031 결정 4) — 순수 판정(보장 시각·넣을 시각·순번)과 FakePaperStore 위의 넣기(스위치·계좌·
  * 결정·문·멱등). 작업에 묶인 흐름(넣은 행을 정기 문턱으로 부름)은 {@link PaperIntradayJobTest}·{@link KrStartTest}가 봅니다.
  *
  * <p>미국 세션 2026-11-09(월, EST — 개장 14:30Z, 12:30 ET = 17:30Z), 한국 2026-12-02(수, 11:30 KST = 02:30Z).

@@ -904,7 +904,7 @@ class KrStartTest {
                 && java.time.LocalTime.of(13, 30).equals(o.targetLocal())).findFirst().orElseThrow();
         PaperKrIntradayJob intraday = intradayJob();
         int calls = fake.requests.size();
-        // 장중 판단만 medium(공유 키 intradayEffort — ADR 0031 초안 결정 6), 밤 결정은 effort(high) 그대로.
+        // 장중 판단만 medium(공유 키 intradayEffort — ADR 0031 결정 6), 밤 결정은 effort(high) 그대로.
         ((tools.jackson.databind.node.ObjectNode) store.settings.body()).put(IntradayPolicy.EFFORT, "medium");
 
         clock.set(kst("2026-12-02T09:11"));
@@ -1067,7 +1067,7 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("한국 보장 1회(kr.intradayMinPerSession 1 — ADR 0031 초안 결정 4): 밤 결정이 장중 판단을 예약하지 않은 세션 — 11:30 KST 전에는 넣지 않고, "
+    @DisplayName("한국 보장 1회(kr.intradayMinPerSession 1 — ADR 0031 결정 4): 밤 결정이 장중 판단을 예약하지 않은 세션 — 11:30 KST 전에는 넣지 않고, "
             + "11:30에 두 계좌에 보장 행(11:31·감시 1분봉·출처 GUARANTEE·밤 결정)을 넣음 → 그 계획의 감시 저장본이 오면 정기 문턱으로 한 번 부름(결정 응답 "
             + "checkpoint.origin GUARANTEE), 부른 뒤에는 다시 넣지 않음")
     void krGuaranteesOneJudgmentByMidSession() {
@@ -1115,7 +1115,7 @@ class KrStartTest {
     }
 
     @Test
-    @DisplayName("한국 사건(kr.intradayEvents·kr.stopWatch.mode SHADOW — ADR 0031 초안 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 "
+    @DisplayName("한국 사건(kr.intradayEvents·kr.stopWatch.mode SHADOW — ADR 0031 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 "
             + "069500 +1.75% → 두 계좌에 사건 행(지금 + 1분·감시 1분봉·출처 EVENT·밤 결정)을 넣음 — 보유의 유효 최고가(금융위 확정 시세)를 읽어도 막히지 않음")
     void krEventsAddAJudgment() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();

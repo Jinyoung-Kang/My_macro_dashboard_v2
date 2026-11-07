@@ -46,7 +46,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 같습니다 — 계좌·순번마다 한 행, 응답 결정 종류 {@code INTRADAY_<순번>}, 그 계좌의 자유 시점 판 파이프라인, 예약 행은 정기 문턱·당긴 행은 수동 문턱,
  * 응답 시점 셋({@link FreeTiming#INTRADAY_TIMINGS})과 다음 판단 예약({@code nextCheckpoint}). 한국에는 결정 주기 소상한이 없습니다(하루 상한만).
  *
- * <p>보장 1회(ADR 0031 초안 결정 4 — 설정 {@value IntradayPolicy#KR_MIN} ≥ 1일 때만)는 미국과 같은 규칙({@link IntradayScheduler#guarantee})이고 보장 시각은
+ * <p>보장 1회(ADR 0031 결정 4 — 설정 {@value IntradayPolicy#KR_MIN} ≥ 1일 때만)는 미국과 같은 규칙({@link IntradayScheduler#guarantee})이고 보장 시각은
  * 개장 + 150분(보통 날 11:30 KST, 수능일 12:30 KST), 피드는 감시 1분봉입니다.
  *
  * <p>REPLACE 검증의 신선도는 그 세션 결정의 순간으로 셉니다(입력 동결 — 한국 장중 확인 작업과 같은 까닭, QA-172). 멈추려면 세션당 횟수 설정
@@ -136,7 +136,7 @@ public class PaperKrIntradayJob {
         Map<String, String> changes = new LinkedHashMap<>();
         String error = null;
         MarketRun run = null;
-        // 보장 1회(ADR 0031 초안 결정 4 — 설정 kr.intradayMinPerSession ≥ 1일 때만, 기본 꺼짐)·사건(결정 7 — kr.intradayEvents가 켜져 있고 한국 장중
+        // 보장 1회(ADR 0031 결정 4 — 설정 kr.intradayMinPerSession ≥ 1일 때만, 기본 꺼짐)·사건(결정 7 — kr.intradayEvents가 켜져 있고 한국 장중
         // 스탑 감시가 SHADOW·ON일 때만, 기본 꺼짐): 그때만 실행(달력 — 수능일 개장 변경 포함)을 엶.
         SettingsRow current = store.settings().orElse(null);
         boolean guaranteeOn = current != null && IntradayScheduler.guaranteeWanted(BOOKS, current.body());
@@ -338,7 +338,7 @@ public class PaperKrIntradayJob {
         Integer lag = measured != null && measured.isNumber() ? measured.asInt() : null;
         Optional<Quotes> quotes = reader.quietly(() -> marketData.quotes(KrPaperMarket.INSTANCE));
 
-        // 장중 판단만의 effort(intradayEffort — 두 책 공통, 없으면 effort, ADR 0031 초안 결정 6).
+        // 장중 판단만의 effort(intradayEffort — 두 책 공통, 없으면 effort, ADR 0031 결정 6).
         ClaudeSettings claudeSettings = ClaudeSettings.intraday(row.body());
         LocalDate today = Kst.today(clock);
         boolean scheduled = !p.manual();
@@ -347,7 +347,7 @@ public class PaperKrIntradayJob {
         }
         Optional<Snapshot> watch = Optional.of(snapshot);
         Instant calledAt = clock.instant();
-        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031 초안, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
+        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
         // — 켠 판 패킷만.
         List<IntradayPlan> rows = store.intradayPlans(code, session);
         KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),

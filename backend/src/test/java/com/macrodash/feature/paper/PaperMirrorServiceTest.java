@@ -456,7 +456,7 @@ class PaperMirrorServiceTest {
         assertThat(service().claim(BOOK, 1, kst("2026-11-06T10:40"), () -> "x")).isEmpty();
     }
 
-    // ------------------------------------------------------------------ 시각 맞추기(ADR 0033 초안 — 실제 매매·ISA의 개장 10분 뒤 맞추기)
+    // ------------------------------------------------------------------ 시각 맞추기(ADR 0033 — 실제 매매·ISA의 개장 10분 뒤 맞추기)
     private static final String RULES = PaperBooks.KR_RULES;
 
     private void rulesBook() {

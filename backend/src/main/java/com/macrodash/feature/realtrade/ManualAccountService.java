@@ -240,7 +240,7 @@ public class ManualAccountService {
             block.put("reason", reason != null && reason.isString() ? reason.asString() : null);
             block.put("ledgerChanged", row.ledgerChangedAt() != null);
             JsonNode target = row.detail() == null ? null : row.detail().get(ManualAccountJob.DETAIL_TARGET_AT);
-            block.put("targetAt", target != null && target.isString() ? target.asString() : null);   // 시각 맞추기 지시(ADR 0033 초안), 시가 지시면 null
+            block.put("targetAt", target != null && target.isString() ? target.asString() : null);   // 시각 맞추기 지시(ADR 0033), 시가 지시면 null
             out.put("instructions", block);
         } else {
             out.put("instructions", null);
@@ -335,7 +335,7 @@ public class ManualAccountService {
         return out;
     }
 
-    /** 장중 스탑 매도 지시 하나(ADR 0033 초안 결정 7) — 종목·수량·체결 시점·기준 시각·상태·즉시 알림 시각과 자동 기록 메모(금액 없음). */
+    /** 장중 스탑 매도 지시 하나(ADR 0033 결정 7) — 종목·수량·체결 시점·기준 시각·상태·즉시 알림 시각과 자동 기록 메모(금액 없음). */
     private static Map<String, Object> stopInstruction(StopInstruction i, Map<String, String> names) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", i.id());

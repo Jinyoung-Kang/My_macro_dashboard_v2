@@ -110,7 +110,7 @@ final class CheckpointPacket {
      * @param slot     그 세션의 몇 번째 판단인가(결정 종류 {@code INTRADAY_<slot>})
      * @param max      그 호출이 읽은 설정의 세션당 장중 판단 횟수
      * @param manual   운영자가 당긴 판단인가
-     * @param origin   그 계획 행을 누가 만들었나({@code PaperStore.IntradayPlan.ORIGINS} — ADR 0031 초안, null이면 수동 표시로 정함)
+     * @param origin   그 계획 행을 누가 만들었나({@code PaperStore.IntradayPlan.ORIGINS} — ADR 0031, null이면 수동 표시로 정함)
      * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건(계획 행의 {@code trigger} — {@code originalAt}·{@code events}), 없으면 null
      * @param replaces  이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약(다음 순번의 PLANNED 행), 없으면 null
      * @param later     그대로 남는 뒤 예약(다음 순번 뒤의 PLANNED 행 — {@link Reserved#later}), 없으면 null. {@code nextCheckpoint}는 그 시각보다

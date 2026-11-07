@@ -191,7 +191,7 @@ final class PaperSettingKeys {
             shared(choice("model", ClaudeBookService.MODELS, false,
                     "Claude 계좌 모델(D5) — 거절·오류 때 다른 모델로 자동 전환하지 않음")),
             shared(choice("effort", ClaudeBookService.EFFORTS, false, "Claude 계좌 effort(C2 기본 high)")),
-            // 장중 판단만의 effort(ADR 0031 초안 — 사용자 결정 2026-11-06 '결정·복기는 high, 장중 판단만 medium'). 기본 본문에 넣지 않음 — 없으면 effort를 따름.
+            // 장중 판단만의 effort(ADR 0031 — 사용자 결정 2026-11-06 '결정·복기는 high, 장중 판단만 medium'). 기본 본문에 넣지 않음 — 없으면 effort를 따름.
             shared(choice(IntradayPolicy.EFFORT, ClaudeBookService.EFFORTS, false,
                     "장중 판단 호출만의 effort(두 책 공통) — 결정·재시도·주간 복기·프레임 제안은 effort. 설정 행에 없으면 effort를 따름")),
             shared(integer("apiDailyCallCap", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
@@ -218,7 +218,7 @@ final class PaperSettingKeys {
             number("trailingStopPct", 1, 50, true, "트레일링 스탑(%) — 최고가 대비 이만큼 떨어지면 전량 매도(D10)"),
             integer("lockoutTradingDays", 0, 250, true, "스탑 뒤 재진입 금지 거래일(D10)"),
             choice(StopWatchMode.US_KEY, StopWatchMode.OPTIONS, true,
-                    "미국 장중 스탑 감시(ADR 0032 초안, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 보고 트레일링 "
+                    "미국 장중 스탑 감시(ADR 0032, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 보고 트레일링 "
                             + "스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가로 매도(개장 10분 전에는 팔지 않음). OFF는 감시·수집 없음(시간별 관측치 "
                             + "스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
             integer("maxDiscretionaryOrdersPerMonth", 0, 200, false, "Claude 재량 주문 월 상한(C9)"),
@@ -313,13 +313,13 @@ final class PaperSettingKeys {
                     "Claude 계좌1 장중 확인 시각(뉴욕 시각 HH:mm, 10:00~15:00, 기본 12:00) — 그 시각 뒤 수집된 그날 시간별 관측치가 오면 부름, "
                             + "마감 30분 전까지 못 부르면 그 세션은 건너뜀"),
             integer(FreeTimingSettings.US_INTRADAY_MAX, 0, FreeTimingSettings.INTRADAY_MAX_SETTING, false,
-                    "미국 세션마다 계좌별 장중 판단 횟수(ADR 0027·0031 초안 — 자유 시점 판을 켠 계좌만, 0~3, 기본 2). 그 계좌의 결정이 다음 세션 "
+                    "미국 세션마다 계좌별 장중 판단 횟수(ADR 0027·0031 — 자유 시점 판을 켠 계좌만, 0~3, 기본 2). 그 계좌의 결정이 다음 세션 "
                             + "장중에 다시 판단할 시각을 이 수까지 예약함(분 단위). 0이면 예약을 받지 않음(분 단위 지정 시각 주문만)"),
             integer(IntradayPolicy.US_MIN, 0, IntradayPolicy.MAX_MIN, false,
-                    "미국 세션마다 계좌별 최소 장중 판단 수(ADR 0031 초안, 기본 0) — 1이면 세션 중간(개장 기준, 보통 날 12:30 ET)까지 예약이 없을 때 "
+                    "미국 세션마다 계좌별 최소 장중 판단 수(ADR 0031, 기본 0) — 1이면 세션 중간(개장 기준, 보통 날 12:30 ET)까지 예약이 없을 때 "
                             + "코드가 한 번 부름(정기 몫, 최대 횟수 안). 0이면 보장 없음"),
             of(IntradayPolicy.US_EVENTS, Type.BOOLEAN, false,
-                    "미국 장중 사건이 장중 판단을 당김(ADR 0031 초안, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·SPY ±1.5%·트레일링 스탑 2% 안이면 가장 "
+                    "미국 장중 사건이 장중 판단을 당김(ADR 0031, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·SPY ±1.5%·트레일링 스탑 2% 안이면 가장 "
                             + "이른 예약을 당기거나 최대 횟수 안에서 더함(사건 하나에 한 번, 자료는 장중 스탑 감시 저장본)"),
             of(FreeTimingSettings.US_CLAUDE, Type.BOOLEAN, false,
                     "Claude 계좌1 자유 시점 판(ADR 0027·0031, 기본 꺼짐) — 켜면 다음 미국 결정부터 분 단위 지정 시각(AT_MINUTE, "
@@ -376,9 +376,9 @@ final class PaperSettingKeys {
                     + "시가 매도(K30), ON이면 장중 감시가 그 세션 안에 팔고 감시가 덮지 못한 종목만 밤 감지 뒤 다음 거래일 첫 분(개장 10분 뒤) 지정 시각 매도"),
             integer("kr.lockoutTradingDays", 0, 250, true, "한국 스탑 뒤 재진입 금지(KRX 거래일)"),
             choice(StopWatchMode.KR_KEY, StopWatchMode.OPTIONS, true,
-                    "한국 장중 스탑 감시(ADR 0032 초안, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 토스 1분봉으로 "
+                    "한국 장중 스탑 감시(ADR 0032, 기본 OFF) — 규칙·Claude 계좌1·계좌2(벤치마크 제외)의 보유를 정규장 5분마다 토스 1분봉으로 "
                             + "보고 트레일링 스탑선 아래가 두 번 이어지면 감지 2분 뒤 시장가로 매도(개장 10분 전에는 팔지 않음, 실제 계좌·ISA도 따름 — "
-                            + "ADR 0033 초안). OFF는 감시·수집 없음(밤 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
+                            + "ADR 0033). OFF는 감시·수집 없음(밤 스탑만), SHADOW는 '걸렸을 것'만 작업 기록에, ON은 주문"),
             integer("kr.rulesMaxNames", 1, 50, true, "한국 규칙 계좌 매수 종목 수 상한(K7 — 후보가 모자란 만큼은 153130)"),
             choice("kr.rules.weighting", List.of("EQUAL", "SCORE"), true,
                     "한국 규칙 계좌 배분 — 동일비중(EQUAL)·점수 비례(SCORE, 점수 = 20일 외국인·기관 순매수 주 ÷ 상장주식수)"),
@@ -433,12 +433,12 @@ final class PaperSettingKeys {
                     "한국 Claude 계좌2 장중 확인(단계 2b — 세션당 최대 1회, 밤 결정이 고른 시각 뒤 토스 1분봉으로 한 번 더 판단). 끄면 확인을 "
                             + "부르지 않고 그 세션 계획은 SKIPPED(밤 결정의 요청은 계속 받음 — 호출만 멈추는 스위치)"),
             integer(FreeTimingSettings.KR_INTRADAY_MAX, 0, FreeTimingSettings.INTRADAY_MAX_SETTING, false,
-                    "한국 세션마다 계좌별 장중 판단 횟수(ADR 0027·0031 초안 — 자유 시점 판을 켠 계좌만, 0~3, 기본 2). 0이면 예약을 받지 않음"),
+                    "한국 세션마다 계좌별 장중 판단 횟수(ADR 0027·0031 — 자유 시점 판을 켠 계좌만, 0~3, 기본 2). 0이면 예약을 받지 않음"),
             integer(IntradayPolicy.KR_MIN, 0, IntradayPolicy.MAX_MIN, false,
-                    "한국 세션마다 계좌별 최소 장중 판단 수(ADR 0031 초안, 기본 0) — 1이면 세션 중간(개장 기준, 보통 날 11:30 KST)까지 예약이 없을 때 "
+                    "한국 세션마다 계좌별 최소 장중 판단 수(ADR 0031, 기본 0) — 1이면 세션 중간(개장 기준, 보통 날 11:30 KST)까지 예약이 없을 때 "
                             + "코드가 한 번 부름(정기 몫, 최대 횟수 안). 0이면 보장 없음"),
             of(IntradayPolicy.KR_EVENTS, Type.BOOLEAN, false,
-                    "한국 장중 사건이 장중 판단을 당김(ADR 0031 초안, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·069500 ±1.5%·트레일링 스탑 2% 안이면 "
+                    "한국 장중 사건이 장중 판단을 당김(ADR 0031, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·069500 ±1.5%·트레일링 스탑 2% 안이면 "
                             + "가장 이른 예약을 당기거나 최대 횟수 안에서 더함(사건 하나에 한 번, 자료는 장중 스탑 감시 저장본)"),
             of(FreeTimingSettings.KR_CLAUDE, Type.BOOLEAN, false,
                     "한국 Claude 계좌1 자유 시점 판(ADR 0027·0031, 기본 꺼짐) — 켜면 다음 한국 결정부터 분 단위 지정 시각(AT_MINUTE, "

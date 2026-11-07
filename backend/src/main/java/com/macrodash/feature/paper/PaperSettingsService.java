@@ -589,11 +589,11 @@ public class PaperSettingsService {
         body.put("claude", claude);
         // 세션마다 계좌별 장중 판단 횟수(ADR 0027 결정 3) — 2. 켠 판의 결정만 읽습니다(끈 판에는 영향 없음).
         body.put(FreeTimingSettings.US_INTRADAY_MAX, FreeTimingSettings.DEFAULT_INTRADAY_MAX);
-        // 장중 판단 최소 횟수·사건 당김(ADR 0031 초안) — 0·꺼짐. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(IntradayPolicy — 배포만으로 바뀌지 않음).
+        // 장중 판단 최소 횟수·사건 당김(ADR 0031) — 0·꺼짐. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(IntradayPolicy — 배포만으로 바뀌지 않음).
         // 장중 판단만의 effort(IntradayPolicy.EFFORT)는 넣지 않습니다 — 없으면 effort를 따릅니다.
         body.put(IntradayPolicy.US_MIN, IntradayPolicy.DEFAULT_MIN);
         body.put(IntradayPolicy.US_EVENTS, IntradayPolicy.DEFAULT_EVENTS);
-        // 장중 스탑 감시(ADR 0032 초안) — OFF. 키가 없는 지금 행도 OFF로 읽힙니다(StopWatchMode).
+        // 장중 스탑 감시(ADR 0032) — OFF. 키가 없는 지금 행도 OFF로 읽힙니다(StopWatchMode).
         body.put("stopWatch", Map.of("mode", StopWatchMode.DEFAULT.name()));
         // 미국 Claude 계좌2(계좌2 명세 §13-2) — 꺼짐·단계 1 값. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(Claude2Settings — 배포만으로 바뀌지 않음).
         body.put("claude2", Claude2Settings.defaultsBody());

@@ -139,7 +139,7 @@ public class ClaudeBookService {
     static final int DEFAULT_DAILY_CALL_CAP = 30;
     /**
      * 일일 호출 상한의 최댓값 — 설정 실수(600)로 하루 비용이 백 배가 되지 않게. 50에서 100으로 넓혔습니다(ADR 0027 결정 9 — 자유 시점 판을 켜는 저장에서
-     * 상한 60·예약 20). ADR 0031 초안(장중 판단 최대 3)은 상한 70·예약 30을 저장합니다 — 네 계좌의 정기 호출(결정 1 + 재시도 1 + 장중 판단 3, KST 하루에
+     * 상한 60·예약 20). ADR 0031(장중 판단 최대 3)은 상한 70·예약 30을 저장합니다 — 네 계좌의 정기 호출(결정 1 + 재시도 1 + 장중 판단 3, KST 하루에
      * 미국 두 세션이 걸침) 하루 최악 EST 22·EDT 26회가 예약 안에 듭니다. 기본값({@value #DEFAULT_DAILY_CALL_CAP})은 그대로입니다.
      */
     static final int MAX_DAILY_CALL_CAP = 100;
@@ -261,7 +261,7 @@ public class ClaudeBookService {
         }
 
         /**
-         * 장중 판단 호출의 설정(ADR 0031 초안 결정 6 — 사용자 결정 2026-11-06 '결정·복기는 high, 장중 판단만 medium') — {@link #from}에 effort만
+         * 장중 판단 호출의 설정(ADR 0031 결정 6 — 사용자 결정 2026-11-06 '결정·복기는 high, 장중 판단만 medium') — {@link #from}에 effort만
          * {@value IntradayPolicy#EFFORT}(받는 값일 때)로 바꿉니다. 키가 없거나 목록 밖이면 결정과 같은 {@code effort}입니다. {@link #fallbacks}는
          * {@link #from} 그대로라(새 키는 넣지 않음) 결정 응답의 {@code settings.fallbacks}가 이 키가 생기기 전과 같습니다. 결정·재시도·주간 복기·프레임
          * 제안은 이 함수를 쓰지 않습니다.
@@ -894,7 +894,7 @@ public class ClaudeBookService {
      */
     static int claude2CallsInCycle(PaperStore store, LocalDate asOf) {
         int calls = 0;
-        // 자유 시점 판의 장중 판단(순번마다 한 종류 — RuleBookService.INTRADAY_KINDS, ADR 0027 결정 3·ADR 0031 초안 최대 3, 재시도 없음)도 같은 결정
+        // 자유 시점 판의 장중 판단(순번마다 한 종류 — RuleBookService.INTRADAY_KINDS, ADR 0027 결정 3·ADR 0031 최대 3, 재시도 없음)도 같은 결정
         // 주기의 호출입니다. 끈 판에는 그 행이 없습니다. 종류를 하나씩 적지 않습니다(순번이 늘면 소상한이 적게 세지 않게).
         List<String> kinds = new ArrayList<>(List.of(RuleBookService.SCHEDULED, RuleBookService.INITIAL, RuleBookService.CHECKPOINT));
         kinds.addAll(RuleBookService.INTRADAY_KINDS);

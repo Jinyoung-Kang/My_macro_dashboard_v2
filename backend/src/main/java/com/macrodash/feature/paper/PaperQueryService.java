@@ -516,7 +516,7 @@ public class PaperQueryService {
     }
 
     /**
-     * 자유 시점 판의 장중 판단 묶음(ADR 0027 결정 3·ADR 0031 초안) — {@code {session, maxPerSession, minPerSession(보장 — 0이면 꺼짐), events(사건 당김
+     * 자유 시점 판의 장중 판단 묶음(ADR 0027 결정 3·ADR 0031) — {@code {session, maxPerSession, minPerSession(보장 — 0이면 꺼짐), events(사건 당김
      * 스위치), books:[{book, freeTiming, plans:[{slot, at(그 시장 현지 시각 'HH:MM'), feed, watch, question, manual, status, reason, decisionId,
      * lagSeconds, calledAtKst, origin(RESERVED·NEXT·MANUAL·GUARANTEE·EVENT), trigger(사건 — 없으면 null)}]}]}}. {@code session}은 지금 진행 중이거나 다음인
      * 세션, 계좌는 그 시장의 Claude 계좌 가운데 스위치가 켜져 있거나 그 세션의 계획 행이 있는 것만입니다. 그런 계좌가 없으면 null(칸을 넣지 않음 —

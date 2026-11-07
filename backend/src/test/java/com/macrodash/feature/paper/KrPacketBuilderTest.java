@@ -1049,7 +1049,7 @@ class KrPacketBuilderTest {
         assertThat(two.get(PacketBuilder.BASIS).get("book").asString()).isEqualTo(PaperBooks.KR_CLAUDE2);
         assertThat(two.get(PacketBuilder.HARD_RULES).get("lines").toString()).doesNotContain("AT_1000");
 
-        // 보장·사건(ADR 0031 초안 결정 4·7) — 켜면 1_basis.intraday에 그 칸(보장 시각은 개장 + 150분 = 11:30 KST, 사건 지수 069500). 사건은 한국 장중 스탑
+        // 보장·사건(ADR 0031 결정 4·7) — 켜면 1_basis.intraday에 그 칸(보장 시각은 개장 + 150분 = 11:30 KST, 사건 지수 069500). 사건은 한국 장중 스탑
         // 감시가 SHADOW·ON일 때만. 끈 판 패킷은 그대로.
         ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
         kr.put("intradayMinPerSession", 1).put("intradayEvents", true);

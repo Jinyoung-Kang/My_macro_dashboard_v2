@@ -256,7 +256,7 @@ def test_계획_전부는_끈_판_장중_확인_행과_켠_판_장중_판단_행
     _plan(store, "claude", SESSION, 2, time(13, 30), feed="HOURLY")          # HOURLY는 감시 자료가 필요 없음
     _plan(store, "claude2", SESSION, 1, time(10, 0), status="SUPERSEDED")    # 닫힌 예약
     _plan(store, "claude2", SESSION, 2, time(14, 5), watch=("AMD", "NVDA"))
-    _plan(store, "claude2", SESSION, 3, time(15, 10), watch=("TSLA",))         # 순번 3(V27 — ADR 0031 초안, 순번을 거르지 않음)
+    _plan(store, "claude2", SESSION, 3, time(15, 10), watch=("TSLA",))         # 순번 3(V27 — ADR 0031, 순번을 거르지 않음)
     _plan(store, "kr_claude", SESSION, 1, time(9, 30), watch=("005930",))    # 다른 시장
     _plan(store, "claude", SESSION + timedelta(days=1), 1, time(9, 40))      # 다른 날
     _hold(store, "claude", "HELD1")

@@ -46,7 +46,7 @@ import java.util.function.Supplier;
  *       관측치·감시 저장본은 {@link StoreReader#quietly}로만 읽습니다(수집을 깨우지 않음). 달력이 모르는 날이면 그 계산을 하지 않습니다(빈 값·거짓).</li>
  *   <li><b>시가 목표</b>({@link #openTargets}): 책의 보유 + 그 세션 시가에 체결될 모든 대기 주문(출처를 거르지 않음 — Claude·규칙·스탑·출발)을 마지막
  *       가격으로 {@link ExpectedState#simulate}한 비중. 그 주문들은 시가 맞추기가 흡수합니다.</li>
- *   <li><b>시각 맞추기</b>(ADR 0033 초안 — {@link #dailySyncAt}·{@link #targetsAt}·{@link #pendingStopSymbols}): 따라 하는 책이 개장 10분 뒤 지정
+ *   <li><b>시각 맞추기</b>(ADR 0033 — {@link #dailySyncAt}·{@link #targetsAt}·{@link #pendingStopSymbols}): 따라 하는 책이 개장 10분 뒤 지정
  *       시각으로 체결하면 실제 매매·ISA가 시가 단일가 대신 그 시각 시장가로 맞추는 시각과 그 시각까지의 목표(시각 지정 STOP은 흡수하지 않음), 매수 전에
  *       뺄 대기 STOP 종목. ISA 자동 기록의 사다리 가격은 {@link #pricesAt}·{@link #orderLadderPrice}.</li>
  *   <li><b>장중 주문</b>({@link #dueOrders}·{@link #weightAfter}): 그 세션의 시각 지정 대기 주문과, 그 주문 기준 시각까지의 모든 대기 주문(시가 포함)을

@@ -6,7 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 모의 장중 스탑 감시의 스위치(ADR 0032 초안 결정 5) — 미국 {@value #US_KEY}·한국 {@value #KR_KEY}, 값은 세 단계입니다.
+ * 모의 장중 스탑 감시의 스위치(ADR 0032 결정 5) — 미국 {@value #US_KEY}·한국 {@value #KR_KEY}, 값은 세 단계입니다.
  *
  * <ul>
  *   <li>{@link #OFF}(기본): 감시하지 않음 — 수집기가 외부를 부르지 않고 백엔드도 판정하지 않습니다(기존 시간별·밤 스탑만).</li>

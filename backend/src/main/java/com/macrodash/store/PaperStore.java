@@ -347,7 +347,7 @@ public class PaperStore {
      * @param intradayDecisionId    응답 결정(부르기 전·놓침은 null)
      * @param status                PLANNED · DONE · EXPIRED · SKIPPED · SUPERSEDED
      * @param lagSeconds            그 판단이 읽은 감시 저장본의 지연(모르면 null — 0으로 채우지 않음)
-     * @param origin                그 행을 누가 만들었나(V27 — ADR 0031 초안): {@value #ORIGIN_RESERVED}(결정의 예약)·{@value #ORIGIN_NEXT}(장중 판단의
+     * @param origin                그 행을 누가 만들었나(V27 — ADR 0031): {@value #ORIGIN_RESERVED}(결정의 예약)·{@value #ORIGIN_NEXT}(장중 판단의
      *                              다음 예약)·{@value #ORIGIN_MANUAL}(운영자)·{@value #ORIGIN_GUARANTEE}(코드의 보장 1회)·{@value #ORIGIN_EVENT}(사건)
      * @param trigger               사건이 당기거나 더한 판단의 사건 목록·원래 시각(없으면 null)
      */

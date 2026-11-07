@@ -58,10 +58,10 @@ import java.util.concurrent.locks.ReentrantLock;
  *   <li><b>응답</b>: KEEP·REPLACE는 장중 확인과 같습니다(예상 상태로 검증, 기준 시각이 남은 대기 주문만 대신함). 주문 시점은
  *       {@link FreeTiming#INTRADAY_TIMINGS}(장중 시장가·그날 남은 지정 시각·그날 종가). 응답의 {@code nextCheckpoint}는 다음 순번의 계획 행을 넣거나
  *       바꿉니다({@link IntradayPlanner#next} — 순번을 다 썼거나 규칙에 맞지 않으면 버리고 사유를 남김, 계좌가 운용 중이 아니면 쓰지 않음).</li>
-     <li><b>보장</b>(ADR 0031 초안 결정 4 — 설정 {@value IntradayPolicy#US_MIN} ≥ 1일 때만, 기본 0): 주기마다 먼저 {@link IntradayScheduler#guarantee}가
+     <li><b>보장</b>(ADR 0031 결정 4 — 설정 {@value IntradayPolicy#US_MIN} ≥ 1일 때만, 기본 0): 주기마다 먼저 {@link IntradayScheduler#guarantee}가
  *       세션 중간(개장 + 180분, 보통 날 12:30 ET)까지 남은 예약·부른 판단이 없는 계좌에 보장 행(출처 GUARANTEE, 시간별 관측치)을 넣고, 그 행은 예약 행처럼
  *       정기 문턱으로 부릅니다. 넣은 행은 작업 기록의 바뀐 행에 남습니다.</li>
- *   <li><b>사건</b>(ADR 0031 초안 결정 7 — 설정 {@value IntradayPolicy#US_EVENTS}가 켜져 있고 장중 스탑 감시({@code stopWatch.mode})가 SHADOW·ON일 때만,
+ *   <li><b>사건</b>(ADR 0031 결정 7 — 설정 {@value IntradayPolicy#US_EVENTS}가 켜져 있고 장중 스탑 감시({@code stopWatch.mode})가 SHADOW·ON일 때만,
  *       기본 꺼짐): 그다음 {@link IntradayScheduler#events}가 새 감시 저장본({@code paper.stopwatch.us})의 사건(보유 ±4%·SPY ±1.5%·스탑 2% 안)으로
  *       가장 이른 남은 예약을 당기거나 사건 행(출처 EVENT, 감시 1분봉)을 넣습니다 — 그 행도 정기 문턱입니다.</li>
  * </ul>
@@ -175,7 +175,7 @@ public class PaperIntradayJob {
         SettingsRow row = store.settings().orElse(null);
         Map<String, String> changes = new LinkedHashMap<>();
         String error = null;
-        // 보장 1회(ADR 0031 초안 결정 4 — 설정 intradayMinPerSession ≥ 1일 때만, 기본 꺼짐): 세션 중간까지 예약이 없으면 한 행을 넣고, 아래가 그 행을
+        // 보장 1회(ADR 0031 결정 4 — 설정 intradayMinPerSession ≥ 1일 때만, 기본 꺼짐): 세션 중간까지 예약이 없으면 한 행을 넣고, 아래가 그 행을
         // 다른 예약처럼 부름(정기 문턱).
         try {
             changes.putAll(scheduler.guarantee(BOOKS, row, calendar, false, started, (code, source) -> guaranteeBlocked(code, source, row)));
@@ -183,7 +183,7 @@ public class PaperIntradayJob {
             error = "보장 판단: " + e;
             log.warn("장중 판단 보장 실패 — 다음 주기에 다시 봅니다: {}", e.toString());
         }
-        // 사건(ADR 0031 초안 결정 7 — 설정 intradayEvents·장중 스탑 감시 SHADOW·ON일 때만, 기본 꺼짐): 새 감시 저장본의 사건이 남은 예약을 당기거나 행을
+        // 사건(ADR 0031 결정 7 — 설정 intradayEvents·장중 스탑 감시 SHADOW·ON일 때만, 기본 꺼짐): 새 감시 저장본의 사건이 남은 예약을 당기거나 행을
         // 넣고, 아래가 그 행을 부름(정기 문턱).
         try {
             changes.putAll(scheduler.events(BOOKS, row, calendar, false, started, (code, source) -> guaranteeBlocked(code, source, row),
@@ -376,7 +376,7 @@ public class PaperIntradayJob {
                         + " — 지금 " + cycle + "회)");
             }
         }
-        // 장중 판단만의 effort(intradayEffort — 없으면 effort, ADR 0031 초안 결정 6). 하루 상한·예약은 결정과 같음.
+        // 장중 판단만의 effort(intradayEffort — 없으면 effort, ADR 0031 결정 6). 하루 상한·예약은 결정과 같음.
         ClaudeSettings claudeSettings = ClaudeSettings.intraday(row.body());
         LocalDate today = Kst.today(clock);
         boolean scheduled = !p.manual();
@@ -388,7 +388,7 @@ public class PaperIntradayJob {
         // 예상 상태의 T 가격 — 1분봉 저장본(장부와 같은 판정). 조용히 읽음(수집 유발 없음).
         Optional<Snapshot> bars = reader.quietly(() -> marketData.barsUs());
         Instant calledAt = clock.instant();
-        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031 초안, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
+        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
         // — 켠 판 패킷만.
         List<IntradayPlan> rows = store.intradayPlans(code, session);
         CheckpointPacket.Free free = new CheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),

@@ -334,7 +334,7 @@ class PaperIntradayJobTest {
     }
 
     @Test
-    @DisplayName("호출 이유(ADR 0031 초안): 사건이 당긴 행(출처 EVENT·사건)은 패킷 1_basis.origin·3_request.trigger(원래 시각·사건)로, 다음 순번의 남은 예약은 "
+    @DisplayName("호출 이유(ADR 0031): 사건이 당긴 행(출처 EVENT·사건)은 패킷 1_basis.origin·3_request.trigger(원래 시각·사건)로, 다음 순번의 남은 예약은 "
             + "nextCheckpoint.replaces로 실림 — 결정 응답 checkpoint 칸에도 출처·사건이 남음")
     void packetCarriesTheCallReason() {
         store.intradayPlans.clear();
@@ -443,7 +443,7 @@ class PaperIntradayJobTest {
     }
 
     @Test
-    @DisplayName("effort(ADR 0031 초안 결정 6): 장중 판단은 intradayEffort(medium)로 부르고 결정 행의 사용 기록도 medium — 키가 없으면 effort(high). 결정·"
+    @DisplayName("effort(ADR 0031 결정 6): 장중 판단은 intradayEffort(medium)로 부르고 결정 행의 사용 기록도 medium — 키가 없으면 effort(high). 결정·"
             + "복기가 읽는 설정(ClaudeSettings.from)은 그대로 high이고 fallbacks는 같음")
     void intradayJudgmentsUseTheIntradayEffort() {
         store.intradayPlans.clear();
@@ -471,7 +471,7 @@ class PaperIntradayJobTest {
         assertThat(ClaudeBookService.ClaudeSettings.intraday(body).effort()).isEqualTo("xhigh");
     }
 
-    // ------------------------------------------------------------------ 보장 1회(ADR 0031 초안 결정 4)
+    // ------------------------------------------------------------------ 보장 1회(ADR 0031 결정 4)
     /** 그 세션의 자유 시점 판 결정(수동, 판 표시 free — 정기 결정보다 늦게 냄) — 보장 행이 붙는 결정. */
     private long freeDecision(String code) {
         store.dbNow = T.plusSeconds(60);
@@ -532,7 +532,7 @@ class PaperIntradayJobTest {
     }
 
     @Test
-    @DisplayName("사건(intradayEvents·장중 스탑 감시 SHADOW — ADR 0031 초안 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 SPY −1.6% → 두 계좌에 "
+    @DisplayName("사건(intradayEvents·장중 스탑 감시 SHADOW — ADR 0031 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 SPY −1.6% → 두 계좌에 "
             + "사건 행(지금 + 1분·감시 1분봉·출처 EVENT)을 넣고 작업 기록에 남김 → 그 계획의 감시 저장본이 오면 정기 문턱으로 부름(패킷 1_basis.origin EVENT·"
             + "3_request.trigger, 결정 응답 checkpoint.origin EVENT·알림 꼬리 '(사건)')")
     void eventsAddAJudgment() {

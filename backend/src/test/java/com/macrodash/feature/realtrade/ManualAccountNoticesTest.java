@@ -76,7 +76,7 @@ class ManualAccountNoticesTest {
     }
 
     @Test
-    @DisplayName("시각 맞추기 지시(ADR 0033 초안) — 제목 '11/09(월) 09:10 매매 지시', 끝줄 '09:10 이후 시장가'·장중 스탑 따로 알림, 금액 없음")
+    @DisplayName("시각 맞추기 지시(ADR 0033) — 제목 '11/09(월) 09:10 매매 지시', 끝줄 '09:10 이후 시장가'·장중 스탑 따로 알림, 금액 없음")
     void timedSyncText() {
         String text = ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), LocalTime.of(9, 10),
                 List.of(instruction(1, "307950", "SELL", 3, "123457", "4.5")), Map.of("307950", "합성오토"), false);

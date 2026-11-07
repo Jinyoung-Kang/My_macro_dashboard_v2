@@ -2516,7 +2516,7 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("V27(ADR 0031 초안): 결정 종류 INTRADAY_3·계획 순번 3(넷째는 막힘), 계획 행 출처(기본 RESERVED — 운영자 MANUAL·다음 예약 NEXT·코드의 "
+    @DisplayName("V27(ADR 0031): 결정 종류 INTRADAY_3·계획 순번 3(넷째는 막힘), 계획 행 출처(기본 RESERVED — 운영자 MANUAL·다음 예약 NEXT·코드의 "
             + "GUARANTEE·EVENT, 모르는 값은 막힘)와 사건 JSON — 넣기·바꾸기는 PLANNED·SUPERSEDED 행만 출처·사건도 바꾸고 끝난 행은 그대로, 사건 붙이기는 "
             + "PLANNED 행만. 시험 뒤 INTRADAY_3 행은 책과 함께 지움(V18·V23 재실행이 막히지 않게)")
     void v27IntradayThreeAndOrigin() {

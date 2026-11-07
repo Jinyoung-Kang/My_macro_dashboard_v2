@@ -27,7 +27,7 @@ record FreeTimingSettings(boolean claude, boolean claude2, boolean krClaude, boo
     static final String KR_CLAUDE2 = "kr.claude2.freeTiming";
 
     /**
-     * 세션마다 계좌별 장중 판단 횟수(ADR 0027 결정 3, ADR 0031 초안 결정 4 — 사용자 결정 2026-11-06 최대 3회). 켠 판의 결정이 예약할 수 있는 수이고, 0이면
+     * 세션마다 계좌별 장중 판단 횟수(ADR 0027 결정 3, ADR 0031 결정 4 — 사용자 결정 2026-11-06 최대 3회). 켠 판의 결정이 예약할 수 있는 수이고, 0이면
      * 예약을 받지 않습니다.
      */
     static final String US_INTRADAY_MAX = "intradayMaxPerSession";

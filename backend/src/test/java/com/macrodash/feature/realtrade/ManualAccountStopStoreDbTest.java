@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * ISA 계좌의 장중 스탑 매도 지시 표(V28 {@code manual_stop_instructions}·{@code manual_ledger.stop_instruction_id} — ADR 0033 초안)를 실제 테스트 DB로:
+ * ISA 계좌의 장중 스탑 매도 지시 표(V28 {@code manual_stop_instructions}·{@code manual_ledger.stop_instruction_id} — ADR 0033)를 실제 테스트 DB로:
  * 모의 STOP 주문 하나에 지시 하나, 같은 날 같은 종목의 다음 시가 지시와 함께 있음, 옛 코드의 다음 시가 지시 문장({@code ON CONFLICT (account, session,
  * symbol)})이 V28 뒤에도 그대로 동작(되돌리기 호환), 장부 행은 두 지시 가운데 하나에만 묶임, 고침은 묶인 스탑 지시를 지우지 않음, 상태·알림 시각, 계좌를
  * 지우면(옛 QA 복원 순서) 함께 지워짐. 종목·금액은 모두 합성 값입니다.

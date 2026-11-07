@@ -207,7 +207,7 @@ const STOP_COLUMNS: readonly Column<IsaStopInstruction>[] = [
   { key: "note", header: "메모", cell: (row) => stopNoteLabel(row.autoNote) },
 ];
 
-/** 장중 스탑 매도 지시(최근 30 — ADR 0033 초안) — 누를 수 없는 표(자동 기록 행은 장부에서 고침). */
+/** 장중 스탑 매도 지시(최근 30 — ADR 0033) — 누를 수 없는 표(자동 기록 행은 장부에서 고침). */
 export function IsaStopInstructionsTable({ rows }: { rows: readonly IsaStopInstruction[] }) {
   return (
     <DataTable

@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 장중 판단 결정 종류(INTRADAY_&lt;순번&gt;)를 하나씩 박은 곳이 없게 지킵니다(ADR 0031 초안 — 세션당 최대 3회, 그 전 2회). 순번이 늘 때
+ * 장중 판단 결정 종류(INTRADAY_&lt;순번&gt;)를 하나씩 박은 곳이 없게 지킵니다(ADR 0031 — 세션당 최대 3회, 그 전 2회). 순번이 늘 때
  * {@code INTRADAY_1·INTRADAY_2}만 적힌 목록(계좌2 소상한·실행 기록의 장중 교체 주문·알림 이름)은 셋째를 조용히 빠뜨립니다 — 소상한이 적게 세면 계좌2가
  * 상한보다 많이 부릅니다. 종류는 {@link RuleBookService#INTRADAY_KINDS}·{@link RuleBookService#intraday}·{@link RuleBookService#intradayKind}로만 셉니다.
  * 화면 쪽 같은 시험은 frontend/src/lib/__tests__/intradayKinds.test.ts입니다.

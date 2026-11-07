@@ -52,7 +52,7 @@ export function targetClock(targetAt: string | null | undefined): string | null 
 /**
  * 지시 칸의 매매 안내(텔레그램 글과 같은 뜻 — 명세 §4). 동시호가 구간은 그 세션 개장 시각(instructions.open)의 30분 전부터 개장까지
  * — 장 시간 변경일(수능일 10:00 개장 등)에도 맞게. 개장 시각을 모르면 보통 날(08:30~09:00). 개장 10분 뒤 시각 맞추기 지시
- * (instructions.targetAt — ADR 0033 초안)면 'HH:MM 이후 시장가' 안내입니다.
+ * (instructions.targetAt — ADR 0033)면 'HH:MM 이후 시장가' 안내입니다.
  */
 export function tradeGuide(open: string | null | undefined, targetAt?: string | null): string {
   const at = openClock(targetAt);

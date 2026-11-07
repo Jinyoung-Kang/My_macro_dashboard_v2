@@ -2205,7 +2205,7 @@ export interface PaperIntradayPlan {
   decisionId?: number | null;
   lagSeconds?: number | null;
   calledAtKst?: string | null;
-  /** 누가 만든 행인가(ADR 0031 초안) — RESERVED(결정의 예약) · NEXT(장중 판단의 다음 예약) · MANUAL(운영자) · GUARANTEE(코드의 보장) · EVENT(사건). */
+  /** 누가 만든 행인가(ADR 0031) — RESERVED(결정의 예약) · NEXT(장중 판단의 다음 예약) · MANUAL(운영자) · GUARANTEE(코드의 보장) · EVENT(사건). */
   origin?: string | null;
   /** 사건이 당기거나 더한 판단의 사건 목록·원래 시각(없으면 null). */
   trigger?: PaperIntradayTrigger | null;

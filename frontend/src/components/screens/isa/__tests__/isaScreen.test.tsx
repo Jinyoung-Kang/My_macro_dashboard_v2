@@ -598,7 +598,7 @@ describe("리뷰 결함 — 개장 시각(ISA-R6)", () => {
   });
 });
 
-describe("개장 10분 뒤 시각 맞추기와 장중 스탑 지시(ADR 0033 초안)", () => {
+describe("개장 10분 뒤 시각 맞추기와 장중 스탑 지시(ADR 0033)", () => {
   it("지시에 targetAt이 있으면 '다음 매매 지시'·'09:10 이후 시장가' 안내, 체결 고치기 기본 시각은 09:10", async () => {
     const at = "2026-11-10T00:10:00Z";
     reads[ISA_PATH] = () => Promise.resolve(started({

@@ -588,7 +588,7 @@ const PURPOSE: Readonly<Record<string, string>> = {
 
 /**
  * 용도·창 종류(시가 맞추기·개장 10분 뒤 맞추기·맞추기 시장가·장중 따라 하기). 모르는 값은 원문. SYNC_FOLLOWUP은 시가 뒤 마무리와 개장 10분 뒤
- * 맞추기 날의 시장가 주문이 함께 쓰는 용도라 '맞추기(시장가)'로 적습니다(ADR 0033 초안).
+ * 맞추기 날의 시장가 주문이 함께 쓰는 용도라 '맞추기(시장가)'로 적습니다(ADR 0033).
  */
 export function purposeLabel(purpose: string | null | undefined): string {
   return labelOf(PURPOSE, purpose);
@@ -699,7 +699,7 @@ export function windowText(window: RealTradeWindow | string | null | undefined):
 }
 
 /**
- * 켜기 창 예상 목록의 다음 맞추기 방식("개장 10분 뒤 맞추기 09:10 시장가"·"시가 맞추기(시가 단일가)") — 예상 응답의 `syncAt`으로(ADR 0033 초안).
+ * 켜기 창 예상 목록의 다음 맞추기 방식("개장 10분 뒤 맞추기 09:10 시장가"·"시가 맞추기(시가 단일가)") — 예상 응답의 `syncAt`으로(ADR 0033).
  * 시각을 읽지 못하면 시각 없이.
  */
 export function previewTimingText(syncAt: string | null | undefined): string {
@@ -734,7 +734,7 @@ export function eventKindLabel(kind: string | null | undefined): string {
 
 /** 창 요약 건수(명세 §7.3 — 접수·체결·놓침·건너뜀·막힘·미룸) — detail 키와 이름표. */
 const EVENT_COUNTS: readonly [string, string][] = [
-  // 스탑 매도(STOP_SELL — ADR 0033 초안) 보냄·막힘·놓침
+  // 스탑 매도(STOP_SELL — ADR 0033) 보냄·막힘·놓침
   ["sent", "보냄"],
   ["accepted", "접수"],
   ["filled", "체결"],

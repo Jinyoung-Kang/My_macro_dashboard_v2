@@ -27,7 +27,7 @@ import java.util.function.Supplier;
 
 /**
  * 연결되지 않은 다른 증권사 계좌(ISA 계좌 — ADR 0029, 명세 docs/specs/2026-11-06-isa-manual-account.md §6)의 표({@code manual_*}, V25 — 장중 스탑 매도
- * 지시 {@code manual_stop_instructions}와 장부의 {@code stop_instruction_id}는 V28, ADR 0033 초안) — 백엔드가 쓰는
+ * 지시 {@code manual_stop_instructions}와 장부의 {@code stop_instruction_id}는 V28, ADR 0033) — 백엔드가 쓰는
  * 표(ADR 0008). 이 표들의 JDBC는 <b>전부 여기</b>에 있고, 부르는 곳은 {@code feature.realtrade}의 ISA 계좌 클래스뿐입니다(ArchitectureRulesTest가 막음).
  *
  * <p><b>잠금</b>: {@link #lockAccount}가 계좌 행을 {@code SELECT … FOR UPDATE}로 잡은 트랜잭션 안에서 받은 일을 돌립니다 — 안에서 부르는 이 저장소의

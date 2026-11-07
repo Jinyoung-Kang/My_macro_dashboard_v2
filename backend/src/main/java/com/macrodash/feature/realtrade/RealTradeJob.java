@@ -78,7 +78,7 @@ import java.util.function.BiFunction;
  *   <li>켜짐(LIVE)이 아니면 끝. 따라 하는 책이 운용 중이 아니거나 세대가 다르면 이상 멈춤. 옛 책·세대의 미체결은 취소.</li>
  *   <li>수집기 스위치(꺼졌다고 분명히 답하면 이상 멈춤, 읽지 못하면 그 주기만 건너뜀)·토큰 경합·같은 오류 반복 확인 → 오늘 토스 장 운영 정보·쉬는 날
  *       판정(그날 첫 창 3분 전에 한 번) → 창 3분 전 토큰 예열. 따라 하는 책이 그 세션에 개장 10분 뒤 지정 시각으로 체결하면
- *       ({@link PaperMirrorService#dailySyncAt}) 시가 단일가 맞추기 창 없이 그 시각부터 3분의 시각 맞추기 창(시장가 DAY 묶음 — ADR 0033 초안 결정 1)을
+ *       ({@link PaperMirrorService#dailySyncAt}) 시가 단일가 맞추기 창 없이 그 시각부터 3분의 시각 맞추기 창(시장가 DAY 묶음 — ADR 0033 결정 1)을
  *       둡니다. 그 창의 목표는 그 시각까지의 모의 주문을 반영하고({@link PaperMirrorService#targetsAt}), 기준 시각이 맞추기 시각 이하인 주문은 장중 따라
  *       하기가 따로 보내지 않습니다(묶음 몫).</li>
  *   <li>창마다 새 사전 조회(매도 가능 수량은 팔 종목만 — 시가 맞추기류는 두 단계) + 오늘 주문 목록(수집기 하루 한도의 남은 몫) → 손실 한도(넘으면 매수만
@@ -371,7 +371,7 @@ class RealTradeJob {
             if (d.skipReason != null) {
                 recordSkip(d);
                 if (RealTradePlanner.SKIP_LEDGER.equals(d.skipReason) && d.windows != null) {
-                    // 장부 밀림으로 쉬는 날에도 스탑 매도만(ADR 0033 초안 결정 2) — 매도는 실제 보유까지만이라 위험을 줄이는 쪽이고, 1분봉 수집 실패가
+                    // 장부 밀림으로 쉬는 날에도 스탑 매도만(ADR 0033 결정 2) — 매도는 실제 보유까지만이라 위험을 줄이는 쪽이고, 1분봉 수집 실패가
                     // 손절을 하루 미루지 않게. 묶음·장중 따라 하기는 하지 않습니다. 휴장·장 시간 불일치·시계 어긋남·달력 날짜 불일치는 아무것도 하지 않음.
                     Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers());
                     List<DueOrder> stops = paper.dueOrders(cfg.sourceBook(), today, now.plus(WARMUP_LEAD)).stream().filter(DueOrder::stop)
@@ -537,7 +537,7 @@ class RealTradeJob {
     }
 
     /**
-     * 따라 하는 책의 그날 일일 맞추기 시각(ADR 0033 초안 결정 1 — {@link PaperMirrorService#dailySyncAt}). 있으면 그날은 시가 단일가 맞추기 대신 그 시각
+     * 따라 하는 책의 그날 일일 맞추기 시각(ADR 0033 결정 1 — {@link PaperMirrorService#dailySyncAt}). 있으면 그날은 시가 단일가 맞추기 대신 그 시각
      * 시장가 맞추기({@value RealTradePlanner#WINDOW_SYNC_AT}), 없으면(책이 없거나 시가 체결 책·전환일) 예전 시가 맞추기입니다.
      */
     private Instant syncAt(String book, LocalDate date) {
@@ -635,7 +635,7 @@ class RealTradeJob {
      * @param send false면 묶음만 만들고 보내지 않음(계획한 주문은 놓침 — 창 끝이 가까워 시작한 시가 맞추기, 시가 뒤 마무리가 메움)
      */
     private void createBatchAndSend(Cycle c, String purpose, String timeInForce, String window, boolean send) {
-        // 시각 맞추기 날(ADR 0033 초안 결정 1)은 그 시각까지의 모의 주문을 반영한 목표(시각 지정 STOP은 흡수하지 않음 — 스탑 매도 경로가 따로 팖)
+        // 시각 맞추기 날(ADR 0033 결정 1)은 그 시각까지의 모의 주문을 반영한 목표(시각 지정 STOP은 흡수하지 않음 — 스탑 매도 경로가 따로 팖)
         Instant syncAt = c.day.windows.syncAt();
         Optional<OpenTargets> found = syncAt != null ? paper.targetsAt(c.cfg.sourceBook(), c.today, syncAt)
                 : paper.openTargets(c.cfg.sourceBook(), c.today);
@@ -1017,7 +1017,7 @@ class RealTradeJob {
                 continue;
             }
             if (o.buy() && pendingStop(c, o.symbol())) {
-                c.day.skip(window, RealTradePlanner.SKIP_PENDING_STOP, o.symbol());   // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 초안 결정 4)
+                c.day.skip(window, RealTradePlanner.SKIP_PENDING_STOP, o.symbol());   // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 결정 4)
                 continue;
             }
             Sent sent = executor.send(new Send(c.today, purpose, batch.id(), null, null, o.symbol(), o.side(), quantity, timeInForce,
@@ -1042,7 +1042,7 @@ class RealTradeJob {
      * 시점은 건너뜀·알림. 창이 지나도록 행이 없으면 놓침. 보낼 것이 없거나(이미 맞음) 구조적으로 건너뛴 뿌리는 그날 다시 보지 않고, 미룸·이 기능 주문 진행
      * 중은 다음 주기에 다시 봅니다.
      *
-     * <p><b>스탑 매도</b>({@link DueOrder#stop} — ADR 0033 초안 결정 2·3): 그 주문 뒤 비중을 셈하지 않고(가격을 몰라도 손절이 사라지지 않게) 목표 0으로
+     * <p><b>스탑 매도</b>({@link DueOrder#stop} — ADR 0033 결정 2·3): 그 주문 뒤 비중을 셈하지 않고(가격을 몰라도 손절이 사라지지 않게) 목표 0으로
      * 정수 보유 전량을 그때 다시 읽은 매도 가능 수량·1건 상한까지 팝니다. 창은 {@link RealTradePlanner#stopWindow}(개장 10분 전에는 팔지 않음), 묶음이
      * 흡수했다고 적혀 있어도 따로 봅니다(묶음이 사전 조회 실패 등으로 만들어지지 못해도 손절이 나가게 — 두 길 모두 목표 0이라 겹쳐도 더 팔 수 없음). 묶음의
      * 회전율 멈춤은 스탑 몫(대기 STOP 종목의 매도와 그 대금의 현금성 매수)을 세지 않으므로 스탑이 멈춤을 걸어 이 경로를 세우지 않습니다(QA-302). 다른
@@ -1052,7 +1052,7 @@ class RealTradeJob {
      * 포함 — 창 요약은 그것을 미룸으로만 셈), 막힘은 토스 거절·안 보냄과, 팔 보유가 있는데 구조적 건너뜀(매도 가능 수량 0 등)으로 그날 닫은 뿌리입니다
      * (놓침과 구조적 막힘은 뿌리마다 한 번 — QA-303).
      *
-     * <p>매수를 보내기 직전에는 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지 않습니다(ADR 0033 초안 결정 4).
+     * <p>매수를 보내기 직전에는 따라 하는 책의 오늘 대기 STOP 종목을 다시 읽어 그 종목 매수를 보내지 않습니다(ADR 0033 결정 4).
      */
     private void runMirror(Cycle c, List<DueOrder> upcoming) {
         StopTally tally = new StopTally();
@@ -1090,7 +1090,7 @@ class RealTradeJob {
                 continue;
             }
             if (syncAt != null && !stop && o.target() != null && !o.target().isAfter(syncAt)) {
-                // 시각 맞추기 날의 묶음 몫(ADR 0033 초안 결정 1) — 기준 시각이 맞추기 시각 이하인 주문은 묶음이 흡수했든 아니든 따라 하지 않음(묶음 생성이
+                // 시각 맞추기 날의 묶음 몫(ADR 0033 결정 1) — 기준 시각이 맞추기 시각 이하인 주문은 묶음이 흡수했든 아니든 따라 하지 않음(묶음 생성이
                 // 늦어진 주기에 하나씩 따라 하고 다음 주기 묶음이 또 맞추는 이중 경로를 막음). 묶음을 놓치면 함께 놓침 — 다음 날 맞추기가 메움. 스탑은 예외.
                 continue;
             }
@@ -1189,7 +1189,7 @@ class RealTradeJob {
                 continue;
             }
             if (planned.buy() && pendingStop(c, planned.symbol())) {
-                // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 초안 결정 4) — 그날 그 종목은 다시 사지 않음
+                // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 결정 4) — 그날 그 종목은 다시 사지 않음
                 recordSkips(c, x.window(), List.of(new Skip(planned.symbol(), null, RealTradePlanner.SKIP_PENDING_STOP)), key);
                 c.day.handledRoots.add(root);
                 continue;
@@ -1245,7 +1245,7 @@ class RealTradeJob {
                 && plan.skipped().stream().anyMatch(s -> !RealTradePlanner.SKIP_FRACTION.equals(s.reason()));
     }
 
-    /** 따라 하는 책의 오늘 대기 STOP 종목인가 — 보내기 직전마다 다시 읽음(ADR 0033 초안 결정 4). */
+    /** 따라 하는 책의 오늘 대기 STOP 종목인가 — 보내기 직전마다 다시 읽음(ADR 0033 결정 4). */
     private boolean pendingStop(Cycle c, String symbol) {
         return symbol != null && paper.pendingStopSymbols(c.cfg.sourceBook(), c.today).contains(symbol);
     }

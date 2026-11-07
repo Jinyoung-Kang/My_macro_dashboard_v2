@@ -663,7 +663,7 @@ class RealTradeJobDbTest {
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("BUY " + A + " DAY 15", "BUY " + CASH_LIKE + " DAY 8");
     }
 
-    // ------------------------------------------------------------------ 시각 맞추기(ADR 0033 초안 결정 1)
+    // ------------------------------------------------------------------ 시각 맞추기(ADR 0033 결정 1)
     private static final Instant SYNC_AT = kst("2026-11-06T09:10");
 
     private void timedTargets(Map<String, Double> weights, List<Long> absorbed, List<Long> stops) {
@@ -834,7 +834,7 @@ class RealTradeJobDbTest {
                 });
     }
 
-    // ------------------------------------------------------------------ 장중 스탑 매도(ADR 0033 초안 결정 2·3·4)
+    // ------------------------------------------------------------------ 장중 스탑 매도(ADR 0033 결정 2·3·4)
     private static DueOrder stopDue(long id, String ticker, String timing, Instant mirrorAt) {
         Instant target = "NEXT_CLOSE".equals(timing) ? kst("2026-11-06T15:30") : mirrorAt;
         return new DueOrder(id, id, ticker, "SELL", timing, "STOP", target, mirrorAt, true, null, null, null);

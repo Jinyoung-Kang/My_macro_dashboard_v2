@@ -397,7 +397,7 @@ describe("표기", () => {
     expect(skippedText({ symbol: "000660", reason: "pending-stop" })).toBe("000660 — 따라 하는 책의 오늘 대기 스탑 종목 — 매수 안 함(pending-stop)");
   });
 
-  it("개장 10분 뒤 맞추기·장중 스탑 매도(ADR 0033 초안) — 이름표·건수 줄·예상 목록의 맞추기 방식", () => {
+  it("개장 10분 뒤 맞추기·장중 스탑 매도(ADR 0033) — 이름표·건수 줄·예상 목록의 맞추기 방식", () => {
     expect(eventKindLabel("STOP_SELL")).toBe("스탑 매도");
     expect(eventDetailText({ sent: 2, blocked: 1, missed: 0, date: "2026-11-10", symbol: "005930" }, "STOP_SELL")).toBe("보냄 2 · 놓침 0 · 막힘 1");
     expect(previewTimingText("2026-11-10T00:10:00Z")).toBe("개장 10분 뒤 맞추기 09:10 시장가");

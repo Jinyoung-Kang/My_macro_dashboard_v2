@@ -22,7 +22,7 @@ const FEED: Record<string, string> = {
   HOURLY: "시간별 관측치",
 };
 
-/** 계획 행을 누가 만들었나(ADR 0031 초안) — 결정의 예약(RESERVED)은 따로 적지 않고, 운영자 행(MANUAL)은 '수동' 표시로 보입니다. */
+/** 계획 행을 누가 만들었나(ADR 0031) — 결정의 예약(RESERVED)은 따로 적지 않고, 운영자 행(MANUAL)은 '수동' 표시로 보입니다. */
 const ORIGIN: Record<string, string | null> = {
   RESERVED: null,
   MANUAL: null,
@@ -31,7 +31,7 @@ const ORIGIN: Record<string, string | null> = {
   EVENT: "사건",
 };
 
-/** 사건 종류(ADR 0031 초안 — 보유 종목 ±4%·지수 ±1.5%·트레일링 스탑 2% 안). 모르는 종류는 받은 글자 그대로. */
+/** 사건 종류(ADR 0031 — 보유 종목 ±4%·지수 ±1.5%·트레일링 스탑 2% 안). 모르는 종류는 받은 글자 그대로. */
 const EVENT_TYPE: Record<string, string> = {
   HELD_MOVE: "보유 종목 변동",
   INDEX_MOVE: "지수 변동",

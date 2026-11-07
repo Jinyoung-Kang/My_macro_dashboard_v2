@@ -227,7 +227,7 @@ class DecisionTimingsLockTest {
                 .contains("13_execution.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간");
         assertThat(ClaudePrompts.KR_FT_INTRADAY_SECTION).contains("09:10~14:50 KST").contains(IntradayRequest.MIN_GAP.toMinutes() + "분 이상")
                 .contains("1_basis.intraday.maxPerSession").contains("nextCheckpoint").doesNotContain("실시간").doesNotContain("feed");
-        // 보장·사건 줄(ADR 0031 초안 결정 4·7) — 보통 날 보장 시각 = 개장 + 보장 오프셋(미국 12:30 ET·한국 11:30 KST), 지수 종목 = 사건 상수, 그 까닭은
+        // 보장·사건 줄(ADR 0031 결정 4·7) — 보통 날 보장 시각 = 개장 + 보장 오프셋(미국 12:30 ET·한국 11:30 KST), 지수 종목 = 사건 상수, 그 까닭은
         // 장중 판단 패킷의 출처·사건 칸.
         java.time.LocalDate krDay = java.time.LocalDate.of(2026, 12, 2);
         com.macrodash.analytics.TradingCalendar krCalendar = new com.macrodash.analytics.KrxCalendar(

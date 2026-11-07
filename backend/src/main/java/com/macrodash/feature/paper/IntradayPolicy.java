@@ -3,7 +3,7 @@ package com.macrodash.feature.paper;
 import tools.jackson.databind.JsonNode;
 
 /**
- * 자유 시점 판 장중 판단의 코드 규칙 스위치(ADR 0031 초안 결정 4·6·7) — 세션당 최소 횟수(보장, {@value #US_MIN}·{@value #KR_MIN}),
+ * 자유 시점 판 장중 판단의 코드 규칙 스위치(ADR 0031 결정 4·6·7) — 세션당 최소 횟수(보장, {@value #US_MIN}·{@value #KR_MIN}),
  * 사건이 판단을 당기는가({@value #US_EVENTS}·{@value #KR_EVENTS}), 장중 판단만의 effort({@value #EFFORT}, 두 책 공통). 최대 횟수는
  * {@link FreeTimingSettings}가 읽습니다.
  *

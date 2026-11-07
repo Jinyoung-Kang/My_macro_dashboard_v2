@@ -236,7 +236,7 @@ final class PaperNotifications {
     }
 
     /**
-     * 코드가 만든 장중 판단의 꼬리(ADR 0031 초안 — 응답 {@code checkpoint.origin}) — 보장이면 '(코드 보장)', 사건이면 '(사건)', 그 밖(예약·다음 예약·
+     * 코드가 만든 장중 판단의 꼬리(ADR 0031 — 응답 {@code checkpoint.origin}) — 보장이면 '(코드 보장)', 사건이면 '(사건)', 그 밖(예약·다음 예약·
      * 운영자·장중 판단이 아닌 결정)은 없음.
      */
     static String originTail(JsonNode response) {

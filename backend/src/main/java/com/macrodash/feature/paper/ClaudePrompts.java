@@ -182,7 +182,7 @@ final class ClaudePrompts {
      * 자유 시점 판의 장중 판단 절(ADR 0027 결정 3 — 출력 절 앞). 결정의 {@code checkpoints} 예약과 장중 판단 응답의 규칙을 함께 적습니다 — 장중 판단
      * 호출도 같은 시스템 프롬프트를 씁니다. 날짜·설정값이 없는 상수입니다(세션당 횟수와 그 세션의 받는 범위는 패킷 13_execution.intraday에).
      * 범위·간격은 {@link IntradayRequest}, 장중 판단이 받는 시점은 {@link FreeTiming#INTRADAY_TIMINGS}와 같습니다({@code DecisionTimingsLockTest}).
-     * 마지막 줄은 코드 규칙(보장·사건 — ADR 0031 초안 결정 4·7)이고, 켜졌는지·그 세션의 보장 시각은 패킷 13_execution.intraday.guarantee·events에
+     * 마지막 줄은 코드 규칙(보장·사건 — ADR 0031 결정 4·7)이고, 켜졌는지·그 세션의 보장 시각은 패킷 13_execution.intraday.guarantee·events에
      * 있습니다(보통 날 보장 시각은 {@link IntradayScheduler#GUARANTEE_AFTER_OPEN_US}와 같음). '실시간'이라는 말은 쓰지 않습니다(끈 판의 장중 확인 절과 같은 까닭).
      */
     static final String US_FT_INTRADAY_SECTION = """
