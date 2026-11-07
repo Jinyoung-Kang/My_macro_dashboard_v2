@@ -532,7 +532,7 @@ export interface RealTradePnl {
 }
 
 /**
- * '운용 평가액' 타일의 설명 줄 — 토스에서 읽은 시각(초까지)과, 그날 정규장 마감 뒤에 읽은 값이면 '그날 마감 뒤 값', 아니고 읽은 날이 오늘(KST — 서버 시각,
+ * '운용 평가액' 타일의 설명 줄 — 토스에서 읽은 시각(초까지)과, 그날 정규장 마감 뒤(휴장일 포함)에 읽은 값이면 '마지막 거래일 마감 뒤 값', 아니고 읽은 날이 오늘(KST — 서버 시각,
  * 없으면 지금)보다 이전이면 '이전 값'(2026-11-08 — 휴장일·토스 점검 중에도 마지막 값이 보이게 백엔드가 저장). 읽은 적이 없으면 그렇게 적습니다.
  */
 export function preflightNote(
@@ -545,7 +545,7 @@ export function preflightNote(
   const read = formatKstSeconds(preflight.fetchedAt);
   const base = `토스에서 읽은 시각 ${read}`;
   if (preflight.afterClose === true) {
-    return `${base} · 그날 마감 뒤 값`;
+    return `${base} · 마지막 거래일 마감 뒤 값`;
   }
   const readDay = /^\d{4}-\d{2}-\d{2}/.exec(read)?.[0];
   const today = /^\d{4}-\d{2}-\d{2}/.exec(formatKstSeconds(serverTime || new Date()))?.[0];
