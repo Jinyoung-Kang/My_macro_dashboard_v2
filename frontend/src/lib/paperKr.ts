@@ -736,13 +736,22 @@ export function krPricesFinalText(value: boolean | null | undefined): { label: s
   return { label: EMPTY, className: "text-muted" };
 }
 
-/** 결정 탭 계좌 소개(한국) — 결정 창은 설정 값이라 숫자를 박지 않습니다. */
-export function krDecisionBookNote(kind: string | null | undefined): string {
+/**
+ * 결정 탭 계좌 소개(한국) — 결정 창은 설정 값이라 숫자를 박지 않습니다. 체결 시점은 계좌마다의 자유 시점 판 스위치(kr.claude.freeTiming·
+ * kr.claude2.freeTiming)를 따르므로 계좌 코드로 그 키와 끈 판의 시점을 고릅니다(QA-323 — 예전에는 kind만 받아 두 Claude 계좌 모두 '다음 KR 거래일
+ * 시가'로 적었음).
+ */
+export function krDecisionBookNote(kind: string | null | undefined, code?: string | null): string {
   if (kind === "CLAUDE") {
+    const second = code === "kr_claude2";
+    const key = second ? "kr.claude2.freeTiming" : "kr.claude.freeTiming";
+    const off = second ? "끔이면 주문마다 고른 시점(시가·매시·종가)" : "끔이면 다음 KR 거래일 시가";
     return "한국 Claude 계좌는 KR 거래일마다 결정 창(설정 kr.decisionTimeKst~kr.decisionDeadlineKst) 안에서 자료 게이트 ①~⑥이 모두 통과하면 한국 "
       + "패킷을 Claude에 보내 주문과 목표 주식 노출을 받습니다. 검증기(하드 규칙 — 체결할 수 없는 종목 매수 UNFILLABLE·1주 미만 증가분 "
-      + "BUY_BELOW_ONE_SHARE 포함)가 통과시킨 주문만 다음 KR 거래일 시가에 체결합니다. 기한이 지나면 그 세션은 부르지 않고 '건너뜀'(기한 지남)으로 "
-      + "남깁니다. '지금 결정 실행'은 같은 창·같은 게이트 안에서만 받고, 수동 호출 문턱(상한 − 정기 몫 예약)까지입니다.";
+      + `BUY_BELOW_ONE_SHARE 포함)가 통과시킨 주문만 대기 주문이 되고, 체결 시점은 설정 ${key}(자유 시점 판)을 따릅니다 — ${off}, 켬이면 다음 KR `
+      + "거래일의 지정 시각(개장 10분 뒤 ~ 종가 단일가 앞)·종가이고 그 세션 장중 판단(설정 kr.intradayMaxPerSession)이 대기 주문을 바꿀 수 있습니다. "
+      + "기한이 지나면 그 세션은 부르지 않고 '건너뜀'(기한 지남)으로 남깁니다. '지금 결정 실행'은 같은 창·같은 게이트 안에서만 받고, 수동 호출 "
+      + "문턱(상한 − 정기 몫 예약)까지입니다.";
   }
   return "한국 규칙 계좌는 KR 거래일마다 결정 창 안에서 자료 게이트 ①~⑥이 모두 통과하면 한 번 결정합니다 — 재선정일(설정 주기)과 출발 때만 "
     + "사고, 그 밖의 날은 보유의 매도 판정(20일 누적 순매도·후보 밖)과 남는 현금만 봅니다. 기한이 지나면 그 세션은 '주문 없음'(기한 지남)이고 "

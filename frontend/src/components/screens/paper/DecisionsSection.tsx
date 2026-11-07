@@ -239,7 +239,7 @@ export function DecisionsSection({
             </Button>
           )}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind) : decisionBookNote(book?.kind, book?.code)}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
         {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
         {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
         {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}

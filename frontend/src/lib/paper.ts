@@ -381,6 +381,36 @@ const US_STOP =
   + "켬(ON)이면 정규장 5분 감시(1분봉)에서 두 번 이어 스탑가 이하일 때 그 세션 안에 팝니다(감지 + 60초 뒤 첫 분의 1분봉 — 개장 10분 뒤 "
   + "전이면 그 첫 분, 마감 5분 전부터는 그날 종가). 시간별 관측치는 그때 감시가 덮지 못한 종목(수집 실패·기업행위 갭 가드)만 봅니다.";
 
+/**
+ * 미국 장중 판단 문장(자유 시점 판을 켠 Claude 계좌 — ADR 0027 결정 3·ADR 0031 결정 4). 횟수·보장·사건은 설정 키로만 적습니다.
+ */
+const US_INTRADAY =
+  "장중 판단(세션당 최대 intradayMaxPerSession회, 개장 10분 뒤 ~ 마감 30분 전 — intradayMinPerSession이 1이면 세션 중간까지 예약이 없을 때 "
+  + "한 번 보장, intradayEvents를 켜면 보유·지수 급변 때 가장 이른 예약을 당김)은 기준 시각이 남은 대기 주문을 그대로 두거나 장중 시장가·그날 "
+  + "남은 지정 시각·그날 종가 주문으로 바꿉니다.";
+
+/** 미국 자유 시점 판의 켠 판 체결(두 Claude 계좌 공통 — 백엔드 FreeTiming·UsTimedFills). */
+const US_FREE_FILL =
+  "켬이면 주문마다 다음 세션의 지정 시각(AT_MINUTE — 개장 10분 뒤부터 마감 5분 전 앞까지의 분, 그 시각 1분봉 시가)이나 확정 종가(NEXT_CLOSE)를 "
+  + "고르는 다음 세션 하루짜리 주문이고, 시가는 없습니다";
+
+/**
+ * 미국 Claude 계좌1의 체결 문장 — 자유 시점 판 스위치 claude.freeTiming의 두 경우(QA-323 — 예전에는 체결 시점을 적지 않고 '계좌1식 = 다음 시간별
+ * 관측치'만 남아 2026-11-06에 켠 뒤 틀렸음). 지금 값은 settings의 claude.freeTiming 행이 적습니다.
+ */
+const US_CLAUDE_FILL =
+  "체결 시점은 설정 claude.freeTiming(자유 시점 판)을 따릅니다. 끔이면 다음 시간별 관측치(NEXT_OBSERVATION)나 확정 종가(NEXT_CLOSE)에 "
+  + "체결합니다. " + US_FREE_FILL + "(다음 관측치도 없음 — 켜기 전에 만든 대기 주문만 그 시점으로 체결). 켠 판에서는 장중 확인(claude.checkpoint)을 "
+  + "쓰지 않고, " + US_INTRADAY;
+
+/** 미국 장중 판단 설정 행(자유 시점 판을 켠 Claude 계좌만 읽음). intradayEffort는 두 시장 공용이고 없으면 effort입니다. */
+const US_INTRADAY_SETTINGS: AccountSettingSpec[] = [
+  { key: "intradayMaxPerSession", label: "장중 판단 최대(세션당, 켠 판)", unit: "회" },
+  { key: "intradayMinPerSession", label: "장중 판단 보장(세션당, 켠 판)", unit: "회" },
+  { key: "intradayEvents", label: "장중 판단 사건 당김(켠 판)" },
+  { key: "intradayEffort", label: "장중 판단 effort(두 시장 공용 — 없으면 effort)" },
+];
+
 /** 장중 스탑 감시 스위치(stopWatch.mode)의 지금 값 이름표. */
 const US_STOP_WATCH_LABELS = {
   OFF: "끔(OFF — 시간별 관측치 스탑만)",
@@ -478,14 +508,15 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
           + "재무·보유·최근 결정·메모·하드 규칙 — 을 Claude에 보내 주문 목록과 목표 주식 노출을 받습니다. 판단 원칙은 프레임 판(시스템 "
           + "프롬프트)이 정합니다. 설정 claude.checkpoint를 켜면 다음 세션 장중에 한 번 더 확인합니다(종류 '장중 확인' — 정한 뉴욕 시각 "
           + "claude.checkpointAtEt 뒤 그날 시간별 관측치로 같은 패킷·검증기, 통과 주문은 다음 시간별 관측치·종가에 체결되고 남은 대기 주문을 "
-          + "대신함, 마감 30분 전까지 못 부르면 그 세션은 건너뜀).",
+          + "대신함, 마감 30분 전까지 못 부르면 그 세션은 건너뜀 — 자유 시점 판을 끈 동안만). 자유 시점 판(설정 claude.freeTiming)을 켜면 켠 판 "
+          + "고정 문단·응답 스키마로 부르고, 결정이 다음 세션의 장중 판단을 예약할 수 있습니다(매수 칸).",
       },
       {
         key: "buy",
         label: "매수",
         text: "Claude가 제안한 매수 가운데 검증기(하드 규칙)를 통과한 것만 대기 주문이 됩니다 — 종목·ETF 비중 상한(현금성 제외), 최대 "
           + "종목 수(현금성 제외), 보유 합계 100% 초과(큰 비중부터 받고 넘치는 매수는 거절), 최소 주문 금액, 월 재량 주문 상한, 재진입 "
-          + "금지, 유니버스, 데이터 신선도.",
+          + "금지, 유니버스, 데이터 신선도. " + US_CLAUDE_FILL,
       },
       {
         key: "sell",
@@ -512,14 +543,16 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         key: "purpose",
         label: "비교 목적",
         text: "실험군 — 매크로·13F·재무를 함께 읽는 재량 판단이 기계적 규칙(규칙 계좌)과 시장(SPY 계좌)을 이기는지 봅니다. 체결 "
-          + "시점 실험(Claude 계좌2)의 '계좌1식' 기준(다음 시간별 관측치 체결)이기도 합니다.",
+          + "시점 실험(Claude 계좌2)의 '계좌1식' 기준(다음 시간별 관측치 체결 — 켠 판에서도 실행 감사의 반사실 기준으로 남음)이기도 합니다.",
       },
     ],
     settings: [
       { key: "model", label: "모델" },
       { key: "decisionTimeKst", label: "결정 시각(KST)" },
-      { key: "claude.checkpoint", label: "장중 확인(세션당 한 번)" },
+      { key: "claude.checkpoint", label: "장중 확인(세션당 한 번 — 끈 판)" },
       { key: "claude.checkpointAtEt", label: "장중 확인 시각(뉴욕)" },
+      { key: "claude.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      ...US_INTRADAY_SETTINGS,
       { key: "apiDailyCallCap", label: "하루 호출 상한", unit: "회" },
       { key: "maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
       { key: "maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },
@@ -556,7 +589,9 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         label: "매수",
         text: "통과 조건은 계좌1과 같은 검증기·같은 한도입니다. 주문마다 체결 시점과 그 이유(실행 메모)를 고릅니다 — 시가(다음 세션 09:30 ET "
           + "첫 1분봉 시가)·10:00~15:00 ET 매시(그 시각 1분봉 시가)·종가(확정 종가). 모든 주문은 다음 세션 하루짜리이고, 매도는 그보다 늦지 "
-          + "않은 시점의 매수에만 현금·자리를 만듭니다. 이미 지난 시각(LATE_FOR_TIMING)과 조기 폐장일 13:00 ET 뒤 시각은 거절합니다.",
+          + "않은 시점의 매수에만 현금·자리를 만듭니다. 이미 지난 시각(LATE_FOR_TIMING)과 조기 폐장일 13:00 ET 뒤 시각은 거절합니다. 이 메뉴는 "
+          + "자유 시점 판(설정 claude2.freeTiming)을 끈 동안이고, " + US_FREE_FILL + "·매시도 없습니다(켜기 전에 만든 대기 주문만 그 시점으로 "
+          + "체결). 켠 판에서는 장중 확인(claude2.checkpoints)을 쓰지 않고, " + US_INTRADAY,
       },
       {
         key: "sell",
@@ -596,7 +631,9 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "claude2.maxCallsPerCycle", label: "결정 주기 호출 상한", unit: "회" },
       { key: "claude2.barsWaitMinutes", label: "1분봉 기다림 상한", unit: "분" },
       { key: "claude2.executionRecord", label: "패킷에 자기 체결 기록" },
-      { key: "claude2.checkpoints", label: "장중 확인(세션당 최대 한 번)" },
+      { key: "claude2.checkpoints", label: "장중 확인(세션당 최대 한 번 — 끈 판)" },
+      { key: "claude2.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      ...US_INTRADAY_SETTINGS,
       { key: "claude2.riskProfile", label: "투자 성향" },
       { key: "model", label: "모델" },
       { key: "decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },

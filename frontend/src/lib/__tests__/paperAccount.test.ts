@@ -16,6 +16,7 @@ import {
   COMPOSITION_TOP_N,
   DIRECT_LABEL_MAX_SEGMENTS,
 } from "../paper";
+import { krDecisionBookNote } from "../paperKr";
 import type { PaperPosition } from "../types";
 
 function position(ticker: string, weightPct: number | null, marketValue: number | null, over: Partial<PaperPosition> = {}): PaperPosition {
@@ -112,6 +113,55 @@ describe("계좌 정의", () => {
     expect(accountProfile("claude")?.definitions.find((d) => d.key === "buy")?.text).toContain("검증기");
     expect(accountProfile("bench_spy")?.definitions.find((d) => d.key === "method")?.text).toContain("결정을 내지 않습니다");
     expect(accountProfile("bench_mix")?.definitions.find((d) => d.key === "sell")?.text).toContain("리밸런싱이 없어");
+  });
+});
+
+// QA-323: 리뷰 TXT-1 — 네 Claude 계좌의 자유 시점 판(claude.freeTiming·claude2.freeTiming·kr.claude.freeTiming·kr.claude2.freeTiming)이 2026-11-06부터
+// 켜져 있는데, 한국 계좌1 매수 칸(KR_FILL)과 결정 탭 설명(krDecisionBookNote — kind만 받아 계좌2에도 같은 글)이 '다음 KR 거래일 시가 체결·금융위 확정
+// 조정'으로, 미국 계좌1은 체결 시점 없이 '계좌1식 = 다음 시간별 관측치'로만 적음. 켠 판 메뉴에는 시가가 없다(AT_MINUTE·NEXT_CLOSE — FreeTiming).
+describe("Claude 계좌 설명 — 체결 시점이 자유 시점 판 스위치를 따름(QA-323)", () => {
+  const text = (code: string, key: string) => accountProfile(code)?.definitions.find((d) => d.key === key)?.text ?? "";
+  const keys = (code: string) => accountProfile(code)?.settings.map((spec) => spec.key) ?? [];
+
+  it("한국 계좌1·계좌2 매수 칸은 끈 판과 켠 판(지정 시각·종가, 시가 없음, 장중 판단)을 함께 적고, 지금 설정에 스위치·장중 판단 키", () => {
+    const first = text("kr_claude", "buy");
+    expect(first).toContain("체결 시점은 설정 kr.claude.freeTiming(자유 시점 판)을 따릅니다. 끔이면 주문은 다음 KR 거래일 시가");
+    expect(first).toContain("켬이면 결정의 주문마다 다음 KR 거래일의 지정 시각(AT_MINUTE");
+    expect(first).toContain("시가는 없습니다 — 켜기 전에 만든 대기 시가 주문만 시가로 체결합니다");
+    expect(first).toContain("kr.intradayMaxPerSession");
+    const second = text("kr_claude2", "buy");
+    expect(second).toContain("kr.claude2.freeTiming");
+    expect(second).toContain("시가·매시는 없으며");
+    expect(text("kr_claude2", "method")).toContain("자유 시점 판(설정 kr.claude2.freeTiming)을 끈 동안");
+    expect(keys("kr_claude")).toEqual(expect.arrayContaining(["kr.claude.freeTiming", "kr.intradayMaxPerSession", "kr.intradayMinPerSession",
+      "kr.intradayEvents", "intradayEffort"]));
+    expect(keys("kr_claude2")).toEqual(expect.arrayContaining(["kr.claude2.freeTiming", "kr.intradayMaxPerSession"]));
+    const rows = Object.fromEntries(accountSettingRows("kr_claude", { kr: { claude: { freeTiming: true }, intradayMaxPerSession: 3 } })
+      .map((row) => [row.key, row.value]));
+    expect(rows["kr.claude.freeTiming"]).toBe("예");
+    expect(rows["kr.intradayMaxPerSession"]).toBe("3회");
+    expect(rows.intradayEffort).toBe("—");
+  });
+
+  it("한국 결정 탭 설명은 계좌 코드로 그 계좌의 스위치를 적고 '다음 KR 거래일 시가에 체결합니다'라 단정하지 않음", () => {
+    const first = krDecisionBookNote("CLAUDE", "kr_claude");
+    expect(first).toContain("설정 kr.claude.freeTiming(자유 시점 판)을 따릅니다 — 끔이면 다음 KR 거래일 시가, 켬이면");
+    expect(first).not.toContain("다음 KR 거래일 시가에 체결합니다");
+    const second = krDecisionBookNote("CLAUDE", "kr_claude2");
+    expect(second).toContain("kr.claude2.freeTiming");
+    expect(second).toContain("끔이면 주문마다 고른 시점(시가·매시·종가)");
+    expect(krDecisionBookNote("RULES", "kr_rules")).toContain("한국 규칙 계좌");
+  });
+
+  it("미국 계좌1 매수 칸은 끈 판(다음 시간별 관측치·종가)과 켠 판(지정 시각·종가, 시가·다음 관측치 없음)을, 계좌2는 켠 판을 함께 적음", () => {
+    const first = text("claude", "buy");
+    expect(first).toContain("체결 시점은 설정 claude.freeTiming(자유 시점 판)을 따릅니다. 끔이면 다음 시간별 관측치(NEXT_OBSERVATION)");
+    expect(first).toContain("켬이면 주문마다 다음 세션의 지정 시각(AT_MINUTE");
+    expect(first).toContain("intradayMaxPerSession");
+    expect(text("claude2", "buy")).toContain("claude2.freeTiming");
+    expect(keys("claude")).toEqual(expect.arrayContaining(["claude.freeTiming", "intradayMaxPerSession", "intradayMinPerSession",
+      "intradayEvents", "intradayEffort"]));
+    expect(keys("claude2")).toEqual(expect.arrayContaining(["claude2.freeTiming", "intradayMaxPerSession"]));
   });
 });
 

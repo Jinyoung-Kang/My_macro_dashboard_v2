@@ -10,7 +10,10 @@
  */
 import type { AccountProfile, PaperTabKey } from "./paper";
 
-/** 결정·체결 시점의 공통 문장 — 한국 Claude 계좌1의 주문은 다음 KR 거래일 시가(KRX 시가 단일가)에 체결합니다. */
+/**
+ * 시가 체결 문장 — 자유 시점 판을 끈 한국 Claude 계좌1·규칙 계좌 기본(시가 NEXT_OPEN)의 체결(KRX 시가 단일가). 켠 판·지정 시각은 KR_CLAUDE_FILL·
+ * KR_RULES_FILL이 이 문장에 덧붙여 적습니다.
+ */
 const KR_FILL =
   "주문은 다음 KR 거래일 시가(KRX 시가 단일가 — 잠정가는 토스증권 1분봉 개장 봉, 확정가는 금융위원회)에 체결하고, 금융위 값이 들어오면 "
   + "체결 행은 그대로 둔 채 '확정 조정' 행으로 현금·평단을 맞춥니다.";
@@ -39,15 +42,48 @@ const KR_STOP =
   + "단일가)로 체결하고 확정가로 다시 판정하지 않습니다. 감시가 덮지 못한 종목(수집 실패·기업행위 갭 가드)만 밤 잠정 평가가로 감지해 다음 "
   + "거래일 첫 분(개장 10분 뒤)의 지정 시각에 팔고 금융위 확정 종가로 다시 판정합니다.";
 
+/**
+ * 한국 장중 판단 문장(자유 시점 판을 켠 Claude 계좌 — ADR 0027 결정 3·ADR 0031 결정 4, 백엔드 IntradayPlanner·IntradayScheduler). 횟수·보장·사건은 설정 키로만
+ * 적고 값은 settings 행이 적습니다.
+ */
+const KR_INTRADAY =
+  "장중 판단(세션당 최대 kr.intradayMaxPerSession회, 개장 10분 뒤 ~ 종가 단일가 30분 전 — kr.intradayMinPerSession이 1이면 세션 중간까지 "
+  + "예약이 없을 때 한 번 보장, kr.intradayEvents를 켜면 보유·지수 급변 때 가장 이른 예약을 당김)은 기준 시각이 남은 대기 주문을 그대로 두거나 "
+  + "장중 시장가·그날 남은 지정 시각·그날 종가 주문으로 바꿉니다.";
+
+/**
+ * 한국 Claude 계좌1의 체결 문장 — 자유 시점 판 스위치 kr.claude.freeTiming(ADR 0027 결정 2·ADR 0031 결정 2, 백엔드 FreeTiming·ClaudeBookProfile)의 두
+ * 경우를 함께 적습니다(QA-323 — 예전에는 KR_FILL만 적어 2026-11-06에 켠 뒤 '다음 거래일 시가'로 틀렸음). 지금 값은 settings의 kr.claude.freeTiming 행이
+ * 적습니다.
+ */
+const KR_CLAUDE_FILL =
+  "체결 시점은 설정 kr.claude.freeTiming(자유 시점 판)을 따릅니다. 끔이면 " + KR_FILL + " 켬이면 결정의 주문마다 다음 KR 거래일의 지정 시각"
+  + "(AT_MINUTE — 개장 10분 뒤부터 종가 단일가 앞까지의 분, 그 시각에 시작한 토스 1분봉 시가로 체결하고 확정 조정하지 않음)이나 종가(NEXT_CLOSE — "
+  + "KRX 종가 단일가 1분봉, 금융위 종가로 확정 조정)를 고르고 시가는 없습니다 — 켜기 전에 만든 대기 시가 주문만 시가로 체결합니다. "
+  + KR_INTRADAY;
+
 /** 장중 스탑 감시 스위치(kr.stopWatch.mode)의 지금 값 이름표. */
 const KR_STOP_WATCH_LABELS = { OFF: "끔(OFF — 밤 스탑만)", SHADOW: "기록만(SHADOW — 밤 스탑만)", ON: "켬(ON — 장중 감시 주문)" };
 
-/** 한국 Claude 계좌2의 체결 문장(단계 2a — 체결 시점 메뉴). 시가는 계좌1과 같고, 매시·종가는 목표 세션의 토스 1분봉입니다. */
+/** 한국 장중 판단 설정 행(자유 시점 판을 켠 Claude 계좌만 읽음) — 두 Claude 계좌가 같은 키를 씁니다. intradayEffort는 두 시장 공용이고 없으면 effort입니다. */
+const KR_INTRADAY_SETTINGS: AccountProfile["settings"] = [
+  { key: "kr.intradayMaxPerSession", label: "장중 판단 최대(세션당, 켠 판)", unit: "회" },
+  { key: "kr.intradayMinPerSession", label: "장중 판단 보장(세션당, 켠 판)", unit: "회" },
+  { key: "kr.intradayEvents", label: "장중 판단 사건 당김(켠 판)" },
+  { key: "intradayEffort", label: "장중 판단 effort(두 시장 공용 — 없으면 effort)" },
+];
+
+/**
+ * 한국 Claude 계좌2의 체결 문장 — 자유 시점 판 스위치 kr.claude2.freeTiming의 두 경우(QA-323). 끈 판은 단계 2a 체결 시점 메뉴(시가는 계좌1의 끈 판과 같고,
+ * 매시·종가는 목표 세션의 토스 1분봉), 켠 판은 계좌1의 켠 판과 같은 메뉴와 장중 판단입니다.
+ */
 const KR_CLAUDE2_FILL =
-  "주문은 고른 시점에 체결합니다 — 시가는 계좌1과 같고(금융위 값으로 확정 조정), 매시는 그 시각에 시작한 토스 1분봉 시가(거래가 없으면 4분 안 "
+  "체결 시점은 설정 kr.claude2.freeTiming(자유 시점 판)을 따릅니다. 끔이면 주문은 고른 시점에 체결합니다 — 시가는 계좌1의 끈 판과 같고(금융위 "
+  + "값으로 확정 조정), 매시는 그 시각에 시작한 토스 1분봉 시가(거래가 없으면 4분 안 "
   + "첫 거래 봉, 그것도 없으면 그날 그 시각 뒤 첫 거래 봉 — 대체)로 체결해 확정 조정하지 않으며(금융위에 그 시각 값이 없음), 종가는 KRX 종가 "
   + "단일가 1분봉으로 체결해 금융위 종가로 확정 조정합니다. 매시·종가 주문은 다음 KR 거래일 하루뿐이고, 체결 순서는 시가 → 매시 → 종가라 매도는 "
-  + "같은 시점이거나 더 늦은 시점 매수의 현금만 만듭니다.";
+  + "같은 시점이거나 더 늦은 시점 매수의 현금만 만듭니다. 켬이면 계좌1의 켠 판과 같은 메뉴입니다 — 지정 시각(AT_MINUTE)·종가(NEXT_CLOSE) "
+  + "가운데 고르고 시가·매시는 없으며(켜기 전에 만든 대기 주문만 그 시점으로 체결), 장중 확인 대신 장중 판단을 씁니다. " + KR_INTRADAY;
 
 /**
  * 네 계좌가 함께 출발한 문장 — 출발일 토스 종가 사후 체결(백엔드 StartCloseRestart의 토스 출처, 사용자 결정 2026-11-02 — K28의 'S+1 시가 출발,
@@ -138,14 +174,15 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
         label: "운용 방식",
         text: "KR 거래일마다 결정 시각(밤)에 한 번, 자료 게이트를 모두 통과하면 한국 패킷 — 매크로·국면(전날 밤 판정)·수급·재무(DART)·"
           + "시세·사건 뉴스·보유·최근 결정·메모·하드 규칙 — 을 Claude에 보내 주문 목록과 목표 주식 노출을 받습니다. 판단 원칙은 두 시장이 "
-          + "함께 쓰는 프레임 판에 한국 하드 규칙 줄·고정 문단이 덮인 시스템 프롬프트입니다.",
+          + "함께 쓰는 프레임 판에 한국 하드 규칙 줄·고정 문단이 덮인 시스템 프롬프트입니다. 자유 시점 판(설정 kr.claude.freeTiming)을 켜면 켠 판 "
+          + "고정 문단·응답 스키마로 부르고, 결정이 다음 거래일의 장중 판단을 예약할 수 있습니다(매수 칸).",
       },
       {
         key: "buy",
         label: "매수",
         text: "Claude가 제안한 매수 가운데 검증기(하드 규칙)를 통과한 것만 대기 주문이 됩니다 — 종목·ETF 비중 상한, 최대 종목 수(현금성 "
           + "제외), 최소 주문 금액, 월 재량 주문 상한, 재진입 금지, 유니버스, 체결할 수 없는 종목(거래정지·봉 없음·기업행위 보류 — "
-          + "UNFILLABLE), 1주에 못 미침(BUY_BELOW_ONE_SHARE), 정수 주. " + KR_FILL,
+          + "UNFILLABLE), 1주에 못 미침(BUY_BELOW_ONE_SHARE), 정수 주. " + KR_CLAUDE_FILL,
       },
       {
         key: "sell",
@@ -171,6 +208,8 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "model", label: "모델(두 책 공용)" },
       { key: "kr.decisionTimeKst", label: "결정 시각(KST)" },
       { key: "kr.decisionDeadlineKst", label: "결정 기한(KST)" },
+      { key: "kr.claude.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      ...KR_INTRADAY_SETTINGS,
       { key: "apiDailyCallCap", label: "하루 호출 상한(두 책 공유)", unit: "회" },
       { key: "kr.maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
       { key: "kr.maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },
@@ -194,11 +233,13 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
           + "장부(보유·대기 주문·최근 결정·이달 재량 주문 수)만 이 계좌의 것입니다(계좌1의 결정·주문은 넣지 않음 — 독립 판단). 같은 프레임 판에 "
           + "사용자가 고른 투자 성향(설정 kr.claude2.riskProfile — 공격투자형·적극투자형·위험중립형·안정추구형, 기본 공격투자형)이 시스템 "
           + "프롬프트의 '투자 성향' 절로 더해져 위험자산 비중(현금성 153130 제외)·종목 집중도·현금 여력·감내할 낙폭의 기준이 됩니다 — 코드가 "
-          + "집행하지 않으므로 한도·검증기는 계좌1과 같습니다. 계좌1과 다른 것은 체결 시점 메뉴입니다(단계 2a) — 주문마다 다음 KR 거래일의 시가"
+          + "집행하지 않으므로 한도·검증기는 계좌1과 같습니다. 자유 시점 판(설정 kr.claude2.freeTiming)을 끈 동안 계좌1과 다른 것은 체결 시점 "
+          + "메뉴입니다(단계 2a) — 주문마다 다음 KR 거래일의 시가"
           + "(NEXT_OPEN)·매시 10:00~15:00 KST(AT_1000~AT_1500 — 그 시각에 시작한 토스 1분봉 시가)·종가(NEXT_CLOSE — KRX 종가 단일가) 가운데 하나와 "
           + "고른 이유(executionNote)를 냅니다. 밤 결정은 다음 거래일 장중 확인 한 번(10:00~15:00 KST 30분 단위·감시 종목 1~10개 — 단계 2b)을 "
           + "요청할 수 있고, 그 시각 뒤에 받은 토스 1분봉으로 한 번 더 판단해 대기 주문을 그대로 두거나 기준 시각이 아직 오지 않은 주문만 장중 "
-          + "시장가(MARKET)·남은 매시·종가 주문으로 바꿉니다(재시도 없음, 설정 kr.claude2.checkpoints로 끔).",
+          + "시장가(MARKET)·남은 매시·종가 주문으로 바꿉니다(재시도 없음, 설정 kr.claude2.checkpoints로 끔). 켜면 두 계좌가 같은 켠 판 메뉴"
+          + "(지정 시각·종가)와 장중 판단을 씁니다(매수 칸).",
       },
       {
         key: "buy",
@@ -233,7 +274,9 @@ export const KR_ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     ],
     settings: [
       { key: "kr.claude2.riskProfile", label: "투자 성향" },
-      { key: "kr.claude2.checkpoints", label: "장중 확인(세션당 최대 한 번)" },
+      { key: "kr.claude2.checkpoints", label: "장중 확인(세션당 최대 한 번 — 끈 판)" },
+      { key: "kr.claude2.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      ...KR_INTRADAY_SETTINGS,
       { key: "model", label: "모델(두 책 공용)" },
       { key: "kr.decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },
       { key: "kr.decisionDeadlineKst", label: "결정 기한(KST)" },
