@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -332,6 +333,35 @@ class StopWatchFallbackTest {
                 assertThat(o.reason().path("observedPrice").asDouble()).isEqualTo(91_000);
             });
             assertThat(StopWatch.intradayStop(stops().get(0))).as("밤 경로 STOP — 금융위 재판정·⑤ 우회 그대로").isFalse();
+        }
+
+        @Test
+        @Disabled("QA-316 재현 — 수정 전에는 감시 저장본에 다른 한국 책이 든 같은 종목이 있으면 이 책이 그 세션에 새로 산 보유도 덮음으로 읽어 "
+                + "밤 대체 스탑을 건너뜀. fix(QA-316)에서 켭니다")
+        @DisplayName("ON — 그 세션에 이 책이 새로 산 종목은 감시 저장본에 같은 종목(다른 책 보유)이 있어도 덮지 않아 다음 거래일 09:10 NIGHT_FALLBACK(QA-316)")
+        void boughtThatSessionKeepsTheNightFallback() {
+            mode("ON", null);
+            store.states.put(BOOK, new BookState(BOOK, 10_000_000, 10_000_000, 0, 0, null, null, null, null));
+            when(marketData.fscMarkets(anyCollection())).thenReturn(Map.of("005930", "KOSPI", "000660", "KOSPI"));
+            watched("000660");   // 다른 한국 책이 000660을 들고 있어 감시 저장본에는 D1 15:20까지 그 종목이 있음
+            long buy = store.insertOrder(new Order(0, BOOK, null, "000660", PaperBooks.BUY, 10, null, null, PaperBooks.NEXT_OPEN,
+                    RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, D, kst("2026-11-02T22:30"), D2, null));
+            KrFixtures.Payload payload = new KrFixtures.Payload(D1);
+            payload.code("005930", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 99_000, 100_000, 2_000).minute("OK", "09:01", 99_000, 100);
+            payload.code("000660", FETCHED_D1).bar(D, 100_000, 100_000, 1_000).bar(D1, 100_000, 91_000, 2_000)
+                    .minute("OK", "09:01", 100_000, 100);
+
+            Outcome outcome = ledger.process(run(), KrQuotes.parse(payload.snapshot(COLLECTED_D1)).orElseThrow());
+
+            assertThat(store.orders.get(buy).status()).as("D1 시가에 새로 삼").isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.ticker()).isEqualTo("000660");
+                assertThat(o.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+                assertThat(o.targetLocal()).isEqualTo(LocalTime.of(9, 10));
+                assertThat(o.asOfTradingDate()).isEqualTo(D1);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+            });
+            assertThat(outcome.notes()).noneMatch(n -> n.contains("000660 밤 스탑을 장중 감시에 맡김"));
         }
 
         @Test
