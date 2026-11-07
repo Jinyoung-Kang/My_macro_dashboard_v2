@@ -321,7 +321,7 @@ describe("자료", () => {
   // QA-313 뒤 리뷰: 출발(INITIAL) 결정의 주문은 kr.rules.timing과 상관없이 늘 다음 KR 거래일 시가인데(KrRuleBookService — 출발 주문은 NEXT_OPEN 고정),
   // 주문 안내가 모든 규칙 결정에 '체결 시점은 설정 kr.rules.timing을 따릅니다'라 적어, 지정 시각을 저장한 뒤 출발 결정을 열면 시가 주문을 지정 시각
   // 체결로 읽음(주문 표의 '체결 시점' 칸은 맞음).
-  it.fails("출발 결정의 주문 안내 — 설정 kr.rules.timing과 상관없이 다음 KR 거래일 시가", async () => {
+  it("출발 결정의 주문 안내 — 설정 kr.rules.timing과 상관없이 다음 KR 거래일 시가", async () => {
     render(<PaperPage market="KR" initialTab="decisions" />);
     const detail = await expand("2026-10-30 출발(초기 결정)");
     expect(within(detail).getByText(/출발 결정의 주문은 설정 kr\.rules\.timing과 상관없이 다음 KR 거래일 시가\(KRX 시가 단일가\) 주문입니다/)).toBeTruthy();

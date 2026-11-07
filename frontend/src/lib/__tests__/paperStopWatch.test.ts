@@ -79,7 +79,7 @@ describe("계좌 설명 — 스탑·체결 문장이 감시 스위치와 규칙 
 
   // QA-313 뒤 리뷰: 출발 결정의 주문은 kr.rules.timing과 상관없이 다음 KR 거래일 시가(KrRuleBookService — NEXT_OPEN 고정)인데 매수 문장('재선정일과
   // 출발 때만 삽니다 … 체결 시점은 설정 kr.rules.timing을 따릅니다')이 출발 주문도 설정을 따르는 것처럼 적음.
-  it.fails("한국 — 규칙 계좌 매수 문장은 출발 결정의 주문만 kr.rules.timing과 상관없이 시가라고 적음", () => {
+  it("한국 — 규칙 계좌 매수 문장은 출발 결정의 주문만 kr.rules.timing과 상관없이 시가라고 적음", () => {
     expect(text("kr_rules", "buy")).toContain("출발 결정의 주문만 이 설정과 상관없이 다음 KR 거래일 시가 주문입니다");
   });
 

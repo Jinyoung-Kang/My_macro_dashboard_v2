@@ -18,10 +18,11 @@ const KR_FILL =
 /**
  * 한국 규칙 계좌의 체결 문장 — 시점은 설정 kr.rules.timing(ADR 0027·0031, 백엔드 RuleTiming)을 따릅니다. 기본(시가)은 계좌1과 같고, 지정 시각·종가는
  * 계좌2의 매시·종가와 같은 체결입니다(KrTimedLadder). 두 경우를 함께 적고 지금 값은 settings의 kr.rules.timing·kr.rules.timingAtKst 행이 적습니다(QA-313 —
- * 예전에는 KR_FILL만 적어 지정 시각을 저장한 뒤 틀렸음).
+ * 예전에는 KR_FILL만 적어 지정 시각을 저장한 뒤 틀렸음). 출발 결정의 주문은 설정과 상관없이 시가입니다(KrRuleBookService 출발 경로 — NEXT_OPEN 고정).
  */
 const KR_RULES_FILL =
-  "체결 시점은 설정 kr.rules.timing을 따릅니다. 기본(시가 NEXT_OPEN)이면 " + KR_FILL + " 지정 시각(AT_MINUTE)이면 그 결정의 주문 전부를 "
+  "체결 시점은 설정 kr.rules.timing을 따릅니다 — 출발 결정의 주문만 이 설정과 상관없이 다음 KR 거래일 시가 주문입니다. 기본(시가 NEXT_OPEN)이면 "
+  + KR_FILL + " 지정 시각(AT_MINUTE)이면 그 결정의 주문 전부를 "
   + "다음 KR 거래일 kr.rules.timingAtKst 분(그날 개장 10분 뒤가 더 늦으면 그 첫 분)에 시작한 토스 1분봉 시가로 체결하고 확정 조정하지 "
   + "않으며(금융위에 그 시각 값이 없음), 종가(NEXT_CLOSE)면 KRX 종가 단일가 1분봉으로 체결해 금융위 종가로 확정 조정합니다. 그날 체결되지 "
   + "못한 지정 시각·종가 주문은 다시 냅니다(지정 시각이면 다음 거래일 첫 분, 종가면 다음 거래일 시가).";
