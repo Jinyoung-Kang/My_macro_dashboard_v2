@@ -113,9 +113,11 @@ final class CheckpointPacket {
      * @param origin   그 계획 행을 누가 만들었나({@code PaperStore.IntradayPlan.ORIGINS} — ADR 0031 초안, null이면 수동 표시로 정함)
      * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건(계획 행의 {@code trigger} — {@code originalAt}·{@code events}), 없으면 null
      * @param replaces  이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약(다음 순번의 PLANNED 행), 없으면 null
+     * @param later     그대로 남는 뒤 예약(다음 순번 뒤의 PLANNED 행 — {@link Reserved#later}), 없으면 null. {@code nextCheckpoint}는 그 시각보다
+     *                  {@link IntradayRequest#MIN_GAP} 이상 앞이어야 합니다(QA-309)
      * @param stopWatch 장중 스탑 감시가 주문을 내는 판인가({@code stopWatch.mode} ON — {@code 1_basis.stopWatch}·스탑 줄, ADR 0032)
      */
-    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces,
+    record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces, Reserved later,
                 boolean stopWatch) {
 
         Free {
@@ -124,9 +126,14 @@ final class CheckpointPacket {
             trigger = trigger == null || trigger.isNull() || trigger.isMissingNode() ? null : trigger;
         }
 
+        /** 그대로 남는 뒤 예약 없이. */
+        Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces, boolean stopWatch) {
+            this(book, slot, max, manual, origin, trigger, replaces, null, stopWatch);
+        }
+
         /** 장중 스탑 감시 OFF·SHADOW 판. */
         Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, Reserved replaces) {
-            this(book, slot, max, manual, origin, trigger, replaces, false);
+            this(book, slot, max, manual, origin, trigger, replaces, null, false);
         }
 
         /** 출처·사건·남은 예약 없이(운영자 행이면 출처 MANUAL, 아니면 RESERVED). */
@@ -165,6 +172,15 @@ final class CheckpointPacket {
                 }
             }
             return null;
+        }
+
+        /**
+         * 그 세션 행들에서 {@code nextCheckpoint}가 대신하지 않고 그대로 남는 뒤 예약 — {@code slot} + 1 뒤 순번의 PLANNED 행 가운데 가장 앞 순번
+         * ({@link IntradayPlanner#laterPlanned}, 없으면 null).
+         */
+        static Reserved later(List<PaperStore.IntradayPlan> rows, int slot) {
+            PaperStore.IntradayPlan p = IntradayPlanner.laterPlanned(rows, slot);
+            return p == null ? null : new Reserved(p.atLocal(), p.origin());
         }
     }
 
@@ -467,7 +483,8 @@ final class CheckpointPacket {
     /**
      * 다음 판단을 예약할 수 있는가({@code 1_basis.nextCheckpoint}) — 순번이 남았고(이 판단의 순번 < 세션당 횟수) 받는 범위에 이 판단 시각 + 최소 간격
      * 뒤의 시각이 남아 있을 때. 범위는 {@link IntradayRequest#window}, 가장 이른 시각은 이 판단의 예약 시각 + {@link IntradayRequest#MIN_GAP}과
-     * 지금(호출 창 시작이 지금보다 뒤 — 지금 − 2분의 다음 분) 가운데 늦은 쪽입니다.
+     * 지금(호출 창 시작이 지금보다 뒤 — 지금 − 2분의 다음 분) 가운데 늦은 쪽입니다. 가장 늦은 시각은 범위 끝이고, 그대로 남는 뒤 예약
+     * ({@code laterReserved})이 있으면 그 시각 − {@link IntradayRequest#MIN_GAP}까지입니다(QA-309 — 계획 쓰기 {@link IntradayPlanner#next}와 같은 규칙).
      */
     private static Map<String, Object> nextCheckpoint(Free free, Checkpoint c, LocalDate session, TradingCalendar calendar,
                                                       Instant now) {
@@ -481,19 +498,42 @@ final class CheckpointPacket {
         if (earliest.isBefore(window.first())) {
             earliest = window.first();
         }
+        Instant last = window.last();
+        if (free.later() != null) {
+            Instant before = FreeTiming.at(session, free.later().at(), calendar).minus(IntradayRequest.MIN_GAP);
+            if (before.isBefore(last)) {
+                last = before;
+            }
+        }
         boolean room = free.slot() < Math.min(free.max(), RuleBookService.INTRADAY_MAX);
-        boolean available = room && calendar.isTradingDay(session) && !earliest.isAfter(window.last());
+        boolean inWindow = room && calendar.isTradingDay(session) && !earliest.isAfter(window.last());
+        boolean available = inWindow && !earliest.isAfter(last);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", available);
         out.put("firstEt", available ? et(earliest, calendar) : null);
-        out.put("lastEt", available ? et(window.last(), calendar) : null);
+        out.put("lastEt", available ? et(last, calendar) : null);
         out.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
         out.put("replaces", reserved(free.replaces(), "atEt"));
-        out.put("note", !room ? "세션당 횟수를 다 썼다 — nextCheckpoint를 적어도 버려진다"
-                : !available ? "받는 범위에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다"
-                : "nextCheckpoint.at은 이 범위(양 끝 포함)의 뉴욕 시각 HH:MM — 이 판단 시각과 " + IntradayRequest.MIN_GAP.toMinutes()
-                + "분 이상 떨어져야 한다. 남은 예약이 있으면(replaces) 그 시각을 대신한다");
+        out.put("laterReserved", reserved(free.later(), "atEt"));
+        out.put("note", nextCheckpointNote(room, inWindow, available, free.later() != null, "뉴욕 시각"));
         return out;
+    }
+
+    /** {@code 1_basis.nextCheckpoint.note} — 미국·한국 패킷이 같은 문장을 씁니다(시각 이름만 다름). */
+    static String nextCheckpointNote(boolean room, boolean inWindow, boolean available, boolean later, String zoneName) {
+        if (!room) {
+            return "세션당 횟수를 다 썼다 — nextCheckpoint를 적어도 버려진다";
+        }
+        if (!inWindow) {
+            return "받는 범위에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다";
+        }
+        if (!available) {
+            return "그대로 남는 뒤 예약(laterReserved)보다 " + IntradayRequest.MIN_GAP.toMinutes()
+                    + "분 앞에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다";
+        }
+        return "nextCheckpoint.at은 이 범위(양 끝 포함)의 " + zoneName + " HH:MM — 이 판단 시각과 " + IntradayRequest.MIN_GAP.toMinutes()
+                + "분 이상 떨어져야 한다. 남은 예약이 있으면(replaces) 그 시각을 대신한다"
+                + (later ? ". 그 뒤 예약(laterReserved)은 그대로 남으므로 범위의 끝은 그 시각 " + IntradayRequest.MIN_GAP.toMinutes() + "분 전이다" : "");
     }
 
     /** 남은 예약의 칸 — 시각(그 시장 시각 이름)과 출처, 없으면 null. */

@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.IntradayPlan;
@@ -8,10 +9,12 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
@@ -22,8 +25,10 @@ import java.util.Set;
  *
  * <p>규칙: 결정의 예약은 시각 순으로 순번 1·2가 되고, 그 세션에 남아 있던 PLANNED 행은 이번 예약으로 바뀌거나(같은 순번) 닫힙니다(예약이 줄었을 때 —
  * {@link #SUPERSEDED}). 끝난 행(DONE·EXPIRED·SKIPPED·SUPERSEDED)은 되살리지 않습니다. 장중 판단의 {@code nextCheckpoint}는 그 판단 다음 순번 하나를
- * 넣거나 바꿉니다(남은 예약을 대신함 — 없으면 남은 예약은 그대로). 어느 길이든 한 세션의 행은 {@link RuleBookService#INTRADAY_MAX}개를 넘지 않습니다
- * (순번이 강제). 의미 검사는 {@link IntradayRequest}가 합니다 — 어긴 예약만 버리고 사유를 응답 기록에 남깁니다.
+ * 넣거나 바꿉니다(남은 예약을 대신함 — 없으면 남은 예약은 그대로). 그 뒤 순번의 PLANNED 행은 그대로 남으므로 {@code nextCheckpoint}는 그 시각보다
+ * {@link IntradayRequest#MIN_GAP} 이상 앞이어야 합니다({@link #laterPlanned} — PLANNED 순번 순 = 시각 순과 두 판단의 간격, QA-309). 어느 길이든 한 세션의
+ * 행은 {@link RuleBookService#INTRADAY_MAX}개를 넘지 않습니다(순번이 강제). 의미 검사는 {@link IntradayRequest}가 합니다 — 어긴 예약만 버리고 사유를
+ * 응답 기록에 남깁니다.
  *
  * <p>계획 읽기({@link #plan}·{@link #next})는 장부 잠금 안에서, 쓰기({@link #write})는 결정 행을 쓰는 트랜잭션 안에서 부릅니다.
  */
@@ -128,6 +133,8 @@ final class IntradayPlanner {
 
     /**
      * 장중 판단 응답의 {@code nextCheckpoint}와 그 세션의 지금 행 — 다음 순번이 없거나({@code slot}이 마지막) 예약이 없으면 null(남은 예약 그대로).
+     * 예약은 다음 순번 하나만 대신하므로, 그 뒤 순번에 PLANNED 행이 있으면 그 시각보다 {@link IntradayRequest#MIN_GAP} 이상 앞이어야 받습니다(QA-309 —
+     * 뒤나 20분 안이면 순번 순 ≠ 시각 순이 되고 두 판단의 호출 창이 겹침). 그 행은 바꾸지 않습니다.
      *
      * @param slot 지금 부른 판단의 순번
      */
@@ -146,8 +153,38 @@ final class IntradayPlanner {
         IntradayRequest.Verdict verdict = slot >= limit
                 ? new IntradayRequest.Verdict(List.of(), List.of(new IntradayRequest.Rejected(text(request, "at"),
                         "CHECKPOINT_INVALID — 세션당 장중 판단 횟수(" + limit + "번)를 다 써서 다음 판단을 예약할 수 없음")))
-                : IntradayRequest.validate(requests, session, calendar, universe, now, 1, taken, korea);
+                : beforeLater(IntradayRequest.validate(requests, session, calendar, universe, now, 1, taken, korea),
+                        laterPlanned(existing, slot), korea);
         return new Plan(profile.code(), session, variant(profile), max, slot + 1, false, verdict, existing);
+    }
+
+    /**
+     * {@code slot} 판단의 {@code nextCheckpoint}가 대신하지 않고 그대로 남는 뒤 예약 — {@code slot} + 1 뒤 순번의 PLANNED 행 가운데 가장 앞 순번(없으면
+     * null). 장중 판단 패킷({@link CheckpointPacket.Reserved#later})도 이것을 싣습니다.
+     */
+    static IntradayPlan laterPlanned(List<IntradayPlan> rows, int slot) {
+        return rows.stream().filter(p -> p.slot() > slot + 1 && PaperBooks.CHECKPOINT_PLANNED.equals(p.status()))
+                .min(Comparator.comparingInt(IntradayPlan::slot)).orElse(null);
+    }
+
+    /** 받은 예약 가운데 그대로 남는 뒤 예약({@code later})보다 {@link IntradayRequest#MIN_GAP} 이상 앞이 아닌 것을 버립니다(사유를 남김). */
+    private static IntradayRequest.Verdict beforeLater(IntradayRequest.Verdict verdict, IntradayPlan later, boolean korea) {
+        if (later == null || verdict.accepted().isEmpty()) {
+            return verdict;
+        }
+        String zone = korea ? " KST" : " ET";
+        List<IntradayRequest.Item> accepted = new ArrayList<>();
+        List<IntradayRequest.Rejected> rejected = new ArrayList<>(verdict.rejected());
+        for (IntradayRequest.Item item : verdict.accepted()) {
+            if (Duration.between(item.at(), later.atLocal()).compareTo(IntradayRequest.MIN_GAP) < 0) {
+                rejected.add(new IntradayRequest.Rejected(FreeTiming.label(item.at()), OrderValidator.CHECKPOINT_INVALID + " — 확인 시각 "
+                        + FreeTiming.label(item.at()) + zone + "가 그대로 남는 뒤 예약 " + FreeTiming.label(later.atLocal()) + zone + "(순번 "
+                        + later.slot() + ")보다 " + IntradayRequest.MIN_GAP.toMinutes() + "분 이상 앞이어야 함(nextCheckpoint는 다음 순번 하나만 대신함)"));
+            } else {
+                accepted.add(item);
+            }
+        }
+        return new IntradayRequest.Verdict(accepted, rejected);
     }
 
     /** 결정의 계획을 씁니다({@link #plan}) — 받은 예약을 순번대로 PLANNED로(끝난 순번은 그대로), 남은 PLANNED 순번을 닫음. */

@@ -947,6 +947,7 @@ class KrStartTest {
         assertThat(basis.path("remainingJudgments").asInt()).as("세션당 2 − 순번 1").isEqualTo(1);
         assertThat(basis.path("nextCheckpoint").path("replaces").toString()).as("다음 순번의 남은 예약(13:00)")
                 .isEqualTo("{\"atKst\":\"13:00\",\"origin\":\"RESERVED\"}");
+        assertThat(basis.path("nextCheckpoint").path("laterReserved").isNull()).as("세션당 2 — 그 뒤 예약 없음").isTrue();
         assertThat(d.packet().path("2_request").path("trigger").isNull()).isTrue();
         assertThat(d.packet().path("0_instructions").path("lines").get(0).asString()).startsWith("장중 판단이다");
         assertThat(d.packet().path("0_instructions").path("lines").toString()).contains("2_request.trigger").contains("1_basis.origin");
@@ -979,6 +980,44 @@ class KrStartTest {
         intraday.run();
         assertThat(fake.requests).as("순번마다 한 번").hasSize(calls + 1);
         assertThat(checkpointJob().run().planned()).as("끈 판의 장중 확인 작업은 장중 판단 계획 행을 보지 않음").isZero();
+    }
+
+    @Test
+    @DisplayName("QA-309 한국: 세션당 3·밤 결정의 예약 09:10·11:00·13:00 — 첫 판단 패킷의 nextCheckpoint 끝은 그대로 남는 셋째 13:00 − 20분(12:40)이고 "
+            + "laterReserved로 실림. 셋째와 20분 안(12:50)인 nextCheckpoint는 버리고 행은 그대로(순번 순 = 시각 순)")
+    void krNextCheckpointKeepsTheLaterReservation() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr")).put("intradayMaxPerSession", 3);
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(8, "관망"), "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"첫 확인\"},"
+                        + "{\"at\":\"11:00\",\"watch\":[\"005930\"],\"question\":\"둘째 확인\"},"
+                        + "{\"at\":\"13:00\",\"watch\":[\"005930\"],\"question\":\"셋째 확인\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.status())
+                .containsExactly("1 09:10 PLANNED", "2 11:00 PLANNED", "3 13:00 PLANNED");
+        PaperKrIntradayJob intraday = intradayJob();
+
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1");
+        fake.answer(intradayReply("KEEP", "{\"at\":\"12:50\",\"watch\":[\"005930\"],\"question\":\"오후 확인\"}"));
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        assertThat(intraday.run().changes()).containsKey("kr_claude " + E + " #1");
+
+        Decision d = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        JsonNode options = d.packet().path("1_basis").path("nextCheckpoint");
+        assertThat(options.path("available").asBoolean()).isTrue();
+        assertThat(options.path("firstKst").asString()).isEqualTo("09:30");
+        assertThat(options.path("lastKst").asString()).as("셋째 13:00 − 20분").isEqualTo("12:40");
+        assertThat(options.path("replaces").toString()).isEqualTo("{\"atKst\":\"11:00\",\"origin\":\"RESERVED\"}");
+        assertThat(options.path("laterReserved").toString()).isEqualTo("{\"atKst\":\"13:00\",\"origin\":\"RESERVED\"}");
+        assertThat(d.packet().path("1_basis").path("remainingJudgments").asInt()).isEqualTo(2);
+        JsonNode view = d.response().path("intradayPlan");
+        assertThat(view.path("planned").size()).isZero();
+        assertThat(view.path("rejected").get(0).path("reason").asString()).startsWith("CHECKPOINT_INVALID").contains("13:00 KST");
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.status())
+                .containsExactly("1 09:10 DONE", "2 11:00 PLANNED", "3 13:00 PLANNED");
     }
 
     @Test

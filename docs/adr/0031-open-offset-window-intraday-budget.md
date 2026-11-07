@@ -86,7 +86,7 @@ ADR 0027은 네 Claude 계좌가 정규장 안의 분 단위 시각(`AT_MINUTE`,
   1분봉으로 바꾸고 감시 목록에 사건 종목을 더함 — 최대 10), 붙임(가장 이른 예약이 t 이전이거나 당김이 막히면 사건만 붙임), 덧붙임(남은 예약이 없고 순번이 남았으면 t에 사건 행 — 감시 1분봉, 정기 문턱),
   버림(`NO_SLOT`·`NO_TIME`·`NO_DECISION`·`BOOK_NOT_ACTIVE`·막힌 사유 — 작업 기록에만), 기다림(창이 끝났는데 아직 닫히지 않은 예약이 있으면 다음 주기에 같은 저장본을 다시 봄). 사건 열쇠(종류·종목·방향)는
   그 세션 행들의 `trigger`와 작업 메모리로 세션에 한 번만 쓴다(운영자 당김·다음 예약이 행의 `trigger`를 덮어도 다시 쏘지 않게). 지수 ±1.5% 날에는 켠 판 계좌마다 하나씩 최대 4회가 더해질 수 있다.
-- **패킷**: 장중 판단 패킷 `1_basis.origin`·`remainingJudgments`(= min(최대, `INTRADAY_MAX`) − 순번), 요청 `trigger`(null 또는 원래 시각·사건 목록·규칙), `nextCheckpoint.replaces`(대신할 예약의 시각·출처).
+- **패킷**: 장중 판단 패킷 `1_basis.origin`·`remainingJudgments`(= min(최대, `INTRADAY_MAX`) − 순번), 요청 `trigger`(null 또는 원래 시각·사건 목록·규칙), `nextCheckpoint.replaces`(대신할 예약의 시각·출처)·`laterReserved`(그대로 남는 뒤 예약 — 다음 순번 뒤의 `PLANNED` 행이 있으면 `nextCheckpoint`는 그 시각보다 20분 이상 앞이어야 하고(계획 쓰기가 어기면 버림) 패킷의 끝 시각도 그 시각 − 20분, QA-309 — 세션당 3에서 순번 순 = 시각 순과 간격을 지킴).
   결정 패킷은 미국 `13_execution.intraday`·한국 `1_basis.intraday`에 `minPerSession`·`guarantee`(그 세션 보장 시각 — 0이면 null)·`events`(문턱·지수 종목·규칙 — 사건이 실제로 당길 수 있을 때만, 아니면 null).
   켠 판 시스템 프롬프트의 장중 판단 절에 보장·사건 규칙 한 줄을 더했다(그 값은 패킷 칸을 가리켜 프롬프트에 설정값이 없음). 같은 배포라 판 이름은 `ft-2`·`kr-ft-2` 그대로다.
 - **응답·화면**: 장중 판단 결정 응답의 `checkpoint` 칸에 그 행의 `origin`(사건이면 `trigger`)이 남는다. 알림 머리줄은 보장이면 '(코드 보장)', 사건이면 '(사건)'을 붙인다.

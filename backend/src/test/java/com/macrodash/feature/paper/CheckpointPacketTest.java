@@ -491,6 +491,43 @@ class CheckpointPacketTest {
     }
 
     @Test
+    @DisplayName("QA-309: 그대로 남는 뒤 예약(laterReserved — 다음 순번 뒤의 PLANNED 행)이 있으면 nextCheckpoint의 끝은 그 시각 − 20분이고 그 예약을 실음. "
+            + "그 끝이 가장 이른 시각보다 앞이면 예약할 수 없음(사유 문구). 뒤 예약이 없으면 범위 끝 그대로")
+    void nextCheckpointStopsBeforeTheLaterReservation() {
+        CheckpointPacket.Reserved second = new CheckpointPacket.Reserved(LocalTime.of(12, 0), "RESERVED");
+        JsonNode bounded = CheckpointPacket.build(freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, 1, 3, false, null, null, second,
+                new CheckpointPacket.Reserved(LocalTime.of(13, 0), "GUARANTEE"), false)), MAPPER).body().get("1_basis").get("nextCheckpoint");
+        assertThat(bounded.get("available").asBoolean()).isTrue();
+        assertThat(bounded.get("firstEt").asString()).as("10:30 + 20분").isEqualTo("10:50");
+        assertThat(bounded.get("lastEt").asString()).as("뒤 예약 13:00 − 20분").isEqualTo("12:40");
+        assertThat(bounded.get("replaces").toString()).isEqualTo("{\"atEt\":\"12:00\",\"origin\":\"RESERVED\"}");
+        assertThat(bounded.get("laterReserved").toString()).isEqualTo("{\"atEt\":\"13:00\",\"origin\":\"GUARANTEE\"}");
+        assertThat(bounded.get("note").asString()).contains("laterReserved").contains("20분 전");
+
+        JsonNode closed = CheckpointPacket.build(freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, 1, 3, false, null, null, second,
+                new CheckpointPacket.Reserved(LocalTime.of(11, 5), "EVENT"), false)), MAPPER).body().get("1_basis").get("nextCheckpoint");
+        assertThat(closed.get("available").asBoolean()).as("끝 10:45 < 가장 이른 10:50").isFalse();
+        assertThat(closed.get("firstEt").isNull()).isTrue();
+        assertThat(closed.get("lastEt").isNull()).isTrue();
+        assertThat(closed.get("laterReserved").toString()).isEqualTo("{\"atEt\":\"11:05\",\"origin\":\"EVENT\"}");
+        assertThat(closed.get("note").asString()).startsWith("그대로 남는 뒤 예약(laterReserved)보다 20분 앞에 남은 시각이 없다");
+
+        JsonNode open = CheckpointPacket.build(freeInputs(new CheckpointPacket.Free(PaperBooks.CLAUDE, 1, 3, false, null, null, second)),
+                MAPPER).body().get("1_basis").get("nextCheckpoint");
+        assertThat(open.get("lastEt").asString()).isEqualTo("15:30");
+        assertThat(open.get("laterReserved").isNull()).isTrue();
+
+        List<com.macrodash.store.PaperStore.IntradayPlan> rows = List.of(
+                com.macrodash.store.PaperStore.IntradayPlan.planned(PaperBooks.CLAUDE, E, 2, LocalTime.of(12, 0), "HOURLY", List.of(), "q",
+                        "ft-2", false, 41L, null),
+                com.macrodash.store.PaperStore.IntradayPlan.planned(PaperBooks.CLAUDE, E, 3, LocalTime.of(13, 0), "HOURLY", List.of(), "q",
+                        "ft-2", false, 41L, null));
+        assertThat(CheckpointPacket.Reserved.later(rows, 1)).as("순번 2 뒤의 PLANNED 행")
+                .isEqualTo(new CheckpointPacket.Reserved(LocalTime.of(13, 0), "RESERVED"));
+        assertThat(CheckpointPacket.Reserved.later(rows, 2)).as("순번 3이 다음 순번 — 그 뒤는 없음").isNull();
+    }
+
+    @Test
     @DisplayName("장중 스탑 감시 ON(ADR 0032): 켠 판 장중 판단 패킷에 1_basis.stopWatch와 6_hardRules 끝의 스탑 줄 — 그 밖은 바이트 그대로. 꺼진 판(OFF·SHADOW)은 "
             + "고정본 그대로")
     void stopWatchOnIntradayPacket() {
@@ -531,6 +568,6 @@ class CheckpointPacketTest {
         assertThat(Golden.sha256(hourly.replace(now, before)))
                 .isEqualTo("724b321e601b68ac3d0a7cc9c278cbea35e4074fc7d90ec6dc731c482b001232");
         assertThat(Golden.sha256(free.replace(now, before)))
-                .isEqualTo("b33984f6d35a771db5ec47968578fa725ae75e449ed76ddc7bd368438b19be6f");
+                .isEqualTo("975c2a754f253b55f417eedbb5efb23f83d803d9ac9ce744c3c0d85a60a7e29a");
     }
 }

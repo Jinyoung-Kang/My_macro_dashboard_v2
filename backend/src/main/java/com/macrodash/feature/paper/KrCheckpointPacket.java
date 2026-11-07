@@ -76,11 +76,13 @@ final class KrCheckpointPacket {
      * @param origin   그 계획 행을 누가 만들었나(null이면 수동 표시로 정함)
      * @param trigger  사건이 당기거나 더하거나 붙인 판단이면 그 사건, 없으면 null
      * @param replaces  이 판단의 {@code nextCheckpoint}가 대신하게 될 남은 예약, 없으면 null
+     * @param later     그대로 남는 뒤 예약({@link CheckpointPacket.Reserved#later}), 없으면 null — {@code nextCheckpoint}는 그 시각보다
+     *                  {@link IntradayRequest#MIN_GAP} 이상 앞이어야 함(QA-309)
      * @param stopWatch 한국 장중 스탑 감시가 주문을 내는 판인가({@code kr.stopWatch.mode} ON — {@code 1_basis.stopWatch}, ADR 0032 — 스탑 줄은 밤 결정
      *                  패킷의 12_hardRules에 있음)
      */
     record Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces,
-                boolean stopWatch) {
+                CheckpointPacket.Reserved later, boolean stopWatch) {
 
         Free {
             Objects.requireNonNull(book, "book");
@@ -88,9 +90,15 @@ final class KrCheckpointPacket {
             trigger = trigger == null || trigger.isNull() || trigger.isMissingNode() ? null : trigger;
         }
 
+        /** 그대로 남는 뒤 예약 없이. */
+        Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces,
+             boolean stopWatch) {
+            this(book, slot, max, manual, origin, trigger, replaces, null, stopWatch);
+        }
+
         /** 장중 스탑 감시 OFF·SHADOW 판. */
         Free(String book, int slot, int max, boolean manual, String origin, JsonNode trigger, CheckpointPacket.Reserved replaces) {
-            this(book, slot, max, manual, origin, trigger, replaces, false);
+            this(book, slot, max, manual, origin, trigger, replaces, null, false);
         }
 
         /** 출처·사건·남은 예약 없이(운영자 행이면 출처 MANUAL, 아니면 RESERVED). */
@@ -336,7 +344,8 @@ final class KrCheckpointPacket {
 
     /**
      * 다음 판단을 예약할 수 있는가({@code 1_basis.nextCheckpoint}) — 순번이 남았고 받는 범위({@link IntradayRequest#window} — 개장 10분 뒤 ~ 종가 단일가
-     * 시작 30분 전)에 이 판단 시각 + 최소 간격 뒤의 시각이 남아 있을 때(미국 {@link CheckpointPacket}과 같은 계산). 대신하게 될 남은 예약도 싣습니다.
+     * 시작 30분 전)에 이 판단 시각 + 최소 간격 뒤의 시각이 남아 있을 때(미국 {@link CheckpointPacket}과 같은 계산). 대신하게 될 남은 예약과 그대로 남는 뒤
+     * 예약도 싣고, 뒤 예약이 있으면 가장 늦은 시각은 그 시각 − {@link IntradayRequest#MIN_GAP}입니다(QA-309).
      */
     private static Map<String, Object> nextCheckpoint(Free free, Checkpoint c, LocalDate session, TradingCalendar calendar,
                                                       Instant now) {
@@ -350,18 +359,24 @@ final class KrCheckpointPacket {
         if (earliest.isBefore(window.first())) {
             earliest = window.first();
         }
+        Instant last = window.last();
+        if (free.later() != null) {
+            Instant before = KrCheckpointRequest.targetAt(session, free.later().at()).minus(IntradayRequest.MIN_GAP);
+            if (before.isBefore(last)) {
+                last = before;
+            }
+        }
         boolean room = free.slot() < Math.min(free.max(), RuleBookService.INTRADAY_MAX);
-        boolean available = room && calendar.isTradingDay(session) && !earliest.isAfter(window.last());
+        boolean inWindow = room && calendar.isTradingDay(session) && !earliest.isAfter(window.last());
+        boolean available = inWindow && !earliest.isAfter(last);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", available);
         out.put("firstKst", available ? clock(earliest) : null);
-        out.put("lastKst", available ? clock(window.last()) : null);
+        out.put("lastKst", available ? clock(last) : null);
         out.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());
         out.put("replaces", CheckpointPacket.reserved(free.replaces(), "atKst"));
-        out.put("note", !room ? "세션당 횟수를 다 썼다 — nextCheckpoint를 적어도 버려진다"
-                : !available ? "받는 범위에 남은 시각이 없다 — nextCheckpoint를 적어도 버려진다"
-                : "nextCheckpoint.at은 이 범위(양 끝 포함)의 한국 시간 HH:MM — 이 판단 시각과 " + IntradayRequest.MIN_GAP.toMinutes()
-                + "분 이상 떨어져야 한다. 남은 예약이 있으면(replaces) 그 시각을 대신한다");
+        out.put("laterReserved", CheckpointPacket.reserved(free.later(), "atKst"));
+        out.put("note", CheckpointPacket.nextCheckpointNote(room, inWindow, available, free.later() != null, "한국 시간"));
         return out;
     }
 

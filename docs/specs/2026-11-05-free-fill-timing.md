@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 - 예약 규칙:
   - 결정의 `checkpoints[]`: 시각 순으로 순번 1·2. 범위·간격을 어긴 항목은 그 항목만 버리고 결정 기록에 사유.
   - 장중 판단 응답의 `nextCheckpoint`: 순번이 남았을 때만. 그 세션의 남은 `PLANNED` 행을 대신합니다(다음 순번 행을 새 시각으로 — `requested_by_decision_id`에 그 응답 결정). 없으면 남은 예약은 그대로.
+    그 뒤 순번의 `PLANNED` 행(세션당 3일 때)은 그대로 남으므로 `nextCheckpoint`는 그 시각보다 20분 이상 앞이어야 합니다(어기면 버림 — 패킷 `nextCheckpoint.laterReserved`, QA-309).
   - 수동 실행: 가장 이른 남은 `PLANNED` 행의 시각을 '지금 + 1분'으로 당기고 `manual`을 켭니다. 예약이 없고 순번이 남았으면 새 행. 순번을 다 썼으면 409.
   - 뒤 결정(수동·재시도)이 앞 결정을 대신하면 그 세션의 `PLANNED` 행은 `SUPERSEDED`.
 - 작업: 새 표를 읽는 장중 판단 작업(시장마다 하나 — 60초 주기, 자기 잠금, `config.enabled()`가 거짓이면 아무것도 하지 않음, 저장본은 `StoreReader.quietly`).
@@ -377,7 +378,7 @@ CREATE TABLE IF NOT EXISTS paper_intraday_plans (
 ### 17-2. 새 칸
 
 - V27: 결정 종류 `INTRADAY_3`, 계획 순번 1~3, 계획 행 `origin`(`RESERVED`·`NEXT`·`MANUAL`·`GUARANTEE`·`EVENT` — 기존 행은 한 번 채움)·`trigger`(JSONB — `{originalAt, events:[{type, ticker, …}]}`).
-- 패킷(켠 판만): 장중 판단 `1_basis.origin`·`remainingJudgments`, 요청 `trigger`, `nextCheckpoint.replaces`. 결정 미국 `13_execution.intraday`·한국 `1_basis.intraday`의 `minPerSession`·`guarantee`·`events`.
+- 패킷(켠 판만): 장중 판단 `1_basis.origin`·`remainingJudgments`, 요청 `trigger`, `nextCheckpoint.replaces`·`laterReserved`. 결정 미국 `13_execution.intraday`·한국 `1_basis.intraday`의 `minPerSession`·`guarantee`·`events`.
 - 상태 응답 `intraday`: `minPerSession`·`events`와 행마다 `origin`·`trigger`([API](../API.md)).
 
 ### 17-3. 배포 뒤 저장(시장별로 따로, 저장 때마다 사용자 확인, 요청에 Origin 헤더)

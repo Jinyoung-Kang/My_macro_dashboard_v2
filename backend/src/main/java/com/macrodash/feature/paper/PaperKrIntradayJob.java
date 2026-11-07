@@ -347,9 +347,11 @@ public class PaperKrIntradayJob {
         }
         Optional<Snapshot> watch = Optional.of(snapshot);
         Instant calledAt = clock.instant();
-        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약(ADR 0031 초안), 장중 스탑 감시 ON 표시(ADR 0032) — 켠 판 패킷만.
+        // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031 초안, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
+        // — 켠 판 패킷만.
+        List<IntradayPlan> rows = store.intradayPlans(code, session);
         KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
-                CheckpointPacket.Reserved.after(store.intradayPlans(code, session), p.slot()),
+                CheckpointPacket.Reserved.after(rows, p.slot()), CheckpointPacket.Reserved.later(rows, p.slot()),
                 StopWatchMode.of(row.body(), true).orders());
         Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
                 source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), watch, quotes, version,

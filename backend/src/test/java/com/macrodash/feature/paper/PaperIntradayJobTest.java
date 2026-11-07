@@ -12,7 +12,6 @@ import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.TransientDataAccessResourceException;
@@ -765,8 +764,6 @@ class PaperIntradayJobTest {
     }
 
     @Test
-    @Disabled("QA-309 재현 — 수정 전에는 nextCheckpoint가 다음 순번만 보고 그대로 남는 셋째 예약을 보지 않아, 셋째 뒤·셋째와 20분 안 시각으로 둘째를 바꿈"
-            + "(순번 순 ≠ 시각 순, 두 호출 창이 겹침). fix(QA-309)에서 켭니다")
     @DisplayName("QA-309: 세 예약(10:00·12:00·13:00, 세션당 3) — 첫 판단의 nextCheckpoint는 둘째만 대신하므로 그대로 남는 셋째(13:00)보다 20분 이상 앞이어야 함. "
             + "셋째 뒤(13:10·13:30)·셋째와 20분 안(12:45)은 버리고 행은 그대로(순번 순 = 시각 순·간격 20분), 12:40은 받음. 패킷 nextCheckpoint의 끝은 "
             + "셋째 − 20분(12:40)이고 그대로 남는 예약(laterReserved)이 실림")
