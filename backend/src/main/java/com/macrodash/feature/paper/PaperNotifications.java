@@ -16,9 +16,12 @@ import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -29,10 +32,9 @@ import java.util.regex.Pattern;
  * 모델이 쓴 글(요약·주문 없음 사유·장중 확인 사유)과 주문 근거는 자르지 않습니다(QA-168 — 길면 보내는 쪽이 여러 통으로 나눔). 자르는 것은 진단 글인
  * 오류(300자)와 거절 사유(120자)뿐입니다.
  *
- * <p>서식(사용자 요청 2026-11-03 — 가독성·문단 구분): 텔레그램 HTML 서식(parse_mode HTML — 보내기는 {@link PaperTelegram})으로 제목 줄과 항목 이름만
- * 굵게 하고, 항목 사이는 빈 줄로 나눕니다. 모델이 쓴 글은 문장마다 한 줄로 보입니다({@link #paragraphs} — 문장 끝과 원 숫자 목록 앞의 공백만 줄바꿈으로
- * 바꾸고 글자는 그대로). 서버 값·모델 글·종목 이름은 모두 {@link #esc}로 HTML 엔티티를 바꿔 넣고, 태그는 이 클래스가 붙이는 {@code <b>}뿐이며 한 줄
- * 안에서 닫힙니다(나눠 보내도 태그가 갈라지지 않음).
+ * <p>서식(사용자 요청 2026-11-08 — 마크다운·가독성): 텔레그램 MarkdownV2(보내기와 표시 함수는 {@link PaperTelegram})로 제목 줄과 항목 이름만 굵게, 모델이 쓴 글은
+ * 인용 블록으로 서버 값과 구분하고 문장마다 한 줄({@link #paragraphs}), 종목은 '• 종목 줄'과 '└ 시점 줄' 두 줄, 항목 사이는 빈 줄입니다. 미국 종목은
+ * 티커(종목명)로 적고, 모델 글 안의 티커는 그 알림에서 처음 나올 때만 이름을 붙입니다({@link TickerNotes}).
  */
 final class PaperNotifications {
 
@@ -40,6 +42,8 @@ final class PaperNotifications {
     }
 
     static final String EMPTY = "—";
+    private static final String BULLET = "• ";
+    private static final String BRANCH = "└ ";
     /** 결정 요약에 적는 주문 줄 상한(넘으면 '외 N건'). */
     static final int ORDER_LINES = 15;
     /** 원 숫자 목록(① 브렌트 …) 앞의 공백 — 그 자리에서 줄을 바꿉니다('①과 ②를'처럼 글 안의 참조는 뒤에 공백이 없어 그대로). */
@@ -80,35 +84,38 @@ final class PaperNotifications {
         boolean oneSource = fills.stream().map(f -> f.priceSource() == null ? EMPTY : f.priceSource()).distinct().count() == 1;
         boolean allBackfill = fills.stream().allMatch(Fill::backfill);
         boolean someBackfill = fills.stream().anyMatch(Fill::backfill);
-        List<String> lines = new ArrayList<>();
+        List<String> blocks = new ArrayList<>();
+        blocks.add(PaperTelegram.bold("모의매매 체결 · " + label(book, first.bookCode())) + "\n"
+                + PaperTelegram.esc(marketName(book) + " · " + fills.size() + "건(" + String.join(" · ", counts) + ")"));
         for (List<Fill> side : List.of(sells, buys, others)) {
+            if (side.isEmpty()) {
+                continue;
+            }
+            List<String> lines = new ArrayList<>();
             for (Fill f : side) {
                 Order order = orders == null ? null : orders.get(f.orderId());
                 String timing = timingName(order, korea);
-                lines.add("- " + sideName(f.side()) + " " + ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ "
-                        + money(f.price(), korea, true) + " = " + money(f.gross(), korea, false) + " · " + (timing == null ? EMPTY : timing)
+                lines.add(BULLET + PaperTelegram.esc(ticker(f.ticker(), names, korea) + " " + count(f.qty()) + "주 @ " + money(f.price(), korea, true)
+                        + " = " + money(f.gross(), korea, false)));
+                lines.add(BRANCH + PaperTelegram.esc((timing == null ? EMPTY : timing)
                         + (order != null && PaperBooks.SOURCE_STOP.equals(order.source()) ? " · 스탑" : "")
                         + (oneSource ? "" : " · 출처 " + (f.priceSource() == null ? EMPTY : f.priceSource()))
-                        + (someBackfill && !allBackfill && f.backfill() ? " · 사후 체결" : ""));
+                        + (someBackfill && !allBackfill && f.backfill() ? " · 사후 체결" : "")));
             }
+            blocks.add(PaperTelegram.bold(sideName(side.get(0).side()) + " " + side.size() + "건") + "\n" + String.join("\n", lines));
         }
-        List<String> blocks = new ArrayList<>();
-        blocks.add(bold("[모의매매 체결] " + label(book, first.bookCode()) + " (" + marketName(book) + ") · " + fills.size() + "건("
-                + String.join("·", counts) + ")") + "\n" + esc(String.join("\n", lines)));
-        List<String> details = new ArrayList<>();
-        details.add(totals(sells, buys, fills, korea));
+        blocks.add(PaperTelegram.bold("합계") + "\n" + PaperTelegram.esc(totals(sells, buys, fills, korea)));
         List<LocalDate> dates = fills.stream().map(Fill::observationDate).filter(java.util.Objects::nonNull).sorted().distinct().toList();
         String date = dates.isEmpty() ? EMPTY : dates.size() == 1 ? dates.get(0).toString()
                 : dates.get(0) + "~" + dates.get(dates.size() - 1);
-        details.add("체결일 " + date + (oneSource ? " · 가격 출처 " + (first.priceSource() == null ? EMPTY : first.priceSource()) : "")
-                + (allBackfill ? " · 사후 체결" : "") + " · 기록 " + (first.createdAt() == null ? EMPTY : Kst.stamp(first.createdAt())));
-        blocks.add(esc(String.join("\n", details)));
+        blocks.add(PaperTelegram.esc("체결일 " + date + (oneSource ? " · 가격 출처 " + (first.priceSource() == null ? EMPTY : first.priceSource()) : "")
+                + (allBackfill ? " · 사후 체결" : "") + "\n기록 " + (first.createdAt() == null ? EMPTY : Kst.stamp(first.createdAt()))));
         link(blocks, linkBase, book, "holdings");
         return String.join("\n\n", blocks);
     }
 
     /**
-     * 체결 묶음의 합계 한 줄 — 매도 합·매수 합(있는 쪽만), 비용 합과 0이 아닌 칸(수수료·세금(미국은 SEC fee + FINRA TAF '제비용' — ADR 0030)·
+     * 체결 묶음의 합계(항목마다 한 줄) — 매도 합·매수 합(있는 쪽만), 비용 합과 0이 아닌 칸(수수료·세금(미국은 SEC fee + FINRA TAF '제비용' — ADR 0030)·
      * 슬리피지 금액). 미국은 슬리피지가 체결가에 들어 있어 슬리피지 칸이 0이고 bp만 적습니다(묶음 안에서 갈리면 범위).
      */
     private static String totals(List<Fill> sells, List<Fill> buys, List<Fill> all, boolean korea) {
@@ -147,7 +154,7 @@ final class PaperNotifications {
         if (!inPriceBp.isEmpty()) {
             parts.add("슬리피지 " + plain(inPriceBp.first()) + (inPriceBp.size() > 1 ? "~" + plain(inPriceBp.last()) : "") + "bp(가격에 포함)");
         }
-        return parts.isEmpty() ? "합계 " + EMPTY : String.join(" · ", parts);
+        return parts.isEmpty() ? EMPTY : String.join("\n", parts);
     }
 
     private static double grossSum(List<Fill> fills) {
@@ -166,48 +173,50 @@ final class PaperNotifications {
     static String decision(Decision d, Book book, List<Order> orders, Map<String, String> names, String linkBase) {
         boolean korea = korea(book);
         JsonNode r = d.response();
+        TickerNotes notes = TickerNotes.of(korea, names, orders.stream().map(Order::ticker).toList());
         List<String> blocks = new ArrayList<>();
         List<String> head = new ArrayList<>();
-        head.add("기준일 " + d.asOfTradingDate() + " · " + kindName(d.kind()) + originTail(r) + " · " + statusName(d.status())
-                + (d.retryCount() > 0 ? "(재시도 " + d.retryCount() + "회)" : ""));
+        head.add(marketName(book) + " · 기준일 " + d.asOfTradingDate());
+        head.add(kindName(d.kind()) + originTail(r) + " · " + statusName(d.status()) + (d.retryCount() > 0 ? "(재시도 " + d.retryCount() + "회)" : ""));
         String action = Json.asText(r, "action");
         if (action != null) {
             head.add("장중 확인 " + ("REPLACE".equals(action) ? "대신함(REPLACE)" : "KEEP".equals(action) ? "그대로 둠(KEEP)" : action)
                     + (r.path("supersededOrders").isArray() && !r.path("supersededOrders").isEmpty()
                     ? " · 대신한 대기 주문 " + r.path("supersededOrders").size() + "건" : ""));
         }
-        blocks.add(bold("[모의매매 결정] " + label(book, d.bookCode()) + " (" + marketName(book) + ")") + "\n" + esc(String.join("\n", head)));
+        blocks.add(PaperTelegram.bold("모의매매 결정 · " + label(book, d.bookCode())) + "\n" + PaperTelegram.esc(String.join("\n", head)));
         String summary = Json.asText(r, "summary");
         if (summary != null && !summary.isBlank()) {
-            blocks.add(section("요약", paragraphs(summary)));
+            blocks.add(PaperTelegram.bold("요약") + "\n" + PaperTelegram.quote(notes.apply(paragraphs(summary))));
         }
         Double target = Json.asDouble(r, "targetEquityExposurePct");
         if (target != null) {
-            blocks.add(bold("목표 주식 노출") + " " + esc(plain(target) + "%"));
+            blocks.add(PaperTelegram.bold("목표 주식 노출") + " " + PaperTelegram.esc(plain(target) + "%"));
         }
         String noTrade = Json.asText(r, "noTradeReason");
         if (orders.isEmpty()) {
-            blocks.add(noTrade == null || noTrade.isBlank() ? bold("새 주문 없음") : section("새 주문 없음", paragraphs(noTrade)));
+            blocks.add(noTrade == null || noTrade.isBlank() ? PaperTelegram.bold("새 주문 없음")
+                    : PaperTelegram.bold("새 주문 없음") + "\n" + PaperTelegram.quote(notes.apply(paragraphs(noTrade))));
         } else {
             List<String> lines = new ArrayList<>();
             for (int i = 0; i < Math.min(orders.size(), ORDER_LINES); i++) {
-                lines.add("- " + orderLine(orders.get(i), names, korea));
+                lines.add(orderItem(orders.get(i), names, korea, ""));
             }
             if (orders.size() > ORDER_LINES) {
-                lines.add("- 외 " + (orders.size() - ORDER_LINES) + "건");
+                lines.add(BULLET + PaperTelegram.esc("외 " + (orders.size() - ORDER_LINES) + "건"));
             }
-            blocks.add(section("새 주문 " + orders.size() + "건", String.join("\n", lines)));
+            blocks.add(PaperTelegram.bold("새 주문 " + orders.size() + "건") + "\n" + String.join("\n", lines));
         }
         JsonNode plan = r == null ? null : r.get("checkpointPlan");
         if (plan != null && plan.isObject() && plan.hasNonNull("status")) {
             String at = Json.asText(plan, "atKst") != null ? Json.asText(plan, "atKst") + " KST"
                     : Json.asText(plan, "atEt") != null ? Json.asText(plan, "atEt") + " ET" : EMPTY;
             String reason = Json.asText(plan, "reason");
-            blocks.add(section("장중 확인 요청", "세션 " + Json.asText(plan, "session") + " " + at + " · " + Json.asText(plan, "status")
-                    + (reason == null || reason.isBlank() ? "" : "\n" + paragraphs(reason))));
+            blocks.add(PaperTelegram.bold("장중 확인 요청") + "\n" + PaperTelegram.esc("세션 " + Json.asText(plan, "session") + " " + at + " · " + Json.asText(plan, "status"))
+                    + (reason == null || reason.isBlank() ? "" : "\n" + PaperTelegram.quote(notes.apply(paragraphs(reason)))));
         }
         if (d.error() != null && !d.error().isBlank()) {
-            blocks.add(section("오류", clip(d.error().strip(), 300)));
+            blocks.add(PaperTelegram.bold("오류") + "\n" + PaperTelegram.esc(clip(d.error().strip(), 300)));
         }
         link(blocks, linkBase, book, "decisions");
         return String.join("\n\n", blocks);
@@ -232,29 +241,22 @@ final class PaperNotifications {
         boolean korea = korea(book);
         Order first = orders.get(0);
         boolean oneSource = orders.stream().map(o -> o.source() == null ? "" : o.source()).distinct().count() == 1;
-        String title = "[모의매매 주문] " + label(book, first.bookCode()) + " (" + marketName(book) + ")"
-                + (oneSource ? sourceTag(first.source()) : "") + (orders.size() > 1 ? " · " + orders.size() + "건" : "");
+        TickerNotes tickerNotes = TickerNotes.of(korea, names, orders.stream().map(Order::ticker).toList());
+        String title = "모의매매 주문 · " + label(book, first.bookCode()) + (oneSource ? sourceTag(first.source()) : "");
         List<String> blocks = new ArrayList<>();
-        if (orders.size() == 1) {
-            blocks.add(bold(title) + "\n" + esc(orderLine(first, names, korea)));
-            String note = first.reason() == null ? null : firstText(first.reason(), "note", "summary", "trigger", "basis");
+        List<String> lines = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        for (Order o : orders) {
+            lines.add(orderItem(o, names, korea, oneSource ? "" : sourceTag(o.source())));
+            String note = o.reason() == null ? null : firstText(o.reason(), "note", "summary", "trigger", "basis");
             if (note != null) {
-                blocks.add(section("근거", paragraphs(note)));
+                notes.add((orders.size() > 1 ? ticker(o.ticker(), names, korea) + ": " : "") + tickerNotes.apply(paragraphs(note)));
             }
-        } else {
-            List<String> lines = new ArrayList<>();
-            List<String> notes = new ArrayList<>();
-            for (Order o : orders) {
-                lines.add("- " + orderLine(o, names, korea) + (oneSource ? "" : sourceTag(o.source())));
-                String note = o.reason() == null ? null : firstText(o.reason(), "note", "summary", "trigger", "basis");
-                if (note != null) {
-                    notes.add("- " + ticker(o.ticker(), names, korea) + ": " + paragraphs(note));
-                }
-            }
-            blocks.add(bold(title) + "\n" + esc(String.join("\n", lines)));
-            if (!notes.isEmpty()) {
-                blocks.add(section("근거", String.join("\n", notes)));
-            }
+        }
+        blocks.add(PaperTelegram.bold(title) + "\n" + PaperTelegram.esc(marketName(book) + (orders.size() > 1 ? " · " + orders.size() + "건" : "")));
+        blocks.add(String.join("\n", lines));
+        if (!notes.isEmpty()) {
+            blocks.add(PaperTelegram.bold("근거") + "\n" + PaperTelegram.quote(String.join("\n", notes)));
         }
         link(blocks, linkBase, book, "holdings");
         return String.join("\n\n", blocks);
@@ -267,6 +269,16 @@ final class PaperNotifications {
 
     /** 주문 한 줄 — 쪽·종목·크기·시점·상태(대기가 아니면). */
     static String orderLine(Order o, Map<String, String> names, boolean korea) {
+        return sideName(o.side()) + " " + orderTarget(o, names, korea) + " · " + orderWhen(o, korea);
+    }
+
+    /** 목록의 주문 두 줄 — '• 쪽 종목 크기'와 '└ 시점·상태'. */
+    private static String orderItem(Order o, Map<String, String> names, boolean korea, String tail) {
+        return BULLET + PaperTelegram.bold(sideName(o.side())) + " " + PaperTelegram.esc(orderTarget(o, names, korea)) + "\n"
+                + BRANCH + PaperTelegram.esc(orderWhen(o, korea) + tail);
+    }
+
+    private static String orderTarget(Order o, Map<String, String> names, boolean korea) {
         String size;
         if (o.qty() != null) {
             size = count(o.qty()) + "주";
@@ -275,10 +287,14 @@ final class PaperNotifications {
         } else {
             size = o.sellFraction() == null || o.sellFraction() >= 1.0 ? "전량" : plain(o.sellFraction() * 100) + "%";
         }
+        return ticker(o.ticker(), names, korea) + " " + size;
+    }
+
+    private static String orderWhen(Order o, boolean korea) {
         String timing = timingName(o, korea);
         String status = PaperBooks.ORDER_PENDING.equals(o.status()) ? "" : " · " + orderStatusName(o.status())
                 + (o.rejectReason() == null ? "" : "(" + clip(o.rejectReason(), 120) + ")");
-        return sideName(o.side()) + " " + ticker(o.ticker(), names, korea) + " " + size + " · " + (timing == null ? EMPTY : timing) + status;
+        return (timing == null ? EMPTY : timing) + status;
     }
 
     // ------------------------------------------------------------------ 이름
@@ -391,8 +407,11 @@ final class PaperNotifications {
     }
 
     private static String ticker(String code, Map<String, String> names, boolean korea) {
-        String name = korea && names != null ? names.get(code) : null;
-        return name == null || name.isBlank() ? code : name + "(" + code + ")";
+        String name = names != null ? names.get(code) : null;
+        if (name == null || name.isBlank()) {
+            return code;
+        }
+        return korea ? name + "(" + code + ")" : code + "(" + name + ")";
     }
 
     private static boolean korea(Book book) {
@@ -451,24 +470,44 @@ final class PaperNotifications {
             return;
         }
         String base = linkBase.strip().replaceAll("/+$", "");
-        blocks.add(esc(base + "/paper/" + (korea(book) ? "kr" : "us") + "/" + tab));
+        blocks.add(PaperTelegram.link("holdings".equals(tab) ? "보유 종목 보기" : "결정 기록 보기", base + "/paper/" + (korea(book) ? "kr" : "us") + "/" + tab));
     }
 
     // ------------------------------------------------------------------ 서식
 
-    /** HTML 서식의 글자 — {@code &}·{@code <}·{@code >}를 엔티티로(텔레그램 HTML 서식이 요구하는 셋). */
-    static String esc(String text) {
-        return text == null ? "" : text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-    }
+    /**
+     * 모델 글 안의 미국 티커에 이름 붙이기 — 그 알림에서 처음 나올 때 한 번만. 글로 흔히 쓰는 말과 겹치는 티커(PBR·ALL·NOW 등)와 두 글자 이하는 그 알림의 주문
+     * 종목일 때만 붙입니다. 이미 괄호가 이어지는 티커는 건드리지 않습니다. 한국 계좌는 하지 않습니다.
+     */
+    private static final class TickerNotes {
+        private static final Pattern TOKEN = Pattern.compile("(?<![A-Za-z0-9.\\-_&])[A-Z]{1,5}(?:[-.][A-Z])?(?![A-Za-z0-9\\-_(])");
+        /** 티커이지만 지표·시간대를 가리키는 글이 더 많아 주문 종목이어도 붙이지 않는 말. */
+        private static final Set<String> NEVER = Set.of("ET", "PM");
+        private static final Set<String> COMMON_WORDS = Set.of("ALL", "NOW", "OPEN", "PBR", "TAP", "LOW", "REAL", "RACE", "RUN", "TECH", "ICE", "NET", "TEAM",
+                "CAT", "SNOW", "FOX", "DOW");
 
-    /** 굵은 글씨 한 줄(제목·항목 이름). */
-    private static String bold(String text) {
-        return "<b>" + esc(text) + "</b>";
-    }
+        private final Map<String, String> names;
+        private final Set<String> own;
+        private final Set<String> seen = new HashSet<>();
 
-    /** 항목 하나 — 굵은 이름 줄과 그 아래 글. */
-    private static String section(String heading, String body) {
-        return bold(heading) + "\n" + esc(body);
+        private TickerNotes(Map<String, String> names, Set<String> own) {
+            this.names = names;
+            this.own = own;
+        }
+
+        static TickerNotes of(boolean korea, Map<String, String> names, List<String> ownTickers) {
+            return new TickerNotes(korea || names == null ? Map.of() : names, new HashSet<>(ownTickers));
+        }
+
+        String apply(String text) {
+            return TOKEN.matcher(text).replaceAll(match -> {
+                String ticker = match.group();
+                String name = names.get(ticker);
+                boolean named = name != null && !NEVER.contains(ticker)
+                        && (own.contains(ticker) || (ticker.length() >= 3 && !COMMON_WORDS.contains(ticker)));
+                return Matcher.quoteReplacement(named && seen.add(ticker) ? ticker + "(" + name + ")" : ticker);
+            });
+        }
     }
 
     /**

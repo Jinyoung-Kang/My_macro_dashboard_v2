@@ -240,15 +240,15 @@ class ManualAccountJobDbTest {
 
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
         verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        String night = texts.getAllValues().get(0);
-        assertThat(night).isEqualTo("<b>[ISA 계좌] 11/09(월) 시가 매매 지시</b>\n"
-                + "매수 000660 합성하이닉스 15주\n"
-                + "매수 005930 합성전자 40주\n"
-                + "매수 153130 합성 단기채권 1주\n"
-                + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 다르게 매매했으면 화면에서 고치세요.");
+        String night = PaperTelegram.plain(texts.getAllValues().get(0));
+        assertThat(night).isEqualTo("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n"
+                + "• 매수 000660 합성하이닉스 15주\n"
+                + "• 매수 005930 합성전자 40주\n"
+                + "• 매수 153130 합성 단기채권 1주\n\n"
+                + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n다르게 매매했으면 화면에서 고치세요.");
         assertThat(texts.getAllValues()).allSatisfy(t -> assertThat(t).doesNotContain("원", "10000", "20000", "100000", "900000", "1000000",
                 "%"));
-        assertThat(texts.getAllValues().get(1)).isEqualTo(night);
+        assertThat(PaperTelegram.plain(texts.getAllValues().get(1))).isEqualTo(night);
         assertThat(store.instructions("isa", E)).allSatisfy(i -> {
             assertThat(i.notifiedNightAt()).isEqualTo(kst("2026-11-06T22:35"));
             assertThat(i.notifiedMorningAt()).isEqualTo(kst("2026-11-09T08:05"));
@@ -459,7 +459,7 @@ class ManualAccountJobDbTest {
         });
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
-        assertThat(text.getValue()).contains("11/09(월) 09:10 매매 지시").contains("09:10 이후 시장가로 내면").doesNotContain("장전 동시호가");
+        assertThat(PaperTelegram.plain(text.getValue())).contains("11/09(월) 09:10 매매 지시").contains("09:10 이후 시장가로 내면").doesNotContain("장전 동시호가");
         Map<String, Object> block = block(service().view());
         assertThat(block).containsEntry("targetAt", SYNC_AT.toString());
         @SuppressWarnings("unchecked")
@@ -552,7 +552,7 @@ class ManualAccountJobDbTest {
         });
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
-        assertThat(text.getValue()).startsWith("<b>[ISA 계좌] 11/09(월) 스탑 매도 지시</b>").contains("\n매도 " + A + " 합성전자 50주\n")
+        assertThat(PaperTelegram.plain(text.getValue())).startsWith("[ISA 계좌] 11/09(월) 스탑 매도 지시").contains("• 매도 " + A + " 합성전자 50주\n")
                 .contains("지금 시장가로 매도하세요(개장 10분 전이면 09:10 이후)").doesNotContain("원", "9,700", "10000");
 
         stopCycleAt("2026-11-09T11:30:40");
@@ -607,7 +607,7 @@ class ManualAccountJobDbTest {
         stopCycleAt("2026-11-09T15:21");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
-        assertThat(text.getValue()).contains("종가 단일가(15:20~15:30)에 시장가로 매도하세요").doesNotContain("지금 시장가");
+        assertThat(PaperTelegram.plain(text.getValue())).contains("종가 단일가(15:20~15:30)에 시장가로 매도하세요").doesNotContain("지금 시장가");
         assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.timing()).isEqualTo("NEXT_CLOSE"));
     }
 
@@ -734,14 +734,14 @@ class ManualAccountJobDbTest {
         assertThat(lines(E)).containsExactly("BUY " + B + " 30 PLANNED", "BUY " + A + " 90 PLANNED", "BUY " + CASH + " 2 PLANNED");
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
         verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        assertThat(texts.getAllValues().get(0)).doesNotContain("다시 계산");
-        assertThat(texts.getAllValues().get(1)).startsWith("<b>[ISA 계좌] 11/09(월) 시가 매매 지시(다시 계산)</b>\n")
-                .contains("\n매수 005930 합성전자 90주\n").doesNotContain("원", "%");
+        assertThat(PaperTelegram.plain(texts.getAllValues().get(0))).doesNotContain("다시 계산");
+        assertThat(PaperTelegram.plain(texts.getAllValues().get(1))).startsWith("[ISA 계좌] 11/09(월) 시가 매매 지시(다시 계산)\n\n")
+                .contains("• 매수 005930 합성전자 90주\n").doesNotContain("원", "%");
         assertThat(block(service().view())).containsEntry("ledgerChanged", false);
 
         cycleAt("2026-11-09T08:05");
         verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        assertThat(texts.getValue()).as("아침 알림도 다시 계산한 지시").contains("(다시 계산)").contains("90주");
+        assertThat(PaperTelegram.plain(texts.getValue())).as("아침 알림도 다시 계산한 지시").contains("(다시 계산)").contains("90주");
     }
 
     @Test
@@ -828,7 +828,7 @@ class ManualAccountJobDbTest {
     private List<String> sentTexts(int times) {
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
         verify(telegram, times(times)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        return texts.getAllValues();
+        return texts.getAllValues().stream().map(PaperTelegram::plain).toList();
     }
 
     @Test
@@ -844,7 +844,7 @@ class ManualAccountJobDbTest {
         verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
         job.middayNotify(kst("2026-11-09T12:15:00"));
-        assertThat(sentTexts(1)).singleElement().asString().startsWith("<b>[ISA 계좌] 11/09(월) 매매 확인</b>")
+        assertThat(sentTexts(1)).singleElement().asString().startsWith("[ISA 계좌] 11/09(월) 매매 확인")
                 .contains("매도 " + A + " 합성전자 3주", "매수 " + CASH + " 합성 단기채권 2주").doesNotContain(B);
         assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).isEqualTo(kst("2026-11-09T12:15:00"));
 

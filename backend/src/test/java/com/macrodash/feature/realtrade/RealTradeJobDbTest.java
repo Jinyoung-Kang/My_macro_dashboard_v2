@@ -1799,8 +1799,8 @@ class RealTradeJobDbTest {
 
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
         verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        assertThat(texts.getAllValues().get(1)).isEqualTo("<b>[실제 매매] 멈춤</b>\n사유: unknown-order");
-        assertThat(texts.getAllValues().get(2)).isEqualTo("<b>[실제 매매] 시가 맞추기</b>\n접수 5 · 체결 5 · 놓침 0 · 건너뜀 1 · 막힘 0 · 미룸 0");
+        assertThat(com.macrodash.feature.paper.PaperTelegram.plain(texts.getAllValues().get(1))).isEqualTo("[실제 매매] 멈춤\n\n사유: unknown-order");
+        assertThat(com.macrodash.feature.paper.PaperTelegram.plain(texts.getAllValues().get(2))).isEqualTo("[실제 매매] 시가 맞추기\n\n접수 5 · 체결 5 · 놓침 0\n건너뜀 1 · 막힘 0 · 미룸 0");
         assertThat(texts.getAllValues()).noneMatch(t -> t.contains(A) || t.contains(B) || t.contains("1234567") || t.contains("1,234,567"));
     }
 

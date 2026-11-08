@@ -71,7 +71,7 @@ class FetchClosureNotifyJobTest {
         assertThat(job.run()).as("닫힘 하나에 한 통").isZero();
 
         assertThat(sent).hasSize(1);
-        assertThat(sent.get(0)).contains("<b>수집 출처 닫힘</b>", "www.calendar.example", "사람 확인 요구(계층 browser)",
+        assertThat(PaperTelegram.plain(sent.get(0))).contains("수집 출처 닫힘", "www.calendar.example", "사람 확인 요구(계층 browser)",
                 "2026-11-06 01:53 KST", "직전 저장본은 그대로");
     }
 
@@ -92,8 +92,8 @@ class FetchClosureNotifyJobTest {
         closed.add(GIVEN_UP);
 
         assertThat(job.run()).isEqualTo(1);
-        assertThat(sent.get(0)).contains("data.flows.example", "포기 — 운영자가 풀 때까지 다시 시도하지 않습니다");
-        assertThat(sent.get(0)).doesNotContain("다시 시도</b>");
+        assertThat(PaperTelegram.plain(sent.get(0))).contains("data.flows.example", "포기 — 운영자가 풀 때까지 다시 시도하지 않습니다");
+        assertThat(PaperTelegram.plain(sent.get(0))).doesNotContain("다시 시도 ");
     }
 
     @Test
@@ -145,11 +145,12 @@ class FetchClosureNotifyJobTest {
     }
 
     @Test
-    @DisplayName("알림 글은 서식 글자를 엔티티로 바꾼다")
+    @DisplayName("알림 글은 서식 글자를 이스케이프해 글자 그대로 보이게 한다")
     void textEscapesMarkup() {
         String text = FetchClosureNotifyJob.text(new Closure("a<b>.example", "차단 & <script>", NOW, false));
 
-        assertThat(text).contains("a&lt;b&gt;.example", "차단 &amp; &lt;script&gt;");
+        assertThat(text).contains("a<b\\>\\.example", "차단 & <script\\>");
+        assertThat(PaperTelegram.plain(text)).contains("a<b>.example", "차단 & <script>");
     }
 
     @Test

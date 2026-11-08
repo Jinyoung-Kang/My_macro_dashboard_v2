@@ -113,19 +113,15 @@ public class FetchClosureNotifyJob {
     /** 알림 글(텔레그램 HTML 서식) — 호스트와 사유만 싣고 주소는 싣지 않습니다. */
     static String text(Closure closure) {
         StringBuilder out = new StringBuilder();
-        out.append("<b>수집 출처 닫힘</b>\n");
-        out.append("<b>출처</b> ").append(escape(closure.host())).append('\n');
-        out.append("<b>사유</b> ").append(escape(closure.reason() == null ? "거부" : closure.reason())).append('\n');
+        out.append(PaperTelegram.bold("수집 출처 닫힘")).append("\n\n");
+        out.append(PaperTelegram.bold("출처")).append(' ').append(PaperTelegram.esc(closure.host())).append('\n');
+        out.append(PaperTelegram.bold("사유")).append(' ').append(PaperTelegram.esc(closure.reason() == null ? "거부" : closure.reason())).append('\n');
         if (closure.givenUp()) {
-            out.append("<b>상태</b> 포기 — 운영자가 풀 때까지 다시 시도하지 않습니다\n");
+            out.append(PaperTelegram.bold("상태")).append(' ').append(PaperTelegram.esc("포기 — 운영자가 풀 때까지 다시 시도하지 않습니다")).append('\n');
         } else {
-            out.append("<b>다시 시도</b> ").append(escape(Kst.stamp(closure.until()))).append(" 뒤\n");
+            out.append(PaperTelegram.bold("다시 시도")).append(' ').append(PaperTelegram.esc(Kst.stamp(closure.until()) + " 뒤")).append('\n');
         }
-        out.append("직전 저장본은 그대로입니다. 푸는 방법은 docs/DATA_SOURCES.md '차단 통과 수집 계층'.");
+        out.append('\n').append(PaperTelegram.esc("직전 저장본은 그대로입니다. 푸는 방법은 docs/DATA_SOURCES.md '차단 통과 수집 계층'."));
         return out.toString();
-    }
-
-    private static String escape(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 }

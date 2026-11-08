@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.time.Duration;
 
 /**
@@ -30,9 +32,9 @@ import java.time.Duration;
  * 대화방은 네 봇이 같습니다(운영자와의 1:1 대화).
  *
  * <ul>
- *   <li>글은 텔레그램 HTML 서식(parse_mode HTML — 사용자 요청 2026-11-03, 굵은 제목·항목 이름)입니다. 글을 만드는 쪽({@link PaperNotifications})이
- *       값을 모두 엔티티로 바꿔 넣고 태그는 한 줄 안의 {@code <b>}뿐입니다. 텔레그램이 서식을 거절하면(HTTP 400 — 엔티티 해석 실패 등) 같은 글을 태그를 떼고
- *       평문으로 한 번 더 보냅니다({@link #plain} — 알림이 빠지지 않게, 굵은 글씨만 사라짐). 링크 미리보기는 끔({@code link_preview_options.is_disabled}).
+ *   <li>글은 텔레그램 MarkdownV2 서식(parse_mode MarkdownV2 — 사용자 요청 2026-11-08)입니다. 글을 만드는 쪽이 값을 모두 {@link #esc}로 넣고 표시는 {@link #bold}·
+ *       {@link #quote}·{@link #link}로만 붙입니다(모두 한 줄 안에서 닫혀 나눠 보내도 갈라지지 않음). 텔레그램이 서식을 거절하면(HTTP 400 — 엔티티 해석 실패 등) 같은
+ *       글을 표시를 떼고 평문으로 한 번 더 보냅니다({@link #plain} — 알림이 빠지지 않게). 링크 미리보기는 끔({@code link_preview_options.is_disabled}).
  *       {@value #MAX_CHARS}자를 넘으면 줄 경계에서 나눠 여러 통으로 차례로 보냅니다(자르지 않음 — QA-168).</li>
  *   <li>실패 사유에 봇 토큰이 섞이지 않게 합니다(주소에 토큰이 들어가므로 예외 글에서 지움). 재시도는 부르는 쪽(알림 작업 — 다음 주기)이 합니다.</li>
  * </ul>
@@ -44,7 +46,7 @@ public class PaperTelegram {
 
     static final String API = "https://api.telegram.org";
     static final Duration TIMEOUT = Duration.ofSeconds(10);
-    /** 한 통의 글자 상한 — Bot API 4096자(서식을 푼 뒤)보다 조금 작게. 엔티티·태그까지 세므로 보이는 글은 늘 이보다 짧습니다. */
+    /** 한 통의 글자 상한 — Bot API 4096자(서식을 푼 뒤)보다 조금 작게. 이스케이프·표시까지 세므로 보이는 글은 늘 이보다 짧습니다. */
     static final int MAX_CHARS = 4000;
 
     /** 보내는 길 — 시험이 가짜로 바꿔 끼웁니다. */
@@ -150,7 +152,7 @@ public class PaperTelegram {
                     out.add(part.toString());
                     part = null;
                 }
-                int cut = Character.isHighSurrogate(line.charAt(MAX_CHARS - 1)) ? MAX_CHARS - 1 : MAX_CHARS;
+                int cut = Character.isHighSurrogate(line.charAt(MAX_CHARS - 1)) || line.charAt(MAX_CHARS - 1) == '\\' ? MAX_CHARS - 1 : MAX_CHARS;
                 out.add(line.substring(0, cut));
                 line = line.substring(cut);
             }
@@ -166,7 +168,7 @@ public class PaperTelegram {
         return out;
     }
 
-    /** 한 통(상한 안의 글) — HTML 서식으로, 서식을 거절하면(HTTP 400) 평문으로 한 번 더. */
+    /** 한 통(상한 안의 글) — MarkdownV2 서식으로, 서식을 거절하면(HTTP 400) 평문으로 한 번 더. */
     private String sendOne(String botToken, String body) {
         String error = post(botToken, body, true);
         if (error == null || !error.startsWith("HTTP 400")) {
@@ -174,23 +176,59 @@ public class PaperTelegram {
         }
         String plainError = post(botToken, plain(body), false);
         if (plainError == null) {
-            log.warn("텔레그램이 HTML 서식을 거절해 평문으로 보냈습니다 — {}", error);
+            log.warn("텔레그램이 MarkdownV2 서식을 거절해 평문으로 보냈습니다 — {}", error);
         }
         return plainError;
     }
 
-    /** HTML 서식 글 → 평문(태그를 떼고 엔티티를 되돌림 — {@code &amp;}는 마지막에). */
-    static String plain(String html) {
-        return html.replace("<b>", "").replace("</b>", "").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
-                .replace("&amp;", "&");
+    /** MarkdownV2에서 표시로 읽히는 글자(Bot API 'MarkdownV2 style'이 이스케이프를 요구하는 목록) + 역슬래시. */
+    private static final Pattern MARKDOWN_SPECIAL = Pattern.compile("[_*\\[\\]()~`>#+\\-=|{}.!\\\\]");
+
+    /** 서버 값·모델 글을 글자 그대로 보이게. */
+    public static String esc(String text) {
+        return text == null ? "" : MARKDOWN_SPECIAL.matcher(text).replaceAll("\\\\$0");
     }
 
-    private String post(String botToken, String body, boolean html) {
+    /** 굵은 글씨 한 줄(제목·항목 이름). */
+    public static String bold(String text) {
+        return "*" + esc(text) + "*";
+    }
+
+    /** 인용 블록 — 줄마다 표시를 붙입니다(빈 줄은 뺌). 모델이 쓴 글을 서버 값과 구분해 보여 줍니다. */
+    public static String quote(String text) {
+        return text.lines().filter(line -> !line.isBlank()).map(line -> ">" + esc(line)).collect(Collectors.joining("\n"));
+    }
+
+    /** 글자에 건 링크. */
+    public static String link(String label, String url) {
+        return "[" + esc(label) + "](" + url.replace("\\", "\\\\").replace(")", "\\)") + ")";
+    }
+
+    /** MarkdownV2 글 → 평문(이스케이프를 풀고 굵은 글씨·인용 표시를 떼고, 링크는 '글자 주소'로). 서식이 거절됐을 때만 씁니다. */
+    public static String plain(String markdown) {
+        StringBuilder out = new StringBuilder(markdown.length());
+        for (int i = 0; i < markdown.length(); i++) {
+            char c = markdown.charAt(i);
+            if (c == '\\' && i + 1 < markdown.length()) {
+                out.append(markdown.charAt(++i));
+            } else if (c == '>' && (i == 0 || markdown.charAt(i - 1) == '\n')) {
+                continue;
+            } else if (c == ']' && i + 1 < markdown.length() && markdown.charAt(i + 1) == '(') {
+                out.append(' ');
+                i++;
+            } else if (c != '*' && c != '[' && c != ')') {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    private String post(String botToken, String body, boolean markdown) {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("chat_id", chatId);
         payload.put("text", body);
-        if (html) {
-            payload.put("parse_mode", "HTML");
+        if (markdown) {
+            payload.put("parse_mode", "MarkdownV2");
         }
         payload.putObject("link_preview_options").put("is_disabled", true);
         try {

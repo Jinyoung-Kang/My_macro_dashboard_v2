@@ -522,7 +522,7 @@ class PaperIntradayJobTest {
         Decision d = decision(PaperBooks.CLAUDE, 1);
         assertThat(d.response().path("checkpoint").path("origin").asString()).isEqualTo(IntradayPlan.ORIGIN_GUARANTEE);
         assertThat(d.response().path("checkpoint").has("trigger")).as("사건 없음").isFalse();
-        assertThat(PaperNotifications.decision(d, store.books.get(PaperBooks.CLAUDE), List.of(), Map.of(), null))
+        assertThat(PaperTelegram.plain(PaperNotifications.decision(d, store.books.get(PaperBooks.CLAUDE), List.of(), Map.of(), null)))
                 .contains("장중 판단 1(코드 보장)");
         assertThat(row(PaperBooks.CLAUDE, 1).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
 
@@ -576,7 +576,7 @@ class PaperIntradayJobTest {
         assertThat(packet.get("3_request").get("question").asString()).isEqualTo(IntradayScheduler.EVENT_QUESTION);
         Decision d = decision(PaperBooks.CLAUDE, 1);
         assertThat(d.response().path("checkpoint").path("origin").asString()).isEqualTo(IntradayPlan.ORIGIN_EVENT);
-        assertThat(PaperNotifications.decision(d, store.books.get(PaperBooks.CLAUDE), List.of(), Map.of(), null))
+        assertThat(PaperTelegram.plain(PaperNotifications.decision(d, store.books.get(PaperBooks.CLAUDE), List.of(), Map.of(), null)))
                 .contains("장중 판단 1(사건)");
         assertThat(row(PaperBooks.CLAUDE, 1).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
     }

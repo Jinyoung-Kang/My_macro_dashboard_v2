@@ -102,6 +102,7 @@ public class PaperNotifyJob {
     private final Clock clock;
     private final Sleeper sleeper;
     private final String linkBase;
+    private final Map<String, String> usNames;
     private final ReentrantLock running = new ReentrantLock();
 
     @Autowired
@@ -122,6 +123,7 @@ public class PaperNotifyJob {
         this.clock = clock;
         this.sleeper = sleeper;
         this.linkBase = linkBase;
+        this.usNames = UsTickerNames.load(mapper);
     }
 
     /** 정기 실행 — 서버(정기 작업 켜짐)이고 텔레그램 값이 있을 때만. 예외는 로그로만. */
@@ -241,7 +243,7 @@ public class PaperNotifyJob {
         SettingsRow row = store.settings().orElse(null);
         boolean on = on(row == null ? null : row.body());
         Map<String, Optional<Book>> books = new HashMap<>();
-        Map<String, String> names = null;
+        Map<String, String> krNames = null;
         Map<String, Cursor> at = new LinkedHashMap<>(cursors);
         Map<String, String> failures = new LinkedHashMap<>();
         int sent = 0;
@@ -252,10 +254,11 @@ public class PaperNotifyJob {
             }
             Book book = books.computeIfAbsent(e.bookCode(), store::book).orElse(null);
             if (on) {
-                if (names == null && book != null && Book.MARKET_KR.equals(book.market())) {
+                if (krNames == null && Book.MARKET_KR.equals(e.market())) {
                     Map<String, String> read = reader.quietly(marketData::krNames);
-                    names = read == null ? Map.of() : read;
+                    krNames = read == null ? Map.of() : read;
                 }
+                Map<String, String> names = Book.MARKET_KR.equals(e.market()) ? krNames : usNames;
                 String text = switch (e.kind()) {
                     case FILL -> PaperNotifications.fills(e.fills(), book, ordersOf(e.fills()), names, linkBase);
                     case ORDER -> PaperNotifications.orders(e.orders(), book, names, linkBase);

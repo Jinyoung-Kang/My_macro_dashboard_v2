@@ -1,5 +1,6 @@
 package com.macrodash.feature.realtrade;
 
+import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.RealTradeStore;
 import tools.jackson.databind.JsonNode;
 
@@ -9,7 +10,7 @@ import java.util.regex.Pattern;
 /**
  * 실제 매매 텔레그램 글(명세 §7.4 — 사용자 결정 2026-11-06 '건수·상태만'). 글은 고정 문구 + 상태 + 건수 + 사유 코드뿐이고 <b>종목·수량·금액·계좌 식별자를
  * 쓰지 않습니다</b> — 이벤트 detail에 무엇이 들어 있든 여기서 읽는 칸은 사유 코드(코드 모양일 때만)·창 이름·건수(정수)뿐입니다. 서식은 모의 알림과 같은
- * 텔레그램 HTML(한 줄 안의 {@code <b>}만 — {@code PaperTelegram}이 서식 거절 때 평문으로 다시 보냄). 이모지 없음.
+ * 텔레그램 MarkdownV2(굵은 제목 — {@code PaperTelegram}이 서식 거절 때 평문으로 다시 보냄). 이모지 없음.
  */
 final class RealTradeNotices {
 
@@ -41,28 +42,32 @@ final class RealTradeNotices {
         JsonNode detail = event.detail();
         String kind = event.kind() == null ? "" : event.kind();
         return switch (kind) {
-            case RealTradeStore.EVENT_HALT -> title("멈춤") + "\n사유: " + code(detail, "reason");
-            case RealTradeStore.EVENT_BUYS_PAUSED -> title("매수 멈춤") + "\n사유: " + code(detail, "reason");
-            case RealTradeStore.EVENT_SKIP_DAY -> title("오늘 쉼") + "\n사유: " + code(detail, "reason");
-            case RealTradeStore.EVENT_WINDOW_SUMMARY -> title(windowLabel(detail)) + "\n" + counts(detail);
-            case RealTradeStore.EVENT_ENABLE -> title("켜짐") + "\n다음 맞추기부터 따라 합니다";
-            case RealTradeStore.EVENT_DISABLE -> title("끄기") + "\n새 주문 멈춤 · 미체결 취소 중";
-            case EVENT_STOPPED -> title("꺼짐") + "\n" + stopped(detail) + unresolved(detail);
-            case EVENT_STOP_SELL -> title("스탑 매도") + "\n보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "
-                    + count(detail, "missed");
-            case EVENT_CANCEL_GAVE_UP -> title("취소 못 함") + "\n" + count(detail, "count") + "건 — 토스증권 앱에서 직접 취소하세요";
+            case RealTradeStore.EVENT_HALT -> notice("멈춤", "사유: " + code(detail, "reason"));
+            case RealTradeStore.EVENT_BUYS_PAUSED -> notice("매수 멈춤", "사유: " + code(detail, "reason"));
+            case RealTradeStore.EVENT_SKIP_DAY -> notice("오늘 쉼", "사유: " + code(detail, "reason"));
+            case RealTradeStore.EVENT_WINDOW_SUMMARY -> notice(windowLabel(detail), counts(detail));
+            case RealTradeStore.EVENT_ENABLE -> notice("켜짐", "다음 맞추기부터 따라 합니다");
+            case RealTradeStore.EVENT_DISABLE -> notice("끄기", "새 주문 멈춤 · 미체결 취소 중");
+            case EVENT_STOPPED -> notice("꺼짐", stopped(detail) + unresolved(detail));
+            case EVENT_STOP_SELL -> notice("스탑 매도", "보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "
+                    + count(detail, "missed"));
+            case EVENT_CANCEL_GAVE_UP -> notice("취소 못 함", count(detail, "count") + "건 — 토스증권 앱에서 직접 취소하세요");
             case RealTradeStore.EVENT_UPDATE -> title("설정 바뀜");
             case RealTradeStore.EVENT_RESUME -> title("멈춤 해제");
-            case RealTradeStore.EVENT_RESTORED -> title("복원 뒤 멈춤") + "\n사유: restored";
-            case RealTradeStore.EVENT_PASSWORD_FAILED -> title("비밀번호 틀림") + "\n연속 " + count(detail, "consecutive") + "회"
-                    + (detail != null && detail.path("locked").asBoolean(false) ? " · 30분 잠금" : "");
-            case EVENT_SKIPPED -> title("건너뜀") + "\n사유: " + code(detail, "reason") + " · " + count(detail, "count") + "건";
+            case RealTradeStore.EVENT_RESTORED -> notice("복원 뒤 멈춤", "사유: restored");
+            case RealTradeStore.EVENT_PASSWORD_FAILED -> notice("비밀번호 틀림", "연속 " + count(detail, "consecutive") + "회"
+                    + (detail != null && detail.path("locked").asBoolean(false) ? " · 30분 잠금" : ""));
+            case EVENT_SKIPPED -> notice("건너뜀", "사유: " + code(detail, "reason") + " · " + count(detail, "count") + "건");
             default -> KIND.matcher(kind).matches() ? title(kind) : null;
         };
     }
 
     private static String title(String label) {
-        return "<b>" + PREFIX + label + "</b>";
+        return PaperTelegram.bold(PREFIX + label);
+    }
+
+    private static String notice(String label, String body) {
+        return title(label) + "\n\n" + PaperTelegram.esc(body);
     }
 
     private static String windowLabel(JsonNode detail) {
@@ -72,7 +77,7 @@ final class RealTradeNotices {
 
     private static String counts(JsonNode detail) {
         return "접수 " + count(detail, "accepted") + " · 체결 " + count(detail, "filled") + " · 놓침 " + count(detail, "missed")
-                + " · 건너뜀 " + count(detail, "skipped") + " · 막힘 " + count(detail, "blocked") + " · 미룸 " + count(detail, "deferred");
+                + "\n건너뜀 " + count(detail, "skipped") + " · 막힘 " + count(detail, "blocked") + " · 미룸 " + count(detail, "deferred");
     }
 
     /** 끈 뒤 끝난 이 기능의 주문을 끝난 방식으로 나눈 건수(정리 결과를 단정하지 않게 — '그 밖'은 있을 때만). */
