@@ -601,6 +601,8 @@ EQUITY_MAP = {
 | `GET /api/v1/candles?symbol=&interval=1d\|1m&count=&before=&adjusted=` | 종목 일봉·1분봉(최신순, 한 번에 200개, `before`로 과거 쪽 — 공식 스펙 1.2.24). 일봉 `timestamp` = 거래일 KST 자정, 1분봉 라벨 = 봉 **끝** 시각. `adjusted` 기본값은 true(수정주가)라 늘 보냄 | 한국 책 관측치·이력(`kr_paper_quotes`) |
 | `GET /api/v1/stocks?symbols=` | 종목 유형·`koreanMarketDetail`(`nxtSupported`·`krxTradingSuspended`)·상장일, 200개씩 | 레이더 폴백 종목 정보, 한국 책 종목 상태 |
 
+실제 매매의 시각 맞추기는 주문 직전에 `GET /api/v1/stocks/{symbol}/warnings`(VI 진행 중 여부)와 코스피·코스닥 현재가·일봉(서킷브레이커 추정 — 토스에 시장 정지 표시 없음)을 읽습니다(저장하지 않음, [ADR 0033](adr/0033-real-isa-open-offset-and-stops.md) 결과).
+
 ### 교차 검증에 쓰는 것 (데이터 저장소 상태)
 
 | 항목 | 토스 엔드포인트 | 대조 상대 | 언제 |
