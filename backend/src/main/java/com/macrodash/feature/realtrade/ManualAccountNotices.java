@@ -87,6 +87,38 @@ final class ManualAccountNotices {
         return out.toString();
     }
 
+    /** 장 중반 확인 알림의 한 줄 — 방향·종목 코드·남은 수량. */
+    record MiddayLine(String side, String symbol, int quantity) {
+    }
+
+    /**
+     * 장 중반 매매 확인 알림 글(2026-11-08 사용자 요청 — ADR 0029 결정 4의 예외 안: 종목 코드·이름·수량만, 금액·기준가·평가액 없음). 제목 'MM/DD(요일) 매매
+     * 확인', 줄마다 '매도 코드 이름 n주'(직접 적은 체결이 일부 있으면 남은 수량), 끝에 할 일. 보일 줄이 없으면 null(보내지 않음).
+     */
+    static String midday(LocalDate session, List<MiddayLine> items, Map<String, String> names) {
+        StringBuilder lines = new StringBuilder();
+        for (MiddayLine i : items) {
+            if (i.symbol() == null || !SYMBOL.matcher(i.symbol()).matches() || i.quantity() <= 0) {
+                continue;
+            }
+            String side = ManualAccountStore.SIDE_SELL.equals(i.side()) ? "매도" : ManualAccountStore.SIDE_BUY.equals(i.side()) ? "매수" : null;
+            if (side == null) {
+                continue;
+            }
+            lines.append('\n').append(side).append(' ').append(i.symbol());
+            String name = names.get(i.symbol());
+            if (name != null && !name.isBlank()) {
+                lines.append(' ').append(escape(name.strip()));
+            }
+            lines.append(' ').append(i.quantity()).append("주");
+        }
+        if (lines.isEmpty()) {
+            return null;
+        }
+        return title(session, "매매 확인", false) + "\n장 중반까지 '매매함' 표시나 체결 기록이 없는 지시입니다." + lines
+                + "\n아직 안 했으면 지금 시장가로 내세요. 이미 했으면 ISA 계좌 탭에서 '매매함'을, 하지 않기로 했으면 '건너뜀'을 누르세요.";
+    }
+
     /** 종가 단일가 시간 — 정규장 마감 이만큼 전부터(보통 15:20~15:30, 장 시간 변경일은 그 마감 기준). */
     private static final long CLOSING_AUCTION_MINUTES = 10;
     /** 장중 체결 첫 분 — 개장 이만큼 뒤(보통 09:10 — ADR 0031·0033). */

@@ -128,10 +128,10 @@ public class ManualAccountStore {
         }
     }
 
-    /** 지시 행 하나(V25 {@code manual_instructions}의 모든 칸). */
+    /** 지시 행 하나(V25 {@code manual_instructions}의 모든 칸 + V30 '매매함' 표시 {@code confirmedAt}·장 중반 확인 알림 시각 {@code notifiedMiddayAt}). */
     public record Instruction(long id, String account, LocalDate session, String symbol, String side, int quantity, BigDecimal refPrice,
                               BigDecimal weightPct, JsonNode reason, String status, Instant notifiedNightAt, Instant notifiedMorningAt,
-                              Instant createdAt, Instant updatedAt) {
+                              Instant confirmedAt, Instant notifiedMiddayAt, Instant createdAt, Instant updatedAt) {
 
         public boolean planned() {
             return STATUS_PLANNED.equals(status);
@@ -203,7 +203,7 @@ public class ManualAccountStore {
     private static final String LEDGER_COLUMNS = "id, account, at, kind, symbol, quantity, price, amount, fee, tax, instruction_id, source, "
             + "note, created_at, updated_at, stop_instruction_id";
     private static final String INSTRUCTION_COLUMNS = "id, account, session, symbol, side, quantity, ref_price, weight_pct, reason, status, "
-            + "notified_night_at, notified_morning_at, created_at, updated_at";
+            + "notified_night_at, notified_morning_at, confirmed_at, notified_midday_at, created_at, updated_at";
     private static final String SESSION_COLUMNS = "account, session, state, decision_id, detail, ledger_changed_at, created_at";
     private static final String STOP_COLUMNS = "id, account, session, paper_order_id, symbol, side, quantity, timing, target_at, reason, status, "
             + "notified_at, created_at, updated_at";
@@ -222,13 +222,14 @@ public class ManualAccountStore {
     }
 
     /**
-     * 표가 있는가. 수집기가 아직 V25·V28을 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중') — 장부 조회가 모두 V28의
-     * {@code stop_instruction_id} 칸을 읽으므로 백엔드만 새로 띄운 배포(QA-016)에서 SQL 오류 대신 안내 문구가 나가게.
+     * 표가 있는가. 수집기가 아직 V25·V28·V30을 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중') — 장부·지시 조회가 모두 V28의
+     * {@code stop_instruction_id}·V30의 두 칸을 읽으므로 백엔드만 새로 띄운 배포(QA-016)에서 SQL 오류 대신 안내 문구가 나가게.
      */
     public boolean ready() {
         return schema.tableExists("manual_accounts") && schema.tableExists("manual_ledger")
                 && schema.tableExists("manual_instructions") && schema.tableExists("manual_sessions")
-                && schema.tableExists("manual_stop_instructions") && schema.columnExists("manual_ledger", "stop_instruction_id");
+                && schema.tableExists("manual_stop_instructions") && schema.columnExists("manual_ledger", "stop_instruction_id")
+                && schema.columnExists("manual_instructions", "confirmed_at") && schema.columnExists("manual_instructions", "notified_midday_at");
     }
 
     /**
@@ -422,6 +423,34 @@ public class ManualAccountStore {
         return markNotified("notified_morning_at", ids, at);
     }
 
+    /** 장 중반 확인 알림을 보낸 시각을 남깁니다(아직 없는 행만). */
+    public int markNotifiedMidday(Collection<Long> ids, Instant at) {
+        return markNotified("notified_midday_at", ids, at);
+    }
+
+    /**
+     * '매매함' 표시를 남기거나({@code at}) 지웁니다(null) — 그 계좌의 PLANNED·RECORDED 지시만, 이미 그 상태인 행은 건드리지 않습니다. 장부·지시 상태는
+     * 바꾸지 않습니다.
+     *
+     * @return 바꾼 행 수
+     */
+    public int setInstructionsConfirmed(String code, Collection<Long> ids, Instant at) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        Long[] array = ids.toArray(new Long[0]);
+        return jdbc.update("UPDATE manual_instructions SET confirmed_at = ?, updated_at = now() WHERE account = ? AND id = ANY (?) "
+                + "AND status IN ('PLANNED', 'RECORDED') AND confirmed_at IS " + (at == null ? "NOT NULL" : "NULL"), ps -> {
+                    if (at == null) {
+                        ps.setNull(1, Types.TIMESTAMP_WITH_TIMEZONE);
+                    } else {
+                        ps.setTimestamp(1, Timestamp.from(at));
+                    }
+                    ps.setString(2, code);
+                    ps.setArray(3, ps.getConnection().createArrayOf("bigint", array));
+                });
+    }
+
     private int markNotified(String column, Collection<Long> ids, Instant at) {
         if (ids.isEmpty()) {
             return 0;
@@ -599,7 +628,8 @@ public class ManualAccountStore {
         return (rs, rowNum) -> new Instruction(rs.getLong("id"), rs.getString("account"), rs.getDate("session").toLocalDate(),
                 rs.getString("symbol"), rs.getString("side"), rs.getInt("quantity"), rs.getBigDecimal("ref_price"),
                 rs.getBigDecimal("weight_pct"), json(rs, "reason"), rs.getString("status"), instant(rs, "notified_night_at"),
-                instant(rs, "notified_morning_at"), instant(rs, "created_at"), instant(rs, "updated_at"));
+                instant(rs, "notified_morning_at"), instant(rs, "confirmed_at"), instant(rs, "notified_midday_at"), instant(rs, "created_at"),
+                instant(rs, "updated_at"));
     }
 
     private RowMapper<SessionRow> sessionMapper() {

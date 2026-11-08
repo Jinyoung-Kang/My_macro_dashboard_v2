@@ -210,4 +210,20 @@ class ManualAccountStopStoreDbTest {
         jdbc.update("DELETE FROM manual_accounts");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM manual_stop_instructions", Integer.class)).isZero();
     }
+
+    @Test
+    @DisplayName("준비 — V30의 '매매함'·장 중반 알림 칸이 있어야 준비됨(지시 조회가 두 칸을 읽음), 시험 뒤 되돌림")
+    void readyRequiresV30() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V30까지 적용했는가").isTrue();
+        for (String column : List.of("confirmed_at", "notified_midday_at")) {
+            assertThatThrownBy(() -> store.atomically(() -> {
+                jdbc.execute("ALTER TABLE manual_instructions DROP COLUMN " + column);
+                assertThat(new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as(column + " 칸이 없으면").isFalse();
+                throw new Rollback();
+            })).isInstanceOf(Rollback.class);
+        }
+        assertThat(store.ready()).as("되돌린 뒤").isTrue();
+    }
 }

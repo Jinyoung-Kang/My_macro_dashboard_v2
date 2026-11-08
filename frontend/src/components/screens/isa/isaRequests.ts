@@ -4,7 +4,7 @@ import { isaErrorCode, isaErrorNeedsReload, isaErrorText } from "@/lib/isa";
 import type { IsaLedgerRequest, IsaOkResponse, IsaStartRequest } from "@/lib/types/isa";
 
 /*
- * ISA 계좌(ADR 0029)의 쓰기 넷 — 이 파일이 ISA 모듈에서 apiPost를 부르는 유일한 곳이고, 경로는 늘 endpoints.isa.*입니다
+ * ISA 계좌(ADR 0029)의 쓰기 — 이 파일이 ISA 모듈에서 apiPost를 부르는 유일한 곳이고, 경로는 늘 endpoints.isa.*입니다
  * (경계 시험 __tests__/isaBoundary.test.ts가 apiPost의 첫 인자를 봅니다). 증권사로 나가는 주문은 없습니다 — 장부와 지시 상태만 바꿉니다.
  */
 
@@ -26,6 +26,11 @@ export function postDeleteLedger(id: number): Promise<IsaOkResponse> {
 /** 지시 건너뜀(장부에 쓰지 않음). */
 export function postSkipInstruction(id: number): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.skipInstruction(id));
+}
+
+/** '매매함' 표시 남기기(confirmed true)·지우기(false) — 장 중반 확인 알림의 신호, 장부는 바꾸지 않습니다. */
+export function postConfirmInstructions(ids: readonly number[], confirmed: boolean): Promise<IsaOkResponse> {
+  return apiPost<IsaOkResponse>(endpoints.isa.confirmInstructions, { ids, confirmed });
 }
 
 /**

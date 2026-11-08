@@ -6,6 +6,8 @@
   **일부 개정 — [ADR 0033](0033-real-isa-open-offset-and-stops.md)(2026-11-06 결정, 2026-11-07 배포)**: 결정 1·3 — 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날의 지시는 '09:10 이후 시장가'이고
   자동 기록은 그 분의 1분봉 사다리 값, 결정 4 — 텔레그램 예외에 장중 스탑 지시(감지 즉시, 종목 코드·이름·수량만 — 금액 없음)를 더함, 결정 5 — V28 `manual_stop_instructions`·`manual_ledger.stop_instruction_id`(더하기만).
   나머지 결정(주문 없음·분리)은 그대로다.
+  **더함 — 2026-11-08(사용자 요청 "해당 영업일 중반까지 지시대로 매매하지 않았다면 텔레그램을 한 번 더", 권장안대로)**: 결정 4의 알림에 장 중반 확인 알림 한 통을 더함(같은 예외 — 종목 코드·이름·수량만). 증권사 연결이 없어
+  실제 매매를 볼 수 없고 자동 기록은 그날 밤이라 [보유]로 판단할 수 없으므로, 화면의 '매매함' 표시(V30 `confirmed_at` — 장부 불변)와 사용자 체결만 신호로 삼고 모르면 알린다. 시각은 그 세션 정규장 절반(보통 12:15). 결정 3(지시대로 자동 기록)은 그대로.
 - 지키는 방법: 백엔드 `ManualAccountPlannerTest`·`ManualAccountLedgerTest`·`ManualAccountNoticesTest`·`ManualAccountServiceDbTest`·`ManualAccountJobDbTest`·`ManualAccountPaperReadsTest`(지시 계산·자동 기록·알림 글에 금액 없음), `ArchitectureRulesTest.realtradeIsIsolated`(허용 목록에 `store.ManualAccountStore`),
   `AccessPolicyTest`(운영자 전용), 화면 `isaBoundary.test.ts`·탭은 KR만.
 

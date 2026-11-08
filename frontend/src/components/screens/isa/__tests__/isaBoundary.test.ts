@@ -128,7 +128,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (/\bfetch\s*\(/.test(text)) offenders.push(`${name}: fetch`);
       for (const match of text.matchAll(/\bapiPost\s*(?:<[^>()]*>)?\s*\(\s*([^,)]+)/g)) {
         const target = match[1].trim();
-        const leaf = /^endpoints\.isa\.(start|ledger|deleteLedger|skipInstruction)\b/.exec(target)?.[1];
+        const leaf = /^endpoints\.isa\.(start|ledger|deleteLedger|skipInstruction|confirmInstructions)\b/.exec(target)?.[1];
         if (leaf) posts.push(leaf);
         else offenders.push(`${name}: apiPost(${target})`);
       }
@@ -139,8 +139,8 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (mentions !== calls + imports) offenders.push(`${name}: apiPost를 부르지 않고 참조`);
     }
     expect(offenders).toEqual([]);
-    // 시작·장부 행 추가·고치기·지우기·지시 건너뜀이 모두 이 모듈 안에서 나갑니다.
-    expect([...new Set(posts)].sort()).toEqual(["deleteLedger", "ledger", "skipInstruction", "start"]);
+    // 시작·장부 행 추가·고치기·지우기·지시 건너뜀·'매매함' 표시가 모두 이 모듈 안에서 나갑니다.
+    expect([...new Set(posts)].sort()).toEqual(["confirmInstructions", "deleteLedger", "ledger", "skipInstruction", "start"]);
   });
 
   it("endpoints.isa를 쓰는 곳은 ISA 모듈뿐(경로 정의 lib/endpoints.ts 제외)", () => {

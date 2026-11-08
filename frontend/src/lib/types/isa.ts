@@ -78,6 +78,12 @@ export interface IsaInstructionItem {
   targetAt?: string | null;
   notifiedNightAt: string | null;
   notifiedMorningAt: string | null;
+  /** 사용자가 '매매함'을 누른 시각(ISO, 없으면 null) — 2026-11-08 백엔드가 더한 칸이라 없을 수 있습니다. */
+  confirmedAt?: string | null;
+  /** 장 중반 확인 알림을 보낸 시각(ISO, 없으면 null). */
+  notifiedMiddayAt?: string | null;
+  /** 사용자가 체결을 직접 적거나 고친 지시인가 — '매매함'을 누르지 않아도 장 중반 확인 알림에서 빠집니다. */
+  recordedByUser?: boolean;
 }
 
 /**

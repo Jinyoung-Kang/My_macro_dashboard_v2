@@ -30,7 +30,11 @@ import {
   isaBasisText,
   isaErrorCode,
   isaErrorNeedsReload,
+  canConfirmTrade,
+  canUndoConfirm,
   isaErrorText,
+  notifiedText as notifiedLabel,
+  tradeConfirmText,
   isaValuation,
   isoFromKstInput,
   kindLabel,
@@ -528,3 +532,22 @@ describe("개장 10분 뒤 시각 맞추기·장중 스탑 지시(ADR 0033)", ()
   });
 });
 
+describe("장 중반 매매 확인(2026-11-08)", () => {
+  it("'매매함'은 기록 전·기록된 지시 가운데 표시도 사용자 체결도 없을 때만, 지우기는 표시가 있을 때만", () => {
+    expect(canConfirmTrade({ status: "PLANNED" })).toBe(true);
+    expect(canConfirmTrade({ status: "RECORDED", recordedByUser: false, confirmedAt: null })).toBe(true);
+    expect(canConfirmTrade({ status: "RECORDED", recordedByUser: true })).toBe(false);
+    expect(canConfirmTrade({ status: "PLANNED", confirmedAt: "2026-11-09T01:00:00Z" })).toBe(false);
+    expect(canConfirmTrade({ status: "SKIPPED" })).toBe(false);
+    expect(canUndoConfirm({ status: "PLANNED", confirmedAt: "2026-11-09T01:00:00Z" })).toBe(true);
+    expect(canUndoConfirm({ status: "PLANNED", confirmedAt: null })).toBe(false);
+    expect(canUndoConfirm({ status: "SKIPPED", confirmedAt: "2026-11-09T01:00:00Z" })).toBe(false);
+  });
+  it("매매 확인 칸·알림 칸의 글", () => {
+    expect(tradeConfirmText({ status: "PLANNED" })).toBe("확인 전");
+    expect(tradeConfirmText({ status: "RECORDED", recordedByUser: true })).toBe("체결 기록함");
+    expect(tradeConfirmText({ status: "PLANNED", confirmedAt: "2026-11-09T01:00:00Z" })).toMatch(/^매매함 /);
+    expect(tradeConfirmText({ status: "SKIPPED" })).toBe("—");
+    expect(notifiedLabel({ notifiedNightAt: null, notifiedMorningAt: null, notifiedMiddayAt: "2026-11-09T03:15:00Z" })).toMatch(/^장 중반 /);
+  });
+});

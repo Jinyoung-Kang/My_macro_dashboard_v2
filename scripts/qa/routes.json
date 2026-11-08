@@ -569,6 +569,12 @@
     },
     {
       "m": "POST",
+      "p": "/api/manual/isa/instructions/confirm",
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/detail/summary",
       "body": {
         "market": "str",

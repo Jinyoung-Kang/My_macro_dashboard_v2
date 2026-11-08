@@ -27,7 +27,7 @@ class ManualAccountNoticesTest {
         ObjectNode reason = MAPPER.createObjectNode();
         reason.put("equity", 98_765_432);
         reason.put("targetWeightPct", weight);
-        return new Instruction(id, "isa", MONDAY, symbol, side, quantity, d(refPrice), d(weight), reason, "PLANNED", null, null, null, null);
+        return new Instruction(id, "isa", MONDAY, symbol, side, quantity, d(refPrice), d(weight), reason, "PLANNED", null, null, null, null, null, null);
     }
 
     @Test
@@ -120,5 +120,19 @@ class ManualAccountNoticesTest {
                 Map.of())).contains("종가 단일가(16:20~16:30)");
         assertThat(ManualAccountNotices.stop(MONDAY, LocalTime.of(10, 0), LocalTime.of(16, 30), List.of(stop(4, "005930", 1, "AT_MINUTE")),
                 Map.of())).contains("10:10 이후");
+    }
+
+    @Test
+    @DisplayName("장 중반 확인 글 — 제목 '11/09(월) 매매 확인', 줄마다 방향·코드·이름·남은 수량, 할 일. 금액 글자 없음, 보일 줄이 없으면 null")
+    void middayHasSymbolsAndQuantitiesOnly() {
+        String text = ManualAccountNotices.midday(MONDAY, List.of(new ManualAccountNotices.MiddayLine("SELL", "307950", 3),
+                new ManualAccountNotices.MiddayLine("BUY", "153130", 1)), Map.of("307950", "합성 & 오토"));
+        assertThat(text).isEqualTo("<b>[ISA 계좌] 11/09(월) 매매 확인</b>\n"
+                + "장 중반까지 '매매함' 표시나 체결 기록이 없는 지시입니다.\n"
+                + "매도 307950 합성 &amp; 오토 3주\n"
+                + "매수 153130 1주\n"
+                + "아직 안 했으면 지금 시장가로 내세요. 이미 했으면 ISA 계좌 탭에서 '매매함'을, 하지 않기로 했으면 '건너뜀'을 누르세요.");
+        assertThat(text).doesNotContain("원");
+        assertThat(ManualAccountNotices.midday(MONDAY, List.of(new ManualAccountNotices.MiddayLine("BUY", "XX", 1)), Map.of())).isNull();
     }
 }

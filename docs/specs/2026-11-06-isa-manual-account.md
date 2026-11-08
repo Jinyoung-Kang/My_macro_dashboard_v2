@@ -46,14 +46,17 @@
   `장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 다르게 매매했으면 화면에서 고치세요.` **종목 코드·이름·수량만 — 금액·평가액·현금 없음.** 이모지 없음.
 - 텔레그램이 설정되지 않았거나(`PaperTelegram.configured()` 거짓) 보내기에 실패하면 다음 주기에 다시(최대 그 세션 개장 전까지 — 개장 뒤에는 밤 알림을 버리고 아침 알림만).
 
+- **장 중반 매매 확인**(2026-11-08 사용자 요청, V30): 그 세션 정규장 절반(`(개장 + 마감) / 2` — 보통 12:15, 장 시간 변경일은 그날 시간으로) 뒤 마감 전에, 오늘 `PLANNED`·`RECORDED` 지시 가운데 '매매함' 표시(`confirmed_at`)도 사용자 체결(`reason.recordedBy = USER`)도 없는 것을 한 통 더(`notified_midday_at` — 세션마다 한 번, 30초 주기, 실패하면 다음 주기에 다시, 마감 뒤에는 보내지 않음).
+  ISA는 증권사와 연결되지 않아 실제 매매를 볼 수 없고 자동 기록은 그날 밤에야 적히므로 [보유]로는 판단할 수 없다 — 사용자의 표시·입력이 유일한 신호이고, 모르면 알린다. 지시에 묶지 않고 장부에 직접 넣은 그날 같은 방향·종목의 사용자 행은 지시 수량에서 빼고(남은 수량만 적음), 다 찼으면 알리지 않는다. 글은 `<b>[ISA 계좌] 11/09(월) 매매 확인</b>` / 줄마다 `매도 307950 이름 3주` / 끝에 할 일 — 지시 알림과 같이 종목 코드·이름·수량만.
+
 ## 5. API(모두 운영자 전용 — `AccessPolicy`, `AccessPolicyTest`)
 
 - `GET /api/manual/isa` → `{available, started, account{code,label,market,sourceBook,sourceLabel,state,startedAt,startCash}, summary{cash, marketValue, equity, netDeposit, profitLoss, profitLossPct, unpriced[]},
-  holdings[{symbol,name,quantity,avgPrice,lastPrice,marketValue,weightPct}], instructions{session, status, items[{id,symbol,name,side,quantity,refPrice,weightPct,status,notifiedNightAt,notifiedMorningAt}]}|null,
+  holdings[{symbol,name,quantity,avgPrice,lastPrice,marketValue,weightPct}], instructions{session, status, items[{id,symbol,name,side,quantity,refPrice,weightPct,status,notifiedNightAt,notifiedMorningAt,confirmedAt,notifiedMiddayAt,recordedByUser}]}|null,
   recentInstructions[…](최근 30), ledger[{id,at,kind,symbol,name,quantity,price,amount,fee,tax,source,instructionId,note}](최근 200), notes[…]}` — 표가 없으면 `available:false`.
 - `POST /api/manual/isa/start` 본문 `{cash, startedAt?, buys:[{symbol, quantity, price}]}` → `{ok}`.
 - `POST /api/manual/isa/ledger` 본문 `{id?, kind, symbol?, quantity?, price?, amount?, fee?, tax?, at?, note?, instructionId?}` — `id`가 있으면 수정, 없으면 추가 → `{ok, id}`.
-- `POST /api/manual/isa/ledger/{id}/delete` → `{ok}`. `POST /api/manual/isa/instructions/{id}/skip` → `{ok}`.
+- `POST /api/manual/isa/ledger/{id}/delete` → `{ok}`. `POST /api/manual/isa/instructions/{id}/skip` → `{ok}`. `POST /api/manual/isa/instructions/confirm` 본문 `{ids, confirmed?}` → `{ok, changed}`('매매함' 표시 — 장부 불변, §4).
 - 오류 본문 `{ok:false, error, message}`(400 `invalid-request`·`ledger-invalid`, 404 `not-found`, 409 `already-started`·`not-started`). 장부 작업이라 비밀번호는 없다(Origin 검사는 기존 `SessionFilter`).
 - `docs/API.md`·`RouteInventoryTest`·`scripts/qa/routes.json`(쓰기 경로 `"fuzz": false`)을 같은 커밋에.
 
@@ -63,7 +66,7 @@
 - `manual_ledger`(id BIGSERIAL, account REFERENCES manual_accounts, at, kind CHECK, symbol(BUY·SELL·ADJUST면 `^[0-9][0-9A-Z]{5}$` 필수), quantity NUMERIC(20,6), price NUMERIC(20,4), amount NUMERIC(20,2)(입출금),
   fee·tax NUMERIC(20,2) DEFAULT 0, instruction_id BIGINT NULL, source CHECK(AUTO·USER), note, created_at, updated_at)
 - `manual_instructions`(id BIGSERIAL, account, session DATE, symbol, side CHECK(BUY·SELL), quantity INTEGER CHECK(>0), ref_price NUMERIC, weight_pct NUMERIC, reason JSONB, status CHECK(PLANNED·RECORDED·SKIPPED·SUPERSEDED),
-  notified_night_at, notified_morning_at, created_at, updated_at, UNIQUE(account, session, symbol))
+  notified_night_at, notified_morning_at, created_at, updated_at, UNIQUE(account, session, symbol)) — V30이 `confirmed_at`('매매함' 표시)·`notified_midday_at`(장 중반 확인 알림)을 더함
 - `manual_sessions`(account, session DATE, state CHECK(NONE·PLANNED·UNAVAILABLE), decision_id, created_at, PK(account, session)) — '지시 없음'·'못 만듦'을 기록해 같은 세션을 되풀이하지 않게.
 - 다른 증권사 실제 계좌 자료라 **저장소·문서·커밋·QA 기록에 값을 넣지 않는다**. 오늘 시작 장부는 배포 뒤 서버에서 `POST /api/manual/isa/start`로 기록한다(마이그레이션 시드 없음).
   매일 S3 백업에 들어간다. QA 복원은 이 표들을 비운다(`RESTORE_REAL_TRADE=clear`와 같은 자리).

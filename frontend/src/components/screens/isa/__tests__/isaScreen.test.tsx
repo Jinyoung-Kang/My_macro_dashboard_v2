@@ -342,6 +342,40 @@ describe("시작 뒤 — 요약·보유·지시·장부", () => {
 });
 
 describe("고치기", () => {
+  it("매매함 — 줄 단추와 '전부 매매함'은 확인 창 없이 POST instructions/confirm(ids·confirmed), 안내와 다시 읽기, 표시가 있으면 지우기 단추", async () => {
+    renderIsa();
+    await screen.findByRole("region", { name: "ISA 계좌" });
+    api.apiPost.mockResolvedValue({ ok: true, changed: 1 });
+    const button = await inRegion().findByRole("button", { name: "매매함 — 합성화학 222220" });
+    const reloadsBefore = isaReads();
+    fireEvent.click(button);
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/confirm", { ids: [7], confirmed: true }));
+    expect(await inRegion().findByText(/매매함으로 표시했습니다/)).toBeTruthy();
+    await waitFor(() => expect(isaReads()).toBeGreaterThan(reloadsBefore));
+    fireEvent.click(inRegion().getByRole("button", { name: "전부 매매함(2)" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/confirm", { ids: [7, 8], confirmed: true }));
+  });
+
+  it("매매함 표시가 있는 줄은 '매매함 지우기'·시각, 사용자 체결이 있는 줄은 단추 없이 '체결 기록함', 장 중반 알림 시각과 안내", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({
+      instructions: { session: "2026-11-09", status: "PLANNED", items: [
+        { ...ITEMS[0], confirmedAt: "2026-11-09T09:40:00+09:00", notifiedMiddayAt: "2026-11-09T12:15:30+09:00" },
+        { ...ITEMS[1], recordedByUser: true },
+      ] },
+    }));
+    renderIsa();
+    await screen.findByRole("region", { name: "ISA 계좌" });
+    const undo = await inRegion().findByRole("button", { name: "매매함 지우기 — 합성화학 222220" });
+    expect(inRegion().queryByRole("button", { name: /^매매함 — / })).toBeNull();
+    expect(inRegion().queryByRole("button", { name: /전부 매매함/ })).toBeNull();
+    expect(inRegion().getByText("체결 기록함")).toBeTruthy();
+    expect(inRegion().getByText(/장 중반 /)).toBeTruthy();
+    expect(inRegion().getByText(/그날 정규장 절반\(보통 12:15\)/)).toBeTruthy();
+    api.apiPost.mockResolvedValue({ ok: true, changed: 1 });
+    fireEvent.click(undo);
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/confirm", { ids: [7], confirmed: false }));
+  });
+
   it("건너뜀 — 확인 창 뒤 POST instructions/{id}/skip, 안내와 다시 읽기", async () => {
     renderIsa();
     fireEvent.click(await inRegion().findByRole("button", { name: "건너뜀 — 합성화학 222220" }));

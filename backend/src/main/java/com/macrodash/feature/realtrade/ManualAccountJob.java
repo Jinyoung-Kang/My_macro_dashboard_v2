@@ -83,6 +83,10 @@ import java.util.concurrent.locks.ReentrantLock;
  *       다시 계산했더니 지시가 없으면(NONE) 그 세션 개장 전까지 '할 매매가 없음' 한 통.</li>
  * </ol>
  *
+ * <p><b>장 중반 매매 확인</b>(2026-11-08 사용자 요청 — {@link #middayNotify}): 30초 주기마다, 그 세션 정규장의 절반이 지나고 마감 전이면 오늘 지시 가운데 '매매함'
+ * 표시도 사용자가 적은 체결도 없는 것을 한 통으로 다시 알립니다(세션마다 한 번, 종목 코드·이름·수량만). ISA는 증권사와 연결되지 않아 실제 매매를 볼 수 없고 자동
+ * 기록은 그날 밤에야 적히므로, 사용자의 표시·입력이 유일한 신호입니다 — 모르면 알리는 쪽입니다.
+ *
  * <p><b>장중 스탑 지시</b>(ADR 0033 결정 7 — V28 {@code manual_stop_instructions}): {@code dashboard.manual.stop-interval-ms}(30초)마다 — 위 네
  * 단계는 그중 {@code interval-ms}(10분)이 지난 주기에만 — 규칙 계좌의 오늘 STOP 매도 대기 주문({@link PaperMirrorService#dueOrders} — 장중 감시·밤 대체,
  * 지금 + 5분 안의 것)마다 그 주문이 그날 지시 목표에 반영된 것(세션 기록 {@value #DETAIL_COVERED_STOPS})이 아니면 스탑 지시 하나(모의 주문 하나에 하나 —
@@ -300,12 +304,13 @@ class ManualAccountJob {
             notifyPending(now);
             stopScan(account, now);
             stopNotify(now);
+            middayNotify(now);
         } finally {
             running.unlock();
         }
     }
 
-    /** 스탑 지시만(30초 주기 — 클래스 설명) — 앞 주기가 도는 중이면 건너뜁니다. */
+    /** 스탑 지시와 장 중반 확인 알림만(30초 주기 — 클래스 설명) — 앞 주기가 도는 중이면 건너뜁니다. */
     void stopCycle(Instant now) {
         if (!store.ready() || !running.tryLock()) {
             return;
@@ -317,9 +322,72 @@ class ManualAccountJob {
             }
             stopScan(account, now);
             stopNotify(now);
+            middayNotify(now);
         } finally {
             running.unlock();
         }
+    }
+
+    // ------------------------------------------------------------------ 장 중반 매매 확인(2026-11-08)
+    /** 사용자가 체결을 적었거나 고친 지시인가(자동 기록은 'AUTO' — 근거 {@code recordedBy}). */
+    static boolean recordedByUser(Instruction i) {
+        return i.reason() != null && "USER".equals(i.reason().path("recordedBy").asString(""));
+    }
+
+    /**
+     * 장 중반 매매 확인 알림(클래스 설명) — 그 세션 정규장 절반({@code (개장 + 마감) / 2} — 보통 12:15, 장 시간 변경일은 그날 시간으로)이 지나고 마감 전이면, 오늘
+     * PLANNED·RECORDED 지시 가운데 '매매함' 표시도 사용자 체결도 없고 아직 이 알림을 보내지 않은 것을 한 통으로 보냅니다. 지시에 묶지 않고 장부에 직접 넣은 그날
+     * 같은 방향·종목의 체결(사용자 행)은 지시 수량에서 빼고, 다 찼으면 알리지 않습니다. 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시, 마감 뒤에는 보내지
+     * 않습니다.
+     */
+    void middayNotify(Instant now) {
+        LocalTime clockTime = now.atZone(Kst.ZONE).toLocalTime();
+        if (clockTime.isBefore(STOP_SCAN_FROM) || clockTime.isAfter(STOP_SCAN_UNTIL)) {
+            return;   // 정규장(장 시간 변경일 포함) 밖 — 30초마다 읽지 않게
+        }
+        LocalDate today = now.atZone(Kst.ZONE).toLocalDate();
+        List<Instruction> waiting = store.instructions(CODE, today).stream()
+                .filter(i -> (i.planned() || ManualAccountStore.STATUS_RECORDED.equals(i.status())) && i.confirmedAt() == null
+                        && i.notifiedMiddayAt() == null && !recordedByUser(i)).toList();
+        if (waiting.isEmpty() || !telegram.configured()) {
+            return;
+        }
+        SessionHours hours = ManualAccountCalendar.hours(paper, today);
+        if (hours == null || !hours.tradingDay() || hours.open() == null || hours.close() == null) {
+            return;
+        }
+        Instant midday = hours.open().plus(Duration.between(hours.open(), hours.close()).dividedBy(2));
+        if (now.isBefore(midday) || !now.isBefore(hours.close())) {
+            return;
+        }
+        Map<String, BigDecimal> entered = new HashMap<>();
+        for (ManualAccountStore.LedgerRow r : store.ledger(CODE)) {
+            if (ManualAccountStore.SOURCE_USER.equals(r.source()) && r.instructionId() == null && r.stopInstructionId() == null
+                    && r.symbol() != null && r.quantity() != null && today.equals(r.at().atZone(Kst.ZONE).toLocalDate())) {
+                entered.merge(r.kind() + "|" + r.symbol(), r.quantity(), BigDecimal::add);
+            }
+        }
+        List<ManualAccountNotices.MiddayLine> lines = new ArrayList<>();
+        List<Long> ids = new ArrayList<>();
+        Set<String> symbols = new TreeSet<>();
+        for (Instruction i : waiting) {
+            BigDecimal done = entered.getOrDefault(i.side() + "|" + i.symbol(), BigDecimal.ZERO).setScale(0, RoundingMode.FLOOR);
+            int remaining = BigDecimal.valueOf(i.quantity()).subtract(done).min(BigDecimal.valueOf(Integer.MAX_VALUE)).intValue();
+            if (remaining > 0) {
+                lines.add(new ManualAccountNotices.MiddayLine(i.side(), i.symbol(), remaining));
+                ids.add(i.id());
+                symbols.add(i.symbol());
+            }
+        }
+        if (lines.isEmpty()) {
+            return;
+        }
+        String text = ManualAccountNotices.midday(today, lines, new HashMap<>(paper.names(symbols)));
+        if (text == null || !sendText(text)) {
+            return;
+        }
+        store.markNotifiedMidday(ids, now);
+        log.info("ISA 계좌 장 중반 매매 확인 알림 — 세션 {} · {}건", today, ids.size());
     }
 
     // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 결정 7)

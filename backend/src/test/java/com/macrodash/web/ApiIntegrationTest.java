@@ -286,7 +286,7 @@ class ApiIntegrationTest {
             assertThat(denied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
             assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
             for (String path : List.of("/api/manual/isa/start", "/api/manual/isa/ledger", "/api/manual/isa/ledger/1/delete",
-                    "/api/manual/isa/instructions/1/skip")) {
+                    "/api/manual/isa/instructions/1/skip", "/api/manual/isa/instructions/confirm")) {
                 assertThat(rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of("cash", 1), member), String.class)
                         .getStatusCode()).as("회원 POST " + path).isEqualTo(HttpStatus.FORBIDDEN);
             }

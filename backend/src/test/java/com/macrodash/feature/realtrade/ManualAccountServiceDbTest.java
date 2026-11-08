@@ -385,4 +385,36 @@ class ManualAccountServiceDbTest {
         List<Map<String, Object>> recent = (List<Map<String, Object>>) service.view().get("recentInstructions");
         assertThat(recent).anySatisfy(i -> assertThat(i).containsEntry("id", shown.id()).containsEntry("session", MONDAY.toString()));
     }
+
+    @Test
+    @DisplayName("'매매함' 표시 — 남기고 지우기, 건너뛴 지시·없는 번호는 세지 않음, 장부·지시 상태는 그대로, 화면 응답에 시각과 사용자 기록 여부, 빈 목록 400, 시작 전 409")
+    void confirmInstructions() {
+        rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(1L), true)), 409, "not-started");
+        startSynthetic();
+        long buy = instruction(C, "BUY", 2);
+        long sell = instruction(B, "SELL", 1);
+        long skipped = instruction(A, "SELL", 1);
+        service.skipInstruction(skipped);
+        int ledgerBefore = store.ledger("isa").size();
+
+        Map<String, Object> done = service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(buy, sell, skipped, 999_999_999L), null));
+        assertThat(done).containsEntry("ok", true).containsEntry("changed", 2);
+        assertThat(store.instruction(buy).orElseThrow().confirmedAt()).isEqualTo(clock.instant());
+        assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("PLANNED");
+        assertThat(store.instruction(skipped).orElseThrow().confirmedAt()).isNull();
+        assertThat(store.ledger("isa")).hasSize(ledgerBefore);
+        assertThat(service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(buy), true))).as("이미 표시됨").containsEntry("changed", 0);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> recent = (List<Map<String, Object>>) service.view().get("recentInstructions");
+        assertThat(recent).anySatisfy(i -> assertThat(i).containsEntry("id", buy).containsEntry("confirmedAt", clock.instant().toString())
+                .containsEntry("notifiedMiddayAt", null).containsEntry("recordedByUser", false));
+
+        assertThat(service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(buy), false))).containsEntry("changed", 1);
+        assertThat(store.instruction(buy).orElseThrow().confirmedAt()).as("지움").isNull();
+
+        rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(), true)), 400, "invalid-request");
+        rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(null, true)), 400, "invalid-request");
+        rejects(() -> service.confirmInstructions(null), 400, "invalid-request");
+    }
 }

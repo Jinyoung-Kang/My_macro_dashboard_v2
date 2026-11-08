@@ -12,6 +12,7 @@ import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.LedgerRow;
 import com.macrodash.store.ManualAccountStore.LedgerValues;
+import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -601,6 +602,7 @@ class ManualAccountJobDbTest {
         timedPlanned(List.of());
         when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(new DueOrder(41L, 41L, A, "SELL", "NEXT_CLOSE", "STOP",
                 kst("2026-11-09T15:30"), kst("2026-11-09T15:20"), true, null, null, null)));
+        store.setInstructionsConfirmed("isa", store.instructions("isa", E).stream().map(Instruction::id).toList(), kst("2026-11-09T09:30"));   // 장 중반 확인 알림은 빼고 스탑 글만
         org.mockito.Mockito.clearInvocations(telegram);
         stopCycleAt("2026-11-09T15:21");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
@@ -811,5 +813,100 @@ class ManualAccountJobDbTest {
         assertThat(off.lastCycleAt()).isNull();
         assertThat(new ManualAccountJob(store, paper, telegram, MAPPER, clock, true, false, 600_000).enabled()).isFalse();
         assertThat(LocalTime.of(8, 0)).isEqualTo(ManualAccountJob.MORNING);
+    }
+
+    // ------------------------------------------------------------------ 장 중반 매매 확인(2026-11-08)
+    private long dailyInstruction(LocalDate session, String symbol, String side, int quantity) {
+        return store.insertInstruction("isa", new NewInstruction(session, symbol, side, quantity, d("10000"), d("10"), MAPPER.createObjectNode()))
+                .orElseThrow();
+    }
+
+    private void userTrade(String at, String kind, String symbol, String quantity) {
+        store.insertLedger("isa", new LedgerValues(kst(at), kind, symbol, d(quantity), d("10000"), null, BigDecimal.ZERO, BigDecimal.ZERO, null, "USER", null));
+    }
+
+    private List<String> sentTexts(int times) {
+        ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
+        verify(telegram, times(times)).send(texts.capture());
+        return texts.getAllValues();
+    }
+
+    @Test
+    @DisplayName("장 중반 확인 — 정규장 절반(12:15) 전에는 없고, 지나면 '매매함'도 사용자 체결도 없는 오늘 지시를 한 통, 세션마다 한 번, 자동 기록된 지시도 포함")
+    void middayNoticeOncePerSession() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000", B, "5", "20000");
+        long sell = dailyInstruction(E, A, "SELL", 3);
+        long buy = dailyInstruction(E, CASH, "BUY", 2);
+        store.updateInstructionStatus(buy, "RECORDED", "PLANNED", Map.of("recordedBy", "AUTO"));
+        dailyInstruction(E2, B, "SELL", 1);                 // 다음 세션 지시 — 오늘 알림에 들지 않음
+
+        job.middayNotify(kst("2026-11-09T12:14:30"));
+        verify(telegram, never()).send(anyString());
+
+        job.middayNotify(kst("2026-11-09T12:15:00"));
+        assertThat(sentTexts(1)).singleElement().asString().startsWith("<b>[ISA 계좌] 11/09(월) 매매 확인</b>")
+                .contains("매도 " + A + " 합성전자 3주", "매수 " + CASH + " 합성 단기채권 2주").doesNotContain(B);
+        assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).isEqualTo(kst("2026-11-09T12:15:00"));
+
+        job.middayNotify(kst("2026-11-09T12:15:30"));
+        job.middayNotify(kst("2026-11-09T14:00:00"));
+        verify(telegram, times(1)).send(anyString());
+    }
+
+    @Test
+    @DisplayName("장 중반 확인 — '매매함' 표시·건너뜀·사용자가 지시에 묶어 적은 체결은 빼고, 모두 빠지면 보내지 않음")
+    void middayNoticeSkipsConfirmedSkippedAndUserRecorded() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000", B, "5", "20000");
+        long confirmed = dailyInstruction(E, A, "SELL", 3);
+        long skipped = dailyInstruction(E, B, "SELL", 1);
+        long recorded = dailyInstruction(E, X, "BUY", 2);
+        store.setInstructionsConfirmed("isa", List.of(confirmed), kst("2026-11-09T09:30"));
+        store.updateInstructionStatus(skipped, "SKIPPED", "PLANNED", Map.of("skippedBy", "USER"));
+        store.updateInstructionStatus(recorded, "RECORDED", "PLANNED", Map.of("recordedBy", "USER"));
+
+        job.middayNotify(kst("2026-11-09T12:20"));
+
+        verify(telegram, never()).send(anyString());
+    }
+
+    @Test
+    @DisplayName("장 중반 확인 — 지시에 묶지 않고 장부에 직접 넣은 그날 같은 방향·종목 체결은 수량에서 빼 남은 수량만, 다 찼으면 뺌(앞날 체결·반대 방향·자동 기록은 세지 않음)")
+    void middayNoticeReadsTodayUserTrades() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000", B, "5", "20000");
+        dailyInstruction(E, A, "SELL", 3);
+        dailyInstruction(E, B, "SELL", 2);
+        dailyInstruction(E, X, "BUY", 4);
+        userTrade("2026-11-09T10:01", "SELL", A, "1");
+        userTrade("2026-11-09T10:02", "SELL", B, "2");
+        userTrade("2026-11-06T15:00", "BUY", X, "4");       // 앞날 — 세지 않음
+        userTrade("2026-11-09T10:03", "SELL", X, "1");      // 반대 방향 — 세지 않음
+
+        job.middayNotify(kst("2026-11-09T12:20"));
+
+        assertThat(sentTexts(1)).singleElement().asString().contains("매도 " + A + " 합성전자 2주", "매수 " + X + " 합성화학 4주").doesNotContain("매도 " + B);
+        assertThat(store.instructions("isa", E).stream().filter(i -> i.symbol().equals(B)).findFirst().orElseThrow().notifiedMiddayAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("장 중반 확인 — 마감 뒤에는 보내지 않고, 실패하면 다음 주기에 다시, 장 시간이 바뀐 날은 그날 절반(10:00~16:30 → 13:15), 30초 주기로 돎")
+    void middayNoticeTiming() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        long sell = dailyInstruction(E, A, "SELL", 3);
+
+        job.middayNotify(kst("2026-11-09T15:30"));
+        verify(telegram, never()).send(anyString());
+
+        when(telegram.send(anyString())).thenReturn("telegram-failed").thenReturn(null);
+        job.middayNotify(kst("2026-11-09T12:15"));
+        assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).as("실패 — 표시하지 않음").isNull();
+        job.middayNotify(kst("2026-11-09T12:15:30"));
+        assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).isEqualTo(kst("2026-11-09T12:15:30"));
+
+        dailyInstruction(E2, A, "SELL", 1);
+        when(paper.sessionHours(E2)).thenReturn(Optional.of(new SessionHours(E2, true, kst("2026-11-10T10:00"), kst("2026-11-10T16:30"))));
+        job.stopCycle(kst("2026-11-10T13:14"));
+        verify(telegram, times(2)).send(anyString());
+        job.stopCycle(kst("2026-11-10T13:15"));
+        verify(telegram, times(3)).send(anyString());
     }
 }

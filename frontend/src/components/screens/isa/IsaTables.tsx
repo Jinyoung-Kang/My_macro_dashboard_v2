@@ -4,8 +4,10 @@ import { DataTable, type Column } from "@/components/patterns";
 import { buttonClasses } from "@/components/ui";
 import { EMPTY, formatKst, formatKstSeconds } from "@/lib/format";
 import {
+  canConfirmTrade,
   canFixFill,
   canSkip,
+  canUndoConfirm,
   formatPrice,
   formatShares,
   formatWeight,
@@ -26,6 +28,7 @@ import {
   symbolText,
   timeSortValue,
   toNumber,
+  tradeConfirmText,
 } from "@/lib/isa";
 import type { IsaInstructionItem, IsaLedgerRow, IsaStopInstruction } from "@/lib/types/isa";
 
@@ -89,24 +92,48 @@ export function IsaHoldingsTable({ rows }: { rows: readonly IsaHoldingView[] }) 
   );
 }
 
-/** 지시 줄의 단추 — 체결 고치기(기록 전·기록됨)·건너뜀(기록 전). 해당하는 단추가 없으면 칸이 비어 "—". */
+/** 지시 줄의 단추 — 매매함(또는 표시 지우기)·체결 고치기(기록 전·기록됨)·건너뜀(기록 전). 해당하는 단추가 없으면 칸이 비어 "—". */
 function InstructionActions({
   item,
+  onConfirm,
   onFix,
   onSkip,
   disabled,
 }: {
   item: IsaInstructionItem;
+  onConfirm: (item: IsaInstructionItem, confirmed: boolean) => void;
   onFix: (item: IsaInstructionItem) => void;
   onSkip: (item: IsaInstructionItem) => void;
   disabled: boolean;
 }) {
   const who = symbolText(item.symbol, item.name);
-  if (!canFixFill(item) && !canSkip(item)) {
+  if (!canConfirmTrade(item) && !canUndoConfirm(item) && !canFixFill(item) && !canSkip(item)) {
     return null;
   }
   return (
     <div className="flex flex-wrap gap-1.5">
+      {canConfirmTrade(item) && (
+        <button
+          type="button"
+          onClick={() => onConfirm(item, true)}
+          disabled={disabled}
+          aria-label={`매매함 — ${who}`}
+          className={buttonClasses("primary", "sm")}
+        >
+          매매함
+        </button>
+      )}
+      {canUndoConfirm(item) && (
+        <button
+          type="button"
+          onClick={() => onConfirm(item, false)}
+          disabled={disabled}
+          aria-label={`매매함 지우기 — ${who}`}
+          className={buttonClasses("ghost", "sm")}
+        >
+          매매함 지우기
+        </button>
+      )}
       {canFixFill(item) && (
         <button
           type="button"
@@ -139,6 +166,7 @@ function InstructionActions({
  */
 export function IsaInstructionsTable({
   rows,
+  onConfirm,
   onFix,
   onSkip,
   disabled,
@@ -146,6 +174,7 @@ export function IsaInstructionsTable({
   withSession = false,
 }: {
   rows: readonly IsaInstructionItem[];
+  onConfirm: (item: IsaInstructionItem, confirmed: boolean) => void;
   onFix: (item: IsaInstructionItem) => void;
   onSkip: (item: IsaInstructionItem) => void;
   disabled: boolean;
@@ -167,11 +196,12 @@ export function IsaInstructionsTable({
     { key: "refPrice", header: "기준가", align: "right", cell: (row) => formatPrice(row.refPrice), sortValue: (row) => toNumber(row.refPrice) },
     { key: "weightPct", header: "목표 비중", align: "right", cell: (row) => formatWeight(row.weightPct), sortValue: (row) => toNumber(row.weightPct) },
     { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
+    { key: "confirm", header: "매매 확인", cell: (row) => tradeConfirmText(row), sortValue: (row) => labelSort(tradeConfirmText(row)) },
     { key: "notified", header: "알림", cell: (row) => notifiedText(row) },
     {
       key: "actions",
       header: "고치기",
-      cell: (row) => <InstructionActions item={row} onFix={onFix} onSkip={onSkip} disabled={disabled} />,
+      cell: (row) => <InstructionActions item={row} onConfirm={onConfirm} onFix={onFix} onSkip={onSkip} disabled={disabled} />,
     },
   ];
   return (

@@ -103,13 +103,13 @@ class AccessPolicyTest {
                 .filter(route -> route.split(" ")[1].startsWith("/api/manual/")).toList();
         assertThat(declared).as("컨트롤러가 여는 ISA 계좌 경로").containsExactlyInAnyOrder("GET /api/manual/isa",
                 "POST /api/manual/isa/start", "POST /api/manual/isa/ledger", "POST /api/manual/isa/ledger/{id}/delete",
-                "POST /api/manual/isa/instructions/{id}/skip");
+                "POST /api/manual/isa/instructions/{id}/skip", "POST /api/manual/isa/instructions/confirm");
         assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
         listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.OWNER));
         assertThat(AccessPolicy.required("GET", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);
         assertThat(AccessPolicy.required("HEAD", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);
         for (String path : java.util.List.of("/api/manual/isa/start", "/api/manual/isa/ledger", "/api/manual/isa/ledger/7/delete",
-                "/api/manual/isa/instructions/7/skip")) {
+                "/api/manual/isa/instructions/7/skip", "/api/manual/isa/instructions/confirm")) {
             assertThat(AccessPolicy.required("POST", path)).as("POST " + path).isEqualTo(AccessPolicy.Access.OWNER);
         }
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).as("유료 회원도 못 봄").isFalse();

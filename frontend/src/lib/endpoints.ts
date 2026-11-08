@@ -306,6 +306,8 @@ export const endpoints = {
     ledger: "/api/manual/isa/ledger",
     deleteLedger: (id: number) => `/api/manual/isa/ledger/${segment(String(id))}/delete`,
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
+    /** '매매함' 표시 남기기·지우기(본문 ids·confirmed) — 장 중반 확인 알림의 신호, 장부는 바꾸지 않음. */
+    confirmInstructions: "/api/manual/isa/instructions/confirm",
   },
 
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)

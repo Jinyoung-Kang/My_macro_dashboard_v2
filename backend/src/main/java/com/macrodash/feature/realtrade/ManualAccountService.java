@@ -113,6 +113,13 @@ public class ManualAccountService {
         }
     }
 
+    /** {@code POST /api/manual/isa/instructions/confirm} 본문 — 지시 번호들과 표시할지({@code confirmed}, 없으면 표시, false면 표시를 지움). */
+    public record ConfirmRequest(List<Long> ids, Boolean confirmed) {
+    }
+
+    /** 한 번에 표시하는 지시 수 상한(한 세션의 지시는 많아야 수십 줄). */
+    static final int MAX_CONFIRM_IDS = 200;
+
     private final ManualAccountStore store;
     private final PaperMirrorService paper;
     private final ManualAccountJob job;
@@ -333,6 +340,9 @@ public class ManualAccountService {
         out.put("targetAt", iso(ManualAccountJob.targetAt(i)));
         out.put("notifiedNightAt", iso(i.notifiedNightAt()));
         out.put("notifiedMorningAt", iso(i.notifiedMorningAt()));
+        out.put("confirmedAt", iso(i.confirmedAt()));
+        out.put("notifiedMiddayAt", iso(i.notifiedMiddayAt()));
+        out.put("recordedByUser", ManualAccountJob.recordedByUser(i));
         return out;
     }
 
@@ -551,6 +561,31 @@ public class ManualAccountService {
             return null;
         });
         return Map.of("ok", true);
+    }
+
+    /**
+     * {@code POST /api/manual/isa/instructions/confirm} — '매매함' 표시를 남기거나 지웁니다(장 중반 확인 알림의 신호 — 장부·지시 상태·다음 지시 계산은 바꾸지
+     * 않음). PLANNED·RECORDED 지시만 바뀌고, 그사이 건너뛰거나 지워진 지시는 세지 않습니다(화면은 다시 읽음).
+     */
+    public Map<String, Object> confirmInstructions(ConfirmRequest body) {
+        requireReady();
+        if (body == null || body.ids() == null || body.ids().isEmpty() || body.ids().size() > MAX_CONFIRM_IDS
+                || body.ids().stream().anyMatch(Objects::isNull)) {
+            throw ManualAccountException.invalid("지시 번호를 1개 이상 " + MAX_CONFIRM_IDS + "개 이하로 넣으세요.");
+        }
+        Instant at = Boolean.FALSE.equals(body.confirmed()) ? null : clock.instant();
+        int changed = store.lockAccount(CODE, acc -> {
+            requireStarted(acc);
+            int n = store.setInstructionsConfirmed(CODE, new TreeSet<>(body.ids()), at);
+            if (n > 0) {
+                store.bumpVersion(CODE);
+            }
+            return n;
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("changed", changed);
+        return out;
     }
 
     // ------------------------------------------------------------------ 검사

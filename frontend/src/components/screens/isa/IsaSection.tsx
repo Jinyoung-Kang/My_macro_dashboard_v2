@@ -13,6 +13,7 @@ import { endpoints } from "@/lib/endpoints";
 import { deltaColor, formatKst, formatNumber, formatPercent, formatSigned } from "@/lib/format";
 import {
   accountStateLabel,
+  canConfirmTrade,
   COST_NOTE,
   formatShares,
   formatWon,
@@ -27,6 +28,7 @@ import {
   kindLabel,
   LEDGER_CHANGED_TEXT,
   ledgerRowForInstruction,
+  MIDDAY_GUIDE,
   PENDING_INSTRUCTIONS_GUIDE,
   sessionLabel,
   sessionStatusLabel,
@@ -43,7 +45,7 @@ import type { IsaInstructionItem, IsaLedgerRow, IsaOkResponse, IsaResponse } fro
 import { IsaLedgerDialog, type IsaLedgerTarget } from "./IsaLedgerDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
 import { IsaHoldingsTable, IsaInstructionsTable, IsaLedgerTable, IsaRecentInstructionsTable, IsaStopInstructionsTable } from "./IsaTables";
-import { postDeleteLedger, postSkipInstruction, sendIsa } from "./isaRequests";
+import { postConfirmInstructions, postDeleteLedger, postSkipInstruction, sendIsa } from "./isaRequests";
 
 /** 다시 읽는 주기 — 장부는 밤 결정·자동 기록·사용자 고침 때만 바뀝니다(개요와 같은 1분). */
 const POLL_MS = 60_000;
@@ -100,6 +102,14 @@ export function IsaSection() {
     const ok = await action.run(() => postSkipInstruction(item.id));
     setSkipItem(null);
     if (ok) setNotice("지시를 건너뜀으로 두었습니다 — 장부에 쓰지 않고, 다음 지시는 지금 장부로 계산합니다.");
+    reloadNow();
+  };
+
+  // '매매함' — 누를 수 있고 되돌릴 수 있어 확인 창 없이 바로(장부는 바꾸지 않음).
+  const confirmTrades = async (ids: readonly number[], confirmed: boolean) => {
+    setNotice(null);
+    const ok = await action.run(() => postConfirmInstructions(ids, confirmed));
+    if (ok) setNotice(confirmed ? "매매함으로 표시했습니다 — 장 중반 확인 알림에서 뺍니다." : "매매함 표시를 지웠습니다.");
     reloadNow();
   };
 
@@ -185,6 +195,7 @@ export function IsaSection() {
           valuation={valuation}
           refreshError={refreshError}
           busy={action.busy}
+          onConfirm={(ids, confirmed) => void confirmTrades(ids, confirmed)}
           onAdd={() => {
             setNotice(null);
             setLedgerTarget({ mode: "add" });
@@ -279,6 +290,7 @@ function StartedBody({
   valuation,
   refreshError,
   busy,
+  onConfirm,
   onAdd,
   onEdit,
   onDelete,
@@ -290,6 +302,7 @@ function StartedBody({
   valuation: IsaValuation;
   refreshError: string | null;
   busy: boolean;
+  onConfirm: (ids: readonly number[], confirmed: boolean) => void;
   onAdd: () => void;
   onEdit: (row: IsaLedgerRow) => void;
   onDelete: (row: IsaLedgerRow) => void;
@@ -307,6 +320,8 @@ function StartedBody({
   const timedAt = targetClock(instructions?.targetAt);
   const timed = timedAt !== null;
   const instructionsTitle = timed ? "다음 매매 지시" : "다음 시가 매매 지시";
+  const confirmable = (instructions?.items ?? []).filter(canConfirmTrade);
+  const confirmOne = (item: IsaInstructionItem, confirmed: boolean) => onConfirm([item.id], confirmed);
   const notes = cleanNotes(data.notes);
 
   return (
@@ -370,8 +385,23 @@ function StartedBody({
           {instructions?.status === "UNAVAILABLE" && <Banner tone="warn">{unavailableText(instructions.reason)}</Banner>}
           {instructions && (instructions.items ?? []).length > 0 && (
             <>
-              <IsaInstructionsTable rows={instructions.items ?? []} onFix={onFix} onSkip={onSkip} disabled={busy} caption={instructionsTitle} />
+              {confirmable.length > 1 && (
+                <div>
+                  <Button size="sm" variant="primary" onClick={() => onConfirm(confirmable.map((item) => item.id), true)} disabled={busy}>
+                    전부 매매함({confirmable.length})
+                  </Button>
+                </div>
+              )}
+              <IsaInstructionsTable
+                rows={instructions.items ?? []}
+                onConfirm={confirmOne}
+                onFix={onFix}
+                onSkip={onSkip}
+                disabled={busy}
+                caption={instructionsTitle}
+              />
               <p className="text-xs leading-relaxed text-text-3">{tradeGuide(instructions.open, instructions.targetAt)}</p>
+              <p className="text-xs leading-relaxed text-text-3">{MIDDAY_GUIDE}</p>
             </>
           )}
           {recent.length > 0 && (
@@ -407,6 +437,7 @@ function StartedBody({
           <div className="flex flex-col gap-3">
             <IsaInstructionsTable
               rows={pending}
+              onConfirm={confirmOne}
               onFix={onFix}
               onSkip={onSkip}
               disabled={busy}

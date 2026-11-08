@@ -317,10 +317,11 @@ export function kstShort(value: string | null | undefined): string {
 }
 
 /** 알림 칸 — "밤 11/06 22:41 · 아침 11/09 08:00", 보낸 적이 없으면 "보내기 전". */
-export function notifiedText(item: Pick<IsaInstructionItem, "notifiedNightAt" | "notifiedMorningAt">): string {
+export function notifiedText(item: Pick<IsaInstructionItem, "notifiedNightAt" | "notifiedMorningAt" | "notifiedMiddayAt">): string {
   const parts: string[] = [];
   if (item.notifiedNightAt) parts.push(`밤 ${kstShort(item.notifiedNightAt)}`);
   if (item.notifiedMorningAt) parts.push(`아침 ${kstShort(item.notifiedMorningAt)}`);
+  if (item.notifiedMiddayAt) parts.push(`장 중반 ${kstShort(item.notifiedMiddayAt)}`);
   return parts.length > 0 ? parts.join(" · ") : "보내기 전";
 }
 
@@ -336,6 +337,27 @@ export function unpricedText(list: readonly IsaUnpriced[] | null | undefined): s
 export function canFixFill(item: Pick<IsaInstructionItem, "status">): boolean {
   return item.status === "PLANNED" || item.status === "RECORDED";
 }
+
+/** '매매함'을 누를 수 있는가 — 기록 전·기록된 지시 가운데 아직 표시도 사용자 체결도 없는 것. */
+export function canConfirmTrade(item: Pick<IsaInstructionItem, "status" | "confirmedAt" | "recordedByUser">): boolean {
+  return (item.status === "PLANNED" || item.status === "RECORDED") && !item.confirmedAt && item.recordedByUser !== true;
+}
+
+/** '매매함' 표시를 지울 수 있는가(잘못 눌렀을 때). */
+export function canUndoConfirm(item: Pick<IsaInstructionItem, "status" | "confirmedAt">): boolean {
+  return (item.status === "PLANNED" || item.status === "RECORDED") && Boolean(item.confirmedAt);
+}
+
+/** 매매 확인 칸 — '매매함 MM/DD HH:mm'·'체결 기록함'·'확인 전', 건너뜀·대체된 지시는 없음(—). */
+export function tradeConfirmText(item: Pick<IsaInstructionItem, "status" | "confirmedAt" | "recordedByUser">): string {
+  if (item.status !== "PLANNED" && item.status !== "RECORDED") return EMPTY;
+  if (item.confirmedAt) return `매매함 ${kstShort(item.confirmedAt)}`;
+  return item.recordedByUser === true ? "체결 기록함" : "확인 전";
+}
+
+/** 장 중반 확인 알림 안내(지시 표 아래). */
+export const MIDDAY_GUIDE =
+  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '매매함'을 누르세요 — 그날 정규장 절반(보통 12:15)이 지나도 '매매함'이나 직접 적은 체결이 없는 지시는 텔레그램으로 한 번 더 알립니다.";
 
 /** 건너뜀을 보이는가 — 아직 장부에 쓰지 않은 지시만(기록된 행은 장부에서 지움). */
 export function canSkip(item: Pick<IsaInstructionItem, "status">): boolean {
