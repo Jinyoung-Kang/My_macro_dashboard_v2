@@ -124,7 +124,7 @@ class ManualAccountNoticesTest {
 
         assertThat(text).isEqualTo("[ISA 계좌] 11/09(월) 09:10 매매 지시\n\n"
                 + "• 매도 307950 합성오토 3주\n\n"
-                + "09:10 이후 시장가로 내면 규칙 계좌와 같은 때(09:10)에 체결됩니다.\n장중 스탑이 걸리면 따로 알립니다.\n다르게 매매했으면 화면에서 고치세요.");
+                + "09:10 이후 시장가로 내면 규칙 계좌와 같은 때(09:10)에 체결됩니다.\n그때 서킷브레이커·VI가 걸려 있으면 풀린 뒤 시장가로 내세요.\n장중 스탑이 걸리면 따로 알립니다.\n다르게 매매했으면 화면에서 고치세요.");
         assertThat(text).doesNotContain("원", "123457", "4.5", "장전 동시호가");
         assertThat(text(MONDAY, LocalTime.of(10, 0), LocalTime.of(10, 10), List.of(), Map.of(), true))
                 .startsWith("[ISA 계좌] 11/09(월) 10:10 매매 지시(다시 계산)").contains("10:10 이후 시장가");

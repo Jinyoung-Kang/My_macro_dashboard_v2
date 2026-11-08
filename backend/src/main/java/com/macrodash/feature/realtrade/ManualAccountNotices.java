@@ -73,7 +73,7 @@ final class ManualAccountNotices {
             lines.append(line(side, i.symbol(), names, i.quantity()));
         }
         String guide = at != null
-                ? hhmm(at) + " 이후 시장가로 내면 규칙 계좌와 같은 때(" + hhmm(at) + ")에 체결됩니다.\n장중 스탑이 걸리면 따로 알립니다.\n다르게 매매했으면 화면에서 고치세요."
+                ? hhmm(at) + " 이후 시장가로 내면 규칙 계좌와 같은 때(" + hhmm(at) + ")에 체결됩니다.\n그때 서킷브레이커·VI가 걸려 있으면 풀린 뒤 시장가로 내세요.\n장중 스탑이 걸리면 따로 알립니다.\n다르게 매매했으면 화면에서 고치세요."
                 : "장전 동시호가(" + hhmm(start.minusMinutes(AUCTION_MINUTES)) + "~" + hhmm(start) + ")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n다르게 매매했으면 화면에서 고치세요.";
         return message(title, (recalculated ? RECALCULATED + "\n\n" : "") + lines.toString().strip() + "\n\n" + guide);
     }

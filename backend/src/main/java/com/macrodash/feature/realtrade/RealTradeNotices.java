@@ -26,6 +26,9 @@ final class RealTradeNotices {
     /** 장중 스탑 매도(ADR 0033 결정 2) — 한 주기의 보냄·막힘·놓침 건수만(종목·수량 없음). */
     static final String EVENT_STOP_SELL = "STOP_SELL";
 
+    /** 시각 맞추기가 VI·서킷브레이커 등으로 미뤄짐 — 사유 코드만. */
+    static final String EVENT_RESTRICTED = "RESTRICTED";
+
     private static final Pattern CODE = Pattern.compile("^[a-z0-9-]{1,40}$");
     private static final Pattern KIND = Pattern.compile("^[A-Z][A-Z_]{1,39}$");
 
@@ -51,6 +54,7 @@ final class RealTradeNotices {
             case EVENT_STOPPED -> notice("꺼짐", stopped(detail) + unresolved(detail));
             case EVENT_STOP_SELL -> notice("스탑 매도", "보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "
                     + count(detail, "missed"));
+            case EVENT_RESTRICTED -> notice("매매 제한으로 대기", "사유: " + code(detail, "reason") + "\n풀리면 시장가로 맞춥니다. 창 안에 못 맞추면 다음 맞추기가 메웁니다");
             case EVENT_CANCEL_GAVE_UP -> notice("취소 못 함", count(detail, "count") + "건 — 토스증권 앱에서 직접 취소하세요");
             case RealTradeStore.EVENT_UPDATE -> title("설정 바뀜");
             case RealTradeStore.EVENT_RESUME -> title("멈춤 해제");

@@ -544,6 +544,24 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("매매 제한 — 지수 등락률의 서킷브레이커 단계, 시각 맞추기 창 늘리기(장중 끝까지, 시가 맞추기 날은 그대로)")
+    void circuitStageAndExtendedWindow() {
+        assertThat(RealTradePlanner.circuitStage(Map.of())).isZero();
+        assertThat(RealTradePlanner.circuitStage(Map.of("KOSPI", new BigDecimal("-7.7")))).isZero();
+        assertThat(RealTradePlanner.circuitStage(Map.of("KOSPI", new BigDecimal("-7.8"), "KOSDAQ", new BigDecimal("1")))).isEqualTo(1);
+        assertThat(RealTradePlanner.circuitStage(Map.of("KOSPI", new BigDecimal("-3"), "KOSDAQ", new BigDecimal("-15.2")))).isEqualTo(2);
+        assertThat(RealTradePlanner.circuitStage(Map.of("KOSDAQ", new BigDecimal("-21")))).isEqualTo(3);
+
+        Day day = RealTradePlanner.windows(DAY, normalSession(), kst("2026-11-06T09:10"));
+        assertThat(day.withTimedSyncUntil(kst("2026-11-06T09:55")).followup())
+                .isEqualTo(new Window("SYNC_AT", kst("2026-11-06T09:10"), kst("2026-11-06T09:55")));
+        assertThat(day.withTimedSyncUntil(kst("2026-11-06T09:11"))).as("줄이지 않음").isEqualTo(day);
+        assertThat(day.withTimedSyncUntil(kst("2026-11-06T16:00")).followup().end()).as("장중 끝에서 자름").isEqualTo(day.intraday().end());
+        Day open = RealTradePlanner.windows(DAY, normalSession(), null);
+        assertThat(open.withTimedSyncUntil(kst("2026-11-06T16:00"))).as("시가 맞추기 날").isEqualTo(open);
+    }
+
+    @Test
     @DisplayName("시각 맞추기 날(ADR 0033) — 시가 맞추기 창 없이 [T, T + 3분] 시장가 창(SYNC_AT), 맞추기 시각이 없으면 지금과 같은 창")
     void timedSyncWindows() {
         assertThat(RealTradePlanner.windows(DAY, normalSession(), null)).as("되돌리기용 시가 맞추기 경로 그대로")

@@ -460,6 +460,25 @@ class CollectorTradeClientTest {
     }
 
     @Test
+    @DisplayName("매매 제한 조회 — GET 한 번, 진행 중인 VI와 숫자인 지수 등락률만, 종목 코드 모양이 아니면 보내지 않음")
+    void restrictions() {
+        assertThat(client().restrictions(List.of("../x")).reason()).isEqualTo("invalid-symbol");
+        assertThat(methods).isEmpty();
+
+        body = "{\"ok\":true,\"viActive\":[\"005930\"],\"unknown\":[],\"indexChangePct\":{\"KOSPI\":-8.1,\"KOSDAQ\":null}}";
+        CollectorTradeClient.Restrictions value = client().restrictions(Set.of("005930", "000660")).value();
+        assertThat(methods).containsExactly("GET");
+        assertThat(paths).containsExactly("/toss/trading/restrictions");
+        assertThat(queries).containsExactly("symbols=000660,005930");
+        assertThat(value.viActive()).containsExactly("005930");
+        assertThat(value.indexChangePct()).containsOnlyKeys("KOSPI");
+        assertThat(value.indexChangePct().get("KOSPI")).isEqualByComparingTo("-8.1");
+
+        body = "{\"ok\":false,\"reason\":\"disabled\"}";
+        assertThat(client().restrictions(List.of("005930")).reason()).isEqualTo("disabled");
+    }
+
+    @Test
     @DisplayName("토큰 예열 — POST 한 번")
     void warmup() {
         body = "{\"ok\":true,\"tokenRefreshed\":true}";

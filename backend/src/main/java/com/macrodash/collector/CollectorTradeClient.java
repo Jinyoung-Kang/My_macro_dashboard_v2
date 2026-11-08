@@ -206,6 +206,10 @@ public class CollectorTradeClient {
     }
 
     /** 국내 보유 하나(소수점 보유는 수량이 소수). 현재가를 모르면 null. */
+    /** 매매 제한 조회 — VI가 진행 중인 종목과 지수의 전 거래일 대비 등락률(%, 못 읽은 지수는 없음). */
+    public record Restrictions(Set<String> viActive, Map<String, BigDecimal> indexChangePct) {
+    }
+
     public record Holding(String symbol, String name, BigDecimal quantity, BigDecimal lastPrice) {
     }
 
@@ -419,6 +423,39 @@ public class CollectorTradeClient {
             return Reply.of(new Preflight(instant(body.get("fetchedAt")), cash, holdings, quotes, sellable));
         } catch (RuntimeException e) {
             return badResponse("GET /toss/trading/preflight", e);
+        }
+    }
+
+    /** 매매 제한 조회({@code GET /toss/trading/restrictions}) — 읽기만. 종목 코드 모양이 아니면 보내지 않습니다. */
+    public Reply<Restrictions> restrictions(Collection<String> symbols) {
+        Set<String> asked = new TreeSet<>(symbols == null ? List.of() : symbols);
+        for (String symbol : asked) {
+            if (symbol == null || !SYMBOL.matcher(symbol).matches()) {
+                return Reply.failed("invalid-symbol");
+            }
+        }
+        String label = "GET /toss/trading/restrictions";
+        Reply<JsonNode> reply = get(label, "/toss/trading/restrictions?symbols=" + String.join(",", asked), preflightReadTimeout, true);
+        if (!reply.ok()) {
+            return Reply.failed(reply.reason());
+        }
+        try {
+            Set<String> active = new TreeSet<>();
+            for (JsonNode node : array(reply.value(), "viActive")) {
+                active.add(node.asString());
+            }
+            Map<String, BigDecimal> changes = new LinkedHashMap<>();
+            JsonNode indices = reply.value().get("indexChangePct");
+            if (indices != null && indices.isObject()) {
+                for (Map.Entry<String, JsonNode> e : indices.properties()) {
+                    if (e.getValue().isNumber()) {
+                        changes.put(e.getKey(), e.getValue().decimalValue());
+                    }
+                }
+            }
+            return Reply.of(new Restrictions(active, changes));
+        } catch (RuntimeException e) {
+            return badResponse(label, e);
         }
     }
 

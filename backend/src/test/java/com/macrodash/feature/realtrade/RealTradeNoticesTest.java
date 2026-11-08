@@ -70,7 +70,7 @@ class RealTradeNoticesTest {
                 .isEqualTo("[실제 매매] 개장 10분 뒤 맞추기\n\n접수 3 · 체결 0 · 놓침 0\n건너뜀 0 · 막힘 0 · 미룸 0");
 
         for (String kind : List.of("HALT", "WINDOW_SUMMARY", "SKIPPED", "PASSWORD_FAILED", "STOPPED", "CANCEL_GAVE_UP", "SKIP_DAY", "ENABLE",
-                "STOP_SELL", "SOMETHING_NEW")) {
+                "STOP_SELL", "RESTRICTED", "SOMETHING_NEW")) {
             String text = text(event(kind, Map.of("reason", "x")));
             assertThat(text).as(kind).isNotNull().doesNotContain("005930", "37주", "1234567", "1,234,567", "TOSS-ORDER-1", "99887766", "70000");
             assertThat(text.codePoints().noneMatch(cp -> Character.getType(cp) == Character.OTHER_SYMBOL)).as(kind + " 이모지 없음").isTrue();

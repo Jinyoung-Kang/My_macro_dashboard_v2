@@ -137,6 +137,23 @@ class RealTradeJob {
      * 거쳐야 주문이 나갑니다. 상태를 읽지 못한 것(연결 실패·시간 초과·수집기 안의 예외)과 한도 해석 실패는 멈추지 않고 그 주기만 건너뜁니다.
      */
     static final String HALT_COLLECTOR_DISABLED = "collector-disabled";
+    /** 토스의 접수 불가 거절 — 서킷브레이커처럼 시장 전체가 멈춘 때 올 수 있음(무엇이 오는지는 스펙에 없음). */
+    static final String CODE_MARKET_CLOSED = "order-hours-closed";
+    /** 토스의 종목 주문 제한 거절 — VI·거래정지 등. */
+    static final String CODE_STOCK_RESTRICTED = "stock-restricted";
+    /** 토스의 호가 유형 거절 — 단일가 구간의 시장가 등. */
+    static final String CODE_ORDER_TYPE_NOT_ALLOWED = "order-type-not-allowed";
+    /** 접수 불가 거절 뒤 시각 맞추기 전체를 쉬는 시간(거절 한 번이 시도 하나를 쓰므로 자주 묻지 않음). */
+    static final Duration MARKET_REFUSED_HOLD = Duration.ofMinutes(10);
+    /** 종목 제한 거절 뒤 그 종목을 쉬는 시간(VI 2분 남짓 + 여유). */
+    static final Duration SYMBOL_REFUSED_HOLD = Duration.ofMinutes(3);
+    /** VI 종목을 처음 본 뒤 기다리는 상한 — 넘으면 보냄(KRX VI 단일가는 호가를 받으므로 체결은 됨, VI 표시가 안 풀려도 그날을 잃지 않게). */
+    static final Duration VI_WAIT_LIMIT = Duration.ofMinutes(6);
+    /** 대기 사유 코드(알림). */
+    static final String RESTRICTED_CIRCUIT = "circuit-breaker";
+    static final String RESTRICTED_VI = "vi-active";
+    static final String RESTRICTED_REFUSED = "order-refused";
+
     /** 수집기의 창 밖 안 보냄 사유(토스로 나가지 않음). */
     static final String CODE_OUTSIDE_WINDOW = "outside-window";
     /**
@@ -154,11 +171,13 @@ class RealTradeJob {
      * 창 검사가 막지만 백엔드와 수집기의 창 끝 사이 여유가 30초뿐), 그것으로 이상 멈춤(이미 접수된 주문까지 취소)을 하지 않습니다.
      */
     static final Set<String> REPEAT_EXEMPT = Set.of("rate-limited", "opposite-pending-order-exists", "over-order-limit",
-            "over-daily-orders", "over-daily-buy", CODE_OUTSIDE_WINDOW,
+            "over-daily-orders", "over-daily-buy", CODE_OUTSIDE_WINDOW, CODE_MARKET_CLOSED, CODE_STOCK_RESTRICTED,
+            CODE_ORDER_TYPE_NOT_ALLOWED,
             RealTradeExecutor.CODE_INTERRUPTED, RealTradeExecutor.CODE_RECONCILED, RealTradeExecutor.CODE_OPERATOR_RESOLVED);
     /** 새 키(시도 2)로 다시 보내도 되는 거절·안 보냄 사유(지나가는 장애) — 같은 결과가 나올 것이 뻔한 한도·창·형식 거절은 다시 보내지 않습니다. */
     static final Set<String> RETRYABLE = Set.of("rate-limited", "collector-unreachable", "token-failed", "timeout",
-            "calendar-unavailable", "account-unavailable", "price-unavailable", "count-unavailable", "connect-timeout", "connect-failed");
+            "calendar-unavailable", "account-unavailable", "price-unavailable", "count-unavailable", "connect-timeout", "connect-failed",
+            CODE_MARKET_CLOSED, CODE_STOCK_RESTRICTED, CODE_ORDER_TYPE_NOT_ALLOWED);
     /** 다음 주기에 다시 볼 건너뜀(미룸·이 기능 주문 진행 중·잔량 모름). 하루 매수 금액은 시가 주문이 상한가보다 낮게 체결되면 다시 생깁니다. */
     static final Set<String> TRANSIENT_SKIPS = Set.of(RealTradePlanner.SKIP_DEFERRED_CASH, RealTradePlanner.SKIP_DAILY_CAP,
             RealTradePlanner.SKIP_OWN, RealTradePlanner.SKIP_PENDING_UNKNOWN);
@@ -467,6 +486,16 @@ class RealTradeJob {
      */
     private record Fresh(Account account, BigDecimal equity, Set<String> blocked, BigDecimal reserved, BigDecimal lossTotal,
                          BigDecimal lossEquity, DailyRoom daily) {
+
+        /** 이번 계획에서 더 뺄 종목(매매 제한)을 더한 값. */
+        Fresh alsoBlocked(Set<String> more) {
+            if (more.isEmpty()) {
+                return this;
+            }
+            Set<String> all = new HashSet<>(blocked);
+            all.addAll(more);
+            return new Fresh(account, equity, all, reserved, lossTotal, lossEquity, daily);
+        }
     }
 
     /** 수집기 하루 한도의 오늘 남은 몫(명세 §5.2 — 한도 − 오늘 쓴 몫, 0 아래는 0). */
@@ -501,6 +530,12 @@ class RealTradeJob {
         boolean followupDone;
         /** 낡았다고 판정한 그날 묶음 번호(한 번 낡으면 그날 계속 낡음). */
         Long staleBatch;
+        /** 매매 제한 대기(시각 맞추기만, 메모리) — 지금까지 본 서킷브레이커 단계, 시장 전체를 보내지 않는 끝, VI를 처음 본 시각, 거절로 쉬는 종목의 끝, 알린 사유. */
+        int circuitStage;
+        Instant marketHoldUntil;
+        final Map<String, Instant> viSince = new HashMap<>();
+        final Map<String, Instant> symbolHoldUntil = new HashMap<>();
+        final Set<String> restrictionNoticed = new HashSet<>();
 
         DayState(LocalDate date) {
             this.date = date;
@@ -858,14 +893,100 @@ class RealTradeJob {
         if (f == null || !lossCheck(c, f)) {
             return null;
         }
+        Set<String> restricted = Set.of();
+        if (timedSync(c, purpose)) {
+            restricted = restrictedSymbols(c, symbols, f);
+            if (restricted == null) {
+                return null;   // 시장 전체 대기 — 묶음도 만들지 않고 다음 주기에 다시 봄
+            }
+            f = f.alsoBlocked(restricted);
+        }
         Set<String> sell = RealTradePlanner.sellSymbols(plan.apply(f, rules(c, f).withRequireSellable(false)));
         if (!sell.isEmpty()) {
             f = fresh(c, symbols, purpose, sell);
             if (f == null || !lossCheck(c, f)) {
                 return null;
             }
+            f = f.alsoBlocked(restricted);
         }
         return new Planned(f, plan.apply(f, rules(c, f)));
+    }
+
+    // ------------------------------------------------------------------ 매매 제한 대기(시각 맞추기)
+    /** 시각 맞추기 창의 주문인가 — 매매 제한 대기는 이 경로에만 있습니다(시가 맞추기·장중 따라 하기·스탑 매도는 그대로). */
+    private static boolean timedSync(Cycle c, String purpose) {
+        return RealTradeStore.PURPOSE_SYNC_FOLLOWUP.equals(purpose) && c.day.windows.syncAt() != null;
+    }
+
+    /**
+     * 지금 보내지 말아야 할 종목(VI 진행 중·거절로 쉬는 중) — 시장 전체를 쉬어야 하면 null. 조회를 못 하면 제한이 없는 것으로 보고 보냅니다(이 검사가 평소 주문을
+     * 막지 않게 — 거절되면 {@link #onTimedRefused}가 대기). 모의 장부도 제한 뒤 첫 체결가로 체결하므로 풀린 뒤 시장가가 같은 때입니다.
+     */
+    private Set<String> restrictedSymbols(Cycle c, Collection<String> symbols, Fresh f) {
+        DayState d = c.day;
+        Set<String> ask = new TreeSet<>(symbols);
+        ask.addAll(f.account().positions().keySet());
+        Reply<CollectorTradeClient.Restrictions> reply = client.restrictions(ask);
+        Set<String> viNow = Set.of();
+        if (reply.ok()) {
+            int stage = RealTradePlanner.circuitStage(reply.value().indexChangePct());
+            if (stage > d.circuitStage) {
+                d.circuitStage = stage;
+                // 3단계는 그날 장 종료 — 창 끝까지 보내지 않음
+                d.marketHoldUntil = stage >= 3 ? d.windows.regularEnd() : c.now.plus(RealTradePlanner.CIRCUIT_HOLD);
+                markRestricted(c, RESTRICTED_CIRCUIT, RealTradePlanner.RESTRICTED_MARKET_SYNC_LENGTH);
+            }
+            viNow = reply.value().viActive();
+        } else {
+            log.warn("매매 제한 조회 실패 — 제한 없이 진행 ({})", reply.reason());
+        }
+        if (d.marketHoldUntil != null && c.now.isBefore(d.marketHoldUntil)) {
+            return null;
+        }
+        Set<String> out = new TreeSet<>();
+        for (String symbol : viNow) {
+            if (c.now.isBefore(d.viSince.computeIfAbsent(symbol, k -> c.now).plus(VI_WAIT_LIMIT))) {
+                out.add(symbol);
+            }
+        }
+        if (!out.isEmpty()) {
+            markRestricted(c, RESTRICTED_VI, RealTradePlanner.RESTRICTED_SYMBOL_SYNC_LENGTH);
+        }
+        d.symbolHoldUntil.forEach((symbol, until) -> {
+            if (c.now.isBefore(until)) {
+                out.add(symbol);
+            }
+        });
+        return out;
+    }
+
+    /** 시각 맞추기 창을 늘리고 사유마다 하루 한 번 알립니다. */
+    private void markRestricted(Cycle c, String reason, Duration length) {
+        DayState d = c.day;
+        d.windows = d.windows.withTimedSyncUntil(d.windows.followup().start().plus(length));
+        publish(d);
+        if (d.restrictionNoticed.add(reason)) {
+            log.warn("시각 맞추기 매매 제한 대기 — {}", reason);
+            store.addEvent(MARKET, RealTradeNotices.EVENT_RESTRICTED, null, Map.of("reason", reason, "date", d.date.toString()), true);
+        }
+    }
+
+    /**
+     * 시각 맞추기 주문이 거절됐을 때 — 접수 불가(시장 전체로 봄)면 쉬고 true(남은 주문을 보내지 않음), 종목 제한이면 그 종목만 쉼. 토스가 서킷브레이커·VI에
+     * 무엇을 답하는지는 스펙에 없어, 조회로 못 잡은 경우의 받침입니다.
+     */
+    private boolean onTimedRefused(Cycle c, String symbol, String code) {
+        DayState d = c.day;
+        if (CODE_MARKET_CLOSED.equals(code)) {
+            d.marketHoldUntil = c.now.plus(MARKET_REFUSED_HOLD);
+            markRestricted(c, RESTRICTED_REFUSED, RealTradePlanner.RESTRICTED_MARKET_SYNC_LENGTH);
+            return true;
+        }
+        if (CODE_STOCK_RESTRICTED.equals(code) || CODE_ORDER_TYPE_NOT_ALLOWED.equals(code)) {
+            d.symbolHoldUntil.put(symbol, c.now.plus(SYMBOL_REFUSED_HOLD));
+            markRestricted(c, RESTRICTED_REFUSED, RealTradePlanner.RESTRICTED_SYMBOL_SYNC_LENGTH);
+        }
+        return false;
     }
 
     /**
@@ -1056,6 +1177,9 @@ class RealTradeJob {
                 written++;
             }
             if (!live(c)) {
+                break;
+            }
+            if (sent.result() == Result.REJECTED && timedSync(c, purpose) && onTimedRefused(c, o.symbol(), sent.code())) {
                 break;
             }
         }

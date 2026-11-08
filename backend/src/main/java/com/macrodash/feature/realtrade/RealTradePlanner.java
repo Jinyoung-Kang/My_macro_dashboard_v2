@@ -66,6 +66,14 @@ final class RealTradePlanner {
     static final Duration FOLLOWUP_LENGTH = Duration.ofMinutes(30);
     /** 시각 맞추기 창 길이: [T, T + 3분](사용자 결정 2026-11-06 '09:10~09:13 시장가' — 묶음 생성·창 안 재시도 모두 이 안에서). */
     static final Duration TIMED_SYNC_LENGTH = Duration.ofMinutes(3);
+    /** 서킷브레이커 의심 때 시각 맞추기 창의 길이 — 발동 직후여도 20분 정지 + 10분 단일가 뒤에 보낼 여유. */
+    static final Duration RESTRICTED_MARKET_SYNC_LENGTH = Duration.ofMinutes(45);
+    /** VI·종목 제한 때 시각 맞추기 창의 길이 — VI는 보통 2분 남짓. */
+    static final Duration RESTRICTED_SYMBOL_SYNC_LENGTH = Duration.ofMinutes(12);
+    /** 서킷브레이커 의심을 처음 본 뒤 보내지 않는 시간(20분 정지 + 10분 단일가 + 여유 1분). */
+    static final Duration CIRCUIT_HOLD = Duration.ofMinutes(31);
+    /** 코스피·코스닥 전 거래일 대비 등락률이 이 값 이하면 서킷브레이커 1·2·3단계로 봄(발동 기준 −8·−15·−20%, 지수 지연 여유 0.2%p). */
+    private static final BigDecimal[] CIRCUIT_STAGES = {new BigDecimal("-7.8"), new BigDecimal("-14.8"), new BigDecimal("-19.8")};
     /** 장중 따라 하기 창: [T, min(T + 3분, 종가 단일가 시작 − 30초)] — 시작은 수집기의 DAY 창(정규장 시작 + 30초)보다 앞서지 않게. */
     static final Duration MIRROR_LENGTH = Duration.ofMinutes(3);
     static final Duration MIRROR_CLOSE_BEFORE = Duration.ofSeconds(30);
@@ -841,6 +849,16 @@ final class RealTradePlanner {
             return out;
         }
 
+        /** 시각 맞추기 창의 끝을 {@code end}까지 늘린 그날 창(장중 끝을 넘지 않음). 시각 맞추기 날이 아니거나 이미 그보다 길면 그대로. */
+        Day withTimedSyncUntil(Instant end) {
+            Instant capped = intraday != null && end.isAfter(intraday.end()) ? intraday.end() : end;
+            if (syncAt == null || !capped.isAfter(followup.end())) {
+                return this;
+            }
+            return new Day(date, sync, new Window(followup.kind(), followup.start(), capped), intraday, close, regularStart, closingAuctionStart,
+                    regularEnd, syncAt);
+        }
+
         /** 그날 첫 창의 시작(시가 맞추기, 없으면 마무리). */
         Instant firstStart() {
             return sync != null ? sync.start() : followup.start();
@@ -886,6 +904,20 @@ final class RealTradePlanner {
             }
         }
         return new Day(date, sync, followup, intraday, close, regular.start(), auction, regular.end(), null);
+    }
+
+    /** 지수 등락률로 추정한 서킷브레이커 단계(0 = 아님) — 토스에 시장 정지 표시가 없음. 시장이 달라도 가장 높은 단계. */
+    static int circuitStage(Map<String, BigDecimal> indexChangePct) {
+        int stage = 0;
+        for (BigDecimal change : indexChangePct.values()) {
+            for (int i = CIRCUIT_STAGES.length; i > stage; i--) {
+                if (change != null && change.compareTo(CIRCUIT_STAGES[i - 1]) <= 0) {
+                    stage = i;
+                    break;
+                }
+            }
+        }
+        return stage;
     }
 
     private static Window window(String kind, Instant start, Instant end) {

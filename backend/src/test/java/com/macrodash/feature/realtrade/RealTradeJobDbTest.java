@@ -95,6 +95,7 @@ class RealTradeJobDbTest {
         when(client.warmup()).thenReturn(Reply.of(new CollectorTradeClient.Warmup(false)));
         when(client.openOrders()).thenReturn(Reply.of(List.of()));
         when(client.todayOrders()).thenReturn(Reply.of(List.of()));
+        when(client.restrictions(any())).thenReturn(Reply.of(new CollectorTradeClient.Restrictions(Set.of(), Map.of())));
         when(client.order(anyString())).thenReturn(Reply.failed("collector-not-ok"));
         when(client.cancelOrder(anyString())).thenReturn(new CancelResult(Outcome.ACCEPTED, "C-1", null));
         when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
@@ -1467,6 +1468,133 @@ class RealTradeJobDbTest {
         assertThat(cfg().state()).isEqualTo("LIVE");
         assertThat(cfg().haltReason()).isNull();
         verify(client, never()).cancelOrder(anyString());
+    }
+
+    // ------------------------------------------------------------------ 시각 맞추기의 매매 제한 대기(2026-11-09 사용자 결정)
+    private void timedRestrictionDay() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L, 22L), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+    }
+
+    private void restrictions(Set<String> vi, String kospiPct) {
+        when(client.restrictions(any())).thenReturn(Reply.of(new CollectorTradeClient.Restrictions(vi,
+                kospiPct == null ? Map.of() : Map.of("KOSPI", d(kospiPct)))));
+    }
+
+    private List<String> sentSummaries() {
+        return sentBodies().stream().map(RealTradeJobDbTest::summary).toList();
+    }
+
+    @Test
+    @DisplayName("매매 제한 — VI 종목만 빼고 보내고, 풀리면 늘어난 창 안에서 그 종목을 시장가로 보냄")
+    void timedSyncWaitsForVi() {
+        timedRestrictionDay();
+        restrictions(Set.of(A), null);
+
+        run("09:10:05");
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(A)).anyMatch(o -> o.startsWith("SELL " + C));
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(events("RESTRICTED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("vi-active"));
+
+        run("09:12:30");
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(A));
+
+        restrictions(Set.of(), null);
+        run("09:13:30");   // 원래 창(09:13) 뒤 — 늘어난 창 안
+        assertThat(sentSummaries()).anyMatch(o -> o.startsWith("BUY " + A + " DAY"));
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("RESTRICTED")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("매매 제한 — VI 표시가 6분 넘게 안 풀리면 더 기다리지 않고 보냄")
+    void timedSyncStopsWaitingForVi() {
+        timedRestrictionDay();
+        restrictions(Set.of(A), null);
+        run("09:10:05");
+        run("09:15:30");
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(A));
+        run("09:16:10");
+        assertThat(sentSummaries()).anyMatch(o -> o.startsWith("BUY " + A + " DAY"));
+    }
+
+    @Test
+    @DisplayName("매매 제한 — 지수 −8%면 서킷브레이커로 보고 묶음도 만들지 않다가 31분 뒤 늘어난 창 안에서 보냄(지수가 그대로여도)")
+    void timedSyncWaitsForCircuitBreaker() {
+        timedRestrictionDay();
+        restrictions(Set.of(), "-8.1");
+
+        run("09:10:05");
+        run("09:30");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        assertThat(events("RESTRICTED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("circuit-breaker"));
+
+        run("09:41:10");
+        assertThat(sentSummaries()).hasSize(3).allMatch(o -> o.contains(" DAY "));
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
+    @Test
+    @DisplayName("매매 제한 — 3단계(−20%)는 그날 보내지 않고 창이 끝나면 놓침으로 알림, 다음 맞추기가 메움")
+    void timedSyncGivesUpOnThirdStage() {
+        timedRestrictionDay();
+        restrictions(Set.of(), "-20.5");
+        run("09:10:05");
+        run("09:54");
+        run("09:56");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("window").asString()).isEqualTo("SYNC_AT");
+            assertThat(e.detail().path("missed").asInt()).isEqualTo(1);
+        });
+    }
+
+    @Test
+    @DisplayName("매매 제한 — 접수 불가 거절은 이상 멈춤이 아니고, 남은 주문을 멈췄다가 10분 뒤 다시 보냄")
+    void timedSyncHoldsOnOrderHoursClosed() {
+        timedRestrictionDay();
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.REJECTED, null, "order-hours-closed", 422));
+
+        run("09:10:05");
+        assertThat(sentSummaries()).hasSize(1);
+        run("09:15");
+        assertThat(sentSummaries()).as("10분 안에는 다시 묻지 않음").hasSize(1);
+
+        when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
+        run("09:20:10");
+        assertThat(sentSummaries()).hasSize(4);
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("매매 제한 — 종목 제한 거절이 3건이어도 이상 멈춤이 아니고 그 종목들만 3분 뒤 다시 보냄")
+    void timedSyncHoldsRestrictedSymbols() {
+        timedRestrictionDay();
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.REJECTED, null, "stock-restricted", 422));
+
+        run("09:10:05");
+        assertThat(sentSummaries()).hasSize(3);
+        run("09:11");
+        assertThat(sentSummaries()).hasSize(3);
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+
+        when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
+        run("09:13:20");
+        assertThat(sentSummaries()).hasSize(6);
+    }
+
+    @Test
+    @DisplayName("매매 제한 — 조회가 실패해도 평소대로 보냄")
+    void restrictionsNeverBlockOnReadFailure() {
+        timedRestrictionDay();
+        when(client.restrictions(any())).thenReturn(Reply.failed("collector-unreachable"));
+        run("09:10:05");
+        assertThat(sentSummaries()).hasSize(3);
     }
 
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
