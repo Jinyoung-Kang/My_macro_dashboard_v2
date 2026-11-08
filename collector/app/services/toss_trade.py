@@ -770,6 +770,84 @@ def preflight(symbols_raw: str | None, sell_raw: str | None) -> dict:
     }
 
 
+# ==============================================================================
+# 매매 제한(VI·서킷브레이커) — 읽기만, 시각 맞추기 직전(2026-11-09 사용자 결정)
+# ==============================================================================
+RESTRICTION_INDICES = ("KOSPI", "KOSDAQ")
+RESTRICTION_MAX_SYMBOLS = 60
+RESTRICTION_BUDGET_SECONDS = 25.0
+_index_prev_close: dict[tuple[str, str], Decimal] = {}
+
+
+def _vi_active(result, day: str) -> bool:
+    """유의사항 목록에 오늘 시작해 아직 끝나지 않은 VI가 있나(스펙 — ``endDate`` null이 진행 중, 모르는 warningType은 허용)."""
+    if not isinstance(result, list):
+        raise _Failure("upstream-error")
+    return any(isinstance(item, dict) and str(item.get("warningType") or "").startswith("VI_") and item.get("endDate") is None
+               and str(item.get("startDate") or "")[:10] == day for item in result)
+
+
+def _previous_close(symbol: str, day: str, deadline: float) -> Decimal | None:
+    """지수의 전 거래일 종가(날짜마다 캐시) — 일봉은 최신순이고 장중 첫 봉은 오늘 봉입니다."""
+    key = (symbol, day)
+    if key in _index_prev_close:
+        return _index_prev_close[key]
+    result = _read(f"/api/v1/market-indicators/{symbol}/candles", {"interval": "1d", "count": 2}, deadline)
+    for candle in (result.get("candles") or []) if isinstance(result, dict) else []:
+        if isinstance(candle, dict) and str(candle.get("timestamp") or "")[:10] < day:
+            close = _decimal(candle.get("closePrice"))
+            if close > 0:
+                _index_prev_close[key] = close
+                return close
+    return None
+
+
+def _index_changes(day: str, deadline: float) -> dict[str, float | None]:
+    """코스피·코스닥의 전 거래일 대비 등락률(%). 토스에 서킷브레이커 표시가 없어 백엔드가 이 값으로 추정합니다. 못 읽은 지수는 None."""
+    changes: dict[str, float | None] = dict.fromkeys(RESTRICTION_INDICES)
+    try:
+        result = _read("/api/v1/market-indicators/prices", {"symbols": ",".join(RESTRICTION_INDICES)}, deadline)
+        for item in result if isinstance(result, list) else []:
+            symbol = item.get("symbol") if isinstance(item, dict) else None
+            if symbol not in changes or str(item.get("timestamp") or "")[:10] != day:
+                continue
+            previous = _previous_close(symbol, day, deadline)
+            if previous is not None:
+                changes[symbol] = float((_decimal(item.get("lastPrice")) - previous) / previous * 100)
+    except _Failure as failure:
+        logger.warning("토스 지수 조회 실패 — %s", failure.reason)
+    except ValueError:
+        logger.warning("토스 지수 응답 해석 실패")
+    return changes
+
+
+def restrictions(symbols_raw: str | None) -> dict:
+    """
+    ``GET /toss/trading/restrictions?symbols=a,b`` — VI가 진행 중인 종목과 지수 등락률. 읽지 못한 종목은 ``unknown``에 넣고 나머지는 돌려줍니다
+    (제한을 몰라도 주문을 막지 않음 — 거절되면 백엔드가 대기합니다).
+    """
+    reason = settings.toss_trading_disabled_reason()
+    if reason is not None:
+        return _disabled_view(reason)
+    try:
+        symbols = _symbol_list(symbols_raw)
+    except ValueError:
+        return {"ok": False, "enabled": True, "reason": "invalid-request", "code": None}
+    if len(symbols) > RESTRICTION_MAX_SYMBOLS:
+        return {"ok": False, "enabled": True, "reason": "invalid-request", "code": None}
+    deadline = _monotonic() + RESTRICTION_BUDGET_SECONDS
+    day = _now().date().isoformat()
+    active: list[str] = []
+    unknown: list[str] = []
+    for symbol in symbols:
+        try:
+            if _vi_active(_read(f"/api/v1/stocks/{symbol}/warnings", None, deadline), day):
+                active.append(symbol)
+        except _Failure:
+            unknown.append(symbol)
+    return {"ok": True, "viActive": active, "unknown": unknown, "indexChangePct": _index_changes(day, deadline)}
+
+
 def open_orders() -> dict:
     """``GET /toss/trading/orders/open`` — 진행 중 주문 전량(국내 KRW만, 앱 주문 포함)을 정리해서."""
     reason = settings.toss_trading_disabled_reason()

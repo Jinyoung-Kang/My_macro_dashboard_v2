@@ -34,6 +34,7 @@ PROTECTED = [
     ("get", "/toss/trading/calendar"),
     ("post", "/toss/trading/warmup"),
     ("get", "/toss/trading/preflight?symbols=005930"),
+    ("get", "/toss/trading/restrictions?symbols=005930"),
     ("post", "/toss/trading/orders"),
     ("post", "/toss/trading/orders/ord-1/cancel"),
     ("get", "/toss/trading/orders/open"),

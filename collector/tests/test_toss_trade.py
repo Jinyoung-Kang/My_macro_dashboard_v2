@@ -448,7 +448,7 @@ def test_쓰기_세션과_가드는_toss_trade_py만_알고_toss_trade를_부르
     main_tree = _tree(APP / "main.py")
     used = {node.attr for node in ast.walk(main_tree)
             if isinstance(node, ast.Attribute) and ast.unparse(node.value) == "toss_trade_service"}
-    assert used <= {"status", "calendar", "warmup", "preflight", "place_order", "cancel_order", "open_orders",
+    assert used <= {"status", "calendar", "warmup", "preflight", "restrictions", "place_order", "cancel_order", "open_orders",
                     "today_orders", "order_detail", "no_service_token_view", "no_service_token_write", "write_result",
                     "UNKNOWN"}
 
@@ -1349,12 +1349,13 @@ def test_속도_조절_그룹은_스펙의_Rate_Limits_Group대로():
         ("GET", "/api/v1/holdings"): "ASSET",
         ("GET", "/api/v1/prices"): "MARKET_DATA",
         ("GET", "/api/v1/price-limits"): "MARKET_DATA",
+        ("GET", "/api/v1/stocks/005930/warnings"): "STOCK",
         ("GET", "/api/v1/accounts"): None,
         ("GET", "/api/v1/market-calendar/KR"): None,
     }
     assert {key: toss_ratelimit.group_for(*key) for key in cases} == cases
     assert toss_ratelimit.RATES == {"ORDER": 5.0, "ORDER_HISTORY": 3.0, "ORDER_INFO": 2.0, "ASSET": 3.0,
-                                    "MARKET_DATA": 8.0}
+                                    "MARKET_DATA": 8.0, "STOCK": 3.0}
 
 
 def test_버킷은_비면_기다리고_3초를_넘기면_쓰지_않는다(limiter_clock):
@@ -1452,3 +1453,56 @@ def test_경로_안의_예상_못_한_예외는_주문이면_UNKNOWN·조회면_
     assert client.get("/toss/trading/orders/open", headers=HEADERS).json() == {"ok": False, "enabled": True,
                                                                                "reason": "internal"}
     assert CANARY not in caplog.text and "RuntimeError" in caplog.text
+
+
+# ==============================================================================
+# 매매 제한 조회(VI·지수 등락률) — 읽기만
+# ==============================================================================
+def _restriction_routes(fake, *, kospi="2300", kosdaq="800", day="2026-11-09") -> None:
+    fake.routes["/api/v1/market-indicators/prices"] = (200, {"result": [
+        {"symbol": "KOSPI", "timestamp": f"{day}T10:00:00+09:00", "lastPrice": kospi},
+        {"symbol": "KOSDAQ", "timestamp": f"{day}T10:00:00+09:00", "lastPrice": kosdaq}]})
+    for symbol, close in (("KOSPI", "2500"), ("KOSDAQ", "800")):
+        fake.routes[f"/api/v1/market-indicators/{symbol}/candles"] = (200, {"result": {"candles": [
+            {"timestamp": f"{day}T09:00:00+09:00", "closePrice": "1"},
+            {"timestamp": "2026-11-06T09:00:00+09:00", "closePrice": close}]}})
+
+
+@pytest.fixture
+def clean_index_cache():
+    toss_trade._index_prev_close.clear()
+    yield
+    toss_trade._index_prev_close.clear()
+
+
+def test_매매_제한은_진행_중인_VI만_세고_지수는_전_거래일_종가와_견준다(enabled, fake, clock, clean_index_cache):
+    _restriction_routes(fake)
+    fake.routes["/api/v1/stocks/005930/warnings"] = (200, {"result": [
+        {"warningType": "VI_DYNAMIC", "exchange": "KRX", "startDate": "2026-11-09", "endDate": None}]})
+    fake.routes["/api/v1/stocks/000660/warnings"] = (200, {"result": [
+        {"warningType": "VI_STATIC", "exchange": "KRX", "startDate": "2026-11-09", "endDate": "2026-11-09"},
+        {"warningType": "OVERHEATED", "exchange": "KRX", "startDate": "2026-11-09", "endDate": None},
+        {"warningType": "VI_DYNAMIC", "exchange": "KRX", "startDate": "2026-11-06", "endDate": None}]})
+    fake.routes["/api/v1/stocks/035420/warnings"] = (200, {"result": []})
+    body = toss_trade.restrictions("005930,000660,035420")
+    assert body["ok"] is True and body["viActive"] == ["005930"] and body["unknown"] == []
+    assert body["indexChangePct"]["KOSPI"] == pytest.approx(-8.0)
+    assert body["indexChangePct"]["KOSDAQ"] == pytest.approx(0.0)
+    toss_trade.restrictions("035420")
+    assert len(fake.gets("/api/v1/market-indicators/KOSPI/candles")) == 1            # 전 거래일 종가는 날짜마다 캐시
+    assert not fake.posts()
+
+
+def test_매매_제한은_못_읽은_종목만_unknown으로_두고_지수_실패도_막지_않는다(enabled, fake, clock, clean_index_cache):
+    fake.routes["/api/v1/market-indicators/prices"] = (500, _error("internal-error", CANARY))
+    fake.routes["/api/v1/stocks/005930/warnings"] = (500, _error("internal-error", CANARY))
+    fake.routes["/api/v1/stocks/000660/warnings"] = (200, {"result": []})
+    body = toss_trade.restrictions("005930,000660")
+    assert body == {"ok": True, "viActive": [], "unknown": ["005930"], "indexChangePct": {"KOSPI": None, "KOSDAQ": None}}
+    assert CANARY not in str(body)
+
+
+def test_매매_제한은_오늘_시세가_아닌_지수를_세지_않고_잘못된_종목은_거절한다(enabled, fake, clock, clean_index_cache):
+    _restriction_routes(fake, day="2026-11-06")
+    assert toss_trade.restrictions("")["indexChangePct"] == {"KOSPI": None, "KOSDAQ": None}
+    assert toss_trade.restrictions("../x")["reason"] == "invalid-request"

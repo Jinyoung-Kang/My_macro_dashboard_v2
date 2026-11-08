@@ -25,6 +25,7 @@ RATES = {
     "ORDER_INFO": 2.0,
     "ASSET": 3.0,
     "MARKET_DATA": 8.0,
+    "STOCK": 3.0,
 }
 
 # (메서드, 경로 정규식, 그룹) — 공식 스펙 1.2.28의 'Rate Limits Group' 표기대로.
@@ -34,6 +35,7 @@ _ROUTES = (
     ("GET", re.compile(r"/api/v1/(buying-power|sellable-quantity)"), "ORDER_INFO"),
     ("GET", re.compile(r"/api/v1/holdings"), "ASSET"),
     ("GET", re.compile(r"/api/v1/(prices|price-limits)"), "MARKET_DATA"),
+    ("GET", re.compile(r"/api/v1/stocks/[^/]+/warnings"), "STOCK"),
 )
 
 

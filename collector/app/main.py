@@ -790,6 +790,16 @@ def toss_trading_preflight(
     return _trading_read(toss_trade_service.preflight, symbols, sell)
 
 
+@app.get("/toss/trading/restrictions")
+def toss_trading_restrictions(
+    symbols: str = Query("", max_length=2000),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """VI가 진행 중인 종목과 코스피·코스닥 등락률(읽기만). 읽지 못한 종목은 unknown."""
+    _check_token(x_service_token)
+    return _trading_read(toss_trade_service.restrictions, symbols)
+
+
 @app.post("/toss/trading/orders")
 async def toss_trading_order(request: Request, x_service_token: str | None = Header(default=None)) -> dict:
     """
