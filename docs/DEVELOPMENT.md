@@ -369,6 +369,7 @@ printf 'COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\
   `TAILNET_OWNER_LOGIN`·`TELEGRAM_*`, 토스 키 `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_ENABLED`, 실제 매매 여섯 줄 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED`, `BROWSER_*`.
   서버 전용 이름은 서버의 지금 값을 그대로 이어 붙이므로, 실제 매매를 켠 채 다시 전달해도 서버 스위치·한도·토스 키가 그대로입니다
   (예전 절차는 서버 `.env`를 통째로 덮어써, 로컬의 빈 줄 때문에 토스 키가 빈 값이 되면 수집기가 알림 없이 키 없음(`not-configured`)으로 주문 전에 막힐 수 있었음).
+- 텔레그램 봇은 네 개입니다(2026-11-08) — 운영 `TELEGRAM_BOT_TOKEN`, 미국 모의 `TELEGRAM_US_BOT_TOKEN`, 한국 모의 `TELEGRAM_KR_BOT_TOKEN`, 실제 계좌·ISA `TELEGRAM_ACCOUNT_BOT_TOKEN`. 대화방은 `TELEGRAM_CHAT_ID` 하나를 함께 쓰고, 토큰이 빈 알림은 운영 봇으로 갑니다. 새 봇은 텔레그램에서 시작(Start)을 눌러 둬야 메시지를 받습니다.
 - 서버 전용 이름을 새로 만들면 위 두 목록(PC의 `grep -Ev`, 서버의 `grep -E`)에 같이 더합니다. 지금 `.env`에 있던 이름이 새 `.env`에서 빠지면 이름만 '경고'로 찍습니다 —
   서버에만 둔 줄이면 백업에서 그 줄을 다시 붙입니다. 로컬 `.env` 끝 줄에 줄바꿈이 없어도 서버가 줄바꿈을 하나 넣고 이어 붙입니다.
 - 바꾼 값은 다시 배포해야 컨테이너에 들어갑니다(`bash scripts/vultr/deploy.sh` — 실제 매매가 꺼져 있지 않으면 한국 거래 창 밖에서). 백업 `.env.bak-*`에는 비밀값이 있어
@@ -546,7 +547,7 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 
 올라가는 곳은 백업 버킷의 `db/vultr/`(60일 만료는 `db/` 접두어의 수명주기 — 2026-11-03에 버킷 전체에서 좁힘, `archive/`는 만료 없음)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
 
-- 실패하면(QA-199) syslog err와 함께 서버 `.env`의 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`, 모의 매매 알림과 같은 봇)으로 'my-macro 서버 — 백업 실패: …' 한 줄을 보냅니다.
+- 실패하면(QA-199) syslog err와 함께 서버 `.env`의 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`, 운영 봇)으로 'my-macro 서버 — 백업 실패: …' 한 줄을 보냅니다.
   둘 중 하나라도 비면 보내지 않습니다. 토큰은 curl 인자가 아니라 stdin 설정으로 넘깁니다.
 - 성공하면 `backups/.last-s3-ok`(유닉스 초 · UTC 시각 · 올린 키)를 남기고, 서버의 `make status`와 `deploy.sh` 끝 요약이 그 나이를 찍습니다 — 36시간이 넘으면 '경고'
   (cron이 빠진 경우는 텔레그램 알림도 없어 여기서만 보임). 기록이 없으면 `deploy.sh`만 '경고'하고 `make status`는 아무것도 찍지 않습니다(PC에는 S3 cron이 없음).
