@@ -601,7 +601,8 @@ public class PaperMirrorService {
      * <ul>
      *   <li>한국 책이 아니거나 운용 중이 아니거나 거래일이 아니거나 달력이 모르면 empty.</li>
      *   <li>그 세션 시가에 장부가 체결할 결정 주문(출처 STOP이 아닌 시가 주문)이 하나라도 있으면 empty — 예전 판으로 낸 주문이 남은 날(전환일)은 예전
-     *       시가 맞추기로 모의·실제·ISA가 같은 때에 맞춥니다.</li>
+     *       시가 맞추기로 모의·실제·ISA가 같은 때에 맞춥니다. 단 규칙 계좌는 설정({@code kr.rules.timing})이 {@code AT_MINUTE}이면 시가 주문이 남은 날도 그
+     *       시각에 맞춥니다(2026-11-09 사용자 결정 — ADR 0033 결과). 그날은 모의가 시가에, 실제가 그 시각에 체결해 가격이 갈립니다.</li>
      *   <li>규칙 계좌: 그 세션의 대기 결정 주문 가운데 분 단위 지정 시각 주문이 있으면 그 가장 이른 기준 시각(실제 주문 먼저 — 통합 검토 R11). 없으면 지금
      *       설정({@code kr.rules.timing})이 {@code AT_MINUTE}일 때 그 결정이 냈을 시각({@link RuleTiming#choose} — 장 시간 변경일은 그날 첫 분),
      *       그 밖의 설정이면 empty.</li>
@@ -623,6 +624,7 @@ public class PaperMirrorService {
             }
             Instant first = SessionWindows.first(calendar, session);
             Instant earliest = null;
+            boolean rulesAtMinute = PaperBooks.KR_RULES.equals(code) && PaperBooks.AT_MINUTE.equals(RuleTiming.kr(run.settingsBody()).timing());
             for (Order o : store.ordersByStatus(code, PaperBooks.ORDER_PENDING)) {
                 if (!PaperBooks.ORDER_PENDING.equals(o.status()) || PaperBooks.SOURCE_STOP.equals(o.source())
                         || !session.equals(ExecutionAudit.targetSession(o, calendar))
@@ -630,7 +632,7 @@ public class PaperMirrorService {
                     continue;
                 }
                 if (PaperBooks.NEXT_OPEN.equals(o.timing())) {
-                    if (KrFills.opensAfterOrder(o, session, calendar)) {
+                    if (!rulesAtMinute && KrFills.opensAfterOrder(o, session, calendar)) {
                         return Optional.empty();   // 그 세션 시가에 체결될 결정 주문 — 예전 시가 맞추기(전환일)
                     }
                     continue;

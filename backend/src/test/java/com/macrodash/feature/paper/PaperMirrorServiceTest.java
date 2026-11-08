@@ -577,8 +577,13 @@ class PaperMirrorServiceTest {
         assertThat(service().dailySyncAt(RULES, S)).as("실제 대기 주문 시각이 먼저").contains(kst("2026-11-06T09:20"));
         store.markOrderStatus(minute, PaperBooks.ORDER_CANCELLED, "시험");
 
-        orderIn(RULES, C, PaperBooks.BUY, 10.0, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, P, NIGHT, null);
-        assertThat(service().dailySyncAt(RULES, S)).as("금요일 결정이 시가로 낸 월요일형 — 예전 시가 맞추기").isEmpty();
+        long open = orderIn(RULES, C, PaperBooks.BUY, 10.0, PaperBooks.NEXT_OPEN, RuleBookService.SOURCE_RULE, P, NIGHT, null);
+        assertThat(service().dailySyncAt(RULES, S)).as("금요일 결정이 시가로 낸 월요일형 — 설정이 AT_MINUTE이면 그래도 09:10").contains(kst("2026-11-06T09:10"));
+        assertThat(service().targetsAt(RULES, S, kst("2026-11-06T09:10")).orElseThrow().absorbedOrderIds()).as("남은 시가 주문을 09:10 묶음이 흡수").contains(open);
+
+        settings("kr.rules.timing", "NEXT_OPEN");
+        assertThat(service().dailySyncAt(RULES, S)).as("설정이 시가면 예전 시가 맞추기").isEmpty();
+        settings("kr.rules.timing", "AT_MINUTE", "kr.rules.timingAtKst", "09:10");
 
         assertThat(service().dailySyncAt(RULES, LocalDate.of(2026, 11, 7))).as("토요일").isEmpty();
         assertThat(service().dailySyncAt("nope", S)).isEmpty();
