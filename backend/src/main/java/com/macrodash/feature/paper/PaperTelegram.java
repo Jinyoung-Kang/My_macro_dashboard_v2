@@ -15,13 +15,19 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.time.Duration;
 
 /**
  * 모의 매매 알림의 텔레그램 보내기(사용자 요청 2026-11-02) — Bot API {@code sendMessage} 한 번에 글 한 통(길면 여러 통). 봇 토큰·대화방은 서버 {@code .env}의
  * {@code TELEGRAM_BOT_TOKEN}·{@code TELEGRAM_CHAT_ID}(S3 백업 실패 알림과 같은 값 — scripts/vultr/backup-s3.sh, QA-199)이고 둘 다 있어야 켜집니다. 로컬·QA에는 값이 없어 보내지
  * 않습니다.
+ *
+ * <p><b>봇 네 개</b>(사용자 요청 2026-11-08 — {@link Channel}): 알림 종류마다 봇을 나눕니다. 위 두 값이 운영 봇이고, 미국·한국·계좌 봇은 토큰
+ * ({@code TELEGRAM_US_BOT_TOKEN}·{@code TELEGRAM_KR_BOT_TOKEN}·{@code TELEGRAM_ACCOUNT_BOT_TOKEN})만 따로 둡니다. 토큰이 비면 운영 봇으로 보내고,
+ * 대화방은 네 봇이 같습니다(운영자와의 1:1 대화).
  *
  * <ul>
  *   <li>글은 텔레그램 HTML 서식(parse_mode HTML — 사용자 요청 2026-11-03, 굵은 제목·항목 이름)입니다. 글을 만드는 쪽({@link PaperNotifications})이
@@ -51,23 +57,50 @@ public class PaperTelegram {
     record Reply(int status, String body) {
     }
 
+    /** 알림을 보내는 봇 — 토큰이 없는 봇의 알림은 운영 봇({@link #OPS})으로 갑니다. */
+    public enum Channel { OPS, US, KR, ACCOUNT }
+
     private final String token;
     private final String chatId;
+    private final Map<Channel, String> channelTokens;
     private final ObjectMapper mapper;
     private final Sender sender;
 
     @Autowired
     PaperTelegram(@Value("${dashboard.paper.telegram-bot-token:}") String token,
-                  @Value("${dashboard.paper.telegram-chat-id:}") String chatId, ObjectMapper mapper) {
-        this(token, chatId, mapper, httpSender());
+                  @Value("${dashboard.paper.telegram-chat-id:}") String chatId,
+                  @Value("${dashboard.paper.telegram-us-bot-token:}") String usToken,
+                  @Value("${dashboard.paper.telegram-kr-bot-token:}") String krToken,
+                  @Value("${dashboard.paper.telegram-account-bot-token:}") String accountToken, ObjectMapper mapper) {
+        this(token, chatId, channels(usToken, krToken, accountToken), mapper, httpSender());
     }
 
-    /** 시험용 — 보내는 길을 바꿔 끼웁니다. */
+    /** 시험용 — 운영 봇 하나만, 보내는 길을 바꿔 끼웁니다. */
     PaperTelegram(String token, String chatId, ObjectMapper mapper, Sender sender) {
+        this(token, chatId, Map.of(), mapper, sender);
+    }
+
+    /** 시험용 — 봇별 토큰과 보내는 길을 바꿔 끼웁니다. */
+    PaperTelegram(String token, String chatId, Map<Channel, String> channelTokens, ObjectMapper mapper, Sender sender) {
         this.token = token == null ? "" : token.strip();
         this.chatId = chatId == null ? "" : chatId.strip();
+        this.channelTokens = Map.copyOf(channelTokens);
         this.mapper = mapper;
         this.sender = sender;
+    }
+
+    private static Map<Channel, String> channels(String usToken, String krToken, String accountToken) {
+        Map<Channel, String> out = new EnumMap<>(Channel.class);
+        out.put(Channel.US, usToken == null ? "" : usToken);
+        out.put(Channel.KR, krToken == null ? "" : krToken);
+        out.put(Channel.ACCOUNT, accountToken == null ? "" : accountToken);
+        return out;
+    }
+
+    /** 그 봇의 토큰 — 없으면 운영 봇의 토큰. */
+    private String tokenOf(Channel channel) {
+        String own = channelTokens.get(channel);
+        return own == null || own.isBlank() ? token : own.strip();
     }
 
     /** 봇 토큰과 대화방이 둘 다 있나. (수집 출처 닫힘 알림 — feature.status — 도 같은 봇으로 보냅니다, ADR 0026) */
@@ -75,19 +108,25 @@ public class PaperTelegram {
         return !token.isEmpty() && !chatId.isEmpty();
     }
 
+    /** 운영 봇으로 보냅니다 — {@link #send(Channel, String)}. */
+    public String send(String text) {
+        return send(Channel.OPS, text);
+    }
+
     /**
-     * 글 하나를 보냅니다 — {@value #MAX_CHARS}자를 넘으면 {@link #parts}로 나눠 차례로.
+     * 글 하나를 그 봇으로 보냅니다 — {@value #MAX_CHARS}자를 넘으면 {@link #parts}로 나눠 차례로.
      *
      * @return 모두 보냈으면 null, 실패면 사유(토큰 없음 — 나눠 보낸 글이면 몇 번째 통에서인지). 앞 통이 나간 뒤 실패하면 부르는 쪽이 다음 주기에 글
      *         전체를 다시 보내 앞 통이 한 번 더 갈 수 있습니다.
      */
-    public String send(String text) {
+    public String send(Channel channel, String text) {
         if (!configured()) {
             return "텔레그램 값(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID)이 없음";
         }
+        String botToken = tokenOf(channel);
         List<String> parts = parts(text);
         for (int i = 0; i < parts.size(); i++) {
-            String error = sendOne(parts.get(i));
+            String error = sendOne(botToken, parts.get(i));
             if (error != null) {
                 return parts.size() > 1 ? (i + 1) + "/" + parts.size() + "통째 — " + error : error;
             }
@@ -128,12 +167,12 @@ public class PaperTelegram {
     }
 
     /** 한 통(상한 안의 글) — HTML 서식으로, 서식을 거절하면(HTTP 400) 평문으로 한 번 더. */
-    private String sendOne(String body) {
-        String error = post(body, true);
+    private String sendOne(String botToken, String body) {
+        String error = post(botToken, body, true);
         if (error == null || !error.startsWith("HTTP 400")) {
             return error;
         }
-        String plainError = post(plain(body), false);
+        String plainError = post(botToken, plain(body), false);
         if (plainError == null) {
             log.warn("텔레그램이 HTML 서식을 거절해 평문으로 보냈습니다 — {}", error);
         }
@@ -146,7 +185,7 @@ public class PaperTelegram {
                 .replace("&amp;", "&");
     }
 
-    private String post(String body, boolean html) {
+    private String post(String botToken, String body, boolean html) {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("chat_id", chatId);
         payload.put("text", body);
@@ -155,32 +194,32 @@ public class PaperTelegram {
         }
         payload.putObject("link_preview_options").put("is_disabled", true);
         try {
-            Reply reply = sender.post(URI.create(API + "/bot" + token + "/sendMessage"), mapper.writeValueAsString(payload));
+            Reply reply = sender.post(URI.create(API + "/bot" + botToken + "/sendMessage"), mapper.writeValueAsString(payload));
             if (reply.status() == 200) {
                 return null;
             }
-            return "HTTP " + reply.status() + describe(reply.body());
+            return "HTTP " + reply.status() + describe(botToken, reply.body());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "보내는 중 끊김";
         } catch (Exception e) {
-            return masked(e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            return masked(botToken, e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage()));
         }
     }
 
     /** Bot API 오류 본문의 description(있으면, 200자까지). */
-    private String describe(String body) {
+    private String describe(String botToken, String body) {
         try {
             JsonNode node = body == null ? null : mapper.readTree(body);
             String description = node == null ? null : node.path("description").asString(null);
-            return description == null ? "" : " — " + masked(description.length() > 200 ? description.substring(0, 200) : description);
+            return description == null ? "" : " — " + masked(botToken, description.length() > 200 ? description.substring(0, 200) : description);
         } catch (RuntimeException e) {
             return "";
         }
     }
 
-    private String masked(String text) {
-        return token.isEmpty() ? text : text.replace(token, "***");
+    private static String masked(String botToken, String text) {
+        return botToken.isEmpty() ? text : text.replace(botToken, "***");
     }
 
     private static Sender httpSender() {

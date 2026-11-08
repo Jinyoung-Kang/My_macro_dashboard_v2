@@ -7,7 +7,7 @@
 #   0 23 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 #   0 14 * * 0 /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/backup-s3.sh
 # 결과는 syslog(태그 my-macro-backup):  journalctl -t my-macro-backup
-# 실패하면 서버 .env의 텔레그램 봇(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID — 모의 매매 알림과 같은 봇)으로 한 줄 알리고, 성공하면
+# 실패하면 서버 .env의 텔레그램 봇(TELEGRAM_BOT_TOKEN·TELEGRAM_CHAT_ID — 운영 봇)으로 한 줄 알리고, 성공하면
 # backups/.last-s3-ok에 시각을 남깁니다 — make status와 deploy.sh 끝 요약이 그 시각이 36시간을 넘으면 경고합니다(deploy.sh는 없을 때도,
 # 판정은 scripts/vultr/backup-age.sh — QA-199).
 #

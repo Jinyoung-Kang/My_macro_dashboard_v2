@@ -1787,7 +1787,7 @@ class RealTradeJobDbTest {
     @DisplayName("알림 — 알림 대기 이벤트를 보내고 표시, 실패하면 다음 주기에 다시. 글에 종목·수량·금액이 없음")
     void notifications() {
         when(telegram.configured()).thenReturn(true);
-        when(telegram.send(anyString())).thenReturn("일시 실패").thenReturn(null);
+        when(telegram.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn("일시 실패").thenReturn(null);
         store.addEvent("KR", "HALT", null, Map.of("reason", "unknown-order", "symbol", A, "amount", 1234567, "row", 9), true);
         store.addEvent("KR", "WINDOW_SUMMARY", null, Map.of("window", "SYNC", "accepted", 5, "filled", 5, "skipped", 1,
                 "reasons", Map.of("opposite-pending", 1), "symbols", List.of(A, B)), true);
@@ -1798,7 +1798,7 @@ class RealTradeJobDbTest {
         assertThat(store.unnotifiedEvents(10)).isEmpty();
 
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(3)).send(texts.capture());
+        verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
         assertThat(texts.getAllValues().get(1)).isEqualTo("<b>[실제 매매] 멈춤</b>\n사유: unknown-order");
         assertThat(texts.getAllValues().get(2)).isEqualTo("<b>[실제 매매] 시가 맞추기</b>\n접수 5 · 체결 5 · 놓침 0 · 건너뜀 1 · 막힘 0 · 미룸 0");
         assertThat(texts.getAllValues()).noneMatch(t -> t.contains(A) || t.contains(B) || t.contains("1234567") || t.contains("1,234,567"));
@@ -1911,7 +1911,7 @@ class RealTradeJobDbTest {
         verify(client, times(2)).preflight(any(), any());
         assertThat(store.configOrOff("KR").state()).isEqualTo(RealTradeStore.STATE_OFF);
         assertThat(store.recentEvents("KR", 10)).isEmpty();
-        verify(telegram, never()).send(anyString());
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
         assertThat(store.valuation("KR")).hasValueSatisfying(v -> assertThat(v.fetchedAt()).isEqualTo(kst("2026-11-06T09:05")));
 
         clock.set(kst("2026-11-07T12:30"));

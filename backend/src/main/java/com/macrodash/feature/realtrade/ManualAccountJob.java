@@ -1074,7 +1074,7 @@ class ManualAccountJob {
     }
 
     private boolean sendText(String text) {
-        String error = telegram.send(text);
+        String error = telegram.send(PaperTelegram.Channel.ACCOUNT, text);
         if (error != null) {
             log.warn("ISA 계좌 알림 실패 — 다음 주기에 다시");
             return false;

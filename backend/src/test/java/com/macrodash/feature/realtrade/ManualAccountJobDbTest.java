@@ -94,7 +94,7 @@ class ManualAccountJobDbTest {
         when(paper.lastPrices(any())).thenReturn(Map.of());
         when(paper.openPrices(any(), any())).thenReturn(Map.of());
         when(telegram.configured()).thenReturn(true);
-        when(telegram.send(anyString())).thenReturn(null);
+        when(telegram.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn(null);
         job = new ManualAccountJob(store, paper, telegram, MAPPER, clock, true, true, 600_000);
     }
 
@@ -222,7 +222,7 @@ class ManualAccountJobDbTest {
         cycleAt("2026-11-06T22:55");
         assertThat(store.session("isa", E)).hasValueSatisfying(s -> assertThat(s.state()).isEqualTo("NONE"));
         assertThat(store.instructions("isa", E)).isEmpty();
-        verify(telegram, times(1)).send(anyString());   // 앞의 매도 지시 한 통뿐
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());   // 앞의 매도 지시 한 통뿐
     }
 
     // ------------------------------------------------------------------ 알림
@@ -239,7 +239,7 @@ class ManualAccountJobDbTest {
         cycleAt("2026-11-09T09:10");
 
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(2)).send(texts.capture());
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
         String night = texts.getAllValues().get(0);
         assertThat(night).isEqualTo("<b>[ISA 계좌] 11/09(월) 시가 매매 지시</b>\n"
                 + "매수 000660 합성하이닉스 15주\n"
@@ -260,26 +260,26 @@ class ManualAccountJobDbTest {
     void retryAndDropLateNight() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         standardTargets();
-        when(telegram.send(anyString())).thenReturn("일시 실패").thenReturn(null);
+        when(telegram.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn("일시 실패").thenReturn(null);
 
         cycleAt("2026-11-06T22:35");
         assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.notifiedNightAt()).isNull());
         cycleAt("2026-11-06T22:45");
         assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.notifiedNightAt()).isEqualTo(kst("2026-11-06T22:45")));
-        verify(telegram, times(2)).send(anyString());
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
         ManualAccountServiceDbTest.clean(jdbc);
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         PaperTelegram quiet = mock(PaperTelegram.class);
         when(quiet.configured()).thenReturn(false);
-        when(quiet.send(anyString())).thenReturn(null);
+        when(quiet.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn(null);
         job = new ManualAccountJob(store, paper, quiet, MAPPER, clock, true, true, 600_000);
         cycleAt("2026-11-06T22:35");
-        verify(quiet, never()).send(anyString());
+        verify(quiet, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
         when(quiet.configured()).thenReturn(true);
         cycleAt("2026-11-09T08:10");
         cycleAt("2026-11-09T08:20");
-        verify(quiet, times(1)).send(anyString());
+        verify(quiet, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
         assertThat(store.instructions("isa", E)).allSatisfy(i -> {
             assertThat(i.notifiedNightAt()).as("08:00 뒤에는 밤 알림을 버림").isNull();
             assertThat(i.notifiedMorningAt()).isEqualTo(kst("2026-11-09T08:10"));
@@ -419,7 +419,7 @@ class ManualAccountJobDbTest {
             assertThat(s.state()).isEqualTo("UNAVAILABLE");
             assertThat(s.detail().path("reason").asString()).isEqualTo(ManualAccountJob.WAIT_TIMED);
         });
-        verify(telegram, never()).send(anyString());
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 
     // ------------------------------------------------------------------ 시각 맞추기 날(ADR 0033 결정 7)
@@ -458,7 +458,7 @@ class ManualAccountJobDbTest {
             assertThat(row.detail().path("coveredStopOrderIds").get(0).asLong()).isEqualTo(9L);
         });
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(telegram).send(text.capture());
+        verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
         assertThat(text.getValue()).contains("11/09(월) 09:10 매매 지시").contains("09:10 이후 시장가로 내면").doesNotContain("장전 동시호가");
         Map<String, Object> block = block(service().view());
         assertThat(block).containsEntry("targetAt", SYNC_AT.toString());
@@ -551,13 +551,13 @@ class ManualAccountJobDbTest {
             assertThat(stop.notifiedAt()).isNotNull();
         });
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(telegram).send(text.capture());
+        verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
         assertThat(text.getValue()).startsWith("<b>[ISA 계좌] 11/09(월) 스탑 매도 지시</b>").contains("\n매도 " + A + " 합성전자 50주\n")
                 .contains("지금 시장가로 매도하세요(개장 10분 전이면 09:10 이후)").doesNotContain("원", "9,700", "10000");
 
         stopCycleAt("2026-11-09T11:30:40");
         assertThat(stops()).hasSize(1);
-        verify(telegram, times(1)).send(anyString());
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 
     @Test
@@ -606,7 +606,7 @@ class ManualAccountJobDbTest {
         org.mockito.Mockito.clearInvocations(telegram);
         stopCycleAt("2026-11-09T15:21");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
-        verify(telegram).send(text.capture());
+        verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
         assertThat(text.getValue()).contains("종가 단일가(15:20~15:30)에 시장가로 매도하세요").doesNotContain("지금 시장가");
         assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.timing()).isEqualTo("NEXT_CLOSE"));
     }
@@ -733,14 +733,14 @@ class ManualAccountJobDbTest {
         // 평가액 2,000,000 — B 30, A 100 − 10 = 90, 현금성 2
         assertThat(lines(E)).containsExactly("BUY " + B + " 30 PLANNED", "BUY " + A + " 90 PLANNED", "BUY " + CASH + " 2 PLANNED");
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(2)).send(texts.capture());
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
         assertThat(texts.getAllValues().get(0)).doesNotContain("다시 계산");
         assertThat(texts.getAllValues().get(1)).startsWith("<b>[ISA 계좌] 11/09(월) 시가 매매 지시(다시 계산)</b>\n")
                 .contains("\n매수 005930 합성전자 90주\n").doesNotContain("원", "%");
         assertThat(block(service().view())).containsEntry("ledgerChanged", false);
 
         cycleAt("2026-11-09T08:05");
-        verify(telegram, times(3)).send(texts.capture());
+        verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
         assertThat(texts.getValue()).as("아침 알림도 다시 계산한 지시").contains("(다시 계산)").contains("90주");
     }
 
@@ -759,7 +759,7 @@ class ManualAccountJobDbTest {
         cycleAt("2026-11-06T23:15");
 
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(2)).send(texts.capture());
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
         assertThat(texts.getAllValues().get(1)).isEqualTo(ManualAccountNotices.noTrades(E));
     }
 
@@ -794,7 +794,7 @@ class ManualAccountJobDbTest {
             assertThat(s.state()).isEqualTo("UNAVAILABLE");
             assertThat(s.detail().path("reason").asString()).isEqualTo(ManualAccountJob.WAIT_DECISION);
         });
-        verify(telegram, never()).send(anyString());
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
         ManualAccountServiceDbTest.clean(jdbc);
         started("1000000", "2026-11-09T10:00", A, "10", "10000");
@@ -827,7 +827,7 @@ class ManualAccountJobDbTest {
 
     private List<String> sentTexts(int times) {
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(times)).send(texts.capture());
+        verify(telegram, times(times)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
         return texts.getAllValues();
     }
 
@@ -841,7 +841,7 @@ class ManualAccountJobDbTest {
         dailyInstruction(E2, B, "SELL", 1);                 // 다음 세션 지시 — 오늘 알림에 들지 않음
 
         job.middayNotify(kst("2026-11-09T12:14:30"));
-        verify(telegram, never()).send(anyString());
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
         job.middayNotify(kst("2026-11-09T12:15:00"));
         assertThat(sentTexts(1)).singleElement().asString().startsWith("<b>[ISA 계좌] 11/09(월) 매매 확인</b>")
@@ -850,7 +850,7 @@ class ManualAccountJobDbTest {
 
         job.middayNotify(kst("2026-11-09T12:15:30"));
         job.middayNotify(kst("2026-11-09T14:00:00"));
-        verify(telegram, times(1)).send(anyString());
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 
     @Test
@@ -866,7 +866,7 @@ class ManualAccountJobDbTest {
 
         job.middayNotify(kst("2026-11-09T12:20"));
 
-        verify(telegram, never()).send(anyString());
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 
     @Test
@@ -894,9 +894,9 @@ class ManualAccountJobDbTest {
         long sell = dailyInstruction(E, A, "SELL", 3);
 
         job.middayNotify(kst("2026-11-09T15:30"));
-        verify(telegram, never()).send(anyString());
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
-        when(telegram.send(anyString())).thenReturn("telegram-failed").thenReturn(null);
+        when(telegram.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn("telegram-failed").thenReturn(null);
         job.middayNotify(kst("2026-11-09T12:15"));
         assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).as("실패 — 표시하지 않음").isNull();
         job.middayNotify(kst("2026-11-09T12:15:30"));
@@ -905,8 +905,8 @@ class ManualAccountJobDbTest {
         dailyInstruction(E2, A, "SELL", 1);
         when(paper.sessionHours(E2)).thenReturn(Optional.of(new SessionHours(E2, true, kst("2026-11-10T10:00"), kst("2026-11-10T16:30"))));
         job.stopCycle(kst("2026-11-10T13:14"));
-        verify(telegram, times(2)).send(anyString());
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
         job.stopCycle(kst("2026-11-10T13:15"));
-        verify(telegram, times(3)).send(anyString());
+        verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 }

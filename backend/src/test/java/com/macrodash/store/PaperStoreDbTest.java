@@ -2097,18 +2097,21 @@ class PaperStoreDbTest {
 
         assertThat(store.maxFillId()).isEqualTo(fill2);
         assertThat(store.maxOrderId()).isEqualTo(stop);
-        assertThat(store.fillsAfter(baseFill, 10)).extracting(PaperStore.Fill::id).containsExactly(fill1, fill2);
-        assertThat(store.fillsAfter(fill1, 10)).extracting(PaperStore.Fill::id).containsExactly(fill2);
-        assertThat(store.ordersWithoutDecisionAfter(baseOrder, 10)).extracting(PaperStore.Order::id).containsExactly(stop);
+        assertThat(store.fillsAfter("US", baseFill, 10)).extracting(PaperStore.Fill::id).containsExactly(fill1, fill2);
+        assertThat(store.fillsAfter("US", fill1, 10)).extracting(PaperStore.Fill::id).containsExactly(fill2);
+        assertThat(store.ordersWithoutDecisionAfter("US", baseOrder, 10)).extracting(PaperStore.Order::id).containsExactly(stop);
+        assertThat(store.fillsAfter("KR", baseFill, 10)).as("다른 시장의 체결은 안 읽음").isEmpty();
+        assertThat(store.ordersWithoutDecisionAfter("KR", baseOrder, 10)).as("다른 시장의 주문은 안 읽음").isEmpty();
+        assertThat(store.decisionsAfter("KR", CLOSE.minusSeconds(1), 0, CLOSE.plusSeconds(3_600), 10)).as("다른 시장의 결정은 안 읽음").isEmpty();
         assertThat(store.order(withDecision)).map(PaperStore.Order::decisionId).contains(d1);
         assertThat(store.order(-1)).isEmpty();
         Instant later = CLOSE.plusSeconds(3_600);
-        assertThat(store.decisionsAfter(CLOSE.minusSeconds(1), 0, later, 10)).extracting(PaperStore.Decision::id).containsExactly(d1, d2);
-        assertThat(store.decisionsAfter(CLOSE, d1, later, 10)).as("같은 시각이면 번호 뒤만").extracting(PaperStore.Decision::id)
+        assertThat(store.decisionsAfter("US", CLOSE.minusSeconds(1), 0, later, 10)).extracting(PaperStore.Decision::id).containsExactly(d1, d2);
+        assertThat(store.decisionsAfter("US", CLOSE, d1, later, 10)).as("같은 시각이면 번호 뒤만").extracting(PaperStore.Decision::id)
                 .containsExactly(d2);
-        assertThat(store.decisionsAfter(CLOSE.minusSeconds(1), 0, CLOSE, 10)).as("기한 전만").isEmpty();
+        assertThat(store.decisionsAfter("US", CLOSE.minusSeconds(1), 0, CLOSE, 10)).as("기한 전만").isEmpty();
         jdbc.update("UPDATE paper_decisions SET decided_at = ? WHERE id = ?", java.sql.Timestamp.from(CLOSE.plusSeconds(60)), d1);
-        assertThat(store.decisionsAfter(CLOSE, d2, later, 10)).as("재시도로 시각을 새로 쓰면 다시 나옴")
+        assertThat(store.decisionsAfter("US", CLOSE, d2, later, 10)).as("재시도로 시각을 새로 쓰면 다시 나옴")
                 .extracting(PaperStore.Decision::id).containsExactly(d1);
     }
 

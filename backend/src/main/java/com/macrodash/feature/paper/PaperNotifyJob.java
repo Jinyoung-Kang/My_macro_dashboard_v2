@@ -43,15 +43,18 @@ import java.util.function.ToLongFunction;
  *       계좌당 한 통, 미국은 관측치 처리마다 계좌당 한 통입니다. 결정은 그대로 결정마다 한 통.</li>
  *   <li><b>켜짐</b>: {@code dashboard.paper.enabled}(서버)이고 텔레그램 값이 둘 다 있을 때만 돕니다(로컬·QA는 값이 없어 돌지 않음). 설정
  *       {@code notify.telegram}(기본 켬)을 끄면 보내지 않고 읽은 자리만 앞으로 옮깁니다 — 다시 켤 때 지난 일이 몰려 오지 않게.</li>
- *   <li><b>어디까지 보냈나</b>: 작업 기록({@code paper_job_runs}, 이름 {@value #JOB})의 상세 {@code cursor}(체결 번호·결정 없는 주문 번호·결정 시각과 번호).
+ *   <li><b>시장별 봇</b>(사용자 요청 2026-11-08): 미국 계좌 알림은 미국 봇, 한국 계좌 알림은 한국 봇으로 보내고({@link PaperTelegram.Channel}) 보낸 자리도 시장마다
+ *       따로 둡니다 — 한 봇이 실패해도 다른 시장 알림은 계속 나갑니다.</li>
+ *   <li><b>어디까지 보냈나</b>: 작업 기록({@code paper_job_runs}, 이름 {@value #JOB})의 상세 {@code cursors}(시장별 체결 번호·결정 없는 주문 번호·결정 시각과 번호 —
+ *       그 전 기록의 {@code cursor} 하나는 두 시장이 함께 이어받습니다).
  *       자리는 묶음 단위로만 옮깁니다(묶음의 마지막 번호 — 묶음의 일부만 보내지 않음). 기록이 없으면(처음 켬) 지금 자리에서 시작하고 지난 일은 보내지
  *       않습니다. 결정은 재시도가 같은 행의 결정 시각을 새로 쓰므로 재시도 결과도 한 통 더 갑니다. 셋 모두 일어난 지 {@value #SETTLE_SECONDS}초 지난 것만
  *       봅니다(트랜잭션이 늦게 끝나는 쓰기를 건너뛰지 않게, 결정 요약이 그 체결보다 늦지 않게 — 한 트랜잭션의 행은 함께 보이므로 지난 묶음은 다 찬 묶음).
  *       체결·주문은 {@value #FETCH_LIMIT}행까지 읽고, 끝 묶음이 그 너머로 이어질 수 있으면(읽은 행이 꽉 참) 다음 주기로 미룹니다 — 묶음 하나가 그보다
  *       크면 거기서 나눠 보냅니다.</li>
- *   <li><b>실패</b>: 한 통이 실패하면 그 주기를 멈추고 그 묶음 앞까지만 자리를 옮깁니다 — 다음 주기에 그 묶음부터 다시(체결·결정에는 영향 없음). 장부
+ *   <li><b>실패</b>: 한 통이 실패하면 그 주기에 그 시장 알림을 멈추고 그 묶음 앞까지만 자리를 옮깁니다 — 다음 주기에 그 묶음부터 다시(체결·결정에는 영향 없음). 장부
  *       잠금·트랜잭션 밖에서 보냅니다.</li>
- *   <li><b>속도</b>: 한 주기 최대 {@value #MAX_PER_CYCLE}통(묶음·결정 수 — 긴 묶음을 보내는 쪽이 나눈 조각은 한 통으로 셈), 통 사이 {@value #SPACING_MS}ms
+ *   <li><b>속도</b>: 한 주기 시장마다 최대 {@value #MAX_PER_CYCLE}통(묶음·결정 수 — 긴 묶음을 보내는 쪽이 나눈 조각은 한 통으로 셈), 통 사이 {@value #SPACING_MS}ms
  *       (같은 대화방 초당 한 통 권장). 남은 것은 다음 주기.</li>
  * </ul>
  */
@@ -63,7 +66,9 @@ public class PaperNotifyJob {
     /** 끄는 설정 키(두 책 공통 — 기본 켬). */
     static final String SETTING = "notify.telegram";
     static final boolean DEFAULT_ON = true;
-    /** 한 주기에 보내는 통 수 상한(결정·묶음 수). */
+    /** 보낸 자리를 따로 두는 시장. */
+    private static final List<String> MARKETS = List.of(Book.MARKET_US, Book.MARKET_KR);
+    /** 한 주기에 시장마다 보내는 통 수 상한(결정·묶음 수). */
     static final int MAX_PER_CYCLE = 20;
     /** 한 주기에 읽는 체결·결정 없는 주문 행 수 — 묶음을 다 채워 읽게 통 수 상한보다 넉넉히. */
     static final int FETCH_LIMIT = 500;
@@ -155,7 +160,7 @@ public class PaperNotifyJob {
     }
 
     /** 보낼 일 하나 — 일어난 시각(순서)과 글을 만드는 법, 보낸 뒤 옮길 자리({@code id} — 결정 번호, 묶음은 마지막 행 번호). */
-    private record Event(Instant at, int rank, long id, Kind kind, String bookCode, Decision decision, List<Order> orders,
+    private record Event(String market, Instant at, int rank, long id, Kind kind, String bookCode, Decision decision, List<Order> orders,
                          List<Fill> fills) {
     }
 
@@ -215,31 +220,21 @@ public class PaperNotifyJob {
             return new Outcome(0, null, 0);
         }
         Instant started = clock.instant();
-        Cursor cursor = loadCursor().orElse(null);
-        if (cursor == null) {
+        Map<String, Cursor> cursors = loadCursors().orElse(null);
+        if (cursors == null) {
             // 처음 켬 — 지금 자리에서 시작(지난 체결·결정을 한꺼번에 보내지 않음).
             Cursor fresh = new Cursor(store.maxFillId(), store.maxOrderId(), started, Long.MAX_VALUE);
-            record(started, "OK", fresh, 0, 0, null, "처음 켬 — 지금 자리에서 시작");
+            record(started, "OK", bothMarkets(fresh), 0, 0, null, "처음 켬 — 지금 자리에서 시작");
             return new Outcome(0, null, 0);
         }
         // 셋 모두 일어난 지 SETTLE이 지난 것만(트랜잭션이 늦게 끝나는 쓰기를 건너뛰지 않게, 결정 요약이 그 출발 체결보다 늦게 가지 않게). 체결·주문은
         // 번호 순이라 그 시각에 닿으면 거기서 멈추고(뒤 번호를 먼저 보내 자리가 앞서 가지 않게), 계좌·트랜잭션 묶음으로 한 통씩.
         Instant settled = started.minusSeconds(SETTLE_SECONDS);
-        List<Event> decisions = new ArrayList<>();
-        for (Decision d : store.decisionsAfter(cursor.decidedAt(), cursor.decisionId(), settled, MAX_PER_CYCLE)) {
-            decisions.add(new Event(d.decidedAt(), 0, d.id(), Kind.DECISION, d.bookCode(), d, null, null));
+        List<List<Event>> markets = new ArrayList<>();
+        for (String market : MARKETS) {
+            markets.add(eventsOf(market, cursors.get(market), settled));
         }
-        List<Event> orders = new ArrayList<>();
-        for (Batch<Order> b : batches(store.ordersWithoutDecisionAfter(cursor.orderId(), FETCH_LIMIT), FETCH_LIMIT, settled,
-                Order::bookCode, Order::createdAt, Order::id)) {
-            orders.add(new Event(b.at(), 1, b.lastId(), Kind.ORDER, b.bookCode(), null, b.rows(), null));
-        }
-        List<Event> fills = new ArrayList<>();
-        for (Batch<Fill> b : batches(store.fillsAfter(cursor.fillId(), FETCH_LIMIT), FETCH_LIMIT, settled, Fill::bookCode,
-                Fill::createdAt, Fill::id)) {
-            fills.add(new Event(b.at(), 2, b.lastId(), Kind.FILL, b.bookCode(), null, null, b.rows()));
-        }
-        List<Event> events = merge(List.of(decisions, orders, fills), MAX_PER_CYCLE);
+        List<Event> events = merge(markets, MAX_PER_CYCLE * MARKETS.size());
         if (events.isEmpty()) {
             return new Outcome(0, null, 0);
         }
@@ -247,11 +242,14 @@ public class PaperNotifyJob {
         boolean on = on(row == null ? null : row.body());
         Map<String, Optional<Book>> books = new HashMap<>();
         Map<String, String> names = null;
-        Cursor at = cursor;
+        Map<String, Cursor> at = new LinkedHashMap<>(cursors);
+        Map<String, String> failures = new LinkedHashMap<>();
         int sent = 0;
         int muted = 0;
-        String error = null;
         for (Event e : events) {
+            if (failures.containsKey(e.market())) {
+                continue;
+            }
             Book book = books.computeIfAbsent(e.bookCode(), store::book).orElse(null);
             if (on) {
                 if (names == null && book != null && Book.MARKET_KR.equals(book.market())) {
@@ -269,29 +267,62 @@ public class PaperNotifyJob {
                         sleeper.sleep(SPACING_MS);
                     } catch (InterruptedException interrupted) {
                         Thread.currentThread().interrupt();
-                        error = "쉬는 중 끊김";
+                        failures.put(e.market(), "쉬는 중 끊김");
                         break;
                     }
                 }
-                error = telegram.send(text);
-                if (error != null) {
-                    break;
+                String failure = telegram.send(channelOf(e.market()), text);
+                if (failure != null) {
+                    failures.put(e.market(), failure);
+                    continue;
                 }
                 sent++;
             } else {
                 muted++;
             }
-            at = switch (e.kind()) {
-                case FILL -> new Cursor(e.id(), at.orderId(), at.decidedAt(), at.decisionId());
-                case ORDER -> new Cursor(at.fillId(), e.id(), at.decidedAt(), at.decisionId());
-                case DECISION -> new Cursor(at.fillId(), at.orderId(), e.at(), e.id());
-            };
+            Cursor before = at.get(e.market());
+            at.put(e.market(), switch (e.kind()) {
+                case FILL -> new Cursor(e.id(), before.orderId(), before.decidedAt(), before.decisionId());
+                case ORDER -> new Cursor(before.fillId(), e.id(), before.decidedAt(), before.decisionId());
+                case DECISION -> new Cursor(before.fillId(), before.orderId(), e.at(), e.id());
+            });
         }
+        String error = failures.isEmpty() ? null : failures.entrySet().stream().map(f -> f.getKey() + ": " + f.getValue())
+                .collect(java.util.stream.Collectors.joining(" · "));
         record(started, error == null ? "OK" : "ERROR", at, sent, muted, error, null);
         if (sent > 0 || muted > 0) {
             log.info("텔레그램 알림 {}통{}{}", sent, muted > 0 ? " · 설정이 꺼져 건너뜀 " + muted : "", error == null ? "" : " · 실패: " + error);
         }
         return new Outcome(sent, error, muted);
+    }
+
+    /** 한 시장의 보낼 일 — 결정·결정 없는 주문·체결 묶음을 일어난 순서로 {@value #MAX_PER_CYCLE}개까지. */
+    private List<Event> eventsOf(String market, Cursor cursor, Instant settled) {
+        List<Event> decisions = new ArrayList<>();
+        for (Decision d : store.decisionsAfter(market, cursor.decidedAt(), cursor.decisionId(), settled, MAX_PER_CYCLE)) {
+            decisions.add(new Event(market, d.decidedAt(), 0, d.id(), Kind.DECISION, d.bookCode(), d, null, null));
+        }
+        List<Event> orders = new ArrayList<>();
+        for (Batch<Order> b : batches(store.ordersWithoutDecisionAfter(market, cursor.orderId(), FETCH_LIMIT), FETCH_LIMIT, settled,
+                Order::bookCode, Order::createdAt, Order::id)) {
+            orders.add(new Event(market, b.at(), 1, b.lastId(), Kind.ORDER, b.bookCode(), null, b.rows(), null));
+        }
+        List<Event> fills = new ArrayList<>();
+        for (Batch<Fill> b : batches(store.fillsAfter(market, cursor.fillId(), FETCH_LIMIT), FETCH_LIMIT, settled, Fill::bookCode,
+                Fill::createdAt, Fill::id)) {
+            fills.add(new Event(market, b.at(), 2, b.lastId(), Kind.FILL, b.bookCode(), null, null, b.rows()));
+        }
+        return merge(List.of(decisions, orders, fills), MAX_PER_CYCLE);
+    }
+
+    private static PaperTelegram.Channel channelOf(String market) {
+        return Book.MARKET_KR.equals(market) ? PaperTelegram.Channel.KR : PaperTelegram.Channel.US;
+    }
+
+    private static Map<String, Cursor> bothMarkets(Cursor cursor) {
+        Map<String, Cursor> out = new LinkedHashMap<>();
+        MARKETS.forEach(market -> out.put(market, cursor));
+        return out;
     }
 
     /**
@@ -328,34 +359,56 @@ public class PaperNotifyJob {
         return out;
     }
 
-    /** 가장 최근 기록의 보낸 자리(없거나 읽을 수 없으면 empty). */
-    private Optional<Cursor> loadCursor() {
+    /** 가장 최근 기록의 시장별 보낸 자리(없거나 읽을 수 없으면 empty) — 시장을 나누기 전 기록의 자리 하나는 두 시장이 함께 이어받습니다. */
+    private Optional<Map<String, Cursor>> loadCursors() {
         for (JobRun run : store.recentJobRuns(JOB, 5)) {
-            if (!JOB.equals(run.job())) {
+            if (!JOB.equals(run.job()) || run.detail() == null) {
                 continue;
             }
-            JsonNode c = run.detail() == null ? null : run.detail().get("cursor");
-            if (c != null && c.isObject() && c.path("fillId").isNumber() && c.path("orderId").isNumber()
-                    && c.path("decisionId").isNumber() && Json.asText(c, "decidedAt") != null) {
-                try {
-                    return Optional.of(new Cursor(c.path("fillId").asLong(), c.path("orderId").asLong(),
-                            Instant.parse(Json.asText(c, "decidedAt")), c.path("decisionId").asLong()));
-                } catch (RuntimeException e) {
-                    return Optional.empty();
+            Map<String, Cursor> split = new LinkedHashMap<>();
+            for (String market : MARKETS) {
+                Cursor cursor = cursorOf(run.detail().path("cursors").get(market));
+                if (cursor != null) {
+                    split.put(market, cursor);
                 }
+            }
+            if (split.size() == MARKETS.size()) {
+                return Optional.of(split);
+            }
+            Cursor shared = cursorOf(run.detail().get("cursor"));
+            if (shared != null) {
+                return Optional.of(bothMarkets(shared));
             }
         }
         return Optional.empty();
     }
 
-    private void record(Instant started, String outcome, Cursor cursor, int sent, int muted, String error, String note) {
-        Map<String, Object> c = new LinkedHashMap<>();
-        c.put("fillId", cursor.fillId());
-        c.put("orderId", cursor.orderId());
-        c.put("decidedAt", cursor.decidedAt().toString());
-        c.put("decisionId", cursor.decisionId());
+    /** 기록의 자리 한 칸 — 없거나 읽을 수 없으면 null. */
+    private static Cursor cursorOf(JsonNode c) {
+        if (c == null || !c.isObject() || !c.path("fillId").isNumber() || !c.path("orderId").isNumber()
+                || !c.path("decisionId").isNumber() || Json.asText(c, "decidedAt") == null) {
+            return null;
+        }
+        try {
+            return new Cursor(c.path("fillId").asLong(), c.path("orderId").asLong(), Instant.parse(Json.asText(c, "decidedAt")),
+                    c.path("decisionId").asLong());
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private void record(Instant started, String outcome, Map<String, Cursor> cursors, int sent, int muted, String error, String note) {
+        Map<String, Object> byMarket = new LinkedHashMap<>();
+        cursors.forEach((market, cursor) -> {
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("fillId", cursor.fillId());
+            c.put("orderId", cursor.orderId());
+            c.put("decidedAt", cursor.decidedAt().toString());
+            c.put("decisionId", cursor.decisionId());
+            byMarket.put(market, c);
+        });
         Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("cursor", c);
+        detail.put("cursors", byMarket);
         detail.put("sent", sent);
         detail.put("muted", muted);
         detail.put("error", error);

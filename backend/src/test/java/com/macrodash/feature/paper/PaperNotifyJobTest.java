@@ -170,7 +170,7 @@ class PaperNotifyJobTest {
         failNext = 1;
         PaperNotifyJob.Outcome failed = job.run();
         assertThat(failed.sent()).isZero();
-        assertThat(failed.error()).isEqualTo("HTTP 429 — Too Many Requests: retry after 3").doesNotContain(TOKEN);
+        assertThat(failed.error()).isEqualTo("US: HTTP 429 — Too Many Requests: retry after 3").doesNotContain(TOKEN);
 
         PaperNotifyJob.Outcome retried = job.run();
         assertThat(retried.sent()).isEqualTo(2);
@@ -422,8 +422,10 @@ class PaperNotifyJobTest {
                 source, false, at, new BigDecimal(fee), new BigDecimal(tax), new BigDecimal(slip)));
     }
 
+    /** 두 시장 가운데 가장 앞선 자리 — 한 시장만 쓰는 시험에서는 그 시장의 자리. */
     private long lastCursor(String field) {
-        return store.jobRuns.get(store.jobRuns.size() - 1).detail().path("cursor").path(field).asLong();
+        var cursors = store.jobRuns.get(store.jobRuns.size() - 1).detail().path("cursors");
+        return Math.max(cursors.path(Book.MARKET_US).path(field).asLong(), cursors.path(Book.MARKET_KR).path(field).asLong());
     }
 
     @Test
@@ -606,7 +608,7 @@ class PaperNotifyJobTest {
         failNext = 1;
         PaperNotifyJob.Outcome failed = job.run();
         assertThat(failed.sent()).isZero();
-        assertThat(failed.error()).startsWith("HTTP 429");
+        assertThat(failed.error()).startsWith("US: HTTP 429");
         assertThat(lastCursor("fillId")).isEqualTo(cursorBefore);
         assertThat(job.run().sent()).isOne();
         assertThat(sent).singleElement().satisfies(m -> assertThat(m).contains("· 2건(매도 1·매수 1)").contains("- 매도 QQQ").contains("- 매수 SPY"));
@@ -645,5 +647,98 @@ class PaperNotifyJobTest {
                 .as("꽉 찬 읽기가 묶음 하나뿐이면 그대로(멈춰 서지 않게)").extracting(PaperNotifyJob.Batch::lastId).containsExactly(2L);
         assertThat(PaperNotifyJob.batches(rows, 500, t.plusSeconds(1), Row::book, Row::at, Row::id))
                 .as("지나지 않은 행(2번)이 이어지는 묶음은 미룸").isEmpty();
+    }
+
+    // ------------------------------------------------------------------ 봇 네 개(사용자 요청 2026-11-08)
+    private static final String US_TOKEN = "111:us-token";
+    private static final String KR_TOKEN = "222:kr-token";
+
+    /** 봇별 토큰을 둔 작업 — {@code delivered}에 (토큰, 글), {@code failing} 토큰은 429. */
+    private PaperNotifyJob splitJob(Map<PaperTelegram.Channel, String> tokens, List<String[]> delivered, List<String> failing) {
+        PaperTelegram telegram = new PaperTelegram(TOKEN, "42", tokens, MAPPER, (URI uri, String json) -> {
+            String token = uri.toString().replace("https://api.telegram.org/bot", "").replace("/sendMessage", "");
+            if (failing.contains(token)) {
+                return new PaperTelegram.Reply(429, "{\"ok\":false,\"description\":\"Too Many Requests\"}");
+            }
+            assertThat(MAPPER.readTree(json).path("chat_id").asString()).as("대화방은 네 봇이 같음").isEqualTo("42");
+            delivered.add(new String[] {token, MAPPER.readTree(json).path("text").asString()});
+            return new PaperTelegram.Reply(200, "{\"ok\":true}");
+        });
+        return new PaperNotifyJob(store, PaperFixtures.quietReader(), mock(PaperMarketData.class), telegram, PaperFixtures.config(), MAPPER,
+                clock, millis -> { }, "https://example.invalid/");
+    }
+
+    private void stopFill(String book, String ticker, Instant at) {
+        long stop = order(book, null, ticker, "SELL", "NEXT_OPEN", PaperBooks.SOURCE_STOP, at);
+        fill(book, stop, ticker, 10, 100.0, at);
+    }
+
+    @Test
+    @DisplayName("시장별 봇 — 미국 계좌는 미국 봇, 한국 계좌는 한국 봇으로, 토큰이 없는 시장은 운영 봇으로")
+    void routesEachMarketToItsBot() {
+        List<String[]> delivered = new ArrayList<>();
+        PaperNotifyJob split = splitJob(Map.of(PaperTelegram.Channel.US, US_TOKEN, PaperTelegram.Channel.KR, KR_TOKEN), delivered, List.of());
+        split.run();
+        Instant t = T0.plusSeconds(60);
+        stopFill(PaperBooks.CLAUDE, "AAPL", t);
+        stopFill(PaperBooks.KR_CLAUDE2, "005930", t.plusSeconds(10));
+        clock.now = T0.plusSeconds(300);
+        assertThat(split.run().error()).isNull();
+        assertThat(delivered).isNotEmpty().allSatisfy(d -> assertThat(d[0]).isEqualTo(d[1].contains("(미국)") ? US_TOKEN : KR_TOKEN));
+        assertThat(delivered).anySatisfy(d -> assertThat(d[0]).isEqualTo(US_TOKEN)).anySatisfy(d -> assertThat(d[0]).isEqualTo(KR_TOKEN));
+
+        List<String[]> fallback = new ArrayList<>();
+        PaperNotifyJob onlyUs = splitJob(Map.of(PaperTelegram.Channel.US, US_TOKEN, PaperTelegram.Channel.KR, " "), fallback, List.of());
+        stopFill(PaperBooks.KR_CLAUDE2, "000660", T0.plusSeconds(400));
+        clock.now = T0.plusSeconds(600);
+        assertThat(onlyUs.run().error()).isNull();
+        assertThat(fallback).isNotEmpty().allSatisfy(d -> assertThat(d[0]).as("토큰이 빈 한국 알림은 운영 봇").isEqualTo(TOKEN));
+    }
+
+    @Test
+    @DisplayName("한 봇이 실패해도 다른 시장 알림은 나가고, 실패한 시장만 다음 주기에 그 통부터 다시 — 나간 시장은 두 번 가지 않음")
+    void oneBotFailureDoesNotBlockTheOtherMarket() {
+        List<String[]> delivered = new ArrayList<>();
+        List<String> failing = new ArrayList<>(List.of(US_TOKEN));
+        PaperNotifyJob split = splitJob(Map.of(PaperTelegram.Channel.US, US_TOKEN, PaperTelegram.Channel.KR, KR_TOKEN), delivered, failing);
+        split.run();
+        Instant t = T0.plusSeconds(60);
+        stopFill(PaperBooks.CLAUDE, "AAPL", t);
+        stopFill(PaperBooks.KR_CLAUDE2, "005930", t.plusSeconds(10));
+        clock.now = T0.plusSeconds(300);
+
+        PaperNotifyJob.Outcome failed = split.run();
+        assertThat(failed.error()).startsWith("US: HTTP 429").doesNotContain(US_TOKEN);
+        int korean = delivered.size();
+        assertThat(korean).isPositive();
+        assertThat(delivered).allSatisfy(d -> assertThat(d[0]).isEqualTo(KR_TOKEN));
+
+        failing.clear();
+        PaperNotifyJob.Outcome retried = split.run();
+        assertThat(retried.error()).isNull();
+        assertThat(delivered).hasSize(korean + retried.sent());
+        assertThat(delivered.subList(korean, delivered.size())).isNotEmpty().allSatisfy(d -> assertThat(d[0]).isEqualTo(US_TOKEN));
+        assertThat(split.run().sent()).isZero();
+    }
+
+    @Test
+    @DisplayName("시장을 나누기 전 기록의 자리(cursor 하나)는 두 시장이 함께 이어받음 — 배포 사이의 일이 빠지지도 두 번 가지도 않음")
+    void inheritsSharedCursorRecord() {
+        Instant t = T0.plusSeconds(60);
+        long oldStop = order(PaperBooks.CLAUDE, null, "MSFT", "SELL", "NEXT_OPEN", PaperBooks.SOURCE_STOP, t);
+        long oldFill = fill(PaperBooks.CLAUDE, oldStop, "MSFT", 1, 400.0, t);
+        ObjectNode detail = MAPPER.createObjectNode();
+        detail.putObject("cursor").put("fillId", oldFill).put("orderId", oldStop).put("decidedAt", T0.toString()).put("decisionId", 0L);
+        store.recordJobRun(PaperNotifyJob.JOB, T0, T0, "OK", detail);
+        Instant later = T0.plusSeconds(120);
+        stopFill(PaperBooks.CLAUDE, "AAPL", later);
+        stopFill(PaperBooks.KR_CLAUDE2, "005930", later.plusSeconds(5));
+        clock.now = T0.plusSeconds(400);
+
+        assertThat(job.run().error()).isNull();
+        assertThat(sent).noneSatisfy(m -> assertThat(m).contains("MSFT"));
+        assertThat(sent).anySatisfy(m -> assertThat(m).contains("AAPL")).anySatisfy(m -> assertThat(m).contains("005930"));
+        assertThat(store.jobRuns.get(store.jobRuns.size() - 1).detail().path("cursors").has(Book.MARKET_KR)).isTrue();
+        assertThat(job.run().sent()).isZero();
     }
 }

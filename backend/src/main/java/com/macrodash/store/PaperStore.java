@@ -1369,26 +1369,28 @@ public class PaperStore {
     }
 
     // ------------------------------------------------------------------ 알림(텔레그램 — 읽기만, PaperNotifyJob)
-    /** 번호가 {@code afterId}보다 큰 체결 {@code limit}건, 번호 순(모든 책). */
-    public List<Fill> fillsAfter(long afterId, int limit) {
-        return jdbc.query("SELECT " + FILL_COLUMNS + " FROM paper_fills WHERE id > ? ORDER BY id LIMIT ?",
-                (rs, rowNum) -> fillOf(rs), afterId, limit);
+    private static final String BOOK_IN_MARKET = "book_code IN (SELECT code FROM paper_books WHERE market = ?)";
+
+    /** 그 시장 계좌들의 체결 가운데 번호가 {@code afterId}보다 큰 것 {@code limit}건, 번호 순. */
+    public List<Fill> fillsAfter(String market, long afterId, int limit) {
+        return jdbc.query("SELECT " + FILL_COLUMNS + " FROM paper_fills WHERE %s AND id > ? ORDER BY id LIMIT ?".formatted(BOOK_IN_MARKET),
+                (rs, rowNum) -> fillOf(rs), market, afterId, limit);
     }
 
-    /** 결정 없이 생긴 주문(스탑 매도·손으로 넣은 주문 등) 가운데 번호가 {@code afterId}보다 큰 것 {@code limit}건, 번호 순(모든 책). */
-    public List<Order> ordersWithoutDecisionAfter(long afterId, int limit) {
-        return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE decision_id IS NULL AND id > ? ORDER BY id LIMIT ?",
-                orderMapper(), afterId, limit);
+    /** 그 시장 계좌들의 결정 없이 생긴 주문(스탑 매도·손으로 넣은 주문 등) 가운데 번호가 {@code afterId}보다 큰 것 {@code limit}건, 번호 순. */
+    public List<Order> ordersWithoutDecisionAfter(String market, long afterId, int limit) {
+        return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE %s AND decision_id IS NULL AND id > ? ORDER BY id LIMIT ?"
+                        .formatted(BOOK_IN_MARKET), orderMapper(), market, afterId, limit);
     }
 
     /**
-     * 결정 시각·번호가 ({@code after}, {@code afterId})보다 뒤이고 결정 시각이 {@code before}보다 이른 결정 {@code limit}건, 결정 시각·번호 순(모든 책).
+     * 그 시장 계좌들의 결정 가운데 결정 시각·번호가 ({@code after}, {@code afterId})보다 뒤이고 결정 시각이 {@code before}보다 이른 것 {@code limit}건, 결정 시각·번호 순.
      * 재시도가 같은 행의 결정 시각을 새로 쓰므로(updateDecisionRetry) 재시도 결과도 다시 나옵니다.
      */
-    public List<Decision> decisionsAfter(Instant after, long afterId, Instant before, int limit) {
-        return jdbc.query("SELECT " + DECISION_COLUMNS + " FROM paper_decisions WHERE (decided_at, id) > (?, ?) AND decided_at < ? "
-                        + "ORDER BY decided_at, id LIMIT ?", decisionMapper(),
-                Timestamp.from(after), afterId, Timestamp.from(before), limit);
+    public List<Decision> decisionsAfter(String market, Instant after, long afterId, Instant before, int limit) {
+        return jdbc.query("SELECT " + DECISION_COLUMNS + " FROM paper_decisions WHERE %s AND (decided_at, id) > (?, ?) AND decided_at < ? "
+                        .formatted(BOOK_IN_MARKET) + "ORDER BY decided_at, id LIMIT ?", decisionMapper(),
+                market, Timestamp.from(after), afterId, Timestamp.from(before), limit);
     }
 
     /** 번호로 주문 하나(체결 알림이 그 주문의 시점을 적을 때). */

@@ -418,21 +418,27 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
-    public List<Fill> fillsAfter(long afterId, int limit) {
-        return fills.tailMap(afterId, false).values().stream().limit(limit).toList();
+    public List<Fill> fillsAfter(String market, long afterId, int limit) {
+        return fills.tailMap(afterId, false).values().stream().filter(f -> inMarket(f.bookCode(), market)).limit(limit).toList();
     }
 
     @Override
-    public List<Order> ordersWithoutDecisionAfter(long afterId, int limit) {
-        return orders.tailMap(afterId, false).values().stream().filter(o -> o.decisionId() == null).limit(limit).toList();
+    public List<Order> ordersWithoutDecisionAfter(String market, long afterId, int limit) {
+        return orders.tailMap(afterId, false).values().stream().filter(o -> o.decisionId() == null && inMarket(o.bookCode(), market))
+                .limit(limit).toList();
     }
 
     @Override
-    public List<Decision> decisionsAfter(Instant after, long afterId, Instant before, int limit) {
+    public List<Decision> decisionsAfter(String market, Instant after, long afterId, Instant before, int limit) {
         return decisions.values().stream()
-                .filter(d -> d.decidedAt() != null && d.decidedAt().isBefore(before)
+                .filter(d -> inMarket(d.bookCode(), market) && d.decidedAt() != null && d.decidedAt().isBefore(before)
                         && (d.decidedAt().isAfter(after) || (d.decidedAt().equals(after) && d.id() > afterId)))
                 .sorted(Comparator.comparing(Decision::decidedAt).thenComparingLong(Decision::id)).limit(limit).toList();
+    }
+
+    private boolean inMarket(String bookCode, String market) {
+        Book book = books.get(bookCode);
+        return market.equals(book == null ? Book.MARKET_US : book.market());
     }
 
     @Override

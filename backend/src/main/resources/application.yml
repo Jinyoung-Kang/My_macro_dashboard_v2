@@ -131,6 +131,10 @@ dashboard:
     notify-initial-delay-ms: 200000
     telegram-bot-token: ${TELEGRAM_BOT_TOKEN:}   # 서버 .env(S3 백업 실패 알림과 같은 봇 — QA-199) — 로컬·QA는 비어 있어 보내지 않음
     telegram-chat-id: ${TELEGRAM_CHAT_ID:}
+    # 알림 종류별 봇(2026-11-08) — 위 두 값이 운영 봇, 아래가 비면 그 알림도 운영 봇으로 보냄. 대화방은 네 봇이 같음.
+    telegram-us-bot-token: ${TELEGRAM_US_BOT_TOKEN:}
+    telegram-kr-bot-token: ${TELEGRAM_KR_BOT_TOKEN:}
+    telegram-account-bot-token: ${TELEGRAM_ACCOUNT_BOT_TOKEN:}
     telegram-link-base: ${PUBLIC_ORIGIN:}   # 알림 끝의 화면 링크 앞부분(서버 공개 주소) — 비면 링크 줄 없음
 
   # 실제 매매(실제 토스 계좌가 모의 한국 책을 따라 함 — ADR 0028, 명세 docs/specs/2026-11-06-real-trade-mirror.md). 여기는 세 스위치 중 백엔드 몫이고
