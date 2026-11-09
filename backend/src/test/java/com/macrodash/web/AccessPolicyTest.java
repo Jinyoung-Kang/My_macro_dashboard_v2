@@ -104,14 +104,14 @@ class AccessPolicyTest {
         assertThat(declared).as("컨트롤러가 여는 ISA 계좌 경로").containsExactlyInAnyOrder("GET /api/manual/isa", "POST /api/manual/isa/start",
                 "POST /api/manual/isa/balance/total", "POST /api/manual/isa/balance/commission", "POST /api/manual/isa/positions",
                 "POST /api/manual/isa/positions/{symbol}/delete", "POST /api/manual/isa/instructions/apply", "POST /api/manual/isa/instructions/{id}/skip",
-                "POST /api/manual/isa/trades/{id}/undo");
+                "POST /api/manual/isa/trades/{id}/undo", "POST /api/manual/isa/trades/{id}");
         assertThat(listed).containsExactlyInAnyOrderElementsOf(declared);
         listed.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.OWNER));
         assertThat(AccessPolicy.required("GET", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);
         assertThat(AccessPolicy.required("HEAD", "/api/manual/isa")).isEqualTo(AccessPolicy.Access.OWNER);
         for (String path : java.util.List.of("/api/manual/isa/start", "/api/manual/isa/balance/total", "/api/manual/isa/balance/commission",
                 "/api/manual/isa/positions", "/api/manual/isa/positions/005930/delete", "/api/manual/isa/instructions/apply",
-                "/api/manual/isa/instructions/7/skip", "/api/manual/isa/trades/7/undo")) {
+                "/api/manual/isa/instructions/7/skip", "/api/manual/isa/trades/7/undo", "/api/manual/isa/trades/7")) {
             assertThat(AccessPolicy.required("POST", path)).as("POST " + path).isEqualTo(AccessPolicy.Access.OWNER);
         }
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).as("유료 회원도 못 봄").isFalse();

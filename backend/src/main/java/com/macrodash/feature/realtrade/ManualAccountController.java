@@ -87,6 +87,11 @@ public class ManualAccountController {
         return service.undoTrade(id);
     }
 
+    @PostMapping("/trades/{id}")
+    public Map<String, Object> editTrade(@PathVariable long id, @RequestBody(required = false) ManualAccountService.EditTradeRequest body) {
+        return service.editTrade(id, body);
+    }
+
     @ExceptionHandler(ManualAccountException.class)
     ResponseEntity<Map<String, Object>> rejected(ManualAccountException e) {
         return body(e.status(), e.code(), e.getMessage());

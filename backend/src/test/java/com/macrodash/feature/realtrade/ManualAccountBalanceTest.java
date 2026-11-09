@@ -17,7 +17,7 @@ class ManualAccountBalanceTest {
     @Test
     @DisplayName("매수 — 현금 −(금액 + 수수료), 매입 금액 +금액, 수량 +")
     void buy() {
-        ManualAccountBalance.Applied r = ManualAccountBalance.buy(d("1000000"), d("10"), d("100000"), d("5"), d("12000"), d("9"));
+        ManualAccountBalance.Applied r = ManualAccountBalance.buy(d("1000000"), d("10"), d("100000"), d("5"), d("60000"), d("9"));
         assertThat(r.cash()).isEqualByComparingTo("939991");
         assertThat(r.quantity()).isEqualByComparingTo("15");
         assertThat(r.purchaseAmount()).isEqualByComparingTo("160000");
@@ -29,7 +29,7 @@ class ManualAccountBalanceTest {
     @Test
     @DisplayName("없던 종목 매수도 — 보유·매입 금액은 0에서")
     void buyNewSymbol() {
-        ManualAccountBalance.Applied r = ManualAccountBalance.buy(d("1000"), null, null, d("3"), d("100"), BigDecimal.ZERO);
+        ManualAccountBalance.Applied r = ManualAccountBalance.buy(d("1000"), null, null, d("3"), d("300"), BigDecimal.ZERO);
         assertThat(r.quantity()).isEqualByComparingTo("3");
         assertThat(r.purchaseAmount()).isEqualByComparingTo("300");
     }
@@ -37,7 +37,7 @@ class ManualAccountBalanceTest {
     @Test
     @DisplayName("매도 — 현금 +(금액 − 수수료 − 세금), 매입 금액은 판 비율만큼, 실현 손익 = 금액 − 줄어든 매입 금액 − 수수료 − 세금")
     void sell() {
-        ManualAccountBalance.Applied r = ManualAccountBalance.sell(d("100000"), d("10"), d("100000"), d("4"), d("12000"), d("7"), d("96"));
+        ManualAccountBalance.Applied r = ManualAccountBalance.sell(d("100000"), d("10"), d("100000"), d("4"), d("48000"), d("7"), d("96"));
         assertThat(r.cash()).isEqualByComparingTo("147897");
         assertThat(r.quantity()).isEqualByComparingTo("6");
         assertThat(r.purchaseAmount()).isEqualByComparingTo("60000");
@@ -48,7 +48,7 @@ class ManualAccountBalanceTest {
     @Test
     @DisplayName("전량 매도 — 매입 금액을 남기지 않음(나눗셈 잔돈 없음), 행을 없앰")
     void sellAll() {
-        ManualAccountBalance.Applied r = ManualAccountBalance.sell(d("0"), d("3"), d("100"), d("3"), d("40"), BigDecimal.ZERO, BigDecimal.ZERO);
+        ManualAccountBalance.Applied r = ManualAccountBalance.sell(d("0"), d("3"), d("100"), d("3"), d("120"), BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(r.empty()).isTrue();
         assertThat(r.purchaseAmount()).isEqualByComparingTo("0");
         assertThat(r.costBasis()).isEqualByComparingTo("100");
@@ -61,28 +61,26 @@ class ManualAccountBalanceTest {
         ManualAccountBalance.Applied r = ManualAccountBalance.sell(d("0"), d("3"), d("100"), d("1"), d("40"), BigDecimal.ZERO, BigDecimal.ZERO);
         assertThat(r.costBasis()).isEqualByComparingTo("33.33");
         assertThat(r.purchaseAmount()).isEqualByComparingTo("66.67");
-        assertThatThrownBy(() -> ManualAccountBalance.sell(d("0"), d("1"), d("100"), d("2"), d("40"), BigDecimal.ZERO, BigDecimal.ZERO))
+        assertThatThrownBy(() -> ManualAccountBalance.sell(d("0"), d("1"), d("100"), d("2"), d("80"), BigDecimal.ZERO, BigDecimal.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     @DisplayName("되돌림은 정확히 거꾸로 — 매수·매도 뒤 되돌리면 현금·수량·매입 금액이 원래대로")
     void undoReverses() {
-        ManualAccountBalance.Applied bought = ManualAccountBalance.buy(d("1000000"), d("10"), d("100000"), d("5"), d("12000.5"), d("9"));
-        ManualAccountBalance.Applied undoneBuy = ManualAccountBalance.undoBuy(bought.cash(), bought.quantity(), bought.purchaseAmount(), d("5"), d("12000.5"), d("9"),
-                bought.costBasis());
+        ManualAccountBalance.Applied bought = ManualAccountBalance.buy(d("1000000"), d("10"), d("100000"), d("5"), d("60002.5"), d("9"));
+        ManualAccountBalance.Applied undoneBuy = ManualAccountBalance.undoBuy(bought.cash(), bought.quantity(), bought.purchaseAmount(), d("5"), d("60002.5"), d("9"), bought.costBasis());
         assertThat(undoneBuy.cash()).isEqualByComparingTo("1000000");
         assertThat(undoneBuy.quantity()).isEqualByComparingTo("10");
         assertThat(undoneBuy.purchaseAmount()).isEqualByComparingTo("100000");
 
-        ManualAccountBalance.Applied sold = ManualAccountBalance.sell(d("100000"), d("10"), d("100000"), d("4"), d("12000"), d("7"), d("96"));
-        ManualAccountBalance.Applied undoneSell = ManualAccountBalance.undoSell(sold.cash(), sold.quantity(), sold.purchaseAmount(), d("4"), d("12000"), d("7"), d("96"),
-                sold.costBasis());
+        ManualAccountBalance.Applied sold = ManualAccountBalance.sell(d("100000"), d("10"), d("100000"), d("4"), d("48000"), d("7"), d("96"));
+        ManualAccountBalance.Applied undoneSell = ManualAccountBalance.undoSell(sold.cash(), sold.quantity(), sold.purchaseAmount(), d("4"), d("48000"), d("7"), d("96"), sold.costBasis());
         assertThat(undoneSell.cash()).isEqualByComparingTo("100000");
         assertThat(undoneSell.quantity()).isEqualByComparingTo("10");
         assertThat(undoneSell.purchaseAmount()).isEqualByComparingTo("100000");
 
-        ManualAccountBalance.Applied soldAll = ManualAccountBalance.undoSell(d("0"), null, null, d("3"), d("40"), BigDecimal.ZERO, BigDecimal.ZERO, d("100"));
+        ManualAccountBalance.Applied soldAll = ManualAccountBalance.undoSell(d("0"), null, null, d("3"), d("120"), BigDecimal.ZERO, BigDecimal.ZERO, d("100"));
         assertThat(soldAll.quantity()).as("전량 판 뒤 되돌림 — 행이 다시 생김").isEqualByComparingTo("3");
         assertThat(soldAll.purchaseAmount()).isEqualByComparingTo("100");
     }
@@ -90,9 +88,9 @@ class ManualAccountBalanceTest {
     @Test
     @DisplayName("매수 되돌림 — 그사이 보유를 고쳐 수량이 모자라면 행을 없애고, 매입 금액은 0 아래로 내려가지 않음")
     void undoAfterEdit() {
-        ManualAccountBalance.Applied r = ManualAccountBalance.undoBuy(d("0"), d("3"), d("100"), d("5"), d("12000"), BigDecimal.ZERO, d("60000"));
+        ManualAccountBalance.Applied r = ManualAccountBalance.undoBuy(d("0"), d("3"), d("100"), d("5"), d("60000"), BigDecimal.ZERO, d("60000"));
         assertThat(r.empty()).isTrue();
-        ManualAccountBalance.Applied partial = ManualAccountBalance.undoBuy(d("0"), d("10"), d("100"), d("5"), d("12000"), BigDecimal.ZERO, d("60000"));
+        ManualAccountBalance.Applied partial = ManualAccountBalance.undoBuy(d("0"), d("10"), d("100"), d("5"), d("60000"), BigDecimal.ZERO, d("60000"));
         assertThat(partial.empty()).isFalse();
         assertThat(partial.purchaseAmount()).isEqualByComparingTo("0");
     }

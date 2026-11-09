@@ -569,4 +569,133 @@ class ManualAccountServiceDbTest {
         rejects(() -> service.skipInstruction(superseded), 400, "invalid-request");
         rejects(() -> service.skipInstruction(999_999), 404, "not-found");
     }
+
+    // ------------------------------------------------------------------ '확인' 창의 입력(2026-11-09 — 수량·체결 금액·평균 단가·수수료)
+    private static ManualAccountService.ApplyItem filled(Long instructionId, Long stopId, String quantity, String amount, String fee) {
+        return new ManualAccountService.ApplyItem(instructionId, stopId, null, "user", d(quantity), d(amount), fee == null ? null : d(fee));
+    }
+
+    private Trade onlyTrade() {
+        List<Trade> trades = store.recentTrades("isa", 10);
+        assertThat(trades).hasSize(1);
+        return trades.get(0);
+    }
+
+    @Test
+    @DisplayName("확인 입력 매도 — 적은 수량·체결 금액·수수료 그대로 현금·실현 손익에, 평균 단가는 금액 ÷ 수량, 세금은 자동, 지시와 다른 수량도 받음")
+    void applyWithEnteredAmountSell() {
+        startSynthetic();                                          // 현금 775,000, A 10주(매입 100,000)
+        long id = instruction(A, "SELL", 10);
+
+        apply(filled(id, null, "4", "50001", "30"));
+
+        Trade t = onlyTrade();
+        assertThat(t.quantity()).isEqualByComparingTo("4");
+        assertThat(t.gross()).as("적은 금액 그대로").isEqualByComparingTo("50001");
+        assertThat(t.price()).as("평균 단가").isEqualByComparingTo("12500.25");
+        assertThat(t.fee()).as("적은 수수료").isEqualByComparingTo("30");
+        assertThat(t.tax()).as("세금 자동").isPositive();
+        assertThat(t.priceSource()).isEqualTo("user");
+        assertThat(cash()).isEqualByComparingTo(d("775000").add(d("50001")).subtract(d("30")).subtract(t.tax()));
+        assertThat(position(A).quantity()).isEqualByComparingTo("6");
+        assertThat(position(A).purchaseAmount()).as("판 비율만큼").isEqualByComparingTo("60000");
+        assertThat(t.realizedPnl()).isEqualByComparingTo(d("50001").subtract(d("40000")).subtract(d("30")).subtract(t.tax()));
+        assertThat(store.instruction(id).orElseThrow().status()).isEqualTo("RECORDED");
+    }
+
+    @Test
+    @DisplayName("확인 입력 매수 — 적은 금액만큼 현금·매입 금액, 수수료를 안 적으면 수수료율로 자동")
+    void applyWithEnteredAmountBuy() {
+        startSynthetic();
+        long id = instruction(B, "BUY", 2);
+
+        apply(new ManualAccountService.ApplyItem(id, null, null, null, d("3"), d("65000"), null));
+
+        Trade t = onlyTrade();
+        assertThat(t.gross()).isEqualByComparingTo("65000");
+        assertThat(t.fee()).as("1.5bp 절사").isEqualByComparingTo("9");
+        assertThat(t.priceSource()).isEqualTo("user");
+        assertThat(position(B).quantity()).isEqualByComparingTo("8");
+        assertThat(position(B).purchaseAmount()).isEqualByComparingTo("165000");
+        assertThat(cash()).isEqualByComparingTo(d("775000").subtract(d("65000")).subtract(d("9")));
+    }
+
+    @Test
+    @DisplayName("확인 입력 — 총액 칸에 단가를 적으면(평균 단가가 종가 ±40% 밖) 400, 정수 아닌 수량·보유보다 많은 매도·음수 수수료는 400, 아무것도 쓰지 않음")
+    void applyEnteredGuards() {
+        startSynthetic();
+        long good = instruction(B, "BUY", 1);
+        long sell = instruction(A, "SELL", 10);
+        assertThatThrownBy(() -> apply(filled(good, null, "1", "21000", null), filled(sell, null, "10", "12000", null)))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains(A).contains("체결 금액(총액)");
+                });
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(store.instruction(good).orElseThrow().status()).isEqualTo("PLANNED");
+
+        rejects(() -> apply(filled(sell, null, "1.5", "18000", null)), 400, "invalid-request");
+        rejects(() -> apply(filled(sell, null, "11", "132000", null)), 400, "invalid-request");
+        rejects(() -> apply(filled(sell, null, "10", "120000", "-1")), 400, "invalid-request");
+        rejects(() -> apply(filled(sell, null, "10", "0", null)), 400, "invalid-request");
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("매매 내역 고치기 — 일부 매도의 금액·수수료를 고치면 현금·실현 손익이 그 값으로, 수량을 고치면 보유·매입 금액도, 되돌리면 시작 잔고로")
+    void editTradeSell() {
+        startSynthetic();
+        long id = instruction(A, "SELL", 4);
+        apply(filled(id, null, "4", "48000", "10"));
+        Trade first = onlyTrade();
+
+        service.editTrade(first.id(), new ManualAccountService.EditTradeRequest(d("4"), d("50000"), d("20")));
+
+        Trade edited = onlyTrade();
+        assertThat(edited.gross()).isEqualByComparingTo("50000");
+        assertThat(edited.fee()).isEqualByComparingTo("20");
+        assertThat(edited.at()).as("시각은 그대로").isEqualTo(first.at());
+        assertThat(edited.priceSource()).isEqualTo("user");
+        assertThat(edited.costBasis()).isEqualByComparingTo("40000");
+        assertThat(position(A).quantity()).isEqualByComparingTo("6");
+        assertThat(cash()).isEqualByComparingTo(d("775000").add(d("50000")).subtract(d("20")).subtract(edited.tax()));
+        assertThat(edited.realizedPnl()).isEqualByComparingTo(d("10000").subtract(d("20")).subtract(edited.tax()));
+
+        service.editTrade(edited.id(), new ManualAccountService.EditTradeRequest(d("5"), d("60000"), d("20")));
+        assertThat(position(A).quantity()).isEqualByComparingTo("5");
+        assertThat(position(A).purchaseAmount()).isEqualByComparingTo("50000");
+
+        service.undoTrade(edited.id());
+        assertThat(position(A).quantity()).isEqualByComparingTo("10");
+        assertThat(position(A).purchaseAmount()).isEqualByComparingTo("100000");
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(store.instruction(id).orElseThrow().status()).isEqualTo("PLANNED");
+    }
+
+    @Test
+    @DisplayName("매매 내역 고치기 — 새로 산 종목의 매수를 고쳐도 줄이 유지되고, 전량 매도를 고치면 줄 없이 현금만, 없는 행 404·보유보다 많은 매도·범위 밖 400")
+    void editTradeBuyAndGuards() {
+        startSynthetic();
+        long buy = instruction(C, "BUY", 2);
+        when(paper.lastPrices(any())).thenReturn(Map.of(A, d("12000"), B, d("21000"), C, d("30000")));
+        apply(filled(buy, null, "2", "60000", "9"));
+        long tradeId = onlyTrade().id();
+
+        service.editTrade(tradeId, new ManualAccountService.EditTradeRequest(d("3"), d("91000"), d("9")));
+        assertThat(position(C).quantity()).isEqualByComparingTo("3");
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("91000");
+        assertThat(cash()).isEqualByComparingTo(d("775000").subtract(d("91000")).subtract(d("9")));
+
+        rejects(() -> service.editTrade(999_999, new ManualAccountService.EditTradeRequest(d("1"), d("30000"), null)), 404, "not-found");
+        rejects(() -> service.editTrade(tradeId, new ManualAccountService.EditTradeRequest(d("3"), d("9000"), null)), 400, "invalid-request");
+        rejects(() -> service.editTrade(tradeId, null), 400, "invalid-request");
+
+        long sell = instruction(A, "SELL", 10);
+        apply(filled(sell, null, "10", "120000", "5"));
+        Trade sold = store.recentTrades("isa", 10).stream().filter(t -> "SELL".equals(t.side())).findFirst().orElseThrow();
+        assertThat(store.position("isa", A)).isEmpty();
+        service.editTrade(sold.id(), new ManualAccountService.EditTradeRequest(d("10"), d("125000"), d("5")));
+        assertThat(store.position("isa", A)).as("전량 매도는 고쳐도 줄 없음").isEmpty();
+        rejects(() -> service.editTrade(sold.id(), new ManualAccountService.EditTradeRequest(d("11"), d("137500"), d("5"))), 400, "invalid-request");
+    }
 }

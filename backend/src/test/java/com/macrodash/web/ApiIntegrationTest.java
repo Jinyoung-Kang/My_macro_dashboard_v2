@@ -287,7 +287,7 @@ class ApiIntegrationTest {
             assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
             for (String path : List.of("/api/manual/isa/start", "/api/manual/isa/balance/total", "/api/manual/isa/balance/commission",
                     "/api/manual/isa/positions", "/api/manual/isa/positions/005930/delete", "/api/manual/isa/instructions/apply",
-                    "/api/manual/isa/instructions/1/skip", "/api/manual/isa/trades/1/undo")) {
+                    "/api/manual/isa/instructions/1/skip", "/api/manual/isa/trades/1/undo", "/api/manual/isa/trades/1")) {
                 assertThat(rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of("totalAsset", 1), member), String.class)
                         .getStatusCode()).as("회원 POST " + path).isEqualTo(HttpStatus.FORBIDDEN);
             }

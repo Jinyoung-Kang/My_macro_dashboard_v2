@@ -92,7 +92,14 @@ public class ManualAccountStore {
     /** 새 매매 내역의 값(번호·시각 칸 제외). */
     public record TradeValues(Instant at, String side, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal fee, BigDecimal tax,
                               BigDecimal costBasis, BigDecimal realizedPnl, boolean taxAssumed, Long instructionId, Long stopInstructionId,
-                              String priceSource) {
+                              String priceSource, BigDecimal amount) {
+
+        /** 체결 금액 칸 없이(수량 × 가격으로 셈). */
+        public TradeValues(Instant at, String side, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal fee, BigDecimal tax,
+                           BigDecimal costBasis, BigDecimal realizedPnl, boolean taxAssumed, Long instructionId, Long stopInstructionId,
+                           String priceSource) {
+            this(at, side, symbol, quantity, price, fee, tax, costBasis, realizedPnl, taxAssumed, instructionId, stopInstructionId, priceSource, null);
+        }
 
         public TradeValues {
             Objects.requireNonNull(at, "at");
@@ -110,7 +117,12 @@ public class ManualAccountStore {
     /** 매매 내역 한 행(V31 {@code manual_trades}). */
     public record Trade(long id, String account, Instant at, String side, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal fee,
                         BigDecimal tax, BigDecimal costBasis, BigDecimal realizedPnl, boolean taxAssumed, Long instructionId,
-                        Long stopInstructionId, String priceSource, Instant createdAt) {
+                        Long stopInstructionId, String priceSource, Instant createdAt, BigDecimal amount) {
+
+        /** 체결 금액 — 적어 둔 값, 없으면(옛 행) 수량 × 가격. */
+        public BigDecimal gross() {
+            return amount != null ? amount : quantity.multiply(price).setScale(2, java.math.RoundingMode.HALF_UP);
+        }
 
         @Override
         public String toString() {
@@ -206,7 +218,7 @@ public class ManualAccountStore {
     private static final String STOP_COLUMNS = "id, account, session, paper_order_id, symbol, side, quantity, timing, target_at, reason, status, "
             + "notified_at, notified_midday_at, notified_preclose_at, created_at, updated_at";
     private static final String TRADE_COLUMNS = "id, account, at, side, symbol, quantity, price, fee, tax, cost_basis, realized_pnl, tax_assumed, "
-            + "instruction_id, stop_instruction_id, price_source, created_at";
+            + "instruction_id, stop_instruction_id, price_source, created_at, amount";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -332,7 +344,7 @@ public class ManualAccountStore {
     /** 매매 내역을 씁니다 — 새 번호. */
     public long insertTrade(String code, TradeValues v) {
         Long id = jdbc.query("INSERT INTO manual_trades (account, at, side, symbol, quantity, price, fee, tax, cost_basis, realized_pnl, tax_assumed, "
-                        + "instruction_id, stop_instruction_id, price_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                        + "instruction_id, stop_instruction_id, price_source, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 ps -> {
                     ps.setString(1, code);
                     ps.setTimestamp(2, Timestamp.from(v.at()));
@@ -356,8 +368,16 @@ public class ManualAccountStore {
                         ps.setLong(13, v.stopInstructionId());
                     }
                     ps.setString(14, v.priceSource());
+                    ps.setBigDecimal(15, v.amount());
                 }, (rs, rowNum) -> rs.getLong("id")).stream().findFirst().orElseThrow();
         return id;
+    }
+
+    /** 매매 내역 한 행의 체결 값을 고칩니다(시각·지시 묶음은 그대로). */
+    public boolean updateTrade(String code, long id, BigDecimal quantity, BigDecimal price, BigDecimal amount, BigDecimal fee, BigDecimal tax, BigDecimal costBasis,
+                               BigDecimal realizedPnl, boolean taxAssumed, String priceSource) {
+        return jdbc.update("UPDATE manual_trades SET quantity = ?, price = ?, amount = ?, fee = ?, tax = ?, cost_basis = ?, realized_pnl = ?, tax_assumed = ?, "
+                + "price_source = ? WHERE id = ? AND account = ?", quantity, price, amount, fee, tax, costBasis, realizedPnl, taxAssumed, priceSource, id, code) == 1;
     }
 
     /** 매매 내역을 지웁니다(되돌리기). 없으면 false. */
@@ -632,7 +652,7 @@ public class ManualAccountStore {
         return (rs, rowNum) -> new Trade(rs.getLong("id"), rs.getString("account"), instant(rs, "at"), rs.getString("side"), rs.getString("symbol"),
                 rs.getBigDecimal("quantity"), rs.getBigDecimal("price"), rs.getBigDecimal("fee"), rs.getBigDecimal("tax"), rs.getBigDecimal("cost_basis"),
                 rs.getBigDecimal("realized_pnl"), rs.getBoolean("tax_assumed"), rs.getObject("instruction_id", Long.class),
-                rs.getObject("stop_instruction_id", Long.class), rs.getString("price_source"), instant(rs, "created_at"));
+                rs.getObject("stop_instruction_id", Long.class), rs.getString("price_source"), instant(rs, "created_at"), rs.getBigDecimal("amount"));
     }
 
     private RowMapper<StopInstruction> stopMapper() {

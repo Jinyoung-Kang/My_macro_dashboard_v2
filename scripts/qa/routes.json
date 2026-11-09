@@ -595,6 +595,15 @@
     },
     {
       "m": "POST",
+      "p": "/api/manual/isa/trades/{id}",
+      "path": {
+        "id": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/detail/summary",
       "body": {
         "market": "str",

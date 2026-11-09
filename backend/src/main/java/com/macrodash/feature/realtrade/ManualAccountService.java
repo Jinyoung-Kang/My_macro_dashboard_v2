@@ -22,6 +22,7 @@ import tools.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -80,7 +81,11 @@ public class ManualAccountService {
     static final String SOURCE_LIVE = "live";
     /** 가격 출처 — 서버 직전 종가. */
     static final String SOURCE_CLOSE = "close";
-    private static final Set<String> SOURCES = Set.of(SOURCE_LIVE, SOURCE_CLOSE);
+    /** 사용자가 '확인' 창에 적거나 고친 체결 금액. */
+    static final String SOURCE_USER = "user";
+    private static final Set<String> SOURCES = Set.of(SOURCE_LIVE, SOURCE_CLOSE, SOURCE_USER);
+    /** 매매 내역 고치기에서 직전 종가 범위를 보는 기간 — 오래된 매매는 종가가 멀어져 범위 검사가 뜻이 없습니다. */
+    static final Duration EDIT_BAND_WINDOW = Duration.ofDays(7);
 
     /** 표가 없을 때의 안내(보기의 {@code message}). */
     static final String NOT_READY = "ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V31)을 적용한 뒤 다시 보세요.";
@@ -133,12 +138,21 @@ public class ManualAccountService {
     }
 
     /** 확인 한 줄 — 다음 지시({@code instructionId})나 장중 스탑 지시({@code stopInstructionId}) 하나에 묶입니다. {@code price}가 없으면 서버 직전 종가. */
-    public record ApplyItem(Long instructionId, Long stopInstructionId, BigDecimal price, String priceSource) {
+    public record ApplyItem(Long instructionId, Long stopInstructionId, BigDecimal price, String priceSource, BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+
+        /** 가격만 싣는 요청(수량은 지시 값, 수수료·금액은 자동). */
+        public ApplyItem(Long instructionId, Long stopInstructionId, BigDecimal price, String priceSource) {
+            this(instructionId, stopInstructionId, price, priceSource, null, null, null);
+        }
 
         @Override
         public String toString() {
             return "ApplyItem[instructionId=" + instructionId + ", stopInstructionId=" + stopInstructionId + "]";
         }
+    }
+
+    /** {@code POST /api/manual/isa/trades/{id}} 본문 — 확인한 매매의 실제 수량·체결 금액(총액)·수수료. */
+    public record EditTradeRequest(BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
     }
 
     /** {@code POST /api/manual/isa/instructions/apply} 본문. */
@@ -392,7 +406,7 @@ public class ManualAccountService {
         out.put("name", names.get(t.symbol()));
         out.put("quantity", plain(t.quantity()));
         out.put("price", plain(t.price()));
-        out.put("amount", money(t.quantity().multiply(t.price())));
+        out.put("amount", money(t.gross()));
         out.put("fee", plain(t.fee()));
         out.put("tax", plain(t.tax()));
         out.put("realizedPnl", money(t.realizedPnl()));
@@ -604,7 +618,16 @@ public class ManualAccountService {
                 price(item.price());
             }
             if (item.priceSource() != null && !SOURCES.contains(item.priceSource())) {
-                throw ManualAccountException.invalid("가격 출처는 live·close 가운데 하나입니다.");
+                throw ManualAccountException.invalid("가격 출처는 live·close·user 가운데 하나입니다.");
+            }
+            if (item.quantity() != null) {
+                wholeQuantity(item.quantity());
+            }
+            if (item.amount() != null) {
+                amount(item.amount(), "체결 금액", true);
+            }
+            if (item.fee() != null) {
+                amount(item.fee(), "수수료", false);
             }
             if (item.instructionId() != null) {
                 store.instruction(item.instructionId()).filter(i -> CODE.equals(i.account())).ifPresent(i -> symbols.add(i.symbol()));
@@ -625,39 +648,46 @@ public class ManualAccountService {
                 Ref ref = item.instructionId() != null ? instructionRef(item.instructionId()) : stopRef(item.stopInstructionId());
                 requirePlanned(ref);
                 BigDecimal close = last.get(ref.symbol());
-                BigDecimal chosen = item.price() != null ? item.price() : close;
-                if (chosen == null || chosen.signum() <= 0) {
-                    throw ManualAccountException.invalid("가격을 모르는 종목이 있습니다 — 실시간 가격을 받은 뒤 다시 누르세요.");
-                }
-                if (item.price() != null && close != null && close.signum() > 0 && outOfBand(item.price(), close)) {
-                    throw ManualAccountException.invalid("가격이 직전 종가의 ±40% 밖입니다 — 잘못 들어온 가격이면 다시 누르세요.");
-                }
-                String source = item.price() != null ? (item.priceSource() != null ? item.priceSource() : SOURCE_LIVE) : SOURCE_CLOSE;
+                boolean explicit = item.amount() != null;
                 boolean sell = ManualAccountStore.SIDE_SELL.equals(ref.side());
                 Position held = store.position(CODE, ref.symbol()).orElse(null);
-                int quantity = ref.quantity();
+                int quantity = item.quantity() != null ? wholeQuantity(item.quantity()) : ref.quantity();
                 if (sell) {
                     BigDecimal whole = held == null ? BigDecimal.ZERO : held.quantity().setScale(0, RoundingMode.FLOOR);
-                    quantity = whole.min(BigDecimal.valueOf(ref.quantity())).intValue();
+                    if (item.quantity() != null && BigDecimal.valueOf(quantity).compareTo(whole) > 0) {
+                        throw ManualAccountException.invalid(ref.symbol() + "의 보유 수량보다 많이 팔 수 없습니다 — 수량을 확인하세요.");
+                    }
+                    quantity = whole.min(BigDecimal.valueOf(quantity)).intValue();
                     if (quantity < 1) {
                         closeNoHolding(ref);
                         skipped++;
                         continue;
                     }
                 }
-                TradeCosts costs = paper.krTradeCosts(ref.symbol(), sell, quantity, chosen, balance.commissionBp(), today);
                 BigDecimal qty = BigDecimal.valueOf(quantity);
+                BigDecimal chosen = explicit ? averagePrice(item.amount(), qty) : item.price() != null ? item.price() : close;
+                if (chosen == null || chosen.signum() <= 0) {
+                    throw ManualAccountException.invalid("가격을 모르는 종목이 있습니다 — 실시간 가격을 받은 뒤 다시 누르세요.");
+                }
+                if ((explicit || item.price() != null) && close != null && close.signum() > 0 && outOfBand(chosen, close)) {
+                    throw ManualAccountException.invalid(explicit ? outOfBandText(ref.symbol()) : "가격이 직전 종가의 ±40% 밖입니다 — 잘못 들어온 가격이면 다시 누르세요.");
+                }
+                String source = explicit ? (item.priceSource() != null ? item.priceSource() : SOURCE_USER)
+                        : item.price() != null ? (item.priceSource() != null ? item.priceSource() : SOURCE_LIVE) : SOURCE_CLOSE;
+                BigDecimal gross = explicit ? ManualAccountBalance.money(item.amount()) : ManualAccountBalance.amount(qty, chosen);
+                TradeCosts costs = paper.krTradeCosts(ref.symbol(), sell, quantity, chosen, balance.commissionBp(), today);
+                BigDecimal fee = item.fee() != null ? ManualAccountBalance.money(item.fee()) : costs.fee();
                 ManualAccountBalance.Applied result = sell
-                        ? ManualAccountBalance.sell(cash, held.quantity(), held.purchaseAmount(), qty, chosen, costs.fee(), costs.tax())
-                        : ManualAccountBalance.buy(cash, held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), qty, chosen, costs.fee());
+                        ? ManualAccountBalance.sell(cash, held.quantity(), held.purchaseAmount(), qty, gross, fee, costs.tax())
+                        : ManualAccountBalance.buy(cash, held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), qty, gross, fee);
                 cash = bounded(result.cash());
                 if (result.empty()) {
                     store.deletePosition(CODE, ref.symbol());
                 } else {
                     store.upsertPosition(CODE, ref.symbol(), held == null ? null : held.name(), result.quantity(), bounded(result.purchaseAmount()));
                 }
-                store.insertTrade(CODE, new TradeValues(now, ref.side(), ref.symbol(), qty, chosen, costs.fee(), costs.tax(), result.costBasis(), result.realizedPnl(),
-                        costs.taxAssumed(), ref.stop() ? null : ref.id(), ref.stop() ? ref.id() : null, source));
+                store.insertTrade(CODE, new TradeValues(now, ref.side(), ref.symbol(), qty, chosen, fee, costs.tax(), result.costBasis(), result.realizedPnl(),
+                        costs.taxAssumed(), ref.stop() ? null : ref.id(), ref.stop() ? ref.id() : null, source, gross));
                 markRecorded(ref);
                 applied++;
             }
@@ -675,6 +705,70 @@ public class ManualAccountService {
         out.put("count", done[0]);
         out.put("skipped", done[1]);
         return out;
+    }
+
+    /** 평균 단가 = 체결 금액 ÷ 수량(소수 넷째 자리 — 표시·세금 계산용, 금액은 적은 값 그대로 씁니다). */
+    private static BigDecimal averagePrice(BigDecimal amount, BigDecimal quantity) {
+        return amount.divide(quantity, 4, RoundingMode.HALF_UP);
+    }
+
+    private static String outOfBandText(String symbol) {
+        return symbol + "의 평균 단가(체결 금액 ÷ 수량)가 직전 종가의 ±40% 밖입니다 — 체결 금액(총액)과 평균 단가 칸을 바꿔 적지 않았는지 확인하세요.";
+    }
+
+    /** {@code POST /api/manual/isa/trades/{id}} — 확인한 매매의 수량·체결 금액·수수료를 실제 값으로 고칩니다(앞 값을 되돌린 뒤 새 값으로 다시 반영, 세금·매입 금액·실현 손익도 다시 셈). */
+    public Map<String, Object> editTrade(long id, EditTradeRequest body) {
+        requireReady();
+        if (body == null || body.quantity() == null || body.amount() == null) {
+            throw ManualAccountException.invalid("수량과 체결 금액을 넣으세요.");
+        }
+        int quantity = wholeQuantity(body.quantity());
+        BigDecimal gross = ManualAccountBalance.money(amount(body.amount(), "체결 금액", true));
+        if (body.fee() != null) {
+            amount(body.fee(), "수수료", false);
+        }
+        Trade found = store.trade(id).filter(t -> CODE.equals(t.account()))
+                .orElseThrow(() -> ManualAccountException.notFound("매매 내역을 찾을 수 없습니다."));
+        BigDecimal qty = BigDecimal.valueOf(quantity);
+        BigDecimal chosen = averagePrice(gross, qty);
+        Instant now = clock.instant();
+        BigDecimal close = paper.lastPrices(Set.of(found.symbol())).get(found.symbol());
+        if (close != null && close.signum() > 0 && found.at().isAfter(now.minus(EDIT_BAND_WINDOW)) && outOfBand(chosen, close)) {
+            throw ManualAccountException.invalid(outOfBandText(found.symbol()));
+        }
+        boolean sell = ManualAccountStore.SIDE_SELL.equals(found.side());
+        SessionHours next = ManualAccountCalendar.nextSession(paper, now);
+        store.lockAccount(CODE, acc -> {
+            Balance balance = requireStarted(acc);
+            Trade trade = store.trade(id).filter(t -> CODE.equals(t.account()))
+                    .orElseThrow(() -> ManualAccountException.notFound("매매 내역을 찾을 수 없습니다."));
+            Position held = store.position(CODE, trade.symbol()).orElse(null);
+            BigDecimal heldQty = held == null ? null : held.quantity();
+            BigDecimal heldPurchase = held == null ? null : held.purchaseAmount();
+            ManualAccountBalance.Applied undone = sell
+                    ? ManualAccountBalance.undoSell(balance.cash(), heldQty, heldPurchase, trade.quantity(), trade.gross(), trade.fee(), trade.tax(), trade.costBasis())
+                    : ManualAccountBalance.undoBuy(balance.cash(), heldQty, heldPurchase, trade.quantity(), trade.gross(), trade.fee(), trade.costBasis());
+            BigDecimal afterQty = undone.quantity().max(BigDecimal.ZERO);
+            if (sell && qty.compareTo(afterQty) > 0) {
+                throw ManualAccountException.invalid(trade.symbol() + "의 보유 수량보다 많이 팔 수 없습니다 — 수량을 확인하세요.");
+            }
+            TradeCosts costs = paper.krTradeCosts(trade.symbol(), sell, quantity, chosen, balance.commissionBp(), LocalDate.ofInstant(trade.at(), Kst.ZONE));
+            BigDecimal fee = body.fee() != null ? ManualAccountBalance.money(body.fee()) : costs.fee();
+            ManualAccountBalance.Applied result = sell
+                    ? ManualAccountBalance.sell(undone.cash(), afterQty, undone.purchaseAmount(), qty, gross, fee, costs.tax())
+                    : ManualAccountBalance.buy(undone.cash(), afterQty, undone.purchaseAmount(), qty, gross, fee);
+            store.updateCash(CODE, bounded(result.cash()));
+            if (result.empty()) {
+                store.deletePosition(CODE, trade.symbol());
+            } else {
+                store.upsertPosition(CODE, trade.symbol(), held == null ? null : held.name(), result.quantity(), bounded(result.purchaseAmount()));
+            }
+            store.updateTrade(CODE, trade.id(), qty, chosen, gross, fee, costs.tax(), result.costBasis(), result.realizedPnl(), costs.taxAssumed(), SOURCE_USER);
+            invalidateUpcoming(acc, next, now);
+            store.bumpVersion(CODE);
+            return null;
+        });
+        return Map.of("ok", true);
     }
 
     private Ref instructionRef(long id) {
@@ -739,9 +833,9 @@ public class ManualAccountService {
             boolean sell = ManualAccountStore.SIDE_SELL.equals(trade.side());
             ManualAccountBalance.Applied result = sell
                     ? ManualAccountBalance.undoSell(balance.cash(), held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), trade.quantity(),
-                    trade.price(), trade.fee(), trade.tax(), trade.costBasis())
+                    trade.gross(), trade.fee(), trade.tax(), trade.costBasis())
                     : ManualAccountBalance.undoBuy(balance.cash(), held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), trade.quantity(),
-                    trade.price(), trade.fee(), trade.costBasis());
+                    trade.gross(), trade.fee(), trade.costBasis());
             store.updateCash(CODE, bounded(result.cash()));
             if (result.empty()) {
                 store.deletePosition(CODE, trade.symbol());
@@ -895,6 +989,14 @@ public class ManualAccountService {
             throw ManualAccountException.invalid("수량이 범위 밖이거나 소수 자리가 너무 깁니다.");
         }
         return value;
+    }
+
+    /** 수량 — 1 이상의 정수(국내 주식은 정수 주, 세금 계산이 정수 수량만 받음). */
+    private static int wholeQuantity(BigDecimal value) {
+        if (value == null || value.signum() <= 0 || value.stripTrailingZeros().scale() > 0 || value.compareTo(BigDecimal.valueOf(999_999_999L)) > 0) {
+            throw ManualAccountException.invalid("수량은 1 이상의 정수 주입니다.");
+        }
+        return value.intValue();
     }
 
     private static BigDecimal price(BigDecimal value) {

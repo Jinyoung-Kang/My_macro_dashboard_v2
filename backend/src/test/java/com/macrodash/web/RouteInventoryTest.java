@@ -106,6 +106,7 @@ class RouteInventoryTest {
             "POST /api/manual/isa/instructions/apply",
             "POST /api/manual/isa/instructions/{id}/skip",
             "POST /api/manual/isa/trades/{id}/undo",
+            "POST /api/manual/isa/trades/{id}",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
             "GET /api/paper/books/{code}/positions",

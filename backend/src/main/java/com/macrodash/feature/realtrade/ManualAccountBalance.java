@@ -48,19 +48,17 @@ final class ManualAccountBalance {
         return value.setScale(2, RoundingMode.HALF_UP);
     }
 
-    /** 매수 반영(클래스 설명). */
-    static Applied buy(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal price, BigDecimal fee) {
-        BigDecimal amount = amount(quantity, price);
+    /** 매수 반영(클래스 설명) — {@code amount}는 체결 금액(총액 — 사용자가 적은 값이나 수량 × 가격). */
+    static Applied buy(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
         return new Applied(money(cash.subtract(amount).subtract(nz(fee))), nz(heldQuantity).add(quantity), money(nz(heldPurchase).add(amount)), amount, null);
     }
 
     /** 매도 반영(클래스 설명) — {@code quantity}는 보유 이하여야 합니다(부르는 쪽이 보유까지로 줄임). */
-    static Applied sell(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal price, BigDecimal fee,
+    static Applied sell(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal amount, BigDecimal fee,
                         BigDecimal tax) {
         if (quantity.compareTo(heldQuantity) > 0) {
             throw new IllegalArgumentException("보유보다 많이 팔 수 없습니다");
         }
-        BigDecimal amount = amount(quantity, price);
         BigDecimal after = heldQuantity.subtract(quantity);
         BigDecimal costBasis = after.signum() == 0 ? money(heldPurchase) : money(heldPurchase.multiply(quantity).divide(heldQuantity, 8, RoundingMode.HALF_UP));
         BigDecimal purchase = money(heldPurchase.subtract(costBasis).max(BigDecimal.ZERO));
@@ -69,18 +67,16 @@ final class ManualAccountBalance {
     }
 
     /** 매수 되돌림 — 현금 +(금액 + 수수료), 수량 −(0 이하이면 행을 없앰), 매입 금액 −(0 아래로 내려가지 않음). */
-    static Applied undoBuy(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal price, BigDecimal fee,
+    static Applied undoBuy(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal amount, BigDecimal fee,
                            BigDecimal costBasis) {
-        BigDecimal amount = amount(quantity, price);
         BigDecimal after = nz(heldQuantity).subtract(quantity);
         BigDecimal purchase = after.signum() <= 0 ? BigDecimal.ZERO : money(nz(heldPurchase).subtract(costBasis).max(BigDecimal.ZERO));
         return new Applied(money(cash.add(amount).add(nz(fee))), after, purchase, costBasis, null);
     }
 
     /** 매도 되돌림 — 현금 −(금액 − 수수료 − 세금), 수량 +, 매입 금액 +. */
-    static Applied undoSell(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal price, BigDecimal fee,
+    static Applied undoSell(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal quantity, BigDecimal amount, BigDecimal fee,
                             BigDecimal tax, BigDecimal costBasis) {
-        BigDecimal amount = amount(quantity, price);
         return new Applied(money(cash.subtract(amount).add(nz(fee)).add(nz(tax))), nz(heldQuantity).add(quantity), money(nz(heldPurchase).add(costBasis)),
                 costBasis, null);
     }
