@@ -353,6 +353,17 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
   });
 });
 
+describe("잔고 종목 팝업", () => {
+  it("잔고의 종목을 누르면 화면을 떠나지 않고 종목 팝업 창이 열림", async () => {
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(table("ISA 계좌 잔고")).getByRole("button", { name: "합성전자 111110" }));
+    expect(dialog()).toBeTruthy();
+    expect(window.location.pathname).toBe("/paper/kr/isa");
+  });
+});
+
 describe("확인·건너뜀·되돌리기", () => {
   it("확인 — 창이 열리고 실시간 가격이 없으면 기준가로 채움, 금액을 적으면 평균 단가가 따라 바뀌고 POST apply(수량·금액·수수료·출처), 안내와 다시 읽기", async () => {
     renderIsa();

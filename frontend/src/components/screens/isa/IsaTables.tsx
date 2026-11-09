@@ -1,6 +1,7 @@
 "use client";
 
 import { DataTable, type Column } from "@/components/patterns";
+import { StockQuickLink } from "@/components/screens/detail/StockQuickLink";
 import { buttonClasses } from "@/components/ui";
 import { deltaColor, EMPTY, formatKst, formatKstSeconds, formatPercent, formatSigned } from "@/lib/format";
 import {
@@ -109,7 +110,13 @@ export function IsaPositionsTable({
 }) {
   const columns: readonly Column<IsaPositionView>[] = [
     { key: "actions", header: "고치기", cell: (row) => <PositionActions row={row} onEdit={onEdit} onDelete={onDelete} disabled={disabled} /> },
-    { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true, sortValue: (row) => symbolSort(row.symbol, row.name) },
+    {
+      key: "symbol",
+      header: "종목",
+      cell: (row) => <StockQuickLink market="kr" code={row.symbol}>{symbolText(row.symbol, row.name)}</StockQuickLink>,
+      rowHeader: true,
+      sortValue: (row) => symbolSort(row.symbol, row.name),
+    },
     { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
     { key: "avgPrice", header: "평균 매입가", align: "right", cell: (row) => formatPrice(row.avgPrice), sortValue: (row) => toNumber(row.avgPrice) },
     { key: "purchaseAmount", header: "매입 금액", align: "right", cell: (row) => formatWon(row.purchaseAmount), sortValue: (row) => toNumber(row.purchaseAmount) },

@@ -1,4 +1,5 @@
 import { type Column, DataTable } from "@/components/patterns";
+import { StockQuickLink } from "@/components/screens/detail/StockQuickLink";
 import { Card } from "@/components/ui";
 import {
   amountDigits,
@@ -46,10 +47,16 @@ function symbolCell(name: string | null, symbol: string | null) {
   );
 }
 
+/** 보유 종목 칸 — 누르면 종목 팝업 창(코드를 모르면 글자만). */
+function holdingSymbolCell(row: BrokerageHoldingRow, market: PaperMarketCode) {
+  const cell = symbolCell(row.name, row.symbol);
+  return row.symbol ? <StockQuickLink market={market === "KR" ? "kr" : "us"} code={row.symbol}>{cell}</StockQuickLink> : cell;
+}
+
 function holdingColumns(market: PaperMarketCode): Column<BrokerageHoldingRow>[] {
   const unit = marketMeta(market).unitLabel;
   return [
-    { key: "symbol", header: "종목", rowHeader: true, sortValue: (row) => row.name ?? row.symbol, cell: (row) => symbolCell(row.name, row.symbol) },
+    { key: "symbol", header: "종목", rowHeader: true, sortValue: (row) => row.name ?? row.symbol, cell: (row) => holdingSymbolCell(row, market) },
     { key: "quantity", header: "수량", align: "right", sortValue: (row) => row.quantity, cell: (row) => formatQuantity(row.quantity) },
     { key: "avg", header: `평균 매입가(${unit})`, align: "right", cell: (row) => formatPrice(row.averagePurchasePrice, market) },
     { key: "last", header: `현재가(${unit})`, align: "right", cell: (row) => formatPrice(row.lastPrice, market) },

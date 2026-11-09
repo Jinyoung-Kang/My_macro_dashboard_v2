@@ -242,6 +242,16 @@ describe("시장 쪽 나누기", () => {
   });
 });
 
+describe("보유 종목 팝업", () => {
+  it("보유 종목을 누르면 화면을 떠나지 않고 종목 팝업 창이 열림", async () => {
+    render(<PaperScreen market="KR" initialTab="real" />);
+    const holdings = await screen.findByRole("table", { name: "실제 계좌 보유 종목" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(within(holdings).getByRole("button", { name: /삼성전자/ }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+});
+
 describe("상태", () => {
   it("꺼짐(DISABLED)은 안내만 — 숫자 타일·표·다시 읽기 단추가 없다", async () => {
     reads["/api/brokerage/account?market=US"] = () => Promise.resolve(
