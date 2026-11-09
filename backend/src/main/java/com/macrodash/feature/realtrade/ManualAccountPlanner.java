@@ -24,10 +24,10 @@ import java.util.TreeMap;
  * ({@link RealTradePlanner#sync} 그대로, 범위·보낼 종목 제한·1건 상한·하루 한도 없음). DB·시계를 모릅니다.
  *
  * <ul>
- *   <li>기준가 = 규칙 계좌 시가 목표의 평가 가격, 책에 없는 ISA 보유는 마지막 가격. ISA 평가액 = 장부 현금 + Σ보유 × 기준가 — 보유 하나라도 기준가를 모르면
+ *   <li>기준가 = 규칙 계좌 시가 목표의 평가 가격, 책에 없는 ISA 보유는 마지막 가격. ISA 평가액 = 잔고 현금 + Σ보유 × 기준가 — 보유 하나라도 기준가를 모르면
  *       지시를 만들지 않습니다(empty — 모르면 지시하지 않음).</li>
  *   <li>목표 수량 = floor(비중 × 평가액 ÷ 기준가). 차이가 1주 이상이고 평가액의 1% 이상인 종목만(책에 없는 보유는 1% 조건 없이 전량 매도).</li>
- *   <li>현금 확인: 매도 먼저 — 매수 합(수량 × 기준가 × {@value #BUY_BUFFER_TEXT})이 '장부 현금 + 같은 지시의 매도 대금(수량 × 기준가)'을 넘으면 뒤 순서
+ *   <li>현금 확인: 매도 먼저 — 매수 합(수량 × 기준가 × {@value #BUY_BUFFER_TEXT})이 '잔고 현금 + 같은 지시의 매도 대금(수량 × 기준가)'을 넘으면 뒤 순서
  *       매수부터 줄이고 1주도 안 되면 뺍니다({@code deferred-cash}). 순서는 매도 → 매수, 현금성은 매수 마지막.</li>
  * </ul>
  */
@@ -45,7 +45,7 @@ final class ManualAccountPlanner {
                  BigDecimal targetQuantity) {
     }
 
-    /** 계산 결과 — 지시(매도 → 매수 순)·건너뛴 종목·평가액·현금(장부)·기준가를 모르는 보유. */
+    /** 계산 결과 — 지시(매도 → 매수 순)·건너뛴 종목·평가액·현금(잔고)·기준가를 모르는 보유. */
     record Result(List<Draft> drafts, List<Skip> skipped, BigDecimal equity, BigDecimal cash) {
 
         Result {
@@ -57,7 +57,7 @@ final class ManualAccountPlanner {
     /**
      * 지시를 계산합니다. 보유 중 기준가를 모르는 종목이 있으면 empty(그 종목은 {@code missing}에 담깁니다).
      *
-     * @param cash      장부 현금
+     * @param cash      잔고 현금
      * @param held      종목 → 보유 수량(0이 아닌 것만)
      * @param weightPct 규칙 계좌 시가 목표 비중(종목 → %)
      * @param bookPrice 규칙 계좌 시가 목표의 평가 가격
@@ -101,7 +101,7 @@ final class ManualAccountPlanner {
         ref.forEach((symbol, price) -> quotes.put(symbol, new Quote(price, price.multiply(BUY_BUFFER))));
         Rules rules = new Rules(null, cashLike, false, false);
 
-        // 1차: 장부 현금만으로 — 매도 수량은 현금과 상관없으므로 여기서 정해집니다.
+        // 1차: 잔고 현금만으로 — 매도 수량은 현금과 상관없으므로 여기서 정해집니다.
         Plan first = RealTradePlanner.sync(weightPct, equity, new Account(cash, positions, quotes, Map.of(), Map.of()), Set.of(),
                 BigDecimal.ZERO, rules, true);
         BigDecimal proceeds = BigDecimal.ZERO;

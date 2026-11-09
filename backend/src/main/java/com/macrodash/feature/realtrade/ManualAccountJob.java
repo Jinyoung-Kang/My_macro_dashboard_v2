@@ -101,8 +101,7 @@ class ManualAccountJob {
     static final String AUTO_NO_HOLDING = "no-holding";
     static final String AUTO_RESTART = "restart";
     /**
-     * 지시 근거·세션 계산 기록의 키 — 그 지시를 낼 시각(시각 맞추기 날 — 따라 하는 책의 일일 맞추기 시각, ISO). 없으면 예전 시가 지시(시가 사다리
-     * 자동 기록). 세션 기록에는 그 지시 목표에 반영한 시각 지정 STOP 주문 번호({@value #DETAIL_COVERED_STOPS} — 스탑 지시를 따로 내지 않음)도 남깁니다.
+     * 지시 근거·세션 계산 기록의 키 — 그 지시를 낼 시각(시각 맞추기 날 — 따라 하는 책의 일일 맞추기 시각, ISO). 없으면 예전 시가 지시. 세션 기록에는 그 지시 목표에 반영한 시각 지정 STOP 주문 번호({@value #DETAIL_COVERED_STOPS} — 스탑 지시를 따로 내지 않음)도 남깁니다.
      */
     static final String DETAIL_TARGET_AT = "targetAt";
     static final String DETAIL_COVERED_STOPS = "coveredStopOrderIds";
