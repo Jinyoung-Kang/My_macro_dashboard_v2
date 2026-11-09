@@ -169,7 +169,7 @@ class PaperSettingsKrTest {
     @DisplayName("한국 규칙 계좌 영향 키를 바꾸면 한국 문장의 경고, 둘 다면 미국 · 한국, 한국 Claude 전용 키는 경고 없음")
     void krRulesWarning() {
         assertThat(update("kr.slippageBp", 7).get("warning"))
-                .isEqualTo("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다");
+                .isEqualTo("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 계좌의 실험 조건을 바꿉니다");
         assertThat(update("kr.news.maxPerDay", 5, "kr.maxPositions", 12).get("warning")).isNull();
         assertThat(update("slippageBp", 6, "kr.tax.kospi.sttBp", 6).get("warning"))
                 .isEqualTo(PaperSettingKeys.RULES_FROZEN_WARNING + " · " + PaperSettingKeys.KR_RULES_FROZEN_WARNING);

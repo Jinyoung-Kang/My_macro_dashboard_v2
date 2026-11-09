@@ -26,7 +26,7 @@ vi.mock("@/components/charts", () => ({
 import PaperPage from "@/components/screens/paper/PaperScreen";
 
 const WARNING = "규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다";
-const KR_WARNING = "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다";
+const KR_WARNING = "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 계좌의 실험 조건을 바꿉니다";
 
 const SETTINGS = {
   available: true,
@@ -154,8 +154,8 @@ describe("설정 탭", () => {
     api.apiPost.mockResolvedValue({ version: 4, changedKeys: ["kr.slippageBp", "kr.calendar.openTimeOverrides"], warning: KR_WARNING });
     await openSettingsTab();
 
-    expect(screen.getByText("한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)")).toBeTruthy();
-    expect(screen.getByText("한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)")).toBeTruthy();
+    expect(screen.getByText("한국 계좌 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)")).toBeTruthy();
+    expect(screen.getByText("한국 계좌 — 거래일 달력(임시휴장 · 장 시간 변경일)")).toBeTruthy();
     const date = screen.getByLabelText("kr.tax.effectiveFrom") as HTMLInputElement;
     expect(date.value).toBe("2026-01-01");
     expect(date.placeholder).toBe("yyyy-MM-dd");

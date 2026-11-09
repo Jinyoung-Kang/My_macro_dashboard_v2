@@ -23,8 +23,8 @@ describe("설정 탭 — 장중 스탑 감시 스위치", () => {
     const groups = settingGroups(RESPONSE);
     expect(groups.map((group) => [group.key, group.title])).toEqual([
       ["", "일반 — Claude 계좌 · 장부 · 검증기 · 규칙 계좌 · 메모"],
-      ["stopWatch", "미국 책 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)"],
-      ["kr.stopWatch", "한국 책 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)"],
+      ["stopWatch", "미국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)"],
+      ["kr.stopWatch", "한국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)"],
     ]);
     const rows = Object.fromEntries(groups.flatMap((group) => group.rows).map((row) => [row.key, row]));
     expect(rows["stopWatch.mode"]).toMatchObject({ kind: "choice", current: "OFF", isDefault: true });

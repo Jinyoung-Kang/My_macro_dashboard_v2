@@ -4278,17 +4278,17 @@ const SETTING_GROUP: Record<string, string> = {
   rules: "규칙 계좌",
   gate: "OS 게이트 지표 — 참고 임계치(구속하지 않음)",
   news: "사건 뉴스 — Claude 계좌 패킷 11b(2단계 B, 규칙 계좌 영향 없음)",
-  calendar: "발표 일정 — 캘린더 컨센서스(3단계 스위치, 두 책 공통)",
-  claude: "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)",
+  calendar: "발표 일정 — 캘린더 컨센서스(3단계 스위치, 두 시장 공통)",
+  claude: "Claude 계좌 3단계 스위치 — 두 시장 공통(규칙 계좌 영향 없음)",
   claude2: "미국 Claude 계좌2 — 체결 시점 실험(켜기 · 결정 주기 호출 상한 · 1분봉 기다림 · 체결 기록 · 장중 확인, 규칙 계좌 영향 없음)",
-  regFees: "미국 책 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)",
-  stopWatch: "미국 책 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
-  kr: "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
-  "kr.tax": "한국 책 — 매도 세금(세율 · 시행일)",
-  "kr.rules": "한국 책 — 규칙 계좌(수급 신호 · 재선정)",
-  "kr.calendar": "한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)",
-  "kr.stopWatch": "한국 책 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
-  "kr.news": "한국 책 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)",
+  regFees: "미국 계좌 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)",
+  stopWatch: "미국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
+  kr: "한국 계좌 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)",
+  "kr.tax": "한국 계좌 — 매도 세금(세율 · 시행일)",
+  "kr.rules": "한국 계좌 — 규칙 계좌(수급 신호 · 재선정)",
+  "kr.calendar": "한국 계좌 — 거래일 달력(임시휴장 · 장 시간 변경일)",
+  "kr.stopWatch": "한국 계좌 — 장중 스탑 감시(OFF · SHADOW 기록만 · ON 주문, 규칙 계좌 영향, ADR 0032)",
+  "kr.news": "한국 계좌 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)",
 };
 
 /** 한국 키는 둘째 마디까지 묶습니다(kr.tax.kospi.sttBp → kr.tax) — 서른 개 넘는 kr.* 키가 한 묶음에 몰리지 않게. 나머지는 첫 마디. */
@@ -4506,9 +4506,9 @@ export function settingsScopeOptions(response: PaperSettingsResponse | null | un
 
 /** 설정 키가 어느 책의 것인지 — 한국 화면에서 키마다 붙이는 이름표(공용은 두 책이 함께 읽음). 모르는 값은 받은 글자. */
 export function settingMarketLabel(market: string | null | undefined): string {
-  if (market === "KR") return "한국 책";
-  if (market === "US") return "미국 책";
-  return market ? market : "두 책 공용";
+  if (market === "KR") return "한국 계좌";
+  if (market === "US") return "미국 계좌";
+  return market ? market : "두 시장 공용";
 }
 
 /** 입력 글자를 설정 값으로 읽은 결과. */
@@ -4642,7 +4642,7 @@ export function settingsPatch(changes: readonly SettingChange[]): Record<string,
 export const RULES_FROZEN_WARNING = "규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다";
 
 /** 한국 규칙 계좌(kr_rules) 영향 키(market KR)를 바꿀 때의 경고 — 서버 warning과 같은 문장(2단계 명세 §4-13, C1b). */
-export const KR_RULES_FROZEN_WARNING = "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다";
+export const KR_RULES_FROZEN_WARNING = "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 계좌의 실험 조건을 바꿉니다";
 
 /**
  * 저장 전 확인 문구 — 바뀐 값에 규칙 책 영향 키(서버 keys[].affectsRules)가 있을 때만, 없으면 null(바로 저장).

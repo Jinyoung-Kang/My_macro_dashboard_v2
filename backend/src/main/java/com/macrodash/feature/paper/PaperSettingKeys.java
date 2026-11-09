@@ -48,7 +48,7 @@ final class PaperSettingKeys {
 
     /** 한국 규칙 계좌({@code kr_rules}, 2단계 명세 K1) 영향 키를 바꿨을 때의 경고 — 화면 확인 문구와 같은 문장입니다. */
     static final String KR_RULES_FROZEN_WARNING =
-            "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다";
+            "한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 계좌의 실험 조건을 바꿉니다";
 
     /**
      * 키를 읽는 책(시장 범위). {@link #market}은 화면에 보내는 값({@code paper_books.market}과 같은 US·KR, 두 책 공통이면 null)이고
@@ -193,11 +193,11 @@ final class PaperSettingKeys {
             shared(choice("effort", ClaudeBookService.EFFORTS, false, "Claude 계좌 effort(C2 기본 high)")),
             // 장중 판단만의 effort(ADR 0031 — 사용자 결정 2026-11-06 '결정·복기는 high, 장중 판단만 medium'). 기본 본문에 넣지 않음 — 없으면 effort를 따름.
             shared(choice(IntradayPolicy.EFFORT, ClaudeBookService.EFFORTS, false,
-                    "장중 판단 호출만의 effort(두 책 공통) — 결정·재시도·주간 복기·프레임 제안은 effort. 설정 행에 없으면 effort를 따름")),
+                    "장중 판단 호출만의 effort(두 시장 공통) — 결정·재시도·주간 복기·프레임 제안은 effort. 설정 행에 없으면 effort를 따름")),
             shared(integer("apiDailyCallCap", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
                     "하루(KST) Claude 호출 상한(D18) — 정기·수동 결정·재시도·미리보기·시작을 모두 셈. 0이면 부르지 않음")),
             shared(integer("apiScheduledReserve", 0, ClaudeBookService.MAX_DAILY_CALL_CAP, false,
-                    "정기 작업 몫 예약(2단계 K18, 두 책 공통) — 수동 호출(미리보기·프레임 제안·수동 실행)은 그날 호출이 상한 − 예약 "
+                    "정기 작업 몫 예약(2단계 K18, 두 시장 공통) — 수동 호출(미리보기·프레임 제안·수동 실행)은 그날 호출이 상한 − 예약 "
                             + "미만일 때만, 정기 작업(정기 결정·재시도·한국 출발·정기 복기)은 상한까지. 기본 7, claude.figureCheck를 켜면 "
                             + "9 권장. 예약이 상한 이상이면 수동 호출은 늘 막힘")),
             of("decisionTimeKst", Type.TIME, false, "결정 시각(KST, HH:mm) — 미국 세션 다음 날 이 시각부터 그 거래일 결정(C1)"),
@@ -231,9 +231,9 @@ final class PaperSettingKeys {
             of("cashLikeTickers", Type.TICKERS, true, "현금성 종목(스탑·비중 상한·종목 수 제외, 기본 SHY)"),
             // 메모 두 키는 두 책 공통(2단계 사용자 결정 v6 — kr.notes* 키를 따로 두지 않음, 명세 §4-13 'E1a 구현에서 정한 것').
             shared(integer("notesDefaultExpiryTradingDays", 1, 60, false,
-                    "시황 메모 기본 만료(거래일, F6) — 두 책 공통, 그 메모 시장의 거래일로 셈")),
+                    "시황 메모 기본 만료(거래일, F6) — 두 시장 공통, 그 메모 시장의 거래일로 셈")),
             shared(integer("notesMaxCharsInPacket", 0, 200_000, false,
-                    "패킷에 싣는 유효 메모 합계 글자 수(F6) — 두 책 공통, 패킷마다 그 시장 메모만 셈")),
+                    "패킷에 싣는 유효 메모 합계 글자 수(F6) — 두 시장 공통, 패킷마다 그 시장 메모만 셈")),
             shared(integer("frameworkTokenBudget", 1_000, 500_000, false,
                     "프레임 렌더링 크기 예산(토큰 어림, F4 — 넘으면 경고)")),
             shared(number("pricing.sonnet.inputUsdPerMTok", 0, PaperApiCalls.MAX_PRICE, false,
@@ -294,16 +294,16 @@ final class PaperSettingKeys {
             // claude.* 둘은 아직 읽는 코드가 없습니다(꺼짐 = 스키마·프롬프트 바이트 그대로 — FrameworkServiceTest).
             shared(of("calendar.consensus", Type.BOOLEAN, false,
                     "Claude 패킷 1b_calendar에 미국 컨센서스(Nasdaq — forecast·previous·unit, 결정 전에 받은 발표치) 열을 실음"
-                            + "(2단계 K22, 두 책 공통) — 켜면 미국 packetVersion 6(한국 패킷은 처음부터 6, 한국 컨센서스 출처 없음). "
-                            + "한국 책 출발일에 claude.* 스위치와 같은 저장으로 켬")),
+                            + "(2단계 K22, 두 시장 공통) — 켜면 미국 packetVersion 6(한국 패킷은 처음부터 6, 한국 컨센서스 출처 없음). "
+                            + "한국 계좌 출발일에 claude.* 스위치와 같은 저장으로 켬")),
             shared(of("claude.schemaV3", Type.BOOLEAN, false,
-                    "Claude 결정 스키마 v3(bearCase, 3단계 — 2단계 K37, 두 책 공통). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
+                    "Claude 결정 스키마 v3(bearCase, 3단계 — 2단계 K37, 두 시장 공통). 한국 계좌 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
             shared(of(PaperNotifyJob.SETTING, Type.BOOLEAN, false,
-                    "텔레그램 알림(사용자 요청 2026-11-02, 두 책 공통, 기본 켬) — 결정마다 요약(새 주문 포함), 체결·결정 없는 주문(스탑 등)은 계좌·장부 처리마다 한 통으로 "
+                    "텔레그램 알림(사용자 요청 2026-11-02, 두 시장 공통, 기본 켬) — 결정마다 요약(새 주문 포함), 체결·결정 없는 주문(스탑 등)은 계좌·장부 처리마다 한 통으로 "
                             + "서버 .env의 TELEGRAM_* 값으로 시장별 봇에 보냄. 끄면 보내지 않고 읽은 자리만 옮김(다시 켜도 지난 일은 안 옴)")),
             shared(of("claude.figureCheck", Type.BOOLEAN, false,
-                    "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 책 공통, 결정마다 호출 +1 — "
-                            + "apiScheduledReserve 9 권장). 한국 책 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
+                    "Claude 응답의 숫자 근거 검사 + 교정 재호출(3단계 — 2단계 K37, 두 시장 공통, 결정마다 호출 +1 — "
+                            + "apiScheduledReserve 9 권장). 한국 계좌 출발일에 함께 켬. 지금은 읽는 코드가 없음")),
             // ---- 미국 Claude 계좌1 장중 확인(사용자 결정 2026-11-02) — 규칙 계좌 영향 없음, 기본 꺼짐.
             of(Claude1Checkpoint.ENABLED, Type.BOOLEAN, false,
                     "Claude 계좌1 장중 확인(세션당 한 번) — 켜면 정한 시각(claude.checkpointAtEt) 뒤 첫 시간별 관측치로 계좌1 결정을 한 번 더 냄"
@@ -337,7 +337,7 @@ final class PaperSettingKeys {
                             + "0이면 계좌2 정기 호출 없음"),
             integer(Claude2Settings.BARS_WAIT_MINUTES, 0, Claude2Settings.MAX_BARS_WAIT_MINUTES, true,
                     "1분봉 기다림 상한(분) — 기준 시각이 지난 시각 지정 주문이 있으면 그 관측치 뒤의 1분봉 저장본을 이만큼 기다린 뒤 "
-                            + "처리(시각 지정 주문이 있는 모든 미국 책 — 계좌2, 자유 시점 판 계좌1, 체결 시각을 정한 규칙 계좌. 그동안 그 책의 스탑 "
+                            + "처리(시각 지정 주문이 있는 모든 미국 계좌 — 계좌2, 자유 시점 판 계좌1, 체결 시각을 정한 규칙 계좌. 그동안 그 계좌의 스탑 "
                             + "판정이 늦음). 0이면 기다리지 않음"),
             of(Claude2Settings.EXECUTION_RECORD, Type.BOOLEAN, false,
                     "계좌2 패킷 13_execution.record — 최근 체결 20건(고른 시점·체결 원가격·사다리 칸·계좌1식 대비 bp, 사실만)"),

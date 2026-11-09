@@ -43,7 +43,7 @@ const INPUT = `w-full ${inputClasses()}`;
  * 초점이 문서 처음(body)으로 떨어지던 것을 막습니다(실패하면 단추가 살아 있어 확인 창이 그 단추로 돌려줌).
  *
  * <p><b>한국 화면</b>(`market` "KR" — 사용자 결정 2026-10-29: 설정은 두 시장 공용 화면): 같은 한 행·같은 저장이고, 맨 위에 공용 행이라는 것을
- * 적고(어느 상태에서든), 보기를 '한국 + 공용'(기본 — keys[].market이 KR이거나 없음)·'전체'로 고릅니다. 미국 키에 '미국 책'을 붙이고(kr.* 키는 이름이 말함) 공용
+ * 적고(어느 상태에서든), 보기를 '한국 + 공용'(기본 — keys[].market이 KR이거나 없음)·'전체'로 고릅니다. 미국 키에 '미국 계좌'를 붙이고(kr.* 키는 이름이 말함) 공용
  * 키는 표시가 없습니다. 바꿀 값·확인 창은 보기와 관계없이 손댄 키 전부입니다(보기를 바꿔도 고친 값이 빠지지 않음).
  */
 export function SettingsSection({ market = "US" }: { market?: PaperMarketCode }) {
@@ -196,7 +196,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
                 <SettingField
                   key={row.key}
                   row={row}
-                  // 한국 화면에서는 미국 키에만 '미국 책'을 붙입니다 — kr.* 키는 이름이 이미 말하고, 표시 없는 키는 공용(안내 글과 같은 규칙).
+                  // 한국 화면에서는 미국 키에만 '미국 계좌'를 붙입니다 — kr.* 키는 이름이 이미 말하고, 표시 없는 키는 공용(안내 글과 같은 규칙).
                   marketLabel={korea && row.market === "US" ? settingMarketLabel(row.market) : null}
                   value={draft[row.key] ?? row.initial}
                   changed={changedKeys.has(row.key)}
@@ -241,11 +241,11 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
 }
 
 /**
- * 한국 화면 설정 탭 머리의 안내 — 두 시장이 한 행을 함께 씀(사용자 결정 2026-10-29). 보이는 글이 미국 키의 '미국 책' 표시와 맞습니다.
+ * 한국 화면 설정 탭 머리의 안내 — 두 시장이 한 행을 함께 씀(사용자 결정 2026-10-29). 보이는 글이 미국 키의 '미국 계좌' 표시와 맞습니다.
  */
 const KR_SETTINGS_NOTE =
-  "설정은 두 시장이 한 행(한 버전)을 함께 씁니다 — kr.* 키는 한국 책, '미국 책' 표시 키는 미국 책, 표시 없는 키(모델·하루 호출 상한·정기 작업 몫 "
-  + "예약·메모·단가 등)는 두 책 공용입니다. 저장하면 버전이 하나 오르고 두 책 모두 다음 작업부터 그 판을 읽습니다. 한국 규칙 계좌 영향 키는 저장 "
+  "설정은 두 시장이 한 행(한 버전)을 함께 씁니다 — kr.* 키는 한국 계좌, '미국 계좌' 표시 키는 미국 계좌, 표시 없는 키(모델·하루 호출 상한·정기 작업 몫 "
+  + "예약·메모·단가 등)는 두 시장 공용입니다. 저장하면 버전이 하나 오르고 두 시장 모두 다음 작업부터 그 판을 읽습니다. 한국 규칙 계좌 영향 키는 저장 "
   + "전에 한 번 더 묻습니다.";
 
 /** 설정 키 하나 — 이름·설명·배지, 입력, 기본값·범위, 형 오류. */
@@ -258,7 +258,7 @@ function SettingField({
   onChange,
 }: {
   row: SettingRow;
-  /** 한국 화면에서 미국 키에 붙이는 '미국 책' — kr.*·공용 키·미국 화면은 null(표시 없음). */
+  /** 한국 화면에서 미국 키에 붙이는 '미국 계좌' — kr.*·공용 키·미국 화면은 null(표시 없음). */
   marketLabel: string | null;
   value: string;
   changed: boolean;

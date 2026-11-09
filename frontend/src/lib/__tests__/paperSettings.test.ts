@@ -338,12 +338,12 @@ describe("한국 키(2단계 C1b — kr.*·공유 스위치)", () => {
   it("묶음 — 공유 키는 그 첫 마디, 한국 키는 둘째 마디까지(kr·kr.tax·kr.rules·kr.calendar·kr.news), 이름표가 있다", () => {
     expect(groups.map((group) => [group.key, group.title])).toEqual([
       ["", "일반 — Claude 계좌 · 장부 · 검증기 · 규칙 계좌 · 메모"],
-      ["claude", "Claude 계좌 3단계 스위치 — 두 책 공통(규칙 계좌 영향 없음)"],
-      ["kr", "한국 책 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)"],
-      ["kr.tax", "한국 책 — 매도 세금(세율 · 시행일)"],
-      ["kr.rules", "한국 책 — 규칙 계좌(수급 신호 · 재선정)"],
-      ["kr.calendar", "한국 책 — 거래일 달력(임시휴장 · 장 시간 변경일)"],
-      ["kr.news", "한국 책 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)"],
+      ["claude", "Claude 계좌 3단계 스위치 — 두 시장 공통(규칙 계좌 영향 없음)"],
+      ["kr", "한국 계좌 — 비용 · 장부 · 검증기 · 규칙 계좌 · 결정 시각(kr.*)"],
+      ["kr.tax", "한국 계좌 — 매도 세금(세율 · 시행일)"],
+      ["kr.rules", "한국 계좌 — 규칙 계좌(수급 신호 · 재선정)"],
+      ["kr.calendar", "한국 계좌 — 거래일 달력(임시휴장 · 장 시간 변경일)"],
+      ["kr.news", "한국 계좌 — 사건 뉴스(Claude 계좌 패킷 11b, 규칙 계좌 영향 없음)"],
     ]);
     expect(groups.find((group) => group.key === "kr.tax")!.rows.map((entry) => entry.key))
       .toEqual(["kr.tax.kospi.sttBp", "kr.tax.effectiveFrom"]);
@@ -428,7 +428,7 @@ describe("한국 키(2단계 C1b — kr.*·공유 스위치)", () => {
     expect(settingsDraftView(groups, { "kr.calendar.extraClosures": "2026-11-02" }).changes).toEqual([]);
     expect(settingsConfirmText(settingsDraftView(groups, { "kr.calendar.extraClosures": "2026-12-30, 2026-11-02" }).changes))
       .toBeNull();
-    expect(KR_RULES_FROZEN_WARNING).toBe("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다");
+    expect(KR_RULES_FROZEN_WARNING).toBe("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 계좌의 실험 조건을 바꿉니다");
   });
 });
 
@@ -458,6 +458,6 @@ describe("설정 보기 거르기 — 한국 화면 '한국 + 공용'(사용자 
     ]);
     expect(settingsScopeOptions(null).map((option) => option.label)).toEqual(["한국 + 공용 (0개)", "전체 — 미국 키 포함 (0개)"]);
     expect([settingMarketLabel("KR"), settingMarketLabel("US"), settingMarketLabel(null), settingMarketLabel("JP")])
-      .toEqual(["한국 책", "미국 책", "두 책 공용", "JP"]);
+      .toEqual(["한국 계좌", "미국 계좌", "두 시장 공용", "JP"]);
   });
 });

@@ -620,7 +620,7 @@ class PaperSettingsServiceTest {
         assertThat(PaperSettingKeys.rulesWarning(List.of(usRules, sharedKey)))
                 .isEqualTo("규칙 계좌는 동결된 대조군입니다 — 이 변경은 실험 조건을 바꿉니다");
         assertThat(PaperSettingKeys.rulesWarning(List.of(krRules)))
-                .isEqualTo("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 책의 실험 조건을 바꿉니다");
+                .isEqualTo("한국 규칙 계좌(kr_rules)는 동결된 대조군입니다 — 이 변경은 한국 계좌의 실험 조건을 바꿉니다");
         assertThat(PaperSettingKeys.rulesWarning(List.of(krRules, usRules))).as("둘 다면 미국 · 한국 순")
                 .isEqualTo(PaperSettingKeys.RULES_FROZEN_WARNING + " · " + PaperSettingKeys.KR_RULES_FROZEN_WARNING);
 

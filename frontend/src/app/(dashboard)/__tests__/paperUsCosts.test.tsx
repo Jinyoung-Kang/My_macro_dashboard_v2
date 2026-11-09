@@ -143,14 +143,14 @@ describe("설정 탭 — 미국 비용 키 넷", () => {
     ],
   };
 
-  it("새 키 넷이 지금 값·범위·설명과 함께 보이고, regFees.*는 '미국 책 — 매도 제비용' 묶음 — 바꾼 값은 점 경로 키로", async () => {
+  it("새 키 넷이 지금 값·범위·설명과 함께 보이고, regFees.*는 '미국 계좌 — 매도 제비용' 묶음 — 바꾼 값은 점 경로 키로", async () => {
     reads["/api/paper/settings"] = () => Promise.resolve(SETTINGS);
     reads["/api/paper/settings/history"] = () => Promise.resolve({ available: true, history: [] });
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("tab", { name: "설정" }));
     await screen.findByLabelText("commissionBp");
 
-    expect(screen.getByText("미국 책 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)")).toBeTruthy();
+    expect(screen.getByText("미국 계좌 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)")).toBeTruthy();
     const values: Record<string, string> = {
       commissionBp: "10", "regFees.secPerMillion": "20.6", "regFees.tafPerShare": "0.000195", "regFees.tafMaxPerTrade": "9.79",
     };

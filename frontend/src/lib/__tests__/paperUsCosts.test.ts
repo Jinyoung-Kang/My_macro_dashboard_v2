@@ -5,7 +5,7 @@
  *  - 비용 칸을 싣지 않는 옛 응답은 '칸 없음'(present false — 화면은 그 줄을 그리지 않거나 "—"), 모르는 값은 "—"(0으로 채우지 않음)
  *  - 체결 표 위 비용 소급 합계(계좌 전체) — 0건·칸 없음이면 줄 없음
  *  - 설정 탭: 새 키 넷(commissionBp·regFees.secPerMillion·regFees.tafPerShare·regFees.tafMaxPerTrade)이 기존 설정 표 생성 방식 그대로 —
- *    commissionBp는 일반 묶음, regFees.*는 '미국 책 — 매도 제비용' 묶음, 작은 소수(0.000195)도 그대로 적고 읽음
+ *    commissionBp는 일반 묶음, regFees.*는 '미국 계좌 — 매도 제비용' 묶음, 작은 소수(0.000195)도 그대로 적고 읽음
  * 값은 모두 합성 값입니다.
  */
 import { describe, expect, it } from "vitest";
@@ -84,12 +84,12 @@ describe("설정 탭 — 미국 비용 키 넷(기존 설정 표 생성 방식 �
     ],
   } as PaperSettingsResponse;
 
-  it("commissionBp는 일반 묶음, regFees.*는 '미국 책 — 매도 제비용' 묶음 — 지금 값·범위·기본값", () => {
+  it("commissionBp는 일반 묶음, regFees.*는 '미국 계좌 — 매도 제비용' 묶음 — 지금 값·범위·기본값", () => {
     const groups = settingGroups(RESPONSE);
     expect(groups.map((group) => [group.title, group.rows.map((row) => row.key)])).toEqual([
       ["일반 — Claude 계좌 · 장부 · 검증기 · 규칙 계좌 · 메모", ["slippageBp", "commissionBp"]],
       [
-        "미국 책 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)",
+        "미국 계좌 — 매도 제비용(SEC fee · FINRA TAF — 매도만, 다섯 계좌 공통, ADR 0030)",
         ["regFees.secPerMillion", "regFees.tafPerShare", "regFees.tafMaxPerTrade"],
       ],
     ]);
