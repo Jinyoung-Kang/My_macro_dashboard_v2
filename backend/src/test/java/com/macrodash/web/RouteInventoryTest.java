@@ -96,10 +96,16 @@ class RouteInventoryTest {
             // 실제 매매(토스증권 실제 계좌가 모의 한국 책을 따라 함 — 운영자 전용, ADR 0028)
             "GET /api/realtrade/status", "GET /api/realtrade/preview", "POST /api/realtrade/enable",
             "POST /api/realtrade/disable", "POST /api/realtrade/update", "POST /api/realtrade/resume",
-            // ISA 계좌(연결되지 않은 다른 증권사 계좌의 장부와 지시 — 운영자 전용, ADR 0029)
-            "GET /api/manual/isa", "POST /api/manual/isa/start", "POST /api/manual/isa/ledger",
-            "POST /api/manual/isa/ledger/{id}/delete", "POST /api/manual/isa/instructions/{id}/skip", "POST /api/manual/isa/instructions/confirm",
-            "POST /api/manual/isa/instructions/fills",
+            // ISA 계좌(연결되지 않은 다른 증권사 계좌의 잔고와 지시 — 운영자 전용, ADR 0029·0034)
+            "GET /api/manual/isa",
+            "POST /api/manual/isa/start",
+            "POST /api/manual/isa/balance/total",
+            "POST /api/manual/isa/balance/commission",
+            "POST /api/manual/isa/positions",
+            "POST /api/manual/isa/positions/{symbol}/delete",
+            "POST /api/manual/isa/instructions/apply",
+            "POST /api/manual/isa/instructions/{id}/skip",
+            "POST /api/manual/isa/trades/{id}/undo",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
             "GET /api/paper/books/{code}/positions",

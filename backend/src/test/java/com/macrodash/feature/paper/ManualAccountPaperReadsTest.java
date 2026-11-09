@@ -203,4 +203,47 @@ class ManualAccountPaperReadsTest {
         assertThat(service().names(Set.of(A, C))).containsExactly(Map.entry(A, "합성전자"));
         assertThat(service().names(Set.of())).isEmpty();
     }
+
+    // ------------------------------------------------------------------ 잔고 구조 도우미(ADR 0034)
+    @Test
+    @DisplayName("비용 — 시장 구분으로 세율을 고르고(코스피 5+15bp·코스닥 20bp·ETF 0·매도만), 수수료는 받은 bp, 원 미만 절사, 시장 구분을 모르면 코스피로 어림")
+    void tradeCostsFollowKrxRates() {
+        when(marketData.fscMarkets(any())).thenAnswer(inv -> {
+            java.util.Collection<String> codes = inv.getArgument(0);
+            String code = codes.iterator().next();
+            return A.equals(code) ? Map.of(A, "KOSPI") : B.equals(code) ? Map.of(B, "KOSDAQ") : Map.of();
+        });
+        BigDecimal bp = new BigDecimal("1.5");
+        BigDecimal price = new BigDecimal("10000");
+
+        PaperMirrorService.TradeCosts kospiSell = service().krTradeCosts(A, true, 10, price, bp, S);
+        assertThat(kospiSell.fee()).as("100,000 × 1.5bp = 15").isEqualByComparingTo("15");
+        assertThat(kospiSell.tax()).as("거래세 50 + 농특세 150").isEqualByComparingTo("200");
+        assertThat(kospiSell.taxAssumed()).isFalse();
+
+        PaperMirrorService.TradeCosts kosdaqSell = service().krTradeCosts(B, true, 10, price, bp, S);
+        assertThat(kosdaqSell.tax()).as("코스닥 20bp").isEqualByComparingTo("200");
+        assertThat(kosdaqSell.taxAssumed()).isFalse();
+
+        PaperMirrorService.TradeCosts etfSell = service().krTradeCosts("153130", true, 10, price, bp, S);
+        assertThat(etfSell.tax()).as("현금성 ETF 0").isEqualByComparingTo("0");
+        assertThat(etfSell.taxAssumed()).isFalse();
+
+        PaperMirrorService.TradeCosts unknown = service().krTradeCosts(D, true, 10, price, bp, S);
+        assertThat(unknown.tax()).as("모르면 코스피 세율로 어림").isEqualByComparingTo("200");
+        assertThat(unknown.taxAssumed()).isTrue();
+
+        PaperMirrorService.TradeCosts unknownBuy = service().krTradeCosts(D, false, 10, price, bp, S);
+        assertThat(unknownBuy.tax()).as("매수는 세금 없음").isEqualByComparingTo("0");
+        assertThat(unknownBuy.taxAssumed()).as("세금이 없으니 어림도 아님").isFalse();
+    }
+
+    @Test
+    @DisplayName("전체 이름표 — 모의 시세의 이름표 그대로, 못 읽으면 빈 표")
+    void allKrNames() {
+        when(marketData.krNames()).thenReturn(Map.of(A, "합성전자"));
+        assertThat(service().allKrNames()).containsEntry(A, "합성전자");
+        when(marketData.krNames()).thenReturn(null);
+        assertThat(service().allKrNames()).isEmpty();
+    }
 }

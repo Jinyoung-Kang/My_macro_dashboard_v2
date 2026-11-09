@@ -27,40 +27,24 @@ final class ManualAccountNotices {
     }
 
     static final String PREFIX = "[ISA 계좌] ";
-    private static final String RECALCULATED = "장부가 바뀌어 다시 계산한 지시입니다 — 앞서 보낸 지시 대신 이 지시를 따르세요.";
     private static final Pattern SYMBOL = Pattern.compile("^[0-9][0-9A-Z]{5}$");
     /** 장전 동시호가 길이 — 개장 30분 전부터(보통 08:30~09:00, 장 시간 변경일은 그 개장 시각 기준). */
     private static final long AUCTION_MINUTES = 30;
+    /** 매매 뒤 할 일(이 시스템은 다른 증권사의 실제 매매를 볼 수 없음). */
+    private static final String CONFIRM_GUIDE = "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결가가 다르면 잔고에서 고치세요.";
 
     /**
-     * 지시 글.
+     * 지시 글(개장 전 08:00 한 통). {@code at}이 있으면 시각 맞추기 지시(ADR 0033 결정 7 — 제목 'MM/DD(요일) HH:MM 매매 지시', 끝줄 'HH:MM 이후 시장가'), 없으면 시가 지시 글.
      *
      * @param session 매매할 세션(제목의 날짜)
      * @param open    그 세션 개장 시각(KST 벽시계 — 장전 동시호가 안내), 모르면 null(기본 09:00)
+     * @param at      지시 시각(KST 벽시계 — 규칙 계좌가 체결하는 시각, 보통 날 09:10), 시가 지시면 null
      * @param items   지시(만든 순서 — 매도 → 매수)
      * @param names   종목 코드 → 이름(모르면 코드만)
      */
-    static String text(LocalDate session, LocalTime open, List<Instruction> items, Map<String, String> names) {
-        return text(session, open, items, names, false);
-    }
-
-    /**
-     * 지시 글 — {@code recalculated}면 장부를 고쳐 다시 계산한 지시(ISA-R4 — 제목에 '(다시 계산)'과 앞서 보낸 지시 대신이라는 줄).
-     */
-    static String text(LocalDate session, LocalTime open, List<Instruction> items, Map<String, String> names, boolean recalculated) {
-        return text(session, open, null, items, names, recalculated);
-    }
-
-    /**
-     * 지시 글. {@code at}이 있으면 시각 맞추기 지시(ADR 0033 결정 7 — 제목 'MM/DD(요일) HH:MM 매매 지시', 끝줄 'HH:MM 이후 시장가'), 없으면 예전 시가
-     * 지시 글(바이트까지 그대로).
-     *
-     * @param at 지시 시각(KST 벽시계 — 규칙 계좌가 체결하는 시각, 보통 날 09:10), 시가 지시면 null
-     */
-    static String text(LocalDate session, LocalTime open, LocalTime at, List<Instruction> items, Map<String, String> names,
-                       boolean recalculated) {
+    static String text(LocalDate session, LocalTime open, LocalTime at, List<Instruction> items, Map<String, String> names) {
         LocalTime start = open == null ? LocalTime.of(9, 0) : open;
-        String title = at == null ? title(session, recalculated) : title(session, hhmm(at) + " 매매 지시", recalculated);
+        String title = title(session, at == null ? "시가 매매 지시" : hhmm(at) + " 매매 지시");
         StringBuilder lines = new StringBuilder();
         for (Instruction i : items) {
             if (i.symbol() == null || !SYMBOL.matcher(i.symbol()).matches() || i.quantity() <= 0) {
@@ -73,9 +57,9 @@ final class ManualAccountNotices {
             lines.append(line(side, i.symbol(), names, i.quantity()));
         }
         String guide = at != null
-                ? hhmm(at) + " 이후 시장가로 내면 규칙 계좌와 같은 때(" + hhmm(at) + ")에 체결됩니다.\n그때 서킷브레이커·VI가 걸려 있으면 풀린 뒤 시장가로 내세요.\n장중 스탑이 걸리면 따로 알립니다.\n다르게 매매했으면 화면에서 고치세요."
-                : "장전 동시호가(" + hhmm(start.minusMinutes(AUCTION_MINUTES)) + "~" + hhmm(start) + ")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n다르게 매매했으면 화면에서 고치세요.";
-        return message(title, (recalculated ? RECALCULATED + "\n\n" : "") + lines.toString().strip() + "\n\n" + guide);
+                ? hhmm(at) + " 이후 시장가로 내면 규칙 계좌와 같은 때(" + hhmm(at) + ")에 체결됩니다.\n그때 서킷브레이커·VI가 걸려 있으면 풀린 뒤 시장가로 내세요.\n장중 스탑이 걸리면 따로 알립니다.\n" + CONFIRM_GUIDE
+                : "장전 동시호가(" + hhmm(start.minusMinutes(AUCTION_MINUTES)) + "~" + hhmm(start) + ")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n" + CONFIRM_GUIDE;
+        return message(title, lines.toString().strip() + "\n\n" + guide);
     }
 
     /** 지시 한 줄 — 방향·종목 코드·이름·수량(앞에 줄바꿈 없이 끝에 줄바꿈). */
@@ -89,17 +73,17 @@ final class ManualAccountNotices {
         return title + "\n\n" + PaperTelegram.esc(body);
     }
 
-    /** 장 중반 확인 알림의 한 줄 — 방향·종목 코드·남은 수량. */
-    record MiddayLine(String side, String symbol, int quantity) {
+    /** 확인 알림의 한 줄 — 방향·종목 코드·수량. */
+    record ReminderLine(String side, String symbol, int quantity) {
     }
 
     /**
-     * 장 중반 매매 확인 알림 글(2026-11-08 사용자 요청 — ADR 0029 결정 4의 예외 안: 종목 코드·이름·수량만, 금액·기준가·평가액 없음). 제목 'MM/DD(요일) 매매
-     * 확인', 줄마다 '매도 코드 이름 n주'(직접 적은 체결이 일부 있으면 남은 수량), 끝에 할 일. 보일 줄이 없으면 null(보내지 않음).
+     * 장 중반·마감 30분 전 매매 확인 알림 글(ADR 0034 — ADR 0029 결정 4의 예외 안: 종목 코드·이름·수량만, 금액·기준가·평가액 없음). 제목 'MM/DD(요일) 매매 확인'(마감 전이면
+     * '마감 전 매매 확인'), 줄마다 '매도 코드 이름 n주', 끝에 할 일. 보일 줄이 없으면 null(보내지 않음).
      */
-    static String midday(LocalDate session, List<MiddayLine> items, Map<String, String> names) {
+    static String reminder(LocalDate session, boolean preclose, List<ReminderLine> items, Map<String, String> names) {
         StringBuilder lines = new StringBuilder();
-        for (MiddayLine i : items) {
+        for (ReminderLine i : items) {
             if (i.symbol() == null || !SYMBOL.matcher(i.symbol()).matches() || i.quantity() <= 0) {
                 continue;
             }
@@ -112,8 +96,8 @@ final class ManualAccountNotices {
         if (lines.isEmpty()) {
             return null;
         }
-        return message(title(session, "매매 확인", false), "장 중반까지 '매매함' 표시나 체결 기록이 없는 지시입니다.\n\n" + lines.toString().strip()
-                + "\n\n아직 안 했으면 지금 시장가로 내세요.\n이미 했으면 ISA 계좌 탭에서 '매매함'을, 하지 않기로 했으면 '건너뜀'을 누르세요.");
+        return message(title(session, preclose ? "마감 전 매매 확인" : "매매 확인"), (preclose ? "마감 30분 전까지" : "장 중반까지") + " '확인'을 누르지 않은 지시입니다.\n\n" + lines.toString().strip()
+                + "\n\n아직 안 했으면 지금 시장가로 내세요.\n이미 했으면 ISA 계좌 탭에서 '확인'을 누르세요(이 시스템은 실제 매매를 볼 수 없습니다).");
     }
 
     /** 종가 단일가 시간 — 정규장 마감 이만큼 전부터(보통 15:20~15:30, 장 시간 변경일은 그 마감 기준). */
@@ -149,33 +133,13 @@ final class ManualAccountNotices {
             out.append(closing.toString().strip()).append("\n규칙 계좌가 트레일링 스탑으로 오늘 종가에 팝니다 — 종가 단일가(")
                     .append(hhmm(end.minusMinutes(CLOSING_AUCTION_MINUTES))).append('~').append(hhmm(end)).append(")에 시장가로 매도하세요.\n\n");
         }
-        out.append("다르게 매매했으면 화면에서 고치세요.");
-        return message(title(session, "스탑 매도 지시", false), out.toString());
+        out.append(CONFIRM_GUIDE);
+        return message(title(session, "스탑 매도 지시"), out.toString());
     }
 
-    /** 장부를 고쳐 다시 계산했더니 그 세션에 할 매매가 없음(앞서 보낸 지시를 내지 않게 — ISA-R4). 종목·수량도 없습니다. */
-    static String noTrades(LocalDate session) {
-        return noTrades(session, null);
-    }
-
-    /**
-     * {@link #noTrades(LocalDate)}에 지시 시각을 — 개장 10분 뒤 시각 맞추기 세션(세션 기록 {@code targetAt}, ADR 0033 결정 7)이면 제목 '11/10(화) 09:10 매매
-     * 지시(다시 계산)'와 '이 세션에 할 매매가 없습니다'(QA-324 — 예전에는 그날도 '시가 매매 지시'·'이 세션 시가에'), {@code at}이 null이면 시가 글 그대로.
-     */
-    static String noTrades(LocalDate session, LocalTime at) {
-        if (at == null) {
-            return message(title(session, true), "장부가 바뀌어 다시 계산했더니 이 세션 시가에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.");
-        }
-        return message(title(session, hhmm(at) + " 매매 지시", true), "장부가 바뀌어 다시 계산했더니 이 세션에 할 매매가 없습니다 — 앞서 보낸 지시는 내지 마세요.");
-    }
-
-    private static String title(LocalDate session, boolean recalculated) {
-        return title(session, "시가 매매 지시", recalculated);
-    }
-
-    private static String title(LocalDate session, String label, boolean recalculated) {
+    private static String title(LocalDate session, String label) {
         return PaperTelegram.bold(PREFIX + String.format(Locale.ROOT, "%02d/%02d", session.getMonthValue(), session.getDayOfMonth()) + '('
-                + session.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.KOREAN) + ") " + label + (recalculated ? "(다시 계산)" : ""));
+                + session.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.KOREAN) + ") " + label);
     }
 
     /** 개장 순간 → KST 벽시계(모르면 null). */

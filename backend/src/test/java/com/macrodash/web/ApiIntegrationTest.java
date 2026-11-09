@@ -274,8 +274,8 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @DisplayName("ISA 계좌(ADR 0029): 회원은 GET·POST 모두 403(required=OWNER), 운영자는 시작 전 GET 200(started=false), 시작 한 번 → 다시 시작 409 "
-            + "already-started, 음수 장부 400 ledger-invalid, 읽지 못한 본문 400 invalid-request, 없는 행·지시 404 not-found — 값은 합성")
+    @DisplayName("ISA 계좌(ADR 0034): 회원은 GET·POST 모두 403(required=OWNER), 운영자는 시작 전 GET 200(started=false), 시작 한 번 → 다시 시작 409 "
+            + "already-started, 읽지 못한 본문 400 invalid-request, 없는 지시 404 not-found, 잘못된 번호 400 — 값은 합성")
     void manualAccountRoutes() {
         cleanManualAccount();
         try {
@@ -285,9 +285,10 @@ class ApiIntegrationTest {
             ResponseEntity<JsonNode> denied = rest.exchange(url("/api/manual/isa"), HttpMethod.GET, new HttpEntity<>(null, member), JsonNode.class);
             assertThat(denied.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
             assertThat(denied.getBody().path("required").asString()).isEqualTo("OWNER");
-            for (String path : List.of("/api/manual/isa/start", "/api/manual/isa/ledger", "/api/manual/isa/ledger/1/delete",
-                    "/api/manual/isa/instructions/1/skip", "/api/manual/isa/instructions/confirm", "/api/manual/isa/instructions/fills")) {
-                assertThat(rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of("cash", 1), member), String.class)
+            for (String path : List.of("/api/manual/isa/start", "/api/manual/isa/balance/total", "/api/manual/isa/balance/commission",
+                    "/api/manual/isa/positions", "/api/manual/isa/positions/005930/delete", "/api/manual/isa/instructions/apply",
+                    "/api/manual/isa/instructions/1/skip", "/api/manual/isa/trades/1/undo")) {
+                assertThat(rest.exchange(url(path), HttpMethod.POST, new HttpEntity<>(Map.of("totalAsset", 1), member), String.class)
                         .getStatusCode()).as("회원 POST " + path).isEqualTo(HttpStatus.FORBIDDEN);
             }
 
@@ -302,13 +303,13 @@ class ApiIntegrationTest {
             HttpHeaders owner = new HttpHeaders();
             owner.add(HttpHeaders.COOKIE, sessionCookie);
             owner.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<JsonNode> notStarted = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST,
-                    new HttpEntity<>(Map.of("kind", "DEPOSIT", "amount", 1000), owner), JsonNode.class);
+            ResponseEntity<JsonNode> notStarted = rest.exchange(url("/api/manual/isa/balance/total"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("totalAsset", 1000), owner), JsonNode.class);
             assertThat(notStarted.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
             assertThat(notStarted.getBody().path("error").asString()).isEqualTo("not-started");
 
-            Map<String, Object> start = Map.of("cash", 50_000, "startedAt", "2026-11-02T14:55",
-                    "buys", List.of(Map.of("symbol", "005930", "quantity", 2, "price", 10_000)));
+            Map<String, Object> start = Map.of("totalAsset", 50_000,
+                    "positions", List.of(Map.of("symbol", "005930", "quantity", 2, "purchaseAmount", 20_000)));
             ResponseEntity<JsonNode> started = rest.exchange(url("/api/manual/isa/start"), HttpMethod.POST, new HttpEntity<>(start, owner),
                     JsonNode.class);
             assertThat(started.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -321,49 +322,45 @@ class ApiIntegrationTest {
 
             JsonNode view = authorizedGet("/api/manual/isa");
             assertThat(view.path("started").asBoolean()).isTrue();
-            assertThat(view.path("summary").path("cash").decimalValue()).isEqualByComparingTo("30000");
-            assertThat(view.path("summary").path("netDeposit").decimalValue()).isEqualByComparingTo("50000");
-            assertThat(view.path("holdings").get(0).path("symbol").asString()).isEqualTo("005930");
-            assertThat(view.path("ledger").size()).isEqualTo(2);
+            assertThat(view.path("summary").path("cash").decimalValue()).as("시험 서버에는 시세가 없어 매입 금액으로 어림").isEqualByComparingTo("30000");
+            assertThat(view.path("positions").get(0).path("symbol").asString()).isEqualTo("005930");
+            assertThat(view.path("positions").get(0).path("purchaseAmount").decimalValue()).isEqualByComparingTo("20000");
+            assertThat(view.path("trades").size()).isZero();
             assertThat(view.path("instructions").isNull()).isTrue();
 
-            ResponseEntity<JsonNode> oversell = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST, new HttpEntity<>(Map.of(
-                    "kind", "SELL", "symbol", "005930", "quantity", 3, "price", 10_000, "at", "2026-11-03T09:00"), owner), JsonNode.class);
-            assertThat(oversell.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-            assertThat(oversell.getBody().path("error").asString()).isEqualTo("ledger-invalid");
             HttpHeaders raw = new HttpHeaders();
             raw.add(HttpHeaders.COOKIE, sessionCookie);
             raw.setContentType(MediaType.APPLICATION_JSON);
-            ResponseEntity<JsonNode> unreadable = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST,
-                    new HttpEntity<>("{\"kind\":\"BUY\",\"quantity\":\"many\"}", raw), JsonNode.class);
+            ResponseEntity<JsonNode> unreadable = rest.exchange(url("/api/manual/isa/positions"), HttpMethod.POST,
+                    new HttpEntity<>("{\"symbol\":\"005930\",\"quantity\":\"many\"}", raw), JsonNode.class);
             assertThat(unreadable.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(unreadable.getBody().path("error").asString()).isEqualTo("invalid-request");
-            ResponseEntity<JsonNode> missing = rest.exchange(url("/api/manual/isa/ledger/999999999/delete"), HttpMethod.POST,
-                    new HttpEntity<>(null, owner), JsonNode.class);
-            assertThat(missing.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-            assertThat(missing.getBody().path("error").asString()).isEqualTo("not-found");
             ResponseEntity<JsonNode> noInstruction = rest.exchange(url("/api/manual/isa/instructions/999999999/skip"), HttpMethod.POST,
                     new HttpEntity<>(null, owner), JsonNode.class);
             assertThat(noInstruction.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-            ResponseEntity<JsonNode> badId = rest.exchange(url("/api/manual/isa/ledger/abc/delete"), HttpMethod.POST,
+            assertThat(noInstruction.getBody().path("error").asString()).isEqualTo("not-found");
+            ResponseEntity<JsonNode> badId = rest.exchange(url("/api/manual/isa/trades/abc/undo"), HttpMethod.POST,
                     new HttpEntity<>(null, owner), JsonNode.class);
             assertThat(badId.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(badId.getBody().path("error").asString()).isEqualTo("invalid-request");
 
-            ResponseEntity<JsonNode> added = rest.exchange(url("/api/manual/isa/ledger"), HttpMethod.POST, new HttpEntity<>(Map.of(
-                    "kind", "DEPOSIT", "amount", 1_000, "at", "2026-11-03T10:00", "note", "합성 입금"), owner), JsonNode.class);
+            ResponseEntity<JsonNode> added = rest.exchange(url("/api/manual/isa/positions"), HttpMethod.POST, new HttpEntity<>(Map.of(
+                    "symbol", "000660", "quantity", 1, "price", 1_000), owner), JsonNode.class);
             assertThat(added.getStatusCode()).isEqualTo(HttpStatus.OK);
-            long id = added.getBody().path("id").asLong();
-            assertThat(rest.exchange(url("/api/manual/isa/ledger/" + id + "/delete"), HttpMethod.POST, new HttpEntity<>(null, owner),
+            assertThat(rest.exchange(url("/api/manual/isa/positions/000660/delete"), HttpMethod.POST, new HttpEntity<>(null, owner),
                     JsonNode.class).getStatusCode()).isEqualTo(HttpStatus.OK);
         } finally {
             cleanManualAccount();
         }
     }
 
-    /** ISA 계좌 표를 비웁니다(합성 값만 쓰는 시험 — 장부가 지시를, 모두가 계좌를 참조하는 순서). */
+    /** ISA 계좌 표를 비웁니다(합성 값만 쓰는 시험 — 내역·장부가 지시를, 모두가 계좌를 참조하는 순서). */
     private void cleanManualAccount() {
+        jdbc.update("DELETE FROM manual_trades");
+        jdbc.update("DELETE FROM manual_positions");
+        jdbc.update("DELETE FROM manual_balance");
         jdbc.update("DELETE FROM manual_ledger");
+        jdbc.update("DELETE FROM manual_stop_instructions");
         jdbc.update("DELETE FROM manual_instructions");
         jdbc.update("DELETE FROM manual_sessions");
         jdbc.update("DELETE FROM manual_accounts");

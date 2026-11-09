@@ -1,11 +1,10 @@
 package com.macrodash.feature.realtrade;
 
 import com.macrodash.store.ManualAccountStore;
-import com.macrodash.store.ManualAccountStore.LedgerRow;
-import com.macrodash.store.ManualAccountStore.LedgerValues;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import com.macrodash.store.ManualAccountStore.NewStopInstruction;
 import com.macrodash.store.ManualAccountStore.StopInstruction;
+import com.macrodash.store.ManualAccountStore.TradeValues;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,10 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * ISA 계좌의 장중 스탑 매도 지시 표(V28 {@code manual_stop_instructions}·{@code manual_ledger.stop_instruction_id} — ADR 0033)를 실제 테스트 DB로:
- * 모의 STOP 주문 하나에 지시 하나, 같은 날 같은 종목의 다음 시가 지시와 함께 있음, 옛 코드의 다음 시가 지시 문장({@code ON CONFLICT (account, session,
- * symbol)})이 V28 뒤에도 그대로 동작(되돌리기 호환), 장부 행은 두 지시 가운데 하나에만 묶임, 고침은 묶인 스탑 지시를 지우지 않음, 상태·알림 시각, 계좌를
- * 지우면(옛 QA 복원 순서) 함께 지워짐. 종목·금액은 모두 합성 값입니다.
+ * ISA 계좌의 장중 스탑 매도 지시 표(V28)와 잔고 표(V31 — ADR 0033·0034)를 실제 테스트 DB로: 모의 STOP 주문 하나에 지시 하나, 같은 날 같은 종목의 다음 시가 지시와
+ * 함께 있음, 옛 코드의 다음 시가 지시 문장({@code ON CONFLICT (account, session, symbol)})이 그대로 동작(되돌리기 호환), 매매 내역은 두 지시 가운데 하나에만 묶임,
+ * 상태·알림 시각, 계좌를 지우면(옛 QA 복원 순서) 함께 지워짐. 종목·금액은 모두 합성 값입니다.
  */
 class ManualAccountStopStoreDbTest {
 
@@ -169,46 +167,58 @@ class ManualAccountStopStoreDbTest {
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
         long ledgerId = jdbc.queryForObject(oldLedger, Long.class, CODE, Timestamp.from(kst("2026-11-09T09:10")), "BUY", B,
                 new BigDecimal("3"), new BigDecimal("21000"), null, BigDecimal.ZERO, BigDecimal.ZERO, first.get(0), "AUTO", null);
-        LedgerRow row = store.ledgerRow(ledgerId).orElseThrow();
-        assertThat(row.instructionId()).isEqualTo(first.get(0));
-        assertThat(row.stopInstructionId()).as("옛 문장은 스탑 칸을 모름 — NULL").isNull();
+        assertThat(jdbc.queryForObject("SELECT instruction_id FROM manual_ledger WHERE id = ?", Long.class, ledgerId)).isEqualTo(first.get(0));
+        assertThat(jdbc.queryForObject("SELECT stop_instruction_id FROM manual_ledger WHERE id = ?", Long.class, ledgerId))
+                .as("옛 문장은 스탑 칸을 모름 — NULL").isNull();
     }
 
     @Test
-    @DisplayName("장부 — 스탑 지시대로 적은 행은 그 지시에 묶이고(지시 하나에만), 고침은 묶인 스탑 지시를 지우지 않음, 계좌를 지우면(옛 QA 복원 순서) 스탑 지시도 함께")
-    void ledgerLinksAndCascade() {
+    @DisplayName("매매 내역은 지시·스탑 지시 가운데 하나에만 묶이고(같은 지시 두 번 안 됨), 계좌를 지우면(옛 QA 복원 순서) 스탑 지시·잔고·보유·내역도 함께")
+    void tradeLinksAndCascade() {
         long stopId = store.insertStopInstruction(CODE, stop(9200, A, 5, "MARKET")).orElseThrow();
         long daily = store.insertInstruction(CODE, new NewInstruction(MONDAY, A, ManualAccountStore.SIDE_BUY, 1, d("12000"), d("1"),
                 MAPPER.createObjectNode())).orElseThrow();
-        LedgerValues sell = new LedgerValues(T, ManualAccountStore.KIND_SELL, A, d("5"), d("11800"), null, null, null, null,
-                ManualAccountStore.SOURCE_AUTO, null, stopId);
-        long ledgerId = store.insertLedger(CODE, sell);
-        assertThat(store.ledgerForStopInstruction(stopId)).extracting(LedgerRow::id).containsExactly(ledgerId);
-        assertThat(store.ledgerRow(ledgerId).orElseThrow()).extracting(LedgerRow::stopInstructionId, LedgerRow::instructionId)
-                .containsExactly(stopId, null);
-        assertThat(store.ledgerForInstruction(daily)).isEmpty();
+        assertThat(store.insertBalance(CODE, T, d("1000"))).isTrue();
+        assertThat(store.insertBalance(CODE, T, d("2000"))).as("잔고는 계좌마다 한 행").isFalse();
+        store.upsertPosition(CODE, A, null, d("5"), d("60000"));
+        store.insertTrade(CODE, new TradeValues(T, ManualAccountStore.SIDE_SELL, A, d("5"), d("11800"), d("8"), d("118"), d("60000"), d("-1126"), false, null, stopId, "live"));
 
-        // 사용자가 고침(스탑 칸을 모르는 값) — 수량·가격은 바뀌고 묶음은 그대로.
-        assertThat(store.updateLedger(CODE, ledgerId, new LedgerValues(T, ManualAccountStore.KIND_SELL, A, d("5"), d("11750"), null, null, null,
-                null, ManualAccountStore.SOURCE_USER, "체결가 고침"))).isTrue();
-        LedgerRow edited = store.ledgerRow(ledgerId).orElseThrow();
-        assertThat(edited.price()).isEqualByComparingTo("11750");
-        assertThat(edited.source()).isEqualTo("USER");
-        assertThat(edited.stopInstructionId()).as("묶인 스탑 지시 그대로").isEqualTo(stopId);
+        assertThatThrownBy(() -> store.insertTrade(CODE, new TradeValues(T, ManualAccountStore.SIDE_SELL, A, d("1"), d("11800"), d("0"), d("0"), d("0"), null, false, daily,
+                stopId, "live"))).as("한 행은 두 지시 가운데 하나에만").isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> store.insertTrade(CODE, new TradeValues(T, ManualAccountStore.SIDE_SELL, A, d("1"), d("11800"), d("0"), d("0"), d("0"), null, false, null,
+                stopId, "live"))).as("같은 스탑 지시를 두 번 반영하지 않음").isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> store.insertTrade(CODE, new TradeValues(T, ManualAccountStore.SIDE_SELL, A, d("1"), d("11800"), d("0"), d("0"), d("0"), null, false, null,
+                -1L, "live"))).as("없는 지시에는 묶지 않음").isInstanceOf(DataIntegrityViolationException.class);
 
-        // 한 행은 두 지시 가운데 하나에만.
-        assertThatThrownBy(() -> store.insertLedger(CODE, new LedgerValues(T, ManualAccountStore.KIND_SELL, A, d("1"), d("11800"), null, null,
-                null, daily, ManualAccountStore.SOURCE_AUTO, null, stopId))).isInstanceOf(DataIntegrityViolationException.class);
-        // 없는 스탑 지시에는 묶지 않음.
-        assertThatThrownBy(() -> store.insertLedger(CODE, new LedgerValues(T, ManualAccountStore.KIND_SELL, A, d("1"), d("11800"), null, null,
-                null, null, ManualAccountStore.SOURCE_AUTO, null, -1L))).isInstanceOf(DataIntegrityViolationException.class);
-
-        // 이 표를 모르는 옛 복원 스크립트의 비우기 순서(장부 → 지시 → 세션 → 계좌)도 막히지 않음 — 계좌를 지우면 스탑 지시도 함께.
+        jdbc.update("DELETE FROM manual_trades");
         jdbc.update("DELETE FROM manual_ledger");
         jdbc.update("DELETE FROM manual_instructions");
         jdbc.update("DELETE FROM manual_sessions");
         jdbc.update("DELETE FROM manual_accounts");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM manual_stop_instructions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM manual_balance", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM manual_positions", Integer.class)).isZero();
+    }
+
+    @Test
+    @DisplayName("준비 — V31의 잔고 표·알림 칸이 있어야 준비됨, 시험 뒤 되돌림")
+    void readyRequiresV31() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V31까지 적용했는가").isTrue();
+        for (String table : List.of("manual_balance", "manual_positions", "manual_trades")) {
+            assertThatThrownBy(() -> store.atomically(() -> {
+                jdbc.execute("DROP TABLE " + table + " CASCADE");
+                assertThat(new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as(table + " 표가 없으면").isFalse();
+                throw new Rollback();
+            })).isInstanceOf(Rollback.class);
+        }
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE manual_stop_instructions DROP COLUMN notified_preclose_at");
+            assertThat(new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("마감 전 알림 칸이 없으면").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(store.ready()).as("되돌린 뒤").isTrue();
     }
 
     @Test

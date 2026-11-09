@@ -523,38 +523,55 @@
       "m": "POST",
       "p": "/api/manual/isa/start",
       "body": {
-        "cash": "int",
-        "startedAt": "str",
-        "buys": "list"
+        "totalAsset": "int",
+        "positions": "list"
       },
       "mutating": true,
       "fuzz": false
     },
     {
       "m": "POST",
-      "p": "/api/manual/isa/ledger",
+      "p": "/api/manual/isa/balance/total",
       "body": {
-        "id": "int",
-        "kind": "enum",
-        "symbol": "str",
-        "quantity": "int",
-        "price": "int",
-        "amount": "int",
-        "fee": "int",
-        "tax": "int",
-        "at": "str",
-        "note": "str",
-        "instructionId": "int"
+        "totalAsset": "int"
       },
       "mutating": true,
       "fuzz": false
     },
     {
       "m": "POST",
-      "p": "/api/manual/isa/ledger/{id}/delete",
-      "path": {
-        "id": "int"
+      "p": "/api/manual/isa/balance/commission",
+      "body": {
+        "commissionPct": "int"
       },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/positions",
+      "body": {
+        "originalSymbol": "str",
+        "symbol": "str",
+        "name": "str",
+        "quantity": "int",
+        "price": "int"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/positions/{symbol}/delete",
+      "path": {
+        "symbol": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/manual/isa/instructions/apply",
       "mutating": true,
       "fuzz": false
     },
@@ -569,13 +586,10 @@
     },
     {
       "m": "POST",
-      "p": "/api/manual/isa/instructions/confirm",
-      "mutating": true,
-      "fuzz": false
-    },
-    {
-      "m": "POST",
-      "p": "/api/manual/isa/instructions/fills",
+      "p": "/api/manual/isa/trades/{id}/undo",
+      "path": {
+        "id": "int"
+      },
       "mutating": true,
       "fuzz": false
     },

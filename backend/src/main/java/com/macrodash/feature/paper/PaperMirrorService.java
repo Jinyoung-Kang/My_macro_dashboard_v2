@@ -2,6 +2,8 @@ package com.macrodash.feature.paper;
 
 import com.macrodash.analytics.CalendarUnavailableException;
 import com.macrodash.analytics.KrxCalendar;
+import com.macrodash.analytics.KrxCosts;
+import com.macrodash.analytics.PaperLedger;
 import com.macrodash.analytics.SessionWindows;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.feature.paper.PaperMarketData.Bar;
@@ -509,6 +511,44 @@ public class PaperMirrorService {
             }
         }
         return out;
+    }
+
+
+    /** 전체 한국 종목 이름표(코드 → 이름, {@link PaperMarketData#krNames}) — ISA 계좌의 이름 입력 해석(ADR 0034). 읽지 못하면 빈 표. */
+    public Map<String, String> allKrNames() {
+        Map<String, String> all = reader.quietly(marketData::krNames);
+        return all == null ? Map.of() : all;
+    }
+
+    /** 한 건의 수수료·세금(원 미만 절사 — {@link KrxCosts}). {@code taxAssumed}는 시장 구분을 몰라 코스피 세율로 어림한 매도. */
+    public record TradeCosts(BigDecimal fee, BigDecimal tax, boolean taxAssumed) {
+
+        @Override
+        public String toString() {
+            return "TradeCosts[taxAssumed=" + taxAssumed + "]";
+        }
+    }
+
+    /**
+     * ISA 계좌 확인 한 건의 비용(ADR 0034) — 세율은 설정 {@code kr.tax.*}, 종목 구분은 금융위 시장 구분 + ETF 목록({@link KrFills}와 같은 규칙).
+     * 수수료율은 사용자가 정한 {@code commissionBp}이고 슬리피지는 없습니다. 시장 구분을 모르는 종목은 코스피 세율로 어림합니다(매도일 때만 어림 표시).
+     *
+     * @param quantity 수량(정수 주)
+     * @throws IllegalArgumentException 수량 1 미만, 가격 0 이하
+     */
+    public TradeCosts krTradeCosts(String symbol, boolean sell, int quantity, BigDecimal price, BigDecimal commissionBp, LocalDate tradeDate) {
+        Objects.requireNonNull(symbol, "symbol");
+        Objects.requireNonNull(tradeDate, "tradeDate");
+        PaperSettings settings = run().settings();
+        KrxCosts.TaxRates tax = settings.costRates() == null ? KrxCosts.TaxRates.KRX_2026 : settings.costRates().tax();
+        Map<String, String> markets = reader.quietly(() -> marketData.fscMarkets(List.of(symbol)));
+        String market = markets == null ? null : markets.get(symbol);
+        Optional<KrxCosts.Instrument> instrument = KrxCosts.classify(market, KrPaperMarket.etf(symbol, settings));
+        boolean beforeRates = tradeDate.isBefore(tax.effectiveFrom());
+        LocalDate date = beforeRates ? tax.effectiveFrom() : tradeDate;   // 세율 시행 전 날짜(설정 실수)면 그 세율로 어림
+        KrxCosts.Costs costs = KrxCosts.fill(sell ? PaperLedger.Side.SELL : PaperLedger.Side.BUY, instrument.orElse(KrxCosts.Instrument.KOSPI), date, quantity, price,
+                new KrxCosts.Rates(commissionBp, BigDecimal.ZERO, tax));
+        return new TradeCosts(costs.commission(), costs.tax(), sell && (instrument.isEmpty() || beforeRates));
     }
 
 

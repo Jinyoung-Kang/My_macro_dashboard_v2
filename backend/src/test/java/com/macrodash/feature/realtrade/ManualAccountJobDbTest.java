@@ -10,8 +10,6 @@ import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.feature.realtrade.RealTradeFixtures.MutableClock;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
-import com.macrodash.store.ManualAccountStore.LedgerRow;
-import com.macrodash.store.ManualAccountStore.LedgerValues;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,10 +44,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * ISA 계좌 정기 작업 한 주기({@link ManualAccountJob}, ADR 0029 — 명세 §2·§3·§4) — 실제 테스트 DB와 가짜 모의 공개 창·텔레그램으로: 규칙 계좌 결정이 최종·
- * 장부 반영·시가 목표 완전일 때만 지시(세션 한 번), 지시 없음(NONE — 알리지 않음), 고친 장부로 계산, 자동 기록(시가 사다리 값·사용자 입력 우선·시가 없음 대기·
- * 매도 시가 대기 중 매수도 대기·현금까지 줄임), 앞 지시 기록 대기 중 다음 지시 대기, 못 만듦(UNAVAILABLE), 알림(밤·아침 한 번씩·실패 재시도·08:00 뒤
- * 밤 알림 버림·종목 코드·이름·수량만). 실제 텔레그램·수집기는 부르지 않습니다. 종목·금액은 모두 합성 값입니다.
+ * ISA 계좌 정기 작업 한 주기({@link ManualAccountJob}, ADR 0029·0034) — 실제 테스트 DB와 가짜 모의 공개 창·텔레그램으로: 규칙 계좌 결정이 최종·장부 반영·시가 목표 완전일 때만
+ * 지시(세션 한 번), 지시 없음(NONE — 알리지 않음), 잔고로 계산, 세션 마감이 지난 미확인 지시 만료(앞 지시를 기다리지 않음), 알림(08:00 한 통·장 중반·마감 30분 전 각 한 번·미확인만·
+ * 종목 코드·이름·수량만), 못 만듦(UNAVAILABLE). 실제 텔레그램·수집기는 부르지 않습니다. 종목·금액은 모두 합성 값입니다.
  */
 class ManualAccountJobDbTest {
 
@@ -111,15 +108,17 @@ class ManualAccountJobDbTest {
         return new SessionHours(date, true, date.atTime(9, 0).atZone(SEOUL).toInstant(), date.atTime(15, 30).atZone(SEOUL).toInstant());
     }
 
-    /** 시작한 계좌 — 현금(DEPOSIT)과 보유(BUY)를 D 14:55에. */
-    private void started(String cash, String startedAt, Object... symbolQtyPrice) {
+    /** 시작한 계좌 — 총 잔고(total)와 보유(종목·수량·평균 매입가) — 현금 = 총 잔고 − Σ(수량 × 평균 매입가). */
+    private void started(String total, String startedAt, Object... symbolQtyPrice) {
         Instant at = kst(startedAt);
-        store.insertAccount("isa", "ISA 계좌", "KR", BOOK, at, d(cash));
-        store.insertLedger("isa", new LedgerValues(at, "DEPOSIT", null, null, null, d(cash), BigDecimal.ZERO, BigDecimal.ZERO, null, "USER", null));
+        store.insertAccount("isa", "ISA 계좌", "KR", BOOK, at, d(total));
+        BigDecimal cash = d(total);
         for (int i = 0; i < symbolQtyPrice.length; i += 3) {
-            store.insertLedger("isa", new LedgerValues(at, "BUY", (String) symbolQtyPrice[i], d((String) symbolQtyPrice[i + 1]),
-                    d((String) symbolQtyPrice[i + 2]), null, BigDecimal.ZERO, BigDecimal.ZERO, null, "USER", null));
+            BigDecimal purchase = d((String) symbolQtyPrice[i + 1]).multiply(d((String) symbolQtyPrice[i + 2]));
+            store.upsertPosition("isa", (String) symbolQtyPrice[i], null, d((String) symbolQtyPrice[i + 1]), purchase);
+            cash = cash.subtract(purchase);
         }
+        store.insertBalance("isa", at, cash);
     }
 
     private void targets(LocalDate session, Map<String, Double> weights, Map<String, Double> prices, boolean complete) {
@@ -187,11 +186,10 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @DisplayName("결정 행이 없어도 기한(D+1 01:00)이 지나면 최종으로 보고 만든다 — 고친 장부(입금 추가)로 계산")
+    @DisplayName("결정 행이 없어도 기한(D+1 01:00)이 지나면 최종으로 보고 만든다 — 지금 잔고(현금을 더한 뒤)로 계산")
     void deadlinePassedAndEditedLedger() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
-        store.insertLedger("isa", new LedgerValues(kst("2026-11-06T16:00"), "DEPOSIT", null, null, null, d("1000000"), BigDecimal.ZERO,
-                BigDecimal.ZERO, null, "USER", null));
+        store.updateCash("isa", d("1900000"));
         standardTargets();
         decisionStatus = null;
 
@@ -222,157 +220,91 @@ class ManualAccountJobDbTest {
         cycleAt("2026-11-06T22:55");
         assertThat(store.session("isa", E)).hasValueSatisfying(s -> assertThat(s.state()).isEqualTo("NONE"));
         assertThat(store.instructions("isa", E)).isEmpty();
-        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());   // 앞의 매도 지시 한 통뿐
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());   // 지시는 08:00에만 알림
     }
 
     // ------------------------------------------------------------------ 알림
     @Test
-    @DisplayName("알림 — 밤에 한 통, E 08:00 뒤 첫 주기에 한 통 더, 각각 한 번씩. 글은 종목 코드·이름·수량만(금액·평가액·현금·기준가 없음)")
-    void nightAndMorningOnce() {
+    @DisplayName("지시 알림 — 밤에는 없고 E 08:00 뒤 첫 주기에 한 통만, 글은 종목 코드·이름·수량만(금액·평가액·현금·기준가 없음)")
+    void morningNoticeOnly() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         standardTargets();
 
         cycleAt("2026-11-06T22:35");
         cycleAt("2026-11-06T22:45");
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
         cycleAt("2026-11-09T08:05");
         cycleAt("2026-11-09T08:15");
         cycleAt("2026-11-09T09:10");
 
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        String night = PaperTelegram.plain(texts.getAllValues().get(0));
-        assertThat(night).isEqualTo("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n"
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
+        assertThat(PaperTelegram.plain(texts.getValue())).isEqualTo("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n"
                 + "• 매수 000660 합성하이닉스 15주\n"
                 + "• 매수 005930 합성전자 40주\n"
                 + "• 매수 153130 합성 단기채권 1주\n\n"
-                + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n다르게 매매했으면 화면에서 고치세요.");
-        assertThat(texts.getAllValues()).allSatisfy(t -> assertThat(t).doesNotContain("원", "10000", "20000", "100000", "900000", "1000000",
-                "%"));
-        assertThat(PaperTelegram.plain(texts.getAllValues().get(1))).isEqualTo(night);
+                + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n"
+                + "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결가가 다르면 잔고에서 고치세요.");
+        assertThat(texts.getValue()).doesNotContain("원", "10000", "20000", "100000", "900000", "1000000", "%");
         assertThat(store.instructions("isa", E)).allSatisfy(i -> {
-            assertThat(i.notifiedNightAt()).isEqualTo(kst("2026-11-06T22:35"));
+            assertThat(i.notifiedNightAt()).isNull();
             assertThat(i.notifiedMorningAt()).isEqualTo(kst("2026-11-09T08:05"));
         });
     }
 
     @Test
-    @DisplayName("보내기에 실패하면 다음 주기에 다시, 텔레그램이 설정되지 않아 08:00까지 못 보낸 밤 알림은 버리고 아침 알림만")
-    void retryAndDropLateNight() {
+    @DisplayName("08:00 알림 — 보내기에 실패하면 다음 주기에 다시, 텔레그램이 설정되지 않으면 보내지 않음")
+    void morningNoticeRetries() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         standardTargets();
         when(telegram.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn("일시 실패").thenReturn(null);
 
-        cycleAt("2026-11-06T22:35");
-        assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.notifiedNightAt()).isNull());
-        cycleAt("2026-11-06T22:45");
-        assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.notifiedNightAt()).isEqualTo(kst("2026-11-06T22:45")));
-        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+        cycleAt("2026-11-09T08:05");
+        assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.notifiedMorningAt()).isNull());
+        cycleAt("2026-11-09T08:15");
+        assertThat(store.instructions("isa", E)).allSatisfy(i -> assertThat(i.notifiedMorningAt()).isEqualTo(kst("2026-11-09T08:15")));
 
         ManualAccountServiceDbTest.clean(jdbc);
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         PaperTelegram quiet = mock(PaperTelegram.class);
         when(quiet.configured()).thenReturn(false);
-        when(quiet.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn(null);
         job = new ManualAccountJob(store, paper, quiet, MAPPER, clock, true, true, 600_000);
-        cycleAt("2026-11-06T22:35");
+        cycleAt("2026-11-09T08:05");
         verify(quiet, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
-        when(quiet.configured()).thenReturn(true);
-        cycleAt("2026-11-09T08:10");
-        cycleAt("2026-11-09T08:20");
-        verify(quiet, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
-        assertThat(store.instructions("isa", E)).allSatisfy(i -> {
-            assertThat(i.notifiedNightAt()).as("08:00 뒤에는 밤 알림을 버림").isNull();
-            assertThat(i.notifiedMorningAt()).isEqualTo(kst("2026-11-09T08:10"));
-        });
     }
 
-    // ------------------------------------------------------------------ 자동 기록
+    // ------------------------------------------------------------------ 만료(앞 지시를 기다리지 않음 — ADR 0034)
     @Test
-    @DisplayName("E 밤 시가로 자동 기록(AUTO·비용 0·RECORDED) — 사용자가 먼저 그 지시에 넣은 행이 있으면 자동 기록하지 않고 RECORDED, 시가가 없는 종목은 PLANNED")
-    void autoRecordsAtOpenPrices() {
+    @DisplayName("세션 마감이 지난 미확인 지시는 SKIPPED(expired)로 닫고 잔고는 그대로, 다음 세션 지시는 앞 지시를 기다리지 않고 잔고로 만든다")
+    void expiredInstructionsDoNotBlockNextPlan() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         standardTargets();
         cycleAt("2026-11-06T22:35");
-        List<Instruction> made = store.instructions("isa", E);
-        Instruction a = made.get(1);
-        store.insertLedger("isa", new LedgerValues(kst("2026-11-09T09:01"), "BUY", A, d("40"), d("10150"), null, d("50"), BigDecimal.ZERO,
-                a.id(), "USER", "직접"));
+        assertThat(lines(E)).hasSize(3);
 
-        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(B, d("20500")));
-        cycleAt("2026-11-09T08:55");
-        assertThat(store.ledger("isa")).as("개장 전에는 적지 않음").hasSize(3);
+        cycleAt("2026-11-09T15:25");
+        assertThat(lines(E)).as("마감 전 — 그대로").allSatisfy(line -> assertThat(line).endsWith("PLANNED"));
 
-        cycleAt("2026-11-09T21:00");
-        assertThat(lines(E)).containsExactly("BUY " + B + " 15 RECORDED", "BUY " + A + " 40 RECORDED", "BUY " + CASH + " 1 PLANNED");
-        List<LedgerRow> auto = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source())).toList();
-        assertThat(auto).singleElement().satisfies(r -> {
-            assertThat(r.symbol()).isEqualTo(B);
-            assertThat(r.quantity()).isEqualByComparingTo("15");
-            assertThat(r.price()).isEqualByComparingTo("20500");
-            assertThat(r.fee()).isEqualByComparingTo("0");
-            assertThat(r.tax()).isEqualByComparingTo("0");
-            assertThat(r.at()).isEqualTo(kst("2026-11-09T09:00"));
-            assertThat(r.instructionId()).isEqualTo(made.get(0).id());
+        targets(E2, Map.of(A, 50.0), Map.of(A, 10_000.0), true);
+        cycleAt("2026-11-09T22:35");   // 다음 세션 E2 — 규칙 계좌 E 결정 뒤
+
+        assertThat(store.instructions("isa", E)).hasSize(3).allSatisfy(i -> {
+            assertThat(i.status()).isEqualTo("SKIPPED");
+            assertThat(i.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
         });
-        assertThat(store.ledgerForInstruction(a.id())).singleElement().satisfies(r -> assertThat(r.source()).isEqualTo("USER"));
-
-        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(B, d("20500"), CASH, d("100100")));
-        cycleAt("2026-11-09T21:10");
-        assertThat(lines(E)).containsExactly("BUY " + B + " 15 RECORDED", "BUY " + A + " 40 RECORDED", "BUY " + CASH + " 1 RECORDED");
-        assertThat(store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source())).count()).isEqualTo(2);
+        assertThat(store.balance("isa").orElseThrow().cash()).as("잔고는 건드리지 않음").isEqualByComparingTo("900000");
+        assertThat(lines(E2)).as("앞 지시를 기다리지 않고 지금 잔고로").containsExactly("BUY " + A + " 40 PLANNED");
     }
 
     @Test
-    @DisplayName("매도 시가를 기다리는 동안 그 세션 매수도 기다리고(다음 세션 지시도 기록 대기), 매도 대금 뒤 현금이 모자라면 매수를 줄여 적음")
-    void sellsFirstAndReducedBuys() {
-        started("200000", "2026-11-06T14:55", X, "5", "20000");
-        when(paper.lastPrices(any())).thenReturn(Map.of(X, d("20000")));
-        targets(E, Map.of(A, 90.0), Map.of(A, 10_000.0), true);
+    @DisplayName("시작 전(잔고 행 없음)이면 계좌 행이 있어도 계산하지 않음")
+    void noPlanBeforeStart() {
+        store.insertAccount("isa", "ISA 계좌", "KR", BOOK, kst("2026-11-06T14:55"), d("1000000"));
+        standardTargets();
         cycleAt("2026-11-06T22:35");
-        assertThat(lines(E)).containsExactly("SELL " + X + " 5 PLANNED", "BUY " + A + " 18 PLANNED");
-
-        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(A, d("11500")));
-        targets(E2, Map.of(A, 90.0), Map.of(A, 11_000.0), true);
-        cycleAt("2026-11-09T21:00");
-        assertThat(lines(E)).as("매도 시가가 없으면 매수도 기다림").containsExactly("SELL " + X + " 5 PLANNED", "BUY " + A + " 18 PLANNED");
-        assertThat(store.session("isa", E2)).as("앞 세션 지시가 적히기 전에는 다음 지시를 만들지 않음").isEmpty();
-        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_RECORD);
-
-        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(X, d("19000"), A, d("11500")));
-        cycleAt("2026-11-09T22:00");
-        // 매도 5 × 19,000 = 95,000 → 현금 195,000 ÷ 11,500 = 16주(지시 18주)
-        assertThat(lines(E)).containsExactly("SELL " + X + " 5 RECORDED", "BUY " + A + " 18 RECORDED");
-        LedgerRow buy = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source()) && "BUY".equals(r.kind())).findFirst().orElseThrow();
-        assertThat(buy.quantity()).isEqualByComparingTo("16");
-        assertThat(buy.note()).contains("16주로 줄임");
-        assertThat(store.instructions("isa", E).get(1).reason().path("autoNote").asString()).isEqualTo("reduced-cash");
-        assertThat(ManualAccountLedger.firstInvalid(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList())).isNull();
-        assertThat(store.session("isa", E2)).as("기록이 끝나면 같은 주기에 다음 지시").isPresent();
-    }
-
-    @Test
-    @DisplayName("ISA-R1: E에 거래가 없어(거래량 0·정지) 시가가 다시 오지 않을 매도는 AUTO SKIPPED(halted) — 그 세션 매수는 기다리지 않고 현금까지 적고, "
-            + "다음 세션 지시를 만든다")
-    void haltedSellIsSkippedAndUnblocks() {
-        started("200000", "2026-11-06T14:55", X, "5", "20000");
-        when(paper.lastPrices(any())).thenReturn(Map.of(X, d("20000")));
-        targets(E, Map.of(A, 90.0), Map.of(A, 10_000.0), true);
-        cycleAt("2026-11-06T22:35");
-        assertThat(lines(E)).containsExactly("SELL " + X + " 5 PLANNED", "BUY " + A + " 18 PLANNED");
-
-        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(A, d("10000")));
-        when(paper.openUnfillable(eq(E), any())).thenReturn(Map.of(X, "halted"));
-        targets(E2, Map.of(A, 90.0), Map.of(A, 10_000.0), true);
-        cycleAt("2026-11-10T01:10");
-
-        assertThat(lines(E)).containsExactly("SELL " + X + " 5 SKIPPED", "BUY " + A + " 18 RECORDED");
-        Instruction sell = store.instructions("isa", E).get(0);
-        assertThat(sell.reason().path("skippedBy").asString()).isEqualTo("AUTO");
-        assertThat(sell.reason().path("autoNote").asString()).isEqualTo("halted");
-        LedgerRow buy = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source())).findFirst().orElseThrow();
-        assertThat(buy.quantity()).as("매도 대금 없이 현금 100,000 ÷ 10,000").isEqualByComparingTo("10");
-        assertThat(store.ledger("isa").stream().filter(r -> "SELL".equals(r.kind()))).as("정지된 매도는 장부에 쓰지 않음").isEmpty();
-        assertThat(store.session("isa", E2)).as("앞 세션이 풀려 다음 지시").isPresent();
+        assertThat(store.session("isa", E)).isEmpty();
+        assertThat(job.waiting()).isNull();
+        verify(paper, never()).openTargets(anyString(), any());
     }
 
     @Test
@@ -396,7 +328,6 @@ class ManualAccountJobDbTest {
             assertThat(i.reason().path("skippedBy").asString()).isEqualTo("AUTO");
             assertThat(i.reason().path("autoNote").asString()).isEqualTo("not-trading");
         });
-        assertThat(store.ledger("isa")).as("장부에 쓰지 않음").hasSize(2);
         assertThat(store.session("isa", E2)).isPresent();
     }
 
@@ -457,6 +388,7 @@ class ManualAccountJobDbTest {
             assertThat(row.detail().path("targetAt").asString()).isEqualTo(SYNC_AT.toString());
             assertThat(row.detail().path("coveredStopOrderIds").get(0).asLong()).isEqualTo(9L);
         });
+        cycleAt("2026-11-09T08:05");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(telegram).send(eq(PaperTelegram.Channel.ACCOUNT), text.capture());
         assertThat(PaperTelegram.plain(text.getValue())).contains("11/09(월) 09:10 매매 지시").contains("09:10 이후 시장가로 내면").doesNotContain("장전 동시호가");
@@ -486,34 +418,6 @@ class ManualAccountJobDbTest {
         assertThat(store.instructions("isa", E).getFirst().reason().has("targetAt")).isFalse();
     }
 
-    @Test
-    @DisplayName("시각 맞추기 지시 자동 기록 — 그 시각이 지난 뒤 09:10 사다리 값·장부 시각 09:10, 창이 없는 종목은 그 세션 시가로 어림(open-fallback), 그 밖은 기다림")
-    void timedAutoRecord() {
-        started("1000000", "2026-11-06T14:55", A, "10", "10000");
-        timedTargets(List.of(), List.of());
-        cycleAt("2026-11-06T22:35");
-        assertThat(lines(E)).hasSize(3);
-        when(paper.pricesAt(eq(E), eq(LocalTime.of(9, 10)), any())).thenReturn(Map.of(
-                B, new PaperMirrorService.LadderPrice(d("20500"), false, false),
-                A, new PaperMirrorService.LadderPrice(null, false, true)));
-        when(paper.openPrices(eq(E), any())).thenReturn(Map.of(A, d("10100")));
-
-        cycleAt("2026-11-09T09:05");
-        assertThat(store.ledger("isa")).as("지시 시각 전에는 적지 않음").hasSize(2);
-        verify(paper, never()).pricesAt(any(), any(), any());
-
-        cycleAt("2026-11-09T21:30");
-        assertThat(lines(E)).containsExactly("BUY " + B + " 15 RECORDED", "BUY " + A + " 40 RECORDED", "BUY " + CASH + " 1 PLANNED");
-        LedgerRow b = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source()) && B.equals(r.symbol())).findFirst().orElseThrow();
-        assertThat(b.price()).isEqualByComparingTo("20500");
-        assertThat(b.at()).isEqualTo(SYNC_AT);
-        assertThat(b.note()).contains("09:10 1분봉 값");
-        LedgerRow a = store.ledger("isa").stream().filter(r -> "AUTO".equals(r.source()) && A.equals(r.symbol())).findFirst().orElseThrow();
-        assertThat(a.price()).isEqualByComparingTo("10100");
-        assertThat(a.note()).contains("시가로 어림");
-        assertThat(store.instructions("isa", E).get(1).reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_OPEN_FALLBACK);
-    }
-
     // ------------------------------------------------------------------ 장중 스탑 지시(ADR 0033 결정 7)
     private static final Instant STOP_T = kst("2026-11-09T11:32");
 
@@ -535,7 +439,7 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @DisplayName("장중 STOP이면 30초 주기에 스탑 지시 하나(수량 = 장부 + 지시 시각이 지난 적지 않은 지시 증감), 같은 주문에 하나, 즉시 알림 한 통 — 종목·이름·수량만")
+    @DisplayName("장중 STOP이면 30초 주기에 스탑 지시 하나(수량 = 잔고 + 지시 시각이 지난 미확인 지시 증감), 같은 주문에 하나, 즉시 알림 한 통 — 종목·이름·수량만")
     void stopInstructionAndImmediateNotice() {
         timedPlanned(List.of());
         when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
@@ -545,7 +449,7 @@ class ManualAccountJobDbTest {
 
         assertThat(stops()).singleElement().satisfies(stop -> {
             assertThat(stop.paperOrderId()).isEqualTo(31L);
-            assertThat(stop.quantity()).as("장부 10주 + 09:10 매수 지시 40주(아직 적지 않음)").isEqualTo(50);
+            assertThat(stop.quantity()).as("잔고 10주 + 09:10 매수 지시 40주(미확인)").isEqualTo(50);
             assertThat(stop.timing()).isEqualTo("MARKET");
             assertThat(stop.targetAt()).isEqualTo(STOP_T);
             assertThat(stop.notifiedAt()).isNotNull();
@@ -561,7 +465,7 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @DisplayName("QA-322: 앞 세션 지시가 아직 적히지 않았으면 다음 세션 장중 스탑 지시 수량에 그 지시를 더하고(장부에 없는 종목도), 스탑 기록은 그 지시를 기다림")
+    @DisplayName("QA-322: 앞 세션 미확인 지시가 아직 닫히지 않았으면 다음 세션 장중 스탑 지시 수량에 그 지시를 더함(잔고에 없는 종목도)")
     void stopQuantityCountsEarlierSessionInstructions() {
         timedPlanned(List.of());   // E 09:10 지시: B 15주·A 40주·현금성 1주 매수 — E 1분봉 값을 못 구해 PLANNED 그대로
         when(paper.dueOrders(eq(BOOK), eq(E2), any())).thenReturn(List.of(stopAt(51L, B, "MARKET", kst("2026-11-10T11:32")),
@@ -570,14 +474,7 @@ class ManualAccountJobDbTest {
         stopCycleAt("2026-11-10T11:30:10");
 
         assertThat(store.stopInstructions("isa", E2)).extracting(s -> s.symbol() + " " + s.quantity())
-                .containsExactlyInAnyOrder(B + " 15", A + " 50");   // B: 장부 0 + E 지시 15, A: 장부 10 + E 지시 40
-
-        when(paper.dueOrders(eq(BOOK), eq(E2), any())).thenReturn(List.of());
-        when(paper.orderLadderPrice(eq(BOOK), anyLong())).thenReturn(Optional.of(new PaperMirrorService.LadderPrice(d("9700"), false,
-                false)));
-        cycleAt("2026-11-10T21:30");
-        assertThat(store.stopInstructions("isa", E2)).as("앞 세션 지시가 먼저 적혀야 보유가 맞음 — 기다림")
-                .allSatisfy(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
+                .containsExactlyInAnyOrder(B + " 15", A + " 50");   // B: 잔고 0 + E 지시 15, A: 잔고 10 + E 지시 40
     }
 
     @Test
@@ -602,7 +499,7 @@ class ManualAccountJobDbTest {
         timedPlanned(List.of());
         when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(new DueOrder(41L, 41L, A, "SELL", "NEXT_CLOSE", "STOP",
                 kst("2026-11-09T15:30"), kst("2026-11-09T15:20"), true, null, null, null)));
-        store.setInstructionsConfirmed("isa", store.instructions("isa", E).stream().map(Instruction::id).toList(), kst("2026-11-09T09:30"));   // 장 중반 확인 알림은 빼고 스탑 글만
+        store.instructions("isa", E).forEach(i -> store.updateInstructionStatus(i.id(), "RECORDED", "PLANNED", Map.of("recordedBy", "USER")));   // 확인 알림은 빼고 스탑 글만
         org.mockito.Mockito.clearInvocations(telegram);
         stopCycleAt("2026-11-09T15:21");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
@@ -612,7 +509,7 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @DisplayName("마감까지 알리지 못한 스탑 지시는 SKIPPED(not-notified) — 장부에 적지 않고 다음 세션 지시를 막지 않음")
+    @DisplayName("마감까지 알리지 못한 스탑 지시는 SKIPPED(not-notified) — 잔고를 바꾸지 않음, 다음 세션 지시를 막지 않음")
     void unnotifiedStopIsSkippedAtClose() {
         timedPlanned(List.of());
         when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
@@ -624,73 +521,26 @@ class ManualAccountJobDbTest {
             assertThat(stop.status()).isEqualTo("SKIPPED");
             assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_NOT_NOTIFIED);
         });
-        assertThat(store.ledger("isa").stream().filter(r -> r.stopInstructionId() != null)).isEmpty();
     }
 
     @Test
-    @DisplayName("알린 스탑 지시 자동 기록 — 그 세션 앞 지시가 적힌 뒤 그 모의 주문 사다리 값·기준 시각으로, 적히기 전에는 다음 세션 지시를 만들지 않음")
-    void stopAutoRecordAfterDaily() {
+    @DisplayName("알린 스탑 지시가 미확인으로 세션 마감을 넘기면 SKIPPED(expired), 보기에 금액 없이 그 상태")
+    void notifiedStopExpiresAtClose() {
         timedPlanned(List.of());
         when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
         stopCycleAt("2026-11-09T11:30");
         when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of());
-        targets(E2, Map.of(B, 30.0), Map.of(B, 20_000.0, CASH, 100_000.0), true);
-        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.of(new PaperMirrorService.LadderPrice(d("9700"), false, false)));
-
-        cycleAt("2026-11-09T21:20");
-        assertThat(stops()).as("09:10 지시가 아직 적히지 않음 — 스탑 기록 대기").allSatisfy(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
-
-        when(paper.pricesAt(eq(E), eq(LocalTime.of(9, 10)), any())).thenReturn(Map.of(
-                A, new PaperMirrorService.LadderPrice(d("10100"), false, false),
-                B, new PaperMirrorService.LadderPrice(d("20100"), false, false),
-                CASH, new PaperMirrorService.LadderPrice(d("100000"), false, false)));
-        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.empty());
-        cycleAt("2026-11-09T21:30");
-        assertThat(lines(E)).allSatisfy(l -> assertThat(l).endsWith("RECORDED"));
-        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
-        assertThat(store.session("isa", E2)).as("알린 스탑 지시가 적히기 전 — 다음 지시 대기").isEmpty();
-        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_RECORD);
-
-        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.of(new PaperMirrorService.LadderPrice(d("9700"), false, false)));
-        cycleAt("2026-11-09T21:40");
-        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.status()).isEqualTo("RECORDED"));
-        LedgerRow sell = store.ledger("isa").stream().filter(r -> r.stopInstructionId() != null).findFirst().orElseThrow();
-        assertThat(sell.kind()).isEqualTo("SELL");
-        assertThat(sell.quantity()).isEqualByComparingTo("50");
-        assertThat(sell.price()).isEqualByComparingTo("9700");
-        assertThat(sell.at()).isEqualTo(STOP_T);
-        assertThat(sell.source()).isEqualTo("AUTO");
-        assertThat(ManualAccountLedger.firstInvalid(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList())).isNull();
-        assertThat(store.session("isa", E2)).as("스탑까지 적힌 같은 주기에 다음 지시").isPresent();
+        cycleAt("2026-11-09T15:40");
+        assertThat(stops()).singleElement().satisfies(stop -> {
+            assertThat(stop.status()).isEqualTo("SKIPPED");
+            assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
+        });
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> shown = (List<Map<String, Object>>) service().view().get("stopInstructions");
         assertThat(shown).singleElement().satisfies(row -> {
-            assertThat(row).containsEntry("symbol", A).containsEntry("quantity", 50).containsEntry("status", "RECORDED");
+            assertThat(row).containsEntry("symbol", A).containsEntry("quantity", 50).containsEntry("status", "SKIPPED").containsEntry("autoNote", "expired");
             assertThat(row).doesNotContainKey("price");
         });
-    }
-
-    @Test
-    @DisplayName("스탑 지시 사다리 값을 그다음 날 07:00까지 못 구하면(모의 주문이 지워짐 등) 적지 않고 건너뜀(no-price) — 다음 지시를 막아 두지 않음")
-    void stopRecordGivesUpNextMorning() {
-        timedPlanned(List.of());
-        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "MARKET", STOP_T)));
-        stopCycleAt("2026-11-09T11:30");
-        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of());
-        when(paper.pricesAt(eq(E), eq(LocalTime.of(9, 10)), any())).thenReturn(Map.of(
-                A, new PaperMirrorService.LadderPrice(d("10100"), false, false),
-                B, new PaperMirrorService.LadderPrice(d("20100"), false, false),
-                CASH, new PaperMirrorService.LadderPrice(d("100000"), false, false)));
-        when(paper.orderLadderPrice(BOOK, 31L)).thenReturn(Optional.empty());
-
-        cycleAt("2026-11-09T23:00");
-        assertThat(stops()).singleElement().satisfies(stop -> assertThat(stop.status()).isEqualTo("PLANNED"));
-        cycleAt("2026-11-10T07:05");
-        assertThat(stops()).singleElement().satisfies(stop -> {
-            assertThat(stop.status()).isEqualTo("SKIPPED");
-            assertThat(stop.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_NO_PRICE);
-        });
-        assertThat(store.ledger("isa").stream().filter(r -> r.stopInstructionId() != null)).isEmpty();
     }
 
     @Test
@@ -705,73 +555,45 @@ class ManualAccountJobDbTest {
         return new ManualAccountService(store, paper, job, clock);
     }
 
-    private static ManualAccountService.LedgerRequest newRow(String kind, String symbol, String qty, String price, String amount, String at) {
-        return new ManualAccountService.LedgerRequest(null, kind, symbol, qty == null ? null : d(qty), price == null ? null : d(price),
-                amount == null ? null : d(amount), null, null, at, null, null);
-    }
-
     @SuppressWarnings("unchecked")
     private static Map<String, Object> block(Map<String, Object> view) {
         return (Map<String, Object>) view.get("instructions");
     }
 
     @Test
-    @DisplayName("ISA-R4: 다음 세션 지시를 만든 뒤 그 세션 08:00 전에 장부를 고치면 그 세션 PLANNED 지시와 세션 행을 지우고, 다음 주기에 고친 장부로 다시 만들어 "
-            + "'다시 계산' 밤 알림을 다시 보낸다")
-    void ledgerEditBeforeMorningReplans() {
+    @DisplayName("ISA-R4: 다음 세션 지시를 만든 뒤 그 세션 08:00 전에 잔고를 고치면 그 세션 PLANNED 지시와 세션 행을 지우고, 다음 주기에 고친 잔고로 다시 만든다")
+    void balanceEditBeforeMorningReplans() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         standardTargets();
         cycleAt("2026-11-06T22:35");
         assertThat(lines(E)).containsExactly("BUY " + B + " 15 PLANNED", "BUY " + A + " 40 PLANNED", "BUY " + CASH + " 1 PLANNED");
 
         clock.set(kst("2026-11-06T23:00"));
-        service().saveLedger(newRow("DEPOSIT", null, null, null, "1000000", "2026-11-06T22:59"));
-        assertThat(store.session("isa", E)).as("고친 장부로 다시 만들게").isEmpty();
+        service().setTotal(new ManualAccountService.TotalRequest(d("2000000"), Map.of()));
+        assertThat(store.session("isa", E)).as("고친 잔고로 다시 만들게").isEmpty();
         assertThat(store.instructions("isa", E)).isEmpty();
 
         cycleAt("2026-11-06T23:05");
-        // 평가액 2,000,000 — B 30, A 100 − 10 = 90, 현금성 2
+        // 평가액 2,000,000 — B 30, A 100 − 10 = 90, 현금성 2(총 잔고를 다시 넣었더니 현금 1,900,000)
         assertThat(lines(E)).containsExactly("BUY " + B + " 30 PLANNED", "BUY " + A + " 90 PLANNED", "BUY " + CASH + " 2 PLANNED");
-        ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        assertThat(PaperTelegram.plain(texts.getAllValues().get(0))).doesNotContain("다시 계산");
-        assertThat(PaperTelegram.plain(texts.getAllValues().get(1))).startsWith("[ISA 계좌] 11/09(월) 시가 매매 지시(다시 계산)\n\n")
-                .contains("• 매수 005930 합성전자 90주\n").doesNotContain("원", "%");
         assertThat(block(service().view())).containsEntry("ledgerChanged", false);
 
         cycleAt("2026-11-09T08:05");
-        verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        assertThat(PaperTelegram.plain(texts.getValue())).as("아침 알림도 다시 계산한 지시").contains("(다시 계산)").contains("90주");
-    }
-
-    @Test
-    @DisplayName("ISA-R4: 다시 계산해 지시가 없으면 '할 매매가 없음(다시 계산)' 한 통 — 앞서 보낸 지시를 내지 않게")
-    void ledgerEditBeforeMorningToNone() {
-        started("1000000", "2026-11-06T14:55", A, "10", "10000");
-        targets(E, Map.of(A, 20.0), Map.of(A, 10_000.0), true);
-        cycleAt("2026-11-06T22:35");
-        assertThat(lines(E)).containsExactly("BUY " + A + " 10 PLANNED");
-
-        clock.set(kst("2026-11-06T23:00"));
-        service().saveLedger(newRow("BUY", A, "10", "10000", null, "2026-11-06T22:50"));
-        cycleAt("2026-11-06T23:05");
-        assertThat(store.session("isa", E)).hasValueSatisfying(s -> assertThat(s.state()).isEqualTo("NONE"));
-        cycleAt("2026-11-06T23:15");
-
         ArgumentCaptor<String> texts = ArgumentCaptor.forClass(String.class);
-        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
-        assertThat(texts.getAllValues().get(1)).isEqualTo(ManualAccountNotices.noTrades(E));
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), texts.capture());
+        assertThat(PaperTelegram.plain(texts.getValue())).startsWith("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n").contains("• 매수 005930 합성전자 90주\n")
+                .doesNotContain("다시 계산", "원", "%");
     }
 
     @Test
-    @DisplayName("ISA-R4: 그 세션 08:00 뒤 장부를 고치면 지시를 지우지 않고(이미 장전 주문을 냈을 수 있음) 보기의 instructions.ledgerChanged가 참")
-    void ledgerEditAfterMorningFlags() {
+    @DisplayName("ISA-R4: 그 세션 08:00 뒤 잔고를 고치면 지시를 지우지 않고(이미 장전 주문을 냈을 수 있음) 보기의 instructions.ledgerChanged가 참")
+    void balanceEditAfterMorningFlags() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         standardTargets();
         cycleAt("2026-11-06T22:35");
 
         clock.set(kst("2026-11-09T08:20"));
-        service().saveLedger(newRow("DEPOSIT", null, null, null, "1000", "2026-11-09T08:19"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("1001000"), Map.of()));
         cycleAt("2026-11-09T08:25");
 
         assertThat(lines(E)).containsExactly("BUY " + B + " 15 PLANNED", "BUY " + A + " 40 PLANNED", "BUY " + CASH + " 1 PLANNED");
@@ -815,14 +637,19 @@ class ManualAccountJobDbTest {
         assertThat(LocalTime.of(8, 0)).isEqualTo(ManualAccountJob.MORNING);
     }
 
-    // ------------------------------------------------------------------ 장 중반 매매 확인(2026-11-08)
+    // ------------------------------------------------------------------ 장 중반·마감 30분 전 확인 알림(ADR 0034)
     private long dailyInstruction(LocalDate session, String symbol, String side, int quantity) {
         return store.insertInstruction("isa", new NewInstruction(session, symbol, side, quantity, d("10000"), d("10"), MAPPER.createObjectNode()))
                 .orElseThrow();
     }
 
-    private void userTrade(String at, String kind, String symbol, String quantity) {
-        store.insertLedger("isa", new LedgerValues(kst(at), kind, symbol, d(quantity), d("10000"), null, BigDecimal.ZERO, BigDecimal.ZERO, null, "USER", null));
+    private long stopInstruction(LocalDate session, long paperOrder, String symbol, int quantity, Instant notifiedAt) {
+        long id = store.insertStopInstruction("isa", new ManualAccountStore.NewStopInstruction(session, paperOrder, symbol, quantity, "MARKET", kst("2026-11-09T10:00"),
+                MAPPER.createObjectNode())).orElseThrow();
+        if (notifiedAt != null) {
+            store.markStopNotified(List.of(id), notifiedAt);
+        }
+        return id;
     }
 
     private List<String> sentTexts(int times) {
@@ -832,74 +659,82 @@ class ManualAccountJobDbTest {
     }
 
     @Test
-    @DisplayName("장 중반 확인 — 정규장 절반(12:15) 전에는 없고, 지나면 '매매함'도 사용자 체결도 없는 오늘 지시를 한 통, 세션마다 한 번, 자동 기록된 지시도 포함")
-    void middayNoticeOncePerSession() {
+    @DisplayName("장 중반 — 정규장 절반(12:15) 전에는 없고, 지나면 오늘 미확인 지시·알린 스탑 지시를 종목 코드·이름·수량 한 통, 칸마다 한 번, 다음 세션 지시는 들지 않음")
+    void middayReminderOnce() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000", B, "5", "20000");
         long sell = dailyInstruction(E, A, "SELL", 3);
         long buy = dailyInstruction(E, CASH, "BUY", 2);
-        store.updateInstructionStatus(buy, "RECORDED", "PLANNED", Map.of("recordedBy", "AUTO"));
         dailyInstruction(E2, B, "SELL", 1);                 // 다음 세션 지시 — 오늘 알림에 들지 않음
+        long stop = stopInstruction(E, 91L, X, 4, kst("2026-11-09T10:00"));
 
-        job.middayNotify(kst("2026-11-09T12:14:30"));
+        job.reminders(kst("2026-11-09T12:14:30"));
         verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
-        job.middayNotify(kst("2026-11-09T12:15:00"));
+        job.reminders(kst("2026-11-09T12:15:00"));
         assertThat(sentTexts(1)).singleElement().asString().startsWith("[ISA 계좌] 11/09(월) 매매 확인")
-                .contains("매도 " + A + " 합성전자 3주", "매수 " + CASH + " 합성 단기채권 2주").doesNotContain(B);
+                .contains("매도 " + A + " 합성전자 3주", "매수 " + CASH + " 합성 단기채권 2주", "매도 " + X + " 합성화학 4주", "실제 매매를 볼 수 없습니다")
+                .doesNotContain(B, "원", "10000");
         assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).isEqualTo(kst("2026-11-09T12:15:00"));
+        assertThat(store.stopInstruction(stop).orElseThrow().notifiedMiddayAt()).isEqualTo(kst("2026-11-09T12:15:00"));
+        assertThat(store.instruction(buy).orElseThrow().notifiedMiddayAt()).isNotNull();
 
-        job.middayNotify(kst("2026-11-09T12:15:30"));
-        job.middayNotify(kst("2026-11-09T14:00:00"));
+        job.reminders(kst("2026-11-09T12:15:30"));
+        job.reminders(kst("2026-11-09T14:00:00"));
         verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 
     @Test
-    @DisplayName("장 중반 확인 — '매매함' 표시·건너뜀·사용자가 지시에 묶어 적은 체결은 빼고, 모두 빠지면 보내지 않음")
-    void middayNoticeSkipsConfirmedSkippedAndUserRecorded() {
-        started("1000000", "2026-11-06T14:55", A, "10", "10000", B, "5", "20000");
-        long confirmed = dailyInstruction(E, A, "SELL", 3);
+    @DisplayName("마감 30분 전(15:00) — 장 중반과 별도로 한 번 더, 칸마다 한 번, 마감 뒤에는 없음")
+    void precloseReminderOnce() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        long sell = dailyInstruction(E, A, "SELL", 3);
+        long stop = stopInstruction(E, 91L, A, 2, kst("2026-11-09T10:00"));
+
+        job.reminders(kst("2026-11-09T12:20"));
+        job.reminders(kst("2026-11-09T14:59:30"));
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+
+        job.reminders(kst("2026-11-09T15:00"));
+        List<String> texts = sentTexts(2);
+        assertThat(texts.get(1)).startsWith("[ISA 계좌] 11/09(월) 마감 전 매매 확인").contains("마감 30분 전까지");
+        assertThat(store.instruction(sell).orElseThrow().notifiedPrecloseAt()).isEqualTo(kst("2026-11-09T15:00"));
+        assertThat(store.stopInstruction(stop).orElseThrow().notifiedPrecloseAt()).isEqualTo(kst("2026-11-09T15:00"));
+
+        job.reminders(kst("2026-11-09T15:05"));
+        job.reminders(kst("2026-11-09T15:31"));
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+    }
+
+    @Test
+    @DisplayName("확인 알림 — 확인(RECORDED)·건너뜀·아직 알리지 못한 스탑은 빼고, 없으면 보내지 않음. 그 시각 뒤에 즉시 알림을 보낸 스탑은 바로 다시 알리지 않음")
+    void remindersOnlyUnconfirmed() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        long recorded = dailyInstruction(E, A, "SELL", 3);
         long skipped = dailyInstruction(E, B, "SELL", 1);
-        long recorded = dailyInstruction(E, X, "BUY", 2);
-        store.setInstructionsConfirmed("isa", List.of(confirmed), kst("2026-11-09T09:30"));
-        store.updateInstructionStatus(skipped, "SKIPPED", "PLANNED", Map.of("skippedBy", "USER"));
         store.updateInstructionStatus(recorded, "RECORDED", "PLANNED", Map.of("recordedBy", "USER"));
+        store.updateInstructionStatus(skipped, "SKIPPED", "PLANNED", Map.of("skippedBy", "USER"));
+        stopInstruction(E, 91L, X, 4, null);                                  // 아직 즉시 알림 전
+        long fresh = stopInstruction(E, 92L, CASH, 2, kst("2026-11-09T14:58"));   // 장 중반 뒤 즉시 알림
 
-        job.middayNotify(kst("2026-11-09T12:20"));
-
+        job.reminders(kst("2026-11-09T12:20"));
+        job.reminders(kst("2026-11-09T14:59:30"));
         verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+        assertThat(store.stopInstruction(fresh).orElseThrow().notifiedMiddayAt()).isNull();
+
+        job.reminders(kst("2026-11-09T15:02"));   // 15:00 뒤 첫 확인 — 14:58 즉시 알림은 그 전이라 마감 전 알림 대상
+        assertThat(sentTexts(1)).singleElement().asString().contains("합성 단기채권 2주").doesNotContain(X);
     }
 
     @Test
-    @DisplayName("장 중반 확인 — 지시에 묶지 않고 장부에 직접 넣은 그날 같은 방향·종목 체결은 수량에서 빼 남은 수량만, 다 찼으면 뺌(앞날 체결·반대 방향·자동 기록은 세지 않음)")
-    void middayNoticeReadsTodayUserTrades() {
-        started("1000000", "2026-11-06T14:55", A, "10", "10000", B, "5", "20000");
-        dailyInstruction(E, A, "SELL", 3);
-        dailyInstruction(E, B, "SELL", 2);
-        dailyInstruction(E, X, "BUY", 4);
-        userTrade("2026-11-09T10:01", "SELL", A, "1");
-        userTrade("2026-11-09T10:02", "SELL", B, "2");
-        userTrade("2026-11-06T15:00", "BUY", X, "4");       // 앞날 — 세지 않음
-        userTrade("2026-11-09T10:03", "SELL", X, "1");      // 반대 방향 — 세지 않음
-
-        job.middayNotify(kst("2026-11-09T12:20"));
-
-        assertThat(sentTexts(1)).singleElement().asString().contains("매도 " + A + " 합성전자 2주", "매수 " + X + " 합성화학 4주").doesNotContain("매도 " + B);
-        assertThat(store.instructions("isa", E).stream().filter(i -> i.symbol().equals(B)).findFirst().orElseThrow().notifiedMiddayAt()).isNull();
-    }
-
-    @Test
-    @DisplayName("장 중반 확인 — 마감 뒤에는 보내지 않고, 실패하면 다음 주기에 다시, 장 시간이 바뀐 날은 그날 절반(10:00~16:30 → 13:15), 30초 주기로 돎")
-    void middayNoticeTiming() {
+    @DisplayName("확인 알림 — 실패하면 다음 주기에 다시, 장 시간이 바뀐 날은 그날 시각(10:00~16:30 → 13:15·16:00), 30초 주기로 돎")
+    void remindersTimingAndRetry() {
         started("1000000", "2026-11-06T14:55", A, "10", "10000");
         long sell = dailyInstruction(E, A, "SELL", 3);
 
-        job.middayNotify(kst("2026-11-09T15:30"));
-        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
-
         when(telegram.send(eq(PaperTelegram.Channel.ACCOUNT), anyString())).thenReturn("telegram-failed").thenReturn(null);
-        job.middayNotify(kst("2026-11-09T12:15"));
+        job.reminders(kst("2026-11-09T12:15"));
         assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).as("실패 — 표시하지 않음").isNull();
-        job.middayNotify(kst("2026-11-09T12:15:30"));
+        job.reminders(kst("2026-11-09T12:15:30"));
         assertThat(store.instruction(sell).orElseThrow().notifiedMiddayAt()).isEqualTo(kst("2026-11-09T12:15:30"));
 
         dailyInstruction(E2, A, "SELL", 1);
@@ -908,5 +743,9 @@ class ManualAccountJobDbTest {
         verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
         job.stopCycle(kst("2026-11-10T13:15"));
         verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+        job.stopCycle(kst("2026-11-10T15:59"));
+        verify(telegram, times(3)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+        job.stopCycle(kst("2026-11-10T16:00"));
+        verify(telegram, times(4)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
     }
 }

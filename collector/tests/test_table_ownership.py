@@ -41,6 +41,8 @@ BACKEND_TABLES = (
     # ISA 계좌(V25, ADR 0029) — 연결되지 않은 다른 증권사 계좌의 장부·지시는 백엔드 feature/realtrade만 씁니다. 수집기는 읽지도 쓰지도 않습니다.
     # 장중 스탑 매도 지시(V28, ADR 0033)도 같습니다.
     "manual_accounts", "manual_ledger", "manual_instructions", "manual_sessions", "manual_stop_instructions",
+    # 잔고 구조(V31, ADR 0034)도 같습니다.
+    "manual_balance", "manual_positions", "manual_trades",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"

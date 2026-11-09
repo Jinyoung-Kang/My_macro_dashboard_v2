@@ -1,17 +1,19 @@
 package com.macrodash.feature.realtrade;
 
-import com.macrodash.Kst;
+import com.macrodash.analytics.KrxCosts;
+import com.macrodash.analytics.PaperLedger;
 import com.macrodash.feature.paper.PaperMirrorService;
 import com.macrodash.feature.paper.PaperMirrorService.BookInfo;
 import com.macrodash.feature.paper.PaperMirrorService.SessionHours;
+import com.macrodash.feature.paper.PaperMirrorService.TradeCosts;
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.feature.realtrade.RealTradeFixtures.MutableClock;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
-import com.macrodash.store.ManualAccountStore.LedgerRow;
-import com.macrodash.store.ManualAccountStore.LedgerValues;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import com.macrodash.store.ManualAccountStore.NewStopInstruction;
+import com.macrodash.store.ManualAccountStore.Position;
+import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,14 +35,15 @@ import static com.macrodash.feature.realtrade.RealTradeFixtures.kst;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * ISA 계좌 API({@link ManualAccountService}, ADR 0029 — 명세 §1·§3·§5) — 실제 테스트 DB와 가짜 모의 공개 창으로: 시작 한 번만(한 트랜잭션), 장부 계산과
- * 응답 모양(요약·보유·장부·지시), 가격 모르는 보유면 손익 비움, 음수 장부 거절(400 ledger-invalid), 행 추가·고침(자동 기록 행은 USER가 됨)·삭제, 지시에 묶기
- * (RECORDED — 사용자 입력 우선), 지시 건너뜀, 시작 전 409. 종목·금액은 모두 합성 값입니다.
+ * ISA 계좌 API({@link ManualAccountService}, ADR 0034) — 실제 테스트 DB와 가짜 모의 공개 창으로: 시작 한 번만(현금 계산·이름 해석·옛 지시 닫기), 응답 모양(요약·보유·
+ * 지시·매매 내역), 총 잔고·수수료율·보유 고침(현금 음수도 저장), 확인(비용·보유까지 팔기·실시간/직전 종가·±40%·한 트랜잭션), 되돌림, 건너뜀. 종목·금액은 모두 합성 값입니다.
  */
 class ManualAccountServiceDbTest {
 
@@ -48,6 +51,7 @@ class ManualAccountServiceDbTest {
     static final String B = "000660";
     static final String C = "035420";
     static final LocalDate MONDAY = LocalDate.of(2026, 11, 9);
+    private static final BigDecimal COMMISSION_BP = new BigDecimal("1.5");
 
     private JdbcTemplate jdbc;
     private ManualAccountStore store;
@@ -59,8 +63,11 @@ class ManualAccountServiceDbTest {
         return new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc));
     }
 
-    /** 다섯 표를 비웁니다(이 기능만 쓰는 표 — 장부가 지시·스탑 지시(V28)를, 모두가 계좌를 참조하는 순서). */
+    /** 이 기능만 쓰는 표를 비웁니다 — 매매 내역·옛 장부가 지시를, 나머지가 계좌를 참조하는 순서. */
     static void clean(JdbcTemplate jdbc) {
+        jdbc.update("DELETE FROM manual_trades");
+        jdbc.update("DELETE FROM manual_positions");
+        jdbc.update("DELETE FROM manual_balance");
         jdbc.update("DELETE FROM manual_ledger");
         jdbc.update("DELETE FROM manual_stop_instructions");
         jdbc.update("DELETE FROM manual_instructions");
@@ -74,11 +81,27 @@ class ManualAccountServiceDbTest {
         store = store(jdbc);
         clean(jdbc);
         paper = mock(PaperMirrorService.class);
-        clock = new MutableClock(kst("2026-11-09T21:00"));
+        clock = new MutableClock(kst("2026-11-09T11:00"));
         when(paper.book(anyString())).thenAnswer(inv -> Optional.of(new BookInfo(inv.getArgument(0), "한국 규칙 계좌", "RULES", "KR", "ACTIVE",
                 LocalDate.of(2026, 10, 30), Instant.parse("2026-10-29T13:00:00Z"), "g")));
         when(paper.names(any())).thenReturn(Map.of(A, "합성전자"));
+        when(paper.allKrNames()).thenReturn(Map.of(A, "합성전자", B, "합성하이닉스", C, "합성화학"));
         when(paper.lastPrices(any())).thenReturn(Map.of(A, d("12000"), B, d("21000")));
+        when(paper.sessionHours(any())).thenAnswer(inv -> {
+            LocalDate date = inv.getArgument(0);
+            return Optional.of(new SessionHours(date, true, date.atTime(9, 0).atZone(RealTradeFixtures.SEOUL).toInstant(),
+                    date.atTime(15, 30).atZone(RealTradeFixtures.SEOUL).toInstant()));
+        });
+        // 수수료 = 금액 × bp(원 미만 절사), 세금은 코스피 20bp(매도만) — 실제 계산기로.
+        when(paper.krTradeCosts(anyString(), anyBoolean(), anyInt(), any(), any(), any())).thenAnswer(inv -> {
+            boolean sell = inv.getArgument(1);
+            int quantity = inv.getArgument(2);
+            BigDecimal price = inv.getArgument(3);
+            BigDecimal bp = inv.getArgument(4);
+            KrxCosts.Costs costs = KrxCosts.fill(sell ? PaperLedger.Side.SELL : PaperLedger.Side.BUY, KrxCosts.Instrument.KOSPI, LocalDate.of(2026, 11, 9),
+                    quantity, price, new KrxCosts.Rates(bp, BigDecimal.ZERO, KrxCosts.TaxRates.KRX_2026));
+            return new TradeCosts(costs.commission(), costs.tax(), C.equals(inv.getArgument(0)));
+        });
         ManualAccountJob job = new ManualAccountJob(store, paper, mock(PaperTelegram.class), MAPPER, clock, false, false, 600_000);
         service = new ManualAccountService(store, paper, job, clock);
     }
@@ -95,25 +118,60 @@ class ManualAccountServiceDbTest {
         });
     }
 
-    private void startSynthetic() {
-        service.start(new ManualAccountService.StartRequest(d("1000000"), "2026-11-06T14:55",
-                List.of(new ManualAccountService.StartBuy(A, d("10"), d("10000")), new ManualAccountService.StartBuy(B, d("5"), d("20000")))));
+    private static ManualAccountService.StartPosition line(String symbol, String quantity, String purchase) {
+        return new ManualAccountService.StartPosition(symbol, d(quantity), d(purchase));
     }
 
-    private static ManualAccountService.LedgerRequest row(Long id, String kind, String symbol, String qty, String price, String amount,
-                                                          String at, Long instructionId) {
-        return new ManualAccountService.LedgerRequest(id, kind, symbol, qty == null ? null : d(qty), price == null ? null : d(price),
-                amount == null ? null : d(amount), null, null, at, null, instructionId);
+    /** 총 잔고 1,000,000 — 합성전자 10주·합성하이닉스 5주(직전 종가 12,000·21,000) → 현금 775,000. */
+    private void startSynthetic() {
+        service.start(new ManualAccountService.StartRequest(d("1000000"), List.of(line(A, "10", "100000"), line(B, "5", "100000")), null));
+    }
+
+    private Position position(String symbol) {
+        return store.position("isa", symbol).orElseThrow();
+    }
+
+    private BigDecimal cash() {
+        return store.balance("isa").orElseThrow().cash();
     }
 
     private long instruction(String symbol, String side, int quantity) {
-        return store.insertInstruction(ManualAccountService.CODE, new NewInstruction(MONDAY, symbol, side, quantity, d("10000"), d("10"),
+        return instruction(MONDAY, symbol, side, quantity);
+    }
+
+    private long instruction(LocalDate session, String symbol, String side, int quantity) {
+        return store.insertInstruction(ManualAccountService.CODE, new NewInstruction(session, symbol, side, quantity, d("10000"), d("10"),
                 MAPPER.createObjectNode())).orElseThrow();
+    }
+
+    private long stop(long paperOrder, String symbol, int quantity) {
+        return store.insertStopInstruction(ManualAccountService.CODE, new NewStopInstruction(MONDAY, paperOrder, symbol, quantity, "MARKET", kst("2026-11-09T10:30"),
+                MAPPER.createObjectNode())).orElseThrow();
+    }
+
+    private static ManualAccountService.ApplyItem item(Long instructionId, Long stopId, String price, String source) {
+        return new ManualAccountService.ApplyItem(instructionId, stopId, price == null ? null : d(price), source);
+    }
+
+    private Map<String, Object> apply(ManualAccountService.ApplyItem... items) {
+        return service.apply(new ManualAccountService.ApplyRequest(List.of(items)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> summary() {
+        return (Map<String, Object>) service.view().get("summary");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Map<String, Object>> rows() {
+        Map<String, Map<String, Object>> out = new HashMap<>();
+        ((List<Map<String, Object>>) service.view().get("positions")).forEach(r -> out.put((String) r.get("symbol"), r));
+        return out;
     }
 
     // ------------------------------------------------------------------ 시작
     @Test
-    @DisplayName("시작은 한 번만 — 시작 현금(DEPOSIT)과 시작 매수(BUY, USER)를 한 트랜잭션으로, 다시 시작하면 409 already-started")
+    @DisplayName("시작은 한 번만 — 현금 = 총평가금액 − Σ(수량 × 직전 종가), 보유·시작 시각, 다시 시작하면 409 already-started")
     void startsOnce() {
         startSynthetic();
 
@@ -121,515 +179,394 @@ class ManualAccountServiceDbTest {
             assertThat(a.label()).isEqualTo("ISA 계좌");
             assertThat(a.sourceBook()).isEqualTo("kr_rules");
             assertThat(a.state()).isEqualTo("ACTIVE");
-            assertThat(a.startedAt()).isEqualTo(kst("2026-11-06T14:55"));
-            assertThat(a.startCash()).isEqualByComparingTo("1000000");
         });
-        List<LedgerRow> rows = store.ledger("isa");
-        assertThat(rows).extracting(LedgerRow::kind).containsExactly("DEPOSIT", "BUY", "BUY");
-        assertThat(rows).allSatisfy(r -> assertThat(r.source()).isEqualTo("USER"));
+        assertThat(store.balance("isa")).hasValueSatisfying(b -> {
+            assertThat(b.cash()).isEqualByComparingTo("775000");
+            assertThat(b.commissionBp()).as("기본 1.5bp").isEqualByComparingTo("1.5");
+            assertThat(b.startedAt()).isEqualTo(kst("2026-11-09T11:00"));
+        });
+        assertThat(position(A).quantity()).isEqualByComparingTo("10");
+        assertThat(position(A).purchaseAmount()).isEqualByComparingTo("100000");
         rejects(this::startSynthetic, 409, "already-started");
-        assertThat(store.ledger("isa")).hasSize(3);
     }
 
     @Test
-    @DisplayName("시작 매수가 시작 현금보다 크면 400 ledger-invalid이고 아무것도 쓰지 않음, 미래 시각·잘못된 종목은 400 invalid-request")
-    void startValidates() {
-        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100000"), null,
-                List.of(new ManualAccountService.StartBuy(A, d("11"), d("10000"))))), 400, "ledger-invalid");
-        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100000"), "2026-11-10T09:00", List.of())), 400, "invalid-request");
-        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100000"), null,
-                List.of(new ManualAccountService.StartBuy("ABC", d("1"), d("10"))))), 400, "invalid-request");
-        rejects(() -> service.start(new ManualAccountService.StartRequest(d("0"), null, List.of())), 400, "invalid-request");
-        rejects(() -> service.start(null), 400, "invalid-request");
-        assertThat(store.account("isa")).isEmpty();
+    @DisplayName("시작 가격 — 본문 실시간 → 직전 종가 → 매입 금액 어림(메모), 현금이 음수여도 저장(막지 않음)")
+    void startPricePrecedence() {
+        when(paper.lastPrices(any())).thenReturn(Map.of(B, d("21000")));
+        Map<String, Object> reply = service.start(new ManualAccountService.StartRequest(d("100000"),
+                List.of(line(A, "10", "100000"), line(B, "5", "90000"), line(C, "4", "20000")), Map.of(A, d("13000"))));
+
+        // A: 실시간 130,000 + B: 직전 종가 105,000 + C: 어림 20,000 → 현금 100,000 − 255,000
+        assertThat(cash()).isEqualByComparingTo("-155000");
+        assertThat(reply.get("notes")).asList().hasSize(1).first().asString().contains("어림");
+    }
+
+    @Test
+    @DisplayName("시작 — 이름으로 넣으면 코드로, 못 찾거나 여럿이면 400, 같은 종목 두 줄·잘못된 값 400이고 아무것도 쓰지 않음")
+    void startResolvesNames() {
+        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100"), List.of(line("없는이름", "1", "1")), null)), 400, "invalid-request");
+        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100"), List.of(line("합성", "1", "1")), null)), 400, "invalid-request");
+        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100"), List.of(line(A, "1", "1"), line("합성전자", "2", "2")), null)), 400, "invalid-request");
+        rejects(() -> service.start(new ManualAccountService.StartRequest(d("0"), List.of(), null)), 400, "invalid-request");
+        rejects(() -> service.start(new ManualAccountService.StartRequest(null, List.of(), null)), 400, "invalid-request");
+        rejects(() -> service.start(new ManualAccountService.StartRequest(d("100"), List.of(line(A, "0", "1")), null)), 400, "invalid-request");
+        assertThat(store.balance("isa")).isEmpty();
+        assertThat(store.account("isa")).as("계좌 행도 쓰지 않음").isEmpty();
+
+        service.start(new ManualAccountService.StartRequest(d("1000000"), List.of(line("합성화학", "1", "1000")), null));
+        assertThat(store.positions("isa")).extracting(Position::symbol).containsExactly(C);
+    }
+
+    @Test
+    @DisplayName("시작 — 이미 있는 계좌 행은 재사용하고, 옛 PLANNED 지시·스탑 지시는 SKIPPED(restart), 아직 열리지 않은 세션은 지워 새 잔고로 다시 만들게 함")
+    void startReusesAccountAndClosesOld() {
+        store.insertAccount("isa", "옛 이름", "KR", "kr_rules", kst("2026-11-01T09:00"), d("1"));
+        long past = instruction(MONDAY.minusDays(3), A, "BUY", 1);
+        long oldStop = stop(71, A, 1);
+        LocalDate tomorrow = MONDAY.plusDays(1);
+        long upcoming = instruction(tomorrow, A, "SELL", 1);
+        store.insertSession("isa", MONDAY.minusDays(3), "PLANNED", null, MAPPER.createObjectNode());
+        store.insertSession("isa", tomorrow, "PLANNED", null, MAPPER.createObjectNode());
+
+        startSynthetic();
+
+        assertThat(store.account("isa").orElseThrow().label()).isEqualTo("옛 이름");
+        assertThat(store.instruction(past).orElseThrow()).satisfies(i -> {
+            assertThat(i.status()).isEqualTo("SKIPPED");
+            assertThat(i.reason().path("autoNote").asString()).isEqualTo("restart");
+        });
+        assertThat(store.stopInstruction(oldStop).orElseThrow().status()).isEqualTo("SKIPPED");
+        assertThat(store.instruction(upcoming)).as("아직 열리지 않은 세션의 지시 — 같은 (세션, 종목) 유일 제약이라 지움").isEmpty();
+        assertThat(store.session("isa", tomorrow)).isEmpty();
+        assertThat(store.session("isa", MONDAY.minusDays(3))).as("지난 세션 기록은 남김").isPresent();
     }
 
     // ------------------------------------------------------------------ 보기
     @Test
-    @DisplayName("보기 — 요약(현금·평가액·순입금·손익), 보유(평단·마지막 가격·비중), 장부(매매 행 금액 = 수량 × 체결가), 지시 없음")
+    @DisplayName("보기 — 요약(현금·평가액·총 잔고·매입 금액 합·평가손익·수수료율), 보유(평단·현재가·평가액·손익·비중·수수료·세금 누적), 없는 값 null")
     void viewShape() {
         startSynthetic();
+        long sell = instruction(A, "SELL", 4);
+        apply(item(sell, null, "12000", "live"));
 
         Map<String, Object> view = service.view();
-
         assertThat(view).containsEntry("available", true).containsEntry("started", true);
         @SuppressWarnings("unchecked")
-        Map<String, Object> account = (Map<String, Object>) view.get("account");
-        assertThat(account).containsEntry("code", "isa").containsEntry("label", "ISA 계좌").containsEntry("market", "KR")
-                .containsEntry("sourceBook", "kr_rules").containsEntry("sourceLabel", "한국 규칙 계좌").containsEntry("state", "ACTIVE")
-                .containsEntry("startedAt", "2026-11-06T05:55:00Z");
-        @SuppressWarnings("unchecked")
         Map<String, Object> summary = (Map<String, Object>) view.get("summary");
-        assertThat((BigDecimal) summary.get("cash")).isEqualByComparingTo("800000");
-        assertThat((BigDecimal) summary.get("marketValue")).as("10 × 12,000 + 5 × 21,000").isEqualByComparingTo("225000");
-        assertThat((BigDecimal) summary.get("equity")).isEqualByComparingTo("1025000");
-        assertThat((BigDecimal) summary.get("netDeposit")).isEqualByComparingTo("1000000");
-        assertThat((BigDecimal) summary.get("profitLoss")).isEqualByComparingTo("25000");
-        assertThat((BigDecimal) summary.get("profitLossPct")).isEqualByComparingTo("2.5");
-        assertThat((List<?>) summary.get("unpriced")).isEmpty();
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> holdings = (List<Map<String, Object>>) view.get("holdings");
-        assertThat(holdings).extracting(h -> h.get("symbol")).containsExactly(B, A);
-        Map<String, Object> a = holdings.get(1);
+        // 현금 775,000 + 48,000 − 수수료 7 − 세금 96 = 822,897; A 6주·B 5주 평가 72,000 + 105,000
+        assertThat((BigDecimal) summary.get("cash")).isEqualByComparingTo("822897");
+        assertThat((BigDecimal) summary.get("marketValue")).isEqualByComparingTo("177000");
+        assertThat((BigDecimal) summary.get("totalAsset")).isEqualByComparingTo("999897");
+        assertThat((BigDecimal) summary.get("purchaseTotal")).isEqualByComparingTo("160000");
+        assertThat((BigDecimal) summary.get("profitLoss")).isEqualByComparingTo("17000");
+        assertThat((BigDecimal) summary.get("profitLossPct")).isEqualByComparingTo("10.63");
+        assertThat((BigDecimal) summary.get("feesPaid")).isEqualByComparingTo("7");
+        assertThat((BigDecimal) summary.get("taxesPaid")).isEqualByComparingTo("96");
+        assertThat((BigDecimal) summary.get("commissionPct")).isEqualByComparingTo("0.015");
+        assertThat(summary.get("unpriced")).asList().isEmpty();
+
+        Map<String, Object> a = rows().get(A);
         assertThat(a).containsEntry("name", "합성전자");
         assertThat((BigDecimal) a.get("avgPrice")).isEqualByComparingTo("10000");
+        assertThat((BigDecimal) a.get("purchaseAmount")).isEqualByComparingTo("60000");
         assertThat((BigDecimal) a.get("lastPrice")).isEqualByComparingTo("12000");
-        assertThat((BigDecimal) a.get("weightPct")).isEqualByComparingTo("11.71");
+        assertThat((BigDecimal) a.get("marketValue")).isEqualByComparingTo("72000");
+        assertThat((BigDecimal) a.get("profitLoss")).isEqualByComparingTo("12000");
+        assertThat((BigDecimal) a.get("profitLossPct")).isEqualByComparingTo("20");
+        assertThat((BigDecimal) a.get("weightPct")).isEqualByComparingTo("7.20");
+        assertThat((BigDecimal) a.get("feesPaid")).isEqualByComparingTo("7");
+        assertThat((BigDecimal) a.get("taxesPaid")).isEqualByComparingTo("96");
+        assertThat((BigDecimal) rows().get(B).get("feesPaid")).as("낸 비용이 없으면 0").isEqualByComparingTo("0");
+
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> ledger = (List<Map<String, Object>>) view.get("ledger");
-        assertThat(ledger).hasSize(3);
-        assertThat(ledger).anySatisfy(r -> {
-            assertThat(r).containsEntry("kind", "BUY").containsEntry("symbol", A).containsEntry("source", "USER");
-            assertThat((BigDecimal) r.get("amount")).isEqualByComparingTo("100000");
-        });
-        assertThat(view.get("instructions")).isNull();
-        assertThat((List<?>) view.get("recentInstructions")).isEmpty();
-        assertThat(view.get("notes").toString()).contains("수수료·세금 0").contains("정기 작업이 꺼져");
+        Map<String, Object> trade = ((List<Map<String, Object>>) view.get("trades")).getFirst();
+        assertThat(trade).containsEntry("side", "SELL").containsEntry("symbol", A).containsEntry("name", "합성전자").containsEntry("priceSource", "live")
+                .containsEntry("taxAssumed", false).containsEntry("instructionId", sell);
+        assertThat((BigDecimal) trade.get("amount")).isEqualByComparingTo("48000");
+        assertThat((BigDecimal) trade.get("realizedPnl")).isEqualByComparingTo("7897");
+        assertThat((BigDecimal) trade.get("realizedPct")).isEqualByComparingTo("19.74");
     }
 
     @Test
-    @DisplayName("시작 전이면 started=false·요약 없음, 가격을 모르는 보유가 있으면 평가에서 빼고 unpriced에 담고 손익은 비움")
+    @DisplayName("시작 전이면 started=false·요약 없음, 가격을 모르는 보유는 평가에서 빼고 unpriced에 담고 손익은 비움, 고친 이름을 표시, 표가 없으면 available=false")
     void viewBeforeStartAndUnpriced() {
         Map<String, Object> before = service.view();
         assertThat(before).containsEntry("available", true).containsEntry("started", false);
         assertThat(before.get("summary")).isNull();
-        assertThat(before.get("notes").toString()).contains("시작 전");
+        assertThat(before.get("positions")).asList().isEmpty();
 
         startSynthetic();
+        service.savePosition(new ManualAccountService.PositionRequest(B, B, "합성 하이닉스 우선", d("5"), d("20000")));
         when(paper.lastPrices(any())).thenReturn(Map.of(A, d("12000")));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> summary = (Map<String, Object>) service.view().get("summary");
-        assertThat(summary.get("unpriced")).isEqualTo(List.of(B));
-        assertThat((BigDecimal) summary.get("marketValue")).isEqualByComparingTo("120000");
+        Map<String, Object> summary = summary();
+        assertThat(summary.get("unpriced")).asList().containsExactly(B);
         assertThat(summary.get("profitLoss")).isNull();
         assertThat(summary.get("profitLossPct")).isNull();
+        Map<String, Object> b = rows().get(B);
+        assertThat(b).containsEntry("name", "합성 하이닉스 우선");
+        assertThat(b.get("lastPrice")).isNull();
+        assertThat(b.get("marketValue")).isNull();
+        assertThat(b.get("profitLoss")).isNull();
+        assertThat(b.get("weightPct")).isNull();
+
+        SchemaCheck noTables = mock(SchemaCheck.class);
+        ManualAccountStore notReady = new ManualAccountStore(jdbc, MAPPER, noTables);
+        ManualAccountJob off = new ManualAccountJob(notReady, paper, mock(PaperTelegram.class), MAPPER, clock, false, false, 600_000);
+        Map<String, Object> view = new ManualAccountService(notReady, paper, off, clock).view();
+        assertThat(view).containsEntry("available", false).containsEntry("started", false);
+        assertThat(view.get("message")).asString().contains("V31");
     }
 
-    // ------------------------------------------------------------------ 장부 고침
+    // ------------------------------------------------------------------ 잔고 고침
     @Test
-    @DisplayName("행 추가·고침·삭제 — 고친 장부로 다시 셈, 음수가 되는 고침·삭제는 400 ledger-invalid, 없는 행 404, 시작 전 409 not-started")
-    void ledgerEdits() {
-        rejects(() -> service.saveLedger(row(null, "DEPOSIT", null, null, null, "1000", null, null)), 409, "not-started");
+    @DisplayName("총 잔고 다시 맞추기 — 현금만 다시 셈(본문 가격 → 직전 종가), 시작 전 409")
+    void setTotal() {
+        rejects(() -> service.setTotal(new ManualAccountService.TotalRequest(d("1000"), null)), 409, "not-started");
         startSynthetic();
 
-        long sell = (long) service.saveLedger(row(null, "SELL", A, "4", "11000", null, "2026-11-09T09:00", null)).get("id");
-        assertThat(ManualAccountLedger.replay(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList()).cash())
-                .isEqualByComparingTo("844000");
-        rejects(() -> service.saveLedger(row(null, "SELL", A, "7", "11000", null, "2026-11-09T10:00", null)), 400, "ledger-invalid");
-        rejects(() -> service.saveLedger(row(sell, "SELL", A, "11", "11000", null, "2026-11-09T09:00", null)), 400, "ledger-invalid");
+        service.setTotal(new ManualAccountService.TotalRequest(d("800000"), Map.of(A, d("13000"))));
 
-        service.saveLedger(row(sell, "SELL", A, "6", "11500", null, "2026-11-09T09:00", null));
-        LedgerRow edited = store.ledgerRow(sell).orElseThrow();
-        assertThat(edited.quantity()).isEqualByComparingTo("6");
-        assertThat(edited.price()).isEqualByComparingTo("11500");
-
-        LedgerRow deposit = store.ledger("isa").get(0);
-        rejects(() -> service.deleteLedger(deposit.id()), 400, "ledger-cash-negative");
-        service.deleteLedger(sell);
-        assertThat(store.ledgerRow(sell)).isEmpty();
-        rejects(() -> service.deleteLedger(999_999_999L), 404, "not-found");
-        rejects(() -> service.saveLedger(row(999_999_999L, "DEPOSIT", null, null, null, "1", null, null)), 404, "not-found");
-        rejects(() -> service.saveLedger(row(null, "BOGUS", null, null, null, "1", null, null)), 400, "invalid-request");
-        rejects(() -> service.saveLedger(row(null, "BUY", A, "1.1234567", "100", null, null, null)), 400, "invalid-request");
-        rejects(() -> service.saveLedger(row(null, "ADJUST", A, "0", null, null, null, null)), 400, "invalid-request");
+        // A 130,000 + B 105,000
+        assertThat(cash()).isEqualByComparingTo("565000");
+        assertThat(position(A).quantity()).isEqualByComparingTo("10");
     }
 
     @Test
-    @DisplayName("지시에 묶은 행은 그 지시를 RECORDED로(사용자 입력 우선), 방향·종목이 다르면 400, 묶인 마지막 행을 지우면 SKIPPED")
-    void linkingToInstructions() {
+    @DisplayName("수수료율 — 0~1%, 다음 확인부터 그 요율로, 범위 밖 400")
+    void setCommission() {
+        startSynthetic();
+        service.setCommission(new ManualAccountService.CommissionRequest(d("0.1")));
+        assertThat(store.balance("isa").orElseThrow().commissionBp()).isEqualByComparingTo("10");
+        assertThat((BigDecimal) summary().get("commissionPct")).isEqualByComparingTo("0.1");
+
+        long buy = instruction(A, "BUY", 1);
+        apply(item(buy, null, "12000", "live"));
+        assertThat(store.recentTrades("isa", 1).getFirst().fee()).as("12,000 × 10bp").isEqualByComparingTo("12");
+
+        rejects(() -> service.setCommission(new ManualAccountService.CommissionRequest(d("1.5"))), 400, "invalid-request");
+        rejects(() -> service.setCommission(new ManualAccountService.CommissionRequest(null)), 400, "invalid-request");
+    }
+
+    @Test
+    @DisplayName("보유 추가·고치기 — 매입 금액 = 수량 × 가격, 코드가 바뀌면 옮김, 이미 있는 코드로 옮기거나 추가하면 400, 없는 행 404, 현금은 그대로")
+    void savePosition() {
+        startSynthetic();
+        BigDecimal before = cash();
+
+        service.savePosition(new ManualAccountService.PositionRequest(null, "합성화학", null, d("3"), d("5000")));
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("15000");
+        assertThat(cash()).as("보유 고침은 현금을 바꾸지 않음").isEqualByComparingTo(before);
+
+        service.savePosition(new ManualAccountService.PositionRequest(C, C, null, d("4"), d("5000")));
+        assertThat(position(C).quantity()).isEqualByComparingTo("4");
+
+        service.savePosition(new ManualAccountService.PositionRequest(C, "051910", "합성소재", d("4"), d("5000")));
+        assertThat(store.position("isa", C)).isEmpty();
+        assertThat(position("051910").name()).isEqualTo("합성소재");
+
+        rejects(() -> service.savePosition(new ManualAccountService.PositionRequest("051910", A, null, d("1"), d("1"))), 400, "invalid-request");
+        rejects(() -> service.savePosition(new ManualAccountService.PositionRequest(null, A, null, d("1"), d("1"))), 400, "invalid-request");
+        rejects(() -> service.savePosition(new ManualAccountService.PositionRequest("999999", C, null, d("1"), d("1"))), 404, "not-found");
+        rejects(() -> service.savePosition(new ManualAccountService.PositionRequest(null, "없는이름", null, d("1"), d("1"))), 400, "invalid-request");
+        rejects(() -> service.savePosition(new ManualAccountService.PositionRequest(null, B, null, d("0"), d("1"))), 400, "invalid-request");
+
+        service.deletePosition("051910");
+        assertThat(store.position("isa", "051910")).isEmpty();
+        rejects(() -> service.deletePosition("051910"), 404, "not-found");
+        rejects(() -> service.deletePosition("abc"), 404, "not-found");
+    }
+
+    // ------------------------------------------------------------------ 확인
+    @Test
+    @DisplayName("확인 매수 — 화면 가격으로 현금 −(금액 + 수수료), 매입 금액·수량 +, RECORDED(recordedBy USER), 내역에 가격 출처, 시각은 누른 순간")
+    void applyBuy() {
         startSynthetic();
         long buy = instruction(A, "BUY", 2);
 
-        rejects(() -> service.saveLedger(row(null, "SELL", A, "2", "10000", null, "2026-11-09T09:00", buy)), 400, "invalid-request");
-        rejects(() -> service.saveLedger(row(null, "BUY", B, "2", "10000", null, "2026-11-09T09:00", buy)), 400, "invalid-request");
-        long id = (long) service.saveLedger(row(null, "BUY", A, "2", "10100", null, "2026-11-09T09:00", buy)).get("id");
-        assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("RECORDED");
-        assertThat(store.ledgerRow(id).orElseThrow().instructionId()).isEqualTo(buy);
+        Map<String, Object> reply = apply(item(buy, null, "12100", "live"));
 
-        service.deleteLedger(id);
-        assertThat(store.instruction(buy).orElseThrow().status()).as("다시 자동 기록하지 않게").isEqualTo("SKIPPED");
+        assertThat(reply).containsEntry("count", 1).containsEntry("skipped", 0);
+        assertThat(cash()).as("775,000 − 24,200 − 수수료 3").isEqualByComparingTo("750797");
+        assertThat(position(A).quantity()).isEqualByComparingTo("12");
+        assertThat(position(A).purchaseAmount()).isEqualByComparingTo("124200");
+        Instruction row = store.instruction(buy).orElseThrow();
+        assertThat(row.status()).isEqualTo("RECORDED");
+        assertThat(row.reason().path("recordedBy").asString()).isEqualTo("USER");
+        Trade trade = store.recentTrades("isa", 1).getFirst();
+        assertThat(trade.at()).isEqualTo(kst("2026-11-09T11:00"));
+        assertThat(trade.side()).isEqualTo("BUY");
+        assertThat(trade.priceSource()).isEqualTo("live");
+        assertThat(trade.costBasis()).isEqualByComparingTo("24200");
+        assertThat(trade.realizedPnl()).isNull();
+        assertThat(trade.instructionId()).isEqualTo(buy);
+        assertThat(trade.toString()).as("로그에 금액을 싣지 않음").doesNotContain("24200");
     }
 
     @Test
-    @DisplayName("ISA-R2: 자동 기록(AUTO) 행만 묶인 지시에 id 없이 그 지시 번호로 새 행을 넣으면 AUTO 행을 지우고 USER 행으로 바꿈(사용자 입력 우선 — 장부에 "
-            + "한 번만), USER 행이 이미 묶였으면 409 already-recorded")
-    void newRowReplacesAutoRowOnce() {
+    @DisplayName("확인 매도 — 비용·세금을 빼고, 매입 금액은 판 비율만큼, 실현 손익. 가격이 없으면 서버 직전 종가(close). 전량이면 행을 없앰")
+    void applySell() {
         startSynthetic();
-        long buy = instruction(A, "BUY", 3);
-        long autoRow = store.insertLedger("isa", new ManualAccountStore.LedgerValues(kst("2026-11-09T09:00"), "BUY", A, d("3"), d("10200"), null,
-                BigDecimal.ZERO, BigDecimal.ZERO, buy, "AUTO", "자동"));
-        store.updateInstructionStatus(buy, "RECORDED", "PLANNED", Map.of("recordedBy", "AUTO"));
+        long partial = instruction(A, "SELL", 4);
+        long all = instruction(B, "SELL", 5);
 
-        long id = (long) service.saveLedger(row(null, "BUY", A, "3", "10150", null, "2026-11-09T09:00", buy)).get("id");
+        Map<String, Object> reply = apply(item(partial, null, null, null), item(all, null, "21000", "close"));
 
-        assertThat(store.ledgerRow(autoRow)).as("자동 기록 행은 지움").isEmpty();
-        assertThat(store.ledgerForInstruction(buy)).singleElement().satisfies(r -> {
-            assertThat(r.id()).isEqualTo(id);
-            assertThat(r.source()).isEqualTo("USER");
-            assertThat(r.price()).isEqualByComparingTo("10150");
+        assertThat(reply).containsEntry("count", 2);
+        Trade soldA = store.recentTrades("isa", 200).stream().filter(t -> t.symbol().equals(A)).findFirst().orElseThrow();
+        assertThat(soldA.priceSource()).isEqualTo("close");
+        assertThat(soldA.price()).isEqualByComparingTo("12000");
+        assertThat(soldA.fee()).isEqualByComparingTo("7");
+        assertThat(soldA.tax()).isEqualByComparingTo("96");
+        assertThat(soldA.costBasis()).isEqualByComparingTo("40000");
+        assertThat(soldA.realizedPnl()).isEqualByComparingTo("7897");
+        assertThat(position(A).quantity()).isEqualByComparingTo("6");
+        assertThat(position(A).purchaseAmount()).isEqualByComparingTo("60000");
+        assertThat(store.position("isa", B)).as("전량 매도 — 행 없앰").isEmpty();
+        // 현금: 775,000 + (48,000 − 7 − 96) + (105,000 − 15 − 209 — 거래세 52 + 농특세 157)
+        assertThat(cash()).isEqualByComparingTo("927673");
+    }
+
+    @Test
+    @DisplayName("확인 매도 — 지시보다 적으면 보유까지(정수 주)만, 팔 보유가 없으면 그 지시만 SKIPPED(no-holding)하고 나머지는 반영")
+    void applySellClampsAndSkips() {
+        startSynthetic();
+        store.upsertPosition("isa", A, null, d("3.5"), d("35000"));
+        long clamp = instruction(A, "SELL", 10);
+        long none = instruction(C, "SELL", 2);
+        long buy = instruction(B, "BUY", 1);
+
+        Map<String, Object> reply = apply(item(clamp, null, "12000", "live"), item(none, null, "5000", "live"), item(buy, null, "21000", "live"));
+
+        assertThat(reply).containsEntry("count", 2).containsEntry("skipped", 1);
+        assertThat(position(A).quantity()).as("3주까지만 — 0.5주는 남김").isEqualByComparingTo("0.5");
+        assertThat(store.instruction(none).orElseThrow()).satisfies(i -> {
+            assertThat(i.status()).isEqualTo("SKIPPED");
+            assertThat(i.reason().path("autoNote").asString()).isEqualTo("no-holding");
         });
-        assertThat(ManualAccountLedger.replay(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList()).holdings().get(A)
-                .quantity()).as("시작 10 + 지시 3 — 두 번 세지 않음").isEqualByComparingTo("13");
         assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("RECORDED");
-
-        rejects(() -> service.saveLedger(row(null, "BUY", A, "3", "10100", null, "2026-11-09T09:00", buy)), 409, "already-recorded");
-        assertThat(store.ledgerForInstruction(buy)).hasSize(1);
     }
 
     @Test
-    @DisplayName("ISA-API-3·4, ISA-R6: 최신 세션보다 앞 세션의 PLANNED 지시는 pendingInstructions(세션 포함)로, instructions 묶음에 개장 시각(open)·"
-            + "사유 코드(reason)·ledgerChanged")
-    void viewPendingInstructionsAndReason() {
+    @DisplayName("확인 — 스탑 지시도 같은 길로(내역은 stopInstructionId), 세금 어림 표시, 매도가 현금을 음수로 만들어도 저장")
+    void applyStopAndNegativeCash() {
         startSynthetic();
-        long earlier = instruction(A, "BUY", 2);
-        store.insertSession("isa", MONDAY, "PLANNED", 11L, MAPPER.createObjectNode());
-        LocalDate tuesday = MONDAY.plusDays(1);
-        store.insertSession("isa", tuesday, "UNAVAILABLE", null, MAPPER.createObjectNode().put("reason", "record-pending"));
-        when(paper.sessionHours(any())).thenAnswer(inv -> {
-            LocalDate date = inv.getArgument(0);
-            LocalTime open = date.equals(tuesday) ? LocalTime.of(10, 0) : LocalTime.of(9, 0);
-            return Optional.of(new SessionHours(date, true, date.atTime(open).atZone(Kst.ZONE).toInstant(),
-                    date.atTime(15, 30).atZone(Kst.ZONE).toInstant()));
-        });
+        long stop = stop(71, A, 5);
+        apply(item(null, stop, "12000", "live"));
+        assertThat(store.stopInstruction(stop).orElseThrow().status()).isEqualTo("RECORDED");
+        Trade trade = store.recentTrades("isa", 1).getFirst();
+        assertThat(trade.stopInstructionId()).isEqualTo(stop);
+        assertThat(trade.instructionId()).isNull();
 
-        Map<String, Object> view = service.view();
+        store.upsertPosition("isa", C, null, d("2"), d("100"));
+        long sellC = instruction(C, "SELL", 1);
+        apply(item(sellC, null, "5000", "live"));
+        assertThat(store.recentTrades("isa", 1).getFirst().taxAssumed()).as("시장 구분을 모르는 종목").isTrue();
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> block = (Map<String, Object>) view.get("instructions");
-        assertThat(block).containsEntry("session", tuesday.toString()).containsEntry("status", "UNAVAILABLE")
-                .containsEntry("open", "2026-11-10T01:00:00Z").containsEntry("reason", "record-pending").containsEntry("ledgerChanged", false);
-        assertThat((List<?>) block.get("items")).isEmpty();
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pending = (List<Map<String, Object>>) view.get("pendingInstructions");
-        assertThat(pending).singleElement().satisfies(i -> assertThat(i).containsEntry("id", earlier).containsEntry("session", MONDAY.toString())
-                .containsEntry("symbol", A).containsEntry("name", "합성전자").containsEntry("status", "PLANNED").containsKey("notifiedMorningAt"));
-
-        store.updateInstructionStatus(earlier, "SKIPPED", "PLANNED", Map.of());
-        assertThat((List<?>) service.view().get("pendingInstructions")).isEmpty();
+        long big = instruction(B, "BUY", 100);
+        apply(item(big, null, "21000", "live"));
+        assertThat(cash()).as("막지 않고 저장").isNegative();
     }
 
     @Test
-    @DisplayName("ISA-API-1: 시작 시각을 비우면 지금을 초 단위로 자른 시각 — 시작 매수 행을 그 시각(초까지) 그대로 고쳐 저장해도 순서가 뒤집히지 않음")
-    void startTruncatesToSeconds() {
-        clock.set(kst("2026-11-09T21:02:03").plusMillis(456));
-        service.start(new ManualAccountService.StartRequest(d("1000000"), null, List.of(new ManualAccountService.StartBuy(A, d("10"), d("10000")))));
-
-        assertThat(store.account("isa").orElseThrow().startedAt()).isEqualTo(kst("2026-11-09T21:02:03"));
-        LedgerRow startBuy = store.ledger("isa").get(1);
-        assertThat(startBuy.at()).isEqualTo(kst("2026-11-09T21:02:03"));
-        service.saveLedger(new ManualAccountService.LedgerRequest(startBuy.id(), "BUY", A, d("10"), d("10000"), null, d("150"), null,
-                "2026-11-09T21:02:03", null, null));
-        assertThat(store.ledger("isa")).extracting(LedgerRow::kind).containsExactly("DEPOSIT", "BUY");
-        assertThat(store.ledgerRow(startBuy.id()).orElseThrow().fee()).isEqualByComparingTo("150");
-    }
-
-    @Test
-    @DisplayName("ISA-API-6: 시작 입금 행을 고치면 account.startCash도 장부를 따라 바뀜(시작 시각의 입금 합) — summary.netDeposit과 어긋나지 않음")
-    void startCashFollowsLedger() {
+    @DisplayName("확인 — 직전 종가 ±40% 밖 400, 가격을 모르면 400, 한 줄이라도 안 되면 아무것도 쓰지 않음(한 트랜잭션), 이미 확인 409, 건너뜀 400, 없는 지시 404, 형식 400")
+    void applyRejects() {
         startSynthetic();
-        LedgerRow deposit = store.ledger("isa").get(0);
-        service.saveLedger(row(deposit.id(), "DEPOSIT", null, null, null, "1200000", "2026-11-06T14:55", null));
+        long ok = instruction(A, "BUY", 1);
+        long bad = instruction(B, "BUY", 1);
 
-        Map<String, Object> view = service.view();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> account = (Map<String, Object>) view.get("account");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> summary = (Map<String, Object>) view.get("summary");
-        assertThat((BigDecimal) account.get("startCash")).isEqualByComparingTo("1200000");
-        assertThat((BigDecimal) summary.get("netDeposit")).isEqualByComparingTo("1200000");
+        rejects(() -> apply(item(ok, null, "12000", "live"), item(bad, null, "40000", "live")), 400, "invalid-request");
+        assertThat(store.instruction(ok).orElseThrow().status()).as("앞줄도 되돌림").isEqualTo("PLANNED");
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+
+        rejects(() -> apply(item(instruction(C, "BUY", 1), null, null, null)), 400, "invalid-request");   // C는 직전 종가 없음
+        apply(item(ok, null, "12000", "live"));
+        rejects(() -> apply(item(ok, null, "12000", "live")), 409, "already-recorded");
+
+        store.updateInstructionStatus(bad, "SKIPPED", "PLANNED", Map.of("skippedBy", "USER"));
+        rejects(() -> apply(item(bad, null, "21000", "live")), 400, "invalid-request");
+        rejects(() -> apply(item(999_999L, null, "21000", "live")), 404, "not-found");
+        rejects(() -> apply(item(1L, 2L, "21000", "live")), 400, "invalid-request");
+        rejects(() -> apply(item(null, null, "21000", "live")), 400, "invalid-request");
+        rejects(() -> apply(item(5L, null, "21000", "live"), item(5L, null, "21000", "live")), 400, "invalid-request");
+        rejects(() -> apply(item(5L, null, "21000", "bid")), 400, "invalid-request");
+        rejects(() -> service.apply(new ManualAccountService.ApplyRequest(List.of())), 400, "invalid-request");
     }
 
     @Test
-    @DisplayName("ISA-API-7: 표가 없으면 available:false와 message(안내 글), 목록 칸은 비움")
-    void viewWithoutTablesHasMessage() {
-        ManualAccountStore missing = mock(ManualAccountStore.class);
-        when(missing.ready()).thenReturn(false);
-        ManualAccountJob job = new ManualAccountJob(missing, paper, mock(PaperTelegram.class), MAPPER, clock, false, false, 600_000);
-
-        Map<String, Object> view = new ManualAccountService(missing, paper, job, clock).view();
-
-        assertThat(view).containsEntry("available", false).containsEntry("started", false);
-        assertThat((String) view.get("message")).contains("V25");
-        assertThat((List<?>) view.get("pendingInstructions")).isEmpty();
+    @DisplayName("확인 — 시작 전 409")
+    void applyBeforeStart() {
+        rejects(() -> apply(item(1L, null, "21000", "live")), 409, "not-started");
     }
 
+    // ------------------------------------------------------------------ 되돌림·건너뜀
     @Test
-    @DisplayName("자동 기록 행을 고치면 USER가 되고 지시 묶음은 그대로, 지시 건너뜀 — PLANNED는 SKIPPED, 자동 기록만 있는 RECORDED는 그 행을 지우고 SKIPPED, "
-            + "직접 입력이 묶였으면 400, 없는 지시 404")
-    void editAutoRowAndSkip() {
+    @DisplayName("되돌리기 — 매수는 현금·수량·매입 금액을 정확히 되돌리고 지시는 PLANNED(recordedBy 지움), 내역 행은 지움")
+    void undoBuy() {
         startSynthetic();
-        long planned = instruction(B, "SELL", 1);
+        long buy = instruction(A, "BUY", 2);
+        apply(item(buy, null, "12100", "live"));
+        long tradeId = store.recentTrades("isa", 1).getFirst().id();
+
+        service.undoTrade(tradeId);
+
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(position(A).quantity()).isEqualByComparingTo("10");
+        assertThat(position(A).purchaseAmount()).isEqualByComparingTo("100000");
+        Instruction row = store.instruction(buy).orElseThrow();
+        assertThat(row.status()).isEqualTo("PLANNED");
+        assertThat(row.reason().has("recordedBy")).isFalse();
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+        rejects(() -> service.undoTrade(tradeId), 404, "not-found");
+    }
+
+    @Test
+    @DisplayName("되돌리기 — 전량 매도를 되돌리면 행이 다시 생기고, 그 세션 마감이 지났으면 지시는 SKIPPED(expired)")
+    void undoSellAfterClose() {
+        startSynthetic();
+        long sell = instruction(B, "SELL", 5);
+        apply(item(sell, null, "21000", "live"));
+        assertThat(store.position("isa", B)).isEmpty();
+
+        clock.set(kst("2026-11-09T16:00"));
+        service.undoTrade(store.recentTrades("isa", 1).getFirst().id());
+
+        assertThat(position(B).quantity()).isEqualByComparingTo("5");
+        assertThat(position(B).purchaseAmount()).isEqualByComparingTo("100000");
+        assertThat(cash()).isEqualByComparingTo("775000");
+        Instruction row = store.instruction(sell).orElseThrow();
+        assertThat(row.status()).isEqualTo("SKIPPED");
+        assertThat(row.reason().path("autoNote").asString()).isEqualTo("expired");
+    }
+
+    @Test
+    @DisplayName("되돌리기 — 스탑 지시도 다시 PLANNED")
+    void undoStop() {
+        startSynthetic();
+        long stop = stop(71, A, 5);
+        apply(item(null, stop, "12000", "live"));
+        service.undoTrade(store.recentTrades("isa", 1).getFirst().id());
+        assertThat(store.stopInstruction(stop).orElseThrow().status()).isEqualTo("PLANNED");
+    }
+
+    @Test
+    @DisplayName("건너뜀 — PLANNED는 SKIPPED, 이미 건너뛴 지시는 그대로, 확인한 지시는 409, 대체된 지시 400, 없는 지시 404, 시작 전 409")
+    void skip() {
+        rejects(() -> service.skipInstruction(1), 409, "not-started");
+        startSynthetic();
+        long planned = instruction(A, "BUY", 1);
         service.skipInstruction(planned);
         assertThat(store.instruction(planned).orElseThrow().status()).isEqualTo("SKIPPED");
-        service.skipInstruction(planned);   // 이미 건너뜀 — 그대로
+        service.skipInstruction(planned);
 
-        long auto = instruction(A, "BUY", 3);
-        long autoRow = store.insertLedger("isa", new ManualAccountStore.LedgerValues(kst("2026-11-09T09:00"), "BUY", A, d("3"), d("10200"), null,
-                BigDecimal.ZERO, BigDecimal.ZERO, auto, "AUTO", "자동"));
-        store.updateInstructionStatus(auto, "RECORDED", "PLANNED", Map.of());
-        service.skipInstruction(auto);
-        assertThat(store.ledgerRow(autoRow)).isEmpty();
-        assertThat(store.instruction(auto).orElseThrow().status()).isEqualTo("SKIPPED");
+        long recorded = instruction(B, "BUY", 1);
+        apply(item(recorded, null, "21000", "live"));
+        rejects(() -> service.skipInstruction(recorded), 409, "already-recorded");
 
-        long fixed = instruction(C, "BUY", 1);
-        long fixedRow = store.insertLedger("isa", new ManualAccountStore.LedgerValues(kst("2026-11-09T09:00"), "BUY", C, d("1"), d("20000"), null,
-                BigDecimal.ZERO, BigDecimal.ZERO, fixed, "AUTO", "자동"));
-        store.updateInstructionStatus(fixed, "RECORDED", "PLANNED", Map.of());
-        service.saveLedger(row(fixedRow, "BUY", C, "1", "20300", null, "2026-11-09T09:00", null));
-        LedgerRow user = store.ledgerRow(fixedRow).orElseThrow();
-        assertThat(user.source()).isEqualTo("USER");
-        assertThat(user.instructionId()).as("본문에 지시 번호가 없어도 묶음 유지").isEqualTo(fixed);
-        rejects(() -> service.skipInstruction(fixed), 400, "invalid-request");
-        rejects(() -> service.skipInstruction(999_999_999L), 404, "not-found");
-
-        Instruction shown = store.instructions("isa", MONDAY).get(0);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> recent = (List<Map<String, Object>>) service.view().get("recentInstructions");
-        assertThat(recent).anySatisfy(i -> assertThat(i).containsEntry("id", shown.id()).containsEntry("session", MONDAY.toString()));
-    }
-
-    @Test
-    @DisplayName("'매매함' 표시 — 남기고 지우기, 건너뛴 지시·없는 번호는 세지 않음, 장부·지시 상태는 그대로, 화면 응답에 시각과 사용자 기록 여부, 빈 목록 400, 시작 전 409")
-    void confirmInstructions() {
-        rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(1L), true)), 409, "not-started");
-        startSynthetic();
-        long buy = instruction(C, "BUY", 2);
-        long sell = instruction(B, "SELL", 1);
-        long skipped = instruction(A, "SELL", 1);
-        service.skipInstruction(skipped);
-        int ledgerBefore = store.ledger("isa").size();
-
-        Map<String, Object> done = service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(buy, sell, skipped, 999_999_999L), null));
-        assertThat(done).containsEntry("ok", true).containsEntry("changed", 2);
-        assertThat(store.instruction(buy).orElseThrow().confirmedAt()).isEqualTo(clock.instant());
-        assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("PLANNED");
-        assertThat(store.instruction(skipped).orElseThrow().confirmedAt()).isNull();
-        assertThat(store.ledger("isa")).hasSize(ledgerBefore);
-        assertThat(service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(buy), true))).as("이미 표시됨").containsEntry("changed", 0);
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> recent = (List<Map<String, Object>>) service.view().get("recentInstructions");
-        assertThat(recent).anySatisfy(i -> assertThat(i).containsEntry("id", buy).containsEntry("confirmedAt", clock.instant().toString())
-                .containsEntry("notifiedMiddayAt", null).containsEntry("recordedByUser", false));
-
-        assertThat(service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(buy), false))).containsEntry("changed", 1);
-        assertThat(store.instruction(buy).orElseThrow().confirmedAt()).as("지움").isNull();
-
-        rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(), true)), 400, "invalid-request");
-        rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(null, true)), 400, "invalid-request");
-        rejects(() -> service.confirmInstructions(null), 400, "invalid-request");
-    }
-
-    // ------------------------------------------------------------------ 체결 바로 적기(2026-11-09 — '매매함'에서 체결가를 받음)
-    private static ManualAccountService.FillItem fill(long instructionId, String qty, String price) {
-        return new ManualAccountService.FillItem(instructionId, null, d(qty), d(price), null, null);
-    }
-
-    private static ManualAccountService.FillsRequest fills(ManualAccountService.FillItem... items) {
-        return new ManualAccountService.FillsRequest(List.of(items));
-    }
-
-    private long stop(String symbol, int quantity, String targetAt) {
-        return store.insertStopInstruction(ManualAccountService.CODE, new NewStopInstruction(MONDAY, 9100L + quantity, symbol, quantity, "MARKET",
-                kst(targetAt), MAPPER.createObjectNode())).orElseThrow();
-    }
-
-    @Test
-    @DisplayName("체결 입력 — 여러 줄을 한 트랜잭션으로 USER 행(세션 시각·수수료·세금)에 적고 지시는 RECORDED, 보유에 바로 반영, 지시와 다른 수량도 받음, 줄 순서와 상관없이 마지막 장부로 검사")
-    void fillsWriteLedgerAtOnce() {
-        startSynthetic();                                          // 현금 800,000, A 10주, B 5주
-        long sell = instruction(A, "SELL", 10);
-        long buy = instruction(B, "BUY", 40);
-
-        Map<String, Object> done = service.saveFills(fills(fill(buy, "38", "21000"),   // 매수를 앞에 — 840,000은 매도 대금 없이는 현금을 넘음(이 줄 수량으로는 798,000)
-                new ManualAccountService.FillItem(sell, null, d("10"), d("12000"), d("150"), d("240"))));
-
-        assertThat(done).containsEntry("ok", true).containsEntry("count", 2);
-        assertThat(store.instruction(sell).orElseThrow().status()).isEqualTo("RECORDED");
-        assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("RECORDED");
-        List<LedgerRow> written = store.ledgerForInstruction(sell);
-        assertThat(written).singleElement().satisfies(r -> {
-            assertThat(r.source()).isEqualTo("USER");
-            assertThat(r.kind()).isEqualTo("SELL");
-            assertThat(r.at()).as("자동 기록과 같은 시각(세션 09:00 — 달력을 모르면)").isEqualTo(kst("2026-11-09T09:00"));
-            assertThat(r.fee()).isEqualByComparingTo("150");
-            assertThat(r.tax()).isEqualByComparingTo("240");
-        });
-        assertThat(store.ledgerForInstruction(buy)).singleElement().satisfies(r -> assertThat(r.quantity()).as("지시 40주와 달라도 받음").isEqualByComparingTo("38"));
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> holdings = (List<Map<String, Object>>) service.view().get("holdings");
-        assertThat(holdings).extracting(h -> h.get("symbol")).containsExactly(B);
-        assertThat(new java.math.BigDecimal(holdings.get(0).get("quantity").toString())).isEqualByComparingTo("43");
-    }
-
-    @Test
-    @DisplayName("체결 입력 — 한 줄이라도 안 되면(보유보다 많은 매도) 400 ledger-invalid이고 아무것도 쓰지 않음")
-    void fillsAreAllOrNothing() {
-        startSynthetic();
-        long good = instruction(B, "BUY", 1);
-        long bad = instruction(A, "SELL", 10);
-        int before = store.ledger("isa").size();
-
-        rejects(() -> service.saveFills(fills(fill(good, "1", "21000"), fill(bad, "11", "12000"))), 400, "ledger-invalid");
-
-        assertThat(store.ledger("isa")).hasSize(before);
-        assertThat(store.instruction(good).orElseThrow().status()).isEqualTo("PLANNED");
-    }
-
-    @Test
-    @DisplayName("체결 입력 — 자동 기록 행은 사용자 행으로 바꾸고, 이미 직접 적은 지시는 409, 건너뛴 지시·잘못된 본문은 400, 없는 지시는 404, 아직 오지 않은 세션은 400")
-    void fillsGuards() {
-        startSynthetic();
-        long auto = instruction(A, "SELL", 2);
-        long autoRow = store.insertLedger("isa", new LedgerValues(kst("2026-11-09T09:00"), "SELL", A, d("2"), d("11000"), null, BigDecimal.ZERO, BigDecimal.ZERO,
-                auto, "AUTO", null));
-        store.updateInstructionStatus(auto, "RECORDED", null, Map.of("recordedBy", "AUTO"));
-
-        service.saveFills(fills(fill(auto, "2", "11500")));
-
-        assertThat(store.ledgerRow(autoRow)).as("자동 행은 지움").isEmpty();
-        assertThat(store.ledgerForInstruction(auto)).singleElement().satisfies(r -> {
-            assertThat(r.source()).isEqualTo("USER");
-            assertThat(r.price()).isEqualByComparingTo("11500");
-        });
-        rejects(() -> service.saveFills(fills(fill(auto, "2", "11600"))), 409, "already-recorded");
-
-        long skipped = instruction(B, "SELL", 1);
-        service.skipInstruction(skipped);
-        rejects(() -> service.saveFills(fills(fill(skipped, "1", "21000"))), 400, "invalid-request");
-        rejects(() -> service.saveFills(fills(fill(999_999_999L, "1", "21000"))), 404, "not-found");
-
-        long open = instruction("035420", "BUY", 1);
-        rejects(() -> service.saveFills(fills(new ManualAccountService.FillItem(null, null, d("1"), d("1"), null, null))), 400, "invalid-request");
-        rejects(() -> service.saveFills(fills(new ManualAccountService.FillItem(open, 1L, d("1"), d("1"), null, null))), 400, "invalid-request");
-        rejects(() -> service.saveFills(fills(fill(open, "1", "21000"), fill(open, "1", "21000"))), 400, "invalid-request");
-        rejects(() -> service.saveFills(fills(fill(open, "0", "21000"))), 400, "invalid-request");
-        rejects(() -> service.saveFills(fills(fill(open, "1", "0"))), 400, "invalid-request");
-        rejects(() -> service.saveFills(new ManualAccountService.FillsRequest(List.of())), 400, "invalid-request");
-        rejects(() -> service.saveFills(null), 400, "invalid-request");
-
-        clock.set(kst("2026-11-08T20:00"));                        // 세션 전날 — 체결 시각이 아직 오지 않음
-        rejects(() -> service.saveFills(fills(fill(open, "1", "21000"))), 400, "invalid-request");
-        assertThat(store.instruction(open).orElseThrow().status()).isEqualTo("PLANNED");
-    }
-
-    @Test
-    @DisplayName("체결 입력 — 장중 스탑 지시는 그 기준 시각의 매도 USER 행으로 묶이고 RECORDED, 자동 행은 바꾸며, 보기에 recordedByUser가 실림")
-    void fillsForStops() {
-        startSynthetic();
-        long open = stop(A, 4, "2026-11-09T09:12");
-        long auto = stop(B, 5, "2026-11-09T09:47");
-        long autoRow = store.insertLedger("isa", new LedgerValues(kst("2026-11-09T09:47"), "SELL", B, d("5"), d("19000"), null, BigDecimal.ZERO, BigDecimal.ZERO,
-                null, "AUTO", null, auto));
-        store.updateStopInstructionStatus(auto, "RECORDED", null, Map.of("recordedBy", "AUTO"));
-
-        service.saveFills(fills(new ManualAccountService.FillItem(null, open, d("4"), d("11000"), null, null),
-                new ManualAccountService.FillItem(null, auto, d("5"), d("19500"), null, null)));
-
-        assertThat(store.ledgerForStopInstruction(open)).singleElement().satisfies(r -> {
-            assertThat(r.source()).isEqualTo("USER");
-            assertThat(r.kind()).isEqualTo("SELL");
-            assertThat(r.at()).isEqualTo(kst("2026-11-09T09:12"));
-            assertThat(r.instructionId()).isNull();
-        });
-        assertThat(store.ledgerRow(autoRow)).isEmpty();
-        assertThat(store.ledgerForStopInstruction(auto)).singleElement().satisfies(r -> assertThat(r.price()).isEqualByComparingTo("19500"));
-        assertThat(store.stopInstruction(open).orElseThrow().status()).isEqualTo("RECORDED");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> stops = (List<Map<String, Object>>) service.view().get("stopInstructions");
-        assertThat(stops).allSatisfy(i -> assertThat(i).containsEntry("recordedByUser", true));
-        rejects(() -> service.saveFills(fills(new ManualAccountService.FillItem(null, open, d("4"), d("11000"), null, null))), 409, "already-recorded");
-    }
-
-    @Test
-    @DisplayName("장부 보기 — 매도 행에 실현 손익률(그때 평단 대비), 매수·입금 행은 null")
-    void ledgerShowsRealizedPct() {
-        startSynthetic();                                          // A 평단 10,000
-        service.saveLedger(row(null, "SELL", A, "4", "12500", null, "2026-11-09T10:00", null));
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> ledger = (List<Map<String, Object>>) service.view().get("ledger");
-        assertThat(ledger).anySatisfy(r -> {
-            assertThat(r).containsEntry("kind", "SELL");
-            assertThat(new java.math.BigDecimal(r.get("realizedPct").toString())).isEqualByComparingTo("25");
-        });
-        assertThat(ledger).filteredOn(r -> !"SELL".equals(r.get("kind"))).allSatisfy(r -> assertThat(r).containsEntry("realizedPct", null));
-    }
-
-    // ------------------------------------------------------------------ QA-337
-    /** A 매도의 체결가에 총액을 넣어 부풀린 현금이 B 매수의 부풀린 체결가를 대 주는 장부(같은 세션 09:00 — 두 행 다 잘못 적음). */
-    private long[] crossFundedTypos() {
-        startSynthetic();                                          // 현금 800,000, A 10주(평단 10,000), B 5주
-        long sell = instruction(A, "SELL", 10);
-        long buy = instruction(B, "BUY", 2);
-        service.saveFills(fills(fill(sell, "10", "120000"), fill(buy, "2", "480000")));   // 원래 체결가 12,000·24,000
-        return new long[]{store.ledgerForInstruction(sell).get(0).id(), store.ledgerForInstruction(buy).get(0).id()};
-    }
-
-    @Test
-    @DisplayName("QA-337: 부풀린 매도를 먼저 고치면 부풀린 매수 행에서 현금이 모자람 — 거절 글이 그 행의 시각·방향·종목을 말함")
-    void qa337NamesTheRowThatRunsOutOfCash() {
-        long[] rows = crossFundedTypos();
-
-        assertThatThrownBy(() -> service.saveLedger(row(rows[0], "SELL", A, "10", "12000", null, "2026-11-09T09:00", null)))
-                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
-                    assertThat(e.status()).isEqualTo(400);
-                    assertThat(e.code()).as("확인 뒤 저장할 수 있는 거절").isEqualTo("ledger-cash-negative");
-                    assertThat(e.getMessage()).contains("11-09 09:00").contains("매수").contains(B);
-                });
-    }
-
-    private BigDecimal ledgerCash() {
-        return ManualAccountLedger.replay(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList()).cash();
-    }
-
-    @Test
-    @DisplayName("QA-337: 부풀린 매수를 먼저 고치면 확인 없이 저장되고, 이어서 매도를 고치면 장부가 바로잡힘(묶인 지시와 USER 그대로)")
-    void qa337FixingBuyFirstWorks() {
-        long[] rows = crossFundedTypos();
-
-        service.saveLedger(row(rows[1], "BUY", B, "2", "24000", null, "2026-11-09T09:00", null));
-        service.saveLedger(row(rows[0], "SELL", A, "10", "12000", null, "2026-11-09T09:00", null));
-
-        assertThat(store.ledgerRow(rows[0]).orElseThrow().price()).isEqualByComparingTo("12000");
-        assertThat(store.ledgerRow(rows[1]).orElseThrow().price()).isEqualByComparingTo("24000");
-        assertThat(store.ledgerRow(rows[1]).orElseThrow().instructionId()).as("지시 묶음은 그대로").isNotNull();
-        assertThat(ledgerCash()).isEqualByComparingTo("872000");   // 800,000 + 120,000 − 48,000
-    }
-
-    @Test
-    @DisplayName("QA-337: 현금 음수인 고치기·지우기는 사용자가 확인하면 저장되고 그 뒤 다른 행을 고쳐 바로잡을 수 있음")
-    void qa337ConfirmedCorrectionGoesThrough() {
-        long[] rows = crossFundedTypos();
-
-        rejects(() -> service.deleteLedger(rows[0]), 400, "ledger-cash-negative");
-        assertThat(store.ledgerRow(rows[0])).as("거절이면 그대로").isPresent();
-
-        service.saveLedger(new ManualAccountService.LedgerRequest(rows[0], "SELL", A, d("10"), d("12000"), null, null, null, "2026-11-09T09:00", null, null, true));
-        assertThat(ledgerCash()).as("확인했으니 잠시 음수").isNegative();
-        service.saveLedger(row(rows[1], "BUY", B, "2", "24000", null, "2026-11-09T09:00", null));
-        assertThat(ledgerCash()).isEqualByComparingTo("872000");
-
-        long buy = (long) service.saveLedger(row(null, "BUY", B, "30", "24000", null, "2026-11-09T10:00", null)).get("id");
-        rejects(() -> service.deleteLedger(store.ledger("isa").get(0).id()), 400, "ledger-cash-negative");
-        service.deleteLedger(store.ledger("isa").get(0).id(), true);
-        assertThat(ledgerCash()).isNegative();
-        assertThat(store.ledgerRow(buy)).isPresent();
-    }
-
-    @Test
-    @DisplayName("QA-337: 확인이 있어도 보유가 음수가 되는 고치기·지우기와, 현금이 모자라는 새 행은 받지 않음")
-    void qa337GuardsThatStay() {
-        startSynthetic();
-        long sell = (long) service.saveLedger(row(null, "SELL", A, "4", "11000", null, "2026-11-09T09:00", null)).get("id");
-
-        assertThatThrownBy(() -> service.saveLedger(new ManualAccountService.LedgerRequest(sell, "SELL", A, d("11"), d("11000"), null, null, null, "2026-11-09T09:00", null, null, true)))
-                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
-                    assertThat(e.code()).isEqualTo("ledger-invalid");
-                    assertThat(e.getMessage()).contains("11-09 09:00").contains("매도").contains(A).contains("보유");
-                });
-        LedgerRow firstBuy = store.ledger("isa").stream().filter(r -> A.equals(r.symbol()) && "BUY".equals(r.kind())).findFirst().orElseThrow();
-        rejects(() -> service.deleteLedger(firstBuy.id(), true), 400, "ledger-invalid");
-        rejects(() -> service.saveLedger(new ManualAccountService.LedgerRequest(null, "BUY", B, d("1000"), d("21000"), null, null, null, "2026-11-09T10:00", null, null, true)), 400, "ledger-invalid");
+        long superseded = instruction(C, "BUY", 1);
+        store.updateInstructionStatus(superseded, "SUPERSEDED", "PLANNED", Map.of());
+        rejects(() -> service.skipInstruction(superseded), 400, "invalid-request");
+        rejects(() -> service.skipInstruction(999_999), 404, "not-found");
     }
 }
