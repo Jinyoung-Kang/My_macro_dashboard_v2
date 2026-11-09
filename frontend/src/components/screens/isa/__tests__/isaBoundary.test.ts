@@ -68,6 +68,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
   it("ISA 모듈이 있다 — 칸·표·장부 창·시작 창·쓰기 요청·순수 함수·응답 계약", () => {
     const files = isaFiles().map((path) => relative(root, path)).sort();
     expect(files).toEqual([
+      "components/screens/isa/IsaFillsDialog.tsx",
       "components/screens/isa/IsaLedgerDialog.tsx",
       "components/screens/isa/IsaSection.tsx",
       "components/screens/isa/IsaStartDialog.tsx",
@@ -128,7 +129,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (/\bfetch\s*\(/.test(text)) offenders.push(`${name}: fetch`);
       for (const match of text.matchAll(/\bapiPost\s*(?:<[^>()]*>)?\s*\(\s*([^,)]+)/g)) {
         const target = match[1].trim();
-        const leaf = /^endpoints\.isa\.(start|ledger|deleteLedger|skipInstruction|confirmInstructions)\b/.exec(target)?.[1];
+        const leaf = /^endpoints\.isa\.(start|ledger|deleteLedger|skipInstruction|confirmInstructions|fills)\b/.exec(target)?.[1];
         if (leaf) posts.push(leaf);
         else offenders.push(`${name}: apiPost(${target})`);
       }
@@ -140,7 +141,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
     }
     expect(offenders).toEqual([]);
     // 시작·장부 행 추가·고치기·지우기·지시 건너뜀·'매매함' 표시가 모두 이 모듈 안에서 나갑니다.
-    expect([...new Set(posts)].sort()).toEqual(["confirmInstructions", "deleteLedger", "ledger", "skipInstruction", "start"]);
+    expect([...new Set(posts)].sort()).toEqual(["confirmInstructions", "deleteLedger", "fills", "ledger", "skipInstruction", "start"]);
   });
 
   it("endpoints.isa를 쓰는 곳은 ISA 모듈뿐(경로 정의 lib/endpoints.ts 제외)", () => {

@@ -10,6 +10,9 @@
  */
 import { EMPTY, formatKst, formatKstSeconds, formatNumber, formatSigned } from "./format";
 import type {
+  IsaDecimal,
+  IsaFillItem,
+  IsaFillsRequest,
   IsaHolding,
   IsaInstructionItem,
   IsaLedgerKind,
@@ -129,7 +132,7 @@ export function stopWindowText(item: Pick<IsaStopInstruction, "timing" | "target
  */
 export const STOP_GUIDE =
   "장중 시장가는 알림을 받으면 바로(개장 10분 뒤 전에 걸린 스탑은 그 시각 이후), 종가 단일가는 마감 10분 전부터 마감까지 시장가로 매도하세요 — "
-  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 다르게 매매했으면 장부의 그 자동 기록 행을 고치세요.";
+  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '매매함'을 눌러 체결가를 적으세요 — 보유에 바로 반영되고, 적지 않으면 그날 밤 자동 기록합니다.";
 
 const STOP_NOTE: Readonly<Record<string, string>> = {
   "not-notified": "마감까지 알리지 못해 건너뜀",
@@ -160,6 +163,10 @@ export const LEDGER_CHANGED_TEXT = "지시를 만든 뒤 장부가 바뀌었습�
 
 /** 장부 표 '금액' 칸의 뜻(서버가 매수·매도 행에도 거래 금액을 채움). */
 export const LEDGER_AMOUNT_NOTE = "금액 — 입출금은 입출금액, 매수·매도는 수량×체결가(수수료·세금은 따로).";
+
+/** 장부 '손익 %' 칸 설명(표 아래). */
+export const LEDGER_PNL_NOTE =
+  "손익 % — 매수는 체결가 대비 지금 가격, 매도는 팔기 직전 평단 대비 실현 손익(수수료·세금은 빼지 않음). 입출금·조정과 지금 가격을 모르는 종목(다 판 종목 포함)은 '—'.";
 
 /** 숫자 또는 숫자 글자 → 숫자. 읽지 못하면 null(0으로 채우지 않음). */
 export function toNumber(value: unknown): number | null {
@@ -338,9 +345,17 @@ export function canFixFill(item: Pick<IsaInstructionItem, "status">): boolean {
   return item.status === "PLANNED" || item.status === "RECORDED";
 }
 
-/** '매매함'을 누를 수 있는가 — 기록 전·기록된 지시 가운데 아직 표시도 사용자 체결도 없는 것. */
-export function canConfirmTrade(item: Pick<IsaInstructionItem, "status" | "confirmedAt" | "recordedByUser">): boolean {
-  return (item.status === "PLANNED" || item.status === "RECORDED") && !item.confirmedAt && item.recordedByUser !== true;
+/**
+ * '매매함'(체결 입력 창)을 누를 수 있는가 — 기록 전·자동 기록된 지시 가운데 사용자 체결이 아직 없는 것. 표시만 남긴 지시도 나중에 체결가를 적을 수
+ * 있게 표시 여부는 보지 않습니다.
+ */
+export function canConfirmTrade(item: Pick<IsaInstructionItem, "status" | "recordedByUser">): boolean {
+  return (item.status === "PLANNED" || item.status === "RECORDED") && item.recordedByUser !== true;
+}
+
+/** 장중 스탑 지시의 '매매함'(체결 입력 창)을 누를 수 있는가 — 기록 전·자동 기록된 지시 가운데 사용자 체결이 아직 없는 것. */
+export function canFillStop(item: Pick<IsaStopInstruction, "status" | "recordedByUser">): boolean {
+  return (item.status === "PLANNED" || item.status === "RECORDED") && item.recordedByUser !== true;
 }
 
 /** '매매함' 표시를 지울 수 있는가(잘못 눌렀을 때). */
@@ -357,7 +372,7 @@ export function tradeConfirmText(item: Pick<IsaInstructionItem, "status" | "conf
 
 /** 장 중반 확인 알림 안내(지시 표 아래). */
 export const MIDDAY_GUIDE =
-  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '매매함'을 누르세요 — 그날 정규장 절반(보통 12:15)이 지나도 '매매함'이나 직접 적은 체결이 없는 지시는 텔레그램으로 한 번 더 알립니다.";
+  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '매매함'을 눌러 체결가를 적으세요 — 보유에 바로 반영됩니다. 체결가를 모르면 창에서 '표시만 남기기'를 고르세요(그날 밤 자동 기록). 그날 정규장 절반(보통 12:15)이 지나도 표시나 적은 체결이 없는 지시는 텔레그램으로 한 번 더 알립니다.";
 
 /** 건너뜀을 보이는가 — 아직 장부에 쓰지 않은 지시만(기록된 행은 장부에서 지움). */
 export function canSkip(item: Pick<IsaInstructionItem, "status">): boolean {
@@ -367,6 +382,31 @@ export function canSkip(item: Pick<IsaInstructionItem, "status">): boolean {
 /** 그 지시의 체결로 적힌 장부 행(자동·직접 — instructionId가 같은 것 중 가장 최근, 장부는 최근 순). 없으면 null. */
 export function ledgerRowForInstruction(ledger: readonly IsaLedgerRow[] | null | undefined, instructionId: number): IsaLedgerRow | null {
   return (ledger ?? []).find((row) => row.instructionId === instructionId) ?? null;
+}
+
+/** 그 장중 스탑 지시로 적힌 장부 행(없으면 null). */
+export function ledgerRowForStop(ledger: readonly IsaLedgerRow[] | null | undefined, stopInstructionId: number): IsaLedgerRow | null {
+  return (ledger ?? []).find((row) => row.stopInstructionId === stopInstructionId) ?? null;
+}
+
+// ---------------------------------------------------------------- 종목별 손익 %(2026-11-09)
+
+/** 기준가 대비 가격의 손익률(%) — 둘 중 하나를 모르거나 기준가가 0 이하이면 null(0으로 채우지 않음). */
+export function pnlPct(price: number | null, base: number | null): number | null {
+  return price === null || base === null || base <= 0 ? null : (price / base - 1) * 100;
+}
+
+/** 보유 한 줄의 손익률(%) — 평단 대비 지금 가격(실시간, 못 받으면 직전 종가). */
+export function holdingPnlPct(row: Pick<IsaHolding, "lastPrice" | "avgPrice">): number | null {
+  return pnlPct(toNumber(row.lastPrice), toNumber(row.avgPrice));
+}
+
+/** 장부 한 줄의 손익률(%) — 매수는 체결가 대비 지금 가격(보유에 없으면 null), 매도는 서버가 센 실현 손익률, 그 밖의 행은 null. */
+export function ledgerPnlPct(row: IsaLedgerRow, holdings: readonly Pick<IsaHolding, "symbol" | "lastPrice">[]): number | null {
+  if (row.kind === "SELL") return toNumber(row.realizedPct);
+  if (row.kind !== "BUY" || !row.symbol) return null;
+  const held = holdings.find((entry) => entry.symbol === row.symbol);
+  return pnlPct(held ? toNumber(held.lastPrice) : null, toNumber(row.price));
 }
 
 // ---------------------------------------------------------------- 실시간 평가(명세 2026-11-06-us-costs-backfill §6)
@@ -747,6 +787,85 @@ export function ledgerFormFromInstruction(item: IsaInstructionItem, row: IsaLedg
   }
   const kind: IsaLedgerKind = item.side === "SELL" ? "SELL" : "BUY";
   return { ...emptyLedgerForm(kind), symbol: item.symbol, quantity: inputText(item.quantity) };
+}
+
+/** 체결 입력 창의 한 줄 — 지시 하나(다음 시가 지시나 장중 스탑 지시). 수량은 지시 값(자동 기록 행이 있으면 그 수량)으로 채우고 체결가는 비워 둡니다. */
+export interface IsaFillLine {
+  key: string;
+  instructionId: number | null;
+  stopInstructionId: number | null;
+  side: string;
+  symbol: string;
+  name: string | null;
+  /** 지시 기준가(참고 — 스탑 지시는 없음). */
+  refPrice: IsaDecimal;
+  /** 밤에 자동 기록된 체결가(참고 — 없으면 null). */
+  autoPrice: IsaDecimal;
+  quantity: string;
+  price: string;
+  fee: string;
+  tax: string;
+}
+
+/** 다음 시가 지시 → 체결 입력 한 줄. */
+export function fillLineFromInstruction(item: IsaInstructionItem, row: IsaLedgerRow | null): IsaFillLine {
+  return {
+    key: `i-${item.id}`,
+    instructionId: item.id,
+    stopInstructionId: null,
+    side: item.side,
+    symbol: item.symbol,
+    name: item.name,
+    refPrice: item.refPrice,
+    autoPrice: row?.price ?? null,
+    quantity: inputText(row?.quantity ?? item.quantity),
+    price: "",
+    fee: "",
+    tax: "",
+  };
+}
+
+/** 장중 스탑 지시 → 체결 입력 한 줄. */
+export function fillLineFromStop(item: IsaStopInstruction, row: IsaLedgerRow | null): IsaFillLine {
+  return {
+    key: `s-${item.id}`,
+    instructionId: null,
+    stopInstructionId: item.id,
+    side: item.side,
+    symbol: item.symbol,
+    name: item.name,
+    refPrice: null,
+    autoPrice: row?.price ?? null,
+    quantity: inputText(row?.quantity ?? item.quantity),
+    price: "",
+    fee: "",
+    tax: "",
+  };
+}
+
+/** 체결 입력 → POST /api/manual/isa/instructions/fills 본문. 줄마다 수량·체결가가 있어야 하고 수수료·세금은 비우면 0입니다. 현금·보유 검사는 서버가 합니다. */
+export function buildFillsRequest(lines: readonly IsaFillLine[]): Checked<IsaFillsRequest> {
+  if (lines.length === 0) {
+    return { ok: false, errors: ["적을 줄이 없습니다."] };
+  }
+  const errors: string[] = [];
+  const fills: IsaFillItem[] = [];
+  for (const line of lines) {
+    const who = symbolText(line.symbol, line.name);
+    const quantity = parseDecimal(line.quantity, { maxDecimals: QUANTITY_DECIMALS });
+    const price = parseDecimal(line.price, { maxDecimals: PRICE_DECIMALS });
+    const fee = line.fee.trim() === "" ? 0 : parseDecimal(line.fee, { maxDecimals: AMOUNT_DECIMALS });
+    const tax = line.tax.trim() === "" ? 0 : parseDecimal(line.tax, { maxDecimals: AMOUNT_DECIMALS });
+    if (quantity === null || quantity <= 0) errors.push(`${who} — 수량은 0보다 큰 수입니다.`);
+    if (price === null || price <= 0) errors.push(`${who} — 체결가를 적으세요.`);
+    if (fee === null) errors.push(`${who} — 수수료는 0 이상의 원 단위 금액입니다(비우면 0).`);
+    if (tax === null) errors.push(`${who} — 세금은 0 이상의 원 단위 금액입니다(비우면 0).`);
+    if (quantity !== null && quantity > 0 && price !== null && price > 0 && fee !== null && tax !== null) {
+      const id = line.instructionId !== null ? { instructionId: line.instructionId } : { stopInstructionId: line.stopInstructionId as number };
+      fills.push({ ...id, quantity, price, fee, tax });
+    }
+  }
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, body: { fills } };
 }
 
 /**

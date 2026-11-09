@@ -106,6 +106,8 @@ export interface IsaStopInstruction {
   notifiedAt: string | null;
   /** 자동 기록·건너뜀 메모(not-notified·close-fallback·halted 등). */
   autoNote?: string | null;
+  /** 사용자가 체결을 적은 스탑 지시인가 — 그러면 '매매함' 단추를 빼고, 고치기는 장부 행에서. 2026-11-09 백엔드가 더한 칸이라 없을 수 있습니다. */
+  recordedByUser?: boolean;
 }
 
 /** 다음 세션의 지시 묶음 — 세션(YYYY-MM-DD)·세션 상태(NONE '지시 없음'·PLANNED·UNAVAILABLE '못 만듦')·지시 목록. */
@@ -140,6 +142,8 @@ export interface IsaLedgerRow {
   /** 장중 스탑 지시대로 자동 기록한 행이면 그 지시 번호(없으면 null·없음). */
   stopInstructionId?: number | null;
   note: string | null;
+  /** 매도 행의 실현 손익률(%, 팔기 직전 평단 대비·수수료·세금 제외 — 서버 계산). 그 밖의 행·평단을 모르면 null. */
+  realizedPct?: IsaDecimal;
 }
 
 /** GET /api/manual/isa — 표가 없으면 `available:false`(그때 `message`와 `notes`에 안내). */
@@ -191,6 +195,21 @@ export interface IsaLedgerRequest {
   instructionId?: number;
 }
 
+/** POST /api/manual/isa/instructions/fills 한 줄 — 다음 시가 지시나 장중 스탑 지시 하나에 묶입니다(번호는 둘 중 하나만). */
+export interface IsaFillItem {
+  instructionId?: number;
+  stopInstructionId?: number;
+  quantity: number;
+  price: number;
+  fee: number;
+  tax: number;
+}
+
+/** POST /api/manual/isa/instructions/fills 본문 — 한 트랜잭션으로 장부에 적습니다(2026-11-09). */
+export interface IsaFillsRequest {
+  fills: IsaFillItem[];
+}
+
 /**
  * 쓰기 응답 — `{ok}`(행 추가·수정은 `id`도). 오류는 `{ok:false, error, message}`(lib/api의 ApiError가 code·message로 나름).
  * 지시 번호만 있고 id가 없는 새 행은 그 지시에 자동(AUTO) 행만 있으면 그 행을 대신하고, 직접(USER) 행이 이미 있으면 409 `already-recorded`.
@@ -198,4 +217,6 @@ export interface IsaLedgerRequest {
 export interface IsaOkResponse {
   ok: boolean;
   id?: number;
+  /** 체결 입력(`instructions/fills`)이 적은 줄 수. */
+  count?: number;
 }

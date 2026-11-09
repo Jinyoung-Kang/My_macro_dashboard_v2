@@ -259,13 +259,14 @@ describe("실제 매매 경로(ADR 0028)", () => {
 
 describe("ISA 계좌 경로(ADR 0029)", () => {
   it("/api/manual/isa 아래 읽기 하나와 쓰기 넷(시작·장부 행 추가·고치기·지우기·지시 건너뜀) — 증권사 주문 경로가 없다", () => {
-    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "ledger", "deleteLedger", "skipInstruction", "confirmInstructions"]);
+    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "ledger", "deleteLedger", "skipInstruction", "confirmInstructions", "fills"]);
     expect([endpoints.isa.account, endpoints.isa.start, endpoints.isa.ledger]).toEqual([
       "/api/manual/isa", "/api/manual/isa/start", "/api/manual/isa/ledger",
     ]);
     expect(endpoints.isa.deleteLedger(12)).toBe("/api/manual/isa/ledger/12/delete");
     expect(endpoints.isa.skipInstruction(3)).toBe("/api/manual/isa/instructions/3/skip");
     expect(endpoints.isa.confirmInstructions).toBe("/api/manual/isa/instructions/confirm");
+    expect(endpoints.isa.fills).toBe("/api/manual/isa/instructions/fills");
   });
 });
 

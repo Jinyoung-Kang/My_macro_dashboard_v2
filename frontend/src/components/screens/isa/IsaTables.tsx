@@ -2,9 +2,10 @@
 
 import { DataTable, type Column } from "@/components/patterns";
 import { buttonClasses } from "@/components/ui";
-import { EMPTY, formatKst, formatKstSeconds } from "@/lib/format";
+import { deltaColor, EMPTY, formatKst, formatKstSeconds, formatPercent } from "@/lib/format";
 import {
   canConfirmTrade,
+  canFillStop,
   canFixFill,
   canSkip,
   canUndoConfirm,
@@ -12,11 +13,14 @@ import {
   formatShares,
   formatWeight,
   formatWon,
+  holdingPnlPct,
   instructionStatusLabel,
   type IsaHoldingView,
   kindLabel,
   LEDGER_AMOUNT_NOTE,
+  LEDGER_PNL_NOTE,
   ledgerFormFromRow,
+  ledgerPnlPct,
   notifiedText,
   sessionLabel,
   sideLabel,
@@ -52,6 +56,11 @@ function clockOf(at: string | null): string | null {
   return /^\d{4}-\d{2}-\d{2} (\d{2}:\d{2}(?::\d{2})?)$/.exec(formatKstSeconds(at))?.[1] ?? null;
 }
 
+/** 손익 % 칸 — 부호·색(모르면 "—"). */
+function pnlCell(pct: number | null) {
+  return <span className={deltaColor(pct, 0)}>{formatPercent(pct)}</span>;
+}
+
 /** 가격 칸 — 값과 그 출처(실시간이면 그 가격의 시각, 서버 직전 종가면 '직전 종가'). 가격을 모르면 "—"(표가 값 없음으로 그림). */
 function priceCell(row: IsaHoldingView) {
   const price = formatPrice(row.lastPrice);
@@ -71,6 +80,7 @@ const HOLDING_COLUMNS: readonly Column<IsaHoldingView>[] = [
   { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
   { key: "avgPrice", header: "평균 단가", align: "right", cell: (row) => formatPrice(row.avgPrice), sortValue: (row) => toNumber(row.avgPrice) },
   { key: "lastPrice", header: "마지막 가격", align: "right", cell: priceCell, sortValue: (row) => toNumber(row.lastPrice) },
+  { key: "pnl", header: "손익 %", align: "right", cell: (row) => pnlCell(holdingPnlPct(row)), sortValue: (row) => holdingPnlPct(row) },
   { key: "marketValue", header: "평가액", align: "right", cell: (row) => formatWon(row.marketValue), sortValue: (row) => toNumber(row.marketValue) },
   { key: "weightPct", header: "비중", align: "right", cell: (row) => formatWeight(row.weightPct), sortValue: (row) => toNumber(row.weightPct) },
 ];
@@ -225,7 +235,7 @@ const RECENT_COLUMNS: readonly Column<IsaInstructionItem>[] = [
   { key: "notified", header: "알림", cell: (row) => notifiedText(row) },
 ];
 
-const STOP_COLUMNS: readonly Column<IsaStopInstruction>[] = [
+const stopColumns = (onFill: (row: IsaStopInstruction) => void, disabled: boolean): readonly Column<IsaStopInstruction>[] => [
   { key: "session", header: "세션", cell: (row) => sessionLabel(row.session ?? null), sortValue: (row) => row.session ?? null },
   { key: "symbol", header: "종목", cell: (row) => symbolText(row.symbol, row.name), rowHeader: true, sortValue: (row) => symbolSort(row.symbol, row.name) },
   { key: "quantity", header: "매도 수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
@@ -235,14 +245,38 @@ const STOP_COLUMNS: readonly Column<IsaStopInstruction>[] = [
   { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
   { key: "notified", header: "알림", cell: (row) => stopNotifiedText(row) },
   { key: "note", header: "메모", cell: (row) => stopNoteLabel(row.autoNote) },
+  {
+    key: "actions",
+    header: "체결",
+    cell: (row) =>
+      canFillStop(row) ? (
+        <button
+          type="button"
+          onClick={() => onFill(row)}
+          disabled={disabled}
+          aria-label={`매매함 — ${symbolText(row.symbol, row.name)}`}
+          className={buttonClasses("primary", "sm")}
+        >
+          매매함
+        </button>
+      ) : null,
+  },
 ];
 
-/** 장중 스탑 매도 지시(최근 30 — ADR 0033) — 누를 수 없는 표(자동 기록 행은 장부에서 고침). */
-export function IsaStopInstructionsTable({ rows }: { rows: readonly IsaStopInstruction[] }) {
+/** 장중 스탑 매도 지시(최근 30 — ADR 0033) — 줄의 '매매함'으로 체결을 적습니다(적은 뒤 고치기는 장부 행에서). */
+export function IsaStopInstructionsTable({
+  rows,
+  onFill,
+  disabled,
+}: {
+  rows: readonly IsaStopInstruction[];
+  onFill: (row: IsaStopInstruction) => void;
+  disabled: boolean;
+}) {
   return (
     <DataTable
       caption="장중 스탑 매도 지시"
-      columns={STOP_COLUMNS}
+      columns={stopColumns(onFill, disabled)}
       rows={rows}
       rowKey={(row) => String(row.id)}
       emptyText="스탑 지시 없음"
@@ -312,16 +346,25 @@ function LedgerActions({
  */
 export function IsaLedgerTable({
   rows,
+  holdings,
   onEdit,
   onDelete,
   disabled,
 }: {
   rows: readonly IsaLedgerRow[];
+  /** 지금 가격을 아는 보유(실시간, 못 받으면 직전 종가) — 매수 행의 손익 %. */
+  holdings: readonly IsaHoldingView[];
   onEdit: (row: IsaLedgerRow) => void;
   onDelete: (row: IsaLedgerRow) => void;
   disabled: boolean;
 }) {
   const columns: readonly Column<IsaLedgerRow>[] = [
+    // 고치기·지우기를 맨 앞에(2026-11-09 — 맨 뒤면 가로로 밀어야 보임)
+    {
+      key: "actions",
+      header: "고치기",
+      cell: (row) => <LedgerActions row={row} onEdit={onEdit} onDelete={onDelete} disabled={disabled} />,
+    },
     { key: "at", header: "시각", cell: (row) => formatKst(row.at), sortValue: (row) => timeSortValue(row.at) },
     { key: "kind", header: "종류", cell: (row) => kindLabel(row.kind), sortValue: (row) => labelSort(kindLabel(row.kind)) },
     {
@@ -332,6 +375,7 @@ export function IsaLedgerTable({
     },
     { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity), sortValue: (row) => toNumber(row.quantity) },
     { key: "price", header: "체결가", align: "right", cell: (row) => formatPrice(row.price), sortValue: (row) => toNumber(row.price) },
+    { key: "pnl", header: "손익 %", align: "right", cell: (row) => pnlCell(ledgerPnlPct(row, holdings)), sortValue: (row) => ledgerPnlPct(row, holdings) },
     { key: "amount", header: "금액", align: "right", cell: (row) => formatWon(row.amount), sortValue: (row) => toNumber(row.amount) },
     { key: "fee", header: "수수료", align: "right", cell: (row) => formatWon(row.fee), sortValue: (row) => toNumber(row.fee) },
     { key: "tax", header: "세금", align: "right", cell: (row) => formatWon(row.tax), sortValue: (row) => toNumber(row.tax) },
@@ -343,11 +387,6 @@ export function IsaLedgerTable({
       sortValue: (row) => (typeof row.instructionId === "number" ? row.instructionId : null),
     },
     { key: "note", header: "메모", cell: (row) => row.note || null },
-    {
-      key: "actions",
-      header: "고치기",
-      cell: (row) => <LedgerActions row={row} onEdit={onEdit} onDelete={onDelete} disabled={disabled} />,
-    },
   ];
   return (
     <div className="flex flex-col gap-2">
@@ -362,6 +401,7 @@ export function IsaLedgerTable({
         scrollHint="overflow"
       />
       <p className="text-xs leading-relaxed text-text-3">{LEDGER_AMOUNT_NOTE}</p>
+      <p className="text-xs leading-relaxed text-text-3">{LEDGER_PNL_NOTE}</p>
     </div>
   );
 }

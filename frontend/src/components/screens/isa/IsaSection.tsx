@@ -14,7 +14,10 @@ import { deltaColor, formatKst, formatNumber, formatPercent, formatSigned } from
 import {
   accountStateLabel,
   canConfirmTrade,
+  canFillStop,
   COST_NOTE,
+  fillLineFromInstruction,
+  fillLineFromStop,
   formatShares,
   formatWon,
   instructionWhenText,
@@ -28,6 +31,7 @@ import {
   kindLabel,
   LEDGER_CHANGED_TEXT,
   ledgerRowForInstruction,
+  ledgerRowForStop,
   MIDDAY_GUIDE,
   PENDING_INSTRUCTIONS_GUIDE,
   sessionLabel,
@@ -41,7 +45,8 @@ import {
   unpricedText,
 } from "@/lib/isa";
 import { liveKey, liveSecondsText, liveShown } from "@/lib/livePrices";
-import type { IsaInstructionItem, IsaLedgerRow, IsaOkResponse, IsaResponse } from "@/lib/types/isa";
+import type { IsaInstructionItem, IsaLedgerRow, IsaOkResponse, IsaResponse, IsaStopInstruction } from "@/lib/types/isa";
+import { IsaFillsDialog, type IsaFillTarget } from "./IsaFillsDialog";
 import { IsaLedgerDialog, type IsaLedgerTarget } from "./IsaLedgerDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
 import { IsaHoldingsTable, IsaInstructionsTable, IsaLedgerTable, IsaRecentInstructionsTable, IsaStopInstructionsTable } from "./IsaTables";
@@ -78,6 +83,7 @@ export function IsaSection() {
   const reloadNow = useCallback(() => void reload(), [reload]);
   const [startOpen, setStartOpen] = useState(false);
   const [ledgerTarget, setLedgerTarget] = useState<IsaLedgerTarget | null>(null);
+  const [fillTarget, setFillTarget] = useState<IsaFillTarget | null>(null);
   const [deleteRow, setDeleteRow] = useState<IsaLedgerRow | null>(null);
   const [skipItem, setSkipItem] = useState<IsaInstructionItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -105,11 +111,11 @@ export function IsaSection() {
     reloadNow();
   };
 
-  // '매매함' — 누를 수 있고 되돌릴 수 있어 확인 창 없이 바로(장부는 바꾸지 않음).
-  const confirmTrades = async (ids: readonly number[], confirmed: boolean) => {
+  // '매매함 지우기' — 되돌릴 수 있어 확인 창 없이 바로(장부는 바꾸지 않음). 표시 남기기는 체결 입력 창의 '표시만 남기기'.
+  const undoConfirm = async (ids: readonly number[]) => {
     setNotice(null);
-    const ok = await action.run(() => postConfirmInstructions(ids, confirmed));
-    if (ok) setNotice(confirmed ? "매매함으로 표시했습니다 — 장 중반 확인 알림에서 뺍니다." : "매매함 표시를 지웠습니다.");
+    const ok = await action.run(() => postConfirmInstructions(ids, false));
+    if (ok) setNotice("매매함 표시를 지웠습니다.");
     reloadNow();
   };
 
@@ -195,7 +201,18 @@ export function IsaSection() {
           valuation={valuation}
           refreshError={refreshError}
           busy={action.busy}
-          onConfirm={(ids, confirmed) => void confirmTrades(ids, confirmed)}
+          onUndoConfirm={(ids) => void undoConfirm(ids)}
+          onFill={(items) => {
+            setNotice(null);
+            setFillTarget({
+              lines: items.map((item) => fillLineFromInstruction(item, ledgerRowForInstruction(data.ledger, item.id))),
+              confirmIds: items.map((item) => item.id),
+            });
+          }}
+          onFillStops={(rows) => {
+            setNotice(null);
+            setFillTarget({ lines: rows.map((row) => fillLineFromStop(row, ledgerRowForStop(data.ledger, row.id))), confirmIds: [] });
+          }}
           onAdd={() => {
             setNotice(null);
             setLedgerTarget({ mode: "add" });
@@ -237,6 +254,21 @@ export function IsaSection() {
           setNotice(
             `시작했습니다 — 시작 현금${buyCount > 0 ? `과 시작 매수 ${buyCount}줄` : ""}을 장부에 적었습니다. 첫 지시는 한국 규칙 계좌의 다음 밤 결정(22:30) 뒤에 만듭니다.`,
           );
+          reloadNow();
+        }}
+      />
+      <IsaFillsDialog
+        target={fillTarget}
+        onClose={() => setFillTarget(null)}
+        onReload={reloadNow}
+        onDone={(count) => {
+          setFillTarget(null);
+          setNotice(`체결 ${count}건을 장부에 적어 보유에 반영했습니다 — 이 지시는 자동 기록하지 않습니다.`);
+          reloadNow();
+        }}
+        onMarked={() => {
+          setFillTarget(null);
+          setNotice("매매함으로 표시했습니다 — 장 중반 확인 알림에서 빼고, 그날 밤 자동 기록합니다.");
           reloadNow();
         }}
       />
@@ -290,7 +322,9 @@ function StartedBody({
   valuation,
   refreshError,
   busy,
-  onConfirm,
+  onUndoConfirm,
+  onFill,
+  onFillStops,
   onAdd,
   onEdit,
   onDelete,
@@ -302,7 +336,11 @@ function StartedBody({
   valuation: IsaValuation;
   refreshError: string | null;
   busy: boolean;
-  onConfirm: (ids: readonly number[], confirmed: boolean) => void;
+  onUndoConfirm: (ids: readonly number[]) => void;
+  /** '매매함' — 그 지시들의 체결 입력 창을 엽니다. */
+  onFill: (items: readonly IsaInstructionItem[]) => void;
+  /** 장중 스탑 지시의 '매매함' — 체결 입력 창을 엽니다. */
+  onFillStops: (rows: readonly IsaStopInstruction[]) => void;
   onAdd: () => void;
   onEdit: (row: IsaLedgerRow) => void;
   onDelete: (row: IsaLedgerRow) => void;
@@ -321,7 +359,8 @@ function StartedBody({
   const timed = timedAt !== null;
   const instructionsTitle = timed ? "다음 매매 지시" : "다음 시가 매매 지시";
   const confirmable = (instructions?.items ?? []).filter(canConfirmTrade);
-  const confirmOne = (item: IsaInstructionItem, confirmed: boolean) => onConfirm([item.id], confirmed);
+  const fillableStops = stops.filter(canFillStop);
+  const confirmOne = (item: IsaInstructionItem, confirmed: boolean) => (confirmed ? onFill([item]) : onUndoConfirm([item.id]));
   const notes = cleanNotes(data.notes);
 
   return (
@@ -387,7 +426,7 @@ function StartedBody({
             <>
               {confirmable.length > 1 && (
                 <div>
-                  <Button size="sm" variant="primary" onClick={() => onConfirm(confirmable.map((item) => item.id), true)} disabled={busy}>
+                  <Button size="sm" variant="primary" onClick={() => onFill(confirmable)} disabled={busy}>
                     전부 매매함({confirmable.length})
                   </Button>
                 </div>
@@ -423,7 +462,14 @@ function StartedBody({
           subtitle="규칙 계좌가 트레일링 스탑으로 판 종목 — 감지 즉시 텔레그램으로 알리고(종목·수량만), 그날 밤 규칙 계좌와 같은 1분봉 값으로 장부에 자동 기록합니다"
         >
           <div className="flex flex-col gap-3">
-            <IsaStopInstructionsTable rows={stops} />
+            {fillableStops.length > 1 && (
+              <div>
+                <Button size="sm" variant="primary" onClick={() => onFillStops(fillableStops)} disabled={busy}>
+                  전부 매매함({fillableStops.length})
+                </Button>
+              </div>
+            )}
+            <IsaStopInstructionsTable rows={stops} onFill={(row) => onFillStops([row])} disabled={busy} />
             <p className="text-xs leading-relaxed text-text-3">{STOP_GUIDE}</p>
           </div>
         </Card>
@@ -465,7 +511,7 @@ function StartedBody({
           </Button>
         }
       >
-        <IsaLedgerTable rows={data.ledger ?? []} onEdit={onEdit} onDelete={onDelete} disabled={busy} />
+        <IsaLedgerTable rows={data.ledger ?? []} holdings={valuation.holdings} onEdit={onEdit} onDelete={onDelete} disabled={busy} />
       </Card>
     </>
   );

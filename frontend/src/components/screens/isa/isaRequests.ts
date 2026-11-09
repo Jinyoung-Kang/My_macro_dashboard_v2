@@ -1,7 +1,7 @@
 import { apiPost, UnauthorizedError } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { isaErrorCode, isaErrorNeedsReload, isaErrorText } from "@/lib/isa";
-import type { IsaLedgerRequest, IsaOkResponse, IsaStartRequest } from "@/lib/types/isa";
+import type { IsaFillsRequest, IsaLedgerRequest, IsaOkResponse, IsaStartRequest } from "@/lib/types/isa";
 
 /*
  * ISA 계좌(ADR 0029)의 쓰기 — 이 파일이 ISA 모듈에서 apiPost를 부르는 유일한 곳이고, 경로는 늘 endpoints.isa.*입니다
@@ -31,6 +31,11 @@ export function postSkipInstruction(id: number): Promise<IsaOkResponse> {
 /** '매매함' 표시 남기기(confirmed true)·지우기(false) — 장 중반 확인 알림의 신호, 장부는 바꾸지 않습니다. */
 export function postConfirmInstructions(ids: readonly number[], confirmed: boolean): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.confirmInstructions, { ids, confirmed });
+}
+
+/** 체결 입력 — 지시·스탑 지시마다 한 줄을 한 트랜잭션으로 장부에 적습니다(한 줄이라도 안 되면 아무것도 적지 않음). */
+export function postFills(body: IsaFillsRequest): Promise<IsaOkResponse> {
+  return apiPost<IsaOkResponse>(endpoints.isa.fills, body);
 }
 
 /**

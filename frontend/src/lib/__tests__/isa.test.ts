@@ -30,7 +30,14 @@ import {
   isaBasisText,
   isaErrorCode,
   isaErrorNeedsReload,
+  buildFillsRequest,
   canConfirmTrade,
+  canFillStop,
+  fillLineFromInstruction,
+  fillLineFromStop,
+  holdingPnlPct,
+  ledgerPnlPct,
+  pnlPct,
   canUndoConfirm,
   isaErrorText,
   notifiedText as notifiedLabel,
@@ -535,9 +542,8 @@ describe("개장 10분 뒤 시각 맞추기·장중 스탑 지시(ADR 0033)", ()
 describe("장 중반 매매 확인(2026-11-08)", () => {
   it("'매매함'은 기록 전·기록된 지시 가운데 표시도 사용자 체결도 없을 때만, 지우기는 표시가 있을 때만", () => {
     expect(canConfirmTrade({ status: "PLANNED" })).toBe(true);
-    expect(canConfirmTrade({ status: "RECORDED", recordedByUser: false, confirmedAt: null })).toBe(true);
+    expect(canConfirmTrade({ status: "RECORDED", recordedByUser: false })).toBe(true);
     expect(canConfirmTrade({ status: "RECORDED", recordedByUser: true })).toBe(false);
-    expect(canConfirmTrade({ status: "PLANNED", confirmedAt: "2026-11-09T01:00:00Z" })).toBe(false);
     expect(canConfirmTrade({ status: "SKIPPED" })).toBe(false);
     expect(canUndoConfirm({ status: "PLANNED", confirmedAt: "2026-11-09T01:00:00Z" })).toBe(true);
     expect(canUndoConfirm({ status: "PLANNED", confirmedAt: null })).toBe(false);
@@ -549,5 +555,61 @@ describe("장 중반 매매 확인(2026-11-08)", () => {
     expect(tradeConfirmText({ status: "PLANNED", confirmedAt: "2026-11-09T01:00:00Z" })).toMatch(/^매매함 /);
     expect(tradeConfirmText({ status: "SKIPPED" })).toBe("—");
     expect(notifiedLabel({ notifiedNightAt: null, notifiedMorningAt: null, notifiedMiddayAt: "2026-11-09T03:15:00Z" })).toMatch(/^장 중반 /);
+  });
+});
+
+describe("종목별 손익 %(2026-11-09)", () => {
+  it("기준가 대비 — 모르면 null(0으로 채우지 않음)", () => {
+    expect(pnlPct(110, 100)).toBeCloseTo(10);
+    expect(pnlPct(90, 100)).toBeCloseTo(-10);
+    expect(pnlPct(null, 100)).toBeNull();
+    expect(pnlPct(100, null)).toBeNull();
+    expect(pnlPct(100, 0)).toBeNull();
+  });
+  it("보유 — 평단 대비 지금 가격, 가격을 모르면 null", () => {
+    expect(holdingPnlPct({ avgPrice: 12_000, lastPrice: 12_600 })).toBeCloseTo(5);
+    expect(holdingPnlPct({ avgPrice: 12_000, lastPrice: null })).toBeNull();
+  });
+  it("장부 — 매수는 체결가 대비 지금 가격, 매도는 서버 실현 값, 입출금·조정·다 판 종목은 null", () => {
+    const base = { id: 1, at: null, name: null, quantity: 1, amount: null, fee: 0, tax: 0, source: "USER", instructionId: null, note: null };
+    const holdings = [{ symbol: "111110", lastPrice: 11_000 }];
+    expect(ledgerPnlPct({ ...base, kind: "BUY", symbol: "111110", price: 10_000 }, holdings)).toBeCloseTo(10);
+    expect(ledgerPnlPct({ ...base, kind: "BUY", symbol: "999990", price: 10_000 }, holdings)).toBeNull();
+    expect(ledgerPnlPct({ ...base, kind: "SELL", symbol: "111110", price: 12_000, realizedPct: 20 }, holdings)).toBe(20);
+    expect(ledgerPnlPct({ ...base, kind: "SELL", symbol: "111110", price: 12_000, realizedPct: null }, holdings)).toBeNull();
+    expect(ledgerPnlPct({ ...base, kind: "DEPOSIT", symbol: null, price: null }, holdings)).toBeNull();
+    expect(ledgerPnlPct({ ...base, kind: "ADJUST", symbol: "111110", price: null }, holdings)).toBeNull();
+  });
+});
+
+describe("체결 입력(2026-11-09)", () => {
+  const item = { id: 7, symbol: "222220", name: "합성화학", side: "SELL", quantity: 3, refPrice: 53_000, weightPct: 0, status: "PLANNED", notifiedNightAt: null, notifiedMorningAt: null };
+  const stop = { id: 4, session: "2026-11-09", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "MARKET", targetAt: null, status: "PLANNED", notifiedAt: null };
+
+  it("스탑 지시 — 기록 전·자동 기록은 입력할 수 있고, 사용자가 적었거나 건너뜀이면 없음", () => {
+    expect(canFillStop({ status: "PLANNED" })).toBe(true);
+    expect(canFillStop({ status: "RECORDED", recordedByUser: false })).toBe(true);
+    expect(canFillStop({ status: "RECORDED", recordedByUser: true })).toBe(false);
+    expect(canFillStop({ status: "SKIPPED" })).toBe(false);
+  });
+  it("줄 — 수량은 지시 값(자동 기록 행이 있으면 그 수량), 체결가는 비워 둠, 자동 기록 값은 참고로", () => {
+    expect(fillLineFromInstruction(item, null)).toMatchObject({ instructionId: 7, stopInstructionId: null, quantity: "3", price: "", refPrice: 53_000, autoPrice: null });
+    const row = { id: 9, at: null, kind: "SELL", symbol: "222220", name: null, quantity: 2, price: 52_000, amount: null, fee: 0, tax: 0, source: "AUTO", instructionId: 7, note: null };
+    expect(fillLineFromInstruction(item, row)).toMatchObject({ quantity: "2", price: "", autoPrice: 52_000 });
+    expect(fillLineFromStop(stop, null)).toMatchObject({ instructionId: null, stopInstructionId: 4, quantity: "5", refPrice: null });
+  });
+  it("본문 — 줄마다 번호 하나·수량·체결가, 수수료·세금은 비우면 0, 체결가가 없으면 막음", () => {
+    const line = { ...fillLineFromInstruction(item, null), price: "53,100", fee: "100" };
+    const stopLine = { ...fillLineFromStop(stop, null), price: "11000" };
+    expect(buildFillsRequest([line, stopLine])).toEqual({
+      ok: true,
+      body: { fills: [{ instructionId: 7, quantity: 3, price: 53_100, fee: 100, tax: 0 }, { stopInstructionId: 4, quantity: 5, price: 11_000, fee: 0, tax: 0 }] },
+    });
+    const missing = buildFillsRequest([fillLineFromInstruction(item, null)]);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.errors[0]).toContain("체결가를 적으세요");
+    expect(buildFillsRequest([]).ok).toBe(false);
+    expect(buildFillsRequest([{ ...line, quantity: "0" }]).ok).toBe(false);
+    expect(buildFillsRequest([{ ...line, fee: "-1" }]).ok).toBe(false);
   });
 });

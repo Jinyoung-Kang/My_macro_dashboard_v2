@@ -308,6 +308,8 @@ export const endpoints = {
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
     /** '매매함' 표시 남기기·지우기(본문 ids·confirmed) — 장 중반 확인 알림의 신호, 장부는 바꾸지 않음. */
     confirmInstructions: "/api/manual/isa/instructions/confirm",
+    /** 체결 입력(본문 fills — 지시·스탑 지시마다 한 줄) — 한 트랜잭션으로 장부에 적어 보유에 바로 반영. */
+    fills: "/api/manual/isa/instructions/fills",
   },
 
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)
