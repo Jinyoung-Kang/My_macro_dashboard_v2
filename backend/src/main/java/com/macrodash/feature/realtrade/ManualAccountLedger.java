@@ -173,21 +173,34 @@ final class ManualAccountLedger {
         return out;
     }
 
+    /** 장부가 처음으로 음수가 되는 행과 그 까닭 — {@code cash}면 현금, 아니면 그 종목 보유. */
+    record Problem(Entry entry, boolean cash) {
+    }
+
     /**
      * 장부 순서로 한 행씩 쌓을 때 현금이나 그 종목 보유가 처음으로 음수가 되는 행 — 없으면 null(받을 수 있는 장부).
      */
     static Entry firstInvalid(List<Entry> entries) {
+        Problem problem = firstProblem(entries, false);
+        return problem == null ? null : problem.entry();
+    }
+
+    /**
+     * {@link #firstInvalid}와 그 까닭. {@code ignoreCash}면 현금 음수는 보지 않고 보유 음수만 봅니다(사용자가 확인한 고치기·지우기 — QA-337: 잘못 적은 두 행이 서로
+     * 현금을 대 주면 어느 한 행을 먼저 고쳐도 중간 상태가 음수라, 막기만 하면 장부를 바로잡을 길이 없음).
+     */
+    static Problem firstProblem(List<Entry> entries, boolean ignoreCash) {
         BigDecimal cash = BigDecimal.ZERO;
         Map<String, BigDecimal> quantity = new TreeMap<>();
         for (Entry e : sorted(entries)) {
             cash = cash.add(e.cashDelta());
-            if (cash.signum() < 0) {
-                return e;
+            if (cash.signum() < 0 && !ignoreCash) {
+                return new Problem(e, true);
             }
             if (e.symbol() != null && e.quantityDelta().signum() != 0) {
                 BigDecimal after = quantity.getOrDefault(e.symbol(), BigDecimal.ZERO).add(e.quantityDelta());
                 if (after.signum() < 0) {
-                    return e;
+                    return new Problem(e, false);
                 }
                 quantity.put(e.symbol(), after);
             }

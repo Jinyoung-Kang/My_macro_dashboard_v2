@@ -10,6 +10,8 @@ class ManualAccountException extends RuntimeException {
 
     static final String INVALID_REQUEST = "invalid-request";
     static final String LEDGER_INVALID = "ledger-invalid";
+    /** 고치기·지우기가 현금을 음수로 만듦 — 사용자가 확인하면 저장할 수 있는 거절(QA-337). */
+    static final String LEDGER_CASH_NEGATIVE = "ledger-cash-negative";
     static final String NOT_FOUND = "not-found";
     static final String ALREADY_STARTED = "already-started";
     static final String NOT_STARTED = "not-started";
@@ -30,6 +32,10 @@ class ManualAccountException extends RuntimeException {
 
     static ManualAccountException ledgerInvalid(String message) {
         return new ManualAccountException(400, LEDGER_INVALID, message);
+    }
+
+    static ManualAccountException ledgerCashNegative(String message) {
+        return new ManualAccountException(400, LEDGER_CASH_NEGATIVE, message);
     }
 
     static ManualAccountException notFound(String message) {

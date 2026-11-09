@@ -18,9 +18,9 @@ export function postLedger(body: IsaLedgerRequest): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.ledger, body);
 }
 
-/** 장부 행 지우기. */
-export function postDeleteLedger(id: number): Promise<IsaOkResponse> {
-  return apiPost<IsaOkResponse>(endpoints.isa.deleteLedger(id));
+/** 장부 행 지우기 — `allowNegativeCash`는 현금이 음수가 되어도 지운다는 사용자 확인(QA-337). */
+export function postDeleteLedger(id: number, allowNegativeCash = false): Promise<IsaOkResponse> {
+  return apiPost<IsaOkResponse>(endpoints.isa.deleteLedger(id, allowNegativeCash));
 }
 
 /** 지시 건너뜀(장부에 쓰지 않음). */
@@ -40,15 +40,20 @@ export function postFills(body: IsaFillsRequest): Promise<IsaOkResponse> {
 
 /**
  * 쓰기 한 번 — 서버 오류를 코드별 문구(lib/isa `isaErrorText`)의 Error로 바꿔 올립니다. 없는 행·이미 시작·시작 전처럼 화면이 서버와 어긋난 오류면
- * 장부를 다시 읽게 `onReload`를 부릅니다. 세션 만료(401)는 그대로 올려 useAsyncAction이 로그인으로 보내게 둡니다. 200인데 `ok:false`인 응답도 실패로 봅니다.
+ * 장부를 다시 읽게 `onReload`를 부릅니다. `onCode`는 서버 거절의 코드를 받습니다(확인 뒤 다시 보낼 수 있는 거절을 가르려고 — QA-337). 세션 만료(401)는 그대로 올려 useAsyncAction이 로그인으로 보내게 둡니다. 200인데 `ok:false`인 응답도 실패로 봅니다.
  */
-export async function sendIsa(request: () => Promise<IsaOkResponse>, onReload: () => void): Promise<IsaOkResponse> {
+export async function sendIsa(
+  request: () => Promise<IsaOkResponse>,
+  onReload: () => void,
+  onCode?: (code: string | null) => void,
+): Promise<IsaOkResponse> {
   let result: IsaOkResponse;
   try {
     result = await request();
   } catch (error) {
     if (error instanceof UnauthorizedError) throw error;
     const code = isaErrorCode(error);
+    onCode?.(code);
     if (isaErrorNeedsReload(code)) onReload();
     throw new Error(isaErrorText(code, error instanceof Error ? error.message : null));
   }

@@ -304,7 +304,9 @@ export const endpoints = {
     start: "/api/manual/isa/start",
     /** 본문 `id`가 있으면 그 행을 고치고, 없으면 새 행. */
     ledger: "/api/manual/isa/ledger",
-    deleteLedger: (id: number) => `/api/manual/isa/ledger/${segment(String(id))}/delete`,
+    /** `allowNegativeCash` — 현금이 음수가 되어도 지운다는 사용자 확인(QA-337). */
+    deleteLedger: (id: number, allowNegativeCash = false) =>
+      `/api/manual/isa/ledger/${segment(String(id))}/delete${allowNegativeCash ? "?allowNegativeCash=true" : ""}`,
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
     /** '매매함' 표시 남기기·지우기(본문 ids·confirmed) — 장 중반 확인 알림의 신호, 장부는 바꾸지 않음. */
     confirmInstructions: "/api/manual/isa/instructions/confirm",

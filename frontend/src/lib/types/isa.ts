@@ -193,6 +193,8 @@ export interface IsaLedgerRequest {
   at?: string;
   note?: string;
   instructionId?: number;
+  /** 고치기에서 현금이 음수가 되어도 저장한다는 사용자 확인(QA-337 — 새 행에는 쓰이지 않음, 보유 음수는 막음). */
+  allowNegativeCash?: boolean;
 }
 
 /** POST /api/manual/isa/instructions/fills 한 줄 — 다음 시가 지시나 장중 스탑 지시 하나에 묶입니다(번호는 둘 중 하나만). */

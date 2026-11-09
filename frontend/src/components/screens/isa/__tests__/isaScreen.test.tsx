@@ -436,6 +436,53 @@ describe("고치기", () => {
     expect(within(holdings).getByText("합성바이오 333330").closest("tr")?.textContent).not.toContain("%");
   });
 
+  it("QA-337: 고치기가 현금 음수로 거절되면 사유를 창 안에 보이고, 확인 단추로 allowNegativeCash를 실어 다시 보냄", async () => {
+    renderIsa();
+    api.apiPost.mockRejectedValueOnce(apiError(400, "ledger-cash-negative", "11-09 09:00 매수 111110 행에서 현금이 모자라 음수가 됩니다"));
+    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 입금 #31" }));
+    expect(within(dialog()).queryByRole("button", { name: "현금이 음수가 되어도 저장" })).toBeNull();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
+    expect((await within(dialog()).findByRole("alert")).textContent).toContain("11-09 09:00 매수 111110");
+    const first = api.apiPost.mock.calls[0][1] as Record<string, unknown>;
+    expect(first.allowNegativeCash).toBeUndefined();
+
+    api.apiPost.mockResolvedValueOnce({ ok: true, id: 31 });
+    fireEvent.click(within(dialog()).getByRole("button", { name: "현금이 음수가 되어도 저장" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledTimes(2));
+    expect((api.apiPost.mock.calls[1][1] as Record<string, unknown>).allowNegativeCash).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("QA-337: 그 밖의 거절(보유 음수)에는 확인 단추가 없음", async () => {
+    renderIsa();
+    api.apiPost.mockRejectedValueOnce(apiError(400, "ledger-invalid", "보유 수량이 음수"));
+    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 입금 #31" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
+    await within(dialog()).findByRole("alert");
+    expect(within(dialog()).queryByRole("button", { name: "현금이 음수가 되어도 저장" })).toBeNull();
+  });
+
+  it("QA-337: 지우기가 현금 음수로 거절되면 창을 닫지 않고 사유를 보인 뒤, 확인하면 allowNegativeCash로 지움", async () => {
+    renderIsa();
+    api.apiPost.mockRejectedValueOnce(apiError(400, "ledger-cash-negative", "11-09 09:00 매수 111110 행에서 현금이 모자라 음수가 됩니다"));
+    fireEvent.click(await inRegion().findByRole("button", { name: "지우기 — 입금 #31" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "지우기" }));
+    await waitFor(() => expect(dialog().textContent).toContain("11-09 09:00 매수 111110"));
+    expect(api.apiPost).toHaveBeenLastCalledWith("/api/manual/isa/ledger/31/delete");
+
+    api.apiPost.mockResolvedValueOnce({ ok: true });
+    fireEvent.click(within(dialog()).getByRole("button", { name: "현금이 음수가 되어도 지우기" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenLastCalledWith("/api/manual/isa/ledger/31/delete?allowNegativeCash=true"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await inRegion().findByText(/장부 행을 지웠습니다/)).toBeTruthy();
+  });
+
+  it("QA-337: 현금이 음수면 요약에 경고", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: { cash: -1_000, marketValue: 3_900_000, equity: 3_899_000, netDeposit: 5_000_000, profitLoss: -1_101_000, profitLossPct: -22, unpriced: [] } }));
+    renderIsa();
+    expect(await inRegion().findByText(/현금이 음수입니다/)).toBeTruthy();
+  });
+
   it("매매함 표시가 있는 줄은 '매매함 지우기'·시각, 사용자 체결이 있는 줄은 매매함 단추 없이 '체결 기록함', 장 중반 알림 시각과 안내", async () => {
     reads[ISA_PATH] = () => Promise.resolve(started({
       instructions: { session: "2026-11-09", status: "PLANNED", items: [

@@ -14,7 +14,7 @@
 - 계좌 하나(`code = "isa"`, 이름 'ISA 계좌', 시장 KR, 따라 하는 책 `kr_rules`). 시작 전에는 행이 없고 화면은 '시작' 창을 보인다.
 - 장부 행(`manual_ledger`)이 정본이다: `kind` ∈ {`DEPOSIT`(시작 현금 포함), `WITHDRAW`, `BUY`, `SELL`, `ADJUST`(수량만 바꾸는 조정 — 분할 등)}.
   현금 = Σ입금 − Σ출금 − Σ매수(수량 × 체결가 + 수수료 + 세금) + Σ매도(수량 × 체결가 − 수수료 − 세금). 보유 = 종목별 Σ매수 수량 − Σ매도 수량 + Σ조정 수량.
-  현금이 음수가 되거나 보유가 음수가 되는 행은 받지 않는다(400 `ledger-invalid`).
+  현금이 음수가 되거나 보유가 음수가 되는 행은 받지 않는다(400 `ledger-invalid`). 다만 고치기·지우기가 현금만 음수로 만들면 400 `ledger-cash-negative`로 어느 행에서 모자라는지 알리고, 사용자가 확인하면(`allowNegativeCash`) 받는다(2026-11-09 QA-337 — 잘못 적은 두 행이 서로 현금을 대 주면 어느 쪽을 먼저 고쳐도 중간 상태가 음수라 막기만 하면 바로잡을 길이 없음). 보유 음수와 새 행은 늘 막는다.
 - 평가: 보유 × 마지막 가격(`PaperMirrorService.lastPrices` — 밤 관측치 종가(직전 종가), 없으면 null. 한국 감시 1분봉은 장중 판단 입력 전용이라 쓰지 않는다). 모르는 가격의 종목은 평가에서 빼고 `unpriced`로 알린다.
   손익 = 평가액 − 순입금(Σ입금 − Σ출금). 수수료·세금은 사용자가 고칠 때만 들어간다(자동 기록은 0 — 화면에 '비용 0으로 어림' 표시).
 
@@ -58,7 +58,7 @@
 - `POST /api/manual/isa/ledger` 본문 `{id?, kind, symbol?, quantity?, price?, amount?, fee?, tax?, at?, note?, instructionId?}` — `id`가 있으면 수정, 없으면 추가 → `{ok, id}`.
 - `POST /api/manual/isa/ledger/{id}/delete` → `{ok}`. `POST /api/manual/isa/instructions/{id}/skip` → `{ok}`. `POST /api/manual/isa/instructions/confirm` 본문 `{ids, confirmed?}` → `{ok, changed}`('매매함' 표시 — 장부 불변, §4).
 - `POST /api/manual/isa/instructions/fills` 본문 `{fills:[{instructionId 또는 stopInstructionId, quantity, price, fee?, tax?}]}` → `{ok, count}`(2026-11-09 — '매매함'의 체결 입력, 아래 §8).
-- 오류 본문 `{ok:false, error, message}`(400 `invalid-request`·`ledger-invalid`, 404 `not-found`, 409 `already-started`·`not-started`·`already-recorded`). 장부 작업이라 비밀번호는 없다(Origin 검사는 기존 `SessionFilter`).
+- 오류 본문 `{ok:false, error, message}`(400 `invalid-request`·`ledger-invalid`·`ledger-cash-negative`, 404 `not-found`, 409 `already-started`·`not-started`·`already-recorded`). 장부 작업이라 비밀번호는 없다(Origin 검사는 기존 `SessionFilter`).
 - `docs/API.md`·`RouteInventoryTest`·`scripts/qa/routes.json`(쓰기 경로 `"fuzz": false`)을 같은 커밋에.
 
 ## 6. 저장 — `db/migrations/V25__manual_accounts.sql`(백엔드 소유, ADR 0008)

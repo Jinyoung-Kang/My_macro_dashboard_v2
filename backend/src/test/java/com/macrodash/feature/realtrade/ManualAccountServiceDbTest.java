@@ -224,7 +224,7 @@ class ManualAccountServiceDbTest {
         assertThat(edited.price()).isEqualByComparingTo("11500");
 
         LedgerRow deposit = store.ledger("isa").get(0);
-        rejects(() -> service.deleteLedger(deposit.id()), 400, "ledger-invalid");
+        rejects(() -> service.deleteLedger(deposit.id()), 400, "ledger-cash-negative");
         service.deleteLedger(sell);
         assertThat(store.ledgerRow(sell)).isEmpty();
         rejects(() -> service.deleteLedger(999_999_999L), 404, "not-found");
@@ -567,7 +567,6 @@ class ManualAccountServiceDbTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("QA-337 — 수정 전: 잘못 적은 두 행이 서로 현금을 대 주면 한 행만 고쳐도 사유 없이 400 ledger-invalid")
     @DisplayName("QA-337: 부풀린 매도를 먼저 고치면 부풀린 매수 행에서 현금이 모자람 — 거절 글이 그 행의 시각·방향·종목을 말함")
     void qa337NamesTheRowThatRunsOutOfCash() {
         long[] rows = crossFundedTypos();
@@ -578,5 +577,59 @@ class ManualAccountServiceDbTest {
                     assertThat(e.code()).as("확인 뒤 저장할 수 있는 거절").isEqualTo("ledger-cash-negative");
                     assertThat(e.getMessage()).contains("11-09 09:00").contains("매수").contains(B);
                 });
+    }
+
+    private BigDecimal ledgerCash() {
+        return ManualAccountLedger.replay(store.ledger("isa").stream().map(ManualAccountLedger.Entry::of).toList()).cash();
+    }
+
+    @Test
+    @DisplayName("QA-337: 부풀린 매수를 먼저 고치면 확인 없이 저장되고, 이어서 매도를 고치면 장부가 바로잡힘(묶인 지시와 USER 그대로)")
+    void qa337FixingBuyFirstWorks() {
+        long[] rows = crossFundedTypos();
+
+        service.saveLedger(row(rows[1], "BUY", B, "2", "24000", null, "2026-11-09T09:00", null));
+        service.saveLedger(row(rows[0], "SELL", A, "10", "12000", null, "2026-11-09T09:00", null));
+
+        assertThat(store.ledgerRow(rows[0]).orElseThrow().price()).isEqualByComparingTo("12000");
+        assertThat(store.ledgerRow(rows[1]).orElseThrow().price()).isEqualByComparingTo("24000");
+        assertThat(store.ledgerRow(rows[1]).orElseThrow().instructionId()).as("지시 묶음은 그대로").isNotNull();
+        assertThat(ledgerCash()).isEqualByComparingTo("872000");   // 800,000 + 120,000 − 48,000
+    }
+
+    @Test
+    @DisplayName("QA-337: 현금 음수인 고치기·지우기는 사용자가 확인하면 저장되고 그 뒤 다른 행을 고쳐 바로잡을 수 있음")
+    void qa337ConfirmedCorrectionGoesThrough() {
+        long[] rows = crossFundedTypos();
+
+        rejects(() -> service.deleteLedger(rows[0]), 400, "ledger-cash-negative");
+        assertThat(store.ledgerRow(rows[0])).as("거절이면 그대로").isPresent();
+
+        service.saveLedger(new ManualAccountService.LedgerRequest(rows[0], "SELL", A, d("10"), d("12000"), null, null, null, "2026-11-09T09:00", null, null, true));
+        assertThat(ledgerCash()).as("확인했으니 잠시 음수").isNegative();
+        service.saveLedger(row(rows[1], "BUY", B, "2", "24000", null, "2026-11-09T09:00", null));
+        assertThat(ledgerCash()).isEqualByComparingTo("872000");
+
+        long buy = (long) service.saveLedger(row(null, "BUY", B, "30", "24000", null, "2026-11-09T10:00", null)).get("id");
+        rejects(() -> service.deleteLedger(store.ledger("isa").get(0).id()), 400, "ledger-cash-negative");
+        service.deleteLedger(store.ledger("isa").get(0).id(), true);
+        assertThat(ledgerCash()).isNegative();
+        assertThat(store.ledgerRow(buy)).isPresent();
+    }
+
+    @Test
+    @DisplayName("QA-337: 확인이 있어도 보유가 음수가 되는 고치기·지우기와, 현금이 모자라는 새 행은 받지 않음")
+    void qa337GuardsThatStay() {
+        startSynthetic();
+        long sell = (long) service.saveLedger(row(null, "SELL", A, "4", "11000", null, "2026-11-09T09:00", null)).get("id");
+
+        assertThatThrownBy(() -> service.saveLedger(new ManualAccountService.LedgerRequest(sell, "SELL", A, d("11"), d("11000"), null, null, null, "2026-11-09T09:00", null, null, true)))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
+                    assertThat(e.code()).isEqualTo("ledger-invalid");
+                    assertThat(e.getMessage()).contains("11-09 09:00").contains("매도").contains(A).contains("보유");
+                });
+        LedgerRow firstBuy = store.ledger("isa").stream().filter(r -> A.equals(r.symbol()) && "BUY".equals(r.kind())).findFirst().orElseThrow();
+        rejects(() -> service.deleteLedger(firstBuy.id(), true), 400, "ledger-invalid");
+        rejects(() -> service.saveLedger(new ManualAccountService.LedgerRequest(null, "BUY", B, d("1000"), d("21000"), null, null, null, "2026-11-09T10:00", null, null, true)), 400, "ledger-invalid");
     }
 }

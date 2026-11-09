@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -22,7 +23,7 @@ import java.util.Map;
  *  GET  /api/manual/isa                              계좌·요약·보유·다음 시가 지시·최근 지시 30·장부 최근 200·메모
  *  POST /api/manual/isa/start                        {cash, startedAt?, buys:[{symbol, quantity, price}]} — 한 번만
  *  POST /api/manual/isa/ledger                       {id?, kind, symbol?, quantity?, price?, amount?, fee?, tax?, at?, note?, instructionId?}
- *  POST /api/manual/isa/ledger/{id}/delete
+ *  POST /api/manual/isa/ledger/{id}/delete           ?allowNegativeCash=true — 현금이 음수가 되는 지우기를 사용자가 확인함
  *  POST /api/manual/isa/instructions/{id}/skip
  *  POST /api/manual/isa/instructions/confirm         {ids:[…], confirmed?} — '매매함' 표시(장 중반 확인 알림의 신호)
  *  POST /api/manual/isa/instructions/fills           {fills:[{instructionId 또는 stopInstructionId, quantity, price, fee?, tax?}]} — 체결을 한 트랜잭션으로 장부에
@@ -57,8 +58,8 @@ public class ManualAccountController {
     }
 
     @PostMapping("/ledger/{id}/delete")
-    public Map<String, Object> deleteLedger(@PathVariable long id) {
-        return service.deleteLedger(id);
+    public Map<String, Object> deleteLedger(@PathVariable long id, @RequestParam(defaultValue = "false") boolean allowNegativeCash) {
+        return service.deleteLedger(id, allowNegativeCash);
     }
 
     @PostMapping("/instructions/{id}/skip")

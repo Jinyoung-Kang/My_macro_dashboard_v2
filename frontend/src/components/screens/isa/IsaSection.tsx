@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { StatGrid, StatTile } from "@/components/patterns";
 import { Banner, Button, Card, ErrorState, Freshness, Loading } from "@/components/ui";
@@ -15,6 +15,7 @@ import {
   accountStateLabel,
   canConfirmTrade,
   canFillStop,
+  CASH_NEGATIVE_CODE,
   COST_NOTE,
   fillLineFromInstruction,
   fillLineFromStop,
@@ -33,6 +34,7 @@ import {
   ledgerRowForInstruction,
   ledgerRowForStop,
   MIDDAY_GUIDE,
+  NEGATIVE_CASH_TEXT,
   PENDING_INSTRUCTIONS_GUIDE,
   sessionLabel,
   sessionStatusLabel,
@@ -88,15 +90,28 @@ export function IsaSection() {
   const [skipItem, setSkipItem] = useState<IsaInstructionItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // 지우기·건너뜀(확인 창) — 한 동작 상태를 함께 씁니다(새 동작을 시작하면 앞 오류를 지움).
-  const send = useCallback((request: () => Promise<IsaOkResponse>) => sendIsa(request, reloadNow), [reloadNow]);
+  const lastCode = useRef<string | null>(null);
+  const send = useCallback(
+    (request: () => Promise<IsaOkResponse>) => sendIsa(request, reloadNow, (code) => { lastCode.current = code; }),
+    [reloadNow],
+  );
   const action = useAsyncAction(send, "요청을 처리하지 못했습니다.");
+  // 지우기가 '현금이 음수가 됨'으로 거절되면 창을 닫지 않고 사유를 창 안에 보인 뒤, 확인하면 다시 보냅니다(QA-337 — 예전에는 창이 닫히고 화면 맨 위에만 오류가 떴음).
+  const [deleteBlocked, setDeleteBlocked] = useState(false);
 
   const confirmDelete = async () => {
     const row = deleteRow;
     if (!row) return;
     setNotice(null);
-    const ok = await action.run(() => postDeleteLedger(row.id));
+    const force = deleteBlocked;
+    lastCode.current = null;
+    const ok = await action.run(() => postDeleteLedger(row.id, force));
+    if (!ok && !force && lastCode.current === CASH_NEGATIVE_CODE) {
+      setDeleteBlocked(true);
+      return;
+    }
     setDeleteRow(null);
+    setDeleteBlocked(false);
     if (ok) setNotice("장부 행을 지웠습니다 — 다음 지시는 지운 뒤의 장부로 계산합니다.");
     reloadNow();
   };
@@ -173,7 +188,7 @@ export function IsaSection() {
           <Banner tone="ok">{notice}</Banner>
         </div>
       )}
-      {action.error && (
+      {action.error && !deleteBlocked && (
         <div role="alert">
           <Banner tone="danger">{action.error}</Banner>
         </div>
@@ -285,15 +300,20 @@ export function IsaSection() {
       <ConfirmDialog
         open={deleteRow !== null}
         onOpenChange={(open) => {
-          if (!open && !action.busy) setDeleteRow(null);
+          if (!open && !action.busy) {
+            setDeleteRow(null);
+            setDeleteBlocked(false);
+          }
         }}
         title="장부 행 지우기"
         description={
-          deleteRow
+          deleteBlocked
+            ? `${action.error ?? ""} 그래도 지우면 현금이 음수인 채로 남고, 다른 행을 고쳐 바로잡아야 합니다.`
+            : deleteRow
             ? `${kindLabel(deleteRow.kind)}${deleteRow.symbol ? ` ${symbolText(deleteRow.symbol, deleteRow.name)}` : ""} 행(#${deleteRow.id}, ${formatKst(deleteRow.at)})을 지웁니다. 되돌릴 수 없고, 다음 지시는 지운 뒤의 장부로 계산합니다.`
             : undefined
         }
-        confirmLabel="지우기"
+        confirmLabel={deleteBlocked ? "현금이 음수가 되어도 지우기" : "지우기"}
         tone="danger"
         busy={action.busy}
         onConfirm={() => void confirmDelete()}
@@ -398,6 +418,7 @@ function StartedBody({
             <StatTile label="현금" value={valuation.cash} format={(value) => formatNumber(value, 0)} unit="원" />
           </StatGrid>
           <p className="text-xs leading-relaxed text-text-3">{COST_NOTE}</p>
+          {valuation.cash !== null && valuation.cash < 0 && <Banner tone="warn">{NEGATIVE_CASH_TEXT}</Banner>}
           {unpriced && (
             <Banner tone="warn">가격을 몰라 평가에서 뺀 종목: {unpriced} — 평가액·손익·비중에 들어가지 않았습니다.</Banner>
           )}

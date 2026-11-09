@@ -85,6 +85,7 @@ public class ManualAccountService {
     private static final Set<String> KINDS = Set.of(ManualAccountStore.KIND_DEPOSIT, ManualAccountStore.KIND_WITHDRAW,
             ManualAccountStore.KIND_BUY, ManualAccountStore.KIND_SELL, ManualAccountStore.KIND_ADJUST);
     private static final BigDecimal HUNDRED = new BigDecimal("100");
+    private static final java.time.format.DateTimeFormatter ROW_TIME = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(Kst.ZONE);
 
     // ------------------------------------------------------------------ 요청 본문
     /** 시작 매수 한 줄. */
@@ -105,9 +106,18 @@ public class ManualAccountService {
         }
     }
 
-    /** {@code POST /api/manual/isa/ledger} 본문 — {@code id}가 있으면 그 행을 고치고, 없으면 새 행. */
+    /**
+     * {@code POST /api/manual/isa/ledger} 본문 — {@code id}가 있으면 그 행을 고치고, 없으면 새 행. {@code allowNegativeCash}는 고치기에서 현금이 음수가 되어도
+     * 저장한다는 사용자 확인입니다(QA-337, 새 행에는 쓰이지 않음).
+     */
     public record LedgerRequest(Long id, String kind, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal amount,
-                                BigDecimal fee, BigDecimal tax, String at, String note, Long instructionId) {
+                                BigDecimal fee, BigDecimal tax, String at, String note, Long instructionId, Boolean allowNegativeCash) {
+
+        /** 확인 없는 요청. */
+        public LedgerRequest(Long id, String kind, String symbol, BigDecimal quantity, BigDecimal price, BigDecimal amount,
+                             BigDecimal fee, BigDecimal tax, String at, String note, Long instructionId) {
+            this(id, kind, symbol, quantity, price, amount, fee, tax, at, note, instructionId, null);
+        }
 
         @Override
         public String toString() {
@@ -492,7 +502,11 @@ public class ManualAccountService {
                 }
             }
             entries.add(entry(existing == null ? null : existing.id(), v));
-            rejectInvalid(entries);
+            if (existing == null) {
+                rejectInvalid(entries);
+            } else {
+                rejectCorrection(entries, Boolean.TRUE.equals(body.allowNegativeCash()));
+            }
             replaced.forEach(rowId -> store.deleteLedger(CODE, rowId));
             long written;
             if (existing == null) {
@@ -627,8 +641,13 @@ public class ManualAccountService {
         }
     }
 
-    /** {@code POST /api/manual/isa/ledger/{id}/delete}. */
+    /** {@code POST /api/manual/isa/ledger/{id}/delete} — 확인 없이. */
     public Map<String, Object> deleteLedger(long id) {
+        return deleteLedger(id, false);
+    }
+
+    /** {@code POST /api/manual/isa/ledger/{id}/delete} — {@code allowNegativeCash}는 현금이 음수가 되어도 지운다는 사용자 확인(QA-337). */
+    public Map<String, Object> deleteLedger(long id, boolean allowNegativeCash) {
         requireReady();
         Instant now = clock.instant();
         SessionHours next = ManualAccountCalendar.nextSession(paper, now);
@@ -642,7 +661,7 @@ public class ManualAccountService {
                     entries.add(Entry.of(r));
                 }
             }
-            rejectInvalid(entries);
+            rejectCorrection(entries, allowNegativeCash);
             store.deleteLedger(CODE, row.id());
             if (row.instructionId() != null) {
                 skipIfOrphan(row.instructionId());
@@ -737,6 +756,34 @@ public class ManualAccountService {
         if (acc == null) {
             throw new ManualAccountException(409, ManualAccountException.NOT_STARTED, "아직 시작하지 않은 계좌입니다 — 먼저 시작하세요.");
         }
+    }
+
+    /**
+     * 잠금 안 — 고치기·지우기의 검사(QA-337). 보유 음수는 늘 막고, 현금 음수는 어느 행에서 모자라는지 알려 거절하되 사용자가 확인하면({@code allowNegativeCash}) 받습니다.
+     * 잘못 적은 두 행이 서로 현금을 대 주면 어느 행을 먼저 고쳐도 중간 상태가 음수라, 막기만 하면 장부를 바로잡을 길이 없습니다. 새 행·체결 입력은 {@link #rejectInvalid}.
+     */
+    private static void rejectCorrection(List<Entry> entries, boolean allowNegativeCash) {
+        ManualAccountLedger.Problem problem = ManualAccountLedger.firstProblem(entries, allowNegativeCash);
+        if (problem == null) {
+            return;
+        }
+        if (problem.cash()) {
+            throw ManualAccountException.ledgerCashNegative(rowText(problem.entry()) + " 행에서 현금이 모자라 음수가 됩니다 — 그 행의 수량·체결가가 잘못됐으면 그 행을 먼저 고치세요.");
+        }
+        throw ManualAccountException.ledgerInvalid(rowText(problem.entry()) + " 행에서 보유 수량이 음수가 됩니다 — 그 전에 매수 행이 있는지 보세요.");
+    }
+
+    /** 거절 글의 행 이름 — 'MM-dd HH:mm 매수 005930'(서울 시각). */
+    private static String rowText(Entry e) {
+        String kind = switch (e.kind()) {
+            case ManualAccountStore.KIND_BUY -> "매수";
+            case ManualAccountStore.KIND_SELL -> "매도";
+            case ManualAccountStore.KIND_DEPOSIT -> "입금";
+            case ManualAccountStore.KIND_WITHDRAW -> "출금";
+            case ManualAccountStore.KIND_ADJUST -> "조정";
+            default -> e.kind();
+        };
+        return ROW_TIME.format(e.at()) + " " + kind + (e.symbol() == null ? "" : " " + e.symbol());
     }
 
     private static void rejectInvalid(List<Entry> entries) {

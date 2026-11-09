@@ -6,6 +6,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import {
   buildLedgerRequest,
+  CASH_NEGATIVE_CODE,
   emptyLedgerForm,
   fillAtDefault,
   formatPrice,
@@ -119,7 +120,12 @@ function LedgerForm({
 }) {
   const ids = useId();
   const [form, setForm] = useState<IsaLedgerForm>(() => initialForm(target));
-  const send = useCallback((request: () => Promise<IsaOkResponse>) => sendIsa(request, onReload), [onReload]);
+  // 서버가 '현금이 음수가 됨'으로 거절한 고치기는 확인 뒤 다시 보낼 수 있습니다(QA-337 — 잘못 적은 두 행이 서로 현금을 대 주면 막기만 해서는 바로잡을 길이 없음).
+  const [cashNegative, setCashNegative] = useState(false);
+  const send = useCallback(
+    (request: () => Promise<IsaOkResponse>) => sendIsa(request, onReload, (code) => setCashNegative(code === CASH_NEGATIVE_CODE)),
+    [onReload],
+  );
   const action = useAsyncAction(send, "장부에 적지 못했습니다.");
   const fields = ledgerFields(form.kind);
   const checked = buildLedgerRequest(form, contextOf(target));
@@ -127,9 +133,10 @@ function LedgerForm({
   const symbolLocked = target.mode === "instruction";
   const set = (key: keyof IsaLedgerForm) => (value: string) => setForm((current) => ({ ...current, [key]: value }));
 
-  const submit = async () => {
+  const submit = async (allowNegativeCash = false) => {
     if (!checked.ok || action.busy) return;
-    const body = checked.body;
+    const body = allowNegativeCash ? { ...checked.body, allowNegativeCash: true } : checked.body;
+    setCashNegative(false);
     onBusyChange(true);
     const ok = await action.run(() => postLedger(body));
     onBusyChange(false);
@@ -317,6 +324,11 @@ function LedgerForm({
         <button type="button" onClick={onCancel} disabled={action.busy} className={buttonClasses("secondary")}>
           취소
         </button>
+        {cashNegative && (
+          <button type="button" onClick={() => void submit(true)} disabled={!checked.ok || action.busy} className={buttonClasses("danger")}>
+            현금이 음수가 되어도 저장
+          </button>
+        )}
         <button type="submit" disabled={!checked.ok || action.busy} className={buttonClasses("primary")}>
           {action.busy ? "적는 중…" : "장부에 적기"}
         </button>

@@ -931,7 +931,13 @@ export function buildLedgerRequest(
 // ---------------------------------------------------------------- 서버 오류
 
 /** 서버 오류 코드(명세 §5 — 400 invalid-request·ledger-invalid, 404 not-found, 409 already-started·not-started·already-recorded). */
-export const ISA_ERROR_CODES = ["invalid-request", "ledger-invalid", "not-found", "already-started", "not-started", "already-recorded"] as const;
+export const ISA_ERROR_CODES = ["invalid-request", "ledger-invalid", "ledger-cash-negative", "not-found", "already-started", "not-started", "already-recorded"] as const;
+
+/** 고치기·지우기가 현금을 음수로 만드는 거절 — 사용자가 확인하면 저장할 수 있습니다(QA-337). */
+export const CASH_NEGATIVE_CODE = "ledger-cash-negative";
+
+/** 현금이 음수인 장부의 경고(요약 카드). */
+export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 장부에 금액을 잘못 적은 행이 남아 있는지 확인해 고치세요. 음수인 동안 다음 지시의 매수가 줄어듭니다.";
 
 export type IsaErrorCode = (typeof ISA_ERROR_CODES)[number];
 
@@ -961,6 +967,8 @@ export function isaErrorText(code: IsaErrorCode | null, fallback: string | null)
       return `입력이 올바르지 않습니다${detail ? ` — ${detail}` : ". 칸을 확인하세요."}`;
     case "ledger-invalid":
       return `이 행을 적으면 현금이나 보유 수량이 음수가 됩니다 — 수량·가격·금액을 확인하세요.${detail ? ` (${detail})` : ""}`;
+    case "ledger-cash-negative":
+      return detail ?? "이대로면 현금이 음수가 됩니다 — 금액이 잘못된 다른 행을 먼저 고치세요.";
     case "not-found":
       return "그 행이나 지시를 찾지 못했습니다 — 그사이 지워졌을 수 있어 장부를 다시 읽었습니다.";
     case "already-started":
