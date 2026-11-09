@@ -13,7 +13,9 @@ import { endpoints } from "@/lib/endpoints";
 import { deltaColor, formatKst, formatNumber, formatPercent, formatSigned } from "@/lib/format";
 import {
   accountStateLabel,
-  applyItemFor,
+  confirmLineFromInstruction,
+  confirmLineFromStop,
+  confirmLineFromTrade,
   BALANCE_CHANGED_TEXT,
   canConfirm,
   COST_NOTE,
@@ -42,12 +44,13 @@ import {
   unpricedText,
 } from "@/lib/isa";
 import { liveKey, liveSecondsText, liveShown } from "@/lib/livePrices";
-import type { IsaApplyItem, IsaInstructionItem, IsaOkResponse, IsaResponse, IsaStopInstruction, IsaTrade } from "@/lib/types/isa";
+import type { IsaInstructionItem, IsaOkResponse, IsaResponse, IsaStopInstruction, IsaTrade } from "@/lib/types/isa";
 import { IsaCommissionDialog, IsaTotalDialog } from "./IsaBalanceDialogs";
+import { IsaConfirmDialog, type IsaConfirmTarget } from "./IsaConfirmDialog";
 import { IsaPositionDialog, type IsaPositionTarget } from "./IsaPositionDialog";
 import { IsaStartDialog } from "./IsaStartDialog";
 import { IsaInstructionsTable, IsaPositionsTable, IsaRecentInstructionsTable, IsaStopInstructionsTable, IsaTradesTable } from "./IsaTables";
-import { postApply, postDeletePosition, postSkipInstruction, postUndoTrade, sendIsa } from "./isaRequests";
+import { postDeletePosition, postSkipInstruction, postUndoTrade, sendIsa } from "./isaRequests";
 
 /** 다시 읽는 주기 — 잔고는 밤 결정·사용자 고침 때만 바뀝니다(개요와 같은 1분). */
 const POLL_MS = 60_000;
@@ -72,6 +75,7 @@ export function IsaSection() {
   const [totalOpen, setTotalOpen] = useState(false);
   const [commissionOpen, setCommissionOpen] = useState(false);
   const [positionTarget, setPositionTarget] = useState<IsaPositionTarget | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<IsaConfirmTarget | null>(null);
   const [deleteRow, setDeleteRow] = useState<IsaPositionView | null>(null);
   const [skipItem, setSkipItem] = useState<IsaInstructionItem | null>(null);
   const [undoRow, setUndoRow] = useState<IsaTrade | null>(null);
@@ -117,24 +121,25 @@ export function IsaSection() {
     return out;
   }, [positions, quotes]);
 
-  const applyItems = async (items: readonly IsaApplyItem[], count: number) => {
+  // '확인' — 체결 입력 창(수량·체결 금액·평균 단가·수수료)을 실시간 가격으로 채워 엽니다(2026-11-09 사용자 결정 — 적은 값으로 잔고에 바로 반영).
+  const commissionPct = toNumber(started ? data?.summary?.commissionPct : null);
+  const confirmInstructions = (items: readonly IsaInstructionItem[]) => {
     setNotice(null);
-    let reply: IsaOkResponse = { ok: true };
-    const ok = await action.run(async () => {
-      reply = await postApply({ items: [...items] });
-      return reply;
-    });
-    if (ok) {
-      const skipped = reply.skipped ?? 0;
-      setNotice(`확인 ${reply.count ?? count}건을 잔고에 반영했습니다.${skipped > 0 ? ` 팔 보유가 없어 ${skipped}건은 닫았습니다.` : ""} 체결가가 다르면 잔고에서 가격을 고치세요.`);
-    }
-    reloadNow();
+    setConfirmTarget({ mode: "apply", lines: items.map((item) => confirmLineFromInstruction(item, quotes, commissionPct)) });
   };
-
-  const confirmInstructions = (items: readonly IsaInstructionItem[]) =>
-    void applyItems(items.map((item) => applyItemFor({ instructionId: item.id }, item.symbol, quotes)), items.length);
-  const confirmStops = (rows: readonly IsaStopInstruction[]) =>
-    void applyItems(rows.map((row) => applyItemFor({ stopInstructionId: row.id }, row.symbol, quotes)), rows.length);
+  const confirmStops = (rows: readonly IsaStopInstruction[]) => {
+    setNotice(null);
+    setConfirmTarget({
+      mode: "apply",
+      lines: rows.map((row) =>
+        confirmLineFromStop(row, quotes, toNumber((positions ?? []).find((entry) => entry.symbol === row.symbol)?.lastPrice ?? null), commissionPct),
+      ),
+    });
+  };
+  const editTrade = (row: IsaTrade) => {
+    setNotice(null);
+    setConfirmTarget({ mode: "edit", tradeId: row.id, line: confirmLineFromTrade(row) });
+  };
 
   const confirmSkip = async () => {
     const item = skipItem;
@@ -240,6 +245,7 @@ export function IsaSection() {
             setNotice(null);
             setDeleteRow(row);
           }}
+          onEditTrade={editTrade}
           onUndo={(row) => {
             setNotice(null);
             setUndoRow(row);
@@ -255,6 +261,19 @@ export function IsaSection() {
         />
       )}
 
+      <IsaConfirmDialog
+        target={confirmTarget}
+        commissionPct={commissionPct}
+        onClose={() => setConfirmTarget(null)}
+        onReload={reloadNow}
+        onDone={(result, count) => {
+          const editing = confirmTarget?.mode === "edit";
+          setConfirmTarget(null);
+          const skipped = result.skipped ?? 0;
+          setNotice(editing ? "매매를 고쳤습니다 — 현금·매입 금액·세금·실현 손익을 다시 계산했습니다." : `확인 ${result.count ?? count}건을 적은 값으로 잔고에 반영했습니다.${skipped > 0 ? ` 팔 보유가 없어 ${skipped}건은 닫았습니다.` : ""}`);
+          reloadNow();
+        }}
+      />
       <IsaStartDialog
         open={startOpen}
         onClose={() => setStartOpen(false)}
@@ -350,6 +369,7 @@ function StartedBody({
   onAddPosition,
   onEditPosition,
   onDeletePosition,
+  onEditTrade,
   onUndo,
   onOpenTotal,
   onOpenCommission,
@@ -365,6 +385,7 @@ function StartedBody({
   onAddPosition: () => void;
   onEditPosition: (row: IsaPositionView) => void;
   onDeletePosition: (row: IsaPositionView) => void;
+  onEditTrade: (row: IsaTrade) => void;
   onUndo: (row: IsaTrade) => void;
   onOpenTotal: () => void;
   onOpenCommission: () => void;
@@ -500,7 +521,7 @@ function StartedBody({
       </Card>
 
       <Card title="매매 내역" subtitle="'확인'으로 잔고에 반영한 매매(최근 200, 최근 순) — 체결가가 다르면 잔고에서 가격을 고치세요. 잘못 눌렀으면 되돌리세요">
-        <IsaTradesTable rows={data.trades ?? []} onUndo={onUndo} disabled={busy} />
+        <IsaTradesTable rows={data.trades ?? []} onEdit={onEditTrade} onUndo={onUndo} disabled={busy} />
       </Card>
     </>
   );

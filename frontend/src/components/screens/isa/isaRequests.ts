@@ -4,6 +4,7 @@ import { isaErrorCode, isaErrorNeedsReload, isaErrorText } from "@/lib/isa";
 import type {
   IsaApplyRequest,
   IsaCommissionRequest,
+  IsaEditTradeRequest,
   IsaOkResponse,
   IsaPositionRequest,
   IsaStartRequest,
@@ -51,6 +52,10 @@ export function postSkipInstruction(id: number): Promise<IsaOkResponse> {
 }
 
 /** 매매 내역 되돌리기(잔고를 되돌리고 지시를 다시 PLANNED로). */
+export function postEditTrade(id: number, body: IsaEditTradeRequest): Promise<IsaOkResponse> {
+  return apiPost<IsaOkResponse>(endpoints.isa.editTrade(id), body);
+}
+
 export function postUndoTrade(id: number): Promise<IsaOkResponse> {
   return apiPost<IsaOkResponse>(endpoints.isa.undoTrade(id));
 }

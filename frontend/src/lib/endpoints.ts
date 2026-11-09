@@ -314,6 +314,8 @@ export const endpoints = {
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
     /** '확인' 되돌리기. */
     undoTrade: (id: number) => `/api/manual/isa/trades/${segment(String(id))}/undo`,
+    /** 확인한 매매의 실제 수량·체결 금액·수수료를 고칩니다. */
+    editTrade: (id: number) => `/api/manual/isa/trades/${segment(String(id))}`,
   },
 
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)

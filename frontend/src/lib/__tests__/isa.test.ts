@@ -10,7 +10,14 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  applyItemFor,
+  buildApplyRequest,
+  buildEditTradeRequest,
+  confirmLineFromInstruction,
+  confirmLineFromStop,
+  confirmLineFromTrade,
+  confirmLineWarning,
+  estimateFee,
+  updateConfirmLine,
   autoNoteLabel,
   buildCommissionRequest,
   buildPositionRequest,
@@ -248,7 +255,7 @@ describe("안내 글", () => {
     expect(tradeGuide("2026-11-19T10:00:00+09:00")).toMatch(/^장전 동시호가\(09:30~10:00\)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다/);
     expect(tradeGuide(null)).toMatch(/^장전 동시호가\(08:30~09:00\)/);
     expect(tradeGuide("모름")).toMatch(/^장전 동시호가\(08:30~09:00\)/);
-    expect(tradeGuide(null)).toContain("'확인'을 누르세요");
+    expect(tradeGuide(null)).toContain("'확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요");
     expect(tradeGuide(null)).not.toContain("자동 기록");
   });
 
@@ -340,15 +347,74 @@ describe("실시간 평가와 '확인' 가격", () => {
     expect(isaValuation(null, null, {})).toMatchObject({ positions: [], cash: null, totalAsset: null, live: 0 });
   });
 
-  it("확인에 실을 가격 — 받았으면 live, 끊겼거나 없으면 생략(서버 직전 종가)", () => {
-    expect(applyItemFor({ instructionId: 7 }, "111110", { "111110": { price: 13_000, at: null } })).toEqual({ instructionId: 7, price: 13_000, priceSource: "live" });
-    expect(applyItemFor({ stopInstructionId: 9 }, "111110", {})).toEqual({ stopInstructionId: 9 });
-    expect(applyItemFor({ instructionId: 7 }, "111110", { "111110": { price: Number.NaN, at: null } })).toEqual({ instructionId: 7 });
-  });
 
   it("정렬의 시각 값 — ISO를 ms로, 못 읽으면 null", () => {
     expect(timeSortValue("2026-11-09T00:00:00Z")).toBe(Date.parse("2026-11-09T00:00:00Z"));
     expect(timeSortValue("모름")).toBeNull();
     expect(timeSortValue(null)).toBeNull();
+  });
+});
+
+describe("체결 입력 창(2026-11-09)", () => {
+  const item = { id: 7, symbol: "222220", name: "합성화학", side: "SELL", quantity: 3, refPrice: 53_000, weightPct: 0, status: "PLANNED", notifiedNightAt: null, notifiedMorningAt: null };
+  const stop = { id: 4, session: "2026-11-10", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "MARKET", targetAt: null, status: "PLANNED", notifiedAt: null };
+  const live = { "222220": { price: 54_000, at: null } };
+
+  it("수수료 어림 — 금액 × 수수료율, 원 미만 절사, 수수료율을 모르면 0", () => {
+    expect(estimateFee(125_000, 0.015)).toBe(18);
+    expect(estimateFee(125_000, null)).toBe(0);
+  });
+
+  it("줄 — 실시간 가격으로 수량·금액·단가·수수료를 채움(출처 live), 없으면 기준가(close), 그것도 없으면 빈칸", () => {
+    expect(confirmLineFromInstruction(item, live, 0.015)).toMatchObject({ instructionId: 7, quantity: "3", amount: "162000", price: "54000", fee: "24", source: "live", instructed: 3, feeEdited: false });
+    expect(confirmLineFromInstruction(item, {}, 0.015)).toMatchObject({ amount: "159000", price: "53000", source: "close" });
+    expect(confirmLineFromStop(stop, {}, 12_000, 0.015)).toMatchObject({ stopInstructionId: 4, instructionId: null, amount: "60000", fee: "9" });
+    expect(confirmLineFromStop(stop, {}, null, 0.015)).toMatchObject({ amount: "", price: "", fee: "" });
+  });
+
+  it("칸 맞추기 — 금액을 고치면 단가, 단가를 고치면 금액, 수량을 고치면 금액(단가 유지), 수수료는 직접 고치기 전까지 다시 셈, 출처는 금액·단가를 고치면 user", () => {
+    let line = confirmLineFromInstruction(item, live, 0.015);
+    line = updateConfirmLine(line, "amount", "150,001", 0.015);
+    expect(line).toMatchObject({ amount: "150,001", price: "50000.33", fee: "22", source: "user" });
+    line = updateConfirmLine(line, "price", "51000", 0.015);
+    expect(line).toMatchObject({ price: "51000", amount: "153000", fee: "22" });
+    line = updateConfirmLine(line, "quantity", "2", 0.015);
+    expect(line).toMatchObject({ quantity: "2", amount: "102000", fee: "15" });
+    line = updateConfirmLine(line, "fee", "40", 0.015);
+    expect(line).toMatchObject({ fee: "40", feeEdited: true });
+    line = updateConfirmLine(line, "amount", "100000", 0.015);
+    expect(line).toMatchObject({ fee: "40", price: "50000" });
+    const quantityOnly = updateConfirmLine(confirmLineFromInstruction(item, live, 0.015), "quantity", "2", 0.015);
+    expect(quantityOnly.source).toBe("live");
+    const unread = updateConfirmLine(confirmLineFromInstruction(item, live, 0.015), "amount", "abc", 0.015);
+    expect(unread).toMatchObject({ amount: "abc", price: "54000" });
+  });
+
+  it("경고 — 단가가 참고 가격에서 10% 넘게 벗어나면 글, 안이면 없음", () => {
+    expect(confirmLineWarning({ price: "54000", refPrice: 53_000 })).toBeNull();
+    expect(confirmLineWarning({ price: "162000", refPrice: 54_000 })).toContain("높습니다");
+    expect(confirmLineWarning({ price: "", refPrice: 54_000 })).toBeNull();
+  });
+
+  it("본문 — 지시 번호·수량·금액·수수료·출처, 체결 금액이 없으면 막고, 수량은 정수만, 수수료는 비우면 0", () => {
+    const line = confirmLineFromInstruction(item, live, 0.015);
+    expect(buildApplyRequest([line, confirmLineFromStop(stop, {}, 12_000, 0.015)])).toEqual({
+      ok: true,
+      body: { items: [
+        { instructionId: 7, quantity: 3, amount: 162_000, fee: 24, priceSource: "live" },
+        { stopInstructionId: 4, quantity: 5, amount: 60_000, fee: 9, priceSource: "close" },
+      ] },
+    });
+    expect(buildApplyRequest([{ ...line, amount: "" }]).ok).toBe(false);
+    expect(buildApplyRequest([{ ...line, quantity: "1.5" }]).ok).toBe(false);
+    expect(buildApplyRequest([{ ...line, fee: "" }])).toMatchObject({ ok: true, body: { items: [{ fee: 0 }] } });
+    expect(buildApplyRequest([]).ok).toBe(false);
+  });
+
+  it("고치기 — 적어 둔 값으로 채우고 수수료를 유지, 본문은 수량·금액·수수료", () => {
+    const trade = { id: 3, at: null, side: "SELL", symbol: "222220", name: "합성화학", quantity: 3, price: 50_000.33, amount: 150_001, fee: 30, tax: 300, realizedPnl: 1, realizedPct: 1, priceSource: "user", taxAssumed: false };
+    const line = confirmLineFromTrade(trade);
+    expect(line).toMatchObject({ quantity: "3", amount: "150001", price: "50000.33", fee: "30", feeEdited: true, instructed: null });
+    expect(buildEditTradeRequest(updateConfirmLine(line, "amount", "151000", 0.015))).toEqual({ ok: true, body: { quantity: 3, amount: 151_000, fee: 30 } });
   });
 });

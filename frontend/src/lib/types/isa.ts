@@ -134,7 +134,7 @@ export interface IsaTrade {
   /** 매도의 실현 손익 — 매수는 null. */
   realizedPnl: IsaDecimal;
   realizedPct: IsaDecimal;
-  /** live(화면이 보던 실시간 가격)·close(서버 직전 종가). */
+  /** live(실시간 가격)·close(서버 직전 종가)·user(사용자가 적은 체결 금액). */
   priceSource: string | null;
   /** 시장 구분을 몰라 코스피 세율로 어림한 매도인가. */
   taxAssumed: boolean | null;
@@ -200,7 +200,21 @@ export interface IsaApplyItem {
   instructionId?: number;
   stopInstructionId?: number;
   price?: number;
-  priceSource?: "live" | "close";
+  /** live(실시간 가격 그대로)·close(직전 종가 그대로)·user(사용자가 적음). */
+  priceSource?: "live" | "close" | "user";
+  /** 실제 체결 수량(정수 주). */
+  quantity?: number;
+  /** 체결 금액(총액, 원) — 평균 단가는 서버가 금액 ÷ 수량으로 셉니다. */
+  amount?: number;
+  /** 매매 비용(수수료, 원). */
+  fee?: number;
+}
+
+/** POST /api/manual/isa/trades/{id} 본문 — 확인한 매매의 실제 수량·체결 금액·수수료. */
+export interface IsaEditTradeRequest {
+  quantity: number;
+  amount: number;
+  fee: number;
 }
 
 /** POST /api/manual/isa/instructions/apply 본문 — 한 트랜잭션으로 잔고에 반영합니다. */

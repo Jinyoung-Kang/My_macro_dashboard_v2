@@ -108,7 +108,7 @@ function PositionForm({
       {field("symbol", "종목코드", "005930", "여섯 자리 코드나 종목 이름.")}
       {field("name", "종목명", "비우면 시세 이름표", "표시 이름만 바꿉니다.")}
       {field("quantity", "수량", "10", undefined, true)}
-      {field("price", "가격(평균 매입가)", "12,000", "실제 체결가가 다르면 이 칸을 고치세요.", true)}
+      {field("price", "가격(평균 매입가)", "12,000", "평균 매입가입니다. 여기를 고쳐도 현금은 바뀌지 않습니다 — 체결 금액이 틀렸으면 매매 내역의 '고치기'를 쓰세요.", true)}
       <p className="text-sm text-text-2">
         매입 금액 = 수량 × 가격: <strong className="font-semibold text-bright">{amount === null ? "—" : formatWon(amount)}</strong>
       </p>

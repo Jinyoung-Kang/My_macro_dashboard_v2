@@ -9,8 +9,10 @@
 import { EMPTY, formatKst, formatKstSeconds, formatNumber, formatSigned } from "./format";
 import type {
   IsaApplyItem,
+  IsaApplyRequest,
   IsaCommissionRequest,
   IsaDecimal,
+  IsaEditTradeRequest,
   IsaInstructionItem,
   IsaPosition,
   IsaPositionRequest,
@@ -19,6 +21,7 @@ import type {
   IsaStopInstruction,
   IsaSummary,
   IsaTotalRequest,
+  IsaTrade,
   IsaUnpriced,
 } from "./types/isa";
 
@@ -31,7 +34,7 @@ export const ISA_SOURCE =
 
 /** 수수료·세금 안내. */
 export const COST_NOTE =
-  "수수료는 화면에서 바꾼 요율, 세금은 코스피 거래세+농특세 0.20%·코스닥 0.20%·ETF 0%(매도만, 원 미만 절사)로 어림합니다. 실제 체결가와 다르면 잔고에서 가격을 고치세요.";
+  "수수료는 화면에서 바꾼 요율, 세금은 코스피 거래세+농특세 0.20%·코스닥 0.20%·ETF 0%(매도만, 원 미만 절사)로 어림합니다. 수수료는 '확인' 창에서 실제 값으로 고칠 수 있습니다.";
 
 /** 장전 동시호가 길이 — 개장 30분 전부터(텔레그램 글 ManualAccountNotices와 같음). */
 const AUCTION_MINUTES = 30;
@@ -58,12 +61,12 @@ export function targetClock(targetAt: string | null | undefined): string | null 
 export function tradeGuide(open: string | null | undefined, targetAt?: string | null): string {
   const at = openClock(targetAt);
   if (at !== null) {
-    return `${at} 이후 시장가로 내면 규칙 계좌와 같은 때(${at})에 체결됩니다. 장중 스탑이 걸리면 텔레그램으로 따로 알립니다. 매매했으면 '확인'을 누르세요 — 그 순간의 가격으로 잔고에 반영합니다.`;
+    return `${at} 이후 시장가로 내면 규칙 계좌와 같은 때(${at})에 체결됩니다. 장중 스탑이 걸리면 텔레그램으로 따로 알립니다. 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다.`;
   }
   const end = openClock(open) ?? DEFAULT_OPEN;
   const minutes = (Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - AUCTION_MINUTES + 24 * 60) % (24 * 60);
   const start = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-  return `장전 동시호가(${start}~${end})에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 매매했으면 '확인'을 누르세요 — 그 순간의 가격으로 잔고에 반영합니다.`;
+  return `장전 동시호가(${start}~${end})에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다.`;
 }
 
 /** '못 만듦'(UNAVAILABLE) 세션의 안내 — 사유 코드(instructions.reason)별로, 모르는 사유·없음은 단정하지 않는 문구. */
@@ -116,7 +119,7 @@ export function stopWindowText(item: Pick<IsaStopInstruction, "timing" | "target
  */
 export const STOP_GUIDE =
   "장중 시장가는 알림을 받으면 바로(개장 10분 뒤 전에 걸린 스탑은 그 시각 이후), 종가 단일가는 마감 10분 전부터 마감까지 시장가로 매도하세요 — "
-  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '확인'을 누르세요 — 그 순간의 가격으로 잔고에 반영합니다.";
+  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다.";
 
 const AUTO_NOTE: Readonly<Record<string, string>> = {
   "not-notified": "마감까지 알리지 못해 건너뜀",
@@ -291,7 +294,7 @@ export function canConfirm(item: Pick<IsaInstructionItem, "status">): boolean {
 
 /** 장 중반·마감 전 확인 알림 안내(지시 표 아래). */
 export const MIDDAY_GUIDE =
-  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '확인'을 누르세요 — 누른 순간의 가격으로 잔고에 바로 반영합니다. 그날 정규장 절반(보통 12:15)과 마감 30분 전(보통 15:00)까지 확인하지 않은 지시는 텔레그램으로 한 번씩 더 알립니다. 체결가가 다르면 잔고에서 가격을 고치고, 잘못 눌렀으면 매매 내역에서 되돌리세요.";
+  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다. 그날 정규장 절반(보통 12:15)과 마감 30분 전(보통 15:00)까지 확인하지 않은 지시는 텔레그램으로 한 번씩 더 알립니다. 체결가가 다르면 잔고에서 가격을 고치고, 잘못 눌렀으면 매매 내역에서 되돌리세요.";
 
 /** 건너뜀을 보이는가 — 아직 확인하지 않은 지시만. */
 export function canSkip(item: Pick<IsaInstructionItem, "status">): boolean {
@@ -428,14 +431,178 @@ export function isaValuation(
   };
 }
 
-/** '확인'에 실을 가격 — 화면이 받은 실시간 가격이 있으면 싣고, 없으면(끊겼거나 못 받음) 칸을 비워 서버 직전 종가로. */
-export function applyItemFor(
-  target: { instructionId?: number; stopInstructionId?: number },
-  symbol: string,
+/** 체결 입력 창의 칸. */
+export type IsaConfirmField = "quantity" | "amount" | "price" | "fee";
+
+/**
+ * 체결 입력 창의 한 줄(2026-11-09 사용자 결정) — 수량·체결 금액(총액)·평균 단가·수수료. 금액을 고치면 평균 단가가, 평균 단가나 수량을 고치면 금액이 따라 바뀌고, 수수료는 직접
+ * 고치기 전까지 수수료율로 다시 셉니다. 채워 둔 값을 그대로 보내면 가격 출처는 live·close, 금액을 고치면 user입니다.
+ */
+export interface IsaConfirmLine {
+  key: string;
+  instructionId: number | null;
+  stopInstructionId: number | null;
+  side: string;
+  symbol: string;
+  name: string | null;
+  /** 지시 수량(참고 — 고치기 창은 null). */
+  instructed: number | null;
+  quantity: string;
+  amount: string;
+  price: string;
+  fee: string;
+  feeEdited: boolean;
+  source: "live" | "close" | "user";
+  /** 벗어나면 경고할 참고 가격(실시간, 없으면 기준가·직전 종가). */
+  refPrice: number | null;
+}
+
+/** 수수료 어림 — 금액 × 수수료율(%), 원 미만 절사. 수수료율을 모르면 0. */
+export function estimateFee(amount: number, commissionPct: number | null): number {
+  return commissionPct === null ? 0 : Math.floor((amount * commissionPct) / 100);
+}
+
+const wonText = (value: number): string => String(Math.round(value));
+const priceText = (value: number): string => String(Number(value.toFixed(2)));
+
+function confirmLine(
+  ids: { key: string; instructionId: number | null; stopInstructionId: number | null },
+  who: { side: string; symbol: string; name: string | null },
+  quantity: number | null,
+  quote: IsaLiveQuote | null,
+  fallback: number | null,
+  commissionPct: number | null,
+): IsaConfirmLine {
+  const live = quote && usablePrice(quote.price) ? quote.price : null;
+  const price = live ?? fallback;
+  const amount = price !== null && quantity !== null ? Math.round(price * quantity) : null;
+  return {
+    ...ids,
+    ...who,
+    instructed: quantity,
+    quantity: quantity === null ? "" : String(quantity),
+    amount: amount === null ? "" : String(amount),
+    price: price === null ? "" : priceText(price),
+    fee: amount === null ? "" : String(estimateFee(amount, commissionPct)),
+    feeEdited: false,
+    source: live !== null ? "live" : "close",
+    refPrice: price,
+  };
+}
+
+/** 다음 매매 지시 → 체결 입력 한 줄(실시간 가격, 없으면 지시 기준가로 채움). */
+export function confirmLineFromInstruction(item: IsaInstructionItem, quotes: Readonly<Record<string, IsaLiveQuote>>, commissionPct: number | null): IsaConfirmLine {
+  return confirmLine(
+    { key: `i-${item.id}`, instructionId: item.id, stopInstructionId: null },
+    { side: item.side, symbol: item.symbol, name: item.name },
+    toNumber(item.quantity),
+    Object.hasOwn(quotes, item.symbol) ? quotes[item.symbol] : null,
+    toNumber(item.refPrice),
+    commissionPct,
+  );
+}
+
+/** 장중 스탑 지시 → 체결 입력 한 줄(실시간 가격, 없으면 잔고의 현재가로 채움). */
+export function confirmLineFromStop(
+  row: IsaStopInstruction,
   quotes: Readonly<Record<string, IsaLiveQuote>>,
-): IsaApplyItem {
-  const quote = Object.hasOwn(quotes, symbol) ? quotes[symbol] : null;
-  return usablePrice(quote?.price) ? { ...target, price: quote.price, priceSource: "live" } : { ...target };
+  fallback: number | null,
+  commissionPct: number | null,
+): IsaConfirmLine {
+  return confirmLine(
+    { key: `s-${row.id}`, instructionId: null, stopInstructionId: row.id },
+    { side: row.side, symbol: row.symbol, name: row.name },
+    toNumber(row.quantity),
+    Object.hasOwn(quotes, row.symbol) ? quotes[row.symbol] : null,
+    fallback,
+    commissionPct,
+  );
+}
+
+/** 매매 내역 → 고치기 한 줄(적어 둔 값 그대로 — 수수료는 그 값을 유지). */
+export function confirmLineFromTrade(trade: IsaTrade): IsaConfirmLine {
+  const amount = toNumber(trade.amount);
+  const price = toNumber(trade.price);
+  const quantity = toNumber(trade.quantity);
+  const fee = toNumber(trade.fee);
+  return {
+    key: `t-${trade.id}`,
+    instructionId: null,
+    stopInstructionId: null,
+    side: trade.side,
+    symbol: trade.symbol,
+    name: trade.name,
+    instructed: null,
+    quantity: quantity === null ? "" : String(quantity),
+    amount: amount === null ? "" : wonText(amount),
+    price: price === null ? "" : priceText(price),
+    fee: fee === null ? "" : String(fee),
+    feeEdited: true,
+    source: "user",
+    refPrice: price,
+  };
+}
+
+/** 칸 하나를 고친 줄 — 금액 ↔ 평균 단가 ↔ 수량을 맞추고, 직접 고치지 않은 수수료를 다시 셉니다. 읽지 못하는 입력은 그대로 두고 다른 칸은 건드리지 않습니다. */
+export function updateConfirmLine(line: IsaConfirmLine, field: IsaConfirmField, value: string, commissionPct: number | null): IsaConfirmLine {
+  const next: IsaConfirmLine = { ...line, [field]: value };
+  if (field === "fee") return { ...next, feeEdited: true };
+  if (field !== "quantity") next.source = "user";
+  const quantity = parseDecimal(next.quantity, { maxDecimals: 0 });
+  if (field === "amount") {
+    const amount = parseDecimal(value, { maxDecimals: AMOUNT_DECIMALS });
+    if (amount !== null && amount > 0 && quantity !== null && quantity > 0) next.price = priceText(amount / quantity);
+  } else {
+    const price = parseDecimal(next.price, { maxDecimals: PRICE_DECIMALS });
+    if (price !== null && price > 0 && quantity !== null && quantity > 0) next.amount = wonText(price * quantity);
+  }
+  if (!next.feeEdited) {
+    const amount = parseDecimal(next.amount, { maxDecimals: AMOUNT_DECIMALS });
+    if (amount !== null) next.fee = String(estimateFee(amount, commissionPct));
+  }
+  return next;
+}
+
+/** 참고 가격에서 10% 넘게 벗어나면 경고 글(총액·단가를 바꿔 적었을 때 바로 보이게) — 막지는 않습니다(±40%는 서버가 거절). */
+export function confirmLineWarning(line: Pick<IsaConfirmLine, "price" | "refPrice">): string | null {
+  const price = parseDecimal(line.price, { maxDecimals: PRICE_DECIMALS });
+  if (price === null || price <= 0 || line.refPrice === null || line.refPrice <= 0) return null;
+  const gap = (price / line.refPrice - 1) * 100;
+  return Math.abs(gap) < 10 ? null : `평균 단가가 참고 가격 ${formatPrice(line.refPrice)}보다 ${formatNumber(Math.abs(gap), 1)}% ${gap > 0 ? "높습니다" : "낮습니다"} — 총액과 단가 칸을 확인하세요.`;
+}
+
+/** 줄 하나의 수량·금액·수수료 읽기 — 문제가 있으면 errors에 글을 더하고 null. */
+function readConfirmLine(line: IsaConfirmLine, errors: string[]): { quantity: number; amount: number; fee: number } | null {
+  const who = symbolText(line.symbol, line.name);
+  const quantity = parseDecimal(line.quantity, { maxDecimals: 0 });
+  const amount = parseDecimal(line.amount, { maxDecimals: AMOUNT_DECIMALS });
+  const fee = line.fee.trim() === "" ? 0 : parseDecimal(line.fee, { maxDecimals: AMOUNT_DECIMALS });
+  if (quantity === null || quantity <= 0) errors.push(`${who} — 수량은 1 이상의 정수 주입니다.`);
+  if (amount === null || amount <= 0) errors.push(`${who} — 체결 금액(총액)을 적으세요.`);
+  if (fee === null) errors.push(`${who} — 수수료는 0 이상의 원 단위 금액입니다.`);
+  return quantity !== null && quantity > 0 && amount !== null && amount > 0 && fee !== null ? { quantity, amount, fee } : null;
+}
+
+/** 체결 입력 → POST /api/manual/isa/instructions/apply 본문. */
+export function buildApplyRequest(lines: readonly IsaConfirmLine[]): Checked<IsaApplyRequest> {
+  if (lines.length === 0) return { ok: false, errors: ["반영할 줄이 없습니다."] };
+  const errors: string[] = [];
+  const items: IsaApplyItem[] = [];
+  for (const line of lines) {
+    const read = readConfirmLine(line, errors);
+    if (read) {
+      const id = line.instructionId !== null ? { instructionId: line.instructionId } : { stopInstructionId: line.stopInstructionId as number };
+      items.push({ ...id, ...read, priceSource: line.source });
+    }
+  }
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, body: { items } };
+}
+
+/** 매매 고치기 → POST /api/manual/isa/trades/{id} 본문. */
+export function buildEditTradeRequest(line: IsaConfirmLine): Checked<IsaEditTradeRequest> {
+  const errors: string[] = [];
+  const read = readConfirmLine(line, errors);
+  return read ? { ok: true, body: read } : { ok: false, errors };
 }
 
 /** 기준 시각 글 — "2026-11-06 14:31:05 KST"(초까지). 실시간 가격이 없거나 시각을 모르면 "—". */

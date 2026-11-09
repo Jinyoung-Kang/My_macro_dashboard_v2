@@ -260,10 +260,12 @@ export function IsaStopInstructionsTable({
 /** 매매 내역(최근 200, 읽기 전용 + 되돌리기). 처음에는 시각 내림차순(최근 순). */
 export function IsaTradesTable({
   rows,
+  onEdit,
   onUndo,
   disabled,
 }: {
   rows: readonly IsaTrade[];
+  onEdit: (row: IsaTrade) => void;
   onUndo: (row: IsaTrade) => void;
   disabled: boolean;
 }) {
@@ -284,14 +286,19 @@ export function IsaTradesTable({
     },
     { key: "realizedPnl", header: "실현 손익", align: "right", cell: (row) => pnlWonCell(row.realizedPnl), sortValue: (row) => toNumber(row.realizedPnl) },
     { key: "realizedPct", header: "손익률", align: "right", cell: (row) => pnlPctCell(row.realizedPct), sortValue: (row) => toNumber(row.realizedPct) },
-    { key: "priceSource", header: "가격 출처", cell: (row) => (row.priceSource === "live" ? "실시간" : row.priceSource === "close" ? "직전 종가" : row.priceSource || null) },
+    { key: "priceSource", header: "가격 출처", cell: (row) => (row.priceSource === "live" ? "실시간" : row.priceSource === "close" ? "직전 종가" : row.priceSource === "user" ? "직접 입력" : row.priceSource || null) },
     {
       key: "undo",
-      header: "되돌리기",
+      header: "고치기",
       cell: (row) => (
-        <button type="button" onClick={() => onUndo(row)} disabled={disabled} aria-label={`되돌리기 — ${symbolText(row.symbol, row.name)}`} className={buttonClasses("ghost", "sm")}>
-          되돌리기
-        </button>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" onClick={() => onEdit(row)} disabled={disabled} aria-label={`고치기 — ${sideLabel(row.side)} ${symbolText(row.symbol, row.name)}`} className={buttonClasses("secondary", "sm")}>
+            고치기
+          </button>
+          <button type="button" onClick={() => onUndo(row)} disabled={disabled} aria-label={`되돌리기 — ${symbolText(row.symbol, row.name)}`} className={buttonClasses("ghost", "sm")}>
+            되돌리기
+          </button>
+        </div>
       ),
     },
   ];
