@@ -101,7 +101,7 @@ public final class AccessPolicy {
         // ISA 계좌(ADR 0029) — 연결되지 않은 다른 증권사 계좌의 장부와 다음 시가 매매 지시(주문 없음). 실제 돈의 장부라 운영자만, 장부 쓰기는 비밀번호 없음
         owner("GET /api/manual/isa", "POST /api/manual/isa/start", "POST /api/manual/isa/ledger",
                 "POST /api/manual/isa/ledger/{id}/delete", "POST /api/manual/isa/instructions/{id}/skip",
-                "POST /api/manual/isa/instructions/confirm");
+                "POST /api/manual/isa/instructions/confirm", "POST /api/manual/isa/instructions/fills");
         // 모의 매매 — 운영자 한 사람의 실험 장부. 초기화·리셋·리스크 실행·트랙레코드 재계산·결정·시작이 장부를 바꾸고,
         //    Claude 책의 결정·미리보기·시작은 운영자 키로 Claude를 부름(비용). 설정은 실험 조건을 바꿈
         owner("GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",

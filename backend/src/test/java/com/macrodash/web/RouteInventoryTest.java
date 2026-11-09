@@ -99,6 +99,7 @@ class RouteInventoryTest {
             // ISA 계좌(연결되지 않은 다른 증권사 계좌의 장부와 지시 — 운영자 전용, ADR 0029)
             "GET /api/manual/isa", "POST /api/manual/isa/start", "POST /api/manual/isa/ledger",
             "POST /api/manual/isa/ledger/{id}/delete", "POST /api/manual/isa/instructions/{id}/skip", "POST /api/manual/isa/instructions/confirm",
+            "POST /api/manual/isa/instructions/fills",
             // 모의 매매(운영자 전용)
             "GET /api/paper/overview", "GET /api/paper/live", "GET /api/paper/status", "GET /api/paper/names",
             "GET /api/paper/books/{code}/positions",

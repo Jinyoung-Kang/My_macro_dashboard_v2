@@ -8,6 +8,7 @@
   나머지 결정(주문 없음·분리)은 그대로다.
   **더함 — 2026-11-08(사용자 요청 "해당 영업일 중반까지 지시대로 매매하지 않았다면 텔레그램을 한 번 더", 권장안대로)**: 결정 4의 알림에 장 중반 확인 알림 한 통을 더함(같은 예외 — 종목 코드·이름·수량만). 증권사 연결이 없어
   실제 매매를 볼 수 없고 자동 기록은 그날 밤이라 [보유]로 판단할 수 없으므로, 화면의 '매매함' 표시(V30 `confirmed_at` — 장부 불변)와 사용자 체결만 신호로 삼고 모르면 알린다. 시각은 그 세션 정규장 절반(보통 12:15). 결정 3(지시대로 자동 기록)은 그대로.
+  **더함 — 2026-11-09(사용자 결정 "매매함에서 체결가를 받아 바로 장부에", "장부에 종목별 손익 %")**: 결정 3의 '지시대로 자동 기록 + 다르면 고침'은 그대로 두고, 화면의 '매매함'이 체결 입력 창을 열어 사용자 체결을 한 트랜잭션으로 적는 길을 더함(`POST /api/manual/isa/instructions/fills` — 다음 시가 지시와 장중 스탑 지시 모두, 자동 기록 행은 사용자 행으로 바꿈, 표시만 남기는 길은 유지). 적으면 보유에 바로 반영되고 그 지시는 밤 자동 기록에서 빠짐. 장부 표에 '손익 %'를 더함(매도 행의 실현 손익률은 서버 `realizedPct`). 주문 없음·분리·알림 예외는 그대로다.
 - 지키는 방법: 백엔드 `ManualAccountPlannerTest`·`ManualAccountLedgerTest`·`ManualAccountNoticesTest`·`ManualAccountServiceDbTest`·`ManualAccountJobDbTest`·`ManualAccountPaperReadsTest`(지시 계산·자동 기록·알림 글에 금액 없음), `ArchitectureRulesTest.realtradeIsIsolated`(허용 목록에 `store.ManualAccountStore`),
   `AccessPolicyTest`(운영자 전용), 화면 `isaBoundary.test.ts`·탭은 KR만.
 

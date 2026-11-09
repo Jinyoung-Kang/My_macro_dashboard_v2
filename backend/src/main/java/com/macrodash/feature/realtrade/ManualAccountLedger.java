@@ -123,17 +123,8 @@ final class ManualAccountLedger {
             BigDecimal before = quantity.getOrDefault(e.symbol(), BigDecimal.ZERO);
             BigDecimal beforeCost = cost.getOrDefault(e.symbol(), BigDecimal.ZERO);
             BigDecimal after = before.add(e.quantityDelta());
-            BigDecimal afterCost;
-            if (ManualAccountStore.KIND_BUY.equals(e.kind())) {
-                afterCost = beforeCost.add(nz(e.quantity()).multiply(nz(e.price())));
-            } else if (ManualAccountStore.KIND_SELL.equals(e.kind())) {
-                afterCost = before.signum() > 0 ? beforeCost.multiply(after.max(BigDecimal.ZERO)).divide(before, 8, RoundingMode.HALF_UP)
-                        : BigDecimal.ZERO;
-            } else {
-                afterCost = after.signum() > 0 ? beforeCost : BigDecimal.ZERO;
-            }
             quantity.put(e.symbol(), after);
-            cost.put(e.symbol(), afterCost);
+            cost.put(e.symbol(), costAfter(e, before, beforeCost, after));
         }
         Map<String, Holding> holdings = new TreeMap<>();
         quantity.forEach((symbol, q) -> {
@@ -142,6 +133,44 @@ final class ManualAccountLedger {
             }
         });
         return new State(cash, holdings, deposits.subtract(withdrawals), deposits, withdrawals);
+    }
+
+    /** 이 행을 지난 뒤의 그 종목 원가(체결가 기준) — 매수는 더하고, 매도는 평단대로 줄이고, 조정은 수량만 바꿉니다(클래스 설명). */
+    private static BigDecimal costAfter(Entry e, BigDecimal before, BigDecimal beforeCost, BigDecimal after) {
+        if (ManualAccountStore.KIND_BUY.equals(e.kind())) {
+            return beforeCost.add(nz(e.quantity()).multiply(nz(e.price())));
+        }
+        if (ManualAccountStore.KIND_SELL.equals(e.kind())) {
+            return before.signum() > 0 ? beforeCost.multiply(after.max(BigDecimal.ZERO)).divide(before, 8, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+        }
+        return after.signum() > 0 ? beforeCost : BigDecimal.ZERO;
+    }
+
+    /**
+     * 매도 행의 실현 손익률(%) — 행 번호 → (체결가 ÷ 팔기 직전 평단 − 1) × 100, 소수 둘째 자리(2026-11-09 사용자 요청 — 장부의 종목별 손익 %). 평단과 같이
+     * 체결가 기준이라 수수료·세금은 빼지 않습니다. 평단을 모르는 매도(보유·원가가 0 이하)는 결과에 없습니다(0으로 채우지 않음).
+     */
+    static Map<Long, BigDecimal> realizedPct(List<Entry> entries) {
+        Map<String, BigDecimal> quantity = new TreeMap<>();
+        Map<String, BigDecimal> cost = new TreeMap<>();
+        Map<Long, BigDecimal> out = new TreeMap<>();
+        for (Entry e : sorted(entries)) {
+            if (e.symbol() == null || e.quantityDelta().signum() == 0) {
+                continue;
+            }
+            BigDecimal before = quantity.getOrDefault(e.symbol(), BigDecimal.ZERO);
+            BigDecimal beforeCost = cost.getOrDefault(e.symbol(), BigDecimal.ZERO);
+            if (ManualAccountStore.KIND_SELL.equals(e.kind()) && e.id() != null && before.signum() > 0 && beforeCost.signum() > 0
+                    && e.price() != null) {
+                BigDecimal avg = beforeCost.divide(before, 12, RoundingMode.HALF_UP);
+                out.put(e.id(), e.price().divide(avg, 12, RoundingMode.HALF_UP).subtract(BigDecimal.ONE).multiply(new BigDecimal("100"))
+                        .setScale(2, RoundingMode.HALF_UP));
+            }
+            BigDecimal after = before.add(e.quantityDelta());
+            quantity.put(e.symbol(), after);
+            cost.put(e.symbol(), costAfter(e, before, beforeCost, after));
+        }
+        return out;
     }
 
     /**

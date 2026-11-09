@@ -9,7 +9,9 @@ import com.macrodash.feature.realtrade.RealTradeFixtures.MutableClock;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.LedgerRow;
+import com.macrodash.store.ManualAccountStore.LedgerValues;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
+import com.macrodash.store.ManualAccountStore.NewStopInstruction;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -416,5 +418,141 @@ class ManualAccountServiceDbTest {
         rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(List.of(), true)), 400, "invalid-request");
         rejects(() -> service.confirmInstructions(new ManualAccountService.ConfirmRequest(null, true)), 400, "invalid-request");
         rejects(() -> service.confirmInstructions(null), 400, "invalid-request");
+    }
+
+    // ------------------------------------------------------------------ 체결 바로 적기(2026-11-09 — '매매함'에서 체결가를 받음)
+    private static ManualAccountService.FillItem fill(long instructionId, String qty, String price) {
+        return new ManualAccountService.FillItem(instructionId, null, d(qty), d(price), null, null);
+    }
+
+    private static ManualAccountService.FillsRequest fills(ManualAccountService.FillItem... items) {
+        return new ManualAccountService.FillsRequest(List.of(items));
+    }
+
+    private long stop(String symbol, int quantity, String targetAt) {
+        return store.insertStopInstruction(ManualAccountService.CODE, new NewStopInstruction(MONDAY, 9100L + quantity, symbol, quantity, "MARKET",
+                kst(targetAt), MAPPER.createObjectNode())).orElseThrow();
+    }
+
+    @Test
+    @DisplayName("체결 입력 — 여러 줄을 한 트랜잭션으로 USER 행(세션 시각·수수료·세금)에 적고 지시는 RECORDED, 보유에 바로 반영, 지시와 다른 수량도 받음, 줄 순서와 상관없이 마지막 장부로 검사")
+    void fillsWriteLedgerAtOnce() {
+        startSynthetic();                                          // 현금 800,000, A 10주, B 5주
+        long sell = instruction(A, "SELL", 10);
+        long buy = instruction(B, "BUY", 40);
+
+        Map<String, Object> done = service.saveFills(fills(fill(buy, "38", "21000"),   // 매수를 앞에 — 840,000은 매도 대금 없이는 현금을 넘음(이 줄 수량으로는 798,000)
+                new ManualAccountService.FillItem(sell, null, d("10"), d("12000"), d("150"), d("240"))));
+
+        assertThat(done).containsEntry("ok", true).containsEntry("count", 2);
+        assertThat(store.instruction(sell).orElseThrow().status()).isEqualTo("RECORDED");
+        assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("RECORDED");
+        List<LedgerRow> written = store.ledgerForInstruction(sell);
+        assertThat(written).singleElement().satisfies(r -> {
+            assertThat(r.source()).isEqualTo("USER");
+            assertThat(r.kind()).isEqualTo("SELL");
+            assertThat(r.at()).as("자동 기록과 같은 시각(세션 09:00 — 달력을 모르면)").isEqualTo(kst("2026-11-09T09:00"));
+            assertThat(r.fee()).isEqualByComparingTo("150");
+            assertThat(r.tax()).isEqualByComparingTo("240");
+        });
+        assertThat(store.ledgerForInstruction(buy)).singleElement().satisfies(r -> assertThat(r.quantity()).as("지시 40주와 달라도 받음").isEqualByComparingTo("38"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> holdings = (List<Map<String, Object>>) service.view().get("holdings");
+        assertThat(holdings).extracting(h -> h.get("symbol")).containsExactly(B);
+        assertThat(new java.math.BigDecimal(holdings.get(0).get("quantity").toString())).isEqualByComparingTo("43");
+    }
+
+    @Test
+    @DisplayName("체결 입력 — 한 줄이라도 안 되면(보유보다 많은 매도) 400 ledger-invalid이고 아무것도 쓰지 않음")
+    void fillsAreAllOrNothing() {
+        startSynthetic();
+        long good = instruction(B, "BUY", 1);
+        long bad = instruction(A, "SELL", 10);
+        int before = store.ledger("isa").size();
+
+        rejects(() -> service.saveFills(fills(fill(good, "1", "21000"), fill(bad, "11", "12000"))), 400, "ledger-invalid");
+
+        assertThat(store.ledger("isa")).hasSize(before);
+        assertThat(store.instruction(good).orElseThrow().status()).isEqualTo("PLANNED");
+    }
+
+    @Test
+    @DisplayName("체결 입력 — 자동 기록 행은 사용자 행으로 바꾸고, 이미 직접 적은 지시는 409, 건너뛴 지시·잘못된 본문은 400, 없는 지시는 404, 아직 오지 않은 세션은 400")
+    void fillsGuards() {
+        startSynthetic();
+        long auto = instruction(A, "SELL", 2);
+        long autoRow = store.insertLedger("isa", new LedgerValues(kst("2026-11-09T09:00"), "SELL", A, d("2"), d("11000"), null, BigDecimal.ZERO, BigDecimal.ZERO,
+                auto, "AUTO", null));
+        store.updateInstructionStatus(auto, "RECORDED", null, Map.of("recordedBy", "AUTO"));
+
+        service.saveFills(fills(fill(auto, "2", "11500")));
+
+        assertThat(store.ledgerRow(autoRow)).as("자동 행은 지움").isEmpty();
+        assertThat(store.ledgerForInstruction(auto)).singleElement().satisfies(r -> {
+            assertThat(r.source()).isEqualTo("USER");
+            assertThat(r.price()).isEqualByComparingTo("11500");
+        });
+        rejects(() -> service.saveFills(fills(fill(auto, "2", "11600"))), 409, "already-recorded");
+
+        long skipped = instruction(B, "SELL", 1);
+        service.skipInstruction(skipped);
+        rejects(() -> service.saveFills(fills(fill(skipped, "1", "21000"))), 400, "invalid-request");
+        rejects(() -> service.saveFills(fills(fill(999_999_999L, "1", "21000"))), 404, "not-found");
+
+        long open = instruction("035420", "BUY", 1);
+        rejects(() -> service.saveFills(fills(new ManualAccountService.FillItem(null, null, d("1"), d("1"), null, null))), 400, "invalid-request");
+        rejects(() -> service.saveFills(fills(new ManualAccountService.FillItem(open, 1L, d("1"), d("1"), null, null))), 400, "invalid-request");
+        rejects(() -> service.saveFills(fills(fill(open, "1", "21000"), fill(open, "1", "21000"))), 400, "invalid-request");
+        rejects(() -> service.saveFills(fills(fill(open, "0", "21000"))), 400, "invalid-request");
+        rejects(() -> service.saveFills(fills(fill(open, "1", "0"))), 400, "invalid-request");
+        rejects(() -> service.saveFills(new ManualAccountService.FillsRequest(List.of())), 400, "invalid-request");
+        rejects(() -> service.saveFills(null), 400, "invalid-request");
+
+        clock.set(kst("2026-11-08T20:00"));                        // 세션 전날 — 체결 시각이 아직 오지 않음
+        rejects(() -> service.saveFills(fills(fill(open, "1", "21000"))), 400, "invalid-request");
+        assertThat(store.instruction(open).orElseThrow().status()).isEqualTo("PLANNED");
+    }
+
+    @Test
+    @DisplayName("체결 입력 — 장중 스탑 지시는 그 기준 시각의 매도 USER 행으로 묶이고 RECORDED, 자동 행은 바꾸며, 보기에 recordedByUser가 실림")
+    void fillsForStops() {
+        startSynthetic();
+        long open = stop(A, 4, "2026-11-09T09:12");
+        long auto = stop(B, 5, "2026-11-09T09:47");
+        long autoRow = store.insertLedger("isa", new LedgerValues(kst("2026-11-09T09:47"), "SELL", B, d("5"), d("19000"), null, BigDecimal.ZERO, BigDecimal.ZERO,
+                null, "AUTO", null, auto));
+        store.updateStopInstructionStatus(auto, "RECORDED", null, Map.of("recordedBy", "AUTO"));
+
+        service.saveFills(fills(new ManualAccountService.FillItem(null, open, d("4"), d("11000"), null, null),
+                new ManualAccountService.FillItem(null, auto, d("5"), d("19500"), null, null)));
+
+        assertThat(store.ledgerForStopInstruction(open)).singleElement().satisfies(r -> {
+            assertThat(r.source()).isEqualTo("USER");
+            assertThat(r.kind()).isEqualTo("SELL");
+            assertThat(r.at()).isEqualTo(kst("2026-11-09T09:12"));
+            assertThat(r.instructionId()).isNull();
+        });
+        assertThat(store.ledgerRow(autoRow)).isEmpty();
+        assertThat(store.ledgerForStopInstruction(auto)).singleElement().satisfies(r -> assertThat(r.price()).isEqualByComparingTo("19500"));
+        assertThat(store.stopInstruction(open).orElseThrow().status()).isEqualTo("RECORDED");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stops = (List<Map<String, Object>>) service.view().get("stopInstructions");
+        assertThat(stops).allSatisfy(i -> assertThat(i).containsEntry("recordedByUser", true));
+        rejects(() -> service.saveFills(fills(new ManualAccountService.FillItem(null, open, d("4"), d("11000"), null, null))), 409, "already-recorded");
+    }
+
+    @Test
+    @DisplayName("장부 보기 — 매도 행에 실현 손익률(그때 평단 대비), 매수·입금 행은 null")
+    void ledgerShowsRealizedPct() {
+        startSynthetic();                                          // A 평단 10,000
+        service.saveLedger(row(null, "SELL", A, "4", "12500", null, "2026-11-09T10:00", null));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> ledger = (List<Map<String, Object>>) service.view().get("ledger");
+        assertThat(ledger).anySatisfy(r -> {
+            assertThat(r).containsEntry("kind", "SELL");
+            assertThat(new java.math.BigDecimal(r.get("realizedPct").toString())).isEqualByComparingTo("25");
+        });
+        assertThat(ledger).filteredOn(r -> !"SELL".equals(r.get("kind"))).allSatisfy(r -> assertThat(r).containsEntry("realizedPct", null));
     }
 }

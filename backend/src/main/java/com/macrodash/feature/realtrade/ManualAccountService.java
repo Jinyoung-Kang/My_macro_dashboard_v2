@@ -29,6 +29,8 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -119,6 +121,24 @@ public class ManualAccountService {
 
     /** 한 번에 표시하는 지시 수 상한(한 세션의 지시는 많아야 수십 줄). */
     static final int MAX_CONFIRM_IDS = 200;
+
+    /** 체결 한 줄 — 다음 시가 지시({@code instructionId})나 장중 스탑 지시({@code stopInstructionId}) 하나에 묶입니다(둘 중 하나만). */
+    public record FillItem(Long instructionId, Long stopInstructionId, BigDecimal quantity, BigDecimal price, BigDecimal fee, BigDecimal tax) {
+
+        @Override
+        public String toString() {
+            return "FillItem[instructionId=" + instructionId + ", stopInstructionId=" + stopInstructionId + "]";
+        }
+    }
+
+    /** {@code POST /api/manual/isa/instructions/fills} 본문. */
+    public record FillsRequest(List<FillItem> fills) {
+
+        @Override
+        public String toString() {
+            return "FillsRequest[fills=" + (fills == null ? 0 : fills.size()) + "]";
+        }
+    }
 
     private final ManualAccountStore store;
     private final PaperMirrorService paper;
@@ -262,7 +282,8 @@ public class ManualAccountService {
         stops.forEach(i -> stopItems.add(stopInstruction(i, names)));
         out.put("stopInstructions", stopItems);
         List<Map<String, Object>> ledger = new ArrayList<>();
-        shown.forEach(r -> ledger.add(ledgerRow(r, names)));
+        Map<Long, BigDecimal> realized = ManualAccountLedger.realizedPct(rows.stream().map(Entry::of).toList());
+        shown.forEach(r -> ledger.add(ledgerRow(r, names, realized.get(r.id()))));
         out.put("ledger", ledger);
 
         notes.add("자동 기록은 지시대로 규칙 계좌와 같은 값 — 시가 지시는 그 세션 시가, 개장 10분 뒤 시각 맞추기 지시·장중 스탑 지시는 그 시각의 1분봉 값 — "
@@ -361,10 +382,16 @@ public class ManualAccountService {
         out.put("notifiedAt", iso(i.notifiedAt()));
         JsonNode note = i.reason() == null ? null : i.reason().get("autoNote");
         out.put("autoNote", note != null && note.isString() ? note.asString() : null);
+        out.put("recordedByUser", recordedByUser(i));
         return out;
     }
 
-    private static Map<String, Object> ledgerRow(LedgerRow r, Map<String, String> names) {
+    /** 사용자가 체결을 적은 스탑 지시인가(화면이 '매매함' 단추를 빼는 근거 — 자동 기록만 있으면 덮어쓸 수 있음). */
+    private static boolean recordedByUser(StopInstruction i) {
+        return i.reason() != null && "USER".equals(i.reason().path("recordedBy").asString(""));
+    }
+
+    private static Map<String, Object> ledgerRow(LedgerRow r, Map<String, String> names, BigDecimal realizedPct) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", r.id());
         out.put("at", iso(r.at()));
@@ -382,6 +409,7 @@ public class ManualAccountService {
         out.put("instructionId", r.instructionId());
         out.put("stopInstructionId", r.stopInstructionId());
         out.put("note", r.note());
+        out.put("realizedPct", plain(realizedPct));   // 매도 행의 실현 손익률(%) — 그 밖의 행·평단을 모르면 null
         return out;
     }
 
@@ -487,6 +515,116 @@ public class ManualAccountService {
         out.put("ok", true);
         out.put("id", id);
         return out;
+    }
+
+    /**
+     * {@code POST /api/manual/isa/instructions/fills}(2026-11-09 사용자 결정 — '매매함'에서 체결가를 받아 바로 장부에) — 지시·스탑 지시마다 사용자 체결 한 행을
+     * 한 트랜잭션으로 적습니다(한 줄이라도 안 되면 아무것도 적지 않음). 행 시각은 자동 기록과 같은 시각(스탑은 그 기준 시각, 시각 맞추기 지시는 그 시각, 그 밖은
+     * 세션 개장)이고, 그 지시의 자동 기록 행은 이 행으로 바꿉니다. 사용자가 이미 적은 지시는 409, 건너뜀·대체된 지시는 400입니다. 묶인 지시는 밤 자동 기록이
+     * 다시 적지 않습니다.
+     */
+    public Map<String, Object> saveFills(FillsRequest body) {
+        requireReady();
+        if (body == null || body.fills() == null || body.fills().isEmpty() || body.fills().size() > MAX_CONFIRM_IDS
+                || body.fills().stream().anyMatch(Objects::isNull)) {
+            throw ManualAccountException.invalid("체결을 1줄 이상 " + MAX_CONFIRM_IDS + "줄 이하로 넣으세요.");
+        }
+        Set<Long> seen = new HashSet<>();
+        Set<Long> seenStops = new HashSet<>();
+        Map<LocalDate, Instant> opens = new HashMap<>();
+        for (FillItem item : body.fills()) {
+            if ((item.instructionId() == null) == (item.stopInstructionId() == null)) {
+                throw ManualAccountException.invalid("체결 한 줄은 지시 번호나 스탑 지시 번호 가운데 하나에 묶어야 합니다.");
+            }
+            if (item.instructionId() != null ? !seen.add(item.instructionId()) : !seenStops.add(item.stopInstructionId())) {
+                throw ManualAccountException.invalid("같은 지시를 두 줄로 적을 수 없습니다.");
+            }
+            quantity(item.quantity(), false);
+            price(item.price());
+            cost(item.fee(), "수수료");
+            cost(item.tax(), "세금");
+            if (item.instructionId() != null) {   // 달력은 잠금 밖에서 읽음(saveLedger와 같은 이유)
+                store.instruction(item.instructionId()).ifPresent(i -> {
+                    SessionHours hours = opens.containsKey(i.session()) ? null : ManualAccountCalendar.hours(paper, i.session());
+                    if (hours != null) {
+                        opens.put(i.session(), hours.open());
+                    }
+                });
+            }
+        }
+        Instant now = clock.instant();
+        SessionHours next = ManualAccountCalendar.nextSession(paper, now);
+        int written = store.lockAccount(CODE, acc -> {
+            requireStarted(acc);
+            Set<Long> replaced = new TreeSet<>();
+            List<LedgerValues> rows = new ArrayList<>();
+            for (FillItem item : body.fills()) {
+                rows.add(item.instructionId() != null ? instructionFill(item, opens, now, replaced) : stopFill(item, now, replaced));
+            }
+            List<Entry> entries = new ArrayList<>();
+            for (LedgerRow r : store.ledger(CODE)) {
+                if (!replaced.contains(r.id())) {
+                    entries.add(Entry.of(r));
+                }
+            }
+            rows.forEach(v -> entries.add(entry(null, v)));
+            rejectInvalid(entries);
+            replaced.forEach(rowId -> store.deleteLedger(CODE, rowId));
+            for (LedgerValues v : rows) {
+                store.insertLedger(CODE, v);
+                if (v.instructionId() != null) {
+                    store.updateInstructionStatus(v.instructionId(), ManualAccountStore.STATUS_RECORDED, null, Map.of("recordedBy", "USER"));
+                } else {
+                    store.updateStopInstructionStatus(v.stopInstructionId(), ManualAccountStore.STATUS_RECORDED, null, Map.of("recordedBy", "USER"));
+                }
+            }
+            invalidateUpcoming(acc, next, now);
+            store.bumpVersion(CODE);
+            return rows.size();
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("count", written);
+        return out;
+    }
+
+    /** 잠금 안 — 다음 시가 지시의 체결 한 행(시각은 자동 기록과 같게). 그 지시의 자동 기록 행은 {@code replaced}에 넣습니다. */
+    private LedgerValues instructionFill(FillItem item, Map<LocalDate, Instant> opens, Instant now, Set<Long> replaced) {
+        Instruction i = store.instruction(item.instructionId()).filter(row -> CODE.equals(row.account()))
+                .orElseThrow(() -> ManualAccountException.notFound("지시를 찾을 수 없습니다."));
+        requireFillable(i.status());
+        replaced.addAll(autoRowsToReplace(i.id(), null));
+        Instant target = ManualAccountJob.targetAt(i);
+        Instant at = target != null ? target : opens.get(i.session());
+        if (at == null) {
+            at = i.session().atTime(9, 0).atZone(Kst.ZONE).toInstant();
+        }
+        notFuture(at, now, "체결 시각");
+        return new LedgerValues(at, i.side(), i.symbol(), item.quantity(), item.price(), null, cost(item.fee(), "수수료"), cost(item.tax(), "세금"),
+                i.id(), ManualAccountStore.SOURCE_USER, null);
+    }
+
+    /** 잠금 안 — 장중 스탑 지시의 체결 한 행(시각은 그 기준 시각). 그 지시의 자동 기록 행은 {@code replaced}에 넣습니다. */
+    private LedgerValues stopFill(FillItem item, Instant now, Set<Long> replaced) {
+        StopInstruction s = store.stopInstruction(item.stopInstructionId()).filter(row -> CODE.equals(row.account()))
+                .orElseThrow(() -> ManualAccountException.notFound("스탑 지시를 찾을 수 없습니다."));
+        requireFillable(s.status());
+        for (LedgerRow r : store.ledgerForStopInstruction(s.id())) {
+            if (!ManualAccountStore.SOURCE_AUTO.equals(r.source())) {
+                throw new ManualAccountException(409, ManualAccountException.ALREADY_RECORDED,
+                        "이미 체결을 적은 지시입니다 — 다시 읽은 뒤 장부에서 그 행을 고치세요.");
+            }
+            replaced.add(r.id());
+        }
+        notFuture(s.targetAt(), now, "체결 시각");
+        return new LedgerValues(s.targetAt(), ManualAccountStore.KIND_SELL, s.symbol(), item.quantity(), item.price(), null,
+                cost(item.fee(), "수수료"), cost(item.tax(), "세금"), null, ManualAccountStore.SOURCE_USER, null, s.id());
+    }
+
+    private static void requireFillable(String status) {
+        if (!ManualAccountStore.STATUS_PLANNED.equals(status) && !ManualAccountStore.STATUS_RECORDED.equals(status)) {
+            throw ManualAccountException.invalid("건너뜀·대체된 지시에는 체결을 적을 수 없습니다 — 장부의 '행 추가'를 쓰세요.");
+        }
     }
 
     /** {@code POST /api/manual/isa/ledger/{id}/delete}. */

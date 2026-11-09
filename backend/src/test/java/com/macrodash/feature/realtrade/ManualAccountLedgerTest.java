@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static com.macrodash.feature.realtrade.RealTradeFixtures.d;
 import static com.macrodash.feature.realtrade.RealTradeFixtures.kst;
@@ -115,5 +116,24 @@ class ManualAccountLedgerTest {
         // 11-03 시점 A 3주 → 11-05 매도 뒤 1주 — 새 매도는 1주까지
         assertThat(ManualAccountLedger.minHoldingFrom(rows, A, at, "SELL")).isEqualByComparingTo("1");
         assertThat(ManualAccountLedger.minCashFrom(rows, kst("2026-11-06T09:00"), "BUY")).as("맨 뒤면 마지막 현금").isEqualByComparingTo("40000");
+    }
+
+    @Test
+    @DisplayName("실현 손익률 — 매도 행만, 팔기 직전 이동평균 평단 대비(수수료·세금 제외), 조정은 평단을 낮추고, 원가를 모르는 매도는 없음")
+    void realizedPctPerSell() {
+        List<Entry> rows = List.of(
+                deposit(1, "2026-11-02T09:00", "10000000"),
+                trade(2, "2026-11-02T09:00", "BUY", A, "10", "50000", "100", "0"),
+                trade(3, "2026-11-03T09:00", "SELL", A, "4", "60000", "500", "300"),   // 평단 50,000 → +20%
+                trade(4, "2026-11-04T09:00", "BUY", A, "6", "70000", "0", "0"),        // 6주 50,000 + 6주 70,000 → 평단 60,000
+                trade(5, "2026-11-05T09:00", "SELL", A, "3", "45000", "0", "0"),       // → −25%
+                adjust(6, "2026-11-05T10:00", B, "10"),                                // 원가 없이 생긴 보유
+                trade(7, "2026-11-06T09:00", "SELL", B, "1", "1000", "0", "0"));
+
+        Map<Long, BigDecimal> pct = ManualAccountLedger.realizedPct(rows);
+
+        assertThat(pct).containsOnlyKeys(3L, 5L);
+        assertThat(pct.get(3L)).isEqualByComparingTo("20");
+        assertThat(pct.get(5L)).isEqualByComparingTo("-25");
     }
 }

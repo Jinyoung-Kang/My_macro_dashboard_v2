@@ -57,7 +57,8 @@
 - `POST /api/manual/isa/start` 본문 `{cash, startedAt?, buys:[{symbol, quantity, price}]}` → `{ok}`.
 - `POST /api/manual/isa/ledger` 본문 `{id?, kind, symbol?, quantity?, price?, amount?, fee?, tax?, at?, note?, instructionId?}` — `id`가 있으면 수정, 없으면 추가 → `{ok, id}`.
 - `POST /api/manual/isa/ledger/{id}/delete` → `{ok}`. `POST /api/manual/isa/instructions/{id}/skip` → `{ok}`. `POST /api/manual/isa/instructions/confirm` 본문 `{ids, confirmed?}` → `{ok, changed}`('매매함' 표시 — 장부 불변, §4).
-- 오류 본문 `{ok:false, error, message}`(400 `invalid-request`·`ledger-invalid`, 404 `not-found`, 409 `already-started`·`not-started`). 장부 작업이라 비밀번호는 없다(Origin 검사는 기존 `SessionFilter`).
+- `POST /api/manual/isa/instructions/fills` 본문 `{fills:[{instructionId 또는 stopInstructionId, quantity, price, fee?, tax?}]}` → `{ok, count}`(2026-11-09 — '매매함'의 체결 입력, 아래 §8).
+- 오류 본문 `{ok:false, error, message}`(400 `invalid-request`·`ledger-invalid`, 404 `not-found`, 409 `already-started`·`not-started`·`already-recorded`). 장부 작업이라 비밀번호는 없다(Origin 검사는 기존 `SessionFilter`).
 - `docs/API.md`·`RouteInventoryTest`·`scripts/qa/routes.json`(쓰기 경로 `"fuzz": false`)을 같은 커밋에.
 
 ## 6. 저장 — `db/migrations/V25__manual_accounts.sql`(백엔드 소유, ADR 0008)
@@ -79,6 +80,8 @@
 - ISA 자료는 모의 장부·패킷·프롬프트·주간 복기·토스 실제 매매로 가지 않는다(방향은 모의 → ISA 한쪽).
 
 ## 8. 화면
+
+**2026-11-09 개정(사용자 결정)**: '매매함'·'전부 매매함'(지시와 장중 스탑 지시)은 체결 입력 창을 엽니다 — 지시마다 수량(지시 값으로 채움)·체결가(비움, 필수)·수수료·세금을 받아 `instructions/fills`로 한 트랜잭션에 적고 보유에 바로 반영합니다. 체결가를 모르면 창의 '표시만 남기기'(`instructions/confirm` — 예전 동작, 장부 불변, 밤 자동 기록)를 씁니다. 장부 표는 고치기·지우기를 첫 열로 옮기고, 장부와 보유 표에 '손익 %'를 더합니다(매수 행 = 체결가 대비 지금 가격, 매도 행 = 서버의 실현 손익률 `realizedPct`, 보유 = 평단 대비 지금 가격 — 수수료·세금 제외, 모르면 '—').
 
 - 한국 탭 줄 '실제 계좌' 옆 'ISA 계좌'(`/paper/kr/isa`). `PAPER_TABS`에 시장 제한 칸(`markets: ["KR"]`)을 더해 미국 탭 줄에는 없다(미국 `/paper/us/isa`는 개요로).
 - 칸: 배너 "연결되지 않은 다른 증권사 계좌 — 이 화면과 텔레그램의 지시를 보고 직접 매매합니다(주문 기능 없음)", 요약(시작 현금·평가액·손익(부호·색)·현금), 보유 표(마지막 가격 평가·비중),

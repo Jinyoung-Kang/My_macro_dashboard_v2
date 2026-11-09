@@ -25,6 +25,7 @@ import java.util.Map;
  *  POST /api/manual/isa/ledger/{id}/delete
  *  POST /api/manual/isa/instructions/{id}/skip
  *  POST /api/manual/isa/instructions/confirm         {ids:[…], confirmed?} — '매매함' 표시(장 중반 확인 알림의 신호)
+ *  POST /api/manual/isa/instructions/fills           {fills:[{instructionId 또는 stopInstructionId, quantity, price, fee?, tax?}]} — 체결을 한 트랜잭션으로 장부에
  * </pre>
  *
  * <p>거절은 {@code {ok:false, error:<사유 코드>, message}}와 그 HTTP 상태(400 invalid-request·ledger-invalid, 404 not-found, 409 already-started·
@@ -68,6 +69,11 @@ public class ManualAccountController {
     @PostMapping("/instructions/confirm")
     public Map<String, Object> confirm(@RequestBody(required = false) ManualAccountService.ConfirmRequest body) {
         return service.confirmInstructions(body);
+    }
+
+    @PostMapping("/instructions/fills")
+    public Map<String, Object> fills(@RequestBody(required = false) ManualAccountService.FillsRequest body) {
+        return service.saveFills(body);
     }
 
     @ExceptionHandler(ManualAccountException.class)

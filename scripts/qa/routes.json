@@ -575,6 +575,12 @@
     },
     {
       "m": "POST",
+      "p": "/api/manual/isa/instructions/fills",
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
       "p": "/api/detail/summary",
       "body": {
         "market": "str",
