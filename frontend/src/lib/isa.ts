@@ -1,27 +1,24 @@
 /**
- * ISA 계좌(연결되지 않은 다른 증권사 계좌를 한국 규칙 계좌 메커니즘으로 '지시 + 직접 매매' — ADR 0029,
- * docs/specs/2026-11-06-isa-manual-account.md §8)의 표기·입력 검사 — React를 모르는 순수 함수(ADR 0004).
+ * ISA 계좌(연결되지 않은 다른 증권사 계좌를 한국 규칙 계좌 메커니즘으로 '지시 + 직접 매매' — ADR 0029·0034)의 표기·입력 검사 — React를 모르는 순수 함수(ADR 0004).
  *
  * 이 파일은 lib/format과 응답 계약 lib/types/isa만 가져옵니다. 모의·홈·실제 계좌 조회(brokerage)·실제 매매(realtrade) 모듈과 서로 가져오지 않습니다
- * (components/screens/isa/__tests__/isaBoundary.test.ts). 장부 숫자(현금·평가액·손익·비중)는 백엔드가 계산한 값을 그대로 찍고, 화면이 계산하는 것은
- * 시작 창의 '시작 매수 합'(현금이 음수가 되는 장부를 보내기 전에 막으려는 어림)과, 보유 종목의 실시간 가격(표시 전용 — ADR 0024, 명세
- * docs/specs/2026-11-06-us-costs-backfill.md §6)을 받았을 때 그 가격으로 다시 센 평가액·손익·비중(`isaValuation` — 받은 가격이 없으면 서버 값 그대로)뿐입니다.
+ * (components/screens/isa/__tests__/isaBoundary.test.ts). 잔고 숫자(현금·평가액·손익·비중)는 백엔드가 계산한 값을 그대로 찍고, 화면이 계산하는 것은
+ * 입력 창의 어림과, 보유 종목의 실시간 가격(표시 전용 — ADR 0024)을 받았을 때 그 가격으로 다시 센 평가액·손익·비중(`isaValuation` — 받은 가격이 없으면 서버 값 그대로)뿐입니다.
  * 모르는 값은 "—"이고 0으로 채우지 않습니다.
  */
 import { EMPTY, formatKst, formatKstSeconds, formatNumber, formatSigned } from "./format";
 import type {
+  IsaApplyItem,
+  IsaCommissionRequest,
   IsaDecimal,
-  IsaFillItem,
-  IsaFillsRequest,
-  IsaHolding,
   IsaInstructionItem,
-  IsaLedgerKind,
-  IsaLedgerRequest,
-  IsaLedgerRow,
-  IsaStartBuy,
+  IsaPosition,
+  IsaPositionRequest,
+  IsaStartPosition,
   IsaStartRequest,
   IsaStopInstruction,
   IsaSummary,
+  IsaTotalRequest,
   IsaUnpriced,
 } from "./types/isa";
 
@@ -30,10 +27,11 @@ export const ISA_BANNER = "연결되지 않은 다른 증권사 계좌 — 이 �
 
 /** 카드의 출처 한 줄. */
 export const ISA_SOURCE =
-  "이 대시보드의 ISA 계좌 장부(PostgreSQL manual_*) — 지시는 한국 규칙 계좌의 다음 맞추기(시가 또는 개장 10분 뒤) 목표 비중·장중 스탑(대시보드 계산), 평가는 실시간 가격(표시 전용 — 못 받은 종목은 밤 관측치 종가)";
+  "이 대시보드의 ISA 계좌 잔고(PostgreSQL manual_*) — 지시는 한국 규칙 계좌의 다음 맞추기(시가 또는 개장 10분 뒤) 목표 비중·장중 스탑(대시보드 계산), 평가는 실시간 가격(표시 전용 — 못 받은 종목은 밤 관측치 종가)";
 
-/** 자동 기록의 비용 안내(명세 §1 — 수수료·세금은 사용자가 고칠 때만). */
-export const COST_NOTE = "비용 0으로 어림 — 지시대로 자동 기록한 행은 수수료·세금을 0으로 적습니다. 실제 체결과 다르면 장부에서 고치세요.";
+/** 수수료·세금 안내. */
+export const COST_NOTE =
+  "수수료는 화면에서 바꾼 요율, 세금은 코스피 거래세+농특세 0.20%·코스닥 0.20%·ETF 0%(매도만, 원 미만 절사)로 어림합니다. 실제 체결가와 다르면 잔고에서 가격을 고치세요.";
 
 /** 장전 동시호가 길이 — 개장 30분 전부터(텔레그램 글 ManualAccountNotices와 같음). */
 const AUCTION_MINUTES = 30;
@@ -60,31 +58,17 @@ export function targetClock(targetAt: string | null | undefined): string | null 
 export function tradeGuide(open: string | null | undefined, targetAt?: string | null): string {
   const at = openClock(targetAt);
   if (at !== null) {
-    return `${at} 이후 시장가로 내면 규칙 계좌와 같은 때(${at})에 체결됩니다. 장중 스탑이 걸리면 텔레그램으로 따로 알립니다. 그날 밤 그 시각의 1분봉 값으로 장부에 자동 기록하니, 다르게 매매했으면 '체결 고치기'로 고치세요.`;
+    return `${at} 이후 시장가로 내면 규칙 계좌와 같은 때(${at})에 체결됩니다. 장중 스탑이 걸리면 텔레그램으로 따로 알립니다. 매매했으면 '확인'을 누르세요 — 그 순간의 가격으로 잔고에 반영합니다.`;
   }
   const end = openClock(open) ?? DEFAULT_OPEN;
   const minutes = (Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5)) - AUCTION_MINUTES + 24 * 60) % (24 * 60);
   const start = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-  return `장전 동시호가(${start}~${end})에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 그날 밤 지시대로 장부에 자동 기록하니, 다르게 매매했으면 '체결 고치기'로 고치세요.`;
-}
-
-/**
- * 체결 고치기 새 행의 기본 시각(datetime-local 값) — 그 세션 개장 시각(자동 기록 행과 같은 시각이라 같은 세션 매도·매수 순서가 맞음),
- * 모르면 그 세션 09:00, 세션도 모르면 빈 칸(서버가 지금으로).
- */
-export function fillAtDefault(session: string | null | undefined, open: string | null | undefined): string {
-  const fromOpen = kstInputFromIso(open);
-  if (fromOpen !== "") {
-    return fromOpen;
-  }
-  return typeof session === "string" && session.trim() !== "" ? `${session.trim()}T${DEFAULT_OPEN}` : "";
+  return `장전 동시호가(${start}~${end})에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다. 매매했으면 '확인'을 누르세요 — 그 순간의 가격으로 잔고에 반영합니다.`;
 }
 
 /** '못 만듦'(UNAVAILABLE) 세션의 안내 — 사유 코드(instructions.reason)별로, 모르는 사유·없음은 단정하지 않는 문구. */
 export function unavailableText(reason: string | null | undefined): string {
   switch (reason) {
-    case "record-pending":
-      return "이 세션의 지시를 만들지 못했습니다 — 앞 세션 지시의 체결 기록이 남아 있습니다. 앞 세션 지시를 체결 고치기·건너뜀으로 처리하세요(아래 '처리 안 된 지난 지시'). 이번 세션은 매매하지 않습니다.";
     case "timed-orders":
       return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다(지시 시각 — 시가·개장 10분 뒤 — 밖의 주문) — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
     default:
@@ -132,25 +116,23 @@ export function stopWindowText(item: Pick<IsaStopInstruction, "timing" | "target
  */
 export const STOP_GUIDE =
   "장중 시장가는 알림을 받으면 바로(개장 10분 뒤 전에 걸린 스탑은 그 시각 이후), 종가 단일가는 마감 10분 전부터 마감까지 시장가로 매도하세요 — "
-  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '매매함'을 눌러 체결가를 적으세요 — 보유에 바로 반영되고, 적지 않으면 그날 밤 자동 기록합니다.";
+  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '확인'을 누르세요 — 그 순간의 가격으로 잔고에 반영합니다.";
 
-const STOP_NOTE: Readonly<Record<string, string>> = {
+const AUTO_NOTE: Readonly<Record<string, string>> = {
   "not-notified": "마감까지 알리지 못해 건너뜀",
-  "close-fallback": "1분봉이 없어 그날 종가로 어림",
-  halted: "그날 거래 없음(정지)",
+  expired: "마감까지 확인하지 않아 닫힘",
   "no-holding": "보유 없음",
-  "reduced-holding": "보유까지로 줄여 적음",
-  // 백엔드 ManualAccountJob.AUTO_NO_PRICE(그다음 날 07:00까지 값을 못 구함)·DB 복원 SQL의 멈춤(ADR 0033 결정 8) — QA-324.
-  "no-price": "값을 구하지 못해 건너뜀(다음 날 07:00)",
+  restart: "새로 시작하며 닫힘",
+  "not-trading": "거래일이 아니게 되어 닫힘",
   restored: "DB 복원으로 건너뜀",
 };
 
-/** 장중 스탑 지시의 자동 기록·건너뜀 메모. 없으면 "—", 모르는 값은 받은 글자 그대로. */
-export function stopNoteLabel(note: string | null | undefined): string {
+/** 지시·스탑 지시가 닫힌 까닭. 없으면 "—", 모르는 값은 받은 글자 그대로. */
+export function autoNoteLabel(note: string | null | undefined): string {
   if (typeof note !== "string" || note.trim() === "") {
     return EMPTY;
   }
-  return STOP_NOTE[note] ?? note;
+  return AUTO_NOTE[note] ?? note;
 }
 
 /** 장중 스탑 지시의 알림 칸 — 보낸 시각("알림 11:32"), 보내기 전이면 "—". */
@@ -158,15 +140,8 @@ export function stopNotifiedText(item: Pick<IsaStopInstruction, "notifiedAt">): 
   return typeof item.notifiedAt === "string" && item.notifiedAt.trim() !== "" ? `알림 ${kstShort(item.notifiedAt)}` : "보내기 전";
 }
 
-/** 지시를 만든 뒤 장부가 바뀌었는데 다시 계산하지 않았을 때(instructions.ledgerChanged)의 경고. */
-export const LEDGER_CHANGED_TEXT = "지시를 만든 뒤 장부가 바뀌었습니다 — 수량을 다시 확인하세요.";
-
-/** 장부 표 '금액' 칸의 뜻(서버가 매수·매도 행에도 거래 금액을 채움). */
-export const LEDGER_AMOUNT_NOTE = "금액 — 입출금은 입출금액, 매수·매도는 수량×체결가(수수료·세금은 따로).";
-
-/** 장부 '손익 %' 칸 설명(표 아래). */
-export const LEDGER_PNL_NOTE =
-  "손익 % — 매수는 체결가 대비 지금 가격, 매도는 팔기 직전 평단 대비 실현 손익(수수료·세금은 빼지 않음). 입출금·조정과 지금 가격을 모르는 종목(다 판 종목 포함)은 '—'.";
+/** 지시를 만든 뒤 잔고가 바뀌었는데 다시 계산하지 않았을 때(instructions.ledgerChanged)의 경고. */
+export const BALANCE_CHANGED_TEXT = "지시를 만든 뒤 잔고가 바뀌었습니다 — 수량을 다시 확인하세요.";
 
 /** 숫자 또는 숫자 글자 → 숫자. 읽지 못하면 null(0으로 채우지 않음). */
 export function toNumber(value: unknown): number | null {
@@ -218,37 +193,14 @@ function labelOf(table: Readonly<Record<string, string>>, code: string | null | 
   return table[code] ?? code;
 }
 
-/** 장부 행 종류 — 고르는 순서(행 추가 창)와 이름표. */
-export const LEDGER_KINDS: readonly { kind: IsaLedgerKind; label: string }[] = [
-  { kind: "BUY", label: "매수" },
-  { kind: "SELL", label: "매도" },
-  { kind: "DEPOSIT", label: "입금" },
-  { kind: "WITHDRAW", label: "출금" },
-  { kind: "ADJUST", label: "조정(수량만 — 분할 등)" },
-];
-
-const KIND_LABEL: Readonly<Record<string, string>> = { BUY: "매수", SELL: "매도", DEPOSIT: "입금", WITHDRAW: "출금", ADJUST: "조정" };
-
-/** 장부 행 종류 이름표. */
-export function kindLabel(kind: string | null | undefined): string {
-  return labelOf(KIND_LABEL, kind);
-}
-
 /** 방향 — 매수·매도. */
 export function sideLabel(side: string | null | undefined): string {
   return labelOf({ BUY: "매수", SELL: "매도" }, side);
 }
 
-const SOURCE_LABEL: Readonly<Record<string, string>> = { AUTO: "자동(지시대로)", USER: "직접 입력" };
-
-/** 장부 행을 쓴 쪽 — 자동(지시대로)·직접 입력. */
-export function sourceLabel(source: string | null | undefined): string {
-  return labelOf(SOURCE_LABEL, source);
-}
-
 const INSTRUCTION_STATUS: Readonly<Record<string, string>> = {
-  PLANNED: "지시 — 체결 기록 전",
-  RECORDED: "체결 기록됨",
+  PLANNED: "미확인",
+  RECORDED: "확인함(잔고 반영)",
   SKIPPED: "건너뜀",
   SUPERSEDED: "새 지시로 바뀜",
 };
@@ -292,14 +244,6 @@ export function instructionWhenText(item: Pick<IsaInstructionItem, "session" | "
   return `${sessionLabel(item.session)} ${at ? `${at} 이후 시장가` : "시가"} `;
 }
 
-/**
- * '처리 안 된 지난 지시' 안내 — 시가 지시는 그 세션 시가, 시각 맞추기 지시는 그 시각의 1분봉 값이 들어오면 자동 기록합니다(백엔드 ManualAccountJob 자동
- * 기록 — QA-324).
- */
-export const PENDING_INSTRUCTIONS_GUIDE =
-  "실제로 매매했으면 '체결 고치기'로 수량·체결가를, 매매하지 않았으면 '건너뜀'을 누르세요. 그 세션 시가(개장 10분 뒤 시각 맞추기 지시는 그 시각의 "
-  + "1분봉 값)가 들어오면 지시대로 자동 기록합니다.";
-
 /** 세션 날짜 "YYYY-MM-DD" → "11/09(월)". 알아볼 수 없으면 받은 글자 그대로, 없으면 "—". */
 export function sessionLabel(session: string | null | undefined): string {
   if (typeof session !== "string" || session.trim() === "") {
@@ -323,12 +267,12 @@ export function kstShort(value: string | null | undefined): string {
   return match ? `${match[1]}/${match[2]} ${match[3]}` : full;
 }
 
-/** 알림 칸 — "밤 11/06 22:41 · 아침 11/09 08:00", 보낸 적이 없으면 "보내기 전". */
-export function notifiedText(item: Pick<IsaInstructionItem, "notifiedNightAt" | "notifiedMorningAt" | "notifiedMiddayAt">): string {
+/** 알림 칸 — "아침 11/09 08:00 · 장 중반 11/09 12:15 · 마감 전 11/09 15:00", 보낸 적이 없으면 "보내기 전". */
+export function notifiedText(item: Pick<IsaInstructionItem, "notifiedMorningAt" | "notifiedMiddayAt" | "notifiedPrecloseAt">): string {
   const parts: string[] = [];
-  if (item.notifiedNightAt) parts.push(`밤 ${kstShort(item.notifiedNightAt)}`);
   if (item.notifiedMorningAt) parts.push(`아침 ${kstShort(item.notifiedMorningAt)}`);
   if (item.notifiedMiddayAt) parts.push(`장 중반 ${kstShort(item.notifiedMiddayAt)}`);
+  if (item.notifiedPrecloseAt) parts.push(`마감 전 ${kstShort(item.notifiedPrecloseAt)}`);
   return parts.length > 0 ? parts.join(" · ") : "보내기 전";
 }
 
@@ -340,98 +284,43 @@ export function unpricedText(list: readonly IsaUnpriced[] | null | undefined): s
   return names.length > 0 ? names.join(", ") : null;
 }
 
-/** 체결 고치기를 보이는가 — 기록 전·기록됨(건너뜀·바뀐 지시는 장부에 쓰지 않은 지시라 '행 추가'로). */
-export function canFixFill(item: Pick<IsaInstructionItem, "status">): boolean {
-  return item.status === "PLANNED" || item.status === "RECORDED";
+/** '확인'을 보이는가 — 아직 확인하지 않은 지시만. */
+export function canConfirm(item: Pick<IsaInstructionItem, "status">): boolean {
+  return item.status === "PLANNED";
 }
 
-/**
- * '매매함'(체결 입력 창)을 누를 수 있는가 — 기록 전·자동 기록된 지시 가운데 사용자 체결이 아직 없는 것. 표시만 남긴 지시도 나중에 체결가를 적을 수
- * 있게 표시 여부는 보지 않습니다.
- */
-export function canConfirmTrade(item: Pick<IsaInstructionItem, "status" | "recordedByUser">): boolean {
-  return (item.status === "PLANNED" || item.status === "RECORDED") && item.recordedByUser !== true;
-}
-
-/** 장중 스탑 지시의 '매매함'(체결 입력 창)을 누를 수 있는가 — 기록 전·자동 기록된 지시 가운데 사용자 체결이 아직 없는 것. */
-export function canFillStop(item: Pick<IsaStopInstruction, "status" | "recordedByUser">): boolean {
-  return (item.status === "PLANNED" || item.status === "RECORDED") && item.recordedByUser !== true;
-}
-
-/** '매매함' 표시를 지울 수 있는가(잘못 눌렀을 때). */
-export function canUndoConfirm(item: Pick<IsaInstructionItem, "status" | "confirmedAt">): boolean {
-  return (item.status === "PLANNED" || item.status === "RECORDED") && Boolean(item.confirmedAt);
-}
-
-/** 매매 확인 칸 — '매매함 MM/DD HH:mm'·'체결 기록함'·'확인 전', 건너뜀·대체된 지시는 없음(—). */
-export function tradeConfirmText(item: Pick<IsaInstructionItem, "status" | "confirmedAt" | "recordedByUser">): string {
-  if (item.status !== "PLANNED" && item.status !== "RECORDED") return EMPTY;
-  if (item.confirmedAt) return `매매함 ${kstShort(item.confirmedAt)}`;
-  return item.recordedByUser === true ? "체결 기록함" : "확인 전";
-}
-
-/** 장 중반 확인 알림 안내(지시 표 아래). */
+/** 장 중반·마감 전 확인 알림 안내(지시 표 아래). */
 export const MIDDAY_GUIDE =
-  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '매매함'을 눌러 체결가를 적으세요 — 보유에 바로 반영됩니다. 체결가를 모르면 창에서 '표시만 남기기'를 고르세요(그날 밤 자동 기록). 그날 정규장 절반(보통 12:15)이 지나도 표시나 적은 체결이 없는 지시는 텔레그램으로 한 번 더 알립니다.";
+  "이 시스템은 다른 증권사의 실제 매매를 볼 수 없습니다. 매매했으면 '확인'을 누르세요 — 누른 순간의 가격으로 잔고에 바로 반영합니다. 그날 정규장 절반(보통 12:15)과 마감 30분 전(보통 15:00)까지 확인하지 않은 지시는 텔레그램으로 한 번씩 더 알립니다. 체결가가 다르면 잔고에서 가격을 고치고, 잘못 눌렀으면 매매 내역에서 되돌리세요.";
 
-/** 건너뜀을 보이는가 — 아직 장부에 쓰지 않은 지시만(기록된 행은 장부에서 지움). */
+/** 건너뜀을 보이는가 — 아직 확인하지 않은 지시만. */
 export function canSkip(item: Pick<IsaInstructionItem, "status">): boolean {
   return item.status === "PLANNED";
 }
 
-/** 그 지시의 체결로 적힌 장부 행(자동·직접 — instructionId가 같은 것 중 가장 최근, 장부는 최근 순). 없으면 null. */
-export function ledgerRowForInstruction(ledger: readonly IsaLedgerRow[] | null | undefined, instructionId: number): IsaLedgerRow | null {
-  return (ledger ?? []).find((row) => row.instructionId === instructionId) ?? null;
-}
-
-/** 그 장중 스탑 지시로 적힌 장부 행(없으면 null). */
-export function ledgerRowForStop(ledger: readonly IsaLedgerRow[] | null | undefined, stopInstructionId: number): IsaLedgerRow | null {
-  return (ledger ?? []).find((row) => row.stopInstructionId === stopInstructionId) ?? null;
-}
-
-// ---------------------------------------------------------------- 종목별 손익 %(2026-11-09)
-
-/** 기준가 대비 가격의 손익률(%) — 둘 중 하나를 모르거나 기준가가 0 이하이면 null(0으로 채우지 않음). */
-export function pnlPct(price: number | null, base: number | null): number | null {
-  return price === null || base === null || base <= 0 ? null : (price / base - 1) * 100;
-}
-
-/** 보유 한 줄의 손익률(%) — 평단 대비 지금 가격(실시간, 못 받으면 직전 종가). */
-export function holdingPnlPct(row: Pick<IsaHolding, "lastPrice" | "avgPrice">): number | null {
-  return pnlPct(toNumber(row.lastPrice), toNumber(row.avgPrice));
-}
-
-/** 장부 한 줄의 손익률(%) — 매수는 체결가 대비 지금 가격(보유에 없으면 null), 매도는 서버가 센 실현 손익률, 그 밖의 행은 null. */
-export function ledgerPnlPct(row: IsaLedgerRow, holdings: readonly Pick<IsaHolding, "symbol" | "lastPrice">[]): number | null {
-  if (row.kind === "SELL") return toNumber(row.realizedPct);
-  if (row.kind !== "BUY" || !row.symbol) return null;
-  const held = holdings.find((entry) => entry.symbol === row.symbol);
-  return pnlPct(held ? toNumber(held.lastPrice) : null, toNumber(row.price));
-}
-
 // ---------------------------------------------------------------- 실시간 평가(명세 2026-11-06-us-costs-backfill §6)
 
-/** 보유 종목 하나의 실시간 가격(화면 표시 전용 — ADR 0024) — 가격과 그 가격의 시각(ISO, 출처가 밝힌 기준 시각 — 모르면 받은 시각). */
+/** 종목 하나의 실시간 가격(화면 표시 전용 — ADR 0024) — 가격과 그 가격의 시각(ISO, 출처가 밝힌 기준 시각 — 모르면 받은 시각). */
 export interface IsaLiveQuote {
   price: number;
   at: string | null;
 }
 
-/** 평가한 보유 한 줄 — 가격·평가액·비중은 실시간 가격(있으면) 또는 서버가 준 직전 종가로 다시 센 값. */
-export interface IsaHoldingView extends IsaHolding {
+/** 평가한 잔고 한 줄 — 가격·평가액·손익·비중은 실시간 가격(있으면) 또는 서버가 준 직전 종가로 다시 센 값. */
+export interface IsaPositionView extends IsaPosition {
   /** 가격의 출처 — 실시간(live)·서버가 준 직전 종가(close)·모름(null). */
   priceSource: "live" | "close" | null;
   /** 실시간 가격의 시각(ISO) — 직전 종가·모름이면 null. */
   priceAt: string | null;
 }
 
-/** 요약·보유를 한 기준으로 평가한 결과 — 받은 실시간 가격이 없으면 서버 값 그대로(`live` 0). */
+/** 요약·잔고를 한 기준으로 평가한 결과 — 받은 실시간 가격이 없으면 서버 값 그대로(`live` 0). */
 export interface IsaValuation {
-  holdings: IsaHoldingView[];
+  positions: IsaPositionView[];
   cash: number | null;
   marketValue: number | null;
-  equity: number | null;
-  netDeposit: number | null;
+  totalAsset: number | null;
+  purchaseTotal: number | null;
   profitLoss: number | null;
   profitLossPct: number | null;
   /** 가격을 몰라 평가에서 뺀 종목(실시간도 직전 종가도 없음). 받은 가격이 없으면 서버 목록 그대로. */
@@ -450,38 +339,36 @@ function usablePrice(value: unknown): value is number {
 }
 
 /**
- * 보유 + 요약 + 실시간 가격(종목 코드 → 가격) → 평가(명세 §6). 실시간 가격을 하나라도 받았으면 평가액 = 현금 + Σ 수량 × 가격(실시간, 못 받은 종목은
- * 서버가 준 직전 종가), 손익 = 평가액 − 순입금, 손익률 = 손익 ÷ 순입금(가격을 모르는 보유가 남으면 둘 다 null — 서버와 같음), 비중 = 평가액(종목) ÷
- * 평가액으로 다시 셉니다. 받은 가격이 없으면 서버 값을 그대로
- * 돌려줍니다(같은 값을 화면에서 다시 세어 반올림이 어긋나지 않게). 가격을 모르는 종목은 평가에서 빼고(0으로 채우지 않음) `unpriced`에 둡니다.
- * 서버 장부·지시는 이 값을 쓰지 않습니다(직전 종가 그대로).
+ * 잔고 + 요약 + 실시간 가격(종목 코드 → 가격) → 평가. 실시간 가격을 하나라도 받았으면 평가액 = Σ 수량 × 가격(실시간, 못 받은 종목은 서버가 준 직전 종가), 총 잔고 = 현금 + 평가액,
+ * 손익 = 평가액 − 매입 금액 합(가격을 모르는 보유가 남으면 null — 서버와 같음), 비중 = 평가액(종목) ÷ 총 잔고로 다시 셉니다. 받은 가격이 없으면 서버 값을 그대로 돌려줍니다(같은 값을
+ * 화면에서 다시 세어 반올림이 어긋나지 않게). 가격을 모르는 종목은 평가에서 빼고(0으로 채우지 않음) `unpriced`에 둡니다. 서버 지시는 이 값을 쓰지 않습니다(직전 종가 그대로).
  */
 export function isaValuation(
-  holdings: readonly IsaHolding[] | null | undefined,
+  positions: readonly IsaPosition[] | null | undefined,
   summary: IsaSummary | null | undefined,
   quotes: Readonly<Record<string, IsaLiveQuote>>,
 ): IsaValuation {
-  const rows = holdings ?? [];
+  const rows = positions ?? [];
   const quoteOf = (symbol: string): IsaLiveQuote | null => {
     const quote = Object.hasOwn(quotes, symbol) ? quotes[symbol] : null;
     return quote && usablePrice(quote.price) ? quote : null;
   };
   const cash = toNumber(summary?.cash);
-  const netDeposit = toNumber(summary?.netDeposit);
+  const purchaseTotal = toNumber(summary?.purchaseTotal);
   const live = rows.filter((row) => quoteOf(row.symbol) !== null).length;
 
   if (live === 0) {
-    const views: IsaHoldingView[] = rows.map((row) => ({
+    const views: IsaPositionView[] = rows.map((row) => ({
       ...row,
       priceSource: toNumber(row.lastPrice) === null ? null : "close",
       priceAt: null,
     }));
     return {
-      holdings: views,
+      positions: views,
       cash,
       marketValue: toNumber(summary?.marketValue),
-      equity: toNumber(summary?.equity),
-      netDeposit,
+      totalAsset: toNumber(summary?.totalAsset),
+      purchaseTotal,
       profitLoss: toNumber(summary?.profitLoss),
       profitLossPct: toNumber(summary?.profitLossPct),
       unpriced: [...(summary?.unpriced ?? [])],
@@ -500,11 +387,10 @@ export function isaValuation(
     return { row, quote, price, value, source: quote ? ("live" as const) : close === null ? null : ("close" as const) };
   });
   const marketValue = priced.reduce((sum, entry) => sum + (entry.value ?? 0), 0);
-  const equity = cash === null ? null : cash + marketValue;
-  // 가격을 모르는 보유가 남아 있으면 손익·손익률은 비웁니다(서버 요약과 같은 정의 — 평가액·비중은 아는 종목만으로 셈, 없는 숫자를 만들지 않음).
+  const totalAsset = cash === null ? null : cash + marketValue;
   const hasUnpriced = priced.some((entry) => entry.value === null && (toNumber(entry.row.quantity) ?? 0) > 0);
-  const profitLoss = hasUnpriced || equity === null || netDeposit === null ? null : equity - netDeposit;
-  const profitLossPct = profitLoss === null || netDeposit === null || netDeposit <= 0 ? null : (profitLoss / netDeposit) * 100;
+  const profitLoss = hasUnpriced || purchaseTotal === null ? null : marketValue - purchaseTotal;
+  const profitLossPct = profitLoss === null || purchaseTotal === null || purchaseTotal <= 0 ? null : (profitLoss / purchaseTotal) * 100;
   let basis: number | null = null;
   let basisAt: string | null = null;
   for (const entry of priced) {
@@ -515,18 +401,24 @@ export function isaValuation(
     }
   }
   return {
-    holdings: priced.map(({ row, quote, price, value, source }) => ({
-      ...row,
-      lastPrice: price,
-      marketValue: value,
-      weightPct: value !== null && equity !== null && equity > 0 ? (value / equity) * 100 : null,
-      priceSource: source,
-      priceAt: quote?.at ?? null,
-    })),
+    positions: priced.map(({ row, quote, price, value, source }) => {
+      const purchase = toNumber(row.purchaseAmount);
+      const pnl = value !== null && purchase !== null ? value - purchase : null;
+      return {
+        ...row,
+        lastPrice: price,
+        marketValue: value,
+        profitLoss: pnl,
+        profitLossPct: pnl !== null && purchase !== null && purchase > 0 ? (pnl / purchase) * 100 : null,
+        weightPct: value !== null && totalAsset !== null && totalAsset > 0 ? (value / totalAsset) * 100 : null,
+        priceSource: source,
+        priceAt: quote?.at ?? null,
+      };
+    }),
     cash,
     marketValue,
-    equity,
-    netDeposit,
+    totalAsset,
+    purchaseTotal,
     profitLoss,
     profitLossPct,
     unpriced: priced.filter((entry) => entry.value === null).map(({ row }) => ({ symbol: row.symbol, name: row.name })),
@@ -534,6 +426,16 @@ export function isaValuation(
     close: priced.filter((entry) => entry.source === "close").length,
     basisAt,
   };
+}
+
+/** '확인'에 실을 가격 — 화면이 받은 실시간 가격이 있으면 싣고, 없으면(끊겼거나 못 받음) 칸을 비워 서버 직전 종가로. */
+export function applyItemFor(
+  target: { instructionId?: number; stopInstructionId?: number },
+  symbol: string,
+  quotes: Readonly<Record<string, IsaLiveQuote>>,
+): IsaApplyItem {
+  const quote = Object.hasOwn(quotes, symbol) ? quotes[symbol] : null;
+  return usablePrice(quote?.price) ? { ...target, price: quote.price, priceSource: "live" } : { ...target };
 }
 
 /** 기준 시각 글 — "2026-11-06 14:31:05 KST"(초까지). 실시간 가격이 없거나 시각을 모르면 "—". */
@@ -548,7 +450,7 @@ export function isaBasisNote(valuation: Pick<IsaValuation, "live" | "close">): s
     return "실시간 가격을 아직 받지 못해 서버가 준 직전 종가(밤 관측치)로 평가";
   }
   const close = valuation.close > 0 ? ` · 직전 종가 ${valuation.close}종목` : "";
-  return `실시간 ${valuation.live}종목${close} — 평가액·손익·비중만 다시 계산(장부·지시는 직전 종가)`;
+  return `실시간 ${valuation.live}종목${close} — 평가액·손익·비중만 다시 계산(지시는 직전 종가)`;
 }
 
 /** 시각 글자 → 정렬 값(ms). 못 읽으면 null(정렬에서 맨 뒤). */
@@ -592,22 +494,6 @@ const PRICE_DECIMALS = 4;
 /** 금액·수수료·세금 — NUMERIC(20,2). */
 const AMOUNT_DECIMALS = 2;
 
-/**
- * datetime-local 입력("2026-11-06T14:55", 초가 붙을 수 있음) → KST ISO("2026-11-06T14:55:00+09:00"). 빈 칸은 undefined(서버가 지금으로),
- * 모양이 틀리면 null.
- */
-export function isoFromKstInput(value: string): string | null | undefined {
-  const trimmed = value.trim();
-  if (trimmed === "") {
-    return undefined;
-  }
-  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/.exec(trimmed);
-  if (!match) {
-    return null;
-  }
-  return `${match[1]}T${match[2]}:${match[3] ?? "00"}+09:00`;
-}
-
 /** 시각 글자(ISO) → datetime-local 입력값(서울 시각 "YYYY-MM-DDTHH:mm"). 시간대가 없으면 KST로 읽고, 못 읽으면 "". */
 export function kstInputFromIso(value: string | null | undefined): string {
   if (typeof value !== "string" || value.trim() === "") {
@@ -644,113 +530,74 @@ export function kstInputFromIso(value: string | null | undefined): string {
   }
 }
 
-/** 시작 매수 목록 읽기 결과 — 읽은 줄과 줄마다의 오류("3번째 줄: …"). */
-export interface ParsedStartBuys {
-  buys: IsaStartBuy[];
-  errors: string[];
-}
-
-/**
- * 시작 매수 목록 붙여 넣기 → 줄마다 '코드 수량 가격'(빈칸·탭으로 나눔 — 표에서 복사한 줄도 받음). 빈 줄은 건너뜁니다.
- * 코드는 대문자로 바꿔 DB 모양(숫자 하나 + 숫자·대문자 다섯)과 맞추고, 수량·가격은 0보다 커야 합니다(천 단위 쉼표 허용).
- */
-export function parseStartBuys(text: string): ParsedStartBuys {
-  const buys: IsaStartBuy[] = [];
-  const errors: string[] = [];
-  text.split(/\r?\n/).forEach((raw, index) => {
-    const line = raw.trim();
-    if (line === "") {
-      return;
-    }
-    const where = `${index + 1}번째 줄`;
-    const cells = line.split(/\s+/);
-    if (cells.length !== 3) {
-      errors.push(`${where}: '코드 수량 가격' 세 칸이어야 합니다(빈칸이나 탭으로 나눔) — "${line}"`);
-      return;
-    }
-    const symbol = cells[0].toUpperCase();
-    const quantity = parseDecimal(cells[1], { maxDecimals: QUANTITY_DECIMALS });
-    const price = parseDecimal(cells[2], { maxDecimals: PRICE_DECIMALS });
-    const problems: string[] = [];
-    if (!SYMBOL_PATTERN.test(symbol)) problems.push("종목 코드는 여섯 자리(예: 005930)");
-    if (quantity === null || quantity <= 0) problems.push("수량은 0보다 큰 수");
-    if (price === null || price <= 0) problems.push("가격은 0보다 큰 수(원)");
-    if (problems.length > 0) {
-      errors.push(`${where}: ${problems.join(", ")} — "${line}"`);
-      return;
-    }
-    buys.push({ symbol, quantity: quantity as number, price: price as number });
-  });
-  return { buys, errors };
-}
-
-/** 시작 매수 합(Σ 수량 × 가격, 원) — 시작 창의 남는 현금 어림. 수수료는 넣지 않습니다(시작 매수 목록에 비용 칸이 없음). */
-export function startBuysTotal(buys: readonly IsaStartBuy[]): number {
-  return buys.reduce((sum, buy) => sum + buy.quantity * buy.price, 0);
-}
-
 /** 보내기 전 검사 결과 — 보낼 본문 또는 사람이 고칠 것 목록. */
 export type Checked<T> = { ok: true; body: T } | { ok: false; errors: string[] };
 
+/** 시작 창의 한 줄(글자 그대로). */
+export interface IsaStartLine {
+  symbol: string;
+  quantity: string;
+  purchaseAmount: string;
+}
+
+/** 빈 줄. */
+export function emptyStartLine(): IsaStartLine {
+  return { symbol: "", quantity: "", purchaseAmount: "" };
+}
+
+/** 실시간 가격 칸(비었으면 뺌). */
+function withPrices<T extends object>(body: T, prices: Readonly<Record<string, number>> | undefined): T & { prices?: Record<string, number> } {
+  const entries = Object.entries(prices ?? {}).filter(([, price]) => usablePrice(price));
+  return entries.length > 0 ? { ...body, prices: Object.fromEntries(entries) } : body;
+}
+
 /**
- * 시작 창 입력 → POST /api/manual/isa/start 본문. 시작 현금은 0보다 큰 원(소수 둘째 자리까지), 시작 시각은 비우면 서버가 지금으로,
- * 시작 매수 목록은 비어도 됩니다(현금만으로 시작). 시작 매수 합이 시작 현금보다 크면 보내지 않습니다(서버도 `ledger-invalid`로 거절).
+ * 시작 창 입력 → POST /api/manual/isa/start 본문. 총 잔고는 0보다 큰 원, 줄마다 종목(이름 또는 코드)·수량(0보다 큰 수)·매입 금액(0 이상의 원). 비어 있는 줄은 건너뜁니다(종목이 없으면 현금만으로 시작).
  */
-export function buildStartRequest(input: { cash: string; startedAt: string; buys: string }): Checked<IsaStartRequest> {
+export function buildStartRequest(input: {
+  totalAsset: string;
+  lines: readonly IsaStartLine[];
+  prices?: Readonly<Record<string, number>>;
+}): Checked<IsaStartRequest> {
   const errors: string[] = [];
-  const cash = parseDecimal(input.cash, { maxDecimals: AMOUNT_DECIMALS });
-  if (cash === null || cash <= 0) errors.push("시작 현금은 0보다 큰 원 단위 금액입니다(예: 10,000,000).");
-  const startedAt = isoFromKstInput(input.startedAt);
-  if (startedAt === null) errors.push("시작 시각을 알아볼 수 없습니다 — 비우면 지금 시각으로 적습니다.");
-  const parsed = parseStartBuys(input.buys);
-  errors.push(...parsed.errors);
-  if (cash !== null && cash > 0 && parsed.errors.length === 0) {
-    const total = startBuysTotal(parsed.buys);
-    if (total > cash) {
-      errors.push(`시작 매수 합(${formatWon(total)})이 시작 현금(${formatWon(cash)})보다 큽니다 — 현금이 음수가 되는 장부는 받지 않습니다.`);
+  const total = parseDecimal(input.totalAsset, { maxDecimals: AMOUNT_DECIMALS });
+  if (total === null || total <= 0) errors.push("총 잔고(총평가금액)는 0보다 큰 원 단위 금액입니다(예: 10,000,000).");
+  const positions: IsaStartPosition[] = [];
+  input.lines.forEach((line, index) => {
+    if (line.symbol.trim() === "" && line.quantity.trim() === "" && line.purchaseAmount.trim() === "") {
+      return;
     }
-  }
+    const where = `${index + 1}번째 줄`;
+    const quantity = parseDecimal(line.quantity, { maxDecimals: QUANTITY_DECIMALS });
+    const purchase = parseDecimal(line.purchaseAmount, { maxDecimals: AMOUNT_DECIMALS });
+    const problems: string[] = [];
+    if (line.symbol.trim() === "") problems.push("종목(이름 또는 여섯 자리 코드)");
+    if (quantity === null || quantity <= 0) problems.push("수량은 0보다 큰 수");
+    if (purchase === null || purchase < 0) problems.push("매입 금액은 0 이상의 원");
+    if (problems.length > 0) {
+      errors.push(`${where}: ${problems.join(", ")}`);
+      return;
+    }
+    positions.push({ symbol: line.symbol.trim(), quantity: quantity as number, purchaseAmount: purchase as number });
+  });
   if (errors.length > 0) {
     return { ok: false, errors };
   }
-  return {
-    ok: true,
-    body: { cash: cash as number, ...(startedAt ? { startedAt } : {}), buys: parsed.buys },
-  };
+  return { ok: true, body: withPrices({ totalAsset: total as number, positions }, input.prices) };
 }
 
-/** 행 추가·고치기 창의 입력(모두 글자 — 검사는 buildLedgerRequest). */
-export interface IsaLedgerForm {
-  kind: IsaLedgerKind;
+/** 고치기 창의 입력(글자 그대로). */
+export interface IsaPositionForm {
   symbol: string;
+  name: string;
   quantity: string;
   price: string;
-  amount: string;
-  fee: string;
-  tax: string;
-  /** datetime-local 값(서울 시각) — 비우면 서버가 지금으로. */
-  at: string;
-  note: string;
 }
 
-/** 종류마다 쓰는 칸 — 매수·매도는 종목·수량·체결가·비용, 조정은 종목·수량(음수 가능), 입출금은 금액. */
-export function ledgerFields(kind: IsaLedgerKind): { symbol: boolean; quantity: boolean; price: boolean; amount: boolean; costs: boolean } {
-  const trade = kind === "BUY" || kind === "SELL";
-  return {
-    symbol: trade || kind === "ADJUST",
-    quantity: trade || kind === "ADJUST",
-    price: trade,
-    amount: kind === "DEPOSIT" || kind === "WITHDRAW",
-    costs: trade,
-  };
+/** 빈 입력(행 추가). */
+export function emptyPositionForm(): IsaPositionForm {
+  return { symbol: "", name: "", quantity: "", price: "" };
 }
-
-/** 빈 입력(행 추가 — 기본 매수). */
-export function emptyLedgerForm(kind: IsaLedgerKind = "BUY"): IsaLedgerForm {
-  return { kind, symbol: "", quantity: "", price: "", amount: "", fee: "", tax: "", at: "", note: "" };
-}
-
-const KINDS = new Set<string>(LEDGER_KINDS.map((entry) => entry.kind));
 
 /** 숫자를 입력칸 글자로(모르면 빈 칸). */
 function inputText(value: unknown): string {
@@ -758,186 +605,68 @@ function inputText(value: unknown): string {
   return number === null ? "" : String(number);
 }
 
-/** 장부 행 → 고치기 창 입력. 모르는 종류는 매수로 두지 않고 null(고칠 수 없음 — 지우기만). */
-export function ledgerFormFromRow(row: IsaLedgerRow): IsaLedgerForm | null {
-  if (!KINDS.has(row.kind)) {
-    return null;
-  }
-  return {
-    kind: row.kind as IsaLedgerKind,
-    symbol: row.symbol ?? "",
-    quantity: inputText(row.quantity),
-    price: inputText(row.price),
-    amount: inputText(row.amount),
-    fee: inputText(row.fee),
-    tax: inputText(row.tax),
-    at: kstInputFromIso(row.at),
-    note: row.note ?? "",
-  };
+/** 잔고 한 줄 → 고치기 창 입력(가격은 평균 매입가). */
+export function positionFormFromRow(row: IsaPosition): IsaPositionForm {
+  return { symbol: row.symbol, name: row.name ?? "", quantity: inputText(row.quantity), price: inputText(row.avgPrice) };
 }
 
-/**
- * 지시 → 체결 고치기 창 입력. 그 지시로 적힌 장부 행이 있으면 그 행을 고치고(같은 id), 없으면 지시의 방향·종목·수량으로 새 행을 채웁니다
- * — 체결가는 비워 둡니다(실제 체결가를 적게 — 지시 기준가는 창에 참고로만 보임).
- */
-export function ledgerFormFromInstruction(item: IsaInstructionItem, row: IsaLedgerRow | null): IsaLedgerForm {
-  const fromRow = row ? ledgerFormFromRow(row) : null;
-  if (fromRow) {
-    return fromRow;
-  }
-  const kind: IsaLedgerKind = item.side === "SELL" ? "SELL" : "BUY";
-  return { ...emptyLedgerForm(kind), symbol: item.symbol, quantity: inputText(item.quantity) };
+/** 고치기 창의 '매입 금액 = 수량 × 가격' — 두 칸을 읽지 못하면 null. */
+export function positionFormAmount(form: IsaPositionForm): number | null {
+  const quantity = parseDecimal(form.quantity, { maxDecimals: QUANTITY_DECIMALS });
+  const price = parseDecimal(form.price, { maxDecimals: PRICE_DECIMALS });
+  return quantity === null || price === null ? null : quantity * price;
 }
 
-/** 체결 입력 창의 한 줄 — 지시 하나(다음 시가 지시나 장중 스탑 지시). 수량은 지시 값(자동 기록 행이 있으면 그 수량)으로 채우고 체결가는 비워 둡니다. */
-export interface IsaFillLine {
-  key: string;
-  instructionId: number | null;
-  stopInstructionId: number | null;
-  side: string;
-  symbol: string;
-  name: string | null;
-  /** 지시 기준가(참고 — 스탑 지시는 없음). */
-  refPrice: IsaDecimal;
-  /** 밤에 자동 기록된 체결가(참고 — 없으면 null). */
-  autoPrice: IsaDecimal;
-  quantity: string;
-  price: string;
-  fee: string;
-  tax: string;
-}
-
-/** 다음 시가 지시 → 체결 입력 한 줄. */
-export function fillLineFromInstruction(item: IsaInstructionItem, row: IsaLedgerRow | null): IsaFillLine {
-  return {
-    key: `i-${item.id}`,
-    instructionId: item.id,
-    stopInstructionId: null,
-    side: item.side,
-    symbol: item.symbol,
-    name: item.name,
-    refPrice: item.refPrice,
-    autoPrice: row?.price ?? null,
-    quantity: inputText(row?.quantity ?? item.quantity),
-    price: "",
-    fee: "",
-    tax: "",
-  };
-}
-
-/** 장중 스탑 지시 → 체결 입력 한 줄. */
-export function fillLineFromStop(item: IsaStopInstruction, row: IsaLedgerRow | null): IsaFillLine {
-  return {
-    key: `s-${item.id}`,
-    instructionId: null,
-    stopInstructionId: item.id,
-    side: item.side,
-    symbol: item.symbol,
-    name: item.name,
-    refPrice: null,
-    autoPrice: row?.price ?? null,
-    quantity: inputText(row?.quantity ?? item.quantity),
-    price: "",
-    fee: "",
-    tax: "",
-  };
-}
-
-/** 체결 입력 → POST /api/manual/isa/instructions/fills 본문. 줄마다 수량·체결가가 있어야 하고 수수료·세금은 비우면 0입니다. 현금·보유 검사는 서버가 합니다. */
-export function buildFillsRequest(lines: readonly IsaFillLine[]): Checked<IsaFillsRequest> {
-  if (lines.length === 0) {
-    return { ok: false, errors: ["적을 줄이 없습니다."] };
-  }
+/** 고치기 창 입력 → POST /api/manual/isa/positions 본문. `originalSymbol`이 있으면 그 행을 고칩니다(코드가 바뀌면 옮김 — 없는 값은 서버가 봄). */
+export function buildPositionRequest(form: IsaPositionForm, originalSymbol?: string | null): Checked<IsaPositionRequest> {
   const errors: string[] = [];
-  const fills: IsaFillItem[] = [];
-  for (const line of lines) {
-    const who = symbolText(line.symbol, line.name);
-    const quantity = parseDecimal(line.quantity, { maxDecimals: QUANTITY_DECIMALS });
-    const price = parseDecimal(line.price, { maxDecimals: PRICE_DECIMALS });
-    const fee = line.fee.trim() === "" ? 0 : parseDecimal(line.fee, { maxDecimals: AMOUNT_DECIMALS });
-    const tax = line.tax.trim() === "" ? 0 : parseDecimal(line.tax, { maxDecimals: AMOUNT_DECIMALS });
-    if (quantity === null || quantity <= 0) errors.push(`${who} — 수량은 0보다 큰 수입니다.`);
-    if (price === null || price <= 0) errors.push(`${who} — 체결가를 적으세요.`);
-    if (fee === null) errors.push(`${who} — 수수료는 0 이상의 원 단위 금액입니다(비우면 0).`);
-    if (tax === null) errors.push(`${who} — 세금은 0 이상의 원 단위 금액입니다(비우면 0).`);
-    if (quantity !== null && quantity > 0 && price !== null && price > 0 && fee !== null && tax !== null) {
-      const id = line.instructionId !== null ? { instructionId: line.instructionId } : { stopInstructionId: line.stopInstructionId as number };
-      fills.push({ ...id, quantity, price, fee, tax });
-    }
+  const symbol = form.symbol.trim();
+  const quantity = parseDecimal(form.quantity, { maxDecimals: QUANTITY_DECIMALS });
+  const price = parseDecimal(form.price, { maxDecimals: PRICE_DECIMALS });
+  if (symbol === "") errors.push("종목(이름 또는 여섯 자리 코드)을 넣으세요.");
+  if (quantity === null || quantity <= 0) errors.push("수량은 0보다 큰 수입니다.");
+  if (price === null || price <= 0) errors.push("가격(평균 매입가)은 0보다 큰 원 단위 가격입니다.");
+  if (errors.length > 0) {
+    return { ok: false, errors };
   }
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, body: { fills } };
+  const name = form.name.trim();
+  return {
+    ok: true,
+    body: {
+      ...(originalSymbol ? { originalSymbol } : {}),
+      symbol,
+      ...(name !== "" ? { name } : {}),
+      quantity: quantity as number,
+      price: price as number,
+    },
+  };
 }
 
-/**
- * 행 추가·고치기 입력 → POST /api/manual/isa/ledger 본문. 종류에 쓰는 칸만 싣고(ledgerFields), 매수·매도의 수수료·세금은 비우면 0,
- * 고치기(`id`)에서는 메모를 늘 싣습니다(지운 메모가 남지 않게). 현금·보유가 음수가 되는지는 서버가 봅니다(`ledger-invalid`).
- *
- * <p>`originalAt`(고치는 행의 시각 원문)이 있고 시각 칸이 그 원문을 분까지 옮긴 값 그대로면(사용자가 시각을 바꾸지 않음) 원문을 그대로 싣습니다
- * — 입력칸은 분까지라, 초·소수초가 있는 행(시작 시각을 비운 시작 매수 등)을 고치면 같은 순간의 시작 입금보다 앞으로 옮겨져 거절되지 않게.
- */
-export function buildLedgerRequest(
-  form: IsaLedgerForm,
-  context: { id?: number | null; instructionId?: number | null; originalAt?: string | null } = {},
-): Checked<IsaLedgerRequest> {
-  const errors: string[] = [];
-  const fields = ledgerFields(form.kind);
-  const body: IsaLedgerRequest = { kind: form.kind };
-  if (typeof context.id === "number") body.id = context.id;
-  if (typeof context.instructionId === "number") body.instructionId = context.instructionId;
+/** 총 잔고 다시 맞추기 입력 → 본문. */
+export function buildTotalRequest(text: string, prices?: Readonly<Record<string, number>>): Checked<IsaTotalRequest> {
+  const total = parseDecimal(text, { maxDecimals: AMOUNT_DECIMALS });
+  if (total === null || total <= 0) {
+    return { ok: false, errors: ["총 잔고(총평가금액)는 0보다 큰 원 단위 금액입니다."] };
+  }
+  return { ok: true, body: withPrices({ totalAsset: total }, prices) };
+}
 
-  if (fields.symbol) {
-    const symbol = form.symbol.trim().toUpperCase();
-    if (!SYMBOL_PATTERN.test(symbol)) errors.push("종목 코드는 여섯 자리입니다(예: 005930).");
-    else body.symbol = symbol;
+/** 수수료율 입력(%) → 본문. 0 이상 1 이하. */
+export function buildCommissionRequest(text: string): Checked<IsaCommissionRequest> {
+  const pct = parseDecimal(text, { maxDecimals: 6 });
+  if (pct === null || pct < 0 || pct > 1) {
+    return { ok: false, errors: ["수수료율은 0~1% 사이의 값입니다(예: 0.015)."] };
   }
-  if (fields.quantity) {
-    const adjust = form.kind === "ADJUST";
-    const quantity = parseDecimal(form.quantity, { maxDecimals: QUANTITY_DECIMALS, allowNegative: adjust });
-    if (quantity === null || quantity === 0 || (!adjust && quantity < 0)) {
-      errors.push(adjust ? "조정 수량은 0이 아닌 수입니다(줄면 음수)." : "수량은 0보다 큰 수입니다.");
-    } else {
-      body.quantity = quantity;
-    }
-  }
-  if (fields.price) {
-    const price = parseDecimal(form.price, { maxDecimals: PRICE_DECIMALS });
-    if (price === null || price <= 0) errors.push("체결가는 0보다 큰 원 단위 가격입니다.");
-    else body.price = price;
-  }
-  if (fields.amount) {
-    const amount = parseDecimal(form.amount, { maxDecimals: AMOUNT_DECIMALS });
-    if (amount === null || amount <= 0) errors.push("금액은 0보다 큰 원 단위 금액입니다.");
-    else body.amount = amount;
-  }
-  if (fields.costs) {
-    for (const [key, label] of [["fee", "수수료"], ["tax", "세금"]] as const) {
-      const text = form[key].trim();
-      const value = text === "" ? 0 : parseDecimal(text, { maxDecimals: AMOUNT_DECIMALS });
-      if (value === null) errors.push(`${label}는 0 이상의 원 단위 금액입니다(비우면 0).`);
-      else body[key] = value;
-    }
-  }
-  const original = typeof context.originalAt === "string" ? context.originalAt.trim() : "";
-  const unchanged = original !== "" && form.at.trim() !== "" && form.at.trim() === kstInputFromIso(original);
-  const at = unchanged ? original : isoFromKstInput(form.at);
-  if (at === null) errors.push("시각을 알아볼 수 없습니다 — 비우면 지금 시각으로 적습니다.");
-  else if (at) body.at = at;
-  const note = form.note.trim();
-  if (note !== "" || typeof context.id === "number") body.note = note;
-
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, body };
+  return { ok: true, body: { commissionPct: pct } };
 }
 
 // ---------------------------------------------------------------- 서버 오류
 
-/** 서버 오류 코드(명세 §5 — 400 invalid-request·ledger-invalid, 404 not-found, 409 already-started·not-started·already-recorded). */
-export const ISA_ERROR_CODES = ["invalid-request", "ledger-invalid", "ledger-cash-negative", "not-found", "already-started", "not-started", "already-recorded"] as const;
+/** 서버 오류 코드(400 invalid-request, 404 not-found, 409 already-started·not-started·already-recorded). */
+export const ISA_ERROR_CODES = ["invalid-request", "not-found", "already-started", "not-started", "already-recorded"] as const;
 
-/** 고치기·지우기가 현금을 음수로 만드는 거절 — 사용자가 확인하면 저장할 수 있습니다(QA-337). */
-export const CASH_NEGATIVE_CODE = "ledger-cash-negative";
-
-/** 현금이 음수인 장부의 경고(요약 카드). */
-export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 장부에 금액을 잘못 적은 행이 남아 있는지 확인해 고치세요. 음수인 동안 다음 지시의 매수가 줄어듭니다.";
+/** 현금이 음수일 때의 경고(요약 카드) — 잔고 쓰기는 막지 않습니다. */
+export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 지시의 매수가 줄어듭니다.";
 
 export type IsaErrorCode = (typeof ISA_ERROR_CODES)[number];
 
@@ -965,24 +694,20 @@ export function isaErrorText(code: IsaErrorCode | null, fallback: string | null)
   switch (code) {
     case "invalid-request":
       return `입력이 올바르지 않습니다${detail ? ` — ${detail}` : ". 칸을 확인하세요."}`;
-    case "ledger-invalid":
-      return `이 행을 적으면 현금이나 보유 수량이 음수가 됩니다 — 수량·가격·금액을 확인하세요.${detail ? ` (${detail})` : ""}`;
-    case "ledger-cash-negative":
-      return detail ?? "이대로면 현금이 음수가 됩니다 — 금액이 잘못된 다른 행을 먼저 고치세요.";
     case "not-found":
-      return "그 행이나 지시를 찾지 못했습니다 — 그사이 지워졌을 수 있어 장부를 다시 읽었습니다.";
+      return "그 행이나 지시를 찾지 못했습니다 — 그사이 지워졌을 수 있어 화면을 다시 읽었습니다.";
     case "already-started":
-      return "이미 시작한 계좌입니다 — 시작은 한 번만 됩니다. 장부를 다시 읽었습니다.";
+      return "이미 시작한 계좌입니다 — 시작은 한 번만 됩니다. 화면을 다시 읽었습니다.";
     case "not-started":
-      return "아직 시작하지 않은 계좌입니다 — 먼저 '시작'으로 시작 현금과 시작 매수를 적으세요.";
+      return "아직 시작하지 않은 계좌입니다 — 먼저 '시작'으로 총 잔고와 보유를 넣으세요.";
     case "already-recorded":
-      return "이 지시에는 이미 직접 적은 체결 행이 있습니다 — 장부를 다시 읽었습니다. 창을 닫고 그 지시의 '체결 고치기'로 그 행을 고치세요.";
+      return "이미 확인한 지시입니다 — 화면을 다시 읽었습니다. 잘못 눌렀으면 매매 내역에서 되돌리세요.";
     default:
       return detail ?? "요청을 처리하지 못했습니다.";
   }
 }
 
-/** 이 오류 뒤에 장부를 다시 읽어야 하는가(화면이 서버와 어긋났다는 뜻 — 없는 행·이미 시작·시작 전·이미 적힌 지시). */
+/** 이 오류 뒤에 화면을 다시 읽어야 하는가(화면이 서버와 어긋났다는 뜻 — 없는 행·이미 시작·시작 전·이미 적힌 지시). */
 export function isaErrorNeedsReload(code: IsaErrorCode | null): boolean {
   return code === "not-found" || code === "already-started" || code === "not-started" || code === "already-recorded";
 }

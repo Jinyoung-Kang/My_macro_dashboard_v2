@@ -296,22 +296,24 @@ export const endpoints = {
     resume: "/api/realtrade/resume",
   },
 
-  // ISA 계좌 — 연결되지 않은 다른 증권사 계좌의 장부와 다음 시가 매매 지시(운영자 전용, ADR 0029). 증권사 연결·주문 경로는 없습니다(사용자가 직접 매매).
-  // 쓰기는 모두 POST — 시작(한 번만)·장부 행 추가·고치기(본문 id)·지우기·지시 건너뜀.
+  // ISA 계좌 — 연결되지 않은 다른 증권사 계좌의 잔고와 다음 매매 지시(운영자 전용, ADR 0029·0034). 증권사 연결·주문 경로는 없습니다(사용자가 직접 매매).
+  // 쓰기는 모두 POST — 시작(한 번만)·총 잔고·수수료율·보유 고침·지시 확인·건너뜀·되돌리기.
   isa: {
-    /** 계좌·요약·보유·다음 시가 지시·최근 지시 30·장부 최근 200. */
+    /** 계좌·요약·보유·다음 지시·최근 지시 30·매매 내역 최근 200. */
     account: "/api/manual/isa",
     start: "/api/manual/isa/start",
-    /** 본문 `id`가 있으면 그 행을 고치고, 없으면 새 행. */
-    ledger: "/api/manual/isa/ledger",
-    /** `allowNegativeCash` — 현금이 음수가 되어도 지운다는 사용자 확인(QA-337). */
-    deleteLedger: (id: number, allowNegativeCash = false) =>
-      `/api/manual/isa/ledger/${segment(String(id))}/delete${allowNegativeCash ? "?allowNegativeCash=true" : ""}`,
+    /** 총 잔고를 다시 넣어 현금을 다시 셈. */
+    total: "/api/manual/isa/balance/total",
+    /** 수수료율(%). */
+    commission: "/api/manual/isa/balance/commission",
+    /** 본문 `originalSymbol`이 있으면 그 행을 고치고, 없으면 새 행. */
+    position: "/api/manual/isa/positions",
+    deletePosition: (symbol: string) => `/api/manual/isa/positions/${segment(symbol)}/delete`,
+    /** 지시·스탑 지시 '확인' — 누른 순간의 가격으로 잔고에 바로 반영(본문 items, 한 트랜잭션). */
+    apply: "/api/manual/isa/instructions/apply",
     skipInstruction: (id: number) => `/api/manual/isa/instructions/${segment(String(id))}/skip`,
-    /** '매매함' 표시 남기기·지우기(본문 ids·confirmed) — 장 중반 확인 알림의 신호, 장부는 바꾸지 않음. */
-    confirmInstructions: "/api/manual/isa/instructions/confirm",
-    /** 체결 입력(본문 fills — 지시·스탑 지시마다 한 줄) — 한 트랜잭션으로 장부에 적어 보유에 바로 반영. */
-    fills: "/api/manual/isa/instructions/fills",
+    /** '확인' 되돌리기. */
+    undoTrade: (id: number) => `/api/manual/isa/trades/${segment(String(id))}/undo`,
   },
 
   // 토스증권 연결 테스트 (경로는 /api/ai/toss 이지만 AI와 관계없음)

@@ -167,9 +167,10 @@ const CASES: Case[] = [
   { name: "realtrade.status(US)", before: "/api/realtrade/status?market=US", after: endpoints.realtrade.status("US") },
   { name: "realtrade.preview(KR, kr_claude2)", before: "/api/realtrade/preview?market=KR&sourceBook=kr_claude2",
     after: endpoints.realtrade.preview("KR", "kr_claude2") },
-  // ISA 계좌(ADR 0029) — 장부 행 지우기·지시 건너뜀(번호 아래 POST).
-  { name: "isa.deleteLedger", before: `/api/manual/isa/ledger/${17}/delete`, after: endpoints.isa.deleteLedger(17) },
+  // ISA 계좌(ADR 0034) — 보유 지우기·지시 건너뜀·되돌리기.
+  { name: "isa.deletePosition", before: "/api/manual/isa/positions/005930/delete", after: endpoints.isa.deletePosition("005930") },
   { name: "isa.skipInstruction", before: `/api/manual/isa/instructions/${8}/skip`, after: endpoints.isa.skipInstruction(8) },
+  { name: "isa.undoTrade", before: `/api/manual/isa/trades/${9}/undo`, after: endpoints.isa.undoTrade(9) },
 ];
 
 describe("API 경로 — 예전 조립식과 서버가 받는 값이 같다", () => {
@@ -258,15 +259,15 @@ describe("실제 매매 경로(ADR 0028)", () => {
 });
 
 describe("ISA 계좌 경로(ADR 0029)", () => {
-  it("/api/manual/isa 아래 읽기 하나와 쓰기 넷(시작·장부 행 추가·고치기·지우기·지시 건너뜀) — 증권사 주문 경로가 없다", () => {
-    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "ledger", "deleteLedger", "skipInstruction", "confirmInstructions", "fills"]);
-    expect([endpoints.isa.account, endpoints.isa.start, endpoints.isa.ledger]).toEqual([
-      "/api/manual/isa", "/api/manual/isa/start", "/api/manual/isa/ledger",
+  it("/api/manual/isa 아래 읽기 하나와 쓰기(시작·총 잔고·수수료율·보유 고침·지우기·확인·건너뜀·되돌리기) — 증권사 주문 경로가 없다", () => {
+    expect(Object.keys(endpoints.isa)).toEqual(["account", "start", "total", "commission", "position", "deletePosition", "apply", "skipInstruction", "undoTrade"]);
+    expect([endpoints.isa.account, endpoints.isa.start, endpoints.isa.total, endpoints.isa.commission, endpoints.isa.position, endpoints.isa.apply]).toEqual([
+      "/api/manual/isa", "/api/manual/isa/start", "/api/manual/isa/balance/total", "/api/manual/isa/balance/commission", "/api/manual/isa/positions",
+      "/api/manual/isa/instructions/apply",
     ]);
-    expect(endpoints.isa.deleteLedger(12)).toBe("/api/manual/isa/ledger/12/delete");
+    expect(endpoints.isa.deletePosition("005930")).toBe("/api/manual/isa/positions/005930/delete");
     expect(endpoints.isa.skipInstruction(3)).toBe("/api/manual/isa/instructions/3/skip");
-    expect(endpoints.isa.confirmInstructions).toBe("/api/manual/isa/instructions/confirm");
-    expect(endpoints.isa.fills).toBe("/api/manual/isa/instructions/fills");
+    expect(endpoints.isa.undoTrade(5)).toBe("/api/manual/isa/trades/5/undo");
   });
 });
 
@@ -298,8 +299,9 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/paper\/framework\/proposals\/[^/]+\/(approve|reject)$/, "/api/paper/framework/proposals/{id}/$1")
   .replace(/^\/api\/paper\/notes\/[^/]+$/, "/api/paper/notes/{id}")
   .replace(/^\/api\/paper\/reviews\/(?!run$)[^/]+$/, "/api/paper/reviews/{weekEnding}")
-  .replace(/^\/api\/manual\/isa\/ledger\/[^/]+\/delete$/, "/api/manual/isa/ledger/{id}/delete")
-  .replace(/^\/api\/manual\/isa\/instructions\/[^/]+\/skip$/, "/api/manual/isa/instructions/{id}/skip");
+  .replace(/^\/api\/manual\/isa\/positions\/[^/]+\/delete$/, "/api/manual/isa/positions/{symbol}/delete")
+  .replace(/^\/api\/manual\/isa\/instructions\/[^/]+\/skip$/, "/api/manual/isa/instructions/{id}/skip")
+  .replace(/^\/api\/manual\/isa\/trades\/[^/]+\/undo$/, "/api/manual/isa/trades/{id}/undo");
 
 describe("docs/API.md 백엔드 표와 대조", () => {
   it("화면이 부르는 경로는 모두 문서(= 백엔드 경로 목록 테스트가 대조하는 표)에 있다", () => {
@@ -312,6 +314,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(65);
+    expect(functions).toBe(66);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * ISA 계좌(연결되지 않은 다른 증권사 계좌 — ADR 0029) 화면 모듈의 경계를 소스로 지킵니다(명세 docs/specs/2026-11-06-isa-manual-account.md §7·§8).
+ * ISA 계좌(연결되지 않은 다른 증권사 계좌 — ADR 0029·0034) 화면 모듈의 경계를 소스로 지킵니다(명세 docs/specs/2026-11-06-isa-manual-account.md §7·§8).
  *
  *  - ISA 모듈(components/screens/isa/*, lib/isa.ts, lib/types/isa.ts)을 그 밖에서 가져오는 곳은 PaperScreen.tsx 하나 — 모의 장부·홈·패킷 쪽 모듈로
  *    ISA 자료가 흘러가는 길이 없게(별칭(@/)·상대 경로·동적 import 모두)
@@ -65,11 +65,11 @@ const codeOf = (path: string) =>
   readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
 describe("ISA 계좌 화면 경계(ADR 0029)", () => {
-  it("ISA 모듈이 있다 — 칸·표·장부 창·시작 창·쓰기 요청·순수 함수·응답 계약", () => {
+  it("ISA 모듈이 있다 — 칸·표·잔고 창·시작 창·쓰기 요청·순수 함수·응답 계약", () => {
     const files = isaFiles().map((path) => relative(root, path)).sort();
     expect(files).toEqual([
-      "components/screens/isa/IsaFillsDialog.tsx",
-      "components/screens/isa/IsaLedgerDialog.tsx",
+      "components/screens/isa/IsaBalanceDialogs.tsx",
+      "components/screens/isa/IsaPositionDialog.tsx",
       "components/screens/isa/IsaSection.tsx",
       "components/screens/isa/IsaStartDialog.tsx",
       "components/screens/isa/IsaTables.tsx",
@@ -129,7 +129,7 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (/\bfetch\s*\(/.test(text)) offenders.push(`${name}: fetch`);
       for (const match of text.matchAll(/\bapiPost\s*(?:<[^>()]*>)?\s*\(\s*([^,)]+)/g)) {
         const target = match[1].trim();
-        const leaf = /^endpoints\.isa\.(start|ledger|deleteLedger|skipInstruction|confirmInstructions|fills)\b/.exec(target)?.[1];
+        const leaf = /^endpoints\.isa\.(start|total|commission|position|deletePosition|apply|skipInstruction|undoTrade)\b/.exec(target)?.[1];
         if (leaf) posts.push(leaf);
         else offenders.push(`${name}: apiPost(${target})`);
       }
@@ -140,8 +140,8 @@ describe("ISA 계좌 화면 경계(ADR 0029)", () => {
       if (mentions !== calls + imports) offenders.push(`${name}: apiPost를 부르지 않고 참조`);
     }
     expect(offenders).toEqual([]);
-    // 시작·장부 행 추가·고치기·지우기·지시 건너뜀·'매매함' 표시가 모두 이 모듈 안에서 나갑니다.
-    expect([...new Set(posts)].sort()).toEqual(["confirmInstructions", "deleteLedger", "fills", "ledger", "skipInstruction", "start"]);
+    // 시작·총 잔고·수수료율·잔고 고침·지우기·확인·건너뜀·되돌리기가 모두 이 모듈 안에서 나갑니다.
+    expect([...new Set(posts)].sort()).toEqual(["apply", "commission", "deletePosition", "position", "skipInstruction", "start", "total", "undoTrade"]);
   });
 
   it("endpoints.isa를 쓰는 곳은 ISA 모듈뿐(경로 정의 lib/endpoints.ts 제외)", () => {

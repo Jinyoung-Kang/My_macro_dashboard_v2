@@ -1,16 +1,12 @@
 /**
- * 모의매매(한국)의 'ISA 계좌' 탭(ADR 0029, 명세 docs/specs/2026-11-06-isa-manual-account.md §8).
+ * 모의매매(한국)의 'ISA 계좌' 탭(ADR 0029·0034).
  *
- *  - 탭은 한국만: 한국 탭 줄 '실제 계좌' 옆, 미국 탭 줄에는 없고 미국 /paper/us/isa는 개요(주소도 개요로, ISA 장부를 읽지 않음)
- *  - 칸: 배너 · 시작 전이면 '시작' 창(시작 현금 + 시작 매수 붙여 넣기 — 줄마다 형식 검사, 합이 현금보다 크면 막음) ·
- *    요약(순입금(시작 현금 포함)·평가액·손익 부호와 색·현금·비용 0으로 어림·가격 모르는 종목) · 다음 시가 매매 지시(세션·종목·방향·수량·상태·알림 시각,
- *    줄마다 체결 고치기·건너뜀) · 보유 · 장부(고치기·지우기 — 지우기는 확인 창) · 행 추가
- *  - 쓰기는 POST /api/manual/isa/{start, ledger, ledger/{id}/delete, instructions/{id}/skip}, 서버 오류 코드별 문구, 개요가 실패해도 그려짐
- *  - 리뷰 결함: 처리 안 된 지난 지시(pendingInstructions — 세션 칸, 체결 고치기·건너뜀), '못 만듦' 사유별 문구, 개장 시각(open)으로 동시호가 안내·
- *    체결 고치기 기본 시각, 고치기에서 시각 원문 보존, 장부 '금액' 칸 설명, 요약 '순입금(시작 현금 포함)', 표가 없을 때 message·notes,
- *    already-recorded, 지시 뒤 장부가 바뀜 경고, 칸 순서(요약 → 지시 → 지난 지시 → 보유 → 장부)
- *  - 명세 2026-11-06-us-costs-backfill §5·§6: 장부·보유 표 정렬(머리를 누르면 오름 → 내림, aria-sort, 장부는 처음 시각 내림차순), 탭 머리의 주기 상자와
- *    기준 시각(받은 가격의 시각 중 가장 이른 것, 초까지), 실시간 가격으로 평가액·손익·비중 다시 계산(못 받은 종목은 '직전 종가')
+ *  - 탭은 한국만: 한국 탭 줄 '실제 계좌' 옆, 미국 탭 줄에는 없고 미국 /paper/us/isa는 개요로 엶
+ *  - 칸: 배너 · 시작 전이면 시작 창(총 잔고 + 줄마다 종목·수량·매입 금액) · 요약(총 평가액·현금·매입 금액 합·평가손익·누적 수수료·세금·수수료율, 현금 음수 경고) ·
+ *    다음 매매 지시(확인·건너뜀·전부 확인) · 장중 스탑 지시(확인) · 잔고(첫 열 고치기·지우기, 행 추가) · 매매 내역(되돌리기)
+ *  - 확인은 한 번 누르면 바로 POST(확인 창 없음) — 화면이 보던 실시간 가격을 실어 보냄(없으면 서버 직전 종가)
+ *  - 쓰기는 POST /api/manual/isa/{start, balance/total, balance/commission, positions, positions/{symbol}/delete, instructions/apply, instructions/{id}/skip, trades/{id}/undo}
+ *  - 실시간 평가: 받은 가격으로 평가액·손익·비중 다시 계산(못 받은 종목은 '직전 종가')
  * 값은 모두 합성 값입니다(실제 계좌 자료 아님).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -50,41 +46,45 @@ const KR_OVERVIEW = {
 const ITEMS = [
   {
     id: 7, symbol: "222220", name: "합성화학", side: "SELL", quantity: 3, refPrice: 53_000, weightPct: 48.2, status: "PLANNED",
-    notifiedNightAt: "2026-11-06T22:41:00+09:00", notifiedMorningAt: null,
+    notifiedMorningAt: "2026-11-09T08:00:30+09:00",
   },
   {
-    id: 8, symbol: "111110", name: "합성전자", side: "BUY", quantity: 4, refPrice: 12_500, weightPct: 25.5, status: "RECORDED",
-    notifiedNightAt: "2026-11-06T22:41:00+09:00", notifiedMorningAt: "2026-11-09T08:00:30+09:00",
+    id: 8, symbol: "111110", name: "합성전자", side: "BUY", quantity: 4, refPrice: 12_500, weightPct: 25.5, status: "RECORDED", recordedByUser: true,
+    notifiedMorningAt: "2026-11-09T08:00:30+09:00",
   },
 ];
+
+const STOP_ITEM = {
+  id: 77, session: "2026-11-09", symbol: "333330", name: "합성바이오", side: "SELL", quantity: 10, timing: "MARKET", targetAt: "2026-11-09T11:32:00+09:00",
+  status: "PLANNED", notifiedAt: "2026-11-09T11:30:10+09:00", autoNote: null,
+};
 
 function started(over: Record<string, unknown> = {}) {
   return {
     available: true, started: true,
     account: {
-      code: "isa", label: "ISA 계좌", market: "KR", sourceBook: "kr_rules", sourceLabel: "규칙 계좌", state: "ACTIVE",
-      startedAt: "2026-11-06T14:55:00+09:00", startCash: 5_000_000,
+      code: "isa", label: "ISA 계좌", market: "KR", sourceBook: "kr_rules", sourceLabel: "규칙 계좌", state: "ACTIVE", startedAt: "2026-11-06T14:55:00+09:00",
     },
-    summary: { cash: 1_200_000, marketValue: 3_900_000, equity: 5_100_000, netDeposit: 5_000_000, profitLoss: 100_000, profitLossPct: 2, unpriced: ["333330"] },
-    holdings: [
-      { symbol: "111110", name: "합성전자", quantity: 100, avgPrice: 12_000, lastPrice: 12_500, marketValue: 1_250_000, weightPct: 24.51 },
-      { symbol: "222220", name: "합성화학", quantity: 50, avgPrice: 53_000, lastPrice: 53_000, marketValue: 2_650_000, weightPct: 51.96 },
-      { symbol: "333330", name: "합성바이오", quantity: 10, avgPrice: 9_000, lastPrice: null, marketValue: null, weightPct: null },
+    summary: {
+      cash: 1_200_000, marketValue: 3_900_000, totalAsset: 5_100_000, purchaseTotal: 3_940_000, profitLoss: null, profitLossPct: null,
+      feesPaid: 1_234, taxesPaid: 5_678, commissionPct: 0.015, unpriced: ["333330"],
+    },
+    positions: [
+      { symbol: "111110", name: "합성전자", quantity: 100, avgPrice: 12_000, purchaseAmount: 1_200_000, lastPrice: 12_500, marketValue: 1_250_000, profitLoss: 50_000, profitLossPct: 4.17, weightPct: 24.51, feesPaid: 500, taxesPaid: 0 },
+      { symbol: "222220", name: "합성화학", quantity: 50, avgPrice: 53_000, purchaseAmount: 2_650_000, lastPrice: 53_000, marketValue: 2_650_000, profitLoss: 0, profitLossPct: 0, weightPct: 51.96, feesPaid: 0, taxesPaid: 0 },
+      { symbol: "333330", name: "합성바이오", quantity: 10, avgPrice: 9_000, purchaseAmount: 90_000, lastPrice: null, marketValue: null, profitLoss: null, profitLossPct: null, weightPct: null, feesPaid: 0, taxesPaid: 0 },
     ],
-    instructions: { session: "2026-11-09", status: "PLANNED", items: ITEMS },
+    instructions: { session: "2026-11-09", status: "PLANNED", items: ITEMS, open: "2026-11-09T09:00:00+09:00", ledgerChanged: false, targetAt: null },
     recentInstructions: ITEMS.map((item) => ({ ...item, session: "2026-11-09" })),
-    ledger: [
+    stopInstructions: [],
+    trades: [
       {
-        id: 33, at: "2026-11-09T09:00:00+09:00", kind: "BUY", symbol: "111110", name: "합성전자", quantity: 4, price: 12_600, amount: null,
-        fee: 0, tax: 0, source: "AUTO", instructionId: 8, note: null,
+        id: 33, at: "2026-11-09T09:05:00+09:00", side: "BUY", symbol: "111110", name: "합성전자", quantity: 4, price: 12_600, amount: 50_400, fee: 7, tax: 0,
+        realizedPnl: null, realizedPct: null, priceSource: "live", taxAssumed: false, instructionId: 8, stopInstructionId: null,
       },
       {
-        id: 32, at: "2026-11-06T14:55:00+09:00", kind: "BUY", symbol: "222220", name: "합성화학", quantity: 50, price: 53_000, amount: null,
-        fee: 0, tax: 0, source: "USER", instructionId: null, note: "시작 매수",
-      },
-      {
-        id: 31, at: "2026-11-06T14:55:00+09:00", kind: "DEPOSIT", symbol: null, name: null, quantity: null, price: null, amount: 5_000_000,
-        fee: 0, tax: 0, source: "USER", instructionId: null, note: null,
+        id: 32, at: "2026-11-09T09:01:00+09:00", side: "SELL", symbol: "222220", name: "합성화학", quantity: 2, price: 54_000, amount: 108_000, fee: 16, tax: 215,
+        realizedPnl: 1_769, realizedPct: 1.67, priceSource: "close", taxAssumed: true, instructionId: 9, stopInstructionId: null,
       },
     ],
     notes: ["합성 안내 한 줄"],
@@ -94,8 +94,8 @@ function started(over: Record<string, unknown> = {}) {
 
 const NOT_STARTED = {
   available: true, started: false,
-  account: { code: "isa", label: "ISA 계좌", market: "KR", sourceBook: "kr_rules", sourceLabel: "규칙 계좌", state: "ACTIVE", startedAt: null, startCash: null },
-  summary: null, holdings: [], instructions: null, recentInstructions: [], ledger: [], notes: [],
+  account: { code: "isa", label: "ISA 계좌", market: "KR", sourceBook: "kr_rules", sourceLabel: "규칙 계좌", state: null, startedAt: null },
+  summary: null, positions: [], instructions: null, recentInstructions: [], stopInstructions: [], trades: [], notes: [],
 };
 
 const ISA_PATH = "/api/manual/isa";
@@ -119,7 +119,7 @@ beforeEach(() => {
     const key = Object.keys(reads).sort((a, b) => b.length - a.length).find((prefix) => path === prefix || path.startsWith(`${prefix}?`));
     return key ? reads[key]() : new Promise(() => {});
   });
-  api.apiPost.mockResolvedValue({ ok: true, id: 99 });
+  api.apiPost.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
@@ -134,8 +134,8 @@ const dialog = () => screen.getByRole("dialog");
 const table = (name: string) => inRegion().getByRole("table", { name });
 const rowOf = (name: string, text: string) =>
   within(table(name)).getAllByRole("row").find((row) => row.textContent?.includes(text)) as HTMLElement;
-/** 머리 글 — 정렬 단추의 방향 화살표(눈으로 보는 보조 표시, aria-hidden)는 뺍니다. */
-const headerText = (cell: HTMLElement) => (cell.textContent ?? "").replace(/[↑↓↕]/g, "");
+const postPaths = () => api.apiPost.mock.calls.map((call) => call[0]);
+const lastBody = () => api.apiPost.mock.calls.at(-1)?.[1];
 
 describe("탭은 한국만", () => {
   it("한국 탭 줄 — '실제 계좌' 옆 'ISA 계좌', 누르면 /paper/kr/isa와 ISA 칸(배너)", async () => {
@@ -179,836 +179,340 @@ describe("시작 전 — '시작' 창", () => {
     reads[ISA_PATH] = () => Promise.resolve(NOT_STARTED);
   });
 
-  it("붙여 넣은 줄을 바로 읽고 틀린 줄은 줄 번호로 막는다 — 고치면 POST start {cash, buys}(시작 시각을 비우면 싣지 않음)", async () => {
+  const openStart = async () => {
     renderIsa();
     fireEvent.click(await inRegion().findByRole("button", { name: "시작" }));
-    const form = within(dialog());
-    expect(dialog().textContent).toContain("ISA 계좌 시작");
+    return within(dialog());
+  };
+
+  it("총 잔고·줄마다 종목·수량·매입 금액을 넣으면 POST start — 빈 줄은 빼고, 틀린 입력은 막음", async () => {
+    const form = await openStart();
     const submit = form.getByRole("button", { name: "시작" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
-    fireEvent.change(form.getByLabelText("시작 현금(원)"), { target: { value: "5,000,000" } });
-    fireEvent.change(form.getByLabelText("시작 매수 목록"), { target: { value: "111110 100 12000\n22222 50 53000" } });
-    expect(form.getByText(/^2번째 줄: 종목 코드는 여섯 자리/)).toBeTruthy();
-    expect(submit.disabled).toBe(true);
-
-    fireEvent.change(form.getByLabelText("시작 매수 목록"), { target: { value: "111110 100 12000\n222220\t50\t53,000" } });
-    expect(form.getByText("읽은 시작 매수 2줄")).toBeTruthy();
-    expect(form.getByText(/시작 매수 합 3,850,000원 · 남는 현금 1,150,000원/)).toBeTruthy();
+    fireEvent.change(form.getByLabelText("총 잔고(총평가금액, 원)"), { target: { value: "10,000,000" } });
     expect(submit.disabled).toBe(false);
-    const before = isaReads();
+    fireEvent.change(form.getByLabelText("1번째 줄 종목"), { target: { value: "합성전자" } });
+    fireEvent.change(form.getByLabelText("1번째 줄 수량"), { target: { value: "0" } });
+    expect(form.getByText(/1번째 줄:/).textContent).toContain("수량은 0보다 큰 수");
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(form.getByLabelText("1번째 줄 수량"), { target: { value: "10" } });
+    fireEvent.change(form.getByLabelText("1번째 줄 매입 금액"), { target: { value: "1,000,000" } });
+
+    fireEvent.click(form.getByRole("button", { name: "줄 추가" }));
+    fireEvent.change(form.getByLabelText("2번째 줄 종목"), { target: { value: "222220" } });
+    fireEvent.change(form.getByLabelText("2번째 줄 수량"), { target: { value: "3" } });
+    fireEvent.change(form.getByLabelText("2번째 줄 매입 금액"), { target: { value: "0" } });
+    fireEvent.click(form.getByRole("button", { name: "줄 추가" }));
+
     fireEvent.click(submit);
-
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/start", {
-      cash: 5_000_000,
-      buys: [{ symbol: "111110", quantity: 100, price: 12_000 }, { symbol: "222220", quantity: 50, price: 53_000 }],
-    }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/시작했습니다 — 시작 현금과 시작 매수 2줄을 장부에 적었습니다/)).toBeTruthy();
-    expect(isaReads()).toBeGreaterThan(before);
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/start", {
+      totalAsset: 10_000_000,
+      positions: [{ symbol: "합성전자", quantity: 10, purchaseAmount: 1_000_000 }, { symbol: "222220", quantity: 3, purchaseAmount: 0 }],
+    });
+    expect(await screen.findByText(/시작했습니다 — 보유 2종목과 현금을 넣었습니다/)).toBeTruthy();
   });
 
-  it("시작 매수 합이 시작 현금보다 크면 보내지 않고, 시작 시각은 KST로 싣는다", async () => {
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "시작" }));
-    const form = within(dialog());
-    fireEvent.change(form.getByLabelText("시작 현금(원)"), { target: { value: "100000" } });
-    fireEvent.change(form.getByLabelText("시작 매수 목록"), { target: { value: "111110 10 12500" } });
-    expect(form.getByText(/시작 매수 합\(125,000원\)이 시작 현금\(100,000원\)보다 큽니다/)).toBeTruthy();
-    expect((form.getByRole("button", { name: "시작" }) as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(form.getByLabelText("시작 현금(원)"), { target: { value: "200000" } });
-    fireEvent.change(form.getByLabelText("시작 시각(서울)"), { target: { value: "2026-11-06T14:55" } });
+  it("보유 없이 현금만으로도 시작 — 서버 메모는 안내에 보임", async () => {
+    api.apiPost.mockResolvedValue({ ok: true, notes: ["가격을 몰라 매입 금액으로 어림한 종목이 있습니다."] });
+    const form = await openStart();
+    fireEvent.change(form.getByLabelText("총 잔고(총평가금액, 원)"), { target: { value: "1,000" } });
     fireEvent.click(form.getByRole("button", { name: "시작" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/start", {
-      cash: 200_000, startedAt: "2026-11-06T14:55:00+09:00", buys: [{ symbol: "111110", quantity: 10, price: 12_500 }],
-    }));
+    expect(await screen.findByText(/어림한 종목이 있습니다/)).toBeTruthy();
+    expect(lastBody()).toEqual({ totalAsset: 1_000, positions: [] });
   });
 
-  it("이미 시작했으면(409 already-started) 창 안에 문구, 장부를 다시 읽는다", async () => {
-    api.apiPost.mockRejectedValue(apiError(409, "already-started", "이미 시작했습니다"));
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "시작" }));
-    const form = within(dialog());
-    fireEvent.change(form.getByLabelText("시작 현금(원)"), { target: { value: "5000000" } });
-    const before = isaReads();
+  it("이미 시작했으면(409 already-started) 창 안에 문구, 다시 읽는다", async () => {
+    api.apiPost.mockRejectedValue(apiError(409, "already-started", "이미 시작"));
+    const form = await openStart();
+    fireEvent.change(form.getByLabelText("총 잔고(총평가금액, 원)"), { target: { value: "1,000" } });
     fireEvent.click(form.getByRole("button", { name: "시작" }));
-    expect((await form.findByRole("alert")).textContent).toContain("이미 시작한 계좌입니다 — 시작은 한 번만 됩니다");
-    expect(isaReads()).toBeGreaterThan(before);
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(await form.findByRole("alert")).toBeTruthy();
+    expect(form.getByRole("alert").textContent).toContain("이미 시작한 계좌입니다");
+    expect(isaReads()).toBeGreaterThan(1);
   });
 
-  it("표가 없으면(available:false) 서버 문구 그대로", async () => {
-    reads[ISA_PATH] = () => Promise.resolve({ available: false, message: "ISA 표가 아직 없습니다(합성 문구)." });
+  it("표가 없으면(available:false) 서버 문구 그대로, message가 없어도 notes를 보임", async () => {
+    reads[ISA_PATH] = () => Promise.resolve({ available: false, message: "표가 아직 없습니다 — 합성", notes: [] });
     renderIsa();
-    expect(await inRegion().findByText("ISA 표가 아직 없습니다(합성 문구).")).toBeTruthy();
-    expect(inRegion().queryByRole("button", { name: "시작" })).toBeNull();
+    expect(await inRegion().findByText("표가 아직 없습니다 — 합성")).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve({ available: false, message: null, notes: ["합성 안내"] });
+    renderIsa();
+    expect(await inRegion().findByText("합성 안내")).toBeTruthy();
   });
 });
 
-describe("시작 뒤 — 요약·보유·지시·장부", () => {
-  it("요약 — 순입금(시작 현금 포함)·평가액·손익(부호·색)·현금·비용 0으로 어림·가격 모르는 종목·서버 안내", async () => {
+describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
+  it("요약 — 총 평가액·현금·매입 금액 합·평가손익·누적 수수료·세금·수수료율·가격 모르는 종목·서버 안내", async () => {
     renderIsa();
-    const net = await inRegion().findByRole("group", { name: "순입금(시작 현금 포함)" });
-    expect(net.textContent).toContain("5,000,000원");
-    const equity = inRegion().getByRole("group", { name: "평가액" });
-    expect(equity.textContent).toContain("5,100,000원");
-    expect(equity.textContent).toContain("보유 평가 3,900,000원 + 현금 1,200,000원");
-    const profit = inRegion().getByRole("group", { name: "손익" });
-    expect(profit.textContent).toContain("+100,000원");
-    expect(profit.textContent).toContain("순입금 대비 +2.00%");
-    expect(profit.querySelector("span.text-2xl")?.className).toContain("text-up");
-    expect(inRegion().getByRole("group", { name: "현금" }).textContent).toContain("1,200,000원");
-    expect(inRegion().getByText(/^비용 0으로 어림/)).toBeTruthy();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect(inRegion().getByRole("group", { name: "총 평가액" }).textContent).toContain("5,100,000원");
+    expect(inRegion().getByRole("group", { name: "현금" }).textContent).toContain("1,200,000");
+    expect(inRegion().getByRole("group", { name: "매입 금액 합" }).textContent).toContain("3,940,000");
+    expect(inRegion().getByRole("group", { name: "평가손익" }).textContent).toContain("—");
+    expect(inRegion().getByRole("group", { name: "누적 수수료" }).textContent).toContain("1,234");
+    expect(inRegion().getByRole("group", { name: "누적 세금" }).textContent).toContain("5,678");
+    expect(inRegion().getByRole("group", { name: "수수료율" }).textContent).toContain("0.015");
     expect(inRegion().getByText(/가격을 몰라 평가에서 뺀 종목: 333330/)).toBeTruthy();
     expect(inRegion().getByText("합성 안내 한 줄")).toBeTruthy();
-    expect(inRegion().getByText(/따라 하는 책: 규칙 계좌 · 운용 중 · 시작 2026-11-06 14:55/)).toBeTruthy();
+    expect(inRegion().queryByText(/현금이 음수입니다/)).toBeNull();
   });
 
-  it("손실이면 음수 부호와 하락 색", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      summary: { cash: 1_000_000, marketValue: 3_700_000, equity: 4_700_000, netDeposit: 5_000_000, profitLoss: -300_000, profitLossPct: -6, unpriced: [] },
-    }));
-    renderIsa();
-    const profit = await inRegion().findByRole("group", { name: "손익" });
-    expect(profit.textContent).toContain("-300,000원");
-    expect(profit.querySelector("span.text-2xl")?.className).toContain("text-down");
-    expect(inRegion().queryByText(/가격을 몰라 평가에서 뺀 종목/)).toBeNull();
-  });
-
-  it("보유 — 수량·평균 단가·마지막 가격·평가액·비중, 가격 모르면 —", async () => {
-    renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
-    const row = rowOf("ISA 계좌 보유", "합성전자 111110");
-    expect(row.textContent).toContain("12,000원");
-    expect(row.textContent).toContain("12,500원");
-    expect(row.textContent).toContain("1,250,000원");
-    expect(row.textContent).toContain("24.51%");
-    expect(rowOf("ISA 계좌 보유", "합성바이오 333330").textContent).toContain("—");
-  });
-
-  it("다음 시가 매매 지시 — 세션·상태·종목·방향·수량·알림 시각, 기록 전은 체결 고치기·건너뜀, 기록됨은 체결 고치기만", async () => {
-    renderIsa();
-    await inRegion().findByRole("table", { name: "다음 시가 매매 지시" });
-    expect(inRegion().getByText("11/09(월) 시가 · 지시 있음")).toBeTruthy();
-    const sell = rowOf("다음 시가 매매 지시", "합성화학 222220");
-    expect(sell.textContent).toContain("매도");
-    expect(sell.textContent).toContain("지시 — 체결 기록 전");
-    expect(sell.textContent).toContain("밤 11/06 22:41");
-    expect(within(sell).getByRole("button", { name: "체결 고치기 — 합성화학 222220" })).toBeTruthy();
-    expect(within(sell).getByRole("button", { name: "건너뜀 — 합성화학 222220" })).toBeTruthy();
-    const buy = rowOf("다음 시가 매매 지시", "합성전자 111110");
-    expect(buy.textContent).toContain("매수");
-    expect(buy.textContent).toContain("체결 기록됨");
-    expect(buy.textContent).toContain("밤 11/06 22:41 · 아침 11/09 08:00");
-    expect(within(buy).getByRole("button", { name: "체결 고치기 — 합성전자 111110" })).toBeTruthy();
-    expect(within(buy).queryByRole("button", { name: /건너뜀/ })).toBeNull();
-    expect(inRegion().getByText(/장전 동시호가\(08:30~09:00\)에 시장가로 내면/)).toBeTruthy();
-
-    // 지난 지시는 접어 둡니다.
-    expect(inRegion().queryByRole("table", { name: "지난 지시" })).toBeNull();
-    fireEvent.click(inRegion().getByRole("button", { name: "지난 지시 보기(2)" }));
-    expect(within(table("지난 지시")).getAllByText("11/09(월)")).toHaveLength(2);
-  });
-
-  it("지시 없음·못 만듦·아직 없음 안내", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-09", status: "NONE", items: [] } }));
-    const view = renderIsa();
-    expect(await inRegion().findByText(/이 세션은 지시 없음/)).toBeTruthy();
-    view.unmount();
-    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-09", status: "UNAVAILABLE", items: [] } }));
-    const again = renderIsa();
-    expect(await inRegion().findByText(/이 세션의 지시를 만들지 못했습니다/)).toBeTruthy();
-    again.unmount();
-    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: null }));
-    renderIsa();
-    expect(await inRegion().findByText("아직 다음 세션의 지시가 없습니다")).toBeTruthy();
-  });
-
-  it("장부 — 종류·종목·수량·체결가·금액·기록·지시 번호·메모, 줄마다 고치기·지우기", async () => {
-    renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 장부" });
-    const auto = rowOf("ISA 계좌 장부", "자동(지시대로)");
-    expect(auto.textContent).toContain("자동(지시대로)");
-    expect(auto.textContent).toContain("12,600원");
-    expect(auto.textContent).toContain("#8");
-    const deposit = rowOf("ISA 계좌 장부", "입금");
-    expect(deposit.textContent).toContain("5,000,000원");
-    expect(deposit.textContent).toContain("직접 입력");
-    expect(within(deposit).getByRole("button", { name: "고치기 — 입금 #31" })).toBeTruthy();
-    expect(within(deposit).getByRole("button", { name: "지우기 — 입금 #31" })).toBeTruthy();
-    expect(rowOf("ISA 계좌 장부", "시작 매수").textContent).toContain("합성화학 222220");
-  });
-});
-
-describe("고치기", () => {
-  it("매매함 — 체결 입력 창: 수량은 지시 값, 체결가를 적어야 적기가 켜지고 POST instructions/fills, 보유 반영 안내와 다시 읽기", async () => {
-    renderIsa();
-    await screen.findByRole("region", { name: "ISA 계좌" });
-    api.apiPost.mockResolvedValue({ ok: true, count: 1 });
-    const reloadsBefore = isaReads();
-    fireEvent.click(await inRegion().findByRole("button", { name: "매매함 — 합성화학 222220" }));
-    expect(dialog().textContent).toContain("체결 입력");
-    expect((within(dialog()).getByRole("textbox", { name: "수량(주) — 매도 합성화학 222220" }) as HTMLInputElement).value).toBe("3");
-    const save = within(dialog()).getByRole("button", { name: "장부에 적기" }) as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
-    expect(api.apiPost).not.toHaveBeenCalled();
-    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결가(원) — 매도 합성화학 222220" }), { target: { value: "53,100" } });
-    expect(save.disabled).toBe(false);
-    fireEvent.click(save);
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/fills", {
-      fills: [{ instructionId: 7, quantity: 3, price: 53_100, fee: 0, tax: 0 }],
-    }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/체결 1건을 장부에 적어 보유에 반영했습니다/)).toBeTruthy();
-    await waitFor(() => expect(isaReads()).toBeGreaterThan(reloadsBefore));
-  });
-
-  it("전부 매매함 — 지시마다 한 줄, 줄을 빼면 나머지만 적고, 표시만 남기기는 POST instructions/confirm(장부 불변)", async () => {
-    renderIsa();
-    await screen.findByRole("region", { name: "ISA 계좌" });
-    api.apiPost.mockResolvedValue({ ok: true, changed: 2 });
-    fireEvent.click(await inRegion().findByRole("button", { name: "전부 매매함(2)" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "표시만 남기기(체결가 모름)" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/confirm", { ids: [7, 8], confirmed: true }));
-    expect(await inRegion().findByText(/매매함으로 표시했습니다/)).toBeTruthy();
-    api.apiPost.mockClear();
-
-    api.apiPost.mockResolvedValue({ ok: true, count: 1 });
-    fireEvent.click(inRegion().getByRole("button", { name: "전부 매매함(2)" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "이 줄 빼기 — 매도 합성화학 222220" }));
-    expect(within(dialog()).queryByRole("textbox", { name: "체결가(원) — 매도 합성화학 222220" })).toBeNull();
-    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결가(원) — 매수 합성전자 111110" }), { target: { value: "12600" } });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/fills", {
-      fills: [{ instructionId: 8, quantity: 4, price: 12_600, fee: 0, tax: 0 }],
-    }));
-  });
-
-  it("체결 입력 — 서버 거절(현금·보유 음수)은 창 안에 보이고 창을 닫지 않음", async () => {
-    renderIsa();
-    await screen.findByRole("region", { name: "ISA 계좌" });
-    api.apiPost.mockRejectedValue(apiError(400, "ledger-invalid", "서버 글"));
-    fireEvent.click(await inRegion().findByRole("button", { name: "매매함 — 합성화학 222220" }));
-    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결가(원) — 매도 합성화학 222220" }), { target: { value: "53000" } });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    expect(await within(dialog()).findByRole("alert")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).not.toBeNull();
-  });
-
-  it("장중 스탑 지시 — 줄의 매매함으로 체결 입력(표시만 남기기 없음), stopInstructionId로 보냄, 사용자가 적은 줄은 단추 없음", async () => {
-    const stop = { id: 41, session: "2026-11-09", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "MARKET", targetAt: "2026-11-09T09:12:00+09:00", status: "PLANNED", notifiedAt: "2026-11-09T09:10:55+09:00" };
-    reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [stop, { ...stop, id: 42, symbol: "222220", name: "합성화학", status: "RECORDED", recordedByUser: true }] }));
-    renderIsa();
-    await screen.findByRole("region", { name: "ISA 계좌" });
-    expect(inRegion().queryByRole("button", { name: "매매함 — 합성화학 222220" })).not.toBeNull();   // 다음 시가 지시의 단추 — 스탑 줄(사용자 체결)에는 없음
-    const table = await screen.findByRole("table", { name: "장중 스탑 매도 지시" });
-    expect(within(table).queryByRole("button", { name: "매매함 — 합성화학 222220" })).toBeNull();
-    api.apiPost.mockResolvedValue({ ok: true, count: 1 });
-    fireEvent.click(within(table).getByRole("button", { name: "매매함 — 합성전자 111110" }));
-    expect(within(dialog()).queryByRole("button", { name: /표시만 남기기/ })).toBeNull();
-    fireEvent.change(within(dialog()).getByRole("textbox", { name: "체결가(원) — 매도 합성전자 111110" }), { target: { value: "11000" } });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/fills", {
-      fills: [{ stopInstructionId: 41, quantity: 5, price: 11_000, fee: 0, tax: 0 }],
-    }));
-  });
-
-  it("장부 — 고치기가 첫 열, 손익 %: 매수는 체결가 대비 지금 가격·매도는 실현 값·입금은 —, 보유 표에도 평단 대비 손익 %", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      ledger: [
-        { id: 34, at: "2026-11-09T10:00:00+09:00", kind: "SELL", symbol: "222220", name: "합성화학", quantity: 1, price: 60_000, amount: null, fee: 0, tax: 0, source: "USER", instructionId: null, note: null, realizedPct: 13.21 },
-        { id: 33, at: "2026-11-09T09:00:00+09:00", kind: "BUY", symbol: "111110", name: "합성전자", quantity: 4, price: 10_000, amount: null, fee: 0, tax: 0, source: "AUTO", instructionId: 8, note: null },
-        { id: 31, at: "2026-11-06T14:55:00+09:00", kind: "DEPOSIT", symbol: null, name: null, quantity: null, price: null, amount: 5_000_000, fee: 0, tax: 0, source: "USER", instructionId: null, note: null },
-      ],
-    }));
-    renderIsa();
-    const ledger = await screen.findByRole("table", { name: "ISA 계좌 장부" });
-    const headers = within(ledger).getAllByRole("columnheader").map((cell) => cell.textContent ?? "");
-    expect(headers[0]).toContain("고치기");
-    expect(headers.some((text) => text.includes("손익 %"))).toBe(true);
-    const row = (name: string) => within(ledger).getByRole("button", { name }).closest("tr") as HTMLElement;
-    expect(row("고치기 — 매도 합성화학 222220 #34").textContent).toContain("+13.21%");
-    expect(row("고치기 — 매수 합성전자 111110 #33").textContent).toContain("+25.00%");   // 지금 가격 12,500 ÷ 체결가 10,000
-    expect(row("고치기 — 입금 #31").textContent).not.toContain("%");
-    const holdings = screen.getByRole("table", { name: "ISA 계좌 보유" });
-    expect(within(holdings).getByText("합성전자 111110").closest("tr")?.textContent).toContain("+4.17%");   // 12,500 ÷ 평단 12,000
-    expect(within(holdings).getByText("합성바이오 333330").closest("tr")?.textContent).not.toContain("%");
-  });
-
-  it("QA-337: 고치기가 현금 음수로 거절되면 사유를 창 안에 보이고, 확인 단추로 allowNegativeCash를 실어 다시 보냄", async () => {
-    renderIsa();
-    api.apiPost.mockRejectedValueOnce(apiError(400, "ledger-cash-negative", "11-09 09:00 매수 111110 행에서 현금이 모자라 음수가 됩니다"));
-    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 입금 #31" }));
-    expect(within(dialog()).queryByRole("button", { name: "현금이 음수가 되어도 저장" })).toBeNull();
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    expect((await within(dialog()).findByRole("alert")).textContent).toContain("11-09 09:00 매수 111110");
-    const first = api.apiPost.mock.calls[0][1] as Record<string, unknown>;
-    expect(first.allowNegativeCash).toBeUndefined();
-
-    api.apiPost.mockResolvedValueOnce({ ok: true, id: 31 });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "현금이 음수가 되어도 저장" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledTimes(2));
-    expect((api.apiPost.mock.calls[1][1] as Record<string, unknown>).allowNegativeCash).toBe(true);
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  });
-
-  it("QA-337: 그 밖의 거절(보유 음수)에는 확인 단추가 없음", async () => {
-    renderIsa();
-    api.apiPost.mockRejectedValueOnce(apiError(400, "ledger-invalid", "보유 수량이 음수"));
-    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 입금 #31" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    await within(dialog()).findByRole("alert");
-    expect(within(dialog()).queryByRole("button", { name: "현금이 음수가 되어도 저장" })).toBeNull();
-  });
-
-  it("QA-337: 지우기가 현금 음수로 거절되면 창을 닫지 않고 사유를 보인 뒤, 확인하면 allowNegativeCash로 지움", async () => {
-    renderIsa();
-    api.apiPost.mockRejectedValueOnce(apiError(400, "ledger-cash-negative", "11-09 09:00 매수 111110 행에서 현금이 모자라 음수가 됩니다"));
-    fireEvent.click(await inRegion().findByRole("button", { name: "지우기 — 입금 #31" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "지우기" }));
-    await waitFor(() => expect(dialog().textContent).toContain("11-09 09:00 매수 111110"));
-    expect(api.apiPost).toHaveBeenLastCalledWith("/api/manual/isa/ledger/31/delete");
-
-    api.apiPost.mockResolvedValueOnce({ ok: true });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "현금이 음수가 되어도 지우기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenLastCalledWith("/api/manual/isa/ledger/31/delete?allowNegativeCash=true"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/장부 행을 지웠습니다/)).toBeTruthy();
-  });
-
-  it("QA-337: 현금이 음수면 요약에 경고", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({ summary: { cash: -1_000, marketValue: 3_900_000, equity: 3_899_000, netDeposit: 5_000_000, profitLoss: -1_101_000, profitLossPct: -22, unpriced: [] } }));
+  it("현금이 음수면 요약에 경고(막지 않음)", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: { ...started().summary, cash: -1_000, totalAsset: 3_899_000 } }));
     renderIsa();
     expect(await inRegion().findByText(/현금이 음수입니다/)).toBeTruthy();
   });
 
-  it("매매함 표시가 있는 줄은 '매매함 지우기'·시각, 사용자 체결이 있는 줄은 매매함 단추 없이 '체결 기록함', 장 중반 알림 시각과 안내", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      instructions: { session: "2026-11-09", status: "PLANNED", items: [
-        { ...ITEMS[0], confirmedAt: "2026-11-09T09:40:00+09:00", notifiedMiddayAt: "2026-11-09T12:15:30+09:00" },
-        { ...ITEMS[1], recordedByUser: true },
-      ] },
-    }));
+  it("평가손익은 부호·색(이익 초록·손실 빨강 — deltaColor)", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: { ...started().summary, profitLoss: -12_345, profitLossPct: -1.5, unpriced: [] } }));
     renderIsa();
-    await screen.findByRole("region", { name: "ISA 계좌" });
-    const undo = await inRegion().findByRole("button", { name: "매매함 지우기 — 합성화학 222220" });
-    expect(inRegion().getByRole("button", { name: "매매함 — 합성화학 222220" })).toBeTruthy();   // 표시만 남긴 지시도 나중에 체결가를 적을 수 있음
-    expect(inRegion().queryByRole("button", { name: "매매함 — 합성전자 111110" })).toBeNull();
-    expect(inRegion().queryByRole("button", { name: /전부 매매함/ })).toBeNull();                // 체결을 적을 지시가 하나뿐
-    expect(inRegion().getByText("체결 기록함")).toBeTruthy();
-    expect(inRegion().getByText(/장 중반 /)).toBeTruthy();
-    expect(inRegion().getByText(/그날 정규장 절반\(보통 12:15\)/)).toBeTruthy();
-    api.apiPost.mockResolvedValue({ ok: true, changed: 1 });
-    fireEvent.click(undo);
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/confirm", { ids: [7], confirmed: false }));
+    const tile = await inRegion().findByRole("group", { name: "평가손익" });
+    expect(tile.textContent).toContain("-12,345");
+    expect(tile.textContent).toContain("-1.50%");
   });
 
-  it("건너뜀 — 확인 창 뒤 POST instructions/{id}/skip, 안내와 다시 읽기", async () => {
+  it("다음 시가 매매 지시 — 줄마다 확인·건너뜀(미확인만), 안내에 '볼 수 없음'·알림, 전부 확인은 2줄 이상일 때만", async () => {
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "건너뜀 — 합성화학 222220" }));
-    expect(dialog().textContent).toContain("매도 합성화학 222220 3주 지시를 건너뜀으로 둡니다");
-    expect(api.apiPost).not.toHaveBeenCalled();
-    const before = isaReads();
-    fireEvent.click(within(dialog()).getByRole("button", { name: "건너뜀" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/7/skip"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/지시를 건너뜀으로 두었습니다/)).toBeTruthy();
-    expect(isaReads()).toBeGreaterThan(before);
+    const rows = await inRegion().findByRole("table", { name: "다음 시가 매매 지시" });
+    const planned = within(rows).getAllByRole("row").find((row) => row.textContent?.includes("합성화학")) as HTMLElement;
+    expect(within(planned).getByRole("button", { name: "확인 — 합성화학 222220" })).toBeTruthy();
+    expect(within(planned).getByRole("button", { name: "건너뜀 — 합성화학 222220" })).toBeTruthy();
+    expect(planned.textContent).toContain("미확인");
+    const recorded = within(rows).getAllByRole("row").find((row) => row.textContent?.includes("합성전자")) as HTMLElement;
+    expect(within(recorded).queryByRole("button", { name: /^확인/ })).toBeNull();
+    expect(recorded.textContent).toContain("확인함(잔고 반영)");
+    expect(inRegion().getByText(/실제 매매를 볼 수 없습니다/)).toBeTruthy();
+    expect(inRegion().queryByRole("button", { name: /전부 확인/ })).toBeNull();
+    expect(inRegion().queryByText("매매함 지우기")).toBeNull();
+    expect(inRegion().queryByText("체결 고치기")).toBeNull();
   });
 
-  it("체결 고치기(기록 전) — 방향·종목·수량을 채운 새 행, 시각은 세션 시가, 체결가를 적어야 보냄 → POST ledger(지시 번호)", async () => {
+  it("지시 없음·못 만듦(사유별)·아직 없음 안내, 지시 뒤 잔고가 바뀌면 경고", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-09", status: "NONE", items: [] } }));
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "체결 고치기 — 합성화학 222220" }));
-    const form = within(dialog());
-    expect(dialog().textContent).toContain("체결 고치기 — 매도 합성화학 222220");
-    expect(dialog().textContent).toContain("기준가 53,000원(참고)");
-    const symbol = form.getByLabelText("종목 코드") as HTMLInputElement;
-    expect(symbol.value).toBe("222220");
-    expect(symbol.readOnly).toBe(true);
-    expect((form.getByLabelText("수량(주)") as HTMLInputElement).value).toBe("3");
-    expect((form.getByLabelText("체결가(원)") as HTMLInputElement).value).toBe("");
-    expect((form.getByLabelText("시각(서울)") as HTMLInputElement).value).toBe("2026-11-09T09:00");
-    const submit = form.getByRole("button", { name: "장부에 적기" }) as HTMLButtonElement;
-    expect(submit.disabled).toBe(true);
-
-    fireEvent.change(form.getByLabelText("체결가(원)"), { target: { value: "52,900" } });
-    fireEvent.click(submit);
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", {
-      kind: "SELL", instructionId: 7, symbol: "222220", quantity: 3, price: 52_900, fee: 0, tax: 0, at: "2026-11-09T09:00:00+09:00",
-    }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/체결을 장부에 적었습니다/)).toBeTruthy();
+    expect(await inRegion().findByText(/이 세션은 지시 없음/)).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-09", status: "UNAVAILABLE", items: [], reason: "timed-orders" } }));
+    renderIsa();
+    expect(await inRegion().findByText(/규칙 계좌가 시가 밖 시점으로 주문해/)).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: null, recentInstructions: [] }));
+    renderIsa();
+    expect(await inRegion().findByText(/밤 결정\(22:30\)이 끝나면 10분 안에/)).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { ...started().instructions, ledgerChanged: true } }));
+    renderIsa();
+    expect(await inRegion().findByText("지시를 만든 뒤 잔고가 바뀌었습니다 — 수량을 다시 확인하세요.")).toBeTruthy();
   });
 
-  it("체결 고치기(기록됨) — 그 지시로 적힌 자동 행을 고친다(같은 id·지시 번호)", async () => {
+  it("잔고 표 — 첫 열 고치기·지우기, 종목·수량·평균 매입가·매입 금액·현재가·평가액·평가손익·손익 %·비중·수수료·세금, 가격 모르면 —", async () => {
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "체결 고치기 — 합성전자 111110" }));
-    const form = within(dialog());
-    expect(dialog().textContent).toContain("이 지시로 적힌 장부 행 #33(자동(지시대로))을 고칩니다");
-    expect((form.getByLabelText("체결가(원)") as HTMLInputElement).value).toBe("12600");
-    fireEvent.change(form.getByLabelText("체결가(원)"), { target: { value: "12650" } });
-    fireEvent.change(form.getByLabelText("수수료(원)"), { target: { value: "20" } });
-    fireEvent.click(form.getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", {
-      kind: "BUY", id: 33, instructionId: 8, symbol: "111110", quantity: 4, price: 12_650, fee: 20, tax: 0,
-      at: "2026-11-09T09:00:00+09:00", note: "",
-    }));
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect(within(table("ISA 계좌 잔고")).getAllByRole("columnheader").map((cell) => (cell.textContent ?? "").replace(/[↑↓↕]/g, ""))).toEqual([
+      "고치기", "종목", "수량(주)", "평균 매입가", "매입 금액", "현재가", "평가액", "평가손익", "손익 %", "비중", "수수료 누적", "세금 누적",
+    ]);
+    const row = rowOf("ISA 계좌 잔고", "합성전자 111110");
+    expect(within(row).getByRole("button", { name: "고치기 — 합성전자 111110" })).toBeTruthy();
+    expect(within(row).getByRole("button", { name: "지우기 — 합성전자 111110" })).toBeTruthy();
+    expect(row.textContent).toContain("12,000원");
+    expect(row.textContent).toContain("1,200,000원");
+    expect(row.textContent).toContain("+50,000원");
+    expect(rowOf("ISA 계좌 잔고", "합성바이오 333330").textContent).toContain("—");
   });
 
-  it("장부 고치기 — 입금 행은 금액만, 종류는 바꾸지 않음 → POST ledger {id}", async () => {
+  it("매매 내역 — 시각·방향·종목·수량·가격·금액·수수료·세금(어림 표시)·실현 손익·손익률·가격 출처, 처음에는 시각 내림차순", async () => {
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 입금 #31" }));
-    const form = within(dialog());
-    expect(dialog().textContent).toContain("장부 행 고치기");
-    expect(form.queryByLabelText("종류")).toBeNull();
-    expect(form.queryByLabelText("종목 코드")).toBeNull();
-    const amount = form.getByLabelText("금액(원)") as HTMLInputElement;
-    expect(amount.value).toBe("5000000");
-    fireEvent.change(amount, { target: { value: "6,000,000" } });
-    fireEvent.change(form.getByLabelText("메모"), { target: { value: "합성 추가 입금" } });
-    fireEvent.click(form.getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", {
-      kind: "DEPOSIT", id: 31, amount: 6_000_000, at: "2026-11-06T14:55:00+09:00", note: "합성 추가 입금",
-    }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/장부 행을 고쳤습니다/)).toBeTruthy();
+    await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
+    expect(within(table("ISA 계좌 매매 내역")).getAllByRole("columnheader").map((cell) => (cell.textContent ?? "").replace(/[↑↓↕]/g, ""))).toEqual([
+      "시각", "방향", "종목", "수량(주)", "가격", "금액", "수수료", "세금", "실현 손익", "손익률", "가격 출처", "되돌리기",
+    ]);
+    const sell = rowOf("ISA 계좌 매매 내역", "합성화학 222220");
+    expect(sell.textContent).toContain("215원 (어림)");
+    expect(sell.textContent).toContain("+1,769원");
+    expect(sell.textContent).toContain("+1.67%");
+    expect(sell.textContent).toContain("직전 종가");
+    const buy = rowOf("ISA 계좌 매매 내역", "합성전자 111110");
+    expect(buy.textContent).toContain("실시간");
+    const rows = within(table("ISA 계좌 매매 내역")).getAllByRole("row").slice(1).map((row) => /합성\S+/.exec(row.textContent ?? "")?.[0]);
+    expect(rows).toEqual(["합성전자", "합성화학"]);
   });
 
-  it("지우기 — 확인 창(되돌릴 수 없음) 뒤 POST ledger/{id}/delete", async () => {
+  it("칸 순서 — 요약 → 지시 → 스탑 지시 → 잔고 → 매매 내역", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [STOP_ITEM] }));
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "지우기 — 매수 합성화학 222220 #32" }));
-    expect(dialog().textContent).toContain("매수 합성화학 222220 행(#32, 2026-11-06 14:55)을 지웁니다. 되돌릴 수 없고");
-    fireEvent.click(within(dialog()).getByRole("button", { name: "취소" }));
+    await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
+    const text = region().textContent ?? "";
+    const order = ["총 평가액", "다음 시가 매매 지시", "장중 스탑 매도 지시", "지금 잔고가 정답", "'확인'으로 잔고에 반영한 매매"].map((word) => text.indexOf(word));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(inRegion().queryByText("장부")).toBeNull();
+    expect(inRegion().queryByRole("button", { name: "행 추가" })).toBeTruthy();
+  });
+});
+
+describe("확인·건너뜀·되돌리기", () => {
+  it("확인 — 한 번 누르면 바로 POST(확인 창 없음), 안내와 다시 읽기", async () => {
+    renderIsa();
+    const button = await inRegion().findByRole("button", { name: "확인 — 합성화학 222220" });
+    api.apiPost.mockResolvedValue({ ok: true, count: 1, skipped: 0 });
+    fireEvent.click(button);
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(api.apiPost).not.toHaveBeenCalled();
-
-    fireEvent.click(inRegion().getByRole("button", { name: "지우기 — 매수 합성화학 222220 #32" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "지우기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger/32/delete"));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/장부 행을 지웠습니다/)).toBeTruthy();
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/apply", { items: [{ instructionId: 7 }] });
+    expect(await inRegion().findByText(/확인 1건을 잔고에 반영했습니다/)).toBeTruthy();
+    await waitFor(() => expect(isaReads()).toBeGreaterThan(1));
   });
 
-  it("행 추가 — 종류 다섯(매수·매도·입금·출금·조정), 고른 종류의 칸만 → POST ledger(id 없음)", async () => {
+  it("전부 확인(N) — 미확인 지시를 한 번에, 팔 보유가 없어 닫힌 지시가 있으면 안내", async () => {
+    const items = [ITEMS[0], { ...ITEMS[0], id: 9, symbol: "444440", name: "합성소재" }];
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-09", status: "PLANNED", items } }));
+    api.apiPost.mockResolvedValue({ ok: true, count: 1, skipped: 1 });
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "행 추가" }));
-    const form = within(dialog());
-    const kind = form.getByLabelText("종류") as HTMLSelectElement;
-    expect([...kind.options].map((option) => option.value)).toEqual(["BUY", "SELL", "DEPOSIT", "WITHDRAW", "ADJUST"]);
-    expect(kind.value).toBe("BUY");
-    expect(form.getByLabelText("체결가(원)")).toBeTruthy();
-
-    fireEvent.change(kind, { target: { value: "ADJUST" } });
-    expect(form.queryByLabelText("체결가(원)")).toBeNull();
-    expect(form.getByText(/늘면 양수, 줄면 음수/)).toBeTruthy();
-
-    fireEvent.change(kind, { target: { value: "WITHDRAW" } });
-    expect(form.queryByLabelText("종목 코드")).toBeNull();
-    fireEvent.change(form.getByLabelText("금액(원)"), { target: { value: "1,000,000" } });
-    fireEvent.click(form.getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", { kind: "WITHDRAW", amount: 1_000_000 }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/장부에 행을 더했습니다/)).toBeTruthy();
+    fireEvent.click(await inRegion().findByRole("button", { name: "전부 확인(2)" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(lastBody()).toEqual({ items: [{ instructionId: 7 }, { instructionId: 9 }] });
+    expect(await inRegion().findByText(/팔 보유가 없어 1건은 닫았습니다/)).toBeTruthy();
   });
-});
 
-describe("서버 오류 코드별 문구", () => {
-  it("ledger-invalid — 창 안에 '음수가 됩니다'와 서버 문구, 창은 그대로", async () => {
-    api.apiPost.mockRejectedValue(apiError(400, "ledger-invalid", "현금이 음수가 됩니다(합성)"));
+  it("장중 스탑 지시도 확인 — stopInstructionId로 보냄, 표에 매도 창·상태·메모, 닫힌 스탑에는 단추 없음", async () => {
+    const closed = { ...STOP_ITEM, id: 78, symbol: "555550", name: "합성닫힘", status: "SKIPPED", autoNote: "expired" };
+    reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [STOP_ITEM, closed] }));
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "행 추가" }));
-    const form = within(dialog());
-    fireEvent.change(form.getByLabelText("종류"), { target: { value: "WITHDRAW" } });
-    fireEvent.change(form.getByLabelText("금액(원)"), { target: { value: "99,000,000" } });
-    fireEvent.click(form.getByRole("button", { name: "장부에 적기" }));
-    // 배너는 낭독기용 '주의: '를 앞에 둡니다.
-    expect((await form.findByRole("alert")).textContent).toBe(
-      "주의: 이 행을 적으면 현금이나 보유 수량이 음수가 됩니다 — 수량·가격·금액을 확인하세요. (현금이 음수가 됩니다(합성))",
-    );
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
+    const row = rowOf("장중 스탑 매도 지시", "합성바이오 333330");
+    expect(row.textContent).toContain("11:32 이후");
+    expect(row.textContent).toContain("미확인");
+    const done = rowOf("장중 스탑 매도 지시", "합성닫힘 555550");
+    expect(done.textContent).toContain("마감까지 확인하지 않아 닫힘");
+    expect(within(done).queryByRole("button", { name: /^확인/ })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: "확인 — 합성바이오 333330" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(lastBody()).toEqual({ items: [{ stopInstructionId: 77 }] });
   });
 
-  it("invalid-request — 서버 문구를 덧붙임", async () => {
-    api.apiPost.mockRejectedValue(apiError(400, "invalid-request", "price가 비었습니다(합성)"));
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 입금 #31" }));
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    expect((await within(dialog()).findByRole("alert")).textContent).toBe("주의: 입력이 올바르지 않습니다 — price가 비었습니다(합성)");
-  });
-
-  it("not-found(지우기) — 확인 창을 닫고 칸에 문구, 장부를 다시 읽음", async () => {
-    api.apiPost.mockRejectedValue(apiError(404, "not-found", "없음"));
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "지우기 — 입금 #31" }));
-    const before = isaReads();
-    fireEvent.click(within(dialog()).getByRole("button", { name: "지우기" }));
-    // 확인 창이 열린 동안은 뒤 화면이 가려집니다(aria-hidden) — 닫힌 뒤 칸을 봅니다.
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect((await inRegion().findByRole("alert")).textContent).toContain("그 행이나 지시를 찾지 못했습니다");
-    expect(isaReads()).toBeGreaterThan(before);
-  });
-
-  it("not-started(건너뜀) — 먼저 시작하라는 문구", async () => {
-    api.apiPost.mockRejectedValue(apiError(409, "not-started", "시작 전"));
+  it("건너뜀 — 확인 창 뒤 POST instructions/{id}/skip, 안내", async () => {
     renderIsa();
     fireEvent.click(await inRegion().findByRole("button", { name: "건너뜀 — 합성화학 222220" }));
+    expect(dialog().textContent).toContain("잔고에 쓰지 않습니다");
     fireEvent.click(within(dialog()).getByRole("button", { name: "건너뜀" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect((await inRegion().findByRole("alert")).textContent).toContain("아직 시작하지 않은 계좌입니다");
+    await waitFor(() => expect(postPaths()).toEqual(["/api/manual/isa/instructions/7/skip"]));
+    expect(await screen.findByText(/건너뜀으로 두었습니다/)).toBeTruthy();
+  });
+
+  it("되돌리기 — 확인 창 뒤 POST trades/{id}/undo, 안내", async () => {
+    renderIsa();
+    fireEvent.click(await inRegion().findByRole("button", { name: "되돌리기 — 합성화학 222220" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "되돌리기" }));
+    await waitFor(() => expect(postPaths()).toEqual(["/api/manual/isa/trades/32/undo"]));
+    expect(await screen.findByText(/확인을 되돌렸습니다/)).toBeTruthy();
+  });
+
+  it("확인이 already-recorded로 거절되면 문구를 보이고 다시 읽음, 없는 지시도 다시 읽음", async () => {
+    api.apiPost.mockRejectedValue(apiError(409, "already-recorded", "이미 확인"));
+    renderIsa();
+    fireEvent.click(await inRegion().findByRole("button", { name: "확인 — 합성화학 222220" }));
+    expect((await inRegion().findByRole("alert")).textContent).toContain("이미 확인한 지시입니다");
+    await waitFor(() => expect(isaReads()).toBeGreaterThan(1));
   });
 });
 
-describe("리뷰 결함 — 처리 안 된 지난 지시(ISA-R1·ISA-API-3)", () => {
-  const PENDING = [
-    {
-      id: 5, session: "2026-11-06", symbol: "444440", name: "합성정지", side: "SELL", quantity: 2, refPrice: 7_000, weightPct: 0,
-      status: "PLANNED", notifiedNightAt: "2026-11-05T22:41:00+09:00", notifiedMorningAt: "2026-11-06T08:00:10+09:00",
-    },
-  ];
-  const blocked = () => started({
-    instructions: { session: "2026-11-09", status: "UNAVAILABLE", items: [], open: "2026-11-09T09:00:00+09:00", reason: "record-pending", ledgerChanged: false },
-    pendingInstructions: PENDING,
-  });
-
-  it("앞 세션의 PLANNED 지시를 세션 칸이 있는 표로 — 줄마다 체결 고치기·건너뜀", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(blocked());
+describe("잔고 고치기", () => {
+  it("행 추가 — 종목코드·종목명·수량·가격, 합계 '매입 금액 = 수량 × 가격'을 바로 보여 주고 POST positions(originalSymbol 없음)", async () => {
     renderIsa();
-    await inRegion().findByRole("table", { name: "처리 안 된 지난 지시" });
-    const row = rowOf("처리 안 된 지난 지시", "합성정지 444440");
-    expect(row.textContent).toContain("11/06(금)");
-    expect(row.textContent).toContain("매도");
-    expect(row.textContent).toContain("지시 — 체결 기록 전");
-    expect(within(row).getByRole("button", { name: "체결 고치기 — 합성정지 444440" })).toBeTruthy();
-    expect(within(row).getByRole("button", { name: "건너뜀 — 합성정지 444440" })).toBeTruthy();
-    const headers = within(table("처리 안 된 지난 지시")).getAllByRole("columnheader").map(headerText);
-    expect(headers[0]).toBe("세션");
-  });
-
-  it("건너뜀 → POST instructions/{그 지시}/skip", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(blocked());
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "건너뜀 — 합성정지 444440" }));
-    expect(dialog().textContent).toContain("11/06(금) 시가 매도 합성정지 444440 2주 지시를 건너뜀으로 둡니다");
-    fireEvent.click(within(dialog()).getByRole("button", { name: "건너뜀" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/instructions/5/skip"));
-  });
-
-  it("체결 고치기 → 그 지시의 세션 09:00(최신 세션의 개장 시각이 아님)으로 채운 새 행, 지시 번호를 싣는다", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      instructions: { session: "2026-11-09", status: "UNAVAILABLE", items: [], open: "2026-11-09T10:00:00+09:00", reason: "record-pending" },
-      pendingInstructions: PENDING,
-    }));
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "체결 고치기 — 합성정지 444440" }));
+    fireEvent.click(await inRegion().findByRole("button", { name: "행 추가" }));
     const form = within(dialog());
-    expect((form.getByLabelText("시각(서울)") as HTMLInputElement).value).toBe("2026-11-06T09:00");
-    fireEvent.change(form.getByLabelText("체결가(원)"), { target: { value: "6,900" } });
-    fireEvent.click(form.getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", {
-      kind: "SELL", instructionId: 5, symbol: "444440", quantity: 2, price: 6_900, fee: 0, tax: 0, at: "2026-11-06T09:00:00+09:00",
-    }));
+    expect(form.getByText(/매입 금액 = 수량 × 가격/).textContent).toContain("—");
+    fireEvent.change(form.getByLabelText("종목코드"), { target: { value: "합성소재" } });
+    fireEvent.change(form.getByLabelText("종목명"), { target: { value: "내 이름" } });
+    fireEvent.change(form.getByLabelText("수량"), { target: { value: "3" } });
+    fireEvent.change(form.getByLabelText("가격(평균 매입가)"), { target: { value: "1,000" } });
+    expect(form.getByText(/매입 금액 = 수량 × 가격/).textContent).toContain("3,000원");
+    fireEvent.click(form.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/positions", { symbol: "합성소재", name: "내 이름", quantity: 3, price: 1000 });
+    expect(await screen.findByText(/잔고를 고쳤습니다/)).toBeTruthy();
   });
 
-  it("처리 안 된 지난 지시가 없으면 그 표가 없다", async () => {
+  it("고치기 — 평균 매입가·수량을 채우고, 코드를 바꾸면 originalSymbol을 실어 옮김, 서버 거절은 창 안에", async () => {
     renderIsa();
-    await inRegion().findByRole("table", { name: "다음 시가 매매 지시" });
-    expect(inRegion().queryByRole("table", { name: "처리 안 된 지난 지시" })).toBeNull();
-  });
-});
-
-describe("리뷰 결함 — '못 만듦' 사유별 문구(ISA-API-4)", () => {
-  const unavailable = (reason: string | null) =>
-    started({ instructions: { session: "2026-11-09", status: "UNAVAILABLE", items: [], reason } });
-
-  it("record-pending — 앞 세션 지시를 처리하라", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(unavailable("record-pending"));
-    renderIsa();
-    expect(await inRegion().findByText(/앞 세션 지시를 체결 고치기·건너뜀으로 처리하세요/)).toBeTruthy();
-    expect(inRegion().queryByText(/규칙 계좌의 목표를 다 받지 못한/)).toBeNull();
-  });
-
-  it("timed-orders — 규칙 계좌가 시가 밖 시점으로 주문함", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(unavailable("timed-orders"));
-    renderIsa();
-    expect(await inRegion().findByText(/규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다/)).toBeTruthy();
-  });
-
-  it("그 밖·없음 — 중립 문구(사유를 단정하지 않음)", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(unavailable("price-missing"));
-    const view = renderIsa();
-    expect(await inRegion().findByText(/이 세션의 지시를 만들지 못했습니다/)).toBeTruthy();
-    expect(inRegion().queryByText(/규칙 계좌의 목표를 다 받지 못한/)).toBeNull();
-    view.unmount();
-    reads[ISA_PATH] = () => Promise.resolve(unavailable(null));
-    renderIsa();
-    expect(await inRegion().findByText(/이 세션의 지시를 만들지 못했습니다/)).toBeTruthy();
-    expect(inRegion().queryByText(/규칙 계좌의 목표를 다 받지 못한/)).toBeNull();
-  });
-});
-
-describe("리뷰 결함 — 개장 시각(ISA-R6)", () => {
-  it("개장 10:00인 세션 — 동시호가 안내는 09:30~10:00, 체결 고치기 기본 시각은 10:00", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      instructions: { session: "2026-11-19", status: "PLANNED", items: ITEMS, open: "2026-11-19T10:00:00+09:00", reason: null, ledgerChanged: false },
-    }));
-    renderIsa();
-    expect(await inRegion().findByText(/장전 동시호가\(09:30~10:00\)에 시장가로 내면/)).toBeTruthy();
-    expect(inRegion().queryByText(/08:30~09:00/)).toBeNull();
-    fireEvent.click(inRegion().getByRole("button", { name: "체결 고치기 — 합성화학 222220" }));
-    expect((within(dialog()).getByLabelText("시각(서울)") as HTMLInputElement).value).toBe("2026-11-19T10:00");
-  });
-});
-
-describe("개장 10분 뒤 시각 맞추기와 장중 스탑 지시(ADR 0033)", () => {
-  it("지시에 targetAt이 있으면 '다음 매매 지시'·'09:10 이후 시장가' 안내, 체결 고치기 기본 시각은 09:10", async () => {
-    const at = "2026-11-10T00:10:00Z";
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      instructions: {
-        session: "2026-11-10", status: "PLANNED", items: ITEMS.map((item) => ({ ...item, targetAt: at })),
-        open: "2026-11-10T09:00:00+09:00", reason: null, ledgerChanged: false, targetAt: at,
-      },
-    }));
-    renderIsa();
-    expect(await inRegion().findByRole("table", { name: "다음 매매 지시" })).toBeTruthy();
-    expect(inRegion().getByText(/09:10 이후 시장가로 내면 규칙 계좌와 같은 때\(09:10\)에 체결됩니다/)).toBeTruthy();
-    expect(inRegion().queryByText(/장전 동시호가/)).toBeNull();
-    fireEvent.click(inRegion().getByRole("button", { name: "체결 고치기 — 합성화학 222220" }));
-    expect((within(dialog()).getByLabelText("시각(서울)") as HTMLInputElement).value).toBe("2026-11-10T09:10");
-  });
-
-  it("장중 스탑 지시 표 — 종목·매도 수량·방식(장중 시장가·종가 단일가)·기준 시각·상태·알림·메모, 금액 칸 없음", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      stopInstructions: [
-        {
-          id: 3, session: "2026-11-09", symbol: "222220", name: "합성화학", side: "SELL", quantity: 50, timing: "MARKET",
-          targetAt: "2026-11-09T11:32:00+09:00", status: "PLANNED", notifiedAt: "2026-11-09T11:30:10+09:00", autoNote: null,
-        },
-        {
-          id: 2, session: "2026-11-06", symbol: "111110", name: "합성전자", side: "SELL", quantity: 4, timing: "NEXT_CLOSE",
-          targetAt: "2026-11-06T15:30:00+09:00", status: "SKIPPED", notifiedAt: null, autoNote: "not-notified",
-        },
-      ],
-    }));
-    renderIsa();
-    const stops = await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
-    const first = within(stops).getAllByRole("row").find((row) => row.textContent?.includes("합성화학")) as HTMLElement;
-    expect(first.textContent).toContain("장중 시장가");
-    expect(first.textContent).toContain("알림 11/09 11:30");
-    const second = within(stops).getAllByRole("row").find((row) => row.textContent?.includes("합성전자")) as HTMLElement;
-    expect(second.textContent).toContain("종가 단일가 시장가");
-    expect(second.textContent).toContain("마감까지 알리지 못해 건너뜀");
-    expect(second.textContent).toContain("보내기 전");
-    expect(stops.textContent).not.toContain("원");
-  });
-
-  // QA-314(리뷰 XC-4): 카드 아래 안내가 '개장 10분 전이면 09:10 이후'·'종가 단일가는 15:20~15:30'으로 고정이라, 장 시간 변경일(2026-11-19 수능 10:00~16:30)에는
-  // 텔레그램 글(그날 마감 기준 16:20~16:30)과 달리 장중 지시를 10:10 전에, 종가 STOP을 연속 매매 중인 15:20에 내게 안내함.
-  it("장 시간 변경일의 스탑 지시 — 매도 창은 그 세션 시각(첫 분 10:10 이후 · 종가 단일가 16:20~16:30), 고정 시각 09:10·15:20~15:30을 적지 않음", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      stopInstructions: [
-        {
-          id: 5, session: "2026-11-19", symbol: "222220", name: "합성화학", side: "SELL", quantity: 50, timing: "AT_MINUTE",
-          targetAt: "2026-11-19T01:10:00Z", status: "PLANNED", notifiedAt: "2026-11-19T09:58:00+09:00", autoNote: null,
-        },
-        {
-          id: 4, session: "2026-11-19", symbol: "111110", name: "합성전자", side: "SELL", quantity: 4, timing: "NEXT_CLOSE",
-          targetAt: "2026-11-19T16:30:00+09:00", status: "PLANNED", notifiedAt: "2026-11-19T16:21:10+09:00", autoNote: null,
-        },
-      ],
-    }));
-    renderIsa();
-    const stops = await inRegion().findByRole("table", { name: "장중 스탑 매도 지시" });
-    expect(rowOf("장중 스탑 매도 지시", "합성화학").textContent).toContain("10:10 이후");
-    expect(rowOf("장중 스탑 매도 지시", "합성전자").textContent).toContain("16:20~16:30");
-    const card = stops.closest("section") ?? region();
-    expect(card.textContent).not.toContain("15:20~15:30에");
-    expect(card.textContent).not.toContain("09:10 이후");
-  });
-});
-
-describe("리뷰 결함 — 고치기의 시각 원문(ISA-API-1)", () => {
-  it("시작 시각을 비우고 시작한 행(초·소수초)의 수수료만 고치면 시각 원문을 그대로 보낸다", async () => {
-    const original = "2026-11-06T05:55:37.123456Z";
-    const base = started();
-    reads[ISA_PATH] = () => Promise.resolve({
-      ...base,
-      ledger: (base.ledger as Array<Record<string, unknown>>).map((row) => (row.id === 33 ? row : { ...row, at: original })),
-    });
-    renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 매수 합성화학 222220 #32" }));
+    fireEvent.click(await inRegion().findByRole("button", { name: "고치기 — 합성전자 111110" }));
     const form = within(dialog());
-    expect((form.getByLabelText("시각(서울)") as HTMLInputElement).value).toBe("2026-11-06T14:55");
-    fireEvent.change(form.getByLabelText("수수료(원)"), { target: { value: "150" } });
-    fireEvent.click(form.getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", {
-      kind: "BUY", id: 32, symbol: "222220", quantity: 50, price: 53_000, fee: 150, tax: 0, at: original, note: "시작 매수",
-    }));
+    expect((form.getByLabelText("가격(평균 매입가)") as HTMLInputElement).value).toBe("12000");
+    fireEvent.change(form.getByLabelText("종목코드"), { target: { value: "999999" } });
+    api.apiPost.mockRejectedValueOnce(apiError(400, "invalid-request", "이미 있는 종목으로 옮길 수 없습니다"));
+    fireEvent.click(form.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(api.apiPost.mock.calls[0][1]).toEqual({ originalSymbol: "111110", symbol: "999999", name: "합성전자", quantity: 100, price: 12000 });
+    expect((await form.findByRole("alert")).textContent).toContain("이미 있는 종목으로 옮길 수 없습니다");
+    expect(dialog()).toBeTruthy();
   });
 
-  it("체결 고치기(기록됨)도 시각을 바꾸지 않았으면 그 행의 시각 원문", async () => {
-    const original = "2026-11-09T00:00:00.000001Z";
-    const base = started();
-    reads[ISA_PATH] = () => Promise.resolve({
-      ...base,
-      ledger: (base.ledger as Array<Record<string, unknown>>).map((row) => (row.id === 33 ? { ...row, at: original } : row)),
-    });
+  it("지우기 — 확인 창 뒤 POST positions/{symbol}/delete", async () => {
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "체결 고치기 — 합성전자 111110" }));
-    fireEvent.change(within(dialog()).getByLabelText("체결가(원)"), { target: { value: "12650" } });
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/ledger", expect.objectContaining({ id: 33, at: original })));
-  });
-});
-
-describe("리뷰 결함 — 장부 금액 칸(ISA-API-5)", () => {
-  it("머리글은 '금액'이고 입출금·매수매도의 뜻을 적는다", async () => {
-    renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 장부" });
-    const headers = within(table("ISA 계좌 장부")).getAllByRole("columnheader").map(headerText);
-    expect(headers).toContain("금액");
-    expect(headers).not.toContain("입출금액");
-    expect(inRegion().getByText(/금액 — 입출금은 입출금액, 매수·매도는 수량×체결가/)).toBeTruthy();
-  });
-});
-
-describe("리뷰 결함 — 요약 순입금(ISA-API-6)", () => {
-  it("'시작 현금'(시작 때 값) 대신 장부에서 계산한 순입금(시작 현금 포함)", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      summary: { cash: 2_200_000, marketValue: 3_900_000, equity: 6_100_000, netDeposit: 6_000_000, profitLoss: 100_000, profitLossPct: 1.67, unpriced: [] },
-    }));
-    renderIsa();
-    const net = await inRegion().findByRole("group", { name: "순입금(시작 현금 포함)" });
-    expect(net.textContent).toContain("6,000,000원");
-    expect(inRegion().queryByRole("group", { name: "시작 현금" })).toBeNull();
-  });
-});
-
-describe("리뷰 결함 — 표가 없을 때(ISA-API-7)", () => {
-  it("message가 없어도 서버 안내(notes)를 보인다", async () => {
-    reads[ISA_PATH] = () => Promise.resolve({
-      available: false, started: false, instructions: null, ledger: [],
-      notes: ["ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V25)을 적용한 뒤 다시 보세요(합성)."],
-    });
-    renderIsa();
-    expect(await inRegion().findByText("ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V25)을 적용한 뒤 다시 보세요(합성).")).toBeTruthy();
+    fireEvent.click(await inRegion().findByRole("button", { name: "지우기 — 합성전자 111110" }));
+    expect(dialog().textContent).toContain("현금은 바뀌지 않음");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "지우기" }));
+    await waitFor(() => expect(postPaths()).toEqual(["/api/manual/isa/positions/111110/delete"]));
+    expect(await screen.findByText(/잔고 행을 지웠습니다/)).toBeTruthy();
   });
 
-  it("message와 notes를 함께", async () => {
-    reads[ISA_PATH] = () => Promise.resolve({ available: false, message: "합성 문구", notes: ["합성 안내"] });
+  it("수수료율 고치기 — 지금 요율을 채우고 POST balance/commission", async () => {
     renderIsa();
-    expect(await inRegion().findByText("합성 문구")).toBeTruthy();
-    expect(inRegion().getByText("합성 안내")).toBeTruthy();
+    fireEvent.click(await inRegion().findByRole("button", { name: "수수료율 고치기" }));
+    const form = within(dialog());
+    const input = form.getByLabelText("수수료율(%)") as HTMLInputElement;
+    expect(input.value).toBe("0.015");
+    fireEvent.change(input, { target: { value: "0.1" } });
+    fireEvent.click(form.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/balance/commission", { commissionPct: 0.1 });
+    expect(await screen.findByText(/수수료율을 고쳤습니다/)).toBeTruthy();
+  });
+
+  it("총 잔고 다시 맞추기 — POST balance/total, 범위 밖 수수료율·빈 칸은 보내지 않음", async () => {
+    renderIsa();
+    fireEvent.click(await inRegion().findByRole("button", { name: "총 잔고 다시 맞추기" }));
+    const form = within(dialog());
+    expect((form.getByRole("button", { name: "다시 맞추기" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(form.getByLabelText("총 잔고(총평가금액, 원)"), { target: { value: "5,000,000" } });
+    fireEvent.click(form.getByRole("button", { name: "다시 맞추기" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(api.apiPost).toHaveBeenCalledWith("/api/manual/isa/balance/total", { totalAsset: 5_000_000 });
+    expect(await screen.findByText(/현금을 다시 셌습니다/)).toBeTruthy();
   });
 });
 
-describe("리뷰 결함 — 이미 적힌 지시(already-recorded)", () => {
-  it("체결 고치기 새 행이 409 already-recorded면 창 안에 문구, 장부를 다시 읽는다", async () => {
-    api.apiPost.mockRejectedValue(apiError(409, "already-recorded", "이미 체결이 적힌 지시입니다(합성)"));
+describe("표 정렬", () => {
+  const headerCell = (name: string, header: string) =>
+    within(table(name)).getAllByRole("columnheader").find((cell) => (cell.textContent ?? "").replace(/[↑↓↕]/g, "") === header) as HTMLElement;
+  const symbolsOf = (name: string) => within(table(name)).getAllByRole("row").slice(1).map((row) => /\d{6}/.exec(row.textContent ?? "")?.[0]);
+
+  it("매매 내역은 처음에 시각 내림차순, 머리를 누르면 그 열로 오름 → 내림", async () => {
     renderIsa();
-    fireEvent.click(await inRegion().findByRole("button", { name: "체결 고치기 — 합성화학 222220" }));
-    fireEvent.change(within(dialog()).getByLabelText("체결가(원)"), { target: { value: "52900" } });
-    const before = isaReads();
-    fireEvent.click(within(dialog()).getByRole("button", { name: "장부에 적기" }));
-    expect((await within(dialog()).findByRole("alert")).textContent).toContain("이 지시에는 이미 직접 적은 체결 행이 있습니다");
-    expect(isaReads()).toBeGreaterThan(before);
-  });
-});
-
-describe("리뷰 결함 — 지시 뒤 장부가 바뀜(ledgerChanged)", () => {
-  it("참이면 경고, 거짓·없음이면 없음", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      instructions: { session: "2026-11-09", status: "PLANNED", items: ITEMS, ledgerChanged: true },
-    }));
-    const view = renderIsa();
-    expect(await inRegion().findByText(/지시를 만든 뒤 장부가 바뀌었습니다 — 수량을 다시 확인하세요/)).toBeTruthy();
-    view.unmount();
-    reads[ISA_PATH] = () => Promise.resolve(started());
-    renderIsa();
-    await inRegion().findByRole("table", { name: "다음 시가 매매 지시" });
-    expect(inRegion().queryByText(/지시를 만든 뒤 장부가 바뀌었습니다/)).toBeNull();
-  });
-});
-
-describe("리뷰 결함 — 칸 순서(지시를 위로)", () => {
-  it("요약 → 다음 시가 매매 지시 → 처리 안 된 지난 지시 → 보유 → 장부", async () => {
-    reads[ISA_PATH] = () => Promise.resolve(started({
-      pendingInstructions: [{ ...ITEMS[0], id: 5, session: "2026-11-06" }],
-    }));
-    renderIsa();
-    await inRegion().findByRole("table", { name: "다음 시가 매매 지시" });
-    const tables = inRegion().getAllByRole("table").map((element) => element.querySelector("caption")?.textContent);
-    expect(tables).toEqual(["다음 시가 매매 지시", "처리 안 된 지난 지시", "ISA 계좌 보유", "ISA 계좌 장부"]);
-    const summary = inRegion().getByRole("group", { name: "평가액" });
-    const instructions = table("다음 시가 매매 지시");
-    expect(summary.compareDocumentPosition(instructions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-});
-
-/** 장부 행 번호 — 줄의 '지우기' 단추 이름 끝의 #번호. */
-const ledgerIds = () =>
-  within(table("ISA 계좌 장부")).getAllByRole("row").slice(1)
-    .map((row) => /#(\d+)$/.exec(within(row).getByRole("button", { name: /^지우기/ }).getAttribute("aria-label") ?? "")?.[1]);
-/** 보유 줄의 종목 코드(행 머리). */
-const holdingSymbols = () =>
-  within(table("ISA 계좌 보유")).getAllByRole("row").slice(1).map((row) => /\d{6}/.exec(row.textContent ?? "")?.[0]);
-/** 머리 칸(th) — 정렬 단추가 든 칸의 aria-sort를 봅니다. */
-const headerCell = (name: string, header: string) =>
-  within(table(name)).getAllByRole("columnheader").find((cell) => headerText(cell) === header) as HTMLElement;
-
-describe("표 정렬(명세 2026-11-06-us-costs-backfill §5)", () => {
-  it("장부는 처음에 시각 내림차순(aria-sort descending) — 머리를 누르면 그 열로 오름 → 내림, 모르는 값은 맨 뒤", async () => {
-    renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 장부" });
-    expect(headerCell("ISA 계좌 장부", "시각").getAttribute("aria-sort")).toBe("descending");
-    expect(ledgerIds()).toEqual(["33", "32", "31"]);
-
-    const ledger = within(table("ISA 계좌 장부"));
-    fireEvent.click(ledger.getByRole("button", { name: "체결가" }));
-    expect(headerCell("ISA 계좌 장부", "체결가").getAttribute("aria-sort")).toBe("ascending");
-    expect(headerCell("ISA 계좌 장부", "시각").getAttribute("aria-sort")).toBeNull();
-    // 12,600(#33) < 53,000(#32), 입금(#31)은 체결가가 없어 맨 뒤.
-    expect(ledgerIds()).toEqual(["33", "32", "31"]);
-    fireEvent.click(ledger.getByRole("button", { name: "체결가" }));
-    expect(headerCell("ISA 계좌 장부", "체결가").getAttribute("aria-sort")).toBe("descending");
-    expect(ledgerIds()).toEqual(["32", "33", "31"]);
-
-    // 글 열(종류) — 가나다: 매수 < 입금, 내림이면 입금이 먼저(같은 값은 앞 순서 그대로).
-    fireEvent.click(ledger.getByRole("button", { name: "종류" }));
-    expect(ledgerIds()).toEqual(["33", "32", "31"]);
-    fireEvent.click(ledger.getByRole("button", { name: "종류" }));
-    expect(ledgerIds()).toEqual(["31", "33", "32"]);
-
-    // 시각을 다시 누르면 오름(가장 이른 행부터 — 같은 시각은 서버 순서).
-    fireEvent.click(ledger.getByRole("button", { name: "시각" }));
-    expect(headerCell("ISA 계좌 장부", "시각").getAttribute("aria-sort")).toBe("ascending");
-    expect(ledgerIds()).toEqual(["32", "31", "33"]);
-    // 메모·고치기 칸은 정렬 단추가 없습니다.
-    expect(ledger.queryByRole("button", { name: "메모" })).toBeNull();
-    expect(ledger.queryByRole("button", { name: "고치기" })).toBeNull();
+    await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
+    expect(headerCell("ISA 계좌 매매 내역", "시각").getAttribute("aria-sort")).toBe("descending");
+    expect(symbolsOf("ISA 계좌 매매 내역")).toEqual(["111110", "222220"]);
+    fireEvent.click(within(table("ISA 계좌 매매 내역")).getByRole("button", { name: "가격" }));
+    expect(headerCell("ISA 계좌 매매 내역", "가격").getAttribute("aria-sort")).toBe("ascending");
+    expect(symbolsOf("ISA 계좌 매매 내역")).toEqual(["111110", "222220"]);
+    fireEvent.click(within(table("ISA 계좌 매매 내역")).getByRole("button", { name: "가격" }));
+    expect(symbolsOf("ISA 계좌 매매 내역")).toEqual(["222220", "111110"]);
+    expect(within(table("ISA 계좌 매매 내역")).queryByRole("button", { name: "되돌리기" })).toBeNull();
   });
 
-  it("보유·지시 표도 숫자·글 열을 정렬 — 처음에는 서버 순서(지시는 매도 먼저)", async () => {
+  it("잔고 표도 숫자 열을 정렬 — 처음에는 서버 순서, 가격 모르는 종목은 맨 뒤", async () => {
     renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
-    expect(holdingSymbols()).toEqual(["111110", "222220", "333330"]);
-    const holdings = within(table("ISA 계좌 보유"));
-    fireEvent.click(holdings.getByRole("button", { name: "평가액" }));
-    expect(headerCell("ISA 계좌 보유", "평가액").getAttribute("aria-sort")).toBe("ascending");
-    expect(holdingSymbols()).toEqual(["111110", "222220", "333330"]);
-    fireEvent.click(holdings.getByRole("button", { name: "평가액" }));
-    expect(headerCell("ISA 계좌 보유", "평가액").getAttribute("aria-sort")).toBe("descending");
-    // 가격을 모르는 합성바이오는 방향과 무관하게 맨 뒤.
-    expect(holdingSymbols()).toEqual(["222220", "111110", "333330"]);
-
-    const instructions = within(table("다음 시가 매매 지시"));
-    const symbolsOf = () => instructions.getAllByRole("row").slice(1).map((row) => /\d{6}/.exec(row.textContent ?? "")?.[0]);
-    expect(symbolsOf()).toEqual(["222220", "111110"]);
-    fireEvent.click(instructions.getByRole("button", { name: "수량(주)" }));
-    expect(symbolsOf()).toEqual(["222220", "111110"]);
-    fireEvent.click(instructions.getByRole("button", { name: "수량(주)" }));
-    expect(symbolsOf()).toEqual(["111110", "222220"]);
-    expect(instructions.queryByRole("button", { name: "고치기" })).toBeNull();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect(symbolsOf("ISA 계좌 잔고")).toEqual(["111110", "222220", "333330"]);
+    const positions = within(table("ISA 계좌 잔고"));
+    fireEvent.click(positions.getByRole("button", { name: "평가액" }));
+    fireEvent.click(positions.getByRole("button", { name: "평가액" }));
+    expect(headerCell("ISA 계좌 잔고", "평가액").getAttribute("aria-sort")).toBe("descending");
+    expect(symbolsOf("ISA 계좌 잔고")).toEqual(["222220", "111110", "333330"]);
+    expect(positions.queryByRole("button", { name: "고치기" })).toBeNull();
   });
 });
 
@@ -1039,7 +543,7 @@ const krPrice = (code: string, price: number, tradedAt: string) => ({
   overPrice: null, overChange: null, overChangePct: null, overTradedAt: null, overSession: null,
 });
 
-describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-06-us-costs-backfill §6)", () => {
+describe("실시간 평가와 '확인' 가격", () => {
   beforeEach(() => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -1055,166 +559,87 @@ describe("새로고침 주기와 기준 시각·실시간 평가(명세 2026-11-
   });
 
   const latest = () => FakeEventSource.instances[FakeEventSource.instances.length - 1];
-
-  /**
-   * 화면이 연 연결 — 보유 표가 먼저 그려지고 연결은 그 뒤 효과에서 열려, 병렬 부하에서는 표를 찾은 직후에 아직 없을 수 있습니다. 'prices'를 듣는
-   * 쪽이 붙을 때까지 기다린 뒤 돌려줍니다(act 밖에서 — act 안에서 기다리면 효과가 act가 끝날 때까지 돌지 않음).
-   */
   const opened = async (): Promise<FakeEventSource> => {
     await waitFor(() => expect(FakeEventSource.instances.at(-1)?.listeners.get("prices")?.length ?? 0).toBeGreaterThan(0));
     return latest();
   };
+  const send = async (source: FakeEventSource, items: Record<string, ReturnType<typeof krPrice>>) => {
+    await act(async () => {
+      source.emit("prices", { available: true, prices: { fetchedAt: "2026-11-09T05:31:10Z", items, missing: [], errors: {} } });
+    });
+  };
 
-  it("탭 머리에 주기 상자(실시간 시세와 같은 값)와 기준 시각 — 가격을 받기 전에는 '—'와 직전 종가 평가, 보유 가격 칸에 '직전 종가'", async () => {
+  it("탭 머리에 주기 상자와 기준 시각 — 보유 ∪ 지시 ∪ 스탑 지시 종목을 구독, 받기 전에는 직전 종가", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [{ ...STOP_ITEM, symbol: "444440", name: "합성스탑" }] }));
     renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
-    const select = inRegion().getByRole("combobox", { name: "실시간 시세 주기" }) as HTMLSelectElement;
-    expect(select.value).toBe("3600");
-    expect(inRegion().getByText("1시간마다 받음(장이 닫혀 있으면 5분 이상 간격)")).toBeTruthy();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect((inRegion().getByRole("combobox", { name: "실시간 시세 주기" }) as HTMLSelectElement).value).toBe("3600");
     expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 —");
-    expect(inRegion().getByText("실시간 가격을 아직 받지 못해 서버가 준 직전 종가(밤 관측치)로 평가")).toBeTruthy();
-    // 보유 종목의 실시간 가격을 고른 주기로(SSE) — 국내 종목 열쇠.
     const url = new URL((await opened()).url);
     expect(url.pathname).toBe("/api/live/prices/stream");
-    expect(url.searchParams.get("items")).toBe("KR:111110,KR:222220,KR:333330");
-    expect(url.searchParams.get("interval")).toBe("3600");
-    expect(rowOf("ISA 계좌 보유", "합성전자 111110").textContent).toContain("12,500원직전 종가");
-    // 요약은 서버 값 그대로.
-    expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,100,000원");
-
-    // 주기를 바꾸면 그 주기로 다시 잇습니다(다른 화면의 실시간 시세와 같은 값).
-    fireEvent.change(select, { target: { value: "10" } });
-    await waitFor(() => expect(new URL(latest().url).searchParams.get("interval")).toBe("10"));
-    expect(window.localStorage.getItem("live.priceRefreshSeconds")).toBe("10");
+    // 확인할 지시(222220 SELL PLANNED)와 스탑 지시 종목까지 — 이미 확인한 지시(111110)는 보유에서만.
+    expect(url.searchParams.get("items")).toBe("KR:111110,KR:222220,KR:333330,KR:444440");
+    expect(rowOf("ISA 계좌 잔고", "합성전자 111110").textContent).toContain("12,500원직전 종가");
   });
 
-  it("실시간 가격을 받으면 평가액·손익·비중을 다시 센다 — 못 받은 종목은 직전 종가, 기준 시각은 받은 가격의 시각 중 가장 이른 것(초까지)", async () => {
+  it("실시간 가격을 받으면 평가액·손익·비중을 다시 세고, 확인은 그 종목 화면 가격을 본문에 싣는다", async () => {
     renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
-    const stream1 = await opened();
-    await act(async () => {
-      stream1.emit("prices", {
-        available: true,
-        prices: {
-          fetchedAt: "2026-11-09T05:31:10Z",
-          items: { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") },
-          missing: ["KR:333330"],
-          errors: {},
-        },
-      });
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    await send(await opened(), {
+      "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z"),
+      "KR:222220": krPrice("222220", 54_000, "2026-11-09T05:31:02Z"),
     });
 
-    // 1,300,000(실시간) + 2,650,000(직전 종가) + 현금 1,200,000 = 5,150,000. 가격 모르는 보유(합성바이오)가 남아 손익은 —(서버와 같음).
-    const equity = inRegion().getByRole("group", { name: "평가액" });
-    expect(equity.textContent).toContain("5,150,000원");
-    expect(equity.textContent).toContain("보유 평가 3,950,000원 + 현금 1,200,000원");
-    const profit = inRegion().getByRole("group", { name: "손익" });
-    expect(profit.textContent).not.toContain("150,000");
-    expect(profit.textContent).toContain("—");
-    expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 2026-11-09 14:31:05 KST");
-    expect(inRegion().getByText("실시간 1종목 · 직전 종가 1종목 — 평가액·손익·비중만 다시 계산(장부·지시는 직전 종가)")).toBeTruthy();
-    const live = rowOf("ISA 계좌 보유", "합성전자 111110");
+    // 1,300,000 + 2,700,000 = 4,000,000, 총 잔고 = 현금 1,200,000 + 4,000,000. 가격 모르는 합성바이오가 남아 손익은 —.
+    const total = inRegion().getByRole("group", { name: "총 평가액" });
+    expect(total.textContent).toContain("5,200,000원");
+    expect(inRegion().getByRole("group", { name: "평가손익" }).textContent).toContain("—");
+    expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 2026-11-09 14:31:02 KST");
+    const live = rowOf("ISA 계좌 잔고", "합성전자 111110");
     expect(live.textContent).toContain("13,000원실시간 14:31:05");
-    expect(live.textContent).toContain("1,300,000원");
-    expect(live.textContent).toContain("25.24%");
-    const close = rowOf("ISA 계좌 보유", "합성화학 222220");
-    expect(close.textContent).toContain("53,000원직전 종가");
-    expect(close.textContent).toContain("51.46%");
-    // 가격을 모르는 종목은 평가에서 빼고 '—'.
-    expect(rowOf("ISA 계좌 보유", "합성바이오 333330").textContent).toContain("—");
-    expect(inRegion().getByText(/가격을 몰라 평가에서 뺀 종목: 합성바이오 333330/)).toBeTruthy();
-    // 서버 장부·지시는 그대로(직전 종가) — 지시 기준가는 서버 값.
-    expect(rowOf("다음 시가 매매 지시", "합성화학 222220").textContent).toContain("53,000원");
+    expect(live.textContent).toContain("+100,000원");
 
-    // 두 종목을 받으면 기준 시각은 더 이른 쪽.
-    const stream2 = await opened();
-    await act(async () => {
-      stream2.emit("prices", {
-        available: true,
-        prices: {
-          fetchedAt: "2026-11-09T05:31:20Z",
-          items: {
-            "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:15Z"),
-            "KR:222220": krPrice("222220", 54_000, "2026-11-09T05:30:59Z"),
-          },
-          missing: [],
-          errors: {},
-        },
-      });
-    });
-    expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 2026-11-09 14:30:59 KST");
-    expect(inRegion().getByText(/^실시간 2종목 — /)).toBeTruthy();
-    expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,200,000원");
-
-    // 가격을 몰랐던 종목까지 받으면 손익 = 평가액 − 순입금: 1,200,000 + 1,300,000 + 2,700,000 + 95,000 − 5,000,000.
-    const stream3 = await opened();
-    await act(async () => {
-      stream3.emit("prices", {
-        available: true,
-        prices: {
-          fetchedAt: "2026-11-09T05:31:30Z",
-          items: {
-            "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:25Z"),
-            "KR:222220": krPrice("222220", 54_000, "2026-11-09T05:31:26Z"),
-            "KR:333330": krPrice("333330", 9_500, "2026-11-09T05:31:27Z"),
-          },
-          missing: [],
-          errors: {},
-        },
-      });
-    });
-    const allLive = inRegion().getByRole("group", { name: "손익" });
-    expect(allLive.textContent).toContain("+295,000원");
-    expect(allLive.textContent).toContain("순입금 대비 +5.90%");
+    fireEvent.click(inRegion().getByRole("button", { name: "확인 — 합성화학 222220" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(lastBody()).toEqual({ items: [{ instructionId: 7, price: 54_000, priceSource: "live" }] });
   });
 
-  it("다음 응답에서 빠진(missing) 종목은 멈춘 값이라 직전 종가로 평가한다(QA-184 계약)", async () => {
+  it("총 잔고 다시 맞추기는 보유 종목의 화면 가격을 본문에 싣는다", async () => {
     renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
-    const stream4 = await opened();
-    await act(async () => {
-      stream4.emit("prices", {
-        available: true,
-        prices: { fetchedAt: "2026-11-09T05:31:10Z", items: { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") }, missing: [], errors: {} },
-      });
-    });
-    expect(rowOf("ISA 계좌 보유", "합성전자 111110").textContent).toContain("13,000원실시간 14:31:05");
-    const stream5 = await opened();
-    await act(async () => {
-      stream5.emit("prices", {
-        available: true,
-        prices: { fetchedAt: "2026-11-09T05:31:20Z", items: { "KR:222220": krPrice("222220", 54_000, "2026-11-09T05:31:15Z") }, missing: [], errors: {} },
-      });
-    });
-    // 111110은 이번 응답에 없음 — 받은 값(13,000)을 실시간으로 쓰지 않고 서버의 직전 종가(12,500).
-    expect(rowOf("ISA 계좌 보유", "합성전자 111110").textContent).toContain("12,500원직전 종가");
-    expect(rowOf("ISA 계좌 보유", "합성화학 222220").textContent).toContain("54,000원실시간 14:31:15");
-    // 1,250,000(직전 종가) + 2,700,000(실시간) + 현금 1,200,000
-    expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,150,000원");
-    expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 2026-11-09 14:31:15 KST");
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    await send(await opened(), { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") });
+    fireEvent.click(inRegion().getByRole("button", { name: "총 잔고 다시 맞추기" }));
+    const form = within(dialog());
+    fireEvent.change(form.getByLabelText("총 잔고(총평가금액, 원)"), { target: { value: "1,000" } });
+    fireEvent.click(form.getByRole("button", { name: "다시 맞추기" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(lastBody()).toEqual({ totalAsset: 1_000, prices: { "111110": 13_000 } });
   });
 
-  it("연결이 닫히면(disconnected) 받은 값을 실시간으로 쓰지 않고 서버 값(직전 종가)으로 — 실시간 0종목", async () => {
+  it("다음 응답에서 빠진 종목은 멈춘 값 — 직전 종가로 평가하고 확인에는 가격을 싣지 않음(QA-184 계약)", async () => {
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { session: "2026-11-09", status: "PLANNED", items: [{ ...ITEMS[0], symbol: "111110", name: "합성전자" }] } }));
     renderIsa();
-    await inRegion().findByRole("table", { name: "ISA 계좌 보유" });
-    const stream6 = await opened();
-    await act(async () => {
-      stream6.emit("prices", {
-        available: true,
-        prices: { fetchedAt: "2026-11-09T05:31:10Z", items: { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") }, missing: [], errors: {} },
-      });
-    });
-    expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,150,000원");
-    const live = await opened();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    await send(await opened(), { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") });
+    await send(await opened(), { "KR:222220": krPrice("222220", 54_000, "2026-11-09T05:31:15Z") });
+    expect(rowOf("ISA 계좌 잔고", "합성전자 111110").textContent).toContain("12,500원직전 종가");
+    fireEvent.click(inRegion().getByRole("button", { name: "확인 — 합성전자 111110" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalled());
+    expect(lastBody()).toEqual({ items: [{ instructionId: 7 }] });
+  });
+
+  it("연결이 닫히면(disconnected) 받은 값을 쓰지 않고 서버 값으로", async () => {
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    const stream = await opened();
+    await send(stream, { "KR:111110": krPrice("111110", 13_000, "2026-11-09T05:31:05Z") });
+    expect(inRegion().getByRole("group", { name: "총 평가액" }).textContent).toContain("5,150,000원");
     act(() => {
-      const source = live;
-      source.readyState = 2;
-      source.onerror?.();
+      stream.readyState = 2;
+      stream.onerror?.();
     });
-    expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 —");
-    expect(inRegion().getByText("실시간 가격을 아직 받지 못해 서버가 준 직전 종가(밤 관측치)로 평가")).toBeTruthy();
-    expect(inRegion().getByRole("group", { name: "평가액" }).textContent).toContain("5,100,000원");
-    expect(rowOf("ISA 계좌 보유", "합성전자 111110").textContent).toContain("12,500원직전 종가");
+    expect(inRegion().getByRole("group", { name: "총 평가액" }).textContent).toContain("5,100,000원");
+    expect(rowOf("ISA 계좌 잔고", "합성전자 111110").textContent).toContain("12,500원직전 종가");
   });
 
   it("시작 전에는 주기 상자·기준 시각이 없고 실시간 가격을 받지 않는다", async () => {

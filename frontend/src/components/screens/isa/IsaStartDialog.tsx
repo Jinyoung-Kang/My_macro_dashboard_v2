@@ -1,28 +1,19 @@
 "use client";
 
-import { useCallback, useId, useState } from "react";
-import { DataTable, type Column } from "@/components/patterns";
+import { useCallback, useId, useMemo, useState } from "react";
 import { Banner, buttonClasses, inputClasses } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
-import { buildStartRequest, formatPrice, formatShares, formatWon, parseDecimal, parseStartBuys, startBuysTotal } from "@/lib/isa";
-import type { IsaOkResponse, IsaStartBuy } from "@/lib/types/isa";
+import { useLivePrices } from "@/hooks/useLivePrices";
+import { useLiveSeconds } from "@/hooks/useLiveSeconds";
+import { buildStartRequest, emptyStartLine, type IsaStartLine, SYMBOL_PATTERN } from "@/lib/isa";
+import { liveKey, liveShown } from "@/lib/livePrices";
+import type { IsaOkResponse } from "@/lib/types/isa";
 import { postStart, sendIsa } from "./isaRequests";
 
-/** 붙여 넣기 칸의 예시(형식만 — 값은 아무 뜻 없는 보기). */
-const BUYS_PLACEHOLDER = "123450 10 10000\n678900 3 25000";
-
-const BUY_COLUMNS: readonly Column<IsaStartBuy>[] = [
-  { key: "symbol", header: "종목 코드", cell: (row) => row.symbol },
-  { key: "quantity", header: "수량(주)", align: "right", cell: (row) => formatShares(row.quantity) },
-  { key: "price", header: "가격", align: "right", cell: (row) => formatPrice(row.price) },
-  { key: "amount", header: "금액(어림)", align: "right", cell: (row) => formatWon(row.quantity * row.price) },
-];
-
 /**
- * ISA 계좌 시작 창(ADR 0029, 명세 §3 '시작'·§8) — 시작 현금(입금 행)과 시작 매수 목록(매수 행 — '코드 수량 가격'을 줄마다 붙여 넣기)을 한 번에 적습니다.
- * 시작은 한 번만 됩니다(이미 시작했으면 409 `already-started`). 붙여 넣은 줄은 바로 읽어 보이고(읽은 줄 표·줄마다 오류·시작 매수 합·남는 현금 어림),
- * 형식이 틀린 줄이 있거나 시작 매수 합이 시작 현금보다 크면 보내지 않습니다.
+ * ISA 계좌 시작 창(ADR 0034) — 총 잔고(총평가금액 = 현금 + 주식)와 줄마다 종목(이름 또는 코드)·보유 수량·매입 금액을 적습니다. 현금은 서버가 총 잔고 − Σ(수량 × 가격)으로 셉니다
+ * (가격: 이 창이 받은 실시간 가격 → 서버 직전 종가 → 매입 금액 어림). 시작은 한 번만 됩니다(이미 시작했으면 409 `already-started`).
  */
 export function IsaStartDialog({
   open,
@@ -32,7 +23,7 @@ export function IsaStartDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onDone: (buyCount: number) => void;
+  onDone: (positionCount: number, notes: readonly string[]) => void;
   onReload: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -43,7 +34,7 @@ export function IsaStartDialog({
         if (!next && !busy) onClose();
       }}
       title="ISA 계좌 시작"
-      description="연결되지 않은 다른 증권사 계좌의 장부를 시작합니다 — 시작 현금과, 이미 산 종목이 있으면 그 수량·체결가를 적으세요. 시작은 한 번만 됩니다(뒤의 차이는 장부에서 고침)."
+      description="오늘 잔고로 시작합니다 — 증권사 앱에 보이는 총평가금액과 지금 들고 있는 종목을 적으세요. 시작은 한 번만 됩니다(뒤의 차이는 잔고에서 고침)."
       size="lg"
       placement="top"
       dismissible={!busy}
@@ -61,28 +52,51 @@ function StartForm({
 }: {
   onBusyChange: (busy: boolean) => void;
   onCancel: () => void;
-  onDone: (buyCount: number) => void;
+  onDone: (positionCount: number, notes: readonly string[]) => void;
   onReload: () => void;
 }) {
   const ids = useId();
-  const [cash, setCash] = useState("");
-  const [startedAt, setStartedAt] = useState("");
-  const [buys, setBuys] = useState("");
+  const [total, setTotal] = useState("");
+  const [lines, setLines] = useState<IsaStartLine[]>([emptyStartLine()]);
   const send = useCallback((request: () => Promise<IsaOkResponse>) => sendIsa(request, onReload), [onReload]);
   const action = useAsyncAction(send, "ISA 계좌를 시작하지 못했습니다.");
 
-  const parsed = parseStartBuys(buys);
-  const total = startBuysTotal(parsed.buys);
-  const cashValue = parseDecimal(cash, { maxDecimals: 2 });
-  const checked = buildStartRequest({ cash, startedAt, buys });
+  // 코드로 적은 줄만 실시간 가격을 받습니다(이름이면 서버가 코드로 찾은 뒤 직전 종가).
+  const [liveSeconds] = useLiveSeconds();
+  const codes = useMemo(
+    () => [...new Set(lines.map((line) => line.symbol.trim().toUpperCase()).filter((code) => SYMBOL_PATTERN.test(code)))],
+    [lines],
+  );
+  const liveItems = useMemo(() => codes.map((code) => liveKey("KR", code)), [codes]);
+  const realtime = useLivePrices(liveItems, liveSeconds, codes.length > 0);
+  const prices = useMemo(() => {
+    const out: Record<string, number> = {};
+    if (realtime.disconnected) return out;
+    for (const code of codes) {
+      const key = liveKey("KR", code);
+      if (realtime.missing.includes(key) || !Object.hasOwn(realtime.prices, key)) continue;
+      out[code] = liveShown(realtime.prices[key]).price;
+    }
+    return out;
+  }, [codes, realtime.disconnected, realtime.missing, realtime.prices]);
+
+  const checked = buildStartRequest({ totalAsset: total, lines, prices });
+
+  const update = (index: number, key: keyof IsaStartLine, value: string) =>
+    setLines((rows) => rows.map((row, at) => (at === index ? { ...row, [key]: value } : row)));
 
   const submit = async () => {
     if (!checked.ok || action.busy) return;
     const body = checked.body;
     onBusyChange(true);
-    const ok = await action.run(() => postStart(body));
+    let notes: readonly string[] = [];
+    const ok = await action.run(async () => {
+      const result = await postStart(body);
+      notes = result.notes ?? [];
+      return result;
+    });
     onBusyChange(false);
-    if (ok) onDone(body.buys.length);
+    if (ok) onDone(body.positions.length, notes);
   };
 
   return (
@@ -95,74 +109,79 @@ function StartForm({
       }}
     >
       <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${ids}-cash`} className="text-sm font-medium text-text">
-          시작 현금(원)
+        <label htmlFor={`${ids}-total`} className="text-sm font-medium text-text">
+          총 잔고(총평가금액, 원)
         </label>
         <input
-          id={`${ids}-cash`}
+          id={`${ids}-total`}
           type="text"
           inputMode="decimal"
-          value={cash}
-          onChange={(event) => setCash(event.target.value)}
+          value={total}
+          onChange={(event) => setTotal(event.target.value)}
           disabled={action.busy}
           autoComplete="off"
           placeholder="예: 10,000,000"
           className={`w-56 ${inputClasses()}`}
         />
-        <p className="text-xs text-text-3">계좌에 넣은 돈 전부(입금 행). 시작 매수 대금은 여기서 빠집니다.</p>
+        <p className="text-xs text-text-3">현금 + 주식 평가액 — 증권사 앱의 총평가금액. 현금은 여기에서 주식 평가액을 뺀 값으로 셉니다.</p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${ids}-at`} className="text-sm font-medium text-text">
-          시작 시각(서울)
-        </label>
-        <input
-          id={`${ids}-at`}
-          type="datetime-local"
-          value={startedAt}
-          onChange={(event) => setStartedAt(event.target.value)}
-          disabled={action.busy}
-          className={`w-60 ${inputClasses()}`}
-        />
-        <p className="text-xs text-text-3">비우면 지금 시각. 시작 매수를 산 시각을 적어도 됩니다.</p>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <label htmlFor={`${ids}-buys`} className="text-sm font-medium text-text">
-          시작 매수 목록
-        </label>
-        <textarea
-          id={`${ids}-buys`}
-          value={buys}
-          onChange={(event) => setBuys(event.target.value)}
-          disabled={action.busy}
-          rows={7}
-          spellCheck={false}
-          placeholder={BUYS_PLACEHOLDER}
-          aria-describedby={`${ids}-buys-help`}
-          className={`w-full font-mono ${inputClasses()}`}
-        />
-        <p id={`${ids}-buys-help`} className="text-xs leading-relaxed text-text-3">
-          줄마다 &lsquo;종목코드 수량 체결가&rsquo;(빈칸이나 탭으로 나눔 — 표에서 복사한 줄도 됨, 천 단위 쉼표 허용). 산 것이 없으면 비워 두세요(현금만으로 시작).
+      <section aria-label="시작 보유" className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium text-text">지금 들고 있는 종목</h3>
+        {lines.map((line, index) => (
+          <div key={index} className="flex flex-wrap items-center gap-2">
+            <input
+              aria-label={`${index + 1}번째 줄 종목`}
+              type="text"
+              value={line.symbol}
+              onChange={(event) => update(index, "symbol", event.target.value)}
+              disabled={action.busy}
+              autoComplete="off"
+              placeholder="종목(이름 또는 코드)"
+              className={`w-52 ${inputClasses()}`}
+            />
+            <input
+              aria-label={`${index + 1}번째 줄 수량`}
+              type="text"
+              inputMode="decimal"
+              value={line.quantity}
+              onChange={(event) => update(index, "quantity", event.target.value)}
+              disabled={action.busy}
+              autoComplete="off"
+              placeholder="수량"
+              className={`w-24 ${inputClasses()}`}
+            />
+            <input
+              aria-label={`${index + 1}번째 줄 매입 금액`}
+              type="text"
+              inputMode="decimal"
+              value={line.purchaseAmount}
+              onChange={(event) => update(index, "purchaseAmount", event.target.value)}
+              disabled={action.busy}
+              autoComplete="off"
+              placeholder="매입 금액(원)"
+              className={`w-40 ${inputClasses()}`}
+            />
+            <button
+              type="button"
+              aria-label={`${index + 1}번째 줄 지우기`}
+              onClick={() => setLines((rows) => (rows.length === 1 ? [emptyStartLine()] : rows.filter((_, at) => at !== index)))}
+              disabled={action.busy}
+              className={buttonClasses("ghost", "sm")}
+            >
+              줄 지우기
+            </button>
+          </div>
+        ))}
+        <div>
+          <button type="button" onClick={() => setLines((rows) => [...rows, emptyStartLine()])} disabled={action.busy} className={buttonClasses("secondary", "sm")}>
+            줄 추가
+          </button>
+        </div>
+        <p className="text-xs leading-relaxed text-text-3">
+          종목은 이름이나 여섯 자리 코드(한 종목으로 좁혀지지 않으면 코드를 넣으세요), 매입 금액은 그 종목을 산 돈 전체입니다. 들고 있는 종목이 없으면 비워 두세요(현금만으로 시작).
         </p>
-      </div>
-
-      {parsed.buys.length > 0 && (
-        <section aria-label="읽은 시작 매수" className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-text">읽은 시작 매수 {parsed.buys.length}줄</h3>
-          <DataTable
-            caption="읽은 시작 매수"
-            columns={BUY_COLUMNS}
-            rows={parsed.buys}
-            rowKey={(row) => `${row.symbol}-${parsed.buys.indexOf(row)}`}
-            maxHeight={240}
-          />
-          <p className="text-xs text-text-3">
-            시작 매수 합 {formatWon(total)}
-            {cashValue !== null && cashValue > 0 ? ` · 남는 현금 ${formatWon(cashValue - total)}` : ""}(어림 — 수수료·세금 제외, 장부에서 고칠 수 있음)
-          </p>
-        </section>
-      )}
+      </section>
 
       {!checked.ok && (
         <ul className="list-disc space-y-0.5 pl-5 text-xs text-text-3" aria-label="보내기 전에 필요한 것">
