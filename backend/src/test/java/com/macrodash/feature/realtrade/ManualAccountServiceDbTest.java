@@ -555,4 +555,28 @@ class ManualAccountServiceDbTest {
         });
         assertThat(ledger).filteredOn(r -> !"SELL".equals(r.get("kind"))).allSatisfy(r -> assertThat(r).containsEntry("realizedPct", null));
     }
+
+    // ------------------------------------------------------------------ QA-337
+    /** A 매도의 체결가에 총액을 넣어 부풀린 현금이 B 매수의 부풀린 체결가를 대 주는 장부(같은 세션 09:00 — 두 행 다 잘못 적음). */
+    private long[] crossFundedTypos() {
+        startSynthetic();                                          // 현금 800,000, A 10주(평단 10,000), B 5주
+        long sell = instruction(A, "SELL", 10);
+        long buy = instruction(B, "BUY", 2);
+        service.saveFills(fills(fill(sell, "10", "120000"), fill(buy, "2", "480000")));   // 원래 체결가 12,000·24,000
+        return new long[]{store.ledgerForInstruction(sell).get(0).id(), store.ledgerForInstruction(buy).get(0).id()};
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("QA-337 — 수정 전: 잘못 적은 두 행이 서로 현금을 대 주면 한 행만 고쳐도 사유 없이 400 ledger-invalid")
+    @DisplayName("QA-337: 부풀린 매도를 먼저 고치면 부풀린 매수 행에서 현금이 모자람 — 거절 글이 그 행의 시각·방향·종목을 말함")
+    void qa337NamesTheRowThatRunsOutOfCash() {
+        long[] rows = crossFundedTypos();
+
+        assertThatThrownBy(() -> service.saveLedger(row(rows[0], "SELL", A, "10", "12000", null, "2026-11-09T09:00", null)))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(400);
+                    assertThat(e.code()).as("확인 뒤 저장할 수 있는 거절").isEqualTo("ledger-cash-negative");
+                    assertThat(e.getMessage()).contains("11-09 09:00").contains("매수").contains(B);
+                });
+    }
 }
