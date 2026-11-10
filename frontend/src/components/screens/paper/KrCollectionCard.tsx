@@ -66,7 +66,7 @@ export function KrCollectionCard({
   return (
     <Card
       title="한국 수집 상태"
-      subtitle="한국 책이 읽는 수집기 저장본 — 관측치·수급은 KR 거래일 20:30 KST 뒤 하루 한 번(장중 관측치 없음). 늦음: 관측치·수급은 다음 수집 예정 + 2시간 5분, DART·일정 7일, 뉴스 24시간 · 유니버스·금융위는 기준일 비교(뒤처짐)"
+      subtitle="한국 계좌가 읽는 수집기 저장본 — 관측치·수급은 KR 거래일 20:30 KST 뒤 하루 한 번(장중 관측치 없음). 늦음: 관측치·수급은 다음 수집 예정 + 2시간 5분, DART·일정 7일, 뉴스 24시간 · 유니버스·금융위는 기준일 비교(뒤처짐)"
       source={PAPER_SOURCES.krCollection}
       actions={quotes && <Freshness collectedAt={quotes.collectedAtKst} ageSeconds={quotes.ageSeconds ?? undefined} stale={quotes.stale} />}
     >

@@ -559,11 +559,11 @@ describe("홈 — 모의매매 한국 탭", () => {
   });
 
   it("쉬는 한국: 계좌 없이 그 사유, 두 책 비교하지 않음 문구", async () => {
-    const reason = "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다";
+    const reason = "한국 계좌 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다";
     reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: paperOverviewKrDormant(reason), [PAPER_KR_STATUS]: { ...paperStatusKr(false), dormantReason: reason } };
     renderHome(OWNER);
     await pickKorea();
-    expect(await screen.findByText(`한국 책이 쉬고 있습니다 — ${reason}`)).toBeTruthy();
+    expect(await screen.findByText(`한국 계좌가 쉬고 있습니다 — ${reason}`)).toBeTruthy();
     const hero = region(PAPER_REGION);
     expect(within(hero).queryAllByRole("link")).toHaveLength(0);
     expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();

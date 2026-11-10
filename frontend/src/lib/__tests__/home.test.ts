@@ -280,7 +280,7 @@ describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", (
     const model = paperHomeModel(paperOverview(), paperStatus(true));
     expect(model.market).toBe("US");
     expect(model.compareNote).toBe(PAPER_COMPARE_NOTE);
-    expect(PAPER_COMPARE_NOTE).toBe("미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다");
+    expect(PAPER_COMPARE_NOTE).toBe("미국·한국 계좌는 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다");
     expect(model.dormantNote).toBeNull();
     expect(paperHomeModel(paperOverview(), paperStatus(true), { market: "US" })).toEqual(model);
   });
@@ -303,9 +303,9 @@ describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", (
   });
 
   it("쉬는 한국: 계좌가 없으면 안내 자리에 사유, 계좌가 있으면 행 아래 한 줄 — 모르는 처음 현금은 '—'(1억을 짓지 않음)", () => {
-    const reason = "한국 책 출발일이 비어 있어 한국 초기화·출발을 하지 않습니다";
+    const reason = "한국 계좌 출발일이 비어 있어 한국 초기화·출발을 하지 않습니다";
     const empty = paperHomeModel(paperOverviewKrDormant(reason), null, { market: "KR" });
-    expect(empty.message).toBe(`한국 책이 쉬고 있습니다 — ${reason}`);
+    expect(empty.message).toBe(`한국 계좌가 쉬고 있습니다 — ${reason}`);
     expect(empty.dormantNote).toBeNull();
     expect(empty.startLine).toBe("출발 — · 처음 현금 — · 변화율은 출발 대비");
     const started = paperHomeModel({ ...paperOverviewKr(), dormantReason: reason }, paperStatusKr(), { market: "KR" });

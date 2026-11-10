@@ -54,7 +54,7 @@ export const LOSS_LIMIT = { min: 1, max: 50, default: 15 } as const;
 
 /** 켜기 창 경고(명세 §8 문구 그대로). */
 export const ENABLE_WARNINGS: readonly string[] = [
-  "원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 맞추기(보통 개장 10분 뒤 09:10, 시가 맞추기 날은 08:50)에서 팔립니다",
+  "원화 자산 전부를 운용합니다 — 따라 하는 모의 계좌에 없는 국내 주식은 다음 맞추기(보통 개장 10분 뒤 09:10, 시가 맞추기 날은 08:50)에서 팔립니다",
   "켠 동안 앱에서 국내 주식을 직접 사고팔지 마세요",
   "모의와 달리 실제 돈이 움직입니다",
 ];
@@ -142,8 +142,8 @@ const HALT_REASON: Readonly<Record<string, string>> = {
   "token-contention": "토스 토큰 경합",
   "repeated-error": "같은 오류 반복",
   turnover: "회전율 60% 초과",
-  "book-changed": "따라 하는 책이 바뀜",
-  "book-not-active": "따라 하는 책이 운용 중이 아님",
+  "book-changed": "따라 하는 계좌가 바뀜",
+  "book-not-active": "따라 하는 계좌가 운용 중이 아님",
   "close-auction-mismatch": "종가 체결 시각 이상",
   "unknown-broker-status": "모르는 주문 상태",
   restored: "DB 복원 직후",
@@ -797,7 +797,7 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
 
 const SKIP_REASON: Readonly<Record<string, string>> = {
   "opposite-pending": "반대 방향 미체결 있음",
-  "pending-stop": "따라 하는 책의 오늘 대기 스탑 종목 — 매수 안 함",
+  "pending-stop": "따라 하는 계좌의 오늘 대기 스탑 종목 — 매수 안 함",
   "deferred-cash": "매수 가능 금액 부족으로 미룸",
   capped: "1건 상한까지만",
   "timing-unsupported": "모르는 체결 시점",
@@ -877,7 +877,7 @@ export function realTradeErrorText(code: RealTradeErrorCode | null, mode: RealTr
     case "server-disabled":
       return "운영 서버의 매매 스위치(수집기·백엔드)가 꺼져 있어 켤 수 없습니다.";
     case "book-changed":
-      return "따라 하던 책이 리셋·재출발했습니다 — 실제 매매를 끄고 다시 켜서 예상 목록을 확인하세요.";
+      return "따라 하던 계좌가 리셋·재출발했습니다 — 실제 매매를 끄고 다시 켜서 예상 목록을 확인하세요.";
     case "invalid-state":
       return fallback && fallback.trim() !== "" ? fallback : "지금 상태에서는 할 수 없는 요청입니다 — 상태를 확인하세요.";
     case "not-ready":

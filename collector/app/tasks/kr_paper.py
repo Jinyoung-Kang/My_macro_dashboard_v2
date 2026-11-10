@@ -537,7 +537,7 @@ def task_kr_paper_quotes() -> str:
                 break
             infos.update(toss_service.fetch_stock_infos(pending[start:start + toss_service.STOCK_INFO_MAX_SYMBOLS]))
     except toss_service.TossMissingKey as exc:
-        raise EmptyResult(f"{exc} — 한국 책 관측치를 받지 않습니다 · 기존 저장본 유지") from None
+        raise EmptyResult(f"{exc} — 한국 계좌 관측치를 받지 않습니다 · 기존 저장본 유지") from None
     except toss_service.TossForbidden as exc:
         raise EmptyResult(f"0/{len(pending)} 종목 — {exc} · 기존 저장본 유지") from None
     except toss_service.TossError as exc:
@@ -736,7 +736,7 @@ def task_kr_paper_flows() -> str:
         try:
             records = toss_service.fetch_stock_investor_trading(code, KR_FLOW_DAYS if seen_before else KR_FLOW_FIRST_DAYS)
         except toss_service.TossMissingKey as exc:
-            raise EmptyResult(f"{exc} — 한국 책 수급을 받지 않습니다 · 기존 저장본 유지") from None
+            raise EmptyResult(f"{exc} — 한국 계좌 수급을 받지 않습니다 · 기존 저장본 유지") from None
         except toss_service.TossForbidden as exc:
             run.forbidden = str(exc)
             break
@@ -920,7 +920,7 @@ def task_kr_paper_price_history() -> str:
         try:
             points, complete = _adjusted_back_to(code, until, run, session, before)
         except toss_service.TossMissingKey as exc:
-            raise EmptyResult(f"{exc} — 한국 책 종가 이력을 받지 않습니다 · 기존 이력 유지") from None
+            raise EmptyResult(f"{exc} — 한국 계좌 종가 이력을 받지 않습니다 · 기존 이력 유지") from None
         except toss_service.TossError as exc:
             run.reasons.append(f"{code}: {exc}")
             continue

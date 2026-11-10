@@ -69,7 +69,7 @@ export function krStartState(
   const books: readonly PaperBookSummary[] = overview.books ?? [];
   if (books.some((book) => book.status !== "NOT_STARTED")) return { kind: "started" };
   if (!overview.startDate) {
-    return { kind: "dormant", reason: overview.dormantReason ?? "한국 책 출발일이 정해지지 않았습니다" };
+    return { kind: "dormant", reason: overview.dormantReason ?? "한국 계좌 출발일이 정해지지 않았습니다" };
   }
   if (overview.initialized === false || books.length === 0) return { kind: "init", startDate: overview.startDate };
   return { kind: "waiting", startDate: overview.startDate };
@@ -185,7 +185,7 @@ export function krStartResultView(result: PaperKrStartResult): KrStartResultView
 export function krRiskResultView(result: PaperKrRiskResult): RiskResultView {
   const view = riskResultView(result);
   if (result.ok === false && result.dormantReason) {
-    return { ...view, warning: `한국 책이 쉬고 있어 리스크 점검을 하지 않았습니다 — ${result.dormantReason}` };
+    return { ...view, warning: `한국 계좌가 쉬고 있어 리스크 점검을 하지 않았습니다 — ${result.dormantReason}` };
   }
   return view;
 }

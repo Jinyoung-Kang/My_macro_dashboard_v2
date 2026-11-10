@@ -153,7 +153,7 @@ describe("리스크 점검", () => {
   it("쉬면 그 사유를 경고로, 돌면 미국과 같은 표시", () => {
     const outcome = { filled: 0, stopped: 0, expired: 0, splits: 0, booksProcessed: [], skippedReason: "쉼", notes: [], errors: [] };
     expect(krRiskResultView({ ok: false, market: "KR", dormantReason: "출발일 없음", outcome }).warning)
-      .toBe("한국 책이 쉬고 있어 리스크 점검을 하지 않았습니다 — 출발일 없음");
+      .toBe("한국 계좌가 쉬고 있어 리스크 점검을 하지 않았습니다 — 출발일 없음");
     expect(krRiskResultView({ ok: true, market: "KR", dormantReason: null, outcome: { ...outcome, skippedReason: null } }))
       .toMatchObject({ tone: "info", warning: null });
   });

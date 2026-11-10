@@ -168,7 +168,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
       {/* 한국 정기 작업(리스크 점검·결정·복기)이 쉬는 사유 — 서버 문구 그대로(출발일 없음·한국 초기화 전). 쉬어도 조회는 저장본으로 답합니다. */}
       {korea && data?.available && data.dormantReason && (
         <Banner tone="warn">
-          <strong>한국 책이 쉬고 있습니다</strong> — {data.dormantReason}
+          <strong>한국 계좌가 쉬고 있습니다</strong> — {data.dormantReason}
         </Banner>
       )}
       {/* 개요가 아직 없거나 실패·읽을 수 없음이면 탭 줄이 없습니다 — 그래도 실제 매매 끄기 단추(실제 계좌 탭)로 가는 길을 둡니다(SEC-6, ADR 0028).

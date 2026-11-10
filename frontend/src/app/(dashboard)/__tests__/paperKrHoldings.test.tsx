@@ -219,7 +219,7 @@ describe("빈 상태(시작 전)", () => {
 
 const DORMANT = {
   available: true, market: "KR", currency: "KRW",
-  dormantReason: "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
+  dormantReason: "한국 계좌 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
   initialized: false, pendingBackfill: [], startDate: null, books: [], navSeries: { dates: [], books: {} }, quotes: null,
   selection: null, gate: null, claudeExposureSeries: [], frameworkBoundaries: [], limits: [], jobs: [],
 };
@@ -229,7 +229,7 @@ describe("쉬는 한국(계좌 없음)", () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
     render(<PaperPage market="KR" initialTab="holdings" />);
     expect(await screen.findByText(/아직 한국 계좌가 없습니다 — 출발일이 정해지면 개요 탭의 '한국 초기화'로 네 계좌가 생깁니다/)).toBeTruthy();
-    expect(screen.getByText(/한국 책이 쉬고 있습니다/)).toBeTruthy();
+    expect(screen.getByText(/한국 계좌가 쉬고 있습니다/)).toBeTruthy();
     expect(requested().some((path) => path.startsWith("/api/paper/books/"))).toBe(false);
   });
 });

@@ -108,7 +108,7 @@ describe("한국 메모 탭", () => {
       "비우면 2026-10-28(마지막으로 끝난 한국 세션 — KRX 달력). 오늘(KST) 날짜를 고르면 오늘 밤 결정(기준 거래일 = 오늘 세션)부터 실립니다. "
         + "오늘보다 뒤 날짜는 서버가 거절합니다.",
     )).toBeTruthy();
-    expect(await within(form).findByText("비우면 기본 +3 KRX 거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays, 두 책 공용)")).toBeTruthy();
+    expect(await within(form).findByText("비우면 기본 +3 KRX 거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays, 두 시장 공용)")).toBeTruthy();
     fireEvent.change(within(form).getByLabelText("제목"), { target: { value: "환율" } });
     fireEvent.change(within(form).getByLabelText("본문"), { target: { value: "원/달러 1,420" } });
     fireEvent.click(within(form).getByRole("button", { name: "메모 저장" }));
@@ -130,11 +130,11 @@ describe("한국 메모 탭", () => {
   });
 
   it("쉬는 한국: 쉬어도 메모는 쓸 수 있다는 한 줄과 사유", async () => {
-    const reason = "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다";
+    const reason = "한국 계좌 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다";
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve({ ...OVERVIEW, dormantReason: reason, startDate: null, initialized: false });
     reads[LIST] = () => Promise.resolve({ available: true, market: "KR", dormantReason: reason, referenceDate: "2026-10-28", notes: [] });
     renderNotes();
-    expect(await screen.findByText(/한국 책이 쉬는 동안에도 메모는 쓸 수 있습니다/)).toBeTruthy();
+    expect(await screen.findByText(/한국 계좌가 쉬는 동안에도 메모는 쓸 수 있습니다/)).toBeTruthy();
     // 사유는 화면 맨 위 배너 한 곳(메모 카드에서 되풀이하지 않음).
     await waitFor(() => expect(screen.getAllByText(new RegExp("PAPER_KR_START_DATE"))).toHaveLength(1));
     // 출발일이 없으면 날짜 없이 '출발 결정도 같은 규칙'.

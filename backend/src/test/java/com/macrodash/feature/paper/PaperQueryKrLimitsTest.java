@@ -60,7 +60,7 @@ class PaperQueryKrLimitsTest {
 
         assertThat(limits).hasSize(16);
         assertThat(limits.get(0)).isEqualTo("모의 매매입니다. 어떤 주문도 밖으로 나가지 않습니다.");
-        assertThat(limits).contains("미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다.");
+        assertThat(limits).contains("미국·한국 계좌는 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다.");
         assertThat(limits).anyMatch(line -> line.startsWith("잠정 체결가·평가는 토스증권, 확정가는 금융위원회(공공데이터포털)"))
                 .anyMatch(line -> line.startsWith("한국 스탑은 다음 거래일 시가에 체결합니다"))
                 .anyMatch(line -> line.contains("'기업행위 확인 필요' 배지"))

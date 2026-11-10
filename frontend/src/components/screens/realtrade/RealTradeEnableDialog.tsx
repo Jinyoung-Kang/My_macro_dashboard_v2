@@ -122,9 +122,9 @@ export function RealTradeEnableDialog({
 }
 
 const DESCRIPTION: Readonly<Record<RealTradeDialogMode, string>> = {
-  enable: "토스증권 실제 계좌의 원화 자산 전부가 고른 모의 한국 책을 따라 자동으로 사고팝니다. 끄기는 언제든 확인 없이 바로 됩니다.",
-  update: "따라 하는 방식·손실 한도·기준 평가액 중 바꿀 것만 고릅니다. 방식을 바꾸면 옛 책 따라 하기를 바로 멈추고 이 기능의 미체결을 취소합니다.",
-  resume: "멈춘 사유를 토스증권 앱에서 확인한 뒤 푸세요. 풀면 다음 맞추기에서 보유를 책 비중에 다시 맞춥니다.",
+  enable: "토스증권 실제 계좌의 원화 자산 전부가 고른 모의 한국 계좌를 따라 자동으로 사고팝니다. 끄기는 언제든 확인 없이 바로 됩니다.",
+  update: "따라 하는 방식·손실 한도·기준 평가액 중 바꿀 것만 고릅니다. 방식을 바꾸면 옛 계좌 따라 하기를 바로 멈추고 이 기능의 미체결을 취소합니다.",
+  resume: "멈춘 사유를 토스증권 앱에서 확인한 뒤 푸세요. 풀면 다음 맞추기에서 보유를 모의 계좌 비중에 다시 맞춥니다.",
 };
 
 function RealTradeForm({
@@ -206,7 +206,7 @@ function RealTradeForm({
   const blockers: string[] = [];
   if (version === null) blockers.push("설정 버전을 몰라 보낼 수 없습니다 — 창을 닫고 상태를 다시 읽으세요.");
   if (mode !== "resume" && loss === null) blockers.push(`손실 한도는 ${LOSS_LIMIT.min}~${LOSS_LIMIT.max}%(소수 둘째 자리까지)입니다.`);
-  if (bookInactive) blockers.push("고른 책이 운용 중이 아닙니다 — 켜면 정기 작업이 바로 멈춥니다(book-not-active).");
+  if (bookInactive) blockers.push("고른 모의 계좌가 운용 중이 아닙니다 — 켜면 정기 작업이 바로 멈춥니다(book-not-active).");
   if (mode === "enable" && !previewOk) blockers.push("예상 목록을 받은 뒤에 켤 수 있습니다.");
   if (mode === "enable" && !checked.every(Boolean)) blockers.push("켜기 전 점검표를 모두 확인하세요.");
   if (!changes) blockers.push("바꿀 것이 없습니다.");
@@ -281,7 +281,7 @@ function RealTradeForm({
                   <span>{option.label}</span>
                   <span className="text-xs text-text-3">
                     {option.code} · {entry ? bookStatusLabel(entry.status) : "상태 모름"}
-                    {option.code === currentBook ? " · 지금 따라 하는 책" : ""}
+                    {option.code === currentBook ? " · 지금 따라 하는 계좌" : ""}
                   </span>
                 </label>
               );
@@ -450,7 +450,7 @@ function PreviewSection({
   return (
     <section aria-label="예상 목록" className="flex flex-col gap-2">
       <h3 className="text-sm font-medium text-text">예상 목록{bookLabel ? ` — ${bookLabel}` : ""}</h3>
-      {!bookLabel && <p className="text-sm text-text-3">따라 하는 책을 몰라 예상 목록을 계산하지 않았습니다.</p>}
+      {!bookLabel && <p className="text-sm text-text-3">따라 하는 계좌를 몰라 예상 목록을 계산하지 않았습니다.</p>}
       {bookLabel && loading && !data && <p className="text-sm text-text-3">토스에서 지금 보유·매수 가능 금액을 읽어 계산하는 중…</p>}
       {bookLabel && (error || (data && data.ok !== true)) && (
         <Banner tone="warn">
@@ -473,7 +473,7 @@ function PreviewSection({
             columns={PREVIEW_COLUMNS}
             rows={data.orders ?? []}
             rowKey={(row) => `${row.side}-${row.symbol}`}
-            emptyText="보낼 주문 없음 — 이미 책 비중에 맞습니다"
+            emptyText="보낼 주문 없음 — 이미 모의 계좌 비중에 맞습니다"
           />
           {(data.skipped ?? []).length > 0 && (
             <div className="text-xs text-text-2">

@@ -713,7 +713,7 @@ describe("메모 안내 — 시장 인자(미국 문구 그대로, 한국은 KRX
     expect(intro).not.toContain("미국 세션");
     expect(noteAsOfHint("2026-10-28", "KR")).toMatch(/^비우면 2026-10-28\(마지막으로 끝난 한국 세션 — KRX 달력\)\. 오늘\(KST\) 날짜를 고르면 오늘 밤 결정/);
     expect(noteAsOfHint(null, "KR")).toMatch(/^비우면 마지막으로 끝난 한국 세션\(KRX 달력\)\./);
-    expect(noteExpiryHint(null, "KR")).toBe("비우면 기본 +3 KRX 거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays의 기본값, 두 책 공용)");
+    expect(noteExpiryHint(null, "KR")).toBe("비우면 기본 +3 KRX 거래일(기준일부터 — 설정 notesDefaultExpiryTradingDays의 기본값, 두 시장 공용)");
     expect(notePayload({ kind: "INSIGHT", asOfDate: "", expiresOn: "2026-11-02", title: "t", body: "b" }, "KR"))
       .toEqual({ kind: "INSIGHT", title: "t", body: "b", market: "KR" });
   });

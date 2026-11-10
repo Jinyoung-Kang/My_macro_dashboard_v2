@@ -104,7 +104,7 @@ export function FrameworkSection({
 const KR_FRAMEWORK_NOTE =
   "두 시장 공용 프레임 — 미국·한국 Claude 계좌가 같은 판을 씁니다. 한국 결정·복기 프롬프트에서는 한국 고정 문단(KR_FIXED_RULES) 첫 줄의 우선순위 "
   + "문장과 한국 하드 규칙 줄(kr.*)이 이 본문보다 앞섭니다(본문의 미국 문장 — NEXT_OBSERVATION·SHY·13F 등 — 은 한국에서 그 문장이 덮음). 판을 "
-  + "바꾸면(직접 고치기·제안 승인) 두 책의 다음 결정부터 바뀝니다. 아래 방법론 메모 고르기·저장은 한국 메모입니다.";
+  + "바꾸면(직접 고치기·제안 승인) 두 시장의 다음 결정부터 바뀝니다. 아래 방법론 메모 고르기·저장은 한국 메모입니다.";
 
 function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | null; market: PaperMarketCode }) {
   const framework = useApi<PaperFrameworkResponse>(endpoints.paper.framework);

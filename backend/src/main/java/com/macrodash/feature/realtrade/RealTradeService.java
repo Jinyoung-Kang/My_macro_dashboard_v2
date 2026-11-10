@@ -673,7 +673,7 @@ public class RealTradeService {
             BookInfo info = activeBook(current.sourceBook());
             if (!info.generation().equals(current.bookGeneration())) {
                 throw new RealTradeException(409, RealTradeJob.HALT_BOOK_CHANGED,
-                        "따라 하던 책이 리셋·재출발했습니다 — 끄고 다시 켜서 예상 목록을 확인하세요.");
+                        "따라 하던 계좌가 리셋·재출발했습니다 — 끄고 다시 켜서 예상 목록을 확인하세요.");
             }
         }
         Config saved = store.lockConfig(KR, locked -> {
@@ -749,14 +749,14 @@ public class RealTradeService {
         if (sourceBook != null && PaperMirrorService.FOLLOWABLE.contains(sourceBook)) {
             return sourceBook;
         }
-        throw new RealTradeException(400, "invalid-source-book", "따라 할 책은 kr_rules · kr_claude · kr_claude2 가운데 하나여야 합니다.");
+        throw new RealTradeException(400, "invalid-source-book", "따라 할 계좌는 kr_rules · kr_claude · kr_claude2 가운데 하나여야 합니다.");
     }
 
     /** 운용 중(ACTIVE)인 한국 책. */
     private BookInfo activeBook(String code) {
         Optional<BookInfo> info = paper.book(code);
         if (info.isEmpty() || !info.get().active() || !KR.equals(info.get().market())) {
-            throw new RealTradeException(400, RealTradeJob.HALT_BOOK_NOT_ACTIVE, "그 책이 운용 중이 아닙니다 — 모의 책을 출발시킨 뒤 켜세요.");
+            throw new RealTradeException(400, RealTradeJob.HALT_BOOK_NOT_ACTIVE, "그 모의 계좌가 운용 중이 아닙니다 — 모의 계좌를 출발시킨 뒤 켜세요.");
         }
         return info.get();
     }

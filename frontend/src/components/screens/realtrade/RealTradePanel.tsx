@@ -37,7 +37,7 @@ import { useRealTrade, type RealTradeContextValue } from "./RealTradeProvider";
 import { RealTradeEvents, RealTradeOrders } from "./RealTradeTables";
 import { RealTradeToggle } from "./RealTradeToggle";
 
-const TITLE = "실제 매매 — 모의 책 따라 하기";
+const TITLE = "실제 매매 — 모의 계좌 따라 하기";
 
 /**
  * 실제 매매 칸(ADR 0028, 명세 §8) — 모의매매(한국) 실제 계좌 탭 맨 위. 토스증권 실제 계좌의 원화 자산 전부가 고른 모의 한국 책을 따라 자동으로 사고팝니다.
@@ -77,7 +77,7 @@ function KoreaPanel({ rt }: { rt: RealTradeContextValue }) {
   return (
     <Card
       title={TITLE}
-      subtitle="토스증권 실제 계좌의 원화 자산 전부가 고른 모의 한국 책을 따라 자동으로 사고팝니다(모의 책 자체는 주문하지 않음)"
+      subtitle="토스증권 실제 계좌의 원화 자산 전부가 고른 모의 한국 계좌를 따라 자동으로 사고팝니다(모의 계좌 자체는 주문하지 않음)"
       source={REAL_TRADE_SOURCE}
       actions={
         <>
@@ -172,7 +172,7 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
           <StatusText tone={chip.tone}>{chip.label}</StatusText>
         </span>
         <span className="text-sm text-text-2">
-          따라 하는 책:{" "}
+          따라 하는 계좌:{" "}
           <span className="text-text">
             {status.sourceBook ? sourceBookLabel(status.sourceBook, status.sourceLabel) : "고르지 않음"}
           </span>
@@ -293,7 +293,7 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
 
       <p className="text-xs leading-relaxed text-text-3">
         켠 동안 토스증권 앱에서 국내 주식을 직접 사고팔지 마세요 — 앱에서 산 국내 주식은 다음 맞추기에서 팔리고, 원화를 넣으면 다음 맞추기에 투자됩니다.
-        모의 책이 장중 스탑으로 팔면 이 계좌도 그 시각부터 3분 안에 시장가로 팝니다(종가로 파는 스탑은 그날 종가 단일가에서, 개장 10분 전에는 팔지 않음). 텔레그램 알림은 건수·상태만 보냅니다.
+        모의 계좌가 장중 스탑으로 팔면 이 계좌도 그 시각부터 3분 안에 시장가로 팝니다(종가로 파는 스탑은 그날 종가 단일가에서, 개장 10분 전에는 팔지 않음). 텔레그램 알림은 건수·상태만 보냅니다.
       </p>
     </>
   );

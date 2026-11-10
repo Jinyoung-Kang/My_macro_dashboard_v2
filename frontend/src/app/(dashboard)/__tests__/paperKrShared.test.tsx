@@ -44,7 +44,7 @@ const FRAMEWORK = {
 };
 
 const KEYS = [
-  { key: "model", type: "string", min: null, max: null, affectsRules: false, market: null, description: "두 책 공용 모델", options: null },
+  { key: "model", type: "string", min: null, max: null, affectsRules: false, market: null, description: "두 시장 공용 모델", options: null },
   { key: "apiDailyCallCap", type: "integer", min: 1, max: 100, affectsRules: false, market: null, description: null },
   { key: "rulesMaxNames", type: "integer", min: 1, max: 30, affectsRules: true, market: "US", description: "미국 규칙 계좌 종목 수" },
   { key: "kr.rulesMaxNames", type: "integer", min: 1, max: 30, affectsRules: true, market: "KR", description: "한국 규칙 계좌 종목 수" },

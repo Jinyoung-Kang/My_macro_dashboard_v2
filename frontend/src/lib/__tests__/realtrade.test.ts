@@ -310,7 +310,7 @@ describe("서버 오류 코드", () => {
   });
 
   it("RT-CONTRACT-4·SEC-3: 서버 본문의 error(code 칸)는 정확히 비교 — 409 book-changed·invalid-state·not-ready는 버전 충돌이 아니다", () => {
-    expect(realTradeErrorCode(failure("따라 하던 책이 바뀌었습니다 — 끄고 다시 켜세요.", 409, { code: "book-changed" }))).toBe("book-changed");
+    expect(realTradeErrorCode(failure("따라 하던 계좌가 바뀌었습니다 — 끄고 다시 켜세요.", 409, { code: "book-changed" }))).toBe("book-changed");
     expect(realTradeErrorCode(failure("지금 상태에서는 할 수 없습니다.", 409, { code: "invalid-state" }))).toBe("invalid-state");
     expect(realTradeErrorCode(failure("준비 전입니다.", 409, { code: "not-ready" }))).toBe("not-ready");
     for (const code of ["book-changed", "invalid-state", "not-ready"]) {
@@ -395,7 +395,7 @@ describe("표기", () => {
     );
     expect(skippedText({ symbol: "000660", reason: "new-code" })).toBe("000660 — new-code");
     expect(skippedText("글자 하나")).toBe("글자 하나");
-    expect(skippedText({ symbol: "000660", reason: "pending-stop" })).toBe("000660 — 따라 하는 책의 오늘 대기 스탑 종목 — 매수 안 함(pending-stop)");
+    expect(skippedText({ symbol: "000660", reason: "pending-stop" })).toBe("000660 — 따라 하는 계좌의 오늘 대기 스탑 종목 — 매수 안 함(pending-stop)");
   });
 
   it("개장 10분 뒤 맞추기·장중 스탑 매도(ADR 0033) — 이름표·건수 줄·예상 목록의 맞추기 방식", () => {

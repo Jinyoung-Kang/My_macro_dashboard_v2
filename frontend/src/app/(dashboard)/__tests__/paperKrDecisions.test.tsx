@@ -232,7 +232,7 @@ describe("빈 상태(출발 전)", () => {
 
 const DORMANT = {
   available: true, market: "KR", currency: "KRW",
-  dormantReason: "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
+  dormantReason: "한국 계좌 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
   initialized: false, pendingBackfill: [], startDate: null, books: [], navSeries: { dates: [], books: {} }, quotes: null,
   selection: null, gate: null, claudeExposureSeries: [], frameworkBoundaries: [], limits: [], jobs: [],
 };

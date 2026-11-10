@@ -140,7 +140,7 @@ describe("자리와 읽기", () => {
   it("칸 내용 — 따라 하는 책·서버 스위치·운용 평가액·기준 대비 손익(부호·색)·손실 한도·오늘 창·최근 실제 주문·이벤트", async () => {
     renderKr();
     await inRegion().findByText("켜짐");
-    expect(inRegion().getByText(/따라 하는 책/).textContent).toContain("Claude 계좌2");
+    expect(inRegion().getByText(/따라 하는 계좌/).textContent).toContain("Claude 계좌2");
     expect(inRegion().getByText(/서버 스위치: 수집기 켜짐 · 백엔드 켜짐/)).toBeTruthy();
     const equity = inRegion().getByRole("group", { name: "운용 평가액" });
     expect(equity.textContent).toContain("9,500,000원");
@@ -690,7 +690,7 @@ describe("켜기 창", () => {
     expect((within(dialog).getByLabelText("손실 한도(%)") as HTMLInputElement).value).toBe("15");
     expect(within(dialog).getByText("30,000,000원")).toBeTruthy();   // 운용 평가액 상한
     expect(within(dialog).getByText("40건")).toBeTruthy();
-    expect(within(dialog).getByText("원화 자산 전부를 운용합니다 — 이 책에 없는 국내 주식은 다음 맞추기(보통 개장 10분 뒤 09:10, 시가 맞추기 날은 08:50)에서 팔립니다")).toBeTruthy();
+    expect(within(dialog).getByText("원화 자산 전부를 운용합니다 — 따라 하는 모의 계좌에 없는 국내 주식은 다음 맞추기(보통 개장 10분 뒤 09:10, 시가 맞추기 날은 08:50)에서 팔립니다")).toBeTruthy();
     expect(within(dialog).getByText("켠 동안 앱에서 국내 주식을 직접 사고팔지 마세요")).toBeTruthy();
     expect(within(dialog).getByText("모의와 달리 실제 돈이 움직입니다")).toBeTruthy();
     expect(within(dialog).getByText(/투자자 지시 거래소를 '통합'/)).toBeTruthy();
@@ -843,7 +843,7 @@ describe("멈춤 해제·설정 바꾸기", () => {
   it("RT-CONTRACT-4: 멈춤 해제가 409 book-changed면 '끄고 다시 켜서' 문구, invalid-state는 서버 문구 — 버전 충돌로 읽지 않아 상태를 다시 읽지 않는다", async () => {
     reads[STATUS_PATH] = () => Promise.resolve(status({ state: "HALTED", haltReason: "book-changed", version: 7 }));
     api.apiPost
-      .mockRejectedValueOnce(Object.assign(new Error("따라 하던 책이 리셋됐습니다."), { status: 409, code: "book-changed" }))
+      .mockRejectedValueOnce(Object.assign(new Error("따라 하던 계좌가 리셋됐습니다."), { status: 409, code: "book-changed" }))
       .mockRejectedValueOnce(Object.assign(new Error("끄는 중이라 풀 수 없습니다."), { status: 409, code: "invalid-state" }));
     renderKr();
     fireEvent.click(await inRegion().findByRole("button", { name: "멈춤 해제" }));

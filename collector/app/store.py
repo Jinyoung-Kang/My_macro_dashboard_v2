@@ -1416,7 +1416,7 @@ def missing_datasets() -> list[dict]:
         expected.append((catalog.SNAP_DART_FUNDAMENTALS, "국내 종목 재무 (DART)"))
     if all(settings.toss_credentials()):
         # 한국 책 관측치 — 토스 키가 있으면 첫 slow에 생깁니다(유니버스가 없어도 ETF 2는 받음). 없으면 토스가 막혔다는 뜻입니다.
-        expected.append((catalog.SNAP_KR_PAPER_QUOTES, "모의 매매 한국 책 관측치 (토스)"))
+        expected.append((catalog.SNAP_KR_PAPER_QUOTES, "모의 매매 한국 계좌 관측치 (토스)"))
 
     for sid in indicators.FRED_ALL_SERIES:
         expected.append((catalog.snap_fred_series(sid), f"FRED {sid}"))

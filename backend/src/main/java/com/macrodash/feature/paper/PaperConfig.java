@@ -41,7 +41,7 @@ public record PaperConfig(boolean enabled, LocalDate startDate, double initialCa
     /** 장부 금액 열(NUMERIC(18,4), V8)이 담는 정수 자리의 상한 — 이 이상은 저장할 수 없습니다. */
     private static final BigDecimal KR_CASH_LIMIT = BigDecimal.TEN.pow(14);
     /** 한국 출발일이 비었을 때 한국 초기화·출발이 남기는 사유. */
-    public static final String KR_START_MISSING = "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 "
+    public static final String KR_START_MISSING = "한국 계좌 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 "
             + "비어 있어 한국 초기화·출발을 하지 않습니다";
 
     public PaperConfig {

@@ -498,7 +498,7 @@ def task_dart_fundamentals() -> str:
         "unmapped": unmapped[:50],
     })
     return (f"{len(fetched)}/{len(targets)} 종목 ({_years_text(fetched, year)}, 호출 {budget.used}회)"
-            + (f" · 한국 책 범위 {kr_count} 먼저" if kr_count else "")
+            + (f" · 한국 계좌 범위 {kr_count} 먼저" if kr_count else "")
             + (f" · 저장본이 더 최신이라 유지 {len(kept_newer)}" if kept_newer else "")
             + (f" · DART 대상 아님 {len(unmapped)}" if unmapped else "") + _reason_suffix(reasons))
 

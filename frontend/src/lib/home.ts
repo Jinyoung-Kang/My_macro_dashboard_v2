@@ -320,7 +320,7 @@ export const PAPER_DISABLED_NOTE = "정기 작업 꺼짐(PAPER_ENABLED=false) �
  * 있습니다(서버 — §6 순서의 여덟째 줄).
  */
 export const PAPER_COMPARE_NOTE =
-  "미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다";
+  "미국·한국 계좌는 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다";
 
 /** 한국 탭의 계좌 행이 가는 화면 — 모의매매(한국) 개요. */
 export const PAPER_KR_HREF = paperMarketPath("KR");
@@ -427,7 +427,7 @@ export function paperHomeModel(
     message = presentText(overview.message) ?? "모의매매 장부를 아직 읽을 수 없습니다.";
   } else if (available && rows.length === 0) {
     message = dormant
-      ? `한국 책이 쉬고 있습니다 — ${dormant}`
+      ? `한국 계좌가 쉬고 있습니다 — ${dormant}`
       : korea
         ? "아직 한국 계좌가 없습니다 — 모의매매(한국) 화면에서 한국 초기화를 합니다."
         : "아직 계좌가 없습니다 — 모의매매 화면에서 초기화합니다.";

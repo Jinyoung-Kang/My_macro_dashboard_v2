@@ -5723,7 +5723,7 @@ export function noteExpiryHint(settingsBody: unknown, market: PaperMarketCode = 
   const days = numberOf(settingValueAt(settingsBody, "notesDefaultExpiryTradingDays"));
   // 한국 메모는 KRX 달력으로 셉니다(설정 키는 두 책 공용 — 사용자 결정 v6). 미국 문구는 예전 그대로.
   const unit = market === "KR" ? " KRX 거래일" : "거래일";
-  const shared = market === "KR" ? ", 두 책 공용" : "";
+  const shared = market === "KR" ? ", 두 시장 공용" : "";
   return days === null
     ? `비우면 기본 +3${unit}(기준일부터 — 설정 notesDefaultExpiryTradingDays의 기본값${shared})`
     : `비우면 기본 +${formatNumber(days, 0)}${unit}(기준일부터 — 설정 notesDefaultExpiryTradingDays${shared})`;
@@ -5737,7 +5737,7 @@ export function notesIntro(startDate: string | null | undefined, market: PaperMa
   if (market === "KR") {
     return "한국 시황 메모(MARKET)는 기준일~만료일 사이 한국 Claude 계좌 결정 패킷(섹션 11)에만 구분자로 감싼 자료로 실립니다 — 지시가 아니고, "
       + "메모의 숫자보다 패킷의 숫자가 우선합니다. 미국 메모와 따로라 이 목록은 한국 메모뿐입니다(미국 메모는 미국 화면의 메모 탭). 유효한 메모는 "
-      + "최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket — 두 책 공용)까지 싣습니다. 한국 결정은 KR 거래일 밤에 그날 세션 D를 기준 "
+      + "최신부터 합계 글자 수 상한(설정 notesMaxCharsInPacket — 두 시장 공용)까지 싣습니다. 한국 결정은 KR 거래일 밤에 그날 세션 D를 기준 "
       + `거래일로 보므로 기준일 ≤ D ≤ 만료일인 메모가 실립니다(${startDate ? `출발일 ${startDate} 밤의 ` : ""}출발 결정도 같은 규칙). 방법론 메모(INSIGHT)는 `
       + "패킷에 싣지 않고 프레임 제안에만 씁니다(프레임은 두 시장 공용). 한국 규칙 계좌는 메모를 읽지 않습니다.";
   }

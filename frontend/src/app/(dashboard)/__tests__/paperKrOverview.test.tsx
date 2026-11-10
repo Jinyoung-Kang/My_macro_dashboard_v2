@@ -70,7 +70,7 @@ const KR_BOOKS = [
 
 const KR_LIMITS = [
   "모의 매매입니다. 어떤 주문도 밖으로 나가지 않습니다.",
-  "미국·한국 책은 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다.",
+  "미국·한국 계좌는 출발일·비용 모형·체결 시점·스탑 집행·통화가 달라 수익률을 서로 비교하지 않습니다.",
 ];
 
 const KR_OVERVIEW = {
@@ -88,7 +88,7 @@ const KR_OVERVIEW = {
 
 const DORMANT = {
   available: true, market: "KR", currency: "KRW",
-  dormantReason: "한국 책 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
+  dormantReason: "한국 계좌 출발일(dashboard.paper.kr.start-date — .env PAPER_KR_START_DATE)이 비어 있어 한국 초기화·출발을 하지 않습니다",
   initialized: false, pendingBackfill: [], startDate: null, books: [], navSeries: { dates: [], books: {} }, quotes: null,
   selection: null, gate: null, claudeExposureSeries: [], frameworkBoundaries: [], limits: KR_LIMITS, jobs: [],
 };
@@ -138,7 +138,7 @@ describe("쉬는 한국", () => {
     reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
     render(<PaperPage market="KR" />);
 
-    expect(await screen.findByText(/한국 책이 쉬고 있습니다/)).toBeTruthy();
+    expect(await screen.findByText(/한국 계좌가 쉬고 있습니다/)).toBeTruthy();
     expect(screen.getByText(/PAPER_KR_START_DATE/)).toBeTruthy();
     expect(screen.getByText(/한국 계좌가 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("table", { name: "계좌 비교" })).toBeNull();
@@ -411,7 +411,7 @@ describe("출발 상태(초기화·출발 단추)", () => {
     expect(await screen.findByText(/한국 장부의 실패 기억을 지우고 같은 관측치를 다시 처리합니다/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "리스크 지금 실행" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/paper/run/risk?market=KR"));
-    expect(await screen.findByText("한국 책이 쉬고 있어 리스크 점검을 하지 않았습니다 — 한국 계좌가 없습니다")).toBeTruthy();
+    expect(await screen.findByText("한국 계좌가 쉬고 있어 리스크 점검을 하지 않았습니다 — 한국 계좌가 없습니다")).toBeTruthy();
   });
 });
 
@@ -489,7 +489,7 @@ describe("한국 수집 상태 카드(x4)", () => {
 
     expect(await screen.findByText("13회(하루 상한 20 − 정기 작업 몫 7)")).toBeTruthy();
     expect(screen.getByText(/오늘 호출이 수동 호출 문턱에 닿았습니다/)).toBeTruthy();
-    expect(screen.getByText(/하루 상한은 미국·한국 책이 함께 쓰고/)).toBeTruthy();
+    expect(screen.getByText(/하루 상한은 미국·한국 계좌가 함께 쓰고/)).toBeTruthy();
   });
 });
 

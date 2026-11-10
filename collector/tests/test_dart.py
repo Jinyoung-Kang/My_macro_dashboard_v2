@@ -385,7 +385,7 @@ def test_B8_예산이_모자라면_한국_범위부터_받는다(monkeypatch):
     saved = fake.snapshots[catalog.SNAP_DART_FUNDAMENTALS]
     assert set(saved["companies"]) == {"222220", "333330", "111110", "888880"}
     assert saved["universe"] == 5 and saved["krScope"] == 4
-    assert "한국 책 범위 4 먼저" in result and "호출 예산 소진" in result
+    assert "한국 계좌 범위 4 먼저" in result and "호출 예산 소진" in result
 
 
 def test_B8_두_상한의_합은_두_연도를_다_물어도_호출_예산_안():

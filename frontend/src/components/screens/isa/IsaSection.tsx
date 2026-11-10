@@ -410,7 +410,7 @@ function StartedBody({
     <>
       <Card
         title={account?.label || "ISA 계좌"}
-        subtitle={`따라 하는 책: ${account?.sourceLabel || account?.sourceBook || "규칙 계좌"} · ${accountStateLabel(account?.state)} · 시작 ${formatKst(account?.startedAt)}`}
+        subtitle={`따라 하는 계좌: ${account?.sourceLabel || account?.sourceBook || "규칙 계좌"} · ${accountStateLabel(account?.state)} · 시작 ${formatKst(account?.startedAt)}`}
         source={ISA_SOURCE}
         actions={<Freshness refreshError={refreshError} />}
       >
