@@ -113,6 +113,27 @@ def test_본문이_없는_최근_글만_글_페이지를_열고_실행당_상한
     assert left["body_status"] == "partial" and left["body"] == "Short teaser.", "못 연 글은 피드 요약으로 둡니다"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-388: _page_worthy가 정책 표의 아무 호스트나 글 페이지로 엽니다")
+def test_QA388_피드_항목의_링크가_그_블로그의_호스트가_아니면_글_페이지를_열지_않는다(store, example_host):
+    """
+    피드 항목의 링크가 정책 표의 **다른** 호스트(KRX 등)를 가리켜도 글 페이지로 열면, 그 호스트의 세션 쿠키가 붙은 요청이 나가고
+    응답이 이 블로그의 글로 저장됩니다. 글 페이지는 그 블로그 자신의 호스트(피드·사이트 주소의 호스트)일 때만 엽니다.
+    """
+    other = "https://data.krx.co.kr/contents/MDC/MAIN/main/index.cmd"
+    assert "data.krx.co.kr" in policy.POLICIES
+    when = format_datetime(NOW)
+    foreign = (f"<item><title>Elsewhere</title><link>{other}</link><pubDate>{when}</pubDate>"
+               f"<description><![CDATA[Short teaser.]]></description></item>")
+    fetch = FakeFetch({BLOG.feed: _feed(foreign, _item(2, content=None)),
+                       "https://blog.example.com/2026/11/post-2/?utm_source=rss": _page(2)})
+
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+    assert fetch.pages() == ["https://blog.example.com/2026/11/post-2/?utm_source=rss"]
+    row = store.info_item(info_text.item_id(other))
+    assert row["body_status"] == "partial" and row["meta"] == {}, "열지 않은 글은 피드 요약으로 두고 시도 횟수도 세지 않습니다"
+
+
 def test_본문을_받은_글은_다시_받지_않고_못_받은_글은_두_번까지만_연다(store, example_host):
     routes = {BLOG.feed: _feed(_item(1, content=None), _item(2, content=None))}
     routes["https://blog.example.com/2026/11/post-1/?utm_source=rss"] = _page(1)

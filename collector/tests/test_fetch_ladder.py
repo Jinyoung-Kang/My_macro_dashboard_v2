@@ -439,6 +439,105 @@ def test_프록시_인자를_넘기지_않는다(local, monkeypatch):
 
 
 # ==============================================================================
+# 8. 리다이렉트 (QA-388) — 계층 1은 따라가지 않고, 사다리가 정책 표 안의 https 목적지만 홉마다 보통 요청처럼 받습니다
+# ==============================================================================
+QA388 = pytest.mark.xfail(strict=True, reason="QA-388: 계층 1(curl_cffi 세션)이 리다이렉트를 검사 없이 따라갑니다")
+
+
+def _redirect(location: str, status: int = 302):
+    return (status, {"Location": location, "Content-Type": "text/html"}, b"")
+
+
+@pytest.fixture()
+def http_hops(monkeypatch):
+    """로컬 서버는 http라, 같은 호스트 안의 홉을 보려는 시험만 리다이렉트 목적지의 허용 scheme에 http를 더합니다(운영 값은 https뿐)."""
+    monkeypatch.setattr(ladder, "REDIRECT_SCHEMES", frozenset({"https", "http"}), raising=False)
+
+
+@QA388
+def test_QA388_정책_표_밖으로_가는_리다이렉트는_따라가지_않는다(local, http_hops):
+    # 정책 표에는 127.0.0.1만 있습니다 — 같은 서버를 가리키는 localhost는 표 밖의 호스트입니다(내부 주소로 돌리는 출처의 모양).
+    local.server.routes["/a"] = [_redirect(f"http://localhost:{local.server.port}/secret")]
+    local.server.routes["/secret"] = [(200, HTML, b"<html><body>internal only</body></html>")]
+
+    with pytest.raises(ladder.FetchFailed, match="정책 표 밖으로 리다이렉트 — 따라가지 않음: localhost"):
+        ladder.fetch(f"{local.server.base}/a")
+
+    assert local.server.hits == ["/a"], "표 밖의 목적지에는 요청이 나가지 않습니다"
+    assert state.closed(HOST) is None, "출처의 거부가 아니라 닫지 않습니다"
+
+
+@QA388
+def test_QA388_https가_아닌_목적지는_따라가지_않는다(local):
+    local.server.routes["/a"] = [_redirect("/b")]                       # 같은 호스트지만 http
+    local.server.routes["/b"] = [(200, HTML, PAGE)]
+
+    with pytest.raises(ladder.FetchFailed, match="https가 아닌 주소로 리다이렉트 — 따라가지 않음"):
+        ladder.fetch(f"{local.server.base}/a")
+
+    assert local.server.hits == ["/a"]
+
+
+@QA388
+def test_QA388_정책_표_안의_리다이렉트는_홉마다_보통_요청처럼_받는다(local, http_hops, monkeypatch):
+    monkeypatch.setitem(policy.POLICIES, HOST, policy.HostPolicy(HOST, (policy.TIER_IMPERSONATE,), daily_budget=3))
+    local.server.routes["/a"] = [_redirect("/b?page=2", status=301)]    # 상대 주소
+    local.server.routes["/b"] = [(200, HTML, PAGE)]
+
+    got = ladder.fetch(f"{local.server.base}/a", headers={"Referer": "https://www.example.org/"})
+
+    assert (got.status, got.body, got.url) == (200, PAGE, f"{local.server.base}/a")
+    assert got.final_url == f"{local.server.base}/b?page=2"
+    assert local.server.hits == ["/a", "/b"]
+    assert local.server.seen[-1]["referer"] == "https://www.example.org/", "같은 호스트 안의 홉은 요청 문맥을 그대로 싣습니다"
+    assert len(local.waits) == 1, "홉도 그 호스트의 요청 사이 지연을 지납니다"
+    assert local.store.fetch_host(HOST)["budget_used"] == 2, "홉도 하루 예산을 한 건 씁니다"
+
+
+@QA388
+def test_QA388_홉이_하루_예산을_넘기면_보내지_않는다(local, http_hops, monkeypatch):
+    monkeypatch.setitem(policy.POLICIES, HOST, policy.HostPolicy(HOST, (policy.TIER_IMPERSONATE,), daily_budget=1))
+    local.server.routes["/a"] = [_redirect("/b")]
+    local.server.routes["/b"] = [(200, HTML, PAGE)]
+
+    with pytest.raises(ladder.FetchSkipped, match=r"오늘 요청 예산\(1건\)"):
+        ladder.fetch(f"{local.server.base}/a")
+
+    assert local.server.hits == ["/a"]
+
+
+@QA388
+def test_QA388_리다이렉트는_세_번까지만_따라간다(local, http_hops):
+    for n in range(1, 5):
+        local.server.routes[f"/h{n}"] = [_redirect(f"/h{n + 1}")]
+    local.server.routes["/h5"] = [(200, HTML, PAGE)]
+
+    with pytest.raises(ladder.FetchFailed, match="리다이렉트가 3번을 넘음"):
+        ladder.fetch(f"{local.server.base}/h1")
+    assert local.server.hits == ["/h1", "/h2", "/h3", "/h4"]
+
+    local.server.hits.clear()
+    assert ladder.fetch(f"{local.server.base}/h2").body == PAGE, "세 번까지는 따라갑니다"
+    assert local.server.hits == ["/h2", "/h3", "/h4", "/h5"]
+
+
+@QA388
+def test_QA388_계층_2가_정책_표_밖의_주소에서_받은_답은_통과로_돌려주지_않는다(local, monkeypatch):
+    # 계층 2(실제 브라우저)는 리다이렉트를 스스로 따라갑니다. 받은 뒤의 최종 주소가 표 밖이면 본문을 버립니다(저장·전파를 막는 사후 방어).
+    local.server.routes["/page"] = [(403, HTML, b"<html>Forbidden</html>")]
+    inside = Reply(status=200, headers={"content-type": "text/html"}, body=b"<html>internal</html>",
+                   final_url="http://backend:8080/api/health")
+    calls = _with_browser(monkeypatch, [inside])
+
+    with pytest.raises(ladder.FetchRejected) as caught:
+        ladder.fetch(f"{local.server.base}/page")
+
+    assert caught.value.why == "HTTP 403(계층 impersonate)", "올라간 계층에서 받지 못했으니 아래 계층의 거부가 최종입니다"
+    assert len(calls) == 1
+    assert state.last_good_tier(HOST) is None, "표 밖에서 받은 답으로 그 계층을 '통과'로 기억하지 않습니다"
+
+
+# ==============================================================================
 # 7. 실행기
 # ==============================================================================
 @pytest.fixture()
