@@ -610,7 +610,7 @@ def get_bls_session() -> requests.Session:
 
 def get_api_session(name: str, adapter_class: type[HTTPAdapter] | None = None) -> requests.Session:
     """
-    증권사 Open API(토스·KIS·LS)용 세션 — 연결(TCP·TLS)만 재사용합니다.
+    증권사 Open API(토스·KIS)용 세션 — 연결(TCP·TLS)만 재사용합니다.
 
     예전에는 호출마다 requests.get/post로 새로 연결했습니다. 아래 두 가지는 그때와 같습니다.
       - 재시도하지 않습니다. 이 API들은 부르는 쪽이 401(토큰 재발급)·429(Retry-After 대기)·
@@ -619,7 +619,7 @@ def get_api_session(name: str, adapter_class: type[HTTPAdapter] | None = None) -
       - 쿠키를 저장하지 않습니다. 이전 응답의 쿠키가 다음 요청에 실리지 않습니다.
     인증 헤더는 요청마다 넘깁니다(세션에 두지 않음). 거부 래치·호스트 간격도 걸지 않습니다(같은 이유 — 부르는 쪽이 다룸).
 
-    :param name: 클라이언트 이름 (toss / kis / ls). 이름마다 세션이 하나입니다
+    :param name: 클라이언트 이름 (toss / kis — LS증권은 2026-11-11에 뺌). 이름마다 세션이 하나입니다
     :param adapter_class: ``HTTPAdapter`` 대신 붙일 하위 클래스(토스의 읽기 전용 가드 — ADR 0025). 이 잠금 안에서 붙이므로 그 세션을
         처음 받는 쪽부터 가드를 거칩니다. 이미 있는 세션의 어댑터가 그 클래스가 아니면 바꿔 붙이고, 주지 않은 호출은 붙어 있는
         하위 클래스를 떼지 않습니다

@@ -27,7 +27,7 @@
 | | | `paper_bars_us` | [모의] 미국 Claude 계좌2(체결 시점 실험) **단계 0 측정 · 단계 1 시각 지정 체결가** — Claude 계좌1·계좌2의 대기 주문 ∪ 최근 8일(달력일) 주문 ∪ 계좌2 보유(백엔드 표 `paper_orders`·`paper_positions`·`paper_books`를 읽기만 — ADR 0022) + 지연 기준 SPY의 정규장 1분봉(yfinance 배치 한 번, `prepost=False`·원시가 `auto_adjust=False`) → 스냅샷 `paper.bars.us`(종목·세션(최근 3, 뉴욕 날짜)마다 메뉴 창 09:30·10:00~15:00 ET 각 5분, 창마다 T 뒤 첫 거래 봉, 첫·마지막 봉, 검증용 일봉 시가, 저장본의 지연 `lagSeconds`). `paper_quotes` **바로 뒤**(같은 Yahoo 래치 — 1분봉이 429를 받아도 그 회차 관측치는 이미 받음). 범위가 비면 Yahoo를 부르지 않음. 기동 뒤 처음 받을 때까지 `period="5d"`(꺼졌던 세션 따라잡기), 그 뒤 `"1d"`. 아침 결정 패킷에는 쓰지 않음 — 읽는 곳은 단계 0-4의 실행 감사 작업, 단계 1-4의 장부 시각 지정 체결(2b·1분봉 기다림 — 시각 지정 주문이 있는 계좌만, 계좌2 정의는 1-5), 단계 2 장중 확인의 예상 상태(T 가격 — `CheckpointPacket`), 상태 응답의 계좌2 묶음(`claude2.bars` — 정규장일 때 받은 시각·지연). 단계 2: 계좌2의 장중 시장가(`MARKET` — 장중 확인 응답) 주문이 대기·최근 8일이면 그 기준 시각 T(생성 + 60초 뒤 첫 분 — `paper_bars.market_target`, 백엔드와 같은 식)를 그 세션에만 창·`firstTradeAfter` 키('HH:MM')로 더함(`store.timed_market_targets` — 읽기만, 없으면 저장본 그대로) — §5 'Claude 계좌2 1분봉' |
 | | | `us_calendar` | [모의] 발표·실적 일정 → 스냅샷 `calendar.us_events`. 거시: FRED `release/dates`(CPI 10·PCE 54·고용 50·GDP 53, 앞으로 45일) + FOMC 연간 일정표 상수. 실적: 같은 유니버스(ETF 제외)의 다음 실적일 — yfinance quoteSummary `calendarEvents`, 실행당 120종목(`US_CALENDAR_EARNINGS_BUDGET`)·종목당 24시간 캐시(§5 '모의 매매가 쓰는 저장본과 한계') |
 | | | `us_calendar_consensus` | [모의] 미국 지표 컨센서스 → 스냅샷 `calendar.us_consensus` — 수집기는 **저장만**(백엔드 미국 패킷이 설정 `calendar.consensus`를 켰을 때만 읽어 `1b_calendar` 거시 줄에 붙임 — 한국 책 출발일에 켬, [명세 §4-12·K22·E1b](specs/2026-10-26-v2-kr-paper-spec.md)). Nasdaq `api/calendar/economicevents`(비공식 참고, 키 없음, 브라우저 UA)를 미국 동부 오늘부터 18일 안의 평일마다 1회(약 14회 — 패킷 창 '기준일 + 10거래일'의 끝이 공휴일 둘이면 +18일) — 같은 동부 날짜에 받은 날은 다시 묻지 않음(서버 창이 동부 한 날짜 안). **`date=D`는 동부 D−1의 행을 줘서** 날짜 E는 `date=E+1`로 묻고(2026-10-26 네 날짜로 확인), 실업수당 청구가 목요일에 하나도 없으면 어긋남이 바뀐 것으로 보고 저장하지 않음. 미국 행만, 값은 숫자 + 단위(`1,728K` → 1728·K, 못 나누면 null·글자는 `…Text`), 중요도는 Nasdaq이 주지 않아 null. 날짜 하나의 실패는 직전 값을 `isStale`로 잇고, 출처 거부면 그 실행을 멈춤. TradingView 경제 캘린더는 이 PC에서 403이라 쓰지 않음(G11) |
-| | | `news_headlines` | [모의] 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각만 — entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
+| | | `news_headlines` | [모의] 사건 뉴스 RSS 8개 피드(인베스팅닷컴 넷·연준·BLS 둘·SEC) → `observations` `news_headline`(제목·링크·출처·시각과 피드가 준 요약 — 요약은 정보 수집 화면용이고 패킷은 읽지 않음, ADR 0037. entity = 정규화한 제목의 해시, obs_date = 발행 시각의 UTC 날짜, 7일 보관) + 수집 상태 `news.headlines.status`. 키 없음(§5 '사건 뉴스 RSS') |
 | | | `kr_news_headlines` | [모의] 한국 사건 뉴스 RSS 4개 피드(한국은행 보도자료 전체·재정경제부 보도·참고자료·국가데이터처 보도자료·연합뉴스 마켓+) → `observations` `kr_news_headline`(제목·링크·출처·시각만 — 미국 `news_headline`과 따로, obs_date = 발행 KST 날짜, 7일 보관(KST 날짜)) + 수집 상태 `kr.news.headlines.status`. 피드마다 시각 형식(`rfc822`·`yyyyMMddHHmm`·`date_only`)을 정해 원문을 직접 읽고(feedparser는 국가데이터처 시각을 버림), 날짜만 있는 항목(재정경제부)은 '알 수 있는 시각' `knownAt` = min(처음 받은 시각, 그 KST 날짜 다음 자정). 형식이 다른 시각은 건너뛰고 셈(`skippedBadTime`). 금융위원회 RSS는 점검 중(503)이라 뺌. 키 없음, 설명형 UA. 한국 Claude 계좌 패킷 `11b_events`가 읽음(E1a — 백엔드 `KrPacketBuilder`, 읽은 순간 뒤에 받은 제목은 쓰지 않고 창은 알 수 있는 시각·받은 시각 중 늦은 것으로 가름) — 연합뉴스는 이용 조건 위험('AI 학습 및 활용 금지' 문구)에도 사용자 결정(2026-10-27)으로 패킷 기본 피드에 남김, [명세 §7 G12](specs/2026-10-26-v2-kr-paper-spec.md) |
 | | | `volatility_history` | VIX·MOVE 시계열 |
 | | | `cot_history` | CFTC COT (주 1회 발표) |
@@ -107,7 +107,7 @@ yfinance 호출(`sector`·`us_calendar`·`earnings_surprise`·매크로 카드 `
 crumb·쿠키를 받지 못하면 요청마다 다시 받아, 출처가 끊긴 동안 한 회차에 수천 번을 보냈음. 5xx 응답은 닫힌 래치를 풀지 않고, 2xx·3xx·4xx
 응답이 셈을 비움). 미국 장중 스탑 감시(spark — 공용 세션)도 이 래치가 닫힌 동안은 묻지 않습니다. 래치·예산 때문에 보내지 않은 회차는
 '거부됨'이 아니라 '수집 결과 없음'(empty, 저장본 유지)으로 적히고 사유는 `Yahoo 응답 없음 — …`·`Yahoo 연결 실패 — …`·
-`태스크 시간 예산이 N초 남아 …`입니다. Yahoo를 늘 부르는 태스크 13개는 따로 둔 작업 스레드 6개에서 돌아, Yahoo가
+`태스크 시간 예산이 N초 남아 …`입니다. Yahoo를 늘 부르는 태스크 14개는 따로 둔 작업 스레드 6개에서 돌아, Yahoo가
 응답하지 않을 때 다른 태스크(한국 장부 입력 등)의 작업 스레드 8개를 차지하지 않습니다. 남는 것: yfinance의 crumb 잠금(프로세스에 하나)을
 기다리는 동안은 예산을 보지 않습니다 — 예산 없는 화면 요청이 잠금을 쥐면 crumb을 새로 받을 때 최대 약 60초.
 **같은 호스트로 가는 요청 사이에는 최소 간격 + 지터를 둡니다** — 공용·BLS 세션 0.2초, FRED 0.5초(지터 0~0.2초), SEC는 기존 토큰
@@ -128,8 +128,17 @@ crumb·쿠키를 받지 못하면 요청마다 다시 받아, 출처가 끊긴 �
 - **닫힘**: 거부 1회 30~60분, 2회 3~6시간, 3회 이상 12~24시간 그 출처를 닫고, 연속 5회면 **포기**합니다(운영자가 풀 때까지 다시 시도하지 않음).
   사람 확인은 서버의 브라우저 계층이 입력 없는 체크박스만 요청 한 번에 한 번 누르고(ADR 0035 결정 5), 퍼즐이 뜨거나 그래도 막히면 풀지 않고 12~24시간 닫습니다. 닫힌 동안의 실행은 네트워크에 나가지 않고 ✗ `거부됨`으로 적히며 직전 저장본은 그대로입니다.
   이 닫힘은 공용 세션의 5분 래치와 무관합니다 — 같은 호스트의 기존 수집(인베스팅닷컴 RSS)을 닫지 않습니다.
-- **닫힘·포기를 푸는 방법**(운영자): 그 호스트의 행을 지웁니다 —
-  `docker compose exec -T postgres psql -U "$DATABASE_USER" -d "$DATABASE_NAME" -c "DELETE FROM fetch_hosts WHERE host = '호스트'"`. 다음 실행부터 처음처럼 시도합니다.
+- **닫힘·포기를 푸는 방법**(운영자): 그 호스트의 행(`fetch_hosts`)과 그 출처 태스크의 일정 행(`fetch_schedule` — 키는 호스트가 아니라 태스크 이름, V21)을
+  함께 지웁니다. 호스트 행만 지우면 닫힐 때 미뤄 둔 다음 실행 시각(포기는 최대 7일 뒤 — `tasks/polite.py`)까지 다시 시도하지 않습니다. 일정 행을 지우면
+  다음 틱이 첫 실행 시각을 새로 정하고(기동 직후처럼 조금 뒤) 그때부터 처음처럼 시도합니다. 계정·DB 이름은 컨테이너 안의 값을 씁니다(서버 셸에는
+  `DATABASE_USER`·`DATABASE_NAME`이 없을 수 있음). 태스크 이름은 정보 수집 화면의 출처 상태나 §1의 표에 있습니다.
+
+  ```bash
+  docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  DELETE FROM fetch_hosts WHERE host = '호스트';
+  DELETE FROM fetch_schedule WHERE task = '태스크 이름';
+  SQL
+  ```
 - 받은 자료는 운영자 화면 전용이고 저장본에 `source`·`collectedAt`·`fetchTier`(통과한 계층)를 싣습니다. 예외는 정보 수집 글(블로그·waedge) — Claude 결정
   패킷의 수집 글 섹션 `11c_reading`에 제목과 앞부분만 참고 자료로 들어갑니다(모의매매 설정 `info.packet`·`kr.info.packet`, 기본 켬, 끄거나 결정 창에 글이 없으면
   패킷은 그 전과 바이트까지 같음 — [ADR 0036](adr/0036-info-hub-krx-packet.md)). 정보 수집 화면의 '정보(메커니즘)' 탭이 이 계층의 실제 값(간격·물러남·호스트 예산·다음 실행)을 보입니다.
@@ -233,7 +242,7 @@ KIS(장중 가집계) → Daum(API) → Naver(stock.naver.com API, 확정 값만
 앞쪽이 성공하면 뒤는 호출되지 않습니다. 화면은 **어느 출처가 실제로 성공했는지**
 항상 표시하고, 전부 실패하면 소스별 사유를 나열합니다.
 
-### 지금 받을 수 있는 투자주체 (2026-09 기준)
+### 지금 받을 수 있는 투자주체 (2026-11 기준)
 
 | 투자주체 | 상태 | 담당 소스 |
 |---|---|---|
@@ -252,8 +261,8 @@ pykrx(KRX 차단 응답)는 2026-11-11에 뺐습니다([ADR 0035](adr/0035-info-
 목록에서 지우면 "원래 있던 항목이 왜 없지?"가 되고, 고를 수 있게 두면
 "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
 
-고를 수 있는 목록은 `RadarService.options()`가 정합니다 — 26시간 안의 토스 저장본이 있으면 여섯 모두,
-없으면 외국인·기관만. 체인 순서도 같은 응답(`fallbackChain`)으로 내려 화면 문구가 어긋나지 않게 합니다.
+고를 수 있는 목록은 `RadarService.options()`가 정합니다 — 26시간 안의 토스 저장본이 있거나 KRX 확정 순위 저장본이 앞 7일 안에
+들어와 있으면(`krxRecent()` — 운영 서버가 거래일 저녁에 받음, ADR 0036) 여섯 모두, 둘 다 없으면 외국인·기관만. 체인 순서도 같은 응답(`fallbackChain`)으로 내려 화면 문구가 어긋나지 않게 합니다.
 
 ---
 

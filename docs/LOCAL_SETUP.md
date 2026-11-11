@@ -84,7 +84,7 @@ brew services start postgresql@16
 ```
 
 Python은 **3.11(3.11.5 이상) 또는 3.12**를 권합니다. 고정판 soupsieve 3.0.3이 3.11.5 이상을
-요구해, 3.11.0~3.11.4에서는 `-c constraints.txt` 설치가 실패합니다. 3.13에서는 `pandas`/`pykrx` 계열
+요구해, 3.11.0~3.11.4에서는 `-c constraints.txt` 설치가 실패합니다. 3.13에서는 `pandas` 계열
 휠이 아직 준비되지 않아 소스 빌드로 넘어가는 경우가 있습니다.
 (확인하지 못한 조합이라 단정하지는 않겠습니다 — 3.11에서 검증했습니다.)
 
@@ -276,7 +276,8 @@ make backup             # DB 백업 → backups/
 > 뿐 아니라, 같은 포트를 두 번 잡으려다 오히려 고장납니다. 실제로 겪는 오류들:
 >
 > - `Error: listen EADDRINUSE: address already in use :::3000`
->   → 이미 컨테이너가 3000을 쓰고 있습니다. 네이티브로 또 띄우지 마세요.
+>   → 3000은 네이티브 화면 개발 서버(`make dev-frontend`)의 포트입니다. 이 저장소의 컨테이너 화면은 3002라 겹치지 않으니, 같은 PC의 다른
+>   스택(v3 화면이 3000)이나 다른 개발 서버가 쓰고 있는 것입니다. 컨테이너가 떠 있다면 네이티브로 또 띄울 필요가 없습니다.
 > - `zsh: command not found: psql` / `command not found: mvn`
 >   → **설치하지 않아도 됩니다.** DB 셸은 `make db`, 백엔드 빌드는 컨테이너가 합니다.
 > - `ModuleNotFoundError: No module named 'apscheduler'`
@@ -347,8 +348,8 @@ npm --prefix frontend install
 make dev-frontend
 ```
 
-> 3000번이 이미 차 있으면(`EADDRINUSE`) 컨테이너 프런트가 떠 있는 것입니다.
-> `docker compose stop frontend` 로 그것만 내린 뒤 다시 실행하세요.
+> 3000번이 이미 차 있으면(`EADDRINUSE`) 같은 PC의 다른 스택(v3 화면이 3000)이나 다른 개발 서버가 쓰고 있는 것입니다 — 이 저장소의
+> 컨테이너 화면은 3002라 겹치지 않습니다. 그쪽을 내리거나 `npm --prefix frontend run dev -- -p <다른 포트>`로 띄우세요.
 
 ### 수집기를 백그라운드 상주로 (launchd)
 
@@ -465,7 +466,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 | 폴더 이름을 바꾼 뒤 로그인은 되는데 데이터가 비어 있음 | DB 볼륨 이름이 폴더 이름을 따라가 빈 볼륨이 새로 생겼습니다. 옛 이력은 옛 이름의 볼륨에 그대로 있습니다(`docker volume ls \| grep postgres-data`). `make down` 후 폴더 이름을 되돌리면 예전 데이터로 돌아갑니다. 새 이름으로 옮기는 방법은 §0에 있습니다 |
 | `Cannot connect to the Docker daemon` | Docker Desktop이 꺼져 있습니다. `open -a Docker` 후 30초 |
 | 포트 5432 충돌 | 맥에 PostgreSQL이 이미 돌고 있습니다. `.env`의 `DATABASE_PORT=5434`(이 저장소 기본)인지 보고 `make up` |
-| 포트 3000 충돌 | 다른 개발 서버가 씁니다. `.env`에서 `FRONTEND_PORT=3002`(이 저장소 기본). `FRONTEND_ORIGIN`을 `.env`에 직접 적어 두셨다면 `http://localhost:3001`로 함께 고치거나 그 줄을 지우세요(지우면 포트를 따라감) |
+| 포트 3000 충돌 | 다른 개발 서버가 씁니다. `.env`에서 `FRONTEND_PORT=3002`(이 저장소 기본). `FRONTEND_ORIGIN`을 `.env`에 직접 적어 두셨다면 `http://localhost:3002`로 함께 고치거나 그 줄을 지우세요(지우면 포트를 따라감) |
 | `Bind for 127.0.0.1:8082 failed: port is already allocated` | 8082를 **다른 컨테이너**가 잡고 있습니다(다른 프로젝트, IDE에서 띄운 Spring Boot 등 — 같은 맥의 v3는 8080이라 겹치지 않음). 나머지는 다 떠서 화면은 "백엔드 API에 연결하지 못했습니다"만 보입니다. `bash scripts/ports.sh check`가 누가 잡았는지 보여 줍니다 → `docker stop <이름>`, 또는 `.env`에서 `BACKEND_PORT=18080` 후 `make up`. 잡은 컨테이너가 없는데도 이 오류가 나면 Docker Desktop을 재시작하세요 |
 | 로그인은 되는데 화면이 계속 401 | `127.0.0.1`로 접속했는데 `FRONTEND_ORIGIN`은 `localhost`입니다(또는 반대). 브라우저는 둘을 **다른 오리진**으로 보고 쿠키를 막습니다. 주소를 하나로 통일하세요 |
 | 화면은 뜨는데 전부 "데이터 없음" | 아직 수집을 하지 않았습니다. `make collect` |
@@ -481,7 +482,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 | `command not found: psql` / `mvn` | Docker로 실행 중이라면 **설치할 필요가 없습니다.** DB 셸은 `make db`를 쓰세요 |
 | `No module named pytest` / `apscheduler` | conda·pyenv의 다른 파이썬이 잡혔습니다. `collector/.venv`를 만들고 `make dev-collector` / `make test-collector`를 쓰세요 (§6) |
 | `release version 21 not supported` | 로컬 Java가 17입니다. `brew install --cask temurin@21` 후 `export JAVA_HOME=$(/usr/libexec/java_home -v 21)` |
-| `EADDRINUSE :::3000` | 컨테이너 프런트가 이미 3000을 쓰고 있습니다. 네이티브로 또 띄우려면 `docker compose stop frontend` 먼저 |
+| `EADDRINUSE :::3000` | 네이티브 화면 개발 서버(3000)를 띄우려는데 다른 프로그램이 3000을 쓰고 있습니다(같은 PC의 v3 화면 등 — 이 저장소의 컨테이너 화면은 3002). 그쪽을 내리거나 다른 포트로 띄우세요 |
 | `make collect`는 성공인데 `make status`가 `0/12 시리즈`처럼 비어 있음 | 수집기는 돌았지만 **외부 소스가 데이터를 주지 않은 것**입니다. 최신 버전은 `(사유: …)`를 함께 출력합니다. `make status` 또는 `make doctor`로 사유를 보세요 |
 | 사유가 `CSV HTTP 403` | FRED 웹 CSV가 차단됐습니다. `.env`에 `FRED_API_KEY`를 넣으면 공식 API 경로로 우회합니다(무료 발급) |
 | 사유가 `yfinance(…)가 빈 응답을 받았습니다` | yfinance가 오래된 버전이면 Yahoo 응답 변경에 대응하지 못합니다. `make update` 후 `make up`으로 **이미지를 다시 빌드**하세요 |

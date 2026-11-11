@@ -280,13 +280,15 @@ public final class Datasets {
      */
     public static final String OBS_US_FUNDAMENTALS = "us.fundamentals";
     /**
-     * 모의 매매 사건 뉴스 헤드라인(RSS 제목·링크·출처·시각만, 2단계 B·D29). entity = 정규화한 제목의 sha256 앞 16자, obs_date = 발행
-     * 시각의 UTC 날짜, payload {@code {title, link, source, feed, publishedAt, fetchedAt}}(시각은 ISO UTC). 수집기만 쓰고(ADR 0008)
+     * 모의 매매 사건 뉴스 헤드라인(RSS 제목·링크·출처·시각과 피드가 준 요약 — 2단계 B·D29, 요약은 ADR 0037). entity = 정규화한 제목의 sha256 앞 16자,
+     * obs_date = 발행 시각의 UTC 날짜, payload {@code {title, link, source, feed, feeds, publishedAt, fetchedAt, summary}}(시각은 ISO UTC, {@code summary}는
+     * 피드가 줄 때만 — 정보 수집 화면용이고 패킷은 읽지 않음). 수집기만 쓰고(ADR 0008)
      * 7일이 지난 행은 수집기가 지웁니다. 거르기(종목·키워드)와 패킷 창은 백엔드가 합니다.
      */
     public static final String OBS_NEWS_HEADLINE = "news_headline";
     /**
-     * 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국
+     * 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각과 피드가 준 요약 — ADR 0037,
+     * payload의 {@code summary}는 줄 때만). 미국
      * {@link #OBS_NEWS_HEADLINE}과 따로입니다. entity = 같은 제목 해시, obs_date = 발행 KST 날짜, payload {@code {title, link, source, feed,
      * feeds, publishedAt, publishedDate, timePrecision, knownAt, fetchedAt}} — {@code publishedAt}은 날짜만 주는 피드(재정경제부)에서 null,
      * {@code timePrecision}은 second·minute·date. 창은 {@code knownAt}('알 수 있는 시각' — 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음

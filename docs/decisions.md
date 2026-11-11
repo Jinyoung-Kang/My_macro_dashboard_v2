@@ -60,6 +60,7 @@
 - 원인: pykrx 1.2.9(최신)와 upstream이 `pandas<3.0`을 요구해 설치가 풀리지 않음. numpy 2.5.x는 `requires_python>=3.12`인데 이미지(python:3.11-slim)와 CI는 3.11.
 - 선택: Python 3.11에서 쓸 수 있는 최신까지만 올림. pykrx는 빼지 않음 — 과거 날짜 수급 레이더 조회는 PyKrx 단계만 지원.
 - 다시 볼 조건: pandas 3은 pykrx가 상한을 풀 때(yfinance의 pandas 3 지원도 그때 확인), numpy 2.5는 Python 3.12 전환과 함께. pandas 2.3에서 FutureWarning을 오류로 바꾸고 `future.infer_string=True`를 켜도 수집기 테스트가 통과함.
+- (2026-11-12 덧붙임) pandas 3을 막던 pykrx는 2026-11-11에 뺐습니다(ADR 0035 — `requirements.txt`·`constraints.txt`). pandas 3의 '다시 볼 조건'은 충족됐고, 올릴지는 따로 정합니다(yfinance의 pandas 3 지원 확인이 먼저 — 5차 개선 계획 D-9에서 이번 회차는 올리지 않음). numpy 2.5의 조건(Python 3.12)은 그대로입니다.
 
 ## 2026-10-18 · Spring Boot 4.1.2 전까지 BOM의 Jackson·Tomcat 판을 덮어씀
 

@@ -185,11 +185,13 @@ TS_KR_CLOSE_ADJ = "kr_close_adj"
 # 모의 매매 미국 종목 재무(SEC XBRL Company Facts, 명세 D28). entity = 티커, obs_date = 공시일(filed) —
 # payload {"cik": [...], "facts": [...]}는 그날 처음 낸(또는 값이 바뀐) 사실 묶음. 백엔드는 obs_date ≤ 기준일만 읽습니다.
 OBS_US_FUNDAMENTALS = "us.fundamentals"
-# 모의 매매 사건 뉴스 헤드라인(RSS 제목·링크·출처·시각만, 2단계 B·D29). entity = 정규화한 제목(공백 하나로·앞뒤 공백 제거·casefold)의
-# sha256 앞 16자, obs_date = 발행 시각의 UTC 날짜, payload {title, link, source, feed, publishedAt, fetchedAt}.
+# 모의 매매 사건 뉴스 헤드라인(RSS 제목·링크·출처·시각과 피드가 준 요약 — 2단계 B·D29, 요약은 ADR 0037). entity = 정규화한 제목(공백 하나로·
+# 앞뒤 공백 제거·casefold)의 sha256 앞 16자, obs_date = 발행 시각의 UTC 날짜, payload {title, link, source, feed, feeds, publishedAt, fetchedAt,
+# summary(피드가 줄 때만 — 정보 수집 화면용, 패킷은 읽지 않음)}.
 # 같은 제목은 7일 안에 다시 넣지 않고(날짜가 달라도), 7일이 지난 행은 태스크가 지웁니다. 거르기·패킷 창은 백엔드가 합니다.
 OBS_NEWS_HEADLINE = "news_headline"
-# 모의 매매 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각만). 미국 news_headline과
+# 모의 매매 한국 책 사건 헤드라인(v2 2단계 B9·K21 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+ RSS 제목·링크·시각과 피드가 준 요약 — ADR 0037,
+# payload에 summary가 줄 때만 더해짐). 미국 news_headline과
 # 따로입니다. entity = news_headline과 같은 제목 해시, obs_date = 발행 KST 날짜, payload {title, link, source, feed, feeds, publishedAt(날짜만 주는
 # 피드는 null), publishedDate, timePrecision(second·minute·date), knownAt, fetchedAt}. knownAt = '알 수 있는 시각' — 시각이 있으면 발행 시각,
 # 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음 자정)(명세 §4-11, 룩어헤드 없음). 7일이 지난 행은 태스크가 지웁니다.

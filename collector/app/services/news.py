@@ -5,8 +5,9 @@ app/services/news.py
 이 모듈은 "받아서 읽는다"까지만 합니다. 기준일 창(결정 시각 직전 24시간), 보유·후보 종목·키워드 거르기, 하루 상한은 백엔드가
 저장본을 읽어 합니다(ADR 0008 — 계좌 보유는 백엔드 테이블이라 수집기는 모릅니다). 규칙 계좌·검증기는 읽지 않습니다(D35).
 
-[출처 — RSS만, 제목·링크·출처·시각만(D29)]
-단계 0(2026-10-25)에 고정했습니다. HTML 페이지는 받지 않고, 본문·요약(description)은 저장하지 않습니다.
+[출처 — RSS만, 제목·링크·출처·시각과 피드가 준 요약(D29, 요약은 ADR 0037)]
+단계 0(2026-10-25)에 고정했습니다. HTML 페이지는 받지 않고 본문은 저장하지 않습니다. 피드가 준 요약(description·summary·content)은
+2026-11-11(ADR 0037)부터 글자만 남겨 저장합니다 — 정보 수집 화면의 팝업용이고 패킷은 읽지 않습니다(패킷에는 여전히 제목·출처·시각만).
   - 인베스팅닷컴 ``news_25``(주식)·``news_95``(경제 지표)·``news_14``(경제) — 피드당 최근 10항목, 시각은 시간대 없이 UTC.
     ``news.rss``(전체)는 자동 생성 내부자 거래 항목이 대부분이라 뺐습니다.
   - 연준 ``press_monetary.xml`` — ``press_all``은 제재·인가 공지가 많아 뺐습니다.
@@ -88,7 +89,7 @@ FEEDS: tuple[Feed, ...] = (
 
 FEED_KEYS: tuple[str, ...] = tuple(feed.key for feed in FEEDS)
 
-SOURCE_NOTE = ("RSS 제목·링크·출처·시각만 — Investing.com news_25·news_95·news_14, 연준 press_monetary, BLS cpi·empsit(Atom), "
+SOURCE_NOTE = ("RSS 제목·링크·출처·시각과 피드가 준 요약 — Investing.com news_25·news_95·news_14, 연준 press_monetary, BLS cpi·empsit(Atom), "
                "SEC pressreleases. 야후 파이낸스는 robots.txt가 막아 제외")
 
 # 피드 시각 형식(Feed.time_format) — 모듈 설명 '한국 피드'.
@@ -115,7 +116,7 @@ KR_FEEDS: tuple[Feed, ...] = (
 
 KR_FEED_KEYS: tuple[str, ...] = tuple(feed.key for feed in KR_FEEDS)
 
-KR_SOURCE_NOTE = ("RSS 제목·링크·출처·시각만 — 한국은행 보도자료(전체), 재정경제부 보도·참고자료, 국가데이터처 보도자료, "
+KR_SOURCE_NOTE = ("RSS 제목·링크·출처·시각과 피드가 준 요약 — 한국은행 보도자료(전체), 재정경제부 보도·참고자료, 국가데이터처 보도자료, "
                   "연합뉴스 마켓+. 금융위원회 RSS는 점검 중(503)이라 제외")
 
 # 요청 하나의 (연결, 읽기) 대기(초). 피드는 수 KB라 넉넉합니다.

@@ -81,7 +81,7 @@ open http://localhost:3002
 한 번 받으세요.
 
 ```bash
-make collect-all    # 전체 수집 (fast + slow + weekly, 수 분 소요)
+make collect-all    # 전체 수집 (fast + slow + weekly, 13F 포함 — 10분 이상)
 make status         # 무엇이 들어왔는지 확인
 ```
 
@@ -370,9 +370,10 @@ bash scripts/vultr/firewall-pc-ip.sh       # PC 공인 IP가 바뀌었을 때 �
 ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 안에서 bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 ```
 
-- 서버 `.env`는 로컬 `.env`에서 포트 네 줄·`COOKIE_SECURE`·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·`AWS_INSTANCE_ID`·`VULTR_*`·`TAILSCALE_*`·`TAILNET_DOMAIN`·`TOSS_ACCOUNT_ENABLED`·`TOSS_TRADING_*`·`REAL_TRADE_ENABLED`를 빼고
-  `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`(Tailscale 주소)·`PAPER_KR_START_DATE`(한국 출발일)·`TAILNET_OWNER_LOGIN`(그 Tailscale 사용자는 로그인 없이 운영자 —
-  [ADR 0023](docs/adr/0023-vultr-deployment.md) 결정 10, 비면 로그인 화면)·`TOSS_ACCOUNT_ENABLED`(켤 때만 `true` — 토스 실제 계좌 읽기 전용 조회, [ADR 0025](docs/adr/0025-toss-real-account-readonly.md))·`BROWSER_FETCH_URL`·`BROWSER_FETCH_TOKEN`(켤 때만 — 브라우저 컨테이너, [ADR 0026](docs/adr/0026-polite-fetch-layers.md))·`TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`·한도 네 줄(켤 때만 — 실제 매매, [ADR 0028](docs/adr/0028-real-trade-mirror.md), 값은 켜기 전에 사용자 확인)을 더한 것입니다([.env.vultr.example](.env.vultr.example)).
+- 서버 `.env`는 로컬 `.env`에서 옮기는 줄에 서버에만 두는 줄을 더한 것입니다. 빼는 이름·서버 전용 이름의 목록과 전달 명령은
+  [docs/DEVELOPMENT.md §7 '서버 .env 전달'](docs/DEVELOPMENT.md#7-vultr-서버)과 [.env.vultr.example](.env.vultr.example)에 있습니다(목록을 여기에 다시
+  적지 않습니다 — 로컬의 포트 네 줄·`PAPER_ENABLED`·`LOCAL_NO_LOGIN` 등은 옮기지 않고, 토스 키·텔레그램·Tailscale 신원·실제 매매 스위치와 한도·
+  브라우저 비밀·`POLITE_FETCH_ENABLED` 같은 서버 전용 줄은 PC를 거치지 않고 서버의 지금 `.env`에서 그대로 이어 붙입니다).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
 - DB는 매일 08:00 KST(미국 결정 뒤 — 2026-11-07 배포 전까지는 06:45)와 일요일 23:00 KST에 S3 백업 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron, 60일 보관).
 - 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-vultr-서버)에 있습니다. 실제 매매를 켜는 절차·켜기 전 점검표·**비상 끄기 순서**도 같은 절('실제 매매 켜기')입니다.
@@ -412,7 +413,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | 증상 | 해결 |
 |---|---|
 | AI 리포트가 `N초 안에 응답하지 않았습니다` | `자동 탐색`을 고르거나 `AI_TIMEOUT_SECONDS`를 늘리세요 |
-| 복사 버튼이 안 먹음 | 다른 기기에서 `http://192.168.x.x:3000`으로 열면 브라우저가 클립보드를 막습니다. 화면이 사유를 표시합니다 |
+| 복사 버튼이 안 먹음 | 브라우저는 `https`나 `localhost`가 아닌 주소에서 클립보드를 막습니다. 이 저장소의 화면은 이 PC의 `localhost`(다른 기기에서는 열리지 않음 — 포트가 모두 127.0.0.1)와 서버의 Tailscale `https` 주소로만 열립니다. 막히면 화면이 사유를 표시합니다 |
 | KRX 선물이 "추정치" | `KRX_API_KEY` 미설정. KODEX 200 기반 폴백입니다 |
 | 수급 레이더에 "누적 이력" 경고 | 외부 소스가 모두 실패해 저장된 이력을 보는 중입니다. **날짜**를 확인하세요 |
 | 교차 검증이 "확인 못 함"만 나옴 | 시간 조건입니다. 시세 대조는 장 마감 후, 수급 대조는 정규장 중에만 가능합니다. 토스 3항목은 토스 키가 있어야 하고, 원/달러는 매크로 화면 저장본이 1시간 이내여야 합니다 |
@@ -482,7 +483,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | DevOps | Docker Compose · GitHub Actions · Vultr(서울 vhf-2c-4gb) · Tailscale · AWS S3(백업) · Caddy | 네 프로세스를 한 명령으로, 세 언어 테스트를 매 푸시마다. 운영본은 공개 TCP 포트 없이 Tailscale로만 여는 서버 한 대, 24시간([ADR 0023](docs/adr/0023-vultr-deployment.md)) |
 
 **의도적으로 쓰지 않은 것** — Kafka/CDC(하루 수천 건 규모라 브로커가 처리할
-트래픽이 없음), BigQuery/ClickHouse(전체 수십 MB), 네이티브 앱(같은 기능을 두 벌
+트래픽이 없음), BigQuery/ClickHouse(전체 수백 MB — 2026-11 덤프 약 480MB), 네이티브 앱(같은 기능을 두 벌
 유지해야 함), 쿠버네티스(1인용 로컬 대시보드). 필요해지면 붙일 수 있도록 경계는
 열어 두었습니다.
 
