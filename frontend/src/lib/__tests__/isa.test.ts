@@ -289,6 +289,16 @@ describe("안내 글", () => {
     expect(NEGATIVE_CASH_TEXT).toContain("음수");
   });
 
+  // QA-381: 현금이 음수인 동안 매매 지시를 만들지 않는다(ADR 0034 결정 5 개정). 수정 전 경고는 '음수인 동안 다음 지시의 매수가 줄어듭니다'였고(실제로는 책 종목 매도
+  // 지시까지 나왔다), 못 만듦 사유 cash-negative는 중립 문구로 떨어졌다(재현 커밋에서는 it.fails).
+  it.fails("QA-381 음수 현금 경고와 못 만듦 사유 — 음수인 동안 매매 지시를 만들지 않고 장중 스탑 지시는 그대로라고 알림", () => {
+    expect(NEGATIVE_CASH_TEXT).toContain("음수인 동안 다음 매매 지시를 만들지 않습니다");
+    expect(NEGATIVE_CASH_TEXT).toContain("장중 스탑");
+    expect(NEGATIVE_CASH_TEXT).not.toContain("매수가 줄어");
+    expect(unavailableText("cash-negative")).toMatch(/^현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다/);
+    expect(unavailableText("cash-negative")).toContain("잔고");
+  });
+
   it("스탑 지시 이름표·건너뜀 머리·매도 창", () => {
     expect(stopTimingLabel("MARKET")).toBe("장중 시장가");
     expect(stopTimingLabel("NEXT_CLOSE")).toBe("종가 단일가 시장가");

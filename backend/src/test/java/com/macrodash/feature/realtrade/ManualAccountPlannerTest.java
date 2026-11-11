@@ -2,6 +2,7 @@ package com.macrodash.feature.realtrade;
 
 import com.macrodash.feature.realtrade.ManualAccountPlanner.Draft;
 import com.macrodash.feature.realtrade.ManualAccountPlanner.Result;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -109,5 +110,22 @@ class ManualAccountPlannerTest {
 
         Result trim = plan("0", Map.of(A, d("100")), Map.of(A, 50.0), Map.of(A, 10_000.0), Map.of());
         assertThat(lines(trim)).containsExactly("SELL " + A + " 50");
+    }
+
+    // QA-381: 평가액 = 현금 + 보유라 음수 현금만큼 목표가 줄어 책에 있는 종목까지 매도 지시가 나왔고, 평가액이 0 이하이면 전 종목 전량 매도였다(수정 전 실패:
+    // 'Expecting an empty Optional but was containing value: Result[drafts=[Draft[symbol=005930, side=SELL, quantity=40, …').
+    @Test
+    @Disabled("QA-381: 음수 현금으로 줄어든 평가액에 맞춰 매도 지시를 계산함 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 현금이 음수면 지시를 계산하지 않음 — 줄어든 평가액으로 책 종목을 팔라고 하지 않고, 평가액이 0 이하여도 전량 매도를 만들지 않음(가격 모름과 구분되게 missing은 빔)")
+    void negativeCashMakesNoPlan() {
+        List<String> missing = new ArrayList<>();
+        // 보유 A 50주(500,000) + 현금 −300,000 = 평가액 200,000 — 수정 전: A 목표 10주라 40주 매도 지시
+        assertThat(ManualAccountPlanner.plan(d("-300000"), Map.of(A, d("50")), Map.of(A, 50.0), Map.of(A, 10_000.0), Map.of(), CASH_LIKE, missing))
+                .isEmpty();
+        // 평가액 −100,000(총 잔고 자릿수 실수) — 수정 전: 목표 수량이 모두 0이라 A·B 전량 매도 지시
+        assertThat(ManualAccountPlanner.plan(d("-900000"), Map.of(A, d("50"), B, d("15")), Map.of(A, 50.0, B, 30.0),
+                Map.of(A, 10_000.0, B, 20_000.0), Map.of(), CASH_LIKE, missing)).isEmpty();
+        assertThat(ManualAccountPlanner.plan(d("-0.01"), Map.of(), Map.of(A, 50.0), Map.of(A, 10_000.0), Map.of(), CASH_LIKE, missing)).isEmpty();
+        assertThat(missing).as("기준가를 모르는 보유는 없음 — 사유는 호출하는 쪽이 현금으로 가림").isEmpty();
     }
 }

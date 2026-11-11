@@ -308,6 +308,25 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
     expect(await inRegion().findByText("지시를 만든 뒤 잔고가 바뀌었습니다 — 수량을 다시 확인하세요.")).toBeTruthy();
   });
 
+  // QA-381: 현금이 음수라 다음 세션 지시를 만들지 않았으면(응답 waiting.reason = cash-negative) 지시 카드에 그 사유를 보인다. 수정 전에는 요약 칸의 안내 목록에만
+  // 있었고 음수 현금 경고는 '매수가 줄어듭니다'였다(재현 커밋에서는 it.fails).
+  it.fails("QA-381 현금이 음수라 지시를 만들지 않으면 지시 카드에 사유(세션·잔고 확인), 개장 뒤 못 만듦도 같은 사유 — 다른 대기 사유는 카드에 띄우지 않음", async () => {
+    const negative = { ...started().summary, cash: -50_000, totalAsset: 3_850_000 };
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, waiting: { session: "2026-11-10", reason: "decision-pending" } }));
+    renderIsa();
+    expect(await inRegion().findByText(/현금이 음수입니다/)).toBeTruthy();
+    expect(inRegion().queryByText(/매매 지시를 만들지 않았습니다/)).toBeNull();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, waiting: { session: "2026-11-10", reason: "cash-negative" } }));
+    renderIsa();
+    expect(await inRegion().findByText(/^11\/10\(화\) 매매 지시를 만들지 않았습니다 — 현금이 음수입니다/)).toBeTruthy();
+    expect(inRegion().getByText(/음수인 동안 다음 매매 지시를 만들지 않습니다/)).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: { session: "2026-11-10", status: "UNAVAILABLE", items: [], reason: "cash-negative" } }));
+    renderIsa();
+    expect(await inRegion().findByText(/^현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다/)).toBeTruthy();
+  });
+
   it("잔고 표 — 첫 열 고치기·지우기, 종목·수량·평균 매입가·매입 금액·현재가·평가액·평가손익·손익 %·비중·수수료·세금, 가격 모르면 —", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
