@@ -2,7 +2,7 @@
 tests/test_radar_chain.py
 수급 레이더 폴백 체인 회귀 테스트.
 
-체인: KIS(장중) → Daum → Naver → LS → 토스(공식) → PyKrx → 누적 이력
+체인: KIS(장중) → Daum → Naver → 토스(공식) → 누적 이력 (PyKrx·LS는 2026-11-11에 뺌 — ADR 0035)
 외부 네트워크를 쓰지 않습니다(각 단계를 대체합니다).
 """
 from __future__ import annotations
@@ -23,9 +23,7 @@ def silence_sources(monkeypatch):
     monkeypatch.setattr(radar.kis, "fetch_deal_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "fetch_daum_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "fetch_naver_ranking", lambda *a, **k: [])
-    monkeypatch.setattr(radar.ls, "fetch_deal_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "fetch_toss_ranking", lambda *a, **k: [])
-    monkeypatch.setattr(radar, "fetch_pykrx_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "read_from_history", lambda *a, **k: None)
 
 
@@ -73,17 +71,6 @@ def test_kis_is_skipped_outside_regular_session(monkeypatch):
     assert result["sourceKind"] == "daum"
 
 
-def test_ls_runs_only_after_kis_daum_naver_failed(monkeypatch):
-    monkeypatch.setattr(radar, "is_regular_session", lambda now=None: True)
-    monkeypatch.setattr(
-        radar.ls, "fetch_deal_ranking", lambda *a, **k: _rows("LS 증권사 API")
-    )
-
-    result = radar.collect_radar_ranking(datetime.now(KST).date())
-
-    assert result["sourceKind"] == "ls"
-
-
 def test_history_fallback_is_marked_and_dated(monkeypatch):
     """
     외부 소스가 전멸하면 수집기가 쌓아 둔 이력으로 대체하되, 화면이
@@ -120,7 +107,7 @@ def test_past_date_skips_current_only_sources(monkeypatch):
     이들을 부르면 '오늘 값'을 과거 날짜 데이터로 착각하게 됩니다.
     """
     monkeypatch.setattr(radar, "is_regular_session", lambda now=None: True)
-    called = {"daum": 0, "naver": 0, "pykrx": 0}
+    called = {"daum": 0, "naver": 0, "toss": 0}
 
     def daum(*args, **kwargs):
         called["daum"] += 1
@@ -130,20 +117,23 @@ def test_past_date_skips_current_only_sources(monkeypatch):
         called["naver"] += 1
         return []
 
-    def pykrx(*args, **kwargs):
-        called["pykrx"] += 1
-        return _rows("PyKrx")
+    def toss(*args, **kwargs):
+        called["toss"] += 1
+        return []
 
     monkeypatch.setattr(radar, "fetch_daum_ranking", daum)
     monkeypatch.setattr(radar, "fetch_naver_ranking", naver)
-    monkeypatch.setattr(radar, "fetch_pykrx_ranking", pykrx)
+    monkeypatch.setattr(radar, "fetch_toss_ranking", toss)
+    monkeypatch.setattr(
+        radar, "read_from_history",
+        lambda *a, **k: {"source": "누적 이력", "sourceKind": "history", "isHistorical": True,
+                         "historyDate": "2020-01-06", "rows": _rows("누적 이력")},
+    )
 
     result = radar.collect_radar_ranking(date(2020, 1, 6))    # 과거 평일
 
-    assert called["daum"] == 0
-    assert called["naver"] == 0
-    assert called["pykrx"] >= 1
-    assert result["sourceKind"] == "pykrx"
+    assert called == {"daum": 0, "naver": 0, "toss": 0}
+    assert result["sourceKind"] == "history", "과거 날짜는 누적 이력만 봅니다(날짜를 지정해 받는 외부 출처 없음)"
 
 
 def test_latest_completed_session_handles_weekend():
@@ -194,8 +184,7 @@ def test_소스가_모두_없는_조합은_이유를_돌려준다():
     reasons = radar.diagnose_sources("개인")
 
     assert any("Daum" in r and "개인" in r for r in reasons)
-    assert any("LS" in r for r in reasons)
-    assert any("pykrx" in r.lower() or "KRX" in r for r in reasons)
+    assert not any("LS" in r or "pykrx" in r.lower() for r in reasons), "뺀 출처는 사유에 나오지 않습니다"
 
 
 def test_조사가_받침에_맞게_붙는다():
@@ -206,30 +195,25 @@ def test_조사가_받침에_맞게_붙는다():
     assert radar._object_particle("") == "를"
 
 
-def test_toss_runs_after_ls_and_before_pykrx(monkeypatch):
+def test_toss_runs_after_naver(monkeypatch):
     monkeypatch.setattr(radar, "is_regular_session", lambda now=None: False)
     order: list[str] = []
 
-    def ls_call(*args, **kwargs):
-        order.append("ls")
+    def naver_call(*args, **kwargs):
+        order.append("naver")
         return []
 
     def toss_call(*args, **kwargs):
         order.append("toss")
         return _rows("토스증권 공식 — 거래대금 상위 100종목 중 순위")
 
-    def pykrx_call(*args, **kwargs):
-        order.append("pykrx")
-        return _rows("PyKrx")
-
-    monkeypatch.setattr(radar.ls, "fetch_deal_ranking", ls_call)
+    monkeypatch.setattr(radar, "fetch_naver_ranking", naver_call)
     monkeypatch.setattr(radar, "fetch_toss_ranking", toss_call)
-    monkeypatch.setattr(radar, "fetch_pykrx_ranking", pykrx_call)
 
     result = radar.collect_radar_ranking(datetime.now(KST).date(), investor="연기금")
 
     assert result["sourceKind"] == "toss"
-    assert order == ["ls", "toss"], "토스가 성공하면 PyKrx는 부르지 않습니다"
+    assert order == ["naver", "toss"]
 
 
 def test_history_fallback_receives_the_requested_interval(monkeypatch):

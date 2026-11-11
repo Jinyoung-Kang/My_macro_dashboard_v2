@@ -3,7 +3,7 @@ tests/test_log_noise.py
 라이브러리가 만든 로그 잡음이 실제 오류를 덮지 않는지 고정합니다.
 
 [실제로 겪은 일]
-pykrx는 내부에서 이렇게 찍습니다.
+예전 의존성 pykrx(2026-11-11 제거)는 내부에서 이렇게 찍었습니다. 다른 라이브러리도 같은 실수를 할 수 있어 필터는 남깁니다.
 
     logging.info(args, kwargs)      # pykrx/website/comm/util.py
 
@@ -28,13 +28,12 @@ from app import logredact
 def captured(caplog):
     caplog.set_level(logging.DEBUG)
     caplog.handler.addFilter(logredact.SafeFormatFilter())
-    caplog.handler.addFilter(logredact.LibraryChatterFilter())
     caplog.handler.addFilter(logredact.RedactingFilter())
     return caplog
 
 
 def test_형식이_깨진_로그가_traceback으로_번지지_않는다(captured):
-    # pykrx가 하는 것과 같은 호출입니다.
+    # 예전 pykrx가 하던 것과 같은 호출입니다.
     logging.getLogger("test.broken").warning(
         ("20260918", "20260918", "KOSPI", "외국인"), {}
     )
@@ -63,28 +62,9 @@ def test_형식이_깨져도_비밀값은_가려진다(captured):
     assert "***redacted***" in captured.text
 
 
-def test_pykrx의_INFO_잡음은_버린다(captured):
-    record = logging.LogRecord(
-        name="root", level=logging.INFO,
-        pathname="/usr/local/lib/python3.11/site-packages/pykrx/website/comm/util.py",
-        lineno=19, msg="Expecting value: line 1 column 1 (char 0)", args=(), exc_info=None,
-    )
-    assert logredact.LibraryChatterFilter().filter(record) is False
-
-
-def test_pykrx의_경고는_남긴다(captured):
-    """INFO 잡음만 걷어냅니다. 경고·오류까지 버리면 진짜 장애를 놓칩니다."""
-    record = logging.LogRecord(
-        name="root", level=logging.WARNING,
-        pathname="/usr/local/lib/python3.11/site-packages/pykrx/website/comm/util.py",
-        lineno=19, msg="무언가 잘못됐습니다", args=(), exc_info=None,
-    )
-    assert logredact.LibraryChatterFilter().filter(record) is True
-
-
 def test_우리_코드의_INFO는_남긴다(captured):
     logging.getLogger("app.services.radar").info(
-        "PyKrx 빈 결과 (20260917): 휴장일이거나 데이터 미제공"
+        "Daum 랭킹 빈 결과: market=KOSPI, investor=외국인"
     )
 
-    assert "PyKrx 빈 결과" in captured.text
+    assert "Daum 랭킹 빈 결과" in captured.text

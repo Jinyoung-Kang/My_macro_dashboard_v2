@@ -23,7 +23,7 @@ import java.util.Optional;
 /**
  * 외국인/기관 수급 레이더.
  *
- * <p>수집 순서는 수집기가 관리합니다(KIS → Daum → Naver → LS → 토스 → PyKrx → 누적 이력).
+ * <p>수집 순서는 수집기가 관리합니다(KIS → Daum → Naver → 토스 → 누적 이력 — PyKrx·LS는 2026-11-11에 뺌, ADR 0035).
  * 백엔드는 저장본을 읽고, 필요하면 수집을 요청하며, <b>어느 출처가 실제로
  * 성공했는지</b>와 <b>이력 대체 여부</b>를 화면에 그대로 전달합니다.
  *
@@ -42,8 +42,8 @@ public class RadarService {
      *
      * <p>Daum API는 {@code investorType=FOREIGN|INSTITUTION} 두 가지만 받습니다.
      * 나머지 넷(개인·연기금·금융투자·투신)은 Naver가 담당했는데, Naver가 그
-     * 페이지를 폐지했습니다(HTTP 410 — stock.naver.com으로 이전). 남은 경로인
-     * LS는 인증이 거절되고 KRX(pykrx)는 차단 응답을 줍니다.
+     * 페이지를 폐지했습니다(HTTP 410 — stock.naver.com으로 이전). 그 밖의 경로였던
+     * LS·KRX(pykrx)는 2026-11-11에 뺐습니다(ADR 0035).
      *
      * <p>목록에서 아예 빼지 않는 이유 — 원래 있던 기능이고 소스가 복구되면
      * 다시 됩니다. 고를 수만 없게 하고 <b>왜 안 되는지</b>를 함께 보여 줍니다.
@@ -103,7 +103,7 @@ public class RadarService {
         out.put("unsupportedInvestorNote", tossReady ? TOSS_ONLY_INVESTOR_NOTE
                 : UNSUPPORTED_INVESTOR_NOTE + " 토스증권 키(TOSS_CLIENT_ID/SECRET)가 있으면 토스 공식 데이터로 "
                         + "거래대금 상위 100종목 안의 순위를 받을 수 있습니다(toss_radar_universe 태스크).");
-        out.put("fallbackChain", List.of("KIS(장중)", "Daum", "Naver", "LS", "토스(공식)", "PyKrx", "누적 이력"));
+        out.put("fallbackChain", List.of("KIS(장중)", "Daum", "Naver", "토스(공식)", "누적 이력"));
         out.put("tradeTypes", TRADE_TYPES);
         out.put("intervals", INTERVALS);
         return out;

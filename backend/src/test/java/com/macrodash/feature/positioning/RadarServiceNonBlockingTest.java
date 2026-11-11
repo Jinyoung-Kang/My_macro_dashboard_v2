@@ -71,13 +71,13 @@ class RadarServiceNonBlockingTest {
         CollectorClient collector = mock(CollectorClient.class);
         when(collector.liveRadar(anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt(), anyString(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(Optional.of(MAPPER.readTree("""
-                        {"source":"PyKrx","sourceKind":"pykrx","isHistorical":false,"rows":[{"code":"000660"}]}
+                        {"source":"토스증권 공식","sourceKind":"toss","isHistorical":false,"rows":[{"code":"000660"}]}
                         """)));
 
         Map<String, Object> out = new RadarService(store, mock(StoreRepository.class), collector)
                 .ranking("KOSPI", "연기금", "순매수", 30, "TODAY", null);
 
-        assertThat(out).containsEntry("available", true).containsEntry("sourceKind", "pykrx");
+        assertThat(out).containsEntry("available", true).containsEntry("sourceKind", "toss");
     }
 
     @Test

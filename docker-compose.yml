@@ -72,7 +72,7 @@ services:
     <<: *hardening
     restart: unless-stopped
     logging: *logging
-    # pandas·pykrx·yfinance·lxml을 올린 상주 메모리가 637MiB(기동 25분 뒤 실측)입니다. 768m에서는
+    # pandas·pykrx·yfinance·lxml을 올린 상주 메모리가 637MiB(기동 25분 뒤 실측 — pykrx는 2026-11-11에 뺌)입니다. 768m에서는
     # 13F XML(6MB) 파싱 때 OOM-kill(종료 코드 137) 여지가 있어 1g로 둡니다.
     mem_limit: 1g
     build: ./collector
@@ -96,13 +96,8 @@ services:
       # 외부 API 키 — 없으면 해당 기능만 비활성화됩니다.
       FRED_API_KEY: "${FRED_API_KEY:-}"
       KRX_API_KEY: "${KRX_API_KEY:-}"
-      # pykrx 로그인 조회(선택). 없으면 비로그인으로 동작합니다.
-      KRX_ID: "${KRX_ID:-}"
-      KRX_PW: "${KRX_PW:-}"
       KIS_APP_KEY: "${KIS_APP_KEY:-}"
       KIS_APP_SECRET: "${KIS_APP_SECRET:-}"
-      LS_APP_KEY: "${LS_APP_KEY:-}"
-      LS_APP_SECRET: "${LS_APP_SECRET:-}"
       TOSS_CLIENT_ID: "${TOSS_CLIENT_ID:-}"
       TOSS_CLIENT_SECRET: "${TOSS_CLIENT_SECRET:-}"
       # 토스 실제 계좌 읽기 전용 조회(ADR 0025)는 운영 서버에서만 켭니다 — 보간 없는 값이라 로컬 .env·셸의 TOSS_ACCOUNT_ENABLED가

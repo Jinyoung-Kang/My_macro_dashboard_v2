@@ -2,14 +2,14 @@
 tests/test_unknown_not_zero.py
 소스가 값을 빼고 보내면 모르는 값(None)이지 0이 아니다(QA-036, PRINCIPLES '수집 실패 시 숫자를 만들어내지 않습니다').
 
-Daum·Naver 파서는 앞선 리뷰(B-8)에서 고쳤고, 같은 패턴이 KIS·LS·COT·KRX 장중 가속도에 남아 있었습니다.
+Daum·Naver 파서는 앞선 리뷰(B-8)에서 고쳤고, 같은 패턴이 KIS·LS(2026-11-11 제거)·COT·KRX 장중 가속도에 남아 있었습니다.
 네트워크를 쓰지 않습니다(각 소스의 응답을 흉내 냅니다).
 """
 from __future__ import annotations
 
 import pytest
 
-from app.services import cot, kis, krx, ls
+from app.services import cot, kis, krx
 
 
 
@@ -19,15 +19,6 @@ def test_QA036_KIS_가격_등락률이_없으면_모른다(monkeypatch):
         {"stck_shrn_iscd": "005930", "hts_kor_isnm": "삼성전자", amount_field: "150000"}]})
 
     rows = kis.fetch_deal_ranking("20261012", "KOSPI", "외국인", "순매수", 30)
-
-    assert rows and rows[0]["price"] is None and rows[0]["changePct"] is None
-
-
-def test_QA036_LS_가격이_없으면_모른다(monkeypatch):
-    monkeypatch.setattr(ls, "_call_t1664", lambda *a: [
-        {"shcode": "005930", "hname": "삼성전자", "svalue": "150000"}])
-
-    rows = ls.fetch_deal_ranking("20261012", "KOSPI", "외국인", "순매수", 30)
 
     assert rows and rows[0]["price"] is None and rows[0]["changePct"] is None
 

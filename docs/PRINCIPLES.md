@@ -163,7 +163,6 @@ URL을 찍는 쪽이 서드파티 라이브러리라 우리 코드만 조심해�
 | `FRED_API_KEY` | <https://fredaccount.stlouisfed.org/apikeys> |
 | `KRX_API_KEY` | KRX OPEN API 마이페이지 |
 | `KIS_APP_KEY` / `KIS_APP_SECRET` | 한국투자증권 KIS Developers |
-| `LS_APP_KEY` / `LS_APP_SECRET` | LS증권 OPEN API |
 | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` | 토스증권 WTS 설정 > Open API — 공식 스펙에 권한 범위(scope)가 없어 이 키로 실제 계좌 조회와 주문까지 될 수 있으니 새어 나갔으면 바로 재발급(ADR 0025). 실제 매매(ADR 0028)를 켜 두었으면 먼저 끕니다(DEVELOPMENT.md §7 '비상 끄기') |
 
 ## 한 출처에는 한 가지 방법으로만 붙습니다

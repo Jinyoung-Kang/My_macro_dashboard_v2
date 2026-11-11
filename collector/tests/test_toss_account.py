@@ -255,13 +255,13 @@ def test_리다이렉트의_다음_요청도_가드를_거친다(monkeypatch):
 
 
 def test_가드는_토스_세션에만_붙고_다른_증권사_세션은_그대로다():
-    from app.services import kis, ls
+    from app.services import kis
 
     for prefix in ("https://", "http://"):
         assert type(toss._http().adapters[prefix]) is toss._ReadOnlyAdapter
     # 이름만으로 받아도(가드 클래스를 주지 않아도) 붙은 가드를 떼지 않습니다.
     assert type(app_http.get_api_session("toss").adapters["https://"]) is toss._ReadOnlyAdapter
-    for module in (kis, ls):
+    for module in (kis,):
         assert type(module._http().get_adapter("https://example.org/")) is HTTPAdapter
 
 

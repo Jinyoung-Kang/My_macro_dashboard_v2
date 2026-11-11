@@ -2,15 +2,15 @@
 app/services/radar.py
 국내 수급 레이더 — 무중단(fail-safe) 폴백 체인.
 
-    KIS(장중 가집계) → Daum(API) → Naver(렌더링) → LS(OPEN API) → 토스(공식) → PyKrx → 누적 이력
+    KIS(장중 가집계) → Daum(API) → Naver(렌더링) → 토스(공식) → 누적 이력
 
 앞쪽이 성공하면 뒤는 호출되지 않습니다.
 
 [반드시 알아야 할 제약]
 - Naver·Daum·KIS는 **과거 날짜 조회를 지원하지 않습니다.** "가장 최근에 끝난
-  거래일"만 줍니다. 그래서 과거 조회는 PyKrx 하나에 기대고 있었는데, PyKrx는
-  KRX 웹을 비공식으로 긁는 라이브러리라 KRX가 차단하면 통째로 멈춥니다.
-- 그때 빈 화면을 보여주는 대신, **수집기가 쌓아 온 우리 자신의 이력**
+  거래일"만 줍니다. 과거 조회를 하던 PyKrx(KRX 웹을 비공식으로 긁는 라이브러리)와
+  LS증권 OPEN API는 2026-11-11에 뺐습니다(ADR 0035).
+- 그래서 과거 날짜는 **수집기가 쌓아 온 우리 자신의 이력**
   (observations)에서 가장 가까운 이전 거래일 랭킹을 꺼내 씁니다. 이 경우
   source에 "어느 날짜의 저장본인지"를 반드시 적어, 화면이 "지금 시점의
   수급이 아니다"라고 경고할 수 있게 합니다.
@@ -22,13 +22,8 @@ app/services/radar.py
 """
 from __future__ import annotations
 
-import contextlib
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-import io
 import logging
-import os
 import re
-import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -37,7 +32,7 @@ from bs4 import BeautifulSoup
 from ..numbers import to_float
 from .. import catalog, krcalendar, kst, store
 from ..http import get_session
-from . import kis, ls, toss
+from . import kis, toss
 
 logger = logging.getLogger(__name__)
 
@@ -58,44 +53,12 @@ NAVER_INVESTOR_CODES = {
     "연기금": "6000", "금융투자": "2000", "투신": "3000",
 }
 
-PYKRX_INVESTORS = {
-    "외국인": "외국인", "기관": "기관합계", "연기금": "연기금",
-    "금융투자": "금융투자", "투신": "투신", "개인": "개인",
-}
-
 INTERVAL_LABELS = {"TODAY": "당일", "DAYS_5": "5거래일", "DAYS_20": "20거래일"}
 
-# 받는 조건(백엔드 RadarService.INVESTORS·TRADE_TYPES·INTERVALS와 같음). 모르는 값을 받으면 PyKrx가 외국인·순매도로
+# 받는 조건(백엔드 RadarService.INVESTORS·TRADE_TYPES·INTERVALS와 같음). 모르는 값을 받으면 예전 PyKrx 단계가 외국인·순매도로
 # 바꿔 받아 그 결과를 임의 이름의 저장본·이력에 썼습니다(QA-037).
 RADAR_INVESTORS = tuple(NAVER_INVESTOR_CODES)
 RADAR_TRADE_TYPES = ("순매수", "순매도")
-
-# pykrx는 선택 의존성입니다 (KRX가 차단하면 어차피 동작하지 않습니다).
-#
-# pykrx 1.2.x는 import 시점에 `print()`로 로그인 상태를 뱉습니다.
-#
-#     KRX 로그인 실패: KRX_ID 또는 KRX_PW 환경 변수가 설정되지 않았습니다.
-#
-# 수집기 로그의 첫 줄이 이것이면 우리 앱이 뭔가 실패한 것처럼 보입니다.
-# 사실은 "선택 기능인 KRX 로그인을 쓰지 않는다"는 뜻일 뿐입니다. 삼켜 버리지
-# 않고 **우리 로거로 옮겨** 뜻이 통하게 적습니다.
-_pykrx_import_output = io.StringIO()
-try:
-    with contextlib.redirect_stdout(_pykrx_import_output):
-        from pykrx import stock as pykrx_stock
-    PYKRX_AVAILABLE = True
-except Exception:  # noqa: BLE001
-    pykrx_stock = None
-    PYKRX_AVAILABLE = False
-
-PYKRX_LOGGED_IN = bool(os.environ.get("KRX_ID") and os.environ.get("KRX_PW"))
-if PYKRX_AVAILABLE and not PYKRX_LOGGED_IN:
-    logger.info(
-        "pykrx를 비로그인으로 씁니다. KRX가 비로그인 조회를 막으면 수급 레이더의 "
-        "pykrx 단계만 건너뜁니다(KIS·Daum·Naver·누적 이력으로 대체). "
-        "KRX 홈페이지 계정이 있으면 .env에 KRX_ID·KRX_PW를 넣어 쓸 수 있습니다."
-    )
-
 
 # ==============================================================================
 # 1. 거래일 계산 — app/krcalendar.py가 공휴일까지 보고 판정합니다. 이름은 호환을 위해 남깁니다.
@@ -126,7 +89,7 @@ def collect_radar_ranking(
     반환 계약(JSON):
     {
       "source": "KIS 장중 가집계 / ...",   # 어느 출처가 실제로 성공했는지
-      "sourceKind": "kis|daum|naver|ls|pykrx|history|none",
+      "sourceKind": "kis|daum|naver|toss|history|none",
       "isHistorical": bool,                # 누적 이력 대체 여부 (화면 경고용)
       "rows": [{"rank","code","name","price","changePct","netAmountEok",...}]
     }
@@ -172,27 +135,16 @@ def collect_radar_ranking(
             if rows:
                 return _result(rows, "naver")
 
-            # LS는 KIS/Daum/Naver가 모두 실패했을 때만 동원됩니다.
-            # (구버전에서는 이 함수가 정의만 되고 **한 번도 호출되지 않아**,
-            #  LS 키를 정확히 넣어도 화면이 달라지지 않았습니다.)
-            rows = ls.fetch_deal_ranking(date_str, market, investor, trade_type, top_n)
-            if rows:
-                return _result(rows, "ls")
-
             # 토스는 투자자별 순위 API가 없어 "거래대금 상위 100종목 안의 순위"입니다.
             # 시장 전체 순위를 주는 앞 단계가 모두 실패했을 때만 씁니다(저장본만 읽음, 호출 없음).
             rows = fetch_toss_ranking(market, investor, trade_type, top_n)
             if rows:
                 return _result(rows, "toss")
         else:
-            logger.info(
-                "과거 날짜(%s) 조회: 날짜 미지원 소스를 건너뛰고 PyKrx만 사용합니다.",
+            logger.debug(
+                "과거 날짜(%s): 날짜를 지정해 받는 외부 출처가 없어 건너뜁니다(누적 이력으로).",
                 date_str,
             )
-
-        rows = fetch_pykrx_ranking(date_str, market, investor, trade_type, top_n)
-        if rows:
-            return _result(rows, "pykrx")
 
         cursor -= timedelta(days=1)
 
@@ -209,8 +161,8 @@ def collect_radar_ranking(
     reasons = diagnose_sources(investor)
     logger.error(
         "수급 레이더 완전 실패: 날짜=%s, 시장=%s, 투자주체=%s, 방향=%s "
-        "(pykrx=%s, 누적 이력에도 없음) — %s",
-        target_day, market, investor, trade_type, PYKRX_AVAILABLE,
+        "(누적 이력에도 없음) — %s",
+        target_day, market, investor, trade_type,
         " / ".join(reasons) or "사유 불명",
     )
     return {
@@ -276,18 +228,6 @@ def diagnose_sources(investor: str) -> list[str]:
     toss_reason = _TOSS_LAST_REASON["value"]
     if toss_reason:
         reasons.append(f"토스: {toss_reason}")
-
-    if not ls.has_credentials():
-        reasons.append("LS는 키가 없어 건너뜁니다 (.env의 LS_APP_KEY/SECRET)")
-    else:
-        reasons.append(
-            "LS는 인증이 거절됐습니다 — Open API 사용등록이 필요할 수 있습니다"
-        )
-
-    if not PYKRX_AVAILABLE:
-        reasons.append("PyKrx가 설치돼 있지 않습니다")
-    else:
-        reasons.append("KRX(pykrx)가 데이터 대신 차단 응답을 주고 있습니다")
 
     return reasons
 
@@ -701,134 +641,6 @@ def test_toss_connection() -> dict:
     return result
 
 
-def fetch_pykrx_ranking(
-    target_date: str,
-    market: str,
-    investor: str,
-    trade_type: str,
-    top_n: int,
-) -> list[dict]:
-    """
-    PyKrx 최종 폴백 (과거 날짜 조회가 가능한 유일한 외부 소스).
-
-    주의: KRX가 JSON 대신 차단 페이지를 주면 통째로 실패합니다
-    ("Expecting value: line 1 column 1"). 패키지 업그레이드로 해결되지
-    않으며, 그때는 누적 이력으로 넘어갑니다.
-    """
-    if not PYKRX_AVAILABLE:
-        logger.warning("PyKrx 미설치 — 이 단계를 건너뜁니다.")
-        return []
-
-    market_code = "KOSPI" if "KOSPI" in market.upper() else "KOSDAQ"
-    investor_name = PYKRX_INVESTORS.get(investor, "외국인")
-
-    try:
-        # pykrx는 실패를 print로 찍습니다("Error occurred in ...").
-        # 로깅이 아니라 표준출력이라 필터로는 못 거릅니다. 우리가 바로 아래에서
-        # 같은 내용을 더 분명하게 남기므로(사유·날짜 포함) 그 출력만 삼킵니다.
-        # 폴백은 날짜를 최대 7번 거슬러 올라가기 때문에, 놔두면 조회 한 번에
-        # 같은 줄이 일곱 번 쌓입니다.
-        with contextlib.redirect_stdout(io.StringIO()):
-            frame = _pykrx_call(
-                pykrx_stock.get_market_net_purchases_of_equities_by_ticker,
-                target_date, target_date, market_code, investor_name,
-            )
-    except PykrxSkipped as exc:
-        logger.debug("PyKrx 건너뜀 (%s): %s", target_date, exc)
-        return []
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("PyKrx 조회 실패 (%s): %s", target_date, exc)
-        return []
-
-    if frame is None or frame.empty:
-        logger.warning("PyKrx 빈 결과 (%s): 휴장일이거나 데이터 미제공", target_date)
-        return []
-
-    frame = frame.reset_index().rename(columns={"티커": "종목코드"})
-    if trade_type == "순매수":
-        frame = frame[frame["순매수거래대금"] > 0].sort_values(
-            "순매수거래대금", ascending=False
-        )
-    else:
-        frame = frame[frame["순매수거래대금"] < 0].sort_values("순매수거래대금")
-
-    frame = frame.head(top_n)
-    if frame.empty:
-        return []
-
-    # 날짜 하나 + market= 로 불러야 "그날 전 종목" 표가 옵니다. YYYYMMDD 인자를
-    # 두 개 주면 pykrx는 '한 종목의 기간 조회'(ticker=시장 이름)로 분기해 빈 결과나
-    # 오류를 돌려주고, 그러면 모든 종목이 가격 0으로 저장됐습니다.
-    try:
-        with contextlib.redirect_stdout(io.StringIO()):
-            prices = _pykrx_call(pykrx_stock.get_market_ohlcv, target_date, market=market_code)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("PyKrx 가격 조회 실패 (%s): %s — 가격 없이 저장합니다", target_date, exc)
-        prices = None
-
-    collected_at = kst.stamp()
-    records: list[dict] = []
-
-    for _, row in frame.iterrows():
-        code = str(row["종목코드"]).zfill(6)
-        # 가격을 모르면 None입니다. 0.0은 "0원에 거래됐다"로 읽히고 이력에도 그대로 남습니다.
-        price = change_pct = None
-        if prices is not None and not prices.empty and code in prices.index:
-            price_row = prices.loc[code]
-            if getattr(price_row, "ndim", 1) == 2:      # 같은 종목이 두 번 있으면 첫 행
-                price_row = price_row.iloc[0]
-            price = to_float(price_row.get("종가"))
-            change_pct = to_float(price_row.get("등락률"))
-
-        records.append({
-            "code": code,
-            "name": str(row["종목명"]),
-            "price": price,
-            "changePct": change_pct,
-            "netAmountEok": round(float(row["순매수거래대금"]) / 100_000_000.0, 1),
-            "source": f"PyKrx ({target_date})",
-            "collectedAt": collected_at,
-            # 폴백은 날짜를 거슬러 받으므로 조회한 날짜가 기준일입니다(QA-029). 없으면 오늘 거래일로 쌓였습니다.
-            "dataDate": _iso_date(target_date),
-        })
-
-    return _rank(records, trade_type, top_n)
-
-
-# pykrx 내부의 requests 호출에는 timeout이 없습니다. KRX가 연결만 받고 응답을 안 주면
-# 스케줄러 스레드가 TCP가 포기할 때까지(수 분~수 시간) 묶이고, max_instances=1이라 그 뒤
-# fast 수집이 전부 건너뛰어집니다. 별도 스레드에서 돌리고 시간이 지나면 포기합니다
-# (스레드는 pykrx가 돌아올 때까지 남지만, 수집은 계속됩니다).
-PYKRX_TIMEOUT_SECONDS = 20.0
-# 응답이 없었으면 이 시간 동안 pykrx를 바로 건너뜁니다. 묶인 워커 2개 뒤에 줄을 서면 그 뒤 모든
-# 호출이 실행도 못 한 채 제한 시간만 소비했습니다(조합당 커서 7일 × 20초 = 140초).
-PYKRX_BACKOFF_SECONDS = 600.0
-_pykrx_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pykrx")
-_pykrx_blocked_until = 0.0
-
-
-class PykrxSkipped(RuntimeError):
-    """최근 응답이 없어 pykrx를 잠시 건너뛰는 중입니다(실패가 아니라 생략)."""
-
-
-def _pykrx_call(fn, *args, **kwargs):
-    """pykrx 함수를 시간 제한 안에서 부릅니다. 넘기면 TimeoutError, 차단 중이면 PykrxSkipped."""
-    global _pykrx_pool, _pykrx_blocked_until
-    remaining = _pykrx_blocked_until - time.monotonic()
-    if remaining > 0:
-        raise PykrxSkipped(f"pykrx 최근 응답 없음 — {remaining:.0f}초 동안 건너뜀")
-    future = _pykrx_pool.submit(fn, *args, **kwargs)
-    try:
-        return future.result(timeout=PYKRX_TIMEOUT_SECONDS)
-    except FuturesTimeoutError as exc:
-        _pykrx_blocked_until = time.monotonic() + PYKRX_BACKOFF_SECONDS
-        # 묶인 워커는 pykrx가 돌아올 때까지 남습니다. 풀을 새로 만들어 두어야 차단이 풀린 뒤의
-        # 호출이 그 뒤에 줄 서지 않습니다.
-        _pykrx_pool.shutdown(wait=False)
-        _pykrx_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pykrx")
-        raise TimeoutError(f"pykrx 응답 없음 ({PYKRX_TIMEOUT_SECONDS:.0f}초)") from exc
-
-
 # ==============================================================================
 # 4. 누적 이력 (외부 소스가 모두 실패했을 때)
 # ==============================================================================
@@ -977,30 +789,6 @@ def test_naver_connection() -> dict:
         "message": (
             f"빈 결과입니다. {reason}" if reason
             else "빈 결과입니다. 페이지 구조 변경 또는 차단을 의심하세요."
-        ),
-    }
-
-
-def test_pykrx_connection() -> dict:
-    if not PYKRX_AVAILABLE:
-        return {
-            "ok": False, "stage": "not_installed",
-            "message": "pykrx 패키지가 설치되지 않았습니다.",
-        }
-    rows = fetch_pykrx_ranking(
-        latest_completed_session(), "KOSPI", "외국인", "순매수", 5
-    )
-    if rows:
-        return {"ok": True, "stage": "ok", "message": f"{len(rows)}건 수신"}
-    return {
-        "ok": False, "stage": "empty",
-        "message": (
-            "빈 결과입니다. KRX가 pykrx에 JSON 대신 차단 페이지를 주는 상태일 수 "
-            "있습니다. 당일 조회는 KIS/Daum/Naver로 정상 동작하며, 과거 조회는 "
-            "누적 이력으로 대체됩니다."
-            + ("" if PYKRX_LOGGED_IN else
-               " KRX 홈페이지 계정이 있으면 .env에 KRX_ID·KRX_PW를 넣어 "
-               "로그인 조회를 시도해 볼 수 있습니다(선택).")
         ),
     }
 

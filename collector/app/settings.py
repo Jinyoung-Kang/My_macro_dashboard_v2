@@ -235,14 +235,6 @@ def kis_credentials() -> tuple[str, str]:
     return get_secret("kis.app_key"), get_secret("kis.app_secret")
 
 
-def ls_credentials() -> tuple[str, str]:
-    return get_secret("ls.app_key"), get_secret("ls.app_secret")
-
-
-def ls_base_url_override() -> str:
-    return get_secret("ls.base_url")
-
-
 def toss_credentials() -> tuple[str, str]:
     return get_secret("toss.client_id"), get_secret("toss.client_secret")
 
@@ -356,9 +348,3 @@ FRED_API_BASE = "https://api.stlouisfed.org/fred"
 FRED_CSV_BASE = "https://fred.stlouisfed.org/graph/fredgraph.csv"
 KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
 
-# LS OPEN API 주소.
-# 문서에는 오랫동안 :8080이 적혀 있었지만 서버가 그 포트를 더 이상 열어두지
-# 않습니다(즉시 connection refused). 표준 443을 먼저 쓰고 8080은 보조로만
-# 남깁니다.
-LS_BASE_URL = "https://openapi.ls-sec.co.kr"
-LS_ALT_BASE_URLS = ("https://openapi.ls-sec.co.kr:8080",)

@@ -13,8 +13,8 @@ import type { KrFundamentalsCompany, LiquidityRow } from "@/lib/types";
 
 describe("radar", () => {
   it("소스는 폴백 체인 순서로, 모르는 소스는 뒤로", () => {
-    const rows = sortBySourceOrder({ pykrx: { ok: true }, kis: { ok: false }, mystery: { ok: true }, daum: { ok: true } });
-    expect(rows.map((r) => r.name)).toEqual(["kis", "daum", "pykrx", "mystery"]);
+    const rows = sortBySourceOrder({ toss: { ok: true }, kis: { ok: false }, mystery: { ok: true }, daum: { ok: true } });
+    expect(rows.map((r) => r.name)).toEqual(["kis", "daum", "toss", "mystery"]);
     expect(sourceLabel("toss")).toBe("토스증권 (공식)");
     expect(sourceLabel("mystery")).toBe("MYSTERY");
   });

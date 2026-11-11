@@ -2,6 +2,7 @@
 # requirements.txt의 직접 의존성을 python:3.11-slim에 설치한 결과(간접 의존성 포함).
 # 2026-11-04: psycopg·psycopg-binary 3.3.7, certifi 2026.10.18(PYSEC-2026-4320)만 손으로 올림 — 다시 만들면 다른 간접 의존성도 그날 판으로 바뀌어서.
 # 2026-11-05: curl_cffi를 requirements.txt의 직접 의존성으로 올림(같은 판 0.16.3) — 이 파일의 고정은 그대로라 다시 만들지 않음.
+# 2026-11-11: pykrx를 뺌(ADR 0035) — pykrx와 그것만 끌어오던 간접 의존성(Deprecated·wrapt·matplotlib과 그 의존성)만 손으로 지움.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
@@ -11,28 +12,20 @@ certifi==2026.10.18
 cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
-contourpy==1.3.3
 curl_cffi==0.16.3
-cycler==0.12.1
-Deprecated==1.3.1
 fastapi==0.143.5
 feedparser==6.0.14
 feedparser-sgmllib==2.1.0
-fonttools==4.67.0
 h11==0.16.0
 httptools==0.9.0
 idna==3.20
-kiwisolver==1.5.1
 lxml==6.1.3
-matplotlib==3.11.2
-multipledispatch==1.0.0
 multitasking==0.0.13
 numpy==2.4.6
 opentelemetry-api==1.45.1
 packaging==26.3
 pandas==2.3.3
 peewee==4.5.3
-pillow==13.0.0
 platformdirs==4.13.4
 protobuf==7.36.2
 psycopg==3.3.7
@@ -41,8 +34,6 @@ psycopg-pool==3.3.3
 pycparser==3.11
 pydantic==2.14.1
 pydantic_core==2.50.1
-pykrx==1.2.9
-pyparsing==3.3.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 pytz==2026.5
@@ -60,5 +51,4 @@ uvicorn==0.54.0
 uvloop==0.23.0
 watchfiles==1.3.0
 websockets==17.2
-wrapt==2.5.1
 yfinance==1.7.0

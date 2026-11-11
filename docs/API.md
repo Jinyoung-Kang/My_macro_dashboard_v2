@@ -404,7 +404,7 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
 | [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |
-| [토큰] `GET /diagnostics/connections` | KIS·LS·Daum·Naver·PyKrx 진단 |
+| [토큰] `GET /diagnostics/connections` | KIS·Daum·Naver·토스 진단 |
 | [토큰] `GET /diagnostics/public-apis` | 특일정보·주식시세·DART 진단 (API당 1회) |
 | [토큰] `GET /diagnostics/toss`, `/toss/*` | 토스 진단·조회 |
 | [토큰] `GET /toss/account` | 실제 계좌 읽기 전용 조회(ADR 0025 — 보유·매수 가능 금액·주문 내역을 원화 `KR`·달러 `US` 쪽으로 나눠 늘 200, 메모리 캐시 10초 — ADR 0030, 그 전 60초, 저장 안 함). `TOSS_ACCOUNT_ENABLED`가 `true`가 아니거나 서비스 토큰 없이 뜬 수집기에서는 토스를 부르지 않고 `{ok:false, enabled:false, reason}` |

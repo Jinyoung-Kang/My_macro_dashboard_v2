@@ -8,13 +8,11 @@ export const SOURCE_LABELS: Record<string, string> = {
   kis: "KIS (장중 가집계)",
   daum: "Daum",
   naver: "Naver",
-  ls: "LS",
   toss: "토스증권 (공식)",
-  pykrx: "PyKrx",
 };
 
 /** 폴백 체인 순서. 표도 이 순서로 보여 줍니다. */
-export const SOURCE_ORDER = ["kis", "daum", "naver", "ls", "toss", "pykrx"];
+export const SOURCE_ORDER = ["kis", "daum", "naver", "toss"];
 
 export function sourceLabel(name: string): string {
   return SOURCE_LABELS[name] ?? name.toUpperCase();

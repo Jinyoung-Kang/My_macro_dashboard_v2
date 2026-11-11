@@ -1,6 +1,6 @@
 """
 tests/test_api_session.py
-증권사 Open API(토스·KIS·LS)용 HTTP 세션 (PERF-06).
+증권사 Open API(토스·KIS)용 HTTP 세션 (PERF-06).
 
 예전에는 호출마다 requests.get/post로 새로 연결해 TCP·TLS 연결을 매번 다시 맺었습니다.
 세션으로 연결을 재사용하되, 예전 동작 중 지켜야 할 두 가지를 고정합니다.
@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from app import http as app_http
-from app.services import kis, ls, toss
+from app.services import kis, toss
 
 
 @pytest.fixture()
@@ -74,6 +74,6 @@ def test_api_session_reuses_one_connection_without_retry_or_cookies(local_server
 
 def test_broker_clients_share_their_own_sessions():
     """각 클라이언트는 자기 세션을 계속 씁니다(요청마다 새로 연결하지 않음)."""
-    for module in (toss, kis, ls):
+    for module in (toss, kis):
         assert module._http() is module._http()
-    assert len({id(toss._http()), id(kis._http()), id(ls._http())}) == 3
+    assert len({id(toss._http()), id(kis._http())}) == 2

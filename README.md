@@ -189,7 +189,7 @@ make down            # 정지
 └──────▲───────┘
        │ 적재
 ┌──────┴───────┐  ④받아서 적재만 합니다. 계산하지 않습니다.
-│  Collector   │    Python 3.11 · FastAPI · pandas · yfinance · pykrx
+│  Collector   │    Python 3.11 · FastAPI · pandas · yfinance · feedparser
 └──────────────┘
 ```
 
@@ -311,8 +311,6 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `SEC_USER_AGENT` | **키가 아니라 본인 이메일입니다.** 없으면 13F 수집(모의 매매 트랙레코드 포함)과 모의 매매 미국 종목 재무(`sec_fundamentals`)가 멈추고, 사건 뉴스(`news_headlines`)의 SEC 보도자료 피드(`sec_press`)도 실패로 남습니다(나머지 7개 피드는 정상) |
 | `KRX_API_KEY` | KRX 선물이 KODEX 200 기반 **추정치**로 폴백 (`isEstimated` 표시) |
 | `KIS_APP_KEY` / `KIS_APP_SECRET` | 장중 수급 가집계와 교차 검증 비활성화 |
-| `LS_APP_KEY` / `LS_APP_SECRET` | 수급 레이더 폴백 체인에서 LS 단계만 건너뜀 |
-| `KRX_ID` / `KRX_PW` | pykrx를 비로그인으로 사용 (선택) |
 | AI 키 (`NVIDIA` / `CEREBRAS` / `CLOUDFLARE`) | AI 메뉴만 비활성화. 하나만 있어도 동작 |
 | `ANTHROPIC_API_KEY` | AI 리포트의 Claude 엔진을 건너뜀. 모의 매매 Claude 계좌(결정·프레임 제안·주간 복기)는 'API Key 누락'으로 실패하고 규칙 계좌·벤치마크는 그대로. Claude 계좌도 이 키를 씀(`AI_ENGINES`를 정했으면 그 목록의 모델만) |
 | `PAPER_ENABLED` | 비우면 `true`. `false`면 모의 매매 정기 작업(리스크 점검·하루 한 번 결정·출발일 종가 얼리기·주간 복기)이 쉼. 화면의 수동 실행은 그대로. 네이티브 `make dev-backend`는 `true`일 때만 켜고 비우거나 없으면 끔 |
@@ -413,9 +411,6 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | KRX 선물이 "추정치" | `KRX_API_KEY` 미설정. KODEX 200 기반 폴백입니다 |
 | 수급 레이더에 "누적 이력" 경고 | 외부 소스가 모두 실패해 저장된 이력을 보는 중입니다. **날짜**를 확인하세요 |
 | 교차 검증이 "확인 못 함"만 나옴 | 시간 조건입니다. 시세 대조는 장 마감 후, 수급 대조는 정규장 중에만 가능합니다. 토스 3항목은 토스 키가 있어야 하고, 원/달러는 매크로 화면 저장본이 1시간 이내여야 합니다 |
-| LS `서버에 접속하지 못했습니다` | 키 문제가 아니라 망 문제입니다 |
-| LS `OAuth 토큰 발급 거절` | 이때가 키 문제입니다. LS 홈에서 "Open API" 사용등록 확인 |
-| 수집기 로그 첫 줄 `KRX 로그인 실패` | pykrx가 import할 때 찍는 문구입니다. 우리 앱 오류가 아닙니다 |
 | `git push`가 403 | 이 PC에 저장된 GitHub 토큰(gh CLI) 문제입니다 → [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 
 > 전체 증상 표와 맥 환경 문제는 [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md),
@@ -433,7 +428,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | 금리·신용 스프레드·유동성·심화 지표 | FRED 공식 API | 공식 (일별/주간 확정치) |
 | 환율·원자재·지수·종목 종가 | yfinance | 종목마다 0~20분 지연 (카드 배지) |
 | 미국채 3M/2Y/10Y/30Y, 달러 인덱스·엔/원·코스피·닛케이·항셍 실시간 | TradingView 공개 Scanner | **비공식 참고** (못 받으면 Yahoo 값과 그 지연) |
-| 국내 수급·파생 | KRX Open API · KIS · LS · pykrx · Daum | 공식 + 비공식 혼합 |
+| 국내 수급·파생 | KRX Open API · KIS · 토스 · Daum · Naver | 공식 + 비공식 혼합 |
 | 13F 포트폴리오 | SEC EDGAR | 공식 (분기 공시, 45일 지연) |
 | CFTC COT | CFTC 공개 API | 공식 (주 1회, 화요일 기준) |
 | 한국 공휴일 (KRX 휴장) | 한국천문연구원 특일정보 | 공식 (대체공휴일·선거일 포함) |
@@ -476,7 +471,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 | Backend | Java 21 · Spring Boot 4.1 | 모든 계산을 한 계층에 모아 타입과 테스트로 고정 |
 | AI | Claude API (Haiku 5.5, 공식 Java SDK) · NVIDIA · Cerebras · Cloudflare | 수집 원본으로 리포트 생성. 엔진이 실패하면 다음 엔진으로 자동 전환. 모의 매매 Claude 계좌는 같은 SDK의 구조화 출력으로 Sonnet 5.5(설정에서 Haiku 5.5) 한 모델만 부름(전환 없음) |
 | Store | PostgreSQL 16 | 수집기와 API가 다른 프로세스라 파일 공유 불가. JSONB로 저장해 SQL로 질의 |
-| Collector | Python 3.11 · FastAPI · pandas · yfinance · pykrx · feedparser(RSS 읽기만) | 금융 데이터 수집·파싱 라이브러리 생태계 |
+| Collector | Python 3.11 · FastAPI · pandas · yfinance · feedparser(RSS 읽기만) · curl_cffi | 금융 데이터 수집·파싱 라이브러리 생태계 |
 | DevOps | Docker Compose · GitHub Actions · Vultr(서울 vhf-2c-4gb) · Tailscale · AWS S3(백업) · Caddy | 네 프로세스를 한 명령으로, 세 언어 테스트를 매 푸시마다. 운영본은 공개 TCP 포트 없이 Tailscale로만 여는 서버 한 대, 24시간([ADR 0023](docs/adr/0023-vultr-deployment.md)) |
 
 **의도적으로 쓰지 않은 것** — Kafka/CDC(하루 수천 건 규모라 브로커가 처리할

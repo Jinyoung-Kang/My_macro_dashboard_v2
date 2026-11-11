@@ -144,18 +144,3 @@ def test_QA029_토스_추정_순위는_그날의_실제_이력을_지우지_않�
 
     assert _codes(store, combo) == {"A", "B"}
     assert _codes(store, combo, "2026-09-10") == set(), "추정치는 어느 날짜에도 쌓지 않습니다"
-
-
-def test_QA029_PyKrx_행은_조회한_날짜를_기준일로_밝힌다(monkeypatch):
-    import pandas as pd
-
-    frame = pd.DataFrame(
-        {"종목명": ["삼성전자"], "순매수거래대금": [12_000_000_000]},
-        index=pd.Index(["005930"], name="티커"),
-    )
-    monkeypatch.setattr(radar, "PYKRX_AVAILABLE", True)
-    monkeypatch.setattr(radar, "_pykrx_call", lambda fn, *a, **k: frame if fn.__name__.startswith("get_market_net") else None)
-
-    rows = radar.fetch_pykrx_ranking("20260910", "KOSPI", "외국인", "순매수", 30)
-
-    assert rows and rows[0]["dataDate"] == "2026-09-10"

@@ -144,7 +144,6 @@ check_key() {
 check_key FRED_API_KEY "FRED"        "웹 CSV로 폴백 (대부분 정상 동작)"
 check_key KRX_API_KEY  "KRX"         "선물이 KODEX 200 기반 추정치로 표시"
 check_key KIS_APP_KEY  "한국투자증권" "장중 수급 가집계·교차 검증 비활성화"
-check_key LS_APP_KEY   "LS증권"       "수급 레이더에서 LS 단계만 건너뜀"
 check_key NVIDIA_API_KEY "AI(NVIDIA)" "AI 메뉴 비활성화 (Cerebras/Cloudflare로 대체 가능)"
 check_key SEC_USER_AGENT "SEC 연락처" "13F 수집 중단 — .env에 본인 이메일을 넣으세요 (키 아님)"
 

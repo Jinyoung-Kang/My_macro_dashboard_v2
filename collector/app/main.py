@@ -43,7 +43,6 @@ from .services import (
     kis as kis_service,
     krx as krx_service,
     live_prices as live_prices_service,
-    ls as ls_service,
     market as market_service,
     radar as radar_service,
     toss as toss_service,
@@ -368,7 +367,6 @@ def status() -> dict:
         "fred": bool(settings.fred_key()),
         "krx": bool(settings.krx_key()),
         "kis": kis_service.has_credentials(),
-        "ls": ls_service.has_credentials(),
         "toss": toss_service.has_credentials(),
         "dataGoKr": bool(settings.data_go_kr_key()),
         "dart": bool(settings.dart_key()),
@@ -653,7 +651,7 @@ def diagnostics(
     x_service_token: str | None = Header(default=None),
 ) -> dict:
     """
-    수급 레이더 폴백 체인의 소스별 연결 상태 (KIS·LS·Daum·Naver·토스·PyKrx).
+    수급 레이더 폴백 체인의 소스별 연결 상태 (KIS·Daum·Naver·토스).
 
     진단은 **화면이 실제로 쓰는 경로**를 그대로 호출합니다. 진단이 다른
     경로를 보면 "진단은 정상인데 화면은 빈" 상황을 설명할 수 없습니다.
@@ -663,11 +661,9 @@ def diagnostics(
         "checkedAt": datetime.now(KST).isoformat(),
         "sources": {
             "kis": kis_service.test_connection(),
-            "ls": ls_service.test_connection(),
             "daum": radar_service.test_daum_connection(),
             "naver": radar_service.test_naver_connection(),
             "toss": radar_service.test_toss_connection(),
-            "pykrx": radar_service.test_pykrx_connection(),
         },
     }
 

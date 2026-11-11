@@ -117,7 +117,7 @@ class SafeFormatFilter(logging.Filter):
     """
     형식이 깨진 로그 한 줄이 traceback 40줄로 번지지 않게 합니다.
 
-    <b>실제로 겪은 일</b> — pykrx가 내부에서 이렇게 찍습니다.
+    <b>실제로 겪은 일</b> — 예전 의존성 pykrx(2026-11-11 제거)가 내부에서 이렇게 찍었습니다.
 
         logging.info(args, kwargs)      # pykrx/website/comm/util.py
 
@@ -142,25 +142,6 @@ class SafeFormatFilter(logging.Filter):
         return True
 
 
-class LibraryChatterFilter(logging.Filter):
-    """
-    pykrx가 루트 로거에 직접 찍는 INFO 잡음을 걷어냅니다.
-
-    pykrx는 자기 로거를 쓰지 않고 ``logging.info(...)``로 루트에 찍기 때문에
-    로거 이름으로는 수위를 조절할 수 없습니다. 그래서 레코드가 어느 파일에서
-    왔는지로 거릅니다.
-
-    버려도 되는 이유 — 우리 코드가 같은 상황을 더 분명하게 남깁니다
-    ("PyKrx 빈 결과 (20260917): 휴장일이거나 데이터 미제공"). 경고·오류는
-    그대로 통과시킵니다.
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.levelno >= logging.WARNING:
-            return True
-        return "/pykrx/" not in (record.pathname or "")
-
-
 def install() -> None:
     """
     루트 핸들러 전부에 필터를 답니다.
@@ -172,7 +153,7 @@ def install() -> None:
     가립니다(Redacting). 반대로 달면 깨진 레코드를 가리려다 같은 자리에서
     다시 터집니다.
     """
-    filters = [SafeFormatFilter(), LibraryChatterFilter(), RedactingFilter()]
+    filters = [SafeFormatFilter(), RedactingFilter()]
     root = logging.getLogger()
     for handler in root.handlers:
         for log_filter in filters:

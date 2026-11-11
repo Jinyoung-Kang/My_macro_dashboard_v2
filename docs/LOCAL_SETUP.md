@@ -186,7 +186,6 @@ APP_PASSWORD=원하는_비밀번호
 | `FRED_API_KEY` | <https://fred.stlouisfed.org/docs/api/api_key.html> | 웹 CSV로 폴백 (대부분 정상). 모의 매매 발표·실적 일정(`us_calendar`)의 FRED 발표일(CPI·PCE·고용·GDP)은 대체 경로가 없어 비고 "키 미설정"으로 표시(FOMC 상수·실적일은 그대로) |
 | `KRX_API_KEY` | <http://data.krx.co.kr> | KRX 선물이 KODEX 200 기반 **추정치** |
 | `KIS_APP_KEY` / `KIS_APP_SECRET` | <https://apiportal.koreainvestment.com> | 장중 수급 가집계·교차 검증 꺼짐 |
-| `LS_APP_KEY` / `LS_APP_SECRET` | LS증권 홈 > 매매시스템 > API | 수급 레이더의 LS 단계만 건너뜀 |
 | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` | 토스증권 Open API | 토스 테스트 메뉴 + 레이더·국내 파생의 투자자별 매매 카드 + 교차 검증의 토스 3항목이 꺼짐. 토스 개발자 콘솔의 허용 IP에 이 맥의 공인 IP 필요 |
 | `ANTHROPIC_API_KEY` (Claude Haiku 5.5) | <https://platform.claude.com> | 자동 탐색이 Claude를 건너뛰고 무료 엔진만 씀. 유료 — 리포트 1건 약 1센트 미만 |
 | `NVIDIA_API_KEY` 등 AI 키 | <https://build.nvidia.com> 등 | AI 메뉴만 꺼짐 (Claude 키까지 모두 없을 때) |
@@ -212,7 +211,6 @@ APP_PASSWORD=원하는_비밀번호
 > | FRED | `FRED_API_KEY` |
 > | KRX Open API | `KRX_API_KEY` |
 > | 한국투자증권 | `KIS_APP_KEY` / `KIS_APP_SECRET` |
-> | LS증권 | `LS_APP_KEY` / `LS_APP_SECRET` |
 > | 토스증권 | `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` |
 > | SEC EDGAR | `SEC_USER_AGENT` (본인 이메일) |
 

@@ -13,7 +13,6 @@ yfinance==1.7.0
 # 브라우저와 같은 TLS·헤더로 보내는 HTTP 클라이언트 — app/yahoo.py(yfinance 세션)와 app/fetch(차단 통과 계층, ADR 0026)가 직접 가져옵니다.
 # 판은 yfinance가 끌어와 constraints.txt에 이미 고정된 것과 같습니다(그래서 constraints.txt는 다시 만들지 않았습니다).
 curl_cffi==0.16.3
-pykrx==1.2.9
 # RSS·Atom 파싱만(받기는 수집기 세션) — 날짜 형식·인코딩 변형을 직접 다루지 않기 위해(모의 매매 2단계 B, D34)
 feedparser==6.0.14
 
