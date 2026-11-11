@@ -96,6 +96,20 @@ def send(method: str, url: str, *, host: str, headers: Any = None, params: dict[
         raise TransportError("브라우저 컨테이너의 답을 읽지 못함") from exc
 
 
+def health() -> dict | None:
+    """
+    브라우저 컨테이너의 상태(공유 비밀 설정 여부·허용 호스트 수·체크박스 누르기 스위치) — 정보 수집의 '메커니즘' 화면용. 켜져 있지 않거나
+    닿지 못하면 None. 출처로 나가는 요청이 아니라 안쪽 망 호출입니다.
+    """
+    if not available():
+        return None
+    try:
+        response = _http().get(f"{_base_url()}/health", timeout=(3.0, 5.0))
+        return response.json() if response.status_code == 200 else None
+    except (requests.RequestException, ValueError):
+        return None
+
+
 def reset() -> None:
     """세션을 닫습니다(시험 사이의 격리용)."""
     global _session

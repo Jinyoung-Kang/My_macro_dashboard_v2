@@ -2,7 +2,7 @@
 app/services/radar.py
 국내 수급 레이더 — 무중단(fail-safe) 폴백 체인.
 
-    KIS(장중 가집계) → Daum(API) → Naver(stock.naver.com API, 확정 값만) → 토스(공식) → 누적 이력
+    KIS(장중 가집계) → Daum(API) → Naver(stock.naver.com API, 확정 값만) → KRX(정보데이터시스템 저장본, 확정) → 토스(공식) → 누적 이력
 
 앞쪽이 성공하면 뒤는 호출되지 않습니다.
 
@@ -10,7 +10,9 @@ app/services/radar.py
 - Naver·Daum·KIS는 **과거 날짜 조회를 지원하지 않습니다.** "가장 최근에 끝난
   거래일"만 줍니다. 과거 조회를 하던 PyKrx(KRX 웹을 비공식으로 긁는 라이브러리)와
   LS증권 OPEN API는 2026-11-11에 뺐습니다(ADR 0035).
-- 그래서 과거 날짜는 **수집기가 쌓아 온 우리 자신의 이력**
+- 2026-11-11부터 KRX 정보데이터시스템(로그인 — ADR 0036)의 확정 순위를 수집기가 거래일 저녁마다 저장하고(외부 호출 없이 그 저장본만
+  읽음), 과거 날짜·여섯 투자주체의 확정 순위는 먼저 거기서 찾습니다.
+- 그것도 없으면 **수집기가 쌓아 온 우리 자신의 이력**
   (observations)에서 가장 가까운 이전 거래일 랭킹을 꺼내 씁니다. 이 경우
   source에 "어느 날짜의 저장본인지"를 반드시 적어, 화면이 "지금 시점의
   수급이 아니다"라고 경고할 수 있게 합니다.
@@ -94,7 +96,7 @@ def collect_radar_ranking(
     반환 계약(JSON):
     {
       "source": "KIS 장중 가집계 / ...",   # 어느 출처가 실제로 성공했는지
-      "sourceKind": "kis|daum|naver|toss|history|none",
+      "sourceKind": "kis|daum|naver|krx|toss|history|none",
       "isHistorical": bool,                # 누적 이력 대체 여부 (화면 경고용)
       "rows": [{"rank","code","name","price","changePct","netAmountEok",...}]
     }
@@ -140,16 +142,21 @@ def collect_radar_ranking(
             if rows:
                 return _result(rows, "naver")
 
+            # KRX 확정 순위(저장본) — 그 날짜가 아직 없으면 가장 가까운 앞 거래일(전 종목·확정). 토스(거래대금 상위 100종목 안·추정)보다 앞.
+            rows = fetch_krx_stored_ranking(date_str, market, investor, trade_type, top_n, nearest=True)
+            if rows:
+                return _result(rows, "krx")
+
             # 토스는 투자자별 순위 API가 없어 "거래대금 상위 100종목 안의 순위"입니다.
             # 시장 전체 순위를 주는 앞 단계가 모두 실패했을 때만 씁니다(저장본만 읽음, 호출 없음).
             rows = fetch_toss_ranking(market, investor, trade_type, top_n)
             if rows:
                 return _result(rows, "toss")
         else:
-            logger.debug(
-                "과거 날짜(%s): 날짜를 지정해 받는 외부 출처가 없어 건너뜁니다(누적 이력으로).",
-                date_str,
-            )
+            # 과거 날짜 — KRX 확정 순위 저장본(그 날짜 그대로)만 봅니다. 없으면 하루 앞으로.
+            rows = fetch_krx_stored_ranking(date_str, market, investor, trade_type, top_n, nearest=False)
+            if rows:
+                return _result(rows, "krx")
 
         cursor -= timedelta(days=1)
 
@@ -228,6 +235,7 @@ def diagnose_sources(investor: str) -> list[str]:
         )
     elif _NAVER_LAST_REASON["value"]:
         reasons.append(f"Naver: {_NAVER_LAST_REASON['value']}")
+    reasons.append("KRX 확정 순위 저장본이 그 날짜(또는 앞 7일)에 없습니다 — 수집기 info_krx_daily(운영 서버, 거래일 18:30 뒤)")
 
     toss_reason = _TOSS_LAST_REASON["value"]
     if toss_reason:
@@ -552,6 +560,46 @@ def _toss_net(record: dict, investor: str) -> int | None:
     group, key = TOSS_INVESTOR_PATHS[investor]
     node = (record.get(group) or {}).get(key) if isinstance(record.get(group), dict) else None
     return node.get("net") if isinstance(node, dict) else None
+
+
+# KRX 저장본을 '가장 가까운 앞 거래일'로 찾을 때 거슬러 보는 날 수(달력일) — 연휴를 넘을 만큼.
+KRX_NEAREST_DAYS = 7
+
+
+def fetch_krx_stored_ranking(
+    date_str: str, market: str, investor: str, trade_type: str, top_n: int, *, nearest: bool,
+) -> list[dict]:
+    """
+    KRX 정보데이터시스템 확정 순위(수집기 info_krx_daily가 저장한 관측치 ``krx_investor_rank``)를 읽습니다 — 외부 호출 없음.
+
+    :param nearest: 그 날짜가 없으면 ``KRX_NEAREST_DAYS`` 안의 가장 가까운 앞 날짜를 씁니다(당일 조회 — 확정은 저녁이라 장중에는 앞 거래일).
+        False면 그 날짜만(과거 조회 — 날짜를 바꿔 다른 날 값을 그 날 값처럼 보이지 않게).
+    """
+    day = _iso_date(date_str)
+    if day is None:
+        return []
+    combo = {"market": market, "investor": investor, "tradeType": trade_type}
+    try:
+        if nearest:
+            earliest = (date.fromisoformat(day) - timedelta(days=KRX_NEAREST_DAYS)).isoformat()
+            dates = [d for d in store.list_observation_dates(catalog.OBS_KRX_INVESTOR_RANK, filters=combo) if earliest <= d <= day]
+            if not dates:
+                return []
+            day = max(dates)
+        rows = store.read_observations(catalog.OBS_KRX_INVESTOR_RANK, obs_date=day, filters=combo)
+    except Exception as exc:  # noqa: BLE001 — 저장소를 읽지 못하면 이 단계만 건너뜁니다
+        logger.warning("KRX 저장본 읽기 실패: %s", exc)
+        return []
+    if not rows:
+        return []
+    rows.sort(key=lambda r: r.get("rank") or 10_000)
+    out = []
+    for row in rows[:top_n]:
+        record = {k: row.get(k) for k in ("rank", "code", "name", "price", "changePct", "netAmountEok", "netVolume", "dataDate")}
+        record["source"] = f"KRX 정보데이터시스템 확정 ({investor}, {day})"
+        record["collectedAt"] = row.get("collectedAt")
+        out.append(record)
+    return out
 
 
 def fetch_toss_ranking(market: str, investor: str, trade_type: str, top_n: int) -> list[dict]:

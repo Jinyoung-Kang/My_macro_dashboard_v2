@@ -7,17 +7,21 @@ polite 속도군 — 정보 수집(ADR 0035). 운영자 화면 '정보 수집'(/
 [info_waedge_people] waedge 거장 견해 → 스냅샷 info.waedge.gurus, 같은 화면의 글 → info_items (source waedge.people)
 [info_waedge_blogs] waedge 해외 블로그의 한국어 제목 → 원문 글 행의 title_ko
 [info_naver_flows] 네이버 투자자별 매매동향·외국인·기관 매매상위 → 스냅샷 info.naver.flows
+[info_krx_daily] KRX 정보데이터시스템(로그인, ADR 0036) — 기준일의 투자자별 순매수 상위 → 관측치 krx_investor_rank(레이더가 읽음),
+                 시장 합계·외국인 보유·공매도 거래·잔고 → 스냅샷 info.krx.daily. 거래일 18:30 뒤 그날 것을 한 번, 이미 받은 날은 외부 호출 없이 끝.
 
 [일정] 출처마다 다음 실행을 구간 안에서 무작위로(app/tasks/polite). 기동 직후에는 받지 않고, 운영 서버(POLITE_FETCH_ENABLED)에서만 돕니다.
 [실패 규칙] 받지 못하면 저장본을 그대로 둡니다 — 거부는 '거부됨'(그 호스트를 물러남), 형식이 다르면 '형식 바뀜'(polite.ShapeChanged).
 """
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+import random
+from datetime import date, datetime, time, timezone
 from typing import Callable
 
 from .. import catalog, kst, krcalendar, store
-from ..services import info_blogs, info_naver, info_waedge
+from ..fetch import ladder
+from ..services import info_blogs, info_naver, info_waedge, krx_data
 from ..services.info_text import ShapeError
 from . import polite
 
@@ -34,6 +38,13 @@ NAVER_SESSION_CADENCE = polite.Cadence(low_minutes=40, high_minutes=90)
 NAVER_OFF_CADENCE = polite.Cadence(low_minutes=180, high_minutes=360)
 NAVER_HOLIDAY_CADENCE = polite.Cadence(low_minutes=480, high_minutes=900)
 NAVER_SESSION = (time(8, 50), time(15, 40))
+KRX_TASK = "info_krx_daily"
+# 받을 것이 없으면(이미 받은 날·쉬는 날) 외부를 부르지 않고 끝나므로 자주 깨도 출처 부하가 없습니다.
+KRX_CADENCE = polite.Cadence(low_minutes=120, high_minutes=300)
+# KRX가 그날 투자자별 자료를 확정해 싣는 시각(KST) — 이 뒤에야 그날을 기준일로 받습니다.
+KRX_READY = time(18, 30)
+# 공매도 잔고는 2~3거래일 늦게 공개됩니다 — 기준일 2거래일 앞부터 이만큼 거슬러 처음 나오는 날.
+KRX_BALANCE_LAG_DAYS = (2, 3, 4)
 
 
 def _shape(work: Callable[[], "str | polite.Partial"]) -> Callable[[], "str | polite.Partial"]:
@@ -133,3 +144,170 @@ def task_info_naver_flows() -> str:
             return polite.Partial(detail, "; ".join(snapshot["shapeErrors"][:2]))
         return detail
     return polite.scheduled(NAVER_TASK, naver_cadence, _shape(work))
+
+
+# ------------------------------------------------------------------ KRX 정보데이터시스템
+def krx_target_day(now: datetime | None = None) -> date:
+    """받을 기준일 — 거래일 18:30(KST) 뒤면 그날, 아니면 앞 거래일."""
+    local = (now or datetime.now(timezone.utc)).astimezone(kst.KST)
+    if krcalendar.is_trading_day(local.date()) and local.time() >= KRX_READY:
+        return local.date()
+    return krcalendar.previous_trading_day(local.date())
+
+
+def task_info_krx_daily() -> str:
+    """KRX 정보데이터시스템(로그인) — 투자자별 순매수 상위·시장 합계·외국인 보유·공매도 거래·잔고."""
+    return polite.scheduled(KRX_TASK, KRX_CADENCE, _shape(lambda: collect_krx()))
+
+
+def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.Random | None = None) -> "str | polite.Partial":
+    """
+    기준일 자료를 받아 저장합니다 → 실행 기록 한 줄(일부 모양이 다르면 polite.Partial).
+
+    이미 그 기준일을 빠짐없이 받았으면 외부를 부르지 않고 끝납니다. 받지 못한 부분은 직전 저장본의 그 부분을 이어받고 ``isStale``을 답니다
+    (부분마다 제 기준일을 적어 다른 날의 값이 이 날 값으로 보이지 않게). 순매수 상위는 받은 (시장, 투자주체)만 그 날짜를 교체합니다.
+    :raises ShapeError: 모든 부분의 모양이 다름
+    :raises krx_data.KrxLoginError: 로그인하지 못함
+    :raises ladder.FetchRejected: 출처가 거부(받은 것은 저장한 뒤)
+    """
+    now = now or datetime.now(timezone.utc)
+    day = krx_target_day(now)
+    iso, compact = day.isoformat(), day.strftime("%Y%m%d")
+    previous = store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY)
+    prev = previous.payload if previous and isinstance(previous.payload, dict) else {}
+    if prev.get("asOf") == iso and not prev.get("failed"):
+        return f"KRX 기준일 {iso} 이미 받음 — 외부 호출 0회"
+
+    krx_data.login(fetch)
+    jobs: list[tuple[str, str, str | None]] = [("rank", market, investor)
+                                                for market in krx_data.MARKETS for investor in krx_data.INVESTORS]
+    jobs += [(kind, market, None) for kind in ("totals", "foreign", "shortTrades") for market in krx_data.MARKETS]
+    (rng or random).shuffle(jobs)                  # 사람이 화면을 오가는 순서처럼 매번 다르게
+
+    parts: dict[str, dict] = {"totals": {}, "foreign": {}, "shortTrades": {}, "shortBalances": {}}
+    ranks: dict[str, int] = {}
+    failed: list[str] = []
+    shape_errors: list[str] = []
+    blocked: ladder.FetchRejected | None = None
+
+    def remember_failure(name: str, kind: str, market: str) -> None:
+        failed.append(name)
+        old = (prev.get(kind) or {}).get(market)
+        if old is not None and kind in parts:
+            parts[kind][market] = {**old, "isStale": True}
+
+    for kind, market, investor in jobs:
+        name = f"{kind}.{market}" + (f".{investor}" if investor else "")
+        if blocked is not None:
+            remember_failure(name, kind, market)
+            continue
+        try:
+            if kind == "rank":
+                rows = krx_data.parse_rankings(
+                    krx_data.data("dbms/MDC/STAT/standard/MDCSTAT02401", krx_data.ranking_params(market, investor, compact), fetch),
+                    market=market, investor=investor, day=iso)
+                if rows:
+                    store.replace_observations(catalog.OBS_KRX_INVESTOR_RANK, iso, f"{market}|{investor}|", rows,
+                                               entity_key="entity")
+                    ranks[f"{market}|{investor}"] = len(rows)
+                else:
+                    failed.append(name)          # 휴장·아직 집계 전 — 그날 행을 비우지 않습니다
+                continue
+            if kind == "totals":
+                rows = krx_data.parse_totals(
+                    krx_data.data("dbms/MDC/STAT/standard/MDCSTAT02201", krx_data.totals_params(market, compact), fetch))
+            elif kind == "foreign":
+                rows = krx_data.parse_foreign(
+                    krx_data.data("dbms/MDC/STAT/standard/MDCSTAT03701", krx_data.foreign_params(market, compact), fetch))
+            else:
+                rows = krx_data.parse_short_trades(
+                    krx_data.data("dbms/MDC/STAT/srt/MDCSTAT30101", krx_data.short_trade_params(market, compact), fetch))
+            if rows:
+                parts[kind][market] = {"asOf": iso, "rows": rows}
+            else:
+                remember_failure(name, kind, market)
+        except ShapeError as exc:
+            shape_errors.append(f"{name}: {exc}")
+            remember_failure(name, kind, market)
+        except (ladder.FetchFailed, ladder.FetchSkipped):
+            remember_failure(name, kind, market)
+        except ladder.FetchRejected as exc:
+            blocked = exc
+            remember_failure(name, kind, market)
+
+    # 공매도 잔고 — 늦게 공개되어 기준일 2거래일 앞부터 거슬러 처음 나오는 날.
+    lagged = krcalendar.previous_trading_days(day, max(KRX_BALANCE_LAG_DAYS))
+    for market in krx_data.MARKETS:
+        name = f"shortBalances.{market}"
+        found = False
+        for lag in KRX_BALANCE_LAG_DAYS:
+            if blocked is not None:
+                break
+            when = lagged[lag - 1]
+            try:
+                rows = krx_data.parse_short_balances(krx_data.data(
+                    "dbms/MDC/STAT/srt/MDCSTAT30501", krx_data.short_balance_params(market, when.strftime("%Y%m%d")), fetch))
+            except ShapeError as exc:
+                shape_errors.append(f"{name}: {exc}")
+                break
+            except (ladder.FetchFailed, ladder.FetchSkipped):
+                break
+            except ladder.FetchRejected as exc:
+                blocked = exc
+                break
+            if rows:
+                parts["shortBalances"][market] = {"asOf": when.isoformat(), "rows": rows}
+                found = True
+                break
+        if not found:
+            remember_failure(name, "shortBalances", market)
+
+    got = len(ranks) + sum(1 for kind in ("totals", "foreign", "shortTrades", "shortBalances")
+                           for part in parts[kind].values() if not part.get("isStale"))
+    if got == 0 and blocked is None:
+        if shape_errors:
+            raise ShapeError("; ".join(shape_errors[:2]))
+        raise ShapeError(f"KRX 기준일 {iso}의 자료가 하나도 없음(휴장이거나 아직 집계 전)")
+    store.put_snapshot(catalog.SNAP_INFO_KRX_DAILY, {
+        "contract": 1,
+        "asOf": iso,
+        "generatedAt": now.isoformat(timespec="seconds"),
+        "collectedAt": kst.stamp(now),
+        "source": krx_data.SOURCE,
+        "sourceUrl": krx_data.SOURCE_URL,
+        "fetchTier": "impersonate",
+        "rankings": ranks,
+        **parts,
+        "failed": failed,
+        "shapeErrors": shape_errors[:4],
+    })
+    if blocked is not None:
+        raise blocked
+    detail = (f"KRX 기준일 {iso} · 순매수 상위 {len(ranks)}/12 · 시장 합계·외국인 보유·공매도 거래 "
+              f"{sum(1 for k in ('totals', 'foreign', 'shortTrades') for p in parts[k].values() if not p.get('isStale'))}/6 · "
+              f"공매도 잔고 {sum(1 for p in parts['shortBalances'].values() if not p.get('isStale'))}/2")
+    if failed:
+        detail += f" · 못 받음 {len(failed)}"
+    if shape_errors:
+        return polite.Partial(detail, "; ".join(shape_errors[:2]))
+    return detail
+
+
+def cadences() -> list[dict]:
+    """polite 태스크마다의 간격(분) — 정보 수집 화면의 '메커니즘'용. 네이버는 시각에 따라 바뀌어 세 구간을 함께 적습니다."""
+    from .econ_calendar import TRADINGVIEW_CADENCE, TRADINGVIEW_TASK
+
+    def row(task: str, cadence: polite.Cadence, note: str | None = None) -> dict:
+        return {"task": task, "lowMinutes": cadence.low_minutes, "highMinutes": cadence.high_minutes, "note": note}
+
+    out = [row(TRADINGVIEW_TASK, TRADINGVIEW_CADENCE)]
+    out += [row(blog.task, polite.Cadence(blog.minutes[0], blog.minutes[1])) for blog in info_blogs.BLOGS]
+    out += [row(WAEDGE_BRIEF_TASK, WAEDGE_BRIEF_CADENCE), row(WAEDGE_PEOPLE_TASK, WAEDGE_PEOPLE_CADENCE),
+            row(WAEDGE_BLOGS_TASK, WAEDGE_BLOGS_CADENCE),
+            row(NAVER_TASK, NAVER_SESSION_CADENCE,
+                f"정규장(거래일 08:50~15:40) {NAVER_SESSION_CADENCE.low_minutes:.0f}~{NAVER_SESSION_CADENCE.high_minutes:.0f}분 · "
+                f"장 밖 {NAVER_OFF_CADENCE.low_minutes:.0f}~{NAVER_OFF_CADENCE.high_minutes:.0f}분 · "
+                f"쉬는 날 {NAVER_HOLIDAY_CADENCE.low_minutes:.0f}~{NAVER_HOLIDAY_CADENCE.high_minutes:.0f}분"),
+            row(KRX_TASK, KRX_CADENCE, "거래일 18:30 뒤 그날 것을 한 번 — 이미 받은 날은 외부 호출 0회")]
+    return out
+

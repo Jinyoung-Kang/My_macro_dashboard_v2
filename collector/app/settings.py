@@ -231,6 +231,11 @@ def krx_key() -> str:
     )
 
 
+def krx_login() -> tuple[str, str]:
+    """KRX 정보데이터시스템(data.krx.co.kr) 계정 — 로그인해 받는 공식 통계(ADR 0036, app/services/krx_data). Open API 키(krx_key)와 다릅니다."""
+    return (os.environ.get("KRX_ID") or "").strip(), (os.environ.get("KRX_PW") or "").strip()
+
+
 def kis_credentials() -> tuple[str, str]:
     return get_secret("kis.app_key"), get_secret("kis.app_secret")
 

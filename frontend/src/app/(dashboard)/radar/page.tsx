@@ -36,7 +36,7 @@ import { endpoints } from "@/lib/endpoints";
 /**
  * 외국인/기관 수급 레이더.
  *
- * 수집 순서(KIS → Daum → Naver → 토스 → 누적 이력)는 수집기가 관리하고,
+ * 수집 순서(KIS → Daum → Naver → KRX 확정 저장본 → 토스 → 누적 이력)는 수집기가 관리하고,
  * 화면은 <b>어느 출처가 실제로 성공했는지</b>를 반드시 표시합니다. 누적 이력으로
  * 대체된 경우에는 "지금 시점의 수급이 아니다"라는 경고가 함께 떠야 합니다.
  */
@@ -84,7 +84,7 @@ export default function RadarPage() {
     <div className="flex flex-col gap-6 lg:gap-8">
       <PageHeader
         title="외국인/기관 수급 레이더 (KRX)"
-        description={<>폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "토스(공식)", "누적 이력"]).join(" → ")}</>}
+        description={<>폴백 체인: {(options.data?.fallbackChain ?? ["KIS(장중)", "Daum", "Naver", "KRX(확정 저장본)", "토스(공식)", "누적 이력"]).join(" → ")}</>}
         actions={
           <>
             <Freshness

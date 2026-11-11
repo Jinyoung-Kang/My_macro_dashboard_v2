@@ -388,6 +388,56 @@ def list_tasks() -> dict:
     }
 
 
+@app.get("/info/mechanism")
+def info_mechanism(x_service_token: str | None = Header(default=None)) -> dict:
+    """
+    정보 수집의 작동 방식(ADR 0026·0035·0036) — 코드에 있는 실제 값: 스위치, 계층·물러남·포기·사람 확인 규칙, 요청 사이 지연, 호스트별 계층·하루
+    예산, 태스크별 간격, 본문·보관 규칙. 외부를 부르지 않습니다(브라우저 컨테이너의 /health만 안쪽 망으로).
+    호스트별 오늘 쓴 예산·마지막 통과 계층·닫힘과 다음 실행 시각은 백엔드가 표(fetch_hosts·fetch_schedule)에서 읽어 붙입니다.
+    """
+    _check_token(x_service_token)
+    from .fetch import browser_client, policy as fetch_policy
+    from .services import info_blogs, info_waedge, info_text
+    from .tasks import info as info_tasks, polite
+
+    gap = fetch_policy.Gap()
+    browser = browser_client.health()
+    return {
+        "politeEnabled": polite.enabled(),
+        "tickSeconds": POLITE_TICK_SECONDS,
+        "tickJitterSeconds": POLITE_TICK_JITTER_SECONDS,
+        "taskDeadlineSeconds": tasks.runner.TASK_DEADLINE_SECONDS.get("polite"),
+        "browser": {
+            "configured": browser_client.available(),
+            "reachable": browser is not None,
+            "pressCheckbox": None if browser is None else browser.get("pressCheckbox"),
+            "allowedHosts": None if browser is None else browser.get("allowedHosts"),
+        },
+        "gap": {"medianSeconds": gap.median, "lowSeconds": gap.low, "highSeconds": gap.high, "longChance": gap.long_chance,
+                "longLowSeconds": gap.long_low, "longHighSeconds": gap.long_high},
+        "backoffMinutes": [list(pair) for pair in fetch_policy.BACKOFF_MINUTES],
+        "humanCheckMinutes": list(fetch_policy.HUMAN_CHECK_MINUTES),
+        "giveUpLevel": fetch_policy.GIVE_UP_LEVEL,
+        "giveUpRecheckDays": polite.GIVE_UP_RECHECK_DAYS,
+        "staleFactor": polite.STALE_FACTOR,
+        "hosts": [{"host": rule.host, "tiers": list(rule.tiers), "dailyBudget": rule.daily_budget}
+                  for rule in fetch_policy.POLICIES.values()],
+        "cadences": info_tasks.cadences(),
+        "articles": {
+            "maxAgeDays": info_blogs.MAX_AGE_DAYS,
+            "pageMaxAgeDays": info_blogs.PAGE_MAX_AGE_DAYS,
+            "pageFetchesPerRun": info_blogs.PAGE_FETCHES_PER_RUN,
+            "pageTriesPerItem": info_blogs.PAGE_TRIES_PER_ITEM,
+            "feedBodyMinChars": info_blogs.FEED_BODY_MIN_CHARS,
+            "waedgeBriefBodiesPerRun": info_waedge.BRIEF_BODIES_PER_RUN,
+            "waedgePeopleBodiesPerRun": info_waedge.PEOPLE_BODIES_PER_RUN,
+            "bodyMaxChars": store.INFO_BODY_MAX_CHARS,
+            "summaryChars": info_text.SUMMARY_CHARS,
+            "retentionDays": store.INFO_RETENTION_DAYS,
+        },
+    }
+
+
 @app.get("/task-history")
 def task_history(
     task: str | None = None,

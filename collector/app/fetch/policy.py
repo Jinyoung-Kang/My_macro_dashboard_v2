@@ -72,6 +72,9 @@ POLICIES: dict[str, HostPolicy] = {
             ("news.waedge.ai", 80),                          # 시장(1~3시간)·거장(8~16시간)·해외 블로그(4~8시간) 목록 + 글 페이지
             ("stock.naver.com", 100),                        # 매매동향·외국인·기관 순위 한 번에 6건, 장중 40~90분
         )),
+        # KRX 정보데이터시스템(로그인, ADR 0036 — services/krx_data). 로그인·자료가 POST라 계층 1만(브라우저 계층은 GET만). 거래일 저녁 한 번:
+        # 로그인 3 + 순매수 상위 12 + 시장 합계 2 + 외국인 보유 2 + 공매도 거래 2 + 잔고 2~6 = 23~27건.
+        HostPolicy("data.krx.co.kr", (TIER_IMPERSONATE,), daily_budget=40),
     )
 }
 

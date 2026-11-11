@@ -61,6 +61,7 @@ class DatasetsParityTest {
         assertThat(constant(source, "TS_KRX_FUTURES")).isEqualTo(Datasets.TS_KRX_FUTURES);
         assertThat(constant(source, "TS_LIQUIDITY")).isEqualTo(Datasets.TS_LIQUIDITY);
         assertThat(constant(source, "OBS_RADAR")).isEqualTo(Datasets.OBS_RADAR);
+        assertThat(constant(source, "OBS_KRX_INVESTOR_RANK")).isEqualTo(Datasets.OBS_KRX_INVESTOR_RANK);
         assertThat(constant(source, "OBS_FSC_PRICE")).isEqualTo(Datasets.OBS_FSC_PRICE);
         assertThat(constant(source, "OBS_FSC_ETF_PRICE")).isEqualTo(Datasets.OBS_FSC_ETF_PRICE);
         assertThat(constant(source, "OBS_KR_PAPER_UNIVERSE")).isEqualTo(Datasets.OBS_KR_PAPER_UNIVERSE);
@@ -88,6 +89,7 @@ class DatasetsParityTest {
         assertThat(constant(source, "SNAP_ECON_CALENDAR_TV")).isEqualTo(Datasets.SNAP_ECON_CALENDAR_TV);
         assertThat(constant(source, "SNAP_INFO_NAVER_FLOWS")).isEqualTo(Datasets.SNAP_INFO_NAVER_FLOWS);
         assertThat(constant(source, "SNAP_INFO_WAEDGE_GURUS")).isEqualTo(Datasets.SNAP_INFO_WAEDGE_GURUS);
+        assertThat(constant(source, "SNAP_INFO_KRX_DAILY")).isEqualTo(Datasets.SNAP_INFO_KRX_DAILY);
         assertThat(constant(source, "OBS_NEWS_HEADLINE")).isEqualTo(Datasets.OBS_NEWS_HEADLINE);
         assertThat(constant(source, "SNAP_NEWS_STATUS")).isEqualTo(Datasets.SNAP_NEWS_STATUS);
         assertThat(constant(source, "OBS_KR_NEWS_HEADLINE")).isEqualTo(Datasets.OBS_KR_NEWS_HEADLINE);

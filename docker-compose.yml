@@ -96,6 +96,9 @@ services:
       # 외부 API 키 — 없으면 해당 기능만 비활성화됩니다.
       FRED_API_KEY: "${FRED_API_KEY:-}"
       KRX_API_KEY: "${KRX_API_KEY:-}"
+      # KRX 정보데이터시스템 계정(ADR 0036) — 로그인해 받는 투자자별 순매수 상위·거래실적·외국인 보유·공매도. polite 속도군이라 서버에서만 씀.
+      KRX_ID: "${KRX_ID:-}"
+      KRX_PW: "${KRX_PW:-}"
       KIS_APP_KEY: "${KIS_APP_KEY:-}"
       KIS_APP_SECRET: "${KIS_APP_SECRET:-}"
       TOSS_CLIENT_ID: "${TOSS_CLIENT_ID:-}"

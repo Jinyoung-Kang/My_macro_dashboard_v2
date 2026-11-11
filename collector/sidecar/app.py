@@ -74,9 +74,11 @@ def create_app(driver: Driver | None = None, *, token: str | None = None, allowe
 
     app = FastAPI(title="Browser sidecar", version="1.0.0", docs_url=None, redoc_url=None, openapi_url=None)
 
+    press = os.environ.get("BROWSER_PRESS_CHECKBOX", "true").strip().lower() != "false"
+
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "tokenConfigured": bool(secret), "allowedHosts": len(allowed)}
+        return {"status": "ok", "tokenConfigured": bool(secret), "allowedHosts": len(allowed), "pressCheckbox": press}
 
     @app.post("/fetch")
     def fetch(body: FetchRequest, x_browser_token: str | None = Header(default=None)) -> dict:

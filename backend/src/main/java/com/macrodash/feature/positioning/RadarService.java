@@ -1,5 +1,6 @@
 package com.macrodash.feature.positioning;
 
+import com.macrodash.Kst;
 import com.macrodash.analytics.SupplyConsensus;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.config.AppProperties;
@@ -23,7 +24,7 @@ import java.util.Optional;
 /**
  * 외국인/기관 수급 레이더.
  *
- * <p>수집 순서는 수집기가 관리합니다(KIS → Daum → Naver → 토스 → 누적 이력 — PyKrx·LS는 2026-11-11에 뺌, ADR 0035).
+ * <p>수집 순서는 수집기가 관리합니다(KIS → Daum → Naver → KRX 확정 저장본 → 토스 → 누적 이력 — PyKrx·LS는 2026-11-11에 뺌, ADR 0035·0036).
  * 백엔드는 저장본을 읽고, 필요하면 수집을 요청하며, <b>어느 출처가 실제로
  * 성공했는지</b>와 <b>이력 대체 여부</b>를 화면에 그대로 전달합니다.
  *
@@ -50,6 +51,10 @@ public class RadarService {
      * 고르게 두면 "수급 데이터를 얻지 못했습니다"만 보게 됩니다.
      */
     public static final List<String> SUPPORTED_INVESTORS = List.of("외국인", "기관");
+
+    /** KRX 확정 순위가 있을 때의 안내 — 장중에는 앞 거래일, 거래일 저녁(18:30 뒤)에 그날 것이 들어옵니다. */
+    static final String KRX_INVESTOR_NOTE = "개인·연기금·금융투자·투신은 KRX 정보데이터시스템의 전 종목 확정 순위입니다 — 장중에는 앞 거래일 값이고 "
+            + "거래일 저녁에 그날 것이 들어옵니다(외국인·기관은 Daum 장중 값이 먼저).";
 
     /** 지원하지 않는 투자주체를 고르려 할 때 화면에 적을 이유. */
     public static final String UNSUPPORTED_INVESTOR_NOTE =
@@ -95,18 +100,29 @@ public class RadarService {
                 .filter(snapshot -> snapshot.payload() != null)
                 .filter(snapshot -> snapshot.isFresh(TOSS_UNIVERSE_MAX_AGE_SECONDS))
                 .isPresent();
+        boolean krxReady = krxRecent();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("markets", MARKETS);
         out.put("investors", INVESTORS);
         // 화면이 "지원 안 함"을 표시할 수 있도록 함께 내려보냅니다.
-        out.put("supportedInvestors", tossReady ? INVESTORS : SUPPORTED_INVESTORS);
-        out.put("unsupportedInvestorNote", tossReady ? TOSS_ONLY_INVESTOR_NOTE
+        out.put("supportedInvestors", tossReady || krxReady ? INVESTORS : SUPPORTED_INVESTORS);
+        out.put("unsupportedInvestorNote", krxReady ? KRX_INVESTOR_NOTE : tossReady ? TOSS_ONLY_INVESTOR_NOTE
                 : UNSUPPORTED_INVESTOR_NOTE + " 토스증권 키(TOSS_CLIENT_ID/SECRET)가 있으면 토스 공식 데이터로 "
                         + "거래대금 상위 100종목 안의 순위를 받을 수 있습니다(toss_radar_universe 태스크).");
-        out.put("fallbackChain", List.of("KIS(장중)", "Daum", "Naver", "토스(공식)", "누적 이력"));
+        out.put("fallbackChain", List.of("KIS(장중)", "Daum", "Naver", "KRX(확정 저장본)", "토스(공식)", "누적 이력"));
         out.put("tradeTypes", TRADE_TYPES);
         out.put("intervals", INTERVALS);
         return out;
+    }
+
+    /** KRX 정보데이터시스템 확정 순위(ADR 0036)가 앞 7일 안에 들어와 있는가 — 있으면 여섯 투자주체 모두 전 종목 확정 순위로 고를 수 있습니다. */
+    private boolean krxRecent() {
+        try {
+            String since = Kst.today().minusDays(7).toString();
+            return repository.listObservationDates(Datasets.OBS_KRX_INVESTOR_RANK).stream().anyMatch(day -> day.compareTo(since) >= 0);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     public Map<String, Object> ranking(String market, String investor, String tradeType,

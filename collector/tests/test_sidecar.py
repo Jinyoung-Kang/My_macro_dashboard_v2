@@ -86,7 +86,8 @@ def test_서버에_비밀이_없으면_무엇을_보내도_거절한다(given):
 
     assert _post(client, "https://www.investing.com/", token=given).status_code == 401
     assert driver.calls == []
-    assert client.get("/health").json() == {"status": "ok", "tokenConfigured": False, "allowedHosts": 2}, "뜨기는 합니다"
+    assert client.get("/health").json() == {"status": "ok", "tokenConfigured": False, "allowedHosts": 2,
+                                            "pressCheckbox": True}, "뜨기는 합니다"
 
 
 # ==============================================================================

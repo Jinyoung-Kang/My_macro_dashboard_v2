@@ -147,6 +147,8 @@ public final class Datasets {
     public static final String SNAP_INFO_NAVER_FLOWS = "info.naver.flows";
     /** 정보 수집(ADR 0035) — waedge 거장 화면의 투자자별 시장 견해. 운영자 화면 '정보 수집'만 읽음(패킷 불변). */
     public static final String SNAP_INFO_WAEDGE_GURUS = "info.waedge.gurus";
+    /** KRX 정보데이터시스템(로그인, ADR 0036) — 투자자별 거래실적·외국인 보유·공매도. 정보 수집 화면이 읽음. */
+    public static final String SNAP_INFO_KRX_DAILY = "info.krx.daily";
     /**
      * 모의 매매 Claude 계좌 패킷 {@code 11b_events}(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유({@code feeds}·{@code failedFeeds}),
      * {@code feedsOk}·{@code feedsTotal}, 7일 보관 건수 {@code stored7d}, 마지막 수집 시각 {@code generatedAt}(UTC). 헤드라인 자체는
@@ -226,6 +228,8 @@ public final class Datasets {
     public static final String TS_KRX_FUTURES = "krx_futures";
     public static final String TS_LIQUIDITY = "fed_liquidity";
     public static final String OBS_RADAR = "radar_ranking";
+    /** KRX 정보데이터시스템(로그인, ADR 0036)의 투자자별 순매수·순매도 상위 50(확정치) — 수급 레이더·정보 수집 화면이 읽음. */
+    public static final String OBS_KRX_INVESTOR_RANK = "krx_investor_rank";
     /** 금융위 공식 일별 시세 (entity = 6자리 종목코드). */
     public static final String OBS_FSC_PRICE = "fsc_price";
     /**

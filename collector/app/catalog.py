@@ -83,6 +83,9 @@ SNAP_ECON_CALENDAR_TV = "calendar.econ.tradingview"
 SNAP_INFO_NAVER_FLOWS = "info.naver.flows"
 # waedge 거장 화면의 투자자별 시장 견해(강세·중립·약세 점수·요약) — 모양(contract 1)은 app/services/info_waedge.py 머리말.
 SNAP_INFO_WAEDGE_GURUS = "info.waedge.gurus"
+# KRX 정보데이터시스템(로그인, ADR 0036) — 기준일의 투자자별 거래실적(시장 합계)·외국인 보유 상위·공매도 거래·잔고 상위. 모양(contract 1)은
+# app/tasks/info.py의 task_info_krx_daily. 투자자별 순매수 상위는 아래 관측치에.
+SNAP_INFO_KRX_DAILY = "info.krx.daily"
 # 모의 매매 Claude 계좌 패킷 11b_events(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유, 7일 보관 건수, 마지막 수집 시각.
 # 헤드라인 자체는 observations news_headline에 있습니다.
 SNAP_NEWS_STATUS = "news.headlines.status"
@@ -150,6 +153,9 @@ TS_KRX_FUTURES = "krx_futures"  # series_id = 종가/거래량/미결제약정
 TS_LIQUIDITY = "fed_liquidity"  # series_id = WALCL/WTREGEN/RRP_M/Net_Liquidity_M
 
 OBS_RADAR = "radar_ranking"     # 날짜별 수급 상위 종목 (과거 조회 불가 소스)
+# KRX 정보데이터시스템(로그인, ADR 0036)의 투자자별 순매수·순매도 상위 50(확정치) — entity = "시장|투자주체|순매수·순매도|종목코드".
+# 수급 레이더가 과거 날짜와 여섯 투자주체의 확정 순위로 읽습니다(외부 호출 없이 저장본만).
+OBS_KRX_INVESTOR_RANK = "krx_investor_rank"
 # 기능을 없애 더 쓰지 않는 누적 데이터셋. 수집기가 기동할 때 지웁니다.
 #   molit_apt — 서울 아파트 실거래 (2026-09 제거)
 RETIRED_OBSERVATION_DATASETS = ("molit_apt",)

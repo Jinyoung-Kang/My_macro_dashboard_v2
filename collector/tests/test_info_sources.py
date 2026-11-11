@@ -215,5 +215,5 @@ def test_모든_출처_호스트는_정책_표에_있고_브라우저_계층으�
 def test_정보_수집_태스크는_모두_polite이고_이름이_겹치지_않는다():
     names = [task.name for task in registry.ALL_TASKS if task.name.startswith("info_")]
 
-    assert len(names) == len(set(names)) == len(info_blogs.BLOGS) + 4
+    assert len(names) == len(set(names)) == len(info_blogs.BLOGS) + 5
     assert all(registry.TASKS_BY_NAME[name].speed == "polite" for name in names)
