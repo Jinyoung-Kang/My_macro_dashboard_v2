@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -787,7 +786,6 @@ class ManualAccountServiceDbTest {
 
     // ------------------------------------------------------------------ QA-355: 수수료 상한
     @Test
-    @Disabled("QA-355: 수정 전 — 수수료 칸에 상한이 없어 체결 금액과 같은 수수료도 그대로 저장됩니다")
     @DisplayName("QA-355 수수료 — max(체결 금액의 5%, 1,000원)을 넘으면 400(평균 단가를 수수료 칸에 적은 실수), 아주 작은 매매의 최소 수수료는 통과, 고치기도 같음")
     void feeCap() {
         startSynthetic();

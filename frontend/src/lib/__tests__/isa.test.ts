@@ -423,8 +423,8 @@ describe("체결 입력 창(2026-11-09)", () => {
     expect(buildEditTradeRequest(line)).toEqual({ ok: true, body: { quantity: 2, amount: 150_001, fee: 30 } });
   });
 
-  // QA-355: 수정 전에는 수수료 칸에 경고가 없어 평균 단가를 수수료 칸에 적어도 그대로 보냈다(it.fails).
-  it.fails("QA-355 수수료 경고 — 체결 금액의 1%를 넘고 100원을 넘으면 글, 작은 매매의 최소 수수료·어림 수수료는 경고 없음, 단가 경고와 함께도 보임", () => {
+  // QA-355: 수정 전에는 수수료 칸에 경고가 없어 평균 단가를 수수료 칸에 적어도 그대로 보냈다(재현 커밋에서는 it.fails).
+  it("QA-355 수수료 경고 — 체결 금액의 1%를 넘고 100원을 넘으면 글, 작은 매매의 최소 수수료·어림 수수료는 경고 없음, 단가 경고와 함께도 보임", () => {
     const swapped = { price: "54000", refPrice: 54_000, amount: "162000", fee: "54000" };
     expect(confirmLineWarning(swapped)).toContain("수수료");
     const onePercent = { price: "54000", refPrice: 54_000, amount: "162000", fee: "1620" };

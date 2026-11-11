@@ -74,6 +74,12 @@ public class ManualAccountService {
     static final BigDecimal MAX_AMOUNT = new BigDecimal("1000000000000000");
     /** 확인 가격의 범위 — 직전 종가의 ±40%. */
     static final BigDecimal PRICE_BAND = new BigDecimal("0.40");
+    /**
+     * 사용자가 적은 수수료의 상한(QA-355) — 체결 금액의 5%와 1,000원 가운데 큰 값. 넘으면 평균 단가나 금액을 수수료 칸에 적은 실수로 봅니다(그대로 저장하면 현금·실현
+     * 손익이 틀림). 아주 작은 매매의 최소 수수료를 막지 않게 절대 하한을 둡니다.
+     */
+    static final BigDecimal FEE_CAP_RATE = new BigDecimal("0.05");
+    static final BigDecimal FEE_CAP_FLOOR = new BigDecimal("1000");
     /** 수수료율 상한(%). */
     static final BigDecimal MAX_COMMISSION_PCT = BigDecimal.ONE;
 
@@ -677,6 +683,9 @@ public class ManualAccountService {
                 BigDecimal gross = explicit ? ManualAccountBalance.money(item.amount()) : ManualAccountBalance.amount(qty, chosen);
                 TradeCosts costs = paper.krTradeCosts(ref.symbol(), sell, quantity, chosen, balance.commissionBp(), today);
                 BigDecimal fee = item.fee() != null ? ManualAccountBalance.money(item.fee()) : costs.fee();
+                if (item.fee() != null) {
+                    requireFeeInRange(ref.symbol(), fee, gross);
+                }
                 ManualAccountBalance.Applied result = sell
                         ? ManualAccountBalance.sell(cash, held.quantity(), held.purchaseAmount(), qty, gross, fee, costs.tax())
                         : ManualAccountBalance.buy(cash, held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), qty, gross, fee);
@@ -712,6 +721,13 @@ public class ManualAccountService {
         return amount.divide(quantity, 4, RoundingMode.HALF_UP);
     }
 
+    /** 적은 수수료가 상한({@link #FEE_CAP_RATE}·{@link #FEE_CAP_FLOOR}) 안인가 — 넘으면 400(QA-355). */
+    private static void requireFeeInRange(String symbol, BigDecimal fee, BigDecimal gross) {
+        if (fee.compareTo(gross.multiply(FEE_CAP_RATE).max(FEE_CAP_FLOOR)) > 0) {
+            throw ManualAccountException.invalid(symbol + "의 수수료가 체결 금액의 5%(작은 매매는 1,000원)를 넘습니다 — 평균 단가나 금액을 수수료 칸에 적지 않았는지 확인하세요.");
+        }
+    }
+
     private static String outOfBandText(String symbol) {
         return symbol + "의 평균 단가(체결 금액 ÷ 수량)가 직전 종가의 ±40% 밖입니다 — 체결 금액(총액)과 평균 단가 칸을 바꿔 적지 않았는지 확인하세요.";
     }
@@ -729,6 +745,9 @@ public class ManualAccountService {
         }
         Trade found = store.trade(id).filter(t -> CODE.equals(t.account()))
                 .orElseThrow(() -> ManualAccountException.notFound("매매 내역을 찾을 수 없습니다."));
+        if (body.fee() != null) {
+            requireFeeInRange(found.symbol(), ManualAccountBalance.money(body.fee()), gross);
+        }
         BigDecimal qty = BigDecimal.valueOf(quantity);
         BigDecimal chosen = averagePrice(gross, qty);
         Instant now = clock.instant();

@@ -576,11 +576,34 @@ export function updateConfirmLine(line: IsaConfirmLine, field: IsaConfirmField, 
 }
 
 /** 참고 가격에서 10% 넘게 벗어나면 경고 글(총액·단가를 바꿔 적었을 때 바로 보이게) — 막지는 않습니다(±40%는 서버가 거절). */
-export function confirmLineWarning(line: Pick<IsaConfirmLine, "price" | "refPrice">): string | null {
+function priceWarning(line: Pick<IsaConfirmLine, "price" | "refPrice">): string | null {
   const price = parseDecimal(line.price, { maxDecimals: PRICE_DECIMALS });
   if (price === null || price <= 0 || line.refPrice === null || line.refPrice <= 0) return null;
   const gap = (price / line.refPrice - 1) * 100;
   return Math.abs(gap) < 10 ? null : `평균 단가가 참고 가격 ${formatPrice(line.refPrice)}보다 ${formatNumber(Math.abs(gap), 1)}% ${gap > 0 ? "높습니다" : "낮습니다"} — 총액과 단가 칸을 확인하세요.`;
+}
+
+/** 수수료 경고의 문턱(QA-355) — 체결 금액 대비 비율(%)과 절대 금액(원)을 둘 다 넘을 때. 서버는 max(금액의 5%, 1,000원)을 넘으면 거절합니다. */
+const FEE_WARN_PCT = 1;
+const FEE_WARN_WON = 100;
+
+/**
+ * 수수료가 체결 금액의 1%를 넘고 100원을 넘으면 경고 글(평균 단가나 금액을 수수료 칸에 적었을 때 바로 보이게). 수수료율이 0이거나 모르면 어림값이 0이라 어림값의
+ * 배수로 재지 않고, 아주 작은 매매의 최소 수수료는 절대 금액 문턱으로 지나갑니다.
+ */
+function feeWarning(line: Partial<Pick<IsaConfirmLine, "amount" | "fee">>): string | null {
+  if (line.amount === undefined || line.fee === undefined) return null;
+  const amount = parseDecimal(line.amount, { maxDecimals: AMOUNT_DECIMALS });
+  const fee = parseDecimal(line.fee, { maxDecimals: AMOUNT_DECIMALS });
+  if (amount === null || amount <= 0 || fee === null || fee <= FEE_WARN_WON) return null;
+  const pct = (fee / amount) * 100;
+  return pct <= FEE_WARN_PCT ? null : `수수료가 체결 금액의 ${formatNumber(pct, 1)}%입니다 — 평균 단가나 금액을 수수료 칸에 적지 않았는지 확인하세요.`;
+}
+
+/** 줄의 경고 글 — 평균 단가(참고 가격에서 10% 넘게 벗어남)와 수수료(금액의 1%·100원 넘음, QA-355). 둘 다면 이어 붙이고, 없으면 null. */
+export function confirmLineWarning(line: Pick<IsaConfirmLine, "price" | "refPrice"> & Partial<Pick<IsaConfirmLine, "amount" | "fee">>): string | null {
+  const texts = [priceWarning(line), feeWarning(line)].filter((text): text is string => text !== null);
+  return texts.length === 0 ? null : texts.join(" ");
 }
 
 /** 줄 하나의 수량·금액·수수료 읽기 — 문제가 있으면 errors에 글을 더하고 null. */
