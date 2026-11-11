@@ -561,7 +561,6 @@ def _run_empty_tasks(count: int) -> tuple[int, int]:
     return before, len(multitasking.config["TASKS"])
 
 
-@pytest.mark.xfail(strict=True, reason="QA-368: multitasking의 전역 목록 config['TASKS']가 끝난 스레드 객체를 계속 쥡니다")
 def test_QA368_끝난_다운로드_스레드는_전역_목록에_쌓이지_않는다():
     # paper_quotes가 615종목을 매시 받으므로 하루 1.5만 개 이상이 남았습니다(개당 약 2KB — 수집기 메모리 상한 1g).
     before, after = _run_empty_tasks(200)

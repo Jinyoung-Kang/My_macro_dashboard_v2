@@ -295,6 +295,28 @@ class _BudgetedSlots:
         return False
 
 
+class _LiveTasks(list):
+    """
+    multitasking의 전역 작업 목록(``config["TASKS"]``)을 대신합니다 — 새 작업을 넣을 때 끝난 스레드를 솎습니다(QA-368).
+
+    multitasking은 만든 스레드 객체를 이 목록에 넣기만 하고 빼지 않습니다(``wait_for_tasks``·``get_active_tasks``가 훑는 용도 — 이 저장소는
+    부르지 않음). yf.download는 종목마다 스레드를 하나씩 만들어, paper_quotes(615종목·매시)만으로 하루 1.5만 개 넘는 끝난 스레드 객체가
+    프로세스 수명 내내 남았습니다(개당 약 2KB).
+
+    솎을 때 남기는 것은 '아직 시작하지 않았거나(``ident is None``) 살아 있는' 작업입니다. multitasking은 목록에 넣은 **뒤에** ``start()``하므로
+    ``is_alive()``만 보면 방금 넣은 작업을 지웁니다. 여러 태스크가 동시에 배치를 받으므로 솎기와 넣기를 한 잠금 안에서 합니다.
+    """
+
+    def __init__(self, items=()) -> None:
+        super().__init__(items)
+        self._lock = threading.Lock()
+
+    def append(self, task) -> None:
+        with self._lock:
+            self[:] = [kept for kept in self if kept is not None and (kept.ident is None or kept.is_alive())]
+            super().append(task)
+
+
 _session: BudgetedSession | None = None
 _install_lock = threading.Lock()
 
@@ -348,3 +370,11 @@ def _patch_download_threads() -> None:
         return
     if not patched:
         logger.warning("yfinance 다운로드 스레드에 태스크 예산을 넘기지 못합니다 — multitasking 스레드 풀이 없습니다")
+    # 끝난 스레드 객체가 쌓이는 전역 목록을 솎는 목록으로 바꿉니다(QA-368). 위 스레드 풀 패치와 따로 둡니다 — 이것이 실패해도 예산은
+    # 넘어가 있고, 위의 경고('예산을 넘기지 못합니다')가 잘못 찍히지 않게.
+    try:
+        tasks = multitasking.config["TASKS"]
+        if not isinstance(tasks, _LiveTasks):
+            multitasking.config["TASKS"] = _LiveTasks(tasks)
+    except Exception as exc:  # noqa: BLE001 — 라이브러리 내부가 바뀌어도 수집은 계속합니다(끝난 스레드 객체가 예전처럼 남을 뿐)
+        logger.warning("yfinance 다운로드 스레드 목록을 솎지 못합니다(multitasking 구조 변경?): %s", exc)
