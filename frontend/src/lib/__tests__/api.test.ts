@@ -70,6 +70,45 @@ describe("요청 헤더", () => {
   });
 });
 
+describe("QA-345 쓰기 요청의 시간 한도", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** 응답을 주지 않다가 취소 신호를 받으면 AbortError로 끝나는 fetch(브라우저와 같은 동작). */
+  const hangingFetch = () =>
+    vi.fn().mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    }));
+
+  // 수정 전에는 apiPost가 한도를 받지 않아(셋째 인자를 버림) 응답이 오지 않으면 끝없이 기다렸다 — 실제 매매 끄기 단추가 '끄는 중…'으로 잠김.
+  it.fails("apiPost에 한도를 주면 그 시간 뒤 NetworkError(timedOut)로 끝난다", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+
+    const post = apiPost as (path: string, body?: unknown, options?: { timeoutMs?: number }) => Promise<unknown>;
+    const outcome = await Promise.race([
+      post("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 30 }).catch((e: unknown) => e),
+      new Promise((resolve) => setTimeout(() => resolve("아직 기다리는 중"), 400)),
+    ]);
+
+    expect(outcome).toBeInstanceOf(ApiError);
+    expect((outcome as ApiError).status).toBe(0);
+    expect((outcome as Error).message).toMatch(/초 안에 응답하지 않았습니다/);
+    expect((outcome as { timedOut?: boolean }).timedOut).toBe(true);
+  });
+
+  it("한도를 주지 않은 apiPost는 예전처럼 기다린다(다른 화면의 쓰기는 그대로)", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+
+    const outcome = await Promise.race([
+      apiPost("/api/y", { a: 1 }).catch((e: unknown) => e),
+      new Promise((resolve) => setTimeout(() => resolve("아직 기다리는 중"), 150)),
+    ]);
+
+    expect(outcome).toBe("아직 기다리는 중");
+  });
+});
+
 describe("401 응답", () => {
   afterEach(() => vi.unstubAllGlobals());
 

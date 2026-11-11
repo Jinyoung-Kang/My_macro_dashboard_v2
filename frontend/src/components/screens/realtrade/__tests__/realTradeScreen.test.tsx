@@ -252,6 +252,19 @@ describe("끄기는 늘 닿는다", () => {
     expect((inRegion().getByRole("button", { name: "실제 매매 끄기" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  // 수정 전에는 끄기 POST에 시간 한도가 없어, 응답이 오지 않으면 단추가 '끄는 중…'으로 잠기고 비상 순서 안내도 뜨지 않았다(QA-345).
+  it.fails("QA-345: 끄기 POST는 20초 한도와 함께 나가고, 한도를 넘긴 오류 뒤에는 이유·비상 순서가 보이고 단추가 다시 눌리며 상태를 다시 읽는다", async () => {
+    api.apiPost.mockRejectedValue(Object.assign(new Error("백엔드가 20초 안에 응답하지 않았습니다 (http://localhost:8082)"), { status: 0, timedOut: true }));
+    renderKr();
+    fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
+
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
+    expect(await inRegion().findByText(/실제 매매를 끄지 못했습니다 — 백엔드가 20초 안에 응답하지 않았습니다/)).toBeTruthy();
+    expect(inRegion().getByText(/POST \/api\/realtrade\/disable/)).toBeTruthy();
+    expect((inRegion().getByRole("button", { name: "실제 매매 끄기" }) as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(calls(STATUS_PATH).length).toBeGreaterThanOrEqual(2));   // 끄기가 처리됐을 수 있으니 상태를 다시 읽음
+  });
+
   it("SEC-6: 개요 탭에서 모의 개요가 실패(500)해도 실제 계좌 탭으로 가는 단추가 있고, 누르면 실제 매매 끄기 단추가 보이고 눌린다", async () => {
     window.history.replaceState(null, "", "/paper/kr");
     reads["/api/paper/overview?market=KR"] = () => Promise.reject(new Error("요청 실패 (HTTP 500)"));
@@ -787,6 +800,22 @@ describe("켜기 창", () => {
     expect(submitOf(dialog).disabled).toBe(false);
     fireEvent.click(submitOf(dialog));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/enable", expect.objectContaining({ lossLimitPct: 12.5 })));
+  });
+
+  // 수정 전에는 켜기류 POST에 시간 한도가 없어, 응답이 오지 않으면 창이 '보내는 중'으로 남아 닫히지 않고 뒤의 끄기 단추에 닿지 못했다(QA-345).
+  it.fails("QA-345: 켜기 POST는 90초 한도와 함께 나가고, 한도를 넘기면 '처리됐을 수 있으니 상태를 확인'을 보이고 상태를 다시 읽는다", async () => {
+    api.apiPost.mockRejectedValue(Object.assign(new Error("백엔드가 90초 안에 응답하지 않았습니다 (http://localhost:8082)"), { status: 0, timedOut: true }));
+    const dialog = await openEnable();
+    await fillAll(dialog);
+    const before = calls(STATUS_PATH).length;
+    fireEvent.click(submitOf(dialog));
+
+    await waitFor(() =>
+      expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/enable", expect.objectContaining({ confirm: "실제 매매 켜기" }), { timeoutMs: 90_000 }));
+    expect(await within(dialog).findByText(/90초 안에 응답을 받지 못했습니다 — 요청이 처리됐을 수 있으니/)).toBeTruthy();
+    await waitFor(() => expect(calls(STATUS_PATH).length).toBeGreaterThan(before));
+    // 창은 닫을 수 있다(보내는 중이 아님) — 닫으면 뒤의 끄기 단추에 닿는다.
+    expect(submitOf(dialog).disabled).toBe(true);   // 비밀번호 칸이 비워져 다시 보내려면 다시 입력
   });
 
   it("비밀번호가 틀리면(403 password-invalid) 창 안에 문구, 비밀번호 칸을 비우고 창은 남는다", async () => {
