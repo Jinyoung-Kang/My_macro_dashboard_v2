@@ -104,14 +104,16 @@ dashboard:
   # 정보 수집(운영자 전용, ADR 0035~0037). 끊김 알림 주기는 SourceAlertJob의 기본값(5분)을 씁니다.
   info:
     translate:
-      # 목록 제목을 미리 한국어로 번역하는 정기 작업 — 운영 서버 덧붙임(compose.vultr.yml)만 켭니다. 화면의 번역 단추(수동)는 이 값과 무관
-      enabled: ${INFO_TRANSLATE_ENABLED:false}
-      model: claude-haiku-5-5             # 번역 모델(낮은 등급 — 사용자 지시 2026-11-11). AI_ENGINES 허용 목록이 있으면 이 모델의 엔진이 들어 있어야 함
-      effort: low                         # low·medium·high·xhigh·max
+      # 번역 엔진(ADR 0037 개정 2026-11-12): auto = GEMINI_API_KEY가 있으면 Gemini, 없으면 Claude Haiku. gemini·claude로 고정할 수도 있음.
+      # 고른 엔진이 실패해도 다른 엔진으로 넘어가지 않습니다. 제목·본문 모두 화면에서 번역 단추를 누를 때만 번역합니다(미리 번역하지 않음).
+      engine: ${INFO_TRANSLATE_ENGINE:auto}
+      # Flash 등급, 사고는 낮게(thinkingLevel low). 2026-11-12 같은 제목 여섯 개로 견줘 보니 한 등급 아래(flash-lite)는 인명을 다른 사람으로
+      # 바꿔 옮겼습니다(Healey → 리브스) — 금융 속보에서는 사실 오류라 Flash로 둡니다. 더 싸게 하려면 gemini-flash-lite-latest.
+      gemini-model: ${INFO_TRANSLATE_GEMINI_MODEL:gemini-3.5-flash}
+      model: claude-haiku-5-5             # Claude 엔진일 때의 모델. AI_ENGINES 허용 목록이 있으면 이 모델의 엔진이 들어 있어야 함
+      effort: low                         # Claude 엔진의 effort(low·medium·high·xhigh·max)
       daily-chars: 1500000                # KST 하루에 번역하는 원문 글자 수의 상한(제목 + 본문). 넘으면 그날은 번역하지 않음
       timeout-seconds: 90                 # 호출 하나의 대기 한도
-      interval-ms: 120000                 # 제목 미리 번역 주기(2분)
-      initial-delay-ms: 150000
 
   # 모의 알고리즘 매매(운영자 전용, 명세 docs/specs/2026-10-24-paper-trading-spec.md). 슬리피지·스탑 비율 같은 값은 여기가 아니라
   # DB 설정 한 행(paper_settings)이고, 여기는 재기동해야 바뀌는 값만 둡니다. 출발일이 거래일이 아니거나 현금이 0 이하면 기동하지 않습니다.
@@ -158,6 +160,8 @@ dashboard:
   ai:
     # Claude API (Haiku 5.5) — platform.claude.com에서 발급. 자동 탐색의 첫 엔진입니다.
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    # Gemini API(Google AI Studio 키) — 정보 수집 글의 번역 전용(ADR 0037 개정). 리포트 엔진 목록에는 넣지 않습니다.
+    gemini-api-key: ${GEMINI_API_KEY:}
     nvidia-api-key: ${NVIDIA_API_KEY:}
     cerebras-api-key: ${CEREBRAS_API_KEY:}
     cloudflare-account-id: ${CLOUDFLARE_ACCOUNT_ID:}

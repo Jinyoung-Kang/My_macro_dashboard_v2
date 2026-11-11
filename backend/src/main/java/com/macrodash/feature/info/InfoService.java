@@ -110,10 +110,8 @@ public class InfoService {
         }
         Paging paging = Paging.of(page, size);
         InfoStore.Page<Item> rows = store.items(sources, query, paging.offset(), paging.size());
-        Map<String, String> korean = translator.cachedTitles(rows.rows().stream()
-                .filter(item -> item.titleKo() == null).map(Item::title).toList());
         out.put("available", true);
-        out.put("items", rows.rows().stream().map(item -> itemJson(item, false, korean)).toList());
+        out.put("items", rows.rows().stream().map(item -> itemJson(item, false)).toList());
         paging.put(out, rows.total());
         return out;
     }
@@ -126,8 +124,7 @@ public class InfoService {
         Map<String, Object> out = new LinkedHashMap<>();
         Optional<Item> item = store.ready() ? store.item(id) : Optional.empty();
         out.put("found", item.isPresent());
-        item.ifPresent(found -> out.put("item", itemJson(found, true,
-                found.titleKo() == null ? translator.cachedTitles(List.of(found.title())) : Map.of())));
+        item.ifPresent(found -> out.put("item", itemJson(found, true)));
         return out;
     }
 
@@ -147,15 +144,12 @@ public class InfoService {
         }
         Paging paging = Paging.of(page, size);
         InfoStore.Page<InfoStore.Headline> rows = store.headlines(datasets, feed, query, paging.offset(), paging.size());
-        Map<String, String> korean = translator.cachedTitles(rows.rows().stream().map(InfoStore.Headline::title)
-                .filter(InfoTranslator::needsTranslation).toList());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("items", rows.rows().stream().map(row -> {
             Map<String, Object> line = new LinkedHashMap<>();
             line.put("set", Datasets.OBS_KR_NEWS_HEADLINE.equals(row.dataset()) ? "kr" : "us");
             line.put("title", row.title());
-            line.put("titleKo", row.title() == null ? null : korean.get(row.title()));
             line.put("summary", row.summary());
             line.put("link", row.link());
             line.put("source", row.source());
@@ -457,7 +451,7 @@ public class InfoService {
         return out;
     }
 
-    private static Map<String, Object> itemJson(Item item, boolean withBody, Map<String, String> korean) {
+    private static Map<String, Object> itemJson(Item item, boolean withBody) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", item.id());
         out.put("source", item.source());
@@ -466,7 +460,7 @@ public class InfoService {
         out.put("kind", item.kind());
         out.put("url", item.url());
         out.put("title", item.title());
-        out.put("titleKo", item.titleKo() != null ? item.titleKo() : korean.get(item.title()));
+        out.put("titleKo", item.titleKo());
         out.put("author", item.author());
         out.put("publishedAt", item.publishedAt() == null ? null : Kst.stamp(item.publishedAt()));
         out.put("firstSeenAt", Kst.stamp(item.firstSeenAt()));

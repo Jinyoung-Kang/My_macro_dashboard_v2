@@ -48,7 +48,6 @@ class InfoStoreDbTest {
         jdbc.update("DELETE FROM fetch_source_state WHERE task LIKE 'test-%'");
         jdbc.update("DELETE FROM source_alerts WHERE task LIKE 'test-%'");
         jdbc.update("DELETE FROM info_translations WHERE model = 'test-model'");
-        jdbc.update("DELETE FROM observations WHERE dataset = 'news_headline' AND entity LIKE 'test-%'");
     }
 
     private void item(String id, String source, String title, Instant published, Instant firstSeen, String body) {
@@ -145,30 +144,5 @@ class InfoStoreDbTest {
 
         assertThat(translations.find(List.of(id, "missing"))).containsExactly(java.util.Map.entry(id, "월러: 금리는 제약적"));
         assertThat(translations.charsSince(Instant.now().minusSeconds(3600)) - before).isEqualTo(title.length());
-    }
-
-    @Test
-    @DisplayName("번역할 제목 고르기 — 한국어 제목이 없는 최근 글과 미국 사건 뉴스만, 한글 제목·이미 번역한 제목·오래된 글은 빼고, 속보 종류(headline)도 넣을 수 있다")
-    void pendingTitles() {
-        Instant now = Instant.now();
-        String tag = " test" + System.nanoTime();
-        jdbc.update("INSERT INTO info_items (id, source, kind, url, title, published_at, first_seen_at, body_status) VALUES "
-                        + "(?, 'test-wire', 'headline', 'https://example.org/w1', ?, ?, ?, 'none'), "
-                        + "(?, 'test-wire', 'headline', 'https://example.org/w2', ?, ?, ?, 'none'), "
-                        + "(?, 'test-wire', 'headline', 'https://example.org/w3', ?, ?, ?, 'none'), "
-                        + "(?, 'test-wire', 'headline', 'https://example.org/w4', ?, ?, ?, 'none')",
-                "b00000000000000000000001", "Oil jumps" + tag, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now),
-                "b00000000000000000000002", "유가 급등" + tag, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now),
-                "b00000000000000000000003", "Done already" + tag, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now),
-                "b00000000000000000000004", "Too old" + tag, Timestamp.from(now.minusSeconds(10 * 86400)), Timestamp.from(now));
-        item("b00000000000000000000005", "test-a", "Has korean title" + tag, now.minusSeconds(60), now, null);
-        jdbc.update("INSERT INTO observations (dataset, obs_date, entity, payload) VALUES ('news_headline', CURRENT_DATE, 'test-h1', "
-                + "jsonb_build_object('title', ?::text))", "Fed holds rates" + tag);
-        translations.put(TranslationStore.id(TranslationStore.TITLE, "Done already" + tag), TranslationStore.TITLE, 5, "이미", "test-model");
-
-        List<String> pending = translations.pendingTitles(now.minusSeconds(3 * 86400), java.time.LocalDate.now().minusDays(4), 500);
-
-        assertThat(pending).contains("Oil jumps" + tag, "Fed holds rates" + tag)
-                .doesNotContain("유가 급등" + tag, "Done already" + tag, "Too old" + tag, "Has korean title" + tag);
     }
 }

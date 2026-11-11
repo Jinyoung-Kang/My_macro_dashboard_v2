@@ -38,6 +38,7 @@ class InfoTranslatorTest {
     private static final String MODEL = "claude-haiku-5-5";
 
     private AiService ai;
+    private GeminiClient gemini;
     private TranslationStore store;
     private Map<String, String> saved;
     private InfoTranslator translator;
@@ -45,6 +46,7 @@ class InfoTranslatorTest {
     @BeforeEach
     void setUp() {
         ai = mock(AiService.class);
+        gemini = mock(GeminiClient.class);
         store = mock(TranslationStore.class);
         saved = new ConcurrentHashMap<>();      // 본문 조각은 여러 스레드가 함께 저장합니다
         when(store.ready()).thenReturn(true);
@@ -63,7 +65,8 @@ class InfoTranslatorTest {
     }
 
     private InfoTranslator translator(long dailyChars) {
-        return new InfoTranslator(ai, store, new ObjectMapper(), MODEL, "low", dailyChars, 30, Clock.fixed(NOW, ZoneOffset.UTC));
+        return new InfoTranslator(ai, gemini, store, new ObjectMapper(), "auto", MODEL, "gemini-flash-lite-latest", "low", dailyChars, 30,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static AiService.StructuredResult ok(String json) {
@@ -204,5 +207,28 @@ class InfoTranslatorTest {
         assertThat(longOne).allSatisfy(part -> assertThat(part.length()).isLessThanOrEqualTo(100));
         assertThat(longOne).allSatisfy(part -> assertThat(part).endsWith("."));
         assertThat(String.join(" ", longOne)).isEqualTo("One sentence here. ".repeat(40).strip());
+    }
+
+    @Test
+    @DisplayName("엔진 — Gemini 키가 있으면 Gemini로만 부르고(Claude로 넘어가지 않음), 실패 사유를 그대로 알린다. 모르는 엔진 이름이면 멈춘다")
+    void geminiEngine() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(new GeminiClient.Reply(true, "{\"items\":[{\"n\":1,\"ko\":\"연준, 금리 동결\"}]}", null, null))
+                .thenReturn(GeminiClient.Reply.failed("BILLING", "Gemini API 선불 크레딧이 없습니다(402)"));
+        InfoTranslator viaGemini = translator(1_000_000);
+
+        InfoTranslator.Titles ok = viaGemini.titles(List.of("Fed holds rates"));
+        InfoTranslator.Titles failed = viaGemini.titles(List.of("Oil jumps"));
+
+        assertThat(viaGemini.model()).isEqualTo("gemini-flash-lite-latest");
+        assertThat(viaGemini.status()).containsEntry("engine", "gemini");
+        assertThat(ok.translated()).containsEntry("Fed holds rates", "연준, 금리 동결");
+        assertThat(failed.errorKind()).isEqualTo("BILLING");
+        verify(gemini, times(2)).structured(eq("gemini-flash-lite-latest"), eq(InfoTranslator.TITLE_SYSTEM), anyString(), any(), eq(30));
+        verify(ai, never()).structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt());
+        verify(store).put(anyString(), eq(TranslationStore.TITLE), eq(15), eq("연준, 금리 동결"), eq("gemini-flash-lite-latest"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new InfoTranslator(ai, gemini, store, new ObjectMapper(), "papago", MODEL,
+                "gemini-flash-lite-latest", "low", 1, 30, Clock.fixed(NOW, ZoneOffset.UTC))).isInstanceOf(IllegalArgumentException.class);
     }
 }

@@ -6,26 +6,23 @@ import org.springframework.stereotype.Repository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.Collection;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
  * 한국어 번역 저장({@code info_translations}, V35 — ADR 0037). 백엔드가 쓰는 표입니다(ADR 0008 — 수집기는 모름).
  *
- * <p>번역 한 건에 한 행이고 id는 {@code md5(kind + ':' + 원문)}입니다 — 같은 글자는 한 번만 번역하고(다시 눌러도 모델을 부르지 않음), SQL에서도
- * 같은 값을 계산해 아직 번역하지 않은 제목을 고릅니다({@link #pendingTitles}). 원문은 저장하지 않습니다(글 표·관측치에 이미 있음).
+ * <p>번역 한 건에 한 행이고 id는 {@code md5(kind + ':' + 원문)}입니다 — 같은 글자는 한 번만 번역합니다(다시 눌러도 모델을 부르지 않음).
+ * 원문은 저장하지 않습니다(글 표·관측치에 이미 있음).
  */
 @Repository
 public class TranslationStore {
 
-    /** 목록 제목(백엔드가 미리 번역). */
+    /** 목록 제목(화면에서 그 제목의 번역 단추를 누를 때). */
     public static final String TITLE = "title";
     /** 본문·요약 조각(화면에서 번역 단추를 누를 때). */
     public static final String BODY = "body";
@@ -81,25 +78,5 @@ public class TranslationStore {
         Long sum = jdbc.queryForObject("SELECT COALESCE(SUM(source_chars), 0) FROM info_translations WHERE created_at >= ?",
                 Long.class, Timestamp.from(from));
         return sum == null ? 0L : sum;
-    }
-
-    /**
-     * 아직 번역하지 않은 제목(최근 것부터, 같은 제목은 한 번) — 수집 글({@code info_items}) 가운데 한국어 제목이 없는 것과 미국 사건 뉴스 RSS
-     * ({@code observations}의 {@code news_headline}). 한글이 든 제목은 고르지 않습니다. 읽기만 합니다(수집기 표).
-     *
-     * @param since     글은 이 시각 뒤(작성 시각, 모르면 처음 받은 시각)
-     * @param sinceDate 사건 뉴스는 이 날짜(obs_date)부터
-     */
-    public List<String> pendingTitles(Instant since, LocalDate sinceDate, int limit) {
-        return jdbc.queryForList("SELECT c.title FROM ("
-                        + " SELECT i.title AS title, COALESCE(i.published_at, i.first_seen_at) AS at FROM info_items i"
-                        + "  WHERE i.title_ko IS NULL AND COALESCE(i.published_at, i.first_seen_at) > ?"
-                        + " UNION ALL"
-                        + " SELECT o.payload->>'title' AS title, o.updated_at AS at FROM observations o"
-                        + "  WHERE o.dataset = ? AND o.obs_date >= ?"
-                        + ") c WHERE c.title IS NOT NULL AND c.title <> '' AND c.title !~ '[가-힣]'"
-                        + " AND NOT EXISTS (SELECT 1 FROM info_translations t WHERE t.id = md5('" + TITLE + ":' || c.title))"
-                        + " GROUP BY c.title ORDER BY MAX(c.at) DESC LIMIT ?",
-                String.class, Timestamp.from(since), Datasets.OBS_NEWS_HEADLINE, Date.valueOf(sinceDate), limit);
     }
 }

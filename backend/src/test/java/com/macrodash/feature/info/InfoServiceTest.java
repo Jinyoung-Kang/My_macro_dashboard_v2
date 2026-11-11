@@ -183,23 +183,23 @@ class InfoServiceTest {
     }
 
     @Test
-    @DisplayName("글 목록은 한국어 제목이 없는 글에 저장된 번역 제목을 붙이고, 속보(wire)만 고를 수 있다")
+    @DisplayName("글 목록은 제목을 원문 그대로 내리고(미리 번역하지 않음 — 출처가 붙인 한국어 제목만), 속보(wire)만 고를 수 있다")
     @SuppressWarnings("unchecked")
     void itemsCarryTranslatedTitles() {
         InfoStore.Item wire = new InfoStore.Item("0123456789abcdef01234568", "wire.financialjuice", "headline",
                 "https://www.financialjuice.com/News/1/x.aspx", "Fed's Waller: rates are restrictive", null, null,
                 NOW.minusSeconds(60), NOW, null, "none", "impersonate", MAPPER.createObjectNode(), null);
         when(store.items(anyList(), any(), anyInt(), anyInt())).thenReturn(new InfoStore.Page<>(List.of(wire, item("blog.wolfstreet")), 2));
-        when(translator.cachedTitles(List.of("Fed's Waller: rates are restrictive")))
-                .thenReturn(Map.of("Fed's Waller: rates are restrictive", "월러 연준 이사: 금리는 제약적"));
 
         Map<String, Object> out = service.items("wire", null, null, null, null);
 
         verify(store).items(eq(List.of("wire.financialjuice")), eq(null), eq(0), eq(InfoService.DEFAULT_SIZE));
         List<Map<String, Object>> rows = (List<Map<String, Object>>) out.get("items");
-        assertThat(rows.get(0)).containsEntry("titleKo", "월러 연준 이사: 금리는 제약적").containsEntry("sourceLabel", "Financial Juice 속보")
+        assertThat(rows.get(0)).containsEntry("title", "Fed's Waller: rates are restrictive").containsEntry("titleKo", null)
+                .containsEntry("sourceLabel", "Financial Juice 속보")
                 .containsEntry("kind", "headline").containsEntry("bodyStatus", "none");
         assertThat(rows.get(1)).containsEntry("titleKo", "금리");
+        verify(translator, never()).titles(anyList());
 
         // 종류를 고르지 않으면 글(블로그·waedge)만 — 속보가 '최근 글'을 덮지 않습니다.
         ArgumentCaptor<List<String>> all = ArgumentCaptor.forClass(List.class);

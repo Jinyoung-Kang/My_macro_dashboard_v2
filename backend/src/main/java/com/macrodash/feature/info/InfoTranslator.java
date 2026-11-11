@@ -26,11 +26,11 @@ import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 
 /**
- * 정보 수집 글의 한국어 번역(ADR 0037) — Claude Haiku를 낮은 effort로 부르고, 결과를 표({@code info_translations})에 두어 같은 글자는 다시
- * 번역하지 않습니다.
+ * 정보 수집 글의 한국어 번역(ADR 0037) — 낮은 등급 모델을 낮은 effort로 부르고, 결과를 표({@code info_translations})에 두어 같은 글자는 다시
+ * 번역하지 않습니다. 엔진은 {@code dashboard.info.translate.engine}: auto면 Gemini 키(GEMINI_API_KEY)가 있을 때 Gemini, 없으면 Claude Haiku.
  *
  * <ul>
- *   <li><b>제목</b>: 여러 개를 한 번에 묶어 번역합니다({@link #titles}) — 정기 작업({@link InfoTranslateJob})이 목록에 보일 제목을 미리 채웁니다.</li>
+ *   <li><b>제목</b>: 화면에서 그 제목의 번역 단추를 누를 때 번역합니다({@link #titles} — 미리 번역하지 않음, 2026-11-12 사용자 지시).</li>
  *   <li><b>본문·요약</b>: 화면에서 번역 단추를 누를 때만 번역합니다({@link #body}). 긴 글은 문단 경계에서 조각으로 나눠 조각마다 저장하므로, 중간에
  *       실패해도 다시 누르면 남은 조각만 번역합니다.</li>
  *   <li><b>상한</b>: KST 하루에 번역하는 원문 글자 수({@code dashboard.info.translate.daily-chars})를 넘기면 그날은 더 부르지 않습니다.</li>
@@ -120,10 +120,15 @@ public class InfoTranslator {
     }
 
     private final AiService ai;
+    private final GeminiClient gemini;
     private final TranslationStore store;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 지금 쓰는 모델 ID(고른 엔진의 것) — 번역 행과 화면에 남깁니다. */
     private final String model;
+    private final String claudeModel;
+    private final String geminiModel;
+    private final boolean useGemini;
     private final String effort;
     private final long dailyChars;
     private final int timeoutSeconds;
@@ -135,24 +140,45 @@ public class InfoTranslator {
     });
 
     @Autowired
-    public InfoTranslator(AiService ai, TranslationStore store, ObjectMapper mapper,
+    public InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, ObjectMapper mapper,
+                          @Value("${dashboard.info.translate.engine:auto}") String engine,
                           @Value("${dashboard.info.translate.model:claude-haiku-5-5}") String model,
+                          @Value("${dashboard.info.translate.gemini-model:gemini-3.5-flash}") String geminiModel,
                           @Value("${dashboard.info.translate.effort:low}") String effort,
                           @Value("${dashboard.info.translate.daily-chars:1500000}") long dailyChars,
                           @Value("${dashboard.info.translate.timeout-seconds:90}") int timeoutSeconds) {
-        this(ai, store, mapper, model, effort, dailyChars, timeoutSeconds, Clock.systemUTC());
+        this(ai, gemini, store, mapper, engine, model, geminiModel, effort, dailyChars, timeoutSeconds, Clock.systemUTC());
     }
 
-    InfoTranslator(AiService ai, TranslationStore store, ObjectMapper mapper, String model, String effort, long dailyChars,
-                   int timeoutSeconds, Clock clock) {
+    InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, ObjectMapper mapper, String engine, String model,
+                   String geminiModel, String effort, long dailyChars, int timeoutSeconds, Clock clock) {
         this.ai = ai;
+        this.gemini = gemini;
         this.store = store;
         this.mapper = mapper;
-        this.model = model;
+        this.claudeModel = model;
+        this.geminiModel = geminiModel;
         this.effort = effort;
         this.dailyChars = dailyChars;
         this.timeoutSeconds = timeoutSeconds;
         this.clock = clock;
+        String wanted = engine == null ? "auto" : engine.strip().toLowerCase(java.util.Locale.ROOT);
+        this.useGemini = switch (wanted) {
+            case "gemini" -> true;
+            case "claude" -> false;
+            case "auto", "" -> gemini.configured();
+            default -> throw new IllegalArgumentException("dashboard.info.translate.engine은 auto·gemini·claude 중 하나여야 합니다: " + engine);
+        };
+        this.model = useGemini ? geminiModel : model;
+    }
+
+    /** 모델을 한 번 부릅니다 — 고른 엔진(Gemini 또는 Claude)으로. 다른 엔진으로 넘어가지 않습니다(비용이 나가는 곳을 조용히 바꾸지 않음). */
+    private GeminiClient.Reply call(String system, String user, Map<String, Object> schema) {
+        if (useGemini) {
+            return gemini.structured(geminiModel, system, user, schema, timeoutSeconds);
+        }
+        AiService.StructuredResult result = ai.structured(claudeModel, system, user, schema, effort, timeoutSeconds);
+        return new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), result.error());
     }
 
     @PreDestroy
@@ -172,6 +198,7 @@ public class InfoTranslator {
     /** 번역의 지금 설정과 오늘(KST) 쓴 양 — 정보(메커니즘) 화면용. 표가 없으면 usedCharsToday는 null. */
     public Map<String, Object> status() {
         Map<String, Object> out = new LinkedHashMap<>();
+        out.put("engine", useGemini ? "gemini" : "claude");
         out.put("model", model);
         out.put("effort", effort);
         out.put("dailyChars", dailyChars);
@@ -235,8 +262,7 @@ public class InfoTranslator {
         for (int i = 0; i < missing.size(); i++) {
             numbered.add(Map.of("n", i + 1, "text", missing.get(i)));
         }
-        AiService.StructuredResult result = ai.structured(model, TITLE_SYSTEM, mapper.writeValueAsString(Map.of("titles", numbered)),
-                TITLE_SCHEMA, effort, timeoutSeconds);
+        GeminiClient.Reply result = call(TITLE_SYSTEM, mapper.writeValueAsString(Map.of("titles", numbered)), TITLE_SCHEMA);
         if (!result.ok()) {
             return new Titles(out, result.errorKind(), result.error(), true);
         }
@@ -326,8 +352,7 @@ public class InfoTranslator {
 
     /** 조각 하나를 번역해 저장합니다 → 실패 사유(성공이면 null). */
     private String translatePart(String part) {
-        AiService.StructuredResult result = ai.structured(model, BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA, effort,
-                timeoutSeconds);
+        GeminiClient.Reply result = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA);
         if (!result.ok()) {
             return result.error();
         }
