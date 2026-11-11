@@ -149,6 +149,41 @@ describe("정보 수집 화면", () => {
     expect(within(dialog).getByText("First paragraph of the body.")).toBeTruthy();
   });
 
+  // 서버는 제목을 먼저 옮기고 본문을 옮깁니다. 본문만 실패하면 '제목 번역 있음·본문 번역 없음·오류 글(다시 누르면 남은 부분만 번역)'이
+  // 오는데, 화면이 제목 번역만으로 번역 결과를 채우고 단추를 내려 다시 시도할 길이 없었습니다(QA-409).
+  it.fails("QA-409: 번역이 제목만 되고 본문이 실패하면 오류 글과 번역 단추가 함께 남고, 다시 누르면 본문이 한국어로 바뀐다", async () => {
+    const english = { ...ITEM, titleKo: null };
+    routes({
+      "/api/info/catalog": CATALOG,
+      "/api/info/items/0123456789abcdef01234567": { found: true, item: { ...english, body: "First paragraph of the body." } },
+      "/api/info/items?kind=blog": { available: true, items: [english], page: 1, size: 10, total: 1, pages: 1 },
+    });
+    api.apiPost
+      .mockResolvedValueOnce({
+        ok: false, titleKo: "금리 급등", textKo: null, alreadyKorean: false, cached: false, truncated: false, model: "gemini-flash-latest",
+        error: "일부만 번역했습니다 — 다시 누르면 남은 부분만 번역합니다.",
+      })
+      .mockResolvedValueOnce({
+        ok: true, titleKo: "금리 급등", textKo: "본문 첫 문단의 번역", alreadyKorean: false, cached: false, truncated: false, model: "gemini-flash-latest", error: null,
+      });
+    render(<InfoHub tab="news" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rates Spike" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rates Spike" });
+    await within(dialog).findByText("First paragraph of the body.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "한국어로 번역" }));
+
+    expect(await within(dialog).findByText(/다시 누르면 남은 부분만 번역합니다/)).toBeTruthy();
+    expect(within(dialog).getByText("금리 급등")).toBeTruthy();                       // 성공한 제목 번역은 남습니다
+    expect(within(dialog).getByText("First paragraph of the body.")).toBeTruthy();   // 본문은 아직 원문
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다시 번역" }));
+    expect(await within(dialog).findByText("본문 첫 문단의 번역")).toBeTruthy();
+    expect(api.apiPost).toHaveBeenCalledTimes(2);
+    expect(within(dialog).queryByText(/다시 누르면 남은 부분만 번역합니다/)).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: /번역$/ })).toBeNull();        // 다 옮겼으면 번역 단추는 내립니다
+  });
+
   it("뉴스·글: 제목은 미리 번역하지 않고 제목마다 번역 단추로 — 누른 제목만 서버에 묻고 아래에 한국어를 보인다. 실패하면 사유를 보인다", async () => {
     const WIRE = {
       ...ITEM, id: "0123456789abcdef01234568", source: "wire.financialjuice", sourceLabel: "Financial Juice 속보", kind: "headline",
