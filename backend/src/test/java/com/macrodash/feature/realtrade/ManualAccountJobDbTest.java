@@ -13,7 +13,6 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -238,7 +237,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 'Expecting empty but was: [SELL 000660 12 PLANNED, SELL 005930 40 PLANNED]'(현금 −600,000 — 평가액 200,000으로 책 종목 매도 지시).
     @Test
-    @Disabled("QA-381: 현금이 음수인 잔고로 매도 지시를 만듦 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 현금이 음수면 지시를 만들지 않고 사유(cash-negative)로 기다림 — 보기에 사유, 08:00에 금액 없는 알림 한 통, 잔고를 고치면 다음 주기에 지시와 지시 알림")
     void negativeCashMakesNoInstructions() {
         negativeCash("-600000");
@@ -248,7 +246,7 @@ class ManualAccountJobDbTest {
         assertThat(lines(E)).isEmpty();
         assertThat(store.session("isa", E)).as("세션 행도 쓰지 않음 — 잔고를 고치면 다시 만들게").isEmpty();
         assertThat(job.waiting().session()).isEqualTo(E);
-        assertThat(job.waiting().reason()).isEqualTo("cash-negative");
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_CASH);
         Map<String, Object> view = service().view();
         assertThat(waitingOf(view)).containsEntry("session", E.toString()).containsEntry("reason", "cash-negative");
         assertThat((List<?>) view.get("notes")).anySatisfy(note -> assertThat((String) note).startsWith(E + " 지시 대기 — ").contains("현금이 음수"));
@@ -272,7 +270,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 'Expecting empty but was: [SELL 000660 15 PLANNED, SELL 005930 50 PLANNED]'(평가액 −100,000 — 전 종목 전량 매도 지시가 08:00 알림으로).
     @Test
-    @Disabled("QA-381: 현금이 음수인 잔고로 매도 지시를 만듦 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 평가액이 0 이하여도 전량 매도 지시를 만들지 않음 — 개장까지 음수면 그 세션은 UNAVAILABLE(사유 cash-negative), 음수인 동안 세션마다 08:00에 한 통")
     void negativeEquityNeverSellsEverything() {
         negativeCash("-900000");
@@ -282,12 +279,12 @@ class ManualAccountJobDbTest {
         cycleAt("2026-11-06T22:35");
         cycleAt("2026-11-09T08:05");
         assertThat(lines(E)).isEmpty();
-        assertThat(sentTexts(1).getFirst()).startsWith("[ISA 계좌] 11/09(월) 매매 지시 없음").doesNotContain("매도", "원");
+        assertThat(sentTexts(1).getFirst()).startsWith("[ISA 계좌] 11/09(월) 매매 지시 없음").doesNotContain("• 매도", "주\n", "원");
 
         cycleAt("2026-11-09T09:05");
         assertThat(store.session("isa", E)).hasValueSatisfying(s -> {
             assertThat(s.state()).isEqualTo("UNAVAILABLE");
-            assertThat(s.detail().path("reason").asString()).isEqualTo("cash-negative");
+            assertThat(s.detail().path("reason").asString()).isEqualTo(ManualAccountJob.WAIT_CASH);
         });
         assertThat(store.instructions("isa", E)).isEmpty();
         assertThat(block(service().view())).containsEntry("status", "UNAVAILABLE").containsEntry("reason", "cash-negative");
@@ -299,10 +296,35 @@ class ManualAccountJobDbTest {
         assertThat(sentTexts(2).get(1)).startsWith("[ISA 계좌] 11/10(화) 매매 지시 없음");
     }
 
+    @Test
+    @DisplayName("QA-381: 지시를 만든 뒤 그 세션 08:00 전에 잔고를 고쳐 현금이 음수가 되면 지시를 지우고 다시 만들지 않음, 08:00 뒤에 음수가 되면 이미 만든 지시는 그대로")
+    void balanceEditToNegativeCash() {
+        started("1000000", "2026-11-06T14:55", A, "10", "10000");
+        standardTargets();
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).hasSize(3);
+
+        clock.set(kst("2026-11-06T23:00"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("50000"), Map.of()));   // 현금 = 50,000 − 10주 × 10,000 = −50,000
+        cycleAt("2026-11-06T23:05");
+        assertThat(store.instructions("isa", E)).isEmpty();
+        assertThat(store.session("isa", E)).isEmpty();
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_CASH);
+
+        store.updateCash("isa", d("900000"));
+        cycleAt("2026-11-06T23:15");
+        assertThat(lines(E)).hasSize(3);
+        clock.set(kst("2026-11-09T08:20"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("50000"), Map.of()));
+        cycleAt("2026-11-09T08:25");
+        assertThat(lines(E)).as("08:00 뒤 — 이미 주문을 냈을 수 있어 지우지 않음").hasSize(3).allSatisfy(l -> assertThat(l).endsWith("PLANNED"));
+        assertThat(block(service().view())).containsEntry("ledgerChanged", true);
+        assertThat(sentTexts(1).getFirst()).as("지시 알림 한 통뿐 — '지시 없음' 글은 가지 않음").contains("시가 매매 지시");
+    }
+
     // 스탑 지시(보유를 파는 손절)는 현금과 무관해 수정 전에도 만들어짐 — 다만 수정 전에는 음수 현금으로 만든 매도 지시(A 40주·B 12주, 미확인)가 스탑 수량에서 빠져
     // 'Expecting actual: ["005930 10 MARKET PLANNED", "000660 3 NEXT_CLOSE PLANNED"]'였다. 고친 뒤에는 잔고 보유 그대로(막지 않는 것을 고정).
     @Test
-    @Disabled("QA-381: 현금이 음수인 잔고로 매도 지시를 만듦 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 현금이 음수여도 장중 스탑 매도 지시는 그대로 — 수량은 잔고 보유, 즉시 알림(막는 것은 목표 비중으로 계산하는 매매 지시뿐)")
     void negativeCashKeepsStopInstructions() {
         negativeCash("-600000");

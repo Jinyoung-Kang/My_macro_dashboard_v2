@@ -23,6 +23,7 @@ import type {
   IsaTotalRequest,
   IsaTrade,
   IsaUnpriced,
+  IsaWaiting,
 } from "./types/isa";
 
 /** 칸의 배너 글(명세 §8 그대로). */
@@ -74,9 +75,23 @@ export function unavailableText(reason: string | null | undefined): string {
   switch (reason) {
     case "timed-orders":
       return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다(지시 시각 — 시가·개장 10분 뒤 — 밖의 주문) — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
+    case "cash-negative":
+      return "현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다 — 잔고(현금·보유)가 실제와 맞는지 확인해 고치세요. 음수인 동안 다음 세션 지시도 만들지 않습니다(장중 스탑 매도 지시는 그대로).";
     default:
       return "이 세션의 지시를 만들지 못했습니다 — 이번 세션은 매매하지 않고 다음 결정을 기다립니다. 까닭이 있으면 요약 칸의 안내에 적혀 있습니다.";
   }
+}
+
+/**
+ * 다음 세션 지시를 아직 만들지 않은 사유(응답 waiting) 가운데 지시 카드에 띄울 글 — 현금이 음수라 만들지 않은 것(cash-negative, QA-381)만. 결정 대기·장부 반영 대기처럼
+ * 밤마다 지나가는 사유는 요약 칸의 안내 목록에만 두고 null을 돌려줍니다.
+ */
+export function waitingText(waiting: IsaWaiting | null | undefined): string | null {
+  if (waiting?.reason !== "cash-negative") {
+    return null;
+  }
+  const session = sessionLabel(waiting.session);
+  return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 현금이 음수입니다. 잔고(현금·보유)가 실제와 맞는지 확인해 고치면 다음 주기(10분 안)에 지시를 만듭니다. 장중 스탑 매도 지시는 그대로 나옵니다.`;
 }
 
 const STOP_TIMING: Readonly<Record<string, string>> = {
@@ -867,8 +882,8 @@ export function buildCommissionRequest(text: string): Checked<IsaCommissionReque
 /** 서버 오류 코드(400 invalid-request, 404 not-found, 409 already-started·not-started·already-recorded). */
 export const ISA_ERROR_CODES = ["invalid-request", "not-found", "already-started", "not-started", "already-recorded"] as const;
 
-/** 현금이 음수일 때의 경고(요약 카드) — 잔고 쓰기는 막지 않습니다. */
-export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 지시의 매수가 줄어듭니다.";
+/** 현금이 음수일 때의 경고(요약 카드) — 잔고 쓰기는 막지 않습니다. 음수인 동안 정기 작업은 다음 매매 지시를 만들지 않습니다(QA-381 — 장중 스탑 지시는 그대로). */
+export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 매매 지시를 만들지 않습니다(장중 스탑 매도 지시는 그대로 나옵니다).";
 
 export type IsaErrorCode = (typeof ISA_ERROR_CODES)[number];
 

@@ -67,8 +67,10 @@ import java.util.concurrent.locks.ReentrantLock;
  *       반영했고({@link PaperMirrorService#ledgerCaughtUp}), 시가 목표가 완전할 때({@link OpenTargets#complete}) {@link ManualAccountPlanner}로 계산해 세션 행과 지시 행을 한
  *       트랜잭션으로 씁니다(입력은 지금 잔고 — 현금·보유). 지시가 없으면 NONE(알리지 않음). 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날({@link PaperMirrorService#dailySyncAt} —
  *       ADR 0033 결정 7)은 그 시각까지의 모의 주문을 반영한 목표로 '그 시각 이후 시장가' 지시를 만듭니다. 그 목표에 들지 않는 시가 밖 시점 대기 주문(STOP 매도 제외 — 스탑 지시가 따로
- *       맡음)이 있으면 만들지 않습니다(사유 {@code timed-orders}).</li>
- *   <li><b>알림</b>: 개장 전 08:00(그 전에 개장하면 개장 때) PLANNED 지시를 한 통. 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시. 글은 종목 코드·이름·수량만.</li>
+ *       맡음)이 있으면 만들지 않습니다(사유 {@code timed-orders}). 잔고 현금이 음수이면 만들지 않고 기다립니다(사유 {@value #WAIT_CASH} — QA-381, ADR 0034 결정 5 개정:
+ *       음수만큼 줄어든 평가액으로 책 종목을 팔라고 하지 않음. 잔고를 고치면 다음 주기에 만듦, 장중 스탑 지시는 현금과 무관해 그대로).</li>
+ *   <li><b>알림</b>: 개장 전 08:00(그 전에 개장하면 개장 때) PLANNED 지시를 한 통. 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시. 글은 종목 코드·이름·수량만.
+ *       현금이 음수라 지시를 만들지 않은 세션은 같은 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통({@link #notifyCashNegative} — 금액 없음).</li>
  * </ol>
  *
  * <p><b>장 중반·마감 30분 전 확인 알림</b>(ADR 0034 — {@link #reminders}): 30초 주기마다, 그 세션 정규장 절반((개장 + 마감) / 2)과 마감 30분 전에 오늘 PLANNED 지시와 스탑 지시를
@@ -126,6 +128,8 @@ class ManualAccountJob {
     static final String WAIT_PRICE = "price-missing";
     static final String WAIT_UNKNOWN = "not-planned";
     static final String WAIT_TIMED = "timed-orders";
+    /** 잔고 현금이 음수 — 매매 지시를 만들지 않음(QA-381). */
+    static final String WAIT_CASH = "cash-negative";
 
     private static final Map<String, String> REASON_LABEL = Map.of(
             WAIT_CALENDAR, "달력을 모름",
@@ -134,6 +138,7 @@ class ManualAccountJob {
             WAIT_LEDGER, "규칙 계좌 장부 반영 대기",
             WAIT_TARGETS, "규칙 계좌 시가 목표를 아직 계산할 수 없음(가격 모름·불완전)",
             WAIT_PRICE, "ISA 보유 종목의 가격을 모름",
+            WAIT_CASH, "ISA 잔고의 현금이 음수라 매매 지시를 만들지 않음(잔고를 고치면 다음 주기부터 만듦)",
             WAIT_UNKNOWN, "개장 전에 지시를 만들지 못함",
             WAIT_TIMED, "규칙 계좌가 지시 시각 밖 시점(분 지정·종가 등)으로 주문함 — ISA는 시가·개장 10분 뒤 시각만 지시");
 
@@ -157,6 +162,8 @@ class ManualAccountJob {
     private volatile Instant lastCycleAt;
     /** 위 네 단계(만료·못 만듦·지시·알림)를 마지막으로 돈 시각 — 스탑 주기 사이에는 {@code interval-ms}가 지났을 때만. */
     private Instant lastFullAt;
+    /** '현금이 음수라 지시 없음' 글을 보낸 마지막 세션(메모리 — 재기동하면 그 세션에 한 번 더 갈 수 있음, 표에 둘 칸이 없음). */
+    private LocalDate cashNoticeSession;
 
     @Autowired
     ManualAccountJob(ManualAccountStore store, PaperMirrorService paper, PaperTelegram telegram, ObjectMapper mapper,
@@ -282,6 +289,7 @@ class ManualAccountJob {
             markUnavailable(balance, now);
             plan(now);
             notifyPending(now);
+            notifyCashNegative(now);
             stopScan(balance, now);
             stopNotify(now);
             reminders(now);
@@ -663,6 +671,10 @@ class ManualAccountJob {
             if (balance == null) {
                 return "skip";
             }
+            if (balance.cash().signum() < 0) {
+                // QA-381 — 평가액 = 현금 + 보유라 음수만큼 목표가 줄어 책 종목까지 매도 지시가 나오고, 0 이하이면 전 종목 전량 매도가 됨. 만들지 않고 사유를 남김.
+                return WAIT_CASH;
+            }
             Map<String, BigDecimal> held = new TreeMap<>();
             store.positions(CODE).forEach(p -> held.put(p.symbol(), p.quantity()));
             Set<String> outside = new TreeSet<>(held.keySet());
@@ -677,8 +689,8 @@ class ManualAccountJob {
             write(session, decision, result.get(), syncAt, targets.stopOrderIds());
             return result.get().drafts().isEmpty() ? ManualAccountStore.SESSION_NONE : ManualAccountStore.SESSION_PLANNED;
         });
-        if (WAIT_PRICE.equals(outcome)) {
-            waitFor(session, WAIT_PRICE, now);
+        if (WAIT_PRICE.equals(outcome) || WAIT_CASH.equals(outcome)) {
+            waitFor(session, outcome, now);
             return;
         }
         waiting = null;
@@ -772,6 +784,25 @@ class ManualAccountJob {
                 }
                 store.markNotifiedMorning(due.stream().map(Instruction::id).toList(), now);
             }
+        }
+    }
+
+    /**
+     * 현금이 음수라 다음 세션 지시를 만들지 않았을 때(이번 주기의 {@link #plan} — 사유 {@value #WAIT_CASH}) 그 세션 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통
+     * (QA-381). 알리지 않으면 '오늘은 매매할 것이 없음'(NONE — 알림 없음)과 구분되지 않아 틀린 잔고가 조용히 남습니다. 음수가 며칠 이어지면 거래일마다 한 통입니다.
+     * 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시. 글에 금액·평가액·종목이 없습니다.
+     */
+    void notifyCashNegative(Instant now) {
+        Waiting w = waiting;
+        if (w == null || w.session() == null || !WAIT_CASH.equals(w.reason()) || w.session().equals(cashNoticeSession) || !telegram.configured()) {
+            return;
+        }
+        if (now.isBefore(w.session().atTime(MORNING).atZone(Kst.ZONE).toInstant())) {
+            return;
+        }
+        if (sendText(ManualAccountNotices.cashNegative(w.session()))) {
+            cashNoticeSession = w.session();
+            log.info("ISA 계좌 지시 없음 알림 — 세션 {} · 사유 {}", w.session(), WAIT_CASH);
         }
     }
 

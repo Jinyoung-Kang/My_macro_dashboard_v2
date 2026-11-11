@@ -135,4 +135,15 @@ class ManualAccountNoticesTest {
                 .startsWith("[ISA 계좌] 11/09(월) 마감 전 매매 확인\n\n마감 30분 전까지 '확인'을 누르지 않은 지시입니다.");
         assertThat(reminder(MONDAY, false, List.of(new ManualAccountNotices.ReminderLine("BUY", "XX", 1)), Map.of())).isNull();
     }
+
+    @Test
+    @DisplayName("QA-381 현금이 음수라 지시를 만들지 않은 세션의 글 — 제목 '매매 지시 없음', 잔고 확인·개장 전에 고치면 다시 알림·스탑은 그대로. 금액·종목·숫자 글자 없음")
+    void cashNegativeTextHasNoAmounts() {
+        String text = plain(ManualAccountNotices.cashNegative(MONDAY));
+        assertThat(text).isEqualTo("[ISA 계좌] 11/09(월) 매매 지시 없음\n\n"
+                + "ISA 잔고의 현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다.\n"
+                + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 지시를 만들어 다시 알립니다.\n"
+                + "장중 스탑 매도 지시는 그대로 알립니다.");
+        assertThat(text.substring(text.indexOf('\n'))).doesNotContain("원", "%", "주\n", "•").doesNotContainPattern("[0-9]{3,}");   // 본문의 숫자는 '10분쯤'뿐
+    }
 }

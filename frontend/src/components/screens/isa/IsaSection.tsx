@@ -42,6 +42,7 @@ import {
   tradeGuide,
   unavailableText,
   unpricedText,
+  waitingText,
 } from "@/lib/isa";
 import { liveKey, liveSecondsText, liveShown } from "@/lib/livePrices";
 import type { IsaInstructionItem, IsaOkResponse, IsaResponse, IsaStopInstruction, IsaTrade } from "@/lib/types/isa";
@@ -404,6 +405,7 @@ function StartedBody({
   const confirmable = (instructions?.items ?? []).filter(canConfirm);
   const confirmableStops = stops.filter(canConfirm);
   const notes = cleanNotes(data.notes);
+  const waitText = waitingText(data.waiting);
   const commission = toNumber(summary?.commissionPct);
 
   return (
@@ -462,6 +464,7 @@ function StartedBody({
       >
         <div className="flex flex-col gap-3">
           {!instructions && <p className="text-sm text-text-2">한국 규칙 계좌의 밤 결정(22:30)이 끝나면 10분 안에 다음 세션의 지시(시가 또는 개장 10분 뒤)를 만듭니다.</p>}
+          {waitText && <Banner tone="warn">{waitText}</Banner>}
           {instructions?.ledgerChanged === true && <Banner tone="warn">{BALANCE_CHANGED_TEXT}</Banner>}
           {instructions?.status === "NONE" && <p className="text-sm text-text-2">이 세션은 지시 없음 — 지금 보유가 규칙 계좌 비중에 맞아 매매할 것이 없습니다.</p>}
           {instructions?.status === "UNAVAILABLE" && <Banner tone="warn">{unavailableText(instructions.reason)}</Banner>}

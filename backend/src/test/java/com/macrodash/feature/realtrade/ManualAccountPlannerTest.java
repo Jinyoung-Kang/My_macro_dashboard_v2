@@ -2,7 +2,6 @@ package com.macrodash.feature.realtrade;
 
 import com.macrodash.feature.realtrade.ManualAccountPlanner.Draft;
 import com.macrodash.feature.realtrade.ManualAccountPlanner.Result;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -115,7 +114,6 @@ class ManualAccountPlannerTest {
     // QA-381: 평가액 = 현금 + 보유라 음수 현금만큼 목표가 줄어 책에 있는 종목까지 매도 지시가 나왔고, 평가액이 0 이하이면 전 종목 전량 매도였다(수정 전 실패:
     // 'Expecting an empty Optional but was containing value: Result[drafts=[Draft[symbol=005930, side=SELL, quantity=40, …').
     @Test
-    @Disabled("QA-381: 음수 현금으로 줄어든 평가액에 맞춰 매도 지시를 계산함 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 현금이 음수면 지시를 계산하지 않음 — 줄어든 평가액으로 책 종목을 팔라고 하지 않고, 평가액이 0 이하여도 전량 매도를 만들지 않음(가격 모름과 구분되게 missing은 빔)")
     void negativeCashMakesNoPlan() {
         List<String> missing = new ArrayList<>();

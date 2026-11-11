@@ -310,7 +310,7 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
 
   // QA-381: 현금이 음수라 다음 세션 지시를 만들지 않았으면(응답 waiting.reason = cash-negative) 지시 카드에 그 사유를 보인다. 수정 전에는 요약 칸의 안내 목록에만
   // 있었고 음수 현금 경고는 '매수가 줄어듭니다'였다(재현 커밋에서는 it.fails).
-  it.fails("QA-381 현금이 음수라 지시를 만들지 않으면 지시 카드에 사유(세션·잔고 확인), 개장 뒤 못 만듦도 같은 사유 — 다른 대기 사유는 카드에 띄우지 않음", async () => {
+  it("QA-381 현금이 음수라 지시를 만들지 않으면 지시 카드에 사유(세션·잔고 확인), 개장 뒤 못 만듦도 같은 사유 — 다른 대기 사유는 카드에 띄우지 않음", async () => {
     const negative = { ...started().summary, cash: -50_000, totalAsset: 3_850_000 };
     reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, waiting: { session: "2026-11-10", reason: "decision-pending" } }));
     renderIsa();

@@ -42,7 +42,8 @@ import java.util.TreeSet;
  *
  * <ul>
  *   <li><b>잔고가 정답</b>({@code manual_balance}·{@code manual_positions}): 현금·보유·매입 금액은 지금 값 하나뿐입니다. 쓰기는 모두 계좌 행을 잡은 트랜잭션
- *       안에서 잔고를 다시 읽고 고칩니다. 현금이 음수가 되어도 <b>막지 않고</b> 저장합니다(화면 경고 — 사용자 결정 2026-11-09).</li>
+ *       안에서 잔고를 다시 읽고 고칩니다. 현금이 음수가 되어도 <b>막지 않고</b> 저장합니다(화면 경고 — 사용자 결정 2026-11-09). 음수인 동안 정기 작업은 다음 매매 지시를
+ *       만들지 않고(보기의 {@code waiting.reason = cash-negative} — QA-381), 장중 스탑 지시는 그대로 만듭니다.</li>
  *   <li><b>시작</b>은 한 번만(잔고 행이 이미 있으면 409 {@code already-started}) — 현금 = 총평가금액 − Σ(수량 × 가격). 가격은 본문의 실시간 가격 → 서버 직전 종가 →
  *       매입 금액 어림(응답 {@code notes}). 계좌 행이 있으면 재사용하고, 옛 PLANNED 지시는 SKIPPED({@code restart})로 닫고 아직 열리지 않은 세션은 지워
  *       새 잔고로 다시 만들게 합니다.</li>
@@ -213,6 +214,7 @@ public class ManualAccountService {
             out.put("recentInstructions", List.of());
             out.put("stopInstructions", List.of());
             out.put("trades", List.of());
+            out.put("waiting", null);
             if (!ready) {
                 out.put("message", NOT_READY);
             }
@@ -330,9 +332,14 @@ public class ManualAccountService {
             notes.add("가격을 모르는 종목 " + unpriced.size() + "개는 평가에서 뺐고, 그동안 손익은 비웁니다.");
         }
         ManualAccountJob.Waiting wait = job.waiting();
+        Map<String, Object> waiting = null;
         if (wait != null && wait.session() != null && (latest.isEmpty() || wait.session().isAfter(latest.get().session()))) {
             notes.add(wait.session() + " 지시 대기 — " + ManualAccountJob.reasonLabel(wait.reason()));
+            waiting = new LinkedHashMap<>();
+            waiting.put("session", wait.session().toString());
+            waiting.put("reason", wait.reason());
         }
+        out.put("waiting", waiting);   // 다음 세션 지시를 아직 만들지 않은 사유 코드(화면의 지시 카드 — cash-negative 등), 없으면 null
         latest.map(SessionRow::detail).map(d -> d.path("notes")).filter(n -> n.isArray()).ifPresent(n -> n.forEach(x -> {
             if (x.isString()) {
                 notes.add(x.asString());

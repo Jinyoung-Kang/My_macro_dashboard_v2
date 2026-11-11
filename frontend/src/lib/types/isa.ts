@@ -142,6 +142,12 @@ export interface IsaTrade {
   stopInstructionId?: number | null;
 }
 
+/** 다음 세션 지시를 아직 만들지 않은 사유(정기 작업이 기다리는 중) — 세션(YYYY-MM-DD)과 사유 코드(cash-negative·decision-pending·price-missing 등). */
+export interface IsaWaiting {
+  session: string | null;
+  reason: string | null;
+}
+
 /** GET /api/manual/isa — 표가 없으면 `available:false`(그때 `message`와 `notes`에 안내). */
 export interface IsaResponse {
   available: boolean;
@@ -157,6 +163,8 @@ export interface IsaResponse {
   stopInstructions?: IsaStopInstruction[] | null;
   /** 매매 내역(최근 200). */
   trades?: IsaTrade[] | null;
+  /** 다음 세션 지시를 아직 만들지 않은 사유 — 기다리는 것이 없으면 null. 화면은 cash-negative(현금이 음수라 만들지 않음 — QA-381)만 지시 카드에 띄웁니다. */
+  waiting?: IsaWaiting | null;
   notes?: string[] | null;
 }
 
