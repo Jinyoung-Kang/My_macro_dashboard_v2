@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1721,6 +1722,94 @@ class RealTradeJobDbTest {
         assertThat(sentSummaries()).hasSize(3);
     }
 
+    // ------------------------------------------------------------------ 묶음을 만든 뒤의 '책에 없는 보유'(QA-376)
+    private static final String D = "051910";
+
+    @Test
+    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
+    @DisplayName("QA-376: 시각 맞추기 — 책에 없는 보유(전량 매도 대상)가 묶음을 만들 때 VI였으면, 풀린 뒤 늘어난 창 안에서 시장가로 판다")
+    void timedSyncWaitsForViOnHoldingNotInBook() {
+        timedRestrictionDay();   // 책 A 50%·B 30%, 실제 보유는 책에 없는 C 100주
+        restrictions(Set.of(C), null);
+
+        run("09:10:05");
+        assertThat(sentSummaries()).as("VI인 C는 기다리고 나머지는 보냄").containsExactly("BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(events("RESTRICTED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("vi-active"));
+
+        run("09:12:30");
+        assertThat(sentSummaries()).as("VI가 이어지는 동안은 팔지 않음").noneMatch(o -> o.contains(C));
+
+        restrictions(Set.of(), null);
+        run("09:13:30");   // 원래 창(09:13) 뒤 — 늘어난 창 안
+        assertThat(sentSummaries()).as("VI가 풀리면 시장가(ADR 0033 — 수정 전에는 그날 다시 보지 않음)").contains("SELL " + C + " DAY 100");
+        assertThat(store.recentOrders("KR", 10)).filteredOn(r -> r.symbol().equals(C)).singleElement().satisfies(r -> {
+            assertThat(r.purpose()).isEqualTo("SYNC_FOLLOWUP");
+            assertThat(r.batchId()).isEqualTo(batch.id());
+            assertThat(r.attempt()).isEqualTo(1);
+        });
+        assertThat(cfg().state()).isEqualTo("LIVE");
+
+        run("09:14:10");
+        assertThat(sentSummaries()).as("한 번만").filteredOn(o -> o.contains(C)).hasSize(1);
+    }
+
+    @Test
+    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
+    @DisplayName("QA-376: 책에 없는 보유는 평가액의 1%보다 작아도 전량 매도 — 묶음 뒤 재시도에서도 1% 문턱을 걸지 않는다")
+    void timedSyncLaterLiquidationHasNoThreshold() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L, 22L), List.of());
+        preflight("9960000", Map.of(C, new String[]{"1", "40000"}), Map.of(A, "50000", B, "20000"));   // C 1주 = 4만 원 < E의 1%(10만 원)
+        restrictions(Set.of(C), null);
+
+        run("09:10:05");
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(C));
+
+        restrictions(Set.of(), null);
+        run("09:13:30");
+        assertThat(sentSummaries()).contains("SELL " + C + " DAY 1");
+    }
+
+    @Test
+    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
+    @DisplayName("QA-376: 시각 맞추기 — 접수 불가 거절로 묶음 전송이 멈춘 뒤, 아직 보내지 못한 뒤 순서의 '책에 없는 보유'도 대기가 끝나면 판다")
+    void timedSyncRefusedKeepsLaterLiquidations() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L, 22L), List.of());
+        preflight("6000000", Map.of(C, new String[]{"50", "40000"}, D, new String[]{"20", "100000"}), Map.of(A, "50000", B, "20000"));
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.REJECTED, null, "order-hours-closed", 422));
+
+        run("09:10:05");
+        assertThat(sentSummaries()).as("첫 주문(C 매도)이 접수 불가 — 남은 주문은 보내지 않음").containsExactly("SELL " + C + " DAY 50");
+
+        when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
+        run("09:20:10");   // 10분 대기 뒤 — 늘어난 창 안
+        assertThat(sentSummaries()).as("거절된 C는 시도 2, 행이 없던 D도 시도 1(수정 전에는 D가 범위 밖)")
+                .contains("SELL " + C + " DAY 50", "SELL " + D + " DAY 20");
+        assertThat(sentSummaries()).as("매도가 매수보다 먼저").filteredOn(o -> o.startsWith("SELL")).hasSize(3);
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
+    @Test
+    @DisplayName("QA-376 고정: 묶음을 만든 뒤에 생긴 책 밖 보유(앱에서 산 종목)는 그날 마무리가 팔지 않는다 — 다음 맞추기 몫 그대로")
+    void followupLeavesHoldingsThatAppearedAfterTheBatch() {
+        timedRestrictionDay();
+        restrictions(Set.of(A), null);   // A가 VI라 마무리가 창 안에서 이어짐
+        run("09:10:05");
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150");
+
+        // 묶음 뒤 — C는 팔렸고, 그사이 앱에서 D를 삼(묶음을 만들 때는 없던 보유)
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", B, "BUY", "DAY", "FILLED", "150", "150", clock.now, clock.now)));
+        preflight("5000000", Map.of(B, new String[]{"150", "20000"}, D, new String[]{"20", "100000"}), Map.of(A, "50000"));
+        restrictions(Set.of(), null);
+        run("09:13:30");
+
+        assertThat(sentSummaries()).as("VI가 풀린 A는 사고, 묶음 뒤에 생긴 D는 건드리지 않음").anyMatch(o -> o.startsWith("BUY " + A + " DAY"))
+                .noneMatch(o -> o.contains(D));
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
@@ -1788,6 +1877,23 @@ class RealTradeJobDbTest {
 
         run("09:00:40");
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("BUY " + A + " DAY 100");
+    }
+
+    @Test
+    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
+    @DisplayName("QA-376: 시가 창 끝이 가까워 묶음만 만든 날 — 시가 뒤 마무리가 '책에 없는 보유'도 시장가 DAY로 판다(수정 전에는 책의 종목만 메움)")
+    void lateSyncStartFollowupSellsHoldingNotInBook() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"));
+
+        run("08:57:40");
+        verify(client, never()).placeOrder(anyString());
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(batch.targets().path(A).asDouble()).isEqualTo(50.0);
+
+        run("09:00:40");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + C + " DAY 100", "BUY " + A + " DAY 92");
     }
 
     @Test
