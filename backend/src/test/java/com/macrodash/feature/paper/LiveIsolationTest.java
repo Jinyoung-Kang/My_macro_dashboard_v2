@@ -64,7 +64,8 @@ class LiveIsolationTest {
         Map<String, Set<String>> out = new LinkedHashMap<>();
         out.put("SNAP_PAPER_LIVE_", union(live, Set.of("store/Datasets.java")));
         out.put("paper.live.", union(live, Set.of("store/Datasets.java")));
-        out.put("paper_live_", live);
+        // 정보 수집의 출처 표는 수집기 태스크 이름을 화면 이름표로만 가집니다(태스크 목록 대조 시험 — ADR 0036). 장중 값을 읽지 않습니다.
+        out.put("paper_live_", union(live, Set.of("feature/info/InfoSources.java")));
         out.put("LiveValuation", live);
         out.put("PaperLiveService", union(live, Set.of(PAPER + "PaperLiveController.java")));
         out.put("PaperOverviewService", union(live, Set.of(PAPER + "PaperOverviewController.java")));
