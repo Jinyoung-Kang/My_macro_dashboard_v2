@@ -446,6 +446,51 @@ def test_market_fixture_honors_spec_identities():
                 )
 
 
+# ------------------------------------------------------------------ QA-350: 봉투 모양이 아닌 응답
+@pytest.mark.xfail(strict=True, reason="QA-350: error가 객체가 아니면 _error_text가 AttributeError — TossError 대신 일반 예외가 올라갑니다")
+@pytest.mark.parametrize("body", [
+    {"status": 404, "error": "Not Found"},          # error가 글자(게이트웨이·프레임워크 기본 오류 본문)
+    ["oops"],                                        # 본문이 목록
+    {"error": ["oops"]},                             # error가 목록
+], ids=["error-글자", "본문-목록", "error-목록"])
+def test_QA350_오류_본문이_봉투_모양이_아니어도_TossError로_올린다(monkeypatch, creds, body):
+    monkeypatch.setattr(toss._http(), "get", lambda *a, **k: FakeResponse(404, body))
+
+    with pytest.raises(toss.TossError) as info:
+        toss.api_get("/api/v1/anything")
+
+    assert info.value.status == 404 and info.value.code is None
+    assert str(info.value).startswith("HTTP 404")
+
+
+@pytest.mark.xfail(strict=True, reason="QA-350: 200 본문이 객체가 아니면 AttributeError가 그대로 올라갑니다")
+def test_QA350_200_본문이_객체가_아니면_TossError(monkeypatch, creds):
+    monkeypatch.setattr(toss._http(), "get", lambda *a, **k: FakeResponse(200, ["not", "an", "envelope"]))
+
+    with pytest.raises(toss.TossError) as info:
+        toss.api_get("/api/v1/anything")
+
+    assert info.value.status == 200
+
+
+@pytest.mark.xfail(strict=True, reason="QA-350: 토큰 응답의 형식이 틀리면 (None, 글) 대신 예외가 올라갑니다")
+@pytest.mark.parametrize("payload", [
+    ["not", "an", "object"],                                   # 본문이 목록
+    {"access_token": "tok", "expires_in": "soon"},             # 수명이 숫자가 아님
+    {"access_token": "tok", "expires_in": None},
+], ids=["본문-목록", "수명-글자", "수명-null"])
+def test_QA350_토큰_응답의_형식이_틀리면_예외_없이_실패_글을_돌려준다(monkeypatch, payload):
+    monkeypatch.setattr(toss.settings, "toss_credentials", lambda: ("cid", "secret-value"))
+    toss._invalidate_token()
+    monkeypatch.setattr(toss._http(), "post", lambda *a, **k: type("R", (), {
+        "raise_for_status": lambda self: None, "json": lambda self: payload})())
+
+    token, error = toss.get_access_token()
+
+    assert token is None and error and error.startswith("토큰 발급 실패")
+    assert toss._cached_token() is None, "형식이 틀린 응답의 토큰은 캐시하지 않습니다"
+
+
 # ------------------------------------------------------------------ QA-367: 시간 상한
 def test_QA367_stock_flows는_시간_상한이_지나면_남은_종목을_다음_주기로(store, monkeypatch):
     codes = [f"{n:06d}" for n in range(100001, 100041)]                    # 40종목
