@@ -4,7 +4,6 @@ import com.macrodash.config.AppProperties;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -293,7 +292,6 @@ class AuthControllerTest {
     }
 
     @Test
-    @Disabled("QA-383: 세션 응답도 요청의 호스트를 보지 않고 신원 헤더만으로 운영자를 돌려줍니다")
     @DisplayName("QA-383: 허용 출처 목록에 없는 호스트로 온 세션 조회는 신원 헤더가 맞아도 로그인 모드 — 목록의 호스트면 지금처럼 운영자")
     void tailnetOwnerSessionNeedsAnAllowedHost() {
         AppProperties props = new AppProperties();

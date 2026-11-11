@@ -53,7 +53,7 @@ public class AuthController {
         this.throttle = throttle;
         this.reauthThrottle = throttle.separateLane();
         this.properties = properties;
-        this.tailnetLogin = new TailnetLogin(properties.getTailnetOwnerLogin());
+        this.tailnetLogin = new TailnetLogin(properties.getTailnetOwnerLogin(), properties.getFrontendOrigin());
     }
 
     public record LoginRequest(String email, String password) {

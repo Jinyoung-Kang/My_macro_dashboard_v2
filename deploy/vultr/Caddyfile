@@ -6,6 +6,8 @@
 #   · 비상용 — PC의 SSH 포트 포워딩(ssh -L 8201:127.0.0.1:8201, 방화벽 22는 PC IP만).
 # 공개 리스너·비밀 헤더 확인·잠금화면(gate)·trusted_proxies·HSTS는 없습니다 — 공개 주소가 없어 그 전제가 사라졌습니다(ADR 0023).
 # TLS는 쓰지 않습니다 — 평문은 서버의 루프백에만 흐릅니다. X-Forwarded-For는 들어온 값을 믿지 않고 접속 주소로 채워 보냅니다(Caddy 기본).
+# Host는 바꾸지 않고 넘기고 X-Forwarded-Host도 받은 Host로 채웁니다(Caddy 기본 — 들어온 X-Forwarded-*는 버림). 백엔드는 그 호스트가 허용 출처의
+# 호스트일 때만 Tailscale 신원(Tailscale-User-Login)을 인정합니다(QA-383, ADR 0023 결정 10) — header_up으로 Host를 바꾸거나 trusted_proxies를 더하면 그 전제가 바뀝니다.
 # 화면과 API를 한 주소(같은 출처)로 묶습니다. 화면은 NEXT_PUBLIC_API_BASE=/로 빌드돼 /api/...를 상대 경로로 부릅니다(ADR 0012의 정의).
 {
 	auto_https off

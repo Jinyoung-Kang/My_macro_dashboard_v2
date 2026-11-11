@@ -9,7 +9,6 @@ import com.macrodash.store.SessionStore;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -437,9 +436,15 @@ class SessionFilterTest {
 
         private Outcome exchange(WebConfig.SessionFilter filter, String serverName, String hostHeader, String method,
                                  String path, String cookie, String... headers) throws Exception {
-            MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+            // 스프링의 흉내 요청은 Host 헤더가 있으면 서버 이름을 그 헤더에서 읽습니다. 실제 서버(Tomcat)는 앞단이 넘긴 X-Forwarded-Host로
+            // 서버 이름을 따로 정할 수 있어, 두 값이 다른 경우까지 보려고 서버 이름을 고정합니다.
+            MockHttpServletRequest request = new MockHttpServletRequest(method, path) {
+                @Override
+                public String getServerName() {
+                    return serverName;
+                }
+            };
             request.setServletPath(path);
-            request.setServerName(serverName);
             if (hostHeader != null) {
                 request.addHeader("Host", hostHeader);
             }
@@ -525,7 +530,6 @@ class SessionFilterTest {
         }
 
         @Test
-        @Disabled("QA-383: 신원 헤더만 맞으면 요청의 호스트를 보지 않고 운영자로 엽니다 — 비상용 포워딩이 열린 PC에서 다른 이름(DNS 리바인딩)으로 온 요청도 읽힘")
         @DisplayName("QA-383: 허용 출처 목록에 없는 호스트로 온 요청은 신원 헤더가 맞아도 로그인 없는 요청(401) — 같은 출처 읽기라 Origin 검사는 지나감")
         void identityNeedsAnAllowedHost() throws Exception {
             WebConfig.SessionFilter on = filter("owner@example.invalid");

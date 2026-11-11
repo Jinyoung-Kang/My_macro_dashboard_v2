@@ -273,7 +273,7 @@ public class WebConfig implements WebMvcConfigurer {
             // 그다음 로컬 무로그인 운영자(ADR 0016 — 켜져 있고 이 맥에서 바로 온 요청만).
             String token = AuthController.readToken(request);
             boolean localRequest = localNoLogin && LocalNoLogin.isLocalRequest(request);
-            // 그다음 Tailscale 신원 운영자(ADR 0023 — Serve가 붙인 신원이 운영자로 정한 사용자일 때만).
+            // 그다음 Tailscale 신원 운영자(ADR 0023 — Serve가 붙인 신원이 운영자로 정한 사용자이고, 요청의 호스트가 허용 출처의 호스트일 때만 — QA-383).
             boolean tailnetOwner = tailnetLogin != null && tailnetLogin.matches(request);
             // 쿠키 없는 이 맥·tailnet 운영자 요청이 받을 사용자는 그 운영자뿐이라, 다른 사이트에서 온 것이면 DB를 읽기 전에 끊습니다
             // (다른 사이트가 <img>로 되풀이해 불러도 운영자 조회가 돌지 않게). 쿠키가 있으면 아래에서 판정합니다.

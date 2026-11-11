@@ -326,6 +326,9 @@ git push origin main
 - 서버·PC·휴대폰이 같은 tailnet에 있습니다. 화면은 `https://my-macro-app.<tailnet>.ts.net` — 서버 `.env`의 `TAILNET_OWNER_LOGIN`과 같은 Tailscale 사용자면 로그인 없이
   운영자로 열리고(ADR 0023 결정 10), 비었거나 다른 사용자·비상용 포워딩이면 운영자 계정 `OWNER_EMAIL`로 로그인합니다. 서버의 `tailscale serve`가
   HTTPS(Tailscale이 받는 인증서)를 끝내고 `127.0.0.1:8201`의 caddy로 넘깁니다. 공개 인터넷에 열린 TCP 포트는 없습니다(잠금화면도 없음).
+  Tailscale 신원은 요청의 호스트가 허용 출처(`FRONTEND_ORIGIN`)의 호스트 — `localhost`·`127.0.0.1`·Tailscale 주소, 포트는 가리지 않음 — 일 때만 인정합니다(QA-383).
+  다른 이름으로 온 요청은 신원 헤더가 있어도 로그인 화면이고(이메일·비밀번호 로그인은 그대로), 백엔드 로그에 '신원 헤더가 왔지만 …' 경고가 10분에 한 번 남습니다.
+  배포 뒤 확인과 되돌리는 법은 ADR 0023 결정 10의 개정 문단.
 - 셸: `ssh ubuntu@my-macro-app`(Tailscale SSH). WSL처럼 MagicDNS 이름에 저장된 호스트 키가 없으면 tailnet 주소(`getent hosts my-macro-app`)로 붙습니다.
 - 비상용(Tailscale이 막혔을 때): `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>` — 방화벽 22는 PC 공인 IP/32만. 화면은 같은 명령에
   `-L 8201:127.0.0.1:8201`을 붙여 <http://localhost:8201>. 둘 다 막히면 Vultr 콘솔의 웹 콘솔.
@@ -494,6 +497,7 @@ docker compose exec -T collector python -c 'import json,os,urllib.request as u; 
 1. 화면 '실제 매매' 칸(또는 계좌 요약 '다시 읽기' 옆)의 **끄기** — 확인 글자·비밀번호 없이 바로 새 주문을 멈추고 이 기능의 미체결을 취소합니다(보유는 팔지 않음). 상태는 끄는 중(STOPPING — 미체결 취소) → 꺼짐(OFF).
 2. 화면이 안 열리면 서버 셸에서 같은 끄기를 한 줄로 — Tailscale 신원 자동 로그인(`TAILNET_OWNER_LOGIN`, ADR 0023)과 허용 출처로 루프백의 caddy를 부릅니다.
    로그인 이름은 백엔드 컨테이너의 환경에서 읽어 stdin으로만 넘기고(인자·화면에 남기지 않음), 출력은 HTTP 상태 코드뿐입니다(200이면 끔 — 401이면 `TAILNET_OWNER_LOGIN`이 빈 것이라 3으로).
+   주소는 `http://127.0.0.1:8201` 그대로 씁니다 — 신원은 허용 출처의 호스트(`localhost`·`127.0.0.1`·Tailscale 주소)로 온 요청에만 인정됩니다(QA-383, 서버 IP나 다른 이름이면 401).
 
    ```bash
    cd ~/My_macro_dashboard_v2 && printf 'Tailscale-User-Login: %s\n' "$(docker compose exec -T backend printenv TAILNET_OWNER_LOGIN)" | curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8201/api/realtrade/disable -H @- -H 'Origin: http://localhost:8201' -H 'Content-Type: application/json' --data '{"market":"KR"}'

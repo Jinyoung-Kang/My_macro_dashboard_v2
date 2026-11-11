@@ -121,6 +121,7 @@ services:
       TELEGRAM_ACCOUNT_BOT_TOKEN: "${TELEGRAM_ACCOUNT_BOT_TOKEN:-}"
       # Tailscale 신원 자동 로그인(ADR 0023) — 그 Tailscale 사용자의 로그인 이름(계정 고유 값이라 서버 .env에만). 비면 꺼짐(늘 로그인 화면).
       # 앱이 루프백(127.0.0.1:8201)에만 열려 Serve를 거쳐야 닿는다는 것이 전제 — 아래 caddy 포트.
+      # 신원은 요청의 호스트가 위 FRONTEND_ORIGIN의 호스트(localhost·127.0.0.1·Tailscale 주소)일 때만 인정합니다(QA-383 — 다른 이름이면 로그인 화면).
       TAILNET_OWNER_LOGIN: "${TAILNET_OWNER_LOGIN:-}"
       # 알림 끝의 화면 링크(Tailscale 주소).
       PUBLIC_ORIGIN: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN 필요 — 서버 .env(.env.vultr.example)}"

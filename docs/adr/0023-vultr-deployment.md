@@ -18,6 +18,9 @@
   - Tailscale 신원 자동 로그인(결정 10): `TailnetLoginTest`(비면 꺼짐·대소문자·공백), `SessionFilterTest` 'Tailscale 신원 자동 로그인'(맞는 신원만 운영자, 다른 신원·
     꺼짐은 로그인, 쿠키 없는 쓰기의 다른 사이트 출처 403, 화면 포트의 다른 호스트 `http://attacker.example:8201`도 403 — QA-171), `CorsOriginsTest`(켜지면 와일드카드 없음),
     `AuthControllerTest`(세션 응답 `noLogin`·`user.tailnet`), CI 'Vultr 덧붙임 해석'(기본 빈 값·서버 `.env` 값 전달).
+    호스트 검사(결정 10 개정 2026-11-12, QA-383): `TailnetLoginTest`(허용 호스트 = `FRONTEND_ORIGIN`의 호스트, 포트·대소문자·끝의 점, Host 헤더와 서버 이름 둘 다, 경고는 10분에 한 번·호스트 이름만),
+    `SessionFilterTest`(목록 밖 호스트는 신원이 맞아도 401·세션 쿠키는 그대로, 비상 끄기 curl 모양은 통과), `TailnetLoginIntegrationTest`(실제 Tomcat·`native` 전략에서 Host·`X-Forwarded-Host` 조합),
+    `CorsOriginsTest`(`compose.vultr.yml`의 허용 출처와 인정 호스트가 같은 셋).
   - Vultr 방화벽·Tailscale 설정·IAM 사용자는 저장소 밖 자원이라 시험이 없습니다 — 명세 §0·§5에 확인한 것을 적고, 바뀌면 이 문서의 결과에 적습니다.
 
 ## 배경
@@ -63,6 +66,33 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
     운영자·같은 출처 검사(쿠키 없는 쓰기는 허용 출처의 `Origin`, 다른 사이트면 403). 켜지면 허용 출처는 `FRONTEND_ORIGIN` 명시 목록뿐이고 로그인 모드의
     화면 포트 와일드카드(`http://*:8201`)는 빠집니다(QA-171, 2026-11-04 — ADR 0016 결정 4와 같은 이유: 쿠키가 아닌 자격이라 SameSite가 막아 주지 않음). 비면 꺼짐(로컬·QA·AWS 기본). 비상용 SSH 포워딩으로 온 요청에는 헤더가 없어
     로그인 화면이 그대로입니다. 세션 응답은 `noLogin: true`·`user.tailnet: true`이고 계정 메뉴는 'Tailscale · 로그인 없음'.
+
+    **개정(2026-11-12, QA-383 — 사용자 승인 D-6): 신원은 요청의 호스트가 허용 출처 목록의 호스트일 때만 인정합니다.** 비상용 SSH 포워딩으로 온 요청은 Serve를
+    거치지 않아 클라이언트가 실은 `Tailscale-User-Login`이 지워지지 않습니다. 포워딩이 열린 PC의 브라우저가 공격자 페이지를 열면, 그 페이지는 자기 이름의 주소를
+    `127.0.0.1`로 바꿔(DNS 리바인딩) `http://<공격자 이름>:8201/api/…`를 **같은 출처**로 부르며 헤더를 직접 실을 수 있고, 같은 출처 읽기라 출처 검사도 지나갑니다
+    (전제: 포워딩이 열려 있음 + 공격자가 운영자의 Tailscale 로그인 이름을 앎. 쓰기는 `Origin`이 공격자 이름이라 전부터 403). 그런 요청은 호스트가 공격자 이름이므로
+    거기서 끊습니다.
+    - 인정하는 호스트: `FRONTEND_ORIGIN`(서버는 `compose.vultr.yml`의 `http://localhost:8201`·`http://127.0.0.1:8201`·`PUBLIC_ORIGIN`)의 호스트 이름 전부 —
+      `localhost`·`127.0.0.1`·`my-macro-app.<tailnet>.ts.net`. 소문자로 견주고 포트와 끝의 점 하나는 가리지 않습니다. 포트를 보지 않는 이유: 이름을 꾸밀 수 없으면
+      리바인딩이 성립하지 않고, 앞단이 포트를 붙이거나 떼어도(예: `:443`) 잠기지 않습니다. 그래서 다른 포트의 `localhost`(다른 포워딩 포트로 연 화면)도 신원은 인정하고,
+      그 화면의 쓰기는 전처럼 출처 검사(`http://localhost:8201`만)가 가릅니다. `[::1]`·서버 IP·다른 tailnet 이름·와일드카드는 인정하지 않습니다.
+    - 보는 값은 둘이고 둘 다 목록에 있어야 합니다: `Host` 헤더(브라우저가 연 주소 그대로 — 스크립트가 바꿀 수 없고, Tailscale Serve와 caddy가 그대로 넘김)와
+      서블릿의 서버 이름(caddy가 들어온 값을 버리고 자기가 받은 Host로 채운 `X-Forwarded-Host`를 Tomcat이 반영 — `SERVER_FORWARDHEADERSSTRATEGY: native`,
+      Spring Boot 4.1.2의 `server.tomcat.remoteip.host-header` 기본값). 확인한 근거: Tailscale `ipn/ipnlocal/serve.go`(TCP 백엔드는 `r.Out.Host = r.In.Host`,
+      `X-Forwarded-Host`도 같은 값), Caddy `reverse_proxy` 문서(Host는 그대로, 들어온 `X-Forwarded-*`는 믿는 프록시가 아니면 버림), 설치된 Spring Boot의 설정 메타데이터,
+      실제 Tomcat으로 본 `TailnetLoginIntegrationTest`. 서버에서 실제로 흐르는 값은 재지 않았습니다(추정) — 어느 조합이든 세 이름 안이라 통과합니다.
+    - 목록 밖이면 '신원 없음'으로만 처리합니다(401 → 로그인 화면). 요청을 막지 않으므로 이메일·비밀번호 로그인과 세션 쿠키는 어느 호스트에서든 그대로입니다.
+      신원은 맞는데 호스트가 목록 밖인 요청은 백엔드 로그에 경고 한 줄을 남깁니다(10분에 한 번, Host와 서버 이름만 — 신원 값은 싣지 않음).
+    - 그대로인 것: 로컬 무로그인(ADR 0016 — 자기 Host 검사), QA 스택과 신원 설정이 빈 환경(헤더를 보지 않음), 서버 셸의 비상 끄기·ISA 시작 curl
+      (`http://127.0.0.1:8201` + `Origin: http://localhost:8201` — DEVELOPMENT §7).
+    - **배포 뒤 확인**(값을 화면에 찍지 않고 상태 코드만): ① PC(tailnet 안)에서 `curl -s -o /dev/null -w '%{http_code}\n' https://my-macro-app.<tailnet>.ts.net/api/admin/users` → `200`
+      (Serve가 신원을 붙인 실제 길), 화면도 로그인 없이 열리고 계정 메뉴가 'Tailscale · 로그인 없음'. ② 서버 셸에서 비상 끄기와 같은 모양의 읽기 —
+      `cd ~/My_macro_dashboard_v2 && printf 'Tailscale-User-Login: %s\n' "$(docker compose exec -T backend printenv TAILNET_OWNER_LOGIN)" | curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8201/api/admin/users -H @-` → `200`.
+      ③ 같은 명령 끝에 `-H 'Host: attacker.example:8201'`을 붙이면 `401`(거절), 그 뒤 `docker compose logs backend --since 5m | grep -c '신원 헤더가 왔지만'` → `1` 이상.
+    - **①이 401이거나 화면이 로그인 화면으로 가면**: 잠긴 것이 아닙니다 — 운영자 계정(`OWNER_EMAIL`)으로 로그인하면 전부 그대로 쓸 수 있습니다. 원인은
+      `docker compose logs backend --since 15m | grep '신원 헤더가 왔지만'`의 Host·서버 이름이 알려 줍니다: 그 이름이 서버 `.env`의 `PUBLIC_ORIGIN` 호스트와 다르면
+      `PUBLIC_ORIGIN`을 고쳐 `deploy.sh`, 앞단이 세 이름 밖의 값을 넘기는 것이면 이 수정 커밋(`fix(QA-383)`)을 `git revert`해 배포합니다(스위치는 두지 않았습니다 —
+      되돌리면 2026-11-12 전 동작).
 
 ## 이유
 

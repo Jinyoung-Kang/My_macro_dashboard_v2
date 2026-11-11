@@ -99,6 +99,30 @@ class CorsOriginsTest {
                 .contains("http://*:8201");
     }
 
+    @Test
+    @DisplayName("QA-383: Tailscale 신원을 인정하는 호스트는 허용 출처 목록의 호스트와 같다 — Vultr 서버는 localhost·127.0.0.1·Tailscale 주소 셋")
+    void tailnetIdentityHostsAreTheAllowedOriginHosts() throws Exception {
+        Path compose = Path.of("../compose.vultr.yml");
+        assumeTrue(Files.exists(compose), "compose.vultr.yml을 찾을 수 없습니다");
+        Matcher setting = Pattern.compile("\\n\\s+FRONTEND_ORIGIN:\\s*(.+)").matcher(Files.readString(compose));
+        assertThat(setting.find()).isTrue();
+        String origins = setting.group(1).trim().replaceAll("^\"|\"$", "")
+                .replaceAll("\\$\\{PUBLIC_ORIGIN:\\?[^}]*}", "https://my-macro-app.example.ts.net");
+        AppProperties properties = new AppProperties();
+        properties.setFrontendOrigin(origins);
+        properties.setFrontendPort(8201);
+        properties.setTailnetOwnerLogin("owner@example.invalid");
+
+        com.macrodash.feature.auth.TailnetLogin login = new com.macrodash.feature.auth.TailnetLogin(properties);
+        assertThat(login.allowedHosts()).containsExactlyInAnyOrder("localhost", "127.0.0.1", "my-macro-app.example.ts.net");
+        // 허용 출처마다 그 호스트가 인정 목록에 있고(잠기지 않음), 목록에는 허용 출처에 없는 호스트가 없습니다(넓히지 않음).
+        java.util.Set<String> fromPatterns = new java.util.LinkedHashSet<>();
+        for (String pattern : WebConfig.allowedOriginPatterns(properties)) {
+            fromPatterns.add(java.net.URI.create(pattern).getHost().toLowerCase(java.util.Locale.ROOT));
+        }
+        assertThat(login.allowedHosts()).containsExactlyInAnyOrderElementsOf(fromPatterns);
+    }
+
     private static MockHttpServletRequest post(String origin) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/alerts/rules");
         request.addHeader("Origin", origin);
