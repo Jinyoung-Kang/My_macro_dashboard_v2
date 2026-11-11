@@ -496,7 +496,7 @@ make db-test           # 테스트 전용 DB 준비 (위 명령들이 자동으�
 ## 8. 백업
 
 누적 수급 이력(`observations`)은 **외부에서 다시 받을 수 없는 데이터**입니다.
-Naver·Daum·KRX가 과거 날짜 조회를 지원하지 않기 때문입니다.
+Naver·Daum은 과거 날짜 조회를 지원하지 않고, KRX 확정 순위는 수집기가 저장한 날짜(2026-11-11부터)만 있기 때문입니다.
 
 ```bash
 make backup                              # backups/macrodash-YYYYmmdd-HHMMSS.sql

@@ -666,7 +666,7 @@ function HistoryPanel({
       {!loading && !error && dates.length === 0 && (
         <Banner tone="info">
           아직 누적된 이력이 없습니다. 수집기를 꾸준히 돌리면 거래일별로 쌓입니다 —
-          Naver·Daum·KRX는 과거 날짜 조회를 지원하지 않으므로 이 이력이 곧 백업입니다.
+          Naver·Daum은 과거 날짜 조회를 지원하지 않고 KRX 확정 순위는 수집기가 저장한 날짜만 있으므로 이 이력이 곧 백업입니다.
         </Banner>
       )}
       {rows.length > 0 && (

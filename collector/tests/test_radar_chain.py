@@ -2,7 +2,7 @@
 tests/test_radar_chain.py
 수급 레이더 폴백 체인 회귀 테스트.
 
-체인: KIS(장중) → Daum → Naver → 토스(공식) → 누적 이력 (PyKrx·LS는 2026-11-11에 뺌 — ADR 0035)
+체인: KIS(장중) → Daum → Naver → KRX 확정 순위 저장본(ADR 0036) → 토스(공식) → 누적 이력 (PyKrx·LS는 2026-11-11에 뺌 — ADR 0035)
 외부 네트워크를 쓰지 않습니다(각 단계를 대체합니다).
 """
 from __future__ import annotations

@@ -519,13 +519,13 @@ public class RadarService {
             out.put("truncated", page.truncated());
         }
         out.put("note",
-                "Naver·Daum·KRX는 과거 날짜 조회를 지원하지 않습니다. 이 이력은 수집기가 "
-                        + "돌 때마다 쌓아 온 값이라 외부에서 다시 받을 수 없습니다 — "
+                "Naver·Daum은 과거 날짜 조회를 지원하지 않고, KRX 확정 순위는 수집기가 저장한 날짜(2026-11-11부터)만 있습니다. "
+                        + "이 이력은 수집기가 돌 때마다 쌓아 온 값이라 외부에서 다시 받을 수 없습니다 — "
                         + "데이터베이스를 백업할 가치가 있습니다.");
         return out;
     }
 
-    /** 5개 데이터 소스 연결 진단. */
+    /** 데이터 소스 연결 진단 — 수집기가 KIS·Daum·Naver·토스 넷을 화면이 쓰는 경로 그대로 부릅니다. */
     public Map<String, Object> diagnostics() {
         Optional<JsonNode> payload = collector.diagnostics();
         if (payload.isEmpty()) {
