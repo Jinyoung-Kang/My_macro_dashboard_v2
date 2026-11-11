@@ -12,7 +12,6 @@ import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.TransientDataAccessResourceException;
@@ -868,7 +867,6 @@ class PaperIntradayJobTest {
     }
 
     @Test
-    @Disabled("QA-363: 장중 판단의 '응답 뒤 쓰기 실패' 결정 행을 재시도 1회로 남겨, 한 번 부른 것을 계좌2 소상한이 두 번으로 셉니다")
     @DisplayName("QA-363 장중 판단은 재시도가 없는 종류 — 응답 뒤 쓰기가 실패해 남긴 결정 행(AFTER_RESPONSE)도 재시도 수 0이고, 계좌2 결정 주기 호출 수는 "
             + "결정 1 + 판단 1")
     void afterResponseFailureIsNotCountedAsARetry() {

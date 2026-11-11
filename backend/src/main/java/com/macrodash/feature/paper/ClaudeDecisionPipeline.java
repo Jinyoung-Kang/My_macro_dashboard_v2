@@ -1029,8 +1029,9 @@ final class ClaudeDecisionPipeline {
      * 가장 가까운 것(호출 쪽 오류)이고 {@code response.failure.stage = AFTER_RESPONSE}로 구분합니다. 이 기록까지 실패하면(DB 장애)
      * 로그만 남기고, 호출한 쪽은 원래 예외를 받습니다.
      *
-     * <p>장중 확인(kind {@code CHECKPOINT} — {@link PaperCheckpointJob})도 같은 함수로 남깁니다(리뷰 F1·OPS-1). 그 행은 결정 작업이 재시도하지 않는
-     * 종류라 {@code retry_count}가 0입니다 — 결정 주기 호출 수({@link ClaudeBookService#claude2CallsInCycle})가 한 번으로 세게.
+     * <p>장중 확인(kind {@code CHECKPOINT} — {@link PaperCheckpointJob})과 장중 판단(kind {@code INTRADAY_n} — {@link PaperIntradayJob}·
+     * {@link PaperKrIntradayJob})도 같은 함수로 남깁니다(리뷰 F1·OPS-1). 그 행은 결정 작업이 재시도하지 않는 종류라 {@code retry_count}가 0입니다 —
+     * 결정 주기 호출 수({@link ClaudeBookService#claude2CallsInCycle})가 한 번으로 세게(QA-363 — 장중 판단을 1로 남겨 두 번으로 셌음).
      */
     void recordAfterResponse(LocalDate asOf, String kind, SettingsRow row, ClaudeSettings claude,
                                      boolean pricesFinal, Attempt attempt, Decision retrying, RuntimeException cause) {
@@ -1076,7 +1077,7 @@ final class ClaudeDecisionPipeline {
             response.put("settings", claudeView(claude));
             putMeasure(response, attempt);
             Decision d = decisionRow(retrying == null ? 0 : retrying.id(), asOf, kind, STATUS_API_ERROR, row, claude,
-                    attempt, null, mapper.valueToTree(response), message, pricesFinal, checkpoint ? 0 : 1);
+                    attempt, null, mapper.valueToTree(response), message, pricesFinal, checkpoint || intraday ? 0 : 1);
             store.atomically(() -> {
                 if (retrying != null) {
                     store.updateDecisionRetry(d);   // 재시도 수가 1이 됩니다(그사이 바뀐 행이면 아무것도 안 함)

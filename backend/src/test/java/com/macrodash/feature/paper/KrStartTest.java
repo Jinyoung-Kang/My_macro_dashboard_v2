@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -910,7 +909,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-363: 장중 판단의 '응답 뒤 쓰기 실패' 결정 행을 재시도 1회로 남겨 알림과 결정 상세에 '재시도 1회'가 붙습니다")
     @DisplayName("QA-363 한국 장중 판단 — 응답 뒤 쓰기가 실패해 남긴 결정 행(API_ERROR·AFTER_RESPONSE)도 재시도 수 0(장중 판단은 재시도가 없는 종류)이고 "
             + "다시 부르지 않음")
     void krIntradayAfterResponseFailureIsNotARetry() {
