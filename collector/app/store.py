@@ -1597,12 +1597,13 @@ def info_source_exists(source: str) -> bool:
 
 def info_page_outcomes(source: str, limit: int) -> list[str]:
     """
-    그 출처에서 글 페이지를 열어 본 글(meta.pageTries가 있는 행)의 본문 판정을 최근 글부터 ``limit``건 — 'full'이면 그 글 페이지에서 본문을
-    받은 글입니다. 글 페이지의 본문 자리가 바뀌었는지 보는 데 씁니다(services/info_blogs — QA-391).
+    그 출처에서 글 페이지를 **받은** 글(meta.pageGot이 있는 행)의 본문 판정을 최근 글부터 ``limit``건 — 'full'이면 그 글 페이지에서 본문을
+    받은 글입니다. 글 페이지의 본문 자리가 바뀌었는지 보는 데 씁니다(services/info_blogs — QA-391). 열어 봤지만 받지 못한 글(meta.pageTries만
+    있음 — 404·5xx)은 뺍니다.
     """
     with connection() as conn:
         rows = conn.execute(
-            "SELECT body_status FROM info_items WHERE source = %s AND meta ? 'pageTries' "
+            "SELECT body_status FROM info_items WHERE source = %s AND meta ? 'pageGot' "
             "ORDER BY COALESCE(published_at, first_seen_at) DESC, id LIMIT %s",
             (source, int(limit)),
         ).fetchall()

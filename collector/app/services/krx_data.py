@@ -70,7 +70,8 @@ def login(fetch: Fetch = ladder.fetch) -> None:
     """
     로그인해 세션 쿠키를 받습니다(계층 1 세션에 남아 이어지는 요청이 씀).
 
-    :raises KrxLoginError: 계정 없음·비밀번호 변경 필요·거절
+    :raises KrxLoginError: 계정 없음·비밀번호 변경 필요·거절(거절 코드가 온 경우만)
+    :raises ShapeError: 로그인 응답이 JSON이 아니거나 결과 코드가 없음
     :raises ladder.FetchRejected·FetchSkipped·FetchFailed: 출처가 거부·예산 부족·받지 못함
     """
     user, password = credentials()
@@ -85,8 +86,12 @@ def login(fetch: Fetch = ladder.fetch) -> None:
         code = _login_code(fetch(LOGIN_URL, method="POST", data=form, headers={"Referer": LOGIN_PAGE}))
     if code == "CD010":
         raise KrxLoginError("KRX가 비밀번호 변경을 요구함(CD010) — krx.co.kr에서 바꾼 뒤 .env를 고침", code=code)
+    if not code:
+        # 결과 코드 칸이 없는 JSON(점검 안내·바뀐 응답 모양) — 계정을 거절한 것인지 알 수 없습니다. 거절로 보면 태스크가 그 호스트를
+        # 12~24시간 닫아 그날 자료를 놓치므로 '형식 바뀜'으로 올립니다(닫지 않고 다음 실행이 다시 시도 — QA-390).
+        raise ShapeError("KRX 로그인 응답에 결과 코드가 없음(점검 중이거나 응답 형식이 바뀐 경우)")
     if code != "CD001":
-        raise KrxLoginError(f"KRX 로그인 거절({code or '코드 없음'})", code=code or "코드 없음")
+        raise KrxLoginError(f"KRX 로그인 거절({code})", code=code)
 
 
 def _login_code(fetched: ladder.Fetched) -> str:

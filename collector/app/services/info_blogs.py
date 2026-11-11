@@ -203,8 +203,9 @@ class Collected:
 
 def _page_issue(blog: Blog) -> str | None:
     """
-    글 페이지에서 본문을 받던 블로그인데 최근에 글 페이지를 연 글이 모두 본문을 얻지 못했으면 그 사유(QA-391) — 페이지 구조가 바뀌어
-    추출이 빈 글이 되는 경우입니다. 저장된 글만 봅니다(외부 호출 없음).
+    글 페이지에서 본문을 받던 블로그인데 최근에 글 페이지를 **받은** 글이 모두 본문을 얻지 못했으면 그 사유(QA-391) — 페이지 구조가 바뀌어
+    추출이 빈 글이 되는 경우입니다. 글 페이지를 받지 못한 글(404·5xx)은 추출해 볼 페이지가 없었으므로 세지 않습니다('받지 못함'이지
+    '형식 바뀜'이 아님). 저장된 글만 봅니다(외부 호출 없음).
     """
     outcomes = store.info_page_outcomes(blog.key, PAGE_ISSUE_LOOKBACK)
     recent, earlier = outcomes[:PAGE_ISSUE_RECENT], outcomes[PAGE_ISSUE_RECENT:]
@@ -212,7 +213,7 @@ def _page_issue(blog: Blog) -> str | None:
         return None
     if not any(status == "full" for status in earlier):
         return None
-    return (f"{blog.label} 글 페이지에서 본문을 고르지 못함(최근에 글 페이지를 연 글 {PAGE_ISSUE_RECENT}편 모두 — "
+    return (f"{blog.label} 글 페이지에서 본문을 고르지 못함(최근에 글 페이지를 받은 글 {PAGE_ISSUE_RECENT}편 모두 — "
             "글 페이지의 본문 자리가 바뀐 경우)")
 
 
@@ -261,7 +262,7 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
             try:
                 page = fetch(entry["url"])
             except ladder.FetchRejected as exc:
-                blocked = exc
+                blocked, sent = exc, exc.sent     # 이미 닫힌 호스트면 요청이 나가지 않았습니다(QA-393)
             except ladder.FetchSkipped:
                 page_room, sent = 0, False        # 보내지 않았음(예산·시간) — 그 글의 시도로 세지 않습니다(QA-393)
             except (ladder.FetchFailed, policy.UnknownHost) as exc:
@@ -270,6 +271,7 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
                 tries += 1                        # 받음·404·5xx·거부 — 보내지 못한 것만 빼고 셉니다
                 meta = {"pageTries": tries}
             if page is not None:
+                meta["pageGot"] = True            # 글 페이지를 받았음 — 본문 자리가 바뀌었는지는 받은 글로만 봅니다(_page_issue)
                 try:
                     extracted = info_text.extract_article(page.text())
                     if len(extracted) >= info_text.MIN_BODY_CHARS:

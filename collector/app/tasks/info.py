@@ -164,6 +164,9 @@ def task_info_naver_flows() -> str:
         missed = [name for name in snapshot["failed"] if name not in unsent]
         if missed:
             return polite.Partial(detail, f"받지 못함: {', '.join(missed)}", kind=polite.PARTIAL_FAILED)
+        if snapshot["failed"]:
+            # 남은 것은 보내지 않은 부분뿐 — 전부 받은 실행이 아니므로 '정상'으로 적지 않고 출처 상태를 그대로 둡니다(QA-391).
+            return polite.Partial(detail, ", ".join(snapshot["failed"]), kind=polite.PARTIAL_UNSENT)
         return detail
     return polite.scheduled(NAVER_TASK, naver_cadence, _shape(work))
 
@@ -189,6 +192,7 @@ def _krx_login(fetch) -> None:
     거절은 사람이 고쳐야 풀립니다(krx.co.kr에서 비밀번호를 바꾸고 서버 .env를 고침). 닫지 않으면 태스크가 깰 때마다(2~5시간) 로그인 요청을
     다시 보내 계정이 막힐 수 있습니다. 닫힘은 사람 확인을 만났을 때와 같은 규칙(12~24시간 — state.note_human_check)이고, 닫힌 동안에는
     받기 계층이 그 호스트로 아무것도 보내지 않습니다. 일시 실패(5xx·시간 초과)와 계정 값이 설정되지 않은 경우(보낸 요청 없음)는 닫지 않습니다.
+    결과 코드가 없는 응답은 거절인지 알 수 없어 '형식 바뀜'(krx_data.login의 ShapeError)으로 올라가고 닫지 않습니다.
 
     :raises ladder.FetchRejected: KRX가 로그인을 거절해 닫음(사유에 계정 값을 싣지 않음)
     :raises krx_data.KrxLoginError: 계정 값이 설정되지 않음
@@ -388,6 +392,10 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
         # 형식은 맞는데 받지 못한 부분 — 그 부분은 '이전 값'이거나 비어 있으므로 '정상'으로 적지 않습니다(QA-391).
         more = f" 외 {len(missed) - 4}" if len(missed) > 4 else ""
         return polite.Partial(detail, f"받지 못함: {', '.join(missed[:4])}{more}", kind=polite.PARTIAL_FAILED)
+    if failed:
+        # 남은 것은 예산·시간으로 보내지 않은 부분뿐 — 전부 받은 실행이 아니므로 출처 상태를 그대로 둡니다(QA-391).
+        more = f" 외 {len(failed) - 4}" if len(failed) > 4 else ""
+        return polite.Partial(detail, f"{', '.join(failed[:4])}{more}", kind=polite.PARTIAL_UNSENT)
     return detail
 
 

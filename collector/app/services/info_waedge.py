@@ -162,7 +162,7 @@ def collect_list(page_url: str, *, source: str, kind: str, bodies_per_run: int, 
             try:
                 detail = fetch(entry["url"])
             except ladder.FetchRejected as exc:
-                blocked = exc
+                blocked, sent = exc, exc.sent     # 이미 닫힌 호스트면 요청이 나가지 않았습니다(QA-393)
             except ladder.FetchSkipped:
                 room, sent = 0, False             # 보내지 않았음(예산·시간) — 그 글의 시도로 세지 않습니다(QA-393, 블로그 글 페이지와 같음)
             except ladder.FetchFailed:

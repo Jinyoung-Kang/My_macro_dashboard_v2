@@ -52,6 +52,9 @@ CadenceLike = Union[Cadence, Callable[[], Cadence]]
 # Partial의 종류 — 출처 상태(fetch_source_state.status)에 그대로 남는 값입니다.
 PARTIAL_FORMAT = "format"       # 일부의 모양이 다름('형식 바뀜')
 PARTIAL_FAILED = "failed"       # 일부를 받지 못함(404·5xx·빈 답 — '받지 못함')
+# 일부를 보내지 않음(하루 예산·태스크 시간) — 출처의 성공도 실패도 아니라 출처 상태에 남기지 않습니다(전부 보내지 못한 실행과 같은 기준).
+# 'ok'로 적으면 이어지던 '받지 못함' 셈이 1로 돌아가고 마지막 성공 시각이 갱신돼 끊김 알림이 한 바퀴 늦어집니다(QA-391).
+PARTIAL_UNSENT = "unsent"
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,7 @@ class Partial:
 
     여러 부분을 한 번에 받는 출처(네이버 6건·KRX 20건)에서 한 부분만 형식이 바뀌거나(``PARTIAL_FORMAT``) 받지 못해도(``PARTIAL_FAILED`` —
     QA-391) 알 수 있게. 받은 부분은 저장하고, 마지막 성공 시각은 전부 받은 실행에서만 갱신됩니다(같은 판정이 이어지면 백엔드가 알림).
+    예산·시간이 모자라 일부를 보내지 않았을 뿐이면 ``PARTIAL_UNSENT`` — 출처 상태를 건드리지 않습니다.
     """
 
     detail: str
@@ -68,7 +72,7 @@ class Partial:
     kind: str = PARTIAL_FORMAT
 
     def __post_init__(self) -> None:
-        if self.kind not in (PARTIAL_FORMAT, PARTIAL_FAILED):
+        if self.kind not in (PARTIAL_FORMAT, PARTIAL_FAILED, PARTIAL_UNSENT):
             raise ValueError(f"모르는 Partial 종류: {self.kind}")
 
 
@@ -169,6 +173,8 @@ def scheduled(name: str, cadence: CadenceLike, work: Callable[[], "str | Partial
         raise
     when = _reschedule(name, cadence)
     if isinstance(detail, Partial):
+        if detail.kind == PARTIAL_UNSENT:       # 보내지 않았을 뿐 — 출처 상태는 그대로(위 FetchSkipped 가지와 같음)
+            return f"{detail.detail} · 일부 보내지 않음({detail.issue[:160]}) · 다음 {kst.stamp(when)}"
         _note(name, cadence, detail.kind, detail.issue)
         label = "일부 형식 다름" if detail.kind == PARTIAL_FORMAT else "일부 받지 못함"
         return f"{detail.detail} · {label}({detail.issue[:160]}) · 다음 {kst.stamp(when)}"

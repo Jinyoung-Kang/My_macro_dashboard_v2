@@ -54,10 +54,12 @@ class FetchRejected(http.SourceRejected):
     무관합니다 — 닫힘은 ``closed``(표 fetch_hosts)에 있습니다.
     """
 
-    def __init__(self, closed: state.Closed) -> None:
+    def __init__(self, closed: state.Closed, *, sent: bool = True) -> None:
         self.host = closed.host
         self.why = closed.reason
         self.closed = closed
+        # 이번에 요청이 나갔는가 — 이미 닫혀 있어 보내지 않은 경우는 False(부르는 쪽이 '시도'로 세지 않게 — QA-393)
+        self.sent = sent
         requests.exceptions.RequestException.__init__(self, f"{http.REJECTED_MARK} — {closed.message()}")
 
 
@@ -206,7 +208,7 @@ def _fetch_hop(url: str, *, expect: str, method: str, headers, params, data) -> 
     rules = policy.policy_for(host)
     shut = state.closed(host)
     if shut is not None:
-        raise FetchRejected(shut)
+        raise FetchRejected(shut, sent=False)
 
     blocked_why: str | None = None
     for attempt, tier in enumerate(_usable_tiers(rules, host)[:2]):       # 첫 계층 + 한 번 올라가기

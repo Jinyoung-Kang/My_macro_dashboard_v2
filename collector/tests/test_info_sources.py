@@ -320,7 +320,6 @@ def test_QA391_글_페이지에서_본문을_받던_블로그의_최근_추출�
     assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-4/"))["body_status"] == "partial", "받은 것은 저장"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391(독립 검토): 글 페이지를 받지 못한 글(404·5xx)까지 '추출이 빈 글'로 세어 형식 바뀜으로 적습니다")
 def test_QA391_글_페이지를_받지_못한_글은_형식_바뀜_판정에서_뺀다(store, example_host, monkeypatch):
     # 글 페이지가 한동안 404·5xx였던 블로그 — 본문 자리가 바뀐 것이 아니라 받지 못한 것입니다(추출해 볼 페이지가 없었음).
     store.upsert_info_items([_page_tried(1, days_ago=6, status="full"),
@@ -333,7 +332,6 @@ def test_QA391_글_페이지를_받지_못한_글은_형식_바뀜_판정에서_
     assert store.source_state(BLOG.task)["status"] != "format", "받지 못한 글 페이지는 구조 변경의 근거가 아닙니다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-393(독립 검토): 닫힌 호스트라 보내지 않은 글 페이지 요청도 그 글의 시도로 셉니다")
 def test_QA393_닫힌_호스트라_보내지_않은_글_페이지는_시도로_세지_않는다(store, example_host):
     shut = state.Closed(host="blog.example.com", reason="HTTP 403", until=NOW + timedelta(hours=1), given_up=False)
     routes = {BLOG.feed: _feed(_item(1, content=None)),
