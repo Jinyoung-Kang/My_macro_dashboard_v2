@@ -192,6 +192,16 @@ describe("원문 팝업(ADR 0037)", () => {
     expect(canTranslate(headline, null)).toBe(false);
   });
 
+  it.fails("QA-410: 글자가 없는 글(숫자·기호뿐, 제목 없음)에는 번역 단추를 내지 않는다 — 제목 단추의 조건과 같게", () => {
+    const entry = readerOfItem(item);
+    expect(canTranslate({ ...entry, title: "+3.5% (2026-11-11)", titleKo: null }, null)).toBe(false);
+    expect(canTranslate({ ...entry, title: "—", titleKo: null }, null)).toBe(false);
+    expect(canTranslate({ ...entry, titleKo: "금리 급등" }, "12,345 / 67.8%")).toBe(false);
+    // 글자가 있는 비한국어 글은 그대로 냅니다.
+    expect(canTranslate({ ...entry, titleKo: "금리 급등" }, "Rates rose 3.5%")).toBe(true);
+    expect(canTranslate({ ...entry, title: "Rates +3.5%", titleKo: null }, null)).toBe(true);
+  });
+
   it("QA-403: 번역을 옮긴 모델은 저장본 포함 전부 — 목록이 없으면 이번에 부른 모델, 그것도 없으면 '번역 모델'", () => {
     expect(translatedBy({ model: null, models: ["gemini-3.5-flash-lite"] })).toBe("gemini-3.5-flash-lite");
     expect(translatedBy({ model: "claude-haiku-5-5", models: ["gemini-3.5-flash", "claude-haiku-5-5", "gemini-3.5-flash"] }))

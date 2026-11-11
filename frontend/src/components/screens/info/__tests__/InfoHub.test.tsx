@@ -235,6 +235,101 @@ describe("정보 수집 화면", () => {
     });
   });
 
+  // ------------------------------------------------------------------ QA-410
+  // 번역 단추 두 곳(제목 옆·원문 팝업)이 서버 호출 단추의 공용 훅을 쓰지 않고 상태를 손으로 관리했습니다.
+  it.fails("QA-410: 세션이 끝난 뒤 번역을 누르면(401) 로그인 알림이 불린다 — 제목 단추와 팝업 모두", async () => {
+    const english = { ...ITEM, id: "0123456789abcdef0123456a", titleKo: null };
+    routes({
+      "/api/info/catalog": CATALOG,
+      "/api/info/items/0123456789abcdef0123456a": { found: true, item: { ...english, body: "First paragraph of the body." } },
+      "/api/info/items?kind=blog": { available: true, items: [english], page: 1, size: 10, total: 1, pages: 1 },
+    });
+    const notify = vi.fn();
+    signal.notifyUnauthorized = notify;
+    api.apiPost.mockImplementation(() => Promise.reject(new api.UnauthorizedError("로그인이 필요합니다.")));
+    try {
+      render(<InfoHub tab="news" />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "제목 번역: Rates Spike" }));
+      await screen.findByText("로그인이 필요합니다.");
+      expect(notify).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "Rates Spike" }));
+      const dialog = await screen.findByRole("dialog", { name: "Rates Spike" });
+      await within(dialog).findByText("First paragraph of the body.");
+      fireEvent.click(within(dialog).getByRole("button", { name: "한국어로 번역" }));
+      await within(dialog).findByText("로그인이 필요합니다.");
+      expect(notify).toHaveBeenCalledTimes(2);
+    } finally {
+      signal.notifyUnauthorized = () => {};
+    }
+  });
+
+  it.fails("QA-410: 번역이 끝나기 전에 팝업을 닫았다 같은 글을 다시 열어 눌러도 같은 번역 요청은 한 번만 나간다", async () => {
+    const english = { ...ITEM, id: "0123456789abcdef0123456b", titleKo: null };
+    routes({
+      "/api/info/catalog": CATALOG,
+      "/api/info/items/0123456789abcdef0123456b": { found: true, item: { ...english, body: "First paragraph of the body." } },
+      "/api/info/items?kind=blog": { available: true, items: [english], page: 1, size: 10, total: 1, pages: 1 },
+    });
+    api.apiPost.mockImplementation(() => new Promise(() => {}));      // 끝나지 않는 번역(긴 글은 1분쯤 걸립니다)
+    render(<InfoHub tab="news" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rates Spike" }));
+    let dialog = await screen.findByRole("dialog", { name: "Rates Spike" });
+    await within(dialog).findByText("First paragraph of the body.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "한국어로 번역" }));
+    await within(dialog).findByRole("button", { name: "번역 중…" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await vi.waitFor(() => expect(screen.queryByRole("dialog", { name: "Rates Spike" })).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Rates Spike" }));
+    dialog = await screen.findByRole("dialog", { name: "Rates Spike" });
+    await within(dialog).findByText("First paragraph of the body.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "한국어로 번역" }));
+    await within(dialog).findByRole("button", { name: "번역 중…" });
+
+    expect(api.apiPost).toHaveBeenCalledTimes(1);
+  });
+
+  it.fails("QA-410: 쪽이 범위를 넘어 빈 목록이 오면(글은 있음) 마지막 쪽을 다시 묻는다", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/info/catalog")) return Promise.resolve(CATALOG);
+      if (!path.startsWith("/api/info/items?kind=blog")) return new Promise(() => {});
+      // 3쪽을 물었는데 그사이 글이 줄어 2쪽까지뿐인 응답.
+      if (path.includes("page=3")) return Promise.resolve({ available: true, items: [], page: 3, size: 10, total: 15, pages: 2 });
+      if (path.includes("page=2")) return Promise.resolve({ available: true, items: [{ ...ITEM, title: "Second page item" }], page: 2, size: 10, total: 15, pages: 2 });
+      return Promise.resolve({ available: true, items: [ITEM], page: 1, size: 10, total: 25, pages: 3 });
+    });
+    render(<InfoHub tab="news" />);
+
+    await screen.findByRole("button", { name: "Rates Spike" });
+    fireEvent.click(within(screen.getByRole("navigation", { name: "글 목록 쪽" })).getByRole("button", { name: "3" }));
+
+    expect(await screen.findByRole("button", { name: "Second page item" })).toBeTruthy();
+    expect(screen.queryByText(/받은 글이 없습니다/)).toBeNull();
+  });
+
+  it.fails("QA-410: 해외 블로그 보기의 출처 고르기에 waedge 해외 블로그가 있고, 사건 뉴스의 검색 이름표는 '제목'이다(서버가 제목만 찾음)", async () => {
+    const catalog = { ...CATALOG, sources: [...CATALOG.sources,
+      source(20, { tab: "news", kind: "waedge", key: "waedge.blogs", label: "waedge 해외 블로그", access: "bypass", speed: "polite" }),
+      source(21, { tab: "news", kind: "waedge", key: "waedge.brief", label: "waedge 시황", access: "bypass", speed: "polite" })] };
+    routes({
+      "/api/info/catalog": catalog,
+      "/api/info/items?kind=blog": { available: true, items: [ITEM], page: 1, size: 10, total: 1, pages: 1 },
+      "/api/info/headlines?set=us": { available: true, page: 1, size: 10, total: 0, pages: 0, items: [] },
+    });
+    render(<InfoHub tab="news" />);
+
+    await screen.findByRole("button", { name: "Rates Spike" });
+    const options = within(screen.getByLabelText("출처")).getAllByRole("option").map((option) => option.textContent);
+    expect(options).toEqual(["전체", "Wolf Street", "waedge 해외 블로그"]);
+    expect(screen.getByLabelText("검색(제목·요약)")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "사건 뉴스(미국)" }));
+    expect(await screen.findByLabelText("검색(제목)")).toBeTruthy();
+  });
+
   it("국내 시장·수급: KRX 순위는 10줄씩, 금액이 없으면 '—', 이어받은 부분은 이전 값 표시; 네이버 장중 추정은 금액 '—'", async () => {
     routes({ "/api/info/krx": KRX, "/api/info/flows": FLOWS, "/api/info/catalog": CATALOG });
     render(<InfoHub tab="kr" />);
