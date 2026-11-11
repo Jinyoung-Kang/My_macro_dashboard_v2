@@ -52,6 +52,8 @@ TREND_CODES: dict[str, tuple[str, ...]] = {
     "otherCorp": ("7100",),
 }
 INSTITUTION_PARTS = ("financial", "insurance", "trust", "bank", "otherFinancial", "pension")
+# 매매동향 한 날의 주 구분 — 이 가운데 하나도 읽지 못한 날은 읽지 못한 날입니다(행으로 넣지 않음).
+MAIN_COLUMNS = ("foreign", "individual", "institution")
 
 Fetch = Callable[..., ladder.Fetched]
 
@@ -69,7 +71,8 @@ def parse_trend(payload) -> list[dict]:
     """
     매매동향(일자별) 응답 → 날짜별 행(최근 날짜부터).
 
-    :raises ShapeError: content 목록이 없거나 날짜·구분을 하나도 읽지 못함
+    주 구분(외국인·개인·기관계) 가운데 하나도 읽지 못한 날은 뺍니다 — 구분 코드가 바뀌면 모든 칸이 null인 행이 직전 값을 덮습니다(QA-392).
+    :raises ShapeError: content 목록이 없거나 날짜·주 구분을 읽은 날이 하나도 없음
     """
     if not isinstance(payload, dict) or not isinstance(payload.get("content"), list):
         raise ShapeError("네이버 매매동향 응답 모양이 다름(content 없음)")
@@ -89,6 +92,8 @@ def parse_trend(payload) -> list[dict]:
             row[column] = _eok(sum(v for v in values if v is not None)) if codes[0] in amounts and amounts[codes[0]] is not None else None
         parts = [row[name] for name in INSTITUTION_PARTS]
         row["institution"] = None if any(part is None for part in parts) else round(sum(parts), 1)
+        if all(row[name] is None for name in MAIN_COLUMNS):
+            continue
         rows.append(row)
     if not rows:
         raise ShapeError("네이버 매매동향에서 날짜별 값을 읽지 못함(bizdate·netAmounts 없음)")
@@ -99,7 +104,9 @@ def parse_rankings(payload) -> dict:
     """
     외국인·기관 매매상위 응답 → {buy, sell, estimated, period{from, to}, rankedAt}.
 
-    :raises ShapeError: sections.buyRankList·sellRankList가 없음
+    종목 코드나 이름이 없는 행은 뺍니다(순위는 응답의 자리 그대로). 행이 있는데 하나도 남지 않으면 형식이 바뀐 것입니다 — 키 이름이 바뀌면
+    code·name이 null인 행들이 직전 값을 덮습니다(QA-392). 행이 처음부터 없는 목록은 빈 목록 그대로입니다.
+    :raises ShapeError: sections.buyRankList·sellRankList가 없음, 또는 행은 있는데 종목 코드·이름을 읽은 행이 없음
     """
     sections = payload.get("sections") if isinstance(payload, dict) else None
     if not isinstance(sections, dict) or not isinstance(sections.get("buyRankList"), list) \
@@ -108,7 +115,12 @@ def parse_rankings(payload) -> dict:
     out: dict = {"estimated": False, "period": {"from": None, "to": None}, "rankedAt": None}
     for side, key in (("buy", "buyRankList"), ("sell", "sellRankList")):
         rows = []
-        for index, row in enumerate([r for r in sections[key] if isinstance(r, dict)], start=1):
+        given = [r for r in sections[key] if isinstance(r, dict)]
+        for index, row in enumerate(given, start=1):
+            code = str(row.get("itemcode") or "").strip()
+            name = str(row.get("itemname") or "").strip()
+            if not code or not name:
+                continue
             estimated = row.get("estimated") is True
             amount = to_float(row.get("accTradeAmount"))
             if estimated:
@@ -118,14 +130,16 @@ def parse_rankings(payload) -> dict:
                              "to": _iso(row.get("bizdateTo")) or out["period"]["to"]}
             rows.append({
                 "rank": index,
-                "code": str(row.get("itemcode") or "").strip() or None,
-                "name": str(row.get("itemname") or "").strip() or None,
+                "code": code,
+                "name": name,
                 "price": to_float(row.get("nowPrice")),
                 "changePct": to_float(row.get("prevChangeRate")),
                 "netVolume": to_int(row.get("accTradeVolume")),
                 # 추정 순위의 금액 칸은 "0"(주지 않음)입니다 — 0원이 아니라 모르는 값.
                 "netAmountEok": None if estimated or amount in (None, 0) else _eok(amount),
             })
+        if given and not rows:
+            raise ShapeError(f"네이버 매매상위에서 종목 코드·이름을 읽지 못함({key} {len(given)}행 — 행의 칸 이름이 바뀐 경우)")
         out[side] = rows
     return out
 

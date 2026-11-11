@@ -99,10 +99,6 @@ def test_확정_순위는_금액을_억_원으로():
     assert parsed["period"] == {"from": "2026-11-11", "to": "2026-11-11"}
 
 
-QA392 = pytest.mark.xfail(strict=True, reason="QA-392: 필수 칸이 전부 비어도 '형식 바뀜'이 아니고 직전 저장본을 빈 값으로 덮습니다")
-
-
-@QA392
 def test_QA392_매매상위_행의_키_이름이_바뀌면_형식_바뀜():
     payload = _ranking(estimated=False)
     for key in ("buyRankList", "sellRankList"):
@@ -113,7 +109,6 @@ def test_QA392_매매상위_행의_키_이름이_바뀌면_형식_바뀜():
         info_naver.parse_rankings(payload)
 
 
-@QA392
 def test_QA392_매매상위에서_코드나_이름이_없는_행은_뺀다():
     payload = _ranking(estimated=False)
     payload["sections"]["buyRankList"].append({"itemcode": "", "itemname": "이름만", "accTradeVolume": "1"})
@@ -130,7 +125,6 @@ def test_QA392_빈_매매상위_목록은_그대로_빈_목록이다():
     assert parsed["buy"] == [] and parsed["sell"] == [], "행이 없는 것(장 시작 전 등)은 형식 바뀜이 아닙니다"
 
 
-@QA392
 def test_QA392_매매동향이_모르는_구분_코드뿐이면_형식_바뀜():
     payload = {"content": [{"bizdate": "20261110", "netAmounts": [_amount("A100", 1_000_000_000), _amount("B200", -2_000_000_000)]}]}
 
@@ -138,7 +132,6 @@ def test_QA392_매매동향이_모르는_구분_코드뿐이면_형식_바뀜():
         info_naver.parse_trend(payload)
 
 
-@QA392
 def test_QA392_매매동향에서_주_구분을_하나도_읽지_못한_날은_뺀다():
     payload = _trend()
     payload["content"].append({"bizdate": "20261109", "netAmounts": [_amount("7100", 5_000_000_000)]})      # 기타법인만
@@ -148,7 +141,6 @@ def test_QA392_매매동향에서_주_구분을_하나도_읽지_못한_날은_�
     assert [row["date"] for row in rows] == ["2026-11-10"]
 
 
-@QA392
 def test_QA392_키_이름이_바뀐_부분은_직전_값을_지킨다():
     previous = {"rankings": {"FOREIGNER": {"KOSPI": {"buy": [{"rank": 1, "code": "005930", "name": "삼성전자"}], "sell": [],
                                                       "estimated": False}}}}

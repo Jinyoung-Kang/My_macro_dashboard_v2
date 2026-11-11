@@ -186,7 +186,7 @@ def parse_gurus(markup: str) -> dict:
     """
     거장 화면 → {asOf, counts, gurus}. 이름으로 하나씩, 점수 내림차순.
 
-    :raises ShapeError: 견해를 하나도 읽지 못함
+    :raises ShapeError: 견해를 하나도 읽지 못함, 또는 견해·점수를 읽은 거장이 절반에 못 미침
     """
     soup = _soup(markup)
     gurus: dict[str, dict] = {}
@@ -196,8 +196,10 @@ def parse_gurus(markup: str) -> dict:
         if not name or name in gurus:
             continue
         line = _text(detail)
-        stance = _STANCE.search(line)
         breakdown = _BREAKDOWN.search(line)
+        # 견해 칸은 분포('강세 N · 중립 N · 약세 N') 앞에 있습니다. 분포 글 안의 '강세 N'을 견해로 읽지 않게 그 앞에서만 찾습니다 —
+        # 견해 표기가 바뀌면 모두 '강세'·점수는 강세 비중으로 읽혔습니다(QA-392).
+        stance = _STANCE.search(line[:breakdown.start()] if breakdown else line)
         basis = _BASIS.search(line)
         day = _DAY.search(line)
         summary_node = detail.find("p")
@@ -214,6 +216,10 @@ def parse_gurus(markup: str) -> dict:
         }
     if not gurus:
         raise ShapeError("waedge 거장 화면에서 견해를 읽지 못함(guru-spectrum-detail 없음 — 화면 형식이 바뀐 경우)")
+    # 필수 칸(견해·점수)을 읽은 거장이 절반에 못 미치면 형식이 바뀐 것입니다 — 이름만 읽힌 빈 견해로 직전 저장본을 덮지 않습니다(QA-392).
+    read = sum(1 for guru in gurus.values() if guru["stance"] is not None and guru["score"] is not None)
+    if read * 2 < len(gurus):
+        raise ShapeError(f"waedge 거장 화면에서 견해·점수를 읽지 못함({len(gurus)}명 가운데 {read}명만 — 견해 표기가 바뀐 경우)")
     header = soup.find(attrs={"data-testid": "guru-sentiment-spectrum"})
     head_text = _text(header)[:400] if header is not None else ""
     counts = {"total": None, "bull": None, "neutral": None, "bear": None}

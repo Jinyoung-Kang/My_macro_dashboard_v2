@@ -149,10 +149,6 @@ def test_거장_견해가_없으면_형식_바뀜():
         info_waedge.parse_gurus("<html><body><p>준비 중</p></body></html>")
 
 
-QA392 = pytest.mark.xfail(strict=True, reason="QA-392: 필수 칸(견해·점수)이 전부 비거나 틀려도 '형식 바뀜'이 아니고 직전 저장본을 덮습니다")
-
-
-@QA392
 @pytest.mark.parametrize("stances", [
     # 견해 표기만 바뀜(강세·중립·약세가 아닌 글) — 이름은 읽히지만 견해·점수는 읽을 수 없습니다.
     (("Neutral", "+0"), ("Bullish", "+80"), ("Bearish", "-60")),
@@ -167,7 +163,6 @@ def test_QA392_거장의_견해_표기가_바뀌면_형식_바뀜(stances):
         info_waedge.parse_gurus(page)
 
 
-@QA392
 def test_QA392_견해_칸이_없는데_분포_글의_강세를_견해로_읽지_않는다():
     # 견해 칸이 빠지면 뒤따르는 '강세 30 · 중립 40 · 약세 30'(분포)의 첫 낱말이 견해로 읽혔습니다 — 모두 '강세', 점수는 강세 비중.
     page = "<html><body>" + _guru("Alpha Kim", "", "", 30, 40, 30) + _guru("Beta Lee", "강세", "+80", 85, 10, 5) \
