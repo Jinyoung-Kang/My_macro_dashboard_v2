@@ -116,6 +116,16 @@ def test_로그인이_안_되면_멈추고_계정_값은_싣지_않는다(accoun
     assert "test-id-not-real" not in str(raised.value) and "test-pw-not-real" not in str(raised.value)
 
 
+@pytest.mark.xfail(strict=True, reason="QA-390(독립 검토): 결과 코드가 없는 로그인 응답을 거절로 보아 그 호스트를 12~24시간 닫습니다")
+def test_QA390_로그인_응답에_결과_코드가_없으면_거절이_아니라_형식_바뀜이다(account):
+    """
+    코드 칸이 없는 JSON(점검 안내·바뀐 응답 모양)은 KRX가 계정을 거절한 것인지 알 수 없습니다. 거절로 보면 태스크가 그 호스트를 길게 닫아
+    그날 자료를 놓칩니다 — 닫는 것은 거절 코드가 실제로 온 경우뿐입니다.
+    """
+    with pytest.raises(krx_data.ShapeError, match="결과 코드"):
+        krx_data.login(FakeKrx(login_codes=("",)))
+
+
 def test_계정이_없으면_보내지_않는다(monkeypatch):
     monkeypatch.delenv("KRX_ID", raising=False)
     fake = FakeKrx()

@@ -114,6 +114,26 @@ def test_QA391_일부를_받지_못하면_실행은_성공이고_상태는_faile
     assert row["last_ok_at"] == ok_at, "마지막 성공 시각은 전부 받은 실행에서만 갱신합니다"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-391(독립 검토): 보내지 않은 부분만 남은 실행을 나타낼 Partial 종류가 없어 'ok'로 적힙니다")
+def test_QA391_일부를_보내지_않은_실행은_출처_상태와_마지막_성공_시각을_그대로_둔다(store, clock):
+    """
+    예산·시간이 모자라 일부를 보내지 않은 실행은 출처의 성공도 실패도 아닙니다. 'ok'로 적으면 이어지던 '받지 못함' 셈이 1로 돌아가고 마지막 성공
+    시각이 갱신돼 끊김 알림이 한 바퀴 늦어집니다(전부 보내지 못한 실행이 상태를 그대로 두는 것과 같은 기준).
+    """
+    _run(clock, lambda: "네이버 6/6")
+    clock["t"] += timedelta(hours=1)
+    _run(clock, lambda: polite.Partial("네이버 4/6", "받지 못함: trend.KOSPI", kind=polite.PARTIAL_FAILED))
+    before = _row(store)
+
+    clock["t"] += timedelta(hours=1)
+    detail = _run(clock, lambda: polite.Partial("네이버 4/6", "trend.KOSPI, trend.KOSDAQ", kind=polite.PARTIAL_UNSENT))
+
+    assert detail.startswith("네이버 4/6 · 일부 보내지 않음(trend.KOSPI, trend.KOSDAQ)")
+    row = _row(store)
+    assert (row["status"], row["streak"], row["reason"], row["last_ok_at"]) == (
+        before["status"], before["streak"], before["reason"], before["last_ok_at"]), "보내지 않은 실행은 판정을 남기지 않습니다"
+
+
 def test_일부만_형식이_다르면_실행은_성공이고_상태는_format(store, clock):
     detail = _run(clock, lambda: polite.Partial("네이버 5/6", "trend.KOSPI: 모양이 다름"))
 

@@ -273,12 +273,13 @@ def test_피드가_HTML이면_형식_바뀜(store, example_host):
 # ==============================================================================
 # 4-2. 글 페이지에 본문을 기대는 블로그의 페이지 구조가 바뀜 (QA-391)
 # ==============================================================================
-def _page_tried(n: int, *, days_ago: float, status: str) -> dict:
-    """전에 글 페이지를 열어 본 글 한 행(저장본) — status full이면 그 페이지에서 본문을 받은 글."""
+def _page_tried(n: int, *, days_ago: float, status: str, got: bool = True) -> dict:
+    """전에 글 페이지를 열어 본 글 한 행(저장본) — status full이면 그 페이지에서 본문을 받은 글. got이 거짓이면 글 페이지를 받지 못한 글(404·5xx)."""
     url = f"https://blog.example.com/2026/11/old-{n}/"
     return {"id": info_text.item_id(url), "source": BLOG.key, "kind": "article", "url": url, "title": f"Old {n}",
             "published_at": NOW - timedelta(days=days_ago), "body": LONG if status == "full" else "Short teaser.",
-            "body_status": status, "fetch_tier": "impersonate", "meta": {"pageTries": 1 if status == "full" else 2}}
+            "body_status": status, "fetch_tier": "impersonate",
+            "meta": {"pageTries": 1 if status == "full" else 2, **({"pageGot": True} if got else {})}}
 
 
 def _run_blog_task(monkeypatch, routes: dict[str, bytes]) -> str:
@@ -317,6 +318,32 @@ def test_QA391_글_페이지에서_본문을_받던_블로그의_최근_추출�
     assert row["status"] == "format" and "글 페이지" in row["reason"], "실행은 성공이지만 출처 상태는 '형식 바뀜'"
     assert "일부 형식 다름" in detail
     assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-4/"))["body_status"] == "partial", "받은 것은 저장"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391(독립 검토): 글 페이지를 받지 못한 글(404·5xx)까지 '추출이 빈 글'로 세어 형식 바뀜으로 적습니다")
+def test_QA391_글_페이지를_받지_못한_글은_형식_바뀜_판정에서_뺀다(store, example_host, monkeypatch):
+    # 글 페이지가 한동안 404·5xx였던 블로그 — 본문 자리가 바뀐 것이 아니라 받지 못한 것입니다(추출해 볼 페이지가 없었음).
+    store.upsert_info_items([_page_tried(1, days_ago=6, status="full"),
+                             _page_tried(2, days_ago=3, status="partial", got=False), _page_tried(3, days_ago=2, status="partial", got=False),
+                             _page_tried(5, days_ago=1, status="partial", got=False)])
+    routes = {BLOG.feed: _feed(_item(4, content=None))}                       # 새 글의 글 페이지도 404
+
+    _run_blog_task(monkeypatch, routes)
+
+    assert store.source_state(BLOG.task)["status"] != "format", "받지 못한 글 페이지는 구조 변경의 근거가 아닙니다"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-393(독립 검토): 닫힌 호스트라 보내지 않은 글 페이지 요청도 그 글의 시도로 셉니다")
+def test_QA393_닫힌_호스트라_보내지_않은_글_페이지는_시도로_세지_않는다(store, example_host):
+    shut = state.Closed(host="blog.example.com", reason="HTTP 403", until=NOW + timedelta(hours=1), given_up=False)
+    routes = {BLOG.feed: _feed(_item(1, content=None)),
+              "https://blog.example.com/2026/11/post-1/?utm_source=rss": ladder.FetchRejected(shut, sent=False)}
+
+    with pytest.raises(ladder.FetchRejected):
+        info_blogs.collect(BLOG, fetch=FakeFetch(routes), now=NOW)
+
+    row = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))
+    assert row["meta"].get("pageTries") is None, "이미 닫힌 호스트로는 요청이 나가지 않았습니다"
 
 
 def test_QA391_글_페이지에서_본문을_받은_적이_없는_블로그는_짧은_글로_본다(store, example_host, monkeypatch):

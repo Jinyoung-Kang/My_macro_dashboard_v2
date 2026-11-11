@@ -260,6 +260,29 @@ def test_QA391_일부의_형식이_다르면_format이_먼저(store, monkeypatch
     assert store.source_state(info_tasks.NAVER_TASK)["status"] == "format"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-391(독립 검토): 일부를 보내지 않은 실행이 출처 상태를 'ok'로 덮고 마지막 성공 시각을 갱신합니다")
+def test_QA391_예산으로_일부를_보내지_않은_실행은_이어지던_받지_못함을_ok로_덮지_않는다(store, monkeypatch):
+    def missing_trend(part, market):
+        return ladder.FetchFailed("stock.naver.com HTTP 404") if part == "trend" else _ranking(estimated=False)
+
+    _run_naver_task(monkeypatch, missing_trend)
+    assert store.source_state(info_tasks.NAVER_TASK)["status"] == "failed"
+
+    sent = {"n": 0}
+
+    def out_of_budget(part, market):
+        sent["n"] += 1
+        if sent["n"] > 4:
+            return ladder.FetchSkipped("stock.naver.com 오늘 요청 예산(250건)을 다 써서 보내지 않음")
+        return _trend() if part == "trend" else _ranking(estimated=False)
+
+    detail = _run_naver_task(monkeypatch, out_of_budget)
+
+    row = store.source_state(info_tasks.NAVER_TASK)
+    assert row["status"] == "failed" and row["last_ok_at"] is None, "보내지 않은 부분이 남은 실행은 전부 받은 실행이 아닙니다"
+    assert "일부 보내지 않음" in detail
+
+
 def test_QA391_예산으로_보내지_않은_부분은_받지_못함으로_세지_않는다(store, monkeypatch):
     sent = {"n": 0}
 
