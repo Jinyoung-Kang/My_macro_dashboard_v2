@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -98,6 +99,12 @@ class StopWatchFallbackTest {
                     null, fetchedAt.plusSeconds(1))));
         }
 
+        /** 지금 저장본의 최상위 {@code mode}(수집기가 그 회차의 감시 모드를 적는 칸)를 {@code value}로 바꿉니다. */
+        private void snapshotMode(String value) {
+            Snapshot current = marketData.stopWatch(false).orElseThrow();
+            ((ObjectNode) current.payload()).put("mode", value);
+        }
+
         /** 16:15 ET 확정 종가 관측치(그날 종가 90 ≤ 스탑가 92)를 16:17 시계의 장부로 처리합니다. */
         private Outcome closeObservation() {
             PaperLedgerService closing = new PaperLedgerService(store, marketData, MAPPER,
@@ -150,6 +157,23 @@ class StopWatchFallbackTest {
 
             assertThat(stops()).isEmpty();
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("장중 감시에 맡김"));
+        }
+
+        @Test
+        @Disabled("QA-360: 덮음 판정이 저장본을 받은 때의 감시 모드를 보지 않아, SHADOW로 지켜본 날을 장 마감 뒤 ON으로 바꾸면 감시에 맡김으로 읽습니다")
+        @DisplayName("QA-360 설정은 ON이지만 저장본은 SHADOW 때 받은 것(그날 감시는 주문을 내지 않음) — 16:15 확정 종가 관측치는 덮지 않아 종가 스탑")
+        void shadowSnapshotDoesNotCoverAfterSwitchingOn() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 100.0);
+            snapshotMode("SHADOW");
+
+            closeObservation();
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.IMMEDIATE);
+                assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK);
+            });
         }
 
         @Test
@@ -286,6 +310,12 @@ class StopWatchFallbackTest {
                     null, fetchedAt.plusSeconds(1))));
         }
 
+        /** 지금 저장본의 최상위 {@code mode}(수집기가 그 회차의 감시 모드를 적는 칸)를 {@code value}로 바꿉니다. */
+        private void snapshotMode(String value) {
+            Snapshot current = marketData.stopWatch(true).orElseThrow();
+            ((ObjectNode) current.payload()).put("mode", value);
+        }
+
         private Outcome nightD1(double close) {
             return d1Observation(close, COLLECTED_D1);
         }
@@ -317,6 +347,24 @@ class StopWatchFallbackTest {
 
             assertThat(stops()).isEmpty();
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("밤 스탑을 장중 감시에 맡김"));
+        }
+
+        @Test
+        @Disabled("QA-360: 덮음 판정이 저장본을 받은 때의 감시 모드를 보지 않아, SHADOW로 지켜본 날을 장 마감 뒤 ON으로 바꾸면 그날의 밤 대체 스탑을 건너뜁니다")
+        @DisplayName("QA-360 설정은 ON이지만 저장본은 SHADOW 때 받은 것(그날 감시는 주문을 내지 않음) — 밤 감지는 덮지 않아 다음 거래일 09:10 NIGHT_FALLBACK. "
+                + "저장본에 mode가 없어도 덮지 않음")
+        void shadowSnapshotDoesNotCoverAfterSwitchingOn() {
+            mode("ON", null);
+            watched("005930");
+            snapshotMode("SHADOW");
+
+            nightD1(91_000);
+
+            assertThat(stops()).singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.AT_MINUTE);
+                assertThat(o.targetLocal()).isEqualTo(LocalTime.of(9, 10));
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
+            });
         }
 
         @Test

@@ -3,6 +3,7 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -272,6 +273,21 @@ class StopWatchTest {
             entry.put("isStale", true);
             assertThat(StopWatch.covered(payload("005930", entry), "005930", DAY, kst(DAY, 21, 0, 0), KR, true, null)).isFalse();
             assertThat(StopWatch.covered(null, "005930", DAY, kst(DAY, 21, 0, 0), KR, true, null)).isFalse();
+        }
+
+        @Test
+        @Disabled("QA-360: 덮음 판정이 저장본의 감시 모드(mode)를 보지 않습니다")
+        @DisplayName("QA-360 저장본의 mode가 ON일 때만 덮음 — SHADOW 때 받은 저장본(주문을 내지 않은 감시)과 mode가 없는 저장본은 덮지 않음")
+        void onlyAnOnSnapshotCovers() {
+            ObjectNode on = (ObjectNode) payload("AAA", usEntry(DAY, usMinutes(et(9, 30), et(10, 6), 100, 0), 100.0, 100.0));
+            on.put("mode", "ON");
+            assertThat(StopWatch.covered(on, "AAA", DAY, et(10, 15), US, false, 100.0)).isTrue();
+            on.put("mode", "SHADOW");
+            assertThat(StopWatch.covered(on, "AAA", DAY, et(10, 15), US, false, 100.0)).as("SHADOW 때 받은 저장본").isFalse();
+            on.put("mode", "OFF");
+            assertThat(StopWatch.covered(on, "AAA", DAY, et(10, 15), US, false, 100.0)).isFalse();
+            on.remove("mode");
+            assertThat(StopWatch.covered(on, "AAA", DAY, et(10, 15), US, false, 100.0)).as("mode 없음 — 보수적으로 덮지 않음").isFalse();
         }
 
         @Test
