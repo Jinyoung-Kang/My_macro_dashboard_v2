@@ -61,7 +61,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>한 주기
  * <ol>
  *   <li><b>만료</b>: 세션 마감이 지난 PLANNED 지시·알린 스탑 지시는 SKIPPED({@value #AUTO_EXPIRED}) — 확인을 누르지 않은 지시는 잔고에 쓰지 않습니다. 지시를 만든 뒤 그 세션이 거래일이
- *       아니게 되면 그 세션 PLANNED 지시는 SKIPPED({@value #AUTO_NOT_TRADING}).</li>
+ *       아니게 되면 그 세션 PLANNED 지시는 SKIPPED({@value #AUTO_NOT_TRADING}). 종가 스탑 지시({@value #TIMING_CLOSE} — 종가 단일가에 체결)만은 마감에 닫지 않습니다
+ *       (QA-382, ADR 0034 결정 7 개정 — 실제 체결이 마감 순간이라 마감에 닫으면 확인할 시간이 없음): 다음 세션 지시를 만들기 직전(같은 잠금 안)이나, 지시를 못 만들었으면
+ *       다음 세션이 열린 뒤 첫 주기에 닫습니다({@link #stopExpired}).</li>
  *   <li><b>못 만듦</b>: 마지막으로 개장한 세션에 지시가 없으면(시작 뒤 세션만) 그 세션을 UNAVAILABLE로 남깁니다.</li>
  *   <li><b>지시 만들기</b>: 다음 세션 E(개장 전)의 지시가 아직 없고, 규칙 계좌의 D(E 전 거래일) 정기 결정이 최종(OK·NO_TRADE·SKIPPED 또는 기한 지남)이고, 규칙 계좌 장부가 D까지
  *       반영했고({@link PaperMirrorService#ledgerCaughtUp}), 시가 목표가 완전할 때({@link OpenTargets#complete}) {@link ManualAccountPlanner}로 계산해 세션 행과 지시 행을 한
@@ -114,8 +116,10 @@ class ManualAccountJob {
     /** 스탑 지시를 찾는 KST 시각 범위(정규장 — 장 시간 변경일 10:00~16:30 포함, 그 안에서 그날 달력의 개장~마감만). */
     static final LocalTime STOP_SCAN_FROM = LocalTime.of(8, 30);
     static final LocalTime STOP_SCAN_UNTIL = LocalTime.of(17, 0);
+    /** 종가 스탑 지시의 시점 — 종가 단일가(마감 10분 전 ~ 마감)에 체결됩니다. */
+    static final String TIMING_CLOSE = "NEXT_CLOSE";
     /** 스탑 지시가 받는 모의 주문 시점(V28 CHECK — 시가 STOP은 다음 시가 지시에 들어감). */
-    static final Set<String> STOP_TIMINGS = Set.of("MARKET", "AT_MINUTE", "NEXT_CLOSE");
+    static final Set<String> STOP_TIMINGS = Set.of("MARKET", "AT_MINUTE", TIMING_CLOSE);
     /** 모의 책 상태 — 시작 전(따라 하지 않음). */
     static final String BOOK_NOT_STARTED = "NOT_STARTED";
 
@@ -353,8 +357,7 @@ class ManualAccountJob {
             if (s.notifiedAt() == null) {
                 continue;   // 알리지 못한 스탑 지시는 stopNotify가 not-notified로 닫음
             }
-            SessionHours hours = paper.sessionHours(s.session()).orElse(null);
-            if (hours == null || hours.close() == null || now.isBefore(hours.close())) {
+            if (!stopExpired(s, paper.sessionHours(s.session()).orElse(null), now)) {
                 continue;
             }
             store.lockAccount(CODE, acc -> {
@@ -365,6 +368,47 @@ class ManualAccountJob {
                 return null;
             });
         }
+    }
+
+    /** 종가 스탑 지시인가 — 종가 단일가에 체결돼 실제 체결이 그 세션 마감 순간입니다. */
+    static boolean closingStop(StopInstruction s) {
+        return TIMING_CLOSE.equals(s.timing());
+    }
+
+    /**
+     * 알린 스탑 지시의 확인 기한이 지났는가(만료와 되돌리기가 함께 씀 — {@link ManualAccountService#undoTrade}). 장중 스탑은 그 세션 마감. 종가 스탑은 마감 뒤에도 열어 두고
+     * (QA-382), 그 뒤 세션의 행이 생겼거나(다음 지시를 만듦 — {@link #plan}이 만들기 직전에 닫지만 받침으로 봄, 못 만듦 기록 포함) 그 뒤 세션이 열렸으면 지난 것입니다.
+     * {@code hours}는 그 지시 세션의 시간 — 모르거나 마감이 없으면 false(다음 주기에 다시).
+     */
+    boolean stopExpired(StopInstruction s, SessionHours hours, Instant now) {
+        if (hours == null || hours.close() == null || now.isBefore(hours.close())) {
+            return false;
+        }
+        if (!closingStop(s)) {
+            return true;
+        }
+        if (store.latestSession(CODE).map(row -> row.session().isAfter(s.session())).orElse(false)) {
+            return true;
+        }
+        SessionHours last = ManualAccountCalendar.lastOpened(paper, now);
+        return last != null && last.date().isAfter(s.session());
+    }
+
+    /**
+     * 다음 세션({@code session}) 지시를 만들기 직전에 닫을 종가 스탑 지시 — 알린 것 가운데 그 앞 세션 것이고 그 세션 마감이 지난 것(잠금 밖에서 달력을 읽어 고름).
+     */
+    private List<Long> closingStopsBefore(LocalDate session, Instant now) {
+        List<Long> ids = new ArrayList<>();
+        for (StopInstruction s : store.plannedStopInstructions(CODE)) {
+            if (s.notifiedAt() == null || !closingStop(s) || !s.session().isBefore(session)) {
+                continue;
+            }
+            SessionHours hours = paper.sessionHours(s.session()).orElse(null);
+            if (hours != null && hours.close() != null && !now.isBefore(hours.close())) {
+                ids.add(s.id());
+            }
+        }
+        return ids;
     }
 
     // ------------------------------------------------------------------ 장 중반·마감 30분 전 확인 알림(ADR 0034)
@@ -663,6 +707,7 @@ class ManualAccountJob {
             return;
         }
         Set<String> cashLike = new TreeSet<>(paper.cashLikeTickers());
+        List<Long> closingStops = closingStopsBefore(session, now);
         String outcome = store.lockAccount(CODE, acc -> {
             if (acc == null || !acc.active() || store.session(CODE, session).isPresent()) {
                 return "skip";
@@ -685,6 +730,11 @@ class ManualAccountJob {
                     missing);
             if (result.isEmpty()) {
                 return WAIT_PRICE;
+            }
+            // 앞 세션의 미확인 종가 스탑 지시는 여기까지(QA-382) — 이 지시는 지금 잔고(그 매도를 반영하지 않은 보유)로 계산했으므로, 같은 보유를 두 지시로 열어 두지 않습니다.
+            for (Long id : closingStops) {
+                store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
+                        Map.of("skippedBy", "AUTO", "autoNote", AUTO_EXPIRED));
             }
             write(session, decision, result.get(), syncAt, targets.stopOrderIds());
             return result.get().drafts().isEmpty() ? ManualAccountStore.SESSION_NONE : ManualAccountStore.SESSION_PLANNED;

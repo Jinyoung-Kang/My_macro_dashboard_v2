@@ -134,7 +134,8 @@ export function stopWindowText(item: Pick<IsaStopInstruction, "timing" | "target
  */
 export const STOP_GUIDE =
   "장중 시장가는 알림을 받으면 바로(개장 10분 뒤 전에 걸린 스탑은 그 시각 이후), 종가 단일가는 마감 10분 전부터 마감까지 시장가로 매도하세요 — "
-  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다.";
+  + "줄마다 '매도 창'이 그 세션의 시각입니다(장 시간 변경일은 그날 개장·마감 기준). 매매했으면 '확인'을 눌러 실제 수량·체결 금액·수수료를 적으세요 — 적은 값으로 잔고에 바로 반영합니다. "
+  + "확인은 그 세션 마감까지이고, 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전(보통 그날 밤 규칙 계좌 결정 뒤)까지 누를 수 있습니다.";
 
 const AUTO_NOTE: Readonly<Record<string, string>> = {
   "not-notified": "마감까지 알리지 못해 건너뜀",
@@ -151,6 +152,17 @@ export function autoNoteLabel(note: string | null | undefined): string {
     return EMPTY;
   }
   return AUTO_NOTE[note] ?? note;
+}
+
+/**
+ * 스탑 지시가 닫힌 까닭 — 종가 단일가 지시(NEXT_CLOSE)의 확인 기한은 그 세션 마감이 아니라 다음 세션 지시를 만들 때(못 만들면 다음 세션 개장)라서
+ * (QA-382 — ADR 0034 결정 7 개정) 기한이 지나 닫힌 것(expired)을 '마감까지'로 적지 않습니다. 그 밖은 autoNoteLabel과 같습니다.
+ */
+export function stopAutoNoteLabel(item: Pick<IsaStopInstruction, "timing" | "autoNote">): string {
+  if (item.autoNote === "expired" && item.timing === "NEXT_CLOSE") {
+    return "다음 지시를 만들 때까지 확인하지 않아 닫힘";
+  }
+  return autoNoteLabel(item.autoNote);
 }
 
 /** 장중 스탑 지시의 알림 칸 — 보낸 시각("알림 11:32"), 보내기 전이면 "—". */

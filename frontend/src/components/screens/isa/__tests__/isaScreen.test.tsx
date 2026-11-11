@@ -463,7 +463,7 @@ describe("확인·건너뜀·되돌리기", () => {
 
   // QA-382: 종가 스탑 지시(NEXT_CLOSE)는 마감이 아니라 다음 세션 지시를 만들 때 닫힌다 — 닫힌 까닭을 '마감까지'로 적지 않는다. 수정 전에는 모든 expired가
   // '마감까지 확인하지 않아 닫힘'이었다(재현 커밋에서는 it.fails).
-  it.fails("QA-382 닫힌 스탑 지시의 메모 — 종가 단일가는 '다음 지시를 만들 때까지', 장중은 '마감까지', 열린 종가 스탑은 마감 뒤에도 확인 단추", async () => {
+  it("QA-382 닫힌 스탑 지시의 메모 — 종가 단일가는 '다음 지시를 만들 때까지', 장중은 '마감까지', 열린 종가 스탑은 마감 뒤에도 확인 단추", async () => {
     const closing = { id: 51, session: "2026-11-09", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "NEXT_CLOSE", targetAt: "2026-11-09T15:30:00+09:00", status: "PLANNED", notifiedAt: "2026-11-09T15:20:40+09:00" };
     reads[ISA_PATH] = () => Promise.resolve(started({
       stopInstructions: [

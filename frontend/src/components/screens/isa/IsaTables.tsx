@@ -17,6 +17,7 @@ import {
   notifiedText,
   sessionLabel,
   sideLabel,
+  stopAutoNoteLabel,
   stopNotifiedText,
   stopTimingLabel,
   stopWindowText,
@@ -228,7 +229,7 @@ const stopColumns = (onConfirm: (row: IsaStopInstruction) => void, disabled: boo
   { key: "targetAt", header: "규칙 계좌 기준 시각", cell: (row) => formatKst(row.targetAt), sortValue: (row) => timeSortValue(row.targetAt) },
   { key: "status", header: "상태", cell: (row) => instructionStatusLabel(row.status), sortValue: (row) => labelSort(instructionStatusLabel(row.status)) },
   { key: "notified", header: "알림", cell: (row) => stopNotifiedText(row) },
-  { key: "note", header: "메모", cell: (row) => autoNoteLabel(row.autoNote) },
+  { key: "note", header: "메모", cell: (row) => stopAutoNoteLabel(row) },
   {
     key: "actions",
     header: "확인",

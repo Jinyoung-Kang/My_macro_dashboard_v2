@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -554,7 +553,6 @@ class ManualAccountServiceDbTest {
     // QA-382: 종가 스탑 지시의 확인 기한은 그 세션 마감이 아니라 다음 세션 지시를 만들 때(ADR 0034 결정 7 개정) — 되돌리기도 같은 기한으로 닫힘을 가린다.
     // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(마감 뒤 확인한 종가 스탑을 되돌리면 다시 확인할 길이 없었음).
     @Test
-    @Disabled("QA-382: 종가 스탑 지시가 15:30 체결 뒤 첫 주기에 만료됨 — 수정 커밋에서 해제")
     @DisplayName("QA-382: 마감 뒤 확인한 종가 스탑 지시를 되돌리면 다시 PLANNED, 다음 세션 행이 생긴 뒤에는 SKIPPED(expired) — 장중 스탑은 마감 뒤 되돌리면 SKIPPED 그대로")
     void undoClosingStopAfterClose() {
         startSynthetic();

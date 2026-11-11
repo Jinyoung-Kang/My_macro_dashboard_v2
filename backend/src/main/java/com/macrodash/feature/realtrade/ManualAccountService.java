@@ -49,7 +49,8 @@ import java.util.TreeSet;
  *       새 잔고로 다시 만들게 합니다.</li>
  *   <li><b>확인</b>({@link #apply}): 지시 또는 스탑 지시 줄마다 가격(본문 → 서버 직전 종가, 직전 종가의 ±40% 밖이면 400)으로 비용을 더해 잔고에 바로 반영하고
  *       {@code manual_trades}에 남깁니다(한 트랜잭션). PLANNED만 받습니다. 팔 보유가 없는 매도는 그 지시만 SKIPPED({@code no-holding}).</li>
- *   <li><b>되돌림</b>({@link #undoTrade}): 잔고를 정확히 되돌리고 그 지시를 PLANNED(세션 마감이 지났으면 SKIPPED)로, 내역 행은 지웁니다.</li>
+ *   <li><b>되돌림</b>({@link #undoTrade}): 잔고를 정확히 되돌리고 그 지시를 PLANNED(세션 마감이 지났으면 SKIPPED — 종가 스탑 지시는 다음 세션 지시를 만들었거나 다음 세션이
+ *       열렸으면, QA-382)로, 내역 행은 지웁니다.</li>
  *   <li><b>고친 잔고로 다음 지시</b>: 잔고를 바꾸는 쓰기는 같은 잠금 안에서 다음 세션 S의 지시가 이미 있으면 S 08:00(KST) 전에는 S의 PLANNED 지시와 세션 행을 지워 정기
  *       작업이 다시 만들게 하고, 08:00 뒤에는 이미 주문을 냈을 수 있어 지우지 않고 '지시 뒤 잔고가 바뀜'({@code instructions.ledgerChanged})만 남깁니다.</li>
  *   <li>평가는 마지막 가격({@link PaperMirrorService#lastPrices})으로 — 모르는 종목은 평가에서 빼고 {@code unpriced}로 알리며, 그때 손익은 비웁니다(없는 숫자를 만들지
@@ -897,15 +898,22 @@ public class ManualAccountService {
         return Map.of("ok", true);
     }
 
-    /** 그 내역이 묶인 지시의 세션 마감이 지났는가 — 달력을 모르면 그 세션이 오늘 전이면 지난 것으로 봅니다. */
+    /**
+     * 그 내역이 묶인 지시의 확인 기한이 지났는가 — 지시와 장중 스탑 지시는 그 세션 마감, 종가 스탑 지시는 다음 세션 지시를 만들 때(정기 작업의 만료와 같은 판정 —
+     * {@link ManualAccountJob#stopExpired}, QA-382). 달력을 모르면 그 세션이 오늘 전이면 지난 것으로 봅니다.
+     */
     private boolean sessionClosed(Trade trade, Instant now) {
+        StopInstruction stop = trade.stopInstructionId() == null ? null : store.stopInstruction(trade.stopInstructionId()).orElse(null);
         LocalDate session = trade.instructionId() != null ? store.instruction(trade.instructionId()).map(Instruction::session).orElse(null)
-                : trade.stopInstructionId() != null ? store.stopInstruction(trade.stopInstructionId()).map(StopInstruction::session).orElse(null) : null;
+                : stop != null ? stop.session() : null;
         if (session == null) {
             return true;
         }
         SessionHours hours = ManualAccountCalendar.hours(paper, session);
-        return hours != null && hours.close() != null ? !now.isBefore(hours.close()) : session.isBefore(Kst.today(clock));
+        if (hours == null || hours.close() == null) {
+            return session.isBefore(Kst.today(clock));
+        }
+        return stop != null ? job.stopExpired(stop, hours, now) : !now.isBefore(hours.close());
     }
 
     /** {@code POST /api/manual/isa/instructions/{id}/skip} — 잔고에 쓰지 않음. PLANNED는 SKIPPED로, 이미 SKIPPED면 그대로, 확인한 지시는 409, 대체된 지시는 400. */

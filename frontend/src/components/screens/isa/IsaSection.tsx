@@ -168,7 +168,7 @@ export function IsaSection() {
     setNotice(null);
     const ok = await action.run(() => postUndoTrade(row.id));
     setUndoRow(null);
-    if (ok) setNotice("확인을 되돌렸습니다 — 잔고를 되돌리고 지시는 다시 미확인(그 세션 마감이 지났으면 닫힘)입니다.");
+    if (ok) setNotice("확인을 되돌렸습니다 — 잔고를 되돌리고 지시는 다시 미확인(확인 기한 — 그 세션 마감, 종가 단일가 스탑 지시는 다음 세션 지시를 만들 때 — 이 지났으면 닫힘)입니다.");
     reloadNow();
   };
 
@@ -350,7 +350,7 @@ export function IsaSection() {
           if (!open && !action.busy) setUndoRow(null);
         }}
         title="확인 되돌리기"
-        description={undoRow ? `${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주 확인을 되돌립니다 — 잔고를 원래대로 돌리고, 지시는 다시 미확인(그 세션 마감이 지났으면 닫힘)입니다.` : undefined}
+        description={undoRow ? `${sideLabel(undoRow.side)} ${symbolText(undoRow.symbol, undoRow.name)} ${formatShares(undoRow.quantity)}주 확인을 되돌립니다 — 잔고를 원래대로 돌리고, 지시는 다시 미확인(확인 기한 — 그 세션 마감, 종가 단일가 스탑 지시는 다음 세션 지시를 만들 때 — 이 지났으면 닫힘)입니다.` : undefined}
         confirmLabel="되돌리기"
         busy={action.busy}
         onConfirm={() => void confirmUndo()}

@@ -53,6 +53,7 @@ import {
   sessionStatusLabel,
   sideLabel,
   STOP_GUIDE,
+  stopAutoNoteLabel,
   stopNotifiedText,
   stopTimingLabel,
   stopWindowText,
@@ -307,9 +308,13 @@ describe("안내 글", () => {
   });
 
   // QA-382: 종가 스탑 지시는 15:30 체결 뒤에도 다음 세션 지시를 만들기 전까지 확인할 수 있다(ADR 0034 결정 7 개정). 수정 전 안내에는 기한이 없었다(재현 커밋에서는 it.fails).
-  it.fails("QA-382 스탑 안내 — 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전까지 확인(고정 시각 없이)", () => {
+  it("QA-382 스탑 안내 — 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전까지 확인(고정 시각 없이)", () => {
     expect(STOP_GUIDE).toContain("종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전");
     expect(STOP_GUIDE).not.toMatch(/\d{2}:\d{2}/);
+    expect(stopAutoNoteLabel({ timing: "NEXT_CLOSE", autoNote: "expired" })).toBe("다음 지시를 만들 때까지 확인하지 않아 닫힘");
+    expect(stopAutoNoteLabel({ timing: "MARKET", autoNote: "expired" })).toBe("마감까지 확인하지 않아 닫힘");
+    expect(stopAutoNoteLabel({ timing: "NEXT_CLOSE", autoNote: "not-notified" })).toBe("마감까지 알리지 못해 건너뜀");
+    expect(stopAutoNoteLabel({ timing: "NEXT_CLOSE", autoNote: null })).toBe("—");
   });
 
   it("스탑 지시 이름표·건너뜀 머리·매도 창", () => {

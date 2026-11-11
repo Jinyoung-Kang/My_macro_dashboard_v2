@@ -13,7 +13,6 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -686,7 +685,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(15:30 체결 뒤 첫 주기에 만료 — 확인할 시간이 0~10분).
     @Test
-    @Disabled("QA-382: 종가 스탑 지시가 15:30 체결 뒤 첫 주기에 만료됨 — 수정 커밋에서 해제")
     @DisplayName("QA-382: 종가 스탑 지시는 마감 뒤 첫 주기에 닫지 않음 — 15:30 체결 뒤에도 '확인'으로 잔고에 반영(내역 시각은 누른 때)")
     void closingStopStaysConfirmableAfterClose() {
         ManualAccountStore.StopInstruction stop = closingStopPastClose();
@@ -710,7 +708,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 15:40 주기에 이미 SKIPPED라 첫 단언('마감 뒤에도 미확인')에서 'expected: "PLANNED" but was: "SKIPPED"'.
     @Test
-    @Disabled("QA-382: 종가 스탑 지시가 15:30 체결 뒤 첫 주기에 만료됨 — 수정 커밋에서 해제")
     @DisplayName("QA-382: 종가 스탑 지시는 다음 세션 지시를 만들 때 SKIPPED(expired) — 미확인이면 잔고 보유 그대로 다음 지시를 계산(같은 종목을 두 지시로 열어 두지 않음), 닫힌 뒤에는 확인 400")
     void closingStopExpiresWhenNextSessionPlanned() {
         ManualAccountStore.StopInstruction stop = closingStopPastClose();
@@ -734,7 +731,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 위와 같음('expected: "PLANNED" but was: "SKIPPED"').
     @Test
-    @Disabled("QA-382: 종가 스탑 지시가 15:30 체결 뒤 첫 주기에 만료됨 — 수정 커밋에서 해제")
     @DisplayName("QA-382: 다음 세션 지시를 못 만들면 종가 스탑 지시는 다음 세션이 열릴 때까지 — 개장 뒤 첫 주기에 SKIPPED(expired), 그 사이 그날 스탑 수량은 잔고 보유만(이중으로 세지 않음)")
     void closingStopExpiresAtNextOpenWithoutPlan() {
         ManualAccountStore.StopInstruction stop = closingStopPastClose();
