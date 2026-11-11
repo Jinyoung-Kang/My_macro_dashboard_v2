@@ -528,3 +528,63 @@ def test_QA335_정상_응답은_실패_셈을_비우고_5xx는_닫힌_래치를_
         assert reason and reason.startswith(f"Yahoo 응답 없음 — 연달아 {yahoo.NO_RESPONSE_LIMIT}번 시간 초과"), reason
     finally:
         yahoo.reset_for_tests()
+
+
+# ==============================================================================
+# QA-368 — yf.download 배치의 끝난 스레드 객체가 프로세스 수명 내내 쌓이지 않게
+# ==============================================================================
+def _run_empty_tasks(count: int) -> tuple[int, int]:
+    """yfinance가 쓰는 것과 같은 ``@multitasking.task``로 빈 함수를 ``count``번 부르고 모두 끝난 뒤 — (부르기 전 목록 길이, 끝난 뒤 길이)."""
+    import multitasking
+
+    _yahoo_module().install()
+
+    @multitasking.task
+    def nothing() -> None:
+        pass
+
+    def settle() -> None:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and any(t.is_alive() for t in list(multitasking.config["TASKS"])):
+            time.sleep(0.01)
+
+    settle()
+    nothing()                    # 직전 시험이 남긴 끝난 스레드를 먼저 솎아 기준 길이를 잡습니다(수정 전에는 솎지 않음)
+    settle()
+    before = len(multitasking.config["TASKS"])
+    made = [nothing() for _ in range(count)]
+    for thread in made:
+        thread.join(30)
+    settle()
+    nothing()                    # 솎는 것은 다음 작업을 넣을 때입니다
+    settle()
+    return before, len(multitasking.config["TASKS"])
+
+
+@pytest.mark.xfail(strict=True, reason="QA-368: multitasking의 전역 목록 config['TASKS']가 끝난 스레드 객체를 계속 쥡니다")
+def test_QA368_끝난_다운로드_스레드는_전역_목록에_쌓이지_않는다():
+    # paper_quotes가 615종목을 매시 받으므로 하루 1.5만 개 이상이 남았습니다(개당 약 2KB — 수집기 메모리 상한 1g).
+    before, after = _run_empty_tasks(200)
+
+    assert after - before <= 1, f"끝난 스레드 {after - before}개가 목록에 남았습니다"
+
+
+def test_QA368_아직_시작하지_않은_작업과_도는_작업은_목록에_남는다():
+    """multitasking은 목록에 넣은 뒤에 start()합니다 — 솎을 때 '살아 있는가'만 보면 방금 넣은 것을 지웁니다(지금 동작 고정)."""
+    import multitasking
+
+    _yahoo_module().install()
+    gate = threading.Event()
+
+    @multitasking.task
+    def waiting() -> None:
+        gate.wait(30)
+
+    try:
+        running = [waiting() for _ in range(3)]
+        assert all(thread in multitasking.config["TASKS"] for thread in running), "도는 작업은 목록에 있어야 합니다(get_active_tasks)"
+        assert len(multitasking.get_active_tasks()) >= 3
+    finally:
+        gate.set()
+        for thread in running:
+            thread.join(30)
