@@ -101,7 +101,6 @@ def test_보내지_못한_것은_상태를_바꾸지_않는다(store, clock):
     assert row["status"] == "ok" and row["streak"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391: Partial은 '형식 바뀜'만 표현해 일부를 받지 못한 실행이 'ok'로 남습니다")
 def test_QA391_일부를_받지_못하면_실행은_성공이고_상태는_failed이며_마지막_성공_시각은_그대로(store, clock):
     _run(clock, lambda: "네이버 6/6")
     ok_at = _row(store)["last_ok_at"]

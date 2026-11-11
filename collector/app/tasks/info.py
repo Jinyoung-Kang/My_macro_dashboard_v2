@@ -66,8 +66,14 @@ def blog_task(blog: info_blogs.Blog) -> Callable[[], str]:
     """블로그 하나의 태스크 함수."""
     cadence = polite.Cadence(low_minutes=blog.minutes[0], high_minutes=blog.minutes[1])
 
+    def work() -> "str | polite.Partial":
+        report = info_blogs.collect_report(blog)
+        if report.page_issue:
+            return polite.Partial(report.detail, report.page_issue)       # 글 페이지의 본문 자리가 바뀐 것으로 보임 — '형식 바뀜'(QA-391)
+        return report.detail
+
     def run() -> str:
-        return polite.scheduled(blog.task, cadence, _shape(lambda: info_blogs.collect(blog)))
+        return polite.scheduled(blog.task, cadence, _shape(work))
 
     run.__name__ = f"task_{blog.task}"
     return run
@@ -140,7 +146,8 @@ def task_info_naver_flows() -> str:
     """네이버 투자자별 매매동향·매매상위 → 스냅샷 info.naver.flows."""
     def work() -> "str | polite.Partial":
         previous = store.read_snapshot(catalog.SNAP_INFO_NAVER_FLOWS)
-        snapshot = info_naver.collect(previous.payload if previous else None)
+        unsent: list[str] = []
+        snapshot = info_naver.collect(previous.payload if previous else None, unsent=unsent)
         store.put_snapshot(catalog.SNAP_INFO_NAVER_FLOWS, snapshot)
         got = 6 - len(snapshot["failed"])
         detail = f"네이버 매매동향·매매상위 {got}/6 · 계층 {snapshot['fetchTier']}"
@@ -152,6 +159,11 @@ def task_info_naver_flows() -> str:
             detail += f" · 이어받음 {', '.join(snapshot['failed'])}"
         if snapshot["shapeErrors"]:
             return polite.Partial(detail, "; ".join(snapshot["shapeErrors"][:2]))
+        # 형식은 맞는데 받지 못한 부분(404·5xx) — 그 부분은 '이전 값'으로 남으므로 '정상'으로 적지 않습니다(QA-391). 예산·시간이 모자라
+        # 보내지 않은 부분은 출처의 실패가 아니라 셈에서 뺍니다.
+        missed = [name for name in snapshot["failed"] if name not in unsent]
+        if missed:
+            return polite.Partial(detail, f"받지 못함: {', '.join(missed)}", kind=polite.PARTIAL_FAILED)
         return detail
     return polite.scheduled(NAVER_TASK, naver_cadence, _shape(work))
 
@@ -194,7 +206,7 @@ def _krx_login(fetch) -> None:
 
 def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.Random | None = None) -> "str | polite.Partial":
     """
-    기준일 자료를 받아 저장합니다 → 실행 기록 한 줄(일부 모양이 다르면 polite.Partial).
+    기준일 자료를 받아 저장합니다 → 실행 기록 한 줄(일부의 모양이 다르거나 일부를 받지 못했으면 polite.Partial).
 
     이미 그 기준일을 빠짐없이 받았으면 외부를 부르지 않고 끝납니다. 같은 기준일을 다시 받을 때는 **받지 못한 부분만** 받습니다 — 직전 저장본의
     ``failed``에 남은 부분과, 그날 관측치가 아직 없는 (시장, 투자주체)의 순위(QA-390). 받지 못한 부분은 직전 저장본의 그 부분을 이어받고
@@ -249,6 +261,7 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
         _krx_login(fetch)
 
     failed: list[str] = []
+    missed: list[str] = []                          # failed 가운데 보냈는데 받지 못한 부분(404·5xx·빈 답) — 출처 상태 '받지 못함'의 근거
     shape_errors: list[str] = []
     blocked: ladder.FetchRejected | None = None
     skipped: ladder.FetchSkipped | None = None     # 하루 예산·시간이 떨어짐 — 남은 부분은 보내지 않습니다(부분마다 지연만 쌓임)
@@ -275,6 +288,7 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
                     ranks[f"{market}|{investor}"] = len(rows)
                 else:
                     failed.append(name)          # 휴장·아직 집계 전 — 그날 행을 비우지 않습니다
+                    missed.append(name)
                 continue
             if kind == "totals":
                 rows = krx_data.parse_totals(
@@ -289,11 +303,13 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
                 parts[kind][market] = {"asOf": iso, "rows": rows}
             else:
                 remember_failure(name, kind, market)
+                missed.append(name)
         except ShapeError as exc:
             shape_errors.append(f"{name}: {exc}")
             remember_failure(name, kind, market)
         except ladder.FetchFailed:
             remember_failure(name, kind, market)
+            missed.append(name)
         except ladder.FetchSkipped as exc:
             skipped = exc
             remember_failure(name, kind, market)
@@ -306,8 +322,10 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
     for market in balance_markets:
         name = f"shortBalances.{market}"
         found = False
+        asked = True                   # 보냈는데 받지 못했는가(404·5xx·세 날짜 모두 빈 답) — 형식·예산·거부로 끝난 것은 따로 셉니다
         for lag in KRX_BALANCE_LAG_DAYS:
             if blocked is not None or skipped is not None:
+                asked = False
                 break
             when = lagged[lag - 1]
             try:
@@ -315,14 +333,17 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
                     "dbms/MDC/STAT/srt/MDCSTAT30501", krx_data.short_balance_params(market, when.strftime("%Y%m%d")), fetch))
             except ShapeError as exc:
                 shape_errors.append(f"{name}: {exc}")
+                asked = False
                 break
             except ladder.FetchFailed:
                 break
             except ladder.FetchSkipped as exc:
                 skipped = exc
+                asked = False
                 break
             except ladder.FetchRejected as exc:
                 blocked = exc
+                asked = False
                 break
             if rows:
                 parts["shortBalances"][market] = {"asOf": when.isoformat(), "rows": rows}
@@ -330,6 +351,8 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
                 break
         if not found:
             remember_failure(name, "shortBalances", market)
+            if asked:
+                missed.append(name)
 
     got = len(ranks) + sum(1 for kind in ("totals", "foreign", "shortTrades", "shortBalances")
                            for part in parts[kind].values() if not part.get("isStale"))
@@ -361,6 +384,10 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
         detail += f" · 못 받음 {len(failed)}"
     if shape_errors:
         return polite.Partial(detail, "; ".join(shape_errors[:2]))
+    if missed:
+        # 형식은 맞는데 받지 못한 부분 — 그 부분은 '이전 값'이거나 비어 있으므로 '정상'으로 적지 않습니다(QA-391).
+        more = f" 외 {len(missed) - 4}" if len(missed) > 4 else ""
+        return polite.Partial(detail, f"받지 못함: {', '.join(missed[:4])}{more}", kind=polite.PARTIAL_FAILED)
     return detail
 
 

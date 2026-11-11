@@ -212,7 +212,6 @@ def _run_blog_task(monkeypatch, routes: dict[str, bytes]) -> str:
 EMPTY_PAGE = b"<html><body><div id='app'></div><p>short</p></body></html>"      # 본문을 고를 수 없는 페이지(구조가 바뀐 모양)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391: 글 페이지 추출이 계속 빈 글이어도 출처 상태가 'ok'로 남습니다")
 def test_QA391_글_페이지에서_본문을_받던_블로그의_최근_추출이_모두_비면_형식_바뀜(store, example_host, monkeypatch):
     store.upsert_info_items([_page_tried(1, days_ago=6, status="full"),          # 전에는 글 페이지에서 본문을 받았음
                              _page_tried(2, days_ago=2, status="partial"), _page_tried(3, days_ago=1, status="partial")])

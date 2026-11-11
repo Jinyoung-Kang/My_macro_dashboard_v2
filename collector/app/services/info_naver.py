@@ -131,10 +131,12 @@ def parse_rankings(payload) -> dict:
 
 
 def collect(previous: dict | None, *, fetch: Fetch = ladder.fetch, now: datetime | None = None,
-            rng: random.Random | None = None) -> dict:
+            rng: random.Random | None = None, unsent: list[str] | None = None) -> dict:
     """
     여섯 부분을 받아 스냅샷을 만듭니다. 받지 못한 부분(형식이 다르거나 404·5xx)은 직전 저장본의 값을 이어받고 ``isStale``을 답니다.
 
+    :param unsent: 넘기면 하루 예산·시간이 모자라 **보내지 않은** 부분의 이름을 여기에 더합니다 — 스냅샷의 ``failed``에는 함께 들어 있지만
+        출처의 실패는 아니라, 부르는 쪽이 출처 상태를 정할 때 가릅니다(QA-391)
     :raises ShapeError: 모든 부분의 형식이 달라 하나도 받지 못함
     :raises ladder.FetchRejected: 출처가 거부함(그때까지 받은 것도 버림 — 직전 저장본 유지)
     :raises ladder.FetchSkipped: 하나도 보내지 못함(예산·시간)
@@ -179,6 +181,8 @@ def collect(previous: dict | None, *, fetch: Fetch = ladder.fetch, now: datetime
             shape_errors.append(f"{name}: {exc}")
         except ladder.FetchSkipped as exc:
             skipped = exc
+            if unsent is not None:
+                unsent.append(name)
         except ladder.FetchFailed as exc:
             failure = exc
         failed.append(name)
@@ -194,6 +198,8 @@ def collect(previous: dict | None, *, fetch: Fetch = ladder.fetch, now: datetime
                 if rest in failed:
                     continue
                 failed.append(rest)
+                if unsent is not None:
+                    unsent.append(rest)
                 old = (previous.get("trend") or {}).get(rest_market) if rest_part == "trend" else \
                     ((previous.get("rankings") or {}).get(rest_part) or {}).get(rest_market)
                 if old is not None:

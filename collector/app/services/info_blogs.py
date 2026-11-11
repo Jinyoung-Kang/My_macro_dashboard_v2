@@ -42,6 +42,11 @@ PAGE_FETCHES_PER_RUN = 6
 PAGE_TRIES_PER_ITEM = 2
 # 피드의 글이 이만큼은 돼야 본문으로 봅니다(Blogger처럼 요약 칸에 본문 전체를 싣는 피드도 같은 기준).
 FEED_BODY_MIN_CHARS = info_text.MIN_BODY_CHARS
+# 글 페이지의 본문 자리가 바뀌었는지 볼 때(QA-391) — 글 페이지를 열어 본 최근 글 이만큼이 모두 본문을 얻지 못했고, 그보다 앞의 글(이 범위
+# 안)에는 글 페이지에서 본문을 받은 것이 있으면 '형식 바뀜'으로 봅니다. 글 페이지에서 본문을 받은 적이 없는 블로그(피드에 본문을 싣고 짧은
+# 글만 글 페이지로 가는 곳)는 짧은 글일 뿐이라 여기에 걸리지 않습니다.
+PAGE_ISSUE_RECENT = 3
+PAGE_ISSUE_LOOKBACK = 12
 
 
 @dataclass(frozen=True)
@@ -181,19 +186,47 @@ def parse_feed(body: bytes) -> list[dict]:
     return entries
 
 
+@dataclass(frozen=True)
+class Collected:
+    """블로그 하나를 받은 결과 — 실행 기록 한 줄과, 글 페이지의 본문 자리가 바뀐 것으로 보이면 그 사유(아니면 None)."""
+
+    detail: str
+    page_issue: str | None = None
+
+
+def _page_issue(blog: Blog) -> str | None:
+    """
+    글 페이지에서 본문을 받던 블로그인데 최근에 글 페이지를 연 글이 모두 본문을 얻지 못했으면 그 사유(QA-391) — 페이지 구조가 바뀌어
+    추출이 빈 글이 되는 경우입니다. 저장된 글만 봅니다(외부 호출 없음).
+    """
+    outcomes = store.info_page_outcomes(blog.key, PAGE_ISSUE_LOOKBACK)
+    recent, earlier = outcomes[:PAGE_ISSUE_RECENT], outcomes[PAGE_ISSUE_RECENT:]
+    if len(recent) < PAGE_ISSUE_RECENT or any(status == "full" for status in recent):
+        return None
+    if not any(status == "full" for status in earlier):
+        return None
+    return (f"{blog.label} 글 페이지에서 본문을 고르지 못함(최근에 글 페이지를 연 글 {PAGE_ISSUE_RECENT}편 모두 — "
+            "글 페이지의 본문 자리가 바뀐 경우)")
+
+
 def collect(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | None = None) -> str:
     """
-    블로그 하나를 받습니다 → 실행 기록 한 줄.
+    블로그 하나를 받습니다 → 실행 기록 한 줄(:func:`collect_report`의 ``detail``).
 
     :raises ShapeError: 피드에서 글을 읽지 못함
     :raises ladder.FetchRejected: 피드나 글 페이지가 거부됨(받은 글은 넣은 뒤)
     :raises ladder.FetchSkipped: 피드를 보내지 못함(예산·시간)
     :raises ladder.FetchFailed: 피드를 받지 못함(404·5xx)
     """
+    return collect_report(blog, fetch=fetch, now=now).detail
+
+
+def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | None = None) -> Collected:
+    """블로그 하나를 받습니다 → 실행 기록 한 줄 + 글 페이지 추출의 이상 여부. 예외는 :func:`collect`와 같습니다."""
     now = now or datetime.now(timezone.utc)
     fetched = fetch(blog.feed, headers=_conditional(blog.feed) or None)
     if fetched.not_modified:
-        return f"{blog.label} 피드 바뀐 것 없음(304) · 계층 {fetched.tier}"
+        return Collected(f"{blog.label} 피드 바뀐 것 없음(304) · 계층 {fetched.tier}", _page_issue(blog))
     entries = parse_feed(fetched.body)
     _remember(blog.feed, fetched)
 
@@ -244,7 +277,7 @@ def collect(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | None = N
         raise blocked
     detail = (f"{blog.label} 피드 {len(entries)}건 · 새로 넣거나 채운 글 {len(items)}(피드 본문 {from_feed}·글 페이지 {opened}·"
               f"요약만 {partial}) · 계층 {fetched.tier}")
-    return detail
+    return Collected(detail, _page_issue(blog))
 
 
 def _page_worthy(blog: Blog, entry: dict, seen: dict | None, now: datetime) -> bool:

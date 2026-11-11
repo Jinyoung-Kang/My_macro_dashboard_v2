@@ -1592,6 +1592,20 @@ def info_source_exists(source: str) -> bool:
         return conn.execute("SELECT 1 FROM info_items WHERE source = %s LIMIT 1", (source,)).fetchone() is not None
 
 
+def info_page_outcomes(source: str, limit: int) -> list[str]:
+    """
+    그 출처에서 글 페이지를 열어 본 글(meta.pageTries가 있는 행)의 본문 판정을 최근 글부터 ``limit``건 — 'full'이면 그 글 페이지에서 본문을
+    받은 글입니다. 글 페이지의 본문 자리가 바뀌었는지 보는 데 씁니다(services/info_blogs — QA-391).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT body_status FROM info_items WHERE source = %s AND meta ? 'pageTries' "
+            "ORDER BY COALESCE(published_at, first_seen_at) DESC, id LIMIT %s",
+            (source, int(limit)),
+        ).fetchall()
+    return [r["body_status"] for r in rows]
+
+
 def upsert_info_items(items: Iterable[dict]) -> int:
     """
     글을 넣거나 채웁니다 → 보낸 행 수.

@@ -11,6 +11,7 @@ polite 속도군(차단 통과 수집 계층 — ADR 0026, 명세 docs/specs/202
   - **운영 서버에서만 돕니다**(ADR 0035 결정 4): ``POLITE_FETCH_ENABLED``가 켜져 있지 않으면 틱이 이 군을 돌리지 않고, 수동 실행도 외부를 부르지
     않고 끝납니다. 로컬·QA compose는 이 값을 "false"로 고정합니다 — 출구가 사용자 PC의 IP가 되지 않게.
   - 실행마다 판정(성공·거부·형식 바뀜·받지 못함)을 표 fetch_source_state에 남깁니다. 백엔드가 읽어 끊김을 알립니다(텔레그램 + 화면 안내).
+    일부만 온전하지 않은 실행(:class:`Partial`)은 받은 부분을 저장하되 판정은 '형식 바뀜'·'받지 못함'으로 남깁니다.
 """
 from __future__ import annotations
 
@@ -48,15 +49,27 @@ class Cadence:
 CadenceLike = Union[Cadence, Callable[[], Cadence]]
 
 
+# Partial의 종류 — 출처 상태(fetch_source_state.status)에 그대로 남는 값입니다.
+PARTIAL_FORMAT = "format"       # 일부의 모양이 다름('형식 바뀜')
+PARTIAL_FAILED = "failed"       # 일부를 받지 못함(404·5xx·빈 답 — '받지 못함')
+
+
 @dataclass(frozen=True)
 class Partial:
     """
-    본문이 받아 저장은 했지만 일부의 모양이 달랐음 — 실행 기록은 성공(``detail``), 출처 상태는 '형식 바뀜'(``issue``)으로 남깁니다.
-    여러 부분을 한 번에 받는 출처(네이버 6건)에서 한 부분의 형식만 바뀌어도 알 수 있게.
+    받아 저장은 했지만 일부가 온전하지 않음 — 실행 기록은 성공(``detail``), 출처 상태는 ``kind``(``issue``)로 남깁니다.
+
+    여러 부분을 한 번에 받는 출처(네이버 6건·KRX 20건)에서 한 부분만 형식이 바뀌거나(``PARTIAL_FORMAT``) 받지 못해도(``PARTIAL_FAILED`` —
+    QA-391) 알 수 있게. 받은 부분은 저장하고, 마지막 성공 시각은 전부 받은 실행에서만 갱신됩니다(같은 판정이 이어지면 백엔드가 알림).
     """
 
     detail: str
     issue: str
+    kind: str = PARTIAL_FORMAT
+
+    def __post_init__(self) -> None:
+        if self.kind not in (PARTIAL_FORMAT, PARTIAL_FAILED):
+            raise ValueError(f"모르는 Partial 종류: {self.kind}")
 
 
 class ShapeChanged(EmptyResult):
@@ -156,7 +169,8 @@ def scheduled(name: str, cadence: CadenceLike, work: Callable[[], "str | Partial
         raise
     when = _reschedule(name, cadence)
     if isinstance(detail, Partial):
-        _note(name, cadence, "format", detail.issue)
-        return f"{detail.detail} · 일부 형식 다름({detail.issue[:160]}) · 다음 {kst.stamp(when)}"
+        _note(name, cadence, detail.kind, detail.issue)
+        label = "일부 형식 다름" if detail.kind == PARTIAL_FORMAT else "일부 받지 못함"
+        return f"{detail.detail} · {label}({detail.issue[:160]}) · 다음 {kst.stamp(when)}"
     _note(name, cadence, "ok", None)
     return f"{detail} · 다음 {kst.stamp(when)}"

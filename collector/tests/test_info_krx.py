@@ -331,7 +331,6 @@ def _run_krx_task(fake, now=EVENING):
                             info_tasks._shape(lambda: info_tasks.collect_krx(fetch=fake, now=now)))
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391: 받지 못한 부분이 있어도 글자열을 돌려줘 출처 상태가 'ok'로 기록됩니다")
 def test_QA391_한_화면을_받지_못하면_저장은_하고_출처_상태는_failed(store, account):
     detail = _run_krx_task(FakeKrx(answers={"MDCSTAT03701": ladder.FetchFailed("data.krx.co.kr HTTP 503")}))
 

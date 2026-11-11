@@ -167,7 +167,6 @@ def _run_naver_task(monkeypatch, answer):
     return info_tasks.task_info_naver_flows()
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391: 받지 못한 부분만 있으면 글자열을 돌려줘 출처 상태가 'ok'로 기록됩니다")
 def test_QA391_매매동향만_받지_못하면_저장은_하고_출처_상태는_failed(store, monkeypatch):
     def answer(part, market):
         return ladder.FetchFailed("stock.naver.com HTTP 404") if part == "trend" else _ranking(estimated=False)
@@ -200,7 +199,6 @@ def test_QA391_일부의_형식이_다르면_format이_먼저(store, monkeypatch
     assert store.source_state(info_tasks.NAVER_TASK)["status"] == "format"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-391: 수정 뒤에 생기는 인자(unsent) — 예산·시간으로 보내지 않은 부분은 출처의 실패가 아닙니다")
 def test_QA391_예산으로_보내지_않은_부분은_받지_못함으로_세지_않는다(store, monkeypatch):
     sent = {"n": 0}
 
