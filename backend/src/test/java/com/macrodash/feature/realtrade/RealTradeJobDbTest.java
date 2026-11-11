@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1795,6 +1796,145 @@ class RealTradeJobDbTest {
 
         assertThat(cfg().state()).isEqualTo("LIVE");
         assertThat(events("HALT")).isEmpty();
+        verify(client, never()).placeOrder(anyString());
+    }
+
+    // ------------------------------------------------------------------ 알림 없이 지나가는 날(QA-342)
+    private RealTradeJob restartedJob() {
+        return new RealTradeJob(store, new RealTradeExecutor(store, client, paper, RealTradeFixtures.MAPPER, clock), client, paper, telegram,
+                RealTradeFixtures.MAPPER, clock, true, false, 10_000);
+    }
+
+    @Test
+    @Disabled("QA-342: 수정 전에는 토스 장 운영 정보를 끝내 못 받아도 경고 로그뿐이고 이벤트·알림이 없습니다")
+    @DisplayName("QA-342: 모의 달력의 개장 3분 전이 지나도록 토스 장 운영 정보를 받지 못하면 하루 한 번 알림 이벤트(calendar-unavailable) — 주문 없음, 재시도는 계속, 다시 띄워도 한 번")
+    void calendarUnavailableNotifiesOnce() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0), List.of());
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        when(client.calendar()).thenReturn(Reply.failed("calendar-unavailable"));
+
+        run("08:47");
+        assertThat(events("UNAVAILABLE")).as("개장 3분 전(08:57) 전에는 아직 알리지 않음").isEmpty();
+        run("08:58");
+        run("09:14");
+
+        assertThat(events("UNAVAILABLE")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("reason").asString()).isEqualTo("calendar-unavailable");
+            assertThat(e.detail().path("date").asString()).isEqualTo(SESSION.toString());
+            assertThat(e.notifies()).isTrue();
+            assertThat(RealTradeNotices.text(e)).contains("calendar-unavailable").doesNotContain(A);
+        });
+        verify(client, never()).placeOrder(anyString());
+        verify(client, org.mockito.Mockito.atLeast(3)).calendar();   // 알린 뒤에도 60초마다 다시 받아 봄
+        assertThat(cfg().state()).as("멈춤이 아님").isEqualTo("LIVE");
+
+        job = restartedJob();
+        run("09:20");
+        assertThat(events("UNAVAILABLE")).as("다시 띄운 작업은 그날 이벤트에서 되살려 또 알리지 않음").hasSize(1);
+    }
+
+    @Test
+    @Disabled("QA-342: 수정 전에는 수집기 매매 상태를 읽지 못하면 주기마다 조용히 돌아갑니다")
+    @DisplayName("QA-342: 켜짐인데 모의 달력의 개장 3분 전이 지나도록 수집기 매매 상태를 읽지 못하면 하루 한 번 알림 이벤트(status-unavailable) — 멈춤 아님")
+    void statusUnavailableNotifiesOnce() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+
+        run("08:51");
+        assertThat(events("UNAVAILABLE")).isEmpty();
+        run("08:58");
+        run("09:30");
+
+        assertThat(events("UNAVAILABLE")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("reason").asString()).isEqualTo("status-unavailable");
+            assertThat(e.notifies()).isTrue();
+        });
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        verify(client, never()).placeOrder(anyString());
+
+        // 상태가 돌아온 뒤 달력까지 못 받으면 그것은 따로 한 번
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
+        when(client.calendar()).thenReturn(Reply.failed("calendar-unavailable"));
+        run("09:31");
+        run("09:33");
+        assertThat(events("UNAVAILABLE")).extracting(e -> e.detail().path("reason").asString())
+                .containsExactlyInAnyOrder("status-unavailable", "calendar-unavailable");
+    }
+
+    @Test
+    @DisplayName("QA-342 대조: 모의 달력이 휴장인 날과 마감 뒤에는 장 운영 정보·수집기 상태를 못 받아도 알리지 않음")
+    void unavailableOutsideTradingHoursIsSilent() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        when(client.calendar()).thenReturn(Reply.failed("calendar-unavailable"));
+
+        run("15:31");   // 마감 뒤 — 오늘 낼 주문이 없음
+        assertThat(events("UNAVAILABLE")).isEmpty();
+
+        when(paper.sessionHours(SESSION)).thenReturn(Optional.of(new SessionHours(SESSION, false, null, null)));
+        job = restartedJob();
+        run("10:00");
+        assertThat(events("UNAVAILABLE")).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-342: 수정 전에는 토스가 휴장이라 답하면 모의 달력이 거래일이어도 알리지 않고 쉽니다")
+    @DisplayName("QA-342: 토스만 휴장이라 답한 날(모의 달력은 거래일)은 쉼 이벤트를 알림 — 둘 다 휴장인 평소 휴장은 알리지 않음")
+    void tossClosedButPaperTradingDayNotifies() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        when(client.calendar()).thenReturn(Reply.of(calendar(new CollectorTradeClient.Session(null, null), 0.3)));
+
+        run("08:58");
+        run("08:59");
+
+        assertThat(events("SKIP_DAY")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("reason").asString()).isEqualTo("market-closed");
+            assertThat(e.notifies()).as("모의 달력은 거래일인데 토스가 휴장 — 알림").isTrue();
+            assertThat(RealTradeNotices.text(e)).contains("market-closed").contains("모의 달력");
+        });
+        verify(client, never()).placeOrder(anyString());
+
+        // 대조 — 모의 달력도 휴장이면 평소 휴장이라 알리지 않음
+        RealTradeFixtures.clean(jdbc);
+        RealTradeFixtures.live(store, true, d("10000000"));
+        when(paper.sessionHours(SESSION)).thenReturn(Optional.of(new SessionHours(SESSION, false, null, null)));
+        job = restartedJob();
+        run("09:01");
+        assertThat(events("SKIP_DAY")).singleElement().satisfies(e -> assertThat(e.notifies()).isFalse());
+    }
+
+    @Test
+    @Disabled("QA-342: 수정 전에는 종가 단일가 시각이 없는 날 장중·스탑 경로가 통째로 빠지고 놓침으로도 세지 않습니다")
+    @DisplayName("QA-342: 토스 장 운영 정보에 종가 단일가 시각이 없는 날 — 따라 하지 못한 스탑은 STOP_SELL 놓침으로, 장중 주문은 마감 뒤 요약의 놓침으로 알림(주문 없음)")
+    void noClosingAuctionCountsMisses() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(client.calendar()).thenReturn(Reply.of(calendar(new CollectorTradeClient.Session(
+                new CollectorTradeClient.PreMarket(kst("2026-11-06T08:00"), kst("2026-11-06T08:50"), kst("2026-11-06T09:00")),
+                new CollectorTradeClient.Regular(kst("2026-11-06T09:00"), null, kst("2026-11-06T15:30"))), 0.3)));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(701, A, "MARKET", kst("2026-11-06T10:00")),
+                dueFor(702, 702, B, "BUY", kst("2026-11-06T10:30"))));
+
+        run("09:59:50");
+        assertThat(events("STOP_SELL")).isEmpty();
+        run("10:00:10");
+        run("10:00:20");
+
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("missed").asInt()).isEqualTo(1);
+            assertThat(e.notifies()).isTrue();
+        });
+
+        run("10:31");
+        run("15:34");
+        run("15:35");
+
+        assertThat(events("WINDOW_SUMMARY")).filteredOn(e -> "MIRROR".equals(e.detail().path("window").asString())).singleElement()
+                .satisfies(e -> {
+                    assertThat(e.detail().path("missed").asInt()).as("스탑 701 + 장중 주문 702").isEqualTo(2);
+                    assertThat(e.notifies()).isTrue();
+                });
         verify(client, never()).placeOrder(anyString());
     }
 
