@@ -2,6 +2,7 @@ package com.macrodash.feature.realtrade;
 
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.RealTradeStore;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -82,6 +83,18 @@ class RealTradeNoticesTest {
             assertThat(text).as(kind).isNotNull().doesNotContain("005930", "37주", "1234567", "1,234,567", "TOSS-ORDER-1", "99887766", "70000");
             assertThat(text.codePoints().noneMatch(cp -> Character.getType(cp) == Character.OTHER_SYMBOL)).as(kind + " 이모지 없음").isTrue();
         }
+    }
+
+    @Test
+    @Disabled("QA-349: 수정 전에는 미종료 주문 없이 바로 꺼진 끄기도 '미체결 취소 중'이라고 알립니다")
+    @DisplayName("QA-349: 끄기 알림 — 바로 꺼졌으면(to OFF) '꺼짐'과 미체결 없음, 끄는 중(STOPPING)이거나 to가 없으면 '미체결 취소 중'")
+    void disableNoticeFollowsResultingState() {
+        assertThat(text(event("DISABLE", Map.of("from", "LIVE", "to", "OFF"))))
+                .isEqualTo("[실제 매매] 끄기\n\n꺼짐 · 이 기능의 미체결 주문 없음");
+        assertThat(text(event("DISABLE", Map.of("from", "LIVE", "to", "STOPPING"))))
+                .isEqualTo("[실제 매매] 끄기\n\n새 주문 멈춤 · 미체결 취소 중");
+        assertThat(text(event("DISABLE", Map.of("from", "HALTED", "to", "꺼짐 <b>"))))
+                .as("모르는 값은 예전 글 — detail의 글자를 그대로 싣지 않음").isEqualTo("[실제 매매] 끄기\n\n새 주문 멈춤 · 미체결 취소 중");
     }
 
     @Test
