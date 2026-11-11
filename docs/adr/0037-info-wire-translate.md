@@ -77,8 +77,11 @@
 
 1. **엔진**: `dashboard.info.translate.engine`(환경변수 `INFO_TRANSLATE_ENGINE`, 기본 auto) — `GEMINI_API_KEY`가 있으면 **1순위 Gemini**
    (`gemini-3.5-flash`, 사고 낮게 — `INFO_TRANSLATE_GEMINI_MODEL`로 바꿈), 실패하면(한도 초과·오류·45초 시간 초과) **2순위 Claude Haiku**·effort low로
-   넘어갑니다(사용자 지시: "Gemini 1순위·Haiku 2순위, Gemini는 무료 한도 안에서만, 너무 싼 모델은 쓰지 않음"). 한도 초과·키 문제로 실패하면 10분 동안
-   Gemini를 건너뜁니다. 번역 행에는 실제로 옮긴 모델을 남깁니다. 키가 없으면 Claude Haiku만, `gemini`·`claude`로 고정하면 그 엔진만 부릅니다.
+   넘어갑니다(사용자 지시: "Gemini 1순위·Haiku 2순위, Gemini는 무료 한도 안에서만, 너무 싼 모델은 쓰지 않음"). 번역 행에는 실제로 옮긴 모델을 남깁니다. 키가 없으면 Claude Haiku만, `gemini`·`claude`로 고정하면 그 엔진만 부릅니다.
+   1순위 모델이 실패하면(붐빔 503·한도 초과·시간 초과·빈 응답 등 종류를 가리지 않고) 한 등급 아래 Gemini(`gemini-3.5-flash-lite`)를 한 번 불러
+   보고, 그것도 안 되면 Claude Haiku로 갑니다(같은 날 사용자 지시 — 서버에서 무료 등급의 503을 실제로 봄). 키·결제 문제만은 같은 키라 아래 모델을
+   부르지 않습니다. 쉬는 시간(10분)은 모델마다 따로라, 1순위가 한도에 걸려도 아래 모델이 받습니다. 아래 모델은 인명을 바꿔 옮긴 적이 있어 1순위가
+   될 때는 쓰지 않고, 번역 행·화면에 실제로 옮긴 모델 이름을 남깁니다.
    Gemini는 SDK를 더하지 않고 REST(`generateContent`, 키는 머리글)로 부릅니다(`feature/info/GeminiClient`).
    무료 등급은 결제를 연결하지 않은 프로젝트의 키일 때입니다 — 그 등급의 입력은 Google의 제품 개선에 쓰일 수 있습니다(번역하는 글은 공개된 기사·블로그).
 2. **제목**: 미리 번역하지 않습니다 — 정기 작업(`InfoTranslateJob`)과 `INFO_TRANSLATE_ENABLED`를 지웠습니다. 목록은 원문 제목을 그대로 보이고

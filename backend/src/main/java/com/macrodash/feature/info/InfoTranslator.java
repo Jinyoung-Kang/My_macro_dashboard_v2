@@ -130,8 +130,10 @@ public class InfoTranslator {
     private record Part(String error, String model) {
     }
 
-    /** Gemini가 이 사유로 실패하면 한동안 Gemini를 건너뜁니다(무료 한도·키 문제는 바로 다시 불러도 같음). */
-    private static final java.util.Set<String> GEMINI_REST_KINDS = java.util.Set.of("RATE_LIMIT", "BILLING", "UNAUTHORIZED", "NOT_FOUND");
+    /** 그 Gemini 모델이 이 사유로 실패하면 한동안 그 모델을 건너뜁니다(무료 한도·없는 모델은 바로 다시 불러도 같음). */
+    private static final java.util.Set<String> GEMINI_REST_KINDS = java.util.Set.of("RATE_LIMIT", "NOT_FOUND");
+    /** 키·결제 문제 — 같은 키를 쓰는 아래 모델도 같은 결과라 불러 보지 않고 두 모델을 함께 쉽니다. */
+    private static final java.util.Set<String> GEMINI_KEY_KINDS = java.util.Set.of("NO_KEY", "UNAUTHORIZED", "BILLING");
     static final int GEMINI_REST_MINUTES = 10;
 
     private final AiService ai;
@@ -143,12 +145,15 @@ public class InfoTranslator {
     private final String model;
     private final String claudeModel;
     private final String geminiModel;
+    /** Gemini 1순위 모델이 실패하면 한 번 불러 보는 한 등급 아래 모델. 없으면 null(바로 다음 순위로). */
+    private final String geminiLowerModel;
     private final boolean useGemini;
     /** Gemini가 실패하면 Claude Haiku로 넘어가는가(engine auto). */
     private final boolean fallbackToClaude;
     private final int geminiTimeoutSeconds;
-    /** 이 시각까지 Gemini를 건너뛰고 바로 Claude로 갑니다(한도 초과 등 — 이 프로세스 안). */
+    /** 이 시각까지 그 Gemini 모델을 건너뜁니다(한도 초과 등 — 이 프로세스 안, 모델마다 따로). */
     private volatile Instant geminiRestUntil = Instant.EPOCH;
+    private volatile Instant geminiLowerRestUntil = Instant.EPOCH;
     private final String effort;
     private final long dailyChars;
     private final int timeoutSeconds;
@@ -164,21 +169,26 @@ public class InfoTranslator {
                           @Value("${dashboard.info.translate.engine:auto}") String engine,
                           @Value("${dashboard.info.translate.model:claude-haiku-5-5}") String model,
                           @Value("${dashboard.info.translate.gemini-model:gemini-3.5-flash}") String geminiModel,
+                          @Value("${dashboard.info.translate.gemini-lower-model:gemini-3.5-flash-lite}") String geminiLowerModel,
                           @Value("${dashboard.info.translate.effort:low}") String effort,
                           @Value("${dashboard.info.translate.daily-chars:1500000}") long dailyChars,
                           @Value("${dashboard.info.translate.timeout-seconds:90}") int timeoutSeconds,
                           @Value("${dashboard.info.translate.gemini-timeout-seconds:45}") int geminiTimeoutSeconds) {
-        this(ai, gemini, store, mapper, engine, model, geminiModel, effort, dailyChars, timeoutSeconds, geminiTimeoutSeconds, Clock.systemUTC());
+        this(ai, gemini, store, mapper, engine, model, geminiModel, geminiLowerModel, effort, dailyChars, timeoutSeconds, geminiTimeoutSeconds,
+                Clock.systemUTC());
     }
 
     InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, ObjectMapper mapper, String engine, String model,
-                   String geminiModel, String effort, long dailyChars, int timeoutSeconds, int geminiTimeoutSeconds, Clock clock) {
+                   String geminiModel, String geminiLowerModel, String effort, long dailyChars, int timeoutSeconds,
+                   int geminiTimeoutSeconds, Clock clock) {
         this.ai = ai;
         this.gemini = gemini;
         this.store = store;
         this.mapper = mapper;
         this.claudeModel = model;
         this.geminiModel = geminiModel;
+        this.geminiLowerModel = geminiLowerModel == null || geminiLowerModel.isBlank() || geminiLowerModel.strip().equals(geminiModel)
+                ? null : geminiLowerModel.strip();
         this.effort = effort;
         this.dailyChars = dailyChars;
         this.timeoutSeconds = timeoutSeconds;
@@ -196,30 +206,65 @@ public class InfoTranslator {
     }
 
     /**
-     * 모델을 부릅니다 — 1순위 Gemini(무료 한도 안에서 씀), 실패하면 2순위 Claude Haiku(engine auto, 2026-11-12 사용자 지시). Gemini가 한도 초과·키
-     * 문제로 실패하면 {@value #GEMINI_REST_MINUTES}분 동안은 Gemini를 건너뛰고 바로 Claude로 갑니다(같은 실패를 되풀이해 기다리지 않게).
-     * engine이 gemini·claude로 고정이면 그 엔진만 부릅니다.
+     * 모델을 부릅니다 — 1순위 Gemini(무료 한도 안에서 씀) → 실패하면 한 등급 아래 Gemini → 그래도 실패하면 Claude Haiku(engine auto,
+     * 2026-11-12 사용자 지시).
+     *
+     * <ul>
+     *   <li>아래 Gemini 모델은 1순위의 실패 종류를 가리지 않고 불러 봅니다(붐빔 503·한도 초과·시간 초과·빈 응답 등 — 무료 한도는 모델마다 따로).
+     *       키·결제 문제({@link #GEMINI_KEY_KINDS})만은 같은 키라 결과가 같아 건너뜁니다.</li>
+     *   <li>한도 초과·모델 없음으로 실패한 모델은 {@value #GEMINI_REST_MINUTES}분 동안 건너뜁니다(모델마다 따로). 키·결제 문제면 두 모델을 함께
+     *       건너뜁니다. 넘어갈 곳(Claude)이 없는 설정(engine gemini)에서는 쉬지 않고 매번 부릅니다.</li>
+     *   <li>engine이 gemini·claude로 고정이면 그 엔진만 부릅니다.</li>
+     * </ul>
      */
     private Called call(String system, String user, Map<String, Object> schema) {
         String geminiError = null;
         if (useGemini) {
-            if (!fallbackToClaude || !clock.instant().isBefore(geminiRestUntil)) {
+            GeminiClient.Reply failure = null;
+            String failedModel = geminiModel;
+            boolean keyProblem = false;
+            if (!fallbackToClaude || !resting(geminiRestUntil)) {
                 GeminiClient.Reply reply = gemini.structured(geminiModel, system, user, schema, geminiTimeoutSeconds);
-                if (reply.ok() || !fallbackToClaude) {
+                if (reply.ok()) {
                     return new Called(reply, geminiModel);
                 }
-                if (GEMINI_REST_KINDS.contains(reply.errorKind())) {
-                    geminiRestUntil = clock.instant().plus(java.time.Duration.ofMinutes(GEMINI_REST_MINUTES));
+                failure = reply;
+                keyProblem = GEMINI_KEY_KINDS.contains(reply.errorKind());
+                if (keyProblem || GEMINI_REST_KINDS.contains(reply.errorKind())) {
+                    geminiRestUntil = restUntil();
                 }
-                geminiError = reply.error();
-                log.info("Gemini 번역 실패({}) — Claude Haiku로 넘어갑니다", reply.errorKind());
-            } else {
-                geminiError = "Gemini는 한도 초과 뒤 잠시 쉬는 중";
             }
+            if (geminiLowerModel != null && !keyProblem && (!fallbackToClaude || !resting(geminiLowerRestUntil))) {
+                log.info("Gemini {} 실패({}) — {}로 시도합니다", geminiModel, failure == null ? "쉬는 중" : failure.errorKind(), geminiLowerModel);
+                GeminiClient.Reply lower = gemini.structured(geminiLowerModel, system, user, schema, geminiTimeoutSeconds);
+                if (lower.ok()) {
+                    return new Called(lower, geminiLowerModel);
+                }
+                if (GEMINI_KEY_KINDS.contains(lower.errorKind()) || GEMINI_REST_KINDS.contains(lower.errorKind())) {
+                    geminiLowerRestUntil = restUntil();
+                }
+                failure = failure == null ? lower : GeminiClient.Reply.failed(lower.errorKind(), failure.error() + " → " + lower.error());
+                failedModel = geminiLowerModel;
+            } else if (keyProblem) {
+                geminiLowerRestUntil = geminiRestUntil;
+            }
+            if (!fallbackToClaude) {
+                return new Called(failure, failedModel);
+            }
+            geminiError = failure == null ? "Gemini는 한도 초과 뒤 잠시 쉬는 중" : failure.error();
+            log.info("Gemini 번역 실패({}) — Claude Haiku로 넘어갑니다", failure == null ? "쉬는 중" : failure.errorKind());
         }
         AiService.StructuredResult result = ai.structured(claudeModel, system, user, schema, effort, timeoutSeconds);
         String error = result.ok() || geminiError == null ? result.error() : "Gemini: " + geminiError + " / Claude: " + result.error();
         return new Called(new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), error), claudeModel);
+    }
+
+    private boolean resting(Instant until) {
+        return clock.instant().isBefore(until);
+    }
+
+    private Instant restUntil() {
+        return clock.instant().plus(java.time.Duration.ofMinutes(GEMINI_REST_MINUTES));
     }
 
     @PreDestroy
@@ -241,8 +286,10 @@ public class InfoTranslator {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("engine", useGemini ? "gemini" : "claude");
         out.put("model", model);
+        out.put("geminiLowerModel", useGemini ? geminiLowerModel : null);
         out.put("fallbackModel", fallbackToClaude ? claudeModel : null);
-        out.put("geminiResting", useGemini && clock.instant().isBefore(geminiRestUntil));
+        // Gemini 전체를 건너뛰는 중인가 — 1순위와 (있으면) 아래 모델이 모두 쉬는 중.
+        out.put("geminiResting", useGemini && resting(geminiRestUntil) && (geminiLowerModel == null || resting(geminiLowerRestUntil)));
         out.put("effort", effort);
         out.put("dailyChars", dailyChars);
         out.put("usedCharsToday", store.ready() ? store.charsSince(Kst.today(clock).atStartOfDay(Kst.ZONE).toInstant()) : null);

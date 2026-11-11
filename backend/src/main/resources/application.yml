@@ -111,6 +111,9 @@ dashboard:
       # Flash 등급(너무 싼 모델을 쓰지 않음 — 사용자 지시), 사고는 낮게(thinkingLevel low). 2026-11-12 같은 제목 여섯 개로 견줘 보니 한 등급 아래
       # (flash-lite)는 인명을 다른 사람으로 바꿔 옮겼습니다(Healey → 리브스). 무료 등급의 하루 요청 한도는 AI Studio의 Rate limit 화면에서 봅니다.
       gemini-model: ${INFO_TRANSLATE_GEMINI_MODEL:gemini-3.5-flash}
+      # 위 모델이 실패하면(붐빔 503·한도 초과·시간 초과 등 — 키·결제 문제만 빼고) 한 번 불러 보는 한 등급 아래 모델(사용자 지시 2026-11-12).
+      # 그것도 안 되면 Claude Haiku. 비우면 건너뜀. 인명을 바꿔 옮긴 적이 있는 등급이라 1순위가 될 때는 쓰지 않고, 번역 행·화면에 이 모델 이름이 남습니다.
+      gemini-lower-model: gemini-3.5-flash-lite
       model: claude-haiku-5-5             # Claude 엔진일 때의 모델. AI_ENGINES 허용 목록이 있으면 이 모델의 엔진이 들어 있어야 함
       effort: low                         # Claude 엔진의 effort(low·medium·high·xhigh·max)
       daily-chars: 1500000                # KST 하루에 번역하는 원문 글자 수의 상한(제목 + 본문). 넘으면 그날은 번역하지 않음

@@ -65,13 +65,14 @@ class InfoTranslatorTest {
     }
 
     private static final String GEMINI = "gemini-3.5-flash";
+    private static final String LOWER = "gemini-3.5-flash-lite";
 
     private InfoTranslator translator(long dailyChars) {
         return translator("auto", dailyChars, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private InfoTranslator translator(String engine, long dailyChars, Clock clock) {
-        return new InfoTranslator(ai, gemini, store, new ObjectMapper(), engine, MODEL, GEMINI, "low", dailyChars, 30, 20, clock);
+        return new InfoTranslator(ai, gemini, store, new ObjectMapper(), engine, MODEL, GEMINI, LOWER, "low", dailyChars, 30, 20, clock);
     }
 
     private static AiService.StructuredResult ok(String json) {
@@ -287,5 +288,67 @@ class InfoTranslatorTest {
         assertThat(noKey.status()).containsEntry("engine", "claude").containsEntry("model", MODEL).containsEntry("fallbackModel", null);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> translator("papago", 1, Clock.fixed(NOW, ZoneOffset.UTC)))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("Gemini 1순위 모델이 실패하면(붐빔·시간 초과 등 종류를 가리지 않고) 한 등급 아래 Gemini를 부르고, 그것도 실패하면 Claude Haiku로")
+    void failureTriesLowerGeminiThenClaude() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(eq(GEMINI), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(GeminiClient.Reply.failed("OVERLOADED", "붐빔(503): " + GEMINI))
+                .thenReturn(GeminiClient.Reply.failed("IO", "시간 초과"));
+        when(gemini.structured(eq(LOWER), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(new GeminiClient.Reply(true, "{\"items\":[{\"n\":1,\"ko\":\"연준, 금리 동결\"}]}", null, null))
+                .thenReturn(GeminiClient.Reply.failed("OVERLOADED", "붐빔(503): " + LOWER));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"유가 급등\"}]}"));
+        InfoTranslator auto = translator(1_000_000);
+
+        InfoTranslator.Titles viaLower = auto.titles(List.of("Fed holds rates"));
+        InfoTranslator.Titles viaClaude = auto.titles(List.of("Oil jumps"));
+
+        assertThat(viaLower.model()).isEqualTo(LOWER);
+        assertThat(viaLower.translated()).containsEntry("Fed holds rates", "연준, 금리 동결");
+        assertThat(viaClaude.model()).isEqualTo(MODEL);
+        assertThat(viaClaude.translated()).containsEntry("Oil jumps", "유가 급등");
+        assertThat(auto.status()).containsEntry("geminiLowerModel", LOWER).containsEntry("geminiResting", false);
+        verify(gemini, times(2)).structured(eq(GEMINI), anyString(), anyString(), any(), anyInt());
+        verify(gemini, times(2)).structured(eq(LOWER), anyString(), anyString(), any(), anyInt());
+        verify(ai, times(1)).structured(eq(MODEL), anyString(), anyString(), any(), anyString(), anyInt());
+        verify(store).put(anyString(), eq(TranslationStore.TITLE), eq(15), eq("연준, 금리 동결"), eq(LOWER));
+    }
+
+    @Test
+    @DisplayName("1순위가 한도에 걸리면 그 모델만 쉬고 아래 Gemini가 받는다 — 쉬는 동안에는 1순위를 부르지 않고 아래 모델부터")
+    void rateLimitedPrimaryRestsAlone() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(eq(GEMINI), anyString(), anyString(), any(), anyInt())).thenReturn(GeminiClient.Reply.failed("RATE_LIMIT", "한도"));
+        when(gemini.structured(eq(LOWER), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(new GeminiClient.Reply(true, "{\"items\":[{\"n\":1,\"ko\":\"번역\"}]}", null, null));
+        InfoTranslator auto = translator(1_000_000);
+
+        assertThat(auto.titles(List.of("Fed holds rates")).model()).isEqualTo(LOWER);
+        assertThat(auto.titles(List.of("Oil jumps")).model()).isEqualTo(LOWER);
+
+        assertThat(auto.status()).containsEntry("geminiResting", false);
+        verify(gemini, times(1)).structured(eq(GEMINI), anyString(), anyString(), any(), anyInt());
+        verify(gemini, times(2)).structured(eq(LOWER), anyString(), anyString(), any(), anyInt());
+        verify(ai, never()).structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("키·결제 문제면 아래 모델을 부르지 않고(같은 키라 같은 결과) 바로 Claude로, 두 Gemini 모델을 함께 쉰다")
+    void keyProblemSkipsLowerModel() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt())).thenReturn(GeminiClient.Reply.failed("BILLING", "크레딧 없음"));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"유가 급등\"}]}"));
+        InfoTranslator auto = translator(1_000_000);
+
+        assertThat(auto.titles(List.of("Oil jumps")).model()).isEqualTo(MODEL);
+
+        assertThat(auto.status()).containsEntry("geminiResting", true);
+        verify(gemini, times(1)).structured(eq(GEMINI), anyString(), anyString(), any(), anyInt());
+        verify(gemini, never()).structured(eq(LOWER), anyString(), anyString(), any(), anyInt());
     }
 }

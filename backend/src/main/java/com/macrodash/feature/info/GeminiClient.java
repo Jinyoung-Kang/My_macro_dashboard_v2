@@ -31,7 +31,7 @@ import java.util.Map;
 @Component
 public class GeminiClient {
 
-    /** 호출 결과 — {@code errorKind}: NO_KEY·BILLING·RATE_LIMIT·UNAUTHORIZED·NOT_FOUND·HTTP·IO·REFUSAL·MAX_TOKENS·EMPTY. 성공이면 null. */
+    /** 호출 결과 — {@code errorKind}: NO_KEY·BILLING·RATE_LIMIT·UNAUTHORIZED·NOT_FOUND·OVERLOADED(503)·HTTP·IO·REFUSAL·MAX_TOKENS·EMPTY. 성공이면 null. */
     public record Reply(boolean ok, String text, String errorKind, String error) {
         static Reply failed(String kind, String error) {
             return new Reply(false, null, kind, error);
@@ -99,6 +99,7 @@ public class GeminiClient {
                 case 429 -> Reply.failed("RATE_LIMIT", "Gemini API 호출 한도에 걸렸습니다(429).");
                 case 401, 403 -> Reply.failed("UNAUTHORIZED", "Gemini API 키를 쓸 수 없습니다(" + status + ") — 키와 프로젝트 설정을 확인하세요.");
                 case 404 -> Reply.failed("NOT_FOUND", "Gemini 모델을 찾지 못했습니다(404): " + model);
+                case 503 -> Reply.failed("OVERLOADED", "Gemini 모델이 지금 붐빕니다(503): " + model);
                 default -> Reply.failed("HTTP", "Gemini API 오류(HTTP " + status + ")");
             };
         } catch (ResourceAccessException e) {

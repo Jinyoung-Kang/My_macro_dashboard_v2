@@ -249,8 +249,9 @@ function TranslationCard({ data }: { data: MechanismResponse }) {
           {t.engine === "gemini" ? "Gemini API(무료 한도 안)" : "Claude API"} · {t.model}
           {t.engine === "gemini" ? "" : ` · effort ${t.effort}`}
         </Row>
+        {t.engine === "gemini" && t.geminiLowerModel && <Row label="1순위가 실패하면">Gemini API · {t.geminiLowerModel} 한 번</Row>}
         {t.engine === "gemini" && (
-          <Row label="2순위(Gemini가 안 될 때)">
+          <Row label="마지막(Gemini가 모두 안 될 때)">
             {t.fallbackModel ? `Claude API · ${t.fallbackModel} · effort ${t.effort}` : "없음(넘어가지 않음)"}
             {t.geminiResting ? " — 지금 Gemini는 한도 초과 뒤 잠시 쉬는 중" : ""}
           </Row>

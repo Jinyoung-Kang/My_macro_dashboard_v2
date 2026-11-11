@@ -339,9 +339,11 @@ export type MechanismResponse = {
     /** 1순위 엔진: gemini 또는 claude — GEMINI_API_KEY가 있으면 gemini. */
     engine: string;
     model: string;
+    /** 1순위 Gemini 모델이 실패하면 한 번 불러 보는 한 등급 아래 Gemini 모델. 없으면 null. */
+    geminiLowerModel?: string | null;
     /** Gemini가 실패하면 넘어가는 2순위 모델(Claude Haiku). 넘어가지 않는 설정이면 null. */
     fallbackModel?: string | null;
-    /** Gemini가 한도 초과 등으로 잠시 쉬는 중(그동안은 바로 2순위로). */
+    /** Gemini 두 모델이 모두 한도 초과 등으로 잠시 쉬는 중(그동안은 바로 Claude로). */
     geminiResting?: boolean;
     effort: string;
     dailyChars: number;
