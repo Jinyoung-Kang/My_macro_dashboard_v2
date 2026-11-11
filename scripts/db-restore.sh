@@ -6,13 +6,14 @@
 # 순서
 #   1. 백업 파일이 끝까지 기록된 것인지 확인합니다(중간에 끊긴 파일이면 시작하지 않음).
 #   2. 확인을 받습니다(--yes가 없으면 터미널에서 y를 눌러야 함).
-#   3. 지금 DB를 backups/pre-restore-….sql로 먼저 백업합니다 — 잘못 복원해도 되돌릴 수 있게.
-#   4. 수집기·백엔드를 잠시 멈추고(쓰기 경합 방지), **한 트랜잭션 안에서** public 스키마를 비운 뒤
-#      백업을 적재합니다. 도중에 한 문장이라도 실패하거나 입력이 끊기면(창을 닫음·Ctrl-C) 전부
-#      되돌려 DB는 3번 시점 그대로입니다.
+#   3. 수집기·백엔드를 잠시 멈춥니다(쓰기 경합 방지 — 컨테이너 모드에서 돌고 있던 것만).
+#   4. 지금 DB를 backups/pre-restore-….sql로 백업합니다 — 잘못 복원해도 되돌릴 수 있게. 서비스를 멈춘 뒤에 떠서(QA-372)
+#      덤프를 뜨는 동안의 쓰기가 이 백업에서 빠지지 않습니다. 백업이 실패하면 복원하지 않고 6으로 갑니다.
+#   5. **한 트랜잭션 안에서** public 스키마를 비운 뒤 백업을 적재합니다. 도중에 한 문장이라도 실패하거나 입력이 끊기면
+#      (창을 닫음·Ctrl-C) 전부 되돌려 DB는 4번 시점 그대로입니다.
 #      같은 트랜잭션의 끝에서 꺼져 있지 않은 실제 매매 설정(real_trade_config, ADR 0028)을 이상 멈춤(HALTED, 사유 restored)으로
 #      바꿉니다 — 아래 RESTORE_REAL_TRADE.
-#   5. 멈췄던 서비스를 다시 켭니다(실패해도).
+#   6. 멈췄던 서비스를 다시 켭니다(실패해도·끊겨도 — QA-370).
 #
 # RESTORE_REAL_TRADE  복원한 DB의 실제 매매 표(ADR 0028)를 어떻게 둘지. 표가 없는 백업(V24 전)이면 둘 다 아무것도 하지 않습니다.
 #   halt(기본)  real_trade_config에서 OFF가 아닌 행을 HALTED·halt_reason='restored'(version + 1)로(꺼진 행은 그대로). 백업 시점 뒤에 토스로 나간 실제 주문의
@@ -64,11 +65,6 @@ if [ "$assume_yes" != "yes" ]; then
     [ "$answer" = "y" ] || die "취소했습니다. 아무것도 바꾸지 않았습니다."
 fi
 
-echo "1/3 지금 DB를 먼저 백업합니다…"
-safety="$(new_backup_path pre-restore)"
-dump_to "$safety" || die "복원 전 백업에 실패해 복원하지 않았습니다."
-echo "    → $safety"
-
 # 컨테이너 모드에서만: 돌고 있던 서비스를 멈췄다가 끝나면 다시 켭니다.
 # 목록은 한 번 받아 둔 뒤 비교합니다. `docker compose ps … | grep -q`는 pipefail 아래에서 grep이 먼저
 # 찾고 끝나면 docker가 SIGPIPE로 죽어 "돌고 있지 않음"으로 판정되고, 그 서비스를 멈추지 않았습니다.
@@ -89,19 +85,26 @@ restart_services() {
     trap '' HUP PIPE INT TERM
     set +e
     if [ -n "$stopped" ]; then
-        echo "3/3 멈췄던 서비스를 다시 켭니다:$stopped" 2>/dev/null || true
+        echo "멈췄던 서비스를 다시 켭니다:$stopped" 2>/dev/null || true
         # shellcheck disable=SC2086
         docker compose start $stopped >/dev/null 2>&1 || echo "경고: 서비스를 다시 켜지 못했습니다. make up으로 켜세요." >&2 || true
     fi
 }
 trap restart_services EXIT
+# 정지 → 안전 백업 → 복원 순서입니다(QA-372). 예전에는 안전 백업을 정지보다 먼저 떠, 덤프 시작부터 정지가 끝날 때까지의 쓰기(수집·장부)가
+# 안전 백업에 없었습니다 — 그 백업으로 되돌리면 그 구간이 사라집니다. 백업이 실패하면 위 trap이 멈춘 서비스를 다시 켭니다.
 if [ -n "$stopped" ]; then
-    echo "2/3 쓰기가 겹치지 않게 서비스를 잠시 멈춥니다:$stopped"
+    echo "1/3 쓰기가 겹치지 않게 서비스를 잠시 멈춥니다:$stopped"
     # shellcheck disable=SC2086
     docker compose stop $stopped >/dev/null
 fi
 
-echo "2/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니다)…"
+echo "2/3 지금 DB를 먼저 백업합니다…"
+safety="$(new_backup_path pre-restore)"
+dump_to "$safety" || die "복원 전 백업에 실패해 복원하지 않았습니다."
+echo "    → $safety"
+
+echo "3/3 복원합니다 (한 트랜잭션 — 실패하면 전부 되돌립니다)…"
 # 트랜잭션은 psql의 --single-transaction이 아니라 입력 안의 BEGIN … COMMIT으로 엽니다.
 # --single-transaction은 입력이 오류 없이 끝나기만 하면(EOF) COMMIT을 보내서, 복원 중에 창을 닫거나
 # Ctrl-C를 누르거나 파일 읽기가 끊기면 "스키마를 지우고 일부만 적재한" 상태가 확정됐습니다.

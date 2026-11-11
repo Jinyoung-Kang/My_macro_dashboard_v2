@@ -127,7 +127,6 @@ def test_QA370_다시_켜기가_실패하면_경고를_남긴다(restore_env):
     assert "서비스를 다시 켜지 못했습니다" in result.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="QA-372: 복원 전 안전 백업을 서비스 정지보다 먼저 떠, 그 사이의 쓰기가 안전 백업에 없습니다")
 def test_QA372_복원_전_안전_백업은_서비스를_멈춘_뒤에_뜬다(restore_env):
     env, log, dump = restore_env
 
