@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -816,7 +815,6 @@ class ManualAccountServiceDbTest {
 
     // ------------------------------------------------------------------ QA-356: 보유 없는 매도 지시를 수량과 함께 확인
     @Test
-    @Disabled("QA-356: 수정 전 — 수량을 함께 보내면 보유 없는 매도 지시가 닫히지 않고 400")
     @DisplayName("QA-356 확인 매도 — 정수 보유가 0이면 수량을 함께 보내도 그 지시를 '보유 없음'으로 닫음(화면은 늘 수량을 보냄), 0 < 보유 < 수량일 때만 400")
     void applySellWithoutHoldingClosesEvenWithQuantity() {
         startSynthetic();

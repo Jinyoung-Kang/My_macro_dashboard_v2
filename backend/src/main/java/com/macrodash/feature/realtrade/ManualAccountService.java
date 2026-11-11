@@ -660,7 +660,8 @@ public class ManualAccountService {
                 int quantity = item.quantity() != null ? wholeQuantity(item.quantity()) : ref.quantity();
                 if (sell) {
                     BigDecimal whole = held == null ? BigDecimal.ZERO : held.quantity().setScale(0, RoundingMode.FLOOR);
-                    if (item.quantity() != null && BigDecimal.valueOf(quantity).compareTo(whole) > 0) {
+                    // 정수 보유가 0이면 수량이 와도 아래에서 '보유 없음'으로 닫습니다 — 화면의 확인 창은 늘 수량을 보내고, 스탑 지시에는 건너뜀이 없습니다(QA-356).
+                    if (item.quantity() != null && whole.signum() > 0 && BigDecimal.valueOf(quantity).compareTo(whole) > 0) {
                         throw ManualAccountException.invalid(ref.symbol() + "의 보유 수량보다 많이 팔 수 없습니다 — 수량을 확인하세요.");
                     }
                     quantity = whole.min(BigDecimal.valueOf(quantity)).intValue();
