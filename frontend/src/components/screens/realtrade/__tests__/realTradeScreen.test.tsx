@@ -267,7 +267,7 @@ describe("끄기는 늘 닿는다", () => {
 
   // 시간 한도를 넘긴 끄기는 서버에서 처리됐을 수 있다. 수정 전에는 다시 읽은 상태가 꺼짐이어도 '끄지 못했습니다 … 끄기 단추를 다시 누르세요'와
   // 비상 순서가 남아(끄기 단추는 이미 사라짐) 칩의 '꺼짐'과 모순됐다(QA-345 — 독립 검토).
-  it.fails("QA-345: 끄기가 시간 한도를 넘겼어도 다시 읽은 상태가 꺼짐이면 '끄지 못했습니다'와 비상 순서를 남기지 않는다", async () => {
+  it("QA-345: 끄기가 시간 한도를 넘겼어도 다시 읽은 상태가 꺼짐이면 '끄지 못했습니다'와 비상 순서를 남기지 않는다", async () => {
     api.apiPost.mockRejectedValue(Object.assign(new Error("백엔드가 20초 안에 응답하지 않았습니다 (http://localhost:8082)"), { status: 0, timedOut: true }));
     renderKr();
     const off = await inRegion().findByRole("button", { name: "실제 매매 끄기" });

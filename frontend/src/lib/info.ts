@@ -543,9 +543,17 @@ export function canTranslate(entry: ReaderEntry, body: string | null): boolean {
  * 팝업에서 번역 단추를 계속 낼 것인가(QA-409) — 번역 응답을 받은 뒤에도, 옮길 본문(한국어가 아닌 본문·요약)이 있는데 본문 번역이 아직
  * 없고 '이미 한국어'도 아니면 냅니다. 서버는 제목을 먼저 옮기고 본문을 옮기므로 본문만 실패한 응답(제목 번역 있음·본문 없음)이 올 수 있고,
  * 다시 누르면 남은 부분만 번역합니다. 응답을 받기 전에는 {@link canTranslate}와 같습니다.
+ *
+ * 거꾸로 제목만 실패한 응답(실패 표시 `ok: false`, 제목 번역 없음, 본문은 옮겨짐)에도 냅니다 — 서버는 제목이 실패해도 본문을 이어 옮기고,
+ * 다시 누르면 저장된 본문은 그대로 두고 제목만 다시 옮깁니다. 실패 없이 제목 번역이 비어 온 응답(옮길 제목이 없다고 봄)에는 내지 않습니다.
  */
-export function offersTranslate(entry: ReaderEntry, body: string | null, translated: Pick<TranslateResponse, "textKo" | "alreadyKorean"> | null): boolean {
+export function offersTranslate(
+  entry: ReaderEntry,
+  body: string | null,
+  translated: (Pick<TranslateResponse, "textKo" | "alreadyKorean"> & Partial<Pick<TranslateResponse, "ok" | "titleKo">>) | null,
+): boolean {
   if (!translated) return canTranslate(entry, body);
+  if (translated.ok === false && !translated.titleKo && titleNeedsTranslation(entry.title, entry.titleKo)) return true;
   if (translated.textKo || translated.alreadyKorean) return false;
   return bodyNeedsTranslation(entry.itemId ? body : entry.text);
 }

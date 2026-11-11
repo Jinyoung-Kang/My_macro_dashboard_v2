@@ -246,7 +246,7 @@ describe("원문 팝업(ADR 0037)", () => {
 
   // 서버는 제목 번역이 실패하면 오류를 남긴 채 본문을 이어 옮긴다. 수정 전에는 본문 번역이 있으면 무조건 단추를 내려, 제목만 실패한
   // 응답 뒤에는 팝업을 닫았다 다시 열어야 했다(QA-409의 거울상 — 독립 검토).
-  it.fails("QA-409: 제목 번역만 실패한 응답(본문은 옮겨짐) 뒤에도 단추를 남긴다 — 제목까지 옮겨졌거나 실패가 없으면 내린다", () => {
+  it("QA-409: 제목 번역만 실패한 응답(본문은 옮겨짐) 뒤에도 단추를 남긴다 — 제목까지 옮겨졌거나 실패가 없으면 내린다", () => {
     const entry = readerOfItem(item);
     const titleFailed = { ok: false, titleKo: null, textKo: "한국어 본문", alreadyKorean: false };
     expect(offersTranslate(entry, "English body", titleFailed)).toBe(true);

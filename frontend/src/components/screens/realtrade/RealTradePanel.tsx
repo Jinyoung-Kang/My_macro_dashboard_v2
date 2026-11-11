@@ -27,6 +27,7 @@ import {
   serverSwitchState,
   serverSwitchText,
   serverUnknownText,
+  showDisableError,
   skipDayText,
   sourceBookLabel,
   toNumber,
@@ -121,7 +122,7 @@ function ActionFeedback({ rt }: { rt: RealTradeContextValue }) {
   const feedback = disableFeedback(rt.status);
   return (
     <>
-      {rt.disableError && (
+      {showDisableError(rt.disableError, rt.status, rt.readFailed) && (
         <Banner tone="danger">
           <p>실제 매매를 끄지 못했습니다 — {rt.disableError}. 끄기 단추를 다시 누르세요.</p>
           <p className="mt-1 text-xs">{EMERGENCY_STEPS}</p>

@@ -13,7 +13,6 @@
  *    (미체결 취소 불가 판단은 모름을 켜짐으로 보지 않음), 이상 멈춤 사유 collector-disabled 이름표
  *  - RT3-UI-3: 끄기 뒤 표시는 다시 켜짐으로 돌아오거나(끄는 중·꺼짐을 본 뒤) 끄기 응답보다 큰 버전의 켜짐·이상 멈춤을 받으면 지운다
  */
-import * as realtradeModule from "@/lib/realtrade";
 import { describe, expect, it } from "vitest";
 import {
   actionDoneText,
@@ -58,6 +57,7 @@ import {
   serverSwitchText,
   serverUnknownText,
   showDisable,
+  showDisableError,
   previewImmediateText,
   previewTimingText,
   skippedText,
@@ -82,20 +82,17 @@ describe("단추를 보이는 조건", () => {
   });
 
   // 끄기 요청이 실패(시간 한도 포함)했더라도 그 뒤 확실히 읽은 상태가 끄는 중·꺼짐이면 요청은 처리된 것이다(QA-345 — 독립 검토).
-  it.fails("QA-345: 끄기 실패 안내는 다시 읽은 상태가 끄는 중·꺼짐이면 내리고, 상태를 모르거나 아직 켜짐·멈춤이면 남긴다", () => {
-    const shown = (realtradeModule as unknown as { showDisableError?: (e: string | null, s: unknown, f: boolean) => boolean }).showDisableError;
-    expect(typeof shown).toBe("function");
-    if (!shown) return;
-    expect(shown(null, { available: true, state: "LIVE" }, false)).toBe(false);
+  it("QA-345: 끄기 실패 안내는 다시 읽은 상태가 끄는 중·꺼짐이면 내리고, 상태를 모르거나 아직 켜짐·멈춤이면 남긴다", () => {
+    expect(showDisableError(null, { available: true, state: "LIVE" }, false)).toBe(false);
     for (const state of ["LIVE", "HALTED"]) {
-      expect(shown("응답 없음", { available: true, state }, false), state).toBe(true);
+      expect(showDisableError("응답 없음", { available: true, state }, false), state).toBe(true);
     }
     for (const state of ["OFF", "STOPPING"]) {
-      expect(shown("응답 없음", { available: true, state }, false), state).toBe(false);
-      expect(shown("응답 없음", { available: true, state }, true), `${state} — 다시 읽기 실패`).toBe(true);
+      expect(showDisableError("응답 없음", { available: true, state }, false), state).toBe(false);
+      expect(showDisableError("응답 없음", { available: true, state }, true), `${state} — 다시 읽기 실패`).toBe(true);
     }
-    expect(shown("응답 없음", null, false)).toBe(true);
-    expect(shown("응답 없음", { available: false, state: "OFF" }, false)).toBe(true);
+    expect(showDisableError("응답 없음", null, false)).toBe(true);
+    expect(showDisableError("응답 없음", { available: false, state: "OFF" }, false)).toBe(true);
   });
 
   it("켜기는 꺼짐 + 서버 두 스위치 + 지원 시장일 때만 — 아니면 이유", () => {

@@ -282,6 +282,27 @@ export function showDisable(status: Pick<RealTradeStatusResponse, "available" | 
   return status.state !== "OFF";
 }
 
+/**
+ * 끄기 실패 안내(위험 배너·'끄기 단추를 다시 누르세요'·비상 순서)를 보일 것인가(QA-345).
+ *
+ * 끄기 요청이 실패로 끝났어도(시간 한도를 넘긴 응답 포함) 그 뒤 **확실히 읽은** 상태가 끄는 중·꺼짐이면 요청은 서버에서 처리된 것입니다 —
+ * 그때까지 안내를 남기면 칩은 '꺼짐'인데 끄지 못했다는 글과 비상 순서가 함께 보여, 필요 없는 비상 절차(서버 스위치 내리기)로 이끕니다.
+ * 상태를 모르거나(읽기 실패·읽을 수 없음) 아직 켜짐·멈춤이면 남깁니다(모를 때는 보이는 쪽이 안전 — {@link showDisable}와 같은 기준).
+ */
+export function showDisableError(
+  error: string | null | undefined,
+  status: Pick<RealTradeStatusResponse, "available" | "state"> | null | undefined,
+  readFailed: boolean,
+): boolean {
+  if (!error) {
+    return false;
+  }
+  if (readFailed || !status || status.available !== true) {
+    return true;
+  }
+  return status.state !== "OFF" && status.state !== "STOPPING";
+}
+
 /** 켜기 단추를 누를 수 있는가와, 누를 수 없으면 그 이유(단추 옆 글). */
 export function enableBlock(
   status: Pick<RealTradeStatusResponse, "available" | "supported" | "state" | "serverEnabled"> | null | undefined,
