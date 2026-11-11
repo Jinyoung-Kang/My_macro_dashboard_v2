@@ -143,7 +143,7 @@ class ManualAccountNoticesTest {
         assertThat(text).isEqualTo("[ISA 계좌] 11/09(월) 매매 지시 없음\n\n"
                 + "ISA 잔고의 현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다.\n"
                 + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 지시를 만들어 다시 알립니다.\n"
-                + "장중 스탑 매도 지시는 그대로 알립니다.");
+                + "전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다. 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 알립니다.");
         assertThat(text.substring(text.indexOf('\n'))).doesNotContain("원", "%", "주\n", "•").doesNotContainPattern("[0-9]{3,}");   // 본문의 숫자는 '10분쯤'뿐
     }
 }

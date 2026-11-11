@@ -405,7 +405,9 @@ function StartedBody({
   const confirmable = (instructions?.items ?? []).filter(canConfirm);
   const confirmableStops = stops.filter(canConfirm);
   const notes = cleanNotes(data.notes);
-  const waitText = waitingText(data.waiting);
+  // 현금이 음수라 지시를 만들지 않았다는 배너 — 정기 작업의 사유(waiting)는 다음 주기(최대 10분)에야 바뀌므로, 잔고를 고쳐 현금이 0 이상이 됐으면 바로 내립니다
+  // (요약의 음수 경고와 같은 순간에 — 고친 뒤에도 '현금이 음수입니다'가 남지 않게).
+  const waitText = valuation.cash !== null && valuation.cash >= 0 ? null : waitingText(data.waiting);
   const commission = toNumber(summary?.commissionPct);
 
   return (

@@ -76,7 +76,7 @@ export function unavailableText(reason: string | null | undefined): string {
     case "timed-orders":
       return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다(지시 시각 — 시가·개장 10분 뒤 — 밖의 주문) — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
     case "cash-negative":
-      return "현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다 — 잔고(현금·보유)가 실제와 맞는지 확인해 고치세요. 음수인 동안 다음 세션 지시도 만들지 않습니다(장중 스탑 매도 지시는 그대로).";
+      return "현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다 — 잔고(현금·보유)가 실제와 맞는지 확인해 고치세요. 음수인 동안 다음 세션 지시도 만들지 않습니다(전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다 — 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 나옵니다).";
     default:
       return "이 세션의 지시를 만들지 못했습니다 — 이번 세션은 매매하지 않고 다음 결정을 기다립니다. 까닭이 있으면 요약 칸의 안내에 적혀 있습니다.";
   }
@@ -91,7 +91,7 @@ export function waitingText(waiting: IsaWaiting | null | undefined): string | nu
     return null;
   }
   const session = sessionLabel(waiting.session);
-  return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 현금이 음수입니다. 잔고(현금·보유)가 실제와 맞는지 확인해 고치면 다음 주기(10분 안)에 지시를 만듭니다. 장중 스탑 매도 지시는 그대로 나옵니다.`;
+  return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 현금이 음수입니다. 잔고(현금·보유)가 실제와 맞는지 확인해 고치면 다음 주기(10분 안)에 지시를 만듭니다. 전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다 — 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 나옵니다.`;
 }
 
 const STOP_TIMING: Readonly<Record<string, string>> = {
@@ -895,7 +895,7 @@ export function buildCommissionRequest(text: string): Checked<IsaCommissionReque
 export const ISA_ERROR_CODES = ["invalid-request", "not-found", "already-started", "not-started", "already-recorded"] as const;
 
 /** 현금이 음수일 때의 경고(요약 카드) — 잔고 쓰기는 막지 않습니다. 음수인 동안 정기 작업은 다음 매매 지시를 만들지 않습니다(QA-381 — 장중 스탑 지시는 그대로). */
-export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 매매 지시를 만들지 않습니다(장중 스탑 매도 지시는 그대로 나옵니다).";
+export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 매매 지시를 만들지 않습니다(전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다 — 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 나옵니다).";
 
 export type IsaErrorCode = (typeof ISA_ERROR_CODES)[number];
 

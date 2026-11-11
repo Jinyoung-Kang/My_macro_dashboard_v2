@@ -322,6 +322,12 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
     expect(await inRegion().findByText(/^11\/10\(화\) 매매 지시를 만들지 않았습니다 — 현금이 음수입니다/)).toBeTruthy();
     expect(inRegion().getByText(/음수인 동안 다음 매매 지시를 만들지 않습니다/)).toBeTruthy();
     cleanup();
+    // 잔고를 고쳐 현금이 0 이상이 됐으면, 정기 작업의 사유가 다음 주기(최대 10분)까지 cash-negative로 남아 있어도 배너를 내린다(독립 검토).
+    reads[ISA_PATH] = () => Promise.resolve(started({ waiting: { session: "2026-11-10", reason: "cash-negative" } }));
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect(inRegion().queryByText(/매매 지시를 만들지 않았습니다 — 현금이 음수입니다/)).toBeNull();
+    cleanup();
     reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: { session: "2026-11-10", status: "UNAVAILABLE", items: [], reason: "cash-negative" } }));
     renderIsa();
     expect(await inRegion().findByText(/^현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다/)).toBeTruthy();

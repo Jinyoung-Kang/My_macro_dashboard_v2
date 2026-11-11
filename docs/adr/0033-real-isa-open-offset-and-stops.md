@@ -79,7 +79,8 @@
   두 시각이 같아 동작이 바뀌지 않는다(`RealTradePlannerTest.firstActionTime`, `RealTradeJobDbTest.decisionTimeUnchangedAtOpenOffset`·`decisionTimeUnchangedOnOpenSyncDay`·
   `timedWindowStillFreezesThreeMinutesBeforeItsStart`가 고정). 늦은 날에 달라지는 것: 판정·토큰 예열·장부 밀림 확인이 개장 7분 뒤로 당겨지고 그때부터 스탑 매도가 돈다
   (`lateTimedSyncDayStillSellsEarlyStops`·`lateTimedSyncLedgerBehindDayStillSellsEarlyStops`). 감수한 것: 그날 판정과 창 굳히기 사이에는 창이 아직 바뀔 수 있다(예전에도
-  굳기 전에는 바뀌었고, 그 사이에 창에 기대어 나가는 주문은 스탑 매도뿐 — 스탑 창은 맞추기 시각과 무관).
+  굳기 전에는 바뀌었고, 그 사이에 창에 기대어 나가는 주문은 스탑 매도뿐 — 스탑 창은 맞추기 시각과 무관). 또 장부 밀림은 판정 때 한 번만 읽으므로, 늦은 날에는
+  개장 7분 뒤에 장부가 밀려 있으면 그 뒤 맞추기 시각 전에 따라잡아도 그날은 스탑만 한다(예전에는 맞추기 3분 전에 읽었음 — 독립 검토에서 확인, 운영 값 09:10은 판정 시각이 같아 무관).
 - **목표**(`PaperMirrorService.targetsAt`): 보유 + 그 세션 시가 주문 + 기준 시각이 T 이하인 시각 지정 주문. 시각 지정 STOP(`MARKET`·`AT_MINUTE`·`NEXT_CLOSE`)은 비중에 반영하되 흡수하지 않고
   `stopOrderIds`로 따로 돌려준다. 시가 경로(`openTargets`)는 아래 '목표 세션이 지난 대기 STOP'만 더 본다. 옛 `NEXT_OPEN` STOP(감시를 켜지 않은 한국 밤 스탑)은 따로 갈 길이 없어 지금처럼 묶음이 흡수한다.
 - **목표 세션이 지난 대기 STOP**(QA-328): 그 세션 1분봉을 기다리거나 장부가 보류해(기업행위·그날 봉 없음·거래정지) 목표 세션이 지났는데도 대기인 STOP 매도(만료 전)는 다음 세션들의
@@ -120,7 +121,7 @@
     종목당 시도 2·보내기 직전 확인, 묶음 뒤에 생긴 보유와 장중 따라 하기가 손댄 종목은 범위 밖. 회전율 멈춤(60%)이 이 길로 약해지지 않게, 묶음을 만들 때 매매 제한으로
     기다리는 전량 매도 대상의 몫을 회전율에 함께 센다(대기 STOP 종목은 QA-302대로 뺌) — 그 종목이 VI가 아니었을 때와 같은 판정이라, 예전에는 다음 날 걸렸을 회전율 멈춤이
     그날 묶음에서 걸릴 수 있다. 책의 종목이 VI로 빠진 몫은 2026-11-09 결정 그대로 세지 않는다. 감수한 단점: 묶음을 만들 때 앱의 반대 방향 미체결·가격 모름 등 종목 단위
-    사유로 건너뛴 책 밖 보유는 회전율에 들지 않은 채 그 사유가 풀린 뒤 그날 팔릴 수 있다(책의 종목은 원래 그랬다).
+    사유로 건너뛴 책 밖 보유는 회전율에 들지 않은 채 그 사유가 풀린 뒤 그날 팔릴 수 있다(책의 종목은 원래 그랬다). 같은 종류로 이 기능의 미종료 주문이 있던 종목(전날의 결과 모름 행 등)과 잔량을 모르던 종목도 세지 않는다(독립 검토에서 확인 — 보완은 매매 제한으로 기다리는 몫만 셈).
     지키는 시험: `RealTradeJobDbTest`의 `timedSyncWaitsForViOnHoldingNotInBook`·`timedSyncLaterLiquidationHasNoThreshold`·`timedSyncRefusedKeepsLaterLiquidations`·
     `lateSyncStartFollowupSellsHoldingNotInBook`·`waitingLiquidationCountsTowardTurnover`·`waitingLiquidationWithinTurnoverProceeds`·
     `batchTargetsMarkWholeHoldingsNotInBook`·`followupLeavesHoldingsThatAppearedAfterTheBatch`.

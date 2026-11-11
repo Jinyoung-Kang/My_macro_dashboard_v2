@@ -296,6 +296,10 @@ describe("안내 글", () => {
   it("QA-381 음수 현금 경고와 못 만듦 사유 — 음수인 동안 매매 지시를 만들지 않고 장중 스탑 지시는 그대로라고 알림", () => {
     expect(NEGATIVE_CASH_TEXT).toContain("음수인 동안 다음 매매 지시를 만들지 않습니다");
     expect(NEGATIVE_CASH_TEXT).toContain("장중 스탑");
+    // 전날 종가 기준 손절(시가 매도)은 다음 시가 지시에 들어 있어 함께 멈춘다 — '스탑은 그대로'라고만 하면 손절이 따로 온다고 읽힌다(독립 검토).
+    for (const text of [NEGATIVE_CASH_TEXT, unavailableText("cash-negative"), waitingText({ session: "2026-11-10", reason: "cash-negative" }) ?? ""]) {
+      expect(text).toContain("손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다");
+    }
     expect(NEGATIVE_CASH_TEXT).not.toContain("매수가 줄어");
     expect(unavailableText("cash-negative")).toMatch(/^현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다/);
     expect(unavailableText("cash-negative")).toContain("잔고");
