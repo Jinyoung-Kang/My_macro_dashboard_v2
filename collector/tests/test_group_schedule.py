@@ -240,7 +240,6 @@ def test_slow_회차가_끝났으면_남은_태스크_실행을_등록하지_않
 # ==============================================================================
 # QA-374 — interval 갈래와 polite 틱의 유예
 # ==============================================================================
-@pytest.mark.xfail(strict=True, reason="QA-374: interval 갈래와 polite 틱에 misfire_grace_time이 없어 APScheduler 기본 1초가 적용됩니다")
 def test_QA374_주기_갈래와_polite_틱도_늦게_깬_회차를_버리지_않게_유예를_준다(monkeypatch):
     """
     기동 직후 한 번(next_run_time = 기동 시각)은 스케줄러가 시작하기 전에 DB 읽기(관측치 시각·끊긴 회차)가 끼어 1초를 넘기 쉽습니다.
@@ -259,7 +258,6 @@ def test_QA374_주기_갈래와_polite_틱도_늦게_깬_회차를_버리지_않
     assert jobs["collect-session"]["trigger"] == "interval" and jobs["collect-session"]["misfire_grace_time"] == main.SESSION_MISFIRE_GRACE_SECONDS
 
 
-@pytest.mark.xfail(strict=True, reason="QA-374: 주기 갈래의 유예 상수가 없습니다")
 def test_QA374_유예는_그_군의_기본_주기보다_짧다(monkeypatch):
     """유예가 주기보다 길면 밀린 회차와 다음 회차가 겹칩니다."""
     for group in ("fast", "slow", "weekly", "session"):

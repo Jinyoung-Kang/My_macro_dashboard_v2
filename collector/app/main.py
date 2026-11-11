@@ -74,6 +74,14 @@ POLITE_TICK_JITTER_SECONDS = 120
 # 그 회차를 통째로 건너뜁니다(slow면 미국 결정이 한 시간 밀림). slow는 15분(다음 회차 전에 끝날 여유), session은 2분(주기 5분보다 짧게).
 SLOW_MISFIRE_GRACE_SECONDS = 900
 SESSION_MISFIRE_GRACE_SECONDS = 120
+# 주기(interval) 갈래의 유예(초) — fast·weekly와, 주기를 바꾼 실험 스택의 slow·session. 이 갈래는 기동 직후 한 번(next_run_time = 기동 시각)을
+# 돌리는데, 그 시각을 잡은 뒤 스케줄러가 시작하기 전에 DB 읽기(관측치 시각·끊긴 회차)가 끼어 기본 유예 1초를 넘기면 그 한 번을 버립니다 —
+# fast는 5분 뒤, weekly는 12시간 뒤에야 처음 돕니다(QA-374). 군의 주기보다 짧게 잡습니다.
+INTERVAL_MISFIRE_GRACE_SECONDS = {
+    "fast": 60, "weekly": 900, "slow": SLOW_MISFIRE_GRACE_SECONDS, "session": SESSION_MISFIRE_GRACE_SECONDS,
+}
+# polite 틱(5분 + 지터)도 같은 이유로 — 늦게 깬 틱을 버리지 않고 늦게 돕니다(틱은 때가 된 태스크가 있나만 봄).
+POLITE_TICK_MISFIRE_GRACE_SECONDS = 60
 
 
 def slow_first_run(now: datetime, last_quotes_at: datetime | None, at_minute: int) -> datetime | None:
@@ -241,7 +249,8 @@ async def lifespan(app: FastAPI):
             else:
                 # 기동 직후 한 번씩 돌립니다. 싼 것부터(fast → slow → weekly → session)
                 # 처리해야 가장 자주 보는 데이터가 먼저 채워집니다.
-                scheduler.add_job(_run_group_job, "interval", seconds=seconds, next_run_time=now, **common)
+                scheduler.add_job(_run_group_job, "interval", seconds=seconds, next_run_time=now,
+                                  misfire_grace_time=INTERVAL_MISFIRE_GRACE_SECONDS[group], **common)
                 logger.info("스케줄 등록: %s 주기 %d초", group, seconds)
         # polite(차단 통과 수집 계층 — ADR 0026): 틱마다 때가 된 태스크만 실행합니다. next_run_time을 주지 않아 기동 직후에는 돌지 않고
         # (첫 틱은 한 주기 뒤), 틱 자체도 매번 0~POLITE_TICK_JITTER_SECONDS초 늦춰 정각에 맞물리지 않게 합니다. 태스크의 실행 시각은
@@ -254,6 +263,7 @@ async def lifespan(app: FastAPI):
             id="collect-polite",
             max_instances=1,
             coalesce=True,
+            misfire_grace_time=POLITE_TICK_MISFIRE_GRACE_SECONDS,
         )
         logger.info("스케줄 등록: polite 틱 %d초(+지터 %d초) — 때가 된 태스크만", POLITE_TICK_SECONDS, POLITE_TICK_JITTER_SECONDS)
         scheduler.start()
