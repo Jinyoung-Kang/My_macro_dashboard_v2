@@ -3,7 +3,6 @@ package com.macrodash.feature.paper;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -237,8 +236,10 @@ class StopWatchTest {
     @DisplayName("덮음 — 대체 경로가 건너뛰어도 되는가")
     class Covered {
 
+        /** 감시 ON 때 받은 저장본 — 운영 수집기는 회차마다 최상위 {@code mode}를 적습니다(QA-360: ON일 때만 덮음). */
         private JsonNode payload(String ticker, JsonNode entry) {
             ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+            payload.put("mode", "ON");
             payload.putObject("tickers").set(ticker, entry);
             return payload;
         }
@@ -276,7 +277,6 @@ class StopWatchTest {
         }
 
         @Test
-        @Disabled("QA-360: 덮음 판정이 저장본의 감시 모드(mode)를 보지 않습니다")
         @DisplayName("QA-360 저장본의 mode가 ON일 때만 덮음 — SHADOW 때 받은 저장본(주문을 내지 않은 감시)과 mode가 없는 저장본은 덮지 않음")
         void onlyAnOnSnapshotCovers() {
             ObjectNode on = (ObjectNode) payload("AAA", usEntry(DAY, usMinutes(et(9, 30), et(10, 6), 100, 0), 100.0, 100.0));

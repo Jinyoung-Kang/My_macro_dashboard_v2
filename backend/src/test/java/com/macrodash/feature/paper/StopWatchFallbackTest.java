@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -80,6 +79,7 @@ class StopWatchFallbackTest {
                 bars.put(at, 99.0);
             }
             ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("mode", "ON");   // 운영 수집기가 회차마다 적는 감시 모드 — ON일 때만 덮음(QA-360)
             payload.put("fetchedAt", et(TUE, 11, 0).plusSeconds(20).toString());
             payload.putObject("tickers").set(ticker, StopWatchTest.usEntry(TUE, bars, 99.0, 100.0));
             when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
@@ -93,6 +93,7 @@ class StopWatchFallbackTest {
                 bars.put(at, 99.0);
             }
             ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("mode", "ON");   // 운영 수집기가 회차마다 적는 감시 모드 — ON일 때만 덮음(QA-360)
             payload.put("fetchedAt", fetchedAt.toString());
             payload.putObject("tickers").set(ticker, StopWatchTest.usEntry(TUE, bars, 99.0, prevClose));
             when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
@@ -160,7 +161,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-360: 덮음 판정이 저장본을 받은 때의 감시 모드를 보지 않아, SHADOW로 지켜본 날을 장 마감 뒤 ON으로 바꾸면 감시에 맡김으로 읽습니다")
         @DisplayName("QA-360 설정은 ON이지만 저장본은 SHADOW 때 받은 것(그날 감시는 주문을 내지 않음) — 16:15 확정 종가 관측치는 덮지 않아 종가 스탑")
         void shadowSnapshotDoesNotCoverAfterSwitchingOn() {
             mode("ON");
@@ -304,6 +304,7 @@ class StopWatchFallbackTest {
             }
             ObjectNode entry = StopWatchTest.krEntry(session, bars, List.of(), 99_000.0, 100_000.0, 100_000.0);
             ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("mode", "ON");   // 운영 수집기가 회차마다 적는 감시 모드 — ON일 때만 덮음(QA-360)
             payload.put("fetchedAt", fetchedAt.toString());
             payload.putObject("tickers").set(code, entry);
             when(marketData.stopWatch(true)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload, "json", "ok",
@@ -350,7 +351,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-360: 덮음 판정이 저장본을 받은 때의 감시 모드를 보지 않아, SHADOW로 지켜본 날을 장 마감 뒤 ON으로 바꾸면 그날의 밤 대체 스탑을 건너뜁니다")
         @DisplayName("QA-360 설정은 ON이지만 저장본은 SHADOW 때 받은 것(그날 감시는 주문을 내지 않음) — 밤 감지는 덮지 않아 다음 거래일 09:10 NIGHT_FALLBACK. "
                 + "저장본에 mode가 없어도 덮지 않음")
         void shadowSnapshotDoesNotCoverAfterSwitchingOn() {

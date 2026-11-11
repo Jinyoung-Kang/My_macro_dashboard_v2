@@ -31,8 +31,8 @@ import java.util.List;
  *       그날 그 종목은 감시에서 뺍니다. 한국은 토스 일봉의 전일 원시·수정 종가가 {@value #KR_ADJUSTED_MISMATCH}배 넘게 다를 때, 미국은 Yahoo 전일 종가와
  *       장부의 전일 종가({@code fill_ref_close})가 {@value #US_CLOSE_MISMATCH}배 넘게 다를 때도 뺍니다. 뺀 종목은 밤·시간별 경로(기업행위·분할 판정 뒤
  *       스탑)가 맡습니다. 가드를 판단할 자료(첫 봉·전일 종가)가 없으면 '모름' — 감시가 그 종목을 판정하지 않습니다.</li>
- *   <li><b>덮음</b>({@link #covered}): 장부의 대체 경로(미국 시간별·한국 밤 스탑)가 그 종목을 건너뛰어도 되는가 — 그 세션 항목이 이어받지 않은 새
- *       값이고, 가드가 판단되어 빼지 않았고, 그 시각 − {@link #COVER_WINDOW} 이후의 거래 표본이 있을 때. 격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤)은
+ *   <li><b>덮음</b>({@link #covered}): 장부의 대체 경로(미국 시간별·한국 밤 스탑)가 그 종목을 건너뛰어도 되는가 — 저장본이 감시 ON 때 받은 것이고(QA-360),
+ *       그 세션 항목이 이어받지 않은 새 값이고, 가드가 판단되어 빼지 않았고, 그 시각 − {@link #COVER_WINDOW} 이후의 거래 표본이 있을 때. 격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤)은
  *       마지막 격자(격자 끝)의 가격이 있을 때만 — 마지막 감시 회차를 놓쳐 그 격자를 판정하지 못한 날은 대체 경로가 맡습니다(QA-307).</li>
  *   <li><b>주문 시점</b>({@link #target}): T = 감지(주문 생성) + 60초 뒤 첫 분({@link ExecutionAudit#marketTarget} — 늦은 주문 가드 ⑤를 지킴). T가 그
  *       세션 첫 분(개장 + 10분) 앞이면 그 첫 분의 지정 시각, 장 끝 여유 안(미국 15:55·한국 15:20 뒤)이면 종가, 그 밖은 장중 시장가.</li>
@@ -233,11 +233,18 @@ final class StopWatch {
     /**
      * 장부의 대체 경로가 그 종목을 건너뛰어도 되는가(클래스 설명) — 감시 저장본이 그 세션의 그 종목을 지켜보고 있었음.
      *
+     * <p>저장본을 받은 때의 감시 모드(수집기가 회차마다 적는 최상위 {@code mode})가 {@code ON}일 때만 덮습니다(QA-360). SHADOW 때 받은 저장본은
+     * 가격은 같아도 그 감시가 주문을 내지 않았으므로, 장 마감 뒤 설정을 ON으로 바꾼 날에 '감시에 맡김'으로 읽으면 그날의 대체 스탑이 빠집니다.
+     * {@code mode}가 없는 저장본도 덮지 않습니다(보수적인 쪽 — 운영 수집기는 늘 적음).</p>
+     *
      * @param payload 감시 저장본 본문(없으면 거짓)
      * @param at      대체 경로의 판정 시각(관측치 수집 시각)
      */
     static boolean covered(JsonNode payload, String ticker, LocalDate session, Instant at, TradingCalendar calendar, boolean korea,
                            Double ledgerPrevClose) {
+        if (!StopWatchMode.ON.name().equals(Json.asText(payload, "mode"))) {
+            return false;
+        }
         JsonNode entry = Json.child(Json.child(payload, "tickers"), ticker);
         if (!usable(entry, session) || !guard(entry, korea, ledgerPrevClose).clear()) {
             return false;
