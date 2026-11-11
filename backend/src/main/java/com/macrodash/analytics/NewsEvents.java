@@ -592,8 +592,8 @@ public final class NewsEvents {
         return clean(stripped == null ? "" : stripped);
     }
 
-    /** 공백·제어 문자를 한 칸으로 접고 앞뒤를 자릅니다. */
-    static String clean(String text) {
+    /** 공백·제어 문자를 한 칸으로 접고 앞뒤를 자릅니다. 패킷의 수집 글 섹션도 제목을 한 줄로 만들 때 같은 접기를 씁니다(QA-402). */
+    public static String clean(String text) {
         return SPACES.matcher(text).replaceAll(" ").strip();
     }
 

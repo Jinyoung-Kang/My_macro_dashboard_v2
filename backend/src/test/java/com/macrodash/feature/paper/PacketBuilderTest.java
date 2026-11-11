@@ -28,7 +28,6 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.HoldingRow;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -3067,7 +3066,6 @@ class PacketBuilderTest {
     }
 
     @Test
-    @Disabled("QA-402: 수집 글 섹션이 제목의 줄바꿈·제어 문자를 그대로 실어, 제목 한 줄이 글 블록 안에서 칸 이름표([앞부분])를 꾸밀 수 있고 제목 길이 상한이 없습니다")
     @DisplayName("QA-402 수집 글(11c)의 제목·한국어 제목은 한 줄 — 줄바꿈·제어 문자는 사건 섹션처럼 한 칸으로 접고 200자에서 자름. 그런 글자가 없고 "
             + "200자 이하인 제목은 글자 그대로")
     void readingSectionKeepsTitlesOnOneLine() {
@@ -3096,6 +3094,20 @@ class PacketBuilderTest {
         assertThat(second.split("\n")[2]).as("제목은 200자까지").isEqualTo("[제목] " + "T".repeat(199) + "…");
         assertThat(text).as("제어 문자가 없고 200자 이하인 제목은 글자 그대로(공백 둘·NBSP·끝 공백 포함)")
                 .contains("[제목] Plain  title\u00a0with spaces \n");
+    }
+
+    @Test
+    @DisplayName("QA-402 대조: 정보 수집 출처 표(feature/info InfoSources)의 블로그 키는 모두 미국 패킷이 읽는 출처에 있고 패킷 이름도 그 표의 이름 — "
+            + "블로그를 더하거나 바꾸면 패킷에서 조용히 빠지지 않게(기능 패키지끼리 의존하지 않으므로 시험에서만 대조)")
+    void readingSourcesCoverTheInfoSourceTable() {
+        List<com.macrodash.feature.info.InfoSources.Source> blogs = com.macrodash.feature.info.InfoSources.ALL.stream()
+                .filter(source -> com.macrodash.feature.info.InfoSources.BLOG.equals(source.kind())).toList();
+        assertThat(blogs).as("출처 표의 블로그").isNotEmpty();
+        assertThat(ReadingSection.sources(false)).containsAll(blogs.stream().map(com.macrodash.feature.info.InfoSources.Source::key).toList());
+        assertThat(blogs).allSatisfy(source -> assertThat(ReadingSection.label(source.key())).as(source.key()).isEqualTo(source.label()));
+        assertThat(ReadingSection.sources(false)).as("패킷이 읽는 출처마다 이름이 있음(키 그대로 싣지 않음)")
+                .allSatisfy(key -> assertThat(ReadingSection.label(key)).isNotEqualTo(key));
+        assertThat(ReadingSection.sources(true)).containsExactly("waedge.brief");
     }
 
     @Test

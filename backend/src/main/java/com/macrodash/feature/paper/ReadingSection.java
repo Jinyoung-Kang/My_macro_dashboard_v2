@@ -37,6 +37,8 @@ final class ReadingSection {
     static final int MAX_ITEMS = 8;
     static final int MAX_PER_SOURCE = 2;
     static final int SUMMARY_CHARS = 240;
+    /** 제목·한국어 제목의 상한(글자) — 넘으면 자르고 '…'(QA-402). 수집기는 제목 길이를 제한하지 않습니다. */
+    static final int TITLE_CHARS = 200;
     /** 읽어 오는 후보 수 — 분류로 거르고 출처마다 상한을 두기 전. */
     static final int CANDIDATES = 60;
     static final String SOURCE = "info_items — 정보 수집(해외 블로그 RSS·waedge 시황·거장 글, 운영 서버의 수집기, 보존 180일)";
@@ -46,6 +48,8 @@ final class ReadingSection {
     private static final Pattern READING_DELIMITER = FrameworkService.delimiterLike("글");
     private static final Pattern EVENT_DELIMITER = FrameworkService.delimiterLike("사건");
     private static final Pattern NOTE_DELIMITER = FrameworkService.delimiterLike("메모");
+    /** 줄을 바꾸는 글자 — 제어 문자(줄바꿈·탭 포함)와 줄·문단 구분자. 제목 칸에 있으면 한 글 블록 안에서 칸 이름표를 꾸밀 수 있습니다(QA-402). */
+    private static final Pattern LINE_BREAKS = Pattern.compile("[\\p{Cc}\\u2028\\u2029]");
     /** waedge 글 분류에 이것이 들어 있으면 한국 시장 글로 봅니다. */
     private static final List<String> KR_MARKS = List.of("국내", "한국", "코스피", "코스닥");
 
@@ -114,10 +118,10 @@ final class ReadingSection {
             String when = item.publishedAt() != null ? Kst.stamp(item.publishedAt()) : Kst.stamp(item.firstSeenAt()) + "(받은 시각)";
             String source = sourceLabel(item);
             text.append("<<글 #").append(k).append(" 시작>>\n");
-            text.append("[출처] ").append(sanitize(source)).append(" · ").append(when).append('\n');
-            text.append("[제목] ").append(sanitize(item.title()));
+            text.append("[출처] ").append(sanitize(oneLine(source))).append(" · ").append(when).append('\n');
+            text.append("[제목] ").append(headline(item.title()));
             if (item.titleKo() != null && !item.titleKo().isBlank() && !item.titleKo().equals(item.title())) {
-                text.append(" (한국어 제목: ").append(sanitize(item.titleKo())).append(')');
+                text.append(" (한국어 제목: ").append(headline(item.titleKo())).append(')');
             }
             text.append('\n');
             String summary = clip(item.summary());
@@ -156,7 +160,33 @@ final class ReadingSection {
             Map.entry("waedge.brief", "WAEDGE NEWS 시장"), Map.entry("waedge.people", "WAEDGE NEWS 거장"));
 
     private static String sourceLabel(InfoStore.Item item) {
-        return LABELS.getOrDefault(item.source(), item.source());
+        return label(item.source());
+    }
+
+    /** 출처 키의 패킷 이름 — 표에 없는 키는 키 그대로(정보 수집 출처 표와의 대조 시험이 블로그 키가 빠지지 않았는지 봄 — QA-402). */
+    static String label(String source) {
+        return LABELS.getOrDefault(source, source);
+    }
+
+    /**
+     * 제목 한 줄 — 줄을 바꾸는 글자가 있으면 사건 섹션과 같은 접기({@link NewsEvents#clean} — 공백·제어 문자 묶음을 한 칸으로, 앞뒤 자름)로 한 줄로
+     * 만들고, 구분자 모양을 지우고, {@link #TITLE_CHARS}에서 자릅니다. 그런 글자가 없고 상한 안인 제목은 예전 글자 그대로입니다(QA-402).
+     */
+    static String headline(String title) {
+        String clean = sanitize(oneLine(title));
+        if (clean.length() <= TITLE_CHARS) {
+            return clean;
+        }
+        int cut = TITLE_CHARS - 1;
+        if (Character.isHighSurrogate(clean.charAt(cut - 1))) {
+            cut--;   // 두 단위 글자의 가운데를 자르지 않게
+        }
+        return clean.substring(0, cut).strip() + "…";
+    }
+
+    /** 줄을 바꾸는 글자가 있을 때만 한 줄로 접습니다 — 없으면 받은 글자 그대로(공백도 건드리지 않음). */
+    private static String oneLine(String text) {
+        return text == null || !LINE_BREAKS.matcher(text).find() ? text : NewsEvents.clean(text);
     }
 
     /**
