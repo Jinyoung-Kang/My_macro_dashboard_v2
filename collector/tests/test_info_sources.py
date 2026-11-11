@@ -170,6 +170,84 @@ def test_바뀐_것이_없으면_304로_끝나고_다음_요청에_검증값을_
     assert fetch.calls[-1][1] == {"If-None-Match": '"v1"'}
 
 
+QA393 = pytest.mark.xfail(strict=True, reason="QA-393: 검증값을 저장 전에 기억하고 304면 바로 끝나, 밀린 글이 피드가 바뀔 때까지 남습니다")
+
+
+@QA393
+def test_QA393_밀린_글이_있으면_검증값을_기억하지_않아_다음_실행이_이어_받는다(store, example_host):
+    items = [_item(n, days_ago=n * 0.1, content=None) for n in range(1, 9)]          # 본문이 피드에 없는 글 8편 — 실행당 6편까지만 엶
+    routes = {BLOG.feed: _feed(*items)}
+    routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": _page(n) for n in range(1, 9)})
+    fetch = FakeFetch(routes)
+
+    first = info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+    assert "밀린 글 2" in first
+    fetch.calls.clear()
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+    assert fetch.calls[0] == (BLOG.feed, None), "밀린 글이 있는 동안은 조건 없는 요청(If-None-Match 없음)"
+    assert len(fetch.pages()) == 2, "못 연 두 편을 이어서 엽니다"
+    left = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-8/"))
+    assert left["body_status"] == "full"
+
+    fetch.calls.clear()
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+    assert fetch.calls == [(BLOG.feed, {"If-None-Match": '"v1"'})], "밀린 글이 없어지면 다시 조건부 요청"
+
+
+@QA393
+def test_QA393_저장이_실패하면_검증값을_기억하지_않는다(store, example_host, monkeypatch):
+    fetch = FakeFetch({BLOG.feed: _feed(_item(1))})
+    real = store.upsert_info_items
+    monkeypatch.setattr(store, "upsert_info_items", lambda items: (_ for _ in ()).throw(RuntimeError("DB 끊김")))
+    with pytest.raises(RuntimeError):
+        info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+    monkeypatch.setattr(store, "upsert_info_items", real)
+
+    routes_304 = FakeFetch({BLOG.feed: _feed(_item(1))})
+    info_blogs.collect(BLOG, fetch=routes_304, now=NOW)
+
+    assert routes_304.calls == [(BLOG.feed, None)], "저장하지 못한 피드의 검증값으로 다음 실행을 304로 끝내지 않습니다"
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))["body_status"] == "full"
+
+
+@QA393
+def test_QA393_글_페이지를_보내지_못하면_시도_횟수를_세지_않는다(store, example_host):
+    routes = {BLOG.feed: _feed(_item(1, content=None)),
+              "https://blog.example.com/2026/11/post-1/?utm_source=rss": ladder.FetchSkipped("blog.example.com 오늘 요청 예산을 다 씀")}
+    fetch = FakeFetch(routes)
+
+    for _ in range(3):
+        info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+    row = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))
+    assert row["meta"].get("pageTries") is None, "보내지 않은 요청은 그 글의 시도가 아닙니다"
+    assert len(fetch.pages()) == 3, "예산이 돌아오면 다시 열 수 있게 남겨 둡니다(실제 요청은 나가지 않음)"
+
+    routes["https://blog.example.com/2026/11/post-1/?utm_source=rss"] = _page(1)
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))["body_status"] == "full"
+
+
+@QA393
+def test_QA393_글_하나의_페이지_처리_예외는_그_글만_일부로_둔다(store, example_host, monkeypatch):
+    routes = {BLOG.feed: _feed(_item(1, content=None), _item(2, days_ago=0.5, content=None))}
+    routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": _page(n) for n in (1, 2)})
+    real = info_text.extract_article
+
+    def breaks_on_first(markup):
+        if "Post 1" in markup:
+            raise ValueError("본문 고르기 실패")
+        return real(markup)
+
+    monkeypatch.setattr(info_text, "extract_article", breaks_on_first)
+
+    info_blogs.collect(BLOG, fetch=FakeFetch(routes), now=NOW)
+
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))["body_status"] == "partial"
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-2/"))["body_status"] == "full"
+
+
 def test_피드가_HTML이면_형식_바뀜(store, example_host):
     fetch = FakeFetch({BLOG.feed: b"<html><body><h1>Our new site</h1></body></html>"})
 
