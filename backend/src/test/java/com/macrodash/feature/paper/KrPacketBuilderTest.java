@@ -706,6 +706,47 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("QA-402 한국 패킷의 수집 글(11c, ADR 0036): 11b 바로 뒤에 waedge 시장 글 가운데 국내 분류만, 읽은 순간(readAt) 뒤에 받은 글은 빼고 — "
+            + "스위치(kr.info.packet)를 끄거나 저장소가 없으면 키가 없어 예전 패킷과 바이트까지 같음")
+    void krReadingSection() {
+        Packet before = scheduled();
+        assertThat(before.body().has(ReadingSection.KEY)).as("저장소가 없으면(시험 기본) 섹션 없음").isFalse();
+
+        com.macrodash.store.InfoStore info = org.mockito.Mockito.mock(com.macrodash.store.InfoStore.class);
+        org.mockito.Mockito.when(info.ready()).thenReturn(true);
+        List<com.macrodash.store.InfoStore.Item> items = List.of(
+                krReading("k1", "코스피 마감 브리핑", "마감 브리핑 · 국내", kst("2026-11-03T16:00"), kst("2026-11-03T16:30")),
+                krReading("k2", "대만 증시", "시장 · 해외 소식", kst("2026-11-03T15:00"), kst("2026-11-03T15:30")),
+                krReading("k3", "코스닥 수급", "수급 · 코스닥", kst("2026-11-03T14:00"), kst("2026-11-03T22:40")),
+                krReading("k4", "분류 없는 글", null, kst("2026-11-03T13:00"), kst("2026-11-03T13:30")));
+        org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.eq(List.of("waedge.brief")),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(items);
+        Packet with = builder.withInfo(info).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+
+        List<String> keys = new ArrayList<>();
+        with.body().propertyNames().forEach(keys::add);
+        assertThat(keys.indexOf(ReadingSection.KEY)).as("11b 바로 뒤").isEqualTo(keys.indexOf("11b_events") + 1);
+        JsonNode section = with.body().get(ReadingSection.KEY);
+        String text = section.get("text").asString();
+        assertThat(text).startsWith("<<글 #1 시작>>\n[출처] WAEDGE NEWS 시장 · ").contains("[제목] 코스피 마감 브리핑");
+        assertThat(text).as("해외 분류·분류 없음·읽은 순간(22:31) 뒤에 받은 글은 없음").doesNotContain("대만 증시", "분류 없는 글", "코스닥 수급");
+        assertThat(section.get("items")).hasSize(1);
+
+        ((ObjectNode) store.settings.body().get("kr")).set("info", MAPPER.valueToTree(Map.of("packet", false)));
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("끄면 예전 바이트 그대로")
+                .isEqualTo(before.text());
+    }
+
+    private static com.macrodash.store.InfoStore.Item krReading(String id, String title, String category, Instant published, Instant seen) {
+        ObjectNode meta = MAPPER.createObjectNode();
+        if (category != null) {
+            meta.put("category", category);
+        }
+        return new com.macrodash.store.InfoStore.Item(id, "waedge.brief", "article", "https://example.org/" + id, title, null, null,
+                published, seen, "요약 " + id, "full", "impersonate", meta, null);
+    }
+
+    @Test
     @DisplayName("11_notes — 한국 메모만(미국 메모 없음), 글자 상한은 두 책 공통 키 notesMaxCharsInPacket(사용자 결정 v6)")
     void notes() {
         JsonNode section = scheduled().body().path("11_notes");
