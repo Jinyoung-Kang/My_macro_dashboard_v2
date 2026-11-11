@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import type { SessionUser } from "@/lib/types";
 import { ReadModeProvider } from "./ReadMode";
 import { SideNav } from "./SideNav";
+import { SourceAlertBanner } from "./SourceAlertBanner";
 import { SubNav } from "./SubNav";
 import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
@@ -21,6 +22,7 @@ import { TopBar } from "./TopBar";
  * 넓어져 하단 탭 바가 화면 밖으로 밀렸고, 데스크톱에서는 문서 높이가 본문 끝까지 늘어 본문 끝에서 휠을 더 굴리면 셸 전체가 위로 밀려 비었습니다.
  * 좁은 화면에서는 하단 탭 바(64px + 안전 영역)에 끝 내용이 가리지 않게 그만큼 아래 여백을 둡니다.
  * 본문 열은 최대 1280px(max-w-7xl)로 가운데에 두고, 좌우 여백(16·24·32px)은 하위 메뉴 줄의 글과 같은 세로줄입니다.
+ * 본문 맨 위에는 운영자에게만 수집 출처 끊김 안내 띠가 뜹니다(ADR 0035 — 끊긴 출처가 있을 때만, 닫을 수 있음).
  */
 export function Shell({
   user,
@@ -53,7 +55,10 @@ export function Shell({
             tabIndex={-1}
             className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-y-auto lg:pb-6"
           >
-            <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">{children}</div>
+            <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+              <SourceAlertBanner user={user} />
+              {children}
+            </div>
           </main>
         </div>
         <TabBar pathname={pathname} user={user} />

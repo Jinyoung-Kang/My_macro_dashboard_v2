@@ -165,10 +165,11 @@ describe("하위 메뉴 줄", () => {
     expect(screen.queryByRole("navigation", { name: /하위 메뉴/ })).toBeNull();
   });
 
-  it("모의매매(운영자)는 미국·한국 두 링크(모의매매 화면의 시장 고르기는 이 줄 하나) — 예전 '한국 · 준비 중'은 없음", () => {
+  it("모의매매(운영자)는 미국·한국·정보 수집 세 링크(모의매매 화면의 시장 고르기는 이 줄 하나) — 예전 '한국 · 준비 중'은 없음", () => {
     renderShell(LOCAL_OWNER, { path: "/paper/us" });
     const sub = screen.getByRole("navigation", { name: "모의매매 하위 메뉴" });
-    expect(linkLabels(sub)).toEqual(["미국", "한국"]);
+    expect(linkLabels(sub)).toEqual(["미국", "한국", "정보 수집"]);
+    expect(within(sub).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/paper/info");
     expect(within(sub).getByRole("link", { name: "미국" }).getAttribute("aria-current")).toBe("page");
     const korea = within(sub).getByRole("link", { name: "한국" });
     expect(korea.getAttribute("href")).toBe("/paper/kr");

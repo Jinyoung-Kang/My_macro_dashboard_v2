@@ -77,6 +77,22 @@ export const endpoints = {
     sectorRotation: (period: string) => withQuery("/api/sector/rotation", { period }),
   },
 
+  // 정보 수집(모의매매 > 정보 수집, 운영자 전용 — ADR 0035). 백엔드는 저장본만 읽습니다(화면이 수집을 일으키지 않음).
+  info: {
+    items: (params: { category?: string; source?: string; q?: string; before?: string; limit?: number }) =>
+      withQuery("/api/info/items", {
+        category: optional(params.category),
+        source: optional(params.source),
+        q: optional(params.q?.trim()),
+        before: optional(params.before),
+        limit: params.limit,
+      }),
+    item: (id: string) => `/api/info/items/${segment(id)}`,
+    sources: "/api/info/sources",
+    flows: "/api/info/flows",
+    gurus: "/api/info/gurus",
+  },
+
   // 검색 상세 화면(종목·지표·기관) — 외부 정보(수집기 실시간 조회)와 AI 요약
   detail: {
     quote: (market: string, code: string) => withQuery("/api/detail/quote", { market, code }),

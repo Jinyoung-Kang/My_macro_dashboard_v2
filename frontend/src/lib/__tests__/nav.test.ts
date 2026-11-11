@@ -49,7 +49,7 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     ]);
     expect(items("korea")).toEqual(["수급 레이더 /radar", "파생·투기세력(KRX) /krx"]);
     // 한국 책 화면(2단계 명세 §4-16, F2) — 예전 '한국 · 준비 중' 표시는 없어지고 링크가 됨.
-    expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr"]);
+    expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr", "정보 수집 /paper/info"]);
     expect(tab("paper").upcoming).toBeUndefined();
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
@@ -151,9 +151,9 @@ describe("하위 메뉴 줄", () => {
     expect(subNav("/login", OWNER)).toBeNull();
   });
 
-  it("모의매매: 운영자에게는 미국 + 한국(둘 다 링크), 주소로 연 회원에게는 줄이 없다", () => {
+  it("모의매매: 운영자에게는 미국 + 한국 + 정보 수집(모두 링크), 주소로 연 회원에게는 줄이 없다", () => {
     const paper = subNav("/paper/us", OWNER);
-    expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us", "/paper/kr"]);
+    expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us", "/paper/kr", "/paper/info"]);
     expect(paper?.upcoming).toEqual([]);
     expect(paper?.current).toBe("/paper/us");
     expect(paper?.currentAria).toBe("page");

@@ -86,6 +86,8 @@ export const TABS: readonly NavTab[] = [
     items: [
       { href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] },
       { href: "/paper/kr", label: "한국", title: "모의매매(한국)", keywords: ["모의 알고리즘 매매(한국)", "한국 증시 모의매매"] },
+      // 정보 수집(ADR 0035) — 해외 블로그·waedge·네이버 매매상위, 출처 상태. 운영자 전용(/paper 아래).
+      { href: "/paper/info", label: "정보 수집", keywords: ["해외 블로그", "waedge", "네이버 매매상위", "수집 출처 상태"] },
     ],
   },
   {
