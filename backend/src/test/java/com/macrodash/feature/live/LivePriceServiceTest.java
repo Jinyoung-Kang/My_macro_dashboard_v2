@@ -7,7 +7,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -184,35 +183,33 @@ class LivePriceServiceTest {
         }
     }
 
-    /** 컨텍스트 종료 이벤트(ContextClosedEvent)를 듣는 메서드 — 없으면 null. */
-    private static Method contextClosedListener() {
-        for (Method method : LivePriceService.class.getDeclaredMethods()) {
-            org.springframework.context.event.EventListener listener = method.getAnnotation(org.springframework.context.event.EventListener.class);
-            if (listener != null && List.of(listener.value()).contains(org.springframework.context.event.ContextClosedEvent.class)) {
-                method.setAccessible(true);
-                return method;
-            }
-        }
-        return null;
-    }
-
     @Test
-    @Disabled("QA-257: 수정 전에는 구독을 빈 정리(@PreDestroy) 때만 닫아, 열린 구독이 웹 서버의 정상 종료 단계를 상한(30초)까지 붙잡습니다")
     @DisplayName("QA-257: 컨텍스트 종료 이벤트(웹 서버 정지 전에 발행됨)에서 열린 구독을 모두 닫고, 그 뒤의 새 구독은 거절한다")
-    void closesStreamsWhenContextStartsClosing() throws Exception {
+    void closesStreamsWhenContextStartsClosing() {
         when(collector.livePrices(anyString())).thenReturn(Optional.of(payload("CLOSED")));
         service.stream("US:AAPL", 3600);
         service.stream("KR:005930", 3600);
         assertThat(service.openStreams()).isEqualTo(2);
+        org.springframework.context.support.StaticApplicationContext root = new org.springframework.context.support.StaticApplicationContext();
+        org.springframework.context.support.StaticApplicationContext child = new org.springframework.context.support.StaticApplicationContext(root);
 
-        Method listener = contextClosedListener();
-        assertThat(listener).as("ContextClosedEvent를 듣는 메서드").isNotNull();
-        listener.invoke(service);
+        service.closeStreamsOnShutdown(new org.springframework.context.event.ContextClosedEvent(child));
+        assertThat(service.openStreams()).as("자식 컨텍스트가 닫히는 것은 서버 종료가 아님").isEqualTo(2);
+
+        service.closeStreamsOnShutdown(new org.springframework.context.event.ContextClosedEvent(root));
 
         assertThat(service.openStreams()).as("종료가 시작되면 열린 구독 0 — 웹 서버가 끝나지 않는 요청을 기다리지 않게").isZero();
         assertThatThrownBy(() -> service.stream("US:AAPL", 3600)).as("종료 중에는 새 구독을 받지 않음")
-                .isInstanceOf(TooManyRequestsException.class);
+                .isInstanceOf(TooManyRequestsException.class).hasMessageContaining("다시 시작하는 중");
         assertThat(service.openStreams()).isZero();
+    }
+
+    @Test
+    @DisplayName("QA-257: 종료 이벤트를 듣는 메서드가 스프링에 등록되는 모양이다(@EventListener · public · ContextClosedEvent 하나)")
+    void shutdownListenerIsRegistered() throws Exception {
+        Method listener = LivePriceService.class.getMethod("closeStreamsOnShutdown", org.springframework.context.event.ContextClosedEvent.class);
+        assertThat(listener.getAnnotation(org.springframework.context.event.EventListener.class)).isNotNull();
+        assertThat(java.lang.reflect.Modifier.isPublic(listener.getModifiers())).isTrue();
     }
 
     /** 열린 구독을 모두 닫음 — 하트비트 보내기가 실패해 서버가 구독을 닫은 것과 같음(브라우저가 탭을 숨겼다 다시 열 때). */

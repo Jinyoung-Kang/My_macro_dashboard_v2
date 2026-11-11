@@ -1005,7 +1005,6 @@ def test_OPS2_Vultr_덧붙임은_백엔드와_수집기가_보내던_실제_주�
 # QA-257: 백엔드가 멈출 때 쓰는 시간은 실제 매매 종료 훅만이 아닙니다 — 웹 서버의 정상 종료 단계(끝나지 않은 요청을 상한까지 기다림, 설정이
 # 없으면 스프링 기본 30초)가 먼저 돌고, 빈 정리에서 실제 매매 종료 훅(진행 중인 주기 + 그 안의 주문 POST 읽기 상한)과 ISA 정기 작업의 종료
 # 대기가 이어집니다. 유예가 그 합보다 짧으면 최악의 경우 보내던 주문의 결과를 기록하기 전에 SIGKILL을 맞습니다.
-@pytest.mark.xfail(strict=True, reason="QA-257: 지금 유예 90초는 종료 단계 30초와 ISA 종료 대기 30초를 세지 않은 값입니다")
 def test_QA257_Vultr_덧붙임의_백엔드_정지_유예는_종료_단계와_실제_매매_ISA_종료_대기를_모두_덮는다():
     services = yaml.safe_load((ROOT / "compose.vultr.yml").read_text(encoding="utf-8"))["services"]
     java = ROOT / "backend/src/main/java/com/macrodash"

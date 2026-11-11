@@ -38,7 +38,7 @@
 #   · 브라우저 컨테이너(browser — 차단 통과 수집 계층의 계층 2, ADR 0026)를 더함: 포트 없음, 수집기와만 통하는 망 fetchnet, 서버 .env의
 #     BROWSER_FETCH_URL·BROWSER_FETCH_TOKEN이 둘 다 있을 때만 수집기가 부름(기반 파일은 빈 값 고정이라 여기서만 켤 수 있음)
 #   · 국면 판정 기록은 23시(AWS와 같은 값 — 24시간이라 시각 제약은 없지만 기록 시점을 바꾸지 않음), postgres는 꺼질 때 30초까지 기다림
-#     (재부팅·업데이트 때 복구부터 하지 않게). 백엔드는 90초·수집기는 30초까지 기다림 — 실제 매매(ADR 0028)의 보내던 주문·취소가 끝나고
+#     (재부팅·업데이트 때 복구부터 하지 않게). 백엔드는 150초·수집기는 30초까지 기다림 — 실제 매매(ADR 0028)의 보내던 주문·취소가 끝나고
 #     기록될 때까지(OPS-2, 아래 각 서비스)
 # 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v2_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
 #   127.0.0.1의 기본값(3000/8080/8000/5432), AI 엔진·읽기 모드는 .env 그대로. 모의 매매 정기 작업(PAPER_ENABLED)은 기반 파일이 보간 없는
@@ -84,8 +84,10 @@ services:
   backend:
     # 실제 매매(ADR 0028)의 종료 훅(RealTradeJob.stop)은 새 전송을 막고 진행 중인 주기를 60초(SHUTDOWN_WAIT_SECONDS)까지 기다립니다 — 그 안의
     # 주문 POST 읽기 상한은 25초(CollectorTradeClient.ORDER_READ_SECONDS). 기본 10초면 그 전에 SIGKILL을 맞아 보내던 주문의 결과를 기록하지
-    # 못하고 다음 기동 때 결과 모름(UNKNOWN)으로 정리됩니다. 둘보다 길게 줍니다(OPS-2 — 대조 시험이 Java 상수와 비교).
-    stop_grace_period: 90s
+    # 못하고 다음 기동 때 결과 모름(UNKNOWN)으로 정리됩니다. 그 앞에는 웹 서버의 정상 종료 단계(끝나지 않은 요청을 최대 30초 기다림 — 설정이
+    # 없으면 스프링 기본값)가, 뒤에는 ISA 정기 작업의 종료 대기 30초(ManualAccountJob)가 같은 유예를 나눠 씁니다. 넷의 합(145초)보다 길게
+    # 줍니다(OPS-2·QA-257 — 대조 시험이 Java 상수와 비교).
+    stop_grace_period: 150s
     environment:
       # 늘 로그인 화면을 거침 — 보간 없는 값이라 서버 .env의 LOCAL_NO_LOGIN이 끼어들 자리가 없다(ADR 0016)
       DASHBOARD_LOCAL_NO_LOGIN: "false"

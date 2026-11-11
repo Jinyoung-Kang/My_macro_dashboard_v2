@@ -8,6 +8,8 @@ import com.macrodash.support.TooManyRequestsException;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -85,6 +87,8 @@ public class LivePriceService {
     /** 진행 중인 수집기 읽기 자리 — 닫힌 구독의 끝나지 않은 읽기도 셉니다(QA-254 후속). */
     private final Semaphore reading = new Semaphore(MAX_STREAMS);
     private final Set<Stream> streams = ConcurrentHashMap.newKeySet();
+    /** 서버가 종료 중 — 새 구독을 받지 않습니다({@link #closeStreamsOnShutdown}). */
+    private volatile boolean closing;
 
     public LivePriceService(StoreReader store, CollectorClient collector) {
         this.store = store;
@@ -103,8 +107,24 @@ public class LivePriceService {
         });
     }
 
+    /**
+     * 컨텍스트 종료가 시작되면 열린 구독을 모두 닫고 새 구독을 받지 않습니다(QA-257). 종료 이벤트는 웹 서버의 정상 종료 단계보다 먼저 발행됩니다 —
+     * 예전에는 구독을 빈 정리({@link #shutdown}) 때만 닫아, SSE가 하나라도 열려 있으면 웹 서버가 끝나지 않는 그 요청을 종료 단계 상한(30초)까지
+     * 기다렸고 빈 정리는 그 뒤에야 돌았습니다. 그 30초는 실제 매매 종료 훅(보내던 주문의 결과 기록)이 쓸 정지 유예에서 빠집니다. 브라우저의
+     * EventSource는 끊기면 스스로 다시 잇습니다(다시 뜬 서버에). 뿌리 컨텍스트의 종료만 봅니다(자식 컨텍스트가 닫히는 것은 서버 종료가 아님).
+     */
+    @EventListener
+    public void closeStreamsOnShutdown(ContextClosedEvent event) {
+        if (event.getApplicationContext().getParent() != null) {
+            return;
+        }
+        closing = true;
+        streams.forEach(Stream::close);
+    }
+
     @PreDestroy
     void shutdown() {
+        closing = true;
         streams.forEach(Stream::close);
         scheduler.shutdownNow();
         readers.shutdownNow();
@@ -161,17 +181,28 @@ public class LivePriceService {
     public SseEmitter stream(String rawItems, Integer seconds) {
         List<String> list = items(rawItems);
         int every = interval(seconds);
+        if (closing) {
+            throw restarting();
+        }
         if (streams.size() >= MAX_STREAMS) {
             throw new TooManyRequestsException("실시간 시세 연결이 너무 많습니다 — 다른 탭을 닫고 다시 여세요.", Duration.ofSeconds(30));
         }
         SseEmitter emitter = new SseEmitter(Duration.ofSeconds(every).plus(STREAM_SLACK).toMillis());
         Stream stream = new Stream(emitter, String.join(",", list), every);
         streams.add(stream);
+        if (closing) {   // 넣는 사이에 종료가 시작됨 — 닫는 쪽이 이 구독을 못 봤을 수 있음
+            stream.close();
+            throw restarting();
+        }
         emitter.onCompletion(stream::close);
         emitter.onTimeout(stream::close);
         emitter.onError(error -> stream.close());
         stream.start();
         return emitter;
+    }
+
+    private static TooManyRequestsException restarting() {
+        return new TooManyRequestsException("서버가 다시 시작하는 중입니다 — 잠시 뒤 다시 연결됩니다.", Duration.ofSeconds(5));
     }
 
     /** 지금 열린 구독 수(상태 화면·시험). */
