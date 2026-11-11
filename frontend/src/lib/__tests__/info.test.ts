@@ -77,14 +77,16 @@ describe("글", () => {
   });
 
   it("작성 시각을 모르면 받은 시각에 '받음'을 붙인다(작성 시각으로 꾸미지 않음)", () => {
+    expect(itemTime({ publishedAt: "2026-11-11 14:30 KST", firstSeenAt: "2026-11-11 15:00 KST" })).toBe("2026-11-11 14:30 KST");
+    expect(itemTime({ publishedAt: null, firstSeenAt: "2026-11-11 15:00 KST" })).toBe("2026-11-11 15:00 KST 받음");
+    // 초가 붙어 온 값이면 초만 뗍니다(서버는 지금 초를 내리지 않습니다).
     expect(itemTime({ publishedAt: "2026-11-11 14:30:59 KST", firstSeenAt: "2026-11-11 15:00:00 KST" })).toBe("2026-11-11 14:30 KST");
-    expect(itemTime({ publishedAt: null, firstSeenAt: "2026-11-11 15:00:00 KST" })).toBe("2026-11-11 15:00 KST 받음");
     expect(kstMinute("2026-11-11 04:00:00 KST")).toBe("2026-11-11 04:00 KST");
     expect(kstMinute(null)).toBe("—");
   });
 
   // 서버(백엔드 Kst.DISPLAY·수집기 kst.stamp)는 초가 없는 "yyyy-MM-dd HH:mm KST"를 내립니다. 초가 있다고 보고 끝의 ":dd KST"를 떼면 분이 잘립니다(QA-407).
-  it.fails("QA-407: 서버가 내리는 분까지의 시각은 그대로 둔다(분을 자르지 않음)", () => {
+  it("QA-407: 서버가 내리는 분까지의 시각은 그대로 둔다(분을 자르지 않음)", () => {
     expect(kstMinute("2026-11-11 04:00 KST")).toBe("2026-11-11 04:00 KST");
     expect(itemTime({ publishedAt: "2026-11-10 19:21 KST", firstSeenAt: "2026-11-11 01:00 KST" })).toBe("2026-11-10 19:21 KST");
     expect(itemTime({ publishedAt: null, firstSeenAt: "2026-11-11 15:07 KST" })).toBe("2026-11-11 15:07 KST 받음");
@@ -134,8 +136,8 @@ describe("거장", () => {
 describe("원문 팝업(ADR 0037)", () => {
   const item = {
     id: "0123456789abcdef01234567", source: "blog.wolfstreet", sourceLabel: "Wolf Street", kind: "article" as const,
-    url: "https://wolfstreet.com/x", title: "Rates Spike", titleKo: null, author: null, publishedAt: "2026-11-10 19:21:57 KST",
-    firstSeenAt: "2026-11-11 01:00:00 KST", summary: "Short", bodyStatus: "full" as const, fetchTier: "impersonate", category: null,
+    url: "https://wolfstreet.com/x", title: "Rates Spike", titleKo: null, author: null, publishedAt: "2026-11-10 19:21 KST",
+    firstSeenAt: "2026-11-11 01:00 KST", summary: "Short", bodyStatus: "full" as const, fetchTier: "impersonate", category: null,
   };
 
   it("수집 글은 id로 본문을 읽게 하고, 받아 둔 범위를 한 줄로 알린다", () => {
@@ -151,7 +153,7 @@ describe("원문 팝업(ADR 0037)", () => {
 
   it("사건 뉴스는 피드가 준 요약이 전부다 — 없으면 제목뿐이라고 알린다(없는 본문을 만들지 않음)", () => {
     const row = { set: "us" as const, title: "Fed holds", summary: "The Committee decided.", link: "https://example.org/a",
-      source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00:00 KST", fetchedAt: null };
+      source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00 KST", fetchedAt: null };
     expect(readerOfHeadline(row, 0)).toMatchObject({ itemId: null, hasBody: true, text: "The Committee decided.", titleKo: null, url: "https://example.org/a", time: "2026-11-11 04:00 KST" });
     const bare = readerOfHeadline({ ...row, summary: null, title: null, link: null, source: null, feed: null, publishedAt: null }, 3);
     expect(bare).toMatchObject({ hasBody: false, text: null, title: "—", sourceLabel: "—", time: "—", url: null });

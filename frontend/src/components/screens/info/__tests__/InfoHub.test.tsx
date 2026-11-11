@@ -18,13 +18,13 @@ import InfoHub from "../InfoHub";
 function source(index: number, over: Record<string, unknown> = {}) {
   return {
     task: `task_${index}`, key: `key_${index}`, label: `출처 ${index}`, tab: "global", kind: "data", siteUrl: null, origin: "합성",
-    access: "official", screen: null, speed: "slow", lastStatus: "ok", lastRunAt: "2026-11-11 17:00:00 KST", lastDetail: null,
+    access: "official", screen: null, speed: "slow", lastStatus: "ok", lastRunAt: "2026-11-11 17:00 KST", lastDetail: null,
     politeStatus: null, streak: null, lastOkAt: null, nextDueAt: null, items: null, incident: null, tone: "ok", ...over,
   };
 }
 
 const CATALOG = {
-  checkedAt: "2026-11-11 18:00:00 KST",
+  checkedAt: "2026-11-11 18:00 KST",
   collectorReachable: true,
   tabs: [
     { key: "news", label: "뉴스·글", sources: 1, tones: { ok: 1 } },
@@ -44,7 +44,7 @@ const CATALOG = {
 const ITEM = {
   id: "0123456789abcdef01234567", source: "blog.wolfstreet", sourceLabel: "Wolf Street", kind: "article",
   url: "https://wolfstreet.com/2026/11/10/rates-spike/", title: "Rates Spike", titleKo: "금리 급등", author: "Wolf Richter",
-  publishedAt: "2026-11-10 19:21:57 KST", firstSeenAt: "2026-11-11 01:00:00 KST", summary: "요약 글", bodyStatus: "full",
+  publishedAt: "2026-11-10 19:21 KST", firstSeenAt: "2026-11-11 01:00 KST", summary: "요약 글", bodyStatus: "full",
   fetchTier: "impersonate", category: null,
 };
 
@@ -75,7 +75,7 @@ const FLOWS = {
 };
 
 const MECHANISM = {
-  checkedAt: "2026-11-11 18:00:00 KST",
+  checkedAt: "2026-11-11 18:00 KST",
   collector: {
     politeEnabled: false, tickSeconds: 60, tickJitterSeconds: 25, taskDeadlineSeconds: 900,
     browser: { configured: false, reachable: false, pressCheckbox: null, allowedHosts: null },
@@ -86,7 +86,7 @@ const MECHANISM = {
     articles: { retentionDays: 180 },
   },
   hostStates: [{ host: "data.krx.co.kr", lastGoodTier: "impersonate", failLevel: 0, blockedUntil: null, blockedReason: null, givenUp: false, usedToday: 3 }],
-  schedule: { info_krx_daily: "2026-11-11 19:12:00 KST" },
+  schedule: { info_krx_daily: "2026-11-11 19:12 KST" },
   alerts: { formatStreak: 2, failedStreak: 3, intervalMinutes: 5 },
   deferred: [{ task: "saveticker", label: "saveticker 뉴스(보류)", reason: "서버 IP 차단" }],
 };
@@ -161,7 +161,7 @@ describe("정보 수집 화면", () => {
       "/api/info/headlines?set=us": {
         available: true, page: 1, size: 10, total: 1, pages: 1,
         items: [{ set: "us", title: "Fed issues FOMC statement", summary: "The Committee decided to maintain the target range.",
-          link: "https://www.federalreserve.gov/x", source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00:00 KST", fetchedAt: null }],
+          link: "https://www.federalreserve.gov/x", source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00 KST", fetchedAt: null }],
       },
     });
     render(<InfoHub tab="news" />);

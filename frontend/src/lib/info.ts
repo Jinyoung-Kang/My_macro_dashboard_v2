@@ -416,9 +416,14 @@ export function titleNeedsTranslation(title: string | null | undefined, titleKo?
   return !!title && title !== EMPTY && !titleKo && !hasHangul(title) && /\p{L}/u.test(title);
 }
 
-/** 서버가 준 KST 시각 글("2026-11-11 14:30:59 KST")에서 초만 떼고 'KST'는 남깁니다 — 어느 시간대인지 화면에 보이게. */
+/**
+ * 서버가 준 KST 시각 글을 분까지로 보입니다. 'KST'는 남깁니다 — 어느 시간대인지 화면에 보이게.
+ *
+ * 서버(백엔드 `Kst.DISPLAY`·수집기 `kst.stamp`)는 초 없는 "2026-11-11 14:30 KST"를 내립니다 — 그대로 둡니다. 초가 붙어 온 값
+ * ("2026-11-11 14:30:59 KST")만 초를 뗍니다. 초가 늘 있다고 보고 끝의 ":dd KST"를 떼면 분이 잘려 "14 KST"가 됐습니다(QA-407).
+ */
 export function kstMinute(stamp: string | null | undefined): string {
-  return stamp ? stamp.replace(/:\d{2} KST$/, " KST") : EMPTY;
+  return stamp ? stamp.replace(/(\d{2}:\d{2}):\d{2} KST$/, "$1 KST") : EMPTY;
 }
 
 // ------------------------------------------------------------------ 원문 팝업·번역(ADR 0037)
