@@ -117,6 +117,7 @@ def task_macro_collected() -> str:
 def task_radar_rankings() -> str:
     today = datetime.now(KST).date()
     ok = 0
+    kinds: dict[str, int] = {}      # 출처별 건수 — Daum이 비어 KRX 앞 거래일·이력으로 대체된 것이 실행 기록에 남게(QA-396)
 
     for market, investor, trade_type, interval in RADAR_COMBINATIONS:
         result = radar_service.collect_radar_ranking(
@@ -140,9 +141,12 @@ def task_radar_rankings() -> str:
                 rows, market, investor, trade_type, interval
             )
         ok += 1
+        kind = str(result.get("sourceKind") or "unknown")
+        kinds[kind] = kinds.get(kind, 0) + 1
 
     if not ok:
         raise EmptyResult(f"0/{len(RADAR_COMBINATIONS)} 조합 — 기존 저장본 유지")
-    return f"{ok}/{len(RADAR_COMBINATIONS)} 조합 수집"
+    by_kind = " · ".join(f"{kind} {count}" for kind, count in sorted(kinds.items()))
+    return f"{ok}/{len(RADAR_COMBINATIONS)} 조합 수집 ({by_kind})"
 
 

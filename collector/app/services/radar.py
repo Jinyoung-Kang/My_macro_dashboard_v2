@@ -98,6 +98,7 @@ def collect_radar_ranking(
       "source": "KIS 장중 가집계 / ...",   # 어느 출처가 실제로 성공했는지
       "sourceKind": "kis|daum|naver|krx|toss|history|none",
       "isHistorical": bool,                # 누적 이력 대체 여부 (화면 경고용)
+      "dataDate": "YYYY-MM-DD" | None,     # 행의 기준일 — KRX 앞 거래일 대체면 그 날짜(QA-396). 모르면 None
       "rows": [{"rank","code","name","price","changePct","netAmountEok",...}]
     }
     """
@@ -129,7 +130,8 @@ def collect_radar_ranking(
         if is_today and live:
             rows = kis.fetch_deal_ranking(date_str, market, investor, trade_type, top_n)
             if rows:
-                return _result(rows, "kis")
+                # 장중 가집계는 오늘 값입니다(이 가지는 오늘·정규장 중에만 탑니다). 행에 기준일 칸이 없어 여기서 밝힙니다.
+                return _result(rows, "kis", data_date=_iso_date(date_str))
 
         if can_use_current_only_sources:
             rows = fetch_daum_ranking(
@@ -182,6 +184,7 @@ def collect_radar_ranking(
         "sourceKind": "none",
         "isHistorical": False,
         "intervalType": interval_type,
+        "dataDate": None,
         "rows": [],
         # 왜 실패했는지 화면까지 전달합니다.
         #
@@ -244,16 +247,21 @@ def diagnose_sources(investor: str) -> list[str]:
     return reasons
 
 
-def _result(rows: list[dict], kind: str, interval_type: str = "TODAY") -> dict:
+def _result(rows: list[dict], kind: str, interval_type: str = "TODAY", *, data_date: str | None = None) -> dict:
     """
     ``intervalType``은 **실제로 받은** 기간입니다. 기간(5일·20일) 요청이 당일 데이터로 바뀌었으면 TODAY —
     저장하는 쪽이 요청한 기간 이름에 당일 금액을 쌓지 않게 합니다(QA-028).
+
+    ``dataDate``는 행의 기준일입니다(QA-396). 당일 조회가 KRX 확정 순위의 앞 거래일 값으로 대체돼도(ADR 0036 결정 6) 결과가 '오늘 값'
+    자리에 저장되므로, 화면과 교집합이 날짜를 알 수 있게 최상위에 싣습니다. 행이 기준일을 밝히지 않으면(Daum 기간 누적) None입니다 —
+    지어내지 않습니다.
     """
     return {
         "source": rows[0].get("source") if rows else None,
         "sourceKind": kind,
         "isHistorical": False,
         "intervalType": interval_type,
+        "dataDate": data_date or next((row.get("dataDate") for row in rows if row.get("dataDate")), None),
         "rows": rows,
     }
 

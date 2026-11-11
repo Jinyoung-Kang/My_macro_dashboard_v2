@@ -26,7 +26,6 @@ def quiet_store(monkeypatch):
     return saved
 
 
-@pytest.mark.xfail(strict=True, reason="QA-396: 태스크 결과 글이 어느 출처로 받았는지 적지 않습니다")
 def test_QA396_결과_글에_출처별_건수를_적는다(monkeypatch, quiet_store):
     """
     Daum이 비어 KRX 앞 거래일 확정 순위로 대체돼도 태스크는 '3/3 조합 수집'으로 끝났습니다. 며칠 끊겨도 실행 기록에서 알 수 없었습니다.

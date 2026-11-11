@@ -215,6 +215,7 @@ public class RadarService {
                 out.put("sourceKind", Json.asText(payload, "sourceKind"));
                 out.put("isHistorical", Json.asBoolean(payload, "isHistorical"));
                 out.put("historyDate", Json.asText(payload, "historyDate"));
+                out.put("dataDate", Json.asText(payload, "dataDate"));
                 out.put("rows", payload.get("rows"));
                 if (Json.asBoolean(payload, "isHistorical")) {
                     out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
@@ -267,6 +268,9 @@ public class RadarService {
         out.put("sourceKind", Json.asText(payload, "sourceKind"));
         out.put("isHistorical", Json.asBoolean(payload, "isHistorical"));
         out.put("historyDate", Json.asText(payload, "historyDate"));
+        // 행의 기준일(QA-396). 당일 조회가 KRX 앞 거래일 확정 순위로 대체되면 '방금 수집'한 저장본이어도 값은 그 날짜 것입니다.
+        // 이 칸이 생기기 전에 저장된 저장본에는 없습니다(null).
+        out.put("dataDate", Json.asText(payload, "dataDate"));
         out.put("rows", payload.get("rows"));
         if (Json.asBoolean(payload, "isHistorical")) {
             out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
@@ -325,11 +329,28 @@ public class RadarService {
             return out;
         }
 
+        // 기준일이 다르면 맞추지 않습니다(QA-396, PRINCIPLES "기준일이 다르면 비교하지 않습니다"). 한쪽만 KRX 앞 거래일 확정 순위로
+        // 대체되면 오늘 값과 전날 값의 교집합이 '함께 샀다'는 이름으로 나갔습니다. 한쪽이라도 기준일을 모르면(옛 저장본·기간 누적)
+        // 판단할 근거가 없어 지금처럼 맞춥니다.
+        Object foreignDate = foreign.get("dataDate");
+        Object institutionDate = institution.get("dataDate");
+        if (foreignDate != null && institutionDate != null && !foreignDate.equals(institutionDate)) {
+            out.put("available", false);
+            out.put("rows", List.of());
+            out.put("message", "외국인 " + foreignDate + ", 기관 " + institutionDate + " — 기준일이 달라 맞추지 않습니다. "
+                    + "두 순위의 기준일이 같아지면 다시 맞춥니다.");
+            out.put("reasons", mergedReasons(foreign, institution));
+            return out;
+        }
+
         List<Map<String, Object>> rows =
                 SupplyConsensus.intersect(FlowJson.rankRows(rowsOf(foreign)), FlowJson.rankRows(rowsOf(institution)));
 
         out.put("available", !rows.isEmpty());
         out.put("rows", rows);
+        if (foreignDate != null && foreignDate.equals(institutionDate)) {
+            out.put("dataDate", foreignDate);
+        }
         out.put("foreignCount", rowsOf(foreign).size());
         out.put("institutionCount", rowsOf(institution).size());
         // 신선도는 두 조회 중 **오래된 쪽**을 따릅니다. 새것만 적으면

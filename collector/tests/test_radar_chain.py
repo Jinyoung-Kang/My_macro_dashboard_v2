@@ -297,7 +297,6 @@ def _krx_rows(day: str):
     }]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-396: 결과 최상위에 기준일(dataDate)이 없습니다")
 def test_QA396_KRX_앞_거래일_확정_순위는_기준일을_최상위에_싣는다(monkeypatch):
     monkeypatch.setattr(radar, "is_regular_session", lambda now=None: False)
     monkeypatch.setattr(radar, "fetch_krx_stored_ranking", lambda *a, **k: _krx_rows("2026-09-10"))
@@ -308,7 +307,6 @@ def test_QA396_KRX_앞_거래일_확정_순위는_기준일을_최상위에_싣�
     assert result["dataDate"] == "2026-09-10", "앞 거래일 값이면 그 날짜를 밝혀야 합니다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-396: 결과 최상위에 기준일(dataDate)이 없습니다")
 def test_QA396_Daum_당일_순위도_행의_기준일을_최상위에_싣는다(monkeypatch):
     monkeypatch.setattr(radar, "is_regular_session", lambda now=None: False)
     rows = _rows("Daum API (외국인, 당일)")

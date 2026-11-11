@@ -6,7 +6,6 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -51,7 +50,6 @@ class RadarServiceDataDateTest {
     }
 
     @Test
-    @Disabled("QA-396: 순위 응답에 기준일(dataDate)이 없습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-396: 저장본의 기준일을 순위 응답에 그대로 싣는다")
     void snapshotDataDateIsPassedThrough() throws Exception {
         Snapshot foreign = fresh(Datasets.radarScanner("KOSPI", "외국인", "순매수", "TODAY"), """
@@ -66,7 +64,6 @@ class RadarServiceDataDateTest {
     }
 
     @Test
-    @Disabled("QA-396: 순위 응답에 기준일(dataDate)이 없습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-396: 지금 받은 순위의 기준일도 응답에 싣는다")
     void liveDataDateIsPassedThrough() throws Exception {
         CollectorClient collector = mock(CollectorClient.class);
@@ -83,7 +80,6 @@ class RadarServiceDataDateTest {
     }
 
     @Test
-    @Disabled("QA-396: 교집합이 기준일이 다른 두 순위를 맞춥니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-396: 두 쪽의 기준일이 다르면 교집합을 만들지 않고 사유를 준다")
     void consensusRefusesDifferentDataDates() throws Exception {
         Snapshot foreign = fresh(Datasets.radarScanner("KOSPI", "외국인", "순매수", "TODAY"), """
