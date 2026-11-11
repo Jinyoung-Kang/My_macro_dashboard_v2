@@ -2,6 +2,7 @@ package com.macrodash.web;
 
 import com.macrodash.store.Datasets;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -456,6 +457,46 @@ class ApiIntegrationTest {
         assertThat(rest.exchange(url("/api/kr/stock-flows?codes=005930"), HttpMethod.GET,
                 new HttpEntity<>(null, headers), String.class).getStatusCode()).isEqualTo(HttpStatus.OK);
         users.updateRoleAndTier(memberId, "MEMBER", "FREE");
+    }
+
+    @Test
+    @Disabled("QA-338: 수정 전에는 비밀번호 확인 없이 회원이 운영자로 올라갑니다")
+    @DisplayName("QA-338 회원을 만들어 운영자로 올리는 사슬 — 비밀번호가 없거나 틀리면 400이고 역할이 그대로, 요청자 비밀번호가 맞아야 올라간다")
+    void promotionChainNeedsRequesterPassword() {
+        HttpHeaders owner = new HttpHeaders();
+        owner.add(HttpHeaders.COOKIE, sessionCookie);
+        owner.setContentType(MediaType.APPLICATION_JSON);
+        String email = "qa338-promote@test.local";
+        jdbc.update("DELETE FROM users WHERE email = ?", email);
+        try {
+            // 공격 사슬의 앞 두 걸음: 운영자 권한(로그인 없는 Tailscale 신원 포함)으로 자기가 정한 비밀번호의 회원을 만들고 운영자로 올립니다.
+            assertThat(rest.exchange(url("/api/admin/users"), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("email", email, "password", "attacker chosen pass", "tier", "FREE"), owner),
+                    String.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+            long createdId = users.findByEmail(email).orElseThrow().id();
+
+            ResponseEntity<JsonNode> bare = rest.exchange(url("/api/admin/users/" + createdId), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("role", "OWNER", "tier", "FREE"), owner), JsonNode.class);
+            assertThat(bare.getStatusCode()).as("비밀번호 없는 승격").isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(users.findById(createdId).orElseThrow().role()).isEqualTo("MEMBER");
+
+            // 만든 계정의 비밀번호(공격자가 아는 값)로는 통과하지 못합니다 — 확인하는 것은 요청자 계정의 비밀번호입니다.
+            ResponseEntity<JsonNode> wrong = rest.exchange(url("/api/admin/users/" + createdId), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("role", "OWNER", "tier", "FREE", "password", "attacker chosen pass"), owner), JsonNode.class);
+            assertThat(wrong.getStatusCode()).as("틀린 비밀번호의 승격").isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(users.findById(createdId).orElseThrow().role()).isEqualTo("MEMBER");
+
+            assertThat(rest.exchange(url("/api/admin/users/" + createdId), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("role", "MEMBER", "tier", "PRO"), owner), String.class).getStatusCode())
+                    .as("등급만 바꾸기는 비밀번호 없이").isEqualTo(HttpStatus.OK);
+
+            assertThat(rest.exchange(url("/api/admin/users/" + createdId), HttpMethod.POST,
+                    new HttpEntity<>(Map.of("role", "OWNER", "tier", "PRO", "password", "test-password"), owner),
+                    String.class).getStatusCode()).as("요청자 비밀번호가 맞으면 승격").isEqualTo(HttpStatus.OK);
+            assertThat(users.findById(createdId).orElseThrow().role()).isEqualTo("OWNER");
+        } finally {
+            jdbc.update("DELETE FROM users WHERE email = ?", email);
+        }
     }
 
     @Test

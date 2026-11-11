@@ -4,6 +4,7 @@ import com.macrodash.store.AuditLogStore;
 import com.macrodash.store.UsageStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -106,6 +107,27 @@ class UsageAndAdminTest {
         assertThat(admin.update(owner, ownerId, "MEMBER", "PRO")).contains("자기 자신");
         assertThat(admin.update(owner, memberId, "GOD", "PRO")).contains("역할");
         assertThat(admin.audit(50)).anySatisfy(row -> assertThat(row.get("action")).isEqualTo("user.updated"));
+    }
+
+    @Test
+    @Disabled("QA-338: 수정 전에는 비밀번호 확인 없이 회원이 운영자로 올라갑니다")
+    @DisplayName("QA-338 회원을 운영자로 올리는 요청은 요청자 비밀번호 없이는 거절되고 역할이 그대로다 — 등급만 바꾸기와 OWNER → OWNER는 그대로")
+    void promotionWithoutPasswordIsRefused() {
+        long ownerId = db.user("admin", "owner passphrase", "OWNER", "PRO");
+        CurrentUser owner = new CurrentUser(ownerId, db.email("admin"), "OWNER", "PRO", null);
+        AdminService admin = new AdminService(db.users, db.audit, db.hasher, new com.macrodash.store.AlertStore(
+                db.jdbc, new tools.jackson.databind.ObjectMapper(), new com.macrodash.store.SchemaCheck(db.jdbc)));
+        long memberId = db.user("m4", "member passphrase", "MEMBER", "FREE");
+
+        // 수정 전: null(성공)이고 역할이 OWNER가 됐습니다 — 로그인 없는 운영자(Tailscale 신원)가 자기가 정한 비밀번호의 회원을 만들어
+        // 운영자로 올린 뒤 그 계정으로 실제 매매 켜기류의 비밀번호 관문을 통과할 수 있었습니다.
+        assertThat(admin.update(owner, memberId, "OWNER", "FREE")).as("비밀번호 없는 승격").contains("비밀번호");
+        assertThat(db.users.findById(memberId).orElseThrow().role()).as("역할 그대로").isEqualTo("MEMBER");
+        assertThat(db.jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE action = 'user.updated' AND detail->>'target' = ?",
+                Integer.class, String.valueOf(memberId))).as("바뀐 것이 없으니 변경 감사 기록도 없음").isZero();
+
+        assertThat(admin.update(owner, memberId, "MEMBER", "PRO")).as("등급만 바꾸기는 비밀번호 없이").isNull();
+        assertThat(admin.update(owner, ownerId, "OWNER", "FREE")).as("이미 운영자인 계정의 등급 바꾸기도 비밀번호 없이").isNull();
     }
 
     @Test
