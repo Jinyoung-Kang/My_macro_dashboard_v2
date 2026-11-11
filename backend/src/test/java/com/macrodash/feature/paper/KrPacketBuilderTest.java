@@ -737,6 +737,32 @@ class KrPacketBuilderTest {
                 .isEqualTo(before.text());
     }
 
+    @Test
+    @DisplayName("한국 패킷의 수집 글(11c)을 싣지 않는 나머지 조건 — 표가 아직 없음·읽다가 예외·고를 글이 없음(전부 해외 분류)·초기 결정 — 에서도 "
+            + "패킷은 저장소가 없을 때와 바이트까지 같다")
+    void krReadingSectionAbsentWhenUnreadableOrNothingPicked() {
+        Packet before = scheduled();
+        com.macrodash.store.InfoStore info = org.mockito.Mockito.mock(com.macrodash.store.InfoStore.class);
+        KrPacketBuilder withInfo = builder.withInfo(info);
+
+        org.mockito.Mockito.when(info.ready()).thenReturn(false);
+        assertThat(withInfo.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("표가 아직 없음")
+                .isEqualTo(before.text());
+
+        org.mockito.Mockito.when(info.ready()).thenReturn(true);
+        org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new IllegalStateException("읽기 실패"));
+        assertThat(withInfo.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("읽다가 예외")
+                .isEqualTo(before.text());
+
+        org.mockito.Mockito.doReturn(List.of(krReading("k2", "대만 증시", "시장 · 해외 소식", kst("2026-11-03T15:00"), kst("2026-11-03T15:30"))))
+                .when(info).recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
+        assertThat(withInfo.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("후보가 전부 해외 분류")
+                .isEqualTo(before.text());
+    }
+
     private static com.macrodash.store.InfoStore.Item krReading(String id, String title, String category, Instant published, Instant seen) {
         ObjectNode meta = MAPPER.createObjectNode();
         if (category != null) {

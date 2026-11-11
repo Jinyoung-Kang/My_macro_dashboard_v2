@@ -3066,6 +3066,32 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("수집 글(11c)을 싣지 않는 나머지 조건 — 표가 아직 없음·읽다가 예외·고를 글이 없음(전부 국내 분류) — 에서도 패킷은 저장소가 없을 때와 "
+            + "바이트까지 같다")
+    void readingSectionAbsentWhenUnreadableOrNothingPicked() {
+        activeClaude();
+        Packet before = builder.build(MON, RuleBookService.SCHEDULED, false);
+        com.macrodash.store.InfoStore info = org.mockito.Mockito.mock(com.macrodash.store.InfoStore.class);
+        builder.setInfoStore(info);
+
+        org.mockito.Mockito.when(info.ready()).thenReturn(false);
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false).text()).as("표가 아직 없음").isEqualTo(before.text());
+        org.mockito.Mockito.verify(info, org.mockito.Mockito.never()).recentForPacket(org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
+
+        org.mockito.Mockito.when(info.ready()).thenReturn(true);
+        org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new IllegalStateException("읽기 실패"));
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false).text()).as("읽다가 예외").isEqualTo(before.text());
+
+        org.mockito.Mockito.doReturn(List.of(reading("a4", "waedge.brief", "코스피 마감", "마감 브리핑 · 국내", "2026-10-26T07:00:00Z", "국내 글")))
+                .when(info).recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false).text()).as("후보가 전부 국내 분류 — 고른 글 없음").isEqualTo(before.text());
+    }
+
+    @Test
     @DisplayName("QA-402 수집 글(11c)의 제목·한국어 제목은 한 줄 — 줄바꿈·제어 문자는 사건 섹션처럼 한 칸으로 접고 200자에서 자름. 그런 글자가 없고 "
             + "200자 이하인 제목은 글자 그대로")
     void readingSectionKeepsTitlesOnOneLine() {
