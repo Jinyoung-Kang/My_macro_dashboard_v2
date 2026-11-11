@@ -3,6 +3,7 @@ package com.macrodash.feature.realtrade;
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -92,6 +93,15 @@ class ManualAccountNoticesTest {
     private static ManualAccountStore.StopInstruction stop(long id, String symbol, int quantity, String timing) {
         return new ManualAccountStore.StopInstruction(id, "isa", MONDAY, 100 + id, symbol, "SELL", quantity, timing, java.time.Instant.EPOCH,
                 MAPPER.createObjectNode().put("stopPrice", 91_234).put("observedPrice", 90_111), "PLANNED", null, null, null, null, null);
+    }
+
+    @Test
+    @Disabled("QA-353: 수정 전 — 알림 끝줄이 '체결가가 다르면 잔고에서 고치세요'라고 안내합니다")
+    @DisplayName("QA-353 매매 뒤 안내 — 체결 값이 다르면 잔고가 아니라 매매 내역의 '고치기'(잔고의 가격 고치기는 현금·실현 손익을 못 맞춤), 금액 없음")
+    void confirmGuidePointsToTradeEdit() {
+        String text = stop(MONDAY, LocalTime.of(9, 0), LocalTime.of(15, 30), List.of(stop(1, "307950", 3, "MARKET")), Map.of("307950", "합성오토"));
+        assertThat(text).contains("매매 내역의 '고치기'");
+        assertThat(text).doesNotContain("잔고에서 고치세요", "원");
     }
 
     @Test

@@ -323,6 +323,14 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
     expect(rowOf("ISA 계좌 잔고", "합성바이오 333330").textContent).toContain("—");
   });
 
+  // QA-353: 수정 전 카드 설명은 '체결가가 다르면 잔고에서 가격을 고치세요'였다(it.fails) — 잔고의 가격 고치기는 현금·실현 손익을 못 맞춘다.
+  it.fails("QA-353 매매 내역 카드와 지시 표 안내 — 체결 값이 다르면 매매 내역의 '고치기'로 안내하고 잔고의 가격 고치기를 권하지 않음", async () => {
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });
+    expect(region().textContent).not.toContain("잔고에서 가격을 고치");
+    expect(inRegion().getByText(/체결 값\(수량·금액·수수료\)이 다르면 '고치기'/)).toBeTruthy();
+  });
+
   it("매매 내역 — 시각·방향·종목·수량·가격·금액·수수료·세금(어림 표시)·실현 손익·손익률·가격 출처, 처음에는 시각 내림차순", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 매매 내역" });

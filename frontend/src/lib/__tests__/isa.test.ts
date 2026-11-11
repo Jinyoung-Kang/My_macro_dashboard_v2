@@ -275,6 +275,12 @@ describe("안내 글", () => {
     }
   });
 
+  // QA-353: 잔고의 가격 고치기는 매입 금액만 바꾸고 현금·실현 손익을 못 맞춘다(ADR 0034 개정). 수정 전 글은 '잔고에서 가격을 고치고'였다(it.fails).
+  it.fails("QA-353 체결 값이 다르면 잔고가 아니라 매매 내역의 '고치기'로 안내", () => {
+    expect(MIDDAY_GUIDE).toContain("매매 내역의 '고치기'");
+    expect(MIDDAY_GUIDE).not.toContain("잔고에서 가격을 고치");
+  });
+
   it("시스템은 실제 매매를 볼 수 없어 확인을 안 누르면 알림이 간다는 뜻, 비용 안내, 음수 현금 경고", () => {
     expect(MIDDAY_GUIDE).toContain("실제 매매를 볼 수 없습니다");
     expect(MIDDAY_GUIDE).toContain("12:15");
