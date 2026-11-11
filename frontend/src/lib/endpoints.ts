@@ -102,6 +102,8 @@ export const endpoints = {
     sources: "/api/info/sources",
     flows: "/api/info/flows",
     gurus: "/api/info/gurus",
+    /** POST — 글 하나를 한국어로(ADR 0037, 유료 API). 수집 글은 `{itemId}`, 사건 뉴스는 `{title, text}`. */
+    translate: "/api/info/translate",
   },
 
   // 검색 상세 화면(종목·지표·기관) — 외부 정보(수집기 실시간 조회)와 AI 요약

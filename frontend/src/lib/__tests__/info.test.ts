@@ -1,16 +1,21 @@
 /**
- * 정보 수집(ADR 0035)의 순수 규칙 — 안내 띠에 보일 사건, 출처 상태 글·색, 글 제목·시각, 네이버 금액(없으면 '—'), 거장 점수.
+ * 정보 수집(ADR 0035)의 순수 규칙 — 안내 띠에 보일 사건, 출처 상태 글·색, 글 제목·시각, 네이버 금액(없으면 '—'), 거장 점수,
+ * 원문 팝업에 여는 글과 번역 단추를 낼 조건(ADR 0037).
  */
 import { describe, expect, it } from "vitest";
 import {
   type InfoIncident,
   bannerText,
   bodyLabel,
+  canTranslate,
   eokText,
+  hasHangul,
   itemTime,
   itemTitles,
   parseInfoTab,
   rankingBasis,
+  readerOfHeadline,
+  readerOfItem,
   scoreText,
   sharesText,
   splitText,
@@ -106,5 +111,48 @@ describe("거장", () => {
     expect(splitText({ bull: 95, neutral: 5, bear: 0 })).toBe("강세 95 · 중립 5 · 약세 0");
     expect(splitText({ bull: 95, neutral: null, bear: 0 })).toBe("—");
     expect([stanceTone("강세"), stanceTone("약세"), stanceTone("중립"), stanceTone(null)]).toEqual(["ok", "danger", "neutral", "neutral"]);
+  });
+});
+
+describe("원문 팝업(ADR 0037)", () => {
+  const item = {
+    id: "0123456789abcdef01234567", source: "blog.wolfstreet", sourceLabel: "Wolf Street", kind: "article" as const,
+    url: "https://wolfstreet.com/x", title: "Rates Spike", titleKo: null, author: null, publishedAt: "2026-11-10 19:21:57 KST",
+    firstSeenAt: "2026-11-11 01:00:00 KST", summary: "Short", bodyStatus: "full" as const, fetchTier: "impersonate", category: null,
+  };
+
+  it("수집 글은 id로 본문을 읽게 하고, 받아 둔 범위를 한 줄로 알린다", () => {
+    const full = readerOfItem(item);
+    expect(full).toMatchObject({ key: "item:0123456789abcdef01234567", itemId: item.id, hasBody: true, text: null, titleKo: null, time: "2026-11-10 19:21" });
+    expect(full.note).toContain("본문 전체");
+    const wire = readerOfItem({ ...item, kind: "headline", bodyStatus: "none", summary: null, titleKo: "금리 급등" });
+    expect(wire).toMatchObject({ hasBody: false, titleKo: "금리 급등" });
+    expect(wire.note).toContain("한 줄 속보");
+    expect(readerOfItem({ ...item, bodyStatus: "partial" }).note).toContain("요약만");
+    expect(readerOfItem({ ...item, titleKo: "Rates Spike" }).titleKo).toBeNull();
+  });
+
+  it("사건 뉴스는 피드가 준 요약이 전부다 — 없으면 제목뿐이라고 알린다(없는 본문을 만들지 않음)", () => {
+    const row = { set: "us" as const, title: "Fed holds", titleKo: "연준 동결", summary: "The Committee decided.", link: "https://example.org/a",
+      source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00:00 KST", fetchedAt: null };
+    expect(readerOfHeadline(row, 0)).toMatchObject({ itemId: null, hasBody: true, text: "The Committee decided.", titleKo: "연준 동결", url: "https://example.org/a" });
+    const bare = readerOfHeadline({ ...row, summary: null, title: null, link: null, source: null, feed: null, publishedAt: null }, 3);
+    expect(bare).toMatchObject({ hasBody: false, text: null, title: "—", sourceLabel: "—", time: "—", url: null });
+    expect(bare.note).toContain("제목만");
+  });
+
+  it("번역 단추는 번역할 글이 있을 때만 — 한국어 글, 이미 번역한 제목뿐인 속보에는 내지 않는다", () => {
+    expect(hasHangul("금리")).toBe(true);
+    expect(hasHangul("Rates 5%")).toBe(false);
+    expect(hasHangul(null)).toBe(false);
+    const entry = readerOfItem(item);
+    expect(canTranslate(entry, "English body")).toBe(true);
+    expect(canTranslate({ ...entry, titleKo: "금리 급등" }, "한국어 본문")).toBe(false);
+    expect(canTranslate({ ...entry, titleKo: "금리 급등" }, null)).toBe(false);
+    expect(canTranslate(entry, null)).toBe(true);
+    expect(canTranslate({ ...entry, title: "금리 급등" }, null)).toBe(false);
+    const headline = readerOfHeadline({ set: "kr", title: "한국은행 보도자료", summary: "기준금리를 동결했다", link: null, source: "한국은행", feed: "bok_press",
+      publishedAt: null, fetchedAt: null }, 0);
+    expect(canTranslate(headline, null)).toBe(false);
   });
 });

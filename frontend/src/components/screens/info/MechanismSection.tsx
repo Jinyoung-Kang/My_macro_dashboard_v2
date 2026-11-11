@@ -39,6 +39,7 @@ export function MechanismSection() {
         <Banner tone="warn">수집기에 닿지 못해 코드의 실제 값을 읽지 못했습니다(상태 확인 {data.checkedAt}). 아래 활용·보류 안내만 보입니다.</Banner>
       )}
       <PacketCard />
+      <TranslationCard data={data} />
       <DeferredCard data={data} />
     </div>
   );
@@ -231,6 +232,30 @@ function PacketCard() {
           <b className="text-text">사건 뉴스 RSS</b> — 미국·한국 사건 섹션(11b_events)에 쓰이고, 정보 수집의 뉴스·글 탭에서도 봅니다.
         </li>
       </ul>
+    </Card>
+  );
+}
+
+function TranslationCard({ data }: { data: MechanismResponse }) {
+  const t = data.translation;
+  if (!t) return null;
+  return (
+    <Card
+      title="한국어 번역"
+      subtitle="영어 제목은 운영 서버가 2분마다 묶어서 미리 번역하고, 본문은 원문 팝업에서 번역 단추를 누를 때만 번역합니다. 한 번 번역한 글자는 저장해 다시 번역하지 않습니다."
+    >
+      <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
+        <Row label="모델 · effort">
+          {t.model} · {t.effort}
+        </Row>
+        <Row label="오늘 번역한 원문(KST)">
+          {t.usedCharsToday === null ? EMPTY : `${formatNumber(t.usedCharsToday, 0)}자`} / 상한 {formatNumber(t.dailyChars, 0)}자
+        </Row>
+        <Row label="제목 묶음">한 번에 {formatNumber(t.titleBatch, 0)}개</Row>
+        <Row label="본문 조각">
+          {formatNumber(t.bodyChunkChars, 0)}자씩(문단 경계) · 글 하나 {formatNumber(t.bodyMaxChars, 0)}자까지
+        </Row>
+      </dl>
     </Card>
   );
 }

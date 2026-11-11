@@ -14,11 +14,12 @@ export type InfoItem = {
   id: string;
   source: string;
   sourceLabel: string;
-  kind: "article" | "brief" | "guru";
+  /** headline은 본문이 없는 속보 한 줄(Financial Juice — ADR 0037). */
+  kind: "article" | "brief" | "guru" | "headline";
   /** 원문 주소(출처 링크). */
   url: string;
   title: string;
-  /** 한국어 제목(waedge 해외 블로그가 붙인 것) — 없으면 null. */
+  /** 한국어 제목 — waedge 해외 블로그가 붙인 것, 없으면 백엔드가 미리 번역해 둔 것. 아직 없으면 null. */
   titleKo: string | null;
   author: string | null;
   /** 출처가 밝힌 작성 시각(KST). 모르면 null — 받은 시각(firstSeenAt)으로 메우지 않습니다. */
@@ -268,6 +269,10 @@ export function toneSummary(tones: Partial<Record<InfoTone, number>>): string {
 export type Headline = {
   set: "us" | "kr";
   title: string | null;
+  /** 미리 번역해 둔 한국어 제목 — 원래 한국어 제목이거나 아직 번역 전이면 null. */
+  titleKo?: string | null;
+  /** 피드가 준 요약(글 페이지는 열지 않음) — 없으면 null. */
+  summary?: string | null;
   link: string | null;
   source: string | null;
   feed: string | null;
@@ -331,6 +336,16 @@ export type MechanismResponse = {
   schedule: Record<string, string>;
   alerts: { formatStreak: number; failedStreak: number; intervalMinutes: number };
   deferred: { task: string; label: string; reason: string }[];
+  /** 한국어 번역의 설정과 오늘(KST) 쓴 원문 글자 수(ADR 0037). 표가 아직 없으면 usedCharsToday는 null. */
+  translation?: {
+    model: string;
+    effort: string;
+    dailyChars: number;
+    usedCharsToday: number | null;
+    titleBatch: number;
+    bodyChunkChars: number;
+    bodyMaxChars: number;
+  } | null;
 };
 
 const TIER_LABELS: Record<string, string> = { impersonate: "브라우저 TLS(계층 1)", browser: "실제 브라우저(계층 2)" };
@@ -388,6 +403,89 @@ export const INFO_DISMISS_KEY = "info.incidents.dismissed";
 export function itemTitles(item: Pick<InfoItem, "title" | "titleKo">): { primary: string; secondary: string | null } {
   if (item.titleKo && item.titleKo !== item.title) return { primary: item.titleKo, secondary: item.title };
   return { primary: item.title, secondary: null };
+}
+
+// ------------------------------------------------------------------ 원문 팝업·번역(ADR 0037)
+/** `POST /api/info/translate`의 응답. 번역할 본문이 없으면 textKo는 null. */
+export type TranslateResponse = {
+  ok: boolean;
+  titleKo: string | null;
+  textKo: string | null;
+  alreadyKorean: boolean;
+  cached: boolean;
+  truncated: boolean;
+  model: string;
+  error: string | null;
+};
+
+/**
+ * 원문 팝업에 여는 글 하나 — 수집 글(본문은 서버에서 id로 읽음)이나 사건 뉴스(피드가 준 요약이 전부)를 같은 모양으로.
+ * `itemId`가 있으면 본문·번역을 id로 묻고, 없으면 `text`(요약)를 그대로 보이고 번역도 그 글자로 묻습니다.
+ */
+export type ReaderEntry = {
+  key: string;
+  sourceLabel: string;
+  time: string;
+  title: string;
+  titleKo: string | null;
+  url: string | null;
+  itemId: string | null;
+  /** 서버에 본문이나 요약이 있는가(itemId일 때) — 없으면 제목뿐인 출처. */
+  hasBody: boolean;
+  text: string | null;
+  /** 받아 둔 글이 어디까지인지 한 줄(본문 전체·요약만·제목만). */
+  note: string;
+};
+
+/** 한글이 든 글인가 — 한국어 제목·요약은 번역 단추를 내지 않습니다. */
+export function hasHangul(text: string | null | undefined): boolean {
+  return !!text && /[가-힣]/.test(text);
+}
+
+export function readerOfItem(item: InfoItem): ReaderEntry {
+  const note =
+    item.bodyStatus === "full"
+      ? "운영 서버가 받아 둔 본문 전체입니다(글자만)."
+      : item.bodyStatus === "partial"
+        ? "피드가 준 요약만 받았습니다 — 전체는 원문에서 보세요."
+        : item.kind === "headline"
+          ? "한 줄 속보라 본문이 없는 출처입니다."
+          : "본문을 아직 받지 못했습니다 — 원문에서 보세요.";
+  return {
+    key: `item:${item.id}`,
+    sourceLabel: item.sourceLabel,
+    time: itemTime(item),
+    title: item.title,
+    titleKo: item.titleKo && item.titleKo !== item.title ? item.titleKo : null,
+    url: item.url,
+    itemId: item.id,
+    hasBody: item.bodyStatus !== "none" || !!item.summary,
+    text: null,
+    note,
+  };
+}
+
+export function readerOfHeadline(row: Headline, index: number): ReaderEntry {
+  const title = row.title ?? EMPTY;
+  return {
+    key: `headline:${row.link ?? title}:${index}`,
+    sourceLabel: row.source ?? row.feed ?? EMPTY,
+    time: row.publishedAt ?? EMPTY,
+    title,
+    titleKo: row.titleKo && row.titleKo !== title ? row.titleKo : null,
+    url: row.link,
+    itemId: null,
+    hasBody: !!row.summary,
+    text: row.summary ?? null,
+    note: row.summary ? "피드가 준 요약입니다 — 전체는 원문에서 보세요(글 페이지는 받지 않는 출처)." : "피드가 제목만 주는 출처입니다 — 내용은 원문에서 보세요.",
+  };
+}
+
+/** 번역 단추를 낼 것인가 — 번역할 글(한국어가 아닌 본문·요약, 또는 아직 번역 전인 제목)이 있을 때만. */
+export function canTranslate(entry: ReaderEntry, body: string | null): boolean {
+  const text = entry.itemId ? body : entry.text;
+  if (text && !hasHangul(text.slice(0, 400))) return true;
+  return !entry.titleKo && !hasHangul(entry.title);
 }
 
 const BODY_LABELS: Record<InfoItem["bodyStatus"], string> = { full: "본문", partial: "요약만", none: "제목만" };
