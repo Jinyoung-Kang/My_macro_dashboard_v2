@@ -8,7 +8,6 @@ import com.macrodash.store.ManualAccountStore.TradeValues;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -223,7 +222,6 @@ class ManualAccountStopStoreDbTest {
     }
 
     @Test
-    @Disabled("QA-354: 수정 전 — ready()가 V32의 manual_trades.amount 칸을 보지 않아 V31까지만 적용된 DB에서도 참")
     @DisplayName("QA-354 준비 — V32의 체결 금액 칸(manual_trades.amount)이 있어야 준비됨(매매 내역 조회·확인·고치기가 그 칸을 읽고 씀), 시험 뒤 되돌림")
     void readyRequiresV32() {
         class Rollback extends RuntimeException {

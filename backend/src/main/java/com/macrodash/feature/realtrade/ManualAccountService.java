@@ -88,7 +88,7 @@ public class ManualAccountService {
     static final Duration EDIT_BAND_WINDOW = Duration.ofDays(7);
 
     /** 표가 없을 때의 안내(보기의 {@code message}). */
-    static final String NOT_READY = "ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V31)을 적용한 뒤 다시 보세요.";
+    static final String NOT_READY = "ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V32)을 적용한 뒤 다시 보세요.";
     private static final String NEED_CODE = "종목을 찾지 못했습니다 — 여섯 자리 코드를 넣으세요.";
 
     // ------------------------------------------------------------------ 요청 본문
@@ -907,7 +907,7 @@ public class ManualAccountService {
     // ------------------------------------------------------------------ 검사
     private void requireReady() {
         if (!store.ready()) {
-            throw ManualAccountException.invalid("ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V31)을 적용한 뒤 다시 하세요.");
+            throw ManualAccountException.invalid("ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V32)을 적용한 뒤 다시 하세요.");
         }
     }
 

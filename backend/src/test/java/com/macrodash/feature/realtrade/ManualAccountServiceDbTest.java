@@ -315,7 +315,7 @@ class ManualAccountServiceDbTest {
         ManualAccountJob off = new ManualAccountJob(notReady, paper, mock(PaperTelegram.class), MAPPER, clock, false, false, 600_000);
         Map<String, Object> view = new ManualAccountService(notReady, paper, off, clock).view();
         assertThat(view).containsEntry("available", false).containsEntry("started", false);
-        assertThat(view.get("message")).asString().contains("V31");
+        assertThat(view.get("message")).asString().contains("V32");
     }
 
     // ------------------------------------------------------------------ 잔고 고침

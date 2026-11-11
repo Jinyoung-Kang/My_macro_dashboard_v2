@@ -234,8 +234,8 @@ public class ManualAccountStore {
     }
 
     /**
-     * 표가 있는가. 수집기가 아직 V25·V28·V30·V31을 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중') — 지시·잔고 조회가 그 표·칸을 읽으므로 백엔드만 새로
-     * 띄운 배포(QA-016)에서 SQL 오류 대신 안내 문구가 나가게.
+     * 표가 있는가. 수집기가 아직 V25·V28·V30·V31·V32를 적용하지 않았으면 false입니다(그때 ISA 계좌는 '준비 중') — 지시·잔고·매매 내역 조회가 그 표·칸을 읽으므로
+     * 백엔드만 새로 띄운 배포(QA-016)에서 SQL 오류 대신 안내 문구가 나가게. V32의 {@code manual_trades.amount}는 매매 내역을 읽고 쓰는 모든 문장이 씁니다(QA-354).
      */
     public boolean ready() {
         return schema.tableExists("manual_accounts") && schema.tableExists("manual_ledger")
@@ -245,7 +245,8 @@ public class ManualAccountStore {
                 && schema.tableExists("manual_balance") && schema.tableExists("manual_positions") && schema.tableExists("manual_trades")
                 && schema.columnExists("manual_instructions", "notified_preclose_at")
                 && schema.columnExists("manual_stop_instructions", "notified_midday_at")
-                && schema.columnExists("manual_stop_instructions", "notified_preclose_at");
+                && schema.columnExists("manual_stop_instructions", "notified_preclose_at")
+                && schema.columnExists("manual_trades", "amount");
     }
 
     /**
