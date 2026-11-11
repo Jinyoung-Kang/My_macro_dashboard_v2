@@ -68,12 +68,15 @@ def _calls(log: Path) -> list[str]:
     return log.read_text(encoding="utf-8").splitlines()
 
 
-def test_QA370_복원_도중_출력이_닫히고_HUP을_받아도_멈춘_서비스를_다시_켠다(restore_env):
+@pytest.mark.parametrize("sigpipe_default", [False, True], ids=["쓰기_오류(EPIPE)", "SIGPIPE_기본"])
+def test_QA370_복원_도중_출력이_닫히고_HUP을_받아도_멈춘_서비스를_다시_켠다(restore_env, sigpipe_default):
     env, log, dump = restore_env
     # 파이썬은 SIGPIPE를 무시합니다. restore_signals=False로 그 상태를 물려주면 닫힌 출력에 쓰는 echo가 신호로 죽지 않고 오류(EPIPE)로
-    # 실패합니다 — 닫힌 터미널에 쓸 때(EIO)와 같은 길입니다. start_new_session은 끝난 뒤 남은 자식을 한꺼번에 치우려고.
+    # 실패합니다 — 닫힌 터미널에 쓸 때(EIO)와 같은 길입니다. restore_signals=True(SIGPIPE 기본 처리)면 닫힌 파이프에 쓰는 순간 신호가
+    # 옵니다 — 다시 켜기 안의 신호 무시(trap '' … PIPE …)가 없으면 안내 줄에서 죽어 다시 켜기에 닿지 못합니다(독립 검토: 이 줄을 보는
+    # 시험이 없었음). start_new_session은 끝난 뒤 남은 자식을 한꺼번에 치우려고.
     proc = subprocess.Popen(["bash", str(RESTORE), str(dump), "--yes"], cwd=ROOT, env={**env, "FAKE_PSQL_HANG": "3"},
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, restore_signals=False, start_new_session=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, restore_signals=sigpipe_default, start_new_session=True)
     try:
         started = Path(str(log) + ".psql-started")
         deadline = time.monotonic() + 20
@@ -155,5 +158,5 @@ def test_QA372_안전_백업이_실패하면_복원하지_않고_멈춘_서비�
     calls = _calls(log)
     assert result.returncode != 0 and "복원하지 않았습니다" in result.stderr
     assert not any(" exec -T postgres psql " in f" {call} " for call in calls), "안전 백업 없이 복원하지 않습니다"
-    if "compose stop collector backend" in calls:
-        assert "compose start collector backend" in calls, f"멈춘 서비스를 다시 켜지 않았습니다: {calls}"
+    assert "compose stop collector backend" in calls, f"안전 백업 전에 서비스를 멈추지 않았습니다: {calls}"
+    assert "compose start collector backend" in calls, f"멈춘 서비스를 다시 켜지 않았습니다: {calls}"
