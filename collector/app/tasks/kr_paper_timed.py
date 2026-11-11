@@ -85,6 +85,11 @@ KR_TIMED_EXPIRY_SESSIONS = 3
 # (초당 20) 안입니다.
 KR_TIMED_CALL_BUDGET = 240
 KR_TIMED_SPACING = 0.1
+# 새 종목·세션(과 다음 쪽)을 더 시작하지 않는 경과 시간(초, 태스크 시작부터). 토스 호출은 태스크 시간 예산 층(app/http.py)을 거치지 않고 건당
+# 한도가 10초라, 호출 수만 세면 토스가 느린 밤에 240회가 slow 군 상한(600초 — runner.TASK_DEADLINE_SECONDS)을 넘깁니다. 넘기면 실행 기록은
+# '시간 초과'인데 스레드는 계속 돌고, 받은 칸은 끝에 한 번만 저장돼 그 사이 재기동하면 버려집니다(QA-367). kr_paper_quotes와 같은 300초 —
+# 남은 칸은 다음 slow 주기가 받습니다(호출 예산 소진 때와 같은 동작).
+KR_TIMED_TIME_LIMIT_SECONDS = 300.0
 # 백엔드 PaperBooks와 같은 글자(test_kr_paper_timed가 파일로 대조). 계좌2는 지금도 이 시점들을 내고, 계좌1·규칙 계좌는 자유 시점 판을 켜거나 체결
 # 시각을 지정했을 때만 냅니다(ADR 0027) — 그 전에는 시가(NEXT_OPEN) 주문뿐이라 고르는 것이 없습니다(범위는 시점으로 갈림).
 KR_TIMED_BOOKS = ("kr_claude2", "kr_claude", "kr_rules")
@@ -100,6 +105,11 @@ KR_MARKET_DELAY = timedelta(seconds=60)
 
 def _now() -> datetime:
     return datetime.now(tz=KST)
+
+
+def _clock() -> float:
+    """경과 시간 시계(초). 테스트가 시간 상한을 시험할 때 바꿔 끼웁니다."""
+    return time.monotonic()
 
 
 def next_trading_day(day: date) -> date:
@@ -172,12 +182,15 @@ def _summarize(candles: list[dict], session: str, extra: list[str] | tuple[str, 
     return {"windows": windows, "firstAfter": first_after, "closes": closes}
 
 
-def _fetch(code: str, session: str, budget: list[int]) -> tuple[list[dict], bool]:
-    """E의 1분봉 — 16:36부터 거슬러 최대 KR_TIMED_PAGES쪽. (봉, 예산 안에서 끝까지 받았나)."""
+def _fetch(code: str, session: str, budget: list[int], expired=lambda: False) -> tuple[list[dict], bool]:
+    """
+    E의 1분봉 — 16:36부터 거슬러 최대 KR_TIMED_PAGES쪽. (봉, 예산·시간 안에서 끝까지 받았나). ``expired``는 시간 상한이 지났는지 —
+    첫 쪽은 부르는 쪽이 방금 확인했으므로 쪽 사이에서만 봅니다.
+    """
     candles: list[dict] = []
     before = f"{session}T{KR_TIMED_BEFORE}:00+09:00"
-    for _ in range(KR_TIMED_PAGES):
-        if budget[0] <= 0:
+    for page_index in range(KR_TIMED_PAGES):
+        if budget[0] <= 0 or (page_index and expired()):
             return candles, False
         budget[0] -= 1
         page, next_before = toss_service.fetch_candles(code, "1m", KR_TIMED_PAGE, adjusted=False, before=before)
@@ -265,12 +278,21 @@ def task_kr_paper_timed() -> str:
     budget = [KR_TIMED_CALL_BUDGET]
     done = failed = kept = 0
     stop = ""
+    started = _clock()
+    time_stop = f"시간 상한 {KR_TIMED_TIME_LIMIT_SECONDS:.0f}초 — 나머지는 다음 주기"
+
+    def expired() -> bool:
+        return _clock() - started >= KR_TIMED_TIME_LIMIT_SECONDS
+
     for code, session in due:
         if budget[0] <= 0:
             stop = "호출 예산 소진 — 나머지는 다음 주기"
             break
+        if expired():
+            stop = time_stop
+            break
         try:
-            candles, complete = _fetch(code, session, budget)
+            candles, complete = _fetch(code, session, budget, expired)
         except toss_service.TossMissingKey as exc:
             raise EmptyResult(f"{exc} — 시각 지정 1분봉을 받지 않습니다 · 기존 저장본 유지") from None
         except toss_service.TossForbidden as exc:
@@ -282,10 +304,12 @@ def task_kr_paper_timed() -> str:
                 kept += 1
             continue
         if not complete:
+            # 받다 만 칸 — 호출 예산이 남았는데 끊겼으면 시간 상한입니다. 어느 쪽이든 그 칸은 FAILED로 적어 다음 주기에 다시 받습니다.
+            timed_out = budget[0] > 0
             failed += 1
-            if not _failed(sessions, session, code, "호출 예산 소진 — 다음 주기에 다시", fetched_at):
+            if not _failed(sessions, session, code, "시간 상한 — 다음 주기에 다시" if timed_out else "호출 예산 소진 — 다음 주기에 다시", fetched_at):
                 kept += 1
-            stop = "호출 예산 소진 — 나머지는 다음 주기"
+            stop = time_stop if timed_out else "호출 예산 소진 — 나머지는 다음 주기"
             break
         summary = _summarize(candles, session, targets.get((code, session), ()))
         has_bars = any(c.get("date") == session for c in candles)

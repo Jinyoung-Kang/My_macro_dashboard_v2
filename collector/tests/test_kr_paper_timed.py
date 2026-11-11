@@ -596,7 +596,6 @@ def _slow(monkeypatch, toss, seconds: float, codes: list[str]) -> _SlowToss:
     return slow
 
 
-@pytest.mark.xfail(strict=True, reason="QA-367: 호출 수만 세고 남은 시간을 보지 않아 느린 밤에 군 상한(600초)을 넘깁니다")
 def test_QA367_시간_상한이_지나면_새_종목을_시작하지_않고_받은_칸은_저장한다(store, toss, monkeypatch):
     codes = [f"{n:06d}" for n in range(100001, 100081)]                           # 80종목 × 3쪽 = 240회(호출 예산과 같음)
     _slow(monkeypatch, toss, 10.0, codes)                                          # 종목마다 30초 → 10종목에서 300초
@@ -609,7 +608,6 @@ def test_QA367_시간_상한이_지나면_새_종목을_시작하지_않고_받�
     assert "시간 상한 300초" in detail and "10/80 종목·세션" in detail
 
 
-@pytest.mark.xfail(strict=True, reason="QA-367: 쪽 사이에서도 남은 시간을 보지 않습니다")
 def test_QA367_쪽_사이에서_시간_상한을_넘으면_그_칸은_다음_주기에_다시(store, toss, monkeypatch):
     codes = [f"{n:06d}" for n in range(100001, 100031)]
     _slow(monkeypatch, toss, 7.0, codes)                                           # 종목마다 21초 → 14종목 294초, 15번째의 첫 쪽에서 301초
@@ -623,6 +621,5 @@ def test_QA367_쪽_사이에서_시간_상한을_넘으면_그_칸은_다음_주
     assert "시간 상한 300초" in detail
 
 
-@pytest.mark.xfail(strict=True, reason="QA-367: 시간 상한 상수가 없습니다")
 def test_QA367_시간_상한은_slow_상한보다_짧다():
     assert kr_paper_timed.KR_TIMED_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
