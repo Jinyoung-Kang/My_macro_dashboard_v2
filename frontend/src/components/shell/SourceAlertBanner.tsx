@@ -7,14 +7,15 @@ import { useApi } from "@/hooks/useApi";
 import { useDismissed } from "@/hooks/useDismissed";
 import { isOwner } from "@/lib/access";
 import { endpoints } from "@/lib/endpoints";
-import { INFO_DISMISS_KEY, type InfoSourcesResponse, bannerText, unseenIncidents } from "@/lib/info";
+import { INFO_DISMISS_KEY, type InfoSourcesResponse, bannerText, incidentDismissKey, unseenIncidents } from "@/lib/info";
 import type { SessionUser } from "@/lib/types";
 
 /**
  * 수집 출처 끊김 안내 띠(ADR 0035 결정 7) — 운영자에게만, 모든 화면의 본문 위에 뜹니다. 차단 통과 수집 계층의 출처가 차단·형식 바뀜·받지 못함·
  * 오래 못 받음이면 출처 이름과 종류를 한 줄로 보이고 '정보 수집 > 출처 상태'로 잇습니다. 같은 사건은 텔레그램으로도 한 통 갑니다(백엔드).
  *
- * 닫으면 그 사건들은 이 브라우저에서 다시 보이지 않고, 새 사건이 생기면 다시 뜹니다. 운영자가 아니면 요청하지 않습니다(null 경로).
+ * 닫으면 그 사건들은 이 브라우저에서 다시 보이지 않고, 새 사건이 생기면 다시 뜹니다 — 같은 출처·같은 종류라도 회복했다가 다시 끊기면
+ * 새 사건입니다(서버가 주는 회차 `episode`까지 붙여 기억, QA-408). 운영자가 아니면 요청하지 않습니다(null 경로).
  */
 export function SourceAlertBanner({ user }: { user?: SessionUser }) {
   const owner = isOwner(user);
@@ -34,7 +35,7 @@ export function SourceAlertBanner({ user }: { user?: SessionUser }) {
           </p>
           <button
             type="button"
-            onClick={() => dismiss(unseen.map((incident) => incident.key))}
+            onClick={() => dismiss(unseen.map(incidentDismissKey))}
             className={buttonClasses("ghost", "sm")}
             aria-label="수집 끊김 안내 닫기"
           >

@@ -26,8 +26,18 @@ public final class SourceIncidents {
     private SourceIncidents() {
     }
 
-    /** 끊긴 출처 하나. {@code key}는 '태스크|종류'(알림 기록의 키). */
-    public record Incident(String key, String task, String label, String kind, String kindLabel, String reason, Instant since) {
+    /** 한 번도 받지 못한 출처의 회차 — 처음 성공하면 그 시각으로 바뀝니다. */
+    static final String EPISODE_NEVER = "never";
+
+    /**
+     * 끊긴 출처 하나. {@code key}는 '태스크|종류'(알림 기록의 키).
+     *
+     * <p>{@code episode}는 사건의 회차입니다(QA-408) — 그 출처의 마지막 성공 시각(없으면 {@value #EPISODE_NEVER}). 끊긴 동안에는 그대로이고
+     * 회복했다가 다시 끊기면 바뀝니다. 화면의 안내 띠가 '닫은 사건'을 {@code key@episode}로 기억해, 같은 출처·같은 종류라도 새로 끊긴 사건은
+     * 다시 보이게 합니다. 사건 시작 시각({@code since})은 실행마다 바뀌는 종류가 있어 쓰지 않습니다. 텔레그램 기록의 키는 {@code key} 그대로입니다.
+     */
+    public record Incident(String key, String task, String label, String kind, String kindLabel, String reason, Instant since,
+                           String episode) {
     }
 
     public static String kindLabel(String kind) {
@@ -64,7 +74,8 @@ public final class SourceIncidents {
             }
             if (kind != null) {
                 out.add(new Incident(state.task() + "|" + kind, state.task(), InfoSources.label(state.task()), kind,
-                        kindLabel(kind), reason, since));
+                        kindLabel(kind), reason, since,
+                        state.lastOkAt() == null ? EPISODE_NEVER : state.lastOkAt().toString()));
             }
         }
         return out;

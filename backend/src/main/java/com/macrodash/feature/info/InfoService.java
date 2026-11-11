@@ -452,6 +452,7 @@ public class InfoService {
         out.put("kindLabel", incident.kindLabel());
         out.put("reason", incident.reason());
         out.put("since", incident.since() == null ? null : Kst.stamp(incident.since()));
+        out.put("episode", incident.episode());
         return out;
     }
 

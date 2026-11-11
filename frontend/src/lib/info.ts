@@ -44,6 +44,8 @@ export type InfoIncident = {
   kindLabel: string;
   reason: string | null;
   since: string | null;
+  /** 사건의 회차(그 출처의 마지막 성공 시각, 없으면 "never") — 회복했다가 다시 끊기면 바뀝니다. 이 칸이 없는 옛 응답도 받습니다. */
+  episode?: string | null;
 };
 
 export type InfoSourceRow = {
@@ -388,10 +390,18 @@ export function statusTone(row: Pick<InfoSourceRow, "status" | "incident">): Inf
   return row.status === "ok" ? "ok" : "warn";
 }
 
-/** 안내 띠에 보일 사건 — 닫은 적 없는 것만(닫은 뒤 새로 생긴 사건은 다시 보임). */
+/**
+ * 안내 띠를 닫을 때 기억하는 키 — `키@회차`(QA-408). 키(태스크|종류)만 기억하면 회복했다가 같은 종류로 다시 끊긴 사건도 닫힌 채로 남습니다.
+ * 회차가 없는 응답이면 키 그대로입니다.
+ */
+export function incidentDismissKey(incident: Pick<InfoIncident, "key" | "episode">): string {
+  return incident.episode ? `${incident.key}@${incident.episode}` : incident.key;
+}
+
+/** 안내 띠에 보일 사건 — 닫은 적 없는 것만(닫은 뒤 새로 생긴 사건, 회복했다가 다시 끊긴 사건은 다시 보임). */
 export function unseenIncidents(incidents: readonly InfoIncident[], dismissed: readonly string[]): InfoIncident[] {
   const closed = new Set(dismissed);
-  return incidents.filter((incident) => !closed.has(incident.key));
+  return incidents.filter((incident) => !closed.has(incidentDismissKey(incident)));
 }
 
 /** 안내 띠의 한 줄 — "수집 출처 2곳이 끊겼습니다: Wolf Street(차단됨 — 잠시 멈춤) · waedge 시장(형식 바뀜)". 셋을 넘으면 '외 N곳'. */

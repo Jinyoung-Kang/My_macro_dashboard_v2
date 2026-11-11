@@ -10,6 +10,7 @@ import {
   canTranslate,
   eokText,
   hasHangul,
+  incidentDismissKey,
   itemTime,
   itemTitles,
   kstMinute,
@@ -38,6 +39,20 @@ describe("안내 띠", () => {
     const all = [incident("a", "Wolf Street"), incident("b", "waedge 시장", "format")];
     expect(unseenIncidents(all, ["a|blocked"]).map((i) => i.key)).toEqual(["b|format"]);
     expect(unseenIncidents(all, [])).toHaveLength(2);
+  });
+
+  it("QA-408: 닫은 기록은 키@회차 — 회복했다가 같은 종류로 다시 끊긴 사건(회차가 바뀜)은 다시 보인다", () => {
+    const first = { ...incident("a", "Wolf Street"), episode: "2026-11-10T01:00:00Z" };
+    const again = { ...first, episode: "2026-11-11T09:00:00Z" };
+    expect(incidentDismissKey(first)).toBe("a|blocked@2026-11-10T01:00:00Z");
+    const closed = [incidentDismissKey(first)];
+    expect(unseenIncidents([first], closed)).toEqual([]);                 // 같은 사건이 이어지는 동안은 닫힌 채
+    expect(unseenIncidents([again], closed)).toEqual([again]);            // 회복 뒤 다시 끊김
+    // 회차가 생기기 전에 닫아 둔 기록(키만)은 회차가 붙은 사건과 맞지 않아 한 번 다시 보입니다(배포 직후의 예상된 동작).
+    expect(unseenIncidents([first], ["a|blocked"])).toEqual([first]);
+    // 회차가 없는 응답(옛 서버)은 키 그대로 닫고 거릅니다.
+    expect(incidentDismissKey(incident("a", "Wolf Street"))).toBe("a|blocked");
+    expect(incidentDismissKey({ key: "a|blocked", episode: null })).toBe("a|blocked");
   });
 
   it("한 줄에 셋까지 이름을 적고 나머지는 '외 N곳'", () => {

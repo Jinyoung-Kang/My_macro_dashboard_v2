@@ -1,7 +1,6 @@
 package com.macrodash.feature.info;
 
 import com.macrodash.store.InfoStore.SourceState;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -62,7 +61,6 @@ class SourceIncidentsTest {
     }
 
     @Test
-    @Disabled("QA-408: 사건 응답에 회차(episode)가 없습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-408: 사건의 회차는 마지막 성공 시각을 따른다 — 끊긴 동안 그대로, 회복 뒤 다시 끊기면 바뀜")
     void episodeFollowsLastSuccess() {
         Instant firstOk = NOW.minus(Duration.ofHours(30));
@@ -75,7 +73,6 @@ class SourceIncidentsTest {
     }
 
     @Test
-    @Disabled("QA-408: 사건 응답에 회차(episode)가 없습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-408: 한 번도 받지 못한 출처의 회차는 고정 글자다(null이 아님)")
     void episodeOfNeverSucceededSource() {
         assertThat(episodeOf(state("info_blog_damodaran", "blocked", 1, null))).isEqualTo("never");

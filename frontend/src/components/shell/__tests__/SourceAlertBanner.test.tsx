@@ -78,7 +78,7 @@ describe("수집 끊김 안내 띠", () => {
 
   // 닫은 기록의 키가 '태스크|종류'뿐이라, 회복했다가 같은 종류로 다시 끊기면 키가 같아 띠가 뜨지 않았습니다(QA-408).
   // 서버가 사건마다 회차(episode — 그 출처의 마지막 성공 시각)를 주고 화면은 그것까지 붙여 닫습니다.
-  it.fails("QA-408: 닫은 출처가 회복했다가 같은 종류로 다시 끊기면(회차가 바뀜) 띠가 다시 뜬다", async () => {
+  it("QA-408: 닫은 출처가 회복했다가 같은 종류로 다시 끊기면(회차가 바뀜) 띠가 다시 뜬다", async () => {
     respond([{ ...incident("info_blog_wolfstreet", "Wolf Street"), episode: "2026-11-10T01:00:00Z" }]);
     const first = render(<SourceAlertBanner user={OWNER} />);
     fireEvent.click(await screen.findByRole("button", { name: "수집 끊김 안내 닫기" }));
