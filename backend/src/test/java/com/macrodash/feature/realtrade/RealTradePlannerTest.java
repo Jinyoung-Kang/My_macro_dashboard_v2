@@ -586,6 +586,28 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("QA-377: 쉬는 날 판정의 기준 시각 — 첫 창과 정규장 시작 + 10분 가운데 이른 쪽. 시가 맞추기 날·맞추기 시각이 개장 10분 뒤인 날은 첫 창과 같다(운영 값 불변)")
+    void firstActionTime() {
+        Day open = RealTradePlanner.windows(DAY, normalSession());
+        assertThat(open.firstAction()).as("시가 맞추기 날 — 시가 창 시작 그대로").isEqualTo(open.firstStart()).isEqualTo(kst("2026-11-06T08:50:30"));
+        Day timed = RealTradePlanner.windows(DAY, normalSession(), kst("2026-11-06T09:10"));
+        assertThat(timed.firstAction()).as("운영 값 09:10 — 그대로").isEqualTo(timed.firstStart()).isEqualTo(kst("2026-11-06T09:10"));
+        CollectorTradeClient.Session exam = new CollectorTradeClient.Session(
+                new CollectorTradeClient.PreMarket(kst("2026-11-06T09:00"), kst("2026-11-06T09:50"), kst("2026-11-06T10:00")),
+                new CollectorTradeClient.Regular(kst("2026-11-06T10:00"), kst("2026-11-06T16:20"), kst("2026-11-06T16:30")));
+        Day lateOpen = RealTradePlanner.windows(DAY, exam, kst("2026-11-06T10:10"));
+        assertThat(lateOpen.firstAction()).as("개장이 늦은 날의 첫 분 10:10 — 그대로").isEqualTo(lateOpen.firstStart());
+        Day noAuctions = RealTradePlanner.windows(DAY, new CollectorTradeClient.Session(
+                new CollectorTradeClient.PreMarket(kst("2026-11-06T08:00"), null, kst("2026-11-06T09:00")),
+                new CollectorTradeClient.Regular(kst("2026-11-06T09:00"), null, kst("2026-11-06T15:30"))));
+        assertThat(noAuctions.firstAction()).as("단일가 시각이 없는 날 — 마무리 창 시작 그대로").isEqualTo(noAuctions.firstStart());
+
+        Day late = RealTradePlanner.windows(DAY, normalSession(), kst("2026-11-06T10:00"));
+        assertThat(late.firstStart()).isEqualTo(kst("2026-11-06T10:00"));
+        assertThat(late.firstAction()).as("맞추기 10:00 — 스탑 매도의 하한 09:10이 먼저").isEqualTo(kst("2026-11-06T09:10"));
+    }
+
+    @Test
     @DisplayName("스탑 매도 창 — [T, T + 3분], 개장 10분 전 T는 개장 + 10분부터(개장 10분 전에는 팔지 않음), 종가 STOP은 종가 창")
     void stopWindow() {
         Day day = RealTradePlanner.windows(DAY, normalSession());

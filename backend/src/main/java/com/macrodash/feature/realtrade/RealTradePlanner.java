@@ -868,6 +868,17 @@ final class RealTradePlanner {
         Instant firstStart() {
             return sync != null ? sync.start() : followup.start();
         }
+
+        /**
+         * 그날 처음 주문이 나갈 수 있는 시각(QA-377) — 첫 창의 시작과, 스탑 매도가 처음 나갈 수 있는 정규장 시작 + {@link SessionWindows#OPEN_OFFSET}
+         * ({@link #stopWindow}의 하한) 가운데 이른 쪽. 쉬는 날 판정은 이 시각의 3분 전에 합니다. 시가 맞추기 날과 맞추기 시각이 개장 10분 뒤인 날은
+         * {@link #firstStart}와 같고, 맞추기 시각이 그보다 늦은 날에만 앞섭니다.
+         */
+        Instant firstAction() {
+            Instant first = firstStart();
+            Instant stops = regularStart.plus(SessionWindows.OPEN_OFFSET);
+            return first.isBefore(stops) ? first : stops;
+        }
     }
 
     /** 토스 장 운영 정보 → 그날 창(시가 맞추기 날). 정규장이 없으면(휴장) null. */

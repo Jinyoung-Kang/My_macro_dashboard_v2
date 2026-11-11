@@ -80,7 +80,7 @@ import java.util.function.BiFunction;
  *       대조로 늦게 묶인 이 기능의 토스 주문은 취소.</li>
  *   <li>켜짐(LIVE)이 아니면 끝. 따라 하는 책이 운용 중이 아니거나 세대가 다르면 이상 멈춤. 옛 책·세대의 미체결은 취소.</li>
  *   <li>수집기 스위치(꺼졌다고 분명히 답하면 이상 멈춤, 읽지 못하면 그 주기만 건너뜀)·토큰 경합·같은 오류 반복 확인 → 오늘 토스 장 운영 정보·쉬는 날
- *       판정(그날 첫 창 3분 전에 한 번) → 창 3분 전 토큰 예열. 따라 하는 책이 그 세션에 개장 10분 뒤 지정 시각으로 체결하면
+ *       판정(그날 첫 창과 정규장 시작 + 10분 가운데 이른 쪽의 3분 전에 한 번 — QA-377) → 창 3분 전 토큰 예열. 따라 하는 책이 그 세션에 개장 10분 뒤 지정 시각으로 체결하면
  *       ({@link PaperMirrorService#dailySyncAt}) 시가 단일가 맞추기 창 없이 그 시각부터 3분의 시각 맞추기 창(시장가 DAY 묶음 — ADR 0033 결정 1)을
  *       둡니다. 그 창의 목표는 그 시각까지의 모의 주문을 반영하고({@link PaperMirrorService#targetsAt}), 기준 시각이 맞추기 시각 이하인 주문은 장중 따라
  *       하기가 따로 보내지 않습니다(묶음 몫).</li>
@@ -436,7 +436,7 @@ class RealTradeJob {
                 return;
             }
             if (d.decidedFor == null || d.windows == null) {
-                return;   // 아직 그날 첫 창 3분 전이 아님
+                return;   // 아직 그날 처음 주문이 나갈 수 있는 시각(첫 창·정규장 시작 + 10분 가운데 이른 쪽)의 3분 전이 아님
             }
             Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers());
             List<DueOrder> upcoming = paper.dueOrders(cfg.sourceBook(), today, now.plus(WARMUP_LEAD));
@@ -530,6 +530,8 @@ class RealTradeJob {
         Instant calendarTriedAt;
         /** 쉬는 판정을 한 책과 세대(바뀌면 다시 판정). */
         String decidedFor;
+        /** 그날 창을 굳힌 책과 세대(QA-377 — 쉬는 판정과 따로: 첫 창 3분 전에 굳히고, 그 전까지는 주기마다 맞추기 시각을 다시 셈. 책·세대가 바뀌면 다시). */
+        String windowsFor;
         String skipReason;
         boolean skipRecorded;
         /** 창 → 사유 → 건너뛴 대상(종목 또는 모의 주문 뿌리) — 같은 대상은 한 번만 셈. */
@@ -634,18 +636,30 @@ class RealTradeJob {
         return book == null ? null : paper.dailySyncAt(book, date).orElse(null);
     }
 
-    /** 쉬는 날 판정(명세 §3) — 그날 첫 창 3분 전에(휴장이면 바로) 한 번, 따라 하는 책·세대가 바뀌면 다시. */
+    /**
+     * 그날 창 굳히기와 쉬는 날 판정(명세 §3) — 따라 하는 책·세대가 바뀌면 둘 다 다시.
+     * <ul>
+     *   <li><b>창 굳히기</b>: 그날 첫 창 3분 전까지는 주기마다 맞추기 시각을 다시 세어 창을 고치고, 그 뒤로는 굳힙니다(예전 그대로).</li>
+     *   <li><b>쉬는 날 판정</b>: 그날 처음 주문이 나갈 수 있는 시각({@link Day#firstAction} — 첫 창의 시작과 스탑 매도의 하한인 정규장 시작 + 10분 가운데
+     *       이른 쪽)의 3분 전에(휴장이면 바로) 한 번. 예전에는 첫 창 3분 전이라, 맞추기 시각이 개장 10분 뒤보다 늦은 날(규칙 계좌의 지정 시각이 09:10이 아닌
+     *       설정)에는 그때까지 스탑 매도가 돌지 않았습니다(QA-377). 맞추기 시각이 개장 10분 뒤(운영 값 09:10·장 시간 변경일 첫 분)이거나 시가 맞추기 날이면
+     *       두 시각이 같아 예전과 같은 주기에 판정합니다.</li>
+     * </ul>
+     */
     private void decide(DayState d, Instant now, Config cfg) {
         String key = cfg.sourceBook() + "|" + cfg.bookGeneration();
-        if (key.equals(d.decidedFor)) {
-            return;
-        }
-        if (d.calendar != null && d.calendar.today() != null) {
+        if (!key.equals(d.windowsFor) && d.calendar != null && d.calendar.today() != null) {
             // 책·세대가 바뀌면 그 책의 맞추기 시각으로 창을 다시 셈(시가 맞추기 ↔ 시각 맞추기)
             d.windows = RealTradePlanner.windows(d.date, d.calendar.today(), syncAt(cfg.sourceBook(), d.date));
             publish(d);
+            if (d.windows == null || !now.isBefore(d.windows.firstStart().minus(WARMUP_LEAD))) {
+                d.windowsFor = key;   // 휴장(창 없음)이면 다시 셀 것이 없음
+            }
         }
-        if (d.windows != null && now.isBefore(d.windows.firstStart().minus(WARMUP_LEAD))) {
+        if (key.equals(d.decidedFor)) {
+            return;
+        }
+        if (d.windows != null && now.isBefore(d.windows.firstAction().minus(WARMUP_LEAD))) {
             return;
         }
         boolean caughtUp = d.windows != null && paper.ledgerCaughtUp(cfg.sourceBook(), d.date);

@@ -73,6 +73,13 @@
 - **시각 맞추기 창**(`SYNC_AT`): [max(T, 정규장 시작 + 30초), min(T + 3분, 장중 끝)] — 그날은 시가 맞추기·시가 뒤 마무리 창이 없다. 창이 비면(T가 장중 끝 뒤) 시가 맞추기 날로 센다.
   창 3분 전까지 주기마다 시각을 다시 세고, 따라 하는 책·세대가 바뀌면 다시 센다. 묶음 종류·주문 용도는 시가 뒤 마무리와 같다(DB CHECK 그대로). 기준 시각이 T 이하인 모의 주문은 묶음 몫이라
   따로 따라 하지 않는다 — 묶음을 만들지 못하고 창을 넘기면 그 주문들도 놓침이다.
+- **덧붙임(QA-377, 2026-11-12 사용자 승인)**: 위 '창 3분 전'은 창을 굳히는 시각이고, 그날의 쉬는 날 판정(판정 전에는 스탑 매도도 보내지 않음)은 이제
+  min(첫 창의 시작, 정규장 시작 + 10분)의 3분 전에 한다. 둘을 한 시각에 묶어 두어, 맞추기 시각이 개장 10분 뒤보다 늦은 날(규칙 계좌 지정 시각을 09:10이 아닌 값으로 둔
+  설정 — 코드 기본값 10:00, 허용 09:10~15:19)에는 T − 3분까지 결정 2의 스탑 매도가 나가지 않았다(놓침 알림만). 운영 값(09:10)·장 시간 변경일의 첫 분·시가 맞추기 날은
+  두 시각이 같아 동작이 바뀌지 않는다(`RealTradePlannerTest.firstActionTime`, `RealTradeJobDbTest.decisionTimeUnchangedAtOpenOffset`·`decisionTimeUnchangedOnOpenSyncDay`·
+  `timedWindowStillFreezesThreeMinutesBeforeItsStart`가 고정). 늦은 날에 달라지는 것: 판정·토큰 예열·장부 밀림 확인이 개장 7분 뒤로 당겨지고 그때부터 스탑 매도가 돈다
+  (`lateTimedSyncDayStillSellsEarlyStops`·`lateTimedSyncLedgerBehindDayStillSellsEarlyStops`). 감수한 것: 그날 판정과 창 굳히기 사이에는 창이 아직 바뀔 수 있다(예전에도
+  굳기 전에는 바뀌었고, 그 사이에 창에 기대어 나가는 주문은 스탑 매도뿐 — 스탑 창은 맞추기 시각과 무관).
 - **목표**(`PaperMirrorService.targetsAt`): 보유 + 그 세션 시가 주문 + 기준 시각이 T 이하인 시각 지정 주문. 시각 지정 STOP(`MARKET`·`AT_MINUTE`·`NEXT_CLOSE`)은 비중에 반영하되 흡수하지 않고
   `stopOrderIds`로 따로 돌려준다. 시가 경로(`openTargets`)는 아래 '목표 세션이 지난 대기 STOP'만 더 본다. 옛 `NEXT_OPEN` STOP(감시를 켜지 않은 한국 밤 스탑)은 따로 갈 길이 없어 지금처럼 묶음이 흡수한다.
 - **목표 세션이 지난 대기 STOP**(QA-328): 그 세션 1분봉을 기다리거나 장부가 보류해(기업행위·그날 봉 없음·거래정지) 목표 세션이 지났는데도 대기인 STOP 매도(만료 전)는 다음 세션들의

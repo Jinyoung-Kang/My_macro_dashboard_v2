@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -803,7 +802,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-377: 맞추기 시각이 개장 10분 뒤보다 늦은 날, 그 3분 전까지 스탑 매도가 돌지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-377: 맞추기 시각이 10:00인 날 — 09:25의 장중 스탑은 그 시각에 판다(수정 전에는 09:57까지 아무것도 하지 않아 놓침), 묶음은 그대로 10:00에")
     void lateTimedSyncDayStillSellsEarlyStops() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -834,7 +832,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-377: 맞추기 시각이 개장 10분 뒤보다 늦은 날, 그 3분 전까지 스탑 매도가 돌지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-377: 맞추기 시각이 10:00이고 장부가 밀린 날 — 스탑만은 09:25에 판다(묶음·장중 따라 하기는 없음)")
     void lateTimedSyncLedgerBehindDayStillSellsEarlyStops() {
         RealTradeFixtures.live(store, false, d("10000000"));
