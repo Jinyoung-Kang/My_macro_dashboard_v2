@@ -31,7 +31,7 @@ final class ManualAccountNotices {
     /** 장전 동시호가 길이 — 개장 30분 전부터(보통 08:30~09:00, 장 시간 변경일은 그 개장 시각 기준). */
     private static final long AUCTION_MINUTES = 30;
     /** 매매 뒤 할 일(이 시스템은 다른 증권사의 실제 매매를 볼 수 없음). */
-    private static final String CONFIRM_GUIDE = "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결가가 다르면 잔고에서 고치세요.";
+    private static final String CONFIRM_GUIDE = "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결 값이 다르면 매매 내역의 '고치기'로 고치세요.";
 
     /**
      * 지시 글(개장 전 08:00 한 통). {@code at}이 있으면 시각 맞추기 지시(ADR 0033 결정 7 — 제목 'MM/DD(요일) HH:MM 매매 지시', 끝줄 'HH:MM 이후 시장가'), 없으면 시가 지시 글.

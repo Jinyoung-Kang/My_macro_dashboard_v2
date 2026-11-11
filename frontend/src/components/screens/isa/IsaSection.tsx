@@ -520,7 +520,7 @@ function StartedBody({
         <IsaPositionsTable rows={valuation.positions} onEdit={onEditPosition} onDelete={onDeletePosition} disabled={busy} />
       </Card>
 
-      <Card title="매매 내역" subtitle="'확인'으로 잔고에 반영한 매매(최근 200, 최근 순) — 체결가가 다르면 잔고에서 가격을 고치세요. 잘못 눌렀으면 되돌리세요">
+      <Card title="매매 내역" subtitle="'확인'으로 잔고에 반영한 매매(최근 200, 최근 순) — 체결 값(수량·금액·수수료)이 다르면 '고치기'로 고치세요. 잘못 눌렀으면 되돌리세요">
         <IsaTradesTable rows={data.trades ?? []} onEdit={onEditTrade} onUndo={onUndo} disabled={busy} />
       </Card>
     </>

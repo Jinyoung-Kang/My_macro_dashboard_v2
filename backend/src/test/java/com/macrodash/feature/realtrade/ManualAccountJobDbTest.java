@@ -244,7 +244,7 @@ class ManualAccountJobDbTest {
                 + "• 매수 005930 합성전자 40주\n"
                 + "• 매수 153130 합성 단기채권 1주\n\n"
                 + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n"
-                + "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결가가 다르면 잔고에서 고치세요.");
+                + "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결 값이 다르면 매매 내역의 '고치기'로 고치세요.");
         assertThat(texts.getValue()).doesNotContain("원", "10000", "20000", "100000", "900000", "1000000", "%");
         assertThat(store.instructions("isa", E)).allSatisfy(i -> {
             assertThat(i.notifiedNightAt()).isNull();

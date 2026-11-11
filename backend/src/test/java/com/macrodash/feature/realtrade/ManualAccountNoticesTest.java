@@ -3,7 +3,6 @@ package com.macrodash.feature.realtrade;
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.ManualAccountStore;
 import com.macrodash.store.ManualAccountStore.Instruction;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -24,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ManualAccountNoticesTest {
 
     private static final LocalDate MONDAY = LocalDate.of(2026, 11, 9);
-    private static final String CONFIRM = "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결가가 다르면 잔고에서 고치세요.";
+    private static final String CONFIRM = "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결 값이 다르면 매매 내역의 '고치기'로 고치세요.";
 
     private static Instruction instruction(long id, String symbol, String side, int quantity, String refPrice, String weight) {
         ObjectNode reason = MAPPER.createObjectNode();
@@ -96,7 +95,6 @@ class ManualAccountNoticesTest {
     }
 
     @Test
-    @Disabled("QA-353: 수정 전 — 알림 끝줄이 '체결가가 다르면 잔고에서 고치세요'라고 안내합니다")
     @DisplayName("QA-353 매매 뒤 안내 — 체결 값이 다르면 잔고가 아니라 매매 내역의 '고치기'(잔고의 가격 고치기는 현금·실현 손익을 못 맞춤), 금액 없음")
     void confirmGuidePointsToTradeEdit() {
         String text = stop(MONDAY, LocalTime.of(9, 0), LocalTime.of(15, 30), List.of(stop(1, "307950", 3, "MARKET")), Map.of("307950", "합성오토"));
