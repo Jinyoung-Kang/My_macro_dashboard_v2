@@ -403,6 +403,7 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 ```
 
 - 순서: main fast-forward → 버전 → backend → frontend → collector → browser 하나씩 빌드(4 GB) → 배포 전 DB 덤프 → 기동 → 스키마 → caddy 다시 만들기 → 정리.
+  기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스가 있음) 스키마 적용과 caddy 다시 만들기는 마친 뒤 0이 아닌 값으로 끝나고, 건강하지 않은 서비스를 표로 알립니다(QA-369).
   서버 `.env`에 적지 않는 이름(옛 AWS 공개 주소용 값·PC 전용 `VULTR_*`·`TAILSCALE_*` 포함)이 있으면 멈추고,
   `PAPER_ENABLED=false`가 있으면 운영본의 정기 작업(리스크 점검·결정·체결)이 꺼진 채 뜬다고 '주의'를 찍고(끝 요약에도 다시) 계속합니다 —
   정비 때 일부러 끈 것이 아니면 그 줄을 지우고 다시 배포합니다. 없으면 '참고: 모의 매매 정기 작업 켜짐' 한 줄입니다(QA-194).

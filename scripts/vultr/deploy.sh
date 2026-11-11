@@ -23,7 +23,9 @@
 #      브라우저 컨테이너(ADR 0026 — Chrome 안정 채널을 빌드 때 받음).
 #      4 GB라 동시에 빌드하면 메모리가 모자랍니다(make up은 한꺼번에 빌드). caddy·postgres 이미지도 새로 받습니다.
 #   5. 배포 전 DB 덤프 backups/pre-deploy-YYYYmmdd-HHMMSS.sql(서버에만, 최근 BACKUP_KEEP개). 뜨지 못하면 배포하지 않습니다(QA-200).
-#   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile)
+#   6. up -d(건강해질 때까지 기다림) → 스키마 적용(make migrate와 같은 반복 — QA-016·QA-118) → caddy 다시 만들기(바뀐 Caddyfile).
+#      기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스) 스키마 적용과 caddy 다시 만들기는 마친 뒤 실패로 끝납니다(QA-369 —
+#      어느 서비스인지 표로 알리고, 7의 정리와 성공 문구는 없음).
 #   7. 매달린 이미지·오래된 빌드 캐시 정리. 끝 요약에 디스크와 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
 #      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
@@ -223,7 +225,14 @@ bash scripts/db-backup.sh pre-deploy ||
 # 빌드가 몇 분 걸려 그 사이 거래 창에 들어왔을 수 있습니다 — 컨테이너를 바꾸기 직전에 한 번 더 봅니다(3의 실제 매매 가드).
 realtrade_guard before-up
 echo "기동합니다(건강해질 때까지 최대 5분)…"
-docker compose up -d --no-build --wait --wait-timeout 300
+# 기동 확인(--wait)이 실패해도 여기서 끝내지 않습니다(QA-369). 여섯 서비스 중 하나라도 5분 안에 건강해지지 못하면 0이 아닌 값인데, set -e로
+# 이 줄에서 끝나면 스키마 적용과 앞단 재생성을 건너뜁니다 — 백엔드와 스키마만 바뀐 배포였다면 새 백엔드는 떠 있는데 새 표가 없어 모의 매매
+# 정기 작업이 '준비 중'으로 쉬고, 다시 돌려도 같은 줄에서 멈춥니다. 실패를 적어 두고 남은 단계를 마친 뒤 실패로 끝냅니다.
+failed=
+docker compose up -d --no-build --wait --wait-timeout 300 || {
+    failed="기동 확인 실패"
+    echo "경고: 기동 확인이 실패했습니다(5분 안에 건강해지지 않은 서비스가 있음) — 스키마 적용과 앞단 재생성은 마저 합니다." >&2
+}
 
 # make migrate와 같은 반복. 수집기는 기동할 때만 스키마를 적용해, 스키마와 백엔드만 바뀐 배포에서는 새 스키마가
 # 빠집니다(QA-016). 10번 모두 실패하면 경고와 0이 아닌 값(QA-118).
@@ -232,10 +241,25 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
     docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && { ok=1; break; }
     sleep 3
 done
-[ -n "$ok" ] || { echo "경고: 스키마를 적용하지 못했습니다 — docker compose logs collector를 보세요." >&2; exit 1; }
-echo "  스키마: 최신 (db/migrations)"
+if [ -n "$ok" ]; then
+    echo "  스키마: 최신 (db/migrations)"
+    schema_note="스키마 적용됨"
+else
+    echo "경고: 스키마를 적용하지 못했습니다 — docker compose logs collector를 보세요." >&2
+    failed="${failed:+$failed · }스키마 적용 실패"
+    schema_note="스키마 적용 못 함"
+fi
 # Caddyfile은 파일 하나를 bind mount해, git이 새 파일로 바꿔도 돌던 컨테이너는 옛 내용을 계속 봅니다 — 늘 다시 만듭니다(앞단만 1초 안팎 끊김).
-docker compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy
+docker compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy || {
+    failed="${failed:+$failed · }앞단(caddy) 재생성 실패"
+    echo "경고: 앞단(caddy)을 다시 만들지 못했습니다 — docker compose logs caddy를 보세요." >&2
+}
+if [ -n "$failed" ]; then
+    # 어느 서비스가 건강하지 않은지 — 이미지 정리와 성공 문구 없이 0이 아닌 값으로 끝냅니다(QA-118·QA-194).
+    docker compose ps --format 'table {{.Service}}\t{{.Status}}' >&2 || true
+    echo "✗ 배포가 끝나지 않았습니다: $failed ($schema_note) — 위 표에서 건강하지 않은 서비스의 로그(docker compose logs <서비스>)를 보고 다시 배포하세요." >&2
+    exit 1
+fi
 
 # ---------------------------------------------------------------- 7) 정리
 # 다시 빌드할 때마다 이름 없는 옛 이미지가 남습니다(128 GB 디스크지만 쌓이면 끝이 없음). 빌드 캐시는 다음 빌드를 빠르게 하므로 일주일 넘은 것만.

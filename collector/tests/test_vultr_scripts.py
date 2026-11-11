@@ -243,7 +243,6 @@ UP = "compose up -d --no-build --wait --wait-timeout 300"
 CADDY = "compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-369: 기동 확인(up --wait)이 실패하면 set -e로 그 줄에서 끝나 스키마 적용과 앞단 재생성을 건너뜁니다")
 def test_QA369_deploy는_기동_확인이_실패해도_스키마_적용과_앞단_재생성을_마친_뒤_실패로_끝난다(server, fakes):
     """
     여섯 서비스 중 하나라도 5분 안에 건강해지지 못하면 `up --wait`가 0이 아닌 값으로 끝납니다. 백엔드와 스키마만 바뀐 배포였다면 새 백엔드는
@@ -262,7 +261,6 @@ def test_QA369_deploy는_기동_확인이_실패해도_스키마_적용과_앞�
     assert "배포했습니다" not in result.stdout, "성공 문구는 성공 때만(QA-194)"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-369: 앞단 재생성 줄도 set -e 아래라 실패하면 정리·요약 없이 끝납니다")
 def test_QA369_deploy는_앞단_재생성이_실패하면_알리고_실패로_끝난다(server, fakes):
     result = _deploy(server, fakes, FAKE_DOCKER_FAIL="--wait-timeout 60 caddy")
 
