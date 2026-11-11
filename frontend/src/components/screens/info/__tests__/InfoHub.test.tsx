@@ -117,6 +117,14 @@ describe("정보 수집 화면", () => {
     expect(screen.getByText(/차단 통과 수집이 꺼져 있습니다/)).toBeTruthy();
   });
 
+  it("QA-410 개요: 수집기에 닿지 못했으면 상태 확인 줄에 그 사실을 적는다", async () => {
+    routes({ "/api/info/catalog": { ...CATALOG, collectorReachable: false }, "/api/info/mechanism": MECHANISM,
+      "/api/info/items": { available: true, items: [], page: 1, pages: 0, total: 0 } });
+    render(<InfoHub tab="overview" />);
+
+    expect(await screen.findByText(/수집기에 닿지 못해 마지막 실행을 모름/)).toBeTruthy();
+  });
+
   it("뉴스·글: 제목은 원문 그대로(시각은 KST), 다음 쪽은 서버에 page=2로 묻고, 제목을 누르면 원문 팝업에서 본문을 읽고 한국어로 번역한다", async () => {
     routes({
       "/api/info/catalog": CATALOG,
@@ -237,7 +245,7 @@ describe("정보 수집 화면", () => {
 
   // ------------------------------------------------------------------ QA-410
   // 번역 단추 두 곳(제목 옆·원문 팝업)이 서버 호출 단추의 공용 훅을 쓰지 않고 상태를 손으로 관리했습니다.
-  it.fails("QA-410: 세션이 끝난 뒤 번역을 누르면(401) 로그인 알림이 불린다 — 제목 단추와 팝업 모두", async () => {
+  it("QA-410: 세션이 끝난 뒤 번역을 누르면(401) 로그인 알림이 불린다 — 제목 단추와 팝업 모두", async () => {
     const english = { ...ITEM, id: "0123456789abcdef0123456a", titleKo: null };
     routes({
       "/api/info/catalog": CATALOG,
@@ -265,7 +273,7 @@ describe("정보 수집 화면", () => {
     }
   });
 
-  it.fails("QA-410: 번역이 끝나기 전에 팝업을 닫았다 같은 글을 다시 열어 눌러도 같은 번역 요청은 한 번만 나간다", async () => {
+  it("QA-410: 번역이 끝나기 전에 팝업을 닫았다 같은 글을 다시 열어 눌러도 같은 번역 요청은 한 번만 나간다", async () => {
     const english = { ...ITEM, id: "0123456789abcdef0123456b", titleKo: null };
     routes({
       "/api/info/catalog": CATALOG,
@@ -292,7 +300,7 @@ describe("정보 수집 화면", () => {
     expect(api.apiPost).toHaveBeenCalledTimes(1);
   });
 
-  it.fails("QA-410: 쪽이 범위를 넘어 빈 목록이 오면(글은 있음) 마지막 쪽을 다시 묻는다", async () => {
+  it("QA-410: 쪽이 범위를 넘어 빈 목록이 오면(글은 있음) 마지막 쪽을 다시 묻는다", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/info/catalog")) return Promise.resolve(CATALOG);
       if (!path.startsWith("/api/info/items?kind=blog")) return new Promise(() => {});
@@ -310,7 +318,7 @@ describe("정보 수집 화면", () => {
     expect(screen.queryByText(/받은 글이 없습니다/)).toBeNull();
   });
 
-  it.fails("QA-410: 해외 블로그 보기의 출처 고르기에 waedge 해외 블로그가 있고, 사건 뉴스의 검색 이름표는 '제목'이다(서버가 제목만 찾음)", async () => {
+  it("QA-410: 해외 블로그 보기의 출처 고르기에 waedge 해외 블로그가 있고, 사건 뉴스의 검색 이름표는 '제목'이다(서버가 제목만 찾음)", async () => {
     const catalog = { ...CATALOG, sources: [...CATALOG.sources,
       source(20, { tab: "news", kind: "waedge", key: "waedge.blogs", label: "waedge 해외 블로그", access: "bypass", speed: "polite" }),
       source(21, { tab: "news", kind: "waedge", key: "waedge.brief", label: "waedge 시황", access: "bypass", speed: "polite" })] };

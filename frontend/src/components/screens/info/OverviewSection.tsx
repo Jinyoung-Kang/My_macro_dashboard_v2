@@ -5,7 +5,7 @@ import { Banner, Card, ErrorState, Loading } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
-import { type CatalogResponse, type InfoItemsResponse, type MechanismResponse, itemTime, itemTitles, toneSummary } from "@/lib/info";
+import { type CatalogResponse, type InfoItemsResponse, type MechanismResponse, itemTime, itemTitles, tabTone, toneSummary } from "@/lib/info";
 
 const TAB_HREF: Record<string, string> = {
   news: "/info/news", kr: "/info/kr", global: "/info/global", filings: "/info/filings", paper: "/info/paper", ops: "/info/status",
@@ -26,7 +26,10 @@ export function OverviewSection() {
           운영 서버 백업을 복원했을 때만 보입니다.
         </Banner>
       )}
-      <Card title="분류별 상태" source={data ? `상태 확인 ${data.checkedAt}` : undefined}>
+      <Card
+        title="분류별 상태"
+        source={data ? `상태 확인 ${data.checkedAt}${data.collectorReachable ? "" : " · 수집기에 닿지 못해 마지막 실행을 모름"}` : undefined}
+      >
         {catalog.loading && !data && <Loading />}
         {catalog.error && <ErrorState message={catalog.error} onRetry={catalog.reload} />}
         {data && (
@@ -39,7 +42,7 @@ export function OverviewSection() {
                 >
                   <span className="text-sm font-semibold text-text">{tab.label}</span>
                   <span className="text-xs text-text-2">출처 {tab.sources}곳</span>
-                  <StatusText tone={(tab.tones.danger ?? 0) > 0 ? "danger" : (tab.tones.warn ?? 0) > 0 ? "warn" : "ok"}>
+                  <StatusText tone={tabTone(tab.tones)}>
                     <span className="text-xs">{toneSummary(tab.tones)}</span>
                   </StatusText>
                 </Link>

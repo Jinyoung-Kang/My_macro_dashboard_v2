@@ -19,12 +19,16 @@ import {
   rankingBasis,
   readerOfHeadline,
   readerOfItem,
+  rewindPage,
   scoreText,
+  searchLabel,
   sharesText,
+  sourceChoices,
   splitText,
   stanceTone,
   statusLabel,
   statusTone,
+  tabTone,
   titleNeedsTranslation,
   translatedBy,
   unseenIncidents,
@@ -192,7 +196,7 @@ describe("원문 팝업(ADR 0037)", () => {
     expect(canTranslate(headline, null)).toBe(false);
   });
 
-  it.fails("QA-410: 글자가 없는 글(숫자·기호뿐, 제목 없음)에는 번역 단추를 내지 않는다 — 제목 단추의 조건과 같게", () => {
+  it("QA-410: 글자가 없는 글(숫자·기호뿐, 제목 없음)에는 번역 단추를 내지 않는다 — 제목 단추의 조건과 같게", () => {
     const entry = readerOfItem(item);
     expect(canTranslate({ ...entry, title: "+3.5% (2026-11-11)", titleKo: null }, null)).toBe(false);
     expect(canTranslate({ ...entry, title: "—", titleKo: null }, null)).toBe(false);
@@ -200,6 +204,35 @@ describe("원문 팝업(ADR 0037)", () => {
     // 글자가 있는 비한국어 글은 그대로 냅니다.
     expect(canTranslate({ ...entry, titleKo: "금리 급등" }, "Rates rose 3.5%")).toBe(true);
     expect(canTranslate({ ...entry, title: "Rates +3.5%", titleKo: null }, null)).toBe(true);
+  });
+
+  it("QA-410: 범위를 넘은 쪽의 빈 목록이면 마지막 쪽을 다시 묻는다 — 정말 글이 없거나 이미 마지막 쪽이면 묻지 않는다", () => {
+    expect(rewindPage({ items: [], total: 15, page: 3, pages: 2 })).toBe(2);
+    expect(rewindPage({ items: [], total: 3, page: 2, pages: 1 })).toBe(1);
+    expect(rewindPage({ items: [], total: 0, page: 1, pages: 0 })).toBeNull();
+    expect(rewindPage({ items: [], total: null, page: 4, pages: 2 })).toBeNull();
+    expect(rewindPage({ items: [], total: 15, page: 2, pages: 2 })).toBeNull();      // 같은 쪽을 되풀이해 묻지 않음
+    expect(rewindPage({ items: [1], total: 15, page: 3, pages: 2 })).toBeNull();
+  });
+
+  it("QA-410: 분류 카드의 색 — 정상이 하나라도 있을 때만 정상, 기록이 없으면 중립", () => {
+    expect(tabTone({ ok: 3, danger: 1 })).toBe("danger");
+    expect(tabTone({ ok: 3, warn: 1 })).toBe("warn");
+    expect(tabTone({ ok: 1, neutral: 4 })).toBe("ok");
+    expect(tabTone({ neutral: 4 })).toBe("neutral");
+    expect(tabTone({})).toBe("neutral");
+  });
+
+  it("QA-410: 출처 고르기와 검색 이름표는 보기마다 — 블로그 보기에 waedge 해외 블로그, 사건 뉴스는 제목만 찾는다", () => {
+    const sources = [{ kind: "blog", key: "blog.wolfstreet" }, { kind: "waedge", key: "waedge.blogs" }, { kind: "waedge", key: "waedge.brief" },
+      { kind: "data", key: "krx" }];
+    expect(sourceChoices(sources, "blog").map((row) => row.key)).toEqual(["blog.wolfstreet", "waedge.blogs"]);
+    expect(sourceChoices(sources, "waedge").map((row) => row.key)).toEqual(["waedge.brief"]);
+    expect(sourceChoices(sources, "wire")).toEqual([]);
+    expect(searchLabel("blog")).toBe("검색(제목·요약)");
+    expect(searchLabel("wire")).toBe("검색(제목·요약)");
+    expect(searchLabel("rss-us")).toBe("검색(제목)");
+    expect(searchLabel("rss-kr")).toBe("검색(제목)");
   });
 
   it("QA-403: 번역을 옮긴 모델은 저장본 포함 전부 — 목록이 없으면 이번에 부른 모델, 그것도 없으면 '번역 모델'", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pager } from "@/components/Pager";
 import {
   Banner,
@@ -33,6 +33,9 @@ import {
   kstMinute,
   readerOfHeadline,
   readerOfItem,
+  rewindPage,
+  searchLabel,
+  sourceChoices,
   titleNeedsTranslation,
 } from "@/lib/info";
 import { GurusSection } from "./GurusSection";
@@ -66,7 +69,7 @@ export function NewsSection() {
   const [page, setPage] = useState(1);
   const catalog = useApi<CatalogResponse>(endpoints.info.catalog, 300_000);
   const sources = useRemembered(catalog.data?.sources) ?? [];
-  const choices = sources.filter((row) => (view === "blog" ? row.kind === "blog" : view === "waedge" ? row.kind === "waedge" && row.key !== "waedge.blogs" : false));
+  const choices = sourceChoices(sources, view);
   const deferred = sources.find((row) => row.access === "deferred");
 
   const choose = (next: View) => {
@@ -118,7 +121,7 @@ export function NewsSection() {
               </label>
             )}
             <label className="flex min-w-0 flex-col gap-1 text-xs text-text-2">
-              검색(제목·요약)
+              {searchLabel(view)}
               <input type="search" value={draft} onChange={(event) => setDraft(event.target.value)} className={inputClasses("sm")} maxLength={100} />
             </label>
             <button type="submit" className={buttonClasses("secondary", "sm")}>
@@ -143,12 +146,23 @@ export function NewsSection() {
 
 type Open = (entry: ReaderEntry) => void;
 
+/** 쪽이 범위를 넘어 빈 목록이 왔으면(글은 있음) 마지막 쪽을 다시 묻습니다(QA-410) → 다시 묻는 중이면 그 쪽, 아니면 null. */
+function useRewind(data: Parameters<typeof rewindPage>[0] | null | undefined, onPage: (page: number) => void): number | null {
+  const rewind = data ? rewindPage(data) : null;
+  useEffect(() => {
+    if (rewind !== null) onPage(rewind);
+  }, [rewind, onPage]);
+  return rewind;
+}
+
 function ArticleList({ path, onPage, onOpen }: { path: string; onPage: (page: number) => void; onOpen: Open }) {
   const { data, loading, error, reload } = useApi<InfoItemsResponse>(path);
+  const rewind = useRewind(data, onPage);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return null;
   if (!data.available) return <EmptyState message="정보 수집 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 보입니다." />;
+  if (rewind !== null) return <Loading />;
   if (data.items.length === 0) return <EmptyState message="받은 글이 없습니다. 수집은 운영 서버에서만 몇 시간에 한 번 불규칙하게 돕니다." />;
   return (
     <>
@@ -199,9 +213,11 @@ function ArticleRow({ item, onOpen }: { item: InfoItem; onOpen: Open }) {
 
 function HeadlineList({ path, onPage, onOpen }: { path: string; onPage: (page: number) => void; onOpen: Open }) {
   const { data, loading, error, reload } = useApi<HeadlinesResponse>(path);
+  const rewind = useRewind(data, onPage);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return null;
+  if (rewind !== null) return <Loading />;
   if (data.items.length === 0) return <EmptyState message="받은 제목이 없습니다(보존 7일)." />;
   return (
     <>

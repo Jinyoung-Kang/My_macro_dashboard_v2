@@ -525,11 +525,18 @@ export function readerOfHeadline(row: Headline, index: number): ReaderEntry {
   };
 }
 
-/** 번역 단추를 낼 것인가 — 번역할 글(한국어가 아닌 본문·요약, 또는 아직 번역 전인 제목)이 있을 때만. */
+/** 한국어로 옮길 본문인가 — 글자가 있고(숫자·기호뿐이 아님) 앞부분에 한글이 없을 때. */
+function bodyNeedsTranslation(text: string | null): boolean {
+  return !!text && /\p{L}/u.test(text) && !hasHangul(text.slice(0, 400));
+}
+
+/**
+ * 번역 단추를 낼 것인가 — 번역할 글(한국어가 아닌 본문·요약, 또는 아직 번역 전인 제목)이 있을 때만.
+ * 글자가 없는 글(숫자·기호뿐, 제목 없음)에는 내지 않습니다 — 눌러도 서버가 옮길 것이 없습니다(QA-410, 제목 단추의 조건과 같게).
+ */
 export function canTranslate(entry: ReaderEntry, body: string | null): boolean {
-  const text = entry.itemId ? body : entry.text;
-  if (text && !hasHangul(text.slice(0, 400))) return true;
-  return !entry.titleKo && !hasHangul(entry.title);
+  if (bodyNeedsTranslation(entry.itemId ? body : entry.text)) return true;
+  return titleNeedsTranslation(entry.title, entry.titleKo);
 }
 
 /**
@@ -540,8 +547,46 @@ export function canTranslate(entry: ReaderEntry, body: string | null): boolean {
 export function offersTranslate(entry: ReaderEntry, body: string | null, translated: Pick<TranslateResponse, "textKo" | "alreadyKorean"> | null): boolean {
   if (!translated) return canTranslate(entry, body);
   if (translated.textKo || translated.alreadyKorean) return false;
-  const text = entry.itemId ? body : entry.text;
-  return !!text && !hasHangul(text.slice(0, 400));
+  return bodyNeedsTranslation(entry.itemId ? body : entry.text);
+}
+
+/**
+ * 쪽이 범위를 넘었을 때 다시 물을 쪽(QA-410) — 목록이 비었는데 전체 건수가 0보다 크면 마지막 쪽, 그럴 일이 아니면 null.
+ * 보고 있던 사이 글이 줄면(보존 기한·다른 조건) 글이 있는데도 '받은 글이 없습니다'만 뜨고 쪽 단추도 사라졌습니다.
+ * 이미 마지막 쪽이면 null입니다(같은 쪽을 되풀이해 묻지 않음).
+ */
+export function rewindPage(data: { items: readonly unknown[]; total?: number | null; page?: number | null; pages?: number | null }): number | null {
+  if (data.items.length > 0 || !data.total || data.total <= 0) return null;
+  const last = Math.max(1, data.pages ?? 1);
+  return (data.page ?? 1) > last ? last : null;
+}
+
+/**
+ * 분류 카드의 색(QA-410) — 위험이 있으면 위험, 주의가 있으면 주의, **정상이 하나라도 있을 때만** 정상, 그 밖(기록이 하나도 없음)은 중립.
+ * 예전에는 기록이 없는 분류도 '정상'으로 칠했습니다.
+ */
+export function tabTone(tones: Partial<Record<InfoTone, number>>): InfoTone {
+  if ((tones.danger ?? 0) > 0) return "danger";
+  if ((tones.warn ?? 0) > 0) return "warn";
+  return (tones.ok ?? 0) > 0 ? "ok" : "neutral";
+}
+
+/** waedge가 한국어 제목을 붙여 주는 해외 블로그 글의 출처 키 — 서버는 이 글을 waedge가 아니라 블로그 종류로 내립니다. */
+const WAEDGE_BLOGS = "waedge.blogs";
+
+/**
+ * 글 목록 보기의 출처 고르기(QA-410) — 해외 블로그 보기는 블로그 출처와 waedge 해외 블로그(그 글이 블로그 쪽에 실리는데 고르기에는 빠져 있었음),
+ * waedge 보기는 나머지 waedge 출처. 그 밖의 보기는 출처를 고르지 않습니다.
+ */
+export function sourceChoices<T extends { kind: string; key: string }>(sources: readonly T[], view: string): T[] {
+  if (view === "blog") return sources.filter((row) => row.kind === "blog" || row.key === WAEDGE_BLOGS);
+  if (view === "waedge") return sources.filter((row) => row.kind === "waedge" && row.key !== WAEDGE_BLOGS);
+  return [];
+}
+
+/** 검색 칸의 이름표 — 서버가 실제로 찾는 범위. 글(블로그·속보·waedge)은 제목·요약, 사건 뉴스는 제목만입니다(QA-410). */
+export function searchLabel(view: string): string {
+  return view === "rss-us" || view === "rss-kr" ? "검색(제목)" : "검색(제목·요약)";
 }
 
 const BODY_LABELS: Record<InfoItem["bodyStatus"], string> = { full: "본문", partial: "요약만", none: "제목만" };
