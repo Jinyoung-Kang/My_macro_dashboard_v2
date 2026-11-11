@@ -283,3 +283,49 @@ def test_QA028_기간_조회가_되면_그_기간이다(monkeypatch):
     monkeypatch.setattr(radar, "fetch_daum_ranking", lambda *a, **k: _rows("Daum API (외국인, 5일)"))
     result = radar.collect_radar_ranking(date(2026, 9, 11), investor="외국인", interval_type="DAYS_5")
     assert result.get("intervalType", "DAYS_5") == "DAYS_5"
+
+
+# ------------------------------------------------------------------ QA-396
+# 거래일 장중에 Daum이 비면 KRX 저장본의 가장 가까운 앞 거래일 확정 순위가 '오늘 값' 자리에 들어갑니다(ADR 0036 결정 6이 정한 대체).
+# 그 날짜가 결과 최상위에 없어 화면·교집합이 기준일을 알 수 없었습니다.
+
+def _krx_rows(day: str):
+    return [{
+        "rank": 1, "code": "005930", "name": "삼성전자", "price": None, "changePct": None,
+        "netAmountEok": 900.0, "netVolume": None, "dataDate": day,
+        "source": f"KRX 정보데이터시스템 확정 (외국인, {day})", "collectedAt": None,
+    }]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-396: 결과 최상위에 기준일(dataDate)이 없습니다")
+def test_QA396_KRX_앞_거래일_확정_순위는_기준일을_최상위에_싣는다(monkeypatch):
+    monkeypatch.setattr(radar, "is_regular_session", lambda now=None: False)
+    monkeypatch.setattr(radar, "fetch_krx_stored_ranking", lambda *a, **k: _krx_rows("2026-09-10"))
+
+    result = radar.collect_radar_ranking(datetime.now(KST).date())
+
+    assert result["sourceKind"] == "krx"
+    assert result["dataDate"] == "2026-09-10", "앞 거래일 값이면 그 날짜를 밝혀야 합니다"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-396: 결과 최상위에 기준일(dataDate)이 없습니다")
+def test_QA396_Daum_당일_순위도_행의_기준일을_최상위에_싣는다(monkeypatch):
+    monkeypatch.setattr(radar, "is_regular_session", lambda now=None: False)
+    rows = _rows("Daum API (외국인, 당일)")
+    rows[0]["dataDate"] = "2026-09-11"
+    monkeypatch.setattr(radar, "fetch_daum_ranking", lambda *a, **k: rows)
+
+    result = radar.collect_radar_ranking(datetime.now(KST).date())
+
+    assert result["sourceKind"] == "daum"
+    assert result["dataDate"] == "2026-09-11"
+
+
+def test_QA396_기준일을_모르는_행이면_지어내지_않는다(monkeypatch):
+    """행에 기준일이 없으면(Daum 기간 누적 등) 최상위 기준일도 비웁니다 — 없는 값을 만들지 않습니다."""
+    monkeypatch.setattr(radar, "fetch_daum_ranking", lambda *a, **k: _rows("Daum API (외국인, 5일)"))
+
+    result = radar.collect_radar_ranking(date(2026, 9, 11), investor="외국인", interval_type="DAYS_5")
+
+    assert result["rows"]
+    assert result.get("dataDate") is None
