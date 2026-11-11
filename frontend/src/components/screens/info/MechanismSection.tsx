@@ -245,10 +245,16 @@ function TranslationCard({ data }: { data: MechanismResponse }) {
       subtitle="미리 번역하지 않습니다 — 제목은 제목 옆 번역 단추를, 본문은 원문 팝업의 번역 단추를 누를 때만 번역합니다. 한 번 번역한 글자는 저장해 다시 번역하지 않습니다."
     >
       <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
-        <Row label="엔진 · 모델">
-          {t.engine === "gemini" ? "Gemini API" : "Claude API"} · {t.model}
+        <Row label="1순위 엔진 · 모델">
+          {t.engine === "gemini" ? "Gemini API(무료 한도 안)" : "Claude API"} · {t.model}
           {t.engine === "gemini" ? "" : ` · effort ${t.effort}`}
         </Row>
+        {t.engine === "gemini" && (
+          <Row label="2순위(Gemini가 안 될 때)">
+            {t.fallbackModel ? `Claude API · ${t.fallbackModel} · effort ${t.effort}` : "없음(넘어가지 않음)"}
+            {t.geminiResting ? " — 지금 Gemini는 한도 초과 뒤 잠시 쉬는 중" : ""}
+          </Row>
+        )}
         <Row label="오늘 번역한 원문(KST)">
           {t.usedCharsToday === null ? EMPTY : `${formatNumber(t.usedCharsToday, 0)}자`} / 상한 {formatNumber(t.dailyChars, 0)}자
         </Row>

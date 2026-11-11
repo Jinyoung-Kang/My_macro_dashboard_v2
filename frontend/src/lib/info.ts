@@ -336,9 +336,13 @@ export type MechanismResponse = {
   deferred: { task: string; label: string; reason: string }[];
   /** 한국어 번역의 설정과 오늘(KST) 쓴 원문 글자 수(ADR 0037). 표가 아직 없으면 usedCharsToday는 null. */
   translation?: {
-    /** gemini 또는 claude — GEMINI_API_KEY가 있으면 gemini. */
+    /** 1순위 엔진: gemini 또는 claude — GEMINI_API_KEY가 있으면 gemini. */
     engine: string;
     model: string;
+    /** Gemini가 실패하면 넘어가는 2순위 모델(Claude Haiku). 넘어가지 않는 설정이면 null. */
+    fallbackModel?: string | null;
+    /** Gemini가 한도 초과 등으로 잠시 쉬는 중(그동안은 바로 2순위로). */
+    geminiResting?: boolean;
     effort: string;
     dailyChars: number;
     usedCharsToday: number | null;
@@ -424,7 +428,8 @@ export type TranslateResponse = {
   alreadyKorean: boolean;
   cached: boolean;
   truncated: boolean;
-  model: string;
+  /** 이번에 번역한 모델(Gemini, 또는 넘어간 Claude Haiku). 저장본만으로 끝났으면 null. */
+  model: string | null;
   error: string | null;
 };
 

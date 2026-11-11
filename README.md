@@ -313,7 +313,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `KRX_API_KEY` | KRX 선물이 KODEX 200 기반 **추정치**로 폴백 (`isEstimated` 표시) |
 | `KRX_ID` / `KRX_PW` | KRX 정보데이터시스템 계정. 운영 서버의 정보 수집 태스크 `info_krx_daily`만 씀(로컬은 차단 통과 수집이 꺼져 쓰지 않음 — 서버 `.env`에도 두 줄). 없으면 그 태스크가 실패로 남고 정보 수집 화면의 KRX 표와 수급 레이더의 KRX 단계가 비어 레이더는 토스·누적 이력으로 넘어감([ADR 0036](docs/adr/0036-info-hub-krx-packet.md)) |
 | `SAVETICKER_ID` / `SAVETICKER_PW` | 보류 — 지금은 아무 코드도 읽지 않음(saveticker가 서버 IP를 막음, ADR 0036 — 대신 원출처 Financial Juice 속보를 받음, ADR 0037) |
-| `GEMINI_API_KEY` | 정보 수집 글의 번역 엔진 — 있으면 Gemini(낮은 등급 모델), 없으면 Claude Haiku. AI Studio 선불 크레딧이 있어야 함(ADR 0037) |
+| `GEMINI_API_KEY` | 정보 수집 글의 번역 1순위 엔진(Gemini Flash, 무료 한도 안) — 한도 초과·오류면 2순위 Claude Haiku로 넘어감. 비우면 Claude Haiku만(ADR 0037) |
 | `KIS_APP_KEY` / `KIS_APP_SECRET` | 장중 수급 가집계와 교차 검증 비활성화 |
 | AI 키 (`NVIDIA` / `CEREBRAS` / `CLOUDFLARE`) | AI 메뉴만 비활성화. 하나만 있어도 동작 |
 | `ANTHROPIC_API_KEY` | AI 리포트의 Claude 엔진을 건너뜀. 모의 매매 Claude 계좌(결정·프레임 제안·주간 복기)는 'API Key 누락'으로 실패하고 규칙 계좌·벤치마크는 그대로. Claude 계좌도 이 키를 씀(`AI_ENGINES`를 정했으면 그 목록의 모델만) |

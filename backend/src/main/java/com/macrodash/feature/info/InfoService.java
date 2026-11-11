@@ -168,7 +168,8 @@ public class InfoService {
      * 사건 뉴스처럼 글 표에 없는 것은 {@code title}·{@code text}를 보냅니다. 번역은 저장되어 다시 눌러도 모델을 부르지 않습니다.
      * 수집은 일으키지 않습니다(없는 본문을 받으러 가지 않음).
      *
-     * @return {@code {ok, titleKo, textKo, alreadyKorean, cached, truncated, model, error}} — 번역할 본문이 없으면 textKo는 null
+     * @return {@code {ok, titleKo, textKo, alreadyKorean, cached, truncated, model, error}} — 번역할 본문이 없으면 textKo는 null,
+     *         model은 이번에 번역한 모델(저장본만으로 끝났으면 null)
      */
     public Map<String, Object> translate(String itemId, String title, String text) {
         String sourceTitle = title == null ? null : title.strip();
@@ -197,10 +198,12 @@ public class InfoService {
         Map<String, Object> out = new LinkedHashMap<>();
         String error = null;
         String titleKo = null;
+        String usedModel = null;
         if (sourceTitle != null && InfoTranslator.needsTranslation(sourceTitle)) {
             InfoTranslator.Titles titles = translator.titles(List.of(sourceTitle));
             titleKo = titles.translated().get(sourceTitle);
             error = titleKo == null ? titles.error() : null;
+            usedModel = titles.model();
         }
         InfoTranslator.Body body = sourceText == null || sourceText.isBlank() ? null : translator.body(sourceText);
         if (body != null && !body.ok()) {
@@ -212,7 +215,8 @@ public class InfoService {
         out.put("alreadyKorean", body != null && body.alreadyKorean());
         out.put("cached", body == null || body.cached());
         out.put("truncated", body != null && body.truncated());
-        out.put("model", translator.model());
+        // 이번에 실제로 번역한 모델(Gemini, 또는 넘어간 Claude). 저장본만으로 끝났으면 null.
+        out.put("model", body != null && body.model() != null ? body.model() : usedModel);
         out.put("error", error);
         return out;
     }

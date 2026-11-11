@@ -214,10 +214,9 @@ class InfoServiceTest {
         InfoStore.Item stored = new InfoStore.Item("0123456789abcdef01234567", "blog.wolfstreet", "article", "https://wolfstreet.com/x",
                 "Rates", null, "Wolf", NOW, NOW, "Short summary", "full", "impersonate", MAPPER.createObjectNode(), "Long body text");
         when(store.item("0123456789abcdef01234567")).thenReturn(Optional.of(stored));
-        when(translator.model()).thenReturn("claude-haiku-5-5");
-        when(translator.titles(List.of("Rates"))).thenReturn(new InfoTranslator.Titles(Map.of("Rates", "금리"), null, null, true));
-        when(translator.body("Long body text")).thenReturn(new InfoTranslator.Body(true, "긴 본문", false, false, false, null));
-        when(translator.body("Summary only")).thenReturn(new InfoTranslator.Body(false, null, false, false, false, "오늘 번역량 상한"));
+        when(translator.titles(List.of("Rates"))).thenReturn(new InfoTranslator.Titles(Map.of("Rates", "금리"), null, null, true, "gemini-3.5-flash"));
+        when(translator.body("Long body text")).thenReturn(new InfoTranslator.Body(true, "긴 본문", false, false, false, null, "claude-haiku-5-5"));
+        when(translator.body("Summary only")).thenReturn(new InfoTranslator.Body(false, null, false, false, false, "오늘 번역량 상한", null));
 
         Map<String, Object> item = service.translate("0123456789abcdef01234567", "ignored", "ignored");
         Map<String, Object> text = service.translate(null, "한국어 제목", "Summary only");

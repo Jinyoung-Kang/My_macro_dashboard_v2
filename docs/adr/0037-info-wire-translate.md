@@ -75,9 +75,12 @@
 
 사용자 지시: "번역 기능에 Gemini API를 활용", "제목을 무조건 미리 번역하지 않고 원문 그대로, 제목마다 번역 단추", "시각을 한국 시각(KST) 기준으로".
 
-1. **엔진**: `dashboard.info.translate.engine`(환경변수 `INFO_TRANSLATE_ENGINE`, 기본 auto) — `GEMINI_API_KEY`가 있으면 Gemini
-   (`gemini-3.5-flash`, 사고 낮게 — `INFO_TRANSLATE_GEMINI_MODEL`로 바꿈), 없으면 Claude Haiku·effort low. 고른 엔진이 실패해도 다른 엔진으로 넘어가지 않습니다(비용이 나가는 곳을
-   조용히 바꾸지 않음). Gemini는 SDK를 더하지 않고 REST(`generateContent`, 키는 머리글)로 부릅니다(`feature/info/GeminiClient`).
+1. **엔진**: `dashboard.info.translate.engine`(환경변수 `INFO_TRANSLATE_ENGINE`, 기본 auto) — `GEMINI_API_KEY`가 있으면 **1순위 Gemini**
+   (`gemini-3.5-flash`, 사고 낮게 — `INFO_TRANSLATE_GEMINI_MODEL`로 바꿈), 실패하면(한도 초과·오류·45초 시간 초과) **2순위 Claude Haiku**·effort low로
+   넘어갑니다(사용자 지시: "Gemini 1순위·Haiku 2순위, Gemini는 무료 한도 안에서만, 너무 싼 모델은 쓰지 않음"). 한도 초과·키 문제로 실패하면 10분 동안
+   Gemini를 건너뜁니다. 번역 행에는 실제로 옮긴 모델을 남깁니다. 키가 없으면 Claude Haiku만, `gemini`·`claude`로 고정하면 그 엔진만 부릅니다.
+   Gemini는 SDK를 더하지 않고 REST(`generateContent`, 키는 머리글)로 부릅니다(`feature/info/GeminiClient`).
+   무료 등급은 결제를 연결하지 않은 프로젝트의 키일 때입니다 — 그 등급의 입력은 Google의 제품 개선에 쓰일 수 있습니다(번역하는 글은 공개된 기사·블로그).
 2. **제목**: 미리 번역하지 않습니다 — 정기 작업(`InfoTranslateJob`)과 `INFO_TRANSLATE_ENABLED`를 지웠습니다. 목록은 원문 제목을 그대로 보이고
    (출처가 붙인 한국어 제목 — waedge 해외 블로그 — 은 아래에), 한글이 없는 제목마다 번역 단추를 둡니다. 누른 제목만 번역하고 저장합니다.
 3. **시각**: 서버는 이미 KST로 내리고 있었지만 화면이 'KST'를 떼고 보였습니다. 글·속보·사건 뉴스·팝업·네이버 순위 시각에 KST를 적습니다.

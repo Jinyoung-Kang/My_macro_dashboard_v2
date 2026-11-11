@@ -108,7 +108,7 @@ function Reader({ entry }: { entry: ReaderEntry }) {
       )}
       <p className="text-xs leading-5 text-text-3">
         {entry.note}
-        {showKorean && translated?.textKo ? ` 번역은 ${translated.model}가 옮긴 것이라 숫자·고유명사는 원문과 대조하세요.` : ""}
+        {showKorean && translated?.textKo ? ` 번역은 ${translated.model ?? "번역 모델"}이(가) 옮긴 것이라 숫자·고유명사는 원문과 대조하세요.` : ""}
       </p>
     </div>
   );

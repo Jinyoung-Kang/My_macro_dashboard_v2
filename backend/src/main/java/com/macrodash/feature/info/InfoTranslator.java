@@ -27,7 +27,8 @@ import java.util.regex.Pattern;
 
 /**
  * 정보 수집 글의 한국어 번역(ADR 0037) — 낮은 등급 모델을 낮은 effort로 부르고, 결과를 표({@code info_translations})에 두어 같은 글자는 다시
- * 번역하지 않습니다. 엔진은 {@code dashboard.info.translate.engine}: auto면 Gemini 키(GEMINI_API_KEY)가 있을 때 Gemini, 없으면 Claude Haiku.
+ * 번역하지 않습니다. 엔진은 {@code dashboard.info.translate.engine}: auto면 Gemini 키(GEMINI_API_KEY)가 있을 때 1순위 Gemini(무료 한도 안)·
+ * 실패하면 2순위 Claude Haiku, 키가 없으면 Claude Haiku만.
  *
  * <ul>
  *   <li><b>제목</b>: 화면에서 그 제목의 번역 단추를 누를 때 번역합니다({@link #titles} — 미리 번역하지 않음, 2026-11-12 사용자 지시).</li>
@@ -101,8 +102,9 @@ public class InfoTranslator {
      * @param translated 원문 제목 → 한국어(저장본에서 읽은 것과 이번에 번역한 것)
      * @param errorKind  실패했으면 {@link AiService.StructuredResult#errorKind()}(상한이면 BUDGET, 응답을 읽지 못했으면 PARSE). 성공이면 null
      * @param called     이번에 모델을 불렀는가(저장본만으로 끝났으면 false)
+     * @param model      이번에 번역한 모델 ID(Gemini 또는 넘어간 Claude). 부르지 않았으면 null
      */
-    public record Titles(Map<String, String> translated, String errorKind, String error, boolean called) {
+    public record Titles(Map<String, String> translated, String errorKind, String error, boolean called, String model) {
         public boolean ok() {
             return errorKind == null;
         }
@@ -115,9 +117,22 @@ public class InfoTranslator {
      * @param alreadyKorean 원문이 이미 한국어라 번역하지 않음
      * @param cached        모델을 부르지 않고 저장본만으로 끝남
      * @param truncated     원문이 상한({@value #BODY_MAX_CHARS}자)을 넘어 앞부분만 번역함
+     * @param model         이번에 번역한 모델 ID(조각마다 다르면 마지막 것). 모델을 부르지 않았으면 null
      */
-    public record Body(boolean ok, String textKo, boolean alreadyKorean, boolean cached, boolean truncated, String error) {
+    public record Body(boolean ok, String textKo, boolean alreadyKorean, boolean cached, boolean truncated, String error, String model) {
     }
+
+    /** 모델 호출 한 번의 결과와 실제로 답한 모델. */
+    private record Called(GeminiClient.Reply reply, String model) {
+    }
+
+    /** 조각 하나의 결과 — 실패 사유(성공이면 null)와 번역한 모델. */
+    private record Part(String error, String model) {
+    }
+
+    /** Gemini가 이 사유로 실패하면 한동안 Gemini를 건너뜁니다(무료 한도·키 문제는 바로 다시 불러도 같음). */
+    private static final java.util.Set<String> GEMINI_REST_KINDS = java.util.Set.of("RATE_LIMIT", "BILLING", "UNAUTHORIZED", "NOT_FOUND");
+    static final int GEMINI_REST_MINUTES = 10;
 
     private final AiService ai;
     private final GeminiClient gemini;
@@ -129,6 +144,11 @@ public class InfoTranslator {
     private final String claudeModel;
     private final String geminiModel;
     private final boolean useGemini;
+    /** Gemini가 실패하면 Claude Haiku로 넘어가는가(engine auto). */
+    private final boolean fallbackToClaude;
+    private final int geminiTimeoutSeconds;
+    /** 이 시각까지 Gemini를 건너뛰고 바로 Claude로 갑니다(한도 초과 등 — 이 프로세스 안). */
+    private volatile Instant geminiRestUntil = Instant.EPOCH;
     private final String effort;
     private final long dailyChars;
     private final int timeoutSeconds;
@@ -146,12 +166,13 @@ public class InfoTranslator {
                           @Value("${dashboard.info.translate.gemini-model:gemini-3.5-flash}") String geminiModel,
                           @Value("${dashboard.info.translate.effort:low}") String effort,
                           @Value("${dashboard.info.translate.daily-chars:1500000}") long dailyChars,
-                          @Value("${dashboard.info.translate.timeout-seconds:90}") int timeoutSeconds) {
-        this(ai, gemini, store, mapper, engine, model, geminiModel, effort, dailyChars, timeoutSeconds, Clock.systemUTC());
+                          @Value("${dashboard.info.translate.timeout-seconds:90}") int timeoutSeconds,
+                          @Value("${dashboard.info.translate.gemini-timeout-seconds:45}") int geminiTimeoutSeconds) {
+        this(ai, gemini, store, mapper, engine, model, geminiModel, effort, dailyChars, timeoutSeconds, geminiTimeoutSeconds, Clock.systemUTC());
     }
 
     InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, ObjectMapper mapper, String engine, String model,
-                   String geminiModel, String effort, long dailyChars, int timeoutSeconds, Clock clock) {
+                   String geminiModel, String effort, long dailyChars, int timeoutSeconds, int geminiTimeoutSeconds, Clock clock) {
         this.ai = ai;
         this.gemini = gemini;
         this.store = store;
@@ -161,6 +182,7 @@ public class InfoTranslator {
         this.effort = effort;
         this.dailyChars = dailyChars;
         this.timeoutSeconds = timeoutSeconds;
+        this.geminiTimeoutSeconds = geminiTimeoutSeconds;
         this.clock = clock;
         String wanted = engine == null ? "auto" : engine.strip().toLowerCase(java.util.Locale.ROOT);
         this.useGemini = switch (wanted) {
@@ -169,16 +191,35 @@ public class InfoTranslator {
             case "auto", "" -> gemini.configured();
             default -> throw new IllegalArgumentException("dashboard.info.translate.engine은 auto·gemini·claude 중 하나여야 합니다: " + engine);
         };
+        this.fallbackToClaude = useGemini && !"gemini".equals(wanted);
         this.model = useGemini ? geminiModel : model;
     }
 
-    /** 모델을 한 번 부릅니다 — 고른 엔진(Gemini 또는 Claude)으로. 다른 엔진으로 넘어가지 않습니다(비용이 나가는 곳을 조용히 바꾸지 않음). */
-    private GeminiClient.Reply call(String system, String user, Map<String, Object> schema) {
+    /**
+     * 모델을 부릅니다 — 1순위 Gemini(무료 한도 안에서 씀), 실패하면 2순위 Claude Haiku(engine auto, 2026-11-12 사용자 지시). Gemini가 한도 초과·키
+     * 문제로 실패하면 {@value #GEMINI_REST_MINUTES}분 동안은 Gemini를 건너뛰고 바로 Claude로 갑니다(같은 실패를 되풀이해 기다리지 않게).
+     * engine이 gemini·claude로 고정이면 그 엔진만 부릅니다.
+     */
+    private Called call(String system, String user, Map<String, Object> schema) {
+        String geminiError = null;
         if (useGemini) {
-            return gemini.structured(geminiModel, system, user, schema, timeoutSeconds);
+            if (!fallbackToClaude || !clock.instant().isBefore(geminiRestUntil)) {
+                GeminiClient.Reply reply = gemini.structured(geminiModel, system, user, schema, geminiTimeoutSeconds);
+                if (reply.ok() || !fallbackToClaude) {
+                    return new Called(reply, geminiModel);
+                }
+                if (GEMINI_REST_KINDS.contains(reply.errorKind())) {
+                    geminiRestUntil = clock.instant().plus(java.time.Duration.ofMinutes(GEMINI_REST_MINUTES));
+                }
+                geminiError = reply.error();
+                log.info("Gemini 번역 실패({}) — Claude Haiku로 넘어갑니다", reply.errorKind());
+            } else {
+                geminiError = "Gemini는 한도 초과 뒤 잠시 쉬는 중";
+            }
         }
         AiService.StructuredResult result = ai.structured(claudeModel, system, user, schema, effort, timeoutSeconds);
-        return new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), result.error());
+        String error = result.ok() || geminiError == null ? result.error() : "Gemini: " + geminiError + " / Claude: " + result.error();
+        return new Called(new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), error), claudeModel);
     }
 
     @PreDestroy
@@ -200,6 +241,8 @@ public class InfoTranslator {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("engine", useGemini ? "gemini" : "claude");
         out.put("model", model);
+        out.put("fallbackModel", fallbackToClaude ? claudeModel : null);
+        out.put("geminiResting", useGemini && clock.instant().isBefore(geminiRestUntil));
         out.put("effort", effort);
         out.put("dailyChars", dailyChars);
         out.put("usedCharsToday", store.ready() ? store.charsSince(Kst.today(clock).atStartOfDay(Kst.ZONE).toInstant()) : null);
@@ -245,26 +288,27 @@ public class InfoTranslator {
     public Titles titles(List<String> titles) {
         Map<String, String> out = cachedTitles(titles);
         if (!store.ready()) {
-            return new Titles(out, "NOT_READY", "번역 저장 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 됩니다", false);
+            return new Titles(out, "NOT_READY", "번역 저장 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 됩니다", false, null);
         }
         List<String> missing = new LinkedHashSet<>(titles).stream()
                 .filter(title -> title != null && !out.containsKey(title) && title.length() <= TITLE_MAX_CHARS && needsTranslation(title))
                 .limit(TITLE_BATCH).toList();
         if (missing.isEmpty()) {
-            return new Titles(out, null, null, false);
+            return new Titles(out, null, null, false, null);
         }
         int chars = missing.stream().mapToInt(String::length).sum();
         String over = overBudget(chars);
         if (over != null) {
-            return new Titles(out, "BUDGET", over, false);
+            return new Titles(out, "BUDGET", over, false, null);
         }
         List<Map<String, Object>> numbered = new ArrayList<>();
         for (int i = 0; i < missing.size(); i++) {
             numbered.add(Map.of("n", i + 1, "text", missing.get(i)));
         }
-        GeminiClient.Reply result = call(TITLE_SYSTEM, mapper.writeValueAsString(Map.of("titles", numbered)), TITLE_SCHEMA);
+        Called called = call(TITLE_SYSTEM, mapper.writeValueAsString(Map.of("titles", numbered)), TITLE_SCHEMA);
+        GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
-            return new Titles(out, result.errorKind(), result.error(), true);
+            return new Titles(out, result.errorKind(), result.error(), true, called.model());
         }
         int stored = 0;
         try {
@@ -275,18 +319,18 @@ public class InfoTranslator {
                     continue;
                 }
                 String title = missing.get(n - 1);
-                store.put(TranslationStore.id(TranslationStore.TITLE, title), TranslationStore.TITLE, title.length(), ko, model);
+                store.put(TranslationStore.id(TranslationStore.TITLE, title), TranslationStore.TITLE, title.length(), ko, called.model());
                 out.put(title, ko);
                 stored++;
             }
         } catch (RuntimeException e) {
             log.warn("제목 번역 응답을 읽지 못함: {}", e.toString());
-            return new Titles(out, "PARSE", "번역 응답을 읽지 못했습니다", true);
+            return new Titles(out, "PARSE", "번역 응답을 읽지 못했습니다", true, called.model());
         }
         if (stored == 0) {
-            return new Titles(out, "PARSE", "번역 응답에 쓸 제목이 없습니다", true);
+            return new Titles(out, "PARSE", "번역 응답에 쓸 제목이 없습니다", true, called.model());
         }
-        return new Titles(out, null, null, true);
+        return new Titles(out, null, null, true, called.model());
     }
 
     /**
@@ -295,13 +339,13 @@ public class InfoTranslator {
      */
     public Body body(String text) {
         if (text == null || text.isBlank()) {
-            return new Body(false, null, false, false, false, "번역할 글이 없습니다");
+            return new Body(false, null, false, false, false, "번역할 글이 없습니다", null);
         }
         if (!needsTranslation(text)) {
-            return new Body(true, null, true, true, false, null);
+            return new Body(true, null, true, true, false, null, null);
         }
         if (!store.ready()) {
-            return new Body(false, null, false, false, false, "번역 저장 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 됩니다");
+            return new Body(false, null, false, false, false, "번역 저장 표가 아직 없습니다 — 수집기가 새 스키마를 적용한 뒤 됩니다", null);
         }
         boolean truncated = text.length() > BODY_MAX_CHARS;
         List<String> parts = chunks(truncated ? text.substring(0, BODY_MAX_CHARS) : text, BODY_CHUNK_CHARS);
@@ -314,21 +358,23 @@ public class InfoTranslator {
             }
         }
         boolean cached = missing.isEmpty();
+        String usedModel = null;
         if (!cached) {
             String over = overBudget(missing.stream().mapToInt(i -> parts.get(i).length()).sum());
             if (over != null) {
-                return new Body(false, null, false, false, truncated, over);
+                return new Body(false, null, false, false, truncated, over, null);
             }
-            Map<Integer, Future<String>> running = new LinkedHashMap<>();
+            Map<Integer, Future<Part>> running = new LinkedHashMap<>();
             for (int index : missing) {
                 String part = parts.get(index);
                 running.put(index, pool.submit(() -> translatePart(part)));
             }
             String error = null;
-            for (Map.Entry<Integer, Future<String>> entry : running.entrySet()) {
+            for (Map.Entry<Integer, Future<Part>> entry : running.entrySet()) {
                 try {
-                    String failure = entry.getValue().get();
-                    error = error == null ? failure : error;
+                    Part part = entry.getValue().get();
+                    error = error == null ? part.error() : error;
+                    usedModel = part.model() == null ? usedModel : part.model();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     error = "번역이 중단됐습니다";
@@ -338,7 +384,7 @@ public class InfoTranslator {
                 }
             }
             if (error != null) {
-                return new Body(false, null, false, false, truncated, error + " — 번역된 부분은 저장했으니 다시 누르면 남은 부분만 번역합니다");
+                return new Body(false, null, false, false, truncated, error + " — 번역된 부분은 저장했으니 다시 누르면 남은 부분만 번역합니다", usedModel);
             }
             done.putAll(store.find(ids));
         }
@@ -347,26 +393,27 @@ public class InfoTranslator {
             String ko = done.get(ids.get(i));
             joined.append(joined.isEmpty() ? "" : "\n\n").append(ko == null ? parts.get(i) : ko);
         }
-        return new Body(true, joined.toString(), false, cached, truncated, null);
+        return new Body(true, joined.toString(), false, cached, truncated, null, usedModel);
     }
 
-    /** 조각 하나를 번역해 저장합니다 → 실패 사유(성공이면 null). */
-    private String translatePart(String part) {
-        GeminiClient.Reply result = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA);
+    /** 조각 하나를 번역해 저장합니다 → 실패 사유(성공이면 null)와 번역한 모델. */
+    private Part translatePart(String part) {
+        Called called = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA);
+        GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
-            return result.error();
+            return new Part(result.error(), called.model());
         }
         String ko;
         try {
             ko = mapper.readTree(result.text()).path("ko").asText("").strip();
         } catch (RuntimeException e) {
-            return "번역 응답을 읽지 못했습니다";
+            return new Part("번역 응답을 읽지 못했습니다", called.model());
         }
         if (ko.isEmpty()) {
-            return "번역 응답이 비었습니다";
+            return new Part("번역 응답이 비었습니다", called.model());
         }
-        store.put(TranslationStore.id(TranslationStore.BODY, part), TranslationStore.BODY, part.length(), ko, model);
-        return null;
+        store.put(TranslationStore.id(TranslationStore.BODY, part), TranslationStore.BODY, part.length(), ko, called.model());
+        return new Part(null, called.model());
     }
 
     /** 오늘(KST) 번역한 글자 수에 {@code chars}를 더하면 하루 상한을 넘는가 → 넘으면 안내 글, 아니면 null. */
