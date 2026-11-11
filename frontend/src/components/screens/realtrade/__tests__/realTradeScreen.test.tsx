@@ -709,6 +709,23 @@ describe("켜기 창", () => {
     await waitFor(() => expect(calls("/api/realtrade/preview")).toContain("/api/realtrade/preview?market=KR&sourceBook=kr_claude2"));
   });
 
+  // 수정 전에는 세션 날짜 없이 시각만 보였고, 맞추기 창이 열려 있어도(켜자마자 오늘 묶음이 나감) 알리지 않았다.
+  it("QA-344: 예상 목록은 세션 날짜를 보이고, 맞추기 창이 열려 있으면 '창이 열려 있는 동안 켜면 바로 주문'을 경고한다", async () => {
+    reads["/api/realtrade/preview"] = () => Promise.resolve({ ...PREVIEW, session: "2026-11-06", syncAt: "2026-11-06T00:10:00Z", immediate: true });
+    const dialog = await openEnable();
+    await within(dialog).findByRole("table", { name: "예상 주문" });
+    expect(within(dialog).getByText(/다음 맞추기 2026-11-06 개장 10분 뒤 맞추기 09:10 시장가/)).toBeTruthy();
+    expect(within(dialog).getByText(/지금 맞추기 창이 열려 있습니다 — 창이 열려 있는 동안 켜면 이 목록이 바로 주문됩니다/)).toBeTruthy();
+  });
+
+  it("QA-344 대조: 창이 열려 있지 않으면(immediate 거짓·없음) 바로 주문 경고가 없다", async () => {
+    reads["/api/realtrade/preview"] = () => Promise.resolve({ ...PREVIEW, session: "2026-11-09", syncAt: "2026-11-09T00:10:00Z", immediate: false });
+    const dialog = await openEnable();
+    await within(dialog).findByRole("table", { name: "예상 주문" });
+    expect(within(dialog).getByText(/다음 맞추기 2026-11-09 개장 10분 뒤 맞추기 09:10 시장가/)).toBeTruthy();
+    expect(within(dialog).queryByText(/지금 맞추기 창이 열려 있습니다/)).toBeNull();
+  });
+
   it("확인 글자가 정확히 같고 점검표·비밀번호가 다 차야 켜기 단추가 열리고, 친 글자 그대로 보낸다", async () => {
     api.apiPost.mockResolvedValue({ ok: true, state: "LIVE", version: 4 });
     const dialog = await openEnable();

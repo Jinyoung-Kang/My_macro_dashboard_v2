@@ -723,12 +723,27 @@ export function windowText(window: RealTradeWindow | string | null | undefined):
  * 켜기 창 예상 목록의 다음 맞추기 방식("개장 10분 뒤 맞추기 09:10 시장가"·"시가 맞추기(시가 단일가)") — 예상 응답의 `syncAt`으로(ADR 0033).
  * 시각을 읽지 못하면 시각 없이.
  */
-export function previewTimingText(syncAt: string | null | undefined): string {
+export function previewTimingText(syncAt: string | null | undefined, session?: string | null): string {
+  // 세션 날짜(YYYY-MM-DD)가 오면 앞에 적습니다 — 시각만으로는 오늘 맞추기인지 다음 거래일 맞추기인지 알 수 없습니다(QA-344).
+  const day = typeof session === "string" && /^\d{4}-\d{2}-\d{2}$/.test(session.trim()) ? `${session.trim()} ` : "";
   if (typeof syncAt !== "string" || syncAt.trim() === "") {
-    return "시가 맞추기(시가 단일가)";
+    return `${day}시가 맞추기(시가 단일가)`;
   }
   const clock = kstClock(syncAt);
-  return clock === EMPTY ? "개장 10분 뒤 맞추기(시장가)" : `개장 10분 뒤 맞추기 ${clock.slice(0, 5)} 시장가`;
+  return clock === EMPTY ? `${day}개장 10분 뒤 맞추기(시장가)` : `${day}개장 10분 뒤 맞추기 ${clock.slice(0, 5)} 시장가`;
+}
+
+const IMMEDIATE_VERB: Readonly<Record<RealTradeDialogMode, string>> = { enable: "켜면", update: "바꾸면", resume: "멈춤을 풀면" };
+
+/**
+ * 예상 목록의 맞추기 창이 지금 열려 있을 때의 안내(QA-344) — 응답의 `immediate`가 정확히 true일 때만, 아니면 null. 그 창 안에서 켜면 정기 작업이
+ * 다음 주기에 오늘 묶음을 만들어 바로 보냅니다. 예상을 읽은 때와 확인을 누르는 때 사이에 창이 닫힐 수 있어 '창이 열려 있는 동안'이라고 적습니다.
+ */
+export function previewImmediateText(immediate: unknown, mode: RealTradeDialogMode): string | null {
+  if (immediate !== true) {
+    return null;
+  }
+  return `지금 맞추기 창이 열려 있습니다 — 창이 열려 있는 동안 ${IMMEDIATE_VERB[mode]} 이 목록이 바로 주문됩니다(실제 주문은 그때 보유·가격으로 다시 계산).`;
 }
 
 const EVENT_KIND: Readonly<Record<string, string>> = {

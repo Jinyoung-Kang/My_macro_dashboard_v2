@@ -349,10 +349,11 @@ public class RealTradeService {
         }
         Limits limits = status.value().limits();
         Instant now = clock.instant();
-        LocalDate session = nextSyncSession(book, now);
-        if (session == null) {
+        NextSync next = nextSync(book, now);
+        if (next == null) {
             return previewFailed("calendar-unknown");
         }
+        LocalDate session = next.session();
         Optional<Instant> syncAt = paper.dailySyncAt(book, session);
         Optional<OpenTargets> found = syncAt.isPresent() ? paper.targetsAt(book, session, syncAt.get()) : paper.openTargets(book, session);
         if (found.isEmpty()) {
@@ -422,6 +423,7 @@ public class RealTradeService {
         out.put("ok", true);
         out.put("sourceBook", book);
         out.put("session", session.toString());
+        out.put("immediate", next.immediate());
         out.put("syncAt", syncAt.map(RealTradeService::iso).orElse(null));
         out.put("equity", equity.get());
         List<Map<String, Object>> orders = new ArrayList<>();
@@ -462,10 +464,26 @@ public class RealTradeService {
     }
 
     /**
-     * 다음 맞추기 세션 — 오늘 개장 전이거나 오늘의 일일 맞추기 시각(ADR 0033 — 개장 10분 뒤 시각 맞추기) 전이면 오늘, 아니면 모의 한국 달력의 다음
-     * 거래일. 달력이 모르면 null.
+     * 다음 맞추기 — 세션과, 그 세션의 맞추기 창이 지금 열려 있는가({@code immediate} — 켜면·바꾸면·풀면 정기 작업이 다음 주기에 그 묶음을 바로 보냄).
      */
-    private LocalDate nextSyncSession(String book, Instant now) {
+    private record NextSync(LocalDate session, boolean immediate) {
+    }
+
+    /** 시가 맞추기 날의 시가 단일가 시작을 모를 때 쓰는 어림 — 정규장 시작 이만큼 전(토스 프리마켓 단일가 08:50, 정규장 09:00). 표시(immediate)에만 씁니다. */
+    static final Duration OPEN_AUCTION_LEAD = Duration.ofMinutes(10);
+
+    /**
+     * 다음 맞추기 세션을 정기 작업과 같은 기준으로 고릅니다(QA-344) — 정기 작업은 그날 묶음이 없고 그날 맞추기 창이 아직 닫히지 않았으면 오늘 묶음을
+     * 만듭니다({@link RealTradeJob}의 시가 맞추기·시각 맞추기). 그래서
+     * <ul>
+     *   <li>오늘 묶음이 이미 있으면 오늘은 건너뜁니다(묶음은 하루 하나 — 껐다 켜거나 방식을 바꿔도 그날 다시 만들지 않음).</li>
+     *   <li>시각 맞추기 날(ADR 0033 — 개장 10분 뒤)은 창 끝([T, T + 3분], 정기 작업이 매매 제한으로 늘린 창이 있으면 그 끝)까지 오늘입니다. 예전에는
+     *       T가 지나면 다음 거래일의 목록을 보여 줘, 창 안에서 그 목록을 확인하고 켜면 다른 묶음(오늘 목표)이 바로 나갔습니다.</li>
+     *   <li>시가 맞추기 날은 개장 전이면 오늘입니다(예전과 같음).</li>
+     * </ul>
+     * 달력이 모르면 null.
+     */
+    private NextSync nextSync(String book, Instant now) {
         LocalDate date = LocalDate.ofInstant(now, Kst.ZONE);
         for (int i = 0; i <= NEXT_SESSION_SEARCH_DAYS; i++) {
             LocalDate d = date.plusDays(i);
@@ -476,11 +494,41 @@ public class RealTradeService {
             if (!hours.get().tradingDay()) {
                 continue;
             }
-            if (i > 0 || now.isBefore(hours.get().open()) || paper.dailySyncAt(book, d).map(now::isBefore).orElse(false)) {
-                return d;
+            if (i > 0) {
+                return new NextSync(d, false);
+            }
+            if (store.batch(KR, d, RealTradeStore.BATCH_SYNC).isPresent()) {
+                continue;
+            }
+            Optional<Instant> syncAt = paper.dailySyncAt(book, d);
+            if (syncAt.isPresent()) {
+                if (!now.isAfter(timedSyncEnd(d, syncAt.get()))) {
+                    return new NextSync(d, !now.isBefore(syncAt.get()));
+                }
+            } else if (now.isBefore(hours.get().open())) {
+                Window sync = todayWindow(d, RealTradePlanner.WINDOW_SYNC);
+                Instant start = sync != null ? sync.start() : hours.get().open().minus(OPEN_AUCTION_LEAD).plus(RealTradePlanner.SYNC_OPEN_AFTER);
+                Instant end = sync != null ? sync.end() : hours.get().open().minus(RealTradePlanner.SYNC_CLOSE_BEFORE);
+                return new NextSync(d, !now.isBefore(start) && !now.isAfter(end));
             }
         }
         return null;
+    }
+
+    /** 오늘 시각 맞추기 창의 끝 — T + 3분, 정기 작업이 같은 T의 창을 더 길게 잡고 있으면(매매 제한 대기) 그 끝. */
+    private Instant timedSyncEnd(LocalDate today, Instant syncAt) {
+        Instant end = syncAt.plus(RealTradePlanner.TIMED_SYNC_LENGTH);
+        Window known = todayWindow(today, RealTradePlanner.WINDOW_SYNC_AT);
+        return known != null && known.start().equals(syncAt) && known.end().isAfter(end) ? known.end() : end;
+    }
+
+    /** 정기 작업이 오늘 받아 둔 창 가운데 그 종류(꺼짐에서는 정기 작업이 장 운영 정보를 받지 않아 없음 — null). */
+    private Window todayWindow(LocalDate today, String kind) {
+        RealTradeJob.TodayView view = job.todayView();
+        if (view == null || !today.equals(view.date())) {
+            return null;
+        }
+        return view.windows().stream().filter(w -> kind.equals(w.kind())).findFirst().orElse(null);
     }
 
     // ------------------------------------------------------------------ 켜기

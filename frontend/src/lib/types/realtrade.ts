@@ -207,8 +207,10 @@ export interface RealTradePreviewResponse {
   ok: boolean;
   /** ok가 거짓일 때의 사유 코드 — 명세에 없는 선택 칸. */
   reason?: string | null;
-  /** 예상의 세션(YYYY-MM-DD). */
+  /** 예상의 세션(YYYY-MM-DD) — 정기 작업이 다음에 묶음을 만드는 날(맞추기 창이 열려 있고 오늘 묶음이 없으면 오늘, QA-344). */
   session?: string | null;
+  /** 그 세션의 맞추기 창이 지금 열려 있는가 — 참이면 켜기·바꾸기·해제 직후 정기 작업이 이 목록(그때 값으로 다시 계산)을 바로 주문합니다. */
+  immediate?: boolean | null;
   /** 다음 맞추기 시각(ISO) — 개장 10분 뒤 시각 맞추기면 그 시각, 시가 맞추기면 null. */
   syncAt?: string | null;
   equity: RealTradeDecimal;

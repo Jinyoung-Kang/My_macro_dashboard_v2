@@ -51,6 +51,7 @@ import {
   serverSwitchText,
   serverUnknownText,
   showDisable,
+  previewImmediateText,
   previewTimingText,
   skippedText,
   sourceBookLabel,
@@ -403,6 +404,18 @@ describe("표기", () => {
     expect(eventDetailText({ sent: 2, blocked: 1, missed: 0, date: "2026-11-10", symbol: "005930" }, "STOP_SELL")).toBe("보냄 2 · 놓침 0 · 막힘 1");
     expect(previewTimingText("2026-11-10T00:10:00Z")).toBe("개장 10분 뒤 맞추기 09:10 시장가");
     expect(previewTimingText(null)).toBe("시가 맞추기(시가 단일가)");
+  });
+
+  it("QA-344: 예상 목록의 맞추기 글은 세션 날짜를 앞에 적고, 창이 열려 있을 때만 '바로 주문' 안내를 낸다", () => {
+    expect(previewTimingText("2026-11-06T00:10:00Z", "2026-11-06")).toBe("2026-11-06 개장 10분 뒤 맞추기 09:10 시장가");
+    expect(previewTimingText(null, "2026-11-09")).toBe("2026-11-09 시가 맞추기(시가 단일가)");
+    expect(previewTimingText("2026-11-06T00:10:00Z", "내일")).toBe("개장 10분 뒤 맞추기 09:10 시장가");   // 날짜 모양이 아니면 적지 않음
+    expect(previewImmediateText(true, "enable")).toBe(
+      "지금 맞추기 창이 열려 있습니다 — 창이 열려 있는 동안 켜면 이 목록이 바로 주문됩니다(실제 주문은 그때 보유·가격으로 다시 계산).",
+    );
+    expect(previewImmediateText(true, "update")).toContain("바꾸면 이 목록이 바로 주문됩니다");
+    expect(previewImmediateText(true, "resume")).toContain("멈춤을 풀면 이 목록이 바로 주문됩니다");
+    for (const value of [false, null, undefined, "true", 1]) expect(previewImmediateText(value, "enable")).toBeNull();
   });
 
   it("QA-342: 준비 안 됨 이벤트(개장이 가깝도록 장 운영 정보·수집기 상태를 못 받음) — 이름표와 사유 코드", () => {

@@ -1554,6 +1554,21 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("QA-344: 정기 작업이 매매 제한으로 시각 맞추기 창을 늘려 둔 동안(묶음 없음)의 예상 목록은 그 창 끝까지 오늘이고 immediate — 기본 길이(09:13)에서 끊지 않음")
+    void previewFollowsExtendedTimedWindow() {
+        timedRestrictionDay();
+        restrictions(Set.of(), "-8.1");
+        run("09:10:05");   // 서킷브레이커 — 묶음을 만들지 않고 창을 늘림
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        RealTradeService service = new RealTradeService(store, client, paper, mock(com.macrodash.feature.auth.AuthService.class), job, executor,
+                clock, true);
+
+        clock.set(kst("2026-11-06T09:30"));
+        assertThat(service.preview("KR", BOOK)).containsEntry("ok", true).containsEntry("session", SESSION.toString())
+                .containsEntry("immediate", true);
+    }
+
+    @Test
     @DisplayName("매매 제한 — 3단계(−20%)는 그날 보내지 않고 창이 끝나면 놓침으로 알림, 다음 맞추기가 메움")
     void timedSyncGivesUpOnThirdStage() {
         timedRestrictionDay();

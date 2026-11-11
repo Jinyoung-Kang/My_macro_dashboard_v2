@@ -22,7 +22,6 @@ import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -504,16 +503,15 @@ class RealTradeServiceDbTest {
                 .atZone(RealTradeFixtures.SEOUL).toInstant()));
         when(paper.targetsAt(eq(BOOK), any(), any())).thenAnswer(inv -> Optional.of(new OpenTargets(BOOK, inv.getArgument(1),
                 Map.of(C, 50.0), Map.of(), 1e7, 0, List.of(), List.of())));
+        sellableOnlyWhenAsked(RealTradeFixtures.kst("2026-11-06T09:00"), "9000000");
     }
 
     private Map<String, Object> previewAt(String kstTime) {
         clock.set(RealTradeFixtures.kst("2026-11-06T" + kstTime));
-        sellableOnlyWhenAsked(clock.now, "9000000");
         return service(true).preview("KR", BOOK);
     }
 
     @Test
-    @Disabled("QA-344: 수정 전에는 맞추기 시각이 지나면 창이 열려 있어도 다음 거래일의 목록을 보여 줍니다")
     @DisplayName("QA-344: 예상 목록의 세션은 정기 작업과 같은 기준 — 맞추기 창이 열려 있는 동안(09:10~09:13)은 오늘이고 immediate(켜면 바로 주문), 창 전은 오늘, 창 뒤는 다음 거래일")
     void previewSessionMatchesJobDuringTimedSyncWindow() {
         timedSyncEveryDay();
@@ -531,7 +529,6 @@ class RealTradeServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-344: 수정 전에는 오늘 묶음이 있어도 맞추기 시각 전이면 오늘 세션을 보여 줍니다")
     @DisplayName("QA-344: 오늘 묶음이 이미 있으면(껐다 다시 켜는 날) 정기 작업은 오늘 묶음을 다시 만들지 않으므로 예상 목록도 다음 거래일")
     void previewSkipsTodayWhenBatchExists() {
         timedSyncEveryDay();

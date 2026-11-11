@@ -23,6 +23,7 @@ import {
   LOSS_LIMIT,
   parseLossLimit,
   PREFLIGHT_CHECKLIST,
+  previewImmediateText,
   previewTimingText,
   realTradeErrorCode,
   realTradeErrorText,
@@ -338,7 +339,7 @@ function RealTradeForm({
         </dl>
       </section>
 
-      <PreviewSection preview={preview} bookLabel={previewBook ? sourceBookLabel(previewBook) : null} />
+      <PreviewSection preview={preview} bookLabel={previewBook ? sourceBookLabel(previewBook) : null} mode={mode} />
 
       {(mode === "enable" || (mode === "update" && book !== currentBook)) && (
         <Banner tone="danger">
@@ -442,11 +443,14 @@ function turnoverText(value: unknown): string {
 function PreviewSection({
   preview,
   bookLabel,
+  mode,
 }: {
   preview: ReturnType<typeof useApi<RealTradePreviewResponse>>;
   bookLabel: string | null;
+  mode: RealTradeDialogMode;
 }) {
   const { data, loading, error, reload } = preview;
+  const immediate = data?.ok === true ? previewImmediateText(data.immediate, mode) : null;
   return (
     <section aria-label="예상 목록" className="flex flex-col gap-2">
       <h3 className="text-sm font-medium text-text">예상 목록{bookLabel ? ` — ${bookLabel}` : ""}</h3>
@@ -465,9 +469,10 @@ function PreviewSection({
       {data?.ok === true && (
         <>
           <p className="text-xs leading-relaxed text-text-3">
-            운용 평가액 {formatWon(data.equity)} · 회전율 {turnoverText(data.turnoverPct)} · 다음 맞추기 {previewTimingText(data.syncAt)} · 지금
-            값으로 계산한 예상이고, 실제 주문은 다음 맞추기에서 그때 보유·가격으로 다시 계산합니다.
+            운용 평가액 {formatWon(data.equity)} · 회전율 {turnoverText(data.turnoverPct)} · 다음 맞추기{" "}
+            {previewTimingText(data.syncAt, data.session)} · 지금 값으로 계산한 예상이고, 실제 주문은 다음 맞추기에서 그때 보유·가격으로 다시 계산합니다.
           </p>
+          {immediate && <Banner tone="warn">{immediate}</Banner>}
           <DataTable
             caption="예상 주문"
             columns={PREVIEW_COLUMNS}
