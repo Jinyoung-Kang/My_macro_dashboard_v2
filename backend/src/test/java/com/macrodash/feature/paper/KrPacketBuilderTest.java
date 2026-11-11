@@ -720,7 +720,7 @@ class KrPacketBuilderTest {
                 krReading("k3", "코스닥 수급", "수급 · 코스닥", kst("2026-11-03T14:00"), kst("2026-11-03T22:40")),
                 krReading("k4", "분류 없는 글", null, kst("2026-11-03T13:00"), kst("2026-11-03T13:30")));
         org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.eq(List.of("waedge.brief")),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(items);
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyList())).thenReturn(items);
         Packet with = builder.withInfo(info).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
 
         List<String> keys = new ArrayList<>();
@@ -731,6 +731,9 @@ class KrPacketBuilderTest {
         assertThat(text).startsWith("<<글 #1 시작>>\n[출처] WAEDGE NEWS 시장 · ").contains("[제목] 코스피 마감 브리핑");
         assertThat(text).as("해외 분류·분류 없음·읽은 순간(22:31) 뒤에 받은 글은 없음").doesNotContain("대만 증시", "분류 없는 글", "코스닥 수급");
         assertThat(section.get("items")).hasSize(1);
+        // QA-400: 저장소에는 처음 받은 시각의 창 (직전 거래일 결정 11-02 22:30, 이번 결정 11-03 22:30]을 넘깁니다 — 읽은 순간(22:31)이 창 끝 뒤라 창 끝까지.
+        org.mockito.Mockito.verify(info).recentForPacket(List.of("waedge.brief"), kst("2026-11-02T22:30"), kst("2026-11-03T22:30"),
+                java.time.Duration.ofHours(72), 2, List.of("국내", "한국", "코스피", "코스닥"));
 
         ((ObjectNode) store.settings.body().get("kr")).set("info", MAPPER.valueToTree(Map.of("packet", false)));
         assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("끄면 예전 바이트 그대로")
@@ -751,14 +754,14 @@ class KrPacketBuilderTest {
 
         org.mockito.Mockito.when(info.ready()).thenReturn(true);
         org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt()))
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyList()))
                 .thenThrow(new IllegalStateException("읽기 실패"));
         assertThat(withInfo.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("읽다가 예외")
                 .isEqualTo(before.text());
 
         org.mockito.Mockito.doReturn(List.of(krReading("k2", "대만 증시", "시장 · 해외 소식", kst("2026-11-03T15:00"), kst("2026-11-03T15:30"))))
                 .when(info).recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
-                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyList());
         assertThat(withInfo.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("후보가 전부 해외 분류")
                 .isEqualTo(before.text());
     }

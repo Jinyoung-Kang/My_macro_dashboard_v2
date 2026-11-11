@@ -2,7 +2,6 @@ package com.macrodash.store;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -10,6 +9,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import tools.jackson.databind.ObjectMapper;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
@@ -80,9 +80,15 @@ class InfoStoreDbTest {
         InfoStore.Page<InfoStore.Item> second = info.items(List.of("test-a", "test-b"), null, 2, 2);
         assertThat(second.rows()).extracting(InfoStore.Item::id).containsExactly("a00000000000000000000003");
         assertThat(second.total()).isEqualTo(3);
-        assertThat(info.recentForPacket(List.of("test-a", "test-b"), NOW.minusSeconds(4000), NOW.minusSeconds(30), 10))
-                .extracting(InfoStore.Item::id).as("창 (from, to] 안(작성 시각, 모르면 받은 시각) — 본문 다 받은 글이 앞")
-                .containsExactly("a00000000000000000000001", "a00000000000000000000002");
+        // QA-400(2026-11-12): 패킷 후보의 창은 작성 시각이 아니라 처음 받은 시각입니다 — 예전 기대(작성 시각이 창 안인 1번 + 받은 시각으로 본 2번)에서
+        // 1번이 빠집니다(작성은 창 안이지만 창 끝 30초 뒤에 처음 받음 — 다음 창의 몫). 자세한 경계는 아래 packetWindowIsByFirstSeenAt.
+        assertThat(info.recentForPacket(List.of("test-a", "test-b"), NOW.minusSeconds(4000), NOW.minusSeconds(30), Duration.ofHours(72), 2,
+                List.of())).extracting(InfoStore.Item::id).as("창 (from, to] 안에 처음 받은 글")
+                .containsExactly("a00000000000000000000002");
+        assertThat(info.recentForPacket(List.of("test-a", "test-b"), NOW.minusSeconds(30), NOW, Duration.ofHours(72), 2, List.of()))
+                .extracting(InfoStore.Item::id).as("다음 창 — 본문 다 받은 글, 작성 최근 순")
+                .containsExactly("a00000000000000000000001", "a00000000000000000000003");
+        assertThat(info.recentForPacket(List.of(), NOW.minusSeconds(4000), NOW, Duration.ofHours(72), 2, List.of())).isEmpty();
         assertThat(info.item("a00000000000000000000001")).get().extracting(InfoStore.Item::body).isEqualTo("본문 1");
         assertThat(info.counts()).filteredOn(count -> count.source().equals("test-a")).singleElement()
                 .satisfies(count -> assertThat(count.items()).isEqualTo(2));
@@ -96,13 +102,13 @@ class InfoStoreDbTest {
                 category == null ? "{}" : "{\"category\": \"" + category + "\"}");
     }
 
-    /** 패킷의 수집 글 섹션이 후보를 읽는 호출 그대로({@code ReadingSection.candidates}) — 창 (from, to]. */
+    /** 패킷의 수집 글 섹션이 후보를 읽는 호출 그대로({@code ReadingSection.candidates}) — 창 (from, to], 받을 때 작성 72시간 안, 출처·분류마다 2편. */
     private List<String> packetIds(List<String> sources, Instant from, Instant to) {
-        return info.recentForPacket(sources, from, to, 60).stream().map(InfoStore.Item::id).toList();
+        return info.recentForPacket(sources, from, to, Duration.ofHours(72), 2, List.of("국내", "한국", "코스피", "코스닥")).stream()
+                .map(InfoStore.Item::id).toList();
     }
 
     @Test
-    @Disabled("QA-400: 창을 작성 시각으로 걸러, 결정 뒤에 처음 받은 글(작성은 결정 전)이 그 결정에도 다음 결정에도 실리지 않습니다")
     @DisplayName("QA-400: 패킷 후보의 창은 처음 받은 시각 (from, to] — 작성이 창 앞이어도 창 안에 받았으면 들고, 받을 때 작성 72시간이 넘었거나 작성이 "
             + "창 끝보다 뒤면 빠지며, 글마다 한 창에만 든다")
     void packetWindowIsByFirstSeenAt() {
@@ -110,25 +116,27 @@ class InfoStoreDbTest {
         Instant from = to.minusSeconds(24 * 3600);     // 직전 결정
         Instant next = to.plusSeconds(24 * 3600);      // 다음 결정
         Instant previous = from.minusSeconds(24 * 3600);
-        List<String> sources = List.of("test-w");
+        // 글마다 출처를 달리합니다 — 출처마다 2편 상한(packetCandidatesAreCappedPerSource)이 창 판정에 섞이지 않게.
+        List<String> sources = List.of("test-w1", "test-w2", "test-w3", "test-w4", "test-w5", "test-w6", "test-w7", "test-w8", "test-w9",
+                "test-wa");
         // 블로그가 직전 결정 2시간 전에 낸 글을 수집기가 직전 결정 1시간 뒤에 처음 받음 — 이번 창의 몫
-        item("b00000000000000000000001", "test-w", from.minusSeconds(2 * 3600), from.plusSeconds(3600), true, null);
+        item("b00000000000000000000001", "test-w1", from.minusSeconds(2 * 3600), from.plusSeconds(3600), true, null);
         // 처음 수집하는 피드에 남아 있던 열흘 전 글 — 받을 때 이미 72시간이 넘어 어느 창에도 싣지 않음
-        item("b00000000000000000000002", "test-w", to.minusSeconds(10 * 24 * 3600), from.plusSeconds(2 * 3600), true, null);
+        item("b00000000000000000000002", "test-w2", to.minusSeconds(10 * 24 * 3600), from.plusSeconds(2 * 3600), true, null);
         // 이번 결정 1시간 전에 쓰였지만 결정 90분 뒤에 처음 받음 — 이번 창이 아니라 다음 창의 몫(지금은 다음 창에서도 빠짐)
-        item("b00000000000000000000003", "test-w", to.minusSeconds(3600), to.plusSeconds(90 * 60), true, null);
+        item("b00000000000000000000003", "test-w3", to.minusSeconds(3600), to.plusSeconds(90 * 60), true, null);
         // 직전 창에 받은 글 — 앞 창의 몫이라 이번 창에 다시 싣지 않음
-        item("b00000000000000000000004", "test-w", from.minusSeconds(3 * 3600), from.minusSeconds(3600), true, null);
+        item("b00000000000000000000004", "test-w4", from.minusSeconds(3 * 3600), from.minusSeconds(3600), true, null);
         // 작성 시각이 이번 결정보다 뒤(시각이 틀린 글) — 싣지 않음
-        item("b00000000000000000000005", "test-w", to.plusSeconds(2 * 3600), from.plusSeconds(3 * 3600), true, null);
+        item("b00000000000000000000005", "test-w5", to.plusSeconds(2 * 3600), from.plusSeconds(3 * 3600), true, null);
         // 작성 시각을 모르는 글 — 받은 시각으로 봄
-        item("b00000000000000000000006", "test-w", null, from.plusSeconds(4 * 3600), false, null);
+        item("b00000000000000000000006", "test-w6", null, from.plusSeconds(4 * 3600), false, null);
         // 경계: 받은 시각이 창 끝과 같으면 이번 창, 창 시작과 같으면 앞 창
-        item("b00000000000000000000007", "test-w", to.minusSeconds(600), to, true, null);
-        item("b00000000000000000000008", "test-w", from.minusSeconds(600), from, true, null);
+        item("b00000000000000000000007", "test-w7", to.minusSeconds(600), to, true, null);
+        item("b00000000000000000000008", "test-w8", from.minusSeconds(600), from, true, null);
         // 경계: 받을 때 작성 뒤 정확히 72시간이면 들고, 1초 더 지났으면 빠짐
-        item("b00000000000000000000009", "test-w", from.plusSeconds(5 * 3600).minusSeconds(72 * 3600), from.plusSeconds(5 * 3600), true, null);
-        item("b0000000000000000000000a", "test-w", from.plusSeconds(5 * 3600).minusSeconds(72 * 3600 + 1), from.plusSeconds(5 * 3600), true, null);
+        item("b00000000000000000000009", "test-w9", from.plusSeconds(5 * 3600).minusSeconds(72 * 3600), from.plusSeconds(5 * 3600), true, null);
+        item("b0000000000000000000000a", "test-wa", from.plusSeconds(5 * 3600).minusSeconds(72 * 3600 + 1), from.plusSeconds(5 * 3600), true, null);
 
         List<String> before = packetIds(sources, previous, from);
         List<String> current = packetIds(sources, from, to);
@@ -145,7 +153,6 @@ class InfoStoreDbTest {
     }
 
     @Test
-    @Disabled("QA-400: 최근 60건만 읽은 뒤 출처마다 2편을 골라, 글이 많은 출처 하나가 후보를 다 채우면 다른 출처는 후보에도 들지 못합니다")
     @DisplayName("QA-400: 패킷 후보는 출처마다 상위 2편(본문 다 받은 글·최근 순) — 글이 61건인 출처와 오래된 2건뿐인 출처가 둘 다 들고, 분류 표시가 "
             + "든 글과 아닌 글은 따로 센다(국내·해외 시장 글이 서로를 밀어내지 않게)")
     void packetCandidatesAreCappedPerSource() {

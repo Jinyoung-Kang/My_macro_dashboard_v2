@@ -581,7 +581,7 @@ public class PacketBuilder {
                 context, names, quotes, universe, inputsStale, consensus, calendar, consensusLayer, newsWindow, news,
                 newsRows, newsStatus, packetNotes, sections,
                 // 수집 글(ADR 0036)의 후보도 여기서 한 번만 읽어 얼립니다 — 조립할 때마다 읽으면 계좌1 호출 사이에 바뀐 글이 계좌2에만 실립니다(QA-401).
-                ReadingSection.candidates(infoStore, settingsBody, initial, newsWindow, false));
+                ReadingSection.candidates(infoStore, settingsBody, initial, newsWindow, false, null));
     }
 
     private Packet assembleFor(MarketInputs in, ClaudeBookProfile book, String kind, Integer frameworkVersion) {

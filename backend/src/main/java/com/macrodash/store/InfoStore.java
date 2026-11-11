@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,17 +101,37 @@ public class InfoStore {
     }
 
     /**
-     * Claude 결정 패킷의 '수집 글' 섹션 재료(ADR 0036) — 이 출처들의 글 가운데 작성 시각(모르면 처음 받은 시각)이 (from, to]인 것을 최근부터,
-     * 본문 없이(요약만). 본문을 다 받은 글을 앞에 둡니다.
+     * Claude 결정 패킷의 '수집 글' 섹션 재료(ADR 0036 결정 7 — 2026-11-12 개정, QA-400) — 이 출처들의 글 가운데 <b>처음 받은 시각</b>
+     * ({@code first_seen_at} — 수집기가 행을 처음 넣은 순간, 그 뒤 바뀌지 않음)이 (from, to]인 것을, 본문 없이(요약만).
+     *
+     * <ul>
+     *   <li>창을 작성 시각이 아니라 받은 시각으로 봅니다 — 결정 뒤에 처음 받은 글(작성은 결정 전)이 다음 결정의 창에 듭니다. 결정 창들이 겹치지 않고
+     *       이어지면 글마다 한 창에만 듭니다.</li>
+     *   <li>작성 시각(모르면 받은 시각으로 봄)이 {@code to}보다 뒤인 글과, 받을 때 이미 작성 뒤 {@code maxAge}가 넘은 글(처음 수집하는 피드에 남아 있던
+     *       묵은 글)은 뺍니다.</li>
+     *   <li>출처마다 상위 {@code perGroup}편만 — 본문을 다 받은 글 먼저, 그 안에서 작성 시각 최근 순. 글이 많은 출처 하나가 후보를 다 채워 다른 출처가
+     *       빠지지 않게 SQL에서 자릅니다. 분류({@code meta.category})에 {@code categoryMarks}의 글자가 든 글과 아닌 글은 한 출처 안에서 따로 셉니다
+     *       (부르는 쪽이 분류로 한쪽만 고르므로 — 국내·해외 시장 글이 서로를 밀어내지 않게).</li>
+     * </ul>
+     * 돌려주는 순서는 본문을 다 받은 글 먼저, 작성 시각 최근 순, id 순입니다.
      */
-    public List<Item> recentForPacket(List<String> sources, Instant from, Instant to, int limit) {
-        if (sources == null || sources.isEmpty()) {
+    public List<Item> recentForPacket(List<String> sources, Instant from, Instant to, Duration maxAge, int perGroup,
+                                      List<String> categoryMarks) {
+        if (sources == null || sources.isEmpty() || perGroup <= 0) {
             return List.of();
         }
-        List<Object> args = List.of(sources.toArray(new String[0]), Timestamp.from(from), Timestamp.from(to), limit);
-        return jdbc.query(con -> bind(con.prepareStatement("SELECT " + LIST_COLUMNS + ", NULL AS body FROM info_items "
-                + "WHERE source = ANY(?) AND COALESCE(published_at, first_seen_at) > ? AND COALESCE(published_at, first_seen_at) <= ? "
-                + "ORDER BY (body_status = 'full') DESC, COALESCE(published_at, first_seen_at) DESC, id LIMIT ?"), args), itemMapper());
+        String[] marks = (categoryMarks == null ? List.<String>of() : categoryMarks).stream().map(InfoStore::like)
+                .toArray(String[]::new);
+        String written = "COALESCE(published_at, first_seen_at)";
+        String order = "(body_status = 'full') DESC, " + written + " DESC, id";
+        List<Object> args = List.of(marks, sources.toArray(new String[0]), Timestamp.from(from), Timestamp.from(to),
+                Timestamp.from(to), maxAge.toSeconds(), perGroup);
+        return jdbc.query(con -> bind(con.prepareStatement("SELECT " + LIST_COLUMNS + ", NULL AS body FROM ("
+                + "SELECT " + LIST_COLUMNS + ", ROW_NUMBER() OVER (PARTITION BY source, "
+                + "COALESCE(meta->>'category' LIKE ANY(?), FALSE) ORDER BY " + order + ") AS rank_in_group "
+                + "FROM info_items WHERE source = ANY(?) AND first_seen_at > ? AND first_seen_at <= ? "
+                + "AND " + written + " <= ? AND " + written + " >= first_seen_at - (? * INTERVAL '1 second')"
+                + ") ranked WHERE rank_in_group <= ? ORDER BY " + order), args), itemMapper());
     }
 
     /**
