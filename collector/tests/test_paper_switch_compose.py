@@ -27,19 +27,16 @@ def _backend_env(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))["services"]["backend"]["environment"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-341: 기반 compose의 PAPER_ENABLED가 ${PAPER_ENABLED:-true}라 빈 값·셸의 true로 로컬 정기 작업이 켜집니다")
 def test_QA341_기반_compose는_보간_없이_끈다():
     assert _backend_env(BASE)["PAPER_ENABLED"] == "false"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-341: 덧붙임에 PAPER_ENABLED가 없어 기반 파일을 끄면 서버·QA 정기 작업도 꺼집니다")
 @pytest.mark.parametrize("overlay", [VULTR, QA], ids=["vultr", "qa"])
 def test_QA341_서버와_QA_덧붙임만_켠다(overlay):
     # 기반이 "false"인데 덧붙임 줄이 빠지면 서버의 정기 작업(리스크 점검·결정·체결)이 조용히 꺼집니다 — 그래서 한 커밋에서 함께 바꿉니다.
     assert _backend_env(overlay).get("PAPER_ENABLED") == "${PAPER_ENABLED:-true}"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-341: CI의 compose 해석 단계에 PAPER_ENABLED 단언이 없습니다")
 def test_QA341_CI가_세_해석의_PAPER_ENABLED를_단언한다():
     text = CI.read_text(encoding="utf-8")
     probe = ".services.backend.environment.PAPER_ENABLED"

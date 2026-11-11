@@ -26,6 +26,9 @@ services:
       # QA 스택은 로그인 경로를 그대로 시험합니다(auth-probe.sh가 쿠키 없는 요청에 401을 기대, ADR 0016).
       # 보간 없는 값이라 .env.qa·셸의 LOCAL_NO_LOGIN이 끼어들지 못합니다.
       DASHBOARD_LOCAL_NO_LOGIN: "false"
+      # 모의 매매 정기 작업 — 기반 파일은 보간 없는 "false"(로컬에서는 돌지 않음, QA-341)라 QA 스택은 여기서 켭니다(.env.qa에
+      # PAPER_ENABLED=false를 적으면 끔). QA 스택은 전용 DB·차단 프록시·빈 AI 키라 정기 작업이 돌아도 밖으로 나가지 않습니다.
+      PAPER_ENABLED: "${PAPER_ENABLED:-true}"
       ANTHROPIC_API_KEY: ""
       GEMINI_API_KEY: ""
       NVIDIA_API_KEY: ""

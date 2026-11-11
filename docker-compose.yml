@@ -194,8 +194,11 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       INFO_TRANSLATE_ENGINE: "${INFO_TRANSLATE_ENGINE:-auto}"
       INFO_TRANSLATE_GEMINI_MODEL: "${INFO_TRANSLATE_GEMINI_MODEL:-gemini-3.5-flash}"
-      # 모의 매매 정기 작업(리스크 점검·결정·출발일 종가). false면 멈춥니다(수동 실행 버튼은 그대로). 여기서 넘기지 않으면 .env의 값이 무시됩니다.
-      PAPER_ENABLED: "${PAPER_ENABLED:-true}"
+      # 모의 매매 정기 작업(리스크 점검·결정·출발일 종가 — 수동 실행 버튼은 그대로)은 운영 서버 한 곳에서만 돕니다(ADR 0019·0020·0023).
+      # 보간 없는 값이라 로컬 .env·셸의 PAPER_ENABLED가 끼어들 자리가 없습니다 — 예전에는 ${PAPER_ENABLED:-true}라 .env.example을 그대로
+      # 복사한 빈 값이나 셸에 남은 true로 로컬 백엔드가 결정·체결을 돌리고 Claude를 불렀습니다(QA-341). 서버는 compose.vultr.yml, QA 스택은
+      # scripts/qa/docker-compose.qa.yml이 켭니다.
+      PAPER_ENABLED: "false"
       # 한국 책 출발 거래일(yyyy-MM-dd, 2단계 명세 K25). 비우면 한국 초기화·출발이 막히고 미국은 그대로 — 출발 절차에서 정합니다.
       PAPER_KR_START_DATE: "${PAPER_KR_START_DATE:-}"
       # 실제 매매(ADR 0028)의 백엔드 스위치 — 운영 서버에서만 켭니다. 보간 없는 값이라 로컬 .env·셸의 REAL_TRADE_ENABLED가 끼어들 자리가 없고

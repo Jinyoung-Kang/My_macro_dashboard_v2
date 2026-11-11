@@ -41,7 +41,8 @@
 #     (재부팅·업데이트 때 복구부터 하지 않게). 백엔드는 90초·수집기는 30초까지 기다림 — 실제 매매(ADR 0028)의 보내던 주문·취소가 끝나고
 #     기록될 때까지(OPS-2, 아래 각 서비스)
 # 바뀌지 않는 것: postgres 컨테이너(볼륨 my_macro_dashboard_v2_postgres-data — 폴더 이름을 따름), 나머지 포트는 기반 파일 그대로
-#   127.0.0.1의 기본값(3000/8080/8000/5432), AI 엔진·모의 매매(PAPER_ENABLED)·읽기 모드는 .env 그대로
+#   127.0.0.1의 기본값(3000/8080/8000/5432), AI 엔진·읽기 모드는 .env 그대로. 모의 매매 정기 작업(PAPER_ENABLED)은 기반 파일이 보간 없는
+#   "false"(로컬)이고 이 덧붙임이 켬 — 서버 .env에 그 줄이 없거나 비면 켜짐(QA-341, 아래 backend)
 # 서버 .env(이름은 .env.vultr.example): 로컬 .env에서 포트 네 줄·COOKIE_SECURE·LOCAL_NO_LOGIN·FRONTEND_ORIGIN·PUBLIC_URL·AWS_INSTANCE_ID·
 #   VULTR_*·TAILSCALE_*·TAILNET_DOMAIN·PAPER_ENABLED를 빼고 COMPOSE_FILE·AWS_BACKUP_BUCKET·PUBLIC_ORIGIN을 더한 것. 다시 전달할 때 서버 전용 줄(토스 키·
 #   텔레그램·TAILNET_OWNER_LOGIN·토스·실제 매매 스위치와 한도·브라우저 비밀 등)은 서버의 지금 .env에서 이어 붙입니다(docs/DEVELOPMENT.md §7 — OPS-1). 운영본은 이 서버 한 곳이라
@@ -105,6 +106,9 @@ services:
       MAIL_HOST: ""
       # 국면 판정 기록 시각(KST) — AWS와 같은 23시(첫 실행은 기동 15분 뒤). 자정 뒤 실행은 다음 날 몫이라 그날 23시 전처럼 기다립니다.
       DASHBOARD_SCHEDULER_REGIMERECORDHOURKST: "23"
+      # 모의 매매 정기 작업(리스크 점검·결정·체결)은 이 서버 한 곳에서만 돎(ADR 0019·0020·0023) — 기반 파일은 보간 없는 "false"라 여기서만
+      # 켤 수 있습니다(QA-341). 서버 .env에 줄이 없거나 비면 켜짐, 정비 때 일부러 끌 때만 PAPER_ENABLED=false를 적습니다(deploy.sh가 '주의'를 찍음).
+      PAPER_ENABLED: "${PAPER_ENABLED:-true}"
       # 모의 매매 텔레그램 알림(체결·결정·결정 없는 주문 — 설정 notify.telegram). 둘 다 있어야 보냄.
       # PAPER_ENABLED=false(정비 때 일부러 끈 경우)이면 알림 작업도 돌지 않습니다.
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"

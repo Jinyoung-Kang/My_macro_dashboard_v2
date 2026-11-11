@@ -317,7 +317,7 @@ make test-frontend     # 자가검증 + 훅 테스트(vitest) + 린트 + 빌드(
 | `KIS_APP_KEY` / `KIS_APP_SECRET` | 장중 수급 가집계와 교차 검증 비활성화 |
 | AI 키 (`NVIDIA` / `CEREBRAS` / `CLOUDFLARE`) | AI 메뉴만 비활성화. 하나만 있어도 동작 |
 | `ANTHROPIC_API_KEY` | AI 리포트의 Claude 엔진을 건너뜀. 모의 매매 Claude 계좌(결정·프레임 제안·주간 복기)는 'API Key 누락'으로 실패하고 규칙 계좌·벤치마크는 그대로. Claude 계좌도 이 키를 씀(`AI_ENGINES`를 정했으면 그 목록의 모델만) |
-| `PAPER_ENABLED` | 비우면 `true`. `false`면 모의 매매 정기 작업(리스크 점검·하루 한 번 결정·출발일 종가 얼리기·주간 복기)이 쉼. 화면의 수동 실행은 그대로. 네이티브 `make dev-backend`는 `true`일 때만 켜고 비우거나 없으면 끔 |
+| `PAPER_ENABLED` | 모의 매매 정기 작업(리스크 점검·하루 한 번 결정·출발일 종가 얼리기·주간 복기) 스위치. 로컬 compose(`make up`)는 이 값을 읽지 않고 늘 끔(기반 파일의 보간 없는 `"false"` — 정기 작업은 서버 한 곳에서만). 서버(`compose.vultr.yml`)와 QA 스택은 비우면 `true`, `false`면 쉼. 화면의 수동 실행은 그대로. 네이티브 `make dev-backend`는 `true`일 때만 켜고 비우거나 없으면 끔 |
 | `PAPER_KR_START_DATE` | 한국 책 출발 거래일(`yyyy-MM-dd`). 기본값 없음 — 비우면 한국 초기화·출발이 막히고 미국 책은 그대로(이미 출발한 한국 계좌의 장부·확정 조정·결정·복기는 출발일 없이도 돎). 형식이 틀리면 백엔드가 기동하지 않음(거래일 검사는 한국 초기화·출발 때) |
 | `TRACK_RECORD_FETCH_BUDGET` | 13F 트랙레코드 수집(`sec_13f_track_record`)이 한 번에 새로 받는 공시 수. 비우면 400(1~2000) |
 | `FUNDAMENTALS_FETCH_BUDGET` | 미국 종목 재무 수집(`sec_fundamentals`, SEC XBRL companyfacts)이 한 번에 보내는 요청(CIK) 수. 비우면 200(1~600) — 유니버스 약 570곳을 약 36시간에 한 바퀴 |

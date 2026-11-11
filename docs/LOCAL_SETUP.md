@@ -36,6 +36,8 @@ open http://localhost:3002
 > 만들었습니다(v1은 2026-10-25에 `Local_macro_dashboard_v3`에서 같은 식으로 갈라져 나옴). v1·v3 폴더·볼륨·스택은 **그대로 계속 돕니다** —
 > 이 저장소는 `.env`의 포트를 3002/8082/8002/5434로 바꿔 v3(3000/…)·v1(3001/…)과 함께 띄웁니다(compose 프로젝트·볼륨·QA 스택·세션 쿠키
 > 이름도 다름). 모의 매매 정기 작업은 AWS의 v1 한 곳에서만 돌므로 이 폴더의 `.env`는 `PAPER_ENABLED=false`입니다(ADR 0019).
+> (지금은 로컬 compose가 `.env`·셸의 `PAPER_ENABLED`를 읽지 않고 늘 끕니다 — 기반 파일의 보간 없는 `"false"`, 서버와 QA 덧붙임만 켬. 그 줄은
+> 네이티브 `make dev-backend`만 봅니다.)
 > 데이터는 볼륨 복사가 아니라 백업·복원(ADR 0003)으로 이어받습니다. 한 줄씩 붙여 넣고, 오류 없이 끝났는지 본 뒤 다음 줄로 넘어가세요.
 > ```bash
 > git clone https://github.com/Jinyoung-Kang/My_macro_dashboard_v2.git ~/Projects/My_macro_dashboard_v2
