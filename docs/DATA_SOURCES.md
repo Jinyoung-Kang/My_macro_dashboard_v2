@@ -8,7 +8,7 @@
 
 ---
 
-## 1. 수집 태스크 (44개)
+## 1. 수집 태스크 (62개)
 
 수집기가 세 그룹으로 나눠 돌립니다. 주기는 `.env`로 바꿀 수 있습니다. 장중 평가 둘(`live`)은 정기 수집이 없고 화면이 볼 때만 백엔드가 요청합니다. 계좌2 장중 확인 감시 둘(`session`, 5분 — compose가 주기 환경변수를 넘기지 않아 코드 기본값)은 확인이 있는 날 확인 시각 앞뒤(한국은 확인 시각 뒤 한 번)에만 외부를 부릅니다(그 밖의 회차는 호출 없이 정상 끝 '호출 0회'). `polite`(차단 통과 수집 계층)는 주기로 돌지 않고 태스크마다 무작위로 정한 다음 실행 시각에만 돕니다 — 아래 '차단 통과 수집 계층'.
 
@@ -58,6 +58,11 @@
 | `live` | 화면이 볼 때만 | `paper_live_us` | [모의] 모의 매매 **장중 평가(표시 전용)** — 미국 보유 종목(백엔드 표 `paper_positions`를 읽기만 — 출발한 계좌)의 최신 정규장 1분봉(yfinance 배치 한 번, Yahoo 래치 공유) → 스냅샷 `paper.live.us` `{market, source, scope, tickers:{T:{price, at}}, missing, error}`. 정기 수집 없음 — 운영자가 모의 매매 화면을 보는 정규장 동안 백엔드 `GET /api/paper/live`가 저장본이 60초보다 오래됐을 때 요청. 받지 못한 종목은 직전 값을 `isStale`로 잇고(봉 시각 그대로 — 장중 값으로 쓰지 않음), 하나도 못 받으면 저장본 유지. 체결·스탑·확정 순자산에는 쓰지 않음 |
 | | | `paper_live_kr` | [모의][토스] 같은 장중 평가의 한국 판 — 한국 보유 종목의 토스 최신 1분봉(원시가 `adjusted=false`, 종목마다 1회·0.1초 간격) → `paper.live.kr`. 서버 가동 창이 한국 정규장(09:00~15:30)을 덮기 전에는 그 시간에 서버가 꺼져 있어 쓰이지 않음 |
 | `polite` | 비주기 — 태스크마다 무작위 | `econ_calendar_tradingview` | [우회] **경제 캘린더(운영자 화면 전용)** — TradingView `economic-calendar.tradingview.com/events`(비공식)에서 미국·한국 지표 일정과 예상치·이전치·실제치·중요도를 받아 스냅샷 `calendar.econ.tradingview`에. 어제부터 두 주 뒤까지 한 번에 요청 1건, 다음 실행은 3~6시간 뒤의 무작위 시각. Claude 결정 패킷은 읽지 않음(패킷의 캘린더는 `calendar.us_events`·`calendar.kr_events`·`calendar.us_consensus` 그대로). 기본 요청은 403이라 화면이 보내는 `Origin`과 브라우저 TLS로 받음 — 자동 작업이 실제 응답을 직접 받아 보지 못해 아는 칸만 옮기고 받은 칸 이름(`fieldsSeen`)을 저장본에 남김. 아래 '차단 통과 수집 계층' |
+| | | `info_blog_*` (14개) | [우회] **정보 수집 — 해외 블로그 RSS(운영자 화면 전용, [ADR 0035](adr/0035-info-collection.md))**: Wolf Street·Abnormal Returns·A Wealth of Common Sense·Marginal Revolution·The Big Picture·Calculated Risk·Liberty Street Economics·Klement on Investing·Econbrowser·Conversable Economist·Alpha Architect·HumbleDollar·Musings on Markets·The Irrelevant Investor. 피드 하나(조건부 요청) → 새 글을 표 `info_items`에, 본문은 피드에 있으면 피드 본문(대부분), 없거나 짧으면 최근 7일 글만 글 페이지에서(실행당 4건·글마다 두 번까지). 다음 실행은 3~8시간(Liberty Street·Damodaran은 6~15시간) 뒤 무작위 |
+| | | `info_waedge_brief` | [우회] 정보 수집 — waedge 시장 글 목록(`news.waedge.ai/s/brief.html`)과 새 글의 상세 페이지 본문(실행당 5건), 1~3시간 |
+| | | `info_waedge_people` | [우회] 정보 수집 — waedge 거장 견해(101명 내외의 강세·중립·약세 점수·요약 → 스냅샷 `info.waedge.gurus`)와 그 화면의 글(실행당 3건), 8~16시간 |
+| | | `info_waedge_blogs` | [우회] 정보 수집 — waedge 해외 블로그 화면의 한국어 제목 → 원문 글 행의 `title_ko`(본문은 원문 피드가 채움), 4~8시간 |
+| | | `info_naver_flows` | [우회] 정보 수집 — 네이버 증권 새 화면이 부르는 JSON API 6건(매매동향 코스피·코스닥 최근 10거래일, 외국인·기관 순매수·순매도 상위 코스피·코스닥 당일 — 순서 무작위) → 스냅샷 `info.naver.flows`. 정규장 40~90분, 장 밖 3~6시간, 쉬는 날 8~15시간. 장중 순위는 네이버의 추정이라 금액 없이 주식 수만 옴(null) |
 
 [우회] = 차단 통과 수집 계층([ADR 0026](adr/0026-polite-fetch-layers.md))으로 받는 태스크. 주기로 돌지 않고 기동 직후에도 받지 않습니다 — 아래 '차단 통과 수집 계층'.
 [키] = 국내 공공 API 키가 있어야 도는 태스크. 키가 없으면 "키 미설정"으로 기록되고
@@ -496,7 +501,7 @@ EQUITY_MAP = {
 | 국내 거시 통계 (물가·고용·산업생산) | KOSIS | **통계표 ID를 확인하지 못해 보류** — 추측한 ID로 붙이면 다른 표를 받아도 알아챌 수 없음 |
 | 부동산 지수·실거래 | 한국부동산원 R-ONE · 국토부 실거래가 | 대시보드 범위에서 제외(2026-09 결정). 국토부 실거래는 한때 구현했다가 뺐습니다 |
 | 뉴스·공시 브리핑 | RSS / 뉴스 API | 모의 매매 Claude 계좌 패킷의 **사건 헤드라인(제목·출처·시각만)은 구현**(2단계 B — `news_headlines`, §5 '사건 뉴스 RSS'). 화면용 브리핑·본문·요약은 미구현 |
-| ISA 계좌(다른 증권사)의 잔고·체결 | 그 증권사 — 이 프로젝트와 연결하지 않음 | 연결하지 않기로 함([ADR 0029](adr/0029-isa-manual-account.md)) — 외부 호출·수집 태스크가 없음(§1의 44개에 들지 않음). 장부는 지시대로 자동 기록하고 다르면 운영자가 화면에서 고치며, 시가·마지막 가격은 모의 한국 책의 저장본을 씀 |
+| ISA 계좌(다른 증권사)의 잔고·체결 | 그 증권사 — 이 프로젝트와 연결하지 않음 | 연결하지 않기로 함([ADR 0029](adr/0029-isa-manual-account.md)) — 외부 호출·수집 태스크가 없음(§1의 62개에 들지 않음). 장부는 지시대로 자동 기록하고 다르면 운영자가 화면에서 고치며, 시가·마지막 가격은 모의 한국 책의 저장본을 씀 |
 
 `종목 스코어카드`가 "가격 기반 지표만" 다루는 이유가 이것입니다. 화면이
 빠진 항목을 먼저 밝히고, 종합 점수라고 부르지 않습니다.
@@ -662,7 +667,7 @@ EQUITY_MAP = {
 
 출처 줄: "토스증권 Open API (공식) — 실제 계좌 조회(읽기 전용, 모의 장부와 별개)". 결정은 [ADR 0025](adr/0025-toss-real-account-readonly.md), 응답 계약은
 [명세](specs/2026-11-05-toss-account-readonly.md)입니다. 모의매매(한국)·(미국) 화면의 '실제 계좌' 탭을 열었을 때만 백엔드 `GET /api/brokerage/account` → 수집기
-`GET /toss/account`가 부릅니다. 수집 태스크가 아니고(§1의 44개에 들지 않음) 테이블·스냅숏·마이그레이션이 없어, 백업(S3)·배포 전 덤프·QA 복원·`/status`로
+`GET /toss/account`가 부릅니다. 수집 태스크가 아니고(§1의 62개에 들지 않음) 테이블·스냅숏·마이그레이션이 없어, 백업(S3)·배포 전 덤프·QA 복원·`/status`로
 퍼지지 않습니다. 켜는 곳은 운영 서버 하나입니다(`TOSS_ACCOUNT_ENABLED=true` — 로컬 compose는 `"false"` 고정, 서비스 토큰 없이 뜬 수집기도 꺼짐).
 
 | 쓰는 엔드포인트(공식 스펙 1.2.28) | 받는 것 | 호출 한도 묶음 |
@@ -697,7 +702,7 @@ EQUITY_MAP = {
 
 출처 줄: "토스증권 Open API (공식) — 실제 매매(모의 한국 책을 따라 하는 실제 주문)". 결정은 [ADR 0028](adr/0028-real-trade-mirror.md), 계약은
 [명세](specs/2026-11-06-real-trade-mirror.md)입니다. 백엔드 정기 작업(`RealTradeJob`)이 수집기 `/toss/trading/*`(서비스 토큰)를 부를 때만 토스에 닿고, 수집 태스크가
-아닙니다(§1의 44개에 들지 않음). 세 스위치(수집기 `TOSS_TRADING_ENABLED`·백엔드 `REAL_TRADE_ENABLED` — 둘 다 로컬·QA compose는 `"false"` 고정 — 와 화면 스위치)가
+아닙니다(§1의 62개에 들지 않음). 세 스위치(수집기 `TOSS_TRADING_ENABLED`·백엔드 `REAL_TRADE_ENABLED` — 둘 다 로컬·QA compose는 `"false"` 고정 — 와 화면 스위치)가
 모두 켜졌을 때만 주문이 나갑니다. 위 '실제 계좌 조회'와 달리 결과를 저장합니다 — 백엔드 소유 `real_trade_*` 표라 S3 백업·배포 전 덤프에 들어가고, 복원 직후에는
 설정이 모두 이상 멈춤(`restored`), QA 복원은 이 표들을 비웁니다.
 

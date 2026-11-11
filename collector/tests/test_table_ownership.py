@@ -38,6 +38,8 @@ BACKEND_TABLES = (
     "real_trade_config", "real_trade_events", "real_trade_batches", "real_trade_orders",
     # 마지막 운용 평가액(V29, 2026-11-08 — ADR 0028 결정 7 범위)도 백엔드 feature/realtrade만 씁니다.
     "real_trade_valuation",
+    # 수집 출처 끊김 알림의 기록(V34 — ADR 0035) — 백엔드 SourceAlertJob만 씁니다.
+    "source_alerts",
     # ISA 계좌(V25, ADR 0029) — 연결되지 않은 다른 증권사 계좌의 장부·지시는 백엔드 feature/realtrade만 씁니다. 수집기는 읽지도 쓰지도 않습니다.
     # 장중 스탑 매도 지시(V28, ADR 0033)도 같습니다.
     "manual_accounts", "manual_ledger", "manual_instructions", "manual_sessions", "manual_stop_instructions",

@@ -68,6 +68,8 @@ ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md)·[ADR 0034](adr/0034-isa-b
 | `refresh_requests` | 수동 새로고침 기준 시각 |
 | `schema_migrations` | 적용한 스키마 버전 (3-2 참고) |
 | `fetch_hosts`·`fetch_schedule` | 차단 통과 수집 계층의 상태 — 호스트별 고정 프로필·거부 뒤 물러남·포기·하루 예산, 태스크별 다음 실행 시각. 수집기가 씁니다([ADR 0026](adr/0026-polite-fetch-layers.md)) |
+| `info_items`·`fetch_source_state` (V33) | 정보 수집([ADR 0035](adr/0035-info-collection.md)) — 수집한 글(출처·원문 주소·제목·한국어 제목·작성 시각·본문 — 180일 보관), polite 태스크마다의 마지막 판정(ok·blocked·format·failed·연속 횟수·마지막 성공). 수집기가 씁니다. 백엔드는 읽기만(`store.InfoStore`) |
+| `source_alerts` (V34) | 수집 출처 끊김 알림의 기록(사건 하나에 한 행 — 연 시각·텔레그램을 보낸 시각·풀린 시각). **백엔드가 씁니다**(`store.SourceAlertStore`, ADR 0035). 수집기는 읽지도 쓰지도 않습니다 |
 | `regime_log` | 국면 판정 라이브 기록 — 하루 한 건, 추가만. **백엔드가 씁니다**(ADR 0008) |
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |
