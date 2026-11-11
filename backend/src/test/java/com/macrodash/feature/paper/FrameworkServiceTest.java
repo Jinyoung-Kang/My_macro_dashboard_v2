@@ -282,6 +282,16 @@ class FrameworkServiceTest {
     }
 
     @Test
+    @DisplayName("고정본(QA-362): 한국 계좌2 끈 판 시스템 프롬프트 — 계좌1 끈 판 렌더링에 체결 시점 메뉴·체결 절·장중 확인 절·투자 성향 절이 더해진 글자를 "
+            + "바이트로 얼림(끈 판은 바이트까지 그대로)")
+    void goldenKrClaude2OffRender() {
+        JsonNode body = FrameworkService.interimBody(MAPPER);
+        Golden.assertMatches("render-kr-claude2-v0-default.txt",
+                FrameworkService.render(ClaudeBookProfile.KR_CLAUDE2, body, 0, settings.defaultsJson()));
+        Golden.assertMatches("render-kr-v0-default.txt", FrameworkService.render(ClaudeBookProfile.KR_CLAUDE, body, 0, settings.defaultsJson()));
+    }
+
+    @Test
     @DisplayName("고정본: 한국 자유 시점 판 시스템 프롬프트(ADR 0027 결정 2·ADR 0031 — kr-ft-2) — 계좌1·계좌2 켠 판. 끈 판 한국 렌더링과 하드 규칙의 체결 시점 줄·"
             + "우선순위 줄의 시점 읽는 법·timing 줄·체결할 수 없는 종목 매도 줄·체결 절만 다르고(시가 없음), 계좌2는 투자 성향 절이 더해짐. 끈 판 렌더링은 그대로")
     void goldenKrFreeTimingRender() {

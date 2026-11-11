@@ -728,6 +728,23 @@ class StructuredSchemaTest {
         Golden.assertMatches("checkpoint-schema-forapi-us-claude2.json", Golden.prettyJson(CHECKPOINT.forApi()));
     }
 
+    // ── 한국 Claude 계좌2 끈 판(단계 2a·2b) 스키마 — QA-362 ─────────────────────
+
+    @Test
+    @DisplayName("고정본(QA-362): API에 보내는 한국 계좌2 끈 판 결정 스키마와 장중 확인 응답 스키마 — 같은 걷어 내기(숫자 범위·길이·개수 없음)")
+    void goldenKrClaude2SchemasForApi() {
+        StructuredSchema decision = StructuredSchema.load(ClaudeBookService.KR_CLAUDE2_SCHEMA_RESOURCE);
+        StructuredSchema checkpoint = StructuredSchema.load(KrCheckpointPacket.SCHEMA_RESOURCE);
+        for (StructuredSchema schema : List.of(decision, checkpoint)) {
+            List<String> found = new ArrayList<>();
+            walkSchemas(schema.forApi(), "$", (path, node) -> node.keySet().stream()
+                    .filter(StructuredSchema.API_UNSUPPORTED::contains).forEach(key -> found.add(path + "." + key)));
+            assertThat(found).isEmpty();
+        }
+        Golden.assertMatches("decision-schema-forapi-kr-claude2.json", Golden.prettyJson(decision.forApi()));
+        Golden.assertMatches("checkpoint-schema-forapi-kr-claude2.json", Golden.prettyJson(checkpoint.forApi()));
+    }
+
     // ── 주간 복기 스키마(2단계 D) ─────────────────────────────────────────
 
     private static final StructuredSchema REVIEW = StructuredSchema.load("paper/review.schema.json");

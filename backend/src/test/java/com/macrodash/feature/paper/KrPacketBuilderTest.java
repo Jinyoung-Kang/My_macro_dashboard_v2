@@ -984,6 +984,24 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("고정본(QA-362): 한국 계좌2 끈 판의 정기 패킷 글자 — 계좌1 패킷과 계좌 몫·체결 시점 메뉴·장중 확인 문장이 다른 글자를 바이트로 얼림. "
+            + "계좌1 끈 판 패킷은 그대로")
+    void goldenKrClaude2OffPacket() {
+        Packet first = scheduled();
+        store.books.put(PaperBooks.KR_CLAUDE2, new Book(PaperBooks.KR_CLAUDE2, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL,
+                100_000_000, S, PaperBooks.ACTIVE, null, Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.states.put(PaperBooks.KR_CLAUDE2, new BookState(PaperBooks.KR_CLAUDE2, 100_000_000, 100_000_000, 0, 0,
+                kst("2026-11-03T21:57"), kst("2026-11-03T21:57"), D, kst("2026-11-03T22:10")));
+
+        Packet second = builder.forBook(PaperBooks.KR_CLAUDE2).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+
+        Golden.assertMatches("packet-kr-claude2-scheduled.json", second.text());
+        Golden.assertMatches("packet-kr-scheduled.json", first.text());
+        assertThat(second.text()).contains(KrPacketBuilder.KR_CLAUDE2_TIMING_LINE).contains(KrPacketBuilder.KR_CLAUDE2_CHECKPOINT_LINE);
+        assertThat(second.body().path("1_basis").path("variant").isMissingNode()).as("끈 판 — 판 표시 없음").isTrue();
+    }
+
+    @Test
     @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2·ADR 0031): 한국 계좌1 켠 판의 정기 패킷 — 끈 판 패킷과 0_instructions의 시점 줄·체결가 낱말, 1_basis의 세 칸"
             + "(variant·fixedRules kr-ft-2·atMinute 범위 09:10~15:19), 12_hardRules의 매도 자리 줄·체결할 수 없는 종목 줄·시가 줄(빠짐)·지정 시각 체결 줄·받는 시점"
             + "(AT_MINUTE·NEXT_CLOSE — 시가 없음)만 다르고 그 밖은 바이트 그대로. 계좌2 켠 판은 기존 장중 확인 문장이 없음. 끈 판 패킷은 그대로")

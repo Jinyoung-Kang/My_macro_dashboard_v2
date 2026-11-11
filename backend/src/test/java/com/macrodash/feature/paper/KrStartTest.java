@@ -722,6 +722,28 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("고정본(QA-362): 한국 계좌2 끈 판의 장중 확인 패킷 글자 — 밤 결정(10:00 매수 대기·11:00 확인 예약) 뒤 11:04에 조립한 패킷을 바이트로 얼림, "
+            + "보낸 글자는 결정 행의 동결본과 같음")
+    void goldenKrClaude2CheckpointPacket() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake, KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000));
+        PaperKrCheckpointJob checkpoint = checkpointJob();
+        int calls = fake.requests.size();
+        watchKr(kst("2026-12-02T11:00:40"));
+        fake.answer(KEEP);
+        clock.set(kst("2026-12-02T11:04"));
+
+        assertThat(checkpoint.run().changes()).containsKey(E.toString());
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        String sent = fake.requests.get(calls).user();
+        com.macrodash.Golden.assertMatches("packet-kr-claude2-checkpoint.json", sent);
+        Decision cp = store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.CHECKPOINT).orElseThrow();
+        assertThat(cp.packetText()).as("결정 행 동결본 = 보낸 패킷 글자").isEqualTo(sent);
+        assertThat(cp.packet().path("1_basis").path("variant").isMissingNode()).as("끈 판 — 판 표시 없음").isTrue();
+    }
+
+    @Test
     @DisplayName("한국 장중 확인(2b) — REPLACE: 기준 시각이 지난 10:00 주문은 남기고 아직 오지 않은 14:00 주문만 '장중 확인이 대신함'으로 취소, 새 장중 시장가(MARKET) 주문을 대기로(기준 거래일 = 밤 결정의 d)")
     void krCheckpointReplace() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
