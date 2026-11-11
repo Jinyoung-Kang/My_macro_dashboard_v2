@@ -40,6 +40,18 @@ def _two_sessions(previous_day: tuple, today: tuple):
             + _points(*today, base_date="2026-09-11T09:00:00+09:00"))
 
 
+@pytest.fixture(autouse=True)
+def _no_real_download(monkeypatch):
+    """
+    이 파일의 시험은 네트워크 없이 돕니다 — 스텁 없이 yfinance 조회(market._download)에 닿으면 그 시험을 실패시킵니다(QA-287).
+    일봉·분봉을 받아야 하는 시험은 ``_download``나 그 위 단계(``previous_close_from_daily``·``collect_ticker``)를 바꿔 끼웁니다.
+    """
+    def refuse(symbol, period):
+        pytest.fail(f"시험이 실제 Yahoo 조회를 하려 했습니다({symbol} {period}) — 그 단계를 바꿔 끼우세요", pytrace=False)
+
+    monkeypatch.setattr(market, "_download", refuse)
+
+
 SPEC = {"key": "dxy", "name": "달러 인덱스 (DXY)", "ticker": "DX-Y.NYB", "note": "실시간"}
 # 분봉의 전 거래일을 달력 날짜로 나눌 수 있는(세션이 하루 안에 끝나는) 상품. 세션형(선물·DXY)은 일봉을 씁니다(QA-058).
 DAY_SESSION_SPEC = {"key": "kospi", "name": "KOSPI", "ticker": "^KS11", "note": "실시간"}
@@ -122,7 +134,9 @@ def test_daily_bar_timestamp_is_labelled_not_faked():
     assert card["lastTs"].endswith("일봉 기준")
 
 
-def test_intraday_timestamp_is_kst():
+def test_intraday_timestamp_is_kst(monkeypatch):
+    # 세션형 상품(DXY)의 장중 카드는 직전 세션 종가를 일봉에서 찾습니다 — 바꿔 끼우지 않으면 yfinance로 실제 Yahoo에 나갑니다(QA-287).
+    monkeypatch.setattr(market, "previous_close_from_daily", lambda symbol, current=None: 99.0)
     card = market._build_card(SPEC, _payload(_points(100.0, 101.0)))
     assert card["lastTs"].endswith("KST")
 
