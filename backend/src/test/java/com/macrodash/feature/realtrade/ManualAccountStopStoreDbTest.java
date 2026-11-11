@@ -8,6 +8,7 @@ import com.macrodash.store.ManualAccountStore.TradeValues;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -216,6 +217,21 @@ class ManualAccountStopStoreDbTest {
         assertThatThrownBy(() -> store.atomically(() -> {
             jdbc.execute("ALTER TABLE manual_stop_instructions DROP COLUMN notified_preclose_at");
             assertThat(new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("마감 전 알림 칸이 없으면").isFalse();
+            throw new Rollback();
+        })).isInstanceOf(Rollback.class);
+        assertThat(store.ready()).as("되돌린 뒤").isTrue();
+    }
+
+    @Test
+    @Disabled("QA-354: 수정 전 — ready()가 V32의 manual_trades.amount 칸을 보지 않아 V31까지만 적용된 DB에서도 참")
+    @DisplayName("QA-354 준비 — V32의 체결 금액 칸(manual_trades.amount)이 있어야 준비됨(매매 내역 조회·확인·고치기가 그 칸을 읽고 씀), 시험 뒤 되돌림")
+    void readyRequiresV32() {
+        class Rollback extends RuntimeException {
+        }
+        assertThat(store.ready()).as("make db-test로 V32까지 적용했는가").isTrue();
+        assertThatThrownBy(() -> store.atomically(() -> {
+            jdbc.execute("ALTER TABLE manual_trades DROP COLUMN amount");
+            assertThat(new ManualAccountStore(jdbc, MAPPER, new SchemaCheck(jdbc)).ready()).as("체결 금액 칸이 없으면").isFalse();
             throw new Rollback();
         })).isInstanceOf(Rollback.class);
         assertThat(store.ready()).as("되돌린 뒤").isTrue();
