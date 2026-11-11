@@ -87,7 +87,9 @@ def parse_list(markup: str) -> list[dict]:
         title = _text(title_node)
         if not title:
             continue
-        summary_node = anchor.find(class_=re.compile(r"line-clamp-1"))
+        # 요약 칸 — 제목 칸도 좁은 화면용 'sm:line-clamp-1'을 가져서 굵은 글(제목)이 아닌 line-clamp 칸을 고릅니다.
+        summary_node = next((node for node in anchor.find_all(class_=re.compile(r"line-clamp"))
+                             if "font-bold" not in (node.get("class") or [])), None)
         meta = anchor.find(class_=re.compile(r"whitespace-nowrap"))
         spans = meta.find_all("span", recursive=False) if meta is not None else []
         time_node = anchor.find("time")

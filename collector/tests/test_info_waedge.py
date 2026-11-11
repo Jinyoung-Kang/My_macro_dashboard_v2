@@ -20,7 +20,7 @@ LONG = "코스피는 반도체 강세로 올랐습니다. " * 12
 
 def _list_item(n: int, title: str) -> str:
     return (f'<li><a href="a/{n}.html" class="block group"><div class="min-w-0 flex-1">'
-            f'<div class="text-base font-bold leading-snug">{title}</div>'
+            f'<div class="text-base font-bold leading-snug line-clamp-2 sm:line-clamp-1">{title}</div>'
             f'<div class="mt-1 text-[13.5px] line-clamp-1">요약 {n}</div>'
             f'<div class="mt-1.5"><div class="flex items-center gap-1.5 min-w-0 text-xs whitespace-nowrap">'
             f'<span class="shrink-0 font-bold">시장 · 국내</span><span class="min-w-0 truncate">데스크 · AI 작성</span>'
