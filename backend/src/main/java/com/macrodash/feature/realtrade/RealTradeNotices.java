@@ -88,8 +88,10 @@ final class RealTradeNotices {
     }
 
     private static String counts(JsonNode detail) {
+        int unknown = count(detail, "unknown");   // 전송 결과를 아직 모르는 주문(재전송·대조 중) — 있을 때만 적음(QA-346)
         return "접수 " + count(detail, "accepted") + " · 체결 " + count(detail, "filled") + " · 놓침 " + count(detail, "missed")
-                + "\n건너뜀 " + count(detail, "skipped") + " · 막힘 " + count(detail, "blocked") + " · 미룸 " + count(detail, "deferred");
+                + "\n건너뜀 " + count(detail, "skipped") + " · 막힘 " + count(detail, "blocked") + " · 미룸 " + count(detail, "deferred")
+                + (unknown > 0 ? " · 결과 모름 " + unknown : "");
     }
 
     /** 끈 뒤 끝난 이 기능의 주문을 끝난 방식으로 나눈 건수(정리 결과를 단정하지 않게 — '그 밖'은 있을 때만). */

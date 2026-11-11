@@ -9,8 +9,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import * as realtrade from "@/lib/realtrade";
-import { eventDetailText, eventKindLabel, haltReasonLabel, skippedText } from "@/lib/realtrade";
+import { eventDetailText, eventKindLabel, haltReasonLabel, skippedText, warningText } from "@/lib/realtrade";
 
 const JAVA = resolve(__dirname, "../../../../backend/src/main/java/com/macrodash");
 const java = (path: string) => readFileSync(resolve(JAVA, path), "utf8");
@@ -43,7 +42,7 @@ describe("QA-346: 실제 매매 화면 이름표와 백엔드 코드 상수", ()
 
   // 수정 전: 화면 열쇠가 `fractional`이라 백엔드의 `fractional-part`에 이름표가 없고, own-pending·pending-unknown·price-missing·buys-paused·
   // weight-unknown·symbol-unsupported·paper-cancelled-after-claim도 코드 그대로 보였다.
-  it.fails("종목 건너뜀 사유 코드마다 화면 이름표가 있다 — '이름표(코드)'로 그린다", () => {
+  it("종목 건너뜀 사유 코드마다 화면 이름표가 있다 — '이름표(코드)'로 그린다", () => {
     const codes = [
       ...constants(planner, "SKIP_").filter((code) => !DAY_SKIPS.includes(code)),
       ...constants(job, "SKIP_"),
@@ -57,7 +56,7 @@ describe("QA-346: 실제 매매 화면 이름표와 백엔드 코드 상수", ()
   });
 
   // 수정 전: RESTRICTED(매매 제한으로 대기)에 이름표가 없었다.
-  it.fails("이벤트 종류마다 화면 이름표가 있다", () => {
+  it("이벤트 종류마다 화면 이름표가 있다", () => {
     // 저장소에는 EVENT_COLUMNS(칸 목록) 같은 다른 상수도 있어 이벤트 종류 모양(대문자·밑줄)만 봅니다.
     const kinds = [...constants(store, "EVENT_"), ...constants(notices, "EVENT_")].filter((kind) => /^[A-Z][A-Z_]+$/.test(kind));
     expect(kinds).toEqual(expect.arrayContaining(["ENABLE", "HALT", "RESTRICTED", "UNAVAILABLE"]));
@@ -70,20 +69,18 @@ describe("QA-346: 실제 매매 화면 이름표와 백엔드 코드 상수", ()
   });
 
   // 수정 전: 예상 목록 경고는 백엔드가 코드를 보내는데 화면은 글자 그대로 그렸다(warningText 없음).
-  it.fails("예상 목록 경고 코드는 이름표로 그린다 — 모르는 글은 받은 그대로", () => {
-    const warningText = (realtrade as unknown as Record<string, unknown>).warningText as ((warning: string) => string) | undefined;
-    expect(typeof warningText).toBe("function");
+  it("예상 목록 경고 코드는 이름표로 그린다 — 모르는 글은 받은 그대로", () => {
     const literal = [...service.matchAll(/warnings\.add\("([^"]+)"\)/g)].map((match) => match[1]);
     expect(literal).toEqual(expect.arrayContaining(["targets-incomplete", "turnover-over-60", "equity-capped"]));
     expect(service).toContain("warnings.add(RealTradeJob.HALT_BOOK_NOT_ACTIVE)");
     for (const code of [...literal, "book-not-active"]) {
-      expect(warningText!(code)).toMatch(new RegExp(`.+\\(${code}\\)$`));
+      expect(warningText(code)).toMatch(new RegExp(`.+\\(${code}\\)$`));
     }
-    expect(warningText!("첫 시가 맞추기는 회전율 한도 예외")).toBe("첫 시가 맞추기는 회전율 한도 예외");
+    expect(warningText("첫 시가 맞추기는 회전율 한도 예외")).toBe("첫 시가 맞추기는 회전율 한도 예외");
   });
 
   // 수정 전: 창 요약의 결과 모름(unknown) 건수를 적지 않았고, 멈춤 해제 이벤트의 사유 없음이 글자 "null"로 보였다.
-  it.fails("창 요약의 결과 모름 건수를 적고, 사유가 없다는 글자 'null'은 사유로 적지 않는다", () => {
+  it("창 요약의 결과 모름 건수를 적고, 사유가 없다는 글자 'null'은 사유로 적지 않는다", () => {
     expect(eventDetailText({ window: "MIRROR", accepted: 1, filled: 0, missed: 0, skipped: 0, blocked: 0, deferred: 0, unknown: 2 }, "WINDOW_SUMMARY"))
       .toContain("결과 모름 2");
     expect(eventDetailText({ from: "LIVE", haltReason: "null", buysPausedCleared: true }, "RESUME")).toBeNull();

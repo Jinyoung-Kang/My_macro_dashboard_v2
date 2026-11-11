@@ -315,6 +315,12 @@ class RealTradeServiceDbTest {
         Config paused = store.config("KR").orElseThrow();
         service(true).resume(OWNER, new RealTradeService.ResumeRequest("KR", "멈춤 해제", RIGHT, paused.version()));
         assertThat(store.config("KR").orElseThrow().buysPaused()).isFalse();
+        // QA-346 — 해제 이벤트의 사유는 있을 때만(이상 멈춤 해제). 매수 멈춤만 푼 해제에 글자 "null"을 저장하지 않음.
+        List<Event> resumes = events("RESUME");   // 최근 것부터
+        assertThat(resumes).hasSize(2);
+        assertThat(resumes.get(1).detail().path("haltReason").asString()).isEqualTo("unknown-order");
+        assertThat(resumes.get(0).detail().has("haltReason")).as("매수 멈춤 해제 — 사유 칸 없음").isFalse();
+        assertThat(resumes.get(0).detail().path("buysPausedCleared").asBoolean()).isTrue();
 
         Config plain = store.config("KR").orElseThrow();
         rejects(() -> service(true).resume(OWNER, new RealTradeService.ResumeRequest("KR", "멈춤 해제", RIGHT, plain.version())), 409,

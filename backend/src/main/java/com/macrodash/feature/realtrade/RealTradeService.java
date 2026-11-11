@@ -741,9 +741,14 @@ public class RealTradeService {
             if (!store.updateConfig(next, user.id())) {
                 throw versionConflict();
             }
-            store.addEvent(KR, RealTradeStore.EVENT_RESUME, user.id(),
-                    Map.of("from", locked.state(), "haltReason", String.valueOf(locked.haltReason()), "buysPausedCleared", locked.buysPaused()),
-                    true);
+            // 사유가 없으면(매수 멈춤만 푼 해제) 그 칸을 넣지 않습니다 — 예전에는 글자 "null"이 저장돼 화면에 '사유 null'로 보였습니다(QA-346).
+            Map<String, Object> resumed = new LinkedHashMap<>();
+            resumed.put("from", locked.state());
+            if (locked.haltReason() != null) {
+                resumed.put("haltReason", locked.haltReason());
+            }
+            resumed.put("buysPausedCleared", locked.buysPaused());
+            store.addEvent(KR, RealTradeStore.EVENT_RESUME, user.id(), resumed, true);
             return store.config(KR).orElseThrow();
         });
         log.warn("실제 매매 멈춤 해제 — 지금 {}", saved.state());

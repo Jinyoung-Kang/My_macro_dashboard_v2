@@ -761,6 +761,7 @@ const EVENT_KIND: Readonly<Record<string, string>> = {
   CANCEL_GAVE_UP: "취소 못 함(토스증권 앱에서 직접 취소)",
   SKIPPED: "건너뜀",
   STOP_SELL: "스탑 매도",
+  RESTRICTED: "매매 제한으로 대기(VI·서킷브레이커 등)",
   // 개장이 가깝도록 토스 장 운영 정보·수집기 매매 상태를 받지 못함(QA-342 — 하루 한 번, 사유 코드 calendar-unavailable·status-unavailable)
   UNAVAILABLE: "준비 안 됨(주문을 내지 못하는 중)",
 };
@@ -780,6 +781,8 @@ const EVENT_COUNTS: readonly [string, string][] = [
   ["skipped", "건너뜀"],
   ["blocked", "막힘"],
   ["deferred", "미룸"],
+  // 창 요약의 결과 모름(전송 결과를 아직 모르는 주문 — 재전송·대조 중)
+  ["unknown", "결과 모름"],
   // 꺼짐(STOPPED) 정리 결과 — 취소로 끝남·체결로 끝남·그 밖·확인 필요
   ["canceled", "취소로 끝남"],
   ["other", "그 밖"],
@@ -798,7 +801,11 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
     return null;
   }
   const parts: string[] = [];
-  const text = (key: string) => (typeof detail[key] === "string" && (detail[key] as string).trim() !== "" ? (detail[key] as string) : null);
+  // 글자 "null"은 값 없음으로 봅니다 — 예전 멈춤 해제 이벤트는 사유가 없을 때 그 글자를 저장했습니다(QA-346, 지금은 칸을 넣지 않음).
+  const text = (key: string) => {
+    const value = detail[key];
+    return typeof value === "string" && value.trim() !== "" && value !== "null" ? value : null;
+  };
   const purpose = text("purpose") ?? text("window");
   if (purpose) parts.push(purposeLabel(purpose));
   const book = text("sourceBook");
@@ -812,18 +819,46 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+/**
+ * 종목 건너뜀 사유 이름표 — 열쇠는 백엔드가 보내는 코드 그대로입니다(RealTradePlanner의 SKIP_*, RealTradeJob의 건너뜀 코드). 백엔드에 코드가 늘면
+ * `__tests__/realtradeCodes.test.ts`가 Java 소스를 읽어 이름표를 요구합니다(QA-346 — 예전에는 열쇠가 `fractional`이라 `fractional-part`에 닿지 않았음).
+ */
 const SKIP_REASON: Readonly<Record<string, string>> = {
   "opposite-pending": "반대 방향 미체결 있음",
+  "own-pending": "이 기능의 주문이 진행 중",
+  "pending-unknown": "미체결 잔량을 모름",
+  "price-missing": "가격을 모름",
   "pending-stop": "따라 하는 계좌의 오늘 대기 스탑 종목 — 매수 안 함",
   "deferred-cash": "매수 가능 금액 부족으로 미룸",
   capped: "1건 상한까지만",
   "timing-unsupported": "모르는 체결 시점",
-  fractional: "소수 부분은 팔 수 없음",
+  "fractional-part": "소수 부분은 팔 수 없음",
   "not-sellable": "팔 수 있는 수량 없음",
   "deferred-daily-cap": "하루 한도로 미룸",
   "sellable-unknown": "팔 수 있는 수량을 못 받음",
+  "buys-paused": "매수 멈춤 중(손실 한도)",
+  "weight-unknown": "목표 비중을 모름",
+  "symbol-unsupported": "지원하지 않는 종목 코드",
   "batch-stale": "방식이 바뀌어 오늘 묶음은 쓰지 않음",
+  "paper-cancelled-after-claim": "따라 한 뒤 모의 주문이 취소됨(다음 맞추기가 되돌림)",
 };
+
+/** 예상 목록 경고 이름표 — 열쇠는 백엔드(RealTradeService.preview)가 보내는 경고 코드. */
+const PREVIEW_WARNING: Readonly<Record<string, string>> = {
+  "targets-incomplete": "모의 계좌의 대기 주문 가운데 가격을 몰라 목표에 넣지 못한 것이 있음",
+  "book-not-active": "고른 모의 계좌가 운용 중이 아님 — 켜면 정기 작업이 바로 멈춤",
+  "turnover-over-60": "회전율이 60%를 넘음 — 켜기·방식 바꾸기·이상 멈춤 해제 뒤 첫 맞추기가 아니면 이상 멈춤",
+  "equity-capped": "운용 평가액이 서버 안전 상한을 넘어 상한까지만 운용",
+};
+
+/** 예상 목록 경고 한 줄 — 아는 코드는 "이름표(코드)", 모르는 글은 받은 그대로(QA-346 — 예전에는 코드를 그대로 그렸음). */
+export function warningText(warning: string | null | undefined): string {
+  if (typeof warning !== "string" || warning.trim() === "") {
+    return EMPTY;
+  }
+  const label = PREVIEW_WARNING[warning];
+  return label ? `${label}(${warning})` : warning;
+}
 
 /** 예상 목록에서 건너뛴 한 줄("삼성전자 005930 — 반대 방향 미체결 있음(opposite-pending)"). 글자 하나로 오면 그대로. */
 export function skippedText(item: RealTradePreviewSkipped | string | null | undefined): string {

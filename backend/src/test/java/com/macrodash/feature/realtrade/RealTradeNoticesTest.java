@@ -54,6 +54,8 @@ class RealTradeNoticesTest {
         assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "NEXT_CLOSE", "accepted", 2, "filled", 1, "missed", 1,
                 "skipped", 0, "blocked", 1, "deferred", 0, "reasons", Map.of("opposite-pending", 1)))))
                 .isEqualTo("[실제 매매] 종가 따라 하기\n\n접수 2 · 체결 1 · 놓침 1\n건너뜀 0 · 막힘 1 · 미룸 0");
+        assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "MIRROR", "accepted", 1, "unknown", 2))))
+                .as("QA-346 — 결과 모름 건수는 있을 때만").isEqualTo("[실제 매매] 장중 따라 하기\n\n접수 1 · 체결 0 · 놓침 0\n건너뜀 0 · 막힘 0 · 미룸 0 · 결과 모름 2");
         assertThat(text(event("STOPPED", Map.of("unresolved", 2))))
                 .isEqualTo("[실제 매매] 꺼짐\n\n취소로 끝남 0 · 체결로 끝남 0\n확인 필요 2건");
         assertThat(text(event("STOPPED", Map.of("canceled", 3, "filled", 1, "other", 1, "unresolved", 0))))

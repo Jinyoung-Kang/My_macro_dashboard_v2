@@ -731,6 +731,17 @@ describe("켜기 창", () => {
     expect(within(dialog).getByText(/지금 맞추기 창이 열려 있습니다 — 창이 열려 있는 동안 켜면 이 목록이 바로 주문됩니다/)).toBeTruthy();
   });
 
+  it("QA-346: 예상 목록의 경고 코드와 건너뜀 코드를 이름표로 그린다(코드도 함께)", async () => {
+    reads["/api/realtrade/preview"] = () => Promise.resolve({
+      ...PREVIEW, warnings: ["turnover-over-60", "equity-capped"], skipped: [{ symbol: "035720", name: "카카오", reason: "fractional-part" }],
+    });
+    const dialog = await openEnable();
+    await within(dialog).findByRole("table", { name: "예상 주문" });
+    expect(within(dialog).getByText(/회전율이 60%를 넘음 — .+\(turnover-over-60\)/)).toBeTruthy();
+    expect(within(dialog).getByText("운용 평가액이 서버 안전 상한을 넘어 상한까지만 운용(equity-capped)")).toBeTruthy();
+    expect(within(dialog).getByText("카카오 035720 — 소수 부분은 팔 수 없음(fractional-part)")).toBeTruthy();
+  });
+
   it("QA-344 대조: 창이 열려 있지 않으면(immediate 거짓·없음) 바로 주문 경고가 없다", async () => {
     reads["/api/realtrade/preview"] = () => Promise.resolve({ ...PREVIEW, session: "2026-11-09", syncAt: "2026-11-09T00:10:00Z", immediate: false });
     const dialog = await openEnable();

@@ -33,6 +33,7 @@ import {
   sideLabel,
   skippedText,
   sourceBookLabel,
+  warningText,
   SOURCE_BOOKS,
   symbolText,
   toNumber,
@@ -505,7 +506,7 @@ function PreviewSection({
             <Banner tone="warn">
               <ul className="list-disc space-y-0.5 pl-4">
                 {(data.warnings ?? []).map((warning) => (
-                  <li key={warning}>{warning}</li>
+                  <li key={warning}>{warningText(warning)}</li>
                 ))}
               </ul>
             </Banner>
