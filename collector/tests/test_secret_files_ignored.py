@@ -53,7 +53,6 @@ def test_추적_중인_파일이_무시_규칙에_걸리지_않는다():
 _CGNAT_EXAMPLES = {"100.64.0.0", "100.64.0.1"}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-340: 시험 파일 한 곳에 예시가 아닌 CGNAT 주소가 적혀 있습니다")
 def test_QA340_추적_파일의_CGNAT_주소는_문서용_예시뿐이다():
     import ipaddress
     import re
