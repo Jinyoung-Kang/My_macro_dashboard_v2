@@ -61,3 +61,7 @@ b918c1e0fdf8723e7e82e794a41139a18db1fcd8:backend/src/test/resources/paper/golden
 7b2c46059fdfec965770f14129f43eb06706bc72:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
 877eb1517dda44d6c5935a76ccd221337b902805:backend/src/test/resources/paper/golden/packet-kr-ft-scheduled.json:generic-api-key:1
 135ddba700f91158178fdd8eb27f0ccc1fbdb682:backend/src/test/resources/paper/golden/packet-kr-ft-stopwatch-scheduled.json:generic-api-key:1
+
+# 2026-11-12 improve-r5 브랜치(QA-362): 한국 계좌2 끈 판 패킷 고정본(packet-kr-claude2-scheduled.json)의 매크로 카드 항목 키
+# ("kospi200_night_scraped") — 위 16b83a7·f5378ee와 같은 데이터셋 키 문자열이다(.env 값과 일치 0건, 값은 수집기 catalog의 데이터셋 이름).
+176da65338353342aec4528186e68b62a9157d6c:backend/src/test/resources/paper/golden/packet-kr-claude2-scheduled.json:generic-api-key:1
