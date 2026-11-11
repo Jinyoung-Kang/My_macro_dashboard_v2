@@ -3239,7 +3239,8 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
       side: sideLabel(side || null),
       sideKey: side,
       size: proposedSizeText(side, order.targetWeightPct, order.sellFraction),
-      timing: timingLabel(textOf(order.timing), marketOfBook(source.book)),
+      // 자유 시점 판의 지정 시각(AT_MINUTE)은 응답의 atLocal을 붙여 '지정 시각 10:47 ET'로(QA-365) — 다른 시점에는 그 칸을 쓰지 않습니다.
+      timing: timingLabel(textOf(order.timing), marketOfBook(source.book), textOf(order.atLocal)),
       thesis: textOf(order.thesis) ?? EMPTY,
       labels: claimLabelBadges(order.labels),
       invalidation: textOf(order.invalidation) ?? EMPTY,

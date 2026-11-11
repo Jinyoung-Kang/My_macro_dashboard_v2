@@ -137,7 +137,7 @@ describe("분 단위 지정 시각·장중 판단 종류의 이름", () => {
   });
 
   // 수정 전에는 '제안 주문' 표가 timingLabel에 주문의 atLocal을 넘기지 않아 '지정 시각'만 보였습니다(QA-365, 재현 커밋에서는 it.fails).
-  it.fails("자유 시점 판 결정의 '제안 주문' 표도 지정 시각을 붙임 — 주문 행이 없는 미리보기·적용되지 않은 교체 응답에서도 시각이 보이게", () => {
+  it("자유 시점 판 결정의 '제안 주문' 표도 지정 시각을 붙임 — 주문 행이 없는 미리보기·적용되지 않은 교체 응답에서도 시각이 보이게", () => {
     const us = claudeDecisionView({
       book: "claude", kind: "SCHEDULED", status: "OK",
       response: {
