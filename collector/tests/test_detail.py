@@ -274,6 +274,30 @@ def test_캐시는_같은_질의를_한_번만_부르고_실패는_짧게만_둔
     assert failures == ["MSFT", "MSFT"], "실패 응답은 FAILURE_TTL 뒤 다시 묻는다"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-285: 일부 출처만 실패한 응답(errors)이 성공 수명(15분)으로 캐시돼 그동안 다시 묻지 않습니다")
+def test_QA285_한_출처만_실패한_뉴스_응답은_실패_수명_뒤_다시_묻는다(monkeypatch):
+    asked = []
+
+    def google(q, lang):
+        asked.append(q)
+        if "site:news.einfomax.co.kr" in q:
+            return [], "HTTP 503"                                  # 연합인포맥스 검색만 실패
+        return [{"title": "Apple beats", "url": "https://news.google.com/c", "publisher": "Reuters",
+                 "publishedAt": "2026-11-01T09:00:00+00:00", "source": detail.GOOGLE_SOURCE}], None
+
+    monkeypatch.setattr(detail, "_google_news", google)
+    now = [1000.0]
+    monkeypatch.setattr(detail.time, "monotonic", lambda: now[0])
+
+    first = detail.news(None, None, "Apple")
+    assert first["error"] is None and first["errors"] == {detail.INFOMAX_SOURCE: "HTTP 503"} and len(first["items"]) == 1
+    assert detail.news(None, None, "Apple") is first, "실패 수명 안에서는 같은 응답"
+
+    now[0] += detail.FAILURE_TTL + 1
+    detail.news(None, None, "Apple")
+    assert len(asked) == 4, "한 출처가 실패한 응답은 FAILURE_TTL 뒤 다시 묻습니다(수정 전에는 NEWS_TTL 15분 동안 그대로)"
+
+
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setattr(main, "API_TOKEN", "")
