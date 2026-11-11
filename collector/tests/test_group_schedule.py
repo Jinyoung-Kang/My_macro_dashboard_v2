@@ -235,3 +235,36 @@ def test_slow_회차가_끝났으면_남은_태스크_실행을_등록하지_않
     jobs = _jobs(monkeypatch, quotes_at=_at(12, 16, 10), now=_at(12, 16, 40), done=lambda group, since: None)
     assert "collect-slow-resume" not in jobs
     assert "next_run_time" not in jobs["collect-slow"]
+
+
+# ==============================================================================
+# QA-374 — interval 갈래와 polite 틱의 유예
+# ==============================================================================
+@pytest.mark.xfail(strict=True, reason="QA-374: interval 갈래와 polite 틱에 misfire_grace_time이 없어 APScheduler 기본 1초가 적용됩니다")
+def test_QA374_주기_갈래와_polite_틱도_늦게_깬_회차를_버리지_않게_유예를_준다(monkeypatch):
+    """
+    기동 직후 한 번(next_run_time = 기동 시각)은 스케줄러가 시작하기 전에 DB 읽기(관측치 시각·끊긴 회차)가 끼어 1초를 넘기 쉽습니다.
+    APScheduler 3.11의 기본 유예는 1초이고 넘으면 그 회차를 버려, fast는 5분 뒤·weekly는 12시간 뒤에야 처음 돕니다.
+    """
+    jobs = _jobs(monkeypatch)
+    assert jobs["collect-fast"]["trigger"] == "interval" and jobs["collect-fast"]["misfire_grace_time"] == 60
+    assert jobs["collect-weekly"]["trigger"] == "interval" and jobs["collect-weekly"]["misfire_grace_time"] == 900
+    assert jobs["collect-polite"]["misfire_grace_time"] == 60
+
+    # 주기를 바꾼 실험 스택에서는 slow·session도 이 갈래를 지납니다 — 고정 위상일 때와 같은 유예.
+    monkeypatch.setenv("COLLECTOR_SLOW_INTERVAL", "1800")
+    monkeypatch.setenv("COLLECTOR_SESSION_INTERVAL", "600")
+    jobs = _jobs(monkeypatch)
+    assert jobs["collect-slow"]["trigger"] == "interval" and jobs["collect-slow"]["misfire_grace_time"] == main.SLOW_MISFIRE_GRACE_SECONDS
+    assert jobs["collect-session"]["trigger"] == "interval" and jobs["collect-session"]["misfire_grace_time"] == main.SESSION_MISFIRE_GRACE_SECONDS
+
+
+@pytest.mark.xfail(strict=True, reason="QA-374: 주기 갈래의 유예 상수가 없습니다")
+def test_QA374_유예는_그_군의_기본_주기보다_짧다(monkeypatch):
+    """유예가 주기보다 길면 밀린 회차와 다음 회차가 겹칩니다."""
+    for group in ("fast", "slow", "weekly", "session"):
+        monkeypatch.delenv(f"COLLECTOR_{group.upper()}_INTERVAL", raising=False)
+    assert set(main.INTERVAL_MISFIRE_GRACE_SECONDS) == {"fast", "slow", "weekly", "session"}
+    for group, grace in main.INTERVAL_MISFIRE_GRACE_SECONDS.items():
+        assert 0 < grace < settings.interval_seconds(group), group
+    assert 0 < main.POLITE_TICK_MISFIRE_GRACE_SECONDS < main.POLITE_TICK_SECONDS
