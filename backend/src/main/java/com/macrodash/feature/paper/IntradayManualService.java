@@ -129,6 +129,7 @@ public class IntradayManualService {
                     throw new InvalidRequestException("가장 이른 예약(" + FreeTiming.label(p.atLocal()) + zone + ", " + p.slot()
                             + "번째)이 이미 부를 차례입니다 — 당길 것이 없습니다(장중 판단 작업이 그 시각 + 2분 뒤 창에서 부릅니다).");
                 }
+                rejectEarlyHourly(p.feed(), at, session, calendar, korea);
                 store.upsertPlannedIntradayPlan(IntradayScheduler.pulled(p, local));
                 return new Pulled(code, session, p.slot(), local, p.feed(), false, korea);
             }
@@ -139,9 +140,22 @@ public class IntradayManualService {
             }
             Decision source = scheduler.sessionDecision(code, session, calendar).orElseThrow(() -> new InvalidRequestException(
                     "오늘 세션(" + session + ")의 자유 시점 판 결정이 없습니다 — 장중 판단은 그 세션의 결정이 자유 시점 판일 때만 부릅니다."));
+            rejectEarlyHourly(IntradayScheduler.feed(korea), at, session, calendar, korea);
             IntradayPlan created = IntradayScheduler.manualRow(code, session, next, local, korea, source.id());
             store.upsertPlannedIntradayPlan(created);
             return new Pulled(code, session, next, local, created.feed(), true, korea);
         }));
+    }
+
+    /**
+     * 미국 시간별 관측치(HOURLY) 행을 그 세션의 첫 시간별 관측치가 올 수 없는 시각으로 넣거나 당기지 않습니다(QA-359 —
+     * {@link IntradayRequest#HOURLY_AFTER_OPEN}). 받으면 작업이 창 끝까지 관측치를 기다리다 호출 없이 만료하고 순번만 씁니다.
+     */
+    private static void rejectEarlyHourly(String feed, Instant at, LocalDate session, TradingCalendar calendar, boolean korea) {
+        if (IntradayRequest.tooEarlyForHourly(feed, at, session, calendar, korea)) {
+            String first = FreeTiming.label(IntradayRequest.hourlyFirst(session, calendar).atZone(calendar.zone()).toLocalTime());
+            throw new InvalidRequestException("시간별 관측치(HOURLY) 장중 판단은 그 세션의 첫 시간별 관측치가 들어온 뒤에만 부를 수 있습니다 — "
+                    + first + " ET 뒤에 요청하세요(지금 요청하면 관측치가 없어 호출 없이 만료되고 순번만 씁니다).");
+        }
     }
 }

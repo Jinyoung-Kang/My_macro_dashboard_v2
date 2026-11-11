@@ -430,7 +430,8 @@ class FreeTimingDecisionTest {
         active(PaperBooks.CLAUDE);
         ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
         ((ObjectNode) store.settings.body()).put(FreeTimingSettings.US_INTRADAY_MAX, 0);
-        String two = "[" + checkpoint("10:00", "HOURLY", "[]", "첫 확인") + "," + checkpoint("12:00", "HOURLY", "[]", "둘째 확인") + "]";
+        // 미국 HOURLY 예약은 10:10 ET부터 받습니다(QA-359) — 첫 예약을 10:30으로 둡니다.
+        String two = "[" + checkpoint("10:30", "HOURLY", "[]", "첫 확인") + "," + checkpoint("12:00", "HOURLY", "[]", "둘째 확인") + "]";
         answerJson(decisionWith(two));
 
         Decision none = service().decide(MON, RuleBookService.SCHEDULED, true);
@@ -449,7 +450,7 @@ class FreeTimingDecisionTest {
         Decision one = service().decide(MON, RuleBookService.MANUAL, true);
         assertThat(one.error()).isNull();
         assertThat(store.intradayPlans(PaperBooks.CLAUDE, TUE)).extracting(p -> p.slot() + " " + p.atLocal() + " " + p.status())
-                .containsExactly("1 10:00 PLANNED");
+                .containsExactly("1 10:30 PLANNED");
         assertThat(one.response().path("intradayPlan").path("rejected").get(0).path("atEt").asString()).isEqualTo("12:00");
         assertThat(one.response().path("intradayPlan").path("rejected").get(0).path("reason").asString()).contains("횟수");
 

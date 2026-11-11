@@ -8,7 +8,6 @@ import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -186,7 +185,6 @@ class IntradayManualServiceTest {
     }
 
     @Test
-    @Disabled("QA-359: 10:10 ET 전의 수동 HOURLY 요청(새 행·HOURLY 예약 당김)을 받아, 시간별 관측치가 없어 호출 없이 만료되고 순번만 씁니다")
     @DisplayName("QA-359 거절(400): 미국 10:10 ET 전에는 수동 새 행(HOURLY)과 HOURLY 예약 당김을 받지 않음('10:10 ET 뒤에 요청') — MINUTE 예약 당김과 "
             + "10:10 뒤 요청은 그대로")
     void earlyHourlyPullIsRejected() {

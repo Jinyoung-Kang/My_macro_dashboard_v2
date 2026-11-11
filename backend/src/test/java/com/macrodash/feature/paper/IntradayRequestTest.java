@@ -4,7 +4,6 @@ import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -64,7 +63,9 @@ class IntradayRequestTest {
         assertThat(kr.first()).as("09:10 KST").isEqualTo(Instant.parse("2026-11-03T00:10:00Z"));
         assertThat(kr.last()).as("14:50 KST — 종가 단일가(15:20) 30분 전").isEqualTo(Instant.parse("2026-11-03T05:50:00Z"));
 
-        IntradayRequest.Verdict edges = us(list(item("09:40", "HOURLY", "[]", "개장 뒤"), item("15:30", "HOURLY", "[]", "마감 전")), 2, List.of());
+        // 범위의 앞 끝(09:40)은 감시 1분봉으로 봅니다 — 미국 HOURLY는 10:10 ET부터 받습니다(QA-359, earlyHourlyIsRejected).
+        IntradayRequest.Verdict edges = us(list(item("09:40", "MINUTE", "[\"AAA\"]", "개장 뒤"), item("15:30", "HOURLY", "[]", "마감 전")), 2,
+                List.of());
         assertThat(edges.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(9, 40), LocalTime.of(15, 30));
         assertThat(edges.rejected()).isEmpty();
 
@@ -98,9 +99,9 @@ class IntradayRequestTest {
     }
 
     @Test
-    @Disabled("QA-359: 미국 HOURLY 예약을 09:40 ET부터 받지만 그 세션의 첫 시간별 관측치는 10:15 ET 회차라, 이른 예약은 호출 없이 만료되고 순번만 씁니다")
     @DisplayName("QA-359 미국 HOURLY 예약은 개장 40분 뒤(10:10 ET)부터 — 그 전 시각은 사유와 함께 버림(조기 폐장일도 같음). MINUTE와 한국은 받는 범위 그대로")
     void earlyHourlyIsRejected() {
+        assertThat(IntradayRequest.HOURLY_AFTER_OPEN).hasMinutes(40);
         IntradayRequest.Verdict v = us(list(item("09:45", "HOURLY", "[]", "이른 시간별"), item("10:09", "HOURLY", "[]", "경계 앞"),
                 item("10:10", "HOURLY", "[]", "경계"), item("09:40", "MINUTE", "[\"AAA\"]", "감시 1분봉")), 3, List.of());
 
@@ -144,10 +145,10 @@ class IntradayRequestTest {
         IntradayRequest.Verdict exact = us(list(item("11:00", "HOURLY", "[]", "q"), item("11:20", "HOURLY", "[]", "q")), 2, List.of());
         assertThat(exact.accepted()).as("딱 20분은 받음").hasSize(2);
 
-        IntradayRequest.Verdict three = us(list(item("10:00", "HOURLY", "[]", "q"), item("12:00", "HOURLY", "[]", "q"),
+        IntradayRequest.Verdict three = us(list(item("10:10", "HOURLY", "[]", "q"), item("12:00", "HOURLY", "[]", "q"),
                 item("14:00", "HOURLY", "[]", "q"), item("15:00", "HOURLY", "[]", "q")), 3, List.of());
         assertThat(three.accepted()).as("세션당 셋까지").extracting(IntradayRequest.Item::at)
-                .containsExactly(LocalTime.of(10, 0), LocalTime.of(12, 0), LocalTime.of(14, 0));
+                .containsExactly(LocalTime.of(10, 10), LocalTime.of(12, 0), LocalTime.of(14, 0));
         assertThat(three.rejected()).singleElement().satisfies(r -> {
             assertThat(r.at()).isEqualTo("15:00");
             assertThat(r.reason()).contains("횟수(3번, 남은 3번)");
@@ -158,11 +159,11 @@ class IntradayRequestTest {
         assertThat(taken.accepted()).as("끝난 판단 10:00과 20분 안인 10:15는 버리고 13:00을 받음").extracting(IntradayRequest.Item::at)
                 .containsExactly(LocalTime.of(13, 0));
 
-        IntradayRequest.Verdict over = us(list(item("10:00", "HOURLY", "[]", "q"), item("13:00", "HOURLY", "[]", "q")), 1, List.of());
-        assertThat(over.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(10, 0));
+        IntradayRequest.Verdict over = us(list(item("10:10", "HOURLY", "[]", "q"), item("13:00", "HOURLY", "[]", "q")), 1, List.of());
+        assertThat(over.accepted()).extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(10, 10));
         assertThat(over.rejected().get(0).reason()).contains("횟수");
 
-        assertThat(us(list(item("10:00", "HOURLY", "[]", "q")), 0, List.of()).accepted()).isEmpty();
+        assertThat(us(list(item("10:10", "HOURLY", "[]", "q")), 0, List.of()).accepted()).isEmpty();
         assertThat(us(null, 2, List.of()).accepted()).as("예약 없음").isEmpty();
         assertThat(us(MAPPER.readTree("{}"), 2, List.of()).rejected()).as("배열이 아니면 예약 없음").isEmpty();
     }

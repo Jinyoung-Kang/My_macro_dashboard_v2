@@ -42,6 +42,12 @@ final class IntradayRequest {
     static final Duration BEFORE_CLOSE = ExecutionSection.CHECKPOINT_BEFORE_CLOSE;
     /** 같은 계좌의 두 판단 시각 사이의 최소 간격(사용자 결정 2026-11-06 — 20분, 그 전은 30분). 호출 창 길이(2~20분, 18분)보다 길어 두 창이 겹치지 않습니다. */
     static final Duration MIN_GAP = Duration.ofMinutes(20);
+    /**
+     * 미국 시간별 관측치({@code HOURLY}) 판단의 가장 이른 시각은 개장 이만큼 뒤(보통 날 10:10 ET — QA-359). 수집기는 시간별 관측치를 매시 :15에 받아
+     * 그 세션의 첫 관측치가 10:15 ET 회차(10:16~17쯤 저장)이고, 작업은 호출 창(시각 + 2~20분) 안에 그 세션 관측치가 있어야 부릅니다. 이보다 이른
+     * HOURLY 판단은 호출 없이 만료되고 순번만 씁니다. 감시 1분봉({@code MINUTE})과 한국(늘 MINUTE)에는 이 경계가 없습니다.
+     */
+    static final Duration HOURLY_AFTER_OPEN = Duration.ofMinutes(40);
 
     /**
      * 받은 예약 하나.
@@ -85,6 +91,16 @@ final class IntradayRequest {
         return new Window(calendar.openInstant(session).plus(AFTER_OPEN), end.minus(BEFORE_CLOSE));
     }
 
+    /** 그 세션에서 미국 시간별 관측치(HOURLY) 판단을 받는 가장 이른 시각 — 개장 + {@link #HOURLY_AFTER_OPEN}. */
+    static Instant hourlyFirst(LocalDate session, TradingCalendar calendar) {
+        return calendar.openInstant(session).plus(HOURLY_AFTER_OPEN);
+    }
+
+    /** 미국 HOURLY 판단 시각 {@code at}이 그 세션의 첫 시간별 관측치를 기다릴 수 없을 만큼 이른가(QA-359). 한국·MINUTE는 늘 거짓. */
+    static boolean tooEarlyForHourly(String feed, Instant at, LocalDate session, TradingCalendar calendar, boolean korea) {
+        return !korea && ExecutionSection.FEED_HOURLY.equals(feed) && at != null && at.isBefore(hourlyFirst(session, calendar));
+    }
+
     /**
      * 예약 목록을 봅니다.
      *
@@ -125,6 +141,11 @@ final class IntradayRequest {
             String feed = korea ? ExecutionSection.FEED_MINUTE : text(request, "feed");
             if (feed == null || !ExecutionSection.FEEDS.contains(feed)) {
                 reasons.add("피드 " + feed + "는 MINUTE·HOURLY가 아님");
+            }
+            if (reasons.isEmpty() && at != null
+                    && tooEarlyForHourly(feed, FreeTiming.at(session, at, calendar), session, calendar, korea)) {
+                reasons.add("HOURLY 확인 시각 " + atText + zone + "가 그 세션의 첫 시간별 관측치 전 — HOURLY는 "
+                        + FreeTiming.label(hourlyFirst(session, calendar).atZone(calendar.zone()).toLocalTime()) + zone + "부터");
             }
             List<String> watch = new ArrayList<>();
             JsonNode list = request == null ? null : request.get("watch");
