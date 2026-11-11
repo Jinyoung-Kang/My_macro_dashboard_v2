@@ -159,6 +159,19 @@ def test_피드가_HTML이면_형식_바뀜(store, example_host):
 # ==============================================================================
 # 5. 거부
 # ==============================================================================
+@pytest.mark.xfail(strict=True, reason="QA-387: parse_feed가 bytes를 그대로 넘겨 feedparser가 파일 이름으로 열어 봅니다")
+def test_QA387_받은_본문이_파일_경로_모양이어도_그_파일을_열지_않는다(tmp_path):
+    """
+    feedparser는 ``read``가 없는 입력을 먼저 파일 이름으로 열어 보고 실패할 때만 데이터로 봅니다. 출처가 본문으로 경로를 주면
+    (``/dev/zero`` 같은 끝없는 파일이면 수집기가 메모리 부족으로 죽음) 그 파일을 읽으면 안 됩니다 — 받은 바이트는 데이터로만 읽습니다.
+    """
+    path = tmp_path / "feed.xml"
+    path.write_bytes(_feed(_item(1)))
+
+    with pytest.raises(ShapeError):
+        info_blogs.parse_feed(str(path).encode("utf-8"))
+
+
 def test_글_페이지가_거부되면_받은_글은_넣고_거부를_올린다(store, example_host):
     closed = state.Closed("blog.example.com", "HTTP 403(계층 impersonate)", NOW + timedelta(hours=1), False)
     routes = {BLOG.feed: _feed(_item(1), _item(2, content=None), _item(3, content=None))}
