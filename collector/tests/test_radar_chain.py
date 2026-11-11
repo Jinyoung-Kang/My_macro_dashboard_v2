@@ -101,6 +101,29 @@ def test_total_failure_returns_empty_not_fabricated():
     assert result["sourceKind"] == "none"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-399: silence_sources가 KRX 저장본 단계를 막지 않아 기본 DB 주소로 접속을 시도합니다")
+def test_QA399_기본_스텁만으로는_DB_풀을_열지_않는다(monkeypatch):
+    """
+    이 파일의 시험은 ``store`` 픽스처를 쓰지 않습니다. 그래서 체인의 KRX 저장본 단계(fetch_krx_stored_ranking)가 스텁 없이 돌면
+    ``DATABASE_URL`` 기본값(localhost:5432/macrodash — 이 PC에서는 다른 스택의 자리)으로 풀을 열려 하고, 닿지 않으면 5초씩 기다립니다.
+    그 단계는 저장소 예외를 삼키므로(빈 결과) 부른 사실을 따로 적어 봅니다.
+    """
+    from app import store
+
+    opened: list[str] = []
+
+    def refuse():
+        opened.append("get_pool")
+        raise RuntimeError("시험이 DB 풀을 열려 했습니다")
+
+    monkeypatch.setattr(store, "get_pool", refuse)
+
+    radar.collect_radar_ranking(date(2020, 1, 6))                 # 과거 평일 — 그 날짜의 KRX 저장본만 봅니다
+    radar.collect_radar_ranking(datetime.now(KST).date())         # 당일 — 가장 가까운 앞 거래일의 KRX 저장본
+
+    assert opened == [], "레이더 체인 시험은 DB 없이 돌아야 합니다"
+
+
 def test_past_date_skips_current_only_sources(monkeypatch):
     """
     Naver/Daum/KIS는 과거 날짜 조회를 지원하지 않습니다. 과거 조회에서

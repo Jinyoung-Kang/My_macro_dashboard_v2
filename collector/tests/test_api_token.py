@@ -84,6 +84,28 @@ def test_상태_경로는_토큰_없이도_401이_아니다(client, path):
     assert client.get(path).status_code != 401
 
 
+@pytest.mark.xfail(strict=True, reason="QA-277·QA-399: /health·/status가 스텁 없이 기본 DB 주소로 접속을 시도합니다")
+@pytest.mark.parametrize("path", OPEN)
+def test_QA277_상태_경로_시험은_DB_풀을_열지_않는다(client, monkeypatch, path):
+    """
+    ``client`` 픽스처는 lifespan을 띄우지 않지만 /health(store.ping)와 /status(store.store_stats)는 요청 때 풀을 엽니다. ``store`` 픽스처가
+    없으니 ``DATABASE_URL`` 기본값(localhost:5432/macrodash — 이 PC에서는 다른 스택의 자리)으로 갑니다.
+    """
+    from app import store
+
+    opened: list[str] = []
+
+    def refuse():
+        opened.append("get_pool")
+        raise RuntimeError("시험이 DB 풀을 열려 했습니다")
+
+    monkeypatch.setattr(store, "get_pool", refuse)
+
+    client.get(path)
+
+    assert opened == [], "인증만 보는 시험은 DB 없이 돌아야 합니다"
+
+
 def test_토큰을_설정하지_않으면_막지_않는다(monkeypatch):
     monkeypatch.setattr(main, "API_TOKEN", "")
     # 검사 함수만 직접 확인합니다. 실제 호출은 외부 네트워크를 타기 때문입니다.
