@@ -14,6 +14,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,7 +46,7 @@ class InfoTranslatorTest {
     void setUp() {
         ai = mock(AiService.class);
         store = mock(TranslationStore.class);
-        saved = new HashMap<>();
+        saved = new ConcurrentHashMap<>();      // 본문 조각은 여러 스레드가 함께 저장합니다
         when(store.ready()).thenReturn(true);
         when(store.find(anyCollection())).thenAnswer(call -> {
             Map<String, String> out = new HashMap<>();
