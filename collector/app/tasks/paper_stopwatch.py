@@ -11,8 +11,9 @@ app/tasks/paper_stopwatch.py
 [범위] store.stopwatch_scope(시장) — 운용 중이고 벤치마크가 아닌 책의 보유 종목(백엔드 표를 읽기만) + 기준 종목(미국 SPY·한국 069500 — 지연과
   지수 사건의 입력). 보유가 없으면 호출 0회.
 [창] 그 세션의 개장 + 4분 ~ 장 끝 여유 앞 + 1분(미국 09:34~15:56 ET — 격자 끝 15:55, 한국 09:04~15:21 KST — 격자 끝 15:20, 수능일 등 장 시간 변경일은
-  설정 ``kr.calendar.openTimeOverrides``의 그날 개장·마감에서). 미국 휴장·조기 폐장은 수집기가 모르므로 첫 응답의 SPY로 배웁니다 — 그날 세션 봉이
-  없으면(휴장) 그날 남은 회차는 묻지 않고, 정규장 끝(Yahoo currentTradingPeriod)을 그날의 창 끝으로 씁니다. 한국은 KRX 휴장일에 묻지 않고, 기준 종목에
+  설정 ``kr.calendar.openTimeOverrides``의 그날 개장·마감에서). 미국 휴장·조기 폐장은 수집기가 모르므로 응답의 SPY로 배웁니다 — 그날 세션 봉이
+  없으면(휴장) 그날 남은 회차는 묻지 않고, 정규장 끝(Yahoo currentTradingPeriod)을 그날의 창 끝으로 씁니다. 그날 세션 봉을 한 번 본 뒤에는 휴장으로
+  굳히지 않고, 정규장 기간은 오늘인데 봉만 빈 응답은 두 번 이어져야 닫습니다(QA-361 — ``_learn_us_day``). 한국은 KRX 휴장일에 묻지 않고, 기준 종목에
   그날 완성 봉이 없으면 나머지를 묻지 않습니다(임시 휴장 — 호출 1회). 마지막 격자(미국 15:55·한국 15:20)는 그 회차 하나만 받을 수 있어 다음
   회차가 메우지 못합니다 — 그 회차가 빠지면(session 군의 앞 태스크가 길어 창 끝을 넘김·쉼·래치) 백엔드의 덮음 판정이 거짓이 되어 장부의 대체 경로
   (미국 마감 뒤 관측치의 종가 스탑·한국 밤 스탑)가 그날 끝을 맡습니다(StopWatch.covered — QA-307).
@@ -79,6 +80,9 @@ SPARK_HOST = http.host_of(live_prices.YAHOO_SPARK)
 REST_AFTER_REJECT = 2
 # 미국 휴장(첫 응답의 SPY 세션이 오늘이 아님)으로 볼 수 있는 가장 이른 뉴욕 시각 — 개장 직후 Yahoo가 그날 봉을 아직 주지 않은 지연과 가르려고.
 US_CLOSED_AFTER = clock_time(9, 45)
+# 응답의 정규장 기간은 오늘인데 SPY에 그날 봉만 없을 때, 휴장으로 굳히기까지 이어져야 하는 그런 응답의 수(QA-361). 장중에 한 번 이상한
+# 응답(빈 시계열)이 왔다고 그날 남은 감시를 멈추지 않게 — 정규장 기간부터 오늘이 아닌 응답(지난 세션만 줌)은 한 번에 닫습니다.
+US_CLOSED_CONFIRMATIONS = 2
 
 # ---- 한국 ----
 KR_SOURCE = "토스증권 1분봉(원시가)·일봉 전일 종가 — 장중 스탑 감시(5분 수집)"
@@ -96,7 +100,9 @@ SPACING_SECONDS = 0.1
 
 # 이 프로세스의 상태(메모리 — 기동하면 처음부터).
 _us_rest_rounds = 0                        # 거부 뒤 쉬어야 할 남은 회차
-_us_days: dict[date, dict] = {}            # 뉴욕 날짜 → {"closed": bool, "end": datetime | None} — 첫 응답에서 배운 그날의 세션
+# 뉴욕 날짜 → {"closed": bool, "end": datetime | None, "open": bool, "empty": int} — 응답에서 배운 그날의 세션. open은 그날 세션의 SPY 봉을
+# 한 번이라도 봤다는 표시(그 뒤로는 닫지 않음), empty는 그날 봉이 없는 응답이 이어진 수.
+_us_days: dict[date, dict] = {}
 
 
 def _now() -> datetime:
@@ -236,7 +242,7 @@ def _us_window(now: datetime) -> tuple[datetime, datetime, str | None]:
         return start, end, "주말"
     learned = _us_days.get(day)
     if learned and learned.get("closed"):
-        return start, end, "휴장(첫 응답에 그날 세션 봉 없음)"
+        return start, end, "휴장(응답에 그날 세션 봉 없음)"
     if learned and learned.get("end"):
         end = min(end, learned["end"] - US_TAIL + WINDOW_TAIL)
     return start, end, None
@@ -246,19 +252,32 @@ def _learn_us_day(now: datetime, series: dict | None, entry: dict | None) -> Non
     """
     응답의 SPY로 그날 세션을 배웁니다 — 정규장 끝(조기 폐장)과 휴장(개장 15분 뒤에도 그날 세션 봉 없음). SPY 줄을 받지 못했으면(묶음 실패) 배우지
     않습니다(받지 못한 것을 휴장으로 읽지 않게). 날짜는 오늘 하나만 둡니다.
+
+    배운 것은 같은 날의 뒤 응답이 이어 씁니다(QA-361 — 예전에는 응답마다 새로 만들어, 장중에 SPY 시계열만 빈 응답이 한 번 오면 그 뉴욕 날짜가
+    끝날 때까지 또는 재기동 전까지 감시가 멈췄습니다).
+      - 그날 세션의 SPY 봉을 한 번이라도 봤으면(open) 그 뒤로는 휴장으로 굳히지 않습니다. 배운 정규장 끝도 뒤 응답에 값이 없다고 지우지 않습니다.
+      - 아직 못 봤으면: 응답의 정규장 기간이 오늘이 아니면(지난 세션만 줌) 한 번에, 정규장 기간은 오늘인데 봉만 없으면 그런 응답이
+        ``US_CLOSED_CONFIRMATIONS``번 이어질 때 닫습니다(장중 재기동 뒤 첫 응답 한 번이 이상해도 닫지 않게).
     """
     if series is None:
         return
     local = now.astimezone(NEW_YORK)
     day = local.date()
-    state = {"closed": False, "end": None}
+    state = dict(_us_days.get(day) or {"closed": False, "end": None, "open": False, "empty": 0})
     regular = (series or {}).get("regular")
+    regular_elsewhere = False                      # 응답이 말하는 정규장 기간이 오늘이 아님
     if regular:
         end = datetime.fromtimestamp(regular[1], timezone.utc)
         if end.astimezone(NEW_YORK).date() == day:
             state["end"] = end
-    if (entry is None or entry.get("session") != day.isoformat()) and local.time() >= US_CLOSED_AFTER:
-        state["closed"] = True
+        else:
+            regular_elsewhere = True
+    if entry is not None and entry.get("session") == day.isoformat():
+        state["open"], state["empty"] = True, 0
+    elif not state["open"] and local.time() >= US_CLOSED_AFTER:
+        state["empty"] += 1
+        if regular_elsewhere or state["empty"] >= US_CLOSED_CONFIRMATIONS:
+            state["closed"] = True
     _us_days.clear()
     _us_days[day] = state
 

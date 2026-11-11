@@ -345,7 +345,6 @@ def test_미국_첫_응답으로_휴장과_조기_폐장을_배운다(store, spa
     assert "창" in tasks.task_paper_stopwatch_us() and len(spark.calls) == 2, "정규장 끝 13:00 − 5분 + 1분 = 12:56 뒤는 창 밖"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-361: 장중 응답 한 번에 SPY 봉이 비면 그날을 휴장으로 굳혀 남은 회차를 묻지 않습니다")
 def test_QA361_미국_오늘_세션을_본_뒤에는_SPY만_빈_응답으로_휴장이_되지_않는다(store, spark, monkeypatch):
     _us_setup(store)
     spark.results = {s: _spark_result(s, _minutes(_ny(9, 30), _ny(9, 59))) for s in ("SPY", "AAPL", "MSFT")}
@@ -367,7 +366,6 @@ def test_QA361_미국_오늘_세션을_본_뒤에는_SPY만_빈_응답으로_휴
     assert len(spark.calls) == 3, "빈 SPY 한 번 뒤에도 다음 회차가 묻습니다(수정 전 2회 — 그날 남은 감시가 멈춤)"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-361: 재기동 뒤 첫 응답 한 번이 비어도 그날을 휴장으로 굳힙니다")
 def test_QA361_미국_오늘_세션을_못_본_채_빈_SPY는_연속_두_번이어야_휴장(store, spark, monkeypatch):
     """장중 재기동 직후 — 이 프로세스는 그날 세션을 아직 보지 못했습니다. 응답의 정규장 기간은 오늘인데 SPY 봉만 빈 응답."""
     _us_setup(store)
