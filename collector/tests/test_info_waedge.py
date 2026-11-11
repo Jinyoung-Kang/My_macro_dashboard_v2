@@ -242,6 +242,44 @@ def test_한국어_제목과_원문_본문이_어느_쪽이_먼저_와도_한_�
     assert row["body_status"] == "full" and row["title_ko"] == "금리 급등", "다시 와도 본문을 지우지 않습니다"
 
 
+QA394 = pytest.mark.xfail(strict=True, reason="QA-394: 원문 제목(title)이 충돌 갱신 목록에 없어 한국어 제목이 그대로 남습니다")
+_NO_ENGLISH = {"url": "https://wolfstreet.com/2026/11/10/rates-spike/", "titleKo": "금리 급등", "titleEn": None,
+               "blog": "Wolf Street", "timeLabel": "16:01"}
+_FROM_FEED = {"id": info_text.item_id("https://wolfstreet.com/2026/11/10/rates-spike/"), "source": "blog.wolfstreet",
+              "kind": "article", "url": "https://wolfstreet.com/2026/11/10/rates-spike/", "title": "Rates Spike",
+              "body": "본문 " * 300, "body_status": "full", "fetch_tier": "impersonate"}
+
+
+@QA394
+def test_QA394_영어_제목_없이_먼저_온_행의_원문_제목은_피드가_오면_채워진다(store):
+    info_waedge.store_blog_titles([_NO_ENGLISH], fetch_tier="impersonate")
+    first = store.info_item(_FROM_FEED["id"])
+    assert first["title"] == "금리 급등" and first["title_ko"] == "금리 급등", "영어 제목이 없으면 한국어 제목이 title 자리에 들어갑니다"
+
+    store.upsert_info_items([_FROM_FEED])
+
+    row = store.info_item(_FROM_FEED["id"])
+    assert row["title"] == "Rates Spike" and row["title_ko"] == "금리 급등", "원문 피드가 오면 title은 원문 제목이 됩니다"
+
+
+def test_QA394_원문_제목이_이미_있으면_바꾸지_않는다(store):
+    store.upsert_info_items([_FROM_FEED])
+    info_waedge.store_blog_titles([_NO_ENGLISH], fetch_tier="impersonate")
+    store.upsert_info_items([dict(_FROM_FEED, title="Rates Spike (Updated)")])
+
+    row = store.info_item(_FROM_FEED["id"])
+    assert row["title"] == "Rates Spike" and row["title_ko"] == "금리 급등", "원문 제목이 있는 행은 그대로(한국어 제목만 채움)"
+
+
+def test_QA394_한국어_글의_제목은_다시_와도_바뀌지_않는다(store):
+    # waedge 시장 글처럼 원래 한국어인 글(title_ko 없음)은 '한국어 제목이 title 자리에 든 행'이 아닙니다.
+    brief = {"id": "brief-1", "source": "waedge.brief", "kind": "brief", "url": "https://news.waedge.ai/a/1.html", "title": "첫 제목"}
+    store.upsert_info_items([brief])
+    store.upsert_info_items([dict(brief, title="고친 제목")])
+
+    assert store.info_item("brief-1")["title"] == "첫 제목"
+
+
 def test_블로그_호스트_표는_waedge_원문_주소를_출처에_묶는다():
     assert info_blogs.blog_for_url("https://www.theirrelevantinvestor.com/p/x").key == "blog.irrelevantinvestor"
     assert info_blogs.blog_for_url("https://marginalrevolution.com/marginalrevolution/2026/11/x.html").key == "blog.marginalrevolution"

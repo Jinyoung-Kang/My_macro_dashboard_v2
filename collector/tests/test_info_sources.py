@@ -159,6 +159,19 @@ def test_30일보다_오래된_글은_넣지_않는다(store, example_host):
 # ==============================================================================
 # 4. 304·형식 바뀜
 # ==============================================================================
+@pytest.mark.xfail(strict=True, reason="QA-394: 피드의 미래 작성 시각을 그대로 저장해 목록 맨 위에 남습니다")
+def test_QA394_하루_넘게_미래인_작성_시각은_저장하지_않는다(store, example_host):
+    fetch = FakeFetch({BLOG.feed: _feed(_item(1, days_ago=-30), _item(2, days_ago=-0.5), _item(3, days_ago=1))})
+
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+    far = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))
+    assert far is not None and far["published_at"] is None, "받은 시각으로 정렬되게 비워 둡니다(없는 시각을 지어내지 않음)"
+    near = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-2/"))
+    assert near["published_at"] == NOW + timedelta(hours=12), "하루 안의 차이(시간대·시계 차이)는 그대로 둡니다"
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-3/"))["published_at"] == NOW - timedelta(days=1)
+
+
 def test_바뀐_것이_없으면_304로_끝나고_다음_요청에_검증값을_보낸다(store, example_host):
     fetch = FakeFetch({BLOG.feed: _feed(_item(1))})
     info_blogs.collect(BLOG, fetch=fetch, now=NOW)
