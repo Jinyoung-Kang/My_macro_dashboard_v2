@@ -215,7 +215,7 @@ function PacketCard() {
     <Card title="수집한 정보의 활용" subtitle="수집 글은 Claude 모의매매 판단에 참고 자료로 들어갑니다(지시가 아니라 자료 — 구분자로 감싸고, 구분자처럼 보이는 글자는 지움).">
       <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-text-2">
         <li>
-          <b className="text-text">패킷 섹션 11c_reading</b> — 결정 창(직전 결정 이후)에 쓰인 글 최대 8편(출처마다 2편, 본문을 다 받은 글 먼저)의 출처·시각·제목·앞부분
+          <b className="text-text">패킷 섹션 11c_reading</b> — 결정 창(직전 결정 이후)에 수집기가 처음 받은 글 최대 8편(출처마다 2편, 본문을 다 받은 글 먼저 — 받을 때 작성 72시간이 넘은 글은 뺌)의 출처·시각·제목·앞부분
           240자. 미국은 해외 블로그·waedge 거장·waedge 해외 시장 글, 한국은 waedge 국내 시장 글. 첫 결정과 글이 없는 창에는 싣지 않습니다.
         </li>
         <li>
