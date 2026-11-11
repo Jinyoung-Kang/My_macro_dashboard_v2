@@ -20,6 +20,7 @@ import { tradeTimeFrom } from "./marketSessions";
 import { KR_ACCOUNT_PROFILES } from "./paperKrProfiles";
 import { filerName } from "./holdings";
 import { formatMoney, formatSharePriceFor, marketMeta, marketOfBook, type PaperMarketCode, tickerName } from "./paperMarket";
+import { intradayOriginLabel, intradayTriggerText } from "./paperIntradayLabels";
 import type {
   PaperBookResetResult,
   PaperBookStatusResult,
@@ -48,6 +49,7 @@ import type {
   PaperGateThresholds,
   PaperInitialDecisionResult,
   PaperInitResult,
+  PaperIntradayTrigger,
   PaperNavRow,
   PaperNote,
   PaperNoteCreateResult,
@@ -3120,8 +3122,21 @@ export interface ClaudeDecisionView {
 
 /** 장중 확인 결정의 본문(표시 문자열 — 서버 값 그대로, 화면은 계산하지 않음). */
 export interface CheckpointDecisionView {
-  /** "세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초" — 응답에 checkpoint 칸이 없으면 "—" 하나. */
+  /** 묶음 제목 — 장중 확인은 "장중 확인", 자유 시점 판의 장중 판단은 "장중 판단 2"(결정 종류 이름). */
+  title: string;
+  /** 묶음 안내 — 세션당 한 번인 장중 확인과 순번마다 한 번인 장중 판단을 가름. */
+  note: string;
+  /** '판단' 칸의 안내(자세·목표 노출 없이 유지·교체와 주문만 낸다는 설명). */
+  judgeNote: string;
+  /**
+   * "세션 2026-11-02 · 10:30 ET · 감시 1분봉(5분 수집, 잰 지연) · 지연 1분 15초" — 응답에 checkpoint 칸이 없으면 "—" 하나.
+   * 장중 판단은 순번을 넣고 끝에 수동·출처를 붙입니다("세션 … · 2번째 · 10:47 ET · … · 지연 … · 사건").
+   */
   request: string;
+  /** 장중 판단을 당기거나 더한 사건 한 줄("사건: 지수 변동 SPY · 원래 13:30") — 없거나 장중 확인이면 null. */
+  trigger: string | null;
+  /** 장중 판단 응답의 다음 판단 예약(응답 intradayPlan — 받은 예약·버린 예약과 사유·대신한 남은 예약 수) 줄들. 없으면 빈 목록. */
+  next: string[];
   /** 유지(KEEP)·대신함(REPLACE) — 응답이 없으면 null. */
   action: Badge | null;
   /** 적용 — 적용함·적용하지 않은 까닭(서버 문구)·바꾼 것 없음, 모르면 "—". */
@@ -3167,7 +3182,12 @@ const CLAUDE_FAILED_STATUSES = ["REFUSED", "FORMAT_ERROR", "API_ERROR"];
  * 응답이 없을 때의 한 줄. 건너뛴 기록(SKIPPED — 호출 상한·일시정지)은 Claude를 부르지 않았으니 서버가 남긴 사유를, 형식 오류·거절·API
  * 오류는 상태와 오류를 보라고 적습니다. 상태를 모르면(옛 기록·미리보기 성공 모양) 어느 쪽이라고 단정하지 않습니다.
  */
-function claudeNoResponseText(status: string | null, skipped: string | null, skippedKey: boolean, checkpoint = false): string {
+function claudeNoResponseText(
+  status: string | null, skipped: string | null, skippedKey: boolean, checkpoint = false, intraday = false,
+): string {
+  if (intraday && status !== null && CLAUDE_FAILED_STATUSES.includes(status)) {
+    return "검사한 모델 응답이 없습니다 — 장중 판단은 재시도하지 않습니다(순번마다 한 번 — 대기 주문 그대로, 상태와 오류를 보세요).";
+  }
   if (checkpoint && status !== null && CLAUDE_FAILED_STATUSES.includes(status)) {
     return "검사한 모델 응답이 없습니다 — 장중 확인은 재시도하지 않습니다(세션당 한 번 — 아침 결정의 주문 그대로, 상태와 오류를 보세요).";
   }
@@ -3204,7 +3224,10 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   const skippedKey = textOf(record?.skipped);
   const skipped = skippedKey ?? (hasResponse ? null : textOf(record?.summary));
   const status = textOf(source.status);
-  const checkpointKind = (textOf(source.kind) ?? textOf(record?.kind)) === "CHECKPOINT";
+  // 자유 시점 판의 장중 판단(INTRADAY_<순번>)은 장중 확인과 같은 응답 구조(유지·교체, 적용, 대신한 주문, 예상 상태)라 같은 모양으로 그립니다(QA-364).
+  const kind = textOf(source.kind) ?? textOf(record?.kind);
+  const intradayKind = isIntradayKind(kind);
+  const checkpointKind = kind === "CHECKPOINT" || intradayKind;
 
   const orders: ClaudeOrderRow[] = listOf(record?.orders).filter(isRecord).flatMap((order, index) => {
     const ticker = textOf(order.ticker);
@@ -3278,7 +3301,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
   return {
     recognized,
     hasResponse,
-    noResponse: hasResponse ? null : claudeNoResponseText(status, skipped, skippedKey !== null, checkpointKind),
+    noResponse: hasResponse ? null : claudeNoResponseText(status, skipped, skippedKey !== null, checkpointKind, intradayKind),
     skipped,
     stance: stanceBadge(record?.stance),
     targetExposure: formatWithUnit(target, 1, "%"),
@@ -3297,7 +3320,7 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     validation,
     watchlist,
     usage: usageCells,
-    checkpoint: checkpointKind ? checkpointDecisionView(record, marketOfBook(source.book)) : null,
+    checkpoint: checkpointKind ? checkpointDecisionView(record, marketOfBook(source.book), intradayKind ? kind : null) : null,
     checkpointPlan: checkpointPlanText(record?.checkpointPlan, record?.checkpointVerdict, marketOfBook(source.book)),
   };
 }
@@ -3689,8 +3712,55 @@ function checkpointPlanText(plan: unknown, verdict: unknown, market: PaperMarket
   return parts.join(" · ");
 }
 
-/** 장중 확인 결정의 본문(kind CHECKPOINT — 서버 응답 그대로). 한국(단계 2b)은 시각이 KST, 금액이 원, 시점 이름이 한국 표. */
-function checkpointDecisionView(record: Record<string, unknown> | null, market: PaperMarketCode = "US"): CheckpointDecisionView {
+const CHECKPOINT_NOTE = "세션당 한 번 부른 장중 확인입니다. REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신하고, 기준 시각이 지난 주문은 자료로 체결합니다. "
+  + "예상 상태는 그 주문들을 체결로 본 추정입니다.";
+const INTRADAY_NOTE = "자유 시점 판의 장중 판단입니다(세션마다 계좌별로 순번마다 한 번). REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신하고, "
+  + "기준 시각이 지난 주문은 자료로 체결합니다. 예상 상태는 그 주문들을 체결로 본 추정입니다.";
+const CHECKPOINT_JUDGE_NOTE = "장중 확인은 자세·목표 노출 없이 그대로 둠(KEEP)·대신함(REPLACE)과 주문만 냅니다 — 요약은 Claude가 쓴 장중 판단이고, "
+  + "집행은 아래 주문(검증 통과분) 기준입니다.";
+const INTRADAY_JUDGE_NOTE = "장중 판단은 자세·목표 노출 없이 그대로 둠(KEEP)·대신함(REPLACE)과 주문만 냅니다 — 요약은 Claude가 쓴 장중 판단이고, "
+  + "집행은 아래 주문(검증 통과분) 기준입니다.";
+
+/**
+ * 장중 판단 응답의 다음 판단 예약(응답 intradayPlan — 서버가 받은 예약·버린 예약과 사유·대신한 남은 예약 수) 줄들. 칸이 없으면 빈 목록.
+ */
+function intradayNextLines(plan: unknown, market: PaperMarketCode): string[] {
+  if (!isRecord(plan)) return [];
+  const zone = market === "KR" ? "KST" : "ET";
+  const at = (row: Record<string, unknown>) => {
+    const text = textOf(row.atEt) ?? textOf(row.atKst);
+    return text ? `${text} ${zone}` : EMPTY;
+  };
+  const lines: string[] = [];
+  for (const row of listOf(plan.planned).filter(isRecord)) {
+    const watch = listOf(row.watch).map((ticker) => textOf(ticker)).filter((ticker): ticker is string => ticker !== null);
+    const status = textOf(row.status);
+    lines.push([
+      isNumber(row.slot) ? `${row.slot}번째` : EMPTY,
+      at(row),
+      checkpointFeedLabel(textOf(row.feed), market),
+      watch.length > 0 ? watch.join(", ") : null,
+      status ? checkpointStatusLabel(status) : null,
+      textOf(row.note),
+    ].filter((part): part is string => part !== null).join(" · "));
+  }
+  for (const row of listOf(plan.rejected).filter(isRecord)) {
+    lines.push(`버림 ${at(row)} — ${textOf(row.reason) ?? EMPTY}`);
+  }
+  const superseded = numberOf(plan.superseded);
+  if (superseded !== null && superseded > 0) lines.push(`남은 예약 ${formatNumber(superseded, 0)}건을 대신함`);
+  return lines;
+}
+
+/**
+ * 장중 확인 결정의 본문(kind CHECKPOINT — 서버 응답 그대로). 한국(단계 2b)은 시각이 KST, 금액이 원, 시점 이름이 한국 표.
+ * 자유 시점 판의 장중 판단(kind INTRADAY_<순번> — `intradayKind`)도 같은 응답 구조라 이 본문을 쓰고, 제목·안내·재시도 문구와 요청 줄(순번·수동·출처),
+ * 사건·다음 예약 줄만 다릅니다(QA-364).
+ */
+function checkpointDecisionView(
+  record: Record<string, unknown> | null, market: PaperMarketCode = "US", intradayKind: string | null = null,
+): CheckpointDecisionView {
+  const intraday = intradayKind !== null;
   const request = isRecord(record?.checkpoint) ? record.checkpoint : {};
   const lag = numberOf(request.lagSeconds);
   const action = textOf(record?.action);
@@ -3710,18 +3780,30 @@ function checkpointDecisionView(record: Record<string, unknown> | null, market: 
     if (unpriced.length > 0) expectedLines.push(`가격을 몰라 빼고 센 주문 ${unpriced.map((id) => `#${id}`).join(" · ")}`);
     if (textOf(expected.note)) expectedLines.push(textOf(expected.note) as string);
   }
+  // 장중 판단의 요청 줄에는 순번과, 끝에 수동·출처(다음 예약·코드 보장·사건 — 결정의 예약은 따로 적지 않음)를 더합니다.
+  const origin = intraday ? intradayOriginLabel(textOf(request.origin)) : null;
+  const requestParts = [
+    `세션 ${textOf(request.session) ?? EMPTY}`,
+    intraday ? (isNumber(request.slot) ? `${request.slot}번째` : EMPTY) : null,
+    textOf(request.atEt) ? `${textOf(request.atEt)} ET` : textOf(request.atKst) ? `${textOf(request.atKst)} KST` : EMPTY,
+    checkpointFeedLabel(textOf(request.feed), market),
+    `지연 ${lag === null ? EMPTY : formatLatency(lag * 1000)}`,
+    intraday && request.manual === true ? "수동" : null,
+    origin,
+  ].filter((part): part is string => part !== null);
   return {
+    title: intraday ? decisionKindLabel(intradayKind) : "장중 확인",
+    note: intraday ? INTRADAY_NOTE : CHECKPOINT_NOTE,
+    judgeNote: intraday ? INTRADAY_JUDGE_NOTE : CHECKPOINT_JUDGE_NOTE,
     // checkpoint 칸이 없는 응답(이 칸을 남기기 전의 응답 뒤 쓰기 실패 행)은 빈 칸 넷을 늘어놓지 않고 '—' 하나.
-    request: isRecord(record?.checkpoint)
-      ? [
-        `세션 ${textOf(request.session) ?? EMPTY}`,
-        textOf(request.atEt) ? `${textOf(request.atEt)} ET` : textOf(request.atKst) ? `${textOf(request.atKst)} KST` : EMPTY,
-        checkpointFeedLabel(textOf(request.feed), market),
-        `지연 ${lag === null ? EMPTY : formatLatency(lag * 1000)}`,
-      ].join(" · ")
-      : EMPTY,
+    request: isRecord(record?.checkpoint) ? requestParts.join(" · ") : EMPTY,
+    trigger: intraday && isRecord(request.trigger) ? intradayTriggerText(request.trigger as PaperIntradayTrigger) : null,
+    next: intraday ? intradayNextLines(record?.intradayPlan, market) : [],
     action: action === "KEEP"
-      ? { key: "KEEP", label: "그대로 둠(KEEP)", className: TONE.muted, title: "아침 결정의 대기 주문을 바꾸지 않았습니다." }
+      ? {
+        key: "KEEP", label: "그대로 둠(KEEP)", className: TONE.muted,
+        title: intraday ? "대기 주문을 바꾸지 않았습니다." : "아침 결정의 대기 주문을 바꾸지 않았습니다.",
+      }
       : action === "REPLACE"
         ? {
           key: "REPLACE", label: "대신함(REPLACE)", className: TONE.info,
@@ -3737,7 +3819,9 @@ function checkpointDecisionView(record: Record<string, unknown> | null, market: 
       ? (superseded.length > 0 ? `${formatNumber(superseded.length, 0)}건(${superseded.map((id) => `#${id}`).join(" · ")})` : "없음")
       : EMPTY,
     expected: expectedLines,
-    retry: "재시도 없음 — 장중 확인은 세션당 한 번이고, 놓치거나 실패해도 대신 부르지 않습니다.",
+    retry: intraday
+      ? "재시도 없음 — 장중 판단은 순번마다 한 번이고, 놓치거나 실패해도 대신 부르지 않습니다."
+      : "재시도 없음 — 장중 확인은 세션당 한 번이고, 놓치거나 실패해도 대신 부르지 않습니다.",
   };
 }
 

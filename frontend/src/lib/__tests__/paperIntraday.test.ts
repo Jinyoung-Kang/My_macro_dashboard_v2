@@ -144,17 +144,10 @@ describe("분 단위 지정 시각·장중 판단 종류의 이름", () => {
   });
 });
 
-/** 재현 커밋에서는 뷰에 아직 없는 칸(title·note·judgeNote·trigger·next)을 읽으므로 느슨한 모양으로 봅니다 — 수정 커밋에서 뷰 타입 그대로 읽습니다. */
-type Detail = {
-  title?: string; note?: string; judgeNote?: string; request?: string; trigger?: string | null; next?: string[];
-  action?: { label: string } | null; applied?: string; superseded?: string; expected?: string[]; retry?: string;
-} | null;
-const detailOf = (view: ReturnType<typeof claudeDecisionView>): Detail => view.checkpoint as unknown as Detail;
-
 describe("장중 판단 결정의 상세(QA-364)", () => {
   // 수정 전에는 화면이 CHECKPOINT만 가려, INTRADAY_n 결정이 일반 결정 모양(자세·목표 노출·확신도가 '—')으로 그려지고 유지·교체·적용·대신한
-  // 주문·예상 상태·다음 예약이 보이지 않았습니다(it.fails).
-  it.fails("INTRADAY_n 결정은 장중 확인과 같은 응답 구조 — 유지·교체, 적용 여부, 대신한 대기 주문, 예상 상태를 보이고 요청 줄에 순번·출처, 사건과 다음 예약을 한 줄씩", () => {
+  // 주문·예상 상태·다음 예약이 보이지 않았습니다(재현 커밋에서는 it.fails).
+  it("INTRADAY_n 결정은 장중 확인과 같은 응답 구조 — 유지·교체, 적용 여부, 대신한 대기 주문, 예상 상태를 보이고 요청 줄에 순번·출처, 사건과 다음 예약을 한 줄씩", () => {
     const replace = claudeDecisionView({
       book: "claude", kind: "INTRADAY_2", status: "OK",
       response: {
@@ -173,23 +166,23 @@ describe("장중 판단 결정의 상세(QA-364)", () => {
         },
       },
     });
-    expect(detailOf(replace)).not.toBeNull();
-    expect(detailOf(replace)?.title).toBe("장중 판단 2");
-    expect(detailOf(replace)?.note).toContain("장중 판단");
-    expect(detailOf(replace)?.judgeNote).toContain("장중 판단은 자세·목표 노출 없이");
-    expect(detailOf(replace)?.request)
+    expect(replace.checkpoint).not.toBeNull();
+    expect(replace.checkpoint?.title).toBe("장중 판단 2");
+    expect(replace.checkpoint?.note).toContain("장중 판단");
+    expect(replace.checkpoint?.judgeNote).toContain("장중 판단은 자세·목표 노출 없이");
+    expect(replace.checkpoint?.request)
       .toBe(`세션 2026-11-09 · 2번째 · 10:47 ET · ${checkpointFeedLabel("MINUTE", "US")} · 지연 1분 15초 · 사건`);
-    expect(detailOf(replace)?.trigger).toBe("사건: 지수 변동 SPY · 원래 13:30");
-    expect(detailOf(replace)?.action?.label).toBe("대신함(REPLACE)");
-    expect(detailOf(replace)?.applied).toContain("적용함");
-    expect(detailOf(replace)?.superseded).toBe("1건(#12)");
-    expect(detailOf(replace)?.expected?.[0]).toContain("주식 노출 88.0%");
-    expect(detailOf(replace)?.next).toEqual([
+    expect(replace.checkpoint?.trigger).toBe("사건: 지수 변동 SPY · 원래 13:30");
+    expect(replace.checkpoint?.action?.label).toBe("대신함(REPLACE)");
+    expect(replace.checkpoint?.applied).toContain("적용함");
+    expect(replace.checkpoint?.superseded).toBe("1건(#12)");
+    expect(replace.checkpoint?.expected[0]).toContain("주식 노출 88.0%");
+    expect(replace.checkpoint?.next).toEqual([
       `3번째 · 13:10 ET · ${checkpointFeedLabel("MINUTE", "US")} · AAA · 예정`,
       "버림 12:00 ET — CHECKPOINT_INVALID — 확인 시각 12:00 ET가 다른 판단 시각과 20분 안",
       "남은 예약 1건을 대신함",
     ]);
-    expect(detailOf(replace)?.retry).toContain("장중 판단은 순번마다 한 번");
+    expect(replace.checkpoint?.retry).toContain("장중 판단은 순번마다 한 번");
 
     // 적용하지 않은 교체(호출하는 사이 일시정지) — 서버가 남긴 까닭 그대로. 한국은 KST, 운영자가 당긴 판단은 '수동'.
     const notApplied = claudeDecisionView({
@@ -199,12 +192,12 @@ describe("장중 판단 결정의 상세(QA-364)", () => {
         checkpoint: { session: "2026-11-09", slot: 1, atKst: "09:10", feed: "MINUTE", manual: true, lagSeconds: 4, origin: "MANUAL" },
       },
     });
-    expect(detailOf(notApplied)?.title).toBe("장중 판단 1");
-    expect(detailOf(notApplied)?.applied).toContain("운용 중이 아니게");
-    expect(detailOf(notApplied)?.request).toContain("1번째 · 09:10 KST");
-    expect(detailOf(notApplied)?.request?.endsWith(" · 수동")).toBe(true);
-    expect(detailOf(notApplied)?.trigger).toBeNull();
-    expect(detailOf(notApplied)?.next).toEqual([]);
+    expect(notApplied.checkpoint?.title).toBe("장중 판단 1");
+    expect(notApplied.checkpoint?.applied).toContain("운용 중이 아니게");
+    expect(notApplied.checkpoint?.request).toContain("1번째 · 09:10 KST");
+    expect(notApplied.checkpoint?.request?.endsWith(" · 수동")).toBe(true);
+    expect(notApplied.checkpoint?.trigger).toBeNull();
+    expect(notApplied.checkpoint?.next).toEqual([]);
 
     // 실패한 호출 — 재시도 문구도 장중 판단으로.
     const failed = claudeDecisionView({
@@ -213,11 +206,22 @@ describe("장중 판단 결정의 상세(QA-364)", () => {
     });
     expect(failed.hasResponse).toBe(false);
     expect(failed.noResponse).toContain("장중 판단은 재시도하지 않습니다");
-    expect(detailOf(failed)?.request).toBe("—");
+    expect(failed.checkpoint?.request).toBe("—");
   });
 
   it("장중 확인(CHECKPOINT) 결정의 제목·안내는 그대로이고 일반 결정에는 이 묶음이 없음", () => {
     const scheduled = claudeDecisionView({ book: "claude", kind: "SCHEDULED", status: "OK", response: { stance: "NEUTRAL", orders: [] } });
     expect(scheduled.checkpoint).toBeNull();
+    const checkpoint = claudeDecisionView({
+      book: "claude2", kind: "CHECKPOINT", status: "NO_TRADE",
+      response: { action: "KEEP", orders: [], checkpoint: { session: "2026-11-02", atEt: "10:30", feed: "MINUTE", lagSeconds: 75, origin: "EVENT", slot: 1 } },
+    });
+    expect(checkpoint.checkpoint?.title).toBe("장중 확인");
+    expect(checkpoint.checkpoint?.note).toContain("세션당 한 번 부른 장중 확인");
+    expect(checkpoint.checkpoint?.judgeNote).toContain("장중 확인은 자세·목표 노출 없이");
+    expect(checkpoint.checkpoint?.request).toBe(`세션 2026-11-02 · 10:30 ET · ${checkpointFeedLabel("MINUTE", "US")} · 지연 1분 15초`);
+    expect(checkpoint.checkpoint?.trigger).toBeNull();
+    expect(checkpoint.checkpoint?.next).toEqual([]);
+    expect(checkpoint.checkpoint?.retry).toContain("장중 확인은 세션당 한 번");
   });
 });

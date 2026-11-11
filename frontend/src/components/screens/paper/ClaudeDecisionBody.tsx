@@ -21,6 +21,8 @@ import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
  *
  * 미국 계좌2 장중 확인 결정(kind CHECKPOINT — 단계 2)은 맨 위에 '장중 확인'(요청·KEEP/REPLACE·적용·대신한 대기 주문·예상 상태·재시도 없음)을 두고
  * 판단 칸의 자세·목표 노출·확신도는 그리지 않습니다(확인 응답에 없는 칸). 아침 결정이 장중 확인을 요청했으면 판단 칸에 그 요청 한 줄.
+ * 자유 시점 판의 장중 판단 결정(kind INTRADAY_n)도 같은 응답 구조라 같은 묶음을 쓰고(제목 '장중 판단 n'·안내는 뷰가 고름), 사건이 부른 판단이면
+ * '호출 이유', 응답이 다음 판단을 예약했으면 '다음 판단 예약' 줄이 더 있습니다(QA-364).
  */
 export function ClaudeDecisionBody({
   view,
@@ -34,12 +36,10 @@ export function ClaudeDecisionBody({
     <div className="flex flex-col gap-4">
       {kr && <KrDecisionExtrasParts extras={kr.extras} />}
       {view.checkpoint && (
-        <Part
-          title="장중 확인"
-          note="세션당 한 번 부른 장중 확인입니다. REPLACE는 기준 시각이 아직 오지 않은 대기 주문만 대신하고, 기준 시각이 지난 주문은 자료로 체결합니다. 예상 상태는 그 주문들을 체결로 본 추정입니다."
-        >
+        <Part title={view.checkpoint.title} note={view.checkpoint.note}>
           <dl className="flex flex-col gap-1 text-xs">
             <MetaRow label="요청">{view.checkpoint.request}</MetaRow>
+            {view.checkpoint.trigger && <MetaRow label="호출 이유">{view.checkpoint.trigger}</MetaRow>}
             <MetaRow label="응답">
               {view.checkpoint.action ? <Badges badges={[view.checkpoint.action]} /> : <span className="text-muted">{EMPTY}</span>}
             </MetaRow>
@@ -52,6 +52,13 @@ export function ClaudeDecisionBody({
                 </ul>
               ) : EMPTY}
             </MetaRow>
+            {view.checkpoint.next.length > 0 && (
+              <MetaRow label="다음 판단 예약">
+                <ul className="flex flex-col gap-0.5">
+                  {view.checkpoint.next.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              </MetaRow>
+            )}
           </dl>
           <p className="text-xs leading-relaxed text-muted">{view.checkpoint.retry}</p>
         </Part>
@@ -59,7 +66,7 @@ export function ClaudeDecisionBody({
       <Part
         title="판단"
         note={view.checkpoint
-          ? "장중 확인은 자세·목표 노출 없이 그대로 둠(KEEP)·대신함(REPLACE)과 주문만 냅니다 — 요약은 Claude가 쓴 장중 판단이고, 집행은 아래 주문(검증 통과분) 기준입니다."
+          ? view.checkpoint.judgeNote
           : "목표 주식 노출은 Claude가 정한 값이고 기록·표시용입니다 — 집행은 아래 주문(검증 통과분) 기준입니다."}
       >
         {view.hasResponse ? (
