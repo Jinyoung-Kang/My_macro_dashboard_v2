@@ -722,6 +722,30 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("QA-347 고정: 맞추기 창이 지난 뒤에 켠 날 — 전체 맞추기(묶음)는 다음 맞추기로 넘기지만, 기준 시각이 그 뒤인 장중 주문과 장중 스탑은 그날 바로 따라 함")
+    void enabledAfterSyncWindowStillMirrorsTodaysIntradayOrdersAndStops() {
+        timedTargets(Map.of(A, 50.0), List.of(), List.of());
+        preflight("10000000", Map.of(B, new String[]{"10", "20000"}), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(dueFor(801, 800, A, "BUY", kst("2026-11-06T10:30")),
+                stopDue(802, B, "MARKET", kst("2026-11-06T10:40"))));
+        when(paper.weightAfter(eq(BOOK), eq(801L), any())).thenReturn(Optional.of(new WeightAfter(801, A, "BUY", 20.0, 1e7, true,
+                List.of(801L), List.of())));
+
+        RealTradeFixtures.live(store, true, d("10200000"));   // 10:00에 켬 — 오늘 맞추기 창(09:10~09:13)은 이미 지남
+        run("10:00");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as("전체 맞추기는 오늘 하지 않음").isEmpty();
+
+        run("10:30:10");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).as("켠 날의 장중 주문은 바로 따라 함").containsExactly("BUY " + A + " DAY 40");
+        run("10:40:10");
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).as("장중 스탑도 바로")
+                .containsExactly("BUY " + A + " DAY 40", "SELL " + B + " DAY 10");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        assertThat(cfg().syncPending()).as("전체 맞추기를 기다리는 표시는 다음 맞추기까지 남음").isTrue();
+    }
+
+    @Test
     @DisplayName("시각 맞추기 날의 묶음 몫 — 묶음을 아직 못 만든 동안 09:10 이하 모의 주문을 장중 따라 하기가 하나씩 보내지 않고, 묶음이 생기면 묶음으로만")
     void timedSyncShareGuard() {
         RealTradeFixtures.live(store, false, d("10000000"));

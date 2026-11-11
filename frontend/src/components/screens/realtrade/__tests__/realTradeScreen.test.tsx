@@ -787,6 +787,18 @@ describe("켜기 창", () => {
     expect(await inRegion().findByText(/켰습니다 — 다음 맞추기/)).toBeTruthy();
   });
 
+  // QA-347 — 수정 전 안내는 '다음 맞추기부터 주문합니다'였다. 켠 날에도 오늘 남은 장중 주문·장중 스탑은 바로 따라 한다.
+  it.fails("QA-347: 켠 뒤 안내 — 전체 맞추기는 다음 맞추기에서, 그 전에도 오늘 남은 장중 주문·장중 스탑은 바로 따라 함", async () => {
+    api.apiPost.mockResolvedValue({ ok: true, state: "LIVE", version: 4 });
+    const dialog = await openEnable();
+    await fillAll(dialog);
+    fireEvent.click(submitOf(dialog));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await inRegion().findByText(
+      "켰습니다 — 전체 맞추기는 다음 맞추기(개장 10분 뒤 맞추기 09:10~09:13, 시가 맞추기 날은 08:50:30~08:58:30)에서 합니다. 그 전에도 오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다.",
+    )).toBeTruthy();
+  });
+
   it("예상 목록을 받지 못하면 켤 수 없다 — 이유와 다시 계산", async () => {
     reads["/api/realtrade/preview"] = () => Promise.resolve({ ok: false, reason: "preflight-failed", equity: null, orders: null, skipped: null, turnoverPct: null, warnings: null });
     const dialog = await openEnable();
@@ -897,6 +909,44 @@ describe("멈춤 해제·설정 바꾸기", () => {
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/resume", {
       market: "KR", confirm: "멈춤 해제", password: "합성-비밀번호", version: 7,
     }, { timeoutMs: 90_000 }));
+  });
+
+  // QA-347 — 수정 전 안내는 '다음 맞추기부터 다시 주문'이라고만 적었다. 실제로는 켠 날·푼 날에도 장중 따라 하기와 스탑 매도는 바로 나가고
+  // (RealTradeJobDbTest.enabledAfterSyncWindowStillMirrorsTodaysIntradayOrdersAndStops), 매수 멈춤만 푼 해제는 매수가 바로 다시 나간다.
+  const resumeFrom = async (over: Record<string, unknown>) => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ version: 7, ...over }));
+    api.apiPost.mockResolvedValue({ ok: true });
+    renderKr();
+    fireEvent.click(await inRegion().findByRole("button", { name: "멈춤 해제" }));
+    const dialog = await screen.findByRole("dialog", { name: "실제 매매 멈춤 해제" });
+    fireEvent.change(within(dialog).getByLabelText(/확인하려면 다음 글자를 그대로 입력하세요/), { target: { value: "멈춤 해제" } });
+    fireEvent.change(within(dialog).getByLabelText("운영자 비밀번호"), { target: { value: "합성-비밀번호" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "멈춤 해제" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  };
+
+  it.fails("QA-347: 이상 멈춤을 푼 뒤 안내 — 전체 맞추기는 다음 맞추기에서, 오늘 남은 장중 주문·장중 스탑은 바로 따라 함", async () => {
+    await resumeFrom({ state: "HALTED", haltReason: "turnover" });
+    expect(await inRegion().findByText(
+      "이상 멈춤을 풀었습니다 — 전체 맞추기는 다음 맞추기에서 하고, 그 전에도 오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다.",
+    )).toBeTruthy();
+  });
+
+  it.fails("QA-347: 매수 멈춤만 푼 뒤 안내 — 매수를 바로 다시 따라 함(다음 맞추기를 기다리지 않음)", async () => {
+    await resumeFrom({ state: "LIVE", buysPaused: true });
+    expect(await inRegion().findByText("매수 멈춤을 풀었습니다 — 매수도 바로 다시 따라 합니다.")).toBeTruthy();
+  });
+
+  it.fails("QA-347: 장부가 밀려 쉬는 날(ledger-behind)의 오늘 줄 — 맞추기·장중 따라 하기는 쉬고 스탑 매도만 한다고 적는다", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ today: { date: "2026-11-06", skipReason: "ledger-behind", windows: [] } }));
+    renderKr();
+    expect(await inRegion().findByText("오늘은 맞추기와 장중 따라 하기를 쉽니다 — 사유 ledger-behind. 스탑 매도만 합니다.")).toBeTruthy();
+  });
+
+  it("QA-347 대조: 그 밖의 쉬는 날(장 시간 불일치 등)은 주문을 보내지 않는다고 적는다", async () => {
+    reads[STATUS_PATH] = () => Promise.resolve(status({ today: { date: "2026-11-06", skipReason: "hours-mismatch", windows: [] } }));
+    renderKr();
+    expect(await inRegion().findByText("오늘은 쉽니다 — 사유 hours-mismatch. 주문을 보내지 않습니다.")).toBeTruthy();
   });
 
   it("RT-CONTRACT-4: 멈춤 해제가 409 book-changed면 '끄고 다시 켜서' 문구, invalid-state는 서버 문구 — 버전 충돌로 읽지 않아 상태를 다시 읽지 않는다", async () => {
