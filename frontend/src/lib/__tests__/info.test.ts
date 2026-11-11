@@ -83,6 +83,13 @@ describe("글", () => {
     expect(kstMinute(null)).toBe("—");
   });
 
+  // 서버(백엔드 Kst.DISPLAY·수집기 kst.stamp)는 초가 없는 "yyyy-MM-dd HH:mm KST"를 내립니다. 초가 있다고 보고 끝의 ":dd KST"를 떼면 분이 잘립니다(QA-407).
+  it.fails("QA-407: 서버가 내리는 분까지의 시각은 그대로 둔다(분을 자르지 않음)", () => {
+    expect(kstMinute("2026-11-11 04:00 KST")).toBe("2026-11-11 04:00 KST");
+    expect(itemTime({ publishedAt: "2026-11-10 19:21 KST", firstSeenAt: "2026-11-11 01:00 KST" })).toBe("2026-11-10 19:21 KST");
+    expect(itemTime({ publishedAt: null, firstSeenAt: "2026-11-11 15:07 KST" })).toBe("2026-11-11 15:07 KST 받음");
+  });
+
   it("본문 판정 글", () => {
     expect([bodyLabel("full"), bodyLabel("partial"), bodyLabel("none")]).toEqual(["본문", "요약만", "제목만"]);
   });
