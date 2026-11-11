@@ -18,12 +18,30 @@ import java.util.Set;
  *
  * <p>결제 연동 전까지 등급은 여기서 수동으로 정합니다(D4). 세션은 요청마다 사용자 행을 다시 읽으므로, 바꾼 역할·등급은
  * 그 사용자의 다음 요청부터 바로 반영됩니다. 운영자가 자기 역할을 내려 아무도 관리하지 못하게 되는 일은 막습니다.
+ *
+ * <p><b>회원을 운영자로 올릴 때만 요청자 계정의 비밀번호를 다시 확인합니다(QA-338).</b> 로그인 없는 운영자(Tailscale 신원·로컬 무로그인)는
+ * 사람임을 증명하지 못합니다(ADR 0028 결정 3). 확인이 없으면 그 신원으로 자기가 정한 비밀번호의 회원을 만들어 운영자로 올린 뒤 그 계정으로
+ * 로그인해, 실제 매매 켜기류의 비밀번호 관문(요청자 본인 계정의 비밀번호를 봄)을 자기가 정한 값으로 통과할 수 있었습니다. 무로그인 운영자의
+ * '요청자 계정'은 첫 운영자입니다.
  */
 @Service
 public class AdminService {
 
     static final Set<String> ROLES = Set.of("OWNER", "MEMBER");
     static final Set<String> TIERS = Set.of("FREE", "PRO");
+
+    static final String PROMOTE_NEEDS_PASSWORD = "회원을 운영자로 올리려면 지금 운영자 계정의 비밀번호를 함께 보내야 합니다.";
+    static final String PROMOTE_WRONG_PASSWORD = "운영자 비밀번호가 올바르지 않습니다 — 역할을 바꾸지 않았습니다.";
+
+    /**
+     * 역할·등급 지정의 결과.
+     *
+     * @param problem          문제가 있으면 이유, 성공이면 null
+     * @param passwordVerified 이 요청에서 요청자 비밀번호를 실제로 확인했고 맞았는가 — 연속 실패 지연({@link LoginThrottle})은 이 값이 참일 때만
+     *                         기록을 지웁니다(다른 이유의 거절이 실패 셈을 되돌리지 않게)
+     */
+    public record Update(String problem, boolean passwordVerified) {
+    }
 
     private final UserStore users;
     private final AuditLogStore audit;
@@ -52,12 +70,48 @@ public class AdminService {
         return out;
     }
 
-    /** @return 문제가 있으면 이유, 성공이면 null */
+    /** 이 요청이 회원을 운영자로 올리는가(지금 역할이 OWNER가 아닌데 새 역할이 OWNER) — 이때만 요청자 비밀번호를 확인합니다(QA-338). */
+    public boolean promotes(long userId, String role) {
+        return "OWNER".equals(role) && promotes(users.findById(userId).orElse(null), role);
+    }
+
+    private static boolean promotes(UserStore.User target, String role) {
+        return target != null && "OWNER".equals(role) && !"OWNER".equals(target.role());
+    }
+
+    /**
+     * 비밀번호 없이 역할·등급을 지정합니다 — 등급만 바꾸기, 운영자 → 회원, 이미 운영자인 계정. 회원을 운영자로 올리는 요청은 거절됩니다.
+     *
+     * @return 문제가 있으면 이유, 성공이면 null
+     */
     public String update(CurrentUser admin, long userId, String role, String tier) {
+        return update(admin, userId, role, tier, null).problem();
+    }
+
+    /**
+     * 역할·등급을 지정합니다. 회원을 운영자로 올릴 때는 {@code password}가 요청자 계정({@code admin})의 비밀번호와 맞아야 합니다 —
+     * 없거나 틀리면 아무것도 바꾸지 않습니다. 그 확인은 다른 검사보다 먼저 합니다(틀린 비밀번호와 다른 거절을 섞어 대입 횟수를 숨기지 못하게).
+     */
+    public Update update(CurrentUser admin, long userId, String role, String tier, String password) {
+        UserStore.User target = users.findById(userId).orElse(null);
+        boolean verified = false;
+        if (promotes(target, role)) {
+            if (password == null || password.isEmpty()) {
+                return new Update(PROMOTE_NEEDS_PASSWORD, false);
+            }
+            UserStore.User requester = users.findById(admin.id()).orElse(null);
+            if (requester == null || !hasher.matches(password, requester.passwordHash())) {
+                return new Update(PROMOTE_WRONG_PASSWORD, false);
+            }
+            verified = true;
+        }
+        return new Update(apply(admin, target, userId, role, tier), verified);
+    }
+
+    private String apply(CurrentUser admin, UserStore.User target, long userId, String role, String tier) {
         if (!ROLES.contains(role) || !TIERS.contains(tier)) {
             return "역할은 OWNER·MEMBER, 등급은 FREE·PRO 중 하나여야 합니다.";
         }
-        UserStore.User target = users.findById(userId).orElse(null);
         if (target == null) {
             return "없는 사용자입니다.";
         }

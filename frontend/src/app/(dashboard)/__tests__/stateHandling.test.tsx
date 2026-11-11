@@ -82,11 +82,55 @@ describe("QA-051", () => {
       { id: 7, email: "m@test.local", role: "MEMBER", tier: "FREE", verified: true, createdAt: "2026-10-01T00:00:00Z" }] });
     api.apiPost.mockReturnValue(new Promise(() => {}));   // 저장이 끝나지 않음
 
+    // 등급을 바꿉니다 — 운영자로 올리는 선택은 QA-338 뒤로 바로 저장하지 않고 비밀번호 창을 엽니다(아래 묶음).
     render(<AdminUsersPage />);
-    const role = (await screen.findByLabelText("m@test.local 역할")) as HTMLSelectElement;
-    fireEvent.change(role, { target: { value: "OWNER" } });
+    const tier = (await screen.findByLabelText("m@test.local 등급")) as HTMLSelectElement;
+    fireEvent.change(tier, { target: { value: "PRO" } });
 
-    expect((screen.getByLabelText("m@test.local 등급") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText("m@test.local 역할") as HTMLSelectElement).disabled).toBe(true);
+    expect(api.apiPost).toHaveBeenCalledWith("/api/admin/users/7", { role: "MEMBER", tier: "PRO" });
+  });
+});
+
+describe("QA-338 사용자 관리 — 운영자로 올리기", () => {
+  const member = { id: 7, email: "m@test.local", role: "MEMBER", tier: "FREE", verified: true, createdAt: "2026-10-01T00:00:00Z" };
+
+  async function choosePromotion() {
+    reads["/api/admin/users"] = () => Promise.resolve({ users: [member] });
+    reads["/api/admin/audit"] = () => Promise.resolve({ entries: [] });
+    render(<AdminUsersPage />);
+    fireEvent.change(await screen.findByLabelText("m@test.local 역할"), { target: { value: "OWNER" } });
+    return within(await screen.findByRole("dialog", { name: "운영자로 올리기" }));
+  }
+
+  // 수정 전에는 선택하자마자 {role: "OWNER"}를 보내 비밀번호 확인 없이 운영자가 됐다.
+  it("회원을 운영자로 올리는 선택은 바로 보내지 않고 비밀번호 창을 열고, 요청자 비밀번호와 함께 보낸다", async () => {
+    api.apiPost.mockResolvedValue({ ok: true, message: "바꿨습니다. 그 사용자의 다음 요청부터 반영됩니다." });
+    const dialog = await choosePromotion();
+
+    expect(api.apiPost).not.toHaveBeenCalled();
+    const submit = dialog.getByRole("button", { name: "운영자로 올리기" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);     // 비밀번호가 비면 보낼 수 없음
+
+    fireEvent.change(dialog.getByLabelText("운영자 비밀번호"), { target: { value: "owner passphrase" } });
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/admin/users/7", { role: "OWNER", tier: "FREE", password: "owner passphrase" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("비밀번호가 틀리면 창을 둔 채 서버 글을 보이고 입력을 비운다 — 취소하면 아무것도 보내지 않는다", async () => {
+    api.apiPost.mockRejectedValue(new Error("운영자 비밀번호가 올바르지 않습니다 — 역할을 바꾸지 않았습니다."));
+    const dialog = await choosePromotion();
+    fireEvent.change(dialog.getByLabelText("운영자 비밀번호"), { target: { value: "wrong guess" } });
+    fireEvent.click(dialog.getByRole("button", { name: "운영자로 올리기" }));
+
+    expect(await dialog.findByText("운영자 비밀번호가 올바르지 않습니다 — 역할을 바꾸지 않았습니다.")).toBeTruthy();
+    expect((dialog.getByLabelText("운영자 비밀번호") as HTMLInputElement).value).toBe("");
+
+    fireEvent.click(dialog.getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.apiPost).toHaveBeenCalledTimes(1);
   });
 });
 

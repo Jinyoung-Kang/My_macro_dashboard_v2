@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { Banner, Button, Card, ErrorState, inputClasses, Loading, PageHeader, Select, Table } from "@/components/ui";
+import { Dialog } from "@/components/ui/Dialog";
 import { CheckIcon, StatusIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -20,8 +21,10 @@ export default function AdminUsersPage() {
   const users = useApi<{ users: AdminUser[] }>(endpoints.admin.users, 0);
   const audit = useApi<{ entries: AuditEntry[] }>(endpoints.admin.audit(100), 0);
 
+  // password는 회원을 운영자로 올릴 때만 보냅니다(요청자 계정의 비밀번호 — 서버가 그때만 확인, QA-338).
   const update = useAsyncAction(
-    (id: number, role: string, tier: string) => apiPost<Result>(endpoints.admin.user(id), { role, tier }),
+    (id: number, role: string, tier: string, password?: string) =>
+      apiPost<Result>(endpoints.admin.user(id), password === undefined ? { role, tier } : { role, tier, password }),
     "바꾸지 못했습니다.",
   );
   const create = useAsyncAction(
@@ -36,15 +39,38 @@ export default function AdminUsersPage() {
   // 저장하고 목록을 다시 읽을 때까지 그 행의 선택 상자를 막습니다. 그사이 다른 칸을 바꾸면 렌더 시점의 옛 값(역할·등급)을
   // 함께 보내 앞의 변경을 되돌렸습니다(QA-051).
   const [savingId, setSavingId] = useState<number | null>(null);
-  const change = async (row: AdminUser, role: string, nextTier: string) => {
+  // 회원을 운영자로 올리는 선택은 바로 보내지 않고 비밀번호 창을 엽니다(QA-338). tried는 이 창에서 한 번이라도 보냈는지 —
+  // 창을 열기 전 다른 변경의 오류 글이 창 안에 보이지 않게 합니다.
+  const [promote, setPromote] = useState<{ row: AdminUser; tier: string; tried: boolean } | null>(null);
+  const [promotePassword, setPromotePassword] = useState("");
+  const save = async (row: AdminUser, role: string, nextTier: string, ownerPassword?: string): Promise<boolean> => {
     setSavingId(row.id);
+    let ok = false;
     try {
-      await update.run(row.id, role, nextTier);
+      ok = await update.run(row.id, role, nextTier, ownerPassword);
       await users.reload();
     } finally {
       setSavingId(null);
     }
     void audit.reload();
+    return ok;
+  };
+  const change = async (row: AdminUser, role: string, nextTier: string) => {
+    if (role === "OWNER" && row.role !== "OWNER") {
+      setPromotePassword("");
+      setPromote({ row, tier: nextTier, tried: false });
+      return;
+    }
+    await save(row, role, nextTier);
+  };
+  const confirmPromote = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!promote || !promotePassword || update.busy) return;
+    setPromote({ ...promote, tried: true });
+    // 성공하면 닫고, 실패(틀린 비밀번호·연속 실패 지연)면 창을 둔 채 오류를 보입니다 — 비밀번호는 다시 치게 비웁니다.
+    const ok = await save(promote.row, "OWNER", promote.tier, promotePassword);
+    setPromotePassword("");
+    if (ok) setPromote(null);
   };
 
   const submit = async (event: FormEvent) => {
@@ -106,6 +132,39 @@ export default function AdminUsersPage() {
           ]}
         />
       </Card>
+
+      <Dialog
+        open={promote !== null}
+        onOpenChange={(open) => {
+          if (!open && !update.busy) setPromote(null);
+        }}
+        title="운영자로 올리기"
+        description={
+          <>
+            <span className="font-medium text-text">{promote?.row.email}</span> 회원을 운영자로 올립니다. 운영자는 모든 설정과 실제 매매
+            화면을 쓸 수 있습니다. 계속하려면 지금 운영자 계정의 비밀번호를 입력하세요(로그인 없이 연 화면에서는 첫 운영자 계정의 비밀번호).
+          </>
+        }
+        size="sm"
+        dismissible={!update.busy}
+        showClose={false}
+      >
+        <form onSubmit={confirmPromote} className="mt-4 flex flex-col gap-3" aria-busy={update.busy}>
+          <label className="text-xs text-muted">
+            운영자 비밀번호
+            <input type="password" autoComplete="off" value={promotePassword} disabled={update.busy}
+              onChange={(event) => setPromotePassword(event.target.value)}
+              className={`mt-1 w-full ${inputClasses()}`} />
+          </label>
+          {promote?.tried && !update.busy && update.error && <Banner tone="warn">{update.error}</Banner>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" type="button" disabled={update.busy} onClick={() => setPromote(null)}>취소</Button>
+            <Button variant="primary" type="submit" disabled={update.busy || !promotePassword}>
+              {update.busy ? "확인하는 중…" : "운영자로 올리기"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
 
       <Card title="회원 만들기" subtitle="메일 없이 인증된 회원을 만듭니다. 처음 비밀번호는 직접 전달하고, 회원이 내 계정에서 바꾸도록 안내하세요.">
         <form onSubmit={submit} className="flex max-w-sm flex-col gap-3">

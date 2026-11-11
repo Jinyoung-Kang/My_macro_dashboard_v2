@@ -4,7 +4,6 @@ import com.macrodash.store.AuditLogStore;
 import com.macrodash.store.UsageStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -110,7 +109,6 @@ class UsageAndAdminTest {
     }
 
     @Test
-    @Disabled("QA-338: 수정 전에는 비밀번호 확인 없이 회원이 운영자로 올라갑니다")
     @DisplayName("QA-338 회원을 운영자로 올리는 요청은 요청자 비밀번호 없이는 거절되고 역할이 그대로다 — 등급만 바꾸기와 OWNER → OWNER는 그대로")
     void promotionWithoutPasswordIsRefused() {
         long ownerId = db.user("admin", "owner passphrase", "OWNER", "PRO");
@@ -128,6 +126,79 @@ class UsageAndAdminTest {
 
         assertThat(admin.update(owner, memberId, "MEMBER", "PRO")).as("등급만 바꾸기는 비밀번호 없이").isNull();
         assertThat(admin.update(owner, ownerId, "OWNER", "FREE")).as("이미 운영자인 계정의 등급 바꾸기도 비밀번호 없이").isNull();
+    }
+
+    @Test
+    @DisplayName("QA-338 승격은 요청자 계정의 비밀번호가 맞을 때만 — 올릴 회원의 비밀번호나 틀린 값은 거절, 맞으면 감사 기록과 함께 올라간다")
+    void promotionChecksRequesterPassword() {
+        long ownerId = db.user("admin", "owner passphrase", "OWNER", "PRO");
+        CurrentUser owner = new CurrentUser(ownerId, db.email("admin"), "OWNER", "PRO", null);
+        AdminService admin = new AdminService(db.users, db.audit, db.hasher, new com.macrodash.store.AlertStore(
+                db.jdbc, new tools.jackson.databind.ObjectMapper(), new com.macrodash.store.SchemaCheck(db.jdbc)));
+        long memberId = db.user("m5", "member passphrase", "MEMBER", "FREE");
+
+        assertThat(admin.promotes(memberId, "OWNER")).isTrue();
+        assertThat(admin.promotes(memberId, "MEMBER")).isFalse();
+        assertThat(admin.promotes(ownerId, "OWNER")).as("이미 운영자").isFalse();
+        assertThat(admin.promotes(-1, "OWNER")).as("없는 사용자").isFalse();
+
+        // 올릴 회원의 비밀번호(회원을 만든 사람이 아는 값)로는 통과하지 못합니다 — 요청자 계정의 비밀번호를 봅니다.
+        AdminService.Update targetPassword = admin.update(owner, memberId, "OWNER", "FREE", "member passphrase");
+        assertThat(targetPassword.problem()).isEqualTo(AdminService.PROMOTE_WRONG_PASSWORD);
+        assertThat(targetPassword.passwordVerified()).isFalse();
+        assertThat(admin.update(owner, memberId, "OWNER", "FREE", "").problem()).isEqualTo(AdminService.PROMOTE_NEEDS_PASSWORD);
+        // 틀린 비밀번호는 다른 거절(잘못된 등급)보다 먼저 — 다른 거절에 섞어 대입 횟수를 숨기지 못합니다.
+        assertThat(admin.update(owner, memberId, "OWNER", "GOLD", "wrong guess").problem()).isEqualTo(AdminService.PROMOTE_WRONG_PASSWORD);
+        assertThat(db.users.findById(memberId).orElseThrow().role()).as("역할 그대로").isEqualTo("MEMBER");
+
+        AdminService.Update promoted = admin.update(owner, memberId, "OWNER", "FREE", "owner passphrase");
+        assertThat(promoted.problem()).isNull();
+        assertThat(promoted.passwordVerified()).isTrue();
+        assertThat(db.users.findById(memberId).orElseThrow().role()).isEqualTo("OWNER");
+        assertThat(db.jdbc.queryForObject("SELECT detail->>'fromRole' FROM audit_log WHERE action = 'user.updated' "
+                + "AND detail->>'target' = ? ORDER BY id DESC LIMIT 1", String.class, String.valueOf(memberId))).isEqualTo("MEMBER");
+        assertThat(db.jdbc.queryForObject("SELECT count(*) FROM audit_log WHERE detail::text LIKE '%passphrase%'", Integer.class))
+                .as("감사 기록에 비밀번호 값은 없음").isZero();
+
+        // 세션 없는 운영자(로컬 무로그인·Tailscale 신원)도 같은 계정 번호라 그 계정(첫 운영자)의 비밀번호를 봅니다.
+        long otherId = db.user("m6", "member passphrase", "MEMBER", "FREE");
+        CurrentUser sessionless = new CurrentUser(ownerId, db.email("admin"), "OWNER", "PRO", null);
+        assertThat(sessionless.isLocalOwner()).isTrue();
+        assertThat(admin.update(sessionless, otherId, "OWNER", "FREE", "owner passphrase").problem()).isNull();
+    }
+
+    @Test
+    @DisplayName("QA-338 승격 비밀번호를 연속으로 틀리면 로그인과 같은 지연(429)이 걸린다 — 빈 비밀번호가 그 셈을 되돌리지 않고, 맞는 비밀번호는 지연 중에도 통과")
+    void promotionPasswordGuessesAreSlowed() {
+        long ownerId = db.user("admin", "owner passphrase", "OWNER", "PRO");
+        CurrentUser owner = new CurrentUser(ownerId, db.email("admin"), "OWNER", "PRO", null);
+        AdminService admin = new AdminService(db.users, db.audit, db.hasher, new com.macrodash.store.AlertStore(
+                db.jdbc, new tools.jackson.databind.ObjectMapper(), new com.macrodash.store.SchemaCheck(db.jdbc)));
+        long memberId = db.user("m7", "member passphrase", "MEMBER", "FREE");
+        AdminController controller = new AdminController(admin, new LoginThrottle(java.time.Clock.systemUTC(), millis -> { }));
+        org.springframework.mock.web.MockHttpServletRequest http = new org.springframework.mock.web.MockHttpServletRequest();
+        http.setAttribute(CurrentUser.ATTRIBUTE, owner);
+
+        for (int i = 1; i <= LoginThrottle.FREE_ATTEMPTS - 1; i++) {
+            assertThat(controller.update(memberId, new AdminController.UpdateRequest("OWNER", "FREE", "wrong guess " + i), http)
+                    .getStatusCode().value()).as("틀린 비밀번호 %d번째", i).isEqualTo(400);
+        }
+        // 빈 비밀번호와 승격이 아닌 저장은 지연 기록을 건드리지 않습니다(성공으로 세면 대입 셈이 0으로 돌아감).
+        assertThat(controller.update(memberId, new AdminController.UpdateRequest("OWNER", "FREE", null), http)
+                .getBody().get("message")).isEqualTo(AdminService.PROMOTE_NEEDS_PASSWORD);
+        assertThat(controller.update(memberId, new AdminController.UpdateRequest("MEMBER", "PRO", null), http)
+                .getStatusCode().value()).isEqualTo(200);
+        assertThat(controller.update(memberId, new AdminController.UpdateRequest("OWNER", "FREE", "wrong guess 5"), http)
+                .getStatusCode().value()).as("무료 시도의 마지막").isEqualTo(400);
+
+        var slowed = controller.update(memberId, new AdminController.UpdateRequest("OWNER", "FREE", "wrong guess 6"), http);
+        assertThat(slowed.getStatusCode().value()).as("무료 시도를 넘긴 실패").isEqualTo(429);
+        assertThat(slowed.getHeaders().getFirst("Retry-After")).isEqualTo("30");
+        assertThat(db.users.findById(memberId).orElseThrow().role()).isEqualTo("MEMBER");
+
+        assertThat(controller.update(memberId, new AdminController.UpdateRequest("OWNER", "PRO", "owner passphrase"), http)
+                .getStatusCode().value()).as("맞는 비밀번호는 잠기지 않음").isEqualTo(200);
+        assertThat(db.users.findById(memberId).orElseThrow().role()).isEqualTo("OWNER");
     }
 
     @Test

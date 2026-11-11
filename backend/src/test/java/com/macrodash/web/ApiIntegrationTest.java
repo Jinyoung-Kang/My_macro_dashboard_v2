@@ -2,7 +2,6 @@ package com.macrodash.web;
 
 import com.macrodash.store.Datasets;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -460,7 +459,6 @@ class ApiIntegrationTest {
     }
 
     @Test
-    @Disabled("QA-338: 수정 전에는 비밀번호 확인 없이 회원이 운영자로 올라갑니다")
     @DisplayName("QA-338 회원을 만들어 운영자로 올리는 사슬 — 비밀번호가 없거나 틀리면 400이고 역할이 그대로, 요청자 비밀번호가 맞아야 올라간다")
     void promotionChainNeedsRequesterPassword() {
         HttpHeaders owner = new HttpHeaders();
