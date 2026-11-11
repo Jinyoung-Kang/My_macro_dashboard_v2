@@ -15,6 +15,7 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -285,6 +286,31 @@ class RealTradeExecutorDbTest {
         assertThat(bound.tossOrderId()).isEqualTo("T-OK");
         assertThat(store.config("KR").orElseThrow().state()).isEqualTo("LIVE");
         verify(client, times(2)).placeOrder(anyString());   // 재전송 창이 지난 뒤에는 보내지 않음
+    }
+
+    @Test
+    @Disabled("QA-343: 수정 전에는 대조 범위가 첫 전송 + 7분에서 끊겨, 창 끝 직전 재전송이 만든 주문이 후보에서 빠져 이상 멈춤이 됩니다")
+    @DisplayName("QA-343: 재전송 창 끝 직전에 받은 재전송이 창 끝 뒤(첫 전송 + 7분 12초)에 주문을 만들고 응답을 잃어도 대조가 그 주문을 묶는다 — 이상 멈춤 아님")
+    void reconcileLateResendStillBinds() {
+        Config cfg = live();
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "read-timeout", null));
+        executor.send(mirror(101, 100, "BUY", 5), cfg);   // 10:00 첫 전송 — 결과 모름
+        OrderRow unknown = only();
+
+        // 수집기는 첫 전송 + 7분 직전에 받은 같은 키 재전송을 통과시키고, 그 POST는 토큰 발급·속도 조절을 기다린 뒤(주문 예산 20초 안) 출발할 수 있습니다.
+        // 그 재전송이 처음으로 주문을 만들고 응답만 잃으면 주문 시각이 창 끝을 넘습니다.
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(
+                broker("T-LATE", A, "BUY", "DAY", "PENDING", "5", "0", kst("2026-11-06T10:07:12"), null),
+                broker("T-FAR", A, "BUY", "DAY", "PENDING", "5", "0", kst("2026-11-06T10:07:31"), null))));   // 뒤쪽 여유(30초) 밖 — 앱에서 낸 다른 주문
+        clock.set(kst("2026-11-06T10:07:50"));
+
+        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()))
+                .isEqualTo(new RealTradeExecutor.Resolution(0, false));
+        OrderRow bound = store.order(unknown.id()).orElseThrow();
+        assertThat(bound.sendOutcome()).isEqualTo("ACCEPTED");
+        assertThat(bound.tossOrderId()).isEqualTo("T-LATE");
+        assertThat(store.config("KR").orElseThrow().state()).as("수정 전: HALTED(unknown-order, 후보 0개) — 그 주문은 추적되지 않은 채 체결").isEqualTo("LIVE");
+        verify(client, times(1)).placeOrder(anyString());   // 대조는 새 주문을 내지 않음
     }
 
     @Test
