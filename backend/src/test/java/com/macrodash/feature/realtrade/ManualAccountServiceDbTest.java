@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -697,5 +698,94 @@ class ManualAccountServiceDbTest {
         service.editTrade(sold.id(), new ManualAccountService.EditTradeRequest(d("10"), d("125000"), d("5")));
         assertThat(store.position("isa", A)).as("전량 매도는 고쳐도 줄 없음").isEmpty();
         rejects(() -> service.editTrade(sold.id(), new ManualAccountService.EditTradeRequest(d("11"), d("137500"), d("5"))), 400, "invalid-request");
+    }
+
+    // ------------------------------------------------------------------ QA-339: 매수 내역을 고치거나 되돌릴 때 그 뒤에 판 수량
+    private Trade tradeOf(String side) {
+        return store.recentTrades("isa", 10).stream().filter(t -> side.equals(t.side())).findFirst().orElseThrow();
+    }
+
+    /** 합성화학 4주를 400,000에 사고(보유 4·매입 400,000) {@code sold}주를 주당 100,000에 판 상태. */
+    private void boughtFourThenSold(int sold) {
+        startSynthetic();
+        when(paper.lastPrices(any())).thenReturn(Map.of(A, d("12000"), B, d("21000"), C, d("100000")));
+        apply(filled(instruction(C, "BUY", 4), null, "4", "400000", "60"));
+        // 같은 (세션, 종목)에는 지시가 하나뿐이라 매도 지시는 다음 세션 것으로 둡니다.
+        apply(filled(instruction(MONDAY.plusDays(1), C, "SELL", sold), null, String.valueOf(sold), String.valueOf(100_000L * sold), "15"));
+    }
+
+    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
+    @Test
+    @DisplayName("QA-339 고치기 — 매수 뒤에 일부를 판 다음 그 매수의 수수료만 고쳐도 보유 수량·매입 금액은 그대로, 금액만 고치면 남은 몫만큼만 바뀜")
+    void editTradeBuyAfterLaterSell() {
+        boughtFourThenSold(1);
+        assertThat(position(C).quantity()).isEqualByComparingTo("3");
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("300000");
+        BigDecimal cashBefore = cash();
+        long buyId = tradeOf("BUY").id();
+
+        service.editTrade(buyId, new ManualAccountService.EditTradeRequest(d("4"), d("400000"), d("70")));
+
+        assertThat(position(C).quantity()).as("판 1주가 되살아나지 않음").isEqualByComparingTo("3");
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("300000");
+        assertThat(cash()).as("현금은 수수료 차이만").isEqualByComparingTo(cashBefore.subtract(d("10")));
+
+        service.editTrade(buyId, new ManualAccountService.EditTradeRequest(d("4"), d("440000"), d("70")));
+        assertThat(position(C).quantity()).isEqualByComparingTo("3");
+        assertThat(position(C).purchaseAmount()).as("남은 3/4 몫만 — 300,000 + (440,000 − 400,000) × 3/4").isEqualByComparingTo("330000");
+        assertThat(cash()).isEqualByComparingTo(cashBefore.subtract(d("10")).subtract(d("40000")));
+    }
+
+    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
+    @Test
+    @DisplayName("QA-339 고치기 — 전량을 판 뒤 매수를 고쳐도 보유 줄이 다시 생기지 않고, 판 수량보다 적게는 고칠 수 없음(400)")
+    void editTradeBuyAfterFullSell() {
+        boughtFourThenSold(4);
+        assertThat(store.position("isa", C)).isEmpty();
+        long buyId = tradeOf("BUY").id();
+
+        service.editTrade(buyId, new ManualAccountService.EditTradeRequest(d("4"), d("400000"), d("70")));
+        assertThat(store.position("isa", C)).as("다 판 종목의 줄이 4주로 되살아나지 않음").isEmpty();
+
+        rejects(() -> service.editTrade(buyId, new ManualAccountService.EditTradeRequest(d("3"), d("300000"), d("70"))), 400, "invalid-request");
+        assertThat(store.position("isa", C)).isEmpty();
+        assertThat(tradeOf("BUY").quantity()).as("거절된 고치기는 내역을 바꾸지 않음").isEqualByComparingTo("4");
+    }
+
+    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
+    @Test
+    @DisplayName("QA-339 고치기 — 3주를 판 뒤 매수 수량을 2로 줄일 수 없음(400), 3으로 줄이면 보유 줄이 없어짐")
+    void editTradeBuyBelowSoldQuantity() {
+        boughtFourThenSold(3);
+        assertThat(position(C).quantity()).isEqualByComparingTo("1");
+        long buyId = tradeOf("BUY").id();
+
+        rejects(() -> service.editTrade(buyId, new ManualAccountService.EditTradeRequest(d("2"), d("200000"), d("30"))), 400, "invalid-request");
+        assertThat(position(C).quantity()).isEqualByComparingTo("1");
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("100000");
+
+        service.editTrade(buyId, new ManualAccountService.EditTradeRequest(d("3"), d("300000"), d("45")));
+        assertThat(store.position("isa", C)).as("3주 사고 3주 판 것이 됨").isEmpty();
+    }
+
+    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
+    @Test
+    @DisplayName("QA-339 되돌리기 — 매수 뒤에 판 수량이 있으면 그 매수를 되돌릴 수 없음(400) — 보유 줄과 매도 내역이 그대로")
+    void undoBuyAfterLaterSell() {
+        boughtFourThenSold(1);
+        long buyId = tradeOf("BUY").id();
+        BigDecimal cashBefore = cash();
+
+        rejects(() -> service.undoTrade(buyId), 400, "invalid-request");
+
+        assertThat(position(C).quantity()).as("남은 3주의 줄이 지워지지 않음").isEqualByComparingTo("3");
+        assertThat(position(C).purchaseAmount()).isEqualByComparingTo("300000");
+        assertThat(cash()).isEqualByComparingTo(cashBefore);
+        assertThat(store.recentTrades("isa", 10)).hasSize(2);
+
+        service.undoTrade(tradeOf("SELL").id());
+        service.undoTrade(buyId);
+        assertThat(store.position("isa", C)).as("매도를 먼저 되돌리면 매수도 되돌려짐").isEmpty();
+        assertThat(cash()).isEqualByComparingTo("775000");
     }
 }
