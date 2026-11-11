@@ -239,6 +239,14 @@ def test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고
     assert not any("prune" in c for c in _docker_calls(fakes)), "실패한 배포는 거기서 멈춤"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-373: 스키마 적용의 오류 출력을 버려, 실패해도 원인이 어디에도 남지 않습니다")
+def test_QA373_deploy는_스키마_적용이_실패하면_마지막_시도의_원인을_보여_준다(server, fakes):
+    result = _deploy(server, fakes, FAKE_EXEC_RC="1", FAKE_EXEC_ERROR="psycopg.errors.Fake: V99 적용 실패(시험)")
+    assert result.returncode != 0
+    assert result.stderr.count("psycopg.errors.Fake: V99 적용 실패(시험)") == 1, f"원인은 마지막 시도의 것 한 번만: {result.stderr}"
+    assert "스키마를 적용하지 못했습니다" in result.stderr
+
+
 UP = "compose up -d --no-build --wait --wait-timeout 300"
 CADDY = "compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy"
 

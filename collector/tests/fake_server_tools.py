@@ -22,7 +22,8 @@ _GIT_ENV = {
 
 # 기록 파일에 한 줄씩: 인자(여러 줄 인자 — 배포 전 덤프의 psql 질의 등 — 는 한 줄로 폄) | 그때의 COMPOSE_FILE · APP_VERSION
 # postgres 안의 pg_dump는 끝 표시가 있는 덤프를 내고(FAKE_PG_DUMP_RC가 0이 아니면 실패), `exec -T postgres true`(떠 있는지 보기)는
-# FAKE_PG_DOWN이 있으면 실패합니다. 그 밖의 exec(스키마 적용 등)는 FAKE_EXEC_RC로 끝납니다.
+# FAKE_PG_DOWN이 있으면 실패합니다. 그 밖의 exec(스키마 적용 등)는 FAKE_EXEC_RC로 끝나고, 실패하는 스키마 적용(init_schema)은
+# 원인 한 줄(FAKE_EXEC_ERROR)을 stderr에 씁니다(QA-373 — 스크립트가 그 원인을 버리지 않는지 봄).
 _FAKE_DOCKER = """#!/usr/bin/env bash
 args="$*"
 echo "${args//$'\\n'/ } | COMPOSE_FILE=${COMPOSE_FILE:-} APP_VERSION=${APP_VERSION:-}" >> "$FAKE_LOG"
@@ -32,7 +33,11 @@ case " $* " in
         printf '%s\\n' 'COPY public.t (a) FROM stdin;' '\\.' '-- PostgreSQL database dump complete'
         exit 0 ;;
     *" exec -T postgres true "*) [ -z "${FAKE_PG_DOWN:-}" ]; exit $? ;;
-    *" exec "*) exit "${FAKE_EXEC_RC:-0}" ;;
+    *" exec "*)
+        if [ "${FAKE_EXEC_RC:-0}" != 0 ]; then
+            case "$*" in *init_schema*) echo "${FAKE_EXEC_ERROR:-psycopg.errors.DuplicateTable: relation \"fake_table\" already exists}" >&2 ;; esac
+        fi
+        exit "${FAKE_EXEC_RC:-0}" ;;
 esac
 if [ -n "${FAKE_DOCKER_FAIL:-}" ] && [[ "$*" == *"$FAKE_DOCKER_FAIL"* ]]; then exit 1; fi
 exit 0

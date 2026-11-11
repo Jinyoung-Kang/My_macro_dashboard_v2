@@ -134,6 +134,11 @@ def test_QA118_스키마_적용이_성공하면_한_번으로_끝나고_0이다(
     assert result.stderr == ""
 
 
+# 실패할 때 원인 한 줄을 stderr에 쓰는 docker(실제 `docker compose exec … init_schema()`의 Python 예외 자리). 성공하면 아무것도 쓰지 않습니다.
+_FAKE_LOUD = ("calls=0\ndocker() {{ calls=$((calls+1)); [ {rc} = 0 ] || echo 'psycopg.errors.Fake: V99 failed' >&2; return {rc}; }}\n"
+              "sleep() {{ :; }}\n")
+
+
 def _qa_stack_schema_snippet() -> str:
     """qa-stack.sh up 블록에서 `docker compose up -d --build` 다음 줄부터 `docker compose ps` 줄 앞까지(스키마 적용)."""
     script = (ROOT / "scripts/qa/qa-stack.sh").read_text(encoding="utf-8")
@@ -163,3 +168,58 @@ def test_QA126_QA_스택_up의_스키마_적용이_성공하면_한_번으로_�
     assert result.returncode == 0, f"qa-stack.sh({shell}): {result.stdout!r} {result.stderr!r}"
     assert "calls=1" in result.stdout
     assert result.stderr == ""
+
+
+# ------------------------------------------------------------------ QA-373: 실패의 원인을 버리지 않는다
+# 스키마 적용 명령의 출력을 버리고 10번 실패하면 '수집기 로그를 보세요'라고 했는데, 그 출력은 컨테이너 로그에 남지 않습니다(수집기가
+# 그대로이고 이 명령이 그 스키마 파일을 처음 적용하다 실패할 때). 마지막 시도의 오류는 그대로 보여 줍니다 — 앞의 아홉 번은 조용히.
+@pytest.mark.xfail(strict=True, reason="QA-373: QA 스택 up의 스키마 적용이 오류 출력을 버립니다")
+@pytest.mark.parametrize("shell", _SHELLS)
+def test_QA373_QA_스택_up의_스키마_적용이_실패하면_마지막_시도의_원인을_보여_준다(shell):
+    script = _FAKE_LOUD.format(rc=1) + _qa_stack_schema_snippet() + _REPORT
+    result = subprocess.run([shell, "-c", script], capture_output=True, text=True, timeout=30)
+    assert "calls=10" in result.stdout and result.returncode != 0
+    assert result.stderr.count("psycopg.errors.Fake: V99 failed") == 1, result.stderr
+    assert "스키마" in result.stderr
+
+
+@pytest.mark.parametrize("shell", _SHELLS)
+def test_QA373_QA_스택_up의_스키마_적용이_성공하면_조용하다(shell):
+    script = _FAKE_LOUD.format(rc=0) + _qa_stack_schema_snippet() + _REPORT
+    result = subprocess.run([shell, "-c", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0 and "calls=1" in result.stdout and result.stderr == ""
+
+
+def _make_migrate(tmp_path: Path, rc: str) -> tuple[subprocess.CompletedProcess, list[str]]:
+    """저장소 Makefile의 migrate를 가짜 docker·sleep으로 돌립니다(임시 폴더, .env 없음)."""
+    import shutil
+
+    from tests import fake_server_tools as tools
+
+    if shutil.which("make") is None:
+        pytest.skip("make가 없어 건너뜁니다.")
+    bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
+    tools._write_exec(bin_dir / "docker", tools._FAKE_DOCKER)
+    tools._write_exec(bin_dir / "sleep", tools._FAKE_SLEEP)
+    log.touch()
+    env = tools._env((bin_dir, log), FAKE_EXEC_RC=rc, FAKE_EXEC_ERROR="psycopg.errors.Fake: V99 failed")
+    result = subprocess.run(["make", "--no-print-directory", "-C", str(tmp_path), "-f", str(ROOT / "Makefile"), "migrate"],
+                            env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    return result, [line.split(" | ")[0] for line in tools._calls((bin_dir, log))]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-373: make migrate가 스키마 적용의 오류 출력을 버립니다")
+def test_QA373_make_migrate가_실패하면_마지막_시도의_원인을_보여_준다(tmp_path):
+    result, calls = _make_migrate(tmp_path, "1")
+    assert result.returncode != 0
+    assert len([call for call in calls if "init_schema" in call]) == 10
+    assert (result.stdout + result.stderr).count("psycopg.errors.Fake: V99 failed") == 1, result.stdout + result.stderr
+    assert "스키마를 적용하지 못했습니다" in result.stdout + result.stderr
+
+
+def test_make_migrate가_성공하면_한_번으로_끝난다(tmp_path):
+    """지금 동작 고정."""
+    result, calls = _make_migrate(tmp_path, "0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len([call for call in calls if "init_schema" in call]) == 1
+    assert "스키마: 최신" in result.stdout and result.stderr == ""
