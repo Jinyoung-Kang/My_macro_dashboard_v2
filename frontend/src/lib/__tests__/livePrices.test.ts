@@ -1,6 +1,6 @@
 /**
  * 화면 실시간 시세의 주기·표시 규칙(lib/livePrices, ADR 0024) — 고정하는 것
- *  - 주기 선택지는 끄기·5·10·30초·1·2·5·10·15·30분·1·3시간(서버 목록과 같음), 기본 1시간(사용자 결정 2026-11-03), 선택지 밖은 기본값
+ *  - 주기 선택지는 끄기·5·10·30초·1·2·5·10·15·30분·1·3시간(서버 목록과 같음), 기본 10초(사용자 결정 2026-11-12 — 그 전 1시간), 선택지 밖은 기본값
  *  - 새 키가 없으면 예전 장중 카드의 분 단위 값을 옮겨 읽음(고른 값을 잃지 않게)
  *  - 장중 저장본은 1분보다 짧게 다시 읽지 않음, 끄기는 0
  *  - 거래 시각은 KST 초까지, 장 상태·출처 설명, 평균 단가 대비 %
@@ -28,30 +28,31 @@ function storage(values: Record<string, string>): Pick<Storage, "getItem"> {
 }
 
 describe("주기", () => {
-  it("선택지와 기본 1시간 — 서버의 주기 목록(LivePriceService.INTERVALS)과 같다", () => {
+  it("선택지와 기본 10초 — 서버의 주기 목록(LivePriceService.INTERVALS)과 같다", () => {
     expect(LIVE_SECONDS_OPTIONS.map((option) => option.value)).toEqual([0, 5, 10, 30, 60, 120, 300, 600, 900, 1800, 3600, 10800]);
     expect(LIVE_SECONDS_OPTIONS.map((option) => option.label)).toEqual(
       ["끄기", "5초", "10초", "30초", "1분", "2분", "5분", "10분", "15분", "30분", "1시간", "3시간"]);
-    expect(DEFAULT_LIVE_SECONDS).toBe(3600);
+    expect(DEFAULT_LIVE_SECONDS).toBe(10);
     expect(normalizeLiveSeconds("5")).toBe(5);
     expect(normalizeLiveSeconds(0)).toBe(0);
-    expect(normalizeLiveSeconds("7")).toBe(3600);
-    expect(normalizeLiveSeconds(undefined)).toBe(3600);
-    expect(normalizeLiveSeconds("")).toBe(3600);
+    expect(normalizeLiveSeconds("7")).toBe(10);
+    expect(normalizeLiveSeconds(undefined)).toBe(10);
+    expect(normalizeLiveSeconds("")).toBe(10);
+    expect(normalizeLiveSeconds("3600")).toBe(3600);   // 직접 고른 1시간은 그대로
     expect(liveSecondsText(10)).toBe("10초");
     expect(liveSecondsText(3600)).toBe("1시간");
     expect(liveSecondsText(45)).toBe("45초");
   });
 
-  it("저장 값 — 새 키가 먼저, 없으면 예전 분 단위 값을 초로(선택지에 있을 때), 둘 다 없으면 1시간", () => {
+  it("저장 값 — 새 키가 먼저, 없으면 예전 분 단위 값을 초로(선택지에 있을 때), 둘 다 없으면 기본 10초", () => {
     expect(storedLiveSeconds(storage({ "live.priceRefreshSeconds": "10" }))).toBe(10);
     expect(storedLiveSeconds(storage({ "live.priceRefreshSeconds": "10", "paper.liveRefreshMinutes": "5" }))).toBe(10);
     expect(storedLiveSeconds(storage({ "paper.liveRefreshMinutes": "5" }))).toBe(300);
     expect(storedLiveSeconds(storage({ "paper.liveRefreshMinutes": "0" }))).toBe(0);
     expect(storedLiveSeconds(storage({ "paper.liveRefreshMinutes": "180" }))).toBe(10800);
-    expect(storedLiveSeconds(storage({ "paper.liveRefreshMinutes": "3" }))).toBe(3600);
-    expect(storedLiveSeconds(storage({}))).toBe(3600);
-    expect(storedLiveSeconds(null)).toBe(3600);
+    expect(storedLiveSeconds(storage({ "paper.liveRefreshMinutes": "3" }))).toBe(10);
+    expect(storedLiveSeconds(storage({}))).toBe(10);
+    expect(storedLiveSeconds(null)).toBe(10);
   });
 
   it("장중 저장본(계좌의 지금 값)은 1분보다 짧게 다시 읽지 않는다 — 끄기는 0", () => {

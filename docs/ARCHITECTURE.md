@@ -282,7 +282,7 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
   `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
   기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).
 - **실시간 시세(SSE, [ADR 0024](adr/0024-live-prices-sse.md))**: 모의 매매 장중 카드·보유 표·종목 상세의 종목 가격은 화면이 `GET /api/live/prices/stream`
-  (EventSource)에 붙어 있으면 백엔드 `feature.live`가 고른 주기(5초~3시간, 기본 1시간)마다 수집기 `/live/prices`(Yahoo·네이버·다음·토스, 3초 캐시)를 불러
+  (EventSource)에 붙어 있으면 백엔드 `feature.live`가 고른 주기(5초~3시간, 기본 10초 — 2026-11-12, 그 전 1시간)마다 수집기 `/live/prices`(Yahoo·네이버·다음·토스, 3초 캐시)를 불러
   밀어 줍니다. 저장하지 않고 장부·계좌 숫자는 기존 저장본을 그대로 씁니다. 탭을 숨기면 연결을 닫습니다.
 - **모의매매의 시장 인자**: 화면은 시장(`US`·`KR`) 하나를 받아 통화·주당 가격 자릿수·거래일 이름은 `lib/paperMarket.ts`, API 경로는
   `endpoints.paper.market(m)`(한국은 `?market=KR`)에서 고릅니다. 한국에만 있는 칸(잠정·확정과 확정 조정, 묶인 평가의 출처, 수집 상태, 노출 맞춘

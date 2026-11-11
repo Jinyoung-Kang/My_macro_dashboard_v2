@@ -412,7 +412,7 @@ describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfi
   /** 걸린 타이머의 간격(ms) 목록. */
   const delays = () => (intervals.mock.calls as unknown as [unknown, number][]).map(([, delay]) => delay);
 
-  it("탭 머리에 기준 시각(초까지)과 주기 상자 — 기본은 실시간 시세와 같은 1시간, 요약의 받은 시각도 초까지", async () => {
+  it("탭 머리에 기준 시각(초까지)과 주기 상자 — 기본은 실시간 시세와 같은 10초(사용자 결정 2026-11-12), 요약의 받은 시각도 초까지", async () => {
     reads["/api/brokerage/account?market=KR"] = () => Promise.resolve(account("KR", { fetchedAtKst: "2026-03-29 09:31:05" }));
     render(<PaperScreen market="KR" initialTab="real" />);
     expect(await screen.findByText("실제 계좌 요약 — 원화")).toBeTruthy();
@@ -421,12 +421,14 @@ describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfi
     expect(within(panel()).getByText("토스가 그 시각 가격으로 계산한 평가·손익(수집기가 토스에서 받은 시각)")).toBeTruthy();
     expect(within(panel()).getByText(/토스증권 종합매매 · 받은 시각 2026-03-29 09:31:05/)).toBeTruthy();
     const select = within(panel()).getByRole("combobox", { name: "새로고침 주기" }) as HTMLSelectElement;
-    expect(select.value).toBe("3600");
-    expect(within(panel()).getByText("1시간마다 다시 읽음 · 실시간 시세와 같은 주기")).toBeTruthy();
-    expect(await brokerageTimers(3_600_000)).toHaveLength(1);
+    // 주기 상자를 건드리지 않아도 보유 종목·요약이 10초마다 다시 읽힙니다(그 전 기본 1시간에서는 한 시간 동안 그대로였음).
+    expect(select.value).toBe("10");
+    expect(within(panel()).getByText("10초마다 다시 읽음 · 실시간 시세와 같은 주기")).toBeTruthy();
+    expect(await brokerageTimers(10_000)).toHaveLength(1);
   });
 
   it("5초를 고르면 10초마다 다시 읽는다(계좌 캐시 10초) — 끄기면 다시 읽지 않고 '다시 읽기'만", async () => {
+    window.localStorage.setItem("live.priceRefreshSeconds", "3600");   // 1시간을 골라 둔 브라우저에서 시작(기본은 10초)
     render(<PaperScreen market="KR" initialTab="real" />);
     expect(await screen.findByText("실제 계좌 요약 — 원화")).toBeTruthy();
     const select = () => within(panel()).getByRole("combobox", { name: "새로고침 주기" }) as HTMLSelectElement;

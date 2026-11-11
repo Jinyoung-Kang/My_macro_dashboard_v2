@@ -1,7 +1,7 @@
 /**
  * 화면 실시간 시세(ADR 0024) — 모의 매매 장중 카드·보유 표·종목 상세가 함께 쓰는 주기 설정과 표시 규칙.
  *
- * 주기는 이 브라우저에 하나(localStorage)라 장중 카드·보유 표·종목 상세 어디서 바꿔도 같은 값입니다(사용자 결정 2026-11-03 — 기본 1시간, 5·10·30초를
+ * 주기는 이 브라우저에 하나(localStorage)라 장중 카드·보유 표·종목 상세 어디서 바꿔도 같은 값입니다(사용자 결정 2026-11-03 — 5·10·30초를
  * 더함). 값은 서버가 고른 주기마다 밀어 주고(SSE — hooks/useLivePrices), 저장하지 않으며 장부(체결·스탑·통계·결정)는 쓰지 않습니다. 모르는 값은 "—".
  */
 import { EMPTY } from "./format";
@@ -23,8 +23,8 @@ export const LIVE_SECONDS_OPTIONS = [
   { value: 10800, label: "3시간" },
 ] as const;
 
-/** 기본 주기 — 사용자 결정(2026-11-03). */
-export const DEFAULT_LIVE_SECONDS = 3600;
+/** 기본 주기 — 10초(사용자 결정 2026-11-12 — 주기 상자를 건드리지 않아도 실제 계좌·ISA 잔고·실시간 칸이 움직이게. 그 전 2026-11-03 결정은 1시간). 직접 고른 값이 있는 브라우저는 그 값을 그대로 씁니다. */
+export const DEFAULT_LIVE_SECONDS = 10;
 export const LIVE_SECONDS_STORAGE_KEY = "live.priceRefreshSeconds";
 /** 예전 장중 카드의 분 단위 설정 — 새 값이 없을 때 한 번 옮겨 읽습니다(고른 값을 잃지 않게). */
 export const LEGACY_MINUTES_STORAGE_KEY = "paper.liveRefreshMinutes";

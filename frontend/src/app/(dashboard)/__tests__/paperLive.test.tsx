@@ -2,7 +2,7 @@
  * 장중 시세 카드(LiveValuationCard) — 고정하는 규칙
  *  - 계좌 표는 없고(계좌 숫자는 개요의 지금 값), 고른 계좌(bookCode — 없거나 응답에 없으면 첫 계좌)의 종목 장중가와 기준 시각·평단
  *  - 서버가 새 시세를 요청한 응답이면(refreshRequested) 20초 뒤 한 번만 더 읽는다(되풀이 없음)
- *  - 간격 선택(끄기·5·10·30초·1분~3시간 — 실시간 시세 주기, lib/livePrices)은 이 브라우저에 기억되고(기본 1시간, 2026-11-03), 장 밖에서는 다시
+ *  - 간격 선택(끄기·5·10·30초·1분~3시간 — 실시간 시세 주기, lib/livePrices)은 이 브라우저에 기억되고(기본 10초 — 이 시험들은 1시간을 골라 둔 채로 봄), 장 밖에서는 다시
  *    읽지 않는다. 계좌 숫자의 장중 저장본은 1분보다 짧게 다시 읽지 않는다(종목 가격만 실시간 시세 — SSE, 시험 환경에는 EventSource가 없음)
  *  - 새 장중 값(판이 바뀐 응답)을 받으면 onUpdated를 한 번 — 첫 응답·같은 판이면 부르지 않고, 부른다고 /live를 다시 읽지 않는다
  *  - 숨긴 탭에서는 '한 번 더'·'다음 개장' 깨우기가 읽지 않고, 다시 보일 때 한 번(QA-154). 숨긴 탭으로 열리면 처음 보일 때 읽는다(QA-156)
@@ -54,6 +54,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
   vi.setSystemTime(NOW);
   window.localStorage.clear();
+  // 이 파일의 시험들은 '1시간을 골라 둔 브라우저'에서 카드의 다시 읽기 규칙을 봅니다(기본값은 2026-11-12부터 10초 — lib/livePrices 시험이 봄).
+  // 기본 10초로 두면 시험마다 10초 주기의 읽기가 끼어들어, 여기서 보려는 '한 번 더'·복귀 읽기의 횟수를 셀 수 없습니다.
+  window.localStorage.setItem("live.priceRefreshSeconds", "3600");
   resetLiveSecondsForTest();
   api.apiGetShared.mockReset();
   // 끄기(0)의 실시간 시세 한 번 읽기(GET /api/live/prices) — 이 시험들은 장중 저장본 읽기(/api/paper/live)만 셉니다.
@@ -92,7 +95,7 @@ describe("정규장", () => {
     expect(screen.getByText(/보유 종목 — 계좌 행을 누르면 그 계좌로 바뀝니다/)).toBeTruthy();
     expect(screen.getByText("정규장 동안 종목 가격은 1시간마다 서버가 보내 주고(실시간 시세), 계좌 숫자는 1시간마다 다시 읽습니다(이 화면을 보는 동안만)."))
       .toBeTruthy();
-    // 기본 1시간 — 그 사이 매시 장부 관측이 돌아 지금 값이 대개 장부 단계라는 안내(미국)
+    // 주기 1시간 — 그 사이 매시 장부 관측이 돌아 지금 값이 대개 장부 단계라는 안내(미국)
     expect(screen.getByText(/^간격이 길면/)).toBeTruthy();
     // 종목을 누르면 화면 안 팝업 창(사용자 결정 2026-11-03) — 창 안에 상세 화면 링크
     fireEvent.click(within(positions).getByRole("button", { name: "AAA" }));

@@ -637,7 +637,7 @@ describe("실시간 평가와 '확인' 가격", () => {
     reads[ISA_PATH] = () => Promise.resolve(started({ stopInstructions: [{ ...STOP_ITEM, symbol: "444440", name: "합성스탑" }] }));
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
-    expect((inRegion().getByRole("combobox", { name: "실시간 시세 주기" }) as HTMLSelectElement).value).toBe("3600");
+    expect((inRegion().getByRole("combobox", { name: "실시간 시세 주기" }) as HTMLSelectElement).value).toBe("10");   // 기본 10초(2026-11-12)
     expect(inRegion().getByText(/^기준 시각/).textContent).toBe("기준 시각 —");
     const url = new URL((await opened()).url);
     expect(url.pathname).toBe("/api/live/prices/stream");

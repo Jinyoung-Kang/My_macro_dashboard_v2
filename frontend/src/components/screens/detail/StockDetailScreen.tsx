@@ -34,7 +34,7 @@ const HOLDERS_SHOWN = 10;
  * - 미국·해외(지수 ^·환율 =X·선물 =F 포함)는 Yahoo Finance, 국내 6자리는 네이버 증권 — 수집기 실시간 조회(GET /api/detail/quote, 5분 캐시).
  * - 차트는 Yahoo 시계열(GET /api/macro/ticker — 국내는 .KS·.KQ 심볼). 값이 없으면 "—", 받지 못한 출처는 그 이유를 적습니다.
  * - 출처 링크: 히어로 배지(시세 출처), 뉴스 제목(원문 기사), 외부 링크 묶음(Yahoo·Google Finance·Investing.com·네이버·SEC·DART).
- * - 가격·전일 대비는 실시간 시세(ADR 0024 — 고른 주기마다 서버가 밀어 줌, 기본 1시간, 장중 카드·보유 표와 같은 주기)가 오면 그 값으로 바꿉니다
+ * - 가격·전일 대비는 실시간 시세(ADR 0024 — 고른 주기마다 서버가 밀어 줌, 기본 10초, 장중 카드·보유 표와 같은 주기)가 오면 그 값으로 바꿉니다
  *   (사용자 요청 2026-11-03 — 모의 매매에서 종목을 누르면 이 화면). 지표·개요는 위 시세 응답 그대로.
  */
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {

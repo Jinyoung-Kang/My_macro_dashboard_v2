@@ -6,7 +6,7 @@
  *  - 끄기(0)는 탭을 숨기거나 다시 보일 때 읽지 않고, 숨긴 탭으로 열리면 처음 보일 때 한 번(QA-189)
  *  - 받지 못함(available:false·출처만 실패·연결 끊김)은 한 줄 문구, 받은 가격은 남김
  *  - 200이 아닌 응답으로 닫힌 연결(readyState CLOSED)은 닫고 5초부터 두 배씩(최대 60초) 뒤 새로 열고, 받으면 처음부터 — 그동안 disconnected(QA-183)
- *  - 주기 설정은 한 곳에서 바꾸면 같은 화면의 다른 구독도 따라 바뀌고, 이 브라우저에 기억됨(기본 1시간)
+ *  - 주기 설정은 한 곳에서 바꾸면 같은 화면의 다른 구독도 따라 바뀌고, 이 브라우저에 기억됨(기본 10초)
  */
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -261,15 +261,15 @@ describe("mergeLivePrices", () => {
 });
 
 describe("useLiveSeconds", () => {
-  it("기본 1시간, 한 곳에서 바꾸면 다른 구독도 따라 바뀌고 이 브라우저에 기억된다", () => {
+  it("기본 10초, 한 곳에서 바꾸면 다른 구독도 따라 바뀌고 이 브라우저에 기억된다", () => {
     const a = renderHook(() => useLiveSeconds());
     const b = renderHook(() => useLiveSeconds());
-    expect(a.result.current[0]).toBe(3600);
-    act(() => a.result.current[1](10));
-    expect(b.result.current[0]).toBe(10);
-    expect(window.localStorage.getItem("live.priceRefreshSeconds")).toBe("10");
-    act(() => a.result.current[1](7));
+    expect(a.result.current[0]).toBe(10);
+    act(() => a.result.current[1](3600));
     expect(b.result.current[0]).toBe(3600);
+    expect(window.localStorage.getItem("live.priceRefreshSeconds")).toBe("3600");
+    act(() => a.result.current[1](7));
+    expect(b.result.current[0]).toBe(10);
   });
 
   it("예전 장중 카드의 분 단위 값을 옮겨 읽는다", () => {
