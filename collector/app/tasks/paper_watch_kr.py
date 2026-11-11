@@ -59,6 +59,10 @@ REFERENCE = "069500"
 # 실행당 토스 호출 상한 — 감시 ≤10 + 보유·대기(계좌2 주문은 하루 12건 안) + 기준 종목(DATA_SOURCES.md '한국 책 호출 예산').
 WATCH_CALL_BUDGET = 30
 SPACING_SECONDS = 0.1
+# 새 종목을 더 묻지 않는 경과 시간(초, 받기 시작부터). 토스 호출은 태스크 시간 예산 층을 거치지 않고 건당 한도가 10초라, 호출 수만 세면
+# 토스가 느릴 때 session 군 상한(60초 — runner.TASK_DEADLINE_SECONDS)을 넘깁니다(QA-367). 장중 스탑 감시(paper_stopwatch.KR_TIME_BUDGET)와 같은 값 —
+# 묻지 못한 종목은 '받지 못함'으로 남아 직전 값을 잇고 다음 회차가 다시 묻습니다.
+WATCH_TIME_BUDGET = 40.0
 # 한 확인에서 T 뒤에 받는 회차 상한 — 빠진 종목(정지 등)이 있어도 창 끝까지 5분마다 다시 묻지 않게.
 WATCH_ATTEMPTS = 3
 # 창을 뽑는 기준 시각 — 시가(09:00)와 매시 10:00~15:00(장중 확인 예상 상태가 기준 시각이 지난 대기 주문의 가격으로 씀).
@@ -68,6 +72,11 @@ OPEN_KEY = "09:00"
 def _now() -> datetime:
     """지금 시각(서울). 테스트가 시계를 바꿔 끼우는 자리입니다."""
     return datetime.now(tz=KST)
+
+
+def _clock() -> float:
+    """경과 시간 시계(초). 테스트가 시간 상한을 시험할 때 바꿔 끼웁니다."""
+    return time.monotonic()
 
 
 def target_at(session: date, at_local: clock_time) -> datetime:
@@ -194,7 +203,11 @@ def task_paper_watch_kr() -> str:
     reason = None
     fetched_at = now
     reference_at = None   # 기준 종목을 받은 시각 — 지연은 이것으로(뒤에 받는 보유·대기 종목의 시각을 섞지 않음 — QA-193)
+    began = _clock()
     for index, code in enumerate(asked):
+        if index and _clock() - began >= WATCH_TIME_BUDGET:
+            failed.append(f"시간 상한 {WATCH_TIME_BUDGET:.0f}초 — {len(asked) - index}종목 묻지 않음")
+            break
         if index and SPACING_SECONDS:
             time.sleep(SPACING_SECONDS)
         try:

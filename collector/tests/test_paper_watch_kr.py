@@ -340,7 +340,6 @@ def test_QA193_지연은_기준_종목을_받은_시각으로_센다(store, toss
     assert payload["fetchedAt"] == _at("11:04", 25).astimezone(timezone.utc).isoformat(), "저장본 받은 시각은 마지막 종목 그대로"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-367: 호출 수(30)만 세고 남은 시간을 보지 않아 느린 토스에서 session 군 상한(60초)을 넘깁니다")
 def test_QA367_시간_상한이_지나면_남은_종목을_묻지_않고_받은_것은_저장한다(store, toss, monkeypatch):
     _scope(monkeypatch, SCOPE)
     for code in ("005930", "000660", "069500", "035720", "051910"):

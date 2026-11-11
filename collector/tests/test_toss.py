@@ -447,7 +447,6 @@ def test_market_fixture_honors_spec_identities():
 
 
 # ------------------------------------------------------------------ QA-367: 시간 상한
-@pytest.mark.xfail(strict=True, reason="QA-367: 종목 수만 세고 남은 시간을 보지 않아 느린 토스에서 slow 군 상한(600초)을 넘깁니다")
 def test_QA367_stock_flows는_시간_상한이_지나면_남은_종목을_다음_주기로(store, monkeypatch):
     codes = [f"{n:06d}" for n in range(100001, 100041)]                    # 40종목
     _radar_snapshot(store, codes)
@@ -471,7 +470,6 @@ def test_QA367_stock_flows는_시간_상한이_지나면_남은_종목을_다음
     assert tasks.toss.TOSS_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-367: 종목 수만 세고 남은 시간을 보지 않아 느린 토스에서 slow 군 상한(600초)을 넘깁니다")
 def test_QA367_radar_universe는_시간_상한이_지나면_남은_종목을_직전_저장본으로_잇는다(store, monkeypatch):
     codes = [f"{n:06d}" for n in range(100001, 100041)]
     store.put_snapshot(catalog.SNAP_TOSS_RADAR_UNIVERSE, {"universe": 40, "stocks": [

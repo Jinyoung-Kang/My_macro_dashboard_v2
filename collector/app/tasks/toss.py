@@ -30,6 +30,10 @@ TOSS_WATCHED_LIMIT = 60       # 알림 규칙의 관심 종목(백엔드가 만�
 # 다른 그룹은 초당 1~10회라, 한 번에 몰아 부르지 않고 간격을 둡니다.
 TOSS_STOCK_SPACING = 0.3
 TOSS_STOCK_RETENTION_DAYS = 400
+# 새 종목을 더 묻지 않는 경과 시간(초, 종목 루프 시작부터) — 종목별 매매동향을 최대 100번 부르는 두 태스크(toss_stock_flows·toss_radar_universe)에
+# 씁니다. 토스 호출은 태스크 시간 예산 층을 거치지 않고 건당 한도가 10초라, 종목 수만 세면 토스가 느릴 때 slow 군 상한(600초)을 넘깁니다
+# (QA-367). 묻지 못한 종목은 다음 slow 주기가 받습니다(레이더 대상은 그때까지 직전 저장본의 기록으로 이음).
+TOSS_TIME_LIMIT_SECONDS = 300.0
 _KR_CODE = re.compile(r"^[0-9A-Z]{6}$")
 
 
@@ -121,6 +125,11 @@ def _toss_universe() -> list[str]:
     return codes
 
 
+def _clock() -> float:
+    """경과 시간 시계(초). 테스트가 시간 상한을 시험할 때 바꿔 끼웁니다."""
+    return time.monotonic()
+
+
 def task_toss_stock_flows() -> str:
     """
     레이더 종목의 일별 투자자 매매동향 (주, 최근 20거래일) — 수급이 며칠째 이어지는지.
@@ -136,7 +145,11 @@ def task_toss_stock_flows() -> str:
     by_date: dict[str, list[dict]] = {}
     fetched = 0
     reasons: list[str] = []
+    began = _clock()
     for index, code in enumerate(universe):
+        if index and _clock() - began >= TOSS_TIME_LIMIT_SECONDS:
+            reasons.append(f"시간 상한 {TOSS_TIME_LIMIT_SECONDS:.0f}초 — {len(universe) - index}종목은 다음 주기")
+            break
         if index:
             time.sleep(TOSS_STOCK_SPACING)
         try:
@@ -190,7 +203,11 @@ def task_toss_radar_universe() -> str:
 
     stocks: list[dict] = []
     reasons: list[str] = []
+    began = _clock()
     for index, leader in enumerate(leaders):
+        if index and _clock() - began >= TOSS_TIME_LIMIT_SECONDS:
+            reasons.append(f"시간 상한 {TOSS_TIME_LIMIT_SECONDS:.0f}초 — {len(leaders) - index}종목은 다음 주기")
+            break
         if index:
             time.sleep(TOSS_STOCK_SPACING)
         info = infos.get(leader["code"]) or {}
