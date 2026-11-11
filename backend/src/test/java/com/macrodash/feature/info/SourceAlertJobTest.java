@@ -5,7 +5,6 @@ import com.macrodash.store.InfoStore;
 import com.macrodash.store.InfoStore.SourceState;
 import com.macrodash.store.SourceAlertStore;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -147,7 +146,6 @@ class SourceAlertJobTest {
     // 실패(1~2회)로 내려가도 회복이 갔으며, 회복 글은 기록한 뒤에 보내 한 번 실패하면 다시 보내지 않았습니다.
 
     @Test
-    @Disabled("QA-404: 끊김의 종류만 바뀌어도 거짓 '수집 회복'이 갑니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-404: 끊김의 종류만 바뀌면(받지 못함 → 차단됨) 새 끊김만 알리고 '수집 회복'은 보내지 않는다")
     void kindChangeIsNotRecovery() {
         state("info_waedge_brief", "failed", 3, "news.waedge.ai HTTP 503");
@@ -162,7 +160,6 @@ class SourceAlertJobTest {
     }
 
     @Test
-    @Disabled("QA-404: 아직 실패 중인데 '수집 회복'이 갑니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-404: 차단이 풀렸어도 아직 실패 중이면(사건 문턱 아래) 회복을 알리지 않고, 정상이 되면 그때 한 통")
     void noRecoveryWhileStillFailing() {
         state("info_blog_wolfstreet", "blocked", 1, "wolfstreet.com HTTP 403");
@@ -179,7 +176,6 @@ class SourceAlertJobTest {
     }
 
     @Test
-    @Disabled("QA-404: 회복 알림은 한 번 실패하면 다시 보내지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-404: 회복 알림을 보내지 못하면 다음 주기에 다시 보낸다(보낸 뒤에 기록)")
     void recoveryIsRetriedAfterSendFailure() {
         state("info_naver_flows", "format", 2, "응답 모양이 다름");
@@ -197,13 +193,13 @@ class SourceAlertJobTest {
     }
 
     @Test
-    @Disabled("QA-404: 끊김 글의 화면 안내가 옮겨진 메뉴를 가리킵니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-404: 끊김 글은 지금 메뉴 자리(정보 수집 > 출처 상태)를 알린다")
     void downTextPointsToTheCurrentMenu() {
         state("info_blog_wolfstreet", "blocked", 1, "wolfstreet.com HTTP 403");
         job().run();
 
-        assertThat(sent.get(0)).contains("정보 수집 > 출처 상태").doesNotContain("모의매매 > 정보 수집");
+        // 텔레그램 MarkdownV2 서식이라 '>'는 앞에 역슬래시가 붙어 나갑니다.
+        assertThat(sent.get(0)).contains("화면: 정보 수집 \\> 출처 상태").doesNotContain("모의매매");
     }
 
     @Test

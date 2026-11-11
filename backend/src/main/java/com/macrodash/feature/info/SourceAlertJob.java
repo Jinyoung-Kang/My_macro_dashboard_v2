@@ -3,6 +3,7 @@ package com.macrodash.feature.info;
 import com.macrodash.Kst;
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.InfoStore;
+import com.macrodash.store.InfoStore.SourceState;
 import com.macrodash.store.SourceAlertStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -24,6 +26,8 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li><b>한 사건에 한 통</b>: 사건(태스크 + 종류)마다 처음 볼 때 한 번. 보낸 것·못 보낸 것은 표 {@code source_alerts}에 있어 배포로 다시 떠도
  *       같은 사건을 다시 알리지 않고, 보내지 못한 것은 다음 주기에 다시 보냅니다.</li>
+ *   <li><b>회복은 정상이 됐을 때만</b>(QA-404): 그 태스크에 지금 사건이 없고 마지막 판정이 정상일 때 한 통. 끊김의 종류만 바뀐 옛 기록은
+ *       조용히 닫고, 아직 실패 중이면 열린 채 둡니다. 회복 글은 보낸 뒤에 기록해 보내지 못하면 다음 주기에 다시 보냅니다.</li>
  *   <li><b>읽기만</b>: 수집기 표({@code fetch_source_state})는 읽기만 하고 수집을 일으키지 않습니다(ADR 0008).</li>
  *   <li><b>켜짐</b>: 텔레그램 값이 둘 다 있을 때만(서버). 모의 매매 정기 작업({@code PAPER_ENABLED})과 무관합니다.</li>
  *   <li>글에는 출처 이름·종류·사유 한 줄만 싣습니다(주소·본문 없음).</li>
@@ -74,7 +78,8 @@ public class SourceAlertJob {
             return 0;
         }
         Instant now = clock.instant();
-        List<SourceIncidents.Incident> incidents = SourceIncidents.build(info.states(), now);
+        List<SourceState> states = info.states();
+        List<SourceIncidents.Incident> incidents = SourceIncidents.build(states, now);
         Map<String, SourceAlertStore.Open> open = alerts.open().stream()
                 .collect(Collectors.toMap(SourceAlertStore.Open::key, Function.identity()));
         int sent = 0;
@@ -93,16 +98,37 @@ public class SourceAlertJob {
             alerts.notified(incident.key(), now);
             sent++;
         }
+        // 열린 기록인데 지금 그 키(태스크|종류)의 사건이 없는 것 — 회복인지 가립니다(QA-404).
+        Set<String> broken = incidents.stream().map(SourceIncidents.Incident::task).collect(Collectors.toSet());
+        Map<String, SourceState> byTask = states.stream().collect(Collectors.toMap(SourceState::task, Function.identity(), (a, b) -> a));
         for (SourceAlertStore.Open gone : open.values()) {
-            alerts.recovered(gone.key(), now);
+            if (broken.contains(gone.task())) {
+                // 끊김의 종류만 바뀌었습니다(받지 못함 → 차단됨 등). 새 종류의 끊김은 위에서 알렸고, 옛 키는 조용히 닫습니다 —
+                // 여기서 '수집 회복'을 보내면 아직 끊긴 출처의 마지막 글이 회복이 됩니다.
+                alerts.recovered(gone.key(), now);
+                continue;
+            }
+            SourceState state = byTask.get(gone.task());
+            if (state == null) {
+                alerts.recovered(gone.key(), now);          // 판정 기록이 없어진 태스크 — 회복이라 할 근거가 없어 알리지 않고 닫습니다
+                continue;
+            }
+            if (!"ok".equals(state.status())) {
+                // 사건 문턱 아래의 실패(차단이 풀린 뒤 첫 실행이 실패 1회 등) — 아직 정상이 아니므로 열린 채 둡니다.
+                // 정상이 되면 그때 회복을 알리고, 다시 같은 종류로 끊기면 같은 사건으로 이어집니다.
+                continue;
+            }
             if (gone.notifiedAt() == null) {
-                continue;                       // 알리지 못한 채 풀린 사건은 회복도 알리지 않습니다
+                alerts.recovered(gone.key(), now);          // 알리지 못한 채 풀린 사건은 회복도 알리지 않습니다
+                continue;
             }
             String error = telegram.send(upText(gone, now));
             if (error != null) {
-                log.warn("수집 출처 회복 알림을 보내지 못함(다시 보내지 않음): {}", error);
+                // 보낸 뒤에 기록합니다 — 닫지 않고 두어 다음 주기에 다시 보냅니다.
+                log.warn("수집 출처 회복 알림을 보내지 못함 — 다음 주기에 다시: {}", error);
                 continue;
             }
+            alerts.recovered(gone.key(), now);
             sent++;
         }
         return sent;
@@ -125,7 +151,7 @@ public class SourceAlertJob {
             case "failed" -> "출처가 연속으로 응답하지 않았습니다. 스스로 다시 시도합니다.";
             default -> "마지막 성공이 오래됐습니다. 상태 화면의 그 태스크 기록을 보세요.";
         };
-        out.append('\n').append(PaperTelegram.esc(next + " 직전 저장본은 그대로이고, 화면: 모의매매 > 정보 수집."));
+        out.append('\n').append(PaperTelegram.esc(next + " 직전 저장본은 그대로이고, 화면: 정보 수집 > 출처 상태."));
         return out.toString();
     }
 
