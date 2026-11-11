@@ -33,11 +33,13 @@ function respond(ranking: Record<string, unknown>) {
     path.startsWith("/api/radar/ranking") ? Promise.resolve(ranking) : new Promise(() => {}));
 }
 
-beforeEach(() => api.apiGetShared.mockReset());
+beforeEach(() => {
+  api.apiGetShared.mockReset();
+});
 afterEach(() => cleanup());
 
 describe("레이더 순위의 실제 기간과 기준일", () => {
-  it.fails("QA-397: 응답의 기간이 하루치로 바뀌었으면 경고와 함께 순위 카드에 '기간 당일'을 적는다", async () => {
+  it("QA-397: 응답의 기간이 하루치로 바뀌었으면 경고와 함께 순위 카드에 '기간 당일'을 적는다", async () => {
     respond({
       ...RANKING, intervalType: "TODAY", requestedIntervalType: "DAYS_5", dataDate: "2026-11-10",
       warning: "요청한 기간(5거래일)의 누적을 받지 못해 하루치(당일) 순위입니다.",
@@ -48,7 +50,7 @@ describe("레이더 순위의 실제 기간과 기준일", () => {
     expect(screen.getByText("기간 당일 · 기준일 2026-11-10")).toBeTruthy();
   });
 
-  it.fails("QA-396: 기준일을 모르는 응답이면 기간만 적는다(없는 날짜를 만들지 않음)", async () => {
+  it("QA-396: 기준일을 모르는 응답이면 기간만 적는다(없는 날짜를 만들지 않음)", async () => {
     respond({ ...RANKING, intervalType: "DAYS_5", dataDate: null });
     render(<SessionUserProvider user={MEMBER}><RadarPage /></SessionUserProvider>);
 

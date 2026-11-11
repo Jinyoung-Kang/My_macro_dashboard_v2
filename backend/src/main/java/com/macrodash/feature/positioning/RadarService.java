@@ -217,6 +217,7 @@ public class RadarService {
                 out.put("historyDate", Json.asText(payload, "historyDate"));
                 out.put("dataDate", Json.asText(payload, "dataDate"));
                 out.put("rows", payload.get("rows"));
+                putActualInterval(out, payload, intervalType);
                 if (Json.asBoolean(payload, "isHistorical")) {
                     out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
                 }
@@ -272,10 +273,45 @@ public class RadarService {
         // 이 칸이 생기기 전에 저장된 저장본에는 없습니다(null).
         out.put("dataDate", Json.asText(payload, "dataDate"));
         out.put("rows", payload.get("rows"));
+        putActualInterval(out, payload, String.valueOf(out.get("intervalType")));
         if (Json.asBoolean(payload, "isHistorical")) {
             out.put("warning", historicalWarning(Json.asText(payload, "historyDate")));
         }
         return out;
+    }
+
+    /**
+     * 응답의 {@code intervalType}을 수집기가 <b>실제로 받은</b> 기간으로 맞춥니다(QA-397).
+     *
+     * <p>기간(5일·20일)을 요청해도 하루치가 올 수 있습니다 — Daum이 그 투자주체의 기간 누적을 주지 않거나(기관, 개인 등 KRX 확정 순위 경로)
+     * 기간 조회가 실패해 당일 경로로 넘어간 경우입니다. 수집기는 실제 기간을 밝히는데(QA-028) 요청 값을 그대로 내리면 화면이 '5거래일' 아래
+     * 하루치 금액을 보입니다. 다르면 실제 값으로 바꾸고 요청 값({@code requestedIntervalType})과 경고를 함께 넣습니다. 수집기가 기간을
+     * 밝히지 않은 응답(옛 저장본)은 요청 값 그대로 둡니다. 이력 대체 경고가 뒤에 붙으면 그쪽이 남습니다(더 무거운 경고).
+     */
+    private static void putActualInterval(Map<String, Object> out, JsonNode payload, String requested) {
+        String actual = Json.asText(payload, "intervalType");
+        if (actual == null || actual.isBlank() || actual.equals(requested)) {
+            return;
+        }
+        out.put("intervalType", actual);
+        out.put("requestedIntervalType", requested);
+        out.put("warning", intervalWarning(requested, actual));
+    }
+
+    static String intervalLabel(String intervalType) {
+        return switch (intervalType) {
+            case "TODAY" -> "당일";
+            case "DAYS_5" -> "5거래일";
+            case "DAYS_20" -> "20거래일";
+            default -> intervalType;
+        };
+    }
+
+    private static String intervalWarning(String requested, String actual) {
+        return "요청한 기간(" + intervalLabel(requested) + ")의 누적을 받지 못해 "
+                + ("TODAY".equals(actual) ? "하루치(당일)" : intervalLabel(actual)) + " 순위입니다. "
+                + "이 투자주체는 출처가 기간 누적을 주지 않거나 기간 조회가 실패했습니다 — 금액을 "
+                + intervalLabel(requested) + " 누적으로 읽지 마세요.";
     }
 
     private String historicalWarning(String historyDate) {
@@ -362,6 +398,19 @@ public class RadarService {
         out.put("note", "각 주체의 상위 " + topN + "개 목록을 종목코드로 맞춘 결과입니다. "
                 + "상위 " + topN + "위 밖에서 같은 방향으로 매매한 종목은 소스가 "
                 + "주지 않아 알 수 없습니다.");
+        // 한쪽이라도 요청한 기간이 아니면(예: 5거래일 요청에 기관은 Daum이 당일만 줌) 서로 다른 기간의 금액을 더한 것입니다(QA-397).
+        List<String> otherInterval = new ArrayList<>();
+        if (foreign.containsKey("requestedIntervalType")) {
+            otherInterval.add("외국인 " + intervalLabel(String.valueOf(foreign.get("intervalType"))));
+        }
+        if (institution.containsKey("requestedIntervalType")) {
+            otherInterval.add("기관 " + intervalLabel(String.valueOf(institution.get("intervalType"))));
+        }
+        if (!otherInterval.isEmpty()) {
+            out.put("warning", "요청한 기간(" + intervalLabel(intervalType) + ")이 아니라 하루치로 받은 쪽이 있습니다: "
+                    + String.join(", ", otherInterval) + ". 합계 금액은 서로 다른 기간을 더한 값이라 "
+                    + intervalLabel(intervalType) + " 누적으로 읽지 마세요.");
+        }
         if (Boolean.TRUE.equals(foreign.get("isHistorical"))
                 || Boolean.TRUE.equals(institution.get("isHistorical"))) {
             out.put("warning", "한쪽 이상이 누적 이력으로 대체됐습니다. 지금 시점의 "

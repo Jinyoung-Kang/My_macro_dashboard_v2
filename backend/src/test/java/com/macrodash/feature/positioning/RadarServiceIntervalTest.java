@@ -6,7 +6,6 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -50,7 +49,6 @@ class RadarServiceIntervalTest {
     }
 
     @Test
-    @Disabled("QA-397: 기간 요청이 하루치로 바뀌어도 응답이 요청한 기간을 그대로 내립니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-397: 기간 요청이 하루치로 바뀌면 응답의 기간은 실제 값이고, 요청 값과 경고를 함께 준다")
     void liveIntervalIsTheActualOne() throws Exception {
         CollectorClient collector = collectorGiving("""
@@ -96,7 +94,6 @@ class RadarServiceIntervalTest {
     }
 
     @Test
-    @Disabled("QA-397: 기간 요청이 하루치로 바뀌어도 교집합이 알리지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-397: 교집합의 한쪽이 요청한 기간이 아니면 경고한다")
     void consensusWarnsWhenOneSideIsNotTheRequestedInterval() throws Exception {
         CollectorClient collector = mock(CollectorClient.class);
@@ -119,7 +116,6 @@ class RadarServiceIntervalTest {
     }
 
     @Test
-    @Disabled("QA-397: 저장본의 실제 기간을 읽지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-397: 저장본에 적힌 실제 기간이 요청과 다르면(옛 저장본) 같은 표시를 한다")
     void snapshotIntervalIsTheActualOne() throws Exception {
         String name = Datasets.radarScanner("KOSPI", "외국인", "순매수", "TODAY");

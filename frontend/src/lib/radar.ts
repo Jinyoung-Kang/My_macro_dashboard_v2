@@ -1,7 +1,7 @@
 /**
  * 수급 레이더 화면의 순수 규칙 — 소스 이름·순서, 재무 패널의 행 나누기.
  */
-import type { KrFundamentalsCompany } from "./types";
+import type { KrFundamentalsCompany, RadarResponse } from "./types";
 
 /** 진단 표의 소스 이름 — 폴백 체인과 같은 이름으로. */
 export const SOURCE_LABELS: Record<string, string> = {
@@ -67,4 +67,24 @@ export function historySelection<Row extends { obsDate: string }>(
   const dateOptions = selectedDate && !dates.includes(selectedDate) ? [selectedDate, ...dates] : dates;
   const rows = (data?.rows ?? []).filter((row) => row.obsDate === selectedDate).slice(0, 30);
   return { dates, selectedDate, dateOptions, rows };
+}
+
+const INTERVAL_LABELS: Record<string, string> = { TODAY: "당일", DAYS_5: "5거래일", DAYS_20: "20거래일" };
+
+/** 조회 기간의 이름표 — 모르는 값은 그대로. */
+export function radarIntervalLabel(intervalType: string): string {
+  return INTERVAL_LABELS[intervalType] ?? intervalType;
+}
+
+/**
+ * 순위 카드의 기준 한 줄 — **응답이 밝힌** 실제 기간과 기준일("기간 당일 · 기준일 2026-11-10").
+ *
+ * 고른 기간이 아니라 응답의 `intervalType`을 씁니다. 기간(5일·20일)을 골라도 수집기가 하루치를 돌려줄 수 있어(QA-397), 고른 값만 보이면
+ * 하루치 금액을 누적으로 읽게 됩니다. 기준일은 응답에 있을 때만 적습니다(QA-396 — 당일 조회가 KRX 확정 순위의 앞 거래일 값으로 대체되면
+ * 그 날짜). 없는 날짜를 만들지 않습니다.
+ */
+export function radarBasis(response: Pick<RadarResponse, "intervalType" | "dataDate">): string {
+  const parts = [`기간 ${radarIntervalLabel(response.intervalType)}`];
+  if (response.dataDate) parts.push(`기준일 ${response.dataDate}`);
+  return parts.join(" · ");
 }

@@ -107,12 +107,16 @@ export interface RadarResponse {
   market: string;
   investor: string;
   tradeType: string;
+  /** 실제로 받은 기간. 요청과 다르면(기간 요청이 하루치로 바뀜) `requestedIntervalType`과 `warning`이 함께 옵니다. */
   intervalType: string;
+  requestedIntervalType?: string;
   readMode: string;
   source?: string | null;
   sourceKind?: string | null;
   isHistorical?: boolean;
   historyDate?: string | null;
+  /** 행의 기준일(YYYY-MM-DD) — 당일 조회가 앞 거래일 확정 순위로 대체되면 그 날짜. 출처가 밝히지 않으면 null. */
+  dataDate?: string | null;
   collectedAtKst?: string;
   ageSeconds?: number;
   stale?: boolean;

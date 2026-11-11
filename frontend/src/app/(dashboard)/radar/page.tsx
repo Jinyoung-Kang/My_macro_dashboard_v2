@@ -1,7 +1,7 @@
 "use client";
 
 import { stableCodesKey } from "@/lib/transforms";
-import { historySelection, sortBySourceOrder, sourceLabel, splitFundamentals } from "@/lib/radar";
+import { historySelection, radarBasis, radarIntervalLabel, sortBySourceOrder, sourceLabel, splitFundamentals } from "@/lib/radar";
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { knownBars } from "@/lib/chartData";
@@ -146,7 +146,7 @@ export default function RadarPage() {
             onChange={setInterval}
             options={(options.data?.intervals ?? ["TODAY"]).map((value) => ({
               value,
-              label: { TODAY: "당일", DAYS_5: "5거래일", DAYS_20: "20거래일" }[value] ?? value,
+              label: radarIntervalLabel(value),
             }))}
           />
           <Select
@@ -197,6 +197,8 @@ export default function RadarPage() {
         <>
           <Card
             title={`${investor} ${tradeType} 상위 ${data.rows?.length ?? 0}개`}
+            // 고른 기간이 아니라 응답이 밝힌 실제 기간·기준일을 적습니다(QA-396·397).
+            subtitle={radarBasis(data)}
             source={data.source ?? undefined}
             actions={
               data.sourceKind ? <SourceBadge>출처: {data.sourceKind}</SourceBadge> : undefined
