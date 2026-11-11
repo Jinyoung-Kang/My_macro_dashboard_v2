@@ -9,6 +9,7 @@ import com.macrodash.store.SessionStore;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -413,9 +414,35 @@ class SessionFilterTest {
         /** Serve를 거친 요청처럼 서버 이름은 ts.net, caddy가 붙인 X-Forwarded-For를 둡니다. */
         private Outcome send(WebConfig.SessionFilter filter, String method, String path, String cookie,
                              String... headers) throws Exception {
+            return exchange(filter, "my-macro-app.example.ts.net", null, method, path, cookie, headers);
+        }
+
+        /**
+         * 브라우저·curl이 보낸 Host 그대로 온 요청(QA-383) — 앞단 caddy는 Host를 바꾸지 않고 넘기고 X-Forwarded-Host도 그 값으로 채우므로
+         * (Tomcat은 그 값으로 서버 이름을 정함), Host 헤더와 서버 이름을 같은 값으로 둡니다.
+         */
+        private Outcome sendTo(WebConfig.SessionFilter filter, String host, String method, String path, String cookie,
+                               String... headers) throws Exception {
+            return exchange(filter, serverNameOf(host), host, method, path, cookie, headers);
+        }
+
+        /** {@code 이름[:포트]}·{@code [IPv6][:포트]}에서 이름 부분(서블릿의 serverName 모양). */
+        private static String serverNameOf(String host) {
+            if (host.startsWith("[")) {
+                return host.substring(0, host.indexOf(']') + 1);
+            }
+            int colon = host.lastIndexOf(':');
+            return colon < 0 ? host : host.substring(0, colon);
+        }
+
+        private Outcome exchange(WebConfig.SessionFilter filter, String serverName, String hostHeader, String method,
+                                 String path, String cookie, String... headers) throws Exception {
             MockHttpServletRequest request = new MockHttpServletRequest(method, path);
             request.setServletPath(path);
-            request.setServerName("my-macro-app.example.ts.net");
+            request.setServerName(serverName);
+            if (hostHeader != null) {
+                request.addHeader("Host", hostHeader);
+            }
             request.addHeader("X-Forwarded-For", "172.18.0.1");
             for (int i = 0; i < headers.length; i += 2) {
                 request.addHeader(headers[i], headers[i + 1]);
@@ -495,6 +522,71 @@ class SessionFilterTest {
                     "Tailscale-User-Login", "owner@example.invalid");
             assertThat(member.reached()).isTrue();
             assertThat(member.user().role()).isEqualTo("MEMBER");
+        }
+
+        @Test
+        @Disabled("QA-383: 신원 헤더만 맞으면 요청의 호스트를 보지 않고 운영자로 엽니다 — 비상용 포워딩이 열린 PC에서 다른 이름(DNS 리바인딩)으로 온 요청도 읽힘")
+        @DisplayName("QA-383: 허용 출처 목록에 없는 호스트로 온 요청은 신원 헤더가 맞아도 로그인 없는 요청(401) — 같은 출처 읽기라 Origin 검사는 지나감")
+        void identityNeedsAnAllowedHost() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            // 공격자 페이지(http://attacker.example:8201 — 주소가 이 서버의 포워딩 포트로 바뀜)가 자기 출처로 부르는 읽기: Origin 없음, 같은 출처.
+            for (String host : new String[]{"attacker.example:8201", "attacker.example", "localhost.attacker.example:8201",
+                    "my-macro-app.example.ts.net.attacker.example", "my-macro-app.other.ts.net", "203.0.113.5:8201",
+                    "[::1]:8201", "0.0.0.0:8201"}) {
+                for (String path : new String[]{"/api/paper/overview", "/api/status", "/api/realtrade/status"}) {
+                    Outcome outcome = sendTo(on, host, "GET", path, null, "Tailscale-User-Login", "owner@example.invalid",
+                            "Sec-Fetch-Site", "same-origin");
+                    assertThat(outcome.status()).as(host + " " + path).isEqualTo(401);
+                    assertThat(outcome.reached()).as(host + " " + path).isFalse();
+                }
+            }
+            // Host 헤더와 서버 이름(앞단이 넘긴 X-Forwarded-Host를 Tomcat이 반영한 값) 가운데 하나만 목록 밖이어도 인정하지 않습니다.
+            Outcome forgedForward = exchange(on, "localhost", "attacker.example:8201", "GET", "/api/paper/overview", null,
+                    "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(forgedForward.status()).as("Host는 공격자 이름, 서버 이름만 localhost").isEqualTo(401);
+            Outcome forgedHost = exchange(on, "attacker.example", "localhost:8201", "GET", "/api/paper/overview", null,
+                    "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(forgedHost.status()).as("Host는 localhost, 서버 이름만 공격자 이름").isEqualTo(401);
+        }
+
+        @Test
+        @DisplayName("QA-383: 허용 출처 목록의 호스트(Tailscale 주소·localhost:8201·127.0.0.1:8201)로 온 신원은 그대로 운영자 — 포트·대소문자·끝의 점은 가리지 않음")
+        void allowedHostsKeepTheIdentity() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            for (String host : new String[]{"my-macro-app.example.ts.net", "my-macro-app.example.ts.net:443",
+                    "MY-MACRO-APP.Example.TS.net", "my-macro-app.example.ts.net.", "localhost:8201", "127.0.0.1:8201",
+                    "localhost", "127.0.0.1", "LOCALHOST:8201"}) {
+                Outcome outcome = sendTo(on, host, "GET", "/api/paper/overview", null, "Tailscale-User-Login", "owner@example.invalid");
+                assertThat(outcome.reached()).as(host).isTrue();
+                assertThat(outcome.user().id()).as(host).isEqualTo(OWNER_ID);
+                assertThat(outcome.user().isLocalOwner()).as(host).isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("QA-383: 비상 끄기 절차의 curl(서버 셸 → 루프백 caddy, Host 127.0.0.1:8201 + Origin http://localhost:8201)은 그대로 운영자 쓰기")
+        void emergencyDisableFromTheServerShellStillWorks() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            Outcome disable = sendTo(on, "127.0.0.1:8201", "POST", "/api/realtrade/disable", null,
+                    "Tailscale-User-Login", "owner@example.invalid", "Origin", "http://localhost:8201",
+                    "Content-Type", "application/json");
+            assertThat(disable.reached()).isTrue();
+            assertThat(disable.user().id()).isEqualTo(OWNER_ID);
+            Outcome read = sendTo(on, "127.0.0.1:8201", "GET", "/api/manual/isa", null, "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(read.reached()).as("같은 절의 읽기 curl(Origin 없음)").isTrue();
+        }
+
+        @Test
+        @DisplayName("QA-383: 목록 밖 호스트여도 세션 쿠키 로그인은 그대로 — 신원만 보지 않을 뿐 요청을 막지 않음")
+        void sessionCookieStillWorksOnOtherHosts() throws Exception {
+            WebConfig.SessionFilter on = filter("owner@example.invalid");
+            Outcome member = sendTo(on, "attacker.example:8201", "GET", "/api/macro/overview", "member-cookie",
+                    "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(member.reached()).isTrue();
+            assertThat(member.user().role()).as("쿠키의 사용자 — 운영자로 올리지 않음").isEqualTo("MEMBER");
+            Outcome memberOnOwnerPath = sendTo(on, "attacker.example:8201", "GET", "/api/paper/overview", "member-cookie",
+                    "Tailscale-User-Login", "owner@example.invalid");
+            assertThat(memberOnOwnerPath.status()).as("운영자 경로는 쿠키 사용자의 역할대로 403").isEqualTo(403);
         }
     }
 

@@ -4,6 +4,7 @@ import com.macrodash.config.AppProperties;
 import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -289,6 +290,33 @@ class AuthControllerTest {
         guest.addHeader(TailnetLogin.HEADER, "guest@example.invalid");
         assertThat(tailnet.session(guest)).containsEntry("authenticated", false).containsEntry("noLogin", false);
         assertThat(controller.session(owner)).as("기능이 꺼진 컨트롤러는 헤더를 보지 않음").containsEntry("authenticated", false);
+    }
+
+    @Test
+    @Disabled("QA-383: 세션 응답도 요청의 호스트를 보지 않고 신원 헤더만으로 운영자를 돌려줍니다")
+    @DisplayName("QA-383: 허용 출처 목록에 없는 호스트로 온 세션 조회는 신원 헤더가 맞아도 로그인 모드 — 목록의 호스트면 지금처럼 운영자")
+    void tailnetOwnerSessionNeedsAnAllowedHost() {
+        AppProperties props = new AppProperties();
+        props.setFrontendOrigin("http://localhost:8201,http://127.0.0.1:8201,https://my-macro-app.example.ts.net");
+        props.setFrontendPort(8201);
+        props.setTailnetOwnerLogin("owner@example.invalid");
+        AuthController tailnet = controller(db.service(props), props);
+
+        MockHttpServletRequest rebound = new MockHttpServletRequest();
+        rebound.setServerName("attacker.example");
+        rebound.addHeader("Host", "attacker.example:8201");
+        rebound.addHeader(TailnetLogin.HEADER, "owner@example.invalid");
+        Map<String, Object> refused = tailnet.session(rebound);
+        assertThat(refused).containsEntry("authenticated", false).containsEntry("noLogin", false).containsEntry("ownerMissing", false);
+        assertThat(refused).doesNotContainKey("user");
+
+        for (String host : new String[]{"my-macro-app.example.ts.net", "localhost:8201", "127.0.0.1:8201"}) {
+            MockHttpServletRequest allowed = new MockHttpServletRequest();
+            allowed.setServerName(host.replaceAll(":\\d+$", ""));
+            allowed.addHeader("Host", host);
+            allowed.addHeader(TailnetLogin.HEADER, "owner@example.invalid");
+            assertThat(tailnet.session(allowed)).as(host).containsEntry("authenticated", true).containsEntry("noLogin", true);
+        }
     }
 
     private AuthController controller(AuthService auth, AppProperties props) {
