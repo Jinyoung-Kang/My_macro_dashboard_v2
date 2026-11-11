@@ -4,7 +4,7 @@ tests/test_info_sources.py
 
 고정하는 규칙
   1. 피드에 본문이 있으면 그 본문을 쓰고 글 페이지를 열지 않습니다(출처 부하가 가장 적음).
-  2. 본문이 없거나 짧은 글만 글 페이지를 열고, 최근 7일 글만, 실행 한 번에 최대 4건, 한 글에 두 번까지입니다.
+  2. 본문이 없거나 짧은 글만 글 페이지를 열고, 최근 7일 글만, 실행 한 번에 최대 6건(ADR 0037에서 4 → 6), 한 글에 두 번까지입니다.
   3. 이미 본문까지 받은 글은 다시 받지 않고, 30일보다 오래된 글은 넣지 않습니다.
   4. 피드에서 글을 하나도 읽지 못하면 '형식 바뀜'이고, 304면 '바뀐 것 없음'으로 끝납니다.
   5. 글 페이지가 거부되면 그때까지 받은 글은 넣고 거부를 올립니다.
@@ -96,8 +96,8 @@ def test_피드에_본문이_있으면_글_페이지를_열지_않는다(store, 
     assert "피드 본문 2" in detail
 
 
-def test_본문이_없는_최근_글만_글_페이지를_열고_실행당_네_건까지(store, example_host):
-    items = [_item(n, days_ago=n * 0.1, content=None) for n in range(1, 7)] + [_item(9, days_ago=10, content=None)]
+def test_본문이_없는_최근_글만_글_페이지를_열고_실행당_상한까지(store, example_host):
+    items = [_item(n, days_ago=n * 0.1, content=None) for n in range(1, 9)] + [_item(9, days_ago=10, content=None)]
     routes = {BLOG.feed: _feed(*items)}
     routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": _page(n) for n in range(1, 10)})
     fetch = FakeFetch(routes)
@@ -108,7 +108,8 @@ def test_본문이_없는_최근_글만_글_페이지를_열고_실행당_네_�
     assert all("post-9" not in url for url in fetch.pages()), "7일보다 오래된 글은 페이지를 열지 않습니다"
     newest = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))
     assert newest["body_status"] == "full" and "Second paragraph of post 1" in newest["body"]
-    left = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-6/"))
+    assert info_blogs.PAGE_FETCHES_PER_RUN == 6
+    left = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-8/"))
     assert left["body_status"] == "partial" and left["body"] == "Short teaser.", "못 연 글은 피드 요약으로 둡니다"
 
 
@@ -215,5 +216,5 @@ def test_모든_출처_호스트는_정책_표에_있고_브라우저_계층으�
 def test_정보_수집_태스크는_모두_polite이고_이름이_겹치지_않는다():
     names = [task.name for task in registry.ALL_TASKS if task.name.startswith("info_")]
 
-    assert len(names) == len(set(names)) == len(info_blogs.BLOGS) + 5
+    assert len(names) == len(set(names)) == len(info_blogs.BLOGS) + 6
     assert all(registry.TASKS_BY_NAME[name].speed == "polite" for name in names)

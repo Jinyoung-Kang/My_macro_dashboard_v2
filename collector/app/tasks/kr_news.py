@@ -9,7 +9,7 @@ slow 그룹 — 모의 매매 한국 책 Claude 계좌 패킷 ``11b_events``의 
 
 [저장]
   observations ``kr_news_headline`` : entity = 정규화한 제목의 해시(services.news.title_entity), obs_date = 발행 KST 날짜,
-      payload {title, link, source, feed, feeds, publishedAt, publishedDate, timePrecision, knownAt, fetchedAt}.
+      payload {title, link, source, feed, feeds, publishedAt, publishedDate, timePrecision, knownAt, fetchedAt, summary(피드가 줄 때만)}.
       publishedAt = 원문 발행 시각(ISO UTC, 날짜만 있는 피드는 null) · publishedDate = KST 날짜 · timePrecision = second|minute|date ·
       knownAt = '알 수 있는 시각'(아래, ISO UTC) · fetchedAt = 처음 받은 시각(ISO UTC). feed·source·link는 처음 실어 온 피드의 것.
   스냅샷 ``kr.news.headlines.status`` : 미국 news.headlines.status와 같은 칸 + 피드별 timeFormat·skippedBadTime.
@@ -139,6 +139,8 @@ def task_kr_news_headlines() -> str:
                 "knownAt": known.isoformat(timespec="seconds"),
                 "fetchedAt": stamp,
             }
+            if item.get("summary"):
+                payload["summary"] = item["summary"]      # 피드가 준 요약(정보 수집 화면용 — 패킷은 읽지 않음, ADR 0037)
             taken[entity] = payload
             rows.append((day, entity, payload))
             counts["new"] += 1

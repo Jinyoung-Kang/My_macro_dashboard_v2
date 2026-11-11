@@ -11,6 +11,7 @@ from .econ_calendar import task_econ_calendar_tradingview
 from .filings import task_sec_13f, task_sec_13f_track_record
 from .info import (
     blog_task, task_info_krx_daily, task_info_naver_flows, task_info_waedge_blogs, task_info_waedge_brief, task_info_waedge_people,
+    task_info_wire_financialjuice,
 )
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
@@ -102,6 +103,7 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("info_waedge_brief", "polite", task_info_waedge_brief, "정보 수집 — waedge 시장 글·본문 (1~3시간에 한 번, 운영자 화면 전용)"),
     Task("info_waedge_people", "polite", task_info_waedge_people, "정보 수집 — waedge 거장 견해·글 (8~16시간에 한 번, 운영자 화면 전용)"),
     Task("info_waedge_blogs", "polite", task_info_waedge_blogs, "정보 수집 — waedge 해외 블로그 한국어 제목 (4~8시간에 한 번, 운영자 화면 전용)"),
+    Task("info_wire_financialjuice", "polite", task_info_wire_financialjuice, "정보 수집 — Financial Juice 속보 RSS 제목·링크·시각 (25~70분에 한 번, 운영자 화면 전용)"),
     Task("info_naver_flows", "polite", task_info_naver_flows, "정보 수집 — 네이버 투자자별 매매동향·외국인·기관 매매상위 (정규장 40~90분·장 밖 3~6시간, 운영자 화면 전용)"),
     Task("info_krx_daily", "polite", task_info_krx_daily, "정보 수집 — KRX 정보데이터시스템(로그인) 투자자별 순매수 상위·시장 합계·외국인 보유·공매도 (거래일 18:30 뒤 하루 한 번, 레이더·정보 수집 화면)"),
 )

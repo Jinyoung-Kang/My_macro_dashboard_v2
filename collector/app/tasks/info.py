@@ -6,6 +6,7 @@ polite 속도군 — 정보 수집(ADR 0035). 운영자 화면 '정보 수집'(/
 [info_waedge_brief] waedge 시장 글 목록 + 새 글 본문 → info_items (source waedge.brief)
 [info_waedge_people] waedge 거장 견해 → 스냅샷 info.waedge.gurus, 같은 화면의 글 → info_items (source waedge.people)
 [info_waedge_blogs] waedge 해외 블로그의 한국어 제목 → 원문 글 행의 title_ko
+[info_wire_financialjuice] Financial Juice 속보 RSS(ADR 0037) → info_items (source wire.financialjuice, kind headline — 제목·링크·시각, 본문 없음)
 [info_naver_flows] 네이버 투자자별 매매동향·외국인·기관 매매상위 → 스냅샷 info.naver.flows
 [info_krx_daily] KRX 정보데이터시스템(로그인, ADR 0036) — 기준일의 투자자별 순매수 상위 → 관측치 krx_investor_rank(레이더가 읽음),
                  시장 합계·외국인 보유·공매도 거래·잔고 → 스냅샷 info.krx.daily. 거래일 18:30 뒤 그날 것을 한 번, 이미 받은 날은 외부 호출 없이 끝.
@@ -21,7 +22,7 @@ from typing import Callable
 
 from .. import catalog, kst, krcalendar, store
 from ..fetch import ladder
-from ..services import info_blogs, info_naver, info_waedge, krx_data
+from ..services import info_blogs, info_naver, info_waedge, info_wire, krx_data
 from ..services.info_text import ShapeError
 from . import polite
 
@@ -38,6 +39,9 @@ NAVER_SESSION_CADENCE = polite.Cadence(low_minutes=40, high_minutes=90)
 NAVER_OFF_CADENCE = polite.Cadence(low_minutes=180, high_minutes=360)
 NAVER_HOLIDAY_CADENCE = polite.Cadence(low_minutes=480, high_minutes=900)
 NAVER_SESSION = (time(8, 50), time(15, 40))
+# Financial Juice 속보 — 피드가 최근 100건(한산할 때 약 11시간, 바쁠 때도 한두 시간 분량)이라 25~70분에 한 번이면 빠지지 않습니다.
+WIRE_TASK = info_wire.TASK
+WIRE_CADENCE = polite.Cadence(low_minutes=25, high_minutes=70)
 KRX_TASK = "info_krx_daily"
 # 받을 것이 없으면(이미 받은 날·쉬는 날) 외부를 부르지 않고 끝나므로 자주 깨도 출처 부하가 없습니다.
 KRX_CADENCE = polite.Cadence(low_minutes=120, high_minutes=300)
@@ -113,6 +117,12 @@ def task_info_waedge_blogs() -> str:
         info_waedge.store_blog_titles(rows, fetch_tier=page.tier)
         return f"waedge 해외 블로그 한국어 제목 {len(rows)}건 · 계층 {page.tier}"
     return polite.scheduled(WAEDGE_BLOGS_TASK, WAEDGE_BLOGS_CADENCE, _shape(work))
+
+
+# ------------------------------------------------------------------ 속보
+def task_info_wire_financialjuice() -> str:
+    """Financial Juice 속보 RSS → info_items(제목·링크·시각)."""
+    return polite.scheduled(WIRE_TASK, WIRE_CADENCE, _shape(lambda: info_wire.collect()))
 
 
 # ------------------------------------------------------------------ 네이버
@@ -304,6 +314,7 @@ def cadences() -> list[dict]:
     out += [row(blog.task, polite.Cadence(blog.minutes[0], blog.minutes[1])) for blog in info_blogs.BLOGS]
     out += [row(WAEDGE_BRIEF_TASK, WAEDGE_BRIEF_CADENCE), row(WAEDGE_PEOPLE_TASK, WAEDGE_PEOPLE_CADENCE),
             row(WAEDGE_BLOGS_TASK, WAEDGE_BLOGS_CADENCE),
+            row(WIRE_TASK, WIRE_CADENCE, "피드 한 번에 최근 100건 — 제목·링크·시각만(본문 없는 출처)"),
             row(NAVER_TASK, NAVER_SESSION_CADENCE,
                 f"정규장(거래일 08:50~15:40) {NAVER_SESSION_CADENCE.low_minutes:.0f}~{NAVER_SESSION_CADENCE.high_minutes:.0f}분 · "
                 f"장 밖 {NAVER_OFF_CADENCE.low_minutes:.0f}~{NAVER_OFF_CADENCE.high_minutes:.0f}분 · "

@@ -226,5 +226,5 @@ def test_패킷이_읽는_저장본_이름과_겹치지_않는다():
 def test_운영_정책은_계층_1만_쓰고_하루_12건():
     rules = policy.policy_for(tv_calendar.HOST)
 
-    assert rules.tiers == (policy.TIER_IMPERSONATE,) and rules.daily_budget == 12
+    assert rules.tiers == (policy.TIER_IMPERSONATE,) and rules.daily_budget == 30
     assert tv_calendar.URL.startswith(f"https://{tv_calendar.HOST}/")

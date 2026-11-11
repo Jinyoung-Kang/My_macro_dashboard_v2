@@ -250,7 +250,7 @@ def test_메커니즘_응답은_스위치_정책_간격을_싣고_외부를_부�
 
     assert body["politeEnabled"] is True and body["giveUpLevel"] == policy.GIVE_UP_LEVEL
     hosts = {row["host"]: row for row in body["hosts"]}
-    assert hosts["data.krx.co.kr"]["tiers"] == ["impersonate"] and hosts["news.waedge.ai"]["dailyBudget"] == 80
+    assert hosts["data.krx.co.kr"]["tiers"] == ["impersonate"] and hosts["news.waedge.ai"]["dailyBudget"] == 200
     cadences = {row["task"]: row for row in body["cadences"]}
     assert {"info_krx_daily", "info_naver_flows", "econ_calendar_tradingview", "info_blog_wolfstreet"} <= set(cadences)
     assert body["browser"]["configured"] is False and body["browser"]["pressCheckbox"] is None

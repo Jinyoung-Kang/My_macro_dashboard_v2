@@ -37,7 +37,7 @@ MAX_AGE_DAYS = 30
 # 글 페이지를 열어 볼 만큼 새로운 글(일).
 PAGE_MAX_AGE_DAYS = 7
 # 한 번 실행에서 여는 글 페이지 수의 상한과, 한 글에 페이지를 여는 횟수의 상한(404 등으로 계속 실패하는 글을 매번 다시 열지 않게).
-PAGE_FETCHES_PER_RUN = 4
+PAGE_FETCHES_PER_RUN = 6
 PAGE_TRIES_PER_ITEM = 2
 # 피드의 글이 이만큼은 돼야 본문으로 봅니다(Blogger처럼 요약 칸에 본문 전체를 싣는 피드도 같은 기준).
 FEED_BODY_MIN_CHARS = info_text.MIN_BODY_CHARS

@@ -1586,6 +1586,12 @@ def info_known(ids: Sequence[str]) -> dict[str, dict]:
     return {r["id"]: {"body_status": r["body_status"], "page_tries": int(r["page_tries"])} for r in rows}
 
 
+def info_source_exists(source: str) -> bool:
+    """그 출처의 글이 하나라도 있는가(속보 피드의 '누락 가능' 판단 — 첫 수집과 구분)."""
+    with connection() as conn:
+        return conn.execute("SELECT 1 FROM info_items WHERE source = %s LIMIT 1", (source,)).fetchone() is not None
+
+
 def upsert_info_items(items: Iterable[dict]) -> int:
     """
     글을 넣거나 채웁니다 → 보낸 행 수.

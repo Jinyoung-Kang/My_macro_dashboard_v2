@@ -691,3 +691,35 @@ def test_상태_스냅샷이_없으면_누락_데이터셋으로_보인다(store
     assert catalog.SNAP_NEWS_STATUS in {entry["name"] for entry in store.missing_datasets()}
     task_module.task_news_headlines()
     assert catalog.SNAP_NEWS_STATUS not in {entry["name"] for entry in store.missing_datasets()}
+
+
+# ==============================================================================
+# 피드가 준 요약(ADR 0037 — 정보 수집 화면의 팝업용, 패킷은 읽지 않음)
+# ==============================================================================
+def test_피드가_준_요약은_글자만_남기고_제목과_같거나_없으면_넣지_않는다():
+    rss = ('<?xml version="1.0"?><rss version="2.0"><channel><title>x</title>'
+           '<item><title>Fed holds rates</title><link>https://example.com/a</link>'
+           '<pubDate>Wed, 11 Nov 2026 03:00:00 GMT</pubDate>'
+           '<description><![CDATA[<p>The Committee decided to <b>maintain</b> the target range.</p>]]></description></item>'
+           '<item><title>Same words</title><link>https://example.com/b</link>'
+           '<pubDate>Wed, 11 Nov 2026 02:00:00 GMT</pubDate><description>same  WORDS</description></item>'
+           '<item><title>No description</title><link>https://example.com/c</link>'
+           '<pubDate>Wed, 11 Nov 2026 01:00:00 GMT</pubDate></item>'
+           '</channel></rss>').encode("utf-8")
+
+    items = svc.parse_feed(rss).items
+
+    assert items[0]["summary"] == "The Committee decided to maintain the target range."
+    assert "summary" not in items[1] and "summary" not in items[2], "없는 요약을 만들지 않습니다"
+
+
+def test_긴_요약은_상한에서_자른다():
+    long = "word " * 1000
+    rss = ('<?xml version="1.0"?><rss version="2.0"><channel><title>x</title>'
+           f'<item><title>Long one</title><link>https://example.com/a</link>'
+           f'<pubDate>Wed, 11 Nov 2026 03:00:00 GMT</pubDate><description>{long}</description></item>'
+           '</channel></rss>').encode("utf-8")
+
+    summary = svc.parse_feed(rss).items[0]["summary"]
+
+    assert svc.MAX_SUMMARY_CHARS - 5 <= len(summary) <= svc.MAX_SUMMARY_CHARS + 1 and summary.endswith("…")

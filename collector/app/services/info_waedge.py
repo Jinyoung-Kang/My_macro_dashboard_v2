@@ -35,8 +35,8 @@ PEOPLE_URL = BASE + "s/people.html"
 BLOGS_URL = BASE + "s/blogs.html"
 SOURCE_LABEL = "WAEDGE NEWS"
 
-BRIEF_BODIES_PER_RUN = 5
-PEOPLE_BODIES_PER_RUN = 3
+BRIEF_BODIES_PER_RUN = 8
+PEOPLE_BODIES_PER_RUN = 5
 
 _ARTICLE_HREF = re.compile(r"^(?:\.\./|/)?a/(\d+)\.html$")
 _STANCE = re.compile(r"(강세|중립|약세)\s*([+-]?\d+)")

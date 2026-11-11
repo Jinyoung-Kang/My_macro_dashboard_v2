@@ -7,7 +7,7 @@ slow 그룹 — 모의 매매(운영자 전용 기능) Claude 계좌 패킷 섹�
 
 [저장]
   observations ``news_headline`` : entity = 정규화한 제목의 해시(services.news.title_entity), obs_date = 발행 시각의 UTC 날짜,
-                                   payload {title, link, source, feed, feeds, publishedAt, fetchedAt} — 시각은 ISO UTC, fetchedAt은 처음
+                                   payload {title, link, source, feed, feeds, publishedAt, fetchedAt, summary(피드가 줄 때만)} — 시각은 ISO UTC, fetchedAt은 처음
                                    받은 시각. feed·source·link는 처음 실어 온 피드의 것, feeds는 그 제목을 실어 온 피드 키 전부(처음 것부터).
   스냅샷 ``news.headlines.status`` : generatedAt(이번 수집 시각, UTC)·feedsOk·feedsTotal·failedFeeds[{feed, source, reason}]·
                                    stored7d(보관 중인 헤드라인 수)·insertedThisRun·deletedThisRun·maybeMissed·retentionDays·
@@ -127,6 +127,8 @@ def task_news_headlines() -> str:
                 "publishedAt": published.isoformat(timespec="seconds"),
                 "fetchedAt": stamp,
             }
+            if item.get("summary"):
+                payload["summary"] = item["summary"]      # 피드가 준 요약(정보 수집 화면용 — 패킷은 읽지 않음, ADR 0037)
             taken[entity] = payload
             rows.append((published.date(), entity, payload))
             counts["new"] += 1

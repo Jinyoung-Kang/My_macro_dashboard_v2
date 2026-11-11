@@ -29,6 +29,8 @@ public final class InfoSources {
     /** 글 출처의 종류 — 글 목록 거름(블로그·waedge)에 씁니다. */
     public static final String BLOG = "blog";
     public static final String WAEDGE = "waedge";
+    /** 속보 한 줄(Financial Juice — 제목·링크·시각, 본문 없는 출처. ADR 0037). */
+    public static final String WIRE = "wire";
 
     /** 접근 방식 — 공식 API·비공식 공개 경로·차단 통과 계층(polite)·외부 호출 없음·보류. */
     public static final String OFFICIAL = "official";
@@ -46,7 +48,7 @@ public final class InfoSources {
      * @param task    수집기 태스크 이름(collector_task_runs·fetch_source_state의 task)
      * @param key     글 출처 키(info_items.source) 또는 그에 준하는 이름
      * @param tab     정보 수집 화면의 탭({@link #TABS})
-     * @param kind    종류(blog·waedge·naver·krx·calendar·rss·data·internal·deferred)
+     * @param kind    종류(blog·waedge·wire·naver·krx·calendar·rss·data·internal·deferred)
      * @param siteUrl 출처 링크(없으면 빈 글)
      * @param origin  자료를 내는 곳
      * @param access  접근 방식({@link #OFFICIAL} 등)
@@ -118,6 +120,7 @@ public final class InfoSources {
             new Source("info_waedge_brief", "waedge.brief", "waedge 시장", "news", "waedge", "https://news.waedge.ai/s/brief.html", "WAEDGE NEWS", "bypass", "/info/news"),
             new Source("info_waedge_people", "waedge.people", "waedge 거장", "news", "waedge", "https://news.waedge.ai/s/people.html", "WAEDGE NEWS", "bypass", "/info/news"),
             new Source("info_waedge_blogs", "waedge.blogs", "waedge 해외 블로그(한국어 제목)", "news", "waedge", "https://news.waedge.ai/s/blogs.html", "WAEDGE NEWS", "bypass", "/info/news"),
+            new Source("info_wire_financialjuice", "wire.financialjuice", "Financial Juice 속보", "news", "wire", "https://www.financialjuice.com/home", "Financial Juice", "bypass", "/info/news"),
             new Source("info_naver_flows", "naver.flows", "네이버 투자자별 매매동향·매매상위", "kr", "naver", "https://stock.naver.com/market/stock/kr/trend/trader", "네이버 증권", "bypass", "/info/kr"),
             new Source("info_krx_daily", "krx.daily", "KRX 정보데이터시스템(로그인)", "kr", "krx", "https://data.krx.co.kr/", "한국거래소 정보데이터시스템", "bypass", "/info/kr"),
             new Source("saveticker", "saveticker.news", "saveticker 뉴스(보류)", "news", "deferred", "https://www.saveticker.com/news", "SAVE(Fivelines)", "deferred", null));

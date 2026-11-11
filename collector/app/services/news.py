@@ -128,6 +128,9 @@ MAX_FEED_BYTES = 5 * 1024 * 1024
 # 본문을 나눠 받는 단위(바이트). 피드 하나는 보통 한두 조각입니다.
 READ_CHUNK_BYTES = 64 * 1024
 
+# 피드가 준 요약(description·summary·content)을 글자만 남겨 이만큼까지 둡니다(ADR 0037 — 정보 수집 화면의 팝업용, 패킷은 읽지 않음).
+MAX_SUMMARY_CHARS = 2000
+
 # 제목 길이 상한(글자). 헤드라인은 길어야 200자 안팎이라, 넘으면 요약문이 제목 칸에 들어온 것으로 보고 자릅니다.
 MAX_TITLE_CHARS = 300
 
@@ -260,6 +263,9 @@ def parse_feed(content: bytes, content_type: str | None = None, feed: Feed | Non
             out.no_title += 1
             continue
         item = {"entity": title_entity(title), "title": title, "link": _link(entry.get("link"))}
+        summary = entry_summary(entry, title)
+        if summary:
+            item["summary"] = summary
         if time_format is None:
             published = _entry_time(entry)
             if published is None:
@@ -338,6 +344,24 @@ def normalise_title(text) -> str:
     if len(collapsed) > MAX_TITLE_CHARS:
         collapsed = collapsed[:MAX_TITLE_CHARS].rstrip() + "…"
     return collapsed
+
+
+def entry_summary(entry, title: str) -> str | None:
+    """
+    피드 항목이 실은 요약 글(HTML은 글자만) — 본문 칸(content)이 더 길면 그것. 없거나 제목과 같으면 None(지어내지 않음).
+    ``MAX_SUMMARY_CHARS``를 넘으면 자르고 '…'를 붙입니다. 글 페이지를 따로 열지 않습니다(출처에 요청을 더하지 않음).
+    """
+    from . import info_text      # bs4를 쓰는 모듈이라 필요할 때만
+
+    best = info_text.html_to_text(entry.get("summary") if isinstance(entry.get("summary"), str) else None)
+    for content in entry.get("content") or []:
+        text = info_text.html_to_text(content.get("value") if isinstance(content, dict) else None)
+        if len(text) > len(best):
+            best = text
+    best = best.strip()
+    if not best or " ".join(best.split()).casefold() == " ".join(title.split()).casefold():
+        return None
+    return best if len(best) <= MAX_SUMMARY_CHARS else best[:MAX_SUMMARY_CHARS].rstrip() + "…"
 
 
 def title_entity(title: str) -> str:
