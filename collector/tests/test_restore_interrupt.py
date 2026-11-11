@@ -68,7 +68,6 @@ def _calls(log: Path) -> list[str]:
     return log.read_text(encoding="utf-8").splitlines()
 
 
-@pytest.mark.xfail(strict=True, reason="QA-370: 출력이 닫힌 채 끊기면 EXIT trap의 첫 echo가 실패해 서비스를 다시 켜지 못합니다")
 def test_QA370_복원_도중_출력이_닫히고_HUP을_받아도_멈춘_서비스를_다시_켠다(restore_env):
     env, log, dump = restore_env
     # 파이썬은 SIGPIPE를 무시합니다. restore_signals=False로 그 상태를 물려주면 닫힌 출력에 쓰는 echo가 신호로 죽지 않고 오류(EPIPE)로
@@ -112,3 +111,17 @@ def test_복원이_끝나면_멈춘_서비스를_다시_켠다(restore_env):
     restore = next(i for i, call in enumerate(calls) if " exec -T postgres psql " in f" {call} ")
     assert stop < restore < start, calls
     assert "복원했습니다" in result.stdout and "다시 켭니다: collector backend" in result.stdout
+
+
+def test_QA370_다시_켜기가_실패하면_경고를_남긴다(restore_env):
+    """다시 켜기의 출력은 버리지만(닫힌 출력에 쓰지 않게) 실패는 알립니다."""
+    env, log, dump = restore_env
+    docker = Path(env["PATH"].split(os.pathsep)[0]) / "docker"
+    docker.write_text(docker.read_text(encoding="utf-8").replace(
+        'case " $* " in\n', 'case " $* " in\n    *" compose start "*) echo "boom" >&2; exit 1 ;;\n', 1), encoding="utf-8")
+
+    result = subprocess.run(["bash", str(RESTORE), str(dump), "--yes"], cwd=ROOT, env=env, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+
+    assert "compose start collector backend" in _calls(log)
+    assert "서비스를 다시 켜지 못했습니다" in result.stderr

@@ -81,11 +81,17 @@ if [ -n "$DB_EXEC" ]; then
         fi
     done
 fi
+# 끝날 때(성공·실패·끊김) 한 번 돕니다. 출력이 닫혔거나 신호를 받아도 다시 켜기에 닿아야 합니다(QA-370): 복원 중 터미널이 닫히면 안내 줄의
+# echo가 닫힌 출력에 쓰다 실패해(set -e) 그 아래 docker compose start를 건너뛰었고, compose stop으로 멈춘 서비스는 자동으로 다시 뜨지 않습니다.
+# 그래서 여기서는 끊김 신호를 무시하고(HUP·PIPE·INT·TERM — 대화형 셸이 HUP을 한 번 더 보내거나 닫힌 파이프에 쓸 때), set -e를 풀고,
+# 안내 줄의 실패를 넘기고, docker의 출력도 닫힌 곳에 쓰지 않게 버립니다.
 restart_services() {
+    trap '' HUP PIPE INT TERM
+    set +e
     if [ -n "$stopped" ]; then
-        echo "3/3 멈췄던 서비스를 다시 켭니다:$stopped"
+        echo "3/3 멈췄던 서비스를 다시 켭니다:$stopped" 2>/dev/null || true
         # shellcheck disable=SC2086
-        docker compose start $stopped >/dev/null || echo "경고: 서비스를 다시 켜지 못했습니다. make up으로 켜세요." >&2
+        docker compose start $stopped >/dev/null 2>&1 || echo "경고: 서비스를 다시 켜지 못했습니다. make up으로 켜세요." >&2 || true
     fi
 }
 trap restart_services EXIT
