@@ -709,6 +709,45 @@ class PaperCheckpointJobTest {
         assertThat(row(E).status()).isEqualTo(PaperBooks.CHECKPOINT_DONE);
     }
 
+    /** 운영자 초기화가 장부에 하는 일(PaperAdminService.reset) — 그 계좌의 결정·주문·계획·보유를 지우고 시작 전 현금 계좌로. */
+    private void resetBook() {
+        store.resetBook(PaperBooks.CLAUDE2);
+        store.updateBookStatus(PaperBooks.CLAUDE2, PaperBooks.NOT_STARTED);
+        store.states.put(PaperBooks.CLAUDE2, new BookState(PaperBooks.CLAUDE2, 100_000, 100_000, 0, 0, null, null, null, null));
+    }
+
+    @Test
+    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
+    @DisplayName("QA-286 호출하는 사이 계좌2를 초기화하면 비운 계좌에 리셋 전 결정 행을 남기지 않음 — KEEP 응답 + 초기화, REPLACE 응답 + 초기화 뒤 다시 "
+            + "출발 모두 결정 행·주문 없음(과금된 호출은 사용량에만), 작업 기록에 사유")
+    void resetDuringCallLeavesNoRows() {
+        universe();
+        duringCall.set(this::resetBook);
+
+        PaperCheckpointJob.Outcome keep = runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        assertThat(sent).hasSize(1);
+        assertThat(store.decisions.values()).as("비운 계좌에 결정 행 없음").noneMatch(d -> PaperBooks.CLAUDE2.equals(d.bookCode()));
+        assertThat(keep.changes().values()).anySatisfy(change -> assertThat(change).startsWith("RESET_DURING_CALL"));
+        assertThat(store.apiUsage(LocalDate.of(2026, 11, 3)).map(ApiUsage::calls)).as("과금된 호출은 사용량에 남음").contains(1);
+
+        // 다시 출발한 계좌 — 새 아침 결정과 새 예약. 그 호출 사이에 초기화 뒤 또 출발하면(새 결정 행) 옛 응답은 버림.
+        book(PaperBooks.ACTIVE);
+        plan(E, LocalTime.of(10, 0), "MINUTE", List.of("AAA"), morning(D));
+        answer = ok(reply("REPLACE", checkpointOrder("CCC", "BUY", 3.0, null, "MARKET")));
+        duringCall.set(() -> {
+            resetBook();
+            book(PaperBooks.ACTIVE);
+            morning(D);
+        });
+
+        runAt(job(true), T.plus(Duration.ofMinutes(4)));
+
+        assertThat(sent).hasSize(2);
+        assertThat(store.decisionFor(PaperBooks.CLAUDE2, D, RuleBookService.CHECKPOINT)).as("옛 예약의 응답은 새 계좌의 결정이 아님").isEmpty();
+        assertThat(store.ordersOf(PaperBooks.CLAUDE2)).as("다시 출발한 계좌에 옛 응답의 주문 없음").isEmpty();
+    }
+
     @Test
     @DisplayName("KEEP은 아무것도 바꾸지 않음 — 대기 주문 그대로·새 주문 없음, 결정 NO_TRADE + action KEEP, 예상 상태만 기록")
     void keepChangesNothing() {

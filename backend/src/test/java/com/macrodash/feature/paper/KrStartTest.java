@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -754,6 +755,66 @@ class KrStartTest {
         assertThat(cp.packet().path("1_basis").path("variant").isMissingNode()).as("끈 판 — 판 표시 없음").isTrue();
     }
 
+    /** 운영자 초기화가 장부에 하는 일(PaperAdminService.reset) — 그 계좌의 결정·주문·계획·보유를 지우고 시작 전 현금 계좌로. */
+    private void resetKrBook(String code) {
+        store.resetBook(code);
+        store.updateBookStatus(code, PaperBooks.NOT_STARTED);
+        store.states.put(code, new com.macrodash.store.PaperStore.BookState(code, 100_000_000, 100_000_000, 0, 0, null, null, null, null));
+    }
+
+    /** 초기화 뒤 다시 출발한 계좌 — 운용 중, 같은 기준 거래일의 새 밤 결정 행(새 번호). */
+    private void restartKrBook(String code) {
+        store.updateBookStatus(code, PaperBooks.ACTIVE);
+        store.insertDecisionIfAbsent(new Decision(0, code, NEXT, RuleBookService.SCHEDULED, null, "OK", "claude-test", 1,
+                store.settings.version(), null, 40.0, null, null, null, PaperFixtures.MAPPER.createObjectNode(), null, null, null, false,
+                null, 0)).orElseThrow();
+    }
+
+    @Test
+    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
+    @DisplayName("QA-286 한국 장중 확인 — 호출하는 사이 계좌2를 초기화하면 비운 계좌에 리셋 전 결정 행을 남기지 않음(KEEP 응답 + 초기화). 과금된 호출은 "
+            + "사용량에만")
+    void krCheckpointResetDuringCallLeavesNoDecision() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake, KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1000));
+        PaperKrCheckpointJob checkpoint = checkpointJob();
+        int calls = fake.requests.size();
+        watchKr(kst("2026-12-02T11:00:40"));
+        fake.answer(KEEP);
+        fake.duringCall = () -> resetKrBook(PaperBooks.KR_CLAUDE2);
+        clock.set(kst("2026-12-02T11:04"));
+
+        var outcome = checkpoint.run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        assertThat(store.decisions.values()).as("비운 계좌에 결정 행 없음").noneMatch(d -> PaperBooks.KR_CLAUDE2.equals(d.bookCode()));
+        assertThat(outcome.changes().values()).anySatisfy(change -> assertThat(change).startsWith("RESET_DURING_CALL"));
+    }
+
+    @Test
+    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
+    @DisplayName("QA-286 한국 장중 확인 — 호출하는 사이 초기화 뒤 다시 출발한 계좌2에 옛 예약의 REPLACE 응답을 적용하지 않음(결정 행·주문 없음)")
+    void krCheckpointResetAndRestartDuringCallAppliesNothing() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        krClaude2NightWithCheckpoint(fake, KrClaudeFixtures.claude2Order("005930", "BUY", 8.0, null, PaperBooks.AT_1400));
+        PaperKrCheckpointJob checkpoint = checkpointJob();
+        int calls = fake.requests.size();
+        watchKr(kst("2026-12-02T11:00:40"));
+        fake.answer("{\"schemaVersion\":2,\"action\":\"REPLACE\",\"summary\":\"오후로 바꿈\",\"orders\":["
+                + KrClaudeFixtures.claude2Order("000660", "BUY", 5.0, null, PaperBooks.MARKET) + "],\"noTradeReason\":null}");
+        fake.duringCall = () -> {
+            resetKrBook(PaperBooks.KR_CLAUDE2);
+            restartKrBook(PaperBooks.KR_CLAUDE2);
+        };
+        clock.set(kst("2026-12-02T11:04"));
+
+        checkpoint.run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        assertThat(store.decisionFor(PaperBooks.KR_CLAUDE2, NEXT, RuleBookService.CHECKPOINT)).as("옛 예약의 응답은 새 계좌의 결정이 아님").isEmpty();
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE2)).as("다시 출발한 계좌에 옛 응답의 주문 없음").isEmpty();
+    }
+
     @Test
     @DisplayName("한국 장중 확인(2b) — REPLACE: 기준 시각이 지난 10:00 주문은 남기고 아직 오지 않은 14:00 주문만 '장중 확인이 대신함'으로 취소, 새 장중 시장가(MARKET) 주문을 대기로(기준 거래일 = 밤 결정의 d)")
     void krCheckpointReplace() {
@@ -938,6 +999,62 @@ class KrStartTest {
         clock.set(kst("2026-12-02T09:16"));
         intraday.run();
         assertThat(fake.requests).as("과금된 응답 — 다시 부르지 않음").hasSize(calls + 1);
+    }
+
+    /** 켠 판 계좌1의 밤 결정(09:10 판단 예약·09:10 매수 대기) 뒤, 09:14에 그 계획의 감시 저장본이 온 상태 — 다음 {@code intraday.run()}이 한 번 부름. */
+    private int krIntradayReadyToCall(KrClaudeFixtures.FakeAi fake) {
+        startWithFreeTiming(fake);
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.AT_MINUTE, "13:30")),
+                        "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        int calls = fake.requests.size();
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1");
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        return calls;
+    }
+
+    @Test
+    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
+    @DisplayName("QA-286 한국 장중 판단 — 호출하는 사이 계좌1을 초기화하면 비운 계좌에 리셋 전 결정 행을 남기지 않음(KEEP 응답 + 초기화). 과금된 호출은 "
+            + "사용량에만")
+    void krIntradayResetDuringCallLeavesNoDecision() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        int calls = krIntradayReadyToCall(fake);
+        PaperKrIntradayJob intraday = intradayJob();
+        fake.answer(intradayReply("KEEP", null));
+        fake.duringCall = () -> resetKrBook(PaperBooks.KR_CLAUDE);
+
+        var outcome = intraday.run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        assertThat(store.decisions.values()).as("비운 계좌에 결정 행 없음").noneMatch(d -> PaperBooks.KR_CLAUDE.equals(d.bookCode()));
+        assertThat(outcome.changes().values()).anySatisfy(change -> assertThat(change).startsWith("RESET_DURING_CALL"));
+    }
+
+    @Test
+    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
+    @DisplayName("QA-286 한국 장중 판단 — 호출하는 사이 초기화 뒤 다시 출발한 계좌1에 옛 예약의 REPLACE 응답을 적용하지 않음(결정 행·주문·다음 예약 없음)")
+    void krIntradayResetAndRestartDuringCallAppliesNothing() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        int calls = krIntradayReadyToCall(fake);
+        PaperKrIntradayJob intraday = intradayJob();
+        fake.answer(intradayReply("REPLACE", "{\"at\":\"10:30\",\"watch\":[\"005930\"],\"question\":\"수급이 이어지나\"}",
+                KrClaudeFixtures.freeOrder("000660", "BUY", 5.0, null, PaperBooks.MARKET, null)));
+        fake.duringCall = () -> {
+            resetKrBook(PaperBooks.KR_CLAUDE);
+            restartKrBook(PaperBooks.KR_CLAUDE);
+        };
+
+        intraday.run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        assertThat(store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1)).as("옛 예약의 응답은 새 계좌의 결정이 아님").isEmpty();
+        assertThat(store.ordersOf(PaperBooks.KR_CLAUDE)).as("다시 출발한 계좌에 옛 응답의 주문 없음").isEmpty();
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).as("옛 응답의 다음 예약도 없음").isEmpty();
     }
 
     @Test

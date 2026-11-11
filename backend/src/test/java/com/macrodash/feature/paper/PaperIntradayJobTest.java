@@ -12,6 +12,7 @@ import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.TransientDataAccessResourceException;
@@ -67,6 +68,8 @@ class PaperIntradayJobTest {
     private AiService.StructuredResult answer;
     /** 심는 쓰기 실패(DB 순간 장애) — 남은 횟수만큼 계획 행 DONE 표시가 실패합니다. */
     private int failDone;
+    /** Claude를 부르는 사이에 할 일(계좌 초기화 등) — 한 번 쓰고 비움. */
+    private Runnable duringCall;
     private long morning1;
     private long morning2;
 
@@ -94,6 +97,11 @@ class PaperIntradayJobTest {
         when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenAnswer(invocation -> {
             sent.add(new String[]{invocation.getArgument(1), invocation.getArgument(2),
                     MAPPER.writeValueAsString(invocation.getArgument(3)), invocation.getArgument(4)});
+            Runnable hook = duringCall;
+            duringCall = null;
+            if (hook != null) {
+                hook.run();
+            }
             return answer;
         });
         settings = PaperFixtures.settings(store);
@@ -864,6 +872,44 @@ class PaperIntradayJobTest {
         assertThat(row(PaperBooks.CLAUDE2, 1).reason()).isEqualTo(PaperCheckpointJob.AFTER_RESPONSE);
         runAt(job, T.plus(Duration.ofMinutes(7)));
         assertThat(sent).as("과금된 응답 — 다시 부르지 않음").hasSize(2);
+    }
+
+    /** 운영자 초기화가 장부에 하는 일(PaperAdminService.reset) — 그 계좌의 결정·주문·계획·보유를 지우고 시작 전 현금 계좌로. */
+    private void resetBook(String code) {
+        store.resetBook(code);
+        store.updateBookStatus(code, PaperBooks.NOT_STARTED);
+        store.states.put(code, new BookState(code, 100_000, 100_000, 0, 0, null, null, null, null));
+    }
+
+    @Test
+    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
+    @DisplayName("QA-286 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 장중 판단 결정 행을 남기지 않음 — KEEP 응답 + 초기화, REPLACE 응답 + 초기화 뒤 "
+            + "다시 출발 모두 결정 행·주문·다음 예약 없음(과금된 호출은 사용량에만), 작업 기록에 사유")
+    void resetDuringCallLeavesNoRows() {
+        duringCall = () -> resetBook(PaperBooks.CLAUDE);
+
+        PaperIntradayJob.Outcome keep = runAt(job(true), T.plus(Duration.ofMinutes(3)));
+
+        assertThat(sent).hasSize(1);
+        assertThat(store.decisions.values()).as("비운 계좌에 결정 행 없음").noneMatch(d -> PaperBooks.CLAUDE.equals(d.bookCode()));
+        assertThat(keep.changes().values()).anySatisfy(change -> assertThat(change).startsWith("RESET_DURING_CALL"));
+
+        // 다시 출발한 계좌 — 새 아침 결정과 새 예약. 그 호출 사이에 초기화 뒤 또 출발하면(새 결정 행) 옛 응답은 버림.
+        book(PaperBooks.CLAUDE);
+        plan(PaperBooks.CLAUDE, 1, TEN, "MINUTE", List.of("AAA"), morning(PaperBooks.CLAUDE), false);
+        answer = ok(reply("REPLACE", next("13:00", "HOURLY", "[]"), order("BBB", "BUY", 3.0, null, "MARKET", null)));
+        duringCall = () -> {
+            resetBook(PaperBooks.CLAUDE);
+            book(PaperBooks.CLAUDE);
+            morning(PaperBooks.CLAUDE);
+        };
+
+        runAt(job(true), T.plus(Duration.ofMinutes(4)));
+
+        assertThat(sent).hasSize(2);
+        assertThat(store.decisionFor(PaperBooks.CLAUDE, D, RuleBookService.INTRADAY_1)).as("옛 예약의 응답은 새 계좌의 결정이 아님").isEmpty();
+        assertThat(store.ordersOf(PaperBooks.CLAUDE)).as("다시 출발한 계좌에 옛 응답의 주문 없음").isEmpty();
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, E)).as("옛 응답의 다음 예약도 없음").isEmpty();
     }
 
     @Test
