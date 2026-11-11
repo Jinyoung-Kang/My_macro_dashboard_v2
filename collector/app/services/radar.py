@@ -154,8 +154,10 @@ def collect_radar_ranking(
             rows = fetch_toss_ranking(market, investor, trade_type, top_n)
             if rows:
                 return _result(rows, "toss")
-        else:
-            # 과거 날짜 — KRX 확정 순위 저장본(그 날짜 그대로)만 봅니다. 없으면 하루 앞으로.
+        elif cursor == target_day:
+            # 과거 날짜 — KRX 확정 순위 저장본을 **요청한 그 날짜에서만** 봅니다(ADR 0036 결정 6). 이 반복은 하루씩 거슬러
+            # 올라가므로, 여기서 매번 물으면 그날 자료가 없을 때 전날·전전날의 순위를 그 날짜 것처럼 돌려줍니다(QA-398).
+            # 없으면 아래의 누적 이력(그 날짜 이하의 가장 가까운 날 — 이력 대체로 표시됨)으로 넘어갑니다.
             rows = fetch_krx_stored_ranking(date_str, market, investor, trade_type, top_n, nearest=False)
             if rows:
                 return _result(rows, "krx")

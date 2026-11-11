@@ -333,7 +333,6 @@ def test_QA396_기준일을_모르는_행이면_지어내지_않는다(monkeypat
 # 과거 날짜 조회의 KRX 단계는 '그 날짜만' 봅니다(ADR 0036 결정 6). 그런데 그 호출이 하루씩 거슬러 올라가는 반복 안에 있어,
 # 그날 KRX 자료가 없으면 전날·전전날의 순위를 그 날짜 것처럼(이력 대체 표시 없이) 돌려줬습니다.
 
-@pytest.mark.xfail(strict=True, reason="QA-398: 과거 날짜 조회가 앞 날짜의 KRX 순위를 표시 없이 돌려줍니다")
 def test_QA398_과거_날짜는_그_날짜의_KRX_순위만_보고_없으면_누적_이력으로_간다(monkeypatch):
     asked: list[tuple[str, bool]] = []
 
