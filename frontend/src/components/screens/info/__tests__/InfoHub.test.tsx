@@ -372,6 +372,19 @@ describe("정보 수집 화면", () => {
     expect(screen.queryByRole("navigation", { name: /출처 상태 쪽/ })).toBeNull();
   });
 
+  // 사용자 지적(2026-11-12): '사유·기록' 칸이 두 줄에서 잘려('…') 긴 사유·실행 기록의 뒤가 보이지 않았다. 표의 칸은 글 전체를 줄을 바꿔 보인다.
+  it.fails("출처 상태: '사유·기록'은 길어도 자르지 않고 전체를 줄을 바꿔 보인다", async () => {
+    const long = "KRX 기준일 2026-11-11 · 순매수 상위 10/12 · 시장 합계·외국인 보유·공매도 거래 5/6 · 공매도 잔고 1/2 · 못 받음 4 · "
+      + "일부 받지 못함(받지 못함: rank.KOSPI.연기금 등, rank.KOSDAQ.연기금 등, shortBalances.KOSDAQ 외 1) · 다음 2026-11-11 21:40 KST";
+    routes({ "/api/info/catalog": { ...CATALOG, sources: [source(1, { label: "긴 기록 출처", lastDetail: long })] } });
+    render(<InfoHub tab="status" />);
+
+    const table = await screen.findByRole("region", { name: /^출처 상태 / });
+    const cell = within(table).getByText(long);
+    expect(cell.className).not.toMatch(/line-clamp|truncate/);
+    expect(cell.className).toMatch(/break-words/);
+  });
+
   it("정보(메커니즘): 수집기의 실제 값(스위치·간격·예산)과 패킷 스위치·보류 출처를 보인다", async () => {
     routes({ "/api/info/mechanism": MECHANISM });
     render(<InfoHub tab="mechanism" />);
