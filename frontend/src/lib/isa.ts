@@ -435,8 +435,10 @@ export function isaValuation(
 export type IsaConfirmField = "quantity" | "amount" | "price" | "fee";
 
 /**
- * 체결 입력 창의 한 줄(2026-11-09 사용자 결정) — 수량·체결 금액(총액)·평균 단가·수수료. 금액을 고치면 평균 단가가, 평균 단가나 수량을 고치면 금액이 따라 바뀌고, 수수료는 직접
+ * 체결 입력 창의 한 줄(2026-11-09 사용자 결정) — 수량·체결 금액(총액)·평균 단가·수수료. 금액을 고치면 평균 단가가, 평균 단가를 고치면 금액이 따라 바뀌고, 수수료는 직접
  * 고치기 전까지 수수료율로 다시 셉니다. 채워 둔 값을 그대로 보내면 가격 출처는 live·close, 금액을 고치면 user입니다.
+ * 수량을 고치면 마지막으로 직접 적은 칸({@link IsaConfirmLine.entered})을 지킵니다 — 금액을 적었으면 금액을 두고 단가를, 단가를 적었거나 채워 둔 값이면 단가를 두고
+ * 금액을 다시 셉니다(QA-352 — 증권사 총액을 적은 뒤 수량을 고쳐도 그 총액이 조용히 덮어써지지 않게).
  */
 export interface IsaConfirmLine {
   key: string;
@@ -452,6 +454,8 @@ export interface IsaConfirmLine {
   price: string;
   fee: string;
   feeEdited: boolean;
+  /** 사용자가 마지막으로 직접 적은 칸 — 채워 둔 값 그대로면 null. 고치기 창은 저장된 체결 금액(실제로 움직인 돈)이 기준이라 처음부터 "amount". */
+  entered: "amount" | "price" | null;
   source: "live" | "close" | "user";
   /** 벗어나면 경고할 참고 가격(실시간, 없으면 기준가·직전 종가). */
   refPrice: number | null;
@@ -485,6 +489,7 @@ function confirmLine(
     price: price === null ? "" : priceText(price),
     fee: amount === null ? "" : String(estimateFee(amount, commissionPct)),
     feeEdited: false,
+    entered: null,
     source: live !== null ? "live" : "close",
     refPrice: price,
   };
@@ -538,19 +543,26 @@ export function confirmLineFromTrade(trade: IsaTrade): IsaConfirmLine {
     price: price === null ? "" : priceText(price),
     fee: fee === null ? "" : String(fee),
     feeEdited: true,
+    entered: "amount",
     source: "user",
     refPrice: price,
   };
 }
 
-/** 칸 하나를 고친 줄 — 금액 ↔ 평균 단가 ↔ 수량을 맞추고, 직접 고치지 않은 수수료를 다시 셉니다. 읽지 못하는 입력은 그대로 두고 다른 칸은 건드리지 않습니다. */
+/**
+ * 칸 하나를 고친 줄 — 금액 ↔ 평균 단가 ↔ 수량을 맞추고, 직접 고치지 않은 수수료를 다시 셉니다. 읽지 못하는 입력은 그대로 두고 다른 칸은 건드리지 않습니다.
+ * 수량을 고칠 때는 마지막으로 직접 적은 칸이 금액이면 금액을 지키고 단가를 다시 셉니다(QA-352).
+ */
 export function updateConfirmLine(line: IsaConfirmLine, field: IsaConfirmField, value: string, commissionPct: number | null): IsaConfirmLine {
   const next: IsaConfirmLine = { ...line, [field]: value };
   if (field === "fee") return { ...next, feeEdited: true };
-  if (field !== "quantity") next.source = "user";
+  if (field !== "quantity") {
+    next.source = "user";
+    next.entered = field;
+  }
   const quantity = parseDecimal(next.quantity, { maxDecimals: 0 });
-  if (field === "amount") {
-    const amount = parseDecimal(value, { maxDecimals: AMOUNT_DECIMALS });
+  if (next.entered === "amount") {
+    const amount = parseDecimal(next.amount, { maxDecimals: AMOUNT_DECIMALS });
     if (amount !== null && amount > 0 && quantity !== null && quantity > 0) next.price = priceText(amount / quantity);
   } else {
     const price = parseDecimal(next.price, { maxDecimals: PRICE_DECIMALS });

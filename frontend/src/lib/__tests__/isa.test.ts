@@ -390,8 +390,8 @@ describe("체결 입력 창(2026-11-09)", () => {
     expect(unread).toMatchObject({ amount: "abc", price: "54000" });
   });
 
-  // QA-352: 수정 전에는 수량을 고치면 늘 단가 × 수량으로 금액을 다시 써, 직접 적은 총액이 조용히 덮어써졌다(it.fails).
-  it.fails("QA-352 금액을 직접 적은 뒤 수량을 고치면 금액을 지키고 단가를 다시 셈 — 단가를 마지막으로 적었으면 지금처럼 금액을 다시 셈", () => {
+  // QA-352: 수정 전에는 수량을 고치면 늘 단가 × 수량으로 금액을 다시 써, 직접 적은 총액이 조용히 덮어써졌다(재현 커밋에서는 it.fails).
+  it("QA-352 금액을 직접 적은 뒤 수량을 고치면 금액을 지키고 단가를 다시 셈 — 단가를 마지막으로 적었으면 지금처럼 금액을 다시 셈", () => {
     const twenty = { ...item, quantity: 20, refPrice: 48_000 };
     let line = confirmLineFromInstruction(twenty, {}, 0.015);
     expect(line).toMatchObject({ quantity: "20", amount: "960000", price: "48000" });
@@ -409,7 +409,7 @@ describe("체결 입력 창(2026-11-09)", () => {
     expect(updateConfirmLine(typed, "quantity", "", 0.015)).toMatchObject({ amount: "950000", price: "47500" });
   });
 
-  it.fails("QA-352 고치기 창 — 저장된 체결 금액은 '적은 금액'이라 수량만 고치면 금액은 그대로이고 단가가 다시 계산돼 경고가 뜸", () => {
+  it("QA-352 고치기 창 — 저장된 체결 금액은 '적은 금액'이라 수량만 고치면 금액은 그대로이고 단가가 다시 계산돼 경고가 뜸", () => {
     const trade = { id: 3, at: null, side: "BUY", symbol: "222220", name: "합성화학", quantity: 3, price: 50_000.33, amount: 150_001, fee: 30, tax: 0, realizedPnl: null, realizedPct: null, priceSource: "user", taxAssumed: false };
     const line = updateConfirmLine(confirmLineFromTrade(trade), "quantity", "2", 0.015);
     expect(line).toMatchObject({ quantity: "2", amount: "150001", price: "75000.5", fee: "30" });
