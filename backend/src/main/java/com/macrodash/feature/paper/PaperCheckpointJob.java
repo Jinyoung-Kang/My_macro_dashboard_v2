@@ -98,6 +98,11 @@ public class PaperCheckpointJob {
     static final String NO_SESSION_BARS = "NO_SESSION_BARS — 그 세션의 봉이 없음(임시 휴장)";
     static final String CHECKPOINTS_OFF = "CHECKPOINTS_OFF — 설정 claude2.checkpoints·claude2.enabled가 꺼져 있음";
     static final String JOB_ERROR = "JOB_ERROR — 부르기 전 작업 오류가 창 끝까지 이어짐(서버는 켜져 있었음)";
+    /**
+     * 호출하는 사이 계좌가 초기화됨 — 응답은 받았지만 그 세션의 결정이 지워져 있어 결정 행·주문을 남기지 않음(QA-286). 계획 행도 초기화가 함께 지워
+     * 표시할 행이 없으므로 이 사유는 작업 기록에만 남습니다. 장중 확인·장중 판단 네 작업이 함께 씁니다.
+     */
+    static final String RESET_DURING_CALL = "RESET_DURING_CALL — 호출하는 사이 계좌가 초기화돼 결정 행을 남기지 않음(과금된 호출은 사용량 기록에만)";
     /** {@link #JOB_ERROR} 뒤에 붙이는 원인 글자 수 상한. */
     static final int JOB_ERROR_CAUSE_CHARS = 200;
     static final String CALLED_NOT_RECORDED = "CALLED_NOT_RECORDED — 부른 뒤 결정을 기록하지 못함(과금된 응답 — 다시 부르지 않음)";
@@ -338,7 +343,7 @@ public class PaperCheckpointJob {
         }
         Integer lagSeconds = lag;
         Feeds feeds = new Feeds(quotes, watch, bars);
-        long id;
+        Long id;
         try {
             id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, c, asOf, row, claudeSettings, attempt,
                     lagSeconds, calledAt, feeds)));
@@ -355,6 +360,10 @@ public class PaperCheckpointJob {
                 e.addSuppressed(again);   // 다음 주기가 그 결정 행으로(또는 메모리의 '부름'으로) 끝냄
             }
             throw e;
+        }
+        if (id == null) {
+            log.warn("Claude 계좌2 장중 확인 {}: 호출하는 사이 계좌가 초기화돼 결정 행을 남기지 않음(과금된 호출은 사용량 기록에만)", key(c));
+            return PaperCheckpointJob.RESET_DURING_CALL;
         }
         log.info("Claude 계좌2 장중 확인 {} {} {}: {} — 결정 {}", session, CheckpointPacket.clock(c.atLocal()), c.feed(),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
@@ -406,8 +415,13 @@ public class PaperCheckpointJob {
      * 대기 주문만 '장중 확인이 대신함'으로 취소한 뒤(⑩) 통과 주문을 대기로 넣습니다(기준 거래일 d, 만료 E). 호출하는 사이 운용 중이 아니게 됐으면
      * 적용하지 않고 SKIPPED로 남깁니다.
      */
-    private long write(ClaudeDecisionPipeline pipeline, Checkpoint c, LocalDate asOf, SettingsRow row,
+    private Long write(ClaudeDecisionPipeline pipeline, Checkpoint c, LocalDate asOf, SettingsRow row,
                        ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt, Feeds feeds) {
+        if (store.decision(c.sourceDecisionId()).isEmpty()) {
+            // 호출하는 사이 계좌가 초기화됨(그 세션의 결정이 지워짐 — 초기화 뒤 다시 출발해도 옛 결정은 없음) — 비운 계좌에 리셋 전 결정 행·주문을
+            // 넣지 않습니다(QA-286). 과금된 호출은 사용량 기록에만 남습니다.
+            return null;
+        }
         ObjectNode response;
         String status;
         String error = null;

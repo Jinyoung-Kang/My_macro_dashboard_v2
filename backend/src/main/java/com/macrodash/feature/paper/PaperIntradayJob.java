@@ -403,7 +403,7 @@ public class PaperIntradayJob {
             return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }
         Integer lagSeconds = lag;
-        long id;
+        Long id;
         try {
             id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, c, asOf, kind, max, row, claudeSettings,
                     attempt, lagSeconds, calledAt, quotes, watch, bars)));
@@ -419,6 +419,10 @@ public class PaperIntradayJob {
                 e.addSuppressed(again);   // 다음 주기가 그 결정 행으로(또는 메모리의 '부름'으로) 끝냄
             }
             throw e;
+        }
+        if (id == null) {
+            log.warn("장중 판단 {}: 호출하는 사이 계좌가 초기화돼 결정 행을 남기지 않음(과금된 호출은 사용량 기록에만)", key(p));
+            return PaperCheckpointJob.RESET_DURING_CALL;
         }
         log.info("Claude {} 장중 판단 {} #{} {} {}: {} — 결정 {}", code, session, p.slot(), CheckpointPacket.clock(p.atLocal()), p.feed(),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
@@ -446,9 +450,14 @@ public class PaperIntradayJob {
      * 예상 상태로 새 주문을 검증하고 기준 시각이 지금보다 뒤인 대기 주문만 대신한 뒤 통과 주문을 대기로 넣음, 호출하는 사이 운용 중이 아니게 됐으면
      * 적용하지 않음)에 다음 판단 예약({@code nextCheckpoint})을 더한 것. 같은 d의 그 순번 결정이 그사이 생겼으면 그 행으로.
      */
-    private long write(ClaudeDecisionPipeline pipeline, IntradayPlan p, Checkpoint c, LocalDate asOf, String kind, int max,
+    private Long write(ClaudeDecisionPipeline pipeline, IntradayPlan p, Checkpoint c, LocalDate asOf, String kind, int max,
                        SettingsRow row, ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt,
                        Optional<Quotes> quotes, Optional<Snapshot> watch, Optional<Snapshot> bars) {
+        if (store.decision(p.sourceDecisionId()).isEmpty()) {
+            // 호출하는 사이 계좌가 초기화됨(그 세션의 결정이 지워짐 — 초기화 뒤 다시 출발해도 옛 결정은 없음) — 비운 계좌에 리셋 전 결정 행·주문을
+            // 넣지 않습니다(QA-286). 과금된 호출은 사용량 기록에만 남습니다.
+            return null;
+        }
         String code = p.bookCode();
         ObjectNode response;
         String status;

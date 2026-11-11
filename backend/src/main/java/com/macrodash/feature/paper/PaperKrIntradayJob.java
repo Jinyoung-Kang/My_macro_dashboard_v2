@@ -359,7 +359,7 @@ public class PaperKrIntradayJob {
         if (attempt == null) {
             return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }
-        long id;
+        Long id;
         try {
             id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, asOf, kind, max, row, claudeSettings, attempt,
                     lag, calledAt, snapshot.payload(), quotes, calendar, source.decidedAt())));
@@ -376,6 +376,10 @@ public class PaperKrIntradayJob {
             }
             throw e;
         }
+        if (id == null) {
+            log.warn("한국 장중 판단 {}: 호출하는 사이 계좌가 초기화돼 결정 행을 남기지 않음(과금된 호출은 사용량 기록에만)", key);
+            return PaperCheckpointJob.RESET_DURING_CALL;
+        }
         log.info("한국 Claude {} 장중 판단 {} #{} {} KST: {} — 결정 {}", code, session, p.slot(), KrTimedLadder.label(p.atLocal()),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
         return PaperBooks.CHECKPOINT_DONE + " 결정 #" + id;
@@ -390,9 +394,14 @@ public class PaperKrIntradayJob {
      * 판단 결정 행과 계획 행 DONE(장부 잠금 안 한 트랜잭션) — 한국 장중 확인 작업의 쓰기와 같은 규칙에 다음 판단 예약({@code nextCheckpoint})을 더한 것
      * (미국 {@link PaperIntradayJob}과 같음). REPLACE 검증의 신선도는 그 세션 결정의 순간({@code sourceDecidedAt})으로 셉니다.
      */
-    private long write(ClaudeDecisionPipeline pipeline, IntradayPlan p, LocalDate asOf, String kind, int max, SettingsRow row,
+    private Long write(ClaudeDecisionPipeline pipeline, IntradayPlan p, LocalDate asOf, String kind, int max, SettingsRow row,
                        ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt, JsonNode watch,
                        Optional<Quotes> quotes, TradingCalendar calendar, Instant sourceDecidedAt) {
+        if (store.decision(p.sourceDecisionId()).isEmpty()) {
+            // 호출하는 사이 계좌가 초기화됨(그 세션의 결정이 지워짐 — 초기화 뒤 다시 출발해도 옛 결정은 없음) — 비운 계좌에 리셋 전 결정 행·주문을
+            // 넣지 않습니다(QA-286). 과금된 호출은 사용량 기록에만 남습니다.
+            return null;
+        }
         String code = p.bookCode();
         ObjectNode response;
         String status;

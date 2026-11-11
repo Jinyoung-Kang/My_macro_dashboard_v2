@@ -12,7 +12,6 @@ import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.TransientDataAccessResourceException;
@@ -882,7 +881,6 @@ class PaperIntradayJobTest {
     }
 
     @Test
-    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
     @DisplayName("QA-286 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 장중 판단 결정 행을 남기지 않음 — KEEP 응답 + 초기화, REPLACE 응답 + 초기화 뒤 "
             + "다시 출발 모두 결정 행·주문·다음 예약 없음(과금된 호출은 사용량에만), 작업 기록에 사유")
     void resetDuringCallLeavesNoRows() {

@@ -253,7 +253,7 @@ public class PaperKrCheckpointJob {
         if (attempt == null) {
             return mark(c, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }
-        long id;
+        Long id;
         try {
             id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, c, asOf, row, claudeSettings, attempt, lag,
                     calledAt, snapshot.payload(), quotes, calendar, source.decidedAt())));
@@ -270,6 +270,10 @@ public class PaperKrCheckpointJob {
                 e.addSuppressed(again);
             }
             throw e;
+        }
+        if (id == null) {
+            log.warn("한국 Claude 계좌2 장중 확인 {}: 호출하는 사이 계좌가 초기화돼 결정 행을 남기지 않음(과금된 호출은 사용량 기록에만)", key(c));
+            return PaperCheckpointJob.RESET_DURING_CALL;
         }
         log.info("한국 Claude 계좌2 장중 확인 {} {} KST: {} — 결정 {}", session, KrTimedLadder.label(c.atLocal()),
                 attempt.succeeded() ? Json.asText(attempt.parsed(), "action") : attempt.status(), id);
@@ -302,9 +306,14 @@ public class PaperKrCheckpointJob {
      * (입력 동결). 지금 시각으로 세면 주말·휴장 다음 세션에는 밤 관측치가 24시간을 넘어 새 주문이 모두 STALE_INPUT이 됩니다(QA-172, QA-165와 같은 원인).
      * 새로 받은 입력인 감시 저장본은 {@link #freshWatch}가 따로 봅니다.
      */
-    private long write(ClaudeDecisionPipeline pipeline, Checkpoint c, LocalDate asOf, SettingsRow row,
+    private Long write(ClaudeDecisionPipeline pipeline, Checkpoint c, LocalDate asOf, SettingsRow row,
                        ClaudeSettings claudeSettings, Attempt attempt, Integer lag, Instant calledAt, JsonNode watch,
                        Optional<Quotes> quotes, TradingCalendar calendar, Instant sourceDecidedAt) {
+        if (store.decision(c.sourceDecisionId()).isEmpty()) {
+            // 호출하는 사이 계좌가 초기화됨(그 세션의 결정이 지워짐 — 초기화 뒤 다시 출발해도 옛 결정은 없음) — 비운 계좌에 리셋 전 결정 행·주문을
+            // 넣지 않습니다(QA-286). 과금된 호출은 사용량 기록에만 남습니다.
+            return null;
+        }
         ObjectNode response;
         String status;
         String error = null;

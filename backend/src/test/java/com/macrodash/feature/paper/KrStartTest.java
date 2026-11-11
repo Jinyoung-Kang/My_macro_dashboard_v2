@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -771,7 +770,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
     @DisplayName("QA-286 한국 장중 확인 — 호출하는 사이 계좌2를 초기화하면 비운 계좌에 리셋 전 결정 행을 남기지 않음(KEEP 응답 + 초기화). 과금된 호출은 "
             + "사용량에만")
     void krCheckpointResetDuringCallLeavesNoDecision() {
@@ -792,7 +790,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
     @DisplayName("QA-286 한국 장중 확인 — 호출하는 사이 초기화 뒤 다시 출발한 계좌2에 옛 예약의 REPLACE 응답을 적용하지 않음(결정 행·주문 없음)")
     void krCheckpointResetAndRestartDuringCallAppliesNothing() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
@@ -1018,7 +1015,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
     @DisplayName("QA-286 한국 장중 판단 — 호출하는 사이 계좌1을 초기화하면 비운 계좌에 리셋 전 결정 행을 남기지 않음(KEEP 응답 + 초기화). 과금된 호출은 "
             + "사용량에만")
     void krIntradayResetDuringCallLeavesNoDecision() {
@@ -1036,7 +1032,6 @@ class KrStartTest {
     }
 
     @Test
-    @Disabled("QA-286: 호출하는 사이 계좌를 초기화하면 비운 계좌에 리셋 전 결정 행(다시 출발했으면 주문까지)이 남습니다")
     @DisplayName("QA-286 한국 장중 판단 — 호출하는 사이 초기화 뒤 다시 출발한 계좌1에 옛 예약의 REPLACE 응답을 적용하지 않음(결정 행·주문·다음 예약 없음)")
     void krIntradayResetAndRestartDuringCallAppliesNothing() {
         KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
