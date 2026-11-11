@@ -131,3 +131,51 @@ def test_실패하면_진단_사유를_남긴다(monkeypatch, response, expected
     assert radar.fetch_naver_ranking("20261110", "KOSPI", "외국인", "순매수", 5) == []
     assert expected in radar._NAVER_LAST_REASON["value"]
     assert expected in radar.test_naver_connection()["message"]
+
+
+# ------------------------------------------------------------------ QA-412
+@pytest.mark.xfail(strict=True, reason="QA-412: 장중 추정 응답을 받은 정상 연결이 진단 표에서 실패로 보입니다")
+def test_QA412_추정_응답을_받았으면_연결_진단은_정상이고_단계로_가른다(monkeypatch):
+    """장중에는 응답이 추정이라 행을 만들지 않습니다(금액 없음). 연결은 정상이므로 진단 표가 위험 색으로 뜨면 안 됩니다."""
+    _stub(monkeypatch, [_Res(_page([_row("000001", "가나다", "0", estimated=True)]))])
+
+    result = radar.test_naver_connection()
+
+    assert result["ok"] is True
+    assert result["stage"] == "estimated"
+    assert "추정" in result["message"]
+
+
+def test_QA412_빈_응답과_차단은_여전히_실패다(monkeypatch):
+    _stub(monkeypatch, [_Res(_page([]))])
+    assert radar.test_naver_connection()["ok"] is False
+
+    _stub(monkeypatch, [_Res({}, status_code=403)])
+    blocked = radar.test_naver_connection()
+    assert blocked["ok"] is False and blocked["stage"] == "empty"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-412: 두 쪽이 겹치면 같은 종목이 두 번 들어갑니다")
+def test_QA412_쪽이_겹쳐_같은_종목이_다시_와도_한_번만_싣는다():
+    """다음 쪽 요청의 startIdx가 행 오프셋이면 1쪽과 겹칩니다(외부 동작 — 확인 못 함). 종목 코드로 한 번만 싣습니다."""
+    first = _page([_row("000001", "가나다", "3000000000"), _row("000002", "라마바", "2000000000")])
+    second = _page([_row("000002", "라마바", "2000000000"), _row("000003", "사아자", "1000000000")])
+
+    records, reason = radar.parse_naver_ranking([first, second], trade_type="순매수", top_n=30, investor="외국인")
+
+    assert reason is None
+    assert [r["code"] for r in records] == ["000001", "000002", "000003"]
+    assert [r["rank"] for r in records] == [1, 2, 3]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-412: KRX 저장본 행에 늘 비어 있는 collectedAt 칸이 붙습니다")
+def test_QA412_KRX_저장본_행에는_없는_수집_시각_칸을_만들지_않는다(monkeypatch):
+    """KRX 순위 관측치에는 수집 시각 칸이 없습니다(krx_data.parse_rankings). 늘 None인 칸을 행에 붙이지 않습니다."""
+    stored = [{"rank": 1, "code": "005930", "name": "삼성전자", "price": None, "changePct": None, "netAmountEok": 900.0,
+               "netVolume": 10, "dataDate": "2026-11-10", "market": "KOSPI", "investor": "외국인", "tradeType": "순매수"}]
+    monkeypatch.setattr(radar.store, "read_observations", lambda *a, **k: [dict(row) for row in stored])
+
+    rows = radar.fetch_krx_stored_ranking("20261110", "KOSPI", "외국인", "순매수", 30, nearest=False)
+
+    assert rows and rows[0]["code"] == "005930"
+    assert "collectedAt" not in rows[0]
