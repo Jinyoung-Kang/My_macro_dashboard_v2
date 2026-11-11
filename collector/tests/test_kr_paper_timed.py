@@ -566,3 +566,63 @@ def test_QA301_장중_시장가_감사_키로_다시_받아도_지정_시각_창
 
     windows = _payload(store)["sessions"][E]["005930"]["windows"]
     assert "13:16" in windows and [b["label"] for b in windows["10:47"]] == ["10:48", "10:49", "10:50", "10:51", "10:52"]
+
+
+# ==============================================================================
+# QA-367 — 시간 상한: 토스가 느린 밤에 slow 군 상한(600초)을 넘기지 않게
+# ==============================================================================
+class _SlowToss:
+    """호출마다 가짜 시계를 ``seconds``만큼 밀어 '느린 토스'를 흉내 냅니다(토스 호출은 태스크 시간 예산 층을 거치지 않음 — 건당 한도 10초)."""
+
+    def __init__(self, toss, seconds: float):
+        self.now = 0.0
+        self._toss, self._seconds = toss, seconds
+
+    def clock(self) -> float:
+        return self.now
+
+    def candles(self, *args, **kwargs):
+        self.now += self._seconds
+        return self._toss.candles(*args, **kwargs)
+
+
+def _slow(monkeypatch, toss, seconds: float, codes: list[str]) -> _SlowToss:
+    slow = _SlowToss(toss, seconds)
+    monkeypatch.setattr(kr_paper_timed.toss_service, "fetch_candles", slow.candles)
+    monkeypatch.setattr(kr_paper_timed, "_clock", slow.clock, raising=False)      # 수정 전에는 이 시계가 없습니다
+    _orders(monkeypatch, [(code, date(2026, 11, 2)) for code in codes])
+    for code in codes:
+        toss.pages[(code, E)] = _session(E)
+    return slow
+
+
+@pytest.mark.xfail(strict=True, reason="QA-367: 호출 수만 세고 남은 시간을 보지 않아 느린 밤에 군 상한(600초)을 넘깁니다")
+def test_QA367_시간_상한이_지나면_새_종목을_시작하지_않고_받은_칸은_저장한다(store, toss, monkeypatch):
+    codes = [f"{n:06d}" for n in range(100001, 100081)]                           # 80종목 × 3쪽 = 240회(호출 예산과 같음)
+    _slow(monkeypatch, toss, 10.0, codes)                                          # 종목마다 30초 → 10종목에서 300초
+
+    detail = tasks.task_kr_paper_timed()
+
+    stored = _payload(store)["sessions"][E]
+    assert len(toss.calls) == 30, "300초 무렵 새 종목을 시작하지 않습니다(수정 전 240회 — 2,400초)"
+    assert sorted(stored) == codes[:10] and {entry["status"] for entry in stored.values()} == {"OK"}
+    assert "시간 상한 300초" in detail and "10/80 종목·세션" in detail
+
+
+@pytest.mark.xfail(strict=True, reason="QA-367: 쪽 사이에서도 남은 시간을 보지 않습니다")
+def test_QA367_쪽_사이에서_시간_상한을_넘으면_그_칸은_다음_주기에_다시(store, toss, monkeypatch):
+    codes = [f"{n:06d}" for n in range(100001, 100031)]
+    _slow(monkeypatch, toss, 7.0, codes)                                           # 종목마다 21초 → 14종목 294초, 15번째의 첫 쪽에서 301초
+
+    detail = tasks.task_kr_paper_timed()
+
+    stored = _payload(store)["sessions"][E]
+    assert len(toss.calls) == 14 * 3 + 1
+    assert [code for code in sorted(stored) if stored[code]["status"] == "OK"] == codes[:14]
+    assert stored[codes[14]]["status"] == "FAILED" and "시간 상한" in stored[codes[14]]["reason"], "받다 만 칸은 예산 소진 때처럼 FAILED로(다음 주기에 다시)"
+    assert "시간 상한 300초" in detail
+
+
+@pytest.mark.xfail(strict=True, reason="QA-367: 시간 상한 상수가 없습니다")
+def test_QA367_시간_상한은_slow_상한보다_짧다():
+    assert kr_paper_timed.KR_TIMED_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
