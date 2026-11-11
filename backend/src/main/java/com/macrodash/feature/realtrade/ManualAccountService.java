@@ -96,6 +96,8 @@ public class ManualAccountService {
     /** 표가 없을 때의 안내(보기의 {@code message}). */
     static final String NOT_READY = "ISA 계좌 표가 아직 없습니다 — 수집기가 마이그레이션(V32)을 적용한 뒤 다시 보세요.";
     private static final String NEED_CODE = "종목을 찾지 못했습니다 — 여섯 자리 코드를 넣으세요.";
+    /** 거절 글에 되돌려 적는 입력 글자의 길이 상한(QA-357). */
+    private static final int ECHO_MAX = 40;
 
     // ------------------------------------------------------------------ 요청 본문
     /** 시작 때 보유 한 줄. */
@@ -444,7 +446,7 @@ public class ManualAccountService {
             }
             String symbol = resolve(row.symbol(), allNames);
             if (lines.containsKey(symbol)) {
-                throw ManualAccountException.invalid("같은 종목을 두 줄로 넣을 수 없습니다.");
+                throw ManualAccountException.invalid("같은 종목을 두 줄로 넣을 수 없습니다: '" + echo(row.symbol()) + "'(" + symbol + ").");
             }
             quantity(row.quantity());
             amount(row.purchaseAmount(), "매입 금액", false);
@@ -985,9 +987,17 @@ public class ManualAccountService {
     private static String resolve(String raw, Map<String, String> names) {
         String symbol = ManualAccountBalance.resolveSymbol(raw, names);
         if (symbol == null) {
-            throw ManualAccountException.invalid(NEED_CODE);
+            String typed = echo(raw);
+            // 여러 줄 가운데 어느 줄인지 알 수 있게 입력한 종목 글자를 되돌려 적습니다(줄 번호는 화면이 빈 줄을 빼고 보내 어긋남 — QA-357). 금액은 넣지 않습니다.
+            throw ManualAccountException.invalid(typed.isEmpty() ? NEED_CODE : "입력한 종목을 찾지 못했습니다: '" + typed + "' — 여섯 자리 코드를 넣으세요.");
         }
         return symbol;
+    }
+
+    /** 거절 글에 넣는 입력 글자 — 앞뒤 공백을 떼고 제어 문자는 빈칸으로, 길면 {@link #ECHO_MAX}자에서 자릅니다(코드 포인트 단위). */
+    private static String echo(String raw) {
+        String text = raw == null ? "" : raw.replaceAll("\\p{Cntrl}", " ").strip();
+        return text.codePointCount(0, text.length()) <= ECHO_MAX ? text : text.substring(0, text.offsetByCodePoints(0, ECHO_MAX)) + "…";
     }
 
     /** 코드 모양 입력만(이름 해석 없음). */

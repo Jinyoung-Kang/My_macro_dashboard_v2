@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -842,7 +841,6 @@ class ManualAccountServiceDbTest {
 
     // ------------------------------------------------------------------ QA-357: 시작 창의 거절 글
     @Test
-    @Disabled("QA-357: 수정 전 — 거절 글이 어느 줄(종목)인지 말하지 않습니다")
     @DisplayName("QA-357 시작 — 종목을 못 찾거나 같은 종목을 두 줄로 넣은 거절 글에 입력한 종목 글자(길면 자름)가 들어감, 금액은 없음")
     void startRejectionNamesTheLine() {
         assertThatThrownBy(() -> service.start(new ManualAccountService.StartRequest(d("1000000"),
