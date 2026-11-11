@@ -1002,6 +1002,29 @@ def test_OPS2_Vultr_덧붙임은_백엔드와_수집기가_보내던_실제_주�
     assert collector > order_budget, "수집기 주문 한 건 예산보다 길어야 토스로 나간 주문의 응답을 돌려줍니다"
 
 
+# QA-257: 백엔드가 멈출 때 쓰는 시간은 실제 매매 종료 훅만이 아닙니다 — 웹 서버의 정상 종료 단계(끝나지 않은 요청을 상한까지 기다림, 설정이
+# 없으면 스프링 기본 30초)가 먼저 돌고, 빈 정리에서 실제 매매 종료 훅(진행 중인 주기 + 그 안의 주문 POST 읽기 상한)과 ISA 정기 작업의 종료
+# 대기가 이어집니다. 유예가 그 합보다 짧으면 최악의 경우 보내던 주문의 결과를 기록하기 전에 SIGKILL을 맞습니다.
+@pytest.mark.xfail(strict=True, reason="QA-257: 지금 유예 90초는 종료 단계 30초와 ISA 종료 대기 30초를 세지 않은 값입니다")
+def test_QA257_Vultr_덧붙임의_백엔드_정지_유예는_종료_단계와_실제_매매_ISA_종료_대기를_모두_덮는다():
+    services = yaml.safe_load((ROOT / "compose.vultr.yml").read_text(encoding="utf-8"))["services"]
+    java = ROOT / "backend/src/main/java/com/macrodash"
+    job = (java / "feature/realtrade/RealTradeJob.java").read_text(encoding="utf-8")
+    isa = (java / "feature/realtrade/ManualAccountJob.java").read_text(encoding="utf-8")
+    client = (java / "collector/CollectorTradeClient.java").read_text(encoding="utf-8")
+    settings = yaml.safe_load((ROOT / "backend/src/main/resources/application.yml").read_text(encoding="utf-8")) or {}
+    phase = ((settings.get("spring") or {}).get("lifecycle") or {}).get("timeout-per-shutdown-phase")
+    shutdown_phase = _duration_seconds(str(phase)) if phase else 30      # 스프링 부트 기본값
+    real_trade_wait = int(re.search(r"\bSHUTDOWN_WAIT_SECONDS\s*=\s*(\d+)\s*;", job).group(1))
+    isa_wait = int(re.search(r"\bSHUTDOWN_WAIT_SECONDS\s*=\s*(\d+)\s*;", isa).group(1))
+    order_read = int(re.search(r"\bORDER_READ_SECONDS\s*=\s*(\d+)\s*;", client).group(1))
+
+    backend = _duration_seconds(str(services["backend"].get("stop_grace_period", "10s")))
+
+    assert backend > shutdown_phase + real_trade_wait + order_read + isa_wait, (
+        "웹 서버 종료 단계 + 실제 매매 종료 대기 + 주문 읽기 상한 + ISA 종료 대기보다 길어야 보내던 주문의 결과를 기록합니다")
+
+
 # OPS-1: 서버 .env 다시 전달(docs/DEVELOPMENT.md §7 '서버 .env 전달'의 첫 명령)을 가짜 ssh로 그대로 돌립니다. 서버에만 있는 줄 — 토스 키·텔레그램·
 # Tailscale 신원·토스 스위치·실제 매매 여섯 줄·브라우저 비밀 등 — 은 서버의 값 그대로 남아야 하고(로컬의 빈 줄·다른 값으로 덮지 않음), 값은 PC를
 # 거치지 않으며, 지금 .env는 먼저 백업됩니다.
