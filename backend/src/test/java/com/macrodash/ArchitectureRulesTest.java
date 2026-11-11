@@ -205,7 +205,8 @@ class ArchitectureRulesTest {
     /** 수집기가 쓰는 테이블(ADR 0008). 백엔드는 읽기만 합니다. */
     private static final Pattern WRITES_COLLECTOR_TABLE = Pattern.compile(
             "(?i)(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|TRUNCATE)\\s+(snapshots|timeseries|observations|"
-                    + "collector_runs|collector_task_runs|refresh_requests|schema_migrations|fetch_hosts|fetch_schedule)\\b");
+                    + "collector_runs|collector_task_runs|refresh_requests|schema_migrations|fetch_hosts|fetch_schedule|"
+                    + "info_items|fetch_source_state)\\b");
 
     @Test
     @DisplayName("백엔드는 수집기 테이블에 쓰지 않는다 — 테이블마다 쓰는 프로세스는 하나(ADR 0008)")

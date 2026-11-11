@@ -34,8 +34,9 @@
     - 화면 읽기가 수집을 일으키지 않음·운영자 전용(결정 10): `EconCalendarServiceTest.readsTheStoredSnapshotOnly`·`missingSnapshotIsUnavailable`,
       `AccessPolicy`의 운영자 표(`AccessPolicyTest`·`RouteInventoryTest`), 화면 `macroEconCalendar.test.tsx`(회원·데모에게는 카드가 없고 경로를 부르지 않음,
       없는 값은 '—', 출처·수집 시각·'우회 수집' 표기)
-    - 닫힘 알림(결정 4·5): `FetchClosureNotifyJobTest`(사람 확인·포기만, 닫힘 하나에 한 통, 처음 뜰 때 닫혀 있던 것은 알리지 않음, 보통의 물러남은 조용히,
-      사람 확인 표지가 수집기 글과 같음), `FetchStateStoreDbTest`(백엔드는 그 표를 읽기만 — 쓰는 메서드 없음)
+    - 닫힘 알림(결정 4·5): 2026-11-11 [ADR 0035](0035-info-collection.md)의 끊김 알림으로 넓힘 — `SourceAlertJobTest`(차단·형식 바뀜·받지 못함·
+      오래 못 받음, 사건 하나에 한 통·회복 한 통, 기록은 표라 다시 떠도 되풀이하지 않음, 포기 표지가 수집기 글과 같음), `FetchStateStoreDbTest`(백엔드는
+      그 표를 읽기만 — 쓰는 메서드 없음). 결정 5(사람 확인은 풀지 않음)는 ADR 0035 결정 5가 '입력 없는 체크박스만 한 번 누름'으로 고쳤습니다.
   - 뒤 단계가 더할 것: 인베스팅닷컴 RSS 보호(A5)
 
 ## 배경

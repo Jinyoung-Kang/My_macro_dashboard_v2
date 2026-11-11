@@ -284,6 +284,18 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `POST /api/manual/isa/trades/{id}/undo` | '확인' 되돌리기 — 잔고를 정확히 되돌리고 지시는 PLANNED(그 세션 마감이 지났으면 SKIPPED), 내역 행은 지움 → `{ok}` |
 | `POST /api/manual/isa/trades/{id}` | 본문 `{quantity(정수 주), amount(체결 금액 총액), fee?(수수료 — 없으면 수수료율로)}` — 확인한 매매를 실제 값으로 고침(2026-11-09). 앞 값을 되돌린 뒤 새 값으로 다시 반영하고 세금·매입 금액·실현 손익을 다시 계산, 시각·지시 묶음은 그대로. 평균 단가(금액 ÷ 수량)가 직전 종가 ±40% 밖이면 400(7일 안의 매매만 검사), 보유보다 많은 매도 400, 없는 행 404 → `{ok}` |
 
+### 정보 수집(모의매매 > 정보 수집, 운영자 전용 — [ADR 0035](adr/0035-info-collection.md))
+
+수집기가 차단 통과 수집 계층(polite — 운영 서버에서만)으로 받아 둔 글·저장본·출처 판정을 읽기만 합니다(화면이 수집을 일으키지 않음). Claude 결정 패킷은 이 자료를 읽지 않습니다. 표(V33)가 아직 없으면 `available: false`.
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/info/items` | 글 목록(작성 시각 — 모르면 처음 받은 시각 — 최근부터, 본문 없이). 인자 `category`(blog·waedge)·`source`(출처 키 하나)·`q`(제목·한국어 제목·요약 검색)·`before`(앞 쪽의 `next`)·`limit`(1~100, 기본 40) → `{available, items: [{id, source, sourceLabel, kind(article·brief·guru), url(원문), title, titleKo, author, publishedAt, firstSeenAt, summary, bodyStatus(full·partial·none), fetchTier, category}], next}`. 모르는 `category`·형식이 틀린 `before`는 400 |
+| `GET /api/info/items/{id}` | 글 한 편(본문 포함 — 글자만, 최대 40,000자) → `{found, item: {…목록 칸, body}}`. id 형식(16진 24자)이 아니면 400 |
+| `GET /api/info/sources` | 출처별 상태 → `{checkedAt, available, recorded(판정 기록이 있는가 — 로컬은 수집하지 않아 false), sources: [{task, key, label, category(blog·waedge·naver·calendar), siteUrl, status(ok·blocked·format·failed·null), streak, reason, lastOkAt, lastRunAt, items, latestItemAt, incident}], incidents: [{key, task, label, kind(blocked·format·failed·stale), kindLabel, reason, since}]}`. 모든 화면의 안내 띠가 `incidents`를 씀 |
+| `GET /api/info/flows` | 네이버 투자자별 매매동향·외국인·기관 매매상위 저장본 → `{available, collectedAtKst, ageSeconds, source, fetchTier, unit, sourceUrls, trend, rankings, failed}`(모양은 `collector/app/services/info_naver.py` 머리말 — 장중 추정 순위의 금액은 null) |
+| `GET /api/info/gurus` | waedge 거장 견해 저장본 → `{available, collectedAtKst, ageSeconds, source, fetchTier, sourceUrl, asOf, counts, gurus: [{name, stance, score, bull, neutral, bear, basisArticles, asOf, summary}]}` |
+
 ### 모의 매매(미국·한국, 운영자 전용)
 
 모든 경로가 운영자 전용입니다. 테이블(V8)이나 V9~V11의 열(`paper_track_record.group_code`·`data_source`, `paper_decisions.packet_text`, `paper_api_usage.est_cost_calls`), V12의 `paper_reviews`, V13~V16의 열(`paper_books.market`·`currency`(V13), `paper_reviews.market`·`paper_notes.market`(V14), `paper_positions.fill_ref_volume`(V15), `paper_orders.ledger_hold_reason`(V16)), V17의 `paper_fills.bar_at` 열과 `paper_order_exec`, V18의 `paper_checkpoints`가 아직 없으면 `{available:false, message}`(POST·DELETE는 `ok:false`도)로 답합니다(`PaperStore.ready` — 백엔드만 새로 띄워 마이그레이션이 빠졌을 때, QA-016).

@@ -52,6 +52,26 @@
     },
     {
       "m": "GET",
+      "p": "/api/info/items"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/items/{id}"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/sources"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/flows"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/gurus"
+    },
+    {
+      "m": "GET",
       "p": "/api/macro/spread",
       "q": {
         "longId": "str",
