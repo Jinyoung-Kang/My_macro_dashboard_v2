@@ -10,7 +10,6 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.store.TranslationStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -73,7 +72,6 @@ class InfoTranslationModelsDbTest {
     }
 
     @Test
-    @Disabled("QA-403: 저장본만으로 끝난 번역 응답에 모델 이름이 없습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-403: 저장된 번역을 다시 읽어도 그 번역을 옮긴 모델들을 응답에 싣는다(제목·본문 조각이 서로 다른 모델이면 모두)")
     void storedTranslationKeepsItsModels() {
         assertThat(translations.ready()).isTrue();
@@ -91,7 +89,6 @@ class InfoTranslationModelsDbTest {
     }
 
     @Test
-    @Disabled("QA-403: 저장본만으로 끝난 번역 응답에 모델 이름이 없습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-403: 제목만 번역한 응답도 저장된 모델을 싣고, 번역이 없으면 빈 목록이다")
     void titleOnlyAndNothingStored() {
         translations.put(TranslationStore.id(TranslationStore.TITLE, TITLE), TranslationStore.TITLE, TITLE.length(), "연준, 금리 동결", "test-model-lower");

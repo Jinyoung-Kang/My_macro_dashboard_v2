@@ -168,8 +168,8 @@ public class InfoService {
      * 사건 뉴스처럼 글 표에 없는 것은 {@code title}·{@code text}를 보냅니다. 번역은 저장되어 다시 눌러도 모델을 부르지 않습니다.
      * 수집은 일으키지 않습니다(없는 본문을 받으러 가지 않음).
      *
-     * @return {@code {ok, titleKo, textKo, alreadyKorean, cached, truncated, model, error}} — 번역할 본문이 없으면 textKo는 null,
-     *         model은 이번에 번역한 모델(저장본만으로 끝났으면 null)
+     * @return {@code {ok, titleKo, textKo, alreadyKorean, cached, truncated, model, models, error}} — 번역할 본문이 없으면 textKo는 null,
+     *         model은 이번에 번역한 모델(저장본만으로 끝났으면 null), models는 이 번역(저장본 포함)을 옮긴 모델 전부
      */
     public Map<String, Object> translate(String itemId, String title, String text) {
         String sourceTitle = title == null ? null : title.strip();
@@ -217,6 +217,9 @@ public class InfoService {
         out.put("truncated", body != null && body.truncated());
         // 이번에 실제로 번역한 모델(Gemini, 또는 넘어간 Claude). 저장본만으로 끝났으면 null.
         out.put("model", body != null && body.model() != null ? body.model() : usedModel);
+        // 이 응답의 번역(저장본 포함)을 옮긴 모델 전부 — 저장본만으로 끝나도, 조각마다 모델이 달라도 화면이 이름을 보일 수 있게(QA-403).
+        out.put("models", translator.models(titleKo == null ? null : sourceTitle,
+                body == null || body.textKo() == null ? null : sourceText));
         out.put("error", error);
         return out;
     }

@@ -67,6 +67,28 @@ public class TranslationStore {
         return out;
     }
 
+    /**
+     * 이 id들의 번역을 옮긴 모델 → {id: 모델 이름}. 번역이 없는 id와 모델이 비어 있는 행은 빠집니다.
+     *
+     * <p>저장본만으로 끝난 응답도 화면에 실제 모델 이름을 보이려고 읽습니다(QA-403, ADR 0037 개정 1 — 한 등급 아래 모델의 번역은
+     * 고유명사를 원문과 대조해야 함).
+     */
+    public Map<String, String> models(Collection<String> ids) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return out;
+        }
+        String[] array = ids.stream().distinct().toArray(String[]::new);
+        jdbc.query(con -> {
+            var ps = con.prepareStatement("SELECT id, model FROM info_translations WHERE id = ANY(?) AND model IS NOT NULL AND model <> ''");
+            ps.setArray(1, con.createArrayOf("text", array));
+            return ps;
+        }, rs -> {
+            out.put(rs.getString("id"), rs.getString("model"));
+        });
+        return out;
+    }
+
     /** 번역 한 건을 넣습니다 — 이미 있으면 그대로 둡니다(먼저 넣은 번역을 지킴). */
     public void put(String id, String kind, int sourceChars, String textKo, String model) {
         jdbc.update("INSERT INTO info_translations (id, kind, source_chars, text_ko, model) VALUES (?, ?, ?, ?, ?) "

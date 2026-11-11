@@ -164,7 +164,8 @@ describe("정보 수집 화면", () => {
         error: "일부만 번역했습니다 — 다시 누르면 남은 부분만 번역합니다.",
       })
       .mockResolvedValueOnce({
-        ok: true, titleKo: "금리 급등", textKo: "본문 첫 문단의 번역", alreadyKorean: false, cached: false, truncated: false, model: "gemini-flash-latest", error: null,
+        ok: true, titleKo: "금리 급등", textKo: "본문 첫 문단의 번역", alreadyKorean: false, cached: false, truncated: false, model: "claude-haiku-5-5",
+        models: ["gemini-flash-latest", "claude-haiku-5-5"], error: null,
       });
     render(<InfoHub tab="news" />);
 
@@ -182,6 +183,8 @@ describe("정보 수집 화면", () => {
     expect(api.apiPost).toHaveBeenCalledTimes(2);
     expect(within(dialog).queryByText(/다시 누르면 남은 부분만 번역합니다/)).toBeNull();
     expect(within(dialog).queryByRole("button", { name: /번역$/ })).toBeNull();        // 다 옮겼으면 번역 단추는 내립니다
+    // 제목은 앞선 응답의 모델이, 본문은 넘어간 모델이 옮겼습니다 — 둘 다 보입니다(QA-403).
+    expect(within(dialog).getByText(/번역은 gemini-flash-latest · claude-haiku-5-5이\(가\) 옮긴 것/)).toBeTruthy();
   });
 
   it("뉴스·글: 제목은 미리 번역하지 않고 제목마다 번역 단추로 — 누른 제목만 서버에 묻고 아래에 한국어를 보인다. 실패하면 사유를 보인다", async () => {

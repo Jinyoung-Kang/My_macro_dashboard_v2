@@ -447,8 +447,20 @@ export type TranslateResponse = {
   truncated: boolean;
   /** 이번에 번역한 모델(Gemini, 또는 넘어간 Claude Haiku). 저장본만으로 끝났으면 null. */
   model: string | null;
+  /** 이 번역(저장본 포함)을 옮긴 모델 전부 — 제목 먼저, 본문 조각 순서. 이 칸이 없는 옛 응답도 받습니다. */
+  models?: string[];
   error: string | null;
 };
+
+/**
+ * 번역을 옮긴 모델 이름(QA-403) — 저장본을 다시 읽은 응답도, 조각마다 모델이 다른 글도 이름을 모두 보입니다("A · B").
+ * 목록이 없으면 이번에 부른 모델, 그것도 없으면 '번역 모델'.
+ */
+export function translatedBy(response: Pick<TranslateResponse, "model" | "models">): string {
+  const names = [...new Set((response.models ?? []).filter(Boolean))];
+  if (names.length > 0) return names.join(" · ");
+  return response.model ?? "번역 모델";
+}
 
 /**
  * 원문 팝업에 여는 글 하나 — 수집 글(본문은 서버에서 id로 읽음)이나 사건 뉴스(피드가 준 요약이 전부)를 같은 모양으로.

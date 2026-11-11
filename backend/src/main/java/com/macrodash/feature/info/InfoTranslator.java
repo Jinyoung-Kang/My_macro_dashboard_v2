@@ -443,6 +443,36 @@ public class InfoTranslator {
         return new Body(true, joined.toString(), false, cached, truncated, null, usedModel);
     }
 
+    /**
+     * 이 제목·본문의 저장된 번역을 옮긴 모델들 — 제목 먼저, 본문은 조각 순서, 같은 이름은 한 번(QA-403).
+     *
+     * <p>{@link Titles#model()}·{@link Body#model()}은 <b>이번에</b> 부른 모델이라 저장본만으로 끝나면 null이고, 조각마다 모델이 달라도 하나뿐입니다.
+     * 화면이 '누가 옮겼는지'를 늘 보일 수 있게, 번역 행에 남은 이름을 읽어 돌려줍니다. 번역이 없거나 표가 없으면 빈 목록입니다.
+     *
+     * @param title 번역된 제목의 원문(없으면 null)
+     * @param text  번역된 본문의 원문(없으면 null) — {@link #body}와 같은 방식으로 조각을 나눕니다
+     */
+    public List<String> models(String title, String text) {
+        if (!store.ready()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        if (title != null && !title.isBlank()) {
+            ids.add(TranslationStore.id(TranslationStore.TITLE, title));
+        }
+        if (text != null && !text.isBlank()) {
+            String limited = text.length() > BODY_MAX_CHARS ? text.substring(0, BODY_MAX_CHARS) : text;
+            for (String part : chunks(limited, BODY_CHUNK_CHARS)) {
+                ids.add(TranslationStore.id(TranslationStore.BODY, part));
+            }
+        }
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<String, String> byId = store.models(ids);
+        return ids.stream().map(byId::get).filter(java.util.Objects::nonNull).distinct().toList();
+    }
+
     /** 조각 하나를 번역해 저장합니다 → 실패 사유(성공이면 null)와 번역한 모델. */
     private Part translatePart(String part) {
         Called called = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA);

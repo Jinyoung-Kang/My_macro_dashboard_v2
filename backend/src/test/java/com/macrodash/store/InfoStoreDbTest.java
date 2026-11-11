@@ -143,6 +143,9 @@ class InfoStoreDbTest {
         translations.put(id, TranslationStore.TITLE, title.length(), "다른 번역", "test-model");
 
         assertThat(translations.find(List.of(id, "missing"))).containsExactly(java.util.Map.entry(id, "월러: 금리는 제약적"));
+        // 번역 행에 남긴 모델 이름도 다시 읽습니다(QA-403) — 번역이 없는 id는 빠집니다.
+        assertThat(translations.models(List.of(id, "missing"))).containsExactly(java.util.Map.entry(id, "test-model"));
+        assertThat(translations.models(List.of())).isEmpty();
         assertThat(translations.charsSince(Instant.now().minusSeconds(3600)) - before).isEqualTo(title.length());
     }
 }

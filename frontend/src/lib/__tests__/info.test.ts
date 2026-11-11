@@ -26,6 +26,7 @@ import {
   statusLabel,
   statusTone,
   titleNeedsTranslation,
+  translatedBy,
   unseenIncidents,
 } from "../info";
 
@@ -189,6 +190,15 @@ describe("원문 팝업(ADR 0037)", () => {
     const headline = readerOfHeadline({ set: "kr", title: "한국은행 보도자료", summary: "기준금리를 동결했다", link: null, source: "한국은행", feed: "bok_press",
       publishedAt: null, fetchedAt: null }, 0);
     expect(canTranslate(headline, null)).toBe(false);
+  });
+
+  it("QA-403: 번역을 옮긴 모델은 저장본 포함 전부 — 목록이 없으면 이번에 부른 모델, 그것도 없으면 '번역 모델'", () => {
+    expect(translatedBy({ model: null, models: ["gemini-3.5-flash-lite"] })).toBe("gemini-3.5-flash-lite");
+    expect(translatedBy({ model: "claude-haiku-5-5", models: ["gemini-3.5-flash", "claude-haiku-5-5", "gemini-3.5-flash"] }))
+      .toBe("gemini-3.5-flash · claude-haiku-5-5");
+    expect(translatedBy({ model: "claude-haiku-5-5", models: [] })).toBe("claude-haiku-5-5");
+    expect(translatedBy({ model: "claude-haiku-5-5" })).toBe("claude-haiku-5-5");
+    expect(translatedBy({ model: null })).toBe("번역 모델");
   });
 
   it("QA-409: 번역 응답 뒤에도 옮길 본문이 남았으면 단추를 계속 낸다 — 본문이 옮겨졌거나 이미 한국어면 내린다", () => {

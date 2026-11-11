@@ -6,7 +6,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { useApi } from "@/hooks/useApi";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { type InfoItemResponse, type ReaderEntry, type TranslateResponse, offersTranslate } from "@/lib/info";
+import { type InfoItemResponse, type ReaderEntry, type TranslateResponse, offersTranslate, translatedBy } from "@/lib/info";
 
 /**
  * 원문 팝업(ADR 0037) — 정보 수집의 글·속보·사건 뉴스를 누르면 받아 둔 원문(본문, 없으면 요약)을 그대로 보이고, 번역 단추를 누르면 한국어로
@@ -110,7 +110,7 @@ function Reader({ entry }: { entry: ReaderEntry }) {
       )}
       <p className="text-xs leading-5 text-text-3">
         {entry.note}
-        {showKorean && translated?.textKo ? ` 번역은 ${translated.model ?? "번역 모델"}이(가) 옮긴 것이라 숫자·고유명사는 원문과 대조하세요.` : ""}
+        {showKorean && translated?.textKo ? ` 번역은 ${translatedBy(translated)}이(가) 옮긴 것이라 숫자·고유명사는 원문과 대조하세요.` : ""}
       </p>
     </div>
   );
