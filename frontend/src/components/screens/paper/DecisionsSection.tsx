@@ -251,6 +251,7 @@ export function DecisionsSection({
           <IntradayPlansPanel
             intraday={status.data.intraday}
             book={code}
+            bookLabel={book?.label}
             market={market}
             onChanged={() => {
               void status.reload();

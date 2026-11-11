@@ -17,11 +17,14 @@ import type { PaperIntradayStatus, PaperMarketCode, PaperRunIntradayResult } fro
 export function IntradayPlansPanel({
   intraday,
   book,
+  bookLabel,
   market = "US",
   onChanged,
 }: {
   intraday: PaperIntradayStatus | null | undefined;
   book: string;
+  /** 확인 글에 적을 계좌 이름(없으면 계좌 코드). */
+  bookLabel?: string | null;
   market?: PaperMarketCode;
   onChanged: () => void;
 }) {
@@ -32,13 +35,16 @@ export function IntradayPlansPanel({
     ),
     "장중 판단을 예약하지 못했습니다.",
   );
-  const [confirming, setConfirming] = useState(false);
+  // 확인 상자는 그것을 연 계좌에 묶습니다 — 연 채로 계좌를 바꾸면 닫혀 보이고, 바꾼 계좌로 요청이 나가지 않습니다(QA-366, 같은 카드의
+  // 수동 결정 확인과 같은 방식).
+  const [confirmingFor, setConfirmingFor] = useState<string | null>(null);
   const [requestedFor, setRequestedFor] = useState<string | null>(null);
   const view = intradayBookView(intraday, book, market);
   if (!view) return null;
+  const confirming = confirmingFor === book;
 
   const run = async () => {
-    setConfirming(false);
+    setConfirmingFor(null);
     setRequestedFor(book);
     const ok = await request.run(book);
     if (ok) onChanged();
@@ -53,7 +59,7 @@ export function IntradayPlansPanel({
           <h3 className="text-sm font-semibold">장중 판단(자유 시점 판)</h3>
           <p className="text-xs text-muted">{view.summary}</p>
         </div>
-        <Button onClick={() => setConfirming(true)} disabled={request.busy || confirming || view.blocked !== null}>
+        <Button onClick={() => setConfirmingFor(book)} disabled={request.busy || confirming || view.blocked !== null}>
           {request.busy ? "예약 중…" : "지금 장중 판단 요청"}
         </Button>
       </div>
@@ -76,12 +82,13 @@ export function IntradayPlansPanel({
       {confirming && (
         <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
           <p className="text-sm leading-relaxed text-warn">
-            장중 판단을 지금으로 당길까요? 가장 이른 남은 예약을 1분 뒤로 옮기거나(없으면 새로 넣고), 서버가 그 시각 + 2분 뒤 창에서 Claude를 한 번
-            부릅니다. {CLAUDE_COST_NOTE}
+            {bookLabel || book} 계좌의 장중 판단을 지금으로 당길까요? 가장 이른 남은 예약을 1분 뒤로 옮기거나(없으면 새로 넣고), 서버가 그 시각 +
+            2분 뒤 창에서 Claude를 한 번 부릅니다. {CLAUDE_COST_NOTE}
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" onClick={() => void run()} disabled={request.busy}>요청 확인</Button>
-            <Button onClick={() => setConfirming(false)} disabled={request.busy}>취소</Button>
+            {/* 확인 상자를 연 뒤 그 계좌가 막히면(스위치 꺼짐·횟수 0 — 상태를 다시 읽어 바뀜) 확인도 누를 수 없습니다. */}
+            <Button variant="primary" onClick={() => void run()} disabled={request.busy || view.blocked !== null}>요청 확인</Button>
+            <Button onClick={() => setConfirmingFor(null)} disabled={request.busy}>취소</Button>
           </div>
         </div>
       )}

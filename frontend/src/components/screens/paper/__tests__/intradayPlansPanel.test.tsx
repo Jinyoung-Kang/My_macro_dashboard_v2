@@ -28,16 +28,30 @@ describe("장중 판단 패널의 확인 단계(QA-366)", () => {
 
   // 수정 전에는 확인 상자가 계좌와 무관한 불(confirming)이라, 연 채로 계좌를 바꾸면 그대로 남아 '요청 확인'이 바꾼 계좌로 요청을 보냈습니다
   // (재현 커밋에서는 it.fails).
-  it.fails("확인 상자를 연 채 계좌를 바꾸면 상자가 닫혀 있고 요청이 나가지 않음", () => {
-    const { rerender } = render(<IntradayPlansPanel intraday={STATUS} book="claude" onChanged={() => {}} />);
+  it("확인 상자를 연 채 계좌를 바꾸면 상자가 닫혀 있고 요청이 나가지 않음 — 확인 글에는 그 계좌 이름", () => {
+    const { rerender } = render(<IntradayPlansPanel intraday={STATUS} book="claude" bookLabel="Claude 계좌1" onChanged={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "지금 장중 판단 요청" }));
     expect(screen.queryByRole("button", { name: "요청 확인" })).not.toBeNull();
+    expect(screen.queryByText(/Claude 계좌1 계좌의 장중 판단을 지금으로 당길까요/)).not.toBeNull();
 
-    rerender(<IntradayPlansPanel intraday={STATUS} book="claude2" onChanged={() => {}} />);
+    rerender(<IntradayPlansPanel intraday={STATUS} book="claude2" bookLabel="Claude 계좌2" onChanged={() => {}} />);
 
     expect(screen.queryByRole("button", { name: "요청 확인" })).toBeNull();
     expect(api.apiPost).not.toHaveBeenCalled();
     expect((screen.getByRole("button", { name: "지금 장중 판단 요청" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("확인 상자를 연 뒤 그 계좌가 막히면(스위치 꺼짐) '요청 확인'도 누를 수 없음", () => {
+    const { rerender } = render(<IntradayPlansPanel intraday={STATUS} book="claude" onChanged={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "지금 장중 판단 요청" }));
+    const off = { ...STATUS, books: [{ book: "claude", freeTiming: false, plans: [] }] };
+
+    rerender(<IntradayPlansPanel intraday={off} book="claude" onChanged={() => {}} />);
+
+    const confirm = screen.getByRole("button", { name: "요청 확인" }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(api.apiPost).not.toHaveBeenCalled();
   });
 
   it("확인을 누르면 그 계좌로 한 번 요청하고 결과를 적음", async () => {
