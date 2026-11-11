@@ -510,6 +510,18 @@ export function canTranslate(entry: ReaderEntry, body: string | null): boolean {
   return !entry.titleKo && !hasHangul(entry.title);
 }
 
+/**
+ * 팝업에서 번역 단추를 계속 낼 것인가(QA-409) — 번역 응답을 받은 뒤에도, 옮길 본문(한국어가 아닌 본문·요약)이 있는데 본문 번역이 아직
+ * 없고 '이미 한국어'도 아니면 냅니다. 서버는 제목을 먼저 옮기고 본문을 옮기므로 본문만 실패한 응답(제목 번역 있음·본문 없음)이 올 수 있고,
+ * 다시 누르면 남은 부분만 번역합니다. 응답을 받기 전에는 {@link canTranslate}와 같습니다.
+ */
+export function offersTranslate(entry: ReaderEntry, body: string | null, translated: Pick<TranslateResponse, "textKo" | "alreadyKorean"> | null): boolean {
+  if (!translated) return canTranslate(entry, body);
+  if (translated.textKo || translated.alreadyKorean) return false;
+  const text = entry.itemId ? body : entry.text;
+  return !!text && !hasHangul(text.slice(0, 400));
+}
+
 const BODY_LABELS: Record<InfoItem["bodyStatus"], string> = { full: "본문", partial: "요약만", none: "제목만" };
 
 export function bodyLabel(status: InfoItem["bodyStatus"]): string {

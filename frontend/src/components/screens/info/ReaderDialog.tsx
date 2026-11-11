@@ -6,7 +6,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { useApi } from "@/hooks/useApi";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { type InfoItemResponse, type ReaderEntry, type TranslateResponse, canTranslate } from "@/lib/info";
+import { type InfoItemResponse, type ReaderEntry, type TranslateResponse, offersTranslate } from "@/lib/info";
 
 /**
  * 원문 팝업(ADR 0037) — 정보 수집의 글·속보·사건 뉴스를 누르면 받아 둔 원문(본문, 없으면 요약)을 그대로 보이고, 번역 단추를 누르면 한국어로
@@ -64,7 +64,9 @@ function Reader({ entry }: { entry: ReaderEntry }) {
   const loading = !!entry.itemId && entry.hasBody && stored.loading && !stored.data;
   const koreanTitle = translated?.titleKo ?? entry.titleKo;
   const shown = showKorean && translated?.textKo ? translated.textKo : original;
-  const offerTranslate = !loading && !translated && canTranslate(entry, original);
+  // 일부만 번역된 응답(제목만 옮기고 본문은 실패) 뒤에도 단추를 남깁니다 — 다시 누르면 서버가 남은 부분만 옮깁니다(QA-409).
+  const offerTranslate = !loading && offersTranslate(entry, original, translated);
+  const retry = translated !== null || error !== null;
 
   return (
     <div className="mt-3 space-y-3">
@@ -76,7 +78,7 @@ function Reader({ entry }: { entry: ReaderEntry }) {
       <div className="flex flex-wrap items-center gap-2">
         {offerTranslate && (
           <button type="button" onClick={translate} disabled={busy} className={buttonClasses("primary", "sm")}>
-            {busy ? "번역 중…" : "한국어로 번역"}
+            {busy ? "번역 중…" : retry ? "다시 번역" : "한국어로 번역"}
           </button>
         )}
         {translated?.textKo && (

@@ -13,6 +13,7 @@ import {
   itemTime,
   itemTitles,
   kstMinute,
+  offersTranslate,
   parseInfoTab,
   rankingBasis,
   readerOfHeadline,
@@ -173,5 +174,22 @@ describe("원문 팝업(ADR 0037)", () => {
     const headline = readerOfHeadline({ set: "kr", title: "한국은행 보도자료", summary: "기준금리를 동결했다", link: null, source: "한국은행", feed: "bok_press",
       publishedAt: null, fetchedAt: null }, 0);
     expect(canTranslate(headline, null)).toBe(false);
+  });
+
+  it("QA-409: 번역 응답 뒤에도 옮길 본문이 남았으면 단추를 계속 낸다 — 본문이 옮겨졌거나 이미 한국어면 내린다", () => {
+    const entry = readerOfItem(item);
+    const partial = { textKo: null, alreadyKorean: false };       // 제목만 옮기고 본문은 실패한 응답
+    expect(offersTranslate(entry, "English body", null)).toBe(true);
+    expect(offersTranslate(entry, "English body", partial)).toBe(true);
+    expect(offersTranslate(entry, "English body", { textKo: "한국어 본문", alreadyKorean: false })).toBe(false);
+    expect(offersTranslate(entry, "English body", { textKo: null, alreadyKorean: true })).toBe(false);
+    // 본문이 없거나 이미 한국어인 글은 제목 번역 응답 뒤 더 옮길 것이 없습니다.
+    expect(offersTranslate(entry, null, partial)).toBe(false);
+    expect(offersTranslate(entry, "한국어 본문", partial)).toBe(false);
+    // 사건 뉴스(id 없음)는 목록이 준 요약이 본문입니다.
+    const headline = readerOfHeadline({ set: "us", title: "Fed holds", summary: "The Committee decided.", link: null, source: "Fed", feed: "fed",
+      publishedAt: null, fetchedAt: null }, 0);
+    expect(offersTranslate(headline, null, partial)).toBe(true);
+    expect(offersTranslate({ ...headline, text: null }, null, partial)).toBe(false);
   });
 });
