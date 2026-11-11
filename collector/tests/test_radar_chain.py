@@ -327,3 +327,41 @@ def test_QA396_기준일을_모르는_행이면_지어내지_않는다(monkeypat
 
     assert result["rows"]
     assert result.get("dataDate") is None
+
+
+# ------------------------------------------------------------------ QA-398
+# 과거 날짜 조회의 KRX 단계는 '그 날짜만' 봅니다(ADR 0036 결정 6). 그런데 그 호출이 하루씩 거슬러 올라가는 반복 안에 있어,
+# 그날 KRX 자료가 없으면 전날·전전날의 순위를 그 날짜 것처럼(이력 대체 표시 없이) 돌려줬습니다.
+
+@pytest.mark.xfail(strict=True, reason="QA-398: 과거 날짜 조회가 앞 날짜의 KRX 순위를 표시 없이 돌려줍니다")
+def test_QA398_과거_날짜는_그_날짜의_KRX_순위만_보고_없으면_누적_이력으로_간다(monkeypatch):
+    asked: list[tuple[str, bool]] = []
+
+    def krx(date_str, market, investor, trade_type, top_n, *, nearest):
+        asked.append((date_str, nearest))
+        return _krx_rows("2026-09-10") if date_str == "20260910" else []
+
+    monkeypatch.setattr(radar, "fetch_krx_stored_ranking", krx)
+    monkeypatch.setattr(
+        radar, "read_from_history",
+        lambda *a, **k: {"source": "누적 이력", "sourceKind": "history", "isHistorical": True,
+                         "historyDate": "2026-09-11", "rows": _rows("누적 이력")},
+    )
+
+    result = radar.collect_radar_ranking(date(2026, 9, 11))
+
+    assert result["sourceKind"] == "history", "9월 11일을 물었는데 9월 10일의 KRX 순위를 그날 것처럼 주면 안 됩니다"
+    assert result["historyDate"] == "2026-09-11"
+    assert asked == [("20260911", False)], "과거 날짜의 KRX 조회는 요청한 날짜 한 번뿐입니다"
+
+
+def test_QA398_과거_날짜에_그날_KRX_순위가_있으면_그것을_쓴다(monkeypatch):
+    monkeypatch.setattr(
+        radar, "fetch_krx_stored_ranking",
+        lambda date_str, *a, nearest: _krx_rows("2026-09-11") if date_str == "20260911" and not nearest else [],
+    )
+
+    result = radar.collect_radar_ranking(date(2026, 9, 11))
+
+    assert result["sourceKind"] == "krx"
+    assert result["dataDate"] == "2026-09-11"
