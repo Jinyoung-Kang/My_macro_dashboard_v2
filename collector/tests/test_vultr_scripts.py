@@ -240,6 +240,36 @@ def test_QA118_deploy의_스키마_적용이_10번_모두_실패하면_알리고
 
 
 UP = "compose up -d --no-build --wait --wait-timeout 300"
+CADDY = "compose up -d --no-deps --force-recreate --wait --wait-timeout 60 caddy"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-369: 기동 확인(up --wait)이 실패하면 set -e로 그 줄에서 끝나 스키마 적용과 앞단 재생성을 건너뜁니다")
+def test_QA369_deploy는_기동_확인이_실패해도_스키마_적용과_앞단_재생성을_마친_뒤_실패로_끝난다(server, fakes):
+    """
+    여섯 서비스 중 하나라도 5분 안에 건강해지지 못하면 `up --wait`가 0이 아닌 값으로 끝납니다. 백엔드와 스키마만 바뀐 배포였다면 새 백엔드는
+    떠 있는데 새 표가 없어 모의 매매 정기 작업이 '준비 중'으로 쉬고, 다시 돌려도 같은 줄에서 멈췄습니다.
+    """
+    result = _deploy(server, fakes, FAKE_DOCKER_FAIL="--wait-timeout 300")      # 그 줄만 실패(postgres 120·caddy 60은 그대로)
+
+    calls = _docker_calls(fakes)
+    schema = [i for i, c in enumerate(calls) if " exec -T collector " in f" {c} " and "init_schema" in c]
+    assert schema and schema[0] > calls.index(UP), "기동 확인이 실패해도 스키마는 적용합니다"
+    assert CADDY in calls and calls.index(CADDY) > schema[0], "앞단 재생성도 마칩니다"
+    assert result.returncode != 0, "기동 확인의 실패는 끝까지 실패로 남습니다"
+    assert "기동 확인" in result.stderr and "스키마" in result.stderr, result.stderr
+    assert any(c.startswith("compose ps") for c in calls), "어느 서비스가 건강하지 않은지 보입니다"
+    assert not any("prune" in c for c in calls), "실패한 배포는 이미지 정리를 하지 않습니다(QA-118)"
+    assert "배포했습니다" not in result.stdout, "성공 문구는 성공 때만(QA-194)"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-369: 앞단 재생성 줄도 set -e 아래라 실패하면 정리·요약 없이 끝납니다")
+def test_QA369_deploy는_앞단_재생성이_실패하면_알리고_실패로_끝난다(server, fakes):
+    result = _deploy(server, fakes, FAKE_DOCKER_FAIL="--wait-timeout 60 caddy")
+
+    calls = _docker_calls(fakes)
+    assert result.returncode != 0
+    assert "앞단" in result.stderr, result.stderr
+    assert not any("prune" in c for c in calls) and "배포했습니다" not in result.stdout
 
 
 def _dump_calls(calls: list[str]) -> list[int]:
