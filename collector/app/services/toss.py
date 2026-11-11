@@ -126,6 +126,14 @@ def _issue_token() -> tuple[str | None, str | None]:
         )
         res.raise_for_status()
         payload = res.json()
+        # 본문 해석도 try 안에서 합니다(QA-350) — 응답이 객체가 아니거나 수명이 숫자가 아니면 예외가 부르는 쪽으로 올라가, 주문 길에서
+        # '보내지 않음(token-failed)' 대신 일반 예외로 분류됐습니다.
+        if not isinstance(payload, dict):
+            return None, "토큰 발급 실패: 응답이 객체가 아닙니다"
+        token = payload.get("access_token")
+        if not token:
+            return None, f"토큰 응답에 access_token이 없습니다: {payload}"
+        expires_in = int(payload.get("expires_in", 3600))
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "?"
         body = exc.response.text[:300] if exc.response is not None else ""
@@ -133,11 +141,6 @@ def _issue_token() -> tuple[str | None, str | None]:
     except Exception as exc:  # noqa: BLE001
         return None, f"토큰 발급 실패: {exc}"
 
-    token = payload.get("access_token")
-    if not token:
-        return None, f"토큰 응답에 access_token이 없습니다: {payload}"
-
-    expires_in = int(payload.get("expires_in", 3600))
     with _lock:
         _token_cache = (token, time.time() + max(60, expires_in - 60))
     return token, None
@@ -320,12 +323,16 @@ def _invalidate_token(failed: str | None = None) -> None:
 
 
 def _error_text(res: requests.Response) -> str:
+    """오류 글 — 토스 오류 envelope(``error.code``·``error.message``)이면 그것을 붙이고, 그 모양이 아니면(JSON 아님·본문이 목록·``error``가 글자) 상태만."""
     try:
-        err = (res.json() or {}).get("error") or {}
-        code, message = err.get("code") or "", err.get("message") or ""
-        return f"HTTP {res.status_code} {code} {message}".strip()
+        body = res.json()
     except ValueError:
         return f"HTTP {res.status_code}"
+    err = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(err, dict):
+        return f"HTTP {res.status_code}"     # 게이트웨이·프레임워크의 기본 오류 본문({"status": 404, "error": "Not Found"}) 등(QA-350)
+    code, message = err.get("code") or "", err.get("message") or ""
+    return f"HTTP {res.status_code} {code} {message}".strip()
 
 
 def _error_code(res: requests.Response) -> str | None:
@@ -425,9 +432,12 @@ def _authorized_get(session: requests.Session, path: str, params: dict | None = 
         if res.status_code != 200:
             raise TossError(_error_text(res), status=res.status_code, code=_error_code(res))
         try:
-            return (res.json() or {}).get("result")
+            body = res.json() or {}
         except ValueError:
             raise TossError("JSON이 아닌 응답", status=200) from None
+        if not isinstance(body, dict):
+            raise TossError("봉투 모양이 아닌 응답", status=200)      # 예전에는 AttributeError가 그대로 올라갔습니다(QA-350)
+        return body.get("result")
     raise TossError("재시도 한도 초과 (401/429)")
 
 

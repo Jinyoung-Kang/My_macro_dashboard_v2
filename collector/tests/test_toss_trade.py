@@ -802,7 +802,6 @@ def test_오늘을_세지_못하면_보내지_않는다(enabled, fake, clock, se
     assert fake.posts() == []
 
 
-@pytest.mark.xfail(strict=True, reason="QA-350: 봉투 모양이 아닌 오류 본문이면 일반 예외가 올라가 단계 코드 대신 internal로 분류됩니다")
 @pytest.mark.parametrize("body", [{"status": 500, "error": "Internal Server Error"}, ["oops"]], ids=["error-글자", "본문-목록"])
 def test_QA350_주문_목록이_봉투_밖_오류_본문으로_실패해도_count_unavailable(enabled, fake, clock, body):
     fake.routes["/api/v1/orders"] = (500, body)
