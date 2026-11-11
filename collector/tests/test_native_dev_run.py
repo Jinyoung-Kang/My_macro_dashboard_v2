@@ -127,7 +127,6 @@ def test_네이티브_실행은_셸에_true가_있어도_토스_조회와_실제
     assert _run(tmp_path, "dev-backend", dict(_SWITCHES_ON))["REALTRADE"] == "false"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-411: dev-collector가 POLITE_FETCH_ENABLED를 고정하지 않아 셸의 true가 그대로 넘어갑니다")
 def test_QA411_dev_collector는_셸에_true가_있어도_차단_통과_수집을_끈다(tmp_path):
     # 차단 통과 수집은 운영 서버에서만 돕니다(ADR 0035 결정 4 — 개인 IP로 받지 않음). 켜진 채 뜨면 이 PC의 IP로 출처를 부릅니다.
     assert _run(tmp_path, "dev-collector", dict(_SWITCHES_ON))["POLITE"] == "false"

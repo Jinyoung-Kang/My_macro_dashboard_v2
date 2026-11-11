@@ -312,6 +312,8 @@ make dev-collector      # 내부적으로 collector/.venv/bin/python -m uvicorn 
 > (`COLLECTOR_API_TOKEN이 비어 있습니다`) — `make setup`을 먼저 실행하세요. `make dev-backend`는 `.env`의
 > `PAPER_ENABLED`도 넘깁니다 — 값이 `true`일 때만 켜고, 비우거나 줄이 없으면 `false`로 띄웁니다(모의 매매 정기 작업은 Vultr 서버 한 곳에서만 — QA-251).
 > `mvn spring-boot:run`을 직접 치면 이 값이 빠져 백엔드 기본값(켜짐)으로 뜹니다.
+> 운영 서버에서만 켜는 스위치(`TOSS_ACCOUNT_ENABLED`·`TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`·`POLITE_FETCH_ENABLED`)는 셸이나 `.env`에
+> `true`가 있어도 두 명령이 끈 채로 띄웁니다(차단 통과 수집을 이 PC의 IP로 돌리지 않음 — QA-411).
 
 > `source .venv/bin/activate` 후 `uvicorn ...`을 직접 치지 마세요. conda나
 > pyenv가 PATH 앞에 있으면 **다른 파이썬의 uvicorn**이 잡혀

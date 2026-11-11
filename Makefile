@@ -206,6 +206,9 @@ dev-collector: export TOSS_ACCOUNT_ENABLED := false
 # 실제 매매(ADR 0028)의 두 서버 스위치도 같습니다 — 셸에 true가 남아 있어도 네이티브 수집기·백엔드는 끈 채로 띄웁니다(compose의 "false" 고정과 같은 이유).
 dev-collector: export TOSS_TRADING_ENABLED := false
 dev-backend: export REAL_TRADE_ENABLED := false
+# 차단 통과 수집(polite 속도군 — ADR 0035 결정 4)도 운영 서버에서만 돕니다. 셸이나 .env에 POLITE_FETCH_ENABLED=true가 있어도 네이티브 수집기는
+# 끈 채로 띄웁니다 — 켜진 채 뜨면 이 PC의 IP로 출처를 부릅니다(compose 기반 파일의 "false" 고정과 같은 이유, QA-411).
+dev-collector: export POLITE_FETCH_ENABLED := false
 
 dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv 필요)
 	@test -x $(VENV_PY) || (echo "경고: collector/.venv가 없습니다. 먼저:" && \
