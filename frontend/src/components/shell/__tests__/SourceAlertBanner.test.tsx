@@ -75,4 +75,25 @@ describe("수집 끊김 안내 띠", () => {
     render(<SourceAlertBanner user={OWNER} />);
     expect(await screen.findByText(/수집 출처 1곳이 끊겼습니다: 네이버/)).toBeTruthy();
   });
+
+  // 닫은 기록의 키가 '태스크|종류'뿐이라, 회복했다가 같은 종류로 다시 끊기면 키가 같아 띠가 뜨지 않았습니다(QA-408).
+  // 서버가 사건마다 회차(episode — 그 출처의 마지막 성공 시각)를 주고 화면은 그것까지 붙여 닫습니다.
+  it.fails("QA-408: 닫은 출처가 회복했다가 같은 종류로 다시 끊기면(회차가 바뀜) 띠가 다시 뜬다", async () => {
+    respond([{ ...incident("info_blog_wolfstreet", "Wolf Street"), episode: "2026-11-10T01:00:00Z" }]);
+    const first = render(<SourceAlertBanner user={OWNER} />);
+    fireEvent.click(await screen.findByRole("button", { name: "수집 끊김 안내 닫기" }));
+    expect(screen.queryByTestId("source-alert-banner")).toBeNull();
+    first.unmount();
+
+    // 같은 사건이 이어지는 동안(회차 그대로)은 닫힌 채입니다.
+    const second = render(<SourceAlertBanner user={OWNER} />);
+    await vi.waitFor(() => expect(api.apiGetShared).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId("source-alert-banner")).toBeNull();
+    second.unmount();
+
+    // 회복(마지막 성공 시각이 바뀜) 뒤 같은 출처·같은 종류로 다시 끊김.
+    respond([{ ...incident("info_blog_wolfstreet", "Wolf Street"), episode: "2026-11-11T09:00:00Z" }]);
+    render(<SourceAlertBanner user={OWNER} />);
+    expect(await screen.findByText(/수집 출처 1곳이 끊겼습니다: Wolf Street/)).toBeTruthy();
+  });
 });
