@@ -85,7 +85,11 @@ def note_rejected(host: str, why: str) -> Closed:
 
 
 def note_human_check(host: str, why: str) -> Closed:
-    """사람 확인을 만남 — 풀지 않고 길게 닫습니다. 연속 거부는 올리지 않습니다(포기로 가는 셈이 아님)."""
+    """
+    사람 확인을 만남 — 풀지 않고 길게 닫습니다. 연속 거부는 올리지 않습니다(포기로 가는 셈이 아님).
+
+    사람이 고쳐야 풀리는 다른 닫힘도 이 규칙을 씁니다 — KRX가 로그인을 거절했을 때(tasks/info._krx_login, QA-390).
+    """
     low, high = policy.HUMAN_CHECK_MINUTES
     until = _utcnow() + timedelta(minutes=_rng.uniform(low, high))
     store.save_fetch_host(host, blocked_until=until, blocked_reason=why)

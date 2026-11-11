@@ -21,7 +21,7 @@ from datetime import date, datetime, time, timezone
 from typing import Callable
 
 from .. import catalog, kst, krcalendar, store
-from ..fetch import ladder
+from ..fetch import ladder, state
 from ..services import info_blogs, info_naver, info_waedge, info_wire, krx_data
 from ..services.info_text import ShapeError
 from . import polite
@@ -170,35 +170,88 @@ def task_info_krx_daily() -> str:
     return polite.scheduled(KRX_TASK, KRX_CADENCE, _shape(lambda: collect_krx()))
 
 
+def _krx_login(fetch) -> None:
+    """
+    KRX에 로그인합니다. KRX가 로그인을 **거절**하면(비밀번호 변경 요구·그 밖의 거절 코드) 그 호스트를 길게 닫고 거부로 올립니다(QA-390).
+
+    거절은 사람이 고쳐야 풀립니다(krx.co.kr에서 비밀번호를 바꾸고 서버 .env를 고침). 닫지 않으면 태스크가 깰 때마다(2~5시간) 로그인 요청을
+    다시 보내 계정이 막힐 수 있습니다. 닫힘은 사람 확인을 만났을 때와 같은 규칙(12~24시간 — state.note_human_check)이고, 닫힌 동안에는
+    받기 계층이 그 호스트로 아무것도 보내지 않습니다. 일시 실패(5xx·시간 초과)와 계정 값이 설정되지 않은 경우(보낸 요청 없음)는 닫지 않습니다.
+
+    :raises ladder.FetchRejected: KRX가 로그인을 거절해 닫음(사유에 계정 값을 싣지 않음)
+    :raises krx_data.KrxLoginError: 계정 값이 설정되지 않음
+    """
+    try:
+        krx_data.login(fetch)
+    except krx_data.KrxLoginError as exc:
+        if exc.code is None:
+            raise
+        why = f"KRX 로그인 거절({exc.code})"
+        if exc.code == "CD010":
+            why += " — 비밀번호 변경 필요(krx.co.kr에서 바꾼 뒤 서버 .env를 고침)"
+        raise ladder.FetchRejected(state.note_human_check(krx_data.HOST, why)) from exc
+
+
 def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.Random | None = None) -> "str | polite.Partial":
     """
     기준일 자료를 받아 저장합니다 → 실행 기록 한 줄(일부 모양이 다르면 polite.Partial).
 
-    이미 그 기준일을 빠짐없이 받았으면 외부를 부르지 않고 끝납니다. 받지 못한 부분은 직전 저장본의 그 부분을 이어받고 ``isStale``을 답니다
-    (부분마다 제 기준일을 적어 다른 날의 값이 이 날 값으로 보이지 않게). 순매수 상위는 받은 (시장, 투자주체)만 그 날짜를 교체합니다.
+    이미 그 기준일을 빠짐없이 받았으면 외부를 부르지 않고 끝납니다. 같은 기준일을 다시 받을 때는 **받지 못한 부분만** 받습니다 — 직전 저장본의
+    ``failed``에 남은 부분과, 그날 관측치가 아직 없는 (시장, 투자주체)의 순위(QA-390). 받지 못한 부분은 직전 저장본의 그 부분을 이어받고
+    ``isStale``을 답니다(부분마다 제 기준일을 적어 다른 날의 값이 이 날 값으로 보이지 않게). 순매수 상위는 받은 (시장, 투자주체)만 그 날짜를
+    교체합니다. 출처가 거부하거나 하루 예산·시간이 떨어지면 남은 부분은 보내지 않습니다.
     :raises ShapeError: 모든 부분의 모양이 다름
-    :raises krx_data.KrxLoginError: 로그인하지 못함
-    :raises ladder.FetchRejected: 출처가 거부(받은 것은 저장한 뒤)
+    :raises krx_data.KrxLoginError: 계정 값이 설정되지 않음
+    :raises ladder.FetchRejected: 출처가 거부(받은 것은 저장한 뒤), 또는 KRX가 로그인을 거절해 닫음
+    :raises ladder.FetchSkipped: 하루 예산·시간이 모자라 하나도 받지 못함
     """
     now = now or datetime.now(timezone.utc)
     day = krx_target_day(now)
     iso, compact = day.isoformat(), day.strftime("%Y%m%d")
     previous = store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY)
     prev = previous.payload if previous and isinstance(previous.payload, dict) else {}
-    if prev.get("asOf") == iso and not prev.get("failed"):
+    same_day = prev.get("asOf") == iso
+    if same_day and not prev.get("failed"):
         return f"KRX 기준일 {iso} 이미 받음 — 외부 호출 0회"
+    # 같은 기준일을 다시 받는 실행이면 직전에 받지 못한 부분의 이름, 새 기준일이면 None(전부 받음).
+    pending: set[str] | None = {str(name) for name in prev.get("failed") or []} if same_day else None
 
-    krx_data.login(fetch)
-    jobs: list[tuple[str, str, str | None]] = [("rank", market, investor)
-                                                for market in krx_data.MARKETS for investor in krx_data.INVESTORS]
-    jobs += [(kind, market, None) for kind in ("totals", "foreign", "shortTrades") for market in krx_data.MARKETS]
-    (rng or random).shuffle(jobs)                  # 사람이 화면을 오가는 순서처럼 매번 다르게
+    def wanted(name: str) -> bool:
+        return pending is None or name in pending
 
     parts: dict[str, dict] = {"totals": {}, "foreign": {}, "shortTrades": {}, "shortBalances": {}}
     ranks: dict[str, int] = {}
+    jobs: list[tuple[str, str, str | None]] = []
+    for market in krx_data.MARKETS:
+        for investor in krx_data.INVESTORS:
+            # 순위는 받을 때마다 (시장, 투자주체) 단위로 그날을 통째로 교체합니다 — 그날 관측치가 있으면 이미 받은 쌍입니다.
+            stored = len(store.read_observations(catalog.OBS_KRX_INVESTOR_RANK, obs_date=iso,
+                                                 filters={"market": market, "investor": investor}))
+            if stored:
+                ranks[f"{market}|{investor}"] = stored
+            else:
+                jobs.append(("rank", market, investor))
+    for kind in ("totals", "foreign", "shortTrades"):
+        for market in krx_data.MARKETS:
+            if wanted(f"{kind}.{market}"):
+                jobs.append((kind, market, None))
+            elif (prev.get(kind) or {}).get(market) is not None:
+                parts[kind][market] = prev[kind][market]          # 오늘 이미 받은 부분 — 그대로
+    balance_markets = []
+    for market in krx_data.MARKETS:
+        if wanted(f"shortBalances.{market}"):
+            balance_markets.append(market)
+        elif (prev.get("shortBalances") or {}).get(market) is not None:
+            parts["shortBalances"][market] = prev["shortBalances"][market]
+    (rng or random).shuffle(jobs)                  # 사람이 화면을 오가는 순서처럼 매번 다르게
+
+    if jobs or balance_markets:
+        _krx_login(fetch)
+
     failed: list[str] = []
     shape_errors: list[str] = []
     blocked: ladder.FetchRejected | None = None
+    skipped: ladder.FetchSkipped | None = None     # 하루 예산·시간이 떨어짐 — 남은 부분은 보내지 않습니다(부분마다 지연만 쌓임)
 
     def remember_failure(name: str, kind: str, market: str) -> None:
         failed.append(name)
@@ -208,7 +261,7 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
 
     for kind, market, investor in jobs:
         name = f"{kind}.{market}" + (f".{investor}" if investor else "")
-        if blocked is not None:
+        if blocked is not None or skipped is not None:
             remember_failure(name, kind, market)
             continue
         try:
@@ -239,7 +292,10 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
         except ShapeError as exc:
             shape_errors.append(f"{name}: {exc}")
             remember_failure(name, kind, market)
-        except (ladder.FetchFailed, ladder.FetchSkipped):
+        except ladder.FetchFailed:
+            remember_failure(name, kind, market)
+        except ladder.FetchSkipped as exc:
+            skipped = exc
             remember_failure(name, kind, market)
         except ladder.FetchRejected as exc:
             blocked = exc
@@ -247,11 +303,11 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
 
     # 공매도 잔고 — 늦게 공개되어 기준일 2거래일 앞부터 거슬러 처음 나오는 날.
     lagged = krcalendar.previous_trading_days(day, max(KRX_BALANCE_LAG_DAYS))
-    for market in krx_data.MARKETS:
+    for market in balance_markets:
         name = f"shortBalances.{market}"
         found = False
         for lag in KRX_BALANCE_LAG_DAYS:
-            if blocked is not None:
+            if blocked is not None or skipped is not None:
                 break
             when = lagged[lag - 1]
             try:
@@ -260,7 +316,10 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
             except ShapeError as exc:
                 shape_errors.append(f"{name}: {exc}")
                 break
-            except (ladder.FetchFailed, ladder.FetchSkipped):
+            except ladder.FetchFailed:
+                break
+            except ladder.FetchSkipped as exc:
+                skipped = exc
                 break
             except ladder.FetchRejected as exc:
                 blocked = exc
@@ -277,6 +336,8 @@ def collect_krx(*, fetch=ladder.fetch, now: datetime | None = None, rng: random.
     if got == 0 and blocked is None:
         if shape_errors:
             raise ShapeError("; ".join(shape_errors[:2]))
+        if skipped is not None:
+            raise skipped                           # 보내지 못했을 뿐 — 형식 바뀜이 아닙니다
         raise ShapeError(f"KRX 기준일 {iso}의 자료가 하나도 없음(휴장이거나 아직 집계 전)")
     store.put_snapshot(catalog.SNAP_INFO_KRX_DAILY, {
         "contract": 1,

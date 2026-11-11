@@ -209,10 +209,6 @@ def test_모두_형식이_다르면_형식_바뀜(store, account):
 # ==============================================================================
 # 3-2. 다시 받기와 로그인 거절 (QA-390) — 깰 때마다 로그인하고 전부 다시 받지 않습니다
 # ==============================================================================
-QA390 = pytest.mark.xfail(strict=True, reason="QA-390: 일부가 비거나 로그인이 거절되면 깰 때마다 다시 로그인하고 전부 다시 받습니다")
-
-
-@QA390
 def test_QA390_다시_받을_때는_받지_못한_부분만_받는다(store, account):
     first = FakeKrx(answers={"MDCSTAT03701": ladder.FetchFailed("data.krx.co.kr HTTP 503")})
     info_tasks.collect_krx(fetch=first, now=EVENING)
@@ -235,7 +231,6 @@ def test_QA390_다시_받을_때는_받지_못한_부분만_받는다(store, acc
     assert "외부 호출 0회" in info_tasks.collect_krx(fetch=third, now=EVENING) and third.calls == []
 
 
-@QA390
 def test_QA390_순위는_그날_관측치가_있는_쌍을_건너뛴다(store, account):
     empty_once = FakeKrx()
     real = empty_once.__call__
@@ -260,7 +255,6 @@ def test_QA390_순위는_그날_관측치가_있는_쌍을_건너뛴다(store, a
     assert store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload["failed"] == []
 
 
-@QA390
 def test_QA390_하루_예산이_떨어지면_남은_부분을_보내지_않는다(store, account):
     fake = FakeKrx()
     sent = {"data": 0}
@@ -279,7 +273,6 @@ def test_QA390_하루_예산이_떨어지면_남은_부분을_보내지_않는�
     assert len(snap["failed"]) == 20 - 5, "받지 못한 부분은 모두 '받지 못함'으로 남아 다음에 그 부분만 다시 받습니다"
 
 
-@QA390
 def test_QA390_로그인이_거절되면_그_호스트를_닫아_닫힌_동안_로그인을_보내지_않는다(store, account, monkeypatch):
     now = {"t": datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)}
     monkeypatch.setattr(state, "_utcnow", lambda: now["t"])

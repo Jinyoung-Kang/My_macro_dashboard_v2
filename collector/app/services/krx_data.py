@@ -43,7 +43,16 @@ Fetch = Callable[..., ladder.Fetched]
 
 
 class KrxLoginError(Exception):
-    """로그인하지 못함 — 계정 없음·비밀번호 변경 필요·거절. 메시지에 계정 값을 싣지 않습니다."""
+    """
+    로그인하지 못함 — 계정 없음·비밀번호 변경 필요·거절. 메시지에 계정 값을 싣지 않습니다.
+
+    ``code``는 KRX가 로그인 요청에 답한 거절 코드입니다(``CD010`` 등, 코드 칸이 비었으면 '코드 없음'). 계정 값이 설정되지 않아 요청을
+    보내지 않은 경우는 None — 부르는 쪽(tasks/info.collect_krx)이 KRX의 거절일 때만 그 호스트를 닫습니다(QA-390).
+    """
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def credentials() -> tuple[str, str]:
@@ -75,9 +84,9 @@ def login(fetch: Fetch = ladder.fetch) -> None:
         form["skipDup"] = "Y"
         code = _login_code(fetch(LOGIN_URL, method="POST", data=form, headers={"Referer": LOGIN_PAGE}))
     if code == "CD010":
-        raise KrxLoginError("KRX가 비밀번호 변경을 요구함(CD010) — krx.co.kr에서 바꾼 뒤 .env를 고침")
+        raise KrxLoginError("KRX가 비밀번호 변경을 요구함(CD010) — krx.co.kr에서 바꾼 뒤 .env를 고침", code=code)
     if code != "CD001":
-        raise KrxLoginError(f"KRX 로그인 거절({code or '코드 없음'})")
+        raise KrxLoginError(f"KRX 로그인 거절({code or '코드 없음'})", code=code or "코드 없음")
 
 
 def _login_code(fetched: ladder.Fetched) -> str:
