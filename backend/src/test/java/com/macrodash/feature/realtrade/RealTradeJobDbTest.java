@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1600,8 +1599,6 @@ class RealTradeJobDbTest {
     }
 
     // ------------------------------------------------------------------ 손실 한도의 판정값과 앱 미체결 매수(QA-379)
-    private static final String DISABLED_QA379 = "QA-379: 손실 판정의 지금 총액이 앱(이 기능 밖) 미체결 매수가 잡은 금액을 되돌리지 않아 거짓 매수 멈춤 — 수정 커밋에서 해제";
-
     /** 기준 E0 = U0 = 1,000만 원(안전 상한에 닿지 않음), 손실 한도 15% = 150만 원. 따라 하는 책 목표는 A 50%. */
     private void plainBaseline() {
         store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_LIVE).withSource(BOOK, GENERATION)
@@ -1635,7 +1632,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled(DISABLED_QA379)
     @DisplayName("QA-379: 켠 뒤 앱에서 걸어 둔 시장가 매수(잡힌 금액 ≥ 손실 한도 금액)는 손실이 아니다 — 매수 멈춤 없이 그대로 따라 함")
     void appMarketBuyPendingIsNotALoss() {
         plainBaseline();
@@ -1652,7 +1648,25 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled(DISABLED_QA379)
+    @DisplayName("QA-379: 앱 매수 종목이 책에도 보유에도 없어 사전 조회에 시세가 없으면, 하루 한도를 세며 한 번 더 물은 시세로 되돌린다(토스 호출을 더하지 않음)")
+    void appBuyOnUnaskedSymbolUsesQuotesFetchedForDailyRoom() {
+        plainBaseline();
+        List<Holding> holdings = List.of(new Holding(C, "합성" + C, d("100"), d("40000")));
+        Preflight base = new Preflight(clock.now, d("3400000"), holdings, Map.of(A, new Quote(d("50000"), d("65000"), d("35000")),
+                C, new Quote(d("40000"), d("52000"), d("28000"))), Map.of(C, d("100")));
+        Preflight withD = new Preflight(clock.now, d("3400000"), holdings, Map.of(D, new Quote(d("20000"), d("26000"), d("14000"))), Map.of());
+        when(client.preflight(any(), any())).thenAnswer(inv -> ((java.util.Collection<?>) inv.getArgument(0)).contains(D)
+                ? Reply.of(withD) : Reply.of(base));
+        tossOrders(appBuy("APP-3", D, "MARKET", "100", "0"));   // 상한가 26,000 × 100 = 260만 원을 잡음
+
+        run("08:51");
+
+        assertThat(cfg().buysPaused()).isFalse();
+        assertThat(job.lastPreflight().total()).isEqualByComparingTo("10000000");
+        verify(client, times(2)).preflight(eq(new java.util.TreeSet<>(List.of(D))), any());   // 두 단계 사전 조회마다 하루 한도 셈이 한 번씩 — 손실 판정용 호출은 없음
+    }
+
+    @Test
     @DisplayName("QA-379: 앱 시장가 매수가 걸린 채 켜면 기준 총액과 첫 주기의 지금 총액이 같은 값이다 — 켜자마자 매수가 멈추지 않음")
     void enableBaselineMatchesTheJudgedTotal() {
         com.macrodash.feature.auth.AuthService auth = mock(com.macrodash.feature.auth.AuthService.class);
@@ -1676,7 +1690,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled(DISABLED_QA379)
     @DisplayName("QA-379: 앱 지정가 매수는 잡힌 금액을 모르므로 하한가 기준으로만 되돌린다 — 그만큼은 거짓 멈춤이 줄어듦(지정가 200만 원 → 차이 60만 원 < 150만 원)")
     void appLimitBuyPendingAddsBackItsFloor() {
         plainBaseline();

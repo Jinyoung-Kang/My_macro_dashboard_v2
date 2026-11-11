@@ -434,6 +434,45 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("QA-379: 손실 판정에 되돌리는 '이 기능 밖' 미체결 매수 — 시장가는 상한가, 지정가는 하한가, 모르는 것·이미 센 주문·매도·외화는 되돌리지 않는다")
+    void otherOpenBuyHoldFloor() {
+        Map<String, BigDecimal> uppers = Map.of(A, d("91000"), B, d("26000"));
+        Map<String, BigDecimal> lowers = Map.of(A, d("49000"), B, d("14000"));
+        List<CollectorTradeClient.BrokerOrder> open = List.of(
+                typed("m1", A, "BUY", "MARKET", "10", "4", "KRW"),      // 시장가 — 남은 6 × 상한가 91,000 = 546,000
+                typed("l1", B, "BUY", "LIMIT", "100", "0", "KRW"),      // 지정가 — 100 × 하한가 14,000 = 1,400,000
+                typed("own", A, "BUY", "MARKET", "40", "0", "KRW"),     // 이 기능의 행으로 이미 셈
+                typed("s1", B, "SELL", "MARKET", "5", "0", "KRW"),      // 매도 — 매수 가능 금액을 잡지 않음
+                typed("u1", A, null, "MARKET", "2", "0", "KRW"),        // 방향 모름 — 되돌리지 않음(기준 U0 쪽 openBuyHold와 반대)
+                typed("f1", A, "BUY", "MARKET", "3", "3", "KRW"),       // 남은 0
+                typed("x1", B, "BUY", "MARKET", "1", "0", "USD"),       // 국내 아님
+                typed("n1", C, "BUY", "MARKET", "7", "0", "KRW"),       // 상한가 모름 — 되돌리지 않음
+                typed("t1", B, "BUY", null, "10", "0", "KRW"),          // 유형 모름 — 지정가처럼 하한가 = 140,000
+                typed(null, A, "BUY", "MARKET", "9", "0", "KRW"),       // 주문 번호 없음 — 이 기능의 주문인지 알 수 없어 되돌리지 않음
+                new CollectorTradeClient.BrokerOrder("q1", A, "BUY", "MARKET", "DAY", "PENDING", null, null, null, null, null, null,
+                        Instant.EPOCH, null, null, "KRW"),              // 수량 모름
+                new CollectorTradeClient.BrokerOrder("q2", A, "BUY", "MARKET", "DAY", "PENDING", d("5"), null, null, null, null, null,
+                        Instant.EPOCH, null, null, "KRW"));             // 체결 수량 모름 — 남은 수량을 크게 잡지 않음
+
+        assertThat(RealTradePlanner.otherOpenBuyHoldFloor(open, Set.of("own"), uppers::get, lowers::get))
+                .isEqualByComparingTo("2086000");
+        assertThat(RealTradePlanner.otherOpenBuyHoldFloor(open, Set.of("own"), uppers::get, s -> null)).as("하한가를 모르면 지정가는 0")
+                .isEqualByComparingTo("546000");
+        assertThat(RealTradePlanner.otherOpenBuyHoldFloor(List.of(), Set.of(), uppers::get, lowers::get)).isEqualByComparingTo("0");
+        List<CollectorTradeClient.BrokerOrder> pair = List.of(open.get(0), open.get(1));
+        assertThat(RealTradePlanner.otherOpenBuyHoldFloor(pair, Set.of(), uppers::get, lowers::get))
+                .as("같은 주문이면 기준 쪽(openBuyHold — 전부 상한가, 3,146,000)보다 크지 않음 — 판정값이 기준보다 부풀지 않게")
+                .isEqualByComparingTo("1946000")
+                .isLessThanOrEqualTo(RealTradePlanner.openBuyHold(pair, uppers::get).orElseThrow());
+    }
+
+    private static CollectorTradeClient.BrokerOrder typed(String id, String symbol, String side, String orderType, String qty, String filled,
+                                                          String currency) {
+        return new CollectorTradeClient.BrokerOrder(id, symbol, side, orderType, "DAY", "PENDING", d(qty), d(filled), null, null, null, null,
+                Instant.EPOCH, null, null, currency);
+    }
+
+    @Test
     @DisplayName("매도 가능 수량을 물을 종목 — 계획의 매도와 매도 가능 수량을 몰라 건너뛴 종목만")
     void sellSymbolsForSecondRead() {
         Account account = new Acct().cash("10000000").hold(C, "10", "1000").hold(B, "100", "10000").sellable(B, null).quote(A, "70000")

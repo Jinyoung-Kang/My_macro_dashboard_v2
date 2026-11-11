@@ -243,7 +243,8 @@ class RealTradeJob {
 
     /**
      * 마지막으로 토스에서 새로 읽은 값(화면용). {@code equity}는 안전 상한을 적용한 E, {@code total}은 손실 판정의 '지금 값'(상한 없는
-     * 총액 — 정기 작업은 이 기능의 미체결 매수가 잡은 금액을 되돌린 값, 모르면 null). 금액 셋과 시각은 V29 표에도 남고(2026-11-08), 재기동 뒤 그 표에서
+     * 총액 — 정기 작업은 토스 미체결 매수(이 기능의 주문, 그리고 QA-379부터 앱 주문의 하한)가 잡은 금액을 되돌린 값, 모르면 null). 금액 셋과 시각은 V29
+     * 표에도 남고(2026-11-08), 재기동 뒤 그 표에서
      * 되살린 값은 {@code holdings}가 비어 있습니다(보유는 저장하지 않음).
      */
     record PreflightView(Instant fetchedAt, BigDecimal equity, BigDecimal total, BigDecimal cashBuyingPower, List<Position> holdings) {
@@ -493,8 +494,9 @@ class RealTradeJob {
     }
 
     /**
-     * 새로 읽은 계좌 — 계획 입력, E, 이 기능의 미종료 주문 종목, 같은 창에서 이미 잡은 매수의 상한가 합, 손실 판정용 평가액(이 기능의 미체결 매수가 잡은
-     * 금액을 되돌린 값 — 상한 없는 {@code lossTotal}, 안전 상한 적용 {@code lossEquity}), 수집기 하루 한도의 오늘 남은 건수·매수 금액.
+     * 새로 읽은 계좌 — 계획 입력, E, 이 기능의 미종료 주문 종목, 같은 창에서 이미 잡은 매수의 상한가 합, 손실 판정용 평가액(토스 미체결 매수가 잡은
+     * 금액을 되돌린 값 — 이 기능의 주문과 앱 주문의 하한(QA-379), 상한 없는 {@code lossTotal}, 안전 상한 적용 {@code lossEquity}), 수집기 하루 한도의 오늘
+     * 남은 건수·매수 금액.
      */
     private record Fresh(Account account, BigDecimal equity, Set<String> blocked, BigDecimal reserved, BigDecimal lossTotal,
                          BigDecimal lossEquity, DailyRoom daily) {
@@ -1653,8 +1655,8 @@ class RealTradeJob {
      * 새 사전 조회(캐시 없음) + 토스 미체결 목록 + 오늘 주문 목록 → 계획 입력. 매도 가능 수량은 {@code sell}의 종목만 묻습니다(시가 맞추기류는
      * {@link #planSync}가 두 단계로, 장중 따라 하기는 매도 주문의 종목만 — 수집기 사전 조회의 시간 예산). 같은 창(용도)에서 이미 잡은 매수(아직 종료
      * 아님)의 상한가 합, 손실 판정용 평가액(이 기능의 미종료 매수 가운데 토스가 접수한 것의 남은 수량 × 상한가 — 모르면 기준가 — 를 매수 가능 금액에
-     * 되돌림: 토스가 미체결 매수에 매수 가능 금액을 잡아도 손실로 보지 않게), 수집기 하루 한도의 오늘 남은 몫을 함께 돌려줍니다. 하나라도 못 읽으면
-     * null(보내지 않음).
+     * 되돌림: 토스가 미체결 매수에 매수 가능 금액을 잡아도 손실로 보지 않게. 이 기능의 행으로 세지 않은 토스 미체결 매수(앱 주문 등)가 잡은 금액도
+     * 하한만큼 되돌림 — QA-379, {@link #heldByOtherOpenBuys}), 수집기 하루 한도의 오늘 남은 몫을 함께 돌려줍니다. 하나라도 못 읽으면 null(보내지 않음).
      */
     private Fresh fresh(Cycle c, Collection<String> symbols, String purpose, Collection<String> sell) {
         Set<String> ask = new TreeSet<>(symbols);
@@ -1679,7 +1681,8 @@ class RealTradeJob {
             return null;
         }
         Account account = RealTradePlanner.account(reply.value(), open.value());
-        Optional<DailyRoom> daily = dailyRoom(c.limits, account, open.value(), today.value());
+        Map<String, CollectorTradeClient.Quote> fetched = new HashMap<>();
+        Optional<DailyRoom> daily = dailyRoom(c.limits, account, open.value(), today.value(), fetched);
         if (daily.isEmpty()) {
             return null;
         }
@@ -1707,7 +1710,8 @@ class RealTradeJob {
             log.warn("미체결 매수의 상한가·기준가를 모름 — 이번 주기는 보내지 않음");
             return null;
         }
-        BigDecimal lossTotal = total.get().add(held.get());
+        // 이 기능의 행으로 세지 않은 토스 미체결 매수(앱 주문 등)가 잡은 금액도 되돌림(QA-379 — 기준 총액 U0는 미체결 매수 전체를 되돌린 값)
+        BigDecimal lossTotal = total.get().add(held.get()).add(heldByOtherOpenBuys(reply.value(), fetched, open.value(), unfinished));
         Set<String> blocked = new HashSet<>();
         unfinished.forEach(row -> blocked.add(row.symbol()));
         notePreflight(reply.value(), account, equity.get(), lossTotal, c.now);
@@ -1721,6 +1725,15 @@ class RealTradeJob {
      */
     Optional<DailyRoom> dailyRoom(Limits limits, Account account, List<CollectorTradeClient.BrokerOrder> open,
                                   List<CollectorTradeClient.BrokerOrder> today) {
+        return dailyRoom(limits, account, open, today, null);
+    }
+
+    /**
+     * {@link #dailyRoom(Limits, Account, List, List)}의 본체 — {@code fetched}가 있으면 진행 중 매수의 상한가를 알려고 한 번 더 물은 시세를 거기에 담습니다
+     * (손실 판정이 같은 종목의 상·하한가를 다시 묻지 않게 — QA-379, {@link #heldByOtherOpenBuys}). 계산은 같습니다.
+     */
+    private Optional<DailyRoom> dailyRoom(Limits limits, Account account, List<CollectorTradeClient.BrokerOrder> open,
+                                          List<CollectorTradeClient.BrokerOrder> today, Map<String, CollectorTradeClient.Quote> fetched) {
         Set<String> openIds = new HashSet<>();
         open.forEach(o -> {
             if (o.orderId() != null) {
@@ -1748,6 +1761,9 @@ class RealTradeJob {
                     uppers.put(symbol, q.upperLimitPrice());
                 }
             });
+            if (fetched != null) {
+                fetched.putAll(extra.value().quotes());
+            }
         }
         Optional<RealTradePlanner.DailyUsage> usage = RealTradePlanner.dailyUsage(today, openIds, uppers::get);
         if (usage.isEmpty()) {
@@ -1781,6 +1797,28 @@ class RealTradeJob {
             held = held.add(remaining.multiply(unit));
         }
         return Optional.of(held);
+    }
+
+    /**
+     * 손실 판정용 '지금 총액'에 되돌릴 금액 가운데 이 기능의 행으로 세지 않은 몫(QA-379) — 토스 미체결 목록의 매수 중 주문 번호가 이 기능의 미종료 행에
+     * 없는 것(앱 주문, 주문 번호를 아직 묶지 못한 이 기능의 결과 모름 주문)이 잡은 금액의 하한({@link RealTradePlanner#otherOpenBuyHoldFloor} — 시장가는
+     * 상한가, 그 밖은 하한가). 이 기능의 미종료 행은 {@link #heldByUnfinishedBuys}가 따로 세므로 주문 번호로 빼 두 번 되돌리지 않습니다. 단가는 이번 사전
+     * 조회의 시세와, 하루 한도를 세며 한 번 더 물은 시세({@code fetched})에서만 봅니다 — 토스 호출을 더하지 않고, 모르는 종목은 되돌리지 않습니다(그 주문만
+     * 예전처럼 손실 쪽으로 보임). 못 되돌려도 주기를 막지 않습니다(스탑 매도까지 서지 않게).
+     */
+    private static BigDecimal heldByOtherOpenBuys(Preflight preflight, Map<String, CollectorTradeClient.Quote> fetched,
+                                                  List<CollectorTradeClient.BrokerOrder> open, List<OrderRow> unfinished) {
+        Set<String> counted = new HashSet<>();
+        for (OrderRow row : unfinished) {
+            if (row.tossOrderId() != null) {
+                counted.add(row.tossOrderId());
+            }
+        }
+        Map<String, CollectorTradeClient.Quote> quotes = new HashMap<>(fetched);
+        quotes.putAll(preflight.quotes());
+        return RealTradePlanner.otherOpenBuyHoldFloor(open, counted,
+                symbol -> quotes.get(symbol) == null ? null : quotes.get(symbol).upperLimitPrice(),
+                symbol -> quotes.get(symbol) == null ? null : quotes.get(symbol).lowerLimitPrice());
     }
 
     // ------------------------------------------------------------------ 마지막 운용 평가액(2026-11-08)
@@ -1914,8 +1952,8 @@ class RealTradeJob {
     }
 
     /**
-     * 손실 한도(명세 §7.3) — 기준 총액(켤 때의 상한 없는 총액 U0) − 지금 상한 없는 총액({@link Fresh#lossTotal} — 이 기능의 미체결 매수가 잡은 금액을
-     * 되돌린 값) ≥ 기준 평가액(E0, 안전 상한 적용) × 한도%면 매수 멈춤({@code buys_paused})을 켜고 알립니다(매도는 계속). 총액이 상한보다 커도 운용분의
+     * 손실 한도(명세 §7.3) — 기준 총액(켤 때의 상한 없는 총액 U0) − 지금 상한 없는 총액({@link Fresh#lossTotal} — 토스 미체결 매수(이 기능의 주문과
+     * 앱 주문)가 잡은 금액을 되돌린 값, QA-379) ≥ 기준 평가액(E0, 안전 상한 적용) × 한도%면 매수 멈춤({@code buys_paused})을 켜고 알립니다(매도는 계속). 총액이 상한보다 커도 운용분의
      * 손실을 잡습니다(RT-BE-3 — 상한을 적용한 E로 재면 상한 밖 현금이 손실을 가림). 기준 총액을 모르는 설정(그 칸 전에 켬)은 예전 식(손실 판정용 E ≤
      * E0 × (1 − 한도%)). 설정이 그사이 바뀌었으면 false(이번 주기의 나머지를 하지 않음).
      */
