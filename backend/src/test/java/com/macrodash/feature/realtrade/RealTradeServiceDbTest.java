@@ -22,6 +22,7 @@ import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -490,6 +491,54 @@ class RealTradeServiceDbTest {
         assertThat(out).containsEntry("ok", true);
         assertThat((String) out.get("syncAt")).isNotNull().endsWith("Z");
         verify(paper, never()).openTargets(anyString(), any());
+    }
+
+    /** 모든 날이 거래일(09:00~15:30)이고 책의 일일 맞추기 시각이 09:10인 모의 달력 — 예상 목록의 세션 고르기 시험용. */
+    private void timedSyncEveryDay() {
+        when(paper.sessionHours(any())).thenAnswer(inv -> {
+            LocalDate date = inv.getArgument(0);
+            return Optional.of(new SessionHours(date, true, date.atTime(9, 0).atZone(RealTradeFixtures.SEOUL).toInstant(),
+                    date.atTime(15, 30).atZone(RealTradeFixtures.SEOUL).toInstant()));
+        });
+        when(paper.dailySyncAt(eq(BOOK), any())).thenAnswer(inv -> Optional.of(((LocalDate) inv.getArgument(1)).atTime(9, 10)
+                .atZone(RealTradeFixtures.SEOUL).toInstant()));
+        when(paper.targetsAt(eq(BOOK), any(), any())).thenAnswer(inv -> Optional.of(new OpenTargets(BOOK, inv.getArgument(1),
+                Map.of(C, 50.0), Map.of(), 1e7, 0, List.of(), List.of())));
+    }
+
+    private Map<String, Object> previewAt(String kstTime) {
+        clock.set(RealTradeFixtures.kst("2026-11-06T" + kstTime));
+        sellableOnlyWhenAsked(clock.now, "9000000");
+        return service(true).preview("KR", BOOK);
+    }
+
+    @Test
+    @Disabled("QA-344: 수정 전에는 맞추기 시각이 지나면 창이 열려 있어도 다음 거래일의 목록을 보여 줍니다")
+    @DisplayName("QA-344: 예상 목록의 세션은 정기 작업과 같은 기준 — 맞추기 창이 열려 있는 동안(09:10~09:13)은 오늘이고 immediate(켜면 바로 주문), 창 전은 오늘, 창 뒤는 다음 거래일")
+    void previewSessionMatchesJobDuringTimedSyncWindow() {
+        timedSyncEveryDay();
+
+        // 수정 전: 09:11이면 다음 거래일(2026-11-07)의 목록이고 immediate 칸이 없었습니다 — 그 목록을 보고 켜면 정기 작업은 오늘 묶음이 없으므로
+        // 오늘 목표로 바로 주문합니다(RealTradeJobDbTest.enabledInsideTimedSyncWindowSendsTodaysBatch).
+        Map<String, Object> inside = previewAt("09:11");
+        assertThat(inside).containsEntry("ok", true).containsEntry("session", "2026-11-06").containsEntry("immediate", true);
+        assertThat(previewAt("09:13")).as("창 끝(양끝 포함)").containsEntry("session", "2026-11-06").containsEntry("immediate", true);
+
+        assertThat(previewAt("09:05")).as("창 전 — 오늘 맞추기를 기다림")
+                .containsEntry("session", "2026-11-06").containsEntry("immediate", false);
+        assertThat(previewAt("09:13:01")).as("창 뒤 — 오늘 묶음은 만들지 않음")
+                .containsEntry("session", "2026-11-07").containsEntry("immediate", false);
+    }
+
+    @Test
+    @Disabled("QA-344: 수정 전에는 오늘 묶음이 있어도 맞추기 시각 전이면 오늘 세션을 보여 줍니다")
+    @DisplayName("QA-344: 오늘 묶음이 이미 있으면(껐다 다시 켜는 날) 정기 작업은 오늘 묶음을 다시 만들지 않으므로 예상 목록도 다음 거래일")
+    void previewSkipsTodayWhenBatchExists() {
+        timedSyncEveryDay();
+        store.upsertBatch("KR", LocalDate.of(2026, 11, 6), RealTradeStore.BATCH_SYNC, BOOK, null, List.of(), d("10000000"));
+
+        assertThat(previewAt("09:05")).containsEntry("ok", true).containsEntry("session", "2026-11-07").containsEntry("immediate", false);
+        assertThat(previewAt("09:11")).containsEntry("session", "2026-11-07").containsEntry("immediate", false);
     }
 
     @Test

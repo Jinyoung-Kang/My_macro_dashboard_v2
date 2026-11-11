@@ -706,6 +706,22 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("QA-344 고정: 맞추기 창이 열려 있는 동안(09:11) 켜면 첫 주기에 오늘 묶음을 만들어 바로 보냄 — 켜기 창 예상 목록이 이 세션을 보여야 함")
+    void enabledInsideTimedSyncWindowSendsTodaysBatch() {
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        run("09:10:30");   // 꺼짐 — 아무것도 하지 않음
+        verify(client, never()).placeOrder(anyString());
+
+        RealTradeFixtures.live(store, true, d("10000000"));   // 09:11에 켬(켠 뒤 첫 묶음 — 회전율 예외)
+        run("09:11");
+
+        assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary)
+                .containsExactly("SELL " + C + " DAY 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as("오늘 묶음").isPresent();
+    }
+
+    @Test
     @DisplayName("시각 맞추기 날의 묶음 몫 — 묶음을 아직 못 만든 동안 09:10 이하 모의 주문을 장중 따라 하기가 하나씩 보내지 않고, 묶음이 생기면 묶음으로만")
     void timedSyncShareGuard() {
         RealTradeFixtures.live(store, false, d("10000000"));
