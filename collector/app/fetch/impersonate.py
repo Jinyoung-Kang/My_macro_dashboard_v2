@@ -71,7 +71,7 @@ def send(
     timeout: tuple[float, float] = DEFAULT_TIMEOUT,
 ) -> Reply:
     """
-    ``url``을 고정 프로필로 한 번 보냅니다(다시 보내지 않음).
+    ``url``을 고정 프로필로 한 번 보냅니다(다시 보내지 않음, 리다이렉트를 따라가지 않음 — 3xx는 그 답 그대로).
 
     :param profile: curl_cffi impersonate 이름 — :func:`app.fetch.state.profile_for`가 호스트마다 고정한 값
     :param headers: 프로필의 기본 헤더 위에 얹을 요청 문맥(Referer 등). User-Agent는 넣지 않습니다
@@ -82,7 +82,10 @@ def send(
     host = http.host_of(url)
     session = _session(host, profile)
     try:
-        response = session.request(method, url, headers=headers, params=params, data=data, timeout=_fit(timeout))
+        # allow_redirects=False — curl_cffi 세션의 기본값은 따라가기(최대 30번)입니다. 3xx는 그대로 돌려주고, 따라갈지는 사다리
+        # (ladder.fetch)가 목적지의 호스트·scheme을 보고 정합니다(QA-388 — 등록 출처가 내부 주소로 돌리면 그대로 따라갔음).
+        response = session.request(method, url, headers=headers, params=params, data=data, timeout=_fit(timeout),
+                                   allow_redirects=False)
     except curl_exceptions.RequestException as exc:
         raise TransportError(http.brief_error(exc)) from exc
     body = response.content or b""

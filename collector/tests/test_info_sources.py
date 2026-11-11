@@ -113,7 +113,6 @@ def test_본문이_없는_최근_글만_글_페이지를_열고_실행당_상한
     assert left["body_status"] == "partial" and left["body"] == "Short teaser.", "못 연 글은 피드 요약으로 둡니다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-388: _page_worthy가 정책 표의 아무 호스트나 글 페이지로 엽니다")
 def test_QA388_피드_항목의_링크가_그_블로그의_호스트가_아니면_글_페이지를_열지_않는다(store, example_host):
     """
     피드 항목의 링크가 정책 표의 **다른** 호스트(KRX 등)를 가리켜도 글 페이지로 열면, 그 호스트의 세션 쿠키가 붙은 요청이 나가고

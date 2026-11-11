@@ -204,6 +204,9 @@ def both_tiers(server, store, sidecar, monkeypatch):
     server.routes["/calendar"] = [(403, {"Content-Type": "text/html"}, b"<html>Forbidden</html>")]
     # 브라우저 컨테이너는 https 허용 호스트만 엽니다 — 이 시험은 계층 2의 문지기를 지나가도록 드라이버 앞의 검사만 열어 둡니다.
     monkeypatch.setattr("sidecar.guard.top_level_allowed", lambda url, allowed: True)
+    # 가짜 드라이버의 기본 답은 최종 주소가 다른 호스트(PAGE_URL)입니다. 사다리는 최종 주소가 정책 표 밖인 답을 버리므로(QA-388),
+    # 이 묶음에서는 연 주소 그대로 끝난 답으로 둡니다.
+    sidecar.driver.result = {**PAGE, "finalUrl": f"{server.base}/calendar"}
     return types.SimpleNamespace(server=server, store=store, sidecar=sidecar, now=now)
 
 
@@ -213,6 +216,16 @@ def test_계층_1이_거부당하면_브라우저_컨테이너로_한_번_올라
     assert got.tier == policy.TIER_BROWSER and "달력" in got.text()
     assert both_tiers.server.hits == ["/calendar"] and len(both_tiers.sidecar.driver.calls) == 1
     assert state.last_good_tier("127.0.0.1") == policy.TIER_BROWSER
+
+
+def test_QA388_브라우저가_정책_표_밖의_주소에서_끝나면_그_답을_쓰지_않는다(both_tiers):
+    both_tiers.sidecar.driver.result = {**PAGE, "finalUrl": "http://backend:8080/api/health", "body": "<html>internal</html>"}
+
+    with pytest.raises(ladder.FetchRejected) as caught:
+        ladder.fetch(f"{both_tiers.server.base}/calendar")
+
+    assert caught.value.why == "HTTP 403(계층 impersonate)", "올라간 계층에서 받지 못했으니 아래 계층의 거부가 최종입니다"
+    assert state.last_good_tier("127.0.0.1") is None
 
 
 def test_브라우저가_사람_확인을_만나면_풀지_않고_길게_닫는다(both_tiers):

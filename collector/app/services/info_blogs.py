@@ -214,7 +214,7 @@ def collect(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | None = N
         body, status, tier, meta = (text, "full", fetched.tier, {}) if len(text) >= FEED_BODY_MIN_CHARS else (None, None, None, {})
         if status == "full":
             from_feed += 1
-        elif blocked is None and page_room > 0 and _page_worthy(entry, seen, now):
+        elif blocked is None and page_room > 0 and _page_worthy(blog, entry, seen, now):
             tries = int((seen or {}).get("page_tries") or 0) + 1
             meta = {"pageTries": tries}
             page_room -= 1
@@ -247,11 +247,18 @@ def collect(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | None = N
     return detail
 
 
-def _page_worthy(entry: dict, seen: dict | None, now: datetime) -> bool:
-    """글 페이지를 열 만한가 — 최근 7일 글이고, 그 글의 페이지를 아직 두 번 열지 않았음. 피드 호스트가 정책 표에 있어야 합니다."""
+def _page_worthy(blog: Blog, entry: dict, seen: dict | None, now: datetime) -> bool:
+    """
+    글 페이지를 열 만한가 — 최근 7일 글이고, 그 글의 페이지를 아직 두 번 열지 않았고, 그 글의 주소가 **이 블로그 자신의 호스트**
+    (사이트·피드 주소의 호스트)이며 그 호스트가 정책 표에 있음.
+
+    피드 항목의 링크는 출처가 정하는 값입니다. 정책 표의 다른 호스트(KRX 등)를 가리키는 링크까지 열면 그 호스트의 세션 쿠키가 붙은 요청이
+    나가고 응답이 이 블로그의 글로 저장됩니다(QA-388). 그런 글은 피드 요약으로만 둡니다.
+    """
     published = entry["published_at"]
     if published is not None and published < now - timedelta(days=PAGE_MAX_AGE_DAYS):
         return False
     if int((seen or {}).get("page_tries") or 0) >= PAGE_TRIES_PER_ITEM:
         return False
-    return http.host_of(entry["url"]) in policy.POLICIES
+    host = http.host_of(entry["url"])
+    return host in {http.host_of(blog.site), http.host_of(blog.feed)} and host in policy.POLICIES

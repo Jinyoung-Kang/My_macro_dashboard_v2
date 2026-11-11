@@ -441,9 +441,6 @@ def test_프록시_인자를_넘기지_않는다(local, monkeypatch):
 # ==============================================================================
 # 8. 리다이렉트 (QA-388) — 계층 1은 따라가지 않고, 사다리가 정책 표 안의 https 목적지만 홉마다 보통 요청처럼 받습니다
 # ==============================================================================
-QA388 = pytest.mark.xfail(strict=True, reason="QA-388: 계층 1(curl_cffi 세션)이 리다이렉트를 검사 없이 따라갑니다")
-
-
 def _redirect(location: str, status: int = 302):
     return (status, {"Location": location, "Content-Type": "text/html"}, b"")
 
@@ -454,7 +451,6 @@ def http_hops(monkeypatch):
     monkeypatch.setattr(ladder, "REDIRECT_SCHEMES", frozenset({"https", "http"}), raising=False)
 
 
-@QA388
 def test_QA388_정책_표_밖으로_가는_리다이렉트는_따라가지_않는다(local, http_hops):
     # 정책 표에는 127.0.0.1만 있습니다 — 같은 서버를 가리키는 localhost는 표 밖의 호스트입니다(내부 주소로 돌리는 출처의 모양).
     local.server.routes["/a"] = [_redirect(f"http://localhost:{local.server.port}/secret")]
@@ -467,7 +463,6 @@ def test_QA388_정책_표_밖으로_가는_리다이렉트는_따라가지_않�
     assert state.closed(HOST) is None, "출처의 거부가 아니라 닫지 않습니다"
 
 
-@QA388
 def test_QA388_https가_아닌_목적지는_따라가지_않는다(local):
     local.server.routes["/a"] = [_redirect("/b")]                       # 같은 호스트지만 http
     local.server.routes["/b"] = [(200, HTML, PAGE)]
@@ -478,7 +473,6 @@ def test_QA388_https가_아닌_목적지는_따라가지_않는다(local):
     assert local.server.hits == ["/a"]
 
 
-@QA388
 def test_QA388_정책_표_안의_리다이렉트는_홉마다_보통_요청처럼_받는다(local, http_hops, monkeypatch):
     monkeypatch.setitem(policy.POLICIES, HOST, policy.HostPolicy(HOST, (policy.TIER_IMPERSONATE,), daily_budget=3))
     local.server.routes["/a"] = [_redirect("/b?page=2", status=301)]    # 상대 주소
@@ -494,7 +488,6 @@ def test_QA388_정책_표_안의_리다이렉트는_홉마다_보통_요청처�
     assert local.store.fetch_host(HOST)["budget_used"] == 2, "홉도 하루 예산을 한 건 씁니다"
 
 
-@QA388
 def test_QA388_홉이_하루_예산을_넘기면_보내지_않는다(local, http_hops, monkeypatch):
     monkeypatch.setitem(policy.POLICIES, HOST, policy.HostPolicy(HOST, (policy.TIER_IMPERSONATE,), daily_budget=1))
     local.server.routes["/a"] = [_redirect("/b")]
@@ -506,7 +499,6 @@ def test_QA388_홉이_하루_예산을_넘기면_보내지_않는다(local, http
     assert local.server.hits == ["/a"]
 
 
-@QA388
 def test_QA388_리다이렉트는_세_번까지만_따라간다(local, http_hops):
     for n in range(1, 5):
         local.server.routes[f"/h{n}"] = [_redirect(f"/h{n + 1}")]
@@ -521,7 +513,95 @@ def test_QA388_리다이렉트는_세_번까지만_따라간다(local, http_hops
     assert local.server.hits == ["/h2", "/h3", "/h4", "/h5"]
 
 
-@QA388
+def test_QA388_첫_계층이_정책_표_밖의_주소에서_받은_답은_그_실행만_실패(local, monkeypatch):
+    _with_browser(monkeypatch, [Reply(status=200, headers={"content-type": "text/html"}, body=b"<html>internal</html>",
+                                      final_url="http://169.254.169.254/latest/meta-data/")])
+    monkeypatch.setitem(policy.POLICIES, HOST, policy.HostPolicy(HOST, (policy.TIER_BROWSER,), daily_budget=5))
+
+    with pytest.raises(ladder.FetchFailed, match="정책 표 밖의 주소에서 받은 답 — 버림: 169.254.169.254"):
+        ladder.fetch(f"{local.server.base}/page")
+
+    assert state.closed(HOST) is None and state.last_good_tier(HOST) is None
+
+
+def test_QA388_다른_호스트로_가는_홉에는_요청_문맥을_싣지_않고_그_호스트의_정책을_지난다(local, monkeypatch):
+    # 계층 1 대신 가짜 전송을 끼워 호스트 둘(둘 다 정책 표 안, https)을 흉내 냅니다.
+    monkeypatch.setitem(policy.POLICIES, "feeds.example.org", policy.HostPolicy("feeds.example.org", (policy.TIER_IMPERSONATE,), daily_budget=5))
+    monkeypatch.setitem(policy.POLICIES, "cdn.example.org", policy.HostPolicy("cdn.example.org", (policy.TIER_IMPERSONATE,), daily_budget=5))
+    sent: list[tuple[str, str, dict | None, dict | None]] = []
+
+    def send(method, url, *, host, headers, params, data):
+        sent.append((host, url, headers, params))
+        if host == "feeds.example.org":
+            return Reply(status=302, headers={"location": "https://cdn.example.org/feed.xml"}, body=b"", final_url=url)
+        return Reply(status=200, headers={"content-type": "text/xml"}, body=b"<rss/>", final_url=url)
+
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+
+    got = ladder.fetch("https://feeds.example.org/feed", headers={"If-None-Match": '"v1"'}, params={"a": "1"})
+
+    assert (got.url, got.final_url, got.body) == ("https://feeds.example.org/feed", "https://cdn.example.org/feed.xml", b"<rss/>")
+    assert sent == [("feeds.example.org", "https://feeds.example.org/feed", {"If-None-Match": '"v1"'}, {"a": "1"}),
+                    ("cdn.example.org", "https://cdn.example.org/feed.xml", None, None)]
+    assert local.store.fetch_host("cdn.example.org")["budget_used"] == 1, "홉은 목적지 호스트의 예산을 씁니다"
+    assert state.last_good_tier("cdn.example.org") == policy.TIER_IMPERSONATE
+    assert state.last_good_tier("feeds.example.org") is None, "리다이렉트만 준 호스트는 '통과'로 기억하지 않습니다"
+
+
+def test_QA388_닫힌_호스트로_가는_홉은_보내지_않는다(local, monkeypatch):
+    monkeypatch.setitem(policy.POLICIES, "feeds.example.org", policy.HostPolicy("feeds.example.org", (policy.TIER_IMPERSONATE,), daily_budget=5))
+    monkeypatch.setitem(policy.POLICIES, "cdn.example.org", policy.HostPolicy("cdn.example.org", (policy.TIER_IMPERSONATE,), daily_budget=5))
+    state.note_rejected("cdn.example.org", "HTTP 403(계층 impersonate)")
+    sent: list[str] = []
+
+    def send(method, url, *, host, headers, params, data):
+        sent.append(host)
+        return Reply(status=302, headers={"location": "https://cdn.example.org/feed.xml"}, body=b"", final_url=url)
+
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+
+    with pytest.raises(ladder.FetchRejected) as caught:
+        ladder.fetch("https://feeds.example.org/feed")
+
+    assert caught.value.host == "cdn.example.org" and sent == ["feeds.example.org"]
+
+
+def test_QA388_POST의_리다이렉트는_따라가지_않고_그_답을_그대로_돌려준다(local, monkeypatch):
+    sent: list[str] = []
+
+    def send(method, url, *, host, headers, params, data):
+        sent.append(method)
+        return Reply(status=302, headers={"location": "http://backend:8080/", "content-type": "text/html"}, body=b"", final_url=url)
+
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+
+    got = ladder.fetch(f"{local.server.base}/login", method="POST", data={"k": "v"})
+
+    assert (got.status, got.body, sent) == (302, b"", ["POST"]), "KRX 로그인·자료처럼 부르는 쪽이 모양(JSON 아님)으로 판정합니다"
+    assert local.server.hits == []
+
+
+def test_QA388_목적지가_없는_리다이렉트는_그_실행만_실패(local, monkeypatch):
+    def send(method, url, *, host, headers, params, data):
+        return Reply(status=302, headers={}, body=b"", final_url=url)
+
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+
+    with pytest.raises(ladder.FetchFailed, match=r"HTTP 302\(목적지 없는 리다이렉트\)"):
+        ladder.fetch(f"{local.server.base}/a")
+    assert state.closed(HOST) is None
+
+
+def test_QA388_계층_1은_리다이렉트를_따라가지_않고_3xx를_그대로_돌려준다(local):
+    local.server.routes["/a"] = [_redirect("/b")]
+    local.server.routes["/b"] = [(200, HTML, PAGE)]
+
+    reply = impersonate.send("GET", f"{local.server.base}/a", profile=state.profile_for(HOST))
+
+    assert (reply.status, reply.headers["location"]) == (302, "/b")
+    assert local.server.hits == ["/a"]
+
+
 def test_QA388_계층_2가_정책_표_밖의_주소에서_받은_답은_통과로_돌려주지_않는다(local, monkeypatch):
     # 계층 2(실제 브라우저)는 리다이렉트를 스스로 따라갑니다. 받은 뒤의 최종 주소가 표 밖이면 본문을 버립니다(저장·전파를 막는 사후 방어).
     local.server.routes["/page"] = [(403, HTML, b"<html>Forbidden</html>")]

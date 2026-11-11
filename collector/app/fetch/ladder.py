@@ -10,6 +10,13 @@ app/fetch/ladder.py
   - 사람 확인: 계층 2가 사람 입력을 요구받았다고 알려 줌 → 풀지 않고 길게 닫습니다.
   - 그 밖(404·5xx·시간 초과·전송 실패): 그 실행만 실패 — 출처의 거부가 아니라 물러나지 않습니다.
 
+리다이렉트(QA-388 — ADR 0026 결정 8의 덧붙임)
+  - 계층 1은 따라가지 않습니다(impersonate.send). GET의 301·302·303·307·308은 여기서 목적지를 보고, **https이고 정책 표에 있는 호스트**일
+    때만 따라갑니다 — 최대 ``MAX_REDIRECTS``번, 홉마다 그 호스트의 닫힘·지연·하루 예산을 보통 요청처럼 지납니다. 그 밖은 요청을 보내지 않고
+    그 실행만 실패입니다(물러나지 않음). POST의 3xx는 따라가지 않고 그 답을 그대로 돌려줍니다(부르는 쪽이 모양으로 판정).
+  - 계층 2(실제 브라우저)는 스스로 따라갑니다. 어느 계층이든 통과로 판정한 답의 최종 주소가 정책 표 밖이면 본문을 버립니다(사후 방어 —
+    저장·전파를 막음). 첫 계층이면 그 실행만 실패, 올라간 계층이면 아래 계층의 거부가 최종입니다.
+
 닫힘은 이 계층의 표에만 적습니다. 공용 세션의 호스트 래치(http.reject_host·http.check_host)는 부르지 않습니다 — 같은 호스트의 기존
 수집(인베스팅닷컴 RSS)이 닫히지 않게(ADR 0026 결정 2). 실행 기록에는 :class:`FetchRejected`(http.SourceRejected의 하위)로 '거부됨'이 남습니다.
 """
@@ -20,6 +27,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -31,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 _OK, _BLOCKED, _HUMAN, _OTHER = "ok", "blocked", "human", "other"
 _CHARSET = re.compile(r"charset=([\w-]+)", re.IGNORECASE)
+
+# 따라가는 리다이렉트(QA-388). 목적지는 이 scheme이고 정책 표에 있는 호스트여야 합니다. 등록 출처의 주소는 모두 https입니다.
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+REDIRECT_SCHEMES = frozenset({"https"})
+MAX_REDIRECTS = 3
 
 
 class FetchRejected(http.SourceRejected):
@@ -129,6 +142,32 @@ def judge(reply: Reply, expect: str) -> tuple[str, str | None]:
     return _OTHER, f"HTTP {reply.status}"
 
 
+@dataclass(frozen=True)
+class _Redirect:
+    """계층 1이 돌려준 GET의 3xx — 따라갈지는 :func:`fetch`가 목적지를 보고 정합니다."""
+
+    status: int
+    location: str
+
+
+def _redirect_target(current: str, moved: _Redirect) -> str:
+    """
+    리다이렉트의 목적지 주소(상대 주소는 지금 주소에 붙임) — 따라가도 되는 곳일 때만 돌려줍니다.
+
+    :raises FetchFailed: 목적지가 없거나, https가 아니거나, 정책 표에 없는 호스트(요청을 보내지 않음). 사유에는 호스트만 싣습니다
+    """
+    host = http.host_of(current)
+    if not moved.location:
+        raise FetchFailed(f"{host} HTTP {moved.status}(목적지 없는 리다이렉트)")
+    target = urljoin(current, moved.location)
+    target_host = http.host_of(target)
+    if urlsplit(target).scheme.lower() not in REDIRECT_SCHEMES:
+        raise FetchFailed(f"{host} https가 아닌 주소로 리다이렉트 — 따라가지 않음: {target_host or '호스트 없음'}")
+    if target_host not in policy.POLICIES:
+        raise FetchFailed(f"{host} 정책 표 밖으로 리다이렉트 — 따라가지 않음: {target_host or '호스트 없음'}")
+    return target
+
+
 def fetch(
     url: str,
     *,
@@ -139,15 +178,30 @@ def fetch(
     data: Any = None,
 ) -> Fetched:
     """
-    ``url``을 그 호스트의 정책대로 받습니다.
+    ``url``을 그 호스트의 정책대로 받습니다. GET의 리다이렉트는 정책 표 안의 https 목적지만 ``MAX_REDIRECTS``번까지 따라갑니다(모듈 설명).
 
     :param expect: 기대하는 모양(``policy.EXPECT_HTML``·``EXPECT_JSON``) — JSON을 기대했는데 HTML이 오면 거부로 봅니다
-    :param headers: 요청 문맥(Referer·Origin 등). 계층 2(브라우저)는 쓰지 않습니다
+    :param headers: 요청 문맥(Referer·Origin 등). 계층 2(브라우저)는 쓰지 않습니다. 다른 호스트로 가는 홉에는 싣지 않습니다
     :raises policy.UnknownHost: 정책 표에 없는 호스트
-    :raises FetchRejected: 닫혀 있거나(보내지 않음) 이번에 거부당해 닫힘
+    :raises FetchRejected: 닫혀 있거나(보내지 않음) 이번에 거부당해 닫힘(홉의 호스트 포함)
     :raises FetchSkipped: 하루 예산·태스크 시간 예산이 모자라 보내지 않음
-    :raises FetchFailed: 출처의 거부가 아닌 실패
+    :raises FetchFailed: 출처의 거부가 아닌 실패(정책 표 밖·https 아닌 곳으로의 리다이렉트, 홉 상한 초과 포함)
     """
+    first_host = http.host_of(url)
+    current = url
+    for hop in range(MAX_REDIRECTS + 1):
+        same_host = http.host_of(current) == first_host
+        got = _fetch_hop(current, expect=expect, method=method, headers=headers if same_host else None,
+                         params=params if hop == 0 else None, data=data)
+        if isinstance(got, Fetched):
+            return got if hop == 0 else Fetched(url=url, status=got.status, content_type=got.content_type, body=got.body,
+                                                tier=got.tier, final_url=got.final_url, headers=got.headers)
+        current = _redirect_target(current, got)
+    raise FetchFailed(f"{first_host} 리다이렉트가 {MAX_REDIRECTS}번을 넘음 — 따라가지 않음")
+
+
+def _fetch_hop(url: str, *, expect: str, method: str, headers, params, data) -> Fetched | _Redirect:
+    """주소 하나를 그 호스트의 정책대로 한 번 받습니다 → 통과한 답, 또는 계층 1이 받은 GET의 리다이렉트(따라가지 않은 채)."""
     host = http.host_of(url)
     rules = policy.policy_for(host)
     shut = state.closed(host)
@@ -171,7 +225,22 @@ def fetch(
             # 올라간 계층에 닿지 못함 — 아래 계층의 거부가 최종입니다(명세 §2).
             logger.warning("%s: 계층 %s로 올라가지 못함(%s) — 아래 계층의 거부로 닫습니다", host, tier, exc)
             break
+        if reply.status in REDIRECT_STATUSES and tier == policy.TIER_IMPERSONATE:
+            if method.upper() == "GET":
+                return _Redirect(reply.status, (reply.headers.get("location") or "").strip())
+            # POST의 3xx(KRX 로그인·자료)는 따라가지 않고 그대로 돌려줍니다 — 부르는 쪽이 모양(JSON 아님)으로 판정합니다.
+            return Fetched(url=url, status=reply.status, content_type=reply.content_type, body=reply.body,
+                           tier=tier, final_url=reply.final_url, headers=dict(reply.headers))
         verdict, why = judge(reply, expect)
+        landed = http.host_of(reply.final_url)
+        if verdict == _OK and landed not in policy.POLICIES:
+            # 통과한 답인데 최종 주소가 표 밖 — 계층 2가 스스로 따라간 리다이렉트 등. 본문을 쓰지 않습니다(QA-388 사후 방어).
+            # 거부·사람 확인 판정은 본문을 쓰지 않으므로 그대로 둡니다.
+            off = f"정책 표 밖의 주소에서 받은 답 — 버림: {landed or '호스트 없음'}"
+            if attempt == 0:
+                raise FetchFailed(f"{host} {off}")
+            logger.warning("%s: 계층 %s의 답을 쓰지 않음(%s) — 아래 계층의 거부로 닫습니다", host, tier, off)
+            break
         if verdict == _OK:
             state.note_success(host, tier)
             if attempt:
