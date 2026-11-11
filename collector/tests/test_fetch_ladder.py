@@ -18,6 +18,7 @@ tests/test_fetch_ladder.py
 """
 from __future__ import annotations
 
+import gzip
 import random
 import re
 import time
@@ -615,6 +616,47 @@ def test_QA388_계층_2가_정책_표_밖의_주소에서_받은_답은_통과�
     assert caught.value.why == "HTTP 403(계층 impersonate)", "올라간 계층에서 받지 못했으니 아래 계층의 거부가 최종입니다"
     assert len(calls) == 1
     assert state.last_good_tier(HOST) is None, "표 밖에서 받은 답으로 그 계층을 '통과'로 기억하지 않습니다"
+
+
+# ==============================================================================
+# 9. 본문 상한 (QA-389) — 다 받은 뒤에 재지 않고, 받는 도중에(압축을 푼 바이트로) 세다가 끊습니다
+# ==============================================================================
+class _CountingSession(impersonate.curl_requests.Session):
+    """계층 1이 메모리에 올린 본문 바이트를 셉니다 — 조각 콜백으로 받은 것과, 콜백 없이 통째로 받은 것(response.content) 모두."""
+
+    received: list[int] = []
+
+    def request(self, method, url, **kwargs):
+        take = kwargs.get("content_callback")
+        if take is not None:
+            def counting(chunk):
+                type(self).received.append(len(chunk))
+                return take(chunk)
+            kwargs["content_callback"] = counting
+        response = super().request(method, url, **kwargs)
+        type(self).received.append(len(response.content or b""))
+        return response
+
+
+@pytest.fixture()
+def counted(monkeypatch):
+    _CountingSession.received = []
+    monkeypatch.setattr(impersonate.curl_requests, "Session", _CountingSession)
+    return _CountingSession.received
+
+
+@pytest.mark.xfail(strict=True, reason="QA-389: 본문을 다 받아 메모리에 올린 뒤에야 길이를 잽니다")
+def test_QA389_본문_상한은_받는_도중에_끊는다(local, counted, monkeypatch):
+    monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 1024)
+    bomb = gzip.compress(b"A" * (4 * 1024 * 1024))            # 보내는 것은 약 4KB, 풀면 4MB
+    assert len(bomb) < 16 * 1024
+    local.server.routes["/bomb"] = [(200, {"Content-Type": "text/html", "Content-Encoding": "gzip"}, bomb)]
+
+    with pytest.raises(ladder.FetchFailed, match="본문이 상한"):
+        ladder.fetch(f"{local.server.base}/bomb")
+
+    assert sum(counted) <= 1024 + 64 * 1024, f"상한 근처에서 끊어야 합니다 — 메모리에 올린 본문 {sum(counted):,}바이트"
+    assert state.closed(HOST) is None, "출처의 거부가 아니라 닫지 않습니다"
 
 
 # ==============================================================================

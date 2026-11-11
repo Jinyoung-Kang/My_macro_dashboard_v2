@@ -54,15 +54,37 @@ def sidecar(monkeypatch):
     client = TestClient(create_app(driver, token=TOKEN, allowed_hosts="www.calendar.example"))
     sent: list[dict] = []
 
+    read: list[int] = []
+
+    class Answer:
+        """시험 클라이언트의 답을 requests.Response처럼 읽게 합니다(상태·머리글·조각 읽기) — 읽은 조각의 크기를 적습니다."""
+
+        def __init__(self, response):
+            self._response = response
+            self.status_code = response.status_code
+            self.headers = response.headers
+
+        def json(self):
+            return self._response.json()
+
+        def iter_content(self, chunk_size=65536):
+            content = self._response.content
+            for start in range(0, len(content), chunk_size):
+                read.append(len(content[start:start + chunk_size]))
+                yield content[start:start + chunk_size]
+
+        def close(self):
+            pass
+
     class Session:
         def post(self, url, **kwargs):
-            sent.append({"url": url, **kwargs})
-            return client.post(url, json=kwargs["json"], headers=kwargs["headers"])
+            sent.append({"url": url, **{key: value for key, value in kwargs.items() if key != "stream"}})
+            return Answer(client.post(url, json=kwargs["json"], headers=kwargs["headers"]))
 
     monkeypatch.setenv(browser_client.ENV_URL, "http://browser:8191/")
     monkeypatch.setenv(browser_client.ENV_TOKEN, TOKEN)
     monkeypatch.setattr(browser_client, "_http", lambda: Session())
-    return types.SimpleNamespace(driver=driver, sent=sent)
+    return types.SimpleNamespace(driver=driver, sent=sent, read=read)
 
 
 def _send(url: str = PAGE_URL, **kwargs):
@@ -189,6 +211,21 @@ def test_답을_읽지_못하면_전송_실패(sidecar):
 
     with pytest.raises(TransportError, match="답을 읽지 못함"):
         _send()
+
+
+@pytest.mark.xfail(strict=True, reason="QA-389: 계층 2의 답은 크기와 관계없이 통째로 읽습니다")
+def test_QA389_브라우저_컨테이너의_답이_상한을_넘으면_읽지_않고_전송_실패(sidecar, monkeypatch):
+    import sidecar.app as sidecar_app
+    from app.fetch import impersonate
+
+    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 10**9, raising=False)      # 컨테이너 쪽 상한이 없는(옛) 이미지라도
+    monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 1024)
+    sidecar.driver.result = {**PAGE, "body": "<html>" + "가" * 2000 + "</html>"}
+
+    with pytest.raises(TransportError, match="본문이 상한"):
+        _send()
+
+    assert sidecar.read == [], "Content-Length가 상한을 넘으면 본문을 읽지 않습니다"
 
 
 # ==============================================================================
