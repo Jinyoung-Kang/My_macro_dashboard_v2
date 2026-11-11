@@ -80,8 +80,11 @@ export function StatusSection() {
               {
                 key: "detail",
                 header: "사유·기록",
-                className: "min-w-[16rem]",
-                render: (row) => <span className="line-clamp-2 text-xs leading-5 text-text-2">{row.incident?.reason ?? row.lastDetail ?? EMPTY}</span>,
+                className: "min-w-[20rem]",
+                // 자르지 않습니다(2026-11-12 사용자 지적 — 두 줄에서 '…'으로 잘려 사유·실행 기록의 뒤가 보이지 않았음). 긴 글은 칸 안에서 줄을 바꿉니다.
+                render: (row) => (
+                  <span className="block whitespace-normal break-words text-xs leading-5 text-text-2">{row.incident?.reason ?? row.lastDetail ?? EMPTY}</span>
+                ),
               },
             ]}
           />
