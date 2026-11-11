@@ -82,7 +82,7 @@ class TailnetLoginIntegrationTest {
         if (forwardedHost != null) {
             request.append("X-Forwarded-Host: ").append(forwardedHost).append("\r\n");
         }
-        request.append("X-Forwarded-For: 100.64.0.7\r\n");
+        request.append("X-Forwarded-For: 100.64.0.1\r\n");
         if (identity) {
             request.append("Tailscale-User-Login: owner@example.invalid\r\n");
         }
