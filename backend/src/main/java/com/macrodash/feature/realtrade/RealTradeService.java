@@ -636,7 +636,7 @@ public class RealTradeService {
         BigDecimal lossLimit = body.lossLimitPct() == null ? null : lossLimit(body.lossLimitPct());
         boolean rebaseline = Boolean.TRUE.equals(body.rebaseline());
         if (book == null && lossLimit == null && !rebaseline) {
-            throw new RealTradeException(400, "nothing-to-update", "바꿀 값(방식·손실 한도·기준 다시 잡기)이 없습니다.");
+            throw nothingToUpdate();
         }
         requireReady();
         Config current = store.configOrOff(KR);
@@ -647,6 +647,10 @@ public class RealTradeService {
             throw new RealTradeException(409, "invalid-state", "켜져 있을 때만 설정을 바꿀 수 있습니다(지금 " + current.state() + ").");
         }
         boolean bookChange = book != null && !book.equals(current.sourceBook());
+        // 지금 설정과 같은 값만 보낸 요청은 바꿀 것이 없는 요청입니다(QA-348) — 예전에는 통과해 버전이 오르고 '설정 바뀜' 알림이 갔습니다.
+        if (!bookChange && !lossChange(lossLimit, current) && !rebaseline) {
+            throw nothingToUpdate();
+        }
         BookInfo info = bookChange ? activeBook(book) : null;
         if (rebaseline) {
             requireNoPendingBuy();
@@ -668,13 +672,16 @@ public class RealTradeService {
                 next = next.withSource(book, info.generation()).withSyncPending(true);
                 changes.add("sourceBook");
             }
-            if (lossLimit != null) {
+            if (lossChange(lossLimit, locked)) {
                 next = next.withLossLimitPct(lossLimit);
                 changes.add("lossLimitPct");
             }
             if (baseline != null) {
                 next = next.withBaselineEquity(baseline.equity()).withBaselineTotal(baseline.total());
                 changes.add("rebaseline");
+            }
+            if (changes.isEmpty()) {
+                throw nothingToUpdate();
             }
             if (!store.updateConfig(next, user.id())) {
                 throw versionConflict();
@@ -899,6 +906,15 @@ public class RealTradeService {
             log.warn("실제 매매 켜기류 비밀번호 틀림 — 연속 {}회{}", consecutive, locked ? "(30분 잠금)" : "");
             throw new RealTradeException(403, "password-invalid", "운영자 비밀번호가 올바르지 않습니다.");
         }
+    }
+
+    private static RealTradeException nothingToUpdate() {
+        return new RealTradeException(400, "nothing-to-update", "바꿀 값(방식·손실 한도·기준 다시 잡기)이 없습니다 — 지금 설정과 같습니다.");
+    }
+
+    /** 보낸 손실 한도가 지금 값과 다른가(없으면 바꾸지 않음 — 자릿수만 다른 같은 수는 같은 값). */
+    private static boolean lossChange(BigDecimal requested, Config current) {
+        return requested != null && (current.lossLimitPct() == null || requested.compareTo(current.lossLimitPct()) != 0);
     }
 
     private static RealTradeException versionConflict() {

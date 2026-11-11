@@ -22,7 +22,6 @@ import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -251,7 +250,6 @@ class RealTradeServiceDbTest {
     }
 
     @Test
-    @Disabled("QA-348: 수정 전에는 지금과 같은 값만 보낸 설정 바꾸기가 버전을 올리고 이벤트·알림을 만듭니다")
     @DisplayName("QA-348: 지금과 같은 계좌·같은 손실 한도만 보낸 설정 바꾸기는 400 nothing-to-update — 버전·이벤트 그대로, 값이 하나라도 다르면 그것만 바꿈")
     void updateWithSameValuesIsRefused() {
         Config live = RealTradeFixtures.live(store, false, d("20000000"));

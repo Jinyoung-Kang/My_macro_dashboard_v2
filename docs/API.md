@@ -264,7 +264,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/realtrade/preview?market=KR&sourceBook=kr_rules` | 켜기 창의 예상 목록 — 지금 새로 읽은 계좌 + 그 책의 다음 맞추기 목표(그 세션 일일 맞추기 시각이 있으면 그 시각까지의 모의 주문을 반영한 목표, 없으면 다음 시가 목표 — ADR 0033) → `{ok, sourceBook, session(정기 작업이 다음에 묶음을 만드는 날 — 오늘 묶음이 없고 오늘 맞추기 창이 아직 닫히지 않았으면 오늘, 아니면 다음 거래일, QA-344), immediate(그 세션의 맞추기 창이 지금 열려 있는가 — 참이면 켜기·바꾸기·해제 직후 그 묶음이 바로 주문됨), syncAt(ISO — 시각 맞추기면 그 시각, 시가 맞추기면 null), equity, orders:[{symbol, name, side, quantity, estAmount}], skipped:[{symbol, name, reason}], turnoverPct, warnings:[…]}`, 읽지 못하면 `{ok:false, reason}` |
 | `POST /api/realtrade/enable` | 본문 `{market:"KR", sourceBook, lossLimitPct(1~50, 기본 15), confirm:"실제 매매 켜기", password, version}` — 꺼짐에서만, 서버 두 스위치가 켜져 있어야 함 → LIVE·`sync_pending`·기준 평가액(지금 운용 평가액) → `{ok, state, version}` |
 | `POST /api/realtrade/disable` | 본문 `{market}` — 비밀번호·확인 글자 없음, 서버 스위치가 꺼져 있어도 받음. 이 기능의 미종료 주문이 있으면 STOPPING(정기 작업이 취소를 따라가 끝나면 OFF), 없으면 OFF → `{ok, state, version}` |
-| `POST /api/realtrade/update` | 본문 `{market:"KR", sourceBook?, lossLimitPct?, rebaseline?, confirm:"설정 바꾸기", password, version}` — 켜짐에서만. 방식이 바뀌면 옛 책 미체결 취소·`sync_pending` → `{ok, state, version}` |
+| `POST /api/realtrade/update` | 본문 `{market:"KR", sourceBook?, lossLimitPct?, rebaseline?, confirm:"설정 바꾸기", password, version}` — 켜짐에서만. 방식이 바뀌면 옛 책 미체결 취소·`sync_pending` → `{ok, state, version}`. 바꿀 값이 없거나 지금 설정과 같은 값만 보내면 400 `nothing-to-update`(버전·이벤트 그대로 — QA-348) |
 | `POST /api/realtrade/resume` | 본문 `{market:"KR", confirm:"멈춤 해제", password, version}` — 이상 멈춤 → 켜짐(`sync_pending`) 또는 켜짐의 매수 멈춤 해제 → `{ok, state, version}` |
 
 ### ISA 계좌(연결되지 않은 다른 증권사 계좌 — 지시 + 직접 매매, 운영자 전용 — [ADR 0029](adr/0029-isa-manual-account.md)·[ADR 0034](adr/0034-isa-balance.md))
