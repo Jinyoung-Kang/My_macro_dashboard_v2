@@ -6,6 +6,7 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -102,5 +103,86 @@ class RadarServiceNonBlockingTest {
 
         assertThat(out).containsEntry("available", true).containsEntry("sourceKind", "daum");
         verify(store, never()).read(anyString(), anyLong(), anyString());
+    }
+
+    // ------------------------------------------------------------------ QA-395
+    // 수집기 radar_rankings 태스크는 세 조합(외국인 순매수·기관 순매수·외국인 순매도, TODAY)만 다시 받습니다. 그 밖의 기본 조회
+    // (KOSPI·상위 30·날짜 없음)는 처음 한 번 지금 받아 저장된 뒤로는 저장본이 먼저 나가는데, 그 저장본을 다시 쓰는 코드가 없습니다.
+
+    private static Snapshot twentyMinutesOld(String name, String json) throws Exception {
+        return new Snapshot(name, MAPPER.readTree(json), "json", "ok", null, Instant.now().minus(Duration.ofMinutes(20)));
+    }
+
+    @Test
+    @Disabled("QA-395: 스케줄 밖 조합의 저장본이 한 번 만들어지면 갱신되지 않습니다 — 수정 커밋에서 풉니다")
+    @DisplayName("QA-395: 스케줄 밖 조합(개인 순매수)은 저장본이 있어도 지금 받는다")
+    void unscheduledCombinationGoesLiveEvenWithSnapshot() throws Exception {
+        String name = Datasets.radarScanner("KOSPI", "개인", "순매수", "TODAY");
+        Snapshot old = twentyMinutesOld(name, """
+                {"source":"토스증권 공식","sourceKind":"toss","isHistorical":false,"rows":[{"rank":1,"code":"000660"}]}
+                """);
+        StoreReader store = mock(StoreReader.class);
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.AUTO);
+        when(store.readStored(eq(name))).thenReturn(Optional.of(old));
+        when(store.read(eq(name), anyLong(), anyString())).thenReturn(Optional.of(old));
+        CollectorClient collector = mock(CollectorClient.class);
+        when(collector.liveRadar(eq("KOSPI"), eq("개인"), eq("순매수"), eq(30), eq("TODAY"), org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(Optional.of(MAPPER.readTree("""
+                        {"source":"KRX 정보데이터시스템 확정","sourceKind":"krx","isHistorical":false,"intervalType":"TODAY",
+                         "rows":[{"rank":1,"code":"005930"}]}
+                        """)));
+
+        Map<String, Object> out = new RadarService(store, mock(StoreRepository.class), collector)
+                .ranking("KOSPI", "개인", "순매수", 30, "TODAY", null);
+
+        assertThat(out).containsEntry("available", true).containsEntry("sourceKind", "krx");
+        // 갱신하는 태스크가 없는 조합이라 radar_rankings를 깨우는 길(StoreReader.read)을 타지 않습니다.
+        verify(store, never()).read(anyString(), anyLong(), anyString());
+    }
+
+    @Test
+    @Disabled("QA-395: 스케줄 밖 조합의 저장본이 한 번 만들어지면 갱신되지 않습니다 — 수정 커밋에서 풉니다")
+    @DisplayName("QA-395: 스케줄 밖 조합의 지금 받기가 비면 저장본으로 돌아가고 오래됨·대체 안내를 붙인다")
+    void unscheduledCombinationFallsBackToSnapshotWhenLiveIsEmpty() throws Exception {
+        String name = Datasets.radarScanner("KOSPI", "기관", "순매도", "TODAY");
+        Snapshot old = twentyMinutesOld(name, """
+                {"source":"Daum","sourceKind":"daum","isHistorical":false,"rows":[{"rank":1,"code":"000660"}]}
+                """);
+        StoreReader store = mock(StoreReader.class);
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.AUTO);
+        when(store.readStored(eq(name))).thenReturn(Optional.of(old));
+        when(store.read(eq(name), anyLong(), anyString())).thenReturn(Optional.of(old));
+        CollectorClient collector = mock(CollectorClient.class);
+        when(collector.liveRadar(anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt(), anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(Optional.of(MAPPER.readTree("""
+                        {"source":null,"sourceKind":"none","isHistorical":false,"rows":[],"reasons":["Daum 응답 없음"]}
+                        """)));
+
+        Map<String, Object> out = new RadarService(store, mock(StoreRepository.class), collector)
+                .ranking("KOSPI", "기관", "순매도", 30, "TODAY", null);
+
+        verify(collector).liveRadar(eq("KOSPI"), eq("기관"), eq("순매도"), eq(30), eq("TODAY"), org.mockito.ArgumentMatchers.isNull());
+        assertThat(out).containsEntry("available", true).containsEntry("sourceKind", "daum").containsEntry("stale", true);
+        assertThat(String.valueOf(out.get("warning"))).contains("수집에 실패해 저장본을 표시합니다");
+    }
+
+    @Test
+    @DisplayName("store_only 모드에서는 스케줄 밖 조합도 저장본만 읽는다(지금 받지 않음)")
+    void storeOnlyServesUnscheduledSnapshot() throws Exception {
+        String name = Datasets.radarScanner("KOSPI", "개인", "순매수", "TODAY");
+        Snapshot old = twentyMinutesOld(name, """
+                {"source":"토스증권 공식","sourceKind":"toss","isHistorical":false,"rows":[{"rank":1,"code":"000660"}]}
+                """);
+        StoreReader store = mock(StoreReader.class);
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
+        when(store.readStored(eq(name))).thenReturn(Optional.of(old));
+        when(store.read(eq(name), anyLong(), anyString())).thenReturn(Optional.of(old));
+        CollectorClient collector = mock(CollectorClient.class);
+
+        Map<String, Object> out = new RadarService(store, mock(StoreRepository.class), collector)
+                .ranking("KOSPI", "개인", "순매수", 30, "TODAY", null);
+
+        assertThat(out).containsEntry("available", true).containsEntry("sourceKind", "toss").containsEntry("stale", true);
+        verify(collector, never()).liveRadar(anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt(), anyString(), org.mockito.ArgumentMatchers.any());
     }
 }
