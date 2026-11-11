@@ -1,6 +1,5 @@
 package com.macrodash.feature.info;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -59,7 +58,6 @@ class GeminiClientTest {
 
     // ------------------------------------------------------------------ QA-405
     @Test
-    @Disabled("QA-405: 정상 종료가 아닌데 글이 일부 있으면 성공으로 봅니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-405: 글이 일부 있어도 종료 사유가 정상 종료가 아니면 실패다")
     void partialTextWithAbnormalFinishIsFailure() {
         for (String finish : new String[]{"SAFETY", "RECITATION", "OTHER", "PROHIBITED_CONTENT"}) {
@@ -99,7 +97,6 @@ class GeminiClientTest {
     }
 
     @Test
-    @Disabled("QA-405: HTTP 400이 따로 분류되지 않아 쉬는 목록에 들지 못합니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-405: 요청 거절(HTTP 400)은 BAD_REQUEST로 따로 가른다")
     void badRequestHasItsOwnKind() throws Exception {
         GeminiClient.Reply reply = callAgainst(400);

@@ -3,7 +3,6 @@ package com.macrodash.feature.info;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.store.TranslationStore;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -358,7 +357,6 @@ class InfoTranslatorTest {
     // 그 조각은 누를 때마다 같은 길로 실패했습니다(ADR 0037 개정: '실패의 종류를 가리지 않고 넘어감').
 
     @Test
-    @Disabled("QA-405: 형식 밖 '성공' 응답이 다음 순위 엔진으로 넘어가지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-405: Gemini가 성공 응답에 JSON이 아닌 글을 주면 다음 순위(아래 Gemini → Claude)로 넘어가 그 번역을 저장한다")
     void malformedSuccessFallsThrough() {
         when(gemini.configured()).thenReturn(true);
@@ -380,7 +378,6 @@ class InfoTranslatorTest {
     }
 
     @Test
-    @Disabled("QA-405: 형식 밖 '성공' 응답이 다음 순위 엔진으로 넘어가지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-405: 제목 번역도 같다 — 쓸 제목이 없는 성공 응답이면 다음 순위로 넘어간다")
     void emptyTitleItemsFallThrough() {
         when(gemini.configured()).thenReturn(true);
@@ -414,7 +411,6 @@ class InfoTranslatorTest {
     }
 
     @Test
-    @Disabled("QA-405: 요청 거절(400) 뒤에도 쉬지 않고 조각마다 Gemini를 다시 부릅니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-405: 요청 거절(400)로 실패한 Gemini 모델은 한동안 건너뛴다 — 다음 호출은 Gemini를 부르지 않고 Claude로")
     void badRequestRestsGemini() {
         when(gemini.configured()).thenReturn(true);

@@ -122,16 +122,18 @@ public class InfoTranslator {
     public record Body(boolean ok, String textKo, boolean alreadyKorean, boolean cached, boolean truncated, String error, String model) {
     }
 
-    /** 모델 호출 한 번의 결과와 실제로 답한 모델. */
-    private record Called(GeminiClient.Reply reply, String model) {
+    /** 모델 호출의 결과와 실제로 답한 모델. {@code value}는 응답을 읽어 얻은 번역(실패면 null). */
+    private record Called<T>(GeminiClient.Reply reply, String model, T value) {
     }
 
     /** 조각 하나의 결과 — 실패 사유(성공이면 null)와 번역한 모델. */
     private record Part(String error, String model) {
     }
 
-    /** 그 Gemini 모델이 이 사유로 실패하면 한동안 그 모델을 건너뜁니다(무료 한도·없는 모델은 바로 다시 불러도 같음). */
-    private static final java.util.Set<String> GEMINI_REST_KINDS = java.util.Set.of("RATE_LIMIT", "NOT_FOUND");
+    /** 그 Gemini 모델이 이 사유로 실패하면 한동안 그 모델을 건너뜁니다(무료 한도·없는 모델·받지 않는 요청은 바로 다시 불러도 같음 — 400은 QA-405). */
+    private static final java.util.Set<String> GEMINI_REST_KINDS = java.util.Set.of("RATE_LIMIT", "NOT_FOUND", "BAD_REQUEST");
+    /** 모델은 성공으로 답했지만 글이 형식 밖(JSON 아님·쓸 번역 없음)일 때의 실패 종류 — 다음 순위로 넘어갑니다(쉬게 하지는 않음). */
+    static final String PARSE = "PARSE";
     /** 키·결제 문제 — 같은 키를 쓰는 아래 모델도 같은 결과라 불러 보지 않고 두 모델을 함께 쉽니다. */
     private static final java.util.Set<String> GEMINI_KEY_KINDS = java.util.Set.of("NO_KEY", "UNAUTHORIZED", "BILLING");
     static final int GEMINI_REST_MINUTES = 10;
@@ -217,46 +219,72 @@ public class InfoTranslator {
      *   <li>engine이 gemini·claude로 고정이면 그 엔진만 부릅니다.</li>
      * </ul>
      */
-    private Called call(String system, String user, Map<String, Object> schema) {
+    private <T> Called<T> call(String system, String user, Map<String, Object> schema, java.util.function.Function<String, T> reader) {
         String geminiError = null;
         if (useGemini) {
             GeminiClient.Reply failure = null;
             String failedModel = geminiModel;
             boolean keyProblem = false;
             if (!fallbackToClaude || !resting(geminiRestUntil)) {
-                GeminiClient.Reply reply = gemini.structured(geminiModel, system, user, schema, geminiTimeoutSeconds);
-                if (reply.ok()) {
-                    return new Called(reply, geminiModel);
+                Called<T> first = read(gemini.structured(geminiModel, system, user, schema, geminiTimeoutSeconds), geminiModel, reader);
+                if (first.reply().ok()) {
+                    return first;
                 }
-                failure = reply;
-                keyProblem = GEMINI_KEY_KINDS.contains(reply.errorKind());
-                if (keyProblem || GEMINI_REST_KINDS.contains(reply.errorKind())) {
+                failure = first.reply();
+                keyProblem = GEMINI_KEY_KINDS.contains(failure.errorKind());
+                if (keyProblem || GEMINI_REST_KINDS.contains(failure.errorKind())) {
                     geminiRestUntil = restUntil();
                 }
             }
             if (geminiLowerModel != null && !keyProblem && (!fallbackToClaude || !resting(geminiLowerRestUntil))) {
                 log.info("Gemini {} 실패({}) — {}로 시도합니다", geminiModel, failure == null ? "쉬는 중" : failure.errorKind(), geminiLowerModel);
-                GeminiClient.Reply lower = gemini.structured(geminiLowerModel, system, user, schema, geminiTimeoutSeconds);
-                if (lower.ok()) {
-                    return new Called(lower, geminiLowerModel);
+                Called<T> lower = read(gemini.structured(geminiLowerModel, system, user, schema, geminiTimeoutSeconds), geminiLowerModel, reader);
+                if (lower.reply().ok()) {
+                    return lower;
                 }
-                if (GEMINI_KEY_KINDS.contains(lower.errorKind()) || GEMINI_REST_KINDS.contains(lower.errorKind())) {
+                String lowerKind = lower.reply().errorKind();
+                if (GEMINI_KEY_KINDS.contains(lowerKind) || GEMINI_REST_KINDS.contains(lowerKind)) {
                     geminiLowerRestUntil = restUntil();
                 }
-                failure = failure == null ? lower : GeminiClient.Reply.failed(lower.errorKind(), failure.error() + " → " + lower.error());
+                failure = failure == null ? lower.reply()
+                        : GeminiClient.Reply.failed(lowerKind, failure.error() + " → " + lower.reply().error());
                 failedModel = geminiLowerModel;
             } else if (keyProblem) {
                 geminiLowerRestUntil = geminiRestUntil;
             }
             if (!fallbackToClaude) {
-                return new Called(failure, failedModel);
+                return new Called<>(failure, failedModel, null);
             }
             geminiError = failure == null ? "Gemini는 한도 초과 뒤 잠시 쉬는 중" : failure.error();
             log.info("Gemini 번역 실패({}) — Claude Haiku로 넘어갑니다", failure == null ? "쉬는 중" : failure.errorKind());
         }
         AiService.StructuredResult result = ai.structured(claudeModel, system, user, schema, effort, timeoutSeconds);
-        String error = result.ok() || geminiError == null ? result.error() : "Gemini: " + geminiError + " / Claude: " + result.error();
-        return new Called(new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), error), claudeModel);
+        Called<T> last = read(new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), result.error()), claudeModel, reader);
+        if (last.reply().ok() || geminiError == null) {
+            return last;
+        }
+        return new Called<>(GeminiClient.Reply.failed(last.reply().errorKind(), "Gemini: " + geminiError + " / Claude: " + last.reply().error()),
+                claudeModel, null);
+    }
+
+    /**
+     * 한 엔진의 응답을 읽습니다(QA-405). 엔진이 성공으로 답했어도 글이 형식 밖이면({@code reader}가 null을 주거나 예외) {@link #PARSE} 실패로
+     * 바꿔, 부르는 쪽이 다음 순위 엔진으로 넘어가게 합니다. 예전에는 호출이 끝난 뒤에 읽어 '성공한' 엔진의 형식 밖 응답에서 멈췄습니다.
+     */
+    private <T> Called<T> read(GeminiClient.Reply reply, String model, java.util.function.Function<String, T> reader) {
+        if (!reply.ok()) {
+            return new Called<>(reply, model, null);
+        }
+        try {
+            T value = reader.apply(reply.text());
+            if (value != null) {
+                return new Called<>(reply, model, value);
+            }
+            return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답에 쓸 번역이 없습니다"), model, null);
+        } catch (RuntimeException e) {
+            log.warn("번역 응답을 읽지 못함({}): {}", model, e.toString());
+            return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답을 읽지 못했습니다"), model, null);
+        }
     }
 
     private boolean resting(Instant until) {
@@ -352,32 +380,30 @@ public class InfoTranslator {
         for (int i = 0; i < missing.size(); i++) {
             numbered.add(Map.of("n", i + 1, "text", missing.get(i)));
         }
-        Called called = call(TITLE_SYSTEM, mapper.writeValueAsString(Map.of("titles", numbered)), TITLE_SCHEMA);
+        Called<Map<String, String>> called = call(TITLE_SYSTEM, mapper.writeValueAsString(Map.of("titles", numbered)), TITLE_SCHEMA,
+                text -> readTitles(text, missing));
         GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
             return new Titles(out, result.errorKind(), result.error(), true, called.model());
         }
-        int stored = 0;
-        try {
-            for (JsonNode row : mapper.readTree(result.text()).path("items")) {
-                int n = row.path("n").asInt(0);
-                String ko = row.path("ko").asText("").strip();
-                if (n < 1 || n > missing.size() || ko.isEmpty()) {
-                    continue;
-                }
-                String title = missing.get(n - 1);
-                store.put(TranslationStore.id(TranslationStore.TITLE, title), TranslationStore.TITLE, title.length(), ko, called.model());
-                out.put(title, ko);
-                stored++;
-            }
-        } catch (RuntimeException e) {
-            log.warn("제목 번역 응답을 읽지 못함: {}", e.toString());
-            return new Titles(out, "PARSE", "번역 응답을 읽지 못했습니다", true, called.model());
-        }
-        if (stored == 0) {
-            return new Titles(out, "PARSE", "번역 응답에 쓸 제목이 없습니다", true, called.model());
-        }
+        called.value().forEach((title, ko) -> {
+            store.put(TranslationStore.id(TranslationStore.TITLE, title), TranslationStore.TITLE, title.length(), ko, called.model());
+            out.put(title, ko);
+        });
         return new Titles(out, null, null, true, called.model());
+    }
+
+    /** 제목 번역 응답 → {원문 제목: 한국어}. 번호가 범위 밖이거나 번역이 빈 줄은 뺍니다. 쓸 줄이 하나도 없으면 null(형식 밖 응답). */
+    private Map<String, String> readTitles(String text, List<String> missing) {
+        Map<String, String> read = new LinkedHashMap<>();
+        for (JsonNode row : mapper.readTree(text).path("items")) {
+            int n = row.path("n").asInt(0);
+            String ko = row.path("ko").asText("").strip();
+            if (n >= 1 && n <= missing.size() && !ko.isEmpty()) {
+                read.putIfAbsent(missing.get(n - 1), ko);
+            }
+        }
+        return read.isEmpty() ? null : read;
     }
 
     /**
@@ -475,21 +501,15 @@ public class InfoTranslator {
 
     /** 조각 하나를 번역해 저장합니다 → 실패 사유(성공이면 null)와 번역한 모델. */
     private Part translatePart(String part) {
-        Called called = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA);
+        Called<String> called = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA, text -> {
+            String ko = mapper.readTree(text).path("ko").asText("").strip();
+            return ko.isEmpty() ? null : ko;
+        });
         GeminiClient.Reply result = called.reply();
         if (!result.ok()) {
             return new Part(result.error(), called.model());
         }
-        String ko;
-        try {
-            ko = mapper.readTree(result.text()).path("ko").asText("").strip();
-        } catch (RuntimeException e) {
-            return new Part("번역 응답을 읽지 못했습니다", called.model());
-        }
-        if (ko.isEmpty()) {
-            return new Part("번역 응답이 비었습니다", called.model());
-        }
-        store.put(TranslationStore.id(TranslationStore.BODY, part), TranslationStore.BODY, part.length(), ko, called.model());
+        store.put(TranslationStore.id(TranslationStore.BODY, part), TranslationStore.BODY, part.length(), called.value(), called.model());
         return new Part(null, called.model());
     }
 

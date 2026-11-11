@@ -31,7 +31,7 @@ import java.util.Map;
 @Component
 public class GeminiClient {
 
-    /** 호출 결과 — {@code errorKind}: NO_KEY·BILLING·RATE_LIMIT·UNAUTHORIZED·NOT_FOUND·OVERLOADED(503)·HTTP·IO·REFUSAL·MAX_TOKENS·EMPTY. 성공이면 null. */
+    /** 호출 결과 — {@code errorKind}: NO_KEY·BILLING·RATE_LIMIT·UNAUTHORIZED·NOT_FOUND·BAD_REQUEST(400)·OVERLOADED(503)·HTTP·IO·REFUSAL·MAX_TOKENS·EMPTY. 성공이면 null. */
     public record Reply(boolean ok, String text, String errorKind, String error) {
         static Reply failed(String kind, String error) {
             return new Reply(false, null, kind, error);
@@ -99,6 +99,8 @@ public class GeminiClient {
                 case 429 -> Reply.failed("RATE_LIMIT", "Gemini API 호출 한도에 걸렸습니다(429).");
                 case 401, 403 -> Reply.failed("UNAUTHORIZED", "Gemini API 키를 쓸 수 없습니다(" + status + ") — 키와 프로젝트 설정을 확인하세요.");
                 case 404 -> Reply.failed("NOT_FOUND", "Gemini 모델을 찾지 못했습니다(404): " + model);
+                // 요청 자체를 받지 않음(모델이 이 설정·스키마를 지원하지 않는 등) — 같은 요청을 바로 다시 보내도 같아 부르는 쪽이 쉬게 합니다(QA-405).
+                case 400 -> Reply.failed("BAD_REQUEST", "Gemini API가 요청을 받지 않았습니다(400): " + model);
                 case 503 -> Reply.failed("OVERLOADED", "Gemini 모델이 지금 붐빕니다(503): " + model);
                 default -> Reply.failed("HTTP", "Gemini API 오류(HTTP " + status + ")");
             };
@@ -132,9 +134,14 @@ public class GeminiClient {
         if ("MAX_TOKENS".equals(finish)) {
             return Reply.failed("MAX_TOKENS", "Gemini 응답이 출력 한도에서 잘렸습니다.");
         }
+        // 종료 사유가 비었거나 정상 종료(STOP)일 때만 성공입니다(QA-405). 안전·인용 등으로 중간에 끊긴 응답은 글이 일부 있어도 끝나지 않은
+        // 글이라 쓰지 않습니다 — 성공으로 돌려주면 다음 순위 엔진으로 넘어가지 못하고 그 글은 누를 때마다 같은 길로 실패합니다.
+        if (!finish.isEmpty() && !"STOP".equals(finish)) {
+            return Reply.failed("REFUSAL", text.isEmpty() ? "Gemini가 답을 내지 않았습니다(" + finish + ")."
+                    : "Gemini가 답을 끝내지 못했습니다(" + finish + ").");
+        }
         if (text.isEmpty()) {
-            return finish.isEmpty() || "STOP".equals(finish) ? Reply.failed("EMPTY", "Gemini 응답에 글이 없습니다.")
-                    : Reply.failed("REFUSAL", "Gemini가 답을 내지 않았습니다(" + finish + ").");
+            return Reply.failed("EMPTY", "Gemini 응답에 글이 없습니다.");
         }
         return new Reply(true, text.toString(), null, null);
     }
