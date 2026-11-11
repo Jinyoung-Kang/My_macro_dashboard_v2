@@ -99,6 +99,75 @@ def test_확정_순위는_금액을_억_원으로():
     assert parsed["period"] == {"from": "2026-11-11", "to": "2026-11-11"}
 
 
+QA392 = pytest.mark.xfail(strict=True, reason="QA-392: 필수 칸이 전부 비어도 '형식 바뀜'이 아니고 직전 저장본을 빈 값으로 덮습니다")
+
+
+@QA392
+def test_QA392_매매상위_행의_키_이름이_바뀌면_형식_바뀜():
+    payload = _ranking(estimated=False)
+    for key in ("buyRankList", "sellRankList"):
+        payload["sections"][key] = [{"stockCode": r["itemcode"], "stockName": r["itemname"], "volume": r["accTradeVolume"]}
+                                    for r in payload["sections"][key]]
+
+    with pytest.raises(ShapeError, match="종목 코드·이름"):
+        info_naver.parse_rankings(payload)
+
+
+@QA392
+def test_QA392_매매상위에서_코드나_이름이_없는_행은_뺀다():
+    payload = _ranking(estimated=False)
+    payload["sections"]["buyRankList"].append({"itemcode": "", "itemname": "이름만", "accTradeVolume": "1"})
+    payload["sections"]["buyRankList"].append(dict(payload["sections"]["buyRankList"][0], itemcode="000003"))
+
+    parsed = info_naver.parse_rankings(payload)
+
+    assert [(r["rank"], r["code"]) for r in parsed["buy"]] == [(1, "000001"), (3, "000003")], "순위는 화면의 자리 그대로"
+
+
+def test_QA392_빈_매매상위_목록은_그대로_빈_목록이다():
+    parsed = info_naver.parse_rankings({"sections": {"buyRankList": [], "sellRankList": []}})
+
+    assert parsed["buy"] == [] and parsed["sell"] == [], "행이 없는 것(장 시작 전 등)은 형식 바뀜이 아닙니다"
+
+
+@QA392
+def test_QA392_매매동향이_모르는_구분_코드뿐이면_형식_바뀜():
+    payload = {"content": [{"bizdate": "20261110", "netAmounts": [_amount("A100", 1_000_000_000), _amount("B200", -2_000_000_000)]}]}
+
+    with pytest.raises(ShapeError, match="날짜별 값을 읽지 못함"):
+        info_naver.parse_trend(payload)
+
+
+@QA392
+def test_QA392_매매동향에서_주_구분을_하나도_읽지_못한_날은_뺀다():
+    payload = _trend()
+    payload["content"].append({"bizdate": "20261109", "netAmounts": [_amount("7100", 5_000_000_000)]})      # 기타법인만
+
+    rows = info_naver.parse_trend(payload)
+
+    assert [row["date"] for row in rows] == ["2026-11-10"]
+
+
+@QA392
+def test_QA392_키_이름이_바뀐_부분은_직전_값을_지킨다():
+    previous = {"rankings": {"FOREIGNER": {"KOSPI": {"buy": [{"rank": 1, "code": "005930", "name": "삼성전자"}], "sell": [],
+                                                      "estimated": False}}}}
+
+    def answer(part, market):
+        if part == "trend":
+            return _trend()
+        payload = _ranking(estimated=False)
+        if (part, market) == ("FOREIGNER", "KOSPI"):
+            payload["sections"]["buyRankList"] = [{"stockCode": "000001", "stockName": "가나다"}]
+        return payload
+
+    snap = info_naver.collect(previous, fetch=FakeFetch(answer), now=NOW, rng=random.Random(1))
+
+    kept = snap["rankings"]["FOREIGNER"]["KOSPI"]
+    assert kept["buy"][0]["code"] == "005930" and kept["isStale"] is True, "빈 값으로 덮지 않고 직전 값을 이어받습니다"
+    assert "FOREIGNER.KOSPI" in snap["failed"] and snap["shapeErrors"]
+
+
 @pytest.mark.parametrize("payload", [{}, {"sections": {}}, {"content": None}, []])
 def test_모양이_다르면_형식_바뀜(payload):
     with pytest.raises(ShapeError):
