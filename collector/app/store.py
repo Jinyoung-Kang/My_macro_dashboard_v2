@@ -1572,6 +1572,9 @@ INFO_BODY_MAX_CHARS = 40_000
 # 수집한 글을 지우기 전에 두는 날 수(보관 태스크).
 INFO_RETENTION_DAYS = 180
 _INFO_BODY_RANK = {"none": 0, "partial": 1, "full": 2}
+# 작성 시각이 받은 시각보다 이만큼 넘게 미래면 믿지 않고 비워 둡니다(시간대·시계 차이는 이 안). 목록이 작성 시각 내림차순이라, 피드가 준
+# 미래 시각을 그대로 두면 그 글이 보존 기간 내내 맨 위에 남습니다(QA-394).
+INFO_FUTURE_TOLERANCE = timedelta(days=1)
 
 
 def info_known(ids: Sequence[str]) -> dict[str, dict]:
@@ -1606,14 +1609,20 @@ def info_page_outcomes(source: str, limit: int) -> list[str]:
     return [r["body_status"] for r in rows]
 
 
-def upsert_info_items(items: Iterable[dict]) -> int:
+def upsert_info_items(items: Iterable[dict], *, now: datetime | None = None) -> int:
     """
     글을 넣거나 채웁니다 → 보낸 행 수.
 
     이미 있는 글은 **나아지는 칸만** 바꿉니다 — 본문은 더 나은 판정(none < partial < full)일 때만 덮고, 한국어 제목·작성자·작성 시각·요약은
     비어 있던 칸만 채웁니다. 그래서 waedge 해외 블로그 목록(한국어 제목만)과 원문 피드(본문)가 어느 쪽이 먼저 와도 한 행으로 모입니다.
     처음 받은 시각(first_seen_at)은 지킵니다.
+
+    원문 제목(title)은 한 경우에만 바꿉니다 — 영어 제목 없이 먼저 온 waedge 해외 블로그 행(title 자리에 한국어 제목이 들어 있음 = title_ko와
+    같음)에 한국어 제목이 없는 행(원문 피드)이 오면 그 원문 제목으로(QA-394). 작성 시각이 받은 시각(``now``)보다 하루 넘게 미래면 비워 둡니다.
+
+    :param now: 받은 시각(없으면 지금) — 미래 작성 시각을 가르는 기준
     """
+    latest = (now or datetime.now(timezone.utc)) + INFO_FUTURE_TOLERANCE
     params = []
     for item in items:
         body = item.get("body")
@@ -1622,9 +1631,14 @@ def upsert_info_items(items: Iterable[dict]) -> int:
         status = item.get("body_status") or ("full" if body else "none")
         if status not in _INFO_BODY_RANK:
             raise ValueError(f"모르는 본문 판정: {status}")
+        published = item.get("published_at")
+        if isinstance(published, datetime):
+            aware = published if published.tzinfo else published.replace(tzinfo=timezone.utc)
+            if aware > latest:
+                published = None                 # 믿을 수 없는 시각 — 받은 시각(first_seen_at)으로 정렬됩니다
         params.append((
             item["id"], item["source"], item.get("kind") or "article", item["url"], item["title"],
-            item.get("title_ko"), item.get("author"), item.get("published_at"), item.get("summary"),
+            item.get("title_ko"), item.get("author"), published, item.get("summary"),
             body, status, Jsonb(item.get("meta") or {}), item.get("fetch_tier"),
         ))
     if not params:
@@ -1636,6 +1650,8 @@ def upsert_info_items(items: Iterable[dict]) -> int:
                                     body, body_status, meta, fetch_tier)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
+                title        = CASE WHEN info_items.title = info_items.title_ko AND EXCLUDED.title_ko IS NULL
+                                    THEN EXCLUDED.title ELSE info_items.title END,
                 title_ko     = COALESCE(info_items.title_ko, EXCLUDED.title_ko),
                 author       = COALESCE(info_items.author, EXCLUDED.author),
                 published_at = COALESCE(info_items.published_at, EXCLUDED.published_at),

@@ -288,7 +288,7 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
             "summary": info_text.summarize(body or text or ""), "body": body, "body_status": status,
             "fetch_tier": tier, "meta": meta,
         })
-    store.upsert_info_items(items)
+    store.upsert_info_items(items, now=now)
     # 검증값(ETag·Last-Modified)은 저장이 끝나고 밀린 글이 없을 때만 기억합니다(QA-393). 저장 전에 기억하면 저장이 실패한 피드도 다음
     # 실행이 304로 끝나고, 실행당 상한·5xx·예산 부족으로 못 연 글 페이지는 피드가 바뀔 때까지 다시 시도되지 않습니다.
     if backlog or blocked is not None:

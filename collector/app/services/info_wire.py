@@ -80,7 +80,7 @@ def collect(*, fetch: Fetch = ladder.fetch, now: datetime | None = None) -> str:
         })
     # 겹치는 줄이 하나도 없는데 전에 받은 적이 있으면 그 사이를 놓쳤을 수 있습니다(넣기 전에 봅니다 — 첫 실행은 늘 전부 처음).
     gap = not known and store.info_source_exists(SOURCE_KEY)
-    store.upsert_info_items(items)
+    store.upsert_info_items(items, now=now)
     detail = f"{LABEL} 속보 {len(entries)}건 · 새로 넣음 {len(items)} · 계층 {fetched.tier}"
     if gap:
         detail += " · 누락 가능(받은 줄이 모두 처음 봄 — 지난 수집 뒤 100건 넘게 나왔을 수 있음)"

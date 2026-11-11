@@ -242,7 +242,6 @@ def test_한국어_제목과_원문_본문이_어느_쪽이_먼저_와도_한_�
     assert row["body_status"] == "full" and row["title_ko"] == "금리 급등", "다시 와도 본문을 지우지 않습니다"
 
 
-QA394 = pytest.mark.xfail(strict=True, reason="QA-394: 원문 제목(title)이 충돌 갱신 목록에 없어 한국어 제목이 그대로 남습니다")
 _NO_ENGLISH = {"url": "https://wolfstreet.com/2026/11/10/rates-spike/", "titleKo": "금리 급등", "titleEn": None,
                "blog": "Wolf Street", "timeLabel": "16:01"}
 _FROM_FEED = {"id": info_text.item_id("https://wolfstreet.com/2026/11/10/rates-spike/"), "source": "blog.wolfstreet",
@@ -250,7 +249,6 @@ _FROM_FEED = {"id": info_text.item_id("https://wolfstreet.com/2026/11/10/rates-s
               "body": "본문 " * 300, "body_status": "full", "fetch_tier": "impersonate"}
 
 
-@QA394
 def test_QA394_영어_제목_없이_먼저_온_행의_원문_제목은_피드가_오면_채워진다(store):
     info_waedge.store_blog_titles([_NO_ENGLISH], fetch_tier="impersonate")
     first = store.info_item(_FROM_FEED["id"])

@@ -159,7 +159,6 @@ def test_30일보다_오래된_글은_넣지_않는다(store, example_host):
 # ==============================================================================
 # 4. 304·형식 바뀜
 # ==============================================================================
-@pytest.mark.xfail(strict=True, reason="QA-394: 피드의 미래 작성 시각을 그대로 저장해 목록 맨 위에 남습니다")
 def test_QA394_하루_넘게_미래인_작성_시각은_저장하지_않는다(store, example_host):
     fetch = FakeFetch({BLOG.feed: _feed(_item(1, days_ago=-30), _item(2, days_ago=-0.5), _item(3, days_ago=1))})
 
@@ -207,7 +206,7 @@ def test_QA393_밀린_글이_있으면_검증값을_기억하지_않아_다음_�
 def test_QA393_저장이_실패하면_검증값을_기억하지_않는다(store, example_host, monkeypatch):
     fetch = FakeFetch({BLOG.feed: _feed(_item(1))})
     real = store.upsert_info_items
-    monkeypatch.setattr(store, "upsert_info_items", lambda items: (_ for _ in ()).throw(RuntimeError("DB 끊김")))
+    monkeypatch.setattr(store, "upsert_info_items", lambda items, **_: (_ for _ in ()).throw(RuntimeError("DB 끊김")))
     with pytest.raises(RuntimeError):
         info_blogs.collect(BLOG, fetch=fetch, now=NOW)
     monkeypatch.setattr(store, "upsert_info_items", real)
