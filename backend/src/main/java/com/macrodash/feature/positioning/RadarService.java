@@ -79,6 +79,18 @@ public class RadarService {
      */
     static final int HISTORY_ROW_LIMIT = 5_000;
 
+    /**
+     * 수집기 {@code radar_rankings} 태스크가 주기적으로 다시 받는 조합(시장·투자주체·방향·기간) — 수집기
+     * {@code app/tasks/base.py}의 {@code RADAR_COMBINATIONS}와 같아야 합니다({@code RadarScheduledCombinationsParityTest}가 대조).
+     *
+     * <p>이 밖의 조합은 저장본을 다시 쓰는 태스크가 없습니다. 저장본을 먼저 돌려주면 처음 한 번 받은 값이 그대로 남으므로(QA-395)
+     * 조회할 때마다 지금 받고, 저장본은 지금 받기가 실패했을 때만 씁니다.
+     */
+    static final List<List<String>> SCHEDULED_COMBINATIONS = List.of(
+            List.of("KOSPI", "외국인", "순매수", "TODAY"),
+            List.of("KOSPI", "기관", "순매수", "TODAY"),
+            List.of("KOSPI", "외국인", "순매도", "TODAY"));
+
     private final StoreReader store;
     private final StoreRepository repository;
     private final CollectorClient collector;
@@ -142,7 +154,7 @@ public class RadarService {
                 || !MARKETS.get(0).equals(market)
                 || topN != 30;
 
-        // 저장본이 있으면 **기다리지 않습니다.** 오래됐으면 StoreReader가 수집기에
+        // 스케줄 조합의 저장본이 있으면 **기다리지 않습니다.** 오래됐으면 StoreReader가 수집기에
         // 비동기로 요청하고 저장본을 돌려줍니다("화면은 수집을 기다리지 않습니다").
         // 예전에는 15분 지난 저장본에서 수집기를 동기로 불러(읽기 타임아웃 90초), 수집기가
         // 응답을 못 하면 랭킹 90초·교집합 180초·AI 리포트 270초가 멈췄습니다.
@@ -151,15 +163,29 @@ public class RadarService {
         // 태스크가 끝날 때까지 기다리는데(최대 90초), 그 태스크는 스케줄 조합 3개만 수집하므로
         // 다른 조합(개인·연기금·순매도×기관·5일/20일 …)은 기다려 봐야 결과가 없습니다.
         // 그런 조합은 아래에서 바로 지금 받습니다.
+        //
+        // 스케줄 밖 조합은 저장본이 **있어도** 그 길을 타지 않습니다(QA-395). 수집기가 지금 받은 결과를 그 조합 이름으로 저장해
+        // 두지만 다시 받는 태스크가 없어, 저장본을 먼저 돌려주면 처음 한 번 받은 값이 새로고침으로도 바뀌지 않았습니다.
+        // 저장본은 들고만 있다가 지금 받기가 비었거나 실패했을 때(또는 store_only 모드에서) 씁니다.
+        boolean scheduled = !custom && SCHEDULED_COMBINATIONS.contains(List.of(market, investor, tradeType, intervalType));
         Optional<Snapshot> snapshot = Optional.empty();
-        if (!custom && store.readStored(snapshotName).isPresent()) {
-            snapshot = store.read(snapshotName, Datasets.MAX_AGE_REALTIME, "radar_rankings");
+        Optional<Snapshot> fallback = Optional.empty();
+        if (!custom) {
+            Optional<Snapshot> stored = store.readStored(snapshotName);
+            if (stored.isPresent() && scheduled) {
+                snapshot = store.read(snapshotName, Datasets.MAX_AGE_REALTIME, "radar_rankings");
+            } else {
+                fallback = stored.filter(found -> found.payload() != null);
+            }
         }
 
         if (snapshot.isPresent() && snapshot.get().payload() != null) {
             return fillFromSnapshot(out, snapshot.get());
         }
         if (store.readMode() == AppProperties.ReadMode.STORE_ONLY) {
+            if (fallback.isPresent()) {
+                return fillFromSnapshot(out, fallback.get());
+            }
             out.put("available", false);
             out.put("rows", List.of());
             out.put("message",
@@ -168,7 +194,7 @@ public class RadarService {
             return out;
         }
 
-        // 저장본이 없는 조합(과거 날짜·다른 시장·다른 topN·스케줄러가 안 받는 투자주체)만 지금 받습니다.
+        // 스케줄 조합의 저장본이 없을 때와, 스케줄 밖 조회(과거 날짜·다른 시장·다른 topN·스케줄러가 안 받는 투자주체·방향·기간)는 지금 받습니다.
         Optional<JsonNode> live = collector.liveRadar(
                 market, investor, tradeType, topN, intervalType, targetDate);
 
@@ -197,13 +223,14 @@ public class RadarService {
             }
         }
 
-        if (snapshot.isPresent() && snapshot.get().payload() != null) {
+        if (fallback.isPresent()) {
             // 수집 실패 → 오래된 저장본이라도 보여 줍니다(화면이 비는 것보다 낫습니다).
-            Map<String, Object> fallback = fillFromSnapshot(out, snapshot.get());
-            fallback.put("warning",
+            Map<String, Object> stored = fillFromSnapshot(out, fallback.get());
+            // 이력 대체 저장본이면 그 경고('지금 시점의 수급이 아닙니다')가 더 무거우므로 덮지 않습니다.
+            stored.putIfAbsent("warning",
                     "수집에 실패해 저장본을 표시합니다 (수집 시각 "
-                            + snapshot.get().collectedAtKst() + ").");
-            return fallback;
+                            + fallback.get().collectedAtKst() + ").");
+            return stored;
         }
 
         out.put("available", false);

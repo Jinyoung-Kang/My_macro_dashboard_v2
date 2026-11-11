@@ -149,7 +149,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/krx/investor-trend` | Daum 투자주체별 수급 (계약수) |
 | `GET /api/krx/intraday?minutes=30` | 장중 수급 가속도 |
 | `GET /api/radar/options` | 선택지 목록 + `supportedInvestors`(토스 폴백 저장본이 있으면 여섯, 없으면 외국인·기관) + `fallbackChain`(수집기 체인 순서) |
-| `GET /api/radar/ranking?market=&investor=&tradeType=&topN=&intervalType=` | 수급 랭킹 |
+| `GET /api/radar/ranking?market=&investor=&tradeType=&topN=&intervalType=` | 수급 랭킹. 수집기가 주기적으로 받는 세 조합(KOSPI·상위 30의 외국인 순매수·기관 순매수·외국인 순매도, 당일)은 저장본을 먼저 주고(오래됐으면 `stale`), 그 밖의 조합·시장·종목 수는 조회할 때마다 수집기에서 지금 받습니다 — 지금 받기가 비었거나 실패하면 그 조합의 옛 저장본을 `stale`·`warning`과 함께 줍니다 |
 | `GET /api/radar/consensus?market=&tradeType=&topN=&intervalType=` | 외국인·기관이 **같은 방향**으로 움직인 종목 (두 상위 N 목록의 교집합) |
 | `GET /api/radar/history?market=&investor=&tradeType=&latest=true&obsDate=` | 누적 이력. `latest=true`면 **한 거래일만** 줍니다 — `dates`(이 조건의 기록이 있는 날, 최신 순), `obsDate`(고른 날, 비우면 가장 최근), `rows`(그날 기록). 빼면 전 기간(`startDate`로 시작일 지정)이되 **최신 5,000행까지**(최신 날짜 순)만 주고 `rowLimit`(5000)·`truncated`(true면 더 오래된 행이 남음)를 함께 줍니다 — 행 단위로 자르므로 잘렸을 때 `rows`의 가장 오래된 날은 일부만 담겼을 수 있어, 그날부터는 `obsDate`로 하루씩 받습니다. 이때 `dates`는 조건 없는 전체 거래일 목록(QA-133). 날짜는 `YYYY-MM-DD`, 틀리면 400 |
 | `GET /api/radar/diagnostics` | 5개 소스 연결 진단 |

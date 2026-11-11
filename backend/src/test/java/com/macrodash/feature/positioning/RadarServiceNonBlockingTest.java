@@ -6,7 +6,6 @@ import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
 import com.macrodash.store.Snapshot;
 import com.macrodash.store.StoreRepository;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -114,7 +113,6 @@ class RadarServiceNonBlockingTest {
     }
 
     @Test
-    @Disabled("QA-395: 스케줄 밖 조합의 저장본이 한 번 만들어지면 갱신되지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-395: 스케줄 밖 조합(개인 순매수)은 저장본이 있어도 지금 받는다")
     void unscheduledCombinationGoesLiveEvenWithSnapshot() throws Exception {
         String name = Datasets.radarScanner("KOSPI", "개인", "순매수", "TODAY");
@@ -141,7 +139,6 @@ class RadarServiceNonBlockingTest {
     }
 
     @Test
-    @Disabled("QA-395: 스케줄 밖 조합의 저장본이 한 번 만들어지면 갱신되지 않습니다 — 수정 커밋에서 풉니다")
     @DisplayName("QA-395: 스케줄 밖 조합의 지금 받기가 비면 저장본으로 돌아가고 오래됨·대체 안내를 붙인다")
     void unscheduledCombinationFallsBackToSnapshotWhenLiveIsEmpty() throws Exception {
         String name = Datasets.radarScanner("KOSPI", "기관", "순매도", "TODAY");
