@@ -94,6 +94,8 @@ public final class AccessPolicy {
         // 정보 수집(사이드바 '정보 수집', ADR 0035·0036) — 운영자 화면 전용, 저장본·수집기 상태만 읽음
         owner("GET /api/info/catalog", "GET /api/info/mechanism", "GET /api/info/items", "GET /api/info/items/{id}",
                 "GET /api/info/headlines", "GET /api/info/sources", "GET /api/info/flows", "GET /api/info/gurus", "GET /api/info/krx");
+        // 정보 수집 글의 한국어 번역(ADR 0037) — 유료 API(Claude Haiku)를 부르고 번역을 저장함. 수집은 일으키지 않음
+        owner("POST /api/info/translate");
         // 사용자 관리
         owner("GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit");
         // 실제 계좌(토스증권, ADR 0025) — 운영자 개인 자산을 읽기만 함(주문 경로 없음, 저장하지 않음, 운영자의 토스 키로 외부 조회)

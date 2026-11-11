@@ -87,6 +87,11 @@
       "p": "/api/info/krx"
     },
     {
+      "m": "POST",
+      "p": "/api/info/translate",
+      "mutating": true
+    },
+    {
       "m": "GET",
       "p": "/api/macro/spread",
       "q": {

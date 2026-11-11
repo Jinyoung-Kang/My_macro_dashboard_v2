@@ -2,6 +2,8 @@ package com.macrodash.feature.info;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,6 +23,7 @@ import java.util.Map;
  *  GET /api/info/flows        네이버 투자자별 매매동향·외국인·기관 매매상위
  *  GET /api/info/gurus        waedge 거장 견해
  *  GET /api/info/krx          KRX 정보데이터시스템 — 순매수 상위·시장 합계·외국인 보유·공매도
+ *  POST /api/info/translate   글 하나를 한국어로(ADR 0037 — Claude Haiku, 결과는 저장해 다시 부르지 않음. 수집은 일으키지 않음)
  * </pre>
  */
 @RestController
@@ -64,6 +67,15 @@ public class InfoController {
                                          @RequestParam(required = false) Integer page,
                                          @RequestParam(required = false) Integer size) {
         return info.headlines(set, feed, q, page, size);
+    }
+
+    /** 번역 요청 — 수집 글이면 {@code itemId}만, 글 표에 없는 것(사건 뉴스)은 {@code title}·{@code text}. */
+    public record TranslateRequest(String itemId, String title, String text) {
+    }
+
+    @PostMapping("/translate")
+    public Map<String, Object> translate(@RequestBody TranslateRequest request) {
+        return info.translate(request.itemId(), request.title(), request.text());
     }
 
     @GetMapping("/sources")

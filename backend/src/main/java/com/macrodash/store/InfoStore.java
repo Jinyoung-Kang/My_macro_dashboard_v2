@@ -64,9 +64,9 @@ public class InfoStore {
     public record Page<T>(List<T> rows, int total) {
     }
 
-    /** 사건 뉴스 RSS 제목 한 줄(관측치 news_headline·kr_news_headline). */
+    /** 사건 뉴스 RSS 제목 한 줄(관측치 news_headline·kr_news_headline). {@code summary}는 피드가 준 요약(없으면 null — ADR 0037). */
     public record Headline(String dataset, String title, String link, String source, String feed, Instant publishedAt,
-                           String fetchedAt) {
+                           String fetchedAt, String summary) {
     }
 
     /**
@@ -152,7 +152,7 @@ public class InfoStore {
                     }
                     return new Headline(rs.getString("dataset"), payload.path("title").asText(null), payload.path("link").asText(null),
                             payload.path("source").asText(null), payload.path("feed").asText(null), published,
-                            payload.path("fetchedAt").asText(null));
+                            payload.path("fetchedAt").asText(null), payload.path("summary").asText(null));
                 });
         return new Page<>(rows, total == null ? 0 : total);
     }

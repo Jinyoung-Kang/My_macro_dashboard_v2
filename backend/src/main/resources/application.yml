@@ -101,6 +101,18 @@ dashboard:
   frontend-origin: ${FRONTEND_ORIGIN:http://localhost:3000}
   frontend-port: ${FRONTEND_PORT:3000}
 
+  # 정보 수집(운영자 전용, ADR 0035~0037). 끊김 알림 주기는 SourceAlertJob의 기본값(5분)을 씁니다.
+  info:
+    translate:
+      # 목록 제목을 미리 한국어로 번역하는 정기 작업 — 운영 서버 덧붙임(compose.vultr.yml)만 켭니다. 화면의 번역 단추(수동)는 이 값과 무관
+      enabled: ${INFO_TRANSLATE_ENABLED:false}
+      model: claude-haiku-5-5             # 번역 모델(낮은 등급 — 사용자 지시 2026-11-11). AI_ENGINES 허용 목록이 있으면 이 모델의 엔진이 들어 있어야 함
+      effort: low                         # low·medium·high·xhigh·max
+      daily-chars: 1500000                # KST 하루에 번역하는 원문 글자 수의 상한(제목 + 본문). 넘으면 그날은 번역하지 않음
+      timeout-seconds: 90                 # 호출 하나의 대기 한도
+      interval-ms: 120000                 # 제목 미리 번역 주기(2분)
+      initial-delay-ms: 150000
+
   # 모의 알고리즘 매매(운영자 전용, 명세 docs/specs/2026-10-24-paper-trading-spec.md). 슬리피지·스탑 비율 같은 값은 여기가 아니라
   # DB 설정 한 행(paper_settings)이고, 여기는 재기동해야 바뀌는 값만 둡니다. 출발일이 거래일이 아니거나 현금이 0 이하면 기동하지 않습니다.
   paper:

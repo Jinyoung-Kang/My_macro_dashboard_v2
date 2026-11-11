@@ -44,6 +44,7 @@ class InfoServiceTest {
     private StoreReader reader;
     private StoreRepository repository;
     private CollectorClient collector;
+    private InfoTranslator translator;
     private InfoService service;
 
     @BeforeEach
@@ -55,7 +56,8 @@ class InfoServiceTest {
         collector = mock(CollectorClient.class);
         when(store.ready()).thenReturn(true);
         when(fetchState.ready()).thenReturn(true);
-        service = new InfoService(store, fetchState, reader, repository, collector, Clock.fixed(NOW, ZoneOffset.UTC));
+        translator = mock(InfoTranslator.class);
+        service = new InfoService(store, fetchState, reader, repository, collector, translator, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static InfoStore.Item item(String source) {
@@ -95,7 +97,7 @@ class InfoServiceTest {
     void headlines() {
         when(store.headlines(anyList(), any(), any(), anyInt(), anyInt())).thenReturn(new InfoStore.Page<>(List.of(
                 new InfoStore.Headline(Datasets.OBS_KR_NEWS_HEADLINE, "금리 동결", "https://example.org/a", "한국은행", "bok_press",
-                        Instant.parse("2026-11-11T01:00:00Z"), "2026-11-11 10:05:00 KST")), 1));
+                        Instant.parse("2026-11-11T01:00:00Z"), "2026-11-11 10:05:00 KST", "기준금리를 동결했다")), 1));
 
         Map<String, Object> out = service.headlines("kr", null, null, null, null);
 
@@ -178,5 +180,55 @@ class InfoServiceTest {
 
         assertThat(service.flows()).containsEntry("available", false);
         verify(reader, never()).read(anyString(), org.mockito.ArgumentMatchers.anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("글 목록은 한국어 제목이 없는 글에 저장된 번역 제목을 붙이고, 속보(wire)만 고를 수 있다")
+    @SuppressWarnings("unchecked")
+    void itemsCarryTranslatedTitles() {
+        InfoStore.Item wire = new InfoStore.Item("0123456789abcdef01234568", "wire.financialjuice", "headline",
+                "https://www.financialjuice.com/News/1/x.aspx", "Fed's Waller: rates are restrictive", null, null,
+                NOW.minusSeconds(60), NOW, null, "none", "impersonate", MAPPER.createObjectNode(), null);
+        when(store.items(anyList(), any(), anyInt(), anyInt())).thenReturn(new InfoStore.Page<>(List.of(wire, item("blog.wolfstreet")), 2));
+        when(translator.cachedTitles(List.of("Fed's Waller: rates are restrictive")))
+                .thenReturn(Map.of("Fed's Waller: rates are restrictive", "월러 연준 이사: 금리는 제약적"));
+
+        Map<String, Object> out = service.items("wire", null, null, null, null);
+
+        verify(store).items(eq(List.of("wire.financialjuice")), eq(null), eq(0), eq(InfoService.DEFAULT_SIZE));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) out.get("items");
+        assertThat(rows.get(0)).containsEntry("titleKo", "월러 연준 이사: 금리는 제약적").containsEntry("sourceLabel", "Financial Juice 속보")
+                .containsEntry("kind", "headline").containsEntry("bodyStatus", "none");
+        assertThat(rows.get(1)).containsEntry("titleKo", "금리");
+
+        // 종류를 고르지 않으면 글(블로그·waedge)만 — 속보가 '최근 글'을 덮지 않습니다.
+        ArgumentCaptor<List<String>> all = ArgumentCaptor.forClass(List.class);
+        service.items(null, null, null, null, 5);
+        verify(store).items(all.capture(), eq(null), eq(0), eq(5));
+        assertThat(all.getValue()).contains("blog.wolfstreet", "waedge.brief", "waedge.blogs").doesNotContain("wire.financialjuice");
+    }
+
+    @Test
+    @DisplayName("번역 — 수집 글은 저장된 본문(없으면 요약)을, 글 표에 없는 것은 보낸 글을 번역한다. 수집은 일으키지 않는다")
+    void translate() {
+        InfoStore.Item stored = new InfoStore.Item("0123456789abcdef01234567", "blog.wolfstreet", "article", "https://wolfstreet.com/x",
+                "Rates", null, "Wolf", NOW, NOW, "Short summary", "full", "impersonate", MAPPER.createObjectNode(), "Long body text");
+        when(store.item("0123456789abcdef01234567")).thenReturn(Optional.of(stored));
+        when(translator.model()).thenReturn("claude-haiku-5-5");
+        when(translator.titles(List.of("Rates"))).thenReturn(new InfoTranslator.Titles(Map.of("Rates", "금리"), null, null, true));
+        when(translator.body("Long body text")).thenReturn(new InfoTranslator.Body(true, "긴 본문", false, false, false, null));
+        when(translator.body("Summary only")).thenReturn(new InfoTranslator.Body(false, null, false, false, false, "오늘 번역량 상한"));
+
+        Map<String, Object> item = service.translate("0123456789abcdef01234567", "ignored", "ignored");
+        Map<String, Object> text = service.translate(null, "한국어 제목", "Summary only");
+
+        assertThat(item).containsEntry("ok", true).containsEntry("titleKo", "금리").containsEntry("textKo", "긴 본문")
+                .containsEntry("model", "claude-haiku-5-5");
+        assertThat(text).containsEntry("ok", false).containsEntry("error", "오늘 번역량 상한").containsEntry("titleKo", null);
+        assertThatThrownBy(() -> service.translate("nope", null, null)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.translate(null, " ", null)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.translate(null, null, "x".repeat(InfoService.TRANSLATE_TEXT_MAX + 1)))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(collector, never()).status();
     }
 }

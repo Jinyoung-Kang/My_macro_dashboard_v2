@@ -39,7 +39,9 @@ public class InfoService {
     static final int DEFAULT_SIZE = 10;
     static final int MAX_SIZE = 50;
     private static final Pattern ID = Pattern.compile("[0-9a-f]{24}");
-    private static final List<String> ITEM_KINDS = List.of(InfoSources.BLOG, InfoSources.WAEDGE);
+    private static final List<String> ITEM_KINDS = List.of(InfoSources.BLOG, InfoSources.WAEDGE, InfoSources.WIRE);
+    /** 번역 요청으로 직접 보내는 글(사건 뉴스 요약)의 길이 상한 — 수집기의 요약 상한(2,000자)에 여유를 둔 값. */
+    static final int TRANSLATE_TEXT_MAX = 8_000;
     private static final List<String> HEADLINE_SETS = List.of("us", "kr");
     private static final List<String> KRX_MARKETS = List.of("KOSPI", "KOSDAQ");
     private static final List<String> KRX_INVESTORS = List.of("외국인", "기관", "개인", "연기금", "금융투자", "투신");
@@ -53,21 +55,23 @@ public class InfoService {
     private final StoreReader reader;
     private final StoreRepository repository;
     private final CollectorClient collector;
+    private final InfoTranslator translator;
     private final Clock clock;
 
     @Autowired
     public InfoService(InfoStore store, FetchStateStore fetchState, StoreReader reader, StoreRepository repository,
-                       CollectorClient collector) {
-        this(store, fetchState, reader, repository, collector, Clock.systemUTC());
+                       CollectorClient collector, InfoTranslator translator) {
+        this(store, fetchState, reader, repository, collector, translator, Clock.systemUTC());
     }
 
     InfoService(InfoStore store, FetchStateStore fetchState, StoreReader reader, StoreRepository repository,
-                CollectorClient collector, Clock clock) {
+                CollectorClient collector, InfoTranslator translator, Clock clock) {
         this.store = store;
         this.fetchState = fetchState;
         this.reader = reader;
         this.repository = repository;
         this.collector = collector;
+        this.translator = translator;
         this.clock = clock;
     }
 
@@ -75,7 +79,7 @@ public class InfoService {
     /**
      * 글 목록(최근부터, 본문 없이, 쪽으로).
      *
-     * @param kind   blog·waedge(비면 전부)
+     * @param kind   blog·waedge·wire(비면 글 전부 — 블로그·waedge. 속보는 wire로만)
      * @param source 출처 키 하나(비면 종류 전체)
      * @param page   1부터
      */
@@ -96,14 +100,20 @@ public class InfoService {
             sources.addAll(InfoSources.keysOf(kind));
             if (InfoSources.WAEDGE.equals(kind)) {
                 sources.remove("waedge.blogs");       // 한국어 제목만 있는 원문 블로그 글은 블로그 쪽에
-            } else {
+            } else if (InfoSources.BLOG.equals(kind)) {
                 sources.add("waedge.blogs");
             }
+        } else {
+            // 종류를 고르지 않으면 글(블로그·waedge)만 — 하루 수백 줄인 속보가 '최근 글'을 덮지 않게. 속보는 kind=wire로 따로 봅니다.
+            sources.addAll(InfoSources.keysOf(InfoSources.BLOG));
+            sources.addAll(InfoSources.keysOf(InfoSources.WAEDGE));
         }
         Paging paging = Paging.of(page, size);
         InfoStore.Page<Item> rows = store.items(sources, query, paging.offset(), paging.size());
+        Map<String, String> korean = translator.cachedTitles(rows.rows().stream()
+                .filter(item -> item.titleKo() == null).map(Item::title).toList());
         out.put("available", true);
-        out.put("items", rows.rows().stream().map(item -> itemJson(item, false)).toList());
+        out.put("items", rows.rows().stream().map(item -> itemJson(item, false, korean)).toList());
         paging.put(out, rows.total());
         return out;
     }
@@ -116,7 +126,8 @@ public class InfoService {
         Map<String, Object> out = new LinkedHashMap<>();
         Optional<Item> item = store.ready() ? store.item(id) : Optional.empty();
         out.put("found", item.isPresent());
-        item.ifPresent(found -> out.put("item", itemJson(found, true)));
+        item.ifPresent(found -> out.put("item", itemJson(found, true,
+                found.titleKo() == null ? translator.cachedTitles(List.of(found.title())) : Map.of())));
         return out;
     }
 
@@ -136,12 +147,16 @@ public class InfoService {
         }
         Paging paging = Paging.of(page, size);
         InfoStore.Page<InfoStore.Headline> rows = store.headlines(datasets, feed, query, paging.offset(), paging.size());
+        Map<String, String> korean = translator.cachedTitles(rows.rows().stream().map(InfoStore.Headline::title)
+                .filter(InfoTranslator::needsTranslation).toList());
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", true);
         out.put("items", rows.rows().stream().map(row -> {
             Map<String, Object> line = new LinkedHashMap<>();
             line.put("set", Datasets.OBS_KR_NEWS_HEADLINE.equals(row.dataset()) ? "kr" : "us");
             line.put("title", row.title());
+            line.put("titleKo", row.title() == null ? null : korean.get(row.title()));
+            line.put("summary", row.summary());
             line.put("link", row.link());
             line.put("source", row.source());
             line.put("feed", row.feed());
@@ -150,6 +165,61 @@ public class InfoService {
             return line;
         }).toList());
         paging.put(out, rows.total());
+        return out;
+    }
+
+    // ------------------------------------------------------------------ 번역
+    /**
+     * 글 하나를 한국어로(ADR 0037) — 화면의 번역 단추가 부릅니다. 수집 글이면 {@code itemId}만 보내고(서버가 저장된 본문 — 없으면 요약 — 을 읽음),
+     * 사건 뉴스처럼 글 표에 없는 것은 {@code title}·{@code text}를 보냅니다. 번역은 저장되어 다시 눌러도 모델을 부르지 않습니다.
+     * 수집은 일으키지 않습니다(없는 본문을 받으러 가지 않음).
+     *
+     * @return {@code {ok, titleKo, textKo, alreadyKorean, cached, truncated, model, error}} — 번역할 본문이 없으면 textKo는 null
+     */
+    public Map<String, Object> translate(String itemId, String title, String text) {
+        String sourceTitle = title == null ? null : title.strip();
+        String sourceText = text == null ? null : text.strip();
+        if (itemId != null && !itemId.isBlank()) {
+            if (!ID.matcher(itemId).matches()) {
+                throw new InvalidRequestException("글 id 형식이 아닙니다");
+            }
+            Optional<Item> item = store.ready() ? store.item(itemId) : Optional.empty();
+            if (item.isEmpty()) {
+                throw new InvalidRequestException("그 글이 없습니다");
+            }
+            sourceTitle = item.get().titleKo() == null ? item.get().title() : null;
+            sourceText = item.get().body() != null && !item.get().body().isBlank() ? item.get().body() : item.get().summary();
+        } else {
+            if ((sourceTitle == null || sourceTitle.isEmpty()) && (sourceText == null || sourceText.isEmpty())) {
+                throw new InvalidRequestException("itemId 또는 title·text가 필요합니다");
+            }
+            if (sourceTitle != null && sourceTitle.length() > InfoTranslator.TITLE_MAX_CHARS) {
+                throw new InvalidRequestException("title은 " + InfoTranslator.TITLE_MAX_CHARS + "자까지입니다");
+            }
+            if (sourceText != null && sourceText.length() > TRANSLATE_TEXT_MAX) {
+                throw new InvalidRequestException("text는 " + TRANSLATE_TEXT_MAX + "자까지입니다");
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        String error = null;
+        String titleKo = null;
+        if (sourceTitle != null && InfoTranslator.needsTranslation(sourceTitle)) {
+            InfoTranslator.Titles titles = translator.titles(List.of(sourceTitle));
+            titleKo = titles.translated().get(sourceTitle);
+            error = titleKo == null ? titles.error() : null;
+        }
+        InfoTranslator.Body body = sourceText == null || sourceText.isBlank() ? null : translator.body(sourceText);
+        if (body != null && !body.ok()) {
+            error = body.error();
+        }
+        out.put("ok", error == null);
+        out.put("titleKo", titleKo);
+        out.put("textKo", body == null ? null : body.textKo());
+        out.put("alreadyKorean", body != null && body.alreadyKorean());
+        out.put("cached", body == null || body.cached());
+        out.put("truncated", body != null && body.truncated());
+        out.put("model", translator.model());
+        out.put("error", error);
         return out;
     }
 
@@ -302,7 +372,9 @@ public class InfoService {
         out.put("alerts", alerts);
         out.put("deferred", List.of(Map.of("task", InfoSources.SAVETICKER, "label", InfoSources.label(InfoSources.SAVETICKER),
                 "reason", "운영 서버 IP를 Cloudflare가 대역째 차단(확인 화면이 아닌 차단 화면, 실제 브라우저로도 같음) — 개인 IP·프록시를 쓰지 "
-                        + "않는 규칙이라 보류. 계정 이름 SAVETICKER_ID·SAVETICKER_PW")));
+                        + "않는 규칙이라 보류. 대신 이 사이트가 원출처로 밝힌 Financial Juice의 속보 RSS를 받습니다(ADR 0037). "
+                        + "계정 이름 SAVETICKER_ID·SAVETICKER_PW")));
+        out.put("translation", translator.status());
         return out;
     }
 
@@ -385,7 +457,7 @@ public class InfoService {
         return out;
     }
 
-    private static Map<String, Object> itemJson(Item item, boolean withBody) {
+    private static Map<String, Object> itemJson(Item item, boolean withBody, Map<String, String> korean) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("id", item.id());
         out.put("source", item.source());
@@ -394,7 +466,7 @@ public class InfoService {
         out.put("kind", item.kind());
         out.put("url", item.url());
         out.put("title", item.title());
-        out.put("titleKo", item.titleKo());
+        out.put("titleKo", item.titleKo() != null ? item.titleKo() : korean.get(item.title()));
         out.put("author", item.author());
         out.put("publishedAt", item.publishedAt() == null ? null : Kst.stamp(item.publishedAt()));
         out.put("firstSeenAt", Kst.stamp(item.firstSeenAt()));
