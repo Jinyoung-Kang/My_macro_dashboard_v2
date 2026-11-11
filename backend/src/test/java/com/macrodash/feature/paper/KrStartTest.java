@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Order;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -50,6 +51,8 @@ class KrStartTest {
     private KrFixtures.MovableClock clock;
     private PaperDecisionJob job;
     private final AtomicBoolean failShortBond = new AtomicBoolean();
+    /** 심는 쓰기 실패(DB 순간 장애) — 참이면 장중 판단 계획 행의 DONE 표시가 한 번 실패합니다(QA-363). */
+    private final AtomicBoolean failIntradayDone = new AtomicBoolean();
     private KrRulesFixtures rulesData;
     /** 실제 한국 Claude 경로({@link #realClaude})의 출발 재시도 전 기다림 — 실제로 기다리지 않고 시계를 옮기며 남김(사용자 결정 w12). */
     private KrClaudeFixtures.FakeSleeper sleeper;
@@ -75,6 +78,15 @@ class KrStartTest {
                     throw new IllegalStateException("시험용 주문 실패");
                 }
                 return super.insertOrder(o);
+            }
+
+            @Override
+            public int markIntradayPlan(String code, LocalDate session, int slot, String fromStatus, String status, String reason,
+                                        Long intradayDecisionId, Integer lagSeconds, Instant calledAt) {
+                if (PaperBooks.CHECKPOINT_DONE.equals(status) && failIntradayDone.compareAndSet(true, false)) {
+                    throw new org.springframework.dao.TransientDataAccessResourceException("시험: DONE 쓰기 중 DB 순간 장애");
+                }
+                return super.markIntradayPlan(code, session, slot, fromStatus, status, reason, intradayDecisionId, lagSeconds, calledAt);
             }
         };
         reader = PaperFixtures.quietReader();
@@ -895,6 +907,39 @@ class KrStartTest {
     private static String intradayReply(String action, String next, String... orders) {
         return "{\"schemaVersion\":2,\"action\":\"" + action + "\",\"summary\":\"장중 판단\",\"orders\":[" + String.join(",", orders)
                 + "],\"noTradeReason\":" + (orders.length == 0 ? "\"관망\"" : "null") + ",\"nextCheckpoint\":" + next + "}";
+    }
+
+    @Test
+    @Disabled("QA-363: 장중 판단의 '응답 뒤 쓰기 실패' 결정 행을 재시도 1회로 남겨 알림과 결정 상세에 '재시도 1회'가 붙습니다")
+    @DisplayName("QA-363 한국 장중 판단 — 응답 뒤 쓰기가 실패해 남긴 결정 행(API_ERROR·AFTER_RESPONSE)도 재시도 수 0(장중 판단은 재시도가 없는 종류)이고 "
+            + "다시 부르지 않음")
+    void krIntradayAfterResponseFailureIsNotARetry() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.AT_MINUTE, "09:10")),
+                        "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        PaperKrIntradayJob intraday = intradayJob();
+        int calls = fake.requests.size();
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1");
+        fake.answer(intradayReply("KEEP", null));
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        failIntradayDone.set(true);
+
+        intraday.run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        Decision d = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        assertThat(d.status()).isEqualTo(ClaudeBookService.STATUS_API_ERROR);
+        assertThat(d.response().path("failure").path("stage").asString()).isEqualTo("AFTER_RESPONSE");
+        assertThat(d.retryCount()).as("장중 판단은 한 번만 부름 — 재시도 수 0").isZero();
+        clock.set(kst("2026-12-02T09:16"));
+        intraday.run();
+        assertThat(fake.requests).as("과금된 응답 — 다시 부르지 않음").hasSize(calls + 1);
     }
 
     @Test
