@@ -57,7 +57,7 @@ final class RealTradeNotices {
             case RealTradeStore.EVENT_WINDOW_SUMMARY -> notice(windowLabel(detail), counts(detail));
             // 켠 날에도 장중 따라 하기와 스탑 매도는 바로 나갑니다 — 전체 맞추기(묶음)만 다음 맞추기 창에서(QA-347)
             case RealTradeStore.EVENT_ENABLE -> notice("켜짐", "전체 맞추기는 다음 맞추기에서 합니다\n오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다");
-            case RealTradeStore.EVENT_DISABLE -> notice("끄기", "새 주문 멈춤 · 미체결 취소 중");
+            case RealTradeStore.EVENT_DISABLE -> notice("끄기", disabled(detail));
             case EVENT_STOPPED -> notice("꺼짐", stopped(detail) + unresolved(detail));
             case EVENT_STOP_SELL -> notice("스탑 매도", "보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "
                     + count(detail, "missed"));
@@ -93,6 +93,17 @@ final class RealTradeNotices {
         return "접수 " + count(detail, "accepted") + " · 체결 " + count(detail, "filled") + " · 놓침 " + count(detail, "missed")
                 + "\n건너뜀 " + count(detail, "skipped") + " · 막힘 " + count(detail, "blocked") + " · 미룸 " + count(detail, "deferred")
                 + (unknown > 0 ? " · 결과 모름 " + unknown : "");
+    }
+
+    /**
+     * 끄기 알림의 본문 — 이 기능의 미종료 주문이 없어 바로 꺼졌으면(이벤트 {@code to}가 정확히 OFF) 그렇게 적습니다(QA-349). 그런 끄기에는 뒤따르는
+     * '꺼짐' 알림({@link #EVENT_STOPPED} — 끄는 중을 거칠 때만 나옴)이 없어, 예전 글 '미체결 취소 중'이 마지막 알림으로 남았습니다. {@code to}가
+     * 끄는 중이거나 없거나 모르는 값이면 예전 글 그대로입니다(값은 고정 글자와 비교만 하고 글에 싣지 않음).
+     */
+    private static String disabled(JsonNode detail) {
+        JsonNode to = detail == null ? null : detail.get("to");
+        boolean off = to != null && to.isString() && RealTradeStore.STATE_OFF.equals(to.asString());
+        return off ? "꺼짐 · 이 기능의 미체결 주문 없음" : "새 주문 멈춤 · 미체결 취소 중";
     }
 
     /** 끈 뒤 끝난 이 기능의 주문을 끝난 방식으로 나눈 건수(정리 결과를 단정하지 않게 — '그 밖'은 있을 때만). */

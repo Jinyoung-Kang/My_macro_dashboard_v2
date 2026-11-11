@@ -2,7 +2,6 @@ package com.macrodash.feature.realtrade;
 
 import com.macrodash.feature.paper.PaperTelegram;
 import com.macrodash.store.RealTradeStore;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -86,7 +85,6 @@ class RealTradeNoticesTest {
     }
 
     @Test
-    @Disabled("QA-349: 수정 전에는 미종료 주문 없이 바로 꺼진 끄기도 '미체결 취소 중'이라고 알립니다")
     @DisplayName("QA-349: 끄기 알림 — 바로 꺼졌으면(to OFF) '꺼짐'과 미체결 없음, 끄는 중(STOPPING)이거나 to가 없으면 '미체결 취소 중'")
     void disableNoticeFollowsResultingState() {
         assertThat(text(event("DISABLE", Map.of("from", "LIVE", "to", "OFF"))))
