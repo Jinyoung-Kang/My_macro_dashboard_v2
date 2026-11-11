@@ -3,6 +3,7 @@ package com.macrodash.feature.info;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.store.TranslationStore;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -350,5 +351,86 @@ class InfoTranslatorTest {
         assertThat(auto.status()).containsEntry("geminiResting", true);
         verify(gemini, times(1)).structured(eq(GEMINI), anyString(), anyString(), any(), anyInt());
         verify(gemini, never()).structured(eq(LOWER), anyString(), anyString(), any(), anyInt());
+    }
+
+    // ------------------------------------------------------------------ QA-405
+    // Gemini가 '성공'으로 답했는데 글이 형식 밖(JSON 아님·빈 번역)이면, 응답을 읽는 것이 호출 뒤라 다음 순위로 넘어가지 못했습니다 —
+    // 그 조각은 누를 때마다 같은 길로 실패했습니다(ADR 0037 개정: '실패의 종류를 가리지 않고 넘어감').
+
+    @Test
+    @Disabled("QA-405: 형식 밖 '성공' 응답이 다음 순위 엔진으로 넘어가지 않습니다 — 수정 커밋에서 풉니다")
+    @DisplayName("QA-405: Gemini가 성공 응답에 JSON이 아닌 글을 주면 다음 순위(아래 Gemini → Claude)로 넘어가 그 번역을 저장한다")
+    void malformedSuccessFallsThrough() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(new GeminiClient.Reply(true, "죄송하지만 번역할 수 없습니다", null, null));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"ko\":\"위원회는 목표 범위를 유지했다.\"}"));
+        InfoTranslator auto = translator(1_000_000);
+
+        InfoTranslator.Body out = auto.body("The Committee decided to maintain the target range.");
+
+        assertThat(out.ok()).isTrue();
+        assertThat(out.textKo()).isEqualTo("위원회는 목표 범위를 유지했다.");
+        assertThat(out.model()).isEqualTo(MODEL);
+        verify(gemini, times(1)).structured(eq(GEMINI), anyString(), anyString(), any(), anyInt());
+        verify(gemini, times(1)).structured(eq(LOWER), anyString(), anyString(), any(), anyInt());
+        verify(ai, times(1)).structured(eq(MODEL), anyString(), anyString(), any(), anyString(), anyInt());
+        assertThat(saved).containsValue("위원회는 목표 범위를 유지했다.").hasSize(1);
+    }
+
+    @Test
+    @Disabled("QA-405: 형식 밖 '성공' 응답이 다음 순위 엔진으로 넘어가지 않습니다 — 수정 커밋에서 풉니다")
+    @DisplayName("QA-405: 제목 번역도 같다 — 쓸 제목이 없는 성공 응답이면 다음 순위로 넘어간다")
+    void emptyTitleItemsFallThrough() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(new GeminiClient.Reply(true, "{\"items\":[{\"n\":7,\"ko\":\"범위 밖\"},{\"n\":1,\"ko\":\" \"}]}", null, null));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"연준, 금리 동결\"}]}"));
+        InfoTranslator auto = translator(1_000_000);
+
+        InfoTranslator.Titles out = auto.titles(List.of("Fed holds rates"));
+
+        assertThat(out.ok()).isTrue();
+        assertThat(out.model()).isEqualTo(MODEL);
+        assertThat(out.translated()).containsEntry("Fed holds rates", "연준, 금리 동결");
+    }
+
+    @Test
+    @DisplayName("모든 순위가 형식 밖으로 답하면 PARSE 실패로 알리고 저장하지 않는다")
+    void allMalformedIsParseFailure() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(new GeminiClient.Reply(true, "not json", null, null));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(ok("still not json"));
+        InfoTranslator auto = translator(1_000_000);
+
+        InfoTranslator.Titles out = auto.titles(List.of("Fed holds rates"));
+
+        assertThat(out.ok()).isFalse();
+        assertThat(out.errorKind()).isEqualTo("PARSE");
+        assertThat(saved).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-405: 요청 거절(400) 뒤에도 쉬지 않고 조각마다 Gemini를 다시 부릅니다 — 수정 커밋에서 풉니다")
+    @DisplayName("QA-405: 요청 거절(400)로 실패한 Gemini 모델은 한동안 건너뛴다 — 다음 호출은 Gemini를 부르지 않고 Claude로")
+    void badRequestRestsGemini() {
+        when(gemini.configured()).thenReturn(true);
+        when(gemini.structured(anyString(), anyString(), anyString(), any(), anyInt()))
+                .thenReturn(GeminiClient.Reply.failed("BAD_REQUEST", "Gemini API가 요청을 받지 않았습니다(400)."));
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"연준, 금리 동결\"}]}"))
+                .thenReturn(ok("{\"items\":[{\"n\":1,\"ko\":\"유가 급등\"}]}"));
+        InfoTranslator auto = translator(1_000_000);
+
+        assertThat(auto.titles(List.of("Fed holds rates")).model()).isEqualTo(MODEL);
+        assertThat(auto.titles(List.of("Oil jumps")).model()).isEqualTo(MODEL);
+
+        // 첫 호출에서 1순위·아래 모델을 한 번씩 불러 보고, 둘 다 쉬는 동안에는 부르지 않습니다.
+        verify(gemini, times(1)).structured(eq(GEMINI), anyString(), anyString(), any(), anyInt());
+        verify(gemini, times(1)).structured(eq(LOWER), anyString(), anyString(), any(), anyInt());
+        assertThat(auto.status()).containsEntry("geminiResting", true);
     }
 }
