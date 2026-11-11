@@ -26,7 +26,10 @@ FAKE_TOKEN = "fake-token-from-env-file"
 pytestmark = pytest.mark.skipif(shutil.which("make") is None, reason="make가 없어 건너뜁니다.")
 
 _PRINT_ENV = ('#!/bin/sh\nprintf "TOKEN=%s\\nURL=%s\\nPAPER=%s\\nPORT=%s\\nCOLLECTOR=%s\\n" "$COLLECTOR_API_TOKEN" "$DATABASE_URL" '
-              '"${PAPER_ENABLED-(unset)}" "${SERVER_PORT-(unset)}" "${COLLECTOR_URL-(unset)}"\n')
+              '"${PAPER_ENABLED-(unset)}" "${SERVER_PORT-(unset)}" "${COLLECTOR_URL-(unset)}"\n'
+              'printf "POLITE=%s\\nTOSSACCOUNT=%s\\nTOSSTRADING=%s\\nREALTRADE=%s\\n" "${POLITE_FETCH_ENABLED-(unset)}" '
+              '"${TOSS_ACCOUNT_ENABLED-(unset)}" "${TOSS_TRADING_ENABLED-(unset)}" "${REAL_TRADE_ENABLED-(unset)}"\n')
+_KEYS = ("TOKEN", "URL", "PAPER", "PORT", "COLLECTOR", "POLITE", "TOSSACCOUNT", "TOSSTRADING", "REALTRADE")
 
 
 def _fake_exe(path: Path) -> None:
@@ -42,7 +45,8 @@ def _run(tmp_path: Path, target: str, extra_env: dict[str, str] | None = None, e
     (tmp_path / "backend").mkdir(exist_ok=True)
     drop = {"COLLECTOR_API_TOKEN", "COLLECTOR_ALLOW_NO_TOKEN", "DATABASE_URL", "DATABASE_PORT",
             "DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_NAME", "PAPER_ENABLED", "MAKEFLAGS", "MFLAGS", "MAKELEVEL",
-            "SERVER_PORT", "COLLECTOR_URL", "BACKEND_PORT", "COLLECTOR_PORT", "FRONTEND_PORT"}     # 개발자 셸의 포트 값이 새지 않게
+            "SERVER_PORT", "COLLECTOR_URL", "BACKEND_PORT", "COLLECTOR_PORT", "FRONTEND_PORT",     # 개발자 셸의 포트 값이 새지 않게
+            "POLITE_FETCH_ENABLED", "TOSS_ACCOUNT_ENABLED", "TOSS_TRADING_ENABLED", "REAL_TRADE_ENABLED"}
     env = {k: v for k, v in os.environ.items() if k not in drop}
     env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env.get('PATH', '')}"
     env.update(extra_env or {})
@@ -52,9 +56,9 @@ def _run(tmp_path: Path, target: str, extra_env: dict[str, str] | None = None, e
     )
     assert result.returncode == 0, result.stdout + result.stderr
     # 토큰 값이 make가 찍는 명령 줄에 그대로 보이면 안 됩니다(터미널·로그에 남음).
-    echoed = [line for line in result.stdout.splitlines() if not line.startswith(("TOKEN=", "URL=", "PAPER=", "PORT=", "COLLECTOR="))]
+    echoed = [line for line in result.stdout.splitlines() if not line.startswith(tuple(f"{key}=" for key in _KEYS))]
     assert not any(FAKE_TOKEN in line for line in echoed), echoed
-    return dict(re.findall(r"^(TOKEN|URL|PAPER|PORT|COLLECTOR)=(.*)$", result.stdout, re.M))
+    return dict(re.findall(rf"^({'|'.join(_KEYS)})=(.*)$", result.stdout, re.M))
 
 
 def test_QA106_dev_collector는_env_파일의_토큰과_DB_포트로_띄운다(tmp_path):
@@ -110,6 +114,24 @@ def test_QA371_dev_backend의_포트도_셸에서_준_값이_먼저이고_env_�
     assert (seen["PORT"], seen["COLLECTOR"]) == ("8080", "http://localhost:8000")
     # 수집기에는 넘기지 않음(수집기는 --port 인자로 받음).
     assert _run(tmp_path, "dev-collector", env_file="BACKEND_PORT=8082\n")["PORT"] == "(unset)"
+
+
+_SWITCHES_ON = {"POLITE_FETCH_ENABLED": "true", "TOSS_ACCOUNT_ENABLED": "true", "TOSS_TRADING_ENABLED": "true",
+                "REAL_TRADE_ENABLED": "true"}
+
+
+def test_네이티브_실행은_셸에_true가_있어도_토스_조회와_실제_매매_스위치를_끈다(tmp_path):
+    """지금 동작 고정 — 운영 서버에서만 켜는 스위치는 compose의 "false" 고정처럼 네이티브 실행에서도 셸 값과 무관하게 끕니다."""
+    collector = _run(tmp_path, "dev-collector", dict(_SWITCHES_ON))
+    assert (collector["TOSSACCOUNT"], collector["TOSSTRADING"]) == ("false", "false")
+    assert _run(tmp_path, "dev-backend", dict(_SWITCHES_ON))["REALTRADE"] == "false"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-411: dev-collector가 POLITE_FETCH_ENABLED를 고정하지 않아 셸의 true가 그대로 넘어갑니다")
+def test_QA411_dev_collector는_셸에_true가_있어도_차단_통과_수집을_끈다(tmp_path):
+    # 차단 통과 수집은 운영 서버에서만 돕니다(ADR 0035 결정 4 — 개인 IP로 받지 않음). 켜진 채 뜨면 이 PC의 IP로 출처를 부릅니다.
+    assert _run(tmp_path, "dev-collector", dict(_SWITCHES_ON))["POLITE"] == "false"
+    assert _run(tmp_path, "dev-collector", env_file="POLITE_FETCH_ENABLED=true\n")["POLITE"] == "false", ".env에 적어도 끔"
 
 
 _FAKE_LSOF = '#!/bin/sh\necho "$*" >> "$FAKE_LSOF_LOG"\nexit 1\n'       # 어느 포트를 물었는지만 남기고 '비어 있음'
