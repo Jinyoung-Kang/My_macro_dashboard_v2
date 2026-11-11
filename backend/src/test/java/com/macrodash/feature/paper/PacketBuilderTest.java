@@ -28,6 +28,7 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.HoldingRow;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -3063,6 +3064,33 @@ class PacketBuilderTest {
         assertThat(builder.build(MON, RuleBookService.SCHEDULED, false).text()).as("창에 글이 없으면 예전 바이트 그대로")
                 .isEqualTo(before.text());
         assertThat(builder.build(MON, RuleBookService.INITIAL, true).body().has(ReadingSection.KEY)).as("초기 결정은 싣지 않음").isFalse();
+    }
+
+    @Test
+    @Disabled("QA-401: 수집 글 섹션을 계좌마다 조립할 때 다시 읽어, 계좌1 호출(최대 300초) 사이에 수집기가 info_items를 고치면 계좌2의 섹션만 달라집니다")
+    @DisplayName("QA-401 수집 글(11c)도 시장 입력에 얼림 — 시장 입력 하나로 두 계좌를 조립하면 그 사이 저장소의 글이 바뀌어도 두 계좌의 11c_reading이 "
+            + "같고 저장소는 한 번만 읽음")
+    void readingSectionIsFrozenAcrossBooks() {
+        activeClaude();
+        otherBook();
+        com.macrodash.store.InfoStore info = org.mockito.Mockito.mock(com.macrodash.store.InfoStore.class);
+        org.mockito.Mockito.when(info.ready()).thenReturn(true);
+        // 첫 읽기(시장 입력을 얼릴 때)와 그 뒤 읽기(계좌1 호출이 도는 사이 수집기가 새 글을 넣고 요약을 채운 뒤)가 다른 글을 줍니다.
+        org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of(reading("a1", "blog.wolfstreet", "First read", null, "2026-10-26T20:00:00Z", "Yields rose.")))
+                .thenReturn(List.of(reading("b1", "blog.calculatedrisk", "Arrived during the call", null, "2026-10-26T21:00:00Z", "New."),
+                        reading("a1", "blog.wolfstreet", "First read", null, "2026-10-26T20:00:00Z", "Yields rose.")));
+        builder.setInfoStore(info);
+
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet claude = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        Packet other = builder.assemble(inputs, OTHER_BOOK, RuleBookService.SCHEDULED, 0);
+
+        assertThat(claude.body().get(ReadingSection.KEY).get("text").asString()).contains("First read");
+        assertThat(other.body().get(ReadingSection.KEY)).as("두 계좌가 같은 수집 글을 봄").isEqualTo(claude.body().get(ReadingSection.KEY));
+        org.mockito.Mockito.verify(info, org.mockito.Mockito.times(1)).recentForPacket(org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     // ------------------------------------------------------------------ 11b 사건
