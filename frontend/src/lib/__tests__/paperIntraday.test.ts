@@ -136,6 +136,27 @@ describe("분 단위 지정 시각·장중 판단 종류의 이름", () => {
     expect(timingLabel("AT_1000", "KR")).toBe("다음 거래일 10:00 KST");
   });
 
+  // 수정 전에는 '제안 주문' 표가 timingLabel에 주문의 atLocal을 넘기지 않아 '지정 시각'만 보였습니다(QA-365, 재현 커밋에서는 it.fails).
+  it.fails("자유 시점 판 결정의 '제안 주문' 표도 지정 시각을 붙임 — 주문 행이 없는 미리보기·적용되지 않은 교체 응답에서도 시각이 보이게", () => {
+    const us = claudeDecisionView({
+      book: "claude", kind: "SCHEDULED", status: "OK",
+      response: {
+        stance: "NEUTRAL",
+        orders: [
+          { ticker: "AAA", side: "BUY", targetWeightPct: 5, timing: "AT_MINUTE", atLocal: "10:47" },
+          { ticker: "BBB", side: "SELL", sellFraction: 1, timing: "NEXT_CLOSE", atLocal: null },
+          { ticker: "CCC", side: "BUY", targetWeightPct: 3, timing: "AT_MINUTE" },
+        ],
+      },
+    });
+    expect(us.orders.map((row) => row.timing)).toEqual(["지정 시각 10:47 ET", "다음 종가", "지정 시각"]);
+    const kr = claudeDecisionView({
+      book: "kr_claude", kind: "INTRADAY_1", status: "SKIPPED",
+      response: { action: "REPLACE", applied: false, orders: [{ ticker: "005930", side: "BUY", targetWeightPct: 5, timing: "AT_MINUTE", atLocal: "13:30" }] },
+    });
+    expect(kr.orders.map((row) => row.timing)).toEqual(["지정 시각 13:30 KST"]);
+  });
+
   it("결정 종류 INTRADAY_n — 이름과 '재시도 없음' 표시", () => {
     expect(decisionKindLabel("INTRADAY_1")).toBe("장중 판단 1");
     expect(decisionKindLabel("INTRADAY_2")).toBe("장중 판단 2");
