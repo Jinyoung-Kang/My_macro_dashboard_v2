@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -811,5 +812,32 @@ class ManualAccountServiceDbTest {
         long small = instruction(C, "BUY", 1);
         apply(filled(small, null, "1", "500", "100"));
         assertThat(position(C).quantity()).isEqualByComparingTo("1");
+    }
+
+    // ------------------------------------------------------------------ QA-356: 보유 없는 매도 지시를 수량과 함께 확인
+    @Test
+    @Disabled("QA-356: 수정 전 — 수량을 함께 보내면 보유 없는 매도 지시가 닫히지 않고 400")
+    @DisplayName("QA-356 확인 매도 — 정수 보유가 0이면 수량을 함께 보내도 그 지시를 '보유 없음'으로 닫음(화면은 늘 수량을 보냄), 0 < 보유 < 수량일 때만 400")
+    void applySellWithoutHoldingClosesEvenWithQuantity() {
+        startSynthetic();
+        long stop = stop(71, C, 2);
+        when(paper.lastPrices(any())).thenReturn(Map.of(A, d("12000"), B, d("21000"), C, d("5000")));
+
+        Map<String, Object> reply = apply(filled(null, stop, "2", "10000", "1"));
+
+        assertThat(reply).containsEntry("count", 0).containsEntry("skipped", 1);
+        assertThat(store.stopInstruction(stop).orElseThrow()).satisfies(row -> {
+            assertThat(row.status()).isEqualTo("SKIPPED");
+            assertThat(row.reason().path("autoNote").asString()).isEqualTo("no-holding");
+        });
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(store.recentTrades("isa", 10)).isEmpty();
+
+        store.upsertPosition("isa", C, null, d("0.5"), d("2500"));
+        long fractional = instruction(C, "SELL", 1);
+        assertThat(apply(filled(fractional, null, "1", "5000", "1"))).as("정수 보유 0(0.5주)도 같음").containsEntry("skipped", 1);
+
+        long more = instruction(A, "SELL", 11);
+        rejects(() -> apply(filled(more, null, "11", "132000", "5")), 400, "invalid-request");
     }
 }
