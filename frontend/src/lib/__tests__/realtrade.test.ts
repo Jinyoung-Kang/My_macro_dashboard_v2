@@ -404,6 +404,11 @@ describe("표기", () => {
     expect(previewTimingText("2026-11-10T00:10:00Z")).toBe("개장 10분 뒤 맞추기 09:10 시장가");
     expect(previewTimingText(null)).toBe("시가 맞추기(시가 단일가)");
   });
+
+  it("QA-342: 준비 안 됨 이벤트(개장이 가깝도록 장 운영 정보·수집기 상태를 못 받음) — 이름표와 사유 코드", () => {
+    expect(eventKindLabel("UNAVAILABLE")).toBe("준비 안 됨(주문을 내지 못하는 중)");
+    expect(eventDetailText({ reason: "calendar-unavailable", date: "2026-11-10" }, "UNAVAILABLE")).toBe("사유 calendar-unavailable");
+  });
 });
 
 describe("RT3-UI-1: 수집기 상태를 읽지 못함은 꺼짐이 아니라 모름", () => {

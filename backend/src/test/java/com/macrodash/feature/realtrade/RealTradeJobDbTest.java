@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1806,7 +1805,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342: 수정 전에는 토스 장 운영 정보를 끝내 못 받아도 경고 로그뿐이고 이벤트·알림이 없습니다")
     @DisplayName("QA-342: 모의 달력의 개장 3분 전이 지나도록 토스 장 운영 정보를 받지 못하면 하루 한 번 알림 이벤트(calendar-unavailable) — 주문 없음, 재시도는 계속, 다시 띄워도 한 번")
     void calendarUnavailableNotifiesOnce() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1823,7 +1821,7 @@ class RealTradeJobDbTest {
             assertThat(e.detail().path("reason").asString()).isEqualTo("calendar-unavailable");
             assertThat(e.detail().path("date").asString()).isEqualTo(SESSION.toString());
             assertThat(e.notifies()).isTrue();
-            assertThat(RealTradeNotices.text(e)).contains("calendar-unavailable").doesNotContain(A);
+            assertThat(PaperTelegram.plain(RealTradeNotices.text(e))).contains("준비 안 됨").contains("calendar-unavailable").doesNotContain(A);
         });
         verify(client, never()).placeOrder(anyString());
         verify(client, org.mockito.Mockito.atLeast(3)).calendar();   // 알린 뒤에도 60초마다 다시 받아 봄
@@ -1835,7 +1833,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342: 수정 전에는 수집기 매매 상태를 읽지 못하면 주기마다 조용히 돌아갑니다")
     @DisplayName("QA-342: 켜짐인데 모의 달력의 개장 3분 전이 지나도록 수집기 매매 상태를 읽지 못하면 하루 한 번 알림 이벤트(status-unavailable) — 멈춤 아님")
     void statusUnavailableNotifiesOnce() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1879,7 +1876,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342: 수정 전에는 토스가 휴장이라 답하면 모의 달력이 거래일이어도 알리지 않고 쉽니다")
     @DisplayName("QA-342: 토스만 휴장이라 답한 날(모의 달력은 거래일)은 쉼 이벤트를 알림 — 둘 다 휴장인 평소 휴장은 알리지 않음")
     void tossClosedButPaperTradingDayNotifies() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1891,7 +1887,7 @@ class RealTradeJobDbTest {
         assertThat(events("SKIP_DAY")).singleElement().satisfies(e -> {
             assertThat(e.detail().path("reason").asString()).isEqualTo("market-closed");
             assertThat(e.notifies()).as("모의 달력은 거래일인데 토스가 휴장 — 알림").isTrue();
-            assertThat(RealTradeNotices.text(e)).contains("market-closed").contains("모의 달력");
+            assertThat(PaperTelegram.plain(RealTradeNotices.text(e))).contains("market-closed").contains("모의 달력");
         });
         verify(client, never()).placeOrder(anyString());
 
@@ -1905,7 +1901,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342: 수정 전에는 종가 단일가 시각이 없는 날 장중·스탑 경로가 통째로 빠지고 놓침으로도 세지 않습니다")
     @DisplayName("QA-342: 토스 장 운영 정보에 종가 단일가 시각이 없는 날 — 따라 하지 못한 스탑은 STOP_SELL 놓침으로, 장중 주문은 마감 뒤 요약의 놓침으로 알림(주문 없음)")
     void noClosingAuctionCountsMisses() {
         RealTradeFixtures.live(store, false, d("10000000"));

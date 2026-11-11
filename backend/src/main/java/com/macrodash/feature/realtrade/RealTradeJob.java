@@ -154,6 +154,14 @@ class RealTradeJob {
     static final String RESTRICTED_VI = "vi-active";
     static final String RESTRICTED_REFUSED = "order-refused";
 
+    /**
+     * 주문을 낼 준비가 안 된 채 개장이 가까워짐(QA-342) — 토스 장 운영 정보를 끝내 받지 못함·수집기 매매 상태를 읽지 못함. 멈춤이 아니고(받는 대로 이어 감)
+     * 하루 한 번 알림 이벤트({@link RealTradeNotices#EVENT_UNAVAILABLE})만 남깁니다. 예전에는 경고 로그뿐이라 그날 맞추기·스탑 매도가 통째로 빠져도
+     * 텔레그램·화면 이벤트가 없었습니다.
+     */
+    static final String UNAVAILABLE_CALENDAR = "calendar-unavailable";
+    static final String UNAVAILABLE_STATUS = "status-unavailable";
+
     /** 수집기의 창 밖 안 보냄 사유(토스로 나가지 않음). */
     static final String CODE_OUTSIDE_WINDOW = "outside-window";
     /**
@@ -393,7 +401,9 @@ class RealTradeJob {
                 return;
             }
             if (!status.ok() || !status.value().enabled() || status.value().limits() == null) {
-                return;   // 수집기 상태를 읽지 못함·한도 해석 실패 — 주문 없음(멈춤 아님, 화면은 '확인 안 됨')
+                // 수집기 상태를 읽지 못함·한도 해석 실패 — 주문 없음(멈춤 아님, 화면은 '확인 안 됨'). 개장이 가깝도록 이어지면 하루 한 번 알림(QA-342)
+                noteUnavailable(d, now, UNAVAILABLE_STATUS);
+                return;
             }
             if (status.value().tokenContention()) {
                 executor.halt(HALT_TOKEN, Map.of());
@@ -405,6 +415,7 @@ class RealTradeJob {
                 return;
             }
             if (!ensureCalendar(d, now)) {
+                noteUnavailable(d, now, UNAVAILABLE_CALENDAR);   // 재시도는 계속(60초마다) — 개장이 가깝도록 못 받으면 하루 한 번 알림(QA-342)
                 return;
             }
             decide(d, now, cfg);
@@ -523,6 +534,10 @@ class RealTradeJob {
         final Set<Long> handledRoots = new HashSet<>();
         /** 놓침을 스탑 매도 알림에 이미 센 스탑 뿌리(같은 놓침을 주기마다 다시 세지 않게). */
         final Set<Long> stopMissCounted = new HashSet<>();
+        /** 그날 이미 알린 '준비 안 됨' 사유(QA-342 — 하루 한 번, 다시 띄우면 그날 이벤트에서 되살림). */
+        final Set<String> unavailableNoticed = new HashSet<>();
+        /** 모의 달력의 그날 장 시간(준비 안 됨 알림의 기준 — 달력이 답한 뒤로는 다시 묻지 않음). */
+        SessionHours paperHours;
         final Set<String> summarized = new HashSet<>();
         Instant lastSyncTry;
         Instant lastFollowupTry;
@@ -562,6 +577,12 @@ class RealTradeJob {
             JsonNode detail = e.detail();
             if (detail != null && today.toString().equals(detail.path("date").asString(""))) {
                 detail.path(STOP_ROOTS).forEach(root -> fresh.stopMissCounted.add(root.asLong()));
+            }
+        }
+        for (Event e : store.eventsSince(MARKET, RealTradeNotices.EVENT_UNAVAILABLE, today.atStartOfDay(Kst.ZONE).toInstant())) {
+            JsonNode detail = e.detail();
+            if (detail != null && today.toString().equals(detail.path("date").asString(""))) {
+                fresh.unavailableNoticed.add(detail.path("reason").asString(""));
             }
         }
         for (Event e : store.recentEvents(MARKET, 50)) {
@@ -639,8 +660,41 @@ class RealTradeJob {
             return;
         }
         d.skipRecorded = true;
-        boolean notify = !RealTradePlanner.SKIP_MARKET_CLOSED.equals(d.skipReason);   // 휴장은 평소 일이라 알리지 않음
-        store.addEvent(MARKET, RealTradeStore.EVENT_SKIP_DAY, null, Map.of("reason", d.skipReason, "date", d.date.toString()), notify);
+        // 휴장은 평소 일이라 알리지 않음 — 단 모의 달력이 거래일인데 토스만 휴장이라 답한 날은 알림(QA-342, 모의 책은 그날 주문을 내는데 실제 계좌만 쉼)
+        boolean closed = RealTradePlanner.SKIP_MARKET_CLOSED.equals(d.skipReason);
+        boolean paperOpen = closed && paperHours(d) != null && d.paperHours.tradingDay();
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("reason", d.skipReason);
+        detail.put("date", d.date.toString());
+        if (paperOpen) {
+            detail.put(RealTradeNotices.DETAIL_PAPER_OPEN, true);
+        }
+        store.addEvent(MARKET, RealTradeStore.EVENT_SKIP_DAY, null, detail, !closed || paperOpen);
+    }
+
+    /** 모의 달력의 그날 장 시간 — 달력이 모르는 날이면 null(다음에 다시 물음). */
+    private SessionHours paperHours(DayState d) {
+        if (d.paperHours == null) {
+            d.paperHours = paper.sessionHours(d.date).orElse(null);
+        }
+        return d.paperHours;
+    }
+
+    /**
+     * 켜짐인데 주문을 낼 준비가 안 된 주기(QA-342) — 모의 달력이 거래일이고 지금이 그날 [개장 − {@link #WARMUP_LEAD}, 마감) 안이면 사유마다 하루 한 번
+     * 알림 이벤트를 남깁니다(사유 코드와 날짜만). 휴장일·개장 한참 전·마감 뒤에는 낼 주문이 없으므로 알리지 않습니다. 동작(재시도·주문 없음)은 그대로입니다.
+     */
+    private void noteUnavailable(DayState d, Instant now, String reason) {
+        if (d.unavailableNoticed.contains(reason)) {
+            return;
+        }
+        SessionHours hours = paperHours(d);
+        if (hours == null || !hours.tradingDay() || now.isBefore(hours.open().minus(WARMUP_LEAD)) || !now.isBefore(hours.close())) {
+            return;
+        }
+        d.unavailableNoticed.add(reason);
+        store.addEvent(MARKET, RealTradeNotices.EVENT_UNAVAILABLE, null, Map.of("reason", reason, "date", d.date.toString()), true);
+        log.warn("실제 매매 준비 안 됨 — 개장이 가까운데 {} (받는 대로 이어 감)", reason);
     }
 
     private void warmup(Cycle c, List<DueOrder> upcoming) {
@@ -1244,9 +1298,8 @@ class RealTradeJob {
 
     private void mirrorOrders(Cycle c, List<DueOrder> upcoming, StopTally tally) {
         Day w = c.day.windows;
-        if (w.intraday() == null && w.close() == null) {
-            return;
-        }
+        // 종가 단일가 시각이 없는 날(장중·종가 창이 모두 없음)에도 아래를 돕니다 — 창이 없는 주문은 보내지 않고 놓침으로 셉니다(QA-342). 예전에는
+        // 여기서 돌아가 그날 따라 하지 못한 스탑·장중 주문이 알림에도 요약에도 잡히지 않았습니다.
         Set<Long> absorbed = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC).map(b -> Set.copyOf(b.absorbedOrderIds()))
                 .orElse(Set.of());
         Instant syncAt = w.syncAt();
@@ -1933,6 +1986,10 @@ class RealTradeJob {
             List<OrderRow> mine = rows.stream().filter(r -> RealTradeStore.PURPOSE_MIRROR.equals(r.purpose())
                     && !RealTradeExecutor.closingOrder(r, w)).toList();
             summarize(c, RealTradePlanner.WINDOW_MIRROR, mine, List.of(RealTradePlanner.WINDOW_MIRROR), 0);
+        }
+        if (w.intraday() == null && w.close() == null && c.now.isAfter(w.regularEnd().plus(CLOSE_SUMMARY_DELAY))) {
+            // 장중·종가 창이 통째로 없던 날 — 따라 하지 못한 주문(놓침)을 마감 뒤 한 번 알림(QA-342). 이 기능의 장중 주문 행은 없습니다.
+            summarize(c, RealTradePlanner.WINDOW_MIRROR, List.of(), List.of(RealTradePlanner.WINDOW_MIRROR, RealTradePlanner.WINDOW_CLOSE), 0);
         }
         if (w.close() != null && c.now.isAfter(w.regularEnd().plus(CLOSE_SUMMARY_DELAY))
                 && !c.day.summarized.contains(RealTradePlanner.WINDOW_CLOSE)) {

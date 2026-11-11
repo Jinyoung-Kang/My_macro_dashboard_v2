@@ -746,6 +746,8 @@ const EVENT_KIND: Readonly<Record<string, string>> = {
   CANCEL_GAVE_UP: "취소 못 함(토스증권 앱에서 직접 취소)",
   SKIPPED: "건너뜀",
   STOP_SELL: "스탑 매도",
+  // 개장이 가깝도록 토스 장 운영 정보·수집기 매매 상태를 받지 못함(QA-342 — 하루 한 번, 사유 코드 calendar-unavailable·status-unavailable)
+  UNAVAILABLE: "준비 안 됨(주문을 내지 못하는 중)",
 };
 
 /** 이벤트 종류 이름표. 모르는 값은 원문. */

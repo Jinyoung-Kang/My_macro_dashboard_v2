@@ -28,6 +28,10 @@ final class RealTradeNotices {
 
     /** 시각 맞추기가 VI·서킷브레이커 등으로 미뤄짐 — 사유 코드만. */
     static final String EVENT_RESTRICTED = "RESTRICTED";
+    /** 켜짐인데 개장이 가깝도록 주문을 낼 준비가 안 됨(QA-342 — 토스 장 운영 정보·수집기 매매 상태를 받지 못함) — 사유 코드만, 하루 한 번. */
+    static final String EVENT_UNAVAILABLE = "UNAVAILABLE";
+    /** 쉼 이벤트 근거의 칸 — 토스는 휴장이라 답했는데 모의 달력은 거래일(QA-342). */
+    static final String DETAIL_PAPER_OPEN = "paperOpen";
 
     private static final Pattern CODE = Pattern.compile("^[a-z0-9-]{1,40}$");
     private static final Pattern KIND = Pattern.compile("^[A-Z][A-Z_]{1,39}$");
@@ -47,7 +51,9 @@ final class RealTradeNotices {
         return switch (kind) {
             case RealTradeStore.EVENT_HALT -> notice("멈춤", "사유: " + code(detail, "reason"));
             case RealTradeStore.EVENT_BUYS_PAUSED -> notice("매수 멈춤", "사유: " + code(detail, "reason"));
-            case RealTradeStore.EVENT_SKIP_DAY -> notice("오늘 쉼", "사유: " + code(detail, "reason"));
+            case RealTradeStore.EVENT_SKIP_DAY -> notice("오늘 쉼", "사유: " + code(detail, "reason")
+                    + (detail != null && detail.path(DETAIL_PAPER_OPEN).asBoolean(false)
+                    ? "\n모의 달력은 거래일입니다. 토스 장 운영 정보를 확인하세요" : ""));
             case RealTradeStore.EVENT_WINDOW_SUMMARY -> notice(windowLabel(detail), counts(detail));
             case RealTradeStore.EVENT_ENABLE -> notice("켜짐", "다음 맞추기부터 따라 합니다");
             case RealTradeStore.EVENT_DISABLE -> notice("끄기", "새 주문 멈춤 · 미체결 취소 중");
@@ -55,6 +61,8 @@ final class RealTradeNotices {
             case EVENT_STOP_SELL -> notice("스탑 매도", "보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "
                     + count(detail, "missed"));
             case EVENT_RESTRICTED -> notice("매매 제한으로 대기", "사유: " + code(detail, "reason") + "\n풀리면 시장가로 맞춥니다. 창 안에 못 맞추면 다음 맞추기가 메웁니다");
+            case EVENT_UNAVAILABLE -> notice("준비 안 됨", "사유: " + code(detail, "reason")
+                    + "\n개장이 가까운데 주문을 낼 준비가 안 됐습니다. 받는 대로 이어서 따라 합니다");
             case EVENT_CANCEL_GAVE_UP -> notice("취소 못 함", count(detail, "count") + "건 — 토스증권 앱에서 직접 취소하세요");
             case RealTradeStore.EVENT_UPDATE -> title("설정 바뀜");
             case RealTradeStore.EVENT_RESUME -> title("멈춤 해제");
