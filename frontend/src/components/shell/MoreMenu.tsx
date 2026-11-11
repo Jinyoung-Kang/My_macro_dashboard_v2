@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { lockedFor } from "@/lib/access";
-import { TABS, visibleItems } from "@/lib/nav";
+import { TABS, visibleItems, visibleTabs } from "@/lib/nav";
 import { AccountBox } from "./AccountBox";
 import { BuildInfo } from "./BuildInfo";
 import { PageHeader } from "@/components/ui";
@@ -14,6 +14,8 @@ import { ThemeSwitch } from "./ThemeSwitch";
 import { ChevronRightIcon, MenuIcon } from "./icons";
 
 const MORE = TABS.find((tab) => tab.key === "more");
+/** 정보 수집 — 좁은 화면의 아래쪽 탭 바에 없어(6칸 유지) 더보기 메뉴의 첫 줄로 엽니다(운영자에게만, 사용자 결정 2026-11-11). */
+const INFO = TABS.find((tab) => tab.key === "info");
 
 /**
  * 더보기 화면(/more) — 더보기 하위 화면 목록(행) + 계정 영역 + 읽기 모드·수동 새로고침(운영자) + 테마 전환 + 빌드 정보.
@@ -24,7 +26,8 @@ const MORE = TABS.find((tab) => tab.key === "more");
  */
 export function MoreMenu() {
   const user = useSessionUser();
-  const items = MORE ? visibleItems(MORE, user) : [];
+  const infoRow = INFO && visibleTabs(user).includes(INFO) ? [{ href: INFO.href, label: INFO.label }] : [];
+  const items = [...infoRow, ...(MORE ? visibleItems(MORE, user) : [])];
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
       <PageHeader title="더보기" description="알림·계정·운영 화면과 화면 설정" />

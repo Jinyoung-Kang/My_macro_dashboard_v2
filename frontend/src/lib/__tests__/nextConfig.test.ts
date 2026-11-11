@@ -63,6 +63,11 @@ describe("next.config 리디렉션", () => {
       { source: "/toss", destination: "/connections", permanent: true },
       { source: "/guru", destination: "/style", permanent: true },
     ]));
-    expect(redirects).toHaveLength(4);
+    // 그 밖은 임시(307): /paper → /paper/us, 정보 수집이 사이드바로 옮긴 옛 주소(/paper/info)와 /info → 첫 탭(ADR 0036).
+    expect(redirects).toEqual(expect.arrayContaining([
+      { source: "/paper/info", destination: "/info/news", permanent: false },
+      { source: "/info", destination: "/info/overview", permanent: false },
+    ]));
+    expect(redirects).toHaveLength(6);
   });
 });

@@ -16,7 +16,8 @@ const COLUMNS: Record<number, string> = { 5: "grid-cols-5", 6: "grid-cols-6" };
  * 문서 스크롤 여백(html scroll-padding-bottom)도 같은 높이입니다(globals.css). 데스크톱에서는 숨깁니다.
  */
 export function TabBar({ pathname, user }: { pathname: string; user?: SessionUser }) {
-  const tabs = visibleTabs(user);
+  // 정보 수집은 넓은 화면의 왼쪽 내비에만 — 아래쪽 탭 바는 6칸 그대로, 좁은 화면에서는 더보기에서 엽니다(사용자 결정 2026-11-11).
+  const tabs = visibleTabs(user).filter((tab) => tab.key !== "info");
   return (
     <nav
       aria-label="하단 메뉴"

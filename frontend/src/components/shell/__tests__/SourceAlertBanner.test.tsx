@@ -48,7 +48,7 @@ describe("수집 끊김 안내 띠", () => {
     render(<SourceAlertBanner user={OWNER} />);
 
     expect(await screen.findByText(/수집 출처 1곳이 끊겼습니다: Wolf Street/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "출처 상태 보기" }).getAttribute("href")).toBe("/paper/info?tab=sources");
+    expect(screen.getByRole("link", { name: "출처 상태 보기" }).getAttribute("href")).toBe("/info/status");
   });
 
   it("끊긴 출처가 없으면 띠가 없다", async () => {

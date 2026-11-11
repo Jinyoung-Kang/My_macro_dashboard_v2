@@ -27,13 +27,14 @@ const tab = (key: string) => {
 };
 
 describe("탭 표(브리프 §1.3 그대로)", () => {
-  it("다섯 탭 + 더보기의 키·이름·이동 경로", () => {
+  it("다섯 탭 + 정보 수집 + 더보기의 키·이름·이동 경로", () => {
     expect(TABS.map((entry) => [entry.key, entry.label, entry.href])).toEqual([
       ["home", "홈", "/"],
       ["markets", "시장", "/macro"],
       ["institutions", "기관", "/institutions"],
       ["korea", "한국", "/radar"],
       ["paper", "모의매매", "/paper/us"],
+      ["info", "정보 수집", "/info/overview"],
       ["more", "더보기", "/more"],
     ]);
   });
@@ -49,8 +50,13 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     ]);
     expect(items("korea")).toEqual(["수급 레이더 /radar", "파생·투기세력(KRX) /krx"]);
     // 한국 책 화면(2단계 명세 §4-16, F2) — 예전 '한국 · 준비 중' 표시는 없어지고 링크가 됨.
-    expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr", "정보 수집 /paper/info"]);
+    expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr"]);
     expect(tab("paper").upcoming).toBeUndefined();
+    // 정보 수집(ADR 0036 — 사이드바 모의매매와 더보기 사이) — 하위 메뉴 줄이 큰 분류 탭.
+    expect(items("info")).toEqual([
+      "개요 /info/overview", "뉴스·글 /info/news", "국내 시장·수급 /info/kr", "해외 시장·거시 /info/global", "기관·공시 /info/filings",
+      "모의매매 입력 /info/paper", "출처 상태 /info/status", "정보(메커니즘) /info/mechanism",
+    ]);
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
       "사용자 관리 /admin/users", "내 계정 /account",
@@ -123,8 +129,8 @@ describe("지금 탭·화면", () => {
 });
 
 describe("보이는 탭·하위 화면(lib/access 앞부분 일치)", () => {
-  it("운영자는 여섯 탭, 회원·데모·모르는 사용자는 모의매매 탭이 빠진다", () => {
-    expect(visibleTabs(OWNER).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "한국", "모의매매", "더보기"]);
+  it("운영자는 일곱 탭(정보 수집 포함), 회원·데모·모르는 사용자는 모의매매·정보 수집 탭이 빠진다", () => {
+    expect(visibleTabs(OWNER).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "한국", "모의매매", "정보 수집", "더보기"]);
     for (const user of [MEMBER, DEMO, undefined]) {
       expect(visibleTabs(user).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "한국", "더보기"]);
     }
@@ -151,9 +157,9 @@ describe("하위 메뉴 줄", () => {
     expect(subNav("/login", OWNER)).toBeNull();
   });
 
-  it("모의매매: 운영자에게는 미국 + 한국 + 정보 수집(모두 링크), 주소로 연 회원에게는 줄이 없다", () => {
+  it("모의매매: 운영자에게는 미국 + 한국(모두 링크), 주소로 연 회원에게는 줄이 없다", () => {
     const paper = subNav("/paper/us", OWNER);
-    expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us", "/paper/kr", "/paper/info"]);
+    expect(paper?.items.map((item) => item.href)).toEqual(["/paper/us", "/paper/kr"]);
     expect(paper?.upcoming).toEqual([]);
     expect(paper?.current).toBe("/paper/us");
     expect(paper?.currentAria).toBe("page");

@@ -118,11 +118,13 @@ describe("계정 영역(옛 사이드바 계정 영역)", () => {
 });
 
 describe("탭 — 모의매매(미국)는 운영자만", () => {
-  it("운영자에게는 왼쪽 내비·하단 탭 모두 홈·시장·기관·한국·모의매매·더보기 순서, 모의매매는 미국 화면(/paper/us)", () => {
+  it("운영자에게는 왼쪽 내비가 홈·시장·기관·한국·모의매매·정보 수집·더보기, 하단 탭은 정보 수집 없이 여섯 칸(더보기에서 엶)", () => {
     renderShell(LOCAL_OWNER);
 
+    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "한국", "모의매매", "정보 수집", "더보기"]);
+    expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/info/overview");
+    expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "한국", "모의매매", "더보기"]);
     for (const scope of [mainNav(), bottomNav()]) {
-      expect(linkLabels(scope)).toEqual(["홈", "시장", "기관", "한국", "모의매매", "더보기"]);
       expect(within(scope).getByRole("link", { name: "모의매매" }).getAttribute("href")).toBe("/paper/us");
     }
     expect(bottomNav().className).toContain("grid-cols-6");
@@ -137,6 +139,7 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
 
     renderShell(DEMO, { readMode: "store_only" });
     expect(screen.queryAllByRole("link", { name: "모의매매" })).toHaveLength(0);
+    expect(screen.queryAllByRole("link", { name: "정보 수집" })).toHaveLength(0);
   });
 
   it("지금 탭은 aria-current — 탭 첫 화면이면 page, 같은 탭의 다른 화면이면 true", () => {
@@ -165,16 +168,23 @@ describe("하위 메뉴 줄", () => {
     expect(screen.queryByRole("navigation", { name: /하위 메뉴/ })).toBeNull();
   });
 
-  it("모의매매(운영자)는 미국·한국·정보 수집 세 링크(모의매매 화면의 시장 고르기는 이 줄 하나) — 예전 '한국 · 준비 중'은 없음", () => {
+  it("모의매매(운영자)는 미국·한국 두 링크(모의매매 화면의 시장 고르기는 이 줄 하나) — 예전 '한국 · 준비 중'은 없음", () => {
     renderShell(LOCAL_OWNER, { path: "/paper/us" });
     const sub = screen.getByRole("navigation", { name: "모의매매 하위 메뉴" });
-    expect(linkLabels(sub)).toEqual(["미국", "한국", "정보 수집"]);
-    expect(within(sub).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/paper/info");
+    expect(linkLabels(sub)).toEqual(["미국", "한국"]);
     expect(within(sub).getByRole("link", { name: "미국" }).getAttribute("aria-current")).toBe("page");
     const korea = within(sub).getByRole("link", { name: "한국" });
     expect(korea.getAttribute("href")).toBe("/paper/kr");
     expect(korea.getAttribute("aria-current")).toBeNull();
     expect(within(sub).queryByText(/준비 중/)).toBeNull();
+  });
+
+  it("정보 수집(운영자)의 하위 메뉴 줄은 여덟 분류 탭, 지금 탭이 aria-current=page", () => {
+    renderShell(LOCAL_OWNER, { path: "/info/kr" });
+    const sub = screen.getByRole("navigation", { name: "정보 수집 하위 메뉴" });
+    expect(linkLabels(sub)).toEqual(["개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)"]);
+    expect(within(sub).getByRole("link", { name: "국내 시장·수급" }).getAttribute("aria-current")).toBe("page");
+    expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("aria-current")).toBe("true");
   });
 
   it("한국 화면 탭 주소(/paper/kr/settings)에서는 '한국'이 고른 표시 — aria-current true", () => {

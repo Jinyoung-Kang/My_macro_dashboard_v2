@@ -25,6 +25,13 @@ const TAB_PATHS: Record<TabKey, React.ReactNode> = {
       <path d="M7 15l3-3 3 2 4-5" />
     </>
   ),
+  info: (
+    <>
+      <path d="M4 5h11M4 10h11M4 15h7" />
+      <circle cx="17.5" cy="16.5" r="3.5" />
+      <path d="M20 19l2 2" />
+    </>
+  ),
   more: (
     <>
       <circle cx="5" cy="12" r="1.5" />
@@ -82,5 +89,5 @@ const MENU_PATHS: Record<string, React.ReactNode> = {
 };
 
 export function MenuIcon({ href, size = 18 }: { href: string; size?: number }) {
-  return <IconBase size={size}>{MENU_PATHS[href] ?? TAB_PATHS.more}</IconBase>;
+  return <IconBase size={size}>{MENU_PATHS[href] ?? (href.startsWith("/info") ? TAB_PATHS.info : TAB_PATHS.more)}</IconBase>;
 }

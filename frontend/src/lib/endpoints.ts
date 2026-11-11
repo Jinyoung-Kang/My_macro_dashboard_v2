@@ -79,15 +79,26 @@ export const endpoints = {
 
   // 정보 수집(모의매매 > 정보 수집, 운영자 전용 — ADR 0035). 백엔드는 저장본만 읽습니다(화면이 수집을 일으키지 않음).
   info: {
-    items: (params: { category?: string; source?: string; q?: string; before?: string; limit?: number }) =>
+    catalog: "/api/info/catalog",
+    mechanism: "/api/info/mechanism",
+    items: (params: { kind?: string; source?: string; q?: string; page?: number; size?: number }) =>
       withQuery("/api/info/items", {
-        category: optional(params.category),
+        kind: optional(params.kind),
         source: optional(params.source),
         q: optional(params.q?.trim()),
-        before: optional(params.before),
-        limit: params.limit,
+        page: params.page,
+        size: params.size,
       }),
     item: (id: string) => `/api/info/items/${segment(id)}`,
+    headlines: (params: { set?: string; feed?: string; q?: string; page?: number; size?: number }) =>
+      withQuery("/api/info/headlines", {
+        set: optional(params.set),
+        feed: optional(params.feed),
+        q: optional(params.q?.trim()),
+        page: params.page,
+        size: params.size,
+      }),
+    krx: (market: string, investor: string, tradeType: string) => withQuery("/api/info/krx", { market, investor, tradeType }),
     sources: "/api/info/sources",
     flows: "/api/info/flows",
     gurus: "/api/info/gurus",

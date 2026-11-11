@@ -39,6 +39,9 @@ const nextConfig = {
       // 화면으로 쓸 수 있어, 브라우저가 영구(308) 리디렉션을 기억하면 그때 /paper로 갈 수 없습니다. source는 /paper 하나만
       // (/paper/:path*로 넓히면 /paper/us까지 맞아 끝없이 되돌아갑니다).
       { source: "/paper", destination: "/paper/us", permanent: false },
+      // 정보 수집이 모의매매 아래(/paper/info)에서 사이드바의 따로 된 메뉴로 옮김(2026-11-11, ADR 0036). /info는 개요로.
+      { source: "/paper/info", destination: "/info/news", permanent: false },
+      { source: "/info", destination: "/info/overview", permanent: false },
     ];
   },
   async headers() {

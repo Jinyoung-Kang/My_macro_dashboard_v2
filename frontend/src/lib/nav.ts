@@ -8,7 +8,7 @@
 import { lockedFor, visibleMenus } from "./access";
 import type { SessionUser } from "./types";
 
-export type TabKey = "home" | "markets" | "institutions" | "korea" | "paper" | "more";
+export type TabKey = "home" | "markets" | "institutions" | "korea" | "paper" | "info" | "more";
 
 export type NavItem = {
   href: string;
@@ -86,8 +86,24 @@ export const TABS: readonly NavTab[] = [
     items: [
       { href: "/paper/us", label: "미국", title: "모의매매(미국)", keywords: ["모의 알고리즘 매매(미국)"] },
       { href: "/paper/kr", label: "한국", title: "모의매매(한국)", keywords: ["모의 알고리즘 매매(한국)", "한국 증시 모의매매"] },
-      // 정보 수집(ADR 0035) — 해외 블로그·waedge·네이버 매매상위, 출처 상태. 운영자 전용(/paper 아래).
-      { href: "/paper/info", label: "정보 수집", keywords: ["해외 블로그", "waedge", "네이버 매매상위", "수집 출처 상태"] },
+    ],
+  },
+  {
+    // 정보 수집(ADR 0035·0036) — 수집기가 받는 모든 출처의 자료·상태와 작동 방식. 운영자 전용. 하위 메뉴 줄이 큰 분류(탭)입니다.
+    // 좁은 화면의 아래쪽 탭 바에는 넣지 않고(6칸 유지 — 사용자 결정 2026-11-11) 더보기에서 엽니다(TabBar·MoreMenu).
+    key: "info",
+    label: "정보 수집",
+    href: "/info/overview",
+    sections: ["/info"],
+    items: [
+      { href: "/info/overview", label: "개요", title: "정보 수집 개요", keywords: ["수집 출처", "데이터 출처"] },
+      { href: "/info/news", label: "뉴스·글", title: "정보 수집 · 뉴스·글", keywords: ["해외 블로그", "waedge", "거장", "사건 뉴스 RSS"] },
+      { href: "/info/kr", label: "국내 시장·수급", title: "정보 수집 · 국내 시장·수급", keywords: ["네이버 매매상위", "KRX 정보데이터시스템", "공매도", "외국인 보유"] },
+      { href: "/info/global", label: "해외 시장·거시", title: "정보 수집 · 해외 시장·거시", keywords: ["FRED", "경제 캘린더", "COT"] },
+      { href: "/info/filings", label: "기관·공시", title: "정보 수집 · 기관·공시·재무", keywords: ["SEC 13F", "DART", "어닝 서프라이즈"] },
+      { href: "/info/paper", label: "모의매매 입력", title: "정보 수집 · 모의매매 입력" },
+      { href: "/info/status", label: "출처 상태", title: "정보 수집 · 출처 상태", keywords: ["수집 끊김", "차단", "형식 바뀜"] },
+      { href: "/info/mechanism", label: "정보(메커니즘)", title: "정보 수집 · 작동 방식", keywords: ["작동 원리", "수집 설정", "하루 예산"] },
     ],
   },
   {

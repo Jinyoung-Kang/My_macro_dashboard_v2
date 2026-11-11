@@ -1,6 +1,8 @@
 "use client";
 
-import { Banner, Card, ErrorState, Freshness, Loading, SourceBadge, Table } from "@/components/ui";
+import { useState } from "react";
+import { Pager } from "@/components/Pager";
+import { Banner, Card, ErrorState, Freshness, Loading, NativeSelect, SourceBadge, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { bypassBadge } from "@/lib/econCalendar";
 import { endpoints } from "@/lib/endpoints";
@@ -9,20 +11,28 @@ import {
   NAVER_INVESTORS,
   NAVER_MARKETS,
   type NaverFlowsResponse,
+  type NaverInvestor,
+  type NaverMarket,
+  PAGE_SIZE,
   type RankRow,
   TREND_COLUMNS,
   type TrendRow,
   eokText,
+  pageSlice,
   rankingBasis,
   sharesText,
 } from "@/lib/info";
 
 /**
  * 네이버 투자자별 매매동향(코스피·코스닥 최근 10거래일, 억 원)과 외국인·기관 순매수·순매도 상위(당일). 장중 순위는 네이버의 추정이라 금액이 없고
- * 주식 수만 보입니다('—'는 0이 아니라 출처가 주지 않은 값).
+ * 주식 수만 보입니다('—'는 0이 아니라 출처가 주지 않은 값). 시장·투자주체를 골라 한 쌍씩 보이고 순위는 10줄씩 넘깁니다.
  */
 export function NaverFlowsSection() {
   const { data, loading, error, reload, refreshError } = useApi<NaverFlowsResponse>(endpoints.info.flows, 300_000);
+  const [market, setMarket] = useState<NaverMarket>("KOSPI");
+  const [investor, setInvestor] = useState<NaverInvestor>("FOREIGNER");
+  const marketLabel = NAVER_MARKETS.find((entry) => entry.key === market)?.label ?? market;
+  const investorLabel = NAVER_INVESTORS.find((entry) => entry.key === investor)?.label ?? investor;
   const badge = bypassBadge(data?.fetchTier);
   return (
     <Card
@@ -57,48 +67,58 @@ export function NaverFlowsSection() {
           {(data.failed?.length ?? 0) > 0 && (
             <Banner tone="warn">이번 수집에서 {data.failed?.length}개 부분을 받지 못해 이전 값을 보입니다: {data.failed?.join(", ")}</Banner>
           )}
-          {NAVER_MARKETS.map((market) => {
-            const trend = data.trend?.[market.key];
-            return (
-              <section key={market.key}>
-                <h3 className="mb-2 text-sm font-semibold text-text">
-                  {market.label} 투자자별 순매수(억 원){trend?.isStale ? " · 이전 값" : ""}
-                </h3>
-                <Table<TrendRow>
-                  label={`${market.label} 투자자별 순매수`}
-                  rows={trend?.rows ?? []}
-                  rowKey={(row) => row.date}
-                  emptyMessage="받은 날짜가 없습니다."
-                  columns={[
-                    { key: "date", header: "날짜", render: (row) => <span className="tabular-nums">{row.date}</span> },
-                    ...TREND_COLUMNS.map((column) => ({
-                      key: column.key,
-                      header: column.label,
-                      align: "right" as const,
-                      render: (row: TrendRow) => <span className="tabular-nums">{row[column.key] === null ? EMPTY : formatSigned(row[column.key], 1)}</span>,
-                    })),
-                  ]}
-                />
-              </section>
-            );
-          })}
-          {NAVER_INVESTORS.map((investor) =>
-            NAVER_MARKETS.map((market) => {
-              const part = data.rankings?.[investor.key]?.[market.key];
-              return (
-                <section key={`${investor.key}-${market.key}`}>
-                  <h3 className="text-sm font-semibold text-text">
-                    {investor.label} 매매상위 · {market.label}
-                  </h3>
-                  <p className="mb-2 text-xs text-text-2">{rankingBasis(part)}</p>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <RankTable title={`${investor.label} 순매수 상위 · ${market.label}`} rows={part?.buy ?? []} />
-                    <RankTable title={`${investor.label} 순매도 상위 · ${market.label}`} rows={part?.sell ?? []} />
-                  </div>
-                </section>
-              );
-            }),
-          )}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex min-w-0 flex-col gap-1 text-xs text-text-2">
+              시장
+              <NativeSelect inputSize="sm" value={market} onChange={(event) => setMarket(event.target.value as NaverMarket)}>
+                {NAVER_MARKETS.map((entry) => (
+                  <option key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <label className="flex min-w-0 flex-col gap-1 text-xs text-text-2">
+              매매상위 투자주체
+              <NativeSelect inputSize="sm" value={investor} onChange={(event) => setInvestor(event.target.value as NaverInvestor)}>
+                {NAVER_INVESTORS.map((entry) => (
+                  <option key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          </div>
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-text">
+              {marketLabel} 투자자별 순매수(억 원){data.trend?.[market]?.isStale ? " · 이전 값" : ""}
+            </h3>
+            <Table<TrendRow>
+              label={`${marketLabel} 투자자별 순매수`}
+              rows={data.trend?.[market]?.rows ?? []}
+              rowKey={(row) => row.date}
+              emptyMessage="받은 날짜가 없습니다."
+              columns={[
+                { key: "date", header: "날짜", render: (row) => <span className="tabular-nums">{row.date}</span> },
+                ...TREND_COLUMNS.map((column) => ({
+                  key: column.key,
+                  header: column.label,
+                  align: "right" as const,
+                  render: (row: TrendRow) => <span className="tabular-nums">{row[column.key] === null ? EMPTY : formatSigned(row[column.key], 1)}</span>,
+                })),
+              ]}
+            />
+          </section>
+          <section>
+            <h3 className="text-sm font-semibold text-text">
+              {investorLabel} 매매상위 · {marketLabel}
+            </h3>
+            <p className="mb-2 text-xs text-text-2">{rankingBasis(data.rankings?.[investor]?.[market])}</p>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <RankTable key={`${investor}-${market}-buy`} title={`${investorLabel} 순매수 상위 · ${marketLabel}`} rows={data.rankings?.[investor]?.[market]?.buy ?? []} />
+              <RankTable key={`${investor}-${market}-sell`} title={`${investorLabel} 순매도 상위 · ${marketLabel}`} rows={data.rankings?.[investor]?.[market]?.sell ?? []} />
+            </div>
+          </section>
         </div>
       )}
     </Card>
@@ -106,12 +126,14 @@ export function NaverFlowsSection() {
 }
 
 function RankTable({ title, rows }: { title: string; rows: RankRow[] }) {
+  const [page, setPage] = useState(1);
+  const slice = pageSlice(rows, page, PAGE_SIZE);
   return (
     <div>
       <h4 className="mb-1 text-xs font-semibold text-text-2">{title.split(" · ")[0].replace(/^(외국인|기관) /, "")}</h4>
       <Table<RankRow>
         label={title}
-        rows={rows.slice(0, 20)}
+        rows={slice.rows}
         rowKey={(row, index) => `${row.code ?? "?"}-${index}`}
         emptyMessage="순위가 없습니다."
         columns={[
@@ -123,6 +145,7 @@ function RankTable({ title, rows }: { title: string; rows: RankRow[] }) {
           { key: "volume", header: "순매수 수량", align: "right", render: (row) => <span className="tabular-nums">{sharesText(row.netVolume)}</span> },
         ]}
       />
+      <Pager page={slice.page} pages={slice.pages} onChange={setPage} label={title} />
     </div>
   );
 }

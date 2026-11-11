@@ -32,7 +32,7 @@ export type InfoItem = {
   body?: string | null;
 };
 
-export type InfoItemsResponse = { available: boolean; items: InfoItem[]; next?: string | null };
+export type InfoItemsResponse = Paged & { available: boolean; items: InfoItem[] };
 export type InfoItemResponse = { found: boolean; item?: InfoItem };
 
 export type InfoIncident = {
@@ -66,7 +66,6 @@ export type InfoSourcesResponse = {
   available: boolean;
   /** 판정 기록이 있는가 — 로컬 PC는 수집하지 않아(운영 서버에서만) 기록이 없습니다. */
   recorded?: boolean;
-  sources: InfoSourceRow[];
   incidents: InfoIncident[];
 };
 
@@ -145,20 +144,205 @@ export type GurusResponse = {
   gurus?: Guru[] | null;
 };
 
-// ------------------------------------------------------------------ 화면 탭
-export type InfoTab = "blog" | "waedge" | "gurus" | "naver" | "sources";
+// ------------------------------------------------------------------ 화면 탭(하위 메뉴 줄 — lib/nav의 info 탭과 같은 순서)
+export type InfoTab = "overview" | "news" | "kr" | "global" | "filings" | "paper" | "status" | "mechanism";
 
-export const INFO_TABS: readonly { key: InfoTab; label: string }[] = [
-  { key: "blog", label: "해외 블로그" },
-  { key: "waedge", label: "waedge 시황" },
-  { key: "gurus", label: "거장" },
-  { key: "naver", label: "네이버 수급" },
-  { key: "sources", label: "출처 상태" },
-];
+export const INFO_TAB_SLUGS: readonly InfoTab[] = ["overview", "news", "kr", "global", "filings", "paper", "status", "mechanism"];
 
-/** 주소의 ?tab= 값을 탭으로 — 모르는 값이면 첫 탭. */
-export function parseInfoTab(value: string | null | undefined): InfoTab {
-  return INFO_TABS.some((tab) => tab.key === value) ? (value as InfoTab) : "blog";
+/** 주소 조각을 탭으로 — 모르는 값이면 null(404). */
+export function parseInfoTab(value: string | null | undefined): InfoTab | null {
+  return INFO_TAB_SLUGS.includes(value as InfoTab) ? (value as InfoTab) : null;
+}
+
+/** 한 쪽에 보이는 줄 수(사용자 요청 2026-11-11 — 5~10개씩 나눠 쪽을 옮김). 카드는 그보다 적게. */
+export const PAGE_SIZE = 10;
+export const CARD_PAGE_SIZE = 8;
+
+// ------------------------------------------------------------------ 쪽 나누기
+export type Paged = { page?: number; size?: number; total?: number; pages?: number };
+
+/** 클라이언트에서 나누는 목록의 한 쪽(1부터). 쪽이 범위를 넘으면 마지막 쪽. */
+export function pageSlice<T>(rows: readonly T[], page: number, size: number): { rows: T[]; page: number; pages: number } {
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const current = Math.min(Math.max(1, page), pages);
+  return { rows: rows.slice((current - 1) * size, current * size), page: current, pages };
+}
+
+/** 쪽 단추에 보일 번호 — 처음·끝·지금 앞뒤 하나, 사이는 null(말줄임). */
+export function pageNumbers(page: number, pages: number): (number | null)[] {
+  const wanted = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages));
+  const sorted = [...wanted].sort((a, b) => a - b);
+  const out: (number | null)[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) out.push(null);
+    out.push(n);
+  });
+  return out;
+}
+
+// ------------------------------------------------------------------ 한눈 보기(catalog)
+export type SourceTab = "news" | "kr" | "global" | "filings" | "paper" | "ops";
+export type Access = "official" | "unofficial" | "bypass" | "internal" | "deferred";
+
+export type CatalogSource = {
+  task: string;
+  key: string;
+  label: string;
+  tab: SourceTab;
+  kind: string;
+  siteUrl: string | null;
+  origin: string;
+  access: Access;
+  screen: string | null;
+  speed: string | null;
+  lastStatus: string | null;
+  lastRunAt: string | null;
+  lastDetail: string | null;
+  politeStatus: string | null;
+  streak: number | null;
+  lastOkAt: string | null;
+  nextDueAt: string | null;
+  items: number | null;
+  incident: InfoIncident | null;
+  tone: InfoTone;
+};
+
+export type CatalogResponse = {
+  checkedAt: string;
+  collectorReachable: boolean;
+  tabs: { key: SourceTab; label: string; sources: number; tones: Partial<Record<InfoTone, number>> }[];
+  sources: CatalogSource[];
+  incidents: InfoIncident[];
+};
+
+const ACCESS_LABELS: Record<Access, string> = {
+  official: "공식 API",
+  unofficial: "비공식 공개 경로",
+  bypass: "차단 통과 수집(서버)",
+  internal: "외부 호출 없음",
+  deferred: "보류",
+};
+
+export function accessLabel(access: Access): string {
+  return ACCESS_LABELS[access] ?? access;
+}
+
+const SPEED_LABELS: Record<string, string> = {
+  fast: "5분마다",
+  slow: "1시간마다",
+  weekly: "12시간마다",
+  session: "장중 5분(조건부)",
+  live: "화면이 볼 때",
+  polite: "불규칙(출처마다 무작위)",
+};
+
+export function speedLabel(speed: string | null): string {
+  return speed ? (SPEED_LABELS[speed] ?? speed) : EMPTY;
+}
+
+const RUN_LABELS: Record<string, string> = {
+  ok: "정상",
+  partial: "일부",
+  empty: "수집 결과 없음",
+  fail: "실패",
+  rejected: "거부됨",
+  interrupted: "중단",
+  skipped: "건너뜀",
+};
+
+/** 카드의 상태 글 — 끊김 사건 → polite 판정 → 수집기 실행 기록 → 기록 없음 순. */
+export function catalogStatus(source: Pick<CatalogSource, "access" | "incident" | "politeStatus" | "lastStatus">): string {
+  if (source.access === "deferred") return "보류(수집하지 않음)";
+  if (source.incident) return source.incident.kindLabel;
+  if (source.politeStatus) return STATUS_LABELS[source.politeStatus] ?? source.politeStatus;
+  if (source.lastStatus) return RUN_LABELS[source.lastStatus] ?? source.lastStatus;
+  return "기록 없음";
+}
+
+/** 그 탭의 색별 수를 한 줄로("정상 12 · 주의 1 · 위험 0 · 기록 없음 2"). */
+export function toneSummary(tones: Partial<Record<InfoTone, number>>): string {
+  return `정상 ${tones.ok ?? 0} · 주의 ${tones.warn ?? 0} · 위험 ${tones.danger ?? 0} · 기록 없음 ${tones.neutral ?? 0}`;
+}
+
+// ------------------------------------------------------------------ 사건 뉴스 RSS
+export type Headline = {
+  set: "us" | "kr";
+  title: string | null;
+  link: string | null;
+  source: string | null;
+  feed: string | null;
+  publishedAt: string | null;
+  fetchedAt: string | null;
+};
+export type HeadlinesResponse = Paged & { available: boolean; items: Headline[] };
+
+// ------------------------------------------------------------------ KRX 정보데이터시스템
+export type KrxPart<T> = { asOf: string; rows: T[]; isStale?: boolean };
+export type KrxTotal = { investor: string; buyEok: number | null; sellEok: number | null; netEok: number | null; netVolume: number | null };
+export type KrxForeign = { code: string; name: string | null; close: number | null; changePct: number | null; holdShares: number | null; holdPct: number | null; limitExhaustPct: number | null };
+export type KrxShortTrade = { code: string; name: string | null; shortEok: number | null; shortVolume: number | null; tradeValueWeightPct: number | null };
+export type KrxShortBalance = { code: string; name: string | null; balanceEok: number | null; balanceShares: number | null; balancePct: number | null };
+export type KrxRank = { rank: number; code: string; name: string; netAmountEok: number | null; netVolume: number | null; buyEok: number | null; sellEok: number | null };
+
+export type KrxResponse = {
+  available: boolean;
+  collectedAtKst?: string;
+  ageSeconds?: number | null;
+  source?: string | null;
+  fetchTier?: string | null;
+  asOf?: string | null;
+  sourceUrl?: string | null;
+  totals?: Partial<Record<NaverMarket, KrxPart<KrxTotal>>> | null;
+  foreign?: Partial<Record<NaverMarket, KrxPart<KrxForeign>>> | null;
+  shortTrades?: Partial<Record<NaverMarket, KrxPart<KrxShortTrade>>> | null;
+  shortBalances?: Partial<Record<NaverMarket, KrxPart<KrxShortBalance>>> | null;
+  failed?: string[] | null;
+  ranking: { market: NaverMarket; investor: string; tradeType: "순매수" | "순매도"; date: string | null; rows: KrxRank[] };
+  markets: NaverMarket[];
+  investors: string[];
+};
+
+/** KRX 부분의 기준일 글 — 이번에 받지 못해 이어받은 것이면 표시. */
+export function partBasis(part: { asOf: string; isStale?: boolean } | null | undefined): string {
+  if (!part) return "받은 자료 없음";
+  return `기준일 ${part.asOf}${part.isStale ? " · 이번에 받지 못해 이전 값" : ""}`;
+}
+
+// ------------------------------------------------------------------ 메커니즘
+export type MechanismResponse = {
+  checkedAt: string;
+  collector: {
+    politeEnabled: boolean;
+    tickSeconds: number;
+    tickJitterSeconds: number;
+    taskDeadlineSeconds: number | null;
+    browser: { configured: boolean; reachable: boolean; pressCheckbox: boolean | null; allowedHosts: number | null };
+    gap: { medianSeconds: number; lowSeconds: number; highSeconds: number; longChance: number; longLowSeconds: number; longHighSeconds: number };
+    backoffMinutes: [number, number][];
+    humanCheckMinutes: [number, number];
+    giveUpLevel: number;
+    giveUpRecheckDays: number;
+    staleFactor: number;
+    hosts: { host: string; tiers: string[]; dailyBudget: number }[];
+    cadences: { task: string; lowMinutes: number; highMinutes: number; note: string | null }[];
+    articles: Record<string, number>;
+  } | null;
+  hostStates: { host: string; lastGoodTier: string | null; failLevel: number; blockedUntil: string | null; blockedReason: string | null; givenUp: boolean; usedToday: number }[];
+  schedule: Record<string, string>;
+  alerts: { formatStreak: number; failedStreak: number; intervalMinutes: number };
+  deferred: { task: string; label: string; reason: string }[];
+};
+
+const TIER_LABELS: Record<string, string> = { impersonate: "브라우저 TLS(계층 1)", browser: "실제 브라우저(계층 2)" };
+
+export function tierLabel(tier: string | null | undefined): string {
+  return tier ? (TIER_LABELS[tier] ?? tier) : EMPTY;
+}
+
+/** 분 구간을 사람 말로("3~8시간", "40~90분"). */
+export function minutesRange(low: number, high: number): string {
+  if (low >= 120 && high >= 120) return `${formatNumber(low / 60, low % 60 ? 1 : 0)}~${formatNumber(high / 60, high % 60 ? 1 : 0)}시간`;
+  return `${formatNumber(low, 0)}~${formatNumber(high, 0)}분`;
 }
 
 // ------------------------------------------------------------------ 출처 상태·안내 띠

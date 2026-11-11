@@ -72,10 +72,11 @@ describe("글", () => {
     expect([bodyLabel("full"), bodyLabel("partial"), bodyLabel("none")]).toEqual(["본문", "요약만", "제목만"]);
   });
 
-  it("모르는 탭 값은 첫 탭", () => {
-    expect(parseInfoTab("sources")).toBe("sources");
-    expect(parseInfoTab("x")).toBe("blog");
-    expect(parseInfoTab(null)).toBe("blog");
+  it("정보 수집 탭 주소 — 아는 조각만, 모르면 null(주소는 404)", () => {
+    expect(parseInfoTab("mechanism")).toBe("mechanism");
+    expect(parseInfoTab("status")).toBe("status");
+    expect(parseInfoTab("sources")).toBeNull();
+    expect(parseInfoTab(null)).toBeNull();
   });
 });
 

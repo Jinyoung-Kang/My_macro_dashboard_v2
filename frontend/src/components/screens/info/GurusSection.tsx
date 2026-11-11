@@ -1,20 +1,28 @@
 "use client";
 
+import { useState } from "react";
+import { Pager } from "@/components/Pager";
 import { Card, ErrorState, Freshness, Loading, SourceBadge, Table } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { bypassBadge } from "@/lib/econCalendar";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
-import { type Guru, type GurusResponse, scoreText, splitText, stanceTone } from "@/lib/info";
+import { type Guru, type GurusResponse, PAGE_SIZE, pageSlice, scoreText, splitText, stanceTone } from "@/lib/info";
 
-/** waedge 거장 — 이름난 투자자들의 최근 시장 견해(강세·중립·약세 점수와 요약). waedge가 기사로 매긴 점수이고 우리 계산이 아닙니다. */
-export function GurusSection() {
+/**
+ * waedge 거장 — 이름난 투자자들의 최근 시장 견해(강세·중립·약세 점수와 요약). waedge가 기사로 매긴 점수이고 우리 계산이 아닙니다. 10명씩 쪽을
+ * 나눕니다. ``embedded``면 다른 카드 안에 그립니다(뉴스·글).
+ */
+export function GurusSection({ embedded = false }: { embedded?: boolean }) {
   const { data, loading, error, reload, refreshError } = useApi<GurusResponse>(endpoints.info.gurus, 600_000);
+  const [page, setPage] = useState(1);
+  const slice = pageSlice(data?.gurus ?? [], page, PAGE_SIZE);
+  const Wrapper = embedded ? EmbeddedCard : Card;
   const badge = bypassBadge(data?.fetchTier);
   const counts = data?.counts;
   return (
-    <Card
+    <Wrapper
       title="거장 시장 견해"
       source={
         data?.sourceUrl ? (
@@ -44,7 +52,7 @@ export function GurusSection() {
           </p>
           <Table<Guru>
             label="거장 견해"
-            rows={data.gurus ?? []}
+            rows={slice.rows}
             rowKey={(row) => row.name}
             emptyMessage="견해가 없습니다."
             columns={[
@@ -63,8 +71,26 @@ export function GurusSection() {
               { key: "summary", header: "요약", className: "min-w-[18rem]", render: (row) => <span className="text-[13px] leading-5">{row.summary ?? EMPTY}</span> },
             ]}
           />
+          <Pager page={slice.page} pages={slice.pages} onChange={setPage} label="거장 견해" />
         </>
       )}
-    </Card>
+    </Wrapper>
+  );
+}
+
+/** 다른 카드 안에 그릴 때 — 머리(제목·출처·신선도)만 작게. */
+function EmbeddedCard({ title, source, subtitle, actions, children }: React.ComponentProps<typeof Card>) {
+  return (
+    <section>
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-text">{title}</h3>
+          {subtitle && <p className="text-xs text-text-2">{subtitle}</p>}
+          {source && <p className="text-xs text-text-3">{source}</p>}
+        </div>
+        {actions}
+      </div>
+      {children}
+    </section>
   );
 }

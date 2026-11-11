@@ -28,7 +28,7 @@ export function SourceAlertBanner({ user }: { user?: SessionUser }) {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <p className="min-w-0">
             {bannerText(unseen)}. 그 출처만 멈추고 직전 저장본을 유지합니다.{" "}
-            <Link href="/paper/info?tab=sources" className="font-semibold underline underline-offset-2">
+            <Link href="/info/status" className="font-semibold underline underline-offset-2">
               출처 상태 보기
             </Link>
           </p>
