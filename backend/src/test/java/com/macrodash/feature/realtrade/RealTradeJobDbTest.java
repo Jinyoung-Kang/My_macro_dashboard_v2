@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1561,7 +1560,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-351: 수정 전에는 형식 밖 종목 코드 보유가 하나라도 있으면 매매 제한 조회가 통째로 빠져 VI 종목도 바로 보냅니다")
     @DisplayName("QA-351: 형식 밖 종목 코드의 보유가 있어도 매매 제한 조회는 형식에 맞는 종목만으로 부르고, VI 종목은 기다린다")
     void restrictionsQuerySkipsMalformedHoldings() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1579,7 +1577,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-351: 수정 전에는 물어볼 종목이 60개를 넘으면 매매 제한 조회가 통째로 빠집니다")
     @DisplayName("QA-351: 보유가 많아 물어볼 종목이 60개를 넘으면 주문 대상 종목을 먼저 넣고 60개에서 자른다")
     void restrictionsQueryKeepsOrderSymbolsWithinLimit() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1599,6 +1596,24 @@ class RealTradeJobDbTest {
             assertThat(symbols).as("주문 대상 종목이 먼저").contains(A, B);
         });
         assertThat(sentSummaries()).as("VI인 A는 기다림").noneMatch(o -> o.contains(" " + A + " "));
+    }
+
+    @Test
+    @DisplayName("QA-351: 매매 제한 조회 종목 — 형식 밖 코드는 빼고, 주문 대상 먼저·보유 다음, 상한은 수집기 RESTRICTION_MAX_SYMBOLS와 같다")
+    void restrictionQueryOrderAndLimit() throws Exception {
+        assertThat(RealTradeJob.restrictionQuery(List.of(B, "bad code", A), Set.of(C, "Q500001", "AAPL")))
+                .as("주문 대상(코드 순) 먼저, 그다음 보유").containsExactly(B, A, C);
+        List<String> many = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            many.add(String.format("9%05d", i));
+        }
+        assertThat(RealTradeJob.restrictionQuery(List.of(A, B), many)).hasSize(RealTradeJob.RESTRICTION_MAX_SYMBOLS).startsWith(B, A);
+        java.nio.file.Path trade = java.nio.file.Path.of("../collector/app/services/toss_trade.py");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(trade), "collector/app/services/toss_trade.py를 찾을 수 없습니다");
+        java.util.regex.Matcher max = java.util.regex.Pattern.compile("(?m)^RESTRICTION_MAX_SYMBOLS\\s*=\\s*(\\d+)")
+                .matcher(java.nio.file.Files.readString(trade));
+        assertThat(max.find()).isTrue();
+        assertThat(Integer.parseInt(max.group(1))).isEqualTo(RealTradeJob.RESTRICTION_MAX_SYMBOLS);
     }
 
     @Test

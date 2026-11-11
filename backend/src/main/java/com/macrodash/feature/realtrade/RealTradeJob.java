@@ -53,6 +53,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -978,9 +979,7 @@ class RealTradeJob {
      */
     private Set<String> restrictedSymbols(Cycle c, Collection<String> symbols, Fresh f) {
         DayState d = c.day;
-        Set<String> ask = new TreeSet<>(symbols);
-        ask.addAll(f.account().positions().keySet());
-        Reply<CollectorTradeClient.Restrictions> reply = client.restrictions(ask);
+        Reply<CollectorTradeClient.Restrictions> reply = client.restrictions(restrictionQuery(symbols, f.account().positions().keySet()));
         Set<String> viNow = Set.of();
         if (reply.ok()) {
             int stage = RealTradePlanner.circuitStage(reply.value().indexChangePct());
@@ -1012,6 +1011,26 @@ class RealTradeJob {
             }
         });
         return out;
+    }
+
+    /** 매매 제한 조회 한 번에 물을 수 있는 종목 수 — 수집기 {@code RESTRICTION_MAX_SYMBOLS}와 같게(넘으면 수집기가 요청을 거절). */
+    static final int RESTRICTION_MAX_SYMBOLS = 60;
+
+    /**
+     * 매매 제한 조회에 넣을 종목(QA-351) — 국내 종목 코드 모양인 것만, 주문 대상({@code symbols} — 책 목표·묶음 범위)을 먼저 넣고 보유를 더해
+     * {@value #RESTRICTION_MAX_SYMBOLS}개까지. 예전에는 보유 전부를 그대로 물어, 코드 모양이 틀린 보유가 하나라도 있거나 60개를 넘으면 조회가 통째로
+     * 실패하고('제한 없이 진행') VI·서킷브레이커 대기가 그날 동작하지 않았습니다. 잘려 나간 보유는 제한을 모르는 채 보냅니다(거절되면 대기).
+     */
+    static Set<String> restrictionQuery(Collection<String> symbols, Collection<String> held) {
+        Set<String> ask = new LinkedHashSet<>();
+        for (Collection<String> group : List.of(new TreeSet<>(symbols), new TreeSet<>(held))) {
+            for (String symbol : group) {
+                if (ask.size() < RESTRICTION_MAX_SYMBOLS && RealTradePlanner.krSymbol(symbol)) {
+                    ask.add(symbol);
+                }
+            }
+        }
+        return ask;
     }
 
     /** 시각 맞추기 창을 늘리고 사유마다 하루 한 번 알립니다. */

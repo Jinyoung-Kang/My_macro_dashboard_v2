@@ -132,6 +132,11 @@ final class RealTradePlanner {
     /** 국내 종목 코드(수집기·DB 검사와 같음) — 아니면 주문하지 않습니다. */
     private static final Pattern KR_SYMBOL = Pattern.compile("^[0-9][0-9A-Z]{5}$");
 
+    /** 국내 종목 코드 모양인가 — 수집기에 종목을 물을 때도 같은 검사로 거릅니다(매매 제한 조회, QA-351). */
+    static boolean krSymbol(String symbol) {
+        return symbol != null && KR_SYMBOL.matcher(symbol).matches();
+    }
+
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final BigDecimal ONE = BigDecimal.ONE;
 
