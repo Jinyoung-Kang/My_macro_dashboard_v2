@@ -15,7 +15,9 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>매수: 현금 −(금액 + 수수료), 매입 금액 +금액, 수량 +.</li>
  *   <li>매도: 현금 +(금액 − 수수료 − 세금), 보유까지만 팔고, 매입 금액은 판 수량 비율만큼 줄입니다(전량 매도면 0). 실현 손익 = 금액 − 줄어든 매입 금액 − 수수료 − 세금.</li>
- *   <li>되돌림은 위를 정확히 거꾸로 합니다 — 그사이 보유를 고쳤어도 수량이 0 이하가 되면 그 행을 없애고, 매입 금액은 0 아래로 내려가지 않습니다.</li>
+ *   <li>되돌림은 위를 정확히 거꾸로 합니다 — 수량이 0이 되면 그 행을 없애고, 매입 금액은 0 아래로 내려가지 않습니다. 매수를 되돌려 수량이 음수가 되면
+ *       ({@link Applied#shortfall()} — 그 매수 뒤에 판 수량이 있거나 잔고를 직접 줄임) 부르는 쪽이 거절합니다(QA-339).</li>
+ *   <li>매수 고치기({@link #editBuy})는 되돌린 뒤 다시 사지 않고 차이만 옮깁니다 — 그 매수에서 이미 판 몫은 보유·매입 금액에 되살리지 않습니다(QA-339).</li>
  *   <li>현금 = 총평가금액 − Σ(수량 × 가격). 음수면 그대로 돌려줍니다(막지 않고 화면에 경고).</li>
  *   <li>금액은 소수 둘째 자리까지(수량·가격 곱이 더 길어져도 반올림 — DB NUMERIC(20,2)).</li>
  * </ul>
@@ -36,6 +38,11 @@ final class ManualAccountBalance {
 
         boolean empty() {
             return quantity.signum() <= 0;
+        }
+
+        /** 수량이 음수 — 지금 보유로는 그 매수를 되돌리거나 그만큼 줄일 수 없습니다(뒤에 판 수량이 있음). 부르는 쪽이 저장하지 않고 거절합니다. */
+        boolean shortfall() {
+            return quantity.signum() < 0;
         }
     }
 
@@ -72,6 +79,38 @@ final class ManualAccountBalance {
         BigDecimal after = nz(heldQuantity).subtract(quantity);
         BigDecimal purchase = after.signum() <= 0 ? BigDecimal.ZERO : money(nz(heldPurchase).subtract(costBasis).max(BigDecimal.ZERO));
         return new Applied(money(cash.add(amount).add(nz(fee))), after, purchase, costBasis, null);
+    }
+
+    /**
+     * 매수 고치기(QA-339) — 옛 값을 통째로 되돌린 뒤 새 값으로 다시 사면, 그 매수 뒤에 판 수량이 보유로 되살아납니다. 그래서 차이만 옮깁니다.
+     *
+     * <ul>
+     *   <li>남는 수량 = 보유 − 옛 수량 + 새 수량. 음수면 {@link Applied#shortfall()}(판 수량보다 적게 고칠 수 없음), 0이면 행을 없앱니다.</li>
+     *   <li>매입 금액 = 지금 매입 금액 + 새 금액 × r′ − 옛 금액 × r (0 아래로 내려가지 않음). r = min(1, 보유 ÷ 옛 수량)은 옛 매수 가운데 아직 보유에 남아
+     *       있다고 보는 몫, r′ = min(1, 남는 수량 ÷ 새 수량)은 새 매수 가운데 남는 몫입니다. 수량·금액을 바꾸지 않은 고치기는 보유 수량과 매입 금액을 바꾸지 않습니다.</li>
+     *   <li>현금은 옛 (금액 + 수수료)를 돌려받고 새 (금액 + 수수료)를 냅니다 — 판 몫과 무관하게 실제로 낸 돈입니다.</li>
+     * </ul>
+     *
+     * @param oldCostBasis 옛 매수가 매입 금액에 더했던 값(매수는 체결 금액과 같음)
+     */
+    static Applied editBuy(BigDecimal cash, BigDecimal heldQuantity, BigDecimal heldPurchase, BigDecimal oldQuantity, BigDecimal oldAmount, BigDecimal oldFee,
+                           BigDecimal oldCostBasis, BigDecimal quantity, BigDecimal amount, BigDecimal fee) {
+        BigDecimal held = nz(heldQuantity);
+        BigDecimal after = held.subtract(oldQuantity).add(quantity);
+        BigDecimal newCash = money(cash.add(oldAmount).add(nz(oldFee)).subtract(amount).subtract(nz(fee)));
+        if (after.signum() <= 0) {
+            return new Applied(newCash, after, BigDecimal.ZERO, amount, null);
+        }
+        BigDecimal purchase = nz(heldPurchase).add(share(amount, after, quantity)).subtract(share(nz(oldCostBasis), held, oldQuantity));
+        return new Applied(newCash, after, money(purchase.max(BigDecimal.ZERO)), amount, null);
+    }
+
+    /** {@code amount × min(1, part ÷ whole)} — 몫이 전체 이상이면 금액 그대로, 0 이하이면 0. */
+    private static BigDecimal share(BigDecimal amount, BigDecimal part, BigDecimal whole) {
+        if (part.compareTo(whole) >= 0) {
+            return amount;
+        }
+        return part.signum() <= 0 ? BigDecimal.ZERO : amount.multiply(part).divide(whole, 8, RoundingMode.HALF_UP);
     }
 
     /** 매도 되돌림 — 현금 −(금액 − 수수료 − 세금), 수량 +, 매입 금액 +. */

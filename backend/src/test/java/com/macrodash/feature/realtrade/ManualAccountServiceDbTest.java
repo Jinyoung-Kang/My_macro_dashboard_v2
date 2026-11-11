@@ -17,7 +17,6 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -714,7 +713,6 @@ class ManualAccountServiceDbTest {
         apply(filled(instruction(MONDAY.plusDays(1), C, "SELL", sold), null, String.valueOf(sold), String.valueOf(100_000L * sold), "15"));
     }
 
-    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
     @Test
     @DisplayName("QA-339 고치기 — 매수 뒤에 일부를 판 다음 그 매수의 수수료만 고쳐도 보유 수량·매입 금액은 그대로, 금액만 고치면 남은 몫만큼만 바뀜")
     void editTradeBuyAfterLaterSell() {
@@ -736,7 +734,6 @@ class ManualAccountServiceDbTest {
         assertThat(cash()).isEqualByComparingTo(cashBefore.subtract(d("10")).subtract(d("40000")));
     }
 
-    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
     @Test
     @DisplayName("QA-339 고치기 — 전량을 판 뒤 매수를 고쳐도 보유 줄이 다시 생기지 않고, 판 수량보다 적게는 고칠 수 없음(400)")
     void editTradeBuyAfterFullSell() {
@@ -752,7 +749,6 @@ class ManualAccountServiceDbTest {
         assertThat(tradeOf("BUY").quantity()).as("거절된 고치기는 내역을 바꾸지 않음").isEqualByComparingTo("4");
     }
 
-    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
     @Test
     @DisplayName("QA-339 고치기 — 3주를 판 뒤 매수 수량을 2로 줄일 수 없음(400), 3으로 줄이면 보유 줄이 없어짐")
     void editTradeBuyBelowSoldQuantity() {
@@ -768,7 +764,6 @@ class ManualAccountServiceDbTest {
         assertThat(store.position("isa", C)).as("3주 사고 3주 판 것이 됨").isEmpty();
     }
 
-    @Disabled("QA-339: 수정 전 — 매수 고치기·되돌리기가 그 뒤에 판 수량을 되살리거나 보유 줄을 지웁니다")
     @Test
     @DisplayName("QA-339 되돌리기 — 매수 뒤에 판 수량이 있으면 그 매수를 되돌릴 수 없음(400) — 보유 줄과 매도 내역이 그대로")
     void undoBuyAfterLaterSell() {

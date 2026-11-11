@@ -716,7 +716,7 @@ public class ManualAccountService {
         return symbol + "의 평균 단가(체결 금액 ÷ 수량)가 직전 종가의 ±40% 밖입니다 — 체결 금액(총액)과 평균 단가 칸을 바꿔 적지 않았는지 확인하세요.";
     }
 
-    /** {@code POST /api/manual/isa/trades/{id}} — 확인한 매매의 수량·체결 금액·수수료를 실제 값으로 고칩니다(앞 값을 되돌린 뒤 새 값으로 다시 반영, 세금·매입 금액·실현 손익도 다시 셈). */
+    /** {@code POST /api/manual/isa/trades/{id}} — 확인한 매매의 수량·체결 금액·수수료를 실제 값으로 고칩니다(매도는 앞 값을 되돌린 뒤 새 값으로 다시 반영해 세금·매입 금액·실현 손익도 다시 셈, 매수는 차이만 옮김 — QA-339). */
     public Map<String, Object> editTrade(long id, EditTradeRequest body) {
         requireReady();
         if (body == null || body.quantity() == null || body.amount() == null) {
@@ -745,18 +745,24 @@ public class ManualAccountService {
             Position held = store.position(CODE, trade.symbol()).orElse(null);
             BigDecimal heldQty = held == null ? null : held.quantity();
             BigDecimal heldPurchase = held == null ? null : held.purchaseAmount();
-            ManualAccountBalance.Applied undone = sell
-                    ? ManualAccountBalance.undoSell(balance.cash(), heldQty, heldPurchase, trade.quantity(), trade.gross(), trade.fee(), trade.tax(), trade.costBasis())
-                    : ManualAccountBalance.undoBuy(balance.cash(), heldQty, heldPurchase, trade.quantity(), trade.gross(), trade.fee(), trade.costBasis());
-            BigDecimal afterQty = undone.quantity().max(BigDecimal.ZERO);
-            if (sell && qty.compareTo(afterQty) > 0) {
-                throw ManualAccountException.invalid(trade.symbol() + "의 보유 수량보다 많이 팔 수 없습니다 — 수량을 확인하세요.");
-            }
             TradeCosts costs = paper.krTradeCosts(trade.symbol(), sell, quantity, chosen, balance.commissionBp(), LocalDate.ofInstant(trade.at(), Kst.ZONE));
             BigDecimal fee = body.fee() != null ? ManualAccountBalance.money(body.fee()) : costs.fee();
-            ManualAccountBalance.Applied result = sell
-                    ? ManualAccountBalance.sell(undone.cash(), afterQty, undone.purchaseAmount(), qty, gross, fee, costs.tax())
-                    : ManualAccountBalance.buy(undone.cash(), afterQty, undone.purchaseAmount(), qty, gross, fee);
+            ManualAccountBalance.Applied result;
+            if (sell) {
+                ManualAccountBalance.Applied undone = ManualAccountBalance.undoSell(balance.cash(), heldQty, heldPurchase, trade.quantity(), trade.gross(),
+                        trade.fee(), trade.tax(), trade.costBasis());
+                if (qty.compareTo(undone.quantity()) > 0) {
+                    throw ManualAccountException.invalid(trade.symbol() + "의 보유 수량보다 많이 팔 수 없습니다 — 수량을 확인하세요.");
+                }
+                result = ManualAccountBalance.sell(undone.cash(), undone.quantity(), undone.purchaseAmount(), qty, gross, fee, costs.tax());
+            } else {
+                // 매수는 되돌린 뒤 다시 사지 않고 차이만 옮깁니다 — 그 매수 뒤에 판 수량을 보유로 되살리지 않게(QA-339).
+                result = ManualAccountBalance.editBuy(balance.cash(), heldQty, heldPurchase, trade.quantity(), trade.gross(), trade.fee(), trade.costBasis(),
+                        qty, gross, fee);
+                if (result.shortfall()) {
+                    throw ManualAccountException.invalid(trade.symbol() + "의 이 매수 뒤에 판 수량보다 적게 고칠 수 없습니다 — 매도 내역을 먼저 고치거나 되돌리세요.");
+                }
+            }
             store.updateCash(CODE, bounded(result.cash()));
             if (result.empty()) {
                 store.deletePosition(CODE, trade.symbol());
@@ -836,6 +842,10 @@ public class ManualAccountService {
                     trade.gross(), trade.fee(), trade.tax(), trade.costBasis())
                     : ManualAccountBalance.undoBuy(balance.cash(), held == null ? null : held.quantity(), held == null ? null : held.purchaseAmount(), trade.quantity(),
                     trade.gross(), trade.fee(), trade.costBasis());
+            if (!sell && result.shortfall()) {
+                // 보유가 그 매수 수량보다 적음 — 되돌리면 남은 보유 줄이 지워지고 매도 내역만 남습니다(QA-339).
+                throw ManualAccountException.invalid(trade.symbol() + "의 이 매수 뒤에 판 수량이 있어 되돌릴 수 없습니다 — 매도 내역을 먼저 되돌리세요.");
+            }
             store.updateCash(CODE, bounded(result.cash()));
             if (result.empty()) {
                 store.deletePosition(CODE, trade.symbol());

@@ -281,8 +281,8 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `POST /api/manual/isa/positions/{symbol}/delete` | 보유 행 삭제 → `{ok}` |
 | `POST /api/manual/isa/instructions/apply` | 본문 `{items:[{instructionId 또는 stopInstructionId, quantity?(정수 주), amount?(체결 금액 총액 — 있으면 평균 단가는 금액 ÷ 수량), fee?(수수료 — 없으면 수수료율로), price?, priceSource?(live·close·user)}](1~200줄)}` — 지시 '확인'을 **한 트랜잭션으로** 잔고에 바로 반영(2026-11-09 — 화면의 체결 입력 창이 수량·금액·수수료를 실음, 세금은 자동). 적은 수량이 보유보다 많은 매도는 400. PLANNED만(그 밖은 409 `already-recorded`·400). 가격이 없으면 서버 직전 종가, 직전 종가의 ±40% 밖이면 400. 팔 보유가 없는 매도는 그 지시만 SKIPPED(`no-holding`) → `{ok, count, skipped}` |
 | `POST /api/manual/isa/instructions/{id}/skip` | 지시 건너뜀(잔고에 쓰지 않음, 이미 건너뜀이면 그대로, 확인한 지시는 409 `already-recorded`, 대체된 지시는 400) → `{ok}` |
-| `POST /api/manual/isa/trades/{id}/undo` | '확인' 되돌리기 — 잔고를 정확히 되돌리고 지시는 PLANNED(그 세션 마감이 지났으면 SKIPPED), 내역 행은 지움 → `{ok}` |
-| `POST /api/manual/isa/trades/{id}` | 본문 `{quantity(정수 주), amount(체결 금액 총액), fee?(수수료 — 없으면 수수료율로)}` — 확인한 매매를 실제 값으로 고침(2026-11-09). 앞 값을 되돌린 뒤 새 값으로 다시 반영하고 세금·매입 금액·실현 손익을 다시 계산, 시각·지시 묶음은 그대로. 평균 단가(금액 ÷ 수량)가 직전 종가 ±40% 밖이면 400(7일 안의 매매만 검사), 보유보다 많은 매도 400, 없는 행 404 → `{ok}` |
+| `POST /api/manual/isa/trades/{id}/undo` | '확인' 되돌리기 — 잔고를 정확히 되돌리고 지시는 PLANNED(그 세션 마감이 지났으면 SKIPPED), 내역 행은 지움. 매수 뒤에 판 수량이 있어 보유가 그 매수 수량보다 적으면 400(매도 내역을 먼저 되돌림 — QA-339) → `{ok}` |
+| `POST /api/manual/isa/trades/{id}` | 본문 `{quantity(정수 주), amount(체결 금액 총액), fee?(수수료 — 없으면 수수료율로)}` — 확인한 매매를 실제 값으로 고침(2026-11-09). 매도는 앞 값을 되돌린 뒤 새 값으로 다시 반영하고 세금·매입 금액·실현 손익을 다시 계산, 매수는 차이만 옮김(그 매수 뒤에 판 수량을 보유로 되살리지 않음 — ADR 0034 개정 2026-11-12). 시각·지시 묶음은 그대로. 평균 단가(금액 ÷ 수량)가 직전 종가 ±40% 밖이면 400(7일 안의 매매만 검사), 보유보다 많은 매도 400, 뒤에 판 수량보다 적게 고치는 매수 400, 없는 행 404 → `{ok}` |
 
 ### 정보 수집(사이드바 '정보 수집', 운영자 전용 — [ADR 0035](adr/0035-info-collection.md)·[ADR 0036](adr/0036-info-hub-krx-packet.md))
 
