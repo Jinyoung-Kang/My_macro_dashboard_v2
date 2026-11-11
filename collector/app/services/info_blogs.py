@@ -17,6 +17,7 @@ app/services/info_blogs.py
 """
 from __future__ import annotations
 
+import io
 import logging
 import threading
 from dataclasses import dataclass
@@ -158,7 +159,9 @@ def parse_feed(body: bytes) -> list[dict]:
 
     :raises ShapeError: 글을 하나도 읽지 못함(피드가 아니거나 형식이 바뀜)
     """
-    parsed = feedparser.parse(body)
+    # BytesIO — bytes를 그대로 넘기면 feedparser가 먼저 파일 이름으로 열어 봅니다(본문이 경로 모양이면 그 파일을 읽음 — QA-387).
+    # news.parse_feed·detail.news_from_google과 같은 가드입니다. 받은 바이트는 데이터로만 읽습니다.
+    parsed = feedparser.parse(io.BytesIO(body))
     entries = []
     for entry in parsed.entries or []:
         link = (entry.get("link") or "").strip()

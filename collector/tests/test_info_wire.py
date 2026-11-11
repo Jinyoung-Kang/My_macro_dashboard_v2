@@ -94,7 +94,6 @@ def test_피드가_아니거나_제목이_꼬리표뿐이면_형식_바뀜이다
         info_wire.collect(fetch=FakeFetch(_feed(_item(1, title="FinancialJuice:"))), now=NOW)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-387: 속보 피드도 info_blogs.parse_feed를 써 본문이 파일 경로면 그 파일을 읽습니다")
 def test_QA387_속보_본문이_파일_경로_모양이어도_그_파일을_열지_않는다(store, tmp_path):
     path = tmp_path / "wire.xml"
     path.write_bytes(_feed(_item(1), _item(2)))
