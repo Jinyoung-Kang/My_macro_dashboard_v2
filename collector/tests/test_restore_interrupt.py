@@ -125,3 +125,36 @@ def test_QA370_다시_켜기가_실패하면_경고를_남긴다(restore_env):
 
     assert "compose start collector backend" in _calls(log)
     assert "서비스를 다시 켜지 못했습니다" in result.stderr
+
+
+@pytest.mark.xfail(strict=True, reason="QA-372: 복원 전 안전 백업을 서비스 정지보다 먼저 떠, 그 사이의 쓰기가 안전 백업에 없습니다")
+def test_QA372_복원_전_안전_백업은_서비스를_멈춘_뒤에_뜬다(restore_env):
+    env, log, dump = restore_env
+
+    result = subprocess.run(["bash", str(RESTORE), str(dump), "--yes"], cwd=ROOT, env=env, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = _calls(log)
+    stop = calls.index("compose stop collector backend")
+    safety = next(i for i, call in enumerate(calls) if " exec -T postgres pg_dump " in f" {call} ")
+    restore = next(i for i, call in enumerate(calls) if " exec -T postgres psql " in f" {call} ")
+    assert stop < safety < restore, f"정지 → 안전 백업 → 복원 순서여야 합니다: {calls}"
+    assert len(list(Path(env["BACKUP_DIR"]).glob("pre-restore-*.sql"))) == 1
+
+
+def test_QA372_안전_백업이_실패하면_복원하지_않고_멈춘_서비스를_다시_켠다(restore_env):
+    """안전 백업이 정지 뒤로 가면, 백업 실패 때도 다시 켜기에 닿아야 합니다(순서가 바뀌기 전에는 멈춘 것이 없어 저절로 성립)."""
+    env, log, dump = restore_env
+    docker = Path(env["PATH"].split(os.pathsep)[0]) / "docker"
+    docker.write_text(docker.read_text(encoding="utf-8").replace(
+        'case " $* " in\n', 'case " $* " in\n    *" exec -T postgres pg_dump "*) echo "pg_dump: error: boom" >&2; exit 1 ;;\n', 1), encoding="utf-8")
+
+    result = subprocess.run(["bash", str(RESTORE), str(dump), "--yes"], cwd=ROOT, env=env, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+
+    calls = _calls(log)
+    assert result.returncode != 0 and "복원하지 않았습니다" in result.stderr
+    assert not any(" exec -T postgres psql " in f" {call} " for call in calls), "안전 백업 없이 복원하지 않습니다"
+    if "compose stop collector backend" in calls:
+        assert "compose start collector backend" in calls, f"멈춘 서비스를 다시 켜지 않았습니다: {calls}"
