@@ -73,14 +73,18 @@ _cache_lock = threading.Lock()
 
 
 def _cached(key: tuple, ttl: float, fetch: Callable[[], dict]) -> dict:
-    """같은 키는 ttl초 동안 같은 응답 — 오류가 있는 응답은 FAILURE_TTL만(출처가 돌아오면 곧 다시 묻게)."""
+    """
+    같은 키는 ttl초 동안 같은 응답 — 오류가 있는 응답은 FAILURE_TTL만(출처가 돌아오면 곧 다시 묻게). 전부 실패(``error``)뿐 아니라 일부 출처만
+    실패한 응답(``errors`` — 뉴스·종목 찾기)도 그렇게 봅니다(QA-285 — 예전에는 한 출처가 빠진 응답이 성공 수명 동안 그대로 쓰였습니다).
+    한 출처가 계속 실패하면 정상 출처도 FAILURE_TTL마다 다시 묻게 됩니다.
+    """
     now = time.monotonic()
     with _cache_lock:
         hit = _cache.get(key)
         if hit is not None and hit[0] > now:
             return hit[1]
     value = fetch()
-    life = FAILURE_TTL if value.get("error") else ttl
+    life = FAILURE_TTL if value.get("error") or value.get("errors") else ttl
     with _cache_lock:
         _cache[key] = (now + life, value)
         if len(_cache) > 500:

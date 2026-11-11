@@ -274,7 +274,6 @@ def test_캐시는_같은_질의를_한_번만_부르고_실패는_짧게만_둔
     assert failures == ["MSFT", "MSFT"], "실패 응답은 FAILURE_TTL 뒤 다시 묻는다"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-285: 일부 출처만 실패한 응답(errors)이 성공 수명(15분)으로 캐시돼 그동안 다시 묻지 않습니다")
 def test_QA285_한_출처만_실패한_뉴스_응답은_실패_수명_뒤_다시_묻는다(monkeypatch):
     asked = []
 
