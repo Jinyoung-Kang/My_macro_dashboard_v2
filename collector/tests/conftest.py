@@ -43,6 +43,20 @@ def _reset_http_guards():
     ladder.reset()
 
 
+@pytest.fixture(autouse=True)
+def _polite_enabled(monkeypatch):
+    """
+    polite 속도군은 운영 서버에서만 켜집니다(POLITE_FETCH_ENABLED — ADR 0035 결정 4). 시험은 그 서버의 동작을 보므로 켜 두고, 꺼진 경우는
+    tests/test_polite_switch.py가 따로 봅니다. 피드의 조건부 요청 기록(프로세스 전역)도 시험마다 비웁니다.
+    """
+    from app.services import info_blogs
+
+    monkeypatch.setenv("POLITE_FETCH_ENABLED", "true")
+    info_blogs.reset()
+    yield
+    info_blogs.reset()
+
+
 def _toss_trade_module():
     """실제 매매 주문 길(app/services/toss_trade.py)이 있으면 그 모듈, 없으면 None — 상태를 비울 때만 씁니다."""
     if importlib.util.find_spec("app.services.toss_trade") is None:

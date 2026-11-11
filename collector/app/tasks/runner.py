@@ -432,6 +432,8 @@ def run_polite_due() -> list[str]:
     틱 밖에서 불려도(수동 실행·전체 수집) 때가 아니면 외부를 부르지 않습니다.
     """
     ran: list[str] = []
+    if not polite.enabled():
+        return ran          # 운영 서버가 아님 — 이 PC의 IP로 차단 통과 수집을 하지 않습니다(ADR 0035 결정 4)
     for task in ALL_TASKS:
         if task.speed != polite.SPEED:
             continue

@@ -74,6 +74,9 @@ services:
       # 브라우저 컨테이너를 부릅니다(비면 꺼짐 — 계층 1의 거부가 최종). 끄려면 서버 .env에서 BROWSER_FETCH_URL 줄을 지우고 deploy.sh.
       BROWSER_FETCH_URL: "${BROWSER_FETCH_URL:-}"
       BROWSER_FETCH_TOKEN: "${BROWSER_FETCH_TOKEN:-}"
+      # 차단 통과 수집 계층(polite 속도군 — TradingView 캘린더·정보 수집, ADR 0035 결정 4)은 이 서버에서만 돕니다(기반 파일은 "false" 고정).
+      # 잠시 멈추려면 서버 .env에 POLITE_FETCH_ENABLED=false를 적고 deploy.sh.
+      POLITE_FETCH_ENABLED: "${POLITE_FETCH_ENABLED:-true}"
     # 브라우저 컨테이너와만 통하는 망을 하나 더 붙입니다. networks를 적으면 기본 망이 빠지므로 default를 함께 적습니다(postgres·backend).
     networks: [default, fetchnet]
 
@@ -176,9 +179,12 @@ services:
     security_opt: ["no-new-privileges:true", "seccomp:./collector/sidecar/seccomp.json"]
     environment:
       BROWSER_FETCH_TOKEN: "${BROWSER_FETCH_TOKEN:-}"
-      # 계층 2를 쓰는 호스트(쉼표). 지금은 없습니다 — 출처를 연결하는 커밋이 수집기 정책 표(collector/app/fetch/policy.py)와 함께 더합니다.
-      BROWSER_ALLOWED_HOSTS: ""
+      # 계층 2를 쓰는 호스트(쉼표) — 수집기 정책 표(collector/app/fetch/policy.py)에서 계층 2를 쓰는 호스트와 같아야 합니다(시험이 대조).
+      # 정보 수집(ADR 0035)의 블로그 14곳·waedge·네이버.
+      BROWSER_ALLOWED_HOSTS: "wolfstreet.com,abnormalreturns.com,awealthofcommonsense.com,marginalrevolution.com,ritholtz.com,calculatedrisk.substack.com,libertystreeteconomics.newyorkfed.org,klementoninvesting.substack.com,econbrowser.com,conversableeconomist.com,alphaarchitect.com,humbledollar.com,aswathdamodaran.blogspot.com,rss.beehiiv.com,www.theirrelevantinvestor.com,news.waedge.ai,stock.naver.com"
       BROWSER_SANDBOX: "${BROWSER_SANDBOX:-true}"
+      # 사람 확인의 입력 없는 체크박스만 요청 한 번에 한 번 누름(ADR 0035 결정 5 — 퍼즐은 풀지 않음). 끄려면 서버 .env에 BROWSER_PRESS_CHECKBOX=false.
+      BROWSER_PRESS_CHECKBOX: "${BROWSER_PRESS_CHECKBOX:-true}"
     volumes:
       # 브라우저 프로필(쿠키) — 요청 사이에 이어 씁니다. 백업 대상이 아닙니다(지워도 다음 요청이 새로 만듦).
       - browser-profile:/profile

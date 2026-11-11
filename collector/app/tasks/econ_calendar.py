@@ -20,7 +20,6 @@ from datetime import datetime, timezone
 from .. import catalog, kst, store
 from ..services import tv_calendar
 from . import polite
-from .base import EmptyResult
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ def _collect_tradingview() -> str:
     try:
         got = tv_calendar.fetch_events(now)
     except tv_calendar.CalendarShapeError as exc:
-        raise EmptyResult(f"TradingView 경제 캘린더 응답 모양이 다름({exc}) — 기존 저장본 유지") from exc
+        raise polite.ShapeChanged(f"TradingView 경제 캘린더 응답 모양이 다름({exc})") from exc
 
     events = got["events"]
     store.put_snapshot(catalog.SNAP_ECON_CALENDAR_TV, {

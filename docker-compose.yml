@@ -103,6 +103,9 @@ services:
       # 토스 실제 계좌 읽기 전용 조회(ADR 0025)는 운영 서버에서만 켭니다 — 보간 없는 값이라 로컬 .env·셸의 TOSS_ACCOUNT_ENABLED가
       # 끼어들 자리가 없습니다(토큰은 키 하나에 1개라 로컬이 부르면 서버의 토큰을 무효로 만들고, 토스 허용 IP는 서버). 서버는 compose.vultr.yml이 넘깁니다.
       TOSS_ACCOUNT_ENABLED: "false"
+      # 차단 통과 수집 계층(polite 속도군 — TradingView 캘린더·정보 수집, ADR 0026·0035)은 운영 서버에서만 돕니다. 보간 없는 값이라 로컬 .env·셸의
+      # POLITE_FETCH_ENABLED가 끼어들 자리가 없습니다 — 로컬 스택이 돌면 출구가 이 PC의 IP가 되므로(사용자 지시 2026-11-11). 서버는 compose.vultr.yml이 켭니다.
+      POLITE_FETCH_ENABLED: "false"
       # 토스 실제 계좌의 실제 매매(ADR 0028)도 운영 서버에서만 켭니다 — 같은 이유의 보간 없는 값이라 로컬 .env·셸의 TOSS_TRADING_ENABLED가
       # 끼어들 자리가 없고, QA 덧붙임도 이 값을 그대로 물려받습니다. 한도 네 값(TOSS_TRADING_MAX_*)은 여기에 두지 않습니다 — 없으면 수집기가
       # 매매를 끈 것으로 봅니다. 서버는 compose.vultr.yml이 서버 .env 값을 넘깁니다.

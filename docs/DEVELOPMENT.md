@@ -348,10 +348,10 @@ GitHub 읽기 전용 배포 키(서버 ubuntu `~/.ssh/id_ed25519_github`, `~/.ss
 ```bash
 # PC(저장소 최상위) — 로컬에서 옮길 줄만 걸러(서버에 적지 않는 이름과 서버 전용 이름을 모두 뺌) Tailscale SSH의 stdin으로 보내고 지웁니다.
 # 서버는 지금 .env를 .env.bak-<UTC 시각>(600)으로 떠 둔 뒤, 받은 줄 뒤에 지금 .env의 서버 전용 줄을 그대로 붙여 한 번에 바꿉니다(mv).
-tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|ORIGIN_SECRET|GATE_[A-Z0-9_]*|VULTR_[A-Z0-9_]*|TAILSCALE_[A-Z0-9_]*|TAILNET_DOMAIN|COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*)=' .env > "$tmp" \
+tmp="$(mktemp)" && grep -Ev '^[[:space:]]*(export[[:space:]]+)?(DATABASE_PORT|BACKEND_PORT|COLLECTOR_PORT|FRONTEND_PORT|LOCAL_NO_LOGIN|FRONTEND_ORIGIN|PUBLIC_URL|AWS_INSTANCE_ID|ORIGIN_SECRET|GATE_[A-Z0-9_]*|VULTR_[A-Z0-9_]*|TAILSCALE_[A-Z0-9_]*|TAILNET_DOMAIN|COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*|POLITE_FETCH_ENABLED)=' .env > "$tmp" \
   && ssh ubuntu@my-macro-app 'set -eu; cd ~/My_macro_dashboard_v2; [ -f .env ] || { echo "✗ 서버 .env가 없습니다 — 처음 한 번은 아래 뼈대부터 만듭니다" >&2; exit 1; }
 umask 077; b=".env.bak-$(date -u +%Y%m%d-%H%M%S)"; cp -p .env "$b"; cat > .env.new; printf "\n" >> .env.new
-grep -E "^[[:space:]]*(export[[:space:]]+)?(COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*)=" .env >> .env.new || true
+grep -E "^[[:space:]]*(export[[:space:]]+)?(COMPOSE_FILE|AWS_BACKUP_BUCKET|PUBLIC_ORIGIN|PAPER_KR_START_DATE|PAPER_ENABLED|COOKIE_SECURE|TAILNET_OWNER_LOGIN|TELEGRAM_[A-Z0-9_]*|TOSS_CLIENT_ID|TOSS_CLIENT_SECRET|TOSS_ACCOUNT_ENABLED|TOSS_TRADING_[A-Z0-9_]*|REAL_TRADE_ENABLED|BROWSER_[A-Z0-9_]*|POLITE_FETCH_ENABLED)=" .env >> .env.new || true
 gone=; for n in $(sed -nE "s/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p" .env | sort -u); do grep -Eq "^[[:space:]]*(export[[:space:]]+)?$n=" .env.new || gone="$gone $n"; done
 chmod 600 .env.new && mv .env.new .env && echo "✓ 서버 .env를 바꿨습니다(이전 판 $b — 배포를 확인한 뒤 지움)"
 [ -z "$gone" ] || echo "경고: 새 .env에 없는 이름:$gone — 서버에만 둔 줄이면 $b에서 그 줄을 다시 붙입니다"' < "$tmp"; rm -f "$tmp"
@@ -366,7 +366,7 @@ printf 'COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nAWS_BACKUP_BUCKET=%s\
 - PC가 거르는 이름은 두 갈래입니다. **서버에 적지 않는 이름**(포트 네 줄·`LOCAL_NO_LOGIN`·`FRONTEND_ORIGIN`·`PUBLIC_URL`·옛 AWS 공개 주소용 값·PC 전용 `AWS_INSTANCE_ID`·`VULTR_*`·
   `TAILSCALE_*`·`TAILNET_DOMAIN` — `deploy.sh`가 막는 이름)과 **서버 전용 이름** — `COMPOSE_FILE`·`AWS_BACKUP_BUCKET`·`PUBLIC_ORIGIN`·`PAPER_KR_START_DATE`(한국 출발일),
   `PAPER_ENABLED`·`COOKIE_SECURE`(로컬의 `false`는 옮기지 않음 — 서버는 비우면 켜짐·Secure, 정비 때 서버에서 일부러 적은 값은 그대로 남음),
-  `TAILNET_OWNER_LOGIN`·`TELEGRAM_*`, 토스 키 `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_ENABLED`, 실제 매매 여섯 줄 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED`, `BROWSER_*`.
+  `TAILNET_OWNER_LOGIN`·`TELEGRAM_*`, 토스 키 `TOSS_CLIENT_ID`·`TOSS_CLIENT_SECRET`, `TOSS_ACCOUNT_ENABLED`, 실제 매매 여섯 줄 `TOSS_TRADING_*`·`REAL_TRADE_ENABLED`, `BROWSER_*`, `POLITE_FETCH_ENABLED`(차단 통과 수집 멈춤 — ADR 0035).
   서버 전용 이름은 서버의 지금 값을 그대로 이어 붙이므로, 실제 매매를 켠 채 다시 전달해도 서버 스위치·한도·토스 키가 그대로입니다
   (예전 절차는 서버 `.env`를 통째로 덮어써, 로컬의 빈 줄 때문에 토스 키가 빈 값이 되면 수집기가 알림 없이 키 없음(`not-configured`)으로 주문 전에 막힐 수 있었음).
 - 텔레그램 봇은 네 개입니다(2026-11-08) — 운영 `TELEGRAM_BOT_TOKEN`, 미국 모의 `TELEGRAM_US_BOT_TOKEN`, 한국 모의 `TELEGRAM_KR_BOT_TOKEN`, 실제 계좌·ISA `TELEGRAM_ACCOUNT_BOT_TOKEN`. 대화방은 `TELEGRAM_CHAT_ID` 하나를 함께 쓰고, 토큰이 빈 알림은 운영 봇으로 갑니다. 새 봇은 텔레그램에서 시작(Start)을 눌러 둬야 메시지를 받습니다.

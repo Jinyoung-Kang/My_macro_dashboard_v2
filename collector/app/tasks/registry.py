@@ -9,10 +9,12 @@ from .base import Task
 from .earnings_surprise import task_earnings_surprise
 from .econ_calendar import task_econ_calendar_tradingview
 from .filings import task_sec_13f, task_sec_13f_track_record
+from .info import blog_task, task_info_naver_flows, task_info_waedge_blogs, task_info_waedge_brief, task_info_waedge_people
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
 from .kr_calendar import task_kr_calendar
 from .kr_news import task_kr_news_headlines
+from ..services.info_blogs import BLOGS
 from .kr_paper import task_kr_paper_flows, task_kr_paper_price_history, task_kr_paper_quotes, task_kr_paper_universe
 from .kr_paper_timed import task_kr_paper_timed
 from .maintenance import task_run_log_retention
@@ -91,6 +93,14 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("run_log_retention", "weekly", task_run_log_retention, "수집 실행 기록 정리 (보존 기간이 지난 것만)"),
     # 속도군 polite(비주기) — 차단 통과 수집 계층(ADR 0026). 주기로 돌지 않고 때가 된 태스크만 실행하며, 기동 직후에는 받지 않습니다.
     Task("econ_calendar_tradingview", "polite", task_econ_calendar_tradingview, "경제 캘린더 — TradingView 미국·한국 지표 일정·예상치·중요도 (3~6시간에 한 번, 운영자 화면 전용)"),
+    # 정보 수집(ADR 0035) — 운영자 화면 '정보 수집'만 읽음(패킷 불변). 운영 서버(POLITE_FETCH_ENABLED)에서만 돕니다.
+    *(Task(blog.task, "polite", blog_task(blog),
+           f"정보 수집 — {blog.label} RSS·본문 ({blog.minutes[0] // 60}~{blog.minutes[1] // 60}시간에 한 번, 운영자 화면 전용)")
+      for blog in BLOGS),
+    Task("info_waedge_brief", "polite", task_info_waedge_brief, "정보 수집 — waedge 시장 글·본문 (1~3시간에 한 번, 운영자 화면 전용)"),
+    Task("info_waedge_people", "polite", task_info_waedge_people, "정보 수집 — waedge 거장 견해·글 (8~16시간에 한 번, 운영자 화면 전용)"),
+    Task("info_waedge_blogs", "polite", task_info_waedge_blogs, "정보 수집 — waedge 해외 블로그 한국어 제목 (4~8시간에 한 번, 운영자 화면 전용)"),
+    Task("info_naver_flows", "polite", task_info_naver_flows, "정보 수집 — 네이버 투자자별 매매동향·외국인·기관 매매상위 (정규장 40~90분·장 밖 3~6시간, 운영자 화면 전용)"),
 )
 
 TASKS_BY_NAME = {task.name: task for task in ALL_TASKS}

@@ -1566,6 +1566,126 @@ def set_fetch_due_at(task: str, when: datetime) -> None:
         )
 
 
+# ------------------------------------------------------------------ 정보 수집 (ADR 0035, 표 info_items·fetch_source_state)
+# 본문 상한(글자). 이보다 긴 글은 잘라 저장합니다(화면에서 원문 링크로 이어 읽음).
+INFO_BODY_MAX_CHARS = 40_000
+# 수집한 글을 지우기 전에 두는 날 수(보관 태스크).
+INFO_RETENTION_DAYS = 180
+_INFO_BODY_RANK = {"none": 0, "partial": 1, "full": 2}
+
+
+def info_known(ids: Sequence[str]) -> dict[str, dict]:
+    """이미 받은 글 → {id: {body_status, page_tries}}(page_tries — 그 글의 페이지를 연 횟수, meta.pageTries). 없는 id는 빠집니다."""
+    if not ids:
+        return {}
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT id, body_status, COALESCE((meta->>'pageTries')::int, 0) AS page_tries FROM info_items WHERE id = ANY(%s)",
+            (list(ids),),
+        ).fetchall()
+    return {r["id"]: {"body_status": r["body_status"], "page_tries": int(r["page_tries"])} for r in rows}
+
+
+def upsert_info_items(items: Iterable[dict]) -> int:
+    """
+    글을 넣거나 채웁니다 → 보낸 행 수.
+
+    이미 있는 글은 **나아지는 칸만** 바꿉니다 — 본문은 더 나은 판정(none < partial < full)일 때만 덮고, 한국어 제목·작성자·작성 시각·요약은
+    비어 있던 칸만 채웁니다. 그래서 waedge 해외 블로그 목록(한국어 제목만)과 원문 피드(본문)가 어느 쪽이 먼저 와도 한 행으로 모입니다.
+    처음 받은 시각(first_seen_at)은 지킵니다.
+    """
+    params = []
+    for item in items:
+        body = item.get("body")
+        if body is not None:
+            body = body[:INFO_BODY_MAX_CHARS]
+        status = item.get("body_status") or ("full" if body else "none")
+        if status not in _INFO_BODY_RANK:
+            raise ValueError(f"모르는 본문 판정: {status}")
+        params.append((
+            item["id"], item["source"], item.get("kind") or "article", item["url"], item["title"],
+            item.get("title_ko"), item.get("author"), item.get("published_at"), item.get("summary"),
+            body, status, Jsonb(item.get("meta") or {}), item.get("fetch_tier"),
+        ))
+    if not params:
+        return 0
+    with connection() as conn, conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO info_items (id, source, kind, url, title, title_ko, author, published_at, summary,
+                                    body, body_status, meta, fetch_tier)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE SET
+                title_ko     = COALESCE(info_items.title_ko, EXCLUDED.title_ko),
+                author       = COALESCE(info_items.author, EXCLUDED.author),
+                published_at = COALESCE(info_items.published_at, EXCLUDED.published_at),
+                summary      = COALESCE(info_items.summary, EXCLUDED.summary),
+                body         = CASE WHEN (CASE EXCLUDED.body_status WHEN 'full' THEN 2 WHEN 'partial' THEN 1 ELSE 0 END)
+                                       > (CASE info_items.body_status WHEN 'full' THEN 2 WHEN 'partial' THEN 1 ELSE 0 END)
+                                    THEN EXCLUDED.body ELSE info_items.body END,
+                fetch_tier   = CASE WHEN (CASE EXCLUDED.body_status WHEN 'full' THEN 2 WHEN 'partial' THEN 1 ELSE 0 END)
+                                       > (CASE info_items.body_status WHEN 'full' THEN 2 WHEN 'partial' THEN 1 ELSE 0 END)
+                                    THEN EXCLUDED.fetch_tier ELSE COALESCE(info_items.fetch_tier, EXCLUDED.fetch_tier) END,
+                body_status  = CASE WHEN (CASE EXCLUDED.body_status WHEN 'full' THEN 2 WHEN 'partial' THEN 1 ELSE 0 END)
+                                       > (CASE info_items.body_status WHEN 'full' THEN 2 WHEN 'partial' THEN 1 ELSE 0 END)
+                                    THEN EXCLUDED.body_status ELSE info_items.body_status END,
+                meta         = info_items.meta || EXCLUDED.meta,
+                updated_at   = now()
+            """,
+            params,
+        )
+    return len(params)
+
+
+def info_item(item_id: str) -> dict | None:
+    """글 한 행(시험·진단용)."""
+    with connection() as conn:
+        return conn.execute("SELECT * FROM info_items WHERE id = %s", (item_id,)).fetchone()
+
+
+def delete_info_items_before(days: int = INFO_RETENTION_DAYS) -> int:
+    """처음 받은 지 ``days``일이 지난 글을 지웁니다 → 지운 행 수."""
+    with connection() as conn:
+        cur = conn.execute("DELETE FROM info_items WHERE first_seen_at < now() - make_interval(days => %s)", (days,))
+        return cur.rowcount or 0
+
+
+def note_source_state(task: str, status: str, reason: str | None, *, stale_after_minutes: int,
+                      when: datetime | None = None) -> None:
+    """
+    polite 태스크 한 번의 판정을 남깁니다. 같은 판정이 이어지면 streak을 올리고, 바뀌면 1부터. 성공이면 마지막 성공 시각도 적습니다.
+
+    :param status: ok·blocked·format·failed
+    :param reason: 사유 한 줄(주소·본문을 싣지 않음)
+    """
+    if status not in ("ok", "blocked", "format", "failed"):
+        raise ValueError(f"모르는 판정: {status}")
+    now = when or datetime.now(timezone.utc)
+    with connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO fetch_source_state (task, status, streak, reason, last_ok_at, last_run_at, stale_after_minutes)
+            VALUES (%(task)s, %(status)s, 1, %(reason)s, CASE WHEN %(status)s = 'ok' THEN %(now)s END, %(now)s, %(stale)s)
+            ON CONFLICT (task) DO UPDATE SET
+                streak = CASE WHEN fetch_source_state.status = EXCLUDED.status THEN fetch_source_state.streak + 1 ELSE 1 END,
+                status = EXCLUDED.status,
+                reason = EXCLUDED.reason,
+                last_ok_at = COALESCE(EXCLUDED.last_ok_at, fetch_source_state.last_ok_at),
+                last_run_at = EXCLUDED.last_run_at,
+                stale_after_minutes = EXCLUDED.stale_after_minutes,
+                updated_at = now()
+            """,
+            {"task": task, "status": status, "reason": (reason or None) and reason[:300], "now": now,
+             "stale": int(stale_after_minutes)},
+        )
+
+
+def source_state(task: str) -> dict | None:
+    """그 태스크의 판정 행(없으면 None)."""
+    with connection() as conn:
+        return conn.execute("SELECT * FROM fetch_source_state WHERE task = %s", (task,)).fetchone()
+
+
 # ==============================================================================
 # 8. 내부 헬퍼
 # ==============================================================================

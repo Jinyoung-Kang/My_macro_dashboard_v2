@@ -86,6 +86,8 @@ class DatasetsParityTest {
         assertThat(constant(source, "SNAP_KR_CALENDAR")).isEqualTo(Datasets.SNAP_KR_CALENDAR);
         assertThat(constant(source, "SNAP_US_CONSENSUS")).isEqualTo(Datasets.SNAP_US_CONSENSUS);
         assertThat(constant(source, "SNAP_ECON_CALENDAR_TV")).isEqualTo(Datasets.SNAP_ECON_CALENDAR_TV);
+        assertThat(constant(source, "SNAP_INFO_NAVER_FLOWS")).isEqualTo(Datasets.SNAP_INFO_NAVER_FLOWS);
+        assertThat(constant(source, "SNAP_INFO_WAEDGE_GURUS")).isEqualTo(Datasets.SNAP_INFO_WAEDGE_GURUS);
         assertThat(constant(source, "OBS_NEWS_HEADLINE")).isEqualTo(Datasets.OBS_NEWS_HEADLINE);
         assertThat(constant(source, "SNAP_NEWS_STATUS")).isEqualTo(Datasets.SNAP_NEWS_STATUS);
         assertThat(constant(source, "OBS_KR_NEWS_HEADLINE")).isEqualTo(Datasets.OBS_KR_NEWS_HEADLINE);

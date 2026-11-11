@@ -13,8 +13,9 @@ from app import tasks
 # 장중 평가 paper_live_us·paper_live_kr, 2단계 A의 us_calendar·B의 news_headlines·C의 earnings_surprise, v2 B3의 fsc_etf_prices,
 # v2 B4의 kr_paper_universe·kr_paper_quotes·kr_paper_flows·kr_paper_price_history, v2 B9의 kr_calendar·kr_news_headlines·us_calendar_consensus,
 # 계좌2 단계 0의 paper_bars_us·단계 2의 paper_watch_us, 한국 계좌2 단계 2a의 kr_paper_timed·2b의 paper_watch_kr,
-# 차단 통과 수집 계층(ADR 0026, polite)의 econ_calendar_tradingview, 장중 스탑 감시(ADR 0032)의 paper_stopwatch_us·paper_stopwatch_kr까지.
-EXPECTED_TASKS = 44
+# 차단 통과 수집 계층(ADR 0026, polite)의 econ_calendar_tradingview, 장중 스탑 감시(ADR 0032)의 paper_stopwatch_us·paper_stopwatch_kr,
+# 정보 수집(ADR 0035, polite)의 블로그 14·waedge 3·네이버 1까지.
+EXPECTED_TASKS = 62
 
 
 def test_태스크_수와_이름():

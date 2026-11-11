@@ -90,6 +90,7 @@ def send(method: str, url: str, *, host: str, headers: Any = None, params: dict[
             body=str(body.get("body") or "").encode("utf-8"),
             final_url=str(body.get("finalUrl") or target),
             challenge=body.get("challenge") if body.get("challenge") in ("human", "js") else None,
+            pressed=body.get("pressed") is True,
         )
     except (ValueError, KeyError, TypeError) as exc:
         raise TransportError("브라우저 컨테이너의 답을 읽지 못함") from exc

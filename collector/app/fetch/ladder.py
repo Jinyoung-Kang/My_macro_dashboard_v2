@@ -3,7 +3,8 @@ app/fetch/ladder.py
 계층 올라가기 — 닫힘 확인 → 지연 → 하루 예산 → 한 번 보냄 → 판정. 거부되면 한 번만 위 계층으로 (명세 §2).
 
 판정
-  - 정상: 2xx이고 기대한 모양 → 통과한 계층을 기억합니다(다음에는 그 계층부터 — 매번 아래 계층에서 한 번 거부당하고 올라가지 않게).
+  - 정상: 2xx이고 기대한 모양, 또는 304(조건부 요청에 '바뀐 것 없음' — 피드) → 통과한 계층을 기억합니다(다음에는 그 계층부터 — 매번 아래
+    계층에서 한 번 거부당하고 올라가지 않게).
   - 거부: 403·429, 차단 서비스의 챌린지 머리글·차단 페이지 표지, JSON을 기대했는데 HTML → 위 계층이 있으면 지연 뒤 한 번 올라가고,
     없으면 물러납니다(:func:`app.fetch.state.note_rejected` — 연속으로 쌓이면 포기).
   - 사람 확인: 계층 2가 사람 입력을 요구받았다고 알려 줌 → 풀지 않고 길게 닫습니다.
@@ -17,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import requests
@@ -57,7 +58,7 @@ class FetchFailed(Exception):
 
 @dataclass(frozen=True)
 class Fetched:
-    """통과해 받은 답. ``tier``는 통과한 계층(저장본의 fetchTier)입니다."""
+    """통과해 받은 답. ``tier``는 통과한 계층(저장본의 fetchTier)입니다. ``status`` 304는 '바뀐 것 없음'(본문 없음)입니다."""
 
     url: str
     status: int
@@ -65,6 +66,11 @@ class Fetched:
     body: bytes
     tier: str
     final_url: str
+    headers: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def not_modified(self) -> bool:
+        return self.status == 304
 
     def text(self) -> str:
         match = _CHARSET.search(self.content_type)
@@ -118,6 +124,8 @@ def judge(reply: Reply, expect: str) -> tuple[str, str | None]:
         if expect == policy.EXPECT_JSON and _looks_html(reply):
             return _BLOCKED, "JSON 대신 HTML 응답"
         return _OK, None
+    if reply.status == 304:
+        return _OK, None
     return _OTHER, f"HTTP {reply.status}"
 
 
@@ -168,8 +176,10 @@ def fetch(
             state.note_success(host, tier)
             if attempt:
                 logger.info("%s: 계층 %s에서 통과(아래 계층은 %s)", host, tier, blocked_why)
+            if reply.pressed:
+                logger.info("%s: 계층 %s가 사람 확인 체크박스를 한 번 눌러 통과", host, tier)
             return Fetched(url=url, status=reply.status, content_type=reply.content_type, body=reply.body,
-                           tier=tier, final_url=reply.final_url)
+                           tier=tier, final_url=reply.final_url, headers=dict(reply.headers))
         if verdict == _OTHER:
             raise FetchFailed(f"{host} {why}")
         if verdict == _HUMAN:

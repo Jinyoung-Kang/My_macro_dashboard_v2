@@ -7,7 +7,8 @@ sidecar/app.py
   - 갈 수 있는 곳은 허용 호스트(``BROWSER_ALLOWED_HOSTS``)의 https 주소뿐입니다. 받는 입력은 주소와 기다릴 시간뿐이고, 스크립트·클릭·
     머리글 같은 입력은 받지 않습니다.
   - 한 번에 한 건만 합니다. 브라우저는 요청마다 띄우고 닫습니다(드라이버가 맡음).
-  - 사람 확인(CAPTCHA·체크박스)을 만나면 풀거나 누르지 않고 ``challenge: "human"``으로 그대로 돌려줍니다.
+  - 사람 확인을 만나면 드라이버가 입력 없는 체크박스만 한 번 누르고(ADR 0035 결정 5), 그래도 막히거나 퍼즐이 뜨면 풀지 않고
+    ``challenge: "human"``으로 돌려줍니다. 누를지·어디를 누를지는 바깥 입력으로 받지 않습니다.
 """
 from __future__ import annotations
 
@@ -38,6 +39,7 @@ class Driver(Protocol):
         ``url``을 브라우저로 열어 받습니다 → ``{status, finalUrl, contentType, body, challenge}``.
 
         ``challenge``는 None(검사를 만나지 않았거나 지나감)·"js"(입력 없는 검사가 시간 안에 끝나지 않음)·"human"(사람 입력을 요구받음).
+        ``pressed``는 체크박스를 한 번 눌렀는지(ADR 0035 결정 5).
         :raises DriverError: 띄우지 못함·받지 못함·시간 초과
         """
 

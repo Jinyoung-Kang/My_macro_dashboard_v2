@@ -78,6 +78,11 @@ SNAP_US_CONSENSUS = "calendar.us_consensus"
 # 읽습니다 — Claude 결정 패킷은 읽지 않습니다(패킷의 캘린더는 calendar.us_events·calendar.kr_events·calendar.us_consensus 그대로).
 # 모양(contract 1)은 app/tasks/econ_calendar.py 머리말. polite 속도군(3~6시간에 한 번, 기동 직후에는 받지 않음).
 SNAP_ECON_CALENDAR_TV = "calendar.econ.tradingview"
+# 정보 수집(ADR 0035) — 운영자 화면 '정보 수집'만 읽습니다(Claude 패킷·한국 규칙 계좌는 읽지 않음). polite 속도군·서버에서만.
+# 네이버 투자자별 매매동향(코스피·코스닥 일자별)과 외국인·기관 순매수·순매도 상위(당일) — 모양(contract 1)은 app/services/info_naver.py 머리말.
+SNAP_INFO_NAVER_FLOWS = "info.naver.flows"
+# waedge 거장 화면의 투자자별 시장 견해(강세·중립·약세 점수·요약) — 모양(contract 1)은 app/services/info_waedge.py 머리말.
+SNAP_INFO_WAEDGE_GURUS = "info.waedge.gurus"
 # 모의 매매 Claude 계좌 패킷 11b_events(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유, 7일 보관 건수, 마지막 수집 시각.
 # 헤드라인 자체는 observations news_headline에 있습니다.
 SNAP_NEWS_STATUS = "news.headlines.status"

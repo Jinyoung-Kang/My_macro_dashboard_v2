@@ -1,6 +1,6 @@
 """
 app/tasks/maintenance.py
-유지보수 — 수집 실행 기록 정리.
+유지보수 — 수집 실행 기록 정리, 정보 수집 글 보관 기간 정리.
 """
 from __future__ import annotations
 
@@ -26,9 +26,11 @@ def task_run_log_retention() -> str:
     """
     days = settings.run_log_retention_days()
     removed = store.purge_run_logs(days)
+    # 정보 수집(ADR 0035)의 글은 본문까지 저장해 커지므로 180일만 둡니다(원문 링크는 출처에 남아 있음).
+    info = store.delete_info_items_before(store.INFO_RETENTION_DAYS)
     return (
         f"{days}일 지난 실행 기록 정리 — 태스크 {removed['taskRuns']:,}건 · "
-        f"실행 {removed['collectorRuns']:,}건"
+        f"실행 {removed['collectorRuns']:,}건 · 정보 수집 글 {store.INFO_RETENTION_DAYS}일 지난 것 {info:,}건"
     )
 
 

@@ -258,9 +258,12 @@ def test_run_log_retention_task_uses_configured_days(monkeypatch):
     calls = []
     monkeypatch.setattr(tasks.store, "purge_run_logs",
                         lambda days: calls.append(days) or {"taskRuns": 1234, "collectorRuns": 5})
+    info_days = []
+    monkeypatch.setattr(tasks.store, "delete_info_items_before", lambda days: info_days.append(days) or 12)
 
     monkeypatch.delenv("COLLECTOR_RUN_LOG_RETENTION_DAYS", raising=False)
-    assert tasks.task_run_log_retention() == "90일 지난 실행 기록 정리 — 태스크 1,234건 · 실행 5건"
+    assert tasks.task_run_log_retention() == "90일 지난 실행 기록 정리 — 태스크 1,234건 · 실행 5건 · 정보 수집 글 180일 지난 것 12건"
+    assert info_days == [180], "정보 수집 글은 실행 기록 보존 기간과 따로 180일(ADR 0035)"
 
     for raw, expected in (("30", 30), ("1", 7), ("abc", 90)):
         monkeypatch.setenv("COLLECTOR_RUN_LOG_RETENTION_DAYS", raw)

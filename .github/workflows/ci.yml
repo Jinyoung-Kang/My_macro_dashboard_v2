@@ -274,6 +274,10 @@ jobs:
           jq -e '.services.backend.environment | (has("BROWSER_FETCH_URL") or has("BROWSER_FETCH_TOKEN")) | not' "$RUNNER_TEMP/vultr.json"
           BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.collector.environment.BROWSER_FETCH_URL == "http://browser:8191" and .services.collector.environment.BROWSER_FETCH_TOKEN == "ci-browser-token" and .services.browser.environment.BROWSER_FETCH_TOKEN == "ci-browser-token"'
+          # 차단 통과 수집(polite 속도군, ADR 0035 결정 4)은 서버에서 기본으로 켜지고 서버 .env의 false로만 멈춤. 체크박스 누르기(결정 5)도 같음
+          jq -e '.services.collector.environment.POLITE_FETCH_ENABLED == "true" and .services.browser.environment.BROWSER_PRESS_CHECKBOX == "true" and (.services.backend.environment | has("POLITE_FETCH_ENABLED") | not)' "$RUNNER_TEMP/vultr.json"
+          POLITE_FETCH_ENABLED=false BROWSER_PRESS_CHECKBOX=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
+            | jq -e '.services.collector.environment.POLITE_FETCH_ENABLED == "false" and .services.browser.environment.BROWSER_PRESS_CHECKBOX == "false"'
           jq -e '.services.frontend.build.args.NEXT_PUBLIC_API_BASE == "/"' "$RUNNER_TEMP/vultr.json"
           COOKIE_SECURE=false docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --format json \
             | jq -e '.services.backend.environment.COOKIE_SECURE == "false"'
@@ -310,7 +314,10 @@ jobs:
           jq -e '(.services | has("browser") | not) and (.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == "")' "$RUNNER_TEMP/local.json"
           BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token docker compose --env-file /dev/null -f docker-compose.yml config --format json \
             | jq -e '.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == ""'
-          LOCAL_NO_LOGIN=true TOSS_ACCOUNT_ENABLED=true BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token \
+          # 차단 통과 수집(polite 속도군)은 로컬에서 돌지 않음 — 셸에 true가 있어도 "false"(이 PC의 IP로 받지 않음, ADR 0035 결정 4)
+          POLITE_FETCH_ENABLED=true docker compose --env-file /dev/null -f docker-compose.yml config --format json \
+            | jq -e '.services.collector.environment.POLITE_FETCH_ENABLED == "false"'
+          LOCAL_NO_LOGIN=true TOSS_ACCOUNT_ENABLED=true BROWSER_FETCH_URL=http://browser:8191 BROWSER_FETCH_TOKEN=ci-browser-token POLITE_FETCH_ENABLED=true \
             TOSS_TRADING_ENABLED=true REAL_TRADE_ENABLED=true TOSS_TRADING_MAX_ORDER_KRW=1000000 \
             docker compose --env-file /dev/null -f docker-compose.yml -f scripts/qa/docker-compose.qa.yml \
             config --format json > "$RUNNER_TEMP/qa.json"
@@ -318,6 +325,7 @@ jobs:
           jq -e '.services.collector.environment.TOSS_ACCOUNT_ENABLED == "false"' "$RUNNER_TEMP/qa.json"
           jq -e '(.services.collector.environment | .TOSS_TRADING_ENABLED == "false" and (keys | map(select(startswith("TOSS_TRADING_MAX_"))) | length == 0) and (has("REAL_TRADE_ENABLED") | not)) and (.services.backend.environment | .REAL_TRADE_ENABLED == "false" and (keys | map(select(startswith("TOSS_"))) | length == 0))' "$RUNNER_TEMP/qa.json"
           jq -e '(.services | has("browser") | not) and (.services.collector.environment | .BROWSER_FETCH_URL == "" and .BROWSER_FETCH_TOKEN == "")' "$RUNNER_TEMP/qa.json"
+          jq -e '.services.collector.environment.POLITE_FETCH_ENABLED == "false"' "$RUNNER_TEMP/qa.json"
           jq -e '[.services[].ports[]?] | length > 0 and all(.host_ip == "127.0.0.1")' "$RUNNER_TEMP/qa.json"
 
       - name: 이미지 빌드 (docker compose build)

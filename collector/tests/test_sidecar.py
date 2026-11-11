@@ -1,6 +1,6 @@
 """
 tests/test_sidecar.py
-브라우저 컨테이너(collector/sidecar — ADR 0026 결정 5·8, 명세 docs/specs/2026-11-05-polite-fetch.md §5)의 문지기와 내부 서비스.
+브라우저 컨테이너(collector/sidecar — ADR 0026 결정 8·ADR 0035 결정 5, 명세 docs/specs/2026-11-05-polite-fetch.md §5)의 문지기와 내부 서비스.
 
 고정하는 규칙
   1. 공유 비밀이 맞아야 하고, 서버에 비밀이 없으면 모든 요청을 거절합니다(드라이버를 부르지 않음).
@@ -8,7 +8,8 @@ tests/test_sidecar.py
   3. 하위 요청의 목적지는 전역 주소만 — 사설·루프백·링크 로컬(클라우드 메타데이터)·CGNAT(tailnet)·IPv6 내부 대역, 풀리지 않는 이름,
      전역과 내부가 섞여 풀리는 이름은 막습니다.
   4. 한 번에 한 건만 합니다. 받는 입력은 주소와 기다릴 시간뿐입니다.
-  5. 사람 확인은 풀거나 누르지 않습니다 — 드라이버의 답(challenge)을 그대로 돌려주고, 드라이버 코드에는 누르기·입력 호출이 없습니다.
+  5. 사람 확인은 입력 없는 체크박스만 한 번 누르고 퍼즐은 풀지 않습니다(ADR 0035 결정 5) — 드라이버의 답(challenge)을 그대로 돌려주고,
+     드라이버 코드의 누르기 호출은 체크박스 함수 하나에만 있고 글자·키보드 입력 호출은 없습니다.
 
 브라우저를 띄우지 않습니다(가짜 드라이버). 드라이버 패키지는 이 시험 환경에 없습니다.
 """
@@ -200,7 +201,7 @@ def test_주소_밖의_입력은_드라이버에_전달되지_않는다():
 
 
 # ==============================================================================
-# 5. 사람 확인은 풀지 않는다
+# 5. 사람 확인 — 입력 없는 체크박스만 한 번 누르고 퍼즐은 풀지 않는다 (ADR 0035 결정 5, ADR 0026 결정 5 개정)
 # ==============================================================================
 def test_사람_확인은_그대로_돌려준다():
     driver = FakeDriver(result={**PAGE, "status": 403, "challenge": "human"})
@@ -209,19 +210,107 @@ def test_사람_확인은_그대로_돌려준다():
     assert len(driver.calls) == 1, "다시 시도하지 않습니다 — 닫을지는 수집기가 정합니다"
 
 
-def test_드라이버_코드에는_누르기와_입력_호출이_없다():
-    """사람 확인 틀을 누르거나 풀 수 있는 호출(클릭·입력·키보드)이 드라이버에 들어오면 이 시험이 막습니다(ADR 0026 결정 5)."""
+def _driver_tree() -> ast.Module:
     source = (Path(__file__).resolve().parents[1] / "sidecar" / "driver.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    forbidden = {"click", "dblclick", "tap", "check", "uncheck", "fill", "type", "press", "press_sequentially",
-                 "select_option", "set_checked", "drag_to", "drag_and_drop", "dispatch_event", "down", "up", "move"}
-    called = {node.func.attr for node in ast.walk(tree)
-              if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)}
-    attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    return ast.parse(source)
 
-    assert not (called & forbidden), f"드라이버가 누르기·입력 호출을 씁니다: {sorted(called & forbidden)}"
+
+def _calls_in(node: ast.AST) -> set[str]:
+    return {sub.func.attr for sub in ast.walk(node) if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)}
+
+
+def test_누르기_호출은_체크박스_함수_하나에만_있고_입력_호출은_없다():
+    """체크박스를 누르는 호출(마우스)은 press_checkbox_once 안에만, 글자·키보드 입력과 요소 조작은 드라이버 어디에도 없습니다."""
+    tree = _driver_tree()
+    pressing = {"click", "dblclick", "tap", "down", "up", "move"}
+    typing = {"fill", "type", "press", "press_sequentially", "select_option", "set_checked", "check", "uncheck",
+              "drag_to", "drag_and_drop", "dispatch_event", "set_input_files", "insert_text"}
+    functions = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    press = functions["press_checkbox_once"]
+
+    outside = set()
+    for name, node in functions.items():
+        if name != "press_checkbox_once":
+            outside |= _calls_in(node)
+    assert not (outside & pressing), f"체크박스 함수 밖에 누르기 호출: {sorted(outside & pressing)}"
+    assert not (_calls_in(tree) & typing), f"입력 호출: {sorted(_calls_in(tree) & typing)}"
+    assert _calls_in(press) & pressing == {"move", "click"}
+    attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
     assert "keyboard" not in attributes and "touchscreen" not in attributes
-    assert "wheel" in called, "마우스로 하는 일은 스크롤뿐입니다"
+    assert "wheel" in _calls_in(tree), "그 밖에 마우스로 하는 일은 스크롤뿐입니다"
+
+
+class _Mouse:
+    def __init__(self):
+        self.clicks: list[tuple[float, float]] = []
+
+    def move(self, x, y, steps=1):
+        pass
+
+    def click(self, x, y, delay=0):
+        self.clicks.append((x, y))
+
+
+class _Element:
+    def __init__(self, box):
+        self._box = box
+
+    def bounding_box(self):
+        return self._box
+
+
+class _Frame:
+    def __init__(self, url, box=None):
+        self.url = url
+        self._box = box or {"x": 100.0, "y": 200.0, "width": 300.0, "height": 65.0}
+
+    def frame_element(self):
+        return _Element(self._box)
+
+
+class _Page:
+    def __init__(self, frames):
+        self.frames = frames
+        self.mouse = _Mouse()
+
+    def wait_for_timeout(self, ms):
+        pass
+
+
+@pytest.mark.parametrize("url", [
+    "https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2/av0/rcv0/0/abc/light/normal",
+    "https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox&id=0",
+    "https://www.google.com/recaptcha/api2/anchor?ar=1&k=key&co=x",
+])
+def test_체크박스_틀이면_그_칸을_한_번만_누른다(url):
+    driver_module = pytest.importorskip("sidecar.driver")
+    page = _Page([_Frame("https://site.example/"), _Frame(url)])
+
+    assert driver_module.press_checkbox_once(page) is True
+    assert len(page.mouse.clicks) == 1
+    x, y = page.mouse.clicks[0]
+    assert 100 <= x <= 100 + 40 and 200 + 25 <= y <= 200 + 40, "틀 왼쪽의 체크박스 자리"
+
+
+@pytest.mark.parametrize("url", [
+    "https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=challenge&id=0",
+    "https://www.google.com/recaptcha/api2/bframe?hl=ko&k=key",
+    "https://geo.captcha-delivery.com/captcha/?initialCid=x",
+])
+def test_퍼즐_틀은_누르지_않는다(url):
+    driver_module = pytest.importorskip("sidecar.driver")
+    page = _Page([_Frame(url)])
+
+    assert driver_module.press_checkbox_once(page) is False
+    assert page.mouse.clicks == []
+    assert driver_module._puzzle_frame(page) is True
+
+
+def test_보이지_않는_틀은_누르지_않는다():
+    driver_module = pytest.importorskip("sidecar.driver")
+    page = _Page([_Frame("https://challenges.cloudflare.com/x", box={"x": 0, "y": 0, "width": 0, "height": 0})])
+
+    assert driver_module.press_checkbox_once(page) is False
 
 
 def test_문지기는_브라우저_드라이버를_가져오지_않는다():

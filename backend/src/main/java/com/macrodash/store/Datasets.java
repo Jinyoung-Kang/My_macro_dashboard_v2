@@ -143,6 +143,10 @@ public final class Datasets {
      * forecast, previous, unit, ...}]}} — 없는 값은 null입니다.
      */
     public static final String SNAP_ECON_CALENDAR_TV = "calendar.econ.tradingview";
+    /** 정보 수집(ADR 0035) — 네이버 투자자별 매매동향·외국인·기관 순매수 상위. 운영자 화면 '정보 수집'만 읽음(패킷 불변). */
+    public static final String SNAP_INFO_NAVER_FLOWS = "info.naver.flows";
+    /** 정보 수집(ADR 0035) — waedge 거장 화면의 투자자별 시장 견해. 운영자 화면 '정보 수집'만 읽음(패킷 불변). */
+    public static final String SNAP_INFO_WAEDGE_GURUS = "info.waedge.gurus";
     /**
      * 모의 매매 Claude 계좌 패킷 {@code 11b_events}(2단계 B)의 수집 상태 — 피드별 성공·실패와 사유({@code feeds}·{@code failedFeeds}),
      * {@code feedsOk}·{@code feedsTotal}, 7일 보관 건수 {@code stored7d}, 마지막 수집 시각 {@code generatedAt}(UTC). 헤드라인 자체는

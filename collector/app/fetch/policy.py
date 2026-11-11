@@ -50,6 +50,28 @@ POLICIES: dict[str, HostPolicy] = {
     for policy in (
         # TradingView 경제 캘린더(services/tv_calendar) — JSON API라 계층 1에서 끝납니다. 3~6시간에 한 번 1건이라 하루 4~8건.
         HostPolicy("economic-calendar.tradingview.com", (TIER_IMPERSONATE,), daily_budget=12),
+        # 정보 수집(ADR 0035 — services/info_*). 서버에서 계층 1이 거부당하면 실제 브라우저(계층 2)로 한 번 올라갑니다 — 이 호스트들은
+        # compose.vultr.yml의 BROWSER_ALLOWED_HOSTS와 같아야 합니다(시험이 대조). 예산은 피드·목록(3~8시간에 한 번)에 글 페이지(본문이
+        # 피드에 없을 때만, 실행당 최대 4건)를 더한 넉넉한 상한입니다.
+        *(HostPolicy(host, (TIER_IMPERSONATE, TIER_BROWSER), daily_budget=budget) for host, budget in (
+            ("wolfstreet.com", 40),                          # 피드에 요약만 — 글 페이지에서 본문
+            ("abnormalreturns.com", 20),
+            ("awealthofcommonsense.com", 30),
+            ("marginalrevolution.com", 20),
+            ("ritholtz.com", 20),
+            ("calculatedrisk.substack.com", 20),
+            ("libertystreeteconomics.newyorkfed.org", 15),
+            ("klementoninvesting.substack.com", 20),
+            ("econbrowser.com", 20),
+            ("conversableeconomist.com", 20),
+            ("alphaarchitect.com", 20),
+            ("humbledollar.com", 20),
+            ("aswathdamodaran.blogspot.com", 15),
+            ("rss.beehiiv.com", 10),                         # The Irrelevant Investor 피드(사이트의 /feed/는 HTML)
+            ("www.theirrelevantinvestor.com", 20),           # 그 글 페이지(피드 본문이 없을 때만)
+            ("news.waedge.ai", 80),                          # 시장(1~3시간)·거장(8~16시간)·해외 블로그(4~8시간) 목록 + 글 페이지
+            ("stock.naver.com", 100),                        # 매매동향·외국인·기관 순위 한 번에 6건, 장중 40~90분
+        )),
     )
 }
 

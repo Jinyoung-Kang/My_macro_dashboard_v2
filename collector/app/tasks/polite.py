@@ -8,18 +8,28 @@ polite 속도군(차단 통과 수집 계층 — ADR 0026, 명세 docs/specs/202
   - 때가 아니면 태스크가 외부를 부르지 않고 EmptyResult로 끝납니다(session 군의 '확인 시각 앞뒤가 아니면 외부 호출 없음'과 같은 방식).
     스케줄러의 틱뿐 아니라 수동 단일 실행·전체 수집도 태스크 머리의 이 확인을 지납니다.
   - 출처가 닫혀 있으면 닫힘이 풀린 뒤로, 포기한 출처면 한 주 뒤로 미룹니다(그동안의 실행은 네트워크에 나가지 않고 '거부됨' 한 줄만 남김).
+  - **운영 서버에서만 돕니다**(ADR 0035 결정 4): ``POLITE_FETCH_ENABLED``가 켜져 있지 않으면 틱이 이 군을 돌리지 않고, 수동 실행도 외부를 부르지
+    않고 끝납니다. 로컬·QA compose는 이 값을 "false"로 고정합니다 — 출구가 사용자 PC의 IP가 되지 않게.
+  - 실행마다 판정(성공·거부·형식 바뀜·받지 못함)을 표 fetch_source_state에 남깁니다. 백엔드가 읽어 끊김을 알립니다(텔레그램 + 화면 안내).
 """
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable
+from typing import Callable, Union
 
-from .. import kst
+from .. import http, kst, store
 from ..fetch import ladder, state
 from .base import EmptyResult
 
+logger = logging.getLogger(__name__)
+
 SPEED = "polite"
+ENV_ENABLED = "POLITE_FETCH_ENABLED"
+# '오래 못 받음'으로 보는 간격 — 그 태스크 간격 상한의 이 배수만큼 성공이 없으면 백엔드가 알립니다.
+STALE_FACTOR = 3
 
 # 포기한 출처는 이만큼 뒤에 한 번씩만 태스크가 돕니다(네트워크에는 나가지 않고 실행 기록에 '포기'가 다시 보이게).
 GIVE_UP_RECHECK_DAYS = 7
@@ -33,6 +43,45 @@ class Cadence:
     high_minutes: float
     first_low_minutes: float = 5.0
     first_high_minutes: float = 45.0
+
+
+CadenceLike = Union[Cadence, Callable[[], Cadence]]
+
+
+@dataclass(frozen=True)
+class Partial:
+    """
+    본문이 받아 저장은 했지만 일부의 모양이 달랐음 — 실행 기록은 성공(``detail``), 출처 상태는 '형식 바뀜'(``issue``)으로 남깁니다.
+    여러 부분을 한 번에 받는 출처(네이버 6건)에서 한 부분의 형식만 바뀌어도 알 수 있게.
+    """
+
+    detail: str
+    issue: str
+
+
+class ShapeChanged(EmptyResult):
+    """
+    출처의 응답 모양이 달라 읽지 못함 — 필수 칸이 없거나 목록·피드에서 항목을 하나도 읽지 못함(ADR 0035 결정 6 '형식 바뀜').
+
+    EmptyResult의 하위라 실행 기록에는 '수집 결과 없음'으로 남고 직전 저장본은 그대로입니다. 같은 판정이 이어지면 백엔드가 알립니다.
+    """
+
+
+def enabled() -> bool:
+    """polite 속도군을 돌려도 되는가 — 운영 서버의 compose 덧붙임만 켭니다(로컬·QA는 "false" 고정)."""
+    return os.environ.get(ENV_ENABLED, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _resolve(cadence: CadenceLike) -> Cadence:
+    return cadence() if callable(cadence) else cadence
+
+
+def _note(name: str, cadence: Cadence, status: str, reason: str | None) -> None:
+    """판정을 표에 남깁니다. 표에 쓰지 못해도 태스크는 그대로 끝납니다(알림이 한 번 늦을 뿐)."""
+    try:
+        store.note_source_state(name, status, reason, stale_after_minutes=int(cadence.high_minutes * STALE_FACTOR))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("출처 상태를 남기지 못함(%s): %s", name, exc)
 
 
 def should_run(name: str) -> bool:
@@ -64,24 +113,50 @@ def _reschedule(name: str, cadence: Cadence, closed: state.Closed | None = None)
     return when
 
 
-def scheduled(name: str, cadence: Cadence, work: Callable[[], str]) -> str:
+def scheduled(name: str, cadence: CadenceLike, work: Callable[[], "str | Partial"]) -> str:
     """
     태스크 본문 ``work``를 일정 안에서 돌립니다 → detail(끝에 다음 실행 시각).
 
-    :raises EmptyResult: 때가 아님, 또는 ``work``가 보내지 못함(하루 예산·시간 예산 — ladder.FetchSkipped)·받지 못함(ladder.FetchFailed)
+    :param cadence: 간격 구간, 또는 그때그때 구간을 고르는 함수(네이버처럼 장중과 장 밖의 간격이 다른 출처)
+    :raises EmptyResult: 운영 서버가 아님·때가 아님, 또는 ``work``가 보내지 못함(하루 예산·시간 예산 — ladder.FetchSkipped)·받지 못함
+        (ladder.FetchFailed)·모양이 다름(:class:`ShapeChanged`)
     :raises ladder.FetchRejected: 출처가 거부했거나 닫혀 있음(실행 기록에 '거부됨')
     """
+    if not enabled():
+        raise EmptyResult(f"차단 통과 수집은 운영 서버에서만 돕니다({ENV_ENABLED} 꺼짐 — 이 PC의 IP로는 받지 않음, 외부 호출 0회)")
+    cadence = _resolve(cadence)
     _gate(name, cadence)
     try:
         detail = work()
     except ladder.FetchRejected as exc:
         _reschedule(name, cadence, closed=exc.closed)
+        _note(name, cadence, "blocked", exc.closed.message())
         raise
-    except (ladder.FetchSkipped, ladder.FetchFailed) as exc:
+    except ShapeChanged as exc:
         when = _reschedule(name, cadence)
+        _note(name, cadence, "format", str(exc))
+        raise ShapeChanged(f"{exc} — 기존 저장본 유지 · 다음 {kst.stamp(when)}") from exc
+    except ladder.FetchSkipped as exc:
+        when = _reschedule(name, cadence)       # 보내지 않았음 — 출처 상태는 그대로
         raise EmptyResult(f"{exc} — 기존 저장본 유지 · 다음 {kst.stamp(when)}") from exc
+    except ladder.FetchFailed as exc:
+        when = _reschedule(name, cadence)
+        _note(name, cadence, "failed", str(exc))
+        raise EmptyResult(f"{exc} — 기존 저장본 유지 · 다음 {kst.stamp(when)}") from exc
+    except EmptyResult:
+        _reschedule(name, cadence)              # 받았지만 쓸 것이 없음(휴장 등) — 출처에는 닿았으므로 성공으로 봅니다
+        _note(name, cadence, "ok", None)
+        raise
+    except Exception as exc:
+        _reschedule(name, cadence)
+        _note(name, cadence, "failed", http.brief_error(exc))
+        raise
     except BaseException:
         _reschedule(name, cadence)
         raise
     when = _reschedule(name, cadence)
+    if isinstance(detail, Partial):
+        _note(name, cadence, "format", detail.issue)
+        return f"{detail.detail} · 일부 형식 다름({detail.issue[:160]}) · 다음 {kst.stamp(when)}"
+    _note(name, cadence, "ok", None)
     return f"{detail} · 다음 {kst.stamp(when)}"
