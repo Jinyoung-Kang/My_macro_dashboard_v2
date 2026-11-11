@@ -2232,7 +2232,9 @@ class PaperStoreDbTest {
         String constraints = "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
                 + "FROM pg_constraint WHERE conrelid IN ('paper_decisions'::regclass, 'paper_orders'::regclass, "
                 + "'paper_checkpoints'::regclass)";
-        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE tablename = 'paper_checkpoints'";
+        // 이 스키마의 색인만 — 같은 DB의 다른 스키마(수집기 시험의 시험별 스키마 등)에 같은 이름의 표가 있으면 섞여 앞뒤 비교가 흔들립니다(QA-275).
+        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE tablename = 'paper_checkpoints' "
+                + "AND schemaname = current_schema()";
         String before = jdbc.queryForObject(constraints, String.class);
         String beforeIndexes = jdbc.queryForObject(indexes, String.class);
         assertThat(before).contains("'CHECKPOINT'").contains("'MARKET'").contains("'MINUTE'");
@@ -2536,7 +2538,9 @@ class PaperStoreDbTest {
         String constraints = "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
                 + "FROM pg_constraint WHERE conrelid IN ('paper_decisions'::regclass, 'paper_orders'::regclass, "
                 + "'paper_intraday_plans'::regclass)";
-        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE tablename = 'paper_intraday_plans'";
+        // 이 스키마의 색인만 — 같은 DB의 다른 스키마(수집기 시험의 시험별 스키마 등)에 같은 이름의 표가 있으면 섞여 앞뒤 비교가 흔들립니다(QA-275).
+        String indexes = "SELECT string_agg(indexname, ', ' ORDER BY indexname) FROM pg_indexes WHERE tablename = 'paper_intraday_plans' "
+                + "AND schemaname = current_schema()";
         String before = jdbc.queryForObject(constraints, String.class);
         String beforeIndexes = jdbc.queryForObject(indexes, String.class);
         assertThat(before).contains("'INTRADAY_1'").contains("'INTRADAY_2'").contains("'AT_MINUTE'").contains("'SUPERSEDED'");
