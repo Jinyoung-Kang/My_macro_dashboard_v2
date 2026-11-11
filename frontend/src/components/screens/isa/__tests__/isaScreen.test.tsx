@@ -461,6 +461,26 @@ describe("확인·건너뜀·되돌리기", () => {
     expect(body.items[0].instructionId).toBeUndefined();
   });
 
+  // QA-382: 종가 스탑 지시(NEXT_CLOSE)는 마감이 아니라 다음 세션 지시를 만들 때 닫힌다 — 닫힌 까닭을 '마감까지'로 적지 않는다. 수정 전에는 모든 expired가
+  // '마감까지 확인하지 않아 닫힘'이었다(재현 커밋에서는 it.fails).
+  it.fails("QA-382 닫힌 스탑 지시의 메모 — 종가 단일가는 '다음 지시를 만들 때까지', 장중은 '마감까지', 열린 종가 스탑은 마감 뒤에도 확인 단추", async () => {
+    const closing = { id: 51, session: "2026-11-09", symbol: "111110", name: "합성전자", side: "SELL", quantity: 5, timing: "NEXT_CLOSE", targetAt: "2026-11-09T15:30:00+09:00", status: "PLANNED", notifiedAt: "2026-11-09T15:20:40+09:00" };
+    reads[ISA_PATH] = () => Promise.resolve(started({
+      stopInstructions: [
+        closing,
+        { ...closing, id: 52, symbol: "222220", name: "합성화학", status: "SKIPPED", autoNote: "expired" },
+        { ...closing, id: 53, symbol: "333330", name: "합성바이오", timing: "MARKET", targetAt: "2026-11-09T11:32:00+09:00", status: "SKIPPED", autoNote: "expired" },
+      ],
+    }));
+    renderIsa();
+    const stops = await screen.findByRole("table", { name: "장중 스탑 매도 지시" });
+    expect(within(stops).getByRole("button", { name: "확인 — 합성전자 111110" })).toBeTruthy();
+    const rowText = (text: string) => within(stops).getAllByRole("row").find((row) => row.textContent?.includes(text))?.textContent ?? "";
+    expect(rowText("합성화학")).toContain("다음 지시를 만들 때까지 확인하지 않아 닫힘");
+    expect(rowText("합성바이오")).toContain("마감까지 확인하지 않아 닫힘");
+    expect(inRegion().getByText(/종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전/)).toBeTruthy();
+  });
+
   it("매매 내역 고치기 — 적어 둔 값으로 열리고 POST trades/{id}(수량·금액·수수료), 안내", async () => {
     reads[ISA_PATH] = () => Promise.resolve(started({ trades: [{ id: 9, at: "2026-11-09T09:15:00+09:00", side: "SELL", symbol: "222220", name: "합성화학", quantity: 3, price: 50_000, amount: 150_000, fee: 22, tax: 300, realizedPnl: 100, realizedPct: 1, priceSource: "live", taxAssumed: false }] }));
     renderIsa();

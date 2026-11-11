@@ -306,6 +306,12 @@ describe("안내 글", () => {
     expect(waitingText({ session: "2026-11-10", reason: "cash-negative" })).not.toMatch(/원|[0-9]{3,}/);
   });
 
+  // QA-382: 종가 스탑 지시는 15:30 체결 뒤에도 다음 세션 지시를 만들기 전까지 확인할 수 있다(ADR 0034 결정 7 개정). 수정 전 안내에는 기한이 없었다(재현 커밋에서는 it.fails).
+  it.fails("QA-382 스탑 안내 — 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전까지 확인(고정 시각 없이)", () => {
+    expect(STOP_GUIDE).toContain("종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전");
+    expect(STOP_GUIDE).not.toMatch(/\d{2}:\d{2}/);
+  });
+
   it("스탑 지시 이름표·건너뜀 머리·매도 창", () => {
     expect(stopTimingLabel("MARKET")).toBe("장중 시장가");
     expect(stopTimingLabel("NEXT_CLOSE")).toBe("종가 단일가 시장가");

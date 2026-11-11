@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -548,6 +549,42 @@ class ManualAccountServiceDbTest {
         apply(item(null, stop, "12000", "live"));
         service.undoTrade(store.recentTrades("isa", 1).getFirst().id());
         assertThat(store.stopInstruction(stop).orElseThrow().status()).isEqualTo("PLANNED");
+    }
+
+    // QA-382: 종가 스탑 지시의 확인 기한은 그 세션 마감이 아니라 다음 세션 지시를 만들 때(ADR 0034 결정 7 개정) — 되돌리기도 같은 기한으로 닫힘을 가린다.
+    // 수정 전 실패: 'expected: "PLANNED" but was: "SKIPPED"'(마감 뒤 확인한 종가 스탑을 되돌리면 다시 확인할 길이 없었음).
+    @Test
+    @Disabled("QA-382: 종가 스탑 지시가 15:30 체결 뒤 첫 주기에 만료됨 — 수정 커밋에서 해제")
+    @DisplayName("QA-382: 마감 뒤 확인한 종가 스탑 지시를 되돌리면 다시 PLANNED, 다음 세션 행이 생긴 뒤에는 SKIPPED(expired) — 장중 스탑은 마감 뒤 되돌리면 SKIPPED 그대로")
+    void undoClosingStopAfterClose() {
+        startSynthetic();
+        long closing = store.insertStopInstruction(ManualAccountService.CODE, new NewStopInstruction(MONDAY, 81, A, 5, "NEXT_CLOSE", kst("2026-11-09T15:30"),
+                MAPPER.createObjectNode())).orElseThrow();
+        long intraday = stop(82, B, 2);
+        store.markStopNotified(List.of(closing, intraday), kst("2026-11-09T15:21"));
+
+        clock.set(kst("2026-11-09T16:00"));
+        apply(item(null, closing, "11000", "user"), item(null, intraday, "21000", "live"));
+        List<Trade> trades = store.recentTrades("isa", 2);
+        long closingTrade = trades.stream().filter(t -> t.stopInstructionId() == closing).findFirst().orElseThrow().id();
+        long intradayTrade = trades.stream().filter(t -> t.stopInstructionId() == intraday).findFirst().orElseThrow().id();
+
+        clock.set(kst("2026-11-09T16:10"));
+        service.undoTrade(closingTrade);
+        service.undoTrade(intradayTrade);
+        assertThat(store.stopInstruction(closing).orElseThrow().status()).as("종가 스탑 — 다음 세션 지시 전이라 다시 확인할 수 있음").isEqualTo("PLANNED");
+        assertThat(store.stopInstruction(intraday).orElseThrow()).satisfies(row -> {
+            assertThat(row.status()).as("장중 스탑 — 그 세션 마감이 기한").isEqualTo("SKIPPED");
+            assertThat(row.reason().path("autoNote").asString()).isEqualTo("expired");
+        });
+
+        apply(item(null, closing, "11000", "user"));
+        store.insertSession(ManualAccountService.CODE, MONDAY.plusDays(1), ManualAccountStore.SESSION_PLANNED, null, MAPPER.createObjectNode());
+        service.undoTrade(store.recentTrades("isa", 1).getFirst().id());
+        assertThat(store.stopInstruction(closing).orElseThrow()).satisfies(row -> {
+            assertThat(row.status()).as("다음 세션 지시를 만든 뒤").isEqualTo("SKIPPED");
+            assertThat(row.reason().path("autoNote").asString()).isEqualTo("expired");
+        });
     }
 
     @Test
