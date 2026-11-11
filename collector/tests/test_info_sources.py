@@ -20,10 +20,11 @@ from email.utils import format_datetime
 import pytest
 
 from app import http
-from app.fetch import ladder, policy, state
+from app.fetch import ladder, pacing, policy, state
+from app.fetch.reply import Reply
 from app.services import info_blogs, info_text
 from app.services.info_text import ShapeError
-from app.tasks import registry
+from app.tasks import info as info_tasks, registry
 
 NOW = datetime(2026, 11, 11, 3, 0, tzinfo=timezone.utc)
 BLOG = info_blogs.Blog("blog.example", "info_blog_example", "Example Blog", "https://blog.example.com/",
@@ -174,6 +175,79 @@ def test_피드가_HTML이면_형식_바뀜(store, example_host):
 
     with pytest.raises(ShapeError, match="피드에서 글을 읽지 못함"):
         info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+
+# ==============================================================================
+# 4-2. 글 페이지에 본문을 기대는 블로그의 페이지 구조가 바뀜 (QA-391)
+# ==============================================================================
+def _page_tried(n: int, *, days_ago: float, status: str) -> dict:
+    """전에 글 페이지를 열어 본 글 한 행(저장본) — status full이면 그 페이지에서 본문을 받은 글."""
+    url = f"https://blog.example.com/2026/11/old-{n}/"
+    return {"id": info_text.item_id(url), "source": BLOG.key, "kind": "article", "url": url, "title": f"Old {n}",
+            "published_at": NOW - timedelta(days=days_ago), "body": LONG if status == "full" else "Short teaser.",
+            "body_status": status, "fetch_tier": "impersonate", "meta": {"pageTries": 1 if status == "full" else 2}}
+
+
+def _run_blog_task(monkeypatch, routes: dict[str, bytes]) -> str:
+    """블로그 태스크를 실제 받기 계층 + 가짜 계층 1 전송으로 한 번 돌립니다(글의 나이는 NOW 기준으로 고정) → detail."""
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    def send(method, url, *, host, headers, params, data):
+        body = routes.get(url)
+        if body is None:
+            return Reply(status=404, headers={"content-type": "text/html"}, body=b"", final_url=url)
+        kind = "application/rss+xml; charset=utf-8" if url == BLOG.feed else "text/html; charset=utf-8"
+        return Reply(status=200, headers={"content-type": kind}, body=body, final_url=url)
+
+    monkeypatch.setattr(info_blogs, "datetime", Frozen)
+    monkeypatch.setattr(pacing, "_sleep", lambda seconds: None)
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+    state.set_due_at(BLOG.task, state._utcnow() - timedelta(minutes=1))
+    return info_tasks.blog_task(BLOG)()
+
+
+EMPTY_PAGE = b"<html><body><div id='app'></div><p>short</p></body></html>"      # 본문을 고를 수 없는 페이지(구조가 바뀐 모양)
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391: 글 페이지 추출이 계속 빈 글이어도 출처 상태가 'ok'로 남습니다")
+def test_QA391_글_페이지에서_본문을_받던_블로그의_최근_추출이_모두_비면_형식_바뀜(store, example_host, monkeypatch):
+    store.upsert_info_items([_page_tried(1, days_ago=6, status="full"),          # 전에는 글 페이지에서 본문을 받았음
+                             _page_tried(2, days_ago=2, status="partial"), _page_tried(3, days_ago=1, status="partial")])
+    routes = {BLOG.feed: _feed(_item(4, content=None)),
+              "https://blog.example.com/2026/11/post-4/?utm_source=rss": EMPTY_PAGE}
+
+    detail = _run_blog_task(monkeypatch, routes)
+
+    row = store.source_state(BLOG.task)
+    assert row["status"] == "format" and "글 페이지" in row["reason"], "실행은 성공이지만 출처 상태는 '형식 바뀜'"
+    assert "일부 형식 다름" in detail
+    assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-4/"))["body_status"] == "partial", "받은 것은 저장"
+
+
+def test_QA391_글_페이지에서_본문을_받은_적이_없는_블로그는_짧은_글로_본다(store, example_host, monkeypatch):
+    # 피드에 본문을 싣는 블로그의 짧은 글은 글 페이지에서도 본문 기준(400자)에 못 미칩니다 — 구조가 바뀐 것이 아닙니다.
+    store.upsert_info_items([_page_tried(2, days_ago=3, status="partial"), _page_tried(3, days_ago=2, status="partial"),
+                             _page_tried(5, days_ago=1, status="partial")])
+    routes = {BLOG.feed: _feed(_item(4, content=None)),
+              "https://blog.example.com/2026/11/post-4/?utm_source=rss": EMPTY_PAGE}
+
+    _run_blog_task(monkeypatch, routes)
+
+    assert store.source_state(BLOG.task)["status"] == "ok"
+
+
+def test_QA391_최근_글_가운데_하나라도_글_페이지에서_본문을_받으면_정상(store, example_host, monkeypatch):
+    store.upsert_info_items([_page_tried(1, days_ago=6, status="full"),
+                             _page_tried(2, days_ago=2, status="partial"), _page_tried(3, days_ago=1, status="partial")])
+    routes = {BLOG.feed: _feed(_item(4, content=None)),
+              "https://blog.example.com/2026/11/post-4/?utm_source=rss": _page(4)}
+
+    _run_blog_task(monkeypatch, routes)
+
+    assert store.source_state(BLOG.task)["status"] == "ok"
 
 
 # ==============================================================================

@@ -18,9 +18,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app import catalog
 from app.fetch import ladder, state
 from app.services import info_naver
 from app.services.info_text import ShapeError
+from app.tasks import info as info_tasks
 
 NOW = datetime(2026, 11, 11, 7, 0, tzinfo=timezone.utc)
 
@@ -151,3 +153,67 @@ def test_거부되면_그대로_올린다():
 
     with pytest.raises(ladder.FetchRejected):
         info_naver.collect(None, fetch=FakeFetch(lambda part, market: ladder.FetchRejected(closed)), now=NOW)
+
+
+# ==============================================================================
+# 5. 출처 상태 (QA-391) — 일부만 받지 못해도 '정상'으로 남지 않습니다
+# ==============================================================================
+def _run_naver_task(monkeypatch, answer):
+    """네이버 태스크를 가짜 받기로 한 번 돌립니다(일정은 '때가 됨'으로 당겨 둠) → detail."""
+    real = info_naver.collect
+    monkeypatch.setattr(info_naver, "collect",
+                        lambda previous, **kwargs: real(previous, fetch=FakeFetch(answer), now=NOW, rng=random.Random(1), **kwargs))
+    state.set_due_at(info_tasks.NAVER_TASK, state._utcnow() - timedelta(minutes=1))
+    return info_tasks.task_info_naver_flows()
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391: 받지 못한 부분만 있으면 글자열을 돌려줘 출처 상태가 'ok'로 기록됩니다")
+def test_QA391_매매동향만_받지_못하면_저장은_하고_출처_상태는_failed(store, monkeypatch):
+    def answer(part, market):
+        return ladder.FetchFailed("stock.naver.com HTTP 404") if part == "trend" else _ranking(estimated=False)
+
+    detail = _run_naver_task(monkeypatch, answer)
+
+    snap = store.read_snapshot(catalog.SNAP_INFO_NAVER_FLOWS).payload
+    assert sorted(snap["failed"]) == ["trend.KOSDAQ", "trend.KOSPI"] and snap["rankings"]["FOREIGNER"]["KOSPI"]["buy"], "받은 부분은 저장"
+    row = store.source_state(info_tasks.NAVER_TASK)
+    assert row["status"] == "failed" and "trend.KOSDAQ" in row["reason"] and "trend.KOSPI" in row["reason"]
+    assert row["last_ok_at"] is None, "마지막 성공 시각은 전부 받은 실행에서만"
+    assert "일부 받지 못함" in detail
+
+
+def test_QA391_전부_받으면_ok(store, monkeypatch):
+    _run_naver_task(monkeypatch, lambda part, market: _trend() if part == "trend" else _ranking(estimated=False))
+
+    row = store.source_state(info_tasks.NAVER_TASK)
+    assert row["status"] == "ok" and row["last_ok_at"] is not None
+
+
+def test_QA391_일부의_형식이_다르면_format이_먼저(store, monkeypatch):
+    def answer(part, market):
+        if part == "trend":
+            return {"unexpected": True} if market == "KOSPI" else ladder.FetchFailed("stock.naver.com HTTP 503")
+        return _ranking(estimated=False)
+
+    _run_naver_task(monkeypatch, answer)
+
+    assert store.source_state(info_tasks.NAVER_TASK)["status"] == "format"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391: 수정 뒤에 생기는 인자(unsent) — 예산·시간으로 보내지 않은 부분은 출처의 실패가 아닙니다")
+def test_QA391_예산으로_보내지_않은_부분은_받지_못함으로_세지_않는다(store, monkeypatch):
+    sent = {"n": 0}
+
+    def answer(part, market):
+        sent["n"] += 1
+        if sent["n"] > 4:
+            return ladder.FetchSkipped("stock.naver.com 오늘 요청 예산(250건)을 다 써서 보내지 않음")
+        return _trend() if part == "trend" else _ranking(estimated=False)
+
+    unsent: list[str] = []
+    snap = info_naver.collect(None, fetch=FakeFetch(answer), now=NOW, rng=random.Random(1), unsent=unsent)
+    assert len(snap["failed"]) == 2 and sorted(unsent) == sorted(snap["failed"])
+
+    sent["n"] = 0
+    detail = _run_naver_task(monkeypatch, answer)
+    assert store.source_state(info_tasks.NAVER_TASK)["status"] == "ok" and "일부 받지 못함" not in detail

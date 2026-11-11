@@ -25,7 +25,7 @@ from app.fetch import ladder, pacing, policy, state
 from app.fetch.reply import Reply
 from app.services import krx_data, radar
 from app.services.info_text import ShapeError
-from app.tasks import info as info_tasks
+from app.tasks import info as info_tasks, polite
 
 # 2026-11-11(수) 19:00 KST = 10:00 UTC — 거래일 18:30 뒤라 그날이 기준일.
 EVENING = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
@@ -320,6 +320,33 @@ def test_QA390_일시_실패는_닫지_않는다(store, account, monkeypatch):
         info_tasks.collect_krx(now=now["t"])
 
     assert state.closed(krx_data.HOST) is None, "5xx·시간 초과는 로그인 거절이 아닙니다"
+
+
+# ==============================================================================
+# 3-3. 출처 상태 (QA-391) — 일부만 받지 못해도 '정상'으로 남지 않습니다
+# ==============================================================================
+def _run_krx_task(fake, now=EVENING):
+    state.set_due_at(info_tasks.KRX_TASK, state._utcnow() - timedelta(minutes=1))
+    return polite.scheduled(info_tasks.KRX_TASK, info_tasks.KRX_CADENCE,
+                            info_tasks._shape(lambda: info_tasks.collect_krx(fetch=fake, now=now)))
+
+
+@pytest.mark.xfail(strict=True, reason="QA-391: 받지 못한 부분이 있어도 글자열을 돌려줘 출처 상태가 'ok'로 기록됩니다")
+def test_QA391_한_화면을_받지_못하면_저장은_하고_출처_상태는_failed(store, account):
+    detail = _run_krx_task(FakeKrx(answers={"MDCSTAT03701": ladder.FetchFailed("data.krx.co.kr HTTP 503")}))
+
+    snap = store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload
+    assert snap["asOf"] == "2026-11-11" and snap["totals"]["KOSPI"]["rows"], "받은 부분은 저장"
+    row = store.source_state(info_tasks.KRX_TASK)
+    assert row["status"] == "failed" and "foreign.KOSPI" in row["reason"] and row["last_ok_at"] is None
+    assert "일부 받지 못함" in detail
+
+    # 다음 실행이 그 부분을 받으면 회복 — 그날을 빠짐없이 받은 뒤의 '이미 받음'도 ok입니다.
+    _run_krx_task(FakeKrx())
+    assert store.source_state(info_tasks.KRX_TASK)["status"] == "ok"
+    _run_krx_task(FakeKrx())
+    row = store.source_state(info_tasks.KRX_TASK)
+    assert row["status"] == "ok" and row["streak"] == 2
 
 
 # ==============================================================================
