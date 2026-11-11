@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1596,6 +1597,147 @@ class RealTradeJobDbTest {
         assertThat(sentBodies()).extracting(RealTradeJobDbTest::summary).containsExactly("SELL " + B + " OPG 450", "BUY " + A + " OPG 100");
         assertThat(job.lastPreflight().total()).as("화면의 지금 총액(상한 없음)").isEqualByComparingTo("29000000");
         assertThat(job.lastPreflight().equity()).isEqualByComparingTo("10000000");
+    }
+
+    // ------------------------------------------------------------------ 손실 한도의 판정값과 앱 미체결 매수(QA-379)
+    private static final String DISABLED_QA379 = "QA-379: 손실 판정의 지금 총액이 앱(이 기능 밖) 미체결 매수가 잡은 금액을 되돌리지 않아 거짓 매수 멈춤 — 수정 커밋에서 해제";
+
+    /** 기준 E0 = U0 = 1,000만 원(안전 상한에 닿지 않음), 손실 한도 15% = 150만 원. 따라 하는 책 목표는 A 50%. */
+    private void plainBaseline() {
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_LIVE).withSource(BOOK, GENERATION)
+                .withSyncPending(true).withBaselineEquity(d("10000000")).withBaselineTotal(d("10000000")), 1L));
+        targets(Map.of(A, 50.0), List.of());
+    }
+
+    /** 사전 조회 — {@link #preflight}와 같되 하한가(현재가 × 0.7)도 줍니다. */
+    private void preflightWithLimits(String cash, Map<String, String[]> holdings, Map<String, String> extraQuotes) {
+        List<Holding> hs = new ArrayList<>();
+        Map<String, Quote> quotes = new LinkedHashMap<>();
+        Map<String, BigDecimal> sellable = new LinkedHashMap<>();
+        holdings.forEach((symbol, qp) -> {
+            hs.add(new Holding(symbol, "합성" + symbol, d(qp[0]), d(qp[1])));
+            quotes.put(symbol, new Quote(d(qp[1]), d(qp[1]).multiply(d("1.3")), d(qp[1]).multiply(d("0.7"))));
+            sellable.put(symbol, d(qp[0]));
+        });
+        extraQuotes.forEach((symbol, price) -> quotes.put(symbol, new Quote(d(price), d(price).multiply(d("1.3")), d(price).multiply(d("0.7")))));
+        when(client.preflight(any(), any())).thenReturn(Reply.of(new Preflight(clock.now, d(cash), hs, quotes, sellable)));
+    }
+
+    /** 이 기능이 내지 않은 토스 미체결 매수(앱 주문) — 주문 번호는 이 기능의 행에 없는 합성 값. */
+    private static CollectorTradeClient.BrokerOrder appBuy(String id, String symbol, String orderType, String quantity, String filled) {
+        return new CollectorTradeClient.BrokerOrder(id, symbol, "BUY", orderType, "DAY", "PENDING", d(quantity), d(filled), null, null, null,
+                null, kst("2026-11-06T08:40"), null, null, "KRW");
+    }
+
+    private void tossOrders(CollectorTradeClient.BrokerOrder... orders) {
+        when(client.openOrders()).thenReturn(Reply.of(List.of(orders)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(orders)));
+    }
+
+    @Test
+    @Disabled(DISABLED_QA379)
+    @DisplayName("QA-379: 켠 뒤 앱에서 걸어 둔 시장가 매수(잡힌 금액 ≥ 손실 한도 금액)는 손실이 아니다 — 매수 멈춤 없이 그대로 따라 함")
+    void appMarketBuyPendingIsNotALoss() {
+        plainBaseline();
+        // 실제 현금 600만·보유 C 400만(손실 0). 앱 시장가 매수 B 100주가 상한가 26,000 × 100 = 260만 원을 잡아 매수 가능 금액은 340만 원.
+        preflightWithLimits("3400000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        tossOrders(appBuy("APP-1", B, "MARKET", "100", "0"));
+
+        run("08:51");
+
+        assertThat(cfg().buysPaused()).as("수정 전에는 U0 − 지금 총액 = 260만 ≥ 150만이라 거짓 매수 멈춤").isFalse();
+        assertThat(events("BUYS_PAUSED")).isEmpty();
+        assertThat(job.lastPreflight().total()).as("지금 총액 = 340만 + 400만 + 되돌린 260만").isEqualByComparingTo("10000000");
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100", "BUY " + A + " OPG 52");
+    }
+
+    @Test
+    @Disabled(DISABLED_QA379)
+    @DisplayName("QA-379: 앱 시장가 매수가 걸린 채 켜면 기준 총액과 첫 주기의 지금 총액이 같은 값이다 — 켜자마자 매수가 멈추지 않음")
+    void enableBaselineMatchesTheJudgedTotal() {
+        com.macrodash.feature.auth.AuthService auth = mock(com.macrodash.feature.auth.AuthService.class);
+        when(auth.verify(eq("owner@test.local"), eq("synthetic-password"))).thenReturn(Optional.of(new com.macrodash.store.UserStore.User(7L,
+                "owner@test.local", "hash", "OWNER", "PRO", Instant.EPOCH, Instant.EPOCH)));
+        RealTradeService service = new RealTradeService(store, client, paper, auth, job, executor, clock, true);
+        targets(Map.of(A, 50.0), List.of());
+        preflightWithLimits("3400000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        tossOrders(appBuy("APP-1", B, "MARKET", "100", "0"));
+        clock.set(kst("2026-11-06T08:40"));
+
+        service.enable(new com.macrodash.support.CurrentUser(7L, "owner@test.local", "OWNER", "PRO", null), new RealTradeService.EnableRequest(
+                "KR", BOOK, new BigDecimal("15"), "실제 매매 켜기", "synthetic-password", 0));
+        assertThat(cfg().baselineTotal()).as("기준 총액 = 340만 + 400만 + 앱 매수가 잡은 260만").isEqualByComparingTo("10000000");
+
+        run("08:51");
+
+        assertThat(job.lastPreflight().total()).as("판정값도 같은 정의").isEqualByComparingTo(cfg().baselineTotal());
+        assertThat(cfg().buysPaused()).as("수정 전에는 켠 직후 첫 주기에 거짓 매수 멈춤").isFalse();
+        assertThat(events("BUYS_PAUSED")).isEmpty();
+    }
+
+    @Test
+    @Disabled(DISABLED_QA379)
+    @DisplayName("QA-379: 앱 지정가 매수는 잡힌 금액을 모르므로 하한가 기준으로만 되돌린다 — 그만큼은 거짓 멈춤이 줄어듦(지정가 200만 원 → 차이 60만 원 < 150만 원)")
+    void appLimitBuyPendingAddsBackItsFloor() {
+        plainBaseline();
+        // 실제 현금 600만·보유 C 400만(손실 0). 앱 지정가 매수 B 100주 @ 20,000이 200만 원을 잡아 매수 가능 금액은 400만 원. 하한가 14,000 × 100 = 140만 원만 되돌림.
+        preflightWithLimits("4000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"));
+        tossOrders(appBuy("APP-2", B, "LIMIT", "100", "0"));
+
+        run("08:51");
+
+        assertThat(cfg().buysPaused()).as("수정 전에는 차이 200만 ≥ 150만이라 거짓 매수 멈춤").isFalse();
+        assertThat(job.lastPreflight().total()).as("400만 + 400만 + 140만").isEqualByComparingTo("9400000");
+    }
+
+    @Test
+    @DisplayName("QA-379 반대 방향 고정: 앱 시장가 매수가 걸려 있어도 진짜 손실이 한도를 넘으면 매수를 멈춘다(되돌림이 손실을 가리지 않음)")
+    void realLossStillPausesWhileAppBuyIsPending() {
+        plainBaseline();
+        // 보유 C가 400만 → 240만(손실 160만 ≥ 150만). 앱 시장가 매수 B가 260만을 잡음 — 되돌려도 지금 총액은 840만.
+        preflightWithLimits("3400000", Map.of(C, new String[]{"100", "24000"}), Map.of(A, "50000", B, "20000"));
+        tossOrders(appBuy("APP-1", B, "MARKET", "100", "0"));
+
+        run("08:51");
+
+        assertThat(cfg().buysPaused()).isTrue();
+        assertThat(events("BUYS_PAUSED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("loss-limit"));
+        assertThat(sentSummaries()).as("매도는 계속").containsExactly("SELL " + C + " OPG 100");
+    }
+
+    @Test
+    @DisplayName("QA-379 반대 방향 고정: 앱 지정가 매수는 상한가가 아니라 하한가 기준으로만 되돌린다 — 상한가로 되돌리면 가려질 진짜 손실(160만 ≥ 150만)에 매수를 멈춘다")
+    void appLimitBuyDoesNotHideARealLoss() {
+        plainBaseline();
+        // 보유 C가 400만 → 240만(손실 160만). 앱 지정가 매수 B 100주 @ 20,000이 200만을 잡아 매수 가능 금액 400만.
+        // 상한가(26,000)로 되돌리면 지금 총액 900만(손실 100만 — 한도 아래로 보임), 하한가(14,000)로 되돌리면 780만(멈춤).
+        preflightWithLimits("4000000", Map.of(C, new String[]{"100", "24000"}), Map.of(A, "50000", B, "20000"));
+        tossOrders(appBuy("APP-2", B, "LIMIT", "100", "0"));
+
+        run("08:51");
+
+        assertThat(cfg().buysPaused()).isTrue();
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100");
+    }
+
+    @Test
+    @DisplayName("QA-379 반대 방향 고정: 이 기능이 낸 미체결 매수는 토스 미체결 목록에도 있지만 한 번만 되돌린다(두 번 되돌리면 손실 160만이 가려짐)")
+    void ownPendingBuyIsAddedBackOnce() {
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_LIVE).withSource(BOOK, GENERATION)
+                .withBaselineEquity(d("10000000")).withBaselineTotal(d("10000000")), 1L));
+        clock.set(kst("2026-11-06T10:00"));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, 901L, 900L, A, "BUY", 40, "DAY", d("50000"), 1),
+                cfg());   // 이 기능의 매수 40주 접수(T-1) — 상한가 65,000 × 40 = 260만 원을 잡음
+        tossOrders(broker("T-1", A, "BUY", "DAY", "PENDING", "40", "0", clock.now, null));
+        // 실제 현금 600만 − 잡힌 260만 = 340만, 보유 C가 400만 → 240만(손실 160만)
+        preflightWithLimits("3400000", Map.of(C, new String[]{"100", "24000"}), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(911, C, "MARKET", kst("2026-11-06T10:01"))));
+
+        run("10:01:10");
+
+        assertThat(job.lastPreflight().total()).as("340만 + 240만 + 260만(한 번)").isEqualByComparingTo("8400000");
+        assertThat(cfg().buysPaused()).isTrue();
+        assertThat(sentSummaries()).as("스탑 매도는 매수 멈춤과 상관없이").contains("SELL " + C + " DAY 100");
     }
 
     @Test
