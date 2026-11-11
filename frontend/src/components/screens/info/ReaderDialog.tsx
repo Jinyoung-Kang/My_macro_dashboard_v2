@@ -4,9 +4,9 @@ import { useState } from "react";
 import { Banner, ErrorState, Loading, buttonClasses } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { useApi } from "@/hooks/useApi";
-import { apiPost } from "@/lib/api";
+import { useTranslate } from "@/hooks/useTranslate";
 import { endpoints } from "@/lib/endpoints";
-import { type InfoItemResponse, type ReaderEntry, type TranslateResponse, offersTranslate, translatedBy } from "@/lib/info";
+import { type InfoItemResponse, type ReaderEntry, offersTranslate, translatedBy } from "@/lib/info";
 
 /**
  * 원문 팝업(ADR 0037) — 정보 수집의 글·속보·사건 뉴스를 누르면 받아 둔 원문(본문, 없으면 요약)을 그대로 보이고, 번역 단추를 누르면 한국어로
@@ -34,31 +34,14 @@ function Reader({ entry }: { entry: ReaderEntry }) {
   // 수집 글의 본문은 열 때 id로 읽습니다(목록 응답에는 본문이 없음). 사건 뉴스는 목록이 준 요약이 전부입니다.
   const stored = useApi<InfoItemResponse>(entry.itemId && entry.hasBody ? endpoints.info.item(entry.itemId) : null);
   const original = entry.itemId ? (stored.data?.item?.body ?? stored.data?.item?.summary ?? null) : entry.text;
-  const [translated, setTranslated] = useState<TranslateResponse | null>(null);
+  const { translate: request, busy, translated, error } = useTranslate();
   const [showKorean, setShowKorean] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const translate = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await apiPost<TranslateResponse>(
-        endpoints.info.translate,
-        entry.itemId ? { itemId: entry.itemId } : { title: entry.titleKo ? undefined : entry.title, text: entry.text ?? undefined },
-      );
-      if (!result.ok) {
-        setError(result.error ?? "번역하지 못했습니다.");
-      }
-      if (result.textKo || result.titleKo || result.alreadyKorean) {
-        setTranslated(result);
-        setShowKorean(true);
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "번역하지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
+    const result = await request(
+      entry.itemId ? { itemId: entry.itemId } : { title: entry.titleKo ? undefined : entry.title, text: entry.text ?? undefined },
+    );
+    if (result && (result.textKo || result.titleKo || result.alreadyKorean)) setShowKorean(true);
   };
 
   const loading = !!entry.itemId && entry.hasBody && stored.loading && !stored.data;

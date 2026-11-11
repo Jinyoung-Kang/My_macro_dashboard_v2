@@ -15,8 +15,8 @@ import {
   inputClasses,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { apiPost } from "@/lib/api";
 import { useRemembered } from "@/hooks/useRemembered";
+import { useTranslate } from "@/hooks/useTranslate";
 import { bypassBadge } from "@/lib/econCalendar";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
@@ -27,7 +27,6 @@ import {
   type InfoItemsResponse,
   PAGE_SIZE,
   type ReaderEntry,
-  type TranslateResponse,
   bodyLabel,
   itemTime,
   itemTitles,
@@ -238,23 +237,12 @@ function HeadlineList({ path, onPage, onOpen }: { path: string; onPage: (page: n
  * 누르면 그 제목만 서버에 묻고(같은 제목은 저장본에서 바로 옴) 아래에 한국어를 보입니다.
  */
 function TitleTranslation({ title, titleKo }: { title: string | null; titleKo?: string | null }) {
-  const [korean, setKorean] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (!titleNeedsTranslation(title, titleKo)) return null;
-  const translate = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await apiPost<TranslateResponse>(endpoints.info.translate, { title });
-      if (result.titleKo) setKorean(result.titleKo);
-      else setError(result.error ?? "번역하지 못했습니다.");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "번역하지 못했습니다.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { translate: request, busy, translated, response, error: requestError } = useTranslate();
+  if (!title || !titleNeedsTranslation(title, titleKo)) return null;
+  const korean = translated?.titleKo ?? null;
+  // 응답은 왔는데 제목 번역이 없으면 그 사유(없으면 일반 문구)를 보입니다.
+  const error = requestError ?? (response && !response.titleKo ? "번역하지 못했습니다." : null);
+  const translate = () => request({ title });
   if (korean) {
     return (
       <p lang="ko" className="text-[13px] text-text-2">
