@@ -660,6 +660,28 @@ class PaperIntradayJobTest {
         assertThat(sent).isEmpty();
     }
 
+    @Test
+    @DisplayName("QA-359 이른 HOURLY 행(09:45 ET)은 그 세션의 시간별 관측치(첫 회차 10:15 ET)가 창 안에 없어 부르지 못하고 창이 끝나면 EXPIRED — 호출 0, "
+            + "순번만 씀. 그래서 예약 검증과 수동 경로가 10:10 ET 전의 HOURLY를 받지 않음")
+    void earlyHourlyRowExpiresWithoutACall() {
+        store.intradayPlans.clear();
+        plan(PaperBooks.CLAUDE, 1, LocalTime.of(9, 45), "HOURLY", List.of(), morning1, false);
+        // 09:45 ET 무렵 저장소의 시간별 관측치는 아직 앞 세션(d) 것입니다(수집기 slow 군은 매시 :15 — 그 세션 첫 회차가 10:15 ET).
+        when(marketData.quotes()).thenReturn(Optional.of(quotes(Instant.parse("2026-11-02T13:16:00Z"), bar("SPY", D, 580.0),
+                bar("AAA", D, 50.0))));
+        PaperIntradayJob job = job(true);
+
+        for (int minute : new int[]{48, 55, 64}) {   // 09:48·09:55·10:04 ET — 호출 창(09:47~10:05) 안
+            runAt(job, Instant.parse("2026-11-02T14:00:00Z").plus(Duration.ofMinutes(minute)));
+            assertThat(row(PaperBooks.CLAUDE, 1).status()).as("09:" + minute).isEqualTo(PaperBooks.CHECKPOINT_PLANNED);
+        }
+        runAt(job, Instant.parse("2026-11-02T15:06:00Z"));   // 10:06 ET — 창 끝(09:45 + 20분) 뒤
+
+        assertThat(row(PaperBooks.CLAUDE, 1).status()).isEqualTo(PaperBooks.CHECKPOINT_EXPIRED);
+        assertThat(row(PaperBooks.CLAUDE, 1).reason()).startsWith(PaperCheckpointJob.NO_FRESH_QUOTES);
+        assertThat(sent).as("Claude 호출 없음").isEmpty();
+    }
+
     // ------------------------------------------------------------------ 응답
     @Test
     @DisplayName("REPLACE: 기준 시각이 남은 대기 주문(11:30 지정 시각·종가)만 대신하고 지난 것(시가·09:45 지정 시각)은 남김. 새 주문은 장중 시장가·남은 지정 "

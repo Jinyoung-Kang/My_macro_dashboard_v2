@@ -4,6 +4,7 @@ import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.OrderValidator;
 import com.macrodash.analytics.TradingCalendar;
 import com.macrodash.analytics.UsMarketCalendar;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -94,6 +95,29 @@ class IntradayRequestTest {
         IntradayRequest.Window examWindow = IntradayRequest.window(exam, shifted, true);
         assertThat(examWindow.first()).isEqualTo(Instant.parse("2026-11-19T01:10:00Z"));
         assertThat(examWindow.last()).isEqualTo(Instant.parse("2026-11-19T06:50:00Z"));
+    }
+
+    @Test
+    @Disabled("QA-359: 미국 HOURLY 예약을 09:40 ET부터 받지만 그 세션의 첫 시간별 관측치는 10:15 ET 회차라, 이른 예약은 호출 없이 만료되고 순번만 씁니다")
+    @DisplayName("QA-359 미국 HOURLY 예약은 개장 40분 뒤(10:10 ET)부터 — 그 전 시각은 사유와 함께 버림(조기 폐장일도 같음). MINUTE와 한국은 받는 범위 그대로")
+    void earlyHourlyIsRejected() {
+        IntradayRequest.Verdict v = us(list(item("09:45", "HOURLY", "[]", "이른 시간별"), item("10:09", "HOURLY", "[]", "경계 앞"),
+                item("10:10", "HOURLY", "[]", "경계"), item("09:40", "MINUTE", "[\"AAA\"]", "감시 1분봉")), 3, List.of());
+
+        assertThat(v.accepted()).extracting(i -> i.at() + " " + i.feed()).containsExactly("09:40 MINUTE", "10:10 HOURLY");
+        assertThat(v.rejected()).extracting(IntradayRequest.Rejected::at).containsExactly("09:45", "10:09");
+        assertThat(v.rejected()).allSatisfy(r -> assertThat(r.reason()).startsWith(OrderValidator.CHECKPOINT_INVALID)
+                .contains("HOURLY", "10:10 ET"));
+
+        IntradayRequest.Verdict early = IntradayRequest.validate(list(item("10:00", "HOURLY", "[]", "q"), item("10:30", "HOURLY", "[]", "q")),
+                EARLY_CLOSE, US, UNIVERSE, NIGHT, 2, List.of(), false);
+        assertThat(early.accepted()).as("조기 폐장일도 개장은 09:30").extracting(IntradayRequest.Item::at).containsExactly(LocalTime.of(10, 30));
+        assertThat(early.rejected()).extracting(IntradayRequest.Rejected::at).containsExactly("10:00");
+
+        IntradayRequest.Verdict korea = IntradayRequest.validate(list(item("09:10", "HOURLY", "[\"005930\"]", "q")), KR_E, KR, KR_UNIVERSE,
+                Instant.parse("2026-11-02T13:30:00Z"), 1, List.of(), true);
+        assertThat(korea.accepted()).as("한국은 늘 감시 1분봉 — 이 경계가 없음").extracting(IntradayRequest.Item::at)
+                .containsExactly(LocalTime.of(9, 10));
     }
 
     @Test

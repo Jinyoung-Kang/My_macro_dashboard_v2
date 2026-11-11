@@ -8,6 +8,7 @@ import com.macrodash.store.PaperStore.Decision;
 import com.macrodash.store.PaperStore.IntradayPlan;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -182,6 +183,33 @@ class IntradayManualServiceTest {
         assertThatThrownBy(() -> service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE))
                 .isInstanceOf(InvalidRequestException.class).hasMessageContaining("운용 중이 아닙니다");
         assertThat(store.intradayPlans).as("거절한 요청은 아무것도 쓰지 않음").isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-359: 10:10 ET 전의 수동 HOURLY 요청(새 행·HOURLY 예약 당김)을 받아, 시간별 관측치가 없어 호출 없이 만료되고 순번만 씁니다")
+    @DisplayName("QA-359 거절(400): 미국 10:10 ET 전에는 수동 새 행(HOURLY)과 HOURLY 예약 당김을 받지 않음('10:10 ET 뒤에 요청') — MINUTE 예약 당김과 "
+            + "10:10 뒤 요청은 그대로")
+    void earlyHourlyPullIsRejected() {
+        clock.now = Instant.parse("2026-11-02T14:41:10Z");   // 09:41:10 ET → 당긴 시각 09:42
+        assertThatThrownBy(() -> service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE)).as("새 행(HOURLY)")
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("10:10 ET 뒤에 요청");
+        assertThat(store.intradayPlans).as("거절한 요청은 행을 만들지 않음 — 순번을 쓰지 않음").isEmpty();
+
+        store.upsertPlannedIntradayPlan(IntradayPlan.planned(PaperBooks.CLAUDE, E, 1, LocalTime.of(13, 30), "HOURLY", List.of(), "예약한 질문",
+                "ft-1", false, morning, null));
+        assertThatThrownBy(() -> service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE)).as("HOURLY 예약 당김")
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("10:10 ET 뒤에 요청");
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, E)).extracting(p -> p.atLocal() + " " + p.manual())
+                .as("예약은 그대로").containsExactly("13:30 false");
+
+        clock.now = Instant.parse("2026-11-02T15:09:10Z");   // 10:09:10 ET → 당긴 시각 10:10(경계 — 받음)
+        assertThat(service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE).at()).isEqualTo(LocalTime.of(10, 10));
+
+        store.intradayPlans.clear();
+        clock.now = Instant.parse("2026-11-02T14:41:10Z");
+        plan(PaperBooks.CLAUDE, 1, LocalTime.of(13, 30), PaperBooks.CHECKPOINT_PLANNED);   // MINUTE 예약
+        assertThat(service(true).pull(UsPaperMarket.INSTANCE, PaperBooks.CLAUDE).at()).as("MINUTE 예약은 이른 시각에도 당김")
+                .isEqualTo(LocalTime.of(9, 42));
     }
 
     @Test
