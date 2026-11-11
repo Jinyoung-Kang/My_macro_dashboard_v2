@@ -166,6 +166,29 @@ final class ReadingSection {
      */
     static Map<String, Object> read(InfoStore store, JsonNode settingsBody, boolean initial, NewsEvents.Window window,
                                     boolean korea, java.time.Instant seenBefore) {
+        List<InfoStore.Item> candidates = candidates(store, settingsBody, initial, window, korea);
+        if (candidates == null) {
+            return null;
+        }
+        try {
+            if (seenBefore != null) {
+                candidates = candidates.stream().filter(item -> !item.firstSeenAt().isAfter(seenBefore)).toList();
+            }
+        } catch (RuntimeException e) {
+            org.slf4j.LoggerFactory.getLogger(ReadingSection.class).warn("수집 글 섹션을 만들지 못해 싣지 않음: {}", e.toString());
+            return null;
+        }
+        return section(candidates, window, korea);
+    }
+
+    /**
+     * 저장소에서 후보만 읽습니다 — 싣지 않을 조건({@link #read}와 같음: 저장소 없음·스위치 꺼짐·초기 결정·읽지 못함)이면 null.
+     *
+     * <p>미국 패킷은 이 목록을 시장 입력({@code PacketBuilder.MarketInputs})에 한 번 얼려 두고 계좌마다 {@link #section}으로 조립합니다(QA-401) —
+     * 계좌1 호출이 도는 사이 수집기가 {@code info_items}를 고쳐도 계좌1·계좌2가 같은 글을 봅니다.</p>
+     */
+    static List<InfoStore.Item> candidates(InfoStore store, JsonNode settingsBody, boolean initial, NewsEvents.Window window,
+                                           boolean korea) {
         if (store == null || initial || window == null || !enabled(settingsBody, korea)) {
             return null;
         }
@@ -173,10 +196,19 @@ final class ReadingSection {
             if (!store.ready()) {
                 return null;
             }
-            List<InfoStore.Item> candidates = store.recentForPacket(sources(korea), window.from(), window.to(), CANDIDATES);
-            if (seenBefore != null) {
-                candidates = candidates.stream().filter(item -> !item.firstSeenAt().isAfter(seenBefore)).toList();
-            }
+            return store.recentForPacket(sources(korea), window.from(), window.to(), CANDIDATES);
+        } catch (RuntimeException e) {
+            org.slf4j.LoggerFactory.getLogger(ReadingSection.class).warn("수집 글 섹션을 만들지 못해 싣지 않음: {}", e.toString());
+            return null;
+        }
+    }
+
+    /** 읽어 둔 후보({@link #candidates} — null이면 싣지 않음)로 섹션을 만듭니다. 고른 글이 없거나 만들지 못하면 null. */
+    static Map<String, Object> section(List<InfoStore.Item> candidates, NewsEvents.Window window, boolean korea) {
+        if (candidates == null) {
+            return null;
+        }
+        try {
             return build(candidates, window, korea);
         } catch (RuntimeException e) {
             org.slf4j.LoggerFactory.getLogger(ReadingSection.class).warn("수집 글 섹션을 만들지 못해 싣지 않음: {}", e.toString());

@@ -28,7 +28,6 @@ import com.macrodash.store.StoreRepository;
 import com.macrodash.store.StoreRepository.HoldingRow;
 import com.macrodash.store.StoreRepository.TimeseriesColumns;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -3067,7 +3066,6 @@ class PacketBuilderTest {
     }
 
     @Test
-    @Disabled("QA-401: 수집 글 섹션을 계좌마다 조립할 때 다시 읽어, 계좌1 호출(최대 300초) 사이에 수집기가 info_items를 고치면 계좌2의 섹션만 달라집니다")
     @DisplayName("QA-401 수집 글(11c)도 시장 입력에 얼림 — 시장 입력 하나로 두 계좌를 조립하면 그 사이 저장소의 글이 바뀌어도 두 계좌의 11c_reading이 "
             + "같고 저장소는 한 번만 읽음")
     void readingSectionIsFrozenAcrossBooks() {

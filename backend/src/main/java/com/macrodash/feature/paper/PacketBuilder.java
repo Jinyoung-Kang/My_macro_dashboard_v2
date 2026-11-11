@@ -456,6 +456,7 @@ public class PacketBuilder {
      * @param newsStatus      사건 수집 상태(꺼졌거나 초기 결정이면 null)
      * @param notes           섹션 11에 실을 메모
      * @param marketSections  계좌 비의존 섹션 — 키 {@link #MARKET_SECTION_KEYS}, 그 순서
+     * @param reading         수집 글 섹션(11c)의 후보 — 읽은 그대로 얼림(QA-401). 싣지 않을 때(저장소 없음·스위치 꺼짐·초기 결정·읽지 못함)는 null
      */
     record MarketInputs(LocalDate asOf, boolean initial, JsonNode settingsBody, Integer settingsVersion,
                         PaperSettings paper, RuleSettings ruleSettings, Limits limits, Selection chosen,
@@ -463,9 +464,11 @@ public class PacketBuilder {
                         boolean inputsStale, boolean consensus, Optional<Snapshot> calendar,
                         CalendarSection.Consensus consensusLayer, NewsEvents.Window newsWindow,
                         NewsEvents.Settings news, List<JsonNode> newsRows, JsonNode newsStatus,
-                        NoteService.PacketNotes notes, Map<String, JsonNode> marketSections) {
+                        NoteService.PacketNotes notes, Map<String, JsonNode> marketSections,
+                        List<InfoStore.Item> reading) {
 
         MarketInputs {
+            reading = reading == null ? null : List.copyOf(reading);
             // 유니버스는 이름 순(TreeSet)이 패킷의 universe 글자 순서라 정렬을 지킨 채 얼립니다.
             universe = Collections.unmodifiableSortedSet(new TreeSet<>(universe));
             newsRows = Collections.unmodifiableList(new ArrayList<>(newsRows));
@@ -576,7 +579,9 @@ public class PacketBuilder {
         sections.put(NOTES, toNode(notesSection(packetNotes)));
         return new MarketInputs(asOf, initial, settingsBody, settingsVersion, paper, ruleSettings, limits, chosen,
                 context, names, quotes, universe, inputsStale, consensus, calendar, consensusLayer, newsWindow, news,
-                newsRows, newsStatus, packetNotes, sections);
+                newsRows, newsStatus, packetNotes, sections,
+                // 수집 글(ADR 0036)의 후보도 여기서 한 번만 읽어 얼립니다 — 조립할 때마다 읽으면 계좌1 호출 사이에 바뀐 글이 계좌2에만 실립니다(QA-401).
+                ReadingSection.candidates(infoStore, settingsBody, initial, newsWindow, false));
     }
 
     private Packet assembleFor(MarketInputs in, ClaudeBookProfile book, String kind, Integer frameworkVersion) {
@@ -638,7 +643,7 @@ public class PacketBuilder {
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());
         // 수집 글(ADR 0036) — 스위치가 켜져 있고 창에 글이 있을 때만. 없으면 이 키가 없어 예전 패킷과 바이트까지 같습니다.
-        Map<String, Object> reading = ReadingSection.read(infoStore, in.settingsBody(), in.initial(), in.newsWindow(), false, null);
+        Map<String, Object> reading = ReadingSection.section(in.reading(), in.newsWindow(), false);
         if (reading != null) {
             root.put(ReadingSection.KEY, reading);
         }
@@ -696,7 +701,7 @@ public class PacketBuilder {
         return new MarketInputs(fresh.asOf(), fresh.initial(), fresh.settingsBody(), fresh.settingsVersion(), fresh.paper(),
                 fresh.ruleSettings(), fresh.limits(), fresh.chosen(), fresh.context(), fresh.names(), fresh.quotes(),
                 fresh.universe(), fresh.inputsStale(), fresh.consensus(), fresh.calendar(), fresh.consensusLayer(),
-                fresh.newsWindow(), fresh.news(), fresh.newsRows(), fresh.newsStatus(), shared, sections);
+                fresh.newsWindow(), fresh.news(), fresh.newsRows(), fresh.newsStatus(), shared, sections, fresh.reading());
     }
 
     /**
