@@ -116,6 +116,11 @@ public class CollectorClient {
         return get("/diagnostics/connections");
     }
 
+    /** 정보 수집의 작동 방식(스위치·계층·예산·간격 — 수집기 코드의 실제 값, ADR 0036). 외부를 부르지 않는 응답입니다. */
+    public Optional<JsonNode> infoMechanism() {
+        return get("/info/mechanism");
+    }
+
     /** 국내 공공 API 연결 진단 (API마다 1회 호출). 결과에 키는 없습니다. */
     public Optional<JsonNode> publicApiDiagnostics() {
         return get("/diagnostics/public-apis");

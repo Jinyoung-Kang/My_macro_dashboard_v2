@@ -576,6 +576,8 @@ public class PaperSettingsService {
         body.put("pricing", PaperApiCalls.Pricing.defaults().body());
         // 사건 뉴스(2단계 B, 패킷 11b_events) — 그 전에 만든 설정 행에는 없고, 그 행은 EventsSection.settings가 이 기본값으로 읽습니다.
         body.put("news", EventsSection.defaultsBody());
+        // 수집 글(ADR 0036, 패킷 11c_reading) — 켬. 이 키가 없는 지금 행도 켬으로 읽힙니다(ReadingSection.enabled — 사용자 결정 2026-11-11).
+        body.put("info", ReadingSection.defaultsBody());
         // 3단계 스위치(2단계 K22·K37, 두 책 공통) — 모두 꺼짐. 한국 책 출발일에 한 번의 저장으로 함께 켭니다.
         body.put("calendar", Map.of("consensus", false));
         Map<String, Object> claude = new LinkedHashMap<>();
@@ -655,6 +657,8 @@ public class PaperSettingsService {
         news.put("feeds", KR_NEWS_FEEDS);
         news.put("aliases", Map.of());
         kr.put("news", news);
+        // 수집 글(ADR 0036, 한국 패킷 11c_reading) — 켬. 이 키가 없는 지금 행도 켬으로 읽힙니다(ReadingSection.enabled).
+        kr.put("info", ReadingSection.defaultsBody());
         // 한국 Claude 계좌2(사용자 결정 2026-11-02) — 투자 성향과 장중 확인 스위치(단계 2b).
         Map<String, Object> claude2 = new LinkedHashMap<>();
         claude2.put("riskProfile", Claude2Settings.DEFAULT_KR_RISK_PROFILE);

@@ -72,6 +72,22 @@
     },
     {
       "m": "GET",
+      "p": "/api/info/catalog"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/mechanism"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/headlines"
+    },
+    {
+      "m": "GET",
+      "p": "/api/info/krx"
+    },
+    {
+      "m": "GET",
       "p": "/api/macro/spread",
       "q": {
         "longId": "str",

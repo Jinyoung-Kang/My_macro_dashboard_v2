@@ -62,18 +62,23 @@ class InfoStoreDbTest {
         item("a00000000000000000000002", "test-a", "Housing", null, NOW.minusSeconds(60), null);
         item("a00000000000000000000003", "test-b", "Rates 100% sure_", NOW.minusSeconds(7200), NOW, "본문 3");
 
-        List<InfoStore.Item> all = info.items(List.of("test-a", "test-b"), null, null, 10);
-        assertThat(all).extracting(InfoStore.Item::id)
+        InfoStore.Page<InfoStore.Item> all = info.items(List.of("test-a", "test-b"), null, 0, 10);
+        assertThat(all.total()).isEqualTo(3);
+        assertThat(all.rows()).extracting(InfoStore.Item::id)
                 .containsExactly("a00000000000000000000002", "a00000000000000000000001", "a00000000000000000000003");
-        assertThat(all.get(1).body()).isNull();
-        assertThat(all.get(1).meta().path("category").asText()).isEqualTo("x");
+        assertThat(all.rows().get(1).body()).isNull();
+        assertThat(all.rows().get(1).meta().path("category").asText()).isEqualTo("x");
 
-        assertThat(info.items(List.of("test-a", "test-b"), "rates", null, 10)).hasSize(2);
-        assertThat(info.items(List.of("test-a", "test-b"), "100%", null, 10)).extracting(InfoStore.Item::id)
+        assertThat(info.items(List.of("test-a", "test-b"), "rates", 0, 10).rows()).hasSize(2);
+        assertThat(info.items(List.of("test-a", "test-b"), "100%", 0, 10).rows()).extracting(InfoStore.Item::id)
                 .containsExactly("a00000000000000000000003");
-        assertThat(info.items(List.of("test-b"), null, null, 10)).hasSize(1);
-        assertThat(info.items(List.of("test-a", "test-b"), null, NOW.minusSeconds(3000), 10)).extracting(InfoStore.Item::id)
-                .containsExactly("a00000000000000000000001", "a00000000000000000000003");
+        assertThat(info.items(List.of("test-b"), null, 0, 10).rows()).hasSize(1);
+        InfoStore.Page<InfoStore.Item> second = info.items(List.of("test-a", "test-b"), null, 2, 2);
+        assertThat(second.rows()).extracting(InfoStore.Item::id).containsExactly("a00000000000000000000003");
+        assertThat(second.total()).isEqualTo(3);
+        assertThat(info.recentForPacket(List.of("test-a", "test-b"), NOW.minusSeconds(4000), NOW.minusSeconds(30), 10))
+                .extracting(InfoStore.Item::id).as("창 (from, to] 안(작성 시각, 모르면 받은 시각) — 본문 다 받은 글이 앞")
+                .containsExactly("a00000000000000000000001", "a00000000000000000000002");
         assertThat(info.item("a00000000000000000000001")).get().extracting(InfoStore.Item::body).isEqualTo("본문 1");
         assertThat(info.counts()).filteredOn(count -> count.source().equals("test-a")).singleElement()
                 .satisfies(count -> assertThat(count.items()).isEqualTo(2));

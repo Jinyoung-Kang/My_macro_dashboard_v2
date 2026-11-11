@@ -11,6 +11,7 @@ import com.macrodash.feature.paper.ClaudeDecisionPipeline.Plan;
 import com.macrodash.feature.paper.ClaudeDecisionPipeline.Planned;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
+import com.macrodash.store.InfoStore;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
@@ -323,11 +324,11 @@ public class ClaudeBookService {
                              PaperSelectionService selection, PaperLedgerService ledger, PaperAdminService admin,
                              PacketBuilder packets, FrameworkService framework, PaperApiCalls calls, AiService ai,
                              PaperSettingsService settings, PaperConfig config, ObjectMapper mapper,
-                             StoreRepository repository, RegimeLogStore regimeLog, NoteService notes,
+                             StoreRepository repository, RegimeLogStore regimeLog, NoteService notes, InfoStore info,
                              @Value("${dashboard.paper.claude-timeout-seconds:300}") int timeoutSeconds) {
         this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config,
                 mapper, timeoutSeconds, Clock.systemUTC(), krPackets(store, reader, repository, regimeLog, marketData,
-                        notes, ledger, config, mapper, Clock.systemUTC()));
+                        notes, ledger, config, mapper, Clock.systemUTC()).withInfo(info));
     }
 
     /** 테스트용 — 시계를 움직입니다(사용량의 KST 날짜·출발일 마감 검사·저장본 신선도). 결정 문맥은 미국 둘(계좌1·계좌2)입니다. */

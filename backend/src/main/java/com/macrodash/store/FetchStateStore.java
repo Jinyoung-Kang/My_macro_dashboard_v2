@@ -38,6 +38,37 @@ public class FetchStateStore {
         return schema.tableExists("fetch_hosts");
     }
 
+    /**
+     * 호스트 한 줄의 상태(정보 수집 화면의 '메커니즘').
+     *
+     * @param budgetDay  하루 예산을 센 KST 날짜(오늘이 아니면 오늘 쓴 양은 0)
+     */
+    public record HostState(String host, String lastGoodTier, int failLevel, Instant blockedUntil, String blockedReason,
+                            boolean givenUp, java.time.LocalDate budgetDay, int budgetUsed) {
+    }
+
+    /** 모든 호스트의 상태(호스트 이름순). */
+    public List<HostState> hosts() {
+        return jdbc.query("SELECT host, last_good_tier, fail_level, blocked_until, blocked_reason, given_up, budget_day, budget_used "
+                        + "FROM fetch_hosts ORDER BY host",
+                (rs, rowNum) -> {
+                    Timestamp until = rs.getTimestamp("blocked_until");
+                    java.sql.Date day = rs.getDate("budget_day");
+                    return new HostState(rs.getString("host"), rs.getString("last_good_tier"), rs.getInt("fail_level"),
+                            until == null ? null : until.toInstant(), rs.getString("blocked_reason"), rs.getBoolean("given_up"),
+                            day == null ? null : day.toLocalDate(), rs.getInt("budget_used"));
+                });
+    }
+
+    /** polite 태스크마다 다음 실행 시각. */
+    public java.util.Map<String, Instant> schedule() {
+        java.util.Map<String, Instant> out = new java.util.LinkedHashMap<>();
+        jdbc.query("SELECT task, next_due_at FROM fetch_schedule ORDER BY next_due_at", rs -> {
+            out.put(rs.getString("task"), rs.getTimestamp("next_due_at").toInstant());
+        });
+        return out;
+    }
+
     /** {@code now}에 닫혀 있는 출처 — 기한이 남았거나 포기한 것(호스트 이름순). */
     public List<Closure> closed(Instant now) {
         return jdbc.query(

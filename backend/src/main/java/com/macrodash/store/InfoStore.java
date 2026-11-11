@@ -60,45 +60,117 @@ public class InfoStore {
         return schema.tableExists("info_items") && schema.tableExists("fetch_source_state");
     }
 
+    /** 쪽 하나와 전체 수. */
+    public record Page<T>(List<T> rows, int total) {
+    }
+
+    /** 사건 뉴스 RSS 제목 한 줄(관측치 news_headline·kr_news_headline). */
+    public record Headline(String dataset, String title, String link, String source, String feed, Instant publishedAt,
+                           String fetchedAt) {
+    }
+
     /**
-     * 최근 글부터(작성 시각, 모르면 처음 받은 시각) — 본문 없이.
+     * 최근 글부터(작성 시각, 모르면 처음 받은 시각) — 본문 없이, 쪽으로.
      *
      * @param sources 이 출처들만(비면 전부)
      * @param query   제목·한국어 제목·요약에 이 글자가 있는 것만(비면 전부, 대소문자 무시)
-     * @param before  이 시각보다 앞선 것만(다음 쪽 — null이면 처음부터)
      */
-    public List<Item> items(List<String> sources, String query, Instant before, int limit) {
-        StringBuilder sql = new StringBuilder("SELECT " + LIST_COLUMNS + ", NULL AS body FROM info_items WHERE TRUE");
+    public Page<Item> items(List<String> sources, String query, int offset, int limit) {
+        StringBuilder where = new StringBuilder(" WHERE TRUE");
         List<Object> args = new ArrayList<>();
         if (sources != null && !sources.isEmpty()) {
-            sql.append(" AND source = ANY(?)");
+            where.append(" AND source = ANY(?)");
             args.add(sources.toArray(new String[0]));
         }
         if (query != null && !query.isBlank()) {
-            sql.append(" AND (title ILIKE ? OR title_ko ILIKE ? OR summary ILIKE ?)");
-            String like = "%" + query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+            where.append(" AND (title ILIKE ? OR title_ko ILIKE ? OR summary ILIKE ?)");
+            String like = like(query);
             args.add(like);
             args.add(like);
             args.add(like);
         }
-        if (before != null) {
-            sql.append(" AND COALESCE(published_at, first_seen_at) < ?");
-            args.add(Timestamp.from(before));
+        Integer total = jdbc.query(con -> bind(con.prepareStatement("SELECT COUNT(*) FROM info_items" + where), args),
+                rs -> rs.next() ? rs.getInt(1) : 0);
+        List<Object> page = new ArrayList<>(args);
+        page.add(limit);
+        page.add(offset);
+        List<Item> rows = jdbc.query(con -> bind(con.prepareStatement("SELECT " + LIST_COLUMNS + ", NULL AS body FROM info_items" + where
+                + " ORDER BY COALESCE(published_at, first_seen_at) DESC, id LIMIT ? OFFSET ?"), page), itemMapper());
+        return new Page<>(rows, total == null ? 0 : total);
+    }
+
+    /**
+     * Claude 결정 패킷의 '수집 글' 섹션 재료(ADR 0036) — 이 출처들의 글 가운데 작성 시각(모르면 처음 받은 시각)이 (from, to]인 것을 최근부터,
+     * 본문 없이(요약만). 본문을 다 받은 글을 앞에 둡니다.
+     */
+    public List<Item> recentForPacket(List<String> sources, Instant from, Instant to, int limit) {
+        if (sources == null || sources.isEmpty()) {
+            return List.of();
         }
-        sql.append(" ORDER BY COALESCE(published_at, first_seen_at) DESC, id LIMIT ?");
-        args.add(limit);
-        return jdbc.query(con -> {
-            var ps = con.prepareStatement(sql.toString());
-            for (int i = 0; i < args.size(); i++) {
-                Object arg = args.get(i);
-                if (arg instanceof String[] array) {
-                    ps.setArray(i + 1, con.createArrayOf("text", array));
-                } else {
-                    ps.setObject(i + 1, arg);
-                }
+        List<Object> args = List.of(sources.toArray(new String[0]), Timestamp.from(from), Timestamp.from(to), limit);
+        return jdbc.query(con -> bind(con.prepareStatement("SELECT " + LIST_COLUMNS + ", NULL AS body FROM info_items "
+                + "WHERE source = ANY(?) AND COALESCE(published_at, first_seen_at) > ? AND COALESCE(published_at, first_seen_at) <= ? "
+                + "ORDER BY (body_status = 'full') DESC, COALESCE(published_at, first_seen_at) DESC, id LIMIT ?"), args), itemMapper());
+    }
+
+    /**
+     * 사건 뉴스 RSS 제목(수집기 news_headlines·kr_news_headlines의 관측치)을 최근부터, 쪽으로.
+     *
+     * @param datasets news_headline·kr_news_headline 가운데
+     * @param feed     피드 키 하나(비면 전부)
+     */
+    public Page<Headline> headlines(List<String> datasets, String feed, String query, int offset, int limit) {
+        StringBuilder where = new StringBuilder(" WHERE dataset = ANY(?)");
+        List<Object> args = new ArrayList<>();
+        args.add(datasets.toArray(new String[0]));
+        if (feed != null && !feed.isBlank()) {
+            where.append(" AND (payload->>'feed' = ? OR jsonb_exists(COALESCE(payload->'feeds', '[]'::jsonb), ?))");
+            args.add(feed.strip());
+            args.add(feed.strip());
+        }
+        if (query != null && !query.isBlank()) {
+            where.append(" AND payload->>'title' ILIKE ?");
+            args.add(like(query));
+        }
+        String order = " ORDER BY COALESCE(NULLIF(payload->>'publishedAt', ''), updated_at::text) DESC, entity";
+        Integer total = jdbc.query(con -> bind(con.prepareStatement("SELECT COUNT(*) FROM observations" + where), args),
+                rs -> rs.next() ? rs.getInt(1) : 0);
+        List<Object> page = new ArrayList<>(args);
+        page.add(limit);
+        page.add(offset);
+        List<Headline> rows = jdbc.query(con -> bind(con.prepareStatement("SELECT dataset, payload FROM observations" + where + order
+                + " LIMIT ? OFFSET ?"), page), (rs, rowNum) -> {
+                    JsonNode payload = json(rs.getString("payload"));
+                    Instant published = null;
+                    String text = payload.path("publishedAt").asText("");
+                    if (!text.isBlank()) {
+                        try {
+                            published = java.time.OffsetDateTime.parse(text).toInstant();
+                        } catch (java.time.format.DateTimeParseException e) {
+                            published = null;
+                        }
+                    }
+                    return new Headline(rs.getString("dataset"), payload.path("title").asText(null), payload.path("link").asText(null),
+                            payload.path("source").asText(null), payload.path("feed").asText(null), published,
+                            payload.path("fetchedAt").asText(null));
+                });
+        return new Page<>(rows, total == null ? 0 : total);
+    }
+
+    private static String like(String query) {
+        return "%" + query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    }
+
+    private static java.sql.PreparedStatement bind(java.sql.PreparedStatement ps, List<Object> args) throws SQLException {
+        for (int i = 0; i < args.size(); i++) {
+            Object arg = args.get(i);
+            if (arg instanceof String[] array) {
+                ps.setArray(i + 1, ps.getConnection().createArrayOf("text", array));
+            } else {
+                ps.setObject(i + 1, arg);
             }
-            return ps;
-        }, itemMapper());
+        }
+        return ps;
     }
 
     /** 글 한 편(본문 포함). */

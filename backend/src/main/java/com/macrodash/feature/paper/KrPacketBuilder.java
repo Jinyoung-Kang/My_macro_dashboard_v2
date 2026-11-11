@@ -18,6 +18,7 @@ import com.macrodash.feature.paper.PaperMarketData.Bar;
 import com.macrodash.feature.paper.PaperMarketData.Quotes;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.InfoStore;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
@@ -186,6 +187,8 @@ final class KrPacketBuilder {
     private final String book;
     /** 자유 시점 판 패킷을 만드는 빌더인가({@link #forFree} — ADR 0027 결정 2). 거짓이면 이 칸이 생기기 전과 같은 글자. */
     private final boolean free;
+    /** 수집 글 섹션 11c_reading의 저장소(ADR 0036) — 없으면(시험) 섹션을 싣지 않습니다. */
+    private InfoStore infoStore;
 
     KrPacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
                     PaperMarketData marketData, NoteService notes, KrRuleBookService rules, PaperConfig config,
@@ -224,7 +227,13 @@ final class KrPacketBuilder {
      */
     KrPacketBuilder forBook(String code) {
         return new KrPacketBuilder(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper,
-                targetTokens, code, false);
+                targetTokens, code, false).withInfo(infoStore);
+    }
+
+    /** 수집 글 섹션의 저장소를 넣습니다(운영 빌더 — {@link ClaudeBookService}). 같은 빌더를 돌려줍니다. */
+    KrPacketBuilder withInfo(InfoStore infoStore) {
+        this.infoStore = infoStore;
+        return this;
     }
 
     /**
@@ -234,7 +243,7 @@ final class KrPacketBuilder {
      */
     KrPacketBuilder forFree(String code) {
         return new KrPacketBuilder(store, reader, repository, regimeLog, marketData, notes, rules, config, mapper,
-                targetTokens, code, true);
+                targetTokens, code, true).withInfo(infoStore);
     }
 
     /**
@@ -386,6 +395,13 @@ final class KrPacketBuilder {
         fixed.put(DECISIONS, decisions);
         fixed.put(NOTES, notesSection);
         fixed.put(EVENTS, events.section());
+        // 수집 글(ADR 0036) — 스위치가 켜져 있고 창에 국내 시장 글이 있을 때만(읽은 순간 뒤에 받은 글은 빼고). 없으면 예전 패킷과 바이트까지 같음.
+        LocalTime decisionTime = PaperDecisionJob.decisionTime(run, body);
+        Map<String, Object> reading = ReadingSection.read(infoStore, body, initial,
+                NewsEvents.window(calendar, asOf, d -> run.decisionInstant(d, decisionTime)), true, readAt);
+        if (reading != null) {
+            fixed.put(ReadingSection.KEY, reading);
+        }
         fixed.put(HARD_RULES, hardRules);
         Rows rows = new Rows(lines, universeRows, quotes, history, flows, scores, unfillable, members, companies, dart,
                 dartMissing, asOf, read, paper);
@@ -449,6 +465,9 @@ final class KrPacketBuilder {
                         r.dartMissing(), r.paper()));
             } else {
                 root.put(key, fixed.get(key));
+            }
+            if (EVENTS.equals(key) && fixed.containsKey(ReadingSection.KEY)) {
+                root.put(ReadingSection.KEY, fixed.get(ReadingSection.KEY));
             }
         }
         return mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(PacketBuilder.toNode(root));

@@ -23,6 +23,7 @@ import com.macrodash.feature.paper.RuleBookService.SelectedFiler;
 import com.macrodash.feature.paper.RuleBookService.SignalContext;
 import com.macrodash.read.StoreReader;
 import com.macrodash.store.Datasets;
+import com.macrodash.store.InfoStore;
 import com.macrodash.store.PaperStore;
 import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.BookState;
@@ -358,6 +359,8 @@ public class PacketBuilder {
     private final PaperConfig config;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 수집 글 섹션 11c_reading의 저장소(ADR 0036) — 없으면(시험) 섹션을 싣지 않습니다. */
+    private InfoStore infoStore;
 
     @Autowired
     public PacketBuilder(PaperStore store, StoreReader reader, StoreRepository repository, RegimeLogStore regimeLog,
@@ -384,6 +387,12 @@ public class PacketBuilder {
         this.settings = settings;
         this.config = config;
         this.mapper = mapper;
+    }
+
+    /** 수집 글 섹션의 저장소를 넣습니다(스프링이 부름 — 없으면 섹션 없음). */
+    @Autowired(required = false)
+    void setInfoStore(InfoStore infoStore) {
+        this.infoStore = infoStore;
     }
 
     /** {@link #build(LocalDate, String, boolean, Integer, SettingsRow)} — 프레임 판을 모를 때(섹션 1의 frameworkVersion이 null — 시험·도구용). */
@@ -630,6 +639,11 @@ public class PacketBuilder {
         root.put(DECISIONS, recentDecisions(prior));
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());
+        // 수집 글(ADR 0036) — 스위치가 켜져 있고 창에 글이 있을 때만. 없으면 이 키가 없어 예전 패킷과 바이트까지 같습니다.
+        Map<String, Object> reading = ReadingSection.read(infoStore, in.settingsBody(), in.initial(), in.newsWindow(), false, null);
+        if (reading != null) {
+            root.put(ReadingSection.KEY, reading);
+        }
         root.put(HARD_RULES, hardRules(book, asOf, initial, in.limits(), in.paper(), in.ruleSettings(), in.universe(),
                 lockedOut, noPrice, in.inputsStale(), initial ? null : in.quotes().map(Quotes::collectedAt).orElse(null), stopWatch));
         if (VARIANT_CLAUDE2.equals(book.packetVariant())) {

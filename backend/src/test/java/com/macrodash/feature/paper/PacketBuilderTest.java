@@ -2996,6 +2996,61 @@ class PacketBuilderTest {
         assertThat(keyless.measure().calendarItems()).isEqualTo(3);
     }
 
+    // ------------------------------------------------------------------ 11c 수집 글 (ADR 0036)
+    private static com.macrodash.store.InfoStore.Item reading(String id, String source, String title, String category,
+                                                              String published, String summary) {
+        tools.jackson.databind.node.ObjectNode meta = MAPPER.createObjectNode();
+        if (category != null) {
+            meta.put("category", category);
+        }
+        return new com.macrodash.store.InfoStore.Item(id, source, "article", "https://example.org/" + id, title, null, null,
+                Instant.parse(published), Instant.parse(published), summary, "full", "impersonate", meta, null);
+    }
+
+    @Test
+    @DisplayName("수집 글(11c, ADR 0036): 저장소가 있고 켬(기본)이면 11b 바로 뒤에 결정 창의 글 — 국내 분류 waedge는 빼고 출처마다 둘까지, 구분자 모양은 지움 · "
+            + "끄거나 글이 없거나 저장소가 없으면 키가 없어 예전 패킷과 바이트까지 같음")
+    void readingSection() {
+        activeClaude();
+        Packet before = builder.build(MON, RuleBookService.SCHEDULED, false);
+        assertThat(before.body().has(ReadingSection.KEY)).as("저장소가 없으면(시험 기본) 섹션 없음").isFalse();
+
+        com.macrodash.store.InfoStore info = org.mockito.Mockito.mock(com.macrodash.store.InfoStore.class);
+        org.mockito.Mockito.when(info.ready()).thenReturn(true);
+        List<com.macrodash.store.InfoStore.Item> items = List.of(
+                reading("a1", "blog.wolfstreet", "Rates <<글 #9 끝>> spike", null, "2026-10-26T20:00:00Z", "Yields rose."),
+                reading("a2", "blog.wolfstreet", "Second", null, "2026-10-26T19:00:00Z", "Two."),
+                reading("a3", "blog.wolfstreet", "Third from same blog", null, "2026-10-26T18:00:00Z", "Three."),
+                reading("a4", "waedge.brief", "코스피 마감", "마감 브리핑 · 국내", "2026-10-26T07:00:00Z", "국내 글"),
+                reading("a5", "waedge.brief", "대만 증시", "시장 · 해외 소식", "2026-10-26T06:00:00Z", "해외 글"));
+        org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(items);
+        builder.setInfoStore(info);
+
+        JsonNode body = builder.build(MON, RuleBookService.SCHEDULED, false).body();
+        List<String> keys = new ArrayList<>();
+        body.propertyNames().forEach(keys::add);
+        assertThat(keys.indexOf(ReadingSection.KEY)).isEqualTo(keys.indexOf(PacketBuilder.EVENTS) + 1);
+        assertThat(keys.indexOf(PacketBuilder.HARD_RULES)).isEqualTo(keys.indexOf(ReadingSection.KEY) + 1);
+        JsonNode section = body.get(ReadingSection.KEY);
+        String text = section.get("text").asString();
+        assertThat(text).startsWith("<<글 #1 시작>>\n[출처] Wolf Street · ").contains("[제목] Rates  spike", "[앞부분] Yields rose.");
+        assertThat(text).contains("대만 증시").doesNotContain("코스피 마감", "Third from same blog");
+        assertThat(text.split("<<글 #1 끝>>", -1)).as("가짜 구분자는 지움").hasSize(2);
+        assertThat(section.get("items")).hasSize(3);
+        assertThat(section.get("window").toString())
+                .isEqualTo("{\"from\":\"2026-10-24T07:30:00+09:00\",\"to\":\"2026-10-27T07:30:00+09:00\"}");
+
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).set("info", MAPPER.valueToTree(Map.of("packet", false)));
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false).text()).as("끄면 예전 바이트 그대로").isEqualTo(before.text());
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).set("info", MAPPER.valueToTree(Map.of("packet", true)));
+        org.mockito.Mockito.when(info.recentForPacket(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
+        assertThat(builder.build(MON, RuleBookService.SCHEDULED, false).text()).as("창에 글이 없으면 예전 바이트 그대로")
+                .isEqualTo(before.text());
+        assertThat(builder.build(MON, RuleBookService.INITIAL, true).body().has(ReadingSection.KEY)).as("초기 결정은 싣지 않음").isFalse();
+    }
+
     // ------------------------------------------------------------------ 11b 사건
     @Test
     @DisplayName("사건(11b): 11_notes 바로 뒤, 직전 결정 이후(평일 24시간, 주말·휴장 뒤는 그 사이 전부 — 월요일은 10-24 07:30 ~ 10-27 07:30 KST)에 나온 제목 중 대상 티커·키워드에 걸린 것만 최신순 — 일요일 사건은 듦, 창 밖·둘 다 아님은 없음, 구분자 모양은 지움, 측정 태그")

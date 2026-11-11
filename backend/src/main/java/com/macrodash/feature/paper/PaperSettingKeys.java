@@ -289,6 +289,9 @@ final class PaperSettingKeys {
                     "매크로 키워드(영어 낱말·구절, 대소문자 무시, 쉼표·줄바꿈으로 나눔 — B3). 보유·후보·watchlist 티커는 따로 잡음"),
             new Spec("news.feeds", Type.FEEDS, null, null, NewsEvents.DEFAULT_FEEDS, false,
                     "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS), Scope.US),
+            of("info.packet", Type.BOOLEAN, false,
+                    "Claude 계좌 패킷에 수집 글 섹션 11c_reading을 넣음(ADR 0036 — 기본 켬, 해외 블로그·waedge 시황·거장 글의 제목과 앞부분, "
+                            + "결정 창의 것만 최대 " + ReadingSection.MAX_ITEMS + "편) — 꺼도 수집은 계속, 패킷에서만 뺌"),
             // 3단계 스위치(2단계 명세 K22·K37) — 한국 책 출발일 S에 설정 저장 한 번으로 함께 켜 두 책이 같은 날 같은 판이 됩니다.
             // calendar.consensus는 미국 패킷이 읽습니다(E1b — 켜면 packetVersion 6, 꺼짐 = 판 5 바이트 그대로 — PacketBuilderTest).
             // claude.* 둘은 아직 읽는 코드가 없습니다(꺼짐 = 스키마·프롬프트 바이트 그대로 — FrameworkServiceTest).
@@ -416,6 +419,8 @@ final class PaperSettingKeys {
                             + "수집기가 싣는 " + String.join("·", KR_OVERRIDE_OPENS) + "만, 마감은 " + String.join("·", KR_OVERRIDE_CLOSES)
                             + "만"),
             of("kr.news.enabled", Type.BOOLEAN, false, "한국 Claude 패킷에 사건 뉴스 11b_events를 넣음 — 꺼도 수집은 계속"),
+            of("kr.info.packet", Type.BOOLEAN, false,
+                    "한국 Claude 패킷에 수집 글 섹션 11c_reading을 넣음(ADR 0036 — 기본 켬, waedge 국내 시장 글의 제목과 앞부분) — 꺼도 수집은 계속"),
             integer("kr.news.maxPerDay", 0, NewsEvents.MAX_PER_DAY_LIMIT, false, "한국 패킷에 싣는 사건 헤드라인 상한"),
             of("kr.news.keywords", Type.PHRASES, false,
                     "한국 매크로 키워드(쉼표·줄바꿈으로 나눔) — 한글 맞춤 규칙은 E1. 보유·후보 종목 이름은 따로 잡음"),

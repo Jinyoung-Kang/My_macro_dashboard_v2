@@ -91,9 +91,9 @@ public final class AccessPolicy {
                 "POST /api/ai/test");
         // 경제 캘린더 — 차단 통과 수집 계층으로 받은 자료(ADR 0026). 운영자 한 명만 보는 화면이라는 조건(DATA_SOURCES §5)이라 회원에게 열지 않음
         owner("GET /api/macro/econ-calendar");
-        // 정보 수집(모의매매 > 정보 수집, ADR 0035) — 운영자 화면 전용, 저장본만 읽음
-        owner("GET /api/info/items", "GET /api/info/items/{id}", "GET /api/info/sources", "GET /api/info/flows",
-                "GET /api/info/gurus");
+        // 정보 수집(사이드바 '정보 수집', ADR 0035·0036) — 운영자 화면 전용, 저장본·수집기 상태만 읽음
+        owner("GET /api/info/catalog", "GET /api/info/mechanism", "GET /api/info/items", "GET /api/info/items/{id}",
+                "GET /api/info/headlines", "GET /api/info/sources", "GET /api/info/flows", "GET /api/info/gurus", "GET /api/info/krx");
         // 사용자 관리
         owner("GET /api/admin/users", "POST /api/admin/users", "POST /api/admin/users/{id}", "GET /api/admin/audit");
         // 실제 계좌(토스증권, ADR 0025) — 운영자 개인 자산을 읽기만 함(주문 경로 없음, 저장하지 않음, 운영자의 토스 키로 외부 조회)
