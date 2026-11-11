@@ -235,17 +235,21 @@ docker compose up -d --no-build --wait --wait-timeout 300 || {
 }
 
 # make migrate와 같은 반복. 수집기는 기동할 때만 스키마를 적용해, 스키마와 백엔드만 바뀐 배포에서는 새 스키마가
-# 빠집니다(QA-016). 10번 모두 실패하면 경고와 0이 아닌 값(QA-118).
+# 빠집니다(QA-016). 10번 모두 실패하면 경고와 0이 아닌 값(QA-118). 아홉 번은 조용히 다시 시도하고 열 번째(마지막) 시도는 오류 출력을
+# 버리지 않습니다 — 예전에는 열 번 모두 버려 실패의 원인이 어디에도 남지 않았습니다(이 명령의 출력은 컨테이너 로그에 남지 않음, QA-373).
 ok=
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for i in 1 2 3 4 5 6 7 8 9; do
     docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && { ok=1; break; }
     sleep 3
 done
+if [ -z "$ok" ]; then
+    docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null && ok=1
+fi
 if [ -n "$ok" ]; then
     echo "  스키마: 최신 (db/migrations)"
     schema_note="스키마 적용됨"
 else
-    echo "경고: 스키마를 적용하지 못했습니다 — docker compose logs collector를 보세요." >&2
+    echo "경고: 스키마를 적용하지 못했습니다 — 바로 위가 마지막 시도의 오류입니다(수집기가 기동하며 적용하다 실패했다면 docker compose logs collector에도 남습니다)." >&2
     failed="${failed:+$failed · }스키마 적용 실패"
     schema_note="스키마 적용 못 함"
 fi

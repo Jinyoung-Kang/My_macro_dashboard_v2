@@ -173,7 +173,6 @@ def test_QA126_QA_스택_up의_스키마_적용이_성공하면_한_번으로_�
 # ------------------------------------------------------------------ QA-373: 실패의 원인을 버리지 않는다
 # 스키마 적용 명령의 출력을 버리고 10번 실패하면 '수집기 로그를 보세요'라고 했는데, 그 출력은 컨테이너 로그에 남지 않습니다(수집기가
 # 그대로이고 이 명령이 그 스키마 파일을 처음 적용하다 실패할 때). 마지막 시도의 오류는 그대로 보여 줍니다 — 앞의 아홉 번은 조용히.
-@pytest.mark.xfail(strict=True, reason="QA-373: QA 스택 up의 스키마 적용이 오류 출력을 버립니다")
 @pytest.mark.parametrize("shell", _SHELLS)
 def test_QA373_QA_스택_up의_스키마_적용이_실패하면_마지막_시도의_원인을_보여_준다(shell):
     script = _FAKE_LOUD.format(rc=1) + _qa_stack_schema_snippet() + _REPORT
@@ -208,7 +207,6 @@ def _make_migrate(tmp_path: Path, rc: str) -> tuple[subprocess.CompletedProcess,
     return result, [line.split(" | ")[0] for line in tools._calls((bin_dir, log))]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-373: make migrate가 스키마 적용의 오류 출력을 버립니다")
 def test_QA373_make_migrate가_실패하면_마지막_시도의_원인을_보여_준다(tmp_path):
     result, calls = _make_migrate(tmp_path, "1")
     assert result.returncode != 0

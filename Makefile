@@ -98,10 +98,14 @@ up: ## 전체 스택 기동 (최초 빌드는 5~10분)
 migrate: ## 대기 중인 스키마 파일(db/migrations)을 지금 적용 (make up이 부름)
 	@# 수집기는 기동할 때만 스키마를 적용합니다. 백엔드만 바뀐 배포에서는 수집기가 다시 만들어지지 않아
 	@# 새 테이블이 생기지 않았습니다(QA-016). 이미 적용한 파일은 건너뛰므로 몇 번 불러도 안전합니다.
-	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+	@# 아홉 번은 조용히 다시 시도하고(수집기가 막 뜨는 중), 열 번째(마지막) 시도는 오류 출력을 버리지 않습니다 — 예전에는 열 번 모두 버려
+	@# 실패의 원인이 어디에도 남지 않았습니다(이 명령의 출력은 컨테이너 로그에 남지 않음, QA-373).
+	@for i in 1 2 3 4 5 6 7 8 9; do \
 		$(COMPOSE) exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && \
 		{ echo "  스키마: 최신 (db/migrations)"; exit 0; }; sleep 3; done; \
-		echo "경고: 스키마를 적용하지 못했습니다. 'make logs S=collector'를 보세요." ; exit 1
+		$(COMPOSE) exec -T collector python -c "from app import store; store.init_schema()" >/dev/null && \
+		{ echo "  스키마: 최신 (db/migrations)"; exit 0; }; \
+		echo "경고: 스키마를 적용하지 못했습니다 — 바로 위가 마지막 시도의 오류입니다(수집기가 기동하며 적용하다 실패했다면 'make logs S=collector'에도 남습니다)." ; exit 1
 
 down: ## 정지 (데이터는 보존)
 	$(COMPOSE) down

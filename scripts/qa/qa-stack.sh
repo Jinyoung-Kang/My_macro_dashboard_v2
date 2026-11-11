@@ -84,11 +84,16 @@ case "$cmd" in
       docker compose up -d --build "$@"
     # 수집기는 기동할 때만 스키마를 적용합니다 — 백엔드만 바뀐 배포에서도 새 테이블이 생기게 지금 적용(QA-016).
     # 10번 모두 실패하면 경고를 찍고 0이 아닌 값으로 끝냅니다(QA-126, make migrate·README와 같은 모양 — QA-118).
-    ok=; for i in 1 2 3 4 5 6 7 8 9 10; do
+    # 아홉 번은 조용히 다시 시도하고, 열 번째(마지막) 시도는 오류 출력을 버리지 않습니다 — 실패의 원인이 화면에 남게(QA-373. 이 명령의
+    # 출력은 컨테이너 로그에 남지 않습니다).
+    ok=; for i in 1 2 3 4 5 6 7 8 9; do
       docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null 2>&1 && { ok=1; break; }
       sleep 3
     done
-    [ -n "$ok" ] || { echo "경고: 스키마를 적용하지 못했습니다 — 'bash scripts/qa/qa-stack.sh logs collector'를 보세요" >&2; false; }
+    if [ -z "$ok" ]; then
+      docker compose exec -T collector python -c "from app import store; store.init_schema()" >/dev/null && ok=1
+    fi
+    [ -n "$ok" ] || { echo "경고: 스키마를 적용하지 못했습니다 — 바로 위가 마지막 시도의 오류입니다(수집기 기동 중의 실패는 'bash scripts/qa/qa-stack.sh logs collector'에도 남습니다)" >&2; false; }
     docker compose ps
     ;;
   down)
