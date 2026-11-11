@@ -43,7 +43,7 @@ class RealTradeNoticesTest {
         expected.put("HALT", "[실제 매매] 멈춤\n\n사유: unknown-order");
         expected.put("BUYS_PAUSED", "[실제 매매] 매수 멈춤\n\n사유: unknown-order");
         expected.put("SKIP_DAY", "[실제 매매] 오늘 쉼\n\n사유: unknown-order");
-        expected.put("ENABLE", "[실제 매매] 켜짐\n\n다음 맞추기부터 따라 합니다");
+        expected.put("ENABLE", "[실제 매매] 켜짐\n\n전체 맞추기는 다음 맞추기에서 합니다\n오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다");   // QA-347
         expected.put("DISABLE", "[실제 매매] 끄기\n\n새 주문 멈춤 · 미체결 취소 중");
         expected.put("UPDATE", "[실제 매매] 설정 바뀜");
         expected.put("RESUME", "[실제 매매] 멈춤 해제");

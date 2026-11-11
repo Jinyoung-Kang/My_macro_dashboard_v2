@@ -914,6 +914,36 @@ export function realTradeErrorCode(error: unknown): RealTradeErrorCode | null {
 }
 
 /**
+ * 켜기·바꾸기·해제가 성공한 뒤의 안내(QA-347). 정기 작업은 켜짐이면 켠 시각과 관계없이 그날 남은 장중 주문·장중 스탑을 바로 따라 하고, 전체 맞추기
+ * (묶음)만 다음 맞추기 창에서 합니다 — 예전 글은 '다음 맞추기부터 주문합니다'라 그날은 주문이 없다고 읽혔습니다. 해제는 풀기 전 상태로 가릅니다:
+ * 이상 멈춤(HALTED)을 풀면 켠 것과 같고, 켜짐에서 매수 멈춤만 풀면 매수가 바로 다시 나갑니다.
+ *
+ * @param stateBefore 창을 열 때의 상태(해제에서만 봄) — 모르면 이상 멈춤 해제의 글
+ */
+export function actionDoneText(mode: RealTradeDialogMode, stateBefore?: string | null): string {
+  switch (mode) {
+    case "enable":
+      return "켰습니다 — 전체 맞추기는 다음 맞추기(개장 10분 뒤 맞추기 09:10~09:13, 시가 맞추기 날은 08:50:30~08:58:30)에서 합니다. 그 전에도 오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다.";
+    case "update":
+      return "설정을 바꿨습니다 — 방식을 바꿨으면 옛 계좌 따라 하기를 멈추고 다음 맞추기에서 새 계좌 비중으로 맞춥니다.";
+    case "resume":
+      return stateBefore === "LIVE"
+        ? "매수 멈춤을 풀었습니다 — 매수도 바로 다시 따라 합니다."
+        : "이상 멈춤을 풀었습니다 — 전체 맞추기는 다음 맞추기에서 하고, 그 전에도 오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다.";
+  }
+}
+
+/**
+ * 오늘 쉬는 날의 한 줄(QA-347) — 장부가 밀려 쉬는 날(ledger-behind)에는 묶음·장중 따라 하기만 쉬고 스탑 매도는 합니다(ADR 0033 결정 2).
+ * 그 밖의 사유(휴장·장 시간 불일치·시계 어긋남 등)는 아무 주문도 보내지 않습니다.
+ */
+export function skipDayText(skipReason: string): string {
+  return skipReason === "ledger-behind"
+    ? `오늘은 맞추기와 장중 따라 하기를 쉽니다 — 사유 ${skipReason}. 스탑 매도만 합니다.`
+    : `오늘은 쉽니다 — 사유 ${skipReason}. 주문을 보내지 않습니다.`;
+}
+
+/**
  * 끄기 POST의 시간 한도(QA-345) — 끄기는 DB 상태만 바꾸는 가벼운 요청이고 멱등이라(다시 눌러도 안전) 짧게 둡니다. 예전에는 한도가 없어 응답이 오지
  * 않으면 끄기 단추가 '끄는 중…'으로 잠기고 비상 순서 안내도 뜨지 않았습니다.
  */

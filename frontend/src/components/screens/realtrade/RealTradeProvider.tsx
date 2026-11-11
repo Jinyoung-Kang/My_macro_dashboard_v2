@@ -5,7 +5,7 @@ import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { DISABLE_TIMEOUT_MS, nextDisableSentMark, type DisableSentMark, type RealTradeDialogMode } from "@/lib/realtrade";
+import { actionDoneText, DISABLE_TIMEOUT_MS, nextDisableSentMark, type DisableSentMark, type RealTradeDialogMode } from "@/lib/realtrade";
 import type { RealTradeActionResponse, RealTradeDisableRequest, RealTradeMarket, RealTradeStatusResponse } from "@/lib/types/realtrade";
 import { RealTradeEnableDialog } from "./RealTradeEnableDialog";
 
@@ -18,13 +18,6 @@ const POLL_MS = 15_000;
 const STATUS_TIMEOUT_MS = 30_000;
 /** 실패 문구를 아직 받지 못했을 때(다시 읽기가 이미 시작된 뒤 그린 경우)의 오류 안내 글. */
 const STATUS_FAILED_FALLBACK = "응답을 받지 못했습니다";
-
-/** 켜기·바꾸기·해제가 성공한 뒤의 안내. */
-const DONE_TEXT: Readonly<Record<RealTradeDialogMode, string>> = {
-  enable: "켰습니다 — 다음 맞추기(개장 10분 뒤 맞추기 09:10~09:13, 시가 맞추기 날은 08:50:30~08:58:30)부터 주문합니다.",
-  update: "설정을 바꿨습니다 — 방식을 바꿨으면 옛 계좌 따라 하기를 멈추고 다음 맞추기에서 새 계좌 비중으로 맞춥니다.",
-  resume: "멈춤을 풀었습니다 — 다음 맞추기부터 다시 주문합니다.",
-};
 
 export interface RealTradeContextValue {
   market: RealTradeMarket;
@@ -176,7 +169,8 @@ export function RealTradeProvider({ market, children }: { market: RealTradeMarke
           onDone={(mode) => {
             setDialog(null);
             setDisableMark(null);
-            setNotice(DONE_TEXT[mode]);
+            // 해제 안내는 풀기 전 상태로 가릅니다(QA-347) — data는 창을 연 동안의 상태(성공 뒤 다시 읽기 전)입니다.
+            setNotice(actionDoneText(mode, data.state));
             void reload();
           }}
         />

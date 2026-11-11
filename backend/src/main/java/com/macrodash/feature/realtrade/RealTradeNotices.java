@@ -55,7 +55,8 @@ final class RealTradeNotices {
                     + (detail != null && detail.path(DETAIL_PAPER_OPEN).asBoolean(false)
                     ? "\n모의 달력은 거래일입니다. 토스 장 운영 정보를 확인하세요" : ""));
             case RealTradeStore.EVENT_WINDOW_SUMMARY -> notice(windowLabel(detail), counts(detail));
-            case RealTradeStore.EVENT_ENABLE -> notice("켜짐", "다음 맞추기부터 따라 합니다");
+            // 켠 날에도 장중 따라 하기와 스탑 매도는 바로 나갑니다 — 전체 맞추기(묶음)만 다음 맞추기 창에서(QA-347)
+            case RealTradeStore.EVENT_ENABLE -> notice("켜짐", "전체 맞추기는 다음 맞추기에서 합니다\n오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다");
             case RealTradeStore.EVENT_DISABLE -> notice("끄기", "새 주문 멈춤 · 미체결 취소 중");
             case EVENT_STOPPED -> notice("꺼짐", stopped(detail) + unresolved(detail));
             case EVENT_STOP_SELL -> notice("스탑 매도", "보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "

@@ -784,11 +784,11 @@ describe("켜기 창", () => {
     }, { timeoutMs: 90_000 });
     // 결과가 나온 뒤 창이 닫히고 안내.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await inRegion().findByText(/켰습니다 — 다음 맞추기/)).toBeTruthy();
+    expect(await inRegion().findByText(/켰습니다 — 전체 맞추기는 다음 맞추기/)).toBeTruthy();
   });
 
   // QA-347 — 수정 전 안내는 '다음 맞추기부터 주문합니다'였다. 켠 날에도 오늘 남은 장중 주문·장중 스탑은 바로 따라 한다.
-  it.fails("QA-347: 켠 뒤 안내 — 전체 맞추기는 다음 맞추기에서, 그 전에도 오늘 남은 장중 주문·장중 스탑은 바로 따라 함", async () => {
+  it("QA-347: 켠 뒤 안내 — 전체 맞추기는 다음 맞추기에서, 그 전에도 오늘 남은 장중 주문·장중 스탑은 바로 따라 함", async () => {
     api.apiPost.mockResolvedValue({ ok: true, state: "LIVE", version: 4 });
     const dialog = await openEnable();
     await fillAll(dialog);
@@ -925,19 +925,19 @@ describe("멈춤 해제·설정 바꾸기", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   };
 
-  it.fails("QA-347: 이상 멈춤을 푼 뒤 안내 — 전체 맞추기는 다음 맞추기에서, 오늘 남은 장중 주문·장중 스탑은 바로 따라 함", async () => {
+  it("QA-347: 이상 멈춤을 푼 뒤 안내 — 전체 맞추기는 다음 맞추기에서, 오늘 남은 장중 주문·장중 스탑은 바로 따라 함", async () => {
     await resumeFrom({ state: "HALTED", haltReason: "turnover" });
     expect(await inRegion().findByText(
       "이상 멈춤을 풀었습니다 — 전체 맞추기는 다음 맞추기에서 하고, 그 전에도 오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다.",
     )).toBeTruthy();
   });
 
-  it.fails("QA-347: 매수 멈춤만 푼 뒤 안내 — 매수를 바로 다시 따라 함(다음 맞추기를 기다리지 않음)", async () => {
+  it("QA-347: 매수 멈춤만 푼 뒤 안내 — 매수를 바로 다시 따라 함(다음 맞추기를 기다리지 않음)", async () => {
     await resumeFrom({ state: "LIVE", buysPaused: true });
     expect(await inRegion().findByText("매수 멈춤을 풀었습니다 — 매수도 바로 다시 따라 합니다.")).toBeTruthy();
   });
 
-  it.fails("QA-347: 장부가 밀려 쉬는 날(ledger-behind)의 오늘 줄 — 맞추기·장중 따라 하기는 쉬고 스탑 매도만 한다고 적는다", async () => {
+  it("QA-347: 장부가 밀려 쉬는 날(ledger-behind)의 오늘 줄 — 맞추기·장중 따라 하기는 쉬고 스탑 매도만 한다고 적는다", async () => {
     reads[STATUS_PATH] = () => Promise.resolve(status({ today: { date: "2026-11-06", skipReason: "ledger-behind", windows: [] } }));
     renderKr();
     expect(await inRegion().findByText("오늘은 맞추기와 장중 따라 하기를 쉽니다 — 사유 ledger-behind. 스탑 매도만 합니다.")).toBeTruthy();

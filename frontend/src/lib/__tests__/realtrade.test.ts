@@ -15,6 +15,8 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  actionDoneText,
+  skipDayText,
   ACTION_TIMEOUT_MS,
   actionTimeoutText,
   DISABLE_TIMEOUT_MS,
@@ -432,6 +434,20 @@ describe("표기", () => {
     expect(actionTimeoutText()).toBe(
       "90초 안에 응답을 받지 못했습니다 — 요청이 처리됐을 수 있으니 창을 닫고 상태를 확인하세요(상태는 다시 읽는 중입니다).",
     );
+  });
+
+  it("QA-347: 켜기·해제 뒤 안내는 '다음 맞추기부터'가 아니라 전체 맞추기와 그날 바로 따라 하는 것을 가르고, 해제는 풀기 전 상태로 가른다", () => {
+    expect(actionDoneText("enable")).toContain("전체 맞추기는 다음 맞추기(");
+    expect(actionDoneText("enable")).toContain("오늘 남은 장중 주문과 장중 스탑은 바로 따라 합니다");
+    expect(actionDoneText("resume", "HALTED")).toMatch(/^이상 멈춤을 풀었습니다 — 전체 맞추기는 다음 맞추기에서/);
+    expect(actionDoneText("resume", "LIVE")).toBe("매수 멈춤을 풀었습니다 — 매수도 바로 다시 따라 합니다.");
+    expect(actionDoneText("resume", null)).toMatch(/^이상 멈춤을 풀었습니다/);
+    expect(actionDoneText("update", "LIVE")).toMatch(/^설정을 바꿨습니다/);
+    for (const text of [actionDoneText("enable"), actionDoneText("resume", "HALTED"), actionDoneText("resume", "LIVE")]) {
+      expect(text).not.toContain("다음 맞추기부터");
+    }
+    expect(skipDayText("ledger-behind")).toBe("오늘은 맞추기와 장중 따라 하기를 쉽니다 — 사유 ledger-behind. 스탑 매도만 합니다.");
+    expect(skipDayText("market-closed")).toBe("오늘은 쉽니다 — 사유 market-closed. 주문을 보내지 않습니다.");
   });
 
   it("QA-342: 준비 안 됨 이벤트(개장이 가깝도록 장 운영 정보·수집기 상태를 못 받음) — 이름표와 사유 코드", () => {

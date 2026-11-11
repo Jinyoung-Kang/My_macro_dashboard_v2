@@ -27,6 +27,7 @@ import {
   serverSwitchState,
   serverSwitchText,
   serverUnknownText,
+  skipDayText,
   sourceBookLabel,
   toNumber,
   unresolvedOffCount,
@@ -274,7 +275,7 @@ function StatusBody({ status, rt }: { status: RealTradeStatusResponse; rt: RealT
       <section aria-label="오늘 창" className="text-sm">
         <h3 className="text-sm font-medium text-text">오늘{today?.date ? `(${today.date})` : ""}</h3>
         {today?.skipReason ? (
-          <p className="mt-1 text-warn">오늘은 쉽니다 — 사유 {today.skipReason}. 주문을 보내지 않습니다.</p>
+          <p className="mt-1 text-warn">{skipDayText(today.skipReason)}</p>
         ) : windows.length > 0 ? (
           <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-text-2">
             {windows.map((window, index) => (
