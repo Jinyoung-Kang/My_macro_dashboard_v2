@@ -496,6 +496,10 @@ def fetch_naver_ranking(
     return records
 
 
+# 장중·마감 직후의 응답은 추정이라 행을 만들지 않습니다. 연결은 정상이므로 진단이 이 사유를 실패와 가릅니다(QA-412).
+NAVER_ESTIMATED_REASON = "장중 추정 순위라 순매수 금액이 없어 쓰지 않습니다 (확정 값이 나오면 다시)"
+
+
 def _naver_rank_list(payload, trade_type: str) -> list | None:
     """응답 한 쪽에서 방향에 맞는 순위 목록. 모양이 다르면 None."""
     if not isinstance(payload, dict) or not isinstance(payload.get("sections"), dict):
@@ -525,16 +529,22 @@ def parse_naver_ranking(
     if not rows:
         return [], "순위 행이 없습니다 (휴장일이거나 아직 집계 전)"
     if any(row.get("estimated") is True for row in rows):
-        return [], "장중 추정 순위라 순매수 금액이 없어 쓰지 않습니다 (확정 값이 나오면 다시)"
+        return [], NAVER_ESTIMATED_REASON
 
     collected_at = kst.stamp()
     records: list[dict] = []
+    seen: set[str] = set()
     for row in rows:
         code = str(row.get("itemcode") or "").strip()
         name = str(row.get("itemname") or "").strip()
         amount = to_float(row.get("accTradeAmount"))
         if not code or not name or amount is None or amount == 0:
             continue
+        # 다음 쪽 요청의 startIdx가 쪽 번호가 아니라 행 오프셋이면 앞 쪽과 겹칩니다(외부 동작 — 확인하지 못함). 같은 종목은
+        # 먼저 온 한 번만 싣습니다(QA-412).
+        if code in seen:
+            continue
+        seen.add(code)
         net_eok = round(amount / 100_000_000.0, 1)
         net_eok = abs(net_eok) if trade_type == "순매수" else -abs(net_eok)
         day = _iso_date(row.get("bizdateTo"))
@@ -607,7 +617,6 @@ def fetch_krx_stored_ranking(
     for row in rows[:top_n]:
         record = {k: row.get(k) for k in ("rank", "code", "name", "price", "changePct", "netAmountEok", "netVolume", "dataDate")}
         record["source"] = f"KRX 정보데이터시스템 확정 ({investor}, {day})"
-        record["collectedAt"] = row.get("collectedAt")
         out.append(record)
     return out
 
@@ -844,6 +853,9 @@ def test_naver_connection() -> dict:
     if rows:
         return {"ok": True, "stage": "ok", "message": f"{len(rows)}건 수신", "sample": rows[:3]}
     reason = _NAVER_LAST_REASON["value"]
+    if reason == NAVER_ESTIMATED_REASON:
+        # 응답은 정상으로 받았고 값이 아직 추정일 뿐입니다 — 연결 실패가 아닙니다(QA-412).
+        return {"ok": True, "stage": "estimated", "message": f"연결 정상 — {reason}"}
     return {
         "ok": False, "stage": "empty",
         "message": (
