@@ -27,6 +27,9 @@ logger = logging.getLogger("sidecar")
 # 검사가 지나가기를 기다리는 시간의 기본값과 상한(초). 요청 하나의 전체 상한은 드라이버가 따로 둡니다.
 DEFAULT_WAIT_SECONDS = 25.0
 MAX_WAIT_SECONDS = 60.0
+# 돌려주는 본문의 상한(UTF-8 바이트). 수집기 계층 1의 상한(app/fetch/impersonate.MAX_BODY_BYTES)과 같은 값입니다 — 이 이미지는 수집기
+# 코드를 싣지 않아 따로 적고, 시험(test_sidecar)이 두 값을 대조합니다. 넘으면 본문을 싣지 않고 502로 답합니다(QA-389).
+MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 class DriverError(Exception):
@@ -89,7 +92,11 @@ def create_app(driver: Driver | None = None, *, token: str | None = None, allowe
         if not busy.acquire(blocking=False):
             raise HTTPException(status_code=429, detail="다른 요청을 처리하는 중입니다(한 번에 한 건)")
         try:
-            return get_driver().fetch(body.url, wait_seconds=body.waitSeconds, allowed=allowed)
+            result = get_driver().fetch(body.url, wait_seconds=body.waitSeconds, allowed=allowed)
+            size = len(str(result.get("body") or "").encode("utf-8"))
+            if size > MAX_BODY_BYTES:
+                raise DriverError(f"본문이 상한({MAX_BODY_BYTES // (1024 * 1024)}MB)보다 큼 — 싣지 않음(기대한 페이지가 아님)")
+            return result
         except DriverError as exc:
             logger.warning("받지 못함: %s", exc)
             raise HTTPException(status_code=502, detail=str(exc)) from exc

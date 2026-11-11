@@ -213,19 +213,77 @@ def test_답을_읽지_못하면_전송_실패(sidecar):
         _send()
 
 
-@pytest.mark.xfail(strict=True, reason="QA-389: 계층 2의 답은 크기와 관계없이 통째로 읽습니다")
 def test_QA389_브라우저_컨테이너의_답이_상한을_넘으면_읽지_않고_전송_실패(sidecar, monkeypatch):
     import sidecar.app as sidecar_app
     from app.fetch import impersonate
 
-    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 10**9, raising=False)      # 컨테이너 쪽 상한이 없는(옛) 이미지라도
+    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 10**9)      # 컨테이너 쪽 상한이 없는(옛) 이미지라도
     monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 1024)
-    sidecar.driver.result = {**PAGE, "body": "<html>" + "가" * 2000 + "</html>"}
+    sidecar.driver.result = {**PAGE, "body": "<html>" + "가" * 40_000 + "</html>"}      # 봉투 상한(본문 상한의 2배 + 64KB)도 넘는 답
 
     with pytest.raises(TransportError, match="본문이 상한"):
         _send()
 
     assert sidecar.read == [], "Content-Length가 상한을 넘으면 본문을 읽지 않습니다"
+
+
+def test_QA389_브라우저_컨테이너가_본문_상한으로_거절하면_전송_실패(sidecar, monkeypatch):
+    import sidecar.app as sidecar_app
+
+    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 1024)
+    sidecar.driver.result = {**PAGE, "body": "가" * 2000}
+
+    with pytest.raises(TransportError, match=r"요청을 받지 않음\(HTTP 502\)"):
+        _send()
+
+
+def test_QA389_길이를_알리지_않는_답은_조각을_세다가_상한에서_멈춘다(monkeypatch):
+    from app.fetch import impersonate
+
+    monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 1024)
+    limit = 1024 * browser_client.ENVELOPE_FACTOR + browser_client.ENVELOPE_EXTRA_BYTES
+    served: list[int] = []
+
+    class Endless:
+        status_code = 200
+        headers: dict = {}
+
+        def iter_content(self, chunk_size=65536):
+            while True:
+                served.append(chunk_size)
+                yield b"x" * chunk_size
+
+        def close(self):
+            served.append(-1)
+
+    class Session:
+        def post(self, url, **kwargs):
+            assert kwargs["stream"] is True
+            return Endless()
+
+    monkeypatch.setenv(browser_client.ENV_URL, "http://browser:8191/")
+    monkeypatch.setenv(browser_client.ENV_TOKEN, TOKEN)
+    monkeypatch.setattr(browser_client, "_http", lambda: Session())
+
+    with pytest.raises(TransportError, match="본문이 상한"):
+        _send()
+
+    assert served[-1] == -1, "끊은 뒤 연결을 닫습니다"
+    assert sum(size for size in served if size > 0) <= limit + 2 * 65536
+
+
+def test_QA389_봉투는_상한_안이어도_풀어_낸_본문이_상한을_넘으면_전송_실패(sidecar, monkeypatch):
+    import sidecar.app as sidecar_app
+    from app.fetch import impersonate
+
+    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 10**9)
+    monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 1024)
+    monkeypatch.setattr(browser_client, "ENVELOPE_EXTRA_BYTES", 10**6)
+    sidecar.driver.result = {**PAGE, "body": "a" * 1500}
+
+    with pytest.raises(TransportError, match="본문이 상한"):
+        _send()
+    assert sidecar.read, "봉투는 읽었지만 본문이 상한을 넘어 쓰지 않습니다"
 
 
 # ==============================================================================

@@ -645,7 +645,6 @@ def counted(monkeypatch):
     return _CountingSession.received
 
 
-@pytest.mark.xfail(strict=True, reason="QA-389: 본문을 다 받아 메모리에 올린 뒤에야 길이를 잽니다")
 def test_QA389_본문_상한은_받는_도중에_끊는다(local, counted, monkeypatch):
     monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 1024)
     bomb = gzip.compress(b"A" * (4 * 1024 * 1024))            # 보내는 것은 약 4KB, 풀면 4MB
@@ -657,6 +656,27 @@ def test_QA389_본문_상한은_받는_도중에_끊는다(local, counted, monke
 
     assert sum(counted) <= 1024 + 64 * 1024, f"상한 근처에서 끊어야 합니다 — 메모리에 올린 본문 {sum(counted):,}바이트"
     assert state.closed(HOST) is None, "출처의 거부가 아니라 닫지 않습니다"
+
+
+def test_QA389_상한_안의_압축_본문은_풀린_바이트_그대로_받는다(local, counted, monkeypatch):
+    monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 64 * 1024)
+    page = PAGE + b"<!-- " + b"x" * 40_000 + b" -->"
+    local.server.routes["/page"] = [(200, {**HTML, "Content-Encoding": "gzip"}, gzip.compress(page))]
+
+    got = ladder.fetch(f"{local.server.base}/page")
+
+    assert got.body == page and got.status == 200, "조각 콜백이 받는 것은 압축을 푼 뒤의 바이트입니다"
+    assert sum(counted) == len(page), "본문을 두 번(조각 + 통째) 쌓지 않습니다"
+
+
+def test_QA389_상한과_같은_크기는_받고_한_바이트_넘으면_끊는다(local, monkeypatch):
+    monkeypatch.setattr(impersonate, "MAX_BODY_BYTES", 2048)
+    local.server.routes["/exact"] = [(200, HTML, b"a" * 2048)]
+    local.server.routes["/over"] = [(200, HTML, b"a" * 2049)]
+
+    assert len(ladder.fetch(f"{local.server.base}/exact").body) == 2048
+    with pytest.raises(ladder.FetchFailed, match=r"본문이 상한\(2,048바이트\)보다 큼 — 받다가 끊음"):
+        ladder.fetch(f"{local.server.base}/over")
 
 
 # ==============================================================================

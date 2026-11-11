@@ -191,17 +191,23 @@ def test_드라이버가_받지_못하면_502(caplog):
     assert response.status_code == 502 and response.json()["detail"] == "브라우저 오류: 시간 초과"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-389: 브라우저 컨테이너가 받은 본문을 크기와 관계없이 그대로 돌려줍니다")
 def test_QA389_본문이_상한을_넘으면_502(monkeypatch):
     import sidecar.app as sidecar_app
 
-    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 1024, raising=False)
+    monkeypatch.setattr(sidecar_app, "MAX_BODY_BYTES", 1024)
     driver = FakeDriver(result={**PAGE, "body": "가" * 400})          # UTF-8로 1,200바이트
 
     response = _post(_client(driver), "https://www.investing.com/")
 
     assert response.status_code == 502 and "본문이 상한" in response.json()["detail"]
     assert "가가" not in response.text, "넘는 본문은 싣지 않습니다"
+
+
+def test_QA389_본문_상한은_수집기_계층_1의_상한과_같다():
+    import sidecar.app as sidecar_app
+    from app.fetch import impersonate
+
+    assert sidecar_app.MAX_BODY_BYTES == impersonate.MAX_BODY_BYTES, "이미지가 달라 따로 적은 값 — 한쪽만 바꾸지 않게"
 
 
 def test_주소_밖의_입력은_드라이버에_전달되지_않는다():

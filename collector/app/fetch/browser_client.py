@@ -11,6 +11,7 @@ app/fetch/browser_client.py
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 from typing import Any
@@ -19,6 +20,7 @@ from urllib.parse import urlencode
 import requests
 
 from .. import http
+from . import impersonate
 from .reply import Reply, TransportError
 
 ENV_URL = "BROWSER_FETCH_URL"
@@ -30,6 +32,11 @@ WAIT_SECONDS = 25.0
 TIMEOUT: tuple[float, float] = (5.0, 110.0)
 # 이만큼은 남아 있어야 브라우저를 부릅니다(브라우저 기동 + 이동 + 검사 대기 + 저장).
 MIN_TIME_LEFT = 150.0
+# 컨테이너의 답(JSON 봉투)을 읽는 상한 — 본문 상한(impersonate.MAX_BODY_BYTES, 계층 1과 같은 값)의 이 배수 + 봉투의 나머지 칸 몫.
+# JSON 문자열은 따옴표·줄바꿈·제어 문자를 이스케이프해 본문보다 길어질 수 있어 봉투는 넉넉히 읽고, 풀어 낸 본문을 본문 상한으로 다시 봅니다.
+ENVELOPE_FACTOR = 2
+ENVELOPE_EXTRA_BYTES = 64 * 1024
+_READ_CHUNK = 64 * 1024
 
 _lock = threading.Lock()
 _session: requests.Session | None = None
@@ -71,29 +78,63 @@ def send(method: str, url: str, *, host: str, headers: Any = None, params: dict[
     if left is not None and left < MIN_TIME_LEFT:
         raise TransportError(f"태스크 시간 예산이 {max(left, 0.0):.0f}초 남아 브라우저를 부르지 않음")
     target = f"{url}{'&' if '?' in url else '?'}{urlencode(params)}" if params else url
+    limit = impersonate.MAX_BODY_BYTES
     try:
         response = _http().post(
             f"{_base_url()}/fetch",
             json={"url": target, "waitSeconds": WAIT_SECONDS},
             headers={TOKEN_HEADER: _token()},
             timeout=TIMEOUT,
+            stream=True,            # 답을 통째로 메모리에 올리지 않고 상한까지만 읽습니다(QA-389)
         )
     except requests.RequestException as exc:
         raise TransportError(f"브라우저 컨테이너에 닿지 못함 — {http.brief_error(exc)}") from exc
-    if response.status_code != 200:
-        raise TransportError(f"브라우저 컨테이너가 요청을 받지 않음(HTTP {response.status_code})")
     try:
-        body = response.json()
-        return Reply(
+        if response.status_code != 200:
+            raise TransportError(f"브라우저 컨테이너가 요청을 받지 않음(HTTP {response.status_code})")
+        try:
+            raw = _read_capped(response, limit * ENVELOPE_FACTOR + ENVELOPE_EXTRA_BYTES)
+        except requests.RequestException as exc:
+            raise TransportError(f"브라우저 컨테이너의 답을 받다가 끊김 — {http.brief_error(exc)}") from exc
+    finally:
+        response.close()
+    if raw is None:
+        raise TransportError(f"본문이 상한({impersonate._size(limit)})보다 큼 — 브라우저 컨테이너의 답을 읽지 않음(기대한 페이지가 아님)")
+    try:
+        body = json.loads(raw)
+        page = str(body.get("body") or "").encode("utf-8")
+        reply = Reply(
             status=int(body["status"]),
             headers={"content-type": str(body.get("contentType") or "")},
-            body=str(body.get("body") or "").encode("utf-8"),
+            body=page,
             final_url=str(body.get("finalUrl") or target),
             challenge=body.get("challenge") if body.get("challenge") in ("human", "js") else None,
             pressed=body.get("pressed") is True,
         )
-    except (ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
         raise TransportError("브라우저 컨테이너의 답을 읽지 못함") from exc
+    if len(page) > limit:
+        raise TransportError(f"본문이 상한({impersonate._size(limit)})보다 큼 — 기대한 페이지가 아님")
+    return reply
+
+
+def _read_capped(response, limit: int) -> bytes | None:
+    """
+    답의 본문을 ``limit`` 바이트까지만 읽습니다 → 본문, 넘으면 None(더 읽지 않음).
+
+    ``Content-Length``가 상한을 넘으면 한 바이트도 읽지 않습니다. 길이를 알리지 않는 답은 조각을 세다가 넘는 순간 멈춥니다.
+    """
+    declared = response.headers.get("content-length")
+    if declared is not None and str(declared).strip().isdigit() and int(declared) > limit:
+        return None
+    chunks: list[bytes] = []
+    received = 0
+    for chunk in response.iter_content(chunk_size=_READ_CHUNK):
+        received += len(chunk)
+        if received > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def health() -> dict | None:

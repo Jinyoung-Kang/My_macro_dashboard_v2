@@ -14,6 +14,7 @@ import threading
 from typing import Any
 
 from curl_cffi import requests as curl_requests
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from curl_cffi.requests import exceptions as curl_exceptions
 
 from .. import http
@@ -21,7 +22,8 @@ from .reply import Reply, TransportError
 
 # (연결, 읽기) 초. 페이지 하나를 받는 데 넉넉한 값이고, 태스크 안에서는 남은 예산에 맞춰 줄어듭니다.
 DEFAULT_TIMEOUT: tuple[float, float] = (10.0, 30.0)
-# 받는 본문의 상한(바이트). 캘린더·뉴스 목록은 수백 KB라, 이보다 크면 기대한 페이지가 아닙니다.
+# 받는 본문의 상한(바이트, 압축을 푼 뒤). 캘린더·뉴스 목록은 수백 KB이고 가장 큰 피드가 약 3MB라, 이보다 크면 기대한 페이지가 아닙니다.
+# 받는 도중에 세다가 넘으면 끊습니다 — 다 받은 뒤에 재면 압축 폭탄·수 GB 응답이 그 전에 수집기 메모리를 채웁니다(QA-389).
 MAX_BODY_BYTES = 8 * 1024 * 1024
 
 _lock = threading.Lock()
@@ -75,28 +77,47 @@ def send(
 
     :param profile: curl_cffi impersonate 이름 — :func:`app.fetch.state.profile_for`가 호스트마다 고정한 값
     :param headers: 프로필의 기본 헤더 위에 얹을 요청 문맥(Referer 등). User-Agent는 넣지 않습니다
-    :raises TransportError: 보내지 못했거나 답이 없음, 본문이 상한보다 큼
+    :raises TransportError: 보내지 못했거나 답이 없음, 본문이 상한(``MAX_BODY_BYTES`` — 압축을 푼 뒤)보다 커서 받다가 끊음
     """
     if headers and any(name.lower() == "user-agent" for name in headers):
         raise ValueError("계층 1은 User-Agent를 덮어쓰지 않습니다 — 프로필이 정한 값을 씁니다(ADR 0026 결정 3)")
     host = http.host_of(url)
     session = _session(host, profile)
+    limit = MAX_BODY_BYTES
+    chunks: list[bytes] = []
+    received = 0
+    too_big = False
+
+    def take(chunk: bytes) -> int:
+        # curl이 본문 조각(압축을 푼 뒤의 바이트)을 줄 때마다 불립니다. 상한을 넘으면 그 자리에서 전송을 끊습니다.
+        nonlocal received, too_big
+        received += len(chunk)
+        if received > limit:
+            too_big = True
+            return CURL_WRITEFUNC_ERROR
+        chunks.append(chunk)
+        return len(chunk)
+
     try:
         # allow_redirects=False — curl_cffi 세션의 기본값은 따라가기(최대 30번)입니다. 3xx는 그대로 돌려주고, 따라갈지는 사다리
         # (ladder.fetch)가 목적지의 호스트·scheme을 보고 정합니다(QA-388 — 등록 출처가 내부 주소로 돌리면 그대로 따라갔음).
+        # content_callback — 본문을 curl_cffi의 버퍼에 통째로 쌓지 않고 조각마다 받습니다(같은 핸들·같은 연결, 응답의 content는 빔).
         response = session.request(method, url, headers=headers, params=params, data=data, timeout=_fit(timeout),
-                                   allow_redirects=False)
+                                   allow_redirects=False, content_callback=take)
     except curl_exceptions.RequestException as exc:
+        if too_big:
+            raise TransportError(f"본문이 상한({_size(limit)})보다 큼 — 받다가 끊음(기대한 페이지가 아님)") from exc
         raise TransportError(http.brief_error(exc)) from exc
-    body = response.content or b""
-    if len(body) > MAX_BODY_BYTES:
-        raise TransportError(f"본문이 상한({MAX_BODY_BYTES // (1024 * 1024)}MB)보다 큼 — 기대한 페이지가 아님")
     return Reply(
         status=response.status_code,
         headers={str(name).lower(): str(value) for name, value in response.headers.items()},
-        body=body,
+        body=b"".join(chunks),
         final_url=str(response.url),
     )
+
+
+def _size(limit: int) -> str:
+    return f"{limit // (1024 * 1024)}MB" if limit >= 1024 * 1024 else f"{limit:,}바이트"
 
 
 def reset() -> None:
