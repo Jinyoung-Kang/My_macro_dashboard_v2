@@ -16,6 +16,7 @@ import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.PaperStore.SettingsRow;
 import com.macrodash.store.StoreRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ArrayNode;
@@ -264,6 +265,26 @@ class KrClaudeValidationTest {
                 NOW).monthly()).isEqualTo(1).isEqualTo(KrPacketBuilder.monthlyDiscretionaryOrders(store, D));
         assertThat(KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, true, packet().body(), run.settings(), quotes(), Set.of(),
                 NOW).monthly()).isZero();
+        Plan plan = plan(false, attempt(packet(), "005930", "BUY", 3.0), view(), quotes());
+        assertThat(plan.response().path("monthlyDiscretionaryOrders").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @Disabled("QA-358: 이달 재량 주문 수를 최근 주문 500행 안에서만 세어, 월초 체결이 창 밖으로 밀리면 0이 됩니다")
+    @DisplayName("QA-358 이달 재량 주문 수 — 월초 체결 뒤 같은 달 주문 행이 500건을 넘어도 그 체결을 셈")
+    void monthlyCountSeesFillsBehindFiveHundredLaterRows() {
+        long scheduledId = decision(RuleBookService.SCHEDULED, LocalDate.of(2026, 11, 2));
+        filled(scheduledId, "207940");
+        // 거절 주문도 행으로 남습니다(ClaudeDecisionPipeline). 응답당 12건·세션당 응답 4번이면 한 달에 500행을 넘을 수 있습니다.
+        for (int i = 0; i < 500; i++) {
+            store.insertOrder(new Order(0, PaperBooks.KR_CLAUDE, scheduledId, "005930", PaperBooks.BUY, null, 3.0, null,
+                    PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE, "REJECTED", "MONTHLY_CAP", MAPPER.createObjectNode(),
+                    D, kst("2026-11-03T22:31"), null, null));
+        }
+
+        assertThat(KrPacketBuilder.monthlyDiscretionaryOrders(store, D)).as("패킷 9_portfolio의 used").isEqualTo(1);
+        assertThat(KrClaudeValidation.checks(run, PaperBooks.KR_CLAUDE, store, D, false, packet().body(), run.settings(), quotes(), Set.of(),
+                NOW).monthly()).as("검증기의 월 누계").isEqualTo(1);
         Plan plan = plan(false, attempt(packet(), "005930", "BUY", 3.0), view(), quotes());
         assertThat(plan.response().path("monthlyDiscretionaryOrders").asInt()).isEqualTo(1);
     }

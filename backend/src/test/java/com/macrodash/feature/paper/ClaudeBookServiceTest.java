@@ -18,6 +18,7 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -840,6 +841,30 @@ class ClaudeBookServiceTest {
 
         assertThatThrownBy(() -> service().start()).as("한 번뿐").isInstanceOf(InvalidRequestException.class)
                 .hasMessageContaining("이미 시작");
+    }
+
+    @Test
+    @Disabled("QA-358: 이달 재량 주문 수를 최근 주문 500행 안에서만 세어, 월초 체결이 창 밖으로 밀리면 월 상한을 넘는 주문이 통과합니다")
+    @DisplayName("QA-358 월 상한 — 월초 체결 뒤 같은 달 주문 행이 500건을 넘어도 그 체결을 세어, 상한 1이면 새 매수는 MONTHLY_CAP")
+    void monthlyCapSeesFillsBehindFiveHundredLaterRows() throws Exception {
+        activeCashOnly();
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE, null, "AAA", "BUY", null, 5.0, null, "NEXT_OBSERVATION",
+                "CLAUDE", "FILLED", null, null, FRI, FRI_CLOSE, null, FRI_CLOSE));
+        // 거절 주문도 행으로 남습니다. 응답당 12건·세션당 응답 4번이면 한 달에 500행을 넘을 수 있습니다.
+        for (int i = 0; i < 500; i++) {
+            store.insertOrder(new Order(0, PaperBooks.CLAUDE, null, "XLK", "BUY", null, 5.0, null, "NEXT_OBSERVATION",
+                    "CLAUDE", "REJECTED", "MONTHLY_CAP", null, FRI, FRI_CLOSE.plusSeconds(60), null, null));
+        }
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body()).put("maxDiscretionaryOrdersPerMonth", 1);
+
+        answerJson(decision(65, null, order("XLK", "BUY", 5.0, null, "NEXT_OBSERVATION")));
+        Decision d = service().decide(MON, RuleBookService.SCHEDULED, true);
+
+        assertThat(d.response().path("monthlyDiscretionaryOrders").asInt()).as("월초 체결 1건").isEqualTo(1);
+        assertThat(d.response().path("validation").get(0).path("rejectReason").asString())
+                .as(d.response().path("validation").toString()).isEqualTo("MONTHLY_CAP");
+        assertThat(d.packet().path(PacketBuilder.PORTFOLIO).path("monthlyDiscretionaryOrders").path("used").asInt())
+                .as("패킷의 used도 같은 수").isEqualTo(1);
     }
 
     @Test
