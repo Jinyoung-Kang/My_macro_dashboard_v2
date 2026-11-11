@@ -274,6 +274,15 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<Order> filledClaudeOrdersOfMonth(String code, LocalDate asOf) {
+        LocalDate first = asOf.withDayOfMonth(1);
+        return orders.values().stream().filter(o -> o.bookCode().equals(code) && "CLAUDE".equals(o.source())
+                        && "FILLED".equals(o.status()) && !"BACKFILL".equals(o.timing()) && o.asOfTradingDate() != null
+                        && !o.asOfTradingDate().isBefore(first) && !o.asOfTradingDate().isAfter(asOf))
+                .sorted(Comparator.comparing(Order::createdAt).thenComparing(Order::id).reversed()).toList();
+    }
+
+    @Override
     public void markOrderFilled(long id, Instant filledAt) {
         Order o = orders.get(id);
         orders.put(id, with(o, "FILLED", o.rejectReason(), filledAt));

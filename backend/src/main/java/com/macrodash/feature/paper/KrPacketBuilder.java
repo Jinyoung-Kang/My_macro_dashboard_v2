@@ -1212,7 +1212,7 @@ final class KrPacketBuilder {
      * 코드로. 앞으로 체결로 출발하는 미국 Claude 계좌2도 같은 계산을 씁니다(계좌2 명세 §4-1의 5·§10-5 — 출발 주문은 BACKFILL이 아님).
      */
     static int monthlyDiscretionaryOrders(PaperStore store, String book, LocalDate asOf) {
-        List<Order> orders = store.recentOrders(book, PacketBuilder.MONTHLY_SCAN);
+        List<Order> orders = store.filledClaudeOrdersOfMonth(book, asOf);
         YearMonth month = YearMonth.from(asOf);
         Map<Long, Boolean> initialDecision = new HashMap<>();
         int count = 0;

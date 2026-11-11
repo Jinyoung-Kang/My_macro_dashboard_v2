@@ -16,7 +16,6 @@ import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.PaperStore.SettingsRow;
 import com.macrodash.store.StoreRepository;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ArrayNode;
@@ -270,7 +269,6 @@ class KrClaudeValidationTest {
     }
 
     @Test
-    @Disabled("QA-358: 이달 재량 주문 수를 최근 주문 500행 안에서만 세어, 월초 체결이 창 밖으로 밀리면 0이 됩니다")
     @DisplayName("QA-358 이달 재량 주문 수 — 월초 체결 뒤 같은 달 주문 행이 500건을 넘어도 그 체결을 셈")
     void monthlyCountSeesFillsBehindFiveHundredLaterRows() {
         long scheduledId = decision(RuleBookService.SCHEDULED, LocalDate.of(2026, 11, 2));

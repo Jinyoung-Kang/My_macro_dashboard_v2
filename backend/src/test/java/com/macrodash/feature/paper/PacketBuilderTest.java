@@ -2538,6 +2538,20 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("QA-358 패킷의 이달 재량 주문 수(used) — 월초 체결 뒤 같은 달 주문 행이 500건을 넘어도 그 체결을 셈")
+    void monthlyOrdersBeyondFiveHundredRows() {
+        activeClaude();
+        for (int i = 0; i < 500; i++) {
+            store.insertOrder(new Order(0, PaperBooks.CLAUDE, null, "XLK", "BUY", null, 5.0, null, "NEXT_OBSERVATION",
+                    "CLAUDE", "REJECTED", "MONTHLY_CAP", null, FRI, FRI_CLOSE.plusSeconds(60), null, null));
+        }
+
+        JsonNode portfolio = builder.build(MON, RuleBookService.SCHEDULED, false).body().get(PacketBuilder.PORTFOLIO);
+
+        assertThat(portfolio.get("monthlyDiscretionaryOrders").get("used").asInt()).as("체결된 DDD — 최근 500행 창 밖").isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("이달 재량 주문: CLAUDE 출처·그 달·기준일 이하의 체결 주문만 — 초기 배분(BACKFILL)·대기·취소·만료·거절·제안 제외")
     void monthlyOrders() {
         List<Order> orders = List.of(

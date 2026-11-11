@@ -18,7 +18,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -844,7 +843,6 @@ class ClaudeBookServiceTest {
     }
 
     @Test
-    @Disabled("QA-358: 이달 재량 주문 수를 최근 주문 500행 안에서만 세어, 월초 체결이 창 밖으로 밀리면 월 상한을 넘는 주문이 통과합니다")
     @DisplayName("QA-358 월 상한 — 월초 체결 뒤 같은 달 주문 행이 500건을 넘어도 그 체결을 세어, 상한 1이면 새 매수는 MONTHLY_CAP")
     void monthlyCapSeesFillsBehindFiveHundredLaterRows() throws Exception {
         activeCashOnly();
@@ -863,8 +861,6 @@ class ClaudeBookServiceTest {
         assertThat(d.response().path("monthlyDiscretionaryOrders").asInt()).as("월초 체결 1건").isEqualTo(1);
         assertThat(d.response().path("validation").get(0).path("rejectReason").asString())
                 .as(d.response().path("validation").toString()).isEqualTo("MONTHLY_CAP");
-        assertThat(d.packet().path(PacketBuilder.PORTFOLIO).path("monthlyDiscretionaryOrders").path("used").asInt())
-                .as("패킷의 used도 같은 수").isEqualTo(1);
     }
 
     @Test

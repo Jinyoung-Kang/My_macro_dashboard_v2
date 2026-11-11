@@ -297,8 +297,6 @@ public class PacketBuilder {
     static final int HOLIDAY_HORIZON_DAYS = 14;
     /** 국면 기록을 이만큼 최근부터 훑어 기준일 이하 첫 판정을 찾습니다. */
     static final int REGIME_LOOKBACK = 30;
-    /** 이달 재량 주문 수를 셀 때 훑는 최근 주문 수(월 상한 20건보다 넉넉히). */
-    static final int MONTHLY_SCAN = 500;
     /** 프로필의 집중도 구분(유효 종목 수) — 표시용 구분이고 계산에는 쓰지 않습니다. */
     static final double CONCENTRATED_BELOW = 15;
     static final double DIVERSIFIED_FROM = 40;
@@ -1998,7 +1996,7 @@ public class PacketBuilder {
         }
         // 앞으로 체결로 출발하는 계좌(계좌2 — ClaudeBookProfile#timed)는 출발 결정(INITIAL)의 주문을 뺀 한국 계산, 계좌1은 사후 체결만 뺀 계산.
         int monthly = profile.timed() ? KrPacketBuilder.monthlyDiscretionaryOrders(store, code, asOf)
-                : monthlyDiscretionaryOrders(store.recentOrders(code, MONTHLY_SCAN), asOf);
+                : monthlyDiscretionaryOrders(store.filledClaudeOrdersOfMonth(code, asOf), asOf);
         // 결정 서비스가 검증을 마친 결정마다 취소하는 것과 같은 묶음(ClaudeDecisionPipeline.supersedePending: CLAUDE 출처의 PENDING).
         List<Order> pending = store.ordersByStatus(code, PaperBooks.ORDER_PENDING).stream()
                 .filter(o -> SOURCE_CLAUDE.equals(o.source())).toList();

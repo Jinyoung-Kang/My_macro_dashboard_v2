@@ -766,7 +766,7 @@ final class ClaudeDecisionPipeline {
         }
         // 앞으로 체결로 출발하는 계좌(계좌2)는 출발 결정(INITIAL) 주문을 뺀 계산 — 패킷 9_portfolio와 같은 함수(PacketBuilder.ledger).
         int monthly = initial ? 0 : profile.timed() ? KrPacketBuilder.monthlyDiscretionaryOrders(store, book(), asOf)
-                : PacketBuilder.monthlyDiscretionaryOrders(store.recentOrders(book(), PacketBuilder.MONTHLY_SCAN), asOf);
+                : PacketBuilder.monthlyDiscretionaryOrders(store.filledClaudeOrdersOfMonth(book(), asOf), asOf);
         return new MarketChecks(universe, RuleSettings.from(body).etfs(), lockedOut(asOf), noPrice, monthly, stale,
                 null, null);
     }

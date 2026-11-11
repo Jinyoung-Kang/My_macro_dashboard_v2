@@ -1148,6 +1148,20 @@ public class PaperStore {
                 + "ORDER BY created_at DESC, id DESC LIMIT ?", orderMapper(), code, limit);
     }
 
+    /**
+     * 그 달(기준 거래일의 달 첫날부터 기준일까지)에 체결된 Claude 재량 주문 전부, 최근 순 — 월 상한의 근거(QA-358).
+     *
+     * <p>출처 CLAUDE·상태 FILLED·기준 거래일이 그 달이고 기준일 이하·사후 체결({@code BACKFILL}) 아님. 예전에는 {@link #recentOrders}의
+     * 최근 500행 안에서 셌는데, 거절 주문도 행으로 남아 한 달에 500행을 넘으면 월초 체결이 창 밖으로 밀려 누계가 작아졌습니다. 조건은
+     * {@code PacketBuilder.monthlyDiscretionaryOrders}와 같고, 출발 결정(INITIAL) 제외는 부르는 쪽이 결정 종류로 가립니다.</p>
+     */
+    public List<Order> filledClaudeOrdersOfMonth(String code, LocalDate asOf) {
+        return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE book_code = ? AND source = 'CLAUDE' "
+                + "AND status = 'FILLED' AND timing IS DISTINCT FROM 'BACKFILL' AND as_of_trading_date >= ? "
+                + "AND as_of_trading_date <= ? ORDER BY created_at DESC, id DESC", orderMapper(), code,
+                Date.valueOf(asOf.withDayOfMonth(1)), Date.valueOf(asOf));
+    }
+
     /** 결정 하나가 낸 주문, 낸 순서(id 순). 없으면 빈 목록. */
     public List<Order> ordersByDecision(long decisionId) {
         return jdbc.query("SELECT " + ORDER_COLUMNS + " FROM paper_orders WHERE decision_id = ? ORDER BY id",

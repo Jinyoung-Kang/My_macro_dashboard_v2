@@ -524,6 +524,45 @@ class PaperStoreDbTest {
     }
 
     @Test
+    @DisplayName("QA-358 그 달의 체결된 Claude 주문 — 뒤에 쌓인 행 수와 무관하게 전부, 다른 출처·상태·달·사후 체결·다른 책은 빼고")
+    void filledClaudeOrdersOfMonth() {
+        store.insertBookIfAbsent(book(BOOK, "Claude 책"));
+        store.insertBookIfAbsent(book(OTHER_BOOK, "다른 책"));
+        LocalDate asOf = DAY.withDayOfMonth(20);
+        LocalDate first = DAY.withDayOfMonth(1);
+        Instant early = Instant.parse("2001-01-01T00:00:00Z");
+        long monthStart = store.insertOrder(claudeOrder(BOOK, "AAA", "NEXT_OBSERVATION", "FILLED", first, early));
+        long onAsOf = store.insertOrder(claudeOrder(BOOK, "BBB", "AT_MINUTE", "FILLED", asOf, early.plusSeconds(1)));
+        store.insertOrder(claudeOrder(BOOK, "CCC", "NEXT_OBSERVATION", "FILLED", first.minusDays(1), early));   // 전월
+        store.insertOrder(claudeOrder(BOOK, "DDD", "NEXT_OBSERVATION", "FILLED", asOf.plusDays(1), early));     // 기준일 뒤
+        store.insertOrder(claudeOrder(BOOK, "EEE", "BACKFILL", "FILLED", first, early));                        // 사후 체결
+        store.insertOrder(claudeOrder(BOOK, "FFF", "NEXT_OBSERVATION", "PENDING", first, early));
+        store.insertOrder(claudeOrder(BOOK, "GGG", "NEXT_OBSERVATION", "CANCELLED", first, early));
+        store.insertOrder(new PaperStore.Order(0, BOOK, null, "HHH", "SELL", null, null, null, "IMMEDIATE", "STOP",
+                "FILLED", null, null, first, early, null, early));                                               // 다른 출처
+        store.insertOrder(claudeOrder(OTHER_BOOK, "III", "NEXT_OBSERVATION", "FILLED", first, early));         // 다른 책
+        // 예전 셈은 최근 500행만 읽어, 같은 달의 뒤 행(거절도 행으로 남음)이 500건을 넘으면 월초 체결을 놓쳤습니다.
+        for (int i = 0; i < 501; i++) {
+            store.insertOrder(new PaperStore.Order(0, BOOK, null, "XLK", "BUY", null, 5.0, null, "NEXT_OBSERVATION",
+                    "CLAUDE", "REJECTED", "MONTHLY_CAP", null, asOf, null, null, null));
+        }
+
+        assertThat(store.recentOrders(BOOK, 500)).as("최근 500행 창에는 월초 체결이 없음")
+                .extracting(PaperStore.Order::id).doesNotContain(monthStart, onAsOf);
+        assertThat(store.filledClaudeOrdersOfMonth(BOOK, asOf)).extracting(PaperStore.Order::id)
+                .as("최근 순(created_at, id 내림차순)").containsExactly(onAsOf, monthStart);
+        assertThat(store.filledClaudeOrdersOfMonth(BOOK, asOf)).extracting(PaperStore.Order::targetLocal)
+                .as("주문 칸을 그대로 읽음").containsExactly(java.time.LocalTime.of(10, 30), null);
+    }
+
+    private static PaperStore.Order claudeOrder(String code, String ticker, String timing, String status, LocalDate asOf,
+                                                Instant createdAt) {
+        return new PaperStore.Order(0, code, null, ticker, "BUY", null, 5.0, null, timing, "CLAUDE", status, null, null,
+                asOf, createdAt, null, "FILLED".equals(status) ? createdAt : null,
+                "AT_MINUTE".equals(timing) ? java.time.LocalTime.of(10, 30) : null);
+    }
+
+    @Test
     @DisplayName("주문: 넣은 값이 그대로 돌아오고, 만료·취소·체결 표시는 조건에 맞는 것만 바꾼다")
     void ordersLifecycle() {
         store.insertBookIfAbsent(book(BOOK, "규칙 책"));
