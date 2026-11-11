@@ -345,6 +345,55 @@ def test_미국_첫_응답으로_휴장과_조기_폐장을_배운다(store, spa
     assert "창" in tasks.task_paper_stopwatch_us() and len(spark.calls) == 2, "정규장 끝 13:00 − 5분 + 1분 = 12:56 뒤는 창 밖"
 
 
+@pytest.mark.xfail(strict=True, reason="QA-361: 장중 응답 한 번에 SPY 봉이 비면 그날을 휴장으로 굳혀 남은 회차를 묻지 않습니다")
+def test_QA361_미국_오늘_세션을_본_뒤에는_SPY만_빈_응답으로_휴장이_되지_않는다(store, spark, monkeypatch):
+    _us_setup(store)
+    spark.results = {s: _spark_result(s, _minutes(_ny(9, 30), _ny(9, 59))) for s in ("SPY", "AAPL", "MSFT")}
+    _us_clock(monkeypatch, _ny(10, 0, 20))
+    tasks.task_paper_stopwatch_us()
+
+    # 다음 회차 — SPY 줄은 왔는데 시계열이 빔(다른 종목은 정상). 그날 세션을 이미 봤으므로 휴장이 아닙니다.
+    spark.results = {"SPY": _spark_result("SPY", []),
+                     "AAPL": _spark_result("AAPL", _minutes(_ny(9, 30), _ny(10, 4))),
+                     "MSFT": _spark_result("MSFT", _minutes(_ny(9, 30), _ny(10, 4)))}
+    _us_clock(monkeypatch, _ny(10, 5, 20))
+    tasks.task_paper_stopwatch_us()
+
+    spark.results = {s: _spark_result(s, _minutes(_ny(9, 30), _ny(10, 9))) for s in ("SPY", "AAPL", "MSFT")}
+    _us_clock(monkeypatch, _ny(10, 10, 20))
+    detail = tasks.task_paper_stopwatch_us()
+
+    assert "휴장" not in detail and "3/3 종목" in detail
+    assert len(spark.calls) == 3, "빈 SPY 한 번 뒤에도 다음 회차가 묻습니다(수정 전 2회 — 그날 남은 감시가 멈춤)"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-361: 재기동 뒤 첫 응답 한 번이 비어도 그날을 휴장으로 굳힙니다")
+def test_QA361_미국_오늘_세션을_못_본_채_빈_SPY는_연속_두_번이어야_휴장(store, spark, monkeypatch):
+    """장중 재기동 직후 — 이 프로세스는 그날 세션을 아직 보지 못했습니다. 응답의 정규장 기간은 오늘인데 SPY 봉만 빈 응답."""
+    _us_setup(store)
+    others = {s: _spark_result(s, _minutes(_ny(9, 30), _ny(11, 4))) for s in ("AAPL", "MSFT")}
+    spark.results = {"SPY": _spark_result("SPY", []), **others}
+    _us_clock(monkeypatch, _ny(11, 5, 20))
+    tasks.task_paper_stopwatch_us()
+
+    # 한 번으로는 닫지 않습니다 — 다음 회차가 묻고, 정상 응답이면 감시가 이어집니다.
+    spark.results = {s: _spark_result(s, _minutes(_ny(9, 30), _ny(11, 9))) for s in ("SPY", "AAPL", "MSFT")}
+    _us_clock(monkeypatch, _ny(11, 10, 20))
+    assert "3/3 종목" in tasks.task_paper_stopwatch_us()
+    assert len(spark.calls) == 2
+
+    # 두 번 연속 비면 그때 닫습니다(그날 남은 회차는 묻지 않음).
+    sw.reset_state()
+    spark.calls.clear()
+    spark.results = {"SPY": _spark_result("SPY", []), **others}
+    for clock in ((11, 15, 20), (11, 20, 20)):
+        _us_clock(monkeypatch, _ny(*clock))
+        tasks.task_paper_stopwatch_us()
+    _us_clock(monkeypatch, _ny(11, 25, 20))
+    assert "휴장" in tasks.task_paper_stopwatch_us()
+    assert len(spark.calls) == 2
+
+
 # ==============================================================================
 # 5. 한국 태스크
 # ==============================================================================
