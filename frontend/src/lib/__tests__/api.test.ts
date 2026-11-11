@@ -5,7 +5,7 @@
  * localhost를 찾고, LAN IP를 박으면 맥의 localhost:3000에서 쿠키가 다른 사이트가 됩니다.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiBase, apiGet, apiPost, UnauthorizedError } from "@/lib/api";
+import { ApiError, apiBase, apiGet, apiPost, NetworkError, UnauthorizedError } from "@/lib/api";
 
 describe("apiBase", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -80,17 +80,16 @@ describe("QA-345 쓰기 요청의 시간 한도", () => {
     }));
 
   // 수정 전에는 apiPost가 한도를 받지 않아(셋째 인자를 버림) 응답이 오지 않으면 끝없이 기다렸다 — 실제 매매 끄기 단추가 '끄는 중…'으로 잠김.
-  it.fails("apiPost에 한도를 주면 그 시간 뒤 NetworkError(timedOut)로 끝난다", async () => {
+  it("apiPost에 한도를 주면 그 시간 뒤 NetworkError(timedOut)로 끝난다", async () => {
     vi.stubGlobal("fetch", hangingFetch());
     vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
 
-    const post = apiPost as (path: string, body?: unknown, options?: { timeoutMs?: number }) => Promise<unknown>;
     const outcome = await Promise.race([
-      post("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 30 }).catch((e: unknown) => e),
+      apiPost("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 30 }).catch((e: unknown) => e),
       new Promise((resolve) => setTimeout(() => resolve("아직 기다리는 중"), 400)),
     ]);
 
-    expect(outcome).toBeInstanceOf(ApiError);
+    expect(outcome).toBeInstanceOf(NetworkError);
     expect((outcome as ApiError).status).toBe(0);
     expect((outcome as Error).message).toMatch(/초 안에 응답하지 않았습니다/);
     expect((outcome as { timedOut?: boolean }).timedOut).toBe(true);

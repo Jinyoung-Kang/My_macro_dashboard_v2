@@ -15,6 +15,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  ACTION_TIMEOUT_MS,
+  actionTimeoutText,
+  DISABLE_TIMEOUT_MS,
+  requestTimedOut,
   preflightNote,
   baselineDelta,
   cancelBlocked,
@@ -416,6 +420,18 @@ describe("표기", () => {
     expect(previewImmediateText(true, "update")).toContain("바꾸면 이 목록이 바로 주문됩니다");
     expect(previewImmediateText(true, "resume")).toContain("멈춤을 풀면 이 목록이 바로 주문됩니다");
     for (const value of [false, null, undefined, "true", 1]) expect(previewImmediateText(value, "enable")).toBeNull();
+  });
+
+  it("QA-345: 쓰기 요청의 시간 한도 — 끄기 20초·켜기류 90초, 한도를 넘긴 오류만 '처리됐을 수 있음'으로 가른다", () => {
+    expect(DISABLE_TIMEOUT_MS).toBe(20_000);
+    expect(ACTION_TIMEOUT_MS).toBe(90_000);
+    expect(requestTimedOut(Object.assign(new Error("백엔드가 90초 안에 응답하지 않았습니다"), { status: 0, timedOut: true }))).toBe(true);
+    expect(requestTimedOut(Object.assign(new Error("백엔드 API에 연결하지 못했습니다"), { status: 0, timedOut: false }))).toBe(false);
+    expect(requestTimedOut(new Error("요청 실패 (HTTP 500)"))).toBe(false);
+    expect(requestTimedOut(null)).toBe(false);
+    expect(actionTimeoutText()).toBe(
+      "90초 안에 응답을 받지 못했습니다 — 요청이 처리됐을 수 있으니 창을 닫고 상태를 확인하세요(상태는 다시 읽는 중입니다).",
+    );
   });
 
   it("QA-342: 준비 안 됨 이벤트(개장이 가깝도록 장 운영 정보·수집기 상태를 못 받음) — 이름표와 사유 코드", () => {

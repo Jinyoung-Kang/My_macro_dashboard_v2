@@ -23,9 +23,12 @@ import {
   LOSS_LIMIT,
   parseLossLimit,
   PREFLIGHT_CHECKLIST,
+  ACTION_TIMEOUT_MS,
+  actionTimeoutText,
   previewImmediateText,
   previewTimingText,
   realTradeErrorCode,
+  requestTimedOut,
   realTradeErrorText,
   sideLabel,
   skippedText,
@@ -57,15 +60,18 @@ type SendArgs =
   | { mode: "update"; body: RealTradeUpdateRequest }
   | { mode: "resume"; body: RealTradeResumeRequest };
 
+/** 켜기류 POST의 시간 한도(QA-345) — 넘기면 창이 '보내는 중'에서 풀립니다(예전에는 응답이 오지 않으면 닫을 수 없었음). */
+const ACTION_TIMEOUT = { timeoutMs: ACTION_TIMEOUT_MS } as const;
+
 /** 켜기류 한 번 보내기 — 경로는 늘 endpoints.realtrade.*(경계 시험이 apiPost의 첫 인자를 봅니다). */
 function post(args: SendArgs): Promise<RealTradeActionResponse> {
   switch (args.mode) {
     case "enable":
-      return apiPost<RealTradeActionResponse>(endpoints.realtrade.enable, args.body);
+      return apiPost<RealTradeActionResponse>(endpoints.realtrade.enable, args.body, ACTION_TIMEOUT);
     case "update":
-      return apiPost<RealTradeActionResponse>(endpoints.realtrade.update, args.body);
+      return apiPost<RealTradeActionResponse>(endpoints.realtrade.update, args.body, ACTION_TIMEOUT);
     case "resume":
-      return apiPost<RealTradeActionResponse>(endpoints.realtrade.resume, args.body);
+      return apiPost<RealTradeActionResponse>(endpoints.realtrade.resume, args.body, ACTION_TIMEOUT);
   }
 }
 
@@ -172,6 +178,11 @@ function RealTradeForm({
       } catch (error) {
         // 세션이 끝났으면 그대로 올려 로그인으로 보내게 둡니다(useAsyncAction).
         if (error instanceof UnauthorizedError) throw error;
+        if (requestTimedOut(error)) {
+          // 시간 한도를 넘김 — 서버가 요청을 처리했을 수 있으므로 상태를 다시 읽고(창 밖 칸이 맞춰짐) 그렇게 안내합니다(QA-345).
+          onConflict();
+          throw new Error(actionTimeoutText());
+        }
         const code = realTradeErrorCode(error);
         // 버전 충돌(서버 코드 version-conflict, 코드 없는 409)일 때만 상태를 다시 읽어 창 밖 칸을 맞추고, 다음 시도는 다시 읽은 버전으로 보냅니다.
         // 같은 409라도 book-changed·invalid-state·not-ready는 다시 보내도 같은 답이라 따라가지 않고 그 문구를 보입니다(SEC-3).

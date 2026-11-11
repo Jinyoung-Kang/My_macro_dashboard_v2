@@ -70,9 +70,16 @@ export class UnauthorizedError extends ApiError {
  * 없어서, 어느 주소에 닿지 못했는지를 함께 적습니다.
  */
 export class NetworkError extends ApiError {
-  constructor(message: string) {
+  /**
+   * 시간 한도를 넘겨 끊은 요청인가 — 서버가 요청을 받았을 수 있습니다(처리 여부를 모름). 연결하지 못한 경우는 false입니다.
+   * 쓰기 요청의 화면이 '처리됐을 수 있으니 상태를 확인하세요'를 가를 때 씁니다(QA-345).
+   */
+  readonly timedOut: boolean;
+
+  constructor(message: string, timedOut = false) {
     super(message, 0);
     this.name = "NetworkError";
+    this.timedOut = timedOut;
   }
 }
 
@@ -117,6 +124,7 @@ async function request<T>(
     if (timedOut) {
       throw new NetworkError(
         `백엔드가 ${Math.round(timeoutMs / 1000)}초 안에 응답하지 않았습니다 (${base})`,
+        true,
       );
     }
     if (external?.aborted) {
@@ -188,11 +196,20 @@ export function apiDelete<T>(path: string): Promise<T> {
   return request<T>(path, { method: "DELETE" });
 }
 
-export function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "POST",
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+/**
+ * @param options.timeoutMs 주면 그 시간 뒤 요청을 끊고 NetworkError(timedOut)로 끝냅니다. 주지 않으면 제한 없음(예전과 같음).
+ *                          응답이 오지 않을 때 단추가 '처리 중'으로 잠기면 안 되는 쓰기(실제 매매 끄기·켜기류 — QA-345)에만 겁니다.
+ *                          끊긴 요청을 서버가 이미 처리했을 수 있으므로, 부르는 쪽은 상태를 다시 읽어야 합니다.
+ */
+export function apiPost<T>(path: string, body?: unknown, options?: { timeoutMs?: number }): Promise<T> {
+  return request<T>(
+    path,
+    {
+      method: "POST",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    },
+    options?.timeoutMs ?? 0,
+  );
 }
 
 // ---------------------------------------------------------------- 인증

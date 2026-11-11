@@ -878,6 +878,27 @@ export function realTradeErrorCode(error: unknown): RealTradeErrorCode | null {
   return status === 409 ? "version-conflict" : null;
 }
 
+/**
+ * 끄기 POST의 시간 한도(QA-345) — 끄기는 DB 상태만 바꾸는 가벼운 요청이고 멱등이라(다시 눌러도 안전) 짧게 둡니다. 예전에는 한도가 없어 응답이 오지
+ * 않으면 끄기 단추가 '끄는 중…'으로 잠기고 비상 순서 안내도 뜨지 않았습니다.
+ */
+export const DISABLE_TIMEOUT_MS = 20_000;
+/**
+ * 켜기·바꾸기·해제 POST의 시간 한도(QA-345) — 백엔드가 그 요청 안에서 수집기를 부르는 상한의 합(매매 상태·사전 조회·미체결 목록 —
+ * `CollectorTradeClient`의 연결·읽기 시간 초과)을 덮게 둡니다. 넘기면 창이 '보내는 중'에서 풀려 닫을 수 있고 상태를 다시 읽습니다.
+ */
+export const ACTION_TIMEOUT_MS = 90_000;
+
+/** 시간 한도를 넘겨 끊긴 요청의 오류인가(lib/api `NetworkError.timedOut`) — 서버가 요청을 처리했을 수 있습니다. */
+export function requestTimedOut(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { timedOut?: unknown }).timedOut === true;
+}
+
+/** 켜기류 요청이 시간 한도를 넘겼을 때의 문구 — 처리 여부를 모르므로 상태 확인을 안내합니다(같은 요청을 바로 다시 보내라고 하지 않음). */
+export function actionTimeoutText(): string {
+  return `${ACTION_TIMEOUT_MS / 1000}초 안에 응답을 받지 못했습니다 — 요청이 처리됐을 수 있으니 창을 닫고 상태를 확인하세요(상태는 다시 읽는 중입니다).`;
+}
+
 /** 오류 코드별 문구. */
 export function realTradeErrorText(code: RealTradeErrorCode | null, mode: RealTradeDialogMode, fallback: string | null): string {
   switch (code) {

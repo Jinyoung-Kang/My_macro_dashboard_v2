@@ -5,7 +5,7 @@ import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
-import { nextDisableSentMark, type DisableSentMark, type RealTradeDialogMode } from "@/lib/realtrade";
+import { DISABLE_TIMEOUT_MS, nextDisableSentMark, type DisableSentMark, type RealTradeDialogMode } from "@/lib/realtrade";
 import type { RealTradeActionResponse, RealTradeDisableRequest, RealTradeMarket, RealTradeStatusResponse } from "@/lib/types/realtrade";
 import { RealTradeEnableDialog } from "./RealTradeEnableDialog";
 
@@ -98,7 +98,10 @@ export function RealTradeProvider({ market, children }: { market: RealTradeMarke
   const disabledVersion = useRef<number | null>(null);
 
   const disableRequest = useCallback(async () => {
-    const response = await apiPost<RealTradeActionResponse>(endpoints.realtrade.disable, { market } satisfies RealTradeDisableRequest);
+    // 시간 한도를 겁니다(QA-345) — 응답이 오지 않으면 단추가 '끄는 중…'으로 잠기지 않고 오류·비상 순서 안내로 바뀌어 다시 누를 수 있습니다.
+    const response = await apiPost<RealTradeActionResponse>(endpoints.realtrade.disable, { market } satisfies RealTradeDisableRequest, {
+      timeoutMs: DISABLE_TIMEOUT_MS,
+    });
     disabledVersion.current = typeof response?.version === "number" ? response.version : null;
     return response;
   }, [market]);

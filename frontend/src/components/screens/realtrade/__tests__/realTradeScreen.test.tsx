@@ -183,7 +183,7 @@ describe("끄기는 늘 닿는다", () => {
     renderKr();
     fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
 
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
     expect(api.apiPost).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(await inRegion().findByText("새 주문 멈춤 — 이 기능의 미체결 주문 취소 중")).toBeTruthy();
@@ -214,7 +214,7 @@ describe("끄기는 늘 닿는다", () => {
     expect(screen.getByRole("tabpanel", { name: "실제 계좌" })).toBeTruthy();
     const off = await inRegion().findByRole("button", { name: "실제 매매 끄기" });
     fireEvent.click(off);
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
   });
 
   it("모의 개요가 읽을 수 없음(available false)이고 조회가 꺼져 있어도 멈춤이면 끄기·멈춤 해제", async () => {
@@ -240,7 +240,7 @@ describe("끄기는 늘 닿는다", () => {
     await waitFor(() => expect(calls(STATUS_PATH)).toHaveLength(2));
 
     fireEvent.click(inRegion().getByRole("button", { name: "실제 매매 끄기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
   });
 
   it("끄기가 실패하면 이유와 비상 순서, 단추는 남아 다시 누를 수 있다", async () => {
@@ -253,7 +253,7 @@ describe("끄기는 늘 닿는다", () => {
   });
 
   // 수정 전에는 끄기 POST에 시간 한도가 없어, 응답이 오지 않으면 단추가 '끄는 중…'으로 잠기고 비상 순서 안내도 뜨지 않았다(QA-345).
-  it.fails("QA-345: 끄기 POST는 20초 한도와 함께 나가고, 한도를 넘긴 오류 뒤에는 이유·비상 순서가 보이고 단추가 다시 눌리며 상태를 다시 읽는다", async () => {
+  it("QA-345: 끄기 POST는 20초 한도와 함께 나가고, 한도를 넘긴 오류 뒤에는 이유·비상 순서가 보이고 단추가 다시 눌리며 상태를 다시 읽는다", async () => {
     api.apiPost.mockRejectedValue(Object.assign(new Error("백엔드가 20초 안에 응답하지 않았습니다 (http://localhost:8082)"), { status: 0, timedOut: true }));
     renderKr();
     fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
@@ -280,7 +280,7 @@ describe("끄기는 늘 닿는다", () => {
     expect(window.location.pathname).toBe("/paper/kr/real");
     const off = await inRegion().findByRole("button", { name: "실제 매매 끄기" });
     fireEvent.click(off);
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
     // 실제 계좌 탭에 왔으면 그 단추는 사라집니다(이미 그 탭).
     expect(screen.queryByRole("button", { name: "실제 계좌 탭으로(실제 매매 끄기)" })).toBeNull();
   });
@@ -506,7 +506,7 @@ describe("RT2-FE-3: 취소 포기·결과 모름이 남았을 때 '취소 중'·
     api.apiPost.mockResolvedValue({ ok: true, state: "STOPPING" });
     renderKr();
     fireEvent.click(await inRegion().findByRole("button", { name: "실제 매매 끄기" }));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
 
     const notice = await within(await inRegion().findByRole("status")).findByText(GAVE_UP(1));
     expect(notice.className).toContain("text-danger");
@@ -770,7 +770,7 @@ describe("켜기 창", () => {
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledTimes(1));
     expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/enable", {
       market: "KR", sourceBook: "kr_rules", lossLimitPct: 15, confirm: "실제 매매 켜기", password: "합성-비밀번호", version: 3,
-    });
+    }, { timeoutMs: 90_000 });
     // 결과가 나온 뒤 창이 닫히고 안내.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await inRegion().findByText(/켰습니다 — 다음 맞추기/)).toBeTruthy();
@@ -799,11 +799,11 @@ describe("켜기 창", () => {
     fireEvent.change(loss, { target: { value: "12.5" } });
     expect(submitOf(dialog).disabled).toBe(false);
     fireEvent.click(submitOf(dialog));
-    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/enable", expect.objectContaining({ lossLimitPct: 12.5 })));
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/enable", expect.objectContaining({ lossLimitPct: 12.5 }), { timeoutMs: 90_000 }));
   });
 
   // 수정 전에는 켜기류 POST에 시간 한도가 없어, 응답이 오지 않으면 창이 '보내는 중'으로 남아 닫히지 않고 뒤의 끄기 단추에 닿지 못했다(QA-345).
-  it.fails("QA-345: 켜기 POST는 90초 한도와 함께 나가고, 한도를 넘기면 '처리됐을 수 있으니 상태를 확인'을 보이고 상태를 다시 읽는다", async () => {
+  it("QA-345: 켜기 POST는 90초 한도와 함께 나가고, 한도를 넘기면 '처리됐을 수 있으니 상태를 확인'을 보이고 상태를 다시 읽는다", async () => {
     api.apiPost.mockRejectedValue(Object.assign(new Error("백엔드가 90초 안에 응답하지 않았습니다 (http://localhost:8082)"), { status: 0, timedOut: true }));
     const dialog = await openEnable();
     await fillAll(dialog);
@@ -814,8 +814,10 @@ describe("켜기 창", () => {
       expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/enable", expect.objectContaining({ confirm: "실제 매매 켜기" }), { timeoutMs: 90_000 }));
     expect(await within(dialog).findByText(/90초 안에 응답을 받지 못했습니다 — 요청이 처리됐을 수 있으니/)).toBeTruthy();
     await waitFor(() => expect(calls(STATUS_PATH).length).toBeGreaterThan(before));
-    // 창은 닫을 수 있다(보내는 중이 아님) — 닫으면 뒤의 끄기 단추에 닿는다.
     expect(submitOf(dialog).disabled).toBe(true);   // 비밀번호 칸이 비워져 다시 보내려면 다시 입력
+    // 창은 닫을 수 있다(보내는 중이 아님) — 닫으면 뒤의 켜기·끄기 단추에 닿는다.
+    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("비밀번호가 틀리면(403 password-invalid) 창 안에 문구, 비밀번호 칸을 비우고 창은 남는다", async () => {
@@ -883,7 +885,7 @@ describe("멈춤 해제·설정 바꾸기", () => {
     fireEvent.click(submit);
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/resume", {
       market: "KR", confirm: "멈춤 해제", password: "합성-비밀번호", version: 7,
-    }));
+    }, { timeoutMs: 90_000 }));
   });
 
   it("RT-CONTRACT-4: 멈춤 해제가 409 book-changed면 '끄고 다시 켜서' 문구, invalid-state는 서버 문구 — 버전 충돌로 읽지 않아 상태를 다시 읽지 않는다", async () => {
@@ -931,7 +933,7 @@ describe("멈춤 해제·설정 바꾸기", () => {
     fireEvent.click(submit);
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/update", {
       market: "KR", lossLimitPct: 20, confirm: "설정 바꾸기", password: "합성-비밀번호", version: 3,
-    }));
+    }, { timeoutMs: 90_000 }));
   });
 });
 
