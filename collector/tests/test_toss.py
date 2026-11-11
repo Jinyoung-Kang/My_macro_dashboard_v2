@@ -444,3 +444,56 @@ def test_market_fixture_honors_spec_identities():
                 assert record["investors"]["institution"][field] == sum(
                     part[field] for part in record["breakdown"].values()
                 )
+
+
+# ------------------------------------------------------------------ QA-367: 시간 상한
+@pytest.mark.xfail(strict=True, reason="QA-367: 종목 수만 세고 남은 시간을 보지 않아 느린 토스에서 slow 군 상한(600초)을 넘깁니다")
+def test_QA367_stock_flows는_시간_상한이_지나면_남은_종목을_다음_주기로(store, monkeypatch):
+    codes = [f"{n:06d}" for n in range(100001, 100041)]                    # 40종목
+    _radar_snapshot(store, codes)
+    monkeypatch.setattr(tasks.toss, "TOSS_STOCK_SPACING", 0)
+    fixture = _fixture("stock_investor_trading_005930.json")["result"]["records"]
+    elapsed = [0.0]
+    calls: list[str] = []
+
+    def slow(code, count):                    # 토스 호출은 태스크 시간 예산 층을 거치지 않습니다 — 건당 한도 10초를 다 쓰는 밤
+        calls.append(code)
+        elapsed[0] += 10.0
+        return [toss.normalize_stock_record(r) for r in fixture]
+
+    monkeypatch.setattr(tasks.toss_service, "fetch_stock_investor_trading", slow)
+    monkeypatch.setattr(tasks.toss, "_clock", lambda: elapsed[0], raising=False)       # 수정 전에는 이 시계가 없습니다
+
+    detail = tasks.task_toss_stock_flows()
+
+    assert calls == codes[:30], "300초 뒤에는 새 종목을 묻지 않습니다(수정 전 40회 — 400초)"
+    assert detail.startswith("30/40 종목") and "시간 상한 300초" in detail
+    assert tasks.toss.TOSS_TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-367: 종목 수만 세고 남은 시간을 보지 않아 느린 토스에서 slow 군 상한(600초)을 넘깁니다")
+def test_QA367_radar_universe는_시간_상한이_지나면_남은_종목을_직전_저장본으로_잇는다(store, monkeypatch):
+    codes = [f"{n:06d}" for n in range(100001, 100041)]
+    store.put_snapshot(catalog.SNAP_TOSS_RADAR_UNIVERSE, {"universe": 40, "stocks": [
+        {"code": code, "market": "KOSPI", "records": [{"date": "2026-09-10"}]} for code in codes]})
+    monkeypatch.setattr(tasks.toss, "TOSS_STOCK_SPACING", 0)
+    monkeypatch.setattr(tasks.toss_service, "fetch_trading_amount_leaders", lambda n: [{"code": code} for code in codes])
+    monkeypatch.setattr(tasks.toss_service, "fetch_stock_infos", lambda asked: {})
+    elapsed = [0.0]
+    calls: list[str] = []
+
+    def slow(code, days):
+        calls.append(code)
+        elapsed[0] += 10.0
+        return [{"date": "2026-09-11"}]
+
+    monkeypatch.setattr(tasks.toss_service, "fetch_stock_investor_trading", slow)
+    monkeypatch.setattr(tasks.toss, "_clock", lambda: elapsed[0], raising=False)
+
+    detail = tasks.task_toss_radar_universe()
+
+    assert calls == codes[:30]
+    stocks = {s["code"]: s for s in store.read_snapshot(catalog.SNAP_TOSS_RADAR_UNIVERSE).payload["stocks"]}
+    assert stocks[codes[0]]["records"] == [{"date": "2026-09-11"}]
+    assert stocks[codes[-1]]["records"] == [{"date": "2026-09-10"}] and stocks[codes[-1]]["isStale"] is True, "묻지 못한 종목은 직전 값으로"
+    assert detail.startswith("30/40 종목") and "시간 상한 300초" in detail

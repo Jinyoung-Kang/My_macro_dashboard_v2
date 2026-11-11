@@ -338,3 +338,28 @@ def test_QA193_지연은_기준_종목을_받은_시각으로_센다(store, toss
     assert payload["lagSeconds"] == 15, "기준 종목을 받은 11:04:15 − 마지막 완성 봉 끝 11:04"
     assert "지연 15초(069500)" in detail
     assert payload["fetchedAt"] == _at("11:04", 25).astimezone(timezone.utc).isoformat(), "저장본 받은 시각은 마지막 종목 그대로"
+
+
+@pytest.mark.xfail(strict=True, reason="QA-367: 호출 수(30)만 세고 남은 시간을 보지 않아 느린 토스에서 session 군 상한(60초)을 넘깁니다")
+def test_QA367_시간_상한이_지나면_남은_종목을_묻지_않고_받은_것은_저장한다(store, toss, monkeypatch):
+    _scope(monkeypatch, SCOPE)
+    for code in ("005930", "000660", "069500", "035720", "051910"):
+        toss.bars[code] = _day("11:03")
+    _clock(monkeypatch, "11:02", 4)
+    elapsed = [0.0]
+    plain = toss.candles
+
+    def slow(*args, **kwargs):                # 토스 호출은 태스크 시간 예산 층을 거치지 않습니다 — 건당 한도 10초를 다 쓰는 밤
+        elapsed[0] += 10.0
+        return plain(*args, **kwargs)
+
+    monkeypatch.setattr(paper_watch_kr.toss_service, "fetch_candles", slow)
+    monkeypatch.setattr(paper_watch_kr, "_clock", lambda: elapsed[0], raising=False)   # 수정 전에는 이 시계가 없습니다
+
+    detail = tasks.task_paper_watch_kr()
+
+    assert toss.calls == ["005930", "000660", "069500", "035720"], "40초 뒤에는 새 종목을 묻지 않습니다(수정 전 5회 — 50초)"
+    payload = _payload(store)
+    assert payload["missing"] == ["051910"] and "시간 상한" in payload["error"]
+    assert detail.startswith("4/5 종목")
+    assert paper_watch_kr.WATCH_TIME_BUDGET < tasks.TASK_DEADLINE_SECONDS["session"]
