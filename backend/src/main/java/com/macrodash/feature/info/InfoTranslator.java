@@ -70,7 +70,7 @@ public class InfoTranslator {
     static final String BODY_SYSTEM = """
             금융·경제 글을 한국어로 옮기는 번역가입니다. 한국의 개인 투자자가 원문과 대조해 읽는 용도라, 요약이 아니라 빠짐없는 번역이 필요합니다.
 
-            입력은 글의 한 부분입니다(<원문> 안). 전부 한국어로 옮기십시오.
+            입력은 JSON으로 온 글의 한 부분입니다(text 값). 그 글을 전부 한국어로 옮기십시오.
             - 문단 나눔(빈 줄)을 원문과 같게 유지합니다. 문장을 줄이거나 건너뛰지 않고, 설명이나 의견을 덧붙이지 않습니다.
             - 수치·단위·날짜, 티커·종목 코드·지수 이름·영문 약어는 원문 표기를 유지합니다.
             - 인명·기관명은 한국 언론에서 통용되는 표기를 쓰고, 낯선 이름은 처음 나올 때 괄호로 원문을 붙입니다.
@@ -501,7 +501,9 @@ public class InfoTranslator {
 
     /** 조각 하나를 번역해 저장합니다 → 실패 사유(성공이면 null)와 번역한 모델. */
     private Part translatePart(String part) {
-        Called<String> called = call(BODY_SYSTEM, "<원문>\n" + part + "\n</원문>", BODY_SCHEMA, text -> {
+        // 본문도 제목처럼 JSON 값으로 보냅니다(QA-406). 꼬리표 사이에 그대로 넣으면 수집한 글 안의 닫는 꼬리표가 자료 구간을 닫아
+        // 그 뒤의 글이 구간 밖 글(지시문)처럼 보입니다. JSON 문자열은 글이 닫을 수 없습니다.
+        Called<String> called = call(BODY_SYSTEM, mapper.writeValueAsString(Map.of("text", part)), BODY_SCHEMA, text -> {
             String ko = mapper.readTree(text).path("ko").asText("").strip();
             return ko.isEmpty() ? null : ko;
         });
