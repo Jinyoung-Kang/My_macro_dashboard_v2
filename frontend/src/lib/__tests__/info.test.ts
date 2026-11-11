@@ -12,6 +12,7 @@ import {
   hasHangul,
   itemTime,
   itemTitles,
+  kstMinute,
   parseInfoTab,
   rankingBasis,
   readerOfHeadline,
@@ -22,6 +23,7 @@ import {
   stanceTone,
   statusLabel,
   statusTone,
+  titleNeedsTranslation,
   unseenIncidents,
 } from "../info";
 
@@ -63,14 +65,22 @@ describe("출처 상태", () => {
 });
 
 describe("글", () => {
-  it("한국어 제목이 있으면 위에, 원문 제목은 아래에", () => {
-    expect(itemTitles({ title: "Rates Spike", titleKo: "금리 급등" })).toEqual({ primary: "금리 급등", secondary: "Rates Spike" });
+  it("제목은 원문 그대로 위에, 출처가 붙인 한국어 제목은 아래에 — 번역 단추는 한글이 없고 한국어 제목도 없는 제목에만", () => {
+    expect(itemTitles({ title: "Rates Spike", titleKo: "금리 급등" })).toEqual({ primary: "Rates Spike", secondary: "금리 급등" });
+    expect(titleNeedsTranslation("Rates Spike")).toBe(true);
+    expect(titleNeedsTranslation("Rates Spike", "금리 급등")).toBe(false);
+    expect(titleNeedsTranslation("금리 급등")).toBe(false);
+    expect(titleNeedsTranslation("2026-11-11 +3.5%")).toBe(false);
+    expect(titleNeedsTranslation(null)).toBe(false);
+    expect(titleNeedsTranslation("—")).toBe(false);
     expect(itemTitles({ title: "Rates Spike", titleKo: null })).toEqual({ primary: "Rates Spike", secondary: null });
   });
 
   it("작성 시각을 모르면 받은 시각에 '받음'을 붙인다(작성 시각으로 꾸미지 않음)", () => {
-    expect(itemTime({ publishedAt: "2026-11-11 14:30:59 KST", firstSeenAt: "2026-11-11 15:00:00 KST" })).toBe("2026-11-11 14:30");
-    expect(itemTime({ publishedAt: null, firstSeenAt: "2026-11-11 15:00:00 KST" })).toBe("2026-11-11 15:00 받음");
+    expect(itemTime({ publishedAt: "2026-11-11 14:30:59 KST", firstSeenAt: "2026-11-11 15:00:00 KST" })).toBe("2026-11-11 14:30 KST");
+    expect(itemTime({ publishedAt: null, firstSeenAt: "2026-11-11 15:00:00 KST" })).toBe("2026-11-11 15:00 KST 받음");
+    expect(kstMinute("2026-11-11 04:00:00 KST")).toBe("2026-11-11 04:00 KST");
+    expect(kstMinute(null)).toBe("—");
   });
 
   it("본문 판정 글", () => {
@@ -97,7 +107,7 @@ describe("네이버 수급", () => {
   it("순위 기준 — 장중 추정은 금액이 없다고, 확정은 기간을, 받지 못했으면 이전 값이라고", () => {
     const base = { buy: [], sell: [], period: { from: "2026-11-11", to: "2026-11-11" }, rankedAt: null };
     expect(rankingBasis({ ...base, estimated: true, rankedAt: "2026-11-11T16:44:10+09:00" }))
-      .toBe("장중 추정 — 금액 없음(주식 수) · 2026-11-11 16:44");
+      .toBe("장중 추정 — 금액 없음(주식 수) · 2026-11-11 16:44 KST");
     expect(rankingBasis({ ...base, estimated: false, period: { from: "2026-11-04", to: "2026-11-10" } })).toBe("확정 · 2026-11-04~2026-11-10");
     expect(rankingBasis({ ...base, estimated: false, isStale: true })).toBe("확정 · 2026-11-11 · 이번에 받지 못해 이전 값");
     expect(rankingBasis(undefined)).toBe("받은 순위 없음");
@@ -123,7 +133,7 @@ describe("원문 팝업(ADR 0037)", () => {
 
   it("수집 글은 id로 본문을 읽게 하고, 받아 둔 범위를 한 줄로 알린다", () => {
     const full = readerOfItem(item);
-    expect(full).toMatchObject({ key: "item:0123456789abcdef01234567", itemId: item.id, hasBody: true, text: null, titleKo: null, time: "2026-11-10 19:21" });
+    expect(full).toMatchObject({ key: "item:0123456789abcdef01234567", itemId: item.id, hasBody: true, text: null, titleKo: null, time: "2026-11-10 19:21 KST" });
     expect(full.note).toContain("본문 전체");
     const wire = readerOfItem({ ...item, kind: "headline", bodyStatus: "none", summary: null, titleKo: "금리 급등" });
     expect(wire).toMatchObject({ hasBody: false, titleKo: "금리 급등" });
@@ -133,9 +143,9 @@ describe("원문 팝업(ADR 0037)", () => {
   });
 
   it("사건 뉴스는 피드가 준 요약이 전부다 — 없으면 제목뿐이라고 알린다(없는 본문을 만들지 않음)", () => {
-    const row = { set: "us" as const, title: "Fed holds", titleKo: "연준 동결", summary: "The Committee decided.", link: "https://example.org/a",
+    const row = { set: "us" as const, title: "Fed holds", summary: "The Committee decided.", link: "https://example.org/a",
       source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00:00 KST", fetchedAt: null };
-    expect(readerOfHeadline(row, 0)).toMatchObject({ itemId: null, hasBody: true, text: "The Committee decided.", titleKo: "연준 동결", url: "https://example.org/a" });
+    expect(readerOfHeadline(row, 0)).toMatchObject({ itemId: null, hasBody: true, text: "The Committee decided.", titleKo: null, url: "https://example.org/a", time: "2026-11-11 04:00 KST" });
     const bare = readerOfHeadline({ ...row, summary: null, title: null, link: null, source: null, feed: null, publishedAt: null }, 3);
     expect(bare).toMatchObject({ hasBody: false, text: null, title: "—", sourceLabel: "—", time: "—", url: null });
     expect(bare.note).toContain("제목만");

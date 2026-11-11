@@ -19,7 +19,7 @@ export type InfoItem = {
   /** 원문 주소(출처 링크). */
   url: string;
   title: string;
-  /** 한국어 제목 — waedge 해외 블로그가 붙인 것, 없으면 백엔드가 미리 번역해 둔 것. 아직 없으면 null. */
+  /** 출처가 붙인 한국어 제목(waedge 해외 블로그) — 없으면 null. 우리가 미리 번역하지 않습니다(번역은 제목마다 단추로). */
   titleKo: string | null;
   author: string | null;
   /** 출처가 밝힌 작성 시각(KST). 모르면 null — 받은 시각(firstSeenAt)으로 메우지 않습니다. */
@@ -269,8 +269,6 @@ export function toneSummary(tones: Partial<Record<InfoTone, number>>): string {
 export type Headline = {
   set: "us" | "kr";
   title: string | null;
-  /** 미리 번역해 둔 한국어 제목 — 원래 한국어 제목이거나 아직 번역 전이면 null. */
-  titleKo?: string | null;
   /** 피드가 준 요약(글 페이지는 열지 않음) — 없으면 null. */
   summary?: string | null;
   link: string | null;
@@ -338,6 +336,8 @@ export type MechanismResponse = {
   deferred: { task: string; label: string; reason: string }[];
   /** 한국어 번역의 설정과 오늘(KST) 쓴 원문 글자 수(ADR 0037). 표가 아직 없으면 usedCharsToday는 null. */
   translation?: {
+    /** gemini 또는 claude — GEMINI_API_KEY가 있으면 gemini. */
+    engine: string;
     model: string;
     effort: string;
     dailyChars: number;
@@ -399,10 +399,20 @@ export function bannerText(incidents: readonly InfoIncident[]): string {
 export const INFO_DISMISS_KEY = "info.incidents.dismissed";
 
 // ------------------------------------------------------------------ 글
-/** 목록의 제목 두 줄 — 한국어 제목이 있으면 그것을 위에, 원문 제목을 아래에. */
+/** 목록의 제목 두 줄 — 원문 제목을 그대로 위에, 출처가 붙인 한국어 제목이 있으면 아래에(2026-11-12 사용자 지시 — 미리 번역하지 않음). */
 export function itemTitles(item: Pick<InfoItem, "title" | "titleKo">): { primary: string; secondary: string | null } {
-  if (item.titleKo && item.titleKo !== item.title) return { primary: item.titleKo, secondary: item.title };
+  if (item.titleKo && item.titleKo !== item.title) return { primary: item.title, secondary: item.titleKo };
   return { primary: item.title, secondary: null };
+}
+
+/** 제목에 번역 단추를 낼 것인가 — 한글이 없는 제목이고, 출처가 붙인 한국어 제목도 없을 때. */
+export function titleNeedsTranslation(title: string | null | undefined, titleKo?: string | null): boolean {
+  return !!title && title !== EMPTY && !titleKo && !hasHangul(title) && /\p{L}/u.test(title);
+}
+
+/** 서버가 준 KST 시각 글("2026-11-11 14:30:59 KST")에서 초만 떼고 'KST'는 남깁니다 — 어느 시간대인지 화면에 보이게. */
+export function kstMinute(stamp: string | null | undefined): string {
+  return stamp ? stamp.replace(/:\d{2} KST$/, " KST") : EMPTY;
 }
 
 // ------------------------------------------------------------------ 원문 팝업·번역(ADR 0037)
@@ -470,9 +480,9 @@ export function readerOfHeadline(row: Headline, index: number): ReaderEntry {
   return {
     key: `headline:${row.link ?? title}:${index}`,
     sourceLabel: row.source ?? row.feed ?? EMPTY,
-    time: row.publishedAt ?? EMPTY,
+    time: kstMinute(row.publishedAt),
     title,
-    titleKo: row.titleKo && row.titleKo !== title ? row.titleKo : null,
+    titleKo: null,
     url: row.link,
     itemId: null,
     hasBody: !!row.summary,
@@ -494,10 +504,10 @@ export function bodyLabel(status: InfoItem["bodyStatus"]): string {
   return BODY_LABELS[status] ?? status;
 }
 
-/** 글 시각 — 작성 시각, 모르면 '받은 시각' 표시를 붙여 받은 시각. */
+/** 글 시각(KST 표기) — 작성 시각, 모르면 '받은 시각' 표시를 붙여 받은 시각. */
 export function itemTime(item: Pick<InfoItem, "publishedAt" | "firstSeenAt">): string {
-  if (item.publishedAt) return item.publishedAt.replace(/:\d{2} KST$/, "");
-  return `${item.firstSeenAt.replace(/:\d{2} KST$/, "")} 받음`;
+  if (item.publishedAt) return kstMinute(item.publishedAt);
+  return `${kstMinute(item.firstSeenAt)} 받음`;
 }
 
 // ------------------------------------------------------------------ 네이버 수급
@@ -539,7 +549,10 @@ export function rankingBasis(part: RankingPart | null | undefined): string {
   if (!part) return "받은 순위 없음";
   const stale = part.isStale ? " · 이번에 받지 못해 이전 값" : "";
   if (part.estimated) {
-    const at = part.rankedAt ? part.rankedAt.replace("T", " ").replace(/:\d{2}([+-]\d{2}:\d{2})$/, "") : null;
+    // 네이버가 준 순위 시각은 KST(+09:00)입니다 — 그때만 'KST'를 붙이고, 다른 시간대면 원문 offset을 그대로 둡니다.
+    const at = part.rankedAt
+      ? part.rankedAt.replace("T", " ").replace(/:\d{2}([+-]\d{2}:\d{2})$/, (_, offset: string) => (offset === "+09:00" ? " KST" : ` ${offset}`))
+      : null;
     return `장중 추정 — 금액 없음(주식 수)${at ? ` · ${at}` : ""}${stale}`;
   }
   const { from, to } = part.period;

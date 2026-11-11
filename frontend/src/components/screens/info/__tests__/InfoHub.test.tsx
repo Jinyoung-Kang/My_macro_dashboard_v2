@@ -117,27 +117,29 @@ describe("정보 수집 화면", () => {
     expect(screen.getByText(/차단 통과 수집이 꺼져 있습니다/)).toBeTruthy();
   });
 
-  it("뉴스·글: 한국어 제목을 위에, 다음 쪽은 서버에 page=2로 묻고, 제목을 누르면 원문 팝업에서 본문을 읽고 한국어로 번역한다", async () => {
+  it("뉴스·글: 제목은 원문 그대로(시각은 KST), 다음 쪽은 서버에 page=2로 묻고, 제목을 누르면 원문 팝업에서 본문을 읽고 한국어로 번역한다", async () => {
     routes({
       "/api/info/catalog": CATALOG,
       "/api/info/items/0123456789abcdef01234567": { found: true, item: { ...ITEM, body: "First paragraph of the body." } },
       "/api/info/items?kind=blog": { available: true, items: [ITEM], page: 1, size: 10, total: 25, pages: 3 },
     });
     api.apiPost.mockResolvedValue({
-      ok: true, titleKo: null, textKo: "본문 첫 문단의 번역", alreadyKorean: false, cached: false, truncated: false, model: "claude-haiku-5-5", error: null,
+      ok: true, titleKo: null, textKo: "본문 첫 문단의 번역", alreadyKorean: false, cached: false, truncated: false, model: "gemini-flash-lite-latest", error: null,
     });
     render(<InfoHub tab="news" />);
 
-    await screen.findByRole("button", { name: "금리 급등" });
+    await screen.findByRole("button", { name: "Rates Spike" });
+    expect(screen.getByText("금리 급등")).toBeTruthy();
+    expect(screen.getByText("2026-11-10 19:21 KST")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /제목 번역/ })).toBeNull();      // 출처가 한국어 제목을 붙인 글
     expect(screen.getByRole("link", { name: "원문 열기" }).getAttribute("href")).toBe(ITEM.url);
     fireEvent.click(within(screen.getByRole("navigation", { name: "글 목록 쪽" })).getByRole("button", { name: "다음" }));
     expect(called("/api/info/items?kind=blog").some((path) => path.includes("page=2"))).toBe(true);
 
     expect(called("/api/info/items/")).toHaveLength(0);
-    fireEvent.click(await screen.findByRole("button", { name: "금리 급등" }));
-    const dialog = await screen.findByRole("dialog", { name: "금리 급등" });
+    fireEvent.click(await screen.findByRole("button", { name: "Rates Spike" }));
+    const dialog = await screen.findByRole("dialog", { name: "Rates Spike" });
     expect(await within(dialog).findByText("First paragraph of the body.")).toBeTruthy();
-    expect(within(dialog).getByText("원문 제목: Rates Spike")).toBeTruthy();
     expect(api.apiPost).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "한국어로 번역" }));
@@ -147,10 +149,10 @@ describe("정보 수집 화면", () => {
     expect(within(dialog).getByText("First paragraph of the body.")).toBeTruthy();
   });
 
-  it("뉴스·글: 속보는 미리 번역한 제목을 위에 보이고, 본문 없는 한 줄이라 팝업에 번역 단추가 없다. 사건 뉴스는 피드 요약을 번역한다", async () => {
+  it("뉴스·글: 제목은 미리 번역하지 않고 제목마다 번역 단추로 — 누른 제목만 서버에 묻고 아래에 한국어를 보인다. 실패하면 사유를 보인다", async () => {
     const WIRE = {
       ...ITEM, id: "0123456789abcdef01234568", source: "wire.financialjuice", sourceLabel: "Financial Juice 속보", kind: "headline",
-      title: "Fed's Waller: rates are restrictive", titleKo: "월러 연준 이사: 금리는 제약적", author: null, summary: null, bodyStatus: "none",
+      title: "Fed's Waller: rates are restrictive", titleKo: null, author: null, summary: null, bodyStatus: "none",
     };
     routes({
       "/api/info/catalog": CATALOG,
@@ -158,32 +160,39 @@ describe("정보 수집 화면", () => {
       "/api/info/items?kind=blog": { available: true, items: [], page: 1, size: 10, total: 0, pages: 1 },
       "/api/info/headlines?set=us": {
         available: true, page: 1, size: 10, total: 1, pages: 1,
-        items: [{ set: "us", title: "Fed issues FOMC statement", titleKo: null, summary: "The Committee decided to maintain the target range.",
+        items: [{ set: "us", title: "Fed issues FOMC statement", summary: "The Committee decided to maintain the target range.",
           link: "https://www.federalreserve.gov/x", source: "Federal Reserve", feed: "fed_monetary", publishedAt: "2026-11-11 04:00:00 KST", fetchedAt: null }],
       },
-    });
-    api.apiPost.mockResolvedValue({
-      ok: true, titleKo: "연준, FOMC 성명 발표", textKo: "위원회는 목표 범위를 유지하기로 했다.", alreadyKorean: false, cached: false, truncated: false,
-      model: "claude-haiku-5-5", error: null,
     });
     render(<InfoHub tab="news" />);
 
     fireEvent.click(await screen.findByRole("button", { name: "속보(Financial Juice)" }));
-    fireEvent.click(await screen.findByRole("button", { name: "월러 연준 이사: 금리는 제약적" }));
-    let dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/한 줄 속보라 본문이 없는 출처/)).toBeTruthy();
-    expect(within(dialog).queryByRole("button", { name: "한국어로 번역" })).toBeNull();
-    expect(called("/api/info/items/")).toHaveLength(0);
-    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    await screen.findByRole("button", { name: "Fed's Waller: rates are restrictive" });
+    expect(api.apiPost).not.toHaveBeenCalled();
+    api.apiPost.mockResolvedValueOnce({ ok: true, titleKo: "월러 연준 이사: 금리는 제약적", textKo: null, alreadyKorean: false, cached: true,
+      truncated: false, model: "gemini-flash-lite-latest", error: null });
+    fireEvent.click(screen.getByRole("button", { name: "제목 번역: Fed's Waller: rates are restrictive" }));
+    expect(await screen.findByText("월러 연준 이사: 금리는 제약적")).toBeTruthy();
+    expect(api.apiPost).toHaveBeenCalledWith("/api/info/translate", { title: "Fed's Waller: rates are restrictive" });
+    expect(screen.getByRole("button", { name: "Fed's Waller: rates are restrictive" })).toBeTruthy();      // 원문 제목은 그대로
 
-    fireEvent.click(await screen.findByRole("button", { name: "사건 뉴스(미국)" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Fed issues FOMC statement" }));
-    dialog = await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "사건 뉴스(미국)" }));
+    await screen.findByRole("button", { name: "Fed issues FOMC statement" });
+    expect(screen.getByText("2026-11-11 04:00 KST")).toBeTruthy();
+    api.apiPost.mockResolvedValueOnce({ ok: false, titleKo: null, textKo: null, alreadyKorean: false, cached: true, truncated: false,
+      model: "gemini-flash-lite-latest", error: "Gemini API 선불 크레딧이 없습니다(402)" });
+    fireEvent.click(screen.getByRole("button", { name: "제목 번역: Fed issues FOMC statement" }));
+    expect(await screen.findByText("Gemini API 선불 크레딧이 없습니다(402)")).toBeTruthy();
+
+    api.apiPost.mockResolvedValueOnce({ ok: true, titleKo: "연준, FOMC 성명 발표", textKo: "위원회는 목표 범위를 유지하기로 했다.", alreadyKorean: false,
+      cached: false, truncated: false, model: "gemini-flash-lite-latest", error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Fed issues FOMC statement" }));
+    const dialog = await screen.findByRole("dialog", { name: "Fed issues FOMC statement" });
     expect(within(dialog).getByText("The Committee decided to maintain the target range.")).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "한국어로 번역" }));
     expect(await within(dialog).findByText("위원회는 목표 범위를 유지하기로 했다.")).toBeTruthy();
     expect(within(dialog).getByText("연준, FOMC 성명 발표")).toBeTruthy();
-    expect(api.apiPost).toHaveBeenCalledWith("/api/info/translate", {
+    expect(api.apiPost).toHaveBeenLastCalledWith("/api/info/translate", {
       title: "Fed issues FOMC statement", text: "The Committee decided to maintain the target range.",
     });
   });

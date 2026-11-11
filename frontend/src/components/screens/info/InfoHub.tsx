@@ -13,7 +13,7 @@ import { StatusSection } from "./StatusSection";
 
 const TITLES: Record<InfoTab, { title: string; description: string }> = {
   overview: { title: "정보 수집", description: "수집기가 받는 모든 출처의 상태를 분류별로 한눈에 봅니다. 분류를 누르면 그 출처들의 자료와 상태로 갑니다." },
-  news: { title: "뉴스·글", description: "해외 블로그 14곳·Financial Juice 속보·waedge 시황·거장 견해·사건 뉴스 RSS. 제목을 누르면 받아 둔 원문이 팝업으로 열리고, 팝업에서 한국어로 번역합니다." },
+  news: { title: "뉴스·글", description: "해외 블로그 14곳·Financial Juice 속보·waedge 시황·거장 견해·사건 뉴스 RSS. 제목은 원문 그대로이고 제목마다 번역 단추가 있습니다. 제목을 누르면 받아 둔 원문이 팝업으로 열리고, 팝업에서 본문을 번역합니다. 시각은 KST입니다." },
   kr: { title: "국내 시장·수급", description: "KRX 정보데이터시스템(로그인)·네이버 매매상위·토스·Daum·금융위 등 국내 출처의 자료와 상태." },
   global: { title: "해외 시장·거시", description: "FRED·TradingView·Yahoo·CFTC·경제 캘린더 등 해외 시장과 거시 지표 출처의 상태." },
   filings: { title: "기관·공시·재무", description: "SEC 13F·XBRL 재무·DART·어닝 서프라이즈 출처의 상태." },

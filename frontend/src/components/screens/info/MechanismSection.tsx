@@ -242,16 +242,16 @@ function TranslationCard({ data }: { data: MechanismResponse }) {
   return (
     <Card
       title="한국어 번역"
-      subtitle="영어 제목은 운영 서버가 2분마다 묶어서 미리 번역하고, 본문은 원문 팝업에서 번역 단추를 누를 때만 번역합니다. 한 번 번역한 글자는 저장해 다시 번역하지 않습니다."
+      subtitle="미리 번역하지 않습니다 — 제목은 제목 옆 번역 단추를, 본문은 원문 팝업의 번역 단추를 누를 때만 번역합니다. 한 번 번역한 글자는 저장해 다시 번역하지 않습니다."
     >
       <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
-        <Row label="모델 · effort">
-          {t.model} · {t.effort}
+        <Row label="엔진 · 모델">
+          {t.engine === "gemini" ? "Gemini API" : "Claude API"} · {t.model}
+          {t.engine === "gemini" ? "" : ` · effort ${t.effort}`}
         </Row>
         <Row label="오늘 번역한 원문(KST)">
           {t.usedCharsToday === null ? EMPTY : `${formatNumber(t.usedCharsToday, 0)}자`} / 상한 {formatNumber(t.dailyChars, 0)}자
         </Row>
-        <Row label="제목 묶음">한 번에 {formatNumber(t.titleBatch, 0)}개</Row>
         <Row label="본문 조각">
           {formatNumber(t.bodyChunkChars, 0)}자씩(문단 경계) · 글 하나 {formatNumber(t.bodyMaxChars, 0)}자까지
         </Row>

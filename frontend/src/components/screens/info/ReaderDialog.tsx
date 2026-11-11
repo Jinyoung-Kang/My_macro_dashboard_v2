@@ -20,7 +20,7 @@ export function ReaderDialog({ entry, onClose }: { entry: ReaderEntry | null; on
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={entry ? (entry.titleKo ?? entry.title) : "원문"}
+      title={entry ? entry.title : "원문"}
       description={entry ? `${entry.sourceLabel} · ${entry.time}` : undefined}
       size="lg"
       placement="top"
@@ -68,8 +68,11 @@ function Reader({ entry }: { entry: ReaderEntry }) {
 
   return (
     <div className="mt-3 space-y-3">
-      {koreanTitle && <p className="text-[13px] leading-5 text-text-2">원문 제목: {entry.title}</p>}
-      {!entry.titleKo && translated?.titleKo && <p className="text-[15px] font-semibold leading-snug text-text">{translated.titleKo}</p>}
+      {koreanTitle && (
+        <p lang="ko" className="text-[14px] font-semibold leading-snug text-text-2">
+          {koreanTitle}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {offerTranslate && (
           <button type="button" onClick={translate} disabled={busy} className={buttonClasses("primary", "sm")}>
