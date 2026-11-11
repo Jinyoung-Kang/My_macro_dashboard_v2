@@ -60,6 +60,11 @@ def client(monkeypatch):
     # 하나입니다. DB가 없는 환경(CI의 수집기 잡은 앱용 DB를 띄우지 않습니다)에서
     # /status가 DB 연결 실패로 터지는 것은 여기서 판단할 문제가 아닙니다.
     # 예외를 그대로 올리면 그 환경 차이가 인증 테스트의 실패로 둔갑합니다.
+    #
+    # 토큰 없이 열린 두 경로(/health·/status)는 저장소를 읽습니다. 스텁하지 않으면 DATABASE_URL 기본값
+    # (localhost:5432/macrodash)으로 풀을 열려 합니다 — 이 PC에서는 다른 스택의 자리입니다(QA-277·QA-399).
+    monkeypatch.setattr(main.store, "ping", lambda: None)
+    monkeypatch.setattr(main.store, "store_stats", lambda task_names=None: {})
     return TestClient(main.app, raise_server_exceptions=False)
 
 
@@ -84,7 +89,6 @@ def test_상태_경로는_토큰_없이도_401이_아니다(client, path):
     assert client.get(path).status_code != 401
 
 
-@pytest.mark.xfail(strict=True, reason="QA-277·QA-399: /health·/status가 스텁 없이 기본 DB 주소로 접속을 시도합니다")
 @pytest.mark.parametrize("path", OPEN)
 def test_QA277_상태_경로_시험은_DB_풀을_열지_않는다(client, monkeypatch, path):
     """

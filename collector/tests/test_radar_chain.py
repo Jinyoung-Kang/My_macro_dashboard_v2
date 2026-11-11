@@ -23,6 +23,9 @@ def silence_sources(monkeypatch):
     monkeypatch.setattr(radar.kis, "fetch_deal_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "fetch_daum_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "fetch_naver_ranking", lambda *a, **k: [])
+    # KRX 확정 순위 단계는 저장소(krx_investor_rank 관측치)를 읽습니다. 이 파일은 store 픽스처를 쓰지 않으므로 막아 두지 않으면
+    # DATABASE_URL 기본값으로 풀을 열려 합니다(QA-399). 이 단계를 보는 시험은 이 스텁을 명시적으로 바꿔 끼웁니다.
+    monkeypatch.setattr(radar, "fetch_krx_stored_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "fetch_toss_ranking", lambda *a, **k: [])
     monkeypatch.setattr(radar, "read_from_history", lambda *a, **k: None)
 
@@ -101,12 +104,12 @@ def test_total_failure_returns_empty_not_fabricated():
     assert result["sourceKind"] == "none"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-399: silence_sources가 KRX 저장본 단계를 막지 않아 기본 DB 주소로 접속을 시도합니다")
 def test_QA399_기본_스텁만으로는_DB_풀을_열지_않는다(monkeypatch):
     """
-    이 파일의 시험은 ``store`` 픽스처를 쓰지 않습니다. 그래서 체인의 KRX 저장본 단계(fetch_krx_stored_ranking)가 스텁 없이 돌면
-    ``DATABASE_URL`` 기본값(localhost:5432/macrodash — 이 PC에서는 다른 스택의 자리)으로 풀을 열려 하고, 닿지 않으면 5초씩 기다립니다.
-    그 단계는 저장소 예외를 삼키므로(빈 결과) 부른 사실을 따로 적어 봅니다.
+    이 파일의 시험은 ``store`` 픽스처를 쓰지 않습니다. 체인의 KRX 저장본 단계(fetch_krx_stored_ranking)가 스텁 없이 돌면
+    ``DATABASE_URL`` 기본값(localhost:5432/macrodash — 이 PC에서는 다른 스택의 자리)으로 풀을 열려 하고, 닿지 않으면 5초씩 기다립니다
+    (수정 전 이 파일 15개에 145초). 그 단계는 저장소 예외를 삼키므로(빈 결과) 부른 사실을 따로 적어 봅니다. 같은 일을 모든 시험에서
+    막는 가드는 conftest의 ``_no_database_without_store``입니다.
     """
     from app import store
 

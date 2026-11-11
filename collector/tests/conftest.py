@@ -93,6 +93,33 @@ def _no_real_toss(monkeypatch):
         trade.reset_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def _no_database_without_store(request, monkeypatch):
+    """
+    ``store`` 픽스처 없이 DB 풀을 열려 하면 그 시험을 실패시킵니다(QA-399).
+
+    풀은 ``DATABASE_URL``로 열리고 그 기본값은 ``localhost:5432/macrodash``입니다(app/settings.py). ``store`` 픽스처만 그 값을 테스트 DB의
+    전용 스키마로 바꾸므로, 그 픽스처 없이 풀을 여는 시험은 이 PC의 다른 스택이 쓰는 자리(5432)에 접속을 시도하고 닿지 않으면 5초씩 기다립니다.
+    제품 코드가 저장소 예외를 삼키는 자리(``except Exception``)가 있어, 부른 순간에 막는 것만으로는 드러나지 않습니다 — 부른 사실을 적어 두었다가
+    시험이 끝날 때 실패로 올립니다. DB가 필요 없는 시험은 그 단계를 스텁하고, 필요한 시험은 ``store`` 픽스처를 씁니다.
+    """
+    if "store" in request.fixturenames:
+        yield
+        return
+    from app import store as store_module
+
+    attempts: list[str] = []
+
+    def refuse():
+        attempts.append("get_pool")
+        raise RuntimeError("시험이 store 픽스처 없이 DB에 접속하려 했습니다(QA-399) — 그 단계를 스텁하거나 store 픽스처를 쓰세요")
+
+    monkeypatch.setattr(store_module, "get_pool", refuse)
+    yield
+    if attempts:
+        pytest.fail(f"store 픽스처 없이 DB 풀을 {len(attempts)}번 열려 했습니다(QA-399) — 그 단계를 스텁하거나 store 픽스처를 쓰세요", pytrace=False)
+
+
 @pytest.fixture()
 def server(monkeypatch):
     """
