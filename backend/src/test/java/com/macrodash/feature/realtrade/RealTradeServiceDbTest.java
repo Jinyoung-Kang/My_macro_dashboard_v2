@@ -22,6 +22,7 @@ import com.macrodash.store.UserStore;
 import com.macrodash.support.CurrentUser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -247,6 +248,36 @@ class RealTradeServiceDbTest {
         assertThat(events("UPDATE")).singleElement();
         rejects(() -> svc.update(OWNER, new RealTradeService.UpdateRequest("US", null, BigDecimal.TEN, null, "설정 바꾸기", RIGHT, 0)),
                 400, "not-supported");
+    }
+
+    @Test
+    @Disabled("QA-348: 수정 전에는 지금과 같은 값만 보낸 설정 바꾸기가 버전을 올리고 이벤트·알림을 만듭니다")
+    @DisplayName("QA-348: 지금과 같은 계좌·같은 손실 한도만 보낸 설정 바꾸기는 400 nothing-to-update — 버전·이벤트 그대로, 값이 하나라도 다르면 그것만 바꿈")
+    void updateWithSameValuesIsRefused() {
+        Config live = RealTradeFixtures.live(store, false, d("20000000"));
+        RealTradeService svc = service(true);
+        String sameBook = live.sourceBook();
+        BigDecimal sameLoss = live.lossLimitPct();
+
+        rejects(() -> svc.update(OWNER, new RealTradeService.UpdateRequest("KR", sameBook, null, null, "설정 바꾸기", RIGHT, live.version())),
+                400, "nothing-to-update");
+        rejects(() -> svc.update(OWNER, new RealTradeService.UpdateRequest("KR", null, sameLoss.setScale(4), null, "설정 바꾸기", RIGHT,
+                live.version())), 400, "nothing-to-update");
+        rejects(() -> svc.update(OWNER, new RealTradeService.UpdateRequest("KR", sameBook, sameLoss, null, "설정 바꾸기", RIGHT, live.version())),
+                400, "nothing-to-update");
+        Config after = store.config("KR").orElseThrow();
+        assertThat(after.version()).as("버전 그대로 — 수정 전에는 요청마다 올라갔음").isEqualTo(live.version());
+        assertThat(after.syncPending()).isEqualTo(live.syncPending());
+        assertThat(events("UPDATE")).as("설정 바뀜 이벤트·알림 없음").isEmpty();
+
+        // 같은 계좌 + 다른 손실 한도 — 바뀐 것(손실 한도)만 기록하고 방식은 그대로라 sync_pending을 켜지 않음
+        svc.update(OWNER, new RealTradeService.UpdateRequest("KR", sameBook, sameLoss.add(BigDecimal.ONE), null, "설정 바꾸기", RIGHT,
+                live.version()));
+        Config changed = store.config("KR").orElseThrow();
+        assertThat(changed.lossLimitPct()).isEqualByComparingTo(sameLoss.add(BigDecimal.ONE));
+        assertThat(changed.syncPending()).isEqualTo(live.syncPending());
+        assertThat(events("UPDATE")).singleElement().satisfies(e ->
+                assertThat(e.detail().path("changes")).extracting(node -> node.asString()).containsExactly("lossLimitPct"));
     }
 
     @Test
