@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -837,5 +838,28 @@ class ManualAccountServiceDbTest {
 
         long more = instruction(A, "SELL", 11);
         rejects(() -> apply(filled(more, null, "11", "132000", "5")), 400, "invalid-request");
+    }
+
+    // ------------------------------------------------------------------ QA-357: 시작 창의 거절 글
+    @Test
+    @Disabled("QA-357: 수정 전 — 거절 글이 어느 줄(종목)인지 말하지 않습니다")
+    @DisplayName("QA-357 시작 — 종목을 못 찾거나 같은 종목을 두 줄로 넣은 거절 글에 입력한 종목 글자(길면 자름)가 들어감, 금액은 없음")
+    void startRejectionNamesTheLine() {
+        assertThatThrownBy(() -> service.start(new ManualAccountService.StartRequest(d("1000000"),
+                List.of(line(A, "1", "12345"), line("합성", "1", "67890")), null)))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains("합성").contains("찾지 못했습니다").doesNotContain("12345", "67890", "1000000");
+                });
+        assertThatThrownBy(() -> service.start(new ManualAccountService.StartRequest(d("1000000"),
+                List.of(line(A, "1", "12345"), line("합성전자", "2", "67890")), null)))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains("합성전자").contains("두 줄").doesNotContain("12345", "67890");
+                });
+        String longName = "가".repeat(200);
+        assertThatThrownBy(() -> service.start(new ManualAccountService.StartRequest(d("1000000"), List.of(line(longName, "1", "1")), null)))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> assertThat(e.getMessage().length()).as("입력 글자는 잘라 넣음").isLessThan(120));
+        assertThat(store.balance("isa")).isEmpty();
     }
 }
