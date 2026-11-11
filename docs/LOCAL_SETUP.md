@@ -145,7 +145,8 @@ make setup
 4. API 키 보유 현황과 "없을 때 무엇이 꺼지는지"를 알려 줍니다
 5. 실행 방법을 확인합니다 — **Docker가 떠 있으면 Java·Maven·Node·psql은
    검사하지 않습니다.** 전부 컨테이너 안에 있어서 맥에 설치할 필요가 없습니다
-6. 포트 4개(3000·8080·8000·5432)를 확인합니다. 이미 `make up`으로 이
+6. 포트 4개(`.env`의 `FRONTEND_PORT`·`BACKEND_PORT`·`COLLECTOR_PORT`·`DATABASE_PORT` — 이 저장소는 3002·8082·8002·5434,
+   줄이 없으면 3000·8080·8000·5432)를 확인합니다. 이미 `make up`으로 이
    프로젝트가 떠 있다면 "이 프로젝트의 컨테이너가 사용 중 (정상)"으로 표시되며,
    **포트를 바꿀 필요가 없습니다**
 
@@ -322,10 +323,10 @@ make dev-collector      # 내부적으로 collector/.venv/bin/python -m uvicorn 
 cd ~/Projects/My_macro_dashboard_v2
 java -version           # 21 이상인지 먼저 확인하세요
 
-# DB 주소(.env의 DATABASE_PORT)와 수집기 토큰(.env의 COLLECTOR_API_TOKEN)은 make가 넘깁니다.
+# DB 주소(.env의 DATABASE_PORT), 수집기 토큰(.env의 COLLECTOR_API_TOKEN), 듣는 포트(.env의 BACKEND_PORT)와
+# 수집기 주소(.env의 COLLECTOR_PORT)는 make가 넘깁니다 — 셸에서 SERVER_PORT·COLLECTOR_URL을 주면 그 값이 먼저입니다.
 DATABASE_USER="macro" DATABASE_PASSWORD="macro" \
 OWNER_EMAIL="로그인용_이메일" APP_PASSWORD="원하는_비밀번호" \
-COLLECTOR_URL="http://localhost:8002" \
   make dev-backend
 ```
 

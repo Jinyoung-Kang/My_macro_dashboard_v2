@@ -95,7 +95,6 @@ def test_QA251_dev_backend는_따옴표_주석_중복_줄에도_true_false만_�
     assert _run(tmp_path, "dev-backend", env_file="PAPER_ENABLED='true'\n")["PAPER"] == "true"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-371: dev-backend가 SERVER_PORT·COLLECTOR_URL을 넘기지 않아 8080에서 뜨고 localhost:8000(다른 스택의 자리)을 부릅니다")
 def test_QA371_dev_backend는_env_파일의_백엔드·수집기_포트를_따른다(tmp_path):
     # make dev-frontend는 .env의 BACKEND_PORT(이 저장소 8082)를 부르고 make dev-collector는 COLLECTOR_PORT(8002)에서 뜹니다.
     seen = _run(tmp_path, "dev-backend", env_file="BACKEND_PORT=8082\nCOLLECTOR_PORT=8002\n")
@@ -103,7 +102,6 @@ def test_QA371_dev_backend는_env_파일의_백엔드·수집기_포트를_따�
     assert seen["COLLECTOR"] == "http://localhost:8002"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-371: dev-backend가 SERVER_PORT·COLLECTOR_URL을 넘기지 않습니다")
 def test_QA371_dev_backend의_포트도_셸에서_준_값이_먼저이고_env_파일에_없으면_기본값(tmp_path):
     seen = _run(tmp_path, "dev-backend", {"SERVER_PORT": "9090", "COLLECTOR_URL": "http://localhost:9000"},
                 env_file="BACKEND_PORT=8082\nCOLLECTOR_PORT=8002\n")
@@ -143,7 +141,6 @@ def _setup_ports(tmp_path: Path, env_lines: str) -> tuple[list[str], str]:
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash가 없어 건너뜁니다.")
-@pytest.mark.xfail(strict=True, reason="QA-371: setup.sh의 포트 확인이 3000·8080·8000·5432를 박아 둬 이 저장소의 포트(.env)를 보지 않습니다")
 def test_QA371_setup의_포트_확인은_env_파일의_포트를_본다(tmp_path):
     asked, out = _setup_ports(tmp_path, "FRONTEND_PORT=3002\nBACKEND_PORT=8082\nCOLLECTOR_PORT=8002\nDATABASE_PORT=5434\n")
     assert asked == ["3002", "8082", "8002", "5434"], "다른 스택(3000/8080/8000/5432)이 떠 있다고 이 저장소의 충돌로 알리지 않습니다"

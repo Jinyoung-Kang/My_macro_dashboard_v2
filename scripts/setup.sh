@@ -7,7 +7,7 @@
 #   2) 운영자 계정 이메일(OWNER_EMAIL) 확인 · 수집기 내부 토큰(COLLECTOR_API_TOKEN) 자동 생성
 #      — 기본 placeholder나 빈 값을 쓰면 안 됩니다. 둘 다 외부 API 키가 아닙니다
 #   3) 필수 도구 확인 (Docker / 네이티브 실행용 Java·Node·Python)
-#   4) 포트 충돌 확인 (3000 · 8080 · 8000 · 5432 · 6379)
+#   4) 포트 충돌 확인 (.env의 FRONTEND_PORT · BACKEND_PORT · COLLECTOR_PORT · DATABASE_PORT — 줄이 없으면 3000 · 8080 · 8000 · 5432)
 #
 # 이미 .env가 있으면 덮어쓰지 않습니다. 여러 번 실행해도 안전합니다.
 #
@@ -270,10 +270,22 @@ check_port() {
   fi
 }
 
-check_port 3000 "화면"       "FRONTEND_PORT"
-check_port 8080 "백엔드 API" "BACKEND_PORT"
-check_port 8000 "수집기"     "COLLECTOR_PORT"
-check_port 5432 "PostgreSQL" "DATABASE_PORT"
+# 확인할 포트는 .env에서 읽습니다(QA-371). 예전에는 3000·8080·8000·5432를 박아 둬, 포트를 바꿔 쓰는 저장소에서는 엉뚱한 포트를 보고
+# 같은 PC의 다른 스택을 충돌로 알렸습니다. 줄이 없거나 숫자가 아니면 compose의 기본값입니다(마지막 줄의 값, 따옴표·줄 끝 주석은 뗌).
+env_port() {
+  local value
+  value=$(grep -s "^$1=" .env | tail -n 1 | cut -d= -f2- | sed -e 's/[[:space:]]*#.*$//' -e 's/[^0-9]//g' || true)
+  if [ -n "$value" ]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$2"
+  fi
+}
+
+check_port "$(env_port FRONTEND_PORT 3000)"  "화면"       "FRONTEND_PORT"
+check_port "$(env_port BACKEND_PORT 8080)"   "백엔드 API" "BACKEND_PORT"
+check_port "$(env_port COLLECTOR_PORT 8000)" "수집기"     "COLLECTOR_PORT"
+check_port "$(env_port DATABASE_PORT 5432)"  "PostgreSQL" "DATABASE_PORT"
 
 if [ "$CONFLICT" -eq 1 ]; then
   note "FRONTEND_ORIGIN·NEXT_PUBLIC_API_BASE를 .env에 직접 적어 두셨다면 새 포트로 함께 고치세요"

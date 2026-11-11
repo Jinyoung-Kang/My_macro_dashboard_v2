@@ -216,7 +216,10 @@ dev-collector: ## 수집기 개발 서버 (자동 리로드 · collector/.venv �
 
 dev-backend: ## 백엔드 개발 서버
 	@# DATABASE_URL을 직접 주지 않았으면 .env의 DATABASE_PORT로 붙습니다(수집기와 같은 DB).
+	@# 포트도 .env를 따릅니다(QA-371): 듣는 포트는 BACKEND_PORT(make dev-frontend가 부르는 포트), 수집기 주소는 COLLECTOR_PORT(make dev-collector가
+	@# 뜨는 포트). 넘기지 않으면 application.yml의 기본값 8080·localhost:8000이 되어 화면과 어긋나고 이 PC의 다른 스택을 부릅니다. 셸에서 준 값이 먼저.
 	cd backend && DATABASE_URL=$${DATABASE_URL:-jdbc:postgresql://localhost:$(DATABASE_PORT)/$${DATABASE_NAME:-macrodash}} \
+		SERVER_PORT=$${SERVER_PORT:-$(BACKEND_PORT)} COLLECTOR_URL=$${COLLECTOR_URL:-http://localhost:$(COLLECTOR_PORT)} \
 		mvn spring-boot:run
 
 dev-frontend: ## 화면 개발 서버 (핫 리로드)
