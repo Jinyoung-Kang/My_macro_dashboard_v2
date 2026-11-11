@@ -265,6 +265,22 @@ describe("끄기는 늘 닿는다", () => {
     await waitFor(() => expect(calls(STATUS_PATH).length).toBeGreaterThanOrEqual(2));   // 끄기가 처리됐을 수 있으니 상태를 다시 읽음
   });
 
+  // 시간 한도를 넘긴 끄기는 서버에서 처리됐을 수 있다. 수정 전에는 다시 읽은 상태가 꺼짐이어도 '끄지 못했습니다 … 끄기 단추를 다시 누르세요'와
+  // 비상 순서가 남아(끄기 단추는 이미 사라짐) 칩의 '꺼짐'과 모순됐다(QA-345 — 독립 검토).
+  it.fails("QA-345: 끄기가 시간 한도를 넘겼어도 다시 읽은 상태가 꺼짐이면 '끄지 못했습니다'와 비상 순서를 남기지 않는다", async () => {
+    api.apiPost.mockRejectedValue(Object.assign(new Error("백엔드가 20초 안에 응답하지 않았습니다 (http://localhost:8082)"), { status: 0, timedOut: true }));
+    renderKr();
+    const off = await inRegion().findByRole("button", { name: "실제 매매 끄기" });
+    // 요청은 서버에 닿아 처리됐다 — 그 뒤의 상태 읽기는 꺼짐을 돌려준다.
+    reads[STATUS_PATH] = () => Promise.resolve(status({ state: "OFF" }));
+    fireEvent.click(off);
+
+    await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/realtrade/disable", { market: "KR" }, { timeoutMs: 20_000 }));
+    await waitFor(() => expect(inRegion().queryByRole("button", { name: "실제 매매 끄기" })).toBeNull());   // 꺼짐을 읽음
+    expect(inRegion().queryByText(/실제 매매를 끄지 못했습니다/)).toBeNull();
+    expect(inRegion().queryByText(/POST \/api\/realtrade\/disable/)).toBeNull();
+  });
+
   it("SEC-6: 개요 탭에서 모의 개요가 실패(500)해도 실제 계좌 탭으로 가는 단추가 있고, 누르면 실제 매매 끄기 단추가 보이고 눌린다", async () => {
     window.history.replaceState(null, "", "/paper/kr");
     reads["/api/paper/overview?market=KR"] = () => Promise.reject(new Error("요청 실패 (HTTP 500)"));
