@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from app import catalog
-from app.fetch import ladder
+from app.fetch import ladder, pacing, policy, state
+from app.fetch.reply import Reply
 from app.services import krx_data, radar
 from app.services.info_text import ShapeError
 from app.tasks import info as info_tasks
@@ -203,6 +204,129 @@ def test_모두_형식이_다르면_형식_바뀜(store, account):
     with pytest.raises(ShapeError):
         info_tasks.collect_krx(fetch=broken, now=EVENING)
     assert store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY) is None
+
+
+# ==============================================================================
+# 3-2. 다시 받기와 로그인 거절 (QA-390) — 깰 때마다 로그인하고 전부 다시 받지 않습니다
+# ==============================================================================
+QA390 = pytest.mark.xfail(strict=True, reason="QA-390: 일부가 비거나 로그인이 거절되면 깰 때마다 다시 로그인하고 전부 다시 받습니다")
+
+
+@QA390
+def test_QA390_다시_받을_때는_받지_못한_부분만_받는다(store, account):
+    first = FakeKrx(answers={"MDCSTAT03701": ladder.FetchFailed("data.krx.co.kr HTTP 503")})
+    info_tasks.collect_krx(fetch=first, now=EVENING)
+    assert sorted(store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload["failed"]) == ["foreign.KOSDAQ", "foreign.KOSPI"]
+
+    again = FakeKrx()
+    detail = info_tasks.collect_krx(fetch=again, now=EVENING)
+
+    assert [(m, u.rsplit("/", 1)[-1]) for m, u, _ in again.calls[:3]] == [
+        ("GET", "MDCCOMS001.cmd"), ("GET", "login.jsp?site=mdc"), ("POST", "MDCCOMS001D1.cmd")]
+    assert sorted(d["bld"].rsplit("/", 1)[-1] for _, url, d in again.calls[3:]) == ["MDCSTAT03701", "MDCSTAT03701"], \
+        "로그인 뒤에는 받지 못한 화면 두 건(코스피·코스닥)만 보냅니다"
+    snap = store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload
+    assert snap["failed"] == [] and snap["asOf"] == "2026-11-11"
+    assert snap["foreign"]["KOSPI"]["asOf"] == "2026-11-11" and "isStale" not in snap["foreign"]["KOSPI"]
+    assert snap["totals"]["KOSPI"]["asOf"] == "2026-11-11" and "isStale" not in snap["totals"]["KOSPI"], "이미 받은 부분은 그대로"
+    assert len(snap["rankings"]) == 12 and "순매수 상위 12/12" in detail
+
+    third = FakeKrx()
+    assert "외부 호출 0회" in info_tasks.collect_krx(fetch=third, now=EVENING) and third.calls == []
+
+
+@QA390
+def test_QA390_순위는_그날_관측치가_있는_쌍을_건너뛴다(store, account):
+    empty_once = FakeKrx()
+    real = empty_once.__call__
+
+    def kosdaq_pension_empty(url, **kwargs):
+        data = kwargs.get("data") or {}
+        if url == krx_data.DATA_URL and data.get("bld", "").endswith("MDCSTAT02401") \
+                and (data.get("mktId"), data.get("invstTpCd")) == ("KSQ", "6000"):
+            empty_once.calls.append((kwargs.get("method", "GET"), url, dict(data)))
+            return empty_once._reply(url, {"output": []})
+        return real(url, **kwargs)
+
+    info_tasks.collect_krx(fetch=kosdaq_pension_empty, now=EVENING)
+    assert store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload["failed"] == ["rank.KOSDAQ.연기금"]
+
+    again = FakeKrx()
+    info_tasks.collect_krx(fetch=again, now=EVENING)
+
+    ranks = again.data_calls("MDCSTAT02401")
+    assert [(d["mktId"], d["invstTpCd"]) for d in ranks] == [("KSQ", "6000")], "그날 관측치가 이미 있는 11쌍은 다시 받지 않습니다"
+    assert len(again.calls) == 3 + 1
+    assert store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload["failed"] == []
+
+
+@QA390
+def test_QA390_하루_예산이_떨어지면_남은_부분을_보내지_않는다(store, account):
+    fake = FakeKrx()
+    sent = {"data": 0}
+
+    def budget_runs_out(url, **kwargs):
+        if url == krx_data.DATA_URL:
+            sent["data"] += 1
+            if sent["data"] > 5:
+                raise ladder.FetchSkipped("data.krx.co.kr 오늘 요청 예산(100건)을 다 써서 보내지 않음")
+        return fake(url, **kwargs)
+
+    info_tasks.collect_krx(fetch=budget_runs_out, now=EVENING, rng=random.Random(3))
+
+    assert sent["data"] == 6, "예산이 떨어진 것을 안 뒤에는 남은 부분마다 다시 보내 보지 않습니다(지연만 쌓임)"
+    snap = store.read_snapshot(catalog.SNAP_INFO_KRX_DAILY).payload
+    assert len(snap["failed"]) == 20 - 5, "받지 못한 부분은 모두 '받지 못함'으로 남아 다음에 그 부분만 다시 받습니다"
+
+
+@QA390
+def test_QA390_로그인이_거절되면_그_호스트를_닫아_닫힌_동안_로그인을_보내지_않는다(store, account, monkeypatch):
+    now = {"t": datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(state, "_utcnow", lambda: now["t"])
+    monkeypatch.setattr(pacing, "_sleep", lambda seconds: None)
+    sent: list[tuple[str, str]] = []
+
+    def send(method, url, *, host, headers, params, data):
+        sent.append((method, url.rsplit("/", 1)[-1]))
+        body = b'{"_error_code": "CD010"}' if url == krx_data.LOGIN_URL else b"<html>login</html>"
+        return Reply(status=200, headers={"content-type": "text/html; charset=utf-8"}, body=body, final_url=url)
+
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+    state.set_due_at(info_tasks.KRX_TASK, now["t"] - timedelta(minutes=1))
+
+    with pytest.raises(ladder.FetchRejected, match=r"KRX 로그인 거절\(CD010\)") as caught:
+        info_tasks.task_info_krx_daily()
+
+    assert sent == [("GET", "MDCCOMS001.cmd"), ("GET", "login.jsp?site=mdc"), ("POST", "MDCCOMS001D1.cmd")]
+    assert "test-id-not-real" not in str(caught.value) and "test-pw-not-real" not in str(caught.value)
+    shut = state.closed(krx_data.HOST)
+    assert shut is not None and timedelta(hours=12) <= shut.until - now["t"] <= timedelta(hours=24), "사람이 고쳐야 풀리는 닫힘"
+    row = store.source_state(info_tasks.KRX_TASK)
+    assert row["status"] == "blocked" and "KRX 로그인 거절(CD010)" in row["reason"], "출처 상태 '차단' → 끊김 알림"
+
+    # 세 시간 뒤 — 일정이 됐더라도(강제로 당김) 닫힌 동안에는 로그인 요청이 나가지 않습니다.
+    now["t"] += timedelta(hours=3)
+    state.set_due_at(info_tasks.KRX_TASK, now["t"] - timedelta(minutes=1))
+    with pytest.raises(ladder.FetchRejected):
+        info_tasks.task_info_krx_daily()
+    assert len(sent) == 3, "닫힌 동안 로그인 요청 0건"
+
+
+def test_QA390_일시_실패는_닫지_않는다(store, account, monkeypatch):
+    now = {"t": datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(state, "_utcnow", lambda: now["t"])
+    monkeypatch.setattr(pacing, "_sleep", lambda seconds: None)
+
+    def send(method, url, *, host, headers, params, data):
+        status = 503 if url == krx_data.LOGIN_URL else 200
+        return Reply(status=status, headers={"content-type": "text/html"}, body=b"<html>busy</html>", final_url=url)
+
+    monkeypatch.setitem(ladder._SENDERS, policy.TIER_IMPERSONATE, (send, lambda: True))
+
+    with pytest.raises(ladder.FetchFailed):
+        info_tasks.collect_krx(now=now["t"])
+
+    assert state.closed(krx_data.HOST) is None, "5xx·시간 초과는 로그인 거절이 아닙니다"
 
 
 # ==============================================================================
