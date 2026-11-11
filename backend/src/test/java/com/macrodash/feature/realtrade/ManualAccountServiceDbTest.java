@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Trade;
 import com.macrodash.store.SchemaCheck;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -782,5 +783,35 @@ class ManualAccountServiceDbTest {
         service.undoTrade(buyId);
         assertThat(store.position("isa", C)).as("매도를 먼저 되돌리면 매수도 되돌려짐").isEmpty();
         assertThat(cash()).isEqualByComparingTo("775000");
+    }
+
+    // ------------------------------------------------------------------ QA-355: 수수료 상한
+    @Test
+    @Disabled("QA-355: 수정 전 — 수수료 칸에 상한이 없어 체결 금액과 같은 수수료도 그대로 저장됩니다")
+    @DisplayName("QA-355 수수료 — max(체결 금액의 5%, 1,000원)을 넘으면 400(평균 단가를 수수료 칸에 적은 실수), 아주 작은 매매의 최소 수수료는 통과, 고치기도 같음")
+    void feeCap() {
+        startSynthetic();
+        long buy = instruction(B, "BUY", 1);
+        assertThatThrownBy(() -> apply(filled(buy, null, "1", "21000", "21000")))
+                .isInstanceOfSatisfying(ManualAccountException.class, e -> {
+                    assertThat(e.status()).isEqualTo(400);
+                    assertThat(e.code()).isEqualTo("invalid-request");
+                    assertThat(e.getMessage()).contains(B).contains("수수료");
+                });
+        rejects(() -> apply(filled(buy, null, "1", "21000", "1050.01")), 400, "invalid-request");
+        assertThat(cash()).isEqualByComparingTo("775000");
+        assertThat(store.instruction(buy).orElseThrow().status()).isEqualTo("PLANNED");
+
+        apply(filled(buy, null, "1", "21000", "1000"));
+        assertThat(cash()).as("5%(1,050) 아래는 통과").isEqualByComparingTo(d("775000").subtract(d("21000")).subtract(d("1000")));
+        long tradeId = onlyTrade().id();
+        rejects(() -> service.editTrade(tradeId, new ManualAccountService.EditTradeRequest(d("1"), d("21000"), d("21000"))), 400, "invalid-request");
+        assertThat(onlyTrade().fee()).as("거절된 고치기는 수수료를 바꾸지 않음").isEqualByComparingTo("1000");
+
+        // 500원짜리 매매의 최소 수수료 100원(20%)은 절대 하한 1,000원 아래라 통과
+        when(paper.lastPrices(any())).thenReturn(Map.of(A, d("12000"), B, d("21000"), C, d("500")));
+        long small = instruction(C, "BUY", 1);
+        apply(filled(small, null, "1", "500", "100"));
+        assertThat(position(C).quantity()).isEqualByComparingTo("1");
     }
 }

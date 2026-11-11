@@ -423,6 +423,23 @@ describe("체결 입력 창(2026-11-09)", () => {
     expect(buildEditTradeRequest(line)).toEqual({ ok: true, body: { quantity: 2, amount: 150_001, fee: 30 } });
   });
 
+  // QA-355: 수정 전에는 수수료 칸에 경고가 없어 평균 단가를 수수료 칸에 적어도 그대로 보냈다(it.fails).
+  it.fails("QA-355 수수료 경고 — 체결 금액의 1%를 넘고 100원을 넘으면 글, 작은 매매의 최소 수수료·어림 수수료는 경고 없음, 단가 경고와 함께도 보임", () => {
+    const swapped = { price: "54000", refPrice: 54_000, amount: "162000", fee: "54000" };
+    expect(confirmLineWarning(swapped)).toContain("수수료");
+    const onePercent = { price: "54000", refPrice: 54_000, amount: "162000", fee: "1620" };
+    expect(confirmLineWarning(onePercent)).toBeNull();
+    const tiny = { price: "500", refPrice: 500, amount: "500", fee: "100" };
+    expect(confirmLineWarning(tiny)).toBeNull();
+    const usual = { price: "54000", refPrice: 54_000, amount: "162000", fee: "24" };
+    expect(confirmLineWarning(usual)).toBeNull();
+    const both = { price: "162000", refPrice: 54_000, amount: "486000", fee: "162000" };
+    expect(confirmLineWarning(both)).toContain("높습니다");
+    expect(confirmLineWarning(both)).toContain("수수료");
+    const unread = { price: "54000", refPrice: 54_000, amount: "abc", fee: "54000" };
+    expect(confirmLineWarning(unread)).toBeNull();
+  });
+
   it("경고 — 단가가 참고 가격에서 10% 넘게 벗어나면 글, 안이면 없음", () => {
     expect(confirmLineWarning({ price: "54000", refPrice: 53_000 })).toBeNull();
     expect(confirmLineWarning({ price: "162000", refPrice: 54_000 })).toContain("높습니다");
