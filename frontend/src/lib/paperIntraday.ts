@@ -4,6 +4,7 @@
  */
 import { EMPTY } from "@/lib/format";
 import { type Badge, checkpointReasonText, checkpointStatusBadge } from "@/lib/paper";
+import { intradayOriginLabel, intradayTriggerText } from "@/lib/paperIntradayLabels";
 import type {
   PaperIntradayPlan,
   PaperIntradayStatus,
@@ -20,22 +21,6 @@ export function intradayStatusBadge(status: string | null | undefined): Badge {
 const FEED: Record<string, string> = {
   MINUTE: "감시 1분봉",
   HOURLY: "시간별 관측치",
-};
-
-/** 계획 행을 누가 만들었나(ADR 0031) — 결정의 예약(RESERVED)은 따로 적지 않고, 운영자 행(MANUAL)은 '수동' 표시로 보입니다. */
-const ORIGIN: Record<string, string | null> = {
-  RESERVED: null,
-  MANUAL: null,
-  NEXT: "다음 예약",
-  GUARANTEE: "코드 보장",
-  EVENT: "사건",
-};
-
-/** 사건 종류(ADR 0031 — 보유 종목 ±4%·지수 ±1.5%·트레일링 스탑 2% 안). 모르는 종류는 받은 글자 그대로. */
-const EVENT_TYPE: Record<string, string> = {
-  HELD_MOVE: "보유 종목 변동",
-  INDEX_MOVE: "지수 변동",
-  NEAR_STOP: "스탑 근접",
 };
 
 /** 장중 판단 사유 코드 가운데 장중 확인과 뜻이 다른 것. */
@@ -86,7 +71,7 @@ function planRow(plan: PaperIntradayPlan, market: PaperMarketCode): IntradayPlan
   const watch = (plan.watch ?? []).filter((ticker) => typeof ticker === "string" && ticker.length > 0);
   if (watch.length > 0) parts.push(watch.join(", "));
   if (plan.manual) parts.push("수동");
-  const origin = plan.origin ? (plan.origin in ORIGIN ? ORIGIN[plan.origin] : plan.origin) : null;
+  const origin = intradayOriginLabel(plan.origin);
   if (origin) parts.push(origin);
   return {
     key: `${plan.slot ?? "?"}`,
@@ -94,19 +79,8 @@ function planRow(plan: PaperIntradayPlan, market: PaperMarketCode): IntradayPlan
     badge: intradayStatusBadge(plan.status),
     reason: plan.reason ? intradayReasonText(plan.reason, market) : null,
     question: plan.question ?? null,
-    trigger: triggerText(plan.trigger),
+    trigger: intradayTriggerText(plan.trigger),
   };
-}
-
-/** 사건 한 줄 — 사건 종류·티커와 당기기 전 원래 시각. 사건이 없으면 null. */
-function triggerText(trigger: PaperIntradayPlan["trigger"]): string | null {
-  if (!trigger) return null;
-  const events = (trigger.events ?? [])
-    .map((event) => [event?.type ? (EVENT_TYPE[event.type] ?? event.type) : null, event?.ticker ?? null].filter(Boolean).join(" "))
-    .filter((text) => text.length > 0);
-  const parts = events.length > 0 ? [`사건: ${events.join(", ")}`] : [];
-  if (trigger.originalAt) parts.push(`원래 ${trigger.originalAt}`);
-  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /**
