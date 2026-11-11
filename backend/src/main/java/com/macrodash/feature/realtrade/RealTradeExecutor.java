@@ -71,8 +71,17 @@ class RealTradeExecutor {
     static final int MAX_SENDS = 12;
     /** 대조의 시각 범위 앞쪽 여유(명세 §4 — first_sent_at − 5초). */
     static final Duration RECONCILE_EARLY = Duration.ofSeconds(5);
-    /** 대조는 재전송 창이 끝나고 이만큼 더 기다린 뒤에(마지막 재전송이 목록에 오를 시간). */
-    static final Duration RECONCILE_GRACE = Duration.ofSeconds(20);
+    static final long RECONCILE_LATE_SECONDS = 30;
+    /**
+     * 대조의 시각 범위 뒤쪽 여유(QA-343) — 수집기는 {@code 첫 전송 + 7분} 직전에 받은 같은 키 재전송을 통과시키고, 그 POST는 토큰 발급·속도 조절을
+     * 기다린 뒤(주문 한 건 예산 {@code ORDER_BUDGET_SECONDS} 20초 안) 창 끝을 넘겨 출발할 수 있습니다. 그 재전송이 처음으로 주문을 만들고 응답만
+     * 잃으면 주문 시각이 창 끝 뒤라, 범위를 창 끝에서 자르면 후보 0개로 이상 멈춤이 되고 그 주문은 추적되지 않은 채 체결됩니다. 수집기 예산과 시계
+     * 차이(쉬는 날 판정 5초)를 덮게 둡니다 — {@code RealTradeExecutorDbTest}의 대조 시험이 수집기 상수와 비교합니다.
+     */
+    static final Duration RECONCILE_LATE = Duration.ofSeconds(RECONCILE_LATE_SECONDS);
+    static final long RECONCILE_GRACE_SECONDS = 45;
+    /** 대조는 재전송 창이 끝나고 이만큼 더 기다린 뒤에(마지막 재전송이 목록에 오를 시간 — 뒤쪽 여유 {@link #RECONCILE_LATE}보다 길게). */
+    static final Duration RECONCILE_GRACE = Duration.ofSeconds(RECONCILE_GRACE_SECONDS);
     /** 취소 재시도 간격(마지막 시도부터)과 상한(첫 취소 포함). */
     static final Duration CANCEL_RETRY_SPACING = Duration.ofSeconds(30);
     static final int MAX_CANCEL_TRIES = 5;
@@ -351,7 +360,7 @@ class RealTradeExecutor {
     }
 
     /**
-     * 목록 대조(명세 §4) — 같은 종목·방향·수량·시장가·같은 TIF, 주문 시각 ∈ [첫 전송 − 5초, 첫 전송 + 7분], 다른 행에 묶이지 않은 후보가 정확히 하나면 그
+     * 목록 대조(명세 §4) — 같은 종목·방향·수량·시장가·같은 TIF, 주문 시각 ∈ [첫 전송 − 5초, 첫 전송 + 7분 + 30초], 다른 행에 묶이지 않은 후보가 정확히 하나면 그
      * 번호로 묶습니다. 목록을 못 읽으면 다음 주기(정하지 못한 것으로 셈). 0개·둘 이상이면 켜짐일 때 이상 멈춤.
      */
     private Reconciled reconcile(OrderRow row, Lists lists, boolean live) {
@@ -361,7 +370,7 @@ class RealTradeExecutor {
         }
         Set<String> bound = store.boundTossOrderIds(MARKET);
         Instant from = row.firstSentAt().minus(RECONCILE_EARLY);
-        Instant to = row.firstSentAt().plus(RESEND_WINDOW);
+        Instant to = row.firstSentAt().plus(RESEND_WINDOW).plus(RECONCILE_LATE);
         List<BrokerOrder> candidates = new ArrayList<>();
         for (BrokerOrder o : orders) {
             if (row.symbol().equals(o.symbol()) && row.side().equals(o.side()) && "MARKET".equals(o.orderType())

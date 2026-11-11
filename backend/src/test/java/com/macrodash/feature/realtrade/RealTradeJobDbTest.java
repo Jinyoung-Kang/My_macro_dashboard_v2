@@ -1750,14 +1750,14 @@ class RealTradeJobDbTest {
         store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
         when(client.openOrders()).thenReturn(Reply.failed("collector-timeout"));
 
-        run("10:07:30");   // 재전송 창(7분) + 여유(20초)가 지남 — 대조할 차례인데 목록을 못 읽음
+        run("10:07:50");   // 재전송 창(7분) + 여유(45초)가 지남 — 대조할 차례인데 목록을 못 읽음
 
         assertThat(cfg().state()).as("대조를 끝내지 못함 — 끄는 중 그대로").isEqualTo("STOPPING");
         assertThat(events("STOPPED")).isEmpty();
 
         when(client.openOrders()).thenReturn(Reply.of(List.of(late)));
         when(client.todayOrders()).thenReturn(Reply.of(List.of(late)));
-        run("10:07:40");
+        run("10:08:00");
 
         assertThat(store.recentOrders("KR", 1).getFirst().tossOrderId()).isEqualTo("T-LATE");
         verify(client).cancelOrder("T-LATE");
@@ -1772,7 +1772,7 @@ class RealTradeJobDbTest {
         when(client.openOrders()).thenReturn(Reply.of(List.of(late)));
         when(client.todayOrders()).thenReturn(Reply.of(List.of(late)));
 
-        run("10:07:30");
+        run("10:07:50");
 
         assertThat(store.recentOrders("KR", 1).getFirst().tossOrderId()).isEqualTo("T-LATE");
         verify(client).cancelOrder("T-LATE");
@@ -1786,7 +1786,7 @@ class RealTradeJobDbTest {
         unknownMirrorBuy();
         store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
 
-        run("10:07:30");   // 목록은 읽었고 후보 0개 — 끄는 중에는 멈추지 않고 사람 확인으로 남김
+        run("10:07:50");   // 목록은 읽었고 후보 0개 — 끄는 중에는 멈추지 않고 사람 확인으로 남김
 
         assertThat(cfg().state()).isEqualTo("OFF");
         assertThat(events("STOPPED")).singleElement().satisfies(e -> assertThat(e.detail().path("unresolved").asInt()).isEqualTo(1));

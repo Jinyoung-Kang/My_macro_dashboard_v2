@@ -110,7 +110,7 @@
 
 - 422 `idempotency-key-conflict`는 `UNKNOWN`이면서 즉시 이상 멈춤(`idempotency-conflict`). 429는 `REJECTED`(`rate-limited`)지만 '같은 오류 3회'에 세지 않는다.
 - **재전송**: `UNKNOWN`인 행은 `first_sent_at + 7분`까지만 같은 키·저장한 바이트 그대로 다시 보낸다(수량·가격을 다시 계산하지 않음). 그 뒤에는 POST 없이 **대조**: 토스 OPEN 목록과 오늘 CLOSED 목록에서
-  같은 종목·방향·수량·`MARKET`·같은 TIF, `orderedAt ∈ [first_sent_at − 5초, first_sent_at + 7분]`, 다른 행에 묶이지 않은 후보가 **정확히 하나**면 그 orderId로 묶고, 아니면 이상 멈춤(`unknown-order`).
+  같은 종목·방향·수량·`MARKET`·같은 TIF, `orderedAt ∈ [first_sent_at − 5초, first_sent_at + 7분 + 30초]`(뒤쪽 30초는 QA-343 — 창 끝 직전에 받은 재전송의 POST가 수집기 주문 예산 20초 안에서 창 끝을 넘겨 출발할 수 있음. 대조는 `first_sent_at + 7분 + 45초` 뒤에 시작), 다른 행에 묶이지 않은 후보가 **정확히 하나**면 그 orderId로 묶고, 아니면 이상 멈춤(`unknown-order`).
 - 새 키(시도 2)는 앞 시도가 `REJECTED`·`NOT_SENT`이거나 종료 상태와 체결 수량이 확인된 뒤에만, 남은 수량만, 원 주문(또는 묶음의 종목)당 최대 2회.
 - 수집기 안의 재시도는 401(재발급 대상 코드) 뒤 같은 키로 한 번뿐이다. 그 밖의 재시도는 백엔드 한 곳에서만.
 - 상태 추적: 매 주기 `GET /toss/trading/orders/open` 한 번(전량) + OPEN에서 빠진 이 기능 주문만 `GET /toss/trading/orders/{orderId}` 한 번씩. 종료 상태(`FILLED`·`CANCELED`·`REJECTED`·`REPLACED`)와

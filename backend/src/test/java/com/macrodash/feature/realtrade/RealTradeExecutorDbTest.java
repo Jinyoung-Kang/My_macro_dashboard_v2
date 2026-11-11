@@ -15,7 +15,6 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -277,7 +276,7 @@ class RealTradeExecutorDbTest {
                 broker("T-QTY", A, "BUY", "DAY", "FILLED", "6", "6", kst("2026-11-06T10:00:02"), null),       // 수량 다름
                 broker("T-EARLY", A, "BUY", "DAY", "FILLED", "5", "5", kst("2026-11-06T09:59:50"), null),     // 시각 밖
                 broker("T-TIF", A, "BUY", "OPG", "FILLED", "5", "5", kst("2026-11-06T10:00:02"), null))));    // TIF 다름
-        clock.set(kst("2026-11-06T10:07:30"));
+        clock.set(kst("2026-11-06T10:07:50"));   // 재전송 창(7분) + 여유(45초) 뒤
         assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()))
                 .isEqualTo(new RealTradeExecutor.Resolution(0, false));
         OrderRow bound = store.order(unknown.id()).orElseThrow();
@@ -289,7 +288,6 @@ class RealTradeExecutorDbTest {
     }
 
     @Test
-    @Disabled("QA-343: 수정 전에는 대조 범위가 첫 전송 + 7분에서 끊겨, 창 끝 직전 재전송이 만든 주문이 후보에서 빠져 이상 멈춤이 됩니다")
     @DisplayName("QA-343: 재전송 창 끝 직전에 받은 재전송이 창 끝 뒤(첫 전송 + 7분 12초)에 주문을 만들고 응답을 잃어도 대조가 그 주문을 묶는다 — 이상 멈춤 아님")
     void reconcileLateResendStillBinds() {
         Config cfg = live();
@@ -314,17 +312,54 @@ class RealTradeExecutorDbTest {
     }
 
     @Test
+    @DisplayName("QA-343: 대조는 재전송 창 + 여유(45초)가 지나기 전에는 하지 않는다 — 10:07:44에는 아직 기다림(이상 멈춤 없음), 10:07:45부터")
+    void reconcileWaitsForGrace() {
+        Config cfg = live();
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "read-timeout", null));
+        executor.send(mirror(101, 100, "BUY", 5), cfg);
+
+        clock.set(kst("2026-11-06T10:07:44"));
+        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow())).isEqualTo(new RealTradeExecutor.Resolution(0, false));
+        assertThat(store.config("KR").orElseThrow().state()).isEqualTo("LIVE");
+        assertThat(executor.cleanupDone(clock.now)).as("끄기 정리도 같은 여유를 기다림").isFalse();
+        verify(client, never()).todayOrders();
+
+        clock.set(kst("2026-11-06T10:07:45"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        assertThat(store.config("KR").orElseThrow().haltReason()).as("후보 0개").isEqualTo("unknown-order");
+        assertThat(executor.cleanupDone(clock.now)).isTrue();
+    }
+
+    @Test
+    @DisplayName("QA-343 대조: 대조 범위의 뒤쪽 여유는 수집기의 주문 한 건 예산을 덮고, 대조는 그 여유가 지난 뒤에 시작하며, 재전송 창은 수집기와 같다")
+    void reconcileWindowCoversCollectorOrderBudget() throws Exception {
+        java.nio.file.Path trade = java.nio.file.Path.of("../collector/app/services/toss_trade.py");
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.exists(trade), "collector/app/services/toss_trade.py를 찾을 수 없습니다");
+        String source = java.nio.file.Files.readString(trade);
+        java.util.regex.Matcher budget = java.util.regex.Pattern.compile("(?m)^ORDER_BUDGET_SECONDS\\s*=\\s*([\\d.]+)").matcher(source);
+        java.util.regex.Matcher window = java.util.regex.Pattern.compile("(?m)^RESEND_WINDOW\\s*=\\s*timedelta\\(minutes=(\\d+)\\)").matcher(source);
+        assertThat(budget.find()).as("ORDER_BUDGET_SECONDS").isTrue();
+        assertThat(window.find()).as("RESEND_WINDOW").isTrue();
+
+        assertThat(Long.parseLong(window.group(1))).as("같은 키 재전송 창").isEqualTo(RealTradeExecutor.RESEND_MINUTES);
+        assertThat((double) RealTradeExecutor.RECONCILE_LATE_SECONDS)
+                .as("창 끝 직전에 받은 재전송의 POST는 수집기 주문 예산 안에서 늦게 출발할 수 있음").isGreaterThanOrEqualTo(Double.parseDouble(budget.group(1)));
+        assertThat(RealTradeExecutor.RECONCILE_GRACE_SECONDS).as("대조는 뒤쪽 여유가 지난 뒤에")
+                .isGreaterThan(RealTradeExecutor.RECONCILE_LATE_SECONDS);
+    }
+
+    @Test
     @DisplayName("7분 뒤 대조 — 후보가 0개면 이상 멈춤(unknown-order)")
     void reconcileNoneHalts() {
         Config cfg = live();
         when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "read-timeout", null));
         executor.send(mirror(101, 100, "BUY", 5), cfg);
-        clock.set(kst("2026-11-06T10:07:30"));
+        clock.set(kst("2026-11-06T10:07:50"));
         assertThat(executor.resolveUnknown(clock.now, null)).isEqualTo(new RealTradeExecutor.Resolution(1, false));
         assertThat(store.config("KR").orElseThrow().state()).isEqualTo("LIVE");
 
         // 켜짐이면 멈춤
-        clock.set(kst("2026-11-06T10:07:40"));
+        clock.set(kst("2026-11-06T10:08:00"));
         executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
         Config halted = store.config("KR").orElseThrow();
         assertThat(halted.state()).isEqualTo("HALTED");
@@ -343,7 +378,7 @@ class RealTradeExecutorDbTest {
         when(client.todayOrders()).thenReturn(Reply.of(List.of(
                 broker("T-1", A, "BUY", "DAY", "PENDING", "5", "0", kst("2026-11-06T10:00:01"), null),
                 broker("T-2", A, "BUY", "DAY", "FILLED", "5", "5", kst("2026-11-06T10:03"), null))));
-        clock.set(kst("2026-11-06T10:07:30"));
+        clock.set(kst("2026-11-06T10:07:50"));
         executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
         assertThat(store.config("KR").orElseThrow().haltReason()).isEqualTo("unknown-order");
         assertThat(only().tossOrderId()).isNull();
