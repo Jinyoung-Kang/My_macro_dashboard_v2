@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1545,6 +1546,59 @@ class RealTradeJobDbTest {
         assertThat(sentSummaries()).anyMatch(o -> o.startsWith("BUY " + A + " DAY"));
         assertThat(cfg().state()).isEqualTo("LIVE");
         assertThat(events("RESTRICTED")).hasSize(1);
+    }
+
+    /** 실제 클라이언트({@code CollectorTradeClient.restrictions})와 같은 입력 검사를 하는 가짜 — 형식 밖 종목이 하나라도 있거나 60개를 넘으면 조회 실패. */
+    private void strictRestrictions(Set<String> vi, List<java.util.Collection<String>> asked) {
+        when(client.restrictions(any())).thenAnswer(inv -> {
+            java.util.Collection<String> symbols = inv.getArgument(0);
+            asked.add(List.copyOf(symbols));
+            if (symbols.size() > 60 || symbols.stream().anyMatch(s -> s == null || !s.matches("^[0-9][0-9A-Z]{5}$"))) {
+                return Reply.failed("invalid-symbol");
+            }
+            return Reply.of(new CollectorTradeClient.Restrictions(vi, Map.of()));
+        });
+    }
+
+    @Test
+    @Disabled("QA-351: 수정 전에는 형식 밖 종목 코드 보유가 하나라도 있으면 매매 제한 조회가 통째로 빠져 VI 종목도 바로 보냅니다")
+    @DisplayName("QA-351: 형식 밖 종목 코드의 보유가 있어도 매매 제한 조회는 형식에 맞는 종목만으로 부르고, VI 종목은 기다린다")
+    void restrictionsQuerySkipsMalformedHoldings() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L, 22L), List.of());
+        preflight("6000000", Map.of(C, new String[]{"100", "40000"}, "Q500001", new String[]{"3", "10000"}), Map.of(A, "50000", B, "20000"));
+        List<java.util.Collection<String>> asked = new ArrayList<>();
+        strictRestrictions(Set.of(A), asked);
+
+        run("09:10:05");
+
+        assertThat(asked).isNotEmpty().allSatisfy(symbols -> assertThat(symbols).doesNotContain("Q500001").contains(A, B, C));
+        assertThat(sentSummaries()).as("VI인 A는 기다림(수정 전에는 조회가 빠져 바로 보냄)").noneMatch(o -> o.contains(A))
+                .anyMatch(o -> o.startsWith("SELL " + C));
+        assertThat(events("RESTRICTED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("vi-active"));
+    }
+
+    @Test
+    @Disabled("QA-351: 수정 전에는 물어볼 종목이 60개를 넘으면 매매 제한 조회가 통째로 빠집니다")
+    @DisplayName("QA-351: 보유가 많아 물어볼 종목이 60개를 넘으면 주문 대상 종목을 먼저 넣고 60개에서 자른다")
+    void restrictionsQueryKeepsOrderSymbolsWithinLimit() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(21L, 22L), List.of());
+        Map<String, String[]> holdings = new LinkedHashMap<>();
+        for (int i = 0; i < 70; i++) {
+            holdings.put(String.format("9%05d", i), new String[]{"1", "1000"});   // 합성 종목 70개(주문 대상 A·B보다 뒤 순서)
+        }
+        preflight("6000000", holdings, Map.of(A, "50000", B, "20000"));
+        List<java.util.Collection<String>> asked = new ArrayList<>();
+        strictRestrictions(Set.of(A), asked);
+
+        run("09:10:05");
+
+        assertThat(asked).isNotEmpty().allSatisfy(symbols -> {
+            assertThat(symbols).hasSizeLessThanOrEqualTo(60);
+            assertThat(symbols).as("주문 대상 종목이 먼저").contains(A, B);
+        });
+        assertThat(sentSummaries()).as("VI인 A는 기다림").noneMatch(o -> o.contains(" " + A + " "));
     }
 
     @Test
