@@ -1,6 +1,6 @@
 """
 tests/test_radar_parsers.py
-Daum·Naver 응답 파서 — 지금까지 fetch와 붙어 있어 테스트가 없던 부분.
+Daum 응답 파서 — 지금까지 fetch와 붙어 있어 테스트가 없던 부분. Naver(새 API)는 tests/test_radar_naver.py.
 """
 from __future__ import annotations
 
@@ -56,36 +56,6 @@ def test_daum_빈_응답과_이상한_응답은_빈_목록():
     assert radar.parse_daum_ranking(None, investor="외국인", trade_type="순매수", top_n=30, target_date="x") == []  # type: ignore[arg-type]
 
 
-def _naver_html(rows: list[tuple[str, str, str, str, str]]) -> str:
-    body = "".join(
-        f"<tr><td>{i}</td><td><a href='/item/main.naver?code={code}'>{name}</a></td>"
-        f"<td>{price}</td><td>{amount}</td><td>{change}</td><td>x</td><td>y</td><td>{amount}</td></tr>"
-        for i, (code, name, price, change, amount) in enumerate(rows, start=1)
-    )
-    return f"<table class='type_1'><tr><th>h</th></tr>{body}</table>"
-
-
-def test_naver_파서는_표에서_코드_가격_등락률_금액을_읽는다():
-    html = _naver_html([("005930", "삼성전자", "71,000", "+2.38%", "123,450"),
-                        ("000660", "SK하이닉스", "180,000", "-1.10%", "98,700")])
-    records, reason = radar.parse_naver_ranking(html, trade_type="순매수", top_n=30, target_date="20260911")
-
-    assert reason is None
-    assert [r["code"] for r in records] == ["005930", "000660"]
-    assert records[0]["price"] == 71000.0 and records[0]["changePct"] == 2.38
-    assert records[0]["netAmountEok"] == 1234.5          # 백만 원 단위 표 → 억
-
-
-def test_naver_표가_없거나_행이_없으면_사유를_돌려준다():
-    records, reason = radar.parse_naver_ranking("<html><body>blocked</body></html>", trade_type="순매수",
-                                                 top_n=30, target_date="20260911")
-    assert records == [] and "표가 없습니다" in reason
-
-    records, reason = radar.parse_naver_ranking("<table class='type_1'><tr><th>h</th></tr></table>",
-                                                 trade_type="순매수", top_n=30, target_date="20260911")
-    assert records == [] and "종목 행이 없습니다" in reason
-
-
 def test_daum_가격_등락률이_빠지면_모르는_값이고_금액이_빠지면_행을_뺀다():
     """빠진 값을 0.0으로 적으면 '가격 0원·등락률 0%'가 이력에 영구히 남습니다."""
     payload = _daum_payload([
@@ -97,14 +67,3 @@ def test_daum_가격_등락률이_빠지면_모르는_값이고_금액이_빠지
     assert [r["code"] for r in records] == ["005930"]          # 순매수 금액을 모르면 순위를 매길 수 없다
     assert records[0]["price"] is None and records[0]["changePct"] is None
     assert records[0]["netAmountEok"] == 10.0
-
-
-def test_naver_빈_칸은_모르는_값이고_금액_칸이_비면_행을_뺀다():
-    html = _naver_html([("005930", "삼성전자", "-", "", "123,450"),
-                        ("000660", "SK하이닉스", "180,000", "-1.10%", "")])
-    records, reason = radar.parse_naver_ranking(html, trade_type="순매수", top_n=30, target_date="20260911")
-
-    assert reason is None
-    assert [r["code"] for r in records] == ["005930"]
-    assert records[0]["price"] is None and records[0]["changePct"] is None
-    assert records[0]["netAmountEok"] == 1234.5

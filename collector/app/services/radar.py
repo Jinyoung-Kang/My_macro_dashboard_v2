@@ -2,7 +2,7 @@
 app/services/radar.py
 국내 수급 레이더 — 무중단(fail-safe) 폴백 체인.
 
-    KIS(장중 가집계) → Daum(API) → Naver(렌더링) → 토스(공식) → 누적 이력
+    KIS(장중 가집계) → Daum(API) → Naver(stock.naver.com API, 확정 값만) → 토스(공식) → 누적 이력
 
 앞쪽이 성공하면 뒤는 호출되지 않습니다.
 
@@ -23,13 +23,10 @@ app/services/radar.py
 from __future__ import annotations
 
 import logging
-import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from bs4 import BeautifulSoup
-
-from ..numbers import to_float
+from ..numbers import to_float, to_int
 from .. import catalog, krcalendar, kst, store
 from ..http import get_session
 from . import kis, toss
@@ -44,20 +41,28 @@ DAUM_RANKING_URL = "https://finance.daum.net/api/trend/investor_purchase/"
 _NAVER_LAST_REASON: dict[str, str | None] = {"value": None}
 _TOSS_LAST_REASON: dict[str, str | None] = {"value": None}
 
-NAVER_RANKING_URL = "https://finance.naver.com/sise/sise_deal_rank_iframe.naver"
+# 네이버 증권 새 화면(stock.naver.com/market/stock/kr/trend/foreigner·organization)이 표를 채우는 JSON API (ADR 0035 결정 10).
+# 옛 iframe 페이지(finance.naver.com/sise/sise_deal_rank_iframe.naver)는 HTTP 410으로 끊겼습니다.
+NAVER_RANKING_URL = "https://stock.naver.com/api/domestic/market/trend/trendForeignOrg"
+NAVER_REFERERS = {
+    "FOREIGNER": "https://stock.naver.com/market/stock/kr/trend/foreigner",
+    "ORGANIZATION": "https://stock.naver.com/market/stock/kr/trend/organization",
+}
+# 화면이 한 번에 받는 행 수(무한 스크롤 한 쪽). 상위 N이 이보다 크면 다음 쪽(startIdx=1)을 한 번 더 받습니다.
+NAVER_PAGE_SIZE = 20
+NAVER_MAX_PAGES = 2
+# 새 API는 외국인·기관만 줍니다. 나머지 넷은 토스(거래대금 상위 안의 순위)로 넘어갑니다.
+NAVER_INVESTOR_TYPES = {"외국인": "FOREIGNER", "기관": "ORGANIZATION"}
 
 DAUM_INVESTOR_TYPES = {"외국인": "FOREIGN", "기관": "INSTITUTION"}
 
-NAVER_INVESTOR_CODES = {
-    "외국인": "9000", "기관": "7000", "개인": "8000",
-    "연기금": "6000", "금융투자": "2000", "투신": "3000",
-}
+# 레이더가 받는 투자주체(화면 목록 순서). 지금 받을 수 있는 출처는 투자주체마다 다릅니다(diagnose_sources).
+RADAR_INVESTORS = ("외국인", "기관", "개인", "연기금", "금융투자", "투신")
 
 INTERVAL_LABELS = {"TODAY": "당일", "DAYS_5": "5거래일", "DAYS_20": "20거래일"}
 
 # 받는 조건(백엔드 RadarService.INVESTORS·TRADE_TYPES·INTERVALS와 같음). 모르는 값을 받으면 예전 PyKrx 단계가 외국인·순매도로
 # 바꿔 받아 그 결과를 임의 이름의 저장본·이력에 썼습니다(QA-037).
-RADAR_INVESTORS = tuple(NAVER_INVESTOR_CODES)
 RADAR_TRADE_TYPES = ("순매수", "순매도")
 
 # ==============================================================================
@@ -217,13 +222,12 @@ def diagnose_sources(investor: str) -> list[str]:
             "(외국인·기관만)"
         )
 
-    naver_reason = _NAVER_LAST_REASON["value"]
-    if naver_reason and "410" in naver_reason:
+    if investor not in NAVER_INVESTOR_TYPES:
         reasons.append(
-            "Naver는 이 페이지를 폐지했습니다 (HTTP 410 — stock.naver.com으로 이전)"
+            f"Naver는 '{investor}'{_object_particle(investor)} 제공하지 않습니다 (외국인·기관만)"
         )
-    elif naver_reason:
-        reasons.append(f"Naver: {naver_reason}")
+    elif _NAVER_LAST_REASON["value"]:
+        reasons.append(f"Naver: {_NAVER_LAST_REASON['value']}")
 
     toss_reason = _TOSS_LAST_REASON["value"]
     if toss_reason:
@@ -420,117 +424,115 @@ def fetch_naver_ranking(
     top_n: int,
 ) -> list[dict]:
     """
-    Naver 투자자별 매매상위 (iframe 페이지).
+    Naver 투자자별 매매상위 — stock.naver.com 새 화면이 부르는 ``trendForeignOrg`` API(외국인·기관, 당일, KRX 시장).
 
-    주의: 이 페이지는 "현재 시점"의 최신 순위만 제공합니다. 과거 날짜 조회에
-    쓰면 안 됩니다(호출부가 그 조건을 지킵니다).
-
-    구버전은 이 페이지를 헤드리스 Chromium으로 렌더링해 읽었습니다. iframe
-    페이지 자체는 서버가 완성된 HTML을 주므로 렌더링 없이 파싱해도 같은
-    결과가 나옵니다. 브라우저 의존성이 사라져 배포가 단순해집니다.
+    주의: "가장 최근 거래일"의 순위만 줍니다. 과거 날짜 조회에 쓰면 안 됩니다(호출부가 그 조건을 지킵니다).
+    장중·마감 직후의 순위는 추정(``estimated``)이라 순매수 금액이 오지 않습니다(주식 수만) — 그때는 행을 만들지 않고
+    다음 단계로 넘깁니다. 확정 값이 오면 금액(원)을 억 원으로 씁니다(ADR 0035 결정 10).
     """
-    investor_code = NAVER_INVESTOR_CODES.get(investor)
-    if investor_code is None:
-        logger.warning("Naver 미지원 투자주체: %s", investor)
+    investor_type = NAVER_INVESTOR_TYPES.get(investor)
+    if investor_type is None:
+        _NAVER_LAST_REASON["value"] = (
+            f"'{investor}'{_object_particle(investor)} 제공하지 않습니다 (외국인·기관만)"
+        )
         return []
 
     params = {
-        "sosok": "01" if ("KOSPI" in market.upper() or "코스피" in market) else "02",
-        "investor_gubun": investor_code,
-        "type": "buy" if trade_type == "순매수" else "sell",
+        "investorType": investor_type,
+        "tradeType": "KRX",
+        "marketType": "KOSPI" if ("KOSPI" in market.upper() or "코스피" in market) else "KOSDAQ",
+        "startIdx": 0,
+        "pageSize": NAVER_PAGE_SIZE,
+        "periodType": "DAY",
     }
+    pages: list[dict] = []
+    for page in range(NAVER_MAX_PAGES):
+        params["startIdx"] = page
+        try:
+            res = get_session().get(
+                NAVER_RANKING_URL,
+                params=params,
+                # 화면이 보내는 문맥 그대로 — 그 화면에서 부른 요청처럼.
+                headers={"Referer": NAVER_REFERERS[investor_type], "Accept": "application/json"},
+                timeout=10,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Naver 랭킹 수집 실패: %s", exc)
+            _NAVER_LAST_REASON["value"] = f"{type(exc).__name__}: {str(exc)[:120]}"
+            return []
+        if res.status_code != 200:
+            _NAVER_LAST_REASON["value"] = f"HTTP {res.status_code}"
+            return []
+        try:
+            payload = res.json()
+        except ValueError:
+            _NAVER_LAST_REASON["value"] = "JSON이 아닌 응답 (차단 페이지이거나 API 형식이 바뀐 경우)"
+            return []
+        pages.append(payload)
+        listed = _naver_rank_list(payload, trade_type)
+        if listed is None or len(listed) < NAVER_PAGE_SIZE or NAVER_PAGE_SIZE * (page + 1) >= top_n:
+            break
 
-    try:
-        res = get_session().get(
-            NAVER_RANKING_URL,
-            params=params,
-            # iframe 페이지는 부모 문서에서 불리는 것을 전제로 합니다. Referer가
-            # 없으면 네이버가 빈 페이지를 주는 경우가 있어 함께 보냅니다.
-            headers={"Referer": "https://finance.naver.com/sise/sise_deal_rank.naver"},
-            timeout=10,
-        )
-        res.encoding = res.apparent_encoding or "euc-kr"
-        html = res.text
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Naver 랭킹 수집 실패: %s", exc)
-        _NAVER_LAST_REASON["value"] = f"{type(exc).__name__}: {str(exc)[:120]}"
-        return []
-
-    if res.status_code != 200:
-        _NAVER_LAST_REASON["value"] = f"HTTP {res.status_code}"
-        return []
-
-    records, reason = parse_naver_ranking(html, trade_type=trade_type, top_n=top_n, target_date=target_date)
+    records, reason = parse_naver_ranking(pages, trade_type=trade_type, top_n=top_n, investor=investor)
     _NAVER_LAST_REASON["value"] = reason
     return records
 
 
+def _naver_rank_list(payload, trade_type: str) -> list | None:
+    """응답 한 쪽에서 방향에 맞는 순위 목록. 모양이 다르면 None."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("sections"), dict):
+        return None
+    listed = payload["sections"].get("buyRankList" if trade_type == "순매수" else "sellRankList")
+    return listed if isinstance(listed, list) else None
+
+
 def parse_naver_ranking(
-    html: str, *, trade_type: str, top_n: int, target_date: str,
+    pages: list[dict], *, trade_type: str, top_n: int, investor: str,
 ) -> tuple[list[dict], str | None]:
     """
-    Naver 투자자별 매매상위 iframe HTML을 랭킹 행으로. 네트워크를 모르는 순수 변환입니다.
+    ``trendForeignOrg`` 응답(쪽 여러 개)을 랭킹 행으로. 네트워크를 모르는 순수 변환입니다.
+
+    - 추정 값(``estimated: true``)은 쓰지 않습니다 — 순매수 금액 칸이 ``"0"``(주지 않음)이라 0으로 읽으면 없는 숫자가 됩니다
+    - 금액(``accTradeAmount``, 원)이 없거나 0인 행은 뺍니다(순위를 매길 수 없음). 가격·등락률이 비면 모르는 값(None)
+    - 기준일은 출처가 밝힌 ``bizdateTo``입니다
 
     :returns: (행, 비어 있을 때의 사유). 행이 있으면 사유는 None
     """
-    soup = BeautifulSoup(html, "html.parser")
-    tables = soup.find_all("table", {"class": "type_1"}) or soup.find_all("table")
-    if not tables:
-        # "표가 아예 없다"와 "표는 있는데 행이 없다"는 원인이 다릅니다.
-        # 전자는 차단·JS 렌더링 요구, 후자는 휴장·구조 변경 쪽입니다.
-        return [], (
-            f"응답에 표가 없습니다 (본문 {len(html):,}자). 차단이거나 "
-            "이 페이지가 JS 렌더링을 요구하게 바뀐 경우입니다."
-        )
-
-    table = max(
-        tables,
-        key=lambda t: sum(
-            1 for row in t.find_all("tr")
-            if len(row.find_all("td")) >= 4 and row.find("a")
-        ),
-    )
+    rows: list[dict] = []
+    for payload in pages:
+        listed = _naver_rank_list(payload, trade_type)
+        if listed is None:
+            return [], "응답 모양이 다릅니다 (sections.buyRankList·sellRankList 없음 — API 형식이 바뀐 경우)"
+        rows.extend(row for row in listed if isinstance(row, dict))
+    if not rows:
+        return [], "순위 행이 없습니다 (휴장일이거나 아직 집계 전)"
+    if any(row.get("estimated") is True for row in rows):
+        return [], "장중 추정 순위라 순매수 금액이 없어 쓰지 않습니다 (확정 값이 나오면 다시)"
 
     collected_at = kst.stamp()
     records: list[dict] = []
-
-    for row in table.find_all("tr"):
-        cols = row.find_all("td")
-        if len(cols) < 4:
+    for row in rows:
+        code = str(row.get("itemcode") or "").strip()
+        name = str(row.get("itemname") or "").strip()
+        amount = to_float(row.get("accTradeAmount"))
+        if not code or not name or amount is None or amount == 0:
             continue
-        anchor = cols[1].find("a")
-        if not anchor:
-            continue
-        match = re.search(r"code=(\d+)", anchor.get("href", ""))
-        if not match:
-            continue
-
-        price = _cell_to_float(cols[2])
-        change_pct = _cell_to_float(cols[4]) if len(cols) > 4 else None
-        raw_amount = _cell_to_float(cols[7]) if len(cols) >= 8 else _cell_to_float(cols[3])
-        if raw_amount is None:
-            continue    # 순매수 금액을 모르면 순위를 매길 수 없습니다
-        net_eok = round(raw_amount / 100.0, 1) if abs(raw_amount) > 1000 else round(raw_amount, 1)
-        if trade_type == "순매도":
-            net_eok = -abs(net_eok)
-
+        net_eok = round(amount / 100_000_000.0, 1)
+        net_eok = abs(net_eok) if trade_type == "순매수" else -abs(net_eok)
+        day = _iso_date(row.get("bizdateTo"))
         records.append({
-            "code": match.group(1),
-            "name": anchor.text.strip(),
-            "price": price,
-            "changePct": change_pct,
+            "code": code,
+            "name": name,
+            "price": to_float(row.get("nowPrice")),
+            "changePct": to_float(row.get("prevChangeRate")),
             "netAmountEok": net_eok,
-            "source": f"Naver 투자자별 매매상위 ({target_date})",
+            "netVolume": to_int(row.get("accTradeVolume")),
+            "source": f"Naver 투자자별 매매상위 ({investor}, {day or '기준일 모름'})",
             "collectedAt": collected_at,
+            "dataDate": day,
         })
-        if len(records) >= top_n:
-            break
-
     if not records:
-        return [], (
-            f"표 {len(tables)}개는 받았지만 종목 행이 없습니다 "
-            "(휴장일이거나 표 구조가 바뀐 경우입니다)."
-        )
+        return [], "순위 행에 순매수 금액이 없습니다 (확정 전이거나 API 형식이 바뀐 경우)"
     return _rank(records, trade_type, top_n), None
 
 
@@ -807,15 +809,6 @@ def _rank(records: list[dict], trade_type: str, top_n: int) -> list[dict]:
     for index, record in enumerate(top, start=1):
         record["rank"] = index
     return top
-
-
-def _cell_to_float(cell) -> float | None:
-    """표 칸의 숫자. 비었거나 '-'처럼 숫자가 아니면 None — 0으로 바꾸지 않습니다."""
-    try:
-        text = cell.text.replace(",", "").replace("+", "").replace("%", "").strip()
-    except AttributeError:
-        return None
-    return to_float(text)
 
 
 def _iso_date(value) -> str | None:

@@ -42,8 +42,8 @@ public class RadarService {
      *
      * <p>Daum API는 {@code investorType=FOREIGN|INSTITUTION} 두 가지만 받습니다.
      * 나머지 넷(개인·연기금·금융투자·투신)은 Naver가 담당했는데, Naver가 그
-     * 페이지를 폐지했습니다(HTTP 410 — stock.naver.com으로 이전). 그 밖의 경로였던
-     * LS·KRX(pykrx)는 2026-11-11에 뺐습니다(ADR 0035).
+     * 페이지를 폐지했습니다(HTTP 410). 새 화면의 API(stock.naver.com)도 외국인·기관만 주고(ADR 0035),
+     * 그 밖의 경로였던 LS·KRX(pykrx)는 2026-11-11에 뺐습니다.
      *
      * <p>목록에서 아예 빼지 않는 이유 — 원래 있던 기능이고 소스가 복구되면
      * 다시 됩니다. 고를 수만 없게 하고 <b>왜 안 되는지</b>를 함께 보여 줍니다.
