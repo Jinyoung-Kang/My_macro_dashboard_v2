@@ -156,7 +156,7 @@
   `halt_reason TEXT`, `halt_detail JSONB`, `version INTEGER NOT NULL DEFAULT 0`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_by BIGINT`.
 - `real_trade_events`: `id BIGSERIAL PK`, `market`, `at TIMESTAMPTZ DEFAULT now()`, `kind TEXT`(ENABLE·DISABLE·UPDATE·RESUME·HALT·BUYS_PAUSED·SKIP_DAY·WINDOW_SUMMARY·PASSWORD_FAILED·RESTORED …), `user_id BIGINT NULL`,
   `detail JSONB`(사유 코드·건수 — 종목·금액은 넣어도 되지만 알림 글에는 쓰지 않음), `notify BOOLEAN NOT NULL DEFAULT false`, `notified_at TIMESTAMPTZ NULL`.
-- `real_trade_batches`: `id BIGSERIAL PK`, `market`, `session DATE`, `kind TEXT CHECK(IN 'SYNC')`, `source_book`, `targets JSONB`(종목 → 비중), `absorbed_order_ids BIGINT[]`, `equity NUMERIC`, `created_at`, `UNIQUE(market, session, kind)`.
+- `real_trade_batches`: `id BIGSERIAL PK`, `market`, `session DATE`, `kind TEXT CHECK(IN 'SYNC')`, `source_book`, `targets JSONB`(종목 → 비중 — 비중 0은 묶음을 만들 때의 전량 매도 대상 표시, §12.2 QA-376), `absorbed_order_ids BIGINT[]`, `equity NUMERIC`, `created_at`, `UNIQUE(market, session, kind)`.
 - `real_trade_orders`: `id BIGSERIAL PK`, `market`, `session DATE`, `purpose TEXT CHECK(IN 'SYNC','SYNC_FOLLOWUP','MIRROR')`, `batch_id BIGINT NULL REFERENCES real_trade_batches`, `source_book`, `book_generation`,
   `paper_order_id BIGINT NULL`, `paper_root_order_id BIGINT NULL`(FK 없음 — 모의 리셋이 막히지 않게), `symbol`, `side`, `quantity INTEGER`, `time_in_force`, `ref_price NUMERIC`, `attempt SMALLINT NOT NULL DEFAULT 1`,
   `client_order_id TEXT NOT NULL UNIQUE`, `request_body TEXT NOT NULL`, `send_outcome TEXT NOT NULL CHECK(IN 'SENDING','ACCEPTED','REJECTED','UNKNOWN','NOT_SENT')`, `outcome_code TEXT`,
@@ -269,6 +269,16 @@
 ### 12.2 시가 맞추기·마무리의 범위와 낡은 묶음
 - 시가 뒤 마무리의 범위 = 묶음 목표 종목 ∪ 그 묶음이 주문한 종목 − **그날 장중 따라 하기가 손댄 종목**(오늘 MIRROR 행이 있는 종목 + 묶음이 흡수하지 않은 장중 대기 주문 중 따라 할 시각 ≤ 지금인 종목).
   범위 밖 보유는 팔지도 사지도 않는다. E는 전체 계좌로, 현금은 마무리 시도가 남은 종목에만 배정한다. 시가 창 안 재시도의 목표 수량은 묶음에 고정한 E(`real_trade_batches.equity`)로 센다.
+- **개정(QA-376, 2026-11-12 사용자 승인 — 주문 동작이 바뀜)**: 범위에 **묶음을 만들 때의 전량 매도 대상**을 더한다 — 그때 실제 계좌에 있던, 책의 목표에 없는 정수 보유
+  (책이 들지 않는 종목, 책이 그 시각까지 전량 매도하는 종목, 목표 세션이 지난 대기 STOP 종목 — 모의 공개 창의 목표 비중에는 수량 0인 종목이 없어 모두 같은 길). 묶음의
+  `targets`에 **비중 0**으로 남기고, 마무리(시각 맞추기 날은 그 창 안 재시도)가 범위를 셀 때 넣는다. 계획에 넘기는 비중 맵에는 0을 넣지 않는다 — 비중 값이 있으면
+  '책의 종목'으로 보고 1% 문턱(§3.1)을 걸기 때문이고, 전량 매도 대상은 지금처럼 문턱 없이 전량이다. 예전에는 범위가 '목표 종목 ∪ 주문 행의 종목'이라, 묶음을 만들 때
+  주문 행을 쓰지 못한 전량 매도(VI 대기, 접수 불가 거절로 멈춘 뒤 순서, 창 끝이 가까워 묶음만 만든 날, 하루 한도·매도 가능 수량 미확인으로 미룬 것)가 그날 다시 보이지 않고
+  다음 거래일 맞추기까지 남았다. 그런 날 그 종목의 매도 주문이 **같은 날 창 안에서 한 번 더** 나간다(한도·창·시도 수 2·보내기 직전 확인은 그대로). 묶음을 만든 뒤에 생긴
+  보유(장중 따라 하기로 산 종목, 앱에서 산 종목)와 장중 따라 하기가 손댄 종목은 지금처럼 범위 밖이다. 감수한 것: 묶음을 만들 때 반대 방향 미체결(앱 매수 주문)로 건너뛴
+  책 밖 보유는, 그 앱 주문이 창 안에서 끝나면 그날 팔린다(예전에는 다음 맞추기) — 책의 종목은 원래 그랬다. 표시 전에 만든 묶음은 예전 범위 그대로다.
+  회전율(§3.1): 묶음을 만들 때 매매 제한(VI·종목 거절 대기)으로 기다리는 전량 매도 대상의 몫을 회전율에 함께 센다(대기 STOP 종목 제외) — 풀린 뒤 팔리는 몫이
+  회전율 멈춤을 비켜 가지 않게. 책의 종목이 매매 제한으로 빠진 몫은 지금처럼 세지 않는다.
 - 그날 묶음의 책이 지금 책과 다르거나, 묶음을 `sync_pending`을 켠 마지막 일(ENABLE, 책을 바꾼 UPDATE, HALTED에서의 RESUME)보다 먼저 만들었으면 그날 시가 재시도·마무리를 하지 않는다(`batch-stale`).
 - `sync_pending`은 묶음 계획에 `capped`·`deferred-cash`·`deferred-daily-cap`이 없으면 묶음을 만들 때 끈다. 있으면 켠 뒤 3번째 SYNC 묶음 전까지 켜 두고 3번째 묶음에서 끈다.
 

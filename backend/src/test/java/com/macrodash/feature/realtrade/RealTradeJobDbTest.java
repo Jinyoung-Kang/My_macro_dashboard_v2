@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -1726,7 +1725,6 @@ class RealTradeJobDbTest {
     private static final String D = "051910";
 
     @Test
-    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
     @DisplayName("QA-376: 시각 맞추기 — 책에 없는 보유(전량 매도 대상)가 묶음을 만들 때 VI였으면, 풀린 뒤 늘어난 창 안에서 시장가로 판다")
     void timedSyncWaitsForViOnHoldingNotInBook() {
         timedRestrictionDay();   // 책 A 50%·B 30%, 실제 보유는 책에 없는 C 100주
@@ -1735,6 +1733,8 @@ class RealTradeJobDbTest {
         run("09:10:05");
         assertThat(sentSummaries()).as("VI인 C는 기다리고 나머지는 보냄").containsExactly("BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
         Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(batch.targets().has(C)).as("묶음에 전량 매도 대상으로 남음(비중 0)").isTrue();
+        assertThat(batch.targets().path(C).asDouble()).isZero();
         assertThat(events("RESTRICTED")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString()).isEqualTo("vi-active"));
 
         run("09:12:30");
@@ -1755,7 +1755,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
     @DisplayName("QA-376: 책에 없는 보유는 평가액의 1%보다 작아도 전량 매도 — 묶음 뒤 재시도에서도 1% 문턱을 걸지 않는다")
     void timedSyncLaterLiquidationHasNoThreshold() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1772,7 +1771,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
     @DisplayName("QA-376: 시각 맞추기 — 접수 불가 거절로 묶음 전송이 멈춘 뒤, 아직 보내지 못한 뒤 순서의 '책에 없는 보유'도 대기가 끝나면 판다")
     void timedSyncRefusedKeepsLaterLiquidations() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -1789,6 +1787,60 @@ class RealTradeJobDbTest {
                 .contains("SELL " + C + " DAY 50", "SELL " + D + " DAY 20");
         assertThat(sentSummaries()).as("매도가 매수보다 먼저").filteredOn(o -> o.startsWith("SELL")).hasSize(3);
         assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
+    @Test
+    @DisplayName("QA-376: VI로 기다리는 전량 매도 대상의 몫도 묶음의 회전율에 센다 — 60%를 넘으면 예전처럼 이상 멈춤(풀린 뒤 팔리는 몫이 회전율 멈춤을 비켜 가지 않음)")
+    void waitingLiquidationCountsTowardTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));   // 켠 뒤 첫 묶음이 아님 — 회전율 예외 없음
+        timedTargets(Map.of(A, 10.0, B, 20.0), List.of(), List.of());
+        // 책의 종목은 이미 목표대로(A 10%·B 20%), 책에 없는 C가 평가액의 70%
+        preflight("0", Map.of(A, new String[]{"20", "50000"}, B, new String[]{"100", "20000"}, C, new String[]{"175", "40000"}), Map.of());
+        restrictions(Set.of(C), null);
+
+        run("09:10:05");
+
+        verify(client, never()).placeOrder(anyString());
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-376: VI로 기다리는 전량 매도 대상을 세어도 회전율이 한도 안이면 묶음을 만들고, 풀린 뒤 판다(회전율 예외가 없는 평소 날)")
+    void waitingLiquidationWithinTurnoverProceeds() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(A, 10.0, B, 60.0), List.of(), List.of());
+        preflight("0", Map.of(A, new String[]{"20", "50000"}, B, new String[]{"300", "20000"}, C, new String[]{"75", "40000"}), Map.of());
+        restrictions(Set.of(C), null);
+
+        run("09:10:05");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+
+        restrictions(Set.of(), null);
+        run("09:13:30");
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 75");
+    }
+
+    @Test
+    @DisplayName("QA-376: 묶음 목표의 전량 매도 표시 — 책의 목표에 없는 정수 보유만 비중 0으로 남기고(소수 보유·형식 밖 코드·책의 종목은 아님), 비중 맵은 0을 읽지 않는다")
+    void batchTargetsMarkWholeHoldingsNotInBook() {
+        RealTradePlanner.Account account = RealTradePlanner.account(new Preflight(clock.now, d("0"), List.of(
+                new Holding(A, "합성", d("7"), d("1000")), new Holding(C, "합성", d("3"), d("1000")), new Holding(D, "합성", d("0.5"), d("1000")),
+                new Holding("Q500001", "합성", d("2"), d("1000"))), Map.of(), Map.of()), List.of());
+
+        Map<String, Double> stored = RealTradeJob.batchTargets(Map.of(A, 50.0, B, 30.0), account);
+
+        assertThat(stored).containsOnly(Map.entry(A, 50.0), Map.entry(B, 30.0), Map.entry(C, 0.0));
+        Batch batch = store.upsertBatch("KR", SESSION, RealTradeStore.BATCH_SYNC, BOOK, RealTradeFixtures.MAPPER.valueToTree(stored), List.of(),
+                d("10000000"));
+        assertThat(RealTradeJob.weights(batch)).as("비중 맵에는 0을 넣지 않음(1% 문턱을 피함)").containsOnlyKeys(A, B);
+        assertThat(RealTradeJob.liquidations(batch)).as("범위에만").containsExactly(C);
+        Batch older = store.upsertBatch("KR", SESSION.minusDays(1), RealTradeStore.BATCH_SYNC, BOOK,
+                RealTradeFixtures.MAPPER.valueToTree(Map.of(A, 50.0)), List.of(), d("10000000"));
+        assertThat(RealTradeJob.liquidations(older)).as("표시 전에 만든 묶음").isEmpty();
     }
 
     @Test
@@ -1880,7 +1932,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-376: 묶음을 만들 때 주문 행이 없던 '책에 없는 보유'가 그날 마무리 범위에서 빠짐 — 수정 커밋에서 해제")
     @DisplayName("QA-376: 시가 창 끝이 가까워 묶음만 만든 날 — 시가 뒤 마무리가 '책에 없는 보유'도 시장가 DAY로 판다(수정 전에는 책의 종목만 메움)")
     void lateSyncStartFollowupSellsHoldingNotInBook() {
         RealTradeFixtures.live(store, true, d("10000000"));

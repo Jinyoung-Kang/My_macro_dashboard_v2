@@ -514,8 +514,11 @@ class RealTradeJob {
     record DailyRoom(int orders, BigDecimal buyKrw) {
     }
 
-    /** 사전 조회와 그것으로 낸 계획. */
-    private record Planned(Fresh fresh, Plan plan) {
+    /**
+     * 사전 조회와 그것으로 낸 계획. {@code restricted}는 이번 계획에서 매매 제한(VI·거절 대기)으로 뺀 종목, {@code ownBlocked}는 그것을 더하기 전의
+     * 이 기능 미종료 주문 종목({@link Fresh#blocked}) — 묶음의 회전율이 기다리는 전량 매도 대상을 셀 때 씁니다({@link #withWaitingLiquidations}).
+     */
+    private record Planned(Fresh fresh, Plan plan, Set<String> restricted, Set<String> ownBlocked) {
     }
 
     // ------------------------------------------------------------------ 그날
@@ -777,11 +780,13 @@ class RealTradeJob {
         Fresh f = planned0.fresh();
         Plan plan = planned0.plan();
         Optional<Instant> start = c.cfg.syncPending() ? followStart() : Optional.empty();
-        if (plan.turnoverExceeded()) {
+        // 회전율에는 매매 제한으로 기다리는 전량 매도 대상의 몫도 셈(QA-376 — 풀리면 그날 나감). 그런 종목이 없으면 plan 그대로.
+        Plan turnover = withWaitingLiquidations(c, planned0, weightPct);
+        if (turnover.turnoverExceeded()) {
             // 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)는 회전율 멈춤에 세지 않음(ADR 0033 결정 3, QA-302) — 스탑이
             // 멈춤을 걸면 같은 주기의 스탑 매도 경로까지 서서 손절이 사라짐. 보낼 주문은 그대로(묶음도 스탑 종목을 목표 0으로 팖 — 겹쳐도 더 팔 수 없음).
             Set<String> stops = paper.pendingStopSymbols(c.cfg.sourceBook(), c.today);
-            Plan counted = RealTradePlanner.withoutStops(plan, weightPct, f.account(), f.blocked(), rules(c, f), true, stops,
+            Plan counted = RealTradePlanner.withoutStops(turnover, weightPct, f.account(), f.blocked(), rules(c, f), true, stops,
                     stopProceeds(c, stops));
             if (counted.turnoverExceeded()) {
                 Map<String, Object> halt = turnoverHalt(c.cfg, start, counted, weightPct, stops, c.cashLike);
@@ -799,8 +804,8 @@ class RealTradeJob {
                 return null;
             }
             Batch batch = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC).orElseGet(() -> store.upsertBatch(MARKET, c.today,
-                    RealTradeStore.BATCH_SYNC, planned.sourceBook(), mapper.valueToTree(weightPct), targets.absorbedOrderIds(),
-                    f.equity()));
+                    RealTradeStore.BATCH_SYNC, planned.sourceBook(), mapper.valueToTree(batchTargets(weightPct, f.account())),
+                    targets.absorbedOrderIds(), f.equity()));
             boolean keep = current.syncPending() && since.isPresent() && batchesSince(batch, since.get()) < SYNC_PENDING_MAX_BATCHES;
             if (current.syncPending() && !keep && !store.updateConfig(current.withSyncPending(false), null)) {
                 return null;
@@ -822,6 +827,25 @@ class RealTradeJob {
     }
 
     private record Locked(Batch batch, Config config) {
+    }
+
+    /**
+     * 묶음에 남기는 목표(QA-376) — 책의 목표 비중에, 묶음을 만들 때 실제 계좌에 있던 '책의 목표에 없는 정수 보유'(전량 매도 대상 — 책이 들지 않는 종목,
+     * 책이 그 시각까지 전량 매도하는 종목, 목표 세션이 지난 대기 STOP 종목)를 <b>비중 0</b>으로 더합니다. 모의 공개 창의 목표 비중에는 수량 0인 종목이
+     * 없으므로({@link PaperMirrorService.OpenTargets#weightPct}) 0은 이 표시로만 생깁니다. 그날의 마무리·재시도는 이 종목을 범위에 넣어
+     * ({@link #liquidations}), 묶음을 만들 때 주문 행을 쓰지 못한 전량 매도(VI 대기·접수 불가 거절 뒤 순서·창 끝이 가까워 묶음만 만든 날·하루 한도 미룸)를
+     * 같은 날 창 안에서 다시 봅니다. 예전에는 범위가 '목표 종목 ∪ 주문 행의 종목'이라 그런 종목이 다음 거래일 맞추기까지 남았습니다. 묶음 뒤에 생긴 보유는
+     * 넣지 않습니다(그날 장중 따라 하기로 산 종목을 팔지 않게 — 다음 맞추기 몫 그대로).
+     */
+    static Map<String, Double> batchTargets(Map<String, Double> weightPct, Account account) {
+        Map<String, Double> out = new TreeMap<>(weightPct);
+        account.positions().forEach((symbol, p) -> {
+            if (!out.containsKey(symbol) && RealTradePlanner.krSymbol(symbol) && p.quantity() != null
+                    && p.quantity().compareTo(BigDecimal.ONE) >= 0) {
+                out.put(symbol, 0.0);
+            }
+        });
+        return out;
     }
 
     /**
@@ -949,6 +973,7 @@ class RealTradeJob {
             return null;
         }
         Set<String> restricted = Set.of();
+        Set<String> ownBlocked = f.blocked();
         if (timedSync(c, purpose)) {
             restricted = restrictedSymbols(c, symbols, f);
             if (restricted == null) {
@@ -962,9 +987,39 @@ class RealTradeJob {
             if (f == null || !lossCheck(c, f)) {
                 return null;
             }
+            ownBlocked = f.blocked();
             f = f.alsoBlocked(restricted);
         }
-        return new Planned(f, plan.apply(f, rules(c, f)));
+        return new Planned(f, plan.apply(f, rules(c, f)), Set.copyOf(restricted), Set.copyOf(ownBlocked));
+    }
+
+    /**
+     * 회전율 판정용 계획(QA-376) — {@code plan}의 회전율 금액에, 매매 제한(VI·종목 거절 대기)으로 지금은 빠졌지만 풀리면 그날 창 안에서 나갈
+     * <b>전량 매도 대상</b>(책의 목표에 없는 정수 보유 — {@link #batchTargets})의 몫을 더한 계획을 돌려줍니다. 예전에는 그 종목이 그날 다시 보이지 않아
+     * 셀 필요가 없었지만, 이제 묶음 뒤에 팔리므로 세지 않으면 엉망인 목표('모두 팔기')가 VI와 겹친 날 그 몫이 회전율 멈춤을 비켜 갑니다. 대기 STOP 종목은
+     * 뺍니다(스탑 매도는 회전율에 세지 않음 — QA-302). 책의 종목이 매매 제한으로 빠진 몫은 예전 그대로 세지 않습니다(2026-11-09 결정의 동작). 주문·건너뜀은
+     * 바꾸지 않습니다.
+     */
+    private Plan withWaitingLiquidations(Cycle c, Planned planned, Map<String, Double> weightPct) {
+        Fresh f = planned.fresh();
+        Plan plan = planned.plan();
+        Set<String> waiting = new TreeSet<>();
+        for (String symbol : planned.restricted()) {
+            if (!weightPct.containsKey(symbol) && !planned.ownBlocked().contains(symbol)
+                    && f.account().held(symbol).compareTo(BigDecimal.ONE) >= 0) {
+                waiting.add(symbol);
+            }
+        }
+        if (waiting.isEmpty()) {
+            return plan;
+        }
+        waiting.removeAll(paper.pendingStopSymbols(c.cfg.sourceBook(), c.today));
+        if (waiting.isEmpty()) {
+            return plan;
+        }
+        BigDecimal extra = RealTradePlanner.sync(weightPct, plan.equity(), f.account(), planned.ownBlocked(), BigDecimal.ZERO, rules(c, f),
+                true, waiting, null).turnoverAmount();
+        return new Plan(plan.orders(), plan.skipped(), plan.turnoverAmount().add(extra), plan.equity());
     }
 
     // ------------------------------------------------------------------ 매매 제한 대기(시각 맞추기)
@@ -1143,7 +1198,8 @@ class RealTradeJob {
      * 건너뜁니다(OPG 결과를 모르면 대체 주문 없음). 그날 시가 단일가 경로가 없으면 이 창이 묶음을 만듭니다(회전율 한도 적용). 시가 맞추기 창을 놓쳐 묶음이
      * 없으면 하지 않습니다(놓침 — 다음 시가 맞추기가 메움). 낡은 묶음(지금 켜짐보다 먼저 만든 것)이면 하지 않습니다.
      *
-     * <p>범위는 묶음의 종목(목표 종목 ∪ 그 묶음이 주문한 종목)뿐이고, 그날 장중 따라 하기가 손댄 종목(오늘 MIRROR 행이 있거나 흡수되지 않은 장중 대기 주문의
+     * <p>범위는 묶음의 종목(목표 종목 ∪ 묶음을 만들 때의 전량 매도 대상 — {@link #batchTargets}, QA-376 ∪ 그 묶음이 주문한 종목)뿐이고, 그날 장중 따라
+     * 하기가 손댄 종목(오늘 MIRROR 행이 있거나 흡수되지 않은 장중 대기 주문의
      * 따라 할 시각이 지난 종목)은 뺍니다 — 같은 시간대의 장중 따라 하기 결과를 묶음 목표로 되돌리지 않게(장중에 산 종목을 '책에 없는 보유'로 팔거나, 장중에
      * 판 종목을 다시 사지 않음). E는 전체 계좌로 셉니다. 현금은 이번에 보낼 수 있는 종목(그 종목의 마무리 시도가 남은 것)에만 배정합니다.
      */
@@ -1167,6 +1223,7 @@ class RealTradeJob {
         Map<String, Double> weights = weights(batch);
         List<OrderRow> rows = store.ordersForBatch(batch.id());
         Set<String> scope = new TreeSet<>(weights.keySet());
+        scope.addAll(liquidations(batch));   // 묶음을 만들 때의 전량 매도 대상 — 주문 행이 없어도 그날 범위(QA-376)
         rows.forEach(row -> scope.add(row.symbol()));
         scope.removeAll(mirrorTouched(c, batch, upcoming));
         Set<String> sendable = new TreeSet<>();
@@ -1892,14 +1949,31 @@ class RealTradeJob {
         return last != null && now.isBefore(last.plus(RETRY_SPACING));
     }
 
-    /** 묶음의 목표 비중(종목 → %). */
-    private static Map<String, Double> weights(Batch batch) {
+    /**
+     * 묶음의 목표 비중(종목 → %). 비중 0으로 남긴 전량 매도 대상({@link #batchTargets})은 넣지 않습니다 — {@link RealTradePlanner#sync}는 비중 값이 있는
+     * 종목을 '책의 종목'으로 보고 1% 문턱을 걸므로, 0을 넣으면 작은 '책에 없는 보유'가 팔리지 않습니다. 그 종목은 범위({@link #liquidations})로만 씁니다.
+     */
+    static Map<String, Double> weights(Batch batch) {
         Map<String, Double> out = new TreeMap<>();
         JsonNode targets = batch.targets();
         if (targets != null && targets.isObject()) {
             for (Map.Entry<String, JsonNode> e : targets.properties()) {
-                if (e.getValue().isNumber()) {
+                if (e.getValue().isNumber() && e.getValue().asDouble() != 0.0) {
                     out.put(e.getKey(), e.getValue().asDouble());
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 묶음을 만들 때의 전량 매도 대상(QA-376 — {@link #batchTargets}가 비중 0으로 남긴 종목). 그 표시 전에 만든 묶음은 빈 집합입니다. */
+    static Set<String> liquidations(Batch batch) {
+        Set<String> out = new TreeSet<>();
+        JsonNode targets = batch.targets();
+        if (targets != null && targets.isObject()) {
+            for (Map.Entry<String, JsonNode> e : targets.properties()) {
+                if (e.getValue().isNumber() && e.getValue().asDouble() == 0.0) {
+                    out.add(e.getKey());
                 }
             }
         }
