@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -786,6 +787,129 @@ class RealTradeJobDbTest {
             assertThat(e.detail().path("window").asString()).isEqualTo("SYNC_AT");
             assertThat(e.detail().path("missed").asInt()).isEqualTo(1);
         });
+    }
+
+    // ------------------------------------------------------------------ 맞추기 시각이 개장 10분 뒤보다 늦은 날의 판정 시각(QA-377)
+    /** 맞추기 시각이 {@code at}(KST)인 날 — 책 목표는 A 50%. */
+    private void timedSyncAt(String at) {
+        Instant syncAt = kst("2026-11-06T" + at);
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.of(syncAt));
+        when(paper.targetsAt(BOOK, SESSION, syncAt)).thenReturn(Optional.of(new OpenTargets(BOOK, SESSION, Map.of(A, 50.0), Map.of(), 1e7, 0,
+                List.of(), List.of(), List.of())));
+    }
+
+    private Instant syncAtWindowStart() {
+        return job.todayView().windows().stream().filter(w -> w.kind().equals(RealTradePlanner.WINDOW_SYNC_AT)).findFirst().orElseThrow().start();
+    }
+
+    @Test
+    @Disabled("QA-377: 맞추기 시각이 개장 10분 뒤보다 늦은 날, 그 3분 전까지 스탑 매도가 돌지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-377: 맞추기 시각이 10:00인 날 — 09:25의 장중 스탑은 그 시각에 판다(수정 전에는 09:57까지 아무것도 하지 않아 놓침), 묶음은 그대로 10:00에")
+    void lateTimedSyncDayStillSellsEarlyStops() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedSyncAt("10:00");
+        preflight("5000000", Map.of(B, new String[]{"100", "50000"}), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(701, B, "MARKET", kst("2026-11-06T09:25"))));
+
+        run("09:25:10");
+
+        assertThat(sentSummaries()).as("스탑 매도 창 09:25~09:28 안").containsExactly("SELL " + B + " DAY 100");
+        assertThat(store.recentOrders("KR", 1).getFirst().purpose()).isEqualTo("MIRROR");
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("sent").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("missed").asInt()).isZero();
+        });
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as("전체 맞추기는 아직(10:00)").isEmpty();
+
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", B, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        run("09:40");
+        run("09:59:50");
+        assertThat(sentSummaries()).as("맞추기 시각 전에는 묶음 주문 없음").hasSize(1);
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+
+        run("10:00:05");
+        assertThat(sentSummaries()).as("묶음은 맞추기 시각 10:00에").containsExactly("SELL " + B + " DAY 100", "BUY " + A + " DAY 100");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+    }
+
+    @Test
+    @Disabled("QA-377: 맞추기 시각이 개장 10분 뒤보다 늦은 날, 그 3분 전까지 스탑 매도가 돌지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-377: 맞추기 시각이 10:00이고 장부가 밀린 날 — 스탑만은 09:25에 판다(묶음·장중 따라 하기는 없음)")
+    void lateTimedSyncLedgerBehindDayStillSellsEarlyStops() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.ledgerCaughtUp(BOOK, SESSION)).thenReturn(false);
+        timedSyncAt("10:00");
+        preflight("5000000", Map.of(B, new String[]{"100", "50000"}), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(711, B, "MARKET", kst("2026-11-06T09:25"))));
+
+        run("09:25:10");
+
+        assertThat(sentSummaries()).containsExactly("SELL " + B + " DAY 100");
+        assertThat(events("SKIP_DAY")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString())
+                .isEqualTo(RealTradePlanner.SKIP_LEDGER));
+        run("10:00:05");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as("장부가 밀린 날은 묶음 없음").isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-377 고정: 운영 값(맞추기 09:10)의 판정 시각은 그대로 09:07 — 09:06:50에는 판정·장부 확인·모의 주문 읽기가 없고, 09:07 주기에 한다")
+    void decisionTimeUnchangedAtOpenOffset() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(A, 50.0), List.of(), List.of());
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+
+        run("08:47:30");
+        run("09:06:50");
+        verify(paper, never()).ledgerCaughtUp(anyString(), any());
+        verify(paper, never()).dueOrders(anyString(), any(), any());
+        verify(client, never()).preflight(any(), any());
+
+        run("09:07:00");
+        verify(paper, times(1)).ledgerCaughtUp(BOOK, SESSION);
+        verify(paper, times(1)).dueOrders(anyString(), any(), any());
+        verify(client, never()).placeOrder(anyString());
+
+        run("09:10:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + A + " DAY 100");
+    }
+
+    @Test
+    @DisplayName("QA-377 고정: 시가 맞추기 날의 판정 시각은 그대로 시가 창 3분 전(08:47:30) — 그 전에는 판정이 없다")
+    void decisionTimeUnchangedOnOpenSyncDay() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        targets(Map.of(A, 50.0), List.of());
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+
+        run("08:47:20");
+        verify(paper, never()).ledgerCaughtUp(anyString(), any());
+        verify(paper, never()).dueOrders(anyString(), any(), any());
+
+        run("08:47:30");
+        verify(paper, times(1)).ledgerCaughtUp(BOOK, SESSION);
+        verify(paper, times(1)).dueOrders(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("QA-377 고정: 맞추기 창은 지금처럼 그 창 3분 전에 굳는다 — 그 전까지는 주기마다 맞추기 시각을 다시 세고, 굳은 뒤에는 바뀐 시각을 따르지 않는다")
+    void timedWindowStillFreezesThreeMinutesBeforeItsStart() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedSyncAt("10:00");
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+
+        run("09:30");
+        assertThat(syncAtWindowStart()).isEqualTo(kst("2026-11-06T10:00"));
+
+        timedSyncAt("09:40");   // 굳기 전 — 다시 셈
+        run("09:35");
+        assertThat(syncAtWindowStart()).isEqualTo(kst("2026-11-06T09:40"));
+
+        run("09:37:00");   // 09:40 창 3분 전 — 굳음
+        timedSyncAt("11:00");
+        run("09:38");
+        assertThat(syncAtWindowStart()).as("굳은 뒤에는 그대로").isEqualTo(kst("2026-11-06T09:40"));
+        run("09:40:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + A + " DAY 100");
     }
 
     // ------------------------------------------------------------------ 장중 따라 하기
