@@ -3,7 +3,8 @@ app/services/info_blogs.py
 정보 수집(ADR 0035) — 해외 투자·경제 블로그 14곳의 RSS·Atom.
 
 [받는 순서]
-  1. 피드 하나(조건부 요청 — 지난번 ETag·Last-Modified를 보내 304면 '새 글 없음'으로 끝)
+  1. 피드 하나(조건부 요청 — 지난번 ETag·Last-Modified를 보내 304면 '새 글 없음'으로 끝). 검증값은 저장이 끝나고 밀린 글(본문을 얻지
+     못했고 글 페이지를 다시 열어 볼 글)이 없을 때만 기억합니다 — 밀린 글이 있는 동안은 조건 없이 받습니다.
   2. 새 글(정규화한 주소의 id로 이미 받은 글은 건너뜀, 30일보다 오래된 글은 넣지 않음)마다
      - 피드에 본문이 있으면(글자 400자 이상) 그 본문을 씁니다 — 같은 글을 다시 열지 않는 것이 출처 부하가 가장 적습니다.
      - 피드에 본문이 없거나 짧으면, 최근 7일 글만 글 페이지를 열어 본문을 고릅니다(실행 한 번에 최대 PAGE_FETCHES_PER_RUN건, 한 글에 두 번까지).
@@ -117,6 +118,12 @@ def _conditional(feed: str) -> dict[str, str]:
         return dict(_validators.get(feed, {}))
 
 
+def _forget(feed: str) -> None:
+    """그 피드의 조건부 요청 기록을 지웁니다 — 다음 요청은 조건 없이 통째로 받습니다."""
+    with _validators_lock:
+        _validators.pop(feed, None)
+
+
 def _remember(feed: str, fetched: ladder.Fetched) -> None:
     headers = {}
     if fetched.headers.get("etag"):
@@ -228,7 +235,6 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
     if fetched.not_modified:
         return Collected(f"{blog.label} 피드 바뀐 것 없음(304) · 계층 {fetched.tier}", _page_issue(blog))
     entries = parse_feed(fetched.body)
-    _remember(blog.feed, fetched)
 
     oldest = now - timedelta(days=MAX_AGE_DAYS)
     fresh = [e for e in entries if e["published_at"] is None or e["published_at"] >= oldest]
@@ -237,6 +243,7 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
 
     items: list[dict] = []
     opened = from_feed = partial = 0
+    backlog = 0                                   # 본문을 얻지 못했고 다음 실행에 글 페이지를 다시 열어 볼 글(밀린 글)
     blocked: ladder.FetchRejected | None = None
     page_room = PAGE_FETCHES_PER_RUN
     for item_id, entry in sorted(ids.items(), key=lambda pair: pair[1]["published_at"] or now, reverse=True):
@@ -245,27 +252,36 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
             continue
         text = entry["text"]
         body, status, tier, meta = (text, "full", fetched.tier, {}) if len(text) >= FEED_BODY_MIN_CHARS else (None, None, None, {})
+        tries = int((seen or {}).get("page_tries") or 0)
         if status == "full":
             from_feed += 1
         elif blocked is None and page_room > 0 and _page_worthy(blog, entry, seen, now):
-            tries = int((seen or {}).get("page_tries") or 0) + 1
-            meta = {"pageTries": tries}
             page_room -= 1
+            page, sent = None, True
             try:
                 page = fetch(entry["url"])
-                extracted = info_text.extract_article(page.text())
-                if len(extracted) >= info_text.MIN_BODY_CHARS:
-                    body, status, tier = extracted, "full", page.tier
-                    opened += 1
             except ladder.FetchRejected as exc:
                 blocked = exc
             except ladder.FetchSkipped:
-                page_room = 0
+                page_room, sent = 0, False        # 보내지 않았음(예산·시간) — 그 글의 시도로 세지 않습니다(QA-393)
             except (ladder.FetchFailed, policy.UnknownHost) as exc:
                 logger.info("%s 글 페이지를 받지 못함: %s", blog.label, exc)
+            if sent:
+                tries += 1                        # 받음·404·5xx·거부 — 보내지 못한 것만 빼고 셉니다
+                meta = {"pageTries": tries}
+            if page is not None:
+                try:
+                    extracted = info_text.extract_article(page.text())
+                    if len(extracted) >= info_text.MIN_BODY_CHARS:
+                        body, status, tier = extracted, "full", page.tier
+                        opened += 1
+                except Exception as exc:  # noqa: BLE001 — 글 하나의 본문 고르기가 실패해도 그 글만 요약으로 둡니다(다른 글은 저장)
+                    logger.warning("%s 글 페이지에서 본문을 고르다 실패: %s", blog.label, http.brief_error(exc))
         if status is None:
             body, status = (text or None), ("partial" if text else "none")
             partial += 1
+            if _page_worthy(blog, entry, {"page_tries": tries}, now):
+                backlog += 1
         items.append({
             "id": item_id, "source": blog.key, "kind": "article", "url": entry["url"], "title": entry["title"],
             "author": entry["author"], "published_at": entry["published_at"],
@@ -273,10 +289,18 @@ def collect_report(blog: Blog, *, fetch: Fetch = ladder.fetch, now: datetime | N
             "fetch_tier": tier, "meta": meta,
         })
     store.upsert_info_items(items)
+    # 검증값(ETag·Last-Modified)은 저장이 끝나고 밀린 글이 없을 때만 기억합니다(QA-393). 저장 전에 기억하면 저장이 실패한 피드도 다음
+    # 실행이 304로 끝나고, 실행당 상한·5xx·예산 부족으로 못 연 글 페이지는 피드가 바뀔 때까지 다시 시도되지 않습니다.
+    if backlog or blocked is not None:
+        _forget(blog.feed)
+    else:
+        _remember(blog.feed, fetched)
     if blocked is not None:
         raise blocked
     detail = (f"{blog.label} 피드 {len(entries)}건 · 새로 넣거나 채운 글 {len(items)}(피드 본문 {from_feed}·글 페이지 {opened}·"
               f"요약만 {partial}) · 계층 {fetched.tier}")
+    if backlog:
+        detail += f" · 밀린 글 {backlog}(다음 실행에 글 페이지를 이어 엶)"
     return Collected(detail, _page_issue(blog))
 
 

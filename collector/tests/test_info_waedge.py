@@ -130,6 +130,44 @@ def test_새_글만_상세_페이지를_열고_실행당_상한을_지킨다(sto
     assert row["body_status"] == "full" and row["kind"] == "brief" and row["meta"]["category"] == "시장 · 국내"
 
 
+def test_QA393_상세_페이지를_보내지_못하면_시도_횟수를_세지_않는다(store):
+    # 블로그 글 페이지와 같은 원인 — 보내지 못한 요청(예산·시간)을 그 글의 시도로 세면 두 번 만에 더 열지 않게 됩니다.
+    routes = {info_waedge.BRIEF_URL: _list_page(),
+              "https://news.waedge.ai/a/11.html": ladder.FetchSkipped("news.waedge.ai 오늘 요청 예산을 다 씀")}
+    fetch = FakeFetch(routes)
+
+    for _ in range(3):
+        info_waedge.collect_list(info_waedge.BRIEF_URL, source="waedge.brief", kind="brief", bodies_per_run=4, fetch=fetch)
+
+    row = store.info_item(info_text.item_id("https://news.waedge.ai/a/11.html"))
+    assert row["meta"].get("pageTries") is None and row["body_status"] == "partial"
+    assert fetch.calls.count("https://news.waedge.ai/a/12.html") == 0, "보내지 못한 뒤에는 그 실행에서 더 열지 않습니다"
+
+    routes["https://news.waedge.ai/a/11.html"] = _article(11)
+    info_waedge.collect_list(info_waedge.BRIEF_URL, source="waedge.brief", kind="brief", bodies_per_run=4, fetch=fetch)
+    assert store.info_item(info_text.item_id("https://news.waedge.ai/a/11.html"))["body_status"] == "full"
+
+
+def test_QA393_상세_페이지_하나의_처리_예외는_그_글만_요약으로_둔다(store, monkeypatch):
+    fetch = FakeFetch({info_waedge.BRIEF_URL: _list_page(),
+                       "https://news.waedge.ai/a/11.html": _article(11), "https://news.waedge.ai/a/12.html": _article(12)})
+    real = info_waedge.parse_article
+
+    def breaks_on_first(markup):
+        if "글 11" in markup:
+            raise ValueError("본문 고르기 실패")
+        return real(markup)
+
+    monkeypatch.setattr(info_waedge, "parse_article", breaks_on_first)
+
+    listed, bodies, blocked = info_waedge.collect_list(info_waedge.BRIEF_URL, source="waedge.brief", kind="brief",
+                                                       bodies_per_run=4, fetch=fetch)
+
+    assert (listed, bodies, blocked) == (2, 1, None)
+    assert store.info_item(info_text.item_id("https://news.waedge.ai/a/11.html"))["body_status"] == "partial"
+    assert store.info_item(info_text.item_id("https://news.waedge.ai/a/12.html"))["body_status"] == "full"
+
+
 # ==============================================================================
 # 거장
 # ==============================================================================

@@ -17,6 +17,7 @@ app/services/info_waedge.py
 """
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Callable
@@ -24,10 +25,12 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
-from .. import kst, store
+from .. import http, kst, store
 from ..fetch import ladder
 from . import info_blogs, info_text
 from .info_text import ShapeError
+
+logger = logging.getLogger(__name__)
 
 BASE = "https://news.waedge.ai/"
 BRIEF_URL = BASE + "s/brief.html"
@@ -155,20 +158,26 @@ def collect_list(page_url: str, *, source: str, kind: str, bodies_per_run: int, 
         meta = {"category": entry["category"]} if entry["category"] else {}
         if blocked is None and room > 0 and tries < info_blogs.PAGE_TRIES_PER_ITEM:
             room -= 1
-            meta["pageTries"] = tries + 1
+            detail, sent = None, True
             try:
                 detail = fetch(entry["url"])
-                parsed = parse_article(detail.text())
-                if len(parsed["body"]) >= 80:
-                    body, status, tier = parsed["body"], "full", detail.tier
-                    bodies += 1
-                    entry["published_at"] = entry["published_at"] or parsed["published_at"]
             except ladder.FetchRejected as exc:
                 blocked = exc
             except ladder.FetchSkipped:
-                room = 0
+                room, sent = 0, False             # 보내지 않았음(예산·시간) — 그 글의 시도로 세지 않습니다(QA-393, 블로그 글 페이지와 같음)
             except ladder.FetchFailed:
                 pass
+            if sent:
+                meta["pageTries"] = tries + 1
+            if detail is not None:
+                try:
+                    parsed = parse_article(detail.text())
+                    if len(parsed["body"]) >= 80:
+                        body, status, tier = parsed["body"], "full", detail.tier
+                        bodies += 1
+                        entry["published_at"] = entry["published_at"] or parsed["published_at"]
+                except Exception as exc:  # noqa: BLE001 — 글 하나의 본문 고르기가 실패해도 그 글만 요약으로 둡니다(다른 글은 저장)
+                    logger.warning("waedge 상세 페이지에서 본문을 고르다 실패: %s", http.brief_error(exc))
         if body is None and entry["summary"]:
             body = entry["summary"]
         items.append({

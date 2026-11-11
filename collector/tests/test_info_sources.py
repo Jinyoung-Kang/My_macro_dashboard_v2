@@ -170,10 +170,6 @@ def test_바뀐_것이_없으면_304로_끝나고_다음_요청에_검증값을_
     assert fetch.calls[-1][1] == {"If-None-Match": '"v1"'}
 
 
-QA393 = pytest.mark.xfail(strict=True, reason="QA-393: 검증값을 저장 전에 기억하고 304면 바로 끝나, 밀린 글이 피드가 바뀔 때까지 남습니다")
-
-
-@QA393
 def test_QA393_밀린_글이_있으면_검증값을_기억하지_않아_다음_실행이_이어_받는다(store, example_host):
     items = [_item(n, days_ago=n * 0.1, content=None) for n in range(1, 9)]          # 본문이 피드에 없는 글 8편 — 실행당 6편까지만 엶
     routes = {BLOG.feed: _feed(*items)}
@@ -195,7 +191,6 @@ def test_QA393_밀린_글이_있으면_검증값을_기억하지_않아_다음_�
     assert fetch.calls == [(BLOG.feed, {"If-None-Match": '"v1"'})], "밀린 글이 없어지면 다시 조건부 요청"
 
 
-@QA393
 def test_QA393_저장이_실패하면_검증값을_기억하지_않는다(store, example_host, monkeypatch):
     fetch = FakeFetch({BLOG.feed: _feed(_item(1))})
     real = store.upsert_info_items
@@ -211,7 +206,6 @@ def test_QA393_저장이_실패하면_검증값을_기억하지_않는다(store,
     assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))["body_status"] == "full"
 
 
-@QA393
 def test_QA393_글_페이지를_보내지_못하면_시도_횟수를_세지_않는다(store, example_host):
     routes = {BLOG.feed: _feed(_item(1, content=None)),
               "https://blog.example.com/2026/11/post-1/?utm_source=rss": ladder.FetchSkipped("blog.example.com 오늘 요청 예산을 다 씀")}
@@ -229,7 +223,16 @@ def test_QA393_글_페이지를_보내지_못하면_시도_횟수를_세지_않�
     assert store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))["body_status"] == "full"
 
 
-@QA393
+def test_QA393_실행의_마지막_자리에서_받지_못한_글도_시도로_센다(store, example_host, monkeypatch):
+    monkeypatch.setattr(info_blogs, "PAGE_FETCHES_PER_RUN", 1)
+    fetch = FakeFetch({BLOG.feed: _feed(_item(1, content=None))})          # 글 페이지는 404
+
+    info_blogs.collect(BLOG, fetch=fetch, now=NOW)
+
+    row = store.info_item(info_text.item_id("https://blog.example.com/2026/11/post-1/"))
+    assert row["meta"]["pageTries"] == 1, "404는 보낸 요청입니다"
+
+
 def test_QA393_글_하나의_페이지_처리_예외는_그_글만_일부로_둔다(store, example_host, monkeypatch):
     routes = {BLOG.feed: _feed(_item(1, content=None), _item(2, days_ago=0.5, content=None))}
     routes.update({f"https://blog.example.com/2026/11/post-{n}/?utm_source=rss": _page(n) for n in (1, 2)})
