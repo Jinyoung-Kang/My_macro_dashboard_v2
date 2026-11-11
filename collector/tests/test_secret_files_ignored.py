@@ -46,3 +46,37 @@ def test_추적_중인_파일이_무시_규칙에_걸리지_않는다():
     listed = subprocess.run(["git", "ls-files", "-ci", "--exclude-standard"], cwd=ROOT,
                             capture_output=True, text=True, check=True)
     assert listed.stdout.split() == []
+
+
+# Tailscale은 기기에 CGNAT 대역(100.64.0.0/10)의 주소를 줍니다. 운영 서버의 tailnet 주소는 .env·메모리에만 둡니다(CLAUDE.md —
+# 이 저장소는 공개). 시험·문서에서 이 대역의 예시가 필요하면 아래 문서용 값만 씁니다(QA-340).
+_CGNAT_EXAMPLES = {"100.64.0.0", "100.64.0.1"}
+
+
+@pytest.mark.xfail(strict=True, reason="QA-340: 시험 파일 한 곳에 예시가 아닌 CGNAT 주소가 적혀 있습니다")
+def test_QA340_추적_파일의_CGNAT_주소는_문서용_예시뿐이다():
+    import ipaddress
+    import re
+
+    network = ipaddress.ip_network("100.64.0.0/10")
+    pattern = re.compile(r"(?<![\d.])100\.\d{1,3}\.\d{1,3}\.\d{1,3}(?![\d.])")
+    tracked = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True).stdout.split(b"\0")
+    found = []
+    for raw in tracked:
+        path = ROOT / raw.decode()
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue                       # 이진 파일
+        for number, line in enumerate(text.splitlines(), 1):
+            for match in pattern.finditer(line):
+                try:
+                    address = ipaddress.ip_address(match.group())
+                except ValueError:
+                    continue
+                if address in network and match.group() not in _CGNAT_EXAMPLES:
+                    found.append(f"{raw.decode()}:{number}")     # 값은 찍지 않습니다 — 위치만
+
+    assert found == [], "CGNAT(100.64.0.0/10) 주소는 문서용 예시(100.64.0.1)만 씁니다 — 위치: " + ", ".join(found)
