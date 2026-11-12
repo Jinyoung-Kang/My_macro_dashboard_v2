@@ -2282,6 +2282,53 @@ class RealTradeJobDbTest {
         assertThat(sentSummaries()).as("한 번만").filteredOn(o -> o.contains(C)).hasSize(1);
     }
 
+    @Test
+    @DisplayName("QA-376 고정: 하루 건수 한도로 묶음에서 미뤄진 전량 매도 대상 — 남은 건수가 없는 동안에는 보내지 않고(한도를 넘기지 않음), 남은 건수가 생기면 그날 창 안에서 매도 먼저 그만큼만 보낸다")
+    void liquidationDeferredByDailyCapStaysWithinTheCap() {
+        CollectorTradeClient.BrokerOrder x1 = broker("X-1", "000270", "SELL", "DAY", "FILLED", "1", "1", clock.now, clock.now);
+        CollectorTradeClient.BrokerOrder x2 = broker("X-2", "000270", "SELL", "DAY", "FILLED", "1", "1", clock.now, clock.now);
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 3, 999_999_999L,
+                999_999_999L)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(x1, x2)));   // 오늘 앱 주문 2건 — 남은 건수 1
+        RealTradeFixtures.live(store, true, d("10000000"));
+        timedTargets(Map.of(A, 50.0), List.of(), List.of());
+        preflight("4000000", Map.of(C, new String[]{"100", "40000"}, D, new String[]{"20", "100000"}), Map.of(A, "50000"));
+
+        run("09:10:05");
+        assertThat(sentSummaries()).as("남은 건수 1 — 매도 먼저(종목 코드 순), 나머지는 미룸").containsExactly("SELL " + C + " DAY 100");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(RealTradeJob.liquidations(batch)).as("미뤄진 D도 묶음의 전량 매도 대상").containsExactly(C, D);
+
+        // C 매도가 체결로 끝남 — 오늘 주문 3건으로 하루 건수 한도(3)를 다 씀
+        CollectorTradeClient.BrokerOrder own = broker("T-1", C, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now);
+        when(client.order("T-1")).thenReturn(Reply.of(own));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(x1, x2, own)));
+        preflight("8000000", Map.of(D, new String[]{"20", "100000"}), Map.of(A, "50000"));
+        run("09:10:40");
+        run("09:11:20");
+        assertThat(sentSummaries()).as("범위에는 들지만 남은 건수 0 — 한도를 넘겨 보내지 않음").containsExactly("SELL " + C + " DAY 100");
+
+        // 남은 건수가 1 생김(수집기 하루 건수 한도가 4로 오른 경우를 흉내) — 그날 창 안에서 다시 보고 매도부터 그만큼만
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 4, 999_999_999L,
+                999_999_999L)));
+        run("09:12:00");
+        assertThat(sentSummaries()).as("주문 행이 없던 D를 같은 날 창 안에서 팖 — 매수 A는 여전히 미룸")
+                .containsExactly("SELL " + C + " DAY 100", "SELL " + D + " DAY 20");
+        assertThat(store.recentOrders("KR", 1).getFirst()).satisfies(r -> {
+            assertThat(r.purpose()).isEqualTo("SYNC_FOLLOWUP");
+            assertThat(r.batchId()).isEqualTo(batch.id());
+        });
+
+        CollectorTradeClient.BrokerOrder second = broker("T-2", D, "SELL", "DAY", "FILLED", "20", "20", clock.now, clock.now);
+        when(client.order("T-2")).thenReturn(Reply.of(second));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(x1, x2, own, second)));
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        run("09:12:40");
+        run("09:13:30");   // 창(09:10~09:13) 뒤
+        assertThat(sentSummaries()).as("한도(4건)를 다 쓴 뒤로는 더 보내지 않음").hasSize(2);
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
