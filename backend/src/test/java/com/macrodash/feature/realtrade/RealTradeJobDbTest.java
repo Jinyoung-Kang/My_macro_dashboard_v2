@@ -1754,6 +1754,47 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @DisplayName("QA-379 반대 방향 고정: 주문 번호를 아직 묶지 못한 이 기능의 매수(결과 모름 행)가 토스 미체결 목록에 보여도 한 번만 되돌린다 — "
+            + "묶기 전(미체결 목록 쪽)과 대조로 묶은 뒤(이 기능의 행 쪽)의 지금 총액이 같고, 손실 160만은 가려지지 않는다")
+    void ownUnknownBuyListedByTossIsAddedBackOnce() {
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_LIVE).withSource(BOOK, GENERATION)
+                .withBaselineEquity(d("10000000")).withBaselineTotal(d("10000000")), 1L));
+        clock.set(kst("2026-11-06T10:00"));
+        // 이 기능의 매수 A 40주가 결과 모름(같은 키 재전송도 계속 결과 모름) — 실제로는 토스에 주문이 생겨 상한가 65,000 × 40 = 260만 원을 잡음
+        when(client.placeOrder(anyString())).thenAnswer(inv -> A.equals(RealTradeFixtures.MAPPER.readTree((String) inv.getArgument(0))
+                .path("symbol").asString()) ? new OrderResult(Outcome.UNKNOWN, null, "collector-timeout", null)
+                : new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, 921L, 920L, A, "BUY", 40, "DAY", d("50000"), 1),
+                cfg());
+        OrderRow unknown = store.recentOrders("KR", 1).getFirst();
+        assertThat(unknown.tossOrderId()).as("주문 번호를 아직 묶지 못함").isNull();
+        tossOrders(broker("T-LATE", A, "BUY", "DAY", "PENDING", "40", "0", unknown.firstSentAt().plusSeconds(1), null));
+        // 켤 때: 현금 580만 + C 400만 + B 20만 = 1,000만. 지금: 현금 580만 − 잡힌 260만 = 320만, C가 240만으로(손실 160만 ≥ 한도 150만), B 20만
+        preflightWithLimits("3200000", Map.of(C, new String[]{"100", "24000"}, B, new String[]{"10", "20000"}), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(931, C, "MARKET", kst("2026-11-06T10:01")),
+                stopDue(932, B, "MARKET", kst("2026-11-06T10:08"))));
+
+        run("10:01:10");   // 재전송 창 안 — 행은 결과 모름 그대로, 그 주문은 토스 미체결 목록에만 보임
+
+        assertThat(store.ordersForRoot("KR", 920L)).singleElement().satisfies(r -> assertThat(r.tossOrderId()).isNull());
+        assertThat(job.lastPreflight().total()).as("320만 + 240만 + 20만 + 260만(미체결 목록 쪽으로 한 번 — 이 기능의 행 쪽은 주문 번호가 없어 0)")
+                .isEqualByComparingTo("8400000");
+        assertThat(cfg().buysPaused()).as("두 번 되돌리면 1,100만으로 보여 손실 160만이 가려짐").isTrue();
+        assertThat(sentSummaries()).as("스탑 매도는 매수 멈춤과 상관없이").contains("SELL " + C + " DAY 100");
+
+        clock.set(kst("2026-11-06T10:08:10"));
+        preflightWithLimits("3200000", Map.of(C, new String[]{"100", "24000"}, B, new String[]{"10", "20000"}), Map.of(A, "50000"));
+        run("10:08:10");   // 재전송 창(7분) + 여유(45초) 뒤 — 대조가 그 주문을 행에 묶음
+
+        assertThat(store.ordersForRoot("KR", 920L)).singleElement().satisfies(r -> assertThat(r.tossOrderId()).isEqualTo("T-LATE"));
+        assertThat(job.lastPreflight().fetchedAt()).as("묶은 뒤 새로 읽은 값").isEqualTo(kst("2026-11-06T10:08:10"));
+        assertThat(job.lastPreflight().total()).as("묶은 뒤에는 이 기능의 행 쪽으로 한 번(미체결 목록 쪽은 주문 번호로 뺌) — 같은 값")
+                .isEqualByComparingTo("8400000");
+        assertThat(sentSummaries()).contains("SELL " + B + " DAY 10");
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
+    @Test
     @DisplayName("같은 사유 코드 3회(429·반대 방향·수집기 한도 거절 제외) → 이상 멈춤(repeated-error)")
     void repeatedErrorHalts() {
         Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
