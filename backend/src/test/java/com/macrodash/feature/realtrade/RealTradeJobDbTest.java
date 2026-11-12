@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -2723,7 +2722,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-380: 꺼짐·이상 멈춤에서도 지난 세션의 결과 모름 행마다 10초 주기로 토스 주문 목록 둘을 무기한 조회")
     @DisplayName("QA-380: 꺼짐·이상 멈춤의 주기는 지난 세션의 결과 모름 행 때문에 토스 주문 목록을 읽지 않는다 — 행은 결과 모름 그대로(화면의 확인 필요)")
     void offAndHaltedCyclesDoNotPollForPastSessionUnknown() {
         unknownFromYesterday();
@@ -2740,7 +2738,7 @@ class RealTradeJobDbTest {
             assertThat(cfg().state()).isEqualTo(state);
             assertThat(executor.stuckUnknown()).isEqualTo(1);
         }
-        verify(client, times(1)).placeOrder(anyString());
+        verify(client, never()).placeOrder(anyString());   // 호출 기록을 비운 뒤 — 꺼짐·이상 멈춤의 주기는 주문을 내지 않음
     }
 
     @Test
@@ -2788,7 +2786,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-380: 꺼짐·이상 멈춤에서도 지난 세션의 결과 모름 행마다 10초 주기로 토스 주문 목록 둘을 무기한 조회")
     @DisplayName("QA-380: 조회를 아낀 주기(이상 멈춤으로 읽고 시작) 도중에 끄기가 커밋돼도 그 주기에는 꺼짐으로 넘기지 않는다 — 다음 주기가 목록을 실제로 읽은 뒤에")
     void disableDuringASparedCycleWaitsForARealRead() {
         unknownFromYesterday();

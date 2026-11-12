@@ -27,6 +27,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +83,12 @@ class RealTradeExecutor {
     static final long RECONCILE_GRACE_SECONDS = 45;
     /** 대조는 재전송 창이 끝나고 이만큼 더 기다린 뒤에(마지막 재전송이 목록에 오를 시간 — 뒤쪽 여유 {@link #RECONCILE_LATE}보다 길게). */
     static final Duration RECONCILE_GRACE = Duration.ofSeconds(RECONCILE_GRACE_SECONDS);
+    /**
+     * 꺼짐·이상 멈춤에서 당일 결과 모름 행의 대조가 목록을 읽고도 후보를 정하지 못한 뒤, 그 행을 다시 대조하기까지의 간격(QA-380). 예전에는 그런 행이 하나라도
+     * 남으면 사람이 켜기·멈춤 해제로 닫을 때까지 주기(10초)마다 토스 미체결·오늘 목록을 읽었습니다. 늦게 목록에 보이는 주문을 묶어 취소·추적하는 길
+     * (RT3-BE-1)은 남기되 자주 묻지 않습니다. 목록을 읽지 못한 대조는 이 간격 없이 다음 주기에 다시 합니다.
+     */
+    static final Duration RECONCILE_RETRY_SPACING = Duration.ofMinutes(5);
     /** 취소 재시도 간격(마지막 시도부터)과 상한(첫 취소 포함). */
     static final Duration CANCEL_RETRY_SPACING = Duration.ofSeconds(30);
     static final int MAX_CANCEL_TRIES = 5;
@@ -133,6 +140,12 @@ class RealTradeExecutor {
     private final Clock clock;
     /** 끄는 중(종료 훅) — 새 SENDING·재전송을 만들지 않습니다. */
     private volatile boolean closing;
+    /**
+     * 행 번호 → 목록을 읽고도 후보를 정하지 못한 마지막 대조 시각(QA-380 — 정기 작업 스레드만 씀, 메모리). 다시 띄우면 비어 한 번 바로 대조합니다.
+     */
+    private final Map<Long, Instant> reconcileMissedAt = new HashMap<>();
+    /** 조회 없이 '확인 필요'로만 센다고 이미 로그에 남긴 지난 세션 행(같은 줄을 주기마다 남기지 않게). */
+    private final Set<Long> sparedLogged = new HashSet<>();
 
     @Autowired
     RealTradeExecutor(RealTradeStore store, CollectorTradeClient client, PaperMirrorService paper, ObjectMapper mapper) {
@@ -253,22 +266,40 @@ class RealTradeExecutor {
      * 결과 모름(UNKNOWN) 행 처리(명세 §4) — 첫 전송 + {@value #RESEND_MINUTES}분 안이면 같은 키·저장한 바이트로 다시 보내고, 그 뒤({@link #RECONCILE_GRACE}
      * 여유)에는 보내지 않고 대조합니다. 대조가 정확히 하나가 아니면 켜짐이면 이상 멈춤입니다.
      *
+     * <p><b>꺼짐·이상 멈춤에서는 조회를 아낍니다</b>(QA-380 — {@code planned}의 상태가 정확히 OFF·HALTED일 때만). 켜짐이 아니면 대조가 실패해도 행이
+     * 결과 모름으로 남아(사람이 켜기·멈춤 해제로 닫음 — {@link #resolveByOperator}), 예전에는 그동안 주기마다 토스 목록 둘을 읽었습니다.
+     * <ul>
+     *   <li>세션이 오늘(KST)보다 앞인 행: 조회하지 않고 '확인 필요'로만 셉니다 — 수집기의 오늘 목록은 오늘 주문만이고 이 기능의 주문은 당일 주문(DAY·OPG)뿐이라
+     *       지난 세션의 주문은 목록에 나타날 수 없습니다.</li>
+     *   <li>당일 행: 목록을 읽고도 후보를 정하지 못했으면 {@link #RECONCILE_RETRY_SPACING} 뒤에 다시 대조합니다(그사이 주기는 '확인 필요'로만 셈).</li>
+     * </ul>
+     * 켜짐은 그대로입니다(대조 실패는 곧 이상 멈춤 — 지난 세션 행도). 끄는 중(STOPPING)도 그대로 주기마다 대조합니다 — 정기 작업은 그 주기의 대조가 목록을
+     * 실제로 읽었을 때만 꺼짐으로 넘기므로(RT3-BE-1), 아낀 행이 있었던 주기({@link Resolution#spared})에는 넘기지 않습니다.
+     *
      * <p>재전송은 행마다 보내기 직전에 설정 행을 잡고 '지금도 켜짐이고 버전이 {@code planned}와 같음'을 확인한 뒤에만 합니다(SENDING과 같은 잠금 —
      * RT-BE-4). 그래서 주기 처음에 읽은 켜짐이 아니라 지금의 상태로 정해지고, 그사이 끄기·이상 멈춤이 커밋됐으면 보내지 않습니다. 이 루프 안에서 이상
      * 멈춤이 걸리면(대조 실패·같은 번호·멱등 충돌) 남은 행은 다시 보내지 않습니다.
      *
      * @param planned 부르는 쪽이 읽은 설정(켜짐이 아니거나 null이면 재전송 없이 대조만 — 대조 실패로 멈추지도 않음)
-     * @return 대조로 정하지 못한(재전송 창이 끝난) 행 수와, 대조할 행이 있었는데 토스 목록을 읽지 못했는가
+     * @return 대조로 정하지 못한(재전송 창이 끝난) 행 수, 대조할 행이 있었는데 토스 목록을 읽지 못했는가, 조회를 아껴 이번 주기에 대조하지 않은 행 수
      */
     Resolution resolveUnknown(Instant now, Config planned) {
         List<OrderRow> unknown = store.unfinishedOrders(MARKET).stream()
                 .filter(row -> RealTradeStore.OUTCOME_UNKNOWN.equals(row.sendOutcome())).toList();
+        Set<Long> ids = new HashSet<>();
+        unknown.forEach(row -> ids.add(row.id()));
+        reconcileMissedAt.keySet().retainAll(ids);
+        sparedLogged.retainAll(ids);
         if (unknown.isEmpty()) {
             return new Resolution(0, false);
         }
         boolean live = planned != null && RealTradeStore.STATE_LIVE.equals(planned.state());
+        boolean sparing = planned != null && (RealTradeStore.STATE_OFF.equals(planned.state())
+                || RealTradeStore.STATE_HALTED.equals(planned.state()));
+        LocalDate today = LocalDate.ofInstant(now, Kst.ZONE);
         Lists lists = new Lists();
         int unresolved = 0;
+        int spared = 0;
         boolean halted = false;
         for (OrderRow row : unknown) {
             Instant first = row.firstSentAt();
@@ -282,20 +313,49 @@ class RealTradeExecutor {
             if (now.isBefore(first.plus(RESEND_WINDOW).plus(RECONCILE_GRACE))) {
                 continue;
             }
+            if (sparing && spare(row, now, today)) {
+                unresolved++;
+                spared++;
+                continue;
+            }
             Reconciled result = reconcile(row, lists, live);
             if (result != Reconciled.BOUND) {
                 unresolved++;
+                if (lists.read()) {
+                    reconcileMissedAt.put(row.id(), now);   // 목록은 읽었는데 정하지 못함 — 꺼짐·이상 멈춤에서는 간격을 두고 다시
+                }
             }
             halted |= result == Reconciled.HALTED;
         }
-        return new Resolution(unresolved, lists.failed());
+        return new Resolution(unresolved, lists.failed(), spared);
+    }
+
+    /**
+     * 꺼짐·이상 멈춤에서 이 주기에 이 행의 대조를 건너뛰는가(QA-380) — 세션이 오늘보다 앞이거나(목록에 나타날 수 없음), 목록을 읽고도 정하지 못한 마지막
+     * 대조부터 {@link #RECONCILE_RETRY_SPACING}이 지나지 않았을 때.
+     */
+    private boolean spare(OrderRow row, Instant now, LocalDate today) {
+        if (row.session().isBefore(today)) {
+            if (sparedLogged.add(row.id())) {
+                log.info("지난 세션의 결과 모름 실제 주문 — 행 {}: 오늘 토스 목록에 나타날 수 없어 조회하지 않음(확인 필요 — 켜기·멈춤 해제 때 닫힘)", row.id());
+            }
+            return true;
+        }
+        Instant missed = reconcileMissedAt.get(row.id());
+        return missed != null && now.isBefore(missed.plus(RECONCILE_RETRY_SPACING));
     }
 
     /**
      * 결과 모름 처리 한 번의 결과 — 대조로 정하지 못한 행 수와, 재전송 창이 끝난 행을 대조하려 했는데 토스 목록(미체결·오늘)을 읽지 못했는가. 목록을 못
-     * 읽은 주기에는 끄는 중을 OFF로 넘기지 않습니다(RT3-BE-1 — 결과 모름 행마다 두 목록을 실제로 읽은 대조가 한 번은 있어야 꺼짐).
+     * 읽은 주기에는 끄는 중을 OFF로 넘기지 않습니다(RT3-BE-1 — 결과 모름 행마다 두 목록을 실제로 읽은 대조가 한 번은 있어야 꺼짐). {@code spared}는
+     * 꺼짐·이상 멈춤이라 조회를 아껴 이번 주기에 대조하지 않은 행 수(QA-380 — {@code unresolved}에 포함)이고, 0이 아니면 그 주기도 OFF로 넘기지 않습니다
+     * (주기 처음에 이상 멈춤으로 읽고 도중에 끄기가 커밋된 경우 — 다음 주기가 끄는 중으로 읽고 목록을 실제로 읽은 뒤에).
      */
-    record Resolution(int unresolved, boolean listsFailed) {
+    record Resolution(int unresolved, boolean listsFailed, int spared) {
+
+        Resolution(int unresolved, boolean listsFailed) {
+            this(unresolved, listsFailed, 0);
+        }
     }
 
     /**
@@ -356,6 +416,11 @@ class RealTradeExecutor {
         /** 읽으려 했는데 읽지 못함(읽지 않았으면 false). */
         boolean failed() {
             return tried && orders == null;
+        }
+
+        /** 두 목록을 실제로 읽음. */
+        boolean read() {
+            return orders != null;
         }
     }
 
@@ -544,7 +609,8 @@ class RealTradeExecutor {
 
     /**
      * 끄기 정리가 끝났는가 — 미종료 행이 없거나, 남은 것이 모두 재전송 창이 끝난 결과 모름 행(토스 주문 번호를 몰라 취소할 수 없음 — 사람이 앱에서 확인)뿐.
-     * 시각만 보므로, 정기 작업은 그 주기의 대조가 토스 목록을 읽었을 때만({@link Resolution#listsFailed}가 거짓) 이것으로 끄는 중을 끝냅니다(RT3-BE-1).
+     * 시각만 보므로, 정기 작업은 그 주기의 대조가 토스 목록을 읽었을 때만({@link Resolution#listsFailed}가 거짓이고 {@link Resolution#spared}가 0)
+     * 이것으로 끄는 중을 끝냅니다(RT3-BE-1).
      */
     boolean cleanupDone(Instant now) {
         for (OrderRow row : store.unfinishedOrders(MARKET)) {

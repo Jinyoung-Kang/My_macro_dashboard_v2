@@ -15,7 +15,6 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -400,7 +399,6 @@ class RealTradeExecutorDbTest {
     }
 
     @Test
-    @Disabled("QA-380: 꺼짐·이상 멈춤에서도 지난 세션의 결과 모름 행마다 10초 주기로 토스 주문 목록 둘을 무기한 조회")
     @DisplayName("QA-380: 꺼짐·이상 멈춤에서 지난 세션의 결과 모름 행은 토스 목록을 조회하지 않고 '확인 필요'로만 센다 — 오늘 목록에 나타날 수 없는 주문")
     void pastSessionUnknownIsNotPolledWhenOffOrHalted() {
         unknownOn(SESSION.minusDays(1), "2026-11-05T14:00");
@@ -418,11 +416,10 @@ class RealTradeExecutorDbTest {
             assertThat(executor.stuckUnknown()).as("상태 응답의 결과 모름 건수(화면의 '토스증권 앱에서 확인')는 그대로").isEqualTo(1);
             assertThat(only().sendOutcome()).isEqualTo("UNKNOWN");
         }
-        verify(client, times(1)).placeOrder(anyString());
+        verify(client, never()).placeOrder(anyString());   // 호출 기록을 비운 뒤 — 꺼짐·이상 멈춤의 주기는 주문을 내지 않음
     }
 
     @Test
-    @Disabled("QA-380: 이상 멈춤 뒤에도 당일 결과 모름 행을 10초마다 다시 대조(목록 둘을 다시 읽음)")
     @DisplayName("QA-380: 이상 멈춤·꺼짐에서 당일 결과 모름 행은 대조가 후보를 정하지 못한 뒤 간격(5분)을 두고 다시 대조 — 늦게 보이면 그때 묶음")
     void todayUnknownIsReconciledWithSpacingWhenHaltedOrOff() {
         OrderRow unknown = unknownOn(SESSION, "2026-11-06T10:00");

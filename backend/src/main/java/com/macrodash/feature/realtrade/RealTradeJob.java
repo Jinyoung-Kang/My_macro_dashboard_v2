@@ -75,7 +75,8 @@ import java.util.function.BiFunction;
  *
  * <p>한 주기(명세 §7.3)
  * <ol>
- *   <li>남은 SENDING 정리 → 진행 중 주문 추적(상태와 무관하게 늘) → 결과 모름 재전송·대조(대조는 꺼짐에서도).</li>
+ *   <li>남은 SENDING 정리 → 진행 중 주문 추적(상태와 무관하게 늘) → 결과 모름 재전송·대조(대조는 꺼짐에서도 — 꺼짐·이상 멈춤에서는 지난 세션 행을
+ *       조회하지 않고 당일 행은 간격을 둠, QA-380).</li>
  *   <li>끄는 중(STOPPING)·멈춤(HALTED)이면 이 기능의 미체결 취소만, 정리가 끝나면(그 주기의 대조가 토스 목록을 읽었을 때만) STOPPING → OFF. 꺼짐(OFF)에서도
  *       대조로 늦게 묶인 이 기능의 토스 주문은 취소.</li>
  *   <li>켜짐(LIVE)이 아니면 끝. 따라 하는 책이 운용 중이 아니거나 세대가 다르면 이상 멈춤. 옛 책·세대의 미체결은 취소.</li>
@@ -374,12 +375,13 @@ class RealTradeJob {
             cfg = store.configOrOff(MARKET);
             if (!live(cfg)) {
                 // 끄는 중·멈춤은 이 기능의 미체결 취소를 따라감. 꺼짐(OFF)에서도 토스 주문 번호가 있는 미종료 행이 있으면 취소 — 끄는 중에 대조를 끝내지
-                // 못한 결과 모름 행이 꺼진 뒤 대조로 늦게 묶인 것(RT3-BE-1, 정상이면 꺼짐에 그런 행은 없음). 대조 목록을 못 읽은 주기에는 OFF로 넘기지 않음.
+                // 못한 결과 모름 행이 꺼진 뒤 대조로 늦게 묶인 것(RT3-BE-1, 정상이면 꺼짐에 그런 행은 없음). 대조 목록을 못 읽은 주기와, 꺼짐·이상 멈춤으로
+                // 읽고 시작해 조회를 아낀 행이 있던 주기(QA-380 — 도중에 끄기가 커밋된 경우)에는 OFF로 넘기지 않음.
                 boolean stopping = RealTradeStore.STATE_STOPPING.equals(cfg.state());
                 if (stopping || RealTradeStore.STATE_HALTED.equals(cfg.state()) || executor.openBrokerOrders() > 0) {
                     executor.cancelOpen(now, row -> true);
                 }
-                if (stopping && !resolution.listsFailed() && executor.cleanupDone(now)) {
+                if (stopping && !resolution.listsFailed() && resolution.spared() == 0 && executor.cleanupDone(now)) {
                     finishStopping();
                 }
                 return;

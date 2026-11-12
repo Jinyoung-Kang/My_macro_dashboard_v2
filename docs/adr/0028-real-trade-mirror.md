@@ -80,5 +80,16 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   금액만큼 한도가 늦게 걸린다. 정확히 맞추려면 수집기 주문 보기에 주문 가격을 더해야 한다(토스 스펙 확인 필요 — 하지 않음). 계약은 [명세 §12.5](../specs/2026-11-06-real-trade-mirror.md),
   시험은 `RealTradeJobDbTest`의 `appMarketBuyPendingIsNotALoss`·`enableBaselineMatchesTheJudgedTotal`·`appLimitBuyPendingAddsBackItsFloor`와 반대 방향
   `realLossStillPausesWhileAppBuyIsPending`·`appLimitBuyDoesNotHideARealLoss`·`ownPendingBuyIsAddedBackOnce`, `RealTradePlannerTest.otherOpenBuyHoldFloor`.
+- **덧붙임(QA-380, 2026-11-12 사용자 승인 — 결정 5의 목록 대조, 주문 동작은 그대로)**: 꺼짐·이상 멈춤에서 결과 모름 행이 남으면 사람이 켜기·멈춤 해제로 닫을
+  때까지 주기(10초)마다 토스 미체결·오늘 목록을 읽었다(며칠이고). 이제 그 두 상태에서는 지난 세션의 행을 조회하지 않고 '확인 필요'로만 세고(오늘 목록에 나타날 수
+  없는 주문), 당일 행은 목록을 읽고도 정하지 못한 대조 뒤 5분마다 다시 대조한다. 켜짐(대조 실패 = `unknown-order` 멈춤)과 끄는 중(그 주기의 대조가 목록을 실제로
+  읽었을 때만 꺼짐)은 바꾸지 않았다. 검토한 대안: ① 꺼짐·이상 멈춤에서 대조를 아예 하지 않음 — 응답을 잃은 주문이 늦게 목록에 보일 때 묶어 취소·추적하는 길
+  (RT3-BE-1)이 사라져 버림. ② 끄는 중에도 지난 세션 행을 건너뜀 — 한 번도 목록을 읽지 못한 채 꺼짐으로 넘어가는 길이 생겨 버림. ③ 마지막 대조 시각을 행에
+  저장 — 스키마 변경이 필요해 메모리에만 둠. 감수한 단점: 꺼짐·이상 멈춤에서 당일 주문이 첫 대조 뒤에야 토스 목록에 보이면 묶어 취소하기까지 최대 5분 늦는다
+  (예전 10초 — 첫 대조는 지금처럼 첫 전송 + 7분 45초이고 시장가 주문은 그 전에 체결되는 것이 보통), 다시 띄우면 간격이 초기화돼 한 번 더 읽는다.
+  계약은 [명세 §12.3·§12.10](../specs/2026-11-06-real-trade-mirror.md), 시험은 `RealTradeExecutorDbTest`의 `pastSessionUnknownIsNotPolledWhenOffOrHalted`·
+  `todayUnknownIsReconciledWithSpacingWhenHaltedOrOff`·`unreadableListsAreRetriedNextCycleWhenHalted`·`livePastSessionUnknownStillHalts`·`stoppingAlwaysReadsLists`,
+  `RealTradeJobDbTest`의 `offAndHaltedCyclesDoNotPollForPastSessionUnknown`·`stoppingStillNeedsARealReadForPastSessionUnknown`·
+  `stoppingAfterHaltedFailureReadsAgainBeforeOff`·`disableDuringASparedCycleWaitsForARealRead`.
 - 토큰이 키 하나에 1개라 서버 밖에 같은 키가 있으면 주문 시각에 401이 나고 멈춘다.
 - 모의 1분봉 체결가와 실제 체결가는 다르다(지연·슬리피지·정수 주). 실제 계좌 칸은 실제 평균 체결가만 보이고, 모의 체결가 대비는 다음 단계로 남긴다(모의 체결은 그날 밤에야 기록됨).
