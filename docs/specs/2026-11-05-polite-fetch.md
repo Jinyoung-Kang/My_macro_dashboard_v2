@@ -81,8 +81,9 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 
 ## 5. 브라우저 컨테이너
 
-- 위치 `collector/sidecar/`(`guard.py` 문지기 · `app.py` 내부 서비스 · `driver.py` 브라우저 드라이버 · `Dockerfile` · `pinned.txt` · `seccomp.json`).
-  시험은 `collector/tests/`에서 가짜 드라이버로 돌립니다(CI job 수는 그대로 — 이미지는 `images` 잡의 Vultr 덧붙임 단계가 빌드).
+- 위치 `collector/sidecar/`(`guard.py` 문지기 · `app.py` 내부 서비스 · `driver.py` 브라우저 드라이버 · `egress.py` 나가는 길 필터 프록시 ·
+  `selfcheck.py` 이미지 안 확인 · `Dockerfile` · `pinned.txt` · `seccomp.json`).
+  시험은 `collector/tests/`에서 가짜 드라이버로 돌립니다(CI job 수는 그대로 — 이미지는 `images` 잡의 Vultr 덧붙임 단계가 빌드하고, 그 바로 뒤에 이미지 안 확인을 돌림).
 - compose: `compose.vultr.yml`에만 서비스 `browser`를 정의합니다. 기반·QA에는 없습니다. 포트 미게시, 새 망 `fetchnet`에 `collector`(기본 망과 함께)와 `browser`만,
   `browser`는 기본 망에 붙이지 않습니다(postgres·backend에 닿지 못함).
 - 환경: 기반 compose `BROWSER_FETCH_URL: ""`(보간 없음), Vultr 덧붙임 `"${BROWSER_FETCH_URL:-}"` — 서버 `.env` 한 줄로 켜고 끕니다. `BROWSER_FETCH_TOKEN`은
@@ -90,6 +91,14 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 - API: `POST /fetch {url, wait}` → `{status, finalUrl, contentType, body, challenge}`. 임의 스크립트·클릭 입력은 받지 않습니다.
 - 보호: 공유 비밀, 최상위 이동은 허용 호스트만, 리다이렉트·하위 요청이 전역 주소가 아닌 목적지(사설·루프백·링크 로컬·CGNAT 대역)면 중단, 내려받기·서비스 워커 끔,
   동시 1건, 요청당 90초 상한.
+- 나가는 길(2026-11-12, QA-414 — [ADR 0026](../adr/0026-polite-fetch-layers.md) 덧붙임 '브라우저의 나가는 길'): 요청 가로채기는 리다이렉트로 이어진 요청과
+  웹소켓에 불리지 않습니다(이미지에서 확인). 그래서 드라이버가 요청마다 컨테이너 **루프백(127.0.0.1)의 필터 프록시**(`egress.py`, 표준 라이브러리만)를 열고 Chrome을
+  그 프록시로만 내보냅니다. 프록시는 연결마다(https·웹소켓은 `CONNECT`, 평문 http는 절대 주소 요청) 목적지 이름을 스스로 풀어 전부 전역 주소일 때만 **검사한 그 주소로**
+  붙습니다(막으면 403, 로그는 호스트만). 터널은 바이트 그대로이고 머리글을 더하지 않으며 나가는 IP는 그대로입니다(차단을 지나가려는 수단이 아님 — 결정 4 그대로).
+  Chrome 인자: 루프백·링크 로컬행도 프록시로(`<-loopback>`), WebRTC는 프록시로 갈 수 없는 UDP를 쓰지 않음(`--webrtc-ip-handling-policy=disable_non_proxied_udp`),
+  QUIC 끔(`--disable-quic`). 프록시를 열지 못하면 브라우저를 띄우지 않고, 프록시가 닫히면 Chrome의 요청은 실패합니다. 꺼짐 스위치는 없습니다.
+- 이미지 안 확인: `xvfb-run -a python -m sidecar.selfcheck`(컨테이너 안 루프백 서버만 씀 — 외부 요청 없음). 실제 Chrome으로 리다이렉트 홉·fetch·웹소켓·루프백/링크 로컬
+  우회·UDP·프록시가 닫혔을 때를 보고, 통과하면 0으로 끝납니다. CI는 이미지 빌드 바로 뒤에 망 없는 컨테이너에서 돌리고, 서버에서는 배포 뒤 [DEVELOPMENT §7](../DEVELOPMENT.md)의 명령으로 돌립니다.
 - 브라우저는 요청마다 띄우고 닫습니다. 프로필(쿠키)은 이름 있는 볼륨에 둡니다. 크래시 보고·배경 통신·구성요소 갱신을 끕니다.
 - 굳히기: 비root, `cap_drop: [ALL]`, `no-new-privileges`, `mem_limit: 1g`, `init: true`. Chrome 샌드박스는 켭니다 — 도커 기본 seccomp은 권한을 뺀 컨테이너에서
   사용자 네임스페이스와 그 안의 `chroot`를 막아 Chrome이 뜨지 않으므로, 그 넷(`clone`·`setns`·`unshare`·`chroot`)만 더한 프로필 `collector/sidecar/seccomp.json`을 씁니다
@@ -132,6 +141,8 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 - 프록시 인자를 넘기지 않음, 프로필이 재기동 뒤에도 같음.
 - 일정: 기동 직후 실행 없음, 때가 아니면 외부 호출 0, 다음 시각이 구간 안.
 - 브라우저 컨테이너: 가짜 드라이버로 비밀·허용 호스트·목적지 차단·사람 확인 돌려주기. CI는 이미지 빌드와 compose 해석 단언까지(브라우저 실행 없음).
+  2026-11-12(QA-414)부터: 필터 프록시는 브라우저 없이 소켓으로(`test_sidecar_egress.py`), 드라이버가 Chrome에 넘기는 인자는 가짜 드라이버 패키지로
+  (`test_sidecar_driver_launch.py`), 실제 Chrome은 CI의 이미지 빌드 뒤 망 없는 컨테이너에서 이미지 안 확인으로(컨테이너 안 루프백 서버만 — 실제 사이트 없음).
 - 백엔드: 새 표를 `ArchitectureRulesTest`의 수집기 표 목록에 더함, 새 경로의 `AccessPolicy`·`RouteInventoryTest`·`docs/API.md`·`scripts/qa/routes.json`,
   읽기가 수집을 요청하지 않음.
 - 실제 사이트 확인은 자동 작업이 직접 하지 않습니다(ADR 0026 '결과와 남은 위험'). 배포 뒤 수집기의 실행 기록으로 통과 계층과 거부를 봅니다.
