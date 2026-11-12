@@ -81,7 +81,8 @@ export function SourceCard({ source }: { source: CatalogSource }) {
         )}
       </dl>
       {(source.incident?.reason ?? source.lastDetail) && (
-        <p className="line-clamp-2 text-xs leading-5 text-text-3">{source.incident?.reason ?? source.lastDetail}</p>
+        // 자르지 않습니다(2026-11-12 사용자 결정 — 출처 상태 표와 같게). 긴 사유·실행 기록은 카드 안에서 줄을 바꿉니다.
+        <p className="whitespace-normal break-words text-xs leading-5 text-text-3">{source.incident?.reason ?? source.lastDetail}</p>
       )}
       <div className="flex flex-wrap gap-3 text-xs">
         {source.siteUrl && (
