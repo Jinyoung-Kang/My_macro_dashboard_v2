@@ -2161,6 +2161,8 @@ export interface PaperReviewsResponse {
 /** 판정 한 줄 — 날짜·종류·상태는 서버가 입력의 결정에서 찾아 붙인 값(없는 id면 null). */
 export interface PaperReviewVerdict {
   decisionId: number | null;
+  /** 그 결정의 계좌 코드(입력 판 2부터 — 그 전 복기는 null). */
+  book?: string | null;
   asOf: string | null;
   kind: string | null;
   status: string | null;
@@ -2187,6 +2189,8 @@ export interface PaperReviewDetail extends Omit<PaperReviewSummary, "proposalId"
   missingDecisionIds: number[];
   recurringErrors: string[];
   keep: string[];
+  /** 다음 복기에서 이어 볼 것(응답 판 2부터 — 그 전 복기는 빈 목록이거나 없음). */
+  watchItems?: string[];
   proposal: PaperReviewProposal | null;
   /** 코드가 만든 복기 입력(보낸 키 순서 그대로 — 계약 밖, JSON 그대로). */
   input?: unknown;

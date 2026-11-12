@@ -9,6 +9,7 @@ import {
   resolveReviewWeek,
   REVIEW_COST_NOTE,
   REVIEW_SCHEDULE_NOTE,
+  reviewBookLabel,
   reviewDetailView,
   reviewProposalText,
   reviewRowSignature,
@@ -130,6 +131,22 @@ describe("주간 복기 목록", () => {
 });
 
 describe("주간 복기 한 건", () => {
+  it("입력 판 2: 판정마다 계좌(계좌1·계좌2)를 붙이고, 다음 복기로 이어 볼 것(지켜볼 것)을 보인다", () => {
+    const view = reviewDetailView(detail({
+      verdicts: [
+        { decisionId: 7, book: "claude", asOf: "2026-10-26", kind: "SCHEDULED", status: "NO_TRADE", thesisHeld: "유지", note: "관망 뒤 지수 −3%" },
+        { decisionId: 8, book: "kr_claude2", asOf: "2026-10-26", kind: "SCHEDULED", status: "OK", thesisHeld: "반증", note: "스탑" },
+        { decisionId: 9, book: "other", asOf: "2026-10-26", kind: "SCHEDULED", status: "OK", thesisHeld: "판단불가", note: "자료 없음" },
+      ],
+      watchItems: ["관망 뒤 반등을 놓치는지 — 다음 주 지수로 판정", 3 as unknown as string],
+    }));
+    expect(view.verdicts.map((row) => row.book)).toEqual(["계좌1", "계좌2", "other"]);
+    expect(view.watchItems).toEqual(["관망 뒤 반등을 놓치는지 — 다음 주 지수로 판정"]);
+    expect(reviewBookLabel(null)).toBe("—");
+    expect(reviewBookLabel("claude2")).toBe("계좌2");
+    expect(reviewBookLabel("kr_claude")).toBe("계좌1");
+  });
+
   it("판정 표에 결정 번호·기준 거래일(서버가 붙인 값)·종류, 없는 값은 —, 판정 없는 결정·반복 오류·지킬 것·제안", () => {
     const view = reviewDetailView(detail());
     expect(view.title).toBe("2026-10-30 주 복기");
@@ -144,6 +161,9 @@ describe("주간 복기 한 건", () => {
     expect(view.proposal).toEqual({ id: 12, label: "제안 #12 · 승인 대기", summary: "진입 자제 규칙",
       detail: "변경 1건 · 기준 판 v1" });
     expect(view.noProposal).toBe(false);
+    // 응답 판 1의 복기에는 계좌·지켜볼 것이 없다 — 계좌 칸은 —, 지켜볼 것은 빈 목록.
+    expect(view.verdicts.map((row) => row.book)).toEqual(["—", "—"]);
+    expect(view.watchItems).toEqual([]);
     expect(view.usage.map((cell) => [cell.label, cell.value])).toEqual([
       ["입력 토큰", "9,000"], ["입력 어림", "6,100"], ["출력 토큰", "1,200"], ["추정 비용", "$0.03"], ["소요", "41.0초"],
     ]);

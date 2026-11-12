@@ -143,8 +143,8 @@ describe("결정 로그 — 주간 복기", () => {
     const body = await screen.findByRole("region", { name: "2026-10-30 주 복기" });
     const verdicts = within(body).getAllByRole("table")[0];
     expect(rowsOf(verdicts)).toEqual([
-      ["#7", "2026-10-26", "정기", "유지", "체결 뒤 +10.00%, 무효화 미충족"],
-      ["#8", "2026-10-28", "수동", "반증", "관망 뒤 +4% 상승"],
+      ["#7", "—", "2026-10-26", "정기", "유지", "체결 뒤 +10.00%, 무효화 미충족"],
+      ["#8", "—", "2026-10-28", "수동", "반증", "관망 뒤 +4% 상승"],
     ]);
     expect(within(body).getByText("월 재량 상한 근처에서 신규 진입(#7·#8)")).toBeTruthy();
     expect(within(body).getByText("200일선 위 종목 우선")).toBeTruthy();
@@ -173,7 +173,7 @@ describe("결정 로그 — 주간 복기", () => {
 
     await waitFor(() => expect(within(region()).getByText("제안 #12 · 승인 대기")).toBeTruthy());
     expect(within(region()).queryByText(/API 오류로 끝났습니다/)).toBeNull();
-    expect(rowsOf(within(region()).getAllByRole("table")[0])[0]).toEqual(["#7", "2026-10-26", "정기", "유지", "체결 뒤 +10.00%, 무효화 미충족"]);
+    expect(rowsOf(within(region()).getAllByRole("table")[0])[0]).toEqual(["#7", "—", "2026-10-26", "정기", "유지", "체결 뒤 +10.00%, 무효화 미충족"]);
   });
 
   it("다른 주를 고르면 그 주를 읽는다 — 건너뜀은 서버 문구 그대로", async () => {

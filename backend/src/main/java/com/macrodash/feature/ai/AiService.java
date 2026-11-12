@@ -189,6 +189,12 @@ public class AiService {
     static final long STRUCTURED_MAX_TOKENS = 16_000L;
 
     /**
+     * 부르는 쪽이 정할 수 있는 구조화 출력 응답 한도의 위 끝(토큰). 스트리밍이 아닌 요청이라 응답이 길면 한 연결이 오래 열립니다 — 한도를 다 써도
+     * 10분 안에 끝나는 크기까지만 받습니다.
+     */
+    public static final long STRUCTURED_MAX_TOKENS_CEILING = 20_000L;
+
+    /**
      * 남은 예산이 이보다 적으면 다음 엔진을 부르지 않습니다(초). 번역도 같습니다 — 원문을 그대로 보여 줍니다(QA-094).
      *
      * <p>5초를 남겨 두고 호출해 봐야 타임아웃만 한 번 더 겪습니다.
@@ -996,6 +1002,22 @@ public class AiService {
      */
     public StructuredResult structured(String model, String system, String user, Map<String, Object> apiSchema,
                                        String effort, int timeoutSeconds) {
+        return structured(model, system, user, apiSchema, effort, timeoutSeconds, STRUCTURED_MAX_TOKENS);
+    }
+
+    /**
+     * {@link #structured(String, String, String, Map, String, int)}와 같되 응답 한도를 부르는 쪽이 정합니다 — 주간 복기처럼 판정 수가 많아
+     * 기본 한도({@value #STRUCTURED_MAX_TOKENS})로는 잘릴 수 있는 호출용입니다(ADR 0038). 결정 호출은 기본 한도 그대로입니다(실험 조건, C2).
+     *
+     * @param maxTokens 응답 한도(토큰) — {@value #STRUCTURED_MAX_TOKENS} 이상 {@value #STRUCTURED_MAX_TOKENS_CEILING} 이하
+     * @throws IllegalArgumentException 한도가 그 범위 밖(스트리밍이 아닌 요청이라 너무 큰 한도는 받지 않음)
+     */
+    public StructuredResult structured(String model, String system, String user, Map<String, Object> apiSchema,
+                                       String effort, int timeoutSeconds, long maxTokens) {
+        if (maxTokens < STRUCTURED_MAX_TOKENS || maxTokens > STRUCTURED_MAX_TOKENS_CEILING) {
+            throw new IllegalArgumentException("응답 한도는 " + STRUCTURED_MAX_TOKENS + "~" + STRUCTURED_MAX_TOKENS_CEILING
+                    + " 토큰이어야 합니다: " + maxTokens);
+        }
         if (model == null || model.isBlank()) {
             throw new IllegalArgumentException("모델 ID가 비었습니다");
         }
@@ -1027,7 +1049,7 @@ public class AiService {
 
         MessageCreateParams.Builder params = MessageCreateParams.builder()
                 .model(model)
-                .maxTokens(STRUCTURED_MAX_TOKENS)
+                .maxTokens(maxTokens)
                 .outputConfig(OutputConfig.builder()
                         .effort(level)
                         .format(JsonOutputFormat.builder().schema(schema.build()).build())
@@ -1062,8 +1084,8 @@ public class AiService {
             } else if (StopReason.MAX_TOKENS.equals(stop)) {
                 kind = "MAX_TOKENS";
                 error = kept == null
-                        ? "출력 한도(%d 토큰)에 걸려 답을 쓰기 전에 끝났습니다".formatted(STRUCTURED_MAX_TOKENS)
-                        : "출력 한도(%d 토큰)에 걸려 응답이 중간에 잘렸습니다".formatted(STRUCTURED_MAX_TOKENS);
+                        ? "출력 한도(%d 토큰)에 걸려 답을 쓰기 전에 끝났습니다".formatted(maxTokens)
+                        : "출력 한도(%d 토큰)에 걸려 응답이 중간에 잘렸습니다".formatted(maxTokens);
             } else if (kept == null) {
                 kind = "EMPTY";
                 error = "응답 텍스트 추출 실패 (stop_reason=" + stopText + ")";

@@ -242,13 +242,14 @@ function ReviewBody({
       {view.notices.map((text) => <Banner key={text} tone="warn">{text}</Banner>)}
 
       {view.verdicts.length > 0 && (
-        <Part title="논거 판정" note="결정마다 Claude가 그 뒤 사실(서버가 계산한 수익률·낙폭·스탑·무효화 평가)로 내린 판정입니다.">
+        <Part title="논거 판정" note="결정마다 Claude가 그 뒤 사실(서버가 계산한 수익률·낙폭·스탑·무효화 평가, 결정 뒤 지수·계좌 수익률과 관심 종목의 그 뒤 가격)로 내린 판정입니다.">
           <Table<ReviewVerdictRow>
             label="논거 판정"
             rows={view.verdicts}
             rowKey={(row) => row.key}
             columns={[
               { key: "decision", header: "결정", render: (row) => <code className="text-xs text-body">{row.decision}</code> },
+              { key: "book", header: "계좌", render: (row) => <span className="whitespace-nowrap text-xs text-muted">{row.book}</span> },
               { key: "asOf", header: "기준 거래일", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.asOf}</span> },
               { key: "kind", header: "종류", render: (row) => <span className="text-xs text-muted">{row.kind}</span> },
               { key: "thesis", header: "판정", render: (row) => <Chip badge={row.thesisHeld} /> },
@@ -331,6 +332,13 @@ function ReviewBody({
         <Part title="지킬 것">
           <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
             {view.keep.map((text) => <li key={text}>{text}</li>)}
+          </ul>
+        </Part>
+      )}
+      {view.watchItems.length > 0 && (
+        <Part title="지켜볼 것" note="규칙을 바꾸기에는 근거가 모자라 다음 복기가 이어받아 따지는 항목입니다.">
+          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
+            {view.watchItems.map((text) => <li key={text}>{text}</li>)}
           </ul>
         </Part>
       )}

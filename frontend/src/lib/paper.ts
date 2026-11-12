@@ -6087,6 +6087,8 @@ export function latestReviewNote(latestWeekEnding: string | null | undefined, op
 export interface ReviewVerdictRow {
   key: string;
   decision: string;
+  /** 계좌1·계좌2(입력 판 2부터 — 그 전 복기는 —). */
+  book: string;
   asOf: string;
   kind: string;
   thesisHeld: Badge;
@@ -6105,12 +6107,22 @@ export interface ReviewDetailView {
   missing: string | null;
   recurringErrors: string[];
   keep: string[];
+  /** 다음 복기에서 이어 볼 것. 없으면 빈 목록. */
+  watchItems: string[];
   proposal: { id: number; label: string; summary: string | null; detail: string } | null;
   /** 형식을 지난 응답인데 제안이 없음 — "제안 없음"을 보일지. */
   noProposal: boolean;
   usage: DecisionMetaCell[];
   input: string | null;
   response: string | null;
+}
+
+/** 복기 판정의 계좌 이름 — Claude 계좌 코드(claude·kr_claude → 계좌1, claude2·kr_claude2 → 계좌2). 모르는 코드는 그대로, 없으면 —. */
+export function reviewBookLabel(code: string | null): string {
+  if (code === null || code === "") return EMPTY;
+  if (code === "claude" || code === "kr_claude") return "계좌1";
+  if (code === "claude2" || code === "kr_claude2") return "계좌2";
+  return code;
 }
 
 /**
@@ -6142,6 +6154,7 @@ export function reviewDetailView(review: PaperReviewDetail): ReviewDetailView {
     return {
       key: `${index}`,
       decision: id === null ? EMPTY : `#${id}`,
+      book: reviewBookLabel(textOf(entry.book)),
       asOf: textOf(entry.asOf) ?? EMPTY,
       kind: decisionKindLabel(textOf(entry.kind)),
       thesisHeld: thesisHeldBadge(entry.thesisHeld),
@@ -6174,6 +6187,7 @@ export function reviewDetailView(review: PaperReviewDetail): ReviewDetailView {
     missing: missingIds.length > 0 ? `판정 없음: ${missingIds.map((id) => `#${id}`).join(" · ")}` : null,
     recurringErrors: listOf(review.recurringErrors).filter((entry): entry is string => typeof entry === "string"),
     keep: listOf(review.keep).filter((entry): entry is string => typeof entry === "string"),
+    watchItems: listOf(review.watchItems).filter((entry): entry is string => typeof entry === "string"),
     proposal,
     noProposal: status === "OK" && proposal === null,
     usage: usage === null ? [] : [

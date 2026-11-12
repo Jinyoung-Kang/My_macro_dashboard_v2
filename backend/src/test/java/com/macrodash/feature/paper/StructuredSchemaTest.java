@@ -56,7 +56,7 @@ class StructuredSchemaTest {
     private static final Map<String, String> SCHEMA_SHA256 = Map.of(
             "paper/decision.schema.json", "b1799bd3c8bc3ee389c5de5e36329212825df4be6646b188bb30a0cc61db6763",
             "paper/proposal.schema.json", "bae8f124b144d7b96dae008f929f45d6239fedb5c22191afa6ea919a917182c1",
-            "paper/review.schema.json", "2b9840e2dd6af3cda675c5452556dcddf409d67349458566e0285bbbe75bf854");
+            "paper/review.schema.json", "051a9734beb17f3c47c7aa226f38f9d073538d4423ba9fe01b5eedcc736abe32");
 
     @Test
     @DisplayName("고정본(묶음 A 기준선): 결정·제안·복기 스키마 파일의 바이트(SHA-256)와 API에 보내는 미국 결정 스키마가 시장 추상화 전과 같다")
@@ -751,12 +751,13 @@ class StructuredSchemaTest {
 
     /** 정상 복기 응답 — 판정 셋, 반복 오류·지킬 것 하나씩, 제안 하나(규칙 수정). */
     private static final String VALID_REVIEW = """
-            {"schemaVersion":1,"weekEnding":"2026-10-30",
+            {"schemaVersion":2,"weekEnding":"2026-10-30",
              "verdicts":[{"decisionId":12,"thesisHeld":"유지","note":"체결 뒤 +3.1%, 200일선 위."},
                          {"decisionId":13,"thesisHeld":"반증","note":"무효화 조건(200일선 이탈) 충족."},
                          {"decisionId":14,"thesisHeld":"판단불가","note":"체결 뒤 2거래일."}],
              "recurringErrors":["실적 발표 직전 진입(#12·#14)"],
              "keep":["두 그룹 교차 확인 종목 우선"],
+             "watchItems":["관망 뒤 반등을 놓치는지 — 다음 주 지수가 +3% 넘게 오르면 기회 손실로 판정"],
              "proposal":{"operations":[{"op":"ADD_RULE","target":"E2","text":"실적 발표 2거래일 전에는 신규 진입을 미룬다.","why":"#12·#14"},
                                        {"op":"DELETE_RULE","target":"E3-R2","text":null,"why":"겹침"}],
                          "judgment":"실적 직전 진입을 미루는 규칙을 더한다.","rationale":"E2에 규칙 추가, E3-R2는 E2와 겹쳐 지움."}}
@@ -811,9 +812,9 @@ class StructuredSchemaTest {
         assertThat(open).isEmpty();
         Map<String, Object> props = (Map<String, Object>) REVIEW.forApi().get("properties");
         assertThat(((Map<String, Object>) props.get("proposal")).get("type")).isEqualTo(List.of("object", "null"));
-        assertThat(((Map<String, Object>) props.get("schemaVersion")).get("const")).isEqualTo(1);
+        assertThat(((Map<String, Object>) props.get("schemaVersion")).get("const")).as("응답 판 2(ADR 0038 — watchItems·판정 상한 80)").isEqualTo(2);
         assertThat((List<Object>) REVIEW.forApi().get("required")).as("선택 키 없음(API의 선택 매개변수 상한)")
-                .containsExactly("schemaVersion", "weekEnding", "verdicts", "recurringErrors", "keep", "proposal");
+                .containsExactly("schemaVersion", "weekEnding", "verdicts", "recurringErrors", "keep", "watchItems", "proposal");
         Map<String, Object> verdictProps = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>)
                 props.get("verdicts")).get("items")).get("properties");
         assertThat(verdictProps.get("decisionId")).as("minimum은 걷어 냄").isEqualTo(Map.of("type", "integer"));
@@ -830,6 +831,7 @@ class StructuredSchemaTest {
         noProposal.putArray("verdicts");
         noProposal.putArray("recurringErrors");
         noProposal.putArray("keep");
+        noProposal.putArray("watchItems");
         assertThat(REVIEW.validate(noProposal)).isEmpty();
     }
 
@@ -837,7 +839,7 @@ class StructuredSchemaTest {
     @DisplayName("복기 스키마: 판정 값·길이·개수·필수 키·없는 키·제안 모양을 잡는다(API가 받지 않는 제약도 검사기가)")
     void reviewViolations() throws Exception {
         ObjectNode r = validReview();
-        r.put("schemaVersion", 2);
+        r.put("schemaVersion", 1);
         r.put("weekEnding", "10/30/2026");
         ObjectNode first = (ObjectNode) r.get("verdicts").get(0);
         first.put("thesisHeld", "맞음");
@@ -849,10 +851,12 @@ class StructuredSchemaTest {
             errors.add("오류 " + i);
         }
         ((ArrayNode) r.get("keep")).add("나".repeat(301));
+        r.remove("watchItems");
         r.put("extra", true);
 
         assertThat(REVIEW.validate(r)).containsExactly(
-                "$.schemaVersion: 값이 1여야 합니다 — 실제 2",
+                "$.watchItems: 필수 키가 없습니다",
+                "$.schemaVersion: 값이 2여야 합니다 — 실제 1",
                 "$.weekEnding: 형식 ^[0-9]{4}-[0-9]{2}-[0-9]{2}$에 맞지 않습니다 — 실제 \"10/30/2026\"",
                 "$.verdicts[0].decisionId: 최솟값 1보다 작습니다 — 실제 0",
                 "$.verdicts[0].thesisHeld: 허용 값이 아닙니다 — 실제 \"맞음\" (허용: 유지, 반증, 판단불가)",
@@ -917,7 +921,7 @@ class StructuredSchemaTest {
         String ops = "/properties/proposal/properties/operations";
         Map<String, String> expected = new java.util.LinkedHashMap<>();
         expected.put("note", "/properties/verdicts/items/properties/note/maxLength");
-        expected.put("recurringErrors·keep 항목 각", "/properties/recurringErrors/items/maxLength");
+        expected.put("recurringErrors·keep·watchItems 항목 각", "/properties/recurringErrors/items/maxLength");
         expected.put("judgment", "/properties/proposal/properties/judgment/maxLength");
         expected.put("rationale", "/properties/proposal/properties/rationale/maxLength");
         expected.put("target", ops + "/items/properties/target/maxLength");
@@ -927,9 +931,11 @@ class StructuredSchemaTest {
                 .contains(label + " " + String.format(java.util.Locale.ROOT, "%,d", s.at(pointer).intValue()) + "자"));
         assertThat(s.at("/properties/keep/items/maxLength").intValue())
                 .isEqualTo(s.at("/properties/recurringErrors/items/maxLength").intValue());
+        assertThat(s.at("/properties/watchItems/items/maxLength").intValue())
+                .isEqualTo(s.at("/properties/recurringErrors/items/maxLength").intValue());
         Map<String, String> counts = Map.of("verdicts", "/properties/verdicts/maxItems",
                 "recurringErrors", "/properties/recurringErrors/maxItems", "keep", "/properties/keep/maxItems",
-                "operations", ops + "/maxItems");
+                "watchItems", "/properties/watchItems/maxItems", "operations", ops + "/maxItems");
         counts.forEach((label, pointer) -> assertThat(prompt).as(label)
                 .contains(label + " " + s.at(pointer).intValue() + "건"));
     }

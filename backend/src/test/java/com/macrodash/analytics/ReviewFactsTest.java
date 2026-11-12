@@ -166,10 +166,10 @@ class ReviewFactsTest {
     }
 
     @Test
-    @DisplayName("어림 25,000토큰까지는 4주 그대로, 넘으면 2주로 줄이는 이유")
+    @DisplayName("어림 60,000토큰까지는 4주 그대로, 넘으면 2주로 줄이는 이유(입력 판 2 — 두 계좌가 들어가게 올린 상한)")
     void trimmedReason() {
-        assertThat(ReviewFacts.trimmedReason(25_000)).isNull();
-        assertThat(ReviewFacts.trimmedReason(25_001)).contains("25001토큰").contains("2주");
+        assertThat(ReviewFacts.trimmedReason(60_000)).isNull();
+        assertThat(ReviewFacts.trimmedReason(60_001)).contains("60001토큰").contains("2주");
     }
 
     // ------------------------------------------------------------------ 주문 사실
@@ -583,9 +583,11 @@ class ReviewFactsTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> short3 = (Map<String, Object>) ((List<Object>) facts.toMap().get("decisions")).get(0);
+        // 입력 판 2 — 관망 결정도 요약을 싣습니다(반증 조건이 요약에 있음). 노출 근거는 싣지 않습니다.
         assertThat(short3.keySet()).containsExactly("id", "kind", "asOf", "status", "stance", "targetExposurePct",
-                "noTradeReason", "frameworkVersion");
-        assertThat(short3).containsEntry("noTradeReason", "관망 — 일정 대기").containsEntry("targetExposurePct", 40.0);
+                "summary", "noTradeReason", "frameworkVersion");
+        assertThat(short3).containsEntry("noTradeReason", "관망 — 일정 대기").containsEntry("targetExposurePct", 40.0)
+                .containsEntry("summary", "요약");
 
         Facts onlyErrors = ReviewFacts.build(new Inputs(List.of(error, outside), Map.of(), List.of(), List.of(),
                 List.of(), 3, "현행"), WE, 4, null);
@@ -616,15 +618,15 @@ class ReviewFactsTest {
     }
 
     @Test
-    @DisplayName("요약·노출 근거·관망 사유는 300자로 자름(끝 '…' 포함 300자), 논거·무효화 문장은 그대로")
+    @DisplayName("요약은 600자, 노출 근거·관망 사유는 300자로 자름(끝 '…' 포함), 논거·무효화 문장은 그대로")
     void clipsLongText() {
-        String longKorean = "가".repeat(400);
+        String longKorean = "가".repeat(700);
         Decision decision = new Decision(1, "SCHEDULED", d("2026-10-26"), "OK", "NEUTRAL", 50.0, longKorean,
                 "a".repeat(500), null, 1, List.of(new Order(2, "A", "BUY", 5.0, null, "NEXT_CLOSE", "REJECTED", "X",
                 "논".repeat(600), "무".repeat(300), null, null)));
         Inputs in = new Inputs(List.of(decision), Map.of(), List.of(), List.of(), List.of(), 1, "현행");
         DecisionFacts f = ReviewFacts.build(in, WE, 4, null).decisions().get(0);
-        assertThat(f.summary()).hasSize(300).endsWith("…");
+        assertThat(f.summary()).hasSize(600).endsWith("…");
         assertThat(f.exposureRationale()).hasSize(300).endsWith("…");
         assertThat(f.orders().get(0).thesis()).hasSize(600);
         assertThat(f.orders().get(0).invalidation()).hasSize(300);
@@ -652,7 +654,7 @@ class ReviewFactsTest {
         assertThat(one).isEqualTo(two);
         assertThat(one.toString()).isEqualTo(two.toString());
         assertThat(one.keySet()).containsExactly("inputVersion", "weekEnding", "window", "trimmedReason", "framework",
-                "note", "decisions", "omittedDecisions", "comparison");
+                "note", "decisions", "omittedDecisions", "comparison", "previousReview");
         assertThat(one).containsEntry("weekEnding", "2026-10-30");
         // 스탑은 날짜 순으로 첫 것(10-28)
         @SuppressWarnings("unchecked")
@@ -770,7 +772,7 @@ class ReviewFactsTest {
                 Map.entry("returnPct", 10.0));
         assertThat((Map<String, Object>) orderMap(facts, 0, 1).get("hypothetical")).containsKeys("afterSellLabel")
                 .doesNotContainKey("entryClose");
-        assertThat(facts.toMap().get("note")).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE);
+        assertThat(facts.toMap().get("note")).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE);
     }
 
     @Test
@@ -836,7 +838,7 @@ class ReviewFactsTest {
         assertThat(ReviewFacts.build(UsMarketCalendar.CALENDAR, Entry.NEXT_CLOSE, withOpens, WE, 4, null).toMap())
                 .isEqualTo(us.toMap());
         assertThat(us.entry()).isEqualTo(Entry.NEXT_CLOSE);
-        assertThat(us.toMap().get("note")).isEqualTo(ReviewFacts.NOTE);
+        assertThat(us.toMap().get("note")).isEqualTo(ReviewFacts.NOTE + ReviewFacts.V2_NOTE);
         @SuppressWarnings("unchecked")
         Map<String, Object> hypothetical = (Map<String, Object>) orderMap(us, 0, 0).get("hypothetical");
         assertThat(hypothetical).containsExactly(Map.entry("basis", ReviewFacts.HYPOTHETICAL),
@@ -854,5 +856,102 @@ class ReviewFactsTest {
                 .doesNotContain("다음 세션 종가에 체결됐다고");
         assertThat(ReviewFacts.NOTE).as("미국 설명은 그대로").contains("결정 다음 세션 종가에 체결됐다고 가정한 값(가정)")
                 .contains("SPY 대비");
+    }
+
+    // ------------------------------------------------------------------ 입력 판 2(ADR 0038)
+    @Test
+    @DisplayName("입력 판 2: 관망 결정에 그 뒤 사실이 붙는다 — 지수(다음 세션·복기 기준일)·계좌 순자산·관심 종목의 그 뒤 가격")
+    void noTradeDecisionCarriesAfterFacts() {
+        // 10-26(월) 결정: 지수 100 → 10-27 102(+2.00%) → 10-30 95(−5.00%), 계좌 1,000 → 990(−1.00%), 관심 종목 50 → 60(+20.00%)
+        Decision noTrade = new Decision(3, "SCHEDULED", d("2026-10-26"), "NO_TRADE", "NEUTRAL", 40.0, "요약 — 반증: 지수 반등",
+                "근거", "관망", 2, List.of(), "claude", 60.0,
+                List.of(new ReviewFacts.Watch("WWW", "실적 확인 뒤 검토"), new ReviewFacts.Watch("NONE", "가격 없음")),
+                List.of());
+        Map<String, DailySeries> closes = Map.of(
+                "IDX", series("2026-10-23", 98, "2026-10-26", 100, "2026-10-27", 102, "2026-10-30", 95),
+                "WWW", series("2026-10-26", 50, "2026-10-30", 60));
+        List<BookNav> books = List.of(new BookNav("claude", List.of(new NavPoint(d("2026-10-26"), 1_000, true),
+                new NavPoint(WE, 990, true))));
+        Inputs in = new Inputs(List.of(noTrade), closes, List.of(), List.of(), books, 3, "현행", Map.of(), "IDX",
+                List.of(new ReviewFacts.MarketDay(d("2026-10-26"), new java.util.LinkedHashMap<>(Map.of("us10y", 4.9)))),
+                new ReviewFacts.PreviousReview(d("2026-10-23"), List.of("원인 불명이면 관망"), List.of("스탑은 코드에"),
+                        List.of("관망 뒤 반등을 놓치는지")));
+        Facts facts = ReviewFacts.build(in, WE, 4, null);
+
+        DecisionFacts f = facts.decisions().get(0);
+        assertThat(f.after().indexNextSessionPct()).isEqualTo(2.0);
+        assertThat(f.after().indexToWeekEndingPct()).isEqualTo(-5.0);
+        assertThat(f.after().bookToWeekEndingPct()).isEqualTo(-1.0);
+        assertThat(f.after().notes()).isEmpty();
+        assertThat(f.watchlist()).extracting(ReviewFacts.WatchFacts::sinceAsOfPct).containsExactly(20.0, null);
+        assertThat(f.watchlist().get(1).reason()).isEqualTo("가격 이력 없음");
+
+        Map<String, Object> map = facts.toMap();
+        assertThat(map.keySet()).containsExactly("inputVersion", "weekEnding", "window", "trimmedReason", "framework",
+                "note", "books", "decisions", "omittedDecisions", "comparison", "market", "previousReview");
+        assertThat(map).containsEntry("inputVersion", 2).containsEntry("books", List.of("claude"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = (Map<String, Object>) ((List<Object>) map.get("decisions")).get(0);
+        assertThat(row.keySet()).containsExactly("id", "book", "kind", "asOf", "status", "stance", "targetExposurePct",
+                "summary", "noTradeReason", "frameworkVersion", "desiredExposurePct", "after", "watchlist");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> market = (Map<String, Object>) map.get("market");
+        assertThat(market).containsEntry("index", "IDX")
+                .containsEntry("columns", List.of("date", "indexClose", "indexDayPct", "us10y"));
+        // 결정 기준일(10-26: 98 → 100 = +2.04%, 패킷 값)과 복기 기준일(10-30: 전 거래일 10-29 종가 없음 → 전일 대비 null, 패킷 값 없음)
+        assertThat(market.get("rows")).isEqualTo(List.of(
+                java.util.Arrays.asList("2026-10-26", 100.0, 2.04, 4.9),
+                java.util.Arrays.asList("2026-10-30", 95.0, null, null)));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> previous = (Map<String, Object>) map.get("previousReview");
+        assertThat(previous).containsEntry("weekEnding", "2026-10-23")
+                .containsEntry("watchItems", List.of("관망 뒤 반등을 놓치는지"));
+    }
+
+    @Test
+    @DisplayName("입력 판 2: 결정 기준일이 복기 기준일이면 그 뒤 사실은 null과 이유(0으로 채우지 않음), 장중 판단은 계기·결과와 함께 실린다")
+    void afterFactsAreNullOnTheWeekEndingAndJudgmentsAreListed() {
+        Decision last = new Decision(9, "SCHEDULED", WE, "NO_TRADE", "NEUTRAL", 40.0, "요약", "근거", "관망", 2, List.of(),
+                "claude2", null, List.of(new ReviewFacts.Watch("WWW", "조건")),
+                List.of(new ReviewFacts.Judgment(10, "INTRADAY_1", "EVENT", List.of("INDEX_MOVE IDX +1.5%"),
+                        "질".repeat(200), "KEEP", "판".repeat(400), 0)));
+        Map<String, DailySeries> closes = Map.of("IDX", series("2026-10-29", 100, "2026-10-30", 101),
+                "WWW", series("2026-10-30", 50));
+        Inputs in = new Inputs(List.of(last), closes, List.of(), List.of(), List.of(), 3, "현행", Map.of(), "IDX",
+                List.of(), null);
+        Facts facts = ReviewFacts.build(in, WE, 4, null);
+
+        DecisionFacts f = facts.decisions().get(0);
+        assertThat(f.after().indexNextSessionPct()).isNull();
+        assertThat(f.after().indexToWeekEndingPct()).isNull();
+        assertThat(f.after().bookToWeekEndingPct()).isNull();
+        assertThat(f.after().notes()).containsExactly("결정 기준일이 복기 기준일 — 그 뒤 세션 없음");
+        assertThat(f.watchlist().get(0).sinceAsOfPct()).isNull();
+        assertThat(f.watchlist().get(0).reason()).contains("그 뒤 세션 없음");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> row = (Map<String, Object>) ((List<Object>) facts.toMap().get("decisions")).get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> judgment = (Map<String, Object>) ((List<Object>) row.get("intraday")).get(0);
+        assertThat(judgment.keySet()).containsExactly("id", "kind", "origin", "events", "question", "action", "summary",
+                "orders");
+        assertThat((String) judgment.get("question")).hasSize(ReviewFacts.QUESTION_CHARS).endsWith("…");
+        assertThat((String) judgment.get("summary")).hasSize(ReviewFacts.JUDGMENT_CHARS).endsWith("…");
+        assertThat(facts.toMap().get("previousReview")).isNull();
+    }
+
+    @Test
+    @DisplayName("입력 판 2: 두 계좌를 함께 복기해도 스탑은 그 결정의 계좌 것만 본다")
+    void stopsAreMatchedPerBook() {
+        DailySeries aaa = series("2026-10-26", 100, "2026-10-30", 110);
+        Decision one = new Decision(1, "SCHEDULED", d("2026-10-23"), "OK", "NEUTRAL", 60.0, "요약", "근거", null, 1,
+                List.of(buy(11, "AAA", new Fill(d("2026-10-26"), 100.0), "스탑")), "claude", null, List.of(), List.of());
+        Decision two = new Decision(2, "SCHEDULED", d("2026-10-23"), "OK", "NEUTRAL", 60.0, "요약", "근거", null, 1,
+                List.of(buy(12, "AAA", new Fill(d("2026-10-26"), 100.0), "스탑")), "claude2", null, List.of(), List.of());
+        List<StopFill> stops = List.of(new StopFill("AAA", d("2026-10-28"), 92.0, "claude2"));
+        Facts facts = ReviewFacts.build(new Inputs(List.of(one, two), Map.of("AAA", aaa), stops, List.of(), List.of(), 3,
+                "현행"), WE, 4, null);
+
+        assertThat(facts.decisions().get(0).orders().get(0).stop().triggered()).isFalse();
+        assertThat(facts.decisions().get(1).orders().get(0).stop().triggered()).isTrue();
     }
 }

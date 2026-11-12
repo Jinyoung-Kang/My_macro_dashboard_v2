@@ -66,14 +66,17 @@ public final class ReviewFacts {
     }
 
     /** 입력 모양의 판 — 칸을 바꾸면 올립니다(복기 기록끼리 비교할 때 같은 모양인지 알게). */
-    public static final int INPUT_VERSION = 1;
+    public static final int INPUT_VERSION = 2;
 
     /** 기본 창(주) — 명세 D2·D32. */
     public static final int DEFAULT_WEEKS = 4;
     /** 어림이 {@link #TOKEN_LIMIT}을 넘을 때 다시 조립하는 창(주) — 단계 0. */
     public static final int FALLBACK_WEEKS = 2;
-    /** 이보다 크면 2주로 다시 조립합니다(PacketBuilder 어림 기준 — 실측은 어림의 약 1.7배, 단계 0). */
-    public static final int TOKEN_LIMIT = 25_000;
+    /**
+     * 이보다 크면 2주로 다시 조립합니다(PacketBuilder 어림 기준 — 실측은 어림의 약 1.7배, 단계 0). 처음은 25,000이었고, 입력 판 2(계좌2 결정·
+     * 관망 결정의 요약·그 뒤 사실·장중 판단·시장 표)에서 두 계좌 4주가 들어가게 올렸습니다(ADR 0038).
+     */
+    public static final int TOKEN_LIMIT = 60_000;
 
     /**
      * 복기가 열리는 요일·시각(한국 시각) — 명세 D1. 금요일 마감(한국 토요일 05:00·06:00) 뒤 확정 종가가 들어올 여유를 둡니다. 처음은 토요일
@@ -83,10 +86,17 @@ public final class ReviewFacts {
     public static final DayOfWeek OPENS_ON = DayOfWeek.SUNDAY;
     public static final LocalTime OPENS_AT = LocalTime.of(21, 0);
 
-    /** 글자 상한 — 결정 요약은 PacketBuilder의 앞선 결정 요약과 같은 300자. 논거·무효화 문장은 스키마 상한(600·300)이라 자르지 않음. */
-    public static final int SUMMARY_CHARS = 300;
+    /**
+     * 글자 상한 — 결정 요약은 600자(입력 판 2 — 반증 조건이 요약 끝에 있어 300자에서는 잘려 나갔음, ADR 0038). 논거·무효화 문장은 스키마
+     * 상한(600·300)이라 자르지 않음.
+     */
+    public static final int SUMMARY_CHARS = 600;
     public static final int RATIONALE_CHARS = 300;
     public static final int NO_TRADE_CHARS = 300;
+    /** 관심 목록 조건·장중 판단 질문·장중 판단 요약의 글자 상한(입력 판 2). */
+    public static final int WATCH_CHARS = 200;
+    public static final int QUESTION_CHARS = 150;
+    public static final int JUDGMENT_CHARS = 300;
 
     /** 이동평균 기간(거래일, 점 수). */
     public static final int MOVING_AVERAGE_DAYS = 200;
@@ -175,6 +185,23 @@ public final class ReviewFacts {
             + "없음(이유는 notes), 0이 아님. 가격은 수정주가 이력이라 배당락이 끼면 낙폭이 배당만큼 커 보일 수 있음.";
 
     /**
+     * 입력 판 2가 더한 칸의 설명({@link #NOTE}·{@link #NEXT_OPEN_NOTE} 뒤에 붙임 — ADR 0038). 사지 않은 판단을 판정할 사실(결정 뒤 지수·계좌·
+     * 관심 목록), 장중 판단, 계좌 구분, 앞 복기입니다.
+     */
+    public static final String V2_NOTE = " 입력 판 2: 결정의 book은 그 결정의 계좌다(books). after = 그 결정 뒤의 사실 — indexNextSessionPct·"
+            + "indexToWeekEndingPct는 지수(market.index)의 결정 기준일 종가 → 다음 세션 종가·복기 기준일 종가, bookToWeekEndingPct는 그 계좌의 "
+            + "결정 기준일 순자산 → 복기 기준일 순자산(관망·노출 유지가 맞았는지 가를 사실). watchlist = 그 결정이 사지 않고 지켜본 종목과 "
+            + "조건, sinceAsOfPct는 결정 기준일 종가 → 복기 기준일 종가(샀다면을 가정한 값이 아니라 그 뒤 가격 변화 — 놓친 기회·피한 손실을 "
+            + "가를 사실). desiredExposurePct = 그 결정이 적은 바라는 노출(적은 판만). intraday = 그 세션의 장중 판단(origin은 누가 그 "
+            + "시각을 정했나 — RESERVED·NEXT는 결정·앞 판단이 예약, GUARANTEE·EVENT는 코드 규칙, MANUAL은 운영자, CHECKPOINT는 옛 장중 확인; "
+            + "action KEEP은 바꾸지 않음, REPLACE는 대기 주문을 바꿈, null은 호출 실패; 그 판단이 낸 주문은 그 결정의 orders에 함께 있음). "
+            + "previousReview = 바로 앞 복기가 남긴 반복 오류·지킬 것·지켜볼 것(없으면 null).";
+
+    /** 시장 표의 설명. */
+    static final String MARKET_NOTE = "결정 기준일·복기 기준일마다 한 줄 — indexClose·indexDayPct는 지수 종가와 전일 대비(%), 그 밖의 열은 그날 "
+            + "결정 패킷이 본 값(결정 시점 수집본 — 그날 결정이 없거나 값이 없으면 null). 결정 뒤 시장이 어떻게 움직였는지 보는 자료다";
+
+    /**
      * 시가 진입 시장(한국 — {@link Entry#NEXT_OPEN})의 입력 설명. 미국 {@link #NOTE}와 같은 사실 정의에 거절 주문의 가정 진입(다음 세션 시가·
      * 출처·종가 근사)·체결가(관측가 — 비용은 장부 칸)·기준일 종가(토스 잠정)를 그 시장 말로 적습니다(2단계 명세 §9 'E3 — 복기의 가정 진입가',
      * 사용자 결정 v5).
@@ -249,22 +276,77 @@ public final class ReviewFacts {
      */
     public record Decision(long id, String kind, LocalDate asOf, String status, String stance, Double targetExposurePct,
                            String summary, String exposureRationale, String noTradeReason, Integer frameworkVersion,
-                           List<Order> orders) {
+                           List<Order> orders, String book, Double desiredExposurePct, List<Watch> watchlist,
+                           List<Judgment> intraday) {
         public Decision {
             Objects.requireNonNull(asOf, "asOf");
             orders = orders == null ? List.of() : List.copyOf(orders);
+            watchlist = watchlist == null ? List.of() : List.copyOf(watchlist);
+            intraday = intraday == null ? List.of() : List.copyOf(intraday);
+        }
+
+        /** 입력 판 1의 모양(계좌·바라는 노출·관심 목록·장중 판단 없음). */
+        public Decision(long id, String kind, LocalDate asOf, String status, String stance, Double targetExposurePct,
+                        String summary, String exposureRationale, String noTradeReason, Integer frameworkVersion,
+                        List<Order> orders) {
+            this(id, kind, asOf, status, stance, targetExposurePct, summary, exposureRationale, noTradeReason,
+                    frameworkVersion, orders, null, null, List.of(), List.of());
+        }
+    }
+
+    /** 결정이 적은 관심 목록 한 줄(응답의 {@code watchlist} — 사지 않고 지켜본 종목과 그 조건). */
+    public record Watch(String ticker, String condition) {
+    }
+
+    /**
+     * 그 세션의 장중 판단 한 건(그 세션 결정에 붙임 — 입력 판 2). 계기({@code origin} — RESERVED·NEXT·GUARANTEE·EVENT·MANUAL, 옛 장중 확인은
+     * CHECKPOINT)·사건·질문·결과({@code action} — KEEP·REPLACE, 호출이 실패했으면 null)·요약·낸 주문 수.
+     */
+    public record Judgment(long id, String kind, String origin, List<String> events, String question, String action,
+                           String summary, int orders) {
+        public Judgment {
+            events = events == null ? List.of() : List.copyOf(events);
+        }
+    }
+
+    /**
+     * 결정 기준일 하루의 시장 값(입력 판 2) — 그날 결정 패킷이 본 매크로 값(이름 → 값, 넣은 순서 그대로). 지수 종가는 {@link Inputs#closes}에서
+     * 따로 읽습니다.
+     */
+    public record MarketDay(LocalDate date, Map<String, Object> values) {
+        public MarketDay {
+            Objects.requireNonNull(date, "date");
+            values = values == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(values));
+        }
+    }
+
+    /** 바로 앞 복기(OK)의 요지 — 이번 복기가 이어받을 것(입력 판 2). */
+    public record PreviousReview(LocalDate weekEnding, List<String> recurringErrors, List<String> keep,
+                                 List<String> watchItems) {
+        public PreviousReview {
+            recurringErrors = recurringErrors == null ? List.of() : List.copyOf(recurringErrors);
+            keep = keep == null ? List.of() : List.copyOf(keep);
+            watchItems = watchItems == null ? List.of() : List.copyOf(watchItems);
         }
     }
 
     /** Claude 계좌의 스탑 체결 한 건(paper_orders.source = STOP). */
-    public record StopFill(String ticker, LocalDate date, double price) {
+    public record StopFill(String ticker, LocalDate date, double price, String book) {
+        /** 계좌를 가르지 않는 재료(입력 판 1 — 한 계좌만 복기할 때). */
+        public StopFill(String ticker, LocalDate date, double price) {
+            this(ticker, date, price, null);
+        }
     }
 
     /**
      * Claude 계좌의 전량 매도 체결 한 건(스탑이 아닌 매도 중 비율이 없거나 1 이상). 포지션이 닫힌 날 — 그 뒤 스탑은 다시 산 포지션의
      * 것입니다({@link #stop}).
      */
-    public record FullSell(String ticker, LocalDate date) {
+    public record FullSell(String ticker, LocalDate date, String book) {
+        /** 계좌를 가르지 않는 재료(입력 판 1 — 한 계좌만 복기할 때). */
+        public FullSell(String ticker, LocalDate date) {
+            this(ticker, date, null);
+        }
     }
 
     /** 계좌의 거래일별 순자산 한 줄(paper_nav_daily). */
@@ -285,11 +367,16 @@ public final class ReviewFacts {
      * @param fullSells 전량 매도 체결(스탑 제외 — 스탑이 어느 포지션의 것인지 가르는 데만 씀)
      * @param books     비교할 계좌(이 순서로 실음 — rules·bench_spy·bench_mix·claude 등)
      * @param opens     티커 → 세션 날짜 → 시가({@link Entry#NEXT_OPEN}의 가정 진입가 — 시가 진입 시장만, 그 밖은 빈 표). 없는 날은 종가 근사
+     * @param benchmark  그 시장 지수 종목(미국 SPY·한국 KODEX 200 — 종가는 {@code closes}에). null이면 결정 뒤 지수 사실·시장 표를 내지 않음
+     * @param marketDays 결정 기준일마다 그 결정 패킷이 본 매크로 값(시장 표의 열)
+     * @param previous   바로 앞 복기의 요지(없으면 null)
      */
     public record Inputs(List<Decision> decisions, Map<String, DailySeries> closes, List<StopFill> stops,
                          List<FullSell> fullSells, List<BookNav> books, Integer frameworkVersion,
-                         String frameworkStatus, Map<String, Map<LocalDate, EntryOpen>> opens) {
+                         String frameworkStatus, Map<String, Map<LocalDate, EntryOpen>> opens, String benchmark,
+                         List<MarketDay> marketDays, PreviousReview previous) {
         public Inputs {
+            marketDays = marketDays == null ? List.of() : List.copyOf(marketDays);
             decisions = decisions == null ? List.of() : List.copyOf(decisions);
             closes = closes == null ? Map.of() : Collections.unmodifiableMap(new HashMap<>(closes));
             stops = stops == null ? List.of() : List.copyOf(stops);
@@ -300,6 +387,14 @@ public final class ReviewFacts {
                 opens.forEach((ticker, days) -> copied.put(ticker, days == null ? Map.of() : Map.copyOf(days)));
             }
             opens = Collections.unmodifiableMap(copied);
+        }
+
+        /** 입력 판 1의 재료(지수·시장 표·앞 복기 없음). */
+        public Inputs(List<Decision> decisions, Map<String, DailySeries> closes, List<StopFill> stops,
+                      List<FullSell> fullSells, List<BookNav> books, Integer frameworkVersion, String frameworkStatus,
+                      Map<String, Map<LocalDate, EntryOpen>> opens) {
+            this(decisions, closes, stops, fullSells, books, frameworkVersion, frameworkStatus, opens, null, List.of(),
+                    null);
         }
 
         /** 시가 없는 재료(종가 진입 시장 — 미국). */
@@ -391,9 +486,36 @@ public final class ReviewFacts {
      */
     public record DecisionFacts(long id, String kind, LocalDate asOf, String status, String stance,
                                 Double targetExposurePct, String summary, String exposureRationale,
-                                String noTradeReason, Integer frameworkVersion, List<OrderFacts> orders) {
+                                String noTradeReason, Integer frameworkVersion, List<OrderFacts> orders, String book,
+                                Double desiredExposurePct, After after, List<WatchFacts> watchlist,
+                                List<Judgment> intraday) {
         public DecisionFacts {
             orders = List.copyOf(orders);
+            watchlist = watchlist == null ? List.of() : List.copyOf(watchlist);
+            intraday = intraday == null ? List.of() : List.copyOf(intraday);
+        }
+    }
+
+    /**
+     * 결정 뒤의 사실(입력 판 2) — 사지 않은 판단(관망·노출 유지)을 판정할 재료. 지수는 결정 기준일 종가 → 다음 세션 종가·복기 기준일 종가,
+     * 계좌는 결정 기준일 순자산 → 복기 기준일 순자산. 못 구한 값은 null이고 이유는 {@code notes}(0으로 채우지 않음).
+     */
+    public record After(Double indexNextSessionPct, Double indexToWeekEndingPct, Double bookToWeekEndingPct,
+                        List<String> notes) {
+        public After {
+            notes = List.copyOf(notes);
+        }
+    }
+
+    /** 관심 목록 한 줄의 사실 — 결정 기준일 종가 → 복기 기준일 종가(사지 않고 지켜본 종목의 그 뒤 값). 못 구하면 null과 이유. */
+    public record WatchFacts(String ticker, String condition, Double sinceAsOfPct, String reason) {
+    }
+
+    /** 시장 표(입력 판 2) — 결정 기준일·복기 기준일마다 지수 종가·전일 대비와 그날 결정 패킷이 본 매크로 값. */
+    public record MarketTable(String index, List<String> columns, List<List<Object>> rows) {
+        public MarketTable {
+            columns = List.copyOf(columns);
+            rows = Collections.unmodifiableList(new ArrayList<>(rows));
         }
     }
 
@@ -417,7 +539,7 @@ public final class ReviewFacts {
      */
     public record Facts(LocalDate weekEnding, Window window, String trimmedReason, Integer frameworkVersion,
                         String frameworkStatus, List<DecisionFacts> decisions, Map<String, Integer> omittedDecisions,
-                        Comparison comparison, Entry entry) {
+                        Comparison comparison, Entry entry, MarketTable market, PreviousReview previous) {
         public Facts {
             decisions = List.copyOf(decisions);
             omittedDecisions = Collections.unmodifiableMap(new TreeMap<>(omittedDecisions));
@@ -588,28 +710,170 @@ public final class ReviewFacts {
             }
         }
         return new Facts(weekEnding, window, trimmedReason, in.frameworkVersion(), in.frameworkStatus(), decisions,
-                omitted, comparison(calendar, in.books(), window), entry);
+                omitted, comparison(calendar, in.books(), window), entry, market(calendar, in, inWindow, weekEnding),
+                in.previous());
+    }
+
+    /**
+     * 결정 뒤의 사실({@link After}). 지수 종목이 없고 계좌도 모르면(입력 판 1의 재료) null — 그 칸을 싣지 않습니다. 다음 세션이 복기 기준일
+     * 뒤면(결정 기준일 = 복기 기준일) 그 뒤 값은 이 주에 알 수 없던 사실이라 null입니다.
+     */
+    static After after(TradingCalendar calendar, Decision d, LocalDate weekEnding, Inputs in) {
+        if (in.benchmark() == null && d.book() == null) {
+            return null;
+        }
+        List<String> notes = new ArrayList<>();
+        LocalDate next = calendar.nextTradingDay(d.asOf());
+        boolean none = next.isAfter(weekEnding);
+        if (none) {
+            notes.add("결정 기준일이 복기 기준일 — 그 뒤 세션 없음");
+        }
+        Double indexNext = null;
+        Double indexEnd = null;
+        if (in.benchmark() != null && !none) {
+            DailySeries index = in.closes().get(in.benchmark());
+            Double base = index == null ? null : index.valueOn(d.asOf());
+            if (base == null || !(base > 0)) {
+                notes.add("지수(" + in.benchmark() + ") " + d.asOf() + " 종가 없음");
+            } else {
+                Double n = index.valueOn(next);
+                Double e = index.valueOn(weekEnding);
+                indexNext = n == null ? null : pct(n / base - 1.0);
+                indexEnd = e == null ? null : pct(e / base - 1.0);
+                if (n == null) {
+                    notes.add("지수(" + in.benchmark() + ") " + next + " 종가 없음");
+                }
+                if (e == null) {
+                    notes.add("지수(" + in.benchmark() + ") 복기 기준일 종가 없음");
+                }
+            }
+        }
+        Double bookEnd = null;
+        if (d.book() != null && !none) {
+            NavPoint from = null;
+            NavPoint to = null;
+            for (BookNav b : in.books()) {
+                if (!d.book().equals(b.book())) {
+                    continue;
+                }
+                for (NavPoint p : b.rows()) {
+                    if (p.date().equals(d.asOf())) {
+                        from = p;
+                    } else if (p.date().equals(weekEnding)) {
+                        to = p;
+                    }
+                }
+            }
+            if (from == null || to == null || !(from.nav() > 0)) {
+                notes.add("계좌(" + d.book() + ") 순자산 줄 없음(" + (from == null ? d.asOf() : weekEnding) + ")");
+            } else {
+                bookEnd = pct(to.nav() / from.nav() - 1.0);
+            }
+        }
+        return new After(indexNext, indexEnd, bookEnd, notes);
+    }
+
+    /** 관심 목록의 그 뒤 값 — 결정 기준일 종가 → 복기 기준일 종가. 조건 글은 {@link #WATCH_CHARS}자로 자릅니다. */
+    static List<WatchFacts> watchlist(Decision d, LocalDate weekEnding, Map<String, DailySeries> closes) {
+        List<WatchFacts> out = new ArrayList<>();
+        for (Watch w : d.watchlist()) {
+            if (w == null || w.ticker() == null) {
+                continue;
+            }
+            DailySeries series = closes.get(w.ticker());
+            Double base = series == null ? null : series.valueOn(d.asOf());
+            Double end = series == null ? null : series.valueOn(weekEnding);
+            String reason = null;
+            Double since = null;
+            if (!d.asOf().isBefore(weekEnding)) {
+                reason = "결정 기준일이 복기 기준일 — 그 뒤 세션 없음";
+            } else if (series == null || series.isEmpty()) {
+                reason = "가격 이력 없음";
+            } else if (base == null || !(base > 0)) {
+                reason = "결정 기준일(" + d.asOf() + ") 종가 없음";
+            } else if (end == null) {
+                reason = "복기 기준일(" + weekEnding + ") 종가 없음";
+            } else {
+                since = pct(end / base - 1.0);
+            }
+            out.add(new WatchFacts(w.ticker(), clip(w.condition(), WATCH_CHARS), since, reason));
+        }
+        return out;
+    }
+
+    /**
+     * 시장 표 — 창 안 결정 기준일과 복기 기준일마다 한 줄(날짜 순). 열은 날짜·지수 종가·지수 전일 대비(%)와 {@link Inputs#marketDays}가 실은
+     * 이름(처음 나온 순서). 지수 종목이 없으면(입력 판 1의 재료) null.
+     */
+    static MarketTable market(TradingCalendar calendar, Inputs in, List<Decision> inWindow, LocalDate weekEnding) {
+        if (in.benchmark() == null) {
+            return null;
+        }
+        TreeMap<LocalDate, Map<String, Object>> byDate = new TreeMap<>();
+        for (Decision d : inWindow) {
+            byDate.putIfAbsent(d.asOf(), Map.of());
+        }
+        byDate.putIfAbsent(weekEnding, Map.of());
+        List<String> names = new ArrayList<>();
+        for (MarketDay day : in.marketDays()) {
+            if (!byDate.containsKey(day.date())) {
+                continue;
+            }
+            byDate.put(day.date(), day.values());
+            for (String name : day.values().keySet()) {
+                if (!names.contains(name)) {
+                    names.add(name);
+                }
+            }
+        }
+        List<String> columns = new ArrayList<>(List.of("date", "indexClose", "indexDayPct"));
+        columns.addAll(names);
+        DailySeries index = in.closes().get(in.benchmark());
+        List<List<Object>> rows = new ArrayList<>();
+        byDate.forEach((date, values) -> {
+            List<Object> row = new ArrayList<>();
+            row.add(text(date));
+            Double close = index == null ? null : index.valueOn(date);
+            Double before = index == null ? null : index.valueOn(calendar.previousTradingDay(date));
+            row.add(close == null ? null : round(close, 4));
+            row.add(close == null || before == null || !(before > 0) ? null : pct(close / before - 1.0));
+            for (String name : names) {
+                row.add(values.get(name));
+            }
+            rows.add(row);
+        });
+        return new MarketTable(in.benchmark(), columns, rows);
     }
 
     private static DecisionFacts decision(TradingCalendar calendar, Entry entry, Decision d, LocalDate weekEnding,
                                           Inputs in, List<StopFill> stops, List<FullSell> fullSells) {
+        After after = after(calendar, d, weekEnding, in);
+        List<WatchFacts> watch = watchlist(d, weekEnding, in.closes());
         if (NO_TRADE.equals(d.status()) && d.orders().isEmpty()) {
-            // 관망 결정은 짧게: 노출과 관망 사유만(주문이 없어 대조할 가격 사실이 없음).
-            return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(), null,
-                    null, clip(d.noTradeReason(), NO_TRADE_CHARS), d.frameworkVersion(), List.of());
+            // 관망 결정은 주문이 없어 대조할 체결 사실이 없습니다 — 요약(반증 조건이 여기 있음)·관망 사유와 그 뒤 사실(지수·계좌·관심 목록)로
+            // 판정합니다. 입력 판 1은 노출과 관망 사유만 실어 관망이 맞았는지 가릴 재료가 없었습니다(ADR 0038).
+            return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(),
+                    clip(d.summary(), SUMMARY_CHARS), null, clip(d.noTradeReason(), NO_TRADE_CHARS),
+                    d.frameworkVersion(), List.of(), d.book(), d.desiredExposurePct(), after, watch, d.intraday());
         }
         // NO_TRADE인데 주문이 있으면 낸 주문이 모두 거절된 결정입니다(통과 0건 → NO_TRADE) — 짧은 줄로 접으면 거절 주문의 가정
         // 수익률(명세 D2)이 사라지므로 주문까지 싣습니다(관망 사유가 있으면 함께).
         List<Order> orders = new ArrayList<>(d.orders());
         orders.sort(Comparator.comparingLong(Order::id));
+        // 두 계좌를 함께 복기하면 같은 종목의 스탑·전량 매도가 계좌마다 따로 있습니다 — 그 결정의 계좌 것만 봅니다(계좌를 모르는 재료는 전부).
+        List<StopFill> ownStops = stops.stream()
+                .filter(s -> s.book() == null || d.book() == null || s.book().equals(d.book())).toList();
+        List<FullSell> ownSells = fullSells.stream()
+                .filter(s -> s.book() == null || d.book() == null || s.book().equals(d.book())).toList();
         List<OrderFacts> facts = new ArrayList<>(orders.size());
         for (Order o : orders) {
             facts.add(order(calendar, entry, o, d.asOf(), weekEnding, in.closes().get(o.ticker()),
-                    entry == Entry.NEXT_OPEN ? in.opens().get(o.ticker()) : null, stops, fullSells));
+                    entry == Entry.NEXT_OPEN ? in.opens().get(o.ticker()) : null, ownStops, ownSells));
         }
         return new DecisionFacts(d.id(), d.kind(), d.asOf(), d.status(), d.stance(), d.targetExposurePct(),
                 clip(d.summary(), SUMMARY_CHARS), clip(d.exposureRationale(), RATIONALE_CHARS),
-                clip(d.noTradeReason(), NO_TRADE_CHARS), d.frameworkVersion(), facts);
+                clip(d.noTradeReason(), NO_TRADE_CHARS), d.frameworkVersion(), facts, d.book(),
+                d.desiredExposurePct(), after, watch, d.intraday());
     }
 
     /**
@@ -1074,26 +1338,109 @@ public final class ReviewFacts {
         framework.put("version", f.frameworkVersion());
         framework.put("status", f.frameworkStatus());
         out.put("framework", framework);
-        out.put("note", f.entry() == Entry.NEXT_OPEN ? NEXT_OPEN_NOTE : NOTE);
+        out.put("note", (f.entry() == Entry.NEXT_OPEN ? NEXT_OPEN_NOTE : NOTE) + V2_NOTE);
+        List<String> books = new ArrayList<>();
+        for (DecisionFacts d : f.decisions()) {
+            if (d.book() != null && !books.contains(d.book())) {
+                books.add(d.book());
+            }
+        }
+        if (!books.isEmpty()) {
+            out.put("books", books);
+        }
         List<Object> decisions = new ArrayList<>();
         f.decisions().forEach(d -> decisions.add(decisionMap(d, f.entry())));
         out.put("decisions", decisions);
         out.put("omittedDecisions", new LinkedHashMap<>(f.omittedDecisions()));
         out.put("comparison", comparisonMap(f.comparison()));
+        if (f.market() != null) {
+            Map<String, Object> market = new LinkedHashMap<>();
+            market.put("index", f.market().index());
+            market.put("note", MARKET_NOTE);
+            market.put("columns", f.market().columns());
+            market.put("rows", f.market().rows());
+            out.put("market", market);
+        }
+        out.put("previousReview", f.previous() == null ? null : previousMap(f.previous()));
         return out;
+    }
+
+    private static Map<String, Object> previousMap(PreviousReview p) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("weekEnding", text(p.weekEnding()));
+        m.put("recurringErrors", p.recurringErrors());
+        m.put("keep", p.keep());
+        m.put("watchItems", p.watchItems());
+        return m;
+    }
+
+    /** 결정마다 붙는 입력 판 2의 칸 — 값이 있는 것만(입력 판 1의 재료로 조립하면 하나도 붙지 않음). */
+    private static void putV2(Map<String, Object> m, DecisionFacts d) {
+        if (d.desiredExposurePct() != null) {
+            m.put("desiredExposurePct", d.desiredExposurePct());
+        }
+        if (d.after() != null) {
+            Map<String, Object> after = new LinkedHashMap<>();
+            after.put("indexNextSessionPct", d.after().indexNextSessionPct());
+            after.put("indexToWeekEndingPct", d.after().indexToWeekEndingPct());
+            after.put("bookToWeekEndingPct", d.after().bookToWeekEndingPct());
+            if (!d.after().notes().isEmpty()) {
+                after.put("notes", d.after().notes());
+            }
+            m.put("after", after);
+        }
+        if (!d.watchlist().isEmpty()) {
+            List<Object> rows = new ArrayList<>();
+            for (WatchFacts w : d.watchlist()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("ticker", w.ticker());
+                row.put("condition", w.condition());
+                row.put("sinceAsOfPct", w.sinceAsOfPct());
+                if (w.reason() != null) {
+                    row.put("reason", w.reason());
+                }
+                rows.add(row);
+            }
+            m.put("watchlist", rows);
+        }
+        if (!d.intraday().isEmpty()) {
+            List<Object> rows = new ArrayList<>();
+            for (Judgment j : d.intraday()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", j.id());
+                row.put("kind", j.kind());
+                row.put("origin", j.origin());
+                if (!j.events().isEmpty()) {
+                    row.put("events", j.events());
+                }
+                row.put("question", clip(j.question(), QUESTION_CHARS));
+                row.put("action", j.action());
+                row.put("summary", clip(j.summary(), JUDGMENT_CHARS));
+                row.put("orders", j.orders());
+                rows.add(row);
+            }
+            m.put("intraday", rows);
+        }
     }
 
     private static Map<String, Object> decisionMap(DecisionFacts d, Entry entry) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", d.id());
+        if (d.book() != null) {
+            m.put("book", d.book());
+        }
         m.put("kind", d.kind());
         m.put("asOf", text(d.asOf()));
         m.put("status", d.status());
         m.put("stance", d.stance());
         m.put("targetExposurePct", d.targetExposurePct());
         if (NO_TRADE.equals(d.status()) && d.orders().isEmpty()) {
+            if (d.summary() != null) {
+                m.put("summary", d.summary());
+            }
             m.put("noTradeReason", d.noTradeReason());
             m.put("frameworkVersion", d.frameworkVersion());
+            putV2(m, d);
             return m;
         }
         m.put("summary", d.summary());
@@ -1102,6 +1449,7 @@ public final class ReviewFacts {
             m.put("noTradeReason", d.noTradeReason());
         }
         m.put("frameworkVersion", d.frameworkVersion());
+        putV2(m, d);
         List<Object> orders = new ArrayList<>();
         d.orders().forEach(o -> orders.add(orderMap(o, entry)));
         m.put("orders", orders);

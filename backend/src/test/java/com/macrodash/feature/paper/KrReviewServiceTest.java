@@ -300,10 +300,10 @@ class KrReviewServiceTest {
     }
 
     private static String reviewJson(long first, long second) {
-        return "{\"schemaVersion\":1,\"weekEnding\":\"2026-11-06\",\"verdicts\":["
+        return "{\"schemaVersion\":2,\"weekEnding\":\"2026-11-06\",\"verdicts\":["
                 + "{\"decisionId\":" + first + ",\"thesisHeld\":\"유지\",\"note\":\"체결 뒤 +10%, 거절된 000660도 +10%\"},"
                 + "{\"decisionId\":" + second + ",\"thesisHeld\":\"판단불가\",\"note\":\"하루 경과\"}],"
-                + "\"recurringErrors\":[\"월 상한 근처 신규 진입\"],\"keep\":[\"체결할 수 없는 종목은 사지 않기\"],"
+                + "\"recurringErrors\":[\"월 상한 근처 신규 진입\"],\"keep\":[\"체결할 수 없는 종목은 사지 않기\"],\"watchItems\":[],"
                 + "\"proposal\":null}";
     }
 
@@ -326,7 +326,7 @@ class KrReviewServiceTest {
         Review review = store.otherReviews.get(Book.MARKET_KR).get(WE);
         assertThat(review.status()).isEqualTo(Review.OK);
         JsonNode input = review.input();
-        assertThat(input.path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE);
+        assertThat(input.path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE);
         assertThat(input.path("window").path("after").asString()).isEqualTo("2026-10-09");
 
         List<JsonNode> monday = orders(input, 0);
@@ -376,10 +376,19 @@ class KrReviewServiceTest {
         assertThat(comparison.path("note").asString()).as("창 시작 10-09(한글날)는 그 실행 달력의 직전 거래일 10-08")
                 .contains("창 시작(2026-10-08)");
         JsonNode books = comparison.path("books");
+        // 입력 판 2 — 복기가 계좌2의 결정도 보므로 계좌2도 견줍니다(이 장면에는 계좌2의 순자산 줄이 없어 수익률 null).
         assertThat(books).extracting(b -> b.path("book").asString())
-                .containsExactly(PaperBooks.KR_RULES, PaperBooks.KR_BENCH_K200, PaperBooks.KR_BENCH_MIX, PaperBooks.KR_CLAUDE);
-        assertThat(books).extracting(b -> b.path("returnPct").asDouble()).containsExactly(0.5, 2.0, 1.2, 1.0);
-        assertThat(books).allSatisfy(b -> assertThat(b.path("isEstimated").asBoolean()).as("금요일 줄은 잠정").isTrue());
+                .containsExactly(PaperBooks.KR_RULES, PaperBooks.KR_BENCH_K200, PaperBooks.KR_BENCH_MIX, PaperBooks.KR_CLAUDE,
+                        PaperBooks.KR_CLAUDE2);
+        assertThat(books.get(4).path("returnPct").isNull()).as("순자산 줄이 없는 계좌는 null(0이 아님)").isTrue();
+        List<JsonNode> priced = new java.util.ArrayList<>();
+        books.forEach(b -> {
+            if (!b.path("returnPct").isNull()) {
+                priced.add(b);
+            }
+        });
+        assertThat(priced).extracting(b -> b.path("returnPct").asDouble()).containsExactly(0.5, 2.0, 1.2, 1.0);
+        assertThat(priced).allSatisfy(b -> assertThat(b.path("isEstimated").asBoolean()).as("금요일 줄은 잠정").isTrue());
         assertThat(callsToday()).isEqualTo(1);
     }
 
@@ -438,7 +447,7 @@ class KrReviewServiceTest {
 
         assertThat(result.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
         assertThat(result.review().market()).isEqualTo(Book.MARKET_KR);
-        assertThat(result.review().input().path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE);
+        assertThat(result.review().input().path("note").asString()).isEqualTo(ReviewFacts.NEXT_OPEN_NOTE + ReviewFacts.V2_NOTE);
         assertThat(store.jobRuns).singleElement().satisfies(r -> {
             assertThat(r.job()).isEqualTo("kr.review");
             assertThat(r.detail().path("status").asString()).isEqualTo(Review.OK);

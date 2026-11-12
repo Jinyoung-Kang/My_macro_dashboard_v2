@@ -1,5 +1,5 @@
 {
-  "max_tokens" : 16000,
+  "max_tokens" : 20000,
   "messages" : [ {
     "content" : "<<고정본 review-user-us.txt>>",
     "role" : "user"
@@ -11,10 +11,10 @@
       "schema" : {
         "type" : "object",
         "additionalProperties" : false,
-        "required" : [ "schemaVersion", "weekEnding", "verdicts", "recurringErrors", "keep", "proposal" ],
+        "required" : [ "schemaVersion", "weekEnding", "verdicts", "recurringErrors", "keep", "watchItems", "proposal" ],
         "properties" : {
           "schemaVersion" : {
-            "const" : 1
+            "const" : 2
           },
           "weekEnding" : {
             "type" : "string",
@@ -46,6 +46,12 @@
             }
           },
           "keep" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "watchItems" : {
             "type" : "array",
             "items" : {
               "type" : "string"

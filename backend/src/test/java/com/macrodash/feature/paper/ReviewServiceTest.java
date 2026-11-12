@@ -254,10 +254,10 @@ class ReviewServiceTest {
     }
 
     private static String reviewJson(long decisionId, String proposal) {
-        return "{\"schemaVersion\":1,\"weekEnding\":\"2026-10-30\",\"verdicts\":[{\"decisionId\":" + decisionId
+        return "{\"schemaVersion\":2,\"weekEnding\":\"2026-10-30\",\"verdicts\":[{\"decisionId\":" + decisionId
                 + ",\"thesisHeld\":\"유지\",\"note\":\"체결 뒤 +10%, 무효화 조건 미충족\"}],"
                 + "\"recurringErrors\":[\"월 상한 근처에서 신규 진입(#" + decisionId + ")\"],"
-                + "\"keep\":[\"200일선 위 종목 우선\"],\"proposal\":" + proposal + "}";
+                + "\"keep\":[\"200일선 위 종목 우선\"],\"watchItems\":[\"관망 뒤 반등을 놓치는지 — 다음 주 지수로 판정\"],\"proposal\":" + proposal + "}";
     }
 
     private static final String PROPOSAL = "{\"operations\":[{\"op\":\"ADD_RULE\",\"target\":\"E5\","
@@ -421,13 +421,13 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("4주 입력 어림이 25,000토큰을 넘으면 2주로 다시 조립하고 windowWeeks·trimmedReason을 남김(단계 0)")
+    @DisplayName("4주 입력 어림이 60,000토큰을 넘으면 2주로 다시 조립하고 windowWeeks·trimmedReason을 남김(단계 0 — 상한은 입력 판 2에서 올림)")
     void largeInputFallsBackToTwoWeeks() throws Exception {
-        // 창의 앞 2주(10-05~10-16)에 긴 논거(600자)·무효화 조건(300자)의 주문 3건씩 결정 10건 ≈ 10 × 3 × 900 = 27,000토큰 이상.
+        // 창의 앞 2주(10-05~10-16)에 긴 논거(600자)·무효화 조건(300자)의 주문 8건씩 결정 10건 ≈ 10 × 8 × 900 = 72,000토큰 이상.
         LocalDate day = LocalDate.of(2026, 10, 5);
         for (int i = 0; i < 10; i++) {
             long id = decision(day, RuleBookService.SCHEDULED, ClaudeBookService.STATUS_OK, 50.0, null);
-            for (int j = 0; j < 3; j++) {
+            for (int j = 0; j < 8; j++) {
                 buyOrder(id, "T" + i + j, "EXPIRED", null, reason("가".repeat(600), "나".repeat(300), 3.0, "NEXT_CLOSE"),
                         3.0);
             }
@@ -442,7 +442,7 @@ class ReviewServiceTest {
         assertThat(review.status()).isEqualTo(Review.OK);
         assertThat(review.windowWeeks()).isEqualTo(2);
         assertThat(review.input().path("window").path("weeks").asInt()).isEqualTo(2);
-        assertThat(review.input().path("trimmedReason").asString()).contains("> 25000").contains("2주로 다시 조립");
+        assertThat(review.input().path("trimmedReason").asString()).contains("> 60000").contains("2주로 다시 조립");
         assertThat(review.input().path("decisions").size()).as("2주 창(10-16, 10-30]의 결정만").isEqualTo(1);
         assertThat(review.usage().path("defaultWindowTokensEst").asInt()).isGreaterThan(25_000);
         assertThat(review.usage().path("inputTokensEst").asInt()).isLessThan(25_000);
@@ -511,11 +511,11 @@ class ReviewServiceTest {
     @DisplayName("형식 오류는 그 주의 끝 — 스키마 위반, 입력에 없는 결정 id·같은 결정 두 번·다른 기준일(코드 계약), 제안은 넣지 않음")
     void formatErrorsAreFinal() throws Exception {
         long decisionId = scene();
-        String twice = "{\"schemaVersion\":1,\"weekEnding\":\"2026-10-23\",\"verdicts\":["
+        String twice = "{\"schemaVersion\":2,\"weekEnding\":\"2026-10-23\",\"verdicts\":["
                 + "{\"decisionId\":" + decisionId + ",\"thesisHeld\":\"유지\",\"note\":\"a\"},"
                 + "{\"decisionId\":" + decisionId + ",\"thesisHeld\":\"반증\",\"note\":\"b\"},"
                 + "{\"decisionId\":999,\"thesisHeld\":\"판단불가\",\"note\":\"c\"}],"
-                + "\"recurringErrors\":[],\"keep\":[],\"proposal\":" + PROPOSAL + "}";
+                + "\"recurringErrors\":[],\"keep\":[],\"watchItems\":[],\"proposal\":" + PROPOSAL + "}";
         answerJson(twice);
         ReviewService service = service();
 
@@ -719,13 +719,13 @@ class ReviewServiceTest {
     // ------------------------------------------------------------------ 시장 격리(2단계 명세 §9 A6)
     /** 이 묶음 전 미국 계좌 비교 순서 — 옛 {@code ReviewService.COMPARED_BOOKS}(main에서 부르는 곳이 없어 시험으로 옮김). */
     private static final List<String> US_COMPARED_BOOKS = List.of(PaperBooks.RULES, PaperBooks.BENCH_SPY,
-            PaperBooks.BENCH_MIX, PaperBooks.CLAUDE);
+            PaperBooks.BENCH_MIX, PaperBooks.CLAUDE, PaperBooks.CLAUDE2);
 
     @Test
     @DisplayName("시장 격리(A6): 미국 계좌 비교 순서는 그대로(규칙 → 벤치마크 둘 → Claude), 다른 시장은 그 시장 책 정의에서")
     void comparedBooksPerMarket() {
         assertThat(ReviewService.comparedBooks(UsPaperMarket.INSTANCE)).isEqualTo(US_COMPARED_BOOKS)
-                .containsExactly("rules", "bench_spy", "bench_mix", "claude");
+                .containsExactly("rules", "bench_spy", "bench_mix", "claude", "claude2");
         assertThat(ReviewService.comparedBooks(TestKrMarket.INSTANCE)).containsExactly(TestKrMarket.CLAUDE_BOOK);
     }
 
@@ -806,7 +806,7 @@ class ReviewServiceTest {
 
     @Test
     @DisplayName("자유 시점 판의 장중 판단(INTRADAY_* — ADR 0027 결정 10)은 복기 입력의 결정 목록에 넣지 않음 — 그 세션의 결정(같은 기준 거래일에 판단을 낸 결정 "
-            + "가운데 가장 늦은 것)에 그 판단들이 낸 주문과 '장중 판단 n회(유지·교체)' 한 줄을 붙임. 장중 판단 행이 없으면 입력이 그대로")
+            + "가운데 가장 늦은 것)에 그 판단들이 낸 주문과 판단마다의 계기·질문·결과(입력 판 2)를 붙임. 장중 판단 행이 없으면 입력이 그대로")
     void intradayJudgmentsFoldIntoTheSessionDecision() {
         long scheduled = decision(MON, RuleBookService.SCHEDULED, "OK", 30.0, null);
         long manual = decision(MON, RuleBookService.MANUAL, "NO_TRADE", 30.0, "관망");
@@ -819,7 +819,9 @@ class ReviewServiceTest {
         assertThat(plain).isEqualTo("요약 " + MON);
 
         long keep = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.INTRADAY_1, null, "NO_TRADE",
-                "claude-sonnet-5-5", 0, 1, null, null, null, null, null, MAPPER.readTree("{\"action\":\"KEEP\",\"summary\":\"유지\"}"), null,
+                "claude-sonnet-5-5", 0, 1, null, null, MAPPER.readTree("{\"1_basis\":{\"origin\":\"EVENT\"},\"3_request\":{\"question\":"
+                        + "\"지수 급등\",\"trigger\":{\"events\":[{\"type\":\"INDEX_MOVE\",\"ticker\":\"SPY\",\"changePct\":1.5}]}}}"), null, null,
+                MAPPER.readTree("{\"action\":\"KEEP\",\"summary\":\"유지\"}"), null,
                 null, null, false, null, 0)).orElseThrow();
         long replace = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.INTRADAY_2, null, "OK",
                 "claude-sonnet-5-5", 0, 1, null, null, null, null, null, MAPPER.readTree("{\"action\":\"REPLACE\",\"summary\":\"교체\"}"),
@@ -833,10 +835,102 @@ class ReviewServiceTest {
         assertThat(in.decisions()).extracting(com.macrodash.analytics.ReviewFacts.Decision::id).as("장중 판단 행은 목록에 없음")
                 .containsExactlyInAnyOrder(scheduled, manual).doesNotContain(keep, replace);
         com.macrodash.analytics.ReviewFacts.Decision host = in.decisions().stream().filter(d -> d.id() == manual).findFirst().orElseThrow();
-        assertThat(host.summary()).as("그 세션에서 가장 늦게 판단을 낸 결정(수동)에 붙음").isEqualTo("요약 " + MON + " [장중 판단 2회 — 유지 1 · 교체 1]");
+        assertThat(host.summary()).as("요약은 그대로 — 장중 판단은 따로 실음").isEqualTo("요약 " + MON);
+        assertThat(host.intraday()).as("그 세션에서 가장 늦게 판단을 낸 결정(수동)에 붙음 — 계기·사건·질문·결과·낸 주문 수")
+                .extracting(com.macrodash.analytics.ReviewFacts.Judgment::id).containsExactly(keep, replace);
+        com.macrodash.analytics.ReviewFacts.Judgment first = host.intraday().get(0);
+        assertThat(first.origin()).isEqualTo("EVENT");
+        assertThat(first.events()).containsExactly("INDEX_MOVE SPY +1.5%");
+        assertThat(first.question()).isEqualTo("지수 급등");
+        assertThat(first.action()).isEqualTo("KEEP");
+        assertThat(first.orders()).isZero();
+        assertThat(host.intraday().get(1).action()).isEqualTo("REPLACE");
+        assertThat(host.intraday().get(1).orders()).isEqualTo(1);
         assertThat(host.orders()).extracting(com.macrodash.analytics.ReviewFacts.Order::id).containsExactly(intradayOrder);
         com.macrodash.analytics.ReviewFacts.Decision other = in.decisions().stream().filter(d -> d.id() == scheduled).findFirst().orElseThrow();
         assertThat(other.summary()).as("같은 날의 다른 결정은 그대로").isEqualTo("요약 " + MON);
+        assertThat(other.intraday()).isEmpty();
         assertThat(other.orders()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("입력 판 2(ADR 0038): 계좌2의 결정도 함께 싣고(결정마다 book), 관망 결정에 그 뒤 지수·계좌·관심 종목 사실, 결정 패킷이 본 매크로 "
+            + "값의 시장 표, 바로 앞 복기의 요지를 싣는다")
+    void twoBooksMarketTableAndPreviousReview() throws Exception {
+        store.books.put(PaperBooks.CLAUDE2, new Book(PaperBooks.CLAUDE2, PaperBooks.KIND_CLAUDE, "Claude 계좌2", 100_000,
+                PaperFixtures.FRI, PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE));
+        // 계좌1: 10-26 관망(관심 종목 WWW). 패킷의 매크로 카드 10Y 4.9·WTI 88, 국면 LATE.
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("stance", "NEUTRAL");
+        response.put("summary", "관망 — 반증: 10Y가 4.75% 아래로 내려오면 노출 확대");
+        response.put("noTradeReason", "근거 부족");
+        response.put("watchlist", List.of(Map.of("ticker", "WWW", "condition", "실적 확인 뒤 검토")));
+        JsonNode packet = MAPPER.readTree("{\"2_macroCards\":{\"cards\":{\"items\":[{\"key\":\"us10y\",\"price\":4.9},"
+                + "{\"key\":\"kospi\",\"price\":5000},{\"key\":\"wti\",\"price\":88.0}]}},\"4_regime\":{\"code\":\"LATE\","
+                + "\"inputs\":{\"hyOas\":{\"value\":3.4}}}}");
+        long first = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, MON, RuleBookService.SCHEDULED, null,
+                ClaudeBookService.STATUS_NO_TRADE, "claude-sonnet-5-5", 0, 1, null, 50.0, packet, null, null,
+                MAPPER.valueToTree(response), null, null, null, true, null, 0)).orElseThrow();
+        // 계좌2: 같은 날 매수 결정(주문 1건).
+        long second = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE2, MON, RuleBookService.SCHEDULED, null,
+                ClaudeBookService.STATUS_OK, "claude-sonnet-5-5", 0, 1, null, 60.0, null, null, null,
+                MAPPER.readTree("{\"stance\":\"RISK_ON\",\"summary\":\"계좌2 매수\",\"desiredEquityExposurePct\":85}"), null,
+                null, null, true, null, 0)).orElseThrow();
+        long bought = store.insertOrder(new Order(0, PaperBooks.CLAUDE2, second, "AAA", PaperBooks.BUY, null, 5.0, null,
+                PaperBooks.NEXT_CLOSE, PacketBuilder.SOURCE_CLAUDE, PaperBooks.ORDER_FILLED, null,
+                reason("논거", "스탑 발동 시", 5.0, "NEXT_CLOSE"), MON, null, null, null));
+        store.insertFill(new Fill(0, bought, PaperBooks.CLAUDE2, "AAA", PaperBooks.BUY, 10, 100.0, 100.0, 5, 1_000,
+                TUE.atTime(20, 15).toInstant(ZoneOffset.UTC), TUE, PaperBooks.SOURCE_QUOTES, false, null));
+        history("SPY", PaperFixtures.FRI, 495, MON, 500, TUE, 510);
+        history("WWW", MON, 40, TUE, 41);
+        history("AAA", TUE, 100);
+        finals.put("SPY", new PaperMarketData.SourcedClose(525.0, PaperBooks.SOURCE_QUOTES));
+        finals.put("WWW", new PaperMarketData.SourcedClose(46.0, PaperBooks.SOURCE_QUOTES));
+        finals.put("AAA", new PaperMarketData.SourcedClose(110.0, PaperBooks.SOURCE_QUOTES));
+        nav(PaperBooks.CLAUDE, MON, 100_000);
+        nav(PaperBooks.CLAUDE, WE, 100_500);
+        // 바로 앞 주(10-23)의 복기 — 이번 입력이 이어받음.
+        LocalDate before = LocalDate.of(2026, 10, 23);
+        store.reviews.put(before, new Review(before, 4, MAPPER.createObjectNode(), "{}", MAPPER.readTree(
+                "{\"recurringErrors\":[\"원인 불명이면 관망\"],\"keep\":[\"스탑은 코드에\"],\"watchItems\":[\"관망 뒤 반등\"]}"),
+                null, "claude-sonnet-5-5", null, Review.OK, null, null, 0, 0, NOW, "US"));
+        FrameworkService.Frame frame = new FrameworkService.Frame(0, "INTERIM", "임시", MAPPER.createObjectNode(), "", 0, null,
+                null, null);
+
+        JsonNode input = MAPPER.readTree(service().build(WE, frame).text());
+
+        assertThat(input.path("inputVersion").asInt()).isEqualTo(2);
+        assertThat(input.path("books")).extracting(JsonNode::asString).containsExactly("claude", "claude2");
+        JsonNode one = input.path("decisions").get(0);
+        JsonNode two = input.path("decisions").get(1);
+        assertThat(one.path("id").asLong()).isEqualTo(first);
+        assertThat(one.path("book").asString()).isEqualTo("claude");
+        assertThat(one.path("summary").asString()).as("관망 결정도 요약(반증 조건)을 싣는다").contains("반증: 10Y가 4.75%");
+        // 지수 500 → 510(+2.00%) → 525(+5.00%), 계좌 100,000 → 100,500(+0.50%), 관심 종목 40 → 46(+15.00%)
+        assertThat(one.path("after").path("indexNextSessionPct").asDouble()).isEqualTo(2.0);
+        assertThat(one.path("after").path("indexToWeekEndingPct").asDouble()).isEqualTo(5.0);
+        assertThat(one.path("after").path("bookToWeekEndingPct").asDouble()).isEqualTo(0.5);
+        assertThat(one.path("watchlist").get(0).path("ticker").asString()).isEqualTo("WWW");
+        assertThat(one.path("watchlist").get(0).path("sinceAsOfPct").asDouble()).isEqualTo(15.0);
+        assertThat(two.path("id").asLong()).isEqualTo(second);
+        assertThat(two.path("book").asString()).isEqualTo("claude2");
+        assertThat(two.path("desiredExposurePct").asDouble()).isEqualTo(85.0);
+        assertThat(two.path("orders").get(0).path("returnSinceFillPct").asDouble()).isEqualTo(10.0);
+        assertThat(two.path("after").path("bookToWeekEndingPct").isNull()).as("계좌2의 순자산 줄이 없으면 null").isTrue();
+        JsonNode market = input.path("market");
+        assertThat(market.path("index").asString()).isEqualTo("SPY");
+        assertThat(market.path("columns")).extracting(JsonNode::asString)
+                .containsExactly("date", "indexClose", "indexDayPct", "us10y", "wti", "hyOas", "regime");
+        JsonNode monday = market.path("rows").get(0);
+        assertThat(monday.get(0).asString()).isEqualTo(MON.toString());
+        assertThat(monday.get(1).asDouble()).isEqualTo(500.0);
+        assertThat(monday.get(2).asDouble()).as("495 → 500").isEqualTo(1.01);
+        assertThat(monday.get(3).asDouble()).isEqualTo(4.9);
+        assertThat(monday.get(6).asString()).isEqualTo("LATE");
+        assertThat(market.path("rows").get(1).get(3).isNull()).as("복기 기준일에는 결정이 없어 패킷 값 null").isTrue();
+        assertThat(input.path("previousReview").path("weekEnding").asString()).isEqualTo("2026-10-23");
+        assertThat(input.path("previousReview").path("watchItems").get(0).asString()).isEqualTo("관망 뒤 반등");
+        assertThat(input.path("comparison").path("books")).extracting(b -> b.path("book").asString())
+                .contains("claude", "claude2");
     }
 }

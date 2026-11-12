@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -46,7 +47,12 @@ import java.util.regex.Pattern;
 
 /**
  * 주간 복기(2단계 명세 §3 D1~D6·D32) — Claude 계좌의 지난 결정(기본 4주)을 그 뒤 실제 가격과 대조한 입력을 <b>코드가</b> 만들고,
- * Claude에 한 번 물어 복기 메모(판정·반복 오류·지킬 것·프레임 제안)를 받아 {@code paper_reviews}에 주마다 한 행 남깁니다.
+ * Claude에 한 번 물어 복기 메모(판정·반복 오류·지킬 것·지켜볼 것·프레임 제안)를 받아 {@code paper_reviews}에 주마다 한 행 남깁니다.
+ *
+ * <p><b>입력 판 2</b>(2026-11-13, ADR 0038): 그 시장의 Claude 계좌 전부({@link #reviewedBooks} — 계좌1·계좌2, 결정마다 {@code book})를 한 번에
+ * 보고, 사지 않은 판단을 판정할 사실(결정 뒤 지수·계좌 수익률, 관심 종목의 그 뒤 가격, 결정 패킷이 본 매크로 값의 시장 표 —
+ * {@link ReviewMarket})과 그 세션 장중 판단의 계기·질문·결과, 바로 앞 복기의 요지({@link #previous})를 싣습니다. 판 1은 계좌1의 주문 사실만
+ * 실어 관망 결정 대부분이 판단불가였습니다(미국 2026-11-06 주 16건 중 10건).
  *
  * <p><b>입력</b>({@link #build}): 장부(결정·주문·체결·스탑·순자산)와 종가 이력을 읽어 {@link ReviewFacts}가 사실을 계산합니다 —
  * 수익률·낙폭·스탑·200일선·무효화 평가·가정 수익률·계좌 비교를 Claude가 계산하지 않게. 기준일 종가는 "그날이 지금 세션이면 이력 값을
@@ -95,6 +101,8 @@ public class ReviewService {
     static final int LEDGER_SCAN = 5_000;
     /** 종가 이력을 읽는 기간(달력일) — 200거래일 이동평균(약 290달력일)과 4주 창이 들어가는 여유. */
     static final int HISTORY_CALENDAR_DAYS = 420;
+    /** 복기 응답 한도(토큰) — 두 계좌의 판정(상한 80건)이 들어가게 결정 호출의 기본 한도보다 크게(ADR 0038). */
+    static final long MAX_TOKENS = AiService.STRUCTURED_MAX_TOKENS_CEILING;
     static final int ERROR_CHARS = 1_000;
     static final int VIOLATIONS_IN_ERROR = 5;
     /** 시장을 받지 않는 옛 시그니처·화면 응답의 시장(클래스 설명). */
@@ -200,6 +208,8 @@ public class ReviewService {
         out.add(market.rulesBook());
         market.books().stream().filter(PaperBooks.Definition::benchmark).forEach(d -> out.add(d.code()));
         out.add(market.claudeBook());
+        // 입력 판 2 — 복기가 계좌2의 결정도 보므로 그 계좌의 수익률도 견줍니다(장부에 없으면 조립이 뺌).
+        market.books().stream().filter(d -> PaperBooks.KIND_CLAUDE.equals(d.kind())).forEach(d -> out.add(d.code()));
         return List.copyOf(out);
     }
 
@@ -258,7 +268,7 @@ public class ReviewService {
         AiService.StructuredResult result;
         try {
             result = ai.structured(claude.model(), system, userMessage(built.text()), schema.forApi(), claude.effort(),
-                    timeoutSeconds);
+                    timeoutSeconds, MAX_TOKENS);
         } catch (RuntimeException e) {
             // 요청을 보내기 전에 멈춘 경우(인자 검사 — 코드 오류)라 잡은 호출을 돌려놓고 그대로 던집니다.
             calls.release(today);
@@ -359,117 +369,111 @@ public class ReviewService {
      * 그 시장의 조립 재료 — 그 시장 Claude 책·계좌 비교·체결 날짜 시간대·종가({@link #inputs(LocalDate, FrameworkService.Frame)}의 시장 판),
      * 시가 진입 시장(한국 — {@link PaperMarket#reviewEntry})이면 거절 주문 종목의 창 안 세션 시가({@link #opens}).
      */
-    /**
-     * 그 세션의 장중 판단을 한 줄로 — '[장중 판단 2회 — 유지 1 · 교체 1]'(실패한 호출은 '실패 n'). 응답의 action만 읽습니다(행 전체를 읽지 않음).
-     * 그 판단들이 낸 주문은 그 세션 결정의 주문 목록에 함께 들어갑니다({@link #inputs}).
-     */
-    private String intradayNote(List<DecisionSummary> judgments) {
-        Map<Long, com.macrodash.store.PaperStore.CheckpointAnswer> answers = store.checkpointAnswers(
-                judgments.stream().map(DecisionSummary::id).toList());
-        int keep = 0;
-        int replace = 0;
-        int failed = 0;
-        for (DecisionSummary judgment : judgments) {
-            com.macrodash.store.PaperStore.CheckpointAnswer answer = answers.get(judgment.id());
-            String action = answer == null ? null : answer.action();
-            if ("KEEP".equals(action)) {
-                keep++;
-            } else if ("REPLACE".equals(action)) {
-                replace++;
-            } else {
-                failed++;
-            }
-        }
-        StringBuilder out = new StringBuilder("[장중 판단 ").append(judgments.size()).append("회 — 유지 ").append(keep)
-                .append(" · 교체 ").append(replace);
-        if (failed > 0) {
-            out.append(" · 실패 ").append(failed);
-        }
-        return out.append("]").toString();
-    }
-
     ReviewFacts.Inputs inputs(PaperMarket market, LocalDate weekEnding, FrameworkService.Frame frame) {
         ReviewFacts.Window window = ReviewFacts.window(weekEnding, ReviewFacts.DEFAULT_WEEKS);
         ZoneId zone = market.calendar().zone();
-        Map<Long, Fill> fillsByOrder = new HashMap<>();
-        for (Fill f : store.recentFills(market.claudeBook(), LEDGER_SCAN)) {
-            fillsByOrder.putIfAbsent(f.orderId(), f);
-        }
+        String benchmark = benchmark(market);
         List<ReviewFacts.Decision> decisions = new ArrayList<>();
         Set<String> tickers = new TreeSet<>();
+        tickers.add(benchmark);
         Set<String> rejected = new TreeSet<>();
-        List<DecisionSummary> summaries = store.decisions(market.claudeBook(), DECISION_SCAN).stream()
-                .filter(s -> window.contains(s.asOfTradingDate())).toList();
-        // 자유 시점 판의 장중 판단(INTRADAY_* — ADR 0027 결정 10)은 결정 목록에 넣지 않습니다(자세·노출이 없는 응답이고 상한 40건을 채움) — 그 세션의
-        // 결정(같은 기준 거래일에 판단을 낸 결정 가운데 가장 늦은 것)에 그 판단들이 낸 주문과 '장중 판단 n회(유지·교체)' 한 줄을 붙입니다. 끈 판에는 그
-        // 행이 없어 입력이 그대로입니다.
-        Map<LocalDate, List<DecisionSummary>> intraday = new HashMap<>();
-        Map<LocalDate, Long> hosts = new HashMap<>();
-        for (DecisionSummary s : summaries) {
-            if (RuleBookService.intraday(s.kind())) {
-                intraday.computeIfAbsent(s.asOfTradingDate(), day -> new ArrayList<>()).add(s);
-            } else if (ClaudeBookService.STATUS_OK.equals(s.status()) || ClaudeBookService.STATUS_NO_TRADE.equals(s.status())) {
-                hosts.merge(s.asOfTradingDate(), s.id(), Math::max);
+        List<ReviewFacts.StopFill> stops = new ArrayList<>();
+        List<ReviewFacts.FullSell> fullSells = new ArrayList<>();
+        // 결정 기준일 → 그날 결정 패킷이 본 매크로 값(시장 표의 열). 같은 날 여러 결정이면 값을 실은 가장 늦은 결정의 패킷입니다.
+        Map<LocalDate, Long> marketSource = new HashMap<>();
+        Map<LocalDate, Map<String, Object>> marketValues = new HashMap<>();
+        for (String book : reviewedBooks(market)) {
+            Map<Long, Fill> fillsByOrder = new HashMap<>();
+            for (Fill f : store.recentFills(book, LEDGER_SCAN)) {
+                fillsByOrder.putIfAbsent(f.orderId(), f);
             }
-        }
-        for (DecisionSummary s : summaries) {
-            if (RuleBookService.intraday(s.kind())) {
-                continue;
-            }
-            boolean judged = ClaudeBookService.STATUS_OK.equals(s.status())
-                    || ClaudeBookService.STATUS_NO_TRADE.equals(s.status());
-            if (!judged) {
-                // 오류·건너뜀은 논거가 없어 상태만 셉니다(ReviewFacts의 omittedDecisions) — 큰 행을 읽지 않습니다.
-                decisions.add(new ReviewFacts.Decision(s.id(), s.kind(), s.asOfTradingDate(), s.status(), null, null,
-                        null, null, null, s.frameworkVersion(), List.of()));
-                continue;
-            }
-            Optional<Decision> found = store.decision(s.id());
-            if (found.isEmpty()) {
-                continue;   // 목록과 상세 사이에 초기화로 지워진 결정
-            }
-            Decision d = found.get();
-            List<ReviewFacts.Order> orders = new ArrayList<>();
-            for (Order o : store.ordersByDecision(d.id())) {
-                orders.add(order(o, fillsByOrder.get(o.id()), zone));
-                tickers.add(o.ticker());
-                if (ReviewFacts.REJECTED.equals(o.status())) {
-                    rejected.add(o.ticker());
+            List<DecisionSummary> summaries = store.decisions(book, DECISION_SCAN).stream()
+                    .filter(s -> window.contains(s.asOfTradingDate())).toList();
+            // 장중 판단(자유 시점 판의 INTRADAY_* — ADR 0027 결정 10, 계좌2의 옛 장중 확인 CHECKPOINT)은 결정 목록에 넣지 않습니다(자세·노출이
+            // 없는 응답이고 판정 상한을 채움) — 그 세션의 결정(같은 기준 거래일에 판단을 낸 결정 가운데 가장 늦은 것)에 그 판단들이 낸 주문과
+            // 판단마다의 계기·질문·결과(입력 판 2 — ReviewFacts.Judgment)를 붙입니다. 그 행이 없는 계좌는 입력이 그대로입니다.
+            Map<LocalDate, List<DecisionSummary>> intraday = new HashMap<>();
+            Map<LocalDate, Long> hosts = new HashMap<>();
+            for (DecisionSummary s : summaries) {
+                if (judgment(book, s.kind())) {
+                    intraday.computeIfAbsent(s.asOfTradingDate(), day -> new ArrayList<>()).add(s);
+                } else if (ClaudeBookService.STATUS_OK.equals(s.status())
+                        || ClaudeBookService.STATUS_NO_TRADE.equals(s.status())) {
+                    hosts.merge(s.asOfTradingDate(), s.id(), Math::max);
                 }
             }
-            JsonNode response = d.response();
-            String summary = Json.asText(response, "summary");
-            List<DecisionSummary> judgments = Long.valueOf(d.id()).equals(hosts.get(d.asOfTradingDate()))
-                    ? intraday.getOrDefault(d.asOfTradingDate(), List.of()) : List.of();
-            if (!judgments.isEmpty()) {
-                for (DecisionSummary judgment : judgments) {
+            for (DecisionSummary s : summaries) {
+                if (judgment(book, s.kind())) {
+                    continue;
+                }
+                boolean judged = ClaudeBookService.STATUS_OK.equals(s.status())
+                        || ClaudeBookService.STATUS_NO_TRADE.equals(s.status());
+                if (!judged) {
+                    // 오류·건너뜀은 논거가 없어 상태만 셉니다(ReviewFacts의 omittedDecisions) — 큰 행을 읽지 않습니다.
+                    decisions.add(new ReviewFacts.Decision(s.id(), s.kind(), s.asOfTradingDate(), s.status(), null, null,
+                            null, null, null, s.frameworkVersion(), List.of()));
+                    continue;
+                }
+                Optional<Decision> found = store.decision(s.id());
+                if (found.isEmpty()) {
+                    continue;   // 목록과 상세 사이에 초기화로 지워진 결정
+                }
+                Decision d = found.get();
+                List<ReviewFacts.Order> orders = new ArrayList<>();
+                for (Order o : store.ordersByDecision(d.id())) {
+                    orders.add(order(o, fillsByOrder.get(o.id()), zone));
+                    tickers.add(o.ticker());
+                    if (ReviewFacts.REJECTED.equals(o.status())) {
+                        rejected.add(o.ticker());
+                    }
+                }
+                JsonNode response = d.response();
+                List<DecisionSummary> sessionJudgments = Long.valueOf(d.id()).equals(hosts.get(d.asOfTradingDate()))
+                        ? intraday.getOrDefault(d.asOfTradingDate(), List.of()) : List.of();
+                List<ReviewFacts.Judgment> judgments = new ArrayList<>();
+                for (DecisionSummary judgment : sessionJudgments) {
+                    int own = 0;
                     for (Order o : store.ordersByDecision(judgment.id())) {
                         orders.add(order(o, fillsByOrder.get(o.id()), zone));
                         tickers.add(o.ticker());
+                        own++;
                         if (ReviewFacts.REJECTED.equals(o.status())) {
                             rejected.add(o.ticker());
                         }
                     }
+                    judgments.add(judgment(judgment, store.decision(judgment.id()).orElse(null), own));
                 }
-                summary = (summary == null ? "" : summary + " ") + intradayNote(judgments);
+                judgments.sort(Comparator.comparingLong(ReviewFacts.Judgment::id));
+                List<ReviewFacts.Watch> watchlist = new ArrayList<>();
+                for (JsonNode item : Json.array(response, "watchlist")) {
+                    String ticker = Json.asText(item, "ticker");
+                    if (ticker != null && !ticker.isBlank()) {
+                        watchlist.add(new ReviewFacts.Watch(ticker.strip(), Json.asText(item, "condition")));
+                        tickers.add(ticker.strip());
+                    }
+                }
+                decisions.add(new ReviewFacts.Decision(d.id(), d.kind(), d.asOfTradingDate(), d.status(),
+                        Json.asText(response, "stance"), d.targetExposurePct(), Json.asText(response, "summary"),
+                        Json.asText(response, "exposureRationale"), Json.asText(response, "noTradeReason"),
+                        d.frameworkVersion(), orders, book, Json.asDouble(response, "desiredEquityExposurePct"),
+                        watchlist, judgments));
+                Map<String, Object> seen = ReviewMarket.values(market, d.packet());
+                if (!seen.isEmpty() && d.id() >= marketSource.getOrDefault(d.asOfTradingDate(), Long.MIN_VALUE)) {
+                    marketSource.put(d.asOfTradingDate(), d.id());
+                    marketValues.put(d.asOfTradingDate(), seen);
+                }
             }
-            decisions.add(new ReviewFacts.Decision(d.id(), d.kind(), d.asOfTradingDate(), d.status(),
-                    Json.asText(response, "stance"), d.targetExposurePct(), summary,
-                    Json.asText(response, "exposureRationale"), Json.asText(response, "noTradeReason"),
-                    d.frameworkVersion(), orders));
-        }
-        List<ReviewFacts.StopFill> stops = new ArrayList<>();
-        List<ReviewFacts.FullSell> fullSells = new ArrayList<>();
-        for (Order o : store.recentOrders(market.claudeBook(), LEDGER_SCAN)) {
-            Fill f = fillsByOrder.get(o.id());
-            if (!PaperBooks.ORDER_FILLED.equals(o.status()) || f == null || fillDate(f, zone) == null) {
-                continue;
-            }
-            if (PaperBooks.SOURCE_STOP.equals(o.source())) {
-                stops.add(new ReviewFacts.StopFill(o.ticker(), fillDate(f, zone), f.price()));
-            } else if (fullSell(o)) {
-                // 스탑이 어느 포지션의 것인지 가르는 데 씁니다 — 전량 매도 뒤 다시 산 포지션의 스탑을 앞선 매수에 붙이지 않게.
-                fullSells.add(new ReviewFacts.FullSell(o.ticker(), fillDate(f, zone)));
+            for (Order o : store.recentOrders(book, LEDGER_SCAN)) {
+                Fill f = fillsByOrder.get(o.id());
+                if (!PaperBooks.ORDER_FILLED.equals(o.status()) || f == null || fillDate(f, zone) == null) {
+                    continue;
+                }
+                if (PaperBooks.SOURCE_STOP.equals(o.source())) {
+                    stops.add(new ReviewFacts.StopFill(o.ticker(), fillDate(f, zone), f.price(), book));
+                } else if (fullSell(o)) {
+                    // 스탑이 어느 포지션의 것인지 가르는 데 씁니다 — 전량 매도 뒤 다시 산 포지션의 스탑을 앞선 매수에 붙이지 않게.
+                    fullSells.add(new ReviewFacts.FullSell(o.ticker(), fillDate(f, zone), book));
+                }
             }
         }
         List<ReviewFacts.BookNav> books = new ArrayList<>();
@@ -483,8 +487,80 @@ public class ReviewService {
             }
             books.add(new ReviewFacts.BookNav(code, rows));
         }
+        List<ReviewFacts.MarketDay> marketDays = new ArrayList<>();
+        new TreeMap<>(marketValues).forEach((date, values) -> marketDays.add(new ReviewFacts.MarketDay(date, values)));
         return new ReviewFacts.Inputs(decisions, closes(market, tickers, weekEnding), stops, fullSells, books,
-                frame.version(), frame.status(), opens(market, rejected, window.after()));
+                frame.version(), frame.status(), opens(market, rejected, window.after()), benchmark, marketDays,
+                previous(market, weekEnding));
+    }
+
+    /**
+     * 복기하는 Claude 계좌 — 그 시장의 재량 계좌 전부(계좌1 먼저, 정의 순)에서 장부에 있는 것만(입력 판 2 — 그 전에는 계좌1만 봐서 실제 매매가
+     * 나온 계좌2가 빠졌음, ADR 0038). 프레임은 두 계좌가 함께 쓰므로 한 번의 복기가 두 계좌의 결정을 같이 봅니다.
+     */
+    List<String> reviewedBooks(PaperMarket market) {
+        Set<String> out = new LinkedHashSet<>();
+        out.add(market.claudeBook());
+        market.books().stream().filter(d -> PaperBooks.KIND_CLAUDE.equals(d.kind())).forEach(d -> out.add(d.code()));
+        return out.stream().filter(code -> store.book(code).isPresent()).toList();
+    }
+
+    /** 그 시장의 지수 종목(결정 뒤 지수 사실·시장 표) — 장중 사건 규칙이 지수로 보는 종목과 같습니다(미국 SPY·한국 KODEX 200). */
+    static String benchmark(PaperMarket market) {
+        return IntradayScheduler.indexTicker(!PaperStore.Book.MARKET_US.equals(market.code()));
+    }
+
+    /** 그 계좌의 그 종류 결정이 장중 판단인가 — 다음 패킷의 직전 결정이 아닌 것({@link PacketBuilder#priorDecisionKind}). */
+    private static boolean judgment(String book, String kind) {
+        return !PacketBuilder.priorDecisionKind(book, kind);
+    }
+
+    /**
+     * 장중 판단 한 건의 계기·질문·결과 — 그 판단의 패킷({@code 1_basis.origin}, 요청 칸의 질문과 사건)과 응답({@code action}·{@code summary})에서.
+     * 행을 못 읽었거나 호출이 실패했으면 아는 것만 싣습니다(없는 값은 null).
+     */
+    private static ReviewFacts.Judgment judgment(DecisionSummary s, Decision d, int orders) {
+        JsonNode packet = d == null ? null : d.packet();
+        JsonNode response = d == null ? null : d.response();
+        // 요청 칸의 번호는 시장마다 다릅니다(미국 3_request · 한국 2_request).
+        JsonNode request = Json.child(packet, "3_request");
+        if (request == null) {
+            request = Json.child(packet, "2_request");
+        }
+        String origin = Json.asText(Json.child(packet, "1_basis"), "origin");
+        if (origin == null && RuleBookService.CHECKPOINT.equals(s.kind())) {
+            origin = RuleBookService.CHECKPOINT;
+        }
+        List<String> events = new ArrayList<>();
+        for (JsonNode e : Json.array(Json.child(request, "trigger"), "events")) {
+            String type = Json.asText(e, "type");
+            String ticker = Json.asText(e, "ticker");
+            Double change = Json.asDouble(e, "changePct");
+            events.add((type == null ? "?" : type) + (ticker == null ? "" : " " + ticker)
+                    + (change == null ? "" : " " + (change > 0 ? "+" : "") + change + "%"));
+        }
+        String summary = Json.asText(response, "summary");
+        return new ReviewFacts.Judgment(s.id(), s.kind(), origin, events, Json.asText(request, "question"),
+                Json.asText(response, "action"), summary == null ? s.summary() : summary, orders);
+    }
+
+    /**
+     * 바로 앞 복기(그 시장에서 이 주보다 앞선 가장 최근 OK 행)의 반복 오류·지킬 것·지켜볼 것 — 이번 복기가 이어받습니다(입력 판 2). 없으면 null.
+     */
+    private ReviewFacts.PreviousReview previous(PaperMarket market, LocalDate weekEnding) {
+        for (ReviewSummary s : store.reviews(market.code(), LIST_LIMIT)) {
+            if (!s.weekEnding().isBefore(weekEnding) || !Review.OK.equals(s.status())) {
+                continue;
+            }
+            Optional<Review> found = store.review(market.code(), s.weekEnding());
+            if (found.isEmpty() || found.get().response() == null) {
+                continue;
+            }
+            JsonNode response = found.get().response();
+            return new ReviewFacts.PreviousReview(s.weekEnding(), texts(Json.array(response, "recurringErrors")),
+                    texts(Json.array(response, "keep")), texts(Json.array(response, "watchItems")));
+        }
+        return null;
     }
 
     /**
@@ -914,6 +990,7 @@ public class ReviewService {
                 }
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("decisionId", id);
+                row.put("book", Json.asText(decision, "book"));
                 row.put("asOf", Json.asText(decision, "asOf"));
                 row.put("kind", Json.asText(decision, "kind"));
                 row.put("status", Json.asText(decision, "status"));
@@ -942,6 +1019,7 @@ public class ReviewService {
         out.put("missingDecisionIds", missing);
         out.put("recurringErrors", ok ? texts(Json.array(response, "recurringErrors")) : List.of());
         out.put("keep", ok ? texts(Json.array(response, "keep")) : List.of());
+        out.put("watchItems", ok ? texts(Json.array(response, "watchItems")) : List.of());
         out.put("proposal", r.proposalId() == null ? null : store.proposal(r.proposalId()).map(this::proposalSummary)
                 .orElse(null));
         out.put("input", r.input());
