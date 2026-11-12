@@ -2138,6 +2138,41 @@ class RealTradeJobDbTest {
                 .noneMatch(o -> o.contains(D));
     }
 
+    // ------------------------------------------------------------------ QA-376 고정 시험(전량 매도 범위와 다른 경로가 겹치는 날)
+    @Test
+    @DisplayName("QA-376 고정: 묶음을 만들 때 전량 매도 대상이던 책 밖 보유를 그 뒤 장중 따라 하기가 산 날 — 마무리는 그 종목을 팔지 않는다"
+            + "(범위에 전량 매도 대상을 더한 뒤에 장중 따라 하기가 손댄 종목을 뺌 — 순서가 뒤집히면 장중에 산 종목을 되팖)")
+    void followupLeavesLiquidationTargetBoughtByIntradayMirror() {
+        timedRestrictionDay();   // 책 A 50%·B 30%, 실제 보유는 책에 없는 C 100주
+        restrictions(Set.of(C), null);
+        run("09:10:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(RealTradeJob.liquidations(batch)).as("VI로 기다린 C는 묶음의 전량 매도 대상(비중 0)").containsExactly(C);
+
+        // 09:11 — VI가 풀리고, 모의 책이 C를 새로 삼(그 주문 뒤 비중 45% = 112주, 실제 보유 100주라 12주 매수)
+        restrictions(Set.of(), null);
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(dueFor(901, 900, C, "BUY", kst("2026-11-06T09:11"))));
+        when(paper.weightAfter(eq(BOOK), eq(901L), any())).thenReturn(Optional.of(new WeightAfter(901, C, "BUY", 45.0, 1e7, true,
+                List.of(901L), List.of())));
+        run("09:11:10");
+        assertThat(sentSummaries()).as("같은 주기 — 마무리가 먼저 돌지만 따라 할 시각이 지난 장중 주문의 종목이라 C를 팔지 않고, 장중 따라 하기가 삼")
+                .containsExactly("BUY " + B + " DAY 150", "BUY " + A + " DAY 32", "BUY " + C + " DAY 12");
+        assertThat(store.recentOrders("KR", 1).getFirst().purpose()).isEqualTo("MIRROR");
+
+        // 장중 매수가 체결로 끝남(C 112주) — 그 종목의 이 기능 주문이 없어도 마무리는 되팔지 않음(오늘 MIRROR 행이 있는 종목)
+        when(client.order("T-3")).thenReturn(Reply.of(broker("T-3", C, "BUY", "DAY", "FILLED", "12", "12", clock.now, clock.now)));
+        preflight("5520000", Map.of(C, new String[]{"112", "40000"}), Map.of(A, "50000", B, "20000"));
+        run("09:11:50");
+        run("09:12:30");
+        run("09:13:30");   // 원래 창(09:13) 뒤 — VI로 늘어난 창 안
+
+        assertThat(store.recentOrders("KR", 10)).filteredOn(r -> r.symbol().equals(C)).singleElement()
+                .satisfies(r -> assertThat(r.terminal()).as("장중 매수는 끝난 주문 — 이 기능 주문 진행 중이라 막힌 것이 아님").isTrue());
+        assertThat(sentSummaries()).as("장중 따라 하기가 산 C를 '책에 없는 보유'로 되팔지 않음").noneMatch(o -> o.startsWith("SELL"))
+                .hasSize(3);
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
