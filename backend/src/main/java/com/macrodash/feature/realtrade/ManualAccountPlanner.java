@@ -30,6 +30,8 @@ import java.util.TreeMap;
  *   <li>목표 수량 = floor(비중 × 평가액 ÷ 기준가). 차이가 1주 이상이고 평가액의 1% 이상인 종목만(책에 없는 보유는 1% 조건 없이 전량 매도).</li>
  *   <li>현금 확인: 매도 먼저 — 매수 합(수량 × 기준가 × {@value #BUY_BUFFER_TEXT})이 '잔고 현금 + 같은 지시의 매도 대금(수량 × 기준가)'을 넘으면 뒤 순서
  *       매수부터 줄이고 1주도 안 되면 뺍니다({@code deferred-cash}). 순서는 매도 → 매수, 현금성은 매수 마지막.</li>
+ *   <li>손절 매도만({@link #stopSells} — QA-381 후속): 현금이 음수라 위 계산을 하지 않을 때도, 규칙 계좌가 그 지시 시각까지 손절(STOP)로 다 파는 종목의 ISA 정수 보유
+ *       전량 매도는 따로 냅니다. 현금·평가액·비중 계산을 거치지 않아 틀린 현금 숫자의 영향을 받지 않습니다(보유를 파는 것은 현금과 무관).</li>
  * </ul>
  */
 final class ManualAccountPlanner {
@@ -46,7 +48,7 @@ final class ManualAccountPlanner {
                  BigDecimal targetQuantity) {
     }
 
-    /** 계산 결과 — 지시(매도 → 매수 순)·건너뛴 종목·평가액·현금(잔고)·기준가를 모르는 보유. */
+    /** 계산 결과 — 지시(매도 → 매수 순)·건너뛴 종목·평가액·현금(잔고). 손절 매도만 담은 결과({@link #stopSells})는 평가액·현금이 null입니다(세지 않음). */
     record Result(List<Draft> drafts, List<Skip> skipped, BigDecimal equity, BigDecimal cash) {
 
         Result {
@@ -127,5 +129,41 @@ final class ManualAccountPlanner {
             drafts.add(new Draft(o.symbol(), o.side(), o.quantity(), o.refPrice(), weight, heldQty, target));
         }
         return Optional.of(new Result(drafts, plan.skipped(), equity, cash));
+    }
+
+    /**
+     * 현금이 음수일 때도 만드는 손절 매도 지시(QA-381 후속 — ADR 0034 결정 5 개정의 덧붙임). 대상은 세 조건을 모두 채운 종목뿐입니다.
+     * <ul>
+     *   <li>규칙 계좌의 대기 STOP 매도 종목({@code stopSymbols} — {@code PaperMirrorService#pendingStopSymbols}: 목표 세션이 그 세션인 것과 지난 세션의 것)이고,</li>
+     *   <li>그 지시 시각(시가 또는 맞추기 시각)의 목표에 비중이 없고({@code weightPct}에 없거나 0 이하 — 규칙 계좌가 그때까지 다 판 종목. 종가처럼 뒤 시각의 STOP은 비중이
+     *       남아 빠지고 장중 스탑 지시가 맡음),</li>
+     *   <li>ISA가 1주 이상 들고 있음.</li>
+     * </ul>
+     * 수량은 정수 보유 전량(규칙 계좌의 손절은 전량 매도, 소수 부분은 평소 지시와 같이 지시하지 않음)이고 종목 코드 순입니다. 평가액·현금을 받지 않습니다 — 계산에 쓰지 않는다는
+     * 것을 시그니처로 지킵니다. 기준가는 목표의 평가 가격(표시용 — 모르면 null이고 지시는 그대로 냄: 수량이 가격에 달려 있지 않음).
+     *
+     * @param held        종목 → ISA 보유 수량
+     * @param stopSymbols 규칙 계좌의 대기 STOP 매도 종목
+     * @param weightPct   규칙 계좌의 그 지시 시각 목표 비중(종목 → %)
+     * @param bookPrice   그 목표의 평가 가격
+     */
+    static List<Draft> stopSells(Map<String, BigDecimal> held, Set<String> stopSymbols, Map<String, Double> weightPct, Map<String, Double> bookPrice) {
+        List<Draft> drafts = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> e : new TreeMap<>(held).entrySet()) {
+            String symbol = e.getKey();
+            Double weight = weightPct.get(symbol);
+            if (e.getValue() == null || !stopSymbols.contains(symbol) || (weight != null && weight > 0)) {
+                continue;
+            }
+            BigDecimal whole = e.getValue().setScale(0, RoundingMode.FLOOR);
+            if (whole.signum() <= 0) {
+                continue;
+            }
+            Double price = bookPrice.get(symbol);
+            BigDecimal ref = price != null && Double.isFinite(price) && price > 0 ? BigDecimal.valueOf(price) : null;
+            drafts.add(new Draft(symbol, RealTradePlanner.SELL, whole.min(BigDecimal.valueOf(Integer.MAX_VALUE)).intValue(), ref,
+                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP), e.getValue(), BigDecimal.ZERO));
+        }
+        return drafts;
     }
 }

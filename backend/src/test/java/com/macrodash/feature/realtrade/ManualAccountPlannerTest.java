@@ -126,4 +126,38 @@ class ManualAccountPlannerTest {
         assertThat(ManualAccountPlanner.plan(d("-0.01"), Map.of(), Map.of(A, 50.0), Map.of(A, 10_000.0), Map.of(), CASH_LIKE, missing)).isEmpty();
         assertThat(missing).as("기준가를 모르는 보유는 없음 — 사유는 호출하는 쪽이 현금으로 가림").isEmpty();
     }
+
+    // QA-381 후속(사용자 결정 2026-11-12): 현금이 음수여도 규칙 계좌의 손절(STOP) 매도는 지시한다 — 보유를 파는 것이라 현금과 무관.
+    @Test
+    @DisplayName("QA-381: 손절 매도만 — 대기 STOP 종목이고 목표에 비중이 없고 ISA가 1주 이상 든 종목의 정수 보유 전량(코드 순), 평가액·현금을 받지 않음")
+    void stopSellsAreWholeHoldingsOfStoppedOutSymbols() {
+        Map<String, BigDecimal> held = Map.of(A, d("50"), B, d("15"), C, d("7.6"), X, d("0.9"));
+        List<Draft> drafts = ManualAccountPlanner.stopSells(held, Set.of(A, C, X, CASH), Map.of(B, 30.0), Map.of(A, 10_000.0, B, 20_000.0));
+
+        assertThat(drafts).extracting(dr -> dr.side() + " " + dr.symbol() + " " + dr.quantity()).as("X는 1주 미만, 현금성은 보유 없음")
+                .containsExactly("SELL " + A + " 50", "SELL " + C + " 7");
+        assertThat(drafts.get(0)).satisfies(dr -> {
+            assertThat(dr.refPrice()).isEqualByComparingTo("10000");
+            assertThat(dr.weightPct()).isEqualByComparingTo("0");
+            assertThat(dr.targetQuantity()).isEqualByComparingTo("0");
+            assertThat(dr.held()).isEqualByComparingTo("50");
+        });
+        assertThat(drafts.get(1).refPrice()).as("기준가를 몰라도 지시 — 수량이 가격에 달려 있지 않음").isNull();
+        assertThat(drafts.get(1).held()).as("소수 부분은 지시하지 않음").isEqualByComparingTo("7.6");
+    }
+
+    @Test
+    @DisplayName("QA-381: 손절 매도만 — 목표에 비중이 남은 종목(뒤 시각의 STOP — 장중 스탑 지시가 맡음)·대기 STOP이 아닌 종목(책에 없는 보유 포함)은 지시하지 않음")
+    void stopSellsSkipSymbolsStillInTargetOrNotStopped() {
+        Map<String, BigDecimal> held = Map.of(A, d("50"), B, d("15"), X, d("3"));
+        assertThat(ManualAccountPlanner.stopSells(held, Set.of(A), Map.of(A, 12.5, B, 30.0), Map.of())).as("A는 지시 시각 목표에 비중이 남음").isEmpty();
+        assertThat(ManualAccountPlanner.stopSells(held, Set.of(), Map.of(B, 30.0), Map.of())).as("대기 STOP 없음 — A·X가 목표에 없어도 손절이 아니면 지시하지 않음").isEmpty();
+        assertThat(ManualAccountPlanner.stopSells(Map.of(), Set.of(A), Map.of(), Map.of())).isEmpty();
+        assertThat(ManualAccountPlanner.stopSells(held, Set.of(A), Map.of(A, 0.0), Map.of(A, Double.NaN)))
+                .as("비중 0으로 적힌 것은 없는 것과 같음, 못 읽는 가격은 null").singleElement().satisfies(dr -> {
+                    assertThat(dr.symbol()).isEqualTo(A);
+                    assertThat(dr.quantity()).isEqualTo(50);
+                    assertThat(dr.refPrice()).isNull();
+                });
+    }
 }

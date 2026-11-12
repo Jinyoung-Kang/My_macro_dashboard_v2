@@ -13,7 +13,6 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -259,7 +258,7 @@ class ManualAccountJobDbTest {
         assertThat(sentTexts(1)).as("세션마다 한 통").singleElement().isEqualTo("[ISA 계좌] 11/09(월) 매매 지시 없음\n\n"
                 + "ISA 잔고의 현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다.\n"
                 + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 지시를 만들어 다시 알립니다.\n"
-                + "전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다. 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 알립니다.");
+                + "규칙 계좌의 손절(트레일링 스탑) 매도는 현금이 음수여도 지시합니다 — 지금은 이 세션에 지시할 손절 매도가 없습니다. 장중 스탑 매도 지시도 감지되면 그대로 알립니다.");
         assertThat(sentTexts(1).getFirst()).doesNotContain("원", "600000", "600,000", "800000", "200000", "%", "-");
 
         store.updateCash("isa", d("200000"));   // 잔고를 고침(평가액 1,000,000 — A 50주·B 15주가 목표 그대로, 현금성 1주 매수)
@@ -361,7 +360,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 'Expecting actual: [] to contain exactly (and in same order): ["SELL 005930 50 PLANNED"]'(현금이 음수면 손절의 시가 매도까지 지시하지 않음).
     @Test
-    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 현금이 음수여도 규칙 계좌의 손절(STOP) 매도는 정수 보유 전량 매도 지시 — 나머지 매매는 만들지 않고, 세션 행에 사유(cash-negative), 08:00에 손절 지시 글 한 통(금액 없음), 개장 뒤에도 그 행 그대로")
     void negativeCashStillInstructsStopSells() {
         negativeCash("-600000");
@@ -384,6 +382,7 @@ class ManualAccountJobDbTest {
         Map<String, Object> block = block(service().view());
         assertThat(block).containsEntry("session", E.toString()).containsEntry("status", "PLANNED").containsEntry("reason", "cash-negative");
         assertThat((List<?>) block.get("items")).hasSize(1);
+        assertThat(waitingOf(service().view())).as("손절만 든 세션은 지시 묶음의 사유로 알림 — '지시를 만들지 않았다'는 대기 사유로 내려보내지 않음").isNull();
         assertThat((List<?>) service().view().get("notes")).anySatisfy(note -> assertThat((String) note).contains("손절 매도 지시만"));
         verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
 
@@ -403,7 +402,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 위와 같음(22:35 주기에 손절 지시가 없어 첫 단언에서 'Expecting actual: [] to contain exactly …').
     @Test
-    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 손절 지시만 든 세션 — 08:00 뒤 개장 전에 잔고를 고치면 다음 주기에 나머지 지시를 더하고(손절 지시는 그대로·두 번 지시하지 않음) 더한 지시만 다시 알림")
     void stopOnlySessionFillsRestAfterBalanceFix() {
         negativeCash("-600000");
@@ -440,7 +438,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 22:35 주기에 손절 지시가 없어 'Expecting actual: [] to contain exactly (and in same order): ["SELL 005930 50 PLANNED"]'.
     @Test
-    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 손절 지시만 든 세션 — 08:00 전에 잔고를 고치면 기존 규칙대로 지우고 다음 주기에 평소 지시로 다시 만듦(손절 종목은 목표 0의 전량 매도 한 줄), 08:00 글은 평소 지시 글 한 통")
     void stopOnlySessionReplansWhenFixedBeforeMorning() {
         negativeCash("-600000");
@@ -464,7 +461,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 손절 지시가 없어 그 번호를 읽는 줄에서 'NoSuchElementException'.
     @Test
-    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 확인(잔고 반영)한 손절 지시의 종목은 나머지 지시를 채울 때 다시 지시하지 않음 — 일부만 확인해 보유가 남아도 같은 세션에 두 번째 매도 지시를 만들지 않음")
     void confirmedStopSellIsNotInstructedAgain() {
         negativeCash("-600000");
@@ -493,7 +489,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 위와 같음(손절 지시가 없어 첫 단언에서 실패).
     @Test
-    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 시각 맞추기 날의 손절 지시 — 세션 기록에 09:10과 목표에 반영한 STOP 주문 번호를 남겨 장중 스탑 지시가 같은 보유를 또 지시하지 않음, 글은 '09:10 손절 매도 지시'")
     void stopOnlyOnTimedDayCoversTheStopOrder() {
         negativeCash("-600000");
@@ -522,7 +517,6 @@ class ManualAccountJobDbTest {
 
     // 수정 전 실패: 위와 같음(손절 지시가 없어 첫 단언에서 실패).
     @Test
-    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 손절 지시를 08:00 전에 건너뛰어 실어 보낼 지시 글이 없으면 '나머지 매매 지시 없음' 글 한 통(금액 없음) — 현금이 음수인 것을 조용히 넘기지 않음")
     void skippedStopOnlyStillGetsCashNotice() {
         negativeCash("-600000");
@@ -538,6 +532,25 @@ class ManualAccountJobDbTest {
                 + "ISA 잔고의 현금이 음수라 이 세션은 손절 매도 지시만 만들고 나머지 매매 지시는 만들지 않았습니다.\n"
                 + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 알립니다.\n"
                 + "장중 스탑 매도 지시는 감지되면 그대로 알립니다.");
+    }
+
+    @Test
+    @DisplayName("QA-381: 손절 지시를 만들 때 앞 세션의 미확인 종가 스탑 지시를 닫음(QA-382와 같은 규칙) — 같은 보유의 매도 지시 둘을 함께 열어 두지 않음, 기준가를 몰라도 손절 지시는 만듦")
+    void stopOnlyClosesEarlierClosingStop() {
+        ManualAccountStore.StopInstruction stop = closingStopPastClose();   // E 종가 스탑 A 10주 — 미확인, 잔고 A 10주 그대로
+        store.updateCash("isa", d("-100000"));
+        targets(E2, Map.of(B, 30.0), Map.of(B, 20_000.0), true);   // 규칙 계좌는 A를 E 종가 스탑으로 팖 — 그 STOP이 아직 대기(지난 세션의 STOP)
+        when(paper.pendingStopSymbols(BOOK, E2)).thenReturn(Set.of(A));
+
+        cycleAt("2026-11-09T22:35");
+
+        assertThat(lines(E2)).containsExactly("SELL " + A + " 10 PLANNED");
+        assertThat(store.instructions("isa", E2).getFirst().refPrice()).as("목표에 가격이 없는 종목 — 수량은 가격에 달려 있지 않음").isNull();
+        assertThat(store.stopInstruction(stop.id()).orElseThrow()).satisfies(row -> {
+            assertThat(row.status()).isEqualTo("SKIPPED");
+            assertThat(row.reason().path("autoNote").asString()).isEqualTo(ManualAccountJob.AUTO_EXPIRED);
+        });
+        assertThat(store.plannedStopInstructions("isa")).as("열린 A 매도는 손절 지시 하나뿐").isEmpty();
     }
 
     @Test

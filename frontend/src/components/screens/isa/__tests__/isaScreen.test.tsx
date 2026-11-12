@@ -335,7 +335,7 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
 
   // QA-381 후속(사용자 결정 2026-11-12): 현금이 음수여도 손절 매도 지시는 만든다 — 손절 지시만 든 세션(instructions.status = PLANNED · reason = cash-negative)은
   // 지시 카드에 그 사실(나머지는 만들지 않음·개장 전에 고치면 만듦)을 보인다. 수정 전 실패: 그 글이 없어 findByText가 'Unable to find an element with the text'.
-  it.fails("QA-381 손절 매도 지시만 든 세션 — 지시 카드에 '손절 매도 지시만 만들었다'는 안내와 그 지시 줄(확인 단추), 나머지를 채운 뒤에는 안내를 내림", async () => {
+  it("QA-381 손절 매도 지시만 든 세션 — 지시 카드에 '손절 매도 지시만 만들었다'는 안내와 그 지시 줄(확인 단추), 나머지를 채운 뒤에는 안내를 내림", async () => {
     const negative = { ...started().summary, cash: -50_000, totalAsset: 3_850_000 };
     const stopOnly = { session: "2026-11-09", status: "PLANNED", items: [ITEMS[0]], open: "2026-11-09T09:00:00+09:00", reason: "cash-negative", ledgerChanged: false, targetAt: null };
     reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: stopOnly }));

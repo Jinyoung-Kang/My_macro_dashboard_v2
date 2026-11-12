@@ -43,8 +43,23 @@ final class ManualAccountNotices {
      * @param names   종목 코드 → 이름(모르면 코드만)
      */
     static String text(LocalDate session, LocalTime open, LocalTime at, List<Instruction> items, Map<String, String> names) {
+        return text(session, open, at, items, names, false);
+    }
+
+    /** 손절 매도 지시만 만든 세션(현금 음수 — QA-381 후속)의 지시 글에 덧붙는 안내 — 고정 문구(금액 없음). */
+    private static final String STOP_ONLY_NOTE = "규칙 계좌가 트레일링 스탑(손절)으로 파는 종목입니다 — 손절 매도는 현금이 음수여도 지시합니다.\n"
+            + "ISA 잔고의 현금이 음수라 나머지 매매 지시는 만들지 않았습니다.\n"
+            + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 다시 알립니다.";
+
+    /**
+     * 지시 글 — {@code stopOnly}가 참이면 손절 매도 지시만 만든 세션의 글입니다(QA-381 후속 — ADR 0034 결정 5 개정의 덧붙임): 제목이 '시가 손절 매도 지시'·
+     * 'HH:MM 손절 매도 지시'이고 지시 줄과 매매 안내 사이에 '현금이 음수라 나머지 지시는 만들지 않았다'는 고정 안내가 들어갑니다. 줄 형식(방향·종목 코드·이름·수량)과
+     * 매매 안내는 평소 지시 글 그대로입니다. 거짓이면 위 글과 같습니다.
+     */
+    static String text(LocalDate session, LocalTime open, LocalTime at, List<Instruction> items, Map<String, String> names, boolean stopOnly) {
         LocalTime start = open == null ? LocalTime.of(9, 0) : open;
-        String title = title(session, at == null ? "시가 매매 지시" : hhmm(at) + " 매매 지시");
+        String label = stopOnly ? "손절 매도 지시" : "매매 지시";
+        String title = title(session, at == null ? "시가 " + label : hhmm(at) + " " + label);
         StringBuilder lines = new StringBuilder();
         for (Instruction i : items) {
             if (i.symbol() == null || !SYMBOL.matcher(i.symbol()).matches() || i.quantity() <= 0) {
@@ -59,7 +74,7 @@ final class ManualAccountNotices {
         String guide = at != null
                 ? hhmm(at) + " 이후 시장가로 내면 규칙 계좌와 같은 때(" + hhmm(at) + ")에 체결됩니다.\n그때 서킷브레이커·VI가 걸려 있으면 풀린 뒤 시장가로 내세요.\n장중 스탑이 걸리면 따로 알립니다.\n" + CONFIRM_GUIDE
                 : "장전 동시호가(" + hhmm(start.minusMinutes(AUCTION_MINUTES)) + "~" + hhmm(start) + ")에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n" + CONFIRM_GUIDE;
-        return message(title, lines.toString().strip() + "\n\n" + guide);
+        return message(title, lines.toString().strip() + "\n\n" + (stopOnly ? STOP_ONLY_NOTE + "\n\n" : "") + guide);
     }
 
     /** 지시 한 줄 — 방향·종목 코드·이름·수량(앞에 줄바꿈 없이 끝에 줄바꿈). */
@@ -102,12 +117,18 @@ final class ManualAccountNotices {
 
     /**
      * 현금이 음수라 그 세션의 매매 지시를 만들지 않았다는 글(QA-381 — ADR 0034 결정 5 개정). 고정 문구와 세션 날짜뿐입니다 — 현금·평가액·종목·수량을 받지도 쓰지도
-     * 않습니다(ADR 0029 결정 4).
+     * 않습니다(ADR 0029 결정 4). 손절 매도 지시는 현금이 음수여도 만들므로(QA-381 후속) 이 글은 그 안내를 실어 보낼 지시 글이 없는 세션에만 갑니다:
+     * {@code stopOnly}가 거짓이면 지시할 손절 매도가 없던 세션('매매 지시 없음'), 참이면 손절 지시는 만들었지만 알림 전에 모두 닫힌 세션('나머지 매매 지시 없음').
      */
-    static String cashNegative(LocalDate session) {
+    static String cashNegative(LocalDate session, boolean stopOnly) {
+        if (stopOnly) {
+            return message(title(session, "나머지 매매 지시 없음"), "ISA 잔고의 현금이 음수라 이 세션은 손절 매도 지시만 만들고 나머지 매매 지시는 만들지 않았습니다.\n"
+                    + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 알립니다.\n"
+                    + "장중 스탑 매도 지시는 감지되면 그대로 알립니다.");
+        }
         return message(title(session, "매매 지시 없음"), "ISA 잔고의 현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다.\n"
                 + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 지시를 만들어 다시 알립니다.\n"
-                + "전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다. 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 알립니다.");
+                + "규칙 계좌의 손절(트레일링 스탑) 매도는 현금이 음수여도 지시합니다 — 지금은 이 세션에 지시할 손절 매도가 없습니다. 장중 스탑 매도 지시도 감지되면 그대로 알립니다.");
     }
 
     /** 종가 단일가 시간 — 정규장 마감 이만큼 전부터(보통 15:20~15:30, 장 시간 변경일은 그 마감 기준). */

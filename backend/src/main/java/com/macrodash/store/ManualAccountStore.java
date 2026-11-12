@@ -617,6 +617,24 @@ public class ManualAccountStore {
                 }) == 1;
     }
 
+    /**
+     * 세션 행의 상태·결정 번호·계산 기록을 바꿉니다 — 손절 매도 지시만 만든 세션(현금 음수, QA-381)에 나머지 지시를 채울 때. '지시 뒤 잔고가 바뀜'
+     * ({@code ledger_changed_at})과 만든 시각은 그대로 둡니다(먼저 알린 손절 지시는 고친 잔고로 다시 세지 않았음). 없는 세션이면 false.
+     */
+    public boolean updateSession(String code, LocalDate session, String state, Long decisionId, JsonNode detail) {
+        return jdbc.update("UPDATE manual_sessions SET state = ?, decision_id = ?, detail = ?::jsonb WHERE account = ? AND session = ?", ps -> {
+            ps.setString(1, state);
+            if (decisionId == null) {
+                ps.setNull(2, Types.BIGINT);
+            } else {
+                ps.setLong(2, decisionId);
+            }
+            ps.setString(3, json(detail));
+            ps.setString(4, code);
+            ps.setDate(5, Date.valueOf(session));
+        }) == 1;
+    }
+
     /** 세션 행을 지웁니다(잔고 고침 뒤 다시 계산 — 정기 작업이 다시 만듦). 없으면 false. */
     public boolean deleteSession(String code, LocalDate session) {
         return jdbc.update("DELETE FROM manual_sessions WHERE account = ? AND session = ?", code, Date.valueOf(session)) == 1;

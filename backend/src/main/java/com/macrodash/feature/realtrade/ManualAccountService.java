@@ -43,7 +43,8 @@ import java.util.TreeSet;
  * <ul>
  *   <li><b>잔고가 정답</b>({@code manual_balance}·{@code manual_positions}): 현금·보유·매입 금액은 지금 값 하나뿐입니다. 쓰기는 모두 계좌 행을 잡은 트랜잭션
  *       안에서 잔고를 다시 읽고 고칩니다. 현금이 음수가 되어도 <b>막지 않고</b> 저장합니다(화면 경고 — 사용자 결정 2026-11-09). 음수인 동안 정기 작업은 다음 매매 지시를
- *       만들지 않고(보기의 {@code waiting.reason = cash-negative} — QA-381), 장중 스탑 지시는 그대로 만듭니다.</li>
+ *       만들지 않고(보기의 {@code waiting.reason = cash-negative} — QA-381), 장중 스탑 지시는 그대로 만듭니다. 규칙 계좌의 손절(STOP) 매도 지시만은 음수여도 만들며
+ *       (QA-381 후속), 그 세션은 {@code instructions.status = PLANNED}·{@code instructions.reason = cash-negative}로 보입니다 — 나머지 지시를 채우면 사유가 없어집니다.</li>
  *   <li><b>시작</b>은 한 번만(잔고 행이 이미 있으면 409 {@code already-started}) — 현금 = 총평가금액 − Σ(수량 × 가격). 가격은 본문의 실시간 가격 → 서버 직전 종가 →
  *       매입 금액 어림(응답 {@code notes}). 계좌 행이 있으면 재사용하고, 옛 PLANNED 지시는 SKIPPED({@code restart})로 닫고 아직 열리지 않은 세션은 지워
  *       새 잔고로 다시 만들게 합니다.</li>
@@ -304,7 +305,8 @@ public class ManualAccountService {
             block.put("items", items);
             SessionHours hours = ManualAccountCalendar.hours(paper, row.session());
             block.put("open", hours == null ? null : iso(hours.open()));
-            JsonNode reason = row.detail() == null ? null : row.detail().get("reason");
+            JsonNode reason = row.detail() == null ? null : row.detail().get(ManualAccountJob.DETAIL_REASON);
+            // 못 만듦(UNAVAILABLE)의 사유. PLANNED인데 cash-negative이면 손절 매도 지시만 만든 세션(ManualAccountJob.stopOnly — QA-381 후속)
             block.put("reason", reason != null && reason.isString() ? reason.asString() : null);
             block.put("ledgerChanged", row.ledgerChangedAt() != null);
             JsonNode target = row.detail() == null ? null : row.detail().get(ManualAccountJob.DETAIL_TARGET_AT);

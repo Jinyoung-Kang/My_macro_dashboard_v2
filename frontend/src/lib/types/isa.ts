@@ -111,7 +111,10 @@ export interface IsaInstructions {
   items: IsaInstructionItem[] | null;
   /** 그 세션 개장 시각(ISO) — 장전 동시호가 안내. 모르면 null(화면은 08:30~09:00). */
   open?: string | null;
-  /** 그 세션 행의 사유 코드(못 만듦이면 timed-orders 등). 없으면 null. */
+  /**
+   * 그 세션 행의 사유 코드(못 만듦이면 timed-orders 등). 없으면 null. status가 PLANNED인데 cash-negative이면 손절 매도 지시만 만든 세션입니다(현금이 음수라 나머지
+   * 매매 지시는 만들지 않음 — QA-381 후속. 개장 전에 잔고를 고쳐 나머지를 채우면 null).
+   */
   reason?: string | null;
   /** 지시를 만든 뒤 잔고가 바뀌었는데 다시 계산하지 않음(그 세션 08:00 뒤의 쓰기) — 화면은 수량을 다시 확인하라고 경고합니다. */
   ledgerChanged?: boolean | null;
@@ -163,7 +166,7 @@ export interface IsaResponse {
   stopInstructions?: IsaStopInstruction[] | null;
   /** 매매 내역(최근 200). */
   trades?: IsaTrade[] | null;
-  /** 다음 세션 지시를 아직 만들지 않은 사유 — 기다리는 것이 없으면 null. 화면은 cash-negative(현금이 음수라 만들지 않음 — QA-381)만 지시 카드에 띄웁니다. */
+  /** 다음 세션 지시를 아직 만들지 않은 사유 — 기다리는 것이 없으면 null. 화면은 cash-negative(현금이 음수라 만들지 않음 — QA-381)만 지시 카드에 띄웁니다. 손절 매도 지시만 만든 세션은 여기가 아니라 instructions.reason으로 옵니다. */
   waiting?: IsaWaiting | null;
   notes?: string[] | null;
 }

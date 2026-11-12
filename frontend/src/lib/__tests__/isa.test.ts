@@ -55,6 +55,7 @@ import {
   STOP_GUIDE,
   stopAutoNoteLabel,
   stopNotifiedText,
+  stopOnlyText,
   stopTimingLabel,
   stopWindowText,
   symbolText,
@@ -296,10 +297,8 @@ describe("안내 글", () => {
   it("QA-381 음수 현금 경고와 못 만듦 사유 — 음수인 동안 매매 지시를 만들지 않고 장중 스탑 지시는 그대로라고 알림", () => {
     expect(NEGATIVE_CASH_TEXT).toContain("음수인 동안 다음 매매 지시를 만들지 않습니다");
     expect(NEGATIVE_CASH_TEXT).toContain("장중 스탑");
-    // 전날 종가 기준 손절(시가 매도)은 다음 시가 지시에 들어 있어 함께 멈춘다 — '스탑은 그대로'라고만 하면 손절이 따로 온다고 읽힌다(독립 검토).
-    for (const text of [NEGATIVE_CASH_TEXT, unavailableText("cash-negative"), waitingText({ session: "2026-11-10", reason: "cash-negative" }) ?? ""]) {
-      expect(text).toContain("손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다");
-    }
+    // (기대 변경 — QA-381 후속, 사용자 결정 2026-11-12) 예전에는 전날 종가 기준 손절의 시가 매도도 함께 멈춰 세 글이 그 사실('…함께 멈춥니다')을 적었다. 이제 손절 매도
+    // 지시는 현금이 음수여도 만들므로 그 문장을 고정하던 줄을 아래 시험('손절 매도 지시는 그대로 나온다고 알림')으로 바꿨다.
     expect(NEGATIVE_CASH_TEXT).not.toContain("매수가 줄어");
     expect(unavailableText("cash-negative")).toMatch(/^현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다/);
     expect(unavailableText("cash-negative")).toContain("잔고");
@@ -313,11 +312,26 @@ describe("안내 글", () => {
 
   // QA-381 후속(사용자 결정 2026-11-12): 현금이 음수여도 규칙 계좌의 손절(STOP) 매도 지시는 만든다 — 음수 현금 글 세 곳이 '손절의 시가 매도도 함께 멈춥니다'라고
   // 말하면 사실이 아니다. 수정 전 실패: "expected '현금이 음수입니다 — …함께 멈춥니다…' not to include '함께 멈춥니다'".
-  it.fails("QA-381 음수 현금 글 세 곳 — 손절 매도 지시는 그대로 나온다고 알림('함께 멈춘다'고 하지 않음)", () => {
+  it("QA-381 음수 현금 글 세 곳 — 손절 매도 지시는 그대로 나온다고 알림('함께 멈춘다'고 하지 않음)", () => {
     for (const text of [NEGATIVE_CASH_TEXT, unavailableText("cash-negative"), waitingText({ session: "2026-11-10", reason: "cash-negative" }) ?? ""]) {
       expect(text).not.toContain("함께 멈춥니다");
       expect(text).toContain("손절 매도 지시");
       expect(text).toContain("장중 스탑 매도 지시");
+    }
+    // 행 없이 기다리는 세션·못 만든 세션은 지시할 손절 매도가 없던 세션 — 손절 지시가 따로 왔다고 읽히지 않게
+    expect(waitingText({ session: "2026-11-10", reason: "cash-negative" })).toContain("지금은 이 세션에 지시할 손절 매도가 없고");
+    expect(unavailableText("cash-negative")).toContain("이 세션에는 개장 전에 지시할 손절 매도가 없었습니다");
+  });
+
+  it("QA-381 손절 매도 지시만 만든 세션의 안내 — 세션 상태가 PLANNED이고 사유가 cash-negative일 때만, 금액 없이", () => {
+    const text = stopOnlyText({ status: "PLANNED", reason: "cash-negative" });
+    expect(text).toMatch(/^현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다/);
+    expect(text).toContain("나머지 매매 지시는 만들지 않았습니다");
+    expect(text).toContain("개장 전에 잔고(현금·보유)를 고치면 다음 주기(10분 안)에 나머지 지시를 만듭니다");
+    expect(text).not.toMatch(/원|[0-9]{3,}/);
+    for (const block of [null, undefined, { status: "PLANNED", reason: null }, { status: "PLANNED" }, { status: "UNAVAILABLE", reason: "cash-negative" },
+      { status: "NONE", reason: "cash-negative" }, { status: "PLANNED", reason: "timed-orders" }]) {
+      expect(stopOnlyText(block)).toBeNull();
     }
   });
 

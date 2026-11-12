@@ -14,6 +14,7 @@ import type {
   IsaDecimal,
   IsaEditTradeRequest,
   IsaInstructionItem,
+  IsaInstructions,
   IsaPosition,
   IsaPositionRequest,
   IsaStartPosition,
@@ -76,7 +77,7 @@ export function unavailableText(reason: string | null | undefined): string {
     case "timed-orders":
       return "규칙 계좌가 시가 밖 시점으로 주문해 ISA는 이번 세션 시가 지시를 만들지 않았습니다(지시 시각 — 시가·개장 10분 뒤 — 밖의 주문) — 이번 세션은 매매하지 않고 다음 결정을 기다립니다.";
     case "cash-negative":
-      return "현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다 — 잔고(현금·보유)가 실제와 맞는지 확인해 고치세요. 음수인 동안 다음 세션 지시도 만들지 않습니다(전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다 — 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 나옵니다).";
+      return "현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다 — 잔고(현금·보유)가 실제와 맞는지 확인해 고치세요. 음수인 동안 다음 세션 지시도 만들지 않습니다(규칙 계좌의 손절 매도 지시와 장중 스탑 매도 지시만 그대로 나옵니다 — 이 세션에는 개장 전에 지시할 손절 매도가 없었습니다).";
     default:
       return "이 세션의 지시를 만들지 못했습니다 — 이번 세션은 매매하지 않고 다음 결정을 기다립니다. 까닭이 있으면 요약 칸의 안내에 적혀 있습니다.";
   }
@@ -84,14 +85,27 @@ export function unavailableText(reason: string | null | undefined): string {
 
 /**
  * 다음 세션 지시를 아직 만들지 않은 사유(응답 waiting) 가운데 지시 카드에 띄울 글 — 현금이 음수라 만들지 않은 것(cash-negative, QA-381)만. 결정 대기·장부 반영 대기처럼
- * 밤마다 지나가는 사유는 요약 칸의 안내 목록에만 두고 null을 돌려줍니다.
+ * 밤마다 지나가는 사유는 요약 칸의 안내 목록에만 두고 null을 돌려줍니다. 손절 매도 지시는 현금이 음수여도 만들므로(QA-381 후속) 이 사유는 지시할 손절 매도가 없어
+ * 세션 행을 만들지 않은 때에만 옵니다 — 손절 지시만 만든 세션은 stopOnlyText가 맡습니다.
  */
 export function waitingText(waiting: IsaWaiting | null | undefined): string | null {
   if (waiting?.reason !== "cash-negative") {
     return null;
   }
   const session = sessionLabel(waiting.session);
-  return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 현금이 음수입니다. 잔고(현금·보유)가 실제와 맞는지 확인해 고치면 다음 주기(10분 안)에 지시를 만듭니다. 전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다 — 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 나옵니다.`;
+  return `${session === EMPTY ? "다음 세션" : session} 매매 지시를 만들지 않았습니다 — 현금이 음수입니다. 잔고(현금·보유)가 실제와 맞는지 확인해 고치면 다음 주기(10분 안)에 지시를 만듭니다. 규칙 계좌의 손절 매도 지시는 현금이 음수여도 만듭니다 — 지금은 이 세션에 지시할 손절 매도가 없고, 장중 스탑 매도 지시도 그대로 나옵니다.`;
+}
+
+/**
+ * 손절 매도 지시만 만든 세션(instructions.status = PLANNED · reason = cash-negative — QA-381 후속, ADR 0034 결정 5 개정의 덧붙임)의 지시 카드 안내 — 현금이 음수라
+ * 비중 계산으로 나오는 매매는 만들지 않고, 규칙 계좌가 손절(STOP)로 파는 종목의 매도만 만든 세션입니다. 나머지를 채우면 서버가 사유를 지우므로 null이 됩니다.
+ * 개장 뒤에도 그 세션의 사실이라 그대로 보입니다(나머지는 그 세션에 만들지 않았음). 금액을 넣지 않습니다.
+ */
+export function stopOnlyText(instructions: Pick<IsaInstructions, "status" | "reason"> | null | undefined): string | null {
+  if (instructions?.status !== "PLANNED" || instructions.reason !== "cash-negative") {
+    return null;
+  }
+  return "현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다 — 아래 매도는 규칙 계좌가 트레일링 스탑(손절)으로 파는 종목이고, 나머지 매매 지시는 만들지 않았습니다. 개장 전에 잔고(현금·보유)를 고치면 다음 주기(10분 안)에 나머지 지시를 만듭니다.";
 }
 
 const STOP_TIMING: Readonly<Record<string, string>> = {
@@ -894,8 +908,8 @@ export function buildCommissionRequest(text: string): Checked<IsaCommissionReque
 /** 서버 오류 코드(400 invalid-request, 404 not-found, 409 already-started·not-started·already-recorded). */
 export const ISA_ERROR_CODES = ["invalid-request", "not-found", "already-started", "not-started", "already-recorded"] as const;
 
-/** 현금이 음수일 때의 경고(요약 카드) — 잔고 쓰기는 막지 않습니다. 음수인 동안 정기 작업은 다음 매매 지시를 만들지 않습니다(QA-381 — 장중 스탑 지시는 그대로). */
-export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 매매 지시를 만들지 않습니다(전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다 — 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 나옵니다).";
+/** 현금이 음수일 때의 경고(요약 카드) — 잔고 쓰기는 막지 않습니다. 음수인 동안 정기 작업은 다음 매매 지시를 만들지 않습니다(QA-381 — 손절 매도 지시와 장중 스탑 지시는 그대로). */
+export const NEGATIVE_CASH_TEXT = "현금이 음수입니다 — 매수가 현금을 넘었거나 잔고 숫자가 실제와 다를 수 있습니다. 총 잔고를 다시 맞추거나 잔고를 고치세요. 음수인 동안 다음 매매 지시를 만들지 않습니다(규칙 계좌의 손절 매도 지시와 장중 스탑 매도 지시만 그대로 나옵니다).";
 
 export type IsaErrorCode = (typeof ISA_ERROR_CODES)[number];
 

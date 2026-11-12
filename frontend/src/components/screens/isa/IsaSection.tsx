@@ -36,6 +36,7 @@ import {
   sessionStatusLabel,
   sideLabel,
   STOP_GUIDE,
+  stopOnlyText,
   symbolText,
   targetClock,
   toNumber,
@@ -408,6 +409,8 @@ function StartedBody({
   // 현금이 음수라 지시를 만들지 않았다는 배너 — 정기 작업의 사유(waiting)는 다음 주기(최대 10분)에야 바뀌므로, 잔고를 고쳐 현금이 0 이상이 됐으면 바로 내립니다
   // (요약의 음수 경고와 같은 순간에 — 고친 뒤에도 '현금이 음수입니다'가 남지 않게).
   const waitText = valuation.cash !== null && valuation.cash >= 0 ? null : waitingText(data.waiting);
+  // 손절 매도 지시만 만든 세션(현금 음수 — QA-381 후속) — 그 세션의 사실이라 현금을 고친 뒤에도 서버가 나머지를 채울 때(사유를 지울 때)까지 그대로 둡니다.
+  const stopOnly = stopOnlyText(instructions);
   const commission = toNumber(summary?.commissionPct);
 
   return (
@@ -467,6 +470,7 @@ function StartedBody({
         <div className="flex flex-col gap-3">
           {!instructions && <p className="text-sm text-text-2">한국 규칙 계좌의 밤 결정(22:30)이 끝나면 10분 안에 다음 세션의 지시(시가 또는 개장 10분 뒤)를 만듭니다.</p>}
           {waitText && <Banner tone="warn">{waitText}</Banner>}
+          {stopOnly && <Banner tone="warn">{stopOnly}</Banner>}
           {instructions?.ledgerChanged === true && <Banner tone="warn">{BALANCE_CHANGED_TEXT}</Banner>}
           {instructions?.status === "NONE" && <p className="text-sm text-text-2">이 세션은 지시 없음 — 지금 보유가 규칙 계좌 비중에 맞아 매매할 것이 없습니다.</p>}
           {instructions?.status === "UNAVAILABLE" && <Banner tone="warn">{unavailableText(instructions.reason)}</Banner>}

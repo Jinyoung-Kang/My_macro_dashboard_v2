@@ -17,6 +17,7 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import com.macrodash.store.ManualAccountStore.NewStopInstruction;
 import com.macrodash.store.ManualAccountStore.Position;
+import com.macrodash.store.ManualAccountStore.SessionRow;
 import com.macrodash.store.ManualAccountStore.StopInstruction;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -69,10 +70,15 @@ import java.util.concurrent.locks.ReentrantLock;
  *       반영했고({@link PaperMirrorService#ledgerCaughtUp}), 시가 목표가 완전할 때({@link OpenTargets#complete}) {@link ManualAccountPlanner}로 계산해 세션 행과 지시 행을 한
  *       트랜잭션으로 씁니다(입력은 지금 잔고 — 현금·보유). 지시가 없으면 NONE(알리지 않음). 규칙 계좌가 개장 10분 뒤 지정 시각으로 체결하는 날({@link PaperMirrorService#dailySyncAt} —
  *       ADR 0033 결정 7)은 그 시각까지의 모의 주문을 반영한 목표로 '그 시각 이후 시장가' 지시를 만듭니다. 그 목표에 들지 않는 시가 밖 시점 대기 주문(STOP 매도 제외 — 스탑 지시가 따로
- *       맡음)이 있으면 만들지 않습니다(사유 {@code timed-orders}). 잔고 현금이 음수이면 만들지 않고 기다립니다(사유 {@value #WAIT_CASH} — QA-381, ADR 0034 결정 5 개정:
- *       음수만큼 줄어든 평가액으로 책 종목을 팔라고 하지 않음. 잔고를 고치면 다음 주기에 만듦, 장중 스탑 지시는 현금과 무관해 그대로).</li>
+ *       맡음)이 있으면 만들지 않습니다(사유 {@code timed-orders}). 잔고 현금이 음수이면 비중 계산으로 나오는 매매 지시는 만들지 않고 기다립니다(사유 {@value #WAIT_CASH} —
+ *       QA-381, ADR 0034 결정 5 개정: 음수만큼 줄어든 평가액으로 책 종목을 팔라고 하지 않음. 잔고를 고치면 다음 주기에 만듦, 장중 스탑 지시는 현금과 무관해 그대로).
+ *       <b>손절 매도만은 음수 현금에서도 만듭니다</b>(QA-381 후속 — {@link ManualAccountPlanner#stopSells}: 규칙 계좌의 대기 STOP 매도 종목 가운데 그 지시 시각 목표에 비중이
+ *       없는 것의 ISA 정수 보유 전량 — 보유를 파는 것은 현금과 무관). 그때 세션 행은 PLANNED에 사유 {@value #WAIT_CASH}를 단 '손절만 든 세션'({@link #stopOnly})이고,
+ *       끝난 세션으로 보지 않습니다 — 개장 전까지 주기마다 다시 보아 현금이 0 이상이 되면 평소 계산의 지시 가운데 <b>아직 없는 종목만</b> 더하고(같은 (세션, 종목) 유일 제약 —
+ *       확인했든 미확인이든 같은 보유를 두 번 지시하지 않음) 세션 기록을 온전한 것으로 바꿉니다. 손절 대상이 없으면 예전처럼 행 없이 기다립니다.</li>
  *   <li><b>알림</b>: 개장 전 08:00(그 전에 개장하면 개장 때) PLANNED 지시를 한 통. 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시. 글은 종목 코드·이름·수량만.
- *       현금이 음수라 지시를 만들지 않은 세션은 같은 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통({@link #notifyCashNegative} — 금액 없음).</li>
+ *       손절만 든 세션의 지시 글은 제목이 '손절 매도 지시'이고 '현금이 음수라 나머지 지시는 만들지 않았다'는 안내를 함께 싣습니다. 현금이 음수인데 그 안내를 실어 보낼 지시 글이
+ *       없는 세션(손절 대상이 없거나 손절 지시가 알림 전에 모두 닫힘)은 같은 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통({@link #notifyCashNegative} — 금액 없음).</li>
  * </ol>
  *
  * <p><b>장 중반·마감 30분 전 확인 알림</b>(ADR 0034 — {@link #reminders}): 30초 주기마다, 그 세션 정규장 절반((개장 + 마감) / 2)과 마감 30분 전에 오늘 PLANNED 지시와 스탑 지시를
@@ -132,8 +138,17 @@ class ManualAccountJob {
     static final String WAIT_PRICE = "price-missing";
     static final String WAIT_UNKNOWN = "not-planned";
     static final String WAIT_TIMED = "timed-orders";
-    /** 잔고 현금이 음수 — 매매 지시를 만들지 않음(QA-381). */
+    /**
+     * 잔고 현금이 음수 — 비중 계산으로 나오는 매매 지시를 만들지 않음(QA-381). PLANNED 세션 행의 계산 기록 {@code reason}에 있으면 손절 매도 지시만 만든 세션입니다
+     * ({@link #stopOnly}).
+     */
     static final String WAIT_CASH = "cash-negative";
+    /** 세션 계산 기록의 사유 칸(못 만듦의 사유, 손절만 든 세션의 표시). */
+    static final String DETAIL_REASON = "reason";
+    /** 손절만 든 세션의 안내(세션 기록 notes — 보기의 안내 목록). */
+    static final String NOTE_STOP_ONLY = "현금이 음수라 손절 매도 지시만 만들었습니다 — 나머지 매매 지시는 만들지 않았습니다(개장 전에 잔고를 고치면 다음 주기에 만듭니다).";
+    /** 손절만 든 세션에 나머지 지시를 채운 뒤의 안내. */
+    static final String NOTE_FILLED = "현금이 음수라 손절 매도 지시만 먼저 만들었고, 잔고를 고친 뒤 나머지 지시를 더했습니다.";
 
     private static final Map<String, String> REASON_LABEL = Map.of(
             WAIT_CALENDAR, "달력을 모름",
@@ -142,7 +157,7 @@ class ManualAccountJob {
             WAIT_LEDGER, "규칙 계좌 장부 반영 대기",
             WAIT_TARGETS, "규칙 계좌 시가 목표를 아직 계산할 수 없음(가격 모름·불완전)",
             WAIT_PRICE, "ISA 보유 종목의 가격을 모름",
-            WAIT_CASH, "ISA 잔고의 현금이 음수라 매매 지시를 만들지 않음(잔고를 고치면 다음 주기부터 만듦)",
+            WAIT_CASH, "ISA 잔고의 현금이 음수라 매매 지시를 만들지 않음(손절 매도가 있으면 그 지시만 만듦 — 잔고를 고치면 다음 주기부터 만듦)",
             WAIT_UNKNOWN, "개장 전에 지시를 만들지 못함",
             WAIT_TIMED, "규칙 계좌가 지시 시각 밖 시점(분 지정·종가 등)으로 주문함 — ISA는 시가·개장 10분 뒤 시각만 지시");
 
@@ -166,7 +181,7 @@ class ManualAccountJob {
     private volatile Instant lastCycleAt;
     /** 위 네 단계(만료·못 만듦·지시·알림)를 마지막으로 돈 시각 — 스탑 주기 사이에는 {@code interval-ms}가 지났을 때만. */
     private Instant lastFullAt;
-    /** '현금이 음수라 지시 없음' 글을 보낸 마지막 세션(메모리 — 재기동하면 그 세션에 한 번 더 갈 수 있음, 표에 둘 칸이 없음). */
+    /** '현금이 음수라 지시 없음' 글을 보낸 마지막 세션(메모리 — 재기동하면 그 세션에 한 번 더 갈 수 있음, 표에 둘 칸이 없음). 손절 지시 글에 실어 보낸 안내는 그 지시 행의 알림 시각이 기록입니다. */
     private LocalDate cashNoticeSession;
 
     @Autowired
@@ -641,7 +656,7 @@ class ManualAccountJob {
         Waiting w = waiting;
         String reason = w != null && last.date().equals(w.session()) ? w.reason() : WAIT_UNKNOWN;
         ObjectNode detail = mapper.createObjectNode();
-        detail.put("reason", reason);
+        detail.put(DETAIL_REASON, reason);
         detail.putArray("notes").add(last.date() + " 시가 전에 지시를 만들지 못했습니다 — " + reasonLabel(reason));
         if (store.insertSession(CODE, last.date(), ManualAccountStore.SESSION_UNAVAILABLE, null, detail)) {
             log.warn("ISA 계좌 지시 못 만듦 — 세션 {} · 사유 {}", last.date(), reason);
@@ -656,8 +671,8 @@ class ManualAccountJob {
             return;
         }
         LocalDate session = next.date();
-        if (store.session(CODE, session).isPresent()) {
-            waiting = null;
+        if (store.session(CODE, session).filter(row -> !stopOnly(row)).isPresent()) {
+            waiting = null;   // 손절만 든 세션(현금 음수 — QA-381)은 끝난 세션이 아님: 아래 조건을 다시 보고 현금이 0 이상이면 나머지 지시를 채움
             return;
         }
         LocalDate decisionDate = ManualAccountCalendar.previousTradingDay(paper, session);
@@ -709,19 +724,34 @@ class ManualAccountJob {
         Set<String> cashLike = new TreeSet<>(paper.cashLikeTickers());
         List<Long> closingStops = closingStopsBefore(session, now);
         String outcome = store.lockAccount(CODE, acc -> {
-            if (acc == null || !acc.active() || store.session(CODE, session).isPresent()) {
+            if (acc == null || !acc.active()) {
+                return "skip";
+            }
+            SessionRow row = store.session(CODE, session).orElse(null);
+            if (row != null && !stopOnly(row)) {
                 return "skip";
             }
             Balance balance = store.balance(CODE).orElse(null);
             if (balance == null) {
                 return "skip";
             }
-            if (balance.cash().signum() < 0) {
-                // QA-381 — 평가액 = 현금 + 보유라 음수만큼 목표가 줄어 책 종목까지 매도 지시가 나오고, 0 이하이면 전 종목 전량 매도가 됨. 만들지 않고 사유를 남김.
-                return WAIT_CASH;
-            }
             Map<String, BigDecimal> held = new TreeMap<>();
             store.positions(CODE).forEach(p -> held.put(p.symbol(), p.quantity()));
+            if (balance.cash().signum() < 0) {
+                // QA-381 — 평가액 = 현금 + 보유라 음수만큼 목표가 줄어 책 종목까지 매도 지시가 나오고, 0 이하이면 전 종목 전량 매도가 됨. 비중 계산의 지시는 만들지 않고 사유를 남김.
+                if (row != null) {
+                    return WAIT_CASH;   // 손절 지시는 이미 만든 세션 — 나머지는 잔고를 고칠 때까지 기다림
+                }
+                // 손절 매도만은 만듦(QA-381 후속) — 보유를 파는 것이라 현금과 무관. 대기 STOP 종목은 이 갈래에서만 읽음(현금이 0 이상인 평소 세션은 예전 계산 그대로).
+                List<Draft> stopSells = ManualAccountPlanner.stopSells(held, paper.pendingStopSymbols(SOURCE_BOOK, session), targets.weightPct(),
+                        targets.price());
+                if (stopSells.isEmpty()) {
+                    return WAIT_CASH;
+                }
+                closeStops(closingStops);   // 평소 지시와 같이(QA-382) — 이 손절 지시도 지금 보유로 셌으므로 같은 보유의 앞 세션 종가 스탑 지시를 함께 열어 두지 않음
+                write(session, decision, new Result(stopSells, List.of(), null, null), syncAt, targets.stopOrderIds(), Fill.STOP_ONLY);
+                return STOP_ONLY;
+            }
             Set<String> outside = new TreeSet<>(held.keySet());
             outside.removeAll(targets.price().keySet());
             Map<String, BigDecimal> last = outside.isEmpty() ? Map.of() : paper.lastPrices(outside);
@@ -732,28 +762,66 @@ class ManualAccountJob {
                 return WAIT_PRICE;
             }
             // 앞 세션의 미확인 종가 스탑 지시는 여기까지(QA-382) — 이 지시는 지금 잔고(그 매도를 반영하지 않은 보유)로 계산했으므로, 같은 보유를 두 지시로 열어 두지 않습니다.
-            for (Long id : closingStops) {
-                store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
-                        Map.of("skippedBy", "AUTO", "autoNote", AUTO_EXPIRED));
+            closeStops(closingStops);
+            if (row != null) {
+                // 손절만 든 세션에 나머지를 채움 — 이미 있는 종목(손절 지시 — 미확인·확인·건너뜀 모두)은 유일 제약이 막아 다시 지시하지 않음
+                write(session, decision, result.get(), syncAt, targets.stopOrderIds(), Fill.REST);
+                return FILLED;
             }
-            write(session, decision, result.get(), syncAt, targets.stopOrderIds());
+            write(session, decision, result.get(), syncAt, targets.stopOrderIds(), Fill.ALL);
             return result.get().drafts().isEmpty() ? ManualAccountStore.SESSION_NONE : ManualAccountStore.SESSION_PLANNED;
         });
+        if (STOP_ONLY.equals(outcome)) {
+            log.info("ISA 계좌 지시 — 세션 {} · 손절 매도만(사유 {})", session, WAIT_CASH);
+            waitFor(session, WAIT_CASH, now);
+            return;
+        }
         if (WAIT_PRICE.equals(outcome) || WAIT_CASH.equals(outcome)) {
             waitFor(session, outcome, now);
             return;
         }
         waiting = null;
-        if (!"skip".equals(outcome)) {
+        if (FILLED.equals(outcome)) {
+            log.info("ISA 계좌 지시 — 세션 {} · 손절 매도만 든 세션에 나머지 지시를 채움", session);
+        } else if (!"skip".equals(outcome)) {
             log.info("ISA 계좌 지시 — 세션 {} · {}", session, outcome);
+        }
+    }
+
+    /** {@link #plan}의 결과 표시(로그·대기 사유 가르기) — 손절 매도만 만듦, 손절만 든 세션에 나머지를 채움. */
+    private static final String STOP_ONLY = "stop-only";
+    private static final String FILLED = "filled";
+
+    /** 세션 행을 쓰는 방식 — 평소(새 행), 손절 매도만(새 행 + 사유 {@value #WAIT_CASH}), 손절만 든 세션에 나머지를 채움(있는 행을 고침). */
+    private enum Fill { ALL, STOP_ONLY, REST }
+
+    /**
+     * 손절 매도 지시만 만든 세션인가(QA-381 후속) — PLANNED인데 계산 기록의 사유가 {@value #WAIT_CASH}. 나머지 지시를 채우면 사유가 없어집니다
+     * (못 만듦 세션의 같은 사유는 상태가 UNAVAILABLE이라 해당하지 않음).
+     */
+    static boolean stopOnly(SessionRow row) {
+        return row != null && ManualAccountStore.SESSION_PLANNED.equals(row.state()) && row.detail() != null
+                && WAIT_CASH.equals(row.detail().path(DETAIL_REASON).asString(""));
+    }
+
+    /** 잠금 안 — 다음 세션 지시를 만들면서 앞 세션의 미확인 종가 스탑 지시를 닫습니다(QA-382). */
+    private void closeStops(List<Long> ids) {
+        for (Long id : ids) {
+            store.updateStopInstructionStatus(id, ManualAccountStore.STATUS_SKIPPED, ManualAccountStore.STATUS_PLANNED,
+                    Map.of("skippedBy", "AUTO", "autoNote", AUTO_EXPIRED));
         }
     }
 
     /**
      * 잠금 안 — 세션 행과 지시 행을 씁니다. {@code syncAt}이 있으면 시각 맞추기 지시(세션 기록·지시 근거에 {@value #DETAIL_TARGET_AT}, 목표에 반영한 STOP 주문 번호 {@value #DETAIL_COVERED_STOPS}).
+     * {@code fill}이 손절 매도만이면 세션 기록에 사유 {@value #WAIT_CASH}와 안내를 남기고 평가액·현금은 적지 않습니다(세지 않음). 나머지를 채우는 것이면 있는 세션 행의
+     * 기록을 고치고(상태 PLANNED — 손절 지시 행이 있음) 지시는 아직 없는 종목만 들어갑니다({@link ManualAccountStore#insertInstruction}의 유일 제약).
      */
-    private void write(LocalDate session, DecisionState decision, Result result, Instant syncAt, List<Long> coveredStops) {
+    private void write(LocalDate session, DecisionState decision, Result result, Instant syncAt, List<Long> coveredStops, Fill fill) {
         ObjectNode detail = mapper.createObjectNode();
+        if (fill == Fill.STOP_ONLY) {
+            detail.put(DETAIL_REASON, WAIT_CASH);
+        }
         if (syncAt != null) {
             detail.put(DETAIL_TARGET_AT, syncAt.toString());
             ArrayNode covered = detail.putArray(DETAIL_COVERED_STOPS);
@@ -764,8 +832,10 @@ class ManualAccountJob {
             detail.put("decisionId", decision.decisionId());
         }
         detail.put("decisionStatus", decision.status());
-        detail.put("equity", result.equity());
-        detail.put("cash", result.cash());
+        if (result.equity() != null) {
+            detail.put("equity", result.equity());
+            detail.put("cash", result.cash());
+        }
         ArrayNode skipped = detail.putArray("skipped");
         Map<String, Integer> reasons = new TreeMap<>();
         for (Skip s : result.skipped()) {
@@ -775,10 +845,21 @@ class ManualAccountJob {
             reasons.merge(s.reason(), 1, Integer::sum);
         }
         ArrayNode notes = detail.putArray("notes");
+        if (fill == Fill.STOP_ONLY) {
+            notes.add(NOTE_STOP_ONLY);
+        } else if (fill == Fill.REST) {
+            notes.add(NOTE_FILLED);
+        }
         reasons.forEach((reason, count) -> notes.add(skipNote(reason, count)));
-        String state = result.drafts().isEmpty() ? ManualAccountStore.SESSION_NONE : ManualAccountStore.SESSION_PLANNED;
-        if (!store.insertSession(CODE, session, state, decision.decisionId(), detail)) {
-            return;
+        if (fill == Fill.REST) {
+            if (!store.updateSession(CODE, session, ManualAccountStore.SESSION_PLANNED, decision.decisionId(), detail)) {
+                return;
+            }
+        } else {
+            String state = result.drafts().isEmpty() ? ManualAccountStore.SESSION_NONE : ManualAccountStore.SESSION_PLANNED;
+            if (!store.insertSession(CODE, session, state, decision.decisionId(), detail)) {
+                return;
+            }
         }
         for (Draft d : result.drafts()) {
             Map<String, Object> reason = new LinkedHashMap<>();
@@ -787,7 +868,11 @@ class ManualAccountJob {
             reason.put("targetWeightPct", d.weightPct());
             reason.put("targetQuantity", d.targetQuantity());
             reason.put("held", d.held());
-            reason.put("equity", result.equity());
+            if (fill == Fill.STOP_ONLY) {
+                reason.put("trigger", "TRAILING_STOP");   // 스탑 지시의 근거와 같은 글자 — 비중 계산이 아니라 규칙 계좌의 손절을 따라 파는 지시
+            } else {
+                reason.put("equity", result.equity());
+            }
             if (syncAt != null) {
                 reason.put(DETAIL_TARGET_AT, syncAt.toString());
             }
@@ -811,7 +896,10 @@ class ManualAccountJob {
     }
 
     // ------------------------------------------------------------------ 알림
-    /** 개장 전 08:00 지시 알림(클래스 설명 4) — PLANNED 지시를 세션마다 한 통. 마감 뒤에는 보내지 않습니다. */
+    /**
+     * 개장 전 08:00 지시 알림(클래스 설명 4) — PLANNED 지시를 세션마다 한 통. 마감 뒤에는 보내지 않습니다. 손절만 든 세션({@link #stopOnly})의 글은 제목이 '손절 매도 지시'이고
+     * 현금 안내를 함께 싣습니다(보낼 때의 세션 행으로 가름 — 나머지를 채운 뒤에 보내는 글은 평소 지시 글).
+     */
     void notifyPending(Instant now) {
         if (!telegram.configured()) {
             return;
@@ -841,6 +929,9 @@ class ManualAccountJob {
      * 현금이 음수라 다음 세션 지시를 만들지 않았을 때(이번 주기의 {@link #plan} — 사유 {@value #WAIT_CASH}) 그 세션 08:00부터 개장 전까지 '매매 지시 없음' 글을 세션마다 한 통
      * (QA-381). 알리지 않으면 '오늘은 매매할 것이 없음'(NONE — 알림 없음)과 구분되지 않아 틀린 잔고가 조용히 남습니다. 음수가 며칠 이어지면 거래일마다 한 통입니다.
      * 텔레그램이 설정되지 않았거나 실패하면 다음 주기에 다시. 글에 금액·평가액·종목이 없습니다.
+     *
+     * <p>손절만 든 세션({@link #stopOnly})은 손절 지시 글이 이 안내를 함께 실으므로({@link #notifyPending}) 보내지 않습니다 — 그 세션의 지시 가운데 아침 알림을 보냈거나 보낼
+     * (미확인) 것이 있으면. 손절 지시가 알림 전에 모두 닫혀(건너뜀·확인) 실어 보낼 글이 없을 때만 '나머지 매매 지시 없음' 글을 한 통 보냅니다.
      */
     void notifyCashNegative(Instant now) {
         Waiting w = waiting;
@@ -850,9 +941,13 @@ class ManualAccountJob {
         if (now.isBefore(w.session().atTime(MORNING).atZone(Kst.ZONE).toInstant())) {
             return;
         }
-        if (sendText(ManualAccountNotices.cashNegative(w.session()))) {
+        boolean stopOnly = store.session(CODE, w.session()).filter(ManualAccountJob::stopOnly).isPresent();
+        if (stopOnly && store.instructions(CODE, w.session()).stream().anyMatch(i -> i.planned() || i.notifiedMorningAt() != null)) {
+            return;
+        }
+        if (sendText(ManualAccountNotices.cashNegative(w.session(), stopOnly))) {
             cashNoticeSession = w.session();
-            log.info("ISA 계좌 지시 없음 알림 — 세션 {} · 사유 {}", w.session(), WAIT_CASH);
+            log.info("ISA 계좌 지시 없음 알림 — 세션 {} · 사유 {}{}", w.session(), WAIT_CASH, stopOnly ? "(손절 매도 지시만 만든 세션)" : "");
         }
     }
 
@@ -861,7 +956,9 @@ class ManualAccountJob {
         items.forEach(i -> symbols.add(i.symbol()));
         Map<String, String> names = new HashMap<>(paper.names(symbols));
         Instant target = targetAt(items);
-        return sendText(ManualAccountNotices.text(session, ManualAccountNotices.wallClock(open), ManualAccountNotices.wallClock(target), items, names));
+        boolean stopOnly = store.session(CODE, session).filter(ManualAccountJob::stopOnly).isPresent();
+        return sendText(ManualAccountNotices.text(session, ManualAccountNotices.wallClock(open), ManualAccountNotices.wallClock(target), items, names,
+                stopOnly));
     }
 
     private boolean sendText(String text) {

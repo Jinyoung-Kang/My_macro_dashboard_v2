@@ -136,14 +136,49 @@ class ManualAccountNoticesTest {
         assertThat(reminder(MONDAY, false, List.of(new ManualAccountNotices.ReminderLine("BUY", "XX", 1)), Map.of())).isNull();
     }
 
+    // QA-381 후속(사용자 결정 2026-11-12): 손절 매도 지시는 현금이 음수여도 만든다 — 예전 셋째 줄 '전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다'는
+    // 사실이 아니게 되어 기대 글을 바꿨다.
     @Test
-    @DisplayName("QA-381 현금이 음수라 지시를 만들지 않은 세션의 글 — 제목 '매매 지시 없음', 잔고 확인·개장 전에 고치면 다시 알림·스탑은 그대로. 금액·종목·숫자 글자 없음")
+    @DisplayName("QA-381 현금이 음수라 지시를 만들지 않은 세션의 글 — 제목 '매매 지시 없음', 잔고 확인·개장 전에 고치면 다시 알림·손절 매도와 장중 스탑은 그대로. 금액·종목·숫자 글자 없음")
     void cashNegativeTextHasNoAmounts() {
-        String text = plain(ManualAccountNotices.cashNegative(MONDAY));
+        String text = plain(ManualAccountNotices.cashNegative(MONDAY, false));
         assertThat(text).isEqualTo("[ISA 계좌] 11/09(월) 매매 지시 없음\n\n"
                 + "ISA 잔고의 현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다.\n"
                 + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 지시를 만들어 다시 알립니다.\n"
-                + "전날 종가 기준 손절의 시가 매도도 이 지시에 들어 있어 함께 멈춥니다. 장중 스탑 매도 지시(장중에 감지되는 것)만 그대로 알립니다.");
+                + "규칙 계좌의 손절(트레일링 스탑) 매도는 현금이 음수여도 지시합니다 — 지금은 이 세션에 지시할 손절 매도가 없습니다. 장중 스탑 매도 지시도 감지되면 그대로 알립니다.");
+        assertThat(text).doesNotContain("함께 멈춥니다");
         assertThat(text.substring(text.indexOf('\n'))).doesNotContain("원", "%", "주\n", "•").doesNotContainPattern("[0-9]{3,}");   // 본문의 숫자는 '10분쯤'뿐
+
+        String rest = plain(ManualAccountNotices.cashNegative(MONDAY, true));
+        assertThat(rest).isEqualTo("[ISA 계좌] 11/09(월) 나머지 매매 지시 없음\n\n"
+                + "ISA 잔고의 현금이 음수라 이 세션은 손절 매도 지시만 만들고 나머지 매매 지시는 만들지 않았습니다.\n"
+                + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 알립니다.\n"
+                + "장중 스탑 매도 지시는 감지되면 그대로 알립니다.");
+        assertThat(rest.substring(rest.indexOf('\n'))).doesNotContain("원", "%", "주\n", "•").doesNotContainPattern("[0-9]{3,}");
+    }
+
+    @Test
+    @DisplayName("QA-381 손절 매도 지시만 만든 세션의 지시 글 — 제목 '시가 손절 매도 지시'·'09:10 손절 매도 지시', 줄과 매매 안내는 평소 글 그대로, 사이에 현금 안내. 금액·평가액·기준가 글자 없음")
+    void stopOnlyTextCarriesTheCashNote() {
+        List<Instruction> items = List.of(instruction(1, "307950", "SELL", 3, "123457", "0"));
+        Map<String, String> names = Map.of("307950", "합성오토");
+        String note = "규칙 계좌가 트레일링 스탑(손절)으로 파는 종목입니다 — 손절 매도는 현금이 음수여도 지시합니다.\n"
+                + "ISA 잔고의 현금이 음수라 나머지 매매 지시는 만들지 않았습니다.\n"
+                + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 다시 알립니다.\n\n";
+
+        String open = plain(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), null, items, names, true));
+        assertThat(open).isEqualTo("[ISA 계좌] 11/09(월) 시가 손절 매도 지시\n\n"
+                + "• 매도 307950 합성오토 3주\n\n"
+                + note
+                + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n" + CONFIRM);
+        String timed = plain(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), LocalTime.of(9, 10), items, names, true));
+        assertThat(timed).startsWith("[ISA 계좌] 11/09(월) 09:10 손절 매도 지시\n\n• 매도 307950 합성오토 3주\n\n" + note + "09:10 이후 시장가로 내면").endsWith(CONFIRM);
+        assertThat(open + timed).doesNotContain("원", "123457", "123,457", "98765432", "98,765,432", "%");
+
+        // 평소 글은 그대로 — 여섯째 인자가 거짓이면 다섯 인자 글과 한 글자도 다르지 않음
+        assertThat(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), null, items, names, false))
+                .isEqualTo(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), null, items, names)).doesNotContain("손절", "음수");
+        assertThat(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), LocalTime.of(9, 10), items, names, false))
+                .isEqualTo(ManualAccountNotices.text(MONDAY, LocalTime.of(9, 0), LocalTime.of(9, 10), items, names));
     }
 }
