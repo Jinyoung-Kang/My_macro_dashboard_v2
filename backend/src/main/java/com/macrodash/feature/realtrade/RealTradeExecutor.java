@@ -36,6 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 /**
  * 실제 주문 한 건의 일(ADR 0028 결정 5 — 명세 docs/specs/2026-11-06-real-trade-mirror.md §1 잠금·§4 멱등·결과·장애 복구) — SENDING 행 쓰기, 전송, 결과 기록,
@@ -184,6 +185,15 @@ class RealTradeExecutor {
      * 결과를 씁니다. 장중 따라 하기는 모의 장부 선점 안에서 행을 씁니다(장중 교체가 먼저 취소했으면 행 없음).
      */
     Sent send(Send s, Config planned) {
+        return send(s, planned, UnaryOperator.identity());
+    }
+
+    /**
+     * {@link #send(Send, Config)}와 같되, 수집기가 보내지 않은 결과(NOT_SENT)의 사유 코드를 {@code notSentCode}로 바꿔 적습니다 — 부르는 쪽이 그 주기의
+     * 사정을 아는 사유를 따로 적게 하려는 것입니다(QA-413 후속: 형식 밖 종목의 앱 매수가 걸린 주기의 {@code count-unavailable}). 돌려주는 코드도 바꾼
+     * 값입니다. 접수·거절·결과 모름의 코드와 그 밖의 동작은 그대로입니다.
+     */
+    Sent send(Send s, Config planned, UnaryOperator<String> notSentCode) {
         Objects.requireNonNull(planned, "planned");
         if (closing) {
             return new Sent(Result.NOT_INSERTED, null, "closing");
@@ -208,7 +218,7 @@ class RealTradeExecutor {
         }
         store.recordSend(id, clock.instant());
         OrderResult result = client.placeOrder(body);
-        return firstResult(id, result);
+        return firstResult(id, result, notSentCode);
     }
 
     /** SENDING을 쓸 수 있는가(명세 §1 잠금) — 상태 LIVE, 버전·책·세대가 계획 때와 같음, 매수면 매수 멈춤이 아님, 끄는 중이 아님. */
@@ -219,8 +229,8 @@ class RealTradeExecutor {
                 && !(RealTradePlanner.BUY.equals(side) && current.buysPaused());
     }
 
-    private Sent firstResult(long id, OrderResult result) {
-        String code = result.code();
+    private Sent firstResult(long id, OrderResult result, UnaryOperator<String> notSentCode) {
+        String code = result.outcome() == Outcome.NOT_SENT ? notSentCode.apply(result.code()) : result.code();
         switch (result.outcome()) {
             case ACCEPTED -> {
                 OutcomeWrite write = store.recordOutcome(id, RealTradeStore.OUTCOME_ACCEPTED, code, result.orderId());

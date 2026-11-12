@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -3417,7 +3416,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-413 후속: 수집기가 count-unavailable로 답하면 스탑 매도가 두 주기에 시도 1·2를 모두 쓰고 그날 닫혀, 앱 주문이 끝난 뒤에도 다시 나가지 않음")
     @DisplayName("QA-413 후속: 형식 밖 종목의 앱 매수가 걸린 주기에 수집기가 count-unavailable로 답하면 — 수집기도 셀 수 없다는 뜻이라 그 주문이 걸려 있는 동안은 "
             + "보내지 않는 예전 동작으로 물러나고(행을 더 쓰지 않음), 그 앱 주문이 끝나면 스탑 매도가 창 안에서 다시 나간다")
     void collectorCannotCountFallsBackAndTheStopSellsLater() {
@@ -3449,7 +3447,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-413 후속: 스탑 둘이면 세 번째 주기에 같은 오류 3회(repeated-error)로 이상 멈춤")
     @DisplayName("QA-413 후속: 매도 여러 건이 걸린 주기에 수집기가 count-unavailable로 답해도 — 첫 답에서 물러나 한 건만 적고, 같은 오류 반복으로 이상 멈춤이 되지 않는다. "
             + "앱 주문이 끝나면 모두 다시 나간다")
     void collectorCannotCountDoesNotHaltOnSeveralSells() {
@@ -3478,7 +3475,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-413 후속: 수집기가 count-unavailable로 답한 뒤에도 주기마다 다시 보내 시도를 다 씀")
     @DisplayName("QA-413 후속: 물러남은 그날 행에서 되살린다 — 다시 띄운 작업은 형식 밖 주문이 걸려 있는 동안 한 번 더 보내지 않고(남은 시도를 쓰지 않게), "
             + "같은 날 다른 형식 밖 주문이 다시 걸려도 시도 없이 물러난다")
     void collectorCannotCountSurvivesRestart() {

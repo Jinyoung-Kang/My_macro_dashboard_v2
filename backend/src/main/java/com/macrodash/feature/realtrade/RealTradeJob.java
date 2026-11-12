@@ -184,6 +184,17 @@ class RealTradeJob {
     /** 모의 주문 상태 — 취소됨(모의 장부의 글자와 같음). */
     static final String PAPER_CANCELLED = "CANCELLED";
 
+    /** 수집기 자체 검사가 오늘 주문 사용량을 세지 못해 보내지 않음(수집기 {@code toss_trade._pre_send_code}). */
+    static final String CODE_COUNT_UNAVAILABLE = "count-unavailable";
+    /**
+     * 형식 밖 종목 코드의 앱 미체결 매수가 걸린 주기에 수집기가 {@value #CODE_COUNT_UNAVAILABLE}로 답함(QA-413 후속) — 수집기는 주문마다 그 종목의
+     * 상한가를 토스에 직접 물어 세는데 받지 못했다는 뜻이라, 그런 주문이 걸려 있는 동안은 어떤 주문을 보내도 같은 답입니다. 이 코드의 행이 오늘 있으면
+     * 형식 밖 주문이 걸린 주기는 예전처럼 보내지 않습니다({@link #collectorCannotCount}). 행 하나가 시도 번호 하나를 쓰므로 그 답을 받은 주기에는 나머지를
+     * 보내지 않고, 그 주문이 끝난 뒤 시도 2로 다시 보낼 수 있게 {@link #RETRYABLE}에 넣으며, 같은 오류 반복({@link #REPEAT_EXEMPT})에는 세지 않습니다
+     * — 평소 주기의 {@value #CODE_COUNT_UNAVAILABLE}는 그대로입니다.
+     */
+    static final String CODE_COUNT_UNPRICED = "count-unavailable-unpriced";
+
     /**
      * '같은 오류 3회'에 세지 않는 사유(명세 §7.3 — 종목 단위 건너뜀·429, 수집기 한도 거절, 수집기 창 밖 안 보냄, 그리고 이 기능이 붙인 기록 코드). 한도
      * 거절(1건·하루 건수·하루 매수)은 계획이 미리 줄이지만(하루 한도 — {@link RealTradePlanner#dailyUsage}, 매도 가격 여유) 사전 조회와 전송 사이의 가격·주문
@@ -192,12 +203,12 @@ class RealTradeJob {
      */
     static final Set<String> REPEAT_EXEMPT = Set.of("rate-limited", "opposite-pending-order-exists", "over-order-limit",
             "over-daily-orders", "over-daily-buy", CODE_OUTSIDE_WINDOW, CODE_MARKET_CLOSED, CODE_STOCK_RESTRICTED,
-            CODE_ORDER_TYPE_NOT_ALLOWED,
+            CODE_ORDER_TYPE_NOT_ALLOWED, CODE_COUNT_UNPRICED,
             RealTradeExecutor.CODE_INTERRUPTED, RealTradeExecutor.CODE_RECONCILED, RealTradeExecutor.CODE_OPERATOR_RESOLVED);
     /** 새 키(시도 2)로 다시 보내도 되는 거절·안 보냄 사유(지나가는 장애) — 같은 결과가 나올 것이 뻔한 한도·창·형식 거절은 다시 보내지 않습니다. */
     static final Set<String> RETRYABLE = Set.of("rate-limited", "collector-unreachable", "token-failed", "timeout",
             "calendar-unavailable", "account-unavailable", "price-unavailable", "count-unavailable", "connect-timeout", "connect-failed",
-            CODE_MARKET_CLOSED, CODE_STOCK_RESTRICTED, CODE_ORDER_TYPE_NOT_ALLOWED);
+            CODE_MARKET_CLOSED, CODE_STOCK_RESTRICTED, CODE_ORDER_TYPE_NOT_ALLOWED, CODE_COUNT_UNPRICED);
     /** 다음 주기에 다시 볼 건너뜀(미룸·이 기능 주문 진행 중·잔량 모름). 하루 매수 금액은 시가 주문이 상한가보다 낮게 체결되면 다시 생깁니다. */
     static final Set<String> TRANSIENT_SKIPS = Set.of(RealTradePlanner.SKIP_DEFERRED_CASH, RealTradePlanner.SKIP_DAILY_CAP,
             RealTradePlanner.SKIP_OWN, RealTradePlanner.SKIP_PENDING_UNKNOWN);
@@ -497,6 +508,8 @@ class RealTradeJob {
         Config cfg;
         final Limits limits;
         final Set<String> cashLike;
+        /** 가장 최근 사전 조회 때 걸려 있던 형식 밖 종목의 진행 중 매수({@link DailyRoom#unpriced} — 평소 빈 집합). 그 뒤의 전송이 봅니다({@link #send}). */
+        Set<String> unpriced = Set.of();
 
         Cycle(Instant now, DayState day, Config cfg, Limits limits, Collection<String> cashLike) {
             this.now = now;
@@ -582,6 +595,11 @@ class RealTradeJob {
         Instant lastFollowupTry;
         Instant lastWarmup;
         boolean followupDone;
+        /**
+         * 오늘 수집기가 형식 밖 종목의 앱 매수 때문에 셀 수 없다고 답했는가(QA-413 후속 — {@link #CODE_COUNT_UNPRICED} 행이 오늘 있음). null이면 아직
+         * 그날 행에서 읽지 않음(다시 띄운 뒤에도 같은 값).
+         */
+        Boolean collectorCannotCount;
         /** 낡았다고 판정한 그날 묶음 번호(한 번 낡으면 그날 계속 낡음). */
         Long staleBatch;
         /** 매매 제한 대기(시각 맞추기만, 메모리) — 지금까지 본 서킷브레이커 단계, 시장 전체를 보내지 않는 끝, VI를 처음 본 시각, 거절로 쉬는 종목의 끝, 알린 사유. */
@@ -1397,13 +1415,13 @@ class RealTradeJob {
                 c.day.skip(window, RealTradePlanner.SKIP_PENDING_STOP, o.symbol());   // 보내기 직전에 다시 읽은 대기 STOP 종목(ADR 0033 결정 4)
                 continue;
             }
-            Sent sent = executor.send(new Send(c.today, purpose, batch.id(), null, null, o.symbol(), o.side(), quantity, timeInForce,
-                    o.refPrice(), attempt), c.cfg);
+            Sent sent = send(c, new Send(c.today, purpose, batch.id(), null, null, o.symbol(), o.side(), quantity, timeInForce,
+                    o.refPrice(), attempt));
             if (sent.result() != Result.NOT_INSERTED) {
                 written++;
             }
-            if (!live(c)) {
-                break;
+            if (!live(c) || uncountable(sent)) {
+                break;   // 멈춤·끄기, 또는 수집기가 셀 수 없다고 답함(QA-413 후속 — 나머지도 같은 답이라 시도를 쓰지 않음)
             }
             if (sent.result() == Result.REJECTED && timedSync(c, purpose) && onTimedRefused(c, o.symbol(), sent.code())) {
                 break;
@@ -1602,8 +1620,8 @@ class RealTradeJob {
                 }
                 continue;
             }
-            Sent sent = executor.send(new Send(c.today, RealTradeStore.PURPOSE_MIRROR, null, o.orderId(), root, planned.symbol(),
-                    planned.side(), quantity, "DAY", planned.refPrice(), x.attempt()), c.cfg);
+            Sent sent = send(c, new Send(c.today, RealTradeStore.PURPOSE_MIRROR, null, o.orderId(), root, planned.symbol(),
+                    planned.side(), quantity, "DAY", planned.refPrice(), x.attempt()));
             if (stop) {
                 if (sent.result() == Result.ACCEPTED || sent.result() == Result.UNKNOWN) {
                     tally.sent++;
@@ -1632,6 +1650,9 @@ class RealTradeJob {
                     ordersLeft--;
                 }
                 default -> blocked.add(planned.symbol());   // 안 보냄 — 시도 2 조건이면 다음 주기
+            }
+            if (uncountable(sent)) {
+                return;   // 수집기가 셀 수 없다고 답함(QA-413 후속) — 나머지도 같은 답이라 보내지 않음(시도를 쓰지 않음)
             }
         }
     }
@@ -1766,6 +1787,13 @@ class RealTradeJob {
         if (daily.isEmpty()) {
             return null;
         }
+        c.unpriced = daily.get().unpriced();
+        if (!c.unpriced.isEmpty() && collectorCannotCount(c)) {
+            // 수집기도 그 종목을 셀 수 없음(오늘 그렇게 답함) — 그런 주문이 걸려 있는 동안은 예전처럼 이 주기를 보내지 않음(행을 쓰지 않아 시도를 아낌)
+            log.warn("형식 밖 종목 코드의 진행 중 매수 {}종목 — 수집기도 오늘 주문을 셀 수 없다고 답해 이번 주기는 보내지 않음(그 주문이 끝나면 이어 감)",
+                    c.unpriced.size());
+            return null;
+        }
         BigDecimal cap = BigDecimal.valueOf(c.limits.maxEquityKrw());
         Optional<BigDecimal> total = RealTradePlanner.equity(account, null);
         Optional<BigDecimal> equity = RealTradePlanner.equity(account, cap);
@@ -1796,6 +1824,41 @@ class RealTradeJob {
         unfinished.forEach(row -> blocked.add(row.symbol()));
         notePreflight(reply.value(), account, equity.get(), lossTotal, c.now);
         return new Fresh(account, equity.get(), blocked, reserved, lossTotal, lossTotal.min(cap), daily.get());
+    }
+
+    /**
+     * 오늘 수집기가 형식 밖 종목의 앱 매수 때문에 셀 수 없다고 답했는가(QA-413 후속) — 그날 행에 {@link #CODE_COUNT_UNPRICED}가 있는지 한 번 읽어 둡니다
+     * (다시 띄운 뒤에도 같은 답 — 다시 보내 남은 시도를 쓰지 않게). 그날 안에서는 내려가지 않습니다: 같은 날 다른 형식 밖 주문이 다시 걸려도 시도 없이
+     * 물러납니다(다시 시도하면 그 답을 받는 주문의 시도 번호를 하나 더 씀 — 뿌리당 2회뿐).
+     */
+    private boolean collectorCannotCount(Cycle c) {
+        if (c.day.collectorCannotCount == null) {
+            c.day.collectorCannotCount = store.ordersOn(MARKET, c.today).stream()
+                    .anyMatch(row -> CODE_COUNT_UNPRICED.equals(row.outcomeCode()));
+        }
+        return c.day.collectorCannotCount;
+    }
+
+    /**
+     * 주문 하나를 실행기로 보냅니다. 형식 밖 종목의 앱 매수가 걸린 주기({@link Cycle#unpriced})에 수집기가 {@value #CODE_COUNT_UNAVAILABLE}로 답하면
+     * 그 행의 사유를 {@link #CODE_COUNT_UNPRICED}로 적고 그날 표시를 켭니다 — 부르는 쪽은 {@link #uncountable}이면 그 주기의 나머지를 보내지 않습니다
+     * (같은 답이 뻔한 주문들이 시도 번호를 쓰지 않게). 평소 주기(빈 집합)는 {@link RealTradeExecutor#send(Send, Config)} 그대로입니다.
+     */
+    private Sent send(Cycle c, Send s) {
+        if (c.unpriced.isEmpty()) {
+            return executor.send(s, c.cfg);
+        }
+        Sent sent = executor.send(s, c.cfg, code -> CODE_COUNT_UNAVAILABLE.equals(code) ? CODE_COUNT_UNPRICED : code);
+        if (uncountable(sent)) {
+            c.day.collectorCannotCount = true;
+            log.warn("형식 밖 종목 코드의 진행 중 매수가 걸린 주기에 수집기가 오늘 주문을 셀 수 없다고 답함 — 그 주문이 걸려 있는 동안은 보내지 않음");
+        }
+        return sent;
+    }
+
+    /** 수집기가 형식 밖 종목의 앱 매수 때문에 셀 수 없다고 답한 전송인가({@link #send}). */
+    private static boolean uncountable(Sent sent) {
+        return sent.result() == Result.NOT_SENT && CODE_COUNT_UNPRICED.equals(sent.code());
     }
 
     /**
