@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -289,7 +288,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-384: 세션 요약의 mode(요약 시점 값)를 마지막 격자를 판정한 때의 모드로 읽음 — 수정 커밋에서 해제")
         @DisplayName("QA-384 ON — 마지막 격자는 SHADOW로 판정했는데(판정 기록 SHADOW) 세션 요약은 요약 전에 바꾼 ON으로 남은 세션: 저장본이 ON이어도 "
                 + "덮지 않아 종가 스탑(요약의 mode는 요약 시점 값 — 판정 기록이 있으면 요약을 근거로 쓰지 않음)")
         void summaryModeDoesNotOverrideAShadowJudgedLastGrid() {

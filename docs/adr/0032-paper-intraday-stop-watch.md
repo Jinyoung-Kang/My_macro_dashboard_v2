@@ -17,10 +17,10 @@
   - 장부·대체 경로: `StopWatchLedgerTest`(장중 시장가·종가 STOP 체결과 재진입 금지, 한국 장중 STOP은 금융위 재판정 없음, 늦은 주문 가드 ⑤), `StopWatchFallbackTest`(미국 — 덮인 종목은 감시에 맡김·덮이지 않은
     종목은 시간별 스탑·OFF와 SHADOW는 옛 경로·대기 STOP을 겹쳐 내지 않음, 한국 — 덮이지 않은 종목은 다음 세션 첫 분·장 시간 변경일·SHADOW는 시가 스탑).
   - 마지막 격자 판정 기록(QA-384 — 아래 덧붙임): `StopWatchFallbackTest`(미국 `lastGridNeverJudgedKeepsTheCloseFallback`·`summaryShortOfTheLastGridKeepsTheCloseFallback`·
-    `shadowJudgedLastGridKeepsTheCloseFallback`·`judgedLastGridIsLeftToTheWatchAtTheClose`·`hourlyObservationBeforeTheGridEndDoesNotAskForTheRecord`·
+    `shadowJudgedLastGridKeepsTheCloseFallback`·`summaryModeDoesNotOverrideAShadowJudgedLastGrid`·`judgedLastGridIsLeftToTheWatchAtTheClose`·`hourlyObservationBeforeTheGridEndDoesNotAskForTheRecord`·
     `pendingWatchStopIsNotDoubledWhenTheLastGridWasNotJudged`, 한국 `lastGridNeverJudgedKeepsTheNightFallback`·`judgedLastGridIsLeftToTheWatchAtNight`·
     `lateProcessingAfterTheGridEndNeedsTheRecord`), `PaperStopWatchJobTest`(`judgedLastGridLeavesTheCloseToTheWatch`·`lastGridStopIsFilledOnceAtTheClose`·
-    `unjudgedLastGridKeepsTheCloseFallback`·`lastGridRecordOncePerSession`·`lastGridRecordModeAndSummaryEvidence`·`lastGridRecordIsRetried`·`earlyCloseLastGrid`·
+    `unjudgedLastGridKeepsTheCloseFallback`·`lastGridRecordOncePerSession`·`lastGridRecordModeAndSummaryEvidence`·`summaryModeIsNotTheJudgingMode`·`lastGridRecordIsRetried`·`earlyCloseLastGrid`·
     `koreaShiftedDayLastGrid`).
   - 새 매수 거절: `KrClaudeValidationTest.pendingWatchStopBlocksNewBuys`, `KrRuleBookServiceTest.pendingWatchStopKeepsTheCandidateOut`.
   - 스탑 설명 글(켰을 때만): `PacketBuilderTest.stopWatchOnPackets`, `KrPacketBuilderTest.stopWatchOnPacket`, `FrameworkServiceTest.krStopWatchOnRender`, `CheckpointPacketTest.stopWatchOnIntradayPacket`,
@@ -94,8 +94,9 @@
   - 고침: ① 감시 작업은 그 세션의 마지막 격자(격자 끝 — 그날 달력: 보통 날 15:55 ET·15:20 KST, 조기 폐장일 12:55 ET, 장 시간 변경일은 그날 마감 − 10분)를 판정한
     회차에, 판정과 같은 장부 잠금 안에서 작업 기록 `stopwatch.lastgrid`·`kr.stopwatch.lastgrid` 한 줄(상세 `{market, mode(판정 때), tradingDate, lastJudgedGrid,
     judgedAt, since, partial}`)을 남긴다 — `SHADOW`·`ON` 모두, 세션마다 한 줄(같은 줄이 있으면 다시 남기지 않음), 기록에 실패하면 다음 회차에 다시. ② 장부
-    (`PaperLedgerService.watchCovers`)는 판정 시각이 그 세션 격자 끝 이후이면 저장본의 덮음에 더해 그 세션의 이 기록(`mode ON`·`lastJudgedGrid` = 격자 끝, 시각으로 대조)이나
-    같은 사실을 적은 세션 요약(`stopwatch.summary`의 `lastJudgedGrid`·`mode`)을 요구한다(`PaperStopWatchJob.lastGridJudged` — 한 처리에 세션마다 한 번 읽음). 없으면 대체 경로가
+    (`PaperLedgerService.watchCovers`)는 판정 시각이 그 세션 격자 끝 이후이면 저장본의 덮음에 더해 그 세션의 이 기록(`mode ON`·`lastJudgedGrid` = 격자 끝, 시각으로 대조)을
+    요구한다(`PaperStopWatchJob.lastGridJudged` — 한 처리에 세션마다 한 번 읽음). 그 세션에 이 기록이 한 줄도 없을 때만 같은 사실을 적은 세션 요약(`stopwatch.summary`의
+    `lastJudgedGrid`·`mode`)을 근거로 읽는다. 없으면 대체 경로가
     맡고(미국 `HOURLY_FALLBACK` 종가 스탑, 한국 `NIGHT_FALLBACK`) 리스크 작업 기록의 메모에 까닭을 남긴다. 격자 끝 전의 판정(미국 시간별 — 그 시각 − 10분 뒤의 거래 표본)은 그대로다.
     스키마 변경 없음(`paper_job_runs.detail` JSON).
   - 평소 날은 그대로다: 마지막 격자를 판정하면 기록이 같은 잠금 안에서 먼저 생기므로 장부가 '판정했는데 기록은 아직'을 볼 틈이 없다. 운영 기록(2026-11-09~11-12의 세션 요약
@@ -103,8 +104,10 @@
   - 기록 시점을 판정 직후로 둔 까닭(요약과 밤 판정의 선후): 세션 요약은 판정 창 끝(마감 + 5분) 뒤 첫 회차에야 남고, 창 끝 뒤에 뜬 프로세스는 남기지 않는다. 평소 일정에서는
     요약이 격자 끝 뒤 판정보다 앞서지만(미국 16:05 ET 요약 → 16:15 ET 관측치, 한국 15:35 요약 → 20:30 뒤 밤 관측치), 요약만 근거로 삼으면 (가) 판정 뒤·요약 전에 재기동된
     날(미국 15:56~16:05 ET, 한국 15:21~15:35 KST)은 감시가 끝까지 봤는데도 덮지 않음이 되고 (나) 요약보다 먼저 도는 격자 끝 뒤 판정(미국 정시 밖 관측치 — 수집기 재기동·수동 수집,
-    한국 D 밤 관측치를 D+1 15:20~15:30에 처음 처리하는 QA-317 경로)이 평소에도 덮지 않음이 된다. 세션 요약은 이 기록이 없던 판의 프로세스가 판정한 세션(배포 당일 — 옛 프로세스가
-    요약을 남긴 뒤의 배포)과 기록을 끝내 남기지 못한 세션의 근거로 함께 읽는다.
+    한국 D 밤 관측치를 D+1 15:20~15:30에 처음 처리하는 QA-317 경로)이 평소에도 덮지 않음이 된다. 세션 요약은 이 기록이 없는 세션 — 이 기록이 없던 판의 프로세스가
+    판정한 세션(배포 당일 — 옛 프로세스가 요약을 남긴 뒤의 배포)과 기록을 끝내 남기지 못한 세션 — 의 근거로만 읽는다. 판정 기록이 있는 세션에서 요약을 함께 근거로 삼지 않는
+    까닭: 요약의 `mode`는 요약을 남길 때(판정 창 끝 뒤)의 설정 값이라, `SHADOW`로 마지막 격자를 판정하고 요약 전에 `ON`으로 바꾼 세션의 요약은 `ON`으로 남는다(판정 기록은
+    `SHADOW` — 그 격자는 주문 없이 판정됨, 독립 검토 F4).
   - 재기동 시각별: 마지막 격자 **전**에 내려갔다가 그 저장본이 아직 신선할 때(수집 뒤 7분 안, 판정 창 안 — 감시 작업의 첫 회차는 기동 195초 뒤) 돌아오면 새 프로세스가 가장 최근
     격자(= 마지막 격자)를 판정하고 기록을 남겨 덮음이다. 그보다 늦게 돌아오면 기록이 없어 대체 경로가 맡는다 — **이 수정으로 달라지는 날**. 판정 **직후**나 요약 **뒤**의 재기동은
     기록이 DB에 있어 전과 같이 덮음이다.

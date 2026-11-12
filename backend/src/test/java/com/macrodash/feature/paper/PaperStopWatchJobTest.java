@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -745,7 +744,6 @@ class PaperStopWatchJobTest {
     // QA-384 후속(독립 검토 F4): 세션 요약의 mode는 요약을 남길 때(판정 창 끝 뒤)의 설정 값이라, SHADOW로 마지막 격자를 판정한 뒤 요약 전에 ON으로 바꾸면
     // 요약이 mode ON·lastJudgedGrid = 마지막 격자로 남습니다. 그 요약을 '판정 때 ON'의 근거로 읽으면 판정 기록(mode SHADOW)과 어긋납니다.
     @Test
-    @Disabled("QA-384: 세션 요약의 mode(요약 시점 값)를 마지막 격자를 판정한 때의 모드로 읽음 — 수정 커밋에서 해제")
     @DisplayName("QA-384 SHADOW로 마지막 격자를 판정하고 요약 전에 ON으로 바꾼 세션 — 요약은 mode ON으로 남지만 판정 기록(SHADOW)이 있으므로 장부의 근거가 아님. "
             + "ON으로 판정한 기록이 있으면 요약이 무엇이든 근거")
     void summaryModeIsNotTheJudgingMode() {
