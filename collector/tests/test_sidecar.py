@@ -139,6 +139,26 @@ def test_전역_주소가_아닌_목적지는_막는다(address):
     assert guard.destination_allowed("https://cdn.example.org/app.js", resolve=lambda name: [address]) is False
 
 
+@pytest.mark.parametrize("address", [
+    "fec0::1", "feff::1",                                        # 폐기된 IPv6 site-local(fec0::/10) — is_global만 보면 전역으로 나옴(QA-414)
+    "0.1.2.3", "198.18.0.1", "198.19.255.254",                    # 이 망(0/8)·벤치마크 대역(CGNAT은 위 시험의 문서용 예시 하나만 — QA-340)
+    "192.0.2.1", "198.51.100.1", "203.0.113.1", "2001:db8::1",   # 문서용
+    "255.255.255.255", "192.0.0.1",                              # 한정 브로드캐스트·IETF 프로토콜 대역
+    "::10.0.0.5", "::127.0.0.1",                                 # IPv4 호환 주소로 감싼 사설·루프백
+    "64:ff9b::10.0.0.5", "64:ff9b::7f00:1", "64:ff9b:1::10.0.0.5",   # NAT64로 감싼 사설·루프백
+    "2002:0a00:0005::1", "2002:7f00:0001::1", "2002:a9fe:a9fe::1",   # 6to4로 감싼 사설·루프백·링크 로컬
+    "2001:0:4136:e378:8000:63bf:f5ff:fffa",                      # Teredo
+    "fc00::1", "fd00::1", "100::1",                              # ULA·버림 전용
+])
+def test_QA414_전역으로_보이기_쉬운_내부_대역도_막는다(address):
+    """파이썬의 주소 표가 이미 막는 대역과 따로 거르는 대역(site-local)을 함께 고정합니다 — 파이썬 판이 바뀌어 표가 달라지면 여기서 걸립니다."""
+    host = f"[{address}]" if ":" in address else address
+
+    assert guard.is_global_address(address) is False
+    assert guard.destination_allowed(f"http://{host}/x") is False
+    assert guard.checked_addresses("wrapped.example.org", resolve=lambda name: ["8.8.8.8", address]) == []
+
+
 def test_전역_주소로만_풀리는_이름은_지나간다():
     assert guard.destination_allowed("https://cdn.example.org/app.js", resolve=lambda name: ["8.8.8.8", "2001:4860:4860::8888"])
     assert guard.destination_allowed("https://8.8.8.8/x")

@@ -44,8 +44,8 @@ def is_global_address(address: str) -> bool:
     """
     전역(공인) 주소인가. 읽을 수 없는 글자는 False.
 
-    ``is_global`` 하나로는 모자랍니다 — 멀티캐스트(224.0.0.0/4)는 전역으로 분류됩니다. 사설·루프백·링크 로컬·멀티캐스트·예약·미지정을 따로
-    거르고, IPv4를 감싼 IPv6 주소(``::ffff:10.0.0.5``)는 안의 IPv4로 봅니다.
+    ``is_global`` 하나로는 모자랍니다 — 멀티캐스트(224.0.0.0/4)와 폐기된 IPv6 site-local(``fec0::/10``)은 전역으로 분류됩니다. 사설·루프백·
+    링크 로컬·site-local·멀티캐스트·예약·미지정을 따로 거르고, IPv4를 감싼 IPv6 주소(``::ffff:10.0.0.5``)는 안의 IPv4로 봅니다.
     """
     try:
         ip = ipaddress.ip_address(address.split("%", 1)[0])
@@ -54,6 +54,8 @@ def is_global_address(address: str) -> bool:
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+        return False
+    if getattr(ip, "is_site_local", False):         # IPv6에만 있는 속성 — fec0::/10
         return False
     return ip.is_global
 
