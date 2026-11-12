@@ -6,6 +6,8 @@ SEC 13F · 국내 수급을 **한 화면에서** 보는 개인용 대시보드�
 1억 원씩 — 출발일 `PAPER_KR_START_DATE`를 정하면 출발, 서버는 2026-10-30 출발).
 체결 시점은 설정으로 넓힐 수 있습니다([ADR 0027](docs/adr/0027-free-fill-timing.md)) — 네 Claude 계좌는 계좌별 스위치(`claude.freeTiming` 등, 기본 꺼짐)를 켜면
 다음 세션의 분 단위 지정 시각·종가 주문과 장중 판단(Claude가 시각을 고름)을 쓰고, 규칙 계좌는 `rules.timing`·`kr.rules.timing`으로 체결 시각을 정합니다(기본은 지금 그대로).
+판단 이어받기([ADR 0038](docs/adr/0038-decision-continuity.md), 스위치 `continuity`·`kr.continuity` — 기본 꺼짐)를 켜면 Claude 결정이 스스로 적은 진입 논거·무효화 조건·조건을
+다음 결정과 장중 판단이 코드가 매긴 충족 여부와 함께 돌려받고, 주간 복기는 두 Claude 계좌의 결정을 그 뒤 사실(지수·계좌 수익률·관심 종목 가격)로 판정합니다.
 [ADR 0031](docs/adr/0031-open-offset-window-intraday-budget.md)부터 장중 체결 창은 모든 계좌가 정규장 개장 10분 뒤 ~ 마감 전(미국 09:40~15:54 ET, 한국 09:10~15:19)이고, 켠 판 메뉴에는 시가가 없으며,
 장중 판단은 세션마다 계좌별 최대 3번(세션 중간 보장 1번·급변 사건이 앞당김 — 설정)입니다. 장중 스탑 감시([ADR 0032](docs/adr/0032-paper-intraday-stop-watch.md) — `stopWatch.mode`·`kr.stopWatch.mode`, 기본 꺼짐)를 켜면
 보유 종목을 정규장 5분마다 보고 트레일링 스탑선 아래가 두 번 이어지면 그 세션 안에 팝니다.

@@ -53,6 +53,10 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **체결 시점 자유화(ADR 0027·0031)의 스위치는 모두 기본 꺼짐** — 네 Claude 계좌의 `*.freeTiming`(분 단위 지정 시각 `AT_MINUTE` — 개장 10분 뒤부터, 미국 09:40~15:54 ET·한국 09:10~15:19 + 장중 판단)과 규칙 계좌의 `rules.timing`·`kr.rules.timing`,
   장중 판단 최소·사건·effort(`intradayMinPerSession`·`intradayEvents`·`intradayEffort`, 한국 `kr.` 키), 장중 스탑 감시(`stopWatch.mode`·`kr.stopWatch.mode` = OFF·SHADOW·ON, ADR 0032).
   끈 판의 프롬프트·스키마·패킷 고정본은 바이트까지 그대로여야 한다(고정본 시험). **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다**(상한 70·예약 30·`claude2.maxCallsPerCycle` 5 이상·`claude.checkpoint` 끔을 함께 — ADR 0031).
+- **판단 이어받기(ADR 0038)의 스위치 `continuity`·`kr.continuity`도 기본 꺼짐**(자유 시점 판을 켠 계좌에만 듦) — 켜면 결정 패킷에 보유 종목의 진입 논거·무효화 조건(`entry`)과
+  직전 결정이 남긴 조건(`10b_carried` — 코드가 지금 값으로 충족 여부를 매김), 응답에 바라는 노출·계획·조건 칸, 장중 판단 패킷에 그 세션 결정의 논거·조건이 실린다.
+  끈 판은 바이트까지 그대로여야 하고, **켜는 설정 저장은 시장별로 따로, 그때 사용자에게 다시 확인받는다.** 조건은 판단할 계기일 뿐 코드가 주문을 내지 않는다.
+  주간 복기는 입력 판 2(그 시장 Claude 계좌 전부·관망 결정의 그 뒤 사실·장중 판단·앞 복기 — 스위치 없음).
 - **실제 계좌(토스, ADR 0025·0028·0033) 자료는 모의 장부·패킷·프롬프트·로그·시험 자료·커밋·QA 기록·텔레그램에 넣지 않는다.** 조회는 서버(Vultr)에서만 켜고
   (`TOSS_ACCOUNT_ENABLED` — 로컬 compose는 `"false"` 고정), 주문은 ADR 0028의 길(수집기 `toss_trade.py` 전용 세션 — ADR 0033의 개장 10분 뒤 시각 맞추기·장중 스탑 매도도 이 길과 같은 한도, 세 스위치 `TOSS_TRADING_ENABLED`·`REAL_TRADE_ENABLED`(로컬·QA compose는 `"false"` 고정)·화면)로만 —
   그 밖의 쓰기 경로는 새 ADR과 사용자 승인 없이 만들지 않는다(공유 토스 세션 가드와 쓰기 금지 시험을 풀면 그것이 결정). 실제 매매 기록은 `real_trade_*` 표에만, 텔레그램은 상태·건수·사유 코드만. 예외: 연결되지 않은 ISA 계좌(ADR 0029·0033·0034 — 잔고·지시만, 주문 없음)의 매매 지시·장중 스탑 지시 알림은 종목 코드·이름·수량만 넣는다(금액·평가액 없음).
