@@ -71,7 +71,7 @@ function planRow(plan: PaperIntradayPlan, market: PaperMarketCode): IntradayPlan
   const watch = (plan.watch ?? []).filter((ticker) => typeof ticker === "string" && ticker.length > 0);
   if (watch.length > 0) parts.push(watch.join(", "));
   if (plan.manual) parts.push("수동");
-  const origin = intradayOriginLabel(plan.origin);
+  const origin = intradayOriginLabel(plan.origin, plan.question);
   if (origin) parts.push(origin);
   return {
     key: `${plan.slot ?? "?"}`,

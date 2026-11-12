@@ -390,7 +390,8 @@ const US_STOP =
 const US_INTRADAY =
   "장중 판단(세션당 최대 intradayMaxPerSession회, 개장 10분 뒤 ~ 마감 30분 전 — intradayMinPerSession이 1이면 세션 중간까지 예약이 없을 때 "
   + "한 번 보장, intradayEvents를 켜면 보유·지수 급변 때 가장 이른 예약을 당김)은 기준 시각이 남은 대기 주문을 그대로 두거나 장중 시장가·그날 "
-  + "남은 지정 시각·그날 종가 주문으로 바꿉니다.";
+  + "남은 지정 시각·그날 종가 주문으로 바꿉니다. intradayFixed(고정 일정 판, ADR 0039)를 켜면 예약을 받지 않고 코드가 개장 1시간 뒤·마감 "
+  + "40분 전에 한 번씩 부르며, 사건은 보유·지수 하락과 스탑 근접만 판단을 하나 더합니다.";
 
 /** 미국 자유 시점 판의 켠 판 체결(두 Claude 계좌 공통 — 백엔드 FreeTiming·UsTimedFills). */
 const US_FREE_FILL =
@@ -410,6 +411,7 @@ const US_CLAUDE_FILL =
 const US_INTRADAY_SETTINGS: AccountSettingSpec[] = [
   { key: "intradayMaxPerSession", label: "장중 판단 최대(세션당, 켠 판)", unit: "회" },
   { key: "intradayMinPerSession", label: "장중 판단 보장(세션당, 켠 판)", unit: "회" },
+  { key: "intradayFixed", label: "장중 판단 고정 일정(개장 1시간 뒤·마감 40분 전 — 예약 받지 않음, 켠 판)" },
   { key: "intradayEvents", label: "장중 판단 사건 당김(켠 판)" },
   { key: "intradayEffort", label: "장중 판단 effort(두 시장 공용 — 없으면 effort)" },
 ];
@@ -552,6 +554,9 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
     settings: [
       { key: "model", label: "모델" },
       { key: "decisionTimeKst", label: "결정 시각(KST)" },
+      { key: "decisionBeforeOpenMinutes", label: "결정을 다음 개장 몇 분 전에(0 = 끔 — 결정 시각 그대로)", unit: "분" },
+      { key: "briefing.enabled", label: "마감 브리핑(텔레그램 — 시장 전체, 모의 매매 입력 아님)" },
+      { key: "briefing.afterCloseMinutes", label: "마감 브리핑 시각(정규장 마감 뒤)", unit: "분" },
       { key: "claude.checkpoint", label: "장중 확인(세션당 한 번 — 끈 판)" },
       { key: "claude.checkpointAtEt", label: "장중 확인 시각(뉴욕)" },
       { key: "claude.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
@@ -642,6 +647,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "claude2.riskProfile", label: "투자 성향" },
       { key: "model", label: "모델" },
       { key: "decisionTimeKst", label: "결정 시각(KST, 계좌1과 같음)" },
+      { key: "decisionBeforeOpenMinutes", label: "결정을 다음 개장 몇 분 전에(0 = 끔 — 결정 시각 그대로)", unit: "분" },
       { key: "apiScheduledReserve", label: "정기 작업 몫 예약", unit: "회" },
       { key: "maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
       { key: "maxWeightEtfPct", label: "ETF 비중 상한", unit: "%" },
@@ -3817,7 +3823,7 @@ function checkpointDecisionView(
     if (textOf(expected.note)) expectedLines.push(textOf(expected.note) as string);
   }
   // 장중 판단의 요청 줄에는 순번과, 끝에 수동·출처(다음 예약·코드 보장·사건 — 결정의 예약은 따로 적지 않음)를 더합니다.
-  const origin = intraday ? intradayOriginLabel(textOf(request.origin)) : null;
+  const origin = intraday ? intradayOriginLabel(textOf(request.origin), textOf(request.question)) : null;
   const requestParts = [
     `세션 ${textOf(request.session) ?? EMPTY}`,
     intraday ? (isNumber(request.slot) ? `${request.slot}번째` : EMPTY) : null,

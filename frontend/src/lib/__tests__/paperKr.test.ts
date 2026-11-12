@@ -83,6 +83,11 @@ describe("결정 창", () => {
     expect(krDecisionWindowText({ kr: { decisionTimeKst: "21:00", decisionDeadlineKst: "23:30" } })).toBe("21:00 ~ 23:30 KST");
     expect(krDecisionWindowText({})).toBe("— ~ — KST");
     expect(krDecisionWindowText(null)).toBe("— ~ — KST");
+    // 다음 개장 기준 판(ADR 0039) — 켜면 서버가 그 두 시각 대신 다음 거래일 개장 기준을 쓴다. 0은 끔.
+    expect(krDecisionWindowText({ kr: { decisionTimeKst: "07:00", decisionDeadlineKst: "07:45", decisionBeforeOpenMinutes: 120 } }))
+      .toBe("다음 거래일 개장 120분 전 ~ 개장 30분 전 KST");
+    expect(krDecisionWindowText({ kr: { decisionTimeKst: "07:00", decisionDeadlineKst: "07:45", decisionBeforeOpenMinutes: 0 } }))
+      .toBe("07:00 ~ 07:45 KST");
   });
 });
 

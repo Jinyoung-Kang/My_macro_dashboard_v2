@@ -13,8 +13,15 @@ const ORIGIN: Record<string, string | null> = {
   EVENT: "사건",
 };
 
-/** 출처 이름 — 따로 적지 않는 출처(결정의 예약·운영자)와 값이 없으면 null, 모르는 출처는 받은 글자 그대로. */
-export function intradayOriginLabel(origin: string | null | undefined): string | null {
+/** 고정 일정 판(ADR 0039)의 고정 시각 행의 질문 머리 — 그 행은 보장과 같은 출처(GUARANTEE)로 들어오고 질문만 다릅니다(백엔드 IntradayScheduler). */
+const FIXED_QUESTION_PREFIX = "코드가 정한 고정 시각의 판단";
+
+/**
+ * 출처 이름 — 따로 적지 않는 출처(결정의 예약·운영자)와 값이 없으면 null, 모르는 출처는 받은 글자 그대로. 질문을 함께 주면 고정 일정 판의 고정 시각
+ * 행(출처 GUARANTEE + 그 질문)을 '고정 시각'으로 가릅니다.
+ */
+export function intradayOriginLabel(origin: string | null | undefined, question?: string | null): string | null {
+  if (origin === "GUARANTEE" && typeof question === "string" && question.startsWith(FIXED_QUESTION_PREFIX)) return "고정 시각";
   return origin ? (origin in ORIGIN ? ORIGIN[origin] : origin) : null;
 }
 

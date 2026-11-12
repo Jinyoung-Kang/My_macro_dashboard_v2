@@ -62,6 +62,32 @@ describe("장중 판단 묶음", () => {
     expect(view?.rows[0].text).toBe("1번째 · 09:10 KST · 감시 1분봉");
   });
 
+  it("고정 일정 판(ADR 0039): 고정 시각 행은 보장과 같은 출처(GUARANTEE)로 오지만 질문으로 갈라 '고정 시각'으로 적는다", () => {
+    const view = intradayBookView(
+      {
+        session: "2026-11-16",
+        maxPerSession: 3,
+        books: [
+          {
+            book: "claude",
+            freeTiming: true,
+            plans: [
+              { slot: 1, at: "10:30", feed: "HOURLY", status: "DONE", origin: "GUARANTEE",
+                question: "코드가 정한 고정 시각의 판단(개장 1시간 뒤) — 그 세션 결정이 남긴 조건과 대기 주문·보유를 점검한다" },
+              { slot: 2, at: "12:31", feed: "HOURLY", status: "PLANNED", origin: "GUARANTEE", question: "코드 보장 판단" },
+            ],
+          },
+        ],
+      },
+      "claude",
+      "US",
+    );
+    expect(view?.rows.map((row) => row.text)).toEqual([
+      "1번째 · 10:30 ET · 시간별 관측치 · 고정 시각",
+      "2번째 · 12:31 ET · 시간별 관측치 · 코드 보장",
+    ]);
+  });
+
   it("셋째 판단·호출 이유(ADR 0031): 다음 예약·코드 보장·사건은 줄에 적고(결정의 예약은 따로 적지 않음), 사건 내용과 원래 시각을 한 줄로, 보장·사건 스위치는 요약에", () => {
     const view = intradayBookView(
       {

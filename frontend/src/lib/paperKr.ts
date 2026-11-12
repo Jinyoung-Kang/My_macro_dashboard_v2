@@ -78,9 +78,14 @@ export function krStartState(
 /**
  * 한국 결정 창 — 설정 본문의 `kr.decisionTimeKst`~`kr.decisionDeadlineKst`(HH:mm, KST). 기한이 결정 시각보다 이르거나 같으면 다음 날로 읽는
  * 서버 규칙 그대로 "(다음 날)"을 붙입니다. 설정을 읽지 못했거나 키가 없으면 그 자리는 "—"(기본값 22:30·01:00으로 채우지 않음 — 지금 설정과
- * 다를 수 있음).
+ * 다를 수 있음). `kr.decisionBeforeOpenMinutes`가 1 이상이면(다음 개장 기준 판, ADR 0039) 서버가 그 두 시각 대신 '다음 거래일 개장 N분 전 ~ 개장
+ * 30분 전'을 쓰므로 그 글로 적습니다.
  */
 export function krDecisionWindowText(settingsBody: unknown): string {
+  const beforeOpen = settingValueAt(settingsBody, "kr.decisionBeforeOpenMinutes");
+  if (typeof beforeOpen === "number" && Number.isInteger(beforeOpen) && beforeOpen >= 1) {
+    return `다음 거래일 개장 ${formatNumber(beforeOpen, 0)}분 전 ~ 개장 30분 전 KST`;
+  }
   const opens = textOf(settingValueAt(settingsBody, "kr.decisionTimeKst"));
   const deadline = textOf(settingValueAt(settingsBody, "kr.decisionDeadlineKst"));
   const nextDay = opens !== null && deadline !== null && deadline <= opens ? "(다음 날)" : "";
