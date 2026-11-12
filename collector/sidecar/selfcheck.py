@@ -1,6 +1,7 @@
 """
 sidecar/selfcheck.py
-이미지 안 확인 — 실제 Chrome과 필터 프록시로 '막아야 할 목적지가 요청을 받지 않는가'를 봅니다 (ADR 0026 덧붙임 2026-11-12, QA-414).
+이미지 안 확인 — 실제 Chrome과 필터 프록시로 '막아야 할 목적지가 요청을 받지 않는가'(ADR 0026 덧붙임 2026-11-12, QA-414)와 '페이지가 메인
+스레드를 붙잡아도 요청이 강제 상한 안에 끝나는가'(덧붙임 2026-11-13, QA-416)를 봅니다.
 
     xvfb-run -a python -m sidecar.selfcheck        # 브라우저 컨테이너 이미지 안에서. 통과하면 0, 아니면 1
 
@@ -20,6 +21,9 @@ sidecar/selfcheck.py
      프록시로 와서 막히고 금지 주소는 연결을 받지 않는다.
   6. 프록시가 닫히면 Chrome의 요청은 실패한다(직접 나가지 않음).
   8. Chrome이 이름을 스스로 풀지 않는다(넷로그에 이름 풀이가 없음) — WebRTC의 TURN(TCP) 서버 이름까지. 그 이름의 연결은 프록시로 온다.
+  9. 메인 스레드를 붙잡는 페이지(DOMContentLoaded 뒤 끝나지 않는 스크립트)를 운영 경로(``ChromeDriver.fetch``) 그대로 열면, 짧게 준 강제 상한에
+     오류로 돌아오고, 그 뒤 Chrome 프로세스와 프로필 잠금이 남지 않고, 바로 이어 연 평소 페이지가 같은 프로필로 뜬다(QA-416). 돌아오지
+     않으면 이 뒤의 확인을 하지 않고 실패로 끝냅니다(붙잡힌 브라우저가 떠 있는 채로는 이어 갈 수 없음).
   7. 대조: WebRTC 정책 스위치와 이름 풀이 규칙을 뺀 Chrome에서는 STUN이 나가고 TURN 이름을 DNS로 묻는다 — 5·8의 확인이 비어 있지 않음을
      보입니다(Chrome 스위치 이름이 바뀌면 여기나 5·8이 실패).
 
@@ -44,7 +48,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.metadata import version
 from urllib.parse import urlsplit
 
-from . import driver, egress, guard
+from . import driver, egress, guard, reap
+from .app import DriverError
 
 ALLOWED_ADDRESS = "127.0.0.1"
 FORBIDDEN_ADDRESS = "127.0.0.2"
@@ -57,6 +62,13 @@ RTC_LOOPBACK_ARG = "--allow-loopback-in-peer-connection"
 # 넷로그에서 'Chrome이 스스로 이름을 풀었다'로 보는 이벤트 종류(앞머리).
 _RESOLVE_EVENTS = ("DNS_TRANSACTION", "HOST_RESOLVER_SYSTEM_TASK", "HOST_RESOLVER_DNS_TASK", "HOST_RESOLVER_MANAGER_JOB")
 MARK = "selfcheck-allowed-page"
+# 9번 확인에서만 쓰는 짧은 강제 상한(초) — 운영 값은 driver.HARD_SECONDS. Chrome이 뜨고 페이지가 메인 스레드를 붙잡기까지(1초 안팎)보다 넉넉히.
+CAP_SECONDS = 4.0
+
+# DOMContentLoaded 뒤에 메인 스레드를 붙잡는 페이지 — 드라이버의 page.evaluate·page.content()·마우스 호출이 돌아오지 않습니다.
+_SPIN_PAGE = """<html><head><title>spin</title></head><body>spin<script>
+document.addEventListener('DOMContentLoaded', () => setTimeout(() => { for (;;) {} }, 0));
+</script></body></html>"""
 
 _SCRIPT_PAGE = """<html><body>script<script>
 (async () => {
@@ -157,6 +169,8 @@ class _Lab:
                     body = _SCRIPT_PAGE % ports
                 elif self.path.startswith("/rtc"):
                     body = _RTC_PAGE % ports
+                elif self.path == "/spin":
+                    body = _SPIN_PAGE
                 else:
                     body = f"<html><body>{MARK}</body></html>"
                 self.send_response(200)
@@ -311,6 +325,86 @@ def _allow_lab_at_the_request_layer() -> None:
     guard.destination_allowed = lambda url, resolve=None: (urlsplit(url).hostname or "") == ALLOWED_ADDRESS
 
 
+def _chrome_processes() -> list[str]:
+    """지금 떠 있는 Chrome 프로세스('번호 종류' — 끝났지만 아직 거두지 않은 것은 빼고)."""
+    found: list[str] = []
+    for path in glob.glob("/proc/[0-9]*/cmdline"):
+        pid = path.split("/")[2]
+        try:
+            with open(path, "rb") as handle:
+                words = handle.read().replace(b"\0", b" ").split()       # 자식 프로세스의 명령줄은 공백으로 이어진 한 덩어리입니다
+            with open(f"/proc/{pid}/stat", "rb") as handle:
+                stat = handle.read()
+        except OSError:
+            continue
+        state = stat[stat.rindex(b")") + 1:].split()[:1]
+        if words and os.path.basename(words[0]).startswith(b"chrome") and state not in ([b"Z"], [b"X"]):
+            kind = next((word.decode()[len("--type="):] for word in words if word.startswith(b"--type=")), "browser")
+            found.append(f"{pid} {kind}")
+    return found
+
+
+def _check_request_cap(lab: _Lab, report: _Report, only_lab: dict) -> None:
+    """
+    9. 요청의 강제 상한(QA-416) — 운영 경로(:meth:`sidecar.driver.ChromeDriver.fetch`) 그대로, 붙잡는 페이지 → 평소 페이지 순서로 두 번.
+
+    이 프로세스 안에서만 세 가지를 바꿔 끼웁니다: 운영 경로가 여는 프록시의 검사('허용 서버 A만' — 다른 확인과 같음), 프로필 폴더(임시),
+    강제 상한(짧게). 요청 가로채기의 규칙은 :func:`_allow_lab_at_the_request_layer`가 이미 바꿔 둔 상태에서 부릅니다.
+    """
+    real_filter, real_profile, real_cap = egress.EgressFilter, driver.PROFILE_DIR, driver.HARD_SECONDS
+    chrome = driver.ChromeDriver()
+    allowed = frozenset({ALLOWED_ADDRESS})
+    with tempfile.TemporaryDirectory(prefix="selfcheck-cap-", ignore_cleanup_errors=True) as profile:
+        egress.EgressFilter = lambda **kwargs: real_filter(**{**only_lab, **kwargs})
+        driver.PROFILE_DIR, driver.HARD_SECONDS = profile, CAP_SECONDS
+        try:
+            lab.hits_a.clear()
+            seen: dict = {}
+
+            def stuck_request() -> None:
+                started = time.monotonic()
+                try:
+                    chrome.fetch(lab.url("/spin"), wait_seconds=2.0, allowed=allowed)
+                    seen["outcome"] = "페이지를 받음"
+                except DriverError as exc:
+                    seen["outcome"], seen["refused"] = f"DriverError({_short(exc, lab)})", True
+                except Exception as exc:  # noqa: BLE001 — 무엇으로 끝났는지 그대로 적습니다
+                    seen["outcome"] = f"{type(exc).__name__}({_short(exc, lab)})"
+                seen["seconds"] = time.monotonic() - started
+
+            # 방어가 없으면 이 호출은 끝나지 않습니다 — 다른 스레드에서 부르고 바깥 시간으로 판정합니다.
+            outer = CAP_SECONDS + driver.CLEANUP_SECONDS + 10.0
+            caller = threading.Thread(target=stuck_request, daemon=True)
+            caller.start()
+            caller.join(outer)
+            name = f"9. 메인 스레드를 붙잡는 페이지: 강제 상한({CAP_SECONDS:g}초)에 오류로 돌아옴(운영 경로 그대로)"
+            if caller.is_alive():
+                report.line(False, name, f"{outer:g}초가 지나도 돌아오지 않음, 떠 있는 Chrome {len(_chrome_processes())}개 — 이 뒤의 확인은 하지 않음")
+                print(f"결과: 실패 {report.failed}건", flush=True)
+                os._exit(1)
+            # 브라우저만 끝내 돌아왔으면 정리 대기의 절반(드라이버 프로세스까지 끝내는 때)을 넘기지 않습니다.
+            in_time = CAP_SECONDS <= seen["seconds"] < CAP_SECONDS + driver.CLEANUP_SECONDS / 2
+            report.line(bool(seen.get("refused")) and in_time and "/spin" in lab.hits_a and "요청 상한" in seen["outcome"], name,
+                        f"{seen['seconds']:.1f}초에 {seen['outcome']}, A가 받음 {lab.hits_a[:1]}")
+
+            _wait_for(lambda: not _chrome_processes(), at_least=0.0, at_most=5.0)
+            locks = [link for link in reap.SINGLETON_LINKS if os.path.lexists(os.path.join(profile, link))]
+            report.line(_chrome_processes() == [] and locks == [], "9. 그 뒤 Chrome 프로세스와 프로필 잠금이 남지 않음",
+                        f"떠 있는 Chrome {_chrome_processes()}, 프로필의 잠금 링크 {locks}")
+
+            lab.hits_a.clear()
+            try:
+                got = chrome.fetch(lab.url("/"), wait_seconds=2.0, allowed=allowed)
+                opened = got["status"] == 200 and MARK in got["body"]
+                outcome = f"상태 {got['status']}"
+            except DriverError as exc:
+                opened, outcome = False, f"DriverError({_short(exc, lab)})"
+            report.line(opened and lab.hits_a[:1] == ["/"] and "/spin" not in lab.hits_a,
+                        "9. 바로 이어 연 평소 페이지가 같은 프로필로 뜸(붙잡던 페이지를 다시 열지 않음)", f"{outcome}, A가 받음 {lab.hits_a}")
+        finally:
+            egress.EgressFilter, driver.PROFILE_DIR, driver.HARD_SECONDS = real_filter, real_profile, real_cap
+
+
 def run() -> int:
     from patchright.sync_api import Error as BrowserError
     from patchright.sync_api import sync_playwright
@@ -416,6 +510,9 @@ def run() -> int:
         report.line(lookups == [] and turn_name_at_proxy, "8. Chrome이 이름을 스스로 풀지 않음(TURN TCP 이름 포함 — 그 연결은 프록시로 옴)",
                     "넷로그를 읽지 못함" if lookups is None else
                     f"넷로그의 이름 풀이 {sorted(set(lookups))}, TURN 이름이 프록시에 옴: {'예' if turn_name_at_proxy else '아니오'}")
+
+    # 9. 요청의 강제 상한 — 메인 스레드를 붙잡는 페이지를 운영 경로 그대로
+    _check_request_cap(lab, report, only_lab)
 
     # 7. 대조 — 정책 스위치와 이름 풀이 규칙을 뺀 Chrome에서는 STUN이 나가고 TURN 이름을 DNS로 묻는다(5·8의 확인이 비어 있지 않음)
     lab.udp_hits.clear()
