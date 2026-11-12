@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import re
 import time
 from urllib.parse import urlsplit
 
@@ -253,7 +254,24 @@ def press_checkbox_once(page) -> bool:
     return False
 
 
+_URL_IN_TEXT = re.compile(r"""[a-z][a-z0-9+.\-]*://[^\s"'<>]+""", re.IGNORECASE)
+_INLINE_URL_IN_TEXT = re.compile(r"""\b(?:data|blob|javascript):[^\s"']+""", re.IGNORECASE)
+
+
+def _host_only(match: re.Match[str]) -> str:
+    try:
+        host = urlsplit(match.group(0)).hostname
+    except ValueError:
+        host = None
+    return host or "(주소)"
+
+
 def _brief(exc: BaseException) -> str:
-    """오류를 한 줄로 — 주소·호출 기록을 싣지 않습니다."""
+    """
+    오류를 한 줄로 — 호출 기록은 싣지 않고, 주소는 호스트만 남깁니다.
+
+    브라우저 오류의 첫 줄은 요청 주소 전체를 달고 옵니다(``Page.goto: net::ERR_… at http://호스트/경로?쿼리``). 이 글은 로그와 502 답에
+    실리므로 경로·쿼리·포트를 떼어 냅니다(막힌 홉이면 그 주소는 출처나 제3자 스크립트가 고른 내부 주소입니다).
+    """
     first = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
-    return first[:160]
+    return _INLINE_URL_IN_TEXT.sub("(주소)", _URL_IN_TEXT.sub(_host_only, first))[:160]

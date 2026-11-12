@@ -148,3 +148,37 @@ def test_QA414_페이지를_받다가_실패해도_브라우저와_프록시를_
         driver.ChromeDriver().fetch("https://blog.example.org/feed", wait_seconds=5.0, allowed=frozenset({"blog.example.org"}))
     assert fake_browser.closed == 1
     assert not _can_connect(fake_browser.launches[0]["proxy"]["server"])
+
+
+@pytest.mark.parametrize("message, brief", [
+    ("Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at http://10.0.0.5:8000/admin/secret-path?token=abc\nCall log:\n  - navigating to ...",
+     "Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at 10.0.0.5"),
+    ("Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at https://blog.example.org/feed?session=xyz#frag",
+     "Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at blog.example.org"),
+    ('Page.goto: Navigation to "https://blog.example.org/a?b=c" is interrupted by another navigation to "chrome-error://chromewebdata/"',
+     'Page.goto: Navigation to "blog.example.org" is interrupted by another navigation to "chromewebdata"'),
+    ("Page.goto: Timeout 45000ms exceeded.", "Page.goto: Timeout 45000ms exceeded."),
+    ("Navigation to data:text/html,<b>secret</b> failed", "Navigation to (주소) failed"),
+    ("", "Exception"),
+])
+def test_QA414_브라우저_오류_한_줄에는_주소의_호스트만_남긴다(message, brief):
+    """막힌 홉의 오류는 요청 주소 전체를 달고 옵니다(… at http://호스트/경로?쿼리). 로그와 502 답에는 호스트만 — 경로·쿼리·포트는 싣지 않습니다."""
+    import sidecar.driver as driver
+
+    assert driver._brief(Exception(message)) == brief
+
+
+def test_QA414_막힌_홉의_502_답에_경로와_쿼리가_실리지_않는다(fake_browser, monkeypatch):
+    import sidecar.driver as driver
+    from sidecar.app import DriverError
+
+    browser_error = sys.modules["patchright.sync_api"].Error
+
+    def failing(self, context, *args, **kwargs):
+        raise browser_error("Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at http://169.254.169.254/latest/meta-data/iam?role=x")
+
+    monkeypatch.setattr(driver.ChromeDriver, "_load", failing)
+
+    with pytest.raises(DriverError) as caught:
+        driver.ChromeDriver().fetch("https://blog.example.org/feed", wait_seconds=5.0, allowed=frozenset({"blog.example.org"}))
+    assert str(caught.value) == "브라우저 오류: Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at 169.254.169.254"
