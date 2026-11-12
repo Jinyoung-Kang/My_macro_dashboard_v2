@@ -82,11 +82,14 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   `realLossStillPausesWhileAppBuyIsPending`·`appLimitBuyDoesNotHideARealLoss`·`ownPendingBuyIsAddedBackOnce`, `RealTradePlannerTest.otherOpenBuyHoldFloor`.
 - **덧붙임(QA-380, 2026-11-12 사용자 승인 — 결정 5의 목록 대조, 주문 동작은 그대로)**: 꺼짐·이상 멈춤에서 결과 모름 행이 남으면 사람이 켜기·멈춤 해제로 닫을
   때까지 주기(10초)마다 토스 미체결·오늘 목록을 읽었다(며칠이고). 이제 그 두 상태에서는 지난 세션의 행을 조회하지 않고 '확인 필요'로만 세고(오늘 목록에 나타날 수
-  없는 주문), 당일 행은 목록을 읽고도 정하지 못한 대조 뒤 5분마다 다시 대조한다. 켜짐(대조 실패 = `unknown-order` 멈춤)과 끄는 중(그 주기의 대조가 목록을 실제로
+  없는 주문), 당일 행은 첫 전송부터 15분 안에는 예전처럼 주기마다, 그 뒤에는 목록을 읽고도 정하지 못한 대조 뒤 5분마다 다시 대조한다. 켜짐(대조 실패 = `unknown-order` 멈춤)과 끄는 중(그 주기의 대조가 목록을 실제로
   읽었을 때만 꺼짐)은 바꾸지 않았다. 검토한 대안: ① 꺼짐·이상 멈춤에서 대조를 아예 하지 않음 — 응답을 잃은 주문이 늦게 목록에 보일 때 묶어 취소·추적하는 길
   (RT3-BE-1)이 사라져 버림. ② 끄는 중에도 지난 세션 행을 건너뜀 — 한 번도 목록을 읽지 못한 채 꺼짐으로 넘어가는 길이 생겨 버림. ③ 마지막 대조 시각을 행에
-  저장 — 스키마 변경이 필요해 메모리에만 둠. 감수한 단점: 꺼짐·이상 멈춤에서 당일 주문이 첫 대조 뒤에야 토스 목록에 보이면 묶어 취소하기까지 최대 5분 늦는다
-  (예전 10초 — 첫 대조는 지금처럼 첫 전송 + 7분 45초이고 시장가 주문은 그 전에 체결되는 것이 보통), 다시 띄우면 간격이 초기화돼 한 번 더 읽는다.
+  저장 — 스키마 변경이 필요해 메모리에만 둠. 감수한 단점: 꺼짐·이상 멈춤에서 당일 주문이 **첫 전송 15분 뒤에야**
+  토스 목록에 보이면 묶어 취소하기까지 최대 5분 늦는다(예전 10초), 다시 띄우면 간격이 초기화돼 한 번 더 읽는다. 처음 15분을 예전 그대로 둔 것은 독립 검토
+  지적 때문이다 — 08:50 `OPG` 주문의 응답을 잃고 08:57:45 첫 대조(후보 0개)로 멈춘 뒤 그 주문이 목록에 뜨면, 5분 간격으로는 다음 대조가 09:02:45라
+  09:00 단일가 체결 전에 취소하지 못한다. 15분이면 가장 이른 `OPG` 전송(08:50:30)의 단일가 체결과 그 뒤 5분을 덮는다(`haltedCancelsLateListedOpgBeforeTheOpeningAuction`·
+  `haltedReconcilesEveryCycleForTheFirstFifteenMinutes`).
   계약은 [명세 §12.3·§12.10](../specs/2026-11-06-real-trade-mirror.md), 시험은 `RealTradeExecutorDbTest`의 `pastSessionUnknownIsNotPolledWhenOffOrHalted`·
   `todayUnknownIsReconciledWithSpacingWhenHaltedOrOff`·`unreadableListsAreRetriedNextCycleWhenHalted`·`livePastSessionUnknownStillHalts`·`stoppingAlwaysReadsLists`,
   `RealTradeJobDbTest`의 `offAndHaltedCyclesDoNotPollForPastSessionUnknown`·`stoppingStillNeedsARealReadForPastSessionUnknown`·

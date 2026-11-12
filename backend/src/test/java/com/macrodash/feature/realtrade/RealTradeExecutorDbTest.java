@@ -15,7 +15,6 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -421,7 +420,7 @@ class RealTradeExecutorDbTest {
     }
 
     @Test
-    @DisplayName("QA-380: 이상 멈춤·꺼짐에서 당일 결과 모름 행은 대조가 후보를 정하지 못한 뒤 간격(5분)을 두고 다시 대조 — 늦게 보이면 그때 묶음")
+    @DisplayName("QA-380: 이상 멈춤·꺼짐에서 당일 결과 모름 행은 첫 전송 15분 뒤부터, 대조가 후보를 정하지 못한 뒤 간격(5분)을 두고 다시 대조 — 늦게 보이면 그때 묶음")
     void todayUnknownIsReconciledWithSpacingWhenHaltedOrOff() {
         OrderRow unknown = unknownOn(SESSION, "2026-11-06T10:00");
 
@@ -430,32 +429,36 @@ class RealTradeExecutorDbTest {
         assertThat(store.config("KR").orElseThrow().haltReason()).isEqualTo("unknown-order");
         verify(client, times(1)).todayOrders();
 
-        for (String at : List.of("2026-11-06T10:08:00", "2026-11-06T10:08:10", "2026-11-06T10:12:40")) {
+        // 첫 전송(10:00)부터 15분 안 — 예전처럼 주기마다 대조(QA-380 후속: 간격을 여기서부터 걸면 늦게 뜬 개장 전 OPG를 단일가 전에 못 묶음)
+        clock.set(kst("2026-11-06T10:14:50"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(2)).todayOrders();
+
+        for (String at : List.of("2026-11-06T10:15:00", "2026-11-06T10:15:10", "2026-11-06T10:19:40")) {   // 15분 뒤 — 마지막 대조(10:14:50)부터 5분 안
             clock.set(kst(at));
             assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()).unresolved()).as(at).isEqualTo(1);
         }
-        verify(client, times(1)).openOrders();
-        verify(client, times(1)).todayOrders();
-
-        clock.set(kst("2026-11-06T10:12:50"));   // 마지막 대조 + 5분
-        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(2)).openOrders();
         verify(client, times(2)).todayOrders();
+
+        clock.set(kst("2026-11-06T10:19:50"));   // 마지막 대조 + 5분
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(3)).todayOrders();
 
         // 꺼진 뒤에도 같은 간격으로 이어 가고, 그 주문이 늦게 목록에 보이면 묶음(정기 작업이 취소·추적)
         state(RealTradeStore.STATE_OFF);
-        clock.set(kst("2026-11-06T10:13:00"));
+        clock.set(kst("2026-11-06T10:20:00"));
         executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
-        verify(client, times(2)).todayOrders();
+        verify(client, times(3)).todayOrders();
         when(client.todayOrders()).thenReturn(Reply.of(List.of(
                 broker("T-LATE", A, "BUY", "DAY", "PENDING", "5", "0", kst("2026-11-06T10:00:02"), null))));
-        clock.set(kst("2026-11-06T10:17:50"));
+        clock.set(kst("2026-11-06T10:24:50"));
         assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()).unresolved()).isZero();
         assertThat(store.order(unknown.id()).orElseThrow().tossOrderId()).isEqualTo("T-LATE");
         verify(client, times(1)).placeOrder(anyString());   // 대조는 주문을 내지 않음
     }
 
     @Test
-    @Disabled("QA-380 후속: 이상 멈춤에서 첫 대조가 후보를 못 찾으면 다음 대조가 5분 뒤라, 그사이 목록에 뜬 주문을 바로 묶지 못함")
     @DisplayName("QA-380 후속: 첫 전송부터 15분 안에는 꺼짐·이상 멈춤에서도 예전처럼 주기마다 대조한다 — 첫 대조 직후 목록에 뜬 주문을 다음 주기에 묶음(간격은 15분 뒤부터)")
     void haltedReconcilesEveryCycleForTheFirstFifteenMinutes() {
         OrderRow unknown = unknownOn(SESSION, "2026-11-06T10:00");
@@ -512,18 +515,23 @@ class RealTradeExecutorDbTest {
         clock.set(kst("2026-11-06T10:07:50"));
         executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());   // 켜짐 → 후보 0개 → 이상 멈춤
         assertThat(store.config("KR").orElseThrow().state()).isEqualTo("HALTED");
+        clock.set(kst("2026-11-06T10:15:10"));   // 첫 전송 15분 뒤의 이상 멈춤 대조(후보 0개) — 여기서부터 5분 간격
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        clock.set(kst("2026-11-06T10:15:20"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(2)).todayOrders();   // 이상 멈춤 — 간격 안이라 읽지 않음
         state(RealTradeStore.STATE_STOPPING);
         when(client.todayOrders()).thenReturn(Reply.failed("collector-timeout"));
 
-        clock.set(kst("2026-11-06T10:08:00"));   // 마지막 대조 10초 뒤 — 간격 안이어도 끄는 중이면 읽음
+        clock.set(kst("2026-11-06T10:15:30"));   // 마지막 대조 20초 뒤 — 간격 안이어도 끄는 중이면 읽음
         RealTradeExecutor.Resolution today = executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
         assertThat(today.listsFailed()).as("읽으려 했고 못 읽음 — 이 주기에는 꺼짐으로 넘기지 않음").isTrue();
-        verify(client, times(2)).todayOrders();
+        verify(client, times(3)).todayOrders();
 
         clock.set(kst("2026-11-07T08:00"));      // 날이 바뀌어 지난 세션 행이 됨 — 끄는 중이면 그래도 읽음
         RealTradeExecutor.Resolution past = executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
         assertThat(past.listsFailed()).isTrue();
-        verify(client, times(3)).todayOrders();
+        verify(client, times(4)).todayOrders();
     }
 
     @Test

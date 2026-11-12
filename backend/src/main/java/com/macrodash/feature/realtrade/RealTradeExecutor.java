@@ -86,9 +86,17 @@ class RealTradeExecutor {
     /**
      * 꺼짐·이상 멈춤에서 당일 결과 모름 행의 대조가 목록을 읽고도 후보를 정하지 못한 뒤, 그 행을 다시 대조하기까지의 간격(QA-380). 예전에는 그런 행이 하나라도
      * 남으면 사람이 켜기·멈춤 해제로 닫을 때까지 주기(10초)마다 토스 미체결·오늘 목록을 읽었습니다. 늦게 목록에 보이는 주문을 묶어 취소·추적하는 길
-     * (RT3-BE-1)은 남기되 자주 묻지 않습니다. 목록을 읽지 못한 대조는 이 간격 없이 다음 주기에 다시 합니다.
+     * (RT3-BE-1)은 남기되 자주 묻지 않습니다. 목록을 읽지 못한 대조는 이 간격 없이 다음 주기에 다시 합니다. 첫 전송부터
+     * {@link #RECONCILE_EVERY_CYCLE_FOR}가 지난 행에만 적용합니다.
      */
     static final Duration RECONCILE_RETRY_SPACING = Duration.ofMinutes(5);
+    /**
+     * 첫 전송부터 이 시간 안의 결과 모름 행은 꺼짐·이상 멈춤에서도 예전처럼 주기마다 대조합니다(QA-380 후속). 첫 대조(첫 전송 + 7분 45초)가 후보를 찾지
+     * 못해 이상 멈춤이 된 직후에 그 주문이 목록에 뜨는 경우를 바로 묶어 취소하려는 것입니다 — 특히 개장 전 시가 단일가(OPG) 주문: 가장 이른 전송이
+     * 단일가 창 시작 + 30초(보통 08:50:30)이고 체결은 정규장 시작(09:00)이라, 15분이면 그 주문의 단일가 체결 시각과 그 뒤 5분을 덮습니다
+     * (08:50:30 → 09:05:30). 장중 시장가 주문도 처음 15분은 예전 그대로입니다. 그 뒤로는 {@link #RECONCILE_RETRY_SPACING}마다.
+     */
+    static final Duration RECONCILE_EVERY_CYCLE_FOR = Duration.ofMinutes(15);
     /** 취소 재시도 간격(마지막 시도부터)과 상한(첫 취소 포함). */
     static final Duration CANCEL_RETRY_SPACING = Duration.ofSeconds(30);
     static final int MAX_CANCEL_TRIES = 5;
@@ -271,7 +279,8 @@ class RealTradeExecutor {
      * <ul>
      *   <li>세션이 오늘(KST)보다 앞인 행: 조회하지 않고 '확인 필요'로만 셉니다 — 수집기의 오늘 목록은 오늘 주문만이고 이 기능의 주문은 당일 주문(DAY·OPG)뿐이라
      *       지난 세션의 주문은 목록에 나타날 수 없습니다.</li>
-     *   <li>당일 행: 목록을 읽고도 후보를 정하지 못했으면 {@link #RECONCILE_RETRY_SPACING} 뒤에 다시 대조합니다(그사이 주기는 '확인 필요'로만 셈).</li>
+     *   <li>당일 행: 첫 전송부터 {@link #RECONCILE_EVERY_CYCLE_FOR} 안에는 예전처럼 주기마다 대조하고(늦게 목록에 뜬 개장 전 OPG 주문을 단일가 전에
+     *       묶어 취소), 그 뒤에는 목록을 읽고도 후보를 정하지 못했으면 {@link #RECONCILE_RETRY_SPACING} 뒤에 다시 대조합니다(그사이 주기는 '확인 필요'로만 셈).</li>
      * </ul>
      * 켜짐은 그대로입니다(대조 실패는 곧 이상 멈춤 — 지난 세션 행도). 끄는 중(STOPPING)도 그대로 주기마다 대조합니다 — 정기 작업은 그 주기의 대조가 목록을
      * 실제로 읽었을 때만 꺼짐으로 넘기므로(RT3-BE-1), 아낀 행이 있었던 주기({@link Resolution#spared})에는 넘기지 않습니다.
@@ -331,8 +340,8 @@ class RealTradeExecutor {
     }
 
     /**
-     * 꺼짐·이상 멈춤에서 이 주기에 이 행의 대조를 건너뛰는가(QA-380) — 세션이 오늘보다 앞이거나(목록에 나타날 수 없음), 목록을 읽고도 정하지 못한 마지막
-     * 대조부터 {@link #RECONCILE_RETRY_SPACING}이 지나지 않았을 때.
+     * 꺼짐·이상 멈춤에서 이 주기에 이 행의 대조를 건너뛰는가(QA-380) — 세션이 오늘보다 앞이거나(목록에 나타날 수 없음), 첫 전송부터
+     * {@link #RECONCILE_EVERY_CYCLE_FOR}가 지났고 목록을 읽고도 정하지 못한 마지막 대조부터 {@link #RECONCILE_RETRY_SPACING}이 지나지 않았을 때.
      */
     private boolean spare(OrderRow row, Instant now, LocalDate today) {
         if (row.session().isBefore(today)) {
@@ -340,6 +349,9 @@ class RealTradeExecutor {
                 log.info("지난 세션의 결과 모름 실제 주문 — 행 {}: 오늘 토스 목록에 나타날 수 없어 조회하지 않음(확인 필요 — 켜기·멈춤 해제 때 닫힘)", row.id());
             }
             return true;
+        }
+        if (now.isBefore(row.firstSentAt().plus(RECONCILE_EVERY_CYCLE_FOR))) {
+            return false;   // 처음 15분은 예전처럼 주기마다 — 늦게 목록에 뜬 주문(개장 전 OPG)을 바로 묶어 취소
         }
         Instant missed = reconcileMissedAt.get(row.id());
         return missed != null && now.isBefore(missed.plus(RECONCILE_RETRY_SPACING));

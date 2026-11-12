@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -2785,7 +2784,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-380 후속: 이상 멈춤에서 첫 대조 뒤 5분 간격 때문에, 늦게 목록에 뜬 개장 전 OPG 주문을 09:00 단일가 전에 묶어 취소하지 못함")
     @DisplayName("QA-380 후속: 08:50 OPG 주문의 응답을 잃고 첫 대조(후보 0개)로 이상 멈춤이 된 뒤 그 주문이 목록에 뜨면 — 다음 주기에 묶어 09:00 단일가 전에 취소한다")
     void haltedCancelsLateListedOpgBeforeTheOpeningAuction() {
         Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
@@ -2818,17 +2816,20 @@ class RealTradeJobDbTest {
 
         run("10:07:50");   // 켜짐 — 목록은 읽었고 후보 0개 → 이상 멈춤
         assertThat(cfg().haltReason()).isEqualTo("unknown-order");
+        run("10:15:10");   // 첫 전송 15분 뒤의 이상 멈춤 대조(후보 0개) — 여기서부터 5분 간격
+        org.mockito.Mockito.clearInvocations(client);
+        run("10:15:20");
+        verify(client, never()).todayOrders();   // 이상 멈춤 — 간격 안이라 읽지 않음
         store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
         when(client.todayOrders()).thenReturn(Reply.failed("collector-timeout"));
-        org.mockito.Mockito.clearInvocations(client);
 
-        run("10:08:00");
+        run("10:15:30");
 
         verify(client).todayOrders();
         assertThat(cfg().state()).as("이 주기의 대조는 목록을 못 읽음").isEqualTo("STOPPING");
 
         when(client.todayOrders()).thenReturn(Reply.of(List.of()));
-        run("10:08:10");
+        run("10:15:40");
         assertThat(cfg().state()).isEqualTo("OFF");
     }
 
