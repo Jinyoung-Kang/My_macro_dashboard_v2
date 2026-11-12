@@ -588,3 +588,7 @@ getent hosts api.telegram.org && cd ~/My_macro_dashboard_v2 && docker compose ps
 browser caddy` — 컨테이너는 시작할 때의 DNS 설정을 씀). Docker·Tailscale은 Ubuntu 보안 저장소 밖이라 자동으로 오르지 않습니다: Docker는
 `sudo apt-get install --only-upgrade docker-ce docker-ce-cli docker-ce-rootless-extras docker-compose-plugin`(컨테이너 모두 재시작), Tailscale은 올리는 동안
 Tailscale SSH가 끊기므로 비상용 22로 들어가 `sudo apt-get install --only-upgrade tailscale`.
+
+Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정 2026-11-12)는 `sudo canonical-livepatch status`에서 `supported`·`checkState: checked`와
+`upgradeRequiredDate`(그 날짜 전에 새 커널로 재부팅)를 봅니다. 연결 상태는 `pro status`. 서버를 새로 만들면 `sudo pro attach`를 토큰 없이 돌려 나온 코드를
+`https://ubuntu.com/pro/attach`에 입력합니다(토큰을 명령 인자·파일에 적지 않음).

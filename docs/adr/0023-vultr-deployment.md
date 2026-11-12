@@ -183,3 +183,9 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
   (Ubuntu 보안 저장소 밖이라 자동 업데이트 대상이 아님 — Tailscale은 비상용 22로 들어가 올림). 위 '이유'의 1.104.4는 그때의 판입니다.
 - **남은 위험**: 자동 업데이트는 커널을 설치만 하고 재부팅하지 않습니다(`Automatic-Reboot` 꺼짐 — 매매 시각을 피해 사람이 재부팅). 재부팅 뒤에는
   `getent hosts api.telegram.org`로 이름 조회를 확인합니다(DEVELOPMENT §7 '재부팅 뒤 확인').
+- **Livepatch**(같은 날 22:0x KST, 사용자 결정 — 긴급 커널 패치는 재부팅 없이, 나머지는 매매 시각을 피해 사람이 재부팅): 서버를 Ubuntu Pro 무료 개인 구독에
+  연결했습니다. 토큰을 쓰지 않는 웹 코드 연결(`sudo pro attach` → 나온 코드를 `https://ubuntu.com/pro/attach`에 입력)이라 토큰은 서버·저장소·`.env` 어디에도 없습니다.
+  기본 서비스 Livepatch·ESM Infra·ESM Apps가 켜졌고, 자동 보안 업데이트는 이미 ESM 저장소를 허용 목록에 두고 있어 그대로 설치합니다(11-12 손으로 한 번 돌려 ESM 두 건 설치 확인).
+  Livepatch는 지금 커널을 `supported`로 보고 `upgradeRequiredDate` 2027-11-23을 줍니다 — 그 전에 새 커널로 재부팅해야 Livepatch가 이어지고, 모든 커널 수정이 Livepatch로
+  오지는 않으므로 `/var/run/reboot-required`가 생기면 여전히 시각을 골라 재부팅합니다. 무료 개인 구독은 Ubuntu Pro 소개 페이지에 '물리 머신 5대', 요금 페이지에 '머신 5대'로 적혀 있어
+  VM(이 서버)이 범위에 드는지 문구가 엇갈립니다 — 개인·비상업 용도로 판단해 연결했습니다(남은 위험).
