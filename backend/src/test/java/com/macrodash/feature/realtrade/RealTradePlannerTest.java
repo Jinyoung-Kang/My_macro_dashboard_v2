@@ -353,6 +353,34 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("QA-376 고정: 범위를 전량 매도 대상으로 좁힌 계획의 회전율 금액 = 정수 보유 × 현재가 — 매도 가능 수량을 몰라 주문은 못 내도 세고, "
+            + "이 기능 주문 진행 중이면 0. 책 밖 보유는 1% 문턱이 없지만 비중 0을 비중 맵에 넣으면 문턱에 걸린다(묶음의 비중 0 표시는 범위로만)")
+    void scopedLiquidationTurnover() {
+        // 묶음의 회전율 보완(RealTradeJob.withWaitingLiquidations)이 부르는 모양 — 책 A 10%(목표대로), 책에 없는 C 175주 × 40,000 = 700만
+        Account account = new Acct().cash("0").hold(A, "20", "50000").hold(C, "175", "40000").sellable(C, null).build();
+        Plan waiting = RealTradePlanner.sync(Map.of(A, 10.0), E, account, Set.of(), BigDecimal.ZERO, RULES, true, Set.of(C), null);
+        assertThat(waiting.turnoverAmount()).isEqualByComparingTo("7000000");
+        assertThat(waiting.turnoverPct()).isEqualByComparingTo("70.00");
+        assertThat(waiting.orders()).as("매도 가능 수량을 묻지 않은 종목 — 주문은 없음").isEmpty();
+        assertThat(reasons(waiting)).containsExactly(RealTradePlanner.SKIP_SELLABLE);
+
+        Plan own = RealTradePlanner.sync(Map.of(A, 10.0), E, account, Set.of(C), BigDecimal.ZERO, RULES, true, Set.of(C), null);
+        assertThat(own.turnoverAmount()).as("이 기능의 주문이 진행 중인 종목은 세지 않음").isEqualByComparingTo("0");
+
+        // C 1주 = 4만 원 < E의 1%(10만 원)
+        Account tiny = new Acct().hold(C, "1", "40000").build();
+        Plan outOfBook = RealTradePlanner.sync(Map.of(), E, tiny, Set.of(), BigDecimal.ZERO, RULES, true, Set.of(C), null);
+        assertThat(outOfBook.orders()).singleElement().satisfies(o -> {
+            assertThat(o.side()).isEqualTo("SELL");
+            assertThat(o.quantity()).isEqualTo(1);
+        });
+        assertThat(outOfBook.turnoverAmount()).isEqualByComparingTo("40000");
+        Plan zeroWeight = RealTradePlanner.sync(Map.of(C, 0.0), E, tiny, Set.of(), BigDecimal.ZERO, RULES, true, Set.of(C), null);
+        assertThat(zeroWeight.orders()).as("비중 값이 있으면 책의 종목 — 1% 문턱에 걸려 팔리지 않음").isEmpty();
+        assertThat(zeroWeight.turnoverAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
     @DisplayName("보낼 수 있는 종목(sendable)에만 현금 배정 — 시도를 다 쓴 종목이 현금을 먼저 잡아 뒤 순서 매수(현금성)가 미뤄지지 않음")
     void sendableGetsCash() {
         Account account = new Acct().cash("1000000").quote(A, "70000").quote(CASH_LIKE, "100000").build();

@@ -2329,6 +2329,88 @@ class RealTradeJobDbTest {
         assertThat(cfg().state()).isEqualTo("LIVE");
     }
 
+    @Test
+    @DisplayName("QA-376 고정: 회전율 보완은 대기 STOP 종목을 세지 않는다 — VI로 기다리는 전량 매도 대상(E의 70%)이 스탑 종목이면 이상 멈춤 없이 묶음을 만들고, 스탑 매도 경로가 판다")
+    void waitingLiquidationThatIsPendingStopStaysOutOfTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));   // 켠 뒤 첫 묶음이 아님 — 회전율 예외 없음
+        timedTargets(Map.of(A, 10.0, B, 20.0), List.of(), List.of(661L));
+        // waitingLiquidationCountsTowardTurnover와 같은 계좌(책의 종목은 목표대로, 책에 없는 C가 70%) — C가 대기 STOP 종목인 것만 다름
+        preflight("0", Map.of(A, new String[]{"20", "50000"}, B, new String[]{"100", "20000"}, C, new String[]{"175", "40000"}), Map.of());
+        restrictions(Set.of(C), null);
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(C));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(661, C, "AT_MINUTE", SYNC_AT)));
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).as("스탑 몫은 회전율 멈춤을 걸지 않음(QA-302) — 멈추면 같은 주기의 스탑 매도까지 섬").isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " DAY 175");
+        assertThat(store.recentOrders("KR", 1).getFirst().purpose()).isEqualTo("MIRROR");
+    }
+
+    @Test
+    @DisplayName("QA-376 고정: 회전율 보완은 이 기능의 주문이 진행 중인 종목을 세지 않는다 — 스탑 매도 경로가 묶음보다 먼저 보낸 매도가 진행 중인 책 밖 보유(E의 70%)가 VI여도 이상 멈춤 없이 묶음을 만든다")
+    void waitingLiquidationWithOwnOrderInFlightStaysOutOfTurnover() {
+        Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(A, 10.0, B, 20.0), List.of(), List.of());
+        preflight("0", Map.of(A, new String[]{"20", "50000"}, B, new String[]{"100", "20000"}, C, new String[]{"175", "40000"}), Map.of());
+        restrictions(Set.of(C), null);
+        clock.set(kst("2026-11-06T09:10:00"));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, 951L, 950L, C, "SELL", 175, "DAY", d("40000"),
+                1), cfg);   // 이 기능의 C 매도(T-1)가 진행 중 — 대기 STOP 목록에는 이제 없음
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).as("이미 나간 매도를 풀린 뒤 또 팔 몫으로 세지 않음").isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        verify(client, times(1)).placeOrder(anyString());   // 먼저 보낸 C 매도뿐 — 묶음은 보낼 것이 없음
+    }
+
+    @Test
+    @DisplayName("QA-376 고정: 회전율 보완은 책의 종목을 세지 않는다 — VI로 빠진 책의 종목(보유 2주, 목표까지 매수 49%)의 몫은 예전처럼 회전율에 들지 않아, 나머지(B 30%)만으로 묶음을 만든다")
+    void restrictedBookSymbolStaysOutOfTurnover() {
+        RealTradeFixtures.live(store, false, d("10000000"));   // 회전율 예외 없음 — A까지 세면 79%로 이상 멈춤
+        timedTargets(Map.of(A, 50.0, B, 30.0), List.of(), List.of());
+        preflight("9900000", Map.of(A, new String[]{"2", "50000"}), Map.of(B, "20000"));   // 책의 종목 A를 이미 2주 들고 있음(E = 1,000만)
+        restrictions(Set.of(A), null);
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 150");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(RealTradeJob.liquidations(batch)).as("책의 종목은 전량 매도 대상이 아님").isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-376 고정: 매매 제한 종목이 없으면 회전율 판정은 계획의 값 그대로이고, 같은 전량 매도 대상이 VI로 기다릴 때도 같은 값으로 멈춘다(VI가 아니었을 때와 같은 판정)")
+    void waitingLiquidationIsJudgedLikeAnUnrestrictedOne() {
+        Map<String, String[]> holdings = Map.of(A, new String[]{"20", "50000"}, B, new String[]{"100", "20000"},
+                C, new String[]{"175", "40000"});   // 책의 종목은 목표대로, 책에 없는 C가 E의 70%
+
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedTargets(Map.of(A, 10.0, B, 20.0), List.of(), List.of());
+        preflight("0", holdings, Map.of());
+        run("09:10:05");   // 매매 제한 없음 — C 매도 70%가 계획의 회전율
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        BigDecimal unrestricted = cfg().haltDetail().path("turnoverPct").decimalValue();
+        assertThat(unrestricted).isEqualByComparingTo("70.00");
+        verify(client, never()).placeOrder(anyString());
+
+        RealTradeFixtures.clean(jdbc);
+        RealTradeFixtures.live(store, false, d("10000000"));
+        job = restartedJob();
+        restrictions(Set.of(C), null);
+        run("09:10:05");   // 같은 계좌, C가 VI — 계획에서는 빠지지만 기다리는 몫으로 셈
+        assertThat(cfg().haltReason()).isEqualTo("turnover");
+        assertThat(cfg().haltDetail().path("turnoverPct").decimalValue()).as("VI가 아니었을 때와 같은 값").isEqualByComparingTo(unrestricted);
+        verify(client, never()).placeOrder(anyString());
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
