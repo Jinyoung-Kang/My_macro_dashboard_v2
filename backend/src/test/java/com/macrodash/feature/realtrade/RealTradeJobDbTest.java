@@ -2256,6 +2256,32 @@ class RealTradeJobDbTest {
         assertThat(events("STOP_SELL")).as("이미 팔린 스탑 — 놓침·막힘으로 알리지 않음").isEmpty();
     }
 
+    @Test
+    @DisplayName("QA-376 고정: 묶음을 만든 뒤 백엔드를 다시 띄워도 DB의 묶음(비중 0 표시)만으로 전량 매도 범위가 되살아난다 — 주문 행이 없던 VI 대기 종목을 풀린 뒤 창 안에서 판다")
+    void restartKeepsLiquidationScopeFromStoredBatch() {
+        timedRestrictionDay();   // 책 A 50%·B 30%, 실제 보유는 책에 없는 C 100주
+        restrictions(Set.of(C), null);
+        run("09:10:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(store.ordersForBatch(batch.id())).as("C는 주문 행이 없음").noneMatch(r -> r.symbol().equals(C));
+
+        job = restartedJob();   // 같은 DB, 새 정기 작업·새 실행기(메모리 상태 없음)
+        restrictions(Set.of(), null);
+        run("09:11:00");
+
+        assertThat(sentSummaries()).as("다시 띄운 작업도 묶음의 전량 매도 대상을 범위에 넣음").contains("SELL " + C + " DAY 100");
+        assertThat(store.recentOrders("KR", 10)).filteredOn(r -> r.symbol().equals(C)).singleElement().satisfies(r -> {
+            assertThat(r.purpose()).isEqualTo("SYNC_FOLLOWUP");
+            assertThat(r.batchId()).isEqualTo(batch.id());
+            assertThat(r.attempt()).isEqualTo(1);
+        });
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow().id()).as("묶음은 하루 하나 그대로").isEqualTo(batch.id());
+
+        run("09:11:40");
+        assertThat(sentSummaries()).as("한 번만").filteredOn(o -> o.contains(C)).hasSize(1);
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
