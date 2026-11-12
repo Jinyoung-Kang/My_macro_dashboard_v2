@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -2707,6 +2708,109 @@ class RealTradeJobDbTest {
 
         run("10:07:50");   // 목록은 읽었고 후보 0개 — 끄는 중에는 멈추지 않고 사람 확인으로 남김
 
+        assertThat(cfg().state()).isEqualTo("OFF");
+        assertThat(events("STOPPED")).singleElement().satisfies(e -> assertThat(e.detail().path("unresolved").asInt()).isEqualTo(1));
+    }
+
+    // ------------------------------------------------------------------ 꺼짐·이상 멈춤에서 남은 결과 모름(QA-380)
+    /** 어제(11-05) 14:00의 장중 따라 하기 A 5주가 결과 모름으로 남은 채 날이 바뀜 — 오늘 토스 목록에는 나타날 수 없는 주문. */
+    private void unknownFromYesterday() {
+        Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
+        clock.set(kst("2026-11-05T14:00"));
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "collector-timeout", null));
+        executor.send(new RealTradeExecutor.Send(SESSION.minusDays(1), RealTradeStore.PURPOSE_MIRROR, null, 1201L, 1200L, A, "BUY", 5, "DAY",
+                d("50000"), 1), cfg);
+    }
+
+    @Test
+    @Disabled("QA-380: 꺼짐·이상 멈춤에서도 지난 세션의 결과 모름 행마다 10초 주기로 토스 주문 목록 둘을 무기한 조회")
+    @DisplayName("QA-380: 꺼짐·이상 멈춤의 주기는 지난 세션의 결과 모름 행 때문에 토스 주문 목록을 읽지 않는다 — 행은 결과 모름 그대로(화면의 확인 필요)")
+    void offAndHaltedCyclesDoNotPollForPastSessionUnknown() {
+        unknownFromYesterday();
+        for (String state : List.of(RealTradeStore.STATE_HALTED, RealTradeStore.STATE_OFF)) {
+            store.lockConfig("KR", current -> store.updateConfig(current.withState(state), 1L));
+            org.mockito.Mockito.clearInvocations(client);
+
+            run("08:51");
+            run("08:51:10");
+            run("10:00");
+
+            verify(client, never()).openOrders();
+            verify(client, never()).todayOrders();
+            assertThat(cfg().state()).isEqualTo(state);
+            assertThat(executor.stuckUnknown()).isEqualTo(1);
+        }
+        verify(client, times(1)).placeOrder(anyString());
+    }
+
+    @Test
+    @DisplayName("QA-380 대조: 끄는 중 — 지난 세션의 결과 모름 행도 그 주기의 대조가 토스 목록을 실제로 읽었을 때만 꺼짐으로(못 읽으면 끄는 중 그대로)")
+    void stoppingStillNeedsARealReadForPastSessionUnknown() {
+        unknownFromYesterday();
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
+        when(client.openOrders()).thenReturn(Reply.failed("collector-timeout"));
+
+        run("08:51");
+        run("08:51:10");
+
+        assertThat(cfg().state()).as("목록을 못 읽음 — 끄는 중 그대로").isEqualTo("STOPPING");
+        verify(client, times(2)).openOrders();
+
+        when(client.openOrders()).thenReturn(Reply.of(List.of()));
+        run("08:51:20");
+
+        assertThat(cfg().state()).isEqualTo("OFF");
+        assertThat(events("STOPPED")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("unresolved").asInt()).isEqualTo(1);
+            assertThat(PaperTelegram.plain(RealTradeNotices.text(e))).as("꺼짐 알림이 확인 필요 건수를 실음").contains("확인 필요 1건");
+        });
+    }
+
+    @Test
+    @DisplayName("QA-380 대조: 이상 멈춤에서 대조가 방금 실패한 당일 행이 있어도, 끄면 다음 주기의 대조는 목록을 다시 읽고(간격을 기다리지 않음) 못 읽으면 꺼짐으로 넘기지 않는다")
+    void stoppingAfterHaltedFailureReadsAgainBeforeOff() {
+        unknownMirrorBuy();
+
+        run("10:07:50");   // 켜짐 — 목록은 읽었고 후보 0개 → 이상 멈춤
+        assertThat(cfg().haltReason()).isEqualTo("unknown-order");
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));
+        when(client.todayOrders()).thenReturn(Reply.failed("collector-timeout"));
+        org.mockito.Mockito.clearInvocations(client);
+
+        run("10:08:00");
+
+        verify(client).todayOrders();
+        assertThat(cfg().state()).as("이 주기의 대조는 목록을 못 읽음").isEqualTo("STOPPING");
+
+        when(client.todayOrders()).thenReturn(Reply.of(List.of()));
+        run("10:08:10");
+        assertThat(cfg().state()).isEqualTo("OFF");
+    }
+
+    @Test
+    @Disabled("QA-380: 꺼짐·이상 멈춤에서도 지난 세션의 결과 모름 행마다 10초 주기로 토스 주문 목록 둘을 무기한 조회")
+    @DisplayName("QA-380: 조회를 아낀 주기(이상 멈춤으로 읽고 시작) 도중에 끄기가 커밋돼도 그 주기에는 꺼짐으로 넘기지 않는다 — 다음 주기가 목록을 실제로 읽은 뒤에")
+    void disableDuringASparedCycleWaitsForARealRead() {
+        unknownFromYesterday();
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_HALTED).withHalt("unknown-order", null),
+                null));
+        RealTradeExecutor racing = org.mockito.Mockito.spy(executor);
+        org.mockito.Mockito.doAnswer(inv -> {
+            Object resolution = inv.callRealMethod();   // 이상 멈춤으로 읽은 설정으로 대조(지난 세션 행 — 조회 없음)
+            store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_STOPPING), 1L));   // 그사이 끄기
+            return resolution;
+        }).doCallRealMethod().when(racing).resolveUnknown(any(), any());
+        job = new RealTradeJob(store, racing, client, paper, telegram, RealTradeFixtures.MAPPER, clock, true, false, 10_000);
+        org.mockito.Mockito.clearInvocations(client);
+
+        run("08:51");
+
+        verify(client, never()).todayOrders();
+        assertThat(cfg().state()).as("목록을 읽지 않은 주기 — 끄는 중 그대로").isEqualTo("STOPPING");
+
+        run("08:51:10");
+
+        verify(client).todayOrders();
         assertThat(cfg().state()).isEqualTo("OFF");
         assertThat(events("STOPPED")).singleElement().satisfies(e -> assertThat(e.detail().path("unresolved").asInt()).isEqualTo(1));
     }

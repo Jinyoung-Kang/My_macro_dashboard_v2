@@ -15,6 +15,7 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -382,6 +383,129 @@ class RealTradeExecutorDbTest {
         executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
         assertThat(store.config("KR").orElseThrow().haltReason()).isEqualTo("unknown-order");
         assertThat(only().tossOrderId()).isNull();
+    }
+
+    // ------------------------------------------------------------------ 꺼짐·이상 멈춤에서 남은 결과 모름(QA-380)
+    /** {@code at}(KST)에 그 세션의 장중 따라 하기 매수 하나가 결과 모름으로 남음. */
+    private OrderRow unknownOn(java.time.LocalDate session, String at) {
+        Config cfg = live();
+        clock.set(kst(at));
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "read-timeout", null));
+        executor.send(new Send(session, RealTradeStore.PURPOSE_MIRROR, null, 101L, 100L, A, "BUY", 5, "DAY", d("70000"), 1), cfg);
+        return only();
+    }
+
+    private void state(String state) {
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(state), 1L));
+    }
+
+    @Test
+    @Disabled("QA-380: 꺼짐·이상 멈춤에서도 지난 세션의 결과 모름 행마다 10초 주기로 토스 주문 목록 둘을 무기한 조회")
+    @DisplayName("QA-380: 꺼짐·이상 멈춤에서 지난 세션의 결과 모름 행은 토스 목록을 조회하지 않고 '확인 필요'로만 센다 — 오늘 목록에 나타날 수 없는 주문")
+    void pastSessionUnknownIsNotPolledWhenOffOrHalted() {
+        unknownOn(SESSION.minusDays(1), "2026-11-05T14:00");
+        for (String state : List.of(RealTradeStore.STATE_HALTED, RealTradeStore.STATE_OFF)) {
+            state(state);
+            org.mockito.Mockito.clearInvocations(client);
+            for (String at : List.of("2026-11-06T08:00", "2026-11-06T08:00:10", "2026-11-06T09:30", "2026-11-06T15:40")) {
+                clock.set(kst(at));
+                RealTradeExecutor.Resolution resolution = executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+                assertThat(resolution.unresolved()).as(state + " " + at + " — 확인 필요로 셈").isEqualTo(1);
+                assertThat(resolution.listsFailed()).isFalse();
+            }
+            verify(client, never()).openOrders();
+            verify(client, never()).todayOrders();
+            assertThat(executor.stuckUnknown()).as("상태 응답의 결과 모름 건수(화면의 '토스증권 앱에서 확인')는 그대로").isEqualTo(1);
+            assertThat(only().sendOutcome()).isEqualTo("UNKNOWN");
+        }
+        verify(client, times(1)).placeOrder(anyString());
+    }
+
+    @Test
+    @Disabled("QA-380: 이상 멈춤 뒤에도 당일 결과 모름 행을 10초마다 다시 대조(목록 둘을 다시 읽음)")
+    @DisplayName("QA-380: 이상 멈춤·꺼짐에서 당일 결과 모름 행은 대조가 후보를 정하지 못한 뒤 간격(5분)을 두고 다시 대조 — 늦게 보이면 그때 묶음")
+    void todayUnknownIsReconciledWithSpacingWhenHaltedOrOff() {
+        OrderRow unknown = unknownOn(SESSION, "2026-11-06T10:00");
+
+        clock.set(kst("2026-11-06T10:07:50"));   // 켜짐 — 목록을 읽고 후보 0개 → 이상 멈춤(예전 그대로)
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        assertThat(store.config("KR").orElseThrow().haltReason()).isEqualTo("unknown-order");
+        verify(client, times(1)).todayOrders();
+
+        for (String at : List.of("2026-11-06T10:08:00", "2026-11-06T10:08:10", "2026-11-06T10:12:40")) {
+            clock.set(kst(at));
+            assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()).unresolved()).as(at).isEqualTo(1);
+        }
+        verify(client, times(1)).openOrders();
+        verify(client, times(1)).todayOrders();
+
+        clock.set(kst("2026-11-06T10:12:50"));   // 마지막 대조 + 5분
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(2)).todayOrders();
+
+        // 꺼진 뒤에도 같은 간격으로 이어 가고, 그 주문이 늦게 목록에 보이면 묶음(정기 작업이 취소·추적)
+        state(RealTradeStore.STATE_OFF);
+        clock.set(kst("2026-11-06T10:13:00"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(2)).todayOrders();
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(
+                broker("T-LATE", A, "BUY", "DAY", "PENDING", "5", "0", kst("2026-11-06T10:00:02"), null))));
+        clock.set(kst("2026-11-06T10:17:50"));
+        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()).unresolved()).isZero();
+        assertThat(store.order(unknown.id()).orElseThrow().tossOrderId()).isEqualTo("T-LATE");
+        verify(client, times(1)).placeOrder(anyString());   // 대조는 주문을 내지 않음
+    }
+
+    @Test
+    @DisplayName("QA-380 대조: 꺼짐·이상 멈춤에서도 목록을 읽지 못한 대조는 간격 없이 다음 주기에 다시(대조가 한 번도 끝나지 않은 행을 5분 미루지 않음)")
+    void unreadableListsAreRetriedNextCycleWhenHalted() {
+        unknownOn(SESSION, "2026-11-06T10:00");
+        state(RealTradeStore.STATE_HALTED);
+        when(client.openOrders()).thenReturn(Reply.failed("collector-timeout"));
+
+        clock.set(kst("2026-11-06T10:07:50"));
+        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow())).extracting(RealTradeExecutor.Resolution::listsFailed)
+                .isEqualTo(true);
+        clock.set(kst("2026-11-06T10:08:00"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+
+        verify(client, times(2)).openOrders();
+    }
+
+    @Test
+    @DisplayName("QA-380 대조: 켜짐에서는 지난 세션의 결과 모름 행도 예전처럼 목록을 읽고 후보가 없으면 이상 멈춤(unknown-order) — 모르는 주문을 둔 채 매매를 잇지 않음")
+    void livePastSessionUnknownStillHalts() {
+        unknownOn(SESSION.minusDays(1), "2026-11-05T14:00");
+
+        clock.set(kst("2026-11-06T08:00"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+
+        verify(client).openOrders();
+        verify(client).todayOrders();
+        Config halted = store.config("KR").orElseThrow();
+        assertThat(halted.state()).isEqualTo("HALTED");
+        assertThat(halted.haltReason()).isEqualTo("unknown-order");
+    }
+
+    @Test
+    @DisplayName("QA-380 대조: 끄는 중에는 지난 세션 행도, 방금 대조에 실패한 당일 행도 주기마다 목록을 실제로 읽는다(꺼짐으로 넘기는 조건 — RT3-BE-1)")
+    void stoppingAlwaysReadsLists() {
+        unknownOn(SESSION, "2026-11-06T10:00");
+        clock.set(kst("2026-11-06T10:07:50"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());   // 켜짐 → 후보 0개 → 이상 멈춤
+        assertThat(store.config("KR").orElseThrow().state()).isEqualTo("HALTED");
+        state(RealTradeStore.STATE_STOPPING);
+        when(client.todayOrders()).thenReturn(Reply.failed("collector-timeout"));
+
+        clock.set(kst("2026-11-06T10:08:00"));   // 마지막 대조 10초 뒤 — 간격 안이어도 끄는 중이면 읽음
+        RealTradeExecutor.Resolution today = executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        assertThat(today.listsFailed()).as("읽으려 했고 못 읽음 — 이 주기에는 꺼짐으로 넘기지 않음").isTrue();
+        verify(client, times(2)).todayOrders();
+
+        clock.set(kst("2026-11-07T08:00"));      // 날이 바뀌어 지난 세션 행이 됨 — 끄는 중이면 그래도 읽음
+        RealTradeExecutor.Resolution past = executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        assertThat(past.listsFailed()).isTrue();
+        verify(client, times(3)).todayOrders();
     }
 
     @Test
