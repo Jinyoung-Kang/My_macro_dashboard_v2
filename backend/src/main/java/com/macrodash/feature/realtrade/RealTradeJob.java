@@ -1724,6 +1724,11 @@ class RealTradeJob {
      * 수집기 하루 한도의 오늘 남은 몫(명세 §5.2) — 오늘 주문 목록으로 수집기와 같은 식({@link RealTradePlanner#dailyUsage})으로 센 쓴 몫을 한도에서 뺍니다.
      * 진행 중 매수의 상한가를 {@code account}가 모르면 그 종목만 한 번 더 사전 조회로 묻습니다. 못 세면 empty(수집기도 그때는 보내지 않음). 켜기 창 예상
      * 목록도 씁니다.
+     *
+     * <p><b>형식 밖 종목 코드의 진행 중 매수</b>(QA-413 — 앱에서 낸 주문): 그 종목은 사전 조회에 넣지 않습니다(수집기 사전 조회는 국내 코드 모양만 받고,
+     * 클라이언트는 하나라도 섞이면 부르지 않고 실패). 수집기 주문 보기에는 주문 가격이 없어 그 주문이 잡은 매수 금액을 어림할 값도 없으므로, 그런 주문이
+     * 걸려 있는 동안 <b>남은 매수 금액을 0으로</b> 둡니다 — 매수는 모두 하루 한도 미룸({@link RealTradePlanner#SKIP_DAILY_CAP})이 되고, 건수는 그대로
+     * 세며, 매도·스탑 매도는 나갑니다. 예전에는 셈 전체가 실패해 그 주문이 끝날 때까지 스탑 매도를 포함한 모든 주기가 '보내지 않음'이었습니다.
      */
     Optional<DailyRoom> dailyRoom(Limits limits, Account account, List<CollectorTradeClient.BrokerOrder> open,
                                   List<CollectorTradeClient.BrokerOrder> today) {
@@ -1744,12 +1749,15 @@ class RealTradeJob {
         });
         Map<String, BigDecimal> uppers = new HashMap<>();
         Set<String> missing = new TreeSet<>();
+        Set<String> unpriceable = new TreeSet<>();   // 형식 밖 종목 코드 — 상한가를 물을 길이 없음(QA-413)
         for (String symbol : RealTradePlanner.dailyUpperSymbols(today, openIds)) {
             BigDecimal upper = account.upper(symbol);
             if (upper != null) {
                 uppers.put(symbol, upper);
-            } else {
+            } else if (RealTradePlanner.krSymbol(symbol)) {
                 missing.add(symbol);
+            } else {
+                unpriceable.add(symbol);
             }
         }
         if (!missing.isEmpty()) {
@@ -1767,12 +1775,18 @@ class RealTradeJob {
                 fetched.putAll(extra.value().quotes());
             }
         }
-        Optional<RealTradePlanner.DailyUsage> usage = RealTradePlanner.dailyUsage(today, openIds, uppers::get);
+        Optional<RealTradePlanner.DailyUsage> usage = RealTradePlanner.dailyUsage(today, openIds, uppers::get, unpriceable);
         if (usage.isEmpty()) {
             log.warn("오늘 주문의 하루 한도 사용량을 셀 수 없음 — 이번 주기는 보내지 않음");
             return Optional.empty();
         }
         int orders = Math.max(0, limits.maxOrdersPerDay() - usage.get().orders());
+        if (usage.get().buyUnknown()) {
+            // 그 주문이 잡은 매수 금액을 모름 — 남은 매수 금액을 0으로(매수는 미루고 매도·스탑 매도는 보냄). 종목 코드는 로그에 싣지 않음
+            log.warn("형식 밖 종목 코드의 진행 중 매수 {}종목 — 오늘 쓴 매수 금액을 셀 수 없어 매수는 미루고 매도만 보냄(그 주문이 끝나면 다시 셈)",
+                    unpriceable.size());
+            return Optional.of(new DailyRoom(orders, BigDecimal.ZERO));
+        }
         BigDecimal buy = BigDecimal.valueOf(limits.maxBuyKrwPerDay()).subtract(usage.get().buyKrw()).max(BigDecimal.ZERO);
         return Optional.of(new DailyRoom(orders, buy));
     }

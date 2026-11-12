@@ -708,8 +708,15 @@ final class RealTradePlanner {
     }
 
     // ------------------------------------------------------------------ 하루 한도
-    /** 오늘 쓴 수집기 하루 한도 — 국내 주문 수와 매수 금액 합. */
-    record DailyUsage(int orders, BigDecimal buyKrw) {
+    /**
+     * 오늘 쓴 수집기 하루 한도 — 국내 주문 수와 매수 금액 합. {@code buyUnknown}이 참이면 상한가를 물을 길이 없는 진행 중 매수(형식 밖 종목 코드 —
+     * QA-413)가 있어 {@code buyKrw}는 그 주문의 잔량을 뺀 <b>하한</b>일 뿐입니다 — 남은 매수 금액을 이 값으로 세면 안 됩니다(부르는 쪽은 매수를 미룸).
+     */
+    record DailyUsage(int orders, BigDecimal buyKrw, boolean buyUnknown) {
+
+        DailyUsage(int orders, BigDecimal buyKrw) {
+            this(orders, buyKrw, false);
+        }
     }
 
     /**
@@ -721,8 +728,19 @@ final class RealTradePlanner {
      */
     static Optional<DailyUsage> dailyUsage(Collection<CollectorTradeClient.BrokerOrder> today, Set<String> openOrderIds,
                                            Function<String, BigDecimal> upper) {
+        return dailyUsage(today, openOrderIds, upper, Set.of());
+    }
+
+    /**
+     * {@link #dailyUsage(Collection, Set, Function)}와 같되, {@code unpriceable}(상한가를 물을 길이 없는 종목 — 국내 종목 코드 모양이 아니라 수집기 사전
+     * 조회가 받지 않음, QA-413)의 진행 중 매수는 잔량 금액을 모르는 채 건수와 체결 금액만 세고 {@link DailyUsage#buyUnknown}을 켭니다. 예전에는 그런
+     * 주문 하나가 셈 전체를 실패시켜(empty) 스탑 매도를 포함한 그 주기의 모든 주문이 나가지 않았습니다. 그 밖의 읽을 수 없는 값은 지금처럼 empty입니다.
+     */
+    static Optional<DailyUsage> dailyUsage(Collection<CollectorTradeClient.BrokerOrder> today, Set<String> openOrderIds,
+                                           Function<String, BigDecimal> upper, Set<String> unpriceable) {
         int count = 0;
         BigDecimal bought = BigDecimal.ZERO;
+        boolean buyUnknown = false;
         for (CollectorTradeClient.BrokerOrder o : today) {
             if (!"KRW".equals(o.currency())) {
                 continue;
@@ -748,11 +766,15 @@ final class RealTradePlanner {
             }
             BigDecimal unit = o.symbol() == null ? null : upper.apply(o.symbol());
             if (!positive(unit)) {
+                if (o.symbol() != null && unpriceable.contains(o.symbol())) {
+                    buyUnknown = true;   // 잔량이 잡은 금액을 모름 — 건수는 위에서 셈
+                    continue;
+                }
                 return Optional.empty();
             }
             bought = bought.add(remaining.multiply(unit));
         }
-        return Optional.of(new DailyUsage(count, bought));
+        return Optional.of(new DailyUsage(count, bought, buyUnknown));
     }
 
     // ------------------------------------------------------------------ 미체결 매수가 잡은 금액(손실 한도의 기준 — RT3-BE-4)

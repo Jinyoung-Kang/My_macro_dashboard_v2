@@ -91,5 +91,21 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   `todayUnknownIsReconciledWithSpacingWhenHaltedOrOff`·`unreadableListsAreRetriedNextCycleWhenHalted`·`livePastSessionUnknownStillHalts`·`stoppingAlwaysReadsLists`,
   `RealTradeJobDbTest`의 `offAndHaltedCyclesDoNotPollForPastSessionUnknown`·`stoppingStillNeedsARealReadForPastSessionUnknown`·
   `stoppingAfterHaltedFailureReadsAgainBeforeOff`·`disableDuringASparedCycleWaitsForARealRead`.
+- **덧붙임(QA-413, 2026-11-12 사용자 승인 — 결정 4의 하루 한도를 계획이 미리 지키는 셈, 실제 돈의 주문 동작이 바뀜)**: 앱에서 낸 미체결 매수의 종목 코드가
+  국내 코드 모양(6자)이 아니면 백엔드는 그 종목의 상한가를 물을 수 없어(수집기 사전 조회가 그 모양만 받음) 하루 남은 몫 셈이 통째로 실패했고, 그 주문이 끝날
+  때까지 스탑 매도를 포함한 모든 주기가 '보내지 않음'이었다(손절이 앱 주문 하나에 묶임). 이제 그 종목은 묻지 않고, 그런 주문이 걸려 있는 동안 **매수는 모두
+  미루고(남은 하루 매수 금액 0) 매도·스탑 매도는 보낸다**. 건수 한도는 그 주문을 그대로 센다.
+  고른 것과 이유: 계획서의 수정안은 '주문 금액 그대로 여유에서 뺌'이었으나 수집기의 주문 보기에는 주문 가격이 없고, 그 종목은 현재가·상한가도 받을 길이 없다
+  (체결이 있거나 보유 중일 때만 값이 하나 있고, 그 종목의 가격 제한 폭도 모름). '여유를 더 줄이는 쪽'으로 믿을 만한 상한을 어림할 값이 없어 **어림하지 않고 매수를
+  멈추는 쪽**을 골랐다 — 매수는 예전(아무것도 보내지 않음)과 같고 매도만 풀리므로 어떤 경우에도 예전보다 더 사지 않는다.
+  검토한 대안: ① 현재가 × 가격 제한 폭으로 어림 — 값이 없는 경우가 일반적이고 폭을 모르는 종목이라 버림. ② 수집기 주문 보기에 주문 가격을 더하거나 수집기
+  사전 조회가 그 종목을 받게 함 — 수집기·토스 스펙 확인이 필요해 이번 범위 밖. ③ 그 종목을 세지 않고 매수도 보냄 — 하루 매수 한도가 느슨해져 버림.
+  감수한 단점: 그런 주문이 걸려 있는 동안 그날 매수(맞추기·장중 따라 하기)가 '하루 한도 미룸'으로만 보이고 사유가 따로 구분되지 않는다(백엔드 로그에만 남음).
+  수집기는 주문마다 그 종목의 상한가를 토스에 직접 물어 한 번 더 세므로, 토스가 답하지 못하는 종목이면 매도도 `count-unavailable`로 나가지 않고 그 안 보냄이
+  오늘 3건이면 '같은 오류 3회' 이상 멈춤이 된다(예전에는 행이 없어 조용히 쉬다가 그 주문이 끝나면 저절로 이어 감 — 이제는 알림과 함께 멈추고 사람이 해제).
+  토스가 그런 코드를 실제로 주는지는 모른다. 계약은 [명세 §12.1](../specs/2026-11-06-real-trade-mirror.md), 시험은 `RealTradeJobDbTest`의
+  `malformedAppBuyDoesNotBlockStopSells`·`malformedAppBuyDefersBuysAndSendsSells`·`malformedAppBuyNextToWellFormedOne`·`malformedAppBuyStillCountsTowardDailyOrders`,
+  `RealTradePlannerTest.dailyUsageWithUnpriceableOpenBuy`, `RealTradeServiceDbTest.previewWithMalformedAppBuyDefersBuys`. 형식에 맞는 종목의 앱 매수와 앱 주문이 없는
+  날은 그대로다(`dailyBuyCapIncludesOpenBuysAtUpper`·`dailyOrderCapDefers`·`syncBatch`).
 - 토큰이 키 하나에 1개라 서버 밖에 같은 키가 있으면 주문 시각에 401이 나고 멈춘다.
 - 모의 1분봉 체결가와 실제 체결가는 다르다(지연·슬리피지·정수 주). 실제 계좌 칸은 실제 평균 체결가만 보이고, 모의 체결가 대비는 다음 단계로 남긴다(모의 체결은 그날 밤에야 기록됨).

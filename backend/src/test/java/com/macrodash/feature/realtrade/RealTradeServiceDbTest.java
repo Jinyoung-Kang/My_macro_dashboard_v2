@@ -729,6 +729,45 @@ class RealTradeServiceDbTest {
     }
 
     @Test
+    @DisplayName("QA-413: 켜기 창 예상 목록 — 형식 밖 종목 코드의 앱 미체결 매수가 걸린 날은 매수를 하루 한도 미룸으로 보이고 매도는 그대로(예전: 예상 목록 전체가 count-unavailable)")
+    void previewWithMalformedAppBuyDefersBuys() {
+        when(paper.sessionHours(any())).thenAnswer(inv -> {
+            LocalDate date = inv.getArgument(0);
+            return Optional.of(new SessionHours(date, true, date.atTime(9, 0).atZone(RealTradeFixtures.SEOUL).toInstant(),
+                    date.atTime(15, 30).atZone(RealTradeFixtures.SEOUL).toInstant()));
+        });
+        when(paper.openTargets(eq(BOOK), any())).thenAnswer(inv -> Optional.of(new OpenTargets(BOOK, inv.getArgument(1), Map.of(C, 50.0),
+                Map.of(), 1e7, 0, List.of(), List.of())));
+        clock.set(RealTradeFixtures.kst("2026-11-06T08:00"));
+        CollectorTradeClient.BrokerOrder odd = new CollectorTradeClient.BrokerOrder("APP-ODD", "Q500001", "BUY", "LIMIT", "DAY", "PENDING",
+                d("10"), d("0"), null, null, null, null, clock.now, null, null, "KRW");   // 합성 — 국내 종목 코드 모양이 아님
+        when(client.openOrders()).thenReturn(Reply.of(List.of(odd)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(odd)));
+        Instant now = clock.now;
+        // 실제 클라이언트처럼 — 물은 종목에 국내 코드 모양이 아닌 것이 있으면 부르지 않고 실패
+        org.mockito.Mockito.doAnswer(inv -> {
+            java.util.Collection<String> symbols = inv.getArgument(0);
+            java.util.Collection<String> sell = inv.getArgument(1);
+            if (symbols.stream().anyMatch(symbol -> !symbol.matches("^[0-9][0-9A-Z]{5}$"))) {
+                return Reply.failed("invalid-symbol");
+            }
+            return Reply.of(new Preflight(now, d("9000000"), List.of(new Holding(A, "합성", d("10"), d("100000"))),
+                    Map.of(A, new Quote(d("100000"), d("130000"), null), C, new Quote(d("50000"), d("65000"), null)),
+                    sell.contains(A) ? Map.of(A, d("10")) : Map.of()));
+        }).when(client).preflight(any(), any());
+
+        Map<String, Object> preview = service(true).preview("KR", BOOK);
+
+        assertThat(preview).containsEntry("ok", true).containsEntry("session", "2026-11-06");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> orders = (List<Map<String, Object>>) preview.get("orders");
+        assertThat(orders).extracting(o -> o.get("side") + " " + o.get("symbol")).containsExactly("SELL " + A);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> skipped = (List<Map<String, Object>>) preview.get("skipped");
+        assertThat(skipped).extracting(o -> o.get("symbol") + " " + o.get("reason")).containsExactly(C + " deferred-daily-cap");
+    }
+
+    @Test
     @DisplayName("상태 — 마지막 사전 조회에 '그날 마감 뒤 값' 표시(afterClose — 모의 한국 달력: 마감 뒤·휴장일은 참, 장중은 거짓, 달력이 모르면 null)")
     void statusMarksAfterClose() {
         service(true).enable(OWNER, enable("실제 매매 켜기", RIGHT, 0));

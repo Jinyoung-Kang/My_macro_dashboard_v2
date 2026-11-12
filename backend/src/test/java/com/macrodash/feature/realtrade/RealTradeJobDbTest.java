@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -3060,6 +3059,9 @@ class RealTradeJobDbTest {
         when(client.preflight(any(), any())).thenAnswer(inv -> {
             java.util.Collection<String> symbols = inv.getArgument(0);
             java.util.Collection<String> sell = inv.getArgument(1);
+            if (symbols == null || sell == null) {
+                return null;   // 다시 정할 때(when(…) 안의 호출) — 인자 없음
+            }
             asked.add(List.copyOf(symbols));
             boolean malformed = java.util.stream.Stream.concat(symbols.stream(), sell.stream())
                     .anyMatch(symbol -> symbol == null || !symbol.matches("^[0-9][0-9A-Z]{5}$"));
@@ -3068,7 +3070,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-413: 형식 밖 종목 코드의 앱 미체결 매수 하나가 하루 한도 셈을 통째로 실패시켜 스탑 매도까지 보내지 않음")
     @DisplayName("QA-413: 형식 밖 종목 코드의 앱 미체결 매수가 있어도 스탑 매도는 나간다 — 그 종목은 사전 조회에 넣지 않음")
     void malformedAppBuyDoesNotBlockStopSells() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -3086,7 +3087,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-413: 형식 밖 종목 코드의 앱 미체결 매수 하나가 하루 한도 셈을 통째로 실패시켜 묶음의 매도까지 보내지 않음")
     @DisplayName("QA-413: 형식 밖 종목의 앱 미체결 매수가 걸린 동안 — 그 주문이 잡은 매수 금액을 셀 수 없으므로 매수는 모두 미루고(하루 한도 미룸) 매도만 보낸다. 그 주문이 끝나면 매수가 다시 나간다")
     void malformedAppBuyDefersBuysAndSendsSells() {
         RealTradeFixtures.live(store, true, d("10000000"));
@@ -3102,25 +3102,41 @@ class RealTradeJobDbTest {
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
         assertThat(asked).allSatisfy(symbols -> assertThat(symbols).doesNotContain(ODD));
 
-        // 그 앱 주문이 체결로 끝남(오늘 목록에 체결 금액과 함께 남고 미체결 목록에서 빠짐) — 쓴 매수 금액을 정확히 세어 매수가 다시 나감
+        // 그 앱 주문이 체결로 끝남(오늘 목록에 체결 금액과 함께 남고 미체결 목록에서 빠짐) — 쓴 매수 금액을 정확히 세어 매수가 다시 나감.
+        // 시가 매도 C 100주도 체결돼 보유가 없고 현금이 늘어난 계좌.
         when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "OPG", "FILLED", "100", "100", clock.now, clock.now)));
+        strictPreflight("10000000", Map.of(), Map.of(A, "50000", B, "20000"), asked);
         when(client.openOrders()).thenReturn(Reply.of(List.of()));
         when(client.todayOrders()).thenReturn(Reply.of(List.of(new CollectorTradeClient.BrokerOrder("APP-ODD", ODD, "BUY", "LIMIT", "DAY",
                 "FILLED", d("10"), d("10"), d("10000"), d("100000"), null, null, kst("2026-11-06T08:40"), null, kst("2026-11-06T09:00"),
                 "KRW"))));
         run("09:01");
 
-        assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 93");
     }
 
     @Test
-    @Disabled("QA-413: 형식 밖 종목이 섞이면 형식에 맞는 종목의 상한가도 묻지 못하고 주기 전체를 보내지 않음")
     @DisplayName("QA-413: 형식에 맞는 앱 매수와 형식 밖 앱 매수가 함께 걸려 있으면 — 형식에 맞는 종목만 상한가를 묻고, 매수는 미루고 매도는 보낸다")
     void malformedAppBuyNextToWellFormedOne() {
         RealTradeFixtures.live(store, true, d("10000000"));
         targets(Map.of(A, 50.0, B, 30.0), List.of());
         List<java.util.Collection<String>> asked = new ArrayList<>();
-        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000", D, "20000"), asked);
+        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"), asked);
+        // D는 책에도 보유에도 없어 첫 사전 조회에 시세가 없음 — 하루 한도를 세며 D만 다시 물을 때 답함
+        Reply<Preflight> base = client.preflight(Set.of(), Set.of());
+        asked.clear();
+        Preflight withD = new Preflight(clock.now, d("6000000"), List.of(), Map.of(D, new Quote(d("20000"), d("26000"), null)), Map.of());
+        when(client.preflight(any(), any())).thenAnswer(inv -> {
+            java.util.Collection<String> symbols = inv.getArgument(0);
+            if (symbols == null) {
+                return null;
+            }
+            asked.add(List.copyOf(symbols));
+            if (symbols.stream().anyMatch(symbol -> !symbol.matches("^[0-9][0-9A-Z]{5}$"))) {
+                return Reply.failed("invalid-symbol");
+            }
+            return symbols.contains(D) ? Reply.of(withD) : base;
+        });
         tossOrders(appBuy("APP-D", D, "MARKET", "10", "0"), appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
 
         run("08:51");

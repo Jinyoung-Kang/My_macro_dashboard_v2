@@ -443,6 +443,34 @@ class RealTradePlannerTest {
     }
 
     @Test
+    @DisplayName("QA-413: 하루 한도 사용량 — 상한가를 물을 길이 없는 종목(형식 밖 코드)의 진행 중 매수는 건수와 체결 금액만 세고 '매수 금액 모름'을 켠다(예전: 셈 전체 실패)")
+    void dailyUsageWithUnpriceableOpenBuy() {
+        String odd = "Q500001";   // 합성 — 국내 종목 코드 모양(6자)이 아님
+        List<CollectorTradeClient.BrokerOrder> today = List.of(
+                todayOrder("t1", A, "SELL", "5", "5", "70000", null, "KRW"),
+                todayOrder("t2", A, "BUY", "10", "10", "70000", null, "KRW"),              // 체결 700,000
+                todayOrder("t3", odd, "BUY", "10", "4", null, "40000", "KRW"),            // 체결 금액 40,000 + 잔량 6주(금액 모름, 진행 중)
+                todayOrder("t4", B, "BUY", "10", "0", null, "0", "KRW"));                  // 잔량 10 × 13,000(진행 중)
+        Set<String> open = Set.of("t3", "t4");
+        assertThat(RealTradePlanner.krSymbol(odd)).isFalse();
+        assertThat(RealTradePlanner.dailyUpperSymbols(today, open)).containsExactlyInAnyOrder(odd, B);
+
+        assertThat(RealTradePlanner.dailyUsage(today, open, Map.of(B, d("13000"))::get)).as("예전 식 — 그 종목의 상한가가 없으면 셈 전체가 모름").isEmpty();
+
+        RealTradePlanner.DailyUsage usage = RealTradePlanner.dailyUsage(today, open, Map.of(B, d("13000"))::get, Set.of(odd)).orElseThrow();
+        assertThat(usage.orders()).as("건수는 그 주문도 그대로 셈").isEqualTo(4);
+        assertThat(usage.buyUnknown()).isTrue();
+        assertThat(usage.buyKrw()).as("하한 — 그 주문의 잔량 금액이 빠져 있음").isEqualByComparingTo("870000");   // 700,000 + 40,000 + 130,000
+
+        // 형식에 맞는 종목의 상한가를 모르는 것은 지금처럼 셈 전체가 모름(물으면 알 수 있는 값을 어림하지 않음)
+        assertThat(RealTradePlanner.dailyUsage(today, open, s -> null, Set.of(odd))).isEmpty();
+        // 그 주문이 끝나면(미체결 목록에 없음) 체결 금액으로 정확히 셈
+        RealTradePlanner.DailyUsage closed = RealTradePlanner.dailyUsage(today, Set.of("t4"), Map.of(B, d("13000"))::get, Set.of()).orElseThrow();
+        assertThat(closed.buyUnknown()).isFalse();
+        assertThat(closed.buyKrw()).isEqualByComparingTo("870000");
+    }
+
+    @Test
     @DisplayName("RT3-BE-4: 미체결 매수가 잡은 금액 — 토스 미체결 목록(앱 주문 포함)의 국내 매수(방향 모름 포함) 남은 수량 × 상한가, 수량·상한가를 모르면 모름")
     void openBuyHold() {
         List<CollectorTradeClient.BrokerOrder> open = List.of(
