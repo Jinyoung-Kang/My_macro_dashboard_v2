@@ -90,8 +90,11 @@ exit 0
 
 
 def _run_tailscale_up(tmp_path, *, state="Running", resolv=_TS_RESOLV, backup: str | None = _VULTR_RESOLV,
-                      getent_ok=True, stdin=""):
-    """가짜 tailscale·id·systemctl·getent로 tailscale-up.sh를 돌립니다. resolv.conf·백업 경로는 임시 폴더(RESOLV_CONF·RESOLV_BACKUP)."""
+                      getent_ok=True, stdin="", link=False):
+    """
+    가짜 tailscale·id·systemctl·getent로 tailscale-up.sh를 돌립니다. resolv.conf·백업 경로는 임시 폴더(RESOLV_CONF·RESOLV_BACKUP).
+    link=True면 resolv.conf를 같은 내용의 stub-resolv.conf를 가리키는 링크로 둡니다(systemd-resolved 스텁 모양).
+    """
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     tools._write_exec(bin_dir / "tailscale", _FAKE_TAILSCALE)
     tools._write_exec(bin_dir / "id", "#!/usr/bin/env bash\necho 0\n")
@@ -100,7 +103,11 @@ def _run_tailscale_up(tmp_path, *, state="Running", resolv=_TS_RESOLV, backup: s
     log.touch()
     etc = tmp_path / "etc"
     etc.mkdir()
-    (etc / "resolv.conf").write_text(resolv, encoding="utf-8")
+    if link:
+        (etc / "stub-resolv.conf").write_text(resolv, encoding="utf-8")
+        (etc / "resolv.conf").symlink_to(etc / "stub-resolv.conf")
+    else:
+        (etc / "resolv.conf").write_text(resolv, encoding="utf-8")
     if backup is not None:
         (etc / "resolv.pre-tailscale-backup.conf").write_text(backup, encoding="utf-8")
     env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_LOG": str(log),
@@ -111,7 +118,6 @@ def _run_tailscale_up(tmp_path, *, state="Running", resolv=_TS_RESOLV, backup: s
     return run, log.read_text(encoding="utf-8").splitlines(), etc
 
 
-@pytest.mark.xfail(strict=True, reason="QA-415 재현 — 고치기 전")
 def test_QA415_tailscale_up은_이미_tailnet에_있으면_Tailscale_DNS를_끈다(tmp_path):
     run, calls, _ = _run_tailscale_up(tmp_path, state="Running")
     assert run.returncode == 0, run.stderr
@@ -119,7 +125,6 @@ def test_QA415_tailscale_up은_이미_tailnet에_있으면_Tailscale_DNS를_끈�
     assert sets and all("--accept-dns=false" in c for c in sets), calls
 
 
-@pytest.mark.xfail(strict=True, reason="QA-415 재현 — 고치기 전")
 def test_QA415_tailscale_up은_처음_등록할_때도_Tailscale_DNS를_끈다(tmp_path):
     run, calls, _ = _run_tailscale_up(tmp_path, state="NeedsLogin", stdin="tskey-test\n")
     assert run.returncode == 0, run.stderr
@@ -127,13 +132,41 @@ def test_QA415_tailscale_up은_처음_등록할_때도_Tailscale_DNS를_끈다(t
     assert len(ups) == 1 and "--accept-dns=false" in ups[0], calls
 
 
-@pytest.mark.xfail(strict=True, reason="QA-415 재현 — 고치기 전")
 def test_QA415_tailscale_up은_Tailscale이_바꿔_둔_resolv_conf를_원래_설정으로_되돌린다(tmp_path):
     run, _, etc = _run_tailscale_up(tmp_path)
     assert run.returncode == 0, run.stderr
     assert (etc / "resolv.conf").read_text(encoding="utf-8") == _VULTR_RESOLV
     kept = [p for p in etc.iterdir() if p.name.startswith("resolv.conf.tailscale-")]
     assert len(kept) == 1 and kept[0].read_text(encoding="utf-8") == _TS_RESOLV, "고장 난 파일은 지우지 않고 남깁니다"
+
+
+def test_QA415_tailscale_up은_resolv_conf가_Tailscale_리졸버가_아니면_건드리지_않는다(tmp_path):
+    run, _, etc = _run_tailscale_up(tmp_path, resolv=_VULTR_RESOLV, backup="nameserver 198.51.100.1\n")
+    assert run.returncode == 0, run.stderr
+    assert (etc / "resolv.conf").read_text(encoding="utf-8") == _VULTR_RESOLV
+    assert not [p for p in etc.iterdir() if p.name.startswith("resolv.conf.tailscale-")]
+
+
+@pytest.mark.parametrize("backup", [None, "", _TS_RESOLV], ids=["백업_없음", "빈_백업", "백업도_Tailscale"])
+def test_QA415_tailscale_up은_되돌릴_원래_설정이_없으면_건드리지_않고_알린_뒤_조회_실패로_끝난다(tmp_path, backup):
+    run, _, etc = _run_tailscale_up(tmp_path, backup=backup, getent_ok=False)
+    assert run.returncode != 0
+    assert "되돌릴 원래 설정이 없습니다" in run.stderr and "이름 조회가 실패합니다" in run.stderr
+    assert (etc / "resolv.conf").read_text(encoding="utf-8") == _TS_RESOLV
+
+
+def test_QA415_tailscale_up은_resolv_conf가_링크면_따라가_고치지_않는다(tmp_path):
+    run, _, etc = _run_tailscale_up(tmp_path, link=True)
+    assert run.returncode == 0, run.stderr
+    assert "되돌릴 원래 설정이 없습니다" in run.stderr
+    assert (etc / "resolv.conf").is_symlink()
+    assert (etc / "stub-resolv.conf").read_text(encoding="utf-8") == _TS_RESOLV, "링크 대상(systemd-resolved 스텁)을 덮지 않습니다"
+
+
+def test_QA415_tailscale_up은_이름_조회가_실패하면_0이_아닌_값으로_끝난다(tmp_path):
+    run, calls, _ = _run_tailscale_up(tmp_path, getent_ok=False)
+    assert run.returncode != 0 and "이름 조회가 실패합니다" in run.stderr
+    assert "tailscale serve --bg --https=443 http://127.0.0.1:8201" in calls, "조회 확인은 serve까지 마친 뒤에 합니다"
 
 
 def test_bootstrap은_비밀번호_로그인을_막는_sshd_드롭인이_cloud_init보다_먼저_읽힌다():
