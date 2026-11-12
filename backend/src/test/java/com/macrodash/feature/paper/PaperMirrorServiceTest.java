@@ -677,6 +677,39 @@ class PaperMirrorServiceTest {
                 .extracting(DueOrder::orderId).containsExactly(halfA);
     }
 
+    // QA-378(고치지 않음 — 경로 확인): 장부가 그 밤 체결하지 못하고 '기다리지 않는' 주문으로 둔 STOP 아닌 대기 주문(이어받은 종목·기업행위 판정 대기의
+    // 그날 보류 등 — 주문은 대기 그대로, 만료 전에 풀리면 원래 세션 값으로 체결: KrLedgerTest.volumeZeroAndCarriedEntries·missedNightStillFillsAtTheNextOpen)은
+    // 다음 세션 S의 목표에 보이지 않습니다. 장부 반영은 참이라 그날 묶음이 쉬지 않고, 목표는 그 주문 전 장부 그대로입니다 — 실제 계좌는 P에 따라 한 매매를
+    // S 묶음에서 되돌립니다(산 종목은 '책에 없는 보유'로 팔고, 판 종목은 목표 비중대로 다시 삼). 아래는 지금 동작을 그대로 적은 것입니다.
+    @Test
+    @DisplayName("QA-378 경로 확인(지금 동작): 목표 세션이 지났는데 장부가 보류해 아직 대기인 STOP 아닌 주문 — 장부 반영은 참, S 목표는 그 주문 전 장부 그대로"
+            + "(매수 주문 종목은 비중 없음·매도 주문 종목은 비중 그대로), 흡수·스탑·장중 주문·대기 STOP 종목 어디에도 그 주문이 없음")
+    void heldDecisionOrdersPastTheirSessionAreInvisibleToTheNextSession() {
+        Instant processed = kst("2026-11-05T20:40");
+        position(B, 50, 20_000);
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000);
+        // P2 밤 결정의 P 09:10 주문 둘 — 실제 계좌는 P 09:10 묶음에서 A를 사고 B를 팔았다고 봄. P 밤 장부는 둘 다 그날 보류(주문은 대기 그대로)
+        long buy = order(A, PaperBooks.BUY, 10.0, null, PaperBooks.AT_MINUTE, RuleBookService.SOURCE_RULE, P2, kst("2026-11-04T22:40"),
+                LocalTime.of(9, 10), null);
+        long sell = order(B, PaperBooks.SELL, null, 1.0, PaperBooks.AT_MINUTE, RuleBookService.SOURCE_RULE, P2, kst("2026-11-04T22:40"),
+                LocalTime.of(9, 10), null);
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("보류 표시 전 — 장부가 아직 일하는 주문이라 그날은 쉼(스탑만)").isFalse();
+        store.ledgerHoldMarks.put(buy, new LedgerHold(buy, BOOK, A, "기업행위 판정 대기 — 그날 그 종목 주문 보류", processed));
+        store.ledgerHoldMarks.put(sell, new LedgerHold(sell, BOOK, B, "기업행위 판정 대기 — 그날 그 종목 주문 보류", processed));
+
+        assertThat(service().ledgerCaughtUp(BOOK, S)).as("장부가 기다리지 않는 주문 — S 묶음은 쉬지 않음").isTrue();
+        for (OpenTargets targets : List.of(service().targetsAt(BOOK, S, kst("2026-11-06T09:10")).orElseThrow(),
+                service().openTargets(BOOK, S).orElseThrow())) {
+            assertThat(targets.weightPct()).as("그 주문 전 장부 그대로 — A는 책에 없고 B는 남아 있음").doesNotContainKey(A).containsKey(B);
+            assertThat(targets.weightPct().get(B)).isCloseTo(50.0, within(0.01));   // 2만 × 50 = 100만 / 순자산 200만
+            assertThat(targets.absorbedOrderIds()).doesNotContain(buy, sell);
+            assertThat(targets.stopOrderIds()).isEmpty();
+            assertThat(targets.complete()).isTrue();
+        }
+        assertThat(service().pendingStopSymbols(BOOK, S)).isEmpty();
+        assertThat(service().dueOrders(BOOK, S, kst("2026-11-06T15:30"))).as("목표 세션이 P라 S 장중 주문도 아님").isEmpty();
+    }
+
     @Test
     @DisplayName("사다리 가격 — 지정 시각 창 첫 거래 봉 시가, 그날 1분봉 없음은 체결 안 됨, 창이 아예 없는 종목은 창 없음(ISA 시가 어림 판단)")
     void ladderPrices() {

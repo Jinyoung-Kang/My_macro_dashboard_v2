@@ -705,6 +705,25 @@ class RealTradeJobDbTest {
         assertThat(RealTradeNotices.text(events("WINDOW_SUMMARY").getFirst())).contains("개장 10분 뒤 맞추기");
     }
 
+    // QA-378(고치지 않음 — 경로 확인): 모의 장부가 보류해 목표 세션이 지난 STOP 아닌 대기 주문은 다음 세션 목표에 보이지 않습니다
+    // (PaperMirrorServiceTest.heldDecisionOrdersPastTheirSessionAreInvisibleToTheNextSession). 그 목표를 받은 묶음은 어제 따라 한 매매를 되돌립니다 —
+    // 뒤에 모의가 원래 세션 값으로 체결하면 다음 묶음이 다시 맞추므로 실제 돈이 왕복합니다. 아래는 지금 동작을 그대로 적은 것입니다(결정 전).
+    @Test
+    @DisplayName("QA-378 경로 확인(지금 동작): 모의 장부가 보류한 지난 세션 주문은 목표에 없으므로 — 어제 따라 산 종목은 '책에 없는 보유'로 팔고, 어제 따라 판 종목은 "
+            + "목표 비중대로 다시 삼(회전율 한도 안이면 멈춤 없이)")
+    void heldPaperOrdersFromTheLastSessionAreRevertedByTheNextBatch() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        // 모의 목표 — 어제 매도가 보류된 B는 비중이 남고(20%), 어제 매수가 보류된 A는 책에 없음
+        timedTargets(Map.of(B, 20.0), List.of(), List.of());
+        // 실제 계좌 — 어제 09:10 묶음에서 A 20주를 샀고 B는 모두 팔았음
+        preflight("9000000", Map.of(A, new String[]{"20", "50000"}), Map.of(B, "20000"));
+
+        run("09:10:05");
+
+        assertThat(sentSummaries()).containsExactly("SELL " + A + " DAY 20", "BUY " + B + " DAY 100");
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
     @Test
     @DisplayName("QA-344 고정: 맞추기 창이 열려 있는 동안(09:11) 켜면 첫 주기에 오늘 묶음을 만들어 바로 보냄 — 켜기 창 예상 목록이 이 세션을 보여야 함")
     void enabledInsideTimedSyncWindowSendsTodaysBatch() {
