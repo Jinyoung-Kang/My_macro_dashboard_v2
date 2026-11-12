@@ -65,3 +65,7 @@ b918c1e0fdf8723e7e82e794a41139a18db1fcd8:backend/src/test/resources/paper/golden
 # 2026-11-12 improve-r5 브랜치(QA-362): 한국 계좌2 끈 판 패킷 고정본(packet-kr-claude2-scheduled.json)의 매크로 카드 항목 키
 # ("kospi200_night_scraped") — 위 16b83a7·f5378ee와 같은 데이터셋 키 문자열이다(.env 값과 일치 0건, 값은 수집기 catalog의 데이터셋 이름).
 176da65338353342aec4528186e68b62a9157d6c:backend/src/test/resources/paper/golden/packet-kr-claude2-scheduled.json:generic-api-key:1
+
+# 2026-11-13 판단 이어받기(ADR 0038): 한국 이어받기 판 패킷 고정본(packet-kr-ft-continuity-scheduled.json)의 매크로 카드 항목 키
+# ("kospi200_night_scraped") — 위 176da65와 같은 데이터셋 키 문자열이다(.env 값과 일치 0건, 값은 수집기 catalog의 데이터셋 이름).
+a4e8018db27f1d6e9e3e4232742c04f75b177b73:backend/src/test/resources/paper/golden/packet-kr-ft-continuity-scheduled.json:generic-api-key:1
