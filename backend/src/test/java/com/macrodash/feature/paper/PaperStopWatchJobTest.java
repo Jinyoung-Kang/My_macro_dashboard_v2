@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -567,5 +568,99 @@ class PaperStopWatchJobTest {
             assertThat(r.detail().path("cyclesJudged").asInt()).isZero();
             assertThat(r.detail().path("lastJudgedGrid").isNull()).isTrue();
         });
+    }
+
+    // ------------------------------------------------------------------ QA-384: 감시 작업이 마지막 격자를 판정했는가 → 장부의 덮음(작업 → 장부를 이어서)
+
+    /** 운영 형식의 미국 감시 저장본({@link #usSnapshot} + 수집기가 회차마다 적는 최상위 {@code mode ON} — 장부의 덮음은 ON 저장본만 봄, QA-360). */
+    private void usSnapshotOn(Instant fetchedAt, Map<String, double[]> tickers, Instant until) {
+        usSnapshot(fetchedAt, fetchedAt.plusSeconds(1), tickers, until);
+        ((ObjectNode) marketData.stopWatch(false).orElseThrow().payload()).put("mode", "ON");
+    }
+
+    /** 16:15 ET 확정 종가 관측치(AAA 그날 종가 90 ≤ 스탑가 92)를 16:17에 뜬 장부(재기동한 프로세스 — 메모리 없음)로 처리합니다. */
+    private PaperLedgerService.Outcome closeObservation() {
+        PaperLedgerService closing = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER,
+                new PaperCheckpointJobTest.MovableClock(et(16, 17, 0)));
+        return closing.process(PaperFixtures.quotes(et(16, 15, 0), PaperFixtures.bar("AAA", PREV, 99.0, DAY, 90.0)));
+    }
+
+    @Test
+    @DisplayName("QA-384 평소 날 불변 — 감시 작업이 15:55 격자까지 판정한 날의 16:15 확정 종가 관측치는 감시에 맡김(대체 스탑 없음). 판정 뒤·요약 전에 "
+            + "백엔드가 재기동돼 그 세션 판정 창을 보지 못한 프로세스만 남아도 같음")
+    void judgedLastGridLeavesTheCloseToTheWatch() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        clock.now = et(9, 0, 0);
+        job.run();   // 개장 전부터 떠 있던 프로세스
+        usSnapshotOn(et(15, 55, 20), Map.of("AAA", new double[]{99, 93}), et(15, 54, 0));
+        clock.now = et(15, 55, 40);
+        assertThat(job.run().get(0).grids()).last().isEqualTo(et(15, 55, 0));
+        assertThat(stops()).as("93 > 스탑가 92 — 감시는 걸지 않음").isEmpty();
+
+        // 15:58 재기동 — 새 프로세스는 16:10에 처음 돌아(판정 창 끝 16:05 뒤) 그 세션 요약을 남기지 않음
+        PaperStopWatchJob restarted = jobWith(new StopWatchStatus());
+        clock.now = et(16, 10, 0);
+        restarted.run();
+        assertThat(store.recentJobRuns("stopwatch.summary", 5)).isEmpty();
+
+        PaperLedgerService.Outcome outcome = closeObservation();
+
+        assertThat(stops()).isEmpty();
+        assertThat(store.positions(PaperBooks.RULES)).singleElement().satisfies(p -> assertThat(p.qty()).isEqualTo(10));
+        assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("장중 감시에 맡김"));
+    }
+
+    @Test
+    @DisplayName("QA-384 이중 스탑 없음 — 감시가 마지막 격자(15:55)에서 낸 종가 STOP은 16:15 확정 종가 관측치가 한 번만 체결(대체 스탑을 겹쳐 내지 않음)")
+    void lastGridStopIsFilledOnceAtTheClose() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshotOn(et(15, 55, 20), Map.of("AAA", new double[]{99, 91}), et(15, 54, 0));
+        clock.now = et(15, 55, 40);   // 세션 중 기동 — 가장 최근 격자(15:55) 하나만: 15:50·15:55 두 격자 모두 91 ≤ 92
+        job.run();
+        assertThat(stops()).singleElement().satisfies(o -> {
+            assertThat(o.timing()).as("T 15:57 — 장 끝 여유 안이라 그날 종가").isEqualTo(PaperBooks.NEXT_CLOSE);
+            assertThat(o.status()).isEqualTo(PaperBooks.ORDER_PENDING);
+        });
+
+        closeObservation();
+
+        assertThat(stops()).as("STOP 주문은 감시가 낸 하나뿐").singleElement().satisfies(o -> {
+            assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperStopWatchJob.STOP_MODE);
+        });
+        assertThat(store.fillsOf(PaperBooks.RULES)).hasSize(1);
+        assertThat(store.positions(PaperBooks.RULES)).isEmpty();
+    }
+
+    @Test
+    @Disabled("QA-384: 밤 장부의 덮음 판정이 감시 작업이 마지막 격자를 실제로 판정했는지 보지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-384 — 감시 작업이 15:50 격자까지만 판정하고 백엔드가 죽은 날(수집기는 15:55:20 저장본을 남김)의 16:15 확정 종가 관측치는 덮지 않아 종가 스탑")
+    void unjudgedLastGridKeepsTheCloseFallback() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        clock.now = et(9, 0, 0);
+        job.run();
+        usSnapshotOn(et(15, 50, 20), Map.of("AAA", new double[]{99, 93}), et(15, 49, 0));
+        clock.now = et(15, 50, 40);
+        assertThat(job.run().get(0).grids()).last().isEqualTo(et(15, 50, 0));
+        // 15:52 백엔드가 죽음 — 수집기는 계속 돌아 15:55:20 저장본(15:55 격자 가격 있음)을 남기지만 아무도 그 격자를 판정하지 않음. 16:12에 다시 뜸.
+        usSnapshotOn(et(15, 55, 20), Map.of("AAA", new double[]{99, 93}), et(15, 54, 0));
+        PaperStopWatchJob restarted = jobWith(new StopWatchStatus());
+        clock.now = et(16, 12, 0);
+        restarted.run();
+
+        PaperLedgerService.Outcome outcome = closeObservation();
+
+        assertThat(stops()).singleElement().satisfies(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.IMMEDIATE);
+            assertThat(o.status()).isEqualTo(PaperBooks.ORDER_FILLED);
+            assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK);
+        });
+        assertThat(outcome.notes()).noneMatch(n -> n.contains("장중 감시에 맡김"));
     }
 }
