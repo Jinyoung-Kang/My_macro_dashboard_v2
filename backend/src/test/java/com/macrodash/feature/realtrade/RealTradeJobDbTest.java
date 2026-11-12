@@ -909,6 +909,85 @@ class RealTradeJobDbTest {
         assertThat(sentSummaries()).containsExactly("BUY " + A + " DAY 100");
     }
 
+    @Test
+    @DisplayName("QA-377 고정: 판정(09:07)과 창 굳히기(맞추기 10:00의 3분 전) 사이에 따라 하는 책이 바뀌면 그 주기에 새 책으로 다시 판정하고 창도 새 책의 시각으로 센다 — "
+            + "옛 책의 판정(따라 함)으로는 아무것도 보내지 않고, 새 책이 장부 밀림이면 스탑만")
+    void bookChangeBetweenDecisionAndWindowFreezeIsDecidedAgainBeforeSending() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        timedSyncAt("10:00");
+        preflight("5000000", Map.of(B, new String[]{"100", "50000"}), Map.of(A, "50000"));
+
+        run("09:07:00");   // 옛 책의 판정 — 따라 함. 창(10:00)은 09:57까지 굳지 않음
+        verify(paper, times(1)).ledgerCaughtUp(BOOK, SESSION);
+        assertThat(job.todayView().skipReason()).isNull();
+        assertThat(syncAtWindowStart()).isEqualTo(kst("2026-11-06T10:00"));
+
+        // 09:20 — 책을 바꿈. 새 책의 맞추기 시각은 09:10(그 창은 이미 지남)이고 장부가 전 거래일을 아직 반영하지 않음
+        otherBookReady();
+        when(paper.ledgerCaughtUp(OTHER_BOOK, SESSION)).thenReturn(false);
+        when(paper.dailySyncAt(OTHER_BOOK, SESSION)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.dueOrders(eq(OTHER_BOOK), any(), any())).thenReturn(List.of(dueFor(801, 800, A, "BUY", kst("2026-11-06T09:20")),
+                stopDue(802, B, "MARKET", kst("2026-11-06T09:25"))));
+        when(paper.weightAfter(eq(OTHER_BOOK), eq(801L), any())).thenReturn(Optional.of(new WeightAfter(801, A, "BUY", 20.0, 1e7, true,
+                List.of(801L), List.of())));
+        store.lockConfig("KR", current -> store.updateConfig(current.withSource(OTHER_BOOK, OTHER_GENERATION).withSyncPending(true), 1L));
+
+        run("09:20:10");
+        verify(client, never()).placeOrder(anyString());   // 옛 책의 판정을 이어 썼다면 새 책의 09:20 장중 매수(A)가 나감
+        verify(paper, never()).weightAfter(anyString(), anyLong(), any());
+        verify(paper, times(1)).ledgerCaughtUp(OTHER_BOOK, SESSION);
+        assertThat(job.todayView().skipReason()).as("새 책으로 다시 판정 — 장부 밀림").isEqualTo(RealTradePlanner.SKIP_LEDGER);
+        assertThat(syncAtWindowStart()).as("창도 새 책의 맞추기 시각으로").isEqualTo(SYNC_AT);
+        assertThat(events("SKIP_DAY")).singleElement().satisfies(e -> assertThat(e.detail().path("reason").asString())
+                .isEqualTo(RealTradePlanner.SKIP_LEDGER));
+
+        run("09:25:10");
+        assertThat(sentSummaries()).as("장부가 밀린 날 — 스탑만").containsExactly("SELL " + B + " DAY 100");
+        run("09:30");
+        run("10:00:05");   // 옛 책의 맞추기 시각 — 아무것도 없음
+        assertThat(sentSummaries()).hasSize(1);
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        verify(paper, times(1)).ledgerCaughtUp(OTHER_BOOK, SESSION);   // 새 책의 판정은 한 번
+    }
+
+    @Test
+    @DisplayName("QA-377 고정: 판정과 창 굳히기 사이에 따라 하는 책의 세대가 바뀌어도 새 세대로 다시 판정한다 — 옛 세대의 쉼(장부 밀림)을 이어 쓰지 않고, "
+            + "창은 아직 굳지 않아 맞추기 시각을 계속 다시 세며, 묶음은 그 시각에")
+    void generationChangeBetweenDecisionAndWindowFreezeIsDecidedAgain() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(paper.ledgerCaughtUp(BOOK, SESSION)).thenReturn(false);
+        timedSyncAt("10:00");
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+
+        run("09:07:00");   // 옛 세대의 판정 — 쉼(장부 밀림)
+        assertThat(job.todayView().skipReason()).isEqualTo(RealTradePlanner.SKIP_LEDGER);
+        verify(paper, times(1)).ledgerCaughtUp(BOOK, SESSION);
+
+        // 09:20 — 같은 책의 세대가 바뀜(합성 세대). 새 세대의 장부는 따라잡은 상태
+        String next = "2026-11-06|2026-11-05T23:30:00Z";
+        when(paper.book(BOOK)).thenReturn(Optional.of(book(next)));
+        when(paper.ledgerCaughtUp(BOOK, SESSION)).thenReturn(true);
+        store.lockConfig("KR", current -> store.updateConfig(current.withSource(BOOK, next).withSyncPending(true), 1L));
+
+        run("09:20:10");
+        verify(paper, times(2)).ledgerCaughtUp(BOOK, SESSION);
+        assertThat(job.todayView().skipReason()).as("새 세대로 다시 판정 — 따라 함").isNull();
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        verify(client, never()).placeOrder(anyString());
+
+        timedSyncAt("09:40");   // 창은 아직 굳기 전 — 새 세대에서도 주기마다 다시 셈
+        run("09:30");
+        assertThat(syncAtWindowStart()).isEqualTo(kst("2026-11-06T09:40"));
+        run("09:39:50");
+        verify(client, never()).placeOrder(anyString());   // 맞추기 시각 전에는 묶음 없음
+
+        run("09:40:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + A + " DAY 100");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(store.recentOrders("KR", 1).getFirst().bookGeneration()).isEqualTo(next);
+        verify(paper, times(2)).ledgerCaughtUp(BOOK, SESSION);   // 세대마다 한 번
+    }
+
     // ------------------------------------------------------------------ 장중 따라 하기
     private static DueOrder due(long id, long root, String side, String timing, Instant mirrorAt, boolean supported) {
         return new DueOrder(id, root, A, side, timing, "CLAUDE", mirrorAt, mirrorAt, supported, 10.0, null, null);
