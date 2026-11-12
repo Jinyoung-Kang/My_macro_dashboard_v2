@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -3330,6 +3331,77 @@ class RealTradeJobDbTest {
         assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100");
         assertThat(asked).as("상한가를 모르는 형식에 맞는 종목은 지금처럼 다시 물음").anyMatch(symbols -> symbols.equals(List.of(D)));
         assertThat(asked).allSatisfy(symbols -> assertThat(symbols).doesNotContain(ODD));
+    }
+
+    /** 형식 밖 종목의 앱 매수가 끝남(취소) — 미체결 목록에서 빠지고 오늘 목록에 체결 0으로 남음. */
+    private void oddAppBuyEnded() {
+        when(client.openOrders()).thenReturn(Reply.of(List.of()));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(new CollectorTradeClient.BrokerOrder("APP-ODD", ODD, "BUY", "LIMIT", "DAY",
+                "CANCELED", d("100"), d("0"), null, d("0"), null, null, kst("2026-11-06T08:40"), kst("2026-11-06T08:59"), null, "KRW"))));
+    }
+
+    @Test
+    @Disabled("QA-413 후속: 형식 밖 종목의 앱 매수가 잡은 금액을 되돌릴 수 없어 손실 0에도 매수 멈춤(loss-limit)이 켜지고, 그 주문이 끝나도 풀리지 않음")
+    @DisplayName("QA-413 후속: 형식 밖 종목의 앱 매수가 걸린 주기에는 손실 한도로 매수 멈춤을 새로 켜지 않는다 — 잡힌 금액을 되돌릴 수 없어 판정값이 그만큼 낮게 "
+            + "보일 뿐(그 주기의 매수는 이미 0). 그 주문이 끝나면 정확한 값으로 판정하고 매수가 다시 나간다")
+    void malformedAppBuyDoesNotTripTheLossLimit() {
+        plainBaseline();   // 기준 총액·기준 평가액 1,000만, 손실 한도 15%(150만)
+        // 실제 손실 0 — 현금 600만 + 보유 C 400만. 형식 밖 종목의 앱 지정가 매수가 200만을 잡아 매수 가능 금액은 400만
+        strictPreflight("4000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "100", "0"));
+
+        run("08:51");
+
+        assertThat(cfg().buysPaused()).as("수정 전: 지금 총액 800만으로 보아 손실 200만 ≥ 150만 — 거짓 매수 멈춤").isFalse();
+        assertThat(events("BUYS_PAUSED")).isEmpty();
+        assertThat(sentSummaries()).as("그 주기 — 매도만, 매수는 미룸").containsExactly("SELL " + C + " OPG 100");
+
+        oddAppBuyEnded();   // 앱 주문이 끝나 잡혔던 200만이 매수 가능 금액으로 돌아옴
+        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        run("09:01");
+
+        assertThat(cfg().buysPaused()).isFalse();
+        assertThat(sentSummaries()).as("그 주문이 끝난 뒤 매수가 다시 나감").anyMatch(o -> o.startsWith("BUY " + A + " DAY"));
+    }
+
+    @Test
+    @DisplayName("QA-413 후속 대조: 실제로 손실 한도를 넘은 계좌 — 형식 밖 종목의 앱 매수가 걸린 동안에도 매수는 한 주도 나가지 않고(남은 매수 금액 0), "
+            + "그 주문이 끝난 첫 주기에 판정이 매수보다 먼저 돌아 매수 멈춤이 켜진다")
+    void realLossWithMalformedAppBuyNeverBuys() {
+        plainBaseline();
+        // 실제 손실 400만(현금 200만 + 보유 C 400만 = 600만) ≥ 150만. 형식 밖 종목의 앱 매수가 그 위에 100만을 더 잡아 매수 가능 금액은 100만
+        strictPreflight("1000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "100", "0"));
+
+        run("08:51");
+        assertThat(sentSummaries()).as("매수 없음").containsExactly("SELL " + C + " OPG 100");
+
+        oddAppBuyEnded();
+        strictPreflight("2000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        run("09:01");
+        run("09:02");
+
+        assertThat(cfg().buysPaused()).as("정확한 값(지금 총액 600만)으로 판정 — 매수 멈춤").isTrue();
+        assertThat(events("BUYS_PAUSED")).hasSize(1);
+        assertThat(sentSummaries()).as("어느 주기에도 매수는 나가지 않음").noneMatch(o -> o.startsWith("BUY"));
+        assertThat(cfg().state()).as("손실 한도는 매수만 멈춤 — 이상 멈춤 아님").isEqualTo("LIVE");
+    }
+
+    @Test
+    @DisplayName("QA-413 후속 대조: 이미 켜진 매수 멈춤은 형식 밖 종목의 앱 매수가 걸려 있어도, 그 주문이 끝나도 풀리지 않는다(해제는 사람이)")
+    void pausedBuysStayPausedAroundMalformedAppBuy() {
+        plainBaseline();
+        store.lockConfig("KR", current -> store.updateConfig(current.withBuysPaused(true), null));
+        strictPreflight("4000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "100", "0"));
+
+        run("08:51");
+        oddAppBuyEnded();
+        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000"), new ArrayList<>());
+        run("09:01");
+
+        assertThat(cfg().buysPaused()).isTrue();
+        assertThat(sentSummaries()).noneMatch(o -> o.startsWith("BUY"));
     }
 
     @Test
