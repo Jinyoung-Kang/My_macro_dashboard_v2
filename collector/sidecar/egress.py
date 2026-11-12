@@ -67,6 +67,17 @@ def _dial(address: str, port: int) -> socket.socket:
     return socket.create_connection((address, port), timeout=CONNECT_SECONDS)
 
 
+def _no_delay(sock: socket.socket) -> None:
+    """
+    작은 쓰기를 모으지 않습니다(TCP_NODELAY) — Chrome이 직접 붙을 때의 소켓과 같게. 없으면 작은 쓰기가 연달아 올 때(TLS 기록, HTTP/2 프레임)
+    Nagle과 상대의 늦은 ACK가 맞물려 한 번에 약 40ms씩 늦습니다.
+    """
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError:
+        pass
+
+
 class EgressFilter:
     """
     루프백의 필터 프록시 하나. 만들면 바로 듣기 시작하고 :meth:`close`(또는 ``with`` 끝)에서 열린 연결까지 닫습니다.
@@ -162,6 +173,7 @@ class EgressFilter:
                 if self._closed.is_set():
                     client.close()
                     break
+                _no_delay(client)
                 if not self._slots.acquire(blocking=False):
                     self._answer(client, 503, "Service Unavailable", linger=0.2)
                     client.close()
@@ -199,6 +211,11 @@ class EgressFilter:
             upstream = self._connect(addresses, port)
             with self._lock:
                 self._sockets.add(upstream)
+            # 닫기는 '닫힘'을 먼저 세우고 그때 열려 있던 소켓을 깨웁니다. 그 뒤에 붙기가 끝난 이 소켓은 깨워지지 않으므로 여기서 봅니다 —
+            # 브라우저가 닫힌 뒤에는 아무것도 내보내지 않습니다.
+            if self._closed.is_set():
+                return
+            with self._lock:
                 self._passed.add(host)
             client.settimeout(SEND_SECONDS)
             upstream.settimeout(SEND_SECONDS)
@@ -250,9 +267,11 @@ class EgressFilter:
             if self._closed.is_set():
                 break
             try:
-                return self._dial(address, port)
+                upstream = self._dial(address, port)
             except OSError:
                 continue
+            _no_delay(upstream)
+            return upstream
         raise _Reject(502, "Bad Gateway")
 
     def _note_blocked(self, host: str) -> None:
@@ -332,6 +351,8 @@ class EgressFilter:
 def _parse_head(head: bytes) -> tuple[bytes, bytes, bytes, list[bytes]]:
     """요청 머리 → (메서드, 요청 대상, HTTP 판, 머리글 줄들). 모양이 아니면 400."""
     lines = head.split(b"\r\n")
+    if any(mark in line for line in lines for mark in (b"\n", b"\r", b"\0")):
+        raise _Reject(400, "Bad Request")              # 줄 안의 CR·LF 단독·NUL — 원 서버가 줄을 다르게 나눠 읽을 수 있는 머리는 넘기지 않습니다
     parts = lines[0].split(b" ")
     if len(parts) != 3 or not parts[2].startswith(b"HTTP/1.") or not parts[0].isalpha():
         raise _Reject(400, "Bad Request")

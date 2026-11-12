@@ -274,6 +274,10 @@ def test_막은_목적지는_호스트만_한_번_로그에_남긴다(gates, cap
     b"GET http://8.8.8.8/x HTTP/1.1\r\nno-colon-line\r\n\r\n",
     b"POST http://8.8.8.8/x HTTP/1.1\r\nContent-Length: 3\r\nContent-Length: 4\r\n\r\nabc",
     b"POST http://8.8.8.8/x HTTP/1.1\r\nContent-Length: -1\r\n\r\n",
+    b"GET http://8.8.8.8/x HTTP/1.1\r\nX-A: 1\nX-Injected: 2\r\n\r\n",   # 머리글 줄 안의 줄바꿈 단독(LF) — 원 서버가 줄 둘로 읽을 수 있음
+    b"GET http://8.8.8.8/x HTTP/1.1\r\nX-A: 1\rX-Injected: 2\r\n\r\n",   # CR 단독
+    b"GET http://8.8.8.8/x\nHost: a HTTP/1.1\r\nHost: 8.8.8.8\r\n\r\n",   # 요청 줄 안
+    b"GET http://8.8.8.8/x HTTP/1.1\r\nX-A: 1\x002\r\n\r\n",             # NUL
 ])
 def test_모양이_아닌_요청은_400이고_어디에도_붙지_않는다(gates, payload):
     gate = gates(resolve=_never_resolve, dial=_never_dial)
@@ -531,6 +535,59 @@ def test_연결_수_상한을_넘으면_503(gates, upstreams, monkeypatch):
     assert answer.startswith(b"HTTP/1.1 200"), "자리가 나면 다시 받습니다"
     for conn in held:
         conn.close()
+
+
+def test_QA414_닫는_중에_붙은_연결로는_아무것도_보내지_않는다(gates, upstreams):
+    """
+    프록시를 닫는 순간 목적지에 붙는 중이던 평문 요청 — 붙기가 끝난 뒤에라도 요청을 내보내지 않습니다(브라우저가 닫힌 뒤에 나가는 요청이 없게).
+    """
+    origin = upstreams(reply=b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+    dialing, release = threading.Event(), threading.Event()
+
+    def slow_dial(address: str, port: int) -> socket.socket:
+        dialing.set()
+        release.wait(timeout=10)
+        return socket.create_connection((address, origin.port), timeout=5)
+
+    gate = gates(allow=lambda address: address == "127.0.0.1", dial=slow_dial)
+    conn = socket.create_connection(gate.address, timeout=5)
+    conn.sendall(f"GET http://127.0.0.1:{origin.port}/late HTTP/1.1\r\nHost: x\r\n\r\n".encode())
+    assert dialing.wait(timeout=5)
+
+    closer = threading.Thread(target=gate.close)
+    closer.start()
+    deadline = time.monotonic() + 5
+    while not gate.closed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    release.set()                                         # 닫힌 뒤에야 붙기가 끝남
+    closer.join(timeout=10)
+    time.sleep(0.3)
+    conn.close()
+
+    assert all(received == b"" for received in origin.received), f"닫힌 뒤에 나간 요청: {origin.received}"
+
+
+def test_QA414_두_소켓_모두_작은_쓰기를_모으지_않는다(gates, upstreams):
+    """
+    TCP_NODELAY — Chrome이 직접 붙을 때와 같게. 없으면 작은 쓰기가 연달아 올 때 Nagle과 늦은 ACK가 맞물려 한 번에 약 40ms씩 늦습니다
+    (터널 41.9ms 대 직접 2.2ms로 잰 적이 있음).
+    """
+    echo = upstreams(echo=True)
+    dialed: list[socket.socket] = []
+
+    def dial(address: str, port: int) -> socket.socket:
+        dialed.append(socket.create_connection((address, port), timeout=5))
+        return dialed[-1]
+
+    gate = gates(allow=lambda address: address == "127.0.0.1", dial=dial)
+
+    with socket.create_connection(gate.address, timeout=5) as conn:
+        conn.sendall(f"CONNECT 127.0.0.1:{echo.port} HTTP/1.1\r\n\r\n".encode())
+        assert conn.recv(4096).startswith(b"HTTP/1.1 200")
+        with gate._lock:
+            held = list(gate._sockets)
+        assert len(held) == 2 and dialed[0] in held, "브라우저 쪽 소켓과 목적지 쪽 소켓"
+        assert all(sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY) for sock in held)
 
 
 def test_프록시는_표준_라이브러리와_guard만_가져온다():
