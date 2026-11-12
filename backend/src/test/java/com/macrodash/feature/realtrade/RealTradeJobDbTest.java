@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -2781,6 +2782,33 @@ class RealTradeJobDbTest {
             assertThat(e.detail().path("unresolved").asInt()).isEqualTo(1);
             assertThat(PaperTelegram.plain(RealTradeNotices.text(e))).as("꺼짐 알림이 확인 필요 건수를 실음").contains("확인 필요 1건");
         });
+    }
+
+    @Test
+    @Disabled("QA-380 후속: 이상 멈춤에서 첫 대조 뒤 5분 간격 때문에, 늦게 목록에 뜬 개장 전 OPG 주문을 09:00 단일가 전에 묶어 취소하지 못함")
+    @DisplayName("QA-380 후속: 08:50 OPG 주문의 응답을 잃고 첫 대조(후보 0개)로 이상 멈춤이 된 뒤 그 주문이 목록에 뜨면 — 다음 주기에 묶어 09:00 단일가 전에 취소한다")
+    void haltedCancelsLateListedOpgBeforeTheOpeningAuction() {
+        Config cfg = RealTradeFixtures.live(store, false, d("10000000"));
+        clock.set(kst("2026-11-06T08:50:40"));
+        long batch = store.upsertBatch("KR", SESSION, RealTradeStore.BATCH_SYNC, BOOK, null, List.of(), d("10000000")).id();
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.UNKNOWN, null, "collector-timeout", null));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_SYNC, batch, null, null, A, "BUY", 5, "OPG", d("50000"), 1),
+                cfg);
+        Instant firstSent = store.recentOrders("KR", 1).getFirst().firstSentAt();
+
+        run("08:58:30");   // 첫 전송 + 7분 45초 뒤 첫 대조 — 목록에 아직 없음(후보 0개) → 이상 멈춤
+        assertThat(cfg().haltReason()).isEqualTo("unknown-order");
+        verify(client, never()).cancelOrder(anyString());
+
+        CollectorTradeClient.BrokerOrder late = broker("T-LATE", A, "BUY", "OPG", "PENDING", "5", "0", firstSent.plusSeconds(1), null);
+        when(client.openOrders()).thenReturn(Reply.of(List.of(late)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(late)));
+        run("08:58:40");
+
+        assertThat(store.recentOrders("KR", 1).getFirst().tossOrderId()).as("수정 전: 다음 대조가 09:03:30이라 단일가(09:00) 체결 뒤에야 묶임")
+                .isEqualTo("T-LATE");
+        verify(client).cancelOrder("T-LATE");
+        verify(client, times(1)).placeOrder(anyString());
     }
 
     @Test

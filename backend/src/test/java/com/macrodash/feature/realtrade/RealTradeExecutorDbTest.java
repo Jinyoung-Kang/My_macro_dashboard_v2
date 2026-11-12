@@ -15,6 +15,7 @@ import com.macrodash.store.RealTradeStore.Config;
 import com.macrodash.store.RealTradeStore.OrderRow;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -451,6 +452,26 @@ class RealTradeExecutorDbTest {
         assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()).unresolved()).isZero();
         assertThat(store.order(unknown.id()).orElseThrow().tossOrderId()).isEqualTo("T-LATE");
         verify(client, times(1)).placeOrder(anyString());   // 대조는 주문을 내지 않음
+    }
+
+    @Test
+    @Disabled("QA-380 후속: 이상 멈춤에서 첫 대조가 후보를 못 찾으면 다음 대조가 5분 뒤라, 그사이 목록에 뜬 주문을 바로 묶지 못함")
+    @DisplayName("QA-380 후속: 첫 전송부터 15분 안에는 꺼짐·이상 멈춤에서도 예전처럼 주기마다 대조한다 — 첫 대조 직후 목록에 뜬 주문을 다음 주기에 묶음(간격은 15분 뒤부터)")
+    void haltedReconcilesEveryCycleForTheFirstFifteenMinutes() {
+        OrderRow unknown = unknownOn(SESSION, "2026-11-06T10:00");
+        clock.set(kst("2026-11-06T10:07:50"));   // 켜짐 — 후보 0개 → 이상 멈춤
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        assertThat(store.config("KR").orElseThrow().haltReason()).isEqualTo("unknown-order");
+
+        clock.set(kst("2026-11-06T10:08:00"));
+        executor.resolveUnknown(clock.now, store.config("KR").orElseThrow());
+        verify(client, times(2)).todayOrders();   // 수정 전: 1(간격 안이라 건너뜀)
+
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(
+                broker("T-LATE", A, "BUY", "DAY", "PENDING", "5", "0", kst("2026-11-06T10:00:02"), null))));
+        clock.set(kst("2026-11-06T10:08:10"));
+        assertThat(executor.resolveUnknown(clock.now, store.config("KR").orElseThrow()).unresolved()).isZero();
+        assertThat(store.order(unknown.id()).orElseThrow().tossOrderId()).isEqualTo("T-LATE");
     }
 
     @Test
