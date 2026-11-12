@@ -592,3 +592,15 @@ Tailscale SSH가 끊기므로 비상용 22로 들어가 `sudo apt-get install --
 Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정 2026-11-12)는 `sudo canonical-livepatch status`에서 `supported`·`checkState: checked`와
 `upgradeRequiredDate`(그 날짜 전에 새 커널로 재부팅)를 봅니다. 연결 상태는 `pro status`. 서버를 새로 만들면 `sudo pro attach`를 토큰 없이 돌려 나온 코드를
 `https://ubuntu.com/pro/attach`에 입력합니다(토큰을 명령 인자·파일에 적지 않음).
+
+재부팅이 필요해지면(`/var/run/reboot-required`) 또는 Livepatch가 지금 커널을 지원하지 않거나 점검·적용이 실패하거나 지원 기한이 30일 안이거나 마지막 점검이
+48시간보다 오래되면 `scripts/vultr/reboot-check.sh`가 매일 16:10 KST에 운영 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`)으로 사유·패키지·권장 재부팅
+시각을 한 통 보냅니다(같은 날 같은 글은 한 번, 이상이 없으면 보내지 않음 — syslog `journalctl -t my-macro-reboot-check`). 같은 판정을 `deploy.sh` 끝 요약과 서버의
+`make status`가 한 줄로 찍습니다. cron 등록(서버 ubuntu — 서버 시간대는 UTC, 여러 번 돌려도 한 줄):
+
+```bash
+(crontab -l 2>/dev/null | grep -v 'scripts/vultr/reboot-check.sh'; echo '10 7 * * * /home/ubuntu/My_macro_dashboard_v2/scripts/vultr/reboot-check.sh') | crontab -
+```
+
+재부팅은 Vultr 화면(Server → Restart)이나 서버 셸의 `sudo reboot`로 합니다. 앱 컨테이너는 `restart: unless-stopped`라 저절로 다시 뜨고, 1~2분 뒤 위의 확인 명령과
+`sudo canonical-livepatch status`·`bash scripts/vultr/reboot-check.sh --summary`로 봅니다.

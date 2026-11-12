@@ -254,7 +254,7 @@ make down            # 정지
 ├── deploy/vultr/      Vultr 서버의 앞단 설정(Caddyfile)
 ├── docs/               문서
 └── scripts/            setup · update · version · doctor
-    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · instance·firewall-pc-ip(PC)
+    └── vultr/           Vultr 서버: bootstrap(첫 기동) · tailscale-up · deploy(배포) · backup-s3(cron) · reboot-check(cron) · instance·firewall-pc-ip(PC)
 ```
 
 ### Docker 없이 개발하기
@@ -376,6 +376,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
   브라우저 비밀·`POLITE_FETCH_ENABLED` 같은 서버 전용 줄은 PC를 거치지 않고 서버의 지금 `.env`에서 그대로 이어 붙입니다).
   PC의 `.env`에는 `VULTR_API_KEY`·`VULTR_INSTANCE_ID`·`VULTR_SERVER_IP`·`VULTR_FIREWALL_GROUP_ID`·`TAILSCALE_AUTH_KEY`·`TAILNET_DOMAIN`을 더합니다.
 - DB는 매일 08:00 KST(미국 결정 뒤 — 2026-11-07 배포 전까지는 06:45)와 일요일 23:00 KST에 S3 백업 버킷의 `db/vultr/`로 백업합니다(`scripts/vultr/backup-s3.sh`, cron, 60일 보관).
+- 보안 업데이트는 자동으로 설치되고 긴급 커널 패치는 Livepatch(Ubuntu Pro 무료 개인 구독)가 재부팅 없이 적용합니다. 재부팅이 필요해지거나 Livepatch에 이상이 있으면 매일 16:10 KST에 텔레그램 운영 봇으로 알리고(`scripts/vultr/reboot-check.sh`, cron), 재부팅은 사람이 16:00~22:00 KST에 합니다([ADR 0023](docs/adr/0023-vultr-deployment.md) 개정 2026-11-12).
 - 서버 만들기·`.env` 전달·배포·백업 절차는 [docs/DEVELOPMENT.md §7](docs/DEVELOPMENT.md#7-vultr-서버)에 있습니다. 실제 매매를 켜는 절차·켜기 전 점검표·**비상 끄기 순서**도 같은 절('실제 매매 켜기')입니다.
   실제 매매가 꺼져 있지 않으면(켜짐·끄는 중·이상 멈춤 — 끄는 중·이상 멈춤도 미체결 취소를 보냄) `deploy.sh`는 한국 거래 창(평일 08:45~15:35 KST — 정규장 전체, 장 시간 변경일은 개장 −15분 ~ 마감 +5분, 설정을 읽지 못하면 08:45~16:35)에 멈추고, `make restore`는 복원한 백업에서 꺼지지 않은 실제 매매를 이상 멈춤(`restored`)과 ISA 계좌의 오늘까지 장중 스탑 지시를 건너뜀(`restored`)으로 두며 복원 전 DB에서 켜져 있었는데 백업에 그 상태·주문이 없으면 경고합니다(토스 앱에서 미체결 직접 확인).
   서버 `.env`를 다시 전달해도 서버 전용 줄(토스 키·텔레그램·실제 매매 스위치·한도 등)은 서버에서 그대로 이어 붙이고, 백엔드·수집기는 다시 만들 때 보내던 주문이 끝나도록 90초·30초까지 기다립니다.

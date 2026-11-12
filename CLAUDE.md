@@ -30,7 +30,7 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
   모의 매매 정기 작업은 여기 한 곳)**. 24시간, 접속은 Tailscale 하나(공개 TCP 포트 0, 잠금화면 없음):
   화면 `https://my-macro-app.<tailnet>.ts.net`, 셸 `ssh ubuntu@my-macro-app`(Tailscale SSH), 비상용 `ssh -i ~/.ssh/id_ed25519_vultr ubuntu@<서버 IP>`(22는 PC IP만).
   **서버에서는 `make up` 대신 `bash scripts/vultr/deploy.sh`**(4 GB — 이미지를 하나씩 빌드), PC에서 `bash scripts/vultr/instance.sh status`·PC IP가 바뀌면
-  `firewall-pc-ip.sh`. Vultr ID·IP·tailnet 이름·버킷 이름은 `.env`·메모리에만. 백업은 매일 08:00·일 23:00 KST에 S3 `db/vultr/`(cron — 2026-11-07 배포 때 서버 crontab `0 23 * * *`로 옮김, 그 전 06:45).
+  `firewall-pc-ip.sh`. Vultr ID·IP·tailnet 이름·버킷 이름은 `.env`·메모리에만. 백업은 매일 08:00·일 23:00 KST에 S3 `db/vultr/`(cron — 2026-11-07 배포 때 서버 crontab `0 23 * * *`로 옮김, 그 전 06:45). 재부팅 필요·Livepatch 점검은 매일 16:10 KST(`reboot-check.sh`, cron — 알리기만, 재부팅은 사람이 16:00~22:00 KST).
   AWS 계정에는 포트폴리오 데모(portfolio-*)가 그대로 있다 — 건드리지 않는다.
 - QA·실험용 별도 스택: `bash scripts/qa/qa-stack.sh up|restore F=…|down` (compose 프로젝트 `my_macrodash_v2_qa`,
   포트 13002/18082/18002/15434·프록시 18890 — v3 QA(`macrodash_qa`, 13000…)·v1 QA(`my_macrodash_qa`, 13001…)와 겹치지 않음, 새 비밀값 `.env.qa`, 외부 호출은 차단 프록시). 성능 측정: `ENV_FILE=.env.qa bash scripts/bench-api.sh`(QA 스택), `scripts/qa/k6/`.
