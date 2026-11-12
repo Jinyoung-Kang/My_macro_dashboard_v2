@@ -149,6 +149,21 @@ def test_내부_주소가_섞여_풀리거나_풀리지_않는_이름은_막는�
     assert guard.destination_allowed("https://nowhere.example.org/", resolve=lambda name: []) is False
 
 
+def test_검사한_주소_목록은_전부_지나갈_때만_돌려준다():
+    """목적지 검사의 속 — 돌려준 주소가 곧 '검사한 주소'입니다(필터 프록시가 이 주소로만 붙음, QA-414)."""
+    def never(name):
+        raise AssertionError("IP 글자는 풀지 않습니다")
+
+    assert guard.checked_addresses("cdn.example.org", resolve=lambda name: ["8.8.8.8", "2001:4860:4860::8888"]) == [
+        "8.8.8.8", "2001:4860:4860::8888"]
+    assert guard.checked_addresses("8.8.8.8", resolve=never) == ["8.8.8.8"]
+    assert guard.checked_addresses("127.0.0.1", resolve=never) == []
+    assert guard.checked_addresses("rebind.example.org", resolve=lambda name: ["8.8.8.8", "10.0.0.5"]) == []
+    assert guard.checked_addresses("nowhere.example.org", resolve=lambda name: []) == []
+    assert guard.checked_addresses("lab.example.org", resolve=lambda name: ["127.0.0.1"], allow=lambda address: True) == [
+        "127.0.0.1"], "검사 함수는 바꿔 끼울 수 있습니다(시험·이미지 안 확인용) — 기본값은 전역 주소 검사"
+
+
 @pytest.mark.parametrize("url", ["ftp://8.8.8.8/x", "ws://8.8.8.8/x", "https:///x", "data:text/plain,hi"])
 def test_http와_https가_아닌_목적지는_지나가지_못한다(url):
     assert guard.destination_allowed(url, resolve=lambda name: ["8.8.8.8"]) is False

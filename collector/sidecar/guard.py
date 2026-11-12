@@ -67,6 +67,22 @@ def system_resolver(host: str) -> list[str]:
     return sorted({entry[4][0] for entry in found})
 
 
+def checked_addresses(host: str, resolve: Resolver = system_resolver,
+                      allow: Callable[[str], bool] = is_global_address) -> list[str]:
+    """
+    그 호스트로 붙어도 되는 주소들 — IP 글자면 그 주소 하나, 이름이면 풀린 주소 전부.
+
+    풀리지 않거나 **하나라도** ``allow``(기본: 전역 주소인가)를 지나지 못하면 빈 목록입니다. 돌려준 주소가 곧 '검사한 주소'라, 부르는 쪽은
+    이름을 다시 풀지 않고 이 주소로 붙어야 합니다(푸는 시점과 붙는 시점 사이에 답이 바뀌는 것을 막으려고 — sidecar/egress.py).
+    """
+    try:
+        ipaddress.ip_address(host)
+        addresses: list[str] = [host]
+    except ValueError:
+        addresses = list(resolve(host))
+    return addresses if addresses and all(allow(address) for address in addresses) else []
+
+
 def destination_allowed(url: str, resolve: Resolver = system_resolver) -> bool:
     """
     하위 요청으로 갈 수 있는 목적지인가 — http(s)이고, 호스트(이름이면 풀린 주소 전부)가 전역 주소.
@@ -77,9 +93,4 @@ def destination_allowed(url: str, resolve: Resolver = system_resolver) -> bool:
     host = (parts.hostname or "").lower()
     if parts.scheme not in ("http", "https") or not host:
         return False
-    try:
-        ipaddress.ip_address(host)
-        addresses: list[str] = [host]
-    except ValueError:
-        addresses = list(resolve(host))
-    return bool(addresses) and all(is_global_address(address) for address in addresses)
+    return bool(checked_addresses(host, resolve))
