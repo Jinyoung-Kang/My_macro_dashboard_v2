@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
-import select
+import selectors
 import socket
 import threading
 import time
@@ -34,8 +34,9 @@ from . import guard
 logger = logging.getLogger("sidecar.egress")
 
 BIND_HOST = "127.0.0.1"
-# 한꺼번에 열어 두는 연결 수의 상한. 넘으면 503으로 답하고 닫습니다(브라우저 하나가 보통 여는 수보다 넉넉한 값).
-MAX_CONNECTIONS = 128
+# 한꺼번에 열어 두는 연결 수의 상한. 넘으면 503으로 답하고 닫습니다. 브라우저 하나가 여는 수보다 넉넉한 값입니다 — 프록시를 둔 Chrome 157은
+# 호스트 60개에 동시에 60개를 열었습니다(프록시 때문에 줄 서지 않음).
+MAX_CONNECTIONS = 256
 # 요청 머리(요청 줄 + 머리글)의 상한과 그것을 다 받기까지의 시간, 목적지 주소 하나에 붙기까지의 시간, 붙어 볼 주소 수, 보내기가 막혔을 때의 상한.
 MAX_HEAD_BYTES = 64 * 1024
 HEAD_SECONDS = 15.0
@@ -270,7 +271,7 @@ class EgressFilter:
             if len(data) > MAX_HEAD_BYTES:
                 raise _Reject(431, "Request Header Fields Too Large")
             if time.monotonic() - started > HEAD_SECONDS:
-                raise _Reject(408, "Request Timeout")
+                raise OSError("요청 머리가 시간 안에 오지 않음")     # 답 없이 닫습니다 — 브라우저가 미리 열어 둔 빈 연결일 수 있습니다
             chunk = client.recv(_CHUNK)
             if not chunk:
                 raise OSError("요청 머리를 받기 전에 끊김")
@@ -286,28 +287,29 @@ class EgressFilter:
 
         ``budget``은 브라우저 → 목적지 쪽으로 더 넘길 수 있는 바이트(평문 http의 남은 본문). 넘으면 끊습니다. ``None``은 제한 없음(터널).
         """
-        peers = {client: upstream, upstream: client}
-        while peers and not self._closed.is_set():
-            if time.monotonic() >= self._deadline:
-                return
-            readable, _, _ = select.select(list(peers), [], [], 0.5)
-            for source in readable:
-                sink = peers.get(source)
-                if sink is None:
-                    continue
-                data = source.recv(_CHUNK)
-                if not data:
-                    del peers[source]
-                    try:
-                        sink.shutdown(socket.SHUT_WR)
-                    except OSError:
-                        return
-                    continue
-                if source is client and budget is not None:
-                    if len(data) > budget:
-                        return
-                    budget -= len(data)
-                sink.sendall(data)
+        with selectors.PollSelector() as waiting:
+            waiting.register(client, selectors.EVENT_READ, upstream)
+            waiting.register(upstream, selectors.EVENT_READ, client)
+            sending = 2                              # 아직 보내기를 끝내지 않은 쪽의 수
+            while sending and not self._closed.is_set():
+                if time.monotonic() >= self._deadline:
+                    return
+                for key, _events in waiting.select(0.5):
+                    source, sink = key.fileobj, key.data
+                    data = source.recv(_CHUNK)
+                    if not data:
+                        waiting.unregister(source)
+                        sending -= 1
+                        try:
+                            sink.shutdown(socket.SHUT_WR)
+                        except OSError:
+                            return
+                        continue
+                    if source is client and budget is not None:
+                        if len(data) > budget:
+                            return
+                        budget -= len(data)
+                    sink.sendall(data)
 
     @staticmethod
     def _answer(client: socket.socket, status: int, reason: str, *, linger: float = 1.0) -> None:

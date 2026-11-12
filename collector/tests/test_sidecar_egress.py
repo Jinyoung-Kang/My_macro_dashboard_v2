@@ -224,6 +224,30 @@ def test_QA414_기본_검사로는_루프백의_서버에_닿지_못한다(gates
     assert secret.received == [], "목적지는 연결조차 받지 않습니다"
 
 
+@pytest.mark.parametrize("host", ["2130706433", "0x7f.0.0.1", "127.1", "017700000001", "localhost", "LOCALHOST"])
+def test_QA414_숫자로_쓴_루프백_주소도_막는다(gates, host):
+    """IP 글자로 읽히지 않는 숫자꼴은 이름으로 풀려 127.0.0.1이 되거나 풀리지 않습니다 — 어느 쪽이든 검사는 풀린 주소로 하므로 막힙니다."""
+    gate = gates(dial=_never_dial)                      # 이름 풀이·검사는 운영 기본값
+
+    assert _status(_send(gate, f"CONNECT {host}:8000 HTTP/1.1\r\n\r\n".encode())) == 403
+    assert _status(_send(gate, f"GET http://{host}:8000/status HTTP/1.1\r\nHost: {host}\r\n\r\n".encode())) == 403
+
+
+def test_밑줄이_든_이름도_목적지로_읽는다(gates):
+    gate = gates(resolve=lambda name: ["10.0.0.5"], dial=_never_dial)
+
+    assert _status(_send(gate, b"CONNECT my_cdn.example.org:443 HTTP/1.1\r\n\r\n")) == 403
+    assert gate.blocked_hosts() == {"my_cdn.example.org"}, "400(읽지 못함)이 아니라 검사까지 갑니다"
+
+
+def test_머리를_보내지_않는_연결은_답_없이_닫는다(gates, monkeypatch):
+    monkeypatch.setattr(egress, "HEAD_SECONDS", 0.3)
+    gate = gates(resolve=_never_resolve, dial=_never_dial)
+
+    with socket.create_connection(gate.address, timeout=5) as conn:
+        assert conn.recv(4096) == b"", "브라우저가 미리 열어 둔 빈 연결 — 답을 쓰지 않고 닫습니다"
+
+
 def test_막은_목적지는_호스트만_한_번_로그에_남긴다(gates, caplog):
     gate = gates(resolve=lambda name: ["10.0.0.5"], dial=_never_dial)
 
