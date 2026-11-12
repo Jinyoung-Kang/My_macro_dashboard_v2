@@ -411,7 +411,9 @@ public class PaperIntradayJob {
         // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
         // — 켠 판 패킷만.
         List<IntradayPlan> rows = store.intradayPlans(code, session);
-        CheckpointPacket.Free free = new CheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
+        // 고정 일정 판(ADR 0039)이면 이 판단 뒤의 예약을 받지 않습니다 — 패킷과 예약 검사에 '순번을 다 씀'으로 넘깁니다(코드가 부르는 순번 수 max는 그대로).
+        int reservable = IntradayPolicy.from(row.body()).fixed(code) ? p.slot() : max;
+        CheckpointPacket.Free free = new CheckpointPacket.Free(code, p.slot(), reservable, p.manual(), p.origin(), p.trigger(),
                 CheckpointPacket.Reserved.after(rows, p.slot()), CheckpointPacket.Reserved.later(rows, p.slot()),
                 StopWatchMode.of(row.body(), false).orders());
         // 판단 이어받기(ADR 0038) — 미국 스위치를 켠 설정 행이면 그 세션 결정의 논거·조건, 보유 종목의 진입 논거, 그 결정 뒤의 사건 뉴스를 싣습니다.
@@ -428,7 +430,7 @@ public class PaperIntradayJob {
         Integer lagSeconds = lag;
         Long id;
         try {
-            id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, c, asOf, kind, max, row, claudeSettings,
+            id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, c, asOf, kind, reservable, row, claudeSettings,
                     attempt, lagSeconds, calledAt, quotes, watch, bars)));
         } catch (RuntimeException e) {
             // 과금된 응답 — 쓰기가 되돌려져도 다시 부르지 않음(재시도 없음). 실패 결정 행을 따로 남기고 행을 DONE으로.

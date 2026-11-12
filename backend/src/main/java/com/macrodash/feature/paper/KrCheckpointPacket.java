@@ -410,7 +410,7 @@ final class KrCheckpointPacket {
         out.put("question", c.question());
         out.put("watch", c.watch());
         if (free != null) {
-            String note = CheckpointPacket.originNote(free.manual(), free.origin());
+            String note = CheckpointPacket.originNote(free.manual(), free.origin(), c.question());
             if (note != null) {
                 out.put("note", note);
             }

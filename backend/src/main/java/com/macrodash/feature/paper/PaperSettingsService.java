@@ -309,6 +309,7 @@ public class PaperSettingsService {
             }
             requireDeadlineAfterDecision(body);
             requireKrDecisionWindow(body);
+            DecisionTiming.requireValid(body);
             requireOneIntradayMode(body);
             String ruleTiming = RuleTiming.invalid(body);
             if (ruleTiming != null) {
@@ -597,6 +598,10 @@ public class PaperSettingsService {
         // 장중 판단만의 effort(IntradayPolicy.EFFORT)는 넣지 않습니다 — 없으면 effort를 따릅니다.
         body.put(IntradayPolicy.US_MIN, IntradayPolicy.DEFAULT_MIN);
         body.put(IntradayPolicy.US_EVENTS, IntradayPolicy.DEFAULT_EVENTS);
+        // 장중 판단 고정 일정·다음 개장 기준 결정·마감 브리핑(ADR 0039) — 모두 꺼짐. 이 키가 없는 지금 행도 꺼짐으로 읽힙니다.
+        body.put(IntradayPolicy.US_FIXED, false);
+        body.put(DecisionTiming.US_KEY, 0);
+        body.put("briefing", Briefing.defaultsBody());
         // 장중 스탑 감시(ADR 0032) — OFF. 키가 없는 지금 행도 OFF로 읽힙니다(StopWatchMode).
         body.put("stopWatch", Map.of("mode", StopWatchMode.DEFAULT.name()));
         // 미국 Claude 계좌2(계좌2 명세 §13-2) — 꺼짐·단계 1 값. 이 키가 없는 지금 행도 같은 값으로 읽힙니다(Claude2Settings — 배포만으로 바뀌지 않음).
@@ -674,6 +679,9 @@ public class PaperSettingsService {
         kr.put("intradayMaxPerSession", FreeTimingSettings.DEFAULT_INTRADAY_MAX);
         kr.put("intradayMinPerSession", IntradayPolicy.DEFAULT_MIN);
         kr.put("intradayEvents", IntradayPolicy.DEFAULT_EVENTS);
+        kr.put("intradayFixed", false);
+        kr.put("decisionBeforeOpenMinutes", 0);
+        kr.put("briefing", Briefing.defaultsBody());
         kr.put("stopWatch", Map.of("mode", StopWatchMode.DEFAULT.name()));
         return kr;
     }

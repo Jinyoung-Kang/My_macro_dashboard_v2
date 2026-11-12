@@ -571,9 +571,9 @@ public class PacketBuilder {
         CalendarSection.Consensus consensusLayer = consensus
                 ? new CalendarSection.Consensus(Datasets.SNAP_US_CONSENSUS,
                         reader.read(Datasets.SNAP_US_CONSENSUS, Datasets.MAX_AGE_SLOW, "us_calendar_consensus"),
-                        NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody)).to())
+                        DecisionTiming.usNewsWindow(asOf, settingsBody).to())
                 : null;
-        NewsEvents.Window newsWindow = NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody));
+        NewsEvents.Window newsWindow = DecisionTiming.usNewsWindow(asOf, settingsBody);
         NewsEvents.Settings news = EventsSection.settings(settingsBody).settings();
         List<JsonNode> newsRows = news.enabled()
                 ? repository.readObservationsBetween(Datasets.OBS_NEWS_HEADLINE, EventsSection.readFrom(newsWindow), null)
@@ -649,6 +649,12 @@ public class PacketBuilder {
         if (continuity) {
             basis.put("continuity", Continuity.VERSION);
         }
+        // 다음 개장 기준 결정(ADR 0039 — 설정 decisionBeforeOpenMinutes): 켠 판의 정기·수동 결정만 머리에 결정 순간과 설명. 끄면 이 칸이 없습니다.
+        Map<String, Object> decisionAt = initial ? null
+                : DecisionTiming.basisView(UsMarketCalendar.CALENDAR, asOf, in.settingsBody(), false);
+        if (decisionAt != null) {
+            basis.put("decisionAt", decisionAt);
+        }
         root.put(BASIS, basis);
         root.put(CALENDAR, calendar.section());
         root.put(MACRO, in.marketSections().get(MACRO));
@@ -693,7 +699,8 @@ public class PacketBuilder {
                     book.checkpoints(), book.freeTiming(),
                     FreeTimingSettings.from(in.settingsBody()).intradayMax(book.code()),
                     IntradayPolicy.from(in.settingsBody()).minPerSession(book.code()),
-                    IntradayScheduler.eventsOn(in.settingsBody(), book.code(), false)));
+                    IntradayScheduler.eventsOn(in.settingsBody(), book.code(), false),
+                    book.freeTiming() && IntradayPolicy.from(in.settingsBody()).fixed(book.code())));
         }
 
         JsonNode body = toNode(root);
@@ -1942,7 +1949,7 @@ public class PacketBuilder {
         // 대상 종목에 행이 있으면 데이터셋이 있는 것이고, 없을 때만 데이터셋 전체를 한 번 봅니다(가장 최근 날짜 — 기본키 앞 열).
         boolean earningsAvailable = !earnings.isEmpty()
                 || repository.latestObservationDate(Datasets.OBS_US_EARNINGS_SURPRISE) != null;
-        Instant knownBy = NewsEvents.window(asOf, PaperDecisionJob.decisionTime(settingsBody)).to();
+        Instant knownBy = DecisionTiming.usNewsWindow(asOf, settingsBody).to();
         return FundamentalsSection.build(asOf, shown, targets.all().size() - shown.size(), targets.excluded(),
                 stored, earningsAvailable ? earnings : null, knownBy);
     }

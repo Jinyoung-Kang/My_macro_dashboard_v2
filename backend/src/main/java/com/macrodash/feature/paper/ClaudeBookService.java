@@ -1310,7 +1310,9 @@ public class ClaudeBookService {
         ClaudeBookProfile profile = pipeline.profile();
         IntradayPlanner.Plan plan = intraday.plan(profile, profile.freeTiming() ? attempt.parsed() : null, session,
                 pipeline.market().calendar(), checkpointUniverse(quotes, view),
-                FreeTimingSettings.from(row.body()).intradayMax(profile.code()), clock.instant());
+                // 고정 일정 판(ADR 0039)이면 예약을 받지 않습니다(0 — 적은 예약은 '꺼짐'으로 버려지고 주문 판정은 그대로).
+                IntradayPolicy.reservable(row.body(), profile.code(), FreeTimingSettings.from(row.body()).intradayMax(profile.code())),
+                clock.instant());
         if (plan != null) {
             response.set("intradayPlan", plan.view(mapper, profile.market() == KrPaperMarket.INSTANCE ? "atKst" : "atEt"));
         }

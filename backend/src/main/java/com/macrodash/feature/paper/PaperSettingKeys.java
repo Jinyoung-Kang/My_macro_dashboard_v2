@@ -326,6 +326,19 @@ final class PaperSettingKeys {
             integer(IntradayPolicy.US_MIN, 0, IntradayPolicy.MAX_MIN, false,
                     "미국 세션마다 계좌별 최소 장중 판단 수(ADR 0031, 기본 0) — 1이면 세션 중간(개장 기준, 보통 날 12:30 ET)까지 예약이 없을 때 "
                             + "코드가 한 번 부름(정기 몫, 최대 횟수 안). 0이면 보장 없음"),
+            of(IntradayPolicy.US_FIXED, Type.BOOLEAN, false,
+                    "미국 장중 판단 고정 일정(ADR 0039, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 코드가 개장 1시간 뒤·마감 40분 전에 한 번씩 "
+                            + "부르고(조기 폐장일은 그날 마감 기준), 결정·판단의 예약은 받지 않음. 사건(intradayEvents)은 보유·지수 하락과 스탑 "
+                            + "근접만 판단을 하나 더함(고정 몫의 순번은 남김). 끄면 지금 그대로(예약·보장·사건)"),
+            integer(DecisionTiming.US_KEY, 0, DecisionTiming.MAX_MINUTES, false,
+                    "미국 정기 결정을 다음 개장 몇 분 전에 낼지(ADR 0039, 기본 0 = 꺼짐 — decisionTimeKst의 KST 시각 그대로). 1 이상이면 세션 D의 "
+                            + "결정을 D 다음 거래일 개장 그 분 전에 냄(주말·휴장·서머타임에 그대로 맞음, " + DecisionTiming.US_MIN_MINUTES
+                            + "분 이상). 규칙 계좌 결정도 같은 때로 옮겨짐(주문은 다음 세션 체결이라 결과는 같음)"),
+            of(Briefing.US_ENABLED, Type.BOOLEAN, false,
+                    "미국 마감 브리핑(ADR 0039, 기본 꺼짐) — 켜면 정규장 마감 briefing.afterCloseMinutes분 뒤에 그날 시장·계좌 사실(코드)과 Claude의 "
+                            + "해석·의견을 텔레그램 한 통으로 보냄. 모의 매매의 입력으로 쓰지 않음. Claude 호출 한 번(하루 상한에 셈)"),
+            integer(Briefing.US_AFTER_CLOSE, 0, Briefing.MAX_AFTER_CLOSE, false,
+                    "미국 마감 브리핑을 정규장 마감 몇 분 뒤에 보낼지(기본 30 — 조기 폐장일은 그날 마감 기준)"),
             of(IntradayPolicy.US_EVENTS, Type.BOOLEAN, false,
                     "미국 장중 사건이 장중 판단을 당김(ADR 0031, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·SPY ±1.5%·트레일링 스탑 2% 안이면 가장 "
                             + "이른 예약을 당기거나 최대 횟수 안에서 더함(사건 하나에 한 번, 자료는 장중 스탑 감시 저장본)"),
@@ -451,6 +464,18 @@ final class PaperSettingKeys {
             integer(IntradayPolicy.KR_MIN, 0, IntradayPolicy.MAX_MIN, false,
                     "한국 세션마다 계좌별 최소 장중 판단 수(ADR 0031, 기본 0) — 1이면 세션 중간(개장 기준, 보통 날 11:30 KST)까지 예약이 없을 때 "
                             + "코드가 한 번 부름(정기 몫, 최대 횟수 안). 0이면 보장 없음"),
+            of(IntradayPolicy.KR_FIXED, Type.BOOLEAN, false,
+                    "한국 장중 판단 고정 일정(ADR 0039, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 코드가 개장 1시간 뒤·마감 40분 전에 한 번씩 "
+                            + "부르고 예약은 받지 않음. 사건(kr.intradayEvents)은 보유·지수 하락과 스탑 근접만 판단을 하나 더함. 끄면 지금 그대로"),
+            integer(DecisionTiming.KR_KEY, 0, DecisionTiming.MAX_MINUTES, false,
+                    "한국 정기 결정을 다음 개장 몇 분 전에 낼지(ADR 0039, 기본 0 = 꺼짐 — kr.decisionTimeKst의 KST 시각 그대로). 1 이상이면 세션 D의 "
+                            + "결정을 D 다음 거래일 개장 그 분 전에 내고 기한은 개장 30분 전(" + DecisionTiming.KR_MIN_MINUTES
+                            + "분 이상). 금요일·휴장 전날 세션의 결정이 다음 거래일 아침으로 옮겨짐"),
+            of(Briefing.KR_ENABLED, Type.BOOLEAN, false,
+                    "한국 마감 브리핑(ADR 0039, 기본 꺼짐) — 켜면 정규장 마감 kr.briefing.afterCloseMinutes분 뒤에 텔레그램 한 통. 한국 장부는 밤에 "
+                            + "체결·평가하므로 마감 직후 브리핑의 체결·순자산·수급은 '밤 장부 처리 뒤 확정'으로 적음"),
+            integer(Briefing.KR_AFTER_CLOSE, 0, Briefing.MAX_AFTER_CLOSE, false,
+                    "한국 마감 브리핑을 정규장 마감 몇 분 뒤에 보낼지(기본 30 — 장 시간 변경일은 그날 마감 기준, 밤 장부 뒤 값이 필요하면 330 등)"),
             of(IntradayPolicy.KR_EVENTS, Type.BOOLEAN, false,
                     "한국 장중 사건이 장중 판단을 당김(ADR 0031, 기본 꺼짐) — 보유 종목 전일 대비 ±4%·069500 ±1.5%·트레일링 스탑 2% 안이면 "
                             + "가장 이른 예약을 당기거나 최대 횟수 안에서 더함(사건 하나에 한 번, 자료는 장중 스탑 감시 저장본)"),

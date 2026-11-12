@@ -430,4 +430,59 @@ class IntradayEventsTest {
         assertThat(made.variant()).isEqualTo(KrPacketBuilder.KR_FREE_FIXED_RULES_VERSION);
         assertThat(made.trigger().get("events").get(0).get("barKst").asString()).isEqualTo("10:05");
     }
+
+    // ------------------------------------------------------------------ 고정 일정 판(ADR 0039)
+    @Test
+    @DisplayName("고정 일정 판(intradayFixed): 움직임 사건은 하락만 — 상승(+1.6%)은 판단을 부르지 않음. 사건은 고정 판단 몫의 순번을 남겨 두고만 씀 — "
+            + "개장 직후에는 한 번(순번 3 − 남은 고정 2), 그 뒤 사건은 NO_SLOT으로 버리고, 첫 고정 판단이 끝난 뒤에는 다시 한 번")
+    void fixedScheduleKeepsDownEventsAndReservesSlots() {
+        long source = freeDecision(PaperBooks.CLAUDE);
+        body().put(IntradayPolicy.US_FIXED, true);
+        ((ObjectNode) body().get("claude2")).put("freeTiming", false);
+        store.upsertPosition(position(PaperBooks.CLAUDE, "AAA", 200));
+        store.upsertPosition(position(PaperBooks.CLAUDE, "BBB", 200));
+        ObjectNode tickers = MAPPER.createObjectNode();
+        usEntry(tickers, "SPY", 100.0, 100.0, 101.6);
+        usEntry(tickers, "AAA", 50.0, 50.0, 52.5);           // +5%
+        monitor = usSnapshot(et(9, 50, 20), tickers);
+        assertThat(events(et(9, 50, 40))).as("상승 사건은 부르지 않음").isEmpty();
+        assertThat(store.intradayPlans(PaperBooks.CLAUDE, MON)).isEmpty();
+
+        usEntry(tickers, "SPY", 100.0, 100.0, 98.4);
+        monitor = usSnapshot(et(10, 0, 20), tickers);
+        assertThat(events(et(10, 1, 10))).containsExactly(Map.entry("claude 2026-11-09 #1",
+                "PLANNED EVENT 10:02 ET — INDEX_MOVE SPY DOWN -1.60%"));
+        store.markIntradayPlan(PaperBooks.CLAUDE, MON, 1, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, null, 9L, 30, et(10, 3, 0));
+
+        usEntry(tickers, "AAA", 50.0, 50.0, 47.9);           // −4.2%
+        monitor = usSnapshot(et(10, 10, 20), tickers);
+        Map<String, String> dropped = events(et(10, 10, 40));
+        assertThat(dropped).containsOnlyKeys("claude 2026-11-09 사건");
+        assertThat(dropped.get("claude 2026-11-09 사건")).as("남은 순번 둘은 고정 판단 몫").startsWith("SUPPRESSED " + IntradayScheduler.NO_SLOT);
+
+        // 사건이 한 번 쓰인 세션: 첫 고정 판단(순번 2)이 끝난 뒤의 사건도 버린다 — 남은 순번 3은 마감 전 고정 판단 몫
+        store.upsertPlannedIntradayPlan(IntradayScheduler.fixedRow(PaperBooks.CLAUDE, MON, 2,
+                new IntradayScheduler.Fixed(LocalTime.of(10, 31), 0), false, source));
+        store.markIntradayPlan(PaperBooks.CLAUDE, MON, 2, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, null, 10L, 30, et(10, 33, 0));
+        usEntry(tickers, "BBB", 50.0, 50.0, 47.0);           // −6%
+        monitor = usSnapshot(et(13, 0, 20), tickers);
+        assertThat(events(et(13, 0, 40)).get("claude 2026-11-09 사건")).startsWith("SUPPRESSED " + IntradayScheduler.NO_SLOT);
+        assertThat(IntradayScheduler.fixedTime(store.intradayPlans(PaperBooks.CLAUDE, MON), MON, US, false, et(15, 20, 10), 3))
+                .as("마감 전 고정 판단은 순번 3으로 그대로").isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(15, 21), 1));
+
+        // 오전에 사건이 없던 세션: 첫 고정 판단(순번 1) 뒤의 사건은 순번 2를 쓰고, 마감 전 고정 판단이 순번 3
+        store.intradayPlans.clear();
+        scheduler = new IntradayScheduler(store, new PaperLedgerService(store, mock(PaperMarketData.class), MAPPER), MAPPER);
+        store.upsertPlannedIntradayPlan(IntradayScheduler.fixedRow(PaperBooks.CLAUDE, MON, 1,
+                new IntradayScheduler.Fixed(LocalTime.of(10, 31), 0), false, source));
+        store.markIntradayPlan(PaperBooks.CLAUDE, MON, 1, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, null, 10L, 30, et(10, 33, 0));
+        monitor = usSnapshot(et(13, 5, 20), tickers);
+        Map<String, String> late = events(et(13, 5, 40));
+        assertThat(late).containsOnlyKeys("claude 2026-11-09 #2");
+        assertThat(late.get("claude 2026-11-09 #2")).startsWith("PLANNED EVENT 13:06 ET — ").contains("HELD_MOVE BBB DOWN -6.00%")
+                .doesNotContain(" UP ");
+        store.markIntradayPlan(PaperBooks.CLAUDE, MON, 2, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, null, 11L, 30, et(13, 8, 0));
+        assertThat(IntradayScheduler.fixedTime(store.intradayPlans(PaperBooks.CLAUDE, MON), MON, US, false, et(15, 20, 10), 3))
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(15, 21), 1));
+    }
 }

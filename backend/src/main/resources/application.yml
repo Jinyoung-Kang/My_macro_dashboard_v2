@@ -145,6 +145,8 @@ dashboard:
     kr-intraday-initial-delay-ms: 185000
     stopwatch-interval-ms: 20000            # 장중 스탑 감시 작업 주기(20초, ADR 0032). 설정 stopWatch.mode·kr.stopWatch.mode가 SHADOW·ON이고 그 시장 정규장 판정 창(개장 10분 뒤 ~ 마감 5분 뒤)일 때만 읽고, 새 감시 저장본이 있을 때만 판정
     stopwatch-initial-delay-ms: 195000
+    briefing-interval-ms: 60000             # 마감 브리핑 작업 주기(60초, ADR 0039). 설정 briefing.enabled·kr.briefing.enabled가 켜져 있고 그 시장 마감 + N분 ~ + 3시간 창일 때만 한 번 만들어 보냄
+    briefing-initial-delay-ms: 150000
     claude-timeout-seconds: 300             # Claude 책 호출 하나의 대기 한도(초). 출력 16,000토큰·effort high가 다 차도 끝나는 여유
     notify-interval-ms: 60000               # 텔레그램 알림 주기(60초) — 체결·결정·결정 없는 주문(설정 notify.telegram, 아래 두 값이 다 있을 때만)
     notify-initial-delay-ms: 200000

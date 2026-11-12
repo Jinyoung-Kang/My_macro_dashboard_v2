@@ -197,6 +197,18 @@ final class CheckpointPacket {
 
     /** 출처에 따른 요청 칸의 한 줄 설명(켠 판 — 운영자·보장·사건만, 그 밖은 null). */
     static String originNote(boolean manual, String origin) {
+        return originNote(manual, origin, null);
+    }
+
+    /**
+     * {@link #originNote(boolean, String)}에 그 행의 질문을 함께 본 것 — 고정 일정 판(ADR 0039)의 고정 시각 행은 보장 행과 같은 출처지만 질문이
+     * 고정 시각의 것이라, 그 행에는 '보장'이 아니라 '고정 시각' 설명을 답니다.
+     */
+    static String originNote(boolean manual, String origin, String question) {
+        if (!manual && PaperStore.IntradayPlan.ORIGIN_GUARANTEE.equals(origin)
+                && (IntradayScheduler.FIXED_QUESTION_OPEN.equals(question) || IntradayScheduler.FIXED_QUESTION_CLOSE.equals(question))) {
+            return "코드가 정한 고정 시각의 판단이다(개장 1시간 뒤·마감 40분 전) — 예약한 판단이 아니고, 이 판단 뒤의 예약(nextCheckpoint)도 받지 않는다";
+        }
         if (manual) {
             return "운영자가 당긴 판단이다 — 예약한 시각이 아니라 지금 부른다";
         }
@@ -583,7 +595,7 @@ final class CheckpointPacket {
         out.put("watch", c.watch());
         out.put("question", c.question());
         if (free != null) {
-            String note = originNote(free.manual(), free.origin());
+            String note = originNote(free.manual(), free.origin(), c.question());
             if (note != null) {
                 out.put("note", note);
             }

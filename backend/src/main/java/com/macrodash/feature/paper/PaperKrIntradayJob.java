@@ -139,7 +139,9 @@ public class PaperKrIntradayJob {
         // 보장 1회(ADR 0031 결정 4 — 설정 kr.intradayMinPerSession ≥ 1일 때만, 기본 꺼짐)·사건(결정 7 — kr.intradayEvents가 켜져 있고 한국 장중
         // 스탑 감시가 SHADOW·ON일 때만, 기본 꺼짐): 그때만 실행(달력 — 수능일 개장 변경 포함)을 엶.
         SettingsRow current = store.settings().orElse(null);
-        boolean guaranteeOn = current != null && IntradayScheduler.guaranteeWanted(BOOKS, current.body());
+        // 고정 일정 판(ADR 0039 — kr.intradayFixed)은 보장과 같은 길로 행을 넣으므로 그 스위치만 켜져 있어도 실행을 엶.
+        boolean guaranteeOn = current != null && (IntradayScheduler.guaranteeWanted(BOOKS, current.body())
+                || IntradayScheduler.fixedWanted(BOOKS, current.body()));
         boolean eventsOn = current != null && IntradayScheduler.eventsWanted(BOOKS, current.body(), true);
         if (guaranteeOn || eventsOn) {
             MarketRun opened = null;
@@ -350,7 +352,9 @@ public class PaperKrIntradayJob {
         // 호출 이유(출처·사건)와 이 판단의 다음 예약이 대신할 남은 예약·그대로 남는 뒤 예약(ADR 0031, QA-309), 장중 스탑 감시 ON 표시(ADR 0032)
         // — 켠 판 패킷만.
         List<IntradayPlan> rows = store.intradayPlans(code, session);
-        KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
+        // 고정 일정 판(ADR 0039)이면 이 판단 뒤의 예약을 받지 않습니다 — 패킷과 예약 검사에 '순번을 다 씀'으로 넘깁니다(코드가 부르는 순번 수 max는 그대로).
+        int reservable = IntradayPolicy.from(row.body()).fixed(code) ? p.slot() : max;
+        KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), reservable, p.manual(), p.origin(), p.trigger(),
                 CheckpointPacket.Reserved.after(rows, p.slot()), CheckpointPacket.Reserved.later(rows, p.slot()),
                 StopWatchMode.of(row.body(), true).orders());
         // 판단 이어받기(ADR 0038) — 한국 스위치를 켠 설정 행이면 밤 결정의 조건, 보유 종목의 진입 논거, 밤 결정 뒤의 사건 뉴스를 싣습니다(끄면 null —
@@ -364,7 +368,7 @@ public class PaperKrIntradayJob {
         }
         Long id;
         try {
-            id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, asOf, kind, max, row, claudeSettings, attempt,
+            id = ledger.exclusively(() -> store.atomically(() -> write(pipeline, p, asOf, kind, reservable, row, claudeSettings, attempt,
                     lag, calledAt, snapshot.payload(), quotes, calendar, source.decidedAt())));
         } catch (RuntimeException e) {
             // 과금된 응답 — 쓰기가 되돌려져도 다시 부르지 않음. 실패 결정 행을 따로 남기고 행을 DONE으로.

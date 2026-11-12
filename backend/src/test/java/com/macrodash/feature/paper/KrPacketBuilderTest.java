@@ -1351,4 +1351,51 @@ class KrPacketBuilderTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("고정 일정·개장 전 결정(ADR 0039 — 한국): kr.intradayFixed를 켜면 자유 시점 판 패킷의 장중 판단 칸만 달라진다(예약 횟수 0·보장 null·"
+            + "fixed에 10:00·14:50) — 끈 판 패킷은 그대로. kr.decisionBeforeOpenMinutes를 켜면 1_basis.decisionAt이 더해진다")
+    void fixedIntradayAndPreOpenDecisionPacket() {
+        Packet plainOff = scheduled();
+        Packet off = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        assertThat(off.body().get(PacketBuilder.BASIS).has("decisionAt")).isFalse();
+        ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
+        kr.put("intradayFixed", true);
+        Packet fixed = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text()).as("끈 판 패킷").isEqualTo(plainOff.text());
+        JsonNode offIntraday = find(off.body(), "intraday");
+        JsonNode intraday = find(fixed.body(), "intraday");
+        assertThat(offIntraday.has("fixed")).isFalse();
+        assertThat(intraday.get("maxPerSession").asInt()).isZero();
+        assertThat(intraday.get("minPerSession").asInt()).isZero();
+        assertThat(intraday.get("guarantee").isNull()).isTrue();
+        assertThat(intraday.get("fixed").get("timesKst")).extracting(JsonNode::asString).containsExactly("10:00", "14:50");
+        assertThat(intraday.get("fixed").get("rule").asString()).isEqualTo(IntradayScheduler.FIXED_RULE);
+        String without = fixed.text().replace(MAPPER.writeValueAsString(intraday), "X");
+        assertThat(without).as("그 밖은 그대로").isEqualTo(off.text().replace(MAPPER.writeValueAsString(offIntraday), "X"));
+
+        kr.put("intradayFixed", false).put("decisionBeforeOpenMinutes", 120);
+        Packet pre = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        JsonNode at = pre.body().get(PacketBuilder.BASIS).get("decisionAt");
+        assertThat(at.get("mode").asString()).isEqualTo("BEFORE_NEXT_OPEN");
+        assertThat(at.get("minutesBeforeOpen").asInt()).isEqualTo(120);
+        assertThat(at.get("decisionAtKst").asString())
+                .isEqualTo(com.macrodash.Kst.stamp(DecisionTiming.decisionInstant(run().calendar(), D, 120)));
+    }
+
+    /** 패킷에서 그 이름의 첫 객체 칸(깊이 우선). */
+    private static JsonNode find(JsonNode node, String name) {
+        if (node.isObject()) {
+            if (node.has(name)) {
+                return node.get(name);
+            }
+            for (JsonNode child : node) {
+                JsonNode found = find(child, name);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
 }

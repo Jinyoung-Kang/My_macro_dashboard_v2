@@ -1292,6 +1292,55 @@ class KrStartTest {
     }
 
     @Test
+    @DisplayName("한국 고정 일정(kr.intradayFixed — ADR 0039): 보장 최소 횟수가 0이어도 작업이 실행을 열어 개장 1시간 뒤(10:00)·마감 40분 전(14:50)에 두 "
+            + "계좌에 한 행씩 넣는다(출처 GUARANTEE·질문은 고정 시각의 것) — 그 시각 2분 전부터 넣고, 판단 응답의 nextCheckpoint는 받지 않으며, "
+            + "14:50 행은 받는 범위의 끝에 그대로 든다")
+    void krFixedScheduleInsertsRowsAtTheTwoTimes() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        fake.answer(KrClaudeFixtures.decision(8, "관망")).answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr")).put("intradayFixed", true).put("intradayMaxPerSession", 3);
+        assertThat(store.settings.body().get("kr").get("intradayMinPerSession").asInt()).as("보장은 꺼진 그대로").isZero();
+        PaperKrIntradayJob intraday = intradayJob();
+        int calls = fake.requests.size();
+
+        clock.set(kst("2026-12-02T09:57"));
+        store.dbNow = kst("2026-12-02T09:57");
+        assertThat(intraday.run().changes()).as("10:00의 2분 전까지는 넣지 않음").isEmpty();
+        clock.set(kst("2026-12-02T09:58"));
+        store.dbNow = kst("2026-12-02T09:58");
+        assertThat(intraday.run().changes()).containsEntry(PaperBooks.KR_CLAUDE + " " + E + " #1", "PLANNED GUARANTEE 10:00 KST")
+                .containsEntry(PaperBooks.KR_CLAUDE2 + " " + E + " #1", "PLANNED GUARANTEE 10:00 KST");
+        com.macrodash.store.PaperStore.IntradayPlan made = store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(0);
+        assertThat(made.origin()).isEqualTo(com.macrodash.store.PaperStore.IntradayPlan.ORIGIN_GUARANTEE);
+        assertThat(made.question()).isEqualTo(IntradayScheduler.FIXED_QUESTION_OPEN);
+
+        // 판단이 다음 판단을 예약해도(nextCheckpoint 11:00) 고정 일정 판은 받지 않는다 — 다음 행은 코드가 14:50에 넣는다.
+        watchKrPlans(kst("2026-12-02T10:00:40"), PaperBooks.KR_CLAUDE + " 10:00 1", PaperBooks.KR_CLAUDE2 + " 10:00 1");
+        String next = "{\"at\":\"11:00\",\"watch\":[\"005930\"],\"question\":\"한 번 더\"}";
+        fake.answer(intradayReply("KEEP", next)).answer(intradayReply("KEEP", next));
+        clock.set(kst("2026-12-02T10:03"));
+        store.dbNow = kst("2026-12-02T10:03");
+        intraday.run();
+        assertThat(fake.requests).hasSize(calls + 2);
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E)).extracting(p -> p.slot() + " " + p.status()).as("예약 행이 생기지 않음")
+                .containsExactly("1 DONE");
+        Decision judged = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        assertThat(judged.packet().toString()).contains("고정 시각의 판단");
+
+        clock.set(kst("2026-12-02T12:00"));
+        store.dbNow = kst("2026-12-02T12:00");
+        assertThat(intraday.run().changes()).as("세션 중간에는 넣지 않음").isEmpty();
+        clock.set(kst("2026-12-02T14:48"));
+        store.dbNow = kst("2026-12-02T14:48");
+        assertThat(intraday.run().changes()).containsEntry(PaperBooks.KR_CLAUDE + " " + E + " #2", "PLANNED GUARANTEE 14:50 KST")
+                .containsEntry(PaperBooks.KR_CLAUDE2 + " " + E + " #2", "PLANNED GUARANTEE 14:50 KST");
+        assertThat(store.intradayPlans(PaperBooks.KR_CLAUDE, E).get(1).question()).isEqualTo(IntradayScheduler.FIXED_QUESTION_CLOSE);
+    }
+
+    @Test
     @DisplayName("한국 사건(kr.intradayEvents·kr.stopWatch.mode SHADOW — ADR 0031 결정 7): 꺼져 있으면 감시 저장본을 읽지 않음. 켜면 새 감시 저장본의 "
             + "069500 +1.75% → 두 계좌에 사건 행(지금 + 1분·감시 1분봉·출처 EVENT·밤 결정)을 넣음 — 보유의 유효 최고가(금융위 확정 시세)를 읽어도 막히지 않음")
     void krEventsAddAJudgment() {

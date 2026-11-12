@@ -3830,4 +3830,50 @@ class PacketBuilderTest {
         String last = rules.get("lines").get(rules.get("lines").size() - 1).asString();
         assertThat(last).startsWith("비용: 수수료 2.5bp").contains("SEC $0/백만 달러").contains("TAF $0.000166/주(1건 상한 $8.3)");
     }
+
+    @Test
+    @DisplayName("고정 일정·개장 전 결정(ADR 0039): intradayFixed를 켜면 자유 시점 판 패킷의 13_execution.intraday만 달라진다(예약 횟수 0·보장 null·fixed에 "
+            + "목표 세션의 두 시각과 규칙·사건 규칙은 하락만) — 자유 시점 판이 아닌 패킷은 그대로. decisionBeforeOpenMinutes를 켜면 1_basis.decisionAt이 "
+            + "더해지고 끄면 그 칸이 없다")
+    void fixedIntradayAndPreOpenDecisionPacket() {
+        activeClaude();
+        ObjectNode settings = (ObjectNode) store.settings.body();
+        settings.put(IntradayPolicy.US_EVENTS, true);
+        ((ObjectNode) settings.get("stopWatch")).put("mode", "SHADOW");
+        Packet off = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0);
+        Packet plainOff = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        assertThat(off.body().get(PacketBuilder.BASIS).has("decisionAt")).isFalse();
+        assertThat(off.body().get(PacketBuilder.EXECUTION).get("intraday").has("fixed")).isFalse();
+
+        settings.put(IntradayPolicy.US_FIXED, true);
+        Packet fixed = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0);
+        assertThat(builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0).text())
+                .as("자유 시점 판이 아닌 패킷").isEqualTo(plainOff.text());
+        JsonNode intraday = fixed.body().get(PacketBuilder.EXECUTION).get("intraday");
+        assertThat(intraday.get("maxPerSession").asInt()).as("예약을 받지 않음").isZero();
+        assertThat(intraday.get("minPerSession").asInt()).isZero();
+        assertThat(intraday.get("guarantee").isNull()).isTrue();
+        assertThat(intraday.get("fixed").get("timesEt")).extracting(JsonNode::asString).containsExactly("10:30", "15:20");
+        assertThat(intraday.get("fixed").get("timesKst")).hasSize(2);
+        assertThat(intraday.get("fixed").get("rule").asString()).isEqualTo(IntradayScheduler.FIXED_RULE);
+        assertThat(intraday.get("events").get("rule").asString()).isEqualTo(IntradayScheduler.fixedEventRule(false)).contains("상승은 사건이 아니다");
+        assertThat(off.body().get(PacketBuilder.EXECUTION).get("intraday").get("events").get("rule").asString())
+                .isNotEqualTo(IntradayScheduler.fixedEventRule(false));
+        JsonNode a = off.body().deepCopy();
+        JsonNode b = fixed.body().deepCopy();
+        ((ObjectNode) a.get(PacketBuilder.EXECUTION)).remove("intraday");
+        ((ObjectNode) b.get(PacketBuilder.EXECUTION)).remove("intraday");
+        assertThat(b).as("그 밖은 그대로").isEqualTo(a);
+
+        settings.put(IntradayPolicy.US_FIXED, false).put(DecisionTiming.US_KEY, 45);
+        Packet pre = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0);
+        JsonNode at = pre.body().get(PacketBuilder.BASIS).get("decisionAt");
+        assertThat(at.get("mode").asString()).isEqualTo("BEFORE_NEXT_OPEN");
+        assertThat(at.get("minutesBeforeOpen").asInt()).isEqualTo(45);
+        assertThat(at.get("decisionAtKst").asString())
+                .isEqualTo(com.macrodash.Kst.stamp(DecisionTiming.decisionInstant(UsMarketCalendar.CALENDAR, MON, 45)));
+        assertThat(at.get("note").asString()).isEqualTo(DecisionTiming.NOTE);
+        assertThat(builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0).body()
+                .get(PacketBuilder.BASIS).has("decisionAt")).as("결정 순간은 계좌의 판과 무관 — 모든 Claude 결정 패킷에").isTrue();
+    }
 }

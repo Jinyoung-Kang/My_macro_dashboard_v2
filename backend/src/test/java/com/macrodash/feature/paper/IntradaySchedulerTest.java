@@ -251,4 +251,107 @@ class IntradaySchedulerTest {
         assertThat(guarantee(now)).containsOnlyKeys("claude 2026-11-09 #1");
         assertThat(store.intradayPlans(PaperBooks.CLAUDE2, MON)).isEmpty();
     }
+
+    // ------------------------------------------------------------------ 고정 두 시각(ADR 0039)
+    private static IntradayPlan row(int slot, LocalTime at, String status, String origin) {
+        IntradayPlan p = row(slot, at, status);
+        return new IntradayPlan(p.bookCode(), p.sessionDate(), p.slot(), p.atLocal(), p.feed(), p.watch(), p.question(), p.variant(),
+                p.manual(), p.sourceDecisionId(), null, null, status, null, null, null, null, null, origin, null);
+    }
+
+    @Test
+    @DisplayName("고정 시각: 개장 1시간 뒤와 마감 40분 전 — 미국 10:30·15:20 ET, 한국 10:00·14:50 KST, 미국 조기 폐장일(13:00 마감)은 10:30·12:20, "
+            + "한국 장 시간 변경일(10:00~16:30)은 11:00·15:50")
+    void fixedTimesFollowTheSessionHours() {
+        assertThat(IntradayScheduler.fixedTimes(MON, US, false)).containsExactly(et(MON, 10, 30, 0), et(MON, 15, 20, 0));
+        assertThat(IntradayScheduler.fixedTimes(KR_DAY, KR, true)).containsExactly(kst(KR_DAY, 10, 0, 0), kst(KR_DAY, 14, 50, 0));
+        LocalDate early = LocalDate.of(2026, 11, 27);
+        assertThat(IntradayScheduler.fixedTimes(early, US, false)).containsExactly(et(early, 10, 30, 0), et(early, 12, 20, 0));
+        LocalDate exam = LocalDate.of(2026, 11, 19);
+        TradingCalendar shifted = new KrxCalendar(KrPaperMarket.holidaysByYear(KrFixtures.holidaysPayload(2026, 2027)), List.of(),
+                Map.of(exam, new KrxCalendar.Hours(LocalTime.of(10, 0), LocalTime.of(16, 30))));
+        assertThat(IntradayScheduler.fixedTimes(exam, shifted, true)).containsExactly(kst(exam, 11, 0, 0), kst(exam, 15, 50, 0));
+        Map<String, Object> view = IntradayScheduler.fixedView(MON, US, false);
+        assertThat(view.get("timesEt")).isEqualTo(List.of("10:30", "15:20"));
+        assertThat((String) view.get("rule")).contains("개장 60분 뒤·마감 40분 전").contains("예약(checkpoints·nextCheckpoint)은 받지 않는다");
+        assertThat(IntradayScheduler.fixedView(KR_DAY, KR, true).get("timesKst")).isEqualTo(List.of("10:00", "14:50"));
+    }
+
+    @Test
+    @DisplayName("고정 판단을 넣을 때: 그 시각 2분 전까지는 없음, 2분 전부터는 그 시각 그대로, 지난 뒤에는 '지금 + 1분', 30분 넘게 놓치면 넣지 않음"
+            + "(몰아서 부르지 않음), 그 시각대에 이미 판단이 있으면 넣지 않음, 남은 예약이 있으면 기다림, 끝난 판단과는 20분 간격, 순번을 다 쓰면 없음 — "
+            + "한국 마감 전 시각(14:50)은 받는 범위의 끝이라 그 시각 전에 넣어야 들어간다")
+    void fixedTimeRules() {
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 10, 27, 59), 3)).isNull();
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 10, 28, 0), 3)).as("2분 전부터 — 시각은 고정 시각 그대로")
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(10, 30), 0));
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 10, 29, 59), 3))
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(10, 30), 0));
+        assertThat(IntradayScheduler.fixedTime(List.of(), KR_DAY, KR, true, kst(KR_DAY, 9, 58, 30), 3))
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(10, 0), 0));
+        assertThat(IntradayScheduler.fixedTime(List.of(), KR_DAY, KR, true, kst(KR_DAY, 14, 48, 30), 3)).as("한국 마감 전 — 범위 끝 14:50 그대로")
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(14, 50), 1));
+        assertThat(IntradayScheduler.fixedTime(List.of(), KR_DAY, KR, true, kst(KR_DAY, 14, 50, 10), 3)).as("14:51은 받는 범위 밖 — 놓침").isNull();
+        List<IntradayPlan> pulled = List.of(row(1, LocalTime.of(10, 29), PaperBooks.CHECKPOINT_DONE, IntradayPlan.ORIGIN_EVENT));
+        assertThat(IntradayScheduler.fixedTime(pulled, MON, US, false, et(MON, 10, 35, 0), 3)).as("2분 전 안에 불린 사건 판단이 그 시각을 대신함").isNull();
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 10, 30, 10), 3))
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(10, 31), 0));
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 11, 0, 30), 3)).as("10:30을 30분 넘게 놓침").isNull();
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 15, 20, 0), 3)).as("둘째 시각은 그대로 — 앞의 놓침과 무관")
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(15, 21), 1));
+        List<IntradayPlan> served = List.of(row(1, LocalTime.of(10, 31), PaperBooks.CHECKPOINT_DONE, IntradayPlan.ORIGIN_GUARANTEE));
+        assertThat(IntradayScheduler.fixedTime(served, MON, US, false, et(MON, 10, 40, 0), 3)).as("그 시각대에 이미 불렀음").isNull();
+        assertThat(IntradayScheduler.fixedTime(served, MON, US, false, et(MON, 15, 20, 5), 3)).as("둘째 시각")
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(15, 21), 1));
+        List<IntradayPlan> planned = List.of(row(1, LocalTime.of(10, 31), PaperBooks.CHECKPOINT_PLANNED, IntradayPlan.ORIGIN_EVENT));
+        assertThat(IntradayScheduler.fixedTime(planned, MON, US, false, et(MON, 10, 30, 30), 3)).as("남은 예약이 불린 뒤 다시 봄").isNull();
+        List<IntradayPlan> eventBefore = List.of(row(1, LocalTime.of(10, 20), PaperBooks.CHECKPOINT_DONE, IntradayPlan.ORIGIN_EVENT));
+        assertThat(IntradayScheduler.fixedTime(eventBefore, MON, US, false, et(MON, 10, 30, 0), 3)).as("앞선 사건 판단과 20분 간격")
+                .isEqualTo(new IntradayScheduler.Fixed(LocalTime.of(10, 40), 0));
+        List<IntradayPlan> full = List.of(row(1, LocalTime.of(9, 50), PaperBooks.CHECKPOINT_DONE), row(2, LocalTime.of(10, 31), PaperBooks.CHECKPOINT_DONE),
+                row(3, LocalTime.of(12, 0), PaperBooks.CHECKPOINT_DONE));
+        assertThat(IntradayScheduler.fixedTime(full, MON, US, false, et(MON, 15, 20, 0), 3)).as("순번을 다 씀").isNull();
+        assertThat(IntradayScheduler.fixedTime(List.of(), MON, US, false, et(MON, 10, 30, 10), 0)).isNull();
+    }
+
+    @Test
+    @DisplayName("사건이 쓸 수 있는 순번: 아직 남은 고정 판단 수만큼 남겨 둔다 — 개장 직후 2, 첫 고정 판단 뒤 1, 둘째 뒤 0, 놓친 고정 시각은 세지 않음")
+    void fixedPendingReservesSlots() {
+        assertThat(IntradayScheduler.fixedPending(List.of(), MON, US, false, et(MON, 9, 45, 0))).isEqualTo(2);
+        assertThat(IntradayScheduler.fixedPending(List.of(), MON, US, false, et(MON, 10, 30, 5))).as("지금 시각대 것이 아직 없음").isEqualTo(2);
+        List<IntradayPlan> first = List.of(row(1, LocalTime.of(10, 31), PaperBooks.CHECKPOINT_DONE, IntradayPlan.ORIGIN_GUARANTEE));
+        assertThat(IntradayScheduler.fixedPending(first, MON, US, false, et(MON, 11, 0, 0))).isEqualTo(1);
+        assertThat(IntradayScheduler.fixedPending(List.of(), MON, US, false, et(MON, 11, 30, 0))).as("첫 시각은 놓침 — 둘째만").isEqualTo(1);
+        List<IntradayPlan> both = List.of(first.get(0), row(2, LocalTime.of(15, 21), PaperBooks.CHECKPOINT_DONE, IntradayPlan.ORIGIN_GUARANTEE));
+        assertThat(IntradayScheduler.fixedPending(both, MON, US, false, et(MON, 15, 25, 0))).isZero();
+    }
+
+    @Test
+    @DisplayName("고정 일정 판(intradayFixed): 두 시각에 한 행씩 넣는다 — 보장 최소 횟수가 0이어도, 질문은 고정 시각의 것, 출처 GUARANTEE. 끈 계좌는 보장 "
+            + "규칙 그대로이고 12:30 전에는 넣지 않음")
+    void fixedScheduleInsertsTwoRows() {
+        body().put(IntradayPolicy.US_FIXED, true).put(IntradayPolicy.US_MIN, 0);
+        long source = freeDecision(PaperBooks.CLAUDE, FRI, PacketBuilder.VARIANT_FREE);
+        assertThat(guarantee(et(MON, 10, 27, 0))).isEmpty();
+
+        Map<String, String> first = guarantee(et(MON, 10, 28, 20));
+        assertThat(first).containsExactly(Map.entry("claude 2026-11-09 #1", "PLANNED GUARANTEE 10:30 ET"));
+        IntradayPlan one = store.intradayPlans(PaperBooks.CLAUDE, MON).get(0);
+        assertThat(one.atLocal()).isEqualTo(LocalTime.of(10, 30));
+        assertThat(one.origin()).isEqualTo(IntradayPlan.ORIGIN_GUARANTEE);
+        assertThat(one.question()).isEqualTo(IntradayScheduler.FIXED_QUESTION_OPEN);
+        assertThat(one.sourceDecisionId()).isEqualTo(source);
+        assertThat(guarantee(et(MON, 10, 31, 20))).as("같은 시각대에 두 번 넣지 않음").isEmpty();
+
+        store.markIntradayPlan(PaperBooks.CLAUDE, MON, 1, PaperBooks.CHECKPOINT_PLANNED, PaperBooks.CHECKPOINT_DONE, null, 9L, 30,
+                et(MON, 10, 33, 0));
+        assertThat(guarantee(et(MON, 12, 30, 0))).as("고정 판은 세션 중간 보장을 넣지 않음").isEmpty();
+        Map<String, String> second = guarantee(et(MON, 15, 20, 30));
+        assertThat(second).containsOnlyKeys("claude 2026-11-09 #2");
+        IntradayPlan two = store.intradayPlans(PaperBooks.CLAUDE, MON).stream().filter(p -> p.slot() == 2).findFirst().orElseThrow();
+        assertThat(two.atLocal()).isEqualTo(LocalTime.of(15, 21));
+        assertThat(two.question()).isEqualTo(IntradayScheduler.FIXED_QUESTION_CLOSE);
+        assertThat(CheckpointPacket.originNote(false, two.origin(), two.question())).contains("고정 시각의 판단").contains("nextCheckpoint");
+        assertThat(CheckpointPacket.originNote(false, IntradayPlan.ORIGIN_GUARANTEE, IntradayScheduler.GUARANTEE_QUESTION)).contains("보장 판단");
+    }
 }

@@ -213,6 +213,18 @@ final class ExecutionSection {
     static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
                                      boolean record, PaperStore store, String book, boolean checkpoints, boolean free,
                                      int intradayMax, int intradayMin, boolean intradayEvents) {
+        return build(asOf, timings, calendar, slippageBp, record, store, book, checkpoints, free, intradayMax, intradayMin,
+                intradayEvents, false);
+    }
+
+    /**
+     * 위 조립에 장중 판단 고정 일정(ADR 0039 — {@link IntradayPolicy#fixed})을 더한 것 — {@code intradayFixed}면 {@code intraday}의 예약 횟수
+     * ({@code maxPerSession}·{@code minPerSession})가 0이고 보장 칸이 null이며, 그 세션의 고정 시각({@code fixed} — {@link IntradayScheduler#fixedView})과
+     * 하락만 보는 사건 규칙이 실립니다. 거짓이면 그 칸이 없어 예전과 바이트까지 같습니다.
+     */
+    static Map<String, Object> build(LocalDate asOf, List<String> timings, TradingCalendar calendar, double slippageBp,
+                                     boolean record, PaperStore store, String book, boolean checkpoints, boolean free,
+                                     int intradayMax, int intradayMin, boolean intradayEvents, boolean intradayFixed) {
         LocalDate session = calendar.nextTradingDay(asOf);
         Instant open = calendar.openInstant(session);
         Instant close = calendar.closeInstant(session);
@@ -292,7 +304,7 @@ final class ExecutionSection {
         }
         if (free) {
             out.put("intraday", intradayOptions(session, calendar, intradayMax, intradayMin, intradayEvents,
-                    lagSummary(store.recentIntradayLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS))));
+                    lagSummary(store.recentIntradayLags(book, FEED_MINUTE, RECENT_LAG_SESSIONS)), intradayFixed));
         }
         return out;
     }
@@ -309,13 +321,17 @@ final class ExecutionSection {
      * 피드 뜻·감시 상한·최근 잰 지연 요약·규칙.
      */
     private static Map<String, Object> intradayOptions(LocalDate session, TradingCalendar calendar, int max, int min, boolean events,
-                                                       Map<String, Object> recentLag) {
+                                                       Map<String, Object> recentLag, boolean fixed) {
         IntradayRequest.Window window = IntradayRequest.window(session, calendar, false);
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("maxPerSession", max);
-        out.put("minPerSession", min);
-        out.put("guarantee", max < 1 ? null : IntradayScheduler.guaranteeView(session, calendar, false, min));
-        out.put("events", IntradayScheduler.eventsView(false, max >= 1 && events));
+        // 고정 일정 판(ADR 0039): 예약을 받지 않으므로 예약 횟수는 0이고(고정 문단의 '0이면 받지 않는다'), 코드가 부르는 시각은 fixed 칸에.
+        out.put("maxPerSession", fixed ? 0 : max);
+        out.put("minPerSession", fixed ? 0 : min);
+        out.put("guarantee", max < 1 || fixed ? null : IntradayScheduler.guaranteeView(session, calendar, false, min));
+        if (fixed && max >= 1) {
+            out.put("fixed", IntradayScheduler.fixedView(session, calendar, false));
+        }
+        out.put("events", IntradayScheduler.eventsView(false, max >= 1 && events, fixed));
         out.put("firstEt", et(window.first(), calendar));
         out.put("lastEt", et(window.last(), calendar));
         out.put("firstKst", Kst.stamp(window.first()));

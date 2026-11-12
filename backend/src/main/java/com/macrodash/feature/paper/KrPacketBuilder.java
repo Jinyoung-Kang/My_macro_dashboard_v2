@@ -405,6 +405,11 @@ final class KrPacketBuilder {
         fixed.put(HARD_RULES, hardRules);
         Rows rows = new Rows(lines, universeRows, quotes, history, flows, scores, unfillable, members, companies, dart,
                 dartMissing, asOf, read, paper);
+        // 다음 개장 기준 결정(ADR 0039 — 설정 kr.decisionBeforeOpenMinutes): 켠 판의 정기·수동 결정만 머리에 결정 순간과 설명. 끄면 이 칸이 없습니다.
+        Map<String, Object> decisionAt = initial ? null : DecisionTiming.basisView(calendar, asOf, body, true);
+        if (decisionAt != null) {
+            basis.put("decisionAt", decisionAt);
+        }
         // 판단 이어받기(ADR 0038) — 자유 시점 판이고 한국 스위치를 켠 결정만: 머리의 continuity, 보유 행의 entry, 섹션 10b_carried. 끄면 이 칸들이
         // 없어 예전 패킷과 바이트까지 같습니다. 조건의 값 표는 3_kr_macro의 환율·외국인 순매수와 8_prices 전 줄(크기 예산으로 자르기 전)의 종가입니다.
         if (free && Continuity.on(body, true)) {
@@ -630,12 +635,17 @@ final class KrPacketBuilder {
             IntradayRequest.Window judgments = IntradayRequest.window(next, calendar, true);
             int max = FreeTimingSettings.from(run.settingsBody()).intradayMax(book);
             Map<String, Object> intraday = new LinkedHashMap<>();
-            intraday.put("maxPerSession", max);
+            // 고정 일정 판(ADR 0039): 예약을 받지 않으므로 예약 횟수는 0이고, 코드가 부르는 시각은 fixed 칸에(끄면 그 칸이 없어 예전과 같음).
+            boolean fixed = IntradayPolicy.from(run.settingsBody()).fixed(book);
+            intraday.put("maxPerSession", fixed ? 0 : max);
             int min = IntradayPolicy.from(run.settingsBody()).minPerSession(book);
-            intraday.put("minPerSession", min);
-            intraday.put("guarantee", max < 1 ? null : IntradayScheduler.guaranteeView(next, calendar, true, min));
+            intraday.put("minPerSession", fixed ? 0 : min);
+            intraday.put("guarantee", max < 1 || fixed ? null : IntradayScheduler.guaranteeView(next, calendar, true, min));
+            if (fixed && max >= 1) {
+                intraday.put("fixed", IntradayScheduler.fixedView(next, calendar, true));
+            }
             intraday.put("events", IntradayScheduler.eventsView(true, max >= 1
-                    && IntradayScheduler.eventsOn(run.settingsBody(), book, true)));
+                    && IntradayScheduler.eventsOn(run.settingsBody(), book, true), fixed));
             intraday.put("firstKst", HOUR_MINUTE.format(judgments.first().atZone(Kst.ZONE)));
             intraday.put("lastKst", HOUR_MINUTE.format(judgments.last().atZone(Kst.ZONE)));
             intraday.put("minGapMinutes", IntradayRequest.MIN_GAP.toMinutes());

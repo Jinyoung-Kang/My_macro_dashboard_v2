@@ -124,7 +124,7 @@ class PaperAdminKrInitTest {
         assertThat(result.startDate()).isEqualTo(S);
         assertThat(result.settingsCreated()).isFalse();
         assertThat(result.settingsVersion()).isEqualTo(2);
-        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(44);   // 한국 자유 시점 판 스위치 둘과 장중 판단 횟수(kr.claude.freeTiming·kr.claude2.freeTiming·kr.intradayMaxPerSession — ADR 0027), 장중 판단 최소·사건·장중 스탑 감시(kr.intradayMinPerSession·kr.intradayEvents·kr.stopWatch.mode — ADR 0031·0032), 수집 글 섹션 스위치(kr.info.packet — ADR 0036)까지
+        assertThat(result.settingsKeysWritten()).containsExactlyElementsOf(krKeys()).hasSize(48);   // 한국 자유 시점 판 스위치 둘과 장중 판단 횟수(kr.claude.freeTiming·kr.claude2.freeTiming·kr.intradayMaxPerSession — ADR 0027), 장중 판단 최소·사건·장중 스탑 감시(kr.intradayMinPerSession·kr.intradayEvents·kr.stopWatch.mode — ADR 0031·0032), 수집 글 섹션 스위치(kr.info.packet — ADR 0036)까지
         assertThat(store.settings.version()).isEqualTo(2);
         assertThat(store.settingsChangedKeys.get(2)).containsExactlyElementsOf(krKeys());
         JsonNode kr = store.settings.body().get("kr");
@@ -194,7 +194,8 @@ class PaperAdminKrInitTest {
                 .contains("kr.commissionBp", "kr.calendar.openTimeOverrides", "kr.claude2.riskProfile", "kr.claude2.checkpoints",
                         "kr.claude.freeTiming", "kr.claude2.freeTiming", "kr.intradayMaxPerSession", "kr.rules.timing",
                         "kr.rules.timingAtKst", "kr.intradayMinPerSession", "kr.intradayEvents", "kr.stopWatch.mode", "kr.info.packet",
-                        "kr.continuity").hasSize(42);
+                        "kr.continuity", "kr.intradayFixed", "kr.decisionBeforeOpenMinutes", "kr.briefing.enabled",
+                        "kr.briefing.afterCloseMinutes").hasSize(46);
         assertThat(store.settings.body().at("/kr/slippageBp").asDouble()).isEqualTo(7);
         assertThat(store.settings.body().at("/kr/calendar/extraClosures/0").asString()).isEqualTo("2026-12-29");
         assertThat(store.settings.body().at("/kr/tax/kospi/sttBp").asDouble()).isEqualTo(5);

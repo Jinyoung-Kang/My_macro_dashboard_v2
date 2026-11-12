@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "headline", "reading", "accounts", "tomorrow", "strategy", "caveats"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "headline": {"type": "string", "maxLength": 120},
+    "reading": {"type": "string", "maxLength": 700},
+    "accounts": {"type": "string", "maxLength": 500},
+    "tomorrow": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {"type": "string", "maxLength": 160}
+    },
+    "strategy": {"type": "string", "maxLength": 500},
+    "caveats": {"type": ["string", "null"], "maxLength": 300}
+  }
+}

@@ -115,6 +115,15 @@ final class IntradayScheduler {
                 + "판단할 계기일 뿐 매매하라는 뜻이 아니다";
     }
 
+    /** 고정 일정 판(ADR 0039)의 사건 규칙 한 줄 — 움직임은 하락만 보고, 예약을 당기지 않고 판단을 하나 더합니다. */
+    static String fixedEventRule(boolean korea) {
+        return "코드가 5분 장중 감시 저장본으로 보유 종목이 전일 종가 대비 −" + trim(HELD_MOVE_PCT) + "% 이하, 지수(" + indexTicker(korea)
+                + ")가 −" + trim(INDEX_MOVE_PCT) + "% 이하로 내리거나 보유 종목이 트레일링 스탑가 위 " + trim(NEAR_STOP_PCT)
+                + "% 안으로 오면(사건마다 세션에 한 번) 세션당 횟수 안에서 판단을 하나 더한다 — 고정 판단 몫의 순번은 남겨 두고, 간격("
+                + IntradayRequest.MIN_GAP.toMinutes() + "분)·받는 범위를 넘으면 그 사건은 버린다. 상승은 사건이 아니다. 사건은 판단할 계기일 뿐 "
+                + "매매하라는 뜻이 아니다";
+    }
+
     /**
      * 결정 패킷의 보장 칸(켠 판) — 세션당 최소 횟수가 1 이상일 때 그 세션의 보장 시각(그 시장 현지 시각 HH:MM과 KST)·규칙, 0이면 null(보장 없음).
      *
@@ -141,6 +150,11 @@ final class IntradayScheduler {
      * 있고 그 시장 장중 스탑 감시가 SHADOW·ON — 사건의 자료가 감시 저장본이라) 문턱과 규칙, 아니면 null.
      */
     static Map<String, Object> eventsView(boolean korea, boolean on) {
+        return eventsView(korea, on, false);
+    }
+
+    /** {@link #eventsView(boolean, boolean)}를 그 판의 규칙 문장으로 — 고정 일정 판(ADR 0039)이면 하락만·판단을 더하기만 하는 문장. */
+    static Map<String, Object> eventsView(boolean korea, boolean on, boolean fixed) {
         if (!on) {
             return null;
         }
@@ -149,7 +163,7 @@ final class IntradayScheduler {
         out.put("indexTicker", indexTicker(korea));
         out.put("indexMovePct", INDEX_MOVE_PCT);
         out.put("nearStopPct", NEAR_STOP_PCT);
-        out.put("rule", eventRule(korea));
+        out.put("rule", fixed ? fixedEventRule(korea) : eventRule(korea));
         return out;
     }
 
@@ -253,6 +267,161 @@ final class IntradayScheduler {
         return Optional.ofNullable(latest);
     }
 
+    // ------------------------------------------------------------------ 고정 두 시각(ADR 0039 — 설정 intradayFixed·kr.intradayFixed)
+
+    /** 고정 판단 하나 — 개장 이만큼 뒤. */
+    static final Duration FIXED_AFTER_OPEN = Duration.ofMinutes(60);
+    /** 고정 판단 둘 — 정규장 마감 이만큼 앞. */
+    static final Duration FIXED_BEFORE_CLOSE = Duration.ofMinutes(40);
+    /** 고정 시각을 이만큼 넘겨 놓치면 그 판단은 넣지 않습니다(서버가 꺼졌다 켜져도 몰아서 부르지 않음). */
+    static final Duration FIXED_GRACE = Duration.ofMinutes(30);
+    /**
+     * 고정 시각 이만큼 전부터 그 시각의 행을 넣습니다(시각 = 고정 시각 그대로) — 한국의 마감 전 시각(14:50)은 받는 범위의 끝과 같아, 그 시각이 지난 뒤
+     * 넣으면('지금 + 1분') 범위를 넘습니다.
+     */
+    static final Duration FIXED_LEAD = Duration.ofMinutes(2);
+    /** 고정 판단 행의 질문(개장 1시간 뒤). */
+    static final String FIXED_QUESTION_OPEN = "코드가 정한 고정 시각의 판단(개장 1시간 뒤) — 그 세션 결정이 남긴 조건과 대기 주문·보유를 점검한다";
+    /** 고정 판단 행의 질문(마감 40분 전). */
+    static final String FIXED_QUESTION_CLOSE = "코드가 정한 고정 시각의 판단(마감 40분 전) — 마감 전에 그 세션 결정이 남긴 조건과 대기 주문·보유를 점검한다";
+    /** 결정 패킷의 고정 일정 규칙 한 줄(켠 판 — {@code intraday.fixed.rule}). */
+    static final String FIXED_RULE = "이 계좌의 장중 판단은 코드가 이 시각들(개장 " + FIXED_AFTER_OPEN.toMinutes() + "분 뒤·마감 "
+            + FIXED_BEFORE_CLOSE.toMinutes() + "분 전)에 한 번씩 부른다 — 예약(checkpoints·nextCheckpoint)은 받지 않는다. 그 시각을 "
+            + FIXED_GRACE.toMinutes() + "분 넘게 놓치면 나중에 대신 부르지 않고 재시도도 없다. 사건(events)이 있으면 세션당 횟수 안에서 판단을 하나 더한다";
+
+    /**
+     * 그 세션의 고정 판단 시각 둘 — 개장 + {@link #FIXED_AFTER_OPEN}, 정규장 마감 − {@link #FIXED_BEFORE_CLOSE}(조기 폐장·장 시간 변경일은 그날 개장·
+     * 마감 기준). 장중 판단을 받는 범위({@link IntradayRequest#window}) 밖이면 그 끝으로 자르고, 둘이 {@link IntradayRequest#MIN_GAP}보다 가까우면
+     * (아주 짧은 세션) 앞의 하나만입니다.
+     */
+    static List<Instant> fixedTimes(LocalDate session, TradingCalendar calendar, boolean korea) {
+        IntradayRequest.Window window = IntradayRequest.window(session, calendar, korea);
+        Instant first = clamp(calendar.openInstant(session).plus(FIXED_AFTER_OPEN), window);
+        Instant second = clamp(calendar.closeInstant(session).minus(FIXED_BEFORE_CLOSE), window);
+        if (Duration.between(first, second).compareTo(IntradayRequest.MIN_GAP) < 0) {
+            return List.of(first);
+        }
+        return List.of(first, second);
+    }
+
+    private static Instant clamp(Instant at, IntradayRequest.Window window) {
+        return at.isBefore(window.first()) ? window.first() : at.isAfter(window.last()) ? window.last() : at;
+    }
+
+    /** 넣을 고정 판단 — 시각(그 시장 현지 시각)과 몇 번째 고정 시각인가(0 = 개장 뒤, 1 = 마감 전). */
+    record Fixed(LocalTime at, int index) {
+    }
+
+    /**
+     * 지금 넣을 고정 판단({@link Fixed}) — 넣을 때가 아니면 null. 순수 함수입니다.
+     *
+     * <p>고정 시각 G마다 그 시각대는 G − {@link #FIXED_LEAD}부터 다음 고정 시각의 그 시각 전까지입니다. 지금이 든 시각대의 G를 봅니다. G를
+     * {@link #FIXED_GRACE} 넘게 지났거나(놓침), 그 시각대에 이미 판단 행이 있거나(고정 행이든 사건 행이든 — 닫힌 SUPERSEDED 행은 빼고), 남은 예약
+     * (PLANNED)이 있거나(그 행이 불린 뒤 다음 주기에 다시 봄), 순번을 다 썼으면 넣지 않습니다. 시각 = max(G, 지금 + 1분, 끝난 판단 +
+     * {@link IntradayRequest#MIN_GAP}), 받는 범위 안일 때만.
+     *
+     * @param max 세션당 장중 판단 횟수(설정 — 코드가 부를 수 있는 순번 수를 넘지 않게 자름)
+     */
+    static Fixed fixedTime(List<IntradayPlan> rows, LocalDate session, TradingCalendar calendar, boolean korea, Instant now, int max) {
+        if (max < 1) {
+            return null;
+        }
+        List<Instant> times = fixedTimes(session, calendar, korea);
+        int index = -1;
+        for (int i = 0; i < times.size(); i++) {
+            if (!now.isBefore(times.get(i).minus(FIXED_LEAD))) {
+                index = i;
+            }
+        }
+        if (index < 0) {
+            return null;
+        }
+        Instant g = times.get(index);
+        if (now.isAfter(g.plus(FIXED_GRACE))) {
+            return null;
+        }
+        if (rows.stream().anyMatch(p -> PaperBooks.CHECKPOINT_PLANNED.equals(p.status())) || fixedServed(rows, session, calendar, times, index)) {
+            return null;
+        }
+        if (nextSlot(rows) > Math.min(max, RuleBookService.INTRADAY_MAX)) {
+            return null;
+        }
+        Instant at = g;
+        Instant pull = pullAt(now);
+        if (pull.isAfter(at)) {
+            at = pull;
+        }
+        for (IntradayPlan p : rows) {
+            if (IntradayPlanner.finished(p)) {
+                Instant after = FreeTiming.at(session, p.atLocal(), calendar).plus(IntradayRequest.MIN_GAP);
+                if (after.isAfter(at)) {
+                    at = after;
+                }
+            }
+        }
+        if (!IntradayRequest.window(session, calendar, korea).accepts(at)) {
+            return null;
+        }
+        return new Fixed(at.atZone(calendar.zone()).toLocalTime(), index);
+    }
+
+    /** 그 고정 시각의 시각대(G − {@link #FIXED_LEAD} ~ 다음 고정 시각의 그 시각 전)에 판단 행이 이미 있는가(닫힌 SUPERSEDED 행은 빼고). */
+    private static boolean fixedServed(List<IntradayPlan> rows, LocalDate session, TradingCalendar calendar, List<Instant> times, int index) {
+        Instant from = times.get(index).minus(FIXED_LEAD);
+        Instant until = index + 1 < times.size() ? times.get(index + 1).minus(FIXED_LEAD) : null;
+        return rows.stream().filter(p -> !PaperBooks.INTRADAY_SUPERSEDED.equals(p.status()))
+                .map(p -> FreeTiming.at(session, p.atLocal(), calendar))
+                .anyMatch(at -> !at.isBefore(from) && (until == null || at.isBefore(until)));
+    }
+
+    /**
+     * 아직 남은 고정 판단 수 — 사건이 그 몫의 순번을 쓰지 않게 남겨 둘 수입니다. {@link #FIXED_GRACE}를 넘겨 놓친 시각과 그 시각대에 판단 행이 이미
+     * 있는 시각은 세지 않습니다.
+     */
+    static int fixedPending(List<IntradayPlan> rows, LocalDate session, TradingCalendar calendar, boolean korea, Instant now) {
+        List<Instant> times = fixedTimes(session, calendar, korea);
+        int pending = 0;
+        for (int i = 0; i < times.size(); i++) {
+            if (now.isAfter(times.get(i).plus(FIXED_GRACE))) {
+                continue;
+            }
+            if (!fixedServed(rows, session, calendar, times, i)) {
+                pending++;
+            }
+        }
+        return pending;
+    }
+
+    /** 고정 판단 행 — 보장 행과 같은 모양(출처 {@value PaperStore.IntradayPlan#ORIGIN_GUARANTEE}, 수동 아님, 감시 목록 없음)에 질문만 고정 시각의 것. */
+    static IntradayPlan fixedRow(String code, LocalDate session, int slot, Fixed fixed, boolean korea, long sourceDecisionId) {
+        return IntradayPlan.planned(code, session, slot, fixed.at(), feed(korea), List.of(),
+                fixed.index() == 0 ? FIXED_QUESTION_OPEN : FIXED_QUESTION_CLOSE, variant(korea), false, sourceDecisionId, null,
+                IntradayPlan.ORIGIN_GUARANTEE, null);
+    }
+
+    /**
+     * 결정 패킷의 고정 일정 칸(켠 판 — {@code intraday.fixed}) — 그 세션의 고정 시각(그 시장 현지 시각 HH:MM, 미국은 KST도)과 규칙.
+     *
+     * @param session 결정의 목표 세션
+     */
+    static Map<String, Object> fixedView(LocalDate session, TradingCalendar calendar, boolean korea) {
+        List<String> local = new ArrayList<>();
+        List<String> kst = new ArrayList<>();
+        for (Instant at : fixedTimes(session, calendar, korea)) {
+            local.add(FreeTiming.label(at.atZone(calendar.zone()).toLocalTime()));
+            kst.add(Kst.stamp(at));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (korea) {
+            out.put("timesKst", local);
+        } else {
+            out.put("timesEt", local);
+            out.put("timesKst", kst);
+        }
+        out.put("rule", FIXED_RULE);
+        return out;
+    }
+
     // ------------------------------------------------------------------ 보장 1회(ADR 0031 결정 4)
 
     /**
@@ -323,6 +492,15 @@ final class IntradayScheduler {
         return books.stream().anyMatch(code -> policy.minPerSession(code) >= 1);
     }
 
+    /** 그 시장 계좌 가운데 고정 일정 판(ADR 0039)인 계좌가 있나 — 없으면 보장 규칙만 봅니다(기본 설정에서는 늘 거짓). */
+    static boolean fixedWanted(List<String> books, JsonNode body) {
+        if (body == null) {
+            return false;
+        }
+        IntradayPolicy policy = IntradayPolicy.from(body);
+        return books.stream().anyMatch(policy::fixed);
+    }
+
     /**
      * 보장 한 번(클래스 설명) — 그 시장 Claude 계좌마다 조건을 보고 맞으면 보장 행을 넣습니다. 보장 시각 전·받는 범위 뒤·거래일이 아닌 날(달력이 그 해를
      * 모르는 날 포함)에는 계획 행도 읽지 않습니다. 쓰기는 장부 잠금 안 한 트랜잭션이고 그 안에서 계좌 상태·행을 다시 읽어 판정합니다(운영자 당김·결정과
@@ -334,32 +512,40 @@ final class IntradayScheduler {
      */
     Map<String, String> guarantee(List<String> books, SettingsRow row, TradingCalendar calendar, boolean korea, Instant now, Gate gate) {
         Map<String, String> out = new LinkedHashMap<>();
-        if (row == null || !guaranteeWanted(books, row.body())) {
+        if (row == null || !(guaranteeWanted(books, row.body()) || fixedWanted(books, row.body()))) {
             return out;
         }
         LocalDate session = now.atZone(calendar.zone()).toLocalDate();
         Instant g;
         Instant last;
+        Instant firstFixed;
         try {
             if (!calendar.isTradingDay(session)) {
                 return out;
             }
             g = guaranteeAt(session, calendar, korea);
             last = IntradayRequest.window(session, calendar, korea).last();
+            firstFixed = fixedTimes(session, calendar, korea).get(0).minus(FIXED_LEAD);
         } catch (CalendarUnavailableException e) {
             return out;   // 그 해 공휴일을 모름 — 장중 판단 작업·결정도 그 세션을 부르지 않음
         }
-        if (now.isBefore(g) || now.isAfter(last)) {
+        if (now.isAfter(last)) {
             return out;
         }
         IntradayPolicy policy = IntradayPolicy.from(row.body());
         FreeTimingSettings free = FreeTimingSettings.from(row.body());
         String zone = korea ? " KST" : " ET";
         for (String code : books) {
+            // 고정 일정 판(ADR 0039)의 계좌는 보장 1회 대신 고정 두 시각을 같은 길로 넣습니다(끈 계좌는 아래 보장 규칙 그대로).
+            boolean fixed = policy.fixed(code);
             int min = policy.minPerSession(code);
             int max = free.intradayMax(code);
-            if (min < 1 || max < 1 || !free.on(code)
-                    || guaranteeTime(store.intradayPlans(code, session), session, calendar, korea, now, min, max) == null) {
+            if (max < 1 || !free.on(code) || now.isBefore(fixed ? firstFixed : g)) {
+                continue;
+            }
+            List<IntradayPlan> seen = store.intradayPlans(code, session);
+            if (fixed ? fixedTime(seen, session, calendar, korea, now, max) == null
+                    : min < 1 || guaranteeTime(seen, session, calendar, korea, now, min, max) == null) {
                 continue;
             }
             Decision source = sessionDecision(code, session, calendar).orElse(null);
@@ -372,11 +558,20 @@ final class IntradayScheduler {
                     return null;
                 }
                 List<IntradayPlan> rows = store.intradayPlans(code, session);
-                LocalTime at = guaranteeTime(rows, session, calendar, korea, now, min, max);
-                if (at == null) {
-                    return null;
+                IntradayPlan plan;
+                if (fixed) {
+                    Fixed slot = fixedTime(rows, session, calendar, korea, now, max);
+                    if (slot == null) {
+                        return null;
+                    }
+                    plan = fixedRow(code, session, nextSlot(rows), slot, korea, source.id());
+                } else {
+                    LocalTime at = guaranteeTime(rows, session, calendar, korea, now, min, max);
+                    if (at == null) {
+                        return null;
+                    }
+                    plan = guaranteeRow(code, session, nextSlot(rows), at, korea, source.id());
                 }
-                IntradayPlan plan = guaranteeRow(code, session, nextSlot(rows), at, korea, source.id());
                 return store.upsertPlannedIntradayPlan(plan) ? plan : null;
             }));
             if (created != null) {
@@ -742,8 +937,12 @@ final class IntradayScheduler {
             if (!policy.events(code) || !free.on(code) || max < 1 || fetched.equals(eventSnapshotSeen.get(code))) {
                 continue;
             }
-            Set<String> used = usedKeys(store.intradayPlans(code, session));
+            // 고정 일정 판(ADR 0039): 움직임 사건은 하락만(상승은 판단을 부르지 않음), 고정 판단 몫의 순번은 남겨 둡니다.
+            boolean fixed = policy.fixed(code);
+            List<IntradayPlan> seen = store.intradayPlans(code, session);
+            Set<String> used = usedKeys(seen);
             List<Event> fresh = detect(snapshot.payload(), session, calendar, korea, source.held(code, session), source.stopPct()).stream()
+                    .filter(e -> !fixed || !UP.equals(e.direction()))
                     .filter(e -> !used.contains(e.key()) && !eventsUsed.contains(code + "|" + e.key())).toList();
             if (fresh.isEmpty()) {
                 eventSnapshotSeen.put(code, fetched);
@@ -751,7 +950,8 @@ final class IntradayScheduler {
             }
             Decision decision = sessionDecision(code, session, calendar).orElse(null);
             String blocked = decision == null ? NO_DECISION : gate.blocked(code, decision);
-            EventOutcome outcome = ledger.exclusively(() -> store.atomically(() -> applyEvents(code, session, calendar, korea, now, max,
+            int eventMax = fixed ? Math.min(max, RuleBookService.INTRADAY_MAX) - fixedPending(seen, session, calendar, korea, now) : max;
+            EventOutcome outcome = ledger.exclusively(() -> store.atomically(() -> applyEvents(code, session, calendar, korea, now, eventMax,
                     fresh, decision, blocked)));
             if (outcome.step() == EventStep.WAIT) {
                 continue;   // 같은 저장본을 다음 주기에 다시 봄

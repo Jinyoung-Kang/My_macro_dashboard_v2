@@ -320,14 +320,27 @@ final class MarketRun implements PaperMarket {
         return market.defaultDeadline();
     }
 
+    /**
+     * 세션의 결정 순간 — 그 실행의 설정 판이 '다음 개장 기준'({@link DecisionTiming} — ADR 0039)을 켰으면 그 세션 다음 거래일의 개장 − N분(받은 KST
+     * 시각은 쓰지 않음), 아니면 시장 묶음의 계산 그대로(세션 다음 날의 그 KST 시각).
+     */
     @Override
     public Instant decisionInstant(LocalDate session, LocalTime kstTime) {
-        return market.decisionInstant(session, kstTime);
+        Integer before = DecisionTiming.minutes(settingsBody(), korea());
+        return before == null ? market.decisionInstant(session, kstTime) : DecisionTiming.decisionInstant(calendar(), session, before);
     }
 
+    /** 세션의 기한 — 다음 개장 기준 판이면 {@link DecisionTiming#deadlineInstant}, 아니면 시장 묶음의 계산 그대로. */
     @Override
     public Instant deadlineInstant(LocalDate session, LocalTime decisionTime, LocalTime deadline) {
-        return market.deadlineInstant(session, decisionTime, deadline);
+        Integer before = DecisionTiming.minutes(settingsBody(), korea());
+        return before == null ? market.deadlineInstant(session, decisionTime, deadline)
+                : DecisionTiming.deadlineInstant(calendar(), session, before, korea());
+    }
+
+    /** 이 실행의 시장이 한국인가(설정 키 접두어·기한 규칙이 갈림). */
+    private boolean korea() {
+        return !PaperStore.Book.MARKET_US.equals(market.code());
     }
 
     @Override

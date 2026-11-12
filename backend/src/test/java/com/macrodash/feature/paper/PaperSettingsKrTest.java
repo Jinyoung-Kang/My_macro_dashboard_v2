@@ -96,7 +96,8 @@ class PaperSettingsKrTest {
                 "kr.universeExtraTickers", "kr.decisionTimeKst",
                 "kr.decisionDeadlineKst", "kr.calendar.extraClosures", "kr.calendar.openTimeOverrides", "kr.news.enabled",
                 "kr.continuity", "kr.info.packet", "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile",
-                "kr.claude2.checkpoints", "kr.intradayMaxPerSession", "kr.intradayMinPerSession", "kr.intradayEvents",
+                "kr.claude2.checkpoints", "kr.intradayMaxPerSession", "kr.intradayMinPerSession", "kr.intradayFixed",
+                "kr.decisionBeforeOpenMinutes", "kr.briefing.enabled", "kr.briefing.afterCloseMinutes", "kr.intradayEvents",
                 "kr.claude.freeTiming", "kr.claude2.freeTiming");
 
         JsonNode d = service.defaultsJson().path("kr");
