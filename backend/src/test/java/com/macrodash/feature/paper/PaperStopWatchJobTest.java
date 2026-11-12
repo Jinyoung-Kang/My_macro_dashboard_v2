@@ -10,7 +10,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -637,7 +636,6 @@ class PaperStopWatchJobTest {
     }
 
     @Test
-    @Disabled("QA-384: 밤 장부의 덮음 판정이 감시 작업이 마지막 격자를 실제로 판정했는지 보지 않음 — 수정 커밋에서 해제")
     @DisplayName("QA-384 — 감시 작업이 15:50 격자까지만 판정하고 백엔드가 죽은 날(수집기는 15:55:20 저장본을 남김)의 16:15 확정 종가 관측치는 덮지 않아 종가 스탑")
     void unjudgedLastGridKeepsTheCloseFallback() {
         settings("ON", "OFF");
@@ -662,5 +660,228 @@ class PaperStopWatchJobTest {
             assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK);
         });
         assertThat(outcome.notes()).noneMatch(n -> n.contains("장중 감시에 맡김"));
+    }
+
+    @Test
+    @DisplayName("QA-384 마지막 격자 판정 기록 — 15:55 격자를 판정한 회차가 stopwatch.lastgrid 한 줄(세션·격자·판정 때의 모드)을 남기고, 앞 격자 회차·같은 "
+            + "저장본을 다시 본 재기동은 남기지 않음. 장부의 근거(lastGridJudged)는 ON 기록만")
+    void lastGridRecordOncePerSession() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        clock.now = et(9, 0, 0);
+        job.run();
+        usSnapshotOn(et(15, 50, 20), Map.of("AAA", new double[]{99, 93}), et(15, 49, 0));
+        clock.now = et(15, 50, 40);
+        job.run();
+        assertThat(store.recentJobRuns(10)).as("앞 격자까지 — 기록 없음").isEmpty();
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isFalse();
+
+        usSnapshotOn(et(15, 55, 20), Map.of("AAA", new double[]{99, 93}), et(15, 54, 0));
+        clock.now = et(15, 55, 40);
+        job.run();
+
+        assertThat(store.recentJobRuns(10)).singleElement().satisfies(r -> {
+            assertThat(r.job()).isEqualTo("stopwatch.lastgrid");
+            assertThat(r.outcome()).isEqualTo("OK");
+            assertThat(r.startedAt()).isEqualTo(et(15, 55, 40));
+            assertThat(r.detail().path("market").asString()).isEqualTo("US");
+            assertThat(r.detail().path("mode").asString()).isEqualTo("ON");
+            assertThat(r.detail().path("tradingDate").asString()).isEqualTo(DAY.toString());
+            assertThat(r.detail().path("lastJudgedGrid").asString()).isEqualTo(et(15, 55, 0).toString());
+            assertThat(r.detail().path("judgedAt").asString()).isEqualTo(et(15, 55, 40).toString());
+            assertThat(r.detail().path("since").asString()).isEqualTo(et(9, 0, 0).toString());
+            assertThat(r.detail().path("partial").asBoolean()).isFalse();
+        });
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isTrue();
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 50, 0))).as("다른 격자").isFalse();
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, PREV, et(15, 55, 0))).as("다른 세션").isFalse();
+        assertThat(PaperStopWatchJob.lastGridJudged(store, KrPaperMarket.INSTANCE, DAY, et(15, 55, 0))).as("다른 시장").isFalse();
+
+        clock.now = et(15, 56, 0);
+        job.run();
+        // 15:57 재기동 — 새 프로세스가 아직 신선한 같은 저장본으로 15:55 격자를 다시 판정해도 같은 줄을 또 남기지 않음
+        PaperStopWatchJob restarted = jobWith(new StopWatchStatus());
+        clock.now = et(15, 58, 0);
+        assertThat(restarted.run().get(0).grids()).containsExactly(et(15, 55, 0));
+        assertThat(store.recentJobRuns("stopwatch.lastgrid", 10)).as("세션에 한 줄").hasSize(1);
+
+        clock.now = et(16, 5, 20);
+        job.run();
+        assertThat(store.recentJobRuns(10)).extracting(r -> r.job()).as("세션 요약은 지금처럼 창 끝 뒤에 따로")
+                .containsExactlyInAnyOrder("stopwatch.lastgrid", "stopwatch.summary");
+    }
+
+    @Test
+    @DisplayName("QA-384 SHADOW로 판정한 마지막 격자의 기록은 mode SHADOW — 장부의 근거가 아님. 세션 요약만 있는 세션(이 기록이 생기기 전 판)은 요약의 "
+            + "lastJudgedGrid·mode ON이 근거")
+    void lastGridRecordModeAndSummaryEvidence() {
+        settings("SHADOW", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(15, 55, 20), et(15, 55, 21), Map.of("AAA", new double[]{99, 93}), et(15, 54, 0));
+        clock.now = et(15, 55, 40);
+        job.run();
+
+        assertThat(store.recentJobRuns("stopwatch.lastgrid", 5)).singleElement().satisfies(r -> {
+            assertThat(r.detail().path("mode").asString()).isEqualTo("SHADOW");
+            assertThat(r.detail().path("partial").asBoolean()).as("세션 중 기동").isTrue();
+        });
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isFalse();
+
+        FakePaperStore old = new FakePaperStore();
+        ObjectNode summary = PaperFixtures.MAPPER.createObjectNode();
+        summary.put("mode", "ON").put("tradingDate", DAY.toString()).put("lastJudgedGrid", et(15, 55, 0).toString());
+        old.recordJobRun("stopwatch.summary", et(16, 5, 20), et(16, 5, 20), "OK", summary);
+        assertThat(PaperStopWatchJob.lastGridJudged(old, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isTrue();
+        assertThat(PaperStopWatchJob.lastGridJudged(old, UsPaperMarket.INSTANCE, DAY, et(12, 55, 0))).isFalse();
+        ObjectNode none = PaperFixtures.MAPPER.createObjectNode();
+        none.put("mode", "ON").put("tradingDate", PREV.toString()).putNull("lastJudgedGrid");
+        old.recordJobRun("stopwatch.summary", et(16, 5, 20), et(16, 5, 20), "OK", none);
+        assertThat(PaperStopWatchJob.lastGridJudged(old, UsPaperMarket.INSTANCE, PREV, et(15, 55, 0))).as("판정한 격자 없음").isFalse();
+    }
+
+    @Test
+    @DisplayName("QA-384 마지막 격자 판정 기록을 남기지 못하면(DB 오류) 다음 회차가 다시 남김 — 그동안 장부의 근거는 없음(대체 경로가 맡음)")
+    void lastGridRecordIsRetried() {
+        boolean[] fail = {true};
+        store = new FakePaperStore() {
+            @Override
+            public void recordJobRun(String name, Instant startedAt, Instant finishedAt, String outcome, tools.jackson.databind.JsonNode detail) {
+                if (fail[0] && "stopwatch.lastgrid".equals(name)) {
+                    throw new IllegalStateException("기록 실패(시험)");
+                }
+                super.recordJobRun(name, startedAt, finishedAt, outcome, detail);
+            }
+        };
+        PaperStopWatchJob failing = jobWith(new StopWatchStatus());
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshotOn(et(15, 55, 20), Map.of("AAA", new double[]{99, 93}), et(15, 54, 0));
+        clock.now = et(15, 55, 40);
+
+        PaperStopWatchJob.Outcome outcome = failing.run().get(0);
+
+        assertThat(outcome.error()).as("판정은 끝남 — 기록 실패는 회차 오류가 아님").isNull();
+        assertThat(outcome.grids()).containsExactly(et(15, 55, 0));
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isFalse();
+
+        fail[0] = false;
+        clock.now = et(15, 56, 0);
+        assertThat(failing.run().get(0).skipped()).isEqualTo("이미 본 저장본");
+        assertThat(store.recentJobRuns("stopwatch.lastgrid", 5)).singleElement().satisfies(r -> {
+            assertThat(r.startedAt()).as("판정한 시각").isEqualTo(et(15, 55, 40));
+            assertThat(r.detail().path("lastJudgedGrid").asString()).isEqualTo(et(15, 55, 0).toString());
+        });
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isTrue();
+    }
+
+    @Test
+    @DisplayName("QA-384 조기 폐장일(2026-11-27, 13:00 ET 마감) — 마지막 격자는 12:55 ET: 그 격자를 판정한 기록으로 13:15 확정 종가 관측치는 감시에 맡기고, "
+            + "12:50까지만 판정했으면 종가 스탑")
+    void earlyCloseLastGrid() {
+        LocalDate early = LocalDate.of(2026, 11, 27);
+        LocalDate before = LocalDate.of(2026, 11, 25);   // 11-26 추수감사절 휴장
+        for (boolean judged : new boolean[]{true, false}) {
+            setUp();
+            settings("ON", "OFF");
+            usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+            hold(PaperBooks.RULES, "AAA", 100, before, 99);
+            clock.now = etOn(early, 9, 0, 0);
+            job.run();
+            earlySnapshot(early, etOn(early, 12, 50, 20), etOn(early, 12, 49, 0));
+            clock.now = etOn(early, 12, 50, 40);
+            assertThat(job.run().get(0).grids()).last().isEqualTo(etOn(early, 12, 50, 0));
+            earlySnapshot(early, etOn(early, 12, 55, 20), etOn(early, 12, 54, 0));   // 수집기는 마지막 회차까지 저장
+            if (judged) {
+                clock.now = etOn(early, 12, 55, 40);
+                assertThat(job.run().get(0).grids()).containsExactly(etOn(early, 12, 55, 0));
+                assertThat(store.recentJobRuns("stopwatch.lastgrid", 5)).singleElement().satisfies(r ->
+                        assertThat(r.detail().path("lastJudgedGrid").asString()).isEqualTo(etOn(early, 12, 55, 0).toString()));
+            }
+
+            PaperLedgerService closing = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER,
+                    new PaperCheckpointJobTest.MovableClock(etOn(early, 13, 17, 0)));
+            PaperLedgerService.Outcome outcome = closing.process(PaperFixtures.quotes(etOn(early, 13, 15, 0),
+                    PaperFixtures.bar("AAA", before, 99.0, early, 90.0)));
+
+            if (judged) {
+                assertThat(stops()).isEmpty();
+                assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("장중 감시에 맡김"));
+            } else {
+                assertThat(stops()).singleElement().satisfies(o ->
+                        assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK));
+            }
+        }
+    }
+
+    private static Instant etOn(LocalDate day, int h, int m, int s) {
+        return ZonedDateTime.of(day, LocalTime.of(h, m, s), UsMarketCalendar.NEW_YORK).toInstant();
+    }
+
+    /** {@code day} 세션의 AAA를 09:30부터 {@code until}(봉 시작)까지 93으로 지켜본 운영 형식(mode ON) 감시 저장본. */
+    private void earlySnapshot(LocalDate day, Instant fetchedAt, Instant until) {
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("mode", "ON");
+        payload.put("fetchedAt", fetchedAt.toString());
+        Map<Instant, Double> bars = new LinkedHashMap<>();
+        for (Instant at = etOn(day, 9, 30, 0); !at.isAfter(until); at = at.plus(Duration.ofMinutes(1))) {
+            bars.put(at, 93.0);
+        }
+        ObjectNode entry = StopWatchTest.usEntry(day, bars, 99.0, null);
+        ((ObjectNode) entry.path("day").path("first")).put("t", etOn(day, 9, 30, 0).toString());
+        payload.putObject("tickers").set("AAA", entry);
+        when(marketData.stopWatch(false)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_US, payload, "json", "ok",
+                null, fetchedAt.plusSeconds(1))));
+    }
+
+    @Test
+    @DisplayName("QA-384 한국 장 시간 변경일(10:00 개장·16:30 마감) — 마지막 격자는 16:20: 15:20 회차는 기록을 남기지 않고 16:20 회차가 kr.stopwatch.lastgrid를 남김")
+    void koreaShiftedDayLastGrid() {
+        ObjectNode body = (ObjectNode) PaperFixtures.settings(store).defaultsJson();
+        ObjectNode kr = (ObjectNode) body.get("kr");
+        ((ObjectNode) kr.get("stopWatch")).put("mode", "ON");
+        ((ObjectNode) kr.get("calendar")).putObject("openTimeOverrides").putObject(DAY.toString()).put("open", "10:00").put("close", "16:30");
+        store.initSettingsIfAbsent(body);
+        store.books.put(PaperBooks.KR_RULES, new Book(PaperBooks.KR_RULES, PaperBooks.KIND_RULES, "한국 규칙", 100_000_000,
+                LocalDate.of(2026, 10, 30), PaperBooks.ACTIVE, PaperFixtures.FRI_CLOSE, Book.MARKET_KR, Book.CURRENCY_KRW));
+        store.states.put(PaperBooks.KR_RULES, new BookState(PaperBooks.KR_RULES, 1000, 1000, 0, 0, null, null, null, null));
+        store.upsertPosition(new Position(PaperBooks.KR_RULES, "005930", 10, 48_000, LocalDate.of(2026, 11, 2), PaperFixtures.FRI_CLOSE,
+                50_000, PaperFixtures.FRI_CLOSE, null, null, false, PREV, 50_500, null));
+        when(marketData.krConfirmed(anyCollection(), anyCollection(), any())).thenReturn(KrConfirmed.NONE);
+        clock.now = kst(9, 30, 0);
+        job.run();
+
+        krSnapshot(kst(15, 20, 20), 15, 6, 20);
+        clock.now = kst(15, 20, 40);
+        assertThat(job.run().get(1).grids()).last().isEqualTo(kst(15, 20, 0));
+        assertThat(store.recentJobRuns("kr.stopwatch.lastgrid", 5)).as("이날의 격자 끝은 16:20 — 15:20은 중간 격자").isEmpty();
+
+        krSnapshot(kst(16, 20, 20), 16, 6, 20);
+        clock.now = kst(16, 20, 40);
+        assertThat(job.run().get(1).grids()).last().isEqualTo(kst(16, 20, 0));
+        assertThat(store.recentJobRuns("kr.stopwatch.lastgrid", 5)).singleElement().satisfies(r -> {
+            assertThat(r.detail().path("market").asString()).isEqualTo("KR");
+            assertThat(r.detail().path("mode").asString()).isEqualTo("ON");
+            assertThat(r.detail().path("tradingDate").asString()).isEqualTo(DAY.toString());
+            assertThat(r.detail().path("lastJudgedGrid").asString()).isEqualTo(kst(16, 20, 0).toString());
+        });
+        assertThat(PaperStopWatchJob.lastGridJudged(store, KrPaperMarket.INSTANCE, DAY, kst(16, 20, 0))).isTrue();
+        assertThat(PaperStopWatchJob.lastGridJudged(store, KrPaperMarket.INSTANCE, DAY, kst(15, 20, 0))).isFalse();
+    }
+
+    /** 한국 감시 저장본 — 005930의 봉 끝 라벨 {@code hour}:{@code from}~{@code to}(50,000 — 스탑가 46,000 위), 갭 가드 통과. */
+    private void krSnapshot(Instant fetchedAt, int hour, int from, int to) {
+        ObjectNode payload = PaperFixtures.MAPPER.createObjectNode();
+        payload.put("mode", "ON");
+        payload.put("fetchedAt", fetchedAt.toString());
+        Map<String, Double> bars = new LinkedHashMap<>();
+        for (int m = from; m <= to; m++) {
+            bars.put(String.format("%02d:%02d", hour, m), 50_000.0);
+        }
+        payload.putObject("tickers").set("005930", StopWatchTest.krEntry(DAY, bars, List.of(), 50_500.0, 50_500.0, 50_500.0));
+        when(marketData.stopWatch(true)).thenReturn(Optional.of(new Snapshot(Datasets.SNAP_PAPER_STOPWATCH_KR, payload, "json", "ok", null,
+                fetchedAt.plusSeconds(1))));
     }
 }

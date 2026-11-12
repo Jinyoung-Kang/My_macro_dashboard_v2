@@ -459,6 +459,11 @@ public class PaperLedgerService {
         boolean korea = market.auctionFills();
         Supplier<JsonNode> watch = StopWatchMode.of(settingsBody, korea).orders()
                 ? once(() -> marketData.stopWatch(korea).map(com.macrodash.store.Snapshot::payload).orElse(null)) : null;
+        // 감시 작업이 그 세션의 마지막 격자를 ON으로 실제 판정한 기록이 있는가(QA-384) — 격자 끝 뒤의 덮음 판정이 처음 물을 때 세션마다 한 번 작업 기록에서
+        // 읽습니다(한 처리 안 — 장부 잠금 안이라 그사이 감시 작업의 판정이 끼어들지 않음).
+        Map<LocalDate, Boolean> judgedSessions = new HashMap<>();
+        Predicate<LocalDate> watchJudged = session -> judgedSessions.computeIfAbsent(session,
+                day -> PaperStopWatchJob.lastGridJudged(store, market, day, StopWatch.lastGrid(market.calendar(), day, korea)));
 
         int filled = 0;
         int stopped = 0;
@@ -478,7 +483,8 @@ public class PaperLedgerService {
                 continue;
             }
             try {
-                BookRun run = store.atomically(() -> processBook(market, book, observed, current, settingsBody, bars, watch));
+                BookRun run = store.atomically(
+                        () -> processBook(market, book, observed, current, settingsBody, bars, watch, watchJudged));
                 failedObservations.remove(key);
                 if (run == null) {
                     continue;
@@ -558,7 +564,8 @@ public class PaperLedgerService {
      * @param bars 미국 시각 지정 체결의 1분봉 저장본(한 처리에 한 번 읽음) — 미국이 아니면 null
      */
     private BookRun processBook(PaperMarket market, Book book, Quotes quotes, PaperSettings current,
-                                JsonNode settingsBody, Supplier<UsTimedFills.Bars> bars, Supplier<JsonNode> watch) {
+                                JsonNode settingsBody, Supplier<UsTimedFills.Bars> bars, Supplier<JsonNode> watch,
+                                Predicate<LocalDate> watchJudged) {
         Optional<BookState> stateRow = store.state(book.code());
         if (stateRow.isEmpty()) {
             throw new IllegalStateException("계좌 상태(paper_book_state)가 없습니다 — 초기화를 다시 실행하세요");
@@ -569,6 +576,7 @@ public class PaperLedgerService {
         }
         BookRun run = new BookRun(market, book, quotes, current, state.cash(), settingsBody);
         run.stopWatch = watch;
+        run.watchJudged = watchJudged;
 
         // 0. 미국 시각 지정 주문(명세 2026-10-30 §10-2): 기준 시각이 이 관측치 전인 대기 주문이 있으면 이 관측치 뒤의 1분봉 저장본을 기다립니다
         //    (최대 설정 claude2.barsWaitMinutes, 기본 15분) — 그러지 않으면 아래 시간별 스탑이 그 앞 시각의 시각 지정 매도보다 먼저 돕니다. 미루면
@@ -1977,6 +1985,12 @@ public class PaperLedgerService {
      *
      * <p>판정 시각은 이 관측치의 수집 시각입니다 — 첫 분이 지난 한국 밤 감지가 지금 세션의 덮음을 볼 때만 이 처리의 시각을 받습니다
      * ({@link #watchCovers(BookRun, Holding, LocalDate, Instant)}, QA-327).
+     *
+     * <p>격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤 — 판정 시각이 그 세션 격자 끝 이후)은 감시 저장본만으로 덮음이라 하지 않습니다(QA-384): 저장본은
+     * 수집기가 쓰므로 마지막 격자 가격이 있어도, 그 시각에 백엔드가 재기동 중·죽어 있었다면 감시 작업은 그 격자를 판정하지 않았습니다. 그래서 감시 작업이
+     * 그 세션의 마지막 격자를 ON으로 실제 판정했다는 DB 기록({@link PaperStopWatchJob#lastGridJudged} — 판정한 회차가 같은 장부 잠금 안에서 남김, 재기동
+     * 뒤에도 읽힘)이 있을 때만 덮음이고, 없으면 대체 경로(미국 종가 스탑·한국 밤 대체 STOP)가 맡습니다. 감시가 이미 낸 대기 STOP은 두 경로 모두 이 판정
+     * 앞에서 건너뛰므로 겹쳐 내지 않습니다. 격자 끝 전의 판정(미국 시간별 — 그 시각 − 10분 뒤의 거래 표본)은 그대로입니다.
      */
     private static boolean watchCovers(BookRun run, Holding holding, LocalDate session) {
         return watchCovers(run, holding, session, run.at);
@@ -2002,7 +2016,17 @@ public class PaperLedgerService {
             return false;
         }
         Double ledgerPrev = previous.equals(holding.sinceAtStart) ? holding.refCloseAtStart : null;
-        return StopWatch.covered(payload, holding.ticker, session, at, calendar, run.market.auctionFills(), ledgerPrev);
+        boolean korea = run.market.auctionFills();
+        if (!StopWatch.covered(payload, holding.ticker, session, at, calendar, korea, ledgerPrev)) {
+            return false;
+        }
+        if (at.isBefore(StopWatch.gridEnd(calendar, session, korea)) || run.watchJudged.test(session)) {
+            return true;
+        }
+        // 저장본에는 마지막 격자 가격이 있지만 감시 작업이 그 격자를 판정한 기록이 없음(QA-384) — 대체 경로가 맡습니다.
+        run.note(holding.ticker + " — 감시 저장본에는 " + session + " 마지막 격자 가격이 있지만 감시 작업이 그 격자를 판정한 기록(ON)이 없어 "
+                + "감시에 맡기지 않음(그 시각에 감시 작업이 돌지 않았거나 주문을 내지 않는 모드)");
+        return false;
     }
 
     // ------------------------------------------------------------------ 5. 평가·저장
@@ -2411,6 +2435,11 @@ public class PaperLedgerService {
         final Map<String, String> timedUnresolved = new TreeMap<>();
         /** 장중 스탑 감시 저장본(그 시장 감시가 ON일 때만 — 아니면 null, ADR 0032 결정 7). 대체 경로가 감시가 지켜본 종목을 건너뜁니다({@link StopWatch#covered}). */
         Supplier<JsonNode> stopWatch;
+        /**
+         * 감시 작업이 그 세션의 마지막 격자를 ON으로 실제 판정한 기록이 있는가(QA-384 — {@link PaperStopWatchJob#lastGridJudged}, 한 처리에 세션마다 한 번
+         * 읽음). 격자 끝 뒤의 덮음 판정({@link PaperLedgerService#watchCovers})만 묻습니다 — {@link #stopWatch}가 있을 때 함께 있습니다.
+         */
+        Predicate<LocalDate> watchJudged;
         int filled;
         int stopped;
         int expired;

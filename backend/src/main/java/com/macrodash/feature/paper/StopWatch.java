@@ -33,7 +33,9 @@ import java.util.List;
  *       스탑)가 맡습니다. 가드를 판단할 자료(첫 봉·전일 종가)가 없으면 '모름' — 감시가 그 종목을 판정하지 않습니다.</li>
  *   <li><b>덮음</b>({@link #covered}): 장부의 대체 경로(미국 시간별·한국 밤 스탑)가 그 종목을 건너뛰어도 되는가 — 저장본이 감시 ON 때 받은 것이고(QA-360),
  *       그 세션 항목이 이어받지 않은 새 값이고, 가드가 판단되어 빼지 않았고, 그 시각 − {@link #COVER_WINDOW} 이후의 거래 표본이 있을 때. 격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤)은
- *       마지막 격자(격자 끝)의 가격이 있을 때만 — 마지막 감시 회차를 놓쳐 그 격자를 판정하지 못한 날은 대체 경로가 맡습니다(QA-307).</li>
+ *       마지막 격자(격자 끝)의 가격이 있을 때만 — 마지막 감시 회차를 놓쳐 그 격자를 판정하지 못한 날은 대체 경로가 맡습니다(QA-307). 이 함수는 저장본이
+ *       말하는 것까지만 봅니다 — 장부는 격자 끝 뒤의 판정에 감시 작업이 그 마지막 격자를 ON으로 실제 판정한 DB 기록
+ *       ({@link PaperStopWatchJob#lastGridJudged})도 함께 요구합니다(저장본은 수집기가 쓰므로 가격이 있어도 그 시각에 백엔드가 죽어 있었을 수 있음, QA-384).</li>
  *   <li><b>주문 시점</b>({@link #target}): T = 감지(주문 생성) + 60초 뒤 첫 분({@link ExecutionAudit#marketTarget} — 늦은 주문 가드 ⑤를 지킴). T가 그
  *       세션 첫 분(개장 + 10분) 앞이면 그 첫 분의 지정 시각, 장 끝 여유 안(미국 15:55·한국 15:20 뒤)이면 종가, 그 밖은 장중 시장가.</li>
  * </ul>
@@ -111,6 +113,16 @@ final class StopWatch {
             out.add(g);
         }
         return out;
+    }
+
+    /**
+     * 그 세션의 마지막 격자 — 격자 끝 이하의 가장 늦은 격자(개장·마감이 5분 단위인 지금의 모든 달력에서는 격자 끝 그 자체: 보통 날 15:55 ET·15:20 KST,
+     * 조기 폐장일 12:55 ET, 한국 장 시간 변경일은 그날 마감 − 10분). 감시 작업이 이 격자를 판정했는지가 격자 끝 뒤 덮음의 근거입니다(QA-384). 거래일이
+     * 아니면 null.
+     */
+    static Instant lastGrid(TradingCalendar calendar, LocalDate session, boolean korea) {
+        List<Instant> all = grids(calendar, session, korea);
+        return all.isEmpty() ? null : all.get(all.size() - 1);
     }
 
     // ------------------------------------------------------------------ 가격·판정
@@ -252,6 +264,7 @@ final class StopWatch {
         Instant end = gridEnd(calendar, session, korea);
         if (!at.isBefore(end)) {
             // 격자 끝 뒤의 판정(미국 마감 뒤 관측치·한국 밤) — 마지막 격자의 가격이 있어야(마지막 회차가 그 격자를 판정할 수 있었어야) 덮음(QA-307).
+            // 실제로 판정했는지는 장부가 감시 작업의 기록으로 따로 봅니다(QA-384 — PaperLedgerService.watchCovers).
             return price(entry, end, session, calendar, korea).price() != null;
         }
         Instant since = at.minus(COVER_WINDOW);

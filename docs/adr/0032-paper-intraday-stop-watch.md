@@ -16,6 +16,12 @@
     (`onPlacesOneStop`·`shadowAndOff`·`exclusionsAndGuard`·`windowAndLateSnapshot`·`missedGridsAreJudgedFromTheNextSnapshot`·`koreaGapGuardAndUnknownCalendar`·`koreaWatermarkAndHolds`), `PaperDecisionJobTest.schedulerPoolIsEight`.
   - 장부·대체 경로: `StopWatchLedgerTest`(장중 시장가·종가 STOP 체결과 재진입 금지, 한국 장중 STOP은 금융위 재판정 없음, 늦은 주문 가드 ⑤), `StopWatchFallbackTest`(미국 — 덮인 종목은 감시에 맡김·덮이지 않은
     종목은 시간별 스탑·OFF와 SHADOW는 옛 경로·대기 STOP을 겹쳐 내지 않음, 한국 — 덮이지 않은 종목은 다음 세션 첫 분·장 시간 변경일·SHADOW는 시가 스탑).
+  - 마지막 격자 판정 기록(QA-384 — 아래 덧붙임): `StopWatchFallbackTest`(미국 `lastGridNeverJudgedKeepsTheCloseFallback`·`summaryShortOfTheLastGridKeepsTheCloseFallback`·
+    `shadowJudgedLastGridKeepsTheCloseFallback`·`judgedLastGridIsLeftToTheWatchAtTheClose`·`hourlyObservationBeforeTheGridEndDoesNotAskForTheRecord`·
+    `pendingWatchStopIsNotDoubledWhenTheLastGridWasNotJudged`, 한국 `lastGridNeverJudgedKeepsTheNightFallback`·`judgedLastGridIsLeftToTheWatchAtNight`·
+    `lateProcessingAfterTheGridEndNeedsTheRecord`), `PaperStopWatchJobTest`(`judgedLastGridLeavesTheCloseToTheWatch`·`lastGridStopIsFilledOnceAtTheClose`·
+    `unjudgedLastGridKeepsTheCloseFallback`·`lastGridRecordOncePerSession`·`lastGridRecordModeAndSummaryEvidence`·`lastGridRecordIsRetried`·`earlyCloseLastGrid`·
+    `koreaShiftedDayLastGrid`).
   - 새 매수 거절: `KrClaudeValidationTest.pendingWatchStopBlocksNewBuys`, `KrRuleBookServiceTest.pendingWatchStopKeepsTheCandidateOut`.
   - 스탑 설명 글(켰을 때만): `PacketBuilderTest.stopWatchOnPackets`, `KrPacketBuilderTest.stopWatchOnPacket`, `FrameworkServiceTest.krStopWatchOnRender`, `CheckpointPacketTest.stopWatchOnIntradayPacket`,
     고정본 `packet-us-ft-claude2-stopwatch-scheduled.json`·`packet-kr-ft-stopwatch-scheduled.json`·`render-kr-ft-claude-v0-stopwatch.txt` — 기본 설정(OFF)의 고정본은 모두 그대로.
@@ -81,6 +87,33 @@
   지금 세션을 지켜보면 감시에 맡김·아니면 감시 STOP과 같은 시점(장중 시장가·그날 종가)으로 낸다(QA-317). 이 첫 분·마감·덮음 판정과 대체 STOP의 생성 시각은 관측치의 수집 시각이
   아니라 처리 시각(둘 중 늦은 쪽)으로 센다(QA-327 — 밤새 꺼졌던 백엔드가 다음 세션 장중에 처음 처리한 밤 관측치, 5분 주기 처리의 늦은 장중 시장가). 감시 기능 STOP이 그 목표 세션 자료로 체결하지 않음이면 그 밤에 만료로 닫고
   덮음을 다시 본다(QA-318). 대기 STOP이 있는 종목은 스위치와 상관없이 다시 내지 않는다.
+- **덧붙임(2026-11-12, QA-384) — 격자 끝 뒤의 덮음은 감시 작업이 그 세션의 마지막 격자를 `ON`으로 실제 판정한 DB 기록이 있을 때만이다.**
+  - 무엇이 왜: 위 '덮음'은 수집기의 감시 저장본만 봤다(마지막 격자 가격이 있으면 덮음 — QA-307, 저장본을 받은 때의 `mode`가 `ON` — QA-360). 저장본은 수집기가 쓰고
+    판정은 백엔드의 감시 작업이 하므로, 마지막 격자 시각에 백엔드가 재기동 중·죽어 있던 날은 저장본에 가격이 있어도 아무도 그 격자를 판정하지 않았는데 미국 마감 뒤
+    관측치·한국 밤 감지가 '감시에 맡김'으로 읽어 그날의 종가·밤 스탑이 빠졌다.
+  - 고침: ① 감시 작업은 그 세션의 마지막 격자(격자 끝 — 그날 달력: 보통 날 15:55 ET·15:20 KST, 조기 폐장일 12:55 ET, 장 시간 변경일은 그날 마감 − 10분)를 판정한
+    회차에, 판정과 같은 장부 잠금 안에서 작업 기록 `stopwatch.lastgrid`·`kr.stopwatch.lastgrid` 한 줄(상세 `{market, mode(판정 때), tradingDate, lastJudgedGrid,
+    judgedAt, since, partial}`)을 남긴다 — `SHADOW`·`ON` 모두, 세션마다 한 줄(같은 줄이 있으면 다시 남기지 않음), 기록에 실패하면 다음 회차에 다시. ② 장부
+    (`PaperLedgerService.watchCovers`)는 판정 시각이 그 세션 격자 끝 이후이면 저장본의 덮음에 더해 그 세션의 이 기록(`mode ON`·`lastJudgedGrid` = 격자 끝, 시각으로 대조)이나
+    같은 사실을 적은 세션 요약(`stopwatch.summary`의 `lastJudgedGrid`·`mode`)을 요구한다(`PaperStopWatchJob.lastGridJudged` — 한 처리에 세션마다 한 번 읽음). 없으면 대체 경로가
+    맡고(미국 `HOURLY_FALLBACK` 종가 스탑, 한국 `NIGHT_FALLBACK`) 리스크 작업 기록의 메모에 까닭을 남긴다. 격자 끝 전의 판정(미국 시간별 — 그 시각 − 10분 뒤의 거래 표본)은 그대로다.
+    스키마 변경 없음(`paper_job_runs.detail` JSON).
+  - 평소 날은 그대로다: 마지막 격자를 판정하면 기록이 같은 잠금 안에서 먼저 생기므로 장부가 '판정했는데 기록은 아직'을 볼 틈이 없다. 운영 기록(2026-11-09~11-12의 세션 요약
+    7건 — 한국 4·미국 3, `partial` 둘 포함)은 모두 `lastJudgedGrid`가 그 세션의 마지막 격자였다. 감시가 이미 낸 대기 STOP은 두 경로 모두 이 판정 앞에서 건너뛰어 겹쳐 내지 않는다.
+  - 기록 시점을 판정 직후로 둔 까닭(요약과 밤 판정의 선후): 세션 요약은 판정 창 끝(마감 + 5분) 뒤 첫 회차에야 남고, 창 끝 뒤에 뜬 프로세스는 남기지 않는다. 평소 일정에서는
+    요약이 격자 끝 뒤 판정보다 앞서지만(미국 16:05 ET 요약 → 16:15 ET 관측치, 한국 15:35 요약 → 20:30 뒤 밤 관측치), 요약만 근거로 삼으면 (가) 판정 뒤·요약 전에 재기동된
+    날(미국 15:56~16:05 ET, 한국 15:21~15:35 KST)은 감시가 끝까지 봤는데도 덮지 않음이 되고 (나) 요약보다 먼저 도는 격자 끝 뒤 판정(미국 정시 밖 관측치 — 수집기 재기동·수동 수집,
+    한국 D 밤 관측치를 D+1 15:20~15:30에 처음 처리하는 QA-317 경로)이 평소에도 덮지 않음이 된다. 세션 요약은 이 기록이 없던 판의 프로세스가 판정한 세션(배포 당일 — 옛 프로세스가
+    요약을 남긴 뒤의 배포)과 기록을 끝내 남기지 못한 세션의 근거로 함께 읽는다.
+  - 재기동 시각별: 마지막 격자 **전**에 내려갔다가 그 저장본이 아직 신선할 때(수집 뒤 7분 안, 판정 창 안 — 감시 작업의 첫 회차는 기동 195초 뒤) 돌아오면 새 프로세스가 가장 최근
+    격자(= 마지막 격자)를 판정하고 기록을 남겨 덮음이다. 그보다 늦게 돌아오면 기록이 없어 대체 경로가 맡는다 — **이 수정으로 달라지는 날**. 판정 **직후**나 요약 **뒤**의 재기동은
+    기록이 DB에 있어 전과 같이 덮음이다.
+  - 검토한 대안: 프로세스 메모리의 세션 상태(재기동하면 사라져 저녁 배포 뒤 덮음이 전부 거짓), 세션 요약만(위 (가)·(나)), 감시 작업의 일반 기록 `stopwatch`에 싣기(주문·가드 기록과
+    최근 200건 한도를 나눠 쓰고 상세에 `tradingDate`가 없음), 새 표(스키마 변경), 수집기가 저장본에 적기(수집기는 백엔드의 판정을 모른다 — ADR 0008).
+  - 감수한 단점: 재기동·장애가 마지막 격자와 겹친 날은 '5분 두 번 이어짐' 대신 종가·밤 잠정 종가 표본 한 번으로 스탑이 나갈 수 있다(감시를 켜기 전의 규칙 — 스탑이 빠지는 쪽보다
+    낫다고 봤다). 마지막 저장본이 들어온 뒤 감시 작업이 판정하기 전(20초 안팎)에 격자 끝 뒤 판정이 돌면(정시 밖 관측치) 그 판정도 대체 경로로 간다(전에는 덮음). 판정 뒤·요약 전에
+    이 판으로 배포한 세션(옛 프로세스가 판정)은 기록이 없어 그 세션만 대체 경로다(신선한 저장본을 새 프로세스가 다시 판정하면 덮음). 작업 기록이 세션마다 한 줄 늘고 화면의 작업 기록
+    목록에 이름 그대로 보인다.
 - **체결**: 대기 STOP 체결은 장부 결과에서 즉시 스탑과 같은 칸(`stopped`)으로 센다. 감시 STOP의 근거는 `stopMode INTRADAY_WATCH`와 감지 격자·가격이다.
 - **새 매수 거절**: Claude 검증기는 감시 기능이 낸 대기 STOP(`INTRADAY_WATCH`·`NIGHT_FALLBACK`)의 종목만 재진입 금지처럼 거절한다 — 감시를 켜기 전부터 있던 한국 밤 감지 STOP(`stopMode` 없음)은
   넣지 않아 끈 판 검증 결과가 그대로다. 규칙 계좌 두 곳은 이미 대기 매도가 있는 종목을 매수 후보에서 뺀다(QA-196 — 시험으로만 고정).

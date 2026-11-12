@@ -134,6 +134,17 @@ class StopWatchTest {
             assertThat(exam.get(exam.size() - 1)).isEqualTo(kst(EXAM, 16, 20, 0));
             assertThat(StopWatch.firstJudgedGrid(KR, EXAM)).isEqualTo(kst(EXAM, 10, 10, 0));
         }
+
+        @Test
+        @DisplayName("QA-384 마지막 격자 — 보통 날 15:55 ET·15:20 KST, 조기 폐장일 12:55 ET, 수능일 16:20 KST(모두 격자 끝과 같음), 휴장일은 없음")
+        void lastGrid() {
+            assertThat(StopWatch.lastGrid(US, DAY, false)).isEqualTo(et(15, 55)).isEqualTo(StopWatch.gridEnd(US, DAY, false));
+            LocalDate early = LocalDate.of(2026, 11, 27);
+            assertThat(StopWatch.lastGrid(US, early, false)).isEqualTo(et(early, 12, 55, 0)).isEqualTo(StopWatch.gridEnd(US, early, false));
+            assertThat(StopWatch.lastGrid(US, LocalDate.of(2026, 11, 26), false)).isNull();
+            assertThat(StopWatch.lastGrid(KR, DAY, true)).isEqualTo(kst(DAY, 15, 20, 0)).isEqualTo(StopWatch.gridEnd(KR, DAY, true));
+            assertThat(StopWatch.lastGrid(KR, EXAM, true)).isEqualTo(kst(EXAM, 16, 20, 0)).isEqualTo(StopWatch.gridEnd(KR, EXAM, true));
+        }
     }
 
     @Nested

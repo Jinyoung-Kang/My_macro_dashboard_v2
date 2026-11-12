@@ -9,7 +9,6 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -107,6 +106,19 @@ class StopWatchFallbackTest {
             ((ObjectNode) current.payload()).put("mode", value);
         }
 
+        /**
+         * 감시 작업이 TUE 세션의 마지막 격자(15:55 ET)를 {@code mode}로 판정하고 바로 남긴 기록(운영 형식 — {@code PaperStopWatchJob}의 마지막 격자 판정
+         * 기록). 격자 끝 뒤의 덮음은 ON 기록이 있을 때만입니다(QA-384) — 마지막 격자까지 지켜본 평소 날의 고정 자료는 이 기록을 함께 둡니다.
+         */
+        private void lastGridJudged(String mode) {
+            ObjectNode detail = MAPPER.createObjectNode();
+            detail.put("market", "US");
+            detail.put("mode", mode);
+            detail.put("tradingDate", TUE.toString());
+            detail.put("lastJudgedGrid", et(TUE, 15, 55).toString());
+            store.recordJobRun(PaperStopWatchJob.LAST_GRID_JOB, et(TUE, 15, 55).plusSeconds(40), et(TUE, 15, 55).plusSeconds(40), "OK", detail);
+        }
+
         /** 16:15 ET 확정 종가 관측치(그날 종가 90 ≤ 스탑가 92)를 16:17 시계의 장부로 처리합니다. */
         private Outcome closeObservation() {
             PaperLedgerService closing = new PaperLedgerService(store, marketData, MAPPER,
@@ -123,6 +135,7 @@ class StopWatchFallbackTest {
         void guardedTickerKeepsTheCloseFallback() {
             mode("ON");
             watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 103.0);
+            lastGridJudged("ON");   // 감시 작업은 15:55 격자까지 판정함(이 종목은 가드로 뺌) — 덮지 않는 까닭은 가드(QA-384 뒤에도 이 조건을 봄)
 
             closeObservation();
 
@@ -154,6 +167,7 @@ class StopWatchFallbackTest {
         void watchedTickerIsLeftToTheWatchAtTheClose() {
             mode("ON");
             watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 100.0);
+            lastGridJudged("ON");   // 평소 날 — 감시 작업이 15:55 격자를 판정하고 남긴 기록(QA-384)
 
             Outcome outcome = closeObservation();
 
@@ -167,6 +181,9 @@ class StopWatchFallbackTest {
             mode("ON");
             watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 100.0);
             snapshotMode("SHADOW");
+            // 15:55 격자는 SHADOW로 판정했고(기록 SHADOW), 판정 창 끝(16:05) 전에 ON으로 바꿔 세션 요약은 ON·15:55로 남음 — 덮지 않는 까닭은 저장본의 모드
+            lastGridJudged("SHADOW");
+            summary("ON", et(TUE, 15, 55), false);
 
             closeObservation();
 
@@ -197,7 +214,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-384: 밤 장부의 덮음 판정이 감시 작업이 마지막 격자를 실제로 판정했는지 보지 않음 — 수정 커밋에서 해제")
         @DisplayName("QA-384 ON — 저장본에는 15:55 격자 가격이 있지만 감시 작업이 그 세션에 남긴 기록이 없으면(15:55에 백엔드가 죽어 있었음) 16:15 확정 종가 "
                 + "관측치는 덮지 않아 종가 스탑")
         void lastGridNeverJudgedKeepsTheCloseFallback() {
@@ -215,7 +231,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-384: 밤 장부의 덮음 판정이 감시 작업이 마지막 격자를 실제로 판정했는지 보지 않음 — 수정 커밋에서 해제")
         @DisplayName("QA-384 ON — 감시 작업의 세션 요약이 앞 격자(15:50)까지만 판정했다고 적었거나 판정한 격자가 없으면(lastJudgedGrid null) 16:15 확정 종가 "
                 + "관측치는 덮지 않아 종가 스탑")
         void summaryShortOfTheLastGridKeepsTheCloseFallback() {
@@ -255,6 +270,35 @@ class StopWatchFallbackTest {
                 assertThat(store.positions(BOOK)).singleElement().satisfies(p -> assertThat(p.qty()).isEqualTo(10));
                 assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("장중 감시에 맡김"));
             }
+        }
+
+        @Test
+        @DisplayName("QA-384 ON — 마지막 격자 판정 기록이 SHADOW뿐이면(그 격자는 주문 없이 판정) 저장본이 ON이어도 덮지 않아 종가 스탑, 작업 기록에 까닭을 남김")
+        void shadowJudgedLastGridKeepsTheCloseFallback() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 100.0);
+            lastGridJudged("SHADOW");
+
+            Outcome outcome = closeObservation();
+
+            assertThat(stops()).singleElement().satisfies(o ->
+                    assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK));
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("AAA").contains("마지막 격자 가격이 있지만")
+                    .contains("판정한 기록(ON)이 없어"));
+        }
+
+        @Test
+        @DisplayName("QA-384 격자 끝 전의 판정(시간별 관측치 15:15 ET — 그 시각 − 10분 뒤의 표본)은 감시 작업 기록을 묻지 않고 지금처럼 감시에 맡김")
+        void hourlyObservationBeforeTheGridEndDoesNotAskForTheRecord() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 14), et(TUE, 15, 15).plusSeconds(20), 100.0);
+            PaperLedgerService hourly = new PaperLedgerService(store, marketData, MAPPER,
+                    new PaperCheckpointJobTest.MovableClock(et(TUE, 15, 17)));
+
+            Outcome outcome = hourly.process(quotes(et(TUE, 15, 15).plusSeconds(40), bar("AAA", MON, 100.0, TUE, 90.0)));
+
+            assertThat(stops()).isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("장중 감시에 맡김"));
         }
 
         @Test
@@ -444,6 +488,7 @@ class StopWatchFallbackTest {
         void coveredTickerIsLeftToTheWatch() {
             mode("ON", null);
             watched("005930");
+            lastGridJudgedD1();   // 평소 날 — 감시 작업이 15:20 격자를 판정하고 남긴 기록(QA-384)
 
             Outcome outcome = nightD1(91_000);
 
@@ -458,6 +503,9 @@ class StopWatchFallbackTest {
             mode("ON", null);
             watched("005930");
             snapshotMode("SHADOW");
+            // 15:20 격자는 SHADOW로 판정했고(기록 SHADOW), 판정 창 끝(15:35) 전에 ON으로 바꿔 세션 요약은 ON·15:20으로 남음 — 덮지 않는 까닭은 저장본의 모드
+            lastGridJudged(D1, "SHADOW", kst("2026-11-03T15:20"));
+            summary(D1, "ON", kst("2026-11-03T15:20"), false);
 
             nightD1(91_000);
 
@@ -486,6 +534,24 @@ class StopWatchFallbackTest {
         // QA-384: 저장본에 마지막 격자(15:20 KST) 가격이 있어도 백엔드의 감시 작업이 그 격자를 판정하지 못한 날(그 시각에 재기동 중·죽어 있음)에 밤 감지가
         // '감시에 맡김'으로 읽어 밤 대체 스탑이 빠집니다. 근거는 DB의 감시 작업 기록(세션 요약 kr.stopwatch.summary의 lastJudgedGrid·mode)입니다.
 
+        /**
+         * 감시 작업이 {@code session} 세션의 마지막 격자({@code grid} — 보통 날 15:20 KST)를 {@code mode}로 판정하고 바로 남긴 기록(운영 형식 —
+         * {@code PaperStopWatchJob}의 마지막 격자 판정 기록). 격자 끝 뒤의 덮음은 ON 기록이 있을 때만입니다(QA-384).
+         */
+        private void lastGridJudged(LocalDate session, String mode, Instant grid) {
+            ObjectNode detail = MAPPER.createObjectNode();
+            detail.put("market", "KR");
+            detail.put("mode", mode);
+            detail.put("tradingDate", session.toString());
+            detail.put("lastJudgedGrid", grid.toString());
+            store.recordJobRun("kr." + PaperStopWatchJob.LAST_GRID_JOB, grid.plusSeconds(40), grid.plusSeconds(40), "OK", detail);
+        }
+
+        /** D1 세션의 마지막 격자 15:20을 ON으로 판정한 기록(평소 날). */
+        private void lastGridJudgedD1() {
+            lastGridJudged(D1, "ON", kst("2026-11-03T15:20"));
+        }
+
         /** 감시 작업이 {@code session} 세션에 남긴 세션 요약 기록(운영 형식) — 마지막 판정 격자 {@code lastJudgedGrid}(없으면 null). */
         private void summary(LocalDate session, String mode, Instant lastJudgedGrid, boolean partial) {
             ObjectNode detail = MAPPER.createObjectNode();
@@ -503,7 +569,6 @@ class StopWatchFallbackTest {
         }
 
         @Test
-        @Disabled("QA-384: 밤 장부의 덮음 판정이 감시 작업이 마지막 격자를 실제로 판정했는지 보지 않음 — 수정 커밋에서 해제")
         @DisplayName("QA-384 ON — 저장본에는 15:20 격자 가격이 있지만 감시 작업이 그 세션에 남긴 기록이 없거나 앞 격자(15:15)까지만 판정했으면 밤 감지는 덮지 않아 "
                 + "다음 거래일 09:10 NIGHT_FALLBACK")
         void lastGridNeverJudgedKeepsTheNightFallback() {
@@ -587,6 +652,7 @@ class StopWatchFallbackTest {
             store.states.put(BOOK, new BookState(BOOK, 10_000_000, 10_000_000, 0, 0, null, null, null, null));
             when(marketData.fscMarkets(anyCollection())).thenReturn(Map.of("005930", "KOSPI", "000660", "KOSPI"));
             watched("000660");   // 다른 한국 책이 000660을 들고 있어 감시 저장본에는 D1 15:20까지 그 종목이 있음
+            lastGridJudgedD1();   // 감시 작업은 15:20 격자까지 판정함 — 덮지 않는 까닭은 이 책이 그 세션에 새로 산 보유(QA-384 뒤에도 이 조건을 봄)
             long buy = store.insertOrder(new Order(0, BOOK, null, "000660", PaperBooks.BUY, 10, null, null, PaperBooks.NEXT_OPEN,
                     RuleBookService.SOURCE_RULE, PaperBooks.ORDER_PENDING, null, null, D, kst("2026-11-02T22:30"), D2, null));
             KrFixtures.Payload payload = new KrFixtures.Payload(D1);
@@ -622,6 +688,7 @@ class StopWatchFallbackTest {
         void daytimeResaveDoesNotRejudgeTheNight() {
             mode("ON", null);
             watched("005930");
+            lastGridJudgedD1();   // 평소 날 — 감시 작업이 15:20 격자를 판정하고 남긴 기록(QA-384)
             nightD1(91_000);
             assertThat(stops()).as("D1 밤 — 감시에 맡김").isEmpty();
 
@@ -734,6 +801,31 @@ class StopWatchFallbackTest {
                 assertThat(o.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
                 assertThat(o.reason().path("detection").asString()).contains("그날(" + D2 + ") 종가 단일가");
                 assertThat(PaperNotifications.timingName(o, true)).isEqualTo("그날 종가");
+            });
+        }
+
+        @Test
+        @DisplayName("QA-384 ON — D2 종가 단일가 시간(15:22)에 처음 처리한 D1 관측치: 감시 작업이 D2 마지막 격자(15:20)를 판정한 기록이 있으면 감시에 맡기고, "
+                + "저장본에 15:20 가격만 있고 기록이 없으면 그날(D2) 종가 대체 STOP")
+        void lateProcessingAfterTheGridEndNeedsTheRecord() {
+            mode("ON", null);
+            watched("005930", D2, kst("2026-11-04T15:20:20"), 97_000.0, "15:10", "15:15", "15:20");
+            lastGridJudged(D2, "ON", kst("2026-11-04T15:20"));
+
+            Outcome outcome = d1Observation(91_000, kst("2026-11-04T15:21"), kst("2026-11-04T15:22"));
+
+            assertThat(stops()).as("D2 마지막 격자를 판정한 기록 있음").isEmpty();
+            assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("005930").contains("감시가 지금 세션 " + D2));
+
+            setUp();
+            mode("ON", null);
+            watched("005930", D2, kst("2026-11-04T15:20:20"), 97_000.0, "15:10", "15:15", "15:20");
+
+            d1Observation(91_000, kst("2026-11-04T15:21"), kst("2026-11-04T15:22"));
+
+            assertThat(stops()).as("기록 없음 — 15:20 격자를 아무도 판정하지 않음").singleElement().satisfies(o -> {
+                assertThat(o.timing()).isEqualTo(PaperBooks.NEXT_CLOSE);
+                assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_NIGHT_FALLBACK);
             });
         }
 

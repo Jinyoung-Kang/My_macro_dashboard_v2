@@ -54,6 +54,13 @@ import java.util.concurrent.locks.ReentrantLock;
  * {@code kr.}{@value #SUMMARY_JOB}) 한 줄로 남깁니다 — SHADOW·ON인 거래일만, 세션마다 한 번(상세 {@code tradingDate}로 이미 있는지 봄). 이 프로세스가 그
  * 세션 판정 창을 보지 못했으면(마감 뒤 기동) 셀 것이 없어 남기지 않고, 세션 중에 열었으면 {@code partial}로 적습니다.
  *
+ * <p><b>마지막 격자 판정 기록</b>(QA-384 — 장부의 '덮음' 근거): 그 세션의 마지막 격자({@link StopWatch#lastGrid} — 미국 15:55 ET·한국 15:20 KST, 조기 폐장·장
+ * 시간 변경일은 그날 달력)를 판정한 회차가 판정과 같은 장부 잠금 안에서 작업 기록 {@value #LAST_GRID_JOB}(한국 {@code kr.}{@value #LAST_GRID_JOB}) 한 줄을 남깁니다
+ * (상세 {@code tradingDate}·{@code lastJudgedGrid}·판정 때의 {@code mode}). 장부의 격자 끝 뒤 대체 스탑 판정(미국 마감 뒤 관측치·한국 밤)은 감시 저장본에
+ * 마지막 격자 가격이 있는 것만으로는 덮음으로 보지 않고 이 기록(또는 같은 사실을 적은 세션 요약)이 있어야 감시에 맡깁니다({@link #lastGridJudged}) —
+ * 그 시각에 백엔드가 죽어 있던 날은 수집기가 저장본을 남겨도 아무도 그 격자를 판정하지 않았기 때문입니다. 프로세스 메모리가 아니라 DB에 남기므로
+ * 판정 뒤 재기동돼도 그대로 읽히고, 판정 직후에 남기므로 세션 요약(창 끝 뒤)을 기다리지 않습니다. 기록에 실패하면 다음 회차에 다시 남깁니다.
+ *
  * <p><b>판정하는 격자</b>: 지난 회차에 본 마지막 격자 뒤부터 저장본이 받은 시각까지의 격자(첫 판정 격자 = 개장 + 10분 — 개장 10분 전에는 팔지 않음, 끝 =
  * 장 끝 여유 앞). 재기동(또는 세션 중 스위치 켬) 직후 — 그 세션 상태를 첫 판정 격자 뒤에 연 경우 — 에는 가장 최근 격자 하나만 봅니다. 개장 전부터 떠 있던
  * 프로세스가 세션 첫 판정 전 회차를 놓친 것은 재기동이 아니므로 첫 판정 격자부터 판정합니다(QA-306). 한 종목에서 처음 걸린 격자로 주문을 냅니다.
@@ -84,6 +91,8 @@ public class PaperStopWatchJob {
     static final Duration AFTER_CLOSE = Duration.ofMinutes(5);
     /** 세션 요약 작업 기록의 이름 — 시장의 작업 기록 접두어를 붙여 씁니다(미국 그대로, 한국 kr.). */
     static final String SUMMARY_JOB = JOB + ".summary";
+    /** 마지막 격자 판정 기록의 이름(클래스 설명 — QA-384) — 시장의 작업 기록 접두어를 붙여 씁니다(미국 그대로, 한국 kr.). */
+    static final String LAST_GRID_JOB = JOB + ".lastgrid";
 
     private static final Logger log = LoggerFactory.getLogger(PaperStopWatchJob.class);
 
@@ -124,6 +133,13 @@ public class PaperStopWatchJob {
         Instant snapshotCollectedAt;
         /** 그 세션 요약을 남겼거나 남기지 않기로 정함. */
         boolean summaryDone;
+        /** 이 프로세스가 그 세션의 마지막 격자({@link StopWatch#lastGrid})를 판정했으면 그 격자 — 아니면 null(QA-384). */
+        Instant endGridJudged;
+        /** 마지막 격자를 판정한 때의 감시 모드와 시각. */
+        String endGridMode;
+        Instant endGridJudgedAt;
+        /** 마지막 격자 판정 기록({@link #LAST_GRID_JOB})을 남겼음(같은 기록이 이미 있음 포함). */
+        boolean endGridNoted;
     }
 
     @Autowired
@@ -276,7 +292,12 @@ public class PaperStopWatchJob {
             state.judged.clear();
             state.lastJudgedAt = null;
             state.summaryDone = false;
+            state.endGridJudged = null;
+            state.endGridMode = null;
+            state.endGridJudgedAt = null;
+            state.endGridNoted = false;
         }
+        noteEndGrid(definition, state, session, firstGrid);   // 판정 때 남기지 못한 마지막 격자 기록이 있으면 다시(QA-384) — 보통은 할 일 없음
         Instant windowEnd = calendar.closeInstant(session).plus(AFTER_CLOSE);
         if (now.isAfter(windowEnd)) {
             summarize(definition, mode, state, session, firstGrid, windowEnd, now);
@@ -316,7 +337,9 @@ public class PaperStopWatchJob {
             return Outcome.skip(code, mode.name(), "이미 본 저장본");
         }
         List<Instant> grids = new ArrayList<>();
-        for (Instant g : StopWatch.grids(calendar, session, korea)) {
+        List<Instant> sessionGrids = StopWatch.grids(calendar, session, korea);
+        Instant lastOfSession = sessionGrids.isEmpty() ? null : sessionGrids.get(sessionGrids.size() - 1);
+        for (Instant g : sessionGrids) {
             if (!g.isBefore(firstGrid) && !g.isAfter(fetched) && (state.lastGrid == null || g.isAfter(state.lastGrid))) {
                 grids.add(g);
             }
@@ -344,6 +367,14 @@ public class PaperStopWatchJob {
                     judgeBook(run, book, korea, mode, session, judged, payload, fetched, state, orders, would, guards);
                     return null;
                 });
+            }
+            if (judged.get(judged.size() - 1).equals(lastOfSession)) {
+                // 그 세션의 마지막 격자까지 판정함 — 같은 장부 잠금 안에서 기록해, 장부의 격자 끝 뒤 덮음 판정이 '판정했는데 기록은 아직'인 틈을 보지 않게(QA-384).
+                state.endGridJudged = lastOfSession;
+                state.endGridMode = mode.name();
+                state.endGridJudgedAt = now;
+                state.endGridNoted = false;
+                noteEndGrid(definition, state, session, firstGrid);
             }
             return null;
         });
@@ -373,6 +404,61 @@ public class PaperStopWatchJob {
         status.put(code, new StopWatchStatus.View(mode.name(), state.session, state.openedAt, now, skipped, state.lastGrid,
                 state.lastJudgedAt, state.snapshotCollectedAt, state.cyclesJudged, state.gridsJudged, state.judged.size(), state.stops,
                 state.wouldStops, state.guarded));
+    }
+
+    /**
+     * 마지막 격자 판정 기록 한 줄(클래스 설명 — QA-384) — 이 프로세스가 그 세션의 마지막 격자를 판정했고 아직 남기지 않았을 때만. 같은 세션·같은 격자·같은
+     * 모드의 줄이 이미 있으면(판정 뒤 재기동한 프로세스가 아직 신선한 같은 저장본으로 그 격자를 다시 판정) 다시 남기지 않습니다. 기록에 실패하면 표시를
+     * 남기지 않아 다음 회차가 다시 시도합니다 — 그동안 장부는 덮지 않음으로 읽습니다(보수적인 쪽: 대체 스탑이 맡고, 감시가 낸 대기 STOP은 겹쳐 내지 않음).
+     */
+    private void noteEndGrid(PaperMarket market, MarketState state, LocalDate session, Instant firstGrid) {
+        if (state.endGridJudged == null || state.endGridNoted) {
+            return;
+        }
+        String job = market.jobName(LAST_GRID_JOB);
+        try {
+            for (PaperStore.JobRun existing : store.jobRunsFor(job, session)) {
+                if (state.endGridMode.equals(Json.asText(existing.detail(), "mode"))
+                        && state.endGridJudged.equals(instant(Json.asText(existing.detail(), "lastJudgedGrid")))) {
+                    state.endGridNoted = true;
+                    return;
+                }
+            }
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("market", market.code());
+            detail.put("mode", state.endGridMode);
+            detail.put("tradingDate", session.toString());
+            detail.put("lastJudgedGrid", state.endGridJudged.toString());
+            detail.put("judgedAt", state.endGridJudgedAt.toString());
+            detail.put("since", state.openedAt.toString());
+            detail.put("partial", state.openedAt.isAfter(firstGrid));
+            store.recordJobRun(job, state.endGridJudgedAt, clock.instant(), "OK", mapper.valueToTree(detail));
+            state.endGridNoted = true;
+        } catch (RuntimeException e) {
+            log.warn("장중 스탑 감시 마지막 격자 판정 기록 실패 — 다음 회차에 다시(그동안 장부는 대체 스탑 경로로 봄): {}", e.toString());
+        }
+    }
+
+    /**
+     * 감시 작업이 그 세션의 마지막 격자({@code lastGrid} — {@link StopWatch#lastGrid})를 ON으로 실제 판정한 기록이 DB에 있는가(QA-384) — 장부의 격자 끝 뒤 덮음 판정
+     * ({@code PaperLedgerService.watchCovers})의 근거입니다. 마지막 격자 판정 기록({@link #LAST_GRID_JOB} — 판정한 회차가 바로 남김)이나, 같은 사실을 적은
+     * 세션 요약({@link #SUMMARY_JOB}의 {@code lastJudgedGrid}·{@code mode} — 이 기록이 생기기 전 판의 프로세스가 판정한 세션, 판정 기록을 끝내 남기지
+     * 못한 세션)이 그 근거입니다. 모드는 ON만 — SHADOW로 판정한 격자는 주문을 내지 않았습니다. 격자는 시각으로 대조합니다(글자 표기와 무관).
+     * 작업 이름마다 최근 기록만 남지만(세션마다 한 줄이라 200세션) 지워진 옛 세션은 '기록 없음' = 덮지 않음입니다.
+     */
+    static boolean lastGridJudged(PaperStore store, PaperMarket market, LocalDate session, Instant lastGrid) {
+        if (lastGrid == null) {
+            return false;
+        }
+        for (String job : List.of(market.jobName(LAST_GRID_JOB), market.jobName(SUMMARY_JOB))) {
+            for (PaperStore.JobRun record : store.jobRunsFor(job, session)) {
+                if (StopWatchMode.ON.name().equals(Json.asText(record.detail(), "mode"))
+                        && lastGrid.equals(instant(Json.asText(record.detail(), "lastJudgedGrid")))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
