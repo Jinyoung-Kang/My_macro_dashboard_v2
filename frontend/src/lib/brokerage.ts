@@ -287,3 +287,16 @@ export function brokerageBasisText(response: Pick<BrokerageAccountResponse, "fet
   const text = formatKstSeconds(response?.fetchedAtKst ?? null);
   return text === EMPTY ? EMPTY : `${text} KST`;
 }
+
+/**
+ * 보유 종목(실제) 카드의 부제 — 그 표의 현재가·평가·손익이 언제 값인지(사용자 요청 2026-11-13). 탭 머리의 기준 시각과 같은 값(`fetchedAtKst` —
+ * 수집기가 토스에서 받은 시각, 초까지)이고, 화면이 이전 값을 보이는 중이면(서버 `isStale`·다시 읽기 실패 — `stale`) 그 뒤 새로 읽지 못했다는 것을
+ * 붙입니다. 시각을 모르면 "—"(지어내지 않음).
+ */
+export function brokerageHoldingsBasisText(
+  response: Pick<BrokerageAccountResponse, "fetchedAtKst"> | null | undefined,
+  stale = false,
+): string {
+  const text = `데이터 기준(갱신) 시각 ${brokerageBasisText(response)}`;
+  return stale ? `${text} · 이전 값 — 그 뒤 새로 읽지 못함` : text;
+}

@@ -10,6 +10,7 @@ import { useApi } from "@/hooks/useApi";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import {
   brokerageBasisText,
+  brokerageHoldingsBasisText,
   brokerageRefreshMs,
   brokerageRefreshNote,
   brokerageScope,
@@ -38,6 +39,7 @@ const TIMEOUT_MS = 40_000;
  * 5초는 10초로 올려 씁니다 — 수집기 계좌 캐시(성공값 10초)보다 자주 읽어도 같은 값이고, 토스 계좌 API의 호출 한도와 운영 1분봉이 쓰는 단일 토큰을
  * 아낍니다. 셸의 수동 새로고침 신호는 따르지 않고, 탭을 숨기면 멈춥니다(useApi). 꺼짐(DISABLED)이면 주기와 상관없이 다시 읽지 않습니다.
  * 머리의 기준 시각은 수집기가 토스에서 그 값을 받은 시각(`fetchedAtKst`, 초까지)입니다 — 토스가 그 시각 가격으로 계산한 평가·손익.
+ * 같은 시각을 보유 종목(실제) 카드의 부제에도 적습니다(사용자 요청 2026-11-13 — 표만 보고도 언제 값인지 알게, 이전 값이면 그렇다고).
  *
  * <p>상태: 꺼짐(DISABLED)은 안내만, 그 밖의 실패는 고정 문구와 다시 시도, 서버가 이전 값을 보이거나(isStale) 다시 읽기가 실패하면(refreshError)
  * '이전 값'과 받은 시각, 모르는 숫자는 "—"입니다.
@@ -123,7 +125,7 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
               </>
             }
           />
-          <BrokerageHoldings rows={data.holdings ?? []} market={market} />
+          <BrokerageHoldings rows={data.holdings ?? []} market={market} basis={brokerageHoldingsBasisText(data, staleNote !== null)} />
           <BrokerageOrders
             title="진행 중 주문(실제)"
             rows={data.openOrders ?? []}

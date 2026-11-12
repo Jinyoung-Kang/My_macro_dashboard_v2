@@ -16,6 +16,7 @@ import {
   amountDigits,
   BROKERAGE_MIN_REFRESH_SECONDS,
   brokerageBasisText,
+  brokerageHoldingsBasisText,
   brokerageRefreshMs,
   brokerageRefreshNote,
   brokerageScope,
@@ -222,5 +223,15 @@ describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfi
     expect(brokerageBasisText({ fetchedAtKst: "2026-11-06 14:31" })).toBe("2026-11-06 14:31 KST");
     expect(brokerageBasisText({ fetchedAtKst: null })).toBe("—");
     expect(brokerageBasisText(null)).toBe("—");
+  });
+
+  it("보유 종목 카드의 부제 — 데이터 기준(갱신) 시각(머리의 기준 시각과 같은 값), 이전 값이면 그렇다고, 모르면 —(사용자 요청 2026-11-13)", () => {
+    expect(brokerageHoldingsBasisText({ fetchedAtKst: "2026-11-06 14:31:05" })).toBe("데이터 기준(갱신) 시각 2026-11-06 14:31:05 KST");
+    expect(brokerageHoldingsBasisText({ fetchedAtKst: "2026-11-06 14:31:05" }, true))
+      .toBe("데이터 기준(갱신) 시각 2026-11-06 14:31:05 KST · 이전 값 — 그 뒤 새로 읽지 못함");
+    // 초가 없으면 받은 그대로, 시각을 모르면 지어내지 않음
+    expect(brokerageHoldingsBasisText({ fetchedAtKst: "2026-11-06 14:31" })).toBe("데이터 기준(갱신) 시각 2026-11-06 14:31 KST");
+    expect(brokerageHoldingsBasisText({ fetchedAtKst: null })).toBe("데이터 기준(갱신) 시각 —");
+    expect(brokerageHoldingsBasisText(null, true)).toBe("데이터 기준(갱신) 시각 — · 이전 값 — 그 뒤 새로 읽지 못함");
   });
 });

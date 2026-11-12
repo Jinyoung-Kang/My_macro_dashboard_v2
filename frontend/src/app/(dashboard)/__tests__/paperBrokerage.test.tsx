@@ -330,6 +330,8 @@ describe("상태", () => {
 
     expect(await screen.findByText("이전 값")).toBeTruthy();
     expect(screen.getByText(/2026-03-29 09:31에 받은 값 — 그 뒤 새로 읽지 못함\(호출 한도\)/)).toBeTruthy();
+    // 보유 종목 카드의 기준 시각에도 이전 값임을 적습니다.
+    expect(screen.getByText(/^데이터 기준\(갱신\) 시각 2026-03-29 09:31(:\d\d)? KST · 이전 값 — 그 뒤 새로 읽지 못함$/)).toBeTruthy();
     // 이전 값도 숫자는 그대로 보입니다(배지가 함께).
     expect(tile("평가금액").textContent).toContain("7,200,000원");
   });
@@ -344,6 +346,7 @@ describe("상태", () => {
 
     expect(await screen.findByText("이전 값")).toBeTruthy();
     expect(screen.getByText(/2026-03-29 09:31에 받은 값 — 다시 읽기 실패/)).toBeTruthy();
+    expect(screen.getByText(/^데이터 기준\(갱신\) 시각 2026-03-29 09:31(:\d\d)? KST · 이전 값 — 그 뒤 새로 읽지 못함$/)).toBeTruthy();
     expect(tile("평가금액").textContent).toContain("7,200,000원");
   });
 
@@ -420,6 +423,8 @@ describe("새로고침 주기와 기준 시각(명세 2026-11-06-us-costs-backfi
     expect(within(panel()).getByText(/^기준 시각/).textContent).toBe("기준 시각 2026-03-29 09:31:05 KST");
     expect(within(panel()).getByText("토스가 그 시각 가격으로 계산한 평가·손익(수집기가 토스에서 받은 시각)")).toBeTruthy();
     expect(within(panel()).getByText(/토스증권 종합매매 · 받은 시각 2026-03-29 09:31:05/)).toBeTruthy();
+    // 보유 종목(실제) 카드에도 같은 시각(사용자 요청 2026-11-13 — 표만 보고도 언제 값인지)
+    expect(within(panel()).getByText("데이터 기준(갱신) 시각 2026-03-29 09:31:05 KST")).toBeTruthy();
     const select = within(panel()).getByRole("combobox", { name: "새로고침 주기" }) as HTMLSelectElement;
     // 주기 상자를 건드리지 않아도 보유 종목·요약이 10초마다 다시 읽힙니다(그 전 기본 1시간에서는 한 시간 동안 그대로였음).
     expect(select.value).toBe("10");

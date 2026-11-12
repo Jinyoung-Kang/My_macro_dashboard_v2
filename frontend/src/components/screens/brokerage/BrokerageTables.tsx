@@ -101,10 +101,21 @@ function rowKeys<T>(rows: readonly T[], label: (row: T) => string): (row: T) => 
   return (row) => keys.get(row) ?? label(row);
 }
 
-/** 보유 종목(실제) — 이 화면 통화의 종목만(백엔드가 나눔). 없으면 '보유 종목 없음'. 처음에는 평가금액이 큰 순서. */
-export function BrokerageHoldings({ rows, market }: { rows: readonly BrokerageHoldingRow[]; market: PaperMarketCode }) {
+/**
+ * 보유 종목(실제) — 이 화면 통화의 종목만(백엔드가 나눔). 없으면 '보유 종목 없음'. 처음에는 평가금액이 큰 순서. 부제(`basis`)는 이 표의
+ * 현재가·평가·손익이 언제 값인지입니다(lib/brokerage `brokerageHoldingsBasisText` — 탭 머리의 기준 시각과 같은 값).
+ */
+export function BrokerageHoldings({
+  rows,
+  market,
+  basis,
+}: {
+  rows: readonly BrokerageHoldingRow[];
+  market: PaperMarketCode;
+  basis?: string;
+}) {
   return (
-    <Card title="보유 종목(실제)" source={SOURCES.tossAccount}>
+    <Card title="보유 종목(실제)" subtitle={basis} source={SOURCES.tossAccount}>
       <DataTable
         columns={holdingColumns(market)}
         rows={rows}
