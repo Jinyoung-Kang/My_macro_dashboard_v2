@@ -351,6 +351,22 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
     expect(inRegion().queryByText(/손절 매도 지시만 만들었습니다/)).toBeNull();
   });
 
+  // 독립 검토 F5: 손절만 든 세션이 개장한 뒤(응답 serverTime ≥ instructions.open)에는 그 세션의 나머지 지시가 만들어지지 않는다 — 배너가 '개장 전에 잔고를 고치면 …
+  // 만듭니다'로 남지 않게. 수정 전 실패: 개장 뒤에도 그 글이 있어 'expected <div …> to be null'.
+  it.fails("QA-381 손절 매도 지시만 든 세션 — 개장 뒤에는 배너가 '이 세션의 나머지 지시는 만들지 않습니다'로 끝남(개장 전에는 '개장 전에 고치면 만듭니다')", async () => {
+    const negative = { ...started().summary, cash: -50_000, totalAsset: 3_850_000 };
+    const stopOnly = { session: "2026-11-09", status: "PLANNED", items: [ITEMS[0]], open: "2026-11-09T00:00:00Z", reason: "cash-negative", ledgerChanged: false, targetAt: null };
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: stopOnly, serverTime: "2026-11-08T23:30:00Z" }));
+    renderIsa();
+    expect(await inRegion().findByText(/개장 전에 잔고\(현금·보유\)를 고치면 다음 주기\(10분 안\)에 나머지 지시를 만듭니다/)).toBeTruthy();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: stopOnly, serverTime: "2026-11-09T00:05:00Z" }));
+    renderIsa();
+    expect(await inRegion().findByText(/^현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다/)).toBeTruthy();
+    expect(inRegion().queryByText(/개장 전에 잔고/)).toBeNull();
+    expect(inRegion().getByText(/이 세션의 나머지 지시는 만들지 않습니다/)).toBeTruthy();
+  });
+
   it("잔고 표 — 첫 열 고치기·지우기, 종목·수량·평균 매입가·매입 금액·현재가·평가액·평가손익·손익 %·비중·수수료·세금, 가격 모르면 —", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });

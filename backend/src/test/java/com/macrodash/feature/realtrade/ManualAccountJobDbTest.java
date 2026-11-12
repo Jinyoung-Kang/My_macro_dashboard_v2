@@ -13,6 +13,7 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -532,6 +533,54 @@ class ManualAccountJobDbTest {
                 + "ISA 잔고의 현금이 음수라 이 세션은 손절 매도 지시만 만들고 나머지 매매 지시는 만들지 않았습니다.\n"
                 + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 알립니다.\n"
                 + "장중 스탑 매도 지시는 감지되면 그대로 알립니다.");
+    }
+
+    /** 손절만 든 세션(A 50주 매도 — 08:05에 알림)에서 B 비중 80%가 목표인 밤: 나머지를 채우면 B 매수가 나옴. */
+    private long stopOnlyWithBuyAhead() {
+        negativeCash("-600000");
+        targets(E, Map.of(B, 80.0), Map.of(A, 10_000.0, B, 20_000.0, CASH, 100_000.0), true);
+        when(paper.pendingStopSymbols(BOOK, E)).thenReturn(Set.of(A));
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED");
+        cycleAt("2026-11-09T08:05");
+        return store.instructions("isa", E).getFirst().id();
+    }
+
+    // 독립 검토 F6. 수정 전 실패: 'Expecting actual: ["SELL 005930 50 SKIPPED", "BUY 000660 19 PLANNED"] to contain exactly …["SELL 005930 50 SKIPPED", "BUY 000660 2 PLANNED"]'
+    // (건너뛴 A 매도의 대금 500,000을 매수 현금에 넣어, 현금 50,000뿐인데 387,600어치 매수 지시).
+    @Test
+    @Disabled("QA-381: 건너뛴 손절 종목의 매도 대금이 나머지 매수 예산에 들어감 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 손절 지시를 건너뛴 뒤 나머지를 채우면 그 종목은 '팔지 않는 보유'로 계산 — 매도 대금을 매수 현금에 넣지 않아 매수 지시가 실제 현금 안")
+    void skippedStopSellProceedsDoNotFundBuys() {
+        long stopSellId = stopOnlyWithBuyAhead();
+        clock.set(kst("2026-11-09T08:20"));
+        service().skipInstruction(stopSellId);
+        service().setTotal(new ManualAccountService.TotalRequest(d("850000"), Map.of()));   // 현금 = 850,000 − 50 × 10,000 − 15 × 20,000 = 50,000
+
+        cycleAt("2026-11-09T08:25");
+
+        // 평가액 850,000 — B 목표 floor(680,000 ÷ 20,000) = 34주(19주 매수 바람). A 매도는 건너뛰어 대금이 없으므로 현금 50,000 안: floor(50,000 ÷ (20,000 × 1.02)) = 2주
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 SKIPPED", "BUY " + B + " 2 PLANNED");
+        assertThat(store.session("isa", E).orElseThrow().detail().has("reason")).isFalse();
+    }
+
+    @Test
+    @DisplayName("QA-381: 미확인(PLANNED) 손절 지시가 있는 채 나머지를 채우면 그 매도 대금은 매수 현금에 셈 — 여전히 유효한 지시(평소 세션의 같은 계산과 같은 수량)")
+    void plannedStopSellProceedsStillFundBuys() {
+        stopOnlyWithBuyAhead();
+        clock.set(kst("2026-11-09T08:20"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("850000"), Map.of()));
+
+        cycleAt("2026-11-09T08:25");
+
+        // 현금 50,000 + A 매도 대금 500,000 = 550,000 ≥ 19 × 20,000 × 1.02 = 387,600 — 19주 매수 그대로
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED", "BUY " + B + " 19 PLANNED");
+
+        // 평소 세션(현금 50,000으로 처음부터 계산)도 같은 수량
+        ManualAccountServiceDbTest.clean(jdbc);
+        started("850000", "2026-11-06T14:55", A, "50", "10000", B, "15", "20000");
+        cycleAt("2026-11-09T08:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED", "BUY " + B + " 19 PLANNED");
     }
 
     @Test

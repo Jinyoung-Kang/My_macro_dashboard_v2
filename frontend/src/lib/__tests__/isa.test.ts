@@ -335,6 +335,26 @@ describe("안내 글", () => {
     }
   });
 
+  // 독립 검토 F5: 그 세션이 개장한 뒤에는 정기 작업이 다음 세션만 보므로 나머지 지시는 그 세션에 만들어지지 않는다 — 안내가 '개장 전에 잔고를 고치면 … 만듭니다'로
+  // 남으면 사실이 아니다. 수정 전 실패: "expected '현금이 음수라 이 세션은 … 개장 전에 잔고(현금·보유)를 고치면 …' not to include '개장 전에'".
+  it.fails("QA-381 손절 매도 지시만 만든 세션의 안내 — 그 세션이 개장한 뒤(서버 시각 ≥ 개장)에는 '개장 전에 고치면 만든다'가 아니라 '이 세션의 나머지는 만들지 않는다'", () => {
+    const text = stopOnlyText as unknown as (block: unknown, serverTime?: string | null) => string | null;
+    const block = { status: "PLANNED", reason: "cash-negative", open: "2026-11-09T00:00:00Z" };   // 09:00 KST
+    for (const now of ["2026-11-09T00:00:00Z", "2026-11-09T00:05:00Z", "2026-11-09T15:00:00+09:00"]) {
+      const after = text(block, now);
+      expect(after).toMatch(/^현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다/);
+      expect(after).toContain("나머지 매매 지시는 만들지 않았습니다");
+      expect(after).not.toContain("개장 전에");
+      expect(after).toContain("이 세션의 나머지 지시는 만들지 않습니다");
+      expect(after).not.toMatch(/원|[0-9]{3,}/);
+    }
+    // 개장 전이거나 시각을 모르면 예전 글 그대로(조건문 — 시각을 지어내지 않음)
+    for (const now of ["2026-11-08T23:59:59Z", null, undefined, "모름"]) {
+      expect(text(block, now)).toContain("개장 전에 잔고(현금·보유)를 고치면 다음 주기(10분 안)에 나머지 지시를 만듭니다");
+    }
+    expect(text({ status: "PLANNED", reason: "cash-negative", open: null }, "2026-11-09T00:05:00Z")).toContain("개장 전에 잔고(현금·보유)를 고치면");
+  });
+
   // QA-382: 종가 스탑 지시는 15:30 체결 뒤에도 다음 세션 지시를 만들기 전까지 확인할 수 있다(ADR 0034 결정 7 개정). 수정 전 안내에는 기한이 없었다(재현 커밋에서는 it.fails).
   it("QA-382 스탑 안내 — 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전까지 확인(고정 시각 없이)", () => {
     expect(STOP_GUIDE).toContain("종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전");
