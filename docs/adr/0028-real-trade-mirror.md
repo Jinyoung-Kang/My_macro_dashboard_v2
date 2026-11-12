@@ -137,5 +137,11 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   계약은 [명세 §3](../specs/2026-11-06-real-trade-mirror.md), 시험은 `RealTradeJobDbTest`의 `briefStatusOutageDoesNotNotifyAndOrdersResume`·
   `outageNotifiesAfterThreeMinutesAndAgainAfterRecovery`·`repeatedOutagesAreSpacedByTheMinimumInterval`·`briefCalendarFailureDoesNotNotify`·
   `outageClockRestartsAfterNotLive`·`calendarUnavailableNotifiesOnce`·`statusUnavailableNotifiesOnce`·`unavailableOutsideTradingHoursIsSilent`.
+- **덧붙임(QA-378, 2026-11-13 사용자 결정 — 지금 동작 유지)**: 모의 장부가 대기 주문을 그 밤 체결하지 못하면서 기다리지도 않는 경우(그 종목만 수집 실패해
+  이어받은 항목, 기업행위로 그날 보류)에, 다음 날 묶음은 어제 따라 산 종목을 '책에 없는 보유'로 팔고 어제 따라 판 종목을 다시 산다 — 보류가 풀리면 장부가 체결해
+  그다음 묶음이 다시 맞추므로 실제 돈이 왕복한다(대기 주문을 3거래일 두는 규칙 계좌에서, 재현 시험 있음). 고치지 않는다: 그 종목을 묶음 범위에서 빼면 보류된 매수가
+  끝내 체결되지 않을 때 실제 계좌가 모의 책에 없는 종목을 스탑 감시 없이 최대 2세션 더 들고 있게 되고(왕복 비용보다 나쁨), 접점(묶음 범위·마무리·회전율 판정·켜기 창
+  예상 목록)이 넓어 회전율 멈춤이 느슨해질 수 있다. 운영의 실제 매매 기록에 같은 종목의 하루 간격 왕복이 실제로 보이면 '매도 쪽만 — 지난 세션에 판 종목을 그 매도가
+  풀릴 때까지 다시 사지 않음'을 다시 올린다. 지금 동작은 `PaperMirrorServiceTest`·`RealTradeJobDbTest`의 QA-378 시험이 고정한다.
 - 토큰이 키 하나에 1개라 서버 밖에 같은 키가 있으면 주문 시각에 401이 나고 멈춘다.
 - 모의 1분봉 체결가와 실제 체결가는 다르다(지연·슬리피지·정수 주). 실제 계좌 칸은 실제 평균 체결가만 보이고, 모의 체결가 대비는 다음 단계로 남긴다(모의 체결은 그날 밤에야 기록됨).
