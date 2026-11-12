@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -3400,6 +3401,129 @@ class RealTradeJobDbTest {
 
         assertThat(cfg().buysPaused()).isTrue();
         assertThat(sentSummaries()).noneMatch(o -> o.startsWith("BUY"));
+    }
+
+    // ---- 수집기도 그 종목을 셀 수 없을 때(QA-413 후속 — 수집기 자체 검사가 그 종목의 상한가를 토스에서 받지 못하면 모든 주문을 count-unavailable로 보내지 않음)
+    private void collectorCannotCount() {
+        when(client.placeOrder(anyString())).thenReturn(new OrderResult(Outcome.NOT_SENT, null, "count-unavailable", null));
+    }
+
+    private void collectorAccepts() {
+        when(client.placeOrder(anyString())).thenAnswer(inv -> new OrderResult(Outcome.ACCEPTED, "T-" + orderIds.incrementAndGet(), null, 200));
+    }
+
+    private List<OrderRow> todayRows() {
+        return store.ordersOn("KR", SESSION);
+    }
+
+    @Test
+    @Disabled("QA-413 후속: 수집기가 count-unavailable로 답하면 스탑 매도가 두 주기에 시도 1·2를 모두 쓰고 그날 닫혀, 앱 주문이 끝난 뒤에도 다시 나가지 않음")
+    @DisplayName("QA-413 후속: 형식 밖 종목의 앱 매수가 걸린 주기에 수집기가 count-unavailable로 답하면 — 수집기도 셀 수 없다는 뜻이라 그 주문이 걸려 있는 동안은 "
+            + "보내지 않는 예전 동작으로 물러나고(행을 더 쓰지 않음), 그 앱 주문이 끝나면 스탑 매도가 창 안에서 다시 나간다")
+    void collectorCannotCountFallsBackAndTheStopSellsLater() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        strictPreflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(), new ArrayList<>());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(601, A, "MARKET", kst("2026-11-06T11:32"))));
+        collectorCannotCount();
+
+        run("11:32:10");
+        run("11:32:20");
+        run("11:32:30");
+
+        verify(client, times(1)).placeOrder(anyString());   // 수정 전: 2(시도 1·2를 20초 만에 다 씀)
+        assertThat(todayRows()).singleElement().satisfies(row -> {
+            assertThat(row.sendOutcome()).isEqualTo("NOT_SENT");
+            assertThat(row.outcomeCode()).as("그 물러남을 일으킨 답 — 따로 적음").isEqualTo("count-unavailable-unpriced");
+        });
+        assertThat(cfg().state()).isEqualTo("LIVE");
+
+        oddAppBuyEnded();
+        collectorAccepts();
+        run("11:32:40");
+
+        assertThat(todayRows()).as("그 앱 주문이 끝난 뒤 — 스탑 창(3분) 안에서 다시 보냄").hasSize(2).last().satisfies(row -> {
+            assertThat(row.sendOutcome()).isEqualTo("ACCEPTED");
+            assertThat(row.side() + " " + row.symbol() + " " + row.quantity()).isEqualTo("SELL " + A + " 100");
+        });
+    }
+
+    @Test
+    @Disabled("QA-413 후속: 스탑 둘이면 세 번째 주기에 같은 오류 3회(repeated-error)로 이상 멈춤")
+    @DisplayName("QA-413 후속: 매도 여러 건이 걸린 주기에 수집기가 count-unavailable로 답해도 — 첫 답에서 물러나 한 건만 적고, 같은 오류 반복으로 이상 멈춤이 되지 않는다. "
+            + "앱 주문이 끝나면 모두 다시 나간다")
+    void collectorCannotCountDoesNotHaltOnSeveralSells() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        strictPreflight("1000000", Map.of(A, new String[]{"100", "50000"}, B, new String[]{"10", "20000"}), Map.of(), new ArrayList<>());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(601, A, "MARKET", kst("2026-11-06T11:32")),
+                stopDue(602, B, "MARKET", kst("2026-11-06T11:32"))));
+        collectorCannotCount();
+
+        run("11:32:10");
+        run("11:32:20");
+        run("11:32:30");
+        run("11:32:40");
+
+        assertThat(cfg().state()).as("수정 전: 세 번째 주기에 HALTED(repeated-error)").isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        verify(client, times(1)).placeOrder(anyString());
+
+        oddAppBuyEnded();
+        collectorAccepts();
+        run("11:32:50");
+
+        assertThat(todayRows().stream().filter(row -> "ACCEPTED".equals(row.sendOutcome())).map(row -> row.side() + " " + row.symbol()))
+                .containsExactlyInAnyOrder("SELL " + A, "SELL " + B);
+    }
+
+    @Test
+    @Disabled("QA-413 후속: 수집기가 count-unavailable로 답한 뒤에도 주기마다 다시 보내 시도를 다 씀")
+    @DisplayName("QA-413 후속: 물러남은 그날 행에서 되살린다 — 다시 띄운 작업은 형식 밖 주문이 걸려 있는 동안 한 번 더 보내지 않고(남은 시도를 쓰지 않게), "
+            + "같은 날 다른 형식 밖 주문이 다시 걸려도 시도 없이 물러난다")
+    void collectorCannotCountSurvivesRestart() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        strictPreflight("1000000", Map.of(A, new String[]{"100", "50000"}, B, new String[]{"10", "20000"}), Map.of(), new ArrayList<>());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(601, A, "MARKET", kst("2026-11-06T11:32"))));
+        collectorCannotCount();
+        run("11:32:10");
+        verify(client, times(1)).placeOrder(anyString());
+
+        job = restartedJob();
+        run("11:32:20");
+        run("11:32:30");
+        verify(client, times(1)).placeOrder(anyString());
+
+        oddAppBuyEnded();
+        collectorAccepts();
+        run("11:32:40");
+        assertThat(todayRows()).hasSize(2).last().satisfies(row -> assertThat(row.sendOutcome()).isEqualTo("ACCEPTED"));
+
+        // 같은 날 오후 — 다른 형식 밖 종목의 앱 매수가 걸린 채 새 스탑: 오늘 이미 수집기가 셀 수 없다고 답했으므로 시도 없이 물러남
+        tossOrders(appBuy("APP-ODD2", "Q500002", "LIMIT", "10", "0"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(602, B, "MARKET", kst("2026-11-06T13:00"))));
+        run("13:00:10");
+        run("13:00:20");
+        assertThat(todayRows()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("QA-413 후속 대조: 형식 밖 주문이 없는 평소 주기의 count-unavailable은 그대로 — 사유 코드도, 시도 2 재시도도, 같은 오류 3회 이상 멈춤도")
+    void plainCountUnavailableIsUnchanged() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}, B, new String[]{"10", "20000"}), Map.of());
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(601, A, "MARKET", kst("2026-11-06T11:32")),
+                stopDue(602, B, "MARKET", kst("2026-11-06T11:32"))));
+        collectorCannotCount();
+
+        run("11:32:10");
+        run("11:32:20");
+        assertThat(todayRows()).hasSize(4).allSatisfy(row -> assertThat(row.outcomeCode()).isEqualTo("count-unavailable"));
+        assertThat(todayRows()).extracting(OrderRow::attempt).containsExactlyInAnyOrder(1, 1, 2, 2);
+
+        run("11:32:30");
+        assertThat(cfg().haltReason()).isEqualTo("repeated-error");
     }
 
     @Test
