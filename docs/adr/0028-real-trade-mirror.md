@@ -107,5 +107,17 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   `malformedAppBuyDoesNotBlockStopSells`·`malformedAppBuyDefersBuysAndSendsSells`·`malformedAppBuyNextToWellFormedOne`·`malformedAppBuyStillCountsTowardDailyOrders`,
   `RealTradePlannerTest.dailyUsageWithUnpriceableOpenBuy`, `RealTradeServiceDbTest.previewWithMalformedAppBuyDefersBuys`. 형식에 맞는 종목의 앱 매수와 앱 주문이 없는
   날은 그대로다(`dailyBuyCapIncludesOpenBuysAtUpper`·`dailyOrderCapDefers`·`syncBatch`).
+- **덧붙임(QA-342 보완, 2026-11-12 사용자 승인 — 결정 10의 '준비 안 됨' 알림, 알림 시점만 바뀜)**: 켜짐인데 토스 장 운영 정보·수집기 매매 상태를 받지 못한
+  주기의 알림(`UNAVAILABLE`)이 첫 실패 주기에 바로, 사유마다 하루 한 번 나갔다. 장중 배포로 수집기가 10~30초 다시 떠도 알림이 가고 그날의 한 번을 써 버려, 그
+  뒤의 긴 끊김(맞추기·스탑 매도가 통째로 빠지는 진짜 장애)은 알리지 못했다. 이제 **끊김이 3분 이어질 때** 알리고(끊김마다 한 번), **회복하면 표시를 지워** 다시
+  끊기면 다시 알리며, 같은 사유는 **30분에 한 번까지**다. 주문 동작(재시도·주문 없음·멈춤 아님)은 그대로다.
+  검토한 대안: ① 하루 한 번을 두고 지속 조건만 더함 — 회복 뒤의 두 번째 끊김을 여전히 놓쳐 버림. ② 회복 알림을 따로 보냄 — 알림이 두 배가 되고 텔레그램은
+  상태·건수·사유 코드만이라는 범위를 넓혀 버림(화면의 '확인 안 됨' 표시와 다음 창 요약으로 회복을 봄). ③ 끊김 시작 시각을 DB에 저장 — 스키마 변경이 필요해
+  메모리에 두고, 다시 띄우면 그때부터 다시 잼. 감수한 단점: 3분 미만의 끊김은 알림이 없다(그 사이 창이 지나간 주문은 지금처럼 창 요약의 놓침·스탑 매도 알림으로
+  드러남). 진짜 장애의 첫 알림이 3분 늦는다(개장 전부터 이어진 끊김은 예전과 같은 개장 3분 전). 다시 띄운 작업은 이어지던 끊김을 새 끊김으로 재므로, 끊김이
+  재기동을 넘어 이어지면 앞 알림부터 30분 뒤 한 번 더 알린다. 알림 글('개장이 가까운데 …')은 그대로라 장중 알림에는 문구가 덜 맞는다(글은 바꾸지 않음).
+  계약은 [명세 §3](../specs/2026-11-06-real-trade-mirror.md), 시험은 `RealTradeJobDbTest`의 `briefStatusOutageDoesNotNotifyAndOrdersResume`·
+  `outageNotifiesAfterThreeMinutesAndAgainAfterRecovery`·`repeatedOutagesAreSpacedByTheMinimumInterval`·`briefCalendarFailureDoesNotNotify`·
+  `outageClockRestartsAfterNotLive`·`calendarUnavailableNotifiesOnce`·`statusUnavailableNotifiesOnce`·`unavailableOutsideTradingHoursIsSilent`.
 - 토큰이 키 하나에 1개라 서버 밖에 같은 키가 있으면 주문 시각에 401이 나고 멈춘다.
 - 모의 1분봉 체결가와 실제 체결가는 다르다(지연·슬리피지·정수 주). 실제 계좌 칸은 실제 평균 체결가만 보이고, 모의 체결가 대비는 다음 단계로 남긴다(모의 체결은 그날 밤에야 기록됨).

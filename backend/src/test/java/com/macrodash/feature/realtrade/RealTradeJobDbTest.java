@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -2857,7 +2856,8 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @DisplayName("QA-342: 모의 달력의 개장 3분 전이 지나도록 토스 장 운영 정보를 받지 못하면 하루 한 번 알림 이벤트(calendar-unavailable) — 주문 없음, 재시도는 계속, 다시 띄워도 한 번")
+    @DisplayName("QA-342: 밤새 이어진 끊김 — 모의 달력의 개장 3분 전이 지나도록 토스 장 운영 정보를 받지 못하면 그 첫 주기에 알림 이벤트(calendar-unavailable), "
+            + "같은 끊김은 한 번 — 주문 없음, 재시도는 계속. 다시 띄운 뒤에도 이어지면 앞 알림부터 30분 뒤 한 번 더(보완)")
     void calendarUnavailableNotifiesOnce() {
         RealTradeFixtures.live(store, true, d("10000000"));
         targets(Map.of(A, 50.0), List.of());
@@ -2882,10 +2882,20 @@ class RealTradeJobDbTest {
         job = restartedJob();
         run("09:20");
         assertThat(events("UNAVAILABLE")).as("다시 띄운 작업은 그날 이벤트에서 되살려 또 알리지 않음").hasSize(1);
+        // QA-342 보완 — 다시 띄운 작업은 끊김을 그때부터 다시 재고(3분), 최소 간격은 그날 이벤트의 알린 시각(08:58)에서 이어 셈
+        run("09:24");
+        assertThat(events("UNAVAILABLE")).as("다시 띄운 뒤 3분은 넘었지만 앞 알림부터 30분 안").hasSize(1);
+        run("09:27:50");
+        assertThat(events("UNAVAILABLE")).hasSize(1);
+        run("09:28:10");
+        assertThat(events("UNAVAILABLE")).as("앞 알림 + 30분 — 다시 띄운 뒤에도 이어지는 끊김을 한 번 더 알림").hasSize(2);
+        run("10:30");
+        assertThat(events("UNAVAILABLE")).as("알린 끊김은 이어져도 다시 알리지 않음").hasSize(2);
     }
 
     @Test
-    @DisplayName("QA-342: 켜짐인데 모의 달력의 개장 3분 전이 지나도록 수집기 매매 상태를 읽지 못하면 하루 한 번 알림 이벤트(status-unavailable) — 멈춤 아님")
+    @DisplayName("QA-342: 켜짐인데 모의 달력의 개장 3분 전이 지나도록 수집기 매매 상태를 읽지 못하면 알림 이벤트(status-unavailable — 같은 끊김은 한 번) — 멈춤 아님. "
+            + "사유마다 따로 재고 따로 알림")
     void statusUnavailableNotifiesOnce() {
         RealTradeFixtures.live(store, true, d("10000000"));
         when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
@@ -2903,11 +2913,13 @@ class RealTradeJobDbTest {
         assertThat(events("HALT")).isEmpty();
         verify(client, never()).placeOrder(anyString());
 
-        // 상태가 돌아온 뒤 달력까지 못 받으면 그것은 따로 한 번
+        // 상태가 돌아온 뒤 달력까지 못 받으면 그것은 따로 한 번 — 그 사유가 3분 이어진 뒤에(QA-342 보완: 예전에는 첫 실패 주기 09:31에 바로)
         when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
         when(client.calendar()).thenReturn(Reply.failed("calendar-unavailable"));
         run("09:31");
         run("09:33");
+        assertThat(events("UNAVAILABLE")).as("장 운영 정보를 못 받은 지 2분 — 아직").hasSize(1);
+        run("09:34:10");
         assertThat(events("UNAVAILABLE")).extracting(e -> e.detail().path("reason").asString())
                 .containsExactlyInAnyOrder("status-unavailable", "calendar-unavailable");
     }
@@ -2933,7 +2945,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342 보완: '준비 안 됨' 알림이 첫 실패 주기에 바로 나감(장중 배포로 수집기가 30초 재기동해도 알림)")
     @DisplayName("QA-342 보완: 수집기 매매 상태를 30초 못 읽은 것(장중 재기동)은 알리지 않는다 — 그동안 주문 없음, 돌아온 주기에 창 안의 주문은 그대로 나감")
     void briefStatusOutageDoesNotNotifyAndOrdersResume() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -2960,7 +2971,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342 보완: '준비 안 됨' 알림이 첫 실패 주기에 바로 나가고 그날의 한 번을 써 버림(회복 뒤의 긴 끊김은 알리지 않음)")
     @DisplayName("QA-342 보완: 끊김이 3분 이어질 때 알리고(같은 끊김은 한 번), 회복한 뒤 다시 3분 끊기면 다시 알린다 — 주문 없음·멈춤 아님은 그대로")
     void outageNotifiesAfterThreeMinutesAndAgainAfterRecovery() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -2993,7 +3003,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342 보완: '준비 안 됨' 알림이 하루 한 번뿐이라 회복 뒤 다시 끊겨도 알리지 않음")
     @DisplayName("QA-342 보완: 끊겼다 돌아오기를 되풀이해도 같은 사유의 알림은 30분에 한 번까지 — 30분이 지나도 이어지는 새 끊김은 그때 알림")
     void repeatedOutagesAreSpacedByTheMinimumInterval() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -3019,7 +3028,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342 보완: 장 운영 정보를 한 번 못 받은 것(재기동 직후)도 첫 실패 주기에 바로 알림")
     @DisplayName("QA-342 보완: 장중에 다시 띄운 직후 토스 장 운영 정보를 한 번 못 받고 다음 재시도(60초 뒤)에 받으면 알리지 않는다")
     void briefCalendarFailureDoesNotNotify() {
         RealTradeFixtures.live(store, false, d("10000000"));
@@ -3036,7 +3044,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-342 보완: '준비 안 됨' 알림이 첫 실패 주기에 바로 나감")
     @DisplayName("QA-342 보완: 켜짐이 아닌 동안(끄기·이상 멈춤)은 끊김을 세지 않는다 — 다시 켠 뒤의 끊김은 그때부터 3분")
     void outageClockRestartsAfterNotLive() {
         RealTradeFixtures.live(store, false, d("10000000"));

@@ -406,8 +406,9 @@ export function cancelGaveUpCount(status: Pick<RealTradeStatusResponse, "cancelG
 }
 
 /**
- * 꺼짐인데 보낸 결과를 모르는 주문 수(`unresolvedOrders`, RT2-FE-3) — 꺼짐이고 1건 이상일 때만 그 수, 아니면 null. 켜짐·멈춤·끄는 중에는 정기 작업이
- * 대조를 계속하므로(결과를 모르면 이상 멈춤) 이 경고를 띄우지 않습니다.
+ * 꺼짐인데 보낸 결과를 모르는 주문 수(`unresolvedOrders`, RT2-FE-3) — 꺼짐이고 1건 이상일 때만 그 수, 아니면 null. 켜짐·끄는 중에는 정기 작업이
+ * 대조를 계속하므로(결과를 모르면 이상 멈춤) 이 경고를 띄우지 않고, 멈춤에서도 예전처럼 띄우지 않습니다. 멈춤·꺼짐에서 지난 세션의 행은 정기 작업이 더
+ * 대조하지 않고 이 건수로만 남습니다(QA-380 — 건수는 DB의 행 수라 대조와 무관).
  */
 export function unresolvedOffCount(status: Pick<RealTradeStatusResponse, "state" | "unresolvedOrders"> | null | undefined): number | null {
   return status?.state === "OFF" ? positiveCount(status.unresolvedOrders) : null;
@@ -783,7 +784,7 @@ const EVENT_KIND: Readonly<Record<string, string>> = {
   SKIPPED: "건너뜀",
   STOP_SELL: "스탑 매도",
   RESTRICTED: "매매 제한으로 대기(VI·서킷브레이커 등)",
-  // 개장이 가깝도록 토스 장 운영 정보·수집기 매매 상태를 받지 못함(QA-342 — 하루 한 번, 사유 코드 calendar-unavailable·status-unavailable)
+  // 개장 직전·장중에 토스 장 운영 정보·수집기 매매 상태를 받지 못함(QA-342 — 끊김이 3분 이어질 때·끊김마다 한 번, 사유 코드 calendar-unavailable·status-unavailable)
   UNAVAILABLE: "준비 안 됨(주문을 내지 못하는 중)",
 };
 

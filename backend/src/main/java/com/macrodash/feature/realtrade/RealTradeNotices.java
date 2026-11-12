@@ -28,7 +28,10 @@ final class RealTradeNotices {
 
     /** 시각 맞추기가 VI·서킷브레이커 등으로 미뤄짐 — 사유 코드만. */
     static final String EVENT_RESTRICTED = "RESTRICTED";
-    /** 켜짐인데 개장이 가깝도록 주문을 낼 준비가 안 됨(QA-342 — 토스 장 운영 정보·수집기 매매 상태를 받지 못함) — 사유 코드만, 하루 한 번. */
+    /**
+     * 켜짐인데 개장이 가깝거나 장중에 주문을 낼 준비가 안 됨(QA-342 — 토스 장 운영 정보·수집기 매매 상태를 받지 못함) — 사유 코드만. 끊김이 3분 이어질 때,
+     * 끊김마다 한 번, 같은 사유는 30분에 한 번까지({@code RealTradeJob#noteUnavailable}).
+     */
     static final String EVENT_UNAVAILABLE = "UNAVAILABLE";
     /** 쉼 이벤트 근거의 칸 — 토스는 휴장이라 답했는데 모의 달력은 거래일(QA-342). */
     static final String DETAIL_PAPER_OPEN = "paperOpen";

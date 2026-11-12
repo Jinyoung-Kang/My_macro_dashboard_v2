@@ -157,12 +157,22 @@ class RealTradeJob {
     static final String RESTRICTED_REFUSED = "order-refused";
 
     /**
-     * 주문을 낼 준비가 안 된 채 개장이 가까워짐(QA-342) — 토스 장 운영 정보를 끝내 받지 못함·수집기 매매 상태를 읽지 못함. 멈춤이 아니고(받는 대로 이어 감)
-     * 하루 한 번 알림 이벤트({@link RealTradeNotices#EVENT_UNAVAILABLE})만 남깁니다. 예전에는 경고 로그뿐이라 그날 맞추기·스탑 매도가 통째로 빠져도
-     * 텔레그램·화면 이벤트가 없었습니다.
+     * 주문을 낼 준비가 안 된 채 개장이 가깝거나 장중임(QA-342) — 토스 장 운영 정보를 받지 못함·수집기 매매 상태를 읽지 못함. 멈춤이 아니고(받는 대로 이어 감)
+     * 알림 이벤트({@link RealTradeNotices#EVENT_UNAVAILABLE})만 남깁니다. 예전에는 경고 로그뿐이라 그날 맞추기·스탑 매도가 통째로 빠져도
+     * 텔레그램·화면 이벤트가 없었습니다. 알리는 때는 {@link #noteUnavailable}(끊김이 {@link #UNAVAILABLE_AFTER} 이어질 때, 끊김마다 한 번, 같은 사유는
+     * {@link #UNAVAILABLE_MIN_INTERVAL}에 한 번까지).
      */
     static final String UNAVAILABLE_CALENDAR = "calendar-unavailable";
     static final String UNAVAILABLE_STATUS = "status-unavailable";
+    /**
+     * '준비 안 됨'을 알리기까지 그 사유가 이어져야 하는 시간(QA-342 보완) — 장중 배포로 수집기가 10~30초 다시 뜨는 것, 재시도 한 번으로 받는 장 운영 정보는
+     * 알리지 않습니다.
+     */
+    static final Duration UNAVAILABLE_AFTER = Duration.ofMinutes(3);
+    /** 같은 사유의 '준비 안 됨' 알림 사이 최소 간격(끊겼다 돌아오기를 되풀이해도 알림이 쏟아지지 않게). */
+    static final Duration UNAVAILABLE_MIN_INTERVAL = Duration.ofMinutes(30);
+    /** '준비 안 됨' 이벤트 근거의 칸 — 알린 시각(다시 띄운 작업이 최소 간격을 이어 셈). */
+    static final String UNAVAILABLE_NOTICED_AT = "noticedAt";
 
     /** 수집기의 창 밖 안 보냄 사유(토스로 나가지 않음). */
     static final String CODE_OUTSIDE_WINDOW = "outside-window";
@@ -374,6 +384,7 @@ class RealTradeJob {
             RealTradeExecutor.Resolution resolution = executor.resolveUnknown(now, cfg);
             cfg = store.configOrOff(MARKET);
             if (!live(cfg)) {
+                d.outages.clear();   // 켜짐이 아닌 동안은 '준비 안 됨' 끊김을 세지 않음(QA-342 보완 — 다시 켜면 그때부터)
                 // 끄는 중·멈춤은 이 기능의 미체결 취소를 따라감. 꺼짐(OFF)에서도 토스 주문 번호가 있는 미종료 행이 있으면 취소 — 끄는 중에 대조를 끝내지
                 // 못한 결과 모름 행이 꺼진 뒤 대조로 늦게 묶인 것(RT3-BE-1, 정상이면 꺼짐에 그런 행은 없음). 대조 목록을 못 읽은 주기와, 꺼짐·이상 멈춤으로
                 // 읽고 시작해 조회를 아낀 행이 있던 주기(QA-380 — 도중에 끄기가 커밋된 경우)에는 OFF로 넘기지 않음.
@@ -405,10 +416,11 @@ class RealTradeJob {
                 return;
             }
             if (!status.ok() || !status.value().enabled() || status.value().limits() == null) {
-                // 수집기 상태를 읽지 못함·한도 해석 실패 — 주문 없음(멈춤 아님, 화면은 '확인 안 됨'). 개장이 가깝도록 이어지면 하루 한 번 알림(QA-342)
+                // 수집기 상태를 읽지 못함·한도 해석 실패 — 주문 없음(멈춤 아님, 화면은 '확인 안 됨'). 3분 이어지면 알림(QA-342 — noteUnavailable)
                 noteUnavailable(d, now, UNAVAILABLE_STATUS);
                 return;
             }
+            noteAvailable(d, UNAVAILABLE_STATUS);
             if (status.value().tokenContention()) {
                 executor.halt(HALT_TOKEN, Map.of());
                 return;
@@ -419,9 +431,10 @@ class RealTradeJob {
                 return;
             }
             if (!ensureCalendar(d, now)) {
-                noteUnavailable(d, now, UNAVAILABLE_CALENDAR);   // 재시도는 계속(60초마다) — 개장이 가깝도록 못 받으면 하루 한 번 알림(QA-342)
+                noteUnavailable(d, now, UNAVAILABLE_CALENDAR);   // 재시도는 계속(60초마다) — 3분 이어지면 알림(QA-342 — noteUnavailable)
                 return;
             }
+            noteAvailable(d, UNAVAILABLE_CALENDAR);
             decide(d, now, cfg);
             if (d.skipReason != null) {
                 recordSkip(d);
@@ -544,8 +557,13 @@ class RealTradeJob {
         final Set<Long> handledRoots = new HashSet<>();
         /** 놓침을 스탑 매도 알림에 이미 센 스탑 뿌리(같은 놓침을 주기마다 다시 세지 않게). */
         final Set<Long> stopMissCounted = new HashSet<>();
-        /** 그날 이미 알린 '준비 안 됨' 사유(QA-342 — 하루 한 번, 다시 띄우면 그날 이벤트에서 되살림). */
-        final Set<String> unavailableNoticed = new HashSet<>();
+        /**
+         * '준비 안 됨' 사유 → 지금 이어지는 끊김(QA-342 보완 — 처음 본 시각과 이 끊김을 이미 알렸는가). 그 사유 없이 한 주기를 지나거나 켜짐이 아니게
+         * 되면 지웁니다(다시 끊기면 새 끊김). 메모리에만 있어 다시 띄우면 그때부터 다시 잽니다.
+         */
+        final Map<String, Outage> outages = new HashMap<>();
+        /** '준비 안 됨' 사유 → 그날 마지막으로 알린 시각(최소 간격 — 다시 띄우면 그날 이벤트에서 되살림). */
+        final Map<String, Instant> unavailableNoticedAt = new HashMap<>();
         /** 모의 달력의 그날 장 시간(준비 안 됨 알림의 기준 — 달력이 답한 뒤로는 다시 묻지 않음). */
         SessionHours paperHours;
         final Set<String> summarized = new HashSet<>();
@@ -564,6 +582,16 @@ class RealTradeJob {
 
         DayState(LocalDate date) {
             this.date = date;
+        }
+
+        /** 이어지는 끊김 하나 — 처음 본 시각, 이 끊김을 알렸는가. */
+        static final class Outage {
+            final Instant since;
+            boolean noticed;
+
+            Outage(Instant since) {
+                this.since = since;
+            }
         }
 
         /** 이번에 처음 센 대상이면 true. */
@@ -592,7 +620,11 @@ class RealTradeJob {
         for (Event e : store.eventsSince(MARKET, RealTradeNotices.EVENT_UNAVAILABLE, today.atStartOfDay(Kst.ZONE).toInstant())) {
             JsonNode detail = e.detail();
             if (detail != null && today.toString().equals(detail.path("date").asString(""))) {
-                fresh.unavailableNoticed.add(detail.path("reason").asString(""));
+                // 알린 시각은 이벤트 근거의 칸(없으면 — 이 칸 전에 남긴 이벤트 — 이벤트 시각). 사유마다 가장 늦은 것.
+                Instant at = noticedAt(detail, e.at());
+                if (at != null) {
+                    fresh.unavailableNoticedAt.merge(detail.path("reason").asString(""), at, (a, b) -> a.isAfter(b) ? a : b);
+                }
             }
         }
         for (Event e : store.recentEvents(MARKET, 50)) {
@@ -703,20 +735,55 @@ class RealTradeJob {
     }
 
     /**
-     * 켜짐인데 주문을 낼 준비가 안 된 주기(QA-342) — 모의 달력이 거래일이고 지금이 그날 [개장 − {@link #WARMUP_LEAD}, 마감) 안이면 사유마다 하루 한 번
-     * 알림 이벤트를 남깁니다(사유 코드와 날짜만). 휴장일·개장 한참 전·마감 뒤에는 낼 주문이 없으므로 알리지 않습니다. 동작(재시도·주문 없음)은 그대로입니다.
+     * 켜짐인데 주문을 낼 준비가 안 된 주기(QA-342) — 그 사유의 끊김이 {@link #UNAVAILABLE_AFTER} 이어졌고, 모의 달력이 거래일이며 지금이 그날
+     * [개장 − {@link #WARMUP_LEAD}, 마감) 안이면 알림 이벤트를 남깁니다(사유 코드·날짜·알린 시각만). 휴장일·개장 한참 전·마감 뒤에는 낼 주문이 없으므로
+     * 알리지 않습니다. 동작(재시도·주문 없음)은 그대로이고 달라지는 것은 알림 시점뿐입니다.
+     * <ul>
+     *   <li><b>지속 조건</b>(QA-342 보완): 처음 본 주기에는 알리지 않고 시각만 적어 둡니다. 예전에는 첫 실패 주기에 바로 알려, 장중 배포로 수집기가
+     *       10~30초 다시 뜨는 동안에도 알림이 갔습니다. 밤새 이어진 끊김은 개장 3분 전 첫 주기에 알립니다(이미 3분 넘게 이어짐 — 예전과 같은 때).</li>
+     *   <li><b>끊김마다 한 번</b>: 알린 끊김은 이어지는 동안 다시 알리지 않습니다. 그 사유 없이 한 주기를 지나면({@link #noteAvailable}) 표시를 지워, 다시
+     *       끊겨 3분 이어지면 다시 알립니다. 예전에는 사유마다 하루 한 번이라 그 한 번을 쓴 뒤의 긴 끊김을 알리지 못했습니다.</li>
+     *   <li><b>최소 간격</b>: 같은 사유의 알림은 {@link #UNAVAILABLE_MIN_INTERVAL}에 한 번까지 — 그 안에 다시 끊긴 것은 간격이 지나도 이어지고 있을 때
+     *       알립니다. 다시 띄운 작업은 그날 이벤트의 알린 시각으로 이 간격을 이어 세고, 끊김은 그때부터 다시 잽니다(다시 띄운 뒤에도 3분 이어지고 앞
+     *       알림부터 간격이 지났으면 한 번 더 — 배포 뒤 수집기가 올라오지 못한 경우를 놓치지 않게).</li>
+     * </ul>
      */
     private void noteUnavailable(DayState d, Instant now, String reason) {
-        if (d.unavailableNoticed.contains(reason)) {
+        DayState.Outage outage = d.outages.computeIfAbsent(reason, k -> new DayState.Outage(now));
+        if (outage.noticed || now.isBefore(outage.since.plus(UNAVAILABLE_AFTER))) {
             return;
         }
         SessionHours hours = paperHours(d);
         if (hours == null || !hours.tradingDay() || now.isBefore(hours.open().minus(WARMUP_LEAD)) || !now.isBefore(hours.close())) {
             return;
         }
-        d.unavailableNoticed.add(reason);
-        store.addEvent(MARKET, RealTradeNotices.EVENT_UNAVAILABLE, null, Map.of("reason", reason, "date", d.date.toString()), true);
-        log.warn("실제 매매 준비 안 됨 — 개장이 가까운데 {} (받는 대로 이어 감)", reason);
+        Instant last = d.unavailableNoticedAt.get(reason);
+        if (last != null && now.isBefore(last.plus(UNAVAILABLE_MIN_INTERVAL))) {
+            return;
+        }
+        outage.noticed = true;
+        d.unavailableNoticedAt.put(reason, now);
+        store.addEvent(MARKET, RealTradeNotices.EVENT_UNAVAILABLE, null,
+                Map.of("reason", reason, "date", d.date.toString(), UNAVAILABLE_NOTICED_AT, now.toString()), true);
+        log.warn("실제 매매 준비 안 됨 — {}이(가) {}분 넘게 이어짐(받는 대로 이어 감)", reason, UNAVAILABLE_AFTER.toMinutes());
+    }
+
+    /** 그 사유 없이 한 주기를 지남(QA-342 보완) — 이어지던 끊김을 지웁니다(다시 끊기면 새 끊김으로 다시 3분). */
+    private static void noteAvailable(DayState d, String reason) {
+        d.outages.remove(reason);
+    }
+
+    /** '준비 안 됨' 이벤트의 알린 시각 — 근거의 칸({@link #UNAVAILABLE_NOTICED_AT}), 없거나 읽을 수 없으면 {@code fallback}(이벤트 시각). */
+    private static Instant noticedAt(JsonNode detail, Instant fallback) {
+        String text = detail.path(UNAVAILABLE_NOTICED_AT).asString("");
+        if (!text.isEmpty()) {
+            try {
+                return Instant.parse(text);
+            } catch (java.time.format.DateTimeParseException e) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 
     private void warmup(Cycle c, List<DueOrder> upcoming) {
