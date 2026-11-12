@@ -76,7 +76,6 @@ def fake_browser(monkeypatch):
     return playwright
 
 
-@pytest.mark.xfail(strict=True, reason="QA-414: 드라이버가 Chrome을 프록시 없이 띄워, 리다이렉트 홉·웹소켓의 목적지를 볼 곳이 없음")
 def test_QA414_드라이버는_Chrome을_루프백의_필터_프록시로만_내보낸다(fake_browser):
     import sidecar.driver as driver
 
@@ -96,3 +95,56 @@ def test_QA414_드라이버는_Chrome을_루프백의_필터_프록시로만_내
     assert "--disable-quic" in launch["args"]
     assert not any(arg.startswith(("--proxy-server", "--proxy-bypass-list", "--no-proxy-server", "--proxy-pac-url"))
                    for arg in launch["args"]), "프록시 설정은 proxy 칸 하나로만 넘깁니다(인자로 덮어쓰지 않음)"
+
+
+def test_QA414_운영_경로는_검사를_바꿔_끼우지_않는다(fake_browser, monkeypatch):
+    """드라이버가 프록시를 만들 때 넘기는 것은 수명뿐 — 이름 풀이·주소 검사·연결은 기본값(시스템 풀이, 전역 주소 검사, 실제 연결)입니다."""
+    import sidecar.driver as driver
+    from sidecar import egress
+
+    made: list[dict] = []
+    real = egress.EgressFilter
+
+    def spy(**kwargs):
+        made.append(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(driver.egress, "EgressFilter", spy)
+
+    driver.ChromeDriver().fetch("https://blog.example.org/feed", wait_seconds=5.0, allowed=frozenset({"blog.example.org"}))
+
+    assert made == [{"lifetime_seconds": driver.EGRESS_LIFETIME_SECONDS}]
+    assert driver.EGRESS_LIFETIME_SECONDS > driver.REQUEST_SECONDS, "요청이 끝나기 전에 프록시가 먼저 닫히지 않게"
+    launch = fake_browser.launches[0]
+    assert launch["profile_dir"] == driver.PROFILE_DIR and launch["args"] == [*driver.CHROME_ARGS, *driver.EGRESS_ARGS]
+
+
+def test_QA414_프록시를_열지_못하면_브라우저를_띄우지_않는다(fake_browser, monkeypatch):
+    import sidecar.driver as driver
+    from sidecar.app import DriverError
+
+    def broken(**kwargs):
+        raise OSError("주소를 쓸 수 없음")
+
+    monkeypatch.setattr(driver.egress, "EgressFilter", broken)
+
+    with pytest.raises(DriverError, match="필터 프록시를 열지 못해"):
+        driver.ChromeDriver().fetch("https://blog.example.org/feed", wait_seconds=5.0, allowed=frozenset({"blog.example.org"}))
+    assert fake_browser.launches == [], "프록시 없이 Chrome을 띄우는 길은 없습니다"
+
+
+def test_QA414_페이지를_받다가_실패해도_브라우저와_프록시를_닫는다(fake_browser, monkeypatch):
+    import sidecar.driver as driver
+    from sidecar.app import DriverError
+
+    browser_error = sys.modules["patchright.sync_api"].Error
+
+    def failing(self, context, *args, **kwargs):
+        raise browser_error("Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at https://blog.example.org/feed\nCall log: ...")
+
+    monkeypatch.setattr(driver.ChromeDriver, "_load", failing)
+
+    with pytest.raises(DriverError, match="브라우저 오류"):
+        driver.ChromeDriver().fetch("https://blog.example.org/feed", wait_seconds=5.0, allowed=frozenset({"blog.example.org"}))
+    assert fake_browser.closed == 1
+    assert not _can_connect(fake_browser.launches[0]["proxy"]["server"])

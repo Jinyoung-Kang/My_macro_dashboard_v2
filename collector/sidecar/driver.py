@@ -6,6 +6,9 @@ sidecar/driver.py
 
   - 프로필(쿠키)은 ``BROWSER_PROFILE_DIR``(이름 있는 볼륨)에 남겨 다음 요청이 이어 씁니다. 브라우저 프로세스는 요청이 끝나면 닫힙니다.
   - 브라우저가 보내려는 요청마다 목적지를 봅니다(guard) — 최상위 이동은 허용 호스트만, 하위 요청은 전역 주소만. 서비스 워커와 내려받기는 끕니다.
+  - 이 가로채기는 리다이렉트로 이어진 요청과 웹소켓에는 불리지 않습니다. 그래서 Chrome의 나가는 길을 요청마다 띄우는 루프백의 필터 프록시
+    (sidecar.egress) 하나로 묶습니다 — 연결마다 거기서 목적지를 다시 풀어 전역 주소일 때만, 검사한 그 주소로 붙습니다(QA-414). 프록시를 열지
+    못하면 브라우저를 띄우지 않고, 프록시가 닫히면 Chrome의 요청은 실패합니다(직접 나가지 않음). 프록시가 볼 수 없는 UDP 길은 인자로 닫습니다.
   - 입력 없이 지나가는 JS 검사는 ``wait_seconds``까지 기다립니다. 사람 확인 틀이 떠 있으면 **입력 없는 체크박스(Turnstile·hCaptcha·
     reCAPTCHA v2의 '사람입니다' 칸)만 요청 한 번에 한 번** 마우스로 누르고(:func:`press_checkbox_once` — 누르기 호출은 이 함수에만 있음),
     남은 시간 동안 다시 기다립니다. 그림·글자 퍼즐이 뜨거나 누른 뒤에도 막혀 있으면 풀지 않고 ``challenge``를 "human"으로 돌려줍니다.
@@ -21,7 +24,7 @@ import random
 import time
 from urllib.parse import urlsplit
 
-from . import guard
+from . import egress, guard
 from .app import DriverError
 
 logger = logging.getLogger("sidecar.driver")
@@ -34,6 +37,9 @@ PRESS_CHECKBOX = os.environ.get("BROWSER_PRESS_CHECKBOX", "true").strip().lower(
 # 요청 하나의 전체 상한(초)과 첫 이동의 상한(ms).
 REQUEST_SECONDS = 90.0
 NAVIGATION_TIMEOUT_MS = 45_000
+# 필터 프록시의 수명 상한(초). 프록시는 요청이 끝나면 닫히고, 이 값은 닫히지 못했을 때의 안전망입니다 — 요청 하나가 쓸 수 있는 시간
+# (위 상한 + 읽기 전 머무는 몇 초)과 수집기가 이 컨테이너의 답을 기다리는 시간(110초)보다 길게 둡니다.
+EGRESS_LIFETIME_SECONDS = REQUEST_SECONDS + 30.0
 
 CHROME_ARGS = (
     "--disable-background-networking",
@@ -46,6 +52,18 @@ CHROME_ARGS = (
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-dev-shm-usage",
+)
+# Chrome이 프록시를 건너뛰는 길을 닫습니다(QA-414 — 이미지의 Chrome 157에서 확인, ADR 0026 덧붙임).
+#   - Chrome은 기본으로 루프백·링크 로컬행 요청을 프록시 없이 직접 붙습니다. ``<-loopback>``이 그 암묵 우회를 끕니다(드라이버 패키지도 기본으로
+#     더하지만 환경변수 하나로 꺼지므로 직접 넘깁니다).
+#   - WebRTC는 프록시로 갈 수 없는 UDP(STUN·후보 연결 확인)를 쓰지 않습니다. 스위치 이름은 Chrome 157 바이너리에 있는 것입니다
+#     (옛 이름 ``--force-webrtc-ip-handling-policy``는 그 판에서 아무 효과가 없었습니다). 이름이 또 바뀌면 sidecar.selfcheck가 잡습니다.
+#   - QUIC(HTTP/3·WebTransport)은 UDP라 프록시가 보지 못합니다. 프록시가 있으면 Chrome이 쓰지 않는 것을 WebTransport로 확인했고, HTTP/3은
+#     확인할 서버가 없어 스위치로 꺼 둡니다.
+PROXY_BYPASS = "<-loopback>"
+EGRESS_ARGS = (
+    "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+    "--disable-quic",
 )
 
 # 검사 화면에만 있는 흔적(제목·틀). 정상 페이지에도 들어가는 스크립트 경로나 'captcha' 단어는 보지 않습니다.
@@ -79,17 +97,13 @@ class ChromeDriver:
 
         started = time.monotonic()
         try:
-            with sync_playwright() as playwright:
-                context = playwright.chromium.launch_persistent_context(
-                    PROFILE_DIR,
-                    channel="chrome",
-                    headless=False,
-                    no_viewport=True,
-                    accept_downloads=False,
-                    service_workers="block",
-                    chromium_sandbox=SANDBOX,
-                    args=list(CHROME_ARGS),
-                )
+            gate = egress.EgressFilter(lifetime_seconds=EGRESS_LIFETIME_SECONDS)
+        except OSError as exc:
+            raise DriverError("나가는 길 필터 프록시를 열지 못해 브라우저를 띄우지 않음") from exc
+        try:
+            # 프록시는 브라우저보다 먼저 열리고 나중에 닫힙니다.
+            with gate, sync_playwright() as playwright:
+                context = launch(playwright, gate.url)
                 try:
                     return self._load(context, url, wait_seconds, allowed, started)
                 finally:
@@ -182,6 +196,26 @@ class ChromeDriver:
         except Exception:  # noqa: BLE001 — 이동 중이라 문맥이 바뀐 순간이면 다음 바퀴에 다시 봅니다
             return True
         return interstitial or (status in _BLOCK_STATUSES and self._human_frame(page))
+
+
+def launch(playwright, proxy_url: str, *, profile_dir: str | None = None, extra_args: tuple[str, ...] = ()):
+    """
+    Chrome을 띄웁니다 → 브라우저 문맥. 나가는 길은 ``proxy_url``(sidecar.egress의 필터 프록시) 하나입니다.
+
+    운영 경로(:meth:`ChromeDriver.fetch`)는 ``profile_dir``·``extra_args``를 넘기지 않습니다. 이미지 안 확인(sidecar/selfcheck.py)이 같은 인자로
+    띄우되 임시 프로필과 확인용 인자를 쓰려고 둔 자리입니다.
+    """
+    return playwright.chromium.launch_persistent_context(
+        PROFILE_DIR if profile_dir is None else profile_dir,
+        channel="chrome",
+        headless=False,
+        no_viewport=True,
+        accept_downloads=False,
+        service_workers="block",
+        chromium_sandbox=SANDBOX,
+        proxy={"server": proxy_url, "bypass": PROXY_BYPASS},
+        args=[*CHROME_ARGS, *EGRESS_ARGS, *extra_args],
+    )
 
 
 def _puzzle_frame(page) -> bool:
