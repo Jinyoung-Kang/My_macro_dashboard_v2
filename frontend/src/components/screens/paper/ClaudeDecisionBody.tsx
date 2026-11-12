@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Table } from "@/components/ui";
 import { EMPTY } from "@/lib/format";
-import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
+import { type Badge, type ClaudeDecisionView, type ClaudeOrderRow, type ConditionRow, sideClass, type ValidationRow, type WatchRow } from "@/lib/paper";
 import type { KrDecisionExtras } from "@/lib/paperKr";
 import { TickerName } from "./TickerName";
 import { KrDecisionExtrasParts, KrEventsPart } from "./KrRuleDecisionBody";
@@ -91,6 +91,8 @@ export function ClaudeDecisionBody({
             {view.mismatch && <p className="text-xs leading-relaxed text-warn">{view.mismatch.title}</p>}
             <Text label="요약" value={view.summary} />
             {!view.checkpoint && <Text label="노출 근거" value={view.exposureRationale} />}
+            {view.desiredExposure && <Text label="바라는 노출" value={view.desiredExposure} />}
+            {view.exposurePlan && <Text label="노출 계획" value={view.exposurePlan} />}
             {view.noTradeReason && <Text label="주문 없음 사유" value={view.noTradeReason} />}
             {view.checkpointPlan && <Text label="장중 확인 요청" value={view.checkpointPlan} />}
             {view.skipped && <p className="text-xs leading-relaxed text-warn">{view.skipped}</p>}
@@ -173,6 +175,20 @@ export function ClaudeDecisionBody({
             columns={[
               { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
               { key: "condition", header: "조건", render: (row) => <span className="text-xs text-body">{row.condition}</span> },
+            ]}
+          />
+        </Part>
+      )}
+
+      {view.conditions.length > 0 && (
+        <Part title="남긴 조건" note="다음 결정과 장중 판단의 패킷에 코드가 지금 값으로 충족 여부를 매겨 돌려주는 조건입니다. 코드가 대신 집행하지는 않습니다.">
+          <Table<ConditionRow>
+            label="남긴 조건"
+            rows={view.conditions}
+            rowKey={(row) => row.key}
+            columns={[
+              { key: "rule", header: "조건", render: (row) => <code className="whitespace-nowrap text-xs text-bright">{row.rule}</code> },
+              { key: "then", header: "충족되면", render: (row) => <span className="text-xs text-body">{row.then}</span> },
             ]}
           />
         </Part>

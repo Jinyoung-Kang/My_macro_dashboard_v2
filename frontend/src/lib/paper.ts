@@ -555,6 +555,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "claude.checkpoint", label: "장중 확인(세션당 한 번 — 끈 판)" },
       { key: "claude.checkpointAtEt", label: "장중 확인 시각(뉴욕)" },
       { key: "claude.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      { key: "continuity", label: "판단 이어받기(진입 논거·남긴 조건을 다음 판단에 — 자유 시점 판만)" },
       ...US_INTRADAY_SETTINGS,
       { key: "apiDailyCallCap", label: "하루 호출 상한", unit: "회" },
       { key: "maxWeightStockPct", label: "종목 비중 상한", unit: "%" },
@@ -636,6 +637,7 @@ export const ACCOUNT_PROFILES: Readonly<Record<string, AccountProfile>> = {
       { key: "claude2.executionRecord", label: "패킷에 자기 체결 기록" },
       { key: "claude2.checkpoints", label: "장중 확인(세션당 최대 한 번 — 끈 판)" },
       { key: "claude2.freeTiming", label: "자유 시점 판(지정 시각·종가·장중 판단)" },
+      { key: "continuity", label: "판단 이어받기(진입 논거·남긴 조건을 다음 판단에 — 자유 시점 판만)" },
       ...US_INTRADAY_SETTINGS,
       { key: "claude2.riskProfile", label: "투자 성향" },
       { key: "model", label: "모델" },
@@ -3086,6 +3088,15 @@ export interface WatchRow {
   condition: string;
 }
 
+/** 결정이 다음 결정·장중 판단에 남긴 조건 한 줄(판단 이어받기 — ADR 0038). */
+export interface ConditionRow {
+  key: string;
+  /** "us10y > 5.1" 꼴 — 이름·방향·수준. */
+  rule: string;
+  /** 충족되면 할 일. */
+  then: string;
+}
+
 /** Claude 책 결정(또는 미리보기)을 화면에 그릴 모양. */
 export interface ClaudeDecisionView {
   /** Claude 책 기록인가(책이 claude이거나 응답이 Claude 모양). 아니면 화면은 이 부분을 그리지 않습니다. */
@@ -3112,6 +3123,12 @@ export interface ClaudeDecisionView {
   orders: ClaudeOrderRow[];
   validation: ValidationRow[];
   watchlist: WatchRow[];
+  /** 바라는 노출(판단 이어받기 판의 응답 desiredEquityExposurePct) — 그 칸이 없는 판의 결정이면 null. */
+  desiredExposure: string | null;
+  /** 바라는 노출과 이번 노출의 차이를 좁힐 계획(응답 exposurePlan). 없으면 null. */
+  exposurePlan: string | null;
+  /** 다음 결정·장중 판단이 확인할 조건(응답 conditions). 그 칸이 없는 판이면 빈 목록. */
+  conditions: ConditionRow[];
   /** 모델·토큰 사용량 칸(있는 값만). */
   usage: DecisionMetaCell[];
   /** 장중 확인 결정(kind CHECKPOINT — 단계 2)이면 그 요청·응답(KEEP/REPLACE)·대신한 주문·예상 상태, 아니면 null. */
@@ -3279,6 +3296,21 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     return ticker ? [{ key: `${index}-${ticker}`, ticker, condition: textOf(entry.condition) ?? EMPTY }] : [];
   });
 
+  // 판단 이어받기 판(ADR 0038)의 조건 — 방향은 기호로(ABOVE >, BELOW <), 모양이 다른 항목은 받은 글자 그대로.
+  const conditions: ConditionRow[] = listOf(record?.conditions).filter(isRecord).flatMap((entry, index) => {
+    const metric = textOf(entry.metric);
+    if (!metric) return [];
+    const op = textOf(entry.op);
+    const sign = op === "ABOVE" ? ">" : op === "BELOW" ? "<" : (op ?? "?");
+    const level = numberOf(entry.level);
+    return [{
+      key: `${index}-${metric}`,
+      rule: `${metric} ${sign} ${level === null ? EMPTY : String(level)}`,
+      then: textOf(entry.then) ?? EMPTY,
+    }];
+  });
+  const desired = numberOf(record?.desiredEquityExposurePct);
+
   const target = isNumber(source.targetExposurePct) ? source.targetExposurePct : numberOf(record?.targetEquityExposurePct);
   const mismatch = source.exposureMismatch === true || record?.exposureMismatch === true;
 
@@ -3320,6 +3352,9 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     orders,
     validation,
     watchlist,
+    desiredExposure: desired === null ? null : formatWithUnit(desired, 1, "%"),
+    exposurePlan: textOf(record?.exposurePlan),
+    conditions,
     usage: usageCells,
     checkpoint: checkpointKind ? checkpointDecisionView(record, marketOfBook(source.book), intradayKind ? kind : null) : null,
     checkpointPlan: checkpointPlanText(record?.checkpointPlan, record?.checkpointVerdict, marketOfBook(source.book)),

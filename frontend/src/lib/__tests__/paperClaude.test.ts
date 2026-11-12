@@ -132,6 +132,31 @@ describe("Claude 결정 상세", () => {
       ["AAPL", "보유의 50%", "거절", "MYSTERY", "—"],
     ]);
     expect(view.watchlist).toEqual([{ key: "0-TLT", ticker: "TLT", condition: "10Y 4.75% 아래로 3일" }]);
+    // 판단 이어받기 판(ADR 0038)의 칸이 없는 응답 — 바라는 노출·계획 없음, 조건 빈 목록.
+    expect(view.desiredExposure).toBeNull();
+    expect(view.exposurePlan).toBeNull();
+    expect(view.conditions).toEqual([]);
+    const carried = claudeDecisionView({
+      book: "claude",
+      response: {
+        ...RESPONSE,
+        desiredEquityExposurePct: 70,
+        exposurePlan: "10년물이 내려오면 두 번에 나눠 좁힌다",
+        conditions: [
+          { metric: "us10y", op: "ABOVE", level: 5.1, then: "노출 축소 검토" },
+          { metric: "AAPL", op: "BELOW", level: 228, then: "매도 검토" },
+          { metric: "cpi", op: "CROSS", level: null, then: null },
+          { op: "ABOVE", level: 1, then: "이름 없는 항목은 뺌" },
+        ],
+      },
+    });
+    expect(carried.desiredExposure).toBe("70.0%");
+    expect(carried.exposurePlan).toBe("10년물이 내려오면 두 번에 나눠 좁힌다");
+    expect(carried.conditions).toEqual([
+      { key: "0-us10y", rule: "us10y > 5.1", then: "노출 축소 검토" },
+      { key: "1-AAPL", rule: "AAPL < 228", then: "매도 검토" },
+      { key: "2-cpi", rule: "cpi CROSS —", then: "—" },
+    ]);
     // 사용량이 없으면 칸을 만들지 않습니다.
     expect(view.usage).toEqual([]);
   });
