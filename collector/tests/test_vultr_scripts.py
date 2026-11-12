@@ -68,6 +68,74 @@ def test_tailscale_up은_auth_key를_stdin으로만_받고_tailnet_안에서만_
     assert "funnel" not in code, "공개 노출(funnel)은 쓰지 않습니다(ADR 0023)"
 
 
+# QA-415: 2026-11-12 재부팅 뒤 tailscaled가 이 이미지의 DNS 관리 방식을 openresolv로 잘못 보고 상위 DNS를 잃어, /etc/resolv.conf의
+# 100.100.100.100이 모든 조회에 SERVFAIL을 돌려줌(서버·컨테이너의 외부 조회 전부 실패). 서버는 Tailscale DNS를 쓰지 않습니다.
+_TS_RESOLV = "nameserver 100.100.100.100\nnameserver fd7a:115c:a1e0::53\nsearch example.ts.net\n"
+_VULTR_RESOLV = "nameserver 192.0.2.10\nnameserver 192.0.2.11\n"
+
+_FAKE_TAILSCALE = """#!/usr/bin/env bash
+echo "tailscale $*" >> "$FAKE_LOG"
+case "$1" in
+  status)
+    if [ "${FAKE_TS_STATE:-Running}" = Running ]; then
+      echo '{"BackendState": "Running", "Self": {"DNSName": "my-macro-app.example.ts.net."}}'
+    else
+      echo '{"BackendState": "NeedsLogin", "Self": {"DNSName": ""}}'
+    fi ;;
+  version) echo "1.104.6" ;;
+  ip) echo "100.64.0.1" ;;
+esac
+exit 0
+"""
+
+
+def _run_tailscale_up(tmp_path, *, state="Running", resolv=_TS_RESOLV, backup: str | None = _VULTR_RESOLV,
+                      getent_ok=True, stdin=""):
+    """가짜 tailscale·id·systemctl·getent로 tailscale-up.sh를 돌립니다. resolv.conf·백업 경로는 임시 폴더(RESOLV_CONF·RESOLV_BACKUP)."""
+    bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
+    tools._write_exec(bin_dir / "tailscale", _FAKE_TAILSCALE)
+    tools._write_exec(bin_dir / "id", "#!/usr/bin/env bash\necho 0\n")
+    tools._write_exec(bin_dir / "systemctl", '#!/usr/bin/env bash\necho "systemctl $*" >> "$FAKE_LOG"\n')
+    tools._write_exec(bin_dir / "getent", f"#!/usr/bin/env bash\nexit {0 if getent_ok else 2}\n")
+    log.touch()
+    etc = tmp_path / "etc"
+    etc.mkdir()
+    (etc / "resolv.conf").write_text(resolv, encoding="utf-8")
+    if backup is not None:
+        (etc / "resolv.pre-tailscale-backup.conf").write_text(backup, encoding="utf-8")
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "FAKE_LOG": str(log),
+           "FAKE_TS_STATE": state, "RESOLV_CONF": str(etc / "resolv.conf"),
+           "RESOLV_BACKUP": str(etc / "resolv.pre-tailscale-backup.conf")}
+    run = subprocess.run(["bash", str(ROOT / "scripts/vultr/tailscale-up.sh")], input=stdin, env=env,
+                         capture_output=True, text=True, timeout=30)
+    return run, log.read_text(encoding="utf-8").splitlines(), etc
+
+
+@pytest.mark.xfail(strict=True, reason="QA-415 재현 — 고치기 전")
+def test_QA415_tailscale_up은_이미_tailnet에_있으면_Tailscale_DNS를_끈다(tmp_path):
+    run, calls, _ = _run_tailscale_up(tmp_path, state="Running")
+    assert run.returncode == 0, run.stderr
+    sets = [c for c in calls if c.startswith("tailscale set ")]
+    assert sets and all("--accept-dns=false" in c for c in sets), calls
+
+
+@pytest.mark.xfail(strict=True, reason="QA-415 재현 — 고치기 전")
+def test_QA415_tailscale_up은_처음_등록할_때도_Tailscale_DNS를_끈다(tmp_path):
+    run, calls, _ = _run_tailscale_up(tmp_path, state="NeedsLogin", stdin="tskey-test\n")
+    assert run.returncode == 0, run.stderr
+    ups = [c for c in calls if c.startswith("tailscale up ")]
+    assert len(ups) == 1 and "--accept-dns=false" in ups[0], calls
+
+
+@pytest.mark.xfail(strict=True, reason="QA-415 재현 — 고치기 전")
+def test_QA415_tailscale_up은_Tailscale이_바꿔_둔_resolv_conf를_원래_설정으로_되돌린다(tmp_path):
+    run, _, etc = _run_tailscale_up(tmp_path)
+    assert run.returncode == 0, run.stderr
+    assert (etc / "resolv.conf").read_text(encoding="utf-8") == _VULTR_RESOLV
+    kept = [p for p in etc.iterdir() if p.name.startswith("resolv.conf.tailscale-")]
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8") == _TS_RESOLV, "고장 난 파일은 지우지 않고 남깁니다"
+
+
 def test_bootstrap은_비밀번호_로그인을_막는_sshd_드롭인이_cloud_init보다_먼저_읽힌다():
     text = (ROOT / "scripts/vultr/bootstrap.sh").read_text(encoding="utf-8")
     assert "/etc/ssh/sshd_config.d/00-my-macro.conf" in text, "50-cloud-init.conf의 PasswordAuthentication yes보다 먼저"
