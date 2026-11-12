@@ -9,6 +9,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -285,6 +286,23 @@ class StopWatchFallbackTest {
                     assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK));
             assertThat(outcome.notes()).anySatisfy(n -> assertThat(n).contains("AAA").contains("마지막 격자 가격이 있지만")
                     .contains("판정한 기록(ON)이 없어"));
+        }
+
+        @Test
+        @Disabled("QA-384: 세션 요약의 mode(요약 시점 값)를 마지막 격자를 판정한 때의 모드로 읽음 — 수정 커밋에서 해제")
+        @DisplayName("QA-384 ON — 마지막 격자는 SHADOW로 판정했는데(판정 기록 SHADOW) 세션 요약은 요약 전에 바꾼 ON으로 남은 세션: 저장본이 ON이어도 "
+                + "덮지 않아 종가 스탑(요약의 mode는 요약 시점 값 — 판정 기록이 있으면 요약을 근거로 쓰지 않음)")
+        void summaryModeDoesNotOverrideAShadowJudgedLastGrid() {
+            mode("ON");
+            watchedUntil("AAA", et(TUE, 15, 54), et(TUE, 15, 55).plusSeconds(20), 100.0);   // 수집기는 15:55:20에 ON으로 읽음
+            lastGridJudged("SHADOW");                                                      // 15:55:30에 SHADOW로 바꿔 작업은 SHADOW로 판정
+            summary("ON", et(TUE, 15, 55), false);                                         // 16:00에 다시 ON — 요약은 ON·15:55
+
+            Outcome outcome = closeObservation();
+
+            assertThat(stops()).singleElement().satisfies(o ->
+                    assertThat(o.reason().path("stopMode").asString()).isEqualTo(PaperLedgerService.STOP_MODE_HOURLY_FALLBACK));
+            assertThat(outcome.notes()).noneMatch(n -> n.contains("장중 감시에 맡김"));
         }
 
         @Test

@@ -10,6 +10,7 @@ import com.macrodash.store.PaperStore.Order;
 import com.macrodash.store.PaperStore.Position;
 import com.macrodash.store.Snapshot;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.node.ObjectNode;
@@ -739,6 +740,43 @@ class PaperStopWatchJobTest {
         none.put("mode", "ON").put("tradingDate", PREV.toString()).putNull("lastJudgedGrid");
         old.recordJobRun("stopwatch.summary", et(16, 5, 20), et(16, 5, 20), "OK", none);
         assertThat(PaperStopWatchJob.lastGridJudged(old, UsPaperMarket.INSTANCE, PREV, et(15, 55, 0))).as("판정한 격자 없음").isFalse();
+    }
+
+    // QA-384 후속(독립 검토 F4): 세션 요약의 mode는 요약을 남길 때(판정 창 끝 뒤)의 설정 값이라, SHADOW로 마지막 격자를 판정한 뒤 요약 전에 ON으로 바꾸면
+    // 요약이 mode ON·lastJudgedGrid = 마지막 격자로 남습니다. 그 요약을 '판정 때 ON'의 근거로 읽으면 판정 기록(mode SHADOW)과 어긋납니다.
+    @Test
+    @Disabled("QA-384: 세션 요약의 mode(요약 시점 값)를 마지막 격자를 판정한 때의 모드로 읽음 — 수정 커밋에서 해제")
+    @DisplayName("QA-384 SHADOW로 마지막 격자를 판정하고 요약 전에 ON으로 바꾼 세션 — 요약은 mode ON으로 남지만 판정 기록(SHADOW)이 있으므로 장부의 근거가 아님. "
+            + "ON으로 판정한 기록이 있으면 요약이 무엇이든 근거")
+    void summaryModeIsNotTheJudgingMode() {
+        settings("SHADOW", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(15, 55, 20), et(15, 55, 21), Map.of("AAA", new double[]{99, 93}), et(15, 54, 0));
+        clock.now = et(15, 55, 40);
+        job.run();
+        ((ObjectNode) store.settings.body().get("stopWatch")).put("mode", "ON");   // 16:00 — 판정 창 끝(16:05) 전에 ON으로 저장
+        clock.now = et(16, 5, 20);
+        job.run();
+
+        assertThat(store.recentJobRuns("stopwatch.lastgrid", 5)).singleElement().satisfies(r ->
+                assertThat(r.detail().path("mode").asString()).isEqualTo("SHADOW"));
+        assertThat(store.recentJobRuns("stopwatch.summary", 5)).singleElement().satisfies(r -> {
+            assertThat(r.detail().path("mode").asString()).as("요약 시점의 모드").isEqualTo("ON");
+            assertThat(r.detail().path("lastJudgedGrid").asString()).isEqualTo(et(15, 55, 0).toString());
+        });
+        assertThat(PaperStopWatchJob.lastGridJudged(store, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0)))
+                .as("마지막 격자는 SHADOW로 판정 — 주문을 내지 않았음").isFalse();
+
+        // 반대 — ON으로 판정한 기록이 있으면 요약이 SHADOW(요약 전에 SHADOW로 바꿈)여도 근거
+        FakePaperStore judgedOn = new FakePaperStore();
+        ObjectNode record = PaperFixtures.MAPPER.createObjectNode();
+        record.put("mode", "ON").put("tradingDate", DAY.toString()).put("lastJudgedGrid", et(15, 55, 0).toString());
+        judgedOn.recordJobRun("stopwatch.lastgrid", et(15, 55, 40), et(15, 55, 40), "OK", record);
+        ObjectNode summary = PaperFixtures.MAPPER.createObjectNode();
+        summary.put("mode", "SHADOW").put("tradingDate", DAY.toString()).put("lastJudgedGrid", et(15, 55, 0).toString());
+        judgedOn.recordJobRun("stopwatch.summary", et(16, 5, 20), et(16, 5, 20), "OK", summary);
+        assertThat(PaperStopWatchJob.lastGridJudged(judgedOn, UsPaperMarket.INSTANCE, DAY, et(15, 55, 0))).isTrue();
     }
 
     @Test
