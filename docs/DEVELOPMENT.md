@@ -400,8 +400,11 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
 - 나가는 길 확인(ADR 0026 덧붙임 '브라우저의 나가는 길', QA-414): Chrome은 컨테이너 루프백의 필터 프록시로만 나갑니다. 배포가 Chrome 안정판을 새로 받으므로 배포 뒤
   서버에서 한 번 돌립니다 — 망이 없는 새 컨테이너에서 그 안의 루프백 서버만 쓰고(외부 요청 없음, 돌고 있는 `browser`를 건드리지 않음), 10초쯤 걸리며 메모리를 1g까지 씁니다:
   `cd ~/My_macro_dashboard_v2 && docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --security-opt seccomp=collector/sidecar/seccomp.json --init --memory 1g --shm-size 256m my_macro_dashboard_v2-browser xvfb-run -a python -m sidecar.selfcheck`
-  — 마지막 줄이 `결과: 통과`. 실패한 줄이 `5.`·`7.`이면 Chrome이 WebRTC 스위치 이름을 바꾼 것입니다(`collector/sidecar/driver.py`의 `EGRESS_ARGS`).
+  — 마지막 줄이 `결과: 통과`. 실패한 줄이 `5.`·`7.`·`8.`이면 Chrome이 WebRTC·이름 풀이 스위치를 바꾼 것입니다(`collector/sidecar/driver.py`의 `EGRESS_ARGS`).
   서버 `.env`에 `BROWSER_SANDBOX=false`를 둔 경우에는 `-e BROWSER_SANDBOX=false`를 더합니다. 운영 중 막은 목적지는 `docker compose logs browser`의 `막은 목적지: 호스트` 줄입니다.
+- 서버 자신의 공인 주소로 듣는 것 확인(ADR 0026 덧붙임의 남은 위험 — 그 주소는 '전역'이라 브라우저 컨테이너에서 닿고, 그 트래픽은 클라우드 방화벽을 지나지 않음):
+  `ss -ltnH | awk '$4 !~ /^(127\.|\[::1\])/'` — 듣는 주소가 tailnet 주소(100.64.0.0/10·`fd7a:`)뿐이면 됩니다. `0.0.0.0`·`*`·`[::]`·공인 주소로 듣는 줄(보통 sshd의 22)이
+  컨테이너에서 닿는 것입니다. 닫으려면 그 서비스를 tailnet·루프백 주소에만 듣게 하거나 망 수준 방화벽(계획서 D-11의 (가))을 둡니다 — 서버 설정이라 결정 뒤에.
 
 ### 배포
 

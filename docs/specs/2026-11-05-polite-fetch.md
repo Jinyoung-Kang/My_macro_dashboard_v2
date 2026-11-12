@@ -96,9 +96,11 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
   그 프록시로만 내보냅니다. 프록시는 연결마다(https·웹소켓은 `CONNECT`, 평문 http는 절대 주소 요청) 목적지 이름을 스스로 풀어 전부 전역 주소일 때만 **검사한 그 주소로**
   붙습니다(막으면 403, 로그는 호스트만). 터널은 바이트 그대로이고 머리글을 더하지 않으며 나가는 IP는 그대로입니다(차단을 지나가려는 수단이 아님 — 결정 4 그대로).
   Chrome 인자: 루프백·링크 로컬행도 프록시로(`<-loopback>`), WebRTC는 프록시로 갈 수 없는 UDP를 쓰지 않음(`--webrtc-ip-handling-policy=disable_non_proxied_udp`),
-  QUIC 끔(`--disable-quic`). 프록시를 열지 못하면 브라우저를 띄우지 않고, 프록시가 닫히면 Chrome의 요청은 실패합니다. 꺼짐 스위치는 없습니다.
+  QUIC 끔(`--disable-quic`), Chrome 자신의 이름 풀이 끔(`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1` — WebRTC의 TURN TCP 서버 이름을 Chrome이 직접
+  DNS로 묻는 것을 막음, 프록시로 가는 요청의 이름은 프록시가 풂). 프록시를 열지 못하면 브라우저를 띄우지 않고, 프록시가 닫히면 Chrome의 요청은 실패합니다.
+  꺼짐 스위치는 없습니다. 브라우저 오류의 로그·502 답에는 주소의 호스트만 남깁니다(경로·쿼리 없음).
 - 이미지 안 확인: `xvfb-run -a python -m sidecar.selfcheck`(컨테이너 안 루프백 서버만 씀 — 외부 요청 없음). 실제 Chrome으로 리다이렉트 홉·fetch·웹소켓·루프백/링크 로컬
-  우회·UDP·프록시가 닫혔을 때를 보고, 통과하면 0으로 끝납니다. CI는 이미지 빌드 바로 뒤에 망 없는 컨테이너에서 돌리고, 서버에서는 배포 뒤 [DEVELOPMENT §7](../DEVELOPMENT.md)의 명령으로 돌립니다.
+  우회·UDP·WebRTC의 TCP 길·Chrome의 직접 DNS(넷로그)·프록시가 닫혔을 때를 보고, 통과하면 0으로 끝납니다. CI는 이미지 빌드 바로 뒤에 망 없는 컨테이너에서 돌리고, 서버에서는 배포 뒤 [DEVELOPMENT §7](../DEVELOPMENT.md)의 명령으로 돌립니다.
 - 브라우저는 요청마다 띄우고 닫습니다. 프로필(쿠키)은 이름 있는 볼륨에 둡니다. 크래시 보고·배경 통신·구성요소 갱신을 끕니다.
 - 굳히기: 비root, `cap_drop: [ALL]`, `no-new-privileges`, `mem_limit: 1g`, `init: true`. Chrome 샌드박스는 켭니다 — 도커 기본 seccomp은 권한을 뺀 컨테이너에서
   사용자 네임스페이스와 그 안의 `chroot`를 막아 Chrome이 뜨지 않으므로, 그 넷(`clone`·`setns`·`unshare`·`chroot`)만 더한 프로필 `collector/sidecar/seccomp.json`을 씁니다
