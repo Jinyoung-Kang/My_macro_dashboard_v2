@@ -1,7 +1,7 @@
 """
 tests/test_vultr_scripts.py
-Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,instance,firewall-pc-ip}.sh
-와 make status의 마지막 S3 백업 나이(QA-199).
+Vultr 서버(ADR 0023)의 스크립트 시험 — scripts/vultr/{bootstrap,tailscale-up,deploy,backup-s3,backup-age,reboot-check,instance,firewall-pc-ip}.sh
+와 make status의 마지막 S3 백업 나이(QA-199)·재부팅 필요 여부(ADR 0023 개정 2026-11-12).
 
 deploy.sh·backup-s3.sh는 scripts/aws의 같은 이름에서 갈라냈으므로, 같은 가짜 실행 파일(tests/fake_server_tools.py — docker·aws·make·
 logger·sleep)과 임시 git 원격으로 Vultr에서 달라진 점을 봅니다: 덧붙임 파일(compose.vultr.yml), gate·CloudFront 대역 단계가 없음,
@@ -28,7 +28,8 @@ import yaml
 from tests import fake_server_tools as tools
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "instance.sh", "firewall-pc-ip.sh"]
+SCRIPTS = ["bootstrap.sh", "tailscale-up.sh", "deploy.sh", "backup-s3.sh", "backup-age.sh", "reboot-check.sh", "instance.sh",
+           "firewall-pc-ip.sh"]
 SECRET = tools.SECRET
 
 
@@ -37,7 +38,8 @@ def fakes(tmp_path):
     """가짜 실행 파일 폴더와 기록 파일(tests/fake_server_tools.py). 진짜 git·bash·coreutils는 그 뒤의 PATH에서 찾습니다."""
     bin_dir, log = tmp_path / "bin", tmp_path / "calls.log"
     for name, text in {"docker": tools._FAKE_DOCKER, "aws": tools._FAKE_AWS, "make": tools._FAKE_MAKE,
-                       "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL}.items():
+                       "logger": tools._FAKE_LOGGER, "sleep": tools._FAKE_SLEEP, "curl": tools._FAKE_CURL,
+                       "canonical-livepatch": tools._FAKE_LIVEPATCH}.items():
         tools._write_exec(bin_dir / name, text)
     log.touch()
     return bin_dir, log
@@ -191,6 +193,7 @@ def server(tmp_path):
     (seed / "scripts/vultr").mkdir(parents=True)
     shutil.copy(ROOT / "scripts/vultr/deploy.sh", seed / "scripts/vultr/deploy.sh")
     shutil.copy(ROOT / "scripts/vultr/backup-age.sh", seed / "scripts/vultr/backup-age.sh")   # 끝 요약의 S3 백업 나이(QA-199)
+    shutil.copy(ROOT / "scripts/vultr/reboot-check.sh", seed / "scripts/vultr/reboot-check.sh")   # 끝 요약의 재부팅 필요 여부
     for name in ("db-backup.sh", "db-common.sh"):   # 배포 전 덤프(QA-200)가 부르는 것
         shutil.copy(ROOT / "scripts" / name, seed / "scripts" / name)
     (seed / "deploy/vultr").mkdir(parents=True)
@@ -1261,3 +1264,163 @@ def test_OPS3_비상_끄기는_화면_끄기가_먼저이고_수집기_스위치
     assert "'켜는 순서' 2부터" not in section, "스위치를 되돌리고 배포만 하면 확인 없이 매매가 이어진다는 옛 안내"
     step3 = section[section.index("3. 그래도 안 되면"):section.index("4. ", section.index("3. 그래도 안 되면"))]
     assert "/toss/trading/status" in step3, "3단계 뒤 수집기 스위치가 꺼졌는지(enabled false·reason disabled) 확인"
+
+
+# --------------------------------------------------------------------------- reboot-check.sh(ADR 0023 개정 2026-11-12)
+@pytest.fixture()
+def reboot_root(tmp_path):
+    """서버 역할의 저장소 최상위 — reboot-check.sh·db-common.sh와 서버 .env(Vultr 덧붙임 + 운영 텔레그램 봇)."""
+    root = tmp_path / "My_macro_dashboard_v2"
+    (root / "scripts/vultr").mkdir(parents=True)
+    shutil.copy(ROOT / "scripts/vultr/reboot-check.sh", root / "scripts/vultr/reboot-check.sh")
+    shutil.copy(ROOT / "scripts/db-common.sh", root / "scripts/db-common.sh")
+    (root / ".env").write_text(f"COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\nTELEGRAM_BOT_TOKEN={TG_TOKEN}\n"
+                               f"TELEGRAM_CHAT_ID={TG_CHAT}\nDATABASE_PASSWORD={SECRET}\n", encoding="utf-8")
+    return root
+
+
+def _reboot_flag(tmp_path, *pkgs: str) -> dict[str, str]:
+    flag = tmp_path / "reboot-required"
+    flag.write_text("*** System restart required ***\n", encoding="utf-8")
+    if pkgs:
+        (tmp_path / "reboot-required.pkgs").write_text("".join(f"{p}\n" for p in pkgs), encoding="utf-8")
+    return {"REBOOT_REQUIRED_FILE": str(flag)}
+
+
+def _reboot_check(root: Path, fakes, *args: str, **extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["bash", str(root / "scripts/vultr/reboot-check.sh"), *args], cwd=root, env=tools._env(fakes, **extra),
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
+def _livepatch_json(*, supported="supported", check="checked", state="nothing-to-apply", due_days: int | None = 400,
+                    checked_hours_ago: float = 1) -> str:
+    from datetime import datetime, timedelta, timezone
+    last = (datetime.now(timezone.utc) - timedelta(hours=checked_hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = {"Kernel": "6.8.0-149.149-generic", "Running": True, "Supported": supported,
+             "Livepatch": {"CheckState": check, "State": state}}
+    if due_days is not None:
+        entry["UpgradeRequiredDate"] = (datetime.now(timezone.utc).date() + timedelta(days=due_days)).isoformat()
+    return json.dumps({"Last-Check": last, "Status": [{"Kernel": "6.8.0-146-generic", "Running": False}, entry]})
+
+
+def _curls(fakes) -> list[str]:
+    return [c for c in tools._calls(fakes) if c.startswith("curl ")]
+
+
+def test_reboot_check는_이상이_없으면_알리지_않고_syslog에만_남긴다(reboot_root, fakes):
+    result = _reboot_check(reboot_root, fakes)
+    assert result.returncode == 0, result.stderr
+    assert _curls(fakes) == []
+    logs = [c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-reboot-check")]
+    assert len(logs) == 1 and "재부팅 필요 없음" in logs[0] and "Livepatch 정상(커널 6.8.0-149.149-generic, 기한 2099-01-01)" in logs[0]
+    assert "user.warning" not in logs[0]
+
+
+def test_reboot_check는_재부팅이_필요하면_패키지와_권장_시각을_운영_봇으로_한_통_알리고_비밀값은_인자에_남기지_않는다(reboot_root, fakes, tmp_path):
+    result = _reboot_check(reboot_root, fakes, **_reboot_flag(tmp_path, "linux-image-6.8.0-150-generic", "linux-base",
+                                                              "linux-base"))
+    assert result.returncode == 0, result.stderr
+    curls = _curls(fakes)
+    assert len(curls) == 1 and "-K -" in curls[0] and "--max-time" in curls[0]
+    assert "재부팅 필요(패키지: linux-base, linux-image-6.8.0-150-generic)" in curls[0], "패키지는 겹치지 않게 한 번씩"
+    assert "16:00~22:00 KST" in curls[0] and curls[0].count("my-macro 서버 — 경고:") == 1
+    log = fakes[1].read_text(encoding="utf-8")
+    assert TG_TOKEN not in log and TG_CHAT not in log, "토큰·채팅 ID가 curl 인자(서버 ps)에 남았습니다"
+    assert f'url = "https://api.telegram.org/bot{TG_TOKEN}/sendMessage"' in _curl_config(fakes)
+    assert TG_TOKEN not in result.stdout + result.stderr and SECRET not in result.stdout + result.stderr
+
+
+def test_reboot_check는_같은_날_같은_알림을_다시_보내지_않는다(reboot_root, fakes, tmp_path):
+    flag = _reboot_flag(tmp_path, "linux-base")
+    assert _reboot_check(reboot_root, fakes, **flag).returncode == 0
+    assert _reboot_check(reboot_root, fakes, **flag).returncode == 0
+    assert len(_curls(fakes)) == 1, "cron을 손으로 다시 돌려도 하루 한 통"
+    assert (reboot_root / "backups/.reboot-check-sent").is_file()
+    # 사유가 바뀌면(새 패키지) 같은 날이라도 다시 알립니다.
+    (tmp_path / "reboot-required.pkgs").write_text("linux-base\nlinux-image-6.8.0-151-generic\n", encoding="utf-8")
+    assert _reboot_check(reboot_root, fakes, **flag).returncode == 0
+    assert len(_curls(fakes)) == 2
+
+
+def test_reboot_check는_알림이_실패하면_보낸_기록을_남기지_않아_다음_실행에_다시_보낸다(reboot_root, fakes, tmp_path):
+    flag = _reboot_flag(tmp_path)
+    failed = _reboot_check(reboot_root, fakes, FAKE_CURL_RC="7", **flag)
+    assert failed.returncode == 0, "cron 스크립트는 늘 0 — 실패는 syslog에"
+    assert not (reboot_root / "backups/.reboot-check-sent").exists()
+    assert any("텔레그램 알림을 보내지 못함" in c for c in tools._calls(fakes))
+    assert _reboot_check(reboot_root, fakes, **flag).returncode == 0
+    assert len(_curls(fakes)) == 2
+
+
+def test_reboot_check는_텔레그램_값이_없으면_보내지_않고_syslog에_남긴다(reboot_root, fakes, tmp_path):
+    (reboot_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\n", encoding="utf-8")
+    result = _reboot_check(reboot_root, fakes, **_reboot_flag(tmp_path))
+    assert result.returncode == 0
+    assert _curls(fakes) == []
+    assert any("텔레그램 값이 없어" in c for c in tools._calls(fakes))
+
+
+@pytest.mark.parametrize(("lp", "expected", "reboot"), [
+    (dict(supported="unsupported"), "Livepatch가 지금 커널(6.8.0-149.149-generic)을 지원하지 않음(unsupported)", False),
+    (dict(state="apply-failed"), "Livepatch 실패(점검 checked · 적용 apply-failed)", False),
+    (dict(check="check-failed"), "Livepatch 실패(점검 check-failed · 적용 nothing-to-apply)", False),
+    (dict(due_days=10), "Livepatch 지원 기한 임박(", True),
+    (dict(due_days=-1), "Livepatch 지원 기한이 지남(", True),
+    (dict(checked_hours_ago=72), "Livepatch 마지막 점검이 72시간 전", False),
+], ids=["지원_안_됨", "적용_실패", "점검_실패", "기한_임박", "기한_지남", "점검_멈춤"])
+def test_reboot_check는_Livepatch가_이상하면_사유를_알린다(reboot_root, fakes, lp, expected, reboot):
+    result = _reboot_check(reboot_root, fakes, "--summary", FAKE_LP_JSON=_livepatch_json(**lp))
+    assert result.returncode == 0, result.stderr
+    line = result.stdout.strip()
+    assert line.startswith("경고: ") and expected in line, line
+    assert ("16:00~22:00 KST" in line) is reboot, "재부팅으로 풀리는 사유일 때만 권장 재부팅 시각을 붙입니다"
+    assert _curls(fakes) == [], "--summary는 알리지 않습니다"
+
+
+def test_reboot_check는_지금_돌고_있는_커널의_항목을_본다(reboot_root, fakes):
+    result = _reboot_check(reboot_root, fakes, "--summary", FAKE_LP_JSON=_livepatch_json())
+    assert result.stdout.strip().startswith("재부팅 필요 없음 · Livepatch 정상(커널 6.8.0-149.149-generic, 기한 ")
+
+
+@pytest.mark.parametrize("extra", [dict(FAKE_LP_RC="1"), dict(FAKE_LP_JSON="not json"), dict(FAKE_LP_JSON='{"Status": []}')],
+                         ids=["명령_실패", "JSON_아님", "항목_없음"])
+def test_reboot_check는_Livepatch_상태를_읽지_못하면_그렇게_알린다(reboot_root, fakes, extra):
+    result = _reboot_check(reboot_root, fakes, "--summary", **extra)
+    assert result.returncode == 0
+    assert result.stdout.strip().startswith("경고: Livepatch 상태를 읽지 못함(")
+
+
+def test_reboot_check는_summary_if_server면_서버가_아닐_때_아무것도_찍지_않는다(reboot_root, fakes, tmp_path):
+    (reboot_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml\n", encoding="utf-8")
+    result = _reboot_check(reboot_root, fakes, "--summary-if-server", **_reboot_flag(tmp_path))
+    assert result.returncode == 0 and result.stdout == "" and result.stderr == ""
+    (reboot_root / ".env").write_text("COMPOSE_FILE=docker-compose.yml:compose.vultr.yml\n", encoding="utf-8")
+    result = _reboot_check(reboot_root, fakes, "--summary-if-server", **_reboot_flag(tmp_path))
+    assert result.stdout.strip().startswith("경고: 재부팅 필요")
+
+
+def test_reboot_check는_모르는_인자면_2로_끝난다(reboot_root, fakes):
+    assert _reboot_check(reboot_root, fakes, "--now").returncode == 2
+
+
+@needs_make
+def test_make_status와_deploy는_재부팅_필요_여부를_같은_줄로_판정한다(server, fakes, tmp_path):
+    here, _ = server
+    flag = _reboot_flag(tmp_path, "linux-base")
+    deployed = _deploy(server, fakes, **flag)
+    assert deployed.returncode == 0, deployed.stderr
+    status = subprocess.run([REAL_MAKE, "--no-print-directory", "-C", str(here), "-f", str(ROOT / "Makefile"), "status"],
+                            env=tools._env(fakes, FAKE_CURL_RC="7", **flag), capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+    assert status.returncode == 0, status.stdout + status.stderr
+    def pick(out: str) -> list[str]:
+        return [line.strip() for line in out.splitlines() if "재부팅" in line and line.startswith("경고")]
+
+    assert len(pick(deployed.stdout)) == 1 and "재부팅 필요(패키지: linux-base)" in pick(deployed.stdout)[0]
+    assert pick(status.stdout) == pick(deployed.stdout), "판정·문구가 두 곳에서 갈라지면 안 됩니다"
+    assert not [c for c in tools._calls(fakes) if c.startswith("curl ") and "api.telegram.org" in c], "요약은 알리지 않습니다"
+
+
+def test_deploy는_재부팅_점검이_실패해도_배포를_실패로_만들지_않는다():
+    text = (ROOT / "scripts/vultr/deploy.sh").read_text(encoding="utf-8")
+    assert "\nbash scripts/vultr/reboot-check.sh --summary || true\n" in text

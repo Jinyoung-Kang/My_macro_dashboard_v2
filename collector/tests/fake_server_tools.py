@@ -70,6 +70,15 @@ exit "${FAKE_CURL_RC:-0}"
 """
 
 
+# Livepatch 상태(scripts/vultr/reboot-check.sh) — 기본은 정상(지원됨·점검함·적용할 것 없음·먼 기한·방금 점검). FAKE_LP_JSON이면 그 글을,
+# FAKE_LP_RC가 0이 아니면 그 값으로 끝납니다. 부른 기록은 남기지 않습니다(배포 시험의 호출 목록을 바꾸지 않게).
+_FAKE_LIVEPATCH = """#!/usr/bin/env bash
+[ "${FAKE_LP_RC:-0}" = 0 ] || exit "$FAKE_LP_RC"
+if [ -n "${FAKE_LP_JSON:-}" ]; then printf '%s\\n' "$FAKE_LP_JSON"; exit 0; fi
+printf '{"Last-Check": "%s", "Status": [{"Kernel": "6.8.0-149.149-generic", "Running": true, "Livepatch": {"CheckState": "checked", "State": "nothing-to-apply"}, "Supported": "supported", "UpgradeRequiredDate": "2099-01-01"}]}\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+"""
+
+
 def _write_exec(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -80,7 +89,9 @@ def _env(fakes, **extra: str) -> dict[str, str]:
     bin_dir, log = fakes
     # 개발자 셸의 AWS·DB·compose 값이 끼어들지 않게 최소한의 환경만 넘깁니다.
     env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}", "HOME": str(bin_dir.parent),
-           "LANG": "C.UTF-8", "FAKE_LOG": str(log)}
+           "LANG": "C.UTF-8", "FAKE_LOG": str(log),
+           # 시험을 돌리는 기계의 /var/run/reboot-required가 끼어들지 않게 — 없는 경로(reboot-check.sh).
+           "REBOOT_REQUIRED_FILE": str(bin_dir.parent / "no-reboot-required")}
     env.update(_GIT_ENV)
     env.update(extra)
     return env

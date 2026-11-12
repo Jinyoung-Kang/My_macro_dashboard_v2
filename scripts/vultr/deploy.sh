@@ -27,7 +27,7 @@
 #      기동 확인이 실패해도(5분 안에 건강해지지 않은 서비스) 스키마 적용과 caddy 다시 만들기는 마친 뒤 실패로 끝납니다(QA-369 —
 #      어느 서비스인지 표로 알리고, 7의 정리와 성공 문구는 없음).
 #   7. 매달린 이미지·오래된 빌드 캐시 정리. 끝 요약에 디스크와 마지막 S3 백업(backups/.last-s3-ok — 36시간 넘었거나 없으면 경고, QA-199 —
-#      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)
+#      판정은 make status와 같이 쓰는 scripts/vultr/backup-age.sh)과 재부팅 필요·Livepatch 상태(scripts/vultr/reboot-check.sh — 같은 판정을 make status·cron이 씀)
 # 어느 단계든 실패하면 0이 아닌 값으로 끝납니다.
 # =============================================================================
 set -euo pipefail
@@ -278,5 +278,7 @@ echo "   디스크: $(df -P / | awk 'NR == 2 {print $5}') 사용"
 # QA-199: 서버 밖 사본(S3 db/vultr/)을 마지막으로 올린 뒤의 나이 — 36시간 넘었거나 기록이 없으면 경고. 판정은 make status와 같이 쓰는
 # backup-age.sh 한 곳에 있습니다(cron이 빠지면 텔레그램 알림도 없어 여기와 make status에서 봄).
 bash scripts/vultr/backup-age.sh
+# 재부팅이 필요한지·Livepatch가 도는지(ADR 0023 개정 2026-11-12) — 판정은 make status·cron과 같은 reboot-check.sh. 요약이라 실패해도 배포를 실패로 만들지 않습니다.
+bash scripts/vultr/reboot-check.sh --summary || true
 [ -z "$paper_off" ] ||
     echo "주의: 모의 매매 정기 작업이 꺼진 채 떴습니다(.env의 PAPER_ENABLED=false) — 정비가 끝났으면 그 줄을 지우고 다시 배포하세요."
