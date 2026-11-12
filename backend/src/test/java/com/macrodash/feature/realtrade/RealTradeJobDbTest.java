@@ -24,7 +24,6 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -3341,7 +3340,6 @@ class RealTradeJobDbTest {
     }
 
     @Test
-    @Disabled("QA-413 후속: 형식 밖 종목의 앱 매수가 잡은 금액을 되돌릴 수 없어 손실 0에도 매수 멈춤(loss-limit)이 켜지고, 그 주문이 끝나도 풀리지 않음")
     @DisplayName("QA-413 후속: 형식 밖 종목의 앱 매수가 걸린 주기에는 손실 한도로 매수 멈춤을 새로 켜지 않는다 — 잡힌 금액을 되돌릴 수 없어 판정값이 그만큼 낮게 "
             + "보일 뿐(그 주기의 매수는 이미 0). 그 주문이 끝나면 정확한 값으로 판정하고 매수가 다시 나간다")
     void malformedAppBuyDoesNotTripTheLossLimit() {

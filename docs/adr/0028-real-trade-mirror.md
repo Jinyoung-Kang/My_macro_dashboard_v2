@@ -106,6 +106,11 @@ ADR 0025로 실제 계좌를 읽기만 했다. 운영자는 모의 책(한국)�
   감수한 단점: 그런 주문이 걸려 있는 동안 그날 매수(맞추기·장중 따라 하기)가 '하루 한도 미룸'으로만 보이고 사유가 따로 구분되지 않는다(백엔드 로그에만 남음).
   수집기는 주문마다 그 종목의 상한가를 토스에 직접 물어 한 번 더 세므로, 토스가 답하지 못하는 종목이면 매도도 `count-unavailable`로 나가지 않고 그 안 보냄이
   오늘 3건이면 '같은 오류 3회' 이상 멈춤이 된다(예전에는 행이 없어 조용히 쉬다가 그 주문이 끝나면 저절로 이어 감 — 이제는 알림과 함께 멈추고 사람이 해제).
+  **후속(독립 검토 지적 — 손실 한도)**: 그 주문이 잡은 금액은 손실 판정값에 되돌릴 수 없어, 이 수정으로 그 주기가 손실 판정까지 가게 되면서 손실 0에도 매수
+  멈춤(`loss-limit`)이 켜지고 그 주문이 끝나도 풀리지 않는 길이 새로 열렸다. 그래서 그런 주문이 걸린 주기에는 매수 멈춤을 **새로 켜지 않는다** — 그 주기의
+  매수는 이미 0이고, 그 주문이 끝난 첫 주기에 판정이 매수보다 먼저 돈다(`malformedAppBuyDoesNotTripTheLossLimit`·`realLossWithMalformedAppBuyNeverBuys`·
+  `pausedBuysStayPausedAroundMalformedAppBuy`). 감수한 것: 그 주문이 걸려 있는 동안에는 진짜 손실이 한도를 넘어도 매수 멈춤 표시·알림이 그 주문이 끝날 때까지
+  늦는다(매수는 어차피 나가지 않음).
   토스가 그런 코드를 실제로 주는지는 모른다. 계약은 [명세 §12.1](../specs/2026-11-06-real-trade-mirror.md), 시험은 `RealTradeJobDbTest`의
   `malformedAppBuyDoesNotBlockStopSells`·`malformedAppBuyDefersBuysAndSendsSells`·`malformedAppBuyNextToWellFormedOne`·`malformedAppBuyStillCountsTowardDailyOrders`,
   `RealTradePlannerTest.dailyUsageWithUnpriceableOpenBuy`, `RealTradeServiceDbTest.previewWithMalformedAppBuyDefersBuys`. 형식에 맞는 종목의 앱 매수와 앱 주문이 없는

@@ -527,8 +527,19 @@ class RealTradeJob {
         }
     }
 
-    /** 수집기 하루 한도의 오늘 남은 몫(명세 §5.2 — 한도 − 오늘 쓴 몫, 0 아래는 0). */
-    record DailyRoom(int orders, BigDecimal buyKrw) {
+    /**
+     * 수집기 하루 한도의 오늘 남은 몫(명세 §5.2 — 한도 − 오늘 쓴 몫, 0 아래는 0). {@code unpriced}는 상한가를 물을 길이 없는 진행 중 매수의 종목(형식 밖
+     * 종목 코드 — QA-413)으로, 비어 있지 않으면 {@code buyKrw}는 0입니다(그 주문이 잡은 금액을 몰라 매수를 미룸). 평소에는 빈 집합입니다.
+     */
+    record DailyRoom(int orders, BigDecimal buyKrw, Set<String> unpriced) {
+
+        DailyRoom {
+            unpriced = Set.copyOf(unpriced);
+        }
+
+        DailyRoom(int orders, BigDecimal buyKrw) {
+            this(orders, buyKrw, Set.of());
+        }
     }
 
     /**
@@ -1852,7 +1863,7 @@ class RealTradeJob {
             // 그 주문이 잡은 매수 금액을 모름 — 남은 매수 금액을 0으로(매수는 미루고 매도·스탑 매도는 보냄). 종목 코드는 로그에 싣지 않음
             log.warn("형식 밖 종목 코드의 진행 중 매수 {}종목 — 오늘 쓴 매수 금액을 셀 수 없어 매수는 미루고 매도만 보냄(그 주문이 끝나면 다시 셈)",
                     unpriceable.size());
-            return Optional.of(new DailyRoom(orders, BigDecimal.ZERO));
+            return Optional.of(new DailyRoom(orders, BigDecimal.ZERO, unpriceable));
         }
         BigDecimal buy = BigDecimal.valueOf(limits.maxBuyKrwPerDay()).subtract(usage.get().buyKrw()).max(BigDecimal.ZERO);
         return Optional.of(new DailyRoom(orders, buy));
@@ -2038,11 +2049,18 @@ class RealTradeJob {
      * 손실 한도(명세 §7.3) — 기준 총액(켤 때의 상한 없는 총액 U0) − 지금 상한 없는 총액({@link Fresh#lossTotal} — 토스 미체결 매수(이 기능의 주문과
      * 앱 주문)가 잡은 금액을 되돌린 값, QA-379) ≥ 기준 평가액(E0, 안전 상한 적용) × 한도%면 매수 멈춤({@code buys_paused})을 켜고 알립니다(매도는 계속). 총액이 상한보다 커도 운용분의
      * 손실을 잡습니다(RT-BE-3 — 상한을 적용한 E로 재면 상한 밖 현금이 손실을 가림). 기준 총액을 모르는 설정(그 칸 전에 켬)은 예전 식(손실 판정용 E ≤
-     * E0 × (1 − 한도%)). 설정이 그사이 바뀌었으면 false(이번 주기의 나머지를 하지 않음).
+     * E0 × (1 − 한도%)). 설정이 그사이 바뀌었으면 false(이번 주기의 나머지를 하지 않음). 형식 밖 종목의 앱 매수가 걸린 주기({@link DailyRoom#unpriced})에는
+     * 매수 멈춤을 새로 켜지 않습니다(QA-413 후속 — 본문 주석).
      */
     private boolean lossCheck(Cycle c, Fresh f) {
         Config cfg = c.cfg;
         if (cfg.buysPaused() || cfg.baselineEquity() == null) {
+            return true;
+        }
+        if (!f.daily().unpriced().isEmpty()) {
+            // 형식 밖 종목의 앱 매수가 걸린 주기(QA-413 후속) — 그 주문이 잡은 금액은 시세가 없어 지금 총액에 되돌리지 못하므로 판정값이 그만큼 낮게
+            // 보입니다(거짓 손실). 이 주기의 매수는 이미 0(남은 하루 매수 금액 0)이라, 매수 멈춤을 새로 켜지 않고 그 주문이 끝난 뒤의 주기가 정확한 값으로
+            // 판정하게 둡니다(그 주기에도 이 판정이 계획·전송보다 먼저 돎). 이미 켜진 매수 멈춤은 위에서 그대로 돌아갑니다(풀지 않음).
             return true;
         }
         if (!lossBreached(cfg, f.lossTotal(), f.lossEquity())) {
