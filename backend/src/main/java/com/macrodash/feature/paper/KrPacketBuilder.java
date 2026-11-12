@@ -405,6 +405,19 @@ final class KrPacketBuilder {
         fixed.put(HARD_RULES, hardRules);
         Rows rows = new Rows(lines, universeRows, quotes, history, flows, scores, unfillable, members, companies, dart,
                 dartMissing, asOf, read, paper);
+        // 판단 이어받기(ADR 0038) — 자유 시점 판이고 한국 스위치를 켠 결정만: 머리의 continuity, 보유 행의 entry, 섹션 10b_carried. 끄면 이 칸들이
+        // 없어 예전 패킷과 바이트까지 같습니다. 조건의 값 표는 3_kr_macro의 환율·외국인 순매수와 8_prices 전 줄(크기 예산으로 자르기 전)의 종가입니다.
+        if (free && Continuity.on(body, true)) {
+            basis.put("continuity", Continuity.VERSION);
+            Continuity.attachEntries(portfolio.get("positions"),
+                    Continuity.entries(store, book, Continuity.tickers(portfolio.get("positions"))));
+            Map<String, Double> krValues = Continuity.krMacro(PacketBuilder.toNode(macro));
+            Map<String, Double> metrics = new LinkedHashMap<>(krValues);
+            Continuity.table(PacketBuilder.toNode(priceSection(List.copyOf(lines.values()), 0, quotes, history, flows, scores,
+                    unfillable, asOf, read)), "code", "close").forEach(metrics::putIfAbsent);
+            fixed.put(Continuity.SECTION, Continuity.carried(Continuity.latestJudged(store, prior), metrics,
+                    List.copyOf(krValues.keySet())));
+        }
         int cut = 0;
         String text = render(fixed, rows, 0);
         if (PacketBuilder.estimateTokens(text) > targetTokens && !universeRows.isEmpty()) {
@@ -468,6 +481,9 @@ final class KrPacketBuilder {
             }
             if (EVENTS.equals(key) && fixed.containsKey(ReadingSection.KEY)) {
                 root.put(ReadingSection.KEY, fixed.get(ReadingSection.KEY));
+            }
+            if (DECISIONS.equals(key) && fixed.containsKey(Continuity.SECTION)) {
+                root.put(Continuity.SECTION, fixed.get(Continuity.SECTION));
             }
         }
         return mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(PacketBuilder.toNode(root));
@@ -1404,6 +1420,29 @@ final class KrPacketBuilder {
             names.put(line.code(), list);
         }
         return KrEventsSection.build(rows, window, readAt, news, names, status);
+    }
+
+    /**
+     * 한국 장중 판단 패킷의 사건 뉴스(판단 이어받기 — ADR 0038) — 밤 결정 뒤({@code from})부터 조립 시각({@code to})까지의 제목을 결정 패킷의
+     * {@value #EVENTS}와 같은 규칙(설정 {@code kr.news.*}·이름 대조)으로 고른 섹션. 뉴스가 꺼졌거나 창이 비면 null. 저장소의 관측치만 읽습니다.
+     *
+     * @param names 걸 대상 — 코드 → 이름들(밤 결정 패킷의 종목명). 설정 별칭은 여기서 더합니다
+     */
+    Map<String, Object> intradayEvents(JsonNode body, Instant from, Instant to, Map<String, List<String>> names) {
+        KrEventsSection.NewsSettings news = KrEventsSection.settings(body);
+        if (!news.settings().enabled() || from == null || to == null || !to.isAfter(from)) {
+            return null;
+        }
+        NewsEvents.Window window = new NewsEvents.Window(from, to);
+        Map<String, List<String>> all = new TreeMap<>();
+        names.forEach((code, list) -> {
+            List<String> merged = new ArrayList<>(list);
+            merged.addAll(news.aliases().getOrDefault(code, List.of()));
+            all.put(code, merged);
+        });
+        List<JsonNode> rows = repository.readObservationsBetween(Datasets.OBS_KR_NEWS_HEADLINE,
+                KrEventsSection.readFrom(window), null);
+        return KrEventsSection.build(rows, window, to, news, all, null).section();
     }
 
     // ------------------------------------------------------------------ 12 하드 규칙

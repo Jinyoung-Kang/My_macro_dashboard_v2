@@ -353,9 +353,12 @@ public class PaperKrIntradayJob {
         KrCheckpointPacket.Free free = new KrCheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
                 CheckpointPacket.Reserved.after(rows, p.slot()), CheckpointPacket.Reserved.later(rows, p.slot()),
                 StopWatchMode.of(row.body(), true).orders());
+        // 판단 이어받기(ADR 0038) — 한국 스위치를 켠 설정 행이면 밤 결정의 조건, 보유 종목의 진입 논거, 밤 결정 뒤의 사건 뉴스를 싣습니다(끄면 null —
+        // 예전 패킷 그대로).
+        Continuity.Intraday extra = Continuity.on(row.body(), true) ? continuity(code, c, source, row.body(), calledAt) : null;
         Attempt attempt = pipeline.attemptCheckpoint(version -> KrCheckpointPacket.build(new KrCheckpointPacket.Inputs(c, asOf,
                 source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), watch, quotes, version,
-                row.version(), calendar, clock.instant(), free), mapper), row, claudeSettings, today, scheduled);
+                row.version(), calendar, clock.instant(), free), mapper, extra), row, claudeSettings, today, scheduled);
         if (attempt == null) {
             return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);
         }
@@ -510,6 +513,29 @@ public class PaperKrIntradayJob {
             request.set("trigger", p.trigger());
         }
         return request;
+    }
+
+    /**
+     * 그 장중 판단의 이어받기 재료(ADR 0038) — 보유 종목의 진입 논거와, 밤 결정 뒤부터 지금까지의 사건 뉴스(대상 = 보유 + 감시 종목, 이름은 밤 결정
+     * 패킷의 종목명). 뉴스 읽기가 실패하면 뉴스 없이 갑니다(판단을 막지 않음 — 그 섹션이 없을 뿐).
+     */
+    private Continuity.Intraday continuity(String code, Checkpoint c, Decision source, JsonNode body, Instant now) {
+        java.util.Set<String> tickers = new java.util.LinkedHashSet<>();
+        store.positions(code).forEach(p -> tickers.add(p.ticker()));
+        Map<String, Continuity.Entry> entries = Continuity.entries(store, code, List.copyOf(tickers));
+        if (c.watch() != null) {
+            tickers.addAll(c.watch());
+        }
+        Map<String, Object> events = null;
+        try {
+            JsonNode nightPacket = source == null ? null
+                    : source.packet() != null ? source.packet() : PacketBuilder.readSent(source.packetText(), mapper);
+            events = claude.krIntradayEvents(body, source == null ? null : source.decidedAt(), now,
+                    Continuity.krNames(nightPacket, tickers));
+        } catch (RuntimeException e) {
+            log.warn("한국 장중 판단 패킷의 사건 뉴스를 읽지 못했습니다 — 뉴스 없이 부릅니다: {}", e.toString());
+        }
+        return new Continuity.Intraday(entries, events);
     }
 
     /** 상태만 바꿈(부르지 않음) — 바꾼 상태 문구. 그사이 PLANNED가 아니면 null. */

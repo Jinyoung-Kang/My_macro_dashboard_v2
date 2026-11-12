@@ -1600,7 +1600,7 @@ public final class ReviewFacts {
     }
 
     /** max자로 자르고 끝에 '…'(합쳐 max자, PacketBuilder와 같은 꼴). 서로게이트 쌍을 가르지 않습니다. */
-    static String clip(String text, int max) {
+    public static String clip(String text, int max) {
         if (text == null || text.length() <= max) {
             return text;
         }

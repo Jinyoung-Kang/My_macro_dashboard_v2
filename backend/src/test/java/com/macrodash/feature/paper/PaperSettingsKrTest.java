@@ -95,7 +95,7 @@ class PaperSettingsKrTest {
                 "kr.rules.parkCashThresholdPct", "kr.rules.timing", "kr.rules.timingAtKst", "kr.cashLikeTickers",
                 "kr.universeExtraTickers", "kr.decisionTimeKst",
                 "kr.decisionDeadlineKst", "kr.calendar.extraClosures", "kr.calendar.openTimeOverrides", "kr.news.enabled",
-                "kr.info.packet", "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile",
+                "kr.continuity", "kr.info.packet", "kr.news.maxPerDay", "kr.news.keywords", "kr.news.feeds", "kr.news.aliases", "kr.claude2.riskProfile",
                 "kr.claude2.checkpoints", "kr.intradayMaxPerSession", "kr.intradayMinPerSession", "kr.intradayEvents",
                 "kr.claude.freeTiming", "kr.claude2.freeTiming");
 

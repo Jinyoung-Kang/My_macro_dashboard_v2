@@ -314,9 +314,11 @@ public class ClaudeBookService {
     private final ReentrantLock initialCall = new ReentrantLock();
     /** 자유 시점 판 결정의 장중 판단 예약을 계획 행으로 옮기는 곳({@link IntradayPlanner} — ADR 0027 결정 3). */
     private final IntradayPlanner intraday;
+    /** 한국 패킷 빌더(한국 장중 판단의 사건 뉴스 — 운영 문맥만, 시험용 문맥은 null). */
+    private final KrPacketBuilder krPackets;
 
     /** 생성자가 받는 결정 문맥 목록(시험 생성자와 시그니처가 겹치지 않게 감쌈) — 운영 문맥과 자유 시점 판 문맥({@link #freeContexts}). */
-    private record Contexts(List<MarketContext> all, List<MarketContext> free) {
+    private record Contexts(List<MarketContext> all, List<MarketContext> free, KrPacketBuilder krPackets) {
     }
 
     @Autowired
@@ -351,7 +353,7 @@ public class ClaudeBookService {
                       KrPacketBuilder krPackets) {
         this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config, mapper,
                 timeoutSeconds, clock, new Contexts(marketContexts(packets, Objects.requireNonNull(krPackets, "krPackets")),
-                        freeContexts(packets, krPackets)));
+                        freeContexts(packets, krPackets), krPackets));
     }
 
     /**
@@ -365,7 +367,7 @@ public class ClaudeBookService {
                       List<MarketContext> otherMarkets) {
         this(store, reader, marketData, selection, ledger, admin, packets, framework, calls, ai, settings, config, mapper,
                 timeoutSeconds, clock, new Contexts(concat(marketContexts(packets, null), otherMarkets),
-                        freeContexts(packets, null)));
+                        freeContexts(packets, null), null));
     }
 
     private ClaudeBookService(PaperStore store, StoreReader reader, PaperMarketData marketData,
@@ -385,6 +387,7 @@ public class ClaudeBookService {
         this.mapper = mapper;
         this.clock = clock;
         this.intraday = new IntradayPlanner(store);
+        this.krPackets = contexts.krPackets();
         Map<String, ClaudeDecisionPipeline> byBook = new LinkedHashMap<>();
         for (MarketContext context : contexts.all()) {
             // 스키마 파일이 깨졌으면 기동하지 않습니다(파이프라인이 만들 때 읽음) — 첫 결정 날 아침에야 알게 되지 않게.
@@ -413,6 +416,14 @@ public class ClaudeBookService {
     private ClaudeDecisionPipeline variant(ClaudeDecisionPipeline base, SettingsRow row) {
         ClaudeDecisionPipeline free = freeTiming.get(base.book());
         return free != null && row != null && FreeTimingSettings.from(row.body()).on(base.book()) ? free : base;
+    }
+
+    /**
+     * 한국 장중 판단 패킷의 사건 뉴스(판단 이어받기 — ADR 0038, {@link KrPacketBuilder#intradayEvents}). 한국 패킷 빌더가 없는 문맥(시험용 시장)이면
+     * null.
+     */
+    Map<String, Object> krIntradayEvents(JsonNode body, Instant from, Instant to, Map<String, List<String>> names) {
+        return krPackets == null ? null : krPackets.intradayEvents(body, from, to, names);
     }
 
     /** 그 계좌의 자유 시점 판 파이프라인(없으면 null) — 시험과 장중 판단 작업이 씁니다. */

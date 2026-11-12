@@ -232,6 +232,26 @@ public class PaperIntradayJob {
      * 보장 행을 넣지 않을 까닭({@link IntradayScheduler.Gate}) — 그 행을 부를 때 막힐 것을 미리 봅니다: 계좌2 꺼짐({@code claude2.enabled}), 자유 시점 판
      * 파이프라인 없음, 계좌2 소상한, 하루 정기 문턱. 넣어도 되면 null.
      */
+    /**
+     * 그 장중 판단의 이어받기 재료(ADR 0038) — 보유 종목의 진입 논거와, 그 세션 결정 뒤부터 지금까지의 사건 뉴스(대상 = 보유 + 감시 종목).
+     * 뉴스 읽기가 실패하면 뉴스 없이 갑니다(판단을 막지 않음 — 그 섹션이 없을 뿐).
+     */
+    private Continuity.Intraday continuity(String code, Checkpoint c, Decision source, JsonNode body, Instant now) {
+        java.util.Set<String> tickers = new java.util.LinkedHashSet<>();
+        store.positions(code).forEach(p -> tickers.add(p.ticker()));
+        Map<String, Continuity.Entry> entries = Continuity.entries(store, code, List.copyOf(tickers));
+        if (c.watch() != null) {
+            tickers.addAll(c.watch());
+        }
+        Map<String, Object> events = null;
+        try {
+            events = packets.intradayEvents(body, source == null ? null : source.decidedAt(), now, tickers);
+        } catch (RuntimeException e) {
+            log.warn("장중 판단 패킷의 사건 뉴스를 읽지 못했습니다 — 뉴스 없이 부릅니다: {}", e.toString());
+        }
+        return new Continuity.Intraday(entries, events);
+    }
+
     private String guaranteeBlocked(String code, Decision source, SettingsRow row) {
         Claude2Settings book2 = Claude2Settings.from(row.body());
         if (PaperBooks.CLAUDE2.equals(code) && !book2.enabled()) {
@@ -394,10 +414,13 @@ public class PaperIntradayJob {
         CheckpointPacket.Free free = new CheckpointPacket.Free(code, p.slot(), max, p.manual(), p.origin(), p.trigger(),
                 CheckpointPacket.Reserved.after(rows, p.slot()), CheckpointPacket.Reserved.later(rows, p.slot()),
                 StopWatchMode.of(row.body(), false).orders());
+        // 판단 이어받기(ADR 0038) — 미국 스위치를 켠 설정 행이면 그 세션 결정의 논거·조건, 보유 종목의 진입 논거, 그 결정 뒤의 사건 뉴스를 싣습니다.
+        // 시스템 프롬프트의 이어받기 절과 같은 행으로 정합니다(끄면 null — 예전 패킷 그대로).
+        Continuity.Intraday extra = Continuity.on(row.body(), false) ? continuity(code, c, source, row.body(), calledAt) : null;
         Attempt attempt = pipeline.attemptCheckpoint(version -> CheckpointPacket.build(new CheckpointPacket.Inputs(c, asOf,
                 source, store.state(code).orElse(null), store.positions(code), pendingOrders(code), todayFills(code, session),
                 watch, quotes, macro, version, row.version(), store.recentIntradayLags(code, ExecutionSection.FEED_MINUTE,
-                        ExecutionSection.RECENT_LAG_SESSIONS), calendar, clock.instant(), bars, free), mapper),
+                        ExecutionSection.RECENT_LAG_SESSIONS), calendar, clock.instant(), bars, free), mapper, extra),
                 row, claudeSettings, today, scheduled);
         if (attempt == null) {
             return mark(p, PaperBooks.CHECKPOINT_EXPIRED, PaperCheckpointJob.CALL_CAP);

@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 
@@ -359,6 +360,75 @@ class CheckpointPacketTest {
         events.addObject().put("type", "INDEX_MOVE").put("ticker", "SPY").put("direction", "DOWN").put("prevClose", 590.0)
                 .put("last", 580.5).put("changePct", -1.61).put("barEt", "10:24");
         return trigger;
+    }
+
+    @Test
+    @DisplayName("판단 이어받기(ADR 0038): 장중 판단 패킷에 그 세션 결정의 요약·주문 논거(3b_decision), 그 결정의 조건을 이 패킷의 값(매크로 카드·시세 "
+            + "마지막 값)으로 다시 매긴 3c_carried(전 거래일 종가 포함), 그 결정 뒤의 사건 뉴스(3d_events), 보유 행의 entry가 실리고 그 밖은 바이트 그대로")
+    void continuityIntradayPacket() {
+        CheckpointPacket.Inputs base = freeInputs(1, 3, false);
+        Decision morning = new Decision(41, PaperBooks.CLAUDE, D, RuleBookService.SCHEDULED, MORNING_CREATED, "OK",
+                "claude-sonnet-5-5", 5, 12, LocalDate.of(2026, 10, 23), 40.0, null, null, null, MAPPER.readTree("""
+                        {"schemaVersion":2,"stance":"NEUTRAL","summary":"아침 요약 — 반등이 이어지면 매수","targetEquityExposurePct":40,
+                         "desiredEquityExposurePct":60,"exposurePlan":"VIX가 내려오면 나눠 좁힌다","noTradeReason":null,
+                         "orders":[{"ticker":"NVDA","side":"BUY","timing":"AT_MINUTE","targetWeightPct":5,"sellFraction":null,
+                                    "executionNote":"개장 변동이 가라앉은 뒤","thesis":"수요 회복","invalidation":"-8% 하락"}],
+                         "conditions":[{"metric":"vix","op":"ABOVE","level":17.0,"then":"매수 보류"},
+                                       {"metric":"AAPL","op":"BELOW","level":228.0,"then":"매도 검토"},
+                                       {"metric":"us10y","op":"ABOVE","level":5.1,"then":"노출 축소 검토"}],
+                         "watchlist":[{"ticker":"MSFT","condition":"520 위 안착"}]}"""), null, null, List.of(), true, 900L, 0,
+                "{\"1_basis\":{\"selectionAsOf\":\"2026-10-23\",\"book\":\"claude\"},\"8_prices\":{\"columns\":[\"ticker\",\"role\","
+                        + "\"date\",\"close\"],\"rows\":[[\"AAPL\",\"HOLDING\",\"2026-10-30\",240.0],[\"NVDA\",\"CANDIDATE\","
+                        + "\"2026-10-30\",178.0]]},\"12_hardRules\":{\"lines\":[\"…\"],\"universe\":\"AAPL,MSFT,NVDA\"}}");
+        CheckpointPacket.Inputs in = new CheckpointPacket.Inputs(base.checkpoint(), base.asOf(), morning, base.state(),
+                base.positions(), base.pending(), base.todayFills(), base.watch(), base.quotes(), base.macroCards(),
+                base.frameworkVersion(), base.settingsVersion(), base.recentLags(), base.calendar(), base.assembledAt(), base.bars(),
+                base.free());
+        Map<String, Object> events = new java.util.LinkedHashMap<>();
+        events.put("source", "news_headline");
+        events.put("items", List.of(Map.of("title", "AAPL 가이던스 하향")));
+        Continuity.Intraday extra = new Continuity.Intraday(Map.of("AAPL",
+                new Continuity.Entry(31L, "2026-10-23", "서비스 매출 성장", "서비스 성장률 한 자릿수")), events);
+
+        PacketBuilder.Packet off = CheckpointPacket.build(in, MAPPER);
+        PacketBuilder.Packet on = CheckpointPacket.build(in, MAPPER, extra);
+
+        JsonNode body = on.body();
+        List<String> keys = new ArrayList<>();
+        body.propertyNames().forEach(keys::add);
+        assertThat(keys).containsExactly("0_instructions", "1_basis", "2_macroCards", "3_request", "3b_decision", "3c_carried",
+                "3d_events", "4_portfolio", "5_feed", "6_hardRules");
+        JsonNode decision = body.get(Continuity.INTRADAY_DECISION);
+        assertThat(decision.get("decisionId").asLong()).isEqualTo(41);
+        assertThat(decision.get("summary").asString()).startsWith("아침 요약");
+        assertThat(decision.get("orders").get(0).get("thesis").asString()).isEqualTo("수요 회복");
+        assertThat(decision.get("orders").get(0).get("invalidation").asString()).isEqualTo("-8% 하락");
+        JsonNode carried = body.get(Continuity.INTRADAY_CARRIED);
+        List<String> conditions = new ArrayList<>();
+        carried.get("conditions").forEach(c -> conditions.add(c.get("metric").asString() + " → " + c.get("status").asString()
+                + " @" + c.get("current")));
+        // 이 패킷의 값: 매크로 카드 vix 17.2(> 17 충족), 감시 1분봉 AAPL 마지막 값(< 228 아님), us10y 카드는 이 패킷에 없음.
+        assertThat(conditions.get(0)).isEqualTo("vix → 충족 @17.2");
+        assertThat(conditions.get(1)).startsWith("AAPL → 미충족 @");
+        assertThat(conditions.get(2)).isEqualTo("us10y → 평가 불가 @null");
+        assertThat(carried.get("desiredEquityExposurePct").asDouble()).isEqualTo(60.0);
+        assertThat(carried.get("watchlist").get(0).get("ticker").asString()).isEqualTo("MSFT");
+        assertThat(carried.get("prevCloses").get("values").get("AAPL").asDouble()).as("그 세션 결정 패킷의 8_prices 종가").isEqualTo(240.0);
+        assertThat(carried.get("prevCloses").get("values").get("NVDA").asDouble()).isEqualTo(178.0);
+        assertThat(carried.get("prevCloses").get("values").has("SPY")).as("그 패킷에 없던 종목은 싣지 않음").isFalse();
+        assertThat(body.get(Continuity.INTRADAY_EVENTS).get("items").get(0).get("title").asString()).isEqualTo("AAPL 가이던스 하향");
+        JsonNode position = body.get("4_portfolio").get("positions").get(0);
+        assertThat(position.get("entry").get("thesis").asString()).isEqualTo("서비스 매출 성장");
+
+        ObjectNode stripped = (ObjectNode) body.deepCopy();
+        stripped.remove(List.of(Continuity.INTRADAY_DECISION, Continuity.INTRADAY_CARRIED, Continuity.INTRADAY_EVENTS));
+        stripped.get("4_portfolio").get("positions").forEach(row -> ((ObjectNode) row).remove("entry"));
+        assertThat(stripped).as("더한 칸을 빼면 예전 장중 판단 패킷과 같다").isEqualTo(off.body());
+        // 뉴스가 없으면(꺼짐·읽기 실패) 3d_events 키가 없다.
+        PacketBuilder.Packet noNews = CheckpointPacket.build(in, MAPPER, new Continuity.Intraday(Map.of(), null));
+        assertThat(noNews.body().has(Continuity.INTRADAY_EVENTS)).isFalse();
+        assertThat(noNews.body().get("4_portfolio").get("positions").get(0).get("entry").isNull()).isTrue();
+        Golden.assertMatches("packet-us-ft-intraday-minute-continuity.json", on.text());
     }
 
     @Test

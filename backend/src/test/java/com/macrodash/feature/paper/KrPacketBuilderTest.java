@@ -1160,6 +1160,65 @@ class KrPacketBuilderTest {
     }
 
     @Test
+    @DisplayName("판단 이어받기(ADR 0038 — 설정 kr.continuity): 한국 자유 시점 판 패킷에 1_basis.continuity, 보유 행의 entry, 10b_carried(직전 결정의 "
+            + "조건을 3_kr_macro의 환율·외국인 순매수와 8_prices 종가로 매긴 상태)가 실리고 그 밖은 바이트 그대로. 끄거나 끈 판이면 그대로")
+    void continuityPacket() {
+        Packet plainOff = scheduled();
+        Packet off = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        // 직전 결정(11-02 정기)의 응답에 조건·바라는 노출을 남기고, 005930 매수 주문에 논거를 답니다.
+        Decision last = store.decisions.values().stream()
+                .filter(d -> PaperBooks.KR_CLAUDE.equals(d.bookCode()) && D1.equals(d.asOfTradingDate())).findFirst().orElseThrow();
+        ObjectNode response = (ObjectNode) last.response().deepCopy();
+        response.put("targetEquityExposurePct", 50).put("desiredEquityExposurePct", 80)
+                .put("exposurePlan", "외국인 5일 합이 순매수로 바뀌면 세 번에 나눠 좁힌다");
+        response.putArray("conditions")
+                .add(MAPPER.createObjectNode().put("metric", "usdkrw").put("op", "ABOVE").put("level", 1360).put("then", "현금 유지"))
+                .add(MAPPER.createObjectNode().put("metric", "005930").put("op", "BELOW").put("level", 9500).put("then", "매도 검토"))
+                .add(MAPPER.createObjectNode().put("metric", "국고채3년").put("op", "ABOVE").put("level", 3.7).put("then", "직접 확인"));
+        store.decisions.put(last.id(), new Decision(last.id(), last.bookCode(), last.asOfTradingDate(), last.kind(),
+                last.decidedAt(), last.status(), last.model(), last.frameworkVersion(), last.settingsVersion(),
+                last.selectionAsOf(), last.targetExposurePct(), last.packet(), last.packetHash(), last.responseRaw(), response,
+                last.usage(), last.error(), last.noteIds(), last.pricesFinal(), last.latencyMs(), last.retryCount()));
+        Order bought = store.orders.values().stream().filter(o -> PaperBooks.KR_CLAUDE.equals(o.bookCode())
+                && "005930".equals(o.ticker()) && PaperBooks.BUY.equals(o.side()) && PaperBooks.ORDER_FILLED.equals(o.status()))
+                .findFirst().orElseThrow();
+        ((ObjectNode) bought.reason()).put("thesis", "메모리 회복").put("invalidation", "외국인 20일 순매도 확대");
+
+        ObjectNode kr = (ObjectNode) store.settings.body().get("kr");
+        kr.put("continuity", true);
+        Packet on = builder.forFree(PaperBooks.KR_CLAUDE).build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D);
+        assertThat(builder.build(run(), D, RuleBookService.SCHEDULED, false, 3, quotesD(), READ_D).text())
+                .as("끈 판(자유 시점 판이 아님) 패킷은 스위치와 무관하게 그대로").isEqualTo(plainOff.text());
+
+        JsonNode body = on.body();
+        assertThat(body.get(PacketBuilder.BASIS).get("continuity").asInt()).isEqualTo(Continuity.VERSION);
+        JsonNode positions = body.get(PacketBuilder.PORTFOLIO).get("positions");
+        assertThat(positions.get(0).get("entry").get("thesis").asString()).isEqualTo("메모리 회복");
+        assertThat(positions.get(0).get("entry").get("invalidation").asString()).isEqualTo("외국인 20일 순매도 확대");
+        assertThat(positions.get(1).get("entry").isNull()).as("논거를 남긴 매수가 없는 보유(현금성)는 null").isTrue();
+        List<String> keys = new ArrayList<>(body.propertyNames());
+        assertThat(keys.indexOf(Continuity.SECTION)).isEqualTo(keys.indexOf(PacketBuilder.DECISIONS) + 1);
+        JsonNode carried = body.get(Continuity.SECTION);
+        assertThat(carried.get("fromDecision").get("id").asLong()).isEqualTo(last.id());
+        assertThat(carried.get("desiredEquityExposurePct").asDouble()).isEqualTo(80.0);
+        List<String> conditions = new ArrayList<>();
+        carried.get("conditions").forEach(c -> conditions.add(c.get("metric").asString() + " → " + c.get("status").asString()
+                + " @" + c.get("current")));
+        // 패킷 값: 원/달러 1,364(> 1,360 충족), 005930 종가 10,100(< 9,500 아님), 국고채 금리는 이 패킷에 없음.
+        assertThat(conditions).containsExactly("usdkrw → 충족 @1364", "005930 → 미충족 @10100", "국고채3년 → 평가 불가 @null");
+        List<String> names = new ArrayList<>();
+        carried.get("metrics").get("names").forEach(n -> names.add(n.asString()));
+        assertThat(names).contains("usdkrw", "dxy", "kospiForeignNet", "kospiForeignNet5", "kospiForeignNet20");
+
+        ObjectNode stripped = (ObjectNode) body.deepCopy();
+        ((ObjectNode) stripped.get(PacketBuilder.BASIS)).remove("continuity");
+        stripped.get(PacketBuilder.PORTFOLIO).get("positions").forEach(row -> ((ObjectNode) row).remove("entry"));
+        stripped.remove(Continuity.SECTION);
+        assertThat(stripped).as("더한 칸을 빼면 끈 스위치의 자유 시점 판 패킷과 같다").isEqualTo(off.body());
+        Golden.assertMatches("packet-kr-ft-continuity-scheduled.json", on.text());
+    }
+
+    @Test
     @DisplayName("한국 장중 스탑 감시 ON(kr.stopWatch.mode — ADR 0032): 한국 결정 패킷(켠 판·끈 판)에 1_basis.stopWatch와 12_hardRules의 스탑 줄(5분 감시·"
             + "두 번·장중 시장가·종가 단일가 뒤 종가·밤 대체 개장 10분 뒤)이 실리고 대기 감시 STOP 종목(밤 대체 포함)은 lockedOut — 그 밖은 바이트 그대로. "
             + "SHADOW는 예전 고정본 그대로")

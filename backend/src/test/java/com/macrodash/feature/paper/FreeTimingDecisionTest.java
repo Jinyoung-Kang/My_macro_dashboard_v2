@@ -317,6 +317,53 @@ class FreeTimingDecisionTest {
     }
 
     @Test
+    @DisplayName("판단 이어받기(ADR 0038 — 설정 continuity): 자유 시점 판 결정만 이어받기 절이 붙은 시스템 프롬프트와 세 칸(바라는 노출·계획·조건)을 더 "
+            + "받는 스키마로 부른다 — 그 칸이 빠진 응답은 형식 오류, 끄면 다음 결정부터 예전 판(고정본 그대로). 자유 시점 판이 아니면 스위치와 무관")
+    void continuitySwitchAddsTheSectionAndSchemaFields() {
+        active(PaperBooks.CLAUDE);
+        ((ObjectNode) store.settings.body().get("claude")).put("freeTiming", true);
+        ((ObjectNode) store.settings.body()).put("continuity", true);
+        String carried = "{\"schemaVersion\":2,\"stance\":\"NEUTRAL\",\"targetEquityExposurePct\":10,"
+                + "\"desiredEquityExposurePct\":40,\"exposurePlan\":\"10년물이 내려오면 두 번에 나눠 좁힌다\",\"exposureRationale\":\"r\","
+                + "\"summary\":\"이어받기 판단\",\"orders\":[" + buy("AAA", 5, "NEXT_CLOSE", null) + "],\"noTradeReason\":null,"
+                + "\"conditions\":[{\"metric\":\"us10y\",\"op\":\"BELOW\",\"level\":4.75,\"then\":\"노출 확대 검토\"}],"
+                + "\"confidence\":0.6}";
+        answerJson(carried);
+
+        Decision d = service().decide(MON, RuleBookService.SCHEDULED, true);
+
+        assertThat(d.error()).isNull();
+        assertThat(d.status()).isEqualTo("OK");
+        assertThat(d.response().get("desiredEquityExposurePct").asDouble()).isEqualTo(40.0);
+        assertThat(d.response().get("conditions").get(0).get("metric").asString()).isEqualTo("us10y");
+        String[] on = sent();
+        Golden.assertMatches("render-us-ft-claude-v0-continuity.txt", on[0]);
+        Golden.assertMatches("decision-schema-forapi-us-ft3.json", on[2]);
+        assertThat(on[0]).contains("## 이어받기(고정)").contains("10b_carried").contains("desiredEquityExposurePct");
+        assertThat(on[0].indexOf("## 이어받기(고정)")).as("장중 판단 절 다음, 출력 절 앞")
+                .isGreaterThan(on[0].indexOf("## 장중 판단(고정)")).isLessThan(on[0].indexOf(ClaudePrompts.OUTPUT_HEADER));
+        assertThat(on[0].replace(ClaudePrompts.CONTINUITY_SECTION, "")).as("이어받기 절을 빼면 자유 시점 판 프롬프트 그대로")
+                .isEqualTo(FrameworkService.render(ClaudeBookProfile.US_CLAUDE_FT, FrameworkService.interimBody(MAPPER), 0,
+                        settings.defaultsJson()));
+        assertThat(on[2]).contains("\"desiredEquityExposurePct\"").contains("\"exposurePlan\"").contains("\"conditions\"");
+
+        // 그 칸이 빠진 응답(예전 판 모양)은 형식 오류 — 주문이 나가지 않는다.
+        answerJson(decision(buy("BBB", 5, "NEXT_CLOSE", null)));
+        Decision missing = service().decide(TUE, RuleBookService.SCHEDULED, true);
+        assertThat(missing.status()).isEqualTo(ClaudeBookService.STATUS_FORMAT_ERROR);
+        assertThat(missing.error()).contains("desiredEquityExposurePct");
+
+        // 끄면 다음 결정부터 예전 판 — 시스템 프롬프트·스키마가 고정본 그대로.
+        ((ObjectNode) store.settings.body()).put("continuity", false);
+        answerJson(decision(buy("CCC", 3, "NEXT_CLOSE", null)));
+        Decision off = service().decide(TUE, RuleBookService.MANUAL, true);
+        assertThat(off.error()).isNull();
+        String[] plain = sent();
+        Golden.assertMatches("render-us-ft-claude-v0-default.txt", plain[0]);
+        Golden.assertMatches("decision-schema-forapi-us-ft.json", plain[2]);
+    }
+
+    @Test
     @DisplayName("계좌1: claude.freeTiming을 켠 정기 결정은 켠 판(계좌2와 같은 스키마·고정 문단, 투자 성향 절 없음) — 종가·지정 시각 주문이 다음 세션 하루짜리, "
             + "받는 가장 이른 분은 개장 10분 뒤(09:40 ET — 09:39는 MALFORMED). 끈 판 응답 시점(NEXT_OBSERVATION)과 시가(NEXT_OPEN — 판 ft-2부터)는 켠 판 스키마가 "
             + "받지 않음. 기존 장중 확인(종류 CHECKPOINT)은 스위치가 켜져 있어도 끈 판 파이프라인")

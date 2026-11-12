@@ -172,6 +172,15 @@ final class KrCheckpointPacket {
 
     /** 패킷 하나(클래스 설명). 메모 번호·측정은 없습니다. */
     static PacketBuilder.Packet build(Inputs in, ObjectMapper mapper) {
+        return build(in, mapper, null);
+    }
+
+    /**
+     * {@link #build(Inputs, ObjectMapper)}에 판단 이어받기(ADR 0038)의 칸을 더한 패킷 — {@code extra}가 있으면 밤 결정의 조건을 이 패킷의 시세 마지막
+     * 값으로 다시 매긴 {@value Continuity#INTRADAY_CARRIED}(전 거래일 종가 포함), 밤 결정 뒤의 사건 뉴스({@value Continuity#INTRADAY_EVENTS}),
+     * 보유 행의 진입 논거({@code entry})가 실립니다(밤 결정의 요약·주문 논거는 {@code 3_night}가 이미 실음). null이면 예전 패킷과 바이트까지 같습니다.
+     */
+    static PacketBuilder.Packet build(Inputs in, ObjectMapper mapper, Continuity.Intraday extra) {
         JsonNode nightPacket = in.night() == null ? null
                 : in.night().packet() != null ? in.night().packet() : PacketBuilder.readSent(in.night().packetText(), mapper);
         LocalDate session = in.checkpoint().sessionDate();
@@ -180,8 +189,23 @@ final class KrCheckpointPacket {
         root.put("1_basis", basis(in, session));
         root.put("2_request", request(in.checkpoint(), in.free()));
         root.put("3_night", night(in.night()));
-        root.put("4_portfolio", portfolio(in, session));
-        root.put("5_feed", feed(in));
+        Map<String, Object> portfolio = portfolio(in, session);
+        Map<String, Object> feed = feed(in);
+        if (extra != null) {
+            Object positions = portfolio.get("ledger") instanceof Map<?, ?> ledger ? ledger.get("positions") : null;
+            Continuity.attachEntries(positions, extra.entries());
+            Map<String, Double> prices = Continuity.feedLast(PacketBuilder.toNode(feed));
+            Map<String, Object> carried = Continuity.intradayCarried(in.night(), prices);
+            java.util.Set<String> tickers = new java.util.LinkedHashSet<>(Continuity.tickers(positions));
+            tickers.addAll(prices.keySet());
+            carried.put("prevCloses", Continuity.prevCloses(nightPacket, "code", tickers));
+            root.put(Continuity.INTRADAY_CARRIED, carried);
+            if (extra.events() != null) {
+                root.put(Continuity.INTRADAY_EVENTS, extra.events());
+            }
+        }
+        root.put("4_portfolio", portfolio);
+        root.put("5_feed", feed);
         root.put(PacketBuilder.HARD_RULES, nightPacket == null ? Map.of() : Json.child(nightPacket, PacketBuilder.HARD_RULES));
         JsonNode body = PacketBuilder.toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);

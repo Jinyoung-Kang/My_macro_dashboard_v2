@@ -289,6 +289,11 @@ final class PaperSettingKeys {
                     "매크로 키워드(영어 낱말·구절, 대소문자 무시, 쉼표·줄바꿈으로 나눔 — B3). 보유·후보·watchlist 티커는 따로 잡음"),
             new Spec("news.feeds", Type.FEEDS, null, null, NewsEvents.DEFAULT_FEEDS, false,
                     "패킷에 넣을 피드 키(수집은 여덟 피드 모두) — " + String.join(" · ", NewsEvents.DEFAULT_FEEDS), Scope.US),
+            of(Continuity.US_KEY, Type.BOOLEAN, false,
+                    "미국 Claude 계좌의 판단 이어받기(ADR 0038, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 다음 미국 결정부터 보유 종목의 진입 "
+                            + "논거·무효화 조건(positions의 entry)과 직전 결정이 남긴 조건·바라는 노출(10b_carried — 조건은 코드가 지금 값으로 "
+                            + "충족 여부를 매김)을 패킷에 돌려주고, 응답이 바라는 노출·계획·조건 칸을 더 받음. 장중 판단 패킷에는 그 세션 결정의 "
+                            + "논거와 조건이 실림. 끄면 다음 결정부터 지금 판(프롬프트·스키마·패킷이 바이트까지 같음)"),
             of("info.packet", Type.BOOLEAN, false,
                     "Claude 계좌 패킷에 수집 글 섹션 11c_reading을 넣음(ADR 0036 — 기본 켬, 해외 블로그·waedge 시황·거장 글의 제목과 앞부분, "
                             + "결정 창의 것만 최대 " + ReadingSection.MAX_ITEMS + "편) — 꺼도 수집은 계속, 패킷에서만 뺌"),
@@ -419,6 +424,10 @@ final class PaperSettingKeys {
                             + "수집기가 싣는 " + String.join("·", KR_OVERRIDE_OPENS) + "만, 마감은 " + String.join("·", KR_OVERRIDE_CLOSES)
                             + "만"),
             of("kr.news.enabled", Type.BOOLEAN, false, "한국 Claude 패킷에 사건 뉴스 11b_events를 넣음 — 꺼도 수집은 계속"),
+            of(Continuity.KR_KEY, Type.BOOLEAN, false,
+                    "한국 Claude 계좌의 판단 이어받기(ADR 0038, 기본 꺼짐 — 자유 시점 판을 켠 계좌만) — 켜면 다음 한국 결정부터 보유 종목의 진입 "
+                            + "논거·무효화 조건과 직전 결정이 남긴 조건·바라는 노출(10b_carried)을 패킷에 돌려주고 응답이 그 칸을 더 받음. 끄면 "
+                            + "다음 결정부터 지금 판"),
             of("kr.info.packet", Type.BOOLEAN, false,
                     "한국 Claude 패킷에 수집 글 섹션 11c_reading을 넣음(ADR 0036 — 기본 켬, waedge 국내 시장 글의 제목과 앞부분) — 꺼도 수집은 계속"),
             integer("kr.news.maxPerDay", 0, NewsEvents.MAX_PER_DAY_LIMIT, false, "한국 패킷에 싣는 사건 헤드라인 상한"),

@@ -267,6 +267,10 @@ public class FrameworkService {
                 : PaperBooks.KR_CLAUDE2.equals(profile.code())
                 ? ClaudePrompts.withKrClaude2RiskProfile(profile.fixedRules(), Claude2Settings.krRiskProfile(settingsBody))
                 : profile.fixedRules();
+        // 판단 이어받기(ADR 0038) — 자유 시점 판이고 그 시장의 스위치를 켠 결정만 이어받기 절을 출력 절 앞(성향 절 다음)에. 끄면 글자 그대로.
+        if (Continuity.on(profile, settingsBody)) {
+            fixedRules = ClaudePrompts.withContinuity(fixedRules);
+        }
         // 자유 시점 판(ADR 0027 결정 2)의 한국 계좌 — 하드 규칙의 체결 시점 줄을 시장 묶음(NEXT_OPEN뿐)이 아니라 그 프로필의 받는 시점으로 적습니다.
         // '코드가 집행' 머리 아래의 줄이라 고정 문단의 우선순위 문장으로는 덮이지 않습니다. 끈 판과 미국(시점 줄이 없음)은 시장 묶음 줄 그대로입니다.
         List<String> hardRules = profile.freeTiming() && profile.market() == KrPaperMarket.INSTANCE

@@ -298,6 +298,16 @@ final class CheckpointPacket {
 
     /** 패킷 하나(클래스 설명). 메모 번호·측정은 없습니다. */
     static PacketBuilder.Packet build(Inputs in, ObjectMapper mapper) {
+        return build(in, mapper, null);
+    }
+
+    /**
+     * {@link #build(Inputs, ObjectMapper)}에 판단 이어받기(ADR 0038)의 칸을 더한 패킷 — {@code extra}가 있으면 그 세션 결정의 요약·주문 논거
+     * ({@value Continuity#INTRADAY_DECISION}), 그 결정의 조건을 이 패킷의 값(매크로 카드·시세의 마지막 값)으로 다시 매긴
+     * {@value Continuity#INTRADAY_CARRIED}(전 거래일 종가 포함), 그 결정 뒤의 사건 뉴스({@value Continuity#INTRADAY_EVENTS}), 보유 행의 진입
+     * 논거({@code entry})가 실립니다. null이면 예전 패킷과 바이트까지 같습니다.
+     */
+    static PacketBuilder.Packet build(Inputs in, ObjectMapper mapper, Continuity.Intraday extra) {
         JsonNode morningPacket = in.morning() == null ? null
                 : in.morning().packet() != null ? in.morning().packet()
                 : PacketBuilder.readSent(in.morning().packetText(), mapper);
@@ -307,9 +317,28 @@ final class CheckpointPacket {
         root.put("1_basis", basis(in, session, morningPacket));
         root.put("2_macroCards", in.macroCards());
         root.put("3_request", request(in.checkpoint(), in.free()));
-        root.put("4_portfolio", portfolio(in, session));
-        root.put("5_feed", ExecutionSection.FEED_MINUTE.equals(in.checkpoint().feed()) ? minuteFeed(in, session)
-                : hourlyFeed(in, morningPacket));
+        Map<String, Object> portfolio = portfolio(in, session);
+        Map<String, Object> feed = ExecutionSection.FEED_MINUTE.equals(in.checkpoint().feed()) ? minuteFeed(in, session)
+                : hourlyFeed(in, morningPacket);
+        if (extra != null) {
+            Continuity.attachEntries(portfolio.get("positions"), extra.entries());
+            JsonNode feedNode = PacketBuilder.toNode(feed);
+            Map<String, Double> metrics = new LinkedHashMap<>(Continuity.usMacro(in.macroCards(), null));
+            Map<String, Double> prices = new LinkedHashMap<>(Continuity.feedLast(feedNode));
+            Continuity.table(feedNode, "ticker", "close").forEach(prices::putIfAbsent);
+            prices.forEach(metrics::putIfAbsent);
+            root.put(Continuity.INTRADAY_DECISION, Continuity.intradayDecision(in.morning()));
+            Map<String, Object> carried = Continuity.intradayCarried(in.morning(), metrics);
+            Set<String> tickers = new LinkedHashSet<>(Continuity.tickers(portfolio.get("positions")));
+            tickers.addAll(prices.keySet());
+            carried.put("prevCloses", Continuity.prevCloses(morningPacket, "ticker", tickers));
+            root.put(Continuity.INTRADAY_CARRIED, carried);
+            if (extra.events() != null) {
+                root.put(Continuity.INTRADAY_EVENTS, extra.events());
+            }
+        }
+        root.put("4_portfolio", portfolio);
+        root.put("5_feed", feed);
         root.put("6_hardRules", hardRules(morningPacket, in.free() != null, in.free() != null && in.free().stopWatch()));
         JsonNode body = PacketBuilder.toNode(root);
         String text = mapper.writer().without(SerializationFeature.INDENT_OUTPUT).writeValueAsString(body);

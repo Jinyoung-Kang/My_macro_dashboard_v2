@@ -1452,6 +1452,74 @@ class PacketBuilderTest {
     }
 
     @Test
+    @DisplayName("판단 이어받기(ADR 0038 — 설정 continuity): 자유 시점 판 패킷에 1_basis.continuity, 보유 행의 entry(그 종목을 산 결정의 논거·무효화 "
+            + "조건), 10b_carried(직전 결정의 바라는 노출·계획·조건과 코드가 이 패킷의 값으로 매긴 상태·관심 목록·조건에 쓸 이름)가 실리고 그 밖은 "
+            + "바이트 그대로. 꺼져 있거나 자유 시점 판이 아니면 패킷이 그대로")
+    void continuityPacket() {
+        activeClaude();
+        // 금요일의 직전 결정 — 조건 셋(매크로 값 충족 · 종목 가격 미충족 · 패킷에 없는 이름), 바라는 노출 70·계획, 관심 목록. BBB 매수의 논거.
+        long prior = store.insertDecisionIfAbsent(new Decision(0, PaperBooks.CLAUDE, FRI, RuleBookService.SCHEDULED, null,
+                "OK", "claude-sonnet-5-5", null, 1, FRI, 45.0, null, null, null, MAPPER.readTree("""
+                        {"schemaVersion":2,"stance":"NEUTRAL","summary":"관망","targetEquityExposurePct":45,
+                         "desiredEquityExposurePct":70,"exposurePlan":"10년물이 내려오면 두 번에 나눠 좁힌다",
+                         "conditions":[{"metric":"us10y","op":"ABOVE","level":5.0,"then":"노출 축소 검토"},
+                                       {"metric":"BBB","op":"BELOW","level":44.0,"then":"매도 검토"},
+                                       {"metric":"cpi","op":"ABOVE","level":3.0,"then":"직접 확인"}],
+                         "watchlist":[{"ticker":"CCC","condition":"실적 확인 뒤 검토"}]}"""), null, null, List.of(), true, 900L,
+                0)).orElseThrow();
+        store.insertOrder(new Order(0, PaperBooks.CLAUDE, prior, "BBB", "BUY", null, 45.0, null, "NEXT_OBSERVATION", "CLAUDE",
+                "FILLED", null, MAPPER.valueToTree(Map.of("thesis", "현금흐름 무결성", "invalidation", "유가 급락 시 논거 폐기")), FRI,
+                FRI_CLOSE.plusSeconds(120), null, FRI_CLOSE.plusSeconds(180)));
+        Packet off = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE_FT,
+                RuleBookService.SCHEDULED, 0);
+
+        ((ObjectNode) store.settings.body()).put("continuity", true);
+        PacketBuilder.MarketInputs inputs = builder.read(MON, false, store.settings);
+        Packet on = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE_FT, RuleBookService.SCHEDULED, 0);
+        Packet plain = builder.assemble(inputs, ClaudeBookProfile.US_CLAUDE, RuleBookService.SCHEDULED, 0);
+        ((ObjectNode) store.settings.body()).put("continuity", false);
+        Packet plainOff = builder.assemble(builder.read(MON, false, store.settings), ClaudeBookProfile.US_CLAUDE,
+                RuleBookService.SCHEDULED, 0);
+        assertThat(plain.text()).as("자유 시점 판이 아닌 계좌1 패킷은 스위치와 무관하게 그대로").isEqualTo(plainOff.text());
+
+        JsonNode body = on.body();
+        assertThat(body.get(PacketBuilder.BASIS).get("continuity").asInt()).isEqualTo(Continuity.VERSION);
+        JsonNode entry = body.get(PacketBuilder.PORTFOLIO).get("positions").get(0).get("entry");
+        assertThat(entry.get("decisionId").asLong()).isEqualTo(prior);
+        assertThat(entry.get("asOf").asString()).isEqualTo(FRI.toString());
+        assertThat(entry.get("thesis").asString()).isEqualTo("현금흐름 무결성");
+        assertThat(entry.get("invalidation").asString()).isEqualTo("유가 급락 시 논거 폐기");
+        List<String> keys = new ArrayList<>(body.propertyNames());
+        assertThat(keys.indexOf(Continuity.SECTION)).as("10_recentDecisions 바로 다음")
+                .isEqualTo(keys.indexOf(PacketBuilder.DECISIONS) + 1);
+        JsonNode carried = body.get(Continuity.SECTION);
+        assertThat(carried.get("note").asString()).isEqualTo(Continuity.NOTE);
+        assertThat(carried.get("fromDecision").get("id").asLong()).isEqualTo(prior);
+        assertThat(carried.get("desiredEquityExposurePct").asDouble()).isEqualTo(70.0);
+        assertThat(carried.get("targetEquityExposurePct").asDouble()).isEqualTo(45.0);
+        assertThat(carried.get("exposurePlan").asString()).contains("두 번에 나눠");
+        List<String> conditions = new ArrayList<>();
+        carried.get("conditions").forEach(c -> conditions.add(c.get("metric").asString() + " " + c.get("op").asString() + " "
+                + c.get("level").asDouble() + " → " + c.get("status").asString() + " @" + c.get("current")));
+        // 패킷 값: 10년물 카드 5.05(> 5.0 충족), BBB 종가 47.52(< 44 아님), cpi는 이 패킷에 없음.
+        assertThat(conditions).containsExactly("us10y ABOVE 5.0 → 충족 @5.05", "BBB BELOW 44.0 → 미충족 @47.52",
+                "cpi ABOVE 3.0 → 평가 불가 @null");
+        assertThat(carried.get("conditions").get(2).get("reason").asString()).contains("이 패킷에 그 이름의 값이 없음");
+        assertThat(carried.get("watchlist").get(0).get("condition").asString()).isEqualTo("실적 확인 뒤 검토");
+        List<String> names = new ArrayList<>();
+        carried.get("metrics").get("names").forEach(n -> names.add(n.asString()));
+        assertThat(names).as("조건에 쓸 수 있는 매크로 이름 — 이 패킷의 매크로 카드").containsExactly("us10y", "brent", "wti", "kospi");
+
+        // 더한 칸을 빼면 끈 판 패킷과 같다.
+        ObjectNode stripped = (ObjectNode) body.deepCopy();
+        ((ObjectNode) stripped.get(PacketBuilder.BASIS)).remove("continuity");
+        stripped.get(PacketBuilder.PORTFOLIO).get("positions").forEach(row -> ((ObjectNode) row).remove("entry"));
+        stripped.remove(Continuity.SECTION);
+        assertThat(stripped).isEqualTo(off.body());
+        Golden.assertMatches("packet-us-ft-claude-continuity-scheduled.json", on.text());
+    }
+
+    @Test
     @DisplayName("고정본(자유 시점 판 — ADR 0027 결정 2·ADR 0031): 미국 계좌2·계좌1 켠 판의 정기 패킷 — 계좌2 단계 1 패킷과 1_basis 세 칸(variant freeTiming·메뉴 판 4·"
             + "고정 문단 판 ft-2), 12_hardRules의 시점 문장 둘, 13_execution의 판·메뉴(분 단위 지정 시각 09:40~·종가 — 시가 없음)·atMinute 범위·출처 사실 셋째 줄만 "
             + "다르고 그 밖은 바이트 그대로. "

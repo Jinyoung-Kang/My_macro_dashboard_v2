@@ -181,6 +181,17 @@ final class ClaudeDecisionPipeline {
      * {@value KrCheckpointPacket#FREE_SCHEMA_RESOURCE})의 파이프라인만 기동 때 읽습니다(깨졌으면 기동 실패). 그 밖은 null.
      */
     private final StructuredSchema checkpointSchema;
+    /**
+     * 판단 이어받기 판의 결정 응답 스키마(ADR 0038 — {@value #US_CONTINUITY_SCHEMA_RESOURCE}·{@value #KR_CONTINUITY_SCHEMA_RESOURCE}: 자유 시점 판
+     * 스키마에 바라는 노출·계획·조건 칸을 더한 것) — 자유 시점 판의 파이프라인만 기동 때 읽습니다(깨졌으면 기동 실패). 그 시장의 스위치를 켠 결정만
+     * 이 스키마로 부르고({@link Continuity#on(ClaudeBookProfile, JsonNode)}), 끈 결정은 {@link #schema} 그대로입니다. 그 밖은 null.
+     */
+    private final StructuredSchema continuitySchema;
+
+    /** 판단 이어받기 판의 미국 결정 응답 스키마. */
+    static final String US_CONTINUITY_SCHEMA_RESOURCE = "paper/us-decision-ft3.schema.json";
+    /** 판단 이어받기 판의 한국 결정 응답 스키마. */
+    static final String KR_CONTINUITY_SCHEMA_RESOURCE = "paper/kr-decision-ft3.schema.json";
 
     ClaudeDecisionPipeline(MarketContext context, PaperStore store, FrameworkService framework, PaperApiCalls calls,
                            AiService ai, ObjectMapper mapper, Clock clock, int timeoutSeconds) {
@@ -200,6 +211,12 @@ final class ClaudeDecisionPipeline {
         this.schema = StructuredSchema.load(context.schemaResource());
         this.checkpointSchema = profile.checkpoints() || profile.freeTiming()
                 ? StructuredSchema.load(checkpointSchemaResource(profile)) : null;
+        this.continuitySchema = profile.freeTiming() ? StructuredSchema.load(continuitySchemaResource(profile)) : null;
+    }
+
+    /** 그 자유 시점 판 프로필의 이어받기 판 결정 응답 스키마. */
+    static String continuitySchemaResource(ClaudeBookProfile profile) {
+        return profile.market() == KrPaperMarket.INSTANCE ? KR_CONTINUITY_SCHEMA_RESOURCE : US_CONTINUITY_SCHEMA_RESOURCE;
     }
 
     /**
@@ -236,6 +253,7 @@ final class ClaudeDecisionPipeline {
         this.timeoutSeconds = base.timeoutSeconds;
         this.schema = base.schema;
         this.checkpointSchema = base.checkpointSchema;
+        this.continuitySchema = base.continuitySchema;
     }
 
     /**
@@ -456,7 +474,9 @@ final class ClaudeDecisionPipeline {
     /** 만든 패킷으로 호출 한 번 — 시스템 프롬프트(그 판·그 설정 행), 호출 한 번 잡기, (호출 창이면 남은 시간 재기), 부르기, 사용량, 형식 검사. */
     private Attempt send(FrameworkService.Frame frame, Packet packet, SettingsRow row, ClaudeSettings claude,
                          LocalDate today, boolean scheduled, CallWindow window) {
-        return send(frame, packet, row, claude, today, scheduled, window, schema);
+        // 판단 이어받기(ADR 0038) — 그 설정 행에서 켠 결정만 칸이 더 있는 스키마로(시스템 프롬프트의 이어받기 절·패킷의 이어받은 섹션과 같은 행).
+        boolean continuity = continuitySchema != null && row != null && Continuity.on(profile, row.body());
+        return send(frame, packet, row, claude, today, scheduled, window, continuity ? continuitySchema : schema);
     }
 
     /** {@link #send(FrameworkService.Frame, Packet, SettingsRow, ClaudeSettings, LocalDate, boolean, CallWindow)}를 그 응답 스키마로. */

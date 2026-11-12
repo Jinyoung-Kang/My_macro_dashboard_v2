@@ -279,6 +279,8 @@ public class PacketBuilder {
     static final int MAX_SELL_SIGNALS = 20;
     static final int MAX_PRICE_ROWS = 60;
     static final int MAX_RECENT_DECISIONS = 5;
+    /** 판단 이어받기(ADR 0038)가 패킷에 더하는 크기의 어림(토큰) — 보유 행의 논거·무효화 조건과 10b_carried. 목표 크기 경고에만 씁니다. */
+    static final int CONTINUITY_TOKENS = 4_000;
     static final int SUMMARY_CHARS = 300;
     static final int TOP_HOLDINGS = 5;
     static final int MAX_SIGNAL_NOTES = 10;
@@ -504,6 +506,21 @@ public class PacketBuilder {
     }
 
     /**
+     * 장중 판단 패킷의 사건 뉴스(판단 이어받기 — ADR 0038) — 그 세션 결정 뒤({@code from})부터 조립 시각({@code to})까지의 제목을 결정 패킷의
+     * {@value #EVENTS}와 같은 규칙(설정 {@code news.*}·대상 티커·키워드)으로 고른 섹션. 뉴스가 꺼졌거나 창이 비면 null(패킷에 그 키가 없음).
+     * 저장소의 관측치만 읽습니다(수집을 깨우지 않음).
+     */
+    Map<String, Object> intradayEvents(JsonNode settingsBody, Instant from, Instant to, Collection<String> tickers) {
+        NewsEvents.Settings news = EventsSection.settings(settingsBody).settings();
+        if (!news.enabled() || from == null || to == null || !to.isAfter(from)) {
+            return null;
+        }
+        NewsEvents.Window window = new NewsEvents.Window(from, to);
+        List<JsonNode> rows = repository.readObservationsBetween(Datasets.OBS_NEWS_HEADLINE, EventsSection.readFrom(window), null);
+        return EventsSection.build(rows, window, news, tickers, false, null).section();
+    }
+
+    /**
      * 시장 입력 하나로 그 계좌의 패킷을 조립합니다 — 장부·최근 결정·이달 재량 주문 수·가격 이력·재무는 그 계좌({@code book})로 읽고, 섹션 1의
      * {@code book}·{@code decisionKind}와 섹션 9의 {@code book}은 인자 그대로입니다. 계좌 비의존 섹션({@link #MARKET_SECTION_KEYS})은 시장 입력의
      * 것을 그대로 넣습니다. 장부는 {@link StoreReader#quietly} 안에서 읽습니다.
@@ -622,10 +639,17 @@ public class PacketBuilder {
         CalendarSection.Built calendar = calendar(in, stockTargets);
         EventsSection.Built events = events(in, stockTargets);
 
+        // 판단 이어받기(ADR 0038) — 자유 시점 판이고 스위치를 켠 결정만: 머리의 continuity, 보유 행의 entry, 섹션 10b_carried. 끄면 이 칸들이 없어
+        // 예전 패킷과 바이트까지 같습니다.
+        boolean continuity = Continuity.on(book, in.settingsBody());
         Map<String, Object> root = new LinkedHashMap<>();
         root.put(INSTRUCTIONS, instructions(asOf, initial, kind));
-        root.put(BASIS, basis(book, asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
-                in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION, stopWatch));
+        Map<String, Object> basis = basis(book, asOf, kind, initial, in.quotes(), frameworkVersion, in.settingsVersion(),
+                in.chosen(), in.consensus() ? PACKET_VERSION_CONSENSUS : PACKET_VERSION, stopWatch);
+        if (continuity) {
+            basis.put("continuity", Continuity.VERSION);
+        }
+        root.put(BASIS, basis);
         root.put(CALENDAR, calendar.section());
         root.put(MACRO, in.marketSections().get(MACRO));
         root.put(FRED, in.marketSections().get(FRED));
@@ -638,8 +662,21 @@ public class PacketBuilder {
         root.put(PRICES, priceSection(shownPrices, prices, asOf, initial, noPrice));
         FundamentalsSection.Built fundamentals = fundamentals(asOf, stockTargets, in.settingsBody());
         root.put(FUNDAMENTALS, fundamentals.section());
-        root.put(PORTFOLIO, portfolio(book.code(), asOf, initial, ledger, in.paper(), in.limits()));
+        Map<String, Object> portfolio = portfolio(book.code(), asOf, initial, ledger, in.paper(), in.limits());
+        if (continuity) {
+            Continuity.attachEntries(portfolio.get("positions"), Continuity.entries(store, book.code(),
+                    ledger.positions().stream().map(Position::ticker).toList()));
+        }
+        root.put(PORTFOLIO, portfolio);
         root.put(DECISIONS, recentDecisions(prior));
+        if (continuity) {
+            // 조건의 값 표 — 이 패킷이 실은 매크로 카드·국면의 하이일드 스프레드와 8_prices의 종목 종가. 이름(metrics.names)은 매크로 값만 보입니다.
+            Map<String, Double> macro = Continuity.usMacro(in.marketSections().get(MACRO), in.marketSections().get(REGIME));
+            Map<String, Double> metrics = new LinkedHashMap<>(macro);
+            Continuity.table(toNode(root.get(PRICES)), "ticker", "close").forEach(metrics::putIfAbsent);
+            root.put(Continuity.SECTION, Continuity.carried(Continuity.latestJudged(store, prior), metrics,
+                    List.copyOf(macro.keySet())));
+        }
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());
         // 수집 글(ADR 0036) — 스위치가 켜져 있고 창에 글이 있을 때만. 없으면 이 키가 없어 예전 패킷과 바이트까지 같습니다.
@@ -664,7 +701,8 @@ public class PacketBuilder {
         int tokens = estimateTokens(text);
         int target = (in.consensus() ? TARGET_TOKENS_CONSENSUS : TARGET_TOKENS)
                 + (VARIANT_CLAUDE2.equals(book.packetVariant()) ? CLAUDE2_EXECUTION_TOKENS : 0)
-                + (book.checkpoints() ? CLAUDE2_CHECKPOINT_TOKENS : 0);
+                + (book.checkpoints() ? CLAUDE2_CHECKPOINT_TOKENS : 0)
+                + (continuity ? CONTINUITY_TOKENS : 0);
         if (tokens > target) {
             log.warn("Claude 패킷이 목표보다 큽니다: {} {} 약 {}토큰(목표 {}) — 목록 상한을 확인하세요", asOf, kind, tokens,
                     target);

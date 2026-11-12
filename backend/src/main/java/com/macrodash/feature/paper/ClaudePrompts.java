@@ -471,6 +471,33 @@ final class ClaudePrompts {
                 .replace(OUTPUT_HEADER, KR_FT_FILL_SECTION + KR_FT_INTRADAY_SECTION + OUTPUT_HEADER);
     }
 
+    // ------------------------------------------------------------------ 판단 이어받기(ADR 0038 — 설정 continuity·kr.continuity)
+    // 자유 시점 판 문단(ft-2·kr-ft-2)은 그대로 두고, 스위치를 켠 결정만 렌더링이 이 절을 출력 절 앞에 끼웁니다(FrameworkService.render — 계좌2는 성향
+    // 절 다음). 끄면 바이트 그대로입니다. 투자 판단(어떤 조건에서 얼마를 살지)은 넣지 않습니다 — 칸의 뜻과 코드가 무엇을 돌려주는지만 적고, 판단
+    // 기준은 프레임의 원칙·엔진에 둡니다(고정 문단의 원칙 — 위 ROLE·FIXED_RULES 설명). 날짜·설정값이 없는 상수입니다(캐시 블록).
+
+    /**
+     * 이어받기 절 — 직전 결정이 남긴 것({@value Continuity#SECTION})·보유 종목의 진입 논거(positions의 entry)·바라는 노출과 계획·조건 칸의 뜻,
+     * 장중 판단 패킷의 그 세션 결정 섹션. 두 시장이 같은 글자를 씁니다(패킷의 섹션 이름이 같음 — 미국 장중 판단만 {@value Continuity#INTRADAY_DECISION}
+     * 을 더 받고 한국은 {@code 3_night}). 길이·개수 제한은 응답 스키마({@code us-decision-ft3}·{@code kr-decision-ft3})와 같습니다.
+     */
+    static final String CONTINUITY_SECTION = """
+            ## 이어받기(고정)
+            - 10b_carried는 직전 결정이 남긴 것을 코드가 그대로 옮긴 자료다 — 바라는 노출과 그 계획, 조건(conditions)마다 이 패킷의 값으로 매긴 상태(충족·미충족·평가 불가), 관심 목록의 조건. 충족된 조건은 summary에서 먼저 다룬다 — 적어 둔 대로 하거나, 하지 않으면 그 까닭을 적는다. 조건은 판단할 계기이고 코드가 대신 집행하지 않는다.
+            - 9_portfolio.positions의 entry는 그 종목을 살 때 네가 쓴 논거(thesis)와 무효화 조건(invalidation)이다(없으면 null). 보유 종목의 무효화 조건이 지금 자료로 충족됐는지를 판단에 넣고, 충족됐는데 그대로 보유하면 그 까닭을 summary에 적는다.
+            - desiredEquityExposurePct(0~100)는 바라는 노출이다 — 위 프레임과 지금 자료로 보아 이 계좌가 가 있어야 할 노출이고 targetEquityExposurePct와 같은 정의다. targetEquityExposurePct는 이번 주문이 체결된 뒤의 노출이다. 둘이 5%p 넘게 다르면 exposurePlan(600자 이내)에 그 차이를 무엇이 확인될 때 어떤 순서와 크기로 좁힐지 적고, 그렇지 않으면 exposurePlan은 null로 둔다.
+            - conditions(8건 이내)에는 다음 결정과 장중 판단이 확인할 조건을 적는다 — metric은 10b_carried.metrics.names의 이름 하나(매크로 값)나 8_prices의 종목 코드(그 종목 가격), op는 ABOVE(level 초과)·BELOW(level 미만), level은 숫자, then은 충족되면 할 일(200자 이내)이다. 다른 이름을 metric에 적으면 코드가 평가하지 못해 '평가 불가'로 돌아오니 그 조건은 직접 확인한다. summary에만 적은 조건은 다음 결정에 옮겨지지 않는다. 적을 조건이 없으면 빈 배열이다.
+            - 장중 판단 패킷의 3b_decision(미국)·3_night(한국)은 그 세션 결정의 요약과 주문 논거이고, 3c_carried는 그 결정의 조건과 관심 목록을 장중 값으로 다시 매긴 것이다 — 충족된 조건부터 본다. 장중 판단의 응답에는 desiredEquityExposurePct·exposurePlan·conditions 칸이 없다.
+            """;
+
+    /** 고정 문단의 출력 절 앞에 이어받기 절을 끼운 글 — 출력 절 머리가 한 번이 아니면 오류(성향 절을 끼울 때와 같은 자리 검사). */
+    static String withContinuity(String fixedRules) {
+        if (fixedRules.indexOf(OUTPUT_HEADER) < 0 || fixedRules.indexOf(OUTPUT_HEADER) != fixedRules.lastIndexOf(OUTPUT_HEADER)) {
+            throw new IllegalStateException("고정 문단의 출력 절 머리가 한 번이어야 이어받기 절을 끼울 수 있습니다");
+        }
+        return fixedRules.replace(OUTPUT_HEADER, CONTINUITY_SECTION + OUTPUT_HEADER);
+    }
+
     /**
      * 프레임 갱신 제안의 시스템 지시문(명세 F2 "OS 절차 B", 계약 보충 §6) — 이 뒤에 지금 판의 렌더링이 붙습니다
      * ({@code FrameworkService.propose}). 제안 스키마({@code proposal.schema.json})의 길이·개수 제한은 API에 보낼 수 없어(D26)
