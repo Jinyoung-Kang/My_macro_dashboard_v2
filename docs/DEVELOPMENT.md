@@ -573,3 +573,18 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 
 백엔드 ERROR(`make logs S=backend`), 수집 누락(`make status`), 메모리(`free -h`)·디스크(`deploy.sh` 끝, 128 GB), 백업(`journalctl -t my-macro-backup` — 실패는 텔레그램으로도 옴, 마지막 성공은 `make status`·`deploy.sh` 끝),
 `tailscale status`에서 PC·휴대폰과 직접 연결인지(relay가 아님). AWS 예산 `my-macro-monthly-45usd`(계정 전체 — my-macro 자원으로 남은 것은 백업 버킷뿐).
+
+### 재부팅 뒤 확인 (QA-415)
+
+자동 보안 업데이트는 커널을 설치만 하고 재부팅하지 않습니다(`/var/run/reboot-required`가 생김). 재부팅은 매매 시각(한국 정규장 09:00~15:30, 한국 결정
+22:30~01:00, 미국 정규장 23:30~06:00과 결정 06:30 전후)을 피해 사람이 합니다. 재부팅 뒤 서버(ubuntu)에서:
+
+```bash
+getent hosts api.telegram.org && cd ~/My_macro_dashboard_v2 && docker compose ps
+```
+
+이름 조회가 비고 `/etc/resolv.conf`가 Tailscale 리졸버(`100.100.100.100`)를 가리키면 `sudo bash scripts/vultr/tailscale-up.sh`를 다시 돌린 뒤(이미 tailnet에 있으면
+키를 읽지 않음 — Tailscale DNS를 끄고 원래 설정으로 되돌림, ADR 0023 개정 2026-11-12) 앱 컨테이너를 재시작합니다(`docker compose restart backend collector frontend
+browser caddy` — 컨테이너는 시작할 때의 DNS 설정을 씀). Docker·Tailscale은 Ubuntu 보안 저장소 밖이라 자동으로 오르지 않습니다: Docker는
+`sudo apt-get install --only-upgrade docker-ce docker-ce-cli docker-ce-rootless-extras docker-compose-plugin`(컨테이너 모두 재시작), Tailscale은 올리는 동안
+Tailscale SSH가 끊기므로 비상용 22로 들어가 `sudo apt-get install --only-upgrade tailscale`.

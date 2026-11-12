@@ -7,7 +7,8 @@
     caddy를 포함해 모든 포트가 `127.0.0.1`이고 caddy는 `8201` 하나, gate 서비스·`ORIGIN_SECRET`·대역 파일 없음, `PUBLIC_ORIGIN`이 비면 해석 실패,
     허용 출처는 Tailscale 주소와 비상용 `localhost:8201`, 로그인 유지·`Secure` 쿠키 기본·메일 끔·같은 출처(`NEXT_PUBLIC_API_BASE=/`)·postgres 30초·국면 기록 23시,
     Caddyfile 문법(`caddy validate`).
-  - `collector/tests/test_vultr_scripts.py`: 일곱 스크립트의 문법·`set -euo pipefail`, `tailscale-up.sh`(auth key는 stdin만, serve는 tailnet 안 — funnel 없음),
+  - `collector/tests/test_vultr_scripts.py`: 일곱 스크립트의 문법·`set -euo pipefail`, `tailscale-up.sh`(auth key는 stdin만, serve는 tailnet 안 — funnel 없음,
+    Tailscale DNS 끔과 Tailscale이 바꿔 둔 `resolv.conf` 되돌리기·끝의 이름 조회 확인 — QA-415, 아래 '개정 — 2026-11-12'),
     `deploy.sh`(빌드 backend → frontend → collector → browser(ADR 0026의 브라우저 컨테이너) — gate 없음, CloudFront 대역 단계 없음, 서버 `.env`에 적지 않는 이름에 `ORIGIN_SECRET`·`GATE_*`·`VULTR_*`·
     `TAILSCALE_*`·`TAILNET_DOMAIN`, `PAPER_ENABLED=false`면 막지 않고 '주의'(끝 요약에도)·없으면 '참고: 정기 작업 켜짐'만 — QA-194, 빌드 뒤·기동 전 배포 전 덤프 `pre-deploy-…`(실패하면 기동하지 않음, postgres가 꺼져 있으면 그것만 먼저 띄움 — QA-200), QA-145 다시 돌기, 스키마 10번 실패면 0이 아닌 값, 끝 요약의 마지막 S3 백업 나이 — 36시간 넘거나 없으면 경고, 판정은 `make status`와 같이 쓰는 `backup-age.sh`, QA-199), `backup-s3.sh`(`db/vultr/`, 실패하면 텔레그램 한 줄 — 토큰은 curl 인자에 없음·값이 없으면 건너뜀·알림 실패가 종료 코드를 바꾸지 않음, 성공하면 `backups/.last-s3-ok` — QA-199),
     `make status`(마지막 S3 백업 나이 — 기록이 있을 때만 찍고 36시간 넘으면 경고, 수집기가 꺼져 있어도, `deploy.sh`와 같은 줄 — QA-199),
@@ -166,3 +167,19 @@ ADR 0019의 AWS 서버는 가동 창(평일 밤·평일 낮·일요일 밤)만 �
   명시 목록이어야 하는 이유입니다(2026-11-03 07:30~11-04 배포 전에는 `http://*:8201`이 남아 있었음, QA-171). tailnet에 다른 사용자를 들이면 그 사용자는 로그인 화면이고, 기기를 잃으면 Tailscale 관리 화면에서 기기를 지웁니다.
 - **비상용 22**: PC 공인 IP가 바뀌면 막힙니다 — Tailscale이 살아 있으면 상관없고, 둘 다 막히면 Vultr 콘솔(웹 콘솔)로 들어갑니다. WSL에서 Tailscale SSH가
   계속 되면 22를 닫을지 정합니다(명세 §2).
+
+## 개정 — 2026-11-12 (서버는 Tailscale DNS를 쓰지 않음, QA-415)
+
+- **무엇이 있었나**: 자동 보안 업데이트가 커널 6.8.0-149를 설치한 뒤 운영자가 서버를 두 번 재부팅했습니다(19:53·20:34 KST). 재부팅 뒤 tailscaled가 이 이미지의
+  DNS 관리 방식을 `openresolv`로 잘못 보고(실제 `resolvconf`는 systemd-resolved의 `resolvectl` 심) 상위 DNS를 잃어, `/etc/resolv.conf`의 `100.100.100.100`이 모든
+  조회에 SERVFAIL을 돌려줬습니다. 서버와 컨테이너의 외부 조회(텔레그램·S3·Claude·수집 출처)가 약 1시간 모두 실패했습니다(수집 75회 '결과 없음' — 직전 저장본은 유지,
+  S3 백업 한 번 실패). 11-02 부팅 때는 같은 설정이 동작했으므로 부팅 순서에 따라 나타나는 문제로 봅니다(원인은 tailscaled 로그의 모드 판정까지만 확인).
+- **결정**: 서버는 Tailscale DNS를 쓰지 않습니다(`--accept-dns=false`). 서버는 tailnet 이름을 조회할 일이 없고, 화면 주소의 MagicDNS·HTTPS 인증서는 관리 콘솔 설정이라
+  서버의 이 값과 무관합니다. `/etc/resolv.conf`는 Tailscale 이전 설정(Vultr DNS — Tailscale이 남긴 `/etc/resolv.pre-tailscale-backup.conf`)으로 둡니다.
+  `scripts/vultr/tailscale-up.sh`가 등록·재설정 때 이 값을 넣고, 이미 Tailscale 리졸버로 바뀌어 있으면 백업으로 되돌리며(링크는 건드리지 않음, 바꾼 파일은 남김),
+  끝에 이름 조회를 확인해 실패하면 0이 아닌 값으로 끝납니다.
+- **운영 서버에 한 것**(2026-11-12 20:4x KST, 사용자 승인): `tailscale set --accept-dns=false`, `/etc/resolv.conf`를 백업으로 되돌림(고장 난 파일은
+  `/etc/resolv.conf.tailscale-broken-20261112`), 앱 컨테이너 다섯 재시작(postgres 제외). 같은 날 Docker 29.9.3·compose 5.7.1·tailscale 1.104.6으로 올렸습니다
+  (Ubuntu 보안 저장소 밖이라 자동 업데이트 대상이 아님 — Tailscale은 비상용 22로 들어가 올림). 위 '이유'의 1.104.4는 그때의 판입니다.
+- **남은 위험**: 자동 업데이트는 커널을 설치만 하고 재부팅하지 않습니다(`Automatic-Reboot` 꺼짐 — 매매 시각을 피해 사람이 재부팅). 재부팅 뒤에는
+  `getent hosts api.telegram.org`로 이름 조회를 확인합니다(DEVELOPMENT §7 '재부팅 뒤 확인').
