@@ -2173,6 +2173,89 @@ class RealTradeJobDbTest {
                 .hasSize(3);
     }
 
+    @Test
+    @DisplayName("QA-376 고정: 대기 STOP 종목이면서 묶음의 전량 매도 대상인 종목 — 묶음을 만들 때 VI라 스탑 매도 경로가 먼저 판 날, VI가 풀려도 마무리가 그 종목을 더 팔지 않는다"
+            + "(1건 상한으로 스탑이 일부만 판 날에도 매도는 스탑 경로의 두 번까지, 보유 수량 안)")
+    void stopSoldLiquidationTargetIsNotSoldAgainByFollowup() {
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(1_000_000L, 200, 999_999_999L,
+                999_999_999L)));   // 1건 상한 100만 원 — A 매도는 한 번에 19주까지(현재가 50,000 × 가격 여유 1.03)
+        RealTradeFixtures.live(store, true, d("6000000"));
+        timedTargets(Map.of(B, 10.0), List.of(), List.of(641L));
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(B, "20000"));
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(641, A, "AT_MINUTE", SYNC_AT)));
+        restrictions(Set.of(A), null);   // 묶음을 만들 때 A가 VI — 묶음은 A를 기다리고, 스탑 매도 경로는 기다리지 않음
+
+        run("09:10:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 30", "SELL " + A + " DAY 19");
+        Batch batch = store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC).orElseThrow();
+        assertThat(RealTradeJob.liquidations(batch)).as("A는 묶음의 전량 매도 대상이기도 함").containsExactly(A);
+        assertThat(store.recentOrders("KR", 1).getFirst().purpose()).as("판 것은 스탑 매도 경로").isEqualTo("MIRROR");
+
+        // VI가 풀림 — 스탑 매도는 아직 진행 중이고 사전 조회에는 A 100주가 그대로 보임
+        restrictions(Set.of(), null);
+        run("09:10:40");
+        assertThat(sentSummaries()).as("진행 중인 스탑 매도와 겹쳐 더 팔지 않음").filteredOn(o -> o.startsWith("SELL")).hasSize(1);
+
+        // 스탑 매도 19주가 체결로 끝남(A 81주 남음) — 마무리는 A를 건드리지 않고, 스탑 경로만 시도 2를 냄
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", A, "SELL", "DAY", "FILLED", "19", "19", clock.now, clock.now)));
+        preflight("1950000", Map.of(A, new String[]{"81", "50000"}), Map.of(B, "20000"));
+        run("09:11:20");
+        assertThat(sentSummaries()).filteredOn(o -> o.startsWith("SELL")).containsExactly("SELL " + A + " DAY 19", "SELL " + A + " DAY 19");
+
+        when(client.order("T-3")).thenReturn(Reply.of(broker("T-3", A, "SELL", "DAY", "FILLED", "19", "19", clock.now, clock.now)));
+        preflight("2900000", Map.of(A, new String[]{"62", "50000"}), Map.of(B, "20000"));
+        run("09:12:00");
+        run("09:12:40");
+        run("09:13:30");   // 원래 창(09:13) 뒤 — VI로 늘어난 창 안
+
+        assertThat(sentSummaries()).as("A 매도는 스탑 경로의 두 번뿐(38주 ≤ 보유 100주) — 남은 62주는 다음 맞추기 몫")
+                .filteredOn(o -> o.startsWith("SELL")).containsExactly("SELL " + A + " DAY 19", "SELL " + A + " DAY 19");
+        assertThat(store.recentOrders("KR", 10)).filteredOn(r -> r.symbol().equals(A)).as("마무리(SYNC_FOLLOWUP)의 A 매도 행은 없음")
+                .extracting(OrderRow::purpose).containsExactly("MIRROR", "MIRROR");
+        assertThat(store.ordersForRoot("KR", 641L)).extracting(OrderRow::attempt).containsExactly(1, 2);
+        assertThat(events("STOP_SELL")).hasSize(2).allSatisfy(e -> {
+            assertThat(e.detail().path("sent").asInt()).isEqualTo(1);
+            assertThat(e.detail().path("missed").asInt()).isZero();
+            assertThat(e.detail().path("blocked").asInt()).isZero();
+        });
+    }
+
+    @Test
+    @DisplayName("QA-376 고정: 묶음의 전량 매도 대상을 마무리가 먼저 판 뒤 그 종목에 장중 STOP이 생긴 날 — 스탑 매도 경로가 진행 중인 매도 위에 또 팔지 않고, 끝난 뒤에는 팔 보유가 없어 놓침·막힘 알림도 없다")
+    void followupSoldLiquidationTargetIsNotSoldAgainByStop() {
+        RealTradeFixtures.live(store, true, d("6000000"));
+        timedTargets(Map.of(B, 10.0), List.of(), List.of());
+        preflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(B, "20000"));
+        restrictions(Set.of(A), null);   // 책에 없는 A가 묶음을 만들 때 VI
+        run("09:10:05");
+        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 30");
+
+        restrictions(Set.of(), null);
+        run("09:10:40");   // VI가 풀림 — 마무리가 전량 매도 대상 A를 팖
+        assertThat(sentSummaries()).containsExactly("BUY " + B + " DAY 30", "SELL " + A + " DAY 100");
+        assertThat(store.recentOrders("KR", 1).getFirst().purpose()).isEqualTo("SYNC_FOLLOWUP");
+
+        // 09:11:30 — 장중 감시가 A에 STOP을 냄. 마무리의 매도는 아직 진행 중이고 사전 조회에는 A 100주가 그대로 보임
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(Set.of(A));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(651, A, "MARKET", kst("2026-11-06T09:11:30"))));
+        run("09:11:40");
+        assertThat(sentSummaries()).as("이 기능의 A 매도가 진행 중 — 스탑 매도를 겹쳐 보내지 않음").filteredOn(o -> o.startsWith("SELL")).hasSize(1);
+
+        // 마무리의 매도가 전량 체결로 끝남 — 팔 보유가 없음
+        when(client.order("T-2")).thenReturn(Reply.of(broker("T-2", A, "SELL", "DAY", "FILLED", "100", "100", clock.now, clock.now)));
+        preflight("6000000", Map.of(), Map.of(A, "50000", B, "20000"));
+        run("09:12:20");
+        run("09:13:00");
+        run("09:14:40");   // 스탑 창(09:11:30~09:14:30) 뒤
+
+        assertThat(sentSummaries()).as("A 매도는 하루에 한 번, 보유 100주까지만").filteredOn(o -> o.startsWith("SELL"))
+                .containsExactly("SELL " + A + " DAY 100");
+        assertThat(store.recentOrders("KR", 10)).filteredOn(r -> r.symbol().equals(A)).extracting(OrderRow::purpose)
+                .containsExactly("SYNC_FOLLOWUP");
+        assertThat(events("STOP_SELL")).as("이미 팔린 스탑 — 놓침·막힘으로 알리지 않음").isEmpty();
+    }
+
     // ------------------------------------------------------------------ 창 끝과 늦은 전송(RT3-MON-4 = RT3-BE-2)
     @Test
     @DisplayName("RT3-MON-4: 수집기 창 밖 안 보냄(outside-window)은 3회여도 이상 멈춤이 아님 — 접수된 주문을 취소하지 않음")
