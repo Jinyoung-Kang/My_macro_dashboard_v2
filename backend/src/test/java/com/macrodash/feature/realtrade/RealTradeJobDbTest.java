@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -3042,6 +3043,110 @@ class RealTradeJobDbTest {
         run("08:51");
         verify(client, never()).placeOrder(anyString());
         assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ 형식 밖 종목 코드의 앱 미체결 매수(QA-413)
+    /** 국내 종목 코드 모양(6자)이 아닌 합성 코드 — 수집기 사전 조회는 이런 종목의 시세를 주지 않고, 백엔드 클라이언트는 물으면 부르지 않고 실패합니다. */
+    private static final String ODD = "Q500001";
+
+    /**
+     * {@link #preflight}와 같은 응답 — 단 실제 클라이언트({@code CollectorTradeClient.preflight})처럼, 물은 종목 가운데 국내 코드 모양이 아닌 것이 있으면
+     * 부르지 않고 실패({@code invalid-symbol})합니다. 물은 종목 목록을 {@code asked}에 남깁니다.
+     */
+    private void strictPreflight(String cash, Map<String, String[]> holdings, Map<String, String> extraQuotes,
+                                 List<java.util.Collection<String>> asked) {
+        preflight(cash, holdings, extraQuotes);
+        Reply<Preflight> ok = client.preflight(Set.of(), Set.of());
+        when(client.preflight(any(), any())).thenAnswer(inv -> {
+            java.util.Collection<String> symbols = inv.getArgument(0);
+            java.util.Collection<String> sell = inv.getArgument(1);
+            asked.add(List.copyOf(symbols));
+            boolean malformed = java.util.stream.Stream.concat(symbols.stream(), sell.stream())
+                    .anyMatch(symbol -> symbol == null || !symbol.matches("^[0-9][0-9A-Z]{5}$"));
+            return malformed ? Reply.failed("invalid-symbol") : ok;
+        });
+    }
+
+    @Test
+    @Disabled("QA-413: 형식 밖 종목 코드의 앱 미체결 매수 하나가 하루 한도 셈을 통째로 실패시켜 스탑 매도까지 보내지 않음")
+    @DisplayName("QA-413: 형식 밖 종목 코드의 앱 미체결 매수가 있어도 스탑 매도는 나간다 — 그 종목은 사전 조회에 넣지 않음")
+    void malformedAppBuyDoesNotBlockStopSells() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        List<java.util.Collection<String>> asked = new ArrayList<>();
+        strictPreflight("1000000", Map.of(A, new String[]{"100", "50000"}), Map.of(), asked);
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(601, A, "MARKET", kst("2026-11-06T11:32"))));
+
+        run("11:32:10");
+
+        assertThat(sentSummaries()).as("수정 전: 하루 한도를 셀 수 없다며 이 주기를 통째로 보내지 않음").containsExactly("SELL " + A + " DAY 100");
+        assertThat(asked).allSatisfy(symbols -> assertThat(symbols).doesNotContain(ODD));
+        assertThat(events("STOP_SELL")).singleElement().satisfies(e -> assertThat(e.detail().path("sent").asInt()).isEqualTo(1));
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
+    @Test
+    @Disabled("QA-413: 형식 밖 종목 코드의 앱 미체결 매수 하나가 하루 한도 셈을 통째로 실패시켜 묶음의 매도까지 보내지 않음")
+    @DisplayName("QA-413: 형식 밖 종목의 앱 미체결 매수가 걸린 동안 — 그 주문이 잡은 매수 금액을 셀 수 없으므로 매수는 모두 미루고(하루 한도 미룸) 매도만 보낸다. 그 주문이 끝나면 매수가 다시 나간다")
+    void malformedAppBuyDefersBuysAndSendsSells() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0, B, 30.0), List.of());
+        List<java.util.Collection<String>> asked = new ArrayList<>();
+        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"), asked);
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+
+        run("08:51");
+
+        assertThat(sentSummaries()).as("매도는 나가고 매수는 한 주도 나가지 않음(수정 전: 아무것도 보내지 않고 묶음도 없음)")
+                .containsExactly("SELL " + C + " OPG 100");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        assertThat(asked).allSatisfy(symbols -> assertThat(symbols).doesNotContain(ODD));
+
+        // 그 앱 주문이 체결로 끝남(오늘 목록에 체결 금액과 함께 남고 미체결 목록에서 빠짐) — 쓴 매수 금액을 정확히 세어 매수가 다시 나감
+        when(client.order("T-1")).thenReturn(Reply.of(broker("T-1", C, "SELL", "OPG", "FILLED", "100", "100", clock.now, clock.now)));
+        when(client.openOrders()).thenReturn(Reply.of(List.of()));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(new CollectorTradeClient.BrokerOrder("APP-ODD", ODD, "BUY", "LIMIT", "DAY",
+                "FILLED", d("10"), d("10"), d("10000"), d("100000"), null, null, kst("2026-11-06T08:40"), null, kst("2026-11-06T09:00"),
+                "KRW"))));
+        run("09:01");
+
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100", "BUY " + B + " DAY 150", "BUY " + A + " DAY 32");
+    }
+
+    @Test
+    @Disabled("QA-413: 형식 밖 종목이 섞이면 형식에 맞는 종목의 상한가도 묻지 못하고 주기 전체를 보내지 않음")
+    @DisplayName("QA-413: 형식에 맞는 앱 매수와 형식 밖 앱 매수가 함께 걸려 있으면 — 형식에 맞는 종목만 상한가를 묻고, 매수는 미루고 매도는 보낸다")
+    void malformedAppBuyNextToWellFormedOne() {
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0, B, 30.0), List.of());
+        List<java.util.Collection<String>> asked = new ArrayList<>();
+        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000", D, "20000"), asked);
+        tossOrders(appBuy("APP-D", D, "MARKET", "10", "0"), appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+
+        run("08:51");
+
+        assertThat(sentSummaries()).containsExactly("SELL " + C + " OPG 100");
+        assertThat(asked).as("상한가를 모르는 형식에 맞는 종목은 지금처럼 다시 물음").anyMatch(symbols -> symbols.equals(List.of(D)));
+        assertThat(asked).allSatisfy(symbols -> assertThat(symbols).doesNotContain(ODD));
+    }
+
+    @Test
+    @DisplayName("QA-413 대조: 형식 밖 종목의 앱 매수도 하루 건수에는 그대로 센다 — 건수가 다 찼으면 매도도 미룸(한도가 느슨해지지 않음)")
+    void malformedAppBuyStillCountsTowardDailyOrders() {
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 3, 999_999_999L,
+                999_999_999L)));
+        RealTradeFixtures.live(store, true, d("10000000"));
+        targets(Map.of(A, 50.0, B, 30.0), List.of());
+        strictPreflight("6000000", Map.of(C, new String[]{"100", "40000"}), Map.of(A, "50000", B, "20000"), new ArrayList<>());
+        CollectorTradeClient.BrokerOrder odd = appBuy("APP-ODD", ODD, "LIMIT", "10", "0");
+        when(client.openOrders()).thenReturn(Reply.of(List.of(odd)));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of(
+                broker("X-1", "000270", "SELL", "DAY", "FILLED", "1", "1", clock.now, clock.now),
+                broker("X-2", "000270", "SELL", "DAY", "FILLED", "1", "1", clock.now, clock.now), odd)));
+
+        run("08:51");
+
+        verify(client, never()).placeOrder(anyString());
     }
 
     // ------------------------------------------------------------------ 사전 조회 두 단계(RT-CONTRACT-5)
