@@ -61,10 +61,14 @@ CHROME_ARGS = (
 #     (옛 이름 ``--force-webrtc-ip-handling-policy``는 그 판에서 아무 효과가 없었습니다). 이름이 또 바뀌면 sidecar.selfcheck가 잡습니다.
 #   - QUIC(HTTP/3·WebTransport)은 UDP라 프록시가 보지 못합니다. 프록시가 있으면 Chrome이 쓰지 않는 것을 WebTransport로 확인했고, HTTP/3은
 #     확인할 서버가 없어 스위치로 꺼 둡니다.
+#   - Chrome은 프록시로 가는 요청의 이름은 스스로 풀지 않지만(프록시가 풂), WebRTC의 TURN(TCP·TLS) 서버 이름은 **프록시 없이 직접 DNS로
+#     묻습니다**(연결 자체는 프록시로 와서 막힘 — 53번 포트를 들어 확인). 페이지가 고른 이름이 풀이 서버로 나가지 않게, Chrome의 이름 풀이를
+#     전부 '없음'으로 돌립니다. 프록시 주소(127.0.0.1)는 빼야 합니다 — 빼지 않으면 프록시 연결 자체가 실패합니다(확인함).
 PROXY_BYPASS = "<-loopback>"
 EGRESS_ARGS = (
     "--webrtc-ip-handling-policy=disable_non_proxied_udp",
     "--disable-quic",
+    f"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE {egress.BIND_HOST}",
 )
 
 # 검사 화면에만 있는 흔적(제목·틀). 정상 페이지에도 들어가는 스크립트 경로나 'captcha' 단어는 보지 않습니다.

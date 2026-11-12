@@ -93,6 +93,8 @@ def test_QA414_드라이버는_Chrome을_루프백의_필터_프록시로만_내
     # 프록시가 볼 수 없는 UDP 길: WebRTC는 프록시로 갈 수 없는 UDP를 쓰지 않고, QUIC(HTTP/3·WebTransport)은 끕니다.
     assert "--webrtc-ip-handling-policy=disable_non_proxied_udp" in launch["args"]
     assert "--disable-quic" in launch["args"]
+    # Chrome이 스스로 DNS를 묻는 길(WebRTC의 TURN 서버 이름): 이름 풀이를 전부 '없음'으로 — 프록시 주소만 빼고.
+    assert "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1" in launch["args"]
     assert not any(arg.startswith(("--proxy-server", "--proxy-bypass-list", "--no-proxy-server", "--proxy-pac-url"))
                    for arg in launch["args"]), "프록시 설정은 proxy 칸 하나로만 넘깁니다(인자로 덮어쓰지 않음)"
 
