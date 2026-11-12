@@ -230,12 +230,13 @@ export function latestObserved(books: readonly PaperBookSummary[]): string | nul
 // ---------------------------------------------------------------- 개요 히어로(고른 계좌 하나 — 포트폴리오식, 장중 명세 §4-1)
 
 /**
- * 히어로 계좌 — 고른 계좌가 목록에 있으면 그것, 아니면(고르지 않음·목록에서 사라짐) 그 시장의 기본 Claude 계좌(홈 PaperHero와 같은 규칙 — 미국
- * claude·한국 kr_claude, lib/paper `primaryClaudeBook`), 그것도 없으면 첫 계좌. 계좌가 없으면 null.
+ * 히어로 계좌 — 고른 계좌가 목록에 있으면 그것, 아니면(고르지 않음·목록에서 사라짐) 그 시장의 규칙 계좌(kind RULES — 미국 rules·한국 kr_rules,
+ * 사용자 결정 2026-11-13: 모의매매 화면에 처음 보이는 계좌를 Claude 계좌1에서 규칙 계좌로). 규칙 계좌가 없으면 예전 기본인 Claude 계좌1
+ * (lib/paper `primaryClaudeBook`), 그것도 없으면 첫 계좌. 계좌가 없으면 null. 홈 화면의 히어로(lib/home)는 이 규칙을 쓰지 않습니다(Claude 계좌1 그대로).
  */
 export function heroBookCode(books: readonly Pick<PaperBookSummary, "code" | "kind">[], pick: string | null | undefined): string | null {
   if (pick && books.some((book) => book.code === pick)) return pick;
-  return primaryClaudeBook(books)?.code ?? books[0]?.code ?? null;
+  return books.find((book) => book.kind === "RULES")?.code ?? primaryClaudeBook(books)?.code ?? books[0]?.code ?? null;
 }
 
 /** 유한한 숫자만 값 — 그 밖(null·글·NaN)은 null(선이 끊김, 짓지 않음). */

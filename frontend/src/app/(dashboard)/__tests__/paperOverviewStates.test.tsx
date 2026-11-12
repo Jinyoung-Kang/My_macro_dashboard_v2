@@ -8,7 +8,7 @@
  *  - 오래됨: 가격 없는 보유·늦은 관측치 저장본이면 계좌 행에 '이전 값' 배지와 사유(숨기는 옵션 없음)
  *  - 기간별 순자산 곡선: 저장된 기록보다 긴 기간 탭은 없고, 고르면 그 기간만(경계선도 그 기간 안의 것만), 곡선 아래 노출 문구(남는 현금 SHY)
  *  - 시장 고르기: 화면 안에는 없다 — 셸의 하위 메뉴 줄(미국 | 한국 두 링크)이 맡는다(Shell.test.tsx), 제목은 '(미국)'
- *  - 히어로(포트폴리오식): 고른 계좌 하나(기본 Claude 계좌, 계좌 행을 누르면 그 계좌 — 상세를 닫아도 남음)의 지금 값·곡선, 기간 알약은
+ *  - 히어로(포트폴리오식): 고른 계좌 하나(기본 규칙 계좌 — 사용자 결정 2026-11-13, 계좌 행을 누르면 그 계좌 — 상세를 닫아도 남음)의 지금 값·곡선, 기간 알약은
  *    히어로 차트 아래(아래 '순자산 곡선'과 같은 기간 — 그 카드의 탭은 없음), 초기화 전이면 히어로 없이 탭은 곡선 카드에
  *  - 지금 값(장중 명세 §4-1): 개요 응답에 current가 있으면 계좌 행은 그 값과 값의 기준 한 줄(단계 표기·덧붙임·변화 한 줄)·추정 배지,
  *    부제는 '지금 값 기준' — current가 없는 옛 응답(위 고정본들)은 장부 표시 그대로
@@ -216,34 +216,36 @@ describe("값 있음 — 계좌 행·비교 표·곡선", () => {
 });
 
 describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
-  it("기본은 Claude 계좌, 계좌 행을 누르면 히어로도 그 계좌 — 상세를 닫아도 남고, 곡선은 그 계좌 한 줄", async () => {
+  it("기본은 규칙 계좌(사용자 결정 2026-11-13), 계좌 행을 누르면 히어로도 그 계좌 — 상세를 닫아도 남고, 곡선은 그 계좌 한 줄", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
     render(<PaperPage />);
 
     await settled();
-    const first = screen.getByRole("region", { name: "Claude 계좌 순자산" });
-    expect(within(first).getByText("100,000.00")).toBeTruthy();
-    // 시작 전 계좌는 곡선 값이 없음(선 없음 — 0으로 채우지 않음)
-    expect(within(first).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
+    // 아무것도 고르지 않은 첫 화면의 히어로는 규칙 계좌(그 전에는 Claude 계좌1)
+    const first = screen.getByRole("region", { name: "규칙 계좌 순자산" });
+    expect(within(first).getByText("101,200.00")).toBeTruthy();
+    expect(within(first).getByText("+1.20%")).toBeTruthy();
+    expect(within(first).getByText("출발 이후")).toBeTruthy();
+    // 옛 응답(current 없음)은 장부 값과 마지막 관측
+    expect(within(first).getByText("마지막 관측 2026-10-24 05:15")).toBeTruthy();
+    expect(within(first).queryByText("추정")).toBeNull();
+    expect(within(first).getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000,101200");
+    expect(screen.queryByRole("region", { name: "Claude 계좌 순자산" })).toBeNull();
     // 히어로는 화면 맨 위(시작 카드·계좌 카드보다 앞)
     const accounts = screen.getByRole("list", { name: "계좌 목록" });
     expect(first.compareDocumentPosition(accounts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    fireEvent.click(row(/^규칙 계좌 상세 보기/));
-    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
-    expect(within(hero).getByText("101,200.00")).toBeTruthy();
-    expect(within(hero).getByText("+1.20%")).toBeTruthy();
-    expect(within(hero).getByText("출발 이후")).toBeTruthy();
-    // 옛 응답(current 없음)은 장부 값과 마지막 관측
-    expect(within(hero).getByText("마지막 관측 2026-10-24 05:15")).toBeTruthy();
-    expect(within(hero).queryByText("추정")).toBeNull();
-    expect(within(hero).getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000,101200");
-    expect(screen.queryByRole("region", { name: "Claude 계좌 순자산" })).toBeNull();
+    fireEvent.click(row(/^Claude 계좌 상세 보기/));
+    const hero = screen.getByRole("region", { name: "Claude 계좌 순자산" });
+    expect(within(hero).getByText("100,000.00")).toBeTruthy();
+    // 시작 전 계좌는 곡선 값이 없음(선 없음 — 0으로 채우지 않음)
+    expect(within(hero).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
+    expect(screen.queryByRole("region", { name: "규칙 계좌 순자산" })).toBeNull();
 
     // 상세를 닫아도 히어로는 그 계좌 그대로
-    fireEvent.click(row(/^규칙 계좌 상세 닫기/));
-    expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
-    expect(screen.getByRole("region", { name: "규칙 계좌 순자산" })).toBeTruthy();
+    fireEvent.click(row(/^Claude 계좌 상세 닫기/));
+    expect(screen.queryByRole("region", { name: "Claude 계좌 상세" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Claude 계좌 순자산" })).toBeTruthy();
   });
 
   it("히어로 제목 줄 오른쪽의 고르기 상자로 계좌를 바꾼다(사용자 요청 2026-11-02) — 계좌 행과 같은 상태, 상자는 초점을 잃지 않음", async () => {
@@ -251,27 +253,27 @@ describe("히어로(포트폴리오식 — 장중 명세 §4-1)", () => {
     render(<PaperPage />);
 
     await settled();
-    const first = screen.getByRole("region", { name: "Claude 계좌 순자산" });
+    const first = screen.getByRole("region", { name: "규칙 계좌 순자산" });
     const picker = within(first).getByRole("combobox", { name: "순자산을 볼 계좌" }) as HTMLSelectElement;
-    expect(picker.value).toBe("claude");
+    expect(picker.value).toBe("rules");
     // 선택지는 계좌 행과 같은 계좌·같은 순서(서버 이름)
     const rows = within(screen.getByRole("list", { name: "계좌 목록" })).getAllByRole("listitem").length;
     expect(Array.from(picker.options).map((option) => option.textContent)).toHaveLength(rows);
     expect(Array.from(picker.options).map((option) => option.value)).toEqual((OVERVIEW.books ?? []).map((book) => book.code));
 
     picker.focus();
-    fireEvent.change(picker, { target: { value: "rules" } });
-    const hero = screen.getByRole("region", { name: "규칙 계좌 순자산" });
-    expect(within(hero).getByText("101,200.00")).toBeTruthy();
-    expect(within(hero).getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000,101200");
+    fireEvent.change(picker, { target: { value: "claude" } });
+    const hero = screen.getByRole("region", { name: "Claude 계좌 순자산" });
+    expect(within(hero).getByText("100,000.00")).toBeTruthy();
+    expect(within(hero).getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("null,null");
     // 다시 마운트하지 않아 같은 상자가 초점을 그대로 가짐
     expect(within(hero).getByRole("combobox", { name: "순자산을 볼 계좌" })).toBe(picker);
     expect(document.activeElement).toBe(picker);
-    expect(picker.value).toBe("rules");
-    // 상세는 열지 않음(고르기 상자는 히어로만 바꿈) — 계좌 행을 눌러 고른 것과 같은 상태라 행을 누르면 상자도 따라감
-    expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
-    fireEvent.click(row(/^Claude 계좌 상세 보기/));
     expect(picker.value).toBe("claude");
+    // 상세는 열지 않음(고르기 상자는 히어로만 바꿈) — 계좌 행을 눌러 고른 것과 같은 상태라 행을 누르면 상자도 따라감
+    expect(screen.queryByRole("region", { name: "Claude 계좌 상세" })).toBeNull();
+    fireEvent.click(row(/^규칙 계좌 상세 보기/));
+    expect(picker.value).toBe("rules");
   });
 
   it("지금 값 — 히어로는 단계 표기·추정 배지·서버 글 전문·변화 한 줄(서버 값)", async () => {
@@ -578,7 +580,7 @@ describe("기간별 순자산 곡선", () => {
 
     const tabs = await screen.findByRole("tablist", { name: "순자산 곡선 기간" });
     // 기간 알약은 히어로(차트 아래) 한 곳 — 아래 '순자산 곡선' 카드에는 탭이 없고 같은 기간을 따릅니다.
-    expect(within(screen.getByRole("region", { name: "Claude 계좌 순자산" })).getByRole("tablist", { name: "순자산 곡선 기간" })).toBe(tabs);
+    expect(within(screen.getByRole("region", { name: "규칙 계좌 순자산" })).getByRole("tablist", { name: "순자산 곡선 기간" })).toBe(tabs);
     expect(screen.getAllByRole("tablist", { name: "순자산 곡선 기간" })).toHaveLength(1);
     // 기록이 약 5개월 — 6개월·1년 탭은 그리지 않습니다.
     expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["1개월", "3개월", "전체"]);
@@ -592,7 +594,7 @@ describe("기간별 순자산 곡선", () => {
     expect(chart().getAttribute("data-rows")).toBe("2");
     expect(chart().getAttribute("data-first")).toBe("2026-09-28");
     // 히어로 곡선도 같은 기간(두 행)이고, 곡선 카드 부제가 지금 기간을 적습니다.
-    expect(screen.getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");
+    expect(screen.getByRole("list", { name: "규칙 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");
     expect(screen.getByText(/기간은 위 히어로에서 고릅니다\(지금 1개월\)\.$/)).toBeTruthy();
     expect(Array.from(chart().querySelectorAll("[data-marker]")).map((li) => li.textContent)).toEqual(["2026-10-26 프레임 v1"]);
     // 기간 밖의 경계를 '그날 기록 없음'으로 적지 않습니다.
@@ -612,7 +614,10 @@ describe("오늘 추정 꼬리(장중 명세 §4 '순자산 곡선 꼬리')", ()
     expect(navItems()).toEqual(["규칙 계좌", "SPY 계좌", "규칙 계좌 · 추정 23:58", "SPY 계좌 · 추정 23:57"]);
     expect(screen.getByRole("list", { name: "순자산 계열" }).getAttribute("data-rows")).toBe("3");
     expect(screen.getByText(/^짧은 점선 꼬리\(범례에 없음\) = 10-30 순자산 줄이 생기기 전의 지금 값/)).toBeTruthy();
-    // 곡선 카드의 출처가 그 점의 출처(장중 1분봉으로 다시 평가한 표시 전용 추정)를 함께 — 기본 히어로(출발 전 Claude 계좌)는 장부 출처
+    // 곡선 카드의 출처가 그 점의 출처(장중 1분봉으로 다시 평가한 표시 전용 추정)를 함께 — 기본 히어로(규칙 계좌 — 꼬리가 있음)의 출처에도 같은 글
+    expect(screen.getAllByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toHaveLength(2);
+    // 히어로를 출발 전 Claude 계좌로 바꾸면 히어로는 장부 출처(곡선 카드 하나만 남음)
+    fireEvent.change(screen.getByRole("combobox", { name: "순자산을 볼 계좌" }), { target: { value: "claude" } });
     expect(screen.getAllByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toHaveLength(1);
     // 출발 전 계좌의 히어로 곡선에는 꼬리가 없음(navEstimate의 그 계좌 값이 null — 짓지 않음)
     expect(screen.getByRole("list", { name: "Claude 계좌 순자산 곡선" }).getAttribute("data-rows")).toBe("2");

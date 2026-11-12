@@ -189,11 +189,11 @@ describe("자료", () => {
     expect(comparisonCell("현금", "한국 60/40 계좌").textContent).toBe("34,000원");
     expect(comparisonCell("비교 기준", "한국 규칙 계좌").textContent).toBe("KODEX 200 계좌");
 
-    // 히어로: 기본은 한국 Claude 계좌(홈과 같은 규칙) — 원 정수, 곡선은 그 계좌 한 줄
-    const hero = screen.getByRole("region", { name: "한국 Claude 계좌 순자산" });
+    // 히어로: 기본은 한국 규칙 계좌(사용자 결정 2026-11-13 — 그 전에는 한국 Claude 계좌) — 원 정수, 곡선은 그 계좌 한 줄
+    const hero = screen.getByRole("region", { name: "한국 규칙 계좌 순자산" });
     expect(within(hero).getByText("100,312,450")).toBeTruthy();
     expect(within(hero).getByText("원")).toBeTruthy();
-    expect(within(hero).getByRole("list", { name: "한국 Claude 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000000,100312450");
+    expect(within(hero).getByRole("list", { name: "한국 규칙 계좌 순자산 곡선" }).getAttribute("data-values")).toBe("100000000,100312450");
 
     // 순자산 곡선: 네 계좌 계열·툴팁 0자리·넓은 축(원 단위 정수 눈금)
     const nav = screen.getByRole("list", { name: "순자산 계열" });
@@ -529,7 +529,7 @@ describe("노출 맞춘 참고선(K40)", () => {
 
 describe("오늘 추정 꼬리(한국)", () => {
 
-  it("계좌 선에만 꼬리 — 노출 맞춘 참고선(K40)에는 없고, 원 정수 자릿수, 히어로(기본 한국 Claude 계좌) 곡선도 꼬리 점", async () => {
+  it("계좌 선에만 꼬리 — 노출 맞춘 참고선(K40)에는 없고, 원 정수 자릿수, 히어로(한국 Claude 계좌를 고르면) 곡선도 꼬리 점", async () => {
     const live = {
       nav: 100_400_000, returnPct: 0.4, exposurePct: 99.9, dayChangePct: 0.09, previousTradingDate: "2026-10-30", previousNavFinal: false,
       basis: "LIVE", stage: "LIVE", tradingDate: "2026-11-02", atKst: "2026-11-02 10:05 KST", isEstimated: true, livePriced: 1,
@@ -554,6 +554,9 @@ describe("오늘 추정 꼬리(한국)", () => {
     reads["/api/paper/status?market=KR"] = () => Promise.resolve(KR_STATUS);
     render(<PaperPage market="KR" />);
     await settled();
+    // 기본 히어로는 한국 규칙 계좌(꼬리 없음) — 꼬리가 있는 한국 Claude 계좌를 히어로로 고릅니다.
+    expect(screen.getByRole("list", { name: "한국 규칙 계좌 순자산 곡선" }).getAttribute("data-estimate")).toBe("null,null");
+    fireEvent.change(screen.getByRole("combobox", { name: "순자산을 볼 계좌" }), { target: { value: "kr_claude" } });
 
     const nav = screen.getByRole("list", { name: "순자산 계열" });
     expect(within(nav).getAllByRole("listitem").map((li) => li.textContent)).toEqual([

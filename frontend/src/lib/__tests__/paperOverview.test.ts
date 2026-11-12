@@ -19,6 +19,7 @@ import {
   bookAssetRow,
   bookMonogram,
   bookStale,
+  heroBookCode,
   heroNavChart,
   markersInWindow,
   monthsBefore,
@@ -351,6 +352,37 @@ describe("계좌 비교 표", () => {
 
   it("계좌가 없으면 칸 없는 줄들", () => {
     expect(accountComparisonRows([]).every((row) => Object.keys(row.cells).length === 0)).toBe(true);
+  });
+});
+
+describe("히어로 계좌(heroBookCode — 모의매매 화면에 처음 보이는 계좌)", () => {
+  const us = [
+    { code: "rules", kind: "RULES" }, { code: "claude", kind: "CLAUDE" }, { code: "claude2", kind: "CLAUDE" },
+    { code: "bench_spy", kind: "BENCHMARK" },
+  ] as Pick<PaperBookSummary, "code" | "kind">[];
+  const kr = [
+    { code: "kr_claude", kind: "CLAUDE" }, { code: "kr_rules", kind: "RULES" }, { code: "kr_bench_k200", kind: "BENCHMARK" },
+  ] as Pick<PaperBookSummary, "code" | "kind">[];
+
+  it("고르지 않았으면 규칙 계좌(사용자 결정 2026-11-13 — 그 전에는 Claude 계좌1), 목록 순서와 무관", () => {
+    expect(heroBookCode(us, null)).toBe("rules");
+    expect(heroBookCode(us, undefined)).toBe("rules");
+    expect(heroBookCode(kr, null)).toBe("kr_rules");
+  });
+
+  it("고른 계좌가 목록에 있으면 그 계좌, 목록에서 사라졌으면 다시 규칙 계좌", () => {
+    expect(heroBookCode(us, "claude2")).toBe("claude2");
+    expect(heroBookCode(us, "bench_spy")).toBe("bench_spy");
+    expect(heroBookCode(us, "gone")).toBe("rules");
+  });
+
+  it("규칙 계좌가 없으면 Claude 계좌1(계좌2가 앞에 있어도), 그것도 없으면 첫 계좌, 계좌가 없으면 null", () => {
+    const noRules = [{ code: "claude2", kind: "CLAUDE" }, { code: "claude", kind: "CLAUDE" }, { code: "bench_spy", kind: "BENCHMARK" }] as Pick<
+      PaperBookSummary, "code" | "kind"
+    >[];
+    expect(heroBookCode(noRules, null)).toBe("claude");
+    expect(heroBookCode([{ code: "bench_spy", kind: "BENCHMARK" }] as Pick<PaperBookSummary, "code" | "kind">[], null)).toBe("bench_spy");
+    expect(heroBookCode([], null)).toBeNull();
   });
 });
 

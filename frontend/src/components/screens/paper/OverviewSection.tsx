@@ -165,7 +165,7 @@ export function OverviewSection({
   // 순자산 곡선의 기간 — 처음엔 전체. 저장된 기록보다 긴 기간 탭은 그리지 않습니다(lib navRangeKeys). 히어로와 '순자산 곡선' 카드가 함께 씁니다.
   const [navRange, setNavRange] = useState<NavRangeKey>("all");
   // 히어로에 그릴 계좌 — 계좌 행을 누르거나 히어로의 고르기 상자로 고르면 그 계좌(상세를 닫아도·개요를 다시 읽어도 남음, 목록에서 사라지면
-  // 기본 Claude 계좌 — lib heroBookCode).
+  // 기본인 규칙 계좌 — lib heroBookCode, 사용자 결정 2026-11-13).
   const [heroPick, setHeroPick] = useState<string | null>(null);
   // 히어로 계좌의 실시간 순자산(장중 카드가 실시간 시세로 다시 셈 — 사용자 결정 2026-11-03). 표시 전용이고 장부·계좌 행은 그대로.
   const [realtimeNav, setRealtimeNav] = useState<RealtimeNav | null>(null);
