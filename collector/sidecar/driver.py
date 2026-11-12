@@ -15,6 +15,10 @@ sidecar/driver.py
     키보드 입력·풀이 서비스는 없습니다. 서버 .env의 ``BROWSER_PRESS_CHECKBOX=false``로 누르기를 끕니다.
   - 받은 응답이 JSON·XML(피드)이면 화면에 그린 것이 아니라 받은 본문 그대로 돌려줍니다.
   - 크래시 보고·배경 통신·구성요소 갱신을 끕니다(CHROME_ARGS).
+  - 요청 하나는 **강제 상한**(``HARD_SECONDS``) 안에 끝납니다(QA-416). 페이지가 메인 스레드를 붙잡으면(끝나지 않는 스크립트·동기 XHR·
+    ``print()``) ``page.evaluate``·``page.content()``·마우스 호출이 돌아오지 않고 그 호출들에는 시간 상한이 없습니다(이미지에서 확인). 그래서
+    띄우기부터 닫기까지를 작업 스레드에서 돌리고, 부른 스레드는 상한까지만 기다립니다. 넘기면 **그 요청의 Chrome 프로세스**를 끝내(sidecar.reap —
+    붙잡혀 있던 호출이 바로 오류로 돌아와 작업 스레드가 평소 길로 정리함) ``DriverError``로 답합니다. 그 요청의 본문은 버립니다.
 """
 from __future__ import annotations
 
@@ -22,10 +26,11 @@ import logging
 import os
 import random
 import re
+import threading
 import time
 from urllib.parse import urlsplit
 
-from . import egress, guard
+from . import egress, guard, reap
 from .app import DriverError
 
 logger = logging.getLogger("sidecar.driver")
@@ -35,11 +40,23 @@ PROFILE_DIR = os.environ.get("BROWSER_PROFILE_DIR", "/profile")
 SANDBOX = os.environ.get("BROWSER_SANDBOX", "true").strip().lower() != "false"
 # 사람 확인 체크박스를 한 번 누르는가(ADR 0035 결정 5). 끄면 ADR 0026의 '누르지 않음'으로 돌아갑니다.
 PRESS_CHECKBOX = os.environ.get("BROWSER_PRESS_CHECKBOX", "true").strip().lower() != "false"
-# 요청 하나의 전체 상한(초)과 첫 이동의 상한(ms).
+# 요청 하나의 전체 상한(초)과 첫 이동의 상한(ms). 전체 상한은 페이지 받기의 반복문이 도는 사이에 봅니다(검사가 지나가기를 기다리는 시간의 끝).
 REQUEST_SECONDS = 90.0
 NAVIGATION_TIMEOUT_MS = 45_000
-# 필터 프록시의 수명 상한(초). 프록시는 요청이 끝나면 닫히고, 이 값은 닫히지 못했을 때의 안전망입니다 — 요청 하나가 쓸 수 있는 시간
-# (위 상한 + 읽기 전 머무는 몇 초)과 수집기가 이 컨테이너의 답을 기다리는 시간(110초)보다 길게 둡니다.
+# 강제 상한(초, QA-416) — 요청이 시작된 지 이만큼 지나도 끝나지 않으면 그 요청의 Chrome을 끝냅니다. 페이지가 메인 스레드를 붙잡으면 드라이버의
+# 호출이 돌아오지 않아 위 상한의 검사에 닿지 못합니다. 값은 두 쪽에서 정해집니다(시험 test_QA416_상한들의_선후가 고정):
+#   - 위 상한보다 10초 깁니다. 가장 긴 정상 경로는 '90초 직전에 시작한 반복 한 바퀴(체크박스를 누르면 약 5.5초) + 본문 읽기 + 닫기'로 96초쯤이라
+#     그 경로를 끊지 않습니다.
+#   - 수집기가 이 컨테이너의 답을 기다리는 시간(110초 — app/fetch/browser_client.TIMEOUT)보다 짧습니다. 아래 정리 대기를 더해도(104초) 수집기가
+#     포기하기 전에 502로 답합니다.
+# 이 모듈의 값을 부를 때 읽습니다(시험과 이미지 안 확인이 짧은 값으로 바꿔 끼움).
+HARD_SECONDS = REQUEST_SECONDS + 10.0
+# 브라우저를 끝낸 뒤 작업 스레드의 정리(붙잡혀 있던 호출이 오류로 돌아옴 → 문맥·드라이버 닫기)를 기다리는 시간(초). 이미지에서 잰 정리는 0.05초
+# 안쪽입니다. 절반이 지나도 끝나지 않으면 그 브라우저를 띄운 드라이버 프로세스까지 끝내고 나머지 절반을 기다립니다. 그래도 끝나지 않으면 더
+# 기다리지 않고 답합니다(오류 로그).
+CLEANUP_SECONDS = 4.0
+# 필터 프록시의 수명 상한(초). 프록시는 요청이 끝나면 닫히고, 이 값은 닫히지 못했을 때의 안전망입니다 — 요청 하나가 쓸 수 있는 가장 긴 시간
+# (강제 상한 + 정리 대기 = 104초)과 수집기가 이 컨테이너의 답을 기다리는 시간(110초)보다 길게 둡니다.
 EGRESS_LIFETIME_SECONDS = REQUEST_SECONDS + 30.0
 
 CHROME_ARGS = (
@@ -105,16 +122,37 @@ class ChromeDriver:
             gate = egress.EgressFilter(lifetime_seconds=EGRESS_LIFETIME_SECONDS)
         except OSError as exc:
             raise DriverError("나가는 길 필터 프록시를 열지 못해 브라우저를 띄우지 않음") from exc
+        outcome: dict[str, object] = {}
+
+        def work() -> None:
+            # 드라이버의 동기 API는 띄운 스레드에서만 부를 수 있습니다 — 띄우기부터 닫기까지 이 스레드 하나에서 합니다.
+            try:
+                with sync_playwright() as playwright:
+                    context = launch(playwright, gate.url)
+                    try:
+                        outcome["result"] = self._load(context, url, wait_seconds, allowed, started)
+                    finally:
+                        context.close()
+            except BaseException as exc:  # noqa: BLE001 — 부른 스레드가 받아 아래에서 다시 던집니다
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=work, name="sidecar-fetch", daemon=True)
         try:
             # 프록시는 브라우저보다 먼저 열리고 나중에 닫힙니다.
-            with gate, sync_playwright() as playwright:
-                context = launch(playwright, gate.url)
-                try:
-                    return self._load(context, url, wait_seconds, allowed, started)
-                finally:
-                    context.close()
-        except BrowserError as exc:
-            raise DriverError(f"브라우저 오류: {_brief(exc)}") from exc
+            worker.start()
+            worker.join(max(0.0, started + HARD_SECONDS - time.monotonic()))
+            if worker.is_alive():
+                _end_overdue(gate.url, worker)
+                # 정리하는 사이에 끝났더라도 그 답은 쓰지 않습니다(브라우저를 끝낸 요청의 본문은 믿지 않음).
+                raise DriverError(f"요청 상한({HARD_SECONDS:g}초)을 넘겨 브라우저를 끝냄: {urlsplit(url).hostname}")
+        finally:
+            gate.close()
+        error = outcome.get("error")
+        if isinstance(error, BrowserError):
+            raise DriverError(f"브라우저 오류: {_brief(error)}") from error
+        if isinstance(error, BaseException):
+            raise error
+        return outcome["result"]
 
     def _load(self, context, url: str, wait_seconds: float, allowed: frozenset[str], started: float) -> dict:
         page = context.pages[0] if context.pages else context.new_page()
@@ -201,6 +239,27 @@ class ChromeDriver:
         except Exception:  # noqa: BLE001 — 이동 중이라 문맥이 바뀐 순간이면 다음 바퀴에 다시 봅니다
             return True
         return interstitial or (status in _BLOCK_STATUSES and self._human_frame(page))
+
+
+def _end_overdue(proxy_url: str, worker: threading.Thread) -> None:
+    """
+    강제 상한을 넘긴 요청의 브라우저를 끝내고, 작업 스레드가 정리를 마치기를 ``CLEANUP_SECONDS``까지 기다립니다 (QA-416).
+
+    끝내는 것은 그 요청의 Chrome(명령줄에 그 요청의 프록시 주소를 가진 프로세스와 그 자손)입니다. 그러면 붙잡혀 있던 호출이 '닫혔다'는 오류로
+    돌아오고 작업 스레드가 문맥·드라이버를 평소 길로 닫습니다. 그래도 돌아오지 않으면(드라이버 프로세스가 멎은 경우) 그 브라우저를 띄운 드라이버
+    프로세스도 끝냅니다. 강제로 끝난 Chrome이 프로필에 남긴 잠금 링크는 치웁니다(컨테이너가 다시 만들어지면 다음 기동을 막음 — sidecar.reap).
+    """
+    found = reap.find_browser(proxy_url)
+    ended = reap.end(found.processes)
+    worker.join(CLEANUP_SECONDS / 2)
+    if worker.is_alive():
+        again = reap.find_browser(proxy_url)        # 처음 볼 때 아직 뜨지 않았던 브라우저까지
+        ended += reap.end(again.processes)
+        ended += reap.end(reap.children_of_this_process({*found.launchers, *again.launchers}))
+        worker.join(CLEANUP_SECONDS / 2)
+    reap.clear_stale_lock(PROFILE_DIR, ended=ended)
+    if worker.is_alive():
+        logger.error("상한을 넘긴 요청의 정리가 끝나지 않음 — 작업 스레드 하나가 남습니다(끝낸 프로세스 %d개)", len(ended))
 
 
 def launch(playwright, proxy_url: str, *, profile_dir: str | None = None, extra_args: tuple[str, ...] = ()):

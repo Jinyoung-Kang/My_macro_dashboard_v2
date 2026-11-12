@@ -7,7 +7,8 @@ sidecar — 브라우저 컨테이너(차단 통과 수집 계층의 계층 2, A
   guard.py   공유 비밀·허용 호스트·목적지 차단(순수 로직 — 드라이버를 가져오지 않음)
   egress.py  브라우저의 나가는 길 — 루프백의 필터 프록시(연결마다 목적지를 풀어 검사한 주소로만 붙음, 표준 라이브러리만)
   app.py     POST /fetch 하나와 GET /health
-  driver.py  브라우저 드라이버(이미지 안에서만 가져옴)
+  driver.py  브라우저 드라이버(이미지 안에서만 가져옴) — 요청 하나는 강제 상한 안에 끝남
+  reap.py    강제 상한을 넘긴 요청의 브라우저를 프로세스 표에서 찾아 끝냄(표준 라이브러리만)
   selfcheck.py  이미지 안 확인 — 실제 Chrome으로 '막아야 할 목적지가 요청을 받지 않는가'(python -m sidecar.selfcheck, CI의 이미지 잡)
 
 시험은 collector/tests에서 가짜 드라이버로 돕니다(CI에는 브라우저가 없음).
