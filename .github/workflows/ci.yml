@@ -291,6 +291,13 @@ jobs:
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           # 브라우저 컨테이너 이미지는 이 덧붙임에만 있어 아래 '이미지 빌드' 단계(기반 파일)가 만들지 않습니다 — 여기서 빌드합니다.
           docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml build browser
+          # 브라우저의 나가는 길 확인(QA-414, ADR 0026 덧붙임): 방금 빌드한 이미지 안에서 실제 Chrome과 필터 프록시로 '막아야 할 목적지가 요청을
+          # 받지 않는지' 봅니다(리다이렉트 홉·fetch·웹소켓·루프백/링크 로컬 우회·UDP·프록시가 닫혔을 때). 망이 없는 컨테이너에서 그 안의 루프백
+          # 서버만 씁니다(외부 요청 없음). 권한 제거·seccomp·메모리 상한은 위에서 단언한 browser 서비스의 설정 그대로입니다.
+          browser_image="$(docker compose --env-file /dev/null -f docker-compose.yml -f compose.vultr.yml config --images browser)"
+          docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true \
+            --security-opt "seccomp=$PWD/collector/sidecar/seccomp.json" --init --memory 1g --shm-size 256m "$browser_image" \
+            xvfb-run -a --server-args="-screen 0 1366x768x24" python -m sidecar.selfcheck
 
       - name: 로컬·QA compose 해석 (docker-compose.yml · scripts/qa/docker-compose.qa.yml)
         # 로컬은 로그인 없이 운영자로 열리므로(ADR 0016) 포트가 루프백 밖으로 열리면 같은 와이파이의 누구나 운영자가 됩니다.

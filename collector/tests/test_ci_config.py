@@ -36,3 +36,25 @@ def test_QA108_pip_audit는_이미지와_같은_constraints_고정판을_감사�
     # 다시 해석하지 않고(--no-deps) 설치도 하지 않고(--disable-pip) 고정판 그대로 봅니다.
     assert "--no-deps" in audit and "--disable-pip" in audit
     assert "requirements.txt" not in audit
+
+
+def test_QA414_이미지_잡은_브라우저_이미지를_빌드한_바로_뒤에_나가는_길_확인을_돌린다():
+    """
+    브라우저 컨테이너의 나가는 길(ADR 0026 덧붙임)은 실제 Chrome으로만 확인되는 부분이 있습니다(Chrome이 정말 프록시로만 나가는가 — Chrome은
+    판을 고정하지 않아 스위치 이름이 바뀔 수 있음). 이미지 안 확인(sidecar.selfcheck)을 CI에서 빼거나, 망·권한을 풀어 돌리지 않게 고정합니다.
+    """
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    runs = [s.get("run") or "" for s in workflow["jobs"]["images"]["steps"]]
+    script = next(run for run in runs if "build browser" in run)
+    after = script[script.index("build browser"):]
+    lines = [line.strip() for line in after.splitlines()[1:] if line.strip() and not line.strip().startswith("#")]
+    command = " ".join(line.rstrip("\\").strip() for line in lines)
+
+    assert command.startswith('browser_image="$(docker compose '), "빌드 바로 뒤 — compose가 만든 이미지 이름을 물어 그 이미지로"
+    assert "config --images browser" in command
+    run = command[command.index("docker run"):]
+    assert run.endswith("python -m sidecar.selfcheck") and '"$browser_image"' in run and "xvfb-run" in run
+    for hardening in ("--rm", "--network none", "--cap-drop ALL", "--security-opt no-new-privileges:true",
+                      '--security-opt "seccomp=$PWD/collector/sidecar/seccomp.json"'):
+        assert hardening in run, f"서버의 browser 서비스와 같은 굳히기로 돌려야 합니다: {hardening}"
+    assert not any(loose in run for loose in (" -p ", "--publish", "--privileged", "--cap-add", "BROWSER_SANDBOX", "seccomp=unconfined"))
