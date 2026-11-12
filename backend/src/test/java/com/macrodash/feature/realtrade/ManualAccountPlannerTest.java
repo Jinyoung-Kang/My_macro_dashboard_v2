@@ -160,4 +160,31 @@ class ManualAccountPlannerTest {
                     assertThat(dr.refPrice()).isNull();
                 });
     }
+
+    // 독립 검토 F6: 손절 매도 지시만 만든 세션에 나머지를 채울 때, 이미 닫힌(건너뜀·확인) 지시의 종목은 유일 제약으로 다시 지시되지 않는다 — 계산에서도 팔지 않는 보유로 둔다.
+    @Test
+    @DisplayName("QA-381: 손대지 않는 종목 — 평가액에는 들어가고 지시·건너뜀·매도 대금에는 들지 않아 매수가 실제 현금 안, 목표에 비중이 있어도 사지 않음. 비면 예전 계산과 같음")
+    void frozenSymbolsAreHeldButNotTraded() {
+        Map<String, BigDecimal> held = Map.of(A, d("50"), B, d("15"));
+        Map<String, Double> weights = Map.of(B, 80.0);
+        Map<String, Double> prices = Map.of(A, 10_000.0, B, 20_000.0);
+        List<String> missing = new ArrayList<>();
+
+        // 평가액 850,000(현금 50,000) — A는 책에 없어 전량 매도, 그 대금 500,000으로 B floor(680,000 ÷ 20,000) − 15 = 19주 매수
+        Result usual = ManualAccountPlanner.plan(d("50000"), held, weights, prices, Map.of(), CASH_LIKE, missing, Set.of()).orElseThrow();
+        assertThat(lines(usual)).containsExactly("SELL " + A + " 50", "BUY " + B + " 19");
+        assertThat(usual).as("빈 집합이면 예전 함수와 같은 결과").isEqualTo(plan("50000", held, weights, prices, Map.of()));
+
+        // A를 손대지 않음 — 매도 지시도 대금도 없음: 매수는 현금 50,000 안, floor(50,000 ÷ (20,000 × 1.02)) = 2주
+        Result frozen = ManualAccountPlanner.plan(d("50000"), held, weights, prices, Map.of(), CASH_LIKE, missing, Set.of(A)).orElseThrow();
+        assertThat(lines(frozen)).containsExactly("BUY " + B + " 2");
+        assertThat(frozen.equity()).as("보유는 그대로 든 것으로 — 평가액에 들어감").isEqualByComparingTo("850000");
+        assertThat(frozen.skipped()).extracting(skip -> skip.symbol()).doesNotContain(A);
+
+        // 목표에 비중이 있는 종목도 손대지 않으면 사지 않음 — 평가액 600,000, B floor(180,000 ÷ 20,000) = 9주만
+        Result noBuy = ManualAccountPlanner.plan(d("500000"), Map.of(A, d("10")), Map.of(A, 50.0, B, 30.0), prices, Map.of(), CASH_LIKE, missing, Set.of(A))
+                .orElseThrow();
+        assertThat(lines(noBuy)).containsExactly("BUY " + B + " 9");
+        assertThat(missing).isEmpty();
+    }
 }

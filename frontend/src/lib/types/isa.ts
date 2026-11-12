@@ -156,6 +156,8 @@ export interface IsaResponse {
   available: boolean;
   message?: string | null;
   started?: boolean;
+  /** 응답을 만든 서버 시각(ISO) — 화면은 손절만 든 세션이 이미 개장했는지 가르는 데만 씁니다(lib/isa stopOnlyText). */
+  serverTime?: string | null;
   account?: IsaAccount | null;
   summary?: IsaSummary | null;
   positions?: IsaPosition[] | null;

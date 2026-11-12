@@ -145,8 +145,8 @@ class ManualAccountJob {
     static final String WAIT_CASH = "cash-negative";
     /** 세션 계산 기록의 사유 칸(못 만듦의 사유, 손절만 든 세션의 표시). */
     static final String DETAIL_REASON = "reason";
-    /** 손절만 든 세션의 안내(세션 기록 notes — 보기의 안내 목록). */
-    static final String NOTE_STOP_ONLY = "현금이 음수라 손절 매도 지시만 만들었습니다 — 나머지 매매 지시는 만들지 않았습니다(개장 전에 잔고를 고치면 다음 주기에 만듭니다).";
+    /** 손절만 든 세션의 안내(세션 기록 notes — 보기의 안내 목록). 개장 뒤에도 그대로 보이므로 '개장 전에 고치면 만든다'는 말은 넣지 않습니다(그 안내는 화면의 지시 카드가 개장 전에만). */
+    static final String NOTE_STOP_ONLY = "현금이 음수라 손절 매도 지시만 만들었습니다 — 나머지 매매 지시는 만들지 않았습니다.";
     /** 손절만 든 세션에 나머지 지시를 채운 뒤의 안내. */
     static final String NOTE_FILLED = "현금이 음수라 손절 매도 지시만 먼저 만들었고, 잔고를 고친 뒤 나머지 지시를 더했습니다.";
 
@@ -756,8 +756,14 @@ class ManualAccountJob {
             outside.removeAll(targets.price().keySet());
             Map<String, BigDecimal> last = outside.isEmpty() ? Map.of() : paper.lastPrices(outside);
             List<String> missing = new ArrayList<>();
+            // 손절만 든 세션에 나머지를 채울 때 — 그 세션에서 이미 닫힌(건너뜀·확인) 지시의 종목은 유일 제약으로 다시 지시되지 않으므로 계산에서도 '팔지 않는 보유'로 둠
+            // (그 매도 대금을 매수 현금에 넣지 않음). 미확인(PLANNED) 손절 지시는 여전히 유효한 매도라 그대로 셈. 평소 세션(행 없음)은 빈 집합 — 예전 계산 그대로.
+            Set<String> frozen = new TreeSet<>();
+            if (row != null) {
+                store.instructions(CODE, session).stream().filter(i -> !i.planned()).forEach(i -> frozen.add(i.symbol()));
+            }
             Optional<Result> result = ManualAccountPlanner.plan(balance.cash(), held, targets.weightPct(), targets.price(), last, cashLike,
-                    missing);
+                    missing, frozen);
             if (result.isEmpty()) {
                 return WAIT_PRICE;
             }

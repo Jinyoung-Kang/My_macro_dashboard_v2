@@ -410,7 +410,8 @@ function StartedBody({
   // (요약의 음수 경고와 같은 순간에 — 고친 뒤에도 '현금이 음수입니다'가 남지 않게).
   const waitText = valuation.cash !== null && valuation.cash >= 0 ? null : waitingText(data.waiting);
   // 손절 매도 지시만 만든 세션(현금 음수 — QA-381 후속) — 그 세션의 사실이라 현금을 고친 뒤에도 서버가 나머지를 채울 때(사유를 지울 때)까지 그대로 둡니다.
-  const stopOnly = stopOnlyText(instructions);
+  // 그 세션이 이미 개장했으면(응답의 서버 시각 기준) '개장 전에 고치면 만든다' 대신 '이 세션의 나머지는 만들지 않는다'로 끝납니다.
+  const stopOnly = stopOnlyText(instructions, data.serverTime);
   const commission = toNumber(summary?.commissionPct);
 
   return (

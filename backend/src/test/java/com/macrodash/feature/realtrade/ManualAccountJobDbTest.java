@@ -13,7 +13,6 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -549,7 +548,6 @@ class ManualAccountJobDbTest {
     // 독립 검토 F6. 수정 전 실패: 'Expecting actual: ["SELL 005930 50 SKIPPED", "BUY 000660 19 PLANNED"] to contain exactly …["SELL 005930 50 SKIPPED", "BUY 000660 2 PLANNED"]'
     // (건너뛴 A 매도의 대금 500,000을 매수 현금에 넣어, 현금 50,000뿐인데 387,600어치 매수 지시).
     @Test
-    @Disabled("QA-381: 건너뛴 손절 종목의 매도 대금이 나머지 매수 예산에 들어감 — 수정 커밋에서 해제")
     @DisplayName("QA-381: 손절 지시를 건너뛴 뒤 나머지를 채우면 그 종목은 '팔지 않는 보유'로 계산 — 매도 대금을 매수 현금에 넣지 않아 매수 지시가 실제 현금 안")
     void skippedStopSellProceedsDoNotFundBuys() {
         long stopSellId = stopOnlyWithBuyAhead();

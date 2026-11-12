@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * ISA 계좌 지시의 순수 계산(ADR 0029 — 명세 docs/specs/2026-11-06-isa-manual-account.md §2) — 실제 매매와 같은 '목표 보유 맞추기'
@@ -71,6 +72,19 @@ final class ManualAccountPlanner {
      */
     static Optional<Result> plan(BigDecimal cash, Map<String, BigDecimal> held, Map<String, Double> weightPct, Map<String, Double> bookPrice,
                                  Map<String, BigDecimal> lastPrice, Set<String> cashLike, List<String> missing) {
+        return plan(cash, held, weightPct, bookPrice, lastPrice, cashLike, missing, Set.of());
+    }
+
+    /**
+     * {@link #plan(BigDecimal, Map, Map, Map, Map, Set, List)}에 '손대지 않는 종목'을 더한 것(QA-381 후속) — 손절 매도 지시만 만든 세션에 나머지 지시를 채울 때, 그 세션에서
+     * 이미 닫힌(건너뜀·확인) 지시의 종목입니다. 같은 (세션, 종목) 유일 제약 때문에 그 종목의 지시는 다시 들어가지 못하므로, 계산에서도 그 보유를 <b>팔지도 사지도 않는 보유</b>로
+     * 둡니다 — 평가액에는 그대로 들어가고, 지시·건너뜀을 만들지 않으며, 그 매도 대금을 매수 현금 확인에 넣지 않습니다(넣으면 나가지 않을 매도의 대금으로 매수 지시가 현금을 넘음).
+     * {@code frozen}이 비면 위 함수와 한 글자도 다르지 않습니다.
+     *
+     * @param frozen 지시를 만들지 않을 종목(보유는 그대로 든 것으로 계산)
+     */
+    static Optional<Result> plan(BigDecimal cash, Map<String, BigDecimal> held, Map<String, Double> weightPct, Map<String, Double> bookPrice,
+                                 Map<String, BigDecimal> lastPrice, Set<String> cashLike, List<String> missing, Set<String> frozen) {
         if (cash.signum() < 0) {
             return Optional.empty();   // QA-381 — 음수 현금으로 줄어든(또는 0 이하인) 평가액에 맞춰 팔라고 하지 않음
         }
@@ -107,10 +121,17 @@ final class ManualAccountPlanner {
         Map<String, Quote> quotes = new HashMap<>();
         ref.forEach((symbol, price) -> quotes.put(symbol, new Quote(price, price.multiply(BUY_BUFFER))));
         Rules rules = new Rules(null, cashLike, false, false);
+        // 손대지 않는 종목이 있으면 그 밖의 종목만 다룸(범위 밖 보유는 팔지도 사지도 않고 건너뜀도 남기지 않음 — RealTradePlanner.sync의 scope). 없으면 null = 전부(예전 그대로).
+        Set<String> scope = null;
+        if (!frozen.isEmpty()) {
+            scope = new TreeSet<>(weightPct.keySet());
+            scope.addAll(positions.keySet());
+            scope.removeAll(frozen);
+        }
 
         // 1차: 잔고 현금만으로 — 매도 수량은 현금과 상관없으므로 여기서 정해집니다.
         Plan first = RealTradePlanner.sync(weightPct, equity, new Account(cash, positions, quotes, Map.of(), Map.of()), Set.of(),
-                BigDecimal.ZERO, rules, true);
+                BigDecimal.ZERO, rules, true, scope, null);
         BigDecimal proceeds = BigDecimal.ZERO;
         for (Order o : first.orders()) {
             if (RealTradePlanner.SELL.equals(o.side())) {
@@ -119,7 +140,7 @@ final class ManualAccountPlanner {
         }
         // 2차: 같은 지시의 매도 대금을 더한 현금으로 매수를 다시 배정(뒤 순서 매수부터 줄어듦).
         Plan plan = RealTradePlanner.sync(weightPct, equity, new Account(cash.add(proceeds), positions, quotes, Map.of(), Map.of()),
-                Set.of(), BigDecimal.ZERO, rules, true);
+                Set.of(), BigDecimal.ZERO, rules, true, scope, null);
         List<Draft> drafts = new ArrayList<>();
         for (Order o : plan.orders()) {
             Double w = weightPct.get(o.symbol());

@@ -337,8 +337,8 @@ describe("안내 글", () => {
 
   // 독립 검토 F5: 그 세션이 개장한 뒤에는 정기 작업이 다음 세션만 보므로 나머지 지시는 그 세션에 만들어지지 않는다 — 안내가 '개장 전에 잔고를 고치면 … 만듭니다'로
   // 남으면 사실이 아니다. 수정 전 실패: "expected '현금이 음수라 이 세션은 … 개장 전에 잔고(현금·보유)를 고치면 …' not to include '개장 전에'".
-  it.fails("QA-381 손절 매도 지시만 만든 세션의 안내 — 그 세션이 개장한 뒤(서버 시각 ≥ 개장)에는 '개장 전에 고치면 만든다'가 아니라 '이 세션의 나머지는 만들지 않는다'", () => {
-    const text = stopOnlyText as unknown as (block: unknown, serverTime?: string | null) => string | null;
+  it("QA-381 손절 매도 지시만 만든 세션의 안내 — 그 세션이 개장한 뒤(서버 시각 ≥ 개장)에는 '개장 전에 고치면 만든다'가 아니라 '이 세션의 나머지는 만들지 않는다'", () => {
+    const text = stopOnlyText;
     const block = { status: "PLANNED", reason: "cash-negative", open: "2026-11-09T00:00:00Z" };   // 09:00 KST
     for (const now of ["2026-11-09T00:00:00Z", "2026-11-09T00:05:00Z", "2026-11-09T15:00:00+09:00"]) {
       const after = text(block, now);

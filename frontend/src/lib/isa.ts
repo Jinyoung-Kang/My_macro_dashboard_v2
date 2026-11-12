@@ -99,13 +99,24 @@ export function waitingText(waiting: IsaWaiting | null | undefined): string | nu
 /**
  * 손절 매도 지시만 만든 세션(instructions.status = PLANNED · reason = cash-negative — QA-381 후속, ADR 0034 결정 5 개정의 덧붙임)의 지시 카드 안내 — 현금이 음수라
  * 비중 계산으로 나오는 매매는 만들지 않고, 규칙 계좌가 손절(STOP)로 파는 종목의 매도만 만든 세션입니다. 나머지를 채우면 서버가 사유를 지우므로 null이 됩니다.
- * 개장 뒤에도 그 세션의 사실이라 그대로 보입니다(나머지는 그 세션에 만들지 않았음). 금액을 넣지 않습니다.
+ * 개장 뒤에도 그 세션의 사실이라 그대로 보입니다. 다만 나머지 지시는 개장 전에만 채워지므로(정기 작업은 개장한 세션을 다시 계산하지 않음), 응답의 서버 시각(serverTime)이
+ * 그 세션 개장 시각(instructions.open) 이후이면 '개장 전에 고치면 만든다' 대신 '이 세션의 나머지는 만들지 않는다'로 끝냅니다. 두 시각 가운데 하나라도 모르면 개장 전 글입니다
+ * (조건문이라 틀리지 않음 — 시각을 지어내지 않음). 금액을 넣지 않습니다.
  */
-export function stopOnlyText(instructions: Pick<IsaInstructions, "status" | "reason"> | null | undefined): string | null {
+export function stopOnlyText(
+  instructions: Pick<IsaInstructions, "status" | "reason" | "open"> | null | undefined,
+  serverTime?: string | null,
+): string | null {
   if (instructions?.status !== "PLANNED" || instructions.reason !== "cash-negative") {
     return null;
   }
-  return "현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다 — 아래 매도는 규칙 계좌가 트레일링 스탑(손절)으로 파는 종목이고, 나머지 매매 지시는 만들지 않았습니다. 개장 전에 잔고(현금·보유)를 고치면 다음 주기(10분 안)에 나머지 지시를 만듭니다.";
+  const head = "현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다 — 아래 매도는 규칙 계좌가 트레일링 스탑(손절)으로 파는 종목이고, 나머지 매매 지시는 만들지 않았습니다.";
+  const open = typeof instructions.open === "string" ? Date.parse(instructions.open) : Number.NaN;
+  const now = typeof serverTime === "string" ? Date.parse(serverTime) : Number.NaN;
+  if (Number.isFinite(open) && Number.isFinite(now) && now >= open) {
+    return `${head} 이미 개장해 이 세션의 나머지 지시는 만들지 않습니다 — 잔고(현금·보유)를 고치면 다음 세션 지시부터 만듭니다.`;
+  }
+  return `${head} 개장 전에 잔고(현금·보유)를 고치면 다음 주기(10분 안)에 나머지 지시를 만듭니다.`;
 }
 
 const STOP_TIMING: Readonly<Record<string, string>> = {

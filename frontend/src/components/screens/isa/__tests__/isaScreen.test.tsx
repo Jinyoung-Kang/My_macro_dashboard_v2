@@ -353,7 +353,7 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
 
   // 독립 검토 F5: 손절만 든 세션이 개장한 뒤(응답 serverTime ≥ instructions.open)에는 그 세션의 나머지 지시가 만들어지지 않는다 — 배너가 '개장 전에 잔고를 고치면 …
   // 만듭니다'로 남지 않게. 수정 전 실패: 개장 뒤에도 그 글이 있어 'expected <div …> to be null'.
-  it.fails("QA-381 손절 매도 지시만 든 세션 — 개장 뒤에는 배너가 '이 세션의 나머지 지시는 만들지 않습니다'로 끝남(개장 전에는 '개장 전에 고치면 만듭니다')", async () => {
+  it("QA-381 손절 매도 지시만 든 세션 — 개장 뒤에는 배너가 '이 세션의 나머지 지시는 만들지 않습니다'로 끝남(개장 전에는 '개장 전에 고치면 만듭니다')", async () => {
     const negative = { ...started().summary, cash: -50_000, totalAsset: 3_850_000 };
     const stopOnly = { session: "2026-11-09", status: "PLANNED", items: [ITEMS[0]], open: "2026-11-09T00:00:00Z", reason: "cash-negative", ledgerChanged: false, targetAt: null };
     reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: stopOnly, serverTime: "2026-11-08T23:30:00Z" }));
