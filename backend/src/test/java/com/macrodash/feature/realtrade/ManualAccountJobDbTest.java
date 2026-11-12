@@ -13,6 +13,7 @@ import com.macrodash.store.ManualAccountStore.Instruction;
 import com.macrodash.store.ManualAccountStore.NewInstruction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,6 +27,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static com.macrodash.feature.realtrade.RealTradeFixtures.MAPPER;
 import static com.macrodash.feature.realtrade.RealTradeFixtures.SEOUL;
@@ -340,6 +342,240 @@ class ManualAccountJobDbTest {
                 .containsExactlyInAnyOrder(A + " 50 MARKET PLANNED", B + " 15 NEXT_CLOSE PLANNED");
         assertThat(stops()).allSatisfy(stop -> assertThat(stop.notifiedAt()).isNotNull());
         assertThat(sentTexts(1).getFirst()).startsWith("[ISA 계좌] 11/09(월) 스탑 매도 지시").contains("• 매도 " + A + " 합성전자 50주", "• 매도 " + B + " 합성하이닉스 15주");
+    }
+
+    // ------------------------------------------------------------------ 현금이 음수여도 손절 매도 지시는 만든다(QA-381 후속 — ADR 0034 결정 5 개정의 덧붙임)
+    private static final String STOP_ONLY_OPEN_TEXT = "[ISA 계좌] 11/09(월) 시가 손절 매도 지시\n\n"
+            + "• 매도 005930 합성전자 50주\n\n"
+            + "규칙 계좌가 트레일링 스탑(손절)으로 파는 종목입니다 — 손절 매도는 현금이 음수여도 지시합니다.\n"
+            + "ISA 잔고의 현금이 음수라 나머지 매매 지시는 만들지 않았습니다.\n"
+            + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 다시 알립니다.\n\n"
+            + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n"
+            + "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결 값이 다르면 매매 내역의 '고치기'로 고치세요.";
+
+    /** 규칙 계좌가 A를 전날 종가 기준 손절(대기 STOP 매도)로 E 시가에 파는 밤 — E 목표에 A가 없고(비중 0) B 30%·현금성 10%. */
+    private void stoppedOutTargets() {
+        targets(E, Map.of(B, 30.0, CASH, 10.0), Map.of(A, 10_000.0, B, 20_000.0, CASH, 100_000.0), true);
+        when(paper.pendingStopSymbols(BOOK, E)).thenReturn(Set.of(A));
+    }
+
+    // 수정 전 실패: 'Expecting actual: [] to contain exactly (and in same order): ["SELL 005930 50 PLANNED"]'(현금이 음수면 손절의 시가 매도까지 지시하지 않음).
+    @Test
+    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 현금이 음수여도 규칙 계좌의 손절(STOP) 매도는 정수 보유 전량 매도 지시 — 나머지 매매는 만들지 않고, 세션 행에 사유(cash-negative), 08:00에 손절 지시 글 한 통(금액 없음), 개장 뒤에도 그 행 그대로")
+    void negativeCashStillInstructsStopSells() {
+        negativeCash("-600000");
+        stoppedOutTargets();
+
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).as("손절 종목 A만 — B 매도·현금성 매수(비중 계산)는 만들지 않음").containsExactly("SELL " + A + " 50 PLANNED");
+        assertThat(store.session("isa", E)).hasValueSatisfying(s -> {
+            assertThat(s.state()).isEqualTo("PLANNED");
+            assertThat(s.detail().path("reason").asString()).isEqualTo(ManualAccountJob.WAIT_CASH);
+            assertThat(s.decisionId()).isEqualTo(11L);
+            assertThat(s.detail().has("equity")).as("평가액을 세지 않음(음수 현금의 영향을 받지 않게)").isFalse();
+        });
+        Instruction sell = store.instructions("isa", E).getFirst();
+        assertThat(sell.weightPct()).isEqualByComparingTo("0");
+        assertThat(sell.refPrice()).isEqualByComparingTo("10000");
+        assertThat(sell.reason().has("equity")).isFalse();
+        assertThat(job.waiting().session()).as("나머지 지시는 잔고를 고칠 때까지 기다림").isEqualTo(E);
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_CASH);
+        Map<String, Object> block = block(service().view());
+        assertThat(block).containsEntry("session", E.toString()).containsEntry("status", "PLANNED").containsEntry("reason", "cash-negative");
+        assertThat((List<?>) block.get("items")).hasSize(1);
+        assertThat((List<?>) service().view().get("notes")).anySatisfy(note -> assertThat((String) note).contains("손절 매도 지시만"));
+        verify(telegram, never()).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+
+        cycleAt("2026-11-06T22:45");
+        assertThat(lines(E)).as("음수인 동안 주기마다 다시 보지만 더 만들지 않음").containsExactly("SELL " + A + " 50 PLANNED");
+
+        cycleAt("2026-11-09T08:05");
+        cycleAt("2026-11-09T08:15");
+        assertThat(sentTexts(1)).as("손절 지시 글 한 통 — '매매 지시 없음' 글은 따로 가지 않음").singleElement().isEqualTo(STOP_ONLY_OPEN_TEXT);
+        assertThat(sentTexts(1).getFirst()).doesNotContain("원", "600000", "600,000", "10000", "500000", "%");
+
+        cycleAt("2026-11-09T09:05");   // 개장까지 음수 — 손절 지시가 든 세션 행을 못 만듦으로 덮지 않음
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED");
+        assertThat(block(service().view())).containsEntry("status", "PLANNED").containsEntry("reason", "cash-negative");
+        verify(telegram, times(1)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+    }
+
+    // 수정 전 실패: 위와 같음(22:35 주기에 손절 지시가 없어 첫 단언에서 'Expecting actual: [] to contain exactly …').
+    @Test
+    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 손절 지시만 든 세션 — 08:00 뒤 개장 전에 잔고를 고치면 다음 주기에 나머지 지시를 더하고(손절 지시는 그대로·두 번 지시하지 않음) 더한 지시만 다시 알림")
+    void stopOnlySessionFillsRestAfterBalanceFix() {
+        negativeCash("-600000");
+        stoppedOutTargets();
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED");
+        cycleAt("2026-11-09T08:05");
+        long stopSellId = store.instructions("isa", E).getFirst().id();
+
+        clock.set(kst("2026-11-09T08:20"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("1000000"), Map.of()));   // 현금 = 1,000,000 − 50 × 10,000 − 15 × 20,000 = 200,000
+        assertThat(lines(E)).as("08:00 뒤 — 이미 알린 손절 지시는 지우지 않음").containsExactly("SELL " + A + " 50 PLANNED");
+        cycleAt("2026-11-09T08:25");
+
+        // 평가액 1,000,000 — A는 목표에 없어 전량 매도(이미 있는 지시 그대로), B floor(300,000 ÷ 20,000) = 15 그대로, 현금성 floor(100,000 ÷ 100,000) = 1주 매수
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED", "BUY " + CASH + " 1 PLANNED");
+        assertThat(store.instructions("isa", E).getFirst().id()).as("손절 지시 행은 그 행 그대로").isEqualTo(stopSellId);
+        assertThat(store.session("isa", E)).hasValueSatisfying(s -> {
+            assertThat(s.state()).isEqualTo("PLANNED");
+            assertThat(s.detail().has("reason")).as("나머지를 채운 세션은 온전한 계산 기록").isFalse();
+            assertThat(s.detail().path("equity").decimalValue()).isEqualByComparingTo("1000000");
+        });
+        assertThat(job.waiting()).isNull();
+        assertThat(block(service().view())).containsEntry("reason", null).containsEntry("ledgerChanged", true);
+        List<String> texts = sentTexts(2);
+        assertThat(texts.get(0)).isEqualTo(STOP_ONLY_OPEN_TEXT);
+        assertThat(texts.get(1)).startsWith("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n").contains("• 매수 " + CASH + " 합성 단기채권 1주")
+                .doesNotContain("• 매도 " + A, "손절", "음수");
+
+        cycleAt("2026-11-09T08:35");
+        assertThat(lines(E)).hasSize(2);
+        verify(telegram, times(2)).send(eq(PaperTelegram.Channel.ACCOUNT), anyString());
+    }
+
+    // 수정 전 실패: 22:35 주기에 손절 지시가 없어 'Expecting actual: [] to contain exactly (and in same order): ["SELL 005930 50 PLANNED"]'.
+    @Test
+    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 손절 지시만 든 세션 — 08:00 전에 잔고를 고치면 기존 규칙대로 지우고 다음 주기에 평소 지시로 다시 만듦(손절 종목은 목표 0의 전량 매도 한 줄), 08:00 글은 평소 지시 글 한 통")
+    void stopOnlySessionReplansWhenFixedBeforeMorning() {
+        negativeCash("-600000");
+        stoppedOutTargets();
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED");
+
+        clock.set(kst("2026-11-06T23:00"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("1000000"), Map.of()));
+        assertThat(store.session("isa", E)).isEmpty();
+        assertThat(store.instructions("isa", E)).isEmpty();
+        cycleAt("2026-11-06T23:05");
+
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED", "BUY " + CASH + " 1 PLANNED");
+        assertThat(store.session("isa", E).orElseThrow().detail().has("reason")).isFalse();
+        assertThat(job.waiting()).isNull();
+        cycleAt("2026-11-09T08:05");
+        assertThat(sentTexts(1).getFirst()).startsWith("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n")
+                .contains("• 매도 " + A + " 합성전자 50주\n• 매수 " + CASH + " 합성 단기채권 1주").doesNotContain("손절", "음수");
+    }
+
+    // 수정 전 실패: 손절 지시가 없어 그 번호를 읽는 줄에서 'NoSuchElementException'.
+    @Test
+    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 확인(잔고 반영)한 손절 지시의 종목은 나머지 지시를 채울 때 다시 지시하지 않음 — 일부만 확인해 보유가 남아도 같은 세션에 두 번째 매도 지시를 만들지 않음")
+    void confirmedStopSellIsNotInstructedAgain() {
+        negativeCash("-600000");
+        stoppedOutTargets();
+        cycleAt("2026-11-06T22:35");
+        cycleAt("2026-11-09T08:05");
+        long stopSellId = store.instructions("isa", E).getFirst().id();
+        when(paper.krTradeCosts(anyString(), org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any()))
+                .thenReturn(new PaperMirrorService.TradeCosts(d("0"), d("0"), false));
+
+        clock.set(kst("2026-11-09T08:40"));   // 장전에 30주만 팔았다고 확인 — 현금 −600,000 + 300,000 = −300,000(아직 음수), A 20주 남음
+        service().apply(new ManualAccountService.ApplyRequest(List.of(
+                new ManualAccountService.ApplyItem(stopSellId, null, null, "user", d("30"), d("300000"), d("0")))));
+        cycleAt("2026-11-09T08:45");
+        assertThat(lines(E)).as("아직 음수 — 더 만들지 않음").containsExactly("SELL " + A + " 50 RECORDED");
+
+        clock.set(kst("2026-11-09T08:46"));
+        service().setTotal(new ManualAccountService.TotalRequest(d("700000"), Map.of()));   // 현금 = 700,000 − 20 × 10,000 − 15 × 20,000 = 200,000
+        cycleAt("2026-11-09T08:55");
+
+        // 평가액 700,000 — B floor(210,000 ÷ 20,000) = 10 → 5주 매도, 현금성 floor(70,000 ÷ 100,000) = 0. 남은 A 20주의 매도는 같은 세션에 다시 지시하지 않음(다음 세션 지시가 맡음)
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 RECORDED", "SELL " + B + " 5 PLANNED");
+        assertThat(store.session("isa", E).orElseThrow().detail().has("reason")).isFalse();
+        assertThat(sentTexts(2).get(1)).contains("• 매도 " + B + " 합성하이닉스 5주").doesNotContain("• 매도 " + A);
+    }
+
+    // 수정 전 실패: 위와 같음(손절 지시가 없어 첫 단언에서 실패).
+    @Test
+    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 시각 맞추기 날의 손절 지시 — 세션 기록에 09:10과 목표에 반영한 STOP 주문 번호를 남겨 장중 스탑 지시가 같은 보유를 또 지시하지 않음, 글은 '09:10 손절 매도 지시'")
+    void stopOnlyOnTimedDayCoversTheStopOrder() {
+        negativeCash("-600000");
+        when(paper.dailySyncAt(BOOK, E)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, E, SYNC_AT)).thenReturn(Optional.of(new OpenTargets(BOOK, E, Map.of(B, 30.0, CASH, 10.0),
+                Map.of(A, 10_000.0, B, 20_000.0, CASH, 100_000.0), 1e8, 0, List.of(), List.of(), List.of(31L))));
+        when(paper.pendingStopSymbols(BOOK, E)).thenReturn(Set.of(A));
+        when(paper.dueOrders(eq(BOOK), eq(E), any())).thenReturn(List.of(stopAt(31L, A, "AT_MINUTE", SYNC_AT)));
+
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED");
+        assertThat(store.instructions("isa", E).getFirst().reason().path("targetAt").asString()).isEqualTo(SYNC_AT.toString());
+        assertThat(store.session("isa", E)).hasValueSatisfying(row -> {
+            assertThat(row.detail().path("reason").asString()).isEqualTo(ManualAccountJob.WAIT_CASH);
+            assertThat(row.detail().path("targetAt").asString()).isEqualTo(SYNC_AT.toString());
+            assertThat(row.detail().path("coveredStopOrderIds").get(0).asLong()).isEqualTo(31L);
+        });
+
+        cycleAt("2026-11-09T08:05");
+        assertThat(sentTexts(1).getFirst()).startsWith("[ISA 계좌] 11/09(월) 09:10 손절 매도 지시\n\n• 매도 " + A + " 합성전자 50주\n\n")
+                .contains("나머지 매매 지시는 만들지 않았습니다", "09:10 이후 시장가로 내면").doesNotContain("장전 동시호가", "원", "%");
+        stopCycleAt("2026-11-09T09:06");
+        stopCycleAt("2026-11-09T09:10:10");
+        assertThat(stops()).as("그 STOP은 손절 지시가 이미 팔게 함 — 스탑 지시를 또 만들지 않음").isEmpty();
+    }
+
+    // 수정 전 실패: 위와 같음(손절 지시가 없어 첫 단언에서 실패).
+    @Test
+    @Disabled("QA-381: 현금이 음수면 손절(STOP)의 시가 매도까지 지시하지 않음 — 수정 커밋에서 해제")
+    @DisplayName("QA-381: 손절 지시를 08:00 전에 건너뛰어 실어 보낼 지시 글이 없으면 '나머지 매매 지시 없음' 글 한 통(금액 없음) — 현금이 음수인 것을 조용히 넘기지 않음")
+    void skippedStopOnlyStillGetsCashNotice() {
+        negativeCash("-600000");
+        stoppedOutTargets();
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED");
+        clock.set(kst("2026-11-06T23:00"));
+        service().skipInstruction(store.instructions("isa", E).getFirst().id());
+
+        cycleAt("2026-11-09T08:05");
+        cycleAt("2026-11-09T08:15");
+        assertThat(sentTexts(1)).singleElement().isEqualTo("[ISA 계좌] 11/09(월) 나머지 매매 지시 없음\n\n"
+                + "ISA 잔고의 현금이 음수라 이 세션은 손절 매도 지시만 만들고 나머지 매매 지시는 만들지 않았습니다.\n"
+                + "ISA 계좌 탭에서 잔고(현금·보유)를 확인해 고치세요 — 개장 전에 고치면(반영에 10분쯤 걸림) 나머지 지시를 만들어 알립니다.\n"
+                + "장중 스탑 매도 지시는 감지되면 그대로 알립니다.");
+    }
+
+    @Test
+    @DisplayName("QA-381: 손절 대상이 아닌 것은 음수 현금에서 지시하지 않음 — 목표에 비중이 남은 종목(뒤 시각의 STOP — 장중 스탑 지시가 맡음)·ISA에 없는 종목·1주 미만 보유")
+    void stopSymbolsOutsideTargetOrHoldingsAreIgnored() {
+        negativeCash("-600000");
+        store.upsertPosition("isa", X, null, d("0.5"), d("5000"));
+        standardTargets();   // A 50%·B 30% — 둘 다 목표에 남음, X는 목표에 없음(비중 0)이지만 1주 미만
+        when(paper.pendingStopSymbols(BOOK, E)).thenReturn(Set.of(A, X, "035720"));
+
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).isEmpty();
+        assertThat(store.session("isa", E)).isEmpty();
+        assertThat(job.waiting().reason()).isEqualTo(ManualAccountJob.WAIT_CASH);
+        cycleAt("2026-11-09T08:05");
+        assertThat(sentTexts(1).getFirst()).startsWith("[ISA 계좌] 11/09(월) 매매 지시 없음");
+    }
+
+    @Test
+    @DisplayName("QA-381: 현금이 0 이상인 평소 세션은 그대로 — 대기 STOP 종목을 따로 읽지 않고, 손절 종목은 목표 0의 전량 매도로 평소 계산에 들어감(세션 기록에 사유 없음·평가액 있음)")
+    void nonNegativeCashPathIsUnchanged() {
+        started("1000000", "2026-11-06T14:55", A, "50", "10000", B, "15", "20000");   // 현금 200,000
+        stoppedOutTargets();
+
+        cycleAt("2026-11-06T22:35");
+        assertThat(lines(E)).containsExactly("SELL " + A + " 50 PLANNED", "BUY " + CASH + " 1 PLANNED");
+        verify(paper, never()).pendingStopSymbols(anyString(), any());
+        assertThat(store.session("isa", E)).hasValueSatisfying(s -> {
+            assertThat(s.detail().has("reason")).isFalse();
+            assertThat(s.detail().path("equity").decimalValue()).isEqualByComparingTo("1000000");
+        });
+        assertThat(store.instructions("isa", E).getFirst().reason().path("equity").decimalValue()).isEqualByComparingTo("1000000");
+        cycleAt("2026-11-09T08:05");
+        assertThat(sentTexts(1).getFirst()).isEqualTo("[ISA 계좌] 11/09(월) 시가 매매 지시\n\n"
+                + "• 매도 005930 합성전자 50주\n"
+                + "• 매수 153130 합성 단기채권 1주\n\n"
+                + "장전 동시호가(08:30~09:00)에 시장가로 내면 규칙 계좌와 같은 시가에 체결됩니다.\n"
+                + "매매했으면 ISA 계좌 탭에서 '확인'을 누르세요 — 체결 값이 다르면 매매 내역의 '고치기'로 고치세요.");
     }
 
     // ------------------------------------------------------------------ 알림

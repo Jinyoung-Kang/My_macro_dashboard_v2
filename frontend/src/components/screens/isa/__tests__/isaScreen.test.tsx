@@ -333,6 +333,24 @@ describe("시작 뒤 — 요약·지시·잔고·매매 내역", () => {
     expect(await inRegion().findByText(/^현금이 음수라 이 세션의 매매 지시를 만들지 않았습니다/)).toBeTruthy();
   });
 
+  // QA-381 후속(사용자 결정 2026-11-12): 현금이 음수여도 손절 매도 지시는 만든다 — 손절 지시만 든 세션(instructions.status = PLANNED · reason = cash-negative)은
+  // 지시 카드에 그 사실(나머지는 만들지 않음·개장 전에 고치면 만듦)을 보인다. 수정 전 실패: 그 글이 없어 findByText가 'Unable to find an element with the text'.
+  it.fails("QA-381 손절 매도 지시만 든 세션 — 지시 카드에 '손절 매도 지시만 만들었다'는 안내와 그 지시 줄(확인 단추), 나머지를 채운 뒤에는 안내를 내림", async () => {
+    const negative = { ...started().summary, cash: -50_000, totalAsset: 3_850_000 };
+    const stopOnly = { session: "2026-11-09", status: "PLANNED", items: [ITEMS[0]], open: "2026-11-09T09:00:00+09:00", reason: "cash-negative", ledgerChanged: false, targetAt: null };
+    reads[ISA_PATH] = () => Promise.resolve(started({ summary: negative, instructions: stopOnly }));
+    renderIsa();
+    expect(await inRegion().findByText(/^현금이 음수라 이 세션은 손절 매도 지시만 만들었습니다/)).toBeTruthy();
+    expect(inRegion().getByText(/나머지 매매 지시는 만들지 않았습니다/)).toBeTruthy();
+    expect(within(rowOf("다음 시가 매매 지시", "합성화학 222220")).getByRole("button", { name: /확인/ })).toBeTruthy();
+    expect(inRegion().queryByText(/함께 멈춥니다/)).toBeNull();
+    cleanup();
+    reads[ISA_PATH] = () => Promise.resolve(started({ instructions: { ...stopOnly, reason: null, items: ITEMS } }));
+    renderIsa();
+    await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });
+    expect(inRegion().queryByText(/손절 매도 지시만 만들었습니다/)).toBeNull();
+  });
+
   it("잔고 표 — 첫 열 고치기·지우기, 종목·수량·평균 매입가·매입 금액·현재가·평가액·평가손익·손익 %·비중·수수료·세금, 가격 모르면 —", async () => {
     renderIsa();
     await inRegion().findByRole("table", { name: "ISA 계좌 잔고" });

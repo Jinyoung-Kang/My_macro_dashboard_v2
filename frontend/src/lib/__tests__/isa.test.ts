@@ -311,6 +311,16 @@ describe("안내 글", () => {
     expect(waitingText({ session: "2026-11-10", reason: "cash-negative" })).not.toMatch(/원|[0-9]{3,}/);
   });
 
+  // QA-381 후속(사용자 결정 2026-11-12): 현금이 음수여도 규칙 계좌의 손절(STOP) 매도 지시는 만든다 — 음수 현금 글 세 곳이 '손절의 시가 매도도 함께 멈춥니다'라고
+  // 말하면 사실이 아니다. 수정 전 실패: "expected '현금이 음수입니다 — …함께 멈춥니다…' not to include '함께 멈춥니다'".
+  it.fails("QA-381 음수 현금 글 세 곳 — 손절 매도 지시는 그대로 나온다고 알림('함께 멈춘다'고 하지 않음)", () => {
+    for (const text of [NEGATIVE_CASH_TEXT, unavailableText("cash-negative"), waitingText({ session: "2026-11-10", reason: "cash-negative" }) ?? ""]) {
+      expect(text).not.toContain("함께 멈춥니다");
+      expect(text).toContain("손절 매도 지시");
+      expect(text).toContain("장중 스탑 매도 지시");
+    }
+  });
+
   // QA-382: 종가 스탑 지시는 15:30 체결 뒤에도 다음 세션 지시를 만들기 전까지 확인할 수 있다(ADR 0034 결정 7 개정). 수정 전 안내에는 기한이 없었다(재현 커밋에서는 it.fails).
   it("QA-382 스탑 안내 — 종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전까지 확인(고정 시각 없이)", () => {
     expect(STOP_GUIDE).toContain("종가 단일가 지시는 마감 뒤에도 다음 세션 지시를 만들기 전");
