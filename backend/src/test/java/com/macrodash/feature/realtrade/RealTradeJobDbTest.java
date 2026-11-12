@@ -24,6 +24,7 @@ import com.macrodash.store.RealTradeStore.OrderRow;
 import com.macrodash.store.RealTradeStore.Valuation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -2924,6 +2925,136 @@ class RealTradeJobDbTest {
         job = restartedJob();
         run("10:00");
         assertThat(events("UNAVAILABLE")).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ '준비 안 됨' 알림의 지속 조건·회복·최소 간격(QA-342 보완)
+    private List<String> unavailableReasons() {
+        return events("UNAVAILABLE").stream().map(e -> e.detail().path("reason").asString()).toList();
+    }
+
+    @Test
+    @Disabled("QA-342 보완: '준비 안 됨' 알림이 첫 실패 주기에 바로 나감(장중 배포로 수집기가 30초 재기동해도 알림)")
+    @DisplayName("QA-342 보완: 수집기 매매 상태를 30초 못 읽은 것(장중 재기동)은 알리지 않는다 — 그동안 주문 없음, 돌아온 주기에 창 안의 주문은 그대로 나감")
+    void briefStatusOutageDoesNotNotifyAndOrdersResume() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        preflight("10000000", Map.of(), Map.of(A, "50000"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(due(331, 330, "BUY", "AT_MINUTE", kst("2026-11-06T10:00"), true)));
+        when(paper.weightAfter(eq(BOOK), eq(331L), any())).thenReturn(Optional.of(new WeightAfter(331, A, "BUY", 60.0, 1e7, true,
+                List.of(331L), List.of())));
+        run("09:59:40");   // 평소 주기 — 장 운영 정보를 받아 둠
+
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+        run("10:00:00");
+        run("10:00:10");
+        run("10:00:20");
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("UNAVAILABLE")).as("30초 끊김 — 아직 알리지 않음(수정 전: 첫 실패 주기에 바로 알림)").isEmpty();
+
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
+        run("10:00:30");
+
+        assertThat(sentSummaries()).as("받는 대로 이어 감 — 10:00 주문의 창(3분) 안").containsExactly("BUY " + A + " DAY 120");
+        run("10:05");
+        assertThat(events("UNAVAILABLE")).isEmpty();
+        assertThat(cfg().state()).isEqualTo("LIVE");
+    }
+
+    @Test
+    @Disabled("QA-342 보완: '준비 안 됨' 알림이 첫 실패 주기에 바로 나가고 그날의 한 번을 써 버림(회복 뒤의 긴 끊김은 알리지 않음)")
+    @DisplayName("QA-342 보완: 끊김이 3분 이어질 때 알리고(같은 끊김은 한 번), 회복한 뒤 다시 3분 끊기면 다시 알린다 — 주문 없음·멈춤 아님은 그대로")
+    void outageNotifiesAfterThreeMinutesAndAgainAfterRecovery() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        run("09:59:40");
+
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+        run("10:00:00");
+        run("10:01:00");
+        run("10:02:50");
+        assertThat(events("UNAVAILABLE")).as("2분 50초 — 아직").isEmpty();
+        run("10:03:00");
+        assertThat(unavailableReasons()).containsExactly("status-unavailable");
+        assertThat(events("UNAVAILABLE").getFirst().notifies()).isTrue();
+        run("10:10");
+        run("10:40");
+        assertThat(events("UNAVAILABLE")).as("같은 끊김은 최소 간격(30분)이 지나도 다시 알리지 않음").hasSize(1);
+
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
+        run("10:41");   // 회복 — 그 사유 없이 한 주기
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+        run("11:30:00");
+        run("11:32:50");
+        assertThat(events("UNAVAILABLE")).hasSize(1);
+        run("11:33:00");
+
+        assertThat(unavailableReasons()).as("회복 뒤의 새 끊김 — 다시 3분 뒤 알림").containsExactly("status-unavailable", "status-unavailable");
+        assertThat(cfg().state()).as("멈춤이 아님").isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        verify(client, never()).placeOrder(anyString());
+    }
+
+    @Test
+    @Disabled("QA-342 보완: '준비 안 됨' 알림이 하루 한 번뿐이라 회복 뒤 다시 끊겨도 알리지 않음")
+    @DisplayName("QA-342 보완: 끊겼다 돌아오기를 되풀이해도 같은 사유의 알림은 30분에 한 번까지 — 30분이 지나도 이어지는 새 끊김은 그때 알림")
+    void repeatedOutagesAreSpacedByTheMinimumInterval() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        run("09:59:40");
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+        run("10:00:00");
+        run("10:03:00");
+        assertThat(events("UNAVAILABLE")).hasSize(1);
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
+        run("10:04");
+
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+        run("10:10:00");
+        run("10:13:10");
+        assertThat(events("UNAVAILABLE")).as("새 끊김이 3분 넘었지만 앞 알림(10:03)부터 30분 안").hasSize(1);
+        run("10:32:50");
+        assertThat(events("UNAVAILABLE")).hasSize(1);
+        run("10:33:00");
+        assertThat(events("UNAVAILABLE")).as("앞 알림 + 30분 — 아직 이어지는 끊김을 알림").hasSize(2);
+        run("10:50");
+        run("11:10");
+        assertThat(events("UNAVAILABLE")).as("알린 끊김은 이어져도 다시 알리지 않음").hasSize(2);
+    }
+
+    @Test
+    @Disabled("QA-342 보완: 장 운영 정보를 한 번 못 받은 것(재기동 직후)도 첫 실패 주기에 바로 알림")
+    @DisplayName("QA-342 보완: 장중에 다시 띄운 직후 토스 장 운영 정보를 한 번 못 받고 다음 재시도(60초 뒤)에 받으면 알리지 않는다")
+    void briefCalendarFailureDoesNotNotify() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        when(client.calendar()).thenReturn(Reply.failed("calendar-unavailable"));
+        run("10:00:00");
+        run("10:00:30");
+
+        when(client.calendar()).thenReturn(Reply.of(calendar(normalSession(), 0.3)));
+        run("10:01:10");
+        run("10:05");
+
+        assertThat(events("UNAVAILABLE")).isEmpty();
+        assertThat(job.todayView().windows()).as("받는 대로 이어 감").isNotEmpty();
+    }
+
+    @Test
+    @Disabled("QA-342 보완: '준비 안 됨' 알림이 첫 실패 주기에 바로 나감")
+    @DisplayName("QA-342 보완: 켜짐이 아닌 동안(끄기·이상 멈춤)은 끊김을 세지 않는다 — 다시 켠 뒤의 끊김은 그때부터 3분")
+    void outageClockRestartsAfterNotLive() {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        run("09:59:40");
+        when(client.status()).thenReturn(Reply.failed("collector-unreachable"));
+        run("10:00:00");
+        run("10:02:00");
+        store.lockConfig("KR", current -> store.updateConfig(current.withState(RealTradeStore.STATE_OFF), 1L));
+        run("10:02:10");
+        run("10:19:50");
+        assertThat(events("UNAVAILABLE")).as("꺼짐 — 낼 주문이 없어 알리지 않음").isEmpty();
+
+        RealTradeFixtures.live(store, false, d("10000000"));   // 다시 켬(시험 자리 — 켜기 API는 부르지 않음)
+        run("10:20:00");
+        run("10:22:50");
+        assertThat(events("UNAVAILABLE")).as("다시 켠 뒤 2분 50초 — 꺼지기 전의 2분을 이어 세지 않음").isEmpty();
+        run("10:23:00");
+        assertThat(unavailableReasons()).containsExactly("status-unavailable");
     }
 
     @Test
