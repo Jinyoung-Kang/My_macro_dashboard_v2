@@ -398,10 +398,15 @@ bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh
   호스트가 컨테이너의 사용자 네임스페이스를 막는 경우입니다.
 - 메모리: `docker stats --no-stream`으로 `browser`(상한 1g)와 `collector`를 함께 봅니다. 수집기·백엔드가 밀리면 끕니다.
 - 나가는 길 확인(ADR 0026 덧붙임 '브라우저의 나가는 길', QA-414): Chrome은 컨테이너 루프백의 필터 프록시로만 나갑니다. 배포가 Chrome 안정판을 새로 받으므로 배포 뒤
-  서버에서 한 번 돌립니다 — 망이 없는 새 컨테이너에서 그 안의 루프백 서버만 쓰고(외부 요청 없음, 돌고 있는 `browser`를 건드리지 않음), 10초쯤 걸리며 메모리를 1g까지 씁니다:
+  서버에서 한 번 돌립니다 — 망이 없는 새 컨테이너에서 그 안의 루프백 서버만 쓰고(외부 요청 없음, 돌고 있는 `browser`를 건드리지 않음), 20초쯤 걸리며 메모리를 1g까지 씁니다:
   `cd ~/My_macro_dashboard_v2 && docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges:true --security-opt seccomp=collector/sidecar/seccomp.json --init --memory 1g --shm-size 256m my_macro_dashboard_v2-browser xvfb-run -a python -m sidecar.selfcheck`
   — 마지막 줄이 `결과: 통과`. 실패한 줄이 `5.`·`7.`·`8.`이면 Chrome이 WebRTC·이름 풀이 스위치를 바꾼 것입니다(`collector/sidecar/driver.py`의 `EGRESS_ARGS`).
+  `9.`가 실패하면 요청의 강제 상한(아래)이 그 Chrome 판에서 듣지 않는 것입니다 — 그 요청의 Chrome을 명령줄의 프록시 인자로 찾지 못했거나(`collector/sidecar/reap.py`),
+  끝내도 드라이버의 호출이 돌아오지 않는 경우입니다. 그 판에서는 붙잡는 페이지 하나가 계층 2를 멈출 수 있습니다(고치기 전과 같은 상태) — 끄려면 위의 `BROWSER_FETCH_URL` 줄.
   서버 `.env`에 `BROWSER_SANDBOX=false`를 둔 경우에는 `-e BROWSER_SANDBOX=false`를 더합니다. 운영 중 막은 목적지는 `docker compose logs browser`의 `막은 목적지: 호스트` 줄입니다.
+- 요청의 강제 상한(ADR 0026 덧붙임 '요청 하나의 강제 상한', QA-416): 페이지가 브라우저를 붙잡아도 요청 하나는 100초에 끝나고(그 요청의 Chrome을 끝냄), 그 실행만
+  실패합니다. `docker compose logs browser`에 `받지 못함: 요청 상한(100초)을 넘겨 브라우저를 끝냄: 호스트`가 남습니다 — 같은 호스트가 되풀이되면 그 출처의 페이지가
+  원인입니다. `정리가 끝나지 않음`(오류)이 보이면 끝내지 못한 것이 남은 것이니 `docker compose restart browser`로 다시 띄웁니다.
 - 서버 자신의 공인 주소로 듣는 것 확인(ADR 0026 덧붙임의 남은 위험 — 그 주소는 '전역'이라 브라우저 컨테이너에서 닿고, 그 트래픽은 클라우드 방화벽을 지나지 않음):
   `ss -ltnH | awk '$4 !~ /^(127\.|\[::1\])/'` — 듣는 주소가 tailnet 주소(100.64.0.0/10·`fd7a:`)뿐이면 됩니다. `0.0.0.0`·`*`·`[::]`·공인 주소로 듣는 줄(보통 sshd의 22)이
   컨테이너에서 닿는 것입니다. 닫으려면 그 서비스를 tailnet·루프백 주소에만 듣게 하거나 망 수준 방화벽(계획서 D-11의 (가))을 둡니다 — 서버 설정이라 결정 뒤에.
