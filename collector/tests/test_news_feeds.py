@@ -3,7 +3,7 @@ tests/test_news_feeds.py
 사건 뉴스 RSS의 탄력 주기·조건부 요청(app/tasks/news_feeds·flex — ADR 0040 단계 1, C1·C2).
 
 고정하는 규칙
-  1. 간격 표: 미국·한국 피드 모두에 규칙이 있다. 인베스팅닷컴 미국 세션(21:00~07:00 KST) 12~20분·그 밖 45~90분, 연합뉴스 한국 장
+  1. 간격 표: 미국·한국 피드 모두에 규칙이 있다. 인베스팅닷컴 미국 세션(21:00~07:00 KST) 30~45분(2026-11-14 조정 — 304가 거의 오지 않음)·그 밖 45~90분, 연합뉴스 한국 장
      (07:00~16:00 KST) 12~20분·그 밖 45~90분, 공공기관 60~120분. 하한은 인베스팅 12분·그 밖 10분 이상. 활발한 시간은 그 시장 거래일만.
      그 밖에서 뽑은 시각이 다음 활발한 시간의 시작을 넘으면 시작 근처로 당긴다.
   2. 처음(일정 없음)에는 받지 않고 2~25분 안에서 흩어 정한다(첫 배포·재기동 직후 한꺼번에 묻지 않음).
@@ -194,7 +194,7 @@ def test_간격_표는_모든_피드를_덮고_하한을_지킨다():
         assert cadence.active_minutes[0] >= cadence.floor_minutes and cadence.off_minutes[0] >= cadence.floor_minutes, key
         if key.startswith("investing_"):
             assert cadence.floor_minutes >= news_feeds.INVESTING_FLOOR_MINUTES == 12.0
-            assert (cadence.market, cadence.active_minutes, cadence.off_minutes) == ("us", (12.0, 20.0), (45.0, 90.0))
+            assert (cadence.market, cadence.active_minutes, cadence.off_minutes) == ("us", (30.0, 45.0), (45.0, 90.0))
     assert news_feeds.CADENCES["yna_market"].market == "kr"
     assert news_feeds.CADENCES["yna_market"].active_minutes == (12.0, 20.0)
     for key in ("fed_monetary", "bls_cpi", "bls_empsit", "sec_press", "bok_press", "mofe_press", "mods_press"):
@@ -237,7 +237,7 @@ def test_다음_시각은_활발할_때와_그_밖의_구간_끝_안(monkeypatch
     active_now = _kst(2026, 11, 16, 22, 0)        # 월 미국 세션
     off_now = _kst(2026, 11, 16, 9, 0)            # 미국 세션 밖, 다음 시작(21:00)까지 12시간
     pick = (lambda pair: pair[1]) if upper else (lambda pair: pair[0])
-    assert news_feeds.draw_next("investing_stock", active_now) == active_now + timedelta(minutes=pick((12, 20)))
+    assert news_feeds.draw_next("investing_stock", active_now) == active_now + timedelta(minutes=pick((30, 45)))
     assert news_feeds.draw_next("investing_stock", off_now) == off_now + timedelta(minutes=pick((45, 90)))
     assert news_feeds.draw_next("fed_monetary", active_now) == active_now + timedelta(minutes=pick((60, 120)))
 
@@ -245,8 +245,8 @@ def test_다음_시각은_활발할_때와_그_밖의_구간_끝_안(monkeypatch
 def test_그_밖에서_뽑은_시각이_활발한_시간_시작을_넘으면_시작_근처로_당긴다(monkeypatch):
     monkeypatch.setattr(news_feeds, "_rng", _Edge(upper=True))
     now = _kst(2026, 11, 13, 20, 40)              # 금 20:40 — 그 밖(45~90분), 21:00에 금요일 세션 시작
-    # 위쪽 끝 90분(22:10)은 시작을 넘으므로 시작 + 0~12분의 위쪽 끝(21:12)으로 당깁니다.
-    assert news_feeds.draw_next("investing_stock", now) == _kst(2026, 11, 13, 21, 12)
+    # 위쪽 끝 90분(22:10)은 시작을 넘으므로 시작 + 0~30분(활발 구간 하한)의 위쪽 끝(21:30)으로 당깁니다.
+    assert news_feeds.draw_next("investing_stock", now) == _kst(2026, 11, 13, 21, 30)
     # 물러난 피드(level ≥ 1)는 당기지 않습니다.
     assert news_feeds.draw_next("investing_stock", now, level=1) == now + timedelta(minutes=180)
     # 토요일 저녁은 세션이 없어(다음은 월 21:00) 당기지 않습니다.
@@ -673,7 +673,7 @@ def test_하한과_다음_시각은_피드를_실제로_보낸_시각에서_잰�
 
     monkeypatch.setattr(web, "session", slow_session)
     monkeypatch.setattr(news_feeds, "_rng", _Edge(upper=False))
-    now = _kst(2026, 11, 16, 22, 0)                                   # 미국 세션 — 인베스팅 12~20분(아래쪽 끝 12분)
+    now = _kst(2026, 11, 16, 22, 0)                                   # 미국 세션 — 인베스팅 30~45분(아래쪽 끝 30분)
     web.clock["now"] = now
     _only_due("news_headlines", ["investing_stock", "investing_ind"], now)
 
@@ -683,8 +683,8 @@ def test_하한과_다음_시각은_피드를_실제로_보낸_시각에서_잰�
     sent_second = now + timedelta(seconds=30)                         # 둘째 피드는 첫 요청이 끝난 뒤에 나감
     assert feeds["investing_stock"]["lastRequestAt"] == now.isoformat(timespec="seconds")
     assert feeds["investing_ind"]["lastRequestAt"] == sent_second.isoformat(timespec="seconds")
-    assert flex.due_map("news_headlines")["investing_ind"] == sent_second + timedelta(minutes=12)
-    assert web.due_at_request["investing_ind"] == sent_second + timedelta(minutes=12), "먼저 적는 시각도 보낸 시각에서"
+    assert flex.due_map("news_headlines")["investing_ind"] == sent_second + timedelta(minutes=30)
+    assert web.due_at_request["investing_ind"] == sent_second + timedelta(minutes=30), "먼저 적는 시각도 보낸 시각에서"
 
 
 def test_서버_지시는_하루까지만_따른다():

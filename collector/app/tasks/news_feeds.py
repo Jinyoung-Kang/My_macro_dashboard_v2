@@ -80,7 +80,9 @@ class Cadence:
 MIN_FLOOR_MINUTES = 10.0
 INVESTING_FLOOR_MINUTES = 12.0
 
-_INVESTING = Cadence("us", (12.0, 20.0), (45.0, 90.0), INVESTING_FLOOR_MINUTES)
+# 인베스팅닷컴은 RSS 파일을 약 10분마다 다시 만들어(ETag·Last-Modified가 바뀜) 조건부 요청에도 304가 거의 오지 않습니다(2026-11-14 배포 뒤
+# 35분 동안 9건 중 304 0 — 진행 기록 §2). 그래서 지시문 §9대로 활발할 때 간격을 12~20분에서 30~45분으로 늘렸습니다(2026-11-14 사용자 결정).
+_INVESTING = Cadence("us", (30.0, 45.0), (45.0, 90.0), INVESTING_FLOOR_MINUTES)
 _YNA = Cadence("kr", (12.0, 20.0), (45.0, 90.0), MIN_FLOOR_MINUTES)
 _STEADY = Cadence(None, (60.0, 120.0), (60.0, 120.0), MIN_FLOOR_MINUTES)
 
@@ -107,7 +109,7 @@ ACTIVE_HOURS: dict[str, tuple[int, int]] = {"us": (21, 7), "kr": (7, 16)}
 FIRST_MINUTES = (2.0, 25.0)
 # 같은 호스트에 잇달아 보낼 때 사이 간격(초, 무작위). 세션의 호스트 간격(http.pace)이 그 위에 걸립니다.
 HOST_SPACING_SECONDS = (2.0, 5.0)
-# 거부가 이어질 때 간격을 두 배씩 늘리는 횟수의 상한 — 2^3 = 8배(인베스팅 활발 12~20분 → 96~160분, 연준·BLS 60~120분 → 8~16시간).
+# 거부가 이어질 때 간격을 두 배씩 늘리는 횟수의 상한 — 2^3 = 8배(인베스팅 활발 30~45분 → 4~6시간, 연준·BLS 60~120분 → 8~16시간).
 BACKOFF_MAX_LEVEL = 3
 # 하한·max-age·호스트 거부로 미룬 피드는 그 시각 + 0~이 초(무작위) 뒤로.
 HOLD_JITTER_SECONDS = 60.0
@@ -115,7 +117,7 @@ HOLD_JITTER_SECONDS = 60.0
 SERVER_WAIT_CAP_SECONDS = 24 * 3600.0
 
 # 저장본 cadence 칸 — 수집 방식 한 줄(화면·사람이 읽음).
-CADENCE_NOTE = ("flex 탄력 주기(ADR 0040) — 피드마다 무작위 간격(인베스팅 미국 세션 12~20분·그 밖 45~90분, 연합뉴스 한국 장 12~20분·"
+CADENCE_NOTE = ("flex 탄력 주기(ADR 0040) — 피드마다 무작위 간격(인베스팅 미국 세션 30~45분·그 밖 45~90분, 연합뉴스 한국 장 12~20분·"
                 "그 밖 45~90분, 공공기관 60~120분), 조건부 요청(ETag·Last-Modified → 304), 거부 시 간격 두 배(최대 8배)")
 
 RESULT_CHANGED = "changed"            # 200 — 새 본문을 읽음
