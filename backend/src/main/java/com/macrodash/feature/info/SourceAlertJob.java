@@ -152,7 +152,24 @@ public class SourceAlertJob {
             default -> "마지막 성공이 오래됐습니다. 상태 화면의 그 태스크 기록을 보세요.";
         };
         out.append('\n').append(PaperTelegram.esc(next + " 직전 저장본은 그대로이고, 화면: 정보 수집 > 출처 상태."));
+        out.append("\n\n").append(PaperTelegram.bold("실행")).append(' ').append(PaperTelegram.esc(action(incident)));
         return out.toString();
+    }
+
+    /**
+     * 받은 사람이 할 일(2026-11-13 사용자 요청 — 운영 알림에 실행 내용을 함께). 사용자는 명령을 직접 치지 않으므로 손이 필요한 경우는 Claude Code에 맡길 말을,
+     * 스스로 풀리는 경우는 '할 일 없음'과 언제 맡길지를 적습니다.
+     */
+    static String action(SourceIncidents.Incident incident) {
+        String label = incident.label();
+        return switch (incident.kind()) {
+            case "blocked" -> incident.reason() != null && incident.reason().contains(GIVE_UP_MARK)
+                    ? "Claude Code에 \"" + label + " 수집 포기 풀어 줘\"라고 하면 됩니다(절차: docs/DATA_SOURCES.md '닫힘·포기를 푸는 방법'). 막힌 원인이 그대로면 다시 막힐 수 있습니다."
+                    : "할 일 없음 — 스스로 다시 시도합니다. 하루 넘게 이어지면 Claude Code에 \"" + label + " 수집 차단 확인해 줘\".";
+            case "format" -> "Claude Code에 \"" + label + " 수집 형식 바뀜 고쳐 줘\"라고 하면 됩니다(수집기 파서를 고쳐 배포).";
+            case "failed" -> "할 일 없음 — 스스로 다시 시도합니다. 하루 넘게 이어지면 Claude Code에 \"" + label + " 수집 실패 확인해 줘\".";
+            default -> "화면 정보 수집 > 출처 상태에서 그 태스크 기록을 보고, 이어지면 Claude Code에 \"" + label + " 수집 확인해 줘\".";
+        };
     }
 
     /** 회복 알림 글. */
@@ -160,6 +177,7 @@ public class SourceAlertJob {
         return PaperTelegram.bold("수집 회복") + "\n\n"
                 + PaperTelegram.bold("출처") + ' ' + PaperTelegram.esc(InfoSources.label(gone.task())) + '\n'
                 + PaperTelegram.bold("끊겼던 종류") + ' ' + PaperTelegram.esc(SourceIncidents.kindLabel(gone.kind())) + '\n'
-                + PaperTelegram.bold("기간") + ' ' + PaperTelegram.esc(Kst.stamp(gone.openedAt()) + " ~ " + Kst.stamp(now));
+                + PaperTelegram.bold("기간") + ' ' + PaperTelegram.esc(Kst.stamp(gone.openedAt()) + " ~ " + Kst.stamp(now)) + "\n\n"
+                + PaperTelegram.bold("실행") + ' ' + PaperTelegram.esc("할 일 없음.");
     }
 }

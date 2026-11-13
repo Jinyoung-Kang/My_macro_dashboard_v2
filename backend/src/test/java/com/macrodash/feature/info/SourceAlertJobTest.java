@@ -95,6 +95,8 @@ class SourceAlertJobTest {
         assertThat(job().run()).isZero();
         assertThat(sent).hasSize(1);
         assertThat(sent.get(0)).contains("수집 끊김", "Wolf Street", "잠시 멈춤", "개인 IP로 돌리지 않음").doesNotContain("https://");
+        // 2026-11-13 사용자 요청: 운영 알림에 할 일 — 잠시 멈춤은 스스로 풀리므로 '할 일 없음'과 언제 맡길지.
+        assertThat(sent.get(0)).contains("*실행*", "할 일 없음", "Wolf Street 수집 차단 확인해 줘");
     }
 
     @Test
@@ -105,7 +107,7 @@ class SourceAlertJobTest {
         state("info_naver_flows", "ok", 1, null);
 
         assertThat(job().run()).isEqualTo(1);
-        assertThat(sent.get(1)).contains("수집 회복", "네이버", "형식 바뀜");
+        assertThat(sent.get(1)).contains("수집 회복", "네이버", "형식 바뀜", "*실행*", "할 일 없음");
 
         state("info_naver_flows", "format", 2, "다시 다름");
         assertThat(job().run()).isEqualTo(1);
@@ -138,7 +140,8 @@ class SourceAlertJobTest {
 
         job().run();
 
-        assertThat(sent.get(0)).contains("TradingView 경제 캘린더", "포기했습니다");
+        assertThat(sent.get(0)).contains("TradingView 경제 캘린더", "포기했습니다", "*실행*", "TradingView 경제 캘린더 수집 포기 풀어 줘")
+                .doesNotContain("할 일 없음");
     }
 
     // ------------------------------------------------------------------ QA-404
@@ -190,6 +193,26 @@ class SourceAlertJobTest {
 
         assertThat(sent).hasSize(2);
         assertThat(sent.get(1)).contains("수집 회복", "네이버");
+    }
+
+    @Test
+    @DisplayName("운영 알림의 실행 줄은 끊김 종류마다 할 일을 적는다(2026-11-13 사용자 요청)")
+    void actionPerKind() {
+        assertThat(SourceAlertJob.action(incident("format", "응답 모양이 다름")))
+                .contains("Claude Code에", "네이버 수집 형식 바뀜 고쳐 줘").doesNotContain("할 일 없음");
+        assertThat(SourceAlertJob.action(incident("failed", "HTTP 503")))
+                .startsWith("할 일 없음").contains("네이버 수집 실패 확인해 줘");
+        assertThat(SourceAlertJob.action(incident("blocked", "HTTP 403 · 연속 5회 거부로 포기")))
+                .contains("네이버 수집 포기 풀어 줘", "닫힘·포기를 푸는 방법").doesNotContain("할 일 없음");
+        assertThat(SourceAlertJob.action(incident("blocked", "HTTP 403")))
+                .startsWith("할 일 없음").contains("네이버 수집 차단 확인해 줘");
+        assertThat(SourceAlertJob.action(incident("stale", "마지막 성공 뒤 30시간")))
+                .contains("출처 상태", "네이버 수집 확인해 줘");
+    }
+
+    private static SourceIncidents.Incident incident(String kind, String reason) {
+        return new SourceIncidents.Incident("info_naver_flows|" + kind, "info_naver_flows", "네이버", kind,
+                SourceIncidents.kindLabel(kind), reason, Instant.parse("2026-11-13T07:00:00Z"), "e");
     }
 
     @Test
