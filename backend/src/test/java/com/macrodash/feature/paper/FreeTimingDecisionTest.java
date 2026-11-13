@@ -326,7 +326,7 @@ class FreeTimingDecisionTest {
         String carried = "{\"schemaVersion\":2,\"stance\":\"NEUTRAL\",\"targetEquityExposurePct\":10,"
                 + "\"desiredEquityExposurePct\":40,\"exposurePlan\":\"10년물이 내려오면 두 번에 나눠 좁힌다\",\"exposureRationale\":\"r\","
                 + "\"summary\":\"이어받기 판단\",\"orders\":[" + buy("AAA", 5, "NEXT_CLOSE", null) + "],\"noTradeReason\":null,"
-                + "\"conditions\":[{\"metric\":\"us10y\",\"op\":\"BELOW\",\"level\":4.75,\"then\":\"노출 확대 검토\"}],"
+                + "\"conditions\":[{\"metric\":\"us10y\",\"op\":\"BELOW\",\"level\":4.75,\"then\":\"노출 확대 검토\",\"ticker\":\"\"}],"
                 + "\"confidence\":0.6}";
         answerJson(carried);
 

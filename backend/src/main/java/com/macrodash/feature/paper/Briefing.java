@@ -245,6 +245,9 @@ final class Briefing {
                 c.put("op", e.condition().op());
                 c.put("level", e.condition().level());
                 c.put("then", e.condition().then());
+                if (e.condition().ticker() != null) {
+                    c.put("ticker", e.condition().ticker());   // 그 종목의 무효화 조건(이어받기 판 2) — 계좌 전체 조건은 이 칸이 없음
+                }
                 c.put("current", e.current());
                 c.put("status", e.status());
                 conditions.add(c);
@@ -312,7 +315,8 @@ final class Briefing {
                 lines.add(PaperTelegram.esc("  대기: " + String.join(", ", pending)));
             }
             for (JsonNode c : Json.array(book, "conditions")) {
-                lines.add(PaperTelegram.esc("  조건: " + Json.asText(c, "metric") + (CarriedConditions.ABOVE.equals(Json.asText(c, "op")) ? " > " : " < ")
+                String holding = Json.asText(c, "ticker");
+                lines.add(PaperTelegram.esc("  조건: " + (holding == null ? "" : "[" + holding + "] ") + Json.asText(c, "metric") + (CarriedConditions.ABOVE.equals(Json.asText(c, "op")) ? " > " : " < ")
                         + number(Json.asDouble(c, "level")) + " — " + Json.asText(c, "status")
                         + (Json.asDouble(c, "current") == null ? "" : "(지금 " + number(Json.asDouble(c, "current")) + ")")));
             }

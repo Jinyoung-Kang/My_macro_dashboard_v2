@@ -341,6 +341,7 @@ final class CheckpointPacket {
             prices.forEach(metrics::putIfAbsent);
             root.put(Continuity.INTRADAY_DECISION, Continuity.intradayDecision(in.morning()));
             Map<String, Object> carried = Continuity.intradayCarried(in.morning(), metrics);
+            carried.put(Continuity.HOLDING_CHECKS, Continuity.attachChecks(portfolio.get("positions"), extra.checks(), metrics));
             Set<String> tickers = new LinkedHashSet<>(Continuity.tickers(portfolio.get("positions")));
             tickers.addAll(prices.keySet());
             carried.put("prevCloses", Continuity.prevCloses(morningPacket, "ticker", tickers));

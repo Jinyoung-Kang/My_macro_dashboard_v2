@@ -485,9 +485,11 @@ final class ClaudePrompts {
             ## 이어받기(고정)
             - 10b_carried는 직전 결정이 남긴 것을 코드가 그대로 옮긴 자료다 — 바라는 노출과 그 계획, 조건(conditions)마다 이 패킷의 값으로 매긴 상태(충족·미충족·평가 불가), 관심 목록의 조건. 충족된 조건은 summary에서 먼저 다룬다 — 적어 둔 대로 하거나, 하지 않으면 그 까닭을 적는다. 조건은 판단할 계기이고 코드가 대신 집행하지 않는다.
             - 9_portfolio.positions의 entry는 그 종목을 살 때 네가 쓴 논거(thesis)와 무효화 조건(invalidation)이다(없으면 null). 보유 종목의 무효화 조건이 지금 자료로 충족됐는지를 판단에 넣고, 충족됐는데 그대로 보유하면 그 까닭을 summary에 적는다.
+            - positions의 checks는 그 종목에 네가 적어 둔 조건(conditions의 ticker가 그 종목인 것 — 그 종목에 조건을 적은 가장 최근 결정의 묶음)을 코드가 이 패킷의 값으로 매긴 것이다(없으면 null). 10b_carried.holdingChecks.met은 그 가운데 충족된 것만 모은 목록이다 — 여기 있는 종목은 summary에서 먼저 다루고, 팔지 않으면 그 까닭을 적는다. holdingChecks.missing은 무효화 조건은 적었는데 코드가 매길 조건이 아직 없는 보유 종목이다 — entry.invalidation에서 숫자로 매길 수 있는 조건을 이번 conditions에 ticker를 붙여 옮겨 적는다(숫자로 옮길 수 없는 조건은 적지 않고 직접 확인한다).
             - desiredEquityExposurePct(0~100)는 바라는 노출이다 — 위 프레임과 지금 자료로 보아 이 계좌가 가 있어야 할 노출이고 targetEquityExposurePct와 같은 정의다. targetEquityExposurePct는 이번 주문이 체결된 뒤의 노출이다. 둘이 5%p 넘게 다르면 exposurePlan(600자 이내)에 그 차이를 무엇이 확인될 때 어떤 순서와 크기로 좁힐지 적고, 그렇지 않으면 exposurePlan은 null로 둔다.
-            - conditions(8건 이내)에는 다음 결정과 장중 판단이 확인할 조건을 적는다 — metric은 10b_carried.metrics.names의 이름 하나(매크로 값)나 8_prices의 종목 코드(그 종목 가격), op는 ABOVE(level 초과)·BELOW(level 미만), level은 숫자, then은 충족되면 할 일(200자 이내)이다. 다른 이름을 metric에 적으면 코드가 평가하지 못해 '평가 불가'로 돌아오니 그 조건은 직접 확인한다. summary에만 적은 조건은 다음 결정에 옮겨지지 않는다. 적을 조건이 없으면 빈 배열이다.
-            - 장중 판단 패킷의 3b_decision(미국)·3_night(한국)은 그 세션 결정의 요약과 주문 논거이고, 3c_carried는 그 결정의 조건과 관심 목록을 장중 값으로 다시 매긴 것이다 — 충족된 조건부터 본다. 장중 판단의 응답에는 desiredEquityExposurePct·exposurePlan·conditions 칸이 없다.
+            - conditions(16건 이내)에는 다음 결정과 장중 판단이 확인할 조건을 적는다 — metric은 10b_carried.metrics.names의 이름 하나(매크로 값)나 8_prices의 종목 코드(그 종목 가격), op는 ABOVE(level 초과)·BELOW(level 미만), level은 숫자, then은 충족되면 할 일(200자 이내)이다. 다른 이름을 metric에 적으면 코드가 평가하지 못해 '평가 불가'로 돌아오니 그 조건은 직접 확인한다. summary에만 적은 조건은 다음 결정에 옮겨지지 않는다. 적을 조건이 없으면 빈 배열이다.
+            - conditions의 ticker는 그 조건이 한 종목의 무효화 조건이면 그 종목 코드(보유 종목이나 이번에 사는 종목)이고, 계좌 전체의 조건이면 빈 문자열("")이다. 종목을 붙인 조건은 그 종목을 보유하는 동안 다음 결정과 장중 판단에 코드가 계속 매겨 돌려준다(다시 적지 않아도 남는다). 한 종목의 조건을 바꾸려면 그 종목의 조건을 전부 다시 적는다 — 그 종목에 조건을 적은 가장 최근 결정의 묶음만 쓰인다. 새로 사는 종목은 invalidation의 숫자 조건을 ticker를 붙여 함께 적는다.
+            - 장중 판단 패킷의 3b_decision(미국)·3_night(한국)은 그 세션 결정의 요약과 주문 논거이고, 3c_carried는 그 결정의 조건과 관심 목록, 보유 종목의 조건(holdingChecks — 보유 행의 checks)을 장중 값으로 다시 매긴 것이다 — 충족된 조건과 holdingChecks.met부터 본다. 장중 판단의 응답에는 desiredEquityExposurePct·exposurePlan·conditions 칸이 없다.
             """;
 
     /** 고정 문단의 출력 절 앞에 이어받기 절을 끼운 글 — 출력 절 머리가 한 번이 아니면 오류(성향 절을 끼울 때와 같은 자리 검사). */

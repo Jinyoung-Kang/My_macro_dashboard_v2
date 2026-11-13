@@ -414,14 +414,21 @@ final class KrPacketBuilder {
         // 없어 예전 패킷과 바이트까지 같습니다. 조건의 값 표는 3_kr_macro의 환율·외국인 순매수와 8_prices 전 줄(크기 예산으로 자르기 전)의 종가입니다.
         if (free && Continuity.on(body, true)) {
             basis.put("continuity", Continuity.VERSION);
-            Continuity.attachEntries(portfolio.get("positions"),
-                    Continuity.entries(store, book, Continuity.tickers(portfolio.get("positions"))));
+            List<String> held = Continuity.tickers(portfolio.get("positions"));
+            Map<String, Continuity.Entry> entries = Continuity.entries(store, book, held);
+            Continuity.attachEntries(portfolio.get("positions"), entries);
             Map<String, Double> krValues = Continuity.krMacro(PacketBuilder.toNode(macro));
             Map<String, Double> metrics = new LinkedHashMap<>(krValues);
             Continuity.table(PacketBuilder.toNode(priceSection(List.copyOf(lines.values()), 0, quotes, history, flows, scores,
                     unfillable, asOf, read)), "code", "close").forEach(metrics::putIfAbsent);
-            fixed.put(Continuity.SECTION, Continuity.carried(Continuity.latestJudged(store, prior), metrics,
-                    List.copyOf(krValues.keySet())));
+            Map<String, Object> carried = Continuity.carried(Continuity.latestJudged(store, prior), metrics,
+                    List.copyOf(krValues.keySet()));
+            // 보유 종목의 조건(판 2) — 직전 결정과 같은 거름으로 찾아 이 패킷의 값으로 매김(보유 행의 checks와 그 요약).
+            carried.put(Continuity.HOLDING_CHECKS, Continuity.attachChecks(portfolio.get("positions"),
+                    Continuity.holdingChecks(store, book, held, entries, d -> PacketBuilder.priorDecisionKind(book, d.kind())
+                            && (d.asOfTradingDate().isBefore(asOf)
+                            || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))), metrics));
+            fixed.put(Continuity.SECTION, carried);
         }
         int cut = 0;
         String text = render(fixed, rows, 0);

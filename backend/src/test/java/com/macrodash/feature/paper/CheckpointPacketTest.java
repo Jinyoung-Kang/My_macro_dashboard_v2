@@ -387,8 +387,12 @@ class CheckpointPacketTest {
         Map<String, Object> events = new java.util.LinkedHashMap<>();
         events.put("source", "news_headline");
         events.put("items", List.of(Map.of("title", "AAPL 가이던스 하향")));
+        // 보유 종목의 조건(판 2) — AAPL에 적어 둔 두 조건(매크로 카드 vix 17.2 > 16 충족, AAPL 가격 < 100 아님).
         Continuity.Intraday extra = new Continuity.Intraday(Map.of("AAPL",
-                new Continuity.Entry(31L, "2026-10-23", "서비스 매출 성장", "서비스 성장률 한 자릿수")), events);
+                new Continuity.Entry(31L, "2026-10-23", "서비스 매출 성장", "서비스 성장률 한 자릿수")), events,
+                Map.of("AAPL", new Continuity.HoldingChecks(31L, "2026-10-23", List.of(
+                        new com.macrodash.analytics.CarriedConditions.Condition("vix", "ABOVE", 16.0, "AAPL 논거 폐기 — 매도", "AAPL"),
+                        new com.macrodash.analytics.CarriedConditions.Condition("AAPL", "BELOW", 100.0, "매도", "AAPL")))));
 
         PacketBuilder.Packet off = CheckpointPacket.build(in, MAPPER);
         PacketBuilder.Packet on = CheckpointPacket.build(in, MAPPER, extra);
@@ -419,15 +423,28 @@ class CheckpointPacketTest {
         assertThat(body.get(Continuity.INTRADAY_EVENTS).get("items").get(0).get("title").asString()).isEqualTo("AAPL 가이던스 하향");
         JsonNode position = body.get("4_portfolio").get("positions").get(0);
         assertThat(position.get("entry").get("thesis").asString()).isEqualTo("서비스 매출 성장");
+        assertThat(position.get("checks").get("fromDecision").asLong()).isEqualTo(31);
+        assertThat(position.get("checks").get("conditions").get(0).get("status").asString()).isEqualTo("충족");
+        assertThat(position.get("checks").get("conditions").get(1).get("status").asString()).isEqualTo("미충족");
+        JsonNode holdingChecks = carried.get(Continuity.HOLDING_CHECKS);
+        assertThat(holdingChecks.get("met")).hasSize(1);
+        assertThat(holdingChecks.get("met").get(0).get("ticker").asString()).isEqualTo("AAPL");
+        assertThat(holdingChecks.get("met").get(0).get("current").asDouble()).isEqualTo(17.2);
+        assertThat(holdingChecks.get("missing")).isEmpty();
 
         ObjectNode stripped = (ObjectNode) body.deepCopy();
         stripped.remove(List.of(Continuity.INTRADAY_DECISION, Continuity.INTRADAY_CARRIED, Continuity.INTRADAY_EVENTS));
-        stripped.get("4_portfolio").get("positions").forEach(row -> ((ObjectNode) row).remove("entry"));
+        stripped.get("4_portfolio").get("positions").forEach(row -> ((ObjectNode) row).remove(List.of("entry", "checks")));
         assertThat(stripped).as("더한 칸을 빼면 예전 장중 판단 패킷과 같다").isEqualTo(off.body());
         // 뉴스가 없으면(꺼짐·읽기 실패) 3d_events 키가 없다.
         PacketBuilder.Packet noNews = CheckpointPacket.build(in, MAPPER, new Continuity.Intraday(Map.of(), null));
         assertThat(noNews.body().has(Continuity.INTRADAY_EVENTS)).isFalse();
         assertThat(noNews.body().get("4_portfolio").get("positions").get(0).get("entry").isNull()).isTrue();
+        assertThat(noNews.body().get("4_portfolio").get("positions").get(0).get("checks").isNull()).isTrue();
+        assertThat(noNews.body().get(Continuity.INTRADAY_CARRIED).get(Continuity.HOLDING_CHECKS).get("missing")).isEmpty();
+        PacketBuilder.Packet noChecks = CheckpointPacket.build(in, MAPPER, new Continuity.Intraday(extra.entries(), null));
+        assertThat(noChecks.body().get(Continuity.INTRADAY_CARRIED).get(Continuity.HOLDING_CHECKS).get("missing").get(0).asString())
+                .as("무효화 조건은 적었는데 코드가 매길 조건이 없는 보유 종목은 missing").isEqualTo("AAPL");
         Golden.assertMatches("packet-us-ft-intraday-minute-continuity.json", on.text());
     }
 

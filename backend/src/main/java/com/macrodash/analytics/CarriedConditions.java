@@ -26,8 +26,15 @@ public final class CarriedConditions {
     public static final String NOT_MET = "미충족";
     public static final String UNEVALUABLE = "평가 불가";
 
-    /** 결정이 적은 조건 한 줄 — 이름·방향·수준·충족되면 할 일. */
-    public record Condition(String metric, String op, Double level, String then) {
+    /**
+     * 결정이 적은 조건 한 줄 — 이름·방향·수준·충족되면 할 일, 그리고 그 조건이 특정 종목의 무효화 조건이면 그 종목 코드({@code ticker} —
+     * 계좌 전체의 조건이면 null, 이어받기 판 2). 평가는 {@code ticker}를 보지 않습니다(값은 {@code metric}으로만 찾음).
+     */
+    public record Condition(String metric, String op, Double level, String then, String ticker) {
+        /** 종목을 붙이지 않은 조건(계좌 전체). */
+        public Condition(String metric, String op, Double level, String then) {
+            this(metric, op, level, then, null);
+        }
     }
 
     /** 평가한 조건 — 지금 값(없으면 null)·상태·평가하지 못한 이유(평가했으면 null). */

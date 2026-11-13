@@ -527,6 +527,9 @@ public class PaperKrIntradayJob {
         java.util.Set<String> tickers = new java.util.LinkedHashSet<>();
         store.positions(code).forEach(p -> tickers.add(p.ticker()));
         Map<String, Continuity.Entry> entries = Continuity.entries(store, code, List.copyOf(tickers));
+        // 보유 종목의 조건(이어받기 판 2) — 지금까지의 결정 가운데 그 종목에 조건을 적은 가장 최근 것(장중 판단은 조건을 적지 않음).
+        Map<String, Continuity.HoldingChecks> checks = Continuity.holdingChecks(store, code, List.copyOf(tickers), entries,
+                d -> PacketBuilder.priorDecisionKind(code, d.kind()));
         if (c.watch() != null) {
             tickers.addAll(c.watch());
         }
@@ -539,7 +542,7 @@ public class PaperKrIntradayJob {
         } catch (RuntimeException e) {
             log.warn("한국 장중 판단 패킷의 사건 뉴스를 읽지 못했습니다 — 뉴스 없이 부릅니다: {}", e.toString());
         }
-        return new Continuity.Intraday(entries, events);
+        return new Continuity.Intraday(entries, events, checks);
     }
 
     /** 상태만 바꿈(부르지 않음) — 바꾼 상태 문구. 그사이 PLANNED가 아니면 null. */

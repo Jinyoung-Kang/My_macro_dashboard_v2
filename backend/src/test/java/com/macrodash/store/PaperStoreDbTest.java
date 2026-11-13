@@ -887,6 +887,33 @@ class PaperStoreDbTest {
         assertThat(store.ruleStockWeights(OTHER_BOOK, List.of("153130"))).isEmpty();
     }
 
+    @Test
+    @DisplayName("조건을 남긴 결정(이어받기 판 2): 검증된 응답(schemaVersion)이고 conditions가 배열인 결정만 최근 순으로, 조건 배열만 읽는다 — "
+            + "조건 칸이 없는 결정·형식 오류 응답·다른 계좌는 빠지고 상한을 지킨다")
+    void decisionConditionsReadsOnlyTheConditionArrays() throws Exception {
+        store.insertBookIfAbsent(book(BOOK, "한국 규칙 시험"));
+        LocalDate d1 = LocalDate.of(2026, 11, 2);
+        LocalDate d2 = LocalDate.of(2026, 11, 3);
+        LocalDate d3 = LocalDate.of(2026, 11, 4);
+        Instant at = Instant.parse("2026-11-04T13:30:00Z");
+        weightDecision(d1, "SCHEDULED", null, "{\"schemaVersion\":2,\"conditions\":[{\"metric\":\"usdkrw\",\"op\":\"ABOVE\","
+                + "\"level\":1400,\"then\":\"매도\",\"ticker\":\"005930\"}]}");
+        weightDecision(d2, "SCHEDULED", null, "{\"schemaVersion\":2,\"summary\":\"조건 칸이 없는 판\"}");
+        weightDecision(d3, "SCHEDULED", at, "{\"schemaVersion\":2,\"conditions\":[]}");
+        weightDecision(d3, "MANUAL", at.plusSeconds(60), "{\"conditions\":[{\"metric\":\"x\"}]}");
+        weightDecision(d3, "REBALANCE", at.plusSeconds(120), "{\"schemaVersion\":2,\"conditions\":\"글자\"}");
+
+        List<PaperStore.DecisionConditions> rows = store.decisionConditions(BOOK, 10);
+        assertThat(rows).extracting(PaperStore.DecisionConditions::asOfTradingDate).containsExactly(d3, d1);
+        assertThat(rows.get(0).kind()).isEqualTo("SCHEDULED");
+        assertThat(rows.get(0).conditions().isArray()).isTrue();
+        assertThat(rows.get(0).conditions()).isEmpty();
+        assertThat(rows.get(1).conditions().get(0).get("ticker").asString()).isEqualTo("005930");
+        assertThat(rows.get(1).conditions().get(0).get("level").asDouble()).isEqualTo(1400.0);
+        assertThat(store.decisionConditions(BOOK, 1)).hasSize(1);
+        assertThat(store.decisionConditions(OTHER_BOOK, 10)).isEmpty();
+    }
+
     private void weightDecision(LocalDate day, String kind, Instant decidedAt, String response) throws Exception {
         store.insertDecisionIfAbsent(new PaperStore.Decision(0, BOOK, day, kind, decidedAt, "OK", null, null, 1, null, null,
                 null, null, null, MAPPER.readTree(response), null, null, null, false, 1L, 0)).orElseThrow();

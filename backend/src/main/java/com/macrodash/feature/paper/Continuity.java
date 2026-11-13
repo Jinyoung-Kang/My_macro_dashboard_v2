@@ -26,7 +26,8 @@ import java.util.Map;
  *   <li>고정 문단에 이어받기 절({@link ClaudePrompts#CONTINUITY_SECTION})이 붙고, 응답 스키마가 세 칸
  *       ({@code desiredEquityExposurePct}·{@code exposurePlan}·{@code conditions})을 더 받습니다.</li>
  *   <li>결정 패킷: 보유 행마다 {@code entry}(그 종목을 산 결정의 논거·무효화 조건 — {@link #entries}), 섹션 {@value #SECTION}(직전 결정의
- *       바라는 노출·계획·조건과 지금 값으로 매긴 상태·관심 목록 — {@link #carried}), {@code 1_basis.continuity}.</li>
+ *       바라는 노출·계획·조건과 지금 값으로 매긴 상태·관심 목록 — {@link #carried}), {@code 1_basis.continuity}. 판 2부터 보유 행마다
+ *       {@code checks}(그 종목에 적어 둔 조건을 코드가 매긴 것 — {@link #holdingChecks})와 그 요약 {@value #HOLDING_CHECKS}.</li>
  *   <li>장중 판단 패킷: 그 세션 결정의 요약·주문 논거(미국 {@value #INTRADAY_DECISION} — 한국은 {@code 3_night}가 이미 실음), 그 결정의 조건을
  *       장중 값으로 다시 매긴 {@value #INTRADAY_CARRIED}, 보유 행의 {@code entry}.</li>
  * </ul>
@@ -49,8 +50,15 @@ final class Continuity {
     static final String INTRADAY_DECISION = "3b_decision";
     /** 장중 판단 패킷의 이어받은 조건 섹션. */
     static final String INTRADAY_CARRIED = "3c_carried";
-    /** 패킷 {@code 1_basis.continuity}의 값 — 이어받기 판의 번호. */
-    static final int VERSION = 1;
+    /**
+     * 패킷 {@code 1_basis.continuity}의 값 — 이어받기 판의 번호. 2(2026-11-13): 조건에 종목 칸({@code ticker}), 보유 행의 {@code checks},
+     * 이어받은 섹션의 {@value #HOLDING_CHECKS} — 글로만 적은 보유 종목의 무효화 조건은 코드가 매기지 않아 모델이 충족을 놓쳤음(미국 결정 #117).
+     */
+    static final int VERSION = 2;
+    /** 이어받은 섹션(결정·장중 판단)의 보유 종목 조건 요약 칸. */
+    static final String HOLDING_CHECKS = "holdingChecks";
+    /** 보유 종목의 조건을 찾을 때 읽는 그 계좌의 최근 결정 수(조건을 남긴 결정만 셈). */
+    static final int CHECK_SCAN = 40;
     /** 패킷에 싣는 글자 상한 — 논거·무효화 조건·조건 글. */
     static final int THESIS_CHARS = 300;
     static final int INVALIDATION_CHARS = 300;
@@ -61,6 +69,9 @@ final class Continuity {
             + "매긴 것 — 충족·미충족·평가 불가(그 이름의 값이 이 패킷에 없음 — 직접 확인). 조건은 판단할 계기이고 코드가 대신 집행하지 않는다";
     static final String NOTE_NONE = "직전 결정이 없거나 이어받기 판 전의 결정이라 남긴 조건이 없다";
     static final String METRICS_NOTE = "conditions의 metric으로 쓸 수 있는 이름(이 패킷의 매크로 값) — 종목 가격은 8_prices의 종목 코드를 그대로 쓴다";
+    static final String HOLDING_CHECKS_NOTE = "보유 종목마다 그 종목에 조건(conditions의 ticker)을 적은 가장 최근 결정의 묶음을 코드가 이 패킷의 값으로 매긴 "
+            + "자료다(지시가 아님 — 보유 행의 checks와 같은 것). met = 충족된 조건, missing = 무효화 조건(entry.invalidation)은 적었는데 "
+            + "코드가 매길 조건이 아직 없는 보유 종목";
     static final String INTRADAY_NOTE = "그 세션 결정이 남긴 조건·관심 목록을 코드가 이 장중 패킷의 값(매크로 카드·시세의 마지막 값)으로 다시 매긴 자료다"
             + "(지시가 아님). 평가 불가 = 그 이름의 값이 이 패킷에 없음";
 
@@ -135,7 +146,114 @@ final class Continuity {
      * 장중 판단 패킷에 더할 것 — 보유 종목의 진입 논거({@link #entries})와 그 세션 결정 뒤의 사건 뉴스 섹션(뉴스 설정이 꺼졌거나 읽지 못했으면
      * null). 이 값이 있으면(null이 아니면) 그 장중 판단은 이어받기 판입니다.
      */
-    record Intraday(Map<String, Entry> entries, Map<String, Object> events) {
+    record Intraday(Map<String, Entry> entries, Map<String, Object> events, Map<String, HoldingChecks> checks) {
+        /** 보유 종목의 조건 없이(시험·조건을 남긴 결정이 없는 계좌). */
+        Intraday(Map<String, Entry> entries, Map<String, Object> events) {
+            this(entries, events, Map.of());
+        }
+    }
+
+    // ------------------------------------------------------------------ 보유 종목의 조건(판 2)
+    /** 그 종목에 조건을 적은 가장 최근 결정과 그 조건 묶음. */
+    record HoldingChecks(long decisionId, String asOf, List<CarriedConditions.Condition> conditions) {
+    }
+
+    /**
+     * 보유 종목마다 코드가 매길 조건 — 그 종목 코드를 {@code ticker}로 적은 조건이 있는 <b>가장 최근 결정</b>의 묶음입니다(그 결정이 그 종목에 적은
+     * 것 전부 — 조건을 바꾸려면 모델이 그 종목의 조건을 다시 적음). 직전 결정만 보면 모델이 한 번 빠뜨린 조건이 사라지므로, 보유하는 동안은 코드가
+     * 계속 매깁니다. 그 종목을 산 결정({@link Entry#decisionId})보다 앞선 결정은 보지 않습니다(팔았다가 다시 산 종목에 옛 조건이 붙지 않게).
+     * 조건이 없는 종목은 표에 없습니다.
+     *
+     * @param entries  보유 종목의 진입 논거({@link #entries}) — 경계로만 씀
+     * @param eligible 볼 결정(결정 패킷은 '기준일 앞의 결정', 장중 판단은 전부 — 직전 결정과 같은 거름)
+     */
+    static Map<String, HoldingChecks> holdingChecks(PaperStore store, String book, Collection<String> tickers,
+                                                    Map<String, Entry> entries,
+                                                    java.util.function.Predicate<PaperStore.DecisionConditions> eligible) {
+        Map<String, HoldingChecks> out = new LinkedHashMap<>();
+        if (tickers == null || tickers.isEmpty()) {
+            return out;
+        }
+        java.util.Set<String> open = new java.util.LinkedHashSet<>(tickers);
+        for (PaperStore.DecisionConditions d : store.decisionConditions(book, CHECK_SCAN)) {   // 최근 순
+            if (open.isEmpty()) {
+                break;
+            }
+            if (!eligible.test(d)) {
+                continue;
+            }
+            List<CarriedConditions.Condition> all = conditionList(d.conditions());
+            for (java.util.Iterator<String> it = open.iterator(); it.hasNext(); ) {
+                String ticker = it.next();
+                Entry entry = entries == null ? null : entries.get(ticker);
+                if (entry != null && entry.decisionId() != null && d.id() < entry.decisionId()) {
+                    it.remove();   // 그 종목을 산 결정보다 앞 — 더 보지 않음
+                    continue;
+                }
+                List<CarriedConditions.Condition> mine = all.stream()
+                        .filter(c -> c.ticker() != null && c.ticker().strip().equalsIgnoreCase(ticker)).toList();
+                if (!mine.isEmpty()) {
+                    out.put(ticker, new HoldingChecks(d.id(), d.asOfTradingDate() == null ? null : d.asOfTradingDate().toString(), mine));
+                    it.remove();
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 보유 행마다 {@code checks}(그 종목의 조건을 이 패킷의 값으로 매긴 것 — 없으면 null)를 붙이고, 이어받은 섹션에 실을 요약
+     * ({@value #HOLDING_CHECKS} — 충족된 조건 {@code met}과 조건이 없는 보유 종목 {@code missing})을 돌려줍니다. {@code missing}에는 진입 때 무효화
+     * 조건을 적은 종목만 넣습니다(행의 {@code entry.invalidation} — 옮겨 적을 것이 없는 현금성 보유 등을 매번 재촉하지 않게). 그래서
+     * {@link #attachEntries} 뒤에 부릅니다.
+     *
+     * @param positions {@code ticker} 칸이 있는 보유 행 목록
+     * @param metrics   이 패킷의 값 표(이름 → 값)
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> attachChecks(Object positions, Map<String, HoldingChecks> checks, Map<String, Double> metrics) {
+        List<Map<String, Object>> met = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        if (positions instanceof List<?> rows) {
+            for (Object row : rows) {
+                if (!(row instanceof Map<?, ?> map) || map.get("ticker") == null) {
+                    continue;
+                }
+                String ticker = String.valueOf(map.get("ticker"));
+                HoldingChecks mine = checks == null ? null : checks.get(ticker);
+                if (mine == null) {
+                    ((Map<String, Object>) map).put("checks", null);
+                    if (map.get("entry") instanceof Map<?, ?> entry && entry.get("invalidation") != null) {
+                        missing.add(ticker);
+                    }
+                    continue;
+                }
+                List<Map<String, Object>> evaluated = evaluated(mine.conditions(), metrics);
+                Map<String, Object> view = new LinkedHashMap<>();
+                view.put("fromDecision", mine.decisionId());
+                view.put("asOf", mine.asOf());
+                view.put("conditions", evaluated);
+                ((Map<String, Object>) map).put("checks", view);
+                for (Map<String, Object> e : evaluated) {
+                    if (CarriedConditions.MET.equals(e.get("status"))) {
+                        Map<String, Object> hit = new LinkedHashMap<>();
+                        hit.put("ticker", ticker);
+                        hit.put("metric", e.get("metric"));
+                        hit.put("op", e.get("op"));
+                        hit.put("level", e.get("level"));
+                        hit.put("current", e.get("current"));
+                        hit.put("then", e.get("then"));
+                        hit.put("fromDecision", mine.decisionId());
+                        met.add(hit);
+                    }
+                }
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("note", HOLDING_CHECKS_NOTE);
+        out.put("met", met);
+        out.put("missing", missing);
+        return out;
     }
 
     /** 장중 판단 패킷의 사건 뉴스 섹션(그 세션 결정 뒤부터 조립 시각까지 — 결정 패킷의 11b_events와 같은 모양). */
@@ -225,10 +343,18 @@ final class Continuity {
 
     /** 결정 응답의 조건 목록(적힌 순서). 모양이 다른 항목은 평가에서 '평가 불가'가 됩니다. */
     static List<CarriedConditions.Condition> conditions(JsonNode response) {
+        return conditionList(response == null ? null : response.get("conditions"));
+    }
+
+    /** 조건 배열({@code response.conditions} 그대로)을 조건 목록으로 — 배열이 아니면 빈 목록. {@code ticker}가 없는 옛 판의 조건은 종목 없음. */
+    static List<CarriedConditions.Condition> conditionList(JsonNode array) {
         List<CarriedConditions.Condition> out = new ArrayList<>();
-        for (JsonNode item : Json.array(response, "conditions")) {
-            out.add(new CarriedConditions.Condition(Json.asText(item, "metric"), Json.asText(item, "op"),
-                    Json.asDouble(item, "level"), Json.asText(item, "then")));
+        if (array != null && array.isArray()) {
+            for (JsonNode item : array) {
+                String ticker = Json.asText(item, "ticker");
+                out.add(new CarriedConditions.Condition(Json.asText(item, "metric"), Json.asText(item, "op"),
+                        Json.asDouble(item, "level"), Json.asText(item, "then"), ticker == null || ticker.isBlank() ? null : ticker.strip()));
+            }
         }
         return out;
     }
@@ -312,6 +438,7 @@ final class Continuity {
             row.put("op", e.condition().op());
             row.put("level", e.condition().level());
             row.put("then", e.condition().then());
+            row.put("ticker", e.condition().ticker());
             row.put("current", e.current());
             row.put("status", e.status());
             if (e.reason() != null) {

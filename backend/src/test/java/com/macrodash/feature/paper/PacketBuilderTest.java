@@ -1462,9 +1462,10 @@ class PacketBuilderTest {
                 "OK", "claude-sonnet-5-5", null, 1, FRI, 45.0, null, null, null, MAPPER.readTree("""
                         {"schemaVersion":2,"stance":"NEUTRAL","summary":"관망","targetEquityExposurePct":45,
                          "desiredEquityExposurePct":70,"exposurePlan":"10년물이 내려오면 두 번에 나눠 좁힌다",
-                         "conditions":[{"metric":"us10y","op":"ABOVE","level":5.0,"then":"노출 축소 검토"},
-                                       {"metric":"BBB","op":"BELOW","level":44.0,"then":"매도 검토"},
-                                       {"metric":"cpi","op":"ABOVE","level":3.0,"then":"직접 확인"}],
+                         "conditions":[{"metric":"us10y","op":"ABOVE","level":5.0,"then":"노출 축소 검토","ticker":""},
+                                       {"metric":"BBB","op":"BELOW","level":44.0,"then":"매도 검토","ticker":"BBB"},
+                                       {"metric":"cpi","op":"ABOVE","level":3.0,"then":"직접 확인","ticker":""},
+                                       {"metric":"brent","op":"BELOW","level":90.0,"then":"BBB 논거 폐기 — 매도","ticker":"BBB"}],
                          "watchlist":[{"ticker":"CCC","condition":"실적 확인 뒤 검토"}]}"""), null, null, List.of(), true, 900L,
                 0)).orElseThrow();
         store.insertOrder(new Order(0, PaperBooks.CLAUDE, prior, "BBB", "BUY", null, 45.0, null, "NEXT_OBSERVATION", "CLAUDE",
@@ -1503,7 +1504,21 @@ class PacketBuilderTest {
                 + c.get("level").asDouble() + " → " + c.get("status").asString() + " @" + c.get("current")));
         // 패킷 값: 10년물 카드 5.05(> 5.0 충족), BBB 종가 47.52(< 44 아님), cpi는 이 패킷에 없음.
         assertThat(conditions).containsExactly("us10y ABOVE 5.0 → 충족 @5.05", "BBB BELOW 44.0 → 미충족 @47.52",
-                "cpi ABOVE 3.0 → 평가 불가 @null");
+                "cpi ABOVE 3.0 → 평가 불가 @null", "brent BELOW 90.0 → 충족 @82.5");
+        assertThat(carried.get("conditions").get(0).get("ticker").isNull()).as("계좌 전체 조건(빈 글자)은 종목 없음").isTrue();
+        assertThat(carried.get("conditions").get(1).get("ticker").asString()).isEqualTo("BBB");
+        // 보유 종목의 조건(판 2) — BBB에 적어 둔 두 조건을 코드가 매겨 보유 행(checks)과 요약(holdingChecks)에 싣는다.
+        JsonNode checks = body.get(PacketBuilder.PORTFOLIO).get("positions").get(0).get("checks");
+        assertThat(checks.get("fromDecision").asLong()).isEqualTo(prior);
+        assertThat(checks.get("conditions")).hasSize(2);
+        assertThat(checks.get("conditions").get(0).get("status").asString()).isEqualTo("미충족");
+        JsonNode holdingChecks = carried.get(Continuity.HOLDING_CHECKS);
+        assertThat(holdingChecks.get("missing")).as("보유 종목은 BBB 하나 — 조건이 있음").isEmpty();
+        assertThat(checks.get("conditions").get(1).get("status").asString()).as("브렌트 카드 82.5 < 90").isEqualTo("충족");
+        assertThat(holdingChecks.get("met")).hasSize(1);
+        assertThat(holdingChecks.get("met").get(0).get("ticker").asString()).isEqualTo("BBB");
+        assertThat(holdingChecks.get("met").get(0).get("metric").asString()).isEqualTo("brent");
+        assertThat(holdingChecks.get("met").get(0).get("current").asDouble()).isEqualTo(82.5);
         assertThat(carried.get("conditions").get(2).get("reason").asString()).contains("이 패킷에 그 이름의 값이 없음");
         assertThat(carried.get("watchlist").get(0).get("condition").asString()).isEqualTo("실적 확인 뒤 검토");
         List<String> names = new ArrayList<>();
@@ -1513,7 +1528,8 @@ class PacketBuilderTest {
         // 더한 칸을 빼면 끈 판 패킷과 같다.
         ObjectNode stripped = (ObjectNode) body.deepCopy();
         ((ObjectNode) stripped.get(PacketBuilder.BASIS)).remove("continuity");
-        stripped.get(PacketBuilder.PORTFOLIO).get("positions").forEach(row -> ((ObjectNode) row).remove("entry"));
+        stripped.get(PacketBuilder.PORTFOLIO).get("positions")
+                .forEach(row -> ((ObjectNode) row).remove(List.of("entry", "checks")));
         stripped.remove(Continuity.SECTION);
         assertThat(stripped).isEqualTo(off.body());
         Golden.assertMatches("packet-us-ft-claude-continuity-scheduled.json", on.text());

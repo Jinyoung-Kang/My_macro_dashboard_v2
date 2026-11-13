@@ -98,7 +98,8 @@ class ContinuityTest {
     }
 
     @Test
-    @DisplayName("응답 스키마: 이어받기 판(ft3)은 자유 시점 판 스키마에 세 칸(바라는 노출·계획·조건)만 더한 것이고, 절에 적은 길이·개수가 스키마와 같다")
+    @DisplayName("응답 스키마: 이어받기 판(ft3)은 자유 시점 판 스키마에 세 칸(바라는 노출·계획·조건)만 더한 것이고, 절에 적은 길이·개수가 스키마와 같다. "
+            + "조건의 종목 칸(판 2)은 필수 문자열 — 계좌 전체 조건은 빈 글자(선택·null 칸을 늘리지 않음)")
     void schemaAddsExactlyThreeFields() throws Exception {
         for (String[] pair : List.of(new String[]{"paper/us-decision-ft.schema.json", ClaudeDecisionPipeline.US_CONTINUITY_SCHEMA_RESOURCE},
                 new String[]{"paper/kr-decision-ft.schema.json", ClaudeDecisionPipeline.KR_CONTINUITY_SCHEMA_RESOURCE})) {
@@ -107,8 +108,12 @@ class ContinuityTest {
             ObjectNode properties = (ObjectNode) extended.get("properties");
             assertThat(properties.get("desiredEquityExposurePct")).isEqualTo(base.get("properties").get("targetEquityExposurePct"));
             assertThat(properties.get("exposurePlan").get("maxLength").asInt()).isEqualTo(600);
-            assertThat(properties.get("conditions").get("maxItems").asInt()).isEqualTo(8);
+            assertThat(properties.get("conditions").get("maxItems").asInt()).isEqualTo(16);
             JsonNode item = properties.get("conditions").get("items");
+            assertThat(item.get("properties").get("ticker")).isEqualTo(MAPPER.readTree("{\"type\":\"string\",\"maxLength\":12}"));
+            List<String> itemRequired = new java.util.ArrayList<>();
+            item.get("required").forEach(name -> itemRequired.add(name.asString()));
+            assertThat(itemRequired).containsExactly("metric", "op", "level", "then", "ticker");
             assertThat(item.get("properties").get("then").get("maxLength").asInt()).isEqualTo(200);
             List<String> ops = new java.util.ArrayList<>();
             item.get("properties").get("op").get("enum").forEach(op -> ops.add(op.asString()));
@@ -126,7 +131,8 @@ class ContinuityTest {
             assertThat(properties).as(pair[1] + " — 세 칸을 빼면 자유 시점 판 스키마").isEqualTo(base.get("properties"));
             assertThat(StructuredSchema.load(pair[1]).forApi()).isNotEmpty();
         }
-        assertThat(ClaudePrompts.CONTINUITY_SECTION).contains("exposurePlan(600자 이내)").contains("conditions(8건 이내)")
+        assertThat(ClaudePrompts.CONTINUITY_SECTION).contains("exposurePlan(600자 이내)").contains("conditions(16건 이내)")
+                .contains("계좌 전체의 조건이면 빈 문자열").contains("holdingChecks.met").contains("holdingChecks.missing")
                 .contains("then은 충족되면 할 일(200자 이내)").contains("ABOVE(level 초과)·BELOW(level 미만)")
                 .doesNotContainPattern("\\d{4}-\\d{2}-\\d{2}");
     }
@@ -203,6 +209,96 @@ class ContinuityTest {
                 .containsEntry("conditions", List.of()).containsEntry("watchlist", List.of())
                 .containsEntry("desiredEquityExposurePct", null);
         assertThat(none.get("metrics")).isEqualTo(Map.of("names", List.of("us10y"), "note", Continuity.METRICS_NOTE));
+    }
+
+    @Test
+    @DisplayName("보유 종목의 조건(판 2): 종목마다 그 종목에 조건을 적은 가장 최근 결정의 묶음 — 직전 결정이 빠뜨려도 남고, 다시 적으면 통째로 바뀌고, "
+            + "그 종목을 산 결정보다 앞선 결정·거름 밖 결정·종목 없는 조건은 쓰지 않는다")
+    void holdingChecksComeFromTheLatestDecisionThatNamedTheTicker() {
+        long first = decision(FRI.minusDays(3), """
+                [{"metric":"us10y","op":"ABOVE","level":5.0,"then":"XLP 논거 폐기","ticker":"XLP"},
+                 {"metric":"XLP","op":"BELOW","level":70.0,"then":"매도","ticker":"xlp "},
+                 {"metric":"brent","op":"ABOVE","level":95.0,"then":"DAL 매도","ticker":"DAL"},
+                 {"metric":"OLD","op":"BELOW","level":10.0,"then":"옛 보유 때 조건","ticker":"OLD"},
+                 {"metric":"vix","op":"ABOVE","level":30.0,"then":"노출 축소","ticker":""}]""");
+        long second = decision(FRI.minusDays(2), """
+                [{"metric":"brent","op":"ABOVE","level":98.0,"then":"DAL 매도(수준 올림)","ticker":"DAL"},
+                 {"metric":"vix","op":"ABOVE","level":28.0,"then":"노출 축소"}]""");
+        long third = decision(FRI.minusDays(1), "[]");
+        long excluded = decision(FRI, """
+                [{"metric":"XLP","op":"BELOW","level":1.0,"then":"지금 다시 만드는 결정","ticker":"XLP"}]""");
+        // OLD는 second 뒤에 다시 산 종목 — 그 결정(third)보다 앞선 조건은 붙지 않는다.
+        Map<String, Continuity.Entry> entries = Map.of("OLD", new Continuity.Entry(third, FRI.minusDays(1).toString(), "재진입", null),
+                "XLP", new Continuity.Entry(first, FRI.minusDays(3).toString(), "방어주", "10년물 5% 재상승"));
+
+        Map<String, Continuity.HoldingChecks> checks = Continuity.holdingChecks(store, PaperBooks.CLAUDE,
+                List.of("XLP", "DAL", "OLD", "NEW"), entries, d -> d.asOfTradingDate().isBefore(FRI));
+
+        assertThat(checks).containsOnlyKeys("XLP", "DAL");
+        assertThat(checks.get("XLP").decisionId()).as("뒤 결정들이 XLP를 적지 않아도 남는다").isEqualTo(first);
+        assertThat(checks.get("XLP").conditions()).extracting(com.macrodash.analytics.CarriedConditions.Condition::metric)
+                .containsExactly("us10y", "XLP");
+        assertThat(checks.get("DAL").decisionId()).as("다시 적은 결정의 묶음으로 통째로 바뀐다").isEqualTo(second);
+        assertThat(checks.get("DAL").conditions()).singleElement().satisfies(c -> assertThat(c.level()).isEqualTo(98.0));
+        assertThat(excluded).isGreaterThan(third);
+        assertThat(Continuity.holdingChecks(store, PaperBooks.CLAUDE, List.of(), entries, d -> true)).isEmpty();
+
+        // 보유 행에 붙이기 — 값 표: 10년물 5.125(> 5.0 충족), XLP 78(< 70 아님), 브렌트 96(> 98 아님). NEW·OLD는 조건 없음.
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (String ticker : List.of("XLP", "DAL", "OLD", "NEW", "CASH")) {
+            rows.add(new java.util.LinkedHashMap<>(Map.of("ticker", ticker)));
+        }
+        // 진입 논거 — OLD·NEW는 무효화 조건을 적었고, CASH(현금성)는 논거만 있어 옮겨 적을 것이 없다.
+        Continuity.attachEntries(rows, Map.of("XLP", entries.get("XLP"),
+                "OLD", new Continuity.Entry(third, null, "재진입", "200일선 이탈"), "NEW", new Continuity.Entry(third, null, "신규", "-10%"),
+                "CASH", new Continuity.Entry(third, null, "대기 자금", null)));
+        Map<String, Object> summary = Continuity.attachChecks(rows, checks, Map.of("us10y", 5.125, "XLP", 78.0, "brent", 96.0));
+        JsonNode xlp = MAPPER.valueToTree(rows.get(0).get("checks"));
+        assertThat(xlp.get("fromDecision").asLong()).isEqualTo(first);
+        assertThat(xlp.get("asOf").asString()).isEqualTo(FRI.minusDays(3).toString());
+        assertThat(xlp.get("conditions").get(0).get("status").asString()).isEqualTo("충족");
+        assertThat(xlp.get("conditions").get(0).get("current").asDouble()).isEqualTo(5.125);
+        assertThat(xlp.get("conditions").get(1).get("status").asString()).isEqualTo("미충족");
+        assertThat(rows.get(2)).as("조건이 없는 보유는 null").containsEntry("checks", null);
+        JsonNode view = MAPPER.valueToTree(summary);
+        assertThat(view.get("note").asString()).isEqualTo(Continuity.HOLDING_CHECKS_NOTE);
+        assertThat(view.get("met")).hasSize(1);
+        assertThat(view.get("met").get(0).get("ticker").asString()).isEqualTo("XLP");
+        assertThat(view.get("met").get(0).get("metric").asString()).isEqualTo("us10y");
+        assertThat(view.get("met").get(0).get("then").asString()).isEqualTo("XLP 논거 폐기");
+        assertThat(view.get("met").get(0).get("fromDecision").asLong()).isEqualTo(first);
+        List<String> missing = new java.util.ArrayList<>();
+        view.get("missing").forEach(m -> missing.add(m.asString()));
+        assertThat(missing).as("무효화 조건을 적었는데 코드가 매길 조건이 없는 보유만 — 현금성은 재촉하지 않음").containsExactly("OLD", "NEW");
+        assertThat(rows.get(4)).containsEntry("checks", null);
+        // 조건을 남긴 결정이 없으면 보유 종목 전부가 missing이고 충족 목록은 비어 있다(조건을 지어내지 않음).
+        JsonNode none = MAPPER.valueToTree(Continuity.attachChecks(rows, Map.of(), Map.of()));
+        assertThat(none.get("met")).isEmpty();
+        assertThat(none.get("missing")).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("조건 읽기: ticker가 없는 옛 판의 조건·빈 글자·공백은 종목 없음, 배열이 아니면 빈 목록")
+    void conditionListReadsTheTicker() throws Exception {
+        List<com.macrodash.analytics.CarriedConditions.Condition> list = Continuity.conditionList(MAPPER.readTree("""
+                [{"metric":"us10y","op":"ABOVE","level":5.1,"then":"a"},
+                 {"metric":"us10y","op":"ABOVE","level":5.1,"then":"b","ticker":""},
+                 {"metric":"us10y","op":"ABOVE","level":5.1,"then":"c","ticker":"  "},
+                 {"metric":"us10y","op":"ABOVE","level":5.1,"then":"d","ticker":" XLP "}]"""));
+        assertThat(list).extracting(com.macrodash.analytics.CarriedConditions.Condition::ticker)
+                .containsExactly(null, null, null, "XLP");
+        assertThat(Continuity.conditionList(null)).isEmpty();
+        assertThat(Continuity.conditionList(MAPPER.readTree("{\"metric\":\"x\"}"))).isEmpty();
+    }
+
+    /** 조건 목록만 남긴 검증된 결정 한 건(계좌1 정기). */
+    private long decision(LocalDate day, String conditions) {
+        ObjectNode response = MAPPER.createObjectNode();
+        response.put("schemaVersion", 2);
+        response.set("conditions", MAPPER.readTree(conditions));
+        return store.insertDecisionIfAbsent(new com.macrodash.store.PaperStore.Decision(0, PaperBooks.CLAUDE, day,
+                RuleBookService.SCHEDULED, null, "OK", "claude-sonnet-5-5", null, 1, day, 40.0, null, null, null, response, null,
+                null, List.of(), true, 900L, 0)).orElseThrow();
     }
 
     private static JsonNode reason(String thesis, String invalidation) {

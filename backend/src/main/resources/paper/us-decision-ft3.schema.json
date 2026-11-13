@@ -62,16 +62,17 @@
     },
     "conditions": {
       "type": "array",
-      "maxItems": 8,
+      "maxItems": 16,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["metric", "op", "level", "then"],
+        "required": ["metric", "op", "level", "then", "ticker"],
         "properties": {
           "metric": {"type": "string", "maxLength": 40},
           "op": {"enum": ["ABOVE", "BELOW"]},
           "level": {"type": "number"},
-          "then": {"type": "string", "maxLength": 200}
+          "then": {"type": "string", "maxLength": 200},
+          "ticker": {"type": "string", "maxLength": 12}
         }
       }
     },

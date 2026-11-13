@@ -1173,7 +1173,10 @@ class KrPacketBuilderTest {
                 .put("exposurePlan", "외국인 5일 합이 순매수로 바뀌면 세 번에 나눠 좁힌다");
         response.putArray("conditions")
                 .add(MAPPER.createObjectNode().put("metric", "usdkrw").put("op", "ABOVE").put("level", 1360).put("then", "현금 유지"))
-                .add(MAPPER.createObjectNode().put("metric", "005930").put("op", "BELOW").put("level", 9500).put("then", "매도 검토"))
+                .add(MAPPER.createObjectNode().put("metric", "005930").put("op", "BELOW").put("level", 9500).put("then", "매도 검토")
+                        .put("ticker", "005930"))
+                .add(MAPPER.createObjectNode().put("metric", "usdkrw").put("op", "ABOVE").put("level", 1360)
+                        .put("then", "005930 논거 폐기 — 매도").put("ticker", "005930"))
                 .add(MAPPER.createObjectNode().put("metric", "국고채3년").put("op", "ABOVE").put("level", 3.7).put("then", "직접 확인"));
         store.decisions.put(last.id(), new Decision(last.id(), last.bookCode(), last.asOfTradingDate(), last.kind(),
                 last.decidedAt(), last.status(), last.model(), last.frameworkVersion(), last.settingsVersion(),
@@ -1205,14 +1208,26 @@ class KrPacketBuilderTest {
         carried.get("conditions").forEach(c -> conditions.add(c.get("metric").asString() + " → " + c.get("status").asString()
                 + " @" + c.get("current")));
         // 패킷 값: 원/달러 1,364(> 1,360 충족), 005930 종가 10,100(< 9,500 아님), 국고채 금리는 이 패킷에 없음.
-        assertThat(conditions).containsExactly("usdkrw → 충족 @1364", "005930 → 미충족 @10100", "국고채3년 → 평가 불가 @null");
+        assertThat(conditions).containsExactly("usdkrw → 충족 @1364", "005930 → 미충족 @10100", "usdkrw → 충족 @1364",
+                "국고채3년 → 평가 불가 @null");
+        // 보유 종목의 조건(판 2) — 005930에 적어 둔 두 조건이 보유 행(checks)에, 충족된 하나가 요약(holdingChecks.met)에.
+        JsonNode checks = positions.get(0).get("checks");
+        assertThat(checks.get("fromDecision").asLong()).isEqualTo(last.id());
+        assertThat(checks.get("conditions")).hasSize(2);
+        assertThat(positions.get(1).get("checks").isNull()).isTrue();
+        JsonNode holdingChecks = carried.get(Continuity.HOLDING_CHECKS);
+        assertThat(holdingChecks.get("met")).hasSize(1);
+        assertThat(holdingChecks.get("met").get(0).get("ticker").asString()).isEqualTo("005930");
+        assertThat(holdingChecks.get("met").get(0).get("metric").asString()).isEqualTo("usdkrw");
+        assertThat(holdingChecks.get("missing")).as("논거를 남긴 매수가 없는 보유는 옮겨 적을 무효화 조건이 없어 재촉하지 않음").isEmpty();
         List<String> names = new ArrayList<>();
         carried.get("metrics").get("names").forEach(n -> names.add(n.asString()));
         assertThat(names).contains("usdkrw", "dxy", "kospiForeignNet", "kospiForeignNet5", "kospiForeignNet20");
 
         ObjectNode stripped = (ObjectNode) body.deepCopy();
         ((ObjectNode) stripped.get(PacketBuilder.BASIS)).remove("continuity");
-        stripped.get(PacketBuilder.PORTFOLIO).get("positions").forEach(row -> ((ObjectNode) row).remove("entry"));
+        stripped.get(PacketBuilder.PORTFOLIO).get("positions")
+                .forEach(row -> ((ObjectNode) row).remove(List.of("entry", "checks")));
         stripped.remove(Continuity.SECTION);
         assertThat(stripped).as("더한 칸을 빼면 끈 스위치의 자유 시점 판 패킷과 같다").isEqualTo(off.body());
         Golden.assertMatches("packet-kr-ft-continuity-scheduled.json", on.text());

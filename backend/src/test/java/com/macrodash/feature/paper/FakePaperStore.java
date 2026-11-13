@@ -982,6 +982,18 @@ class FakePaperStore extends PaperStore {
     }
 
     @Override
+    public List<DecisionConditions> decisionConditions(String code, int limit) {
+        return decisions.values().stream().filter(d -> d.bookCode().equals(code))
+                .filter(d -> d.response() != null && d.response().has("schemaVersion")
+                        && d.response().get("conditions") != null && d.response().get("conditions").isArray())
+                .sorted(Comparator.comparing(Decision::asOfTradingDate).thenComparing(Decision::decidedAt)
+                        .thenComparing(Decision::id).reversed())
+                .limit(limit)
+                .map(d -> new DecisionConditions(d.id(), d.asOfTradingDate(), d.kind(), d.response().get("conditions")))
+                .toList();
+    }
+
+    @Override
     public List<DecisionSummary> decisions(String code, int limit) {
         return decisions.values().stream().filter(d -> d.bookCode().equals(code))
                 .sorted(Comparator.comparing(Decision::asOfTradingDate).thenComparing(Decision::decidedAt)

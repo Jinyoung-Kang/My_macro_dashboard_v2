@@ -2558,6 +2558,24 @@ public class PaperStore {
                 code, limit);
     }
 
+    /** 결정 한 건이 남긴 조건 목록({@code response.conditions} 배열 그대로) — 패킷·응답 전체는 읽지 않습니다. */
+    public record DecisionConditions(long id, LocalDate asOfTradingDate, String kind, JsonNode conditions) {
+    }
+
+    /**
+     * 그 계좌의 결정 가운데 조건 목록을 남긴 것(검증된 응답 — {@code schemaVersion}이 있고 {@code conditions}가 배열)을 최근 순으로.
+     * 보유 종목의 조건을 찾을 때 씁니다(판단 이어받기 판 2 — 결정 전체를 읽으면 패킷까지 딸려 옴).
+     */
+    public List<DecisionConditions> decisionConditions(String code, int limit) {
+        return jdbc.query("SELECT d.id, d.as_of_trading_date, d.kind, d.response->'conditions' AS conditions FROM paper_decisions d "
+                        + "WHERE d.book_code = ? AND d.response->'schemaVersion' IS NOT NULL "
+                        + "AND jsonb_typeof(d.response->'conditions') = 'array' "
+                        + "ORDER BY d.as_of_trading_date DESC, d.decided_at DESC, d.id DESC LIMIT ?",
+                (rs, rowNum) -> new DecisionConditions(rs.getLong("id"), date(rs, "as_of_trading_date"), rs.getString("kind"),
+                        json(rs, "conditions")),
+                code, limit);
+    }
+
     /**
      * 결정의 상태·응답·오류를 바꿉니다(응답이 null이면 그대로 둠). 결정 행을 먼저 넣어 번호를 받고 그 번호로 주문·체결을 낸 뒤,
      * 체결 결과(사후 체결의 체결가·건너뛴 종목)를 같은 기록에 덧붙일 때 씁니다.

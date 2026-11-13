@@ -669,19 +669,28 @@ public class PacketBuilder {
         FundamentalsSection.Built fundamentals = fundamentals(asOf, stockTargets, in.settingsBody());
         root.put(FUNDAMENTALS, fundamentals.section());
         Map<String, Object> portfolio = portfolio(book.code(), asOf, initial, ledger, in.paper(), in.limits());
+        Map<String, Object> holdingChecks = null;
+        Map<String, Double> macro = null;
+        Map<String, Double> metrics = null;
         if (continuity) {
-            Continuity.attachEntries(portfolio.get("positions"), Continuity.entries(store, book.code(),
-                    ledger.positions().stream().map(Position::ticker).toList()));
+            // 조건의 값 표 — 이 패킷이 실은 매크로 카드·국면의 하이일드 스프레드와 8_prices의 종목 종가. 이름(metrics.names)은 매크로 값만 보입니다.
+            macro = Continuity.usMacro(in.marketSections().get(MACRO), in.marketSections().get(REGIME));
+            metrics = new LinkedHashMap<>(macro);
+            Continuity.table(toNode(root.get(PRICES)), "ticker", "close").forEach(metrics::putIfAbsent);
+            List<String> held = ledger.positions().stream().map(Position::ticker).toList();
+            Map<String, Continuity.Entry> entries = Continuity.entries(store, book.code(), held);
+            Continuity.attachEntries(portfolio.get("positions"), entries);
+            // 보유 종목의 조건(판 2) — 직전 결정과 같은 거름(기준일 앞, 같은 날의 다른 종류 — 지금 다시 만드는 결정은 뺌)으로 찾아 이 패킷의 값으로 매김.
+            holdingChecks = Continuity.attachChecks(portfolio.get("positions"), Continuity.holdingChecks(store, book.code(), held,
+                    entries, d -> priorDecisionKind(book.code(), d.kind()) && (d.asOfTradingDate().isBefore(asOf)
+                            || !initial && d.asOfTradingDate().equals(asOf) && !d.kind().equals(kind))), metrics);
         }
         root.put(PORTFOLIO, portfolio);
         root.put(DECISIONS, recentDecisions(prior));
         if (continuity) {
-            // 조건의 값 표 — 이 패킷이 실은 매크로 카드·국면의 하이일드 스프레드와 8_prices의 종목 종가. 이름(metrics.names)은 매크로 값만 보입니다.
-            Map<String, Double> macro = Continuity.usMacro(in.marketSections().get(MACRO), in.marketSections().get(REGIME));
-            Map<String, Double> metrics = new LinkedHashMap<>(macro);
-            Continuity.table(toNode(root.get(PRICES)), "ticker", "close").forEach(metrics::putIfAbsent);
-            root.put(Continuity.SECTION, Continuity.carried(Continuity.latestJudged(store, prior), metrics,
-                    List.copyOf(macro.keySet())));
+            Map<String, Object> carried = Continuity.carried(Continuity.latestJudged(store, prior), metrics, List.copyOf(macro.keySet()));
+            carried.put(Continuity.HOLDING_CHECKS, holdingChecks);
+            root.put(Continuity.SECTION, carried);
         }
         root.put(NOTES, in.marketSections().get(NOTES));
         root.put(EVENTS, events.section());

@@ -56,7 +56,7 @@ class BriefingTest {
                 "claude-sonnet-5-5", 15, 26, PREVIOUS, 45.0, "금리 부담으로 노출을 줄인다", null, true, 1, 0);
         List<CarriedConditions.Condition> conditions = List.of(
                 new CarriedConditions.Condition("us10y", CarriedConditions.ABOVE, 5.1, "노출 축소 검토"),
-                new CarriedConditions.Condition("AAA", CarriedConditions.BELOW, 100.0, "매도 검토"),
+                new CarriedConditions.Condition("AAA", CarriedConditions.BELOW, 100.0, "매도 검토", "AAA"),
                 new CarriedConditions.Condition("cpi", CarriedConditions.ABOVE, 3.0, "직접 확인"));
         Briefing.BookData one = new Briefing.BookData(claude, new BookState(PaperBooks.CLAUDE, 55_000, 99_000, 44_000, 44.444, CLOSE, CLOSE,
                 SESSION, CLOSE), nav, List.of(position(PaperBooks.CLAUDE, "AAA", 10, 100, 110.0), position(PaperBooks.CLAUDE, "ZZZ", 0, 50, 51.0),
@@ -119,6 +119,8 @@ class BriefingTest {
                 .containsExactly("us10y " + CarriedConditions.MET, "AAA " + CarriedConditions.NOT_MET, "cpi " + CarriedConditions.UNEVALUABLE);
         assertThat(claude.get("conditions").get(0).get("current").asDouble()).isEqualTo(5.125);
         assertThat(claude.get("conditions").get(2).get("current").isNull()).isTrue();
+        assertThat(claude.get("conditions").get(1).get("ticker").asString()).as("종목을 붙인 조건(이어받기 판 2)").isEqualTo("AAA");
+        assertThat(claude.get("conditions").get(0).has("ticker")).as("계좌 전체 조건은 이 칸이 없음").isFalse();
 
         JsonNode rules = facts.get("books").get(1);
         assertThat(rules.get("nav").asDouble()).as("직전 처리 기준").isEqualTo(101_000.0);
@@ -152,6 +154,7 @@ class BriefingTest {
                 .contains("  대기: BBB 매수 AT\\_MINUTE 09:40")
                 .contains("  조건: us10y \\> 5\\.1 — 충족\\(지금 5\\.125\\)")
                 .contains("  조건: cpi \\> 3 — 평가 불가")
+                .contains("  조건: \\[AAA\\] AAA < 100 — 미충족\\(지금 110\\)")
                 .contains("\\- 규칙 계좌 — 순자산 101,000, 노출 0%, 보유 0종목")
                 .contains("참고: 장부가 이 세션을 아직 처리하지 않은 계좌가 있음")
                 .contains("*해석*").contains("*계좌 판단*").contains("*다음 세션에 볼 것*").contains("\\- 10년물 5\\.1% 아래 복귀 여부")

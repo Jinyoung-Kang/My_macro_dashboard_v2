@@ -196,6 +196,7 @@ final class KrCheckpointPacket {
             Continuity.attachEntries(positions, extra.entries());
             Map<String, Double> prices = Continuity.feedLast(PacketBuilder.toNode(feed));
             Map<String, Object> carried = Continuity.intradayCarried(in.night(), prices);
+            carried.put(Continuity.HOLDING_CHECKS, Continuity.attachChecks(positions, extra.checks(), prices));
             java.util.Set<String> tickers = new java.util.LinkedHashSet<>(Continuity.tickers(positions));
             tickers.addAll(prices.keySet());
             carried.put("prevCloses", Continuity.prevCloses(nightPacket, "code", tickers));

@@ -120,7 +120,7 @@
       "items" : {
         "type" : "object",
         "additionalProperties" : false,
-        "required" : [ "metric", "op", "level", "then" ],
+        "required" : [ "metric", "op", "level", "then", "ticker" ],
         "properties" : {
           "metric" : {
             "type" : "string"
@@ -132,6 +132,9 @@
             "type" : "number"
           },
           "then" : {
+            "type" : "string"
+          },
+          "ticker" : {
             "type" : "string"
           }
         }
