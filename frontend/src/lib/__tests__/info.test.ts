@@ -24,6 +24,7 @@ import {
   searchLabel,
   sharesText,
   sourceChoices,
+  speedLabel,
   splitText,
   stanceTone,
   statusLabel,
@@ -82,6 +83,15 @@ describe("출처 상태", () => {
     expect(statusTone({ status: "format", incident: null })).toBe("warn");
     expect(statusTone({ status: "ok", incident: null })).toBe("ok");
     expect(statusTone({ status: null, incident: null })).toBe("neutral");
+  });
+});
+
+describe("수집 주기 글", () => {
+  it("속도군마다 글이 있고, 사건 뉴스의 탄력 주기(ADR 0040)도 이름 대신 글로, 없으면 '—'", () => {
+    expect(speedLabel("slow")).toBe("1시간마다");
+    expect(speedLabel("polite")).toBe("불규칙(출처마다 무작위)");
+    expect(speedLabel("flex")).toBe("탄력(피드마다 무작위 · 304)");
+    expect(speedLabel(null)).toBe("—");
   });
 });
 

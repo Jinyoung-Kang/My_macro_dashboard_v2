@@ -237,6 +237,7 @@ const SPEED_LABELS: Record<string, string> = {
   session: "장중 5분(조건부)",
   live: "화면이 볼 때",
   polite: "불규칙(출처마다 무작위)",
+  flex: "탄력(피드마다 무작위 · 304)",
 };
 
 export function speedLabel(speed: string | null): string {
