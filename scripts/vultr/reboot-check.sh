@@ -51,10 +51,30 @@ fi
 
 # 2. Livepatch — 지금 돌고 있는 커널의 항목(없으면 첫 항목)을 봅니다. 판정은 아래 python 한 곳.
 livepatch_ok=""
+livepatch_issue=""
+# QA-417: 2026-11-13 16:10 KST cron에서 status가 한 번 실패했고(원인 미확인 — 그때는 오류를 버렸음) 바로 뒤에는 늘 읽혔습니다.
+# 세 번까지(사이 REBOOT_CHECK_RETRY_SECONDS초, 기본 10) 다시 묻고, 끝내 못 읽으면 마지막 오류의 첫 줄을 사유에 남깁니다.
+lp_json=""
+lp_err=""
+if command -v canonical-livepatch >/dev/null 2>&1; then
+    err_file="$(mktemp)"
+    trap 'rm -f "$err_file"' EXIT
+    for attempt in 1 2 3; do
+        if lp_json="$(canonical-livepatch status --format json 2>"$err_file")"; then
+            lp_err=""
+            break
+        fi
+        lp_json=""
+        lp_err="$(head -n 1 "$err_file" | tr -d '\r' | cut -c1-120)"
+        [ "$attempt" = 3 ] || sleep "${REBOOT_CHECK_RETRY_SECONDS:-10}"
+    done
+fi
 if ! command -v canonical-livepatch >/dev/null 2>&1; then
     reasons+=("Livepatch 상태를 읽지 못함(canonical-livepatch 없음 — pro status를 보세요)")
-elif ! lp_json="$(canonical-livepatch status --format json 2>/dev/null)"; then
-    reasons+=("Livepatch 상태를 읽지 못함(canonical-livepatch status 실패 — pro status를 보세요)")
+    livepatch_issue=1
+elif [ -z "$lp_json" ]; then
+    reasons+=("Livepatch 상태를 읽지 못함(canonical-livepatch status 3번 실패${lp_err:+: $lp_err} — pro status를 보세요)")
+    livepatch_issue=1
 else
     lp_out="$(LP_JSON="$lp_json" python3 - <<'PY' 2>/dev/null
 import json, os
@@ -105,7 +125,9 @@ PY
     while IFS=$'\t' read -r kind text; do
         case "$kind" in
             OK) livepatch_ok="$text" ;;
-            WARN) reasons+=("$text"); case "$text" in *"새 커널로 재부팅"*) needs_reboot=1 ;; esac ;;
+            WARN)
+                reasons+=("$text")
+                case "$text" in *"새 커널로 재부팅"*) needs_reboot=1 ;; *) livepatch_issue=1 ;; esac ;;
         esac
     done <<< "$lp_out"
 fi

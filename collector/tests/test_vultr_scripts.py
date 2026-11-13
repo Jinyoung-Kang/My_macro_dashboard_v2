@@ -1390,7 +1390,6 @@ def test_reboot_check는_Livepatch_상태를_읽지_못하면_그렇게_알린�
     assert result.stdout.strip().startswith("경고: Livepatch 상태를 읽지 못함(")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-417 재현 — 고치기 전")
 def test_QA417_reboot_check는_Livepatch_상태를_한_번_못_읽어도_다시_물어_정상이면_알리지_않는다(reboot_root, fakes, tmp_path):
     # 2026-11-13 16:10 KST cron에서 한 번만 실패(원인 미확인)해 재부팅 알림에 '읽지 못함'이 섞였고, 바로 뒤에는 늘 읽혔음.
     result = _reboot_check(reboot_root, fakes, FAKE_LP_FAIL_TIMES="1")
@@ -1399,7 +1398,6 @@ def test_QA417_reboot_check는_Livepatch_상태를_한_번_못_읽어도_다시_
     assert any("Livepatch 정상" in c for c in tools._calls(fakes) if c.startswith("logger -t my-macro-reboot-check"))
 
 
-@pytest.mark.xfail(strict=True, reason="QA-417 재현 — 고치기 전")
 def test_QA417_reboot_check는_Livepatch를_끝내_못_읽으면_마지막_오류_첫_줄을_사유에_남긴다(reboot_root, fakes):
     result = _reboot_check(reboot_root, fakes, "--summary", FAKE_LP_FAIL_TIMES="9")
     assert result.returncode == 0
