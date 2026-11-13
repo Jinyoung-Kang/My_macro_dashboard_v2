@@ -231,7 +231,8 @@ def test_스케줄러의_polite_틱은_기동_직후에_돌지_않는다(monkeyp
     asyncio.run(enter_and_exit())
 
     by_id = {job["id"]: job for job in jobs}
-    assert set(by_id) == {"collect-fast", "collect-slow", "collect-weekly", "collect-session", "collect-polite"}
+    # flex(탄력 주기 — ADR 0040)의 틱도 같은 방식으로 등록됩니다(test_group_schedule.py의 test_flex_틱은_…).
+    assert set(by_id) == {"collect-fast", "collect-slow", "collect-weekly", "collect-session", "collect-polite", "collect-flex"}
     tick = by_id["collect-polite"]
     assert "next_run_time" not in tick, "다른 군은 기동 직후 한 번 돌지만 polite 틱은 한 주기 뒤에 처음 돕니다"
     assert (tick["trigger"], tick["seconds"], tick["jitter"]) == ("interval", 300, 120)

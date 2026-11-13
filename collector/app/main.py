@@ -266,6 +266,20 @@ async def lifespan(app: FastAPI):
             misfire_grace_time=POLITE_TICK_MISFIRE_GRACE_SECONDS,
         )
         logger.info("스케줄 등록: polite 틱 %d초(+지터 %d초) — 때가 된 태스크만", POLITE_TICK_SECONDS, POLITE_TICK_JITTER_SECONDS)
+        # flex(탄력 주기 — ADR 0040): 1분 틱이 때가 된 일이 있는 태스크만 실행합니다(사건 뉴스 RSS — 피드마다 다음 시각, 표 fetch_schedule).
+        # polite처럼 next_run_time을 주지 않아 기동 직후에는 돌지 않습니다. 로컬에서도 돕니다(POLITE_FETCH_ENABLED와 무관).
+        scheduler.add_job(
+            _run_flex_job,
+            "interval",
+            seconds=tasks.flex.TICK_SECONDS,
+            jitter=tasks.flex.TICK_JITTER_SECONDS,
+            id="collect-flex",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=tasks.flex.TICK_MISFIRE_GRACE_SECONDS,
+        )
+        logger.info("스케줄 등록: flex 틱 %d초(+지터 %d초) — 때가 된 피드가 있는 태스크만", tasks.flex.TICK_SECONDS,
+                    tasks.flex.TICK_JITTER_SECONDS)
         scheduler.start()
     else:
         logger.info("스케줄러 비활성화 — REST 요청으로만 수집합니다.")
@@ -302,6 +316,13 @@ def _run_polite_job() -> None:
         tasks.run_polite_due()
     except Exception as exc:  # noqa: BLE001
         logger.exception("스케줄 수집 실패 (polite): %s", exc)
+
+
+def _run_flex_job() -> None:
+    try:
+        tasks.run_flex_due()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("스케줄 수집 실패 (flex): %s", exc)
 
 
 def _check_token(token: str | None) -> None:

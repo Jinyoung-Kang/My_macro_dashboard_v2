@@ -16,13 +16,13 @@ from .info import (
 from .fundamentals import task_sec_fundamentals
 from .korea_public import task_dart_fundamentals, task_fsc_etf_prices, task_fsc_prices, task_kr_holidays
 from .kr_calendar import task_kr_calendar
-from .kr_news import task_kr_news_headlines
+from .kr_news import due as kr_news_due, task_kr_news_headlines
 from ..services.info_blogs import BLOGS
 from .kr_paper import task_kr_paper_flows, task_kr_paper_price_history, task_kr_paper_quotes, task_kr_paper_universe
 from .kr_paper_timed import task_kr_paper_timed
 from .maintenance import task_run_log_retention
 from .markets import task_macro_collected, task_radar_rankings, task_scraper_markets
-from .news import task_news_headlines
+from .news import due as news_due, task_news_headlines
 from .paper import task_paper_price_history, task_paper_quotes
 from .paper_bars import task_paper_bars_us
 from .paper_stopwatch import task_paper_stopwatch_kr, task_paper_stopwatch_us
@@ -67,8 +67,12 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("paper_live_kr", "live", task_paper_live_kr, "장중 평가 — 한국 보유 종목 최신 1분봉 (화면이 볼 때만, 표시 전용)"),
     Task("us_calendar", "slow", task_us_calendar, "미국 발표·실적 일정 — FRED 릴리스·FOMC 상수·yfinance 실적일 (모의 매매 Claude 계좌 패킷)", yahoo=True),
     Task("us_calendar_consensus", "slow", task_us_calendar_consensus, "미국 지표 컨센서스 — Nasdaq 경제 캘린더, 동부 하루 1회·저장만 (패킷은 calendar.consensus를 켠 뒤)"),
-    Task("news_headlines", "slow", task_news_headlines, "사건 뉴스 RSS 헤드라인 — 인베스팅닷컴·연준·BLS·SEC, 7일 보관 (모의 매매 Claude 계좌 패킷)"),
-    Task("kr_news_headlines", "slow", task_kr_news_headlines, "한국 사건 뉴스 RSS 헤드라인 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 7일 보관 (한국 Claude 계좌 패킷)"),
+    # 속도군 flex(탄력 주기 — ADR 0040): 1분 틱이 때가 된 피드가 있는 태스크만 부르고, 한 실행은 때가 된 피드만 조건부 요청으로 받습니다.
+    Task("news_headlines", "flex", task_news_headlines,
+         "사건 뉴스 RSS 헤드라인 — 인베스팅닷컴·연준·BLS·SEC, 피드마다 탄력 주기·조건부 요청, 7일 보관 (모의 매매 Claude 계좌 패킷)", due=news_due),
+    Task("kr_news_headlines", "flex", task_kr_news_headlines,
+         "한국 사건 뉴스 RSS 헤드라인 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 피드마다 탄력 주기·조건부 요청, 7일 보관 (한국 Claude 계좌 패킷)",
+         due=kr_news_due),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열", yahoo=True),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),

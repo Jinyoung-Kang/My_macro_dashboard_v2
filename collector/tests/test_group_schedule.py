@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from apscheduler.triggers.cron import CronTrigger
 
-from app import main, settings
+from app import main, settings, tasks
 from app import store as app_store
 
 UTC = timezone.utc
@@ -266,3 +266,26 @@ def test_QA374_유예는_그_군의_기본_주기보다_짧다(monkeypatch):
     for group, grace in main.INTERVAL_MISFIRE_GRACE_SECONDS.items():
         assert 0 < grace < settings.interval_seconds(group), group
     assert 0 < main.POLITE_TICK_MISFIRE_GRACE_SECONDS < main.POLITE_TICK_SECONDS
+
+
+# ==============================================================================
+# flex 틱(탄력 주기 — ADR 0040)
+# ==============================================================================
+def test_flex_틱은_1분_interval이고_기동_직후에는_돌지_않으며_유예는_틱보다_짧다(monkeypatch):
+    """사건 뉴스 RSS의 피드별 일정을 1분마다 봅니다. polite처럼 next_run_time이 없어 첫 틱은 한 주기 뒤이고, 로컬에서도 등록됩니다."""
+    monkeypatch.delenv("POLITE_FETCH_ENABLED", raising=False)
+    jobs = _jobs(monkeypatch)
+    job = jobs["collect-flex"]
+    assert job["func"] is main._run_flex_job and job["trigger"] == "interval"
+    assert job["seconds"] == tasks.flex.TICK_SECONDS == 60 and job["jitter"] == tasks.flex.TICK_JITTER_SECONDS
+    assert "next_run_time" not in job
+    assert (job["max_instances"], job["coalesce"]) == (1, True)
+    assert 0 < job["misfire_grace_time"] < tasks.flex.TICK_SECONDS
+
+
+def test_flex_틱_작업은_실패해도_스케줄러를_멈추지_않는다(monkeypatch):
+    def broken():
+        raise RuntimeError("표를 읽지 못함")
+
+    monkeypatch.setattr(tasks, "run_flex_due", broken)
+    main._run_flex_job()    # 예외를 밖으로 내지 않음(로그만)

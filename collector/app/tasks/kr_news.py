@@ -1,18 +1,20 @@
 """
 app/tasks/kr_news.py
-slow 그룹 — 모의 매매 한국 책 Claude 계좌 패킷 ``11b_events``의 한국 사건 헤드라인(v2 2단계 명세 §4-11·K21·B9).
+flex 그룹(탄력 주기 — ADR 0040) — 모의 매매 한국 책 Claude 계좌 패킷 ``11b_events``의 한국 사건 헤드라인(v2 2단계 명세 §4-11·K21·B9).
 
 미국 ``news_headlines``(tasks/news.py)와 같은 규칙으로 받아 저장만 하고, 따로 된 데이터셋에 씁니다 — 같은 ``news_headline``에 섞으면 한국
 행의 받은 시각이 미국 패킷의 '수집 공백(STALE)' 판정을 가리고, 백엔드 설정 ``news.feeds``·``NewsFeedsParityTest``는 미국 여덟 피드가
 전제입니다. 거르기(종목 이름·한글 조사·별칭·키워드)·창·하루 상한은 백엔드(E1)가 이 저장본을 읽어 합니다(ADR 0008). 피드 표는
-``services.news.KR_FEEDS``.
+``services.news.KR_FEEDS``. 언제·어떻게 받는지(피드마다 다른 간격·조건부 요청·같은 본문 건너뛰기·거부 뒤 물러남)는 tasks/news_feeds —
+한 실행은 때가 된 피드만 받습니다.
 
 [저장]
   observations ``kr_news_headline`` : entity = 정규화한 제목의 해시(services.news.title_entity), obs_date = 발행 KST 날짜,
       payload {title, link, source, feed, feeds, publishedAt, publishedDate, timePrecision, knownAt, fetchedAt, summary(피드가 줄 때만)}.
       publishedAt = 원문 발행 시각(ISO UTC, 날짜만 있는 피드는 null) · publishedDate = KST 날짜 · timePrecision = second|minute|date ·
       knownAt = '알 수 있는 시각'(아래, ISO UTC) · fetchedAt = 처음 받은 시각(ISO UTC). feed·source·link는 처음 실어 온 피드의 것.
-  스냅샷 ``kr.news.headlines.status`` : 미국 news.headlines.status와 같은 칸 + 피드별 timeFormat·skippedBadTime.
+  스냅샷 ``kr.news.headlines.status`` : 미국 news.headlines.status와 같은 칸(feedsOk·failedFeeds는 피드마다의 마지막 요청 기준) + timeZone·
+      피드별 timeFormat·skippedBadTime.
 
 [알 수 있는 시각 — 명세 §4-11]
   시각이 있는 항목은 발행 시각 그대로입니다. 날짜만 있는 항목(재정경제부)은 min(처음 받은 시각, 그 KST 날짜 다음 자정)입니다 — 실제
@@ -26,8 +28,9 @@ slow 그룹 — 모의 매매 한국 책 Claude 계좌 패킷 ``11b_events``의 
   - 발행 시각(날짜만이면 그 날짜)이 지금보다 하루 넘게 뒤면 건너뜁니다. 시각이 없거나 형식이 다른 항목은 건너뛰고 셉니다.
 
 [실패 규칙 — 수집기 공통, 미국과 같음]
-  피드 하나의 실패는 나머지를 멈추지 않고, 전부 실패하면 EmptyResult(행·상태 그대로). 헤드라인은 쌓기만 해 '이전 값 이어받기'가
-  없고, 상태의 피드 줄은 마지막 성공 시각(lastOkAt)을 잇습니다. 받은 항목이 모두 처음 보는 것이면 '누락 가능'(maybeMissed).
+  피드 하나의 실패는 나머지를 멈추지 않고, 이번 실행에 받은 피드가 없으면 행 그대로·상태는 실패한 피드의 줄만 고침(저장 시각 그대로,
+  저장본이 아직 없으면 쓰지 않음) — 다른 피드가 정상이면 성공, 모두 실패 중이면 EmptyResult. 헤드라인은 쌓기만 해 '이전 값 이어받기'가 없고, 상태의 피드 줄은 마지막 성공 시각(lastOkAt)을
+  잇습니다. 받은 항목이 모두 처음 보는 것이면 '누락 가능'(maybeMissed).
 """
 from __future__ import annotations
 
@@ -36,12 +39,11 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as clock_time
-from urllib.parse import urlparse
 
-from .. import catalog, logredact, store
-from ..http import brief_error
+from .. import catalog, store
 from ..services import news as news_service
 
+from . import news_feeds
 from .base import KST, EmptyResult, previous_payload
 
 logger = logging.getLogger(__name__)
@@ -52,12 +54,9 @@ RETENTION_DAYS = 7
 # 발행 시각이 이만큼 넘게 미래면 건너뜁니다(모듈 설명 '중복·보관').
 FUTURE_TOLERANCE = timedelta(days=1)
 
-# 새 피드를 더 시작하지 않는 경과 시간(초) — 미국 news_headlines와 같은 값(slow 상한 600초의 절반, 남는 시간은 진행 중인 요청과 저장).
-# 정상이면 피드 4개에 2~5초(한국은행 피드는 200~460KB).
+# 새 피드를 더 시작하지 않는 경과 시간(초) — 미국 news_headlines와 같은 값(flex 상한 600초의 절반, 남는 시간은 진행 중인 요청과 저장).
+# 한국은행 피드는 200~460KB. 같은 호스트 사이 간격은 news_feeds.HOST_SPACING_SECONDS(지금 네 피드는 호스트가 모두 달라 쉬지 않음).
 TIME_LIMIT_SECONDS = 300.0
-
-# 같은 호스트에 잇달아 보낼 때 사이 간격(초). 지금 네 피드는 호스트가 모두 달라 쉬지 않습니다(피드를 더할 때를 위한 자리).
-HOST_SPACING_SECONDS = 0.6
 
 
 def known_at(published_at: datetime | None, published_date: date, fetched_at: datetime) -> datetime:
@@ -72,8 +71,20 @@ def known_at(published_at: datetime | None, published_date: date, fetched_at: da
     return min(fetched_at, next_midnight.astimezone(timezone.utc))
 
 
+TASK_NAME = "kr_news_headlines"
+
+
+def due() -> bool:
+    """flex 틱이 이 태스크를 부를 때인가 — 일정이 없거나 때가 된 피드가 있으면 참(tasks/news_feeds.any_due, 외부 호출 없음)."""
+    return news_feeds.any_due(TASK_NAME, news_service.KR_FEEDS)
+
+
+def _parse(content: bytes, content_type: str | None, feed) -> news_service.ParsedFeed:
+    return news_service.parse_feed(content, content_type, feed=feed)
+
+
 def task_kr_news_headlines() -> str:
-    """한국 사건 뉴스 RSS 4개 → observations ``kr_news_headline`` + 상태 ``kr.news.headlines.status``."""
+    """때가 된 한국 사건 뉴스 RSS 피드 → observations ``kr_news_headline`` + 상태 ``kr.news.headlines.status``(피드별 줄을 합침)."""
     feeds_table = news_service.KR_FEEDS
     now = _now()
     stamp = now.isoformat(timespec="seconds")
@@ -82,25 +93,50 @@ def task_kr_news_headlines() -> str:
     previous = previous_payload(catalog.SNAP_KR_NEWS_STATUS)
     prev_feeds = previous.get("feeds") if isinstance(previous.get("feeds"), dict) else {}
 
-    parsed, failed = _fetch_all(feeds_table)
-    if not parsed:
-        raise EmptyResult(f"피드 0/{len(feeds_table)} — 기존 저장본 유지" + _failed_suffix(failed))
+    plan = news_feeds.plan(TASK_NAME, feeds_table, prev_feeds, now)
+    if not plan.due:
+        raise EmptyResult(plan.idle_message())
+    fetched = news_feeds.fetch(TASK_NAME, feeds_table, plan.due, prev_feeds, now, parse=_parse, clock=_clock, sleep=_sleep,
+                               time_limit=TIME_LIMIT_SECONDS, wall=_now)
+    outcomes = fetched.outcomes
+    failed = {key: outcome.error for key, outcome in outcomes.items() if outcome.result == news_feeds.RESULT_FAILED}
+    received = [key for key, outcome in outcomes.items() if outcome.result in news_feeds.RECEIVED]
+    sent = [feed for feed in plan.due if feed.key in outcomes]
+
+    if not received:
+        # 받은 피드가 없음 — 미국 news_headlines와 같은 규칙(실패한 피드의 줄만 고쳐 쓰고 저장 시각은 그대로, 다른 피드가 정상이면 성공으로).
+        entries = {feed.key: news_feeds.settle(TASK_NAME, feed, outcomes[feed.key], news_feeds.entry_of(prev_feeds, feed.key), now,
+                                               fixed={"timeFormat": feed.time_format})
+                   for feed in sent}
+        merged, ok_count, failed_feeds = news_feeds.merge(feeds_table, prev_feeds, entries)
+        next_key, next_at = news_feeds.head_next(TASK_NAME, feeds_table)
+        if previous:
+            store.update_snapshot_payload(catalog.SNAP_KR_NEWS_STATUS, {
+                **previous, "feeds": merged, "feedsOk": ok_count, "feedsTotal": len(feeds_table), "failedFeeds": failed_feeds,
+                "thisRun": news_feeds.run_note(fetched), "nextFeed": next_key, "nextDueAt": next_at,
+            })
+        if previous and ok_count:
+            return (f"새 헤드라인 0건 · {news_feeds.run_label(outcomes)} · 다른 피드 정상 {ok_count}/{len(feeds_table)}"
+                    + _failed_suffix(failed) + news_feeds.tail_note(TASK_NAME, feeds_table, fetched))
+        # 실패 글에는 다음 시각을 넣지 않습니다 — 같은 실패가 상태 화면의 오류 모음에서 한 줄로 묶이게.
+        raise EmptyResult(f"피드 0/{len(outcomes)} — 기존 저장본 유지" + _failed_suffix(failed)
+                          + news_feeds.tail_note(TASK_NAME, feeds_table, fetched, with_next=False))
 
     existing = store.observation_entities_since(catalog.OBS_KR_NEWS_HEADLINE, cutoff.isoformat())
     taken: dict[str, dict] = {}
     carried: list[tuple[str, str]] = []
     rows: list[tuple] = []
-    feeds: dict[str, dict] = {}
+    entries: dict[str, dict] = {}
     maybe_missed: list[str] = []
     skipped = Counter()
 
-    for feed in feeds_table:
-        before = prev_feeds.get(feed.key) if isinstance(prev_feeds.get(feed.key), dict) else {}
-        if feed.key in failed:
-            feeds[feed.key] = {"source": feed.source, "url": feed.url, "timeFormat": feed.time_format, "status": "실패",
-                               "error": failed[feed.key], "lastOkAt": before.get("lastOkAt")}
+    for feed in sent:
+        outcome = outcomes[feed.key]
+        before = news_feeds.entry_of(prev_feeds, feed.key)
+        if outcome.result != news_feeds.RESULT_CHANGED:
+            entries[feed.key] = news_feeds.settle(TASK_NAME, feed, outcome, before, now, fixed={"timeFormat": feed.time_format})
             continue
-        result = parsed[feed.key]
+        result = outcome.parsed
         counts = Counter()
         newest: datetime | None = None
         overlap = 0
@@ -150,11 +186,7 @@ def task_kr_news_headlines() -> str:
         skipped["badTime"] += result.bad_time
         skipped["noTitle"] += result.no_title
         skipped["future"] += counts["future"]
-        feeds[feed.key] = {
-            "source": feed.source,
-            "url": feed.url,
-            "timeFormat": feed.time_format,
-            "status": "ok",
+        entries[feed.key] = news_feeds.settle(TASK_NAME, feed, outcome, before, now, fixed={"timeFormat": feed.time_format}, stats={
             "entries": result.entries,
             "new": counts["new"],
             "seen": counts["seen"],
@@ -164,33 +196,36 @@ def task_kr_news_headlines() -> str:
             "skippedBadTime": result.bad_time,
             "skippedNoTitle": result.no_title,
             "newestAt": newest.isoformat(timespec="seconds") if newest else None,
-            "lastOkAt": stamp,
-        }
+        })
 
     store.insert_new_observations(catalog.OBS_KR_NEWS_HEADLINE, rows)
     store.add_headline_feeds(catalog.OBS_KR_NEWS_HEADLINE, cutoff.isoformat(), carried)
     deleted = store.delete_observations_before(catalog.OBS_KR_NEWS_HEADLINE, cutoff.isoformat())
     stored = len(existing | taken.keys())
 
-    failed_feeds = [{"feed": feed.key, "source": feed.source, "reason": failed[feed.key]}
-                    for feed in feeds_table if feed.key in failed]
+    merged, ok_count, failed_feeds = news_feeds.merge(feeds_table, prev_feeds, entries)
+    next_key, next_at = news_feeds.head_next(TASK_NAME, feeds_table)
     store.put_snapshot(catalog.SNAP_KR_NEWS_STATUS, {
         "generatedAt": stamp,
         "source": news_service.KR_SOURCE_NOTE,
+        "cadence": news_feeds.CADENCE_NOTE,
         "timeZone": "Asia/Seoul",
         "retentionDays": RETENTION_DAYS,
         "retainedFrom": cutoff.isoformat(),
         "stored7d": stored,
         "insertedThisRun": len(rows),
         "deletedThisRun": deleted,
-        "feedsOk": len(parsed),
+        "feedsOk": ok_count,
         "feedsTotal": len(feeds_table),
         "failedFeeds": failed_feeds,
         "maybeMissed": maybe_missed,
-        "feeds": feeds,
+        "thisRun": news_feeds.run_note(fetched),
+        "nextFeed": next_key,
+        "nextDueAt": next_at,
+        "feeds": merged,
     })
 
-    detail = f"새 헤드라인 {len(rows)}건 · 피드 {len(parsed)}/{len(feeds_table)} · {RETENTION_DAYS}일 보관 {stored}건"
+    detail = f"새 헤드라인 {len(rows)}건 · {news_feeds.run_label(outcomes)} · {RETENTION_DAYS}일 보관 {stored}건"
     if deleted:
         detail += f"(지움 {deleted}건)"
     if skipped["noTime"]:
@@ -203,34 +238,7 @@ def task_kr_news_headlines() -> str:
         detail += f" · 미래 시각 {skipped['future']}건 건너뜀"
     if maybe_missed:
         detail += f" · 누락 가능: {', '.join(maybe_missed)}(받은 항목이 모두 처음 봄 — 지난 수집 뒤 더 많이 나왔을 수 있음)"
-    return detail + _failed_suffix(failed)
-
-
-def _fetch_all(feeds_table) -> tuple[dict[str, news_service.ParsedFeed], dict[str, str]]:
-    """피드를 표 순서로 하나씩 받습니다. (키 → 읽은 결과, 키 → 실패 사유). 한 피드의 실패는 다음 피드를 멈추지 않습니다."""
-    started = _clock()
-    parsed: dict[str, news_service.ParsedFeed] = {}
-    failed: dict[str, str] = {}
-    last_host: str | None = None
-    for index, feed in enumerate(feeds_table):
-        host = urlparse(feed.url).hostname
-        if host == last_host:
-            _sleep(HOST_SPACING_SECONDS)
-        if _clock() - started > TIME_LIMIT_SECONDS:
-            for rest in feeds_table[index:]:
-                failed[rest.key] = f"시간 상한({TIME_LIMIT_SECONDS:.0f}초) — 다음 실행"
-            break
-        last_host = host
-        try:
-            content, content_type = news_service.fetch_feed(feed)
-            parsed[feed.key] = news_service.parse_feed(content, content_type, feed=feed)
-        except (news_service.FeedFetchError, news_service.FeedShapeError) as exc:
-            failed[feed.key] = str(exc)
-        except Exception as exc:  # noqa: BLE001 — feedparser 내부 오류 같은 예기치 못한 것도 그 피드만의 실패입니다
-            failed[feed.key] = logredact.redact(brief_error(exc))
-        if feed.key in failed:
-            logger.warning("한국 사건 뉴스 피드 실패 (%s): %s", feed.key, failed[feed.key])
-    return parsed, failed
+    return detail + _failed_suffix(failed) + news_feeds.tail_note(TASK_NAME, feeds_table, fetched)
 
 
 def _failed_suffix(failed: dict[str, str]) -> str:

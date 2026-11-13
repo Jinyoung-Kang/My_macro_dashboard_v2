@@ -12,8 +12,10 @@ tests/test_news_headlines.py
   4. 저장: entity = 정규화 제목 해시, obs_date = 발행 UTC 날짜, payload {title, link, source, feed, feeds, publishedAt, fetchedAt}.
      7일보다 오래된 항목은 넣지 않고, 7일 지난 행은 지운다. 같은 제목은 날짜가 달라도 7일 안에 다시 넣지 않되, 실어 온 피드는
      모두 feeds에 남긴다(다음 실행이면 그 행에 피드 키만 더함).
-  5. 실패: 피드 하나의 실패는 나머지를 멈추지 않고 사유가 실행 기록(collector_task_runs)과 상태에 남는다. 전부 실패 → EmptyResult
-     (행·상태 그대로). 피드 항목이 모두 처음 보는 것이면 '누락 가능'.
+  5. 실패: 피드 하나의 실패는 나머지를 멈추지 않고 사유가 실행 기록(collector_task_runs)과 상태에 남는다. 받은 피드가 없으면
+     EmptyResult(행 그대로, 상태는 실패한 피드의 줄만 고침 — 저장본이 없으면 쓰지 않음). 피드 항목이 모두 처음 보는 것이면 '누락 가능'.
+  6. 속도군은 flex(ADR 0040). 이 파일의 태스크 시험은 '받을 피드 고르기'(tasks/news_feeds.plan)를 '모두 때가 됨'으로 고정하고 받기·저장
+     규칙만 봅니다. 고르기·조건부 요청·물러남·틱은 test_news_feeds.py에서 봅니다.
 
 외부 네트워크를 쓰지 않습니다 — 가짜 세션이 tests/fixtures/news/의 응답을 돌려줍니다(requests 전송도 막아 둠).
 태스크 테스트는 PostgreSQL이 필요합니다(store 픽스처, macrodash_test). 순수 함수 테스트는 DB 없이 돕니다.
@@ -31,6 +33,7 @@ import requests
 from app import catalog, http, tasks
 from app.services import news as svc
 from app.tasks import news as task_module
+from app.tasks import news_feeds
 from app.tasks.base import EmptyResult
 
 FIXTURES = Path(__file__).parent / "fixtures" / "news"
@@ -95,10 +98,10 @@ def test_데이터셋_이름():
     assert catalog.SNAP_NEWS_STATUS == "news.headlines.status"
 
 
-def test_slow에_등록되고_시간_상한은_slow_상한보다_짧다():
+def test_flex에_등록되고_시간_상한은_flex_상한보다_짧다():
     task = tasks.TASKS_BY_NAME["news_headlines"]
-    assert task.speed == "slow" and task.run is task_module.task_news_headlines
-    assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
+    assert task.speed == "flex" and task.run is task_module.task_news_headlines and task.due is task_module.due
+    assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["flex"]
     assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME)  # 태스크 수는 test_task_registry.py 한 곳에서 셉니다
 
 
@@ -287,6 +290,8 @@ def web(monkeypatch):
     monkeypatch.setattr(task_module, "_now", lambda: fake.clock["now"])
     monkeypatch.setattr(task_module, "_clock", lambda: fake.clock["mono"])
     monkeypatch.setattr(task_module, "_sleep", lambda seconds: fake.calls.append(("sleep", seconds)))
+    # 받을 피드 고르기는 '모두 때가 됨'으로 고정합니다(모듈 설명 6 — 고르기는 test_news_feeds.py).
+    monkeypatch.setattr(news_feeds, "plan", lambda task, feeds, prev, now: news_feeds.Plan(list(feeds), [], [], None, None))
 
     def no_network(*args, **kwargs):
         raise AssertionError("테스트가 실제 네트워크로 나가려 했습니다")
@@ -455,10 +460,12 @@ def test_여덟_피드를_받아_7일_안의_항목만_저장한다(store, web):
     assert status["feeds"]["fed_monetary"]["skippedOld"] == 3 and status["feeds"]["fed_monetary"]["new"] == 0
     assert status["feeds"]["investing_economy"]["newestAt"] == "2026-10-25T06:00:53+00:00"
     assert status["feeds"]["sec_press"]["lastOkAt"] == "2026-10-25T07:00:00+00:00"
-    assert detail == "새 헤드라인 15건 · 피드 8/8 · 7일 보관 15건"
+    assert detail.startswith("새 헤드라인 15건 · 받은 피드 8/8(새 본문 8) · 7일 보관 15건 · 다음 ")
 
-    # 같은 호스트에 잇달아 보낼 때만 쉽니다(인베스팅 셋 사이 2번, BLS 둘 사이 1번). SEC는 속도 제한을 거칩니다.
-    assert [seconds for name, seconds in web.calls if name == "sleep"] == [task_module.HOST_SPACING_SECONDS] * 4
+    # 같은 호스트에 잇달아 보낼 때만 쉽니다(인베스팅 넷 사이 3번, BLS 둘 사이 1번 — 2~5초 무작위). SEC는 속도 제한을 거칩니다.
+    sleeps = [seconds for name, seconds in web.calls if name == "sleep"]
+    low, high = news_feeds.HOST_SPACING_SECONDS
+    assert len(sleeps) == 4 and all(low <= seconds <= high for seconds in sleeps)
     assert web.fetched() == list(URL.values())
     assert ("sec_rate_limit", None) in web.calls
 
@@ -488,18 +495,23 @@ def test_피드_하나가_실패해도_나머지는_저장되고_사유가_실�
 
     assert ok is True
     assert len(_rows(store)) == 12   # 인베스팅 12건 — SEC 3건만 빠짐
+    # 같은 호스트(BLS)가 방금 거부해 bls_empsit는 이번 실행에서 보내지 않고 미룹니다(ADR 0040 결정 3).
+    assert URL["bls_empsit"] not in web.fetched()
     recorded = store.read_task_history("news_headlines")[0]
     assert recorded["status"] == "ok"
-    assert "피드 6/8" in recorded["detail"]
+    assert "받은 피드 5/7(새 본문 5)" in recorded["detail"] and "호스트 거부로 미룸: bls_empsit" in recorded["detail"]
     assert (f"실패 2개: bls_cpi({_BLS_REJECTED} — BLS 차단(UA)); sec_press(ConnectionError — 서버가 연결을 거부했습니다)"
             in recorded["detail"])
     status = _status(store)
-    assert status["feedsOk"] == 6
+    assert status["feedsOk"] == 5
     assert status["failedFeeds"] == [
         {"feed": "bls_cpi", "source": "BLS", "reason": f"{_BLS_REJECTED} — BLS 차단(UA)"},
         {"feed": "sec_press", "source": "SEC", "reason": "ConnectionError — 서버가 연결을 거부했습니다"},
     ]
-    assert status["feeds"]["bls_cpi"]["status"] == "실패" and status["feeds"]["bls_cpi"]["lastOkAt"] is None
+    assert status["thisRun"]["deferred"] == ["bls_empsit"]
+    assert status["feeds"]["bls_cpi"]["status"] == "실패" and status["feeds"]["bls_cpi"].get("lastOkAt") is None
+    # 거부는 그 피드의 간격을 두 배로(ADR 0040 C1) — 연결 거부(SEC)는 늘리지 않습니다.
+    assert status["feeds"]["bls_cpi"]["backoff"] == 1 and status["feeds"]["sec_press"]["backoff"] == 0
 
 
 def test_HTML_응답은_그_피드만_실패(store, web):
@@ -511,8 +523,8 @@ def test_HTML_응답은_그_피드만_실패(store, web):
     assert len(_rows(store)) == 12
 
 
-def test_전부_실패하면_EmptyResult이고_행과_상태를_그대로_둔다(store, web):
-    store.put_snapshot(catalog.SNAP_NEWS_STATUS, {"marker": "이전 상태"})
+def test_전부_실패하면_EmptyResult이고_행은_그대로_상태는_실패한_피드의_줄만_고친다(store, web):
+    store.put_snapshot(catalog.SNAP_NEWS_STATUS, {"marker": "이전 상태", "generatedAt": "2026-10-25T05:00:00+00:00"})
     store.insert_new_observations(catalog.OBS_NEWS_HEADLINE, [("2026-10-01", "0123456789abcdef", {"title": "old"})])
     for key in FILES:
         web.outcomes[URL[key]] = requests.ConnectionError("Max retries exceeded")
@@ -523,9 +535,24 @@ def test_전부_실패하면_EmptyResult이고_행과_상태를_그대로_둔다
     message = str(caught.value)
     assert message.startswith("피드 0/8 — 기존 저장본 유지 · 실패 8개: investing_stock(")
     assert all(f"{key}(" in message for key in FILES)
-    assert _status(store) == {"marker": "이전 상태"}
+    status = _status(store)
+    # 다른 칸(generatedAt — 피드를 하나라도 받은 마지막 시각)은 직전 값 그대로, 피드 줄만 실패로(ADR 0040 결정 4).
+    assert status["marker"] == "이전 상태" and status["generatedAt"] == "2026-10-25T05:00:00+00:00"
+    assert (status["feedsOk"], status["feedsTotal"]) == (0, 8)
+    assert [entry["feed"] for entry in status["failedFeeds"]] == list(FILES)
+    assert all(status["feeds"][key]["status"] == "실패" for key in FILES)
     # 전부 실패한 실행은 보관 정리도 하지 않습니다.
     assert list(_rows(store)) == ["0123456789abcdef"]
+
+
+def test_전부_실패했고_저장본이_없으면_상태를_쓰지_않는다(store, web):
+    for key in FILES:
+        web.outcomes[URL[key]] = requests.ConnectionError("Max retries exceeded")
+
+    with pytest.raises(EmptyResult):
+        task_module.task_news_headlines()
+
+    assert store.read_snapshot(catalog.SNAP_NEWS_STATUS) is None
 
 
 def test_같은_제목은_날짜가_달라도_다시_넣지_않는다(store, web):
@@ -626,13 +653,18 @@ def test_7일이_지난_행은_지우고_기한_안은_남긴다(store, web):
 def test_두_번째_실행은_새것이_없어도_성공이고_누락_가능이_아니다(store, web):
     task_module.task_news_headlines()
     web.clock["now"] = NOW + timedelta(hours=1)
+    # 인베스팅 주식 피드만 본문이 바뀜(같은 항목, 채널 설명만 다름) — 나머지 일곱은 본문이 같아 읽지 않습니다(ADR 0040 C1).
+    web.outcomes[URL["investing_stock"]] = (200, _fixture("investing_stock") + b"\n")
 
     detail = task_module.task_news_headlines()
 
-    assert detail == "새 헤드라인 0건 · 피드 8/8 · 7일 보관 15건"
+    assert detail.startswith("새 헤드라인 0건 · 받은 피드 8/8(새 본문 1 · 같은 본문 7) · 7일 보관 15건")
     status = _status(store)
     assert status["maybeMissed"] == [] and status["insertedThisRun"] == 0
     assert status["feeds"]["investing_stock"]["seen"] == 3
+    assert status["feeds"]["investing_ind"]["lastResult"] == "unchanged"
+    assert status["feeds"]["investing_ind"]["lastOkAt"] == "2026-10-25T08:00:00+00:00"
+    assert status["generatedAt"] == "2026-10-25T08:00:00+00:00"
     # 처음 받은 시각(fetchedAt)은 첫 수집 그대로입니다.
     assert {payload["fetchedAt"] for _, payload in _rows(store).values()} == {"2026-10-25T07:00:00+00:00"}
 
@@ -671,8 +703,14 @@ def test_시간_상한을_넘으면_남은_피드는_다음_실행으로(store, 
     detail = task_module.task_news_headlines()
 
     assert web.fetched() == [URL["investing_stock"], URL["investing_ind"], URL["investing_economy"]]
-    assert "피드 3/8" in detail and "실패 5개: investing_forex(시간 상한(300초) — 다음 실행)" in detail
+    assert "받은 피드 3/3(새 본문 3)" in detail
+    assert "시간 상한으로 다음 실행: investing_forex, fed_monetary, bls_cpi, bls_empsit, sec_press" in detail
     assert len(_rows(store)) == 9
+    # 보내지 못한 피드는 실패가 아니고(요청하지 않음) 일정도 건드리지 않습니다 — 다음 틱이 다시 고릅니다.
+    status = _status(store)
+    assert status["failedFeeds"] == [] and "investing_forex" not in status["feeds"]
+    assert status["thisRun"]["unsent"] == ["investing_forex", "fed_monetary", "bls_cpi", "bls_empsit", "sec_press"]
+    assert set(news_feeds.flex.due_map("news_headlines")) == {"investing_stock", "investing_ind", "investing_economy"}
 
 
 def test_실패한_피드의_마지막_성공_시각을_잇는다(store, web):
@@ -683,8 +721,11 @@ def test_실패한_피드의_마지막_성공_시각을_잇는다(store, web):
     task_module.task_news_headlines()
 
     entry = _status(store)["feeds"]["bls_empsit"]
-    assert entry == {"source": "BLS", "url": URL["bls_empsit"], "status": "실패", "error": "HTTP 503",
-                     "lastOkAt": "2026-10-25T07:00:00+00:00"}
+    assert {key: entry[key] for key in ("source", "url", "status", "error", "lastOkAt", "lastResult")} == {
+        "source": "BLS", "url": URL["bls_empsit"], "status": "실패", "error": "HTTP 503",
+        "lastOkAt": "2026-10-25T07:00:00+00:00", "lastResult": "failed"}
+    # 5xx는 거부가 아니라 간격을 늘리지 않고, 마지막으로 읽은 본문의 수는 잇습니다.
+    assert entry["backoff"] == 0 and entry["entries"] == 3 and entry["lastRequestAt"] == "2026-10-25T08:00:00+00:00"
 
 
 def test_상태_스냅샷이_없으면_누락_데이터셋으로_보인다(store, web):

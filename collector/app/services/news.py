@@ -54,6 +54,7 @@ from ..http import (
     get_bls_session,
     get_sec_session,
     get_session,
+    retry_after_seconds,
     sec_rate_limit,
 )
 
@@ -137,7 +138,36 @@ MAX_TITLE_CHARS = 300
 
 
 class FeedFetchError(RuntimeError):
-    """피드 하나를 받지 못함 — 사유는 상태 화면에 뜨는 한 줄(연락처·응답 본문 없음)."""
+    """
+    피드 하나를 받지 못함 — 사유는 상태 화면에 뜨는 한 줄(연락처·응답 본문 없음).
+
+    ``rejected``는 출처의 거부(403·429·봇 차단·거부 래치 — http.SourceRejected), ``retry_after``는 서버가 Retry-After로 요구한 대기(초 — 없거나
+    읽을 수 없으면 None), ``latched``는 거부 래치로 막혀 네트워크에 나가지 않은 요청입니다. 탄력 주기(tasks/news_feeds)가 그 피드의 다음
+    간격을 늘리거나(보낸 요청이 거부됨) 래치가 풀린 뒤로 미루는 데(보내지 않음) 씁니다.
+    """
+
+    def __init__(self, message: str, *, rejected: bool = False, retry_after: float | None = None, latched: bool = False) -> None:
+        super().__init__(message)
+        self.rejected = rejected
+        self.retry_after = retry_after
+        self.latched = latched
+
+
+@dataclass(frozen=True)
+class FeedReply:
+    """
+    조건부 요청(:func:`fetch_feed_conditional`)의 응답 — 200(본문 있음)이나 304(본문 없음, 직전 본문 그대로).
+
+    ``etag``·``last_modified``는 응답 머리글 그대로(없으면 None — 304는 흔히 싣지 않음), ``max_age``는 ``Cache-Control: max-age``에서
+    ``Age``를 뺀 남은 초(없거나 ``no-cache``·``no-store``면 None).
+    """
+
+    status: int
+    content: bytes | None
+    content_type: str | None
+    etag: str | None
+    last_modified: str | None
+    max_age: int | None
 
 
 # 출처가 403으로 거부했을 때 세션별로 덧붙이는 조치 안내. 403은 BLS·SEC 세션의 어댑터가 출처 거부(SourceRejected, 거부됨 — …)로
@@ -151,9 +181,22 @@ class FeedShapeError(RuntimeError):
 
 def fetch_feed(feed: Feed) -> tuple[bytes, str | None]:
     """
-    피드 하나를 수집기 세션으로 받습니다. (본문, Content-Type).
+    피드 하나를 수집기 세션으로 받습니다. (본문, Content-Type). 검증 값 없이 늘 전체를 받습니다(:func:`fetch_feed_conditional`).
 
     :raises FeedFetchError: 연결·HTTP·크기 오류(상한을 넘으면 그 자리에서 끊음), SEC 연락처 UA 미설정
+    """
+    reply = fetch_feed_conditional(feed)
+    return reply.content or b"", reply.content_type
+
+
+def fetch_feed_conditional(feed: Feed, *, etag: str | None = None, last_modified: str | None = None) -> FeedReply:
+    """
+    피드 하나를 수집기 세션으로 받습니다 — 직전 응답의 검증 값이 있으면 ``If-None-Match``·``If-Modified-Since``를 붙입니다(ADR 0040 C1).
+
+    304는 검증 값을 보냈을 때만 받아들입니다(본문 없음). 세션(UA)·재시도·거부 래치·호스트 간격은 :func:`fetch_feed`와 같습니다 —
+    조건부 머리글 둘만 더합니다.
+
+    :raises FeedFetchError: 연결·HTTP·크기 오류(상한을 넘으면 그 자리에서 끊음), SEC 연락처 UA 미설정, 검증 값 없이 온 304
     """
     try:
         if feed.session == "sec":
@@ -168,21 +211,65 @@ def fetch_feed(feed: Feed) -> tuple[bytes, str | None]:
         raise FeedFetchError("SEC_USER_AGENT 미설정 — SEC는 연락처 없는 요청을 403으로 막음") from None
     except SecUserAgentInvalid:
         raise FeedFetchError("SEC_USER_AGENT 값을 쓸 수 없음(예시 값·한글·이메일 없음)") from None
+    conditional: dict[str, str] = {}
+    if etag:
+        conditional["If-None-Match"] = etag
+    if last_modified:
+        conditional["If-Modified-Since"] = last_modified
     try:
         # stream=True — 본문을 한 번에 받지 않고 상한까지만 읽습니다(MAX_FEED_BYTES). 그래서 응답은 어느 길로 나가든 닫습니다.
-        res = session.get(feed.url, timeout=FETCH_TIMEOUT, stream=True)
+        # 조건부 머리글은 있을 때만 넘깁니다(없으면 예전 요청과 바이트까지 같음).
+        res = session.get(feed.url, timeout=FETCH_TIMEOUT, stream=True, **({"headers": conditional} if conditional else {}))
     except Exception as exc:  # noqa: BLE001 — 연결 오류는 그 피드만의 실패입니다
-        hint = _FORBIDDEN_HINTS.get(feed.session, "") if isinstance(exc, SourceRejected) and exc.why == "HTTP 403" else ""
-        raise FeedFetchError(f"{brief_error(exc)}{hint}") from None
+        rejected = isinstance(exc, SourceRejected)
+        hint = _FORBIDDEN_HINTS.get(feed.session, "") if rejected and exc.why == "HTTP 403" else ""
+        raise FeedFetchError(f"{brief_error(exc)}{hint}", rejected=rejected,
+                             retry_after=getattr(exc, "retry_after", None) if rejected else None,
+                             latched=bool(getattr(exc, "latched", False)) if rejected else False) from None
     try:
+        headers = res.headers
+        if res.status_code == 304 and conditional:
+            return FeedReply(304, None, headers.get("Content-Type"), _header(headers, "ETag"), _header(headers, "Last-Modified"),
+                             cache_max_age(headers))
         if res.status_code != 200:
-            raise FeedFetchError(f"HTTP {res.status_code}")
-        declared = _content_length(res.headers.get("Content-Length"))
+            raise FeedFetchError(f"HTTP {res.status_code}", retry_after=retry_after_seconds(headers.get("Retry-After")))
+        declared = _content_length(headers.get("Content-Length"))
         if declared is not None and declared > MAX_FEED_BYTES:
             raise FeedFetchError(f"응답이 너무 큼({declared // 1024}KB 예고) — 피드가 아닌 것으로 봄")
-        return _read_capped(res), res.headers.get("Content-Type")
+        content = _read_capped(res)
+        return FeedReply(200, content, headers.get("Content-Type"), _header(headers, "ETag"), _header(headers, "Last-Modified"),
+                         cache_max_age(headers))
     finally:
         res.close()
+
+
+def _header(headers, name: str) -> str | None:
+    value = headers.get(name)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+_MAX_AGE = re.compile(r"(?:^|,)\s*max-age\s*=\s*\"?(\d+)\"?\s*(?:,|$)", re.IGNORECASE)
+_NO_CACHE = re.compile(r"(?:^|,)\s*(?:no-cache|no-store)\s*(?:[,=]|$)", re.IGNORECASE)
+
+
+def cache_max_age(headers) -> int | None:
+    """
+    ``Cache-Control: max-age``에서 ``Age``를 뺀 남은 신선 시간(초). 없거나 ``no-cache``·``no-store``거나 남은 시간이 0 이하면 None.
+
+    탄력 주기가 '이 시각 전에는 다시 묻지 않음'으로만 씁니다(받은 본문을 캐시해 두고 쓰지는 않음).
+    """
+    control = headers.get("Cache-Control")
+    if not isinstance(control, str) or _NO_CACHE.search(control):
+        return None
+    matched = _MAX_AGE.search(control)
+    if not matched:
+        return None
+    seconds = int(matched.group(1))
+    try:
+        seconds -= max(0, int(str(headers.get("Age") or "0").strip()))
+    except ValueError:
+        pass
+    return seconds if seconds > 0 else None
 
 
 def _content_length(value) -> int | None:

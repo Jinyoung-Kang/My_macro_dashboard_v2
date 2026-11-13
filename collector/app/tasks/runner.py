@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from .. import http, store
 
-from . import polite
+from . import flex, polite
 from .base import EmptyResult, Task
 from .registry import ALL_TASKS, TASKS_BY_NAME
 
@@ -202,8 +202,9 @@ def _run_status(ok_count: int, failures: list[str]) -> str:
 # 다음 회차와 겹치지 않습니다.
 # polite: 차단 통과 수집 계층(ADR 0026)의 태스크 — 요청 사이에 4~15초(가끔 20~45초)를 쉬며 몇 건을 받으므로 길게 둡니다. 다른 속도군처럼
 # 주기로 돌지 않고, 때가 된 태스크만 run_polite_due가 이름으로 돌립니다.
+# flex: 탄력 주기(ADR 0040)의 태스크 — 사건 뉴스 RSS(예전 slow)라 slow와 같은 상한. 때가 된 태스크만 run_flex_due가 이름으로 돌립니다.
 TASK_DEADLINE_SECONDS: dict[str, float] = {
-    "fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0, "polite": 900.0,
+    "fast": 120.0, "slow": 600.0, "weekly": 1800.0, "live": 60.0, "session": 60.0, "polite": 900.0, "flex": 600.0,
 }
 _task_threads = ThreadPoolExecutor(max_workers=8, thread_name_prefix="task")
 # Yahoo가 주 출처인 태스크(Task.yahoo)는 따로 둔 작업 스레드에서 돕니다. Yahoo가 응답하지 않을 때 그 좀비가 위 8개를 모두 차지해 Yahoo와
@@ -441,6 +442,33 @@ def run_polite_due() -> list[str]:
             due = polite.should_run(task.name)
         except Exception as exc:  # noqa: BLE001 — 일정 표를 읽지 못하면 그 태스크만 이번 틱을 건너뜁니다
             logger.warning("polite 일정 확인 실패(%s): %s", task.name, exc)
+            continue
+        if due:
+            run_group(task_name=task.name)
+            ran.append(task.name)
+    return ran
+
+
+def run_flex_due() -> list[str]:
+    """
+    flex 속도군에서 때가 된 일이 있는 태스크만 차례로 실행합니다(스케줄러의 1분 틱이 부름) → 실행한 태스크 이름.
+
+    태스크마다 ``Task.due``(표만 읽음 — 외부 호출 없음)를 묻고 참일 때만 부릅니다. 할 일이 없던 틱은 실행 기록을 남기지 않습니다(polite와
+    같은 관례 — ADR 0040 결정 5). 앞선 실행이 아직 도는 태스크(시간 상한을 넘긴 작업 포함)는 이번 틱에 부르지 않습니다 — 1분마다
+    '이전 수집이 아직 진행 중' 줄이 쌓이지 않게. 로컬에서도 돕니다(POLITE_FETCH_ENABLED와 무관).
+    """
+    ran: list[str] = []
+    for task in ALL_TASKS:
+        if task.speed != flex.SPEED:
+            continue
+        with _inflight_lock:
+            busy = task.name in _inflight
+        if busy:
+            continue
+        try:
+            due = task.due() if task.due is not None else True
+        except Exception as exc:  # noqa: BLE001 — 일정 표를 읽지 못하면 그 태스크만 이번 틱을 건너뜁니다
+            logger.warning("flex 일정 확인 실패(%s): %s", task.name, exc)
             continue
         if due:
             run_group(task_name=task.name)

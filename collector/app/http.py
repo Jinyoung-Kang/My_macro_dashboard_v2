@@ -19,11 +19,13 @@ TCP/TLS 핸드셰이크를 매번 반복하고, 레이트리밋 대응(재시도
 from __future__ import annotations
 
 import contextvars
+import email.utils
 import functools
 import logging
 import random
 import threading
 import time
+from datetime import datetime, timezone
 from http.cookiejar import DefaultCookiePolicy
 from typing import Callable, TypeVar
 from urllib.parse import urlsplit
@@ -207,11 +209,18 @@ class SourceRejected(requests.exceptions.RequestException):
     requests 예외라서 지금 ``except requests.RequestException``·``except Exception``으로 그 항목의 실패를 적는 자리가 그대로
     받습니다. 메시지는 화면에 뜨는 한 줄이라 주소(쿼리에 든 키)는 싣지 않고 호스트만 적습니다. 처음 거부와 닫힌 동안의 요청이
     같은 메시지라 사유 목록(_reason_suffix)에서 한 번으로 합쳐집니다.
+
+    ``retry_after``는 거부 응답이 Retry-After로 요구한 대기(초 — 없거나 읽을 수 없으면 None, 래치로 막힌 요청도 None)입니다. 래치 기한은
+    그대로 5분이고, 이 값은 부르는 쪽이 그 출처의 다음 요청을 미룰 때 씁니다(사건 뉴스 탄력 주기 — ADR 0040). ``latched``는 래치로 막혀
+    네트워크에 나가지 않은 요청입니다. 둘 다 메시지에는 싣지 않습니다.
     """
 
-    def __init__(self, host: str, why: str) -> None:
+    def __init__(self, host: str, why: str, retry_after: float | None = None, latched: bool = False) -> None:
         self.host = host
         self.why = why
+        self.retry_after = retry_after
+        # 래치로 막혀 네트워크에 나가지 않은 요청이면 True — 부르는 쪽이 '보낸 요청'으로 세지 않게(사건 뉴스 탄력 주기 — ADR 0040).
+        self.latched = latched
         minutes = int(REJECT_LATCH_SECONDS // 60)
         super().__init__(f"{REJECTED_MARK} — {host} {why} · {minutes}분 동안 이 출처 호출을 멈춤")
 
@@ -299,17 +308,42 @@ def host_of(url: str) -> str:
     return (urlsplit(url).hostname or "").lower()
 
 
-def reject_host(host: str, why: str) -> SourceRejected:
+def reject_host(host: str, why: str, retry_after: float | None = None) -> SourceRejected:
     """
     ``host``를 REJECT_LATCH_SECONDS 동안 닫고 지금 태스크에 적은 뒤, 그 예외를 돌려줍니다(부르는 쪽이 raise).
 
     :param why: 거부 근거 한 줄("HTTP 429", "봇 차단 페이지(…)") — 주소·응답 본문은 싣지 않습니다
+    :param retry_after: 거부 응답의 Retry-After(초) — 예외에만 싣고 래치 기한은 바꾸지 않습니다
     """
     host = host.lower()
     with _guard_lock:
         _latched[host] = (_now() + REJECT_LATCH_SECONDS, why)
     logger.warning("출처 거부: %s %s — %d초 동안 이 호스트로 요청하지 않습니다", host, why, int(REJECT_LATCH_SECONDS))
-    return _noted(SourceRejected(host, why))
+    return _noted(SourceRejected(host, why, retry_after))
+
+
+def retry_after_seconds(value) -> float | None:
+    """
+    ``Retry-After`` 머리글 → 지금부터 기다릴 초(0 이상). 정수 초나 HTTP 날짜를 읽고, 없거나 읽을 수 없으면 None.
+
+    HTTP 날짜는 벽시계(UTC)와 비교합니다. 이미 지난 날짜면 0입니다.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isascii() and text.isdigit():
+        return float(int(text))
+    try:
+        when = email.utils.parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
 def active_rejection(host: str) -> SourceRejected | None:
@@ -324,7 +358,18 @@ def active_rejection(host: str) -> SourceRejected | None:
             del _latched[host]
             logger.info("출처 거부 래치 기한이 지나 %s에 다시 요청합니다", host)
             return None
-    return _noted(SourceRejected(host, why))
+    return _noted(SourceRejected(host, why, latched=True))
+
+
+def latch_remaining(host: str) -> float | None:
+    """``host``의 거부 래치가 풀리기까지 남은 초(닫혀 있지 않으면 None). 래치를 풀거나 태스크에 적지 않고 보기만 합니다."""
+    host = host.lower()
+    with _guard_lock:
+        entry = _latched.get(host)
+        if entry is None:
+            return None
+        left = entry[0] - _now()
+    return left if left > 0 else None
 
 
 def check_host(host: str) -> None:
@@ -517,8 +562,9 @@ class _GuardedAdapter(HTTPAdapter):
             _attempt_seconds.reset(token)
         why = rejection_reason(response, streamed=bool(stream))
         if why is not None:
+            retry_after = retry_after_seconds(response.headers.get("Retry-After"))
             response.close()
-            raise reject_host(host, why)
+            raise reject_host(host, why, retry_after)
         return response
 
 

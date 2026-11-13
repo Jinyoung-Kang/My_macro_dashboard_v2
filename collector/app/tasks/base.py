@@ -120,10 +120,13 @@ class Task:
     speed: str            # fast | slow | weekly | live(정기 수집 없음 — 화면이 볼 때만 백엔드가 요청)
                           # | session(5분 — 장중 확인 날 확인 시각 앞뒤에만 외부 호출, 그 밖은 EmptyResult)
                           # | polite(비주기 — 차단 통과 수집 계층, 때가 된 태스크만 이름으로 실행. app/tasks/polite, ADR 0026)
+                          # | flex(탄력 주기 — 1분 틱이 due()가 참인 태스크만 이름으로 실행, 로컬에서도 돎. app/tasks/flex, ADR 0040)
     run: Callable[[], str]
     description: str
     # Yahoo(yfinance)를 늘 부르는 태스크 — 실행기가 따로 둔 작업 스레드에서 돌립니다. Yahoo가 응답하지 않을 때 그 태스크가 다른 태스크(한국 장부
     # 입력 등)의 작업 스레드를 차지하지 않게(QA-255). Yahoo가 주 출처가 아니어도 한 회차에 Yahoo 항목을 함께 받아 Yahoo 무응답에 같이 묶이면
     # 표시합니다(scraper_markets — 16항목 중 Yahoo 3개). 폴백으로만 Yahoo를 쓰는 태스크(krx_futures의 KODEX)는 표시하지 않습니다.
     yahoo: bool = False
+    # flex 태스크의 '때가 된 일이 있나'(외부 호출 없이 표만 읽음) — 틱이 참일 때만 부릅니다. 다른 속도군은 None.
+    due: Callable[[], bool] | None = None
 

@@ -10,7 +10,9 @@ tests/test_kr_news_headlines.py
   3. 저장: observations kr_news_headline(obs_date = 발행 KST 날짜) + 상태 kr.news.headlines.status — 미국 news_headline·news.headlines.status를
      건드리지 않는다. 날짜만 있는 항목의 알 수 있는 시각(knownAt) = min(처음 받은 시각, 그 KST 날짜 다음 자정), 처음 받을 때 정해 다시 쓰지 않는다.
   4. 보관 7일은 KST 날짜, 같은 제목은 7일 안에 다시 넣지 않고 실어 온 피드는 feeds에 더한다. 피드 하나의 실패는 나머지를 멈추지 않고,
-     전부 실패하면 EmptyResult(행·상태 그대로).
+     받은 피드가 없으면 EmptyResult(행 그대로, 상태는 실패한 피드의 줄만 고침 — 저장본이 없으면 쓰지 않음).
+  5. 속도군은 flex(ADR 0040). 이 파일의 태스크 시험은 '받을 피드 고르기'(tasks/news_feeds.plan)를 '모두 때가 됨'으로 고정하고 받기·저장
+     규칙만 봅니다. 고르기·조건부 요청·같은 본문 건너뛰기·물러남은 test_news_feeds.py에서 봅니다.
 
 외부 네트워크를 쓰지 않습니다 — 고정본은 tests/fixtures/news_kr/(연합뉴스는 합성 자료, README). 가짜 세션이 그 응답을 돌려주고 requests
 전송은 막아 둡니다. 태스크 테스트는 PostgreSQL이 필요합니다(store 픽스처, macrodash_test).
@@ -26,6 +28,7 @@ import requests
 from app import catalog, http, tasks
 from app.services import news as svc
 from app.tasks import kr_news as task_module
+from app.tasks import news_feeds
 from app.tasks.base import EmptyResult
 
 FIXTURES = Path(__file__).parent / "fixtures" / "news_kr"
@@ -261,6 +264,8 @@ def web(monkeypatch):
     monkeypatch.setattr(task_module, "_now", lambda: fake.clock["now"])
     monkeypatch.setattr(task_module, "_clock", lambda: fake.clock["mono"])
     monkeypatch.setattr(task_module, "_sleep", lambda seconds: fake.calls.append(("sleep", seconds)))
+    # 받을 피드 고르기는 '모두 때가 됨'으로 고정합니다(모듈 설명 5 — 고르기는 test_news_feeds.py).
+    monkeypatch.setattr(news_feeds, "plan", lambda task, feeds, prev, now: news_feeds.Plan(list(feeds), [], [], None, None))
 
     def no_network(*args, **kwargs):
         raise AssertionError("테스트가 실제 네트워크로 나가려 했습니다")
@@ -285,12 +290,12 @@ def _status(store) -> dict:
     return store.read_snapshot(catalog.SNAP_KR_NEWS_STATUS).payload
 
 
-def test_slow에서_미국_뉴스_바로_뒤에_돌고_태스크는_35개():
+def test_flex에서_미국_뉴스_바로_뒤에_돈다():
     task = tasks.TASKS_BY_NAME["kr_news_headlines"]
-    assert task.speed == "slow" and task.run is task_module.task_kr_news_headlines
+    assert task.speed == "flex" and task.run is task_module.task_kr_news_headlines and task.due is task_module.due
     names = [t.name for t in tasks.ALL_TASKS]
     assert names.index("kr_news_headlines") == names.index("news_headlines") + 1
-    assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["slow"]
+    assert task_module.TIME_LIMIT_SECONDS < tasks.TASK_DEADLINE_SECONDS["flex"]
     assert len(tasks.ALL_TASKS) == len(tasks.TASKS_BY_NAME)  # 태스크 수는 test_task_registry.py 한 곳에서 셉니다
 
 
@@ -342,7 +347,7 @@ def test_네_피드를_받아_세_형식을_저장하고_미국_저장본은_건
     assert status["feeds"]["mofe_press"]["newestAt"] == "2026-10-25T15:00:00+00:00"
     assert status["feeds"]["mods_press"]["skippedBadTime"] == 0
     assert status["maybeMissed"] == []
-    assert detail == "새 헤드라인 12건 · 피드 4/4 · 7일 보관 12건"
+    assert detail.startswith("새 헤드라인 12건 · 받은 피드 4/4(새 본문 4) · 7일 보관 12건 · 다음 ")
 
     # 설명형 UA 세션 하나로 표 순서대로, 호스트가 모두 달라 쉬지 않음.
     assert web.calls == [("product", URL[key]) for key in FILES]
@@ -413,14 +418,17 @@ def test_피드_하나가_실패해도_나머지는_저장되고_사유가_남�
     assert ok is True
     assert len(_rows(store)) == 6   # 한국은행 3 + 재정경제부 3
     recorded = store.read_task_history("kr_news_headlines")[0]
-    assert recorded["status"] == "ok" and "피드 2/4" in recorded["detail"]
+    assert recorded["status"] == "ok" and "받은 피드 2/4(새 본문 2)" in recorded["detail"]
     assert ("실패 2개: mods_press(ConnectionError — 서버가 연결을 거부했습니다); yna_market(RSS·Atom 피드가 아님(HTML 등))"
             in recorded["detail"])
     status = _status(store)
     assert [failed["feed"] for failed in status["failedFeeds"]] == ["mods_press", "yna_market"]
-    assert status["feeds"]["mods_press"] == {
+    entry = status["feeds"]["mods_press"]
+    assert {key: entry.get(key) for key in ("source", "url", "timeFormat", "status", "error", "lastOkAt", "lastResult")} == {
         "source": "국가데이터처", "url": URL["mods_press"], "timeFormat": "yyyyMMddHHmm", "status": "실패",
-        "error": "ConnectionError — 서버가 연결을 거부했습니다", "lastOkAt": None}
+        "error": "ConnectionError — 서버가 연결을 거부했습니다", "lastOkAt": None, "lastResult": "failed"}
+    # 형식이 다른 200(HTML)은 검증 값을 남기지 않습니다 — 남기면 그 뒤 304만 받아 다시 읽지 못함(ADR 0040 C1).
+    assert status["feeds"]["yna_market"]["etag"] is None and status["feeds"]["yna_market"].get("bodyHash") is None
 
 
 def test_형식이_다른_시각은_상태와_결과에_남는다(store, web):
@@ -433,8 +441,8 @@ def test_형식이_다른_시각은_상태와_결과에_남는다(store, web):
     assert len(_rows(store)) == 11
 
 
-def test_전부_실패하면_EmptyResult이고_행과_상태를_그대로_둔다(store, web):
-    store.put_snapshot(catalog.SNAP_KR_NEWS_STATUS, {"marker": "이전 상태"})
+def test_전부_실패하면_EmptyResult이고_행은_그대로_상태는_실패한_피드의_줄만_고친다(store, web):
+    store.put_snapshot(catalog.SNAP_KR_NEWS_STATUS, {"marker": "이전 상태", "generatedAt": "2026-10-25T05:00:00+00:00"})
     store.insert_new_observations(catalog.OBS_KR_NEWS_HEADLINE, [("2026-10-01", "0123456789abcdef", {"title": "old"})])
     for key in FILES:
         web.outcomes[URL[key]] = requests.ConnectionError("Max retries exceeded")
@@ -443,7 +451,10 @@ def test_전부_실패하면_EmptyResult이고_행과_상태를_그대로_둔다
         task_module.task_kr_news_headlines()
 
     assert str(caught.value).startswith("피드 0/4 — 기존 저장본 유지 · 실패 4개: bok_press(")
-    assert _status(store) == {"marker": "이전 상태"}
+    status = _status(store)
+    assert status["marker"] == "이전 상태" and status["generatedAt"] == "2026-10-25T05:00:00+00:00"
+    assert (status["feedsOk"], [entry["feed"] for entry in status["failedFeeds"]]) == (0, list(FILES))
+    assert status["feeds"]["mofe_press"]["timeFormat"] == "date_only"
     assert [payload["title"] for _, payload in _rows(store).values()] == ["old"]
 
 
@@ -456,10 +467,10 @@ def test_시간_상한이_지나면_남은_피드는_다음_실행(store, web):
         inner = original(name)
 
         class _Session:
-            def get(self, url, timeout=None, stream=False):
+            def get(self, url, timeout=None, stream=False, **kwargs):
                 calls["n"] += 1
                 web.clock["mono"] += task_module.TIME_LIMIT_SECONDS   # 첫 피드에서 상한을 다 씀
-                return inner.get(url, timeout=timeout, stream=stream)
+                return inner.get(url, timeout=timeout, stream=stream, **kwargs)
 
         return _Session()
 
@@ -467,4 +478,4 @@ def test_시간_상한이_지나면_남은_피드는_다음_실행(store, web):
     detail = task_module.task_kr_news_headlines()
 
     assert calls["n"] == 2   # 상한 직전(경과 = 상한)까지는 시작하고, 넘은 뒤로는 새 요청을 보내지 않음
-    assert "실패 2개: mods_press(시간 상한(300초) — 다음 실행); yna_market(시간 상한(300초) — 다음 실행)" in detail
+    assert "시간 상한으로 다음 실행: mods_press, yna_market" in detail and "실패" not in detail

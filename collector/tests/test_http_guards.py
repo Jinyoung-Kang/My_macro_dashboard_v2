@@ -80,13 +80,37 @@ def test_429는_다시_보내지도_기다리지도_않고_호스트를_5분_닫
     assert message == "거부됨 — 127.0.0.1 HTTP 429 · 5분 동안 이 출처 호출을 멈춤"
     assert app_http.brief_error(caught.value) == message, "화면 사유에 예외 이름을 붙이지 않아 '거부됨'이 첫머리에 옵니다"
     assert "/limited" not in message, "주소(쿼리의 키)는 사유에 싣지 않습니다"
+    # 기다리지는 않지만 서버가 요구한 대기는 예외에 실어, 부르는 쪽이 그 출처의 다음 요청을 미룰 수 있게 합니다(ADR 0040).
+    assert caught.value.retry_after == 3600.0
 
     # 닫힌 동안의 같은 호스트 요청은 네트워크에 나가지 않고 같은 메시지로 끝납니다 — 다른 세션이어도.
     for other in (session, app_http.get_fred_session()):
         with pytest.raises(app_http.SourceRejected) as again:
             other.get(f"{server.base}/fine", timeout=2)
         assert str(again.value) == message
+        assert again.value.retry_after is None, "래치로 막힌 요청에는 서버의 Retry-After가 없습니다"
     assert server.hits == ["/limited"]
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("120", 120.0),
+    (" 30 ", 30.0),
+    ("Thu, 01 Jan 2000 00:00:00 GMT", 0.0),      # 이미 지난 날짜 — 기다리지 않음
+    ("곧", None),
+    ("", None),
+    (None, None),
+])
+def test_Retry_After_머리글을_초로_읽는다(value, expected):
+    assert app_http.retry_after_seconds(value) == expected
+
+
+def test_Retry_After_HTTP_날짜는_지금부터의_초():
+    from datetime import datetime, timedelta, timezone
+    from email.utils import format_datetime
+
+    later = datetime.now(timezone.utc) + timedelta(hours=2)
+    seconds = app_http.retry_after_seconds(format_datetime(later, usegmt=True))
+    assert 7190 <= seconds <= 7200
 
 
 def test_403도_거부이고_다른_호스트는_열려_있다(server, slept):

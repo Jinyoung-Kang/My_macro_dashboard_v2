@@ -215,6 +215,18 @@ def put_snapshot(
         )
 
 
+def update_snapshot_payload(name: str, payload: Any) -> bool:
+    """
+    이미 있는 스냅샷의 내용만 바꿉니다 — 저장 시각(collected_at)·상태는 그대로. 없으면 아무것도 하지 않고 False.
+
+    받은 것이 없는 실행이 상태 줄(실패한 피드의 물러남·다음 시각)만 고칠 때 씁니다(사건 뉴스 — ADR 0040 결정 4). 저장 시각을 그대로 두어
+    상태 화면의 '오래됨'(저장 시각 기준)이 모두 실패한 동안 가려지지 않게 합니다.
+    """
+    with connection() as conn:
+        updated = conn.execute("UPDATE snapshots SET payload = %s WHERE name = %s", (Jsonb(payload), name)).rowcount
+    return bool(updated)
+
+
 def read_snapshot(name: str) -> Snapshot | None:
     with connection() as conn:
         row = conn.execute(
@@ -1555,6 +1567,20 @@ def fetch_due_at(task: str) -> datetime | None:
     with connection() as conn:
         row = conn.execute("SELECT next_due_at FROM fetch_schedule WHERE task = %s", (task,)).fetchone()
     return row["next_due_at"] if row else None
+
+
+def fetch_due_rows(prefix: str) -> dict[str, datetime]:
+    """
+    이름이 ``prefix``로 시작하는 일정 줄(이름 → 다음 실행 시각). flex 속도군의 항목별 일정(``태스크/항목`` — tasks/flex, ADR 0040)을 읽습니다.
+
+    ``prefix``의 LIKE 특수 글자(``%``·``_``·``\\``)는 글자 그대로 봅니다(태스크 이름에 ``_``가 있음).
+    """
+    pattern = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT task, next_due_at FROM fetch_schedule WHERE task LIKE %s ESCAPE '\\'", (pattern,),
+        ).fetchall()
+    return {row["task"]: row["next_due_at"] for row in rows}
 
 
 def set_fetch_due_at(task: str, when: datetime) -> None:
