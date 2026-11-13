@@ -3097,6 +3097,8 @@ export interface WatchRow {
 /** 결정이 다음 결정·장중 판단에 남긴 조건 한 줄(판단 이어받기 — ADR 0038). */
 export interface ConditionRow {
   key: string;
+  /** 그 조건이 붙은 보유 종목(이어받기 판 2). 계좌 전체의 조건이면 "—". */
+  holding: string;
   /** "us10y > 5.1" 꼴 — 이름·방향·수준. */
   rule: string;
   /** 충족되면 할 일. */
@@ -3309,8 +3311,11 @@ export function claudeDecisionView(source: ClaudeDecisionSource): ClaudeDecision
     const op = textOf(entry.op);
     const sign = op === "ABOVE" ? ">" : op === "BELOW" ? "<" : (op ?? "?");
     const level = numberOf(entry.level);
+    // 종목을 붙인 조건(이어받기 판 2 — 그 보유 종목의 무효화 조건)은 종목 코드를 앞에, 계좌 전체 조건(빈 글자·없음)은 "—".
+    const holding = textOf(entry.ticker)?.trim();
     return [{
       key: `${index}-${metric}`,
+      holding: holding ? holding : EMPTY,
       rule: `${metric} ${sign} ${level === null ? EMPTY : String(level)}`,
       then: textOf(entry.then) ?? EMPTY,
     }];

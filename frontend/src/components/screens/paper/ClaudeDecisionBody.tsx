@@ -181,12 +181,13 @@ export function ClaudeDecisionBody({
       )}
 
       {view.conditions.length > 0 && (
-        <Part title="남긴 조건" note="다음 결정과 장중 판단의 패킷에 코드가 지금 값으로 충족 여부를 매겨 돌려주는 조건입니다. 코드가 대신 집행하지는 않습니다.">
+        <Part title="남긴 조건" note="다음 결정과 장중 판단의 패킷에 코드가 지금 값으로 충족 여부를 매겨 돌려주는 조건입니다. 종목이 붙은 조건은 그 종목을 보유하는 동안 계속 매겨집니다. 코드가 대신 집행하지는 않습니다.">
           <Table<ConditionRow>
             label="남긴 조건"
             rows={view.conditions}
             rowKey={(row) => row.key}
             columns={[
+              { key: "holding", header: "종목", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.holding}</span> },
               { key: "rule", header: "조건", render: (row) => <code className="whitespace-nowrap text-xs text-bright">{row.rule}</code> },
               { key: "then", header: "충족되면", render: (row) => <span className="text-xs text-body">{row.then}</span> },
             ]}
