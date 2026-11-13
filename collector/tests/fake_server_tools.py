@@ -71,9 +71,14 @@ exit "${FAKE_CURL_RC:-0}"
 
 
 # Livepatch 상태(scripts/vultr/reboot-check.sh) — 기본은 정상(지원됨·점검함·적용할 것 없음·먼 기한·방금 점검). FAKE_LP_JSON이면 그 글을,
-# FAKE_LP_RC가 0이 아니면 그 값으로 끝납니다. 부른 기록은 남기지 않습니다(배포 시험의 호출 목록을 바꾸지 않게).
+# FAKE_LP_RC가 0이 아니면 그 값으로 끝납니다(stderr에 한 줄). 부른 기록은 남기지 않습니다(배포 시험의 호출 목록을 바꾸지 않게).
 _FAKE_LIVEPATCH = """#!/usr/bin/env bash
-[ "${FAKE_LP_RC:-0}" = 0 ] || exit "$FAKE_LP_RC"
+[ "${FAKE_LP_RC:-0}" = 0 ] || { echo "error: fake livepatch rc=$FAKE_LP_RC" >&2; exit "$FAKE_LP_RC"; }
+# FAKE_LP_FAIL_TIMES=n이면 처음 n번은 실패합니다(QA-417 — 한 번 실패를 '읽지 못함'으로 알림). 부른 횟수는 <기록>.lpcount에.
+if [ -n "${FAKE_LP_FAIL_TIMES:-}" ]; then
+    n=$(( $(cat "$FAKE_LOG.lpcount" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_LOG.lpcount"
+    [ "$n" -gt "$FAKE_LP_FAIL_TIMES" ] || { echo "error: daemon busy (call $n)" >&2; exit 1; }
+fi
 if [ -n "${FAKE_LP_JSON:-}" ]; then printf '%s\\n' "$FAKE_LP_JSON"; exit 0; fi
 printf '{"Last-Check": "%s", "Status": [{"Kernel": "6.8.0-149.149-generic", "Running": true, "Livepatch": {"CheckState": "checked", "State": "nothing-to-apply"}, "Supported": "supported", "UpgradeRequiredDate": "2099-01-01"}]}\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 """
