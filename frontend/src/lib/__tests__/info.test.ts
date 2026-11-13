@@ -87,10 +87,10 @@ describe("출처 상태", () => {
 });
 
 describe("수집 주기 글", () => {
-  it("속도군마다 글이 있고, 사건 뉴스의 탄력 주기(ADR 0040)도 이름 대신 글로, 없으면 '—'", () => {
+  it("속도군마다 글이 있고, 탄력 주기(ADR 0040 — 사건 뉴스·BLS 발표 시각)도 이름 대신 글로, 없으면 '—'", () => {
     expect(speedLabel("slow")).toBe("1시간마다");
     expect(speedLabel("polite")).toBe("불규칙(출처마다 무작위)");
-    expect(speedLabel("flex")).toBe("탄력(피드마다 무작위 · 304)");
+    expect(speedLabel("flex")).toBe("탄력(때가 된 것만 — 피드·발표 시각마다)");
     expect(speedLabel(null)).toBe("—");
   });
 });
