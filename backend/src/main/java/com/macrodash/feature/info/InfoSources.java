@@ -79,6 +79,7 @@ public final class InfoSources {
             new Source("us_calendar", "us_calendar", "미국 발표·실적 일정", "global", "data", "https://fred.stlouisfed.org/releases/calendar", "FRED·연준 FOMC 일정·yfinance", "official", "/paper/us"),
             new Source("us_calendar_consensus", "us_calendar_consensus", "미국 지표 컨센서스", "global", "data", "https://www.nasdaq.com/market-activity/economic-calendar", "Nasdaq 경제 캘린더", "unofficial", "/paper/us"),
             new Source("us_bls_actuals", "us_bls_actuals", "미국 경제지표 BLS 공식 발표치(저장만)", "global", "data", "https://www.bls.gov/developers/", "BLS Public Data API", "official", null),
+            new Source("us_consensus_release", "us_consensus_release", "미국 지표 실제치 발표 직후(컨센서스 오늘 줄)", "global", "data", "https://www.nasdaq.com/market-activity/economic-calendar", "Nasdaq 경제 캘린더", "unofficial", "/paper/us"),
             new Source("news_headlines", "news_headlines", "사건 뉴스 RSS(미국)", "news", "rss", "https://www.investing.com/", "Investing.com·연준·BLS·SEC", "official", "/info/news"),
             new Source("kr_news_headlines", "kr_news_headlines", "사건 뉴스 RSS(한국)", "news", "rss", "https://www.bok.or.kr/", "한국은행·재정경제부·국가데이터처·연합뉴스", "official", "/info/news"),
             new Source("volatility_history", "volatility_history", "VIX·MOVE 변동성", "global", "data", "https://finance.yahoo.com/", "Yahoo(yfinance)", "unofficial", "/macro"),

@@ -48,7 +48,8 @@ class HostPolicy:
 POLICIES: dict[str, HostPolicy] = {
     policy.host: policy
     for policy in (
-        # TradingView 경제 캘린더(services/tv_calendar) — JSON API라 계층 1에서 끝납니다. 3~6시간에 한 번 1건이라 하루 4~8건.
+        # TradingView 경제 캘린더(services/tv_calendar) — JSON API라 계층 1에서 끝납니다. 3~6시간에 한 번 1건이라 하루 4~8건, 발표 직후
+        # 태스크(tasks/us_release — ADR 0040 단계 2)가 일정을 당기는 몫이 하루 6건까지 더해 많아야 14건.
         HostPolicy("economic-calendar.tradingview.com", (TIER_IMPERSONATE,), daily_budget=30),
         # Financial Juice 속보 RSS(ADR 0037 — services/info_wire). 피드 하나(100건)를 25~70분에 한 번이라 하루 20~60건. XML 피드라 계층 1에서
         # 끝납니다(실제 브라우저로 올리지 않음 — 거부되면 물러나 멈춤).

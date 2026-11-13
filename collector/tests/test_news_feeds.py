@@ -501,7 +501,8 @@ def test_틱은_때가_된_태스크만_부르고_할_일이_없으면_기록을
         flex.set_due("news_headlines", key, US_NOW + timedelta(hours=1))
     for key in KR_FILES:
         flex.set_due("kr_news_headlines", key, US_NOW + timedelta(hours=1))
-    flex.set_due("us_bls_actuals", "next", US_NOW + timedelta(hours=1))       # 같은 flex 군의 BLS 태스크도 때가 아님
+    flex.set_due("us_bls_actuals", "next", US_NOW + timedelta(hours=1))       # 같은 flex 군의 다른 태스크도 때가 아님
+    flex.set_due("us_consensus_release", "next", US_NOW + timedelta(hours=1))
 
     assert tasks.run_flex_due() == []
     assert store.read_task_history("news_headlines") == [] and store.read_task_history("kr_news_headlines") == []
@@ -527,8 +528,8 @@ def test_틱은_앞선_실행이_아직_돌면_그_태스크를_부르지_않는
     monkeypatch.setattr(runner, "ALL_TASKS", tuple(patched))
     monkeypatch.setitem(runner._inflight, "news_headlines", runner._InFlight())
 
-    assert runner.run_flex_due() == ["kr_news_headlines", "us_bls_actuals"]
-    assert called == ["kr_news_headlines", "us_bls_actuals"]
+    assert runner.run_flex_due() == ["kr_news_headlines", "us_bls_actuals", "us_consensus_release"]
+    assert called == ["kr_news_headlines", "us_bls_actuals", "us_consensus_release"]
 
 
 def test_틱이_일정을_읽지_못하면_그_태스크만_건너뛴다(monkeypatch):
@@ -543,12 +544,12 @@ def test_틱이_일정을_읽지_못하면_그_태스크만_건너뛴다(monkeyp
                for task in runner.ALL_TASKS]
     monkeypatch.setattr(runner, "ALL_TASKS", tuple(patched))
 
-    assert runner.run_flex_due() == ["kr_news_headlines", "us_bls_actuals"]
+    assert runner.run_flex_due() == ["kr_news_headlines", "us_bls_actuals", "us_consensus_release"]
 
 
 def test_flex_태스크는_뉴스_둘과_BLS이고_due가_있다():
     flex_tasks = [task for task in tasks.ALL_TASKS if task.speed == flex.SPEED]
-    assert [task.name for task in flex_tasks] == ["news_headlines", "kr_news_headlines", "us_bls_actuals"]
+    assert [task.name for task in flex_tasks] == ["news_headlines", "kr_news_headlines", "us_bls_actuals", "us_consensus_release"]
     assert all(task.due is not None for task in flex_tasks)
     assert all(task.due is None for task in tasks.ALL_TASKS if task.speed != flex.SPEED)
     assert tasks.TASK_DEADLINE_SECONDS["flex"] == 600.0

@@ -14,6 +14,8 @@ slow 그룹(하루 1회) — 미국 경제 지표 컨센서스(v2 2단계 명세
   days   : {동부 날짜: {date, queryDate, status "ok", fetchedAt, rows: [services.us_consensus.us_row], count, withForecast}}
            — 날짜 순. 이번에 받지 못한 날은 직전 값을 isStale·staleReason·staleSince로 잇고(3일 기한), 직전 값도 없으면 빠집니다.
   failed : 이번 실행에서 받지 못한 날과 사유
+  releaseRefetch : 발표 직후 다시 받기(tasks/us_release — ADR 0040 단계 2)의 그날 상태 — 이 태스크는 직전 값을 그대로 잇습니다. 그 태스크는
+           오늘(동부) 줄을 발표 시각 + 2~4분에 다시 받아 바꾸고(fetchedAt·refetchedAfterRelease), 두 태스크는 같은 잠금 안에서 읽고 씁니다.
 [실패 규칙]
   - 날짜 하나의 실패는 나머지를 멈추지 않습니다. 출처 거부(403·429)면 남은 날도 같은 답이라 그 실행을 멈춥니다.
   - 물을 날이 있었는데 하나도 받지 못하면 EmptyResult — 저장본을 덮지 않습니다.
@@ -62,7 +64,12 @@ def horizon_days(today: date) -> list[date]:
 
 
 def task_us_calendar_consensus() -> str:
-    """미국 지표 컨센서스(Nasdaq) → 스냅샷 ``calendar.us_consensus``."""
+    """미국 지표 컨센서스(Nasdaq) → 스냅샷 ``calendar.us_consensus``. 발표 직후 태스크(us_release)와 같은 잠금 안에서 읽고 씁니다."""
+    with consensus_service.SNAPSHOT_LOCK:
+        return _run()
+
+
+def _run() -> str:
     now = _now()
     stamp = now.isoformat(timespec="seconds")
     today = now.astimezone(NEW_YORK).date()
@@ -100,6 +107,8 @@ def task_us_calendar_consensus() -> str:
         "tradingView": consensus_service.TRADINGVIEW_NOTE,
         "days": ordered,
         "failed": failed,
+        # 발표 직후 다시 받기(us_release)의 그날 상태 — 이 태스크는 건드리지 않고 잇습니다(ADR 0040 단계 2).
+        **({"releaseRefetch": previous["releaseRefetch"]} if isinstance(previous.get("releaseRefetch"), dict) else {}),
     })
 
     rows = sum(entry["count"] for entry in fetched.values())
@@ -112,6 +121,24 @@ def task_us_calendar_consensus() -> str:
     if failed:
         detail += f" · 실패 {len(failed)}일" + _reason_suffix(list(failed.values()))
     return detail
+
+
+def rewrite_snapshot(change) -> None:
+    """
+    발표 직후 태스크(tasks/us_release — ADR 0040 단계 2)가 오늘 줄·상태 칸을 고칠 때 씁니다. 이 모듈이 이 저장본의 유일한 쓰는 곳이라(표 소유권
+    시험 B9) 쓰기는 여기서, 하루 1회 실행과 같은 잠금 안에서 합니다.
+
+    :param change: 잠금 안에서 다시 읽은 최신 저장본(없으면 빈 dict)을 받아 (새 저장본 | None, 오늘 줄을 바꿨나)를 돌려주는 함수. 줄을 바꿨으면
+        저장 시각도 새로(put_snapshot), 상태 칸만 바뀌었으면 내용만(update_snapshot_payload — 저장 시각 그대로), None이면 쓰지 않음
+    """
+    with consensus_service.SNAPSHOT_LOCK:
+        payload, rows_changed = change(previous_payload(catalog.SNAP_US_CONSENSUS))
+        if payload is None:
+            return
+        if rows_changed:
+            store.put_snapshot(catalog.SNAP_US_CONSENSUS, payload)
+        else:
+            store.update_snapshot_payload(catalog.SNAP_US_CONSENSUS, payload)
 
 
 def _fetched_today(entry, today: date) -> bool:

@@ -17,7 +17,8 @@ app/tasks/ — 수집 작업 정의(패키지).
                   paper_stopwatch_us·paper_stopwatch_kr(장중 스탑 감시 — 설정이 켜졌을 때 정규장 동안만, ADR 0032)
   polite (비주기): econ_calendar_tradingview — 차단 통과 수집 계층(ADR 0026). 태스크마다 다음 실행 시각을 무작위로 정하고 때가 된 것만 실행
   flex   (탄력)  : news_headlines · kr_news_headlines — 1분 틱이 때가 된 피드가 있는 태스크만 실행, 피드마다 무작위 간격·조건부 요청(ADR 0040).
-                  us_bls_actuals — BLS 공식 발표치, 동부 평일 08:30·10:00 발표 직후. 로컬에서도 돎(polite와 달리 공용 세션)
+                  us_bls_actuals — BLS 공식 발표치, 동부 평일 08:30·10:00 발표 직후. us_consensus_release — Nasdaq 오늘 줄 발표 직후.
+                  로컬에서도 돎(polite와 달리 공용 세션)
 
 [규칙]
 - 수집이 예외 없이 끝났지만 쓸 데이터가 없으면 EmptyResult로 **실패 집계**
@@ -168,6 +169,9 @@ from .kr_news import (  # noqa: F401
 from .bls_actuals import (  # noqa: F401
     task_us_bls_actuals,
 )
+from .us_release import (  # noqa: F401
+    task_us_consensus_release,
+)
 from .kr_calendar import (  # noqa: F401
     task_kr_calendar,
 )
@@ -200,4 +204,4 @@ from .runner import (  # noqa: F401
     run_polite_due,
     run_flex_due,
 )
-from . import base, bls_actuals, earnings_surprise, econ_calendar, filings, flex, fundamentals, korea_public, kr_calendar, kr_news, kr_paper, maintenance, markets, news, news_feeds, polite, registry, runner, series, toss, us_calendar, us_consensus  # noqa: F401,E402
+from . import base, bls_actuals, earnings_surprise, econ_calendar, filings, flex, fundamentals, korea_public, kr_calendar, kr_news, kr_paper, maintenance, markets, news, news_feeds, polite, registry, runner, series, toss, us_calendar, us_consensus, us_release  # noqa: F401,E402

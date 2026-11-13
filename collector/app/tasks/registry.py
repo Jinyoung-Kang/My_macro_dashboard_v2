@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from .base import Task
 from .bls_actuals import due as bls_due, task_us_bls_actuals
+from .us_release import due as release_due, task_us_consensus_release
 from .earnings_surprise import task_earnings_surprise
 from .econ_calendar import task_econ_calendar_tradingview
 from .filings import task_sec_13f, task_sec_13f_track_record
@@ -78,6 +79,10 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("us_bls_actuals", "flex", task_us_bls_actuals,
          "미국 경제지표 BLS 공식 발표치 — CPI·고용·실업률·시급·PPI·JOLTS, 동부 평일 08:30·10:00 발표 직후 (저장만, Nasdaq 실제치와 대조)",
          due=bls_due),
+    # 발표 직후 실제치(ADR 0040 단계 2) — 오늘(동부) 패킷 발표 시각 + 2~4분에 Nasdaq 오늘 줄만 다시(없으면 + 15~25분), 하루 8회까지.
+    Task("us_consensus_release", "flex", task_us_consensus_release,
+         "미국 지표 실제치 발표 직후 — Nasdaq 오늘 줄만 발표 시각 + 2~4분에 다시 받음(패킷 발표만, 하루 8회까지), 운영 서버면 TradingView 캘린더 일정도 당김",
+         due=release_due),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열", yahoo=True),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),

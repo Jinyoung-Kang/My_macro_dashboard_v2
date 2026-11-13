@@ -23,6 +23,7 @@ app/services/us_consensus.py
 from __future__ import annotations
 
 import re
+import threading
 from datetime import date, timedelta
 
 from ..http import brief_error, get_session
@@ -47,6 +48,11 @@ TRADINGVIEW_NOTE = {
     "note": ("이 PC에서 기본 요청 403(2026-10-26 두 번·10-27 한 번) — 이 저장본(패킷 입력)은 머리글을 바꾼 재시도를 하지 않고 Nasdaq만 씀. "
              "화면용 경제 캘린더는 2026-11-05부터 따로 받음(태스크 econ_calendar_tradingview, ADR 0026)"),
 }
+
+
+# 저장본 calendar.us_consensus를 읽고 고쳐 쓰는 두 태스크(하루 1회 us_calendar_consensus·발표 직후 us_consensus_release — ADR 0040 단계 2)가 함께
+# 잡는 잠금. 한 프로세스(수집기) 안의 두 스레드라 이것으로 충분합니다 — 서로의 쓰기를 덮지 않게.
+SNAPSHOT_LOCK = threading.Lock()
 
 
 class ConsensusFetchError(RuntimeError):
