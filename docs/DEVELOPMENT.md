@@ -566,7 +566,7 @@ journalctl -t my-macro-backup --since yesterday       # 결과(실패는 err)
 
 올라가는 곳은 백업 버킷의 `db/vultr/`(60일 만료는 `db/` 접두어의 수명주기 — 2026-11-03에 버킷 전체에서 좁힘, `archive/`는 만료 없음)입니다. 서버의 IAM 사용자는 `db/vultr/`에만 쓰고 `db/`는 읽기만 합니다.
 
-- 실패하면(QA-199) syslog err와 함께 서버 `.env`의 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`, 운영 봇)으로 'my-macro 서버 — 백업 실패: …' 한 줄을 보냅니다.
+- 실패하면(QA-199) syslog err와 함께 서버 `.env`의 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`, 운영 봇)으로 'my-macro 서버 — 백업 실패: …' 한 줄과 할 일('실행:' — 원인 보기·다시 올리기 명령, 2026-11-13)을 보냅니다.
   둘 중 하나라도 비면 보내지 않습니다. 토큰은 curl 인자가 아니라 stdin 설정으로 넘깁니다.
 - 성공하면 `backups/.last-s3-ok`(유닉스 초 · UTC 시각 · 올린 키)를 남기고, 서버의 `make status`와 `deploy.sh` 끝 요약이 그 나이를 찍습니다 — 36시간이 넘으면 '경고'
   (cron이 빠진 경우는 텔레그램 알림도 없어 여기서만 보임). 기록이 없으면 `deploy.sh`만 '경고'하고 `make status`는 아무것도 찍지 않습니다(PC에는 S3 cron이 없음).
@@ -600,7 +600,8 @@ Livepatch(Ubuntu Pro 무료 개인 구독, 2026-11-12 연결 — ADR 0023 개정
 
 재부팅이 필요해지면(`/var/run/reboot-required`) 또는 Livepatch가 지금 커널을 지원하지 않거나 점검·적용이 실패하거나 지원 기한이 30일 안이거나 마지막 점검이
 48시간보다 오래되면 `scripts/vultr/reboot-check.sh`가 매일 16:10 KST에 운영 텔레그램 봇(`TELEGRAM_BOT_TOKEN`·`TELEGRAM_CHAT_ID`)으로 사유·패키지·권장 재부팅
-시각을 한 통 보냅니다(같은 날 같은 글은 한 번, 이상이 없으면 보내지 않음 — syslog `journalctl -t my-macro-reboot-check`). 같은 판정을 `deploy.sh` 끝 요약과 서버의
+시각과 할 일('실행:' — 재부팅이면 아래 재부팅·확인·DNS 복구 명령, Livepatch만이면 확인 명령, 2026-11-13)을 한 통 보냅니다(같은 날 같은 글은 한 번, 이상이 없으면
+보내지 않음 — syslog `journalctl -t my-macro-reboot-check`). Livepatch 상태는 세 번까지 다시 묻고, 끝내 못 읽으면 마지막 오류의 첫 줄을 사유에 적습니다(QA-417). 같은 판정을 `deploy.sh` 끝 요약과 서버의
 `make status`가 한 줄로 찍습니다. cron 등록(서버 ubuntu — 서버 시간대는 UTC, 여러 번 돌려도 한 줄):
 
 ```bash
