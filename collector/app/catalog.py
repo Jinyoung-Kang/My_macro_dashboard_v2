@@ -74,6 +74,9 @@ SNAP_KR_CALENDAR = "calendar.kr_events"
 # 싣는 것은 설정 calendar.consensus를 한국 책 출발일에 켠 뒤(백엔드 미국 패킷이 켜졌을 때만 읽음, E1b). {forDate, days: {동부 날짜: {rows: [{name, timeEt, forecast, previous, actual, unit,
 # …Text, importance null}], fetchedAt, isStale?}}, failed}. 미국 동부 오늘부터 18일 안의 평일, 하루 1회.
 SNAP_US_CONSENSUS = "calendar.us_consensus"
+# 미국 경제지표의 BLS 공식 발표치(ADR 0040 '단계 2 앞당김' — api.bls.gov, 공식). 동부 평일 08:30·10:00 발표 직후에 받아 **저장만** 합니다 —
+# 결정 패킷·화면은 읽지 않습니다(패킷의 실제치는 calendar.us_consensus 그대로). 모양은 app/tasks/bls_actuals.py 머리말.
+SNAP_US_BLS_ACTUALS = "calendar.us_bls_actuals"
 # 경제 캘린더(미국·한국 지표 일정과 예상치·이전치·실제치·중요도 — TradingView, 비공식). 차단 통과 수집 계층(ADR 0026)으로 받고 운영자 화면만
 # 읽습니다 — Claude 결정 패킷은 읽지 않습니다(패킷의 캘린더는 calendar.us_events·calendar.kr_events·calendar.us_consensus 그대로).
 # 모양(contract 1)은 app/tasks/econ_calendar.py 머리말. polite 속도군(3~6시간에 한 번, 기동 직후에는 받지 않음).

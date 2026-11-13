@@ -131,3 +131,10 @@ def test_QA018_traceback에_담긴_키도_가린다(captured):
 
     assert "QA018TRACEBACKKEY" not in captured.text
     assert "_UrlError" in captured.text
+
+
+def test_BLS_registrationkey도_가린다():
+    """BLS Public Data API(ADR 0040)의 키 이름 — 'key' 앞에 낱말 경계가 없어 key 규칙으로는 걸리지 않습니다."""
+    text = "https://api.bls.gov/publicAPI/v2/timeseries/data/?registrationkey=BLSKEY123&catalog=true"
+    assert "BLSKEY123" not in logredact.redact(text)
+    assert "catalog=true" in logredact.redact(text)

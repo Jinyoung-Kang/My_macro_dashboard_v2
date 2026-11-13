@@ -56,7 +56,7 @@ class InfoSourcesParityTest {
         Set<String> table = new TreeSet<>();
         InfoSources.ALL.forEach(source -> table.add(source.task()));
 
-        assertThat(tasks).hasSize(64);
+        assertThat(tasks).hasSize(65);
         assertThat(table).containsAll(tasks);
         Set<String> extra = new TreeSet<>(table);
         extra.removeAll(tasks);

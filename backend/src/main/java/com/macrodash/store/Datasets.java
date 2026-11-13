@@ -136,6 +136,11 @@ public final class Datasets {
      */
     public static final String SNAP_US_CONSENSUS = "calendar.us_consensus";
     /**
+     * 미국 경제지표의 BLS 공식 발표치(ADR 0040 '단계 2 앞당김' — api.bls.gov). 수집기 {@code us_bls_actuals}가 동부 평일 08:30·10:00 발표 직후에
+     * 받아 저장만 합니다 — 결정 패킷·화면은 읽지 않습니다(패킷의 실제치는 {@link #SNAP_US_CONSENSUS} 그대로).
+     */
+    public static final String SNAP_US_BLS_ACTUALS = "calendar.us_bls_actuals";
+    /**
      * 경제 캘린더(미국·한국 지표 일정과 예상치·이전치·실제치·중요도 — TradingView, 비공식). 수집기가 차단 통과 수집 계층(ADR 0026)으로 받고
      * 운영자 화면만 읽습니다 — 모의 매매 패킷은 읽지 않습니다(패킷의 캘린더는 {@link #SNAP_US_CALENDAR}·{@link #SNAP_KR_CALENDAR}·
      * {@link #SNAP_US_CONSENSUS} 그대로). 읽을 때는 태스크 이름을 넘기지 않습니다 — 화면 조회가 수집을 일으키면 그 출처의 비주기 일정과

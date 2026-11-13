@@ -223,6 +223,15 @@ def fred_key() -> str:
     return get_secret("fred.api_key") or get_secret("FRED_API_KEY")
 
 
+def bls_key() -> str:
+    """
+    BLS Public Data API 등록 키(``BLS_API_KEY``). 없으면 빈 문자열 — 그때는 키 없는 v1(하루 25회)으로 받습니다(tasks/bls_actuals).
+
+    키는 요청 본문에만 싣고 주소·로그·저장본에는 남기지 않습니다. 등록은 해마다 갱신해야 합니다(BLS FAQ).
+    """
+    return get_secret("bls.api_key")
+
+
 def krx_key() -> str:
     return (
         get_secret("krx.api_key")

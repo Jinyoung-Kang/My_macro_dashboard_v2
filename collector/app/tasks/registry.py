@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from .base import Task
+from .bls_actuals import due as bls_due, task_us_bls_actuals
 from .earnings_surprise import task_earnings_surprise
 from .econ_calendar import task_econ_calendar_tradingview
 from .filings import task_sec_13f, task_sec_13f_track_record
@@ -73,6 +74,10 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("kr_news_headlines", "flex", task_kr_news_headlines,
          "한국 사건 뉴스 RSS 헤드라인 — 한국은행·재정경제부·국가데이터처·연합뉴스 마켓+, 피드마다 탄력 주기·조건부 요청, 7일 보관 (한국 Claude 계좌 패킷)",
          due=kr_news_due),
+    # BLS 공식 발표치(ADR 0040 '단계 2 앞당김') — 동부 평일 08:30·10:00 발표 2~4분 뒤, 시리즈 11개를 한 요청으로. 저장만(패킷·화면 불변).
+    Task("us_bls_actuals", "flex", task_us_bls_actuals,
+         "미국 경제지표 BLS 공식 발표치 — CPI·고용·실업률·시급·PPI·JOLTS, 동부 평일 08:30·10:00 발표 직후 (저장만, Nasdaq 실제치와 대조)",
+         due=bls_due),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열", yahoo=True),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),

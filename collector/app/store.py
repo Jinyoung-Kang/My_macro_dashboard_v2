@@ -1411,6 +1411,7 @@ def missing_datasets() -> list[dict]:
         (catalog.SNAP_US_FUNDAMENTALS_STATUS, "모의 매매 미국 재무(SEC XBRL) 수집 상태"),
         # FRED 키가 없어도 FOMC 상수·실적 일정으로 저장본이 생기므로 키와 상관없이 기대합니다.
         (catalog.SNAP_US_CALENDAR, "모의 매매 미국 발표·실적 일정"),
+        (catalog.SNAP_US_BLS_ACTUALS, "미국 경제지표 BLS 공식 발표치"),
         # 피드 하나라도 받으면 생깁니다(키 없음). 전부 실패하면 생기지 않아 여기서 '누락'으로 보입니다.
         (catalog.SNAP_NEWS_STATUS, "모의 매매 사건 뉴스(RSS) 수집 상태"),
         # 키가 필요 없습니다(yfinance). 한 종목이라도 받으면 생기고, 전부 실패·내부 API 변경이면 생기지 않아 '누락'으로 보입니다.
