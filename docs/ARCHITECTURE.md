@@ -67,7 +67,7 @@ ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md)·[ADR 0034](adr/0034-isa-b
 | `collector_task_runs` | 태스크별 결과 (상태·소요·실패 이유) |
 | `refresh_requests` | 수동 새로고침 기준 시각 |
 | `schema_migrations` | 적용한 스키마 버전 (3-2 참고) |
-| `fetch_hosts`·`fetch_schedule` | 차단 통과 수집 계층의 상태 — 호스트별 고정 프로필·거부 뒤 물러남·포기·하루 예산, 태스크별 다음 실행 시각. 수집기가 씁니다([ADR 0026](adr/0026-polite-fetch-layers.md)) |
+| `fetch_hosts`·`fetch_schedule` | 차단 통과 수집 계층의 상태 — 호스트별 고정 프로필·거부 뒤 물러남·포기·하루 예산, 태스크별 다음 실행 시각. 수집기가 씁니다([ADR 0026](adr/0026-polite-fetch-layers.md)). `fetch_schedule`에는 flex 속도군의 피드별 다음 시각(`news_headlines/<피드>` — [ADR 0040](adr/0040-fresh-feeds.md))도 둡니다 |
 | `info_items`·`fetch_source_state` (V33) | 정보 수집([ADR 0035](adr/0035-info-collection.md)) — 수집한 글(출처·원문 주소·제목·한국어 제목·작성 시각·본문 — 180일 보관), polite 태스크마다의 마지막 판정(ok·blocked·format·failed·연속 횟수·마지막 성공). 수집기가 씁니다. 백엔드는 읽기만(`store.InfoStore`) |
 | `source_alerts` (V34) | 수집 출처 끊김 알림의 기록(사건 하나에 한 행 — 연 시각·텔레그램을 보낸 시각·풀린 시각). **백엔드가 씁니다**(`store.SourceAlertStore`, ADR 0035). 수집기는 읽지도 쓰지도 않습니다 |
 | `info_translations` (V35) | 정보 수집 글의 한국어 번역([ADR 0037](adr/0037-info-wire-translate.md)) — 번역 한 건에 한 행(id = `md5(종류:원문)`, 종류 title·body, 원문 글자 수, 한국어, 모델). 같은 글자는 한 번만 번역. **백엔드가 씁니다**(`store.TranslationStore`). V35는 `info_items.kind`에 `headline`(본문 없는 속보 한 줄)도 더함 |

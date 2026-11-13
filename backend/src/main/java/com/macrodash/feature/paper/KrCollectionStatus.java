@@ -33,14 +33,14 @@ import java.util.Set;
  * <p><b>모르는 값은 null</b>(0으로 채우지 않음). 저장본이 없으면 그 묶음은 {@code available:false}이고 나머지 칸은 null입니다.
  *
  * <p><b>늦음</b>({@code stale}): 관측치·수급은 시장 늦음 규칙({@link PaperMarket#quotesLateAt} — 그 세션 다음 수집 예정 + 2시간 5분, 개요의
- * 관측치 요약과 같은 규칙·같은 달력), DART·거시 일정(주간 수집)은 7일({@link Datasets#MAX_AGE_WEEKLY}), 사건 뉴스(매시 수집)는 24시간
+ * 관측치 요약과 같은 규칙·같은 달력), DART·거시 일정(주간 수집)은 7일({@link Datasets#MAX_AGE_WEEKLY}), 사건 뉴스(피드마다 탄력 주기 — ADR 0040)는 24시간
  * ({@link Datasets#MAX_AGE_SLOW})을 넘김입니다. 유니버스·금융위 시세는 저장본에 수집 시각 칸이 없어 늦음 대신 기준일 비교(뒤처짐)로 봅니다 —
  * 유니버스 기준일이 금융위 주식시세 최신 기준일보다 이르면 {@code behind}, 증권상품(ETF) 최신 기준일이 주식보다 이르면 {@code etfBehind}.
  * 달력이 그 해를 몰라 늦음을 셀 수 없으면 {@code stale:null} + {@code staleReason}(개요의 관측치 요약과 같음 — 명세 K35).
  */
 final class KrCollectionStatus {
 
-    /** 사건 뉴스 저장본이 이보다 오래되면 늦음(매시 수집 — 24시간 = 서버 창이 하루 닫혀 있어도 넘지 않는 폭). */
+    /** 사건 뉴스 저장본이 이보다 오래되면 늦음(피드마다 12~120분 — 24시간 = 서버가 하루 꺼져 있어도 넘지 않는 폭). */
     static final Duration NEWS_LATE = Duration.ofSeconds(Datasets.MAX_AGE_SLOW);
     /** DART·거시 일정(주간 묶음, 12시간마다) 저장본이 이보다 오래되면 늦음. */
     static final Duration WEEKLY_LATE = Duration.ofSeconds(Datasets.MAX_AGE_WEEKLY);
@@ -196,7 +196,7 @@ final class KrCollectionStatus {
         return out;
     }
 
-    // ------------------------------------------------------------------ 사건 뉴스 RSS(매시)
+    // ------------------------------------------------------------------ 사건 뉴스 RSS(피드마다 탄력 주기 — ADR 0040)
     private static Map<String, Object> news(StoreReader reader, Instant now) {
         Optional<Snapshot> found = reader.readStored(Datasets.SNAP_KR_NEWS_STATUS);
         JsonNode payload = payload(found);
