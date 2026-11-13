@@ -27,7 +27,7 @@ export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-ap-northeast-2}"
 source "$(dirname "${BASH_SOURCE[0]}")/../db-common.sh"   # DB_NAME · BACKUP_DIR · env_file_value, 저장소 최상위로 이동
 
 tag=my-macro-backup
-# QA-199: 실패를 운영자에게 밀어서 알립니다 — syslog만으로는 journalctl을 보기 전까지 아무도 모르고, 그동안 db/ 수명주기(60일)가
+# QA-199: 실패를 운영자에게 밀어서 알립니다(사유 한 줄 + 할 일 '실행:') — syslog만으로는 journalctl을 보기 전까지 아무도 모르고, 그동안 db/ 수명주기(60일)가
 # 서버 밖 사본을 지워 갑니다. 둘 중 하나라도 비면 조용히 건너뜁니다. 토큰·채팅 ID는 curl 설정(stdin, -K -)으로 넘겨 프로세스 목록·로그에
 # 남기지 않고(출력도 버림), 알림이 실패해도 백업의 종료 코드(1)는 그대로입니다. 보내는 글은 fail의 사유 한 줄 그대로입니다 — 걸러 내는 것은
 # make backup 출력에서 고른 원인 줄뿐이고(compose 경고 줄을 빼고, .env 해석 오류로 보이면 '값 생략'으로 바꿈 — 아래), S3 올리기 실패는
@@ -40,8 +40,13 @@ notify_failure() {
     # curl 설정의 따옴표 값에 그대로 넣을 수 없는 글자가 있으면 보내지 않습니다(정상 토큰·채팅 ID에는 없음).
     if [[ "$token$chat" =~ [[:space:]\"\\] ]]; then return 0; fi
     command -v curl >/dev/null 2>&1 || return 0
+    # 할 일을 함께 적습니다(2026-11-13 사용자 요청 — 받은 사람이 그대로 따라 할 수 있게).
+    local actions=$'\n\n실행:'
+    actions+=$'\n1. 원인 보기 — 셸: ssh ubuntu@my-macro-app 다음 journalctl -t my-macro-backup --since today'
+    actions+=$'\n2. 고친 뒤 다시 올리기: cd ~/My_macro_dashboard_v2 && bash scripts/vultr/backup-s3.sh'
+    actions+=$'\n직접 하기 어려우면 Claude Code에 "백업 실패 확인해 줘"라고 하면 됩니다.'
     printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\n' "$token" "$chat" |
-        curl -sS --fail -o /dev/null --max-time 10 -K - --data-urlencode "text=my-macro 서버 — $1 (journalctl -t $tag)" >/dev/null 2>&1 ||
+        curl -sS --fail -o /dev/null --max-time 10 -K - --data-urlencode "text=my-macro 서버 — $1 (journalctl -t $tag)$actions" >/dev/null 2>&1 ||
         logger -t "$tag" -p user.warning "백업 실패 텔레그램 알림을 보내지 못했습니다" || true
 }
 fail() {

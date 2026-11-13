@@ -659,6 +659,16 @@ def test_QA199_backup_s3는_실패하면_서버_env의_텔레그램_봇으로_�
     assert f'url = "https://api.telegram.org/bot{TG_TOKEN}/sendMessage"' in config and f"chat_id={TG_CHAT}" in config
 
 
+def test_backup_s3_실패_알림은_따라_할_실행_단계를_함께_보낸다(backup_root, fakes):
+    _with_telegram(backup_root)
+    assert _backup(backup_root, fakes, FAKE_AWS_RC="1").returncode == 1
+    sent = fakes[1].read_text(encoding="utf-8")
+    for step in ("실행:", "journalctl -t my-macro-backup --since today", "cd ~/My_macro_dashboard_v2 && bash scripts/vultr/backup-s3.sh",
+                 "백업 실패 확인해 줘"):
+        assert step in sent, step
+    assert TG_TOKEN not in sent
+
+
 def test_QA199_backup_s3는_올리기에_성공하면_마지막_성공_시각을_남긴다(backup_root, fakes):
     started = int(time.time())
     result = _backup(backup_root, fakes)
@@ -1402,6 +1412,27 @@ def test_QA417_reboot_check는_Livepatch를_끝내_못_읽으면_마지막_오�
     result = _reboot_check(reboot_root, fakes, "--summary", FAKE_LP_FAIL_TIMES="9")
     assert result.returncode == 0
     assert "Livepatch 상태를 읽지 못함(canonical-livepatch status 3번 실패: error: daemon busy (call 3)" in result.stdout
+
+
+def test_reboot_check_알림은_재부팅이면_따라_할_실행_단계를_함께_보낸다(reboot_root, fakes, tmp_path):
+    assert _reboot_check(reboot_root, fakes, **_reboot_flag(tmp_path, "libc6")).returncode == 0
+    sent = fakes[1].read_text(encoding="utf-8")   # 알림 글은 여러 줄 — 기록 파일 전체에서 봅니다
+    for step in ("실행(재부팅 — 16:00~22:00 KST):", "Server > Restart", "ssh ubuntu@my-macro-app 다음 sudo reboot",
+                 "bash scripts/vultr/reboot-check.sh --summary", "sudo bash scripts/vultr/tailscale-up.sh", "재부팅해 줘"):
+        assert step in sent, step
+    assert "실행(Livepatch 확인)" not in sent
+
+
+def test_reboot_check_알림은_Livepatch만_이상하면_확인_단계만_보낸다(reboot_root, fakes):
+    assert _reboot_check(reboot_root, fakes, FAKE_LP_JSON=_livepatch_json(supported="unsupported")).returncode == 0
+    sent = fakes[1].read_text(encoding="utf-8")
+    assert "실행(Livepatch 확인):" in sent and "canonical-livepatch status; pro status" in sent and "Livepatch 확인해 줘" in sent
+    assert "sudo reboot" not in sent
+
+
+def test_reboot_check_요약은_실행_단계_없이_한_줄이다(reboot_root, fakes, tmp_path):
+    result = _reboot_check(reboot_root, fakes, "--summary", **_reboot_flag(tmp_path, "libc6"))
+    assert result.stdout.count("\n") == 1 and "실행" not in result.stdout
 
 
 def test_reboot_check는_summary_if_server면_서버가_아닐_때_아무것도_찍지_않는다(reboot_root, fakes, tmp_path):

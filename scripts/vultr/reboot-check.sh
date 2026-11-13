@@ -10,8 +10,8 @@
 #     상태를 읽지 못함(canonical-livepatch 없음 등)
 #
 # 사용(저장소 최상위로 옮겨 .env·backups/를 봄):
-#   bash scripts/vultr/reboot-check.sh                       cron — 걸린 것이 있으면 운영 텔레그램 봇으로 한 통(같은 KST 날짜에 같은 글은
-#                                                            다시 보내지 않음), 없으면 syslog에만. 늘 0으로 끝남
+#   bash scripts/vultr/reboot-check.sh                       cron — 걸린 것이 있으면 운영 텔레그램 봇으로 한 통(한 줄 요약 + 할 일 '실행:',
+#                                                            같은 KST 날짜에 같은 글은 다시 보내지 않음), 없으면 syslog에만. 늘 0으로 끝남
 #   bash scripts/vultr/reboot-check.sh --summary             한 줄만 찍음(deploy.sh 끝 요약 — 서버에서만 돎)
 #   bash scripts/vultr/reboot-check.sh --summary-if-server   서버(.env의 COMPOSE_FILE에 compose.vultr.yml)일 때만 한 줄(make status —
 #                                                            PC에는 Livepatch가 없어 늘 경고가 되므로 찍지 않음)
@@ -164,6 +164,28 @@ if [ "$(cat "$sent" 2>/dev/null || true)" = "$stamp" ]; then
     exit 0
 fi
 
+# 운영 알림에는 할 일을 함께 적습니다(2026-11-13 사용자 요청 — 받은 사람이 그대로 따라 할 수 있게). 한 줄 요약(--summary)은 그대로입니다.
+actions=""
+if [ -n "$needs_reboot" ]; then
+    actions+=$'\n\n실행(재부팅 — 16:00~22:00 KST):'
+    actions+=$'\n1. Vultr 화면 > my-macro-app > Server > Restart'
+    actions+=$'\n   또는 셸: ssh ubuntu@my-macro-app 다음 sudo reboot'
+    actions+=$'\n2. 1~2분 뒤 셸에서 확인:'
+    actions+=$'\n   cd ~/My_macro_dashboard_v2 && getent hosts api.telegram.org && docker compose ps && bash scripts/vultr/reboot-check.sh --summary'
+    actions+=$'\n3. 2의 첫 줄(주소)이 비면 DNS 복구(QA-415):'
+    actions+=$'\n   sudo bash scripts/vultr/tailscale-up.sh && docker compose restart backend collector frontend browser caddy'
+fi
+if [ -n "$livepatch_issue" ]; then
+    actions+=$'\n\n실행(Livepatch 확인):'
+    actions+=$'\n   셸: ssh ubuntu@my-macro-app 다음 canonical-livepatch status; pro status'
+    actions+=$'\n   다음 날 점검에서 사라지면 할 일 없음.'
+fi
+if [ -n "$needs_reboot" ]; then
+    actions+=$'\n\n직접 하기 어려우면 Claude Code에 "재부팅해 줘"라고 하면 됩니다.'
+else
+    actions+=$'\n\n직접 하기 어려우면 Claude Code에 "Livepatch 확인해 줘"라고 하면 됩니다.'
+fi
+
 token="$(env_file_value TELEGRAM_BOT_TOKEN)"
 chat="$(env_file_value TELEGRAM_CHAT_ID)"
 if [ -z "$token" ] || [ -z "$chat" ] || [[ "$token$chat" =~ [[:space:]\"\\] ]] || ! command -v curl >/dev/null 2>&1; then
@@ -171,7 +193,7 @@ if [ -z "$token" ] || [ -z "$chat" ] || [[ "$token$chat" =~ [[:space:]\"\\] ]] |
     exit 0
 fi
 if printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\n' "$token" "$chat" |
-        curl -sS --fail -o /dev/null --max-time 10 -K - --data-urlencode "text=my-macro 서버 — $summary" >/dev/null 2>&1; then
+        curl -sS --fail -o /dev/null --max-time 10 -K - --data-urlencode "text=my-macro 서버 — $summary$actions" >/dev/null 2>&1; then
     { mkdir -p "$BACKUP_DIR" && printf '%s\n' "$stamp" > "$sent"; } || logger -t "$tag" -p user.warning "보낸 기록을 남기지 못함" || true
 else
     logger -t "$tag" -p user.warning "텔레그램 알림을 보내지 못함 — 다음 실행에 다시" || true
