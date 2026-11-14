@@ -18,6 +18,7 @@ afterEach(() => cleanup());
 const ICONS = [
   "AlertTriangleIcon",
   "BellIcon",
+  "BellOffIcon",
   "BuildingIcon",
   "CheckCircleIcon",
   "CheckIcon",
@@ -85,6 +86,21 @@ describe("장식 아이콘", () => {
     expect(small.getAttribute("width")).toBe("12");
     expect(normal.getAttribute("width")).toBe("16");
     expect(bell.getAttribute("width")).toBe("18");
+  });
+
+  it("종(알림) — 기본은 선만(상단바와 같음), filled면 종을 글자색으로 채움, 끈 종은 사선이 그어진 모양(사용자 요청 2026-11-15)", () => {
+    const { container } = render(
+      <>
+        <icons.BellIcon />
+        <icons.BellIcon filled />
+        <icons.BellOffIcon />
+      </>,
+    );
+    const [plain, filled, off] = [...container.querySelectorAll("svg")];
+    expect(plain.querySelector("path")?.getAttribute("fill")).toBeNull();
+    expect(filled.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
+    expect(off.querySelector('[data-part="slash"]')).toBeTruthy();
+    expect(plain.querySelector('[data-part="slash"]')).toBeNull();
   });
 
   it("별(관심 대상) — 등록 전은 선만, filled면 별을 글자색으로 채움(SVG 바탕은 그대로 fill=none)", () => {

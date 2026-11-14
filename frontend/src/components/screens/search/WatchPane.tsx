@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { SELECTED_BAR } from "@/components/ui/classes";
-import { BellIcon, ChevronDownIcon, SpinnerIcon, StarIcon, StatusText } from "@/components/ui/icons";
+import { BellIcon, BellOffIcon, ChevronDownIcon, SpinnerIcon, StarIcon, StatusText } from "@/components/ui/icons";
 import type { InfoSearchWatch, NotifyFrom } from "@/hooks/useInfoSearchWatch";
 import { DEMO_READ_ONLY } from "@/lib/access";
 import {
@@ -188,7 +188,8 @@ export function WatchPane({
 }
 
 /**
- * 관심 대상 한 줄의 새 글 알림 켜기·끄기(계약 §9-5 — PATCH {notify}, 기본 꺼짐). 종 아이콘 + '알림 켬'·'알림 끔'(상태를 글로 — 색만이 아님), aria-pressed.
+ * 관심 대상 한 줄의 새 글 알림 켜기·끄기(계약 §9-5 — PATCH {notify}, 기본 꺼짐). 종 아이콘(켬은 채운 종, 끔은 사선 그은 종) + '알림 켬'·'알림 끔'(상태를 글로 —
+ * 색·모양만이 아님), aria-pressed.
  * 낭독 이름은 상태와 상관없이 같습니다(머리 '알림', 목록 줄 '<대상 이름> 알림' — 줄마다 같은 단추가 여럿이라 aria-label). 상태는 aria-pressed가 전하고
  * 보이는 '켬'·'끔'은 aria-hidden입니다(이름이 상태에 따라 바뀌면 지금 상태인지 누르면 할 일인지 모호함 — WAI-ARIA APG).
  * 넓은 화면의 좁은 칸에서는 종 아이콘과 '켬'·'끔'만 보입니다. 바꾸는 동안에는 모든 알림 단추를 aria-disabled로 두고(요청이 겹치지 않게) 누른 단추는 도는 아이콘.
@@ -212,7 +213,8 @@ function NotifyToggle({ watch, item, from }: { watch: InfoSearchWatch; item: Sea
       }}
       className={toggleClass(on, compact)}
     >
-      {busy ? <SpinnerIcon size={14} className="motion-safe:animate-spin" /> : <BellIcon size={14} />}
+      {/* 종 모양도 상태마다 — 켬은 채운 종, 끔은 사선이 그어진 종(사용자 요청 2026-11-15). 상태는 글 '켬'·'끔'이 함께 전함(모양만으로 가르지 않음). */}
+      {busy ? <SpinnerIcon size={14} className="motion-safe:animate-spin" /> : on ? <BellIcon size={14} filled /> : <BellOffIcon size={14} />}
       <span className={compact ? "lg:hidden" : undefined}>{NOTIFY_LABEL}</span>
       <span aria-hidden="true"> {notifyStateText(on)}</span>
     </button>

@@ -406,6 +406,11 @@ describe("새 글 알림 켜기(계약 §9-5)", () => {
     const on = within(list).getByRole("button", { name: "합성 주제 알림" });
     expect(on.getAttribute("aria-pressed")).toBe("true");
     expect(on.textContent).toContain("켬");
+    // 종 모양도 상태마다 다름(사용자 요청 2026-11-15) — 켬은 채운 종, 끔은 사선이 그어진 종(글 '켬'·'끔'과 함께 — 모양만으로 가르지 않음).
+    expect(on.querySelector('svg path[fill="currentColor"]')).toBeTruthy();
+    expect(on.querySelector('[data-part="slash"]')).toBeNull();
+    expect(off.querySelector('[data-part="slash"]')).toBeTruthy();
+    expect(off.querySelector('svg path[fill="currentColor"]')).toBeNull();
     // 누르는 자리(좁은 화면 44px)와 포커스 링
     expect(off.className).toMatch(/min-h-11/);
     expect(off.className).toMatch(/min-w-11/);

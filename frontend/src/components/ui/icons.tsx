@@ -186,11 +186,23 @@ export function SearchIcon({ size = 16, ...props }: IconProps) {
   );
 }
 
-export function BellIcon({ size = 18, ...props }: IconProps) {
+/** 종 — 상단바 알림함(선만), filled면 종을 글자색으로 채움(정보 검색의 '알림 켬'). */
+export function BellIcon({ size = 18, filled = false, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <IconBase size={size} {...props}>
+      <path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8" {...(filled ? { fill: "currentColor" } : {})} />
+      <path d="M10 20a2 2 0 0 0 4 0" />
+    </IconBase>
+  );
+}
+
+/** 사선이 그어진 종 — 정보 검색의 '알림 끔'(켬의 채운 종과 모양으로도 갈림, 사용자 요청 2026-11-15). 상태는 옆 글 '끔'이 함께 전함. */
+export function BellOffIcon({ size = 18, ...props }: IconProps) {
   return (
     <IconBase size={size} {...props}>
       <path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8" />
       <path d="M10 20a2 2 0 0 0 4 0" />
+      <path data-part="slash" d="M3 3l18 18" />
     </IconBase>
   );
 }
