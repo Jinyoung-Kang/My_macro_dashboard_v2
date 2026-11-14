@@ -51,9 +51,10 @@ import java.util.regex.Pattern;
  *   <li><b>자료</b>: 수집기 결과를 {@code external=false}로 읽음(받아 둔 것만 — 외부 출처를 새로 부르지 않음). 줄마다 제목·매체·날짜(KST)·출처가 준 요약
  *       ({@value #MAX_FIELD}자까지)만 보내고, 기사 본문·원문 주소·원문 팝업 id는 보내지 않습니다. 작성 시각을 모르는 줄({@code timeBasis: fetched})은 날짜를
  *       비우고 받은 시각({@code received})으로 보냅니다. 기간은 화면과 같은 KST 날짜 경계({@link SearchService#rangeStart}).</li>
- *   <li><b>빠진 출처</b>: 외부 출처의 받아 둔 결과는 수집기의 출처 캐시(15분)에만 있어 그 뒤에는 {@code offline}입니다. 그런 출처는 응답
- *       {@code offlineSources}(이름)로 알리고, 그 때문에 고른 기간에 줄이 하나도 없으면 빈 요약 대신 {@code available:false, reason:"stale"}과 다시
- *       불러오라는 안내를 돌려줍니다(외부를 부르지 않는 모드 store_only는 화면도 같은 offline이라 빈 요약 그대로).</li>
+ *   <li><b>빠진 출처</b>: 외부 출처의 받아 둔 결과는 수집기의 출처 캐시(성공 15분·실패 60초)에만 있어 그 뒤에는 아직 부르지 않은 출처와 함께
+ *       {@code offline}입니다(셋을 가를 수 없음). 그런 출처는 응답 {@code offlineSources}(이름)로 알리고, 그 때문에 고른 기간에 줄이 하나도 없으면
+ *       빈 요약 대신 {@code available:false, reason:"stale"}과 다시 불러오라는 안내를 돌려줍니다(외부를 부르지 않는 모드 store_only는 화면도 같은
+ *       offline이라 빈 요약 그대로).</li>
  *   <li><b>엔진</b>: 번역(ADR 0037)과 같은 설정({@code dashboard.info.translate.*})과 순서 — 1순위 Gemini(무료 한도) → 한 등급 아래 Gemini → Claude Haiku.
  *       한도 초과·모델 없음인 Gemini 모델은 {@value #GEMINI_REST_MINUTES}분 건너뜀(이 서비스 안 — 번역의 쉬는 시각과는 따로). 키가 없으면 아무것도 부르지 않음.</li>
  *   <li><b>프롬프트</b>: 지시는 시스템 프롬프트에만, 자료는 요청마다 다른 꼬리표({@code <자료-…>})로 감싼 JSON — 자료 안의 글은 JSON 문자열이라 구간을 닫지 못하고,
@@ -93,8 +94,11 @@ public class SearchSummaryService {
     static final String PARSE = "PARSE";
 
     static final String NOT_CONFIGURED = "AI 요약 엔진의 키가 없습니다 — 번역과 같은 엔진(GEMINI_API_KEY 또는 ANTHROPIC_API_KEY)을 .env에 넣고 다시 띄우세요.";
-    /** 외부 출처의 받아 둔 결과가 수집기 캐시에서 빠져 고른 기간에 줄이 없을 때(출처 수를 넣음). */
-    static final String STALE = "외부 출처 %d곳의 받아 둔 결과가 서버에 남아 있지 않습니다(출처마다 받은 지 15분이 지나면 빠짐) — 결과를 새로 불러온 뒤 다시 요약하세요.";
+    /**
+     * 받아 둔 결과가 없는 외부 출처 때문에 고른 기간에 줄이 없을 때(출처 수를 넣음). 수집기 캐시가 지난 뒤에는 성공(15분)이었는지 실패(60초)였는지,
+     * 아직 부르지 않았는지 가를 수 없어 사유를 하나로 단정하지 않습니다(QA-427).
+     */
+    static final String STALE = "외부 출처 %d곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.";
     /** 출처 상태 — 외부를 부르지 않아 캐시에 없는 출처(계약 §3-4). */
     private static final String OFFLINE = "offline";
 
@@ -219,7 +223,7 @@ public class SearchSummaryService {
      * 요약(계약 §9-6).
      *
      * @return 성공 {@code {available:true, summary:[{text, refs:[itemId]}], basedOn, model, generatedAt, cached, offlineSources}} — 고른 기간에 받아 둔
-     *         줄이 없으면 빈 요약·basedOn 0(엔진을 부르지 않음). 그 까닭이 캐시에서 빠진 외부 출처면({@code stale} — 외부를 부르는 모드만), 엔진 키가 없거나
+     *         줄이 없으면 빈 요약·basedOn 0(엔진을 부르지 않음). 그 까닭이 받아 둔 결과가 없는 외부 출처면({@code stale} — 외부를 부르는 모드만), 엔진 키가 없거나
      *         ({@code reason not_configured} — 아무것도 부르지 않음) 수집기에 닿지 못했거나({@code collector}) 모든 엔진이 실패하면({@code engine_failed})
      *         {@code {available:false, reason, message}}
      * @throws ResponseStatusException            운영자가 아님(403)

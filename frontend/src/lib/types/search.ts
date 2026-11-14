@@ -265,7 +265,7 @@ export type SearchSummaryResponse = SearchRelay & {
   model?: string | null;
   generatedAt?: string | null;
   cached?: boolean | null;
-  /** 받은 지 15분이 지나 수집기 캐시에 없어 요약에 들지 않은 바깥 출처(이름) — 비면 없음. */
+  /** 수집기 캐시에 받아 둔 결과가 없어 요약에 들지 않은 바깥 출처(이름 — 15분이 지난 성공·60초가 지난 실패·부르지 않은 출처를 가르지 않음) — 비면 없음. */
   offlineSources?: string[] | null;
   /** available:false의 사유 코드(not_configured·collector·stale·engine_failed). */
   reason?: string | null;

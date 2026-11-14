@@ -49,7 +49,7 @@ describe("머리 안내(summaryNoteText)", () => {
 describe("요약에 들지 않은 출처(summaryOfflineText)", () => {
   it("서버가 받아 둔 결과가 없어 뺀 출처(offlineSources)를 출처 이름으로 한 줄에 — 없으면 null", () => {
     expect(summaryOfflineText({ offlineSources: ["google_en", "bing"] })).toBe(
-      "요약에 들지 않은 출처: 구글 뉴스(영어)·Bing 뉴스 — 받은 지 15분이 지나 서버에 남아 있지 않음, 새로 받은 뒤 다시 요약하면 들어갑니다.",
+      "요약에 들지 않은 출처: 구글 뉴스(영어)·Bing 뉴스 — 서버에 받아 둔 결과가 없음(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음). 새로 받기에 성공한 뒤 다시 요약하면 들어갑니다.",
     );
     expect(summaryOfflineText({ offlineSources: [] })).toBeNull();
     expect(summaryOfflineText({})).toBeNull();
