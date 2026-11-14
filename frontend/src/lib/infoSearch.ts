@@ -994,6 +994,97 @@ export function fitGraphLabel(name: string, maxPx: number): string {
   return `${out.trimEnd()}${ELLIPSIS}`;
 }
 
+/** 폭 maxPx 안에 드는 앞쪽 글자들. */
+function fitChars(chars: readonly string[], maxPx: number): string[] {
+  const out: string[] = [];
+  let width = 0;
+  for (const char of chars) {
+    if (width + charWidth(char) > maxPx) break;
+    width += charWidth(char);
+    out.push(char);
+  }
+  return out;
+}
+
+/**
+ * 가운데를 줄인 노드 이름 — 앞부분 + '…' + from번째 글자(코드 포인트, 앞뒤 공백을 뗀 이름에서)부터의 뒷부분. 뒷부분이 끝까지 들면 앞부분은 남는 폭만큼,
+ * 아니면 앞부분은 폭의 30%까지이고 뒷부분 끝에도 '…'. 다 들면 이름 그대로, 앞부분이 from 앞을 다 담으면(가운데를 줄일 것이 없음) fitGraphLabel과
+ * 같습니다. 폭(12px 글자 어림)은 maxPx를 넘지 않습니다.
+ */
+export function fitGraphLabelFrom(name: string, from: number, maxPx: number): string {
+  const chars = Array.from(name.trim());
+  const whole = chars.join("");
+  if (textWidth(whole) <= maxPx) return whole;
+  const start = Math.min(Math.max(0, Math.floor(from)), chars.length);
+  const ellipsis = charWidth(ELLIPSIS);
+  const tail = chars.slice(start).join("");
+  const head = fitChars(chars.slice(0, start), Math.max(maxPx * 0.3, maxPx - ellipsis - textWidth(tail)));
+  if (head.length >= start) return fitGraphLabel(whole, maxPx);
+  const shownHead = head.join("").trimEnd();
+  const room = maxPx - textWidth(shownHead) - ellipsis;
+  if (textWidth(tail) <= room) return `${shownHead}${ELLIPSIS}${tail}`;
+  return `${shownHead}${ELLIPSIS}${fitChars(Array.from(tail), room - ellipsis).join("").trimEnd()}${ELLIPSIS}`;
+}
+
+/** 줄인 글이 같은 이름들을 가를 때 갈리는 자리를 낱말 첫 글자로 물리는 최대 글자 수('…12'처럼 숫자·낱말을 통째로 보이게). */
+const GRAPH_WORD_BACK = 6;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+
+/**
+ * 그림의 노드 글(QA-423) — 이름마다 fitGraphLabel(끝을 자름)로 맞추되, 서로 다른 이름의 글이 같아지면(앞머리가 같은 자회사 법인명·내부자 등) 그 이름들은
+ * 가운데를 줄여(fitGraphLabelFrom) 서로 갈리는 자리부터 보입니다 — 처음에는 그 자리가 든 낱말의 첫 글자부터(많아야 GRAPH_WORD_BACK자 앞, 빈칸이면 그
+ * 뒤 글자부터), 그래도 같은 글이 남으면 그 이름들끼리 다시 갈리는 바로 그 글자부터. 그렇게 몇 차례 해도 같은 글이 남으면(같은 낱말이 되풀이되는 드문
+ * 이름 — 다른 자리의 글이 우연히 같아짐) 둘째 이름부터 아무도 쓰지 않은 글이 나올 때까지 보이는 자리를 뒤로 옮깁니다. 겹치지 않는 이름의 글은 그대로이고,
+ * 같은 이름(앞뒤 공백 무시)은 같은 글. 돌려주는 표는 앞뒤 공백을 뗀 이름 → 글. 전체 이름은 노드의 <title>·낭독 이름과 목록에 있습니다.
+ */
+export function graphLabels(names: readonly string[], maxPx: number): Map<string, string> {
+  const distinct = [...new Set(names.map((name) => name.trim()))];
+  const labels = new Map(distinct.map((name) => [name, fitGraphLabel(name, maxPx)]));
+  const clashes = () => {
+    const byLabel = new Map<string, string[]>();
+    for (const name of distinct) {
+      const label = labels.get(name)!;
+      byLabel.set(label, [...(byLabel.get(label) ?? []), name]);
+    }
+    return [...byLabel.values()].filter((group) => group.length > 1);
+  };
+  for (let round = 0; round < 8; round += 1) {
+    const groups = clashes();
+    if (groups.length === 0) break;
+    for (const group of groups) {
+      const charsOf = group.map((name) => Array.from(name));
+      const shortest = Math.min(...charsOf.map((chars) => chars.length));
+      let split = 0;
+      while (split < shortest && charsOf.every((chars) => chars[split] === charsOf[0][split])) split += 1;
+      let from = split;
+      if (round === 0) {
+        while (from > 0 && split - from < GRAPH_WORD_BACK && LETTER_OR_DIGIT.test(charsOf[0][from - 1])) from -= 1;
+        if (from > 0 && LETTER_OR_DIGIT.test(charsOf[0][from - 1])) from = split; // 낱말이 길면 물리지 않음
+      }
+      group.forEach((name, at) => {
+        let start = from;
+        // 처음에는 '…' 뒤에 빈칸을 두지 않음(이름마다 — 갈리는 글자가 빈칸인 이름).
+        while (round === 0 && start < charsOf[at].length && /\s/.test(charsOf[at][start])) start += 1;
+        labels.set(name, fitGraphLabelFrom(name, start, maxPx));
+      });
+    }
+  }
+  for (const group of clashes()) {
+    for (const name of group.slice(1)) {
+      const used = new Set(labels.values());
+      const length = Array.from(name).length;
+      for (let from = 1; from <= length; from += 1) {
+        const label = fitGraphLabelFrom(name, from, maxPx);
+        if (!used.has(label)) {
+          labels.set(name, label);
+          break;
+        }
+      }
+    }
+  }
+  return labels;
+}
+
 /** 그림의 크기 — 잰 폭(280~760, 재지 못했으면 360)에 맞추고 높이는 폭의 3/4(340~480). 좁은 화면은 세로로 긴 타원이 됩니다. */
 export function linkGraphSize(measuredWidth: number): { width: number; height: number } {
   const width = measuredWidth > 0 ? Math.round(Math.min(760, Math.max(280, measuredWidth))) : 360;
@@ -1151,6 +1242,8 @@ export function linkGraphLayout(
   }
   const sideUnits = sides.map((side) => side.reduce((sum, slot) => sum + unitOf(slot), 0));
   const step = stepFor(Math.max(...sideUnits));
+  // 노드 글 — 앞머리가 같아 같은 글이 되는 서로 다른 이름은 가운데를 줄여 가름(QA-423).
+  const labels = graphLabels(kept.flatMap((group) => group.links.map((entry) => entry.name)), labelSpace - 14);
 
   const nodes: LinkGraphNode[] = [];
   const nodeSector: number[] = [];
@@ -1174,7 +1267,7 @@ export function linkGraphLayout(
           x,
           y,
           angle,
-          label: fitGraphLabel(slot.link.name, labelSpace - 14),
+          label: labels.get(slot.link.name.trim()) ?? fitGraphLabel(slot.link.name, labelSpace - 14),
           labelX: round1(anchor === "start" ? x + 10 : x - 10),
           labelY: round1(y + 4),
           anchor,
