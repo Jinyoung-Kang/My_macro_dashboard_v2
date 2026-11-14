@@ -56,7 +56,7 @@ polite 틱(5분 + 지터) ── 때가 된 태스크만 ──> 태스크(colle
 | 거부 뒤 물러남 | 1회 30~60분 · 2회 3~6시간 · 3회 이상 12~24시간(구간 안 무작위) · 성공하면 0 |
 | 포기 | 연속 5회 — 운영자가 풀 때까지 다시 시도하지 않음(`given_up`) |
 | 사람 확인 | 12~24시간 닫음, `fail_level`은 올리지 않음 |
-| 하루 예산(KST 날짜) | `www.investing.com` 60 · `economic-calendar.tradingview.com` 12 · `data.krx.co.kr` 40 |
+| 하루 예산(KST 날짜) | `www.investing.com` 60 · `economic-calendar.tradingview.com` 12 · `data.krx.co.kr` 40 (처음 값 — 지금 값은 `fetch/policy.py`; 2026-11-14 `finviz.com` 250 더함 — 그 안에서 정보 검색 용도별 `fetch_budgets` search 60·watch 100, ADR 0041) |
 | 요청 사이 지연 | 로그정규(중앙값 7초)에서 뽑아 4~15초로 자르고 ms 잡음, 10%는 20~45초 |
 | 프로필 | 호스트를 처음 만날 때 후보 가운데 하나를 뽑아 고정, `curl_cffi` 판이 바뀔 때만 다시 |
 
