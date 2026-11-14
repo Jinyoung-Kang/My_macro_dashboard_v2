@@ -283,6 +283,10 @@ describe("정보 검색 관심 대상·매체 제외 경로(계약 §6-4)", () =
     expect(endpoints.search.feed("kr:005930", "filings")).toBe("/api/search/feed?e=kr%3A005930&tab=filings");
     expect(endpoints.search.feed("us:NVDA", "research")).toBe("/api/search/feed?e=us%3ANVDA&tab=research");
   });
+
+  it("AI 요약(계약 §9-6 — 운영자)은 인자 없는 POST 경로 하나 — 대상·탭·기간은 본문 {e, tab, range}", () => {
+    expect(endpoints.search.summary).toBe("/api/search/summary");
+  });
 });
 
 describe("실제 계좌 경로(ADR 0025)", () => {

@@ -52,6 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         // AI 키는 셸 환경과 상관없이 비웁니다 — 데모의 AI 리포트 요청이 외부(유료) 호출 없이 "키 없음"으로 끝나게.
         "dashboard.ai.anthropic-api-key=", "dashboard.ai.nvidia-api-key=", "dashboard.ai.cerebras-api-key=",
         "dashboard.ai.cloudflare-account-id=", "dashboard.ai.cloudflare-api-token=",
+        "dashboard.ai.gemini-api-key=",                  // 번역·정보 검색 AI 요약의 1순위 엔진도 비움(외부 호출 없이 '키 없음')
         "dashboard.ai.demo-daily-limit=7",
         "dashboard.scheduler.enabled=false",             // 정기 작업이 테스트 DB에 쓰면 결과가 실행 시각에 따라 달라짐
         "dashboard.paper.enabled=false",                 // 모의 매매 리스크 점검도(스케줄러를 켜는 테스트가 생겨도 장부를 건드리지 않게)
@@ -182,6 +183,24 @@ class ApiIntegrationTest {
         assertThat(refresh.getBody().path("required").asText()).isEqualTo("OWNER");
         assertThat(rest.exchange(url("/api/status"), HttpMethod.GET,
                 new HttpEntity<>(null, headers), String.class).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+
+        // 정보 검색 AI 요약(계약 §9-6)은 운영자만 — 회원은 403(required=OWNER), 운영자는 엔진 키가 없어 아무것도 부르지 않고 200 available:false
+        HttpHeaders memberJson = new HttpHeaders();
+        memberJson.addAll(headers);
+        memberJson.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, String> summaryBody = Map.of("e", "us:SYNT", "tab", "news", "range", "30d");
+        ResponseEntity<JsonNode> summary = rest.exchange(url("/api/search/summary"), HttpMethod.POST,
+                new HttpEntity<>(summaryBody, memberJson), JsonNode.class);
+        assertThat(summary.getStatusCode()).as("회원 POST /api/search/summary").isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(summary.getBody().path("required").asString()).isEqualTo("OWNER");
+        HttpHeaders ownerJson = new HttpHeaders();
+        ownerJson.add(HttpHeaders.COOKIE, sessionCookie);
+        ownerJson.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<JsonNode> ownerSummary = rest.exchange(url("/api/search/summary"), HttpMethod.POST,
+                new HttpEntity<>(summaryBody, ownerJson), JsonNode.class);
+        assertThat(ownerSummary.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(ownerSummary.getBody().path("available").asBoolean(true)).isFalse();
+        assertThat(ownerSummary.getBody().path("reason").asString()).isEqualTo("not_configured");
 
         JsonNode session = rest.exchange(url("/api/auth/session"), HttpMethod.GET,
                 new HttpEntity<>(null, headers), JsonNode.class).getBody();
@@ -712,7 +731,7 @@ class ApiIntegrationTest {
         demoJson.addAll(demo);
         demoJson.setContentType(MediaType.APPLICATION_JSON);
         for (String path : List.of("/api/alerts/rules", "/api/alerts/inbox/read", "/api/ai/test", "/api/auth/logout",
-                "/api/search/watch", "/api/search/watch/1/seen")) {
+                "/api/search/watch", "/api/search/watch/1/seen", "/api/search/summary")) {
             ResponseEntity<JsonNode> write = rest.exchange(url(path), HttpMethod.POST,
                     new HttpEntity<>(Map.of("kind", "REGIME_CHANGE", "key", "topic:데모"), demoJson), JsonNode.class);
             assertThat(write.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);

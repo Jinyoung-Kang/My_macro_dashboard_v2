@@ -58,6 +58,9 @@ public class SearchService {
     static final String NO_RESPONSE = "수집기에서 응답을 받지 못했습니다.";
     static final Set<String> TABS = Set.of("timeline", "news", "posts", "filings", "research");
     static final String DEFAULT_TAB = "timeline";
+    /** 화면의 기간 단추(계약 §5) — 받은 2년 묶음을 화면이 자르는 단위. */
+    static final Set<String> RANGES = Set.of("7d", "30d", "1y", "2y");
+    static final String DEFAULT_RANGE = "30d";
     /** 운영자 전용 저장본에서 온 줄의 출처(수집 글 info_items · 거장 견해 · 속보) — 회원에게는 지웁니다(결정 2). */
     static final Set<String> OWNER_ONLY_SOURCES = Set.of("info", "guru", "wire");
     static final String OWNER_ONLY = "owner_only";
@@ -253,6 +256,18 @@ public class SearchService {
     }
 
     /**
+     * AI 요약(계약 §9-6)이 읽는 결과 — 받아 둔 것만({@code external=false}, Finviz도 새로 줄에 넣지 않음)이고 운영자 경로라 {@code owner=true}입니다.
+     * 화면이 받은 결과와 같은 출처 캐시를 읽도록 {@link #feed}와 같이 그 사용자의 관심 대상 별칭을 넘깁니다(검색식이 캐시 열쇠). 입력 검사·권한은
+     * 부르는 쪽이 합니다. 닿지 못했거나 객체가 아니면 빈 값.
+     */
+    Optional<JsonNode> storedFeed(String key, String tab, CurrentUser user) {
+        List<String> aliases = watchAliases(user, key);
+        Optional<JsonNode> body = aliases == null ? collector.liveSearchFeed(key, tab, false, true, false, false)
+                : collector.liveSearchFeed(key, tab, false, true, false, false, aliases);
+        return body == null ? Optional.empty() : body.filter(JsonNode::isObject);
+    }
+
+    /**
      * 첫 화면의 최근 글(계약 §6-4) — 수집기 저장본(새 피드 묶음, 운영자면 속보도)을 중계하고, 회원에게서는 운영자 전용 줄을 한 번 더 지웁니다.
      * 외부를 부르지 않으므로 데모·store_only도 같습니다.
      */
@@ -403,6 +418,37 @@ public class SearchService {
         return which;
     }
 
+    /**
+     * 기간 — 비면 30일(화면 기본).
+     *
+     * @throws InvalidRequestException 네 기간 밖(400)
+     */
+    static String range(String range) {
+        String which = range == null ? "" : range.strip();
+        if (which.isEmpty()) {
+            return DEFAULT_RANGE;
+        }
+        if (!RANGES.contains(which)) {
+            throw new InvalidRequestException("range는 7d·30d·1y·2y 중 하나입니다.");
+        }
+        return which;
+    }
+
+    /**
+     * 기간의 시작 — 오늘(KST)에서 7일·30일·1년·2년 뺀 날의 00:00 KST(그 시각부터 포함). 화면 {@code rangeStart}·수집기 {@code range_starts}와 같은 정의이고,
+     * 2월 29일에서 해를 빼면 2월 28일입니다.
+     */
+    static Instant rangeStart(String range, LocalDate today) {
+        LocalDate day = switch (range) {
+            case "7d" -> today.minusDays(7);
+            case "30d" -> today.minusDays(30);
+            case "1y" -> today.minusYears(1);
+            case "2y" -> today.minusYears(2);
+            default -> throw new IllegalArgumentException("모르는 기간: " + range);
+        };
+        return day.atStartOfDay(Kst.ZONE).toInstant();
+    }
+
     // ------------------------------------------------------------------ 사용자
 
     /** 운영자만 운영자 전용 줄을 받습니다. 사용자가 없으면(필터 밖) 운영자가 아닙니다. */
@@ -410,8 +456,8 @@ public class SearchService {
         return user != null && user.isOwner();
     }
 
-    /** 데모 열람·store_only·사용자 없음이면 외부를 부르지 않습니다(결정 2). */
-    private boolean external(CurrentUser user) {
+    /** 데모 열람·store_only·사용자 없음이면 외부를 부르지 않습니다(결정 2). AI 요약도 씁니다(화면이 외부 출처를 받았을 수 있는가). */
+    boolean external(CurrentUser user) {
         return external(user, store);
     }
 
@@ -515,9 +561,9 @@ public class SearchService {
     private void subtractRangeCounts(ObjectNode counts, List<JsonNode> removed) {
         LocalDate today = Kst.today(clock);
         Map<String, Instant> starts = new LinkedHashMap<>();
-        starts.put("7d", today.minusDays(7).atStartOfDay(Kst.ZONE).toInstant());
-        starts.put("30d", today.minusDays(30).atStartOfDay(Kst.ZONE).toInstant());
-        starts.put("1y", today.minusYears(1).atStartOfDay(Kst.ZONE).toInstant());
+        starts.put("7d", rangeStart("7d", today));
+        starts.put("30d", rangeStart("30d", today));
+        starts.put("1y", rangeStart("1y", today));
         starts.put("2y", null);
         for (Map.Entry<String, Instant> range : starts.entrySet()) {
             JsonNode value = counts.get(range.getKey());

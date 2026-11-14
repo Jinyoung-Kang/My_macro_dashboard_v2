@@ -145,6 +145,11 @@ export const endpoints = {
     excludes: "/api/search/excludes",
     /** DELETE(운영자) — 더한 제외 매체 지우기. */
     exclude: (id: number) => `/api/search/excludes/${segment(String(id))}`,
+    /**
+     * POST `{e, tab, range}`(운영자 — 회원·데모 403) — 그 결과의 받아 둔 줄로 만든 AI 요약(단계 6 묶음 3, 계약 §9-6). 누를 때만 부릅니다
+     * (번역과 하루 글자 상한을 함께 셈, 같은 자료는 서버가 6시간 다시 씀).
+     */
+    summary: "/api/search/summary",
   },
 
   // 화면 실시간 시세(ADR 0024) — 저장하지 않는 외부 조회. 종목은 'US:AAPL'·'KR:005930', SSE는 고른 주기(초)마다 서버가 밀어 줌

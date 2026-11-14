@@ -1,6 +1,5 @@
 package com.macrodash.feature.info;
 
-import com.macrodash.Kst;
 import com.macrodash.feature.ai.AiService;
 import com.macrodash.store.TranslationStore;
 import jakarta.annotation.PreDestroy;
@@ -34,7 +33,8 @@ import java.util.regex.Pattern;
  *   <li><b>제목</b>: 화면에서 그 제목의 번역 단추를 누를 때 번역합니다({@link #titles} — 미리 번역하지 않음, 2026-11-12 사용자 지시).</li>
  *   <li><b>본문·요약</b>: 화면에서 번역 단추를 누를 때만 번역합니다({@link #body}). 긴 글은 문단 경계에서 조각으로 나눠 조각마다 저장하므로, 중간에
  *       실패해도 다시 누르면 남은 조각만 번역합니다.</li>
- *   <li><b>상한</b>: KST 하루에 번역하는 원문 글자 수({@code dashboard.info.translate.daily-chars})를 넘기면 그날은 더 부르지 않습니다.</li>
+ *   <li><b>상한</b>: KST 하루에 번역하는 원문 글자 수({@code dashboard.info.translate.daily-chars})를 넘기면 그날은 더 부르지 않습니다. 정보 검색 AI
+ *       요약(계약 §9-6)이 보낸 글자도 함께 셉니다({@link InfoAiBudget}).</li>
  *   <li>모의 매매의 Claude 호출 상한({@code PaperApiCalls})과는 따로입니다 — 그 수를 쓰지 않고, 그 기록에도 남지 않습니다.</li>
  *   <li>원문은 수집한 글이라 믿을 수 없는 글자입니다. 번역 지시는 시스템 프롬프트에만 두고, 응답은 스키마로 모양을 강제합니다.</li>
  * </ul>
@@ -157,7 +157,8 @@ public class InfoTranslator {
     private volatile Instant geminiRestUntil = Instant.EPOCH;
     private volatile Instant geminiLowerRestUntil = Instant.EPOCH;
     private final String effort;
-    private final long dailyChars;
+    /** 하루 글자 상한 — 번역 표와 정보 검색 AI 요약이 함께 씁니다. */
+    private final InfoAiBudget budget;
     private final int timeoutSeconds;
     /** 본문 조각을 함께 번역하는 일꾼(조각 셋까지 동시에). */
     private final ExecutorService pool = Executors.newFixedThreadPool(3, runnable -> {
@@ -167,21 +168,28 @@ public class InfoTranslator {
     });
 
     @Autowired
-    public InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, ObjectMapper mapper,
+    public InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, InfoAiBudget budget, ObjectMapper mapper,
                           @Value("${dashboard.info.translate.engine:auto}") String engine,
                           @Value("${dashboard.info.translate.model:claude-haiku-5-5}") String model,
                           @Value("${dashboard.info.translate.gemini-model:gemini-3.5-flash}") String geminiModel,
                           @Value("${dashboard.info.translate.gemini-lower-model:gemini-3.5-flash-lite}") String geminiLowerModel,
                           @Value("${dashboard.info.translate.effort:low}") String effort,
-                          @Value("${dashboard.info.translate.daily-chars:1500000}") long dailyChars,
                           @Value("${dashboard.info.translate.timeout-seconds:90}") int timeoutSeconds,
                           @Value("${dashboard.info.translate.gemini-timeout-seconds:45}") int geminiTimeoutSeconds) {
-        this(ai, gemini, store, mapper, engine, model, geminiModel, geminiLowerModel, effort, dailyChars, timeoutSeconds, geminiTimeoutSeconds,
+        this(ai, gemini, store, budget, mapper, engine, model, geminiModel, geminiLowerModel, effort, timeoutSeconds, geminiTimeoutSeconds,
                 Clock.systemUTC());
     }
 
+    /** 시험용 — 상한을 혼자 쓰는 번역(요약 몫 없음). */
     InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, ObjectMapper mapper, String engine, String model,
                    String geminiModel, String geminiLowerModel, String effort, long dailyChars, int timeoutSeconds,
+                   int geminiTimeoutSeconds, Clock clock) {
+        this(ai, gemini, store, new InfoAiBudget(store, dailyChars, clock), mapper, engine, model, geminiModel, geminiLowerModel, effort,
+                timeoutSeconds, geminiTimeoutSeconds, clock);
+    }
+
+    InfoTranslator(AiService ai, GeminiClient gemini, TranslationStore store, InfoAiBudget budget, ObjectMapper mapper, String engine,
+                   String model, String geminiModel, String geminiLowerModel, String effort, int timeoutSeconds,
                    int geminiTimeoutSeconds, Clock clock) {
         this.ai = ai;
         this.gemini = gemini;
@@ -192,7 +200,7 @@ public class InfoTranslator {
         this.geminiLowerModel = geminiLowerModel == null || geminiLowerModel.isBlank() || geminiLowerModel.strip().equals(geminiModel)
                 ? null : geminiLowerModel.strip();
         this.effort = effort;
-        this.dailyChars = dailyChars;
+        this.budget = budget;
         this.timeoutSeconds = timeoutSeconds;
         this.geminiTimeoutSeconds = geminiTimeoutSeconds;
         this.clock = clock;
@@ -309,7 +317,10 @@ public class InfoTranslator {
         return model;
     }
 
-    /** 번역의 지금 설정과 오늘(KST) 쓴 양 — 정보(메커니즘) 화면용. 표가 없으면 usedCharsToday는 null. */
+    /**
+     * 번역의 지금 설정과 오늘(KST) 쓴 양 — 정보(메커니즘) 화면용. usedCharsToday는 상한에 세는 양(번역 표 + 정보 검색 AI 요약 — {@link InfoAiBudget}),
+     * 표가 없으면 null.
+     */
     public Map<String, Object> status() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("engine", useGemini ? "gemini" : "claude");
@@ -319,8 +330,8 @@ public class InfoTranslator {
         // Gemini 전체를 건너뛰는 중인가 — 1순위와 (있으면) 아래 모델이 모두 쉬는 중.
         out.put("geminiResting", useGemini && resting(geminiRestUntil) && (geminiLowerModel == null || resting(geminiLowerRestUntil)));
         out.put("effort", effort);
-        out.put("dailyChars", dailyChars);
-        out.put("usedCharsToday", store.ready() ? store.charsSince(Kst.today(clock).atStartOfDay(Kst.ZONE).toInstant()) : null);
+        out.put("dailyChars", budget.dailyChars());
+        out.put("usedCharsToday", store.ready() ? budget.usedToday() : null);
         out.put("titleBatch", TITLE_BATCH);
         out.put("bodyChunkChars", BODY_CHUNK_CHARS);
         out.put("bodyMaxChars", BODY_MAX_CHARS);
@@ -515,12 +526,16 @@ public class InfoTranslator {
         return new Part(null, called.model());
     }
 
-    /** 오늘(KST) 번역한 글자 수에 {@code chars}를 더하면 하루 상한을 넘는가 → 넘으면 안내 글, 아니면 null. */
+    /**
+     * 오늘(KST) 쓴 글자 수(번역 표 + 정보 검색 AI 요약 — {@link InfoAiBudget#usedToday()})에 {@code chars}를 더하면 하루 상한을 넘는가 → 넘으면 안내 글,
+     * 아니면 null.
+     */
     private String overBudget(int chars) {
-        Instant dayStart = Kst.today(clock).atStartOfDay(Kst.ZONE).toInstant();
-        long used = store.charsSince(dayStart);
+        long used = budget.usedToday();
+        long dailyChars = budget.dailyChars();
         if (used + chars > dailyChars) {
-            return "오늘 번역량 상한(원문 %,d자)에 닿아 번역하지 않았습니다(오늘 %,d자 씀) — 내일 다시 됩니다".formatted(dailyChars, used);
+            return "오늘 번역량 상한(원문 %,d자 — 정보 검색 AI 요약과 함께 셈)에 닿아 번역하지 않았습니다(오늘 %,d자 씀) — 내일 다시 됩니다"
+                    .formatted(dailyChars, used);
         }
         return null;
     }

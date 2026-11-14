@@ -141,6 +141,25 @@ class InfoTranslatorTest {
     }
 
     @Test
+    @DisplayName("하루 상한은 정보 검색 AI 요약과 함께 센다(InfoAiBudget) — 요약이 쓴 양 때문에 넘으면 번역도 부르지 않고, 화면의 오늘 쓴 양에 요약 몫이 든다")
+    void dailyBudgetSharedWithSearchSummary() {
+        Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        when(store.charsSince(any())).thenReturn(10L);
+        InfoAiBudget budget = new InfoAiBudget(store, 100, clock);
+        assertThat(budget.reserve(80)).as("요약이 80자를 보냄").isNull();
+        InfoTranslator shared = new InfoTranslator(ai, gemini, store, budget, new ObjectMapper(), "auto", MODEL, GEMINI, LOWER, "low", 30, 20,
+                clock);
+
+        InfoTranslator.Titles titles = shared.titles(List.of("Fed holds rates"));          // 15자 — 10 + 80 + 15 > 100
+
+        assertThat(titles.errorKind()).isEqualTo("BUDGET");
+        assertThat(titles.error()).contains("90");
+        verify(ai, never()).structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt());
+        verify(gemini, never()).structured(anyString(), anyString(), anyString(), any(), anyInt());
+        assertThat(shared.status()).containsEntry("usedCharsToday", 90L).containsEntry("dailyChars", 100L);
+    }
+
+    @Test
     @DisplayName("모델 실패는 그대로 알리고 저장하지 않는다")
     void titleFailure() {
         when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(failed("RATE_LIMIT"));
