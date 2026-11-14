@@ -825,7 +825,7 @@ def test_Finviz는_미국_종목의_뉴스에_받는_중으로_먼저_보이고_
     assert (row["status"], row["message"], row["count"]) == ("pending", "받는 중 — 몇 초 뒤 채움", 0)
     assert first["pending"] is True and first["finvizQueued"] is True
     assert [args[:2] for args in net.budget] == [("finviz.com", "search")]
-    assert search_finviz.wait_idle(5) and net.urls == ["https://finviz.com/quote.ashx?t=SCHP"]
+    assert search_finviz.wait_idle(5) and net.urls == ["https://finviz.com/stock?t=SCHP"]
 
     second = search.feed("us:SCHP", "news", owner=False, external=True)
     row = _row(second, "finviz")

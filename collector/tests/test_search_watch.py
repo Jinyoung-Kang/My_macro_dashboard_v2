@@ -276,7 +276,7 @@ def test_대상의_글을_저장본과_구글·Bing에서_모아_규칙을_거�
 
     assert detail.startswith("관심 대상 1/1곳 처리 · 새 글 4건 · 바깥 요청 5건")
     assert sorted((call[0], call[1]) for call in world.calls) == [("bing", "en"), ("bing", "ko"), ("google", "en"), ("google", "ko")]
-    assert world.finviz_urls == ["https://finviz.com/quote.ashx?t=SCHP"], "미국 종목은 Finviz 한 쪽"
+    assert world.finviz_urls == ["https://finviz.com/stock?t=SCHP"], "미국 종목은 Finviz 한 쪽"
     for _, lang, terms, _after in world.calls:
         assert "SCHP" not in terms and "SC" not in terms, "티커·짧은 별칭은 자유 검색어에 넣지 않음"
         assert all(rules.has_hangul(term) == (lang == "ko") for term in terms)
@@ -842,7 +842,7 @@ def test_미국_종목은_Finviz_한_쪽을_watch_예산으로_받아_넣는다(
         (timedelta(hours=5), "Synthetic note on Finviz", "/news/900001/synthetic-note", "Synthetic Blog"),
     )
     detail = task.task_search_watch()
-    assert "바깥 요청 5건" in detail and world.finviz_urls == ["https://finviz.com/quote.ashx?t=SCHP"]
+    assert "바깥 요청 5건" in detail and world.finviz_urls == ["https://finviz.com/stock?t=SCHP"]
     items = _items(store, "us:SCHP")
     row = items["SynthChip wins synthetic contract"]
     assert (row["source"], row["kind"], row["publisher"], row["lang"]) == ("finviz", "news", "Synthetic Wire", "en")

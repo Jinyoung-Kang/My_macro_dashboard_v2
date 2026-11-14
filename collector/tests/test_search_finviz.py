@@ -70,8 +70,9 @@ def test_finviz_호스트_정책과_용도별_예산():
 
 
 def test_종목_화면_주소는_티커_한_쪽뿐이고_점은_줄표로():
-    assert finviz.quote_url("NVDA") == "https://finviz.com/quote.ashx?t=NVDA"
-    assert finviz.quote_url("BRK.B") == "https://finviz.com/quote.ashx?t=BRK-B"
+    # 서버 실측(2026-11-14): quote.ashx?t= 는 /stock?t= 로 옮겨짐 — 새 주소를 바로 물어 옮기는 요청 한 건을 아낌(robots.txt '*'가 막지 않음).
+    assert finviz.quote_url("NVDA") == "https://finviz.com/stock?t=NVDA"
+    assert finviz.quote_url("BRK.B") == "https://finviz.com/stock?t=BRK-B"
 
 
 # ==============================================================================
@@ -231,7 +232,7 @@ def test_처음_부름은_줄에_넣고_받는_중_받은_뒤에는_받음_그�
     first = _ask()
     assert (first.status, first.queued, first.message) == ("pending", True, "받는 중 — 몇 초 뒤 채움")
     assert finviz.wait_idle(5)
-    assert net.urls == ["https://finviz.com/quote.ashx?t=QZXY"] and net.expects == [policy.EXPECT_HTML]
+    assert net.urls == ["https://finviz.com/stock?t=QZXY"] and net.expects == [policy.EXPECT_HTML]
     assert net.budget_calls == [("finviz.com", "search", rules.kst_today(), 60)], "줄에 넣기 전 검색 예산 한 건(KST 날짜)"
     done = _ask()
     assert (done.status, done.queued) == ("ok", False) and [item["title"] for item in done.items] == ["Synthetic Corp beats estimates"]
@@ -339,14 +340,14 @@ def test_형식이_바뀌면_error(net):
 
 
 def test_사유_글과_로그에_티커·경로가_남지_않는다(net, caplog):
-    net.pages[finviz.quote_url(TICKER)] = ladder.FetchFailed(f"finviz.com 읽기 실패 https://finviz.com/quote.ashx?t={TICKER} (HTTP 502)")
+    net.pages[finviz.quote_url(TICKER)] = ladder.FetchFailed(f"finviz.com 읽기 실패 https://finviz.com/stock?t={TICKER} (HTTP 502)")
     with caplog.at_level(logging.DEBUG):
         _ask()
         assert finviz.wait_idle(5)
         answer = _ask()
     assert answer.status == "error" and answer.message.startswith("finviz.com")
-    assert TICKER not in answer.message and "quote.ashx" not in answer.message
-    assert TICKER not in caplog.text and "quote.ashx" not in caplog.text
+    assert TICKER not in answer.message and "/stock" not in answer.message
+    assert TICKER not in caplog.text and "/stock" not in caplog.text
 
 
 # ==============================================================================
@@ -543,7 +544,7 @@ def test_줄_만들기의_예상_밖_예외도_형식이_바뀜이고_관심_대
 
 
 def test_종목_화면이_아닌_곳으로_옮겨진_답은_쓰지_않는다(net):
-    """같은 호스트 안의 리다이렉트(로그인·유료·검색 화면)를 따라간 답은 뉴스 표가 있어도 쓰지 않음 — quote.ashx 한 쪽만."""
+    """같은 호스트 안의 리다이렉트(로그인·유료·검색 화면)를 따라간 답은 뉴스 표가 있어도 쓰지 않음 — 종목 화면 한 쪽만."""
     net.final_urls[finviz.quote_url(TICKER)] = "https://finviz.com/login.ashx?next=synthetic"
     _ask()
     assert finviz.wait_idle(5)
@@ -553,7 +554,9 @@ def test_종목_화면이_아닌_곳으로_옮겨진_답은_쓰지_않는다(net
     net.final_urls[finviz.quote_url("SYNB")] = "https://finviz.com/elite.ashx"
     moved = finviz.for_watch("SYNB", take=lambda: True)
     assert (moved.failure, moved.items) == (finviz.MOVED, ())
-    assert finviz.for_watch("SYNC", take=lambda: True).items, "quote.ashx에 머문 답은 그대로 씀"
+    assert finviz.for_watch("SYNC", take=lambda: True).items, "종목 화면(/stock)에 머문 답은 그대로 씀"
+    net.final_urls[finviz.quote_url("SYND")] = "https://finviz.com/quote.ashx?t=SYND"
+    assert finviz.for_watch("SYND", take=lambda: True).items, "옛 종목 화면 주소(/quote.ashx)로 끝난 답도 씀"
 
 
 def test_관심_대상_수집은_계층_올림에_필요한_시간이_남을_때만_Finviz를_묻는다(net):

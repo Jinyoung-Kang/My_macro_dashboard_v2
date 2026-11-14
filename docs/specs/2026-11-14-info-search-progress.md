@@ -301,8 +301,15 @@ D-9 — 실측에서 보인 중화권 영어 매체: **DigiTimes**(대만, Finvi
 - `make test`: 수집기 2,930 · 백엔드 3,392 · 화면 2,463 통과. 그 뒤 고친 수집기 부분은 관련 묶음을 DB와 함께 다시 돌려 583건 통과.
 
 
+- **23:36 KST Vultr 배포**(main@408d7161, CI 6/6). 서버에서 실제 경로로 불러 보니 첫 부름은 `pending`이었고, 결과는 '종목 화면이 아닌 곳으로 옮겨짐'이었습니다.
+  - 원인: Finviz가 옛 주소 `quote.ashx?t=NVDA`를 새 주소 `/stock?t=NVDA`로 옮기고 같은 종목 화면(뉴스 표 있음)을 줍니다.
+  - `robots.txt`의 `*` 묶음(89줄)은 `/stock`·`/quote.ashx`를 막지 않습니다(막는 것은 스크리너·내려받기 경로).
+  - 고침: 새 주소를 바로 묻고, 최종 주소는 `/stock`·`/quote.ashx`를 받습니다. 옮기는 요청 한 건도 아낍니다.
+  - 새 주소의 실제 화면을 배포된 파서로 읽어 보니 100줄이었습니다. 매체는 Yahoo Finance·Barrons·MarketWatch 13, Stocktwits 9, Investing.com 8, Reuters 6 순이고, Finviz 안쪽 링크는 6줄입니다.
+  - Yahoo의 같은 기사 3건과 시각을 대조했습니다. 2건이 0·1분 차이라 **미국 동부로 읽는 것이 맞습니다.** 1건은 15시간 21분 차이로, 24·12시간 배수가 아니어서 Yahoo가 나중에 다시 실은 것으로 보입니다.
+
 ## 남은 확인
 
 - (닫힘, 2026-11-14 사용자 결정) 대만 매체·StreetInsider·Investing.com·South China Morning Post·소유가 불확실한 매체(Webull·Tiger·AInvest 등)는 수집 허용 —
   제외 목록에서 뺐고, 지금 쓰는 Investing.com 사건 뉴스 RSS 넷(모의 매매 패킷 입력)·정보 수집·종목 상세 링크도 그대로 둡니다.
-- Finviz 시각의 시간대(미국 동부로 보임) — 단계 5에서 원문 기사 시각과 몇 건 대조.
+- (닫힘, 2026-11-14) Finviz 시각의 시간대 — 미국 동부(Yahoo 같은 기사 0·1분 차이).

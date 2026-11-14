@@ -341,7 +341,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - `fetch/policy.py` `POLICIES`에 `HostPolicy("finviz.com", (TIER_IMPERSONATE, TIER_BROWSER), daily_budget=250)` — 계층 1 → 계층 2(한 번 올림, 기존 규칙). 계층 예산 250은
   호스트 전체(올림·되돌림 포함)이고, 그 안에서 용도별 하루 예산을 `fetch_budgets`로 따로 셉니다: `search` 60 · `watch` 100(KST 날짜). `compose.vultr.yml`
   `BROWSER_ALLOWED_HOSTS`에 `finviz.com`(대조 시험). 리디렉트로 다른 호스트(`www.finviz.com` 등)가 나오면 표에 없어 실패로 끝남(그대로 — 넓히지 않음).
-- 받는 것: `https://finviz.com/quote.ashx?t=<티커>` 한 쪽의 뉴스 표(`id="news-table"`)만 — 시각·제목·매체·링크. 'Show Previous News'·`news.ashx`·유료·로그인·차트·
+- 받는 것: `https://finviz.com/stock?t=<티커>`(배포 뒤 서버 실측 2026-11-14 — 옛 주소 `quote.ashx?t=`는 `/stock?t=`로 옮겨짐, `robots.txt`의 `*`는 둘 다 막지 않음; 최종 주소가 `/stock`·`/quote.ashx`가 아니면 쓰지 않음) 한 쪽의 뉴스 표(`id="news-table"`)만 — 시각·제목·매체·링크. 'Show Previous News'·`news.ashx`·유료·로그인·차트·
   시세·스크리너·내려받기·Finviz 안쪽 글의 본문은 받지 않음. 검색 한 번이 보내는 요청은 1건(계층 올림 1건 더 가능).
 - 넓히지 않는 것(D-2): 프록시·IP 돌려쓰기, 퍼즐 풀이, 로그인·유료 장벽, 거부당한 뒤 다른 길로 다시 시도. 서버 IP로 지나가지 못하면 빼고 보고.
 
@@ -356,6 +356,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
   같이 걸림(관심 대상 수집의 다음 성공이 지움). 형식이 바뀌면(뉴스 표 없음) `error`("형식이 바뀜").
 
 ### 8-3. 줄 만들기
+- 시각은 미국 동부 — 서버 실측(2026-11-14): Yahoo의 같은 기사 3건 가운데 2건이 0·1분 차이(1건은 15시간 21분 — Yahoo가 나중에 다시 실은 것으로 보임, 24·12시간 배수 아님).
 - 표의 줄마다: 날짜 칸이 `Nov-13-26 11:24PM`이면 날짜와 시각, `10:40PM`이면 앞 줄의 날짜를 이어받음, `Today 10:40PM`이면 그날(미국 동부) — 시각은 **미국 동부**
   (`America/New_York`, 단계 5 배포 뒤 다른 출처의 같은 기사 시각과 몇 건 대조해 진행 기록에 남김). 날짜를 알 수 없는 줄은 시각 모름.
 - FeedItem: `kind:"news"`(뉴스·블로그를 가를 근거가 없으면 뉴스 — 지어내지 않음), `source:"finviz"`, 라벨 'Finviz 종목 뉴스', `title`(앵커 글), `url`(절대 주소 — 상대

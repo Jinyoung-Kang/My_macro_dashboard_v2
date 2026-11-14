@@ -3,10 +3,11 @@ app/services/search_finviz.py
 정보 검색 단계 5 — Finviz 종목 뉴스(ADR 0041 결정 10, 계약 docs/specs/2026-11-14-info-search-contract.md §8). **화면의 요청이 차단 통과
 계층(app/fetch)을 부르는 첫 길**이라 아래를 모두 지킵니다. 결과는 회원에게도 보이고, 모의 매매의 입력이 아닙니다.
 
-- 받는 것: ``https://finviz.com/quote.ashx?t=<티커>`` 한 쪽의 뉴스 표(``id="news-table"``)에서 시각·제목·매체·링크만(최대 100줄). 'Show Previous
+- 받는 것: ``https://finviz.com/stock?t=<티커>`` 한 쪽의 뉴스 표(``id="news-table"``)에서 시각·제목·매체·링크만(최대 100줄). 'Show Previous
   News'·``news.ashx``·유료·로그인·차트·시세·스크리너·내려받기·Finviz 안쪽 글의 본문은 받지 않습니다. 검색 한 번이 보내는 요청은 1건(계층 올림
   1건 더 가능). 프록시·IP 돌려쓰기·퍼즐 풀이·로그인은 하지 않고, 거부당하면 다른 길로 다시 시도하지 않습니다. 같은 호스트 안의 다른 화면(로그인·
-  유료·검색 등)으로 옮겨진 답은 뉴스 표가 있어도 쓰지 않습니다(:data:`MOVED` — 최종 주소가 ``/quote.ashx``가 아님). 계층은 표 안의 호스트로 가는
+  유료·검색 등)으로 옮겨진 답은 뉴스 표가 있어도 쓰지 않습니다(:data:`MOVED` — 최종 주소가 종목 화면 ``/stock``·``/quote.ashx``가 아님; 서버 실측 2026-11-14: 옛 주소 ``quote.ashx?t=``는 ``/stock?t=``로 옮겨짐 —
+  새 주소를 바로 물어 옮기는 요청을 아낌, robots.txt의 ``*``는 둘 다 막지 않음). 계층은 표 안의 호스트로 가는
   리다이렉트를 따라가므로 그 홉의 요청까지 막지는 못합니다(계층에 '따라가지 않음' 선택이 생기면 그것을 씀).
 - 서버에서만: 계층은 ``POLITE_FETCH_ENABLED``를 보지 않으므로 이 길이 직접 확인합니다(``polite.enabled()``). 꺼진 곳(로컬·QA)은 줄에 넣지
   않고 상태 ``server_only`` — 예산·계층·네트워크 0건.
@@ -50,7 +51,7 @@ from . import search_sources as sources
 logger = logging.getLogger(__name__)
 
 HOST = "finviz.com"
-QUOTE_URL = "https://finviz.com/quote.ashx"
+QUOTE_URL = "https://finviz.com/stock"
 BASE_URL = "https://finviz.com/"
 SOURCE = "finviz"
 LABEL = "Finviz 종목 뉴스"
@@ -80,7 +81,7 @@ QUEUE_FULL = "대기열이 가득 참 — 잠시 뒤 다시"
 SHAPE_CHANGED = "형식이 바뀜"
 MOVED = "Finviz 종목 화면이 아닌 곳으로 옮겨짐 — 쓰지 않음"
 TIME_SHORT = "태스크 시간이 모자라 다음 깨기"
-QUOTE_PATH = "/quote.ashx"
+QUOTE_PATHS = ("/stock", "/quote.ashx")           # 종목 화면(새 주소·옛 주소)
 
 _MONTHS = {name: number for number, name in enumerate(
     ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
@@ -234,12 +235,12 @@ def _fetch_page(url: str) -> ladder.Fetched:
 
 
 def _on_quote_page(url: str) -> bool:
-    """답의 최종 주소가 finviz.com의 종목 화면(``/quote.ashx``)인가 — 같은 호스트의 로그인·유료·검색 화면으로 옮겨진 답을 가름."""
+    """답의 최종 주소가 finviz.com의 종목 화면(``/stock``·옛 ``/quote.ashx``)인가 — 같은 호스트의 로그인·유료·검색 화면으로 옮겨진 답을 가름."""
     try:
         parts = urlsplit(url or "")
     except ValueError:
         return False
-    return (parts.hostname or "").lower() == HOST and parts.path.rstrip("/").lower() == QUOTE_PATH
+    return (parts.hostname or "").lower() == HOST and parts.path.rstrip("/").lower() in QUOTE_PATHS
 
 
 def _fetch_outcome(ticker: str) -> _Outcome:
