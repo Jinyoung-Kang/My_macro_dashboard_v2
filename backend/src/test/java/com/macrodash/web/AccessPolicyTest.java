@@ -125,7 +125,7 @@ class AccessPolicyTest {
         java.util.List<String> owner = java.util.List.of("POST /api/search/excludes", "DELETE /api/search/excludes/{id}");
         assertThat(declared).containsExactlyInAnyOrder("GET /api/search/suggest", "GET /api/search/resolve",
                 "GET /api/search/entity", "GET /api/search/feed", "GET /api/search/recent", "GET /api/search/watch",
-                "POST /api/search/watch", "DELETE /api/search/watch/{id}", "POST /api/search/watch/{id}/seen",
+                "POST /api/search/watch", "DELETE /api/search/watch/{id}", "PATCH /api/search/watch/{id}", "POST /api/search/watch/{id}/seen",
                 "GET /api/search/excludes", "POST /api/search/excludes", "DELETE /api/search/excludes/{id}",
                 "GET /api/search/links");
         declared.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route)
@@ -137,6 +137,7 @@ class AccessPolicyTest {
         }
         assertThat(AccessPolicy.required("POST", "/api/search/watch")).isEqualTo(AccessPolicy.Access.MEMBER);
         assertThat(AccessPolicy.required("DELETE", "/api/search/watch/12")).isEqualTo(AccessPolicy.Access.MEMBER);
+        assertThat(AccessPolicy.required("PATCH", "/api/search/watch/12")).isEqualTo(AccessPolicy.Access.MEMBER);
         assertThat(AccessPolicy.required("POST", "/api/search/watch/12/seen")).isEqualTo(AccessPolicy.Access.MEMBER);
         assertThat(AccessPolicy.required("POST", "/api/search/excludes")).isEqualTo(AccessPolicy.Access.OWNER);
         assertThat(AccessPolicy.required("DELETE", "/api/search/excludes/3")).isEqualTo(AccessPolicy.Access.OWNER);

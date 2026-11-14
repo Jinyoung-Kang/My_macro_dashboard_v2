@@ -30,6 +30,23 @@ class AlertServiceTest {
     private static final CurrentUser PRO = new CurrentUser(2, "p@x", "MEMBER", "PRO", null);
 
     @Test
+    @DisplayName("알림함 줄에 화면 안 주소(payload.href)를 싣는다 — 없으면 payload null(정보 검색 관심 대상 알림, 단계 6)")
+    void inboxCarriesInAppHref() {
+        AlertStore store = mock(AlertStore.class);
+        AlertService service = new AlertService(store, MAPPER);
+        java.time.Instant at = java.time.Instant.parse("2026-11-15T01:00:00Z");
+        when(store.inbox(1, 50)).thenReturn(java.util.List.of(
+                new AlertStore.InboxItem(7, "SEARCH_WATCH", java.time.LocalDate.of(2026, 11, 15), "관심 대상 '합성칩' 새 글 2건", "제목 하나", false,
+                        at, null, "/search?e=us:SCHP&tab=timeline"),
+                new AlertStore.InboxItem(8, "REGIME_CHANGE", java.time.LocalDate.of(2026, 11, 15), "국면 전환", "본문", false, at, null, null)));
+
+        java.util.List<java.util.Map<String, Object>> rows = service.inbox(FREE, 50);
+
+        assertThat(rows.get(0).get("payload")).isEqualTo(java.util.Map.of("href", "/search?e=us:SCHP&tab=timeline"));
+        assertThat(rows.get(1)).containsEntry("payload", null);
+    }
+
+    @Test
     @DisplayName("무료는 국면 전환 1개만, 유료는 종류·대상 검사를 통과해야 만든다")
     void rulesByTier() {
         AlertStore store = mock(AlertStore.class);

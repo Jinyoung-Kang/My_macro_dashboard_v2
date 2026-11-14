@@ -4,11 +4,13 @@ import com.macrodash.Kst;
 import com.macrodash.collector.CollectorClient;
 import com.macrodash.config.AppProperties;
 import com.macrodash.read.StoreReader;
+import com.macrodash.store.SearchWatchStore;
 import com.macrodash.support.CurrentUser;
 import com.macrodash.support.InvalidRequestException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -42,7 +44,8 @@ import java.util.regex.Pattern;
  * 사라지므로 여기서 먼저 막습니다). ② 데모 열람·읽기 모드 {@code store_only}면 {@code external=false}(수집기가 외부를 부르지 않고 저장본·캐시만),
  * 운영자면 {@code owner=true}. ③ 글·논평 탭은 운영자만(403). ④ 회원에게 가는 결과에서 운영자 전용 줄(수집 글·거장 견해·속보)을 한 번 더 지움
  * (수집기에 owner=false를 보냈어도 — 이중 방어). ⑤ Finviz를 새로 줄에 넣는 횟수를 사용자마다 한 시간 한도로 셈(계약 §8-5). 2년 자르기·중국어
- * 제목·매체 거름은 수집기가 원본이라 다시 구현하지 않습니다.
+ * 제목·매체 거름은 수집기가 원본이라 다시 구현하지 않습니다. ⑥ 결과를 부른 사용자가 그 대상을 관심 대상으로 등록했으면 그 줄의 별칭을 수집기에 넘김(계약 §9-4 —
+ * 수집기가 대상 별칭에 합쳐 검색식을 만듦).
  *
  * <p>검색어와 대상 키는 로그에 남기지 않습니다(결정 12). 정보 검색 자료는 모의 매매의 입력이 아닙니다.
  */
@@ -69,6 +72,8 @@ public class SearchService {
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
     private static final Pattern SPACES = Pattern.compile("(?U)\\s+");
     private static final String TOPIC = "topic:";
+    /** Wikidata 키의 머리 — 결과 경로가 대표 키로 등록한 줄을 식별자로 찾을 때 씀. */
+    private static final String WIKIDATA = "wd:";
 
     /** '지금 새로 받기'(feed?refresh=1)의 사용자당 간격(계약 §6-4) — 출처 캐시를 건너뛰어 외부 호출이 늘기 때문입니다. */
     static final Duration REFRESH_INTERVAL = Duration.ofMinutes(10);
@@ -92,6 +97,8 @@ public class SearchService {
 
     private final StoreReader store;
     private final CollectorClient collector;
+    /** 관심 대상 표(별칭을 읽음) — 시험에서는 없을 수 있습니다(null이면 별칭을 넘기지 않음). */
+    private final SearchWatchStore watches;
     private final Clock clock;
     /**
      * 사용자 번호 → 마지막으로 새로 받은 시각. 백엔드 한 프로세스의 메모리라 재기동하면 비워집니다(그래도 한 번 더 받을 뿐 — 출처 캐시와 수집기의
@@ -106,13 +113,18 @@ public class SearchService {
     private final Map<Long, List<Instant>> finvizQueued = new ConcurrentHashMap<>();
 
     @Autowired
-    public SearchService(StoreReader store, CollectorClient collector) {
-        this(store, collector, Clock.systemUTC());
+    public SearchService(StoreReader store, CollectorClient collector, SearchWatchStore watches) {
+        this(store, collector, watches, Clock.systemUTC());
     }
 
     SearchService(StoreReader store, CollectorClient collector, Clock clock) {
+        this(store, collector, null, clock);
+    }
+
+    SearchService(StoreReader store, CollectorClient collector, SearchWatchStore watches, Clock clock) {
         this.store = store;
         this.collector = collector;
+        this.watches = watches;
         this.clock = clock;
     }
 
@@ -188,10 +200,12 @@ public class SearchService {
         boolean applied = refresh && refused == null;
         // external이면 사용자가 있습니다. 외부를 부르지 않는 모드는 수집기가 Finviz를 부르지 않지만(offline) finviz=0도 함께 보냅니다(이중 방어).
         boolean finviz = external && finvizApplies(key, which) && reserveFinviz(user.id(), now);
+        List<String> aliases = watchAliases(user, key);
         boolean[] queued = new boolean[1];
         Map<String, Object> out;
         try {
-            out = relay(() -> collector.liveSearchFeed(key, which, external, owner, applied, finviz), body -> {
+            out = relay(() -> aliases == null ? collector.liveSearchFeed(key, which, external, owner, applied, finviz)
+                    : collector.liveSearchFeed(key, which, external, owner, applied, finviz, aliases), body -> {
                 JsonNode flag = body.remove(FINVIZ_QUEUED);
                 queued[0] = flag != null && flag.isBoolean() && flag.booleanValue();
                 if (!owner) {
@@ -210,6 +224,32 @@ public class SearchService {
             out.put("refreshNote", refused);
         }
         return out;
+    }
+
+    /**
+     * 그 사용자가 이 대상을 관심 대상으로 등록했으면 그 줄의 별칭(계약 §9-4), 아니면 null(인자를 보내지 않음). 같은 키의 줄을 먼저 찾고, 없으면 {@code wd:} 키는
+     * 식별자 {@code ids.wikidata}가 같은 그 사용자의 줄(대표 키 {@code us:}·{@code kr:}·{@code cik:}로 등록한 같은 대상 — 화면 {@code findWatch}가 별칭 편집을
+     * 보이는 줄)을 씁니다. 그런 줄이 여럿이면 등록한 순서로 합칩니다. 넘기는 별칭은 PATCH 규칙에 맞는 것만({@link SearchWatchService#usableAliases} — 등록 때 받은
+     * 60자 넘는 별칭은 뺌), 남는 것이 없으면 null. 데모는 줄이 없고, 표가 없거나 읽지 못하면 별칭 없이 부릅니다(결과를 막지 않음 — 로그에는 예외 종류만, 키·별칭 없이).
+     *
+     * <p>wikidata 식별자가 없는 줄(등록 때 Wikidata를 찾지 못한 상장사)은 {@code wd:} 키로 열면 잇지 못합니다 — 대표 키로 열면 그대로 이어집니다.
+     */
+    private List<String> watchAliases(CurrentUser user, String key) {
+        if (watches == null || user == null || user.demo()) {
+            return null;
+        }
+        try {
+            if (!watches.ready()) {
+                return null;
+            }
+            List<SearchWatchStore.Watch> rows = watches.find(user.id(), key).map(List::of)
+                    .orElseGet(() -> key.startsWith(WIKIDATA) ? watches.findByWikidata(user.id(), key.substring(WIKIDATA.length())) : List.of());
+            List<String> usable = SearchWatchService.usableAliases(rows.stream().flatMap(row -> row.aliases().stream()).toList());
+            return usable.isEmpty() ? null : usable;
+        } catch (DataAccessException e) {
+            log.warn("정보 검색: 관심 대상 별칭을 읽지 못해 대상 별칭만으로 부릅니다: {}", e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     /**

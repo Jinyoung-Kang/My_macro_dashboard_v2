@@ -83,9 +83,10 @@ public final class AccessPolicy {
         member("GET /api/search/suggest", "GET /api/search/resolve", "GET /api/search/entity", "GET /api/search/feed",
                 "GET /api/search/links");
         // 정보 검색 첫 화면·관심 대상(ADR 0041 결정 9) — 회원. 자기 줄만(남의 것 404), 상한 회원 10·운영자 50·서버 100은 SearchWatchService,
-        // 데모의 등록·지우기·봤음(POST·DELETE)은 데모 쓰기 금지 규칙이 막음. 매체 제외 목록은 회원이 읽고 더하기·지우기는 운영자만
+        // 데모의 등록·지우기·봤음·별칭과 알림 바꾸기(POST·DELETE·PATCH)는 데모 쓰기 금지 규칙이 막음(store_only의 등록·바꾸기는 서비스가 403).
+        // 매체 제외 목록은 회원이 읽고 더하기·지우기는 운영자만
         member("GET /api/search/recent", "GET /api/search/watch", "POST /api/search/watch", "DELETE /api/search/watch/{id}",
-                "POST /api/search/watch/{id}/seen", "GET /api/search/excludes");
+                "PATCH /api/search/watch/{id}", "POST /api/search/watch/{id}/seen", "GET /api/search/excludes");
         owner("POST /api/search/excludes", "DELETE /api/search/excludes/{id}");
 
         // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)

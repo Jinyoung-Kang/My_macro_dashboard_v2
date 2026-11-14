@@ -718,6 +718,11 @@ class ApiIntegrationTest {
             assertThat(write.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
             assertThat(write.getBody().path("error").asString()).isEqualTo("demo_read_only");
         }
+        // 관심 대상 별칭·알림 바꾸기(PATCH, 계약 §9-4·9-5)도 데모 쓰기 금지 규칙이 막음
+        ResponseEntity<JsonNode> patch = rest.exchange(url("/api/search/watch/1"), HttpMethod.PATCH,
+                new HttpEntity<>(Map.of("notify", true, "aliases", List.of("데모")), demoJson), JsonNode.class);
+        assertThat(patch.getStatusCode()).as("PATCH /api/search/watch/1").isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(patch.getBody().path("error").asString()).isEqualTo("demo_read_only");
 
         // AI 리포트는 데모의 유일한 쓰기(ADR 0014) — 공용 하루 한도(메모리)로 세고 DB에는 쓰지 않습니다.
         // 이 테스트에는 AI 키가 없어 엔진을 못 쓰므로 한도를 쓰기 전에 끝납니다(외부 호출 없음, QA-133).

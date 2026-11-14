@@ -106,6 +106,8 @@ class SearchWatchServiceTest {
         entity.put("key", key);
         entity.put("kind", kind);
         entity.put("name", name);
+        entity.put("nameKo", name != null && name.codePoints().anyMatch(cp -> cp >= 0xAC00 && cp <= 0xD7A3) ? name : null);
+        entity.put("nameEn", key.startsWith("us:") ? key.substring(3) + " Corp" : null);
         entity.put("aliases", List.of(aliases));
         entity.put("ids", ids);
         entity.put("links", List.of());
@@ -150,6 +152,8 @@ class SearchWatchServiceTest {
                 .startsWith("NVIDIA", "Nvidia", "엔비디아", "NVIDIA Corporation").doesNotContain(" ").doesNotHaveDuplicates();
         assertThat(row.ids().path("ticker").asString()).isEqualTo("NVDA");
         assertThat(row.ids().get("cik").isNull()).isTrue();
+        assertThat(watches.names).as("등록 때의 이름 둘(V38) — 정기 수집이 별칭 앞자리에서 짐작하지 않게")
+                .containsExactly(List.of("엔비디아", "NVDA Corp"));
 
         Map<String, Object> item = item(result);
         assertThat(item).containsEntry("key", "us:NVDA").containsEntry("kind", "company").containsEntry("name", "엔비디아")
@@ -712,6 +716,142 @@ class SearchWatchServiceTest {
         }
     }
 
+    // ------------------------------------------------------------------ 별칭·알림 바꾸기(계약 §9-4·9-5)
+
+    private SearchWatchService.Result patch(CurrentUser user, long id, String body) {
+        return service.patch(user, id, body == null ? null : json(body));
+    }
+
+    @Test
+    @DisplayName("별칭 바꾸기 — 앞뒤 공백·가운데 이어진 공백을 정리하고 대소문자만 다른 것은 처음 것 하나로, 이름은 그대로. 응답 item에 별칭·알림")
+    void patchAliases() {
+        long id = watches.seed(MEMBER.id(), "us:NVDA");
+
+        SearchWatchService.Result result = patch(MEMBER, id, "{\"aliases\": [\" NVIDIA \", \"nvidia\", \"엔비디아\", \"NVIDIA   Corp\", \"Nvidia\", \"nvidia corp\"]}");
+
+        assertThat(result.status()).isEqualTo(200);
+        assertThat(result.body()).containsEntry("ok", true).containsKey("message");
+        SearchWatchStore.Watch row = watches.rows.get(0);
+        assertThat(row.aliases()).containsExactly("NVIDIA", "엔비디아", "NVIDIA Corp");
+        assertThat(row.name()).as("이름은 그대로").isEqualTo("us:NVDA");
+        assertThat(item(result)).containsEntry("id", id).containsEntry("aliases", List.of("NVIDIA", "엔비디아", "NVIDIA Corp"))
+                .containsEntry("notify", false).containsEntry("name", "us:NVDA").containsKeys("newCount", "hot");
+        assertThat(row.notifyEnabled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("별칭은 1~12개(겹친 것을 하나로 센 뒤), 하나에 1~60자 — 12개 + 대소문자 겹침과 60자는 받음")
+    void patchAliasBounds() {
+        long id = watches.seed(MEMBER.id(), "topic:HBM");
+        List<String> twelve = new ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            twelve.add("\"Alias" + i + "\"");
+        }
+        twelve.add("\"alias0\"");
+        assertThat(patch(MEMBER, id, "{\"aliases\": [" + String.join(",", twelve) + "]}").status()).isEqualTo(200);
+        assertThat(watches.rows.get(0).aliases()).hasSize(12).startsWith("Alias0");
+        assertThat(patch(MEMBER, id, "{\"aliases\": [\"" + "가".repeat(60) + "\"]}").status()).isEqualTo(200);
+        assertThat(watches.rows.get(0).aliases()).containsExactly("가".repeat(60));
+    }
+
+    @Test
+    @DisplayName("본문이 틀리면 400(바꾸지 않음) — 객체가 아님·칸 없음·별칭이 배열이 아니거나 비었거나 13개·글이 아님·빈 글·61자·제어 글자, 알림이 참·거짓이 아님")
+    void patchRejectsBadBodies() {
+        long id = watches.seed(MEMBER.id(), "topic:HBM");
+        List<String> thirteen = new ArrayList<>();
+        for (int i = 0; i < 13; i++) {
+            thirteen.add("\"a" + i + "\"");
+        }
+        List<String> bad = List.of("[]", "\"aliases\"", "{}", "{\"name\": \"다른 이름\"}", "{\"aliases\": null}", "{\"aliases\": \"NVIDIA\"}",
+                "{\"aliases\": []}", "{\"aliases\": [1]}", "{\"aliases\": [null]}", "{\"aliases\": [\"   \"]}",
+                "{\"aliases\": [\"" + "가".repeat(61) + "\"]}", "{\"aliases\": [\"a\\u0007b\"]}", "{\"aliases\": [\"a\\nb\"]}",
+                "{\"aliases\": [" + String.join(",", thirteen) + "]}", "{\"notify\": \"yes\"}", "{\"notify\": null}", "{\"notify\": 1}",
+                "{\"aliases\": [\"NVIDIA\"], \"notify\": \"on\"}");
+        for (String body : bad) {
+            assertThatThrownBy(() -> patch(MEMBER, id, body)).as(body).isInstanceOf(InvalidRequestException.class);
+        }
+        assertThatThrownBy(() -> service.patch(MEMBER, id, null)).as("본문 없음").isInstanceOf(InvalidRequestException.class);
+        assertThat(watches.writes).isZero();
+        assertThat(watches.rows.get(0).aliases()).containsExactly("topic:HBM");
+    }
+
+    @Test
+    @DisplayName("별칭 정리는 화면과 같은 순서(공백을 줄인 뒤 뗌) — 유니코드 공백(U+00A0·U+2007·U+202F·U+FEFF)뿐인 별칭은 400, 앞뒤에 붙은 것은 떼고 "
+            + "겹침도 그 뒤에 셈. C1 제어 글자(U+0080~U+009F)도 400")
+    void patchAliasUnicodeSpacesAndControls() {
+        long id = watches.seed(MEMBER.id(), "topic:HBM");
+        List<String> bad = List.of("{\"aliases\": [\"\\u00a0\"]}", "{\"aliases\": [\"\\u2007\\u202f\"]}", "{\"aliases\": [\"\\ufeff\"]}",
+                "{\"aliases\": [\"a\\u0085b\"]}", "{\"aliases\": [\"a\\u009fb\"]}", "{\"aliases\": [\"\\u0080\"]}");
+        for (String body : bad) {
+            assertThatThrownBy(() -> patch(MEMBER, id, body)).as(body).isInstanceOf(InvalidRequestException.class);
+        }
+        assertThat(watches.writes).isZero();
+
+        assertThat(patch(MEMBER, id, "{\"aliases\": [\"\\u00a0abc\\u202f\", \"ABC\", \"x\\u00a0\\u00a0y\", \"\\ufeffz\"]}").status()).isEqualTo(200);
+        assertThat(watches.rows.get(0).aliases()).containsExactly("abc", "x y", "z");
+    }
+
+    @Test
+    @DisplayName("결과 경로에 넘길 별칭은 PATCH 규칙에 맞는 것만 — 60자 넘는 별칭(등록 때 받은 100자 별칭·200자 이름)·제어 글자·공백뿐인 것은 빼고 정리한 글로, "
+            + "대소문자만 다른 것은 하나로, 12개까지")
+    void usableAliasesDropInvalid() {
+        List<String> stored = new ArrayList<>(List.of("가".repeat(61), "NVIDIA", "nvidia", "a\u0085b", "\u00a0", " NVIDIA  Corp ", "나".repeat(60)));
+        for (int i = 0; i < 15; i++) {
+            stored.add("Alias" + i);
+        }
+        assertThat(SearchWatchService.usableAliases(stored)).hasSize(12)
+                .startsWith("NVIDIA", "NVIDIA Corp", "나".repeat(60), "Alias0").doesNotContain("가".repeat(61));
+        assertThat(SearchWatchService.usableAliases(List.of("가".repeat(61), "\u2007"))).isEmpty();
+        assertThat(SearchWatchService.usableAliases(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("알림 켜기·끄기 — 자기 줄만, 켜면 목록 줄의 notify가 참, 켠 시각이 알린 시각(켠 뒤 처음 받은 글부터)")
+    void patchNotify() {
+        long id = watches.seed(MEMBER.id(), "us:NVDA");
+        assertThat(items(service.list(MEMBER)).get(0)).containsEntry("notify", false).containsEntry("aliases", List.of("us:NVDA"));
+
+        SearchWatchService.Result on = patch(MEMBER, id, "{\"notify\": true}");
+        assertThat(on.status()).isEqualTo(200);
+        assertThat(item(on)).containsEntry("notify", true);
+        assertThat(watches.rows.get(0).notifiedAt()).isEqualTo(NOW);
+        assertThat(items(service.list(MEMBER)).get(0)).containsEntry("notify", true);
+
+        clock.advance(Duration.ofMinutes(5));
+        SearchWatchService.Result both = patch(MEMBER, id, "{\"notify\": false, \"aliases\": [\"합성 별칭\"]}");
+        assertThat(both.status()).isEqualTo(200);
+        assertThat(item(both)).containsEntry("notify", false).containsEntry("aliases", List.of("합성 별칭"));
+        assertThat(watches.rows.get(0).notifiedAt()).as("끌 때는 그대로").isEqualTo(NOW);
+    }
+
+    @Test
+    @DisplayName("남의 줄·없는 줄은 404, 데모·store_only는 403(본문 검사 전), 표가 없으면 503, 알림 칸(V38)이 없으면 알림만 503")
+    void patchGuards() {
+        long id = watches.seed(MEMBER.id(), "us:NVDA");
+        assertThat(patch(OTHER, id, "{\"notify\": true}").status()).isEqualTo(404);
+        assertThat(patch(MEMBER, id + 99, "{\"aliases\": [\"NVIDIA\"]}").status()).isEqualTo(404);
+        assertThat(patch(DEMO, id, "{\"notify\": true}").status()).isEqualTo(403);
+        assertThat(patch(DEMO, id, "{}").status()).as("데모는 본문 검사 전에 403").isEqualTo(403);
+        assertThat(patch(null, id, "{\"notify\": true}").status()).isEqualTo(403);
+
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
+        SearchWatchService.Result storeOnly = patch(MEMBER, id, "{\"notify\": true}");
+        assertThat(storeOnly.status()).isEqualTo(403);
+        assertThat(storeOnly.body()).containsEntry("reason", "store_only");
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.AUTO);
+
+        watches.notifyReady = false;
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> listed = (List<Map<String, Object>>) service.list(MEMBER).get("items");
+        assertThat(listed).as("V38 전에는 알림 칸을 모름(null) — 화면이 단추를 숨김, '끔'으로 보이지 않게").isNotEmpty()
+                .allSatisfy(entry -> assertThat(entry).containsEntry("notify", null));
+        assertThat(patch(MEMBER, id, "{\"notify\": true}").status()).isEqualTo(503);
+        assertThat(patch(MEMBER, id, "{\"aliases\": [\"NVIDIA\"]}").status()).as("별칭만은 V38 없이도").isEqualTo(200);
+        watches.ready = false;
+        assertThat(patch(MEMBER, id, "{\"aliases\": [\"NVIDIA\"]}").status()).isEqualTo(503);
+        assertThat(watches.rows.get(0).notifyEnabled()).isFalse();
+    }
+
     /** 고칠 수 있는 시계. */
     static final class MutableClock extends Clock {
         private Instant now;
@@ -752,6 +892,8 @@ class SearchWatchServiceTest {
         List<String> buzzHidden;
         Instant buzzNow;
         boolean ready = true;
+        /** 알림 칸(V38)이 있는가. */
+        boolean notifyReady = true;
         int writes;
         private long sequence;
         private CyclicBarrier barrier;
@@ -784,6 +926,28 @@ class SearchWatchServiceTest {
         }
 
         @Override
+        public boolean notifyReady() {
+            return ready && notifyReady;
+        }
+
+        @Override
+        public synchronized Optional<Watch> patch(long id, long userId, List<String> aliases, Boolean notify, Instant at) {
+            writes++;
+            for (int i = 0; i < rows.size(); i++) {
+                Watch row = rows.get(i);
+                if (row.id() == id && row.userId() == userId) {
+                    boolean on = notify == null ? row.notifyEnabled() : notify;
+                    Instant notifiedAt = Boolean.TRUE.equals(notify) && !row.notifyEnabled() ? at : row.notifiedAt();
+                    Watch changed = new Watch(row.id(), row.userId(), row.entityKey(), row.kind(), row.name(),
+                            aliases == null ? row.aliases() : aliases, row.ids(), row.createdAt(), row.lastSeenAt(), on, notifiedAt);
+                    rows.set(i, changed);
+                    return Optional.of(changed);
+                }
+            }
+            return Optional.empty();
+        }
+
+        @Override
         public synchronized List<Watch> watches(long userId) {
             return rows.stream().filter(row -> row.userId() == userId).toList();
         }
@@ -791,6 +955,12 @@ class SearchWatchServiceTest {
         @Override
         public synchronized Optional<Watch> find(long userId, String entityKey) {
             return rows.stream().filter(row -> row.userId() == userId && row.entityKey().equals(entityKey)).findFirst();
+        }
+
+        @Override
+        public synchronized List<Watch> findByWikidata(long userId, String qid) {
+            return rows.stream().filter(row -> row.userId() == userId && row.ids() != null && row.ids().path("wikidata").isString()
+                    && row.ids().path("wikidata").stringValue().equals(qid)).toList();
         }
 
         @Override
@@ -806,6 +976,17 @@ class SearchWatchServiceTest {
         @Override
         public synchronized boolean watchedByAnyone(String entityKey) {
             return rows.stream().anyMatch(row -> row.entityKey().equals(entityKey));
+        }
+
+        final List<List<String>> names = new java.util.ArrayList<>();
+
+        @Override
+        public Watch insert(long userId, String entityKey, String kind, String name, String nameKo, String nameEn, List<String> aliases,
+                            JsonNode ids, Instant at) {
+            synchronized (this) {
+                names.add(java.util.Arrays.asList(nameKo, nameEn));
+            }
+            return insert(userId, entityKey, kind, name, aliases, ids, at);
         }
 
         @Override
@@ -844,7 +1025,7 @@ class SearchWatchServiceTest {
                 Watch row = rows.get(i);
                 if (row.id() == id && row.userId() == userId) {
                     rows.set(i, new Watch(row.id(), row.userId(), row.entityKey(), row.kind(), row.name(), row.aliases(), row.ids(),
-                            row.createdAt(), at));
+                            row.createdAt(), at, row.notifyEnabled(), row.notifiedAt()));
                     return Optional.of(at);
                 }
             }

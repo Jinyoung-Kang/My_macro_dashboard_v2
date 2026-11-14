@@ -56,6 +56,7 @@ class SearchWatchStoreDbTest {
     void cleanUp() {
         jdbc.update("DELETE FROM search_watch_items WHERE entity_key LIKE ?", MARK + "%");
         jdbc.update("DELETE FROM users WHERE email LIKE 'search-watch-store-test-%@example.invalid'");   // search_watches는 CASCADE
+        jdbc.update("DELETE FROM users WHERE email LIKE 'search-watch-store-owner-%@example.invalid'");
         jdbc.update("DELETE FROM search_media_excludes WHERE value LIKE '%.store-test.invalid' OR value LIKE 'Store Test %'");
     }
 
@@ -63,6 +64,19 @@ class SearchWatchStoreDbTest {
         Long id = jdbc.queryForObject("INSERT INTO users (email, password_hash, role) VALUES (?, 'x', 'MEMBER') RETURNING id",
                 Long.class, EMAIL.formatted(n));
         return id == null ? -1 : id;
+    }
+
+    private long owner(int n) {
+        Long id = jdbc.queryForObject("INSERT INTO users (email, password_hash, role) VALUES (?, 'x', 'OWNER') RETURNING id",
+                Long.class, "search-watch-store-owner-%d@example.invalid".formatted(n));
+        return id == null ? -1 : id;
+    }
+
+    /** 알림 판정용 합성 글 — 제목을 정해 넣습니다(작성 시각을 모르면 null). */
+    private void titled(String key, String itemId, String source, String title, Instant publishedAt, Instant firstSeenAt) {
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
+                        + "VALUES (?, ?, 'news', ?, ?, ?, ?)", key, itemId, title, source,
+                publishedAt == null ? null : Timestamp.from(publishedAt), Timestamp.from(firstSeenAt));
     }
 
     private void item(String key, String itemId, String source, Instant firstSeenAt) {
@@ -93,6 +107,19 @@ class SearchWatchStoreDbTest {
         assertThat(bare.ids().isObject()).as("식별자가 없으면 빈 객체").isTrue();
         assertThat(bare.ids().size()).isZero();
         assertThat(bare.aliases()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("등록 때의 한국어·영문 이름을 V38 칸(name_ko·name_en)에 저장한다 — 수집기 정기 수집이 별칭 앞자리에서 이름을 짐작하지 않게")
+    void storesRegistrationNames() {
+        SearchWatchStore.Watch row = store.insert(alice, MARK + "names", "company", "합성칩", "합성칩", "SynthChip",
+                List.of("합성칩", "SynthChip Corporation"), null, AT);
+        Map<String, Object> names = jdbc.queryForMap("SELECT name_ko, name_en FROM search_watches WHERE id = ?", row.id());
+        assertThat(names).containsEntry("name_ko", "합성칩").containsEntry("name_en", "SynthChip");
+        SearchWatchStore.Watch plain = store.insert(alice, MARK + "plain", "topic", "주제", List.of("주제"), null, AT);
+        Map<String, Object> none = jdbc.queryForMap("SELECT name_ko, name_en FROM search_watches WHERE id = ?", plain.id());
+        assertThat(none.get("name_ko")).isNull();
+        assertThat(none.get("name_en")).isNull();
     }
 
     @Test
@@ -290,6 +317,144 @@ class SearchWatchStoreDbTest {
         hotItem(MARK + "t", "dartOld", "dart", Instant.parse("2027-01-09T15:00:00Z"), Instant.parse("2027-01-12T18:00:00Z"));
 
         assertThat(store.buzz(alice, List.of(), now).get(watch.id())).isEqualTo(new SearchWatchStore.Buzz(4, 0, 30.0));
+    }
+
+    @Test
+    @DisplayName("별칭·알림 바꾸기(계약 §9-4·9-5) — 자기 줄만, 이름은 그대로. 알림을 꺼짐에서 켤 때만 알린 시각을 그때로 두고, 이미 켰거나 끌 때는 그대로")
+    void patchAliasesAndNotify() {
+        assertThat(store.notifyReady()).as("V38 적용").isTrue();
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "p", "topic", "처음 이름", List.of("처음 이름"), null, AT);
+        assertThat(watch.notifyEnabled()).as("기본은 꺼짐").isFalse();
+        assertThat(watch.notifiedAt()).isNull();
+
+        assertThat(store.patch(watch.id(), bob, List.of("남의 별칭"), true, AT)).as("남의 줄").isEmpty();
+        assertThat(store.find(alice, MARK + "p").orElseThrow().aliases()).containsExactly("처음 이름");
+
+        SearchWatchStore.Watch renamed = store.patch(watch.id(), alice, List.of("Synthetic Alias", "합성 별칭"), null, AT.plusSeconds(10)).orElseThrow();
+        assertThat(renamed.aliases()).containsExactly("Synthetic Alias", "합성 별칭");
+        assertThat(renamed.name()).isEqualTo("처음 이름");
+        assertThat(renamed.notifyEnabled()).isFalse();
+        assertThat(renamed.notifiedAt()).isNull();
+
+        Instant on = AT.plusSeconds(60);
+        SearchWatchStore.Watch enabled = store.patch(watch.id(), alice, null, true, on).orElseThrow();
+        assertThat(enabled.notifyEnabled()).isTrue();
+        assertThat(enabled.notifiedAt()).as("켠 시각부터 알림").isEqualTo(on);
+        assertThat(enabled.aliases()).as("별칭은 그대로").containsExactly("Synthetic Alias", "합성 별칭");
+        assertThat(store.patch(watch.id(), alice, null, true, on.plusSeconds(60)).orElseThrow().notifiedAt()).as("이미 켜져 있음").isEqualTo(on);
+        SearchWatchStore.Watch disabled = store.patch(watch.id(), alice, null, false, on.plusSeconds(120)).orElseThrow();
+        assertThat(disabled.notifyEnabled()).isFalse();
+        assertThat(disabled.notifiedAt()).isEqualTo(on);
+
+        Instant again = on.plusSeconds(600);
+        SearchWatchStore.Watch both = store.patch(watch.id(), alice, List.of("하나"), true, again).orElseThrow();
+        assertThat(both.aliases()).containsExactly("하나");
+        assertThat(both.notifyEnabled()).isTrue();
+        assertThat(both.notifiedAt()).isEqualTo(again);
+        assertThat(store.watches(alice)).singleElement().isEqualTo(both);
+    }
+
+    @Test
+    @DisplayName("알림 후보(계약 §9-5) — 알림을 켠 줄의 새 글(새 글 수와 같은 규칙) 가운데 알린 뒤·6시간 안·지금 이하에 처음 받은 글, 회원은 운영자 전용 출처를 세지 않음. 제목은 최근 3개")
+    void notifyCandidatesFollowNewItemRule() {
+        long carol = owner(1);
+        Instant now = AT.plus(Duration.ofHours(10));
+        Instant since = now.minus(Duration.ofHours(6));
+        List<String> hidden = List.of("info", "guru", "wire");
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "w", "topic", "합성 대상", List.of("합성 대상"), null, AT);
+        SearchWatchStore.Watch quiet = store.insert(bob, MARK + "w", "topic", "합성 대상", List.of("합성 대상"), null, AT);
+        SearchWatchStore.Watch mine = store.insert(carol, MARK + "w", "topic", "합성 대상", List.of("합성 대상"), null, AT);
+        store.patch(watch.id(), alice, null, true, AT);
+        store.patch(mine.id(), carol, null, true, AT);
+        titled(MARK + "w", "seen", "google_en", "본 뒤가 아님", null, AT.minusSeconds(60));
+        titled(MARK + "w", "stale", "google_en", "6시간보다 전", AT.plus(Duration.ofHours(2)), now.minus(Duration.ofHours(7)));
+        titled(MARK + "w", "a", "google_en", "합성 제목 A", now.minus(Duration.ofMinutes(90)), now.minus(Duration.ofHours(1)));
+        titled(MARK + "w", "b", "feeds", "합성 제목 B", null, now.minus(Duration.ofHours(2)));
+        titled(MARK + "w", "c", "bing", "합성 제목 C", now.minus(Duration.ofMinutes(30)), now.minus(Duration.ofMinutes(20)));
+        titled(MARK + "w", "d", "google_ko", "합성 제목 D", now.minus(Duration.ofHours(5)), now.minus(Duration.ofHours(3)));
+        titled(MARK + "w", "backfill", "google_ko", "등록 전 글", AT.minus(Duration.ofDays(30)), now.minus(Duration.ofMinutes(30)));
+        titled(MARK + "w", "wire", "wire", "운영자 전용 속보", now.minus(Duration.ofMinutes(15)), now.minus(Duration.ofMinutes(10)));
+        titled(MARK + "w", "future", "google_en", "지금 뒤", now.plusSeconds(30), now.plusSeconds(60));
+
+        List<SearchWatchStore.NotifyCandidate> candidates = store.notifyCandidates(hidden, since, now);
+
+        assertThat(candidates).extracting(SearchWatchStore.NotifyCandidate::watchId).as("알림을 끈 줄(bob)은 없음")
+                .containsExactly(watch.id(), mine.id());
+        SearchWatchStore.NotifyCandidate member = candidates.get(0);
+        assertThat(member.userId()).isEqualTo(alice);
+        assertThat(member.entityKey()).isEqualTo(MARK + "w");
+        assertThat(member.name()).isEqualTo("합성 대상");
+        assertThat(member.fresh()).as("A·B·C·D").isEqualTo(4);
+        assertThat(member.titles()).as("작성 시각(모르면 처음 받은 시각) 최근 3개").containsExactly("합성 제목 C", "합성 제목 A", "합성 제목 B");
+        SearchWatchStore.NotifyCandidate ownerRow = candidates.get(1);
+        assertThat(ownerRow.fresh()).as("운영자는 속보도 셈").isEqualTo(5);
+        assertThat(ownerRow.titles()).containsExactly("운영자 전용 속보", "합성 제목 C", "합성 제목 A");
+        assertThat(store.newCounts(alice, hidden).get(watch.id())).as("새 글 수는 6시간·지금 조건 없이 같은 규칙").isEqualTo(6);
+        assertThat(quiet.notifyEnabled()).isFalse();
+
+        assertThat(member.notifiedAt()).as("후보는 읽을 때의 알린 시각을 함께 줌").isEqualTo(AT);
+        assertThat(store.markNotified(watch.id(), member.notifiedAt(), now)).isTrue();
+        assertThat(store.markNotified(watch.id(), member.notifiedAt(), now)).as("읽은 뒤 이미 고친 줄은 다시 고치지 않음").isFalse();
+        assertThat(store.markNotified(watch.id(), now, now)).as("같은 시각에 다시 적지 않음").isFalse();
+        assertThat(store.markNotified(quiet.id(), null, now)).as("알림을 끈 줄").isFalse();
+        assertThat(store.find(alice, MARK + "w").orElseThrow().notifiedAt()).isEqualTo(now);
+        assertThat(store.notifyCandidates(hidden, since, now)).as("알린 뒤에 처음 받은 글이 없음")
+                .extracting(SearchWatchStore.NotifyCandidate::watchId).containsExactly(mine.id());
+
+        Instant later = now.plus(Duration.ofMinutes(15));
+        assertThat(store.notifyCandidates(hidden, later.minus(Duration.ofHours(6)), later))
+                .as("지난번에 지금 뒤였던 글은 다음 실행에 셈").filteredOn(c -> c.watchId() == watch.id())
+                .singleElement().satisfies(c -> {
+                    assertThat(c.fresh()).isEqualTo(1);
+                    assertThat(c.titles()).containsExactly("지금 뒤");
+                });
+
+        store.markSeen(watch.id(), alice, later);
+        assertThat(store.notifyCandidates(hidden, later.minus(Duration.ofHours(6)), later))
+                .as("본 뒤에는 새 글이 아님").extracting(SearchWatchStore.NotifyCandidate::watchId).doesNotContain(watch.id());
+    }
+
+    @Test
+    @DisplayName("알린 시각은 읽은 값과 같을 때만 고침(비교 후 설정) — 후보를 읽은 뒤 다른 실행이 먼저 알렸거나 알림을 껐다 켰으면 고치지 않아 같은 글로 두 번 알리지 않음")
+    void markNotifiedComparesWithReadValue() {
+        Instant now = AT.plus(Duration.ofHours(3));
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "cas", "topic", "합성 대상", List.of("합성 대상"), null, AT);
+        store.patch(watch.id(), alice, null, true, AT);
+        titled(MARK + "cas", "a", "google_en", "합성 제목 A", now.minus(Duration.ofMinutes(30)), now.minus(Duration.ofMinutes(20)));
+        SearchWatchStore.NotifyCandidate first = store.notifyCandidates(List.of(), now.minus(Duration.ofHours(6)), now).stream()
+                .filter(c -> c.watchId() == watch.id()).findFirst().orElseThrow();
+        SearchWatchStore.NotifyCandidate second = store.notifyCandidates(List.of(), now.minus(Duration.ofHours(6)), now.plusSeconds(1)).stream()
+                .filter(c -> c.watchId() == watch.id()).findFirst().orElseThrow();
+
+        assertThat(store.markNotified(first.watchId(), first.notifiedAt(), now)).isTrue();
+        assertThat(store.markNotified(second.watchId(), second.notifiedAt(), now.plusSeconds(1))).as("다른 실행이 먼저 알림").isFalse();
+        assertThat(store.find(alice, MARK + "cas").orElseThrow().notifiedAt()).isEqualTo(now);
+
+        SearchWatchStore.NotifyCandidate stale = store.notifyCandidates(List.of(), now.minus(Duration.ofHours(6)), now.plusSeconds(60)).stream()
+                .filter(c -> c.watchId() == watch.id()).findFirst().orElse(null);
+        assertThat(stale).as("알린 뒤 새 글 없음").isNull();
+        titled(MARK + "cas", "b", "google_en", "합성 제목 B", now.plusSeconds(30), now.plusSeconds(40));
+        SearchWatchStore.NotifyCandidate before = store.notifyCandidates(List.of(), now.minus(Duration.ofHours(6)), now.plusSeconds(60)).stream()
+                .filter(c -> c.watchId() == watch.id()).findFirst().orElseThrow();
+        store.patch(watch.id(), alice, null, false, now.plusSeconds(50));
+        store.patch(watch.id(), alice, null, true, now.plusSeconds(55));
+        assertThat(store.markNotified(before.watchId(), before.notifiedAt(), now.plusSeconds(60))).as("읽은 뒤 껐다 켬 — 켠 뒤 글부터").isFalse();
+        assertThat(store.find(alice, MARK + "cas").orElseThrow().notifiedAt()).isEqualTo(now.plusSeconds(55));
+    }
+
+    @Test
+    @DisplayName("식별자 wikidata로 내 줄 찾기 — wd: 키로 연 대상을 대표 키로 등록한 줄과 잇습니다(남의 줄·다른 식별자는 아님, 등록한 순서)")
+    void findByWikidataOwnRowsOnly() {
+        tools.jackson.databind.node.ObjectNode ids = MAPPER.createObjectNode().put("wikidata", "Q182477").put("ticker", "NVDA");
+        SearchWatchStore.Watch mine = store.insert(alice, MARK + "wd1", "company", "합성 회사", List.of("합성 회사"), ids, AT);
+        SearchWatchStore.Watch later = store.insert(alice, MARK + "wd2", "company", "합성 회사 둘", List.of("합성 회사 둘"), ids, AT.plusSeconds(5));
+        store.insert(bob, MARK + "wd1", "company", "합성 회사", List.of("합성 회사"), ids, AT);
+        store.insert(alice, MARK + "wd3", "company", "다른 회사", List.of("다른 회사"), MAPPER.createObjectNode().put("wikidata", "Q95"), AT);
+        store.insert(alice, MARK + "wd4", "topic", "식별자 없음", List.of("식별자 없음"), null, AT);
+
+        assertThat(store.findByWikidata(alice, "Q182477")).extracting(SearchWatchStore.Watch::id).containsExactly(mine.id(), later.id());
+        assertThat(store.findByWikidata(bob, "Q95")).isEmpty();
+        assertThat(store.findByWikidata(alice, "Q1")).isEmpty();
     }
 
     @Test

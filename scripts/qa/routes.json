@@ -531,6 +531,19 @@
       "fuzz": false
     },
     {
+      "m": "PATCH",
+      "p": "/api/search/watch/{id}",
+      "path": {
+        "id": "int"
+      },
+      "body": {
+        "aliases": "list",
+        "notify": "bool"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
       "m": "POST",
       "p": "/api/search/watch/{id}/seen",
       "path": {

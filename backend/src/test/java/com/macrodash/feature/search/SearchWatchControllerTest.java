@@ -29,6 +29,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
@@ -107,6 +108,27 @@ class SearchWatchControllerTest {
                 .isEqualTo("bad_request");
         assertThat(call(delete("/api/search/watch/abc"), MEMBER, 400).path("error").asString()).isEqualTo("bad_request");
         assertThat(watches.rows).isEmpty();
+    }
+
+    @Test
+    @DisplayName("PATCH 별칭·알림(계약 §9-4·9-5) — 자기 줄만(남의 것 404), 응답 item과 목록에 별칭·notify, 본문이 틀리거나 없으면 400")
+    void patchRoundTrip() throws Exception {
+        long id = watches.seed(MEMBER.id(), "us:NVDA");
+
+        JsonNode changed = call(json(patch("/api/search/watch/" + id), "{\"aliases\":[\"NVIDIA\",\"엔비디아\"],\"notify\":true}"), MEMBER, 200);
+        assertThat(changed.path("ok").asBoolean()).isTrue();
+        assertThat(changed.path("item").path("notify").asBoolean()).isTrue();
+        assertThat(changed.path("item").path("aliases").get(1).asString()).isEqualTo("엔비디아");
+        JsonNode list = call(get("/api/search/watch"), MEMBER, 200);
+        assertThat(list.path("items").get(0).path("notify").asBoolean()).isTrue();
+        assertThat(list.path("items").get(0).path("aliases").size()).isEqualTo(2);
+
+        assertThat(call(json(patch("/api/search/watch/" + id), "{\"notify\":false}"), OTHER, 404).path("ok").asBoolean()).isFalse();
+        assertThat(call(json(patch("/api/search/watch/" + id), "{\"aliases\":[]}"), MEMBER, 400).path("error").asString()).isEqualTo("bad_request");
+        assertThat(call(json(patch("/api/search/watch/" + id), "{\"notify\":\"on\"}"), MEMBER, 400).path("error").asString()).isEqualTo("bad_request");
+        assertThat(call(patch("/api/search/watch/" + id), MEMBER, 400).path("error").asString()).isEqualTo("bad_request");
+        assertThat(call(json(patch("/api/search/watch/abc"), "{\"notify\":true}"), MEMBER, 400).path("error").asString()).isEqualTo("bad_request");
+        assertThat(watches.rows.get(0).notifyEnabled()).isTrue();
     }
 
     @Test

@@ -208,6 +208,33 @@ class CollectorClientUriTest {
     }
 
     @Test
+    @DisplayName("정보 검색 결과의 관심 대상 별칭(계약 §9-4) — JSON 배열 글 하나로 한 번만 인코딩되어 도착하고(한글·쉼표·따옴표·'&'·'+' 그대로), 비었거나 없으면 인자가 없다")
+    void searchFeedAliasesArrive() {
+        List<String> aliases = List.of("NVIDIA Corp", "엔비디아", "합성, 별칭", "A&B+C \"인용\"", "50% 할인");
+        client.liveSearchFeed("us:NVDA", "news", true, false, false, true, aliases);
+
+        assertThat(receivedPaths).containsExactly("/live/search/feed");
+        tools.jackson.databind.JsonNode decoded = new tools.jackson.databind.ObjectMapper().readTree(decodedParam("aliases"));
+        assertThat(decoded.isArray()).isTrue();
+        List<String> values = new ArrayList<>();
+        decoded.forEach(node -> values.add(node.asString()));
+        assertThat(values).containsExactlyElementsOf(aliases);
+        assertThat(decodedParam("e")).isEqualTo("us:NVDA");
+        assertThat(decodedParam("finviz")).isEqualTo("1");
+        assertThat(receivedQueries.get(0)).doesNotContain("%25EA");
+
+        receivedQueries.clear();
+        client.liveSearchFeed("us:NVDA", "news", true, false, false, true, List.of());
+        assertThat(receivedQueries.get(0)).doesNotContain("aliases");
+        receivedQueries.clear();
+        client.liveSearchFeed("us:NVDA", "news", true, false, false, true, null);
+        assertThat(receivedQueries.get(0)).doesNotContain("aliases");
+        receivedQueries.clear();
+        client.liveSearchFeed("us:NVDA", "news", true, false, false, true);
+        assertThat(receivedQueries.get(0)).doesNotContain("aliases");
+    }
+
+    @Test
     @DisplayName("정보 검색 첫 화면 최근 글·매체 제외 목록의 처음 값 — 경로와 owner가 그대로 도착한다")
     void searchRecentAndExcludesArrive() {
         client.liveSearchRecent(true);

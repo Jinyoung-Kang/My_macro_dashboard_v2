@@ -25,8 +25,13 @@ public class AlertStore {
     public record Event(long id, String kind, String eventKey, LocalDate occurredOn, String title, String body) {
     }
 
+    /**
+     * 알림함 한 줄. {@code href}는 사건 {@code payload.href}(누르면 갈 화면 안 주소 — 정보 검색 관심 대상 알림 {@code SEARCH_WATCH}, 계약 §9-5), 없거나 화면 안
+     * 주소가 아니면 null({@link #inAppHref}).
+     * 화면에는 {@code payload: {href}}(없으면 null)로 냅니다(docs/API.md 알림함).
+     */
     public record InboxItem(long id, String kind, LocalDate occurredOn, String title, String body, boolean late,
-                            Instant createdAt, Instant readAt) {
+                            Instant createdAt, Instant readAt, String href) {
     }
 
     private final JdbcTemplate jdbc;
@@ -140,16 +145,38 @@ public class AlertStore {
                 eventId, userId, ruleId, late) == 1;
     }
 
+    /**
+     * 규칙 없이 한 사용자의 알림함에 넣습니다({@code rule_id} NULL, 지난 사건 아님 — 읽지 않은 수에 셈). 규칙 표가 아닌 곳에서 켜는 알림(정보 검색 관심 대상의
+     * {@code notify}, 계약 §9-5)용입니다. 이미 있으면 그대로(유일 제약). @return 새로 넣었으면 true
+     */
+    public boolean deliverInbox(long eventId, long userId) {
+        return jdbc.update("INSERT INTO alert_deliveries (event_id, user_id, rule_id, channel, late) "
+                + "VALUES (?, ?, NULL, 'inbox', false) ON CONFLICT (event_id, user_id, channel) DO NOTHING",
+                eventId, userId) == 1;
+    }
+
     // ------------------------------------------------------------------ 알림함
     public List<InboxItem> inbox(long userId, int limit) {
-        return jdbc.query("SELECT d.id, e.kind, e.occurred_on, e.title, e.body, d.late, d.created_at, d.read_at "
+        return jdbc.query("SELECT d.id, e.kind, e.occurred_on, e.title, e.body, d.late, d.created_at, d.read_at, e.payload->>'href' AS href "
                         + "FROM alert_deliveries d JOIN alert_events e ON e.id = d.event_id "
                         + "WHERE d.user_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT ?",
                 (rs, rowNum) -> new InboxItem(rs.getLong("id"), rs.getString("kind"),
                         rs.getDate("occurred_on").toLocalDate(), rs.getString("title"), rs.getString("body"),
                         rs.getBoolean("late"), UserStore.instant(rs.getTimestamp("created_at")),
-                        UserStore.instant(rs.getTimestamp("read_at"))),
+                        UserStore.instant(rs.getTimestamp("read_at")), inAppHref(rs.getString("href"))),
                 userId, limit);
+    }
+
+    /**
+     * 사건 {@code payload.href} 가운데 이 화면 안의 주소만 — '/'로 시작하고 '//'(다른 호스트)·역슬래시·제어 글자가 없을 때 그대로, 아니면 null. 사건은 백엔드만
+     * 쓰지만 화면이 이 값으로 이동하므로 한 번 더 거릅니다.
+     */
+    static String inAppHref(String href) {
+        if (href == null || !href.startsWith("/") || href.startsWith("//") || href.indexOf('\\') >= 0
+                || href.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+            return null;
+        }
+        return href;
     }
 
     public int unreadCount(long userId) {
@@ -174,6 +201,16 @@ public class AlertStore {
             statement.setArray(2, connection.createArrayOf("bigint", wanted));
             return statement;
         });
+    }
+
+    /**
+     * 배달이 하나도 남지 않은 {@code kind} 사건을 지웁니다. 한 사람에게만 가는 사건(정보 검색 관심 대상 {@code SEARCH_WATCH} — 제목에 관심 대상 이름, 본문에 글
+     * 제목, 계약 §9-5)이 알림함 정리({@link #purgeDeliveries})·탈퇴(배달은 사용자를 따라 지워짐) 뒤에 전역 표에 남지 않게 합니다. 사건 키에 실행 시각이 들어
+     * 있어 중복 판정에 다시 쓰이지 않습니다. 규칙 종류의 전역 사실 사건(국면 전환 등 — 중복 판정 키이자 기록)에는 쓰지 않습니다. @return 지운 사건 수
+     */
+    public int purgeUndeliveredEvents(String kind) {
+        return jdbc.update("DELETE FROM alert_events e WHERE e.kind = ? "
+                + "AND NOT EXISTS (SELECT 1 FROM alert_deliveries d WHERE d.event_id = e.id)", kind);
     }
 
     /** 알림함 항목은 90일 보관합니다. 사건은 지우지 않습니다(중복 판정 키이자 기록). */

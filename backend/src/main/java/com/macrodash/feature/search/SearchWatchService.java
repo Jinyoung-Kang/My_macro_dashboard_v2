@@ -43,6 +43,9 @@ import java.util.regex.Pattern;
  * <p>매체 제외: 목록은 수집기의 처음 값(코드 상수)과 운영자가 더한 표의 줄을 함께 보이고, 더하기·지우기는 운영자만(경로 등급 + 여기서 한 번 더).
  * 도메인은 소문자 호스트로 맞춥니다(경로·포트·공백은 거절). 대조는 수집기가 합니다.
  *
+ * <p>별칭·알림 바꾸기(계약 §9-4·9-5): 자기 줄의 별칭(1~12개, 하나에 1~60자, 제어 글자 없음, 대소문자만 다른 것은 하나)과 알림함 알림({@code notify})을
+ * 바꿉니다. 이름은 그대로이고, 데모·store_only는 403입니다. 알림을 켜면 켠 뒤에 처음 받은 글부터 알립니다({@link SearchWatchAlertJob}).
+ *
  * <p>관심 대상·모은 글·제외 목록은 모의 매매의 입력이 아닙니다. 대상 키·별칭은 로그에 남기지 않습니다(결정 12).
  */
 @Service
@@ -54,6 +57,8 @@ public class SearchWatchService {
     static final int MAX_ALIASES = 12;
     static final int MAX_NAME = 200;
     static final int MAX_ALIAS = 100;
+    /** 사용자가 고치는 별칭 하나의 글자 수 상한(계약 §9-4) — 대상 풀기에서 온 별칭({@link #MAX_ALIAS})보다 짧습니다. */
+    static final int MAX_EDIT_ALIAS = 60;
     static final int MAX_EXCLUDE_NAME = 80;
     static final int MAX_NOTE = 200;
     static final int MAX_HOST = 253;
@@ -71,18 +76,24 @@ public class SearchWatchService {
     private static final List<String> ID_FIELDS = List.of("ticker", "market", "stockCode", "cik", "dartCorpCode", "wikidata", "lei");
     private static final String TOPIC = "topic:";
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
+    /** 별칭의 제어 글자 — C0·DEL·C1(화면 {@code ALIAS_CONTROL}과 같은 범위 — {@code \p{Cntrl}}은 C1을 막지 않음). */
+    private static final Pattern ALIAS_CONTROL = Pattern.compile("[\\x00-\\x1f\\x7f-\\x9f]");
+    /** 별칭의 공백 — 유니코드 공백과 U+FEFF(화면 정규식 {@code \s}와 같은 범위). */
+    private static final Pattern ALIAS_SPACES = Pattern.compile("(?U)[\\s\\x{FEFF}]+");
     private static final Pattern HOST_LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?");
     private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssxxx");
 
     static final String NOT_READY = "관심 대상 표가 아직 없습니다 — 수집기가 스키마를 적용한 뒤(make up) 다시 보세요.";
     static final String EXCLUDES_NOT_READY = "매체 제외 표가 아직 없습니다 — 수집기가 스키마를 적용한 뒤(make up) 다시 보세요.";
+    static final String NOTIFY_NOT_READY = "관심 대상 알림 칸이 아직 없습니다 — 수집기가 스키마(V38)를 적용한 뒤(make up) 다시 켜세요.";
 
     /** 결과 — {@code status}는 HTTP 상태, {@code body}는 응답 본문. */
     public record Result(int status, Map<String, Object> body) {
     }
 
     /** 수집기가 풀어 준 대상(또는 주제 키에서 만든 것). {@code partial}은 다시 물으면 달라질 출처 오류가 섞인 풀기({@link #RETRY_ERRORS}). */
-    private record Resolved(String key, String kind, String name, List<String> aliases, JsonNode ids, boolean partial) {
+    private record Resolved(String key, String kind, String name, String nameKo, String nameEn, List<String> aliases, JsonNode ids,
+                            boolean partial) {
     }
 
     private record Collecting(Boolean value, Instant until) {
@@ -121,8 +132,9 @@ public class SearchWatchService {
     // ------------------------------------------------------------------ 관심 대상
 
     /**
-     * 내 관심 대상 — {@code {available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount, hot}], limits:{mine, max, serverUsed, serverMax},
-     * collecting}}. {@code hot}은 화제(계약 §9-2 — {@link SearchWatchStore.Buzz#hot()}, 모르면 null). 읽기만 합니다(데모도 부름 — 빈 목록).
+     * 내 관심 대상 — {@code {available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount, hot, notify, aliases}], limits:{mine, max, serverUsed,
+     * serverMax}, collecting}}. {@code hot}은 화제(계약 §9-2 — {@link SearchWatchStore.Buzz#hot()}, 모르면 null), {@code notify}는 새 글 알림을 켰는지(§9-5),
+     * {@code aliases}는 그 줄의 별칭(§9-4 편집 화면이 씀). 읽기만 합니다(데모도 부름 — 빈 목록).
      * 표가 없으면 {@code {available:false, message}}.
      */
     public Map<String, Object> list(CurrentUser user) {
@@ -208,8 +220,8 @@ public class SearchWatchService {
             if (resolved.partial()) {
                 return failure(503, "partial", "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 1분쯤 뒤 다시 등록하세요.");
             }
-            SearchWatchStore.Watch row = watches.insert(user.id(), resolved.key(), resolved.kind(), resolved.name(), resolved.aliases(),
-                    resolved.ids(), clock.instant());
+            SearchWatchStore.Watch row = watches.insert(user.id(), resolved.key(), resolved.kind(), resolved.name(), resolved.nameKo(),
+                    resolved.nameEn(), resolved.aliases(), resolved.ids(), clock.instant());
             return registered(user, row, true);
         }
     }
@@ -251,6 +263,128 @@ public class SearchWatchService {
     }
 
     /**
+     * 내 줄의 별칭·알림 바꾸기(계약 §9-4·9-5) — 본문 {@code {aliases?, notify?}}(둘 중 하나는 있어야 함). 별칭은 {@link #editedAliases}대로 정리해 통째로 바꾸고,
+     * 이름은 그대로입니다. 알림을 꺼짐에서 켜면 그때부터 처음 받은 글을 알립니다. 데모·store_only는 403(본문 검사 전), 본문이 틀리면 400, 표가 없으면 503(알림을
+     * 바꾸는데 V38 칸이 없어도 503), 남의 줄·없는 줄은 404. 응답 {@code item}은 목록 줄과 같은 모양입니다.
+     *
+     * @throws InvalidRequestException 본문이 틀림(400)
+     */
+    public Result patch(CurrentUser user, long id, JsonNode body) {
+        if (user == null || user.demo()) {
+            return failure(403, null, "데모 열람에서는 관심 대상을 바꿀 수 없습니다.");
+        }
+        if (store.readMode() == AppProperties.ReadMode.STORE_ONLY) {
+            return failure(403, "store_only", "저장본만 읽는 모드(store_only)에서는 관심 대상의 별칭·알림을 바꿀 수 없습니다.");
+        }
+        if (body == null || !body.isObject()) {
+            throw new InvalidRequestException("본문은 {aliases, notify} 객체입니다.");
+        }
+        List<String> aliases = body.has("aliases") ? editedAliases(body.get("aliases")) : null;
+        Boolean notify = null;
+        if (body.has("notify")) {
+            JsonNode given = body.get("notify");
+            if (given == null || !given.isBoolean()) {
+                throw new InvalidRequestException("notify는 true·false입니다.");
+            }
+            notify = given.booleanValue();
+        }
+        if (aliases == null && notify == null) {
+            throw new InvalidRequestException("바꿀 칸(aliases·notify)이 없습니다.");
+        }
+        if (!watches.ready()) {
+            return failure(503, null, NOT_READY);
+        }
+        if (notify != null && !watches.notifyReady()) {
+            return failure(503, null, NOTIFY_NOT_READY);
+        }
+        Optional<SearchWatchStore.Watch> row = watches.patch(id, user.id(), aliases, notify, clock.instant());
+        if (row.isEmpty()) {
+            return failure(404, null, "없는 관심 대상입니다.");
+        }
+        Map<Long, Integer> counts = watches.newCounts(user.id(), hiddenSources(user));
+        Boolean hot = hot(watches.buzz(user.id(), hiddenSources(user), clock.instant()), row.get().id());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("message", patchMessage(aliases != null, notify));
+        out.put("item", itemJson(row.get(), counts.getOrDefault(row.get().id(), 0), hot));
+        return new Result(200, out);
+    }
+
+    private static String patchMessage(boolean aliases, Boolean notify) {
+        String notice = notify == null ? null
+                : notify ? "새 글 알림을 켰습니다 — 지금부터 처음 받은 글을 알림함으로 알립니다." : "새 글 알림을 껐습니다.";
+        if (!aliases) {
+            return notice;
+        }
+        return notice == null ? "별칭을 바꿨습니다 — 다음 검색부터 씁니다." : "별칭을 바꿨습니다. " + notice;
+    }
+
+    /**
+     * 사용자가 보낸 별칭(계약 §9-4) — 글 배열이어야 하고, 하나마다 {@link #cleanAlias}로 다듬은 뒤 1~{@value #MAX_EDIT_ALIAS}자·제어 글자(C0·DEL·C1) 없음.
+     * 대소문자만 다른 것은 처음 것 하나로 남기고(순서 유지), 남은 것이 1~{@value #MAX_ALIASES}개여야 합니다.
+     *
+     * @throws InvalidRequestException 모양이 틀림(400)
+     */
+    static List<String> editedAliases(JsonNode given) {
+        if (given == null || !given.isArray()) {
+            throw new InvalidRequestException("aliases는 글 배열입니다(1~" + MAX_ALIASES + "개).");
+        }
+        Map<String, String> kept = new LinkedHashMap<>();
+        for (JsonNode alias : given) {
+            if (alias == null || !alias.isString()) {
+                throw new InvalidRequestException("별칭은 글이어야 합니다.");
+            }
+            String raw = alias.stringValue();
+            if (ALIAS_CONTROL.matcher(raw).find()) {
+                throw new InvalidRequestException("별칭에 제어 글자(줄바꿈 등)를 쓸 수 없습니다.");
+            }
+            String text = cleanAlias(raw);
+            if (text == null) {
+                throw new InvalidRequestException("별칭은 하나에 1~" + MAX_EDIT_ALIAS + "자입니다.");
+            }
+            kept.putIfAbsent(text.toLowerCase(Locale.ROOT), text);
+        }
+        if (kept.isEmpty() || kept.size() > MAX_ALIASES) {
+            throw new InvalidRequestException("별칭은 1~" + MAX_ALIASES + "개입니다(대소문자만 다른 것은 하나로 셈).");
+        }
+        return List.copyOf(kept.values());
+    }
+
+    /**
+     * 별칭 하나를 다듬음(계약 §9-4) — 공백(유니코드 공백·U+FEFF 포함)이 이어진 곳을 하나로 줄인 <b>뒤</b> 앞뒤를 떼어(화면 {@code cleanAlias}와 같은 순서 —
+     * 거꾸로 하면 U+00A0처럼 {@code String.strip}이 공백으로 보지 않는 글자만으로 된 별칭이 공백 한 칸으로 남음) 1~{@value #MAX_EDIT_ALIAS}자이고 제어 글자
+     * (C0·DEL·C1 — 화면과 같은 범위)가 없으면 그 글, 아니면 null.
+     */
+    static String cleanAlias(String raw) {
+        if (raw == null || ALIAS_CONTROL.matcher(raw).find()) {
+            return null;
+        }
+        String text = ALIAS_SPACES.matcher(raw).replaceAll(" ").strip();
+        int length = text.codePointCount(0, text.length());
+        return length < 1 || length > MAX_EDIT_ALIAS ? null : text;
+    }
+
+    /**
+     * 결과 경로가 수집기에 넘길 별칭(계약 §9-4) — 저장된 별칭 가운데 PATCH 규칙({@link #cleanAlias})에 맞는 것만 다듬은 글로, 대소문자만 다른 것은 처음 것 하나로,
+     * {@value #MAX_ALIASES}개까지. 등록 때 대상 풀기에서 받은 별칭은 {@value #MAX_ALIAS}자(별칭이 없으면 {@value #MAX_NAME}자까지의 이름)까지 저장되므로, 그
+     * 가운데 {@value #MAX_EDIT_ALIAS}자를 넘는 것은 여기서 뺍니다(수집기도 빼지만 백엔드가 계약 밖의 값을 보내지 않게). 그런 별칭은 대상 풀기에서 온 것이라
+     * 수집기가 대상 별칭으로 이미 씁니다. 남는 것이 없으면 빈 목록.
+     */
+    static List<String> usableAliases(List<String> stored) {
+        if (stored == null) {
+            return List.of();
+        }
+        Map<String, String> kept = new LinkedHashMap<>();
+        for (String alias : stored) {
+            String text = cleanAlias(alias);
+            if (text != null && kept.size() < MAX_ALIASES) {
+                kept.putIfAbsent(text.toLowerCase(Locale.ROOT), text);
+            }
+        }
+        return List.copyOf(kept.values());
+    }
+
+    /**
      * 수집기의 대상 풀기 응답에서 저장할 값을 고릅니다. 대표 키가 문법에 맞지 않으면 물은 키, 모르는 종류는 키 모양으로(wd:는 알 수 없어 null —
      * 등록하지 않음), 이름이 없으면 키의 값, 별칭은 문자열만·빈 것과 겹친 것 없이 12개까지(없으면 이름 하나), 식별자는 객체일 때만(아니면 null —
      * 표에는 빈 객체), {@code errors}에 다시 물으면 달라질 출처({@link #RETRY_ERRORS})가 있으면 partial. 대상이 없으면 주제 키만 키의 글로 만들고 그 밖은 null.
@@ -264,7 +398,7 @@ public class SearchWatchService {
             String text = key.substring(TOPIC.length());
             ObjectNode ids = JsonNodeFactory.instance.objectNode();
             ID_FIELDS.forEach(ids::putNull);
-            return new Resolved(key, "topic", text, List.of(text), ids, false);
+            return new Resolved(key, "topic", text, null, null, List.of(text), ids, false);
         }
         String representative = key;
         String given = text(entity, "key");
@@ -302,7 +436,8 @@ public class SearchWatchService {
         JsonNode ids = entity.get("ids");
         JsonNode errors = answer.map(body -> body.get("errors")).filter(JsonNode::isObject).orElse(null);
         boolean partial = errors != null && RETRY_ERRORS.stream().anyMatch(errors::has);
-        return new Resolved(representative, kind, name, List.copyOf(aliases), ids != null && ids.isObject() ? ids.deepCopy() : null, partial);
+        return new Resolved(representative, kind, name, givenName(entity, "nameKo"), givenName(entity, "nameEn"), List.copyOf(aliases),
+                ids != null && ids.isObject() ? ids.deepCopy() : null, partial);
     }
 
     /** 키 모양이 정하는 종류(계약 §2) — 상장사 us:·kr:는 회사, cik:는 13F 기관, topic:은 주제. wd:는 키만으로 알 수 없어 null. */
@@ -356,6 +491,9 @@ public class SearchWatchService {
         item.put("lastSeenAt", iso(row.lastSeenAt()));
         item.put("newCount", newCount);
         item.put("hot", hot);
+        // V38 전이면 알림 칸을 모름(null) — 화면은 칸이 없을 때 단추를 숨김('끔'으로 보였다가 누르면 503이 되지 않게).
+        item.put("notify", watches.notifyReady() ? row.notifyEnabled() : null);
+        item.put("aliases", row.aliases());
         return item;
     }
 
@@ -534,6 +672,15 @@ public class SearchWatchService {
     /** 계약의 시각 모양(UTC ISO, 초까지, {@code +00:00}). 없으면 null. */
     static String iso(Instant at) {
         return at == null ? null : OffsetDateTime.ofInstant(at, ZoneOffset.UTC).format(ISO);
+    }
+
+    /** 대상 풀기 응답의 이름 칸(nameKo·nameEn) — 비었거나 제어 글자가 있으면 null, 앞뒤 공백을 떼고 이름 상한으로 자름. */
+    private static String givenName(JsonNode entity, String field) {
+        String value = text(entity, field);
+        if (value == null || value.isBlank() || CONTROL.matcher(value).find()) {
+            return null;
+        }
+        return cut(value.strip(), MAX_NAME);
     }
 
     private static String text(JsonNode node, String field) {

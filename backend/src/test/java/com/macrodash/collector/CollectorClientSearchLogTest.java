@@ -83,6 +83,7 @@ class CollectorClientSearchLogTest {
             c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false),
             c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false, true),
             c -> c.liveSearchFeed("us:" + CANARY, "news", true, false, false, true),
+            c -> c.liveSearchFeed("us:NVDA", "news", true, false, false, true, List.of(CANARY + " 별칭", "합성, 별칭")),
             c -> c.liveSearchRecent(false),
             c -> c.liveSearchExcludes(),
             c -> c.liveSearchLinks("topic:" + CANARY, true, false));
@@ -100,7 +101,7 @@ class CollectorClientSearchLogTest {
             assertThat(logLines()).hasSize(CALLS.size());
             assertThat(logLines()).allSatisfy(line -> assertThat(line)
                     .contains("/live/search/", String.valueOf(code))
-                    .doesNotContain(CANARY, "검색어", "topic", "q=", "e=", "?"));
+                    .doesNotContain(CANARY, "검색어", "별칭", "topic", "q=", "e=", "aliases", "?"));
         }
     }
 
@@ -115,7 +116,7 @@ class CollectorClientSearchLogTest {
         assertThat(logLines()).hasSize(CALLS.size());
         assertThat(logLines()).allSatisfy(line -> assertThat(line)
                 .contains("/live/search/")
-                .doesNotContain(CANARY, "127.0.0.1", "http://", "q=", "e=", "?"));
+                .doesNotContain(CANARY, "127.0.0.1", "http://", "q=", "e=", "aliases", "?"));
     }
 
     @Test

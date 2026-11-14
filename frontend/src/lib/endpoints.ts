@@ -134,7 +134,10 @@ export const endpoints = {
     recent: "/api/search/recent",
     /** 내 관심 대상 — GET 목록, POST `{key}` 등록(데모 403, 상한이면 409). */
     watch: "/api/search/watch",
-    /** DELETE — 내 관심 대상 지우기. */
+    /**
+     * DELETE — 내 관심 대상 지우기. PATCH `{aliases}` 또는 `{notify}` — 그 줄의 별칭·새 글 알림 고치기(단계 6 묶음 2, 계약 §9-4·9-5 —
+     * 자기 줄만, 데모·store_only 403). 같은 경로라 함수를 따로 두지 않습니다.
+     */
     watchItem: (id: number) => `/api/search/watch/${segment(String(id))}`,
     /** POST — 그 대상을 지금 봤다고 적음(타임라인 결과를 받아 그렸을 때 — 새 글 수가 0이 됨). */
     watchSeen: (id: number) => `/api/search/watch/${segment(String(id))}/seen`,

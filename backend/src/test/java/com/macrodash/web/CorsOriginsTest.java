@@ -16,6 +16,12 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class CorsOriginsTest {
 
     @Test
+    @DisplayName("허용 메서드에 화면이 쓰는 PATCH가 있다 — 로컬·QA는 화면(3002)과 API(8082) 포트가 달라 사전 요청이 걸림(정보 검색 별칭·알림, 단계 6)")
+    void allowsEveryMethodTheScreenUses() {
+        assertThat(WebConfig.CORS_METHODS).contains("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
+    }
+
+    @Test
     @DisplayName("명시한 origin에 더해 화면 포트의 모든 호스트를 허용한다 — 휴대폰이 LAN IP로 연다")
     void allowsAnyHostOnTheFrontendPort() {
         AppProperties properties = new AppProperties();

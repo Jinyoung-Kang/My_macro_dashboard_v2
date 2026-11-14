@@ -9,9 +9,13 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriBuilder;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -290,6 +294,22 @@ public class CollectorClient {
      * 씀). 사용자마다 한 시간 한도는 백엔드가 셉니다(계약 §8-5). 응답의 {@code finvizQueued}는 그 셈에 쓰고 화면에 넘기지 않습니다.
      */
     public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner, boolean refresh, boolean finviz) {
+        return liveSearchFeed(e, tab, external, owner, refresh, finviz, null);
+    }
+
+    /**
+     * 결과 — 위와 같고, {@code aliases}는 그 사용자가 관심 대상에 둔 별칭(계약 §9-4 — 수집기가 대상 별칭에 합쳐 검색식을 만듦). 비었거나 null이면 인자를
+     * 보내지 않습니다. 쉼표가 든 별칭이 있어 JSON 배열 글로 보내고(URI 변수로 한 번만 인코딩), 실패 로그에는 경로 이름표만 남깁니다(별칭 없이).
+     */
+    public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner, boolean refresh, boolean finviz,
+                                             List<String> aliases) {
+        String encoded = aliasesJson(aliases);
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("e", e);
+        variables.put("tab", tab);
+        if (encoded != null) {
+            variables.put("aliases", encoded);
+        }
         return getQuietly(client, uri -> uri.path("/live/search/feed")
                 .queryParam("e", "{e}")
                 .queryParam("tab", "{tab}")
@@ -297,7 +317,22 @@ public class CollectorClient {
                 .queryParam("owner", owner)
                 .queryParamIfPresent("refresh", refresh ? Optional.of(true) : Optional.empty())
                 .queryParam("finviz", finviz ? 1 : 0)
-                .build(Map.of("e", e, "tab", tab)), "/live/search/feed");
+                .queryParamIfPresent("aliases", encoded == null ? Optional.empty() : Optional.of("{aliases}"))
+                .build(variables), "/live/search/feed");
+    }
+
+    /** 별칭 → JSON 배열 글(문자열만, 없으면 null). */
+    static String aliasesJson(List<String> aliases) {
+        if (aliases == null || aliases.isEmpty()) {
+            return null;
+        }
+        ArrayNode array = JsonNodeFactory.instance.arrayNode();
+        aliases.forEach(alias -> {
+            if (alias != null) {
+                array.add(alias);
+            }
+        });
+        return array.isEmpty() ? null : array.toString();
     }
 
     /**

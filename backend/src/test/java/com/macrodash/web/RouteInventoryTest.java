@@ -95,7 +95,7 @@ class RouteInventoryTest {
             // 정보 검색(ADR 0041)
             "GET /api/search/suggest", "GET /api/search/resolve", "GET /api/search/entity", "GET /api/search/feed",
             "GET /api/search/recent", "GET /api/search/watch", "POST /api/search/watch", "DELETE /api/search/watch/{id}",
-            "POST /api/search/watch/{id}/seen", "GET /api/search/excludes", "POST /api/search/excludes",
+            "PATCH /api/search/watch/{id}", "POST /api/search/watch/{id}/seen", "GET /api/search/excludes", "POST /api/search/excludes",
             "DELETE /api/search/excludes/{id}", "GET /api/search/links",
             // 화면 실시간 시세(ADR 0024)
             "GET /api/live/prices", "GET /api/live/prices/stream",
@@ -219,20 +219,20 @@ class RouteInventoryTest {
     }
 
     /**
-     * API.md 1장(백엔드)의 표에서 "메서드 경로"를 뽑습니다. 두 가지 표 형식을 모두 읽습니다.
+     * API.md 1장(백엔드)의 표에서 "메서드 경로"를 뽑습니다(PATCH 포함 — 관심 대상 바꾸기). 두 가지 표 형식을 모두 읽습니다.
      * {@code | POST | `/api/auth/login` |} · {@code | `GET /api/x?a=`, `/api/y` |}
      */
     static Set<String> documentedRoutes(String markdown) {
         int end = markdown.indexOf("\n## 2.");
         String backend = end < 0 ? markdown : markdown.substring(0, end);
         Set<String> routes = new TreeSet<>();
-        Pattern split = Pattern.compile("^\\| (GET|POST|PUT|DELETE) \\| `(/api[^`?]*)", Pattern.MULTILINE);
+        Pattern split = Pattern.compile("^\\| (GET|POST|PUT|PATCH|DELETE) \\| `(/api[^`?]*)", Pattern.MULTILINE);
         Matcher m = split.matcher(backend);
         while (m.find()) {
             routes.add(m.group(1) + " " + m.group(2));
         }
-        Pattern row = Pattern.compile("^\\| `(GET|POST|PUT|DELETE) ([^|]*)\\|", Pattern.MULTILINE);
-        Pattern path = Pattern.compile("`(?:(?:GET|POST|PUT|DELETE) )?(/api[^`?]*)");
+        Pattern row = Pattern.compile("^\\| `(GET|POST|PUT|PATCH|DELETE) ([^|]*)\\|", Pattern.MULTILINE);
+        Pattern path = Pattern.compile("`(?:(?:GET|POST|PUT|PATCH|DELETE) )?(/api[^`?]*)");
         Matcher r = row.matcher(backend);
         while (r.find()) {
             Matcher p = path.matcher("`" + r.group(1) + " " + r.group(2));

@@ -51,6 +51,9 @@ public class WebConfig implements WebMvcConfigurer {
         this.properties = properties;
     }
 
+    /** 화면이 부르는 메서드 — PATCH는 정보 검색의 관심 대상 별칭·알림(단계 6). 로컬·QA는 화면과 API의 포트가 달라 사전 요청(OPTIONS)이 이 목록을 봄. */
+    static final String[] CORS_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"};
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         // 쿠키를 주고받아야 하므로 allowCredentials가 필요하고,
@@ -62,7 +65,7 @@ public class WebConfig implements WebMvcConfigurer {
                 // 다른 사이트의 요청에는 애초에 실리지 않아, 패턴을 넓혀도 인증이 새지 않습니다.
                 // 로컬 무로그인(ADR 0016)은 쿠키 없이 운영자가 되므로 이 맥의 화면 주소만 받습니다.
                 .allowedOriginPatterns(allowedOriginPatterns(properties).toArray(String[]::new))
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedMethods(CORS_METHODS)
                 .allowCredentials(true)
                 .maxAge(3600);
     }

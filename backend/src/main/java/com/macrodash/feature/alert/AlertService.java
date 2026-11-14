@@ -204,6 +204,8 @@ public class AlertService {
             row.put("late", item.late());
             row.put("createdAt", String.valueOf(item.createdAt()));
             row.put("read", item.readAt() != null);
+            // 화면 안 주소(AlertStore.inAppHref가 거른 값)만 — 정보 검색 관심 대상 알림(SEARCH_WATCH)이 그 대상으로 가게.
+            row.put("payload", item.href() == null ? null : Map.of("href", item.href()));
             out.add(row);
         }
         return out;

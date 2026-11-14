@@ -268,6 +268,7 @@ describe("정보 검색 관심 대상·매체 제외 경로(계약 §6-4)", () =
   it("목록·등록은 같은 경로(GET·POST), 지우기·봤음은 번호 아래 — 첫 화면 최근 글과 제외 목록은 따로", () => {
     expect(endpoints.search.watch).toBe("/api/search/watch");
     expect(endpoints.search.watchItem(12)).toBe("/api/search/watch/12");
+    // 별칭·알림 고치기(PATCH — 계약 §9-4·9-5)도 지우기와 같은 경로를 씁니다(함수를 따로 두지 않음).
     expect(endpoints.search.watchSeen(12)).toBe("/api/search/watch/12/seen");
     expect(endpoints.search.recent).toBe("/api/search/recent");
     expect(endpoints.search.excludes).toBe("/api/search/excludes");
@@ -359,8 +360,8 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
 describe("docs/API.md 백엔드 표와 대조", () => {
   it("화면이 부르는 경로는 모두 문서(= 백엔드 경로 목록 테스트가 대조하는 표)에 있다", () => {
     const doc = readFileSync(resolve(__dirname, "../../../../docs/API.md"), "utf8");
-    // 표 형식 두 가지: `GET /api/x`(DELETE도) 또는 | GET | `/api/x` |
-    const documented = new Set([...doc.matchAll(/`(?:(?:GET|POST|DELETE) )?(\/api\/[^`?\s]*)/g)].map((m) => m[1]));
+    // 표 형식 두 가지: `GET /api/x`(POST·DELETE·PATCH도) 또는 | GET | `/api/x` |
+    const documented = new Set([...doc.matchAll(/`(?:(?:GET|POST|DELETE|PATCH) )?(\/api\/[^`?\s]*)/g)].map((m) => m[1]));
     expect(documented.size).toBeGreaterThan(50);
 
     const { strings, functions } = leaves(endpoints);

@@ -175,6 +175,85 @@ class SearchServiceTest {
     }
 
     @Test
+    @DisplayName("결과는 그 사용자가 그 대상을 관심 대상으로 등록했으면 그 줄의 별칭을 aliases로 넘긴다(계약 §9-4) — 등록하지 않은 대상·남의 줄·표가 없을 때는 인자 없이")
+    void feedPassesWatchAliases() {
+        SearchWatchServiceTest.MemoryWatchStore watches = new SearchWatchServiceTest.MemoryWatchStore();
+        Instant at = CLOCK.instant();
+        watches.rows.add(new com.macrodash.store.SearchWatchStore.Watch(1, MEMBER.id(), "us:NVDA", "company", "엔비디아",
+                List.of("NVIDIA", "엔비디아", "합성 별칭"), null, at, at));
+        SearchService withWatches = new SearchService(store, collector, watches, CLOCK);
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(json("{\"items\":[]}")));
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(), anyBoolean(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(Optional.of(json("{\"items\":[]}")));
+
+        assertThat(withWatches.feed("us:NVDA", "news", MEMBER)).containsEntry("available", true);
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, false, true, List.of("NVIDIA", "엔비디아", "합성 별칭"));
+
+        withWatches.feed("us:AAPL", "timeline", MEMBER);
+        verify(collector).liveSearchFeed("us:AAPL", "timeline", true, false, false, true);
+        withWatches.feed("us:NVDA", "filings", PRO);
+        verify(collector).liveSearchFeed("us:NVDA", "filings", true, false, false, false);
+        withWatches.feed("us:NVDA", "timeline", DEMO);
+        verify(collector).liveSearchFeed("us:NVDA", "timeline", false, false, false, false);
+
+        watches.ready = false;
+        withWatches.feed("us:NVDA", "research", MEMBER);
+        verify(collector).liveSearchFeed("us:NVDA", "research", true, false, false, false);
+        verify(collector, org.mockito.Mockito.times(1)).liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(),
+                anyBoolean(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("wd: 키로 연 대상도 그 사용자가 대표 키(us: 등)로 등록한 줄의 식별자 wikidata가 같으면 그 줄의 별칭을 넘긴다(화면이 별칭 편집을 보이는 줄과 같음) — "
+            + "60자 넘는 별칭·제어 글자가 든 별칭은 빼고, 남는 것이 없으면 인자 없이. 남의 줄은 쓰지 않음")
+    void feedPassesAliasesForWikidataKeyAndDropsUnusable() {
+        SearchWatchServiceTest.MemoryWatchStore watches = new SearchWatchServiceTest.MemoryWatchStore();
+        Instant at = CLOCK.instant();
+        tools.jackson.databind.node.ObjectNode nvda = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("wikidata", "Q182477");
+        tools.jackson.databind.node.ObjectNode other = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("wikidata", "Q95");
+        tools.jackson.databind.node.ObjectNode longOnly = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("wikidata", "Q312");
+        watches.rows.add(new com.macrodash.store.SearchWatchStore.Watch(1, MEMBER.id(), "us:NVDA", "company", "엔비디아",
+                List.of("NVIDIA", "가".repeat(61), "합성\u0085별칭", "합성 별칭"), nvda, at, at));
+        watches.rows.add(new com.macrodash.store.SearchWatchStore.Watch(2, PRO.id(), "us:GOOGL", "company", "알파벳",
+                List.of("Alphabet"), other, at, at));
+        watches.rows.add(new com.macrodash.store.SearchWatchStore.Watch(3, MEMBER.id(), "us:AAPL", "company", "애플",
+                List.of("가".repeat(100)), longOnly, at, at));
+        SearchService withWatches = new SearchService(store, collector, watches, CLOCK);
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(json("{\"items\":[]}")));
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(), anyBoolean(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(Optional.of(json("{\"items\":[]}")));
+
+        withWatches.feed("wd:Q182477", "filings", MEMBER);
+        verify(collector).liveSearchFeed("wd:Q182477", "filings", true, false, false, false, List.of("NVIDIA", "합성 별칭"));
+        withWatches.feed("us:NVDA", "research", MEMBER);
+        verify(collector).liveSearchFeed("us:NVDA", "research", true, false, false, false, List.of("NVIDIA", "합성 별칭"));
+
+        withWatches.feed("wd:Q95", "filings", MEMBER);
+        verify(collector).liveSearchFeed("wd:Q95", "filings", true, false, false, false);
+        withWatches.feed("us:AAPL", "filings", MEMBER);
+        verify(collector).liveSearchFeed("us:AAPL", "filings", true, false, false, false);
+        withWatches.feed("wd:Q312", "research", MEMBER);
+        verify(collector).liveSearchFeed("wd:Q312", "research", true, false, false, false);
+    }
+
+    @Test
+    @DisplayName("관심 대상 별칭을 읽지 못하면(DB 오류) 별칭 없이 그대로 부른다 — 결과를 막지 않음")
+    void feedWithoutAliasesWhenWatchStoreFails() {
+        com.macrodash.store.SearchWatchStore broken = org.mockito.Mockito.mock(com.macrodash.store.SearchWatchStore.class);
+        when(broken.ready()).thenReturn(true);
+        when(broken.find(org.mockito.ArgumentMatchers.anyLong(), anyString()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("합성 실패"));
+        SearchService withBroken = new SearchService(store, collector, broken, CLOCK);
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(json("{\"items\":[]}")));
+
+        assertThat(withBroken.feed("us:NVDA", "news", MEMBER)).containsEntry("available", true);
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, false, true);
+    }
+
+    @Test
     @DisplayName("store_only 읽기 모드도 external=false — 운영자여도 외부를 부르지 않는다(available:false로 막지는 않음)")
     void storeOnlyIsOffline() {
         when(store.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);

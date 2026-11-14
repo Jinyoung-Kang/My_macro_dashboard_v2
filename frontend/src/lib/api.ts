@@ -212,6 +212,14 @@ export function apiPost<T>(path: string, body?: unknown, options?: { timeoutMs?:
   );
 }
 
+/**
+ * 일부 칸만 고치는 쓰기(정보 검색 관심 대상의 별칭·알림 — PATCH /api/search/watch/{id}). 본문은 JSON, 시간 한도는 없습니다(apiPost와 같음).
+ * 화면과 백엔드 포트가 다르면 브라우저가 OPTIONS를 먼저 보내므로 백엔드 CORS 허용 메서드에 PATCH가 있어야 합니다.
+ */
+export function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+}
+
 // ---------------------------------------------------------------- 인증
 export const auth = {
   login: (email: string, password: string) =>

@@ -5,7 +5,7 @@
  * localhost를 찾고, LAN IP를 박으면 맥의 localhost:3000에서 쿠키가 다른 사이트가 됩니다.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiBase, apiGet, apiPost, NetworkError, UnauthorizedError } from "@/lib/api";
+import { ApiError, apiBase, apiGet, apiPatch, apiPost, NetworkError, UnauthorizedError } from "@/lib/api";
 
 describe("apiBase", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -67,6 +67,22 @@ describe("요청 헤더", () => {
     await apiPost("/api/y", { a: 1 });
     const postHeaders = fetchMock.mock.calls[1][1].headers as Record<string, string>;
     expect(postHeaders["Content-Type"]).toBe("application/json");
+  });
+
+  it("PATCH는 메서드·JSON 본문·Content-Type을 보낸다(정보 검색 관심 대상의 별칭·알림 — 계약 §9-4·9-5)", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response("{\"ok\":true}", { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+
+    await expect(apiPatch("/api/search/watch/7", { notify: true })).resolves.toEqual({ ok: true });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/search\/watch\/7$/);
+    expect(init.method).toBe("PATCH");
+    expect(init.body).toBe(JSON.stringify({ notify: true }));
+    expect(init.credentials).toBe("include");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
 });
 

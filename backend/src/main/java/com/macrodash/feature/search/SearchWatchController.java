@@ -5,11 +5,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.JsonNode;
 
 import java.util.Map;
 
@@ -20,6 +22,7 @@ import java.util.Map;
  *  GET    /api/search/watch               내 관심 대상 + 새 글 수 + 상한 + 서버 정기 수집 여부
  *  POST   /api/search/watch               등록 {key} (데모 403, 상한 409)
  *  DELETE /api/search/watch/{id}          지우기(자기 것만 — 남의 것 404)
+ *  PATCH  /api/search/watch/{id}          별칭·새 글 알림 바꾸기 {aliases?, notify?} (자기 것만, 데모·store_only 403)
  *  POST   /api/search/watch/{id}/seen     지금 봤음(새 글 수 0)
  *  GET    /api/search/excludes            매체 제외 목록(처음 값 + 운영자가 더한 줄)
  *  POST   /api/search/excludes            (운영자) 더하기 {kind, value, note}
@@ -58,6 +61,13 @@ public class SearchWatchController {
     @DeleteMapping("/watch/{id}")
     public ResponseEntity<Map<String, Object>> delete(@PathVariable long id, HttpServletRequest request) {
         return respond(watches.delete(CurrentUser.of(request), id));
+    }
+
+    @PatchMapping("/watch/{id}")
+    public ResponseEntity<Map<String, Object>> patch(@PathVariable long id, @RequestBody(required = false) JsonNode body,
+                                                     HttpServletRequest request) {
+        // 본문은 칸마다 모양을 따로 검사하려고(별칭 배열의 글이 아닌 값·알림의 참거짓이 아닌 값 → 400) 날것으로 받습니다. 데모(403)를 먼저 봅니다.
+        return respond(watches.patch(CurrentUser.of(request), id, body));
     }
 
     @PostMapping("/watch/{id}/seen")
