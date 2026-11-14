@@ -39,8 +39,8 @@ function renderList() {
 describe("연결 탭 '목록' 보기 — 좁은 화면(390)에서도 연결마다 이름을 읽고 가름(QA-422)", () => {
   // QA-422: 390에서 줄 오른쪽의 메타 칸('기업 · GLEIF · 이름으로 찾기' — shrink-0)이 폭을 먼저 차지해 이름 칸이 약 78px로 줄고, 이름·설명이
   // 한 줄 말줄임(truncate, title 없음)이라 'Example Subsidiary 1~4 Ltd'가 모두 'Example …'로 똑같이 보였습니다.
-  // 수정 전 실패: 이름 span에 lg 접두 없는 truncate가 있고 title이 없음, 메타 span이 이름 칸 밖의 shrink-0 칸.
-  it.fails("lg 미만은 이름·설명을 줄바꿈하고(말줄임은 lg에서만, 잘릴 수 있는 글에는 title) 메타는 이름 칸 밑의 제 줄 — 줄 높이 44px 그대로", () => {
+  // 수정 전 실패: 이름 span에 lg 접두 없는 truncate가 있고 title이 없음, 메타 span이 이름 칸 밖의 shrink-0 칸(재현 커밋에서는 it.fails).
+  it("lg 미만은 이름·설명을 줄바꿈하고(말줄임은 lg에서만, 잘릴 수 있는 글에는 title) 메타는 이름 칸 밑의 제 줄 — 줄 높이 44px 그대로", () => {
     renderList();
     for (const link of [...SUBSIDIARIES, INSIDER]) {
       const button = screen.getByRole("button", { name: new RegExp(link.name) });

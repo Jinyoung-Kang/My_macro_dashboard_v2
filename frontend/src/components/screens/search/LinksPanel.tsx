@@ -104,24 +104,36 @@ export function LinksPanel({
             <ul className="divide-y divide-border">
               {group.links.map((link, index) => (
                 <li key={`${link.key ?? "name"}:${link.name}:${index}`}>
+                  {/* lg 미만(390 등)은 이름·설명을 줄바꿈하고 메타(종류·출처·이름으로 찾기)를 그 밑의 제 줄로 — 오른쪽 칸이 폭을 먼저 차지하면 앞머리가 같은
+                      이름(자회사 법인명 등)이 똑같이 잘려 가를 수 없음(QA-422). lg는 한 줄(말줄임 + title)과 오른쪽 메타 칸. 아이콘·꺾쇠는 첫 줄(20px)에 맞춤. */}
                   <button
                     type="button"
                     onClick={() => onTarget(linkTarget(link))}
-                    className="flex min-h-11 w-full items-center gap-2 rounded-control px-1.5 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8"
+                    className="flex min-h-11 w-full items-start gap-2 rounded-control px-1.5 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8 lg:items-center"
                   >
-                    <span className="text-text-3">
+                    <span className="flex h-5 shrink-0 items-center text-text-3">
                       <KindIcon kind={link.kind} size={14} />
                     </span>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-accent">{link.name}</span>
-                      {link.detail ? <span className="truncate text-xs text-text-2">{link.detail}</span> : null}
+                    <span className="flex min-w-0 flex-1 flex-col lg:flex-row lg:items-center lg:gap-2">
+                      <span className="flex min-w-0 flex-col lg:flex-1">
+                        <span className="break-words text-accent lg:truncate" title={link.name}>
+                          {link.name}
+                        </span>
+                        {link.detail ? (
+                          <span className="break-words text-xs text-text-2 lg:truncate" title={link.detail}>
+                            {link.detail}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-text-3 lg:shrink-0">
+                        {[link.kind ? entityKindLabel(link.kind) : null, linkSourceLabel(link.source), link.key ? null : "이름으로 찾기"]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
                     </span>
-                    <span className="shrink-0 text-xs text-text-3">
-                      {[link.kind ? entityKindLabel(link.kind) : null, linkSourceLabel(link.source), link.key ? null : "이름으로 찾기"]
-                        .filter(Boolean)
-                        .join(" · ")}
+                    <span className="flex h-5 shrink-0 items-center">
+                      <ChevronRightIcon size={14} className="text-text-3" />
                     </span>
-                    <ChevronRightIcon size={14} className="text-text-3" />
                   </button>
                 </li>
               ))}
