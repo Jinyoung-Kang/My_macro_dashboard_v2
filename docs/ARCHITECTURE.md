@@ -72,6 +72,7 @@ ISA 계좌([ADR 0029](adr/0029-isa-manual-account.md)·[ADR 0034](adr/0034-isa-b
 | `source_alerts` (V34) | 수집 출처 끊김 알림의 기록(사건 하나에 한 행 — 연 시각·텔레그램을 보낸 시각·풀린 시각). **백엔드가 씁니다**(`store.SourceAlertStore`, ADR 0035). 수집기는 읽지도 쓰지도 않습니다 |
 | `info_translations` (V35) | 정보 수집 글의 한국어 번역([ADR 0037](adr/0037-info-wire-translate.md)) — 번역 한 건에 한 행(id = `md5(종류:원문)`, 종류 title·body, 원문 글자 수, 한국어, 모델). 같은 글자는 한 번만 번역. **백엔드가 씁니다**(`store.TranslationStore`). V35는 `info_items.kind`에 `headline`(본문 없는 속보 한 줄)도 더함 |
 | `paper_briefings` (V36) | 모의 매매 마감 브리핑의 기록([ADR 0039](adr/0039-fixed-intraday-preopen-briefing.md)) — 시장·세션마다 한 행(코드가 만든 사실 JSON, Claude의 응답, 보낸 글, 상태 OK·FACTS_ONLY, 사용량, 보낸 시각). 결정·장중 판단 패킷은 이 표를 읽지 않습니다. **백엔드가 씁니다**(`store.BriefingStore`). 수집기는 읽지도 쓰지도 않습니다 |
+| `search_watches`·`search_media_excludes`·`search_watch_items`·`fetch_budgets` (V37) | 정보 검색의 관심 대상·매체 제외([ADR 0041](adr/0041-info-search-watch.md) 단계 3) — 사용자마다 등록한 대상(대표 키·이름·별칭·식별자·마지막으로 본 시각)과 운영자가 더한 제외 매체는 **백엔드가 씁니다**(`store.SearchWatchStore`·`store.SearchExcludeStore` — 수집기는 읽기만). 대상마다 모은 글(2년)과 즉석 검색·관심 대상의 호스트별 하루 요청 예산(KST 날짜, `fetch_hosts`와 따로)은 **수집기가 씁니다**(백엔드는 새 글 수만 읽음). `fetch_schedule`에 피드·대상별 다음 시각 `search_feeds/<피드>`·`search_watch/<대표 키의 md5 앞 16자>`도 둡니다. 모의 매매 입력이 아닙니다 |
 | `regime_log` | 국면 판정 라이브 기록 — 하루 한 건, 추가만. **백엔드가 씁니다**(ADR 0008) |
 | `users`·`user_sessions`·`audit_log`·`email_tokens`·`usage_counters` | 계정·DB 세션·감사 기록·메일 링크 토큰·하루 사용량 — **백엔드가 씁니다**(ADR 0010) |
 | `alert_rules`·`alert_events`·`alert_deliveries` | 알림 규칙·사건·알림함 — **백엔드가 씁니다**(ADR 0011). 수집기는 종목 규칙의 코드만 읽습니다 |
@@ -288,7 +289,9 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
   백엔드는 입력을 검사하고 `external`(데모·`store_only`면 false)·`owner`를 붙여 수집기 `/live/search/*`를 중계합니다. 대상 풀기(Wikidata·SEC·DART·13F)와 출처 호출
   (구글·Bing·Yahoo·네이버·연합인포맥스)·저장본 읽기·2년 자르기·중국어 제목·매체 제외·같은 글 가리기는 모두 수집기(`services/search*.py`)가 하고 결과는 메모리 캐시에만 둡니다.
   백엔드는 회원 응답에서 운영자 전용 출처(수집 글·거장 견해·속보)의 줄을 한 번 더 지웁니다. 화면은 2년 묶음을 한 번 받아 기간 단추로 자르고, 내용 영역만 늘 어두운
-  범위 토큰(`[data-scope="search"]`)으로 그립니다([계약](specs/2026-11-14-info-search-contract.md)).
+  범위 토큰(`[data-scope="search"]`)으로 그립니다([계약](specs/2026-11-14-info-search-contract.md)). 단계 3부터 관심 대상(`/api/search/watch` — 등록·새 글 수,
+  백엔드 표 `search_watches`)을 등록하면 운영 서버의 수집기 polite 태스크 `search_watch`가 대상마다 3~8시간에 한 번 새 글을 모아 `search_watch_items`에 넣고,
+  flex 태스크 `search_feeds`가 보도자료·경제지 RSS 12개를 `search_feed_headline`에 받습니다(정보 검색의 저장본 출처·첫 화면 최근 글 — 모의 매매 입력 아님).
 - **실시간 시세(SSE, [ADR 0024](adr/0024-live-prices-sse.md))**: 모의 매매 장중 카드·보유 표·종목 상세의 종목 가격은 화면이 `GET /api/live/prices/stream`
   (EventSource)에 붙어 있으면 백엔드 `feature.live`가 고른 주기(5초~3시간, 기본 10초 — 2026-11-12, 그 전 1시간)마다 수집기 `/live/prices`(Yahoo·네이버·다음·토스, 3초 캐시)를 불러
   밀어 줍니다. 저장하지 않고 장부·계좌 숫자는 기존 저장본을 그대로 씁니다. 탭을 숨기면 연결을 닫습니다.

@@ -138,11 +138,14 @@ SourceStatus = {
    한국어 제목의 한자(예: `이재용 회장, 日 R&D`)와 일본어 제목은 남아야 함(시험).
 3. **매체 제외**: 매체 도메인이 `.cn`으로 끝나거나, 제외 목록의 도메인과 점 경계로 같으면(`host == d` 또는 `host.endswith("." + d)`), 또는 매체 이름이 목록의 이름과
    대소문자 무시 완전 일치면 뺌(`dropped.excluded`). 처음 목록은 진행 기록 '매체 제외 목록의 처음 값'(코드 상수), 사용자가 더하는 표는 단계 3.
-   도메인은 구글 `<source url>`의 호스트, Bing은 링크 인자 `url`의 호스트, 그 밖은 링크 호스트.
+   도메인은 구글 `<source url>`의 호스트, Bing은 링크 인자 `url`의 호스트, 그 밖은 링크 호스트. 국제화 도메인은 대조할 때 punycode(`xn--`)로 맞춥니다(단계 3 —
+   화면·백엔드가 사용자 제외 도메인을 그 모양으로 저장).
 4. **같은 글**: 원문 주소가 있으면 `info_text.item_id(url)`, 경유 주소(구글)뿐이면 `re.sub(r"\W+", "", title.lower())[:24]`. 먼저 온 것(출처 우선순위: 저장본 > Yahoo·네이버 >
    Bing > 구글)을 남깁니다.
 5. **검색식**: 따옴표 구문을 ` OR `로 묶음. 한국어 판(구글 `hl=ko&gl=KR&ceid=KR:ko`)은 한글 이름·한글 별칭, 영어 판(`hl=en-US&gl=US&ceid=US:en`)은 영문 이름·영문 별칭.
    네 글자 미만의 별칭과 티커는 자유 검색어에 넣지 않음(티커는 종목 뉴스 출처에만). 대상의 이름 자체는 길이와 상관없이 넣음(예: '카카오' — 이름까지 빼면 묻지 못함). 별칭은 판마다 최대 4개(긴 이름 우선). 구글에는 `after:<창 시작 날짜>`를 붙입니다(믿지 않고 1번으로 다시 자름).
+   **Bing은 예외**(단계 3, 서버 실측 2026-11-14 — `"A" OR "B"` 모양과 아주 흔한 한 단어 `NVIDIA`에 0건, 여러 단어 구문·한글 이름에는 줌): 판마다 따옴표 구문 하나를
+   묻고(여러 단어 구문 먼저, 같으면 위 순서), 0건이면 다음 구문으로 한 번 더(판마다 최대 2번, 실패하면 다시 묻지 않음 — `search_sources.bing_phrases`).
 6. **로그**: 검색어·경로·인자를 남기지 않음. 오류 글은 호스트와 상태 코드만(`http.host_of`).
 
 ## 5. 화면
@@ -155,3 +158,79 @@ SourceStatus = {
 - `timeBasis`가 `fetched`인 줄은 시각 옆에 '받은 시각'.
 - 보유 탭: 회사는 `GET /api/guru/holders?q=<티커 또는 이름>`, 기관은 `GET /api/sec13f/portfolio?cik=` — 가장 최근 보고가 2년보다 오래면 같은 안내.
 - 출처 상태 줄: `sources`를 그대로(이름 · 상태 글 · 건수 · 거른 건수), 색만으로 구분하지 않음.
+
+## 6. 단계 3 — 새 피드 묶음 · 관심 대상 · 매체 제외 표 (2026-11-14 추가)
+
+### 6-1. 새 피드 묶음(수집기 flex 태스크 `search_feeds`)
+
+- 피드 12개(ADR 0041 결정 8 — FXStreet 뺌). 모듈은 `services/news.py`의 `FEEDS`·`KR_FEEDS`와 **다른 모듈·다른 이름**(예: `services/search_feeds.py`의 `SEARCH_FEEDS`) —
+  사건 뉴스 시험(`CADENCES` 키 = `FEEDS ∪ KR_FEEDS`, `NewsFeedsParityTest`)과 패킷에 섞이지 않게. `news.Feed`·조건부 요청(`fetch_feed_conditional`)은 재사용하고,
+  피드 읽기는 자체 파서(`search_feeds.parse` — feedparser 직접)를 씁니다: `news.parse_feed`는 시각 없는 글을 버려 Nikkei가 통째로 빠지고, 요약에 본문 칸
+  (`content:encoded`)을 2,000자까지 고릅니다. 간격 규칙(다음 시각·하한·물러남)은 `tasks/search_feeds`에 따로 둡니다(`news_feeds.CADENCES`는 사건 뉴스만).
+- 받기: ADR 0040과 같은 flex 방식(피드마다 `fetch_schedule`의 `search_feeds/<피드>` 줄, 무작위 간격, 처음엔 2~25분 흩기, 하한 10분, 거부되면 그 피드 간격 두 배(최대 8배),
+  같은 호스트는 차례로 2~5초 + 세션 간격 — CNBC 두 피드). 간격(분): 연준·ECB·영란은행 120~240, BBC 90~180, Economist 180~360, Bloomberg·CNBC 금융 60~120,
+  CNBC 세계 90~180, Nikkei Asia 60~120, MarketWatch·Benzinga 45~90, Seeking Alpha 30~60. 로컬에서도 돕니다(공용 세션 — 사건 뉴스와 같음).
+- 저장: 새 관측치 데이터셋 `search_feed_headline`(엔티티 = 같은 글 키 — 원문 주소 `info_text.item_id`, 없으면 제목 키), payload
+  `{title, summary(description·summary만, 300자 — 본문 칸 안 씀), url, publisher(매체 이름 — 피드 설정의 이름), publisherDomain, feed(피드 키), publishedAt|null,
+  fetchedAt(처음 받은 시각), timeBasis(published|fetched), lang:"en"}`. 2년 밖·중국어 제목은 넣지 않음. 보관 90일(정리 태스크). 상태 저장본 `search.feeds.status`
+  (사건 뉴스 상태와 같은 피드별 줄). 데이터셋 이름은 `catalog.py`·`Datasets.java` 둘 다.
+- 쓰는 곳: 정보 검색 `feed`의 저장본 출처(`source:"feeds"`, 라벨 '보도자료·경제지 피드' — 회원에게도), 첫 화면 최근 글(6-4), 관심 대상 대조(6-3).
+  **모의 매매 패킷은 읽지 않음**(백엔드 `feature.paper`가 이 상수를 참조하지 않는다는 구조 시험 + 고정본 불변).
+- 정보 수집 화면: 출처 표(`InfoSources`)에 한 줄(분류 뉴스·글, 종류 rss, 접근 공식 RSS), 뉴스·글 화면의 사건 뉴스 보기 옆에 세 번째 보기 '보도자료·경제지'
+  (백엔드 `InfoService.headlines`의 `set` = `us`·`kr`·`world`).
+
+### 6-2. 표(V37 — `db/migrations/V37__search_watch.sql`, 여러 번 실행해도 안전)
+
+| 표 | 쓰는 쪽 | 칸 |
+|---|---|---|
+| `search_watches` | 백엔드 | `id bigserial PK`, `user_id bigint FK users ON DELETE CASCADE`, `entity_key text`, `kind text`, `name text`, `aliases jsonb`(문자열 배열), `ids jsonb`, `created_at timestamptz`, `last_seen_at timestamptz`, `UNIQUE(user_id, entity_key)` |
+| `search_media_excludes` | 백엔드 | `id bigserial PK`, `kind text`(`domain`·`name`), `value text`(도메인은 소문자 호스트, 이름은 그대로), `note text`, `created_at timestamptz`, `UNIQUE(kind, lower(value))` |
+| `search_watch_items` | 수집기 | `entity_key text`, `item_id text`, `kind text`, `title text`, `url text`, `publisher text`, `publisher_domain text`, `source text`, `lang text`, `summary text`, `published_at timestamptz NULL`, `first_seen_at timestamptz NOT NULL`, `PRIMARY KEY(entity_key, item_id)`, 색인 `(entity_key, coalesce(published_at, first_seen_at) DESC)`·`(coalesce(published_at, first_seen_at))`(2년 정리용) |
+| `fetch_budgets` | 수집기 | `host text`, `purpose text`(`watch`·`search`), `budget_day date`, `budget_used int`, `updated_at`, `PRIMARY KEY(host, purpose)` — 즉석 검색·관심 대상의 호스트별 하루 예산(정기 polite 예산 `fetch_hosts`와 따로, 날이 바뀌면 그 줄을 0부터). `search` 용도는 단계 5(Finviz)부터 씀 — 단계 3의 즉석 검색은 사용자당 새로 받기 10분 1번과 같은 키 호출 묶기로만 막음 |
+
+구현에서 더한 제약: `search_watches.kind`는 `company·institution·person·topic` CHECK, `aliases`는 배열 CHECK, `last_seen_at NOT NULL DEFAULT now()`,
+`search_media_excludes.value`는 빈 글 CHECK, `fetch_budgets.budget_used >= 0`.
+
+수집기는 `search_watches`·`search_media_excludes`를 읽기만 합니다(ADR 0008 — `paper_settings` 선례). 소유 시험 둘(`test_table_ownership.py`·`ArchitectureRulesTest`)을 함께 고칩니다.
+
+### 6-3. 관심 대상 정기 수집(수집기 polite 태스크 `search_watch` — 서버에서만)
+
+- 태스크 깨는 간격 `Cadence(20, 40)`분(본문이 끝난 뒤부터 재고 polite 틱 지연이 더해짐), 한 번에 때가 된 대상 최대 6개(하루 약 250곳 — 대상마다 3~8시간을 운영자
+  상한 50곳까지 지킴, 서버 상한 100곳을 다 채우면 차례가 밀려 대상마다 9~10시간쯤). 처리량 상한이 먼저 걸려 구글은 하루 많아야 약 500건이고, Bing은 0건이라 두 번째
+  구문을 묻는 일이 잦으면 예산이 바닥날 수 있음. 보낼 질의가 없는 대상(따옴표·공백뿐인 주제)은 예산·간격을 쓰지 않음. 대상마다 다음 시각은 `fetch_schedule`의 `search_watch/<대표 키의 md5 앞 16자>` 줄에 3~8시간(180~480분) 무작위 —
+  줄 이름에 대표 키를 그대로 두지 않음(회원의 `topic:` 글이 운영자 메커니즘 화면에 드러나지 않게, ADR 0041 결정 12). 처음 등록된 대상(줄 없음)은 다음 깨기에서
+  바로, 그다음 오래 기다린 대상. 여러 사용자가 같은 대상을 등록해도 한 번(대표 키 기준). 등록 표에는 이름 하나와 별칭만 있어, 등록 때의 이름 둘(한·영)은 별칭 앞쪽에서
+  되살립니다(`watch_entity` — 즉석 검색과 같은 검색어).
+- 한 대상의 처리: ① 저장본 대조(외부 0건 — 새 피드 묶음 90일·사건 뉴스 7일·속보·수집 글에서 별칭이 든 글: 영문은 단어 경계, 한글은 포함, 4글자 미만 별칭 안 씀)
+  ② 외부 질의 — 구글 뉴스(한국어·영어 판)·Bing 뉴스(판마다 구문 하나, 0건이면 다음 구문으로 한 번 더 — 4절 규칙 5), 요청 사이 2~5초. 요청마다(Bing의 두 번째
+  구문 포함) 호스트 하루 예산(`fetch_budgets`, purpose `watch`, KST 날짜): `news.google.com` 600·`www.bing.com` 600. 예산이 없으면 그 질의는 보내지 않고 그 대상은
+  저장본 대조만 한 뒤 다음 시각을 잡음. 단계 4부터 SEC·DART, 단계 5부터 Finviz.
+- 넣을 때 4절의 2년·중국어·`.cn`·매체 제외(코드 상수 + `search_media_excludes`)를 적용. 저장 id는 원문 주소면 `info_text.item_id(url)`, 경유 주소(구글)면 그
+  기사 경로(`/rss/articles/<id>`, 인자 없음)의 같은 해시, 주소가 없으면 전체 제목의 해시 — 4절 규칙 4의 제목 앞 24자(한 요청 안의 임시 키)는 2년 보관 키로 쓰지
+  않음(앞 24자가 같은 다른 기사를 막지 않게). 경유 주소·주소 없는 줄은 같은 실행이나 그 대상의 저장본에 전체 제목이 같은 글이 있으면 넣지 않음. 이미 있는 글은 처음
+  받은 시각 그대로. 작성 시각이 없는 저장본 글(Nikkei 등)의 처음 받은 시각은 그 글을 처음 받은 시각.
+- 정리: KST 하루 한 번 — 더는 아무도 등록하지 않은 대상의 글(그 대상의 일정 줄이 마지막으로 고쳐진 뒤 7일 유예, 일정 줄도 함께)·2년 지난 글. 제외 목록이 바뀌었을
+  때(과정이 처음 깰 때 포함) 그 목록에 걸리는 매체의 글. 정리 문장은 10초 상한, 실패하면 실행 기록에 '정리 못 함'만 적고 수집은 이어 감.
+- 판정: 저장본·외부 질의가 일부 실패하면 받은 것은 넣고 `Partial(failed)`. 하루 예산으로 보내지 않은 질의는 출처의 끊김이 아님 — 보낸 요청이 모두 성공했으면 '정상',
+  하나도 못 보낸 깨기는 직전 판정이 정상(또는 없음)일 때만 '정상'(아니면 `Partial(unsent)` — 직전 판정 그대로). 태스크 시간 상한(600초)으로 남긴 대상이 있으면 `Partial(unsent)`.
+- `POLITE_FETCH_ENABLED`가 꺼진 곳(로컬·QA)에서는 태스크가 돌지 않음(외부·표 읽기 0건 — 시험).
+- 출처 표 `InfoSources`에 한 줄(접근 '공식 RSS·검색' — 화면 `/search`), 태스크 수 +2(`search_feeds`·`search_watch`).
+
+### 6-4. 경로(백엔드)
+
+| 경로 | 등급 | 내용 |
+|---|---|---|
+| `GET /api/search/watch` | 회원 | 내 관심 대상 `{available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax}, collecting:boolean}` — `newCount` = 마지막으로 본 뒤 처음 받았고(`first_seen_at > last_seen_at`) 작성 시각(모르면 처음 받은 시각)이 `last_seen_at`의 24시간 전과 등록 시각 가운데 늦은 것보다 늦은 글 수(등록 직후 첫 수집의 2년치·등록 전 글이 '새 글'이 되지 않게, 늦게 잡힌 어제 기사는 셈). 회원에게는 운영자 전용 출처(`info`·`guru`·`wire`)에서 온 글을 세지 않음. `collecting` = 서버 정기 수집이 켜진 곳인지(수집기 `/live/search/excludes`의 `politeEnabled` — 10분 캐시, 모르면 null) |
+| `POST /api/search/watch` | 회원(데모·`store_only` 403) | `{key}` → 백엔드가 수집기 `entity`로 이름·별칭·식별자를 풀어 저장(별칭은 대상의 것만, 최대 12개). 상한: 회원 10·운영자 50, 서버 전체 서로 다른 대표 키 100 — 넘으면 409(reason `user_limit`·`server_limit`). 이미 있으면(다른 키로 같은 대상을 보내도 대표 키로 찾아) 200(`created:false`). 풀지 못하면 409(`unresolved`), 수집기에 닿지 못하면 503(reason 없음 — `topic:` 키는 풀기 없이 키의 글로 등록), 풀기가 일부 실패(`entity`·`wikidata`·`sec` 오류)하면 503(`partial` — 저장하지 않음) |
+| `DELETE /api/search/watch/{id}` | 회원(자기 것만) | 지움 |
+| `POST /api/search/watch/{id}/seen` | 회원(자기 것만) | `last_seen_at = now()` — 화면이 그 대상의 타임라인 결과를 받아 그렸을 때(받지 못했으면 보내지 않음) |
+| `GET /api/search/recent` | 회원 | 첫 화면 — 새 피드 묶음 최근 30건(운영자는 속보 최근 20건을 더함) `{available, items:[FeedItem], errors:{출처: 사유}(없으면 빈 객체), fetchedAt}` — 화면은 `errors`가 있으면 '읽지 못한 출처'를 보이고, 비었어도 '없음'이라 하지 않음 |
+| `GET /api/search/excludes` | 회원 | 매체 제외 목록 `{available, seed:[{kind, value, group}]|null, added:[{id, kind, value, note, createdAt}]|null}` (수집기 `/live/search/excludes`는 `fixedRules`·`politeEnabled`를 더 주지만 백엔드는 넘기지 않음) |
+| `POST /api/search/excludes` · `DELETE /api/search/excludes/{id}` | 운영자 | 사용자가 더하는 제외 매체(도메인 — 소문자 ASCII 호스트, 국제화 도메인은 punycode · 이름 — 앞뒤 공백만 떼고 그대로, 80자). 같은 값을 다시 넣으면 200(`created:false`) |
+
+- `feed`의 저장본 출처에 `watch`(그 대상의 `search_watch_items`, 라벨 '관심 대상 수집')와 `feeds`(6-1)를 더합니다. 모은 글 가운데 속보·수집 글에서 온 줄은 운영자에게만
+  `source` = `wire`·`info` 그대로 보이고(회원에게는 지움), 뉴스 탭에는 수집 글·거장 견해에서 온 줄을 넣지 않음(글 탭의 것). 모은 글의 건수는 출처 상태 줄 `watch`에 셈
+  (상태 줄 건수의 합 = 줄 수). 경유 주소(구글) 줄은 합칠 때 맨 뒤로 보내 같은 기사의 원문 주소 줄이 남게 함.
+- `feed?refresh=1`은 캐시를 건너뛰는 '지금 새로 받기'(사용자당 10분에 1번 — 넘으면 캐시 그대로 + 응답 최상위 `refreshNote`에 안내 한 줄, 새로 받았으면 null,
+  refresh를 묻지 않으면 칸 없음). 수집기에 닿지 못한 새로 받기는 한 번으로 세지 않음. 데모·`store_only`는 새로 받지 않고 한도도 쓰지 않음.
+- 주제 키는 앞뒤 공백을 떼고 가운데 이어진 공백을 하나로(수집기 `clean_query`와 같은 키 — 등록·정기 수집·결과가 같은 키).
