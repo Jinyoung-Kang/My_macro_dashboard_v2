@@ -351,6 +351,14 @@ D-9 — 실측에서 보인 중화권 영어 매체: **DigiTimes**(대만, Finvi
   - V38 전 `notify`는 null.
   - 화면 알림 타입, API.md·ARCHITECTURE·계약 §9-8.
 
+- **03:06 KST Vultr 배포**(main@9fe01625, CI 6/6, `make test` 수집기 2,983 · 백엔드 3,433 · 화면 2,569 통과). 서버에 V38이 적용됐고, `search_watches`에 `notify`·`notified_at`·`name_ko`·`name_en`이 생긴 것을 확인했습니다.
+  - 알림 작업은 알림을 켠 관심 대상이 없어 아직 아무것도 만들지 않습니다.
+
+- 묶음 3 워크플로 `wf_6b299696-5f2`(백엔드·화면 — 구현 → 두 갈래 리뷰 → 고침, 통합 점검 — 에이전트 9). 리뷰가 찾아 고친 것:
+  - 백엔드: 하루 상한을 한쪽(요약)만 셈(→ 번역도 함께), 받은 시각을 보도 날짜로 보냄, 출처 캐시가 지나 바깥 출처가 소리 없이 빠짐(→ `offlineSources`·`stale`)
+  - 화면: 겹친 요청의 429 실패 글, 빈 요약 안내, 긴 낱말 줄바꿈, 언마운트
+- 통합 뒤 고친 것: 화면이 `offlineSources`를 "요약에 들지 않은 출처"로 보임, 정보 수집 화면의 사용량 이름표(번역 + 요약), 계약 §9-9·ADR 0037·0041.
+
 ## 남은 확인
 
 - (닫힘, 2026-11-14 사용자 결정) 대만 매체·StreetInsider·Investing.com·South China Morning Post·소유가 불확실한 매체(Webull·Tiger·AInvest 등)는 수집 허용 —
