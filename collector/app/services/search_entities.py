@@ -12,7 +12,8 @@ app/services/search_entities.py
 - ``cik:`` 13F 목록(이름·운용자), Wikidata(CIK 또는 영어 이름이 같은 항목).
 - ``wd:`` Wikidata — 상장사면 대표 키를 ``us:``/``kr:``로(미국·한국 거래소 문장의 티커만 — 미국은 SEC 표에 있고 항목의 CIK와 같을 때,
   한국은 DART 저장본에 있을 때), 13F 기관(CIK)이면 ``cik:``로 바꿉니다.
-- 연결: Wikidata 관계(이름은 ko·en 라벨) + 13F 운용자↔기관.
+- 연결: Wikidata 관계(이름은 ko·en 라벨) + 13F 운용자↔기관(줄마다 ``detail`` 칸은 null — 단계 4 연결 보강(search_links)과 같은 모양).
+- 식별자 ``ids.lei``(단계 4): Wikidata P1278의 모양이 맞는 첫 값(연결 탭의 GLEIF가 씀), 없으면 null.
 외부 호출을 끈 요청(``external=false``)은 로컬 색인과 메모리에 있는 것만 씁니다.
 """
 from __future__ import annotations
@@ -29,6 +30,8 @@ from . import search_store, sec_fundamentals
 from . import search_wikidata as wd
 
 OFFLINE = "외부 호출을 끈 요청이라 부르지 않음(저장본만)"
+# Wikidata가 답했지만 그 항목이 없을 때의 사유 — 실패가 아님(연결 보강이 'LEI 없음'과 'LEI를 모름'을 가를 때 씀).
+WD_MISSING = "Wikidata에 이 항목이 없음"
 LOCAL_TTL = 600.0
 LOCAL_EMPTY_TTL = 60.0
 SEC_TTL = 86_400.0
@@ -363,7 +366,7 @@ def reset() -> None:
 # ------------------------------------------------------------------ 대상 풀기
 
 def empty_ids() -> dict:
-    return {"ticker": None, "market": None, "stockCode": None, "cik": None, "dartCorpCode": None, "wikidata": None}
+    return {"ticker": None, "market": None, "stockCode": None, "cik": None, "dartCorpCode": None, "wikidata": None, "lei": None}
 
 
 def topic_entity(text: str) -> dict:
@@ -520,6 +523,8 @@ def _apply_wd(b: _Builder, parsed: dict, *, prefer_wd_english: bool) -> None:
     b.description = descriptions.get("ko") or descriptions.get("en") or b.description
     if b.ids["cik"] is None and parsed["cik"]:
         b.ids["cik"] = parsed["cik"]
+    if b.ids["lei"] is None and parsed.get("lei"):
+        b.ids["lei"] = parsed["lei"]
 
 
 def _wd_links(b: _Builder) -> None:
@@ -541,19 +546,19 @@ def _wd_links(b: _Builder) -> None:
         if not name or rules.is_chinese_title(name):
             continue
         kind = "person" if relation == "ceo" else "company" if relation == "ceo_of" else None
-        b.links.append({"relation": relation, "key": f"wd:{qid}", "name": name, "kind": kind, "source": "wikidata"})
+        b.links.append({"relation": relation, "key": f"wd:{qid}", "name": name, "kind": kind, "source": "wikidata", "detail": None})
 
 
 def _manager_links(b: _Builder) -> None:
     if b.kind == "institution":
         for ko, _en in MANAGERS.get(b.ids["cik"] or "", ()):
-            b.links.append({"relation": "manager", "key": None, "name": ko, "kind": "person", "source": "13f"})
+            b.links.append({"relation": "manager", "key": None, "name": ko, "kind": "person", "source": "13f", "detail": None})
     elif b.kind == "person":
         names = {name.casefold() for name in [b.name_ko, b.name_en, *b.aliases] if name}
         for cik, managers in MANAGERS.items():
             if any(ko.casefold() in names or en.casefold() in names for ko, en in managers):
                 b.links.append({"relation": "managed_by", "key": f"cik:{cik}", "name": INSTITUTIONS_BY_CIK[cik]["ko"],
-                                "kind": "institution", "source": "13f"})
+                                "kind": "institution", "source": "13f", "detail": None})
 
 
 def _apply_institution(b: _Builder, cik: str) -> bool:
@@ -658,7 +663,7 @@ def _build_wd(b: _Builder, qid: str) -> bool:
     parsed = (entities or {}).get(qid)
     if parsed is None:
         if entities is not None:
-            b.errors["wikidata"] = "Wikidata에 이 항목이 없음"
+            b.errors["wikidata"] = WD_MISSING
         return False
     b.key = f"wd:{qid}"
     if parsed["human"]:

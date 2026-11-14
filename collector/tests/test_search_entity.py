@@ -62,6 +62,8 @@ SYNTH_CHIP = _entity(
         "P749": [_claim("Q900012", qualifiers={"P582": ["+2020-01-01T00:00:00Z"]})],
         "P169": [_claim("Q900020")],
         "P112": [_claim("Q900020")],
+        # 법인 식별자(LEI) — 모양이 틀린 값은 건너뛰고 맞는 첫 값(합성 값, 검증 숫자는 맞추지 않음)
+        "P1278": [_claim("NOT-A-LEI"), _claim("SYNTHCHIPLEI000000" + "42"), _claim("SYNTHCHIPLEI000001" + "07")],
     })
 SYNTH_PERSON = _entity(
     "Q900020", en="Synth Founder", aliases_en=("Synthia Q. Founder",), desc_en="synthetic businessperson",
@@ -180,6 +182,24 @@ def test_Wikidata_항목_읽기():
     assert search_wikidata.parse_entity(_entity("Q3", claims={"P31": [_claim("Q4230006")]}))["organization"] is True
     assert search_wikidata.parse_entity(_entity("Q4", claims={"P31": [_claim("Q5633421")]}))["organization"] is False
     assert search_wikidata.parse_entity({"id": "Q2", "missing": ""}) is None
+
+
+def test_Wikidata_LEI는_20자_모양이_맞는_첫_값만():
+    assert search_wikidata.parse_entity(SYNTH_CHIP)["lei"] == "SYNTHCHIPLEI000000" + "42"
+    for bad in ("SYNTHCHIPLEI00000042X", "synthchiplei00000042", "SYNTHCHIPLEI0000004A", ""):
+        parsed = search_wikidata.parse_entity(_entity("Q5", claims={"P1278": [_claim(bad)]}))
+        assert parsed["lei"] is None, bad
+    assert search_wikidata.parse_entity(_entity("Q6"))["lei"] is None
+    deprecated = _entity("Q7", claims={"P1278": [_claim("SYNTHCHIPLEI000000" + "42", rank="deprecated")]})
+    assert search_wikidata.parse_entity(deprecated)["lei"] is None
+
+
+def test_연결_줄에는_detail_칸이_있다(monkeypatch):
+    _load_sec([("SCHP", "0009000001", "SYNTHCHIP CORP /DE/")])
+    _use_wikidata(monkeypatch, FakeWikidata(cirrus={"P5531=0009000001": ["Q900001"]}, entities={"Q900001": SYNTH_CHIP}))
+    entity = search.entity("us:SCHP", external=True)["entity"]
+    assert entity["links"] and all(link["detail"] is None for link in entity["links"])
+    assert search_entities.empty_ids()["lei"] is None
 
 
 def test_Wikidata_요청은_연락처_없는_일반_이름_UA로():
@@ -381,7 +401,7 @@ def test_미국_종목은_SEC와_Wikidata로_풀린다(monkeypatch):
     assert entity["name"] == "합성칩" and entity["nameKo"] == "합성칩" and entity["nameEn"] == "SynthChip"
     assert entity["description"] == "합성 반도체 기업"
     assert entity["ids"] == {"ticker": "SCHP", "market": "us", "stockCode": None, "cik": "0009000001", "dartCorpCode": None,
-                             "wikidata": "Q900001"}
+                             "wikidata": "Q900001", "lei": "SYNTHCHIPLEI000000" + "42"}
     assert entity["sources"] == ["sec", "wikidata"]
     assert "SynthChip Corporation" in entity["aliases"] and "합성칩 코퍼레이션" in entity["aliases"]
     assert "英伟达" not in entity["aliases"] and "SCHP" not in entity["aliases"]
@@ -415,7 +435,8 @@ def test_13F_기관은_운용자_연결이_있다(monkeypatch):
     assert entity["key"] == "cik:0001536411" and entity["kind"] == "institution"
     assert entity["nameKo"] == "듀케인 패밀리 오피스" and entity["nameEn"] == "Duquesne Family Office"
     assert entity["ids"]["cik"] == "0001536411" and entity["ids"]["wikidata"] is None
-    assert {"relation": "manager", "key": None, "name": "스탠리 드러켄밀러", "kind": "person", "source": "13f"} in entity["links"]
+    assert {"relation": "manager", "key": None, "name": "스탠리 드러켄밀러", "kind": "person", "source": "13f",
+            "detail": None} in entity["links"]
     assert entity["sources"] == ["13f"]
 
 
@@ -439,7 +460,7 @@ def test_운용자_이름의_사람은_13F_기관으로_이어진다(monkeypatch
     _use_wikidata(monkeypatch, FakeWikidata(entities={"Q900060": person}))
     entity = search.entity("wd:Q900060", external=True)["entity"]
     assert {"relation": "managed_by", "key": "cik:0001536411", "name": "듀케인 패밀리 오피스", "kind": "institution",
-            "source": "13f"} in entity["links"]
+            "source": "13f", "detail": None} in entity["links"]
 
 
 def test_Wikidata_항목이_상장사면_대표_키는_티커(monkeypatch):
@@ -531,7 +552,7 @@ def test_주제는_외부를_부르지_않는다():
     assert out["entity"] == {"key": "topic:AI 반도체", "kind": "topic", "name": "AI 반도체", "nameKo": None, "nameEn": None,
                              "aliases": ["AI 반도체"], "description": None,
                              "ids": {"ticker": None, "market": None, "stockCode": None, "cik": None, "dartCorpCode": None,
-                                     "wikidata": None},
+                                     "wikidata": None, "lei": None},
                              "links": [], "sources": []}
     assert out["errors"] == {}
 

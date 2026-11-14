@@ -10,6 +10,8 @@ app/services/search_wikidata.py
   CirrusSearch로 찾습니다. 지운(deprecated) 문장과 끝난(P582) 관계는 뺍니다. 상장(P414)의 한정자 P249가 티커, P5531이 CIK입니다.
   티커는 거래소(P414 값)와 함께 읽고, 미국·한국 대표 키(us:·kr:)에는 미국·한국 거래소 문장의 티커만 씁니다(해외 거래소의 같은 티커·본국 숫자 코드가
   다른 회사로 풀리지 않게).
+- 법인 식별자(LEI, 단계 4 — 계약 §7-5): P1278 문장 가운데 20자 모양(``[A-Z0-9]{18}[0-9]{2}``)이 맞는 첫 값. 연결 탭의 GLEIF 법인 관계를 이 값으로만
+  찾습니다(이름 검색은 해외 자회사가 먼저 나옴).
 - 실패 사유는 호스트와 상태 코드만(검색어·인자 없음). 읽기(``parse_*``)는 순수 함수입니다.
 """
 from __future__ import annotations
@@ -47,6 +49,7 @@ MIN_INTERVAL = 1.0
 # 조직으로 볼 근거가 되는 속성(산업·본사·직원 수·매출·법적 형태·상장·CIK·모회사·자회사·대표·창업자).
 ORGANIZATION_PROPS = ("P452", "P159", "P1128", "P2139", "P1454", "P414", "P5531", "P749", "P355", "P169", "P112")
 _QID = re.compile(r"^Q[1-9]\d{0,11}$")
+LEI = re.compile(r"^[A-Z0-9]{18}[0-9]{2}$")
 _CIRRUS_UNSAFE = re.compile(r"[^\w\s가-힣.&'-]")
 
 
@@ -148,7 +151,7 @@ def parse_entity(raw: Any) -> dict | None:
     """
     wbgetentities의 항목 하나 → 이름·별칭·설명·사람 여부·조직 근거·CIK·티커·관계. 없는 항목이면 None.
     ``tickers``는 거래소와 상관없이 모든 상장 티커(조직 근거로만 씀), ``us_tickers``·``kr_codes``는 미국·한국 거래소 문장의 티커,
-    ``ciks``는 P5531 값 전부(10자리), ``cik``는 그 첫 값입니다.
+    ``ciks``는 P5531 값 전부(10자리), ``cik``는 그 첫 값, ``lei``는 P1278 가운데 모양이 맞는 첫 값(없으면 None)입니다.
     """
     if not isinstance(raw, dict) or "missing" in raw or not _QID.match(str(raw.get("id") or "")):
         return None
@@ -174,6 +177,8 @@ def parse_entity(raw: Any) -> dict | None:
             if ticker and (exchange, ticker) not in listings:
                 listings.append((exchange, ticker))
     tickers = list(dict.fromkeys(ticker for _, ticker in listings))
+    lei = next((value for value in (_string(row.get("mainsnak")) for row in _statements(claims, "P1278"))
+                if value and LEI.match(value)), None)
     relations: list[tuple[str, str]] = []
     for pid, relation in RELATION_PROPS.items():
         taken = 0
@@ -197,6 +202,7 @@ def parse_entity(raw: Any) -> dict | None:
         "us_tickers": list(dict.fromkeys(ticker for exchange, ticker in listings if exchange in US_EXCHANGES)),
         "kr_codes": list(dict.fromkeys(ticker for exchange, ticker in listings if exchange in KR_EXCHANGES)),
         "relations": relations,
+        "lei": lei,
     }
 
 

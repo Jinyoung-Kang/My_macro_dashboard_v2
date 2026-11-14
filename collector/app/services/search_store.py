@@ -11,6 +11,8 @@ app/services/search_store.py
 - (단계 3) 새 피드 묶음 관측치 ``search_feed_headline``(보관 90일 — 회원에게도): 제목·요약에서 별칭. 시각 칸이 없는 피드(Nikkei Asia)의 글은
   처음 받은 시각('fetched'). 첫 화면의 최근 글(묶음 최근 30건 + 운영자는 속보 최근 20건)도 여기서.
 - (단계 3) 관심 대상이 모은 글 ``search_watch_items``(store.search_watch_items) — 운영자 전용 출처(속보·수집 글)에서 온 줄은 운영자에게만.
+  (단계 4) 탭에 맞는 종류만 읽을 수 있고(``kinds`` — 계약 §7-6, 이때는 종류 조건을 건 SELECT를 여기서 함 — 건수 상한이 다른 종류에 먼저 차지 않게),
+  날짜만 아는 공시 줄은 ``timeBasis: "date"``로 되살립니다(search_filings.stored_basis — 표에 시각 기준 칸이 없음).
 - (단계 3) 사용자가 더한 제외 매체 ``search_media_excludes``(백엔드 표 — 읽기만, 60초 캐시).
 
 이 모듈의 SQL은 ``store.connection()``으로 SELECT만 합니다(쓰기 문장 없음 — tests/test_table_ownership.py가 봄). 새 표(V37)의 읽기는
@@ -27,7 +29,7 @@ from datetime import date
 from typing import Any
 
 from .. import catalog, store
-from . import info_blogs, info_waedge, info_wire
+from . import info_blogs, info_waedge, info_wire, search_filings
 from . import search_rules as rules
 from .search_sources import Fetched, feed_item
 
@@ -325,13 +327,27 @@ def recent_wire(limit: int) -> Fetched:
 
 # ------------------------------------------------------------------ 관심 대상이 모은 글(단계 3)
 
-def watch_items(entity_key: str, *, owner: bool) -> Fetched:
+def _watch_rows(entity_key: str, kinds: tuple[str, ...] | None) -> list[dict]:
+    """모은 글 행(최근부터 WATCH_ROW_LIMIT건) — ``kinds``가 있으면 그 종류만(색인 search_watch_items_recent의 대상 범위 안에서 거름)."""
+    if kinds is None:
+        return store.search_watch_items(entity_key, WATCH_ROW_LIMIT)
+    with store.connection() as conn:
+        _set_timeout(conn)
+        return conn.execute(
+            "SELECT * FROM search_watch_items WHERE entity_key = %s AND kind = ANY(%s::text[]) "
+            "ORDER BY COALESCE(published_at, first_seen_at) DESC, item_id LIMIT %s",
+            (entity_key, list(kinds), WATCH_ROW_LIMIT),
+        ).fetchall()
+
+
+def watch_items(entity_key: str, *, owner: bool, kinds: tuple[str, ...] | None = None) -> Fetched:
     """
     그 대상(대표 키)의 모은 글 — 출처 표시는 ``watch``이고, 운영자 전용 출처(속보·수집 글)에서 온 줄은 운영자에게만 그 출처 이름 그대로 둡니다
-    (백엔드가 회원에게서 한 번 더 지움). 경유 주소(구글) 줄은 뒤로 — 같은 글의 원문 주소 줄이 먼저 남게(규칙 4).
+    (백엔드가 회원에게서 한 번 더 지움). 경유 주소(구글) 줄은 뒤로 — 같은 글의 원문 주소 줄이 먼저 남게(규칙 4). ``kinds``가 있으면 그 종류의 줄만
+    (계약 §7-6 — 뉴스 탭·공시 탭). 날짜만 아는 공시 줄은 ``timeBasis: "date"``.
     """
     try:
-        rows = store.search_watch_items(entity_key, WATCH_ROW_LIMIT)
+        rows = _watch_rows(entity_key, kinds)
     except Exception as exc:  # noqa: BLE001
         return Fetched(error=_store_error(exc))
     items = []
@@ -339,7 +355,7 @@ def watch_items(entity_key: str, *, owner: bool) -> Fetched:
         origin = row["source"]
         if origin in OWNER_ONLY_ORIGINS and not owner:
             continue
-        published, basis = row["published_at"], "published"
+        published, basis = row["published_at"], search_filings.stored_basis(origin, row["published_at"])
         if published is None:
             published, basis = row["first_seen_at"], "fetched"
         reader = row["item_id"] if origin in ("wire", "info") else None

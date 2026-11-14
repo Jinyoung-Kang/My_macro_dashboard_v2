@@ -28,6 +28,8 @@ PROTECTED = [
     ("get", "/live/search/entity?e=us:NVDA"),
     ("get", "/live/search/feed?e=us:NVDA&tab=news"),
     ("get", "/live/search/feed?e=us:NVDA&tab=news&refresh=true"),
+    ("get", "/live/search/links?e=us:NVDA"),
+    ("get", "/live/search/links?e=us:NVDA&external=false&owner=true"),
     ("get", "/live/search/recent"),
     ("get", "/live/search/recent?owner=true"),
     ("get", "/live/search/excludes"),

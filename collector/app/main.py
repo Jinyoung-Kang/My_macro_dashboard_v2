@@ -770,6 +770,22 @@ def live_search_feed(
     return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh)
 
 
+@app.get("/live/search/links")
+def live_search_links(
+    e: str | None = Query(None),
+    owner: bool = Query(False),
+    external: bool = Query(True),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """
+    정보 검색 — 연결 보강(계약 §7-5: Yahoo 내부자 명단·GLEIF 법인 관계, 출처마다 캐시). 대상 풀기와 따로 부릅니다(연결 탭을 열 때).
+    external=false면 캐시만. 운영자 전용 출처는 없어 owner는 받기만 합니다.
+    """
+    _check_token(x_service_token)
+    prefix, value = _search_input(search_service.parse_key, e)
+    return search_service.links(f"{prefix}:{value}", external=external, owner=owner)
+
+
 @app.get("/live/search/recent")
 def live_search_recent(
     owner: bool = Query(False),

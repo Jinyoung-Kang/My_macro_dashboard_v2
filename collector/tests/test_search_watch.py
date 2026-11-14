@@ -16,6 +16,9 @@ tests/test_search_watch.py
   6. 정리: 등록이 풀린 대상의 글은 7일 유예 뒤, 2년 지난 글(둘 다 KST 하루 한 번), 제외 매체의 글(제외 목록이 바뀌었을 때).
   7. 정보 검색이 읽는 모은 글: 운영자 전용 출처(속보·수집 글)에서 온 줄은 운영자에게만. 뉴스 탭에는 수집 글에서 온 줄을 넣지 않고(글 탭의 것),
      모은 글의 건수는 '관심 대상 수집' 상태 줄에 셈(상태 줄 건수의 합 = 줄 수).
+  8. 단계 4(계약 §7-6): CIK가 있으면 SEC 회사별 목록(data.sec.gov 600), 사람·13F 기관이면 EDGAR 이름 전문 검색 첫 구문 한 번(efts.sec.gov 300),
+     DART 고유번호가 있으면 첫 쪽(opendart.fss.or.kr 600) — 넣는 줄은 kind 'filing', id는 접수번호·DART 주소. 탭마다 맞는 종류만 읽고(뉴스 탭은
+     뉴스·헤드라인·속보, 공시 탭은 공시), 날짜만 아는 공시 줄은 timeBasis 'date'로 되살림.
 
 외부 네트워크를 쓰지 않습니다 — 구글·Bing 함수를 합성 결과로 바꿔 끼웁니다. PostgreSQL이 필요합니다.
 """
@@ -28,6 +31,7 @@ import pytest
 import requests
 
 from app import catalog, tasks
+from app.services import search_filings
 from app.services import search_rules as rules
 from app.services import search_sources as sources
 from app.services import search_store
@@ -221,7 +225,8 @@ def test_태스크는_polite로_등록되고_간격은_20_40분():
     assert registered.speed == polite.SPEED and registered.run is task.task_search_watch and registered.due is None
     assert (task.CADENCE.low_minutes, task.CADENCE.high_minutes) == (20.0, 40.0)
     assert (task.ENTITIES_PER_WAKE, task.ENTITY_MINUTES, task.UNWATCHED_GRACE_DAYS) == (6, (180.0, 480.0), 7)
-    assert task.DAILY_BUDGETS == {"news.google.com": 600, "www.bing.com": 600} and task.PURPOSE == "watch"
+    assert task.DAILY_BUDGETS == {"news.google.com": 600, "www.bing.com": 600, "data.sec.gov": 600, "efts.sec.gov": 300,
+                                  "opendart.fss.or.kr": 600} and task.PURPOSE == "watch"
 
 
 # ==============================================================================
@@ -641,3 +646,152 @@ def test_타임라인에서_모은_글의_경유_주소_줄은_같은_기사의_
         assert [(item["source"], item["url"]) for item in out["items"]] == [("bing", "https://www.example.org/deal")]
     finally:
         search.reset_cache()
+
+
+# ==============================================================================
+# 8. 단계 4 — 공시
+# ==============================================================================
+class Filings:
+    """SEC·DART 함수 자리 — 부른 (출처, 인자)를 적고 정한 결과를 줍니다."""
+
+    def __init__(self, monkeypatch):
+        self.calls: list[tuple] = []
+        self.results = {
+            "sec": sources.Fetched(items=[_filing("10-Q · Quarterly report", "0009000001-26-000101", source="sec",
+                                                  published=NOW - timedelta(days=2), basis="published")]),
+            "sec_fts": sources.Fetched(items=[
+                _filing("13F-HR · Synthetic Family Office LLC", "0009000001-26-000101", source="sec_fts",
+                        published=search_filings.date_moment("2026-11-01", search_filings.NEW_YORK), basis="date"),
+                _filing("S-1 · Synthetic Family Office LLC", "0009000077-26-000009", source="sec_fts",
+                        published=search_filings.date_moment("2026-10-01", search_filings.NEW_YORK), basis="date")]),
+            "dart": sources.Fetched(items=[sources.feed_item(
+                title="분기보고서", url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261113000123", publisher="합성전자",
+                domain="dart.fss.or.kr", published=search_filings.date_moment("20261113", search_filings.KST), basis="date",
+                source="dart", lang="ko", kind="filing")]),
+        }
+        monkeypatch.setattr(search_filings, "sec_submissions",
+                            lambda cik, *, start_day, session=None: self._hit("sec", cik, start_day))
+        monkeypatch.setattr(search_filings, "sec_fts", self.fts)
+        monkeypatch.setattr(search_filings, "dart_list", self.dart)
+        # 설정(SEC_USER_AGENT·DART_API_KEY)은 갖춘 것으로 — 없는 경우는 따로 시험합니다.
+        monkeypatch.setattr(search_filings, "sec_unready", lambda: None)
+        monkeypatch.setattr(search_filings, "dart_unready", lambda: None)
+
+    def _hit(self, source, *args):
+        self.calls.append((source, *args))
+        return self.results[source]
+
+    def fts(self, phrases, *, start_day, end_day, max_phrases=2, before_retry=None, session=None):
+        return self._hit("sec_fts", tuple(phrases), max_phrases, before_retry)
+
+    def dart(self, corp, *, start_day, end_day, max_pages=2):
+        return self._hit("dart", corp, max_pages)
+
+
+def _filing(title, accession, *, source, published, basis):
+    return sources.feed_item(title=title, url=search_filings.sec_index_url("0009000001", accession), publisher="Synthetic Filer",
+                             domain="sec.gov", published=published, basis=basis, source=source, lang="en", kind="filing",
+                             item_id=search_filings.sec_item_id(accession))
+
+
+COMPANY = dict(ENTITY, ids={"ticker": "SCHP", "market": "us", "cik": "0009000001"})
+KR_COMPANY = {"key": "kr:900001", "kind": "company", "name": "합성전자", "aliases": ["합성전자"],
+              "ids": {"ticker": "900001", "market": "kr", "stockCode": "900001", "dartCorpCode": "00900001"}}
+OFFICE = {"key": "cik:0009000077", "kind": "institution", "name": "합성 패밀리 오피스",
+          "aliases": ["합성 패밀리 오피스", "Synthetic Family Office", "Synthetic Family Office LLC"],
+          "ids": {"cik": "0009000077"}}
+
+
+def _budgets(store) -> dict:
+    with store.connection() as conn:
+        return {row["host"]: row["budget_used"] for row in conn.execute("SELECT host, budget_used FROM fetch_budgets").fetchall()}
+
+
+def test_CIK가_있는_회사는_SEC_회사별_목록을_모아_공시로_넣는다(store, world, monkeypatch):
+    filings = Filings(monkeypatch)
+    _watch(store, _user(store, "a@example.org"), COMPANY)
+    detail = task.task_search_watch()
+    assert [call[:2] for call in filings.calls] == [("sec", "0009000001")], "회사는 이름 전문 검색·DART 없음"
+    assert filings.calls[0][2] == rules.window(rules.kst_today(NOW))[0]
+    assert "바깥 요청 5건" in detail and len(world.sleeps) == 4
+    row = _items(store, "us:SCHP")["10-Q · Quarterly report"]
+    assert (row["kind"], row["source"]) == ("filing", "sec")
+    assert row["item_id"] == search_filings.sec_item_id("0009000001-26-000101"), "id는 접수번호(SEC 두 출처가 같은 id)"
+    assert _budgets(store)["data.sec.gov"] == 1 and "efts.sec.gov" not in _budgets(store)
+
+
+def test_13F_기관은_SEC_목록과_이름_전문_검색_첫_구문만(store, world, monkeypatch):
+    filings = Filings(monkeypatch)
+    _watch(store, _user(store, "a@example.org"), OFFICE)
+    task.task_search_watch()
+    fts = next(call for call in filings.calls if call[0] == "sec_fts")
+    assert fts[1] == ('"Synthetic Family Office"',) and fts[2] == 1 and fts[3] is None, \
+        "첫 구문 한 번(두 번째 구문은 묻지 않음), 티커·짧은 별칭 없이"
+    stored = _items(store, "cik:0009000077")
+    filed = {title: row for title, row in stored.items() if row["kind"] == "filing"}
+    assert set(filed) == {"10-Q · Quarterly report", "S-1 · Synthetic Family Office LLC"}, \
+        "같은 접수(전문 검색과 회사별 목록)는 한 줄 — 회사별 목록이 먼저"
+    assert _budgets(store)["efts.sec.gov"] == 1 and _budgets(store)["data.sec.gov"] == 1
+
+
+def test_국내_회사는_DART_첫_쪽만(store, world, monkeypatch):
+    filings = Filings(monkeypatch)
+    _watch(store, _user(store, "a@example.org"), KR_COMPANY)
+    task.task_search_watch()
+    assert [call for call in filings.calls] == [("dart", "00900001", 1)]
+    row = _items(store, "kr:900001")["분기보고서"]
+    assert row["kind"] == "filing" and row["item_id"] == search_filings.info_text.item_id(row["url"])
+    assert _budgets(store)["opendart.fss.or.kr"] == 1
+
+
+def test_공시_예산이_없으면_보내지_않고_실패는_받지_못함(store, world, monkeypatch):
+    filings = Filings(monkeypatch)
+    _watch(store, _user(store, "a@example.org"), OFFICE)
+    with store.connection() as conn:
+        conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day, budget_used) VALUES ('efts.sec.gov', 'watch', %s, 300)",
+                     (rules.kst_today(NOW),))
+    filings.results["sec"] = sources.Fetched(error="data.sec.gov HTTP 503")
+    detail = task.task_search_watch()
+    assert [call[0] for call in filings.calls] == ["sec"]
+    assert "efts.sec.gov 하루 예산 300건 소진" in detail and "sec data.sec.gov HTTP 503" in detail
+    assert store.source_state(task.TASK_NAME)["status"] == "failed"
+
+
+def test_공시_설정이_없으면_예산·간격·요청_수를_쓰지_않고_끊김으로_보지_않는다(store, world, monkeypatch):
+    filings = Filings(monkeypatch)
+    monkeypatch.setattr(search_filings, "sec_unready", lambda: "SEC_USER_AGENT가 비어 있거나 올바르지 않음")
+    monkeypatch.setattr(search_filings, "dart_unready", lambda: "DART_API_KEY가 설정되지 않음")
+    user = _user(store, "a@example.org")
+    _watch(store, user, OFFICE)
+    _watch(store, user, KR_COMPANY)
+    detail = task.task_search_watch()
+    assert filings.calls == [], "설정이 없으면 부르지 않음"
+    assert not {"data.sec.gov", "efts.sec.gov", "opendart.fss.or.kr"} & set(_budgets(store)), "예산을 쓰지 않음"
+    news_requests = sum(_budgets(store).values())
+    assert f"바깥 요청 {news_requests}건" in detail and len(world.sleeps) == news_requests - 1, "보내지 않은 요청은 세지도 쉬지도 않음"
+    assert detail.count("SEC_USER_AGENT") == 1 and detail.count("DART_API_KEY") == 1, "운영자가 볼 안내는 한 번씩"
+    assert store.source_state(task.TASK_NAME)["status"] == "ok", "설정 빠짐은 출처의 끊김이 아님(보낸 요청은 모두 성공)"
+
+
+def test_모은_글은_탭에_맞는_종류만_읽고_날짜만_아는_공시는_date(store):
+    base = {"publisher": "Example", "publisher_domain": "example.org", "lang": "en", "summary": None, "first_seen_at": NOW}
+    midnight_ny = search_filings.date_moment("2026-11-10", search_filings.NEW_YORK)
+    store.insert_search_watch_items("us:SCHP", [
+        dict(base, item_id="n1", kind="news", title="SynthChip news", url="https://www.example.org/n1", source="bing",
+             published_at=NOW - timedelta(hours=1)),
+        dict(base, item_id="w1", kind="wire", title="SYNTHCHIP HALTED", url="https://www.example.com/w1", source="wire",
+             published_at=NOW - timedelta(hours=2)),
+        dict(base, item_id="f1", kind="filing", title="8-K", url="https://www.sec.gov/Archives/edgar/data/1/2/3-index.htm",
+             source="sec", published_at=midnight_ny),
+        dict(base, item_id="f2", kind="filing", title="10-Q", url="https://www.sec.gov/Archives/edgar/data/1/2/4-index.htm",
+             source="sec", published_at=NOW - timedelta(hours=3)),
+        dict(base, item_id="f3", kind="filing", title="분기보고서", url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=1",
+             source="dart", published_at=search_filings.date_moment("20261110", search_filings.KST)),
+    ])
+    filings = search_store.watch_items("us:SCHP", owner=True, kinds=("filing",))
+    assert {item["title"]: item["timeBasis"] for item in filings.items} == {"8-K": "date", "10-Q": "published", "분기보고서": "date"}
+    assert all(item["kind"] == "filing" and item["source"] == "watch" for item in filings.items)
+    news = search_store.watch_items("us:SCHP", owner=False, kinds=("news", "headline", "wire"))
+    assert [item["title"] for item in news.items] == ["SynthChip news"], "회원에게 속보 줄은 없음"
+    everything = search_store.watch_items("us:SCHP", owner=True)
+    assert len(everything.items) == 5

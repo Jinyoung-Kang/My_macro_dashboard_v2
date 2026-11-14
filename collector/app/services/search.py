@@ -7,13 +7,19 @@ app/services/search.py
   맨 끝에 언제나 ``topic:<q>``.
 - ``entity``: 대상 풀기(하루 캐시, 실패가 섞이면 60초) — search_entities.build.
 - ``feed``: 탭 하나의 결과(2년 묶음 한 번에) — 출처를 작은 스레드 풀로 함께 부르고(출처마다 캐시 — 성공 15분·실패 60초) 규칙(search_rules)을
-  적용해 합칩니다. 공시·리서치 탭은 다음 단계라 빈 목록과 상태 ``later``입니다. 단계 3에서 저장본 출처 둘을 더함 — 새 피드 묶음(``feeds``,
+  적용해 합칩니다. 단계 4(계약 §7)에서 공시 탭(``sec``·``sec_fts``·``dart`` — 기업·기관·사람)과 리서치 탭(``yahoo_research``·``naver_research`` —
+  기업)을 엶(상태 ``later`` 없앰). 타임라인은 그 대상에 허락된 모든 탭의 합(주제는 공시·리서치 없음). 단계 3에서 저장본 출처 둘을 더함 — 새 피드 묶음(``feeds``,
   보도자료·경제지 — 회원에게도)과 관심 대상이 모은 글(``watch``). ``refresh``면 출처 캐시를 건너뜀('지금 새로 받기' — 빈도는 백엔드가 막음).
   모은 글 가운데 수집 글·거장 견해에서 온 줄은 글이 섞이는 탭(타임라인)에만 두고(뉴스 탭에는 넣지 않음 — 계약 §3-4), 출처 상태 줄의 건수는
   그 줄을 내준 출처에서 셉니다(모은 글은 표시 출처가 ``wire``·``info``여도 '관심 대상 수집' 줄 — 상태 줄 건수의 합 = 줄 수). 모은 글의 경유
   주소(구글) 줄은 합칠 때 맨 뒤로 보내 같은 기사의 원문 주소 줄이 남게 합니다.
 - ``recent``(단계 3): 첫 화면 — 새 피드 묶음 최근 30건(+ 운영자는 속보 최근 20건). 저장본만, 바깥 호출 0건.
 - ``excludes``(단계 3): 매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙. 바깥 호출·DB 없음.
+- ``links``(단계 4, 계약 §7-5): 연결 보강 — Yahoo 내부자 명단(``insiders``)·GLEIF 법인 관계(``gleif``). 대상 풀기와 따로 부르고 출처마다 캐시
+  (search_links). 중국어 이름의 연결은 빼고 상태 줄에 셉니다.
+
+관심 대상이 모은 글(``watch``)은 탭에 맞는 종류만 섞습니다(계약 §7-6): 뉴스 탭은 ``news``·``headline``·``wire``(속보는 운영자에게만 — §3-4),
+공시 탭은 ``filing``, 타임라인은 전부(주제는 공시·리서치 줄 없음).
 
 매체 제외는 처음 값(코드 상수) + 사용자가 더한 매체(백엔드 표 search_media_excludes — search_store.user_excludes, 60초 캐시)입니다.
 
@@ -32,7 +38,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from . import search_entities, search_store
+from . import search_entities, search_filings, search_links, search_research, search_store
 from . import search_rules as rules
 from . import search_sources as sources
 from . import search_wikidata as wd
@@ -54,14 +60,28 @@ OFFLINE = search_entities.OFFLINE
 LABELS = {
     "google_ko": "구글 뉴스(한국어)", "google_en": "구글 뉴스(영어)", "bing": "Bing 뉴스", "yahoo": "Yahoo 종목 뉴스",
     "naver": "네이버 종목 뉴스", "infomax": "연합인포맥스", "event_news": "사건 뉴스(저장본)", "wire": "속보(Financial Juice)",
-    "info": "수집 글", "guru": "거장 견해", "filings": "공시", "research": "리서치",
+    "info": "수집 글", "guru": "거장 견해",
     "feeds": "보도자료·경제지 피드", "watch": "관심 대상 수집",
+    # 단계 4(계약 §7-2·§7-3·§7-5)
+    "sec": "SEC 공시(회사별)", "sec_fts": "SEC 전문 검색(이름)", "dart": "DART 공시",
+    "yahoo_research": "투자의견 변경(Yahoo)", "naver_research": "증권사 리포트(네이버)",
+    "insiders": "내부자 명단(Yahoo)", "gleif": "법인 관계(GLEIF)",
 }
 DISPLAY_ORDER = ("google_ko", "google_en", "bing", "yahoo", "naver", "infomax", "event_news", "feeds", "watch", "wire", "info",
-                 "guru", "filings", "research")
-# 같은 글이 여러 출처에 있으면 앞의 출처가 남습니다(계약 §4-4: 저장본 > Yahoo·네이버 > Bing > 구글).
+                 "guru", "sec", "sec_fts", "dart", "yahoo_research", "naver_research")
+LINK_ORDER = ("insiders", "gleif")
+# 같은 글이 여러 출처에 있으면 앞의 출처가 남습니다(계약 §4-4: 저장본 > Yahoo·네이버 > Bing > 구글, §7-4: 그 뒤에
+# sec > sec_fts > dart > yahoo_research > naver_research — SEC 두 출처는 같은 접수번호 id라 한 줄). 모은 글의 공시 줄은 dart 바로 뒤
+# (_merge_order — 실시간 공시 출처가 먼저).
 MERGE_PRIORITY = ("event_news", "feeds", "info", "guru", "wire", "watch", "yahoo", "naver", "bing", "infomax", "google_ko",
-                  "google_en")
+                  "google_en", "sec", "sec_fts", "dart", "yahoo_research", "naver_research")
+FILING_KINDS = ("company", "institution", "person")     # 공시 탭이 있는 대상 종류(주제는 없음)
+FTS_KINDS = ("institution", "person")                   # EDGAR 이름 전문 검색을 묻는 대상 종류
+# 관심 대상이 모은 글에서 탭마다 섞는 종류(계약 §7-6). 뉴스 탭의 'wire'는 운영자에게만 남는 속보(§3-4 — 단계 3과 같음).
+WATCH_KINDS = {"news": ("news", "headline", "wire"), "filings": ("filing",)}
+TOPIC_TIMELINE_KINDS = ("news", "headline", "wire", "post", "opinion")   # 주제의 타임라인 — 공시·리서치 줄 없음
+_CIK = re.compile(r"^\d{10}$")
+_CORP_CODE = re.compile(r"^\d{8}$")
 OWNER_SOURCES = ("wire", "info", "guru")
 POST_SOURCES = ("info", "guru")    # 글 탭의 출처 — 모은 글에서 이 출처로 표시되는 줄은 뉴스 탭에 넣지 않음
 RECENT_FEEDS = 30               # 첫 화면 — 새 피드 묶음 최근 건수
@@ -133,12 +153,13 @@ def _put(key: tuple, value: dict, life: float) -> None:
 
 
 def reset_cache() -> None:
-    """시험용 — 대상·후보 캐시, 출처별 캐시, 로컬 색인·SEC 표를 모두 비웁니다."""
+    """시험용 — 대상·후보 캐시, 출처별 캐시(연결 출처 포함), 로컬 색인·SEC 표를 모두 비웁니다."""
     with _cache_lock:
         _cache.clear()
         _entity_jobs.clear()
         _resolve_jobs.clear()
     sources.reset_cache()
+    search_links.reset_cache()
     search_store.reset_excludes()
     search_entities.reset()
 
@@ -326,19 +347,26 @@ def _stored(source: str, key: tuple, fetch: Callable[[], sources.Fetched], refre
     return _Spec(source, run=lambda: sources.cached(key, fetch, external=True, refresh=refresh))
 
 
-def _watch_spec(entity_key: str, *, owner: bool, refresh: bool, posts: bool = False) -> _Spec:
+def _watch_spec(entity_key: str, *, owner: bool, refresh: bool, kinds: tuple[str, ...] | None = None) -> _Spec:
     """
-    관심 대상이 모은 글(대표 키) — 운영자 전용 출처에서 온 줄은 운영자에게만(캐시 키에 owner). ``posts``가 거짓(뉴스 탭)이면 수집 글·거장 견해에서
-    온 줄을 뺍니다(그 글은 글 탭의 것 — 계약 §3-4).
+    관심 대상이 모은 글(대표 키) — 운영자 전용 출처에서 온 줄은 운영자에게만(캐시 키에 owner). ``kinds``가 있으면 그 종류의 줄만(계약 §7-6 — 뉴스 탭
+    ``WATCH_KINDS["news"]``·공시 탭 ``filing``·주제의 타임라인, None = 전부). 글(``post``)이 섞이지 않는 탭에서는 수집 글·거장 견해에서 온 줄을
+    뺍니다(그 글은 글 탭의 것 — 계약 §3-4).
     """
     def run() -> sources.Fetched:
-        result = sources.cached(("watch", entity_key, owner), lambda: search_store.watch_items(entity_key, owner=owner),
+        result = sources.cached(("watch", entity_key, owner, kinds),
+                                lambda: search_store.watch_items(entity_key, owner=owner, kinds=kinds),
                                 external=True, refresh=refresh)
-        if posts:
+        if kinds is None or "post" in kinds:
             return result
         return dataclasses.replace(result, items=[item for item in result.items if item.get("source") not in POST_SOURCES])
 
     return _Spec("watch", run=run)
+
+
+def _timeline_watch_kinds(target: dict | None) -> tuple[str, ...] | None:
+    """타임라인이 섞는 모은 글의 종류 — 주제는 공시·리서치 줄 없음(그 탭이 없음), 그 밖은 전부."""
+    return TOPIC_TIMELINE_KINDS if (target or {}).get("kind") == "topic" else None
 
 
 def _news_specs(target: dict, *, owner: bool, external: bool, after: str, refresh: bool = False,
@@ -379,7 +407,8 @@ def _news_specs(target: dict, *, owner: bool, external: bool, after: str, refres
         specs.append(_Spec("event_news", status="skipped", message="찾을 이름이 없음"))
         specs.append(_Spec("feeds", status="skipped", message="찾을 이름이 없음"))
     if target.get("key"):
-        specs.append(_watch_spec(target["key"], owner=owner, refresh=refresh, posts=posts))
+        kinds = _timeline_watch_kinds(target) if posts else WATCH_KINDS["news"]
+        specs.append(_watch_spec(target["key"], owner=owner, refresh=refresh, kinds=kinds))
     if owner:
         specs.append(_stored("wire", ("wire", tuple(match)), lambda: search_store.wire(match), refresh))
     else:
@@ -395,17 +424,88 @@ def _post_specs(target: dict, *, owner: bool, refresh: bool = False) -> list[_Sp
             _stored("guru", ("guru", tuple(match)), lambda: search_store.guru_views(match), refresh)]
 
 
-def _later_specs(tab: str, target: dict | None) -> list[_Spec]:
+def _filing_specs(target: dict, *, tab: str, owner: bool, external: bool, window_from: str, window_to: str,
+                  refresh: bool = False) -> list[_Spec]:
+    """
+    공시 출처(계약 §7-2) — ``sec``(CIK가 있으면), ``sec_fts``(사람·13F 기관의 영문 이름 — Bing과 같은 구문 규칙, 티커 없이), ``dart``(DART 고유번호가
+    있으면). 공시 탭이면 모은 글의 공시 줄도. 주제는 공시가 없어 공시 탭에서만 '건너뜀' 줄을 두고 타임라인에는 아무것도 넣지 않습니다.
+    """
+    kind = target.get("kind")
+    if kind not in FILING_KINDS:
+        note = "주제에는 공시 탭이 없음"
+        return [_Spec(source, status="skipped", message=note) for source in ("sec", "sec_fts", "dart")] if tab == "filings" else []
+    ids = target.get("ids") or {}
+    specs: list[_Spec] = []
+    cik = ids.get("cik")
+    if isinstance(cik, str) and _CIK.match(cik):
+        specs.append(_remote("sec", ("sec", cik, window_from),
+                             lambda: search_filings.sec_submissions(cik, start_day=window_from), external, refresh))
+    elif ids.get("market") != "kr":
+        specs.append(_Spec("sec", status="skipped", message="CIK가 없어 묻지 않음"))
+    if kind in FTS_KINDS:
+        phrases = sources.bing_queries(rules.edition_terms(target, "en"))
+        if phrases:
+            specs.append(_remote("sec_fts", ("sec_fts", tuple(phrases), window_from, window_to),
+                                 lambda: search_filings.sec_fts(phrases, start_day=window_from, end_day=window_to), external,
+                                 refresh))
+        else:
+            specs.append(_Spec("sec_fts", status="skipped", message="영문 이름이 없어 묻지 않음"))
+    corp = ids.get("dartCorpCode")
+    if isinstance(corp, str) and _CORP_CODE.match(corp):
+        specs.append(_remote("dart", ("dart", corp, window_from, window_to),
+                             lambda: search_filings.dart_list(corp, start_day=window_from, end_day=window_to), external, refresh))
+    elif ids.get("market") == "kr":
+        specs.append(_Spec("dart", status="skipped", message="DART 고유번호가 없어 묻지 않음"))
+    if tab == "filings" and target.get("key"):
+        specs.append(_watch_spec(target["key"], owner=owner, refresh=refresh, kinds=WATCH_KINDS["filings"]))
+    return specs
+
+
+def _research_specs(target: dict, *, tab: str, external: bool, refresh: bool = False) -> list[_Spec]:
+    """리서치 출처(계약 §7-3) — 기업(상장 종목)만: 미국 종목은 ``yahoo_research``, 국내 종목은 ``naver_research``."""
+    if target.get("kind") != "company":
+        note = "리서치 탭은 기업에만 있음"
+        return ([_Spec(source, status="skipped", message=note) for source in ("yahoo_research", "naver_research")]
+                if tab == "research" else [])
+    ids = target.get("ids") or {}
+    if ids.get("market") == "us" and ids.get("ticker"):
+        ticker = ids["ticker"]
+        return [_remote("yahoo_research", ("yahoo_research", ticker), lambda: search_research.yahoo_grades(ticker), external,
+                        refresh)]
+    if ids.get("market") == "kr" and ids.get("stockCode"):
+        code = ids["stockCode"]
+        return [_remote("naver_research", ("naver_research", code), lambda: search_research.naver_research(code), external,
+                        refresh)]
+    note = "미국·한국 상장 종목이 아니라 묻지 않음"
+    # 상장되지 않은 기업은 화면에 리서치 탭이 없음 — 타임라인에는 건너뜀 줄도 두지 않음(주제·비기업과 같게).
+    return ([_Spec(source, status="skipped", message=note) for source in ("yahoo_research", "naver_research")]
+            if tab == "research" else [])
+
+
+def _unresolved_specs(norm: str, tab: str, *, owner: bool, external: bool, refresh: bool) -> list[_Spec]:
+    """대상을 풀지 못했을 때의 상태 줄 — 바깥 출처는 '건너뜀'(외부 호출을 끈 요청이면 offline), 모은 글은 키로 읽음."""
+    note = "대상을 풀지 못해 묻지 않음"
+
+    def remote(source: str) -> _Spec:
+        # 외부 호출을 끈 요청(데모·STORE_ONLY)이면 바깥 출처는 '대상을 못 풀어서'가 아니라 '부르지 않아서' — 상태 offline(계약 §3-4).
+        return _Spec(source, status="skipped" if external else "offline", message=note if external else OFFLINE)
+
+    specs: list[_Spec] = []
+    if tab in ("news", "timeline"):
+        specs += [remote(source) for source in ("google_ko", "google_en", "bing")]
+        specs.append(_Spec("event_news", status="skipped", message=note))
+        specs.append(_Spec("feeds", status="skipped", message=note))
+        # 관심 대상이 모은 글은 이름 없이 키로 읽습니다(등록 때 푼 대표 키 — 대상을 지금 풀지 못해도 모은 글은 보임).
+        specs.append(_watch_spec(norm, owner=owner, refresh=refresh, kinds=None if tab == "timeline" else WATCH_KINDS["news"]))
+        specs.append(_Spec("wire", status="owner_only" if not owner else "skipped", message=None if not owner else note))
+    if tab in ("posts", "timeline"):
+        specs += [_Spec(source, status="owner_only" if not owner else "skipped", message=None if not owner else note)
+                  for source in ("info", "guru")]
     if tab == "filings":
-        return [_Spec("filings", status="later", message="공시 탭은 다음 단계에서 엽니다")]
+        specs += [remote(source) for source in ("sec", "sec_fts", "dart")]
+        specs.append(_watch_spec(norm, owner=owner, refresh=refresh, kinds=WATCH_KINDS["filings"]))
     if tab == "research":
-        return [_Spec("research", status="later", message="리서치 탭은 다음 단계에서 엽니다")]
-    kind = (target or {}).get("kind")
-    specs = []
-    if kind in ("company", "institution", "person"):
-        specs.append(_Spec("filings", status="later", message="공시 탭은 다음 단계에서 엽니다"))
-    if kind == "company":
-        specs.append(_Spec("research", status="later", message="리서치 탭은 다음 단계에서 엽니다"))
+        specs += [remote(source) for source in ("yahoo_research", "naver_research")]
     return specs
 
 
@@ -445,34 +545,21 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
     window_from, window_to = rules.window(today)
     start = rules.window_start(today)
 
-    if tab in ("filings", "research"):
-        specs = _later_specs(tab, None)
+    target = entity(norm, external=external)["entity"]
+    if target is None:
+        specs = _unresolved_specs(norm, tab, owner=owner, external=external, refresh=refresh)
     else:
-        target = entity(norm, external=external)["entity"]
-        if target is None:
-            note = "대상을 풀지 못해 묻지 않음"
-            specs = []
-            if tab in ("news", "timeline"):
-                # 외부 호출을 끈 요청(데모·STORE_ONLY)이면 바깥 출처는 '대상을 못 풀어서'가 아니라 '부르지 않아서' — 상태 offline(계약 §3-4).
-                specs += [_Spec(source, status="skipped" if external else "offline", message=note if external else OFFLINE)
-                          for source in ("google_ko", "google_en", "bing")]
-                specs.append(_Spec("event_news", status="skipped", message=note))
-                specs.append(_Spec("feeds", status="skipped", message=note))
-                # 관심 대상이 모은 글은 이름 없이 키로 읽습니다(등록 때 푼 대표 키 — 대상을 지금 풀지 못해도 모은 글은 보임).
-                specs.append(_watch_spec(norm, owner=owner, refresh=refresh, posts=tab == "timeline"))
-                specs.append(_Spec("wire", status="owner_only" if not owner else "skipped", message=None if not owner else note))
-            if tab in ("posts", "timeline"):
-                specs += [_Spec(source, status="owner_only" if not owner else "skipped", message=None if not owner else note)
-                          for source in ("info", "guru")]
-        else:
-            specs = []
-            if tab in ("news", "timeline"):
-                specs += _news_specs(target, owner=owner, external=external, after=window_from, refresh=refresh,
-                                     posts=tab == "timeline")
-            if tab in ("posts", "timeline"):
-                specs += _post_specs(target, owner=owner, refresh=refresh)
-            if tab == "timeline":
-                specs += _later_specs(tab, target)
+        specs = []
+        if tab in ("news", "timeline"):
+            specs += _news_specs(target, owner=owner, external=external, after=window_from, refresh=refresh,
+                                 posts=tab == "timeline")
+        if tab in ("posts", "timeline"):
+            specs += _post_specs(target, owner=owner, refresh=refresh)
+        if tab in ("filings", "timeline"):
+            specs += _filing_specs(target, tab=tab, owner=owner, external=external, window_from=window_from,
+                                   window_to=window_to, refresh=refresh)
+        if tab in ("research", "timeline"):
+            specs += _research_specs(target, tab=tab, external=external, refresh=refresh)
 
     fetched = _run(specs)
     excludes = search_store.user_excludes() if fetched else rules.Excludes()
@@ -527,17 +614,107 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
 
 
 def _merge_order(groups: dict[str, list[dict]]) -> list[list[dict]]:
-    """합칠 순서(MERGE_PRIORITY) — 모은 글의 경유 주소(구글) 줄만은 맨 뒤로(구글 줄과 같은 낮은 우선순위, 같은 기사의 원문 주소 줄이 남게)."""
+    """
+    합칠 순서(MERGE_PRIORITY) — 모은 글 가운데 두 갈래만 자리를 옮깁니다.
+    - 경유 주소(구글) 줄은 맨 뒤로(구글 줄과 같은 낮은 우선순위, 같은 기사의 원문 주소 줄이 남게).
+    - 공시 줄(kind ``filing``)은 실시간 공시 출처(``sec``·``sec_fts``·``dart``) 바로 뒤로 — 관심 대상 수집은 같은 회사별 목록·DART 목록을 같은 id로
+      모으므로, 앞에 두면 겹치는 줄이 모두 모은 줄로 남아 실시간 출처가 줄을 줬는데도 상태가 '빈 결과'(0건)가 됩니다. 실시간 출처가 실패하면
+      모은 공시 줄이 그 자리를 채웁니다.
+    """
     ordered: list[list[dict]] = []
     relayed: list[dict] = []
+    stored_filings: list[dict] = []
     for source in MERGE_PRIORITY:
         kept = groups.get(source, [])
         if source == "watch":
             relayed = [item for item in kept if rules.is_relay(item.get("url"))]
-            kept = [item for item in kept if not rules.is_relay(item.get("url"))]
+            stored_filings = [item for item in kept if not rules.is_relay(item.get("url")) and item.get("kind") == "filing"]
+            kept = [item for item in kept if not rules.is_relay(item.get("url")) and item.get("kind") != "filing"]
         ordered.append(kept)
+        if source == "dart":
+            ordered.append(stored_filings)
     ordered.append(relayed)
     return ordered
+
+
+# ------------------------------------------------------------------ 연결 보강(단계 4)
+
+def _unknown_lei(errors: dict, *, external: bool) -> _Spec | None:
+    """
+    LEI가 없을 때 그것이 'Wikidata를 읽지 못해 모름'인지 — 대상 풀기의 ``errors``에 Wikidata 실패·시간 초과·외부 호출 끔이 있으면 GLEIF 줄을
+    ``offline``(외부 호출을 끈 요청·Wikidata를 부르지 않음) 또는 ``error``(그 사유)로 둡니다. Wikidata가 답했으면(항목이 없음 포함) None — 그때만
+    'LEI 없음'(계약 §5: 확인하지 못한 것을 '없음'으로 보이지 않음).
+    """
+    reason = errors.get("entity") or errors.get("wikidata")
+    if not reason or reason == search_entities.WD_MISSING:
+        return None
+    if not external or reason == OFFLINE:
+        return _Spec("gleif", status="offline", message=OFFLINE)
+    return _Spec("gleif", status="error", message=f"LEI를 모름 — {reason}")
+
+
+def _link_specs(target: dict | None, *, external: bool, errors: dict | None = None) -> list[_Spec]:
+    """
+    연결 출처(계약 §7-5) — 미국 상장 회사면 내부자 명단, LEI가 있으면 GLEIF. 해당하지 않으면 '건너뜀' 줄. LEI가 없는데 대상 풀기가 Wikidata를
+    읽지 못했으면(``errors``) GLEIF 줄은 '건너뜀'이 아니라 offline·error.
+    """
+    if target is None:
+        note = "대상을 풀지 못해 묻지 않음"
+        return [_Spec(source, status="skipped" if external else "offline", message=note if external else OFFLINE)
+                for source in LINK_ORDER]
+    ids = target.get("ids") or {}
+    specs: list[_Spec] = []
+    if target.get("kind") == "company" and ids.get("market") == "us" and ids.get("ticker"):
+        ticker = ids["ticker"]
+        specs.append(_Spec("insiders", run=lambda: search_links.cached(("insiders", ticker), lambda: search_links.insiders(ticker),
+                                                                       ttl=search_links.INSIDERS_TTL, external=external)))
+    else:
+        specs.append(_Spec("insiders", status="skipped", message="미국 상장 회사가 아니라 묻지 않음"))
+    lei = ids.get("lei")
+    if isinstance(lei, str) and search_links.LEI_PATTERN.match(lei):
+        specs.append(_Spec("gleif", run=lambda: search_links.cached(("gleif", lei), lambda: search_links.gleif(lei),
+                                                                    ttl=search_links.GLEIF_TTL, external=external)))
+    else:
+        specs.append(_unknown_lei(errors or {}, external=external)
+                     or _Spec("gleif", status="skipped", message="LEI 없음 — Wikidata에 법인 식별자가 없음"))
+    return specs
+
+
+def links(key: str, *, external: bool = True, owner: bool = False) -> dict:
+    """
+    연결 보강(계약 §7-5) — ``{entityKey, links, sources, fetchedAt}``. 대상 풀기(하루 캐시)와 따로 부릅니다. 중국어 이름의 연결은 빼고(규칙 2)
+    상태 줄의 ``dropped.chinese``에 셉니다. 운영자 전용 출처는 없어 ``owner``는 받기만 합니다.
+    """
+    prefix, value = parse_key(key)
+    norm = f"{prefix}:{value}"
+    resolved = entity(norm, external=external)
+    specs = _link_specs(resolved["entity"], external=external, errors=resolved.get("errors"))
+    fetched = _run(specs)
+    out: list[dict] = []
+    rows = []
+    for spec in specs:
+        result = fetched.get(spec.source)
+        if result is None:
+            rows.append(_status_row(spec.source, spec.status or "skipped", 0, None, spec.message))
+            continue
+        dropped = rules.empty_dropped()
+        kept = []
+        for link in result.items:
+            if rules.is_chinese_title(link.get("name")):
+                dropped["chinese"] += 1
+            else:
+                kept.append(link)
+        out += kept
+        if result.offline:
+            status, message = "offline", OFFLINE
+        elif result.error:
+            status, message = "error", result.error
+        elif result.cached:
+            status, message = "cached", result.note
+        else:
+            status, message = ("ok" if kept else "empty"), result.note
+        rows.append(_status_row(spec.source, status, len(kept), dropped, message))
+    return {"entityKey": norm, "links": out, "sources": rows, "fetchedAt": _now_iso()}
 
 
 # ------------------------------------------------------------------ 첫 화면·제외 목록(단계 3)
