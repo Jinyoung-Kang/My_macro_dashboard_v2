@@ -974,6 +974,17 @@ const GRAPH_TAG_STEP = 18;
 const GRAPH_ROW_GAP = 14;
 /** 가운데 대상 상자 높이(px). */
 const GRAPH_CENTER_HEIGHT = 28;
+/** 노드 원의 반지름(그린 원 5 + 테두리 1)과 노드 이름 글 상자의 반높이(12px 글자) — 관계 글이 이것과 겹치면 옮깁니다. */
+const GRAPH_DOT_RADIUS = 6;
+const GRAPH_LABEL_HALF_HEIGHT = 7;
+/** 관계 글을 옮길 때 남기는 틈(px) — 노드 원·이름과 1, 가운데 상자·다른 관계 글과 2(같은 쪽 글의 세로 간격 GRAPH_TAG_STEP − GRAPH_TAG_HEIGHT와 같음). */
+const GRAPH_TAG_ROOM_NODE = 1;
+const GRAPH_TAG_GAP = GRAPH_TAG_STEP - GRAPH_TAG_HEIGHT;
+/** 겹친 관계 글을 옮겨 볼 거리의 상한(px — 처음 자리에서). */
+const GRAPH_TAG_SEARCH = 240;
+/** 관계 글이 들 빈자리가 없을 때 세로 반지름을 늘리는 비율(한 번에)과 횟수. */
+const GRAPH_TAG_GROW = 0.15;
+const GRAPH_TAG_GROW_TRIES = 6;
 /** 글자 크기 12px에서 어림한 글자 폭 — 한글·한자·가나·전각은 12, 그 밖은 7.5. */
 const WIDE_CHAR = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
 const charWidth = (char: string) => (WIDE_CHAR.test(char) ? 12 : 7.5);
@@ -1143,7 +1154,7 @@ export type LinkGraphTag = { relation: string; label: string; side: "right" | "l
 
 export type LinkGraphLayout = {
   width: number;
-  /** 배치의 높이 — 받은 크기의 높이, 같은 쪽 이웃 노드가 GRAPH_ROW_GAP보다 붙으면 그만큼 더 큼(QA-424). */
+  /** 배치의 높이 — 받은 크기의 높이, 같은 쪽 이웃 노드가 GRAPH_ROW_GAP보다 붙거나 관계 글이 들 빈자리가 없으면 그만큼 더 큼(QA-424). */
   height: number;
   cx: number;
   cy: number;
@@ -1172,6 +1183,84 @@ const round1 = (value: number) => Math.round(value * 10) / 10;
 /** 한 줄로 늘어선 칸(노드 1 · 틈 GRAPH_GAP_UNITS) — 그림의 오른쪽·왼쪽 호를 채우는 차례. 틈의 sector는 그 틈 뒤의 묶음. */
 type GraphSlot = { kind: "node"; sector: number; link: SearchLink } | { kind: "gap"; sector: number };
 
+/** 그림 위의 상자(px — 왼쪽·오른쪽·위·아래). */
+type GraphBox = { left: number; right: number; top: number; bottom: number };
+
+/** 두 상자 사이가 gap(px)보다 좁은가 — gap이 0이면 맞닿기만 한 것은 겹침이 아님(0.1px 반올림 뒤의 부동소수 오차는 무시). */
+const boxesClash = (a: GraphBox, b: GraphBox, gap = 0) =>
+  Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1e-6 - gap && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1e-6 - gap;
+
+let graphTagOffsets: readonly (readonly [number, number])[] | null = null;
+
+/**
+ * 겹친 관계 글을 옮겨 볼 자리(처음 자리에서 옮기는 x·y) — 2px 격자, 반지름 GRAPH_TAG_SEARCH 안, 가까운 차례. 거리가 같으면 세로로 옮기는 것부터,
+ * 그다음 양수 쪽(placeGraphTags가 세로는 바깥쪽·가로는 안쪽으로 뒤집어 씀). 처음 쓸 때 한 번 만듭니다.
+ */
+function tagOffsets(): readonly (readonly [number, number])[] {
+  if (graphTagOffsets) return graphTagOffsets;
+  const out: [number, number][] = [];
+  for (let dx = -GRAPH_TAG_SEARCH; dx <= GRAPH_TAG_SEARCH; dx += 2) {
+    for (let dy = -GRAPH_TAG_SEARCH; dy <= GRAPH_TAG_SEARCH; dy += 2) if (dx * dx + dy * dy <= GRAPH_TAG_SEARCH ** 2) out.push([dx, dy]);
+  }
+  out.sort((a, b) => a[0] ** 2 + a[1] ** 2 - (b[0] ** 2 + b[1] ** 2) || Math.abs(a[0]) - Math.abs(b[0]) || b[1] - a[1] || b[0] - a[0]);
+  graphTagOffsets = out;
+  return out;
+}
+
+/** 자리를 정할 관계 글 — 지금 자리(x·y), 처음 자리(선 위 — 옮길 때 가까움을 재는 곳), 상자의 반폭(글 폭/2 + 4), 쪽(0 오른쪽·1 왼쪽). */
+type GraphTagSpot = { side: number; x: number; y: number; half: number; originX: number; originY: number };
+
+/** 관계 글이 비킬 것 — 상자와, 관계 글을 옮길 때 그 상자와 남기는 틈(px). */
+type GraphObstacle = { box: GraphBox; room: number };
+
+/**
+ * 관계 글의 마지막 자리(QA-424) — 차례대로 지금 자리가 가운데 상자·노드 원·노드 이름(fixed)과 앞서 자리 잡은 관계 글에 겹치지 않으면(맞닿기만 한
+ * 것은 그대로) 두고, 겹치는 글은 처음 자리에서 가장 가까운 빈 자리로 옮깁니다 — 비킬 것마다 정한 틈(room)과 다른 관계 글과의 틈 GRAPH_TAG_GAP을
+ * 남기고, 그림 폭·높이 안, 글의 가운데는 노드가 놓인 타원 안(노드 바깥으로 나가 다른 노드의 이름 곁에 붙지 않게). 2px 격자를 가까운 차례로 보며,
+ * 빈 자리가 없으면 지금 자리 그대로. 자리는 0.1px로 반올림한 값으로 재고 그 값을 씁니다.
+ */
+function placeGraphTags(
+  tags: GraphTagSpot[],
+  fixed: readonly GraphObstacle[],
+  geo: { width: number; height: number; cx: number; cy: number; rx: number; ry: number },
+): boolean {
+  const boxOf = (x: number, y: number, half: number): GraphBox => ({ left: x - half, right: x + half, top: y - GRAPH_TAG_HEIGHT / 2, bottom: y + GRAPH_TAG_HEIGHT / 2 });
+  const accepted: GraphBox[] = [];
+  const clear = (box: GraphBox, roomy: boolean) =>
+    !fixed.some((other) => boxesClash(box, other.box, roomy ? other.room : 0)) && !accepted.some((other) => boxesClash(box, other, roomy ? GRAPH_TAG_GAP : 0));
+  const moving: GraphTagSpot[] = [];
+  let settled = true;
+  for (const tag of tags) {
+    tag.x = round1(Math.min(geo.width - tag.half - 2, Math.max(tag.half + 2, tag.x)));
+    tag.y = round1(tag.y);
+    const box = boxOf(tag.x, tag.y, tag.half);
+    if (clear(box, false)) accepted.push(box);
+    else moving.push(tag);
+  }
+  for (const tag of moving) {
+    const outward = tag.originY < geo.cy ? -1 : 1;
+    const inward = tag.side === 0 ? -1 : 1;
+    let found: { x: number; y: number; box: GraphBox } | null = null;
+    for (const [dx, dy] of tagOffsets()) {
+      const x = round1(tag.originX + inward * dx);
+      const y = round1(tag.originY + outward * dy);
+      if (x < tag.half + 2 || x > geo.width - tag.half - 2 || y < GRAPH_TAG_HEIGHT || y > geo.height - GRAPH_TAG_HEIGHT) continue;
+      if (((x - geo.cx) / geo.rx) ** 2 + ((y - geo.cy) / geo.ry) ** 2 > 1) continue;
+      const box = boxOf(x, y, tag.half);
+      if (clear(box, true)) {
+        found = { x, y, box };
+        break;
+      }
+    }
+    if (found) {
+      tag.x = found.x;
+      tag.y = found.y;
+    } else settled = false;
+    accepted.push(found?.box ?? boxOf(tag.x, tag.y, tag.half));
+  }
+  return settled;
+}
+
 /**
  * 연결 그림의 배치(계약 §9-3) — 대상을 가운데 두고, 노드는 둘레의 오른쪽 호(위 → 아래)와 왼쪽 호(아래 → 위)에 시계 방향으로 linkGroups의 순서대로
  * 놓습니다(관계 묶음마다 이어진 부채꼴, 묶음 사이에 작은 틈). 좌우는 관계 묶음 단위로 나누되(두 쪽 중 큰 쪽이 가장 작은 묶음 경계), 그러면 한쪽
@@ -1181,7 +1270,8 @@ type GraphSlot = { kind: "node"; sector: number; link: SearchLink } | { kind: "g
  * 12px 그대로). 노드는 최대 max개(graphLinks). 노드 이름은 오른쪽 노드는 오른쪽으로, 왼쪽 노드는 왼쪽으로 뻗고 이름 자리(폭의 26%,
  * 80~130px) 안에 들게 줄입니다(graphLabels — 같은 글이 되는 이름은 가운데를 줄임). 그린 것의 세로 범위(view)를 돌려줘 노드가 적은 그림은 낮게
  * 그립니다. 관계 글은 그 조각의 가운데 노드로 가는 선 위(반지름 55~70%)에 두되 가운데 대상 상자와 겹치면 선 옆(위·아래)으로 비키고,
- * 같은 쪽 관계 글끼리는 세로로, 다른 쪽 관계 글끼리 겹치면 가로로 벌려 둡니다. 출처에 없는 관계는 만들지 않습니다(받은 연결만).
+ * 같은 쪽 관계 글끼리는 세로로 비켜 둡니다. 그래도 가운데 상자·노드 원·노드 이름·다른 관계 글과 겹치는 글은 처음 자리에서 가장 가까운 빈 자리로
+ * 옮기고(placeGraphTags), 빈 자리가 없으면 세로 반지름을 늘려 다시 놓습니다. 출처에 없는 관계는 만들지 않습니다(받은 연결만).
  */
 export function linkGraphLayout(
   groups: readonly LinkGroup[],
@@ -1266,103 +1356,113 @@ export function linkGraphLayout(
   for (let at = 1; at < placed.length; at += 1) {
     if (placed[at].side === placed[at - 1].side) narrowest = Math.min(narrowest, Math.abs(Math.sin(placed[at].angle) - Math.sin(placed[at - 1].angle)));
   }
-  const ry = baseRy * narrowest < GRAPH_ROW_GAP ? (GRAPH_ROW_GAP + 0.1) / narrowest : baseRy;
+  const rowRy = baseRy * narrowest < GRAPH_ROW_GAP ? (GRAPH_ROW_GAP + 0.1) / narrowest : baseRy;
   const reach = Math.max(0, ...placed.map(({ angle }) => Math.abs(Math.sin(angle))));
-  const height = ry > baseRy ? Math.max(size.height, Math.ceil(2 * (ry * reach + GRAPH_MARGIN_Y))) : size.height;
-  const cy = height / 2;
-
-  const nodes: LinkGraphNode[] = [];
-  const nodeSector: number[] = [];
-  const nodeSide: number[] = [];
-  for (const { slot, side, angle } of placed) {
-    const cos = Math.cos(angle);
-    const x = round1(cx + rx * cos);
-    const y = round1(cy + ry * Math.sin(angle));
-    const anchor: LinkGraphNode["anchor"] = cos >= 0 ? "start" : "end";
-    const relation = kept[slot.sector].relation;
-    nodes.push({
-      id: `${relation}:${nodes.filter((node) => node.relation === relation).length}`,
-      link: slot.link,
-      relation,
-      x,
-      y,
-      angle,
-      label: labels.get(slot.link.name.trim()) ?? fitGraphLabel(slot.link.name, labelSpace - 14),
-      labelX: round1(anchor === "start" ? x + 10 : x - 10),
-      labelY: round1(y + 4),
-      anchor,
-      ariaLabel: `${slot.link.name} · ${relationLabel(relation)}${isEntityKey(slot.link.key) ? "" : " · 이름으로 찾기"}`,
-    });
-    nodeSector.push(slot.sector);
-    nodeSide.push(side);
-  }
-
-  // 관계 글 — 이어진 호(묶음 × 쪽)마다 하나, 그 조각의 가운데 노드로 가는 선 위. 가운데 상자와 겹치면 선 옆으로, 같은 쪽끼리는 세로로 비킴.
   const halfStep = step / 2;
-  const pieces: { sector: number; side: number }[] = [];
-  nodes.forEach((_, at) => {
-    if (!pieces.some((piece) => piece.sector === nodeSector[at] && piece.side === nodeSide[at])) pieces.push({ sector: nodeSector[at], side: nodeSide[at] });
-  });
-  const tags = pieces.map(({ sector, side }) => {
-    const members = nodes.filter((_, at) => nodeSector[at] === sector && nodeSide[at] === side);
-    const pivot = members[Math.floor((members.length - 1) / 2)];
-    const labelWidth = Math.ceil(textWidth(kept[sector].label));
-    const half = labelWidth / 2 + 4;
-    const cos = Math.cos(pivot.angle);
-    const sin = Math.sin(pivot.angle);
-    const clearY = center.height / 2 + GRAPH_TAG_HEIGHT / 2 + 4;
-    let placed = false;
-    let x = cx;
-    let y = cy;
-    for (let t = 0.55; t <= 0.7 + 1e-9 && !placed; t += 0.05) {
-      x = cx + rx * t * cos;
-      y = cy + ry * t * sin;
-      placed = Math.abs(x - cx) >= center.width / 2 + half + 4 || Math.abs(y - cy) >= clearY;
+
+  /** 세로 반지름 ry로 노드·관계 글을 놓음 — settled는 관계 글이 모두 겹치지 않는 자리를 찾았는가. */
+  const arrange = (ry: number) => {
+    const height = ry > baseRy ? Math.max(size.height, Math.ceil(2 * (ry * reach + GRAPH_MARGIN_Y))) : size.height;
+    const cy = height / 2;
+
+    const nodes: LinkGraphNode[] = [];
+    const nodeSector: number[] = [];
+    const nodeSide: number[] = [];
+    for (const { slot, side, angle } of placed) {
+      const cos = Math.cos(angle);
+      const x = round1(cx + rx * cos);
+      const y = round1(cy + ry * Math.sin(angle));
+      const anchor: LinkGraphNode["anchor"] = cos >= 0 ? "start" : "end";
+      const relation = kept[slot.sector].relation;
+      nodes.push({
+        id: `${relation}:${nodes.filter((node) => node.relation === relation).length}`,
+        link: slot.link,
+        relation,
+        x,
+        y,
+        angle,
+        label: labels.get(slot.link.name.trim()) ?? fitGraphLabel(slot.link.name, labelSpace - 14),
+        labelX: round1(anchor === "start" ? x + 10 : x - 10),
+        labelY: round1(y + 4),
+        anchor,
+        ariaLabel: `${slot.link.name} · ${relationLabel(relation)}${isEntityKey(slot.link.key) ? "" : " · 이름으로 찾기"}`,
+      });
+      nodeSector.push(slot.sector);
+      nodeSide.push(side);
     }
-    if (!placed) {
-      // 선이 거의 가로라 바깥으로 밀면 노드에 닿음 — 선 옆(위·아래)으로 올려 가운데 상자를 비킴.
-      x = cx + rx * 0.6 * cos;
-      y = cy + (sin > 0 ? 1 : -1) * Math.max(clearY, Math.abs(ry * 0.6 * sin));
-    }
-    return { sector, side, x, y, half, labelWidth };
-  });
-  for (const side of [0, 1]) {
-    const column = tags.filter((tag) => tag.side === side).sort((a, b) => a.y - b.y);
-    for (let at = 1; at < column.length; at += 1) column[at].y = Math.max(column[at].y, column[at - 1].y + GRAPH_TAG_STEP);
-    const overflow = (column.at(-1)?.y ?? 0) - (height - GRAPH_TAG_HEIGHT);
-    if (overflow > 0) for (const tag of column) tag.y = Math.max(GRAPH_TAG_HEIGHT, tag.y - overflow);
-  }
-  // 다른 쪽 관계 글끼리(위·아래 극 가까이에서 가운데로 모임) 상자가 겹치면 가로로 벌립니다(QA-424) — 오른쪽 글은 오른쪽, 왼쪽 글은 왼쪽으로만 옮기므로
-  // 다른 쪽 글과는 멀어지기만 하고, 같은 쪽 세로 간격과 가운데 상자 비킴은 그대로입니다. 그림 폭 안에서 다 벌리지 못하면(모르는 관계 코드의 긴 글 등)
-  // 가운데에서 먼 글을 세로로 더 바깥에 둡니다.
-  const xRange = (tag: (typeof tags)[number]) => ({ min: tag.half + 2, max: width - tag.half - 2 });
-  for (const tag of tags) tag.x = Math.min(xRange(tag).max, Math.max(xRange(tag).min, tag.x));
-  for (const right of tags.filter((tag) => tag.side === 0)) {
-    for (const left of tags.filter((tag) => tag.side === 1)) {
-      // 0.1·0.2 — 자리를 0.1px로 반올림한 뒤에도 겹치거나 닿지 않게.
-      if (Math.abs(right.y - left.y) >= GRAPH_TAG_HEIGHT + 0.1) continue;
-      const need = right.half + left.half + 0.2 - (right.x - left.x);
-      if (need <= 0) continue;
-      const rightRoom = Math.max(0, xRange(right).max - right.x);
-      const leftRoom = Math.max(0, left.x - xRange(left).min);
-      if (rightRoom + leftRoom >= need) {
-        const rightMove = Math.min(rightRoom, Math.max(need / 2, need - leftRoom));
-        right.x += rightMove;
-        left.x -= need - rightMove;
-      } else {
-        const [outer, inner] = Math.abs(right.y - cy) >= Math.abs(left.y - cy) ? [right, left] : [left, right];
-        outer.y = outer.y < cy ? Math.max(GRAPH_TAG_HEIGHT, inner.y - GRAPH_TAG_STEP) : Math.min(height - GRAPH_TAG_HEIGHT, inner.y + GRAPH_TAG_STEP);
+
+    // 관계 글 — 이어진 호(묶음 × 쪽)마다 하나, 그 조각의 가운데 노드로 가는 선 위. 가운데 상자와 겹치면 선 옆으로, 같은 쪽끼리는 세로로 비킴.
+    const pieces: { sector: number; side: number }[] = [];
+    nodes.forEach((_, at) => {
+      if (!pieces.some((piece) => piece.sector === nodeSector[at] && piece.side === nodeSide[at])) pieces.push({ sector: nodeSector[at], side: nodeSide[at] });
+    });
+    const tags = pieces.map(({ sector, side }) => {
+      const members = nodes.filter((_, at) => nodeSector[at] === sector && nodeSide[at] === side);
+      const pivot = members[Math.floor((members.length - 1) / 2)];
+      const labelWidth = Math.ceil(textWidth(kept[sector].label));
+      const half = labelWidth / 2 + 4;
+      const cos = Math.cos(pivot.angle);
+      const sin = Math.sin(pivot.angle);
+      const clearY = center.height / 2 + GRAPH_TAG_HEIGHT / 2 + 4;
+      let onLine = false;
+      let x = cx;
+      let y = cy;
+      for (let t = 0.55; t <= 0.7 + 1e-9 && !onLine; t += 0.05) {
+        x = cx + rx * t * cos;
+        y = cy + ry * t * sin;
+        onLine = Math.abs(x - cx) >= center.width / 2 + half + 4 || Math.abs(y - cy) >= clearY;
       }
+      if (!onLine) {
+        // 선이 거의 가로라 바깥으로 밀면 노드에 닿음 — 선 옆(위·아래)으로 올려 가운데 상자를 비킴.
+        x = cx + rx * 0.6 * cos;
+        y = cy + (sin > 0 ? 1 : -1) * Math.max(clearY, Math.abs(ry * 0.6 * sin));
+      }
+      return { sector, side, x, y, half, labelWidth, originX: x, originY: y };
+    });
+    for (const side of [0, 1]) {
+      const column = tags.filter((tag) => tag.side === side).sort((a, b) => a.y - b.y);
+      for (let at = 1; at < column.length; at += 1) column[at].y = Math.max(column[at].y, column[at - 1].y + GRAPH_TAG_STEP);
+      const overflow = (column.at(-1)?.y ?? 0) - (height - GRAPH_TAG_HEIGHT);
+      if (overflow > 0) for (const tag of column) tag.y = Math.max(GRAPH_TAG_HEIGHT, tag.y - overflow);
     }
-  }
-  const graphTags: LinkGraphTag[] = tags.map((tag) => ({
-    relation: kept[tag.sector].relation,
-    label: kept[tag.sector].label,
-    side: tag.side === 0 ? "right" : "left",
-    x: round1(Math.min(xRange(tag).max, Math.max(xRange(tag).min, tag.x))),
-    y: round1(tag.y),
-    width: tag.labelWidth,
-  }));
+    // 그래도 관계 글이 가운데 상자·노드 원·노드 이름·다른 관계 글(다른 쪽 글 포함)과 겹치면(좁은 화면에서 관계가 여러 종일 때 — 같은 쪽 비킴이 가운데
+    // 상자 쪽으로 밀거나 극 가까이에서 좌우 글이 모임) 그 글만 처음 자리(선 위)에서 가장 가까운 빈 자리로 옮깁니다(QA-424). 겹치지 않는 글은 그대로입니다.
+    const fixed: GraphObstacle[] = [
+      {
+        box: { left: cx - center.width / 2, right: cx + center.width / 2, top: cy - center.height / 2, bottom: cy + center.height / 2 },
+        room: GRAPH_TAG_GAP,
+      },
+      ...nodes.flatMap((node): GraphObstacle[] => {
+        const labelWidth = textWidth(node.label);
+        const labelLeft = node.anchor === "start" ? node.labelX : node.labelX - labelWidth;
+        return [
+          {
+            box: { left: node.x - GRAPH_DOT_RADIUS, right: node.x + GRAPH_DOT_RADIUS, top: node.y - GRAPH_DOT_RADIUS, bottom: node.y + GRAPH_DOT_RADIUS },
+            room: GRAPH_TAG_ROOM_NODE,
+          },
+          {
+            box: { left: labelLeft, right: labelLeft + labelWidth, top: node.y - GRAPH_LABEL_HALF_HEIGHT, bottom: node.y + GRAPH_LABEL_HALF_HEIGHT },
+            room: GRAPH_TAG_ROOM_NODE,
+          },
+        ];
+      }),
+    ];
+    const settled = placeGraphTags(tags, fixed, { width, height, cx, cy, rx, ry });
+    const graphTags: LinkGraphTag[] = tags.map((tag) => ({
+      relation: kept[tag.sector].relation,
+      label: kept[tag.sector].label,
+      side: tag.side === 0 ? "right" : "left",
+      x: tag.x,
+      y: tag.y,
+      width: tag.labelWidth,
+    }));
+    return { ry, height, cy, nodes, nodeSector, tags: graphTags, settled };
+  };
+  // 관계 글이 모두 들 빈자리가 없으면(좁은 화면에 관계가 아주 여러 종이고 글이 긴 때 — 노드 사이 안쪽은 가로 폭이 정해져 있음) 세로 반지름을
+  // GRAPH_TAG_GROW씩 늘려 다시 놓습니다(안쪽의 줄 수가 늘어남 — 글자는 그대로, 그림이 길어짐). 많아야 GRAPH_TAG_GROW_TRIES번.
+  let arranged = arrange(rowRy);
+  for (let tries = 1; !arranged.settled && tries <= GRAPH_TAG_GROW_TRIES; tries += 1) arranged = arrange(rowRy * (1 + GRAPH_TAG_GROW * tries));
+  const { ry, height, cy, nodes, nodeSector, tags: graphTags } = arranged;
 
   const sectors: LinkGraphSector[] = kept.map((group, sector) => {
     const angles = nodes.filter((_, at) => nodeSector[at] === sector).map((node) => node.angle);
