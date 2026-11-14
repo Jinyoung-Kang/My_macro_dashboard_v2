@@ -23,6 +23,7 @@ import {
 import type { SearchEntityResponse, SearchRange } from "@/lib/types";
 import { AliasEditor } from "./AliasEditor";
 import { AttributesPanel, EntityHeader } from "./EntityParts";
+import { ENTITY_GRID, ENTITY_LEFT } from "./entityGrid";
 import { FeedPanel } from "./FeedPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { LinksPanel } from "./LinksPanel";
@@ -200,8 +201,8 @@ export function EntityView({
               />
             ) : (
               <div className={`${PANEL} flex flex-col`}>
-                <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)_18rem]">
-                  <div className="border-b border-border p-3 lg:border-b-0 lg:border-r">{watchPane}</div>
+                <div className={ENTITY_GRID}>
+                  <div className={`border-b border-border p-3 lg:border-b-0 lg:border-r ${ENTITY_LEFT}`}>{watchPane}</div>
                   <div className="min-w-0 px-3 py-2">
                     {current === "holdings" ? (
                       <HoldingsPanel entity={entity} loading={!settled} />
@@ -209,7 +210,7 @@ export function EntityView({
                       <LinksPanel view={links} centerName={entity?.name ?? entityKey} onTarget={onTarget} onRetry={() => void links.reload()} />
                     )}
                   </div>
-                  <div className="border-t border-border p-3 lg:border-l lg:border-t-0">
+                  <div className="border-t border-border p-3 xl:border-l xl:border-t-0">
                     <AttributesPanel entity={entity} kind={kind} errors={errors} aliasEditor={aliasEditor ? aliasEditor() : null} />
                   </div>
                 </div>

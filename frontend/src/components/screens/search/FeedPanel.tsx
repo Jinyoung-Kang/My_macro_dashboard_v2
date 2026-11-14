@@ -44,13 +44,15 @@ import {
 } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind, SearchFeedItem, SearchFeedTab, SearchRange } from "@/lib/types";
 import { AttributesPanel } from "./EntityParts";
+import { ENTITY_GRID, ENTITY_LEFT } from "./entityGrid";
 import { BUTTON, ItemKindTag, LINK, PANEL, PaneHeading, SourceStatusLine, segmentClass } from "./parts";
 import { PeriodBars } from "./PeriodBars";
 import { SummaryButton, SummaryPanel } from "./SummaryPanel";
 
 /**
  * 결과 세 칸(넓은 화면) — 왼쪽 거르기(기간·종류·출처·언어, 건수는 받은 자료 기준), 가운데 KST 날짜별 조밀한 목록(시각 · 종류 · 매체 · 제목),
- * 오른쪽 속성·미리 보기, 아래 출처 상태 줄. 좁은 화면은 한 칸 — 거르기는 접는 서랍, 미리 보기는 아래 시트.
+ * 오른쪽 속성·미리 보기, 아래 출처 상태 줄. 좁은 화면은 한 칸 — 거르기는 접는 서랍, 미리 보기는 아래 시트. 세 칸은 xl(1280) 이상이고,
+ * lg(1024~1279)는 두 칸(왼쪽 · 가운데 — 속성은 가운데 아래, 미리 보기는 아래 시트)입니다(entityGrid — QA-420).
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
  * 날짜만 아는 줄(공시 접수일·리포트 날짜 — timeBasis "date", 계약 §7-1)은 시각 칸에 날짜만 두고, 공시·리서치 줄은 종류를 테두리 표지로 둡니다.
@@ -476,8 +478,8 @@ export function FeedPanel({
         </button>
         {data?.fetchedAt ? <span className="text-xs text-text-3">받은 시각 {formatKst(data.fetchedAt)} KST</span> : null}
       </div>
-      <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)_18rem]">
-        <div className="lg:border-r lg:border-border">
+      <div className={ENTITY_GRID}>
+        <div className={`lg:border-r lg:border-border ${ENTITY_LEFT}`}>
           {aside ? <div className="border-b border-border p-3">{aside}</div> : null}
           <div id={drawerId} className={`${drawer ? "block" : "hidden"} border-b border-border p-3 lg:block lg:border-b-0`}>
             {filterPane}
@@ -588,14 +590,15 @@ export function FeedPanel({
           ) : null}
           {body}
         </div>
+        {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴 232px 옆). */}
         <div
           className={`${
             selected
-              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay"
+              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
               : "border-t border-border"
-          } p-3 lg:static lg:z-auto lg:max-h-none lg:overflow-visible lg:border-l lg:border-t-0 lg:shadow-none`}
+          } p-3 xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:border-l xl:border-t-0 xl:shadow-none`}
         >
-          <div className="lg:sticky lg:top-0">{rightPane}</div>
+          <div className="xl:sticky xl:top-0">{rightPane}</div>
         </div>
       </div>
       <SourceStatusLine sources={statuses} pendingStalled={feed.pendingPhase === "stalled"} />

@@ -4,7 +4,7 @@
  * jsdom은 배치를 재지 않습니다. 그래서 그린 화면의 클래스에서 그 창 폭에 쓰이는 칸 틀(`grid-cols-[…]`과 그 앞의 lg:·xl: 등)을 읽고,
  * 셸의 폭(아래 상수)으로 가운데 칸의 폭을 셈해 줄의 고정 칸이 들어가는지 봅니다(배치 계산을 클래스 계약으로 시험 — 실제 화면은 QA 스택에서 잼).
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -141,8 +141,8 @@ const entityGridOf = (inner: Element) => {
 const middleWidth = (grid: Element, viewport: number) => gridWidth(viewport) - fixedPx(activeTracks(grid, viewport));
 
 describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁아 줄이 오른쪽 속성 칸으로 넘침", () => {
-  // QA-420: 수정 전 실패: 1024에서 가운데 칸이 173px(669 - 13rem - 18rem)인데 타임라인 줄은 고정 칸만 340px(+ 제목 80)이라 넘침.
-  it.fails("타임라인 — 1024·1100·1180·1279·1280·1440 모두 가운데 칸에 줄의 고정 칸과 제목이 들어간다(칸 머리 줄도)", async () => {
+  // QA-420: 1024에서 가운데 칸이 173px(669 - 13rem - 18rem)인데 타임라인 줄은 고정 칸만 340px(+ 제목 80)이라 넘쳤음 — lg는 두 칸(461px).
+  it("타임라인 — 1024·1100·1180·1279·1280·1440 모두 가운데 칸에 줄의 고정 칸과 제목이 들어간다(칸 머리 줄도)", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
@@ -150,7 +150,7 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     const grid = entityGridOf(list);
     const header = list.firstElementChild as Element;
     expect(header.textContent).toContain("제목");
-    const rows = [header, ...screen.getAllByRole("option")];
+    const rows = [header, ...within(list).getAllByRole("option")];
     for (const viewport of WIDTHS) {
       const middle = middleWidth(grid, viewport);
       for (const line of rows) {
@@ -161,8 +161,8 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     }
   });
 
-  // QA-420: 수정 전 실패: 연결·보유 탭도 같은 세 칸이라 1024에서 가운데 안쪽이 149px — 연결 그림의 가장 작은 폭(280)보다 좁아 12px 글자가 줄어듦.
-  it.fails("연결 탭 — 같은 창 폭에서 가운데 칸 안쪽이 연결 그림의 가장 작은 폭 이상이다", async () => {
+  // QA-420: 연결·보유 탭도 같은 세 칸이라 1024에서 가운데 안쪽이 149px — 연결 그림의 가장 작은 폭(280)보다 좁아 12px 글자가 줄었음.
+  it("연결 탭 — 같은 창 폭에서 가운데 칸 안쪽이 연결 그림의 가장 작은 폭 이상이다", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.links("us:NVDA")] = LINKS;
     renderScreen("/search?e=us:NVDA&tab=links&range=30d");
@@ -172,6 +172,54 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
       const inner = middleWidth(grid, viewport) - 2 * 12; // 가운데 칸의 px-3
       expect({ viewport, inner }).toEqual({ viewport, inner: Math.max(inner, graphMin) });
     }
+  });
+
+  it("lg(1024~1279)는 두 칸 — 왼쪽 칸이 두 줄을 차지하고 오른쪽 칸(속성)은 가운데 아래(옆 경계는 xl부터), lg 미만은 한 칸 그대로", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const grid = entityGridOf(await screen.findByRole("listbox", { name: "결과" }));
+    for (const viewport of [1024, 1279]) expect(activeTracks(grid, viewport)).toEqual(["13rem", "minmax(0,1fr)"]);
+    expect(activeTracks(grid, 1280)).toEqual(["13rem", "minmax(0,1fr)", "18rem"]);
+    const tokens = grid.className.split(/\s+/);
+    // lg 미만은 칸 틀이 없음(한 칸 — 390 그대로).
+    expect(tokens.filter((token) => !token.includes(":"))).toEqual([]);
+    expect(tokens).toContain("lg:grid-rows-[auto_1fr]");
+    const [left, middle, right] = [...grid.children];
+    expect(left.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:row-span-2", "xl:row-span-1"]));
+    expect(middle.contains(screen.getByRole("listbox", { name: "결과" }))).toBe(true);
+    const edge = right.className.split(/\s+/);
+    expect(edge).toEqual(expect.arrayContaining(["border-t", "xl:border-l", "xl:border-t-0", "xl:static"]));
+    expect(edge.some((token) => token.startsWith("lg:"))).toBe(false);
+    expect(right.textContent).toContain("속성");
+  });
+
+  it("xl 미만에서 고른 줄의 미리 보기는 아래 시트 — lg는 바닥에, 왼쪽 메뉴(232px) 옆. xl은 오른쪽 칸 그대로", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    fireEvent.click(within(list).getAllByRole("option")[0]);
+    const preview = screen.getByRole("region", { name: "미리 보기" });
+    const pane = preview.parentElement?.parentElement as HTMLElement;
+    const tokens = pane.className.split(/\s+/);
+    // 좁은 화면의 시트(하단 탭 바 위)는 그대로.
+    expect(tokens).toEqual(expect.arrayContaining(["fixed", "inset-x-0", "bottom-[calc(64px+env(safe-area-inset-bottom))]", "z-30", "max-h-[50dvh]"]));
+    expect(tokens).toEqual(expect.arrayContaining(["lg:bottom-0", "lg:left-[232px]"]));
+    expect(tokens).toEqual(expect.arrayContaining(["xl:static", "xl:z-auto", "xl:max-h-none", "xl:overflow-visible", "xl:border-l", "xl:border-t-0", "xl:shadow-none"]));
+    expect(tokens).not.toContain("lg:static");
+    expect(preview.parentElement?.className).toBe("xl:sticky xl:top-0");
+  });
+
+  it("결과 탭과 연결 탭은 같은 칸 틀을 쓴다", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
+    reads[endpoints.search.links("us:NVDA")] = LINKS;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const feedGrid = entityGridOf(await screen.findByRole("listbox", { name: "결과" })).className;
+    fireEvent.click(screen.getByRole("tab", { name: "연결" }));
+    const linksGrid = entityGridOf(await screen.findByRole("button", { name: /Mellanox/ })).className;
+    expect(linksGrid).toBe(feedGrid);
   });
 
   it("1440 — 세 칸(13rem · 가운데 · 18rem) 그대로", async () => {
