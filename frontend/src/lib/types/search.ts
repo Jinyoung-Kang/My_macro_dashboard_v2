@@ -245,3 +245,28 @@ export type SearchLinksResponse = SearchRelay & {
   sources?: SearchSourceStatus[];
   fetchedAt?: string | null;
 };
+
+// ------------------------------------------------------------------ 단계 6 묶음 3 — AI 요약(계약 §9-6, 운영자 전용)
+
+/** POST /api/search/summary 본문 — 화면의 대상 키·결과 탭·기간 그대로(서버가 그 결과를 받아 둔 것만 읽어 고른 기간의 최근 40줄을 요약). */
+export type SearchSummaryRequest = { e: string; tab: SearchFeedTab; range: SearchRange };
+
+/** 요약 한 줄 — 글과 근거 줄의 id(FeedItem.id). 근거는 서버가 읽은 줄이라 지금 화면의 묶음에 없을 수 있습니다. */
+export type SearchSummaryLine = { text: string; refs: string[] };
+
+/**
+ * POST /api/search/summary 응답. 같은 (대상, 탭, 기간, 줄 id들)은 서버가 6시간 다시 씁니다(cached). basedOn = 서버가 읽은 줄 수(제목·매체·날짜·
+ * 출처 요약만 — 기사 본문 없음), 모르면 null. generatedAt은 UTC ISO(다시 쓴 요약이면 처음 만든 시각). 수집기·엔진에 닿지 못하면 `{available: false, message}`.
+ * 모의 매매의 입력이 아닙니다.
+ */
+export type SearchSummaryResponse = SearchRelay & {
+  summary?: SearchSummaryLine[] | null;
+  basedOn?: number | null;
+  model?: string | null;
+  generatedAt?: string | null;
+  cached?: boolean | null;
+  /** 받은 지 15분이 지나 수집기 캐시에 없어 요약에 들지 않은 바깥 출처(이름) — 비면 없음. */
+  offlineSources?: string[] | null;
+  /** available:false의 사유 코드(not_configured·collector·stale·engine_failed). */
+  reason?: string | null;
+};

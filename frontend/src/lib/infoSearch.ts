@@ -6,7 +6,7 @@
  * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기), 단계 4의 공시·리서치 탭(대상 종류에 따라)·날짜만 아는 줄·
  * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글), 단계 5의 받는 중(pending — Finviz) 다시 읽기 횟수와 상태 글,
  * 단계 6 묶음 1의 기간 막대(KST 하루·월요일 시작 주)·같은 사건 묶어 보기·연결 그림 배치(계약 §9-1~9-3),
- * 묶음 2의 별칭 편집 검사·알림 켬/끔 칸·알림함 줄이 가는 주소(계약 §9-4·9-5).
+ * 묶음 2의 별칭 편집 검사·알림 켬/끔 칸·알림함 줄이 가는 주소(계약 §9-4·9-5), 묶음 3의 AI 요약 안내·근거 줄 맞추기·패널을 비우는 열쇠(계약 §9-6).
  * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
  */
 import { holderQuery, institutionHref, stockHref } from "./detail";
@@ -24,6 +24,9 @@ import type {
   SearchLinksResponse,
   SearchRange,
   SearchSourceStatus,
+  SearchSummaryLine,
+  SearchSummaryRequest,
+  SearchSummaryResponse,
   SearchWatchItem,
   SearchWatchLimits,
 } from "./types";
@@ -1836,4 +1839,107 @@ export function excludeSeedGroups(seed: readonly SearchExcludeSeed[]): ExcludeSe
     group.items.push({ kind: row.kind, value: row.value });
   }
   return [...groups.values()];
+}
+
+// ------------------------------------------------------------------ AI 요약(단계 6 묶음 3 — 계약 §9-6, 운영자 전용)
+
+/** 결과 머리의 단추 이름(읽는 중에도 같음 — 상태는 옆의 글과 aria-disabled가 나름). */
+export const SUMMARY_LABEL = "요약";
+
+const SUMMARY_FAILED = "요약하지 못했습니다";
+
+/** 앞서 다른 기간·탭에서 누른(또는 닫은) 요약이 아직 끝나지 않아 단추가 잠긴 동안의 상태 글 — 서버가 요약을 한 번에 하나만 만듦(겹치면 429). */
+export const SUMMARY_WAITING_TEXT = "AI 요약은 한 번에 하나만 만듭니다 — 앞서 누른 요약이 끝나면 누를 수 있습니다.";
+
+/**
+ * 요약 패널 머리의 안내(계약 §9-6) — n은 서버가 읽은 줄 수(basedOn). 모르면 건수 없이 둡니다(0으로 채우지 않음).
+ * 요약은 받아 둔 줄의 제목·매체·날짜·출처 요약만 보고 만든 것이라 원문을 확인해야 한다고 늘 적습니다.
+ */
+export function summaryNoteText(basedOn: number | null | undefined): string {
+  const known = typeof basedOn === "number" && Number.isFinite(basedOn) && basedOn >= 0;
+  return known
+    ? `AI 요약 — 받은 자료 ${Math.floor(basedOn)}건의 제목·요약만 보고 만든 것, 원문 확인 필요`
+    : "AI 요약 — 받은 자료의 제목·요약만 보고 만든 것, 원문 확인 필요";
+}
+
+/**
+ * 서버가 준 요약 줄 — 글이 있는 줄만(앞뒤 공백을 뗌), 근거는 빈 글이 아닌 글 id만(겹친 것은 처음 것 하나, 받은 순서). 모양이 틀린 칸은 버립니다.
+ * 글은 화면이 글로만 그립니다(링크·태그로 바꾸지 않음 — 모델이 낸 글이라).
+ */
+export function summaryLinesOf(response: { summary?: unknown } | null | undefined): SearchSummaryLine[] {
+  const raw = response?.summary;
+  if (!Array.isArray(raw)) return [];
+  const lines: SearchSummaryLine[] = [];
+  for (const entry of raw as unknown[]) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { text, refs } = entry as { text?: unknown; refs?: unknown };
+    if (typeof text !== "string" || !text.trim()) continue;
+    const ids = Array.isArray(refs) ? refs.filter((ref): ref is string => typeof ref === "string" && ref.length > 0) : [];
+    lines.push({ text: text.trim(), refs: [...new Set(ids)] });
+  }
+  return lines;
+}
+
+/** 요약 줄의 근거 하나 — 받은 자료에 있는 줄(제목)과 지금 목록에서 갈 수 있는지(기간·거르기·막대 좁히기 안 — 접힌 같은 사건 묶음 포함). */
+export type SummaryRef = { id: string; title: string | null; reachable: boolean };
+
+/**
+ * 근거를 지금 화면의 묶음과 맞춥니다. 받은 자료(items — 받은 2년 묶음)에 있는 줄은 받은 순서로 제목과 함께, 없는 근거는 건수(missing)만
+ * (서버가 읽은 저장본과 화면의 묶음이 다를 수 있음 — 새로 받기 뒤 등). reachable = 지금 목록에서 그 줄로 갈 수 있는 id들.
+ */
+export function summaryRefs(
+  refs: readonly string[],
+  items: readonly SearchFeedItem[],
+  reachable: ReadonlySet<string>,
+): { refs: SummaryRef[]; missing: number } {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const out: SummaryRef[] = [];
+  let missing = 0;
+  for (const id of refs) {
+    const item = byId.get(id);
+    if (!item) missing += 1;
+    else out.push({ id, title: item.title || null, reachable: reachable.has(id) });
+  }
+  return { refs: out, missing };
+}
+
+/** 모델·만든 시각(KST) 한 줄 — 모르는 칸은 빼고, 둘 다 모르면 null. */
+export function summaryMetaText(response: Pick<SearchSummaryResponse, "model" | "generatedAt">): string | null {
+  const model = typeof response.model === "string" ? response.model.trim() : "";
+  const parts = [model ? `모델 ${model}` : null, response.generatedAt ? `만든 시각 ${formatKst(response.generatedAt)} KST` : null];
+  const shown = parts.filter((part): part is string => part !== null);
+  return shown.length > 0 ? shown.join(" · ") : null;
+}
+
+/** 받은 요약에 줄이 없을 때의 글 — 서버가 읽은 줄이 0건이면 그렇다고, 그 밖에는 받지 못했다고. */
+/**
+ * 요약에 들지 않은 출처의 한 줄(없으면 null) — 서버는 받아 둔 결과(수집기 출처별 15분 캐시)만 읽어 요약하므로, 그 사이 캐시에서 빠진 바깥 출처는
+ * 요약에 없습니다(화면 목록에는 보일 수 있음). 실패를 '없음'으로 보이지 않게 이름을 적습니다.
+ */
+export function summaryOfflineText(response: Partial<Pick<SearchSummaryResponse, "offlineSources">>): string | null {
+  const names = (response.offlineSources ?? []).filter((name) => typeof name === "string" && name.trim()).map((name) => sourceLabel(name.trim()));
+  return names.length
+    ? `요약에 들지 않은 출처: ${names.join("·")} — 받은 지 15분이 지나 서버에 남아 있지 않음, 새로 받은 뒤 다시 요약하면 들어갑니다.`
+    : null;
+}
+
+export function summaryEmptyText(response: Pick<SearchSummaryResponse, "basedOn">): string {
+  return response.basedOn === 0 ? "고른 기간에 받아 둔 자료가 없어 요약하지 않았습니다." : "요약 줄을 받지 못했습니다.";
+}
+
+/** 수집기·엔진에 닿지 못한 응답(available:false — 하루 글자 상한·엔진 실패 등)의 글. 서버 사유가 없으면 기본 글. */
+export function summaryUnavailableText(response: Partial<Pick<SearchSummaryResponse, "available" | "message">>): string {
+  const message = typeof response.message === "string" ? response.message.trim() : "";
+  return message ? `${SUMMARY_FAILED} — ${message}` : `${SUMMARY_FAILED}.`;
+}
+
+/** 요청 실패의 글 — 서버 사유 그대로, 권한(403)은 사유가 없으면 '이 계정으로는 할 수 없습니다'(writeErrorText와 같은 규칙). */
+export function summaryErrorText(error: unknown): string {
+  const reason = writeErrorText(error, "");
+  return reason ? `${SUMMARY_FAILED} — ${reason}` : `${SUMMARY_FAILED}.`;
+}
+
+/** 패널을 비우는 열쇠 — (대상, 탭, 기간) 가운데 하나라도 바뀌면 다른 열쇠(화면은 그때 패널을 비우고 늦은 응답을 버림). */
+export function summaryRequestKey(request: SearchSummaryRequest): string {
+  return JSON.stringify([request.e, request.tab, request.range]);
 }

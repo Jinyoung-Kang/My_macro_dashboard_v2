@@ -6,6 +6,7 @@ import { SELECTED_BAR } from "@/components/ui/classes";
 import { ChevronDownIcon, ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
 import { useInfoSearchFeed } from "@/hooks/useInfoSearch";
+import { useInfoSearchSummary } from "@/hooks/useInfoSearchSummary";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst } from "@/lib/format";
@@ -45,6 +46,7 @@ import type { SearchEntity, SearchEntityKind, SearchFeedItem, SearchFeedTab, Sea
 import { AttributesPanel } from "./EntityParts";
 import { BUTTON, ItemKindTag, LINK, PANEL, PaneHeading, SourceStatusLine, segmentClass } from "./parts";
 import { PeriodBars } from "./PeriodBars";
+import { SummaryButton, SummaryPanel } from "./SummaryPanel";
 
 /**
  * 결과 세 칸(넓은 화면) — 왼쪽 거르기(기간·종류·출처·언어, 건수는 받은 자료 기준), 가운데 KST 날짜별 조밀한 목록(시각 · 종류 · 매체 · 제목),
@@ -65,6 +67,12 @@ import { PeriodBars } from "./PeriodBars";
  * 전환으로 모든 줄을 봅니다. 묶음 줄도 목록의 한 줄이라 ↑↓로 지나가고 Enter·누르기로 펼치거나 접습니다(결과 줄의 Enter는 그대로 원문).
  *
  * 단계 6 묶음 2(계약 §9-4): 이 대상이 내 관심 대상이면 속성 칸에 별칭 편집(aliasEditor)을 두고, 저장하면 이 결과를 다시 부릅니다(별칭이 검색어라).
+ *
+ * 단계 6 묶음 3(계약 §9-6): 운영자에게는 결과 머리에 '요약' 단추(데모·회원에게는 없음, 고른 기간에 받은 줄이 없으면 없음)를 두고, 누르면 이 대상·탭·기간의
+ * AI 요약을 결과 위 패널(SummaryPanel)에 보입니다. 줄마다 근거 줄로 가는 단추는 그 줄을 목록에서 고르고(접힌 같은 사건 묶음이면 펼침), 지금 목록에서
+ * 갈 수 없는 줄(거르기·막대 좁히기 밖)은 글로만 둡니다. 기간을 바꾸면 패널을 비웁니다(대상·탭을 바꾸면 이 컴포넌트가 새로 그려짐). 서버는 요약을
+ * 한 번에 하나만 만들므로(겹치면 429), 앞서 누른 요약이 끝나기 전에는 기간·탭을 바꿔도 단추를 잠그고 그 까닭을 적습니다(훅이 모듈에 기억 —
+ * 읽는 중인 기간·탭으로 돌아오면 읽는 중으로 보이고 그 응답을 받음).
  */
 export function FeedPanel({
   entityKey,
@@ -133,6 +141,12 @@ export function FeedPanel({
   const baseId = useId();
   const optionId = (index: number) => `${baseId}-row-${index}`;
   const drawerId = `${baseId}-filters`;
+  // AI 요약(운영자만 — 계약 §9-6). 데모 열람에는 두지 않습니다(서버도 403).
+  const summaryAllowed = owner && !demo;
+  const summary = useInfoSearchSummary(summaryAllowed ? { e: entityKey, tab: feedTab, range } : null);
+  const summaryButtonRef = useRef<HTMLButtonElement>(null);
+  // 근거 단추로 접힌 묶음을 펼쳤을 때 — 펼친 줄이 그려진 뒤 그 줄로 옮기고 포커스를 목록에 둡니다.
+  const revealPending = useRef<string | null>(null);
 
   useEffect(() => {
     if (feed.rechecking || !recheckHadFocus.current) return;
@@ -159,12 +173,44 @@ export function FeedPanel({
   const selectedIndex = selectedKey === null ? -1 : flat.findIndex((entry) => entry.key === selectedKey);
   const selectedEntry = selectedIndex >= 0 ? flat[selectedIndex] : null;
   const selected = selectedEntry?.type === "item" ? selectedEntry.item : null;
+  /** 요약의 근거 단추로 갈 수 있는 줄 — 기간·거르기·막대 좁히기를 거친 줄(접힌 같은 사건 묶음의 줄 포함 — 누르면 펼침). */
+  const reachableIds = useMemo(() => new Set(narrowed.map((item) => item.id)), [narrowed]);
 
   const select = (index: number) => {
     const entry = flat[index];
     if (!entry) return;
     setSelectedKey(entry.key);
     document.getElementById(optionId(index))?.scrollIntoView({ block: "nearest" });
+  };
+
+  /** 요약의 근거 단추 — 그 줄을 목록에서 고르고 포커스를 목록에 둡니다(↑↓로 이어 감). 접힌 같은 사건 묶음의 줄이면 펼친 뒤에. */
+  const revealRow = (id: string) => {
+    const index = flat.findIndex((entry) => entry.type === "item" && entry.key === id);
+    if (index >= 0) {
+      select(index);
+      listRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    const clusterId = narrowed.find((item) => item.id === id)?.clusterId;
+    if (!clusterId) return;
+    revealPending.current = id;
+    setExpanded((current) => new Set(current).add(clusterId));
+    setSelectedKey(id);
+  };
+
+  useEffect(() => {
+    const id = revealPending.current;
+    if (id === null) return;
+    const index = flat.findIndex((entry) => entry.key === id);
+    if (index < 0) return;
+    revealPending.current = null;
+    document.getElementById(`${baseId}-row-${index}`)?.scrollIntoView({ block: "nearest" });
+    listRef.current?.focus({ preventScroll: true });
+  }, [flat, baseId]);
+
+  const closeSummary = () => {
+    summary.clear();
+    summaryButtonRef.current?.focus();
   };
 
   const toggleCluster = (clusterId: string) =>
@@ -458,6 +504,15 @@ export function FeedPanel({
                   "캐시를 건너뛰고 출처를 다시 부릅니다(10분에 한 번)"
                 )}
               </span>
+              {summaryAllowed && inRange.length > 0 ? (
+                <SummaryButton
+                  ref={summaryButtonRef}
+                  className="lg:ml-auto"
+                  loading={summary.phase === "loading"}
+                  busy={summary.busy}
+                  onClick={() => void summary.summarize()}
+                />
+              ) : null}
             </div>
           ) : null}
           {pendingText ? (
@@ -496,6 +551,18 @@ export function FeedPanel({
                 </button>
               ) : null}
             </div>
+          ) : null}
+          {summaryAllowed && data?.available ? (
+            <SummaryPanel
+              phase={summary.phase}
+              response={summary.response}
+              error={summary.error}
+              waiting={summary.busy && summary.phase !== "loading"}
+              items={data.items ?? []}
+              reachable={reachableIds}
+              onRef={revealRow}
+              onClose={closeSummary}
+            />
           ) : null}
           {data?.available && shown.length > 0 ? (
             <PeriodBars bars={bars} active={activeBin} onToggle={togglePeriod} onClear={() => setPeriod(null)} />

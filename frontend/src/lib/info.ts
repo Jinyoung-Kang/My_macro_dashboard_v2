@@ -393,7 +393,7 @@ export type MechanismResponse = {
   schedule: Record<string, string>;
   alerts: { formatStreak: number; failedStreak: number; intervalMinutes: number };
   deferred: { task: string; label: string; reason: string }[];
-  /** 한국어 번역의 설정과 오늘(KST) 쓴 원문 글자 수(ADR 0037). 표가 아직 없으면 usedCharsToday는 null. */
+  /** 한국어 번역의 설정과 오늘(KST) AI에 보낸 원문 글자 수(ADR 0037 — 번역 + 정보 검색 AI 요약, 요약 몫은 백엔드 메모리라 재기동하면 0부터). 표가 아직 없으면 usedCharsToday는 null. */
   translation?: {
     /** 1순위 엔진: gemini 또는 claude — GEMINI_API_KEY가 있으면 gemini. */
     engine: string;

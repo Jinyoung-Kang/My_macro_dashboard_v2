@@ -256,7 +256,7 @@ function TranslationCard({ data }: { data: MechanismResponse }) {
             {t.geminiResting ? " — 지금 Gemini는 한도 초과 뒤 잠시 쉬는 중" : ""}
           </Row>
         )}
-        <Row label="오늘 번역한 원문(KST)">
+        <Row label="오늘 AI에 보낸 원문(KST, 번역 + 정보 검색 AI 요약)">
           {t.usedCharsToday === null ? EMPTY : `${formatNumber(t.usedCharsToday, 0)}자`} / 상한 {formatNumber(t.dailyChars, 0)}자
         </Row>
         <Row label="본문 조각">
