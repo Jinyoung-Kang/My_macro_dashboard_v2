@@ -871,3 +871,100 @@ def test_Finviz는_미국_상장_회사의_뉴스·타임라인에만(monkeypatc
         assert "finviz" not in {row["source"] for row in out["sources"]}, key
         assert out["finvizQueued"] is False
     assert stubs.finviz_calls == []
+
+
+# ------------------------------------------------------------------ 같은 사건 묶기(단계 6, 계약 §9-2)
+
+def _cluster_stubs(monkeypatch):
+    """영어 세 줄(한 사건)·한국어 두 줄(한 사건, 줄의 lang 칸은 합성 도우미라 'en' — 언어는 제목 글자로 가름)·따로인 한 줄·같은 꼴의 공시 두 줄."""
+    stubs = Stubs(monkeypatch)
+    for source in list(stubs.results):
+        stubs.results[source] = sources.Fetched(items=[])
+    stubs.results["google_en"] = sources.Fetched(items=[
+        _item("Global recall: SynthChip pulls accelerator boards", "https://news.google.com/rss/articles/R1", source="google_en",
+              publisher="Wire A", domain="wire-a.example", ago=timedelta(hours=10))])
+    stubs.results["bing"] = sources.Fetched(items=[
+        _item("SynthChip pulls accelerator boards in global recall", "https://www.example.net/r2", source="bing", publisher="Wire B",
+              ago=timedelta(hours=8)),
+        _item("SynthChip quarterly preview", "https://www.example.net/p1", source="bing", ago=timedelta(days=20))])
+    stubs.results["yahoo"] = sources.Fetched(items=[
+        _item("Why SynthChip pulls its accelerator boards", "https://www.example.com/r3", source="yahoo", publisher="wire a",
+              ago=timedelta(hours=6))])
+    stubs.results["google_ko"] = sources.Fetched(items=[
+        _item("가속기 기판 전량 리콜 결정한 합성칩", "https://news.google.com/rss/articles/K9", source="google_ko",
+              publisher="한국경제신문", domain="hankyung.example", ago=timedelta(hours=7))])
+    stubs.results["infomax"] = sources.Fetched(items=[
+        _item("합성칩, 가속기 기판 전량 리콜 결정", "https://news.einfomax.example/r5", source="infomax", publisher="연합인포맥스",
+              ago=timedelta(hours=9))])
+    stubs.results["sec"] = sources.Fetched(items=[
+        _filing("8-K · Current report", "0009000001-26-000101", source="sec", ago=timedelta(hours=30), basis="published"),
+        _filing("8-K · Current report", "0009000001-26-000102", source="sec", ago=timedelta(hours=20), basis="published")])
+    return stubs
+
+
+def _clusters(out):
+    by_title = {item["title"]: item for item in out["items"]}
+    return by_title, {item["title"]: item["cluster"] for item in out["items"] if item["cluster"] is not None}
+
+
+def test_같은_사건은_묶고_기간_건수와_출처_건수는_줄_수_그대로(monkeypatch):
+    _cluster_stubs(monkeypatch)
+    out = search.feed("us:SCHP", "news", owner=False, external=True)
+    assert all({"clusterId", "cluster"} <= set(item) for item in out["items"])
+    stamps = [item["publishedAt"] for item in out["items"]]
+    assert stamps == sorted(stamps, reverse=True), "순서는 그대로(최신순)"
+    by_title, clusters = _clusters(out)
+    assert clusters == {"Global recall: SynthChip pulls accelerator boards": {"size": 3, "publishers": 2},
+                        "합성칩, 가속기 기판 전량 리콜 결정": {"size": 2, "publishers": 2}}
+    english = by_title["Global recall: SynthChip pulls accelerator boards"]["id"]
+    korean = by_title["합성칩, 가속기 기판 전량 리콜 결정"]["id"]
+    assert {title: item["clusterId"] for title, item in by_title.items()} == {
+        "Global recall: SynthChip pulls accelerator boards": english,
+        "SynthChip pulls accelerator boards in global recall": english,
+        "Why SynthChip pulls its accelerator boards": english,
+        "합성칩, 가속기 기판 전량 리콜 결정": korean,
+        "가속기 기판 전량 리콜 결정한 합성칩": korean,
+        "SynthChip quarterly preview": None,
+    }
+    assert out["rangeCounts"] == {"7d": 5, "30d": 6, "1y": 6, "2y": 6}, "묶기와 상관없이 줄 수"
+    assert {source: _row(out, source)["count"] for source in ("google_en", "bing", "yahoo", "google_ko", "infomax")} == {
+        "google_en": 1, "bing": 2, "yahoo": 1, "google_ko": 1, "infomax": 1}
+
+
+def test_묶기는_모든_탭에_적용하고_공시_줄은_묶지_않는다(monkeypatch):
+    _cluster_stubs(monkeypatch)
+    timeline = search.feed("us:SCHP", "timeline", owner=False, external=True)
+    by_title, clusters = _clusters(timeline)
+    assert clusters["Global recall: SynthChip pulls accelerator boards"] == {"size": 3, "publishers": 2}
+    assert [item["clusterId"] for item in timeline["items"] if item["kind"] == "filing"] == [None, None]
+    assert timeline["rangeCounts"]["2y"] == 8
+    filings = search.feed("us:SCHP", "filings", owner=False, external=True)
+    assert len(filings["items"]) == 2 and all(item["clusterId"] is None and item["cluster"] is None for item in filings["items"])
+    posts = search.feed("us:SCHP", "posts", owner=True, external=True)
+    assert posts["items"] == []
+
+
+def test_수집_글은_묶고_거장_견해와_받은_시각_줄은_묶지_않는다(monkeypatch):
+    stubs = _cluster_stubs(monkeypatch)
+    stubs.results["info"] = sources.Fetched(items=[
+        _item("SynthChip recalls accelerator boards worldwide", "https://blog-a.example.org/i1", source="info", kind="post",
+              publisher="Synthetic Blog A", reader="i1", ago=timedelta(hours=9)),
+        _item("Why SynthChip recalls accelerator boards worldwide", "https://blog-b.example.org/i2", source="info", kind="post",
+              publisher="Synthetic Blog B", reader="i2", ago=timedelta(hours=7)),
+        _item("SynthChip recalls accelerator boards worldwide, again", "https://blog-c.example.org/i3", source="info",
+              kind="post", publisher="Synthetic Blog C", reader="i3", basis="fetched", ago=timedelta(hours=8))])
+    # 거장 견해(search_store.guru_views 꼴) — 이름만 다른 틀 제목, 같은 기준일.
+    as_of = _iso(timedelta(days=1))
+    stubs.results["guru"] = sources.Fetched(items=[
+        sources.feed_item(title=f"{name} 시장 견해 — 약세 {score:+d}", url="https://people.example.org/gurus", publisher="Synthetic Gurus",
+                          domain="people.example.org", published=as_of, source="guru", lang="ko", kind="opinion",
+                          summary="합성칩 언급", item_id=f"guru-{n}")
+        for n, (name, score) in enumerate((("짐 합성", -30), ("빌 합성", -10)))])
+    posts = search.feed("us:SCHP", "posts", owner=True, external=True)
+    by_title, clusters = _clusters(posts)
+    lead = by_title["SynthChip recalls accelerator boards worldwide"]
+    assert clusters == {"SynthChip recalls accelerator boards worldwide": {"size": 2, "publishers": 2}}
+    assert by_title["Why SynthChip recalls accelerator boards worldwide"]["clusterId"] == lead["id"]
+    assert by_title["SynthChip recalls accelerator boards worldwide, again"]["clusterId"] is None, "받은 시각 줄"
+    assert [item["clusterId"] for item in posts["items"] if item["kind"] == "opinion"] == [None, None], "거장 견해"
+    assert posts["rangeCounts"]["2y"] == 5

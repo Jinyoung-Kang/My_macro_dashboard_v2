@@ -13,6 +13,9 @@ app/services/search_rules.py
    사용자가 더하는 매체(단계 3 — 백엔드 표 search_media_excludes)는 :class:`Excludes`로 받아 처음 값에 더해 봅니다(읽기는 search_store, 60초 캐시).
 4. 같은 글: 원문 주소가 있으면 ``info_text.item_id(url)``, 경유 주소(구글 뉴스)뿐이면 제목 앞 24자. 먼저 온 출처(우선순위 순)를 남깁니다.
 5. 검색식: 따옴표 구문을 ' OR '로 묶음. 판마다 이름 + 네 글자 이상 별칭 최대 4개(긴 것 먼저), 티커는 넣지 않음.
+6. 같은 사건 묶기(계약 §9-2 — 단계 6): 같은 언어(제목 글자로 가름)의 제목 낱말 집합(라틴 소문자 3글자 이상·불용어 제외, 한글 2글자 이상)의
+   자카드 ≥ 0.5이고 시각 차이 ≤ 48시간이면 같은 묶음(시각순 단일 연결, 묶음 하나 최대 30줄, 모든 줄이 대표 줄로부터 48시간 안). 대표는 가장 이른 줄.
+   공시·리서치·거장 견해 줄과 작성 시각을 모르는 줄(``timeBasis: fetched``)은 묶지 않습니다.
 """
 from __future__ import annotations
 
@@ -392,6 +395,188 @@ def range_counts(items: Iterable[dict], today: date) -> dict[str, int]:
             if stamp >= starts[key]:
                 counts[key] += 1
     return counts
+
+
+# ------------------------------------------------------------------ 같은 사건 묶기(계약 §9-2 — 단계 6)
+
+CLUSTER_MIN_JACCARD = 0.5
+CLUSTER_WINDOW = timedelta(hours=48)
+CLUSTER_MAX_ROWS = 30
+CLUSTER_MIN_SHARED = 2          # 대상 이름 낱말을 뺀 뒤 겹친 낱말이 이만큼은 있어야 같은 사건(낱말 하나로 묶지 않음)
+# 묶는 줄의 종류 — 공시·리서치 줄은 문서 그 자체라(서식 이름·투자의견 꼴의 같은 제목이 서로 다른 문서) 묶지 않습니다. 거장 견해(opinion)도
+# '<이름> 시장 견해 — <입장> <점수>' 틀의 제목에 한 스냅숏의 거장이 모두 같은 기준일이라, 서로 다른 거장의 견해가 틀 낱말만으로 묶이므로 뺍니다.
+CLUSTER_KINDS = frozenset({"news", "headline", "post", "wire"})
+MIN_LATIN_WORD = 3
+MIN_HANGUL_WORD = 2
+# 영어 제목에 흔한 기능어(3글자 이상만 — 그보다 짧은 낱말은 길이로 빠짐).
+STOPWORDS = frozenset({
+    "the", "and", "for", "with", "from", "into", "onto", "over", "under", "after", "before", "about", "amid", "against",
+    "that", "this", "these", "those", "than", "then", "there", "here", "what", "why", "how", "who", "whom", "when", "where",
+    "which", "while", "are", "was", "were", "been", "being", "has", "have", "had", "does", "did", "will", "would", "could",
+    "should", "can", "may", "might", "its", "his", "her", "their", "our", "your", "you", "they", "not", "but", "all", "any",
+    "more", "most", "new", "now", "out", "off", "per", "via", "just", "also", "says", "said", "get", "gets",
+})
+_LATIN_WORD = re.compile(r"[0-9a-zà-öø-ɏ]+")
+_LATIN_LOWER = re.compile(r"[a-zà-öø-ɏ]")
+_HANGUL_WORD = re.compile(r"[가-힣]+")
+
+
+def title_tokens(title: str | None) -> frozenset[str]:
+    """
+    제목의 낱말 집합 — 라틴 글자 낱말(소문자, 3글자 이상이고 글자가 하나 이상 — 숫자만인 낱말은 아님, 불용어 제외)과 한글 낱말(2글자 이상).
+    낱말은 그 글자가 이어진 덩어리입니다('NVIDIA's' → nvidia, 'SK하이닉스' → 하이닉스, 'HBM4' → hbm4).
+    """
+    if not title:
+        return frozenset()
+    folded = title.casefold()
+    latin = {word for word in _LATIN_WORD.findall(folded)
+             if len(word) >= MIN_LATIN_WORD and _LATIN_LOWER.search(word) and word not in STOPWORDS}
+    hangul = {word for word in _HANGUL_WORD.findall(folded) if len(word) >= MIN_HANGUL_WORD}
+    return frozenset(latin | hangul)
+
+
+def title_lang(title: str | None) -> str | None:
+    """
+    묶기에 쓰는 제목 언어 — 한글이 있으면 'ko', 가나가 있으면 None(일본어 — 묶지 않음), 라틴 글자가 있으면 'en', 그 밖은 None.
+    줄의 ``lang`` 칸은 출처의 판(구글 한국어 판에도 영어 제목이 옴)이라 제목 글자로 가릅니다(search_store의 언어 가르기와 같은 뜻).
+    """
+    if not title:
+        return None
+    if _HANGUL.search(title):
+        return "ko"
+    if _KANA.search(title):
+        return None
+    return "en" if _LATIN.search(title) else None
+
+
+def jaccard(left: frozenset[str], right: frozenset[str]) -> float:
+    """두 낱말 집합의 자카드 유사도(겹친 수 / 합친 수). 한쪽이 비면 0."""
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _prefix_size(count: int) -> int:
+    """
+    앞부분 거르기(prefix filter)의 길이 — 모든 집합의 낱말을 같은 순서(드문 낱말 먼저)로 세웠을 때, 자카드 ≥ t인 두 집합은 각자의 앞
+    ``n − ⌈t·n⌉ + 1``개 안에서 낱말 하나 이상을 함께 가집니다. 그 앞부분만 색인해 후보를 고르고 유사도는 전부로 다시 잽니다.
+    """
+    return count - math.ceil(CLUSTER_MIN_JACCARD * count - 1e-9) + 1
+
+
+def _publisher_count(rows: Iterable[dict]) -> int | None:
+    """
+    묶음의 서로 다른 매체 수 — 매체 이름(대소문자 무시, MSN 재게재 꼬리 뗌)으로 세고, 이름이 없는 줄은 매체 도메인으로 셉니다. 이름 없는 줄의 도메인을
+    묶음 안에서 이름 하나만 썼으면 그 매체로 봅니다. 매체를 하나도 모르면 None(0이 아님).
+    """
+    names: set[str] = set()
+    names_by_domain: dict[str, set[str]] = {}
+    bare_domains: set[str] = set()
+    for row in rows:
+        name = media_name_key(row.get("publisher"))
+        domain = (row.get("publisherDomain") or "").strip().lower() or None
+        if name:
+            names.add(name)
+            if domain:
+                names_by_domain.setdefault(domain, set()).add(name)
+        elif domain:
+            bare_domains.add(domain)
+    unnamed = {domain for domain in bare_domains if len(names_by_domain.get(domain, ())) != 1}
+    return (len(names) + len(unnamed)) or None
+
+
+def cluster_items(items: Sequence[dict], *, ignore: Iterable[str] = ()) -> list[dict]:
+    """
+    같은 사건 묶기(계약 §9-2) — 같은 언어의 제목 낱말 집합 자카드 ≥ 0.5이고 작성 시각 차이 ≤ 48시간이면 같은 묶음입니다. 줄을 이른 시각부터
+    차례로 보며(시각순 단일 연결) 앞선 줄 하나와 이어지면 그 줄의 묶음에 들고, 여러 묶음과 이어지면 그 묶음들을 하나로 합칩니다(대표가 가장 이른
+    묶음으로 — 합친 크기가 상한을 넘는 묶음은 따로 둠). 묶음 하나는 최대 30줄이고, 모든 줄이 대표 줄(가장 이른 줄)로부터 48시간 안이어야
+    합니다(매일 같은 꼴의 제목이 사슬로 한 달치 이어지지 않게). 꽉 찬 묶음과만 이어지는 줄은 새 묶음을 엽니다.
+
+    ``ignore``(대상의 이름·별칭 — :func:`match_terms`)의 낱말은 재기 전에 제목 낱말에서 뺍니다: 대상별 결과는 거의 모든 제목에 대상 이름이
+    있어, 이름 낱말이 공통분모가 되면 'Nvidia shares rise'와 '… fall' 같은 반대 사건이 0.5로 묶입니다. 뺀 뒤 겹친 낱말이
+    :data:`CLUSTER_MIN_SHARED` 미만이면 자카드와 상관없이 묶지 않습니다.
+
+    묶는 줄은 :data:`CLUSTER_KINDS`이고 id·작성 시각·제목 언어·낱말이 모두 있는 줄만입니다 — ``timeBasis``가 ``fetched``(처음 받은 시각)인 줄은
+    작성 시각을 모르므로 묶지 않습니다. 순서는 그대로 두고 줄마다 새 사전에 ``clusterId``(대표 줄의
+    ``id``, 묶이지 않으면 None)와 ``cluster``(대표 줄에만 ``{size, publishers}``, 그 밖은 None)를 더해 돌려줍니다. 줄을 빼지 않으므로 기간 건수·
+    출처 건수는 그대로입니다.
+    """
+    rows = list(items)
+    skip: set[str] = set()
+    for term in ignore or ():
+        skip |= title_tokens(term)
+    entries: list[tuple[float, str, int, str, frozenset[str]]] = []
+    for index, item in enumerate(rows):
+        if item.get("kind") not in CLUSTER_KINDS or not item.get("id") or item.get("timeBasis") == "fetched":
+            continue
+        moment = parse_time(item.get("publishedAt"))
+        lang = title_lang(item.get("title"))
+        tokens = title_tokens(item.get("title")) - skip
+        if moment is None or lang is None or len(tokens) < CLUSTER_MIN_SHARED:
+            continue
+        entries.append((moment.timestamp(), str(item["id"]), index, lang, tokens))
+    entries.sort(key=lambda entry: (entry[0], entry[1], entry[2]))
+
+    frequency: dict[str, int] = {}
+    for entry in entries:
+        for token in entry[4]:
+            frequency[token] = frequency.get(token, 0) + 1
+    window_seconds = CLUSTER_WINDOW.total_seconds()
+    parent = list(range(len(entries)))
+    size = [1] * len(entries)
+    postings: dict[tuple[str, str], list[int]] = {}      # (언어, 앞부분 낱말) → 그 낱말을 앞부분에 가진 앞선 줄(시각순)
+
+    def find(position: int) -> int:
+        while parent[position] != position:
+            parent[position] = parent[parent[position]]
+            position = parent[position]
+        return position
+
+    for position, (stamp, _, _, lang, tokens) in enumerate(entries):
+        ordered = sorted(tokens, key=lambda token: (frequency[token], token))
+        prefix = ordered[:_prefix_size(len(ordered))]
+        linked: set[int] = set()
+        examined: set[int] = set()
+        for token in prefix:
+            earlier = postings.get((lang, token), [])
+            for other in reversed(earlier):
+                if stamp - entries[other][0] > window_seconds:
+                    break
+                if other in examined:
+                    continue
+                examined.add(other)
+                root = find(other)
+                if root in linked or size[root] >= CLUSTER_MAX_ROWS or stamp - entries[root][0] > window_seconds:
+                    continue
+                theirs = entries[other][4]
+                if len(tokens & theirs) >= CLUSTER_MIN_SHARED and jaccard(tokens, theirs) >= CLUSTER_MIN_JACCARD:
+                    linked.add(root)
+        if linked:
+            roots = sorted(linked)                       # 자리 = 시각순 — 대표가 가장 이른 묶음이 앞
+            target = roots[0]
+            parent[position] = target
+            size[target] += 1
+            for root in roots[1:]:
+                if size[target] + size[root] <= CLUSTER_MAX_ROWS:
+                    parent[root] = target
+                    size[target] += size[root]
+        for token in prefix:
+            postings.setdefault((lang, token), []).append(position)
+
+    members: dict[int, list[int]] = {}
+    for position in range(len(entries)):
+        members.setdefault(find(position), []).append(position)
+    lead_of: dict[int, str] = {}
+    summary: dict[int, dict] = {}
+    for root, group in members.items():
+        if len(group) < 2:
+            continue
+        lead_id = entries[root][1]
+        for position in group:
+            lead_of[entries[position][2]] = lead_id
+        summary[entries[root][2]] = {"size": len(group),
+                                     "publishers": _publisher_count(rows[entries[position][2]] for position in group)}
+    return [dict(item, clusterId=lead_of.get(index), cluster=summary.get(index)) for index, item in enumerate(rows)]
 
 
 # ------------------------------------------------------------------ 검색식·대조

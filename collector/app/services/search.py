@@ -17,6 +17,8 @@ app/services/search.py
   받는 중이면 상태 ``pending``과 응답 ``pending: true``, 이 요청이 새로 줄에 넣었으면 ``finvizQueued: true``(백엔드가 사용자 빈도를 셈),
   ``finviz=False``면 줄에 넣지 않음(캐시는 씀). 공시 출처는 대상 풀기가 SEC 표·DART 저장본을 읽지 못해 식별자를 모르면 '건너뜀'이 아니라
   ``error``(단계 4 QA — 확인하지 못한 것을 '없음'으로 보이지 않음).
+  단계 6(계약 §9-2)에서 모든 탭의 합친 줄에 같은 사건 묶기(search_rules.cluster_items)를 더함 — 줄마다 ``clusterId``, 대표 줄에
+  ``cluster: {size, publishers}``. 줄을 빼지 않으므로 기간 건수·출처 건수는 그대로입니다.
 - ``recent``(단계 3): 첫 화면 — 새 피드 묶음 최근 30건(+ 운영자는 속보 최근 20건). 저장본만, 바깥 호출 0건. 사용자 제외 매체는 60초 캐시 없이
   바로 읽음(값싼 저장본 경로 — 제외를 더한 직후 화면이 다시 읽으면 바로 빠짐, 단계 4 QA).
 - ``excludes``(단계 3): 매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙. 바깥 호출·DB 없음.
@@ -675,7 +677,8 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
     return {
         "entityKey": norm,
         "tab": tab,
-        "items": merged,
+        # 같은 사건 묶기(단계 6, 계약 §9-2) — 줄마다 clusterId, 대표 줄에 cluster. 줄을 빼지 않아 기간·출처 건수는 그대로.
+        "items": rules.cluster_items(merged, ignore=rules.match_terms(target) if target else ()),
         "sources": rows,
         "window": {"from": window_from, "to": window_to},
         "rangeCounts": rules.range_counts(merged, today),
