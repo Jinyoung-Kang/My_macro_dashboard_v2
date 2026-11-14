@@ -6,12 +6,13 @@
  *  - Esc·닫기 단추는 onOpenChange(false) — dismissible=false면 둘 다 막힌다(처리 중)
  *  - Trigger 없이 연 창도 닫으면 연 단추로 포커스가 돌아간다
  *  - 움직임은 motion-safe: 안에만(움직임 줄이기면 없음)
+ *  - 범위 표지(scope): 기본은 없고(앱 테마 그대로), scope나 DialogScope로 주면 대화상자 상자에 data-scope가 붙는다(포털이라 화면의 범위 토큰이 닿지 않음)
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Dialog } from "../Dialog";
+import { Dialog, DialogScope } from "../Dialog";
 
 afterEach(() => cleanup());
 
@@ -133,5 +134,26 @@ describe("움직임 줄이기", () => {
     const moving = classes.filter((name) => /(^|:)(transition|duration-|animate-|starting:)/.test(name));
     expect(moving.length).toBeGreaterThan(0);
     expect(moving.filter((name) => !name.startsWith("motion-safe:"))).toEqual([]);
+  });
+});
+
+describe("범위 표지(scope)", () => {
+  it("기본은 data-scope가 없다 — 기존 대화상자는 앱 테마 그대로", () => {
+    render(<Dialog open onOpenChange={() => {}} title="확인">내용</Dialog>);
+    expect(screen.getByRole("dialog").hasAttribute("data-scope")).toBe(false);
+  });
+
+  it("scope를 주면 대화상자 상자에 data-scope — 정보 검색 화면의 어두운 토큰이 포털에도 닿는다", () => {
+    render(<Dialog open onOpenChange={() => {}} title="원문" scope="search">내용</Dialog>);
+    expect(screen.getByRole("dialog").getAttribute("data-scope")).toBe("search");
+  });
+
+  it("DialogScope 안에서 연 대화상자는 그 표지를 이어받는다 — 대화상자를 감싼 부품(원문 팝업)을 고치지 않고", () => {
+    render(
+      <DialogScope value="search">
+        <Dialog open onOpenChange={() => {}} title="원문">내용</Dialog>
+      </DialogScope>,
+    );
+    expect(screen.getByRole("dialog").getAttribute("data-scope")).toBe("search");
   });
 });

@@ -116,7 +116,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
             {holdings.length > HOLDINGS_SHOWN ? <p className="mt-2 text-xs text-text-3">{holdings.length}종목 가운데 비중 상위 {HOLDINGS_SHOWN}종목</p> : null}
           </Card>
           <AiSummaryCard request={{ q: names.query, label: names.display }} />
-          <NewsCard path={endpoints.detail.news({ q: names.query })} />
+          <NewsCard path={endpoints.detail.news({ q: names.query })} searchQuery={names.query} />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           {data?.institution?.desc ? (

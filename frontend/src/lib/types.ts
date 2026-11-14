@@ -17,3 +17,4 @@ export * from "./types/alerts";
 export * from "./types/paper";
 export * from "./types/detail";
 export * from "./types/live";
+export * from "./types/search";

@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { SELECTED_BAR } from "@/components/ui/classes";
+import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -11,6 +12,7 @@ import { navSearchItems } from "@/lib/nav";
 import {
   buildSearchIndex,
   indicatorEntries,
+  infoSearchEntry,
   institutionEntries,
   menuEntries,
   noResultText,
@@ -47,6 +49,8 @@ const SYMBOL_MIN_CHARS = 2;
  *   이름과 보조 글 · 오른쪽 '→ 화면' 캡션. 지표·기관·종목은 그 상세 화면으로 갑니다(/markets/i/…·/institutions/…·/s/…).
  * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 마지막 묶음
  *   '종목 찾기'에 붙입니다. 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞 검색어의 결과가 남지 않게).
+ * - 결과 맨 아래(목록 밖)의 '‘검색어’ 정보 검색' 링크 — 같은 검색어로 정보 검색 화면(/search?q=, ADR 0041)으로 갑니다. 결과가 없어도 있고,
+ *   결과 수·'맞는 결과가 없습니다'에는 세지 않습니다.
  */
 export function SearchCommand({ user }: { user?: SessionUser }) {
   const router = useRouter();
@@ -152,6 +156,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   };
 
   const trimmed = query.trim();
+  const infoSearch = infoSearchEntry(query, user);
 
   return (
     <Dialog
@@ -279,6 +284,21 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         </p>
       )}
       {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
+      {infoSearch && (
+        <Link
+          href={infoSearch.href}
+          onClick={() => changeOpen(false)}
+          className={`mt-2 flex min-h-12 items-center gap-3 rounded-control px-3 py-2 hover:bg-surface-2 ${FOCUS_RING}`}
+        >
+          <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-2">
+            <TabIcon tab="search" size={16} />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[15px] text-accent">{infoSearch.label}</span>
+          <span aria-hidden="true" className="shrink-0 text-xs text-text-3">
+            → 기사·글 모아 보기
+          </span>
+        </Link>
+      )}
       {notices.length > 0 && (
         <ul aria-label="검색 자료 상태" className="mt-3 flex flex-col gap-1 border-t border-border px-3 pt-3 text-xs text-text-3">
           {notices.map((notice) => (

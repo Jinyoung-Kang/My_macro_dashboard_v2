@@ -8,11 +8,13 @@
  * 일치: 대소문자·공백·기호를 무시하고, 한글은 자모로 풀어 맞춥니다 — 입력 중인 글자("맼" → "매크로")와 초성("ㅅㅈ" → "시장")도 맞습니다.
  * 순위: 정확히 같음 > 앞부분 > 중간(같은 단계면 이름이 검색어보다 앞섬, 그다음 원래 순서). 범주마다 상한이 있고 넘친 수는 `more`로 알립니다.
  */
+import { visibleMenus } from "./access";
 import { indicatorHref, institutionHref, kindText, stockHref } from "./detail";
 import { withoutLeadingIcon } from "./format";
+import { searchHref } from "./infoSearch";
 import type { NavSearchItem, TabKey } from "./nav";
 import { assetMonogram } from "./patternRows";
-import type { DetailSymbolsResponse, MacroOverview, StockUniverseResponse } from "./types";
+import type { DetailSymbolsResponse, MacroOverview, SessionUser, StockUniverseResponse } from "./types";
 
 /** 'symbol'은 색인 밖 외부 검색 묶음(종목 찾기) — 색인 일치(searchGroups)가 아니라 `symbolGroup`이 만듭니다. */
 export type SearchKind = "menu" | "indicator" | "institution" | "ticker" | "symbol";
@@ -354,4 +356,17 @@ export function symbolNotice(state: SourceState): string | null {
   }
   if (failed.length > 0) return `${SYMBOL_GROUP_LABEL}: 일부 출처를 받지 못했습니다(${failed.join("·")})`;
   return null;
+}
+
+/** 정보 검색 화면(ADR 0041)의 검색어 상한 — 넘으면 앞부분만 넘깁니다. */
+const INFO_SEARCH_MAX = 60;
+
+/**
+ * 통합 검색 결과 맨 아래의 '‘검색어’ 정보 검색' 행 — 같은 검색어로 정보 검색 화면(/search?q=, 대상 후보 보기)으로 갑니다. 메뉴·지표·종목 결과와
+ * 따로 두는 바닥 줄이라 결과 수·'맞는 결과가 없습니다'에는 세지 않습니다. 검색어가 비었거나 그 화면이 보이지 않는 사용자면 null.
+ */
+export function infoSearchEntry(query: string, user: SessionUser | null | undefined): { label: string; href: string } | null {
+  const trimmed = Array.from(query.trim()).slice(0, INFO_SEARCH_MAX).join("").trim();
+  if (!trimmed || visibleMenus([{ href: "/search" }], user).length === 0) return null;
+  return { label: `‘${trimmed}’ 정보 검색`, href: searchHref({ q: trimmed }) };
 }

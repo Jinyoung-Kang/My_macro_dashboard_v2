@@ -190,7 +190,7 @@ export function subNav(pathname: string, user: SessionUser | null | undefined): 
   if (!tab) return null;
   const item = activeItem(pathname);
   // 같은 묶음의 화면만 — 묶음 화면(/radar)에서는 그 묶음, 하위 화면이 아니거나(/more) 묶음 없는 화면이면 묶음 없는 화면들.
-  const group = item && tab.items.includes(item) ? item.group : undefined;
+  const group = item?.group;
   const items = visibleItems(tab, user).filter((entry) => entry.group === group);
   const upcoming = tab.upcoming ?? [];
   if (items.length + upcoming.length < 2) return null;

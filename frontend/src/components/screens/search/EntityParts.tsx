@@ -1,0 +1,100 @@
+"use client";
+
+import Link from "next/link";
+import { EMPTY } from "@/lib/format";
+import { entityKindLabel, entityShortcuts, identifierChips } from "@/lib/infoSearch";
+import type { SearchEntity, SearchEntityKind } from "@/lib/types";
+import { KindBadge, KindIcon, LINK, PaneHeading, Tag } from "./parts";
+
+/** 화면에 보이는 별칭 — 이름과 같은 것은 뺍니다. */
+function visibleAliases(entity: SearchEntity): string[] {
+  return entity.aliases.filter((alias) => alias && alias !== entity.name);
+}
+
+/**
+ * 대상 머리 — 종류 아이콘·이름·식별자·별칭 꼬리표와 다른 화면 바로가기(종목 상세·기관 상세). 차트·시세는 그리지 않습니다(지시문 §4.2).
+ * 대상 풀기 응답이 아직 없거나 풀지 못했으면 키만 보입니다.
+ */
+export function EntityHeader({
+  entityKey,
+  entity,
+  kind,
+}: {
+  entityKey: string;
+  entity: SearchEntity | null;
+  kind: SearchEntityKind | null;
+}) {
+  const name = entity?.name ?? entityKey.replace(/^topic:/, "");
+  const shortcuts = entity ? entityShortcuts(entity) : [];
+  const aliases = entity ? visibleAliases(entity) : [];
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-border bg-surface-2 text-text-2">
+            <KindIcon kind={kind} size={18} />
+          </span>
+          <h2 className="min-w-0 truncate text-lg font-semibold text-text">{name}</h2>
+          <KindBadge kind={kind} />
+        </div>
+        {entity ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {identifierChips(entity).map((chip) => (
+              <Tag key={chip}>{chip}</Tag>
+            ))}
+            {aliases.length > 0 ? <span className="ml-1 text-xs text-text-3">별칭</span> : null}
+            {aliases.map((alias) => (
+              <Tag key={`alias:${alias}`}>{alias}</Tag>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-text-3">{entityKey}</p>
+        )}
+      </div>
+      {shortcuts.length > 0 ? (
+        <nav aria-label="바로가기" className="flex flex-wrap gap-3 text-sm">
+          {shortcuts.map((shortcut) => (
+            <Link key={shortcut.href} href={shortcut.href} className={LINK}>
+              {shortcut.label}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
+    </header>
+  );
+}
+
+/** 오른쪽 칸(줄을 고르지 않았을 때) — 대상의 속성. 모르는 값은 '—'. */
+export function AttributesPanel({ entity, kind, errors }: { entity: SearchEntity | null; kind: SearchEntityKind | null; errors: Record<string, string> }) {
+  const failures = Object.entries(errors);
+  const rows: [string, string][] = entity
+    ? [
+        ["종류", entityKindLabel(entity.kind)],
+        ["한글 이름", entity.nameKo ?? EMPTY],
+        ["영문 이름", entity.nameEn ?? EMPTY],
+        ["설명", entity.description ?? EMPTY],
+        ["식별자", identifierChips(entity).join(" · ") || EMPTY],
+        ["별칭", visibleAliases(entity).join(" · ") || EMPTY],
+        ["푼 출처", entity.sources.join(" · ") || EMPTY],
+      ]
+    : [["종류", entityKindLabel(kind)]];
+  return (
+    <section aria-labelledby="search-attributes" className="flex flex-col gap-2">
+      <PaneHeading id="search-attributes">속성</PaneHeading>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-xs leading-5 text-text-3">{label}</dt>
+            <dd className="min-w-0 break-words text-text-2">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {failures.length > 0 ? (
+        <p className="text-xs text-text-3">
+          대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}
+        </p>
+      ) : null}
+      <p className="text-xs text-text-3">줄을 고르면 이 칸에 그 글의 미리 보기가 나옵니다(↑↓로 옮기고 Enter로 원문).</p>
+    </section>
+  );
+}

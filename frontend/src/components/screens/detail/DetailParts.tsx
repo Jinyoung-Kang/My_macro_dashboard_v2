@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, Hero, RangeTabs, Skeleton } from "@/components/patterns";
@@ -15,6 +16,7 @@ import { apiPost } from "@/lib/api";
 import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, indicatorChartRows, newsPage, newsTime, summaryLines } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { formatNumber } from "@/lib/format";
+import { infoSearchEntry } from "@/lib/search";
 import { hasLineValues, scrubModel } from "@/lib/lineChart";
 import type { DetailNewsResponse, DetailStat, DetailSummaryResponse, SessionUser } from "@/lib/types";
 
@@ -144,9 +146,12 @@ export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) 
 /**
  * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)·연합인포맥스·구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 한 쪽에 5건씩(사용자 요청
  * 2026-11-02 — 이전·다음 단추와 'n / m쪽'), 경로가 바뀌면 첫 쪽으로. 제목은 원문 기사로 가는 새 창 링크, 아래 줄은 언론사·시각·받은 곳. 출처 하나가
- * 실패하면 그 사실을 한 줄로 적습니다(나머지는 그대로).
+ * 실패하면 그 사실을 한 줄로 적습니다(나머지는 그대로). `searchQuery`를 주면 카드 머리에 같은 말로 정보 검색(/search?q=, 최근 2년 — ADR 0041)으로
+ * 가는 작은 링크를 둡니다(그 화면이 보이는 사용자에게만).
  */
-export function NewsCard({ path, title = "주요 뉴스" }: { path: string | null; title?: string }) {
+export function NewsCard({ path, title = "주요 뉴스", searchQuery }: { path: string | null; title?: string; searchQuery?: string | null }) {
+  const user = useSessionUser();
+  const infoSearch = searchQuery ? infoSearchEntry(searchQuery, user) : null;
   const news = useApi<DetailNewsResponse>(path);
   const now = useMinuteClock();
   const [page, setPage] = useState(1);
@@ -179,7 +184,17 @@ export function NewsCard({ path, title = "주요 뉴스" }: { path: string | nul
     );
   }
   return (
-    <Card title={title} source="Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사">
+    <Card
+      title={title}
+      source="Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사"
+      actions={
+        infoSearch ? (
+          <Link href={infoSearch.href} title={`${infoSearch.label} — 최근 2년의 기사·글`} className="rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+            정보 검색
+          </Link>
+        ) : undefined
+      }
+    >
       {body}
       {shown.pages > 1 ? (
         <nav aria-label="뉴스 쪽" className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3 text-sm">

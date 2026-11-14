@@ -1,0 +1,472 @@
+/**
+ * 정보 검색(/search — ADR 0041) 화면의 순수 규칙 — 주소 상태, 대상 키 모양, 후보 자동 열기, 기간 자르기(rangeCounts), KST 날짜 묶음,
+ * 빈 화면 안내, 출처 상태 글, 거르기, 키보드. 표본은 모두 합성 값입니다.
+ */
+import { describe, expect, it } from "vitest";
+import {
+  DEFAULT_RANGE,
+  DEFAULT_TAB,
+  FEED_PENDING_REFRESH_MS,
+  applyFilters,
+  autoPick,
+  isTopicSearch,
+  candidateTarget,
+  countByRange,
+  cutByRange,
+  droppedText,
+  entityShortcuts,
+  facetCounts,
+  feedEmptyState,
+  feedRefreshMs,
+  feedTabOf,
+  groupByKstDate,
+  holdersQuery,
+  holdingsWindow,
+  httpUrl,
+  identifierChips,
+  isEntityKey,
+  isSlashShortcut,
+  kindOfKey,
+  kstDate,
+  kstTime,
+  kstToday,
+  linkGroups,
+  linkTarget,
+  nextRowIndex,
+  parseSearchUrl,
+  rangeCountsOf,
+  rangeStart,
+  readerOfFeedItem,
+  searchHref,
+  sourceStatusView,
+  tabFor,
+  tabsFor,
+  topicKey,
+} from "../infoSearch";
+import type { SearchCandidate, SearchEntity, SearchFeedItem, SearchFeedResponse, SearchSourceStatus } from "../types";
+
+function item(over: Partial<SearchFeedItem> = {}): SearchFeedItem {
+  return {
+    id: "a", kind: "news", title: "제목", url: "https://example.com/a", publisher: "Example", publisherDomain: "example.com",
+    publishedAt: "2026-11-14T00:30:00+00:00", timeBasis: "published", source: "google_en", lang: "en", summary: null, readerId: null, ...over,
+  };
+}
+
+function entity(over: Partial<SearchEntity> = {}): SearchEntity {
+  return {
+    key: "us:NVDA", kind: "company", name: "엔비디아", nameKo: "엔비디아", nameEn: "NVIDIA Corp", aliases: ["NVIDIA", "엔비디아"],
+    description: null,
+    ids: { ticker: "NVDA", market: "us", stockCode: null, cik: "0001045810", dartCorpCode: null, wikidata: "Q182477" },
+    links: [], sources: ["sec"], ...over,
+  };
+}
+
+const cand = (over: Partial<SearchCandidate>): SearchCandidate => ({ key: null, kind: "company", name: "", sub: null, source: "sec", ...over });
+
+describe("대상 키 모양(계약 §2)", () => {
+  it.each([
+    "us:NVDA", "us:BRK.B", "us:BRK-B", "kr:005930", "cik:0001067983", "wd:Q3195170", "topic:AI 반도체", `topic:${"가".repeat(60)}`,
+  ])("%s — 맞음", (key) => expect(isEntityKey(key)).toBe(true));
+
+  it.each([
+    null, "", "us:", "us:nvda", "us:NV DA", "kr:5930", "kr:00593A", "cik:1067983", "wd:182477", "wd:q1", "topic:", "topic:   ",
+    ` topic:x`, `topic:${"가".repeat(61)}`, "foo:bar", "NVDA",
+    // 수집기 문법과 같게 — 티커 15자까지, QID는 0으로 시작하지 않음, 제어 글자 없음
+    `us:${"A".repeat(16)}`, "wd:Q0123", "topic:AI\u0007반도체",
+  ])("%s — 틀림(주소로 넘어가지 않음)", (key) => expect(isEntityKey(key)).toBe(false));
+
+  it("주제 키는 앞뒤 공백을 떼고 1~60자만 — 넘거나 비면 null", () => {
+    expect(topicKey("  AI   반도체 ")).toBe("topic:AI 반도체");
+    expect(topicKey("   ")).toBeNull();
+    expect(topicKey("가".repeat(61))).toBeNull();
+  });
+
+  it("키 앞부분으로 종류를 짐작한다 — wd:는 모름", () => {
+    expect(kindOfKey("us:NVDA")).toBe("company");
+    expect(kindOfKey("kr:005930")).toBe("company");
+    expect(kindOfKey("cik:0001067983")).toBe("institution");
+    expect(kindOfKey("topic:x")).toBe("topic");
+    expect(kindOfKey("wd:Q1")).toBeNull();
+  });
+});
+
+describe("주소 상태", () => {
+  it("대상 키가 있으면 대상·탭·기간, 없거나 틀린 값은 기본(타임라인·30일)", () => {
+    expect(parseSearchUrl("?e=us:NVDA&tab=news&range=1y")).toEqual({ q: null, e: "us:NVDA", tab: "news", range: "1y", badKey: false });
+    expect(parseSearchUrl(new URLSearchParams("e=us%3ANVDA&tab=bogus&range=9y"))).toEqual({
+      q: null, e: "us:NVDA", tab: DEFAULT_TAB, range: DEFAULT_RANGE, badKey: false,
+    });
+    expect(parseSearchUrl("?e=us:nvda")).toMatchObject({ e: null, badKey: true });
+    expect(parseSearchUrl("?q=%20Ken%20Griffin%20")).toMatchObject({ q: "Ken Griffin", e: null });
+    expect(parseSearchUrl("")).toEqual({ q: null, e: null, tab: "timeline", range: "30d", badKey: false });
+  });
+
+  it("검색어는 60자까지만", () => {
+    expect(parseSearchUrl(`?q=${"a".repeat(80)}`).q).toHaveLength(60);
+  });
+
+  it("주소 만들기 — 대상이면 탭·기간을 함께(':'는 읽기 좋게 그대로), 아니면 검색어, 둘 다 없으면 /search", () => {
+    expect(searchHref({ e: "us:NVDA", tab: "news", range: "1y" })).toBe("/search?e=us:NVDA&tab=news&range=1y");
+    expect(searchHref({ e: "topic:AI & 반도체" })).toBe(`/search?e=topic:AI%20%26%20${encodeURIComponent("반도체")}&tab=timeline&range=30d`);
+    expect(searchHref({ q: "삼성전자" })).toBe(`/search?q=${encodeURIComponent("삼성전자")}`);
+    expect(searchHref({ e: "bad key", q: "x" })).toBe("/search?q=x");
+    expect(searchHref({})).toBe("/search");
+    // 만든 주소를 다시 읽으면 같은 상태
+    expect(parseSearchUrl(searchHref({ e: "topic:AI & 반도체", tab: "links", range: "7d" }).slice("/search".length))).toMatchObject({
+      e: "topic:AI & 반도체", tab: "links", range: "7d",
+    });
+  });
+});
+
+describe("탭", () => {
+  it("글·논평은 운영자만, 보유는 기업·기관만, 연결·타임라인·뉴스는 모두", () => {
+    expect(tabsFor("company", false)).toEqual(["timeline", "news", "holdings", "links"]);
+    expect(tabsFor("company", true)).toEqual(["timeline", "news", "posts", "holdings", "links"]);
+    expect(tabsFor("person", true)).toEqual(["timeline", "news", "posts", "links"]);
+    expect(tabsFor("topic", false)).toEqual(["timeline", "news", "links"]);
+  });
+
+  it("고를 수 없는 탭을 주소로 주면 타임라인 — 회원의 글·논평(403을 부르지 않음), 사람의 보유", () => {
+    expect(tabFor("posts", "company", false)).toBe("timeline");
+    expect(tabFor("posts", "company", true)).toBe("posts");
+    expect(tabFor("holdings", "person", true)).toBe("timeline");
+  });
+
+  it("결과 경로를 부르는 탭만 feed 탭 이름이 있다", () => {
+    expect(feedTabOf("timeline")).toBe("timeline");
+    expect(feedTabOf("posts")).toBe("posts");
+    expect(feedTabOf("holdings")).toBeNull();
+    expect(feedTabOf("links")).toBeNull();
+  });
+});
+
+describe("후보 고르기(자동으로 고르지 않음)", () => {
+  const nvidia = cand({ key: "us:NVDA", name: "NVIDIA", sub: "NVDA · 미국" });
+  const topic = cand({ key: "topic:NVIDIA", kind: "topic", name: "NVIDIA", source: "topic" });
+
+  it("주제를 뺀 후보가 하나이고 이름이 입력과 같을 때만(대소문자·공백 무시) 바로 연다", () => {
+    expect(autoPick([nvidia, topic], " nvidia ")).toBe(nvidia);
+    expect(autoPick([nvidia, topic], "NVDA")).toBeNull();
+    expect(autoPick([nvidia, cand({ key: "wd:Q182477", name: "NVIDIA", source: "wikidata" }), topic], "NVIDIA")).toBeNull();
+    expect(autoPick([topic], "NVIDIA")).toBeNull();
+    // 사람·조직이 아닌 Wikidata 항목(종류 topic, 키 wd:)은 주제 검색이 아니라 대상 — 같은 이름이면 목록을 보임(자동으로 고르지 않음)
+    const wdTopic = cand({ key: "wd:Q11660", kind: "topic", name: "NVIDIA", source: "wikidata" });
+    expect(autoPick([nvidia, wdTopic, topic], "NVIDIA")).toBeNull();
+    expect(autoPick([wdTopic, topic], "NVIDIA")).toBe(wdTopic);
+  });
+
+  it("주제 검색 줄은 출처 topic(키 topic:)뿐 — 종류가 topic인 Wikidata 항목은 아님", () => {
+    expect(isTopicSearch(topic)).toBe(true);
+    expect(isTopicSearch(cand({ key: "wd:Q11660", kind: "topic", name: "인공지능", source: "wikidata" }))).toBe(false);
+    expect(isTopicSearch(nvidia)).toBe(false);
+  });
+
+  it("키가 없는 후보는 바로 열지 않는다", () => {
+    expect(autoPick([cand({ key: null, name: "Ken Griffin", kind: "person" }), topic], "Ken Griffin")).toBeNull();
+  });
+
+  it("고른 후보 — 키가 있으면 그 대상, 없으면 그 이름으로 다시 풀고, 이미 그 이름으로 푼 목록이면 주제로", () => {
+    expect(candidateTarget(nvidia, null)).toEqual({ open: "us:NVDA" });
+    expect(candidateTarget(cand({ key: null, name: "Ken Griffin" }), null)).toEqual({ resolve: "Ken Griffin" });
+    expect(candidateTarget(cand({ key: null, name: "Ken Griffin" }), "Ken Griffin")).toEqual({ open: "topic:Ken Griffin" });
+    expect(candidateTarget(cand({ key: "us:bad key", name: "X" }), null)).toEqual({ resolve: "X" });
+  });
+
+  it("연결 — 키가 있으면 그 대상, 없으면 그 이름으로 풂", () => {
+    expect(linkTarget({ relation: "owner_of", key: "wd:Q1", name: "A", kind: "company", source: "wikidata" })).toEqual({ open: "wd:Q1" });
+    expect(linkTarget({ relation: "manager", key: null, name: "Stanley Druckenmiller", kind: "person", source: "13f" })).toEqual({
+      resolve: "Stanley Druckenmiller",
+    });
+  });
+});
+
+describe("KST 시각", () => {
+  it("UTC ISO를 KST 날짜·시각으로(+9시간, 날짜가 넘어감)", () => {
+    expect(kstDate("2026-11-13T15:30:00+00:00")).toBe("2026-11-14");
+    expect(kstTime("2026-11-13T15:30:00+00:00")).toBe("00:30");
+    expect(kstDate(null)).toBeNull();
+    expect(kstTime("not a time")).toBeNull();
+  });
+
+  it("오늘(KST)", () => {
+    expect(kstToday(Date.parse("2026-11-13T15:00:00Z"))).toBe("2026-11-14");
+    expect(kstToday(Date.parse("2026-11-13T14:59:59Z"))).toBe("2026-11-13");
+  });
+
+  it("기간 시작 날짜 — 오늘 − 기간(2년은 계약 §4-1과 같은 정의)", () => {
+    expect(rangeStart("7d", "2026-11-14")).toBe("2026-11-07");
+    expect(rangeStart("30d", "2026-11-14")).toBe("2026-10-15");
+    expect(rangeStart("1y", "2026-11-14")).toBe("2025-11-14");
+    expect(rangeStart("2y", "2026-11-14")).toBe("2024-11-14");
+    expect(rangeStart("1y", "2028-02-29")).toBe("2027-02-28");
+  });
+});
+
+describe("기간 자르기", () => {
+  const items = [
+    item({ id: "1", publishedAt: "2026-11-13T23:00:00+00:00" }), // KST 11-14
+    item({ id: "2", publishedAt: "2026-11-10T01:00:00+00:00" }), // 11-10
+    item({ id: "3", publishedAt: "2026-10-01T01:00:00+00:00" }), // 10-01
+    item({ id: "4", publishedAt: "2025-06-01T01:00:00+00:00" }), // 2025-06-01
+  ];
+  const feed = (over: Partial<SearchFeedResponse> = {}): SearchFeedResponse => ({
+    available: true, items, window: { from: "2024-11-14", to: "2026-11-14" }, rangeCounts: { "7d": 2, "30d": 2, "1y": 3, "2y": 4 }, ...over,
+  });
+
+  it("rangeCounts가 있으면 최근부터 그 수만큼 — 서버가 센 수와 보이는 줄이 같다", () => {
+    expect(cutByRange(feed(), "7d").map((row) => row.id)).toEqual(["1", "2"]);
+    expect(cutByRange(feed(), "1y").map((row) => row.id)).toEqual(["1", "2", "3"]);
+    expect(cutByRange(feed(), "2y").map((row) => row.id)).toEqual(["1", "2", "3", "4"]);
+  });
+
+  it("rangeCounts가 없으면 창 끝 날짜(window.to)에서 작성 시각(KST)으로 자른다", () => {
+    const bare = feed({ rangeCounts: null });
+    expect(cutByRange(bare, "7d").map((row) => row.id)).toEqual(["1", "2"]);
+    expect(cutByRange(bare, "30d").map((row) => row.id)).toEqual(["1", "2"]);
+    expect(cutByRange(bare, "1y").map((row) => row.id)).toEqual(["1", "2", "3"]);
+    expect(countByRange(items, "2026-11-14")).toEqual({ "7d": 2, "30d": 2, "1y": 3, "2y": 4 });
+  });
+
+  it("보이는 건수는 서버의 rangeCounts(받은 자료 기준), 없으면 직접 센 값", () => {
+    expect(rangeCountsOf(feed({ rangeCounts: { "7d": 9, "30d": 9, "1y": 9, "2y": 9 } }))).toEqual({ "7d": 9, "30d": 9, "1y": 9, "2y": 9 });
+    expect(rangeCountsOf(feed({ rangeCounts: null }))).toEqual({ "7d": 2, "30d": 2, "1y": 3, "2y": 4 });
+  });
+
+  it("순서가 섞여 와도 최근부터 — 시각 없는 줄은 맨 뒤", () => {
+    const mixed = feed({ items: [items[2], item({ id: "x", publishedAt: null }), items[0], items[1]], rangeCounts: { "7d": 2, "30d": 2, "1y": 3, "2y": 3 } });
+    expect(cutByRange(mixed, "2y").map((row) => row.id)).toEqual(["1", "2", "3"]);
+  });
+});
+
+describe("날짜 묶음(KST)", () => {
+  it("KST 날짜로 묶고 요일을 붙인다 — UTC로는 전날인 줄도 KST 날짜로", () => {
+    const groups = groupByKstDate([
+      item({ id: "1", publishedAt: "2026-11-13T23:00:00+00:00" }),
+      item({ id: "2", publishedAt: "2026-11-13T15:10:00+00:00" }),
+      item({ id: "3", publishedAt: "2026-11-13T14:50:00+00:00" }),
+    ]);
+    expect(groups.map((group) => [group.date, group.label, group.items.map((row) => row.id)])).toEqual([
+      ["2026-11-14", "2026-11-14 (토)", ["1", "2"]],
+      ["2026-11-13", "2026-11-13 (금)", ["3"]],
+    ]);
+  });
+});
+
+describe("빈 화면 안내(계약 §5)", () => {
+  const counts = { "7d": 0, "30d": 0, "1y": 3, "2y": 5 };
+  const none = { "7d": 0, "30d": 0, "1y": 0, "2y": 0 };
+  const src = (source: string, status: string, label = source): SearchSourceStatus => ({
+    source, label, status, count: 0, dropped: null, message: null,
+  });
+
+  it("2년 안에 하나도 없으면 그 안내 — 2년보다 오래된 것만 있었으면 가장 최근 날짜를 함께", () => {
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: "2023-05-02" }))
+      .toEqual({ kind: "none2y", message: "최근 2년 안의 자료가 없습니다", note: "가장 최근 자료: 2023-05-02", caveat: null, wider: [] });
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null }))
+      .toEqual({ kind: "none2y", message: "최근 2년 안의 자료가 없습니다", note: null, caveat: null, wider: [] });
+  });
+
+  it("고른 기간에 없으면 그 안내와 더 넓은 기간 단추(건수가 있는 것만, 건수와 함께)", () => {
+    expect(feedEmptyState({ total: 5, inRange: 0, shown: 0, counts, range: "7d", olderOnlyLatest: null })).toEqual({
+      kind: "range", message: "이 기간에는 자료가 없습니다", note: null, caveat: null,
+      wider: [{ range: "1y", label: "1년", count: 3 }, { range: "2y", label: "2년", count: 5 }],
+    });
+  });
+
+  it("거르기 때문에 비었으면 그렇다고 — 기간 안내와 섞지 않음", () => {
+    expect(feedEmptyState({ total: 5, inRange: 5, shown: 0, counts, range: "2y", olderOnlyLatest: null })).toMatchObject({
+      kind: "filtered", wider: [], caveat: null,
+    });
+  });
+
+  it("보일 줄이 있으면 안내 없음", () => {
+    expect(feedEmptyState({ total: 5, inRange: 2, shown: 2, counts, range: "2y", olderOnlyLatest: null })).toBeNull();
+  });
+
+  it("출처가 모두 실패하면 '없다'고 하지 않고 모른다고 — 사유는 출처 상태 줄로", () => {
+    const sources = [src("google_en", "error", "구글 뉴스(영어)"), src("bing", "error", "Bing 뉴스"), src("wire", "owner_only")];
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toEqual({
+      kind: "unknown",
+      message: "받은 출처가 없어 최근 2년 안의 자료가 있는지 모릅니다",
+      note: null,
+      caveat: "받지 못한 출처가 있습니다(구글 뉴스(영어) · Bing 뉴스) — 아래 출처 상태를 보세요.",
+      wider: [],
+    });
+  });
+
+  it("대상을 풀지 못해 출처를 하나도 부르지 않았으면(모두 건너뜀) 모른다고", () => {
+    const sources = [src("google_ko", "skipped"), src("google_en", "skipped"), src("bing", "skipped"), src("event_news", "skipped"), src("wire", "owner_only")];
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toMatchObject({
+      kind: "unknown",
+      message: "받은 출처가 없어 최근 2년 안의 자료가 있는지 모릅니다",
+      caveat: "부른 출처가 없습니다 — 아래 출처 상태에서 사유를 보세요.",
+    });
+  });
+
+  it("외부 조회를 하지 않았으면(데모·저장본만) 저장본만 찾았다고 덧붙인다", () => {
+    const sources = [src("google_ko", "offline"), src("google_en", "offline"), src("bing", "offline"), src("event_news", "empty")];
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toEqual({
+      kind: "none2y",
+      message: "최근 2년 안의 자료가 없습니다",
+      note: null,
+      caveat: "외부 출처는 부르지 않았습니다(저장본만 찾음) — 아래 출처 상태를 보세요.",
+      wider: [],
+    });
+    const allOffline = [src("google_en", "offline"), src("bing", "offline")];
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources: allOffline }))
+      .toMatchObject({ kind: "unknown", caveat: "외부 출처는 부르지 않았습니다(저장본만 찾음) — 아래 출처 상태를 보세요." });
+  });
+
+  it("일부 출처만 실패하면 안내 글은 그대로, 받지 못한 출처를 덧붙인다(기간 안내도 같음)", () => {
+    const sources = [src("google_en", "ok", "구글 뉴스(영어)"), src("bing", "error", "Bing 뉴스"), src("google_ko", "skipped")];
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toMatchObject({
+      kind: "none2y", message: "최근 2년 안의 자료가 없습니다", caveat: "받지 못한 출처가 있습니다(Bing 뉴스) — 아래 출처 상태를 보세요.",
+    });
+    expect(feedEmptyState({ total: 5, inRange: 0, shown: 0, counts, range: "7d", olderOnlyLatest: null, sources })).toMatchObject({
+      kind: "range", caveat: "받지 못한 출처가 있습니다(Bing 뉴스) — 아래 출처 상태를 보세요.",
+    });
+  });
+
+  it("받는 중인 출처만 남았으면 그렇다고", () => {
+    const sources = [src("google_en", "empty"), src("finviz", "pending", "Finviz")];
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toMatchObject({
+      kind: "none2y", caveat: "받는 중인 출처가 있습니다(Finviz) — 몇 초 뒤 다시 읽습니다.",
+    });
+  });
+
+  it("출처 상태가 없으면(옛 응답) 지금처럼 2년 안내", () => {
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources: [] }))
+      .toMatchObject({ kind: "none2y", caveat: null });
+  });
+});
+
+describe("출처 상태 줄", () => {
+  it("상태 글·톤·건수·뺀 건수 — 색만으로 가르지 않게 글이 있다", () => {
+    expect(sourceStatusView({ source: "bing", label: "Bing 뉴스", status: "error", count: 0, dropped: null, message: "HTTP 503" })).toEqual({
+      label: "Bing 뉴스", status: "실패", tone: "danger", count: "0건", dropped: null, message: "HTTP 503",
+    });
+    expect(sourceStatusView({ source: "google_en", label: "구글 뉴스(영어)", status: "ok", count: 12,
+      dropped: { old: 3, noTime: 2, chinese: 1, excluded: 0 }, message: null })).toMatchObject({
+      status: "받음", tone: "ok", count: "12건", dropped: "뺀 줄: 2년 밖 3건 · 시각을 알 수 없음 2건 · 중국어 제목 1건",
+    });
+    expect(sourceStatusView({ source: "info", label: "수집 글", status: "owner_only", count: null, dropped: null, message: null })).toMatchObject({
+      status: "운영자 전용", tone: "neutral", count: "—",
+    });
+    expect(sourceStatusView({ source: "x", label: "X", status: "brand_new", count: 1, dropped: null, message: null }).status).toBe("brand_new");
+  });
+
+  it("뺀 건수가 모두 0이거나 없으면 null", () => {
+    expect(droppedText({ old: 0, noTime: 0, chinese: 0, excluded: 0 })).toBeNull();
+    expect(droppedText(null)).toBeNull();
+    expect(droppedText({ old: 0, noTime: 0, chinese: 0, excluded: 4 })).toBe("뺀 줄: 제외 매체 4건");
+  });
+
+  it("받는 중인 출처가 있으면 몇 초 뒤 다시 읽는다", () => {
+    expect(feedRefreshMs({ pending: true })).toBe(FEED_PENDING_REFRESH_MS);
+    expect(feedRefreshMs({ pending: false })).toBe(0);
+    expect(feedRefreshMs(null)).toBe(0);
+  });
+});
+
+describe("거르기", () => {
+  const rows = [
+    item({ id: "1", kind: "news", source: "google_en", lang: "en" }),
+    item({ id: "2", kind: "news", source: "naver", lang: "ko" }),
+    item({ id: "3", kind: "wire", source: "wire", lang: null }),
+  ];
+
+  it("종류·출처·언어별 건수(받은 자료 기준) — 출처 이름은 상태 줄의 이름을 먼저", () => {
+    const facets = facetCounts(rows, [{ source: "naver", label: "네이버 종목 뉴스", status: "ok", count: 1, dropped: null, message: null }]);
+    expect(facets.kind).toEqual([{ key: "news", label: "뉴스", count: 2 }, { key: "wire", label: "속보", count: 1 }]);
+    expect(facets.source.map((facet) => [facet.label, facet.count])).toEqual([["구글 뉴스(영어)", 1], ["네이버 종목 뉴스", 1], ["속보", 1]]);
+    expect(facets.lang.map((facet) => [facet.key, facet.label, facet.count])).toEqual([["en", "영어", 1], ["ko", "한국어", 1], ["unknown", "모름", 1]]);
+  });
+
+  it("끈 값의 줄을 뺀다", () => {
+    expect(applyFilters(rows, { kind: [], source: ["naver"], lang: [] }).map((row) => row.id)).toEqual(["1", "3"]);
+    expect(applyFilters(rows, { kind: [], source: [], lang: ["unknown"] }).map((row) => row.id)).toEqual(["1", "2"]);
+  });
+});
+
+describe("대상 머리·바로가기·보유", () => {
+  it("식별자 칸 — 있는 것만", () => {
+    expect(identifierChips(entity())).toEqual(["NVDA · 미국", "CIK 0001045810", "Wikidata Q182477"]);
+    expect(identifierChips(entity({ ids: { ticker: null, market: "kr", stockCode: "005930", cik: null, dartCorpCode: "00126380", wikidata: null } })))
+      .toEqual(["005930 · 한국", "DART 00126380"]);
+  });
+
+  it("종목은 종목 상세, 13F 기관(cik: 키)은 기관 상세 — 차트·시세는 그리지 않고 링크만", () => {
+    expect(entityShortcuts(entity())).toEqual([{ label: "종목 상세", href: "/s/us/NVDA" }]);
+    expect(entityShortcuts(entity({ key: "kr:005930", ids: { ticker: null, market: "kr", stockCode: "005930", cik: null, dartCorpCode: null, wikidata: null } })))
+      .toEqual([{ label: "종목 상세", href: "/s/kr/005930" }]);
+    expect(entityShortcuts(entity({ key: "cik:0001067983", kind: "institution", ids: { ticker: null, market: null, stockCode: null, cik: "0001067983", dartCorpCode: null, wikidata: null } })))
+      .toEqual([{ label: "기관 상세", href: "/institutions/0001067983" }]);
+    expect(entityShortcuts(entity({ key: "wd:Q1", kind: "person", ids: { ticker: null, market: null, stockCode: null, cik: null, dartCorpCode: null, wikidata: "Q1" } })))
+      .toEqual([]);
+  });
+
+  it("13F 보유 기관 검색어 — 영문 이름(법인 꼬리 뗌), 없으면 티커", () => {
+    expect(holdersQuery(entity())).toBe("NVIDIA");
+    expect(holdersQuery(entity({ name: "삼성전자", nameEn: null, ids: { ticker: "SSNLF", market: "us", stockCode: null, cik: null, dartCorpCode: null, wikidata: null } })))
+      .toBe("SSNLF");
+    expect(holdersQuery(entity({ name: "Apple Inc.", nameEn: null }))).toBe("APPLE");
+  });
+
+  it("보유 자료의 2년 규칙 — 가장 최근 보고가 2년보다 오래면 보이지 않고 그 날짜만", () => {
+    expect(holdingsWindow(["2026-09-30", "2026-06-30"], "2026-11-14")).toEqual({ recent: ["2026-09-30", "2026-06-30"], latest: "2026-09-30" });
+    expect(holdingsWindow(["2023-12-31", "2024-03-31"], "2026-11-14")).toEqual({ recent: [], latest: "2024-03-31" });
+    expect(holdingsWindow([], "2026-11-14")).toEqual({ recent: [], latest: null });
+  });
+
+  it("연결은 관계 종류별로 묶고 계약의 순서대로", () => {
+    const groups = linkGroups([
+      { relation: "subsidiary", key: "wd:Q2", name: "B", kind: "company", source: "wikidata" },
+      { relation: "owned_by", key: null, name: "A", kind: "person", source: "wikidata" },
+      { relation: "subsidiary", key: "wd:Q3", name: "C", kind: "company", source: "wikidata" },
+      { relation: "mystery", key: null, name: "M", kind: null, source: "wikidata" },
+    ]);
+    expect(groups.map((group) => [group.label, group.links.map((link) => link.name)])).toEqual([
+      ["소유자", ["A"]],
+      ["자회사", ["B", "C"]],
+      ["mystery", ["M"]],
+    ]);
+  });
+});
+
+describe("키보드·링크", () => {
+  it("↑↓로 줄을 옮긴다 — 끝에서 멈추고, 고른 줄이 없으면 첫 줄", () => {
+    expect(nextRowIndex(-1, "ArrowDown", 3)).toBe(0);
+    expect(nextRowIndex(0, "ArrowDown", 3)).toBe(1);
+    expect(nextRowIndex(2, "ArrowDown", 3)).toBe(2);
+    expect(nextRowIndex(1, "ArrowUp", 3)).toBe(0);
+    expect(nextRowIndex(0, "ArrowUp", 3)).toBe(0);
+    expect(nextRowIndex(-1, "ArrowUp", 3)).toBe(0);
+    expect(nextRowIndex(5, "ArrowUp", 0)).toBe(-1);
+  });
+
+  it("'/'는 다른 입력칸에서 칠 때·조합 중·수식키와 함께·대화상자 안에서는 검색창으로 가지 않는다", () => {
+    const base = { key: "/", ctrlKey: false, metaKey: false, altKey: false, isComposing: false, target: { tagName: "BODY" } };
+    expect(isSlashShortcut(base)).toBe(true);
+    expect(isSlashShortcut({ ...base, target: { tagName: "INPUT" } })).toBe(false);
+    expect(isSlashShortcut({ ...base, target: { tagName: "TEXTAREA" } })).toBe(false);
+    expect(isSlashShortcut({ ...base, target: { tagName: "DIV", isContentEditable: true } })).toBe(false);
+    expect(isSlashShortcut({ ...base, target: { tagName: "BUTTON", closest: (selector: string) => (selector.includes("dialog") ? {} : null) } })).toBe(false);
+    expect(isSlashShortcut({ ...base, isComposing: true })).toBe(false);
+    expect(isSlashShortcut({ ...base, ctrlKey: true })).toBe(false);
+    expect(isSlashShortcut({ ...base, key: "?" })).toBe(false);
+  });
+
+  it("원문 주소는 http(s)만", () => {
+    expect(httpUrl("https://a.example/x")).toBe("https://a.example/x");
+    expect(httpUrl("HTTP://a.example")).toBe("HTTP://a.example");
+    expect(httpUrl("javascript:alert(1)")).toBeNull();
+    expect(httpUrl(null)).toBeNull();
+  });
+
+  it("수집 글의 원문 팝업 — id로 본문을 읽고, 시각은 KST", () => {
+    const entry = readerOfFeedItem(item({ id: "z", readerId: "0123456789abcdef01234567", source: "info", url: "javascript:x" }), "수집 글");
+    expect(entry).toMatchObject({
+      key: "search:z", sourceLabel: "수집 글", time: "2026-11-14 09:30 KST", itemId: "0123456789abcdef01234567", hasBody: true, url: null,
+    });
+  });
+});

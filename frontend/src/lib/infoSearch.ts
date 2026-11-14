@@ -1,0 +1,680 @@
+/**
+ * 정보 검색(/search — ADR 0041)의 화면 규칙 — React를 모르는 순수 함수(ADR 0004).
+ *
+ * 계약(docs/specs/2026-11-14-info-search-contract.md)의 화면 몫만 둡니다: 주소 상태(?q= · ?e=&tab=&range=), 대상 키 모양 검사(주소로 넘어가기 전),
+ * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드.
+ * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
+ */
+import { holderQuery, institutionHref, stockHref } from "./detail";
+import { EMPTY } from "./format";
+import type { ReaderEntry } from "./info";
+import type {
+  SearchCandidate,
+  SearchEntity,
+  SearchEntityKind,
+  SearchFeedItem,
+  SearchFeedResponse,
+  SearchFeedTab,
+  SearchLink,
+  SearchRange,
+  SearchSourceStatus,
+} from "./types";
+
+// ------------------------------------------------------------------ 탭·기간
+
+/** 화면의 탭 — 타임라인·뉴스·글·논평은 결과 경로(feed), 보유는 13F 경로, 연결은 대상 풀기의 links. 공시·리서치는 단계 4. */
+export type SearchTabKey = "timeline" | "news" | "posts" | "holdings" | "links";
+
+export const SEARCH_TABS: readonly { key: SearchTabKey; label: string }[] = [
+  { key: "timeline", label: "타임라인" },
+  { key: "news", label: "뉴스" },
+  { key: "posts", label: "글·논평" },
+  { key: "holdings", label: "보유" },
+  { key: "links", label: "연결" },
+];
+
+export const DEFAULT_TAB: SearchTabKey = "timeline";
+
+export const SEARCH_RANGES: readonly { key: SearchRange; label: string }[] = [
+  { key: "7d", label: "7일" },
+  { key: "30d", label: "30일" },
+  { key: "1y", label: "1년" },
+  { key: "2y", label: "2년" },
+];
+
+export const DEFAULT_RANGE: SearchRange = "30d";
+
+const TAB_KEYS = new Set<string>(SEARCH_TABS.map((tab) => tab.key));
+const RANGE_KEYS = new Set<string>(SEARCH_RANGES.map((range) => range.key));
+
+/** 이 대상·사용자에게 보이는 탭. 글·논평은 운영자만(D-1 — 회원이 부르면 403), 보유는 기업·기관만. */
+export function tabsFor(kind: SearchEntityKind, owner: boolean): SearchTabKey[] {
+  return SEARCH_TABS.map((tab) => tab.key).filter((key) => {
+    if (key === "posts") return owner;
+    if (key === "holdings") return kind === "company" || kind === "institution";
+    return true;
+  });
+}
+
+/** 주소의 탭을 이 대상·사용자에게 맞춤 — 고를 수 없는 탭이면 타임라인. */
+export function tabFor(requested: SearchTabKey, kind: SearchEntityKind, owner: boolean): SearchTabKey {
+  return tabsFor(kind, owner).includes(requested) ? requested : DEFAULT_TAB;
+}
+
+/** 결과 경로(GET /api/search/feed)의 tab 값 — 보유·연결은 그 경로를 쓰지 않아 null. */
+export function feedTabOf(tab: SearchTabKey): SearchFeedTab | null {
+  return tab === "timeline" || tab === "news" || tab === "posts" ? tab : null;
+}
+
+// ------------------------------------------------------------------ 대상 키
+
+// 수집기(search.py의 _KEY_PATTERNS)·백엔드(SearchService)와 같은 문법 — 어긋나면 수집기의 400이 '응답 없음'으로 보입니다.
+const KEY_PATTERNS: readonly RegExp[] = [/^us:[A-Z0-9][A-Z0-9.-]{0,14}$/, /^kr:\d{6}$/, /^cik:\d{10}$/, /^wd:Q[1-9]\d{0,11}$/];
+const TOPIC_MAX = 60;
+// eslint-disable-next-line no-control-regex -- 제어 글자를 막는 것이 목적
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+const codePoints = (text: string) => Array.from(text).length;
+
+/**
+ * 대상 키 모양(계약 §2) — 화면이 주소로 넘어가기 전에 봅니다(틀린 키로 400을 부르지 않게).
+ * 티커는 영문 대문자·숫자·'.'·'-', 국내 6자리, CIK 10자리, Wikidata Q+숫자, 주제는 앞뒤 공백 없는 1~60자.
+ */
+export function isEntityKey(key: string | null | undefined): key is string {
+  if (!key) return false;
+  if (key.startsWith("topic:")) {
+    const text = key.slice("topic:".length);
+    return text.length > 0 && text === text.trim() && codePoints(text) <= TOPIC_MAX && !CONTROL.test(text);
+  }
+  return KEY_PATTERNS.some((pattern) => pattern.test(key));
+}
+
+/** 검색어 → 주제 키. 공백을 하나로 줄이고, 비거나 60자를 넘으면 null. */
+export function topicKey(text: string): string | null {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean || codePoints(clean) > TOPIC_MAX) return null;
+  return `topic:${clean}`;
+}
+
+/** 키 앞부분으로 아는 종류 — wd:는 사람·기업·기관 모두라 모름(null). 대상 풀기 응답이 없을 때만 씁니다. */
+export function kindOfKey(key: string): SearchEntityKind | null {
+  if (key.startsWith("us:") || key.startsWith("kr:")) return "company";
+  if (key.startsWith("cik:")) return "institution";
+  if (key.startsWith("topic:")) return "topic";
+  return null;
+}
+
+// ------------------------------------------------------------------ 주소 상태
+
+export type SearchUrlState = {
+  /** 후보 보기의 검색어(대상이 없을 때). */
+  q: string | null;
+  /** 연 대상의 키(모양이 맞을 때만). */
+  e: string | null;
+  tab: SearchTabKey;
+  range: SearchRange;
+  /** 주소에 대상 키가 있었지만 모양이 틀렸음 — 화면이 그렇다고 적습니다. */
+  badKey: boolean;
+};
+
+const QUERY_MAX = 60;
+
+/** 주소의 쿼리(`?e=…&tab=…` 또는 URLSearchParams) → 화면 상태. 모르는 탭·기간은 기본값. */
+export function parseSearchUrl(input: URLSearchParams | string | null | undefined): SearchUrlState {
+  const params = typeof input === "string" || input == null ? new URLSearchParams(input ?? "") : input;
+  const rawKey = params.get("e");
+  const e = isEntityKey(rawKey) ? rawKey : null;
+  const rawQuery = (params.get("q") ?? "").trim();
+  const q = rawQuery ? Array.from(rawQuery).slice(0, QUERY_MAX).join("").trim() : null;
+  const tab = params.get("tab");
+  const range = params.get("range");
+  return {
+    q: q || null,
+    e,
+    tab: tab && TAB_KEYS.has(tab) ? (tab as SearchTabKey) : DEFAULT_TAB,
+    range: range && RANGE_KEYS.has(range) ? (range as SearchRange) : DEFAULT_RANGE,
+    badKey: rawKey !== null && rawKey !== "" && e === null,
+  };
+}
+
+/** 쿼리 값 인코딩 — ':'는 쿼리에서 그대로 써도 되어 읽기 좋게 남깁니다(us:NVDA). */
+const encodeValue = (value: string) => encodeURIComponent(value).replace(/%3A/gi, ":");
+
+/**
+ * 화면 상태 → 주소. 대상이 있으면 `/search?e=…&tab=…&range=…`(북마크·새로고침이 같은 화면), 없으면 `/search?q=…`, 둘 다 없으면 `/search`.
+ * 모양이 틀린 키는 넣지 않습니다.
+ */
+export function searchHref(state: { q?: string | null; e?: string | null; tab?: SearchTabKey; range?: SearchRange }): string {
+  if (isEntityKey(state.e)) {
+    return `/search?e=${encodeValue(state.e)}&tab=${state.tab ?? DEFAULT_TAB}&range=${state.range ?? DEFAULT_RANGE}`;
+  }
+  const q = state.q?.trim();
+  return q ? `/search?q=${encodeValue(q)}` : "/search";
+}
+
+// ------------------------------------------------------------------ 후보
+
+const sameName = (a: string, b: string) => a.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase() === b.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * 입력 그대로의 구문 검색 줄인가(맨 끝의 `topic:` 후보). 종류가 topic이어도 키가 `wd:`인 Wikidata 항목(사람·조직이 아닌 것)은 대상입니다.
+ */
+export function isTopicSearch(candidate: SearchCandidate): boolean {
+  return candidate.source === "topic" || (candidate.key?.startsWith("topic:") ?? false);
+}
+
+/**
+ * Enter로 받은 후보에서 바로 열 대상(계약 3-2) — 주제를 뺀 후보가 정확히 하나이고, 키가 있고, 이름이 입력과 같을 때만.
+ * 그 밖에는 null(목록을 보이고 사용자가 고름 — 동명이인을 자동으로 고르지 않음).
+ */
+export function autoPick(items: readonly SearchCandidate[], query: string): SearchCandidate | null {
+  const named = items.filter((item) => !isTopicSearch(item));
+  if (named.length !== 1) return null;
+  const only = named[0];
+  return isEntityKey(only.key) && sameName(only.name, query) ? only : null;
+}
+
+/** 고른 것이 하는 일 — 대상을 열거나(open), 그 이름으로 다시 풂(resolve). */
+export type SearchTarget = { open: string } | { resolve: string };
+
+/**
+ * 후보를 골랐을 때(계약 3-1) — 키가 있으면 그 대상, 없으면 그 이름으로 다시 풂. 이미 그 이름으로 푼 목록에서 다시 고르면(같은 목록이 또 나옴)
+ * 그 이름을 주제로 엽니다.
+ *
+ * @param resolvedQuery 지금 보이는 목록을 만든 검색어(치는 동안의 후보면 null)
+ */
+export function candidateTarget(candidate: SearchCandidate, resolvedQuery: string | null): SearchTarget {
+  if (isEntityKey(candidate.key)) return { open: candidate.key };
+  if (resolvedQuery !== null && sameName(candidate.name, resolvedQuery)) {
+    const topic = topicKey(candidate.name);
+    if (topic) return { open: topic };
+  }
+  return { resolve: candidate.name };
+}
+
+/** 연결을 눌렀을 때 — 키가 있으면 그 대상, 없으면 그 이름으로 풂(계약 3-3). */
+export function linkTarget(link: SearchLink): SearchTarget {
+  return isEntityKey(link.key) ? { open: link.key } : { resolve: link.name };
+}
+
+// ------------------------------------------------------------------ KST 시각
+
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const pad = (value: number) => String(value).padStart(2, "0");
+
+function kstShifted(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? null : new Date(ms + KST_OFFSET_MS);
+}
+
+const dateText = (date: Date) => `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+
+/** UTC ISO → KST 날짜(YYYY-MM-DD). 모르면 null. KST는 서머타임이 없어 +9시간으로 셉니다. */
+export function kstDate(iso: string | null | undefined): string | null {
+  const shifted = kstShifted(iso);
+  return shifted ? dateText(shifted) : null;
+}
+
+/** UTC ISO → KST 시각(HH:mm). 모르면 null. */
+export function kstTime(iso: string | null | undefined): string | null {
+  const shifted = kstShifted(iso);
+  return shifted ? `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}` : null;
+}
+
+/** 지금(ms)의 KST 날짜. */
+export function kstToday(nowMs: number): string {
+  return dateText(new Date(nowMs + KST_OFFSET_MS));
+}
+
+/**
+ * 기간의 시작 날짜(KST) — 오늘에서 7일·30일·1년·2년 뺀 날(그날 00:00 KST부터 포함). 2년은 계약 §4-1(창 시작 = 오늘 − 2년)과 같은 정의이고,
+ * 2월 29일에서 해를 빼면 2월 28일입니다.
+ */
+export function rangeStart(range: SearchRange, today: string): string {
+  const [year, month, day] = today.split("-").map(Number);
+  if (range === "7d" || range === "30d") {
+    const days = range === "7d" ? 7 : 30;
+    return dateText(new Date(Date.UTC(year, month - 1, day - days)));
+  }
+  const years = range === "1y" ? 1 : 2;
+  const lastDay = new Date(Date.UTC(year - years, month, 0)).getUTCDate();
+  return dateText(new Date(Date.UTC(year - years, month - 1, Math.min(day, lastDay))));
+}
+
+// ------------------------------------------------------------------ 기간 자르기·묶기
+
+/** 최근부터(작성 시각 — 없으면 맨 뒤). 계약상 ISO 문자열 정렬이 시간 순서와 같습니다. 같은 시각은 받은 순서 그대로. */
+export function sortFeed(items: readonly SearchFeedItem[]): SearchFeedItem[] {
+  return [...items].sort((a, b) => {
+    if (a.publishedAt === b.publishedAt) return 0;
+    if (!a.publishedAt) return 1;
+    if (!b.publishedAt) return -1;
+    return a.publishedAt < b.publishedAt ? 1 : -1;
+  });
+}
+
+const RANGE_ORDER: readonly SearchRange[] = ["7d", "30d", "1y", "2y"];
+
+/** 받은 줄을 기간마다 셉니다(작성 시각의 KST 날짜가 시작 날짜 이상). */
+export function countByRange(items: readonly SearchFeedItem[], today: string): Record<SearchRange, number> {
+  const out = { "7d": 0, "30d": 0, "1y": 0, "2y": 0 } as Record<SearchRange, number>;
+  for (const range of RANGE_ORDER) {
+    const start = rangeStart(range, today);
+    out[range] = items.filter((item) => {
+      const date = kstDate(item.publishedAt);
+      return date !== null && date >= start;
+    }).length;
+  }
+  return out;
+}
+
+/** 서버의 오늘(window.to) — 없으면 부르는 쪽이 준 오늘(브라우저 시계의 KST 날짜), 그것도 없으면 null(날짜로 자르지 못함). */
+const feedToday = (feed: SearchFeedResponse, today: string | null | undefined) => feed.window?.to ?? today ?? null;
+
+function serverCounts(feed: SearchFeedResponse): Record<SearchRange, number> | null {
+  const counts = feed.rangeCounts;
+  if (!counts) return null;
+  const values = RANGE_ORDER.map((range) => counts[range]);
+  if (values.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0)) return null;
+  return Object.fromEntries(RANGE_ORDER.map((range, at) => [range, values[at]])) as Record<SearchRange, number>;
+}
+
+/** 기간 단추의 건수 — 서버의 rangeCounts(받은 자료 기준), 없으면 받은 줄을 직접 셈(오늘을 모르면 모두 2년 안으로 봄 — 서버가 이미 자름). */
+export function rangeCountsOf(feed: SearchFeedResponse, today?: string | null): Record<SearchRange, number> {
+  const server = serverCounts(feed);
+  if (server) return server;
+  const day = feedToday(feed, today);
+  if (day) return countByRange(feed.items ?? [], day);
+  const all = (feed.items ?? []).length;
+  return { "7d": all, "30d": all, "1y": all, "2y": all };
+}
+
+/**
+ * 2년 묶음에서 고른 기간만(다시 부르지 않음). 서버가 센 rangeCounts가 있으면 최근부터 그 수만큼 — 기간은 '오늘부터 거슬러 올라간 구간'이라
+ * 최근순 목록의 앞부분이므로, 단추의 건수와 보이는 줄이 늘 같습니다. 없으면 작성 시각의 KST 날짜로 자릅니다.
+ */
+export function cutByRange(feed: SearchFeedResponse, range: SearchRange, today?: string | null): SearchFeedItem[] {
+  const sorted = sortFeed(feed.items ?? []);
+  const counts = serverCounts(feed);
+  if (counts) return sorted.slice(0, counts[range]);
+  const day = feedToday(feed, today);
+  if (!day) return sorted;
+  const start = rangeStart(range, day);
+  return sorted.filter((item) => {
+    const date = kstDate(item.publishedAt);
+    return date !== null && date >= start;
+  });
+}
+
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+export type FeedDateGroup = { date: string; label: string; items: SearchFeedItem[] };
+
+/** KST 날짜별 묶음(받은 순서 유지) — 제목은 'YYYY-MM-DD (요일)'. 시각 모르는 줄은 '시각 모름' 묶음으로 맨 뒤. */
+export function groupByKstDate(items: readonly SearchFeedItem[]): FeedDateGroup[] {
+  const groups: FeedDateGroup[] = [];
+  const byDate = new Map<string, FeedDateGroup>();
+  for (const item of items) {
+    const date = kstDate(item.publishedAt) ?? "";
+    let group = byDate.get(date);
+    if (!group) {
+      const [year, month, day] = date.split("-").map(Number);
+      const label = date ? `${date} (${WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]})` : "시각 모름";
+      group = { date, label, items: [] };
+      byDate.set(date, group);
+      groups.push(group);
+    }
+    group.items.push(item);
+  }
+  return groups.sort((a, b) => (a.date === b.date ? 0 : !a.date ? 1 : !b.date ? -1 : a.date < b.date ? 1 : -1));
+}
+
+// ------------------------------------------------------------------ 빈 화면
+
+export type FeedEmpty = {
+  /** unknown = 답한 출처가 하나도 없어 2년 안에 자료가 있는지 모름(실패·외부 조회 안 함·건너뜀뿐). */
+  kind: "none2y" | "range" | "filtered" | "unknown";
+  message: string;
+  /** 덧붙이는 한 줄(가장 최근 자료 날짜). */
+  note: string | null;
+  /** 받지 못한 출처가 있다는 한 줄 — 빈 결과가 '없음'이 아니라 '받은 출처 기준'임을 알립니다. 자세한 사유는 출처 상태 줄. */
+  caveat: string | null;
+  /** 더 넓은 기간 단추(건수가 있는 것만). */
+  wider: { range: SearchRange; label: string; count: number }[];
+};
+
+/** 출처가 답한 상태(결과가 0건이어도 '없음'을 말할 수 있음). */
+const ANSWERED = new Set(["ok", "cached", "empty"]);
+/** 물었어야 했는데 답을 받지 못한 상태. 건너뜀(이름이 없어 묻지 않음)·운영자 전용·다음 단계는 원래 묻지 않는 자리라 넣지 않습니다. */
+const UNANSWERED = new Set(["error", "offline", "pending", "server_only"]);
+
+/** 받지 못한 출처의 한 줄(없으면 null) — 외부 조회 안 함(데모·저장본만)·받는 중은 따로 말합니다. */
+export function feedSourceCaveat(sources: readonly SearchSourceStatus[]): string | null {
+  const missed = sources.filter((source) => UNANSWERED.has(source.status));
+  if (missed.length === 0) return null;
+  if (missed.every((source) => source.status === "offline")) return "외부 출처는 부르지 않았습니다(저장본만 찾음) — 아래 출처 상태를 보세요.";
+  const names = missed.map((source) => source.label || sourceLabel(source.source)).join(" · ");
+  if (missed.every((source) => source.status === "pending")) return `받는 중인 출처가 있습니다(${names}) — 몇 초 뒤 다시 읽습니다.`;
+  return `받지 못한 출처가 있습니다(${names}) — 아래 출처 상태를 보세요.`;
+}
+
+/**
+ * 결과가 비었을 때의 안내(계약 §5).
+ * - 2년 안에 하나도 없음 → '최근 2년 안의 자료가 없습니다' (+ 2년보다 오래된 것만 있었으면 '가장 최근 자료: 날짜' — 그 줄은 보이지 않음)
+ *   단, 답한 출처가 하나도 없으면(모두 실패·외부 조회 안 함·건너뜀) '없다'고 하지 않고 모른다고 합니다(지시문 §8 — 실패를 빈 목록으로 숨기지 않음).
+ * - 고른 기간에 없음 → '이 기간에는 자료가 없습니다' + 더 넓은 기간 단추(그 기간의 건수와 함께)
+ * - 거르기 때문에 없음 → 그렇다고(기간 안내와 섞지 않음)
+ * 받지 못한 출처가 있으면 앞의 두 안내에 caveat 한 줄을 붙입니다.
+ *
+ * @param total 2년 안의 줄 수 · @param inRange 고른 기간의 줄 수(거르기 전) · @param shown 거른 뒤 보이는 줄 수 · @param sources 출처 상태(없으면 지금처럼)
+ */
+export function feedEmptyState(args: {
+  total: number;
+  inRange: number;
+  shown: number;
+  counts: Record<SearchRange, number>;
+  range: SearchRange;
+  olderOnlyLatest: string | null | undefined;
+  sources?: readonly SearchSourceStatus[];
+}): FeedEmpty | null {
+  const sources = args.sources ?? [];
+  const caveat = feedSourceCaveat(sources);
+  if (args.total === 0) {
+    const note = args.olderOnlyLatest ? `가장 최근 자료: ${args.olderOnlyLatest}` : null;
+    if (sources.length > 0 && !sources.some((source) => ANSWERED.has(source.status))) {
+      return {
+        kind: "unknown",
+        message: "받은 출처가 없어 최근 2년 안의 자료가 있는지 모릅니다",
+        note,
+        caveat: caveat ?? "부른 출처가 없습니다 — 아래 출처 상태에서 사유를 보세요.",
+        wider: [],
+      };
+    }
+    return { kind: "none2y", message: "최근 2년 안의 자료가 없습니다", note, caveat, wider: [] };
+  }
+  if (args.inRange === 0) {
+    const after = RANGE_ORDER.slice(RANGE_ORDER.indexOf(args.range) + 1);
+    return {
+      kind: "range",
+      message: "이 기간에는 자료가 없습니다",
+      note: null,
+      caveat,
+      wider: SEARCH_RANGES.filter((range) => after.includes(range.key) && args.counts[range.key] > 0).map((range) => ({
+        range: range.key,
+        label: range.label,
+        count: args.counts[range.key],
+      })),
+    };
+  }
+  if (args.shown === 0) return { kind: "filtered", message: "고른 거르기에 맞는 자료가 없습니다", note: null, caveat: null, wider: [] };
+  return null;
+}
+
+// ------------------------------------------------------------------ 이름표
+
+const ITEM_KIND_LABELS: Record<string, string> = {
+  news: "뉴스",
+  headline: "헤드라인",
+  post: "글",
+  opinion: "논평",
+  wire: "속보",
+  filing: "공시",
+  research: "리서치",
+};
+
+export function itemKindLabel(kind: string): string {
+  return ITEM_KIND_LABELS[kind] ?? kind;
+}
+
+const ENTITY_KIND_LABELS: Record<SearchEntityKind, string> = { company: "기업", institution: "기관", person: "사람", topic: "주제" };
+
+export function entityKindLabel(kind: SearchEntityKind | null | undefined): string {
+  return kind ? (ENTITY_KIND_LABELS[kind] ?? kind) : "대상";
+}
+
+/** 출처 키의 기본 이름 — 응답의 출처 상태 줄에 이름이 있으면 그쪽을 씁니다. */
+const SOURCE_LABELS: Record<string, string> = {
+  google_ko: "구글 뉴스(한국어)",
+  google_en: "구글 뉴스(영어)",
+  bing: "Bing 뉴스",
+  yahoo: "Yahoo Finance",
+  naver: "네이버 증권",
+  infomax: "연합인포맥스",
+  event_news: "사건 뉴스(저장본)",
+  info: "수집 글",
+  guru: "거장 견해",
+  wire: "속보",
+};
+
+export function sourceLabel(source: string, statuses: readonly SearchSourceStatus[] = []): string {
+  return statuses.find((status) => status.source === source)?.label || SOURCE_LABELS[source] || source;
+}
+
+const LANG_LABELS: Record<string, string> = { ko: "한국어", en: "영어", unknown: "모름" };
+const langKey = (lang: string | null | undefined) => lang || "unknown";
+
+/** 관계 이름(계약 3-3) — 이 대상에서 본 상대의 자리. 순서도 이 표 순서. */
+const RELATION_LABELS: readonly [string, string][] = [
+  ["owner_of", "소유한 곳"],
+  ["owned_by", "소유자"],
+  ["founded_by", "창업자"],
+  ["founder_of", "창업한 곳"],
+  ["employer", "소속"],
+  ["employee", "구성원"],
+  ["ceo", "대표"],
+  ["ceo_of", "대표로 있는 곳"],
+  ["parent", "모회사"],
+  ["subsidiary", "자회사"],
+  ["manager", "운용자"],
+  ["managed_by", "운용하는 기관"],
+];
+
+export type LinkGroup = { relation: string; label: string; links: SearchLink[] };
+
+/** 연결을 관계별로 묶음 — 계약의 순서, 모르는 관계는 뒤에 이름 그대로. */
+export function linkGroups(links: readonly SearchLink[]): LinkGroup[] {
+  const order = new Map(RELATION_LABELS.map(([relation], at) => [relation, at]));
+  const groups = new Map<string, LinkGroup>();
+  for (const link of links) {
+    let group = groups.get(link.relation);
+    if (!group) {
+      const label = RELATION_LABELS.find(([relation]) => relation === link.relation)?.[1] ?? link.relation;
+      group = { relation: link.relation, label, links: [] };
+      groups.set(link.relation, group);
+    }
+    group.links.push(link);
+  }
+  const rank = (relation: string) => order.get(relation) ?? RELATION_LABELS.length;
+  return [...groups.values()].sort((a, b) => rank(a.relation) - rank(b.relation));
+}
+
+// ------------------------------------------------------------------ 출처 상태
+
+const STATUS_TEXT: Record<string, { text: string; tone: "ok" | "warn" | "danger" | "neutral" }> = {
+  ok: { text: "받음", tone: "ok" },
+  cached: { text: "캐시", tone: "ok" },
+  empty: { text: "결과 없음", tone: "neutral" },
+  error: { text: "실패", tone: "danger" },
+  skipped: { text: "건너뜀", tone: "neutral" },
+  owner_only: { text: "운영자 전용", tone: "neutral" },
+  offline: { text: "외부 조회 안 함(저장본만)", tone: "warn" },
+  later: { text: "다음 단계", tone: "neutral" },
+  pending: { text: "받는 중", tone: "neutral" },
+  server_only: { text: "서버에서만", tone: "neutral" },
+};
+
+/** 거른 건수 한 줄 — 0이 아닌 것만. 모두 0이거나 모르면 null. */
+export function droppedText(dropped: SearchSourceStatus["dropped"]): string | null {
+  if (!dropped) return null;
+  const parts = [
+    dropped.old > 0 ? `2년 밖 ${dropped.old}건` : null,
+    dropped.noTime > 0 ? `시각을 알 수 없음 ${dropped.noTime}건` : null,
+    dropped.chinese > 0 ? `중국어 제목 ${dropped.chinese}건` : null,
+    dropped.excluded > 0 ? `제외 매체 ${dropped.excluded}건` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? `뺀 줄: ${parts.join(" · ")}` : null;
+}
+
+export type SourceStatusView = {
+  label: string;
+  status: string;
+  tone: "ok" | "warn" | "danger" | "neutral";
+  count: string;
+  dropped: string | null;
+  message: string | null;
+};
+
+/** 출처 상태 한 줄(계약 §5 — 이름 · 상태 글 · 건수 · 거른 건수). 색만으로 가르지 않게 상태는 글로 둡니다. 모르는 상태는 코드 그대로. */
+export function sourceStatusView(status: SearchSourceStatus): SourceStatusView {
+  const known = STATUS_TEXT[status.status];
+  return {
+    label: status.label || sourceLabel(status.source),
+    status: known?.text ?? status.status,
+    tone: known?.tone ?? "neutral",
+    count: typeof status.count === "number" ? `${status.count}건` : EMPTY,
+    dropped: droppedText(status.dropped),
+    message: status.message || null,
+  };
+}
+
+/** 받는 중인 출처(pending)가 있으면 다시 읽는 간격(ms), 없으면 0. */
+export const FEED_PENDING_REFRESH_MS = 4000;
+
+export function feedRefreshMs(feed: Pick<SearchFeedResponse, "pending"> | null | undefined): number {
+  return feed?.pending === true ? FEED_PENDING_REFRESH_MS : 0;
+}
+
+// ------------------------------------------------------------------ 거르기
+
+export type FeedFacet = { key: string; label: string; count: number };
+export type FeedFacets = { kind: FeedFacet[]; source: FeedFacet[]; lang: FeedFacet[] };
+/** 끈 값(그 값의 줄을 뺌). 빈 목록이면 모두 보임. */
+export type FeedFilters = { kind: string[]; source: string[]; lang: string[] };
+
+export const NO_FILTERS: FeedFilters = { kind: [], source: [], lang: [] };
+
+function facet(items: readonly SearchFeedItem[], keyOf: (item: SearchFeedItem) => string, labelOf: (key: string) => string): FeedFacet[] {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(keyOf(item), (counts.get(keyOf(item)) ?? 0) + 1);
+  // 많은 것부터, 같으면 처음 나온 순서(정렬은 안정).
+  return [...counts.entries()].map(([key, count]) => ({ key, label: labelOf(key), count })).sort((a, b) => b.count - a.count);
+}
+
+/** 거르기 칸의 값과 건수(받은 자료 기준 — 고른 기간 안, 거르기 전). */
+export function facetCounts(items: readonly SearchFeedItem[], statuses: readonly SearchSourceStatus[] = []): FeedFacets {
+  return {
+    kind: facet(items, (item) => item.kind, itemKindLabel),
+    source: facet(items, (item) => item.source, (key) => sourceLabel(key, statuses)),
+    lang: facet(items, (item) => langKey(item.lang), (key) => LANG_LABELS[key] ?? key),
+  };
+}
+
+export function applyFilters(items: readonly SearchFeedItem[], filters: FeedFilters): SearchFeedItem[] {
+  return items.filter(
+    (item) => !filters.kind.includes(item.kind) && !filters.source.includes(item.source) && !filters.lang.includes(langKey(item.lang)),
+  );
+}
+
+export function hasFilters(filters: FeedFilters): boolean {
+  return filters.kind.length + filters.source.length + filters.lang.length > 0;
+}
+
+// ------------------------------------------------------------------ 대상 머리·바로가기·보유
+
+/** 머리의 식별자 칸 — 있는 것만(티커·시장, 종목코드, CIK, DART 고유번호, Wikidata). */
+export function identifierChips(entity: Pick<SearchEntity, "ids">): string[] {
+  const { ids } = entity;
+  const chips: string[] = [];
+  if (ids.market === "kr" && (ids.stockCode || ids.ticker)) chips.push(`${ids.stockCode ?? ids.ticker} · 한국`);
+  else if (ids.market === "us" && ids.ticker) chips.push(`${ids.ticker} · 미국`);
+  else if (ids.ticker) chips.push(ids.ticker);
+  if (ids.cik) chips.push(`CIK ${ids.cik}`);
+  if (ids.dartCorpCode) chips.push(`DART ${ids.dartCorpCode}`);
+  if (ids.wikidata) chips.push(`Wikidata ${ids.wikidata}`);
+  return chips;
+}
+
+/** 다른 화면으로 가는 바로가기 — 종목이면 종목 상세, 13F 기관(cik: 키)이면 기관 상세. 차트·시세는 이 화면에 그리지 않습니다. */
+export function entityShortcuts(entity: Pick<SearchEntity, "key" | "ids">): { label: string; href: string }[] {
+  const { ids } = entity;
+  const out: { label: string; href: string }[] = [];
+  if (ids.market === "us" && ids.ticker) out.push({ label: "종목 상세", href: stockHref("us", ids.ticker) });
+  else if (ids.market === "kr" && ids.stockCode) out.push({ label: "종목 상세", href: stockHref("kr", ids.stockCode) });
+  if (entity.key.startsWith("cik:")) out.push({ label: "기관 상세", href: institutionHref(entity.key.slice("cik:".length)) });
+  return out;
+}
+
+const HANGUL = /[가-힣]/;
+
+/** 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름은 대문자 영문) — 영문 이름에서 법인 꼬리를 떼고, 영문 이름이 없으면 티커. */
+export function holdersQuery(entity: Pick<SearchEntity, "name" | "nameEn" | "ids">): string | null {
+  const english = entity.nameEn ?? (HANGUL.test(entity.name) ? null : entity.name);
+  return holderQuery(english) ?? entity.ids.ticker ?? null;
+}
+
+/** 보유 자료(13F 보고 날짜들)의 2년 규칙 — 2년 안의 날짜와 가장 최근 날짜. 2년 안이 비면 화면은 '최근 2년 안의 자료가 없습니다'. */
+export function holdingsWindow(reportDates: readonly string[], today: string): { recent: string[]; latest: string | null } {
+  const start = rangeStart("2y", today);
+  const latest = reportDates.reduce<string | null>((best, date) => (best === null || date > best ? date : best), null);
+  return { recent: reportDates.filter((date) => date >= start), latest };
+}
+
+// ------------------------------------------------------------------ 키보드·링크·원문 팝업
+
+/** ↑↓로 고른 줄 옮기기 — 끝에서 멈춤, 고른 줄이 없으면 첫 줄. 줄이 없으면 -1. */
+export function nextRowIndex(current: number, key: "ArrowUp" | "ArrowDown", length: number): number {
+  if (length <= 0) return -1;
+  if (current < 0) return 0;
+  return key === "ArrowDown" ? Math.min(current + 1, length - 1) : Math.max(current - 1, 0);
+}
+
+type ShortcutTarget = { tagName?: string; isContentEditable?: boolean; closest?: (selector: string) => unknown } | null;
+
+/**
+ * '/'로 검색창에 갈 키인가 — 수식키(Ctrl·⌘·Alt)가 없고, 한글 조합 중이 아니고, 다른 입력칸·편집 영역·대화상자 안이 아닐 때만.
+ * 상단 통합 검색의 ⌘K/Ctrl+K는 그대로 둡니다.
+ */
+export function isSlashShortcut(event: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  isComposing?: boolean;
+  target: ShortcutTarget | EventTarget;
+}): boolean {
+  if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
+  const target = event.target as ShortcutTarget;
+  if (!target) return true;
+  const tag = (target.tagName ?? "").toUpperCase();
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return false;
+  return !(typeof target.closest === "function" && target.closest('[role="dialog"]'));
+}
+
+/** 원문 주소 — http(s)만(javascript: 등은 링크로 두지 않음). */
+export function httpUrl(url: string | null | undefined): string | null {
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
+/** 줄의 시각 한 줄(KST, 분까지) — 모르면 '—'. */
+export function itemTimeText(item: Pick<SearchFeedItem, "publishedAt">): string {
+  const date = kstDate(item.publishedAt);
+  const time = kstTime(item.publishedAt);
+  return date && time ? `${date} ${time} KST` : EMPTY;
+}
+
+/** 수집 글(readerId가 있는 줄 — 운영자)을 원문 팝업(ReaderDialog)에 여는 모양. 본문·요약은 id로 서버에서 읽습니다. */
+export function readerOfFeedItem(item: SearchFeedItem, label: string): ReaderEntry {
+  return {
+    key: `search:${item.id}`,
+    sourceLabel: label,
+    time: itemTimeText(item),
+    title: item.title,
+    titleKo: null,
+    url: httpUrl(item.url),
+    itemId: item.readerId,
+    hasBody: true,
+    text: null,
+    note: "운영 서버가 받아 둔 글입니다 — 본문이 없으면 원문에서 보세요.",
+  };
+}

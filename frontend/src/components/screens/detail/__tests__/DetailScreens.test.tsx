@@ -505,3 +505,29 @@ describe("라우트", () => {
     expect(page.props).toMatchObject({ market: "us", code: "BRK-B" });
   });
 });
+
+describe("뉴스 카드의 정보 검색 링크(ADR 0041)", () => {
+  const newsCard = async () => (await screen.findByRole("heading", { name: "주요 뉴스" })).closest("section") as HTMLElement;
+
+  it("종목 — 회사 이름으로 정보 검색(/search?q=)", async () => {
+    reads = appleReads();
+    renderAs(FREE, <StockDetailScreen market="us" code="AAPL" />);
+    const card = await newsCard();
+    await waitFor(() =>
+      expect(within(card).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("Apple Inc.")}`),
+    );
+  });
+
+  it("기관 — 영문 이름, 지표 — 뉴스 검색어와 같은 말로", async () => {
+    reads = { [endpoints.macro.overview(false)]: macroOverview(), "/api/calendar/kr-holidays": { available: true, years: {} } };
+    renderAs(PRO, <IndicatorDetailScreen indicatorKey="sp500" />);
+    expect(within(await newsCard()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("S&P 500")}`);
+    cleanup();
+
+    reads = {};
+    renderAs(PRO, <InstitutionDetailScreen cik="0001067983" />);
+    await waitFor(async () =>
+      expect(within(await newsCard()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toMatch(/^\/search\?q=/),
+    );
+  });
+});

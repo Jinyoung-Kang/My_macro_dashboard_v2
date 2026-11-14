@@ -105,7 +105,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-8">
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           <AiSummaryCard request={symbol ? { market: "us", code: symbol, q: query, label: item.name } : { q: query, label: item.name }} />
-          <NewsCard path={endpoints.detail.news({ q: query })} />
+          <NewsCard path={endpoints.detail.news({ q: query })} searchQuery={query} />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           {related.length > 0 ? (

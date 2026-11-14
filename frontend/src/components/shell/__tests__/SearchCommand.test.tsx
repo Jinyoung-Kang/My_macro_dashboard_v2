@@ -378,3 +378,21 @@ describe("이동", () => {
       .getByText("종목 찾기 · Yahoo·네이버: 일부 출처를 받지 못했습니다(네이버 증권)")).toBeTruthy();
   });
 });
+
+describe("정보 검색으로 넘기기(ADR 0041)", () => {
+  it("검색어가 있으면 결과 맨 아래에 '‘검색어’ 정보 검색' 링크(/search?q=) — 결과가 없어도 있고, 결과 수·목록에는 세지 않는다", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(screen.queryByRole("link", { name: /정보 검색/ })).toBeNull();
+
+    type("zzzz");
+    const link = screen.getByRole("link", { name: "‘zzzz’ 정보 검색" });
+    expect(link.getAttribute("href")).toBe("/search?q=zzzz");
+    expect(screen.getByRole("status").textContent).toBe("결과 0건");
+    expect(input().getAttribute("aria-expanded")).toBe("false");
+
+    type("aapl");
+    expect(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }).closest("[role='listbox']")).toBeNull();
+    expect(optionLabels().some((label) => label.includes("정보 검색"))).toBe(false);
+  });
+});

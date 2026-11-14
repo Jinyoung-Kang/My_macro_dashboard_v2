@@ -195,6 +195,57 @@ export function BellIcon({ size = 18, ...props }: IconProps) {
   );
 }
 
+/** 기업(사무 건물) — 정보 검색의 대상 종류. */
+export function BuildingIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <rect x="5" y="3" width="14" height="18" rx="1" />
+      <path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2" />
+      <path d="M10.5 21v-3h3v3" />
+    </IconBase>
+  );
+}
+
+/** 기관(기둥 있는 건물 — 13F 기관 등) — 정보 검색의 대상 종류. */
+export function LandmarkIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M3 21h18M3 9.5 12 4l9 5.5z" />
+      <path d="M6 12.5V18M10 12.5V18M14 12.5V18M18 12.5V18" />
+    </IconBase>
+  );
+}
+
+/** 사람 — 정보 검색의 대상 종류. */
+export function PersonIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+    </IconBase>
+  );
+}
+
+/** 주제(꼬리표) — 정보 검색의 대상 종류(어디에도 없는 검색어). */
+export function TagIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M3 4v7.2a1 1 0 0 0 .3.7l9.8 9.8a1 1 0 0 0 1.4 0l6.2-6.2a1 1 0 0 0 0-1.4L10.9 4.3a1 1 0 0 0-.7-.3H4a1 1 0 0 0-1 1z" />
+      <circle cx="7.5" cy="8.5" r="1.5" />
+    </IconBase>
+  );
+}
+
+/** 바깥 링크(새 창) — 글자 '↗'(그림 문자라 쓰지 않음) 대신. 뜻은 옆 글이나 sr-only '(새 창)'이 나릅니다. */
+export function ExternalLinkIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M14 4h6v6M20 4l-9 9" />
+      <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+    </IconBase>
+  );
+}
+
 /** 새로 읽기(돌아가는 화살표). */
 export function RefreshIcon(props: IconProps) {
   return (

@@ -87,6 +87,48 @@
   }
 }
 
+/* 정보 검색(/search) 내용 영역의 범위 토큰 — 앱의 밝음·어두움 설정과 상관없이 늘 어둡습니다(ADR 0041 결정 11). 셸(왼쪽 메뉴·상단바)은
+   앱 테마 그대로이고, 이 화면에서 연 대화상자(포털)에는 같은 표지(data-scope="search")를 붙입니다(ui/Dialog의 scope).
+   값은 공개 디자인 시스템의 어두운 단계(바탕 #111418 · 면 #1c2127 · #252a31)를 참고했고, 글자·상태색은 어두운 면 위 4.5:1을 넘는 밝은 단계만 씁니다.
+   var()로 정의된 토큰(--focus 등)은 :root에서 계산된 값이 상속되므로 모두 실제 값으로 다시 적습니다. 틴트(bg-*-tint)·그림자(shadow-overlay)는
+   @theme inline이 쓰는 자리에서 var(--톤)·var(--surface)를 풀어 따로 적지 않아도 이 값을 따릅니다.
+   대비(WCAG, bg / surface / surface-2): text 17.2/15.1/13.5 · text-2 11.3/9.9/8.8 · text-3 6.4/5.6/5.0 · accent 5.8/5.1/4.5 · ok 9.4/8.2/7.3 ·
+   warn 8.1/7.1/6.4 · danger 5.9/5.2/4.6, border-strong 4.0(surface) — lib/__tests__/searchTheme.test.ts가 이 블록을 읽어 다시 셉니다. */
+[data-scope="search"] {
+  color-scheme: dark;
+  --bg: #111418;
+  --surface: #1c2127;
+  --surface-2: #252a31;
+  --border: #383e47;
+  --border-strong: #738091;
+  --text: #f6f7f9;
+  --text-2: #c5cbd3;
+  --text-3: #8f99a8;
+  --accent: #4c90f0;
+  --accent-fg: #111418; /* 흰 글자는 accent 위 3.2:1이라 쓰지 않습니다 */
+  --accent-hover: #8abbff;
+  --up: #fa999c;
+  --down: #68c1ee;
+  --warn: #ec9a3c;
+  --neutral: #8f99a8;
+  --focus: #8abbff;
+  --ok: #72ca9b;
+  --danger: #e76a6e;
+  --danger-fg: #111418;
+  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
+  --radius-card: 4px;
+  --radius-control: 4px;
+}
+
+/* 범위 뿌리의 바탕·글자색은 base 층에 둡니다. 레이어 밖에 두면 우선순위와 상관없이 유틸리티를 이겨, 범위 표지를 단 대화상자의 bg-surface가
+   --bg로 덮입니다. 토큰 블록(위)에는 사용자 속성과 color-scheme만 둡니다. */
+@layer base {
+  [data-scope="search"] {
+    background-color: var(--bg);
+    color: var(--text);
+  }
+}
+
 /* bg-surface·text-up·border-border 같은 클래스가 이 이름에서 나옵니다. inline이어야 유틸리티가 var(--x)를 바로 참조해
    하위 요소에서 바꾼 값도 먹고, bg-accent/15 같은 투명도는 color-mix로 나옵니다. 토큰이 테마마다 바뀌므로 dark: 변형은 쓰지 않습니다.
    기본 팔레트(purple-500 등)는 그대로 남아 있습니다. */

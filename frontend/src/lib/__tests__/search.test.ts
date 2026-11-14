@@ -7,6 +7,7 @@ import {
   SEARCH_PER_GROUP,
   buildSearchIndex,
   indicatorEntries,
+  infoSearchEntry,
   institutionEntries,
   menuEntries,
   noResultText,
@@ -280,5 +281,18 @@ describe("종목 찾기(외부 검색 묶음)", () => {
     expect(symbolGroup({ available: false, message: "store_only" }, [])).toBeNull();
     expect(symbolGroup({ available: true, symbols: { items: [] } }, [])).toBeNull();
     expect(symbolGroup(SYMBOLS, [], 1)).toMatchObject({ total: 3, more: 2 });
+  });
+});
+
+describe("정보 검색으로 넘기기(ADR 0041)", () => {
+  it("검색어가 있으면 맨 아래 '‘검색어’ 정보 검색' 행 — /search?q=로 가고, 비면 없다", () => {
+    expect(infoSearchEntry("  Ken Griffin ", undefined)).toEqual({
+      label: "‘Ken Griffin’ 정보 검색", href: `/search?q=${encodeURIComponent("Ken Griffin")}`,
+    });
+    expect(infoSearchEntry("   ", undefined)).toBeNull();
+  });
+
+  it("60자를 넘는 검색어는 앞 60자로(정보 검색의 검색어 상한)", () => {
+    expect(infoSearchEntry("a".repeat(80), undefined)?.href).toBe(`/search?q=${"a".repeat(60)}`);
   });
 });

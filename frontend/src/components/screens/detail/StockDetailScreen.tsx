@@ -104,7 +104,10 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
           </Card>
           <AiSummaryCard request={{ market, code, q: quote?.name ?? undefined, label: name }} />
           {/* 회사 이름(구글 뉴스 검색어)은 시세 응답에 있어, 시세를 읽기 전에는 부르지 않습니다 — 이름 없이 한 번, 이름과 함께 또 한 번 부르지 않게. */}
-          <NewsCard path={quoteState.data || quoteState.error ? endpoints.detail.news({ market, code, q: quote?.name ?? undefined }) : null} />
+          <NewsCard
+            path={quoteState.data || quoteState.error ? endpoints.detail.news({ market, code, q: quote?.name ?? undefined }) : null}
+            searchQuery={quote?.name ?? code}
+          />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           {quote ? <ProfileCard quote={quote} /> : null}

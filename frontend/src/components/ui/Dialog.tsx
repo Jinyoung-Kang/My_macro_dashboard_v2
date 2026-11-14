@@ -2,13 +2,24 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
-import { useRef, type ReactElement, type ReactNode } from "react";
+import { createContext, useContext, useRef, type ReactElement, type ReactNode } from "react";
 import { XIcon } from "@/components/ui/icons";
 
 /** 폭 — 확인 창은 sm, 보통은 md, 검색처럼 목록이 긴 것은 lg. 좁은 화면에서는 양옆 16px만 남기고 다 씁니다. */
 const WIDTH = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-2xl" } as const;
 
 export type DialogSize = keyof typeof WIDTH;
+
+/**
+ * 범위 표지(data-scope)를 이어받는 자리 — 대화상자는 body 끝으로 옮겨 그려(portal) 화면의 범위 토큰(globals.css의 [data-scope="…"])이
+ * 닿지 않습니다. 정보 검색 화면처럼 늘 어두운 화면은 이것으로 감싸 그 안에서 연 대화상자(원문 팝업 등 대화상자를 감싼 부품 포함)에 같은 표지를
+ * 붙입니다. 밖에서는 값이 없어 지금처럼 앱 테마 그대로입니다.
+ */
+const DialogScopeContext = createContext<string | undefined>(undefined);
+
+export function DialogScope({ value, children }: { value: string; children: ReactNode }) {
+  return <DialogScopeContext.Provider value={value}>{children}</DialogScopeContext.Provider>;
+}
 
 /*
  * 움직임은 나타날 때의 짧은 흐려짐(150ms) 하나뿐이고, 움직임 줄이기(prefers-reduced-motion)면 없습니다 — motion-safe: 안에만 둡니다.
@@ -39,6 +50,7 @@ export function Dialog({
   dismissible = true,
   showClose = true,
   placement = "center",
+  scope,
   children,
 }: {
   open: boolean;
@@ -58,8 +70,12 @@ export function Dialog({
   showClose?: boolean;
   /** 세로 자리 — 가운데(기본) 또는 위쪽 고정(내용 높이가 바뀌어도 위 끝이 그대로). */
   placement?: "center" | "top";
+  /** 범위 표지 — 주면 대화상자 상자에 data-scope를 붙여 그 범위의 토큰으로 그립니다. 없으면 둘러싼 DialogScope, 그것도 없으면 앱 테마. */
+  scope?: string;
   children?: ReactNode;
 }) {
+  const inherited = useContext(DialogScopeContext);
+  const scopeValue = scope ?? inherited;
   // 열기 직전에 포커스가 있던 요소. 이벤트 처리기에서만 읽고 씁니다.
   const opener = useRef<HTMLElement | null>(null);
   const blockWhenBusy = (event: Event) => {
@@ -77,6 +93,7 @@ export function Dialog({
         {/* 덮개는 두 테마 모두 검정 반투명입니다(밝은 덮개는 다크에서 화면을 씻어 냄). */}
         <DialogPrimitive.Overlay className={`fixed inset-0 z-50 bg-black/50 ${FADE_IN}`} />
         <DialogPrimitive.Content
+          data-scope={scopeValue}
           onOpenAutoFocus={() => {
             // 이 시점에는 아직 포커스가 옮겨지기 전입니다(Radix FocusScope가 옮기기 직전에 부름).
             const active = document.activeElement;
