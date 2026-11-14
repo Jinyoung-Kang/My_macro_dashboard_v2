@@ -1,6 +1,7 @@
 /**
  * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes, 단계 4의 links,
- * 단계 5의 Finviz(feed의 출처 `finviz`·`pending`). 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6·§7·§8입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
+ * 단계 5의 Finviz(feed의 출처 `finviz`·`pending`), 단계 6의 같은 사건 묶음(줄의 `clusterId`·`cluster`)과 관심 대상의 화제(`hot`).
+ * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6~9입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
  * 수집기에 닿지 못하면 `{available: false, message}`만 보냅니다. 모르는 값은 null(화면은 '—', 0으로 채우지 않음). 시각은 UTC ISO.
  */
 
@@ -110,7 +111,17 @@ export type SearchFeedItem = {
   summary: string | null;
   /** 수집 글(info_items)의 id — 운영자 화면의 원문 팝업용. */
   readerId: string | null;
+  /**
+   * 같은 사건 묶음(단계 6 — 계약 §9-2): 묶음 대표 줄(가장 이른 줄)의 id. 묶이지 않으면 null, 단계 5까지의 응답에는 칸이 없습니다.
+   * 묶기 규칙(제목 낱말 자카드 ≥ 0.5 · 48시간 안 · 최대 30줄)은 수집기가 원본이고 화면은 이 칸으로 묶어 보이기만 합니다.
+   */
+  clusterId?: string | null;
+  /** 대표 줄에만 — 묶음의 줄 수와 서로 다른 매체 수(받은 2년 묶음 전체 기준). 그 밖의 줄은 null이거나 칸이 없습니다. */
+  cluster?: SearchFeedCluster | null;
 };
+
+/** 같은 사건 묶음의 크기(계약 §9-2) — size = 줄 수, publishers = 서로 다른 매체 수('삼각측량'). */
+export type SearchFeedCluster = { size: number; publishers: number | null };
 
 export type SearchSourceStatusCode =
   | "ok"
@@ -172,6 +183,12 @@ export type SearchWatchItem = {
   createdAt: string | null;
   lastSeenAt: string | null;
   newCount: number | null;
+  /**
+   * 화제(단계 6 — 계약 §9-2): 지난 24시간에 처음 받은 글이 5건 이상이고 그 앞 30일 하루 평균의 3배 이상. 받을 때 작성 시각(날짜만 아는 줄은
+   * 그 날의 끝)이 이미 하루 넘게 지난 글은 세지 않고, 평균은 그 대상이 처음 등록된 뒤 모은 날로 나눔. 회원에게는 운영자 전용 출처를 세지 않음.
+   * 모르면 null(모은 날이 하루 미만이고 5건 이상 등), 단계 5까지의 응답에는 칸이 없습니다(화면은 true일 때만 '화제' 글 배지).
+   */
+  hot?: boolean | null;
 };
 
 /** 상한 — 내 목록(회원 10·운영자 50)과 서버 전체의 서로 다른 대상(100). */

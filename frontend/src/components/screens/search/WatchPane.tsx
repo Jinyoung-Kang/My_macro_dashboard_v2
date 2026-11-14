@@ -26,6 +26,7 @@ const LIST_SCROLL = "max-h-[min(28dvh,14rem)] overflow-y-auto";
 /**
  * 왼쪽 칸의 관심 대상 목록(ADR 0041 결정 9 — 계약 §6-4): 이름 · 종류 · 마지막으로 본 뒤 새 글 수. 누르면 그 대상을 엽니다.
  * 알림은 이 수뿐입니다(알림함·텔레그램 없음). 정기 수집이 꺼진 곳(로컬·QA)이면 그렇다고 적습니다.
+ * 화제인 대상(단계 6 — 계약 §9-2의 hot)에는 '화제' 글 배지를 두고(색만이 아님), 그런 대상이 있으면 목록 아래에 뜻 한 줄을 적습니다.
  *
  * collapsible이면 lg 미만에서 접는 서랍(머리 단추로 펼침 — 머리에 개수와 새 글 수 합계), lg 이상은 늘 펼침. 첫 화면은 접지 않습니다.
  * 목록은 제 높이 상한 안에서 스크롤합니다(상한 50개 — 대상 화면의 거르기 칸·첫 화면의 최근 글을 밀어내지 않게). 그 영역은 Tab으로 닿아
@@ -72,6 +73,7 @@ export function WatchPane({
   } else {
     const limits = watchLimitsText(data.limits);
     const note = watchCollectingNote(data.collecting);
+    const anyHot = items.some((item) => item.hot === true);
     body = (
       <>
         {items.length === 0 ? (
@@ -105,6 +107,9 @@ export function WatchPane({
                         <span className="block truncate text-accent">{item.name}</span>
                         <span className="block text-xs text-text-3">{entityKindLabel(item.kind as SearchEntityKind)}</span>
                       </span>
+                      {item.hot === true ? (
+                        <span className="shrink-0 rounded-control border border-warn px-1.5 py-0.5 text-xs font-semibold text-warn">화제</span>
+                      ) : null}
                       {count ? (
                         <span className="shrink-0 rounded-control border border-border-strong bg-surface-2 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-text">
                           {count}
@@ -117,6 +122,11 @@ export function WatchPane({
             </ul>
           </div>
         )}
+        {anyHot ? (
+          <p className="text-xs leading-5 text-text-3">
+            화제 = 지난 24시간에 처음 받은 글이 5건 이상이고 그 앞 30일 하루 평균의 3배 이상(받은 자료 기준 — 받을 때 이미 하루 넘게 지난 글은 빼고).
+          </p>
+        ) : null}
         {limits ? <p className="text-xs text-text-3">{limits}</p> : null}
         {note ? <p className="text-xs leading-5 text-text-3">{note}</p> : null}
         <p className="text-xs leading-5 text-text-3">새 글 수는 마지막으로 그 대상의 타임라인을 연 뒤 서버가 처음 받은 글입니다.</p>

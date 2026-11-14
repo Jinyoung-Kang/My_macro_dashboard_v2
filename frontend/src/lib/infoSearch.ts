@@ -4,7 +4,8 @@
  * 계약(docs/specs/2026-11-14-info-search-contract.md)의 화면 몫만 둡니다: 주소 상태(?q= · ?e=&tab=&range=), 대상 키 모양 검사(주소로 넘어가기 전),
  * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드,
  * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기), 단계 4의 공시·리서치 탭(대상 종류에 따라)·날짜만 아는 줄·
- * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글), 단계 5의 받는 중(pending — Finviz) 다시 읽기 횟수와 상태 글.
+ * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글), 단계 5의 받는 중(pending — Finviz) 다시 읽기 횟수와 상태 글,
+ * 단계 6 묶음 1의 기간 막대(KST 하루·월요일 시작 주)·같은 사건 묶어 보기·연결 그림 배치(계약 §9-1~9-3).
  * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
  */
 import { holderQuery, institutionHref, stockHref } from "./detail";
@@ -336,6 +337,15 @@ export function cutByRange(feed: SearchFeedResponse, range: SearchRange, today?:
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
+/** 'YYYY-MM-DD' 날짜의 요일 번호(0 = 일요일). 달력 날짜라 시간대와 상관없습니다. */
+function weekdayOf(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+/** 'YYYY-MM-DD (요일)'. */
+const dateWithWeekday = (date: string) => `${date} (${WEEKDAYS[weekdayOf(date)]})`;
+
 export type FeedDateGroup = { date: string; label: string; items: SearchFeedItem[] };
 
 /** KST 날짜별 묶음(받은 순서 유지) — 제목은 'YYYY-MM-DD (요일)'. 시각 모르는 줄은 '시각 모름' 묶음으로 맨 뒤. */
@@ -346,8 +356,7 @@ export function groupByKstDate(items: readonly SearchFeedItem[]): FeedDateGroup[
     const date = kstDate(item.publishedAt) ?? "";
     let group = byDate.get(date);
     if (!group) {
-      const [year, month, day] = date.split("-").map(Number);
-      const label = date ? `${date} (${WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]})` : "시각 모름";
+      const label = date ? dateWithWeekday(date) : "시각 모름";
       group = { date, label, items: [] };
       byDate.set(date, group);
       groups.push(group);
@@ -357,11 +366,246 @@ export function groupByKstDate(items: readonly SearchFeedItem[]): FeedDateGroup[
   return groups.sort((a, b) => (a.date === b.date ? 0 : !a.date ? 1 : !b.date ? -1 : a.date < b.date ? 1 : -1));
 }
 
+// ------------------------------------------------------------------ 기간 막대(단계 6 — 계약 §9-1)
+
+/** 막대 옆에 늘 적는 한 줄(지시문 §6 — 기간 막대는 받은 자료 기준). */
+export const PERIOD_BARS_NOTE = "받은 자료 기준 — 출처마다 한 번에 주는 건수에 상한이 있어 전체 보도량이 아님";
+
+/** 막대 한 칸의 길이 — 7일·30일은 하루, 1년·2년은 주(월요일 시작, KST). */
+export type PeriodUnit = "day" | "week";
+
+export function periodUnit(range: SearchRange): PeriodUnit {
+  return range === "7d" || range === "30d" ? "day" : "week";
+}
+
+/** 날짜(YYYY-MM-DD)에 날 수를 더함(음수면 뺌). */
+function addDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  return dateText(new Date(Date.UTC(year, month - 1, day + days)));
+}
+
+/** 그 KST 날짜가 든 주의 월요일(월요일 시작 — 일요일은 그 앞 월요일). */
+export function kstWeekStart(date: string): string {
+  return addDays(date, -((weekdayOf(date) + 6) % 7));
+}
+
+/** 막대 한 칸 — start·end는 KST 날짜(하루 칸은 같음, 주 칸은 월요일~일요일), count는 그 안의 줄 수. */
+export type PeriodBin = { start: string; end: string; count: number };
+
+export type PeriodBarsView = {
+  unit: PeriodUnit;
+  /** 오래된 칸부터. 날짜를 아는 줄이 없고 오늘도 모르면 빈 목록. */
+  bins: PeriodBin[];
+  /** 가장 큰 칸의 건수(막대 높이의 기준 — 모두 0이면 0). */
+  max: number;
+  /** 막대에 없는 줄 — 시각을 모르거나 막대 범위 밖(2년 밖·이틀 이상 뒤). 0으로 채우지 않고 화면이 따로 적습니다. */
+  offChart: number;
+};
+
+/**
+ * 고른 기간의 건수 막대(계약 §9-1) — 7일·30일은 하루씩, 1년·2년은 주(월요일 시작)마다, 작성 시각의 KST 날짜로 셉니다. 넣는 줄은 지금 탭·거르기를
+ * 거친 줄이고(묶어 보기와 상관없이 줄 수), 받은 자료 기준입니다.
+ *
+ * 칸은 기간 시작 날(rangeStart)부터 오늘까지 — 서버가 센 기간(rangeCounts로 자른 줄)이 이 날짜 셈과 조금 어긋나 이른 줄이 섞이면 칸을 그 날까지
+ * 늘리되 많아야 7일(주 단위는 4주, 2년 창 안)이고, 내일 날짜 줄(서버가 하루 뒤까지 받아 줌)도 담습니다. 그 밖은 막대 밖(offChart)으로 셉니다.
+ *
+ * @param today 서버의 오늘(window.to) 또는 브라우저 시계의 KST 날짜 — 모르면 받은 줄의 가장 최근 날짜
+ */
+export function periodBars(items: readonly SearchFeedItem[], range: SearchRange, today: string | null | undefined): PeriodBarsView {
+  const unit = periodUnit(range);
+  const dates = items.map((item) => kstDate(item.publishedAt)).filter((date): date is string => date !== null);
+  const end = today ?? dates.reduce<string | null>((best, date) => (best === null || date > best ? date : best), null);
+  if (!end) return { unit, bins: [], max: 0, offChart: items.length };
+
+  const start = rangeStart(range, end);
+  const stretched = addDays(start, unit === "week" ? -28 : -7);
+  const twoYears = rangeStart("2y", end);
+  const floor = stretched > twoYears ? stretched : twoYears;
+  const ceiling = addDays(end, 1);
+  const onChart = dates.filter((date) => date >= floor && date <= ceiling);
+  let first = start;
+  let last = end;
+  for (const date of onChart) {
+    if (date < first) first = date;
+    if (date > last) last = date;
+  }
+  const align = unit === "week" ? kstWeekStart : (date: string) => date;
+  const step = unit === "week" ? 7 : 1;
+  const bins: PeriodBin[] = [];
+  const at = new Map<string, number>();
+  for (let start = align(first); start <= last; start = addDays(start, step)) {
+    at.set(start, bins.length);
+    bins.push({ start, end: addDays(start, step - 1), count: 0 });
+  }
+  for (const date of onChart) bins[at.get(align(date)) as number].count += 1;
+  return { unit, bins, max: bins.reduce((best, bin) => Math.max(best, bin.count), 0), offChart: items.length - onChart.length };
+}
+
+/** 칸의 이름 — 하루는 'YYYY-MM-DD (요일)', 주는 'YYYY-MM-DD ~ YYYY-MM-DD 주'. */
+export function periodLabel(bin: Pick<PeriodBin, "start" | "end">, unit: PeriodUnit): string {
+  return unit === "day" ? dateWithWeekday(bin.start) : `${bin.start} ~ ${bin.end} 주`;
+}
+
+/** 막대 하나의 낭독 이름(색만으로 가르지 않음) — 이름과 건수. */
+export function periodAriaLabel(bin: PeriodBin, unit: PeriodUnit): string {
+  return `${periodLabel(bin, unit)} ${bin.count}건`;
+}
+
+/** 막대 아래 끝 눈금 — 하루는 'MM-DD', 주는 그 주 월요일의 'YYYY-MM-DD'. */
+export function periodTickLabel(bin: Pick<PeriodBin, "start">, unit: PeriodUnit): string {
+  return unit === "day" ? bin.start.slice(5) : bin.start;
+}
+
+/** 막대를 눌러 좁힌 칸에 드는 줄인가 — 작성 시각의 KST 날짜가 칸 안(양 끝 포함). 시각을 모르면 아님. */
+export function itemInPeriod(item: Pick<SearchFeedItem, "publishedAt">, bin: Pick<PeriodBin, "start" | "end">): boolean {
+  const date = kstDate(item.publishedAt);
+  return date !== null && date >= bin.start && date <= bin.end;
+}
+
+// ------------------------------------------------------------------ 같은 사건 묶어 보기(단계 6 — 계약 §9-2)
+
+/** 목록의 한 줄 — 결과 줄(member = 펼친 묶음 안의 줄). key는 줄의 id. */
+export type FeedItemEntry = { type: "item"; key: string; item: SearchFeedItem; member: boolean };
+
+/**
+ * 대표 줄 아래의 묶음 줄('같은 사건 n건 · 매체 m곳 — 펼치기'). size·publishers는 보이는 줄로 센 값이고(매체 수는 서버 값을 넘지 않음),
+ * 보이는 줄이 묶음 전체이면 매체 수는 서버(규칙 원본)의 값입니다. 매체를 하나도 모르면 publishers는 null. key = 'cluster:' + 묶음 id.
+ */
+export type FeedClusterEntry = { type: "cluster"; key: string; clusterId: string; size: number; publishers: number | null; expanded: boolean };
+
+export type FeedEntry = FeedItemEntry | FeedClusterEntry;
+
+export type FeedEntryGroup = { date: string; label: string; entries: FeedEntry[] };
+
+/** 보이는 줄 가운데 같은 사건 묶음(보이는 줄이 둘 이상인 것만) — 묶음 id → 줄(받은 순서). */
+function visibleClusters(items: readonly SearchFeedItem[]): Map<string, SearchFeedItem[]> {
+  const byId = new Map<string, SearchFeedItem[]>();
+  for (const item of items) {
+    if (!item.clusterId) continue;
+    const rows = byId.get(item.clusterId) ?? [];
+    rows.push(item);
+    byId.set(item.clusterId, rows);
+  }
+  for (const [id, rows] of byId) if (rows.length < 2) byId.delete(id);
+  return byId;
+}
+
+/** 묶음의 대표로 보일 줄 — 서버의 대표(id = 묶음 id)가 보이면 그 줄, 아니면 보이는 줄 가운데 가장 이른 줄(서버와 같은 정의). */
+function clusterLead(clusterId: string, rows: readonly SearchFeedItem[]): SearchFeedItem {
+  const lead = rows.find((row) => row.id === clusterId);
+  if (lead) return lead;
+  return rows.reduce((best, row) => (row.publishedAt !== null && (best.publishedAt === null || row.publishedAt < best.publishedAt) ? row : best));
+}
+
+/** 매체 이름 대조 키 — MSN 재게재 꼬리(' on MSN')를 떼고 대소문자를 무시합니다(수집기 search_rules.media_name_key와 같은 규칙). */
+const MSN_TAIL = /\s+on\s+msn\s*$/i;
+function mediaNameKey(name: string | null | undefined): string {
+  return (name ?? "").trim().replace(MSN_TAIL, "").trim().toLowerCase();
+}
+
+/**
+ * 서로 다른 매체 수 — 수집기 _publisher_count(규칙 원본)와 같은 규칙: 매체 이름(대소문자 무시, MSN 재게재 꼬리 뗌)으로 세고, 이름이 없는 줄은
+ * 매체 도메인으로 세되 그 도메인을 묶음 안에서 이름 하나만 썼으면 그 매체로 봅니다. 보이는 줄이 묶음의 일부일 때만 씁니다. 하나도 모르면
+ * null(0으로 채우지 않음).
+ */
+function publisherCount(rows: readonly SearchFeedItem[]): number | null {
+  const names = new Set<string>();
+  const namesByDomain = new Map<string, Set<string>>();
+  const bareDomains = new Set<string>();
+  for (const row of rows) {
+    const name = mediaNameKey(row.publisher);
+    const domain = (row.publisherDomain ?? "").trim().toLowerCase();
+    if (name) {
+      names.add(name);
+      if (domain) namesByDomain.set(domain, (namesByDomain.get(domain) ?? new Set<string>()).add(name));
+    } else if (domain) {
+      bareDomains.add(domain);
+    }
+  }
+  const unnamed = [...bareDomains].filter((domain) => namesByDomain.get(domain)?.size !== 1).length;
+  return names.size + unnamed || null;
+}
+
+/** 서버가 준 매체 수(양수일 때만 — 0이나 모양이 틀린 값은 모름). */
+const serverPublishers = (value: number | null | undefined) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null);
+
+/**
+ * 묶음 줄 — 건수는 보이는 줄. 매체 수는 보이는 줄이 묶음 전체면 서버(규칙 원본)의 값, 일부면 보이는 줄로 센 값이되 서버 값(묶음 전체의 매체
+ * 수)을 넘지 않게 합니다(일부의 매체가 전체보다 많을 수 없음 — 이름 없는 줄의 도메인 규칙은 일부만 보면 따로 셀 수 있음).
+ * @param server 서버 대표 줄(id = 묶음 id — 거르기로 숨었어도 거르기 전 줄에서 찾음), 모르면 null
+ */
+function clusterEntry(clusterId: string, rows: readonly SearchFeedItem[], server: SearchFeedItem | null, expanded: boolean): FeedClusterEntry {
+  const known = serverPublishers(server?.cluster?.publishers);
+  const whole = server !== null && server.cluster?.size === rows.length && rows.some((row) => row.id === server.id);
+  const counted = publisherCount(rows);
+  const publishers = whole && known !== null ? known : counted !== null && known !== null ? Math.min(counted, known) : counted;
+  return { type: "cluster", key: `cluster:${clusterId}`, clusterId, size: rows.length, publishers, expanded };
+}
+
+const itemEntry = (item: SearchFeedItem, member: boolean): FeedItemEntry => ({ type: "item", key: item.id, item, member });
+
+/** 보이는 줄 가운데 묶어 보일 묶음 수(보이는 줄이 둘 이상인 묶음) — 0이면 화면은 '묶어 보기' 전환을 두지 않습니다. */
+export function feedClusterCount(items: readonly SearchFeedItem[]): number {
+  return visibleClusters(items).size;
+}
+
+/**
+ * 목록의 KST 날짜 묶음과 줄(계약 §9-2). 묶어 보기(grouped)면 같은 사건 묶음은 대표 줄(가장 이른 줄)만 그 날짜 자리에 두고, 그 아래 묶음 줄 하나,
+ * 펼친 묶음(expanded)이면 그 아래 나머지 줄(받은 순서 — 최근순)을 member로 둡니다. 끄면 지금처럼 모든 줄. 보이는 줄이 하나뿐인 묶음(나머지가
+ * 기간·거르기 밖)은 그냥 줄입니다. 건수 막대·기간 건수는 이 묶기와 상관없이 줄 수입니다.
+ *
+ * @param options.all 거르기 전 줄(받은 줄 전부) — 서버 대표 줄(묶음 전체의 매체 수)을 대표 줄이 기간·거르기로 숨었어도 찾습니다. 없으면 보이는 줄에서만.
+ */
+export function feedEntryGroups(
+  items: readonly SearchFeedItem[],
+  options: { grouped: boolean; expanded: ReadonlySet<string>; all?: readonly SearchFeedItem[] },
+): FeedEntryGroup[] {
+  if (!options.grouped) {
+    return groupByKstDate(items).map((group) => ({ date: group.date, label: group.label, entries: group.items.map((item) => itemEntry(item, false)) }));
+  }
+  const clusters = visibleClusters(items);
+  const leads = new Map<string, SearchFeedItem>();
+  for (const [id, rows] of clusters) leads.set(id, clusterLead(id, rows));
+  const servers = new Map<string, SearchFeedItem>();
+  for (const row of [...items, ...(options.all ?? [])]) if (row.clusterId && row.id === row.clusterId && clusters.has(row.id) && !servers.has(row.id)) servers.set(row.id, row);
+  const isLead = (item: SearchFeedItem) => !!item.clusterId && leads.get(item.clusterId) === item;
+  const top = items.filter((item) => !item.clusterId || !clusters.has(item.clusterId) || isLead(item));
+  return groupByKstDate(top).map((group) => ({
+    date: group.date,
+    label: group.label,
+    entries: group.items.flatMap((item): FeedEntry[] => {
+      if (!isLead(item)) return [itemEntry(item, false)];
+      const id = item.clusterId as string;
+      const rows = clusters.get(id) as SearchFeedItem[];
+      const open = options.expanded.has(id);
+      const out: FeedEntry[] = [itemEntry(item, false), clusterEntry(id, rows, servers.get(id) ?? null, open)];
+      if (open) out.push(...rows.filter((row) => row !== item).map((row) => itemEntry(row, true)));
+      return out;
+    }),
+  }));
+}
+
+/** 묶음 줄의 글 — '같은 사건 n건 · 매체 m곳 — 펼치기'(펼쳤으면 '접기', 매체 수를 모르면 그 칸 없이). */
+export function clusterToggleText(entry: Pick<FeedClusterEntry, "size" | "publishers" | "expanded">): string {
+  const publishers = entry.publishers !== null ? ` · 매체 ${entry.publishers}곳` : "";
+  return `같은 사건 ${entry.size}건${publishers} — ${entry.expanded ? "접기" : "펼치기"}`;
+}
+
+/** 펼친 줄이 놓인 날짜 묶음과 다른 KST 날짜면 'MM-DD'(시각 칸에 덧붙임). 같거나 모르거나 날짜만 아는 줄(이미 날짜)이면 null. */
+export function otherDateText(item: Pick<SearchFeedItem, "publishedAt" | "timeBasis">, groupDate: string): string | null {
+  if (isDateOnly(item)) return null;
+  const date = kstDate(item.publishedAt);
+  return date && date !== groupDate ? date.slice(5) : null;
+}
+
 // ------------------------------------------------------------------ 빈 화면
 
 export type FeedEmpty = {
-  /** unknown = 답한 출처가 하나도 없어 2년 안에 자료가 있는지 모름(실패·외부 조회 안 함·건너뜀뿐). */
-  kind: "none2y" | "range" | "filtered" | "unknown";
+  /**
+   * unknown = 답한 출처가 하나도 없어 2년 안에 자료가 있는지 모름(실패·외부 조회 안 함·건너뜀뿐).
+   * period = 막대로 좁힌 날·주에 맞는 줄이 없음(좁힌 뒤 거르기를 바꾼 때 등 — 단계 6 계약 §9-1).
+   */
+  kind: "none2y" | "range" | "filtered" | "period" | "unknown";
   message: string;
   /** 덧붙이는 한 줄(가장 최근 자료 날짜). */
   note: string | null;
@@ -407,15 +651,18 @@ export function feedSourceCaveat(sources: readonly SearchSourceStatus[], options
  *   단, 답한 출처가 하나도 없으면(모두 실패·외부 조회 안 함·건너뜀) '없다'고 하지 않고 모른다고 합니다(지시문 §8 — 실패를 빈 목록으로 숨기지 않음).
  * - 고른 기간에 없음 → '이 기간에는 자료가 없습니다' + 더 넓은 기간 단추(그 기간의 건수와 함께)
  * - 거르기 때문에 없음 → 그렇다고(기간 안내와 섞지 않음)
+ * - 막대로 좁힌 날·주에 없음 → 그렇다고(좁히기를 풀 단추는 화면이 둠)
  * 받지 못한 출처가 있으면 앞의 두 안내에 caveat 한 줄을 붙입니다.
  *
  * @param total 2년 안의 줄 수 · @param inRange 고른 기간의 줄 수(거르기 전) · @param shown 거른 뒤 보이는 줄 수 · @param sources 출처 상태(없으면 지금처럼)
+ * @param narrowed 막대로 좁혔으면 그 날·주의 줄 수(좁히지 않았으면 주지 않음)
  * @param pendingStalled 받는 중 다시 읽기를 멈췄는가(feedPendingPhase가 stalled)
  */
 export function feedEmptyState(args: {
   total: number;
   inRange: number;
   shown: number;
+  narrowed?: number;
   counts: Record<SearchRange, number>;
   range: SearchRange;
   olderOnlyLatest: string | null | undefined;
@@ -452,6 +699,7 @@ export function feedEmptyState(args: {
     };
   }
   if (args.shown === 0) return { kind: "filtered", message: "고른 거르기에 맞는 자료가 없습니다", note: null, caveat: null, wider: [] };
+  if (args.narrowed === 0) return { kind: "period", message: "좁힌 기간(막대)에 맞는 자료가 없습니다", note: null, caveat: null, wider: [] };
   return null;
 }
 
@@ -679,6 +927,306 @@ export function linksView(args: {
       : "가진 연결이 없습니다 — Wikidata 관계, 13F 운용자·기관, 미국 상장사의 내부자 명단(Yahoo), LEI가 있는 법인의 모회사·자회사(GLEIF)에서 찾습니다.";
   }
   return { groups, extra, sources, empty, entityNote };
+}
+
+// ------------------------------------------------------------------ 연결 그림(단계 6 — 계약 §9-3)
+
+/** 그림에 그리는 노드 상한 — 넘으면 '목록에서 n개 더'. */
+export const LINK_GRAPH_MAX = 30;
+
+/**
+ * 노드를 두는 호 — 가운데에서 오른쪽(0)과 왼쪽(π)을 중심으로 위아래 65도씩. 위·아래 끝(극)에는 두지 않습니다: 노드 이름이 옆으로 뻗으므로
+ * 극에서는 이웃 이름끼리 겹칩니다(좁은 화면의 세로로 긴 타원에서 특히 — 시각 확인).
+ */
+const GRAPH_ARC = (65 * Math.PI) / 180;
+/** 노드 사이 각도의 상한(라디안) — 노드가 적으면 호 전체에 흩지 않고 가운데(좌우 한가운데)에 모읍니다. */
+const GRAPH_MAX_STEP = 0.32;
+/** 관계 묶음 사이의 틈(노드 칸의 몇 배). */
+const GRAPH_GAP_UNITS = 0.8;
+/** 그림 위아래 여백(px) — 맨 위·맨 아래 노드의 이름이 잘리지 않게. */
+const GRAPH_MARGIN_Y = 18;
+/** 관계 글 상자 높이(px)와 같은 쪽 관계 글 사이의 최소 세로 간격. */
+const GRAPH_TAG_HEIGHT = 16;
+const GRAPH_TAG_STEP = 18;
+/**
+ * 관계 묶음을 통째로 한쪽 호에 둘 때 같은 쪽 이웃 노드 사이에 남아야 하는 세로 간격(px) — 이보다 좁아지면(12px 이름이 붙음) 묶음 경계가 아니라
+ * 칸 수로 반씩 나누고, 그때 쪼개진 묶음은 호마다 관계 글을 둡니다.
+ */
+const GRAPH_ROW_GAP = 14;
+/** 가운데 대상 상자 높이(px). */
+const GRAPH_CENTER_HEIGHT = 28;
+/** 글자 크기 12px에서 어림한 글자 폭 — 한글·한자·가나·전각은 12, 그 밖은 7.5. */
+const WIDE_CHAR = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+const charWidth = (char: string) => (WIDE_CHAR.test(char) ? 12 : 7.5);
+const textWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + charWidth(char), 0);
+const ELLIPSIS = "…";
+
+/** 그림의 노드 이름 — 어림한 폭(12px 글자)이 maxPx를 넘으면 잘라 '…'(전체 이름은 낭독 이름과 목록에). */
+export function fitGraphLabel(name: string, maxPx: number): string {
+  const chars = Array.from(name.trim());
+  if (textWidth(chars.join("")) <= maxPx) return chars.join("");
+  let width = charWidth(ELLIPSIS);
+  let out = "";
+  for (const char of chars) {
+    if (width + charWidth(char) > maxPx) break;
+    width += charWidth(char);
+    out += char;
+  }
+  return `${out.trimEnd()}${ELLIPSIS}`;
+}
+
+/** 그림의 크기 — 잰 폭(280~760, 재지 못했으면 360)에 맞추고 높이는 폭의 3/4(340~480). 좁은 화면은 세로로 긴 타원이 됩니다. */
+export function linkGraphSize(measuredWidth: number): { width: number; height: number } {
+  const width = measuredWidth > 0 ? Math.round(Math.min(760, Math.max(280, measuredWidth))) : 360;
+  return { width, height: Math.min(480, Math.max(340, Math.round(width * 0.75))) };
+}
+
+/**
+ * 그림에 그릴 연결 — 관계 묶음마다 돌아가며 하나씩 골라(한 관계 — 내부자 명단 등 — 가 자리를 다 차지하지 않게) 최대 max개. 묶음 순서와 묶음 안의
+ * 순서는 그대로이고, hidden은 그리지 않은 연결 수(목록에는 모두 있음).
+ */
+export function graphLinks(groups: readonly LinkGroup[], max: number = LINK_GRAPH_MAX): { groups: LinkGroup[]; hidden: number } {
+  const taken = groups.map(() => 0);
+  const total = groups.reduce((sum, group) => sum + group.links.length, 0);
+  let left = Math.min(max, total);
+  while (left > 0) {
+    groups.forEach((group, at) => {
+      if (left > 0 && taken[at] < group.links.length) {
+        taken[at] += 1;
+        left -= 1;
+      }
+    });
+  }
+  const kept = groups.map((group, at) => ({ ...group, links: group.links.slice(0, taken[at]) })).filter((group) => group.links.length > 0);
+  return { groups: kept, hidden: total - kept.reduce((sum, group) => sum + group.links.length, 0) };
+}
+
+export type LinkGraphNode = {
+  /** 그림 안에서 노드를 가리는 값(관계 + 차례). */
+  id: string;
+  link: SearchLink;
+  relation: string;
+  /** 노드 자리(그림 좌표 — 왼쪽 위가 0,0)와 각도(라디안 — 오른쪽 위에서 시계 방향으로 늘어남). */
+  x: number;
+  y: number;
+  angle: number;
+  /** 보이는 이름(폭에 맞춰 줄임)과 그 자리·정렬 — 오른쪽 노드는 오른쪽으로, 왼쪽 노드는 왼쪽으로 뻗습니다. */
+  label: string;
+  labelX: number;
+  labelY: number;
+  anchor: "start" | "end";
+  /** 낭독 이름 — '이름 · 관계'(키가 없으면 '· 이름으로 찾기'). */
+  ariaLabel: string;
+};
+
+/** 관계 묶음 하나의 부채꼴(라디안 start~end — 좌우 호로 쪼개졌으면 두 조각을 덮는 범위). */
+export type LinkGraphSector = { relation: string; label: string; count: number; start: number; end: number };
+
+/**
+ * 관계 글 하나 — 관계 묶음의 이어진 호마다 하나(묶음이 좌우 호로 쪼개지면 둘). x·y는 글 상자의 가운데, width는 글 폭(px), side는 그 조각의
+ * 노드가 놓인 쪽.
+ */
+export type LinkGraphTag = { relation: string; label: string; side: "right" | "left"; x: number; y: number; width: number };
+
+export type LinkGraphLayout = {
+  width: number;
+  height: number;
+  cx: number;
+  cy: number;
+  /** 노드가 놓이는 타원의 가로·세로 반지름. */
+  rx: number;
+  ry: number;
+  nodes: LinkGraphNode[];
+  sectors: LinkGraphSector[];
+  /** 관계 글(이어진 호마다 하나). */
+  tags: LinkGraphTag[];
+  /** 가운데 대상 상자의 글(폭에 맞춰 줄임)과 폭·높이(px). */
+  center: { label: string; width: number; height: number };
+  /** 상한을 넘어 그리지 않은 연결 수. */
+  hidden: number;
+  /** 실제로 그린 세로 범위(뷰박스의 y·높이) — 노드가 적으면 빈 위아래를 잘라 그림이 낮아집니다. */
+  view: { y: number; height: number };
+  /**
+   * 노드의 누르는 자리 반지름 — 어느 두 노드 사이든 가장 짧은 거리의 절반 이하(누르는 원끼리 겹치지 않음), 많아야 22(지름 44px). 노드가 많은
+   * 좁은 화면에서는 44px보다 작아지고, 같은 일은 '목록' 보기(줄 높이 44px)가 합니다.
+   */
+  hitRadius: number;
+};
+
+const round1 = (value: number) => Math.round(value * 10) / 10;
+
+/** 한 줄로 늘어선 칸(노드 1 · 틈 GRAPH_GAP_UNITS) — 그림의 오른쪽·왼쪽 호를 채우는 차례. 틈의 sector는 그 틈 뒤의 묶음. */
+type GraphSlot = { kind: "node"; sector: number; link: SearchLink } | { kind: "gap"; sector: number };
+
+/**
+ * 연결 그림의 배치(계약 §9-3) — 대상을 가운데 두고, 노드는 둘레의 오른쪽 호(위 → 아래)와 왼쪽 호(아래 → 위)에 시계 방향으로 linkGroups의 순서대로
+ * 놓습니다(관계 묶음마다 이어진 부채꼴, 묶음 사이에 작은 틈). 좌우는 관계 묶음 단위로 나누되(두 쪽 중 큰 쪽이 가장 작은 묶음 경계), 그러면 한쪽
+ * 호에 노드가 너무 많아 이웃 이름이 붙을 때(세로 간격 GRAPH_ROW_GAP 미만)와 관계가 하나뿐일 때만 칸 수로 반씩 나눕니다 — 그때 쪼개진 묶음은
+ * 호마다 관계 글을 둡니다(다른 관계의 글 옆에 관계 글 없는 노드가 남지 않게). 각 쪽은 한가운데에 모으며, 노드가 많으면 호(위아래 65도) 안에서
+ * 간격을 줄입니다. 노드는 최대 max개(graphLinks). 노드 이름은 오른쪽 노드는 오른쪽으로, 왼쪽 노드는 왼쪽으로 뻗고 이름 자리(폭의 26%,
+ * 80~130px) 안에 들게 줄입니다. 그린 것의 세로 범위(view)를 돌려줘 노드가 적은 그림은 낮게 그립니다. 관계 글은 그 조각의 가운데 노드로 가는
+ * 선 위(반지름 55~70%)에 두되 가운데 대상 상자와 겹치면 선 옆(위·아래)으로 비키고,
+ * 같은 쪽 관계 글끼리는 세로로 비켜 둡니다. 출처에 없는 관계는 만들지 않습니다(받은 연결만).
+ */
+export function linkGraphLayout(
+  groups: readonly LinkGroup[],
+  size: { width: number; height: number },
+  options: { max?: number; centerName?: string } = {},
+): LinkGraphLayout {
+  const { groups: kept, hidden } = graphLinks(groups, options.max ?? LINK_GRAPH_MAX);
+  const { width, height } = size;
+  const cx = width / 2;
+  const cy = height / 2;
+  const labelSpace = Math.min(130, Math.max(80, Math.round(width * 0.26)));
+  const rx = Math.max(40, cx - labelSpace);
+  // 맨 위·맨 아래 노드(호의 끝 65도)가 여백 안에 들게 — 극(90도)에는 노드를 두지 않아 타원이 그림보다 커도 됩니다.
+  const ry = Math.max(40, (cy - GRAPH_MARGIN_Y) / Math.sin(GRAPH_ARC));
+  const centerLabel = fitGraphLabel(options.centerName ?? "", Math.min(160, rx * 1.2));
+  const center = { label: centerLabel, width: Math.round(Math.min(176, Math.max(64, textWidth(centerLabel) + 20))), height: GRAPH_CENTER_HEIGHT };
+
+  // 칸을 한 줄로 — 묶음 사이에만 틈.
+  const slots: GraphSlot[] = [];
+  kept.forEach((group, sector) => {
+    if (sector > 0) slots.push({ kind: "gap", sector });
+    for (const link of group.links) slots.push({ kind: "node", sector, link });
+  });
+  const unitOf = (slot: GraphSlot) => (slot.kind === "node" ? 1 : GRAPH_GAP_UNITS);
+  const stepFor = (units: number) => Math.min(GRAPH_MAX_STEP, (2 * GRAPH_ARC) / Math.max(1, units));
+  // 한쪽 호에 units 칸을 둘 때 같은 쪽 이웃 노드의 가장 좁은 세로 간격 — 호의 양 끝(사인이 가장 완만한 곳)의 두 칸 사이.
+  const rowGap = (units: number) => {
+    if (units < 2) return Infinity;
+    const end = (units / 2 - 0.5) * stepFor(units);
+    return ry * (Math.sin(end) - Math.sin(end - stepFor(units)));
+  };
+  // 묶음 경계에서 나누기 — 두 쪽 가운데 큰 쪽이 가장 작은 경계(k = 오른쪽에 두는 마지막 묶음).
+  let boundary = -1;
+  let boundaryUnits = Infinity;
+  for (let k = 0; k < kept.length - 1; k += 1) {
+    let right = 0;
+    let left = 0;
+    kept.forEach((group, sector) => {
+      if (sector <= k) right += group.links.length + (sector > 0 ? GRAPH_GAP_UNITS : 0);
+      else left += group.links.length + (sector > k + 1 ? GRAPH_GAP_UNITS : 0);
+    });
+    if (Math.max(right, left) < boundaryUnits) {
+      boundaryUnits = Math.max(right, left);
+      boundary = k;
+    }
+  }
+  const sides: GraphSlot[][] = [[], []];
+  if (boundary >= 0 && rowGap(boundaryUnits) >= GRAPH_ROW_GAP) {
+    for (const slot of slots) sides[slot.sector <= boundary ? 0 : 1].push(slot);
+  } else {
+    // 칸 수로 반씩 — 칸의 가운데가 전체의 절반 앞이면 오른쪽, 아니면 왼쪽(나뉘는 자리의 틈은 버림).
+    const totalUnits = slots.reduce((sum, slot) => sum + unitOf(slot), 0);
+    let walked = 0;
+    for (const slot of slots) {
+      const middle = walked + unitOf(slot) / 2;
+      walked += unitOf(slot);
+      sides[middle <= totalUnits / 2 ? 0 : 1].push(slot);
+    }
+  }
+  for (const side of sides) {
+    while (side[0]?.kind === "gap") side.shift();
+    while (side.at(-1)?.kind === "gap") side.pop();
+  }
+  const sideUnits = sides.map((side) => side.reduce((sum, slot) => sum + unitOf(slot), 0));
+  const step = stepFor(Math.max(...sideUnits));
+
+  const nodes: LinkGraphNode[] = [];
+  const nodeSector: number[] = [];
+  const nodeSide: number[] = [];
+  sides.forEach((side, at) => {
+    // 오른쪽은 각도 0, 왼쪽은 π를 한가운데로 — 각 쪽에서 각도가 늘어나는 쪽(오른쪽은 아래, 왼쪽은 위)으로 차례로.
+    let offset = (at === 0 ? 0 : Math.PI) - (sideUnits[at] * step) / 2;
+    for (const slot of side) {
+      const units = unitOf(slot);
+      if (slot.kind === "node") {
+        const angle = offset + (units * step) / 2;
+        const cos = Math.cos(angle);
+        const x = round1(cx + rx * cos);
+        const y = round1(cy + ry * Math.sin(angle));
+        const anchor: LinkGraphNode["anchor"] = cos >= 0 ? "start" : "end";
+        const relation = kept[slot.sector].relation;
+        nodes.push({
+          id: `${relation}:${nodes.filter((node) => node.relation === relation).length}`,
+          link: slot.link,
+          relation,
+          x,
+          y,
+          angle,
+          label: fitGraphLabel(slot.link.name, labelSpace - 14),
+          labelX: round1(anchor === "start" ? x + 10 : x - 10),
+          labelY: round1(y + 4),
+          anchor,
+          ariaLabel: `${slot.link.name} · ${relationLabel(relation)}${isEntityKey(slot.link.key) ? "" : " · 이름으로 찾기"}`,
+        });
+        nodeSector.push(slot.sector);
+        nodeSide.push(at);
+      }
+      offset += units * step;
+    }
+  });
+
+  // 관계 글 — 이어진 호(묶음 × 쪽)마다 하나, 그 조각의 가운데 노드로 가는 선 위. 가운데 상자와 겹치면 선 옆으로, 같은 쪽끼리는 세로로 비킴.
+  const halfStep = step / 2;
+  const pieces: { sector: number; side: number }[] = [];
+  nodes.forEach((_, at) => {
+    if (!pieces.some((piece) => piece.sector === nodeSector[at] && piece.side === nodeSide[at])) pieces.push({ sector: nodeSector[at], side: nodeSide[at] });
+  });
+  const tags = pieces.map(({ sector, side }) => {
+    const members = nodes.filter((_, at) => nodeSector[at] === sector && nodeSide[at] === side);
+    const pivot = members[Math.floor((members.length - 1) / 2)];
+    const labelWidth = Math.ceil(textWidth(kept[sector].label));
+    const half = labelWidth / 2 + 4;
+    const cos = Math.cos(pivot.angle);
+    const sin = Math.sin(pivot.angle);
+    const clearY = center.height / 2 + GRAPH_TAG_HEIGHT / 2 + 4;
+    let placed = false;
+    let x = cx;
+    let y = cy;
+    for (let t = 0.55; t <= 0.7 + 1e-9 && !placed; t += 0.05) {
+      x = cx + rx * t * cos;
+      y = cy + ry * t * sin;
+      placed = Math.abs(x - cx) >= center.width / 2 + half + 4 || Math.abs(y - cy) >= clearY;
+    }
+    if (!placed) {
+      // 선이 거의 가로라 바깥으로 밀면 노드에 닿음 — 선 옆(위·아래)으로 올려 가운데 상자를 비킴.
+      x = cx + rx * 0.6 * cos;
+      y = cy + (sin > 0 ? 1 : -1) * Math.max(clearY, Math.abs(ry * 0.6 * sin));
+    }
+    return { sector, side, x, y, half, labelWidth };
+  });
+  for (const side of [0, 1]) {
+    const column = tags.filter((tag) => tag.side === side).sort((a, b) => a.y - b.y);
+    for (let at = 1; at < column.length; at += 1) column[at].y = Math.max(column[at].y, column[at - 1].y + GRAPH_TAG_STEP);
+    const overflow = (column.at(-1)?.y ?? 0) - (height - GRAPH_TAG_HEIGHT);
+    if (overflow > 0) for (const tag of column) tag.y = Math.max(GRAPH_TAG_HEIGHT, tag.y - overflow);
+  }
+  const graphTags: LinkGraphTag[] = tags.map((tag) => ({
+    relation: kept[tag.sector].relation,
+    label: kept[tag.sector].label,
+    side: tag.side === 0 ? "right" : "left",
+    x: round1(Math.min(width - tag.half - 2, Math.max(tag.half + 2, tag.x))),
+    y: round1(tag.y),
+    width: tag.labelWidth,
+  }));
+
+  const sectors: LinkGraphSector[] = kept.map((group, sector) => {
+    const angles = nodes.filter((_, at) => nodeSector[at] === sector).map((node) => node.angle);
+    return { relation: group.relation, label: group.label, count: group.links.length, start: Math.min(...angles) - halfStep, end: Math.max(...angles) + halfStep };
+  });
+
+  // 누르는 원끼리 겹치지 않게 — 어느 두 노드 사이든 가장 짧은 거리의 절반 이하(내림), 많아야 22.
+  let closest = Infinity;
+  for (let a = 0; a < nodes.length; a += 1) {
+    for (let b = a + 1; b < nodes.length; b += 1) closest = Math.min(closest, Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y));
+  }
+  const hitRadius = Math.floor(Math.min(22, closest / 2));
+  const ys = [cy - center.height / 2, cy + center.height / 2, ...nodes.map((node) => node.y), ...graphTags.map((tag) => tag.y)];
+  const top = Math.max(0, Math.floor(Math.min(...ys) - GRAPH_MARGIN_Y));
+  const bottom = Math.min(height, Math.ceil(Math.max(...ys) + GRAPH_MARGIN_Y));
+  return { width, height, cx, cy, rx, ry, nodes, sectors, tags: graphTags, center, hidden, view: { y: top, height: bottom - top }, hitRadius };
 }
 
 // ------------------------------------------------------------------ 출처 상태

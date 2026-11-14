@@ -197,7 +197,7 @@ export function EntityView({
                     {current === "holdings" ? (
                       <HoldingsPanel entity={entity} loading={!settled} />
                     ) : (
-                      <LinksPanel view={links} onTarget={onTarget} onRetry={() => void links.reload()} />
+                      <LinksPanel view={links} centerName={entity?.name ?? entityKey} onTarget={onTarget} onRetry={() => void links.reload()} />
                     )}
                   </div>
                   <div className="border-t border-border p-3 lg:border-l lg:border-t-0">
