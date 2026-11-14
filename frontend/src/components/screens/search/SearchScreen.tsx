@@ -72,7 +72,8 @@ export function SearchScreen() {
         ) : (
           <SearchHome watch={watch} owner={owner} demo={demo} onOpen={openEntity} />
         )}
-        {/* 맨 위로(사용자 요청 2026-11-15) — 범위 안이라 어두운 토큰, 휴대폰 미리보기 서랍(z-30)을 덮지 않게 그 아래 층. */}
+        {/* 맨 위로(사용자 요청 2026-11-15) — 범위 안이라 어두운 토큰, 미리 보기 아래 시트(z-30)를 덮지 않게 그 아래 층.
+            시트가 열려 있으면 그 높이만큼 위로 올라가 시트에 가리지 않습니다(ScrollTopButton — --bottom-sheet). */}
         <ScrollTopButton layer="z-20" />
       </DialogScope>
     </div>

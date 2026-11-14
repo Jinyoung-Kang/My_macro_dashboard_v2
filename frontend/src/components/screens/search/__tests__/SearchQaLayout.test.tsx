@@ -6,7 +6,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -334,6 +334,18 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
     expect(panel.style.marginBottom).toBe("");
     expect(sheet.style.right).toBe("");
     expect(scrolled).toEqual([]);
+  });
+
+  it("TOP 단추는 시트 높이(--bottom-sheet)만큼 위로 올라가 시트에 가리지 않는다(Tab 차례에 숨은 단추가 남지 않게)", async () => {
+    await openPreview(1);
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    act(() => {
+      main.scrollTop = 900;
+      main.dispatchEvent(new Event("scroll"));
+    });
+    const top = screen.getByRole("button", { name: /맨 위로/ });
+    expect(top.style.translate).toBe("0 calc(-1 * var(--bottom-sheet, 0px))");
+    expect(top.className).toContain("z-20");
   });
 
   it("스크롤 여백은 --bottom-sheet를 따른다 — lg 미만은 문서(하단 탭 바 + 시트), lg 이상은 본문 main(globals.css)", () => {
