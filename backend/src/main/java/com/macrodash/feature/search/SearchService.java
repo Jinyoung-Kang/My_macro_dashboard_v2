@@ -37,10 +37,11 @@ import java.util.regex.Pattern;
 /**
  * 정보 검색(ADR 0041, 계약 docs/specs/2026-11-14-info-search-contract.md §3) — 수집기 {@code /live/search/*}의 중계.
  *
- * <p>하는 일은 넷입니다. ① 입력 검사(검색어 1~60자, 대상 키 문법, 탭 — 틀리면 400, 수집기를 부르지 않음 — 수집기의 400은 빈 값이 되어 사유가
+ * <p>하는 일은 다섯입니다. ① 입력 검사(검색어 1~60자, 대상 키 문법, 탭 — 틀리면 400, 수집기를 부르지 않음 — 수집기의 400은 빈 값이 되어 사유가
  * 사라지므로 여기서 먼저 막습니다). ② 데모 열람·읽기 모드 {@code store_only}면 {@code external=false}(수집기가 외부를 부르지 않고 저장본·캐시만),
  * 운영자면 {@code owner=true}. ③ 글·논평 탭은 운영자만(403). ④ 회원에게 가는 결과에서 운영자 전용 줄(수집 글·거장 견해·속보)을 한 번 더 지움
- * (수집기에 owner=false를 보냈어도 — 이중 방어). 2년 자르기·중국어 제목·매체 거름은 수집기가 원본이라 다시 구현하지 않습니다.
+ * (수집기에 owner=false를 보냈어도 — 이중 방어). ⑤ Finviz를 새로 줄에 넣는 횟수를 사용자마다 한 시간 한도로 셈(계약 §8-5). 2년 자르기·중국어
+ * 제목·매체 거름은 수집기가 원본이라 다시 구현하지 않습니다.
  *
  * <p>검색어와 대상 키는 로그에 남기지 않습니다(결정 12). 정보 검색 자료는 모의 매매의 입력이 아닙니다.
  */
@@ -71,6 +72,23 @@ public class SearchService {
     /** '지금 새로 받기'(feed?refresh=1)의 사용자당 간격(계약 §6-4) — 출처 캐시를 건너뛰어 외부 호출이 늘기 때문입니다. */
     static final Duration REFRESH_INTERVAL = Duration.ofMinutes(10);
 
+    /**
+     * Finviz 종목 뉴스를 새로 줄에 넣는 횟수의 사용자당 상한과 그 창(계약 §8-5) — 지난 1시간에 수집기가 {@code finvizQueued:true}로 답한 것이
+     * 이만큼이면 수집기에 {@code finviz=0}을 보냅니다(받아 둔 결과만, 수집기가 상태 줄에 알림). 화면의 요청이 차단 통과 계층을 부르는 길이라 사람
+     * 한 명이 서버 전체의 Finviz 하루 예산을 다 쓰지 않게 합니다.
+     */
+    static final int FINVIZ_PER_HOUR = 10;
+    static final Duration FINVIZ_WINDOW = Duration.ofHours(1);
+    /**
+     * Finviz가 붙는 탭(계약 §8-4 — 미국 상장 회사의 뉴스·타임라인). 그 밖의 탭과, 미국 상장 회사로 풀릴 수 없는 대상({@code kr:} 국내 종목코드 ·
+     * {@code topic:} 주제)은 자리를 잡지 않고 {@code finviz=0}을 보냅니다 — 수집에 오래 걸리는 공시 탭 요청이 자리를 붙잡아 그동안 온 같은
+     * 사용자의 뉴스 요청이 한도에 막히지 않게. {@code wd:}·{@code cik:}는 미국 상장 회사로 풀릴 수 있어 거르지 않습니다.
+     */
+    static final Set<String> FINVIZ_TABS = Set.of("news", "timeline");
+    private static final Set<String> FINVIZ_NEVER_KEYS = Set.of("kr:", TOPIC);
+    /** 수집기 응답의 '이 요청이 Finviz를 새로 줄에 넣었는지' 칸 — 셈에만 쓰고 화면에 넘기지 않습니다. */
+    static final String FINVIZ_QUEUED = "finvizQueued";
+
     private final StoreReader store;
     private final CollectorClient collector;
     private final Clock clock;
@@ -79,6 +97,12 @@ public class SearchService {
      * 거부 래치는 그대로). 크기는 사용자 수만큼입니다.
      */
     private final Map<Long, Instant> lastRefresh = new ConcurrentHashMap<>();
+    /**
+     * 사용자 번호 → 지난 {@link #FINVIZ_WINDOW} 안에 수집기가 Finviz를 새로 줄에 넣은 시각(수집기에 가 있는 요청이 잡은 자리 포함). 목록은 이 맵의
+     * {@code compute} 안에서만 고칩니다. 새로 받기 한도와 같이 백엔드 한 프로세스의 메모리라 재기동하면 비워집니다(그래도 수집기의 Finviz 하루
+     * 예산·대기열 상한은 그대로). 빈 목록은 지워 크기는 그 시간에 부른 사용자 수만큼입니다.
+     */
+    private final Map<Long, List<Instant>> finvizQueued = new ConcurrentHashMap<>();
 
     @Autowired
     public SearchService(StoreReader store, CollectorClient collector) {
@@ -142,6 +166,11 @@ public class SearchService {
      * 응답의 {@code refreshNote}에 안내 한 줄을 둡니다(새로 받았으면 null). 외부를 부르지 않는 모드(데모·store_only)는 새로 받지 않고 한도도 쓰지
      * 않습니다. {@code refresh}를 묻지 않으면 그 칸이 없습니다.
      *
+     * <p>Finviz(계약 §8-5): 사용자마다 지난 1시간에 수집기가 새로 줄에 넣은 것이 {@link #FINVIZ_PER_HOUR}번이면 {@code finviz=0}으로 부르고,
+     * 응답의 {@code finvizQueued}는 셈에만 쓰고 지웁니다. {@code finviz=0}은 새로 줄에 넣는 것만 막으므로 이미 줄에 있거나 받는 중인 티커를 화면이
+     * 다시 부르면 수집기의 {@code pending}이 그대로 갑니다. 외부를 부르지 않는 모드와 Finviz가 붙지 않는 탭·대상({@link #FINVIZ_TABS})은
+     * {@code finviz=0}이고 한도를 쓰지 않습니다.
+     *
      * @throws InvalidRequestException 대상 키·탭이 틀림(400)
      * @throws ResponseStatusException 회원이 글·논평 탭을 부름(403)
      */
@@ -156,8 +185,22 @@ public class SearchService {
         Instant now = clock.instant();
         String refused = refresh ? refreshRefusal(user, external, now) : null;
         boolean applied = refresh && refused == null;
-        Map<String, Object> out = relay(() -> applied ? collector.liveSearchFeed(key, which, external, owner, true)
-                : collector.liveSearchFeed(key, which, external, owner), owner ? null : body -> hideOwnerOnly(body, which));
+        // external이면 사용자가 있습니다. 외부를 부르지 않는 모드는 수집기가 Finviz를 부르지 않지만(offline) finviz=0도 함께 보냅니다(이중 방어).
+        boolean finviz = external && finvizApplies(key, which) && reserveFinviz(user.id(), now);
+        boolean[] queued = new boolean[1];
+        Map<String, Object> out;
+        try {
+            out = relay(() -> collector.liveSearchFeed(key, which, external, owner, applied, finviz), body -> {
+                JsonNode flag = body.remove(FINVIZ_QUEUED);
+                queued[0] = flag != null && flag.isBoolean() && flag.booleanValue();
+                if (!owner) {
+                    hideOwnerOnly(body, which);
+                }
+            });
+        } finally {
+            // 중간에 예외가 나도 잡았던 자리가 한 시간 동안 남지 않게 합니다.
+            settleFinviz(user, finviz, queued[0], now, which);
+        }
         if (applied && !Boolean.TRUE.equals(out.get("available"))) {
             // 수집기에 닿지 못한 새로 받기는 한 번으로 세지 않습니다(그 사이 같은 사용자가 다시 받았으면 그 시각은 그대로).
             lastRefresh.remove(user.id(), now);
@@ -199,6 +242,58 @@ public class SearchService {
         long seconds = Duration.between(now, previous[0].plus(REFRESH_INTERVAL)).toSeconds();
         long minutes = Math.max(1, (seconds + 59) / 60);
         return "지금 새로 받기는 " + REFRESH_INTERVAL.toMinutes() + "분에 한 번입니다 — 약 " + minutes + "분 뒤에 다시 누르세요. 지금은 받아 둔 결과입니다.";
+    }
+
+    /** 이 탭·대상에 Finviz가 붙을 수 있는지({@link #FINVIZ_TABS}) — 아니면 자리를 잡지 않습니다. */
+    private static boolean finvizApplies(String key, String tab) {
+        return FINVIZ_TABS.contains(tab) && FINVIZ_NEVER_KEYS.stream().noneMatch(key::startsWith);
+    }
+
+    /**
+     * 이 요청이 Finviz를 새로 줄에 넣어도 되는지 — 지난 {@link #FINVIZ_WINDOW}(정확히 그만큼 지난 것은 뺌)의 셈이 {@link #FINVIZ_PER_HOUR}보다
+     * 적으면 {@code now}로 자리를 잡고 참입니다. 검사와 자리 잡기를 한 번에 해 같은 사용자의 동시 요청이 함께 한도를 넘지 않게 하고, 수집기가 새로
+     * 넣지 않았으면 {@link #settleFinviz}가 그 자리를 돌려줍니다.
+     */
+    private boolean reserveFinviz(long userId, Instant now) {
+        Instant cutoff = now.minus(FINVIZ_WINDOW);
+        boolean[] reserved = new boolean[1];
+        finvizQueued.compute(userId, (id, times) -> {
+            List<Instant> kept = times == null ? new ArrayList<>() : times;
+            kept.removeIf(at -> !at.isAfter(cutoff));
+            if (kept.size() < FINVIZ_PER_HOUR) {
+                kept.add(now);
+                reserved[0] = true;
+            }
+            return kept.isEmpty() ? null : kept;
+        });
+        return reserved[0];
+    }
+
+    /**
+     * 응답을 받은 뒤 셈을 맞춥니다. 자리를 잡았는데 새로 넣지 않았으면(캐시·같은 티커가 이미 줄에 있음·미국 종목이 아님·응답을 받지 못함) 그 자리를
+     * 돌려주고, 자리 없이({@code finviz=0}) 불렀는데 새로 넣었다고 답하면(수집기 쪽 결함) 그래도 셉니다 — 로그에는 탭만(대상 키 없이).
+     *
+     * <p>응답을 받지 못한 경우는 '수집기에 닿지 못함'과 '수집기가 처리했는데 응답이 끊김(읽기 시간 초과·연결 끊김)'을 가르지 못해 모두 돌려줍니다.
+     * 뒤쪽에서 수집기가 실제로 줄에 넣었으면 이 사용자의 셈이 한 번 모자라지만, 서버 전체의 Finviz 검색 하루 예산(수집기 {@code fetch_budgets})은
+     * 그대로 막습니다. 반대로 붙잡아 두면 수집기가 멈춘 동안의 실패 열 번이 한 시간 동안 새로 부르기를 막으므로 이쪽을 택했습니다.
+     */
+    private void settleFinviz(CurrentUser user, boolean reserved, boolean queued, Instant at, String tab) {
+        if (user == null || reserved == queued) {
+            return;
+        }
+        if (reserved) {
+            finvizQueued.computeIfPresent(user.id(), (id, times) -> {
+                times.remove(at);
+                return times.isEmpty() ? null : times;
+            });
+            return;
+        }
+        log.warn("정보 검색: finviz=0으로 불렀는데 수집기가 Finviz를 새로 줄에 넣었다고 답했습니다 (tab={})", tab);
+        finvizQueued.compute(user.id(), (id, times) -> {
+            List<Instant> kept = times == null ? new ArrayList<>() : times;
+            kept.add(at);
+            return kept;
+        });
     }
 
     // ------------------------------------------------------------------ 입력 검사

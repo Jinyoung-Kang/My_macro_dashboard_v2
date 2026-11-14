@@ -180,6 +180,34 @@ class CollectorClientUriTest {
     }
 
     @Test
+    @DisplayName("정보 검색 Finviz(계약 §8-4·8-5) — finviz=1|0이 늘 숫자로 도착하고, 빈도를 세지 않는 예전 겹쳐 쓰기(인자 넷·다섯)는 finviz=0")
+    void searchFeedFinvizArrives() {
+        client.liveSearchFeed("us:NVDA", "news", true, false, false, true);
+        assertThat(receivedPaths).containsExactly("/live/search/feed");
+        assertThat(decodedParam("finviz")).isEqualTo("1");
+        assertThat(decodedParam("e")).isEqualTo("us:NVDA");
+        assertThat(decodedParam("external")).isEqualTo("true");
+        assertThat(receivedQueries.get(0)).doesNotContain("refresh");
+
+        receivedQueries.clear();
+        client.liveSearchFeed("us:BRK.B", "timeline", true, true, true, false);
+        assertThat(decodedParam("finviz")).isEqualTo("0");
+        assertThat(decodedParam("refresh")).isEqualTo("true");
+        assertThat(decodedParam("e")).isEqualTo("us:BRK.B");
+        assertThat(decodedParam("owner")).isEqualTo("true");
+
+        receivedQueries.clear();
+        client.liveSearchFeed("us:NVDA", "news", true, false);
+        assertThat(decodedParam("finviz")).isEqualTo("0");
+
+        receivedQueries.clear();
+        client.liveSearchFeed("topic:AI 반도체", "news", true, false, true);
+        assertThat(decodedParam("finviz")).isEqualTo("0");
+        assertThat(decodedParam("refresh")).isEqualTo("true");
+        assertThat(decodedParam("e")).isEqualTo("topic:AI 반도체");
+    }
+
+    @Test
     @DisplayName("정보 검색 첫 화면 최근 글·매체 제외 목록의 처음 값 — 경로와 owner가 그대로 도착한다")
     void searchRecentAndExcludesArrive() {
         client.liveSearchRecent(true);

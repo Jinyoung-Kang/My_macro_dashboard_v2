@@ -271,21 +271,32 @@ public class CollectorClient {
                 .build(Map.of("e", e)), "/live/search/entity");
     }
 
-    /** 결과(수집기 /live/search/feed — 출처별 상태와 2년 묶음, 15분 캐시). */
+    /**
+     * 결과(수집기 /live/search/feed — 출처별 상태와 2년 묶음, 15분 캐시). Finviz를 새로 줄에 넣지 않습니다({@code finviz=0} — 사용자 빈도를 세는
+     * 길만 {@link #liveSearchFeed(String, String, boolean, boolean, boolean, boolean)}로 넣을 수 있게).
+     */
     public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner) {
-        return liveSearchFeed(e, tab, external, owner, false);
+        return liveSearchFeed(e, tab, external, owner, false, false);
+    }
+
+    /** 결과 — {@code refresh}는 아래와 같고, Finviz를 새로 줄에 넣지 않습니다({@code finviz=0}). */
+    public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner, boolean refresh) {
+        return liveSearchFeed(e, tab, external, owner, refresh, false);
     }
 
     /**
      * 결과 — {@code refresh}가 참이면 출처 캐시를 건너뛰는 '지금 새로 받기'(계약 §6-4, 사용자당 빈도는 백엔드가 막음). 거짓이면 인자를 보내지 않습니다.
+     * {@code finviz}는 이 요청이 Finviz 종목 뉴스를 새로 줄에 넣어도 되는지(계약 §8-4 — {@code finviz=1|0}을 늘 보냄, 거짓이면 수집기가 받아 둔 결과만
+     * 씀). 사용자마다 한 시간 한도는 백엔드가 셉니다(계약 §8-5). 응답의 {@code finvizQueued}는 그 셈에 쓰고 화면에 넘기지 않습니다.
      */
-    public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner, boolean refresh) {
+    public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner, boolean refresh, boolean finviz) {
         return getQuietly(client, uri -> uri.path("/live/search/feed")
                 .queryParam("e", "{e}")
                 .queryParam("tab", "{tab}")
                 .queryParam("external", external)
                 .queryParam("owner", owner)
                 .queryParamIfPresent("refresh", refresh ? Optional.of(true) : Optional.empty())
+                .queryParam("finviz", finviz ? 1 : 0)
                 .build(Map.of("e", e, "tab", tab)), "/live/search/feed");
     }
 

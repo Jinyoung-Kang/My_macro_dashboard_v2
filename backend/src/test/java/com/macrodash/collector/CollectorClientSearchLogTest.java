@@ -82,6 +82,7 @@ class CollectorClientSearchLogTest {
             c -> c.liveSearchEntity("topic:" + CANARY, true, false),
             c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false),
             c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false, true),
+            c -> c.liveSearchFeed("us:" + CANARY, "news", true, false, false, true),
             c -> c.liveSearchRecent(false),
             c -> c.liveSearchExcludes(),
             c -> c.liveSearchLinks("topic:" + CANARY, true, false));

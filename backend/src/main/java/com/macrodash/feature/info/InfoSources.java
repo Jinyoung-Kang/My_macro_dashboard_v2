@@ -83,7 +83,7 @@ public final class InfoSources {
             new Source("news_headlines", "news_headlines", "사건 뉴스 RSS(미국)", "news", "rss", "https://www.investing.com/", "Investing.com·연준·BLS·SEC", "official", "/info/news"),
             new Source("kr_news_headlines", "kr_news_headlines", "사건 뉴스 RSS(한국)", "news", "rss", "https://www.bok.or.kr/", "한국은행·재정경제부·국가데이터처·연합뉴스", "official", "/info/news"),
             new Source("search_feeds", "search_feeds", "보도자료·경제지 피드(정보 검색)", "news", "rss", "https://www.federalreserve.gov/feeds/", "연준·ECB·영란은행·Bloomberg·MarketWatch·CNBC·Benzinga·Seeking Alpha·BBC·Economist·Nikkei Asia", "official", "/info/news"),
-            new Source("search_watch", "search_watch", "관심 대상 수집(구글·Bing 뉴스 RSS)", "news", "rss", "https://news.google.com/", "구글 뉴스·Bing 뉴스 RSS + 저장본 대조", "official", "/search"),
+            new Source("search_watch", "search_watch", "관심 대상 수집(뉴스·공시·Finviz)", "news", "rss", "https://news.google.com/", "구글 뉴스·Bing 뉴스 RSS·SEC·DART 공시·Finviz 종목 뉴스(차단 통과 계층 — 화면발 Finviz 거부도 이 줄) + 저장본 대조", "bypass", "/search"),
             new Source("volatility_history", "volatility_history", "VIX·MOVE 변동성", "global", "data", "https://finance.yahoo.com/", "Yahoo(yfinance)", "unofficial", "/macro"),
             new Source("cot_history", "cot_history", "CFTC COT", "global", "data", "https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm", "CFTC", "official", "/cot"),
             new Source("daum_futures_trend", "daum_futures_trend", "선물 투자주체별 수급", "kr", "data", "https://finance.daum.net/domestic/investors/DERIVATIVES", "Daum 금융", "unofficial", "/krx"),

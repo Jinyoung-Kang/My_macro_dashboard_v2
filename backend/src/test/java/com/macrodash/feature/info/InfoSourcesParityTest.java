@@ -65,14 +65,15 @@ class InfoSourcesParityTest {
     }
 
     @Test
-    @DisplayName("정보 검색의 두 태스크(ADR 0041) — 새 피드 묶음은 뉴스·글 탭의 공식 RSS, 관심 대상 수집도 공식 RSS·검색(차단 통과 아님)이고 화면은 /search")
+    @DisplayName("정보 검색의 두 태스크(ADR 0041) — 새 피드 묶음은 뉴스·글 탭의 공식 RSS, 관심 대상 수집은 단계 5부터 Finviz를 차단 통과 계층으로 받고 화면은 /search")
     void searchTasks() {
         InfoSources.Source feeds = InfoSources.byTask("search_feeds").orElseThrow();
         assertThat(feeds.tab()).isEqualTo(InfoSources.TAB_NEWS);
         assertThat(feeds.kind()).isEqualTo("rss");
         assertThat(feeds.access()).isEqualTo(InfoSources.OFFICIAL);
         InfoSources.Source watch = InfoSources.byTask("search_watch").orElseThrow();
-        assertThat(watch.access()).isEqualTo(InfoSources.OFFICIAL);
+        assertThat(watch.access()).isEqualTo(InfoSources.BYPASS);
+        assertThat(watch.origin()).contains("Finviz");
         assertThat(watch.screen()).isEqualTo("/search");
         assertThat(watch.tab()).isEqualTo(InfoSources.TAB_NEWS);
     }

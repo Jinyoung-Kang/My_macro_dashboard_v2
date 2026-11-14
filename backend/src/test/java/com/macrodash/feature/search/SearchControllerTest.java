@@ -21,6 +21,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -70,7 +71,7 @@ class SearchControllerTest {
                 .thenReturn(Optional.of(MAPPER.readTree("{\"items\":[],\"errors\":{}}")));
         when(collector.liveSearchEntity(anyString(), anyBoolean(), anyBoolean()))
                 .thenReturn(Optional.of(MAPPER.readTree("{\"entity\":null,\"errors\":{}}")));
-        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean()))
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), eq(false), anyBoolean()))
                 .thenReturn(Optional.of(MAPPER.readTree("{\"entityKey\":\"us:NVDA\",\"tab\":\"news\",\"items\":[]}")));
 
         JsonNode suggest = call("/api/search/suggest", MEMBER, 200, "q", "엔비디아");
@@ -87,7 +88,7 @@ class SearchControllerTest {
         JsonNode feed = call("/api/search/feed", MEMBER, 200, "e", "us:NVDA", "tab", "news");
         assertThat(feed.path("available").asBoolean()).isTrue();
         assertThat(feed.path("entityKey").asString()).isEqualTo("us:NVDA");
-        verify(collector).liveSearchFeed("us:NVDA", "news", true, false);
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, false, true);
     }
 
     @Test
@@ -114,7 +115,7 @@ class SearchControllerTest {
     @Test
     @DisplayName("수집기에 닿지 못하면 200 + available:false와 사유")
     void collectorDownIsAvailableFalse() throws Exception {
-        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.empty());
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), eq(false), anyBoolean())).thenReturn(Optional.empty());
         JsonNode body = call("/api/search/feed", OWNER, 200, "e", "cik:0001067983", "tab", "posts");
         assertThat(body.path("available").asBoolean()).isFalse();
         assertThat(body.path("message").asString()).isEqualTo("수집기에서 응답을 받지 못했습니다.");
@@ -128,14 +129,14 @@ class SearchControllerTest {
         assertThat(recent.path("available").asBoolean()).isTrue();
         verify(collector).liveSearchRecent(false);
 
-        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean()))
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), eq(true), anyBoolean()))
                 .thenReturn(Optional.of(MAPPER.readTree("{\"items\":[]}")));
         JsonNode feed = call("/api/search/feed", MEMBER, 200, "e", "us:NVDA", "tab", "news", "refresh", "1");
         assertThat(feed.has("refreshNote")).isTrue();
         assertThat(feed.get("refreshNote").isNull()).as("새로 받았으면 안내 없음").isTrue();
-        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, true);
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, true, true);
 
-        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(MAPPER.readTree("{}")));
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), eq(false), anyBoolean())).thenReturn(Optional.of(MAPPER.readTree("{}")));
         assertThat(call("/api/search/feed", OWNER, 200, "e", "us:NVDA").has("refreshNote")).as("묻지 않으면 칸 없음").isFalse();
         assertThat(call("/api/search/feed", OWNER, 400, "e", "us:NVDA", "refresh", "maybe").path("error").asString()).isEqualTo("bad_request");
     }
@@ -168,5 +169,20 @@ class SearchControllerTest {
         JsonNode body = call("/api/search/links", MEMBER, 200, "e", "kr:005930");
         assertThat(body.path("available").asBoolean()).isFalse();
         assertThat(body.path("message").asString()).isEqualTo("수집기에서 응답을 받지 못했습니다.");
+    }
+
+    @Test
+    @DisplayName("Finviz(계약 §8-4·8-5) — 결과 경로가 finviz=1로 부르고, 응답 JSON에 finvizQueued가 없으며 pending은 그대로")
+    void feedStripsFinvizQueued() throws Exception {
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(MAPPER.readTree("{\"entityKey\":\"us:NVDA\",\"tab\":\"news\",\"items\":[],\"pending\":true,"
+                        + "\"finvizQueued\":true}")));
+
+        JsonNode body = call("/api/search/feed", MEMBER, 200, "e", "us:NVDA", "tab", "news");
+
+        assertThat(body.path("available").asBoolean()).isTrue();
+        assertThat(body.path("pending").asBoolean()).isTrue();
+        assertThat(body.has("finvizQueued")).isFalse();
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, false, true);
     }
 }
