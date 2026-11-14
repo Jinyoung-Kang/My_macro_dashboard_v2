@@ -52,9 +52,10 @@ import java.util.regex.Pattern;
  *       ({@value #MAX_FIELD}자까지)만 보내고, 기사 본문·원문 주소·원문 팝업 id는 보내지 않습니다. 작성 시각을 모르는 줄({@code timeBasis: fetched})은 날짜를
  *       비우고 받은 시각({@code received})으로 보냅니다. 기간은 화면과 같은 KST 날짜 경계({@link SearchService#rangeStart}).</li>
  *   <li><b>빠진 출처</b>: 외부 출처의 받아 둔 결과는 수집기의 출처 캐시(성공 15분·실패 60초)에만 있어 그 뒤에는 아직 부르지 않은 출처와 함께
- *       {@code offline}입니다(셋을 가를 수 없음). 그런 출처는 응답 {@code offlineSources}(이름)로 알리고, 그 때문에 고른 기간에 줄이 하나도 없으면
- *       빈 요약 대신 {@code available:false, reason:"stale"}과 다시 불러오라는 안내를 돌려줍니다(외부를 부르지 않는 모드 store_only는 화면도 같은
- *       offline이라 빈 요약 그대로).</li>
+ *       {@code offline}입니다(셋을 가를 수 없음). 실패 캐시가 살아 있는 동안 실패한 출처는 {@code error}입니다. 둘 다 받지 못한 출처라(화면의
+ *       '새로 받기' 안내와 같은 기준) 응답 {@code offlineSources}(이름)로 알리고, 그 때문에 고른 기간에 줄이 하나도 없으면 빈 요약 대신
+ *       {@code available:false, reason:"stale"}과 다시 불러오라는 안내를 돌려줍니다(외부를 부르지 않는 모드 store_only는 화면도 같은 offline이라
+ *       빈 요약 그대로).</li>
  *   <li><b>엔진</b>: 번역(ADR 0037)과 같은 설정({@code dashboard.info.translate.*})과 순서 — 1순위 Gemini(무료 한도) → 한 등급 아래 Gemini → Claude Haiku.
  *       한도 초과·모델 없음인 Gemini 모델은 {@value #GEMINI_REST_MINUTES}분 건너뜀(이 서비스 안 — 번역의 쉬는 시각과는 따로). 키가 없으면 아무것도 부르지 않음.</li>
  *   <li><b>프롬프트</b>: 지시는 시스템 프롬프트에만, 자료는 요청마다 다른 꼬리표({@code <자료-…>})로 감싼 JSON — 자료 안의 글은 JSON 문자열이라 구간을 닫지 못하고,
@@ -95,12 +96,15 @@ public class SearchSummaryService {
 
     static final String NOT_CONFIGURED = "AI 요약 엔진의 키가 없습니다 — 번역과 같은 엔진(GEMINI_API_KEY 또는 ANTHROPIC_API_KEY)을 .env에 넣고 다시 띄우세요.";
     /**
-     * 받아 둔 결과가 없는 외부 출처 때문에 고른 기간에 줄이 없을 때(출처 수를 넣음). 수집기 캐시가 지난 뒤에는 성공(15분)이었는지 실패(60초)였는지,
-     * 아직 부르지 않았는지 가를 수 없어 사유를 하나로 단정하지 않습니다(QA-427).
+     * 받아 둔 결과가 없는(받지 못한) 출처 때문에 고른 기간에 줄이 없을 때(출처 수를 넣음). 수집기 캐시가 지난 뒤에는 성공(15분)이었는지 실패(60초)였는지,
+     * 아직 부르지 않았는지 가를 수 없어 사유를 하나로 단정하지 않습니다(QA-427). 막 실패한 출처({@code error} — 저장본을 읽는 출처의 실패도)가 섞이므로
+     * '외부'라고 하지 않습니다.
      */
-    static final String STALE = "외부 출처 %d곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.";
+    static final String STALE = "출처 %d곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.";
     /** 출처 상태 — 외부를 부르지 않아 캐시에 없는 출처(계약 §3-4). */
     private static final String OFFLINE = "offline";
+    /** 출처 상태 — 실패. 수집기가 실패를 캐시하는 동안(출처 60초·Finviz 5분)은 {@code external=false}로 읽어도 이 상태입니다. */
+    private static final String ERROR = "error";
 
     static final String SYSTEM = """
             정보 검색 화면에서 한 대상(회사·기관·사람·주제)에 관해 받아 둔 보도·공시·리포트 목록을 한국어로 요약하는 도우미입니다. 한국의 개인 투자자가 최근 흐름을 빠르게 훑는 용도입니다.
@@ -223,7 +227,7 @@ public class SearchSummaryService {
      * 요약(계약 §9-6).
      *
      * @return 성공 {@code {available:true, summary:[{text, refs:[itemId]}], basedOn, model, generatedAt, cached, offlineSources}} — 고른 기간에 받아 둔
-     *         줄이 없으면 빈 요약·basedOn 0(엔진을 부르지 않음). 그 까닭이 받아 둔 결과가 없는 외부 출처면({@code stale} — 외부를 부르는 모드만), 엔진 키가 없거나
+     *         줄이 없으면 빈 요약·basedOn 0(엔진을 부르지 않음). 그 까닭이 받지 못한 출처면({@code stale} — 외부를 부르는 모드만), 엔진 키가 없거나
      *         ({@code reason not_configured} — 아무것도 부르지 않음) 수집기에 닿지 못했거나({@code collector}) 모든 엔진이 실패하면({@code engine_failed})
      *         {@code {available:false, reason, message}}
      * @throws ResponseStatusException            운영자가 아님(403)
@@ -248,8 +252,8 @@ public class SearchSummaryService {
         List<String> offline = offlineSources(feed.get());
         if (rows.isEmpty()) {
             if (!offline.isEmpty() && search.external(user)) {
-                // 화면은 외부 출처의 줄을 받았을 수 있음 — 빈 요약('받아 둔 자료가 없음')이 눈앞의 목록과 어긋나지 않게 다시 불러오라고 함.
-                log.info("정보 검색 AI 요약: 고른 기간의 받아 둔 줄 없음(빠진 외부 출처 {}곳)", offline.size());
+                // 화면은 그 출처의 줄을 받았을 수 있음 — 빈 요약('받아 둔 자료가 없음')이 눈앞의 목록과 어긋나지 않게 다시 불러오라고 함.
+                log.info("정보 검색 AI 요약: 고른 기간의 받아 둔 줄 없음(받지 못한 출처 {}곳)", offline.size());
                 Map<String, Object> out = unavailable("stale", STALE.formatted(offline.size()), null);
                 out.put("offlineSources", offline);
                 return out;
@@ -329,13 +333,15 @@ public class SearchSummaryService {
     }
 
     /**
-     * 받아 둔 결과가 없어 요약에 들지 못한 외부 출처({@code status: offline})의 이름(없으면 출처 코드), 응답의 출처 순서대로. 이름은 수집기가 정한 고정
-     * 글이라 검색어가 들어가지 않습니다.
+     * 받지 못해 요약에 들지 못한 출처의 이름(없으면 출처 코드), 응답의 출처 순서대로 — 받아 둔 결과가 없는 출처({@code status: offline})와
+     * 실패한 출처({@code status: error} — 실패 캐시가 살아 있는 동안은 offline이 아니라 이 상태라, 빼면 막 실패한 출처가 조용히 빠짐. QA-427 검토).
+     * 화면의 '새로 받기' 안내(받지 못한 출처 = error·offline)와 같은 기준입니다. 이름은 수집기가 정한 고정 글이라 검색어가 들어가지 않습니다.
      */
     private static List<String> offlineSources(JsonNode feed) {
         List<String> out = new ArrayList<>();
         for (JsonNode source : feed.path("sources")) {
-            if (!OFFLINE.equals(text(source, "status"))) {
+            String status = text(source, "status");
+            if (!OFFLINE.equals(status) && !ERROR.equals(status)) {
                 continue;
             }
             String label = clean(text(source, "label"));

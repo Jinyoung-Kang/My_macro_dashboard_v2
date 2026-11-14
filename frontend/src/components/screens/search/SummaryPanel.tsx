@@ -89,7 +89,7 @@ export function SummaryPanel({
   const meta = response ? summaryMetaText(response) : null;
   // 요약 줄이 없으면(서버가 읽은 줄 0건 등) 만든 요약이 없으니 'AI 요약 … 보고 만든 것' 대신 그 사유만.
   const empty = response && lines.length === 0 ? summaryEmptyText(response) : null;
-  // 받아 둔 결과가 없어 요약에 들지 않은 바깥 출처 — 목록에는 보일 수 있으니 이름을 적음(실패를 '없음'으로 보이지 않게).
+  // 받지 못해(받아 둔 결과가 없거나 막 실패함) 요약에 들지 않은 출처 — 목록에는 보일 수 있으니 이름을 적음(실패를 '없음'으로 보이지 않게).
   const offline = response ? summaryOfflineText(response) : null;
   // 단추가 잠긴 까닭(앞서 다른 기간·탭에서 누른 요약을 만드는 중) — 이 기간의 요약을 읽는 중이거나 받았으면 그 글이 먼저.
   const waitingShown = waiting && phase !== "loading" && phase !== "done";

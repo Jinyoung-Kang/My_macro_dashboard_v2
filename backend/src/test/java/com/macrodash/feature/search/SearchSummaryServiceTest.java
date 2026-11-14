@@ -828,6 +828,32 @@ class SearchSummaryServiceTest {
     }
 
     @Test
+    @DisplayName("QA-427 검토: 실패 캐시가 살아 있는 동안 실패한 출처(error)도 offlineSources에 — 막 실패한 출처가 '요약에 들지 않은 출처'에서 조용히 빠지지 않음")
+    void qa427FailedSourcesAreListedToo() {
+        // '지금 새로 받기'에서 Bing이 실패한 직후(수집기 실패 캐시 60초 안)에 요약하면 그 출처는 offline이 아니라 error.
+        feedReturns("news", feed(recent(3), List.of(source("google_en", "구글 뉴스(영어)", "offline"), source("bing", "Bing 뉴스", "error"),
+                source("event_news", "사건 뉴스(저장본)", "ok"), source("watch", "관심 대상 수집", "empty"),
+                source("wire", "속보(Financial Juice)", "skipped"))));
+        primaryReturns(geminiOk(ONE_LINE));
+
+        Map<String, Object> made = service().summarize(KEY, "news", "30d", OWNER);
+
+        assertThat(made.get("available")).isEqualTo(true);
+        assertThat(made.get("basedOn")).isEqualTo(3);
+        assertThat(made.get("offlineSources")).isEqualTo(List.of("구글 뉴스(영어)", "Bing 뉴스"));
+
+        // 그 출처 때문에 고른 기간에 줄이 없으면 '받아 둔 자료가 없음'(빈 요약)이 아니라 stale — 저장본을 읽는 출처의 실패도 같음('외부'라고 하지 않음).
+        feedReturns("news", feed(List.of(), List.of(source("bing", "Bing 뉴스", "error"), source("event_news", "사건 뉴스(저장본)", "error"))));
+
+        Map<String, Object> stale = service().summarize(KEY, "news", "30d", OWNER);
+
+        assertThat(stale.get("available")).isEqualTo(false);
+        assertThat(stale.get("reason")).isEqualTo("stale");
+        assertThat((String) stale.get("message")).startsWith("출처 2곳");
+        assertThat(stale.get("offlineSources")).isEqualTo(List.of("Bing 뉴스", "사건 뉴스(저장본)"));
+    }
+
+    @Test
     @DisplayName("QA-428 실패 안내(message·429 사유)는 사유 본문만 — 화면이 앞에 붙이는 '요약하지 못했습니다'가 한 번만 나오게(모든 사유)")
     void qa428FailureMessagesCarryOnlyTheDetail() {
         feedReturns("news", feed(recent(3)));
