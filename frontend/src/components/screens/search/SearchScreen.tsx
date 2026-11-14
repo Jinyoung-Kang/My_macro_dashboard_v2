@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { Banner, PageHeader } from "@/components/ui";
 import { DialogScope } from "@/components/ui/Dialog";
 import { useInfoSearchUrl } from "@/hooks/useInfoSearch";
@@ -71,6 +72,8 @@ export function SearchScreen() {
         ) : (
           <SearchHome watch={watch} owner={owner} demo={demo} onOpen={openEntity} />
         )}
+        {/* 맨 위로(사용자 요청 2026-11-15) — 범위 안이라 어두운 토큰, 휴대폰 미리보기 서랍(z-30)을 덮지 않게 그 아래 층. */}
+        <ScrollTopButton layer="z-20" />
       </DialogScope>
     </div>
   );

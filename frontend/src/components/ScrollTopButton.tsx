@@ -17,10 +17,13 @@ function offset(target: Window | HTMLElement): number {
 }
 
 /**
- * 맨 위로(TOP) 단추 — 사용자 요청(2026-11-03, 모의 매매 화면). 조금 내려가면 오른쪽 아래에 나타나고, 누르면 본문과 창을 모두 맨 위로 부드럽게
- * 올립니다(움직임을 줄이는 설정이면 바로). 휴대폰에서는 아래 탭 막대 위에 둡니다.
+ * 맨 위로(TOP) 단추 — 사용자 요청(2026-11-03, 모의 매매 화면 · 2026-11-15 정보 검색). 조금 내려가면 오른쪽 아래에 나타나고, 누르면 본문과 창을
+ * 모두 맨 위로 부드럽게 올립니다(움직임을 줄이는 설정이면 바로). 휴대폰에서는 아래 탭 막대 위에 둡니다.
+ *
+ * @param layer 층(z-index 클래스) — 기본 z-40. 화면에 같은 자리를 쓰는 고정 칸이 있으면 그보다 낮춰 덮지 않게 합니다(정보 검색은 휴대폰
+ *   미리보기 서랍 z-30 아래인 z-20). 클래스 이름은 소스에 글자 그대로 적어야 Tailwind가 만듭니다.
  */
-export function ScrollTopButton() {
+export function ScrollTopButton({ layer = "z-40" }: { layer?: string } = {}) {
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
@@ -41,7 +44,7 @@ export function ScrollTopButton() {
       type="button"
       onClick={toTop}
       aria-label="맨 위로"
-      className="fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 z-40 inline-flex items-center gap-1 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-bright shadow-lg hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6"
+      className={`fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 ${layer} inline-flex items-center gap-1 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-bright shadow-lg hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6`}
     >
       <ChevronUpIcon size={14} />
       TOP

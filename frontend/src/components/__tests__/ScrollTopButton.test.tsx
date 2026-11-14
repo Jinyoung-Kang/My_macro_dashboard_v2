@@ -51,6 +51,18 @@ describe("ScrollTopButton", () => {
     expect(main.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 
+  it("층(z-index)은 기본 z-40이고 화면이 낮출 수 있다 — 정보 검색은 휴대폰 미리보기 서랍(z-30) 아래", () => {
+    const { unmount } = render(<ScrollTopButton />);
+    scrollMain(500);
+    expect(screen.getByRole("button", { name: "맨 위로" }).className).toContain("z-40");
+    unmount();
+    render(<ScrollTopButton layer="z-20" />);
+    scrollMain(600);
+    const lowered = screen.getByRole("button", { name: "맨 위로" }).className;
+    expect(lowered).toContain("z-20");
+    expect(lowered).not.toContain("z-40");
+  });
+
   it("움직임을 줄이는 설정이면 바로 올린다", () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
     render(<ScrollTopButton />);

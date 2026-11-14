@@ -108,6 +108,26 @@ describe("첫 화면", () => {
     expect([...new Set(sharedCalls())].sort()).toEqual([endpoints.search.recent, endpoints.search.watch].sort());
   });
 
+  it("본문이 내려가면 TOP 단추가 어두운 범위 안에 나타나고, 휴대폰 미리보기 서랍(z-30)보다 아래 층(사용자 요청 2026-11-15)", () => {
+    const main = document.createElement("main");
+    main.id = "main";
+    document.body.appendChild(main);
+    try {
+      const { container } = renderScreen();
+      expect(screen.queryByRole("button", { name: "맨 위로" })).toBeNull();
+      act(() => {
+        main.scrollTop = 900;
+        main.dispatchEvent(new Event("scroll"));
+      });
+      const top = screen.getByRole("button", { name: "맨 위로" });
+      expect(top.textContent).toContain("TOP");
+      expect(container.querySelector('[data-scope="search"]')?.contains(top)).toBe(true);
+      expect(top.className).toContain("z-20");
+    } finally {
+      main.remove();
+    }
+  });
+
   it("주소의 대상 키 모양이 틀리면 부르지 않고 그렇게 말한다", () => {
     renderScreen(MEMBER, "/search?e=us:nvda");
     expect(screen.getByText(/대상 키의 모양이 맞지 않습니다/)).toBeTruthy();
