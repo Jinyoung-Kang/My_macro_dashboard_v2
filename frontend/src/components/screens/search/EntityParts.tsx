@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { EMPTY } from "@/lib/format";
 import { entityKindLabel, entityShortcuts, identifierChips } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
@@ -12,17 +13,20 @@ function visibleAliases(entity: SearchEntity): string[] {
 }
 
 /**
- * 대상 머리 — 종류 아이콘·이름·식별자·별칭 꼬리표와 다른 화면 바로가기(종목 상세·기관 상세). 차트·시세는 그리지 않습니다(지시문 §4.2).
+ * 대상 머리 — 종류 아이콘·이름·식별자·별칭 꼬리표와 다른 화면 바로가기(종목 상세·기관 상세), 관심 대상 등록 단추(action). 차트·시세는 그리지 않습니다(지시문 §4.2).
  * 대상 풀기 응답이 아직 없거나 풀지 못했으면 키만 보입니다.
  */
 export function EntityHeader({
   entityKey,
   entity,
   kind,
+  action,
 }: {
   entityKey: string;
   entity: SearchEntity | null;
   kind: SearchEntityKind | null;
+  /** 머리 오른쪽의 단추(관심 대상 등록·해제). */
+  action?: ReactNode;
 }) {
   const name = entity?.name ?? entityKey.replace(/^topic:/, "");
   const shortcuts = entity ? entityShortcuts(entity) : [];
@@ -51,14 +55,19 @@ export function EntityHeader({
           <p className="mt-1 text-xs text-text-3">{entityKey}</p>
         )}
       </div>
-      {shortcuts.length > 0 ? (
-        <nav aria-label="바로가기" className="flex flex-wrap gap-3 text-sm">
-          {shortcuts.map((shortcut) => (
-            <Link key={shortcut.href} href={shortcut.href} className={LINK}>
-              {shortcut.label}
-            </Link>
-          ))}
-        </nav>
+      {shortcuts.length > 0 || action ? (
+        <div className="flex flex-wrap items-start gap-3">
+          {shortcuts.length > 0 ? (
+            <nav aria-label="바로가기" className="flex flex-wrap gap-3 text-sm">
+              {shortcuts.map((shortcut) => (
+                <Link key={shortcut.href} href={shortcut.href} className={LINK}>
+                  {shortcut.label}
+                </Link>
+              ))}
+            </nav>
+          ) : null}
+          {action}
+        </div>
       ) : null}
     </header>
   );

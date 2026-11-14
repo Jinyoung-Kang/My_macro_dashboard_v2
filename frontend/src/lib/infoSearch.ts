@@ -2,11 +2,12 @@
  * 정보 검색(/search — ADR 0041)의 화면 규칙 — React를 모르는 순수 함수(ADR 0004).
  *
  * 계약(docs/specs/2026-11-14-info-search-contract.md)의 화면 몫만 둡니다: 주소 상태(?q= · ?e=&tab=&range=), 대상 키 모양 검사(주소로 넘어가기 전),
- * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드.
+ * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드,
+ * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기).
  * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
  */
 import { holderQuery, institutionHref, stockHref } from "./detail";
-import { EMPTY } from "./format";
+import { EMPTY, formatKst } from "./format";
 import type { ReaderEntry } from "./info";
 import type {
   SearchCandidate,
@@ -15,9 +16,12 @@ import type {
   SearchFeedItem,
   SearchFeedResponse,
   SearchFeedTab,
+  SearchExcludeSeed,
   SearchLink,
   SearchRange,
   SearchSourceStatus,
+  SearchWatchItem,
+  SearchWatchLimits,
 } from "./types";
 
 // ------------------------------------------------------------------ 탭·기간
@@ -445,6 +449,8 @@ const SOURCE_LABELS: Record<string, string> = {
   info: "수집 글",
   guru: "거장 견해",
   wire: "속보",
+  feeds: "보도자료·경제지 피드",
+  watch: "관심 대상 수집",
 };
 
 export function sourceLabel(source: string, statuses: readonly SearchSourceStatus[] = []): string {
@@ -677,4 +683,170 @@ export function readerOfFeedItem(item: SearchFeedItem, label: string): ReaderEnt
     text: null,
     note: "운영 서버가 받아 둔 글입니다 — 본문이 없으면 원문에서 보세요.",
   };
+}
+
+// ------------------------------------------------------------------ 관심 대상(단계 3 — 계약 §6-4)
+
+/** 등록할 키 — 풀린 대상의 대표 키(계약 §2 — 상장사 us:/kr:, 13F 기관 cik:, 그 밖 wd:, 주제 topic:), 풀지 못했으면 주소의 키. */
+export function watchKeyOf(entityKey: string, entity: Pick<SearchEntity, "key"> | null | undefined): string {
+  return entity && isEntityKey(entity.key) ? entity.key : entityKey;
+}
+
+/** 이 대상이 내 관심 대상인가 — 주소의 키나 풀린 대상의 대표 키와 같은 줄(wd:로 열어도 us: 대표 키로 등록한 줄을 찾음). */
+export function findWatch(
+  items: readonly SearchWatchItem[],
+  entityKey: string,
+  entity: Pick<SearchEntity, "key"> | null | undefined,
+): SearchWatchItem | null {
+  return items.find((item) => item.key === entityKey || (entity ? item.key === entity.key : false)) ?? null;
+}
+
+const NEW_COUNT_MAX = 999;
+
+/** 새 글 수 꼬리표 — 1건 이상일 때만 '새 글 n'(999 넘으면 '999+'). 모르면(null) 0으로 채우지 않고 null — 화면은 그리지 않습니다. */
+export function newCountText(count: number | null | undefined): string | null {
+  if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) return null;
+  return `새 글 ${count > NEW_COUNT_MAX ? `${NEW_COUNT_MAX}+` : Math.floor(count)}`;
+}
+
+const countOrEmpty = (value: number | null | undefined) => (typeof value === "number" && Number.isFinite(value) ? String(value) : EMPTY);
+
+/** 상한 한 줄 — '내 목록 2 / 10 · 서버 전체 40 / 100'. 모르는 값은 '—', 상한 칸이 없으면 null. */
+export function watchLimitsText(limits: SearchWatchLimits | null | undefined): string | null {
+  if (!limits) return null;
+  return `내 목록 ${countOrEmpty(limits.mine)} / ${countOrEmpty(limits.max)} · 서버 전체 ${countOrEmpty(limits.serverUsed)} / ${countOrEmpty(limits.serverMax)}`;
+}
+
+/**
+ * 정기 수집 안내(지시문 §5 — 로컬·QA에서는 등록·조회만 되고 정기 수집은 서버에서만). 켜진 곳이면 null, 꺼졌으면 그렇다고, 모르면 모른다고.
+ */
+export function watchCollectingNote(collecting: boolean | null | undefined): string | null {
+  if (collecting === true) return null;
+  if (collecting === false) return "정기 수집은 서버에서만 돕니다 — 이 환경에서는 등록·조회만 되고 새 글은 모이지 않습니다.";
+  return "정기 수집이 켜져 있는지 확인하지 못했습니다.";
+}
+
+/** 오류 응답의 상태 코드(lib/api의 ApiError — 모양으로 읽어 화면 시험의 가짜 api와도 맞음). */
+function statusOf(error: unknown): number | null {
+  if (typeof error !== "object" || error === null || !("status" in error)) return null;
+  const status = Number((error as { status: unknown }).status);
+  return Number.isFinite(status) ? status : null;
+}
+
+/** 서버가 사유를 주지 않았을 때 lib/api가 만드는 글. */
+const GENERIC_FAILURE = /^요청 실패 \(HTTP \d+\)$/;
+
+/**
+ * 쓰기(관심 대상 등록·해제, 제외 매체 더하기·지우기)의 실패 문구 — 상한·중복(409)·입력(400)은 서버가 준 사유를 그대로 글로 보이고,
+ * 사유가 없으면 conflict(409)·일반 문구. 권한(403 — 데모 등)은 서버 사유, 없으면 '이 계정으로는 할 수 없습니다'.
+ */
+export function writeErrorText(error: unknown, conflict: string): string {
+  if (!(error instanceof Error)) return "알 수 없는 오류";
+  const status = statusOf(error);
+  const generic = !error.message || GENERIC_FAILURE.test(error.message);
+  if (status === 409 && generic) return conflict;
+  if (status === 403 && generic) return "이 계정으로는 할 수 없습니다";
+  return error.message || "알 수 없는 오류";
+}
+
+/** '지금 새로 받기' 뒤의 한 줄 — 서버가 준 글(10분 상한 등)이 있으면 그것, 없으면 받은 시각(KST). */
+export function refreshNoteText(feed: { refreshNote?: string | null; fetchedAt?: string | null }): string {
+  if (feed.refreshNote) return feed.refreshNote;
+  return feed.fetchedAt ? `새로 받았습니다 — 받은 시각 ${formatKst(feed.fetchedAt)} KST` : "새로 받았습니다";
+}
+
+// ------------------------------------------------------------------ 매체 제외 목록(단계 3 — 계약 §6-2)
+
+export type ExcludeKind = "domain" | "name";
+
+const EXCLUDE_KIND_LABELS: Record<string, string> = { domain: "도메인", name: "이름" };
+
+export function excludeKindLabel(kind: string): string {
+  return EXCLUDE_KIND_LABELS[kind] ?? kind;
+}
+
+const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const NAME_MAX = 80;
+const NOTE_MAX = 200;
+
+/** 붙여 넣은 주소·호스트 → 소문자 호스트(https:// 같은 앞부분·경로·포트·끝 점을 뗌). 국제화 도메인은 ASCII(punycode)로. */
+function hostOf(raw: string): string {
+  const host = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
+    .split(/[/?#]/)[0]
+    .replace(/:\d+$/, "")
+    .replace(/\.$/, "");
+  return asciiHost(host);
+}
+
+/**
+ * 유니코드 표기 호스트 → punycode(백엔드 IDN.toASCII와 같은 결과 — 브라우저 URL 파서가 바꿈). ASCII 호스트와, 공백·'@'·역슬래시·':'·'%'가
+ * 든 값은 그대로 둡니다(아래 모양 검사가 거절 — URL 파서가 사용자 칸·퍼센트 표기를 풀어 다른 호스트가 되지 않게).
+ */
+function asciiHost(host: string): string {
+  if (!/[\u0080-\uffff]/.test(host) || /[\s@\\:%]/.test(host)) return host;
+  try {
+    return new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return host;
+  }
+}
+
+function isDomain(host: string): boolean {
+  if (!host || host.length > 253) return false;
+  const labels = host.split(".");
+  return labels.length >= 2 && labels.every((label) => DOMAIN_LABEL.test(label));
+}
+
+export type ExcludeDraft =
+  | { ok: true; body: { kind: ExcludeKind; value: string; note: string | null } }
+  | { ok: false; message: string };
+
+/**
+ * 더할 제외 매체(운영자) — 도메인은 소문자 호스트(주소를 붙여 넣어도 호스트만, 국제화 도메인은 punycode — 대조는 서버가 점 경계로),
+ * 이름은 앞뒤 공백만 뗌(가운데 공백은 그대로 — 백엔드·수집기가 그 값으로 대소문자 무시 완전 일치 대조). 메모는 비면 null. 이미 있는 값(처음 값·더한 것, 같은 종류·대소문자 무시)은 다시 보내지 않습니다.
+ * 서버가 같은 검사를 다시 합니다 — 이것은 틀린 값으로 400을 부르지 않게 하는 앞단입니다.
+ */
+export function excludeDraft(
+  kind: ExcludeKind,
+  value: string,
+  note: string | null | undefined,
+  existing: readonly { kind: string; value: string }[],
+): ExcludeDraft {
+  let clean: string;
+  if (kind === "domain") {
+    clean = hostOf(value);
+    if (!isDomain(clean)) return { ok: false, message: "도메인 모양이 아닙니다 — 예: example.com" };
+  } else {
+    clean = value.trim();
+    if (!clean) return { ok: false, message: "매체 이름을 넣어 주세요" };
+    if (Array.from(clean).length > NAME_MAX) return { ok: false, message: `매체 이름은 ${NAME_MAX}자까지입니다` };
+    if (CONTROL.test(clean)) return { ok: false, message: "매체 이름에 쓸 수 없는 글자가 있습니다" };
+  }
+  const lowered = clean.toLowerCase();
+  if (existing.some((row) => row.kind === kind && row.value.toLowerCase() === lowered)) return { ok: false, message: "이미 목록에 있습니다" };
+  const memo = (note ?? "").replace(/\s+/g, " ").trim();
+  if (Array.from(memo).length > NOTE_MAX) return { ok: false, message: `메모는 ${NOTE_MAX}자까지입니다` };
+  return { ok: true, body: { kind, value: clean, note: memo || null } };
+}
+
+export type ExcludeSeedGroup = { group: string; items: { kind: string; value: string }[] };
+
+const OTHER_GROUP = "그 밖";
+
+/** 처음 값을 묶음별로(받은 순서) — 묶음이 없는 값은 '그 밖'. */
+export function excludeSeedGroups(seed: readonly SearchExcludeSeed[]): ExcludeSeedGroup[] {
+  const groups = new Map<string, ExcludeSeedGroup>();
+  for (const row of seed) {
+    const name = row.group || OTHER_GROUP;
+    let group = groups.get(name);
+    if (!group) {
+      group = { group: name, items: [] };
+      groups.set(name, group);
+    }
+    group.items.push({ kind: row.kind, value: row.value });
+  }
+  return [...groups.values()];
 }

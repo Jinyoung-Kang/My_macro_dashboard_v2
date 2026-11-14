@@ -2,7 +2,7 @@
  * 정보 검색 화면의 훅(hooks/useInfoSearch.ts).
  *  - 주소가 상태: 대상을 바꾸면 기록에 쌓고(뒤로 가기), 탭·기간은 바꿔 씀, 뒤로 가기면 앞 상태로
  *  - 치는 동안의 후보: 멈춘 뒤 한 번만 묻고(앞 요청은 취소), 비면 묻지 않음, 수집기에 닿지 못하면 그 말
- *  - 결과: 받는 중(pending)이면 몇 초 뒤 다시 읽고, 다 받으면 멈춤
+ *  - 결과: 받는 중(pending)이면 몇 초 뒤 다시 읽고, 다 받으면 멈춤 · '지금 새로 받기'는 누를 때 한 번만 refresh=1(단계 3)
  *  - '/'로 검색창 — 다른 입력칸에서 칠 때는 아님
  * 응답은 모두 합성 값입니다.
  */
@@ -157,6 +157,64 @@ describe("useInfoSearchFeed", () => {
       await vi.advanceTimersByTimeAsync(FEED_PENDING_REFRESH_MS * 3);
     });
     expect(api.apiGetShared).toHaveBeenCalledTimes(2);
+  });
+
+  it("'지금 새로 받기'는 누를 때 한 번만 refresh=1로 부르고 그 응답을 보이며, 뒤이은 보통 읽기(받는 중 다시 읽기)는 refresh 없이 간다", async () => {
+    vi.useFakeTimers();
+    const path = endpoints.search.feed("us:NVDA", "timeline");
+    const refreshPath = endpoints.search.feed("us:NVDA", "timeline", true);
+    api.apiGetShared
+      .mockResolvedValueOnce({ available: true, items: [], pending: false, fetchedAt: "a" })
+      .mockResolvedValue({ available: true, items: [], pending: false, fetchedAt: "c" });
+    api.apiGet.mockResolvedValueOnce({ available: true, items: [], pending: true, fetchedAt: "b", refreshNote: "새로 받음" });
+    const { result } = renderHook(() => useInfoSearchFeed(path, refreshPath));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(result.current.data?.fetchedAt).toBe("a");
+    expect(result.current.refreshed).toBeNull();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    expect(api.apiGet).toHaveBeenCalledWith(refreshPath);
+    expect(result.current.data?.fetchedAt).toBe("b");
+    expect(result.current.refreshed?.refreshNote).toBe("새로 받음");
+
+    // 새로 받은 응답이 받는 중이면 몇 초 뒤 보통 경로로 다시 읽고(refresh 없음), 그 응답이 보입니다.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_PENDING_REFRESH_MS + 10);
+    });
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    expect(api.apiGetShared.mock.calls.every(([called]) => called === path)).toBe(true);
+    expect(result.current.data?.fetchedAt).toBe("c");
+    expect(result.current.refreshed).toBeNull();
+  });
+
+  it("새로 받기 응답이 available:false(수집기에 닿지 못함)면 보이던 묶음을 그대로 두고 실패 사유를 낸다", async () => {
+    const path = endpoints.search.feed("us:NVDA", "timeline");
+    const refreshPath = endpoints.search.feed("us:NVDA", "timeline", true);
+    api.apiGetShared.mockResolvedValue({ available: true, items: [], pending: false, fetchedAt: "a" });
+    api.apiGet.mockResolvedValueOnce({ available: false, message: "수집기에서 응답을 받지 못했습니다.", refreshNote: null });
+    const { result } = renderHook(() => useInfoSearchFeed(path, refreshPath));
+    await waitFor(() => expect(result.current.data?.fetchedAt).toBe("a"));
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(result.current.data?.available).toBe(true);
+    expect(result.current.data?.fetchedAt).toBe("a");
+    expect(result.current.refreshed).toBeNull();
+    expect(result.current.refreshError).toBe("수집기에서 응답을 받지 못했습니다.");
+  });
+
+  it("새로 받기 경로가 없으면(데모) 부르지 않는다", async () => {
+    api.apiGetShared.mockResolvedValue({ available: true, items: [], pending: false });
+    const { result } = renderHook(() => useInfoSearchFeed(endpoints.search.feed("us:NVDA", "news")));
+    await act(async () => {
+      await result.current.refresh();
+    });
+    expect(api.apiGet).not.toHaveBeenCalled();
   });
 });
 

@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { Banner, PageHeader } from "@/components/ui";
 import { DialogScope } from "@/components/ui/Dialog";
 import { useInfoSearchUrl } from "@/hooks/useInfoSearch";
+import { useInfoSearchWatch } from "@/hooks/useInfoSearchWatch";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo, isOwner } from "@/lib/access";
 import { candidateTarget, type SearchTarget } from "@/lib/infoSearch";
@@ -11,7 +12,7 @@ import type { SearchCandidate } from "@/lib/types";
 import { CandidateList } from "./CandidateList";
 import { EntityView } from "./EntityView";
 import { SearchBox } from "./SearchBox";
-import { SearchIntro } from "./SearchIntro";
+import { SearchHome } from "./SearchHome";
 
 /** 이 화면의 범위 표지 — globals.css의 [data-scope="search"]가 늘 어두운 토큰을 다시 정합니다. 이 화면에서 연 대화상자도 같은 표지. */
 const SCOPE = "search";
@@ -22,11 +23,16 @@ const SCOPE = "search";
  *
  * 상태는 주소에 있습니다: `?q=`(후보 보기) · `?e=&tab=&range=`(대상). 대상을 바꾸면 기록에 쌓고 탭·기간은 바꿔 씁니다(hooks/useInfoSearch).
  * 내용 영역은 앱 테마와 상관없이 늘 어둡고(범위 토큰), 셸(왼쪽 메뉴·상단바)은 앱 테마 그대로입니다. 차트·시세는 그리지 않습니다.
+ *
+ * 관심 대상(단계 3 — 계약 §6-4)은 이 화면이 한 번 읽어 첫 화면·대상 화면의 왼쪽 칸과 대상 머리의 등록 단추가 함께 씁니다.
+ * 데모 열람은 등록하지 못해 읽지도 않습니다.
  */
 export function SearchScreen() {
   const user = useSessionUser();
   const owner = isOwner(user);
+  const demo = isDemo(user);
   const { state, openEntity, replaceEntity, openQuery, setTab, setRange } = useInfoSearchUrl();
+  const watch = useInfoSearchWatch(!demo);
 
   const go = useCallback(
     (target: SearchTarget) => {
@@ -53,15 +59,18 @@ export function SearchScreen() {
             tab={state.tab}
             range={state.range}
             owner={owner}
+            demo={demo}
+            watch={watch}
             onTab={setTab}
             onRange={setRange}
             onTarget={go}
+            onOpen={openEntity}
           />
         ) : state.q ? (
           <CandidateList key={state.q} query={state.q} onAutoOpen={replaceEntity} onChoose={chooseCandidate} />
-        ) : !state.badKey ? (
-          <SearchIntro owner={owner} demo={isDemo(user)} />
-        ) : null}
+        ) : (
+          <SearchHome watch={watch} owner={owner} demo={demo} onOpen={openEntity} />
+        )}
       </DialogScope>
     </div>
   );

@@ -1,6 +1,6 @@
 /**
- * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed.
- * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
+ * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes.
+ * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
  * 수집기에 닿지 못하면 `{available: false, message}`만 보냅니다. 모르는 값은 null(화면은 '—', 0으로 채우지 않음). 시각은 UTC ISO.
  */
 
@@ -136,4 +136,51 @@ export type SearchFeedResponse = SearchRelay & {
   olderOnlyLatest?: string | null;
   pending?: boolean;
   fetchedAt?: string | null;
+  /**
+   * '지금 새로 받기'(refresh=1) 응답에 서버가 붙이는 한 줄 — 사용자당 10분 상한에 걸려 캐시를 그대로 줬을 때 등(계약 §6-4 '상태 글').
+   * 없으면 화면은 받은 시각만 적습니다.
+   */
+  refreshNote?: string | null;
 };
+
+// ------------------------------------------------------------------ 단계 3 — 관심 대상·첫 화면·매체 제외(계약 §6-4)
+
+/** 내 관심 대상 한 줄. newCount = 마지막으로 본 뒤 처음 받은 글 수(모르면 null — 0으로 채우지 않음). */
+export type SearchWatchItem = {
+  id: number;
+  /** 대표 키(계약 §2). */
+  key: string;
+  kind: SearchEntityKind | string;
+  name: string;
+  createdAt: string | null;
+  lastSeenAt: string | null;
+  newCount: number | null;
+};
+
+/** 상한 — 내 목록(회원 10·운영자 50)과 서버 전체의 서로 다른 대상(100). */
+export type SearchWatchLimits = { mine: number | null; max: number | null; serverUsed: number | null; serverMax: number | null };
+
+/** GET /api/search/watch. collecting = 서버 정기 수집이 켜진 곳인지(로컬·QA는 false, 모르면 null). */
+export type SearchWatchResponse = SearchRelay & {
+  items?: SearchWatchItem[];
+  limits?: SearchWatchLimits | null;
+  collecting?: boolean | null;
+};
+
+/**
+ * GET /api/search/recent — 새 피드 묶음 최근 글(운영자는 속보를 더함). errors = 읽지 못한 저장본(feeds·wire)과 사유 —
+ * 있으면 빈 목록은 '없음'이 아니라 '모름'입니다.
+ */
+export type SearchRecentResponse = SearchRelay & { items?: SearchFeedItem[]; errors?: Record<string, string> | null; fetchedAt?: string | null };
+
+/** 매체 제외 종류 — 도메인(점 경계로 대조)·이름(대소문자 무시 완전 일치). */
+export type SearchExcludeKind = "domain" | "name";
+
+/** 코드에 둔 처음 값 — 묶음(중국 국가·당 매체·홍콩 등)과 함께. */
+export type SearchExcludeSeed = { kind: SearchExcludeKind | string; value: string; group: string | null };
+
+/** 운영자가 더한 제외 매체(백엔드 표 search_media_excludes). */
+export type SearchExcludeAdded = { id: number; kind: SearchExcludeKind | string; value: string; note: string | null; createdAt: string | null };
+
+/** GET /api/search/excludes. */
+export type SearchExcludesResponse = SearchRelay & { seed?: SearchExcludeSeed[]; added?: SearchExcludeAdded[] };

@@ -38,12 +38,30 @@ import {
   rangeStart,
   readerOfFeedItem,
   searchHref,
+  sourceLabel,
   sourceStatusView,
   tabFor,
   tabsFor,
   topicKey,
+  excludeDraft,
+  excludeKindLabel,
+  excludeSeedGroups,
+  findWatch,
+  newCountText,
+  refreshNoteText,
+  watchCollectingNote,
+  watchKeyOf,
+  watchLimitsText,
+  writeErrorText,
 } from "../infoSearch";
-import type { SearchCandidate, SearchEntity, SearchFeedItem, SearchFeedResponse, SearchSourceStatus } from "../types";
+import type {
+  SearchCandidate,
+  SearchEntity,
+  SearchFeedItem,
+  SearchFeedResponse,
+  SearchSourceStatus,
+  SearchWatchItem,
+} from "../types";
 
 function item(over: Partial<SearchFeedItem> = {}): SearchFeedItem {
   return {
@@ -468,5 +486,143 @@ describe("키보드·링크", () => {
     expect(entry).toMatchObject({
       key: "search:z", sourceLabel: "수집 글", time: "2026-11-14 09:30 KST", itemId: "0123456789abcdef01234567", hasBody: true, url: null,
     });
+  });
+});
+
+// ------------------------------------------------------------------ 단계 3 — 관심 대상·새 피드 묶음·매체 제외(계약 §6)
+
+const watchItem = (over: Partial<SearchWatchItem> = {}): SearchWatchItem => ({
+  id: 7, key: "us:NVDA", kind: "company", name: "엔비디아", createdAt: "2026-11-14T00:00:00+00:00", lastSeenAt: null, newCount: 0, ...over,
+});
+
+describe("관심 대상(계약 §6-4)", () => {
+  it("등록은 대표 키로 — 풀린 대상의 key, 풀지 못했으면 주소의 키", () => {
+    expect(watchKeyOf("wd:Q182477", entity({ key: "us:NVDA" }))).toBe("us:NVDA");
+    expect(watchKeyOf("topic:AI 반도체", null)).toBe("topic:AI 반도체");
+    // 풀린 대상의 키가 모양이 틀리면(있을 수 없지만) 주소의 키로 — 서버의 400을 부르지 않게.
+    expect(watchKeyOf("us:NVDA", entity({ key: "bad key" }))).toBe("us:NVDA");
+  });
+
+  it("이 대상이 내 관심 대상인가 — 주소의 키나 대표 키가 같은 줄", () => {
+    const items = [watchItem({ id: 7, key: "us:NVDA" }), watchItem({ id: 8, key: "cik:0001067983", kind: "institution", name: "버크셔" })];
+    expect(findWatch(items, "us:NVDA", null)?.id).toBe(7);
+    expect(findWatch(items, "wd:Q182477", entity({ key: "us:NVDA" }))?.id).toBe(7);
+    expect(findWatch(items, "wd:Q1", entity({ key: "wd:Q1" }))).toBeNull();
+    expect(findWatch([], "us:NVDA", null)).toBeNull();
+  });
+
+  it("새 글 수 꼬리표는 1건 이상일 때만 — 모르면(null) 0으로 채우지 않고 그리지 않음", () => {
+    expect(newCountText(3)).toBe("새 글 3");
+    expect(newCountText(1200)).toBe("새 글 999+");
+    expect(newCountText(0)).toBeNull();
+    expect(newCountText(null)).toBeNull();
+    expect(newCountText(undefined)).toBeNull();
+    expect(newCountText(Number.NaN)).toBeNull();
+  });
+
+  it("상한 한 줄 — 모르는 값은 '—'", () => {
+    expect(watchLimitsText({ mine: 2, max: 10, serverUsed: 40, serverMax: 100 })).toBe("내 목록 2 / 10 · 서버 전체 40 / 100");
+    expect(watchLimitsText({ mine: 2, max: 50, serverUsed: null, serverMax: 100 })).toBe("내 목록 2 / 50 · 서버 전체 — / 100");
+    expect(watchLimitsText(null)).toBeNull();
+  });
+
+  it("정기 수집 안내 — 꺼진 곳(로컬·QA)이면 서버에서만 돈다고, 모르면 모른다고, 켜졌으면 없음", () => {
+    expect(watchCollectingNote(false)).toContain("정기 수집은 서버에서만 돕니다");
+    expect(watchCollectingNote(null)).toContain("확인하지 못했습니다");
+    expect(watchCollectingNote(undefined)).toContain("확인하지 못했습니다");
+    expect(watchCollectingNote(true)).toBeNull();
+  });
+
+  it("쓰기 실패 문구 — 409·400은 서버 사유 그대로(없으면 대신하는 글), 그 밖은 오류 글", () => {
+    const failed = (status: number, message: string) => Object.assign(new Error(message), { status });
+    expect(writeErrorText(failed(409, "관심 대상은 회원 10개까지입니다"), "상한")).toBe("관심 대상은 회원 10개까지입니다");
+    expect(writeErrorText(failed(409, "요청 실패 (HTTP 409)"), "관심 대상 상한을 넘었습니다")).toBe("관심 대상 상한을 넘었습니다");
+    expect(writeErrorText(failed(400, "도메인 모양이 아닙니다"), "x")).toBe("도메인 모양이 아닙니다");
+    expect(writeErrorText(failed(403, "요청 실패 (HTTP 403)"), "x")).toBe("이 계정으로는 할 수 없습니다");
+    expect(writeErrorText(failed(0, "백엔드 API(http://x)에 연결하지 못했습니다"), "x")).toBe("백엔드 API(http://x)에 연결하지 못했습니다");
+    expect(writeErrorText("문자열", "x")).toBe("알 수 없는 오류");
+  });
+
+  it("'지금 새로 받기' 뒤의 한 줄 — 서버가 준 글(10분 상한 등)이 있으면 그것, 없으면 받은 시각", () => {
+    expect(refreshNoteText({ refreshNote: "10분에 한 번만 새로 받습니다 — 저장해 둔 결과입니다", fetchedAt: "2026-11-14T01:00:00+00:00" }))
+      .toBe("10분에 한 번만 새로 받습니다 — 저장해 둔 결과입니다");
+    expect(refreshNoteText({ fetchedAt: "2026-11-14T01:00:00+00:00" })).toBe("새로 받았습니다 — 받은 시각 2026-11-14 10:00 KST");
+    expect(refreshNoteText({ fetchedAt: null })).toBe("새로 받았습니다");
+  });
+
+  it("새 출처 이름 — 새 피드 묶음·관심 대상 수집", () => {
+    expect(sourceLabel("feeds")).toBe("보도자료·경제지 피드");
+    expect(sourceLabel("watch")).toBe("관심 대상 수집");
+  });
+});
+
+describe("매체 제외 목록(계약 §6-2·6-4)", () => {
+  const existing = [
+    { kind: "domain", value: "xinhuanet.com" },
+    { kind: "name", value: "Global Times" },
+  ];
+
+  it("도메인은 소문자 호스트로 — 주소를 붙여 넣어도 호스트만, 메모는 비면 null", () => {
+    expect(excludeDraft("domain", "  https://News.Example.COM:443/path?q=1 ", "  ", existing)).toEqual({
+      ok: true, body: { kind: "domain", value: "news.example.com", note: null },
+    });
+    expect(excludeDraft("domain", "example.org.", " 사용자 추가 ", existing)).toEqual({
+      ok: true, body: { kind: "domain", value: "example.org", note: "사용자 추가" },
+    });
+  });
+
+  it("국제화 도메인(유니코드 표기)은 서버처럼 ASCII(punycode)로 바꿔 보낸다", () => {
+    expect(excludeDraft("domain", "한겨레.한국", null, existing)).toEqual({
+      ok: true, body: { kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e", note: null },
+    });
+    expect(excludeDraft("domain", "https://Bücher.example/a", null, existing)).toEqual({
+      ok: true, body: { kind: "domain", value: "xn--bcher-kva.example", note: null },
+    });
+    // 이미 punycode로 넣은 값과 같으면 다시 더하지 않음
+    expect(excludeDraft("domain", "한겨레.한국", null, [{ kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e" }])).toEqual({
+      ok: false, message: "이미 목록에 있습니다",
+    });
+    // 모양이 틀린 유니코드 값은 그대로 거절
+    expect(excludeDraft("domain", "한겨레", null, existing)).toMatchObject({ ok: false });
+    expect(excludeDraft("domain", "사용자@한겨레.한국", null, existing)).toMatchObject({ ok: false });
+  });
+
+  it("도메인 모양이 아니면 거절", () => {
+    expect(excludeDraft("domain", "", null, existing)).toMatchObject({ ok: false });
+    expect(excludeDraft("domain", "localhost", null, existing)).toMatchObject({ ok: false });
+    expect(excludeDraft("domain", "bad_host.com", null, existing)).toMatchObject({ ok: false });
+    expect(excludeDraft("domain", "a b.com", null, existing)).toMatchObject({ ok: false });
+  });
+
+  it("이름은 앞뒤 공백만 떼고 그대로(대조는 서버가 대소문자 무시 완전 일치), 길이 상한은 서버와 같은 80자", () => {
+    // 가운데 공백은 그대로 — 백엔드(strip)·수집기(strip().casefold())가 그 값으로 대조합니다.
+    expect(excludeDraft("name", "  Some  Media ", null, existing)).toEqual({ ok: true, body: { kind: "name", value: "Some  Media", note: null } });
+    expect(excludeDraft("name", "x".repeat(80), null, existing)).toMatchObject({ ok: true });
+    expect(excludeDraft("name", "x".repeat(81), null, existing)).toMatchObject({ ok: false });
+    expect(excludeDraft("name", "a\u0001b", null, existing)).toMatchObject({ ok: false });
+    expect(excludeDraft("name", "   ", null, existing)).toMatchObject({ ok: false });
+  });
+
+  it("이미 있으면(처음 값·더한 것 — 대소문자 무시) 다시 더하지 않음", () => {
+    expect(excludeDraft("domain", "XINHUANET.com", null, existing)).toEqual({ ok: false, message: "이미 목록에 있습니다" });
+    expect(excludeDraft("name", "global times", null, existing)).toEqual({ ok: false, message: "이미 목록에 있습니다" });
+    // 종류가 다르면 다른 값입니다.
+    expect(excludeDraft("name", "xinhuanet.com", null, existing)).toMatchObject({ ok: true });
+  });
+
+  it("처음 값은 묶음별로(받은 순서), 묶음이 없으면 '그 밖'", () => {
+    expect(excludeSeedGroups([
+      { kind: "domain", value: "a.cn", group: "중국 국가·당 매체" },
+      { kind: "domain", value: "b.hk", group: "홍콩" },
+      { kind: "name", value: "C", group: "중국 국가·당 매체" },
+      { kind: "domain", value: "d.example", group: null },
+    ])).toEqual([
+      { group: "중국 국가·당 매체", items: [{ kind: "domain", value: "a.cn" }, { kind: "name", value: "C" }] },
+      { group: "홍콩", items: [{ kind: "domain", value: "b.hk" }] },
+      { group: "그 밖", items: [{ kind: "domain", value: "d.example" }] },
+    ]);
+    expect(excludeKindLabel("domain")).toBe("도메인");
+    expect(excludeKindLabel("name")).toBe("이름");
+    expect(excludeKindLabel("other")).toBe("other");
   });
 });

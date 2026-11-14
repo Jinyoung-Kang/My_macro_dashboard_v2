@@ -22,15 +22,20 @@ import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
 import {
   type CatalogResponse,
+  type HeadlineSet,
   type HeadlinesResponse,
   type InfoItem,
   type InfoItemsResponse,
   PAGE_SIZE,
   type ReaderEntry,
   bodyLabel,
+  headlineLink,
+  headlineSet,
+  headlineSource,
+  headlineTime,
+  headlineViewText,
   itemTime,
   itemTitles,
-  kstMinute,
   readerOfHeadline,
   readerOfItem,
   rewindPage,
@@ -41,8 +46,9 @@ import {
 import { GurusSection } from "./GurusSection";
 import { ReaderDialog } from "./ReaderDialog";
 
-type View = "blog" | "wire" | "waedge" | "rss-us" | "rss-kr" | "gurus";
+type View = "blog" | "wire" | "waedge" | "rss-us" | "rss-kr" | "rss-world" | "gurus";
 
+/** 보기 — 사건 뉴스 두 묶음(모의 매매 패킷의 재료) 옆에 보도자료·경제지(새 피드 묶음 — 정보 검색 계약 §6-1, 패킷 밖). */
 const VIEWS: readonly { key: View; label: string }[] = [
   { key: "blog", label: "해외 블로그" },
   { key: "wire", label: "속보(Financial Juice)" },
@@ -50,13 +56,14 @@ const VIEWS: readonly { key: View; label: string }[] = [
   { key: "gurus", label: "거장 견해" },
   { key: "rss-us", label: "사건 뉴스(미국)" },
   { key: "rss-kr", label: "사건 뉴스(한국)" },
+  { key: "rss-world", label: "보도자료·경제지" },
 ];
 
 /** 제목 단추 — 누르면 원문 팝업이 열립니다(새 창의 원문은 '원문 열기' 링크). */
 const TITLE_BUTTON = "mt-1 block text-left text-[15px] font-semibold leading-snug text-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 /**
- * 뉴스·글 — 해외 블로그·속보·waedge 글·거장 견해·사건 뉴스 RSS를 한 카드에서 골라 봅니다. 목록은 10편씩 쪽을 나누고, 제목을 누르면 받아 둔
+ * 뉴스·글 — 해외 블로그·속보·waedge 글·거장 견해·사건 뉴스 RSS·보도자료·경제지 RSS를 한 카드에서 골라 봅니다. 목록은 10편씩 쪽을 나누고, 제목을 누르면 받아 둔
  * 원문이 팝업으로 열립니다(팝업에서 한국어로 번역 — ADR 0037). 제목은 원문 그대로 보이고, 제목마다 번역 단추를 눌렀을 때만 번역합니다.
  * 시각은 모두 한국 시각(KST)입니다.
  */
@@ -71,6 +78,7 @@ export function NewsSection() {
   const sources = useRemembered(catalog.data?.sources) ?? [];
   const choices = sourceChoices(sources, view);
   const deferred = sources.find((row) => row.access === "deferred");
+  const set = headlineSet(view);
 
   const choose = (next: View) => {
     setView(next);
@@ -128,11 +136,12 @@ export function NewsSection() {
               찾기
             </button>
           </form>
-          {view === "blog" || view === "waedge" || view === "wire" ? (
+          {set === null ? (
             <ArticleList path={endpoints.info.items({ kind: view, source, q: query, page, size: PAGE_SIZE })} onPage={setPage} onOpen={setReader} />
           ) : (
             <HeadlineList
-              path={endpoints.info.headlines({ set: view === "rss-us" ? "us" : "kr", q: query, page, size: PAGE_SIZE })}
+              set={set}
+              path={endpoints.info.headlines({ set, q: query, page, size: PAGE_SIZE })}
               onPage={setPage}
               onOpen={setReader}
             />
@@ -211,31 +220,37 @@ function ArticleRow({ item, onOpen }: { item: InfoItem; onOpen: Open }) {
   );
 }
 
-function HeadlineList({ path, onPage, onOpen }: { path: string; onPage: (page: number) => void; onOpen: Open }) {
+/**
+ * 헤드라인 목록 — 사건 뉴스(미국·한국)와 보도자료·경제지(world). 묶음마다 안내 글(패킷의 재료인지·보관 기간)이 다르고,
+ * 작성 시각이 없는 피드의 줄은 처음 받은 시각에 '(받은 시각)'을 붙입니다.
+ */
+function HeadlineList({ set, path, onPage, onOpen }: { set: HeadlineSet; path: string; onPage: (page: number) => void; onOpen: Open }) {
   const { data, loading, error, reload } = useApi<HeadlinesResponse>(path);
   const rewind = useRewind(data, onPage);
+  const text = headlineViewText(set);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return null;
   if (rewind !== null) return <Loading />;
-  if (data.items.length === 0) return <EmptyState message="받은 제목이 없습니다(보존 7일)." />;
+  if (data.items.length === 0) return <EmptyState message={text.empty} />;
   return (
     <>
-      <p className="mb-1 text-xs text-text-3">모두 {data.total ?? EMPTY}건 · RSS 제목·출처·시각과 피드가 준 요약(글 페이지는 받지 않음) · 모의매매 패킷 11b_events의 재료(제목만)</p>
+      <p className="mb-1 text-xs text-text-3">모두 {data.total ?? EMPTY}건 · {text.note}</p>
       <ul className="divide-y divide-border">
         {data.items.map((row, index) => {
+          const link = headlineLink(row);
           return (
-            <li key={`${row.link ?? row.title}-${index}`} className="py-2 text-sm">
+            <li key={`${link ?? row.title}-${index}`} className="py-2 text-sm">
               <span className="text-xs text-text-2">
-                {row.source ?? row.feed ?? EMPTY} · <span className="tabular-nums">{kstMinute(row.publishedAt)}</span>
+                {headlineSource(row)} · <span className="tabular-nums">{headlineTime(row)}</span>
               </span>
               <button type="button" onClick={() => onOpen(readerOfHeadline(row, index))} aria-haspopup="dialog" className={TITLE_BUTTON}>
                 {row.title ?? EMPTY}
               </button>
               <TitleTranslation title={row.title} />
               {row.summary && <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-text-2">{row.summary}</p>}
-              {row.link && (
-                <a href={row.link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-accent hover:underline">
+              {link && (
+                <a href={link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-accent hover:underline">
                   원문 열기
                 </a>
               )}
@@ -243,7 +258,7 @@ function HeadlineList({ path, onPage, onOpen }: { path: string; onPage: (page: n
           );
         })}
       </ul>
-      <Pager page={data.page ?? 1} pages={data.pages ?? 1} onChange={onPage} label="사건 뉴스" />
+      <Pager page={data.page ?? 1} pages={data.pages ?? 1} onChange={onPage} label={text.pager} />
     </>
   );
 }

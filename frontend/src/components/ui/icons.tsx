@@ -236,6 +236,21 @@ export function TagIcon(props: IconProps) {
   );
 }
 
+/**
+ * 별 — 정보 검색의 관심 대상 등록 단추. filled면 별을 글자색으로 채웁니다(등록됨). 뜻은 옆의 글('관심 대상 등록'·'해제')이 나르고,
+ * 채움만으로 상태를 알리지 않습니다(명세 원칙 A5).
+ */
+export function StarIcon({ filled = false, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <IconBase {...props}>
+      <path
+        d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"
+        {...(filled ? { fill: "currentColor" } : {})}
+      />
+    </IconBase>
+  );
+}
+
 /** 바깥 링크(새 창) — 글자 '↗'(그림 문자라 쓰지 않음) 대신. 뜻은 옆 글이나 sr-only '(새 창)'이 나릅니다. */
 export function ExternalLinkIcon(props: IconProps) {
   return (

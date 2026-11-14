@@ -1,6 +1,6 @@
 /**
  * 정보 검색 화면(/search — ADR 0041, 계약 §5). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
- *  - 첫 화면은 설명만(외부 호출 없음), 내용 영역은 늘 어두운 범위(data-scope="search")
+ *  - 첫 화면은 저장본만(관심 대상·최근 글 — 대상 풀기·결과·후보를 부르지 않음), 내용 영역은 늘 어두운 범위(data-scope="search")
  *  - 후보: 치는 동안의 후보, Enter는 검색어로(자동으로 고르지 않음), 여럿이면 목록, 하나이고 이름이 같으면 바로 열기(그 자리를 바꿔 씀)
  *  - 빈 결과: 2년 안에 없음(+ 가장 최근 자료 날짜), 이 기간에 없음 + 더 넓은 기간 단추
  *  - 출처 상태 줄: 실패한 출처를 글로(색만이 아님)
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
-  return { apiGet: vi.fn(), apiPost: vi.fn(), apiGetShared: vi.fn(), UnauthorizedError };
+  return { apiGet: vi.fn(), apiPost: vi.fn(), apiDelete: vi.fn(), apiGetShared: vi.fn(), UnauthorizedError };
 });
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
@@ -88,6 +88,7 @@ beforeEach(() => {
   reads = {};
   api.apiGet.mockReset();
   api.apiPost.mockReset();
+  api.apiDelete.mockReset();
   api.apiGetShared.mockReset();
   api.apiGetShared.mockImplementation((path: string) => serve(path));
   api.apiGet.mockImplementation((path: string) => serve(path));
@@ -98,19 +99,20 @@ afterEach(() => {
 });
 
 describe("첫 화면", () => {
-  it("대상을 고르기 전에는 설명만 — 외부 호출이 없고, 내용 영역은 늘 어두운 범위", () => {
+  it("대상을 고르기 전에는 저장본만(관심 대상·최근 글) — 대상 풀기·결과·후보를 부르지 않고, 내용 영역은 늘 어두운 범위", () => {
     const { container } = renderScreen();
     expect(screen.getByRole("heading", { level: 1, name: "정보 검색" })).toBeTruthy();
-    expect(screen.getByText(/최근 2년/)).toBeTruthy();
+    expect(screen.getAllByText(/최근 2년/).length).toBeGreaterThan(0);
     expect(container.querySelector('[data-scope="search"]')).toBeTruthy();
     expect(api.apiGet).not.toHaveBeenCalled();
-    expect(api.apiGetShared).not.toHaveBeenCalled();
+    expect([...new Set(sharedCalls())].sort()).toEqual([endpoints.search.recent, endpoints.search.watch].sort());
   });
 
   it("주소의 대상 키 모양이 틀리면 부르지 않고 그렇게 말한다", () => {
     renderScreen(MEMBER, "/search?e=us:nvda");
     expect(screen.getByText(/대상 키의 모양이 맞지 않습니다/)).toBeTruthy();
-    expect(api.apiGetShared).not.toHaveBeenCalled();
+    // 첫 화면(관심 대상·최근 글 — 저장본)만 그리고 대상 풀기·결과는 부르지 않음.
+    expect(sharedCalls().filter((path) => path !== endpoints.search.watch && path !== endpoints.search.recent)).toEqual([]);
   });
 });
 

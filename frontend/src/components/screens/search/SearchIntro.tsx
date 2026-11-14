@@ -1,7 +1,7 @@
 import { PANEL, PaneHeading } from "./parts";
 
 /**
- * 대상을 고르기 전의 첫 화면 — 무엇을 어디서 얼마나 찾는지 설명만(외부 호출 없음). 관심 대상 목록은 단계 3에서 들어옵니다.
+ * 첫 화면의 설명 — 무엇을 어디서 얼마나 찾는지(외부 호출 없음). 관심 대상 목록·최근 글은 SearchHome이 옆에 그립니다.
  */
 export function SearchIntro({ owner, demo }: { owner: boolean; demo: boolean }) {
   return (
@@ -13,9 +13,15 @@ export function SearchIntro({ owner, demo }: { owner: boolean; demo: boolean }) 
         모읍니다. 어디에도 없는 말은 주제로 두고 그대로 찾습니다. 이름이 같은 후보가 여럿이면 직접 고릅니다.
       </p>
       <ul className="list-disc space-y-1 pl-5">
-        <li>뉴스: 구글 뉴스(한국어·영어 판), Bing 뉴스, 이 대시보드가 받아 둔 사건 뉴스. 종목이면 Yahoo Finance·네이버 종목 뉴스·연합인포맥스도.</li>
+        <li>
+          뉴스: 구글 뉴스(한국어·영어 판), Bing 뉴스, 이 대시보드가 받아 둔 사건 뉴스와 보도자료·경제지 피드. 종목이면 Yahoo Finance·네이버 종목 뉴스·연합인포맥스도.
+        </li>
         <li>보유: 이 대시보드가 받는 13F 기관의 보유 줄(기업은 보유 기관, 기관은 상위 보유 종목).</li>
         <li>연결: Wikidata 관계(소유·창업·소속·모회사·자회사)와 13F 운용자·기관.</li>
+        <li>
+          관심 대상: 대상 머리의 &lsquo;관심 대상 등록&rsquo;으로 등록하면 서버가 대상마다 3~8시간에 한 번 새 글을 모으고, 왼쪽 목록에 마지막으로 본 뒤의
+          새 글 수를 보입니다.
+        </li>
         {owner ? <li>운영자: 수집 글(블로그·waedge)·거장 견해·속보도 섞고, 글·논평 탭에서 받아 둔 글을 엽니다.</li> : null}
       </ul>
       <p>

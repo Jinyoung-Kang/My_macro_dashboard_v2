@@ -37,6 +37,7 @@ const ICONS = [
   "SearchIcon",
   "SkipIcon",
   "SpinnerIcon",
+  "StarIcon",
   "TagIcon",
   "XCircleIcon",
   "XIcon",
@@ -84,6 +85,20 @@ describe("장식 아이콘", () => {
     expect(small.getAttribute("width")).toBe("12");
     expect(normal.getAttribute("width")).toBe("16");
     expect(bell.getAttribute("width")).toBe("18");
+  });
+
+  it("별(관심 대상) — 등록 전은 선만, filled면 별을 글자색으로 채움(SVG 바탕은 그대로 fill=none)", () => {
+    const { container } = render(
+      <>
+        <icons.StarIcon />
+        <icons.StarIcon filled />
+      </>,
+    );
+    const [empty, filled] = [...container.querySelectorAll("svg")];
+    expect(empty.getAttribute("fill")).toBe("none");
+    expect(empty.querySelector("path")?.getAttribute("fill")).toBeNull();
+    expect(filled.getAttribute("fill")).toBe("none");
+    expect(filled.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
   });
 });
 

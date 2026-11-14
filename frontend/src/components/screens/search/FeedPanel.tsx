@@ -1,9 +1,9 @@
 "use client";
 
-import { useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ErrorState, Loading } from "@/components/ui";
 import { SELECTED_BAR } from "@/components/ui/classes";
-import { ExternalLinkIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
+import { ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
 import { useInfoSearchFeed } from "@/hooks/useInfoSearch";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -27,6 +27,7 @@ import {
   nextRowIndex,
   rangeCountsOf,
   readerOfFeedItem,
+  refreshNoteText,
   sourceLabel,
   type FeedFacet,
   type FeedFilters,
@@ -41,30 +42,45 @@ import { BUTTON, LINK, PANEL, PaneHeading, SourceStatusLine, segmentClass } from
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
  * 수집 글(readerId)의 원문 팝업은 운영자에게만(그 경로가 운영자 전용 — D-1).
+ *
+ * 왼쪽 칸 맨 위에는 관심 대상 목록(aside — 단계 3, 좁은 화면은 따로 접힘)을 둡니다. '지금 새로 받기'는 캐시를 건너뛰고(refresh=1 — 사용자당
+ * 10분에 1번, 넘으면 서버가 캐시를 그대로 주며 한 줄을 붙임) 데모 열람에는 없습니다(외부를 부르지 않는 열람).
  */
 export function FeedPanel({
   entityKey,
   feedTab,
   range,
   owner,
+  demo = false,
   entity,
   kind,
   entityErrors,
   onRange,
+  aside = null,
+  onShown,
 }: {
   entityKey: string;
   feedTab: SearchFeedTab;
   range: SearchRange;
   owner: boolean;
+  demo?: boolean;
   entity: SearchEntity | null;
   kind: SearchEntityKind | null;
   entityErrors: Record<string, string>;
   onRange: (range: SearchRange) => void;
+  /** 왼쪽 칸 맨 위(관심 대상 목록). */
+  aside?: ReactNode;
+  /** 결과(available:true)를 받아 그렸을 때 — 관심 대상의 '봤음'을 실패·받는 중에는 보내지 않게(EntityView). */
+  onShown?: () => void;
 }) {
-  const feed = useInfoSearchFeed(endpoints.search.feed(entityKey, feedTab));
+  const feed = useInfoSearchFeed(endpoints.search.feed(entityKey, feedTab), demo ? null : endpoints.search.feed(entityKey, feedTab, true));
   const now = useMinuteClock();
   const today = now ? kstToday(now.getTime()) : null;
   const data = feed.data;
+  const loaded = data?.available === true;
+  useEffect(() => {
+    if (loaded) onShown?.();
+  }, [loaded, onShown]);
   const [filters, setFilters] = useState<FeedFilters>(NO_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
@@ -287,10 +303,35 @@ export function FeedPanel({
         {data?.fetchedAt ? <span className="text-xs text-text-3">받은 시각 {formatKst(data.fetchedAt)} KST</span> : null}
       </div>
       <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)_18rem]">
-        <div id={drawerId} className={`${drawer ? "block" : "hidden"} border-b border-border p-3 lg:block lg:border-b-0 lg:border-r`}>
-          {filterPane}
+        <div className="lg:border-r lg:border-border">
+          {aside ? <div className="border-b border-border p-3">{aside}</div> : null}
+          <div id={drawerId} className={`${drawer ? "block" : "hidden"} border-b border-border p-3 lg:block lg:border-b-0`}>
+            {filterPane}
+          </div>
         </div>
         <div className="min-w-0">
+          {!demo && data?.available ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5">
+              <button type="button" className={BUTTON} disabled={feed.refreshing} onClick={() => void feed.refresh()}>
+                {feed.refreshing ? <SpinnerIcon size={14} className="motion-safe:animate-spin" /> : <RefreshIcon size={14} />}
+                지금 새로 받기
+              </button>
+              {/* 실패 글도 이 상태 영역 안에 둡니다 — 낭독기가 진행·결과·실패를 같은 자리에서 듣게. */}
+              <span role="status" className="text-xs text-text-3">
+                {feed.refreshing ? (
+                  "새로 받는 중… (외부 출처를 부르면 몇 초 걸립니다)"
+                ) : feed.refreshError ? (
+                  <StatusText tone="danger" colorText={false} iconSize={12} className="text-xs text-text-2">
+                    새로 받지 못했습니다 — {feed.refreshError}
+                  </StatusText>
+                ) : feed.refreshed ? (
+                  refreshNoteText(feed.refreshed)
+                ) : (
+                  "캐시를 건너뛰고 출처를 다시 부릅니다(10분에 한 번)"
+                )}
+              </span>
+            </div>
+          ) : null}
           {data?.pending ? (
             <p role="status" className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-2">
               <SpinnerIcon size={12} className="motion-safe:animate-spin" />

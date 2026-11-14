@@ -4,7 +4,7 @@
  * 백엔드 `GET /api/info/*`가 수집기 저장본(글·네이버 매매동향·waedge 거장)과 출처 판정을 그대로 내려 줍니다. 비공식 출처를 차단 통과 수집으로
  * 받은 참고 자료라, 없는 값은 만들지 않고 '—'로 둡니다(0과 다름). 장중 추정 순위의 금액은 출처가 주지 않아 '—'입니다.
  */
-import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
+import { EMPTY, formatKst, formatNumber, formatSigned } from "@/lib/format";
 
 /** 상태 톤 — components/ui/icons의 StatusTone과 같은 네 값(lib는 화면 모듈을 가져오지 않음). */
 export type InfoTone = "ok" | "warn" | "danger" | "neutral";
@@ -268,19 +268,75 @@ export function toneSummary(tones: Partial<Record<InfoTone, number>>): string {
   return `정상 ${tones.ok ?? 0} · 주의 ${tones.warn ?? 0} · 위험 ${tones.danger ?? 0} · 기록 없음 ${tones.neutral ?? 0}`;
 }
 
-// ------------------------------------------------------------------ 사건 뉴스 RSS
+// ------------------------------------------------------------------ 사건 뉴스 RSS · 보도자료·경제지(새 피드 묶음)
+/** 헤드라인 묶음 — 사건 뉴스 미국·한국(모의 매매 패킷 11b_events의 재료)과 새 피드 묶음 world(정보 검색 계약 §6-1 — 패킷 밖). */
+export type HeadlineSet = "us" | "kr" | "world";
+
 export type Headline = {
-  set: "us" | "kr";
+  set: HeadlineSet;
   title: string | null;
   /** 피드가 준 요약(글 페이지는 열지 않음) — 없으면 null. */
   summary?: string | null;
   link: string | null;
   source: string | null;
   feed: string | null;
+  /** 작성 시각(KST 표기). 시각 칸이 없는 피드(Nikkei Asia 등)는 null — 처음 받은 시각(fetchedAt)으로 보입니다. */
   publishedAt: string | null;
   fetchedAt: string | null;
+  /** 새 피드 묶음의 칸 이름(저장본 payload) — 백엔드가 link·source로 옮기지 않았을 때 씁니다. */
+  url?: string | null;
+  publisher?: string | null;
+  /** fetched면 작성 시각이 없어 처음 받은 시각으로 넣은 줄. */
+  timeBasis?: "published" | "fetched" | null;
 };
 export type HeadlinesResponse = Paged & { available: boolean; items: Headline[] };
+
+/** 정보 수집 > 뉴스·글의 헤드라인 보기 → 묶음(백엔드 `GET /api/info/headlines`의 set). 글 보기는 null. */
+export function headlineSet(view: string): HeadlineSet | null {
+  if (view === "rss-us") return "us";
+  if (view === "rss-kr") return "kr";
+  if (view === "rss-world") return "world";
+  return null;
+}
+
+/** 헤드라인 묶음의 안내 글 — 사건 뉴스는 모의 매매 패킷의 재료(보존 7일), 새 피드 묶음은 패킷에 들어가지 않음(보관 90일). */
+export function headlineViewText(set: HeadlineSet): { note: string; empty: string; pager: string } {
+  if (set === "world") {
+    return {
+      note: "중앙은행 보도자료·경제지 RSS의 제목·출처·시각과 피드가 준 요약(글 페이지는 받지 않음) · 정보 검색과 관심 대상에 쓰고, 모의 매매 패킷에는 들어가지 않습니다",
+      empty: "받은 제목이 없습니다(보관 90일). 피드마다 30분~6시간 간격으로 받습니다.",
+      pager: "보도자료·경제지",
+    };
+  }
+  return {
+    note: "RSS 제목·출처·시각과 피드가 준 요약(글 페이지는 받지 않음) · 모의매매 패킷 11b_events의 재료(제목만)",
+    empty: "받은 제목이 없습니다(보존 7일).",
+    pager: "사건 뉴스",
+  };
+}
+
+/** 헤드라인의 원문 주소 — 사건 뉴스의 link, 없으면 새 묶음의 url. http(s)만(그 밖은 링크로 두지 않음). */
+export function headlineLink(row: Pick<Headline, "link"> & Partial<Pick<Headline, "url">>): string | null {
+  const url = row.link || row.url || null;
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
+/** 헤드라인의 매체 이름 — 사건 뉴스의 source, 없으면 새 묶음의 publisher, 그것도 없으면 피드 키. 모르면 '—'. */
+export function headlineSource(row: Pick<Headline, "source" | "feed"> & Partial<Pick<Headline, "publisher">>): string {
+  return row.source || row.publisher || row.feed || EMPTY;
+}
+
+/** 헤드라인 시각(KST) — 작성 시각, 없으면 처음 받은 시각에 '(받은 시각)'(작성 시각을 지어내지 않음), 둘 다 없으면 '—'. */
+export function headlineTime(row: Pick<Headline, "publishedAt" | "fetchedAt"> & Partial<Pick<Headline, "timeBasis">>): string {
+  const fetched = row.fetchedAt ? `${formatKst(row.fetchedAt)} KST` : null;
+  if (row.timeBasis === "fetched") {
+    // 받은 시각으로 넣은 줄 — 서버가 그 시각을 publishedAt 칸에 실어 보냈어도 '받은 시각'으로 적습니다.
+    const at = fetched ?? (row.publishedAt ? kstMinute(row.publishedAt) : null);
+    return at ? `${at} (받은 시각)` : EMPTY;
+  }
+  if (row.publishedAt) return kstMinute(row.publishedAt);
+  return fetched ? `${fetched} (받은 시각)` : EMPTY;
+}
 
 // ------------------------------------------------------------------ KRX 정보데이터시스템
 export type KrxPart<T> = { asOf: string; rows: T[]; isStale?: boolean };
@@ -512,13 +568,14 @@ export function readerOfItem(item: InfoItem): ReaderEntry {
 
 export function readerOfHeadline(row: Headline, index: number): ReaderEntry {
   const title = row.title ?? EMPTY;
+  const url = headlineLink(row);
   return {
-    key: `headline:${row.link ?? title}:${index}`,
-    sourceLabel: row.source ?? row.feed ?? EMPTY,
-    time: kstMinute(row.publishedAt),
+    key: `headline:${url ?? title}:${index}`,
+    sourceLabel: headlineSource(row),
+    time: headlineTime(row),
     title,
     titleKo: null,
-    url: row.link,
+    url,
     itemId: null,
     hasBody: !!row.summary,
     text: row.summary ?? null,
@@ -593,9 +650,9 @@ export function sourceChoices<T extends { kind: string; key: string }>(sources: 
   return [];
 }
 
-/** 검색 칸의 이름표 — 서버가 실제로 찾는 범위. 글(블로그·속보·waedge)은 제목·요약, 사건 뉴스는 제목만입니다(QA-410). */
+/** 검색 칸의 이름표 — 서버가 실제로 찾는 범위. 글(블로그·속보·waedge)은 제목·요약, 헤드라인(사건 뉴스·보도자료·경제지)은 제목만입니다(QA-410). */
 export function searchLabel(view: string): string {
-  return view === "rss-us" || view === "rss-kr" ? "검색(제목)" : "검색(제목·요약)";
+  return headlineSet(view) !== null ? "검색(제목)" : "검색(제목·요약)";
 }
 
 const BODY_LABELS: Record<InfoItem["bodyStatus"], string> = { full: "본문", partial: "요약만", none: "제목만" };

@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
 import { useApi } from "@/hooks/useApi";
+import { useMountedRef } from "@/hooks/useAsyncAction";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { apiGet, UnauthorizedError } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
@@ -117,18 +118,62 @@ export function useInfoSearchSuggest(query: string, enabled: boolean) {
   };
 }
 
+type FreshFeed = { path: string; data: SearchFeedResponse; at: number };
+
 /**
  * 결과(GET /api/search/feed) — 대상·탭마다 한 번(2년 묶음). 받는 중인 출처가 있으면(pending — 단계 5의 Finviz) 몇 초 뒤 다시 읽고,
  * 다 받으면 멈춥니다. 기간은 화면이 자르므로 다시 부르지 않습니다.
+ *
+ * refreshPath를 주면 '지금 새로 받기'(계약 §6-4 — `refresh=1`, 캐시를 건너뜀, 사용자당 10분에 1번)를 쓸 수 있습니다. 새로 받은 응답은
+ * 그 뒤의 보통 읽기(받는 중 다시 읽기·수동 새로고침)가 올 때까지 보이고, 그 읽기는 서버 캐시(방금 새로 받은 것)를 줍니다.
+ * 새로 받기는 그 단추를 누를 때 한 번뿐이고 다시 읽기·새로고침 신호로 되풀이되지 않습니다(외부 호출 상한).
+ * 새로 받기가 수집기에 닿지 못하면(available:false) 보이던 묶음을 그대로 두고 refreshError에 사유를 둡니다.
  */
-export function useInfoSearchFeed(path: string | null) {
+export function useInfoSearchFeed(path: string | null, refreshPath: string | null = null) {
   const [pollMs, setPollMs] = useState(0);
   const feed = useApi<SearchFeedResponse>(path, pollMs);
-  const wanted = feedRefreshMs(feed.data);
+  const { notifyUnauthorized } = useRefreshSignal();
+  const mounted = useMountedRef();
+  const [fresh, setFresh] = useState<FreshFeed | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  const loadedAt = feed.loadedAt?.getTime() ?? null;
+  const freshShown = fresh !== null && fresh.path === path && (loadedAt === null || fresh.at >= loadedAt) ? fresh : null;
+  const data = freshShown ? freshShown.data : feed.data;
+
+  const wanted = feedRefreshMs(data);
   useEffect(() => {
     setPollMs(wanted);
   }, [wanted]);
-  return feed;
+
+  const refresh = useCallback(async () => {
+    if (!path || !refreshPath) return;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const response = await apiGet<SearchFeedResponse>(refreshPath);
+      if (!mounted.current) return;
+      // 수집기에 닿지 못한 응답(available:false)은 보이던 묶음을 덮지 않고 실패로 알립니다 — 잘 보이던 결과가 사유 한 줄로 바뀌지 않게.
+      if (response?.available) setFresh({ path, data: response, at: Date.now() });
+      else setRefreshError(response?.message ?? "수집기에서 응답을 받지 못했습니다.");
+    } catch (error: unknown) {
+      if (error instanceof UnauthorizedError) notifyUnauthorized();
+      if (mounted.current) setRefreshError(error instanceof Error ? error.message : "알 수 없는 오류");
+    } finally {
+      if (mounted.current) setRefreshing(false);
+    }
+  }, [path, refreshPath, mounted, notifyUnauthorized]);
+
+  return {
+    ...feed,
+    data,
+    refresh,
+    refreshing,
+    refreshError,
+    /** 이번 화면에서 새로 받은 응답(보이는 중일 때만) — '새로 받았습니다' 한 줄에 씁니다. */
+    refreshed: freshShown?.data ?? null,
+  };
 }
 
 /**

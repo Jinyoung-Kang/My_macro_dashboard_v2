@@ -10,6 +10,11 @@ import {
   canTranslate,
   eokText,
   hasHangul,
+  headlineLink,
+  headlineSet,
+  headlineSource,
+  headlineTime,
+  headlineViewText,
   incidentDismissKey,
   itemTime,
   itemTitles,
@@ -243,6 +248,7 @@ describe("원문 팝업(ADR 0037)", () => {
     expect(searchLabel("wire")).toBe("검색(제목·요약)");
     expect(searchLabel("rss-us")).toBe("검색(제목)");
     expect(searchLabel("rss-kr")).toBe("검색(제목)");
+    expect(searchLabel("rss-world")).toBe("검색(제목)");
   });
 
   it("QA-403: 번역을 옮긴 모델은 저장본 포함 전부 — 목록이 없으면 이번에 부른 모델, 그것도 없으면 '번역 모델'", () => {
@@ -282,5 +288,44 @@ describe("원문 팝업(ADR 0037)", () => {
       publishedAt: null, fetchedAt: null }, 0);
     expect(offersTranslate(headline, null, partial)).toBe(true);
     expect(offersTranslate({ ...headline, text: null }, null, partial)).toBe(false);
+  });
+});
+
+describe("보도자료·경제지(새 피드 묶음 — 정보 검색 계약 §6-1)", () => {
+  it("헤드라인 보기마다 묶음 — 미국·한국 사건 뉴스와 세 번째 묶음 world", () => {
+    expect(headlineSet("rss-us")).toBe("us");
+    expect(headlineSet("rss-kr")).toBe("kr");
+    expect(headlineSet("rss-world")).toBe("world");
+    expect(headlineSet("blog")).toBeNull();
+  });
+
+  it("안내 글 — 사건 뉴스는 패킷의 재료(보관 7일), 새 묶음은 패킷에 들어가지 않음(보관 90일)", () => {
+    expect(headlineViewText("us").note).toContain("11b_events");
+    expect(headlineViewText("us").empty).toContain("7일");
+    const world = headlineViewText("world");
+    expect(world.note).toContain("모의 매매 패킷에는 들어가지 않습니다");
+    expect(world.note).not.toContain("11b_events");
+    expect(world.empty).toContain("90일");
+    expect(world.pager).toBe("보도자료·경제지");
+  });
+
+  it("시각 — 작성 시각(KST)이 있으면 그것, 없으면(시각 칸 없는 피드) 처음 받은 시각에 '받은 시각' 표시, 둘 다 없으면 '—'", () => {
+    const base = { set: "world" as const, title: "t", summary: null, link: null, source: null, feed: "nikkei_asia" };
+    expect(headlineTime({ ...base, publishedAt: "2026-11-14 09:30:00 KST", fetchedAt: "2026-11-14T01:00:00+00:00" })).toBe("2026-11-14 09:30 KST");
+    expect(headlineTime({ ...base, publishedAt: null, fetchedAt: "2026-11-14T01:00:00+00:00" })).toBe("2026-11-14 10:00 KST (받은 시각)");
+    expect(headlineTime({ ...base, publishedAt: null, fetchedAt: "2026-11-14T01:00:00+00:00", timeBasis: "fetched" })).toBe("2026-11-14 10:00 KST (받은 시각)");
+    expect(headlineTime({ ...base, publishedAt: null, fetchedAt: null })).toBe("—");
+  });
+
+  it("링크·매체 — 사건 뉴스 칸(link·source)이 없으면 새 묶음 칸(url·publisher), 그것도 없으면 피드 키", () => {
+    const row = { set: "world" as const, title: "t", summary: null, link: null, source: null, feed: "cnbc_finance", publishedAt: null, fetchedAt: null,
+      url: "https://www.cnbc.com/a", publisher: "CNBC" };
+    expect(headlineLink(row)).toBe("https://www.cnbc.com/a");
+    expect(headlineSource(row)).toBe("CNBC");
+    expect(headlineLink({ ...row, link: "https://example.org/b" })).toBe("https://example.org/b");
+    expect(headlineSource({ ...row, publisher: null })).toBe("cnbc_finance");
+    expect(headlineLink({ ...row, url: "javascript:alert(1)" })).toBeNull();
+    const entry = readerOfHeadline({ ...row, summary: "요약" }, 0);
+    expect(entry).toMatchObject({ url: "https://www.cnbc.com/a", sourceLabel: "CNBC", time: "—" });
   });
 });
