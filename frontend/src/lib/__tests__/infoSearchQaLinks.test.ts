@@ -125,3 +125,112 @@ describe("연결 그림 — 앞머리가 같은 이름의 노드도 보이는 �
     }
   });
 });
+
+type Layout = ReturnType<typeof linkGraphLayout>;
+
+/** 같은 쪽(오른쪽 = start, 왼쪽 = end) 이웃 노드의 가장 좁은 세로 간격. */
+function minRowGap(layout: Layout): number {
+  let gap = Infinity;
+  for (const anchor of ["start", "end"] as const) {
+    const ys = layout.nodes.filter((node) => node.anchor === anchor).map((node) => node.y).sort((a, b) => a - b);
+    for (let at = 1; at < ys.length; at += 1) gap = Math.min(gap, ys[at] - ys[at - 1]);
+  }
+  return gap;
+}
+
+/** 노드 글 상자 — 12px 글자의 글 폭 × 높이 14(노드 높이 가운데), 오른쪽 노드는 오른쪽으로·왼쪽 노드는 왼쪽으로 뻗음. */
+function labelBox(node: Layout["nodes"][number]) {
+  const width = textWidth(node.label);
+  const left = node.anchor === "start" ? node.labelX : node.labelX - width;
+  return { left, right: left + width, top: node.y - 7, bottom: node.y + 7 };
+}
+
+/** 겹치는 노드 글 상자 쌍(글 — 실패할 때 어느 둘인지 보이게). */
+function labelOverlaps(layout: Layout): string[] {
+  const out: string[] = [];
+  layout.nodes.forEach((a, at) => {
+    for (const b of layout.nodes.slice(at + 1)) {
+      const A = labelBox(a);
+      const B = labelBox(b);
+      if (Math.min(A.right, B.right) > Math.max(A.left, B.left) && Math.min(A.bottom, B.bottom) > Math.max(A.top, B.top)) out.push(`${a.label} / ${b.label}`);
+    }
+  });
+  return out;
+}
+
+/** 겹치는 관계 글 상자 쌍 — 상자는 글 폭 + 좌우 4px × 높이 16(LinksGraph의 rect), 다른 쪽(오른쪽·왼쪽) 글끼리도. */
+function tagOverlaps(layout: Layout): string[] {
+  const out: string[] = [];
+  layout.tags.forEach((a, at) => {
+    for (const b of layout.tags.slice(at + 1)) {
+      if (Math.abs(a.x - b.x) < (a.width + b.width) / 2 + 8 && Math.abs(a.y - b.y) < 16) out.push(`${a.label}(${a.side}) / ${b.label}(${b.side})`);
+    }
+  });
+  return out;
+}
+
+/** 그린 것(노드 글 상자·관계 글 상자)이 모두 뷰(그린 세로 범위)와 그림 폭 안. */
+function expectInView(layout: Layout) {
+  const top = layout.view.y;
+  const bottom = layout.view.y + layout.view.height;
+  for (const node of layout.nodes) {
+    const box = labelBox(node);
+    expect(box.top).toBeGreaterThanOrEqual(top);
+    expect(box.bottom).toBeLessThanOrEqual(bottom);
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(layout.width);
+  }
+  for (const tag of layout.tags) {
+    expect(tag.y - 8).toBeGreaterThanOrEqual(top);
+    expect(tag.y + 8).toBeLessThanOrEqual(bottom);
+    expect(tag.x - tag.width / 2 - 4).toBeGreaterThanOrEqual(0);
+    expect(tag.x + tag.width / 2 + 4).toBeLessThanOrEqual(layout.width);
+  }
+}
+
+describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 겹치지 않음(QA-424)", () => {
+  // QA-424: 폭 296(390 화면)에서 높이가 340에 묶여(linkGraphSize) 타원의 세로 반지름에 상한이 있고, 관계 9종이면 칸 수로 나눈 뒤에도 간격을 다시
+  // 재지 않아 같은 쪽 이웃 노드가 10.9·11.4px 간격(< GRAPH_ROW_GAP 14)으로 붙어 노드 글 상자 6쌍이 최대 3.1px 겹쳤습니다. 관계 글은 같은 쪽끼리만
+  // 비켜 두어 위쪽 극 근처의 오른쪽 '소유한 곳'과 왼쪽 '자회사' 상자가 겹쳤습니다.
+  // 수정 전 실패: 폭 296에서 minRowGap 10.9, 노드 글 겹침 6쌍, 관계 글 겹침 '소유한 곳(right) / 자회사(left)'.
+  it.fails("C-02 자료(관계 9종·노드 30개, 9개는 목록으로)를 폭 296·330·390·570에 그려도 같은 쪽 이웃 간격 ≥ 14, 노드 글·관계 글 상자가 겹치지 않음 — 모자라면 그림을 높임", () => {
+    for (const width of [296, 330, 390, 570]) {
+      const layout = linkGraphLayout(linkGroups(c02Links()), linkGraphSize(width), { centerName: "Example Corp" });
+      expect([layout.nodes.length, layout.hidden]).toEqual([30, 9]);
+      expect(minRowGap(layout)).toBeGreaterThanOrEqual(14);
+      expect(labelOverlaps(layout)).toEqual([]);
+      expect(tagOverlaps(layout)).toEqual([]);
+      expectInView(layout);
+    }
+    // 좁은 화면은 글자를 줄이지 않고 그림을 높임(폭 296 → 높이 340보다 큼). 1440(폭 570)은 겹침이 없어 크기 그대로.
+    expect(linkGraphLayout(linkGroups(c02Links()), linkGraphSize(296)).height).toBeGreaterThan(340);
+    expect(linkGraphLayout(linkGroups(c02Links()), linkGraphSize(570)).height).toBe(linkGraphSize(570).height);
+  });
+
+  it.fails("관계가 1~9종이어도(노드 30) 폭 296·330·390·453·570에서 같은 쪽 이웃 간격 ≥ 14, 모르는 관계 코드(긴 글)가 있어도 관계 글끼리 겹치지 않음", () => {
+    const relations = ["owner_of", "owned_by", "founded_by", "employer", "ceo", "ultimate_parent", "parent", "subsidiary"];
+    for (let kinds = 1; kinds <= 9; kinds += 1) {
+      const links = [
+        ...named("insider", Array.from({ length: 31 - kinds }, (_, at) => `Fictional Insider ${at + 1}`), "yahoo", false),
+        ...relations.slice(0, kinds - 1).flatMap((relation) => named(relation, [`Example ${relation}`], "wikidata", true)),
+      ];
+      for (const width of [296, 330, 390, 453, 570]) {
+        const layout = linkGraphLayout(linkGroups(links), linkGraphSize(width), { centerName: "Example Corp" });
+        expect([kinds, width, minRowGap(layout) >= 14]).toEqual([kinds, width, true]);
+        expect(labelOverlaps(layout)).toEqual([]);
+        expect(tagOverlaps(layout)).toEqual([]);
+        expectInView(layout);
+      }
+    }
+    // 모르는 관계 코드는 이름 그대로(설계대로) 관계 글이 되고 맨 뒤 묶음(왼쪽 위)에 놓임 — 오른쪽 위 '소유한 곳'과 겹치지 않음.
+    const unknown = [...c02Links(), ...named("qa_unknown_rel", ["Example Unknown Relation"], "wikidata", true)];
+    for (const width of [296, 330, 390, 570, 760]) {
+      const layout = linkGraphLayout(linkGroups(unknown), linkGraphSize(width), { centerName: "Example Corp" });
+      expect(layout.tags.some((tag) => tag.label === "qa_unknown_rel")).toBe(true);
+      expect(tagOverlaps(layout)).toEqual([]);
+      expect(labelOverlaps(layout)).toEqual([]);
+      expect(minRowGap(layout)).toBeGreaterThanOrEqual(14);
+      expectInView(layout);
+    }
+  });
+});
