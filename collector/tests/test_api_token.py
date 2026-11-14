@@ -23,6 +23,10 @@ from app import main
 PROTECTED = [
     ("get", "/live/ticker/^VIX"),
     ("get", "/live/daum-intraday"),
+    ("get", "/live/search/suggest?q=NVDA"),
+    ("get", "/live/search/resolve?q=NVDA"),
+    ("get", "/live/search/entity?e=us:NVDA"),
+    ("get", "/live/search/feed?e=us:NVDA&tab=news"),
     ("get", "/verify/readings"),
     ("get", "/diagnostics/connections"),
     ("get", "/diagnostics/toss"),

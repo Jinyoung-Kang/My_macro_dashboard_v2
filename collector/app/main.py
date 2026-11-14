@@ -45,6 +45,7 @@ from .services import (
     live_prices as live_prices_service,
     market as market_service,
     radar as radar_service,
+    search as search_service,
     toss as toss_service,
     toss_account as toss_account_service,
     toss_trade as toss_trade_service,
@@ -697,6 +698,68 @@ def live_symbols(
     """종목 찾기(네이버 자동완성 + Yahoo 검색) — 통합 검색이 저장된 색인 밖의 종목을 찾을 때. 1시간 캐시."""
     _check_token(x_service_token)
     return detail_service.symbols(q.strip())
+
+
+def _search_input(check, value):
+    """정보 검색 입력 검사(services/search) — 틀리면 400(FastAPI의 422가 아니라 계약대로). 검색어는 응답·로그에 되풀이하지 않습니다."""
+    try:
+        return check(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.get("/live/search/suggest")
+def live_search_suggest(
+    q: str | None = Query(None),
+    owner: bool = Query(False),
+    external: bool = Query(True),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """정보 검색 — 치는 동안의 후보(이미 가진 색인만, 바깥 호출 없음 — ADR 0041). owner면 거장 이름도. external은 받기만 합니다."""
+    _check_token(x_service_token)
+    text = _search_input(search_service.clean_query, q)
+    return search_service.suggest(text, owner=owner)
+
+
+@app.get("/live/search/resolve")
+def live_search_resolve(
+    q: str | None = Query(None),
+    owner: bool = Query(False),
+    external: bool = Query(True),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """정보 검색 — Enter의 후보(로컬 + Wikidata 1시간 캐시, 맨 끝에 topic:<q>). external=false면 Wikidata를 부르지 않습니다."""
+    _check_token(x_service_token)
+    text = _search_input(search_service.clean_query, q)
+    return search_service.resolve(text, owner=owner, external=external)
+
+
+@app.get("/live/search/entity")
+def live_search_entity(
+    e: str | None = Query(None),
+    owner: bool = Query(False),
+    external: bool = Query(True),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """정보 검색 — 대상 풀기(SEC·DART 저장본·13F·Wikidata, 하루 캐시). external=false면 저장본·캐시만."""
+    _check_token(x_service_token)
+    prefix, value = _search_input(search_service.parse_key, e)
+    return search_service.entity(f"{prefix}:{value}", external=external)
+
+
+@app.get("/live/search/feed")
+def live_search_feed(
+    e: str | None = Query(None),
+    tab: str | None = Query(None),
+    owner: bool = Query(False),
+    external: bool = Query(True),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """정보 검색 — 탭 하나의 결과(최근 2년 묶음, 출처별 상태). 운영자 전용 저장본은 owner일 때만, external=false면 바깥 출처는 캐시만."""
+    _check_token(x_service_token)
+    prefix, value = _search_input(search_service.parse_key, e)
+    checked_tab = _search_input(search_service.check_tab, tab)
+    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external)
 
 
 @app.get("/live/daum-intraday")

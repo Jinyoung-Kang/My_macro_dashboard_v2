@@ -1,0 +1,416 @@
+"""
+app/services/search_rules.py
+정보 검색(ADR 0041)의 규칙 — 계약 docs/specs/2026-11-14-info-search-contract.md §4가 원본으로 정한 것을 순수 함수로 둡니다(네트워크·DB 없음).
+
+1. 2년 자르기: 창 시작 = 오늘(KST) − 2년의 날짜 00:00 KST. 작성 시각이 그보다 이르면 old(가장 최근 날짜를 기억 — ``olderOnlyLatest``),
+   시각을 모르거나 지금 + 1일을 넘는 미래면 noTime.
+2. 중국어 제목: 한글(가-힣)이나 가나(ぁ-ヿ)가 하나라도 있으면 남김. 아니면 한자(一-鿿) 2자 이상이고 한자 / (한자 + 라틴 글자) ≥ 0.3이면 뺌.
+3. 매체 제외: 도메인이 '.cn'으로 끝나거나 목록의 도메인과 점 경계로 같거나, 매체 이름이 목록의 이름과 대소문자 무시 완전 일치면 뺌.
+   목록의 처음 값은 진행 기록(2026-11-14-info-search-progress.md '매체 제외 목록의 처음 값')의 확실한 것만입니다. 이름이 다른 나라의 매체와
+   겹치는 것(The Standard — 런던, Phoenix·SMM·The Paper 같은 일반 낱말)은 이름으로 빼지 않고 도메인으로만 뺍니다.
+   2026-11-14 사용자 허용(ADR 0041 결정 6): 대만 매체, Investing.com, StreetInsider, South China Morning Post(자매 매체 Inkstone 포함),
+   소유가 불확실했던 매체(Webull·Tiger·AInvest 등)는 목록에 넣지 않습니다(중국어 제목 거름과 '.cn' 규칙은 그대로 적용).
+4. 같은 글: 원문 주소가 있으면 ``info_text.item_id(url)``, 경유 주소(구글 뉴스)뿐이면 제목 앞 24자. 먼저 온 출처(우선순위 순)를 남깁니다.
+5. 검색식: 따옴표 구문을 ' OR '로 묶음. 판마다 이름 + 네 글자 이상 별칭 최대 4개(긴 것 먼저), 티커는 넣지 않음.
+"""
+from __future__ import annotations
+
+import math
+import re
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Iterable, Sequence
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
+
+from . import info_text
+
+KST = ZoneInfo("Asia/Seoul")
+WINDOW_YEARS = 2
+FUTURE_TOLERANCE = timedelta(days=1)
+# 기간 단추(화면이 받은 2년 묶음에서 자름) — 시작은 그 날짜의 00:00 KST. 7d·30d는 오늘 − N일, 1y·2y는 오늘 − N년.
+RANGE_DAYS = {"7d": 7, "30d": 30}
+RANGE_YEARS = {"1y": 1, "2y": WINDOW_YEARS}
+RANGE_KEYS = ("7d", "30d", "1y", "2y")
+
+MIN_ALIAS_CHARS = 4          # 이보다 짧은 별칭은 자유 검색어·저장본 대조에 넣지 않음(이름은 짧아도 넣음)
+MAX_ALIASES_PER_EDITION = 4
+TITLE_KEY_CHARS = 24
+SUMMARY_MAX_CHARS = 300
+RELAY_HOSTS = frozenset({"news.google.com"})
+
+_HANGUL = re.compile(r"[가-힣]")
+_KANA = re.compile(r"[ぁ-ヿ]")
+_HAN = re.compile(r"[一-鿿]")
+_LATIN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ɏ]")
+_NON_LATIN_TEXT = re.compile(r"[^\x00-\x7fÀ-ÖØ-öø-ɏ]")
+_MSN_TAIL = re.compile(r"\s+on\s+msn\s*$", re.IGNORECASE)
+_PG_SPECIAL = re.compile(r"([\\^$.|?*+()\[\]{}])")
+
+# ------------------------------------------------------------------ 매체 제외 목록(처음 값 — 진행 기록 2026-11-14, 사용자 허용 매체는 넣지 않음)
+EXCLUDED_DOMAINS: frozenset[str] = frozenset({
+    # 중국 국가·당 매체
+    "xinhuanet.com", "news.cn", "chinadaily.com.cn", "chinadailyhk.com", "chinadailyasia.com", "globaltimes.cn",
+    "people.cn", "people.com.cn", "peopledaily.com.cn", "cgtn.com", "cctv.com", "cri.cn", "ecns.cn", "chinanews.com.cn",
+    "china.org.cn", "bjreview.com", "sixthtone.com", "thepaper.cn", "yicaiglobal.com", "yicai.com", "shine.cn",
+    "shanghaidaily.com", "stcn.com", "cs.com.cn", "cnstock.com",
+    # 본토 민간
+    "caixinglobal.com", "caixin.com", "jiemian.com", "eeo.com.cn", "21jingji.com", "36kr.com", "technode.com", "pandaily.com",
+    "mysteel.net", "mysteel.com", "metal.com", "gasgoo.com", "cnevpost.com", "carnewschina.com",
+    # 홍콩
+    "thestandard.com.hk", "rthk.hk", "hongkongfp.com", "asiatimes.com", "ejinsight.com",
+    "hkej.com", "hket.com", "aastocks.com", "etnet.com.hk", "mingtiandi.com", "dimsumdaily.hk", "ifeng.com", "weekinchina.com",
+    # 마카오
+    "macaubusiness.com", "macaudailytimes.com.mo", "ggrasia.com", "asgam.com", "macaunews.mo",
+    # 중국 자본 금융 매체
+    "moomoo.com", "futunn.com", "futuhk.com", "futuholdings.com",
+    # 비중국 매체의 중국어 판 중 '.cn'이 잡지 못하는 것
+    "ftchinese.com",
+})
+EXCLUDED_NAMES: frozenset[str] = frozenset({
+    "Xinhua", "Xinhua News Agency", "Xinhuanet", "China Daily", "Global Times", "People's Daily", "People's Daily Online",
+    "CGTN", "CCTV", "China Radio International", "China News Service", "China.org.cn", "Beijing Review", "Sixth Tone",
+    "Yicai", "Yicai Global", "Shanghai Daily",
+    "Caixin", "Caixin Global", "Jiemian", "Economic Observer", "21st Century Business Herald", "36Kr", "TechNode", "Pandaily",
+    "Mysteel", "Shanghai Metals Market", "Gasgoo", "CnEVPost", "CarNewsChina",
+    "RTHK", "Hong Kong Free Press", "HKFP", "Asia Times", "EJ Insight",
+    "Hong Kong Economic Journal", "HKET", "Hong Kong Economic Times", "AASTOCKS", "ETNet", "Mingtiandi", "Dimsum Daily",
+    "Phoenix New Media", "Week in China",
+    "Macau Business", "Macau Daily Times", "GGRAsia", "Inside Asian Gaming", "Macau News Agency",
+    "Futu", "Futubull", "moomoo",
+})
+_EXCLUDED_NAME_KEYS = frozenset(name.casefold() for name in EXCLUDED_NAMES)
+
+
+# ------------------------------------------------------------------ 시각
+
+def kst_today(now: datetime | None = None) -> date:
+    return (now or datetime.now(timezone.utc)).astimezone(KST).date()
+
+
+def years_before(day: date, years: int) -> date:
+    """``years``년 전의 같은 날(2월 29일은 2월 28일로)."""
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:
+        return day.replace(year=day.year - years, day=28)
+
+
+def window(today: date) -> tuple[str, str]:
+    """조회 창(KST 날짜) — (오늘 − 2년, 오늘)."""
+    return years_before(today, WINDOW_YEARS).isoformat(), today.isoformat()
+
+
+def kst_midnight(day: date) -> datetime:
+    return datetime(day.year, day.month, day.day, tzinfo=KST)
+
+
+def window_start(today: date) -> datetime:
+    """창 시작 시각 — 오늘 − 2년의 00:00 KST."""
+    return kst_midnight(years_before(today, WINDOW_YEARS))
+
+
+def range_starts(today: date) -> dict[str, str]:
+    """기간 단추마다 시작 시각(UTC ISO) — 그 시각 이후(같은 시각 포함)의 줄을 그 기간에 셉니다."""
+    out = {key: utc_iso(kst_midnight(today - timedelta(days=days))) for key, days in RANGE_DAYS.items()}
+    out.update({key: utc_iso(kst_midnight(years_before(today, years))) for key, years in RANGE_YEARS.items()})
+    return {key: out[key] for key in RANGE_KEYS}
+
+
+def utc_iso(moment: datetime) -> str:
+    """UTC ISO(``YYYY-MM-DDTHH:MM:SS+00:00``) — 문자열 정렬이 시간 순서와 같습니다. 시간대가 없으면 UTC로 봅니다."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def parse_time(value: Any) -> datetime | None:
+    """ISO 문자열('Z' 포함)·epoch 초·datetime → UTC datetime. 읽지 못하면 None(지어내지 않음)."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        moment = value
+    elif isinstance(value, (int, float)):
+        if not math.isfinite(value):
+            return None
+        try:
+            return datetime.fromtimestamp(value, timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith(("Z", "z")):
+            text = text[:-1] + "+00:00"
+        try:
+            moment = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    else:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
+
+
+def time_verdict(published: datetime | None, *, start: datetime, now: datetime) -> str:
+    """'ok' · 'old'(창 시작보다 이름) · 'noTime'(모름 또는 지금 + 1일 넘는 미래)."""
+    if published is None or published > now + FUTURE_TOLERANCE:
+        return "noTime"
+    return "old" if published < start else "ok"
+
+
+# ------------------------------------------------------------------ 중국어 제목
+
+def has_hangul(text: str | None) -> bool:
+    return bool(text) and bool(_HANGUL.search(text))
+
+
+def is_chinese_title(title: str | None) -> bool:
+    """중국어 제목인가 — 한글·가나가 있으면 아님(한국어·일본어), 아니면 한자 2자 이상이고 한자/(한자+라틴) ≥ 0.3."""
+    if not title or _HANGUL.search(title) or _KANA.search(title):
+        return False
+    han = len(_HAN.findall(title))
+    if han < 2:
+        return False
+    latin = len(_LATIN.findall(title))
+    return han / (han + latin) >= 0.3
+
+
+# ------------------------------------------------------------------ 매체 제외
+
+def domain_of(url: str | None) -> str | None:
+    """주소의 호스트(소문자, 앞의 www. 없음). http(s)가 아니거나 호스트가 없으면 None."""
+    if not url:
+        return None
+    try:
+        parts = urlsplit(str(url).strip())
+    except ValueError:
+        return None
+    if parts.scheme.lower() not in ("http", "https"):
+        return None
+    host = (parts.hostname or "").lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    return host or None
+
+
+def is_excluded_media(domain: str | None, name: str | None) -> bool:
+    """제외할 매체인가(규칙 3) — '.cn' 도메인, 목록 도메인(점 경계), 목록 이름(대소문자 무시 완전 일치, MSN 재게재 꼬리는 뗌)."""
+    host = (domain or "").strip().lower().rstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    if host:
+        if host.endswith(".cn"):
+            return True
+        if any(host == excluded or host.endswith("." + excluded) for excluded in EXCLUDED_DOMAINS):
+            return True
+    if name:
+        key = _MSN_TAIL.sub("", name.strip()).strip().casefold()
+        if key in _EXCLUDED_NAME_KEYS:
+            return True
+    return False
+
+
+# ------------------------------------------------------------------ 같은 글
+
+def same_ticker(left: str, right: str) -> bool:
+    """같은 티커인가 — 'BRK.B'와 'BRK-B'를 같게 봅니다."""
+    return left.upper().replace(".", "-") == right.upper().replace(".", "-")
+
+
+def title_key(title: str | None) -> str:
+    return re.sub(r"\W+", "", (title or "").lower())[:TITLE_KEY_CHARS]
+
+
+def is_relay(url: str | None) -> bool:
+    return domain_of(url) in RELAY_HOSTS
+
+
+def item_key(url: str | None, title: str | None) -> str:
+    """같은 글 가리기 키 — 원문 주소면 ``info_text.item_id``, 경유 주소(구글)뿐이거나 주소가 없으면 제목 앞 24자."""
+    if url and domain_of(url) and not is_relay(url):
+        return info_text.item_id(url)
+    return title_key(title)
+
+
+def merge(groups: Iterable[Sequence[dict]]) -> list[dict]:
+    """
+    출처 묶음(우선순위 높은 것부터)을 합쳐 최신순으로 — 같은 키는 먼저 온 하나만. 경유 주소 줄은 앞서 남은 어느 줄과도 제목 앞 24자가
+    같으면 뺍니다(우선순위가 가장 낮은 구글 줄이 원문 주소를 가진 같은 기사와 겹치지 않게).
+    """
+    seen_ids: set[str] = set()
+    seen_titles: set[str] = set()
+    merged: list[dict] = []
+    for group in groups:
+        for item in group:
+            key = item.get("id") or item_key(item.get("url"), item.get("title"))
+            title = title_key(item.get("title"))
+            if not key or key in seen_ids:
+                continue
+            if title and (is_relay(item.get("url")) or not item.get("url")) and title in seen_titles:
+                continue
+            seen_ids.add(key)
+            if title:
+                seen_titles.add(title)
+            merged.append(item)
+    merged.sort(key=lambda item: (item.get("publishedAt") or "", item.get("id") or ""), reverse=True)
+    return merged
+
+
+# ------------------------------------------------------------------ 규칙 적용
+
+def empty_dropped() -> dict[str, int]:
+    return {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}
+
+
+def apply_rules(items: Iterable[dict], *, start: datetime, now: datetime) -> tuple[list[dict], dict[str, int], str | None]:
+    """
+    매체 제외 → 중국어 제목 → 시각(2년·모름·미래) 순으로 가립니다. 한 줄은 한 번만 셉니다.
+
+    :returns: (남은 줄, 뺀 건수, 창보다 오래된 줄 가운데 가장 최근 날짜(KST, 없으면 None))
+    """
+    kept: list[dict] = []
+    dropped = empty_dropped()
+    latest_old: datetime | None = None
+    for item in items:
+        if is_excluded_media(item.get("publisherDomain"), item.get("publisher")):
+            dropped["excluded"] += 1
+            continue
+        if is_chinese_title(item.get("title")):
+            dropped["chinese"] += 1
+            continue
+        published = parse_time(item.get("publishedAt"))
+        verdict = time_verdict(published, start=start, now=now)
+        if verdict == "noTime":
+            dropped["noTime"] += 1
+            continue
+        if verdict == "old":
+            dropped["old"] += 1
+            latest_old = published if latest_old is None or published > latest_old else latest_old
+            continue
+        kept.append(dict(item, publishedAt=utc_iso(published)))
+    return kept, dropped, latest_old.astimezone(KST).date().isoformat() if latest_old else None
+
+
+def range_counts(items: Iterable[dict], today: date) -> dict[str, int]:
+    """받은 자료(규칙을 거친 줄) 기준 기간별 건수."""
+    starts = range_starts(today)
+    counts = {key: 0 for key in RANGE_KEYS}
+    for item in items:
+        stamp = item.get("publishedAt") or ""
+        for key in RANGE_KEYS:
+            if stamp >= starts[key]:
+                counts[key] += 1
+    return counts
+
+
+# ------------------------------------------------------------------ 검색식·대조
+
+def _is_latin_term(term: str) -> bool:
+    return not _NON_LATIN_TEXT.search(term)
+
+
+def usable_alias(alias: str, ticker: str | None) -> bool:
+    text = alias.strip()
+    if len(text) < MIN_ALIAS_CHARS:
+        return False
+    if ticker and text.casefold() == ticker.casefold():
+        return False
+    return not (_HAN.search(text) and not _HANGUL.search(text))      # 중국어 별칭은 쓰지 않음
+
+
+def dedupe_texts(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    out = []
+    for value in values:
+        text = (value or "").strip()
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            out.append(text)
+    return out
+
+
+def _names(entity: dict) -> list[str]:
+    ticker = ((entity.get("ids") or {}).get("ticker") or "").casefold()
+    names = dedupe_texts([entity.get("nameKo") or "", entity.get("nameEn") or "", entity.get("name") or ""])
+    return [name for name in names if name.casefold() != ticker and not (_HAN.search(name) and not _HANGUL.search(name))]
+
+
+def edition_terms(entity: dict, lang: str) -> list[str]:
+    """
+    한 판(ko·en)의 검색어 — 그 판 글자의 이름 전부 + 네 글자 이상 별칭 최대 4개(긴 것 먼저). 티커·중국어는 넣지 않습니다.
+    한국어 판은 한글이 든 이름·별칭, 영어 판은 한글이 없는 라틴 글자 이름·별칭입니다.
+    """
+    def fits(text: str) -> bool:
+        return has_hangul(text) if lang == "ko" else (not has_hangul(text) and _is_latin_term(text))
+
+    ticker = (entity.get("ids") or {}).get("ticker")
+    names = [name for name in _names(entity) if fits(name)]
+    taken = {name.casefold() for name in names}
+    aliases = [alias for alias in dedupe_texts(entity.get("aliases") or [])
+               if fits(alias) and alias.casefold() not in taken and usable_alias(alias, ticker)]
+    aliases.sort(key=len, reverse=True)
+    return names + aliases[:MAX_ALIASES_PER_EDITION]
+
+
+def match_terms(entity: dict) -> list[str]:
+    """저장본(사건 뉴스·수집 글·거장 견해) 대조어 — 이름 전부 + 네 글자 이상 별칭(티커·중국어 없음)."""
+    ticker = (entity.get("ids") or {}).get("ticker")
+    names = _names(entity)
+    taken = {name.casefold() for name in names}
+    aliases = [alias for alias in dedupe_texts(entity.get("aliases") or [])
+               if alias.casefold() not in taken and usable_alias(alias, ticker)]
+    return names + aliases
+
+
+def build_query(terms: Sequence[str], *, after: str | None = None, site: str | None = None) -> str | None:
+    """따옴표 구문을 ' OR '로 — 구문 안의 따옴표는 지웁니다. 검색어가 없으면 None."""
+    phrases = [f'"{" ".join(term.replace(chr(34), "").split())}"' for term in terms if term and term.replace('"', "").strip()]
+    if not phrases:
+        return None
+    query = " OR ".join(phrases)
+    if site:
+        query += f" site:{site}"
+    if after:
+        query += f" after:{after}"
+    return query
+
+
+def _latin_pattern(term: str) -> re.Pattern:
+    return re.compile(r"(?<![0-9a-z])" + re.escape(term.casefold()) + r"(?![0-9a-z])")
+
+
+def text_matches(text: str | None, terms: Sequence[str]) -> bool:
+    """대조 — 라틴 글자 별칭은 단어 경계(대소문자 무시), 그 밖(한글 등)은 포함."""
+    if not text or not terms:
+        return False
+    folded = text.casefold()
+    for term in terms:
+        if _is_latin_term(term):
+            if _latin_pattern(term).search(folded):
+                return True
+        elif term.casefold() in folded:
+            return True
+    return False
+
+
+def sql_patterns(terms: Sequence[str]) -> tuple[list[str], list[str]]:
+    """DB 대조식 — (ILIKE 패턴(한글 등 포함 대조), ``~*`` 정규식(라틴 글자 단어 경계)). text_matches와 같은 뜻입니다."""
+    ilike: list[str] = []
+    regex: list[str] = []
+    for term in terms:
+        if _is_latin_term(term):
+            regex.append("(^|[^0-9a-z])" + _PG_SPECIAL.sub(r"\\\1", term.casefold()) + "([^0-9a-z]|$)")
+        else:
+            escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            ilike.append(f"%{escaped}%")
+    return ilike, regex
+
+
+def clip(text: str | None, limit: int = SUMMARY_MAX_CHARS) -> str | None:
+    """요약 상한(글자) — 넘으면 자르고 '…'."""
+    value = " ".join((text or "").split())
+    if not value:
+        return None
+    return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
