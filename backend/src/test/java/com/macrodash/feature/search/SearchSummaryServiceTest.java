@@ -12,6 +12,7 @@ import com.macrodash.support.CurrentUser;
 import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -825,6 +826,46 @@ class SearchSummaryServiceTest {
                 .contains("받지 못했")
                 .contains("아직 부르지 않");
         verifyNoEngine();
+    }
+
+    @Test
+    @Disabled("QA-428: 수정 전 실패 — engine_failed 안내가 '요약을 만들지 못했습니다 — '로 시작하고 429 상한 안내에 '요약하지 않았습니다'가 들어 화면 앞머리와 겹침")
+    @DisplayName("QA-428 실패 안내(message·429 사유)는 사유 본문만 — 화면이 앞에 붙이는 '요약하지 못했습니다'가 한 번만 나오게(모든 사유)")
+    void qa428FailureMessagesCarryOnlyTheDetail() {
+        feedReturns("news", feed(recent(3)));
+        primaryReturns(geminiFailed("RATE_LIMIT"));
+        lowerReturns(geminiFailed("RATE_LIMIT"));
+        claudeReturns(claudeFailed("TIMEOUT"));
+
+        Map<String, Object> failed = service().summarize(KEY, "news", "30d", OWNER);
+
+        assertThat(failed.get("reason")).isEqualTo("engine_failed");
+        String engine = (String) failed.get("message");
+        assertDetailOnly(engine);
+        assertThat(engine).startsWith("Gemini: ").contains("합성 실패: RATE_LIMIT").contains("Claude: 합성 실패: TIMEOUT");
+
+        // 하루 글자 상한(429) — 화면은 이 사유에도 같은 앞머리를 붙임(summaryErrorText).
+        when(translations.charsSince(any())).thenReturn(999_990L);
+        SearchSummaryService limited = service("auto", 1_000_000);
+        assertThatThrownBy(() -> limited.summarize(KEY, "news", "7d", OWNER))
+                .isInstanceOfSatisfying(TooManyRequestsException.class, e -> {
+                    assertDetailOnly(e.getMessage());
+                    assertThat(e.getMessage()).contains("상한");
+                });
+
+        // 다른 사유도 같은 규칙(사유 본문만).
+        for (String message : List.of(SearchSummaryService.NOT_CONFIGURED, SearchService.NO_RESPONSE, SearchSummaryService.STALE.formatted(2))) {
+            assertDetailOnly(message);
+        }
+    }
+
+    /** 화면 앞머리('요약하지 못했습니다 — ')와 같은 뜻의 실패 머리가 없는 사유 본문인가. */
+    private static void assertDetailOnly(String message) {
+        assertThat(message).isNotBlank()
+                .doesNotStartWith("요약")
+                .doesNotContain("요약을 만들지 못했")
+                .doesNotContain("요약하지 못했")
+                .doesNotContain("요약하지 않았");
     }
 
     /** 고칠 수 있는 시계. */
