@@ -58,7 +58,7 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
   // 탭 막대로 감(WCAG 2.4.3). 넓은 화면(본문 main#main이 스크롤)과 휴대폰(창이 스크롤) 둘 다. 본문은 셸에서 tabIndex=-1(건너뛰기 링크의
   // 대상)이라 여기서도 그렇게 둡니다. 브라우저는 단추 위 Enter·Space를 click으로 바꾸므로 포커스를 둔 뒤 click으로 누릅니다.
   // 수정 전 실패: document.activeElement가 main이 아니라 body.
-  it.fails("키보드로 누르면 단추가 사라지므로 포커스를 본문 시작(main#main)으로 옮긴다 — 본문·창 스크롤 모두(WCAG 2.4.3)", () => {
+  it("키보드로 누르면 단추가 사라지므로 포커스를 본문 시작(main#main)으로 옮긴다 — 본문·창 스크롤 모두(WCAG 2.4.3)", () => {
     main.tabIndex = -1;
     const focus = vi.spyOn(main, "focus");
     const scrollWindow = (top: number) =>
@@ -82,5 +82,16 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
       main.blur();
       focus.mockClear();
     }
+  });
+
+  it("본문(main#main)이 없는 화면에서도 누르면 창을 올리고 깨지지 않는다(QA-426 고침의 바깥 경우)", () => {
+    main.remove();
+    render(<ScrollTopButton />);
+    act(() => {
+      (window as { scrollY: number }).scrollY = 900;
+      window.dispatchEvent(new Event("scroll"));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "맨 위로" }));
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 });
