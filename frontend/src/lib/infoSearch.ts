@@ -1260,13 +1260,13 @@ export function linkGraphLayout(
     }
   });
   // 같은 쪽 이웃 노드의 세로 간격(호의 끝에서 가장 좁음 — 칸 수로 나눈 뒤 관계 묶음 사이의 틈까지 실제 각도로 잼)이 GRAPH_ROW_GAP에 못 미치면
-  // 세로 반지름을 늘리고 그만큼 그림을 높입니다(QA-424 — 글자 12px은 줄이지 않음, 좁은 화면의 그림이 길어짐). 0.1은 자리를 0.1px로 반올림해도
-  // 간격이 GRAPH_ROW_GAP 밑으로 내려가지 않게.
+  // 세로 반지름을 늘리고 그만큼 그림을 높입니다(QA-424 — 글자 12px은 줄이지 않음, 좁은 화면의 그림이 길어짐). 이미 GRAPH_ROW_GAP 이상이면 그대로이고,
+  // 늘릴 때만 0.1을 더해 자리를 0.1px로 반올림한 뒤에도 간격이 GRAPH_ROW_GAP 밑으로 내려가지 않게.
   let narrowest = Infinity;
   for (let at = 1; at < placed.length; at += 1) {
     if (placed[at].side === placed[at - 1].side) narrowest = Math.min(narrowest, Math.abs(Math.sin(placed[at].angle) - Math.sin(placed[at - 1].angle)));
   }
-  const ry = baseRy * narrowest < GRAPH_ROW_GAP + 0.1 ? (GRAPH_ROW_GAP + 0.1) / narrowest : baseRy;
+  const ry = baseRy * narrowest < GRAPH_ROW_GAP ? (GRAPH_ROW_GAP + 0.1) / narrowest : baseRy;
   const reach = Math.max(0, ...placed.map(({ angle }) => Math.abs(Math.sin(angle))));
   const height = ry > baseRy ? Math.max(size.height, Math.ceil(2 * (ry * reach + GRAPH_MARGIN_Y))) : size.height;
   const cy = height / 2;

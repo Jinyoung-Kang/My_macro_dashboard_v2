@@ -128,6 +128,14 @@ describe("연결 그림 — 앞머리가 같은 이름의 노드도 보이는 �
 
 type Layout = ReturnType<typeof linkGraphLayout>;
 
+/**
+ * 같은 쪽 이웃 간격의 하한 — 14px에서 부동소수 오차만 뺌. 노드 y는 0.1px로 반올림한 값이라 간격이 정확히 14여도 뺄셈이 13.999999999999996
+ * (37.8 − 23.8)처럼 나옵니다(검토 지적 — 그것은 결함이 아님).
+ */
+const ROW_GAP_MIN = 14 - 1e-6;
+/** 상자가 겹쳤다고 보는 최소 폭(px) — 맞닿기만 한 것과 반올림 오차는 겹침이 아님. */
+const OVERLAP_MIN = 1e-6;
+
 /** 같은 쪽(오른쪽 = start, 왼쪽 = end) 이웃 노드의 가장 좁은 세로 간격. */
 function minRowGap(layout: Layout): number {
   let gap = Infinity;
@@ -152,7 +160,9 @@ function labelOverlaps(layout: Layout): string[] {
     for (const b of layout.nodes.slice(at + 1)) {
       const A = labelBox(a);
       const B = labelBox(b);
-      if (Math.min(A.right, B.right) > Math.max(A.left, B.left) && Math.min(A.bottom, B.bottom) > Math.max(A.top, B.top)) out.push(`${a.label} / ${b.label}`);
+      if (Math.min(A.right, B.right) - Math.max(A.left, B.left) > OVERLAP_MIN && Math.min(A.bottom, B.bottom) - Math.max(A.top, B.top) > OVERLAP_MIN) {
+        out.push(`${a.label} / ${b.label}`);
+      }
     }
   });
   return out;
@@ -197,7 +207,7 @@ describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 
     for (const width of [296, 330, 390, 570]) {
       const layout = linkGraphLayout(linkGroups(c02Links()), linkGraphSize(width), { centerName: "Example Corp" });
       expect([layout.nodes.length, layout.hidden]).toEqual([30, 9]);
-      expect(minRowGap(layout)).toBeGreaterThanOrEqual(14);
+      expect(minRowGap(layout)).toBeGreaterThanOrEqual(ROW_GAP_MIN);
       expect(labelOverlaps(layout)).toEqual([]);
       expect(tagOverlaps(layout)).toEqual([]);
       expectInView(layout);
@@ -207,7 +217,8 @@ describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 
     expect(linkGraphLayout(linkGroups(c02Links()), linkGraphSize(570)).height).toBe(linkGraphSize(570).height);
   });
 
-  // 수정 전 실패: 관계 1종(내부자 30)도 폭 296에서 간격이 13.99…(반올림 뒤 14에 닿음), 7~9종은 관계 글이 좌우로 겹침(재현 커밋에서는 it.fails).
+  // 수정 전 실패: 관계 2~9종은 폭 296에서 같은 쪽 간격이 14 밑(2종 13.2 … 5종 12.0), 7~9종은 관계 글이 좌우로 겹침(재현 커밋에서는 it.fails).
+  // 관계 1종(내부자 30)은 결함이 아님 — 실제 간격 14.05를 0.1px로 반올림한 y끼리 빼면 13.999…(검토 지적, ROW_GAP_MIN).
   it("관계가 1~9종이어도(노드 30) 폭 296·330·390·453·570에서 같은 쪽 이웃 간격 ≥ 14, 모르는 관계 코드(긴 글)가 있어도 관계 글끼리 겹치지 않음", () => {
     const relations = ["owner_of", "owned_by", "founded_by", "employer", "ceo", "ultimate_parent", "parent", "subsidiary"];
     for (let kinds = 1; kinds <= 9; kinds += 1) {
@@ -217,7 +228,7 @@ describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 
       ];
       for (const width of [296, 330, 390, 453, 570]) {
         const layout = linkGraphLayout(linkGroups(links), linkGraphSize(width), { centerName: "Example Corp" });
-        expect([kinds, width, minRowGap(layout) >= 14]).toEqual([kinds, width, true]);
+        expect([kinds, width, minRowGap(layout) >= ROW_GAP_MIN]).toEqual([kinds, width, true]);
         expect(labelOverlaps(layout)).toEqual([]);
         expect(tagOverlaps(layout)).toEqual([]);
         expectInView(layout);
@@ -230,8 +241,21 @@ describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 
       expect(layout.tags.some((tag) => tag.label === "qa_unknown_rel")).toBe(true);
       expect(tagOverlaps(layout)).toEqual([]);
       expect(labelOverlaps(layout)).toEqual([]);
-      expect(minRowGap(layout)).toBeGreaterThanOrEqual(14);
+      expect(minRowGap(layout)).toBeGreaterThanOrEqual(ROW_GAP_MIN);
       expectInView(layout);
+    }
+  });
+
+  it("같은 쪽 간격이 이미 14px 이상이면 그림을 높이지 않음 — 관계 1종(내부자 30)은 폭 296~453에서 크기·세로 반지름이 받은 그대로(검토 지적)", () => {
+    // 늘릴지는 반올림 전의 간격(14.05)으로 가름 — 반올림 여유(0.1)를 늘릴지 가르는 데까지 쓰면 겹침이 없는 그림도 세로 반지름이 167.7 → 168.3으로 바뀜.
+    const insiders = named("insider", Array.from({ length: 30 }, (_, at) => `Fictional Insider ${at + 1}`), "yahoo", false);
+    for (const width of [296, 330, 390, 453]) {
+      const size = linkGraphSize(width);
+      const layout = linkGraphLayout(linkGroups(insiders), size, { centerName: "Example Corp" });
+      expect(layout.height).toBe(size.height);
+      expect(layout.ry).toBeCloseTo((size.height / 2 - 18) / Math.sin((65 * Math.PI) / 180), 9);
+      expect(minRowGap(layout)).toBeGreaterThanOrEqual(ROW_GAP_MIN);
+      expect(labelOverlaps(layout)).toEqual([]);
     }
   });
 });
