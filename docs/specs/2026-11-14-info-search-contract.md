@@ -145,7 +145,8 @@ SourceStatus = {
 5. **검색식**: 따옴표 구문을 ` OR `로 묶음. 한국어 판(구글 `hl=ko&gl=KR&ceid=KR:ko`)은 한글 이름·한글 별칭, 영어 판(`hl=en-US&gl=US&ceid=US:en`)은 영문 이름·영문 별칭.
    네 글자 미만의 별칭과 티커는 자유 검색어에 넣지 않음(티커는 종목 뉴스 출처에만). 대상의 이름 자체는 길이와 상관없이 넣음(예: '카카오' — 이름까지 빼면 묻지 못함). 별칭은 판마다 최대 4개(긴 이름 우선). 구글에는 `after:<창 시작 날짜>`를 붙입니다(믿지 않고 1번으로 다시 자름).
    **Bing은 예외**(단계 3, 서버 실측 2026-11-14 — `"A" OR "B"` 모양과 아주 흔한 한 단어 `NVIDIA`에 0건, 여러 단어 구문·한글 이름에는 줌): 판마다 따옴표 구문 하나를
-   묻고(여러 단어 구문 먼저, 같으면 위 순서), 0건이면 다음 구문으로 한 번 더(판마다 최대 2번, 실패하면 다시 묻지 않음 — `search_sources.bing_phrases`).
+   묻고(여러 단어 구문 먼저, 같으면 위 순서), 0건이면 다음 구문으로 한 번 더(판마다 최대 2번, 실패하면 다시 묻지 않음 — `search_sources.bing_queries`).
+   미국 종목의 영어 판은 한 단어 구문에 티커를 따옴표 밖에 붙임(`"NVIDIA" NVDA` — 서버 실측 `"NVIDIA"` 0건·`"NVIDIA" NVDA` 9건·`"Apple" AAPL` 12건; 티커는 검색을 넓히지 않고 좁힘).
 6. **로그**: 검색어·경로·인자를 남기지 않음. 오류 글은 호스트와 상태 코드만(`http.host_of`).
 
 ## 5. 화면
@@ -234,3 +235,88 @@ SourceStatus = {
 - `feed?refresh=1`은 캐시를 건너뛰는 '지금 새로 받기'(사용자당 10분에 1번 — 넘으면 캐시 그대로 + 응답 최상위 `refreshNote`에 안내 한 줄, 새로 받았으면 null,
   refresh를 묻지 않으면 칸 없음). 수집기에 닿지 못한 새로 받기는 한 번으로 세지 않음. 데모·`store_only`는 새로 받지 않고 한도도 쓰지 않음.
 - 주제 키는 앞뒤 공백을 떼고 가운데 이어진 공백을 하나로(수집기 `clean_query`와 같은 키 — 등록·정기 수집·결과가 같은 키).
+
+## 7. 단계 4 — 공시 · 리서치 · 연결 보강 (2026-11-14 추가)
+
+지시문 4.2·4.5와 단계 0 실측(진행 기록 '서버 실측')이 근거입니다. 모두 **공식 API·라이브러리 길**(공용 세션 — 로컬에서도 나감)이고 스크래핑은 없습니다. 출처마다 성공 15분·실패
+60초 캐시(3-4와 같음), `external=false`면 캐시만(`offline`). 검색어·경로·인자는 로그에 남기지 않습니다(호스트만). **모의 매매 입력이 아닙니다.**
+
+### 7-1. 시각 칸 — `timeBasis: "date"`(더함)
+
+날짜만 아는 출처(DART 접수일, EDGAR 전문 검색 `file_date`, 네이버 리포트 날짜)는 `publishedAt` = 그 날짜의 그 출처 달력 00:00(DART·네이버 = KST `+09:00`,
+SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값, `timeBasis: "date"`. 2년 자르기·정렬은 그 값으로 하고, 화면은 날짜만(`YYYY-MM-DD`) 보입니다.
+
+### 7-2. 공시 탭(`filings`) — 대상 종류: 기업·기관·사람(주제는 탭 없음, `timeline`에도 공시 출처 없음)
+
+| source | label | 언제 부름 | 호출 |
+|---|---|---|---|
+| `sec` | SEC 공시(회사별) | `ids.cik`가 있는 대상(회사·13F 기관·CIK가 있는 사람) | `https://data.sec.gov/submissions/CIK<10자리>.json` 한 번(`SEC_USER_AGENT` — 기존 SEC 세션·간격). `filings.recent`의 줄 가운데 2년 안. 최근 블록의 가장 오래된 접수일이 창 안이면(그 앞 파일이 따로 있음) 상태 `message` = "최근 1,000건만 — 그 앞은 SEC에서"(더 부르지 않음) |
+| `sec_fts` | SEC 전문 검색(이름) | 사람·13F 기관(종류 `person`·`institution`)의 영문 이름이 있을 때 | `https://efts.sec.gov/LATEST/search-index?q="<구문>"&dateRange=custom&startdt=<창 시작>&enddt=<오늘 KST>` — 구문은 Bing과 같은 규칙(`bing_queries(edition_terms(entity,"en"))` — 티커 없이, 첫 구문이 0건이면 다음 구문 한 번). 첫 쪽(최대 100건)만 |
+| `dart` | DART 공시 | `ids.dartCorpCode`가 있는 국내 회사 | `https://opendart.fss.or.kr/api/list.json?corp_code=&bgn_de=<창 시작 YYYYMMDD>&end_de=<오늘>&sort=date&sort_mth=desc&page_count=100&page_no=1`(+ `total_page`가 1보다 크면 `page_no=2` 한 번 — 최대 200건). `DART_API_KEY`(기존 `publicapi`). `total_count` > 받은 수면 `message` = "최근 200건(전체 n건 — 그 앞은 DART에서)". status `013`(자료 없음)은 `empty` |
+
+- FeedItem(공통): `kind:"filing"`, `lang` SEC `en`·DART `ko`, `summary` ≤ 300자, `readerId:null`.
+  - `sec`: `title` = `<form> · <primaryDocDescription>`(설명이 없거나 양식과 같으면 양식만), `url` = 접수 색인 쪽
+    `https://www.sec.gov/Archives/edgar/data/<CIK 숫자>/<접수번호 대시 없음>/<접수번호>-index.htm`, `publisher` = 회사 이름(submissions `name`), `publisherDomain` = `sec.gov`,
+    `publishedAt` = `acceptanceDateTime`(UTC, 있으면 `timeBasis:"published"`) 없으면 `filingDate`(`"date"`), `summary` = "보고 기준일 <reportDate>"(있을 때).
+  - `sec_fts`: `title` = `<form> · <제출자 이름>`(`display_names[0]`에서 꼬리 ` (CIK …)`·티커 괄호를 뗌), `url` = 같은 접수 색인 쪽(`ciks[0]`), `publisher` = 제출자 이름,
+    `publishedAt` = `file_date`(`"date"`), `summary` = `file_description`.
+  - **같은 공시 가리기**: SEC 두 출처는 `id` = `info_text.item_id("sec:" + 접수번호)`(쪽 주소가 아니라 접수번호 — 같은 접수가 두 출처에서 와도 한 줄, `sec`가 먼저).
+  - `dart`: `title` = `report_nm`(앞뒤 공백 정리), `url` = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=<rcept_no>`, `publisher` = `flr_nm`(제출인), `publisherDomain` = `dart.fss.or.kr`,
+    `publishedAt` = `rcept_dt`(KST 날짜, `"date"`), `summary` = `rm` 표지(유·코·채·넥·공·연·정·철 — 있으면 "비고 <rm>"), `id` = `info_text.item_id(url)`.
+- 중국어·매체 제외 규칙은 그대로 거칩니다(공시는 걸릴 일이 거의 없음). 시각 모름은 `noTime`.
+
+### 7-3. 리서치 탭(`research`) — 대상 종류: 기업(상장 종목)만
+
+| source | label | 언제 | 호출 |
+|---|---|---|---|
+| `yahoo_research` | 투자의견 변경(Yahoo) | `ids.market == "us"`이고 티커가 있음 | yfinance `Ticker(t).upgrades_downgrades`(Yahoo 공용 거부 래치 `http.YAHOO_HOST`를 먼저 봄 — 닫혀 있으면 부르지 않고 `error`). 2년 안의 줄만 |
+| `naver_research` | 증권사 리포트(네이버) | `ids.market == "kr"` | 종목 상세의 네이버 `integration` 응답의 `researches`(상세 화면 함수 그대로 — 새 네이버 경로를 늘리지 않음, 받은 만큼) |
+
+- `yahoo_research`: `kind:"research"`, `title` = `<Firm>: <등급 바뀜>` — `Action`을 한국어로(`up` 상향·`down` 하향·`main` 유지·`init` 신규·`reit` 재개, 모르면 원문),
+  `FromGrade → ToGrade`(앞 등급이 없으면 `ToGrade`만), `summary` = 목표가가 있으면 "목표가 <prior> → <current>"(달러, 없으면 null), `publisher` = `Firm`, `url` =
+  `https://finance.yahoo.com/quote/<티커>/analysis/`(공용 — 같은 글 가리기는 `id`로), `id` = `info_text.item_id("yahoo-grade:" + 티커 + 날짜시각 + Firm + Action + ToGrade)`,
+  `publishedAt` = `GradeDate`(UTC, `"published"`), `lang:"en"`.
+- `naver_research`: `kind:"research"`, `title` = 리포트 제목, `publisher` = 증권사, `url` = 네이버 리포트 쪽(상세와 같음), `publishedAt` = 날짜(`"date"`, KST), `lang:"ko"`.
+
+### 7-4. 타임라인
+
+`timeline` = 그 대상에 허락된 모든 탭의 합(3-4) — 단계 4부터 기업·기관·사람은 공시 출처, 기업은 리서치 출처도 들어갑니다(상태 `later` 없앰). 같은 글 가리기 우선순위는
+기존 순서 뒤에 `sec` > `sec_fts` > `dart` > `yahoo_research` > `naver_research`.
+
+### 7-5. 연결 보강 — 새 경로 `GET /api/search/links?e=`(회원) · 수집기 `GET /live/search/links?e=&external=&owner=`
+
+대상 풀기(3-3, 하루 캐시·15초 상한)를 무겁게 하지 않으려고 따로 부릅니다. 연결 탭을 열 때 화면이 부르고, 3-3의 `links`(Wikidata·13F)와 합쳐 보입니다.
+
+```
+{ "entityKey": "us:NVDA", "links": [Link], "sources": [SourceStatus], "fetchedAt": iso }
+```
+
+| source | label | 언제 | 호출 → Link |
+|---|---|---|---|
+| `insiders` | 내부자 명단(Yahoo) | 미국 상장 회사(티커) | yfinance `Ticker(t).insider_roster_holders`(Yahoo 래치) → `relation:"insider"`, `kind:"person"`, `key:null`, `name` = `Name`, `detail` = `Position` + (있으면) " · 최근 <Most Recent Transaction> <Latest Transaction Date(YYYY-MM-DD)>" |
+| `gleif` | 법인 관계(GLEIF) | `ids.lei`가 있음 | `https://api.gleif.org/api/v1/lei-records/<LEI>/direct-parent`·`/ultimate-parent`(404 = 관계 없음 — 오류 아님)·`/direct-children?page[size]=20` (일반 이름 UA — Wikidata와 같은 UA, 하루 캐시) → `relation` `parent`·`ultimate_parent`·`subsidiary`, `kind:"company"`, `key:null`, `name` = `entity.legalName.name`, `detail` = 법인 소재지(`entity.legalAddress.country`) + " · LEI <lei>". 자식이 20을 넘으면 상태 `message` = "자회사 20곳까지(전체 n곳)" |
+
+- `Link`에 칸 둘을 더합니다: `detail`(한 줄, 없으면 null), `source`에 `yahoo`·`gleif`. `relation`에 `insider`·`ultimate_parent`를 더합니다.
+- `key:null` 연결은 누르면 그 이름으로 3-2(resolve)를 부릅니다(지금과 같음).
+- `ids`에 `lei`를 더합니다(Wikidata `P1278`의 첫 값 — 20자 `[A-Z0-9]{18}[0-9]{2}`만, 없으면 null). 속성 칸에 보입니다.
+- LEI가 없는 대상은 `gleif` 상태 `skipped`("LEI 없음 — Wikidata에 법인 식별자가 없음"), 미국 상장 회사가 아니면 `insiders` `skipped`.
+- 사람 대상의 '임원·내부자 ↔ 기업' 역방향(사람 → 회사)은 이번 단계에서 하지 않습니다(SEC 소유 공시 역색인이 필요 — 단계 6 후보).
+
+### 7-6. 관심 대상 정기 수집에 더함(6-3)
+
+- 대상에 `ids.cik`가 있으면 SEC submissions(호스트 `data.sec.gov`, 하루 예산 600), 종류가 사람·13F 기관이면 EDGAR 전문 검색 첫 구문 한 번(호스트 `efts.sec.gov`, 300 —
+  두 번째 구문은 묻지 않음), `ids.dartCorpCode`가 있으면 DART 첫 쪽(호스트 `opendart.fss.or.kr`, 600). 예산·간격·판정 규칙은 6-3과 같고, 넣는 줄은 `kind:"filing"`.
+- 공시 줄의 저장 id = 7-2의 `id`(접수번호·DART 주소). 리서치·연결은 모으지 않습니다.
+- `feed`의 저장본 출처 `watch`는 탭에 맞는 종류만 섞습니다: `news` 탭은 `kind` `news`·`headline`, `filings` 탭은 `filing`, `timeline`은 전부(공시 탭이 없는 주제는 공시 줄도 없음).
+
+### 7-7. 화면
+
+- 공시·리서치 탭을 엽니다(대상 종류에 따라 — 주제는 공시·리서치 없음, 기관·사람은 리서치 없음). 줄의 종류 표지(공시·리서치), `timeBasis:"date"`는 날짜만.
+- 연결 탭: 3-3의 `links` + 7-5 응답을 관계별 묶음으로(`insider` '내부자', `ultimate_parent` '최상위 모회사' 등), 각 줄에 `detail`, 출처 상태 줄. 받는 중·실패·건너뜀은 글로.
+- 속성 칸: `ids.lei`(있으면).
+
+### 7-8. 백엔드
+
+- `GET /api/search/links?e=` — 회원(`AccessPolicy`), 키 검사는 `entityKey`, `external`·`owner` 인자는 다른 경로와 같음, 중계만(운영자 전용 출처 없음). `RouteInventoryTest`·`API.md`·
+  `scripts/qa/routes.json`·화면 `endpoints.ts`.
+- 새 출처(`sec`·`sec_fts`·`dart`·`yahoo_research`·`naver_research`·`insiders`·`gleif`)는 회원에게도 보입니다(운영자 전용 아님) — `hideOwnerOnly`가 이 줄을 지우지 않는지 시험.

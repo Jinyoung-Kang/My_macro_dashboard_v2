@@ -199,6 +199,21 @@ D-9 — 실측에서 보인 중화권 영어 매체: **DigiTimes**(대만, Finvi
 - 새 글 수의 기준은 '마지막으로 본 때 24시간 전'과 '등록 시각' 가운데 늦은 것으로 정함(등록할 때 본 글은 새 글이 아님).
 - IDNA2003/2008 차이(ß 등)는 화면이 WHATWG URL(IDNA2008)로 punycode를 만들어 보내므로 실제 입력 경로에서는 닿지 않음 — 반박됨.
 
+- **20:3x KST Vultr 배포**(main@0a92407c, CI 6/6). V37 적용(`schema_migrations` 37), `search_feeds`가 피드 12개의 첫 일정을 잡음(첫 요청 20:34). 서버에서 고친 Bing 재기:
+  삼성전자 한 9·영 11, Ken Griffin 영 9, 엔비디아 한 5건 — 엔비디아 영어 판은 여전히 0건(이름이 `NVIDIA` 하나)이라 `"NVIDIA" NVDA` 9·`NVIDIA stock`·`"NVIDIA Corporation"` 12·
+  `"Apple" AAPL`·`"Tesla" TSLA` 12건을 재고, 미국 종목 영어 판의 한 단어 구문에 티커를 붙이도록 고침. 이 측정 중 수집기 컨테이너의 별도 파이썬 과정에서 대상 풀기를
+  짧게 네 번 하다 Wikidata 429를 한 번 받음(그 과정 안의 래치만 — 운영 수집기 과정과 따로).
+
+## 단계 4 — 공시 · 리서치 · 연결 보강 (2026-11-14 토, 진행 중)
+
+- 계약 §7을 먼저 고정:
+  - 날짜만 아는 줄은 `timeBasis:"date"`.
+  - 공시 탭 출처는 SEC 회사별 submissions, EDGAR 이름 전문 검색(사람·기관), DART `list.json`(최대 200건).
+  - 리서치 탭 출처는 Yahoo 투자의견 변경과 네이버 리포트(상세 응답 그대로).
+  - 연결은 새 경로 `/api/search/links`로 따로 받습니다. Yahoo 내부자 명단과 GLEIF 모회사·최상위 모회사·자회사이고, LEI는 Wikidata P1278에서 얻습니다.
+  - 관심 대상 정기 수집에 SEC·EDGAR·DART 공시를 더합니다. 하루 예산은 data.sec.gov 600·efts.sec.gov 300·opendart 600입니다.
+- GLEIF는 이름 검색 대신 Wikidata LEI로만 찾습니다. 단계 0 실측에서 `Samsung Electronics` 이름 검색의 첫 결과가 해외 자회사였기 때문입니다.
+
 ## 남은 확인
 
 - (닫힘, 2026-11-14 사용자 결정) 대만 매체·StreetInsider·Investing.com·South China Morning Post·소유가 불확실한 매체(Webull·Tiger·AInvest 등)는 수집 허용 —
