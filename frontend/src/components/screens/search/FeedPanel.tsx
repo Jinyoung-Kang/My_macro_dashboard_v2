@@ -5,6 +5,7 @@ import { ErrorState, Loading } from "@/components/ui";
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { ChevronDownIcon, ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
+import { useBottomSheet } from "@/hooks/useBottomSheet";
 import { useInfoSearchFeed } from "@/hooks/useInfoSearch";
 import { useInfoSearchSummary } from "@/hooks/useInfoSearchSummary";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -53,6 +54,9 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 결과 세 칸(넓은 화면) — 왼쪽 거르기(기간·종류·출처·언어, 건수는 받은 자료 기준), 가운데 KST 날짜별 조밀한 목록(시각 · 종류 · 매체 · 제목),
  * 오른쪽 속성·미리 보기, 아래 출처 상태 줄. 좁은 화면은 한 칸 — 거르기는 접는 서랍, 미리 보기는 아래 시트. 세 칸은 xl(1280) 이상이고,
  * lg(1024~1279)는 두 칸(왼쪽 · 가운데 — 속성은 가운데 아래, 미리 보기는 아래 시트)입니다(entityGrid — QA-420).
+ * 아래 시트가 열려 있으면 그 높이를 재서(useBottomSheet) 결과 아래에 같은 여백을 두고(끝 줄·출처 상태 줄이 시트 위로 올라오게), 스크롤 여백
+ * (globals.css의 --bottom-sheet)으로 ↑↓·End로 고른 줄이 시트 밑에 숨지 않게 하며, 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다.
+ * 넓은 화면(lg)에서는 시트가 본문의 스크롤 막대를 덮지 않게 그 폭만큼 오른쪽을 비웁니다.
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
  * 날짜만 아는 줄(공시 접수일·리포트 날짜 — timeBasis "date", 계약 §7-1)은 시각 칸에 날짜만 두고, 공시·리서치 줄은 종류를 테두리 표지로 둡니다.
@@ -177,6 +181,21 @@ export function FeedPanel({
   const selected = selectedEntry?.type === "item" ? selectedEntry.item : null;
   /** 요약의 근거 단추로 갈 수 있는 줄 — 기간·거르기·막대 좁히기를 거친 줄(접힌 같은 사건 묶음의 줄 포함 — 누르면 펼침). */
   const reachableIds = useMemo(() => new Set(narrowed.map((item) => item.id)), [narrowed]);
+  /** 오른쪽 칸 — xl 미만에서 줄을 고르면 아래 시트(고정)가 됩니다. 시트의 높이·본문 스크롤 막대 폭(QA-420 검토). */
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const sheet = useBottomSheet(sheetRef, selected !== null);
+
+  // 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다(스크롤 여백을 따름 — nearest). 처음 고른 줄은 시트가 열리기
+  // 전에 옮겨졌고, 누른 줄은 열린 시트에 덮일 수 있습니다. 덮지 않았으면(사용자가 다른 곳으로 스크롤한 뒤 휴대폰 주소 막대로 시트 높이가
+  // 바뀐 때 등) 옮기지 않고, 거르기·막대로 목록이 바뀔 때도 옮기지 않습니다(왼쪽 칸에서 고르는 중일 수 있음).
+  useEffect(() => {
+    const row = listRef.current?.querySelector('[role="option"][aria-selected="true"]');
+    const pane = sheetRef.current;
+    if (sheet.height <= 0 || !row || !pane) return;
+    const box = row.getBoundingClientRect();
+    const top = pane.getBoundingClientRect().top;
+    if (box.bottom > top && box.top < top + sheet.height) row.scrollIntoView({ block: "nearest" });
+  }, [sheet.height]);
 
   const select = (index: number) => {
     const entry = flat[index];
@@ -471,7 +490,7 @@ export function FeedPanel({
   );
 
   return (
-    <div className={`${PANEL} flex flex-col`}>
+    <div className={`${PANEL} flex flex-col`} style={sheet.height > 0 ? { marginBottom: sheet.height } : undefined}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 lg:hidden">
         <button type="button" className={BUTTON} aria-expanded={drawer} aria-controls={drawerId} onClick={() => setDrawer((value) => !value)}>
           거르기 · 기간 {SEARCH_RANGES.find((option) => option.key === range)?.label}
@@ -590,8 +609,11 @@ export function FeedPanel({
           ) : null}
           {body}
         </div>
-        {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴 232px 옆). */}
+        {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴 232px 옆,
+            본문 스크롤 막대 옆까지). */}
         <div
+          ref={sheetRef}
+          style={sheet.gutter > 0 ? { right: sheet.gutter } : undefined}
           className={`${
             selected
               ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"

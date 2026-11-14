@@ -4,6 +4,8 @@
  * 배치: jsdom은 배치를 재지 않습니다. 그래서 그린 화면의 클래스에서 그 창 폭에 쓰이는 칸 틀(`grid-cols-[…]`과 그 앞의 lg:·xl: 등)을 읽고,
  * 셸의 폭(아래 상수)으로 가운데 칸의 폭을 셈해 줄의 고정 칸이 들어가는지 봅니다(배치 계산을 클래스 계약으로 시험 — 실제 화면은 QA 스택에서 잼).
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +18,7 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 vi.mock("next/navigation", () => import("./fakeNavigation"));
 
+import { BOTTOM_SHEET_VAR } from "@/hooks/useBottomSheet";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
 import { canonicalSearchHref, linkGraphSize } from "@/lib/infoSearch";
@@ -233,6 +236,113 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     const grid = entityGridOf(await screen.findByRole("listbox", { name: "결과" }));
     expect(activeTracks(grid, 1440)).toEqual(["13rem", "minmax(0,1fr)", "18rem"]);
     expect(middleWidth(grid, 1440)).toBe(589);
+  });
+});
+
+describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼 비운다(고른 줄·끝 줄이 시트 밑에 숨지 않게)", () => {
+  // jsdom은 배치를 재지 않으므로 시트(max-h-[50dvh] 칸)의 계산된 위치(고정인지)와 크기를 가짜로 줍니다 — 창 폭에 따라 고정(xl 미만)·흐름 안(xl)인 것은
+  // 클래스(xl:static)가 정하고, 여기서는 그 두 경우를 sheetFixed로 고릅니다.
+  const SHEET_TOP = 500;
+  const SHEET_HEIGHT = 240;
+  let sheetFixed: boolean;
+  /** 고른 줄의 화면 위 자리(위·아래 끝). */
+  let selectedBox: { top: number; bottom: number };
+  let main: HTMLElement;
+  let restore: (() => void)[];
+  const isSheet = (element: Element) => element instanceof HTMLElement && element.className.split(/\s+/).includes("max-h-[50dvh]");
+  const rect = (top: number, height: number) =>
+    ({ x: 0, y: top, top, left: 0, right: 0, bottom: top + height, width: 0, height, toJSON: () => ({}) }) as DOMRect;
+  const reserved = () => document.documentElement.style.getPropertyValue(BOTTOM_SHEET_VAR);
+
+  beforeEach(() => {
+    sheetFixed = true;
+    selectedBox = { top: 600, bottom: 632 };
+    const realStyle = window.getComputedStyle.bind(window);
+    const style = vi
+      .spyOn(window, "getComputedStyle")
+      .mockImplementation((element: Element, pseudo?: string | null) =>
+        sheetFixed && isSheet(element) ? ({ position: "fixed" } as CSSStyleDeclaration) : realStyle(element, pseudo),
+      );
+    const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (isSheet(this)) return rect(SHEET_TOP, SHEET_HEIGHT);
+      if (this.getAttribute("role") === "option" && this.getAttribute("aria-selected") === "true") {
+        return rect(selectedBox.top, selectedBox.bottom - selectedBox.top);
+      }
+      return rect(0, 0);
+    });
+    // 본문(main#main)의 세로 스크롤 막대 10px — 셸의 본문이 lg부터 스크롤 상자.
+    main = document.createElement("main");
+    main.id = "main";
+    Object.defineProperty(main, "offsetWidth", { configurable: true, value: 800 });
+    Object.defineProperty(main, "clientWidth", { configurable: true, value: 790 });
+    document.body.appendChild(main);
+    restore = [() => style.mockRestore(), () => box.mockRestore()];
+  });
+  afterEach(() => {
+    cleanup();
+    restore.forEach((undo) => undo());
+    main.remove();
+    document.documentElement.style.removeProperty(BOTTOM_SHEET_VAR);
+  });
+
+  async function openPreview(index: number) {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const panel = entityGridOf(list).parentElement as HTMLElement;
+    const scrolled: Element[] = [];
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    restore.push(() => scroll.mockRestore());
+    const row = within(list).getAllByRole("option")[index];
+    fireEvent.click(row);
+    const sheet = screen.getByRole("region", { name: "미리 보기" }).parentElement?.parentElement as HTMLElement;
+    return { list, panel, sheet, row, scrolled, scroll };
+  }
+
+  it("시트가 고정(xl 미만)이면 그 높이를 문서 루트(--bottom-sheet — 스크롤 여백)에 적고 결과 아래에 같은 여백, 오른쪽은 본문 스크롤 막대만큼 비운다 — 닫으면 지운다", async () => {
+    const { list, panel, sheet } = await openPreview(1);
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    expect(panel.style.marginBottom).toBe(`${SHEET_HEIGHT}px`);
+    expect(sheet.style.right).toBe("10px");
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(reserved()).toBe("");
+    expect(panel.style.marginBottom).toBe("");
+  });
+
+  it("시트가 열려 고른 줄을 덮으면 그 줄을 시트 위로 옮긴다(nearest — 스크롤 여백을 따름), 덮지 않았으면 옮기지 않는다", async () => {
+    const { row, scrolled, scroll } = await openPreview(1);
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    expect(scrolled).toEqual([row]);
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+    scroll.mockRestore();
+    cleanup();
+    expect(reserved()).toBe("");
+    selectedBox = { top: 100, bottom: 132 };
+    const again = await openPreview(0);
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    expect(again.scrolled).toEqual([]);
+  });
+
+  it("xl(오른쪽 칸 — 흐름 안)에서는 비우지 않는다", async () => {
+    sheetFixed = false;
+    const { panel, sheet, scrolled } = await openPreview(1);
+    expect(reserved()).toBe("");
+    expect(panel.style.marginBottom).toBe("");
+    expect(sheet.style.right).toBe("");
+    expect(scrolled).toEqual([]);
+  });
+
+  it("스크롤 여백은 --bottom-sheet를 따른다 — lg 미만은 문서(하단 탭 바 + 시트), lg 이상은 본문 main(globals.css)", () => {
+    const css = readFileSync(resolve(__dirname, "../../../../app/globals.css"), "utf8");
+    expect(BOTTOM_SHEET_VAR).toBe("--bottom-sheet");
+    expect(css).toMatch(
+      /@media \(width < 64rem\) \{\s*html \{\s*scroll-padding-bottom: calc\(64px \+ env\(safe-area-inset-bottom\) \+ var\(--bottom-sheet, 0px\)\);/,
+    );
+    expect(css).toMatch(/@media \(width >= 64rem\) \{\s*#main \{\s*scroll-padding-bottom: var\(--bottom-sheet, 0px\);/);
   });
 });
 
