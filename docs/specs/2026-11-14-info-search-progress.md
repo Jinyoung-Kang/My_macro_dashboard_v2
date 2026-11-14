@@ -308,6 +308,9 @@ D-9 — 실측에서 보인 중화권 영어 매체: **DigiTimes**(대만, Finvi
   - 새 주소의 실제 화면을 배포된 파서로 읽어 보니 100줄이었습니다. 매체는 Yahoo Finance·Barrons·MarketWatch 13, Stocktwits 9, Investing.com 8, Reuters 6 순이고, Finviz 안쪽 링크는 6줄입니다.
   - Yahoo의 같은 기사 3건과 시각을 대조했습니다. 2건이 0·1분 차이라 **미국 동부로 읽는 것이 맞습니다.** 1건은 15시간 21분 차이로, 24·12시간 배수가 아니어서 Yahoo가 나중에 다시 실은 것으로 보입니다.
 
+- **23:49 KST Vultr 배포**(main@03a2e328, CI 6/6): 실제 경로로 `us:NVDA` 뉴스를 불러 보니 첫 부름은 `pending`이었고, 다시 부르면 `ok` 100건이었습니다. 하루 예산은 `fetch_budgets` search 3건, 계층 예산 11건을 썼습니다.
+- 장외 티커 `NSRGY`는 Finviz가 HTTP 404를 줍니다. 계층은 이것을 거부로 세지 않습니다(`fail_level` 0). 그런데 '받지 못함'으로 보이고, 관심 대상 수집에서는 실패로 쌓여 거짓 끊김 알림이 날 수 있었습니다. 그래서 404는 빈 결과("Finviz에 이 종목 화면이 없음", 30분 캐시)로 바꿨습니다.
+
 ## 남은 확인
 
 - (닫힘, 2026-11-14 사용자 결정) 대만 매체·StreetInsider·Investing.com·South China Morning Post·소유가 불확실한 매체(Webull·Tiger·AInvest 등)는 수집 허용 —

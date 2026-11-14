@@ -443,6 +443,21 @@ def test_즉석_검색_작업은_잠금을_놓기_전에_결과를_적는다(net
     assert results and results[0].sent is False
 
 
+def test_Finviz에_종목_화면이_없는_티커는_실패가_아니라_빈_결과(net):
+    """서버 실측(2026-11-14): 장외(OTC) 티커는 HTTP 404 — 출처 끊김이 아님. 30분 캐시, 관심 대상 수집도 실패로 세지 않음(거짓 끊김 알림 방지)."""
+    net.pages[finviz.quote_url(TICKER)] = ladder.FetchFailed("finviz.com HTTP 404")
+    _ask()
+    assert finviz.wait_idle(5)
+    answer = _ask()
+    assert (answer.status, answer.items, answer.message) == ("ok", (), finviz.NOT_COVERED)
+    assert finviz._results[TICKER].expires - finviz._clock() > finviz.FAILURE_TTL, "성공처럼 30분 캐시"
+    net.pages[finviz.quote_url("SYNB")] = ladder.FetchFailed("finviz.com HTTP 404")
+    watched = finviz.for_watch("SYNB", take=lambda: True)
+    assert (watched.failure, watched.items, watched.sent) == (None, [] if isinstance(watched.items, list) else (), True)
+    net.pages[finviz.quote_url("SYNC")] = ladder.FetchFailed("finviz.com HTTP 404x")
+    assert finviz.for_watch("SYNC", take=lambda: True).failure, "404만 — 다른 실패는 그대로 실패"
+
+
 def test_오늘_날짜는_KST_날짜로_예산을_센다(net, monkeypatch):
     monkeypatch.setattr(finviz.rules, "kst_today", lambda now=None: date(2026, 11, 15))
     _ask()

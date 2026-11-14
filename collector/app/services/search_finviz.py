@@ -80,6 +80,9 @@ USER_LIMIT = "한 사람이 한 시간에 Finviz를 새로 부를 수 있는 횟
 QUEUE_FULL = "대기열이 가득 참 — 잠시 뒤 다시"
 SHAPE_CHANGED = "형식이 바뀜"
 MOVED = "Finviz 종목 화면이 아닌 곳으로 옮겨짐 — 쓰지 않음"
+# 서버 실측(2026-11-14): Finviz가 다루지 않는 티커(장외 OTC 등)는 HTTP 404 — 출처 끊김이 아니라 그 종목의 화면이 없음(빈 결과, 30분 캐시).
+NOT_COVERED = "Finviz에 이 종목 화면이 없음(HTTP 404 — 장외 종목 등)"
+_NOT_FOUND = re.compile(r"\bHTTP 404\b(?!\S)")
 TIME_SHORT = "태스크 시간이 모자라 다음 깨기"
 QUOTE_PATHS = ("/stock", "/quote.ashx")           # 종목 화면(새 주소·옛 주소)
 
@@ -251,6 +254,8 @@ def _fetch_outcome(ticker: str) -> _Outcome:
     except ladder.FetchRejected as exc:
         return _Outcome("error", message=exc.closed.message(), rejected=True, sent=exc.sent)
     except ladder.FetchFailed as exc:
+        if _NOT_FOUND.search(str(exc)):
+            return _Outcome("ok", message=NOT_COVERED)
         return _Outcome("error", message=_scrub(str(exc)))
     except policy.UnknownHost:
         return _Outcome("error", message=f"{HOST} 차단 통과 계층의 정책 표에 없음", sent=False)
@@ -361,7 +366,7 @@ def _from_entry(entry: _Entry, *, mark_read: bool) -> Answer:
         status = "ok" if entry.unread and mark_read else "cached"
         if mark_read:
             entry.unread = False
-        return Answer(status, items=outcome.items)
+        return Answer(status, items=outcome.items, message=outcome.message)
     if outcome.status == "skipped":
         return Answer("skipped", message=BUDGET_SPENT)
     return Answer("error", message=outcome.message)
