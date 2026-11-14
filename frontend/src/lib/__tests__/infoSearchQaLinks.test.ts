@@ -192,8 +192,8 @@ describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 
   // QA-424: 폭 296(390 화면)에서 높이가 340에 묶여(linkGraphSize) 타원의 세로 반지름에 상한이 있고, 관계 9종이면 칸 수로 나눈 뒤에도 간격을 다시
   // 재지 않아 같은 쪽 이웃 노드가 10.9·11.4px 간격(< GRAPH_ROW_GAP 14)으로 붙어 노드 글 상자 6쌍이 최대 3.1px 겹쳤습니다. 관계 글은 같은 쪽끼리만
   // 비켜 두어 위쪽 극 근처의 오른쪽 '소유한 곳'과 왼쪽 '자회사' 상자가 겹쳤습니다.
-  // 수정 전 실패: 폭 296에서 minRowGap 10.9, 노드 글 겹침 6쌍, 관계 글 겹침 '소유한 곳(right) / 자회사(left)'.
-  it.fails("C-02 자료(관계 9종·노드 30개, 9개는 목록으로)를 폭 296·330·390·570에 그려도 같은 쪽 이웃 간격 ≥ 14, 노드 글·관계 글 상자가 겹치지 않음 — 모자라면 그림을 높임", () => {
+  // 수정 전 실패: 폭 296에서 minRowGap 10.9, 노드 글 겹침 6쌍, 관계 글 겹침 '소유한 곳(right) / 자회사(left)'(재현 커밋에서는 it.fails).
+  it("C-02 자료(관계 9종·노드 30개, 9개는 목록으로)를 폭 296·330·390·570에 그려도 같은 쪽 이웃 간격 ≥ 14, 노드 글·관계 글 상자가 겹치지 않음 — 모자라면 그림을 높임", () => {
     for (const width of [296, 330, 390, 570]) {
       const layout = linkGraphLayout(linkGroups(c02Links()), linkGraphSize(width), { centerName: "Example Corp" });
       expect([layout.nodes.length, layout.hidden]).toEqual([30, 9]);
@@ -207,7 +207,8 @@ describe("연결 그림 — 좁은 화면에서도 노드 이름·관계 글이 
     expect(linkGraphLayout(linkGroups(c02Links()), linkGraphSize(570)).height).toBe(linkGraphSize(570).height);
   });
 
-  it.fails("관계가 1~9종이어도(노드 30) 폭 296·330·390·453·570에서 같은 쪽 이웃 간격 ≥ 14, 모르는 관계 코드(긴 글)가 있어도 관계 글끼리 겹치지 않음", () => {
+  // 수정 전 실패: 관계 1종(내부자 30)도 폭 296에서 간격이 13.99…(반올림 뒤 14에 닿음), 7~9종은 관계 글이 좌우로 겹침(재현 커밋에서는 it.fails).
+  it("관계가 1~9종이어도(노드 30) 폭 296·330·390·453·570에서 같은 쪽 이웃 간격 ≥ 14, 모르는 관계 코드(긴 글)가 있어도 관계 글끼리 겹치지 않음", () => {
     const relations = ["owner_of", "owned_by", "founded_by", "employer", "ceo", "ultimate_parent", "parent", "subsidiary"];
     for (let kinds = 1; kinds <= 9; kinds += 1) {
       const links = [

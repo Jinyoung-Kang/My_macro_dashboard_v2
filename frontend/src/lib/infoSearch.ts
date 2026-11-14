@@ -969,7 +969,7 @@ const GRAPH_TAG_HEIGHT = 16;
 const GRAPH_TAG_STEP = 18;
 /**
  * 관계 묶음을 통째로 한쪽 호에 둘 때 같은 쪽 이웃 노드 사이에 남아야 하는 세로 간격(px) — 이보다 좁아지면(12px 이름이 붙음) 묶음 경계가 아니라
- * 칸 수로 반씩 나누고, 그때 쪼개진 묶음은 호마다 관계 글을 둡니다.
+ * 칸 수로 반씩 나누고, 그때 쪼개진 묶음은 호마다 관계 글을 둡니다. 칸 수로 나눈 뒤에도 좁으면 그림을 높입니다(QA-424).
  */
 const GRAPH_ROW_GAP = 14;
 /** 가운데 대상 상자 높이(px). */
@@ -1085,7 +1085,10 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
   return labels;
 }
 
-/** 그림의 크기 — 잰 폭(280~760, 재지 못했으면 360)에 맞추고 높이는 폭의 3/4(340~480). 좁은 화면은 세로로 긴 타원이 됩니다. */
+/**
+ * 그림의 크기 — 잰 폭(280~760, 재지 못했으면 360)에 맞추고 높이는 폭의 3/4(340~480). 좁은 화면은 세로로 긴 타원이 됩니다. 노드가 많아 같은 쪽
+ * 이웃이 붙으면 linkGraphLayout이 이보다 높입니다(QA-424).
+ */
 export function linkGraphSize(measuredWidth: number): { width: number; height: number } {
   const width = measuredWidth > 0 ? Math.round(Math.min(760, Math.max(280, measuredWidth))) : 360;
   return { width, height: Math.min(480, Math.max(340, Math.round(width * 0.75))) };
@@ -1140,6 +1143,7 @@ export type LinkGraphTag = { relation: string; label: string; side: "right" | "l
 
 export type LinkGraphLayout = {
   width: number;
+  /** 배치의 높이 — 받은 크기의 높이, 같은 쪽 이웃 노드가 GRAPH_ROW_GAP보다 붙으면 그만큼 더 큼(QA-424). */
   height: number;
   cx: number;
   cy: number;
@@ -1173,10 +1177,11 @@ type GraphSlot = { kind: "node"; sector: number; link: SearchLink } | { kind: "g
  * 놓습니다(관계 묶음마다 이어진 부채꼴, 묶음 사이에 작은 틈). 좌우는 관계 묶음 단위로 나누되(두 쪽 중 큰 쪽이 가장 작은 묶음 경계), 그러면 한쪽
  * 호에 노드가 너무 많아 이웃 이름이 붙을 때(세로 간격 GRAPH_ROW_GAP 미만)와 관계가 하나뿐일 때만 칸 수로 반씩 나눕니다 — 그때 쪼개진 묶음은
  * 호마다 관계 글을 둡니다(다른 관계의 글 옆에 관계 글 없는 노드가 남지 않게). 각 쪽은 한가운데에 모으며, 노드가 많으면 호(위아래 65도) 안에서
- * 간격을 줄입니다. 노드는 최대 max개(graphLinks). 노드 이름은 오른쪽 노드는 오른쪽으로, 왼쪽 노드는 왼쪽으로 뻗고 이름 자리(폭의 26%,
- * 80~130px) 안에 들게 줄입니다. 그린 것의 세로 범위(view)를 돌려줘 노드가 적은 그림은 낮게 그립니다. 관계 글은 그 조각의 가운데 노드로 가는
- * 선 위(반지름 55~70%)에 두되 가운데 대상 상자와 겹치면 선 옆(위·아래)으로 비키고,
- * 같은 쪽 관계 글끼리는 세로로 비켜 둡니다. 출처에 없는 관계는 만들지 않습니다(받은 연결만).
+ * 간격을 줄입니다. 그렇게 나눈 뒤에도 같은 쪽 이웃 노드의 세로 간격이 GRAPH_ROW_GAP에 못 미치면 세로 반지름을 늘려 그림을 높입니다(QA-424 — 글자는
+ * 12px 그대로). 노드는 최대 max개(graphLinks). 노드 이름은 오른쪽 노드는 오른쪽으로, 왼쪽 노드는 왼쪽으로 뻗고 이름 자리(폭의 26%,
+ * 80~130px) 안에 들게 줄입니다(graphLabels — 같은 글이 되는 이름은 가운데를 줄임). 그린 것의 세로 범위(view)를 돌려줘 노드가 적은 그림은 낮게
+ * 그립니다. 관계 글은 그 조각의 가운데 노드로 가는 선 위(반지름 55~70%)에 두되 가운데 대상 상자와 겹치면 선 옆(위·아래)으로 비키고,
+ * 같은 쪽 관계 글끼리는 세로로, 다른 쪽 관계 글끼리 겹치면 가로로 벌려 둡니다. 출처에 없는 관계는 만들지 않습니다(받은 연결만).
  */
 export function linkGraphLayout(
   groups: readonly LinkGroup[],
@@ -1184,13 +1189,13 @@ export function linkGraphLayout(
   options: { max?: number; centerName?: string } = {},
 ): LinkGraphLayout {
   const { groups: kept, hidden } = graphLinks(groups, options.max ?? LINK_GRAPH_MAX);
-  const { width, height } = size;
+  const { width } = size;
   const cx = width / 2;
-  const cy = height / 2;
   const labelSpace = Math.min(130, Math.max(80, Math.round(width * 0.26)));
   const rx = Math.max(40, cx - labelSpace);
-  // 맨 위·맨 아래 노드(호의 끝 65도)가 여백 안에 들게 — 극(90도)에는 노드를 두지 않아 타원이 그림보다 커도 됩니다.
-  const ry = Math.max(40, (cy - GRAPH_MARGIN_Y) / Math.sin(GRAPH_ARC));
+  // 맨 위·맨 아래 노드(호의 끝 65도)가 여백 안에 들게 — 극(90도)에는 노드를 두지 않아 타원이 그림보다 커도 됩니다. 노드가 많아 같은 쪽 이웃이
+  // 붙으면 아래에서 세로 반지름을 늘리고 그림을 높입니다(QA-424).
+  const baseRy = Math.max(40, (size.height / 2 - GRAPH_MARGIN_Y) / Math.sin(GRAPH_ARC));
   const centerLabel = fitGraphLabel(options.centerName ?? "", Math.min(160, rx * 1.2));
   const center = { label: centerLabel, width: Math.round(Math.min(176, Math.max(64, textWidth(centerLabel) + 20))), height: GRAPH_CENTER_HEIGHT };
 
@@ -1206,7 +1211,7 @@ export function linkGraphLayout(
   const rowGap = (units: number) => {
     if (units < 2) return Infinity;
     const end = (units / 2 - 0.5) * stepFor(units);
-    return ry * (Math.sin(end) - Math.sin(end - stepFor(units)));
+    return baseRy * (Math.sin(end) - Math.sin(end - stepFor(units)));
   };
   // 묶음 경계에서 나누기 — 두 쪽 가운데 큰 쪽이 가장 작은 경계(k = 오른쪽에 두는 마지막 묶음).
   let boundary = -1;
@@ -1245,40 +1250,52 @@ export function linkGraphLayout(
   // 노드 글 — 앞머리가 같아 같은 글이 되는 서로 다른 이름은 가운데를 줄여 가름(QA-423).
   const labels = graphLabels(kept.flatMap((group) => group.links.map((entry) => entry.name)), labelSpace - 14);
 
+  // 노드 각도 — 오른쪽은 0, 왼쪽은 π를 한가운데로, 각 쪽에서 각도가 늘어나는 쪽(오른쪽은 아래, 왼쪽은 위)으로 차례로.
+  const placed: { slot: Extract<GraphSlot, { kind: "node" }>; side: number; angle: number }[] = [];
+  sides.forEach((side, at) => {
+    let offset = (at === 0 ? 0 : Math.PI) - (sideUnits[at] * step) / 2;
+    for (const slot of side) {
+      if (slot.kind === "node") placed.push({ slot, side: at, angle: offset + step / 2 });
+      offset += unitOf(slot) * step;
+    }
+  });
+  // 같은 쪽 이웃 노드의 세로 간격(호의 끝에서 가장 좁음 — 칸 수로 나눈 뒤 관계 묶음 사이의 틈까지 실제 각도로 잼)이 GRAPH_ROW_GAP에 못 미치면
+  // 세로 반지름을 늘리고 그만큼 그림을 높입니다(QA-424 — 글자 12px은 줄이지 않음, 좁은 화면의 그림이 길어짐). 0.1은 자리를 0.1px로 반올림해도
+  // 간격이 GRAPH_ROW_GAP 밑으로 내려가지 않게.
+  let narrowest = Infinity;
+  for (let at = 1; at < placed.length; at += 1) {
+    if (placed[at].side === placed[at - 1].side) narrowest = Math.min(narrowest, Math.abs(Math.sin(placed[at].angle) - Math.sin(placed[at - 1].angle)));
+  }
+  const ry = baseRy * narrowest < GRAPH_ROW_GAP + 0.1 ? (GRAPH_ROW_GAP + 0.1) / narrowest : baseRy;
+  const reach = Math.max(0, ...placed.map(({ angle }) => Math.abs(Math.sin(angle))));
+  const height = ry > baseRy ? Math.max(size.height, Math.ceil(2 * (ry * reach + GRAPH_MARGIN_Y))) : size.height;
+  const cy = height / 2;
+
   const nodes: LinkGraphNode[] = [];
   const nodeSector: number[] = [];
   const nodeSide: number[] = [];
-  sides.forEach((side, at) => {
-    // 오른쪽은 각도 0, 왼쪽은 π를 한가운데로 — 각 쪽에서 각도가 늘어나는 쪽(오른쪽은 아래, 왼쪽은 위)으로 차례로.
-    let offset = (at === 0 ? 0 : Math.PI) - (sideUnits[at] * step) / 2;
-    for (const slot of side) {
-      const units = unitOf(slot);
-      if (slot.kind === "node") {
-        const angle = offset + (units * step) / 2;
-        const cos = Math.cos(angle);
-        const x = round1(cx + rx * cos);
-        const y = round1(cy + ry * Math.sin(angle));
-        const anchor: LinkGraphNode["anchor"] = cos >= 0 ? "start" : "end";
-        const relation = kept[slot.sector].relation;
-        nodes.push({
-          id: `${relation}:${nodes.filter((node) => node.relation === relation).length}`,
-          link: slot.link,
-          relation,
-          x,
-          y,
-          angle,
-          label: labels.get(slot.link.name.trim()) ?? fitGraphLabel(slot.link.name, labelSpace - 14),
-          labelX: round1(anchor === "start" ? x + 10 : x - 10),
-          labelY: round1(y + 4),
-          anchor,
-          ariaLabel: `${slot.link.name} · ${relationLabel(relation)}${isEntityKey(slot.link.key) ? "" : " · 이름으로 찾기"}`,
-        });
-        nodeSector.push(slot.sector);
-        nodeSide.push(at);
-      }
-      offset += units * step;
-    }
-  });
+  for (const { slot, side, angle } of placed) {
+    const cos = Math.cos(angle);
+    const x = round1(cx + rx * cos);
+    const y = round1(cy + ry * Math.sin(angle));
+    const anchor: LinkGraphNode["anchor"] = cos >= 0 ? "start" : "end";
+    const relation = kept[slot.sector].relation;
+    nodes.push({
+      id: `${relation}:${nodes.filter((node) => node.relation === relation).length}`,
+      link: slot.link,
+      relation,
+      x,
+      y,
+      angle,
+      label: labels.get(slot.link.name.trim()) ?? fitGraphLabel(slot.link.name, labelSpace - 14),
+      labelX: round1(anchor === "start" ? x + 10 : x - 10),
+      labelY: round1(y + 4),
+      anchor,
+      ariaLabel: `${slot.link.name} · ${relationLabel(relation)}${isEntityKey(slot.link.key) ? "" : " · 이름으로 찾기"}`,
+    });
+    nodeSector.push(slot.sector);
+    nodeSide.push(side);
+  }
 
   // 관계 글 — 이어진 호(묶음 × 쪽)마다 하나, 그 조각의 가운데 노드로 가는 선 위. 가운데 상자와 겹치면 선 옆으로, 같은 쪽끼리는 세로로 비킴.
   const halfStep = step / 2;
@@ -1315,11 +1332,34 @@ export function linkGraphLayout(
     const overflow = (column.at(-1)?.y ?? 0) - (height - GRAPH_TAG_HEIGHT);
     if (overflow > 0) for (const tag of column) tag.y = Math.max(GRAPH_TAG_HEIGHT, tag.y - overflow);
   }
+  // 다른 쪽 관계 글끼리(위·아래 극 가까이에서 가운데로 모임) 상자가 겹치면 가로로 벌립니다(QA-424) — 오른쪽 글은 오른쪽, 왼쪽 글은 왼쪽으로만 옮기므로
+  // 다른 쪽 글과는 멀어지기만 하고, 같은 쪽 세로 간격과 가운데 상자 비킴은 그대로입니다. 그림 폭 안에서 다 벌리지 못하면(모르는 관계 코드의 긴 글 등)
+  // 가운데에서 먼 글을 세로로 더 바깥에 둡니다.
+  const xRange = (tag: (typeof tags)[number]) => ({ min: tag.half + 2, max: width - tag.half - 2 });
+  for (const tag of tags) tag.x = Math.min(xRange(tag).max, Math.max(xRange(tag).min, tag.x));
+  for (const right of tags.filter((tag) => tag.side === 0)) {
+    for (const left of tags.filter((tag) => tag.side === 1)) {
+      // 0.1·0.2 — 자리를 0.1px로 반올림한 뒤에도 겹치거나 닿지 않게.
+      if (Math.abs(right.y - left.y) >= GRAPH_TAG_HEIGHT + 0.1) continue;
+      const need = right.half + left.half + 0.2 - (right.x - left.x);
+      if (need <= 0) continue;
+      const rightRoom = Math.max(0, xRange(right).max - right.x);
+      const leftRoom = Math.max(0, left.x - xRange(left).min);
+      if (rightRoom + leftRoom >= need) {
+        const rightMove = Math.min(rightRoom, Math.max(need / 2, need - leftRoom));
+        right.x += rightMove;
+        left.x -= need - rightMove;
+      } else {
+        const [outer, inner] = Math.abs(right.y - cy) >= Math.abs(left.y - cy) ? [right, left] : [left, right];
+        outer.y = outer.y < cy ? Math.max(GRAPH_TAG_HEIGHT, inner.y - GRAPH_TAG_STEP) : Math.min(height - GRAPH_TAG_HEIGHT, inner.y + GRAPH_TAG_STEP);
+      }
+    }
+  }
   const graphTags: LinkGraphTag[] = tags.map((tag) => ({
     relation: kept[tag.sector].relation,
     label: kept[tag.sector].label,
     side: tag.side === 0 ? "right" : "left",
-    x: round1(Math.min(width - tag.half - 2, Math.max(tag.half + 2, tag.x))),
+    x: round1(Math.min(xRange(tag).max, Math.max(xRange(tag).min, tag.x))),
     y: round1(tag.y),
     width: tag.labelWidth,
   }));
