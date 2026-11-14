@@ -2176,13 +2176,19 @@ export function summaryEmptyText(response: Pick<SearchSummaryResponse, "basedOn"
   return response.basedOn === 0 ? "고른 기간에 받아 둔 자료가 없어 요약하지 않았습니다." : "요약 줄을 받지 못했습니다.";
 }
 
-/** 수집기·엔진에 닿지 못한 응답(available:false — 하루 글자 상한·엔진 실패 등)의 글. 서버 사유가 없으면 기본 글. */
+/**
+ * 수집기·엔진에 닿지 못한 응답(available:false — 엔진 키 없음·수집기·받아 둔 결과 없음·엔진 실패)의 글. 서버 사유가 없으면 기본 글.
+ * 서버 사유(message)는 본문만 담으므로 '요약하지 못했습니다'는 여기서 한 번만 붙입니다(QA-428).
+ */
 export function summaryUnavailableText(response: Partial<Pick<SearchSummaryResponse, "available" | "message">>): string {
   const message = typeof response.message === "string" ? response.message.trim() : "";
   return message ? `${SUMMARY_FAILED} — ${message}` : `${SUMMARY_FAILED}.`;
 }
 
-/** 요청 실패의 글 — 서버 사유 그대로, 권한(403)은 사유가 없으면 '이 계정으로는 할 수 없습니다'(writeErrorText와 같은 규칙). */
+/**
+ * 요청 실패의 글 — 서버 사유 그대로, 권한(403)은 사유가 없으면 '이 계정으로는 할 수 없습니다'(writeErrorText와 같은 규칙). 429(하루 글자 상한·
+ * 다른 요약을 만드는 중)의 사유도 본문만이라 앞머리는 여기서 한 번만(QA-428).
+ */
 export function summaryErrorText(error: unknown): string {
   const reason = writeErrorText(error, "");
   return reason ? `${SUMMARY_FAILED} — ${reason}` : `${SUMMARY_FAILED}.`;

@@ -12,7 +12,6 @@ import com.macrodash.support.CurrentUser;
 import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -646,7 +645,7 @@ class SearchSummaryServiceTest {
 
         assertThat(out.get("available")).isEqualTo(false);
         assertThat(out.get("reason")).isEqualTo("engine_failed");
-        assertThat((String) out.get("message")).contains("요약을 만들지 못했습니다");
+        assertThat((String) out.get("message")).startsWith("Gemini: ").contains("Claude: 합성 실패: TIMEOUT");
         assertThat(out.get("basedOn")).isEqualTo(3);
 
         claudeReturns(claudeOk(ONE_LINE));
@@ -829,7 +828,6 @@ class SearchSummaryServiceTest {
     }
 
     @Test
-    @Disabled("QA-428: 수정 전 실패 — engine_failed 안내가 '요약을 만들지 못했습니다 — '로 시작하고 429 상한 안내에 '요약하지 않았습니다'가 들어 화면 앞머리와 겹침")
     @DisplayName("QA-428 실패 안내(message·429 사유)는 사유 본문만 — 화면이 앞에 붙이는 '요약하지 못했습니다'가 한 번만 나오게(모든 사유)")
     void qa428FailureMessagesCarryOnlyTheDetail() {
         feedReturns("news", feed(recent(3)));
@@ -843,6 +841,13 @@ class SearchSummaryServiceTest {
         String engine = (String) failed.get("message");
         assertDetailOnly(engine);
         assertThat(engine).startsWith("Gemini: ").contains("합성 실패: RATE_LIMIT").contains("Claude: 합성 실패: TIMEOUT");
+
+        // Claude만 쓰는 배포에서 형식 밖 응답 — 사유('요약 응답을 읽지 못했습니다')에도 엔진 이름이 붙어 앞머리와 같은 뜻으로 시작하지 않음.
+        claudeReturns(claudeOk("합성 응답 — JSON 아님"));
+        Map<String, Object> claudeOnly = service("claude", 1_000_000).summarize(KEY, "news", "30d", OWNER);
+        assertThat(claudeOnly.get("reason")).isEqualTo("engine_failed");
+        assertDetailOnly((String) claudeOnly.get("message"));
+        assertThat((String) claudeOnly.get("message")).isEqualTo("Claude: 요약 응답을 읽지 못했습니다");
 
         // 하루 글자 상한(429) — 화면은 이 사유에도 같은 앞머리를 붙임(summaryErrorText).
         when(translations.charsSince(any())).thenReturn(999_990L);

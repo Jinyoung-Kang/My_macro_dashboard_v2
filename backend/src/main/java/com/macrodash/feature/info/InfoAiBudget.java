@@ -58,11 +58,12 @@ public class InfoAiBudget {
     /**
      * 표에 남지 않는 호출(요약)이 {@code chars}자를 쓰려 합니다 — 오늘 쓴 양에 더해 상한을 넘으면 안내 글을 돌려주고 세지 않으며, 넘지 않으면 null을
      * 돌려주고 바로 셉니다(검사와 세기를 한 번에 — 요약끼리 함께 넘지 않게). 모델을 하나도 부르지 않았으면 {@link #release}로 돌려줍니다.
+     * 안내 글은 사유 본문만입니다 — 화면이 앞에 '요약하지 못했습니다 — '를 붙임(QA-428).
      */
     public synchronized String reserve(int chars) {
         long used = usedToday();
         if (used + chars > dailyChars) {
-            return "오늘 AI 글자 상한(번역과 함께 원문 %,d자)에 닿아 요약하지 않았습니다(오늘 %,d자 씀) — 내일(KST) 다시 됩니다"
+            return "오늘 AI 글자 상한(번역과 함께 원문 %,d자)에 닿았습니다(오늘 %,d자 씀) — 내일(KST) 다시 됩니다"
                     .formatted(dailyChars, used);
         }
         untrackedChars = untrackedToday() + chars;

@@ -290,7 +290,7 @@ public class SearchSummaryService {
             }
             if (!outcome.ok()) {
                 log.warn("정보 검색 AI 요약 실패({}): 자료 {}건", outcome.errorKind(), rows.size());
-                return unavailable("engine_failed", "요약을 만들지 못했습니다 — " + outcome.error(), rows.size());
+                return unavailable("engine_failed", engineFailure(outcome), rows.size());
             }
             Made made = new Made(outcome.lines(), rows.size(), outcome.model(), clock.instant().truncatedTo(ChronoUnit.SECONDS));
             remember(cacheKey, made);
@@ -475,8 +475,12 @@ public class SearchSummaryService {
         boolean claudeSent = result.ok() || !CLAUDE_NOT_SENT.contains(result.errorKind());
         Outcome last = read(new GeminiClient.Reply(result.ok(), result.text(), result.errorKind(), result.error()), claudeModel, ids)
                 .sent(sent || claudeSent);
-        if (last.ok() || geminiError == null) {
+        if (last.ok()) {
             return last;
+        }
+        if (geminiError == null) {
+            // Claude만 불렀어도 사유는 '엔진: 사유' — 형식 밖 응답('요약 응답을 읽지 못했습니다')이 화면 앞머리와 같은 뜻으로 시작하지 않게(QA-428).
+            return Outcome.failed(last.errorKind(), "Claude: " + last.error(), claudeModel, last.sent());
         }
         return Outcome.failed(last.errorKind(), "Gemini: " + geminiError + " / Claude: " + last.error(), claudeModel, true);
     }
@@ -589,6 +593,10 @@ public class SearchSummaryService {
         return out;
     }
 
+    /**
+     * {@code available:false}의 응답. {@code message}는 사유 본문만 담습니다 — 화면이 앞에 '요약하지 못했습니다 — '를 붙이므로 같은 뜻의 머리를
+     * 다시 넣지 않습니다(QA-428, 모든 사유와 429 사유가 같은 규칙).
+     */
     private static Map<String, Object> unavailable(String reason, String message, Integer basedOn) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("available", false);
@@ -598,6 +606,12 @@ public class SearchSummaryService {
             out.put("basedOn", basedOn);
         }
         return out;
+    }
+
+    /** 모든 엔진이 실패한 사유 본문(엔진마다 'Gemini: … / Claude: …') — 사유가 비었으면 실패 종류만. */
+    private static String engineFailure(Outcome outcome) {
+        String error = outcome.error();
+        return error == null || error.isBlank() ? "엔진이 사유 없이 실패했습니다(" + outcome.errorKind() + ")" : error;
     }
 
     // ------------------------------------------------------------------ 글
