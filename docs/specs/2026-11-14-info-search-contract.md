@@ -78,7 +78,7 @@ Link = { "relation": "owner_of" | "owned_by" | "founded_by" | "founder_of" | "em
 - 관계 이름: `owner_of`(P1830 소유) · `owned_by`(P127) · `founded_by`(P112) · `founder_of`(P112 역) · `employer`(P108 — 사람의 소속) · `ceo`(P169 — 회사의 대표) ·
   `parent`(P749) · `subsidiary`(P355) · `manager`(13F 기관의 운용자) · `managed_by`(운용자의 기관). 관계 대상의 이름은 ko·en 라벨만.
 - `topic:` 키는 외부를 부르지 않고 `{kind:"topic", name:<글>, aliases:[<글>], ids 모두 null, links: []}`.
-- DART 고유번호를 찾지 못한 국내 종목의 `errors`: 저장본을 읽었는데 그 종목이 없으면 `dart`("DART 고유번호 저장본에 이 종목이 없음" — ETF·우선주 등, 다시 물어도 같음), 저장본이 없거나 읽지 못했으면 `dart_store`("DART 고유번호 저장본을 읽지 못함" — 다시 물으면 달라짐, 관심 대상 등록은 `partial`)(2026-11-15 QA-429).
+- DART 고유번호를 찾지 못한 국내 종목의 `errors`: 저장본을 읽었는데 그 종목이 없으면 `dart`("DART 고유번호 저장본에 이 종목이 없음" — ETF·우선주 등, 다시 물어도 같음), 저장본이 없거나 읽지 못했으면 `dart_store`("DART 고유번호 저장본을 읽지 못함" — 다시 물으면 달라짐, 관심 대상 등록은 `partial`). 한국 거래소 코드가 있는 `wd:` 항목도 저장본을 읽지 못하면 `dart_store`를 남기고(국내 상장사인지 확인하지 못함 — 60초 캐시), 공시 탭 DART 줄은 빼지 않고 `error`(2026-11-15 QA-429).
 
 ### 3-4. `GET /api/search/feed?e=&tab=` — 결과(2년 묶음 한 번에)
 - `tab`: `timeline` · `news` · `posts`(운영자) · `filings`(단계 4 — 7절) · `research`(단계 4 — 7절, 단계 2·3에서는 빈 목록 + 상태 `later`). 보유·연결 탭은 이 경로를 쓰지 않음

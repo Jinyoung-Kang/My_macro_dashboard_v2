@@ -101,7 +101,6 @@ def _use_wikidata(monkeypatch) -> None:
     monkeypatch.setattr(search_wikidata, "api", api)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-429 검토 지적: 저장본을 읽지 못하면 wd: 국내 상장사가 사유 없이 국내 종목이 아닌 것처럼 하루 캐시됨")
 def test_DART_저장본을_읽지_못하면_wd_국내_상장사도_모름이라_적고_실패_캐시만(monkeypatch):
     """
     한국 거래소 코드가 있는 Wikidata 항목을 저장본 없이 풀면 국내 종목인지 확인하지 못한 것 — 사유 없이 '국내 종목 아님'으로 하루 붙들지 않고
@@ -126,3 +125,14 @@ def test_DART_저장본을_읽었는데_wd_항목의_코드가_없으면_사유�
     assert out["entity"]["ids"]["market"] is None and out["errors"] == {}
     sources_ = {row["source"] for row in search.feed("wd:Q900050", "filings", owner=False, external=True)["sources"]}
     assert "dart" not in sources_
+
+
+def test_저장본_없이_푼_wd_국내_상장사는_저장본이_돌아와도_캐시_동안_건너뜀이_아니라_모름(monkeypatch):
+    """종목코드를 모르는 대상(저장본 없이 푼 wd:)은 60초 캐시 동안 저장본을 다시 읽어도 '읽었는데 없음'으로 보지 않음 — 풀 때 읽지 못한 것."""
+    _use_wikidata(monkeypatch)
+    codes: dict = {}
+    monkeypatch.setattr(search_store, "dart_codes", lambda: dict(codes))
+    search.entity("wd:Q900050", external=True)
+    codes["900001"] = {"corpCode": "00900001", "name": "합성전자"}
+    row = _dart_row(search.feed("wd:Q900050", "filings", owner=False, external=True))
+    assert (row["status"], row["message"]) == ("error", "DART 고유번호를 모름 — 대상을 풀 때 저장본을 읽지 못함")

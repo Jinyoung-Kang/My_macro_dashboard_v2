@@ -514,12 +514,14 @@ def _unknown_dart(ids: dict, errors: dict, *, external: bool) -> _Spec | None:
     ``dart``에 '이 종목이 없음', 못 읽었으면 ``dart_store``에 '읽지 못함')는 풀 때의 저장본 기준이고 그 결과는 60초 캐시되므로, 저장본(외부
     호출 없음)을 한 번 더 봅니다 — 저장본을 읽었고 그 종목이 없으면 None(ETF·우선주 등 — '건너뜀'), 저장본을 읽지 못했으면 ``error``(대상
     풀기와 같은 사유 글 — 외부 호출을 끈 요청이면 ``offline``), 저장본에는 있는데 대상에 없으면(저장본을 못 읽던 때 푼 대상) ``error``.
-    대상 풀기의 사유(``dart``·``dart_store``·``entity``)가 없으면 None.
+    대상 풀기의 사유(``dart``·``dart_store``·``entity``)가 없으면 None. 종목코드를 모르는 대상(저장본 없이 푼 ``wd:`` 국내 상장사)은 지금
+    저장본을 읽어도 '건너뜀'이 아니라 ``error``(대상을 풀 때 읽지 못함).
     """
     if not (errors.get("dart") or errors.get(search_entities.DART_STORE) or errors.get("entity")):
         return None
     codes = search_store.dart_codes()
-    if codes and ids.get("stockCode") not in codes:
+    stock = ids.get("stockCode")
+    if codes and stock and stock not in codes:
         return None
     if not external:
         return _Spec("dart", status="offline", message=OFFLINE)
@@ -533,7 +535,8 @@ def _filing_specs(target: dict, *, tab: str, owner: bool, external: bool, window
     공시 출처(계약 §7-2) — ``sec``(CIK가 있으면), ``sec_fts``(사람·13F 기관의 영문 이름 — Bing과 같은 구문 규칙, 티커 없이), ``dart``(DART 고유번호가
     있으면). 공시 탭이면 모은 글의 공시 줄도. 주제는 공시가 없어 공시 탭에서만 '건너뜀' 줄을 두고 타임라인에는 아무것도 넣지 않습니다.
     식별자가 없는데 대상 풀기가 SEC 티커 표를 읽지 못했거나 시간을 넘겼으면(``errors``), 또는 DART 고유번호 저장본을 읽지 못했으면
-    (:func:`_unknown_dart`) '건너뜀'이 아니라 ``error``("CIK를 모름 — <사유>")입니다(단계 4 QA).
+    (:func:`_unknown_dart`) '건너뜀'이 아니라 ``error``("CIK를 모름 — <사유>")입니다(단계 4 QA). 국내 종목이 아니어도 대상 풀기가 저장본을
+    읽지 못해 국내 상장사인지 확인하지 못했으면(``errors.dart_store`` — 한국 거래소 코드가 있는 ``wd:`` 항목) DART 줄을 빼지 않습니다(QA-429).
     """
     errors = errors or {}
     kind = target.get("kind")
@@ -561,7 +564,7 @@ def _filing_specs(target: dict, *, tab: str, owner: bool, external: bool, window
     if isinstance(corp, str) and _CORP_CODE.match(corp):
         specs.append(_remote("dart", ("dart", corp, window_from, window_to),
                              lambda: search_filings.dart_list(corp, start_day=window_from, end_day=window_to), external, refresh))
-    elif ids.get("market") == "kr":
+    elif ids.get("market") == "kr" or errors.get(search_entities.DART_STORE):
         specs.append(_unknown_dart(ids, errors, external=external)
                      or _Spec("dart", status="skipped", message="DART 고유번호가 없어 묻지 않음"))
     if tab == "filings" and target.get("key"):

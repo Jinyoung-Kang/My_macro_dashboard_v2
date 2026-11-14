@@ -699,6 +699,9 @@ def _build_wd(b: _Builder, qid: str) -> bool:
                 ticker = us_listing(parsed, table)
                 if ticker:
                     _apply_us(b, ticker, table)
+            if listed is None and not b.dart() and any(KR_CODE.match(code) for code in parsed.get("kr_codes") or []):
+                # 한국 거래소 코드가 있는데 저장본을 읽지 못해 국내 상장사인지 확인하지 못함 — '국내 종목 아님'으로 굳히지 않음(QA-429)
+                b.errors.setdefault(DART_STORE, DART_UNREAD)
         if b.kind is None:
             b.kind = "company" if (parsed["organization"] or parsed["cik"] or parsed["tickers"]) else "topic"
     b.fallback = qid
