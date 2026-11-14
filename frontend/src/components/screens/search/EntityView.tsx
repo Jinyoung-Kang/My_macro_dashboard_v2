@@ -21,6 +21,7 @@ import {
   type SearchTarget,
 } from "@/lib/infoSearch";
 import type { SearchEntityResponse, SearchRange } from "@/lib/types";
+import { AliasEditor } from "./AliasEditor";
 import { AttributesPanel, EntityHeader } from "./EntityParts";
 import { FeedPanel } from "./FeedPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
@@ -44,6 +45,8 @@ const TAB_CLASS =
  * 왼쪽 칸에 내 관심 대상 목록(단계 3)을 두고, 이 대상이 관심 대상이면 타임라인 결과를 받아 그렸을 때 '봤음'(POST /api/search/watch/{id}/seen)을
  * 이 화면에서 한 번만 보냅니다(새 글 수가 0이 됨). 결과를 받지 못했거나 받는 중이면 보내지 않습니다(보지 못한 새 글 수를 지우지 않게).
  * 이 컴포넌트는 대상 키로 다시 그려지므로(SearchScreen의 key) 다른 대상을 열면 다시 보냅니다.
+ *
+ * 관심 대상이면 속성 칸에 그 줄의 별칭 편집(단계 6 묶음 2 — 계약 §9-4, 저장하면 지금 결과를 다시 부름)을, 머리의 등록 단추 옆에 새 글 알림 켜기(§9-5)를 둡니다.
  *
  * 주소의 탭을 이 대상에서 고를 수 없으면(주제 + 공시 등) 타임라인을 보이고 주소의 탭도 바꿔 씁니다(기록에 쌓지 않음) — 종류를 아는 때만
  * (풀린 대상이나 키 앞부분, wd: 키를 풀지 못해 사람으로 짐작한 때는 그대로). 좁은 화면에서 탭 줄이 가로로 넘치면 고른 탭이 보이게 줄을 옮깁니다
@@ -110,7 +113,8 @@ export function EntityView({
   const [timelineShown, setTimelineShown] = useState(false);
   const markTimelineShown = useCallback(() => setTimelineShown(true), []);
   const watchItems = watch.data?.available ? (watch.data.items ?? []) : [];
-  const watchedId = findWatch(watchItems, entityKey, entity)?.id ?? null;
+  const watched = findWatch(watchItems, entityKey, entity);
+  const watchedId = watched?.id ?? null;
   const seenSent = useRef<Set<number>>(new Set());
   const { seen, clearActionError } = watch;
   // 앞 대상의 등록 실패 문구(상한 등)를 이 대상의 단추 밑에 남기지 않습니다(대상을 바꾸면 이 컴포넌트가 새로 그려짐).
@@ -122,6 +126,10 @@ export function EntityView({
   }, [current, timelineShown, watchedId, seen]);
 
   const watchPane = <WatchPane watch={watch} demo={demo} currentKey={watchKeyOf(entityKey, entity)} collapsible onOpen={onOpen} />;
+  // 별칭 편집(관심 대상일 때만) — 결과 탭은 저장한 뒤 그 결과를 다시 부르고, 보유·연결 탭은 별칭을 쓰지 않아 목록만 다시 읽습니다.
+  const aliasEditor = watched
+    ? (reloadFeed?: () => void) => <AliasEditor watch={watch} item={watched} demo={demo} onSaved={reloadFeed} />
+    : null;
 
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     // 화살표는 포커스만 옮기고, 탭을 여는 것은 누르기·Enter·Space입니다(탭마다 결과를 부르므로 지나가며 부르지 않게).
@@ -188,6 +196,7 @@ export function EntityView({
                 onRange={onRange}
                 aside={watchPane}
                 onShown={feedTab === "timeline" ? markTimelineShown : undefined}
+                aliasEditor={aliasEditor}
               />
             ) : (
               <div className={`${PANEL} flex flex-col`}>
@@ -201,7 +210,7 @@ export function EntityView({
                     )}
                   </div>
                   <div className="border-t border-border p-3 lg:border-l lg:border-t-0">
-                    <AttributesPanel entity={entity} kind={kind} errors={errors} />
+                    <AttributesPanel entity={entity} kind={kind} errors={errors} aliasEditor={aliasEditor ? aliasEditor() : null} />
                   </div>
                 </div>
                 {current === "links" ? (

@@ -194,6 +194,71 @@ describe("useInfoSearchFeed", () => {
     expect(result.current.refreshed).toBeNull();
   });
 
+  it("쓰기 뒤 다시 읽기(reloadAfterWrite)는 그 전에 나간 받는 중 다시 읽기에 합류하지 않고 새로 읽는다 — 늦게 온 앞 응답은 버림", async () => {
+    vi.useFakeTimers();
+    const path = endpoints.search.feed("us:NVDA", "timeline");
+    let late: (value: unknown) => void = () => {};
+    let reads = 0;
+    api.apiGetShared.mockImplementation(() => {
+      reads += 1;
+      if (reads === 1) return Promise.resolve({ available: true, items: [{ id: "a" }], pending: true, fetchedAt: "a" });
+      // 받는 중 다시 읽기 — 쓰기 전에 나가 쓰기가 끝난 뒤에 옴(옛 별칭으로 만든 결과)
+      return new Promise((resolve) => (late = resolve));
+    });
+    api.apiGet.mockResolvedValue({ available: true, items: [{ id: "new" }], pending: false, fetchedAt: "new" });
+    const { result } = renderHook(() => useInfoSearchFeed(path));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_PENDING_REFRESH_MS + 10);
+    });
+    expect(api.apiGetShared).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await result.current.reloadAfterWrite();
+    });
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    expect(api.apiGet).toHaveBeenCalledWith(path);
+    expect(result.current.data?.fetchedAt).toBe("new");
+    // 쓰기 뒤의 새 응답은 '새로 받기'가 아님
+    expect(result.current.refreshed).toBeNull();
+
+    await act(async () => {
+      late({ available: true, items: [{ id: "old" }], pending: true, fetchedAt: "old" });
+      await vi.advanceTimersByTimeAsync(FEED_PENDING_REFRESH_MS * 3);
+    });
+    expect(result.current.data?.fetchedAt).toBe("new");
+    expect(result.current.pendingPhase).toBe("none");
+    expect(api.apiGetShared).toHaveBeenCalledTimes(2);
+  });
+
+  it("쓰기 뒤 다시 읽기 — 처음 읽기가 아직 오는 중이면 그것이 먼저 도착하게 기다린 뒤 새로 읽어, 늦게 온 처음 읽기가 새 응답을 덮지 않음", async () => {
+    const path = endpoints.search.feed("us:NVDA", "timeline");
+    let first: (value: unknown) => void = () => {};
+    const running = new Promise((resolve) => (first = resolve));
+    // 진짜처럼 진행 중인 같은 경로의 GET은 함께 씀
+    api.apiGetShared.mockImplementation(() => running);
+    api.apiGet.mockResolvedValue({ available: true, items: [{ id: "new" }], pending: false, fetchedAt: "new" });
+    const { result } = renderHook(() => useInfoSearchFeed(path));
+    await waitFor(() => expect(result.current.loading).toBe(true));
+
+    let done = false;
+    let call: Promise<void> = Promise.resolve();
+    act(() => {
+      call = result.current.reloadAfterWrite().then(() => {
+        done = true;
+      });
+    });
+    await act(async () => {
+      first({ available: true, items: [{ id: "old" }], pending: false, fetchedAt: "old" });
+      await call;
+    });
+    expect(done).toBe(true);
+    expect(api.apiGet).toHaveBeenCalledTimes(1);
+    expect(result.current.data?.fetchedAt).toBe("new");
+  });
+
   it("새로 받기 응답이 available:false(수집기에 닿지 못함)면 보이던 묶음을 그대로 두고 실패 사유를 낸다", async () => {
     const path = endpoints.search.feed("us:NVDA", "timeline");
     const refreshPath = endpoints.search.feed("us:NVDA", "timeline", true);

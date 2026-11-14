@@ -73,8 +73,22 @@ export function EntityHeader({
   );
 }
 
-/** 오른쪽 칸(줄을 고르지 않았을 때) — 대상의 속성. 모르는 값은 '—'. */
-export function AttributesPanel({ entity, kind, errors }: { entity: SearchEntity | null; kind: SearchEntityKind | null; errors: Record<string, string> }) {
+/**
+ * 오른쪽 칸(줄을 고르지 않았을 때) — 대상의 속성. 모르는 값은 '—'.
+ * aliasEditor(단계 6 묶음 2 — 이 대상이 내 관심 대상일 때의 별칭 편집)를 주면 표 아래에 둡니다. 표의 '별칭' 줄(대상 풀기의 별칭)은 그대로 둡니다 —
+ * 결과 검색은 그 별칭에 관심 대상 줄의 별칭을 더해 쓰므로(수집기 with_aliases — 합집합) 편집에서 빼도 쓰이는 별칭을 숨기지 않습니다(편집 칸의 안내).
+ */
+export function AttributesPanel({
+  entity,
+  kind,
+  errors,
+  aliasEditor = null,
+}: {
+  entity: SearchEntity | null;
+  kind: SearchEntityKind | null;
+  errors: Record<string, string>;
+  aliasEditor?: ReactNode;
+}) {
   const failures = Object.entries(errors);
   const rows: [string, string][] = entity
     ? [
@@ -100,6 +114,7 @@ export function AttributesPanel({ entity, kind, errors }: { entity: SearchEntity
           </div>
         ))}
       </dl>
+      {aliasEditor}
       {failures.length > 0 ? (
         <p className="text-xs text-text-3">
           대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}

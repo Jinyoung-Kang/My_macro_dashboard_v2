@@ -128,7 +128,8 @@ export function useInfoSearchSuggest(query: string, enabled: boolean) {
   };
 }
 
-type FreshFeed = { path: string; data: SearchFeedResponse; at: number };
+/** 보통 읽기 밖에서 받은 응답 — '지금 새로 받기'(refreshed)나 쓰기 뒤 다시 읽기(reloadAfterWrite). 그 뒤의 보통 읽기가 올 때까지 보입니다. */
+type FreshFeed = { path: string; data: SearchFeedResponse; at: number; refreshed: boolean };
 
 /**
  * 받는 중 다시 읽기의 상태 — base(지금 보이는 처음 읽기·새로 받기 응답의 시각) 뒤로 다시 읽은 횟수와 마지막으로 받은 응답.
@@ -151,6 +152,11 @@ type RecheckError = { path: string; base: number; message: string };
  * 그 뒤의 보통 읽기(받는 중 다시 읽기·수동 새로고침)가 올 때까지 보이고, 그 읽기는 서버 캐시(방금 새로 받은 것)를 줍니다.
  * 새로 받기는 그 단추를 누를 때 한 번뿐이고 다시 읽기·새로고침 신호로 되풀이되지 않습니다(외부 호출 상한).
  * 새로 받기가 수집기에 닿지 못하면(available:false) 보이던 묶음을 그대로 두고 refreshError에 사유를 둡니다.
+ *
+ * reloadAfterWrite는 쓰기(관심 대상 별칭 저장 — 계약 §9-4, 별칭이 검색어라 결과가 바뀜) 뒤 다시 읽기입니다. 보통 읽기는 진행 중인 같은 GET을 함께 쓰므로
+ * (lib/sharedRequest) 쓰기 전에 나간 받는 중 다시 읽기·처음 읽기에 합류하면 옛 별칭의 결과를 받습니다. 그래서 공유하지 않는 GET으로 읽고 그 응답을
+ * 새로 받기와 같은 자리에 보입니다('새로 받았습니다' 줄은 없음). 처음 읽기가 아직 오는 중이면 먼저 도착하게 기다립니다(뒤에 와서 새 응답을 덮지 않게).
+ * 받는 중 다시 읽기는 기준(base)이 바뀌어 늦게 온 앞 응답을 버립니다. 받지 못하면(실패·available:false) 보이던 묶음 그대로입니다.
  */
 export function useInfoSearchFeed(path: string | null, refreshPath: string | null = null) {
   const feed = useApi<SearchFeedResponse>(path);
@@ -164,6 +170,12 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
   const [recheckError, setRecheckError] = useState<RecheckError | null>(null);
   // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(단추를 끄는 것은 다시 그린 뒤라).
   const recheckBusy = useRef(false);
+  const { reload: reloadFeed, loading: feedLoading } = feed;
+  // 마지막으로 그린 때 보통 읽기(처음 읽기·수동 새로고침)가 진행 중이었는가 — 쓰기 뒤 다시 읽기가 그것을 먼저 받게.
+  const loadingRef = useRef(feedLoading);
+  useEffect(() => {
+    loadingRef.current = feedLoading;
+  }, [feedLoading]);
 
   const loadedAt = feed.loadedAt?.getTime() ?? null;
   const freshShown = fresh !== null && fresh.path === path && (loadedAt === null || fresh.at >= loadedAt) ? fresh : null;
@@ -242,7 +254,7 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
       const response = await apiGet<SearchFeedResponse>(refreshPath);
       if (!mounted.current) return;
       // 수집기에 닿지 못한 응답(available:false)은 보이던 묶음을 덮지 않고 실패로 알립니다 — 잘 보이던 결과가 사유 한 줄로 바뀌지 않게.
-      if (response?.available) setFresh({ path, data: response, at: Date.now() });
+      if (response?.available) setFresh({ path, data: response, at: Date.now(), refreshed: true });
       else setRefreshError(response?.message ?? "수집기에서 응답을 받지 못했습니다.");
     } catch (error: unknown) {
       if (error instanceof UnauthorizedError) notifyUnauthorized();
@@ -252,14 +264,27 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
     }
   }, [path, refreshPath, mounted, notifyUnauthorized]);
 
+  const reloadAfterWrite = useCallback(async () => {
+    if (!path) return;
+    if (loadingRef.current) await reloadFeed();
+    try {
+      const response = await apiGet<SearchFeedResponse>(path);
+      if (mounted.current && response?.available) setFresh({ path, data: response, at: Date.now(), refreshed: false });
+    } catch (error: unknown) {
+      if (error instanceof UnauthorizedError) notifyUnauthorized();
+    }
+  }, [path, reloadFeed, mounted, notifyUnauthorized]);
+
   return {
     ...feed,
     data,
     refresh,
     refreshing,
     refreshError,
+    /** 쓰기(별칭 저장) 뒤 다시 읽기 — 쓰기 전에 나간 같은 GET에 합류하지 않음. */
+    reloadAfterWrite,
     /** 이번 화면에서 새로 받은 응답(보이는 중일 때만 — 받는 중 다시 읽기로 바뀌면 null) — '새로 받았습니다' 한 줄에 씁니다. */
-    refreshed: polled?.data ? null : (freshShown?.data ?? null),
+    refreshed: polled?.data ? null : freshShown?.refreshed ? freshShown.data : null,
     /** 받는 중 다시 읽기의 단계(none·polling·stalled)와 '다시 확인'. */
     pendingPhase,
     recheck,

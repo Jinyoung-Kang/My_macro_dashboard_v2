@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Banner, Button, Card, ErrorState, Freshness, inputClasses, Loading, PageHeader, Select, Table } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -11,6 +12,7 @@ import { apiDelete, apiPost } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
+import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { AlertKind, AlertRule, AlertRulesResponse, InboxItem, InboxResponse } from "@/lib/types";
 
 type Result = { ok: boolean; message: string };
@@ -21,6 +23,7 @@ type Result = { ok: boolean; message: string };
  * 알림은 대시보드를 열어야 보입니다(메일·메신저로 보내지 않음). 상단바 알림 벨과 탭 제목에 읽지 않은 수가 뜹니다.
  * 규칙을 만든 날 이후의 사건만 들어오고, 사건은 수집이 확정된 데이터로만 만듭니다(잠정치 제외).
  * 데모 열람(ADR 0013)은 읽기 전용이라 읽음 처리·규칙 만들기·켜기/끄기·지우기를 막습니다(백엔드도 403).
+ * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH — 그 대상에서 켠 것, 규칙 없음)은 제목을 누르면 그 대상의 타임라인으로 갑니다(정보 검색 화면 안쪽 주소만).
  */
 export default function AlertsPage() {
   const demo = isDemo(useSessionUser());
@@ -106,7 +109,7 @@ export default function AlertsPage() {
                   <p className="text-sm font-semibold text-bright">
                     {!item.read && !item.late && <span className="mr-1 text-text">●</span>}
                     {/* 제목·본문은 서버가 만든 글이라 예전 알림에는 국기·나침반 같은 그림 문자가 있습니다 — 화면에서 뗍니다 */}
-                    {withoutLeadingIcon(item.title)}
+                    <InboxTitle item={item} />
                   </p>
                   <span className="text-xs text-muted">
                     {item.occurredOn}{item.late ? " · 지난 사건" : ""}
@@ -198,5 +201,23 @@ export default function AlertsPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+/**
+ * 알림함 줄의 제목 — 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 그 대상의 타임라인으로 가는 링크(payload.href — 정보 검색 화면 안쪽 주소만,
+ * lib/infoSearch), 그 밖의 알림은 지금처럼 글. 링크는 누를 수 있는 것이라 강조 파랑(명세 A1).
+ */
+function InboxTitle({ item }: { item: InboxItem }) {
+  const title = withoutLeadingIcon(item.title);
+  const href = searchWatchInboxHref(item);
+  if (!href) return <>{title}</>;
+  return (
+    <Link
+      href={href}
+      className="inline-flex min-h-11 items-center rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline lg:min-h-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+    >
+      {title}
+    </Link>
   );
 }

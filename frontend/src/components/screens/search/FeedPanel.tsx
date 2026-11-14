@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ErrorState, Loading } from "@/components/ui";
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { ChevronDownIcon, ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
@@ -63,6 +63,8 @@ import { PeriodBars } from "./PeriodBars";
  * 단계 6(계약 §9-1·9-2): 목록 위에 고른 기간의 건수 막대(PeriodBars — 거르기를 거친 줄, 묶기와 상관없이 줄 수)를 두고, 막대를 누르면 그 날·주로
  * 목록을 좁힙니다(기간을 바꾸면 풂). 목록은 기본으로 같은 사건을 묶어(대표 줄 + '같은 사건 n건 · 매체 m곳 — 펼치기' 줄) 보이고 '묶어 보기'
  * 전환으로 모든 줄을 봅니다. 묶음 줄도 목록의 한 줄이라 ↑↓로 지나가고 Enter·누르기로 펼치거나 접습니다(결과 줄의 Enter는 그대로 원문).
+ *
+ * 단계 6 묶음 2(계약 §9-4): 이 대상이 내 관심 대상이면 속성 칸에 별칭 편집(aliasEditor)을 두고, 저장하면 이 결과를 다시 부릅니다(별칭이 검색어라).
  */
 export function FeedPanel({
   entityKey,
@@ -76,6 +78,7 @@ export function FeedPanel({
   onRange,
   aside = null,
   onShown,
+  aliasEditor = null,
 }: {
   entityKey: string;
   feedTab: SearchFeedTab;
@@ -90,8 +93,13 @@ export function FeedPanel({
   aside?: ReactNode;
   /** 결과(available:true)를 받아 그렸을 때 — 관심 대상의 '봤음'을 실패·받는 중에는 보내지 않게(EntityView). */
   onShown?: () => void;
+  /** 속성 칸의 별칭 편집(관심 대상일 때 — EntityView). 인자는 이 결과를 다시 부르는 함수(저장한 뒤). */
+  aliasEditor?: ((reloadFeed: () => void) => ReactNode) | null;
 }) {
   const feed = useInfoSearchFeed(endpoints.search.feed(entityKey, feedTab), demo ? null : endpoints.search.feed(entityKey, feedTab, true));
+  // 별칭을 저장한 뒤 — 저장 전에 나간 같은 결과 읽기(받는 중 다시 읽기 등)에 합류하지 않는 다시 읽기(useInfoSearchFeed).
+  const { reloadAfterWrite } = feed;
+  const reloadFeed = useCallback(() => void reloadAfterWrite(), [reloadAfterWrite]);
   const now = useMinuteClock();
   const today = now ? kstToday(now.getTime()) : null;
   const data = feed.data;
@@ -411,7 +419,7 @@ export function FeedPanel({
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
     />
   ) : (
-    <AttributesPanel entity={entity} kind={kind} errors={entityErrors} />
+    <AttributesPanel entity={entity} kind={kind} errors={entityErrors} aliasEditor={aliasEditor ? aliasEditor(reloadFeed) : null} />
   );
 
   return (

@@ -1,6 +1,7 @@
 /**
  * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes, 단계 4의 links,
- * 단계 5의 Finviz(feed의 출처 `finviz`·`pending`), 단계 6의 같은 사건 묶음(줄의 `clusterId`·`cluster`)과 관심 대상의 화제(`hot`).
+ * 단계 5의 Finviz(feed의 출처 `finviz`·`pending`), 단계 6의 같은 사건 묶음(줄의 `clusterId`·`cluster`)과 관심 대상의 화제(`hot`)·
+ * 별칭(`aliases`)·알림(`notify`, PATCH /api/search/watch/{id}).
  * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6~9입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
  * 수집기에 닿지 못하면 `{available: false, message}`만 보냅니다. 모르는 값은 null(화면은 '—', 0으로 채우지 않음). 시각은 UTC ISO.
  */
@@ -189,7 +190,20 @@ export type SearchWatchItem = {
    * 모르면 null(모은 날이 하루 미만이고 5건 이상 등), 단계 5까지의 응답에는 칸이 없습니다(화면은 true일 때만 '화제' 글 배지).
    */
   hot?: boolean | null;
+  /**
+   * 이 줄의 별칭(단계 6 묶음 2 — 계약 §9-4): 그 사용자의 검색어(결과 경로가 수집기에 `aliases=`로 넘기면 대상 풀기의 별칭에 더해 쓰고, 정기 수집은 대표 키마다 모든 사용자의 것을 합침).
+   * 등록 때 대상 풀기의 별칭(이름 둘이 앞)으로 채우고 PATCH로 고칩니다. 1~12개, 하나 1~60자. 단계 6 묶음 1까지의 응답에는 칸이 없습니다(화면은 편집을 두지 않음).
+   */
+  aliases?: string[] | null;
+  /**
+   * 새 글 알림(계약 §9-5) — 켜면 백엔드 정기 작업(15분)이 새 글을 알림함에 한 줄로 남깁니다(텔레그램 없음). 기본 꺼짐.
+   * 단계 6 묶음 1까지의 응답에는 칸이 없습니다(화면은 단추를 그리지 않음 — 끔으로 채우지 않음).
+   */
+  notify?: boolean | null;
 };
+
+/** PATCH /api/search/watch/{id} — 별칭이나 알림 하나를 고칩니다(자기 줄만, 데모·store_only 403). */
+export type SearchWatchPatch = { aliases: string[] } | { notify: boolean };
 
 /** 상한 — 내 목록(회원 10·운영자 50)과 서버 전체의 서로 다른 대상(100). */
 export type SearchWatchLimits = { mine: number | null; max: number | null; serverUsed: number | null; serverMax: number | null };

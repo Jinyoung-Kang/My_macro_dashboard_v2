@@ -5,7 +5,8 @@
  * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드,
  * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기), 단계 4의 공시·리서치 탭(대상 종류에 따라)·날짜만 아는 줄·
  * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글), 단계 5의 받는 중(pending — Finviz) 다시 읽기 횟수와 상태 글,
- * 단계 6 묶음 1의 기간 막대(KST 하루·월요일 시작 주)·같은 사건 묶어 보기·연결 그림 배치(계약 §9-1~9-3).
+ * 단계 6 묶음 1의 기간 막대(KST 하루·월요일 시작 주)·같은 사건 묶어 보기·연결 그림 배치(계약 §9-1~9-3),
+ * 묶음 2의 별칭 편집 검사·알림 켬/끔 칸·알림함 줄이 가는 주소(계약 §9-4·9-5).
  * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
  */
 import { holderQuery, institutionHref, stockHref } from "./detail";
@@ -1536,6 +1537,143 @@ export function watchCollectingNote(collecting: boolean | null | undefined): str
   if (collecting === true) return null;
   if (collecting === false) return "정기 수집은 서버에서만 돕니다 — 이 환경에서는 등록·조회만 되고 새 글은 모이지 않습니다.";
   return "정기 수집이 켜져 있는지 확인하지 못했습니다.";
+}
+
+// ------------------------------------------------------------------ 별칭 편집·알림(단계 6 묶음 2 — 계약 §9-4·9-5)
+
+/** 관심 대상 한 줄의 별칭 상한 — 개수와 하나의 글자 수(서버 PATCH 검사와 같음). */
+export const WATCH_ALIAS_MAX = 12;
+export const WATCH_ALIAS_CHARS = 60;
+
+/**
+ * 짧은 별칭 안내(계약 §4 규칙 5·§6-3) — 4글자 미만 별칭은 자유 검색어에도 받아 둔 글 대조에도 쓰지 않고, 이름은 길이와 상관없이 씁니다.
+ * 판마다 긴 별칭부터 4개까지 묻습니다.
+ */
+export const ALIAS_SHORT_NOTE =
+  "4글자 미만 별칭은 뉴스 검색어와 받아 둔 글 대조에 쓰지 않습니다(대상 이름은 길이와 상관없이 씀). 검색은 언어 판마다 긴 별칭부터 4개까지 묻습니다.";
+
+/**
+ * 관심 대상 별칭을 어떻게 합쳐 쓰는지(계약 §9-4) — 결과 경로는 대상 풀기의 별칭에 이 목록을 더해 씀(수집기 with_aliases — 합집합)이라 표에 있는 별칭은
+ * 여기서 빼도 쓰이고, 정기 수집은 대표 키마다 모든 사용자의 목록을 합칩니다. 빼면 검색에서 빠지는 것처럼 보이지 않게 편집 칸에 늘 적습니다.
+ */
+export const ALIAS_MERGE_NOTE =
+  "결과 검색은 대상 이름과 속성 표의 '별칭'(대상을 풀 때 나온 것)에 이 목록을 더해 씁니다 — 표에 있는 별칭은 여기서 빼도 결과 검색에 쓰입니다. 정기 수집은 이 대상을 등록한 모든 사용자의 목록을 합쳐 씁니다.";
+
+/** 제어 글자(C0·DEL·C1). */
+const ALIAS_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+/** 안내 글에 넣을 때 공백으로 바꿀 제어 글자. */
+const ALIAS_CONTROL_ALL = /[\u0000-\u001f\u007f-\u009f]/g;
+const ALIAS_SHOWN_CHARS = 20;
+
+/** 별칭 다듬기 — 앞뒤 공백을 떼고 가운데 이어진 공백을 하나로. */
+const cleanAlias = (raw: string) => raw.replace(/\s+/g, " ").trim();
+/** 중복을 가르는 키 — 대소문자 무시(서버와 같음). */
+const aliasKey = (alias: string) => alias.toLowerCase();
+
+/** 안내 글에 넣는 별칭 — 제어 글자는 공백으로, 20자 넘으면 자름. */
+function shownAlias(alias: string): string {
+  const visible = alias.replace(ALIAS_CONTROL_ALL, " ").replace(/\s+/g, " ").trim();
+  const chars = Array.from(visible);
+  return chars.length > ALIAS_SHOWN_CHARS ? `${chars.slice(0, ALIAS_SHOWN_CHARS).join("")}…` : visible;
+}
+
+/** 다듬은 별칭 하나의 모양 사유(맞으면 null) — 비었나·60자·제어 글자. */
+function aliasShapeError(alias: string): "empty" | "long" | "control" | null {
+  if (!alias) return "empty";
+  if (codePoints(alias) > WATCH_ALIAS_CHARS) return "long";
+  if (ALIAS_CONTROL.test(alias)) return "control";
+  return null;
+}
+
+export type AliasDraft = { ok: true; alias: string } | { ok: false; message: string };
+
+/**
+ * 편집 중인 목록에 더할 별칭 하나 — 다듬고 서버와 같은 검사(1~60자, 제어 글자 없음, 대소문자 무시 중복 없음, 12개 안).
+ * 서버가 같은 검사를 다시 합니다 — 이것은 틀린 값으로 400을 부르지 않게 하는 앞단입니다.
+ */
+export function aliasDraft(raw: string, existing: readonly string[]): AliasDraft {
+  const alias = cleanAlias(raw);
+  const shape = aliasShapeError(alias);
+  if (shape === "empty") return { ok: false, message: "별칭을 넣어 주세요" };
+  if (shape === "long") return { ok: false, message: `별칭은 ${WATCH_ALIAS_CHARS}자까지입니다` };
+  if (shape === "control") return { ok: false, message: "별칭에 쓸 수 없는 글자가 있습니다" };
+  const key = aliasKey(alias);
+  if (existing.some((other) => aliasKey(cleanAlias(other)) === key)) return { ok: false, message: "이미 있는 별칭입니다(대소문자 무시)" };
+  if (existing.length >= WATCH_ALIAS_MAX) return { ok: false, message: `별칭은 ${WATCH_ALIAS_MAX}개까지입니다` };
+  return { ok: true, alias };
+}
+
+export type AliasesForSave = { ok: true; aliases: string[] } | { ok: false; message: string };
+
+/**
+ * 저장할 별칭 목록(PATCH {aliases}) — 하나씩 다듬어 검사하고, 대소문자 무시 중복은 앞의 것 하나만 남깁니다(서버와 같음). 1~12개.
+ * 서버에 이미 있던 값이 규칙에 어긋나면(등록 때 받은 긴 별칭 등) 그 별칭을 짚어 막습니다 — 보내면 서버가 400으로 거절합니다.
+ */
+export function aliasesForSave(aliases: readonly string[]): AliasesForSave {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of aliases) {
+    const alias = cleanAlias(raw);
+    const shape = aliasShapeError(alias);
+    if (shape === "empty") return { ok: false, message: "빈 별칭이 있습니다 — 빼고 저장하세요" };
+    if (shape === "long") return { ok: false, message: `별칭 '${shownAlias(alias)}'이(가) ${WATCH_ALIAS_CHARS}자를 넘습니다 — 빼고 저장하세요` };
+    if (shape === "control") return { ok: false, message: `별칭 '${shownAlias(alias)}'에 쓸 수 없는 글자가 있습니다 — 빼고 저장하세요` };
+    const key = aliasKey(alias);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(alias);
+  }
+  if (out.length === 0) return { ok: false, message: "별칭은 하나 이상이어야 합니다" };
+  if (out.length > WATCH_ALIAS_MAX) return { ok: false, message: `별칭은 ${WATCH_ALIAS_MAX}개까지입니다` };
+  return { ok: true, aliases: out };
+}
+
+/** 두 별칭 목록이 순서·글자까지 같은가 — 바뀐 것이 없으면 저장 요청을 보내지 않습니다. */
+export function sameAliases(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((alias, index) => alias === b[index]);
+}
+
+/** 관심 대상 줄의 별칭(그 사용자의 검색어) — 문자열 배열일 때만. 칸이 없거나 모양이 틀리면 null(모름 — 빈 목록으로 채우지 않음). */
+export function watchAliasesOf(item: Pick<SearchWatchItem, "aliases"> | null | undefined): string[] | null {
+  const value: unknown = item?.aliases;
+  if (!Array.isArray(value)) return null;
+  return value.filter((alias): alias is string => typeof alias === "string");
+}
+
+/** 관심 대상 줄의 알림 켬·끔 — true·false일 때만. 칸이 없으면 null(끔으로 채우지 않음 — 화면은 단추를 그리지 않음). */
+export function watchNotifyOf(item: Pick<SearchWatchItem, "notify"> | null | undefined): boolean | null {
+  const value: unknown = item?.notify;
+  return typeof value === "boolean" ? value : null;
+}
+
+/**
+ * 알림 단추의 이름 — 상태와 상관없이 같습니다(aria-pressed 단추의 이름이 상태에 따라 바뀌면 '알림 끔, 누르지 않음'처럼 들려 지금 상태인지
+ * 누르면 할 일인지 모호함 — WAI-ARIA APG). 상태는 aria-pressed와 보이는 글(notifyStateText)이 나릅니다.
+ */
+export const NOTIFY_LABEL = "알림";
+
+/** 알림 단추에 보이는 상태 글(색·아이콘만이 아님) — 낭독은 aria-pressed가 하므로 이 글은 이름에 넣지 않습니다. */
+export function notifyStateText(on: boolean): string {
+  return on ? "켬" : "끔";
+}
+
+/** 관심 대상 새 글 알림의 알림함 종류(계약 §9-5). */
+export const SEARCH_WATCH_ALERT_KIND = "SEARCH_WATCH";
+const INBOX_HREF_MAX = 2048;
+/** 정보 검색 화면 주소 — '/search' 다음은 끝·'?'·'#'만(다른 경로·'/search/..'·'/searchx'가 아님), 공백·역슬래시·제어 글자 없음. */
+const INBOX_HREF = /^\/search(?:[?#][^\s\\\u0000-\u001f\u007f]*)?$/;
+
+/**
+ * 알림함 줄이 가는 주소 — 관심 대상 새 글 알림(SEARCH_WATCH)의 payload.href가 이 앱의 정보 검색 화면이면 그 주소, 아니면 null(누를 수 없는 줄 그대로).
+ * 다른 종류의 알림은 늘 null입니다. 서버가 만든 값이지만 바깥 주소·다른 화면으로 보내지 않게 '/search'로 시작하는 안쪽 경로만 받습니다.
+ */
+export function searchWatchInboxHref(item: { kind?: string | null; payload?: unknown }): string | null {
+  if (item.kind !== SEARCH_WATCH_ALERT_KIND) return null;
+  const payload = item.payload;
+  if (typeof payload !== "object" || payload === null) return null;
+  const href: unknown = (payload as { href?: unknown }).href;
+  if (typeof href !== "string" || href.length > INBOX_HREF_MAX || !INBOX_HREF.test(href)) return null;
+  return href;
 }
 
 /** 오류 응답의 상태 코드(lib/api의 ApiError — 모양으로 읽어 화면 시험의 가짜 api와도 맞음). */

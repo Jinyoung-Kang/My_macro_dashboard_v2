@@ -25,6 +25,22 @@ export function segmentClass(active: boolean): string {
   }`;
 }
 
+/**
+ * 켜고 끄는 단추(aria-pressed — 관심 대상의 알림): 켠 칸은 진한 테두리·굵은 글, 끈 칸은 옅은 글(상태는 단추의 글 '켬'·'끔'이 나름 — 색만이 아님).
+ * 바꾸는 중에는 aria-disabled(포커스가 떨어지지 않게 disabled를 쓰지 않음). compact는 목록 줄 — 좁은 화면 44px 정사각, 넓은 화면은 줄 높이 32px,
+ * 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
+ */
+export function toggleClass(pressed: boolean, compact = false): string {
+  const shape = compact
+    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-8 lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+    : CONTROL;
+  return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
+    pressed
+      ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
+      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
+  }`;
+}
+
 /** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(ADR 0041 결정 11), 넓은 화면은 글 높이. */
 export const LINK = `inline-flex min-h-11 items-center rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline lg:min-h-0 ${FOCUS}`;
 
