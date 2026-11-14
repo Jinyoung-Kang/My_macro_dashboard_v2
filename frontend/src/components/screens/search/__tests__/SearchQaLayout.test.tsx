@@ -1,10 +1,10 @@
 /**
- * 정보 검색 대상 화면의 배치(QA-420). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
+ * 정보 검색 대상 화면의 배치(QA-420)와 주소의 탭·기간 정규화(QA-421). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  *
- * jsdom은 배치를 재지 않습니다. 그래서 그린 화면의 클래스에서 그 창 폭에 쓰이는 칸 틀(`grid-cols-[…]`과 그 앞의 lg:·xl: 등)을 읽고,
+ * 배치: jsdom은 배치를 재지 않습니다. 그래서 그린 화면의 클래스에서 그 창 폭에 쓰이는 칸 틀(`grid-cols-[…]`과 그 앞의 lg:·xl: 등)을 읽고,
  * 셸의 폭(아래 상수)으로 가운데 칸의 폭을 셈해 줄의 고정 칸이 들어가는지 봅니다(배치 계산을 클래스 계약으로 시험 — 실제 화면은 QA 스택에서 잼).
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -52,6 +52,10 @@ const FEED = {
 };
 
 const LINKS = { available: true, entityKey: "us:NVDA", links: [], sources: [], fetchedAt: "2026-11-14T01:00:00+00:00" };
+
+const NO_IDS = { ticker: null, market: null, stockCode: null, cik: null, dartCorpCode: null, wikidata: null, lei: null };
+const TOPIC_KEY = "topic:합성 반도체 공급";
+const TOPIC = { key: TOPIC_KEY, kind: "topic", name: "합성 반도체 공급", nameKo: null, nameEn: null, aliases: [], description: null, ids: NO_IDS, links: [], sources: [] };
 
 /** 경로 앞부분 → 응답. 없는 경로는 끝나지 않습니다(읽는 중). */
 let reads: Record<string, unknown>;
@@ -229,5 +233,43 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     const grid = entityGridOf(await screen.findByRole("listbox", { name: "결과" }));
     expect(activeTracks(grid, 1440)).toEqual(["13rem", "minmax(0,1fr)", "18rem"]);
     expect(middleWidth(grid, 1440)).toBe(589);
+  });
+});
+
+describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 남음(계약 §5 — 탭·기간은 바꿔 씀)", () => {
+  const url = () => new URLSearchParams(window.location.search);
+  const tabNames = async () => within(await screen.findByRole("tablist", { name: "결과 탭" })).getAllByRole("tab").map((tab) => tab.textContent);
+
+  // QA-421: 수정 전 실패: 화면은 타임라인인데 주소의 tab=bogus가 그대로 남음(파싱이 조용히 기본값으로 바꿔 EntityView의 비교에 드러나지 않음).
+  it.fails("모르는 탭 값(tab=bogus) — 주소를 timeline으로 바꿔 쓴다(기록에 쌓지 않음, 기간은 그대로)", async () => {
+    reads[endpoints.search.entity(TOPIC_KEY)] = { available: true, entity: TOPIC, errors: {} };
+    renderScreen(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=bogus&range=1y`);
+    const before = window.history.length;
+    expect(await tabNames()).toEqual(["타임라인", "뉴스", "연결"]);
+    expect(screen.getByRole("tab", { name: "타임라인" }).getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(url().get("tab")).toBe("timeline"));
+    expect(url().get("e")).toBe(TOPIC_KEY);
+    expect(url().get("range")).toBe("1y");
+    expect(window.history.length).toBe(before);
+  });
+
+  // QA-421: 수정 전 실패: 화면은 30일인데 주소의 range=9y가 그대로 남음(기간은 바꿔 쓰는 길이 없었음).
+  it.fails("모르는 기간 값(range=9y) — 주소를 30d로 바꿔 쓴다(기록에 쌓지 않음, 탭은 그대로)", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    renderScreen("/search?e=us:NVDA&tab=news&range=9y");
+    const before = window.history.length;
+    await tabNames();
+    expect(screen.getByRole("tab", { name: "뉴스" }).getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(url().get("range")).toBe("30d"));
+    expect(url().get("tab")).toBe("news");
+    expect(window.history.length).toBe(before);
+  });
+
+  it("탭·기간이 빠진 주소(알림의 /search?e=…&tab=timeline 등)는 기본값으로 보이고 주소는 그대로 둔다", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    renderScreen("/search?e=us:NVDA&tab=timeline");
+    await tabNames();
+    expect(screen.getByRole("tab", { name: "타임라인" }).getAttribute("aria-selected")).toBe("true");
+    expect(window.location.search).toBe("?e=us:NVDA&tab=timeline");
   });
 });
