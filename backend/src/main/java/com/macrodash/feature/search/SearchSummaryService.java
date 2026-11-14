@@ -55,7 +55,7 @@ import java.util.regex.Pattern;
  *       {@code offline}입니다(셋을 가를 수 없음). 실패 캐시가 살아 있는 동안 실패한 출처는 {@code error}입니다. 둘 다 받지 못한 출처라(화면의
  *       '새로 받기' 안내와 같은 기준) 응답 {@code offlineSources}(이름)로 알리고, 그 때문에 고른 기간에 줄이 하나도 없으면 빈 요약 대신
  *       {@code available:false, reason:"stale"}과 다시 불러오라는 안내를 돌려줍니다(외부를 부르지 않는 모드 store_only는 화면도 같은 offline이라
- *       빈 요약 그대로).</li>
+ *       빈 요약 그대로이고, 늘 부르지 않는 offline 출처는 {@code offlineSources}에도 넣지 않음 — 새로 받기가 없어 넣을 길이 없음).</li>
  *   <li><b>엔진</b>: 번역(ADR 0037)과 같은 설정({@code dashboard.info.translate.*})과 순서 — 1순위 Gemini(무료 한도) → 한 등급 아래 Gemini → Claude Haiku.
  *       한도 초과·모델 없음인 Gemini 모델은 {@value #GEMINI_REST_MINUTES}분 건너뜀(이 서비스 안 — 번역의 쉬는 시각과는 따로). 키가 없으면 아무것도 부르지 않음.</li>
  *   <li><b>프롬프트</b>: 지시는 시스템 프롬프트에만, 자료는 요청마다 다른 꼬리표({@code <자료-…>})로 감싼 JSON — 자료 안의 글은 JSON 문자열이라 구간을 닫지 못하고,
@@ -249,9 +249,10 @@ public class SearchSummaryService {
             return unavailable("collector", SearchService.NO_RESPONSE, null);
         }
         List<Row> rows = rows(feed.get(), period);
-        List<String> offline = offlineSources(feed.get());
+        boolean external = search.external(user);
+        List<String> offline = offlineSources(feed.get(), external);
         if (rows.isEmpty()) {
-            if (!offline.isEmpty() && search.external(user)) {
+            if (!offline.isEmpty() && external) {
                 // 화면은 그 출처의 줄을 받았을 수 있음 — 빈 요약('받아 둔 자료가 없음')이 눈앞의 목록과 어긋나지 않게 다시 불러오라고 함.
                 log.info("정보 검색 AI 요약: 고른 기간의 받아 둔 줄 없음(받지 못한 출처 {}곳)", offline.size());
                 Map<String, Object> out = unavailable("stale", STALE.formatted(offline.size()), null);
@@ -336,12 +337,17 @@ public class SearchSummaryService {
      * 받지 못해 요약에 들지 못한 출처의 이름(없으면 출처 코드), 응답의 출처 순서대로 — 받아 둔 결과가 없는 출처({@code status: offline})와
      * 실패한 출처({@code status: error} — 실패 캐시가 살아 있는 동안은 offline이 아니라 이 상태라, 빼면 막 실패한 출처가 조용히 빠짐. QA-427 검토).
      * 화면의 '새로 받기' 안내(받지 못한 출처 = error·offline)와 같은 기준입니다. 이름은 수집기가 정한 고정 글이라 검색어가 들어가지 않습니다.
+     *
+     * <p>외부를 부르지 않는 모드(store_only — {@code external} 거짓)에서는 {@code offline}을 넣지 않습니다: 바깥 출처는 이 모드에서 늘 부르지 않아
+     * offline이고, 새로 받기도 서버가 거절해(SearchService) '새로 받은 뒤 다시 요약하면 들어감' 안내가 이루어질 수 없으며, 화면 목록도 같은 저장본이라
+     * 요약이 빠뜨린 줄이 없습니다(출처 상태 줄이 '외부 호출을 끈 요청이라 부르지 않음'을 따로 적음). 실패({@code error})는 그대로 넣습니다(QA-427 검토).
      */
-    private static List<String> offlineSources(JsonNode feed) {
+    private static List<String> offlineSources(JsonNode feed, boolean external) {
         List<String> out = new ArrayList<>();
         for (JsonNode source : feed.path("sources")) {
             String status = text(source, "status");
-            if (!OFFLINE.equals(status) && !ERROR.equals(status)) {
+            boolean listed = ERROR.equals(status) || (external && OFFLINE.equals(status));
+            if (!listed) {
                 continue;
             }
             String label = clean(text(source, "label"));

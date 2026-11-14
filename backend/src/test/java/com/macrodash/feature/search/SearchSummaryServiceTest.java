@@ -435,7 +435,7 @@ class SearchSummaryServiceTest {
     }
 
     @Test
-    @DisplayName("외부를 부르지 않는 모드(store_only)는 화면도 같은 offline이라 줄이 없으면 그대로 빈 요약(basedOn 0)")
+    @DisplayName("외부를 부르지 않는 모드(store_only)는 화면도 같은 offline이라 줄이 없으면 그대로 빈 요약(basedOn 0) — 늘 부르지 않는 offline 출처는 offlineSources에 넣지 않음")
     void storeOnlyEmptyStaysEmpty() {
         StoreReader storeOnly = mock(StoreReader.class);
         when(storeOnly.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
@@ -447,7 +447,7 @@ class SearchSummaryServiceTest {
         assertThat(out.get("available")).isEqualTo(true);
         assertThat(lines(out)).isEmpty();
         assertThat(out.get("basedOn")).isEqualTo(0);
-        assertThat(out.get("offlineSources")).isEqualTo(List.of("구글 뉴스(영어)"));
+        assertThat(out.get("offlineSources")).isEqualTo(List.of());
         verifyNoEngine();
     }
 
@@ -851,6 +851,23 @@ class SearchSummaryServiceTest {
         assertThat(stale.get("reason")).isEqualTo("stale");
         assertThat((String) stale.get("message")).startsWith("출처 2곳");
         assertThat(stale.get("offlineSources")).isEqualTo(List.of("Bing 뉴스", "사건 뉴스(저장본)"));
+    }
+
+    @Test
+    @DisplayName("QA-427 검토: 외부를 부르지 않는 모드(store_only)는 늘 부르지 않는 offline 출처를 offlineSources에 넣지 않음 — 새로 받기를 서버가 거절해 '새로 받은 뒤 다시 요약하면 들어감'이 이루어질 수 없음, 실패(error)는 그대로")
+    void qa427StoreOnlyDoesNotListNeverCalledSources() {
+        StoreReader storeOnly = mock(StoreReader.class);
+        when(storeOnly.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
+        search = new SearchService(storeOnly, collector, clock);
+        feedReturns("news", feed(recent(3), List.of(source("google_en", "구글 뉴스(영어)", "offline"), source("bing", "Bing 뉴스", "offline"),
+                source("event_news", "사건 뉴스(저장본)", "error"), source("feeds", "보도자료·경제지 피드", "ok"))));
+        primaryReturns(geminiOk(ONE_LINE));
+
+        Map<String, Object> out = service().summarize(KEY, "news", "30d", OWNER);
+
+        assertThat(out.get("available")).isEqualTo(true);
+        assertThat(out.get("basedOn")).isEqualTo(3);
+        assertThat(out.get("offlineSources")).isEqualTo(List.of("사건 뉴스(저장본)"));
     }
 
     @Test
