@@ -358,7 +358,7 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     expect(options()).toHaveLength(6);
   });
 
-  it("관심 대상 목록 — 화제인 대상에 '화제' 글 배지와 뜻 한 줄(색만이 아님), 아니거나 모르면 없음", async () => {
+  it("관심 대상 목록 — 화제인 대상에 '화제' 글 배지(색만이 아님)와 접힌 안내 속 화제 뜻, 아니거나 모르면 배지 없음", async () => {
     reads[endpoints.search.watch] = {
       available: true,
       items: [
@@ -376,10 +376,13 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     expect(within(hot).getByText("화제")).toBeTruthy();
     expect(within(list).getByRole("button", { name: /버크셔 해서웨이/ }).textContent).not.toContain("화제");
     expect(within(list).getByRole("button", { name: /합성 주제/ }).textContent).not.toContain("화제");
-    expect(screen.getByText(/화제 = 지난 24시간에 처음 받은 글이 5건 이상/)).toBeTruthy();
+    // 뜻은 목록 아래에 늘 펼치지 않고 기본으로 접힌 안내(details)에 둡니다(QA-419). jsdom의 getByText는 닫힌 details 안의 글도 찾으므로 자리를 함께 대조합니다.
+    const definition = screen.getByText(/화제 = 지난 24시간에 처음 받은 글이 5건 이상/);
+    expect(definition.closest("details")).not.toBeNull();
+    expect(definition.closest("details")!.hasAttribute("open")).toBe(false);
   });
 
-  it("화제인 대상이 없으면 뜻 한 줄도 없다", async () => {
+  it("화제인 대상이 없으면 접힌 안내에도 화제 뜻이 없다", async () => {
     reads[endpoints.search.watch] = {
       available: true,
       items: [{ id: 8, key: "cik:0001067983", kind: "institution", name: "버크셔 해서웨이", createdAt: null, lastSeenAt: null, newCount: 1, hot: false }],
