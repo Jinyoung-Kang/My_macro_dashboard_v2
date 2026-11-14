@@ -1,17 +1,19 @@
 /**
- * 정보 검색 연결 탭 '목록' 보기의 QA 결함 재현·고정 시험(QA-422). 표본은 모두 합성 값입니다(실제 법인·사람의 자료를 쓰지 않음).
+ * 정보 검색 연결 탭 '목록' 보기의 QA 결함 재현·고정 시험(QA-422)과 좁은 칸의 연결 그림(QA-424 검토 지적). 표본은 모두 합성 값입니다(실제 법인·사람의
+ * 자료를 쓰지 않음).
  * 배치를 재지 못하는 jsdom이라, 고침이 세우는 구조(클래스·title·요소의 자리)를 대조하고 실제 폭은 QA 스택 브라우저(390·1024·1440)로 확인합니다.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { linkGroups, type LinksView } from "@/lib/infoSearch";
 import type { SearchLink } from "@/lib/types";
+import { LinksGraph } from "../LinksGraph";
 import { LinksPanel } from "../LinksPanel";
 
 afterEach(cleanup);
 
-/** 요소의 클래스 낱말(접두가 붙은 것은 따로 — 'truncate'와 'lg:truncate'는 다른 낱말). */
-const classes = (element: Element) => element.className.split(/\s+/).filter(Boolean);
+/** 요소의 클래스 낱말(접두가 붙은 것은 따로 — 'truncate'와 'lg:truncate'는 다른 낱말). SVG도 되게 class 속성으로 읽음. */
+const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
 
 /** 앞머리가 같은 GLEIF 자회사 넷(키 없음 — '이름으로 찾기')과 Yahoo 내부자 하나. */
 const SUBSIDIARIES: SearchLink[] = [1, 2, 3, 4].map((n) => ({
@@ -75,6 +77,39 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
       expect(classes(stack)).toEqual(expect.arrayContaining(["min-w-0", "flex-1", "flex-col", "@md:flex-row"]));
       expect(classes(stack)).not.toContain("lg:flex-row");
       expect(classes(name.parentElement!)).toEqual(expect.arrayContaining(["min-w-0", "@md:flex-1"]));
+    }
+  });
+});
+
+describe("연결 그림 — 칸이 그림의 가장 작은 폭(280)보다 좁으면 줄여 그리지 않고 가로로 넘김(QA-424 검토 지적)", () => {
+  // 검토 지적: 1024~약 1140 화면의 가운데 칸(1024에서 안쪽 약 164px)은 linkGraphSize가 폭을 280으로 올려, width="100%"인 SVG가 뷰박스 280을
+  // 칸 폭에 맞춰 줄여 그렸습니다 — 노드·관계 글 12px이 1024에서 약 7px(164/280)로 보여 글자 하한(ADR 0041 결정 11)을 어겼습니다.
+  // jsdom은 배치를 재지 못하므로 칸 폭(clientWidth)을 정해 두고 SVG의 폭 속성·클래스와 감싼 칸의 넘김을 대조합니다.
+  const renderGraph = (width: number) => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
+    render(<LinksGraph groups={linkGroups([INSIDER, ...SUBSIDIARIES])} centerName="Example Corp" onTarget={() => {}} onShowList={() => {}} />);
+    const svg = screen.getByRole("group", { name: /Example Corp의 연결 그림/ });
+    return { svg, box: svg.parentElement! };
+  };
+
+  it("칸 164px — 그림은 뷰박스와 같은 폭 280px 그대로(글자 12px), 감싼 칸에서 가로로 넘기고 처음에는 가운데로 넘겨 둠", () => {
+    const { svg, box } = renderGraph(164);
+    expect(svg.getAttribute("viewBox")).toMatch(/^0 \d+ 280 \d+$/);
+    expect(svg.getAttribute("width")).toBe("280");
+    expect(classes(svg)).toContain("max-w-none");
+    expect(classes(svg)).not.toContain("max-w-full");
+    expect(classes(box)).toContain("overflow-x-auto");
+    expect(box.scrollLeft).toBe((280 - 164) / 2);
+  });
+
+  it("칸 296px(390 화면)·570px(1440 화면) — 뷰박스가 칸 폭과 같아 지금처럼 칸에 맞춤(넘기지 않음)", () => {
+    for (const width of [296, 570]) {
+      const { svg, box } = renderGraph(width);
+      expect(svg.getAttribute("viewBox")).toMatch(new RegExp(`^0 \\d+ ${width} \\d+$`));
+      expect(svg.getAttribute("width")).toBe("100%");
+      expect(classes(svg)).toContain("max-w-full");
+      expect(classes(box)).not.toContain("overflow-x-auto");
+      cleanup();
     }
   });
 });

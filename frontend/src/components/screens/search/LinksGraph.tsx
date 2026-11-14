@@ -12,7 +12,8 @@ const GRAPH_NOTE = "받은 자료 기준 — 출처에 없는 관계는 그리�
  * 이어진 호마다 관계 글(한국어 — 묶음이 좌우 호로 쪼개지면 양쪽에). 새 의존성 없이 SVG로 그리고, 배치는 lib의 순수 함수(linkGraphLayout)가 정합니다(명세 A10).
  *
  * 그림의 폭은 담는 칸의 폭을 재서 맞추고(좁은 화면 390에서도 — 글자 12px이 줄지 않게 뷰박스를 칸 폭과 같게), 재지 못하면 360으로 그려 칸에 맞춰
- * 줄입니다. 노드는 Tab으로 차례로 닿고(낭독 이름 = 이름 · 관계), 누르기·Enter·Space로 그 대상으로(키가 없으면 그 이름으로 찾기) 갑니다.
+ * 줄입니다. 칸이 그림의 가장 작은 폭(280 — linkGraphSize)보다 좁으면(가운데 칸이 가장 좁은 1024~약 1140 화면) 줄여 그리지 않고 제 폭 그대로 두어
+ * 칸 안에서 가로로 넘기고(글자 12px 그대로), 처음에는 가운데 대상이 보이게 가운데로 넘겨 둡니다. 노드는 Tab으로 차례로 닿고(낭독 이름 = 이름 · 관계), 누르기·Enter·Space로 그 대상으로(키가 없으면 그 이름으로 찾기) 갑니다.
  * 노드는 누를 수 있는 것이라 강조 파랑(이름·테두리), 선·관계 글은 데이터라 중립입니다(명세 A1). 포커스는 노드를 둘러싼 2px 고리로 보입니다
  * (브라우저 기본 바깥선은 투명 — 고대비 모드에서는 시스템 색으로 보임).
  * 색은 currentColor로 칠해 고대비 모드에서도 시스템 글자색으로 남습니다.
@@ -43,6 +44,12 @@ export function LinksGraph({
   const size = useMemo(() => linkGraphSize(measured), [measured]);
   const layout = useMemo(() => linkGraphLayout(groups, size, { centerName }), [groups, size, centerName]);
   const { center } = layout;
+  /** 칸이 그림보다 좁은가(잰 뒤에만) — 그러면 줄이지 않고 가로로 넘김. */
+  const overflowing = measured > 0 && measured < layout.width;
+  useEffect(() => {
+    const box = boxRef.current;
+    if (box && overflowing) box.scrollLeft = (layout.width - measured) / 2;
+  }, [overflowing, layout.width, measured]);
 
   const open = (node: LinkGraphNode) => onTarget(linkTarget(node.link));
   const onKeyDown = (event: KeyboardEvent<SVGGElement>, node: LinkGraphNode) => {
@@ -53,13 +60,13 @@ export function LinksGraph({
 
   return (
     <div className="flex flex-col gap-2">
-      <div ref={boxRef} className="w-full">
+      <div ref={boxRef} className={overflowing ? "w-full overflow-x-auto" : "w-full"}>
         <svg
           role="group"
           aria-label={`${centerName}의 연결 그림 — 노드 ${layout.nodes.length}개`}
-          width="100%"
+          width={overflowing ? layout.width : "100%"}
           viewBox={`0 ${layout.view.y} ${layout.width} ${layout.view.height}`}
-          className="block h-auto max-w-full"
+          className={overflowing ? "block h-auto max-w-none" : "block h-auto max-w-full"}
         >
           <g aria-hidden="true" className="text-border-strong">
             {layout.nodes.map((node) => (
