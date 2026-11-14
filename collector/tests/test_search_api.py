@@ -735,20 +735,25 @@ def test_SEC_표를_읽지_못해_CIK를_모르면_건너뜀이_아니라_모름
 
 _DART_OTHER = {"900002": {"corpCode": "00900002", "name": "합성화학"}}      # 저장본을 읽었고 이 종목(900001)은 없음 — ETF·우선주 등
 _DART_SELF = {"900001": {"corpCode": "00900001", "name": "합성전자"}}       # 저장본에 있는데 대상에 고유번호가 없음(저장본을 못 읽던 때 푼 대상)
-_DART_MISSING = "DART 고유번호 저장본에 이 종목이 없음"       # 대상 풀기는 저장본을 읽었든 못 읽었든 이 사유를 남김(search_entities._build_kr)
+_DART_MISSING = "DART 고유번호 저장본에 이 종목이 없음"       # 대상 풀기가 저장본을 읽었는데 종목이 없을 때의 사유(search_entities._build_kr)
+_DART_UNREAD = "DART 고유번호 저장본을 읽지 못함"             # 대상 풀기가 저장본을 읽지 못했을 때의 사유(QA-429)
 
 
 @pytest.mark.parametrize("codes, errors, external, status, message", [
     (_DART_OTHER, {"dart": _DART_MISSING}, True, "skipped", "DART 고유번호가 없어 묻지 않음"),
     (_DART_OTHER, {"dart": _DART_MISSING, "entity": "대상 풀기가 15초를 넘어 저장본 이름으로만 답함"}, True, "skipped",
      "DART 고유번호가 없어 묻지 않음"),
+    ({}, {"dart": _DART_UNREAD}, True, "error", "DART 고유번호를 모름 — DART 고유번호 저장본을 읽지 못함"),
     ({}, {"dart": _DART_MISSING}, True, "error", "DART 고유번호를 모름 — DART 고유번호 저장본을 읽지 못함"),
-    ({}, {"dart": _DART_MISSING}, False, "offline", search.OFFLINE),
-    (_DART_SELF, {"dart": _DART_MISSING}, True, "error", "DART 고유번호를 모름 — 대상을 풀 때 저장본을 읽지 못함"),
+    ({}, {"dart": _DART_UNREAD}, False, "offline", search.OFFLINE),
+    (_DART_SELF, {"dart": _DART_UNREAD}, True, "error", "DART 고유번호를 모름 — 대상을 풀 때 저장본을 읽지 못함"),
     ({}, {}, True, "skipped", "DART 고유번호가 없어 묻지 않음"),
 ])
 def test_DART_저장본을_읽지_못해_고유번호를_모르면_모름(monkeypatch, codes, errors, external, status, message):
-    """저장본을 읽었는데 그 종목이 없으면(ETF 등) '건너뜀', 저장본을 읽지 못했으면 '모름'(error) — 대상 풀기의 사유 글만으로는 둘을 못 가름."""
+    """
+    저장본을 읽었는데 그 종목이 없으면(ETF 등) '건너뜀', 저장본을 읽지 못했으면 '모름'(error) — 판정은 대상 풀기의 사유가 아니라 지금의
+    저장본(풀기 결과는 실패가 섞이면 60초 캐시라 그 사이 저장본이 바뀌었을 수 있음 — 넷째 줄은 읽은 저장본으로 푼 뒤 저장본을 못 읽게 된 때).
+    """
     stubs = Stubs(monkeypatch)
     monkeypatch.setattr(search_store, "dart_codes", lambda: dict(codes))
     stubs.use(dict(KR_ENTITY, ids=dict(KR_ENTITY["ids"], dartCorpCode=None)), errors=errors)

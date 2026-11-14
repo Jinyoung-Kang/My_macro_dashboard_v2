@@ -42,7 +42,6 @@ def _dart_row(out: dict) -> dict:
     return next(row for row in out["sources"] if row["source"] == "dart")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-429: 저장본을 읽지 못해도 대상 풀기가 '저장본에 이 종목이 없음'이라 적음")
 @pytest.mark.parametrize("external", [False, True])
 def test_DART_저장본을_읽지_못하면_대상_풀기도_읽지_못함이라_적는다(monkeypatch, external):
     monkeypatch.setattr(search_store, "dart_codes", lambda: {})
@@ -60,7 +59,6 @@ def test_DART_저장본을_읽었는데_종목이_없으면_이_종목이_없음
     assert (row["status"], row["message"]) == ("skipped", "DART 고유번호가 없어 묻지 않음"), "읽었는데 없으면 '건너뜀'"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-429: 속성 칸은 '저장본에 이 종목이 없음', 출처 상태 줄은 '저장본을 읽지 못함'으로 엇갈림")
 def test_같은_화면의_속성_칸과_공시_줄이_같은_사유를_말한다(monkeypatch):
     """화면(/search?e=kr:…&tab=filings)이 함께 부르는 대상 풀기와 공시 탭 결과 — 저장본을 읽지 못했을 때 두 안내의 사유가 같음."""
     monkeypatch.setattr(search_store, "dart_codes", lambda: {})

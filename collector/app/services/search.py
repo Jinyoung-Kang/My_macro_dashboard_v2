@@ -510,10 +510,11 @@ def _unknown_id(source: str, errors: dict, keys: tuple[str, ...], label: str, *,
 
 def _unknown_dart(ids: dict, errors: dict, *, external: bool) -> _Spec | None:
     """
-    국내 종목에 DART 고유번호가 없을 때 그것이 '모름'인지. 대상 풀기는 저장본을 읽었든 못 읽었든 같은 사유('저장본에 이 종목이 없음')를
-    남기므로(search_entities._build_kr) 사유 글로는 가르지 못해 저장본(외부 호출 없음)을 한 번 더 봅니다 — 저장본을 읽었고 그 종목이 없으면
-    None(ETF·우선주 등 — '건너뜀'), 저장본을 읽지 못했으면 ``error``(외부 호출을 끈 요청이면 ``offline``), 저장본에는 있는데 대상에 없으면
-    (저장본을 못 읽던 때 푼 대상 — 그 결과는 60초만 캐시) ``error``. 대상 풀기의 사유(``dart``·``entity``)가 없으면 None.
+    국내 종목에 DART 고유번호가 없을 때 그것이 '모름'인지. 대상 풀기의 사유(search_entities.dart_missing_reason — 저장본을 읽었으면
+    '이 종목이 없음', 못 읽었으면 '읽지 못함')는 풀 때의 저장본 기준이고 그 결과는 60초 캐시되므로, 저장본(외부 호출 없음)을 한 번 더 봅니다
+    — 저장본을 읽었고 그 종목이 없으면 None(ETF·우선주 등 — '건너뜀'), 저장본을 읽지 못했으면 ``error``(대상 풀기와 같은 사유 글 —
+    외부 호출을 끈 요청이면 ``offline``), 저장본에는 있는데 대상에 없으면(저장본을 못 읽던 때 푼 대상) ``error``.
+    대상 풀기의 사유(``dart``·``entity``)가 없으면 None.
     """
     if not (errors.get("dart") or errors.get("entity")):
         return None
@@ -522,7 +523,7 @@ def _unknown_dart(ids: dict, errors: dict, *, external: bool) -> _Spec | None:
         return None
     if not external:
         return _Spec("dart", status="offline", message=OFFLINE)
-    reason = "대상을 풀 때 저장본을 읽지 못함" if codes else "DART 고유번호 저장본을 읽지 못함"
+    reason = "대상을 풀 때 저장본을 읽지 못함" if codes else search_entities.DART_UNREAD
     return _Spec("dart", status="error", message=f"DART 고유번호를 모름 — {reason}")
 
 
