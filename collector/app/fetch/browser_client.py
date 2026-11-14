@@ -8,6 +8,9 @@ app/fetch/browser_client.py
   - 컨테이너에 닿지 못했거나(연결 실패·비밀 불일치·허용 호스트 아님·바쁨) 브라우저가 페이지를 받지 못한 것은 출처의 거부가 아니라
     :class:`TransportError`입니다. 출처의 답(상태 코드·본문·검사 상태)은 그대로 :class:`Reply`로 돌려주고 판정은 ladder가 합니다.
   - 안쪽 망의 호출이라 환경변수 프록시를 따르지 않습니다(``trust_env = False``).
+  - 컨테이너는 한 번에 한 건만 받습니다(바쁘면 429 — 계층 올림 실패라 ladder가 아래 계층의 거부로 기록). polite 태스크는 차례로 돌지만 정보 검색의
+    Finviz 작업자(ADR 0041 단계 5)는 그 차례 밖의 스레드라, 이 과정 안의 호출을 :data:`_flight` 잠금으로 줄 세웁니다. 기다리는 시간은 태스크의 남은
+    시간에서 :data:`MIN_TIME_LEFT`를 뺀 만큼(태스크 밖이면 :data:`BUSY_WAIT_SECONDS`)이고, 넘으면 지금 컨테이너가 바쁠 때와 같은 전송 실패입니다.
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ from urllib.parse import urlencode
 import requests
 
 from .. import http
-from . import impersonate
+from . import impersonate, pacing
 from .reply import Reply, TransportError
 
 ENV_URL = "BROWSER_FETCH_URL"
@@ -38,7 +41,11 @@ ENVELOPE_FACTOR = 2
 ENVELOPE_EXTRA_BYTES = 64 * 1024
 _READ_CHUNK = 64 * 1024
 
+# 태스크 밖에서(남은 시간을 모름) 다른 브라우저 요청을 기다리는 상한(초) — 한 요청의 읽기 상한(TIMEOUT)보다 조금 길게.
+BUSY_WAIT_SECONDS = 120.0
+
 _lock = threading.Lock()
+_flight = threading.Lock()          # 컨테이너 호출 한 번에 한 건(과정 안)
 _session: requests.Session | None = None
 
 
@@ -77,6 +84,21 @@ def send(method: str, url: str, *, host: str, headers: Any = None, params: dict[
     left = http.time_left()
     if left is not None and left < MIN_TIME_LEFT:
         raise TransportError(f"태스크 시간 예산이 {max(left, 0.0):.0f}초 남아 브라우저를 부르지 않음")
+    wait = BUSY_WAIT_SECONDS if left is None else max(0.0, left - MIN_TIME_LEFT)
+    if not _flight.acquire(timeout=wait):
+        raise TransportError(f"브라우저 컨테이너가 다른 요청을 받는 중 — {wait:.0f}초 기다려도 비지 않음")
+    try:
+        left = http.time_left()
+        if left is not None and left < MIN_TIME_LEFT:
+            raise TransportError(f"태스크 시간 예산이 {max(left, 0.0):.0f}초 남아 브라우저를 부르지 않음")
+        pacing.mark(host)               # 기다린 만큼 같은 호스트 간격이 줄지 않게 — 실제로 보내는 순간을 다시 적음
+        return _send_one(url, params)
+    finally:
+        _flight.release()
+
+
+def _send_one(url: str, params: dict[str, Any] | None) -> Reply:
+    """컨테이너에 한 번 — :func:`send`가 :data:`_flight`를 쥔 채 부릅니다."""
     target = f"{url}{'&' if '?' in url else '?'}{urlencode(params)}" if params else url
     limit = impersonate.MAX_BODY_BYTES
     try:

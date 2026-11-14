@@ -166,6 +166,76 @@ def test_태스크_시간_예산이_모자라면_브라우저를_부르지_않�
     assert sidecar.sent == []
 
 
+def test_브라우저_컨테이너는_과정_안에서_한_번에_한_건만_부른다(sidecar, monkeypatch):
+    """컨테이너는 한 번에 한 건(바쁘면 429 → 계층 올림 실패가 거부로 기록됨) — 화면발 Finviz 작업자와 polite 태스크가 겹쳐도 차례로(ADR 0041 단계 5)."""
+    import threading
+
+    inside = {"now": 0, "most": 0}
+    real_post = browser_client._http().post
+    gate = threading.Event()
+
+    class Slow:
+        def post(self, url, **kwargs):
+            inside["now"] += 1
+            inside["most"] = max(inside["most"], inside["now"])
+            gate.wait(2)
+            try:
+                return real_post(url, **kwargs)
+            finally:
+                inside["now"] -= 1
+
+    monkeypatch.setattr(browser_client, "_http", lambda: Slow())
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(_send().status)) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.2)
+    gate.set()
+    for thread in threads:
+        thread.join(5)
+    assert results == [200, 200] and inside["most"] == 1
+
+
+def test_브라우저_컨테이너를_기다리다_시간_예산이_모자라면_부르지_않는다(sidecar, monkeypatch):
+    """다른 요청이 쓰는 동안은 남은 시간 안에서만 기다림 — 넘으면 전송 실패(지금 컨테이너가 바빠 429를 받는 것과 같은 길)."""
+    monkeypatch.setattr(browser_client, "BUSY_WAIT_SECONDS", 0.2)
+    browser_client._flight.acquire()
+    try:
+        with pytest.raises(TransportError, match="다른 요청"):
+            _send()
+        monkeypatch.setattr(browser_client, "BUSY_WAIT_SECONDS", 30.0)     # 태스크 안에서는 남은 시간 − 최소 시간이 상한(이 값이 아님)
+        short = app_http.TaskGuard(deadline=time.monotonic() + browser_client.MIN_TIME_LEFT + 0.2)
+        started = time.monotonic()
+        with pytest.raises(TransportError, match="다른 요청"):
+            app_http.run_guarded(short, _send)
+        assert time.monotonic() - started < 1.0, "남은 시간 - 최소 시간만큼만 기다림"
+    finally:
+        browser_client._flight.release()
+    assert sidecar.sent == []
+
+
+def test_브라우저_컨테이너를_기다린_뒤에는_보낸_시각을_다시_적는다(sidecar, monkeypatch):
+    """pacing은 기다리기 전에 보낸 시각을 적음 — 컨테이너를 기다린 만큼 같은 호스트 간격이 줄지 않게, 실제로 보내기 직전에 다시 적음."""
+    import threading
+
+    from app.fetch import pacing
+
+    pacing.reset()
+    browser_client._flight.acquire()
+    done = []
+    worker = threading.Thread(target=lambda: done.append(_send().status))
+    worker.start()
+    time.sleep(0.3)
+    stale = time.monotonic() - 10.0
+    with pacing._lock:
+        pacing._last_request["www.calendar.example"] = stale          # pacing이 기다리기 전에 적은 시각(오래됨)
+    browser_client._flight.release()
+    worker.join(5)
+    assert done == [200]
+    assert pacing._last_request["www.calendar.example"] > stale + 5, "보내기 직전에 다시 적음"
+    pacing.reset()
+
+
 def test_안쪽_망의_호출은_환경_프록시를_따르지_않는다(monkeypatch):
     monkeypatch.setenv("HTTP_PROXY", "http://qaproxy:8888")
 

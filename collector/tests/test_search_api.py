@@ -10,6 +10,10 @@ tests/test_search_api.py
 - 공시·리서치 탭(단계 4, 계약 §7-2·§7-3): 대상 종류마다 부를 출처(주제는 공시·리서치 없음, 기관·사람은 리서치 없음), 타임라인은 허락된 탭의 합,
   SEC 두 출처의 같은 접수는 한 줄(sec가 먼저), 모은 글은 탭에 맞는 종류만(§7-6)
 - 로그에 검색어가 남지 않음
+- Finviz 종목 뉴스(단계 5, 계약 §8-4): 미국 상장 회사의 뉴스·타임라인에만, 처음엔 받는 중(pending·finvizQueued), 받은 뒤 채움, finviz=0이면
+  줄에 넣지 않음, 서버가 아니면 server_only(네트워크 0건), 합치기는 Yahoo 바로 뒤
+- 단계 4 QA: SEC 표·DART 저장본·대상 풀기를 읽지 못해 식별자를 모르면 공시 줄은 '건너뜀'이 아니라 error(Q1), 첫 화면은 사용자 제외 매체를
+  캐시 없이 바로 읽음(Q3)
 """
 from __future__ import annotations
 
@@ -22,8 +26,12 @@ import requests
 from fastapi.testclient import TestClient
 
 from app import http, main, publicapi
+from app import store as app_store
+from app.fetch import ladder, policy
 from app.services import detail, search, search_entities, search_filings, search_links, search_research, search_store, search_wikidata
+from app.services import search_finviz
 from app.services import search_sources as sources
+from app.tasks import polite
 
 SECRET = "Synthetic Secret Holdings"
 
@@ -37,7 +45,14 @@ def _fresh(monkeypatch):
     monkeypatch.setattr(search_store, "feed_bundle", lambda terms: sources.Fetched(items=[]))
     monkeypatch.setattr(search_store, "watch_items", lambda key, owner, kinds=None: sources.Fetched(items=[]))
     monkeypatch.setattr(search_store, "user_excludes", lambda: search.rules.Excludes())
+    # 첫 화면은 사용자 제외 매체를 캐시 없이 읽음(Q3) — DB 없이.
+    monkeypatch.setattr(app_store, "search_media_excludes", lambda: [])
+    # Finviz(단계 5) — 시험마다 따로 바꿔 끼우지 않으면 검색 예산이 없어 줄에 넣지 않고, 계층은 부르지 않음(DB·네트워크 없음).
+    monkeypatch.setattr(app_store, "take_search_budget", lambda *a, **k: False)
+    monkeypatch.setattr(app_store, "fetch_host", lambda host: None)       # 표 fetch_hosts(닫힘·통과한 계층) — 열려 있고 기록 없음
+    monkeypatch.setattr(ladder, "fetch", lambda *a, **k: pytest.fail("Finviz 계층을 부르면 안 됩니다"))
     yield
+    search_finviz.wait_idle(5)
     search.reset_cache()
 
 
@@ -124,7 +139,11 @@ class Stubs:
             "dart": sources.Fetched(items=[]),
             "yahoo_research": sources.Fetched(items=[]),
             "naver_research": sources.Fetched(items=[]),
+            # 단계 5 — Finviz(시험마다 따로 넣지 않으면 받아 둔 빈 결과)
+            "finviz": sources.Fetched(items=[]),
         }
+        self.finviz_calls: list[tuple] = []
+        monkeypatch.setattr(search_finviz, "request", self.finviz)
         self.filing_args: list[tuple] = []
         monkeypatch.setattr(sources, "google", lambda terms, lang, after: self._hit(f"google_{lang}"))
         monkeypatch.setattr(sources, "bing", lambda terms_by_lang, ticker=None: self.bing_call(terms_by_lang, ticker))
@@ -151,8 +170,19 @@ class Stubs:
         self.watch_calls: list[tuple] = []
         self.watch_kinds: list = []
 
-    def use(self, entity):
-        self.monkeypatch.setattr(search, "entity", lambda key, external=True: {"entity": entity, "errors": {}, "fetchedAt": None})
+    def use(self, entity, errors=None):
+        self.monkeypatch.setattr(search, "entity", lambda key, external=True: {"entity": entity, "errors": dict(errors or {}),
+                                                                               "fetchedAt": None})
+
+    def finviz(self, ticker, *, external=True, allow_queue=True):
+        """Finviz 자리 — 받아 둔 결과(외부를 끈 요청이면 offline). 실제 길은 자기 30분 캐시가 있어 calls(바깥 부름)에 세지 않음."""
+        self.finviz_calls.append((ticker, external, allow_queue))
+        if not external:
+            return search_finviz.Answer("offline")
+        result = self.results["finviz"]
+        if result.error:
+            return search_finviz.Answer("error", message=result.error)
+        return search_finviz.Answer("ok", items=tuple(result.items))
 
     def _watch(self, key, owner, kinds=None):
         """모은 글 자리 — 저장본처럼 그 종류의 줄만 돌려줍니다."""
@@ -195,15 +225,18 @@ def test_경로는_검사한_값과_owner·external을_넘긴다(client, monkeyp
     monkeypatch.setattr(search, "resolve", lambda q, owner=False, external=True: seen.append(("resolve", q, owner, external))
                         or {"items": []})
     monkeypatch.setattr(search, "entity", lambda e, external=True: seen.append(("entity", e, external)) or {"entity": None})
-    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False:
-                        seen.append(("feed", e, tab, owner, external, refresh)) or {"items": []})
+    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False, finviz=True:
+                        seen.append(("feed", e, tab, owner, external, refresh, finviz)) or {"items": []})
     assert client.get("/live/search/suggest?q=%20합성%20&owner=true").status_code == 200
     assert client.get("/live/search/resolve?q=Synth&external=false").status_code == 200
     assert client.get("/live/search/entity?e=topic:AI%20반도체").status_code == 200
     assert client.get("/live/search/feed?e=us:BRK.B&tab=news&owner=true&external=false").status_code == 200
     assert client.get("/live/search/feed?e=us:BRK.B&tab=news&refresh=true").status_code == 200
+    assert client.get("/live/search/feed?e=us:BRK.B&tab=news&finviz=0").status_code == 200
+    assert client.get("/live/search/feed?e=us:BRK.B&tab=news&finviz=1").status_code == 200
     assert seen == [("suggest", "합성", True), ("resolve", "Synth", False, False), ("entity", "topic:AI 반도체", True),
-                    ("feed", "us:BRK.B", "news", True, False, False), ("feed", "us:BRK.B", "news", False, True, True)]
+                    ("feed", "us:BRK.B", "news", True, False, False, True), ("feed", "us:BRK.B", "news", False, True, True, True),
+                    ("feed", "us:BRK.B", "news", False, True, False, False), ("feed", "us:BRK.B", "news", False, True, False, True)]
 
 
 # ------------------------------------------------------------------ external=false
@@ -227,6 +260,8 @@ def test_외부_호출을_끄면_바깥으로_나가는_요청이_0건(client, m
     monkeypatch.setattr(publicapi, "get", refuse("dart"))
     monkeypatch.setattr(search_research, "_ticker", refuse("yfinance.Ticker"))
     monkeypatch.setattr(search_links, "_ticker", refuse("yfinance.Ticker(links)"))
+    monkeypatch.setattr(ladder, "fetch", refuse("finviz"))
+    monkeypatch.setattr(app_store, "take_search_budget", refuse("finviz budget"))
     monkeypatch.setattr(search_store, "event_news", lambda terms: sources.Fetched(items=[]))
     monkeypatch.setattr(search_store, "wire", lambda terms: sources.Fetched(items=[]))
     monkeypatch.setattr(search_store, "info_posts", lambda terms: sources.Fetched(items=[]))
@@ -247,8 +282,9 @@ def test_외부_호출을_끄면_바깥으로_나가는_요청이_0건(client, m
     assert attempts == []
 
     out = client.get("/live/search/feed?e=us:NVDA&tab=timeline&owner=true&external=false").json()
-    for source in ("google_en", "bing", "yahoo", "infomax"):
+    for source in ("google_en", "bing", "yahoo", "finviz", "infomax"):
         assert _row(out, source)["status"] == "offline", source
+    assert out["pending"] is False and out["finvizQueued"] is False
     assert _row(out, "event_news")["status"] in ("empty", "cached")
     assert _row(out, "info")["status"] in ("empty", "cached")
 
@@ -291,8 +327,10 @@ def test_결과는_규칙을_거쳐_합치고_출처마다_상태를_적는다(m
                                   "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": None}
     assert _row(out, "watch")["label"] == "관심 대상 수집" and _row(out, "watch")["count"] == 1
     assert stubs.watch_calls == [("us:SCHP", True)], "관심 대상이 모은 글은 대표 키로 읽고 운영자 여부를 넘김"
-    assert [row["source"] for row in out["sources"]] == ["google_ko", "google_en", "bing", "yahoo", "infomax", "event_news",
-                                                        "feeds", "watch", "wire", "info", "guru", "sec", "yahoo_research"]
+    assert [row["source"] for row in out["sources"]] == ["google_ko", "google_en", "bing", "yahoo", "finviz", "infomax",
+                                                        "event_news", "feeds", "watch", "wire", "info", "guru", "sec",
+                                                        "yahoo_research"]
+    assert _row(out, "finviz")["label"] == "Finviz 종목 뉴스" and out["finvizQueued"] is False
     assert stubs.watch_kinds == [None], "타임라인은 모은 글 전부"
     assert all(set(row) == {"source", "label", "status", "count", "dropped", "message"} for row in out["sources"])
     info = next(item for item in out["items"] if item["source"] == "info")
@@ -666,3 +704,170 @@ def test_상태_경로는_차단_통과_수집이_켜졌는지_알린다(client,
     assert client.get("/status").json()["politeEnabled"] is False
     monkeypatch.setenv("POLITE_FETCH_ENABLED", "true")
     assert client.get("/status").json()["politeEnabled"] is True
+
+
+# ------------------------------------------------------------------ 단계 4 QA — 식별자를 모름(Q1)·첫 화면 제외 매체(Q3)
+
+@pytest.mark.parametrize("errors, external, status, message", [
+    ({"sec": "www.sec.gov HTTP 503"}, True, "error", "CIK를 모름 — www.sec.gov HTTP 503"),
+    ({"entity": "대상 풀기가 15초를 넘어 저장본 이름으로만 답함"}, True, "error",
+     "CIK를 모름 — 대상 풀기가 15초를 넘어 저장본 이름으로만 답함"),
+    ({"sec": search.OFFLINE}, False, "offline", search.OFFLINE),
+    ({"wikidata": "www.wikidata.org HTTP 503"}, True, "skipped", "CIK가 없어 묻지 않음"),
+    ({}, True, "skipped", "CIK가 없어 묻지 않음"),
+])
+def test_SEC_표를_읽지_못해_CIK를_모르면_건너뜀이_아니라_모름(monkeypatch, errors, external, status, message):
+    """계약 §5 — 확인하지 못한 것을 '없음'으로 보이지 않음. SEC 표를 읽었는데 그 티커가 없을 때만 '건너뜀'."""
+    stubs = Stubs(monkeypatch)
+    stubs.use(dict(ENTITY, ids=dict(ENTITY["ids"], cik=None)), errors=errors)
+    for tab in ("filings", "timeline"):
+        search.reset_cache()
+        out = search.feed("us:SCHP", tab, owner=False, external=external)
+        row = _row(out, "sec")
+        assert (row["status"], row["message"]) == (status, message), tab
+    assert not [args for args in stubs.filing_args if args[0] == "sec"], "CIK 없이 부르지 않음"
+
+
+_DART_OTHER = {"900002": {"corpCode": "00900002", "name": "합성화학"}}      # 저장본을 읽었고 이 종목(900001)은 없음 — ETF·우선주 등
+_DART_SELF = {"900001": {"corpCode": "00900001", "name": "합성전자"}}       # 저장본에 있는데 대상에 고유번호가 없음(저장본을 못 읽던 때 푼 대상)
+_DART_MISSING = "DART 고유번호 저장본에 이 종목이 없음"       # 대상 풀기는 저장본을 읽었든 못 읽었든 이 사유를 남김(search_entities._build_kr)
+
+
+@pytest.mark.parametrize("codes, errors, external, status, message", [
+    (_DART_OTHER, {"dart": _DART_MISSING}, True, "skipped", "DART 고유번호가 없어 묻지 않음"),
+    (_DART_OTHER, {"dart": _DART_MISSING, "entity": "대상 풀기가 15초를 넘어 저장본 이름으로만 답함"}, True, "skipped",
+     "DART 고유번호가 없어 묻지 않음"),
+    ({}, {"dart": _DART_MISSING}, True, "error", "DART 고유번호를 모름 — DART 고유번호 저장본을 읽지 못함"),
+    ({}, {"dart": _DART_MISSING}, False, "offline", search.OFFLINE),
+    (_DART_SELF, {"dart": _DART_MISSING}, True, "error", "DART 고유번호를 모름 — 대상을 풀 때 저장본을 읽지 못함"),
+    ({}, {}, True, "skipped", "DART 고유번호가 없어 묻지 않음"),
+])
+def test_DART_저장본을_읽지_못해_고유번호를_모르면_모름(monkeypatch, codes, errors, external, status, message):
+    """저장본을 읽었는데 그 종목이 없으면(ETF 등) '건너뜀', 저장본을 읽지 못했으면 '모름'(error) — 대상 풀기의 사유 글만으로는 둘을 못 가름."""
+    stubs = Stubs(monkeypatch)
+    monkeypatch.setattr(search_store, "dart_codes", lambda: dict(codes))
+    stubs.use(dict(KR_ENTITY, ids=dict(KR_ENTITY["ids"], dartCorpCode=None)), errors=errors)
+    out = search.feed("kr:900001", "filings", owner=False, external=external)
+    row = _row(out, "dart")
+    assert (row["status"], row["message"]) == (status, message)
+    assert stubs.filing_args == []
+
+
+def test_첫_화면은_사용자_제외_매체를_캐시_없이_바로_읽는다(monkeypatch):
+    bundle = [_item("Synthetic outlet story", "https://www.synthetic-daily.com/p1", source="feeds", ago=timedelta(hours=1)),
+              _item("Fed statement on rates", "https://www.federalreserve.gov/p2", source="feeds", ago=timedelta(hours=2),
+                    publisher="Federal Reserve")]
+    monkeypatch.setattr(search_store, "recent_bundle", lambda limit: sources.Fetched(items=bundle))
+    rows: list[dict] = []
+    monkeypatch.setattr(app_store, "search_media_excludes", lambda: list(rows))
+    monkeypatch.setattr(search_store, "user_excludes", lambda: pytest.fail("첫 화면은 60초 캐시를 거치지 않음"))
+    assert [item["title"] for item in search.recent()["items"]] == ["Synthetic outlet story", "Fed statement on rates"]
+    rows.append({"kind": "domain", "value": "synthetic-daily.com"})
+    assert [item["title"] for item in search.recent()["items"]] == ["Fed statement on rates"], "제외를 더한 바로 다음 읽기에 빠짐"
+
+    def broken():
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(app_store, "search_media_excludes", broken)
+    monkeypatch.setattr(search_store, "user_excludes", lambda: search.rules.make_excludes([{"kind": "name", "value": "Example"}]))
+    assert [item["title"] for item in search.recent()["items"]] == ["Fed statement on rates"], "읽지 못하면 결과 경로의 값(직전 값)"
+
+
+# ------------------------------------------------------------------ 단계 5 — Finviz 종목 뉴스(계약 §8-4)
+
+_real_finviz_request = search_finviz.request
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _finviz_stamp(ago: timedelta) -> str:
+    moment = (datetime.now(timezone.utc) - ago).astimezone(search_finviz.NEW_YORK)
+    hour = moment.hour % 12 or 12
+    return f"{_MONTHS[moment.month - 1]}-{moment.day:02d}-{moment.year % 100:02d} {hour:02d}:{moment.minute:02d}" \
+           f"{'PM' if moment.hour >= 12 else 'AM'}"
+
+
+def _finviz_page(*rows) -> str:
+    body = "".join(f'<tr><td width="130" align="right">{_finviz_stamp(ago)}</td><td align="left"><div class="news-link-container">'
+                   f'<a class="tab-link-news" href="{href}">{title}</a><div class="news-link-right"><span>({publisher})</span>'
+                   f'</div></div></td></tr>' for ago, title, href, publisher in rows)
+    return f'<html><body><table id="news-table">{body}</table></body></html>'
+
+
+class FinvizNet:
+    """Finviz의 계층·예산 자리 — 실제 search_finviz.request를 쓰고 그 아래만 바꿔 끼웁니다."""
+
+    def __init__(self, monkeypatch, page: str):
+        self.urls: list[str] = []
+        self.budget: list[tuple] = []
+        monkeypatch.setattr(search_finviz, "request", _real_finviz_request)
+        monkeypatch.setattr(ladder, "fetch", self.fetch)
+        monkeypatch.setattr(app_store, "take_search_budget", lambda *args: self.budget.append(args) or True)
+        self.page = page
+
+    def fetch(self, url, *, expect=policy.EXPECT_HTML, **kwargs):
+        self.urls.append(url)
+        return ladder.Fetched(url=url, status=200, content_type="text/html; charset=utf-8", body=self.page.encode("utf-8"),
+                              tier=policy.TIER_IMPERSONATE, final_url=url)
+
+
+def test_Finviz는_미국_종목의_뉴스에_받는_중으로_먼저_보이고_받은_뒤_채운다(monkeypatch):
+    stubs = Stubs(monkeypatch)
+    stubs.results["yahoo"] = sources.Fetched(items=[_item("SynthChip on Yahoo", "https://www.example.com/same", source="yahoo",
+                                                          ago=timedelta(hours=4))])
+    net = FinvizNet(monkeypatch, _finviz_page(
+        (timedelta(hours=2), "SynthChip wins synthetic contract", "https://www.example.com/fz1", "Synthetic Wire"),
+        (timedelta(hours=4), "SynthChip on Yahoo (Finviz copy)", "https://www.example.com/same", "Yahoo Finance"),
+        (timedelta(days=20), "SynthChip quarterly preview (Finviz)", "https://www.example.net/p1", "Example Markets"),
+        (timedelta(hours=6), "Synthetic note on Finviz", "/news/900001/synthetic-note", "Synthetic Blog"),
+    ))
+    first = search.feed("us:SCHP", "news", owner=False, external=True)
+    row = _row(first, "finviz")
+    assert (row["status"], row["message"], row["count"]) == ("pending", "받는 중 — 몇 초 뒤 채움", 0)
+    assert first["pending"] is True and first["finvizQueued"] is True
+    assert [args[:2] for args in net.budget] == [("finviz.com", "search")]
+    assert search_finviz.wait_idle(5) and net.urls == ["https://finviz.com/quote.ashx?t=SCHP"]
+
+    second = search.feed("us:SCHP", "news", owner=False, external=True)
+    row = _row(second, "finviz")
+    assert row["status"] == "ok" and second["pending"] is False and second["finvizQueued"] is False
+    by_url = {item["url"]: item["source"] for item in second["items"]}
+    assert by_url["https://www.example.com/same"] == "yahoo", "같은 글은 Yahoo가 먼저(Finviz는 Yahoo 바로 뒤)"
+    assert by_url["https://www.example.net/p1"] == "finviz", "Finviz는 Bing보다 먼저"
+    assert by_url["https://finviz.com/news/900001/synthetic-note"] == "finviz"
+    assert row["count"] == 3 and _row(second, "bing")["count"] == 0
+    assert sum(r["count"] for r in second["sources"]) == len(second["items"])
+    timeline = search.feed("us:SCHP", "timeline", owner=False, external=True)
+    assert _row(timeline, "finviz")["status"] == "cached" and len(net.urls) == 1, "같은 티커는 30분 다시 씀"
+
+
+def test_Finviz_새로_부르기_한도를_넘으면_줄에_넣지_않는다(monkeypatch):
+    Stubs(monkeypatch)
+    net = FinvizNet(monkeypatch, _finviz_page())
+    out = search.feed("us:SCHP", "news", owner=False, external=True, finviz=False)
+    row = _row(out, "finviz")
+    assert (row["status"], row["message"]) == ("skipped", "한 사람이 한 시간에 Finviz를 새로 부를 수 있는 횟수를 넘음 — 받아 둔 결과만")
+    assert out["finvizQueued"] is False and out["pending"] is False and net.budget == [] and net.urls == []
+
+
+def test_Finviz는_서버가_아니면_server_only이고_네트워크_0건(monkeypatch):
+    Stubs(monkeypatch)
+    monkeypatch.setattr(search_finviz, "request", _real_finviz_request)
+    monkeypatch.delenv(polite.ENV_ENABLED, raising=False)
+    out = search.feed("us:SCHP", "timeline", owner=False, external=True)
+    row = _row(out, "finviz")
+    assert (row["status"], row["message"]) == ("server_only", "Finviz는 운영 서버에서만")
+    assert out["pending"] is False and out["finvizQueued"] is False
+    assert search_finviz.wait_idle(1)
+
+
+def test_Finviz는_미국_상장_회사의_뉴스·타임라인에만(monkeypatch):
+    stubs = Stubs(monkeypatch)
+    for tab in ("filings", "research", "posts"):
+        assert "finviz" not in {row["source"] for row in search.feed("us:SCHP", tab, owner=True, external=True)["sources"]}, tab
+    for entity, key in ((KR_ENTITY, "kr:900001"), (INSTITUTION, "cik:0009000077"), (PERSON, "wd:Q900020"),
+                        (search_entities.topic_entity("합성 반도체"), "topic:합성 반도체")):
+        stubs.use(entity)
+        out = search.feed(key, "timeline", owner=False, external=True)
+        assert "finviz" not in {row["source"] for row in out["sources"]}, key
+        assert out["finvizQueued"] is False
+    assert stubs.finviz_calls == []

@@ -66,6 +66,15 @@ def pace(host: str, gap: Gap) -> float:
     return wait
 
 
+def mark(host: str) -> None:
+    """
+    ``host``로 지금 보낸다고 다시 적습니다 — :func:`pace` 뒤 보내기 전에 더 기다린 길(브라우저 컨테이너가 다른 요청을 받는 중)이 실제로 보내는
+    순간을 적어, 그만큼 같은 호스트의 다음 간격이 줄지 않게 합니다.
+    """
+    with _lock:
+        _last_request[host.lower()] = _now()
+
+
 def reset() -> None:
     """보낸 시각 기록을 비웁니다(시험 사이의 격리용)."""
     with _lock:

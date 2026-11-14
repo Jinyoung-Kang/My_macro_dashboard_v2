@@ -13,10 +13,15 @@ app/services/search.py
   모은 글 가운데 수집 글·거장 견해에서 온 줄은 글이 섞이는 탭(타임라인)에만 두고(뉴스 탭에는 넣지 않음 — 계약 §3-4), 출처 상태 줄의 건수는
   그 줄을 내준 출처에서 셉니다(모은 글은 표시 출처가 ``wire``·``info``여도 '관심 대상 수집' 줄 — 상태 줄 건수의 합 = 줄 수). 모은 글의 경유
   주소(구글) 줄은 합칠 때 맨 뒤로 보내 같은 기사의 원문 주소 줄이 남게 합니다.
-- ``recent``(단계 3): 첫 화면 — 새 피드 묶음 최근 30건(+ 운영자는 속보 최근 20건). 저장본만, 바깥 호출 0건.
+  단계 5(계약 §8-4)에서 미국 상장 회사의 뉴스·타임라인에 Finviz 종목 뉴스(``finviz`` — search_finviz)를 더함: 바로 답하고 받기는 작업자가 —
+  받는 중이면 상태 ``pending``과 응답 ``pending: true``, 이 요청이 새로 줄에 넣었으면 ``finvizQueued: true``(백엔드가 사용자 빈도를 셈),
+  ``finviz=False``면 줄에 넣지 않음(캐시는 씀). 공시 출처는 대상 풀기가 SEC 표·DART 저장본을 읽지 못해 식별자를 모르면 '건너뜀'이 아니라
+  ``error``(단계 4 QA — 확인하지 못한 것을 '없음'으로 보이지 않음).
+- ``recent``(단계 3): 첫 화면 — 새 피드 묶음 최근 30건(+ 운영자는 속보 최근 20건). 저장본만, 바깥 호출 0건. 사용자 제외 매체는 60초 캐시 없이
+  바로 읽음(값싼 저장본 경로 — 제외를 더한 직후 화면이 다시 읽으면 바로 빠짐, 단계 4 QA).
 - ``excludes``(단계 3): 매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙. 바깥 호출·DB 없음.
 - ``links``(단계 4, 계약 §7-5): 연결 보강 — Yahoo 내부자 명단(``insiders``)·GLEIF 법인 관계(``gleif``). 대상 풀기와 따로 부르고 출처마다 캐시
-  (search_links). 중국어 이름의 연결은 빼고 상태 줄에 셉니다.
+  (search_links). 중국어 이름의 연결은 빼고 상태 줄에 셉니다. LEI가 없을 때 'LEI 없음'은 Wikidata 항목을 읽었을 때만(못 찾았으면 '모름').
 
 관심 대상이 모은 글(``watch``)은 탭에 맞는 종류만 섞습니다(계약 §7-6): 뉴스 탭은 ``news``·``headline``·``wire``(속보는 운영자에게만 — §3-4),
 공시 탭은 ``filing``, 타임라인은 전부(주제는 공시·리서치 줄 없음).
@@ -31,6 +36,7 @@ from __future__ import annotations
 
 import concurrent.futures as futures
 import dataclasses
+import logging
 import re
 import threading
 import time
@@ -38,10 +44,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from . import search_entities, search_filings, search_links, search_research, search_store
+from .. import store
+from . import search_entities, search_filings, search_finviz, search_links, search_research, search_store
 from . import search_rules as rules
 from . import search_sources as sources
 from . import search_wikidata as wd
+
+logger = logging.getLogger(__name__)
 
 TABS = ("timeline", "news", "posts", "filings", "research")
 QUERY_MAX_CHARS = 60
@@ -66,14 +75,16 @@ LABELS = {
     "sec": "SEC 공시(회사별)", "sec_fts": "SEC 전문 검색(이름)", "dart": "DART 공시",
     "yahoo_research": "투자의견 변경(Yahoo)", "naver_research": "증권사 리포트(네이버)",
     "insiders": "내부자 명단(Yahoo)", "gleif": "법인 관계(GLEIF)",
+    # 단계 5(계약 §8-3)
+    "finviz": search_finviz.LABEL,
 }
-DISPLAY_ORDER = ("google_ko", "google_en", "bing", "yahoo", "naver", "infomax", "event_news", "feeds", "watch", "wire", "info",
-                 "guru", "sec", "sec_fts", "dart", "yahoo_research", "naver_research")
+DISPLAY_ORDER = ("google_ko", "google_en", "bing", "yahoo", "finviz", "naver", "infomax", "event_news", "feeds", "watch", "wire",
+                 "info", "guru", "sec", "sec_fts", "dart", "yahoo_research", "naver_research")
 LINK_ORDER = ("insiders", "gleif")
 # 같은 글이 여러 출처에 있으면 앞의 출처가 남습니다(계약 §4-4: 저장본 > Yahoo·네이버 > Bing > 구글, §7-4: 그 뒤에
-# sec > sec_fts > dart > yahoo_research > naver_research — SEC 두 출처는 같은 접수번호 id라 한 줄). 모은 글의 공시 줄은 dart 바로 뒤
-# (_merge_order — 실시간 공시 출처가 먼저).
-MERGE_PRIORITY = ("event_news", "feeds", "info", "guru", "wire", "watch", "yahoo", "naver", "bing", "infomax", "google_ko",
+# sec > sec_fts > dart > yahoo_research > naver_research — SEC 두 출처는 같은 접수번호 id라 한 줄, §8-3: Finviz는 Yahoo 바로 뒤).
+# 모은 글의 공시 줄은 dart 바로 뒤(_merge_order — 실시간 공시 출처가 먼저).
+MERGE_PRIORITY = ("event_news", "feeds", "info", "guru", "wire", "watch", "yahoo", "finviz", "naver", "bing", "infomax", "google_ko",
                   "google_en", "sec", "sec_fts", "dart", "yahoo_research", "naver_research")
 FILING_KINDS = ("company", "institution", "person")     # 공시 탭이 있는 대상 종류(주제는 없음)
 FTS_KINDS = ("institution", "person")                   # EDGAR 이름 전문 검색을 묻는 대상 종류
@@ -153,7 +164,7 @@ def _put(key: tuple, value: dict, life: float) -> None:
 
 
 def reset_cache() -> None:
-    """시험용 — 대상·후보 캐시, 출처별 캐시(연결 출처 포함), 로컬 색인·SEC 표를 모두 비웁니다."""
+    """시험용 — 대상·후보 캐시, 출처별 캐시(연결 출처 포함), 로컬 색인·SEC 표, Finviz 캐시·줄을 모두 비웁니다."""
     with _cache_lock:
         _cache.clear()
         _entity_jobs.clear()
@@ -162,6 +173,7 @@ def reset_cache() -> None:
     search_links.reset_cache()
     search_store.reset_excludes()
     search_entities.reset()
+    search_finviz.reset()
 
 
 # ------------------------------------------------------------------ 후보
@@ -424,12 +436,47 @@ def _post_specs(target: dict, *, owner: bool, refresh: bool = False) -> list[_Sp
             _stored("guru", ("guru", tuple(match)), lambda: search_store.guru_views(match), refresh)]
 
 
+def _unknown_id(source: str, errors: dict, keys: tuple[str, ...], label: str, *, external: bool) -> _Spec | None:
+    """
+    식별자가 없을 때 그것이 '읽지 못해 모름'인지 — 대상 풀기의 ``errors``에 ``keys``(그 표를 읽은 출처·대상 풀기 시간 초과)의 사유가 있으면
+    공시 줄을 ``error``("<식별자>를 모름 — <사유>")로, 외부 호출을 끈 요청이면 ``offline``으로 둡니다. 그 표를 읽었는데 식별자가 없을 때만
+    None(그때만 '건너뜀' — 계약 §5: 확인하지 못한 것을 '없음'으로 보이지 않음).
+    """
+    reason = next((errors[key] for key in keys if errors.get(key)), None)
+    if not reason:
+        return None
+    if not external or reason == OFFLINE:
+        return _Spec(source, status="offline", message=OFFLINE)
+    return _Spec(source, status="error", message=f"{label}를 모름 — {reason}")
+
+
+def _unknown_dart(ids: dict, errors: dict, *, external: bool) -> _Spec | None:
+    """
+    국내 종목에 DART 고유번호가 없을 때 그것이 '모름'인지. 대상 풀기는 저장본을 읽었든 못 읽었든 같은 사유('저장본에 이 종목이 없음')를
+    남기므로(search_entities._build_kr) 사유 글로는 가르지 못해 저장본(외부 호출 없음)을 한 번 더 봅니다 — 저장본을 읽었고 그 종목이 없으면
+    None(ETF·우선주 등 — '건너뜀'), 저장본을 읽지 못했으면 ``error``(외부 호출을 끈 요청이면 ``offline``), 저장본에는 있는데 대상에 없으면
+    (저장본을 못 읽던 때 푼 대상 — 그 결과는 60초만 캐시) ``error``. 대상 풀기의 사유(``dart``·``entity``)가 없으면 None.
+    """
+    if not (errors.get("dart") or errors.get("entity")):
+        return None
+    codes = search_store.dart_codes()
+    if codes and ids.get("stockCode") not in codes:
+        return None
+    if not external:
+        return _Spec("dart", status="offline", message=OFFLINE)
+    reason = "대상을 풀 때 저장본을 읽지 못함" if codes else "DART 고유번호 저장본을 읽지 못함"
+    return _Spec("dart", status="error", message=f"DART 고유번호를 모름 — {reason}")
+
+
 def _filing_specs(target: dict, *, tab: str, owner: bool, external: bool, window_from: str, window_to: str,
-                  refresh: bool = False) -> list[_Spec]:
+                  refresh: bool = False, errors: dict | None = None) -> list[_Spec]:
     """
     공시 출처(계약 §7-2) — ``sec``(CIK가 있으면), ``sec_fts``(사람·13F 기관의 영문 이름 — Bing과 같은 구문 규칙, 티커 없이), ``dart``(DART 고유번호가
     있으면). 공시 탭이면 모은 글의 공시 줄도. 주제는 공시가 없어 공시 탭에서만 '건너뜀' 줄을 두고 타임라인에는 아무것도 넣지 않습니다.
+    식별자가 없는데 대상 풀기가 SEC 티커 표를 읽지 못했거나 시간을 넘겼으면(``errors``), 또는 DART 고유번호 저장본을 읽지 못했으면
+    (:func:`_unknown_dart`) '건너뜀'이 아니라 ``error``("CIK를 모름 — <사유>")입니다(단계 4 QA).
     """
+    errors = errors or {}
     kind = target.get("kind")
     if kind not in FILING_KINDS:
         note = "주제에는 공시 탭이 없음"
@@ -441,7 +488,8 @@ def _filing_specs(target: dict, *, tab: str, owner: bool, external: bool, window
         specs.append(_remote("sec", ("sec", cik, window_from),
                              lambda: search_filings.sec_submissions(cik, start_day=window_from), external, refresh))
     elif ids.get("market") != "kr":
-        specs.append(_Spec("sec", status="skipped", message="CIK가 없어 묻지 않음"))
+        specs.append(_unknown_id("sec", errors, ("sec", "entity"), "CIK", external=external)
+                     or _Spec("sec", status="skipped", message="CIK가 없어 묻지 않음"))
     if kind in FTS_KINDS:
         phrases = sources.bing_queries(rules.edition_terms(target, "en"))
         if phrases:
@@ -455,10 +503,28 @@ def _filing_specs(target: dict, *, tab: str, owner: bool, external: bool, window
         specs.append(_remote("dart", ("dart", corp, window_from, window_to),
                              lambda: search_filings.dart_list(corp, start_day=window_from, end_day=window_to), external, refresh))
     elif ids.get("market") == "kr":
-        specs.append(_Spec("dart", status="skipped", message="DART 고유번호가 없어 묻지 않음"))
+        specs.append(_unknown_dart(ids, errors, external=external)
+                     or _Spec("dart", status="skipped", message="DART 고유번호가 없어 묻지 않음"))
     if tab == "filings" and target.get("key"):
         specs.append(_watch_spec(target["key"], owner=owner, refresh=refresh, kinds=WATCH_KINDS["filings"]))
     return specs
+
+
+def _finviz_spec(target: dict, *, external: bool, allow_queue: bool) -> tuple[_Spec | None, bool]:
+    """
+    Finviz 종목 뉴스(계약 §8-4) — 미국 상장 회사(티커)만. 바로 답합니다(받기는 search_finviz의 작업자): 받아 둔 결과는 ``ok``(막 받음)·``cached``,
+    받는 중·줄에 있으면 ``pending``, 서버가 아니면 ``server_only``, 외부를 끈 요청은 캐시만(``offline``). → (상태 줄 자리, 이 요청이 새로 줄에 넣었는지)
+    """
+    ids = target.get("ids") or {}
+    if not (target.get("kind") == "company" and ids.get("market") == "us" and ids.get("ticker")):
+        return None, False
+    answer = search_finviz.request(ids["ticker"], external=external, allow_queue=allow_queue)
+    if answer.status in ("ok", "cached"):
+        result = sources.Fetched(items=list(answer.items), note=answer.message, cached=answer.status == "cached")
+        return _Spec("finviz", run=lambda: result), answer.queued
+    if answer.status == "offline":
+        return _Spec("finviz", status="offline", message=OFFLINE), answer.queued
+    return _Spec("finviz", status=answer.status, message=answer.message), answer.queued
 
 
 def _research_specs(target: dict, *, tab: str, external: bool, refresh: bool = False) -> list[_Spec]:
@@ -532,10 +598,11 @@ def _run(specs: list[_Spec]) -> dict[str, sources.Fetched]:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refresh: bool = False) -> dict:
+def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refresh: bool = False, finviz: bool = True) -> dict:
     """
     탭 하나의 결과 — 오늘(KST)부터 2년 안의 줄 전부(최신순), 출처마다 상태 한 줄, 기간별 건수. 화면이 7일·30일·1년·2년으로 자릅니다.
-    ``refresh``면 출처 캐시를 건너뜁니다(대상 풀기 캐시는 그대로 — 외부 호출을 끈 요청에서는 캐시만).
+    ``refresh``면 출처 캐시를 건너뜁니다(대상 풀기 캐시는 그대로 — 외부 호출을 끈 요청에서는 캐시만, Finviz의 30분 캐시도 그대로).
+    ``finviz``가 거짓이면(백엔드 — 사용자 한 명의 한 시간 한도를 넘음) Finviz를 줄에 넣지 않고 받아 둔 결과만 씁니다.
     """
     prefix, value = parse_key(key)
     tab = check_tab(tab)
@@ -545,7 +612,9 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
     window_from, window_to = rules.window(today)
     start = rules.window_start(today)
 
-    target = entity(norm, external=external)["entity"]
+    resolved = entity(norm, external=external)
+    target = resolved["entity"]
+    finviz_queued = False
     if target is None:
         specs = _unresolved_specs(norm, tab, owner=owner, external=external, refresh=refresh)
     else:
@@ -553,11 +622,14 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
         if tab in ("news", "timeline"):
             specs += _news_specs(target, owner=owner, external=external, after=window_from, refresh=refresh,
                                  posts=tab == "timeline")
+            finviz_spec, finviz_queued = _finviz_spec(target, external=external, allow_queue=finviz)
+            if finviz_spec is not None:
+                specs.append(finviz_spec)
         if tab in ("posts", "timeline"):
             specs += _post_specs(target, owner=owner, refresh=refresh)
         if tab in ("filings", "timeline"):
             specs += _filing_specs(target, tab=tab, owner=owner, external=external, window_from=window_from,
-                                   window_to=window_to, refresh=refresh)
+                                   window_to=window_to, refresh=refresh, errors=resolved.get("errors"))
         if tab in ("research", "timeline"):
             specs += _research_specs(target, tab=tab, external=external, refresh=refresh)
 
@@ -608,7 +680,10 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
         "window": {"from": window_from, "to": window_to},
         "rangeCounts": rules.range_counts(merged, today),
         "olderOnlyLatest": max(latest_olds) if not merged and latest_olds else None,
-        "pending": False,
+        # 받는 중인 출처(Finviz)가 있으면 화면이 몇 초 뒤 다시 부름(계약 §8-6).
+        "pending": any(row["status"] == "pending" for row in rows),
+        # 이 요청이 Finviz를 새로 줄에 넣었는지 — 백엔드가 사용자 빈도를 세고 화면에는 넘기지 않음(계약 §8-5).
+        "finvizQueued": finviz_queued,
         "fetchedAt": rules.utc_iso(now),
     }
 
@@ -656,7 +731,7 @@ def _unknown_lei(errors: dict, *, external: bool) -> _Spec | None:
 def _link_specs(target: dict | None, *, external: bool, errors: dict | None = None) -> list[_Spec]:
     """
     연결 출처(계약 §7-5) — 미국 상장 회사면 내부자 명단, LEI가 있으면 GLEIF. 해당하지 않으면 '건너뜀' 줄. LEI가 없는데 대상 풀기가 Wikidata를
-    읽지 못했으면(``errors``) GLEIF 줄은 '건너뜀'이 아니라 offline·error.
+    읽지 못했으면(``errors``) GLEIF 줄은 '건너뜀'이 아니라 offline·error, Wikidata 항목을 찾지 못했으면 '모름'(:func:`_no_lei`).
     """
     if target is None:
         note = "대상을 풀지 못해 묻지 않음"
@@ -675,9 +750,18 @@ def _link_specs(target: dict | None, *, external: bool, errors: dict | None = No
         specs.append(_Spec("gleif", run=lambda: search_links.cached(("gleif", lei), lambda: search_links.gleif(lei),
                                                                     ttl=search_links.GLEIF_TTL, external=external)))
     else:
-        specs.append(_unknown_lei(errors or {}, external=external)
-                     or _Spec("gleif", status="skipped", message="LEI 없음 — Wikidata에 법인 식별자가 없음"))
+        specs.append(_unknown_lei(errors or {}, external=external) or _no_lei(ids, errors or {}))
     return specs
+
+
+def _no_lei(ids: dict, errors: dict) -> _Spec:
+    """
+    LEI가 없고 Wikidata를 읽지 못한 것도 아닐 때 — Wikidata 항목을 읽었으면(``ids.wikidata``가 있고 '항목 없음'이 아님) 'LEI 없음', 항목을
+    찾지 못했거나 묻지 않았으면 '모름'(둘 다 건너뜀 — 단계 4 QA: 확인하지 못한 것을 '없음'으로 보이지 않음).
+    """
+    if ids.get("wikidata") and errors.get("wikidata") != search_entities.WD_MISSING:
+        return _Spec("gleif", status="skipped", message="LEI 없음 — Wikidata에 법인 식별자가 없음")
+    return _Spec("gleif", status="skipped", message="Wikidata 항목을 찾지 못해 LEI를 모름")
 
 
 def links(key: str, *, external: bool = True, owner: bool = False) -> dict:
@@ -731,7 +815,7 @@ def recent(*, owner: bool = False) -> dict:
     if owner:
         groups.append(search_store.recent_wire(RECENT_WIRE))
         names.append("wire")
-    excludes = search_store.user_excludes()
+    excludes = _fresh_excludes()
     kept_groups = []
     errors: dict[str, str] = {}
     for name, result in zip(names, groups):
@@ -740,6 +824,18 @@ def recent(*, owner: bool = False) -> dict:
         kept, _, _ = rules.apply_rules(result.items, start=start, now=now, excludes=excludes)
         kept_groups.append(kept)
     return {"items": rules.merge(kept_groups), "errors": errors, "fetchedAt": rules.utc_iso(now)}
+
+
+def _fresh_excludes() -> rules.Excludes:
+    """
+    사용자가 더한 제외 매체를 캐시(60초) 없이 바로 읽음 — 첫 화면(저장본만 읽는 값싼 경로)이 제외를 더한 직후 다시 읽을 때 바로 맞게(단계 4 QA).
+    읽지 못하면 결과 경로와 같은 값(search_store.user_excludes — 직전 값)을 씁니다. 결과 경로(feed)는 그대로 60초 캐시.
+    """
+    try:
+        return rules.make_excludes(store.search_media_excludes())
+    except Exception as exc:  # noqa: BLE001
+        logger.info("정보 검색: 사용자 제외 매체를 바로 읽지 못함(%s) — 캐시된 값으로", type(exc).__name__)
+        return search_store.user_excludes()
 
 
 def excludes() -> dict:

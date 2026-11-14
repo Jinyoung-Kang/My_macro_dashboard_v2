@@ -80,6 +80,11 @@ POLICIES: dict[str, HostPolicy] = {
         # KRX 정보데이터시스템(로그인, ADR 0036 — services/krx_data). 로그인·자료가 POST라 계층 1만(브라우저 계층은 GET만). 거래일 저녁 한 번:
         # 로그인 3 + 순매수 상위 12 + 시장 합계 2 + 외국인 보유 2 + 공매도 거래 2 + 잔고 2~6 = 23~27건.
         HostPolicy("data.krx.co.kr", (TIER_IMPERSONATE,), daily_budget=100),
+        # Finviz 종목 뉴스(ADR 0041 결정 10, 계약 §8 — services/search_finviz). 화면의 요청(정보 검색)과 관심 대상 정기 수집이 함께 쓰고,
+        # 과정 하나에 작업자·잠금 하나로 한 번에 한 건씩 보냅니다. 서버 IP에서 계층 1로 지나감(2026-11-14 실측) — 거부되면 계층 2로 한 번
+        # 올라갑니다(compose.vultr.yml BROWSER_ALLOWED_HOSTS에도 있음). 이 250은 호스트 전체(올림 포함)이고, 그 안에서 용도별 하루 예산
+        # (search 60·watch 100)을 표 fetch_budgets로 따로 셉니다. www.finviz.com 등 다른 호스트로의 리디렉트는 표에 없어 실패로 끝납니다.
+        HostPolicy("finviz.com", (TIER_IMPERSONATE, TIER_BROWSER), daily_budget=250),
     )
 }
 

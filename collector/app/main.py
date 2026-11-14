@@ -758,16 +758,18 @@ def live_search_feed(
     owner: bool = Query(False),
     external: bool = Query(True),
     refresh: bool = Query(False),
+    finviz: bool = Query(True),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
     """
     정보 검색 — 탭 하나의 결과(최근 2년 묶음, 출처별 상태). 운영자 전용 저장본은 owner일 때만, external=false면 바깥 출처는 캐시만.
-    refresh면 출처 캐시를 건너뜀('지금 새로 받기' — 사용자당 빈도는 백엔드가 막음).
+    refresh면 출처 캐시를 건너뜀('지금 새로 받기' — 사용자당 빈도는 백엔드가 막음). finviz=0이면 Finviz 종목 뉴스를 새로 줄에 넣지 않고
+    받아 둔 결과만(사용자 한 명의 한 시간 한도 — 백엔드가 응답의 finvizQueued로 셈, 계약 §8-4·§8-5).
     """
     _check_token(x_service_token)
     prefix, value = _search_input(search_service.parse_key, e)
     checked_tab = _search_input(search_service.check_tab, tab)
-    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh)
+    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh, finviz=finviz)
 
 
 @app.get("/live/search/links")
@@ -791,7 +793,7 @@ def live_search_recent(
     owner: bool = Query(False),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """정보 검색 첫 화면 — 새 피드 묶음 최근 30건(owner면 속보 최근 20건을 더함). 저장본만(바깥 호출 0건)."""
+    """정보 검색 첫 화면 — 새 피드 묶음 최근 30건(owner면 속보 최근 20건을 더함). 저장본만(바깥 호출 0건), 사용자 제외 매체는 캐시 없이 읽음."""
     _check_token(x_service_token)
     return search_service.recent(owner=owner)
 

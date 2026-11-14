@@ -245,24 +245,32 @@ def test_미국_상장_회사가_아니면_내부자는_LEI가_없으면_GLEIF�
     assert _row(out, "gleif")["message"] == "LEI 없음 — Wikidata에 법인 식별자가 없음"
 
 
-@pytest.mark.parametrize("errors, external, status", [
-    ({"wikidata": search.OFFLINE}, False, "offline"),
-    ({"wikidata": search.OFFLINE}, True, "offline"),
-    ({"wikidata": "www.wikidata.org HTTP 503"}, True, "error"),
-    ({"wikidata": "www.wikidata.org HTTP 503"}, False, "offline"),
-    ({"entity": "대상 풀기가 15초를 넘어 저장본 이름으로만 답함"}, True, "error"),
-    ({"wikidata": search_entities.WD_MISSING}, True, "skipped"),
-    ({}, False, "skipped"),
+NO_LEI = "LEI 없음 — Wikidata에 법인 식별자가 없음"
+NO_ITEM = "Wikidata 항목을 찾지 못해 LEI를 모름"
+
+
+@pytest.mark.parametrize("errors, external, wikidata, status, message", [
+    ({"wikidata": search.OFFLINE}, False, "Q900001", "offline", None),
+    ({"wikidata": search.OFFLINE}, True, "Q900001", "offline", None),
+    ({"wikidata": "www.wikidata.org HTTP 503"}, True, "Q900001", "error", None),
+    ({"wikidata": "www.wikidata.org HTTP 503"}, False, "Q900001", "offline", None),
+    ({"entity": "대상 풀기가 15초를 넘어 저장본 이름으로만 답함"}, True, "Q900001", "error", None),
+    # Wikidata 항목을 읽었고 LEI가 없을 때만 'LEI 없음'(QA 단계 4 Q2) — 항목을 찾지 못했거나 묻지 않았으면 '모름'.
+    ({}, False, "Q900001", "skipped", NO_LEI),
+    ({}, True, "Q900001", "skipped", NO_LEI),
+    ({"wikidata": search_entities.WD_MISSING}, True, None, "skipped", NO_ITEM),
+    ({"wikidata": search_entities.WD_MISSING}, True, "Q900001", "skipped", NO_ITEM),
+    ({}, True, None, "skipped", NO_ITEM),
 ])
-def test_Wikidata를_읽지_못해_LEI를_모르면_LEI_없음이라_하지_않는다(monkeypatch, errors, external, status):
-    no_lei = dict(US, ids=dict(US["ids"], lei=None))
+def test_Wikidata를_읽지_못해_LEI를_모르면_LEI_없음이라_하지_않는다(monkeypatch, errors, external, wikidata, status, message):
+    no_lei = dict(US, ids=dict(US["ids"], lei=None, wikidata=wikidata))
     monkeypatch.setattr(search, "entity", lambda key, external=True: {"entity": no_lei, "errors": errors, "fetchedAt": None})
     monkeypatch.setattr(search_links, "insiders", lambda ticker: search_links.Linked())
     monkeypatch.setattr(search_links, "gleif", lambda lei: pytest.fail("LEI 없이 부르면 안 됩니다"))
     row = _row(search.links("us:SCHP", external=external), "gleif")
     assert row["status"] == status
     if status == "skipped":
-        assert row["message"] == "LEI 없음 — Wikidata에 법인 식별자가 없음", "Wikidata가 답했는데 LEI가 없을 때만"
+        assert row["message"] == message, "Wikidata가 항목을 답했는데 LEI가 없을 때만 'LEI 없음'"
     else:
         assert "LEI 없음" not in row["message"], "확인하지 못한 것을 '없음'으로 보이지 않음"
     if status == "offline":

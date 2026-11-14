@@ -19,8 +19,10 @@ tests/test_search_watch.py
   8. 단계 4(계약 §7-6): CIK가 있으면 SEC 회사별 목록(data.sec.gov 600), 사람·13F 기관이면 EDGAR 이름 전문 검색 첫 구문 한 번(efts.sec.gov 300),
      DART 고유번호가 있으면 첫 쪽(opendart.fss.or.kr 600) — 넣는 줄은 kind 'filing', id는 접수번호·DART 주소. 탭마다 맞는 종류만 읽고(뉴스 탭은
      뉴스·헤드라인·속보, 공시 탭은 공시), 날짜만 아는 공시 줄은 timeBasis 'date'로 되살림.
+  9. 단계 5(계약 §8-7): 미국 상장 회사면 Finviz 종목 화면 한 쪽(즉석 검색과 같은 잠금·같은 30분 캐시 — 캐시가 있으면 요청 없음), 예산
+     finviz.com 100(용도 watch). 거부는 그 대상의 Finviz만 건너뛰고(판정은 다른 출처로), 받지 못함·형식 바뀜은 '받지 못함'.
 
-외부 네트워크를 쓰지 않습니다 — 구글·Bing 함수를 합성 결과로 바꿔 끼웁니다. PostgreSQL이 필요합니다.
+외부 네트워크를 쓰지 않습니다 — 구글·Bing 함수와 Finviz의 계층(ladder.fetch)을 합성 결과로 바꿔 끼웁니다. PostgreSQL이 필요합니다.
 """
 from __future__ import annotations
 
@@ -31,7 +33,8 @@ import pytest
 import requests
 
 from app import catalog, tasks
-from app.services import search_filings
+from app.fetch import ladder, policy, state
+from app.services import search_filings, search_finviz
 from app.services import search_rules as rules
 from app.services import search_sources as sources
 from app.services import search_store
@@ -53,6 +56,21 @@ def _iso(delta: timedelta) -> str:
 def _news(title, url, *, source, publisher="Example Wire", domain=None, ago=timedelta(days=1), lang="en"):
     return sources.feed_item(title=title, url=url, publisher=publisher, domain=domain or rules.domain_of(url),
                              published=_iso(ago) if ago is not None else None, source=source, lang=lang)
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _finviz_page(*rows) -> str:
+    """합성 Finviz 뉴스 표 — rows = (몇 시간 전, 제목, 주소, 매체). 시각은 미국 동부의 날짜·시각 칸."""
+    cells = []
+    for ago, title, href, publisher in rows:
+        moment = (NOW - ago).astimezone(search_finviz.NEW_YORK)
+        stamp = (f"{_MONTHS[moment.month - 1]}-{moment.day:02d}-{moment.year % 100:02d} {moment.hour % 12 or 12:02d}:"
+                 f"{moment.minute:02d}{'PM' if moment.hour >= 12 else 'AM'}")
+        cells.append(f'<tr><td>{stamp}</td><td><a class="tab-link-news" href="{href}">{title}</a>'
+                     f'<div class="news-link-right"><span>({publisher})</span></div></td></tr>')
+    return f'<html><body><table id="news-table">{"".join(cells)}</table></body></html>'
 
 
 class External:
@@ -82,6 +100,17 @@ class External:
         }
         monkeypatch.setattr(sources, "google", self.google)
         monkeypatch.setattr(sources, "bing", self.bing)
+        # Finviz(단계 5) — 계층 자리. 기본은 줄 없는 뉴스 표(형식은 그대로).
+        self.finviz_urls: list[str] = []
+        self.finviz_page: object = _finviz_page()
+        monkeypatch.setattr(ladder, "fetch", self.finviz)
+
+    def finviz(self, url, *, expect=policy.EXPECT_HTML, **kwargs):
+        self.finviz_urls.append(url)
+        if isinstance(self.finviz_page, BaseException):
+            raise self.finviz_page
+        return ladder.Fetched(url=url, status=200, content_type="text/html; charset=utf-8",
+                              body=str(self.finviz_page).encode("utf-8"), tier=policy.TIER_IMPERSONATE, final_url=url)
 
     def google(self, terms, lang, *, after=None, session=None):
         self.calls.append(("google", lang, tuple(terms), after))
@@ -107,12 +136,15 @@ def world(store, monkeypatch):
     monkeypatch.setattr(requests.Session, "send", no_network)
     search_store.reset_excludes()
     task.reset_maintenance()
+    search_finviz.reset()
     external = External(monkeypatch)
     external.sleeps = sleeps
     _due_now(store)
     yield external
     search_store.reset_excludes()
     task.reset_maintenance()
+    search_finviz.wait_idle(5)
+    search_finviz.reset()
 
 
 def _due_now(store) -> None:
@@ -212,6 +244,7 @@ def test_차단_통과_수집이_꺼지면_외부_호출도_표_읽기도_없다
     monkeypatch.setattr(sources, "google", lambda *a, **k: calls.append("google"))
     monkeypatch.setattr(sources, "bing", lambda *a, **k: calls.append("bing"))
     monkeypatch.setattr(requests.Session, "send", lambda *a, **k: calls.append("send"))
+    monkeypatch.setattr(ladder, "fetch", lambda *a, **k: calls.append("finviz"))
     monkeypatch.setattr(store, "search_watch_targets", lambda: calls.append("targets") or [])
     monkeypatch.setattr(store, "search_media_excludes", lambda: calls.append("excludes") or [])
     with pytest.raises(EmptyResult, match="운영 서버에서만"):
@@ -226,7 +259,7 @@ def test_태스크는_polite로_등록되고_간격은_20_40분():
     assert (task.CADENCE.low_minutes, task.CADENCE.high_minutes) == (20.0, 40.0)
     assert (task.ENTITIES_PER_WAKE, task.ENTITY_MINUTES, task.UNWATCHED_GRACE_DAYS) == (6, (180.0, 480.0), 7)
     assert task.DAILY_BUDGETS == {"news.google.com": 600, "www.bing.com": 600, "data.sec.gov": 600, "efts.sec.gov": 300,
-                                  "opendart.fss.or.kr": 600} and task.PURPOSE == "watch"
+                                  "opendart.fss.or.kr": 600, "finviz.com": 100} and task.PURPOSE == "watch"
 
 
 # ==============================================================================
@@ -241,12 +274,13 @@ def test_대상의_글을_저장본과_구글·Bing에서_모아_규칙을_거�
 
     detail = task.task_search_watch()
 
-    assert detail.startswith("관심 대상 1/1곳 처리 · 새 글 4건 · 바깥 요청 4건")
+    assert detail.startswith("관심 대상 1/1곳 처리 · 새 글 4건 · 바깥 요청 5건")
     assert sorted((call[0], call[1]) for call in world.calls) == [("bing", "en"), ("bing", "ko"), ("google", "en"), ("google", "ko")]
+    assert world.finviz_urls == ["https://finviz.com/quote.ashx?t=SCHP"], "미국 종목은 Finviz 한 쪽"
     for _, lang, terms, _after in world.calls:
         assert "SCHP" not in terms and "SC" not in terms, "티커·짧은 별칭은 자유 검색어에 넣지 않음"
         assert all(rules.has_hangul(term) == (lang == "ko") for term in terms)
-    assert world.sleeps and all(2.0 <= value <= 5.0 for value in world.sleeps) and len(world.sleeps) == 3
+    assert world.sleeps and all(2.0 <= value <= 5.0 for value in world.sleeps) and len(world.sleeps) == 4
     items = _items(store, "us:SCHP")
     assert set(items) == {"Central bank cites SynthChip supply", "SynthChip Corporation expands", "합성칩, 새 공장 착공",
                           "SynthChip opens new fab"}
@@ -266,7 +300,7 @@ def test_대상의_글을_저장본과_구글·Bing에서_모아_규칙을_거�
     assert store.source_state(task.TASK_NAME)["status"] == "ok"
     with store.connection() as conn:
         used = {row["host"]: row["budget_used"] for row in conn.execute("SELECT host, budget_used FROM fetch_budgets").fetchall()}
-    assert used == {"news.google.com": 2, "www.bing.com": 2}
+    assert used == {"news.google.com": 2, "www.bing.com": 2, "finviz.com": 1}
 
     # 다시 깨도 때가 아닌 대상은 묻지 않고, 이미 있는 글은 그대로입니다.
     world.calls.clear()
@@ -386,10 +420,10 @@ def test_Bing의_두_번째_구문도_예산에서_한_건을_쓰고_간격을_�
     monkeypatch.setattr(sources, "bing", bing)
     detail = task.task_search_watch()
     assert allowed == [True, True]
-    assert "바깥 요청 6건" in detail and len(world.sleeps) == 5
+    assert "바깥 요청 7건" in detail and len(world.sleeps) == 6
     with store.connection() as conn:
         used = {row["host"]: row["budget_used"] for row in conn.execute("SELECT host, budget_used FROM fetch_budgets").fetchall()}
-    assert used == {"news.google.com": 2, "www.bing.com": 4}
+    assert used == {"news.google.com": 2, "www.bing.com": 4, "finviz.com": 1}
 
 
 def test_Bing의_두_번째_구문은_예산이_없으면_보내지_않는다(store, world, monkeypatch):
@@ -436,7 +470,7 @@ def test_예산이_모두_바닥나_하나도_못_보낸_깨기도_직전이_정
     _spend_all_budgets(store)
     store.note_source_state(task.TASK_NAME, "ok", None, stale_after_minutes=120, when=NOW - timedelta(hours=5))
     detail = task.task_search_watch()
-    assert world.calls == [] and "하루 예산으로 보내지 않음" in detail
+    assert world.calls == [] and world.finviz_urls == [] and "하루 예산으로 보내지 않음" in detail
     state = store.source_state(task.TASK_NAME)
     assert state["status"] == "ok" and state["last_ok_at"] > NOW - timedelta(minutes=5), \
         "예산 소진이 2시간 넘게 이어져도 마지막 성공 시각이 고쳐져 '오래 못 받음'이 되지 않음"
@@ -713,7 +747,7 @@ def test_CIK가_있는_회사는_SEC_회사별_목록을_모아_공시로_넣는
     detail = task.task_search_watch()
     assert [call[:2] for call in filings.calls] == [("sec", "0009000001")], "회사는 이름 전문 검색·DART 없음"
     assert filings.calls[0][2] == rules.window(rules.kst_today(NOW))[0]
-    assert "바깥 요청 5건" in detail and len(world.sleeps) == 4
+    assert "바깥 요청 6건" in detail and len(world.sleeps) == 5
     row = _items(store, "us:SCHP")["10-Q · Quarterly report"]
     assert (row["kind"], row["source"]) == ("filing", "sec")
     assert row["item_id"] == search_filings.sec_item_id("0009000001-26-000101"), "id는 접수번호(SEC 두 출처가 같은 id)"
@@ -795,3 +829,85 @@ def test_모은_글은_탭에_맞는_종류만_읽고_날짜만_아는_공시는
     assert [item["title"] for item in news.items] == ["SynthChip news"], "회원에게 속보 줄은 없음"
     everything = search_store.watch_items("us:SCHP", owner=True)
     assert len(everything.items) == 5
+
+
+# ==============================================================================
+# 9. 단계 5 — Finviz(계약 §8-7)
+# ==============================================================================
+def test_미국_종목은_Finviz_한_쪽을_watch_예산으로_받아_넣는다(store, world):
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    world.finviz_page = _finviz_page(
+        (timedelta(hours=3), "SynthChip wins synthetic contract", "https://www.example.com/fz1", "Synthetic Wire"),
+        (timedelta(days=1), "SynthChip opens new fab (Finviz)", "https://www.example.org/fab", "Example Markets"),
+        (timedelta(hours=5), "Synthetic note on Finviz", "/news/900001/synthetic-note", "Synthetic Blog"),
+    )
+    detail = task.task_search_watch()
+    assert "바깥 요청 5건" in detail and world.finviz_urls == ["https://finviz.com/quote.ashx?t=SCHP"]
+    items = _items(store, "us:SCHP")
+    row = items["SynthChip wins synthetic contract"]
+    assert (row["source"], row["kind"], row["publisher"], row["lang"]) == ("finviz", "news", "Synthetic Wire", "en")
+    assert row["item_id"] == search_finviz.info_text.item_id("https://www.example.com/fz1") and row["published_at"] is not None
+    assert items["Synthetic note on Finviz"]["url"] == "https://finviz.com/news/900001/synthetic-note"
+    fab = [r for r in items.values() if r["url"] == "https://www.example.org/fab"]
+    assert [r["source"] for r in fab] == ["finviz"], "같은 글은 Finviz가 Bing보다 먼저(Yahoo 바로 뒤 — 계약 §8-3)"
+    assert _budgets(store)["finviz.com"] == 1
+    with store.connection() as conn:
+        purposes = {row["purpose"] for row in conn.execute("SELECT purpose FROM fetch_budgets WHERE host = 'finviz.com'").fetchall()}
+    assert purposes == {"watch"}, "검색 예산(search)과 따로"
+    assert search_finviz.request("SCHP", external=True, allow_queue=True).status == "cached", "즉석 검색이 같은 캐시를 씀"
+
+
+def test_Finviz_캐시가_있으면_요청도_예산도_쓰지_않는다(store, world):
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    task.task_search_watch()
+    assert len(world.finviz_urls) == 1
+    flex.set_due(task.TASK_NAME, task.schedule_item("us:SCHP"), NOW - timedelta(seconds=1))
+    _due_now(store)
+    detail = task.task_search_watch()
+    assert len(world.finviz_urls) == 1 and _budgets(store)["finviz.com"] == 1, "30분 캐시 안에서는 다시 받지 않음"
+    assert "바깥 요청 4건" in detail
+
+
+def test_Finviz_거부는_그_대상의_Finviz만_건너뛰고_다른_출처는_계속(store, world):
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    closed = state.Closed("finviz.com", "HTTP 403(계층 browser)", None, False)
+    world.finviz_page = ladder.FetchRejected(closed, sent=False)
+    detail = task.task_search_watch()
+    assert "Finviz 건너뜀(" in detail and "finviz.com" in detail
+    assert "바깥 요청 4건" in detail, "닫혀 있어 나가지 않은 Finviz 요청은 세지 않음"
+    assert store.source_state(task.TASK_NAME)["status"] == "ok", "거부는 '받지 못함'이 아님(호스트 닫힘은 계층이 기록)"
+    assert "SynthChip opens new fab" in _items(store), "다른 출처는 그대로"
+
+
+def test_Finviz를_받지_못하면_받지_못함(store, world):
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    world.finviz_page = ladder.FetchFailed("finviz.com HTTP 502")
+    detail = task.task_search_watch()
+    assert "finviz finviz.com HTTP 502" in detail and "SCHP" not in detail, "실행 기록에 티커·경로 없음"
+    assert store.source_state(task.TASK_NAME)["status"] == "failed"
+    search_finviz.reset()
+    world.finviz_page = "<html><body>Synthetic maintenance</body></html>"
+    flex.set_due(task.TASK_NAME, task.schedule_item("us:SCHP"), NOW - timedelta(seconds=1))
+    _due_now(store)
+    detail = task.task_search_watch()
+    assert "finviz 형식이 바뀜" in detail
+
+
+def test_Finviz_watch_예산이_없으면_보내지_않는다(store, world):
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    with store.connection() as conn:
+        conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day, budget_used) VALUES ('finviz.com', 'watch', %s, 100)",
+                     (rules.kst_today(NOW),))
+    detail = task.task_search_watch()
+    assert world.finviz_urls == [] and "finviz.com 하루 예산 100건 소진" in detail
+    assert store.source_state(task.TASK_NAME)["status"] == "ok"
+
+
+def test_Finviz가_닫혀_있으면_watch_예산도_요청도_쓰지_않고_건너뛴다(store, world):
+    """호스트가 닫힌 동안(계층의 표 fetch_hosts)은 예산을 쓰기 전에 건너뜀 — 대상마다 예산 한 건씩 버리지 않음(단계 5 검토)."""
+    _watch(store, _user(store, "a@example.org"), ENTITY)
+    store.save_fetch_host("finviz.com", fail_level=5, given_up=True, blocked_reason="HTTP 403(계층 impersonate)")
+    detail = task.task_search_watch()
+    assert world.finviz_urls == [] and "finviz.com" not in _budgets(store)
+    assert "Finviz 건너뜀(finviz.com HTTP 403(계층 impersonate)" in detail and "바깥 요청 4건" in detail
+    assert store.source_state(task.TASK_NAME)["status"] == "ok"

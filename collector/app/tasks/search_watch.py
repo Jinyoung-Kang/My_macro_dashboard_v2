@@ -11,7 +11,10 @@ polite 그룹(비주기 — 운영 서버에서만) — 정보 검색의 관심 
     지킵니다. 서버 상한 100곳을 다 채우면 차례가 밀려 대상마다 9~10시간쯤이 됩니다. 처리량 상한이 먼저 걸려 구글은 하루 많아야 약 500건(600건 예산
     안), Bing은 0건이라 두 번째 구문을 묻는 일이 잦으면 예산이 바닥날 수 있습니다(그 뒤 그날의 Bing 질의는 보내지 않음 — 아래 판정).
     공시(단계 4)는 대상마다 출처당 한 건이라 하루 많아야 약 250건씩(SEC 회사별 목록·DART 600, EDGAR 전문 검색 300 예산 안).
-    바깥 요청은 대상마다 많아야 9건(구글 2·Bing 2~4·공시 3)이라 한 번 깰 때 54건, 사이 2~5초(많아야 약 270초)에 요청 시간을 더해도 대개 시간
+    Finviz(단계 5)는 미국 상장 회사 대상마다 한 건이고 즉석 검색과 같은 30분 캐시를 써, 하루 많아야 약 250건이 예산 100에서 멈춥니다(그 뒤
+    그날의 Finviz 질의는 보내지 않음 — 미국 종목 대상이 많으면 대상마다 하루 한 번도 못 받을 수 있음).
+    바깥 요청은 대상마다 많아야 10건(구글 2·Bing 2~4·공시 3·Finviz 1 — 공시 셋과 Finviz를 모두 받는 대상은 없어 실제로는 8건 이하)이라 한 번
+    깰 때 많아야 60건, 사이 2~5초(많아야 약 300초)에 요청 시간과 Finviz 계층의 같은 호스트 간격(4~15초, 가끔 20~45초)을 더해도 대개 시간
     상한(600초) 안이고, 넘으면 남은 대상은 다음 깨기로 미룹니다(아래 판정).
   - 대상마다 다음 시각은 fetch_schedule의 ``search_watch/<대표 키의 md5 앞 16자>`` 줄에 3~8시간(180~480분, 무작위)으로 둡니다 — 처리를 시작하기
     전에 먼저 적어, 실행이 끊겨도 같은 대상을 곧바로 다시 묻지 않습니다. 줄 이름에 대표 키를 그대로 두지 않습니다(회원이 쓴 ``topic:`` 글이 운영자
@@ -32,9 +35,13 @@ polite 그룹(비주기 — 운영 서버에서만) — 정보 검색의 관심 
      EDGAR 이름 전문 검색 첫 구문 한 번(efts.sec.gov 300 — 두 번째 구문은 묻지 않음), DART 고유번호가 있으면 DART 첫 쪽(opendart.fss.or.kr 600).
      예산·간격·판정은 2와 같고, 넣는 줄은 kind ``filing``(id는 접수번호·DART 주소 — 정보 검색과 같음). 리서치·연결은 모으지 않습니다.
      설정(SEC_USER_AGENT·DART_API_KEY)이 없으면 그 질의는 보내지 않고 예산·간격·요청 수도 쓰지 않습니다(실행 기록에 안내 한 번 — 아래 판정).
-     단계 5부터 Finviz.
-  4. 넣기 전 규칙: 2년 자르기·중국어 제목·'.cn'·매체 제외(처음 값 + 사용자가 더한 search_media_excludes), 같은 글 가리기(출처 우선순위: 저장본 >
-     Bing > 구글 > SEC 회사별 목록 > EDGAR 전문 검색 > DART). 저장하는 글 id(:func:`stored_id`)는 원문 주소면 ``info_text.item_id``, 경유 주소(구글)면 그 기사 경로(``/rss/articles/<id>``,
+  4. Finviz(단계 5 — 계약 §8-7, services/search_finviz): 미국 상장 회사(티커)면 종목 화면 한 쪽의 뉴스 표. 즉석 검색과 같은 잠금(finviz.com에
+     동시에 두 건이 나가지 않음)·같은 30분 캐시(캐시가 있으면 요청·예산 없음)를 거치고, 예산은 finviz.com 100(용도 watch)·간격은 2와 같음 —
+     계층(차단 통과 수집)의 같은 호스트 간격과 계층 예산 250도 그 위에 걸림. 거부(닫힘·포기)는 그 대상의 Finviz만 건너뜀(호스트 닫힘은 계층이
+     표 fetch_hosts에 기록 — 이미 닫혀 있으면 예산을 쓰기 전에 건너뜀, 다른 출처는 계속, 실행 기록에 'Finviz 건너뜀'). 태스크의 남은 시간이
+     계층 한 번 올림에 모자라면(search_finviz.WATCH_MIN_TIME_LEFT) 묻지 않음. 받지 못함·형식 바뀜·종목 화면이 아닌 곳으로 옮겨짐은 '받지 못함'.
+  5. 넣기 전 규칙: 2년 자르기·중국어 제목·'.cn'·매체 제외(처음 값 + 사용자가 더한 search_media_excludes), 같은 글 가리기(출처 우선순위: 저장본 >
+     Finviz > Bing > 구글 > SEC 회사별 목록 > EDGAR 전문 검색 > DART — 정보 검색과 같이 Finviz는 Yahoo 바로 뒤). 저장하는 글 id(:func:`stored_id`)는 원문 주소면 ``info_text.item_id``, 경유 주소(구글)면 그 기사 경로(``/rss/articles/<id>``,
      인자 없음)의 같은 해시, 주소가 없으면 전체 제목의 해시입니다 — 제목 앞 24자(계약 규칙 4 — 한 요청 안에서 출처끼리 겹친 줄을 가리는 임시 키)는
      2년 보관 키로 쓰지 않습니다(앞 24자가 같은 다른 기사를 막지 않게). 경유 주소 줄·주소 없는 줄은 같은 실행이나 그 대상의 저장본에 **전체 제목**이
      같은 글이 있으면 넣지 않습니다. 이미 있는 (대상, 글)은 그대로 둡니다(처음 받은 시각을 지킴). 처음 받은 시각은 지금이고, 작성 시각이 없는 저장본
@@ -52,6 +59,9 @@ polite 그룹(비주기 — 운영 서버에서만) — 정보 검색의 관심 
     바닥난 동안 마지막 성공 시각이 멈춰 '오래 못 받음'(간격 상한 40분 × 3)이 거짓으로 나지 않고, 닿지 못한 출처의 '받지 못함'을 지우지도 않습니다
     (그때는 Partial ``unsent`` — 출처 상태 그대로).
   - 태스크 시간 상한으로 남긴 대상이 있으면 Partial(``unsent``).
+  - Finviz를 건너뛴 대상(거부·닫힘·직전 실패·즉석 검색의 요청을 기다리다 넘김·남은 시간·계층 예산)은 판정과 무관합니다 — 실행 기록에
+    'Finviz 건너뜀'만. Finviz 즉석 검색이 새로 거부당하면 search_finviz가 이 태스크의 판정을 'blocked'로 남겨 끊김 알림에 걸리고, 이 태스크의
+    다음 성공이 지웁니다(이미 닫혀 보내지 않은 즉석 검색은 다시 걸지 않음).
   - 설정이 없어 보내지 않은 공시 질의(SEC_USER_AGENT·DART_API_KEY)도 출처의 끊김이 아닙니다 — 실행 기록에 '설정이 없어 보내지 않음'만 적고
     판정은 보낸 요청으로 합니다(실행마다 같은 '받지 못함'이 쌓이지 않게 — DART 키가 있는지는 수집기 ``/status``의 ``keys``에도 보임).
   - 검색어·경로는 로그와 실행 기록에 남기지 않습니다(호스트·상태 코드만 — 단계 2의 사유 글).
@@ -67,7 +77,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from .. import kst, store
-from ..services import info_text, search_filings
+from ..services import info_text, search_filings, search_finviz
 from ..services import search_rules as rules
 from ..services import search_sources as sources
 from ..services import search_store
@@ -85,7 +95,9 @@ BING_HOST = "www.bing.com"
 SEC_DATA_HOST = search_filings.SEC_HOST         # data.sec.gov — SEC 회사별 목록(단계 4)
 EFTS_HOST = search_filings.EFTS_HOST            # efts.sec.gov — EDGAR 이름 전문 검색(단계 4)
 DART_HOST = search_filings.DART_HOST            # opendart.fss.or.kr — DART 공시 목록(단계 4)
-DAILY_BUDGETS = {GOOGLE_HOST: 600, BING_HOST: 600, SEC_DATA_HOST: 600, EFTS_HOST: 300, DART_HOST: 600}
+FINVIZ_HOST = search_finviz.HOST                # finviz.com — Finviz 종목 뉴스(단계 5)
+DAILY_BUDGETS = {GOOGLE_HOST: 600, BING_HOST: 600, SEC_DATA_HOST: 600, EFTS_HOST: 300, DART_HOST: 600,
+                 FINVIZ_HOST: search_finviz.WATCH_BUDGET}
 FTS_KINDS = ("person", "institution")           # EDGAR 이름 전문 검색을 묻는 대상 종류
 _CIK = re.compile(r"^\d{10}$")
 _CORP_CODE = re.compile(r"^\d{8}$")
@@ -95,8 +107,9 @@ UNWATCHED_GRACE_DAYS = 7
 TIME_LIMIT_SECONDS = 600.0
 SCHEDULE_PREFIX = flex.key(TASK_NAME, "")
 SCHEDULE_HASH_CHARS = 16        # 일정 줄 이름의 대표 키 해시(md5) 앞 글자 수 — store.purge_unwatched_search_items의 SQL과 같은 값
-# 같은 글이 여러 곳에서 오면 앞의 것이 남습니다(계약 §4-4: 저장본 > Bing > 구글, §7-4: 그 뒤 SEC 회사별 목록 > EDGAR 전문 검색 > DART).
-PRIORITY = ("feeds", "event_news", "info", "wire", "bing", "google_ko", "google_en", "sec", "sec_fts", "dart")
+# 같은 글이 여러 곳에서 오면 앞의 것이 남습니다(계약 §4-4: 저장본 > Bing > 구글, §7-4: 그 뒤 SEC 회사별 목록 > EDGAR 전문 검색 > DART,
+# §8-3: Finviz는 Yahoo 바로 뒤 — 여기에는 Yahoo가 없어 저장본 바로 뒤).
+PRIORITY = ("feeds", "event_news", "info", "wire", "finviz", "bing", "google_ko", "google_en", "sec", "sec_fts", "dart")
 
 # 시험이 난수를 바꿔 끼우는 자리입니다.
 _rng = random.Random()
@@ -163,6 +176,7 @@ def _work() -> str | polite.Partial:
     over_budget: list[str] = []
     over_time: list[str] = []
     unconfigured: list[str] = []
+    finviz_notes: list[str] = []
     for index, target in enumerate(picked):
         if _clock() - started > TIME_LIMIT_SECONDS:
             over_time.append(f"시간 상한으로 대상 {len(picked) - index}곳은 다음 깨기")
@@ -175,6 +189,7 @@ def _work() -> str | polite.Partial:
         failures += outcome["failures"]
         over_budget += outcome["unsent"]
         unconfigured += outcome["unconfigured"]
+        finviz_notes += outcome["finviz"]
 
     left = len(waiting) - len(done)
     detail = (f"관심 대상 {len(done)}/{len(targets)}곳 처리 · 새 글 {inserted}건 · 바깥 요청 {requests_sent}건"
@@ -183,6 +198,8 @@ def _work() -> str | polite.Partial:
         detail += f" · 하루 예산으로 보내지 않음({'; '.join(dict.fromkeys(over_budget))})"
     if unconfigured:
         detail += f" · 설정이 없어 보내지 않음({'; '.join(dict.fromkeys(unconfigured))})"
+    if finviz_notes:
+        detail += f" · Finviz 건너뜀({'; '.join(dict.fromkeys(finviz_notes))})"
     if failures:
         return polite.Partial(detail, "; ".join(dict.fromkeys(failures))[:300], kind=polite.PARTIAL_FAILED)
     if over_time:
@@ -215,6 +232,7 @@ def _collect(target: dict, now: datetime, excludes: rules.Excludes, pace: dict) 
     failures: list[str] = []
     unsent: list[str] = []
     unconfigured: list[str] = []
+    finviz_notes: list[str] = []
 
     # 1. 저장본 대조 — 외부 호출 0건.
     for source, read in (("feeds", search_store.feed_bundle), ("event_news", search_store.event_news),
@@ -273,9 +291,20 @@ def _collect(target: dict, now: datetime, excludes: rules.Excludes, pace: dict) 
         if result.error:
             failures.append(f"{source} {result.error}")
         groups.setdefault(source, []).extend(result.items)
+
+    # 4. Finviz(단계 5) — 미국 상장 회사만. 즉석 검색과 같은 잠금·캐시(캐시가 있으면 예산·간격·요청 수를 쓰지 않음), 예산·간격은 take.
+    if us_ticker:
+        answer = search_finviz.for_watch(us_ticker, take=lambda: take(FINVIZ_HOST))
+        if answer.took and not answer.sent:
+            sent["requests"] -= 1       # 예산은 썼지만 계층이 보내지 않음(닫힘·계층 예산·시간) — 보낸 요청으로 세지 않음
+        if answer.failure:
+            failures.append(f"finviz {answer.failure}")
+        if answer.note:
+            finviz_notes.append(answer.note)
+        groups["finviz"] = list(answer.items)
     requests = sent["requests"]
 
-    # 4. 규칙 → 같은 글 가리기 → 넣기.
+    # 5. 규칙 → 같은 글 가리기 → 넣기.
     start = rules.window_start(today)
     kept_groups = []
     for source in PRIORITY:
@@ -284,7 +313,8 @@ def _collect(target: dict, now: datetime, excludes: rules.Excludes, pace: dict) 
     merged = _merge(kept_groups)
     rows = _rows(target["key"], merged, now)
     inserted = store.insert_search_watch_items(target["key"], rows) if rows else 0
-    return {"inserted": inserted, "requests": requests, "failures": failures, "unsent": unsent, "unconfigured": unconfigured}
+    return {"inserted": inserted, "requests": requests, "failures": failures, "unsent": unsent, "unconfigured": unconfigured,
+            "finviz": finviz_notes}
 
 
 def _filing_queries(target: dict, en_terms: list[str], window_from: str, window_to: str) -> list[tuple]:
