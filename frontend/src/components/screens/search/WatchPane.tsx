@@ -32,11 +32,13 @@ const LIST_SCROLL = "max-h-[min(28dvh,14rem)] overflow-y-auto";
  * 배지가 이름과 한 가로줄에 있으면 대상 화면의 13rem 칸에서 이름 폭이 0px까지 눌리고 종류 글이 글자마다 끊겨 배지 밑에 겹쳤습니다(QA-418).
  * 줄마다 새 글 알림 켜기(단계 6 묶음 2 — 계약 §9-5, 종 아이콘 + 켬·끔 글, aria-pressed)를 둡니다 — 켜면 백엔드가 새 글을 알림함에 남깁니다
  * (텔레그램 없음). 서버가 알림 칸을 주지 않으면(묶음 1까지) 단추를 그리지 않습니다. 정기 수집이 꺼진 곳(로컬·QA)이면 그렇다고 적습니다.
- * 화제인 대상(단계 6 — 계약 §9-2의 hot)에는 '화제' 글 배지를 두고(색만이 아님), 그런 대상이 있으면 목록 아래에 뜻 한 줄을 적습니다.
+ * 화제인 대상(단계 6 — 계약 §9-2의 hot)에는 '화제' 글 배지를 둡니다(색만이 아님).
  *
  * collapsible이면 lg 미만에서 접는 서랍(머리 단추로 펼침 — 머리에 개수와 새 글 수 합계), lg 이상은 늘 펼침. 첫 화면은 접지 않습니다.
  * 목록은 제 높이 상한 안에서 스크롤합니다(상한 50개 — 대상 화면의 거르기 칸·첫 화면의 최근 글을 밀어내지 않게). 그 영역은 Tab으로 닿아
  * 키보드로도 스크롤합니다. 영역이 넘침을 자르므로 줄의 포커스 링은 안쪽에 그립니다.
+ * 목록 아래에는 상태(알림 실패·상한 줄·정기 수집 안내)만 늘 보이고, 뜻 풀이(새 글 수, 화제 대상이 있으면 화제, 알림 칸이 있으면 알림)는 기본으로 접힌
+ * 안내 하나에 둡니다 — 늘 펼쳐 두면 50개일 때 단계 5의 높이 상한이 아낀 높이를 다시 먹어 거르기·최근 글이 첫 화면 밖으로 밀렸습니다(QA-419).
  */
 export function WatchPane({
   watch,
@@ -143,19 +145,21 @@ export function WatchPane({
             </StatusText>
           </p>
         ) : null}
-        {anyHot ? (
-          <p className="text-xs leading-5 text-text-3">
-            화제 = 지난 24시간에 처음 받은 글이 5건 이상이고 그 앞 30일 하루 평균의 3배 이상(받은 자료 기준 — 받을 때 이미 하루 넘게 지난 글은 빼고).
-          </p>
-        ) : null}
         {limits ? <p className="text-xs text-text-3">{limits}</p> : null}
         {note ? <p className="text-xs leading-5 text-text-3">{note}</p> : null}
-        <p className="text-xs leading-5 text-text-3">새 글 수는 마지막으로 그 대상의 타임라인을 연 뒤 서버가 처음 받은 글입니다.</p>
-        {notifyKnown ? (
-          <p className="text-xs leading-5 text-text-3">
-            알림을 켠 대상은 새 글이 들어오면 알림함에 한 줄을 남깁니다(15분마다 확인 — 텔레그램은 보내지 않음).
-          </p>
-        ) : null}
+        <details className="group/guide text-xs leading-5 text-text-3">
+          <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 rounded-control text-text-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0 [&::-webkit-details-marker]:hidden">
+            <ChevronDownIcon size={12} className="group-open/guide:rotate-180" />
+            {`${["새 글 수", ...(anyHot ? ["화제"] : []), ...(notifyKnown ? ["알림"] : [])].join("·")} 안내`}
+          </summary>
+          <div className="mt-1 flex flex-col gap-1">
+            <p>새 글 수는 마지막으로 그 대상의 타임라인을 연 뒤 서버가 처음 받은 글입니다.</p>
+            {anyHot ? (
+              <p>화제 = 지난 24시간에 처음 받은 글이 5건 이상이고 그 앞 30일 하루 평균의 3배 이상(받은 자료 기준 — 받을 때 이미 하루 넘게 지난 글은 빼고).</p>
+            ) : null}
+            {notifyKnown ? <p>알림을 켠 대상은 새 글이 들어오면 알림함에 한 줄을 남깁니다(15분마다 확인 — 텔레그램은 보내지 않음).</p> : null}
+          </div>
+        </details>
       </>
     );
   }

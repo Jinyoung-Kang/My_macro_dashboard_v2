@@ -88,8 +88,8 @@ describe("QA-419 관심 대상 50개 — 목록 아래 설명 글이 거르기·
   // 단계 6이 목록 아래에 늘 펼친 설명 글(화제 정의 약 100px·알림 안내 약 80px)을 더해 거르기가 y=994, 최근 글이 y=820(아래 메뉴가 y=779부터 덮음)으로 다시 밀림.
   // jsdom은 위치를 재지 못하므로, 고친 배치의 구조 — 설명 글(새 글 수·화제·알림의 뜻)은 기본으로 접힌 안내(details) 하나에 넣고 머리 한 줄만 보이며,
   // 상태(상한 줄·정기 수집 안내·알림 실패)는 그 밖에서 늘 보임 — 를 대조합니다.
-  // 수정 전 실패: 설명 글이 details 안에 있지 않음(closest('details')가 null).
-  it.fails("설명 글은 기본으로 접힌 안내 하나에(머리에 든 것을 글로, 좁은 화면 44px) — 상한 줄·정기 수집 안내는 그 밖에서 늘 보임", () => {
+  // 수정 전에는 설명 글이 details 안에 있지 않아(closest('details')가 null) 실패했습니다.
+  it("설명 글은 기본으로 접힌 안내 하나에(머리에 든 것을 글로, 좁은 화면 44px) — 상한 줄·정기 수집 안내는 그 밖에서 늘 보임", () => {
     render(<WatchPane watch={fakeWatch(watchData(manyTopics(50), { limits: FULL, collecting: false }))} demo={false} onOpen={() => {}} />);
     const details = screen.getByText(/화제 = 지난 24시간에 처음 받은 글이 5건 이상/).closest("details");
     expect(details).not.toBeNull();
@@ -114,8 +114,8 @@ describe("QA-419 관심 대상 50개 — 목록 아래 설명 글이 거르기·
   });
 
   // QA-419: 머리 글은 든 것만 말하고(화제인 대상이 없으면 '화제'를, 알림 칸을 모르면 '알림'을 뺌), 알림 실패 글(role=alert)은 접힌 안내 밖에 남음.
-  // 수정 전 실패: 접힌 안내(summary)가 없음.
-  it.fails("머리 글은 든 것만 — 화제·알림이 없으면 '새 글 수 안내', 알림 실패 글은 안내 밖(role=alert)", () => {
+  // 수정 전에는 접힌 안내(summary)가 없어 실패했습니다.
+  it("머리 글은 든 것만 — 화제·알림이 없으면 '새 글 수 안내', 알림 실패 글은 안내 밖(role=alert)", () => {
     const quiet = manyTopics(3).map((item) => ({ ...item, hot: false }));
     const watch = {
       ...fakeWatch(watchData(quiet)),
