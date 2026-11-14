@@ -303,7 +303,7 @@ export function headlineSet(view: string): HeadlineSet | null {
 export function headlineViewText(set: HeadlineSet): { note: string; empty: string; pager: string } {
   if (set === "world") {
     return {
-      note: "중앙은행 보도자료·경제지 RSS의 제목·출처·시각과 피드가 준 요약(글 페이지는 받지 않음) · 정보 검색과 관심 대상에 쓰고, 모의 매매 패킷에는 들어가지 않습니다",
+      note: "중앙은행 보도자료·경제지 RSS의 제목·출처·시각과 피드가 준 요약(글 페이지는 받지 않음, 보관 90일) · 정보 검색과 관심 대상에 쓰고, 모의 매매 패킷에는 들어가지 않습니다",
       empty: "받은 제목이 없습니다(보관 90일). 피드마다 30분~6시간 간격으로 받습니다.",
       pager: "보도자료·경제지",
     };

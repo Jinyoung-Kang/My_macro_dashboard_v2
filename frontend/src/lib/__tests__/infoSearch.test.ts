@@ -24,7 +24,15 @@ import {
   holdingsWindow,
   httpUrl,
   identifierChips,
+  isDateOnly,
   isEntityKey,
+  isListedEntity,
+  itemTimeText,
+  linkSourceLabel,
+  linksView,
+  mergeLinks,
+  relationLabel,
+  rowTimeText,
   isSlashShortcut,
   kindOfKey,
   kstDate,
@@ -52,6 +60,7 @@ import {
   watchCollectingNote,
   watchKeyOf,
   watchLimitsText,
+  watchNewTotal,
   writeErrorText,
 } from "../infoSearch";
 import type {
@@ -59,6 +68,8 @@ import type {
   SearchEntity,
   SearchFeedItem,
   SearchFeedResponse,
+  SearchLink,
+  SearchLinksResponse,
   SearchSourceStatus,
   SearchWatchItem,
 } from "../types";
@@ -137,24 +148,58 @@ describe("주소 상태", () => {
 });
 
 describe("탭", () => {
-  it("글·논평은 운영자만, 보유는 기업·기관만, 연결·타임라인·뉴스는 모두", () => {
-    expect(tabsFor("company", false)).toEqual(["timeline", "news", "holdings", "links"]);
-    expect(tabsFor("company", true)).toEqual(["timeline", "news", "posts", "holdings", "links"]);
-    expect(tabsFor("person", true)).toEqual(["timeline", "news", "posts", "links"]);
-    expect(tabsFor("topic", false)).toEqual(["timeline", "news", "links"]);
+  it("글·논평은 운영자만, 보유는 기업·기관만, 공시는 주제 밖 모두, 리서치는 상장 기업만, 연결·타임라인·뉴스는 모두(계약 §7-3·7-7)", () => {
+    expect(tabsFor("company", false, true)).toEqual(["timeline", "news", "filings", "research", "holdings", "links"]);
+    expect(tabsFor("company", true, true)).toEqual(["timeline", "news", "filings", "research", "posts", "holdings", "links"]);
+    expect(tabsFor("institution", false, false)).toEqual(["timeline", "news", "filings", "holdings", "links"]);
+    expect(tabsFor("person", true, false)).toEqual(["timeline", "news", "filings", "posts", "links"]);
+    expect(tabsFor("topic", false, false)).toEqual(["timeline", "news", "links"]);
+    expect(tabsFor("topic", true, false)).toEqual(["timeline", "news", "posts", "links"]);
   });
 
-  it("고를 수 없는 탭을 주소로 주면 타임라인 — 회원의 글·논평(403을 부르지 않음), 사람의 보유", () => {
-    expect(tabFor("posts", "company", false)).toBe("timeline");
-    expect(tabFor("posts", "company", true)).toBe("posts");
-    expect(tabFor("holdings", "person", true)).toBe("timeline");
+  it("상장되지 않은 기업(시장 없는 wd: 기업)은 리서치 탭이 없다 — 수집기가 묻지 않는 탭을 '모름'으로 열지 않음(계약 §7-3)", () => {
+    expect(tabsFor("company", false, false)).toEqual(["timeline", "news", "filings", "holdings", "links"]);
+    expect(tabFor("research", "company", true, false)).toBe("timeline");
   });
 
-  it("결과 경로를 부르는 탭만 feed 탭 이름이 있다", () => {
+  it("상장 여부 — 풀린 대상의 시장(미국·한국), 풀기 전·풀지 못했으면 키 앞부분(us:·kr:)", () => {
+    expect(isListedEntity("us:NVDA", null)).toBe(true);
+    expect(isListedEntity("kr:005930", null)).toBe(true);
+    expect(isListedEntity("wd:Q95", null)).toBe(false);
+    expect(isListedEntity("cik:0001067983", null)).toBe(false);
+    expect(isListedEntity("topic:AI", null)).toBe(false);
+    // wd:로 열었어도 풀린 대상이 상장 종목이면(대표 키 us:·kr:, 시장 있음) 상장
+    expect(isListedEntity("wd:Q182477", entity())).toBe(true);
+    expect(isListedEntity("wd:Q20", entity({ key: "kr:005930", ids: { ...entity().ids, market: "kr", stockCode: "005930" } }))).toBe(true);
+    // 시장이 없는 wd: 기업은 상장 아님
+    expect(isListedEntity("wd:Q95", entity({ key: "wd:Q95", ids: { ...entity().ids, ticker: null, market: null, cik: null } }))).toBe(false);
+  });
+
+  it("고를 수 없는 탭을 주소로 주면 타임라인 — 회원의 글·논평(403을 부르지 않음), 사람의 보유, 주제의 공시, 기관·사람의 리서치", () => {
+    expect(tabFor("posts", "company", false, true)).toBe("timeline");
+    expect(tabFor("posts", "company", true, true)).toBe("posts");
+    expect(tabFor("holdings", "person", true, false)).toBe("timeline");
+    expect(tabFor("filings", "topic", true, false)).toBe("timeline");
+    expect(tabFor("research", "topic", true, false)).toBe("timeline");
+    expect(tabFor("research", "institution", true, false)).toBe("timeline");
+    expect(tabFor("research", "person", true, false)).toBe("timeline");
+    expect(tabFor("filings", "person", false, false)).toBe("filings");
+    expect(tabFor("research", "company", false, true)).toBe("research");
+  });
+
+  it("결과 경로를 부르는 탭만 feed 탭 이름이 있다 — 공시·리서치도 결과 경로", () => {
     expect(feedTabOf("timeline")).toBe("timeline");
     expect(feedTabOf("posts")).toBe("posts");
+    expect(feedTabOf("filings")).toBe("filings");
+    expect(feedTabOf("research")).toBe("research");
     expect(feedTabOf("holdings")).toBeNull();
     expect(feedTabOf("links")).toBeNull();
+  });
+
+  it("주소의 공시·리서치 탭을 읽고 다시 쓴다", () => {
+    expect(parseSearchUrl("?e=us:NVDA&tab=filings").tab).toBe("filings");
+    expect(parseSearchUrl("?e=us:NVDA&tab=research&range=1y")).toMatchObject({ tab: "research", range: "1y" });
+    expect(searchHref({ e: "kr:005930", tab: "filings", range: "2y" })).toBe("/search?e=kr:005930&tab=filings&range=2y");
   });
 });
 
@@ -550,6 +595,27 @@ describe("관심 대상(계약 §6-4)", () => {
     expect(refreshNoteText({ fetchedAt: null })).toBe("새로 받았습니다");
   });
 
+  it("새로 받은 응답에 받지 못한 출처(실패·외부 조회 안 함)가 있으면 그 한 줄에 그렇다고 붙인다", () => {
+    const status = (source: string, code: string): SearchSourceStatus => ({ source, label: source, status: code, count: null, dropped: null, message: null });
+    const at = "2026-11-14T01:00:00+00:00";
+    expect(refreshNoteText({ fetchedAt: at, sources: [status("google_en", "ok"), status("gdelt", "error")] }))
+      .toBe("새로 받았습니다 — 받은 시각 2026-11-14 10:00 KST — 일부 출처는 받지 못함(아래 출처 상태)");
+    expect(refreshNoteText({ fetchedAt: at, sources: [status("google_en", "ok"), status("finviz", "offline")] }))
+      .toBe("새로 받았습니다 — 받은 시각 2026-11-14 10:00 KST — 일부 출처는 받지 못함(아래 출처 상태)");
+    expect(refreshNoteText({ refreshNote: "10분에 한 번만 새로 받습니다", sources: [status("gdelt", "error")] }))
+      .toBe("10분에 한 번만 새로 받습니다 — 일부 출처는 받지 못함(아래 출처 상태)");
+    // 받음·캐시·결과 없음·건너뜀은 받지 못한 것이 아닙니다.
+    expect(refreshNoteText({ fetchedAt: at, sources: ["ok", "cached", "empty", "skipped", "owner_only"].map((code) => status(code, code)) }))
+      .toBe("새로 받았습니다 — 받은 시각 2026-11-14 10:00 KST");
+  });
+
+  it("새 글 수 합계(접힌 서랍 머리) — 1건 이상인 수만 더하고, 모르는 수(null)는 0으로 세지 않음", () => {
+    expect(watchNewTotal([watchItem({ newCount: 3 }), watchItem({ newCount: 2 }), watchItem({ newCount: 0 })])).toBe(5);
+    expect(watchNewTotal([watchItem({ newCount: null }), watchItem({ newCount: 4 })])).toBe(4);
+    expect(watchNewTotal([watchItem({ newCount: null })])).toBe(0);
+    expect(watchNewTotal([])).toBe(0);
+  });
+
   it("새 출처 이름 — 새 피드 묶음·관심 대상 수집", () => {
     expect(sourceLabel("feeds")).toBe("보도자료·경제지 피드");
     expect(sourceLabel("watch")).toBe("관심 대상 수집");
@@ -571,13 +637,16 @@ describe("매체 제외 목록(계약 §6-2·6-4)", () => {
     });
   });
 
-  it("국제화 도메인(유니코드 표기)은 서버처럼 ASCII(punycode)로 바꿔 보낸다", () => {
+  it("국제화 도메인(유니코드 표기)은 서버처럼 ASCII(punycode)로 바꿔 보내고, 메모가 비었으면 입력한 표기를 메모로 남긴다", () => {
     expect(excludeDraft("domain", "한겨레.한국", null, existing)).toEqual({
-      ok: true, body: { kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e", note: null },
+      ok: true, body: { kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e", note: "입력: 한겨레.한국" },
     });
-    expect(excludeDraft("domain", "https://Bücher.example/a", null, existing)).toEqual({
-      ok: true, body: { kind: "domain", value: "xn--bcher-kva.example", note: null },
+    expect(excludeDraft("domain", "https://Bücher.example/a", "  ", existing)).toEqual({
+      ok: true, body: { kind: "domain", value: "xn--bcher-kva.example", note: "입력: bücher.example" },
     });
+    // 메모를 쓴 값은 그대로, ASCII로 넣은 값(punycode 포함)에는 붙이지 않음
+    expect(excludeDraft("domain", "한겨레.한국", " 한겨레 ", existing)).toMatchObject({ ok: true, body: { note: "한겨레" } });
+    expect(excludeDraft("domain", "xn--h89at9srwx.xn--3e0b707e", null, existing)).toMatchObject({ ok: true, body: { note: null } });
     // 이미 punycode로 넣은 값과 같으면 다시 더하지 않음
     expect(excludeDraft("domain", "한겨레.한국", null, [{ kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e" }])).toEqual({
       ok: false, message: "이미 목록에 있습니다",
@@ -610,6 +679,31 @@ describe("매체 제외 목록(계약 §6-2·6-4)", () => {
     expect(excludeDraft("name", "xinhuanet.com", null, existing)).toMatchObject({ ok: true });
   });
 
+  it("앞의 www.는 뗀다(수집기 normalize_domain·백엔드와 같게) — 붙여 넣은 www 주소가 따로 한 줄이 되지 않게", () => {
+    expect(excludeDraft("domain", "www.Example.org", null, existing)).toEqual({ ok: true, body: { kind: "domain", value: "example.org", note: null } });
+    expect(excludeDraft("domain", "https://WWW.한겨레.한국/path", null, existing)).toEqual({
+      ok: true, body: { kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e", note: "입력: 한겨레.한국" },
+    });
+    expect(excludeDraft("domain", "https://WWW.한겨레.한국/path", null, [{ kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e" }])).toEqual({
+      ok: false, message: "이미 목록에 있습니다",
+    });
+    // www 하나만 남는 값은 도메인이 아님
+    expect(excludeDraft("domain", "www.com", null, existing)).toMatchObject({ ok: false });
+  });
+
+  it("목록의 도메인 아래 주소(점 경계)는 이미 걸리므로 더하지 않고, 어느 값이 덮는지 글로", () => {
+    expect(excludeDraft("domain", "english.XINHUANET.com", null, existing)).toEqual({
+      ok: false, message: "이미 목록의 xinhuanet.com이(가) 이 도메인을 덮습니다",
+    });
+    expect(excludeDraft("domain", "news.한겨레.한국", null, [{ kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e" }])).toEqual({
+      ok: false, message: "이미 목록의 xn--h89at9srwx.xn--3e0b707e이(가) 이 도메인을 덮습니다",
+    });
+    // 점 경계가 아니면 다른 도메인, 이름 종류는 도메인을 덮지 않음, 더 넓은 도메인은 더할 수 있음
+    expect(excludeDraft("domain", "notxinhuanet.com", null, existing)).toMatchObject({ ok: true });
+    expect(excludeDraft("domain", "news.example.com", null, [{ kind: "name", value: "example.com" }])).toMatchObject({ ok: true });
+    expect(excludeDraft("domain", "example.com", null, [{ kind: "domain", value: "news.example.com" }])).toMatchObject({ ok: true });
+  });
+
   it("처음 값은 묶음별로(받은 순서), 묶음이 없으면 '그 밖'", () => {
     expect(excludeSeedGroups([
       { kind: "domain", value: "a.cn", group: "중국 국가·당 매체" },
@@ -624,5 +718,245 @@ describe("매체 제외 목록(계약 §6-2·6-4)", () => {
     expect(excludeKindLabel("domain")).toBe("도메인");
     expect(excludeKindLabel("name")).toBe("이름");
     expect(excludeKindLabel("other")).toBe("other");
+  });
+});
+
+// ------------------------------------------------------------------ 단계 4 — 공시·리서치·연결 보강(계약 §7)
+
+describe("날짜만 아는 줄(계약 §7-1 — timeBasis \"date\")", () => {
+  // DART·네이버 = 그 날짜의 KST 00:00, SEC = 미국 동부 00:00을 UTC로 바꾼 값 — KST 날짜가 출처의 날짜와 같습니다.
+  const dart = item({ id: "d", kind: "filing", source: "dart", timeBasis: "date", publishedAt: "2026-11-12T15:00:00+00:00" });
+  const secWinter = item({ id: "s1", kind: "filing", source: "sec_fts", timeBasis: "date", publishedAt: "2026-11-13T05:00:00+00:00" });
+  const secSummer = item({ id: "s2", kind: "filing", source: "sec_fts", timeBasis: "date", publishedAt: "2026-07-01T04:00:00+00:00" });
+
+  it("날짜만(YYYY-MM-DD) — 시각·'KST'를 붙이지 않음", () => {
+    expect(isDateOnly(dart)).toBe(true);
+    expect(isDateOnly(item())).toBe(false);
+    expect(itemTimeText(dart)).toBe("2026-11-13");
+    expect(itemTimeText(secWinter)).toBe("2026-11-13");
+    expect(itemTimeText(secSummer)).toBe("2026-07-01");
+    expect(itemTimeText(item())).toBe("2026-11-14 09:30 KST");
+    expect(itemTimeText(item({ timeBasis: "date", publishedAt: null }))).toBe("—");
+  });
+
+  it("목록의 시각 칸 — 날짜만 아는 줄은 날짜, 그 밖은 KST 시각, 모르면 '—'", () => {
+    expect(rowTimeText(dart)).toBe("2026-11-13");
+    expect(rowTimeText(item())).toBe("09:30");
+    expect(rowTimeText(item({ publishedAt: null }))).toBe("—");
+  });
+
+  it("날짜 묶음·기간 자르기도 그 날짜로(KST)", () => {
+    expect(groupByKstDate([dart, secWinter]).map((group) => group.date)).toEqual(["2026-11-13"]);
+    expect(countByRange([dart, secSummer], "2026-11-14")).toEqual({ "7d": 1, "30d": 1, "1y": 2, "2y": 2 });
+  });
+
+  it("수집 글 팝업의 시각도 날짜만", () => {
+    expect(readerOfFeedItem(dart, "DART 공시").time).toBe("2026-11-13");
+  });
+});
+
+describe("단계 4 출처·관계 이름", () => {
+  it("공시·리서치·연결 보강 출처 이름(응답의 상태 줄 이름이 없을 때)", () => {
+    expect(sourceLabel("sec")).toBe("SEC 공시(회사별)");
+    expect(sourceLabel("sec_fts")).toBe("SEC 전문 검색(이름)");
+    expect(sourceLabel("dart")).toBe("DART 공시");
+    expect(sourceLabel("yahoo_research")).toBe("투자의견 변경(Yahoo)");
+    expect(sourceLabel("naver_research")).toBe("증권사 리포트(네이버)");
+    expect(sourceLabel("insiders")).toBe("내부자 명단(Yahoo)");
+    expect(sourceLabel("gleif")).toBe("법인 관계(GLEIF)");
+    // 상태 줄의 이름이 있으면 그쪽
+    expect(sourceLabel("dart", [status({ source: "dart", label: "DART" })])).toBe("DART");
+  });
+
+  it("관계 이름 — 내부자·최상위 모회사·모회사·자회사, 모르는 관계는 이름 그대로", () => {
+    expect(relationLabel("insider")).toBe("내부자");
+    expect(relationLabel("ultimate_parent")).toBe("최상위 모회사");
+    expect(relationLabel("parent")).toBe("모회사");
+    expect(relationLabel("subsidiary")).toBe("자회사");
+    expect(relationLabel("mystery")).toBe("mystery");
+  });
+
+  it("연결 출처 이름 — Wikidata·13F·Yahoo·GLEIF", () => {
+    expect(linkSourceLabel("wikidata")).toBe("Wikidata");
+    expect(linkSourceLabel("13f")).toBe("13F 기관 목록");
+    expect(linkSourceLabel("yahoo")).toBe("Yahoo");
+    expect(linkSourceLabel("gleif")).toBe("GLEIF");
+    expect(linkSourceLabel("other")).toBe("other");
+  });
+
+  it("관계 묶음 순서 — 대표 다음 내부자, 최상위 모회사가 모회사 앞", () => {
+    const groups = linkGroups([
+      link({ relation: "subsidiary", name: "C" }),
+      link({ relation: "insider", name: "I", kind: "person" }),
+      link({ relation: "parent", name: "P" }),
+      link({ relation: "ultimate_parent", name: "U" }),
+      link({ relation: "ceo", name: "E", kind: "person" }),
+    ]);
+    expect(groups.map((group) => group.label)).toEqual(["대표", "내부자", "최상위 모회사", "모회사", "자회사"]);
+  });
+});
+
+function status(over: Partial<SearchSourceStatus>): SearchSourceStatus {
+  return { source: "gleif", label: "법인 관계(GLEIF)", status: "ok", count: 0, dropped: null, message: null, ...over };
+}
+
+function link(over: Partial<SearchLink>): SearchLink {
+  return { relation: "subsidiary", key: null, name: "X", kind: "company", source: "gleif", detail: null, ...over };
+}
+
+describe("연결 합치기(계약 §7-5 — 대상 풀기의 links + 연결 보강 경로)", () => {
+  it("대상 풀기의 연결이 먼저, 같은 관계·같은 대상(키, 없으면 이름 — 대소문자·공백 무시)은 한 줄 — 빠진 키·설명은 뒤 줄에서 채움", () => {
+    const merged = mergeLinks(
+      [
+        link({ relation: "subsidiary", key: "wd:Q100", name: "Mellanox", source: "wikidata" }),
+        link({ relation: "parent", key: null, name: "Acme Holdings", source: "wikidata" }),
+      ],
+      [
+        link({ relation: "parent", name: "ACME  holdings", detail: "US · LEI TEST00LEI0000000AB42" }),
+        link({ relation: "subsidiary", name: "Mellanox Technologies Ltd", detail: "IL · LEI TEST00LEI0000000CD17" }),
+        link({ relation: "insider", name: "Jane Roe", kind: "person", source: "yahoo", detail: "CFO" }),
+      ],
+    );
+    expect(merged.map((row) => [row.relation, row.name, row.source, row.detail ?? null])).toEqual([
+      ["subsidiary", "Mellanox", "wikidata", null],
+      ["parent", "Acme Holdings", "wikidata", "US · LEI TEST00LEI0000000AB42"],
+      ["subsidiary", "Mellanox Technologies Ltd", "gleif", "IL · LEI TEST00LEI0000000CD17"],
+      ["insider", "Jane Roe", "yahoo", "CFO"],
+    ]);
+  });
+
+  it("키 있는 Wikidata 연결과 키 없는 GLEIF 연결이 같은 관계·같은 이름이면 한 줄 — 키는 Wikidata, 설명은 GLEIF에서", () => {
+    const merged = mergeLinks(
+      [link({ relation: "parent", key: "wd:Q20800404", name: "Example Parent Inc.", source: "wikidata" })],
+      [link({ relation: "parent", key: null, name: "EXAMPLE PARENT INC.", source: "gleif", detail: "US · LEI TEST00LEI0000000PA22" })],
+    );
+    expect(merged).toEqual([
+      { relation: "parent", key: "wd:Q20800404", name: "Example Parent Inc.", kind: "company", source: "wikidata", detail: "US · LEI TEST00LEI0000000PA22" },
+    ]);
+  });
+
+  it("키 없는 줄이 앞에 있고 같은 이름의 키 있는 줄이 뒤에 오면 그 키로 채움 — 그 뒤 같은 키의 줄도 같은 줄", () => {
+    const merged = mergeLinks(
+      [link({ relation: "manager", key: null, name: "Jane Roe", kind: "person", source: "13f" })],
+      [
+        link({ relation: "manager", key: "wd:Q7", name: "jane roe", kind: "person", source: "wikidata" }),
+        link({ relation: "manager", key: "wd:Q7", name: "J. Roe", kind: "person", source: "wikidata", detail: "설명" }),
+      ],
+    );
+    expect(merged).toEqual([{ relation: "manager", key: "wd:Q7", name: "Jane Roe", kind: "person", source: "13f", detail: "설명" }]);
+  });
+
+  it("키가 다른 두 줄은 이름이 같아도 따로(동명이인), 그 이름의 키 없는 줄은 어느 쪽인지 짐작하지 않고 따로", () => {
+    const merged = mergeLinks(
+      [
+        link({ relation: "subsidiary", key: "wd:Q1", name: "Acme", source: "wikidata" }),
+        link({ relation: "subsidiary", key: "wd:Q2", name: "ACME", source: "wikidata" }),
+      ],
+      [link({ relation: "subsidiary", key: null, name: "acme", source: "gleif", detail: "US · LEI TEST00LEI0000000AC55" })],
+    );
+    expect(merged.map((row) => [row.key, row.source, row.detail ?? null])).toEqual([
+      ["wd:Q1", "wikidata", null],
+      ["wd:Q2", "wikidata", null],
+      [null, "gleif", "US · LEI TEST00LEI0000000AC55"],
+    ]);
+  });
+
+  it("관계가 다르면 같은 이름이어도 따로(대표와 내부자)", () => {
+    const merged = mergeLinks(
+      [link({ relation: "ceo", key: "wd:Q5", name: "Jane Roe", kind: "person", source: "wikidata" })],
+      [link({ relation: "insider", name: "Jane Roe", kind: "person", source: "yahoo" })],
+    );
+    expect(merged).toHaveLength(2);
+  });
+});
+
+describe("연결 탭 상태(계약 §7-7 — 받는 중·실패·건너뜀은 글로)", () => {
+  const entityLinks = [link({ relation: "founded_by", key: null, name: "Jensen Huang", kind: "person", source: "wikidata" })];
+  const response = (over: Partial<SearchLinksResponse> = {}): SearchLinksResponse => ({
+    available: true, entityKey: "us:NVDA",
+    links: [link({ relation: "insider", name: "Jane Roe", kind: "person", source: "yahoo", detail: "CFO" })],
+    sources: [status({ source: "insiders", label: "내부자 명단(Yahoo)", count: 1 }), status({ source: "gleif", status: "skipped", message: "LEI 없음" })],
+    fetchedAt: "2026-11-14T01:00:00+00:00", ...over,
+  });
+
+  it("받는 중 — 대상 풀기의 연결은 바로 보이고, 보강은 받는 중이라고(없다고 하지 않음)", () => {
+    const view = linksView({ entity: { links: entityLinks }, entitySettled: true, entityErrors: {}, response: null, loading: true, error: null });
+    expect(view.groups.map((group) => group.label)).toEqual(["창업자"]);
+    expect(view.extra).toEqual({ state: "loading", text: expect.stringContaining("받는 중") });
+    expect(view.empty).toBeNull();
+    expect(view.sources).toEqual([]);
+  });
+
+  it("받으면 합쳐 묶고 출처 상태를 넘긴다", () => {
+    const view = linksView({ entity: { links: entityLinks }, entitySettled: true, entityErrors: {}, response: response(), loading: false, error: null });
+    expect(view.groups.map((group) => group.label)).toEqual(["창업자", "내부자"]);
+    expect(view.extra).toBeNull();
+    expect(view.sources.map((row) => row.source)).toEqual(["insiders", "gleif"]);
+    expect(view.empty).toBeNull();
+  });
+
+  it("보강 경로가 실패하면(요청 실패·수집기 응답 없음) 사유를 글로, 대상 풀기의 연결은 그대로", () => {
+    const failed = linksView({ entity: { links: entityLinks }, entitySettled: true, entityErrors: {}, response: null, loading: false, error: "HTTP 502" });
+    expect(failed.extra).toEqual({ state: "error", text: expect.stringContaining("HTTP 502") });
+    expect(failed.groups).toHaveLength(1);
+    const offline = linksView({
+      entity: { links: entityLinks }, entitySettled: true, entityErrors: {}, response: { available: false, message: "수집기에서 응답을 받지 못했습니다." }, loading: false, error: null,
+    });
+    expect(offline.extra).toEqual({ state: "error", text: expect.stringContaining("수집기에서 응답을 받지 못했습니다.") });
+  });
+
+  it("연결이 하나도 없을 때 — 다 받았으면 없다고, 받지 못한 출처가 있으면 더 있는지 모른다고, 받는 중이면 말하지 않음", () => {
+    const none = linksView({ entity: { links: [] }, entitySettled: true, entityErrors: {}, response: response({ links: [] }), loading: false, error: null });
+    expect(none.empty).toMatch(/^가진 연결이 없습니다/);
+    const partly = linksView({
+      entity: { links: [] }, entitySettled: true, entityErrors: {},
+      response: response({ links: [], sources: [status({ source: "insiders", status: "error", message: "HTTP 429" })] }), loading: false, error: null,
+    });
+    expect(partly.empty).toMatch(/모릅니다/);
+    const failed = linksView({ entity: { links: [] }, entitySettled: true, entityErrors: {}, response: null, loading: false, error: "HTTP 502" });
+    expect(failed.empty).toMatch(/모릅니다/);
+    expect(linksView({ entity: { links: [] }, entitySettled: true, entityErrors: {}, response: null, loading: true, error: null }).empty).toBeNull();
+  });
+
+  it("대상은 풀렸지만 Wikidata를 받지 못했으면(errors.wikidata) 보강 출처가 모두 건너뜀이어도 '없다'고 하지 않고 모른다고, 사유를 한 줄로", () => {
+    const skippedOnly = response({
+      links: [],
+      sources: [
+        status({ source: "insiders", label: "내부자 명단(Yahoo)", status: "skipped", message: "미국 상장 회사가 아님" }),
+        status({ source: "gleif", status: "skipped", message: "LEI 없음" }),
+      ],
+    });
+    const view = linksView({ entity: { links: [] }, entitySettled: true, entityErrors: { wikidata: "HTTP 503" }, response: skippedOnly, loading: false, error: null });
+    expect(view.empty).toMatch(/모릅니다/);
+    expect(view.empty).not.toMatch(/^가진 연결이 없습니다/);
+    expect(view.entityNote).toBe("Wikidata 관계를 받지 못했습니다 — HTTP 503");
+    // 연결이 있어도(일부만 받음) 사유 줄은 남김
+    const partial = linksView({ entity: { links: entityLinks }, entitySettled: true, entityErrors: { wikidata: "HTTP 503" }, response: skippedOnly, loading: false, error: null });
+    expect(partial.entityNote).toBe("Wikidata 관계를 받지 못했습니다 — HTTP 503");
+    // 다른 출처의 오류(SEC 표 등)는 연결과 무관 — 다 받았으면 없다고
+    const other = linksView({ entity: { links: [] }, entitySettled: true, entityErrors: { sec: "HTTP 500" }, response: skippedOnly, loading: false, error: null });
+    expect(other.empty).toMatch(/^가진 연결이 없습니다/);
+    expect(other.entityNote).toBeNull();
+    // 대상 풀기 시간 초과(errors.entity — 수집기는 이때 wikidata 사유를 지움)도 Wikidata 관계를 모르는 것 — 수집기 _unknown_lei와 같은 기준
+    const timedOut = linksView({ entity: { links: [] }, entitySettled: true, entityErrors: { entity: "대상 풀기가 15초를 넘어 저장본 이름으로만 답함" }, response: skippedOnly, loading: false, error: null });
+    expect(timedOut.empty).toMatch(/모릅니다/);
+    expect(timedOut.entityNote).toBe("Wikidata 관계를 받지 못했습니다 — 대상 풀기가 15초를 넘어 저장본 이름으로만 답함");
+  });
+
+  it("실패 뒤 다시 받는 중이면(앞 응답이 남아 있어도) 실패 글이 아니라 받는 중", () => {
+    const offline = { available: false, message: "timeout" } as const;
+    const retrying = linksView({ entity: { links: entityLinks }, entitySettled: true, entityErrors: {}, response: offline, loading: true, error: null });
+    expect(retrying.extra).toEqual({ state: "loading", text: expect.stringContaining("받는 중") });
+    expect(retrying.empty).toBeNull();
+    // 받은 응답을 다시 읽는 동안(수동 새로고침)은 받는 중 줄을 띄우지 않음 — 보이던 연결 그대로
+    expect(linksView({ entity: { links: entityLinks }, entitySettled: true, entityErrors: {}, response: response(), loading: true, error: null }).extra).toBeNull();
+  });
+
+  it("대상을 풀지 못했으면 Wikidata·13F 연결은 모른다고 — 보강 경로의 연결은 보임", () => {
+    const view = linksView({ entity: null, entitySettled: true, entityErrors: {}, response: response(), loading: false, error: null });
+    expect(view.entityNote).toMatch(/대상을 풀지 못해/);
+    expect(view.groups.map((group) => group.label)).toEqual(["내부자"]);
+    expect(linksView({ entity: null, entitySettled: false, entityErrors: {}, response: null, loading: true, error: null }).entityNote).toMatch(/푸는 중/);
+    expect(linksView({ entity: { links: [] }, entitySettled: true, entityErrors: {}, response: response(), loading: false, error: null }).entityNote).toBeNull();
   });
 });

@@ -20,27 +20,29 @@ import {
   groupByKstDate,
   hasFilters,
   httpUrl,
+  isDateOnly,
   itemKindLabel,
   itemTimeText,
-  kstTime,
   kstToday,
   nextRowIndex,
   rangeCountsOf,
   readerOfFeedItem,
   refreshNoteText,
+  rowTimeText,
   sourceLabel,
   type FeedFacet,
   type FeedFilters,
 } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind, SearchFeedItem, SearchFeedTab, SearchRange } from "@/lib/types";
 import { AttributesPanel } from "./EntityParts";
-import { BUTTON, LINK, PANEL, PaneHeading, SourceStatusLine, segmentClass } from "./parts";
+import { BUTTON, ItemKindTag, LINK, PANEL, PaneHeading, SourceStatusLine, segmentClass } from "./parts";
 
 /**
  * 결과 세 칸(넓은 화면) — 왼쪽 거르기(기간·종류·출처·언어, 건수는 받은 자료 기준), 가운데 KST 날짜별 조밀한 목록(시각 · 종류 · 매체 · 제목),
  * 오른쪽 속성·미리 보기, 아래 출처 상태 줄. 좁은 화면은 한 칸 — 거르기는 접는 서랍, 미리 보기는 아래 시트.
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
+ * 날짜만 아는 줄(공시 접수일·리포트 날짜 — timeBasis "date", 계약 §7-1)은 시각 칸에 날짜만 두고, 공시·리서치 줄은 종류를 테두리 표지로 둡니다.
  * 수집 글(readerId)의 원문 팝업은 운영자에게만(그 경로가 운영자 전용 — D-1).
  *
  * 왼쪽 칸 맨 위에는 관심 대상 목록(aside — 단계 3, 좁은 화면은 따로 접힘)을 둡니다. '지금 새로 받기'는 캐시를 건너뛰고(refresh=1 — 사용자당
@@ -226,12 +228,12 @@ export function FeedPanel({
                     }`}
                   >
                     {isSelected ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
-                    <span className="flex flex-col text-xs tabular-nums text-text-2 lg:text-sm">
-                      <span>{kstTime(item.publishedAt) ?? EMPTY}</span>
+                    <span className={`flex flex-col text-xs tabular-nums text-text-2 ${isDateOnly(item) ? "whitespace-nowrap" : "lg:text-sm"}`}>
+                      <span>{rowTimeText(item)}</span>
                       {item.timeBasis === "fetched" ? <span className="text-xs text-text-3">받은 시각</span> : null}
                     </span>
                     <span className="col-start-2 row-start-2 text-xs text-text-3 lg:col-start-auto lg:row-start-auto">
-                      {itemKindLabel(item.kind)}
+                      <ItemKindTag kind={item.kind} />
                       <span className="lg:hidden"> · {item.publisher ?? EMPTY}</span>
                     </span>
                     <span className="hidden truncate text-xs text-text-2 lg:block">{item.publisher ?? EMPTY}</span>
@@ -396,7 +398,9 @@ function FeedPreview({
 }) {
   const url = httpUrl(item.url);
   const rows: [string, string][] = [
-    ["시각", `${itemTimeText(item)}${item.timeBasis === "fetched" ? " (받은 시각 — 출처가 작성 시각을 주지 않음)" : ""}`],
+    isDateOnly(item)
+      ? ["날짜", `${itemTimeText(item)} (출처가 날짜만 줌)`]
+      : ["시각", `${itemTimeText(item)}${item.timeBasis === "fetched" ? " (받은 시각 — 출처가 작성 시각을 주지 않음)" : ""}`],
     ["매체", [item.publisher, item.publisherDomain].filter(Boolean).join(" · ") || EMPTY],
     ["종류", itemKindLabel(item.kind)],
     ["받은 곳", label],

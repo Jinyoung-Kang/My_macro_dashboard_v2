@@ -306,6 +306,8 @@ describe("보도자료·경제지(새 피드 묶음 — 정보 검색 계약 §6
     expect(world.note).toContain("모의 매매 패킷에는 들어가지 않습니다");
     expect(world.note).not.toContain("11b_events");
     expect(world.empty).toContain("90일");
+    // 목록이 있을 때도 늘 보이는 안내 글에 보관 기간
+    expect(world.note).toContain("보관 90일");
     expect(world.pager).toBe("보도자료·경제지");
   });
 

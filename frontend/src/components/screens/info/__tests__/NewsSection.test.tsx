@@ -59,6 +59,8 @@ describe("뉴스·글 — 보도자료·경제지 보기", () => {
     expect(await screen.findByRole("button", { name: "ECB keeps rates unchanged" })).toBeTruthy();
     expect(called("/api/info/headlines")).toEqual([endpoints.info.headlines({ set: "world", page: 1, size: 10 })]);
     expect(screen.getByText(/모의 매매 패킷에는 들어가지 않습니다/)).toBeTruthy();
+    // 보관 기간은 목록이 있을 때도 안내 글에(빈 목록 안내에만 두지 않음)
+    expect(screen.getByText(/보관 90일/)).toBeTruthy();
     expect(screen.queryByText(/11b_events/)).toBeNull();
     expect(screen.getByText(/European Central Bank/)).toBeTruthy();
     expect(screen.getByText("2026-11-14 09:30 KST")).toBeTruthy();

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { ErrorState, Loading } from "@/components/ui";
 import { ExternalLinkIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -13,10 +14,18 @@ import { PANEL, PaneHeading } from "./parts";
  * 첫 화면의 최근 글(GET /api/search/recent — 계약 §6-4): 새 피드 묶음(중앙은행 보도자료·경제지 RSS 12곳)의 최근 30건, 운영자에게는 속보 최근 20건을
  * 더합니다. 저장본만 읽고(외부 호출 없음), KST 날짜로 묶어 시각 · 종류 · 매체 · 제목(원문 새 창)을 보입니다. 기사 본문은 받지 않습니다.
  * 읽지 못한 저장본(응답의 errors)은 출처와 사유를 위에 적고, 그때 빈 목록은 '없음'이 아니라 '모름'으로 보입니다.
+ * version이 바뀌면(첫 화면에서 제외 매체를 더하거나 지움) 보이던 목록을 둔 채 다시 읽습니다.
  */
-export function RecentPanel({ owner }: { owner: boolean }) {
+export function RecentPanel({ owner, version = 0 }: { owner: boolean; version?: number }) {
   const recent = useApi<SearchRecentResponse>(endpoints.search.recent);
   const data = recent.data;
+  const { reload } = recent;
+  const readVersion = useRef(version);
+  useEffect(() => {
+    if (readVersion.current === version) return;
+    readVersion.current = version;
+    void reload();
+  }, [version, reload]);
 
   let body;
   if (!data) {

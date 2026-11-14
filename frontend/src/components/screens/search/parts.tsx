@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { BuildingIcon, LandmarkIcon, PersonIcon, StatusText, TagIcon } from "@/components/ui/icons";
-import { entityKindLabel, sourceStatusView } from "@/lib/infoSearch";
+import { entityKindLabel, itemKindLabel, sourceStatusView } from "@/lib/infoSearch";
 import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
 
 /*
@@ -56,6 +56,15 @@ export function KindBadge({ kind }: { kind: SearchEntityKind | null | undefined 
       {entityKindLabel(kind)}
     </span>
   );
+}
+
+/**
+ * 결과 줄의 종류 — 공시·리서치는 테두리 표지로 둬 타임라인에서 뉴스와 갈라 봅니다(글과 테두리로 — 색만이 아니고, 누를 수 없으니 강조 파랑을 쓰지 않음).
+ */
+export function ItemKindTag({ kind }: { kind: string }) {
+  const label = itemKindLabel(kind);
+  if (kind !== "filing" && kind !== "research") return <>{label}</>;
+  return <span className="inline-flex items-center rounded-control border border-border-strong px-1 leading-4 text-text-2">{label}</span>;
 }
 
 /** 별칭·식별자 꼬리표. */

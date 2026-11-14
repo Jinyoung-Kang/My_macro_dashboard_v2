@@ -1,6 +1,6 @@
 /**
- * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes.
- * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
+ * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes, 단계 4의 links.
+ * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6·§7입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
  * 수집기에 닿지 못하면 `{available: false, message}`만 보냅니다. 모르는 값은 null(화면은 '—', 0으로 채우지 않음). 시각은 UTC ISO.
  */
 
@@ -39,7 +39,13 @@ export type SearchLinkRelation =
   | "parent"
   | "subsidiary"
   | "manager"
-  | "managed_by";
+  | "managed_by"
+  // 단계 4(계약 §7-5) — 미국 상장사의 내부자 명단(Yahoo), 법인의 최상위 모회사(GLEIF).
+  | "insider"
+  | "ultimate_parent";
+
+/** 연결의 출처 — 대상 풀기(Wikidata·13F)와 연결 보강(단계 4 — Yahoo 내부자 명단·GLEIF 법인 관계). */
+export type SearchLinkSource = "wikidata" | "13f" | "yahoo" | "gleif";
 
 export type SearchLink = {
   relation: SearchLinkRelation | string;
@@ -47,7 +53,9 @@ export type SearchLink = {
   key: string | null;
   name: string;
   kind: SearchEntityKind | null;
-  source: string;
+  source: SearchLinkSource | string;
+  /** 한 줄 설명(단계 4 — 내부자의 직위·최근 거래, 법인의 소재지·LEI). 없으면 null, 대상 풀기의 옛 응답에는 칸이 없습니다. */
+  detail?: string | null;
 };
 
 export type SearchEntityIds = {
@@ -57,6 +65,8 @@ export type SearchEntityIds = {
   cik: string | null;
   dartCorpCode: string | null;
   wikidata: string | null;
+  /** 법인 식별자(단계 4 — Wikidata P1278의 첫 값, 20자). 없으면 null, 하루 캐시의 옛 응답에는 칸이 없습니다. */
+  lei?: string | null;
 };
 
 export type SearchEntity = {
@@ -89,9 +99,12 @@ export type SearchFeedItem = {
   url: string | null;
   publisher: string | null;
   publisherDomain: string | null;
-  /** 작성 시각(timeBasis가 fetched면 처음 받은 시각). UTC ISO. */
+  /**
+   * 작성 시각(timeBasis가 fetched면 처음 받은 시각, date면 그 날짜의 출처 달력 00:00 — DART·네이버 KST, SEC 미국 동부). UTC ISO.
+   */
   publishedAt: string | null;
-  timeBasis: "published" | "fetched";
+  /** published = 작성 시각, fetched = 처음 받은 시각(시각 칸 없는 피드), date = 날짜만 아는 출처(단계 4 — 화면은 날짜만). */
+  timeBasis: "published" | "fetched" | "date";
   source: string;
   lang: "ko" | "en" | null | string;
   summary: string | null;
@@ -184,3 +197,16 @@ export type SearchExcludeAdded = { id: number; kind: SearchExcludeKind | string;
 
 /** GET /api/search/excludes. */
 export type SearchExcludesResponse = SearchRelay & { seed?: SearchExcludeSeed[]; added?: SearchExcludeAdded[] };
+
+// ------------------------------------------------------------------ 단계 4 — 연결 보강(계약 §7-5)
+
+/**
+ * GET /api/search/links — 연결 탭을 열 때 따로 부르는 연결 보강(미국 상장사의 내부자 명단 · LEI가 있는 법인의 모회사·자회사).
+ * 화면은 대상 풀기의 links와 합쳐 관계별로 보입니다. sources는 출처마다 한 줄(받는 중·실패·건너뜀을 빈 목록으로 숨기지 않음).
+ */
+export type SearchLinksResponse = SearchRelay & {
+  entityKey?: string;
+  links?: SearchLink[];
+  sources?: SearchSourceStatus[];
+  fetchedAt?: string | null;
+};

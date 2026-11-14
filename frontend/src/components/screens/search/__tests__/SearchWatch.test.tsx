@@ -46,6 +46,18 @@ function row(over: Partial<SearchFeedItem>): SearchFeedItem {
 const WATCH_NVDA = { id: 7, key: "us:NVDA", kind: "company", name: "엔비디아", createdAt: "2026-11-10T00:00:00+00:00", lastSeenAt: "2026-11-13T00:00:00+00:00", newCount: 3 };
 const WATCH_BRK = { id: 8, key: "cik:0001067983", kind: "institution", name: "버크셔 해서웨이", createdAt: "2026-11-10T00:00:00+00:00", lastSeenAt: null, newCount: 0 };
 
+/** 합성 관심 대상 n개(주제). */
+function manyWatches(count: number) {
+  return Array.from({ length: count }, (_, at) => ({ ...WATCH_BRK, id: 100 + at, key: `topic:합성 주제 ${at}`, kind: "topic", name: `합성 주제 ${at}` }));
+}
+
+/** 관심 대상 목록의 스크롤 영역 — 높이 상한·세로 스크롤·Tab으로 닿음(jsdom은 배치를 재지 않아 클래스로 확인). */
+function expectBoundedScroll(region: HTMLElement) {
+  expect(region.getAttribute("tabindex")).toBe("0");
+  expect(region.className).toContain("overflow-y-auto");
+  expect(region.className).toMatch(/max-h-\[min\(40dvh,24rem\)\]/);
+}
+
 function watchList(items: unknown[], over: Record<string, unknown> = {}) {
   return { available: true, items, limits: { mine: items.length, max: 10, serverUsed: 5, serverMax: 100 }, collecting: false, ...over };
 }
@@ -171,6 +183,51 @@ describe("첫 화면 — 관심 대상과 최근 글", () => {
     const recent = await screen.findByRole("list", { name: "최근 글" });
     expect(within(recent).getByText("ECB 보도자료")).toBeTruthy();
     expect(screen.getByText(/속보 — 저장소를 읽지 못함\(OperationalError\)/)).toBeTruthy();
+  });
+
+  it("관심 대상이 많아도(상한 50) 목록은 제 높이 안에서 스크롤한다 — 키보드로 닿는 이름 있는 영역, 최근 글을 밀어내지 않음", async () => {
+    reads[endpoints.search.watch] = watchList(manyWatches(50), { limits: { mine: 50, max: 50, serverUsed: 50, serverMax: 100 } });
+    reads[endpoints.search.recent] = { available: true, items: [], fetchedAt: null };
+    renderScreen(OWNER);
+    const region = await screen.findByRole("region", { name: "관심 대상 목록 (위아래 스크롤)" });
+    expectBoundedScroll(region);
+    expect(within(within(region).getByRole("list", { name: "관심 대상 목록" })).getAllByRole("button")).toHaveLength(50);
+    // 목록 아래 상한 한 줄은 스크롤 영역 밖(늘 보임)
+    expect(within(region).queryByText("내 목록 50 / 50 · 서버 전체 50 / 100")).toBeNull();
+    expect(screen.getByText("내 목록 50 / 50 · 서버 전체 50 / 100")).toBeTruthy();
+  });
+});
+
+describe("대상 화면의 관심 대상 칸", () => {
+  beforeEach(() => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "news")] = feed({ tab: "news" });
+  });
+
+  it("목록은 제 높이 안에서 스크롤한다 — 거르기(기간·종류·출처)를 밀어내지 않음", async () => {
+    reads[endpoints.search.watch] = watchList(manyWatches(50));
+    renderScreen(MEMBER, "/search?e=us:NVDA&tab=news");
+    const region = await screen.findByRole("region", { name: "관심 대상 목록 (위아래 스크롤)" });
+    expectBoundedScroll(region);
+    expect(within(region).getAllByRole("button")).toHaveLength(50);
+    expect(within(region).queryByRole("group", { name: "기간" })).toBeNull();
+  });
+
+  it("좁은 화면의 접힌 서랍 머리에 새 글 수 합계 — 모르는 수(null)는 0으로도 세지 않고, 합계가 없으면 붙이지 않음", async () => {
+    reads[endpoints.search.watch] = watchList([
+      WATCH_NVDA,
+      { ...WATCH_BRK, newCount: 2 },
+      { ...WATCH_BRK, id: 9, key: "topic:HBM", kind: "topic", name: "HBM", newCount: null },
+    ]);
+    renderScreen(MEMBER, "/search?e=us:NVDA&tab=news");
+    const header = await screen.findByRole("button", { name: "관심 대상 3 · 새 글 5" });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("새 글이 없으면 머리는 개수만", async () => {
+    reads[endpoints.search.watch] = watchList([WATCH_BRK, { ...WATCH_BRK, id: 9, key: "topic:HBM", kind: "topic", name: "HBM", newCount: null }]);
+    renderScreen(MEMBER, "/search?e=us:NVDA&tab=news");
+    expect(await screen.findByRole("button", { name: "관심 대상 2" })).toBeTruthy();
   });
 });
 
@@ -315,6 +372,25 @@ describe("지금 새로 받기", () => {
     expect(screen.getByText("10분에 한 번만 새로 받습니다 — 다음은 10:10 KST부터")).toBeTruthy();
   });
 
+  it("새로 받은 응답에 받지 못한 출처가 있으면 '새로 받았습니다' 줄에 그렇다고 붙인다", async () => {
+    reads[endpoints.search.watch] = watchList([]);
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = feed();
+    reads[endpoints.search.feed("us:NVDA", "timeline", true)] = feed({
+      items: [row({ id: "n1", title: "방금 받은 기사", source: "google_en", kind: "news" })],
+      sources: [
+        { source: "google_en", label: "구글 뉴스(영어)", status: "ok", count: 1, dropped: null, message: null },
+        { source: "gdelt", label: "GDELT", status: "error", count: null, dropped: null, message: "시간 초과" },
+      ],
+      fetchedAt: "2026-11-14T01:05:00+00:00",
+    });
+    renderScreen(MEMBER, "/search?e=us:NVDA");
+    await screen.findByRole("option", { name: /연준 보도자료 한 줄/ });
+    fireEvent.click(screen.getByRole("button", { name: "지금 새로 받기" }));
+    await screen.findByRole("option", { name: /방금 받은 기사/ });
+    expect(screen.getByText("새로 받았습니다 — 받은 시각 2026-11-14 10:05 KST — 일부 출처는 받지 못함(아래 출처 상태)")).toBeTruthy();
+  });
+
   it("새로 받기가 수집기에 닿지 못하면(available:false) 보이던 결과와 단추를 그대로 두고 실패를 상태 영역에 알린다", async () => {
     reads[endpoints.search.watch] = watchList([]);
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
@@ -400,6 +476,70 @@ describe("매체 제외 목록", () => {
     fireEvent.click(within(form).getByRole("button", { name: "더하기" }));
     expect((await within(form).findByRole("alert")).textContent).toContain("이미 목록에 있습니다");
     expect(api.apiPost).not.toHaveBeenCalled();
+  });
+
+  it("운영자 — 더하거나 지우면 최근 글을 다시 읽는다(서버가 이미 빼고 줌)", async () => {
+    renderScreen(OWNER);
+    await waitFor(() => expect(sharedCalls().filter((path) => path === endpoints.search.recent)).toHaveLength(1));
+    fireEvent.click(await screen.findByRole("button", { name: /매체 제외 목록/ }));
+    const form = await screen.findByRole("form", { name: "제외 매체 더하기" });
+    fireEvent.change(within(form).getByLabelText("값"), { target: { value: "example.org" } });
+    fireEvent.click(within(form).getByRole("button", { name: "더하기" }));
+    await waitFor(() => expect(sharedCalls().filter((path) => path === endpoints.search.recent)).toHaveLength(2));
+
+    fireEvent.click(within(screen.getByRole("list", { name: "더한 제외 매체" })).getByRole("button", { name: "Some Media 지우기" }));
+    await waitFor(() => expect(sharedCalls().filter((path) => path === endpoints.search.recent)).toHaveLength(3));
+  });
+
+  it("운영자 — 더하기가 실패하면 최근 글을 다시 읽지 않는다", async () => {
+    api.apiPost.mockRejectedValue(Object.assign(new Error("도메인 형식이 올바르지 않습니다"), { status: 400 }));
+    renderScreen(OWNER);
+    await waitFor(() => expect(sharedCalls().filter((path) => path === endpoints.search.recent)).toHaveLength(1));
+    fireEvent.click(await screen.findByRole("button", { name: /매체 제외 목록/ }));
+    const form = await screen.findByRole("form", { name: "제외 매체 더하기" });
+    fireEvent.change(within(form).getByLabelText("값"), { target: { value: "example.org" } });
+    fireEvent.click(within(form).getByRole("button", { name: "더하기" }));
+    expect((await within(form).findByRole("alert")).textContent).toContain("도메인 형식이 올바르지 않습니다");
+    expect(sharedCalls().filter((path) => path === endpoints.search.recent)).toHaveLength(1);
+  });
+
+  it("운영자 — 국제화 도메인은 punycode로 보내고 메모가 비면 입력한 표기를, www 주소를 붙여 넣으면 www를 떼어 이미 있는 줄로 본다", async () => {
+    reads[endpoints.search.excludes] = {
+      ...EXCLUDES,
+      added: [...EXCLUDES.added, { id: 4, kind: "domain", value: "xn--h89at9srwx.xn--3e0b707e", note: "입력: 한겨레.한국", createdAt: "2026-11-14T01:00:00+00:00" }],
+    };
+    renderScreen(OWNER);
+    fireEvent.click(await screen.findByRole("button", { name: /매체 제외 목록/ }));
+    const form = await screen.findByRole("form", { name: "제외 매체 더하기" });
+
+    fireEvent.change(within(form).getByLabelText("값"), { target: { value: "https://WWW.한겨레.한국/path" } });
+    fireEvent.click(within(form).getByRole("button", { name: "더하기" }));
+    expect((await within(form).findByRole("alert")).textContent).toContain("이미 목록에 있습니다");
+
+    fireEvent.change(within(form).getByLabelText("값"), { target: { value: "news.한겨레.한국" } });
+    fireEvent.click(within(form).getByRole("button", { name: "더하기" }));
+    await waitFor(() =>
+      expect(within(form).getByRole("alert").textContent).toContain("이미 목록의 xn--h89at9srwx.xn--3e0b707e이(가) 이 도메인을 덮습니다"),
+    );
+    expect(api.apiPost).not.toHaveBeenCalled();
+
+    fireEvent.change(within(form).getByLabelText("값"), { target: { value: "Bücher.example" } });
+    fireEvent.click(within(form).getByRole("button", { name: "더하기" }));
+    await waitFor(() =>
+      expect(postCalls()).toContainEqual([endpoints.search.excludes, { kind: "domain", value: "xn--bcher-kva.example", note: "입력: bücher.example" }]),
+    );
+  });
+
+  it("더한 매체 줄 — 좁은 화면에서는 메모가 값 아래 한 줄을 다 쓴다(글자마다 끊기지 않게)", async () => {
+    renderScreen(MEMBER);
+    fireEvent.click(await screen.findByRole("button", { name: /매체 제외 목록/ }));
+    const added = await screen.findByRole("list", { name: "더한 제외 매체" });
+    const note = within(added).getByText("사용자 추가");
+    // 좁은 화면: 줄의 마지막으로 내려 한 줄을 다 씀 · sm 이상: 값 옆 남은 폭
+    expect(note.className).toContain("order-last");
+    expect(note.className).toContain("basis-full");
+    expect(note.className).toContain("sm:order-none");
+    expect(note.className).toContain("sm:basis-0");
   });
 
   it("회원 — 목록은 읽기만(더하기·지우기 없음)", async () => {

@@ -12,15 +12,21 @@ import {
   watchCollectingNote,
   watchKeyOf,
   watchLimitsText,
+  watchNewTotal,
 } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
 import { BUTTON, KindIcon, PaneHeading } from "./parts";
+
+/** 관심 대상 목록 스크롤 영역의 높이 상한 — 화면 높이의 40%, 많아야 24rem. */
+const LIST_SCROLL = "max-h-[min(40dvh,24rem)] overflow-y-auto";
 
 /**
  * 왼쪽 칸의 관심 대상 목록(ADR 0041 결정 9 — 계약 §6-4): 이름 · 종류 · 마지막으로 본 뒤 새 글 수. 누르면 그 대상을 엽니다.
  * 알림은 이 수뿐입니다(알림함·텔레그램 없음). 정기 수집이 꺼진 곳(로컬·QA)이면 그렇다고 적습니다.
  *
- * collapsible이면 lg 미만에서 접는 서랍(머리 단추로 펼침), lg 이상은 늘 펼침. 첫 화면은 접지 않습니다.
+ * collapsible이면 lg 미만에서 접는 서랍(머리 단추로 펼침 — 머리에 개수와 새 글 수 합계), lg 이상은 늘 펼침. 첫 화면은 접지 않습니다.
+ * 목록은 제 높이 상한 안에서 스크롤합니다(상한 50개 — 대상 화면의 거르기 칸·첫 화면의 최근 글을 밀어내지 않게). 그 영역은 Tab으로 닿아
+ * 키보드로도 스크롤합니다. 영역이 넘침을 자르므로 줄의 포커스 링은 안쪽에 그립니다.
  */
 export function WatchPane({
   watch,
@@ -68,38 +74,45 @@ export function WatchPane({
         {items.length === 0 ? (
           <p className="text-xs leading-5 text-text-2">등록한 관심 대상이 없습니다 — 대상을 열고 머리의 &lsquo;관심 대상 등록&rsquo;을 누르세요.</p>
         ) : (
-          <ul aria-label="관심 대상 목록" className="-mx-1 flex flex-col">
-            {items.map((item) => {
-              const count = newCountText(item.newCount);
-              const current = item.key === currentKey;
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(item.key)}
-                    aria-current={current ? "true" : undefined}
-                    className={`relative flex min-h-11 w-full items-center gap-2 rounded-control px-2 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8 ${
-                      current ? "bg-surface-2" : ""
-                    }`}
-                  >
-                    {current ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
-                    <span className="text-text-3">
-                      <KindIcon kind={item.kind as SearchEntityKind} size={14} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-accent">{item.name}</span>
-                      <span className="block text-xs text-text-3">{entityKindLabel(item.kind as SearchEntityKind)}</span>
-                    </span>
-                    {count ? (
-                      <span className="shrink-0 rounded-control border border-border-strong bg-surface-2 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-text">
-                        {count}
+          <div
+            role="region"
+            aria-label="관심 대상 목록 (위아래 스크롤)"
+            tabIndex={0}
+            className={`-mx-1 rounded-control ${LIST_SCROLL} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
+          >
+            <ul aria-label="관심 대상 목록" className="flex flex-col">
+              {items.map((item) => {
+                const count = newCountText(item.newCount);
+                const current = item.key === currentKey;
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpen(item.key)}
+                      aria-current={current ? "true" : undefined}
+                      className={`relative flex min-h-11 w-full items-center gap-2 rounded-control px-2 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus lg:min-h-8 ${
+                        current ? "bg-surface-2" : ""
+                      }`}
+                    >
+                      {current ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
+                      <span className="text-text-3">
+                        <KindIcon kind={item.kind as SearchEntityKind} size={14} />
                       </span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-accent">{item.name}</span>
+                        <span className="block text-xs text-text-3">{entityKindLabel(item.kind as SearchEntityKind)}</span>
+                      </span>
+                      {count ? (
+                        <span className="shrink-0 rounded-control border border-border-strong bg-surface-2 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-text">
+                          {count}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
         {limits ? <p className="text-xs text-text-3">{limits}</p> : null}
         {note ? <p className="text-xs leading-5 text-text-3">{note}</p> : null}
@@ -109,6 +122,7 @@ export function WatchPane({
   }
 
   const count = items.length;
+  const newTotal = newCountText(watchNewTotal(items));
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-2">
       {collapsible ? (
@@ -120,7 +134,10 @@ export function WatchPane({
             onClick={() => setExpanded((value) => !value)}
             className={`${BUTTON} justify-between lg:hidden`}
           >
-            <span id={headingId}>관심 대상{count > 0 ? ` ${count}` : ""}</span>
+            <span id={headingId}>
+              관심 대상{count > 0 ? ` ${count}` : ""}
+              {newTotal ? ` · ${newTotal}` : ""}
+            </span>
             <ChevronDownIcon size={14} className={expanded ? "rotate-180" : ""} />
           </button>
           <div className="hidden lg:block">

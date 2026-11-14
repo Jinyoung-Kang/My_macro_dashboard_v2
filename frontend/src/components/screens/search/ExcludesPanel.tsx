@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useCallback, useId, useState, type FormEvent } from "react";
 import { NativeSelect, inputClasses } from "@/components/ui";
 import { ChevronDownIcon, StatusText } from "@/components/ui/icons";
 import { useInfoSearchExcludes } from "@/hooks/useInfoSearchWatch";
@@ -15,12 +15,28 @@ const FIELD = `${inputClasses("sm")} w-full`;
  * 매체 제외 목록(계약 §6-2·6-4, ADR 0041 결정 6) — 펼칠 때만 읽습니다(GET /api/search/excludes — 회원). 처음 값(코드 상수 — 중국 국가·당 매체,
  * 본토·홍콩·마카오 매체, 중국 자본 금융 매체)은 묶음별로 읽기만, 운영자가 더한 것은 운영자만 더하고 지웁니다(POST·DELETE — 운영자).
  * 중국어 제목과 주소가 .cn인 매체는 이 목록과 상관없이 늘 빠집니다(수집기가 거름).
+ * 더하기·지우기가 성공하면 onChanged를 부릅니다(첫 화면이 최근 글을 다시 읽음 — 서버는 이미 바뀐 목록으로 거른 글을 줌).
  */
-export function ExcludesPanel({ owner }: { owner: boolean }) {
+export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?: () => void }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const excludes = useInfoSearchExcludes(open);
   const data = excludes.data;
+  const { add: addExclude, remove: removeExclude } = excludes;
+  const add = useCallback(
+    async (body: Parameters<typeof addExclude>[0]) => {
+      const ok = await addExclude(body);
+      if (ok) onChanged?.();
+      return ok;
+    },
+    [addExclude, onChanged],
+  );
+  const remove = useCallback(
+    async (id: number) => {
+      if (await removeExclude(id)) onChanged?.();
+    },
+    [removeExclude, onChanged],
+  );
   const seed = data?.available ? (data.seed ?? []) : [];
   const added = data?.available ? (data.added ?? []) : [];
 
@@ -48,17 +64,20 @@ export function ExcludesPanel({ owner }: { owner: boolean }) {
             ) : (
               <ul aria-label="더한 제외 매체" className="flex flex-col divide-y divide-border rounded-control border border-border">
                 {added.map((row) => (
+                  // 좁은 화면(sm 미만)은 메모를 줄 끝으로 내려 한 줄을 다 쓰게 합니다 — 값 옆에 끼우면 메모 칸이 좁아져 글자마다 끊깁니다.
                   <li key={row.id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1 text-sm lg:min-h-8">
-                    <span className="font-medium text-text">{row.value}</span>
+                    <span className="min-w-0 break-all font-medium text-text">{row.value}</span>
                     <span className="text-xs text-text-3">{excludeKindLabel(row.kind)}</span>
-                    {row.note ? <span className="min-w-0 flex-1 text-xs text-text-2">{row.note}</span> : <span className="flex-1" />}
-                    <span className="text-xs tabular-nums text-text-3">{row.createdAt ? formatKst(row.createdAt) : EMPTY}</span>
+                    {row.note ? (
+                      <span className="order-last basis-full break-words text-xs text-text-2 sm:order-none sm:min-w-0 sm:flex-1 sm:basis-0">{row.note}</span>
+                    ) : null}
+                    <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-text-3">{row.createdAt ? formatKst(row.createdAt) : EMPTY}</span>
                     {owner ? (
                       <button
                         type="button"
                         className={BUTTON}
                         disabled={excludes.busy}
-                        onClick={() => void excludes.remove(row.id)}
+                        onClick={() => void remove(row.id)}
                         aria-label={`${row.value} 지우기`}
                       >
                         지우기
@@ -75,7 +94,7 @@ export function ExcludesPanel({ owner }: { owner: boolean }) {
               error={excludes.actionError}
               existing={[...seed, ...added]}
               onError={excludes.setActionError}
-              onAdd={excludes.add}
+              onAdd={add}
             />
           ) : (
             <p className="text-xs text-text-3">제외 매체를 더하고 지우는 것은 운영자만 합니다.</p>

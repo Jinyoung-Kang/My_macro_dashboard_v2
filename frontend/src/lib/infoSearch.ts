@@ -3,7 +3,8 @@
  *
  * 계약(docs/specs/2026-11-14-info-search-contract.md)의 화면 몫만 둡니다: 주소 상태(?q= · ?e=&tab=&range=), 대상 키 모양 검사(주소로 넘어가기 전),
  * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드,
- * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기).
+ * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기), 단계 4의 공시·리서치 탭(대상 종류에 따라)·날짜만 아는 줄·
+ * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글).
  * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
  */
 import { holderQuery, institutionHref, stockHref } from "./detail";
@@ -18,6 +19,7 @@ import type {
   SearchFeedTab,
   SearchExcludeSeed,
   SearchLink,
+  SearchLinksResponse,
   SearchRange,
   SearchSourceStatus,
   SearchWatchItem,
@@ -26,12 +28,17 @@ import type {
 
 // ------------------------------------------------------------------ 탭·기간
 
-/** 화면의 탭 — 타임라인·뉴스·글·논평은 결과 경로(feed), 보유는 13F 경로, 연결은 대상 풀기의 links. 공시·리서치는 단계 4. */
-export type SearchTabKey = "timeline" | "news" | "posts" | "holdings" | "links";
+/**
+ * 화면의 탭 — 타임라인·뉴스·공시·리서치·글·논평은 결과 경로(feed), 보유는 13F 경로, 연결은 대상 풀기의 links + 연결 보강 경로(단계 4).
+ * 순서는 지시문 §4.2의 표 순서입니다.
+ */
+export type SearchTabKey = "timeline" | "news" | "filings" | "research" | "posts" | "holdings" | "links";
 
 export const SEARCH_TABS: readonly { key: SearchTabKey; label: string }[] = [
   { key: "timeline", label: "타임라인" },
   { key: "news", label: "뉴스" },
+  { key: "filings", label: "공시" },
+  { key: "research", label: "리서치" },
   { key: "posts", label: "글·논평" },
   { key: "holdings", label: "보유" },
   { key: "links", label: "연결" },
@@ -51,23 +58,39 @@ export const DEFAULT_RANGE: SearchRange = "30d";
 const TAB_KEYS = new Set<string>(SEARCH_TABS.map((tab) => tab.key));
 const RANGE_KEYS = new Set<string>(SEARCH_RANGES.map((range) => range.key));
 
-/** 이 대상·사용자에게 보이는 탭. 글·논평은 운영자만(D-1 — 회원이 부르면 403), 보유는 기업·기관만. */
-export function tabsFor(kind: SearchEntityKind, owner: boolean): SearchTabKey[] {
+/**
+ * 이 대상·사용자에게 보이는 탭. 글·논평은 운영자만(D-1 — 회원이 부르면 403), 보유는 기업·기관만, 공시는 주제 밖 모두(기업·기관·사람),
+ * 리서치는 상장 기업만(계약 §7-2·7-3·7-7 — 수집기도 상장되지 않은 기업에는 리서치 출처를 묻지 않음).
+ *
+ * @param listed 미국·한국 상장 종목인가(isListedEntity)
+ */
+export function tabsFor(kind: SearchEntityKind, owner: boolean, listed: boolean): SearchTabKey[] {
   return SEARCH_TABS.map((tab) => tab.key).filter((key) => {
     if (key === "posts") return owner;
     if (key === "holdings") return kind === "company" || kind === "institution";
+    if (key === "filings") return kind !== "topic";
+    if (key === "research") return kind === "company" && listed;
     return true;
   });
 }
 
 /** 주소의 탭을 이 대상·사용자에게 맞춤 — 고를 수 없는 탭이면 타임라인. */
-export function tabFor(requested: SearchTabKey, kind: SearchEntityKind, owner: boolean): SearchTabKey {
-  return tabsFor(kind, owner).includes(requested) ? requested : DEFAULT_TAB;
+export function tabFor(requested: SearchTabKey, kind: SearchEntityKind, owner: boolean, listed: boolean): SearchTabKey {
+  return tabsFor(kind, owner, listed).includes(requested) ? requested : DEFAULT_TAB;
+}
+
+/**
+ * 미국·한국 상장 종목인가 — 풀린 대상의 시장(ids.market), 풀기 전·풀지 못했으면 키 앞부분(us:·kr: — 수집기가 늘 시장을 채우는 키).
+ * wd:로 열었어도 풀린 대상이 상장 종목이면 상장, 시장이 없는 wd: 기업은 상장 아님.
+ */
+export function isListedEntity(entityKey: string, entity: Pick<SearchEntity, "ids"> | null | undefined): boolean {
+  const market = entity?.ids.market;
+  return market === "us" || market === "kr" || entityKey.startsWith("us:") || entityKey.startsWith("kr:");
 }
 
 /** 결과 경로(GET /api/search/feed)의 tab 값 — 보유·연결은 그 경로를 쓰지 않아 null. */
 export function feedTabOf(tab: SearchTabKey): SearchFeedTab | null {
-  return tab === "timeline" || tab === "news" || tab === "posts" ? tab : null;
+  return tab === "holdings" || tab === "links" ? null : tab;
 }
 
 // ------------------------------------------------------------------ 대상 키
@@ -451,6 +474,14 @@ const SOURCE_LABELS: Record<string, string> = {
   wire: "속보",
   feeds: "보도자료·경제지 피드",
   watch: "관심 대상 수집",
+  // 단계 4(계약 §7) — 공시·리서치 탭과 연결 보강
+  sec: "SEC 공시(회사별)",
+  sec_fts: "SEC 전문 검색(이름)",
+  dart: "DART 공시",
+  yahoo_research: "투자의견 변경(Yahoo)",
+  naver_research: "증권사 리포트(네이버)",
+  insiders: "내부자 명단(Yahoo)",
+  gleif: "법인 관계(GLEIF)",
 };
 
 export function sourceLabel(source: string, statuses: readonly SearchSourceStatus[] = []): string {
@@ -470,6 +501,8 @@ const RELATION_LABELS: readonly [string, string][] = [
   ["employee", "구성원"],
   ["ceo", "대표"],
   ["ceo_of", "대표로 있는 곳"],
+  ["insider", "내부자"],
+  ["ultimate_parent", "최상위 모회사"],
   ["parent", "모회사"],
   ["subsidiary", "자회사"],
   ["manager", "운용자"],
@@ -478,6 +511,11 @@ const RELATION_LABELS: readonly [string, string][] = [
 
 export type LinkGroup = { relation: string; label: string; links: SearchLink[] };
 
+/** 관계 이름 — 모르는 관계는 이름 그대로. */
+export function relationLabel(relation: string): string {
+  return RELATION_LABELS.find(([key]) => key === relation)?.[1] ?? relation;
+}
+
 /** 연결을 관계별로 묶음 — 계약의 순서, 모르는 관계는 뒤에 이름 그대로. */
 export function linkGroups(links: readonly SearchLink[]): LinkGroup[] {
   const order = new Map(RELATION_LABELS.map(([relation], at) => [relation, at]));
@@ -485,14 +523,140 @@ export function linkGroups(links: readonly SearchLink[]): LinkGroup[] {
   for (const link of links) {
     let group = groups.get(link.relation);
     if (!group) {
-      const label = RELATION_LABELS.find(([relation]) => relation === link.relation)?.[1] ?? link.relation;
-      group = { relation: link.relation, label, links: [] };
+      group = { relation: link.relation, label: relationLabel(link.relation), links: [] };
       groups.set(link.relation, group);
     }
     group.links.push(link);
   }
   const rank = (relation: string) => order.get(relation) ?? RELATION_LABELS.length;
   return [...groups.values()].sort((a, b) => rank(a.relation) - rank(b.relation));
+}
+
+const LINK_SOURCE_LABELS: Record<string, string> = { wikidata: "Wikidata", "13f": "13F 기관 목록", yahoo: "Yahoo", gleif: "GLEIF" };
+
+/** 연결 한 줄의 출처 이름 — 모르는 출처는 키 그대로. */
+export function linkSourceLabel(source: string): string {
+  return LINK_SOURCE_LABELS[source] ?? source;
+}
+
+/** 같은 대상인지 가리는 키 — 관계 + 대상 키(모양이 맞을 때만, 없으면 null). */
+const linkKeyId = (link: SearchLink) => (isEntityKey(link.key) ? `${link.relation}|${link.key}` : null);
+/** 같은 이름인지 가리는 값 — 관계 + 이름(대소문자·공백·전각 무시). */
+const linkNameId = (link: SearchLink) => `${link.relation}|${link.name.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase()}`;
+
+/**
+ * 대상 풀기의 links(Wikidata·13F)와 연결 보강 경로(계약 §7-5 — 내부자·GLEIF)를 합침. 앞의 것이 먼저이고, 같은 관계에서
+ * - 키가 같은 두 줄은 한 줄,
+ * - 한쪽에 키가 없고 이름(대소문자·공백 무시)이 같으면 한 줄(Wikidata의 키 있는 모회사와 GLEIF의 키 없는 같은 이름 모회사 등)입니다.
+ * 한 줄로 둘 때 앞 줄에 없는 키·종류·설명은 뒤 줄에서 채웁니다(출처는 앞 줄 그대로).
+ * 키가 다른 두 줄은 이름이 같아도 따로 두고(동명이인), 키 없는 줄과 같은 이름의 키 있는 줄이 여럿이면 어느 쪽인지 짐작하지 않습니다.
+ * 이름이 다르면(한국어 라벨과 법인 이름 등) 합치지 않습니다.
+ */
+export function mergeLinks(first: readonly SearchLink[], second: readonly SearchLink[]): SearchLink[] {
+  const out: SearchLink[] = [];
+  const byKey = new Map<string, number>();
+  /** 이름 → 키 없는 줄(같은 이름의 키 없는 줄은 늘 한 줄로 합쳐져 하나뿐). */
+  const keyless = new Map<string, number>();
+  /** 이름 → 키 있는 줄들. */
+  const keyed = new Map<string, number[]>();
+  for (const link of [...first, ...second]) {
+    const keyId = linkKeyId(link);
+    const nameId = linkNameId(link);
+    let index: number | undefined;
+    if (keyId !== null) {
+      index = byKey.get(keyId) ?? keyless.get(nameId);
+    } else {
+      const named = keyed.get(nameId) ?? [];
+      index = keyless.get(nameId) ?? (named.length === 1 ? named[0] : undefined);
+    }
+    if (index === undefined) {
+      index = out.length;
+      out.push(link);
+    } else {
+      const kept = out[index];
+      out[index] = {
+        ...kept,
+        key: linkKeyId(kept) !== null ? kept.key : keyId !== null ? link.key : kept.key,
+        kind: kept.kind ?? link.kind,
+        detail: kept.detail || link.detail || null,
+      };
+    }
+    // 합친 줄을 그 키와 (이번 줄의) 이름으로 다시 찾게 합니다 — 키로 채운 줄은 키 없는 이름 칸에서 빼고 키 있는 줄로 옮김.
+    const mergedKeyId = linkKeyId(out[index]);
+    if (mergedKeyId === null) {
+      keyless.set(nameId, index);
+    } else {
+      byKey.set(mergedKeyId, index);
+      if (keyless.get(nameId) === index) keyless.delete(nameId);
+      const named = keyed.get(nameId) ?? [];
+      if (!named.includes(index)) keyed.set(nameId, [...named, index]);
+    }
+  }
+  return out;
+}
+
+export type LinksView = {
+  /** 관계별 묶음(두 응답을 합친 것). */
+  groups: LinkGroup[];
+  /** 연결 보강 경로의 받는 중·실패 한 줄(글 — 색만이 아님). 받았으면 null. */
+  extra: { state: "loading" | "error"; text: string } | null;
+  /** 연결 보강 경로의 출처 상태 줄(받기 전·실패면 빈 목록). */
+  sources: SearchSourceStatus[];
+  /** 보일 연결이 없을 때의 안내 — 받는 중이면 null('없음'을 미리 말하지 않음), 받지 못한 출처가 있으면 모른다고. */
+  empty: string | null;
+  /** 대상을 풀지 못했거나 푸는 중이라 Wikidata·13F 연결을 모를 때, 또는 Wikidata를 받지 못했을 때(사유와 함께)의 한 줄. */
+  entityNote: string | null;
+};
+
+const EXTRA_NAME = "내부자 명단·법인 관계";
+
+/**
+ * 연결 탭의 화면 상태(계약 §7-7) — 대상 풀기의 links는 바로 보이고, 연결 보강 경로(GET /api/search/links)는 받는 중·실패를 글로 적습니다.
+ * 출처마다의 건너뜀(LEI 없음·미국 상장사 아님)과 실패는 출처 상태 줄(sources)이 글로 보입니다. 대상은 풀렸지만 Wikidata를 받지 못했으면
+ * (대상 풀기의 errors.wikidata — 실패·외부 조회 안 함) Wikidata 관계를 모르므로 그 사유를 한 줄로 두고, 연결이 없어도 '없다'고 하지 않습니다.
+ * 실패 뒤 다시 받는 동안은(앞 응답이 남아 있어도) 받는 중으로 둡니다. 받은 응답을 다시 읽는 동안은 보이던 그대로입니다.
+ *
+ * @param entity 풀린 대상(없으면 null) · @param entitySettled 대상 풀기 응답이 왔는지(실패 포함) · @param entityErrors 대상 풀기 응답의 errors
+ * @param response 연결 보강 응답(받기 전·요청 실패면 null) · @param loading 받는 중인지 · @param error 요청 실패 글
+ */
+export function linksView(args: {
+  entity: Pick<SearchEntity, "links"> | null;
+  entitySettled: boolean;
+  entityErrors: Readonly<Record<string, string>>;
+  response: SearchLinksResponse | null;
+  loading: boolean;
+  error: string | null;
+}): LinksView {
+  const { entity, entitySettled, entityErrors, response, loading, error } = args;
+  const answered = response?.available === true;
+  const sources = answered ? (response.sources ?? []) : [];
+  const groups = linkGroups(mergeLinks(entity?.links ?? [], answered ? (response.links ?? []) : []));
+
+  let extra: LinksView["extra"] = null;
+  if (!answered) {
+    if (loading || (!response && !error)) extra = { state: "loading", text: `${EXTRA_NAME}를 받는 중… (외부 출처를 부르면 몇 초 걸립니다)` };
+    else if (response) extra = { state: "error", text: `${EXTRA_NAME}를 받지 못했습니다 — ${response.message || "수집기에서 응답을 받지 못했습니다."}` };
+    else extra = { state: "error", text: `${EXTRA_NAME}를 받지 못했습니다 — ${error}` };
+  }
+
+  // 대상 풀기 시간 초과(errors.entity)도 Wikidata 관계를 모르는 것 — 수집기 _unknown_lei(GLEIF 상태)와 같은 기준.
+  const wikidataError = entity ? (entityErrors.wikidata ?? entityErrors.entity ?? null) : null;
+  const entityNote = entity
+    ? wikidataError
+      ? `Wikidata 관계를 받지 못했습니다 — ${wikidataError}`
+      : null
+    : entitySettled
+      ? "대상을 풀지 못해 Wikidata 관계·13F 운용자·기관 연결은 모릅니다."
+      : "대상을 푸는 중… (Wikidata 관계·13F 운용자·기관)";
+
+  let empty: string | null = null;
+  if (groups.length === 0 && extra?.state !== "loading" && (entity || entitySettled)) {
+    const missed = extra?.state === "error" || !entity || wikidataError !== null || sources.some((source) => UNANSWERED.has(source.status));
+    empty = missed
+      ? "찾은 연결이 없습니다 — 받지 못한 출처가 있어 연결이 더 있는지 모릅니다(위 안내와 아래 출처 상태를 보세요)."
+      : "가진 연결이 없습니다 — Wikidata 관계, 13F 운용자·기관, 미국 상장사의 내부자 명단(Yahoo), LEI가 있는 법인의 모회사·자회사(GLEIF)에서 찾습니다.";
+  }
+  return { groups, extra, sources, empty, entityNote };
 }
 
 // ------------------------------------------------------------------ 출처 상태
@@ -662,11 +826,28 @@ export function httpUrl(url: string | null | undefined): string | null {
   return url && /^https?:\/\//i.test(url) ? url : null;
 }
 
-/** 줄의 시각 한 줄(KST, 분까지) — 모르면 '—'. */
-export function itemTimeText(item: Pick<SearchFeedItem, "publishedAt">): string {
+type TimedItem = Pick<SearchFeedItem, "publishedAt"> & Partial<Pick<SearchFeedItem, "timeBasis">>;
+
+/**
+ * 날짜만 아는 줄인가(계약 §7-1 — DART 접수일·EDGAR 전문 검색 접수일·네이버 리포트 날짜). publishedAt은 그 날짜의 출처 달력 00:00을 UTC로 바꾼 값이라
+ * KST 날짜가 출처의 날짜와 같고, 시각은 뜻이 없어 보이지 않습니다.
+ */
+export function isDateOnly(item: Partial<Pick<SearchFeedItem, "timeBasis">>): boolean {
+  return item.timeBasis === "date";
+}
+
+/** 줄의 시각 한 줄(KST, 분까지) — 날짜만 아는 줄은 날짜만(YYYY-MM-DD), 모르면 '—'. */
+export function itemTimeText(item: TimedItem): string {
   const date = kstDate(item.publishedAt);
+  if (isDateOnly(item)) return date ?? EMPTY;
   const time = kstTime(item.publishedAt);
   return date && time ? `${date} ${time} KST` : EMPTY;
+}
+
+/** 목록의 시각 칸(날짜 묶음 아래) — KST 시각(HH:mm), 날짜만 아는 줄은 날짜, 모르면 '—'. */
+export function rowTimeText(item: TimedItem): string {
+  if (isDateOnly(item)) return kstDate(item.publishedAt) ?? EMPTY;
+  return kstTime(item.publishedAt) ?? EMPTY;
 }
 
 /** 수집 글(readerId가 있는 줄 — 운영자)을 원문 팝업(ReaderDialog)에 여는 모양. 본문·요약은 id로 서버에서 읽습니다. */
@@ -709,6 +890,14 @@ export function newCountText(count: number | null | undefined): string | null {
   return `새 글 ${count > NEW_COUNT_MAX ? `${NEW_COUNT_MAX}+` : Math.floor(count)}`;
 }
 
+/** 관심 대상의 새 글 수 합계(좁은 화면의 접힌 서랍 머리) — 1건 이상인 수만 더합니다. 모르는 수(null)는 0으로도 세지 않습니다. */
+export function watchNewTotal(items: readonly Pick<SearchWatchItem, "newCount">[]): number {
+  return items.reduce((total, item) => {
+    const count = item.newCount;
+    return typeof count === "number" && Number.isFinite(count) && count > 0 ? total + Math.floor(count) : total;
+  }, 0);
+}
+
 const countOrEmpty = (value: number | null | undefined) => (typeof value === "number" && Number.isFinite(value) ? String(value) : EMPTY);
 
 /** 상한 한 줄 — '내 목록 2 / 10 · 서버 전체 40 / 100'. 모르는 값은 '—', 상한 칸이 없으면 null. */
@@ -749,10 +938,25 @@ export function writeErrorText(error: unknown, conflict: string): string {
   return error.message || "알 수 없는 오류";
 }
 
-/** '지금 새로 받기' 뒤의 한 줄 — 서버가 준 글(10분 상한 등)이 있으면 그것, 없으면 받은 시각(KST). */
-export function refreshNoteText(feed: { refreshNote?: string | null; fetchedAt?: string | null }): string {
-  if (feed.refreshNote) return feed.refreshNote;
-  return feed.fetchedAt ? `새로 받았습니다 — 받은 시각 ${formatKst(feed.fetchedAt)} KST` : "새로 받았습니다";
+/** 새로 받기에서 받지 못한 출처의 상태(실패·외부 조회 안 함) — 받음·캐시·결과 없음·건너뜀은 받지 못한 것이 아닙니다. */
+const NOT_RECEIVED = new Set(["error", "offline"]);
+
+/**
+ * '지금 새로 받기' 뒤의 한 줄 — 서버가 준 글(10분 상한 등)이 있으면 그것, 없으면 받은 시각(KST). 받지 못한 출처가 있으면
+ * 그렇다고 붙입니다(어느 출처인지는 아래 출처 상태 줄).
+ */
+export function refreshNoteText(feed: {
+  refreshNote?: string | null;
+  fetchedAt?: string | null;
+  sources?: readonly Pick<SearchSourceStatus, "status">[] | null;
+}): string {
+  const base = feed.refreshNote
+    ? feed.refreshNote
+    : feed.fetchedAt
+      ? `새로 받았습니다 — 받은 시각 ${formatKst(feed.fetchedAt)} KST`
+      : "새로 받았습니다";
+  const partial = (feed.sources ?? []).some((source) => NOT_RECEIVED.has(source.status));
+  return partial ? `${base} — 일부 출처는 받지 못함(아래 출처 상태)` : base;
 }
 
 // ------------------------------------------------------------------ 매체 제외 목록(단계 3 — 계약 §6-2)
@@ -769,16 +973,20 @@ const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const NAME_MAX = 80;
 const NOTE_MAX = 200;
 
-/** 붙여 넣은 주소·호스트 → 소문자 호스트(https:// 같은 앞부분·경로·포트·끝 점을 뗌). 국제화 도메인은 ASCII(punycode)로. */
-function hostOf(raw: string): string {
-  const host = raw
+/**
+ * 붙여 넣은 주소·호스트 → 소문자 호스트(https:// 같은 앞부분·경로·포트·끝 점·앞의 www.를 뗌 — 수집기 normalize_domain·백엔드와 같게).
+ * host는 보낼 값(국제화 도메인은 ASCII — punycode), typed는 punycode로 바꾸기 전의 표기(메모에 남김).
+ */
+function hostOf(raw: string): { host: string; typed: string } {
+  let typed = raw
     .trim()
     .toLowerCase()
     .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
     .split(/[/?#]/)[0]
     .replace(/:\d+$/, "")
     .replace(/\.$/, "");
-  return asciiHost(host);
+  if (typed.startsWith("www.")) typed = typed.slice("www.".length);
+  return { host: asciiHost(typed), typed };
 }
 
 /**
@@ -804,9 +1012,17 @@ export type ExcludeDraft =
   | { ok: true; body: { kind: ExcludeKind; value: string; note: string | null } }
   | { ok: false; message: string };
 
+/** 목록의 도메인 가운데 이 호스트를 이미 덮는 것(같은 값 제외, 점 경계 — news.example.com은 example.com에 걸림). 없으면 null. */
+function coveringDomain(host: string, existing: readonly { kind: string; value: string }[]): string | null {
+  const row = existing.find((entry) => entry.kind === "domain" && host.endsWith(`.${entry.value.toLowerCase()}`));
+  return row ? row.value.toLowerCase() : null;
+}
+
 /**
- * 더할 제외 매체(운영자) — 도메인은 소문자 호스트(주소를 붙여 넣어도 호스트만, 국제화 도메인은 punycode — 대조는 서버가 점 경계로),
- * 이름은 앞뒤 공백만 뗌(가운데 공백은 그대로 — 백엔드·수집기가 그 값으로 대소문자 무시 완전 일치 대조). 메모는 비면 null. 이미 있는 값(처음 값·더한 것, 같은 종류·대소문자 무시)은 다시 보내지 않습니다.
+ * 더할 제외 매체(운영자) — 도메인은 소문자 호스트(주소를 붙여 넣어도 호스트만, 앞의 www.는 뗌, 국제화 도메인은 punycode — 대조는 서버가 점 경계로),
+ * 이름은 앞뒤 공백만 뗌(가운데 공백은 그대로 — 백엔드·수집기가 그 값으로 대소문자 무시 완전 일치 대조). 메모는 비면 null — 국제화 도메인을
+ * 유니코드로 넣었으면 '입력: 그 표기'(브라우저에 punycode를 되돌리는 기능이 없어 목록이 punycode로만 보이므로). 이미 있는 값(처음 값·더한 것,
+ * 같은 종류·대소문자 무시)과 목록의 도메인이 덮는 아래 주소(점 경계)는 다시 보내지 않습니다.
  * 서버가 같은 검사를 다시 합니다 — 이것은 틀린 값으로 400을 부르지 않게 하는 앞단입니다.
  */
 export function excludeDraft(
@@ -816,9 +1032,13 @@ export function excludeDraft(
   existing: readonly { kind: string; value: string }[],
 ): ExcludeDraft {
   let clean: string;
+  let typedNote: string | null = null;
   if (kind === "domain") {
-    clean = hostOf(value);
+    const { host, typed } = hostOf(value);
+    clean = host;
     if (!isDomain(clean)) return { ok: false, message: "도메인 모양이 아닙니다 — 예: example.com" };
+    // 유니코드로 넣은 국제화 도메인(punycode로 바뀜)이면 넣은 표기를 메모 대신으로.
+    if (typed !== host) typedNote = `입력: ${typed}`;
   } else {
     clean = value.trim();
     if (!clean) return { ok: false, message: "매체 이름을 넣어 주세요" };
@@ -827,9 +1047,13 @@ export function excludeDraft(
   }
   const lowered = clean.toLowerCase();
   if (existing.some((row) => row.kind === kind && row.value.toLowerCase() === lowered)) return { ok: false, message: "이미 목록에 있습니다" };
+  const covering = kind === "domain" ? coveringDomain(lowered, existing) : null;
+  if (covering) return { ok: false, message: `이미 목록의 ${covering}이(가) 이 도메인을 덮습니다` };
   const memo = (note ?? "").replace(/\s+/g, " ").trim();
   if (Array.from(memo).length > NOTE_MAX) return { ok: false, message: `메모는 ${NOTE_MAX}자까지입니다` };
-  return { ok: true, body: { kind, value: clean, note: memo || null } };
+  // 입력한 표기를 남기는 메모는 상한 안일 때만(넘으면 남기지 않음 — 쓰지 않은 메모로 거절하지 않게).
+  const fallback = typedNote && Array.from(typedNote).length <= NOTE_MAX ? typedNote : null;
+  return { ok: true, body: { kind, value: clean, note: memo || fallback } };
 }
 
 export type ExcludeSeedGroup = { group: string; items: { kind: string; value: string }[] };

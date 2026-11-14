@@ -11,11 +11,19 @@ import {
   feedRefreshMs,
   isEntityKey,
   isSlashShortcut,
+  linksView,
   parseSearchUrl,
   searchHref,
   type SearchTabKey,
 } from "@/lib/infoSearch";
-import type { SearchCandidate, SearchFeedResponse, SearchRange, SearchSuggestResponse } from "@/lib/types";
+import type {
+  SearchCandidate,
+  SearchEntity,
+  SearchFeedResponse,
+  SearchLinksResponse,
+  SearchRange,
+  SearchSuggestResponse,
+} from "@/lib/types";
 
 /**
  * 정보 검색(/search — ADR 0041) 화면의 훅. 규칙은 lib/infoSearch(순수 함수), 여기서는 주소·요청·키보드만 잇습니다.
@@ -174,6 +182,26 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
     /** 이번 화면에서 새로 받은 응답(보이는 중일 때만) — '새로 받았습니다' 한 줄에 씁니다. */
     refreshed: freshShown?.data ?? null,
   };
+}
+
+/**
+ * 연결 탭(계약 §7-5·7-7) — 연결 보강(GET /api/search/links — 내부자 명단·법인 관계)을 받아 대상 풀기의 links와 합친 화면 상태.
+ * entityKey가 null이면 부르지 않습니다(연결 탭을 열었을 때만 — 외부 출처를 부르는 경로라 다른 탭에서는 받지 않음).
+ * 합치기·받는 중·실패 글의 규칙은 lib/infoSearch의 linksView입니다(entityErrors = 대상 풀기 응답의 errors — Wikidata를 받지 못했으면 모른다고).
+ */
+export function useInfoSearchLinks(
+  entityKey: string | null,
+  entity: SearchEntity | null,
+  entitySettled: boolean,
+  entityErrors: Readonly<Record<string, string>>,
+) {
+  const links = useApi<SearchLinksResponse>(entityKey ? endpoints.search.links(entityKey) : null);
+  const { data, loading, error, reload } = links;
+  const view = useMemo(
+    () => linksView({ entity, entitySettled, entityErrors, response: data, loading, error }),
+    [entity, entitySettled, entityErrors, data, loading, error],
+  );
+  return { ...view, fetchedAt: data?.available ? (data.fetchedAt ?? null) : null, reload };
 }
 
 /**

@@ -90,7 +90,7 @@ export function CandidateList({
       )}
       {failures.length > 0 ? (
         <p className="mt-2 px-1 text-xs text-text-3">
-          일부 출처를 받지 못했습니다 — {failures.map(([source, reason]) => `${sourceLabel(source)}: ${reason}`).join(" · ")}
+          일부 출처를 받지 못했습니다 — {failures.map(([source, reason]) => `${CANDIDATE_SOURCES[source] ?? sourceLabel(source)}: ${reason}`).join(" · ")}
         </p>
       ) : null}
     </section>

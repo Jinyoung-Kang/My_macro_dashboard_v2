@@ -83,6 +83,8 @@ export function AttributesPanel({ entity, kind, errors }: { entity: SearchEntity
         ["영문 이름", entity.nameEn ?? EMPTY],
         ["설명", entity.description ?? EMPTY],
         ["식별자", identifierChips(entity).join(" · ") || EMPTY],
+        // 법인 식별자(계약 §7-5 — 연결 탭의 GLEIF 모회사·자회사를 찾는 키) — 있을 때만.
+        ...(entity.ids.lei ? ([["LEI", entity.ids.lei]] as [string, string][]) : []),
         ["별칭", visibleAliases(entity).join(" · ") || EMPTY],
         ["푼 출처", entity.sources.join(" · ") || EMPTY],
       ]

@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useInfoSearchLinks } from "@/hooks/useInfoSearch";
 import type { InfoSearchWatch } from "@/hooks/useInfoSearchWatch";
 import { endpoints } from "@/lib/endpoints";
+import { formatKst } from "@/lib/format";
 import {
   SEARCH_TABS,
   feedTabOf,
   findWatch,
+  isListedEntity,
   kindOfKey,
   tabFor,
   tabsFor,
@@ -21,16 +24,21 @@ import { AttributesPanel, EntityHeader } from "./EntityParts";
 import { FeedPanel } from "./FeedPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { LinksPanel } from "./LinksPanel";
-import { PANEL } from "./parts";
+import { PANEL, SourceStatusLine } from "./parts";
 import { WatchButton, WatchPane } from "./WatchPane";
+
+/** 대상 풀기 응답에 errors가 없을 때 — 그릴 때마다 새 객체를 만들지 않게(연결 탭 상태의 useMemo 의존값). */
+const NO_ERRORS: Readonly<Record<string, string>> = {};
 
 const TAB_CLASS =
   "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap border-b-2 px-3 text-sm lg:min-h-[30px] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus motion-safe:transition-colors";
 
 /**
- * 대상 하나의 화면 — 머리(종류·이름·식별자·별칭·바로가기·관심 대상 등록), 탭(타임라인·뉴스·글·논평(운영자)·보유(기업·기관)·연결), 탭 내용.
- * 대상 풀기(GET /api/search/entity)와 결과(GET /api/search/feed)는 따로 부릅니다 — 키로 종류를 아는 대상(us:·kr:·cik:·topic:)은 결과를 함께
- * 받기 시작하고, wd: 키는 종류(보유 탭이 있는지)를 안 뒤에 탭을 정합니다. 공시·리서치 탭은 단계 4입니다.
+ * 대상 하나의 화면 — 머리(종류·이름·식별자·별칭·바로가기·관심 대상 등록), 탭(타임라인·뉴스·공시(주제 밖)·리서치(상장 기업)·글·논평(운영자)·
+ * 보유(기업·기관)·연결), 탭 내용. 대상 풀기(GET /api/search/entity)와 결과(GET /api/search/feed)는 따로 부릅니다 — 키로 종류를 아는 대상
+ * (us:·kr:·cik:·topic:)은 결과를 함께 받기 시작하고, wd: 키는 종류(공시·리서치·보유 탭이 있는지)를 안 뒤에 탭을 정합니다.
+ * 연결 탭은 열었을 때만 연결 보강(GET /api/search/links — 내부자 명단·법인 관계, 계약 §7-5)을 부르고 대상 풀기의 links와 합쳐 보이며,
+ * 그 출처 상태 줄을 패널 아래에 둡니다.
  *
  * 왼쪽 칸에 내 관심 대상 목록(단계 3)을 두고, 이 대상이 관심 대상이면 타임라인 결과를 받아 그렸을 때 '봤음'(POST /api/search/watch/{id}/seen)을
  * 이 화면에서 한 번만 보냅니다(새 글 수가 0이 됨). 결과를 받지 못했거나 받는 중이면 보내지 않습니다(보지 못한 새 글 수를 지우지 않게).
@@ -66,10 +74,12 @@ export function EntityView({
   // 종류: 풀린 대상 → 키 앞부분 → (wd: 키를 풀지 못했으면) 사람으로 봄(보유 탭 없음).
   const known = entity?.kind ?? kindOfKey(entityKey);
   const kind = known ?? (settled ? "person" : null);
-  const tabs = kind ? tabsFor(kind, owner) : [];
-  const current = kind ? tabFor(tab, kind, owner) : null;
+  const listed = isListedEntity(entityKey, entity);
+  const tabs = kind ? tabsFor(kind, owner, listed) : [];
+  const current = kind ? tabFor(tab, kind, owner, listed) : null;
   const feedTab = current ? feedTabOf(current) : null;
-  const errors = resolved.data?.errors ?? {};
+  const errors = resolved.data?.errors ?? NO_ERRORS;
+  const links = useInfoSearchLinks(current === "links" ? entityKey : null, entity, settled, errors);
   const baseId = useId();
   const tabId = (key: SearchTabKey) => `${baseId}-tab-${key}`;
   const panelId = `${baseId}-panel`;
@@ -159,14 +169,28 @@ export function EntityView({
                 onShown={feedTab === "timeline" ? markTimelineShown : undefined}
               />
             ) : (
-              <div className={`${PANEL} lg:grid lg:grid-cols-[13rem_minmax(0,1fr)_18rem]`}>
-                <div className="border-b border-border p-3 lg:border-b-0 lg:border-r">{watchPane}</div>
-                <div className="min-w-0 px-3 py-2">
-                  {current === "holdings" ? <HoldingsPanel entity={entity} loading={!settled} /> : <LinksPanel entity={entity} onTarget={onTarget} />}
+              <div className={`${PANEL} flex flex-col`}>
+                <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)_18rem]">
+                  <div className="border-b border-border p-3 lg:border-b-0 lg:border-r">{watchPane}</div>
+                  <div className="min-w-0 px-3 py-2">
+                    {current === "holdings" ? (
+                      <HoldingsPanel entity={entity} loading={!settled} />
+                    ) : (
+                      <LinksPanel view={links} onTarget={onTarget} onRetry={() => void links.reload()} />
+                    )}
+                  </div>
+                  <div className="border-t border-border p-3 lg:border-l lg:border-t-0">
+                    <AttributesPanel entity={entity} kind={kind} errors={errors} />
+                  </div>
                 </div>
-                <div className="border-t border-border p-3 lg:border-l lg:border-t-0">
-                  <AttributesPanel entity={entity} kind={kind} errors={errors} />
-                </div>
+                {current === "links" ? (
+                  <>
+                    <SourceStatusLine sources={links.sources} />
+                    {links.fetchedAt ? (
+                      <p className="hidden px-3 pb-2 text-xs text-text-3 lg:block">받은 시각 {formatKst(links.fetchedAt)} KST</p>
+                    ) : null}
+                  </>
+                ) : null}
               </div>
             )}
           </div>

@@ -169,7 +169,8 @@ describe("검색창과 후보", () => {
     expect(buttons).toHaveLength(3);
     expect(buttons[2].textContent).toContain("주제");
     expect(window.location.search).toBe(`?q=${encodeURIComponent("Ken Griffin")}`);
-    expect(screen.getByText(/dart: 키 없음/)).toBeTruthy();
+    // 후보의 출처 이름으로(결과 탭의 'DART 공시'가 아니라 고유번호 표 — 단계 4에서 sourceLabel에 공시 출처 이름이 생김)
+    expect(screen.getByText(/DART: 키 없음/)).toBeTruthy();
 
     fireEvent.click(buttons[0]);
     expect(window.location.search).toBe("?e=wd:Q3195170&tab=timeline&range=30d");
@@ -343,7 +344,7 @@ describe("대상 화면 — 결과", () => {
   it("회원 — 글·논평 탭이 없고, 주소로 줘도 그 경로를 부르지 않으며, 원문 팝업 단추도 없다", async () => {
     renderScreen(MEMBER, "/search?e=us:NVDA&tab=posts");
     const tabs = await screen.findByRole("tablist", { name: "결과 탭" });
-    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["타임라인", "뉴스", "보유", "연결"]);
+    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["타임라인", "뉴스", "공시", "리서치", "보유", "연결"]);
     expect(within(tabs).getByRole("tab", { name: "타임라인" }).getAttribute("aria-selected")).toBe("true");
     await screen.findByRole("listbox", { name: "결과" });
     expect(sharedCalls().some((path) => path.includes("tab=posts"))).toBe(false);
@@ -358,7 +359,7 @@ describe("대상 화면 — 결과", () => {
     };
     renderScreen(OWNER, "/search?e=us:NVDA&tab=posts");
     const tabs = await screen.findByRole("tablist", { name: "결과 탭" });
-    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["타임라인", "뉴스", "글·논평", "보유", "연결"]);
+    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["타임라인", "뉴스", "공시", "리서치", "글·논평", "보유", "연결"]);
     expect(within(tabs).getByRole("tab", { name: "글·논평" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() => expect(sharedCalls()).toContain(endpoints.search.feed("us:NVDA", "posts")));
 
