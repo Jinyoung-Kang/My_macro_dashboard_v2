@@ -121,8 +121,9 @@ public class SearchWatchService {
     // ------------------------------------------------------------------ 관심 대상
 
     /**
-     * 내 관심 대상 — {@code {available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax},
-     * collecting}}. 읽기만 합니다(데모도 부름 — 빈 목록). 표가 없으면 {@code {available:false, message}}.
+     * 내 관심 대상 — {@code {available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount, hot}], limits:{mine, max, serverUsed, serverMax},
+     * collecting}}. {@code hot}은 화제(계약 §9-2 — {@link SearchWatchStore.Buzz#hot()}, 모르면 null). 읽기만 합니다(데모도 부름 — 빈 목록).
+     * 표가 없으면 {@code {available:false, message}}.
      */
     public Map<String, Object> list(CurrentUser user) {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -133,11 +134,11 @@ public class SearchWatchService {
         }
         long userId = user == null ? -1 : user.id();
         List<SearchWatchStore.Watch> rows = user == null ? List.of() : watches.watches(userId);
-        Map<Long, Integer> counts = rows.isEmpty() ? Map.of()
-                : watches.newCounts(userId, SearchService.owner(user) ? List.of() : List.copyOf(SearchService.OWNER_ONLY_SOURCES));
+        Map<Long, Integer> counts = rows.isEmpty() ? Map.of() : watches.newCounts(userId, hiddenSources(user));
+        Map<Long, SearchWatchStore.Buzz> buzz = rows.isEmpty() ? Map.of() : watches.buzz(userId, hiddenSources(user), clock.instant());
         List<Map<String, Object>> items = new ArrayList<>();
         for (SearchWatchStore.Watch row : rows) {
-            items.add(itemJson(row, counts.getOrDefault(row.id(), 0)));
+            items.add(itemJson(row, counts.getOrDefault(row.id(), 0), hot(buzz, row.id())));
         }
         Map<String, Object> limits = new LinkedHashMap<>();
         limits.put("mine", rows.size());
@@ -318,22 +319,34 @@ public class SearchWatchService {
     private Result registered(CurrentUser user, SearchWatchStore.Watch row, boolean created) {
         int fresh = 0;
         if (!created) {
-            fresh = watches.newCounts(user.id(), SearchService.owner(user) ? List.of() : List.copyOf(SearchService.OWNER_ONLY_SOURCES))
-                    .getOrDefault(row.id(), 0);
+            fresh = watches.newCounts(user.id(), hiddenSources(user)).getOrDefault(row.id(), 0);
         }
+        // 새로 등록한 대상도 다른 사용자가 이미 모으던 대상이면 화제일 수 있어 같은 판정을 씁니다.
+        Boolean hot = hot(watches.buzz(user.id(), hiddenSources(user), clock.instant()), row.id());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", true);
         body.put("created", created);
         body.put("message", created ? "관심 대상에 더했습니다." : "이미 관심 대상에 있습니다.");
-        body.put("item", itemJson(row, fresh));
+        body.put("item", itemJson(row, fresh, hot));
         return new Result(200, body);
+    }
+
+    /** 새 글 수·화제에서 세지 않을 출처 — 회원은 운영자 전용 저장본(수집 글·거장 견해·속보), 운영자는 없음. */
+    private static List<String> hiddenSources(CurrentUser user) {
+        return SearchService.owner(user) ? List.of() : List.copyOf(SearchService.OWNER_ONLY_SOURCES);
+    }
+
+    /** 그 줄의 화제 판정({@link SearchWatchStore.Buzz#hot()}) — 건수가 없으면(그 사이 지워진 줄 등) 모름(null). */
+    private static Boolean hot(Map<Long, SearchWatchStore.Buzz> buzz, long id) {
+        SearchWatchStore.Buzz counts = buzz.get(id);
+        return counts == null ? null : counts.hot();
     }
 
     private Result userLimit(CurrentUser user) {
         return failure(409, "user_limit", "관심 대상은 %d개까지 등록할 수 있습니다 — 다른 대상을 지운 뒤 다시 등록하세요.".formatted(limit(user)));
     }
 
-    private Map<String, Object> itemJson(SearchWatchStore.Watch row, int newCount) {
+    private Map<String, Object> itemJson(SearchWatchStore.Watch row, int newCount, Boolean hot) {
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", row.id());
         item.put("key", row.entityKey());
@@ -342,6 +355,7 @@ public class SearchWatchService {
         item.put("createdAt", iso(row.createdAt()));
         item.put("lastSeenAt", iso(row.lastSeenAt()));
         item.put("newCount", newCount);
+        item.put("hot", hot);
         return item;
     }
 

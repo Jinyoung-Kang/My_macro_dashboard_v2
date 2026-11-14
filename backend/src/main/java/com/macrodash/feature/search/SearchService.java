@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -434,6 +435,27 @@ public class SearchService {
                     ObjectNode dropped = row.putObject("dropped");
                     dropped.put("old", 0).put("noTime", 0).put("chinese", 0).put("excluded", 0);
                     row.putNull("message");
+                }
+            }
+        }
+        if (!removed.isEmpty() && body.get("items") instanceof ArrayNode kept) {
+            // 같은 사건 묶음(계약 §9-2): 지운 줄을 가리키던 남은 줄의 묶음 칸을 비웁니다 — 운영자 전용 줄의 id(제목 키일 수 있음)가 남지 않게, 숫자도 부풀지 않게.
+            Set<String> touched = new HashSet<>();
+            for (JsonNode gone : removed) {
+                String id = text(gone, "id");
+                String cluster = text(gone, "clusterId");
+                if (id != null) {
+                    touched.add(id);
+                }
+                if (cluster != null) {
+                    touched.add(cluster);
+                }
+            }
+            for (JsonNode item : kept) {
+                String cluster = text(item, "clusterId");
+                if (item instanceof ObjectNode row && cluster != null && touched.contains(cluster)) {
+                    row.putNull("clusterId");
+                    row.putNull("cluster");
                 }
             }
         }

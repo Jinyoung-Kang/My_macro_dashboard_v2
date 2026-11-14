@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 /**
  * 관심 대상·매체 제외 표(V37, ADR 0041 결정 9) — 실제 테스트 DB에서 사용자·대상마다 한 줄, 자기 줄만 지우고 '봤음'을 적기, 새 글 수(마지막으로 본 뒤 처음 받은 글,
@@ -162,6 +163,133 @@ class SearchWatchStoreDbTest {
     private void insertItem(String key, String itemId, Instant publishedAt, Instant firstSeenAt) {
         jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
                 + "VALUES (?, ?, 'news', '합성 제목', 'google_en', ?, ?)", key, itemId, Timestamp.from(publishedAt), Timestamp.from(firstSeenAt));
+    }
+
+    /** 화제 판정용 합성 글 — 작성 시각을 모르면(정기 피드의 처음 받은 시각 기준 줄) null. */
+    private void hotItem(String key, String itemId, String source, Instant publishedAt, Instant firstSeenAt) {
+        jdbc.update("INSERT INTO search_watch_items (entity_key, item_id, kind, title, source, published_at, first_seen_at) "
+                        + "VALUES (?, ?, 'news', '합성 제목', ?, ?, ?)", key, itemId, source,
+                publishedAt == null ? null : Timestamp.from(publishedAt), Timestamp.from(firstSeenAt));
+    }
+
+    @Test
+    @DisplayName("화제 건수 — 지난 24시간과 그 앞 30일(지금의 31일 전~24시간 전)에 처음 받은 글을 따로 센다. 경계·창 밖·미래 시각, 받을 때 이미 하루 넘게 지난 글(첫 수집의 옛 글)은 세지 않는다")
+    void buzzCountsWindows() {
+        Instant now = AT.plus(Duration.ofDays(60));
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "h", "topic", "h", List.of("h"), null, AT);
+        for (int n = 0; n < 6; n++) {
+            hotItem(MARK + "h", "day" + n, "google_en", now.minus(Duration.ofHours(n + 2)), now.minus(Duration.ofHours(n + 1)));
+        }
+        hotItem(MARK + "h", "feedNoTime", "feeds", null, now.minus(Duration.ofHours(3)));                     // 작성 시각 모름 — 처음 받은 시각 기준, 셈
+        hotItem(MARK + "h", "backfill", "google_ko", now.minus(Duration.ofDays(10)), now.minus(Duration.ofHours(2)));   // 받을 때 열흘 지난 글 — 빼
+        hotItem(MARK + "h", "edge", "google_en", now.minus(Duration.ofHours(30)), now.minus(Duration.ofHours(24)));    // 정확히 24시간 전 — 앞 30일 쪽
+        for (int n = 0; n < 9; n++) {
+            hotItem(MARK + "h", "base" + n, "bing", now.minus(Duration.ofDays(n + 2)), now.minus(Duration.ofDays(n + 2)).plusSeconds(600));
+        }
+        hotItem(MARK + "h", "lateBase", "bing", now.minus(Duration.ofDays(9)), now.minus(Duration.ofDays(5)));       // 받을 때 나흘 지난 글 — 빼
+        hotItem(MARK + "h", "tooOld", "bing", now.minus(Duration.ofDays(32)), now.minus(Duration.ofDays(32)));       // 31일보다 전 — 빼
+        hotItem(MARK + "h", "future", "bing", now.plusSeconds(60), now.plusSeconds(60));                            // 지금 뒤 — 빼
+        SearchWatchStore.Watch quiet = store.insert(alice, MARK + "q", "topic", "q", List.of("q"), null, AT);
+
+        Map<Long, SearchWatchStore.Buzz> buzz = store.buzz(alice, List.of(), now);
+
+        assertThat(buzz.get(watch.id())).isEqualTo(new SearchWatchStore.Buzz(7, 10, 30.0));
+        assertThat(buzz.get(quiet.id())).as("글이 없는 대상도 한 줄(0건)").isEqualTo(new SearchWatchStore.Buzz(0, 0, 30.0));
+        assertThat(store.buzz(bob, List.of(), now)).as("등록한 것이 없으면 빈 지도").isEmpty();
+    }
+
+    @Test
+    @DisplayName("화제 건수 — 숨길 출처(회원의 운영자 전용 출처)는 세지 않는다(새 글 수와 같음)")
+    void buzzHidesSources() {
+        Instant now = AT.plus(Duration.ofDays(40));
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "s", "topic", "s", List.of("s"), null, AT);
+        String[] sources = {"google_en", "feeds", "wire", "info", "guru"};
+        for (int n = 0; n < sources.length; n++) {
+            hotItem(MARK + "s", "s" + n, sources[n], now.minus(Duration.ofHours(n + 1)), now.minus(Duration.ofHours(n + 1)));
+            hotItem(MARK + "s", "b" + n, sources[n], now.minus(Duration.ofDays(n + 3)), now.minus(Duration.ofDays(n + 3)));
+        }
+
+        assertThat(store.buzz(alice, List.of(), now).get(watch.id())).isEqualTo(new SearchWatchStore.Buzz(5, 5, 30.0));
+        assertThat(store.buzz(alice, List.of("info", "guru", "wire"), now).get(watch.id())).isEqualTo(new SearchWatchStore.Buzz(2, 2, 30.0));
+    }
+
+    @Test
+    @DisplayName("화제의 앞 30일 가운데 모은 날 수는 그 대상이 서버에서 처음 등록된 때부터(누가 등록했든) — 하루 전에 처음 등록된 대상은 0일")
+    void buzzBaselineDaysFromFirstRegistration() {
+        Instant now = AT.plus(Duration.ofDays(60));
+        store.insert(bob, MARK + "f", "topic", "f", List.of("f"), null, now.minus(Duration.ofDays(10)));
+        SearchWatchStore.Watch shared = store.insert(alice, MARK + "f", "topic", "f", List.of("f"), null, now.minus(Duration.ofHours(2)));
+        SearchWatchStore.Watch fresh = store.insert(alice, MARK + "g", "topic", "g", List.of("g"), null, now.minus(Duration.ofHours(2)));
+        SearchWatchStore.Watch dayAgo = store.insert(alice, MARK + "k", "topic", "k", List.of("k"), null, now.minus(Duration.ofHours(36)));
+
+        Map<Long, SearchWatchStore.Buzz> buzz = store.buzz(alice, List.of(), now);
+
+        assertThat(buzz.get(shared.id()).earlierDays()).as("bob이 열흘 전에 등록 — 앞 30일 중 9일").isCloseTo(9.0, within(1e-9));
+        assertThat(buzz.get(fresh.id()).earlierDays()).isZero();
+        assertThat(buzz.get(dayAgo.id()).earlierDays()).isCloseTo(0.5, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("화제의 앞 30일 건수는 모은 날과 같은 기간 — 먼저 등록한 사람이 지워 처음 등록 시각이 늦어지면, 그 앞에 쓰인 글(그때 모은 글)은 세지 않는다")
+    void buzzBaselineCountMatchesDaysAfterEarliestLeaves() {
+        Instant now = AT.plus(Duration.ofDays(60));
+        SearchWatchStore.Watch first = store.insert(bob, MARK + "m", "topic", "m", List.of("m"), null, now.minus(Duration.ofDays(60)));
+        SearchWatchStore.Watch later = store.insert(alice, MARK + "m", "topic", "m", List.of("m"), null, now.minus(Duration.ofDays(10)));
+        for (int k = 1; k <= 30; k++) {      // 하루 한 건 — 지금의 36시간 전 ~ 732시간 전, 모두 앞 30일 안
+            Instant written = now.minus(Duration.ofHours(k * 24L + 12));
+            hotItem(MARK + "m", "d" + k, "bing", written, written.plusSeconds(600));
+        }
+        for (int n = 0; n < 5; n++) {
+            hotItem(MARK + "m", "now" + n, "google_en", now.minus(Duration.ofHours(n + 2)), now.minus(Duration.ofHours(n + 1)));
+        }
+        assertThat(store.buzz(alice, List.of(), now).get(later.id())).as("bob이 60일 전부터 모음 — 30일 30건, 평균 1")
+                .isEqualTo(new SearchWatchStore.Buzz(5, 30, 30.0));
+
+        store.delete(first.id(), bob);
+        SearchWatchStore.Buzz buzz = store.buzz(alice, List.of(), now).get(later.id());
+
+        assertThat(buzz).as("alice가 등록한 10일 전부터 — 모은 날 9일, 그 사이에 쓰인 9건").isEqualTo(new SearchWatchStore.Buzz(5, 9, 9.0));
+        assertThat(buzz.dailyAverage()).isCloseTo(1.0, within(1e-9));
+        assertThat(buzz.hot()).isTrue();
+    }
+
+    @Test
+    @DisplayName("화제의 앞 30일 건수는 처음 등록한 뒤에 쓰인 글만 — 첫 수집이 넣은 등록 전 하루치와, 처음 받은 시각을 과거로 되돌린 작성 시각 없는 줄은 세지 않는다")
+    void buzzBaselineSkipsWhatWasWrittenBeforeFirstRegistration() {
+        Instant now = AT.plus(Duration.ofDays(60));
+        Instant since = now.minus(Duration.ofHours(72));
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "r", "topic", "r", List.of("r"), null, since);
+        hotItem(MARK + "r", "storeOld", "feeds", null, now.minus(Duration.ofDays(5)));                        // 저장본이 닷새 전에 받은 줄 — 빼
+        hotItem(MARK + "r", "storeOlder", "event_news", null, now.minus(Duration.ofDays(20)));               // 스무날 전 — 빼
+        hotItem(MARK + "r", "preReg", "google_en", since.minus(Duration.ofHours(6)), since.plusSeconds(300));  // 첫 수집의 등록 전 6시간 글 — 빼
+        hotItem(MARK + "r", "post1", "google_en", since.plus(Duration.ofHours(6)), since.plus(Duration.ofHours(7)));
+        hotItem(MARK + "r", "post2", "bing", since.plus(Duration.ofHours(30)), since.plus(Duration.ofHours(31)));
+        hotItem(MARK + "r", "postNoTime", "feeds", null, since.plus(Duration.ofHours(40)));
+
+        SearchWatchStore.Buzz buzz = store.buzz(alice, List.of(), now).get(watch.id());
+
+        assertThat(buzz).isEqualTo(new SearchWatchStore.Buzz(0, 3, 2.0));
+        assertThat(buzz.dailyAverage()).isCloseTo(1.5, within(1e-9));
+    }
+
+    @Test
+    @DisplayName("화제 건수 — 날짜만 아는 줄(DART·SEC 전문 검색·국내 리포트, 접수 시각 없는 SEC 줄)은 그 날의 끝을 작성 시각으로 본다. 시각을 아는 줄은 하루 넘게 늦게 받으면 빼")
+    void buzzDateOnlyRowsCountUntilTheDayEnds() {
+        Instant now = Instant.parse("2027-01-13T03:00:00Z");                                                  // KST 1월 13일 12:00
+        SearchWatchStore.Watch watch = store.insert(alice, MARK + "t", "topic", "t", List.of("t"), null, AT);
+        // KST 1월 12일 공시를 다음 날 01:00 KST에 처음 받음(00:00에서 25시간)
+        hotItem(MARK + "t", "dart", "dart", Instant.parse("2027-01-11T15:00:00Z"), Instant.parse("2027-01-12T16:00:00Z"));
+        hotItem(MARK + "t", "naver", "naver_research", Instant.parse("2027-01-11T15:00:00Z"), Instant.parse("2027-01-12T17:00:00Z"));
+        // 미국 동부 1월 11일 00:00(EST)의 날짜 줄을 26·27시간 뒤에 받음
+        hotItem(MARK + "t", "fts", "sec_fts", Instant.parse("2027-01-11T05:00:00Z"), Instant.parse("2027-01-12T07:00:00Z"));
+        hotItem(MARK + "t", "secDay", "sec", Instant.parse("2027-01-11T05:00:00Z"), Instant.parse("2027-01-12T08:00:00Z"));
+        // 접수 시각을 아는 SEC 줄·시각 있는 뉴스는 25시간 늦게 받으면 빼
+        hotItem(MARK + "t", "secTime", "sec", Instant.parse("2027-01-11T21:08:27Z"), Instant.parse("2027-01-12T22:10:00Z"));
+        hotItem(MARK + "t", "late", "google_en", Instant.parse("2027-01-11T09:00:00Z"), Instant.parse("2027-01-12T10:00:00Z"));
+        // 날짜 줄이라도 그 날이 끝나고 하루 넘게 지나 받으면 빼
+        hotItem(MARK + "t", "dartOld", "dart", Instant.parse("2027-01-09T15:00:00Z"), Instant.parse("2027-01-12T18:00:00Z"));
+
+        assertThat(store.buzz(alice, List.of(), now).get(watch.id())).isEqualTo(new SearchWatchStore.Buzz(4, 0, 30.0));
     }
 
     @Test

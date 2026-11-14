@@ -331,6 +331,32 @@ class SearchServiceTest {
     }
 
     @Test
+    @DisplayName("같은 사건 묶음 칸(clusterId·cluster)은 회원에게도 그대로 넘기고, 지운 운영자 전용 줄을 가리키던 줄의 묶음 칸만 비운다(닫힌 실패)")
+    void clusterFieldsSurviveAndPointersToRemovedRowsAreCleared() {
+        String feed = """
+                {"entityKey": "us:NVDA", "tab": "timeline", "items": [
+                  {"id": "n1", "kind": "news", "title": "합성 기사 하나", "source": "google_en", "publishedAt": "2026-11-13T03:00:00+00:00",
+                   "clusterId": "n2", "cluster": null},
+                  {"id": "n2", "kind": "news", "title": "합성 기사 하나 다른 매체", "source": "bing", "publishedAt": "2026-11-13T01:00:00+00:00",
+                   "clusterId": "n2", "cluster": {"size": 2, "publishers": 2}},
+                  {"id": "n3", "kind": "news", "title": "합성 기사 둘", "source": "google_en", "publishedAt": "2026-11-12T03:00:00+00:00",
+                   "clusterId": "w1", "cluster": null},
+                  {"id": "w1", "kind": "wire", "title": "합성 속보", "source": "wire", "publishedAt": "2026-11-12T01:00:00+00:00",
+                   "clusterId": "w1", "cluster": {"size": 2, "publishers": 2}}],
+                 "sources": [], "rangeCounts": {"7d": 4, "30d": 4, "1y": 4, "2y": 4}, "pending": false}
+                """;
+        when(collector.liveSearchFeed("us:NVDA", "timeline", true, false, false, true)).thenReturn(Optional.of(json(feed)));
+
+        JsonNode items = (JsonNode) service.feed("us:NVDA", "timeline", MEMBER).get("items");
+
+        assertThat(items.values().stream().map(item -> item.path("id").asString()).toList()).containsExactly("n1", "n2", "n3");
+        assertThat(items.get(0).path("clusterId").asString()).as("정상 묶음은 그대로").isEqualTo("n2");
+        assertThat(items.get(1).path("cluster").path("size").asInt()).isEqualTo(2);
+        assertThat(items.get(2).get("clusterId").isNull()).as("지운 줄(대표)을 가리키던 줄은 비움 — 운영자 전용 줄의 id가 남지 않게").isTrue();
+        assertThat(items.get(2).get("cluster").isNull()).isTrue();
+    }
+
+    @Test
     @DisplayName("운영자에게는 아무것도 지우지 않는다")
     void ownerSeesEverything() {
         when(collector.liveSearchFeed("us:NVDA", "timeline", true, true, false, true)).thenReturn(Optional.of(json(FEED)));

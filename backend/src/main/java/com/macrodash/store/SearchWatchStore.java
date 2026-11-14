@@ -15,10 +15,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 정보 검색의 관심 대상(ADR 0041 결정 9, V37) — 백엔드가 쓰는 표 {@code search_watches}(사용자·대표 키마다 한 줄)와, 수집기가 모은 글 표
- * {@code search_watch_items}의 <b>읽기</b>(새 글 수). 글 표는 수집기 소유라 쓰는 메서드를 두지 않습니다(ADR 0008). 수집기는 {@code search_watches}를
+ * {@code search_watch_items}의 <b>읽기</b>(새 글 수·화제 건수). 글 표는 수집기 소유라 쓰는 메서드를 두지 않습니다(ADR 0008). 수집기는 {@code search_watches}를
  * 읽기만 합니다({@code paper_settings} 선례).
  *
  * <p>관심 대상·모은 글은 모의 매매의 입력이 아닙니다({@code ArchitectureRulesTest} — feature.paper가 이 저장소를 쓰지 않음).
@@ -38,8 +39,66 @@ public class SearchWatchStore {
                        Instant createdAt, Instant lastSeenAt) {
     }
 
+    /**
+     * 화제 판정(계약 §9-2)에 쓰는 한 대상의 건수. 글은 처음 받은 시각으로 나누고, 받을 때 작성 시각이 이미 {@link SearchWatchStore#HOT_FRESH}보다 지난 글(등록 직후 첫
+     * 수집이 넣은 2년치·늦게 찾은 옛 글)은 어느 쪽에도 세지 않습니다 — 세면 새로 등록한 대상이 하루 동안 모두 '화제'가 되고, 그 뒤 30일은 평균이 부풀어
+     * 화제가 거의 뜨지 않습니다. 작성 시각은 날짜만 아는 줄({@link SearchWatchStore#DATE_SOURCES}, 접수 시각 없이 미국 동부 00:00으로 넣은 {@code sec} 줄)이면
+     * 그 날의 끝, 모르면 처음 받은 시각입니다.
+     *
+     * @param lastDay     지난 {@link SearchWatchStore#HOT_WINDOW}(지금까지)에 처음 받은 글 수
+     * @param earlier     그 앞 {@link SearchWatchStore#HOT_BASELINE}(지금의 31일 전 초과 ~ 24시간 전 이하)에 처음 받았고, 작성 시각이 그 대표 키를 서버에서
+     *                    처음 등록한 때(지금 남은 줄 가운데 가장 이른 등록) 뒤인 글 수 — {@code earlierDays}와 같은 기간을 셉니다(첫 수집이 넣은 등록 전 글,
+     *                    먼저 등록한 사람이 지운 뒤 남은 그 앞의 글은 빼)
+     * @param earlierDays 그 30일 가운데 이 대상을 모은 날 수(0~30, 소수) — 그 대표 키가 서버에서 처음 등록된 때(누가 등록했든)부터 셉니다
+     */
+    public record Buzz(int lastDay, int earlier, double earlierDays) {
+
+        /** 앞 30일의 하루 평균 — 모은 날이 하루 미만이면 모름(null, 0으로 채우지 않음). */
+        public Double dailyAverage() {
+            return earlierDays >= HOT_MIN_BASELINE_DAYS ? earlier / earlierDays : null;
+        }
+
+        /**
+         * 화제인가 — 지난 24시간 {@link SearchWatchStore#HOT_MIN_ITEMS}건 이상이고 앞 30일 하루 평균의 {@link SearchWatchStore#HOT_RATIO}배 이상(평균 0이면 5건부터).
+         * 5건 미만은 평균과 상관없이 아님, 5건 이상인데 평균을 모르면 null.
+         */
+        public Boolean hot() {
+            if (lastDay < HOT_MIN_ITEMS) {
+                return false;
+            }
+            Double average = dailyAverage();
+            return average == null ? null : lastDay >= HOT_RATIO * average;
+        }
+    }
+
     /** 새 글로 세는 작성 시각의 여유 — 마지막으로 본 때의 이만큼 전부터 나온 글(늦게 잡힌 어제 기사는 셈, 첫 수집의 옛 글은 세지 않음). */
     public static final Duration NEW_ITEM_LOOKBACK = Duration.ofHours(24);
+    /** 화제의 '지난 24시간'. */
+    public static final Duration HOT_WINDOW = Duration.ofHours(24);
+    /** 화제의 비교 기간 — {@link #HOT_WINDOW} 앞의 30일. */
+    public static final Duration HOT_BASELINE = Duration.ofDays(30);
+    /** 화제 건수에 넣는 글 — 처음 받을 때 작성 시각(모르면 처음 받은 시각)이 이만큼 안이었던 글. */
+    public static final Duration HOT_FRESH = Duration.ofHours(24);
+    public static final int HOT_MIN_ITEMS = 5;
+    public static final int HOT_RATIO = 3;
+    /** 앞 30일 평균을 믿는 최소 모은 날 수 — 그보다 짧으면 평균을 모름. */
+    public static final double HOT_MIN_BASELINE_DAYS = 1.0;
+    /**
+     * 날짜만 아는 출처(수집기 {@code services/search_filings.DATE_SOURCES}와 같음 — {@code SearchWatchServiceTest}가 대조). 이 줄의 작성 시각은 그 출처 달력의
+     * 그 날 00:00이라, 화제에서는 {@link #DATE_DAY}를 더한 그 날의 끝을 작성 시각으로 봅니다(저녁 공시를 다음 날 처음 받아도 '받을 때 하루 넘게 지난 글'이 아님).
+     */
+    public static final Set<String> DATE_SOURCES = Set.of("sec_fts", "dart", "naver_research");
+    /** 날짜만 아는 줄의 하루. */
+    static final Duration DATE_DAY = Duration.ofHours(24);
+    /**
+     * 화제의 작성 시각 식 — 날짜만 아는 줄은 그 날의 끝, 접수 시각 없이 접수일(미국 동부 00:00:00)로 넣은 {@code sec} 줄도 같음(수집기
+     * {@code search_filings.stored_basis}), 작성 시각을 모르면 처음 받은 시각.
+     */
+    private static final String WRITTEN = "COALESCE(i.published_at + CASE WHEN i.source IN ("
+            + String.join(", ", DATE_SOURCES.stream().sorted().map(source -> "'" + source + "'").toList()) + ")"
+            + " OR (i.source = 'sec' AND i.published_at = date_trunc('day', i.published_at AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York')"
+            + " THEN INTERVAL '" + DATE_DAY.toHours() + " hours' ELSE INTERVAL '0 hours' END, i.first_seen_at)";
+    private static final double DAY_MILLIS = Duration.ofDays(1).toMillis();
     private static final String COLUMNS = "id, user_id, entity_key, kind, name, aliases::text AS aliases, ids::text AS ids, created_at, last_seen_at";
 
     private final JdbcTemplate jdbc;
@@ -133,6 +192,54 @@ public class SearchWatchStore {
             return statement;
         }, rs -> {
             out.put(rs.getLong("id"), rs.getInt("fresh"));
+        });
+        return out;
+    }
+
+    /**
+     * 내 관심 대상마다 화제 건수({@link Buzz}) — 수집기 글 표에서 그 대표 키의 글을 {@code now} 기준 지난 24시간과 그 앞 30일로 나눠 셉니다(둘 다 처음 받은
+     * 시각, 지금 뒤는 빼고, 받을 때 작성 시각이 {@link #HOT_FRESH}보다 지난 글은 빼고). 모은 날 수는 그 대표 키를 서버에서 처음 등록한 시각부터이고, 앞 30일
+     * 건수도 그 뒤에 쓰인 글만 셉니다(분자와 분모가 같은 기간). {@code hiddenSources}를 주면(회원) 그 출처의 글은 세지 않습니다({@link #newCounts}와 같음).
+     * 글이 없는 대상도 한 줄(0건).
+     */
+    public Map<Long, Buzz> buzz(long userId, List<String> hiddenSources, Instant now) {
+        boolean hide = hiddenSources != null && !hiddenSources.isEmpty();
+        Instant dayStart = now.minus(HOT_WINDOW);
+        Instant baselineStart = dayStart.minus(HOT_BASELINE);
+        // 결과를 바꾸지 않는 하한 — 세는 글은 모두 작성 시각(날짜 줄은 그 날 00:00)이 비교 기간 시작의 HOT_FRESH + 하루 전보다 늦습니다. 이 조건이 있어야
+        // 작성 시각 색인(search_watch_items_recent·search_watch_items_time)으로 약 32일 범위만 훑습니다(first_seen_at에는 색인이 없음).
+        Instant indexFloor = baselineStart.minus(HOT_FRESH).minus(DATE_DAY);
+        String sql = "WITH mine AS (SELECT id, entity_key FROM search_watches WHERE user_id = ?), "
+                + "starts AS (SELECT entity_key, MIN(created_at) AS since FROM search_watches "
+                + "WHERE entity_key IN (SELECT entity_key FROM mine) GROUP BY entity_key) "
+                + "SELECT m.id, s.since, COUNT(i.item_id) FILTER (WHERE i.first_seen_at > ?) AS last_day, "
+                + "COUNT(i.item_id) FILTER (WHERE i.first_seen_at <= ? AND " + WRITTEN + " >= s.since) AS earlier "
+                + "FROM mine m JOIN starts s ON s.entity_key = m.entity_key "
+                + "LEFT JOIN search_watch_items i ON i.entity_key = m.entity_key AND i.first_seen_at > ? AND i.first_seen_at <= ?"
+                + " AND COALESCE(i.published_at, i.first_seen_at) > ?"
+                + " AND " + WRITTEN + " > i.first_seen_at - INTERVAL '" + HOT_FRESH.toHours() + " hours'"
+                + (hide ? " AND i.source <> ALL (?)" : "")
+                + " GROUP BY m.id, s.since ORDER BY m.id";
+        Map<Long, Buzz> out = new LinkedHashMap<>();
+        jdbc.query(connection -> {
+            PreparedStatement statement = connection.prepareStatement(sql);
+            int index = 1;
+            statement.setLong(index++, userId);
+            statement.setTimestamp(index++, Timestamp.from(dayStart));
+            statement.setTimestamp(index++, Timestamp.from(dayStart));
+            statement.setTimestamp(index++, Timestamp.from(baselineStart));
+            statement.setTimestamp(index++, Timestamp.from(now));
+            statement.setTimestamp(index++, Timestamp.from(indexFloor));
+            if (hide) {
+                statement.setArray(index, connection.createArrayOf("text", hiddenSources.toArray(new String[0])));
+            }
+            return statement;
+        }, rs -> {
+            Instant since = UserStore.instant(rs.getTimestamp("since"));
+            // 처음 등록 시각을 모르면 모은 날도 모름(0일 — 평균 모름).
+            double days = since == null ? 0
+                    : Math.max(0, Duration.between(since.isBefore(baselineStart) ? baselineStart : since, dayStart).toMillis() / DAY_MILLIS);
+            out.put(rs.getLong("id"), new Buzz(rs.getInt("last_day"), rs.getInt("earlier"), days));
         });
         return out;
     }

@@ -14,6 +14,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -31,9 +36,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -417,6 +425,80 @@ class SearchWatchServiceTest {
     }
 
     @Test
+    @DisplayName("화제 규칙 — 지난 24시간 5건 이상이고 앞 30일 하루 평균의 3배 이상. 평균 0이면 5건부터, 5건 미만은 늘 아님, 모은 날이 하루 미만이라 평균을 모르면 null")
+    void hotRule() {
+        assertThat(new SearchWatchStore.Buzz(5, 0, 30.0).hot()).as("평균 0 — 5건이면 화제").isTrue();
+        assertThat(new SearchWatchStore.Buzz(4, 0, 30.0).hot()).as("5건 미만").isFalse();
+        assertThat(new SearchWatchStore.Buzz(6, 60, 30.0).hot()).as("평균 2의 3배 = 6").isTrue();
+        assertThat(new SearchWatchStore.Buzz(5, 60, 30.0).hot()).as("평균 2의 3배에 못 미침").isFalse();
+        assertThat(new SearchWatchStore.Buzz(12, 36, 9.0).hot()).as("모은 날 9일 — 평균 4의 3배 = 12").isTrue();
+        assertThat(new SearchWatchStore.Buzz(11, 36, 9.0).hot()).isFalse();
+        assertThat(new SearchWatchStore.Buzz(30, 0, 0.5).hot()).as("모은 날이 하루 미만 — 평균을 모름").isNull();
+        assertThat(new SearchWatchStore.Buzz(4, 0, 0.0).hot()).as("5건 미만은 평균을 몰라도 아님").isFalse();
+        assertThat(new SearchWatchStore.Buzz(5, 0, 1.0).hot()).as("모은 날 하루부터 평균을 앎").isTrue();
+        assertThat(new SearchWatchStore.Buzz(9, 3, 0.0).dailyAverage()).isNull();
+        assertThat(new SearchWatchStore.Buzz(9, 3, 2.0).dailyAverage()).isEqualTo(1.5);
+    }
+
+    @Test
+    @DisplayName("화제에서 날짜만 아는 출처(그 날의 끝을 작성 시각으로 봄)는 수집기 services/search_filings의 DATE_SOURCES와 같다")
+    void dateSourcesMatchCollector() throws IOException {
+        Path file = Path.of("../collector/app/services/search_filings.py");
+        assumeTrue(Files.exists(file), "collector/app/services/search_filings.py를 찾을 수 없습니다");
+        Matcher line = Pattern.compile("^DATE_SOURCES = frozenset\\(\\{([^}]*)\\}\\)", Pattern.MULTILINE).matcher(Files.readString(file));
+        assertThat(line.find()).as("DATE_SOURCES 줄").isTrue();
+        Set<String> collector = new TreeSet<>();
+        Matcher name = Pattern.compile("\"([a-z_]+)\"").matcher(line.group(1));
+        while (name.find()) {
+            collector.add(name.group(1));
+        }
+        assertThat(collector).isNotEmpty();
+        assertThat(SearchWatchStore.DATE_SOURCES).containsExactlyInAnyOrderElementsOf(collector);
+    }
+
+    @Test
+    @DisplayName("목록 줄마다 hot — 저장소의 건수로 판정하고, 건수가 없는 줄은 null. 회원은 운영자 전용 출처를 빼고, 시각은 서비스 시계")
+    void listsHotFlag() {
+        long busy = watches.seed(MEMBER.id(), "us:NVDA");
+        long calm = watches.seed(MEMBER.id(), "us:AAPL");
+        long unknown = watches.seed(MEMBER.id(), "topic:HBM");
+        long missing = watches.seed(MEMBER.id(), "kr:005930");
+        watches.buzzByKey.put("us:NVDA", new SearchWatchStore.Buzz(9, 30, 30.0));
+        watches.buzzByKey.put("us:AAPL", new SearchWatchStore.Buzz(4, 0, 30.0));
+        watches.buzzByKey.put("topic:HBM", new SearchWatchStore.Buzz(9, 0, 0.0));
+
+        Map<String, Object> out = service.list(MEMBER);
+
+        Map<Long, Object> hot = new LinkedHashMap<>();
+        items(out).forEach(item -> hot.put((Long) item.get("id"), item.get("hot")));
+        assertThat(hot).containsEntry(busy, true).containsEntry(calm, false).containsEntry(unknown, null).containsEntry(missing, null);
+        assertThat(items(out).get(0)).containsKeys("id", "key", "kind", "name", "createdAt", "lastSeenAt", "newCount", "hot");
+        assertThat(watches.buzzHidden).containsExactlyInAnyOrderElementsOf(SearchService.OWNER_ONLY_SOURCES);
+        assertThat(watches.buzzNow).isEqualTo(NOW);
+
+        watches.seed(OWNER.id(), "us:NVDA");
+        assertThat(items(service.list(OWNER)).get(0)).containsEntry("hot", true);
+        assertThat(watches.buzzHidden).as("운영자는 모두 셈").isEmpty();
+        assertThat(watches.writes).as("읽기만").isZero();
+    }
+
+    @Test
+    @DisplayName("등록 응답의 줄에도 hot — 이미 있던 대상은 그 건수로, 새로 등록한 대상도 같은 판정(다른 사용자가 모으던 대상일 수 있음)")
+    void registeredItemCarriesHot() {
+        watches.seed(OTHER.id(), "us:NVDA");
+        watches.buzzByKey.put("us:NVDA", new SearchWatchStore.Buzz(8, 0, 30.0));
+        resolves("us:NVDA", entity("us:NVDA", "company", "엔비디아", "NVIDIA"));
+
+        SearchWatchService.Result created = service.add(MEMBER, "us:NVDA");
+        assertThat(created.body()).containsEntry("created", true);
+        assertThat(item(created)).containsEntry("hot", true).containsEntry("newCount", 0);
+
+        SearchWatchService.Result again = service.add(MEMBER, "us:NVDA");
+        assertThat(again.body()).containsEntry("created", false);
+        assertThat(item(again)).containsEntry("hot", true);
+    }
+
+    @Test
     @DisplayName("collecting은 수집기의 politeEnabled(제외 목록 경로가 함께 답함) — 칸이 없거나 수집기에 닿지 못하면 null, 받은 값은 잠시 다시 쓴다")
     void collectingFlag() {
         when(collector.liveSearchExcludes()).thenReturn(Optional.of(json("{\"seed\": [], \"politeEnabled\": true}")));
@@ -665,6 +747,10 @@ class SearchWatchServiceTest {
     static final class MemoryWatchStore extends SearchWatchStore {
         final List<Watch> rows = new ArrayList<>();
         final List<Object[]> items = new ArrayList<>();
+        /** 화제 건수 — 대표 키마다 미리 정한 값(없는 키는 지도에 넣지 않음). 마지막 부름의 숨길 출처·시각을 남깁니다. */
+        final Map<String, Buzz> buzzByKey = new LinkedHashMap<>();
+        List<String> buzzHidden;
+        Instant buzzNow;
         boolean ready = true;
         int writes;
         private long sequence;
@@ -779,6 +865,20 @@ class SearchWatchServiceTest {
                     }
                 }
                 out.put(row.id(), count);
+            }
+            return out;
+        }
+
+        @Override
+        public synchronized Map<Long, Buzz> buzz(long userId, List<String> hiddenSources, Instant now) {
+            buzzHidden = hiddenSources;
+            buzzNow = now;
+            Map<Long, Buzz> out = new LinkedHashMap<>();
+            for (Watch row : watches(userId)) {
+                Buzz preset = buzzByKey.get(row.entityKey());
+                if (preset != null) {
+                    out.put(row.id(), preset);
+                }
             }
             return out;
         }
