@@ -75,3 +75,54 @@ def test_DART_저장본을_읽지_못한_풀기는_실패_캐시만(monkeypatch)
     search.entity("kr:900001", external=True)
     until, _ = search._cache[("entity", "kr:900001", True)]
     assert until - time.monotonic() <= search.FAILURE_TTL
+
+
+# ------------------------------------------------------------------ Wikidata 항목(wd:)으로 연 국내 상장사(QA-429 검토 지적)
+
+def _claim(qid: str, ticker: str | None = None) -> dict:
+    claim = {"mainsnak": {"snaktype": "value", "datavalue": {"value": {"entity-type": "item", "id": qid}, "type": "wikibase-entityid"}},
+             "rank": "normal"}
+    if ticker:
+        claim["qualifiers"] = {"P249": [{"snaktype": "value", "datavalue": {"value": ticker, "type": "string"}}]}
+    return claim
+
+
+# 한국 거래소(Q495372)에 종목코드 900001로 상장된 합성 회사 — P31 = 상장 회사(Q891723)
+_WD_KR = {"id": "Q900050", "labels": {"ko": {"language": "ko", "value": "합성전자"}}, "aliases": {}, "descriptions": {},
+          "claims": {"P31": [_claim("Q891723")], "P414": [_claim("Q495372", "900001")]}}
+
+
+def _use_wikidata(monkeypatch) -> None:
+    def api(params):
+        if params.get("action") == "wbgetentities":
+            return {"entities": {qid: (_WD_KR if qid == "Q900050" else {"id": qid, "missing": ""}) for qid in params["ids"].split("|")}}
+        raise AssertionError(f"모르는 요청: {params}")
+
+    monkeypatch.setattr(search_wikidata, "api", api)
+
+
+@pytest.mark.xfail(strict=True, reason="QA-429 검토 지적: 저장본을 읽지 못하면 wd: 국내 상장사가 사유 없이 국내 종목이 아닌 것처럼 하루 캐시됨")
+def test_DART_저장본을_읽지_못하면_wd_국내_상장사도_모름이라_적고_실패_캐시만(monkeypatch):
+    """
+    한국 거래소 코드가 있는 Wikidata 항목을 저장본 없이 풀면 국내 종목인지 확인하지 못한 것 — 사유 없이 '국내 종목 아님'으로 하루 붙들지 않고
+    (errors.dart_store → 60초 캐시·관심 대상 등록 partial), 공시 탭에 DART 줄을 빼지 않고 '모름'으로 둠.
+    """
+    _use_wikidata(monkeypatch)
+    monkeypatch.setattr(search_store, "dart_codes", lambda: {})
+    out = search.entity("wd:Q900050", external=True)
+    assert out["entity"]["ids"]["dartCorpCode"] is None
+    assert out["errors"] == {search_entities.DART_STORE: _UNREAD}
+    until, _ = search._cache[("entity", "wd:Q900050", True)]
+    assert until - time.monotonic() <= search.FAILURE_TTL
+    row = _dart_row(search.feed("wd:Q900050", "filings", owner=False, external=True))
+    assert (row["status"], row["message"]) == ("error", f"DART 고유번호를 모름 — {_UNREAD}")
+
+
+def test_DART_저장본을_읽었는데_wd_항목의_코드가_없으면_사유도_DART_줄도_없다(monkeypatch):
+    """대조 — 저장본을 읽었고 그 코드가 없으면(상장 폐지 등) 국내 종목이 아니라고 확인한 것: 사유 없이 하루 캐시, 공시 탭에 DART 줄 없음."""
+    _use_wikidata(monkeypatch)
+    monkeypatch.setattr(search_store, "dart_codes", lambda: dict(_OTHER))
+    out = search.entity("wd:Q900050", external=True)
+    assert out["entity"]["ids"]["market"] is None and out["errors"] == {}
+    sources_ = {row["source"] for row in search.feed("wd:Q900050", "filings", owner=False, external=True)["sources"]}
+    assert "dart" not in sources_
