@@ -45,9 +45,16 @@ public class CollectorClient {
      */
     static final Duration ACCOUNT_READ_TIMEOUT = Duration.ofSeconds(35);
 
+    /**
+     * 정보 검색의 치는 동안 후보({@link #liveSearchSuggest})의 읽기 타임아웃. 수집기가 이미 가진 색인만 찾고 외부를 부르지 않으므로(ADR 0041 결정 4)
+     * 글자마다 오는 요청이 일반 호출의 90초만큼 요청 스레드를 묶지 않게 짧게 둡니다.
+     */
+    static final Duration SEARCH_SUGGEST_READ_TIMEOUT = Duration.ofSeconds(10);
+
     private final RestClient client;
     private final RestClient controlClient;
     private final RestClient accountClient;
+    private final RestClient suggestClient;
     private final AppProperties properties;
 
     public CollectorClient(AppProperties properties) {
@@ -55,6 +62,7 @@ public class CollectorClient {
         this.client = build(properties, Duration.ofSeconds(properties.getCollectorTimeoutSeconds()));
         this.controlClient = build(properties, CONTROL_READ_TIMEOUT);
         this.accountClient = build(properties, ACCOUNT_READ_TIMEOUT);
+        this.suggestClient = build(properties, SEARCH_SUGGEST_READ_TIMEOUT);
     }
 
     private static RestClient build(AppProperties properties, Duration readTimeout) {
@@ -230,6 +238,49 @@ public class CollectorClient {
                 .build(), "/live/daum-intraday");
     }
 
+    // -------------------------------------------------------------- 정보 검색 (ADR 0041, 계약 docs/specs/2026-11-14-info-search-contract.md §3)
+    //
+    // 검색어·대상 키는 URI 변수로 넘겨 한 번만, 빠짐없이 인코딩합니다('+'·'&'·'{'·한글까지 — 템플릿 글자로 두면 '+'가 공백으로 풀립니다).
+    // external(false면 수집기가 외부를 부르지 않음 — 데모·store_only)과 owner(운영자 전용 줄을 섞음)는 백엔드가 정해 늘 붙입니다.
+    // 실패 로그는 경로 이름표와 상태 코드·예외 클래스만 남깁니다(getQuietly — 검색어를 로그에 남기지 않음, 결정 12).
+
+    /** 치는 동안의 후보(수집기 /live/search/suggest — 이미 가진 색인만, 외부 호출 없음). 읽기 한도 {@link #SEARCH_SUGGEST_READ_TIMEOUT}. */
+    public Optional<JsonNode> liveSearchSuggest(String q, boolean external, boolean owner) {
+        return getQuietly(suggestClient, uri -> uri.path("/live/search/suggest")
+                .queryParam("q", "{q}")
+                .queryParam("external", external)
+                .queryParam("owner", owner)
+                .build(Map.of("q", q)), "/live/search/suggest");
+    }
+
+    /** Enter의 후보(수집기 /live/search/resolve — 로컬 색인 + Wikidata 검색, 1시간 캐시). */
+    public Optional<JsonNode> liveSearchResolve(String q, boolean external, boolean owner) {
+        return getQuietly(client, uri -> uri.path("/live/search/resolve")
+                .queryParam("q", "{q}")
+                .queryParam("external", external)
+                .queryParam("owner", owner)
+                .build(Map.of("q", q)), "/live/search/resolve");
+    }
+
+    /** 대상 풀기(수집기 /live/search/entity — Wikidata·SEC·DART 표, 하루 캐시). */
+    public Optional<JsonNode> liveSearchEntity(String e, boolean external, boolean owner) {
+        return getQuietly(client, uri -> uri.path("/live/search/entity")
+                .queryParam("e", "{e}")
+                .queryParam("external", external)
+                .queryParam("owner", owner)
+                .build(Map.of("e", e)), "/live/search/entity");
+    }
+
+    /** 결과(수집기 /live/search/feed — 출처별 상태와 2년 묶음, 15분 캐시). */
+    public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner) {
+        return getQuietly(client, uri -> uri.path("/live/search/feed")
+                .queryParam("e", "{e}")
+                .queryParam("tab", "{tab}")
+                .queryParam("external", external)
+                .queryParam("owner", owner)
+                .build(Map.of("e", e, "tab", tab)), "/live/search/feed");
+    }
+
     // -------------------------------------------------------------- 호출 공통
     //
     // URI는 **UriBuilder에 맡겨 한 번만 인코딩**합니다.
@@ -261,6 +312,22 @@ public class CollectorClient {
 
     private Optional<JsonNode> get(String uri) {
         return get(builder -> builder.path(uri).build(), uri);
+    }
+
+    /**
+     * 로그에 요청 주소·응답 본문을 남기지 않는 GET. {@link #get}은 {@code e.getMessage()}를 남기는데, 연결·시간 초과 예외의 메시지에는 쿼리까지 든
+     * 주소가, 4xx·5xx 예외의 메시지에는 응답 본문이 들어갑니다 — 경로 이름표({@code label})와 상태 코드나 예외 클래스 이름만 남깁니다.
+     */
+    private Optional<JsonNode> getQuietly(RestClient via, Function<UriBuilder, URI> uriFunction, String label) {
+        try {
+            return Optional.ofNullable(via.get().uri(uriFunction).retrieve().body(JsonNode.class));
+        } catch (RestClientResponseException e) {
+            log.warn("수집기 호출 실패 (GET {}): HTTP {}", label, e.getStatusCode().value());
+            return Optional.empty();
+        } catch (RuntimeException e) {
+            log.warn("수집기 호출 실패 (GET {}): {}", label, e.getClass().getSimpleName());
+            return Optional.empty();
+        }
     }
 
     private Optional<JsonNode> post(RestClient via, Function<UriBuilder, URI> uriFunction,

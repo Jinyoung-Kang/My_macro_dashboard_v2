@@ -118,6 +118,21 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("정보 검색 경로(/api/search, ADR 0041 결정 2)는 네 GET 모두 회원 — 운영자 전용 줄과 글·논평 탭은 서비스가 거른다")
+    void searchRoutesAreMember() throws ClassNotFoundException {
+        java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
+                .filter(route -> route.split(" ")[1].startsWith("/api/search/")).toList();
+        assertThat(declared).containsExactlyInAnyOrder("GET /api/search/suggest", "GET /api/search/resolve",
+                "GET /api/search/entity", "GET /api/search/feed");
+        declared.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route).isEqualTo(AccessPolicy.Access.MEMBER));
+        for (String path : java.util.List.of("/api/search/suggest", "/api/search/resolve", "/api/search/entity", "/api/search/feed")) {
+            assertThat(AccessPolicy.required("GET", path)).as("GET " + path).isEqualTo(AccessPolicy.Access.MEMBER);
+            assertThat(AccessPolicy.required("HEAD", path)).as("HEAD " + path).isEqualTo(AccessPolicy.Access.MEMBER);
+        }
+        assertThat(AccessPolicy.allows(AccessPolicy.Access.MEMBER, "MEMBER", "FREE")).as("무료 회원도 부름").isTrue();
+    }
+
+    @Test
     @DisplayName("운영자는 모든 등급 경로를, 무료 회원은 운영·유료 경로를 못 쓴다")
     void allows() {
         assertThat(AccessPolicy.allows(AccessPolicy.Access.OWNER, "MEMBER", "PRO")).isFalse();

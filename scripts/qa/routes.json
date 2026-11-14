@@ -469,6 +469,35 @@
     },
     {
       "m": "GET",
+      "p": "/api/search/suggest",
+      "q": {
+        "q": "str"
+      }
+    },
+    {
+      "m": "GET",
+      "p": "/api/search/resolve",
+      "q": {
+        "q": "str"
+      }
+    },
+    {
+      "m": "GET",
+      "p": "/api/search/entity",
+      "q": {
+        "e": "str"
+      }
+    },
+    {
+      "m": "GET",
+      "p": "/api/search/feed",
+      "q": {
+        "e": "str",
+        "tab": "enum"
+      }
+    },
+    {
+      "m": "GET",
       "p": "/api/live/prices",
       "q": {
         "items": "list"

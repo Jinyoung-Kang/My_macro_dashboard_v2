@@ -47,6 +47,14 @@ const CASES: Case[] = [
   { name: "detail.news 검색어만", before: `/api/detail/news?q=${encodeURIComponent("Berkshire Hathaway")}`,
     after: endpoints.detail.news({ q: "Berkshire Hathaway" }) },
   { name: "detail.symbols", before: `/api/detail/symbols?q=${encodeURIComponent("삼성")}`, after: endpoints.detail.symbols("삼성") },
+  // 정보 검색(ADR 0041) — 대상 키의 ':'와 주제 글의 공백·'&'도 값 하나로 갑니다.
+  { name: "search.suggest", before: `/api/search/suggest?q=${encodeURIComponent("엔비디아 & co")}`,
+    after: endpoints.search.suggest("엔비디아 & co") },
+  { name: "search.resolve", before: `/api/search/resolve?q=${encodeURIComponent("Ken Griffin")}`,
+    after: endpoints.search.resolve("Ken Griffin") },
+  { name: "search.entity", before: `/api/search/entity?e=${encodeURIComponent("us:NVDA")}`, after: endpoints.search.entity("us:NVDA") },
+  { name: "search.feed", before: `/api/search/feed?e=${encodeURIComponent("topic:AI 반도체")}&tab=news`,
+    after: endpoints.search.feed("topic:AI 반도체", "news") },
   { name: "live.prices", before: `/api/live/prices?items=${encodeURIComponent("US:AAPL,KR:005930")}`,
     after: endpoints.live.prices(["US:AAPL", "KR:005930"]) },
   { name: "live.stream", before: `/api/live/prices/stream?items=${encodeURIComponent("US:^GSPC,US:KRW=X")}&interval=5`,
@@ -326,6 +334,6 @@ describe("docs/API.md 백엔드 표와 대조", () => {
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(71);
+    expect(functions).toBe(75);
   });
 });

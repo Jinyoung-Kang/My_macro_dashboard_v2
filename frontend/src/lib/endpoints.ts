@@ -115,6 +115,18 @@ export const endpoints = {
     summary: "/api/detail/summary",
   },
 
+  // 정보 검색(/search — ADR 0041, 회원). 대상 키(e)는 us:·kr:·cik:·wd:·topic: 모양(docs/specs/2026-11-14-info-search-contract.md §2).
+  // 기간 인자는 없습니다 — feed는 2년 묶음을 한 번에 주고 화면이 7일·30일·1년·2년으로 자릅니다.
+  search: {
+    /** 치는 동안의 후보(외부 호출 없음). */
+    suggest: (q: string) => withQuery("/api/search/suggest", { q }),
+    /** Enter의 후보(로컬 + Wikidata, 맨 끝에 주제). */
+    resolve: (q: string) => withQuery("/api/search/resolve", { q }),
+    entity: (e: string) => withQuery("/api/search/entity", { e }),
+    /** tab: timeline · news · posts(운영자) · filings · research. */
+    feed: (e: string, tab: string) => withQuery("/api/search/feed", { e, tab }),
+  },
+
   // 화면 실시간 시세(ADR 0024) — 저장하지 않는 외부 조회. 종목은 'US:AAPL'·'KR:005930', SSE는 고른 주기(초)마다 서버가 밀어 줌
   live: {
     prices: (items: readonly string[]) => withQuery("/api/live/prices", { items: items.join(",") }),

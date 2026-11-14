@@ -78,6 +78,9 @@ public final class AccessPolicy {
         pro("POST /api/detail/summary");
         // 화면 실시간 시세(ADR 0024 — 모의 매매 장중 카드·보유 표·종목 상세, 저장하지 않는 외부 조회 — 상세 시세와 같은 등급)
         member("GET /api/live/prices", "GET /api/live/prices/stream");
+        // 정보 검색(ADR 0041 결정 2 — 상세 뉴스와 같은 회원). 운영자 전용 줄(수집 글·거장 견해·속보)과 글·논평 탭은 SearchService가
+        // CurrentUser.isOwner()로 거르고, 데모·store_only는 외부를 부르지 않음
+        member("GET /api/search/suggest", "GET /api/search/resolve", "GET /api/search/entity", "GET /api/search/feed");
 
         // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
         member("GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",

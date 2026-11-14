@@ -227,6 +227,18 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/detail/symbols?q=` | `{available, symbols:{items:[{market, code, yahooSymbol, name, exchange, kind, source}], errors, error}}` — 네이버 자동완성 + Yahoo 검색(한글·숫자 질의는 네이버 먼저), 10건. 검색어 40자 이내, 비면 빈 목록 |
 | `POST /api/detail/summary` | (유료) `{market?, code?, q?, label?}` → `{status, summary, model, generatedAtKst, cached, sources:[{n, label, url}], quota:{used, limit}, error}` — 서버가 모은 시세·지표·뉴스 제목만 번호를 붙여 Claude Haiku 5.5(effort medium)에 넘김, 줄 끝 [번호]가 `sources`. 같은 대상·같은 KST 날짜의 성공 요약은 다시 부르지 않음(`cached`). 하루 한도는 AI 리포트와 같은 값(`ai.detail`로 따로 셈), 모델에 닿지 않은 실패는 되돌림 |
 
+### 정보 검색 (`/search` — [ADR 0041](adr/0041-info-search-watch.md), [계약](specs/2026-11-14-info-search-contract.md))
+
+기업·기관·사람·주제를 대상으로 풀어 최근 2년의 뉴스·글을 모읍니다(회원 — 운영자 전용 저장본의 줄과 글·논평 탭은 운영자에게만). 즉석 검색은 수집기 메모리
+캐시에만 두고 저장하지 않습니다. 데모 열람·`store_only`는 외부를 부르지 않고 저장본·캐시만(출처 상태 `offline`). 응답 모양은 계약 §3이 정본입니다.
+
+| 경로 | 설명 |
+|---|---|
+| `GET /api/search/suggest?q=` | 치는 동안의 후보(외부 호출 없음 — DART 고유번호·SEC 티커 저장본, 13F 기관, 거장 등) → `{items:[{key, kind, name, sub, source}], fetchedAt}`, 최대 12개. 검색어 1~60자 |
+| `GET /api/search/resolve?q=` | Enter의 후보 — 로컬 + Wikidata(한국어·영어, 1시간 캐시), 맨 끝에 `topic:<q>` → `{items, errors, fetchedAt}` |
+| `GET /api/search/entity?e=` | 대상 풀기(키 `us:`·`kr:`·`cik:`·`wd:`·`topic:` — 모양이 틀리면 400) → `{entity:{key, kind, name, nameKo, nameEn, aliases, description, ids:{ticker, market, stockCode, cik, dartCorpCode, wikidata}, links:[{relation, key, name, kind, source}], sources}, errors, fetchedAt}`, 하루 캐시 |
+| `GET /api/search/feed?e=&tab=timeline\|news\|posts\|filings\|research` | 2년 묶음 한 번에(화면이 7일·30일·1년·2년으로 자름) → `{entityKey, tab, items:[{id, kind, title, url, publisher, publisherDomain, publishedAt, timeBasis, source, lang, summary, readerId}], sources:[{source, label, status, count, dropped:{old, noTime, chinese, excluded}, message}], window:{from, to}, rangeCounts, olderOnlyLatest, pending, fetchedAt}` — 2년 밖·시각 모름·중국어 제목·`.cn`·제외 매체는 빼고 건수만, 15분 캐시. `posts`는 운영자만(그 밖 403) |
+
 ### 화면 실시간 시세 ([ADR 0024](adr/0024-live-prices-sse.md))
 
 모의 매매 장중 카드·보유 표·종목 팝업·종목 상세와 [시장] 메뉴(매크로 카드·섹터 현재가)가 사용자가 고른 주기(5초~3시간)로 받는 가격입니다. 저장하지 않고 수집기
@@ -420,6 +432,10 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/prices?items=US:AAPL,KR:005930,TV:TVC:DXY,NI:.INX` | 화면 실시간 시세(ADR 0024 — 미국 네이버 → Yahoo, 국내 네이버 → 다음 → 토스 1분봉, `TV:` TradingView global/scan, `NI:` 네이버 해외 지수, 종목마다 지연·시간 외 가격, 3초 캐시, 저장 안 함, 60개까지) |
 | [토큰] `GET /live/news?market=&code=&q=` | 검색 상세의 주요 뉴스(Yahoo·네이버·구글 뉴스 RSS, 15분 캐시) |
 | [토큰] `GET /live/symbols?q=` | 종목 찾기(네이버 자동완성·Yahoo 검색, 1시간 캐시) |
+| [토큰] `GET /live/search/suggest?q=&owner=&external=` | 정보 검색 — 치는 동안의 후보(로컬 색인만, 외부 호출 없음) |
+| [토큰] `GET /live/search/resolve?q=&owner=&external=` | 정보 검색 — Enter의 후보(로컬 + Wikidata, 1시간 캐시) |
+| [토큰] `GET /live/search/entity?e=&owner=&external=` | 정보 검색 — 대상 풀기(Wikidata·SEC·DART 표, 하루 캐시) |
+| [토큰] `GET /live/search/feed?e=&tab=&owner=&external=` | 정보 검색 — 결과(구글·Bing·Yahoo·네이버·연합인포맥스 + 저장본, 2년 자르기·중국어·매체 거름, 15분 캐시). `external=false`면 외부를 부르지 않음 |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |
 | [토큰] `GET /diagnostics/connections` | KIS·Daum·Naver·토스 진단 |
 | [토큰] `GET /diagnostics/public-apis` | 특일정보·주식시세·DART 진단 (API당 1회) |

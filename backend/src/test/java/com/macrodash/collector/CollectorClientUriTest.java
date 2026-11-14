@@ -119,4 +119,50 @@ class CollectorClientUriTest {
         assertThat(receivedPaths).containsExactly("/collect/task/macro_collected");
         assertThat(decodedParam("wait")).isEqualTo("false");
     }
+
+    @Test
+    @DisplayName("정보 검색 후보 — 한글 검색어가 그대로, external·owner가 함께 도착한다")
+    void searchSuggestKoreanQueryArrivesIntact() {
+        client.liveSearchSuggest("엔비디아 반도체", false, true);
+
+        assertThat(receivedPaths).containsExactly("/live/search/suggest");
+        assertThat(decodedParam("q")).isEqualTo("엔비디아 반도체");
+        assertThat(decodedParam("external")).isEqualTo("false");
+        assertThat(decodedParam("owner")).isEqualTo("true");
+        assertThat(receivedQueries.get(0)).doesNotContain("%25");
+    }
+
+    @Test
+    @DisplayName("정보 검색 Enter 후보 — '+'·'&'·'{'가 든 검색어도 한 번만 인코딩되어 그대로 도착한다")
+    void searchResolveReservedCharactersArriveIntact() {
+        client.liveSearchResolve("C++ & {AT&T} 100%", true, false);
+
+        assertThat(receivedPaths).containsExactly("/live/search/resolve");
+        assertThat(decodedParam("q")).isEqualTo("C++ & {AT&T} 100%");
+        assertThat(decodedParam("external")).isEqualTo("true");
+        assertThat(decodedParam("owner")).isEqualTo("false");
+    }
+
+    @Test
+    @DisplayName("정보 검색 대상 풀기 — 'topic:' 키의 한글·공백·콜론이 그대로 도착한다")
+    void searchEntityTopicKeyArrivesIntact() {
+        client.liveSearchEntity("topic:AI 반도체", true, true);
+
+        assertThat(receivedPaths).containsExactly("/live/search/entity");
+        assertThat(decodedParam("e")).isEqualTo("topic:AI 반도체");
+        assertThat(decodedParam("external")).isEqualTo("true");
+        assertThat(decodedParam("owner")).isEqualTo("true");
+    }
+
+    @Test
+    @DisplayName("정보 검색 결과 — 대상 키·탭·external·owner가 그대로 도착한다")
+    void searchFeedParametersArriveIntact() {
+        client.liveSearchFeed("us:BRK.B", "news", false, false);
+
+        assertThat(receivedPaths).containsExactly("/live/search/feed");
+        assertThat(decodedParam("e")).isEqualTo("us:BRK.B");
+        assertThat(decodedParam("tab")).isEqualTo("news");
+        assertThat(decodedParam("external")).isEqualTo("false");
+        assertThat(decodedParam("owner")).isEqualTo("false");
+    }
 }
