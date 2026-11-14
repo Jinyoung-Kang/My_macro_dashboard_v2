@@ -548,6 +548,23 @@ EQUITY_MAP = {
 - robots.txt가 막는 출처(Yahoo·구글 뉴스 검색·WISEfn 등)도 씁니다 — 개인·비상업 프로젝트라 사용자가 허락했습니다([decisions.md](decisions.md) 2026-11-01). 출처 링크와
   받은 시각을 함께 내고, 실패는 출처별로(`errors`) 보이며, 실패한 응답은 1분만 캐시합니다. 모의매매 사건 헤드라인(`news_headlines`)의 출처 규칙은 그대로입니다.
 
+## 6-1b. 정보 검색의 즉석 조회 (저장하지 않음, [ADR 0041](adr/0041-info-search-watch.md))
+
+정보 검색(`/search` — [계약](specs/2026-11-14-info-search-contract.md))도 수집 태스크가 아니라 화면이 볼 때만 수집기 `/live/search/{suggest,resolve,entity,feed}`를
+부릅니다(`collector/app/services/search*.py`). 결과는 수집기 메모리에만 두고, 최근 2년(오늘 KST − 2년의 00:00)보다 오래된 줄·시각을 모르는 줄·제목이 중국어인 줄·
+매체 주소가 `.cn`이거나 제외 목록(중국 국가·당·본토·홍콩·마카오 매체, Futu/moomoo — 대만 매체·Investing.com·StreetInsider·SCMP는 사용자가 허용)에 든 줄은
+빼고 건수만 출처 상태에 적습니다. 데모 열람·`store_only`는 외부를 부르지 않습니다(`external=false`).
+
+| 출처 | 받는 것 | 캐시 | 한계 |
+|---|---|---|---|
+| 구글 뉴스 RSS 검색(한국어 판 `hl=ko`·영어 판 `hl=en-US`, `after:<2년 전>`) | 대상 이름·별칭의 따옴표 구문을 OR로 묶은 뉴스 | 출처마다 15분(실패 60초) | 날짜순이 아니고 약 100건 상한 — 많이 나오는 이름은 최근 2주만 옴. `after:`를 믿지 않고 다시 자름. 링크는 구글 경유 주소(풀지 않음), 매체 도메인은 `<source url>` |
+| Bing 뉴스 RSS(`www.bing.com/news/search?format=rss`) | 같은 검색식(한·영) | 같음 | 날짜순 아님, 10건 안팎. 원문 주소는 링크의 `url` 인자에서, 매체는 `News:Source` |
+| Yahoo 검색 뉴스(yfinance `Search`) | 미국 종목 대상의 뉴스 — `relatedTickers`에 그 티커가 있는 줄만 | 같음 | 상세 화면과 같은 거부 래치 |
+| 네이버 종목 뉴스·연합인포맥스 | 국내 종목 뉴스(상세 화면 함수 그대로), 연합인포맥스는 구글 `site:` 검색 + `after:` | 같음 | 6-1과 같음 |
+| Wikidata(`wbsearchentities`·`wbgetentities`, 일반 이름 User-Agent) | 한국어·영어 이름·별칭·설명, 관계(소유·피소유·창업·소속·대표·모회사·자회사), CIK·상장 거래소와 티커 | 대상 풀기 하루·후보 1시간 | 요청 사이 1초 넘게(짧게 몰아 보내면 429). 다른 언어 이름은 받지 않음. `Duquesne Family Office`처럼 항목이 없는 대상은 13F·주제로만 |
+| SEC `company_tickers.json`(`SEC_USER_AGENT`) | 티커 ↔ CIK·회사 이름 | 메모리 하루 | 치는 동안의 후보는 이미 받아 둔 표만(외부 호출 없음) |
+| 저장본(외부 호출 없음) | 사건 뉴스 관측치(`news_headline`·`kr_news_headline`, 보관 7일), DART 고유번호 저장본, 13F 기관 목록, (운영자) 수집 글 `info_items`(보관 180일)·거장 견해·속보 | — | 저장본의 보관 기간만큼만 있음 — 화면의 건수는 '받은 자료 기준' |
+
 ## 6-2. 화면 실시간 시세 (저장하지 않음, [ADR 0024](adr/0024-live-prices-sse.md))
 
 모의 매매 장중 카드·보유 표·종목 팝업·종목 상세와 [시장] 메뉴(매크로 카드·섹터 현재가)의 가격은 수집 태스크가 아니라 화면이 SSE로 붙어 있는 동안 백엔드가 고른 주기(5초~3시간)마다 수집기

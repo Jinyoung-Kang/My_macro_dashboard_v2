@@ -112,16 +112,16 @@ D-9 — 실측에서 보인 중화권 영어 매체: **DigiTimes**(대만, Finvi
 - 본토 민간: Caixin(`caixinglobal.com`·`caixin.com`), Jiemian(`jiemian.com`), Economic Observer(`eeo.com.cn`), 21st Century Business Herald(`21jingji.com`),
   36Kr(`36kr.com`), TechNode(`technode.com`), Pandaily(`pandaily.com`), Mysteel(`mysteel.net`·`mysteel.com`), SMM(`metal.com`), Gasgoo(`gasgoo.com`),
   CnEVPost(`cnevpost.com`), CarNewsChina(`carnewschina.com`)
-- 홍콩: SCMP(`scmp.com`·`inkstonenews.com`), The Standard(`thestandard.com.hk`), RTHK(`rthk.hk`), Hong Kong Free Press(`hongkongfp.com`), Asia Times(`asiatimes.com`),
+- 홍콩: The Standard(`thestandard.com.hk`), RTHK(`rthk.hk`), Hong Kong Free Press(`hongkongfp.com`), Asia Times(`asiatimes.com`),
   EJ Insight(`ejinsight.com`·`hkej.com`), HKET(`hket.com`), AASTOCKS(`aastocks.com`), ETNet(`etnet.com.hk`), Mingtiandi(`mingtiandi.com`),
   Dimsum Daily(`dimsumdaily.hk`), Phoenix(`ifeng.com`), Week in China(`weekinchina.com`)
 - 마카오: Macau Business(`macaubusiness.com`), Macau Daily Times(`macaudailytimes.com.mo`), GGRAsia(`ggrasia.com`), Inside Asian Gaming(`asgam.com`),
   Macau News Agency(`macaunews.mo`)
-- 대만: Focus Taiwan·CNA(`focustaiwan.tw`·`cna.com.tw`), Taipei Times(`taipeitimes.com`), Taiwan News(`taiwannews.com.tw`), DigiTimes(`digitimes.com`·
-  `digitimes.com.tw`), TrendForce(`trendforce.com`), CommonWealth(`cw.com.tw`), Taiwan Today(`taiwantoday.tw`), RTI(`rti.org.tw`), The China Post(`chinapost.com.tw`),
-  BigGo(`biggo.com` — 실측에서 `finance.biggo.com`)
-- 중국 자본 금융 매체: Investing.com(`investing.com`), StreetInsider(`streetinsider.com`), Futu·moomoo(`moomoo.com`·`futunn.com`·`futuhk.com`·`futuholdings.com`)
-- 처음 값에 넣지 않고 보고(불확실): Webull, Tiger Brokers(UP Fintech), KrASIA, China Briefing, AInvest, Bamboo Works, The News Lens
+- 중국 자본 금융 매체: Futu·moomoo(`moomoo.com`·`futunn.com`·`futuhk.com`·`futuholdings.com`)
+- **사용자가 허용함(2026-11-14 — 제외 목록에 넣지 않음)**: 대만 매체 전부(Focus Taiwan·CNA, Taipei Times, Taiwan News, DigiTimes, TrendForce, CommonWealth,
+  Taiwan Today, RTI, The China Post, BigGo 등), Investing.com, StreetInsider, South China Morning Post(`scmp.com`·자매 매체 Inkstone `inkstonenews.com`),
+  소유가 불확실했던 매체(Webull, Tiger Brokers(UP Fintech), KrASIA, China Briefing, AInvest, Bamboo Works, The News Lens). 중국어 제목 거름과 `.cn` 규칙은
+  이 매체들에도 그대로 적용됩니다(D-9 고정).
 - 비중국 매체의 중국어 판(`cn.wsj.com`·`cn.nytimes.com`·`ftchinese.com`·`zh.cn.nikkei.com`·`fxstreet.cn`)은 중국어 제목 거름과 `.cn` 규칙이 잡고,
   잡지 못하는 도메인은 목록에 넣음.
 
@@ -133,8 +133,38 @@ D-9 — 실측에서 보인 중화권 영어 매체: **DigiTimes**(대만, Finvi
 - 관심 대상 글 표는 D29 재개정('robots 출처는 저장하지 않음')을 고치는 것이라 ADR 0041 머리에 적음(사용자 결정 D-4).
 - 매체 제외 목록: 처음 값(코드에 둔 확실한 목록 — 위) + 사용자가 더하는 표(단계 3 마이그레이션에 함께). 즉석 검색·관심 대상 모두 수집기가 거름.
 
+## 단계 1 — 메뉴 재배치 (2026-11-14 토, 배포 끝)
+
+- 커밋 `6a4b60b6`(화면 — `TABS`에서 한국 탭 없앰, 정보 검색 탭 + 자리 화면, `/radar`·`/krx`는 더보기 탭의 `group: "한국 시장"`, 하위 메뉴 줄은 같은 묶음만,
+  통합 검색은 검색어 '한국'·보조 글 '한국 시장', 더보기 화면은 '메뉴' 다음 '한국 시장' 묶음, 아이콘) · `f42eb980`(README·ARCHITECTURE·UI 설계서·ADR 0036 개정 메모).
+- 시험: 먼저 고친 nav·Shell·MoreMenu 시험이 실패하는 것을 본 뒤 구현. `make test` 통과(수집기 2,524 통과·36 건너뜀, 백엔드 3,287, 화면 2,178).
+  독립 검토 에이전트 1개: 큰 결함 없음(사소한 넷 — `subNav`의 늘 참인 조건 줄이기·자리 화면 문구는 단계 2에서 고침, 더보기 화면이 다른 묶음 값을 그리지 않는 것·
+  통합 검색 결과의 레이더 아이콘이 더보기 아이콘인 것은 그대로 둠).
+- main `f42eb980` push → CI 6/6 → **17:14 KST Vultr 배포**(`deploy.sh` — 화면 컨테이너만 새로 뜸), 컨테이너 6개 정상, 백엔드·화면 로그 오류 0,
+  ts.net `/search`·`/more`·`/radar` 200.
+
+## 단계 2 — 정보 검색 1판 (2026-11-14 토)
+
+- 계약을 먼저 고정: [2026-11-14-info-search-contract.md](2026-11-14-info-search-contract.md)(대상 키·경로·응답 모양·규칙). 구현은 워크플로 `wf_cbd97f75-01d` —
+  수집기·백엔드·화면 에이전트 셋이 나뉜 파일만 고침(같은 작업 트리, 커밋 없음, 백엔드는 따로 만든 시험 DB `macrodash_b_test`) → 영역마다 검토 둘(계약·규칙 관점,
+  정확성·시험 관점) → 영역마다 고치는 에이전트 → 영역 간 계약 대조 에이전트(13개).
+- 검토에서 고친 것(주요): 사용자가 허용한 매체(대만·Investing.com·StreetInsider·SCMP)가 제외 목록에 남아 있던 것(구현 중에 사용자 결정이 와서 — 시험을 뒤집어 고정),
+  해외 거래소 티커가 엉뚱한 미국 종목 키가 되던 것(LVMH 'MC' → Moelis — 거래소별 티커만), 키 없는 로컬 후보가 같은 이름의 Wikidata 사람을 지우던 것,
+  resolve에 시간 상한이 없던 것, 회원 응답에서 출처 칸이 없는 줄 하나가 500을 내던 것(백엔드 `hideOwnerOnly` — 닫힌 실패로), 모든 출처가 실패해도 '자료가 없습니다'로
+  보이던 것(받은 출처가 없으면 '모릅니다' + 받지 못한 출처 한 줄), 단독 링크의 누름 자리 44px, 범위 블록의 바탕·글자색이 레이어 밖에서 대화상자 `bg-surface`를 이기던 것.
+- 대조에서 직접 고친 것: Wikidata의 사람·조직이 아닌 항목(종류 `topic`, 키 `wd:`)을 화면이 '주제로 찾기'로 보이던 것(`isTopicSearch` — 출처·키로 가름),
+  맨 끝 주제 후보의 부제 '주제' 겹침(null), 세 층의 키 문법 차이(티커 15자·QID 0으로 시작 안 함·제어 글자 400 — 수집기의 400이 '응답 없음'으로 바뀌던 것).
+- 계약을 구현에 맞게 고친 곳: `wd:` 종류에 `topic`, 캐시는 출처마다(결과 전체 캐시 없음, `external=false`는 읽기만), 대상 이름은 4글자 미만이어도 검색식에,
+  빈 결과 안내 두 줄 더함.
+- 시험: `make test` 통과(수집기 2,712 통과·36 건너뜀, 백엔드 3,319, 화면 2,319). 새 시험 — 수집기 `test_search_{rules,sources,entity,store,api}.py`,
+  백엔드 `SearchServiceTest`·`SearchControllerTest`·`CollectorClientSearchLogTest`, 화면 `infoSearch.test.ts`·`searchTheme.test.ts`·`SearchScreen.test.tsx`·
+  `useInfoSearch.test.tsx`.
+- 이 PC에서 실제 출처로 한 번(수집기 에이전트, 응답 원문은 남기지 않음): `wd:Q182477` → `us:NVDA`, 뉴스 탭 약 4초에 출처 5곳 ok, Ken Griffin 후보가 사람·주제로 나뉨.
+  Wikidata가 짧게 약 15건에 429 → 요청 사이 1초 넘게(서버에서는 배포 뒤 확인).
+- 남긴 한계: 영문이 섞인 국내 새 종목 코드는 `kr:` 키로 받지 않음, 수집 글 본문 검색은 색인 없이 문 시간 3초·200건, 시간 상한을 넘긴 출처 호출은 끝날 때까지 스레드로 남음.
+
 ## 남은 확인
 
-- 사용자 결정 거리(보고에 적음): Investing.com·StreetInsider(중국 자본)를 지금 쓰는 곳(사건 뉴스 RSS 넷 — 모의 매매 패킷 입력, 정보 수집, 종목 상세 링크)을 어떻게
-  할지 · 불확실한 매체(Webull·Tiger·AInvest 등)를 제외 목록에 넣을지 · 대만 매체 제외로 반도체 검색 결과가 줄어드는 것.
+- (닫힘, 2026-11-14 사용자 결정) 대만 매체·StreetInsider·Investing.com·South China Morning Post·소유가 불확실한 매체(Webull·Tiger·AInvest 등)는 수집 허용 —
+  제외 목록에서 뺐고, 지금 쓰는 Investing.com 사건 뉴스 RSS 넷(모의 매매 패킷 입력)·정보 수집·종목 상세 링크도 그대로 둡니다.
 - Finviz 시각의 시간대(미국 동부로 보임) — 단계 5에서 원문 기사 시각과 몇 건 대조.

@@ -30,6 +30,23 @@
 | 5 | SEC XBRL frames(한 개념·한 기간·전 회사) — 유니버스 밖 비교군이 필요할 때 | Fincept `scripts/sec_xbrl_data.py:55` | 수집기 선택 태스크 |
 | 5 | 우회 수집 대상: KRX 정보데이터시스템 전 종목 투자자별·공매도, 네이버·FnGuide 국내 컨센서스. 방식은 one-shot 헤드리스(Playwright 또는 camoufox 파이썬 패키지) | camofox `lib/page-structure.js:66-112`(표 구조화·refs 150줄은 일반 Playwright로 그대로 됨) | 수집기 태스크(V2 결정 뒤) |
 
+### 1-1. 정보 검색에 접목한 것(2026-11-14, [ADR 0041](../adr/0041-info-search-watch.md) 결정 13 — 코드는 가져오지 않고 출처·주소·규칙만, 우리 구조로 새로 씀)
+
+| 무엇 | 어디서 배운 것(라이선스) | 우리 자리 |
+|---|---|---|
+| 우리에게 없는 RSS 12개(연준·ECB·영란은행 보도자료, Bloomberg·MarketWatch·CNBC 둘·Benzinga·Seeking Alpha·BBC·Economist·Nikkei Asia) | FinceptTerminal 피드 53개(AGPL-3.0) | 새 피드 묶음(단계 3) — FXStreet는 서버 IP 403으로 뺌 |
+| 키워드 감시(이름·키워드·한 번만 알림·오래된 글 제외) | FinceptTerminal `NewsMonitorService` | 관심 대상의 별칭 대조(단계 3) |
+| Yahoo 검색 뉴스를 `relatedTickers`로 거르기 | FinceptTerminal `yfinance_data.py` | 정보 검색 뉴스 탭(단계 2) |
+| 회사별 공시 목록·이름으로 EDGAR 전문 검색 | FinceptTerminal `sec_data.py`·`deal_scanner.py` | 공시 탭(단계 4) — 티커↔CIK 표는 이미 있던 `sec_fundamentals` 재사용 |
+| 모회사·자회사(GLEIF), 임원·내부자·투자의견 변경(yfinance) | FinceptTerminal `lei_data.py`·`relationship_map.py` | 연결·리서치 탭(단계 4) |
+| 차단을 감지하면 재시도하지 않고 멈춤, 지수 간격 + 흔들림 | akshare `utils/http.py`(MIT) | 이미 우리 계층(ADR 0026)에 더 엄격하게 있음 |
+
+- 접목하지 않은 것: akshare의 출처 전부(뉴스 검색·7x24 속보·기업 프로필·목표가·공시·연구보고서 — 모두 중화권 사이트), akquant(Rust·Python 백테스트 엔진 — 자체 출처
+  없음), FinceptTerminal의 `scmp` 피드와 범위 밖 피드(지정학·기술·가상자산 등), 키가 필요한 출처(OpenCorporates·Finnhub·FMP 등), 손으로 적은 동종 기업 표,
+  JS로 토큰을 계산해 보내는 방식(새 의존성).
+- AGPL-3.0인 FinceptTerminal의 코드는 옮기지 않습니다(다른 언어로 줄 단위 번역 포함 — 저장소 전체가 AGPL-3.0이 됨). MIT인 akshare·akquant 코드를 옮길 일이
+  생기면 저작권 고지와 라이선스 전문을 두고 옮긴 파일 머리에 출처를 적습니다(이번에는 옮긴 코드 없음).
+
 ## 2. 가져오지 않는 것과 이유
 
 | 항목 | 이유 |

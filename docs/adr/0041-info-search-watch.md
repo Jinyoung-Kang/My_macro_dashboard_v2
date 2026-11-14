@@ -14,7 +14,14 @@
 - 지키는 방법(시험): 단계마다 이름을 더합니다.
   - 메뉴 순서·묶음·검색어('한국'): `frontend/src/lib/__tests__/nav.test.ts`, `components/shell/__tests__/Shell.test.tsx`·`MoreMenu.test.tsx`(단계 1)
   - 패킷 불변: 결정 패킷 고정본(`backend/src/test/resources/paper/golden/`)이 바뀌지 않음 + 새 데이터셋을 `feature.paper`가 참조하지 않는다는 구조 시험(단계 3)
-  - 2년 자르기·시각 모름·중국어 글 가리기·`.cn`·매체 제외 목록: 수집기 `test_search*.py`와 화면 `lib/__tests__/infoSearch.test.ts`(단계 2)
+  - 2년 자르기·시각 모름·중국어 제목(한국어 한자·일본어는 남김)·`.cn`·매체 제외 목록(사용자가 허용한 매체는 빠지지 않음)·같은 글·검색식·기간별 건수:
+    수집기 `test_search_rules.py`, 출처 파서(구글·Bing·Yahoo `relatedTickers`)·출처별 캐시·로그 거름: `test_search_sources.py`, 대상 풀기(Wikidata 관계·
+    거래소별 티커·SEC·DART·13F 운용자): `test_search_entity.py`, 저장본 읽기: `test_search_store.py`, 경로·입력 검사·`external=false`면 외부 0건·
+    운영자 전용 출처: `test_search_api.py`(단계 2)
+  - 백엔드 입력 검사·데모/`STORE_ONLY`의 `external=false`·회원에게서 운영자 전용 줄 지우기·`posts` 403·실패 로그에 검색어 없음:
+    `SearchServiceTest`·`SearchControllerTest`·`CollectorClientSearchLogTest`·`CollectorClientUriTest`(단계 2)
+  - 화면 주소 상태·기간 자르기·KST 날짜 묶음·빈 결과 안내·후보 자동 고르기 금지: `lib/__tests__/infoSearch.test.ts`, 화면 상태(없음·2년 밖만·일부 실패·
+    운영자/회원 탭·키보드): `components/screens/search/__tests__/SearchScreen.test.tsx`, 어두운 범위 토큰의 대비·레이어: `lib/__tests__/searchTheme.test.ts`(단계 2)
   - 표 소유(ADR 0008): `collector/tests/test_table_ownership.py`·백엔드 `ArchitectureRulesTest`(단계 3)
   - 서버에서만(Finviz·관심 대상 정기 수집): `POLITE_FETCH_ENABLED`가 꺼진 곳에서 외부 호출 0건(단계 3·5)
   - 경로 등급: `AccessPolicyTest`·`RouteInventoryTest`·`endpoints.test.ts`(단계 2~)
@@ -40,7 +47,8 @@
     Crawl-delay 없음). 날짜는 그날 첫 줄에만 있고 나머지 줄은 시각만입니다.
 - 매체 소유(2026-11-14 확인, 출처는 진행 기록): 새 묶음 12개 매체 모두 중국 자본을 찾지 못함(연준·ECB·영란은행·BBC는 공공, Bloomberg L.P.,
   Dow Jones·News Corp, Versant Media, Beringer Capital(Benzinga), Seeking Alpha Ltd., Economist Group, Nikkei Inc.). 같은 확인에서
-  **Investing.com(2021년부터 홍콩 Joffre Capital 소유)·StreetInsider(Investing.com 소유)**가 중국 자본임이 드러났습니다 — '결과와 남은 위험' 참고.
+  **Investing.com(2021년부터 홍콩 Joffre Capital 소유)·StreetInsider(Investing.com 소유)**가 중국 자본임이 드러났습니다. 사용자는 같은 날 이 둘과 대만 매체·
+  South China Morning Post·소유가 불확실한 매체(Webull·Tiger·AInvest 등)의 수집을 허용했습니다(결정 6).
 
 ## 결정
 
@@ -73,9 +81,10 @@
 6. **중화권 제외**(사용자 고정 결정 + D-9):
    - 늘 적용(코드 고정): 제목이 중국어인 글은 뺍니다(한자 비율로 가리되 한글·가나가 있는 글은 한국어·일본어로 보고 남김 — 한국어 제목의 한자 한두 글자는
      남음, 시험으로 고정). 매체 주소가 `.cn`인 글은 뺍니다.
-   - 매체 제외 목록: 처음 값은 확인이 확실한 중국 국가·당 매체, 중국 본토·홍콩·마카오·대만 기반 매체, 중국 자본 소유 금융 매체(Investing.com·
-     StreetInsider·Futu/moomoo 등)입니다(목록과 근거는 진행 기록). 대조는 도메인을 점 경계로(`host == d` 또는 `.d`로 끝남), 이름은 대소문자를 무시한
-     완전 일치로만 합니다. 소유가 불확실한 매체(Webull·Tiger·AInvest 등)는 처음 값에 넣지 않고 사용자에게 보고합니다. 사용자는 목록에 매체를 더할 수
+   - 매체 제외 목록: 처음 값은 확인이 확실한 중국 국가·당 매체, 중국 본토·홍콩·마카오 기반 매체, 중국 자본 소유 금융 매체(Futu/moomoo 등)입니다
+     (목록과 근거는 진행 기록). 대조는 도메인을 점 경계로(`host == d` 또는 `.d`로 끝남), 이름은 대소문자를 무시한 완전 일치로만 합니다.
+     **사용자 허용(2026-11-14)**: 대만 매체, Investing.com, StreetInsider, South China Morning Post, 소유가 불확실했던 매체(Webull·Tiger·AInvest 등)는
+     목록에 넣지 않습니다(중국어 제목 거름과 `.cn` 규칙은 그대로 적용). 사용자는 목록에 매체를 더할 수
      있습니다(단계 3 — 백엔드 소유 표, 수집기는 읽기만). 뺀 건수는 출처 상태에 적습니다.
    - 직접 부르는 출처와 묻는 언어: 중화권 기반·중국 자본 소유 사이트를 직접 부르지 않고, 중국어 판·중국어 별칭으로 묻지 않습니다(Wikidata도 ko·en만).
 7. **합치기·본문**: 같은 글은 정규화한 원문 주소의 해시(`info_text.item_id`와 같은 방식)로 하나만, 구글처럼 경유 주소뿐이면 지금의 제목 앞 24자 규칙으로
@@ -148,11 +157,32 @@
 
 ## 결과와 남은 위험
 
-- **Investing.com은 중국 자본 소유**(2021년 홍콩 Joffre Capital 인수, 회사 소개에 선전 사무소). 이 프로젝트는 이미 Investing.com RSS 넷을 사건 뉴스 묶음
-  (모의 매매 패킷의 입력)·정보 수집 화면·종목 상세의 바깥 링크에서 씁니다. 사용자 결정('중국 자본이 소유한 사이트는 일체 쓰지 않음')과 어긋나지만 패킷
-  입력을 바꾸는 일이라 이 작업에서 고치지 않고 사용자에게 보고합니다. 정보 검색의 결과에서는 매체 제외 목록으로 뺍니다.
-- 대만 기반 영어 매체(DigiTimes·TrendForce·Focus Taiwan 등)를 빼면 반도체·대만 기업 검색의 결과가 줄어듭니다(사용자 정의 '중화권'에 대만 포함).
+- **Investing.com은 중국 자본 소유**(2021년 홍콩 Joffre Capital 인수, 회사 소개에 선전 사무소)이지만 사용자가 수집을 허용했습니다(2026-11-14). 이미 쓰는
+  Investing.com RSS 넷(사건 뉴스 묶음 — 모의 매매 패킷의 입력)·정보 수집 화면·종목 상세의 바깥 링크는 그대로 둡니다.
 - 비공개 회사(Benzinga·Seeking Alpha·Bloomberg)의 지분 구성은 공개되지 않아 '찾지 못함'은 '없음'의 증명이 아닙니다. Bloomberg는 2026-07 소수 지분 매각
   논의 보도가 있어 거래가 발표되면 다시 확인합니다.
 - Finviz 수집이 같은 서버 IP의 평판을 다른 수집(RSS·TradingView·토스 허용 IP)과 나눠 씁니다(ADR 0026과 같은 위험).
 - 구글·Bing 뉴스는 날짜순이 아니고 한 번에 주는 건수에 상한이 있어(구글 약 100건) 많이 나오는 이름은 최근 2주만 옵니다 — 화면의 건수는 '받은 자료 기준'입니다.
+
+## 단계 2 — 정보 검색 1판 (2026-11-14 구현)
+
+계약은 [2026-11-14-info-search-contract.md](../specs/2026-11-14-info-search-contract.md)(대상 키·경로·응답 모양·규칙 — 세 층이 같은 문법). 구현하며 정한 것:
+
+- **층 나눔**: 수집기(`services/search*.py`, `/live/search/{suggest,resolve,entity,feed}`)가 대상 풀기·출처 호출·자기 표 읽기(사건 뉴스 관측치·`info_items`·거장 견해·
+  13F 기관)·규칙(2년·중국어·매체·같은 글)을 모두 맡는 원본이고, 백엔드 `feature.search`는 입력 검사·등급·`external`/`owner` 인자·운영자 전용 줄의 이중 거름·중계만
+  합니다. 자르기 규칙을 Java로 다시 쓰지 않습니다.
+- **결과는 2년 묶음 한 번**: `feed`에는 기간 인자가 없고 화면이 7일·30일·1년·2년으로 자릅니다(`rangeCounts` — 세 층의 기간 경계가 같음: 그 날짜 00:00 KST).
+- **캐시**: 출처마다 성공 15분·실패 60초, 같은 출처를 부르는 중이면 다시 보내지 않고 기다림. `external=false`는 캐시를 읽기만 함. 대상 풀기는 하루(키에 `external`),
+  resolve는 1시간. 시간 상한: 대상 풀기·resolve의 Wikidata 단계 15초(넘으면 로컬 결과만), 출처 30초 — 백엔드 읽기 시간 90초 안.
+- **Wikidata**: 일반 이름 User-Agent, 요청 사이 1초 넘게(이 PC에서 짧게 15건쯤 보내자 429 — 서버는 단계 3 배포 뒤 확인). 상장 티커는 거래소와 함께 읽고 `us:`·`kr:` 키에는
+  미국 거래소 6곳·한국 거래소 3곳의 티커만 씁니다(LVMH의 파리 'MC'가 미국 Moelis로 풀리는 충돌 — 시험). 사람·조직이 아닌 항목(개념·글 등)은 `wd:` 키에 종류 `topic`.
+  연결은 정방향 관계 + `founder_of` + 13F 운용자↔기관만(역방향 `ceo_of`·`employee`는 호출을 아끼려고 뺌).
+- **검색식**: 별칭은 4글자 미만이면 빼되 대상 이름은 길이와 상관없이 넣음('카카오'). 연합인포맥스는 상세 화면 함수(`when:7d`) 대신 같은 사이트 한정 구글 검색에 `after:`.
+- **운영자 전용**: 거장 이름 후보·수집 글·거장 견해·속보는 `owner=true`에서만 부르고, 백엔드가 회원 응답에서 출처를 모르는 줄까지 지움(닫힌 실패) — `posts`는 403.
+- **화면**: `/search`(정적 페이지), 주소 상태는 `?q=`·`?e=&tab=&range=`(대상을 바꾸면 기록에 쌓고 탭·기간은 바꿔 씀), `/`로 검색창, 위·아래로 줄, Enter로 원문 새 창.
+  답한 출처가 하나도 없으면 '받은 출처가 없어 … 모릅니다', 받지 못한 출처가 있으면 안내에 한 줄 — 실패를 '없음'으로 보이지 않음. 범위 토큰(`[data-scope="search"]`,
+  `globals.css`)은 토큰과 `color-scheme`만 두고 바탕·글자색은 `@layer base`(대화상자 `bg-surface`가 지게). 대화상자는 `ui/Dialog`의 `scope`로 같은 표지.
+  상단 통합 검색 맨 아래 "'검색어' 정보 검색" 줄, 종목·기관·지표 상세의 뉴스 카드에 '정보 검색' 링크.
+- **남긴 한계**: 영문이 섞인 국내 새 종목 코드는 아직 `kr:` 키로 받지 않음(DART 저장본도 숫자 6자리만), 수집 글 본문 검색은 색인 없이 문 시간 3초·200건 상한,
+  시간 상한을 넘긴 출처 호출은 끝날 때까지 스레드로 남음(같은 출처 중복은 막음).
+

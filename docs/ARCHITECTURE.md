@@ -284,6 +284,11 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
   (지표 `/markets/i/<키>`·종목 `/s/<시장>/<코드>`·기관 `/institutions/<CIK>`)은 2026-11-01에 열었습니다 — 시세·뉴스·종목 찾기는 백엔드
   `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
   기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).
+- **정보 검색(`/search`, [ADR 0041](adr/0041-info-search-watch.md))**: 화면이 백엔드 `feature.search`(`/api/search/{suggest,resolve,entity,feed}` — 회원)를 부르면
+  백엔드는 입력을 검사하고 `external`(데모·`store_only`면 false)·`owner`를 붙여 수집기 `/live/search/*`를 중계합니다. 대상 풀기(Wikidata·SEC·DART·13F)와 출처 호출
+  (구글·Bing·Yahoo·네이버·연합인포맥스)·저장본 읽기·2년 자르기·중국어 제목·매체 제외·같은 글 가리기는 모두 수집기(`services/search*.py`)가 하고 결과는 메모리 캐시에만 둡니다.
+  백엔드는 회원 응답에서 운영자 전용 출처(수집 글·거장 견해·속보)의 줄을 한 번 더 지웁니다. 화면은 2년 묶음을 한 번 받아 기간 단추로 자르고, 내용 영역만 늘 어두운
+  범위 토큰(`[data-scope="search"]`)으로 그립니다([계약](specs/2026-11-14-info-search-contract.md)).
 - **실시간 시세(SSE, [ADR 0024](adr/0024-live-prices-sse.md))**: 모의 매매 장중 카드·보유 표·종목 상세의 종목 가격은 화면이 `GET /api/live/prices/stream`
   (EventSource)에 붙어 있으면 백엔드 `feature.live`가 고른 주기(5초~3시간, 기본 10초 — 2026-11-12, 그 전 1시간)마다 수집기 `/live/prices`(Yahoo·네이버·다음·토스, 3초 캐시)를 불러
   밀어 줍니다. 저장하지 않고 장부·계좌 숫자는 기존 저장본을 그대로 씁니다. 탭을 숨기면 연결을 닫습니다.
