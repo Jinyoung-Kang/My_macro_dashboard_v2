@@ -39,7 +39,7 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
   // ADR 0041 결정 11 'lg 미만 누름 자리 44px'. jsdom은 레이아웃을 재지 못하므로 고친 뒤의 클래스 약속(lg 미만 최소 높이 44px =
   // min-h-11, 넓은 화면은 지금 모양 그대로 lg:min-h-0, 글은 세로 가운데, 아래 탭 막대 위 자리 그대로)을 봅니다.
   // 수정 전 실패: 클래스에 min-h-11이 없음.
-  it.fails("lg 미만 누름 자리 44px(min-h-11), 넓은 화면은 지금 모양 — 두 층 모두(ADR 0041 결정 11)", () => {
+  it("lg 미만 누름 자리 44px(min-h-11), 넓은 화면은 지금 모양 — 두 층 모두(ADR 0041 결정 11)", () => {
     for (const layer of [undefined, "z-20"]) {
       const { unmount } = render(layer ? <ScrollTopButton layer={layer} /> : <ScrollTopButton />);
       scrollMain(500);
