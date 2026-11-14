@@ -153,7 +153,10 @@ public class InfoStore {
             where.append(" AND payload->>'title' ILIKE ?");
             args.add(like(query));
         }
-        String order = " ORDER BY COALESCE(NULLIF(payload->>'publishedAt', ''), updated_at::text) DESC, entity";
+        // 작성 시각이 없는 줄(새 피드 묶음의 Nikkei Asia 등)은 처음 받은 시각, 그것도 없으면 행의 갱신 시각 — 셋 다 같은 UTC ISO 모양
+        // (YYYY-MM-DDTHH:MM:SS+00:00)이라야 글자 비교가 시간 순서와 같습니다(updated_at::text는 'T' 대신 공백이라 같은 날 줄 뒤로 밀림).
+        String order = " ORDER BY COALESCE(NULLIF(payload->>'publishedAt', ''), NULLIF(payload->>'fetchedAt', ''), "
+                + "to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"+00:00\"')) DESC, entity";
         Integer total = jdbc.query(con -> bind(con.prepareStatement("SELECT COUNT(*) FROM observations" + where), args),
                 rs -> rs.next() ? rs.getInt(1) : 0);
         List<Object> page = new ArrayList<>(args);
@@ -171,11 +174,18 @@ public class InfoStore {
                             published = null;
                         }
                     }
-                    return new Headline(rs.getString("dataset"), payload.path("title").asText(null), payload.path("link").asText(null),
-                            payload.path("source").asText(null), payload.path("feed").asText(null), published,
+                    // 정보 검색의 새 피드 묶음(search_feed_headline, ADR 0041)은 링크·매체를 url·publisher 칸에 둡니다(사건 뉴스는 link·source).
+                    return new Headline(rs.getString("dataset"), payload.path("title").asText(null), either(payload, "link", "url"),
+                            either(payload, "source", "publisher"), payload.path("feed").asText(null), published,
                             payload.path("fetchedAt").asText(null), payload.path("summary").asText(null));
                 });
         return new Page<>(rows, total == null ? 0 : total);
+    }
+
+    /** 첫 칸의 글, 없으면 둘째 칸의 글(둘 다 없으면 null). */
+    private static String either(JsonNode payload, String field, String fallback) {
+        String value = payload.path(field).asText(null);
+        return value != null ? value : payload.path(fallback).asText(null);
     }
 
     private static String like(String query) {

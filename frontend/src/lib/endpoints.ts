@@ -123,8 +123,23 @@ export const endpoints = {
     /** Enter의 후보(로컬 + Wikidata, 맨 끝에 주제). */
     resolve: (q: string) => withQuery("/api/search/resolve", { q }),
     entity: (e: string) => withQuery("/api/search/entity", { e }),
-    /** tab: timeline · news · posts(운영자) · filings · research. */
-    feed: (e: string, tab: string) => withQuery("/api/search/feed", { e, tab }),
+    /**
+     * tab: timeline · news · posts(운영자) · filings · research. refresh면 캐시를 건너뛰는 '지금 새로 받기'(`refresh=1` — 사용자당 10분에 1번,
+     * 계약 §6-4). 주지 않으면 지금까지와 같은 주소입니다.
+     */
+    feed: (e: string, tab: string, refresh?: boolean) => withQuery("/api/search/feed", { e, tab, refresh: refresh ? 1 : undefined }),
+    /** 첫 화면 — 새 피드 묶음의 최근 글(운영자는 속보를 더함). */
+    recent: "/api/search/recent",
+    /** 내 관심 대상 — GET 목록, POST `{key}` 등록(데모 403, 상한이면 409). */
+    watch: "/api/search/watch",
+    /** DELETE — 내 관심 대상 지우기. */
+    watchItem: (id: number) => `/api/search/watch/${segment(String(id))}`,
+    /** POST — 그 대상을 지금 봤다고 적음(타임라인 결과를 받아 그렸을 때 — 새 글 수가 0이 됨). */
+    watchSeen: (id: number) => `/api/search/watch/${segment(String(id))}/seen`,
+    /** 매체 제외 목록 — GET(회원), POST `{kind, value, note}`(운영자). */
+    excludes: "/api/search/excludes",
+    /** DELETE(운영자) — 더한 제외 매체 지우기. */
+    exclude: (id: number) => `/api/search/excludes/${segment(String(id))}`,
   },
 
   // 화면 실시간 시세(ADR 0024) — 저장하지 않는 외부 조회. 종목은 'US:AAPL'·'KR:005930', SSE는 고른 주기(초)마다 서버가 밀어 줌

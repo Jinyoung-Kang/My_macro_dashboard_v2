@@ -81,6 +81,11 @@ public final class AccessPolicy {
         // 정보 검색(ADR 0041 결정 2 — 상세 뉴스와 같은 회원). 운영자 전용 줄(수집 글·거장 견해·속보)과 글·논평 탭은 SearchService가
         // CurrentUser.isOwner()로 거르고, 데모·store_only는 외부를 부르지 않음
         member("GET /api/search/suggest", "GET /api/search/resolve", "GET /api/search/entity", "GET /api/search/feed");
+        // 정보 검색 첫 화면·관심 대상(ADR 0041 결정 9) — 회원. 자기 줄만(남의 것 404), 상한 회원 10·운영자 50·서버 100은 SearchWatchService,
+        // 데모의 등록·지우기·봤음(POST·DELETE)은 데모 쓰기 금지 규칙이 막음. 매체 제외 목록은 회원이 읽고 더하기·지우기는 운영자만
+        member("GET /api/search/recent", "GET /api/search/watch", "POST /api/search/watch", "DELETE /api/search/watch/{id}",
+                "POST /api/search/watch/{id}/seen", "GET /api/search/excludes");
+        owner("POST /api/search/excludes", "DELETE /api/search/excludes/{id}");
 
         // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
         member("GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",

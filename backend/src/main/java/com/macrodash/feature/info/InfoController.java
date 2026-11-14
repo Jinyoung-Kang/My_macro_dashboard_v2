@@ -18,7 +18,7 @@ import java.util.Map;
  *  GET /api/info/mechanism    작동 방식(스위치·계층·예산·간격·알림 기준 — 수집기 코드의 실제 값과 지금 상태)
  *  GET /api/info/items        글 목록(최근부터, 본문 없이 — kind·source·q·page·size)
  *  GET /api/info/items/{id}   글 한 편(본문 포함)
- *  GET /api/info/headlines    사건 뉴스 RSS 제목(set·feed·q·page·size)
+ *  GET /api/info/headlines    사건 뉴스 RSS·보도자료·경제지 묶음 제목(set us·kr·world·feed·q·page·size)
  *  GET /api/info/sources      지금 끊긴 출처(모든 화면의 안내 띠)
  *  GET /api/info/flows        네이버 투자자별 매매동향·외국인·기관 매매상위
  *  GET /api/info/gurus        waedge 거장 견해

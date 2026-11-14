@@ -119,4 +119,24 @@ class SearchControllerTest {
         assertThat(body.path("available").asBoolean()).isFalse();
         assertThat(body.path("message").asString()).isEqualTo("수집기에서 응답을 받지 못했습니다.");
     }
+
+    @Test
+    @DisplayName("첫 화면 최근 글(/recent)은 수집기 저장본을 중계하고, feed의 refresh=1은 지금 새로 받기로 넘긴다")
+    void recentAndRefresh() throws Exception {
+        when(collector.liveSearchRecent(anyBoolean())).thenReturn(Optional.of(MAPPER.readTree("{\"items\":[],\"fetchedAt\":null}")));
+        JsonNode recent = call("/api/search/recent", MEMBER, 200);
+        assertThat(recent.path("available").asBoolean()).isTrue();
+        verify(collector).liveSearchRecent(false);
+
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(MAPPER.readTree("{\"items\":[]}")));
+        JsonNode feed = call("/api/search/feed", MEMBER, 200, "e", "us:NVDA", "tab", "news", "refresh", "1");
+        assertThat(feed.has("refreshNote")).isTrue();
+        assertThat(feed.get("refreshNote").isNull()).as("새로 받았으면 안내 없음").isTrue();
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, true);
+
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(MAPPER.readTree("{}")));
+        assertThat(call("/api/search/feed", OWNER, 200, "e", "us:NVDA").has("refreshNote")).as("묻지 않으면 칸 없음").isFalse();
+        assertThat(call("/api/search/feed", OWNER, 400, "e", "us:NVDA", "refresh", "maybe").path("error").asString()).isEqualTo("bad_request");
+    }
 }

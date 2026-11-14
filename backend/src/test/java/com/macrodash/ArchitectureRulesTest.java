@@ -206,7 +206,7 @@ class ArchitectureRulesTest {
     private static final Pattern WRITES_COLLECTOR_TABLE = Pattern.compile(
             "(?i)(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|TRUNCATE)\\s+(snapshots|timeseries|observations|"
                     + "collector_runs|collector_task_runs|refresh_requests|schema_migrations|fetch_hosts|fetch_schedule|"
-                    + "info_items|fetch_source_state)\\b");
+                    + "info_items|fetch_source_state|search_watch_items|fetch_budgets)\\b");
 
     @Test
     @DisplayName("백엔드는 수집기 테이블에 쓰지 않는다 — 테이블마다 쓰는 프로세스는 하나(ADR 0008)")
@@ -219,6 +219,40 @@ class ArchitectureRulesTest {
             }
         });
         assertThat(found).isEmpty();
+    }
+
+    /**
+     * 정보 검색의 자료(새 피드 묶음 관측치·상태 저장본, 관심 대상·모은 글·매체 제외 표)를 가리키는 글자(ADR 0041 결정 8·9). 모의 매매 패킷은 이 자료를 읽지
+     * 않습니다 — 패킷 입력(실험 조건)이 바뀌지 않게. 주석을 뺀 본문에서 찾습니다.
+     */
+    private static final Pattern SEARCH_DATA = Pattern.compile(
+            "OBS_SEARCH_FEED_HEADLINE|SNAP_SEARCH_FEEDS_STATUS|search_feed_headline|search\\.feeds\\.status"
+                    + "|\\bsearch_watch(?:es|_items)?\\b|\\bsearch_media_excludes\\b|\\bfetch_budgets\\b"
+                    + "|SearchWatchStore|SearchExcludeStore|com\\.macrodash\\.feature\\.search\\.");
+
+    @Test
+    @DisplayName("모의 매매(feature.paper)는 정보 검색 자료를 읽지 않는다 — 새 피드 묶음 데이터셋·상태 저장본·search_* 표·정보 검색 기능을 참조하지 않음")
+    void paperDoesNotReadSearchData() {
+        assertThat(SOURCES.values()).as("feature.paper 패키지가 있음")
+                .anyMatch(source -> source.pkg().equals("com.macrodash.feature.paper"));
+        List<String> found = new ArrayList<>();
+        SOURCES.forEach((file, source) -> {
+            if (!source.pkg().equals("com.macrodash.feature.paper") && !source.pkg().startsWith("com.macrodash.feature.paper.")) {
+                return;
+            }
+            Matcher matcher = SEARCH_DATA.matcher(CODE.get(file));
+            while (matcher.find()) {
+                found.add(source.simpleName() + ": " + matcher.group());
+            }
+            source.refs().stream().filter(ref -> ref.startsWith("com.macrodash.feature.search.")
+                            || ref.equals("com.macrodash.store.SearchWatchStore") || ref.equals("com.macrodash.store.SearchExcludeStore"))
+                    .forEach(ref -> found.add(source.simpleName() + " → " + ref));
+        });
+        assertThat(found).isEmpty();
+        assertThat(SEARCH_DATA.matcher("readObservationsBetween(Datasets.OBS_SEARCH_FEED_HEADLINE, from, null)").find())
+                .as("규칙이 실제로 잡는지").isTrue();
+        assertThat(SEARCH_DATA.matcher("SELECT 1 FROM search_watch_items").find()).isTrue();
+        assertThat(SEARCH_DATA.matcher("researchNotes searchable").find()).as("다른 낱말은 잡지 않음").isFalse();
     }
 
     private static final String BROKERAGE = "com.macrodash.feature.brokerage";

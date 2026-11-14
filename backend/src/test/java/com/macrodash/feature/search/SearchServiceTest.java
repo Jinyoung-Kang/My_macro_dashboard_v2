@@ -85,6 +85,13 @@ class SearchServiceTest {
         }
         assertThat(SearchService.entityKey("  us:NVDA ")).isEqualTo("us:NVDA");
         assertThat(SearchService.entityKey("topic:  AI 반도체  ")).as("주제 글은 앞뒤 공백을 지움").isEqualTo("topic:AI 반도체");
+        assertThat(SearchService.entityKey("topic:AI   반도체\u3000공급")).as("가운데 공백은 하나로 — 수집기 clean_query와 같은 키")
+                .isEqualTo("topic:AI 반도체 공급");
+        assertThat(SearchService.entityKey("topic:\u00a0fed\u202f")).as("줄바꿈 없는 공백도 앞뒤에서 지움").isEqualTo("topic:fed");
+        assertThat(SearchService.entityKey("topic:\u0085x ")).isEqualTo("topic:x");
+        for (String blank : new String[]{"topic:\u00a0", "topic:\u0085", "topic:\u2007\u202f"}) {
+            assertThatThrownBy(() -> SearchService.entityKey(blank)).as(blank).isInstanceOf(InvalidRequestException.class);
+        }
         // 수집기 문법과 같게(티커 15자까지, QID는 0으로 시작하지 않음, 제어 글자 없음) — 수집기의 400이 '응답 없음'으로 바뀌지 않게.
         assertThat(SearchService.entityKey("us:" + "A".repeat(15))).isEqualTo("us:" + "A".repeat(15));
         for (String bad : new String[]{"us:" + "A".repeat(16), "wd:Q0123", "topic:AI\u0007반도체", "topic:줄\n바꿈"}) {
@@ -421,5 +428,126 @@ class SearchServiceTest {
         when(collector.liveSearchFeed("us:NVDA", "timeline", true, false)).thenReturn(Optional.of(payload));
         service.feed("us:NVDA", "timeline", MEMBER);
         assertThat(payload).isEqualTo(json(FEED));
+    }
+
+    // ------------------------------------------------------------------ 첫 화면 최근 글 (계약 §6-4)
+
+    private static final String RECENT = """
+            {"items": [
+               {"id": "f1", "kind": "headline", "title": "합성 보도자료", "source": "feeds", "publishedAt": "2026-11-14T01:00:00+00:00",
+                "timeBasis": "published", "readerId": null},
+               {"id": "w1", "kind": "wire", "title": "합성 속보", "source": "wire", "publishedAt": "2026-11-14T02:00:00+00:00",
+                "timeBasis": "published", "readerId": null},
+               {"id": "f2", "kind": "headline", "title": "합성 경제지", "source": "feeds", "publishedAt": null,
+                "timeBasis": "fetched", "readerId": "stray"}],
+             "fetchedAt": "2026-11-14T03:00:00+00:00"}
+            """;
+
+    @Test
+    @DisplayName("첫 화면 최근 글 — 수집기 저장본을 중계하고, 회원에게서는 속보(운영자 전용) 줄을 지운다. 운영자는 그대로")
+    void recentRelaysAndHidesWire() {
+        when(collector.liveSearchRecent(false)).thenReturn(Optional.of(json(RECENT)));
+        when(collector.liveSearchRecent(true)).thenReturn(Optional.of(json(RECENT)));
+
+        Map<String, Object> member = service.recent(MEMBER);
+        assertThat(member).containsEntry("available", true);
+        JsonNode items = (JsonNode) member.get("items");
+        assertThat(items.values().stream().map(item -> item.path("id").asString()).toList()).containsExactly("f1", "f2");
+        assertThat(items.get(1).get("readerId").isNull()).isTrue();
+        assertThat(member.get("fetchedAt")).isEqualTo(json(RECENT).get("fetchedAt"));
+        verify(collector).liveSearchRecent(false);
+
+        Map<String, Object> owner = service.recent(OWNER);
+        assertThat(owner.get("items")).isEqualTo(json(RECENT).get("items"));
+        verify(collector).liveSearchRecent(true);
+
+        assertThat(service.recent(DEMO)).containsEntry("available", true);
+        when(collector.liveSearchRecent(false)).thenReturn(Optional.empty());
+        assertThat(service.recent(MEMBER)).containsEntry("available", false).containsEntry("message", "수집기에서 응답을 받지 못했습니다.");
+    }
+
+    // ------------------------------------------------------------------ 지금 새로 받기 (feed?refresh=1)
+
+    @Test
+    @DisplayName("지금 새로 받기는 사용자마다 10분에 한 번 — 넘으면 캐시 그대로 부르고 refreshNote에 안내(새로 받았으면 null), 10분 뒤 다시 됨")
+    void refreshIsRateLimitedPerUser() {
+        SearchWatchServiceTest.MutableClock clock = new SearchWatchServiceTest.MutableClock(Instant.parse("2026-11-14T03:00:00Z"));
+        SearchService limited = new SearchService(store, collector, clock);
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(json("{\"items\":[]}")));
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(json("{\"items\":[]}")));
+
+        Map<String, Object> first = limited.feed("us:NVDA", "news", true, MEMBER);
+        verify(collector).liveSearchFeed("us:NVDA", "news", true, false, true);
+        assertThat(first).containsEntry("refreshNote", null);
+
+        clock.advance(java.time.Duration.ofMinutes(9));
+        Map<String, Object> second = limited.feed("kr:005930", "timeline", true, MEMBER);
+        verify(collector).liveSearchFeed("kr:005930", "timeline", true, false);
+        assertThat(refreshNote(second)).contains("10분").contains("받아 둔 결과");
+
+        Map<String, Object> other = limited.feed("us:AAPL", "news", true, PRO);
+        verify(collector).liveSearchFeed("us:AAPL", "news", true, false, true);
+        assertThat(other).as("다른 사용자는 따로 셈").containsEntry("refreshNote", null);
+
+        clock.advance(java.time.Duration.ofMinutes(1).plusSeconds(1));
+        assertThat(limited.feed("us:NVDA", "timeline", true, MEMBER)).containsEntry("refreshNote", null);
+        verify(collector).liveSearchFeed("us:NVDA", "timeline", true, false, true);
+
+        Map<String, Object> plain = limited.feed("us:NVDA", "timeline", false, MEMBER);
+        assertThat(plain).as("새로 받기를 묻지 않으면 칸 없음").doesNotContainKey("refreshNote");
+    }
+
+    @Test
+    @DisplayName("데모·store_only는 새로 받지 않는다 — 외부를 부르지 않는 모드라 refreshNote에 안내, 한도도 쓰지 않음")
+    void refreshIsIgnoredOffline() {
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(json("{\"items\":[]}")));
+
+        Map<String, Object> demo = service.feed("us:NVDA", "news", true, DEMO);
+        verify(collector).liveSearchFeed("us:NVDA", "news", false, false);
+        assertThat(refreshNote(demo)).contains("외부를 부르지 않는");
+
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
+        assertThat(refreshNote(service.feed("us:NVDA", "news", true, OWNER))).isNotBlank();
+        verify(collector).liveSearchFeed("us:NVDA", "news", false, true);
+        verify(collector, org.mockito.Mockito.never()).liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean());
+
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.AUTO);
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.of(json("{\"items\":[]}")));
+        assertThat(service.feed("us:NVDA", "news", true, OWNER)).as("앞의 거절이 한도를 쓰지 않음").containsEntry("refreshNote", null);
+    }
+
+    @Test
+    @DisplayName("수집기에 닿지 못해도 새로 받기 안내는 붙는다(available:false 응답에도)")
+    void refreshNoteOnFailure() {
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean())).thenReturn(Optional.empty());
+        Map<String, Object> out = service.feed("us:NVDA", "news", true, MEMBER);
+        assertThat(out).containsEntry("available", false);
+        assertThat(out).containsEntry("refreshNote", null);
+    }
+
+    @Test
+    @DisplayName("수집기에 닿지 못한 새로 받기는 10분 한 번을 쓰지 않는다 — 곧바로 다시 누르면 다시 새로 받음")
+    void failedRefreshDoesNotSpendTheAllowance() {
+        SearchWatchServiceTest.MutableClock clock = new SearchWatchServiceTest.MutableClock(Instant.parse("2026-11-14T03:00:00Z"));
+        SearchService limited = new SearchService(store, collector, clock);
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean(), anyBoolean()))
+                .thenReturn(Optional.empty(), Optional.of(json("{\"items\":[]}")), Optional.of(json("{\"items\":[]}")));
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(json("{\"items\":[]}")));
+
+        assertThat(limited.feed("us:NVDA", "news", true, MEMBER)).containsEntry("available", false).containsEntry("refreshNote", null);
+        clock.advance(java.time.Duration.ofSeconds(30));
+        assertThat(limited.feed("us:NVDA", "news", true, MEMBER)).as("실패한 앞 요청은 한도를 쓰지 않음")
+                .containsEntry("available", true).containsEntry("refreshNote", null);
+        clock.advance(java.time.Duration.ofSeconds(30));
+        assertThat(refreshNote(limited.feed("us:NVDA", "news", true, MEMBER))).as("성공한 새로 받기는 한도를 씀").contains("10분");
+        verify(collector, org.mockito.Mockito.times(2)).liveSearchFeed("us:NVDA", "news", true, false, true);
+    }
+
+    private static String refreshNote(Map<String, Object> out) {
+        assertThat(out).containsKey("refreshNote");
+        assertThat(out.get("refreshNote")).isInstanceOf(String.class);
+        return (String) out.get("refreshNote");
     }
 }

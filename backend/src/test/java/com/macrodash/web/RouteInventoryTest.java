@@ -94,6 +94,9 @@ class RouteInventoryTest {
             "GET /api/detail/quote", "GET /api/detail/news", "GET /api/detail/symbols", "POST /api/detail/summary",
             // 정보 검색(ADR 0041)
             "GET /api/search/suggest", "GET /api/search/resolve", "GET /api/search/entity", "GET /api/search/feed",
+            "GET /api/search/recent", "GET /api/search/watch", "POST /api/search/watch", "DELETE /api/search/watch/{id}",
+            "POST /api/search/watch/{id}/seen", "GET /api/search/excludes", "POST /api/search/excludes",
+            "DELETE /api/search/excludes/{id}",
             // 화면 실시간 시세(ADR 0024)
             "GET /api/live/prices", "GET /api/live/prices/stream",
             // 실제 계좌(토스증권, 읽기 전용 — 운영자 전용, ADR 0025)

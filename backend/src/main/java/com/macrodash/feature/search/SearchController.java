@@ -10,15 +10,18 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 정보 검색(사이드바 '정보 검색' {@code /search}, ADR 0041) — 회원 경로 넷. 응답 모양은 계약(docs/specs/2026-11-14-info-search-contract.md §3)이
+ * 정보 검색(사이드바 '정보 검색' {@code /search}, ADR 0041) — 회원 경로 다섯. 응답 모양은 계약(docs/specs/2026-11-14-info-search-contract.md §3·§6-4)이
  * 정본이고, 수집기 응답에 {@code available}을 더해 그대로 전합니다.
  *
  * <pre>
  *  GET /api/search/suggest?q=          치는 동안의 후보(외부 호출 없음)
  *  GET /api/search/resolve?q=          Enter의 후보(로컬 + Wikidata)
  *  GET /api/search/entity?e=           대상 풀기
- *  GET /api/search/feed?e=&amp;tab=        결과(2년 묶음, 글·논평 탭은 운영자만)
+ *  GET /api/search/feed?e=&amp;tab=&amp;refresh=1   결과(2년 묶음, 글·논평 탭은 운영자만, refresh=1은 지금 새로 받기 — 사용자당 10분에 1번)
+ *  GET /api/search/recent              첫 화면 최근 글(새 피드 묶음, 운영자는 속보도)
  * </pre>
+ *
+ * <p>관심 대상·매체 제외 경로는 {@link SearchWatchController}에 있습니다.
  *
  * <p>응답 캐시({@code ComputedCache})를 쓰지 않습니다 — 사용자(운영자·데모)마다 결과가 다르고, 캐시는 수집기 메모리에 있습니다.
  */
@@ -49,7 +52,12 @@ public class SearchController {
 
     @GetMapping("/feed")
     public Map<String, Object> feed(@RequestParam(required = false) String e, @RequestParam(required = false) String tab,
-                                    HttpServletRequest request) {
-        return search.feed(e, tab, CurrentUser.of(request));
+                                    @RequestParam(defaultValue = "false") boolean refresh, HttpServletRequest request) {
+        return search.feed(e, tab, refresh, CurrentUser.of(request));
+    }
+
+    @GetMapping("/recent")
+    public Map<String, Object> recent(HttpServletRequest request) {
+        return search.recent(CurrentUser.of(request));
     }
 }

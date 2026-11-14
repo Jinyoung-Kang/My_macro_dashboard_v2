@@ -42,7 +42,8 @@ public class InfoService {
     private static final List<String> ITEM_KINDS = List.of(InfoSources.BLOG, InfoSources.WAEDGE, InfoSources.WIRE);
     /** 번역 요청으로 직접 보내는 글(사건 뉴스 요약)의 길이 상한 — 수집기의 요약 상한(2,000자)에 여유를 둔 값. */
     static final int TRANSLATE_TEXT_MAX = 8_000;
-    private static final List<String> HEADLINE_SETS = List.of("us", "kr");
+    /** 헤드라인 묶음 — 사건 뉴스 미국·한국과, 정보 검색의 새 피드 묶음(보도자료·경제지, ADR 0041 결정 8 — 모의 매매 패킷은 읽지 않음). */
+    private static final List<String> HEADLINE_SETS = List.of("us", "kr", "world");
     private static final List<String> KRX_MARKETS = List.of("KOSPI", "KOSDAQ");
     private static final List<String> KRX_INVESTORS = List.of("외국인", "기관", "개인", "연기금", "금융투자", "투신");
     private static final List<String> TRADE_TYPES = List.of("순매수", "순매도");
@@ -129,16 +130,22 @@ public class InfoService {
     }
 
     /**
-     * 사건 뉴스 RSS 제목(미국·한국 — 수집기 news_headlines·kr_news_headlines, 모의매매 Claude 패킷 11b_events의 재료)을 최근부터, 쪽으로.
+     * 사건 뉴스 RSS 제목(미국·한국 — 수집기 news_headlines·kr_news_headlines, 모의매매 Claude 패킷 11b_events의 재료)이나 정보 검색의 새 피드 묶음
+     * (보도자료·경제지 — 수집기 search_feeds, 패킷 밖)을 최근부터, 쪽으로. 새 피드 묶음의 줄은 작성 시각이 없을 수 있고(Nikkei Asia) 그때는
+     * {@code publishedAt}이 null이고 {@code fetchedAt}(처음 받은 시각)만 있습니다.
      *
-     * @param set us·kr(비면 둘 다)
+     * @param set us·kr·world(비면 사건 뉴스 둘 — 새 피드 묶음은 world로만)
      */
     public Map<String, Object> headlines(String set, String feed, String query, Integer page, Integer size) {
         List<String> datasets;
         if (set == null || set.isBlank()) {
             datasets = List.of(Datasets.OBS_NEWS_HEADLINE, Datasets.OBS_KR_NEWS_HEADLINE);
         } else if (HEADLINE_SETS.contains(set)) {
-            datasets = List.of("us".equals(set) ? Datasets.OBS_NEWS_HEADLINE : Datasets.OBS_KR_NEWS_HEADLINE);
+            datasets = List.of(switch (set) {
+                case "us" -> Datasets.OBS_NEWS_HEADLINE;
+                case "kr" -> Datasets.OBS_KR_NEWS_HEADLINE;
+                default -> Datasets.OBS_SEARCH_FEED_HEADLINE;
+            });
         } else {
             throw new InvalidRequestException("set은 " + HEADLINE_SETS + " 가운데 하나입니다");
         }
@@ -148,7 +155,8 @@ public class InfoService {
         out.put("available", true);
         out.put("items", rows.rows().stream().map(row -> {
             Map<String, Object> line = new LinkedHashMap<>();
-            line.put("set", Datasets.OBS_KR_NEWS_HEADLINE.equals(row.dataset()) ? "kr" : "us");
+            line.put("set", Datasets.OBS_KR_NEWS_HEADLINE.equals(row.dataset()) ? "kr"
+                    : Datasets.OBS_SEARCH_FEED_HEADLINE.equals(row.dataset()) ? "world" : "us");
             line.put("title", row.title());
             line.put("summary", row.summary());
             line.put("link", row.link());

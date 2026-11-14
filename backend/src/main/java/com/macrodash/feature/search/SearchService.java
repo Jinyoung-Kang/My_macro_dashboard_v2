@@ -18,6 +18,7 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -63,11 +65,20 @@ public class SearchService {
     private static final Pattern WD_KEY = Pattern.compile("wd:Q[1-9][0-9]{0,11}");
     /** 제어 글자(수집기가 400으로 막는 것과 같음). */
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
+    private static final Pattern SPACES = Pattern.compile("(?U)\\s+");
     private static final String TOPIC = "topic:";
+
+    /** '지금 새로 받기'(feed?refresh=1)의 사용자당 간격(계약 §6-4) — 출처 캐시를 건너뛰어 외부 호출이 늘기 때문입니다. */
+    static final Duration REFRESH_INTERVAL = Duration.ofMinutes(10);
 
     private final StoreReader store;
     private final CollectorClient collector;
     private final Clock clock;
+    /**
+     * 사용자 번호 → 마지막으로 새로 받은 시각. 백엔드 한 프로세스의 메모리라 재기동하면 비워집니다(그래도 한 번 더 받을 뿐 — 출처 캐시와 수집기의
+     * 거부 래치는 그대로). 크기는 사용자 수만큼입니다.
+     */
+    private final Map<Long, Instant> lastRefresh = new ConcurrentHashMap<>();
 
     @Autowired
     public SearchService(StoreReader store, CollectorClient collector) {
@@ -106,13 +117,22 @@ public class SearchService {
         return relay(() -> collector.liveSearchEntity(key, external, owner), null);
     }
 
+    /** 결과(계약 §3-4) — 새로 받기 없이. */
+    public Map<String, Object> feed(String e, String tab, CurrentUser user) {
+        return feed(e, tab, false, user);
+    }
+
     /**
      * 결과(계약 §3-4) — 2년 묶음 한 번에. 글·논평 탭은 운영자만이고, 회원에게는 운영자 전용 줄을 지웁니다.
+     *
+     * <p>{@code refresh}(계약 §6-4 '지금 새로 받기')는 사용자마다 {@link #REFRESH_INTERVAL}에 한 번만 수집기에 넘기고, 넘으면 캐시 그대로 부르며
+     * 응답의 {@code refreshNote}에 안내 한 줄을 둡니다(새로 받았으면 null). 외부를 부르지 않는 모드(데모·store_only)는 새로 받지 않고 한도도 쓰지
+     * 않습니다. {@code refresh}를 묻지 않으면 그 칸이 없습니다.
      *
      * @throws InvalidRequestException 대상 키·탭이 틀림(400)
      * @throws ResponseStatusException 회원이 글·논평 탭을 부름(403)
      */
-    public Map<String, Object> feed(String e, String tab, CurrentUser user) {
+    public Map<String, Object> feed(String e, String tab, boolean refresh, CurrentUser user) {
         String key = entityKey(e);
         String which = tab(tab);
         boolean owner = owner(user);
@@ -120,7 +140,52 @@ public class SearchService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "글·논평 탭은 운영자만 볼 수 있습니다.");
         }
         boolean external = external(user);
-        return relay(() -> collector.liveSearchFeed(key, which, external, owner), owner ? null : body -> hideOwnerOnly(body, which));
+        Instant now = clock.instant();
+        String refused = refresh ? refreshRefusal(user, external, now) : null;
+        boolean applied = refresh && refused == null;
+        Map<String, Object> out = relay(() -> applied ? collector.liveSearchFeed(key, which, external, owner, true)
+                : collector.liveSearchFeed(key, which, external, owner), owner ? null : body -> hideOwnerOnly(body, which));
+        if (applied && !Boolean.TRUE.equals(out.get("available"))) {
+            // 수집기에 닿지 못한 새로 받기는 한 번으로 세지 않습니다(그 사이 같은 사용자가 다시 받았으면 그 시각은 그대로).
+            lastRefresh.remove(user.id(), now);
+        }
+        if (refresh) {
+            out.put("refreshNote", refused);
+        }
+        return out;
+    }
+
+    /**
+     * 첫 화면의 최근 글(계약 §6-4) — 수집기 저장본(새 피드 묶음, 운영자면 속보도)을 중계하고, 회원에게서는 운영자 전용 줄을 한 번 더 지웁니다.
+     * 외부를 부르지 않으므로 데모·store_only도 같습니다.
+     */
+    public Map<String, Object> recent(CurrentUser user) {
+        boolean owner = owner(user);
+        return relay(() -> collector.liveSearchRecent(owner), owner ? null : body -> hideOwnerOnly(body, "recent"));
+    }
+
+    /**
+     * 새로 받기를 거절할 사유 — 받아도 되면 null이고 그 사용자의 시각({@code now})을 적습니다(검사와 적기를 한 번에 — 같은 사용자의 동시 요청 둘이
+     * 모두 통과하지 않게). 수집기에 닿지 못하면 {@link #feed}가 그 시각을 지웁니다.
+     */
+    private String refreshRefusal(CurrentUser user, boolean external, Instant now) {
+        if (!external || user == null) {
+            return "외부를 부르지 않는 모드(데모 열람·저장본만 읽기)라 새로 받지 않고 받아 둔 결과를 보입니다.";
+        }
+        Instant[] previous = new Instant[1];
+        lastRefresh.compute(user.id(), (id, last) -> {
+            if (last != null && now.isBefore(last.plus(REFRESH_INTERVAL))) {
+                previous[0] = last;
+                return last;
+            }
+            return now;
+        });
+        if (previous[0] == null) {
+            return null;
+        }
+        long seconds = Duration.between(now, previous[0].plus(REFRESH_INTERVAL)).toSeconds();
+        long minutes = Math.max(1, (seconds + 59) / 60);
+        return "지금 새로 받기는 " + REFRESH_INTERVAL.toMinutes() + "분에 한 번입니다 — 약 " + minutes + "분 뒤에 다시 누르세요. 지금은 받아 둔 결과입니다.";
     }
 
     // ------------------------------------------------------------------ 입력 검사
@@ -146,20 +211,23 @@ public class SearchService {
 
     /**
      * 대상 키(계약 §2) — {@code us:<티커>} · {@code kr:<6자리>} · {@code cik:<10자리>} · {@code wd:Q<숫자>} · {@code topic:<1~60자>}.
-     * 키 앞뒤 공백과 주제 글의 앞뒤 공백은 지웁니다. 대소문자는 바꾸지 않습니다(그 밖은 400).
+     * 키 앞뒤 공백과 주제 글의 앞뒤 공백은 지우고, 주제 글 가운데의 이어진 공백은 하나로 줄입니다(수집기 {@code clean_query}와 같은 키 — 관심 대상
+     * 등록·정기 수집·결과가 같은 키를 씀). 대소문자는 바꾸지 않습니다(그 밖은 400).
      *
      * @throws InvalidRequestException 모양이 틀림(400)
      */
     static String entityKey(String e) {
         String key = e == null ? "" : e.strip();
         if (key.startsWith(TOPIC)) {
-            String text = key.substring(TOPIC.length()).strip();
+            String raw = key.substring(TOPIC.length()).strip();
+            if (CONTROL.matcher(raw).find()) {
+                throw new InvalidRequestException("주제에 제어 글자를 쓸 수 없습니다.");
+            }
+            // 접은 뒤에 앞뒤를 지웁니다 — strip()은 U+00A0·U+2007·U+202F·U+0085를 공백으로 보지 않지만 (?U)\s는 봄(수집기 str.split과 같게).
+            String text = SPACES.matcher(raw).replaceAll(" ").strip();
             int length = text.codePointCount(0, text.length());
             if (length < 1 || length > MAX_QUERY) {
                 throw new InvalidRequestException("주제는 1~" + MAX_QUERY + "자입니다.");
-            }
-            if (CONTROL.matcher(text).find()) {
-                throw new InvalidRequestException("주제에 제어 글자를 쓸 수 없습니다.");
             }
             return TOPIC + text;
         }
@@ -189,12 +257,17 @@ public class SearchService {
     // ------------------------------------------------------------------ 사용자
 
     /** 운영자만 운영자 전용 줄을 받습니다. 사용자가 없으면(필터 밖) 운영자가 아닙니다. */
-    private static boolean owner(CurrentUser user) {
+    static boolean owner(CurrentUser user) {
         return user != null && user.isOwner();
     }
 
     /** 데모 열람·store_only·사용자 없음이면 외부를 부르지 않습니다(결정 2). */
     private boolean external(CurrentUser user) {
+        return external(user, store);
+    }
+
+    /** {@link #external(CurrentUser)}와 같은 규칙 — 관심 대상 등록의 대상 풀기({@code SearchWatchService})도 씁니다. */
+    static boolean external(CurrentUser user, StoreReader store) {
         return user != null && !user.demo() && store.readMode() != AppProperties.ReadMode.STORE_ONLY;
     }
 

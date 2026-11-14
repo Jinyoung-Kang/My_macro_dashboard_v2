@@ -49,6 +49,7 @@ class InfoStoreDbTest {
         jdbc.update("DELETE FROM fetch_source_state WHERE task LIKE 'test-%'");
         jdbc.update("DELETE FROM source_alerts WHERE task LIKE 'test-%'");
         jdbc.update("DELETE FROM info_translations WHERE model = 'test-model'");
+        jdbc.update("DELETE FROM observations WHERE dataset IN ('search_feed_headline', 'news_headline') AND entity LIKE 'test-%'");
     }
 
     private void item(String id, String source, String title, Instant published, Instant firstSeen, String body) {
@@ -56,6 +57,55 @@ class InfoStoreDbTest {
                         + "VALUES (?, ?, 'article', ?, ?, ?, ?, ?, ?, ?, ?, '{\"category\": \"x\"}'::jsonb)",
                 id, source, "https://example.org/" + id, title, title + " 한국어", published == null ? null : Timestamp.from(published),
                 Timestamp.from(firstSeen), "요약 " + title, body, body == null ? "none" : "full");
+    }
+
+    @Test
+    @DisplayName("헤드라인 — 새 피드 묶음(search_feed_headline)의 url·publisher를 링크·매체로 읽고, 사건 뉴스의 link·source는 그대로")
+    void headlinesReadBothPayloadShapes() {
+        jdbc.update("INSERT INTO observations (dataset, obs_date, entity, payload) VALUES ('search_feed_headline', DATE '1999-01-04', "
+                + "'test-w1', ?::jsonb)", "{\"title\": \"합성 보도자료\", \"url\": \"https://example.org/w1\", \"publisher\": \"합성 매체\", "
+                + "\"publisherDomain\": \"example.org\", \"feed\": \"fed_press\", \"publishedAt\": null, "
+                + "\"fetchedAt\": \"1999-01-04T01:00:00+00:00\", \"timeBasis\": \"fetched\", \"lang\": \"en\", \"summary\": \"요약\"}");
+        jdbc.update("INSERT INTO observations (dataset, obs_date, entity, payload) VALUES ('news_headline', DATE '1999-01-04', "
+                + "'test-n1', ?::jsonb)", "{\"title\": \"합성 사건\", \"link\": \"https://example.org/n1\", \"source\": \"합성 출처\", "
+                + "\"feed\": \"fed\", \"publishedAt\": \"1999-01-04T02:00:00+00:00\", \"fetchedAt\": \"1999-01-04T02:01:00+00:00\"}");
+
+        InfoStore.Page<InfoStore.Headline> world = info.headlines(List.of("search_feed_headline"), "fed_press", "합성 보도", 0, 10);
+        assertThat(world.total()).isEqualTo(1);
+        InfoStore.Headline row = world.rows().get(0);
+        assertThat(row.link()).isEqualTo("https://example.org/w1");
+        assertThat(row.source()).isEqualTo("합성 매체");
+        assertThat(row.publishedAt()).isNull();
+        assertThat(row.summary()).isEqualTo("요약");
+
+        InfoStore.Page<InfoStore.Headline> us = info.headlines(List.of("news_headline"), "fed", "합성 사건", 0, 10);
+        assertThat(us.rows()).singleElement().satisfies(headline -> {
+            assertThat(headline.link()).isEqualTo("https://example.org/n1");
+            assertThat(headline.source()).isEqualTo("합성 출처");
+        });
+    }
+
+    private void worldHeadline(String entity, String publishedAt, String fetchedAt, String updatedAt) {
+        jdbc.update("INSERT INTO observations (dataset, obs_date, entity, payload, updated_at) VALUES ('search_feed_headline', DATE '1999-01-05', "
+                        + "?, ?::jsonb, ?::timestamptz)", entity,
+                "{\"title\": \"합성 순서 " + entity + "\", \"url\": \"https://example.org/" + entity + "\", \"publisher\": \"합성 매체\", "
+                        + "\"feed\": \"test_order\", \"publishedAt\": " + (publishedAt == null ? "null" : "\"" + publishedAt + "\"")
+                        + ", \"fetchedAt\": " + (fetchedAt == null ? "null" : "\"" + fetchedAt + "\"") + "}",
+                updatedAt);
+    }
+
+    @Test
+    @DisplayName("헤드라인 순서 — 작성 시각이 없는 줄(받은 시각 기준)도 같은 날의 작성 시각 줄과 시간 순서대로 선다(ISO 모양으로 맞춰 비교)")
+    void headlinesWithoutPublishedAtSortByFetchedAt() {
+        worldHeadline("test-o1", "1999-01-05T01:00:00+00:00", "1999-01-05T01:05:00+00:00", "1999-01-05 01:05:00+00");
+        worldHeadline("test-o2", null, "1999-01-05T03:00:00+00:00", "1999-01-05 03:00:00+00");
+        worldHeadline("test-o3", "1999-01-05T02:00:00+00:00", "1999-01-05T02:05:00+00:00", "1999-01-05 02:05:00+00");
+        worldHeadline("test-o4", null, null, "1999-01-05 01:30:00+00");
+
+        InfoStore.Page<InfoStore.Headline> page = info.headlines(List.of("search_feed_headline"), "test_order", null, 0, 10);
+
+        assertThat(page.rows()).extracting(InfoStore.Headline::link).containsExactly(
+                "https://example.org/test-o2", "https://example.org/test-o3", "https://example.org/test-o4", "https://example.org/test-o1");
     }
 
     @Test

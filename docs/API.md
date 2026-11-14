@@ -237,7 +237,15 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/search/suggest?q=` | 치는 동안의 후보(외부 호출 없음 — DART 고유번호·SEC 티커 저장본, 13F 기관, 거장 등) → `{items:[{key, kind, name, sub, source}], fetchedAt}`, 최대 12개. 검색어 1~60자 |
 | `GET /api/search/resolve?q=` | Enter의 후보 — 로컬 + Wikidata(한국어·영어, 1시간 캐시), 맨 끝에 `topic:<q>` → `{items, errors, fetchedAt}` |
 | `GET /api/search/entity?e=` | 대상 풀기(키 `us:`·`kr:`·`cik:`·`wd:`·`topic:` — 모양이 틀리면 400) → `{entity:{key, kind, name, nameKo, nameEn, aliases, description, ids:{ticker, market, stockCode, cik, dartCorpCode, wikidata}, links:[{relation, key, name, kind, source}], sources}, errors, fetchedAt}`, 하루 캐시 |
-| `GET /api/search/feed?e=&tab=timeline\|news\|posts\|filings\|research` | 2년 묶음 한 번에(화면이 7일·30일·1년·2년으로 자름) → `{entityKey, tab, items:[{id, kind, title, url, publisher, publisherDomain, publishedAt, timeBasis, source, lang, summary, readerId}], sources:[{source, label, status, count, dropped:{old, noTime, chinese, excluded}, message}], window:{from, to}, rangeCounts, olderOnlyLatest, pending, fetchedAt}` — 2년 밖·시각 모름·중국어 제목·`.cn`·제외 매체는 빼고 건수만, 15분 캐시. `posts`는 운영자만(그 밖 403) |
+| `GET /api/search/feed?e=&tab=timeline\|news\|posts\|filings\|research&refresh=1` | 2년 묶음 한 번에(화면이 7일·30일·1년·2년으로 자름) → `{entityKey, tab, items:[{id, kind, title, url, publisher, publisherDomain, publishedAt, timeBasis, source, lang, summary, readerId}], sources:[{source, label, status, count, dropped:{old, noTime, chinese, excluded}, message}], window:{from, to}, rangeCounts, olderOnlyLatest, pending, fetchedAt}` — 2년 밖·시각 모름·중국어 제목·`.cn`·제외 매체는 빼고 건수만, 15분 캐시. `posts`는 운영자만(그 밖 403). `refresh=1`은 캐시를 건너뛰는 '지금 새로 받기'(사용자당 10분에 1번, 데모·`STORE_ONLY`는 받지 않음) — 넘으면 캐시 그대로 부르고 `refreshNote`에 안내 한 줄(새로 받았으면 `null`, 묻지 않으면 칸 없음) |
+| `GET /api/search/recent` | 첫 화면 — 새 피드 묶음(보도자료·경제지 12곳) 최근 30건, 운영자에게는 속보 최근 20건을 더함 → `{available, items:[FeedItem], errors, fetchedAt}` — `errors`는 읽지 못한 저장본(`{출처: 사유}`, 없으면 빈 객체) |
+| `GET /api/search/watch` | 내 관심 대상 → `{available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax}, collecting}` — `newCount`는 마지막으로 본 뒤 처음 받았고 작성 시각이 그때의 24시간 전과 등록 시각 가운데 늦은 것보다 늦은 글 수(회원에게는 운영자 전용 출처에서 온 글을 세지 않음), `collecting`은 서버 정기 수집이 켜진 곳인지(모르면 null) |
+| `POST /api/search/watch` | `{key}` → 대상을 풀어 이름·별칭·식별자와 함께 대표 키로 등록(데모·`store_only` 403). 상한 회원 10·운영자 50·서버 전체 서로 다른 대상 100 — 넘으면 409(`reason` user_limit·server_limit). 이미 있으면(다른 키로 등록한 같은 대상도) 그대로 200(`created:false`). 대상을 풀지 못하면 409(unresolved), 수집기에 닿지 못했거나 표가 없으면 503(`topic:` 키는 수집기 없이도 등록), 풀기가 덜 끝났으면(출처 일시 실패) 저장하지 않고 503(partial) |
+| `DELETE /api/search/watch/{id}` | 내 관심 대상 지우기(남의 것은 404) |
+| `POST /api/search/watch/{id}/seen` | 그 대상을 지금 봤다고 적음(`newCount`가 0이 됨 — 화면은 타임라인 결과를 받아 그린 뒤 부름) |
+| `GET /api/search/excludes` | 매체 제외 목록 → `{available, seed:[{kind, value, group}], added:[{id, kind, value, note, createdAt}]}` — `seed`는 코드에 둔 처음 값, `added`는 운영자가 더한 것 |
+| `POST /api/search/excludes` | (운영자) `{kind: domain\|name, value, note}` → 제외 매체 더하기(도메인은 소문자 ASCII 호스트 — 국제화 도메인은 punycode, 이름은 앞뒤 공백만 뗌). 같은 값이 있으면 200(`created:false`) |
+| `DELETE /api/search/excludes/{id}` | (운영자) 더한 제외 매체 지우기 |
 
 ### 화면 실시간 시세 ([ADR 0024](adr/0024-live-prices-sse.md))
 
@@ -306,7 +314,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/info/mechanism` | 작동 방식 → `{checkedAt, collector(수집기 /info/mechanism — 스위치·브라우저 계층·요청 사이 지연·물러남·사람 확인·포기·호스트별 계층과 하루 예산·태스크별 간격·본문 규칙, 닿지 못하면 null), hostStates: [{host, lastGoodTier, failLevel, blockedUntil, blockedReason, givenUp, usedToday}], schedule{태스크: 다음 실행 KST — polite 태스크와 flex 피드(`news_headlines/<피드>`·`kr_news_headlines/<피드>`, ADR 0040)}, alerts{formatStreak, failedStreak, intervalMinutes}, deferred: [{task, label, reason}], translation{engine(1순위 — gemini·claude), model, geminiLowerModel(1순위가 실패하면 한 번 부르는 아래 Gemini 모델 — 없으면 null), fallbackModel(Gemini가 모두 안 될 때의 Claude 모델 — 없으면 null), geminiResting, effort, dailyChars, usedCharsToday(오늘 KST 번역한 원문 글자 수 — 표가 없으면 null), titleBatch, bodyChunkChars, bodyMaxChars}}` |
 | `GET /api/info/items` | 글 목록(작성 시각 — 모르면 처음 받은 시각 — 최근부터, 본문 없이). 인자 `kind`(blog·waedge·wire — wire는 Financial Juice 속보, 비면 블로그·waedge 글 전부이고 속보는 빠짐)·`source`(출처 키 하나)·`q`(제목·한국어 제목·요약 검색)·`page`·`size` → `{available, items: [{id, source, sourceLabel, kind(article·brief·guru·headline — headline은 본문 없는 속보 한 줄), url(원문), title, titleKo(출처가 붙인 한국어 제목 — waedge 해외 블로그, 없으면 null. 미리 번역하지 않음), author, publishedAt, firstSeenAt, summary, bodyStatus(full·partial·none), fetchTier, category}], page, size, total, pages}`. 모르는 `kind`는 400 |
 | `GET /api/info/items/{id}` | 글 한 편(본문 포함 — 글자만, 최대 40,000자) → `{found, item: {…목록 칸, body}}`. id 형식(16진 24자)이 아니면 400 |
-| `GET /api/info/headlines` | 사건 뉴스 RSS 제목(모의매매 Claude 패킷 11b_events의 재료 — 수집기 news_headlines·kr_news_headlines, 보존 7일). 인자 `set`(us·kr, 비면 둘 다)·`feed`(피드 키)·`q`·`page`·`size` → `{available, items: [{set, title, summary(피드가 준 요약 — 없으면 null, 글 페이지는 열지 않음), link, source, feed, publishedAt, fetchedAt}], page, size, total, pages}`. 모르는 `set`은 400 |
+| `GET /api/info/headlines` | 사건 뉴스 RSS 제목(모의매매 Claude 패킷 11b_events의 재료 — 수집기 news_headlines·kr_news_headlines, 보존 7일). `set=world`는 정보 검색의 새 피드 묶음(보도자료·경제지 — 수집기 search_feeds, 패킷 밖, [ADR 0041](adr/0041-info-search-watch.md) 결정 8)이고 링크·매체는 그 묶음의 `url`·`publisher`에서 읽습니다. 인자 `set`(us·kr·world, 비면 사건 뉴스 둘)·`feed`(피드 키)·`q`·`page`·`size` → `{available, items: [{set, title, summary(피드가 준 요약 — 없으면 null, 글 페이지는 열지 않음), link, source, feed, publishedAt, fetchedAt}], page, size, total, pages}`. world 줄은 작성 시각이 없을 수 있고(`publishedAt` null — `fetchedAt`(처음 받은 시각)만, 순서도 그 시각으로). 모르는 `set`은 400 |
 | `POST /api/info/translate` | 글 하나를 한국어로([ADR 0037](adr/0037-info-wire-translate.md) — 엔진은 `GEMINI_API_KEY`가 있으면 1순위 Gemini(Flash 등급, 무료 한도 안)·실패하면 2순위 Claude Haiku·effort low(유료), 키가 없으면 Claude Haiku만). 본문 `{itemId}`(수집 글 — 서버가 저장된 본문, 없으면 요약을 읽음) 또는 `{title, text}`(제목 하나만 번역할 때는 `{title}` — 목록의 제목별 번역 단추, 사건 뉴스처럼 글 표에 없는 것 — title 500자·text 8,000자까지) → `{ok, titleKo, textKo(번역할 본문이 없으면 null), alreadyKorean, cached(모델을 부르지 않고 저장본으로 끝남), truncated(40,000자를 넘어 앞부분만), model(이번에 번역한 모델 — 저장본만으로 끝났으면 null), models(이 번역을 옮긴 모델 전부 — 저장본 포함, 제목 먼저·본문 조각 순서, 번역이 없으면 빈 목록), error}`. 번역은 표 `info_translations`에 저장해 같은 글자는 다시 번역하지 않고, KST 하루 원문 글자 수 상한을 넘으면 `ok: false`. 수집은 일으키지 않음(없는 본문을 받으러 가지 않음). id 형식이 아니거나 없는 글·빈 요청·길이 초과는 400 |
 | `GET /api/info/sources` | 지금 끊긴 출처 → `{checkedAt, available, recorded(판정 기록이 있는가 — 로컬은 수집하지 않아 false), incidents: [{key, task, label, kind(blocked·format·failed·stale), kindLabel, reason, since, episode}]}`. `episode`는 사건의 회차(그 출처의 마지막 성공 시각, 한 번도 받지 못했으면 `never`) — 끊긴 동안 그대로이고 회복했다가 다시 끊기면 바뀝니다. 모든 화면의 안내 띠가 쓰고, 닫은 사건을 `key@episode`로 기억합니다 |
 | `GET /api/info/flows` | 네이버 투자자별 매매동향·외국인·기관 매매상위 저장본 → `{available, collectedAtKst, ageSeconds, source, fetchTier, unit, sourceUrls, trend, rankings, failed}`(모양은 `collector/app/services/info_naver.py` 머리말 — 장중 추정 순위의 금액은 null) |
@@ -419,7 +427,7 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | 경로 | 설명 |
 |---|---|
 | `GET /health` | 헬스체크 |
-| `GET /status` | 저장 현황 + 키 보유 + 수집 주기 |
+| `GET /status` | 저장 현황 + 키 보유 + 수집 주기 + 차단 통과 수집(관심 대상 정기 수집 포함)이 켜졌는지(`politeEnabled`) |
 | `GET /tasks` | 태스크 목록 |
 | `GET /task-history?task=&limit=` | 실행 이력 |
 | [토큰] `POST /collect?group=fast\|slow\|weekly\|all&wait=true` | 작업군 실행 |
@@ -435,7 +443,9 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/search/suggest?q=&owner=&external=` | 정보 검색 — 치는 동안의 후보(로컬 색인만, 외부 호출 없음) |
 | [토큰] `GET /live/search/resolve?q=&owner=&external=` | 정보 검색 — Enter의 후보(로컬 + Wikidata, 1시간 캐시) |
 | [토큰] `GET /live/search/entity?e=&owner=&external=` | 정보 검색 — 대상 풀기(Wikidata·SEC·DART 표, 하루 캐시) |
-| [토큰] `GET /live/search/feed?e=&tab=&owner=&external=` | 정보 검색 — 결과(구글·Bing·Yahoo·네이버·연합인포맥스 + 저장본, 2년 자르기·중국어·매체 거름, 15분 캐시). `external=false`면 외부를 부르지 않음 |
+| [토큰] `GET /live/search/feed?e=&tab=&owner=&external=&refresh=` | 정보 검색 — 결과(구글·Bing·Yahoo·네이버·연합인포맥스 + 저장본(사건 뉴스·새 피드 묶음·관심 대상이 모은 글·운영자 전용 글), 2년 자르기·중국어·매체 거름, 15분 캐시). `external=false`면 외부를 부르지 않음, `refresh=true`면 출처 캐시를 건너뜀 |
+| [토큰] `GET /live/search/recent?owner=` | 정보 검색 첫 화면 — 새 피드 묶음·(운영자) 속보 최근 글(저장본만) → `{items, errors, fetchedAt}` |
+| [토큰] `GET /live/search/excludes` | 매체 제외 목록의 처음 값(코드 상수, 외부 호출·DB 없음) → `{seed:[{kind, value, group}], fixedRules, politeEnabled}` — `politeEnabled`는 관심 대상 정기 수집이 이 수집기에서 도는지 |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |
 | [토큰] `GET /diagnostics/connections` | KIS·Daum·Naver·토스 진단 |
 | [토큰] `GET /diagnostics/public-apis` | 특일정보·주식시세·DART 진단 (API당 1회) |

@@ -107,6 +107,26 @@ class InfoServiceTest {
     }
 
     @Test
+    @DisplayName("보도자료·경제지(world)는 정보 검색의 새 피드 묶음만 — 묶음을 고르지 않으면 사건 뉴스 둘만(새 묶음을 섞지 않음)")
+    @SuppressWarnings("unchecked")
+    void worldHeadlines() {
+        when(store.headlines(anyList(), any(), any(), anyInt(), anyInt())).thenReturn(new InfoStore.Page<>(List.of(
+                new InfoStore.Headline(Datasets.OBS_SEARCH_FEED_HEADLINE, "합성 보도자료", "https://example.org/w", "합성 매체", "fed_press",
+                        null, "2026-11-11T01:05:00+00:00", null)), 1));
+
+        Map<String, Object> out = service.headlines("world", null, null, null, null);
+
+        verify(store).headlines(eq(List.of(Datasets.OBS_SEARCH_FEED_HEADLINE)), eq(null), eq(null), eq(0), eq(InfoService.DEFAULT_SIZE));
+        Map<String, Object> line = ((List<Map<String, Object>>) out.get("items")).get(0);
+        assertThat(line).containsEntry("set", "world").containsEntry("link", "https://example.org/w").containsEntry("source", "합성 매체")
+                .containsEntry("publishedAt", null).containsEntry("fetchedAt", "2026-11-11T01:05:00+00:00");
+
+        service.headlines(null, null, null, null, null);
+        verify(store).headlines(eq(List.of(Datasets.OBS_NEWS_HEADLINE, Datasets.OBS_KR_NEWS_HEADLINE)), eq(null), eq(null), eq(0),
+                eq(InfoService.DEFAULT_SIZE));
+    }
+
+    @Test
     @DisplayName("한눈 보기는 모든 출처를 탭으로 묶고 마지막 실행·판정·끊김에 따라 색을 매긴다 — 보류한 saveticker는 회색")
     @SuppressWarnings("unchecked")
     void catalog() {

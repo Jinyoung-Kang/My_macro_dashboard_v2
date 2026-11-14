@@ -55,6 +55,14 @@ const CASES: Case[] = [
   { name: "search.entity", before: `/api/search/entity?e=${encodeURIComponent("us:NVDA")}`, after: endpoints.search.entity("us:NVDA") },
   { name: "search.feed", before: `/api/search/feed?e=${encodeURIComponent("topic:AI 반도체")}&tab=news`,
     after: endpoints.search.feed("topic:AI 반도체", "news") },
+  // 정보 검색 단계 3(계약 §6-4) — '지금 새로 받기'는 refresh=1(주지 않으면 빼서 캐시를 씀), 관심 대상·매체 제외는 번호 아래.
+  { name: "search.feed refresh", before: `/api/search/feed?e=${encodeURIComponent("us:NVDA")}&tab=timeline&refresh=1`,
+    after: endpoints.search.feed("us:NVDA", "timeline", true) },
+  { name: "search.feed refresh 없음", before: `/api/search/feed?e=${encodeURIComponent("us:NVDA")}&tab=timeline`,
+    after: endpoints.search.feed("us:NVDA", "timeline", false) },
+  { name: "search.watchItem", before: `/api/search/watch/${7}`, after: endpoints.search.watchItem(7) },
+  { name: "search.watchSeen", before: `/api/search/watch/${7}/seen`, after: endpoints.search.watchSeen(7) },
+  { name: "search.exclude", before: `/api/search/excludes/${3}`, after: endpoints.search.exclude(3) },
   { name: "live.prices", before: `/api/live/prices?items=${encodeURIComponent("US:AAPL,KR:005930")}`,
     after: endpoints.live.prices(["US:AAPL", "KR:005930"]) },
   { name: "live.stream", before: `/api/live/prices/stream?items=${encodeURIComponent("US:^GSPC,US:KRW=X")}&interval=5`,
@@ -254,6 +262,20 @@ describe("모의 매매 시장 단위 경로", () => {
   });
 });
 
+describe("정보 검색 관심 대상·매체 제외 경로(계약 §6-4)", () => {
+  it("목록·등록은 같은 경로(GET·POST), 지우기·봤음은 번호 아래 — 첫 화면 최근 글과 제외 목록은 따로", () => {
+    expect(endpoints.search.watch).toBe("/api/search/watch");
+    expect(endpoints.search.watchItem(12)).toBe("/api/search/watch/12");
+    expect(endpoints.search.watchSeen(12)).toBe("/api/search/watch/12/seen");
+    expect(endpoints.search.recent).toBe("/api/search/recent");
+    expect(endpoints.search.excludes).toBe("/api/search/excludes");
+    expect(endpoints.search.exclude(4)).toBe("/api/search/excludes/4");
+    // refresh를 주지 않으면 지금까지와 글자까지 같은 주소(캐시 키·시험 mock이 경로로 맞춤).
+    expect(endpoints.search.feed("us:NVDA", "news")).toBe("/api/search/feed?e=us%3ANVDA&tab=news");
+    expect(endpoints.search.feed("us:NVDA", "news", true)).toBe("/api/search/feed?e=us%3ANVDA&tab=news&refresh=1");
+  });
+});
+
 describe("실제 계좌 경로(ADR 0025)", () => {
   it("읽기 경로 하나뿐이고 /api/paper 밖 — 주문·취소 경로가 없다", () => {
     expect(Object.keys(endpoints.brokerage)).toEqual(["account"]);
@@ -321,19 +343,22 @@ const documentedForm = (url: string) => new URL(url, "http://backend").pathname
   .replace(/^\/api\/manual\/isa\/instructions\/[^/]+\/skip$/, "/api/manual/isa/instructions/{id}/skip")
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+\/undo$/, "/api/manual/isa/trades/{id}/undo")
   .replace(/^\/api\/manual\/isa\/trades\/[^/]+$/, "/api/manual/isa/trades/{id}")
-  .replace(/^\/api\/info\/items\/[^/]+$/, "/api/info/items/{id}");
+  .replace(/^\/api\/info\/items\/[^/]+$/, "/api/info/items/{id}")
+  .replace(/^\/api\/search\/watch\/[^/]+\/seen$/, "/api/search/watch/{id}/seen")
+  .replace(/^\/api\/search\/watch\/[^/]+$/, "/api/search/watch/{id}")
+  .replace(/^\/api\/search\/excludes\/[^/]+$/, "/api/search/excludes/{id}");
 
 describe("docs/API.md 백엔드 표와 대조", () => {
   it("화면이 부르는 경로는 모두 문서(= 백엔드 경로 목록 테스트가 대조하는 표)에 있다", () => {
     const doc = readFileSync(resolve(__dirname, "../../../../docs/API.md"), "utf8");
-    // 표 형식 두 가지: `GET /api/x` 또는 | GET | `/api/x` |
-    const documented = new Set([...doc.matchAll(/`(?:(?:GET|POST) )?(\/api\/[^`?\s]*)/g)].map((m) => m[1]));
+    // 표 형식 두 가지: `GET /api/x`(DELETE도) 또는 | GET | `/api/x` |
+    const documented = new Set([...doc.matchAll(/`(?:(?:GET|POST|DELETE) )?(\/api\/[^`?\s]*)/g)].map((m) => m[1]));
     expect(documented.size).toBeGreaterThan(50);
 
     const { strings, functions } = leaves(endpoints);
     const paths = [...strings, ...CASES.map(({ after }) => after)].map(documentedForm);
     expect(paths.filter((path) => !documented.has(path))).toEqual([]);
     // 경로를 만드는 함수는 모두 위 CASES에 한 줄 이상 있습니다. 새 함수를 만들었다면 CASES에 추가하고 이 숫자를 고치세요.
-    expect(functions).toBe(75);
+    expect(functions).toBe(78);
   });
 });

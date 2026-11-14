@@ -669,7 +669,7 @@ class ApiIntegrationTest {
 
     /** 사용자 번호를 키로 쓰는 테이블(모두 users FK) — 데모 열람이 여기에 한 줄이라도 쓰면 안 됩니다. */
     private static final List<String> USER_KEYED_TABLES = List.of(
-            "user_sessions", "audit_log", "usage_counters", "alert_rules", "alert_deliveries", "email_tokens");
+            "user_sessions", "audit_log", "usage_counters", "alert_rules", "alert_deliveries", "email_tokens", "search_watches");
 
     private Map<String, Long> userKeyedRowCounts() {
         Map<String, Long> counts = new java.util.TreeMap<>();
@@ -694,7 +694,7 @@ class ApiIntegrationTest {
 
         for (String path : List.of("/api/auth/sessions", "/api/alerts/rules", "/api/alerts/inbox", "/api/alerts/unread-count",
                 "/api/analytics/regime/log", "/api/analytics/regime/track-record", "/api/kr/stock-flows?codes=005930",
-                "/api/macro/overview", "/api/ai/engines", "/api/ai/report-types")) {
+                "/api/macro/overview", "/api/ai/engines", "/api/ai/report-types", "/api/search/watch")) {
             ResponseEntity<String> response = rest.exchange(url(path), HttpMethod.GET, new HttpEntity<>(null, demo),
                     String.class);
             assertThat(response.getStatusCode()).as(path).isEqualTo(HttpStatus.OK);
@@ -711,9 +711,10 @@ class ApiIntegrationTest {
         HttpHeaders demoJson = new HttpHeaders();
         demoJson.addAll(demo);
         demoJson.setContentType(MediaType.APPLICATION_JSON);
-        for (String path : List.of("/api/alerts/rules", "/api/alerts/inbox/read", "/api/ai/test", "/api/auth/logout")) {
+        for (String path : List.of("/api/alerts/rules", "/api/alerts/inbox/read", "/api/ai/test", "/api/auth/logout",
+                "/api/search/watch", "/api/search/watch/1/seen")) {
             ResponseEntity<JsonNode> write = rest.exchange(url(path), HttpMethod.POST,
-                    new HttpEntity<>(Map.of("kind", "REGIME_CHANGE"), demoJson), JsonNode.class);
+                    new HttpEntity<>(Map.of("kind", "REGIME_CHANGE", "key", "topic:데모"), demoJson), JsonNode.class);
             assertThat(write.getStatusCode()).as(path).isEqualTo(HttpStatus.FORBIDDEN);
             assertThat(write.getBody().path("error").asString()).isEqualTo("demo_read_only");
         }

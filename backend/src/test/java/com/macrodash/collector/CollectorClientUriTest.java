@@ -165,4 +165,28 @@ class CollectorClientUriTest {
         assertThat(decodedParam("external")).isEqualTo("false");
         assertThat(decodedParam("owner")).isEqualTo("false");
     }
+
+    @Test
+    @DisplayName("정보 검색 지금 새로 받기 — refresh=true가 함께 도착하고, 묻지 않으면 refresh 인자가 없다")
+    void searchFeedRefreshArrives() {
+        client.liveSearchFeed("topic:AI 반도체", "timeline", true, true, true);
+        assertThat(receivedPaths).containsExactly("/live/search/feed");
+        assertThat(decodedParam("e")).isEqualTo("topic:AI 반도체");
+        assertThat(decodedParam("refresh")).isEqualTo("true");
+
+        receivedQueries.clear();
+        client.liveSearchFeed("us:NVDA", "news", true, false);
+        assertThat(receivedQueries.get(0)).doesNotContain("refresh");
+    }
+
+    @Test
+    @DisplayName("정보 검색 첫 화면 최근 글·매체 제외 목록의 처음 값 — 경로와 owner가 그대로 도착한다")
+    void searchRecentAndExcludesArrive() {
+        client.liveSearchRecent(true);
+        client.liveSearchExcludes();
+
+        assertThat(receivedPaths).containsExactly("/live/search/recent", "/live/search/excludes");
+        assertThat(decodedParam("owner")).isEqualTo("true");
+        assertThat(receivedQueries.get(1)).isNull();
+    }
 }

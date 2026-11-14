@@ -75,12 +75,15 @@ class CollectorClientSearchLogTest {
         return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
     }
 
-    /** 네 호출 — 검색어·대상 키 자리에 카나리를 넣습니다. */
+    /** 정보 검색 호출 — 검색어·대상 키 자리에 카나리를 넣습니다(최근 글·제외 목록은 검색어가 없어도 같은 조용한 로그). */
     private static final List<Function<CollectorClient, Optional<?>>> CALLS = List.of(
             c -> c.liveSearchSuggest(CANARY + " 검색어", true, false),
             c -> c.liveSearchResolve(CANARY + " 검색어", true, false),
             c -> c.liveSearchEntity("topic:" + CANARY, true, false),
-            c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false));
+            c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false),
+            c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false, true),
+            c -> c.liveSearchRecent(false),
+            c -> c.liveSearchExcludes());
 
     @Test
     @DisplayName("수집기가 오류 상태와 본문을 내면 빈 값이고, 로그에는 경로 이름표와 상태 코드만")

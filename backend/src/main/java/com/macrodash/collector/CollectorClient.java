@@ -273,12 +273,32 @@ public class CollectorClient {
 
     /** 결과(수집기 /live/search/feed — 출처별 상태와 2년 묶음, 15분 캐시). */
     public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner) {
+        return liveSearchFeed(e, tab, external, owner, false);
+    }
+
+    /**
+     * 결과 — {@code refresh}가 참이면 출처 캐시를 건너뛰는 '지금 새로 받기'(계약 §6-4, 사용자당 빈도는 백엔드가 막음). 거짓이면 인자를 보내지 않습니다.
+     */
+    public Optional<JsonNode> liveSearchFeed(String e, String tab, boolean external, boolean owner, boolean refresh) {
         return getQuietly(client, uri -> uri.path("/live/search/feed")
                 .queryParam("e", "{e}")
                 .queryParam("tab", "{tab}")
                 .queryParam("external", external)
                 .queryParam("owner", owner)
+                .queryParamIfPresent("refresh", refresh ? Optional.of(true) : Optional.empty())
                 .build(Map.of("e", e, "tab", tab)), "/live/search/feed");
+    }
+
+    /** 첫 화면 최근 글(수집기 /live/search/recent — 새 피드 묶음, owner면 속보도 — 저장본만, 외부 호출 없음). */
+    public Optional<JsonNode> liveSearchRecent(boolean owner) {
+        return getQuietly(client, uri -> uri.path("/live/search/recent")
+                .queryParam("owner", owner)
+                .build(), "/live/search/recent");
+    }
+
+    /** 매체 제외 목록의 처음 값(수집기 /live/search/excludes — 코드 상수, 외부 호출 없음). 운영자가 더한 줄은 백엔드 표에 있습니다. */
+    public Optional<JsonNode> liveSearchExcludes() {
+        return getQuietly(controlClient, uri -> uri.path("/live/search/excludes").build(), "/live/search/excludes");
     }
 
     // -------------------------------------------------------------- 호출 공통
