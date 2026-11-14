@@ -285,9 +285,9 @@ lib/                        표시 규칙(서식·메뉴·검색·테마·화면
   (지표 `/markets/i/<키>`·종목 `/s/<시장>/<코드>`·기관 `/institutions/<CIK>`)은 2026-11-01에 열었습니다 — 시세·뉴스·종목 찾기는 백엔드
   `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
   기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).
-- **정보 검색(`/search`, [ADR 0041](adr/0041-info-search-watch.md))**: 화면이 백엔드 `feature.search`(`/api/search/{suggest,resolve,entity,feed}` — 회원)를 부르면
+- **정보 검색(`/search`, [ADR 0041](adr/0041-info-search-watch.md))**: 화면이 백엔드 `feature.search`(`/api/search/{suggest,resolve,entity,feed,links}` — 회원)를 부르면
   백엔드는 입력을 검사하고 `external`(데모·`store_only`면 false)·`owner`를 붙여 수집기 `/live/search/*`를 중계합니다. 대상 풀기(Wikidata·SEC·DART·13F)와 출처 호출
-  (구글·Bing·Yahoo·네이버·연합인포맥스)·저장본 읽기·2년 자르기·중국어 제목·매체 제외·같은 글 가리기는 모두 수집기(`services/search*.py`)가 하고 결과는 메모리 캐시에만 둡니다.
+  (구글·Bing·Yahoo·네이버·연합인포맥스, 단계 4부터 SEC 공시·EDGAR 전문 검색·DART 공시·Yahoo 투자의견·내부자 명단·GLEIF)·저장본 읽기·2년 자르기·중국어 제목·매체 제외·같은 글 가리기는 모두 수집기(`services/search*.py`)가 하고 결과는 메모리 캐시에만 둡니다.
   백엔드는 회원 응답에서 운영자 전용 출처(수집 글·거장 견해·속보)의 줄을 한 번 더 지웁니다. 화면은 2년 묶음을 한 번 받아 기간 단추로 자르고, 내용 영역만 늘 어두운
   범위 토큰(`[data-scope="search"]`)으로 그립니다([계약](specs/2026-11-14-info-search-contract.md)). 단계 3부터 관심 대상(`/api/search/watch` — 등록·새 글 수,
   백엔드 표 `search_watches`)을 등록하면 운영 서버의 수집기 polite 태스크 `search_watch`가 대상마다 3~8시간에 한 번 새 글을 모아 `search_watch_items`에 넣고,

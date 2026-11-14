@@ -80,7 +80,7 @@ Link = { "relation": "owner_of" | "owned_by" | "founded_by" | "founder_of" | "em
 - `topic:` 키는 외부를 부르지 않고 `{kind:"topic", name:<글>, aliases:[<글>], ids 모두 null, links: []}`.
 
 ### 3-4. `GET /api/search/feed?e=&tab=` — 결과(2년 묶음 한 번에)
-- `tab`: `timeline` · `news` · `posts`(운영자) · `filings`(단계 4 — 그 전에는 빈 목록 + 상태 `later`) · `research`(단계 4, 같음). 보유·연결 탭은 이 경로를 쓰지 않음
+- `tab`: `timeline` · `news` · `posts`(운영자) · `filings`(단계 4 — 7절) · `research`(단계 4 — 7절, 단계 2·3에서는 빈 목록 + 상태 `later`). 보유·연결 탭은 이 경로를 쓰지 않음
   (보유는 기존 13F 경로, 연결은 3-3의 `links`).
 - 기간 인자 없음 — 응답은 **오늘(KST)부터 2년 안의 줄 전부**이고 화면이 7일·30일·1년·2년으로 자릅니다.
 
@@ -257,9 +257,12 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - FeedItem(공통): `kind:"filing"`, `lang` SEC `en`·DART `ko`, `summary` ≤ 300자, `readerId:null`.
   - `sec`: `title` = `<form> · <primaryDocDescription>`(설명이 없거나 양식과 같으면 양식만), `url` = 접수 색인 쪽
     `https://www.sec.gov/Archives/edgar/data/<CIK 숫자>/<접수번호 대시 없음>/<접수번호>-index.htm`, `publisher` = 회사 이름(submissions `name`), `publisherDomain` = `sec.gov`,
-    `publishedAt` = `acceptanceDateTime`(UTC, 있으면 `timeBasis:"published"`) 없으면 `filingDate`(`"date"`), `summary` = "보고 기준일 <reportDate>"(있을 때).
+    `publishedAt` = `acceptanceDateTime`(꼬리 `Z` 그대로 UTC — 서버 실측 2026-11-14: `…T13:52:41.000Z` = 접수 색인 쪽 'Accepted 08:52:41' 미국 동부 표준시, 있으면
+    `timeBasis:"published"`) 없으면 `filingDate`(`"date"`), `summary` = "보고 기준일 <reportDate>"(있을 때).
   - `sec_fts`: `title` = `<form> · <제출자 이름>`(`display_names[0]`에서 꼬리 ` (CIK …)`·티커 괄호를 뗌), `url` = 같은 접수 색인 쪽(`ciks[0]`), `publisher` = 제출자 이름,
     `publishedAt` = `file_date`(`"date"`), `summary` = `file_description`.
+  - 실패: 전문 검색에서 받은 줄 없이 두 번째 구문이 실패하면 `error`(60초 캐시). DART 2쪽이 실패하면 1쪽 줄과 안내("2쪽을 받지 못함(…)")를 둡니다. SEC submissions 404는
+    빈 결과와 안내. 전문 검색에서 제출자 CIK가 없는 줄은 연결할 쪽이 없어 뺍니다. 2년 밖 줄은 규칙(4절)이 잘라 `dropped.old`에 셉니다.
   - **같은 공시 가리기**: SEC 두 출처는 `id` = `info_text.item_id("sec:" + 접수번호)`(쪽 주소가 아니라 접수번호 — 같은 접수가 두 출처에서 와도 한 줄, `sec`가 먼저).
   - `dart`: `title` = `report_nm`(앞뒤 공백 정리), `url` = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=<rcept_no>`, `publisher` = `flr_nm`(제출인), `publisherDomain` = `dart.fss.or.kr`,
     `publishedAt` = `rcept_dt`(KST 날짜, `"date"`), `summary` = `rm` 표지(유·코·채·넥·공·연·정·철 — 있으면 "비고 <rm>"), `id` = `info_text.item_id(url)`.
@@ -299,7 +302,9 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - `Link`에 칸 둘을 더합니다: `detail`(한 줄, 없으면 null), `source`에 `yahoo`·`gleif`. `relation`에 `insider`·`ultimate_parent`를 더합니다.
 - `key:null` 연결은 누르면 그 이름으로 3-2(resolve)를 부릅니다(지금과 같음).
 - `ids`에 `lei`를 더합니다(Wikidata `P1278`의 첫 값 — 20자 `[A-Z0-9]{18}[0-9]{2}`만, 없으면 null). 속성 칸에 보입니다.
-- LEI가 없는 대상은 `gleif` 상태 `skipped`("LEI 없음 — Wikidata에 법인 식별자가 없음"), 미국 상장 회사가 아니면 `insiders` `skipped`.
+- LEI가 없는 대상은 `gleif` 상태 `skipped`("LEI 없음 — Wikidata에 법인 식별자가 없음") — Wikidata가 답했을 때만. 외부 호출을 끈 요청이면 `offline`, Wikidata 실패나
+  대상 풀기 시간 초과면 `error`("LEI를 모름 — <사유>"); 화면도 이 경우(대상 응답의 `errors.wikidata`·`errors.entity`) 연결이 '없다'고 하지 않고 '모른다'고 함.
+  미국 상장 회사가 아니면 `insiders` `skipped`. 내부자 명단의 빈 표는 `empty`와 안내(받지 못했을 수 있음 — 60초 캐시).
 - 사람 대상의 '임원·내부자 ↔ 기업' 역방향(사람 → 회사)은 이번 단계에서 하지 않습니다(SEC 소유 공시 역색인이 필요 — 단계 6 후보).
 
 ### 7-6. 관심 대상 정기 수집에 더함(6-3)
@@ -307,11 +312,17 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - 대상에 `ids.cik`가 있으면 SEC submissions(호스트 `data.sec.gov`, 하루 예산 600), 종류가 사람·13F 기관이면 EDGAR 전문 검색 첫 구문 한 번(호스트 `efts.sec.gov`, 300 —
   두 번째 구문은 묻지 않음), `ids.dartCorpCode`가 있으면 DART 첫 쪽(호스트 `opendart.fss.or.kr`, 600). 예산·간격·판정 규칙은 6-3과 같고, 넣는 줄은 `kind:"filing"`.
 - 공시 줄의 저장 id = 7-2의 `id`(접수번호·DART 주소). 리서치·연결은 모으지 않습니다.
-- `feed`의 저장본 출처 `watch`는 탭에 맞는 종류만 섞습니다: `news` 탭은 `kind` `news`·`headline`, `filings` 탭은 `filing`, `timeline`은 전부(공시 탭이 없는 주제는 공시 줄도 없음).
+- `feed`의 저장본 출처 `watch`는 탭에 맞는 종류만 섞습니다: `news` 탭은 `kind` `news`·`headline`·`wire`(속보 — 운영자에게만 남음, 3-4), `filings` 탭은 `filing`,
+  `timeline`은 전부(공시 탭이 없는 주제는 공시 줄도 없음). 모은 공시 줄은 합칠 때 `dart` 바로 뒤(같은 접수는 실시간 출처 줄로 남고 건수도 그쪽에 셈 — 실시간 출처가 실패하면
+  모은 줄이 그 자리를 채움).
+- 관심 대상 수집은 설정(`SEC_USER_AGENT`·`DART_API_KEY`)이 없으면 그 질의를 보내지 않고 예산·간격·요청 수도 쓰지 않습니다(실행 기록에 '설정이 없어 보내지 않음' — 끊김 아님).
+- 새 글 수(6-4)의 한계: 날짜만 아는 공시 줄(`dart`·`sec_fts`·접수 시각 없는 `sec`)은 작성 시각이 그 날 00:00이라, 등록한 날에 접수된 공시는 새 글로 세지 않습니다(다음 날
+  접수분부터 셈). 표에 시각 기준 칸을 더하는 마이그레이션 없이 받아들임.
 
 ### 7-7. 화면
 
-- 공시·리서치 탭을 엽니다(대상 종류에 따라 — 주제는 공시·리서치 없음, 기관·사람은 리서치 없음). 줄의 종류 표지(공시·리서치), `timeBasis:"date"`는 날짜만.
+- 공시·리서치 탭을 엽니다(대상 종류에 따라 — 주제는 공시·리서치 없음, 기관·사람은 리서치 없음, 리서치는 `ids.market`이 `us`·`kr`인 상장 기업만 — 풀기 전이면 키 모양
+  `us:`·`kr:`로 판단). 탭이 없는 종류에서 그 탭을 직접 부르면 수집기는 출처별 `skipped` 줄을 돌려주고, 타임라인에는 그 출처 줄을 두지 않습니다. 줄의 종류 표지(공시·리서치), `timeBasis:"date"`는 날짜만.
 - 연결 탭: 3-3의 `links` + 7-5 응답을 관계별 묶음으로(`insider` '내부자', `ultimate_parent` '최상위 모회사' 등), 각 줄에 `detail`, 출처 상태 줄. 받는 중·실패·건너뜀은 글로.
 - 속성 칸: `ids.lei`(있으면).
 
