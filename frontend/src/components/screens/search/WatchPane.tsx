@@ -28,6 +28,8 @@ const LIST_SCROLL = "max-h-[min(28dvh,14rem)] overflow-y-auto";
 
 /**
  * 왼쪽 칸의 관심 대상 목록(ADR 0041 결정 9 — 계약 §6-4): 이름 · 종류 · 마지막으로 본 뒤 새 글 수. 누르면 그 대상을 엽니다.
+ * 줄의 첫 줄은 이름만(두 줄까지 줄바꿈, 전체 이름은 title), 그 아래 줄에 종류 글과 '화제'·'새 글 n' 배지를 둡니다(줄바꿈하지 않는 조각으로 — 넘치면 다음 줄로).
+ * 배지가 이름과 한 가로줄에 있으면 대상 화면의 13rem 칸에서 이름 폭이 0px까지 눌리고 종류 글이 글자마다 끊겨 배지 밑에 겹쳤습니다(QA-418).
  * 줄마다 새 글 알림 켜기(단계 6 묶음 2 — 계약 §9-5, 종 아이콘 + 켬·끔 글, aria-pressed)를 둡니다 — 켜면 백엔드가 새 글을 알림함에 남깁니다
  * (텔레그램 없음). 서버가 알림 칸을 주지 않으면(묶음 1까지) 단추를 그리지 않습니다. 정기 수집이 꺼진 곳(로컬·QA)이면 그렇다고 적습니다.
  * 화제인 대상(단계 6 — 계약 §9-2의 hot)에는 '화제' 글 배지를 두고(색만이 아님), 그런 대상이 있으면 목록 아래에 뜻 한 줄을 적습니다.
@@ -107,21 +109,25 @@ export function WatchPane({
                       }`}
                     >
                       {current ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
-                      <span className="text-text-3">
+                      <span className="shrink-0 text-text-3">
                         <KindIcon kind={item.kind as SearchEntityKind} size={14} />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-accent">{item.name}</span>
-                        <span className="block text-xs text-text-3">{entityKindLabel(item.kind as SearchEntityKind)}</span>
-                      </span>
-                      {item.hot === true ? (
-                        <span className="shrink-0 rounded-control border border-warn px-1.5 py-0.5 text-xs font-semibold text-warn">화제</span>
-                      ) : null}
-                      {count ? (
-                        <span className="shrink-0 rounded-control border border-border-strong bg-surface-2 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-text">
-                          {count}
+                        <span className="line-clamp-2 text-accent wrap-anywhere" title={item.name}>
+                          {item.name}
                         </span>
-                      ) : null}
+                        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-text-3">
+                          <span className="whitespace-nowrap">{entityKindLabel(item.kind as SearchEntityKind)}</span>
+                          {item.hot === true ? (
+                            <span className="whitespace-nowrap rounded-control border border-warn px-1 font-semibold text-warn">화제</span>
+                          ) : null}
+                          {count ? (
+                            <span className="whitespace-nowrap rounded-control border border-border-strong bg-surface-2 px-1 font-semibold tabular-nums text-text">
+                              {count}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
                     </button>
                     <NotifyToggle watch={watch} item={item} from="list" />
                   </li>
