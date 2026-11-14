@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ErrorState, Loading } from "@/components/ui";
 import { SELECTED_BAR } from "@/components/ui/classes";
-import { ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
+import { ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
 import { useInfoSearchFeed } from "@/hooks/useInfoSearch";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -17,6 +17,7 @@ import {
   cutByRange,
   facetCounts,
   feedEmptyState,
+  feedPendingText,
   groupByKstDate,
   hasFilters,
   httpUrl,
@@ -47,6 +48,9 @@ import { BUTTON, ItemKindTag, LINK, PANEL, PaneHeading, SourceStatusLine, segmen
  *
  * 왼쪽 칸 맨 위에는 관심 대상 목록(aside — 단계 3, 좁은 화면은 따로 접힘)을 둡니다. '지금 새로 받기'는 캐시를 건너뛰고(refresh=1 — 사용자당
  * 10분에 1번, 넘으면 서버가 캐시를 그대로 주며 한 줄을 붙임) 데모 열람에는 없습니다(외부를 부르지 않는 열람).
+ *
+ * 받는 중인 출처(pending — 단계 5의 Finviz, 계약 §8-6)가 있으면 목록 위에 그 이름과 함께 한 줄을 두고 훅이 5초마다 다시 읽어 바꿔 끼웁니다
+ * (보이던 줄은 그대로). 12번(1분) 뒤에도 받는 중이면 다시 읽기를 멈추고 '받는 중'과 '다시 확인' 단추를 둡니다.
  */
 export function FeedPanel({
   entityKey,
@@ -88,11 +92,24 @@ export function FeedPanel({
   const [drawer, setDrawer] = useState(false);
   const [reader, setReader] = useState<ReaderEntry | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const emptyRef = useRef<HTMLDivElement>(null);
+  const pendingStatusRef = useRef<HTMLParagraphElement>(null);
+  // '다시 확인'을 누를 때 그 단추에 포커스가 있었는가 — 읽기가 끝나 단추가 사라지면(받았거나 아직 받는 중이라 다시 12번) 포커스를 같은 자리
+  // (받는 중 줄, 그것도 없으면 결과 목록·빈 결과 안내)로 옮깁니다. 키보드·낭독기 사용자가 처음부터 다시 찾지 않게(WCAG 2.4.3).
+  const recheckHadFocus = useRef(false);
   const baseId = useId();
   const optionId = (index: number) => `${baseId}-row-${index}`;
   const drawerId = `${baseId}-filters`;
 
+  useEffect(() => {
+    if (feed.rechecking || !recheckHadFocus.current) return;
+    recheckHadFocus.current = false;
+    if (feed.pendingPhase === "stalled") return; // 받지 못해 단추가 그대로 — 포커스도 단추에 그대로
+    (pendingStatusRef.current ?? listRef.current ?? emptyRef.current)?.focus();
+  }, [feed.rechecking, feed.pendingPhase]);
+
   const statuses = useMemo(() => data?.sources ?? [], [data]);
+  const pendingText = data?.available ? feedPendingText(feed.pendingPhase, statuses) : null;
   const inRange = useMemo(() => (data ? cutByRange(data, range, today) : []), [data, range, today]);
   const counts = useMemo(() => (data ? rangeCountsOf(data, today) : null), [data, today]);
   const facets = useMemo(() => facetCounts(inRange, statuses), [inRange, statuses]);
@@ -155,9 +172,15 @@ export function FeedPanel({
       range,
       olderOnlyLatest: data.olderOnlyLatest,
       sources: statuses,
+      pendingStalled: feed.pendingPhase === "stalled",
     });
     body = empty ? (
-      <div role="status" className="flex flex-col items-start gap-2 px-3 py-8 text-sm">
+      <div
+        ref={emptyRef}
+        role="status"
+        tabIndex={-1}
+        className="flex flex-col items-start gap-2 px-3 py-8 text-sm outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+      >
         <p className="font-medium text-text">{empty.message}</p>
         {empty.note ? <p className="text-text-2">{empty.note}</p> : null}
         {empty.caveat ? (
@@ -334,11 +357,42 @@ export function FeedPanel({
               </span>
             </div>
           ) : null}
-          {data?.pending ? (
-            <p role="status" className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-2">
-              <SpinnerIcon size={12} className="motion-safe:animate-spin" />
-              받는 중인 출처가 있어 몇 초 뒤 다시 읽습니다.
-            </p>
+          {pendingText ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-xs text-text-2">
+              {/* 다시 읽는 동안·멈춘 뒤·다시 확인의 실패를 같은 상태 영역에 둡니다(낭독기가 한 자리에서 듣게). */}
+              <p
+                ref={pendingStatusRef}
+                role="status"
+                tabIndex={-1}
+                className="flex items-center gap-2 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+              >
+                {feed.pendingPhase === "polling" || feed.rechecking ? (
+                  <SpinnerIcon size={12} className="shrink-0 motion-safe:animate-spin" />
+                ) : (
+                  <ClockIcon size={12} className="shrink-0" />
+                )}
+                <span>
+                  {pendingText}
+                  {feed.recheckError ? ` 다시 확인하지 못했습니다 — ${feed.recheckError}` : ""}
+                </span>
+              </p>
+              {feed.pendingPhase === "stalled" ? (
+                // 읽는 동안 disabled로 바꾸지 않습니다(포커스가 body로 떨어짐) — aria-disabled로 알리고 누름은 훅이 한 번만 보냅니다.
+                <button
+                  type="button"
+                  className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+                  aria-disabled={feed.rechecking || undefined}
+                  onClick={(event) => {
+                    if (feed.rechecking) return;
+                    recheckHadFocus.current = document.activeElement === event.currentTarget;
+                    void feed.recheck();
+                  }}
+                >
+                  <RefreshIcon size={14} />
+                  다시 확인
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {body}
         </div>
@@ -352,7 +406,7 @@ export function FeedPanel({
           <div className="lg:sticky lg:top-0">{rightPane}</div>
         </div>
       </div>
-      <SourceStatusLine sources={statuses} />
+      <SourceStatusLine sources={statuses} pendingStalled={feed.pendingPhase === "stalled"} />
       {data?.fetchedAt ? <p className="hidden px-3 pb-2 text-xs text-text-3 lg:block">받은 시각 {formatKst(data.fetchedAt)} KST · 결과는 15분 동안 다시 씁니다</p> : null}
       {owner ? <ReaderDialog entry={reader} onClose={() => setReader(null)} /> : null}
     </div>

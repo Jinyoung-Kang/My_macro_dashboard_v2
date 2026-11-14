@@ -1,14 +1,16 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useApi } from "@/hooks/useApi";
 import { useMountedRef } from "@/hooks/useAsyncAction";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
-import { apiGet, UnauthorizedError } from "@/lib/api";
+import { apiGet, apiGetShared, UnauthorizedError } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import {
-  feedRefreshMs,
+  FEED_PENDING_MAX_POLLS,
+  FEED_PENDING_REFRESH_MS,
+  feedPendingPhase,
   isEntityKey,
   isSlashShortcut,
   linksView,
@@ -129,8 +131,21 @@ export function useInfoSearchSuggest(query: string, enabled: boolean) {
 type FreshFeed = { path: string; data: SearchFeedResponse; at: number };
 
 /**
- * 결과(GET /api/search/feed) — 대상·탭마다 한 번(2년 묶음). 받는 중인 출처가 있으면(pending — 단계 5의 Finviz) 몇 초 뒤 다시 읽고,
- * 다 받으면 멈춥니다. 기간은 화면이 자르므로 다시 부르지 않습니다.
+ * 받는 중 다시 읽기의 상태 — base(지금 보이는 처음 읽기·새로 받기 응답의 시각) 뒤로 다시 읽은 횟수와 마지막으로 받은 응답.
+ * 경로나 base가 바뀌면(대상·탭을 바꿈, 새로 받기, 셸의 수동 새로고침) 이 상태는 버려지고 횟수는 0부터 셉니다.
+ */
+type PendingPoll = { path: string; base: number; count: number; data: SearchFeedResponse | null };
+
+/** '다시 확인'이 받지 못한 사유 — 누른 그 멈춤(같은 경로·같은 base)에만 보입니다. 새로 받기·대상·탭을 바꾼 뒤 다시 멈추면 앞의 실패를 끌어오지 않게. */
+type RecheckError = { path: string; base: number; message: string };
+
+/**
+ * 결과(GET /api/search/feed) — 대상·탭마다 한 번(2년 묶음). 기간은 화면이 자르므로 다시 부르지 않습니다.
+ *
+ * 받는 중인 출처가 있으면(pending — 단계 5의 Finviz, 계약 §8-6) 같은 결과를 5초 뒤 다시 읽습니다. 앞 요청이 끝난 뒤에 다음을 걸어
+ * 요청이 겹치지 않고, 최대 12번(1분) — 그 뒤에는 pendingPhase가 stalled이고 recheck('다시 확인')를 누를 때 한 번 읽습니다(아직이면 다시 12번).
+ * 다시 읽는 동안 보이던 묶음은 그대로 두고 새 응답으로 바꿔 끼우며, 실패하거나 수집기에 닿지 못한 응답(available:false)은 보이던 묶음을 덮지 않고
+ * 횟수만 셉니다. 탭이 숨어 있으면 보일 때까지 미룹니다. 경로가 바뀌거나 화면을 떠나면 걸어 둔 다시 읽기를 거두고 늦게 온 응답은 버립니다.
  *
  * refreshPath를 주면 '지금 새로 받기'(계약 §6-4 — `refresh=1`, 캐시를 건너뜀, 사용자당 10분에 1번)를 쓸 수 있습니다. 새로 받은 응답은
  * 그 뒤의 보통 읽기(받는 중 다시 읽기·수동 새로고침)가 올 때까지 보이고, 그 읽기는 서버 캐시(방금 새로 받은 것)를 줍니다.
@@ -138,22 +153,86 @@ type FreshFeed = { path: string; data: SearchFeedResponse; at: number };
  * 새로 받기가 수집기에 닿지 못하면(available:false) 보이던 묶음을 그대로 두고 refreshError에 사유를 둡니다.
  */
 export function useInfoSearchFeed(path: string | null, refreshPath: string | null = null) {
-  const [pollMs, setPollMs] = useState(0);
-  const feed = useApi<SearchFeedResponse>(path, pollMs);
+  const feed = useApi<SearchFeedResponse>(path);
   const { notifyUnauthorized } = useRefreshSignal();
   const mounted = useMountedRef();
   const [fresh, setFresh] = useState<FreshFeed | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [poll, setPoll] = useState<PendingPoll | null>(null);
+  const [rechecking, setRechecking] = useState(false);
+  const [recheckError, setRecheckError] = useState<RecheckError | null>(null);
+  // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(단추를 끄는 것은 다시 그린 뒤라).
+  const recheckBusy = useRef(false);
 
   const loadedAt = feed.loadedAt?.getTime() ?? null;
   const freshShown = fresh !== null && fresh.path === path && (loadedAt === null || fresh.at >= loadedAt) ? fresh : null;
-  const data = freshShown ? freshShown.data : feed.data;
+  const base = freshShown ? freshShown.at : (loadedAt ?? 0);
+  const polled = poll !== null && poll.path === path && poll.base === base ? poll : null;
+  const data = polled?.data ?? (freshShown ? freshShown.data : feed.data);
+  const polls = polled?.count ?? 0;
+  const pendingPhase = feedPendingPhase(data, polls);
 
-  const wanted = feedRefreshMs(data);
   useEffect(() => {
-    setPollMs(wanted);
-  }, [wanted]);
+    if (!path || pendingPhase !== "polling") return;
+    let cancelled = false;
+    const settle = (response: SearchFeedResponse | null, count: number) =>
+      setPoll((previous) => ({
+        path,
+        base,
+        count,
+        // 받지 못한 다시 읽기는 보이던 묶음을 덮지 않습니다(앞서 다시 읽어 받은 것이 있으면 그것을 그대로).
+        data: response?.available ? response : previous?.path === path && previous.base === base ? previous.data : null,
+      }));
+    const read = () => {
+      if (document.visibilityState === "hidden") {
+        document.addEventListener("visibilitychange", onVisible);
+        return;
+      }
+      apiGetShared<SearchFeedResponse>(path)
+        .then((response) => {
+          if (!cancelled) settle(response, polls + 1);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          if (error instanceof UnauthorizedError) {
+            notifyUnauthorized();
+            settle(null, FEED_PENDING_MAX_POLLS);
+          } else settle(null, polls + 1);
+        });
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") return;
+      document.removeEventListener("visibilitychange", onVisible);
+      read();
+    };
+    const timer = window.setTimeout(read, FEED_PENDING_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [path, base, polls, pendingPhase, notifyUnauthorized]);
+
+  const recheck = useCallback(async () => {
+    if (!path || recheckBusy.current) return;
+    recheckBusy.current = true;
+    setRechecking(true);
+    setRecheckError(null);
+    try {
+      const response = await apiGetShared<SearchFeedResponse>(path);
+      if (!mounted.current) return;
+      // 받았으면 그 응답을 보이고 횟수를 0부터(아직 받는 중이면 다시 12번까지). 수집기에 닿지 못했으면 멈춘 그대로 사유만.
+      if (response?.available) setPoll({ path, base, count: 0, data: response });
+      else setRecheckError({ path, base, message: response?.message ?? "수집기에서 응답을 받지 못했습니다." });
+    } catch (error: unknown) {
+      if (error instanceof UnauthorizedError) notifyUnauthorized();
+      if (mounted.current) setRecheckError({ path, base, message: error instanceof Error ? error.message : "알 수 없는 오류" });
+    } finally {
+      recheckBusy.current = false;
+      if (mounted.current) setRechecking(false);
+    }
+  }, [path, base, mounted, notifyUnauthorized]);
 
   const refresh = useCallback(async () => {
     if (!path || !refreshPath) return;
@@ -179,8 +258,15 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
     refresh,
     refreshing,
     refreshError,
-    /** 이번 화면에서 새로 받은 응답(보이는 중일 때만) — '새로 받았습니다' 한 줄에 씁니다. */
-    refreshed: freshShown?.data ?? null,
+    /** 이번 화면에서 새로 받은 응답(보이는 중일 때만 — 받는 중 다시 읽기로 바뀌면 null) — '새로 받았습니다' 한 줄에 씁니다. */
+    refreshed: polled?.data ? null : (freshShown?.data ?? null),
+    /** 받는 중 다시 읽기의 단계(none·polling·stalled)와 '다시 확인'. */
+    pendingPhase,
+    recheck,
+    rechecking,
+    /** '다시 확인'이 받지 못했을 때의 사유(멈춘 상태 그대로) — 누른 그 멈춤(같은 경로·같은 base)에만. */
+    recheckError:
+      pendingPhase === "stalled" && recheckError !== null && recheckError.path === path && recheckError.base === base ? recheckError.message : null,
   };
 }
 

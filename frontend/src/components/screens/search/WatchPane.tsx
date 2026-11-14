@@ -17,8 +17,11 @@ import {
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
 import { BUTTON, KindIcon, PaneHeading } from "./parts";
 
-/** 관심 대상 목록 스크롤 영역의 높이 상한 — 화면 높이의 40%, 많아야 24rem. */
-const LIST_SCROLL = "max-h-[min(40dvh,24rem)] overflow-y-auto";
+/**
+ * 관심 대상 목록 스크롤 영역의 높이 상한 — 화면 높이의 28%, 많아야 14rem(약 줄 7개). 40%·24rem이면 50개일 때 대상 화면의 거르기(1440x900에서
+ * y≈934)와 첫 화면의 최근 글(390)이 첫 화면 밖으로 밀렸습니다(4단계 브라우저 확인).
+ */
+const LIST_SCROLL = "max-h-[min(28dvh,14rem)] overflow-y-auto";
 
 /**
  * 왼쪽 칸의 관심 대상 목록(ADR 0041 결정 9 — 계약 §6-4): 이름 · 종류 · 마지막으로 본 뒤 새 글 수. 누르면 그 대상을 엽니다.

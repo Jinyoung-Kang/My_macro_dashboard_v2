@@ -4,7 +4,7 @@
  * 계약(docs/specs/2026-11-14-info-search-contract.md)의 화면 몫만 둡니다: 주소 상태(?q= · ?e=&tab=&range=), 대상 키 모양 검사(주소로 넘어가기 전),
  * 후보를 자동으로 고르지 않는 규칙, 2년 묶음을 7일·30일·1년·2년으로 자르기, KST 날짜 묶음, 빈 화면 안내, 출처 상태 글, 거르기, 키보드,
  * 단계 3의 관심 대상(대표 키·새 글 수·상한·정기 수집 안내)과 매체 제외 목록(더할 값 다듬기), 단계 4의 공시·리서치 탭(대상 종류에 따라)·날짜만 아는 줄·
- * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글).
+ * 연결 보강(대상 풀기의 links와 합치기·받는 중/실패 글), 단계 5의 받는 중(pending — Finviz) 다시 읽기 횟수와 상태 글.
  * 2년 자르기·중국어 제목·매체 제외는 수집기가 원본이고 화면은 다시 구현하지 않습니다(계약 §1). 상단 통합 검색(⌘K)의 색인은 lib/search.ts입니다.
  */
 import { holderQuery, institutionHref, stockHref } from "./detail";
@@ -376,13 +376,28 @@ const ANSWERED = new Set(["ok", "cached", "empty"]);
 /** 물었어야 했는데 답을 받지 못한 상태. 건너뜀(이름이 없어 묻지 않음)·운영자 전용·다음 단계는 원래 묻지 않는 자리라 넣지 않습니다. */
 const UNANSWERED = new Set(["error", "offline", "pending", "server_only"]);
 
-/** 받지 못한 출처의 한 줄(없으면 null) — 외부 조회 안 함(데모·저장본만)·받는 중은 따로 말합니다. */
-export function feedSourceCaveat(sources: readonly SearchSourceStatus[]): string | null {
-  const missed = sources.filter((source) => UNANSWERED.has(source.status));
+/**
+ * 물었어야 했는데 답을 받지 못했는가. Finviz의 건너뜀은 받지 못한 쪽으로 셉니다 — 그 줄은 미국 상장 회사에만 있고, 건너뜀은 검색 예산 소진·
+ * 한 사람 빈도 상한·대기열 가득 참(계약 §8-2·8-4 — 물어야 했는데 보내지 않음)이라 '원래 묻지 않는 자리'가 아닙니다.
+ */
+function isUnanswered(source: SearchSourceStatus): boolean {
+  return UNANSWERED.has(source.status) || (source.status === "skipped" && source.source === "finviz");
+}
+
+/**
+ * 받지 못한 출처의 한 줄(없으면 null) — 외부 조회 안 함(데모·저장본만)·받는 중은 따로 말합니다.
+ * pendingStalled = 받는 중 다시 읽기를 멈춘 뒤(12번 — 계약 §8-6)라 '몇 초 뒤'라고 하지 않습니다.
+ */
+export function feedSourceCaveat(sources: readonly SearchSourceStatus[], options: { pendingStalled?: boolean } = {}): string | null {
+  const missed = sources.filter(isUnanswered);
   if (missed.length === 0) return null;
   if (missed.every((source) => source.status === "offline")) return "외부 출처는 부르지 않았습니다(저장본만 찾음) — 아래 출처 상태를 보세요.";
   const names = missed.map((source) => source.label || sourceLabel(source.source)).join(" · ");
-  if (missed.every((source) => source.status === "pending")) return `받는 중인 출처가 있습니다(${names}) — 몇 초 뒤 다시 읽습니다.`;
+  if (missed.every((source) => source.status === "pending")) {
+    return options.pendingStalled
+      ? `받는 중인 출처가 있습니다(${names}) — 아직 받지 못했습니다('다시 확인'을 누르면 한 번 더 읽습니다).`
+      : `받는 중인 출처가 있습니다(${names}) — 몇 초 뒤 다시 읽습니다.`;
+  }
   return `받지 못한 출처가 있습니다(${names}) — 아래 출처 상태를 보세요.`;
 }
 
@@ -395,6 +410,7 @@ export function feedSourceCaveat(sources: readonly SearchSourceStatus[]): string
  * 받지 못한 출처가 있으면 앞의 두 안내에 caveat 한 줄을 붙입니다.
  *
  * @param total 2년 안의 줄 수 · @param inRange 고른 기간의 줄 수(거르기 전) · @param shown 거른 뒤 보이는 줄 수 · @param sources 출처 상태(없으면 지금처럼)
+ * @param pendingStalled 받는 중 다시 읽기를 멈췄는가(feedPendingPhase가 stalled)
  */
 export function feedEmptyState(args: {
   total: number;
@@ -404,9 +420,10 @@ export function feedEmptyState(args: {
   range: SearchRange;
   olderOnlyLatest: string | null | undefined;
   sources?: readonly SearchSourceStatus[];
+  pendingStalled?: boolean;
 }): FeedEmpty | null {
   const sources = args.sources ?? [];
-  const caveat = feedSourceCaveat(sources);
+  const caveat = feedSourceCaveat(sources, { pendingStalled: args.pendingStalled });
   if (args.total === 0) {
     const note = args.olderOnlyLatest ? `가장 최근 자료: ${args.olderOnlyLatest}` : null;
     if (sources.length > 0 && !sources.some((source) => ANSWERED.has(source.status))) {
@@ -482,6 +499,8 @@ const SOURCE_LABELS: Record<string, string> = {
   naver_research: "증권사 리포트(네이버)",
   insiders: "내부자 명단(Yahoo)",
   gleif: "법인 관계(GLEIF)",
+  // 단계 5(계약 §8) — 미국 상장 종목의 Finviz 종목 화면 한 쪽(수집기가 줄 세워 받는 대로 채움)
+  finviz: "Finviz 종목 뉴스",
 };
 
 export function sourceLabel(source: string, statuses: readonly SearchSourceStatus[] = []): string {
@@ -620,7 +639,7 @@ const EXTRA_NAME = "내부자 명단·법인 관계";
  * @param response 연결 보강 응답(받기 전·요청 실패면 null) · @param loading 받는 중인지 · @param error 요청 실패 글
  */
 export function linksView(args: {
-  entity: Pick<SearchEntity, "links"> | null;
+  entity: (Pick<SearchEntity, "links"> & Partial<Pick<SearchEntity, "ids" | "kind">>) | null;
   entitySettled: boolean;
   entityErrors: Readonly<Record<string, string>>;
   response: SearchLinksResponse | null;
@@ -651,7 +670,10 @@ export function linksView(args: {
 
   let empty: string | null = null;
   if (groups.length === 0 && extra?.state !== "loading" && (entity || entitySettled)) {
-    const missed = extra?.state === "error" || !entity || wikidataError !== null || sources.some((source) => UNANSWERED.has(source.status));
+    // Wikidata 항목을 찾지 못한 대상(주제 밖)은 Wikidata 관계·LEI를 모름 — 수집기 _no_lei('Wikidata 항목을 찾지 못해 LEI를 모름')와 같은 기준.
+    const noWikidataItem = !!entity && !!entity.ids && entity.kind !== "topic" && !entity.ids.wikidata;
+    const missed = extra?.state === "error" || !entity || wikidataError !== null || noWikidataItem
+      || sources.some((source) => UNANSWERED.has(source.status));
     empty = missed
       ? "찾은 연결이 없습니다 — 받지 못한 출처가 있어 연결이 더 있는지 모릅니다(위 안내와 아래 출처 상태를 보세요)."
       : "가진 연결이 없습니다 — Wikidata 관계, 13F 운용자·기관, 미국 상장사의 내부자 명단(Yahoo), LEI가 있는 법인의 모회사·자회사(GLEIF)에서 찾습니다.";
@@ -660,6 +682,10 @@ export function linksView(args: {
 }
 
 // ------------------------------------------------------------------ 출처 상태
+
+/** 받는 중 상태 글(계약 §8-4의 서버 사유와 같은 말) — 다시 읽기를 멈춘 뒤에는 '받는 중'만. */
+const PENDING_TEXT = "받는 중 — 몇 초 뒤 채움";
+const PENDING_STALLED_TEXT = "받는 중";
 
 const STATUS_TEXT: Record<string, { text: string; tone: "ok" | "warn" | "danger" | "neutral" }> = {
   ok: { text: "받음", tone: "ok" },
@@ -670,9 +696,20 @@ const STATUS_TEXT: Record<string, { text: string; tone: "ok" | "warn" | "danger"
   owner_only: { text: "운영자 전용", tone: "neutral" },
   offline: { text: "외부 조회 안 함(저장본만)", tone: "warn" },
   later: { text: "다음 단계", tone: "neutral" },
-  pending: { text: "받는 중", tone: "neutral" },
-  server_only: { text: "서버에서만", tone: "neutral" },
+  pending: { text: PENDING_TEXT, tone: "neutral" },
+  server_only: { text: "운영 서버에서만", tone: "neutral" },
 };
+
+/**
+ * 상태 글과 같은 말이라 겹쳐 적지 않는 서버 사유 — 받는 중(계약 §8-4의 "받는 중 — 몇 초 뒤 채움"), 서버에서만("Finviz는 운영 서버에서만").
+ * 그 밖의 사유(예산 소진·차단·형식 바뀜·한 사람 빈도 상한)는 서버가 준 말 그대로 둡니다.
+ */
+function redundantMessage(status: SearchSourceStatus): boolean {
+  const message = status.message?.trim() ?? "";
+  if (status.status === "pending") return message === PENDING_TEXT;
+  if (status.status === "server_only") return message.endsWith("운영 서버에서만");
+  return false;
+}
 
 /** 거른 건수 한 줄 — 0이 아닌 것만. 모두 0이거나 모르면 null. */
 export function droppedText(dropped: SearchSourceStatus["dropped"]): string | null {
@@ -695,24 +732,62 @@ export type SourceStatusView = {
   message: string | null;
 };
 
-/** 출처 상태 한 줄(계약 §5 — 이름 · 상태 글 · 건수 · 거른 건수). 색만으로 가르지 않게 상태는 글로 둡니다. 모르는 상태는 코드 그대로. */
-export function sourceStatusView(status: SearchSourceStatus): SourceStatusView {
+/**
+ * 출처 상태 한 줄(계약 §5 — 이름 · 상태 글 · 건수 · 거른 건수). 색만으로 가르지 않게 상태는 글로 둡니다. 모르는 상태는 코드 그대로.
+ * pendingStalled = 받는 중 다시 읽기를 멈춘 뒤(계약 §8-6) — 받는 중 글에서 '몇 초 뒤 채움'을 뗍니다.
+ */
+export function sourceStatusView(status: SearchSourceStatus, options: { pendingStalled?: boolean } = {}): SourceStatusView {
   const known = STATUS_TEXT[status.status];
+  const text = status.status === "pending" && options.pendingStalled ? PENDING_STALLED_TEXT : known?.text;
   return {
     label: status.label || sourceLabel(status.source),
-    status: known?.text ?? status.status,
+    status: text ?? status.status,
     tone: known?.tone ?? "neutral",
     count: typeof status.count === "number" ? `${status.count}건` : EMPTY,
     dropped: droppedText(status.dropped),
-    message: status.message || null,
+    message: status.message && !redundantMessage(status) ? status.message : null,
   };
 }
 
-/** 받는 중인 출처(pending)가 있으면 다시 읽는 간격(ms), 없으면 0. */
-export const FEED_PENDING_REFRESH_MS = 4000;
+// ------------------------------------------------------------------ 받는 중 다시 읽기(단계 5 — 계약 §8-6)
 
-export function feedRefreshMs(feed: Pick<SearchFeedResponse, "pending"> | null | undefined): number {
-  return feed?.pending === true ? FEED_PENDING_REFRESH_MS : 0;
+/** 받는 중(pending)인 결과를 다시 읽는 간격 — 5초. 앞 요청이 끝난 뒤부터 잽니다(겹치지 않음). */
+export const FEED_PENDING_REFRESH_MS = 5000;
+/** 다시 읽는 횟수 상한 — 12번(1분). 그 뒤에는 '받는 중' 그대로 두고 '다시 확인' 단추. */
+export const FEED_PENDING_MAX_POLLS = 12;
+
+/** none = 받는 중인 출처 없음, polling = 몇 초 뒤 다시 읽음, stalled = 상한만큼 다시 읽고 멈춤('다시 확인'). */
+export type FeedPendingPhase = "none" | "polling" | "stalled";
+
+/** @param polls 지금 보이는 응답(처음 읽기·새로 받기·'다시 확인') 뒤로 다시 읽은 횟수 */
+export function feedPendingPhase(feed: Pick<SearchFeedResponse, "pending"> | null | undefined, polls: number): FeedPendingPhase {
+  if (feed?.pending !== true) return "none";
+  return polls < FEED_PENDING_MAX_POLLS ? "polling" : "stalled";
+}
+
+/** 받는 중 안내 한 줄(목록 위) — 받는 중인 출처 이름과 함께. 받는 중이 아니면 null. */
+export function feedPendingText(phase: FeedPendingPhase, sources: readonly SearchSourceStatus[]): string | null {
+  if (phase === "none") return null;
+  const names = sources
+    .filter((source) => source.status === "pending")
+    .map((source) => source.label || sourceLabel(source.source))
+    .join(" · ");
+  const suffix = names ? `(${names})` : "";
+  return phase === "polling"
+    ? `받는 중인 출처가 있어 몇 초 뒤 다시 읽습니다${suffix}.`
+    : `받는 중 — 1분 동안 다시 읽었지만 아직 받지 못했습니다${suffix}.`;
+}
+
+// ------------------------------------------------------------------ 탭 줄
+
+/**
+ * 가로로 넘치는 탭 줄(좁은 화면)에서 고른 탭이 다 보이게 옮길 가로 거리(px) — 왼쪽으로 잘렸으면 음수, 오른쪽으로 잘렸으면 양수, 다 보이면 0.
+ * scrollIntoView의 inline:'nearest'와 같은 규칙이고(탭이 줄보다 넓으면 왼쪽 가장자리를 맞춤), 세로(화면 전체)는 건드리지 않습니다.
+ */
+export function revealScrollDelta(container: { left: number; right: number }, item: { left: number; right: number }): number {
+  if (item.left < container.left) return item.left - container.left;
+  if (item.right > container.right) return Math.min(item.right - container.right, item.left - container.left);
+  return 0;
 }
 
 // ------------------------------------------------------------------ 거르기
@@ -948,14 +1023,16 @@ const NOT_RECEIVED = new Set(["error", "offline"]);
 export function refreshNoteText(feed: {
   refreshNote?: string | null;
   fetchedAt?: string | null;
-  sources?: readonly Pick<SearchSourceStatus, "status">[] | null;
+  sources?: readonly Pick<SearchSourceStatus, "status" | "source">[] | null;
 }): string {
   const base = feed.refreshNote
     ? feed.refreshNote
     : feed.fetchedAt
       ? `새로 받았습니다 — 받은 시각 ${formatKst(feed.fetchedAt)} KST`
       : "새로 받았습니다";
-  const partial = (feed.sources ?? []).some((source) => NOT_RECEIVED.has(source.status));
+  // Finviz의 건너뜀(예산·한 사람 빈도 상한·대기열)도 받지 못한 것 — isUnanswered와 같은 기준(받는 중은 따로 말함).
+  const partial = (feed.sources ?? []).some((source) => NOT_RECEIVED.has(source.status)
+    || (source.status === "skipped" && source.source === "finviz"));
   return partial ? `${base} — 일부 출처는 받지 못함(아래 출처 상태)` : base;
 }
 

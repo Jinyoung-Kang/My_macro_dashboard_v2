@@ -1,6 +1,6 @@
 /**
- * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes, 단계 4의 links.
- * 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6·§7입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
+ * 정보 검색(/search — ADR 0041) 응답 계약 — GET /api/search/suggest|resolve|entity|feed, 단계 3의 recent·watch·excludes, 단계 4의 links,
+ * 단계 5의 Finviz(feed의 출처 `finviz`·`pending`). 모양의 정본은 docs/specs/2026-11-14-info-search-contract.md §2~3·§6·§7·§8입니다. 백엔드는 수집기 응답에 `available: true`를 더해 그대로 넘기고,
  * 수집기에 닿지 못하면 `{available: false, message}`만 보냅니다. 모르는 값은 null(화면은 '—', 0으로 채우지 않음). 시각은 UTC ISO.
  */
 
@@ -147,6 +147,10 @@ export type SearchFeedResponse = SearchRelay & {
   window?: { from: string; to: string } | null;
   rangeCounts?: Partial<Record<SearchRange, number>> | null;
   olderOnlyLatest?: string | null;
+  /**
+   * 받는 중인 출처가 있음(단계 5 — Finviz가 줄에 있거나 받는 중, 출처 상태 `pending`). 화면은 5초마다 같은 결과를 다시 부릅니다(최대 12번 — 계약 §8-6).
+   * 수집기의 `finvizQueued`(사용자 빈도 셈)는 백엔드가 지우고 넘기지 않습니다(§8-5).
+   */
   pending?: boolean;
   fetchedAt?: string | null;
   /**

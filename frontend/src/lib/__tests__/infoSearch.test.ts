@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RANGE,
   DEFAULT_TAB,
+  FEED_PENDING_MAX_POLLS,
   FEED_PENDING_REFRESH_MS,
   applyFilters,
   autoPick,
@@ -17,7 +18,8 @@ import {
   entityShortcuts,
   facetCounts,
   feedEmptyState,
-  feedRefreshMs,
+  feedPendingPhase,
+  feedPendingText,
   feedTabOf,
   groupByKstDate,
   holdersQuery,
@@ -45,6 +47,7 @@ import {
   rangeCountsOf,
   rangeStart,
   readerOfFeedItem,
+  revealScrollDelta,
   searchHref,
   sourceLabel,
   sourceStatusView,
@@ -390,6 +393,20 @@ describe("빈 화면 안내(계약 §5)", () => {
     });
   });
 
+  it("Finviz의 건너뜀(예산 소진·한 사람 빈도 상한·대기열 가득 참 — 물어야 했는데 보내지 않음)은 받지 못한 출처로 적는다(계약 §8-2·8-4)", () => {
+    const finvizSkipped = { ...src("finviz", "skipped", "Finviz 종목 뉴스"), message: "오늘 Finviz 검색 예산 소진" };
+    const sources = [src("google_en", "ok", "구글 뉴스(영어)"), finvizSkipped, src("google_ko", "skipped")];
+    expect(feedEmptyState({ total: 5, inRange: 0, shown: 0, counts, range: "7d", olderOnlyLatest: null, sources })).toMatchObject({
+      kind: "range", caveat: "받지 못한 출처가 있습니다(Finviz 종목 뉴스) — 아래 출처 상태를 보세요.",
+    });
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toMatchObject({
+      kind: "none2y", caveat: "받지 못한 출처가 있습니다(Finviz 종목 뉴스) — 아래 출처 상태를 보세요.",
+    });
+    // 다른 출처의 건너뜀(이름이 없어 묻지 않음)은 그대로 넣지 않음
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null,
+      sources: [src("google_en", "ok"), src("google_ko", "skipped")] })).toMatchObject({ kind: "none2y", caveat: null });
+  });
+
   it("받는 중인 출처만 남았으면 그렇다고", () => {
     const sources = [src("google_en", "empty"), src("finviz", "pending", "Finviz")];
     expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })).toMatchObject({
@@ -424,10 +441,84 @@ describe("출처 상태 줄", () => {
     expect(droppedText({ old: 0, noTime: 0, chinese: 0, excluded: 4 })).toBe("뺀 줄: 제외 매체 4건");
   });
 
-  it("받는 중인 출처가 있으면 몇 초 뒤 다시 읽는다", () => {
-    expect(feedRefreshMs({ pending: true })).toBe(FEED_PENDING_REFRESH_MS);
-    expect(feedRefreshMs({ pending: false })).toBe(0);
-    expect(feedRefreshMs(null)).toBe(0);
+  it("받는 중(pending)이면 5초마다 최대 12번(1분) 다시 읽고, 그 뒤에는 멈춘 채 '받는 중'(계약 §8-6)", () => {
+    expect(FEED_PENDING_REFRESH_MS).toBe(5000);
+    expect(FEED_PENDING_MAX_POLLS).toBe(12);
+    expect(feedPendingPhase({ pending: true }, 0)).toBe("polling");
+    expect(feedPendingPhase({ pending: true }, 11)).toBe("polling");
+    expect(feedPendingPhase({ pending: true }, 12)).toBe("stalled");
+    expect(feedPendingPhase({ pending: false }, 3)).toBe("none");
+    expect(feedPendingPhase({}, 0)).toBe("none");
+    expect(feedPendingPhase(null, 0)).toBe("none");
+  });
+
+  it("받는 중 안내 한 줄 — 다시 읽는 동안과 멈춘 뒤를 글로 가르고, 받는 중인 출처 이름을 적는다", () => {
+    const finviz: SearchSourceStatus = {
+      source: "finviz", label: "Finviz 종목 뉴스", status: "pending", count: 0, dropped: null, message: "받는 중 — 몇 초 뒤 채움",
+    };
+    const ok: SearchSourceStatus = { source: "yahoo", label: "Yahoo Finance", status: "ok", count: 3, dropped: null, message: null };
+    expect(feedPendingText("none", [finviz])).toBeNull();
+    expect(feedPendingText("polling", [ok, finviz])).toBe("받는 중인 출처가 있어 몇 초 뒤 다시 읽습니다(Finviz 종목 뉴스).");
+    expect(feedPendingText("stalled", [ok, finviz])).toBe("받는 중 — 1분 동안 다시 읽었지만 아직 받지 못했습니다(Finviz 종목 뉴스).");
+    // 출처 상태 줄에 받는 중인 출처가 없으면(옛 응답) 이름 없이
+    expect(feedPendingText("polling", [ok])).toBe("받는 중인 출처가 있어 몇 초 뒤 다시 읽습니다.");
+    // 이름 칸이 비면 기본 이름
+    expect(feedPendingText("polling", [{ ...finviz, label: "" }])).toBe("받는 중인 출처가 있어 몇 초 뒤 다시 읽습니다(Finviz 종목 뉴스).");
+  });
+});
+
+describe("단계 5 — Finviz 출처 상태(계약 §8)", () => {
+  const finviz = (status: string, message: string | null = null): SearchSourceStatus => ({
+    source: "finviz", label: "Finviz 종목 뉴스", status, count: 0, dropped: null, message,
+  });
+
+  it("출처 이름은 'Finviz 종목 뉴스'(상태 줄에 이름이 없을 때도)", () => {
+    expect(sourceLabel("finviz")).toBe("Finviz 종목 뉴스");
+    expect(sourceStatusView({ ...finviz("ok"), label: "" }).label).toBe("Finviz 종목 뉴스");
+  });
+
+  it("받는 중 — 다시 읽는 동안은 '받는 중 — 몇 초 뒤 채움', 멈춘 뒤는 '받는 중'. 서버의 같은 말은 겹쳐 적지 않음", () => {
+    expect(sourceStatusView(finviz("pending", "받는 중 — 몇 초 뒤 채움"))).toMatchObject({ status: "받는 중 — 몇 초 뒤 채움", tone: "neutral", message: null });
+    expect(sourceStatusView(finviz("pending", "받는 중 — 몇 초 뒤 채움"), { pendingStalled: true })).toMatchObject({ status: "받는 중", message: null });
+    // 다른 말이면 그대로
+    expect(sourceStatusView(finviz("pending", "대기열 2번째"))).toMatchObject({ message: "대기열 2번째" });
+  });
+
+  it("서버에서만 — '운영 서버에서만'(로컬·QA), 같은 뜻의 서버 말은 겹쳐 적지 않음", () => {
+    expect(sourceStatusView(finviz("server_only", "Finviz는 운영 서버에서만"))).toMatchObject({ status: "운영 서버에서만", tone: "neutral", message: null });
+    expect(sourceStatusView(finviz("server_only", null))).toMatchObject({ status: "운영 서버에서만", message: null });
+  });
+
+  it("예산 소진·차단·형식 바뀜·한 사람 빈도 상한은 서버가 준 사유를 그대로(상태 글과 함께)", () => {
+    expect(sourceStatusView(finviz("skipped", "오늘 Finviz 검색 예산 소진"))).toMatchObject({ status: "건너뜀", message: "오늘 Finviz 검색 예산 소진" });
+    expect(sourceStatusView(finviz("error", "finviz.com 닫힘(거부 3번) — 내일 다시"))).toMatchObject({
+      status: "실패", tone: "danger", message: "finviz.com 닫힘(거부 3번) — 내일 다시",
+    });
+    expect(sourceStatusView(finviz("error", "형식이 바뀜"))).toMatchObject({ status: "실패", message: "형식이 바뀜" });
+    expect(sourceStatusView(finviz("cached"))).toMatchObject({ status: "캐시", tone: "ok" });
+    expect(sourceStatusView(finviz("ok"))).toMatchObject({ status: "받음", tone: "ok" });
+  });
+
+  it("빈 결과의 안내 — 다시 읽기를 멈춘 뒤에는 '몇 초 뒤'라고 하지 않는다", () => {
+    const sources = [finviz("pending")];
+    const none = { "7d": 0, "30d": 0, "1y": 0, "2y": 0 };
+    expect(feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources })?.caveat).toBe(
+      "받는 중인 출처가 있습니다(Finviz 종목 뉴스) — 몇 초 뒤 다시 읽습니다.",
+    );
+    expect(
+      feedEmptyState({ total: 0, inRange: 0, shown: 0, counts: none, range: "30d", olderOnlyLatest: null, sources, pendingStalled: true })?.caveat,
+    ).toBe("받는 중인 출처가 있습니다(Finviz 종목 뉴스) — 아직 받지 못했습니다('다시 확인'을 누르면 한 번 더 읽습니다).");
+  });
+});
+
+describe("고른 탭을 탭 줄 안에 보이기(390px — 가로로 넘치는 탭 줄)", () => {
+  const bar = { left: 16, right: 374 };
+  it("다 보이면 0, 오른쪽으로 잘렸으면 양수, 왼쪽으로 잘렸으면 음수(가까운 쪽 가장자리에 맞춤)", () => {
+    expect(revealScrollDelta(bar, { left: 100, right: 160 })).toBe(0);
+    expect(revealScrollDelta(bar, { left: 400, right: 460 })).toBe(86);
+    expect(revealScrollDelta(bar, { left: -40, right: 20 })).toBe(-56);
+    // 탭이 줄보다 넓으면 왼쪽 가장자리를 맞춤
+    expect(revealScrollDelta(bar, { left: 200, right: 800 })).toBe(184);
   });
 });
 
@@ -607,6 +698,9 @@ describe("관심 대상(계약 §6-4)", () => {
     // 받음·캐시·결과 없음·건너뜀은 받지 못한 것이 아닙니다.
     expect(refreshNoteText({ fetchedAt: at, sources: ["ok", "cached", "empty", "skipped", "owner_only"].map((code) => status(code, code)) }))
       .toBe("새로 받았습니다 — 받은 시각 2026-11-14 10:00 KST");
+    // 다만 Finviz의 건너뜀(예산·한 사람 빈도 상한·대기열)은 받지 못한 것(isUnanswered와 같은 기준).
+    expect(refreshNoteText({ fetchedAt: at, sources: [status("google_en", "ok"), status("finviz", "skipped")] }))
+      .toBe("새로 받았습니다 — 받은 시각 2026-11-14 10:00 KST — 일부 출처는 받지 못함(아래 출처 상태)");
   });
 
   it("새 글 수 합계(접힌 서랍 머리) — 1건 이상인 수만 더하고, 모르는 수(null)는 0으로 세지 않음", () => {
@@ -941,6 +1035,11 @@ describe("연결 탭 상태(계약 §7-7 — 받는 중·실패·건너뜀은 �
     const timedOut = linksView({ entity: { links: [] }, entitySettled: true, entityErrors: { entity: "대상 풀기가 15초를 넘어 저장본 이름으로만 답함" }, response: skippedOnly, loading: false, error: null });
     expect(timedOut.empty).toMatch(/모릅니다/);
     expect(timedOut.entityNote).toBe("Wikidata 관계를 받지 못했습니다 — 대상 풀기가 15초를 넘어 저장본 이름으로만 답함");
+    // Wikidata 항목을 찾지 못한 회사(ids.wikidata 없음)는 LEI·관계를 모름 — 없다고 단정하지 않음. 주제는 해당 없음.
+    const noItem = linksView({ entity: { links: [], kind: "company", ids: { ticker: null, market: "kr", stockCode: "005930", cik: null, dartCorpCode: null, wikidata: null, lei: null } }, entitySettled: true, entityErrors: {}, response: skippedOnly, loading: false, error: null });
+    expect(noItem.empty).toMatch(/모릅니다/);
+    const topic = linksView({ entity: { links: [], kind: "topic", ids: { ticker: null, market: null, stockCode: null, cik: null, dartCorpCode: null, wikidata: null, lei: null } }, entitySettled: true, entityErrors: {}, response: skippedOnly, loading: false, error: null });
+    expect(topic.empty).toMatch(/^가진 연결이 없습니다/);
   });
 
   it("실패 뒤 다시 받는 중이면(앞 응답이 남아 있어도) 실패 글이 아니라 받는 중", () => {

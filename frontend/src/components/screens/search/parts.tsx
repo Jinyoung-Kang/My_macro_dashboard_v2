@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BuildingIcon, LandmarkIcon, PersonIcon, StatusText, TagIcon } from "@/components/ui/icons";
+import { BuildingIcon, ClockIcon, LandmarkIcon, LockIcon, PersonIcon, StatusText, TagIcon } from "@/components/ui/icons";
 import { entityKindLabel, itemKindLabel, sourceStatusView } from "@/lib/infoSearch";
 import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
 
@@ -72,20 +72,28 @@ export function Tag({ children }: { children: ReactNode }) {
   return <span className="inline-flex items-center rounded-control border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-text-2">{children}</span>;
 }
 
+/** 상태마다 다른 모양의 아이콘(글과 함께 — 색만으로 가르지 않음). 받는 중은 시계, 운영 서버에서만은 자물쇠, 그 밖은 톤 기본. */
+function statusIcon(status: string) {
+  if (status === "pending") return <ClockIcon size={12} />;
+  if (status === "server_only") return <LockIcon size={12} />;
+  return undefined;
+}
+
 /**
  * 출처 상태 줄(계약 §5) — 출처마다 이름 · 상태 글(아이콘 + 글, 색만이 아님) · 건수 · 거른 건수 · 사유. 실패한 출처를 빈 목록으로 숨기지 않습니다.
+ * pendingStalled = 받는 중 다시 읽기를 멈춘 뒤(계약 §8-6) — 받는 중 글에서 '몇 초 뒤'를 뗍니다.
  */
-export function SourceStatusLine({ sources }: { sources: readonly SearchSourceStatus[] }) {
+export function SourceStatusLine({ sources, pendingStalled = false }: { sources: readonly SearchSourceStatus[]; pendingStalled?: boolean }) {
   if (sources.length === 0) return null;
   return (
     <ul aria-label="출처 상태" className="flex flex-col gap-1 border-t border-border px-3 py-2 text-xs text-text-2 lg:flex-row lg:flex-wrap lg:gap-x-5 lg:gap-y-1">
       {sources.map((source) => {
-        const view = sourceStatusView(source);
+        const view = sourceStatusView(source, { pendingStalled });
         return (
           <li key={source.source} className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="font-medium text-text">{view.label}</span>
             <span aria-hidden="true">·</span>
-            <StatusText tone={view.tone} iconSize={12}>
+            <StatusText tone={view.tone} iconSize={12} icon={statusIcon(source.status)}>
               {view.status}
             </StatusText>
             <span aria-hidden="true">·</span>

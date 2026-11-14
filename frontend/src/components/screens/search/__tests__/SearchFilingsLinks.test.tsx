@@ -195,6 +195,89 @@ describe("공시·리서치 탭 — 대상 종류에 따라(계약 §7-7)", () =
   });
 });
 
+describe("주소의 탭이 이 대상에 없을 때 — 주소도 타임라인으로 바꿔 씀(4단계 확인 [관찰])", () => {
+  it("주제 + tab=filings → 주소의 탭을 timeline으로 바꿔 쓴다(기록에 쌓지 않음, 기간은 그대로)", async () => {
+    reads[endpoints.search.entity(TOPIC_KEY)] = { available: true, entity: TOPIC, errors: {} };
+    renderScreen(MEMBER, `/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=filings&range=1y`);
+    const before = window.history.length;
+    await tabNames();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("tab")).toBe("timeline"));
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("e")).toBe(TOPIC_KEY);
+    expect(params.get("range")).toBe("1y");
+    expect(window.history.length).toBe(before);
+  });
+
+  it("13F 기관 + tab=research, 회원 + tab=posts도 같은 방식", async () => {
+    reads[endpoints.search.entity("cik:0001067983")] = { available: true, entity: BERKSHIRE, errors: {} };
+    renderScreen(MEMBER, "/search?e=cik:0001067983&tab=research");
+    await tabNames();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("tab")).toBe("timeline"));
+    cleanup();
+
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    renderScreen(MEMBER, "/search?e=us:NVDA&tab=posts");
+    await tabNames();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get("tab")).toBe("timeline"));
+  });
+
+  it("고를 수 있는 탭이면 주소를 그대로 둔다 — wd: 키는 풀린 뒤 종류를 보고 정함", async () => {
+    reads[endpoints.search.entity("wd:Q182477")] = { available: true, entity: NVIDIA, errors: {} };
+    renderScreen(MEMBER, "/search?e=wd:Q182477&tab=research");
+    expect(await tabNames()).toContain("리서치");
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe("research");
+  });
+
+  it("wd: 키를 풀지 못했으면(종류를 모름) 주소의 탭을 바꾸지 않는다", async () => {
+    failures[endpoints.search.entity("wd:Q4000001")] = "HTTP 502";
+    renderScreen(MEMBER, "/search?e=wd:Q4000001&tab=holdings");
+    await tabNames();
+    expect(screen.getByRole("tab", { name: "타임라인" }).getAttribute("aria-selected")).toBe("true");
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe("holdings");
+  });
+});
+
+describe("좁은 화면(390) — 고른 탭을 탭 줄 안에 보이게 가로로 옮김(4단계 확인 [하])", () => {
+  const TAB_WIDTH = 80;
+  const BAR = { left: 16, right: 374 };
+  let rects: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    // jsdom은 배치를 재지 않아 탭 줄(358px)과 탭(80px씩)의 자리를 흉내 냅니다. 탭의 자리는 탭 줄의 가로 스크롤만큼 왼쪽으로 갑니다.
+    rects = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const box = (left: number, right: number) => ({ left, right, top: 0, bottom: 44, width: right - left, height: 44, x: left, y: 0, toJSON: () => ({}) });
+      if (this.getAttribute("role") === "tablist") return box(BAR.left, BAR.right) as DOMRect;
+      const bar = this.closest('[role="tablist"]') as HTMLElement | null;
+      if (this.getAttribute("role") === "tab" && bar) {
+        const index = [...bar.querySelectorAll('[role="tab"]')].indexOf(this);
+        const left = BAR.left + index * TAB_WIDTH - bar.scrollLeft;
+        return box(left, left + TAB_WIDTH) as DOMRect;
+      }
+      return box(0, 0) as DOMRect;
+    });
+  });
+  afterEach(() => rects.mockRestore());
+
+  it("주소로 연 탭(tab=links)이 탭 줄 밖이면 그 탭이 보이게 옮긴다", async () => {
+    renderScreen(MEMBER, "/search?e=us:NVDA&tab=links");
+    const bar = await screen.findByRole("tablist", { name: "결과 탭" });
+    // 연결 = 여섯째 탭(16 + 5 × 80 = 416 ~ 496) — 오른쪽 끝 374에 맞춤
+    await waitFor(() => expect(bar.scrollLeft).toBe(496 - BAR.right));
+  });
+
+  it("탭을 바꾸면 그 탭이 보이게 다시 옮기고, 이미 보이면 그대로", async () => {
+    renderScreen(MEMBER, "/search?e=us:NVDA&tab=links");
+    const bar = await screen.findByRole("tablist", { name: "결과 탭" });
+    await waitFor(() => expect(bar.scrollLeft).toBe(122));
+    fireEvent.click(within(bar).getByRole("tab", { name: "타임라인" }));
+    await waitFor(() => expect(bar.scrollLeft).toBe(0));
+    fireEvent.click(within(bar).getByRole("tab", { name: "뉴스" }));
+    await waitFor(() => expect(within(bar).getByRole("tab", { name: "뉴스" }).getAttribute("aria-selected")).toBe("true"));
+    expect(bar.scrollLeft).toBe(0);
+  });
+});
+
 describe("공시 탭 — 날짜만 아는 줄(계약 §7-1)", () => {
   beforeEach(() => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };

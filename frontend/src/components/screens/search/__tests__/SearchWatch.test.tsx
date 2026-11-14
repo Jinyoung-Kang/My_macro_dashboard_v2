@@ -51,11 +51,16 @@ function manyWatches(count: number) {
   return Array.from({ length: count }, (_, at) => ({ ...WATCH_BRK, id: 100 + at, key: `topic:합성 주제 ${at}`, kind: "topic", name: `합성 주제 ${at}` }));
 }
 
-/** 관심 대상 목록의 스크롤 영역 — 높이 상한·세로 스크롤·Tab으로 닿음(jsdom은 배치를 재지 않아 클래스로 확인). */
+/**
+ * 관심 대상 목록의 스크롤 영역 — 높이 상한·세로 스크롤·Tab으로 닿음(jsdom은 배치를 재지 않아 클래스로 확인).
+ * 상한은 min(28dvh, 14rem) — 4단계 브라우저 확인에서 40dvh·24rem이면 50개일 때 대상 화면의 거르기(1440x900에서 y≈934)와 첫 화면의
+ * 최근 글(390)이 여전히 첫 화면 밖이었습니다.
+ */
 function expectBoundedScroll(region: HTMLElement) {
   expect(region.getAttribute("tabindex")).toBe("0");
   expect(region.className).toContain("overflow-y-auto");
-  expect(region.className).toMatch(/max-h-\[min\(40dvh,24rem\)\]/);
+  expect(region.className).toMatch(/max-h-\[min\(28dvh,14rem\)\]/);
+  expect(region.className).not.toMatch(/max-h-\[min\(40dvh/);
 }
 
 function watchList(items: unknown[], over: Record<string, unknown> = {}) {

@@ -13,6 +13,7 @@ import {
   findWatch,
   isListedEntity,
   kindOfKey,
+  revealScrollDelta,
   tabFor,
   tabsFor,
   watchKeyOf,
@@ -43,6 +44,10 @@ const TAB_CLASS =
  * 왼쪽 칸에 내 관심 대상 목록(단계 3)을 두고, 이 대상이 관심 대상이면 타임라인 결과를 받아 그렸을 때 '봤음'(POST /api/search/watch/{id}/seen)을
  * 이 화면에서 한 번만 보냅니다(새 글 수가 0이 됨). 결과를 받지 못했거나 받는 중이면 보내지 않습니다(보지 못한 새 글 수를 지우지 않게).
  * 이 컴포넌트는 대상 키로 다시 그려지므로(SearchScreen의 key) 다른 대상을 열면 다시 보냅니다.
+ *
+ * 주소의 탭을 이 대상에서 고를 수 없으면(주제 + 공시 등) 타임라인을 보이고 주소의 탭도 바꿔 씁니다(기록에 쌓지 않음) — 종류를 아는 때만
+ * (풀린 대상이나 키 앞부분, wd: 키를 풀지 못해 사람으로 짐작한 때는 그대로). 좁은 화면에서 탭 줄이 가로로 넘치면 고른 탭이 보이게 줄을 옮깁니다
+ * (주소로 연 탭 포함 — 세로로는 화면을 움직이지 않음).
  */
 export function EntityView({
   entityKey,
@@ -84,6 +89,22 @@ export function EntityView({
   const tabId = (key: SearchTabKey) => `${baseId}-tab-${key}`;
   const panelId = `${baseId}-panel`;
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tablistRef = useRef<HTMLDivElement>(null);
+
+  // 주소의 탭을 고를 수 없어 타임라인으로 보였으면 주소도 맞춰 바꿔 씁니다(뒤로 가기에 남지 않게 — onTab은 바꿔 쓰기).
+  useEffect(() => {
+    if (known !== null && current !== null && current !== tab) onTab(current);
+  }, [known, current, tab, onTab]);
+
+  // 고른 탭이 탭 줄 밖(가로)이면 줄을 옮깁니다. scrollIntoView는 세로로 화면 전체를 움직일 수 있어 줄의 가로 스크롤만 바꿉니다.
+  const tabsKey = tabs.join(",");
+  useEffect(() => {
+    const list = tablistRef.current;
+    const selected = current ? tabRefs.current[current] : null;
+    if (!list || !selected) return;
+    const delta = revealScrollDelta(list.getBoundingClientRect(), selected.getBoundingClientRect());
+    if (delta !== 0) list.scrollLeft += delta;
+  }, [current, tabsKey]);
 
   // 관심 대상이면 타임라인 결과를 받아 그렸을 때 '봤음' — 이 화면에서 대상마다 한 번(목록을 다시 읽어도 또 보내지 않음).
   const [timelineShown, setTimelineShown] = useState(false);
@@ -126,7 +147,7 @@ export function EntityView({
 
       {kind && current ? (
         <>
-          <div role="tablist" aria-label="결과 탭" className="flex overflow-x-auto border-b border-border">
+          <div ref={tablistRef} role="tablist" aria-label="결과 탭" className="flex overflow-x-auto border-b border-border">
             {tabs.map((key, index) => {
               const selected = key === current;
               return (
