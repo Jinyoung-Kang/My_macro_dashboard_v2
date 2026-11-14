@@ -260,10 +260,10 @@ class SearchWatchServiceTest {
     }
 
     @Test
-    @DisplayName("대상 풀기가 덜 끝났으면(errors에 entity·wikidata·sec — 시간 초과·일시 실패) 저장하지 않고 503(partial). 다시 풀어 오류가 없으면 등록, "
-            + "DART 저장본에 없는 종목(dart — 다시 해도 같음)은 그대로 등록")
+    @DisplayName("대상 풀기가 덜 끝났으면(errors에 entity·wikidata·sec·dart_store — 시간 초과·일시 실패·DART 저장본을 읽지 못함) 저장하지 않고 "
+            + "503(partial). 다시 풀어 오류가 없으면 등록, DART 저장본에 없는 종목(dart — 다시 해도 같음)은 그대로 등록")
     void partialResolutionIsNotStored() {
-        for (String source : new String[]{"entity", "wikidata", "sec"}) {
+        for (String source : new String[]{"entity", "wikidata", "sec", "dart_store"}) {
             resolves("us:NVDA", withError(entity("us:NVDA", "company", "NVIDIA", "NVIDIA"), source));
             SearchWatchService.Result result = service.add(MEMBER, "us:NVDA");
             assertThat(result.status()).as(source).isEqualTo(503);
@@ -275,6 +275,10 @@ class SearchWatchServiceTest {
         resolves("us:NVDA", entity("us:NVDA", "company", "엔비디아", "NVIDIA", "엔비디아"));
         assertThat(service.add(MEMBER, "us:NVDA").status()).isEqualTo(200);
         assertThat(watches.rows).singleElement().satisfies(row -> assertThat(row.aliases()).contains("엔비디아"));
+
+        resolves("kr:005930", withError(entity("kr:005930", "company", "합성 종목", "합성 종목"), "dart_store"));
+        assertThat(service.add(MEMBER, "kr:005930").status()).as("저장본을 읽지 못해 고유번호를 모르는 국내 종목은 굳히지 않음").isEqualTo(503);
+        assertThat(watches.rows).hasSize(1);
 
         resolves("kr:005930", withError(entity("kr:005930", "company", "합성 종목", "합성 종목"), "dart"));
         assertThat(service.add(MEMBER, "kr:005930").status()).isEqualTo(200);

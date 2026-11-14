@@ -69,10 +69,11 @@ public class SearchWatchService {
     static final Set<String> KINDS = Set.of("company", "institution", "person", "topic");
     static final Set<String> EXCLUDE_KINDS = Set.of("domain", "name");
     /**
-     * 대상 풀기 응답 {@code errors}의 출처 가운데 다시 물으면 달라질 것 — {@code entity}(풀기 시간 초과로 저장본 이름만), {@code wikidata}·{@code sec}(일시 실패).
-     * {@code dart}(DART 고유번호 저장본에 그 종목이 없음)는 다시 물어도 같아서 넣지 않습니다.
+     * 대상 풀기 응답 {@code errors}의 출처 가운데 다시 물으면 달라질 것 — {@code entity}(풀기 시간 초과로 저장본 이름만), {@code wikidata}·{@code sec}(일시 실패),
+     * {@code dart_store}(DART 고유번호 저장본이 없거나 읽지 못함 — 그대로 저장하면 고유번호 없이 굳어 정기 수집이 DART 공시를 묻지 않음).
+     * {@code dart}(저장본을 읽었는데 그 종목이 없음 — ETF·우선주 등)는 다시 물어도 같아서 넣지 않습니다.
      */
-    static final Set<String> RETRY_ERRORS = Set.of("entity", "wikidata", "sec");
+    static final Set<String> RETRY_ERRORS = Set.of("entity", "wikidata", "sec", "dart_store");
     private static final List<String> ID_FIELDS = List.of("ticker", "market", "stockCode", "cik", "dartCorpCode", "wikidata", "lei");
     private static final String TOPIC = "topic:";
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");

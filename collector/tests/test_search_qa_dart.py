@@ -2,9 +2,10 @@
 tests/test_search_qa_dart.py
 정보 검색 국내 종목의 DART 고유번호 사유(QA-429) — 네트워크·DB 없이.
 
-- 대상 풀기(search_entities._build_kr)가 DART 고유번호를 찾지 못한 사유: 저장본을 읽었는데 그 종목이 없으면 '저장본에 이 종목이 없음',
-  저장본이 없거나 읽지 못해 빈 표면 '저장본을 읽지 못함'(계약 §5 — 확인하지 못한 것을 '없음'으로 보이지 않음)
-- 같은 화면의 두 안내(속성 칸의 '대상을 푸는 데 받지 못한 출처' = 대상 응답 errors.dart, 공시 탭 출처 상태 줄 = 피드 dart 줄)가 같은 사유를 말함
+- 대상 풀기(search_entities._build_kr)가 DART 고유번호를 찾지 못한 사유: 저장본을 읽었는데 그 종목이 없으면 errors.dart에 '저장본에 이 종목이 없음',
+  저장본이 없거나 읽지 못해 빈 표면 errors.dart_store에 '저장본을 읽지 못함'(계약 §5 — 확인하지 못한 것을 '없음'으로 보이지 않음, 다시 물으면
+  달라지는 사유라 키를 따로 — 관심 대상 등록이 partial로 받음)
+- 같은 화면의 두 안내(속성 칸의 '대상을 푸는 데 받지 못한 출처' = 대상 응답 errors, 공시 탭 출처 상태 줄 = 피드 dart 줄)가 같은 사유를 말함
 - 저장본을 읽지 못한 풀기는 하루가 아니라 실패 캐시(60초)만 — 저장본이 돌아오면 곧 다시 풂
 """
 from __future__ import annotations
@@ -47,13 +48,13 @@ def test_DART_저장본을_읽지_못하면_대상_풀기도_읽지_못함이라
     monkeypatch.setattr(search_store, "dart_codes", lambda: {})
     out = search_entities.build("kr", "900001", external=external)
     assert out["entity"]["ids"]["dartCorpCode"] is None
-    assert out["errors"]["dart"] == _UNREAD, "읽었는데 없다고 단정하지 않음"
+    assert out["errors"] == {search_entities.DART_STORE: _UNREAD}, "읽었는데 없다고 단정하지 않음 — 다시 물으면 달라지는 사유의 키"
 
 
 def test_DART_저장본을_읽었는데_종목이_없으면_이_종목이_없음(monkeypatch):
     monkeypatch.setattr(search_store, "dart_codes", lambda: dict(_OTHER))
     out = search_entities.build("kr", "900001", external=False)
-    assert out["errors"]["dart"] == _MISSING
+    assert out["errors"] == {"dart": _MISSING}
     feed = search.feed("kr:900001", "filings", owner=False, external=True)
     row = _dart_row(feed)
     assert (row["status"], row["message"]) == ("skipped", "DART 고유번호가 없어 묻지 않음"), "읽었는데 없으면 '건너뜀'"
@@ -62,7 +63,7 @@ def test_DART_저장본을_읽었는데_종목이_없으면_이_종목이_없음
 def test_같은_화면의_속성_칸과_공시_줄이_같은_사유를_말한다(monkeypatch):
     """화면(/search?e=kr:…&tab=filings)이 함께 부르는 대상 풀기와 공시 탭 결과 — 저장본을 읽지 못했을 때 두 안내의 사유가 같음."""
     monkeypatch.setattr(search_store, "dart_codes", lambda: {})
-    reason = search.entity("kr:900001", external=True)["errors"]["dart"]
+    reason = search.entity("kr:900001", external=True)["errors"][search_entities.DART_STORE]
     row = _dart_row(search.feed("kr:900001", "filings", owner=False, external=True))
     assert row["status"] == "error"
     assert row["message"] == f"DART 고유번호를 모름 — {reason}"

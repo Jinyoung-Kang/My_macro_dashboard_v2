@@ -32,10 +32,12 @@ from . import search_wikidata as wd
 OFFLINE = "외부 호출을 끈 요청이라 부르지 않음(저장본만)"
 # Wikidata가 답했지만 그 항목이 없을 때의 사유 — 실패가 아님(연결 보강이 'LEI 없음'과 'LEI를 모름'을 가를 때 씀).
 WD_MISSING = "Wikidata에 이 항목이 없음"
-# 국내 종목에 DART 고유번호가 없을 때의 사유(errors['dart']) — 저장본을 읽었는데 그 종목이 없음(ETF·우선주 등)과 저장본이 없거나 읽지 못함.
+# 국내 종목에 DART 고유번호가 없을 때의 사유 — 저장본을 읽었는데 그 종목이 없음(ETF·우선주 등 — errors['dart'], 다시 물어도 같음)과
+# 저장본이 없거나 읽지 못함(errors['dart_store'] — 다시 물으면 달라짐: 관심 대상 등록이 partial로 받아 저장하지 않음, 계약 §3-3·§6-4).
 # 피드의 공시 줄(search._unknown_dart)도 같은 글을 써서 속성 칸과 출처 상태 줄이 같은 사유를 말합니다(QA-429).
 DART_MISSING = "DART 고유번호 저장본에 이 종목이 없음"
 DART_UNREAD = "DART 고유번호 저장본을 읽지 못함"
+DART_STORE = "dart_store"
 LOCAL_TTL = 600.0
 LOCAL_EMPTY_TTL = 60.0
 SEC_TTL = 86_400.0
@@ -632,17 +634,20 @@ def _build_us(b: _Builder, ticker: str) -> None:
     _wd_links(b)
 
 
-def dart_missing_reason(codes: dict) -> str:
+def _note_dart_missing(b: _Builder) -> None:
     """
-    DART 고유번호를 찾지 못한 사유 — 저장본(search_store.dart_codes)을 읽었으면 '이 종목이 없음', 빈 표면 '읽지 못함'(dart_codes는 스냅숏이
-    없을 때와 읽다 실패했을 때 모두 빈 표 — 계약 §5: 확인하지 못한 것을 '없음'으로 보이지 않음).
+    DART 고유번호를 찾지 못한 사유 — 저장본(search_store.dart_codes)을 읽었으면 ``dart``에 '이 종목이 없음', 빈 표면 ``dart_store``에 '읽지 못함'
+    (dart_codes는 스냅숏이 없을 때와 읽다 실패했을 때 모두 빈 표 — 계약 §5: 확인하지 못한 것을 '없음'으로 보이지 않음).
     """
-    return DART_MISSING if codes else DART_UNREAD
+    if b.dart():
+        b.errors.setdefault("dart", DART_MISSING)
+    else:
+        b.errors.setdefault(DART_STORE, DART_UNREAD)
 
 
 def _build_kr(b: _Builder, code: str) -> None:
     if not _apply_kr(b, code):
-        b.errors.setdefault("dart", dart_missing_reason(b.dart()))
+        _note_dart_missing(b)
     parsed = _wd_by_name(b, b.name_ko, "ko", lambda p: code in p["kr_codes"],
                          lambda p: bool(b.name_ko) and p["organization"] and not p["human"] and _same_label(p, b.name_ko))
     if parsed is not None:

@@ -510,13 +510,13 @@ def _unknown_id(source: str, errors: dict, keys: tuple[str, ...], label: str, *,
 
 def _unknown_dart(ids: dict, errors: dict, *, external: bool) -> _Spec | None:
     """
-    국내 종목에 DART 고유번호가 없을 때 그것이 '모름'인지. 대상 풀기의 사유(search_entities.dart_missing_reason — 저장본을 읽었으면
-    '이 종목이 없음', 못 읽었으면 '읽지 못함')는 풀 때의 저장본 기준이고 그 결과는 60초 캐시되므로, 저장본(외부 호출 없음)을 한 번 더 봅니다
-    — 저장본을 읽었고 그 종목이 없으면 None(ETF·우선주 등 — '건너뜀'), 저장본을 읽지 못했으면 ``error``(대상 풀기와 같은 사유 글 —
-    외부 호출을 끈 요청이면 ``offline``), 저장본에는 있는데 대상에 없으면(저장본을 못 읽던 때 푼 대상) ``error``.
-    대상 풀기의 사유(``dart``·``entity``)가 없으면 None.
+    국내 종목에 DART 고유번호가 없을 때 그것이 '모름'인지. 대상 풀기의 사유(search_entities._note_dart_missing — 저장본을 읽었으면
+    ``dart``에 '이 종목이 없음', 못 읽었으면 ``dart_store``에 '읽지 못함')는 풀 때의 저장본 기준이고 그 결과는 60초 캐시되므로, 저장본(외부
+    호출 없음)을 한 번 더 봅니다 — 저장본을 읽었고 그 종목이 없으면 None(ETF·우선주 등 — '건너뜀'), 저장본을 읽지 못했으면 ``error``(대상
+    풀기와 같은 사유 글 — 외부 호출을 끈 요청이면 ``offline``), 저장본에는 있는데 대상에 없으면(저장본을 못 읽던 때 푼 대상) ``error``.
+    대상 풀기의 사유(``dart``·``dart_store``·``entity``)가 없으면 None.
     """
-    if not (errors.get("dart") or errors.get("entity")):
+    if not (errors.get("dart") or errors.get(search_entities.DART_STORE) or errors.get("entity")):
         return None
     codes = search_store.dart_codes()
     if codes and ids.get("stockCode") not in codes:

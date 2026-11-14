@@ -78,6 +78,7 @@ Link = { "relation": "owner_of" | "owned_by" | "founded_by" | "founder_of" | "em
 - 관계 이름: `owner_of`(P1830 소유) · `owned_by`(P127) · `founded_by`(P112) · `founder_of`(P112 역) · `employer`(P108 — 사람의 소속) · `ceo`(P169 — 회사의 대표) ·
   `parent`(P749) · `subsidiary`(P355) · `manager`(13F 기관의 운용자) · `managed_by`(운용자의 기관). 관계 대상의 이름은 ko·en 라벨만.
 - `topic:` 키는 외부를 부르지 않고 `{kind:"topic", name:<글>, aliases:[<글>], ids 모두 null, links: []}`.
+- DART 고유번호를 찾지 못한 국내 종목의 `errors`: 저장본을 읽었는데 그 종목이 없으면 `dart`("DART 고유번호 저장본에 이 종목이 없음" — ETF·우선주 등, 다시 물어도 같음), 저장본이 없거나 읽지 못했으면 `dart_store`("DART 고유번호 저장본을 읽지 못함" — 다시 물으면 달라짐, 관심 대상 등록은 `partial`)(2026-11-15 QA-429).
 
 ### 3-4. `GET /api/search/feed?e=&tab=` — 결과(2년 묶음 한 번에)
 - `tab`: `timeline` · `news` · `posts`(운영자) · `filings`(단계 4 — 7절) · `research`(단계 4 — 7절, 단계 2·3에서는 빈 목록 + 상태 `later`). 보유·연결 탭은 이 경로를 쓰지 않음
@@ -222,7 +223,7 @@ SourceStatus = {
 | 경로 | 등급 | 내용 |
 |---|---|---|
 | `GET /api/search/watch` | 회원 | 내 관심 대상 `{available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax}, collecting:boolean}` — `newCount` = 마지막으로 본 뒤 처음 받았고(`first_seen_at > last_seen_at`) 작성 시각(모르면 처음 받은 시각)이 `last_seen_at`의 24시간 전과 등록 시각 가운데 늦은 것보다 늦은 글 수(등록 직후 첫 수집의 2년치·등록 전 글이 '새 글'이 되지 않게, 늦게 잡힌 어제 기사는 셈). 회원에게는 운영자 전용 출처(`info`·`guru`·`wire`)에서 온 글을 세지 않음. `collecting` = 서버 정기 수집이 켜진 곳인지(수집기 `/live/search/excludes`의 `politeEnabled` — 10분 캐시, 모르면 null) |
-| `POST /api/search/watch` | 회원(데모·`store_only` 403) | `{key}` → 백엔드가 수집기 `entity`로 이름·별칭·식별자를 풀어 저장(별칭은 대상의 것만, 최대 12개). 상한: 회원 10·운영자 50, 서버 전체 서로 다른 대표 키 100 — 넘으면 409(reason `user_limit`·`server_limit`). 이미 있으면(다른 키로 같은 대상을 보내도 대표 키로 찾아) 200(`created:false`). 풀지 못하면 409(`unresolved`), 수집기에 닿지 못하면 503(reason 없음 — `topic:` 키는 풀기 없이 키의 글로 등록), 풀기가 일부 실패(`entity`·`wikidata`·`sec` 오류)하면 503(`partial` — 저장하지 않음) |
+| `POST /api/search/watch` | 회원(데모·`store_only` 403) | `{key}` → 백엔드가 수집기 `entity`로 이름·별칭·식별자를 풀어 저장(별칭은 대상의 것만, 최대 12개). 상한: 회원 10·운영자 50, 서버 전체 서로 다른 대표 키 100 — 넘으면 409(reason `user_limit`·`server_limit`). 이미 있으면(다른 키로 같은 대상을 보내도 대표 키로 찾아) 200(`created:false`). 풀지 못하면 409(`unresolved`), 수집기에 닿지 못하면 503(reason 없음 — `topic:` 키는 풀기 없이 키의 글로 등록), 풀기가 일부 실패(`entity`·`wikidata`·`sec`·`dart_store` 오류)하면 503(`partial` — 저장하지 않음) |
 | `DELETE /api/search/watch/{id}` | 회원(자기 것만) | 지움 |
 | `POST /api/search/watch/{id}/seen` | 회원(자기 것만) | `last_seen_at = now()` — 화면이 그 대상의 타임라인 결과를 받아 그렸을 때(받지 못했으면 보내지 않음) |
 | `GET /api/search/recent` | 회원 | 첫 화면 — 새 피드 묶음 최근 30건(운영자는 속보 최근 20건을 더함) `{available, items:[FeedItem], errors:{출처: 사유}(없으면 빈 객체), fetchedAt}` — 화면은 `errors`가 있으면 '읽지 못한 출처'를 보이고, 비었어도 '없음'이라 하지 않음 |
