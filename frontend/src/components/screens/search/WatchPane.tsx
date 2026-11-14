@@ -21,8 +21,10 @@ import type { SearchEntity, SearchEntityKind, SearchWatchItem } from "@/lib/type
 import { BUTTON, KindIcon, PaneHeading, toggleClass } from "./parts";
 
 /**
- * 관심 대상 목록 스크롤 영역의 높이 상한 — 화면 높이의 28%, 많아야 14rem(약 줄 7개). 40%·24rem이면 50개일 때 대상 화면의 거르기(1440x900에서
+ * 관심 대상 목록 스크롤 영역의 높이 상한 — 화면 높이의 28%, 많아야 14rem(224px). 40%·24rem이면 50개일 때 대상 화면의 거르기(1440x900에서
  * y≈934)와 첫 화면의 최근 글(390)이 첫 화면 밖으로 밀렸습니다(4단계 브라우저 확인).
+ * 줄은 이름 줄 + 종류·배지 줄이라 적어도 44px이고, 대상 화면의 13rem 칸에서는 이름이 두 줄로 접히거나 배지 줄이 넘쳐 약 86px까지 커집니다
+ * — 이 영역에 보이는 줄은 약 3~5개입니다. 이름을 읽을 수 있게 하려고 감수한 높이입니다(QA-418 — 배지와 한 가로줄이던 때는 이름이 0px까지 눌렸음).
  */
 const LIST_SCROLL = "max-h-[min(28dvh,14rem)] overflow-y-auto";
 
