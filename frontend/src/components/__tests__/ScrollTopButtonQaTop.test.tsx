@@ -2,7 +2,7 @@
  * 맨 위로(TOP) 단추 — 정보 검색 QA(2026-11-15, QA 스택 브라우저 확인)에서 나온 결함의 재현.
  * 공용 단추라(정보 검색 z-20 · 모의 매매 · 정보 수집 기본 z-40) 두 층 모두 같은 규칙을 지키는지 봅니다.
  */
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ScrollTopButton } from "@/components/ScrollTopButton";
 
@@ -51,6 +51,36 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
       expect(hasClass(className, "lg:bottom-6")).toBe(true);
       unmount();
       scrollMain(0);
+    }
+  });
+
+  // QA-426: 키보드로 누르면 맨 위에 닿아 단추가 사라지고(400px 아래면 그리지 않음) 포커스가 body로 떨어짐 — 다음 Tab이 화면 끝의 아래
+  // 탭 막대로 감(WCAG 2.4.3). 넓은 화면(본문 main#main이 스크롤)과 휴대폰(창이 스크롤) 둘 다. 본문은 셸에서 tabIndex=-1(건너뛰기 링크의
+  // 대상)이라 여기서도 그렇게 둡니다. 브라우저는 단추 위 Enter·Space를 click으로 바꾸므로 포커스를 둔 뒤 click으로 누릅니다.
+  // 수정 전 실패: document.activeElement가 main이 아니라 body.
+  it.fails("키보드로 누르면 단추가 사라지므로 포커스를 본문 시작(main#main)으로 옮긴다 — 본문·창 스크롤 모두(WCAG 2.4.3)", () => {
+    main.tabIndex = -1;
+    const focus = vi.spyOn(main, "focus");
+    const scrollWindow = (top: number) =>
+      act(() => {
+        (window as { scrollY: number }).scrollY = top;
+        window.dispatchEvent(new Event("scroll"));
+      });
+    for (const scroll of [scrollMain, scrollWindow]) {
+      const { unmount } = render(<ScrollTopButton layer="z-20" />);
+      scroll(1500);
+      const button = screen.getByRole("button", { name: "맨 위로" });
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      fireEvent.click(button);
+      scroll(0); // 맨 위에 닿아 단추가 사라짐
+      expect(screen.queryByRole("button", { name: "맨 위로" })).toBeNull();
+      expect(document.activeElement).toBe(main);
+      // 포커스가 본문을 끌어당겨 부드러운 스크롤을 끊거나 창을 본문 머리로 옮기지 않게.
+      expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
+      unmount();
+      main.blur();
+      focus.mockClear();
     }
   });
 });
