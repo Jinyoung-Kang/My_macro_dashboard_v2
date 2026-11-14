@@ -40,7 +40,8 @@ export function LinksPanel({
   const hasLinks = view.groups.length > 0;
   const graph = hasLinks && mode === "graph";
   return (
-    <div className="flex flex-col gap-4 py-1">
+    // @container — 목록 줄의 한 줄 배치는 화면 폭이 아니라 이 패널(대상 화면 가운데 칸)의 폭으로 정함(QA-422 — 아래 줄의 주석).
+    <div className="@container flex flex-col gap-4 py-1">
       {hasLinks ? (
         <div role="group" aria-label="연결 보기 방식" className="flex flex-wrap gap-1">
           {(
@@ -104,28 +105,29 @@ export function LinksPanel({
             <ul className="divide-y divide-border">
               {group.links.map((link, index) => (
                 <li key={`${link.key ?? "name"}:${link.name}:${index}`}>
-                  {/* lg 미만(390 등)은 이름·설명을 줄바꿈하고 메타(종류·출처·이름으로 찾기)를 그 밑의 제 줄로 — 오른쪽 칸이 폭을 먼저 차지하면 앞머리가 같은
-                      이름(자회사 법인명 등)이 똑같이 잘려 가를 수 없음(QA-422). lg는 한 줄(말줄임 + title)과 오른쪽 메타 칸. 아이콘·꺾쇠는 첫 줄(20px)에 맞춤. */}
+                  {/* 패널 폭이 28rem(@md) 미만이면(390 화면, 가운데 칸이 가장 좁은 1024~약 1280 화면 등) 이름·설명을 줄바꿈하고 메타(종류·출처·이름으로
+                      찾기)를 그 밑의 제 줄로 — 오른쪽 칸이 폭을 먼저 차지하면 앞머리가 같은 이름(자회사 법인명 등)이 똑같이 잘리거나 0px로 눌려 가를 수
+                      없음(QA-422). 28rem 이상은 한 줄(말줄임 + title)과 오른쪽 메타 칸. 아이콘·꺾쇠는 첫 줄(20px)에 맞춤. 줄 높이는 화면 폭 기준(lg 미만 44px). */}
                   <button
                     type="button"
                     onClick={() => onTarget(linkTarget(link))}
-                    className="flex min-h-11 w-full items-start gap-2 rounded-control px-1.5 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8 lg:items-center"
+                    className="flex min-h-11 w-full items-start gap-2 rounded-control px-1.5 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8 @md:items-center"
                   >
                     <span className="flex h-5 shrink-0 items-center text-text-3">
                       <KindIcon kind={link.kind} size={14} />
                     </span>
-                    <span className="flex min-w-0 flex-1 flex-col lg:flex-row lg:items-center lg:gap-2">
-                      <span className="flex min-w-0 flex-col lg:flex-1">
-                        <span className="break-words text-accent lg:truncate" title={link.name}>
+                    <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-center @md:gap-2">
+                      <span className="flex min-w-0 flex-col @md:flex-1">
+                        <span className="break-words text-accent @md:truncate" title={link.name}>
                           {link.name}
                         </span>
                         {link.detail ? (
-                          <span className="break-words text-xs text-text-2 lg:truncate" title={link.detail}>
+                          <span className="break-words text-xs text-text-2 @md:truncate" title={link.detail}>
                             {link.detail}
                           </span>
                         ) : null}
                       </span>
-                      <span className="text-xs text-text-3 lg:shrink-0">
+                      <span className="text-xs text-text-3 @md:shrink-0">
                         {[link.kind ? entityKindLabel(link.kind) : null, linkSourceLabel(link.source), link.key ? null : "이름으로 찾기"]
                           .filter(Boolean)
                           .join(" · ")}
