@@ -187,3 +187,15 @@ def test_관심_대상_수집은_백엔드_표를_store_함수로만_읽는다()
     for reader in (store.search_watch_targets, store.search_media_excludes):
         source = inspect.getsource(reader)
         assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", source), reader.__name__
+
+
+def test_수집기는_관심_대상_알림_칸을_읽지도_쓰지도_않는다():
+    """V38의 notify·notified_at(계약 §9-5)은 백엔드 알림 작업만 씁니다 — 수집기는 그 칸을 쓰지 않고, 관심 대상 읽기도 칸을 골라 읽습니다."""
+    import inspect
+
+    from app import store
+
+    assert [path.name for path in APP.rglob("*.py") if re.search(r"\bnotified_at\b", path.read_text(encoding="utf-8"))] == []
+    source = inspect.getsource(store.search_watch_targets)
+    assert "SELECT entity_key, kind, name, name_ko, name_en, aliases, ids FROM search_watches" in source and "SELECT *" not in source
+    assert not re.search(r"\bnotify\b", source), "알림 칸은 읽지 않음(이름 두 칸 name_ko·name_en만 V38에서 더 읽음)"

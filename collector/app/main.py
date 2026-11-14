@@ -759,17 +759,23 @@ def live_search_feed(
     external: bool = Query(True),
     refresh: bool = Query(False),
     finviz: bool = Query(True),
+    aliases: str | None = Query(None),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
     """
     정보 검색 — 탭 하나의 결과(최근 2년 묶음, 출처별 상태). 운영자 전용 저장본은 owner일 때만, external=false면 바깥 출처는 캐시만.
     refresh면 출처 캐시를 건너뜀('지금 새로 받기' — 사용자당 빈도는 백엔드가 막음). finviz=0이면 Finviz 종목 뉴스를 새로 줄에 넣지 않고
     받아 둔 결과만(사용자 한 명의 한 시간 한도 — 백엔드가 응답의 finvizQueued로 셈, 계약 §8-4·§8-5).
+    aliases는 그 사용자가 관심 대상에 적은 별칭의 JSON 배열 글(계약 §9-4 — 글의 배열·최대 12개가 아니면 400)이고 풀린 대상의 별칭에 합쳐
+    검색식을 만듭니다. 하나 1~60자·제어 글자 없음에 맞지 않는 별칭은 그것만 뺍니다(등록 때 저장한 긴 별칭으로 결과가 깨지지 않게).
+    검색어처럼 응답·로그에 되풀이하지 않습니다.
     """
     _check_token(x_service_token)
     prefix, value = _search_input(search_service.parse_key, e)
     checked_tab = _search_input(search_service.check_tab, tab)
-    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh, finviz=finviz)
+    checked_aliases = _search_input(search_service.parse_aliases, aliases)
+    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh, finviz=finviz,
+                               aliases=checked_aliases)
 
 
 @app.get("/live/search/links")

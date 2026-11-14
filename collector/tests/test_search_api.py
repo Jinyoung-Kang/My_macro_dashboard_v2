@@ -14,9 +14,14 @@ tests/test_search_api.py
   줄에 넣지 않음, 서버가 아니면 server_only(네트워크 0건), 합치기는 Yahoo 바로 뒤
 - 단계 4 QA: SEC 표·DART 저장본·대상 풀기를 읽지 못해 식별자를 모르면 공시 줄은 '건너뜀'이 아니라 error(Q1), 첫 화면은 사용자 제외 매체를
   캐시 없이 바로 읽음(Q3)
+- 별칭(단계 6, 계약 §9-4): feed의 aliases 인자(문자열 JSON 배열, 최대 12개 — 모양이 틀리면 400)는 대상 별칭에 합쳐 검색식·저장본 대조에
+  쓰고(네 글자 미만은 자유 검색어에 넣지 않음 — 규칙 5), 하나 1~60자·제어 글자 없음에 맞지 않는 별칭(등록 때 저장한 100자 별칭 등)은 하나씩
+  빼고 나머지로 부름(결과 전체를 400으로 깨지 않음), 풀어 둔 대상은 바꾸지 않고, 로그·응답에 되풀이하지 않음
 """
 from __future__ import annotations
 
+import copy
+import json
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -225,7 +230,7 @@ def test_경로는_검사한_값과_owner·external을_넘긴다(client, monkeyp
     monkeypatch.setattr(search, "resolve", lambda q, owner=False, external=True: seen.append(("resolve", q, owner, external))
                         or {"items": []})
     monkeypatch.setattr(search, "entity", lambda e, external=True: seen.append(("entity", e, external)) or {"entity": None})
-    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False, finviz=True:
+    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False, finviz=True, aliases=None:
                         seen.append(("feed", e, tab, owner, external, refresh, finviz)) or {"items": []})
     assert client.get("/live/search/suggest?q=%20합성%20&owner=true").status_code == 200
     assert client.get("/live/search/resolve?q=Synth&external=false").status_code == 200
@@ -968,3 +973,171 @@ def test_수집_글은_묶고_거장_견해와_받은_시각_줄은_묶지_않�
     assert by_title["SynthChip recalls accelerator boards worldwide, again"]["clusterId"] is None, "받은 시각 줄"
     assert [item["clusterId"] for item in posts["items"] if item["kind"] == "opinion"] == [None, None], "거장 견해"
     assert posts["rangeCounts"]["2y"] == 5
+
+
+# ------------------------------------------------------------------ 단계 6 — 별칭 편집(계약 §9-4)
+
+def _aliases(values) -> str:
+    return json.dumps(values, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("raw", [
+    "", "   ", "not json", '{"alias": "SynthChip Labs"}', '"SynthChip Labs"', "[1]", "[null]", "[true]", '[["SynthChip Labs"]]',
+    '["SynthChip Labs", 7]', _aliases([f"Synthetic alias {n:02d}" for n in range(13)]),
+    "[" * 5000, "[" * 20000, '["SynthChip Labs"', '["SynthChip Labs"] trailing', _aliases(["x" * 700] * 12),
+])
+def test_별칭_인자의_모양이_틀리면_400이고_서비스를_부르지_않는다(client, monkeypatch, raw):
+    """JSON이 아님·배열이 아님·글이 아닌 칸·13개 이상·인자 글 8,192자 초과 — 백엔드가 보내는 모양이 아니므로 400."""
+    monkeypatch.setattr(search, "feed", lambda *a, **k: pytest.fail("부르면 안 됩니다"))
+    response = client.get("/live/search/feed", params={"e": "us:SCHP", "tab": "news", "aliases": raw})
+    assert response.status_code == 400
+
+
+def test_별칭_인자는_검사해_앞뒤_공백을_떼고_같은_글자는_하나로_넘긴다(client, monkeypatch):
+    seen = []
+    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False, finviz=True, aliases=None:
+                        seen.append(aliases) or {"items": []})
+    params = {"e": "us:SCHP", "tab": "news"}
+    assert client.get("/live/search/feed", params=params).status_code == 200
+    raw = _aliases(["  SynthChip Labs ", "synthchip labs", "합성칩 연구소", "SCL"])
+    assert client.get("/live/search/feed", params=dict(params, aliases=raw)).status_code == 200
+    assert client.get("/live/search/feed", params=dict(params, aliases="[]")).status_code == 200
+    longest = [f"{n:02d}" + "가" * 58 for n in range(12)]                 # 12개 · 하나 60자 — 경계 안
+    assert client.get("/live/search/feed", params=dict(params, aliases=_aliases(longest))).status_code == 200
+    assert seen == [None, ("SynthChip Labs", "합성칩 연구소", "SCL"), (), tuple(longest)]
+
+
+def test_규칙에_맞지_않는_별칭은_하나씩_빼고_나머지로_부른다(client, monkeypatch):
+    """
+    하나 1~60자·제어 글자 없음(계약 §9-4의 PATCH 규칙)에 맞지 않는 별칭은 400이 아니라 그 별칭만 뺍니다 — 등록 때 대상 풀기에서 받아 100자까지
+    저장한 별칭, 별칭이 없어 넣은 200자 이름, 백엔드(Java strip)는 남기지만 여기서는 공백인 글(U+00A0·U+0085)이 든 줄로도 결과가 깨지지 않게.
+    """
+    seen = []
+    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False, finviz=True, aliases=None:
+                        seen.append(aliases) or {"items": []})
+    raw = _aliases(["   ", "", "가" * 61, "Synthetic registered alias " + "b" * 73, "c" * 200, "Synth\u0007Chip", "SynthChip Labs\n",
+                    "\tSynthChip Labs", "Synth\x7fChip", "\u00a0", "\x85", "  합성칩 연구소 "])
+    response = client.get("/live/search/feed", params={"e": "us:SCHP", "tab": "news", "aliases": raw})
+    assert response.status_code == 200
+    only_bad = client.get("/live/search/feed", params={"e": "us:SCHP", "tab": "news", "aliases": _aliases(["가" * 61, "\u00a0"])})
+    assert only_bad.status_code == 200
+    assert seen == [("합성칩 연구소",), ()]
+
+
+def test_틀린_별칭은_응답과_로그에_되풀이하지_않는다(client, monkeypatch, caplog):
+    seen = []
+    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False, finviz=True, aliases=None:
+                        seen.append(aliases) or {"items": []})
+    with caplog.at_level(logging.DEBUG):
+        refused = client.get("/live/search/feed", params={"e": "us:SCHP", "tab": "news", "aliases": _aliases([SECRET, 7])})
+        dropped = client.get("/live/search/feed",
+                             params={"e": "us:SCHP", "tab": "news", "aliases": _aliases([SECRET + " " + "x" * 60, "합성칩 연구소"])})
+    assert refused.status_code == 400 and dropped.status_code == 200
+    assert seen == [("합성칩 연구소",)]
+    for text in (refused.text, dropped.text, caplog.text):
+        assert SECRET not in text
+
+
+def _recording_stubs(monkeypatch):
+    """구글·Bing·사건 뉴스 저장본에 넘어간 검색어를 적는 자리."""
+    stubs = Stubs(monkeypatch)
+    stubs.google_terms = []
+    stubs.bing_terms = []
+    stubs.match_terms = []
+
+    def google(terms, lang, after):
+        stubs.google_terms.append((lang, list(terms)))
+        return stubs._hit(f"google_{lang}")
+
+    def bing(terms_by_lang, ticker=None):
+        stubs.bing_terms.append({lang: list(terms) for lang, terms in terms_by_lang.items()})
+        return stubs._hit("bing")
+
+    def event_news(terms):
+        stubs.match_terms.append(list(terms))
+        return stubs._hit("event_news")
+
+    monkeypatch.setattr(sources, "google", google)
+    monkeypatch.setattr(sources, "bing", bing)
+    monkeypatch.setattr(search_store, "event_news", event_news)
+    return stubs
+
+
+def test_별칭은_대상_별칭에_합쳐_검색식과_저장본_대조에_쓴다(monkeypatch):
+    stubs = _recording_stubs(monkeypatch)
+    before = copy.deepcopy(ENTITY)
+    out = search.feed("us:SCHP", "news", owner=False, external=True,
+                      aliases=("SynthChip Labs", "합성칩 연구소", "synthchip", "SCL"))
+    google = dict(stubs.google_terms)
+    # 대상의 이름(합성칩·SynthChip)은 그대로 앞에, 더한 별칭은 규칙 5대로(네 글자 이상, 판마다 긴 것 먼저) — 'SCL'은 자유 검색어에 넣지 않음.
+    assert google["en"] == ["SynthChip", "SynthChip Corporation", "SynthChip Labs"]
+    assert google["ko"] == ["합성칩", "합성칩 연구소"]
+    assert stubs.bing_terms == [{"ko": ["합성칩", "합성칩 연구소"], "en": ["SynthChip", "SynthChip Corporation", "SynthChip Labs"]}]
+    assert stubs.match_terms == [["합성칩", "SynthChip", "SynthChip Corporation", "SynthChip Labs", "합성칩 연구소"]]
+    assert not any("SCL" in terms for _, terms in stubs.google_terms)
+    assert _row(out, "google_en")["status"] in ("ok", "empty")
+    assert ENTITY == before, "풀어 둔 대상(하루 캐시)은 바꾸지 않음"
+
+
+def test_별칭이_다르면_출처_캐시도_따로다(monkeypatch):
+    stubs = _recording_stubs(monkeypatch)
+    search.feed("us:SCHP", "news", owner=False, external=True, aliases=("SynthChip Labs",))
+    plain = search.feed("us:SCHP", "news", owner=False, external=True)
+    again = search.feed("us:SCHP", "news", owner=False, external=True, aliases=("SynthChip Labs",))
+    en_terms = [terms for lang, terms in stubs.google_terms if lang == "en"]
+    assert en_terms == [["SynthChip", "SynthChip Corporation", "SynthChip Labs"], ["SynthChip", "SynthChip Corporation"]]
+    assert _row(plain, "google_en")["status"] != "cached", "별칭 없는 부름이 별칭을 더한 결과의 캐시를 쓰지 않음"
+    assert _row(again, "google_en")["status"] == "cached"
+    assert _row(again, "bing")["status"] == "cached" and _row(again, "event_news")["status"] == "cached"
+
+
+def test_주제에_영문_별칭을_더하면_영어_판도_묻는다(monkeypatch):
+    stubs = _recording_stubs(monkeypatch)
+    topic = search_entities.topic_entity("합성 반도체")
+    stubs.use(topic)
+    out = search.feed("topic:합성 반도체", "news", owner=False, external=True, aliases=("Synthetic Semiconductors", "SSC"))
+    assert dict(stubs.google_terms) == {"ko": ["합성 반도체"], "en": ["Synthetic Semiconductors"]}
+    assert _row(out, "google_en")["status"] in ("ok", "empty"), "이름이 없어 묻지 않던 영어 판을 물음(건너뜀 아님)"
+    assert topic["aliases"] == ["합성 반도체"]
+
+
+def test_짧은_별칭뿐이면_검색식이_그대로다(monkeypatch):
+    stubs = _recording_stubs(monkeypatch)
+    search.feed("us:SCHP", "news", owner=False, external=True, aliases=("SCL", "SC", "SCHP"))
+    assert dict(stubs.google_terms) == {"ko": ["합성칩"], "en": ["SynthChip", "SynthChip Corporation"]}
+
+
+def test_풀지_못한_대상에는_별칭을_더해도_바깥을_부르지_않는다(monkeypatch):
+    stubs = _recording_stubs(monkeypatch)
+    stubs.use(None)
+    out = search.feed("wd:Q900001", "news", owner=False, external=True, aliases=("SynthChip Labs",))
+    assert stubs.google_terms == [] and stubs.bing_terms == []
+    assert _row(out, "google_en")["status"] == "skipped"
+
+
+def test_서비스에_바로_넘긴_별칭도_모양이_틀리면_거부하고_규칙에_맞지_않는_것은_뺀다(monkeypatch):
+    Stubs(monkeypatch)
+    for bad in (tuple(f"Synthetic alias {n:02d}" for n in range(13)), (7,), ("SynthChip Labs", None), "SynthChip Labs"):
+        with pytest.raises(ValueError):
+            search.feed("us:SCHP", "news", owner=False, external=True, aliases=bad)
+    stubs = _recording_stubs(monkeypatch)
+    search.feed("us:SCHP", "news", owner=False, external=True,
+                aliases=("가" * 61, "Synth\nChip Labs", "  ", "\u00a0", "Synthetic Chip Labs"))
+    assert dict(stubs.google_terms) == {"ko": ["합성칩"], "en": ["SynthChip", "SynthChip Corporation", "Synthetic Chip Labs"]}
+
+
+def test_별칭의_제어_글자는_백엔드·화면과_같은_범위로_C1까지_뺀다():
+    """제어 글자 범위를 세 층이 같게([\x00-\x1f\x7f-\x9f]) — C1(U+0080~U+009F)이 든 별칭도 그 하나만 뺌(통합 점검)."""
+    assert search.check_aliases(["Synth\u0085Chip", "Synth\u009fChip", "SynthChip"]) == ("SynthChip",)
+
+
+def test_별칭은_로그와_출처_상태에_남지_않는다(monkeypatch, caplog):
+    def failing(*args, **kwargs):
+        raise requests.ConnectionError(f"HTTPSConnectionPool(host='news.google.com'): /rss/search?q={SECRET}")
+
+    monkeypatch.setattr(requests.Session, "get", failing)
+    monkeypatch.setattr(search_store, "event_news", lambda terms: sources.Fetched(items=[]))
+    with caplog.at_level(logging.DEBUG):
+        out = search.feed("topic:합성 반도체", "news", owner=False, external=True, aliases=(SECRET,))
+    assert SECRET not in caplog.text and SECRET.replace(" ", "+") not in caplog.text
+    assert all(SECRET not in (row["message"] or "") for row in out["sources"])

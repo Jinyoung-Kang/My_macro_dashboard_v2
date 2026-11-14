@@ -1755,19 +1755,20 @@ def source_state(task: str) -> dict | None:
 # 수집기 표라 여기서만 씁니다(tests/test_table_ownership.py가 봄).
 def search_watch_targets() -> list[dict]:
     """
-    관심 대상을 대표 키마다 하나로 → [{key, kind, name, aliases, ids, watchers}](키 순서). 여러 사용자가 같은 대상을 등록해도 한 번만 모읍니다 —
-    종류·이름·식별자는 가장 최근 등록의 것, 별칭은 모든 등록의 것을 합칩니다(최근 등록 먼저, 같은 글자는 대소문자 무시로 하나).
+    관심 대상을 대표 키마다 하나로 → [{key, kind, name, nameKo, nameEn, aliases, ids, watchers}](키 순서). 여러 사용자가 같은 대상을 등록해도 한 번만
+    모읍니다 — 종류·이름·등록 때의 한국어·영문 이름(V38, 없으면 None)·식별자는 가장 최근 등록의 것, 별칭은 모든 등록의 것을 합칩니다(최근 등록 먼저,
+    같은 글자는 대소문자 무시로 하나).
     """
     with connection() as conn:
         rows = conn.execute(
-            "SELECT entity_key, kind, name, aliases, ids FROM search_watches ORDER BY entity_key, created_at DESC, id DESC"
+            "SELECT entity_key, kind, name, name_ko, name_en, aliases, ids FROM search_watches ORDER BY entity_key, created_at DESC, id DESC"
         ).fetchall()
     targets: dict[str, dict] = {}
     for row in rows:
         target = targets.get(row["entity_key"])
         if target is None:
-            target = {"key": row["entity_key"], "kind": row["kind"], "name": row["name"], "aliases": [],
-                      "ids": row["ids"] if isinstance(row["ids"], dict) else {}, "watchers": 0}
+            target = {"key": row["entity_key"], "kind": row["kind"], "name": row["name"], "nameKo": row["name_ko"],
+                      "nameEn": row["name_en"], "aliases": [], "ids": row["ids"] if isinstance(row["ids"], dict) else {}, "watchers": 0}
             targets[row["entity_key"]] = target
         target["watchers"] += 1
         taken = {alias.casefold() for alias in target["aliases"]}

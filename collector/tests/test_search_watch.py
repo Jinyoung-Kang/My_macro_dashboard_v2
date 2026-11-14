@@ -10,7 +10,8 @@ tests/test_search_watch.py
   4. 저장본 대조(외부 0건) + 구글(한·영)·Bing(한·영, 0건이면 다음 구문으로 한 번 더) — 호스트 하루 예산(news.google.com 600·www.bing.com 600,
      용도 watch)을 넘으면 보내지 않음(Bing의 두 번째 구문도 한 건).
      예산만 모자란 깨기는 끊김이 아님(보낸 요청이 다 성공했거나, 하나도 못 보냈어도 직전 판정이 정상이면 '정상'). 요청 사이 2~5초.
-     검색어에 티커·짧은 별칭 없음, 등록 때의 이름 둘(한·영)은 짧아도 씀(즉석 검색과 같은 검색어).
+     검색어에 티커·짧은 별칭 없음, 등록 때의 이름 둘(한·영)은 짧아도 씀(즉석 검색과 같은 검색어). 사용자가 고친 별칭(계약 §9-4)의 짧은 글은
+     이름 자리에 와도 이름으로 보지 않음(주제 키는 이름 하나, 그 밖은 대상 풀기의 모양일 때만 둘째 이름).
   5. 넣기 전 규칙: 2년·중국어 제목·'.cn'·처음 값·사용자가 더한 제외 매체, 같은 글은 한 번(이미 있는 글은 처음 받은 시각 그대로), 경유 주소 줄은 같은
      제목(전체)의 글이 이미 있으면 넣지 않음. 경유 주소 줄의 글 id는 경유 주소의 기사 경로 — 제목 앞 24자가 같은 다른 기사도 남음.
   6. 정리: 등록이 풀린 대상의 글은 7일 유예 뒤, 2년 지난 글(둘 다 KST 하루 한 번), 제외 매체의 글(제외 목록이 바뀌었을 때).
@@ -34,7 +35,7 @@ import requests
 
 from app import catalog, tasks
 from app.fetch import ladder, policy, state
-from app.services import search_filings, search_finviz
+from app.services import search, search_entities, search_filings, search_finviz
 from app.services import search_rules as rules
 from app.services import search_sources as sources
 from app.services import search_store
@@ -161,10 +162,10 @@ def _watch(store, user_id: int, target: dict, *, created: datetime | None = None
     from psycopg.types.json import Jsonb
 
     with store.connection() as conn:
-        conn.execute("INSERT INTO search_watches (user_id, entity_key, kind, name, aliases, ids, created_at) "
-                     "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                     (user_id, target["key"], target["kind"], target["name"], Jsonb(target["aliases"]), Jsonb(target["ids"]),
-                      created or NOW))
+        conn.execute("INSERT INTO search_watches (user_id, entity_key, kind, name, name_ko, name_en, aliases, ids, created_at) "
+                     "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                     (user_id, target["key"], target["kind"], target["name"], target.get("nameKo"), target.get("nameEn"),
+                      Jsonb(target["aliases"]), Jsonb(target["ids"]), created or NOW))
 
 
 def _exclude(store, kind: str, value: str) -> None:
@@ -361,6 +362,19 @@ def test_일정_줄_이름에_대상_키가_드러나지_않는다(store, world)
     assert len(task.schedule_item(topic["key"])) == 16 and task.schedule_item("us:SCHP") != task.schedule_item("us:SCHQ")
 
 
+def test_등록_때_저장한_이름_둘이_있으면_별칭에서_짐작하지_않는다(store, world):
+    """V38의 name_ko·name_en(등록 때 대상 풀기의 이름) — 사용자가 별칭 앞자리에 짧은 별칭('EV')을 두거나 이름 칩을 지워도 정기 수집의 이름은 그대로(통합 지적)."""
+    target = {"key": "us:SCHP", "kind": "company", "name": "합성칩", "nameKo": "합성칩", "nameEn": "SynthChip",
+              "aliases": ["합성칩", "EV", "SynthChip Corporation"], "ids": {"ticker": "SCHP", "market": "us"}}
+    _watch(store, _user(store, "a@example.org"), target)
+    read = next(row for row in store.search_watch_targets() if row["key"] == "us:SCHP")
+    assert (read["nameKo"], read["nameEn"]) == ("합성칩", "SynthChip")
+    entity = task.watch_entity(read)
+    assert (entity["nameKo"], entity["nameEn"]) == ("합성칩", "SynthChip")
+    assert "EV" not in rules.edition_terms(entity, "en") and "EV" not in rules.match_terms(entity), "짧은 사용자 별칭은 이름이 되지 않음"
+    assert "SynthChip" in rules.edition_terms(entity, "en"), "지운 이름 칩도 등록 때의 이름으로 남음"
+
+
 def test_등록_때의_이름_둘을_되살려_즉석_검색과_같은_검색어를_쓴다(store, world):
     """대상 풀기는 별칭 맨 앞에 이름(한·영)을 두고 그 뒤 별칭은 네 글자 이상만 — 정기 수집도 짧은 영문 이름 'Kia'로 묻습니다(계약 규칙 5)."""
     usable = ["Kia Motors Corporation", "Kia Corporation", "Kia Motors", "KIA Corp.", "기아자동차", "기아 주식회사"]
@@ -376,6 +390,36 @@ def test_등록_때의_이름_둘을_되살려_즉석_검색과_같은_검색어
     task.task_search_watch()
     english = [terms for kind, lang, terms, _ in world.calls if lang == "en"]
     assert english and all("Kia" in terms for terms in english)
+
+
+def test_사용자가_고친_짧은_별칭은_정기_수집에서도_이름이_되지_않는다(store, world):
+    """
+    별칭 편집(계약 §9-4) 뒤에도 네 글자 미만 별칭은 자유 검색어·저장본 대조에 넣지 않습니다(규칙 5). 정기 수집은 별칭 앞자리로 이름을 되살리므로
+    (watch_entity) 주제 키는 이름 하나만, 그 밖은 대상 풀기의 모양(이름이 맨 앞이고 바로 뒤가 둘째 이름)일 때만 짧은 글을 이름으로 봅니다.
+    """
+    topic = {"key": "topic:합성 반도체", "kind": "topic", "name": "합성 반도체", "aliases": ["합성 반도체", "AI"], "ids": {}}
+    instant = search.with_aliases(search_entities.topic_entity("합성 반도체"), ("합성 반도체", "AI"))
+    entity = task.watch_entity(topic)
+    for lang in ("ko", "en"):
+        assert rules.edition_terms(entity, lang) == rules.edition_terms(instant, lang)
+    assert rules.edition_terms(entity, "en") == []
+    assert rules.match_terms(entity) == rules.match_terms(instant) == ["합성 반도체"]
+
+    ids = {"ticker": "SCHP", "market": "us"}
+    moved = {"key": "us:SCHP", "kind": "company", "name": "합성칩", "aliases": ["EV", "SynthChip Corporation", "SynthChip"], "ids": ids}
+    cleared = {"key": "kr:000270", "kind": "company", "name": "기아", "aliases": ["Kia Motors Corporation", "EV"],
+               "ids": {"stockCode": "000270", "market": "kr"}}
+    for target in (moved, cleared):
+        entity = task.watch_entity(target)
+        terms = [*rules.edition_terms(entity, "ko"), *rules.edition_terms(entity, "en"), *rules.match_terms(entity)]
+        assert "EV" not in terms, target["key"]
+    assert set(rules.edition_terms(task.watch_entity(moved), "en")) == {"SynthChip Corporation", "SynthChip"}
+
+    _watch(store, _user(store, "a@example.org"), topic)
+    task.task_search_watch()
+    assert world.calls, "한국어 판은 물음"
+    assert all("AI" not in terms for _, _, terms, _ in world.calls)
+    assert all(lang == "ko" for _, lang, _, _ in world.calls), "영문 이름이 없는 주제는 영어 판을 묻지 않음(즉석 검색과 같음)"
 
 
 def test_한_번에_6곳까지이고_처음_등록된_대상이_먼저(store, world):

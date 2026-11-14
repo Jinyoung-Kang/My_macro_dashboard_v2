@@ -130,13 +130,33 @@ def schedule_item(entity_key: str) -> str:
 
 def watch_entity(target: dict) -> dict:
     """
-    등록 표의 대상 → 검색어를 만들 대상(``nameKo``·``nameEn``을 되살림). 대상 풀기(search_entities.finish)는 별칭 맨 앞에 이름(한·영)을 두고 그 뒤
+    등록 표의 대상 → 검색어를 만들 대상(``nameKo``·``nameEn``). 등록 때 저장한 이름(V38 ``name_ko``·``name_en``)이 있으면 그것을 씁니다. 없는
+    줄(V38 전 등록)만 아래처럼 별칭에서 되살립니다. 대상 풀기(search_entities.finish)는 별칭 맨 앞에 이름(한·영)을 두고 그 뒤
     별칭은 네 글자 이상만 남기며, 백엔드는 그 순서 그대로 저장합니다. 그래서 대표 이름과 별칭 앞 두 개 가운데 한글이 든 첫 글자를 한국어 이름,
     한글이 없는 첫 글자를 영문 이름으로 봅니다 — 이름이 하나뿐인 대상이면 두 번째 자리는 (네 글자 이상의) 보통 별칭이라 이름으로 봐도 검색어에
     늘 넣을 뿐입니다(티커·중국어는 rules._names가 다시 뺌).
+
+    별칭 편집(계약 §9-4 — PATCH로 별칭을 통째로 바꿈)이 생겨 별칭 앞자리가 늘 이름인 것은 아닙니다. 그래서 네 글자 미만 별칭(규칙 5 — 자유
+    검색어·저장본 대조에 넣지 않음)이 이름 자리로 올라가지 않게, 별칭 앞 두 개 가운데 ``rules.usable_alias``를 통과하지 못하는 짧은 글은 대상 풀기의
+    모양(맨 앞이 대표 이름이고 바로 뒤가 둘째 이름 — 예: '기아' 다음의 'Kia')일 때만 이름으로 봅니다. 주제 키(``topic:``)는 대상 풀기에도 이름이
+    하나뿐이라(search_entities.topic_entity) 별칭에서 이름을 되살리지 않습니다. 이름 하나뿐인 대상의 바로 뒤에 사용자가 짧은 별칭을 붙인 줄은
+    등록 때의 둘째 이름과 가를 수 없어 이름으로 봅니다(저장된 칸만으로는 알 수 없음).
     """
-    heads = [text.strip() for text in [target.get("name") or "", *list(target.get("aliases") or [])[:2]]
-             if isinstance(text, str) and text.strip()]
+    if str(target.get("key") or "").startswith("topic:"):
+        return dict(target, nameKo=None, nameEn=None)
+    stored_ko = target.get("nameKo") if isinstance(target.get("nameKo"), str) and target.get("nameKo").strip() else None
+    stored_en = target.get("nameEn") if isinstance(target.get("nameEn"), str) and target.get("nameEn").strip() else None
+    if stored_ko or stored_en:
+        # 등록 때 저장한 이름(V38 name_ko·name_en) — 별칭 앞자리에서 짐작하지 않음.
+        return dict(target, nameKo=stored_ko.strip() if stored_ko else None, nameEn=stored_en.strip() if stored_en else None)
+    name = target.get("name").strip() if isinstance(target.get("name"), str) else ""
+    ids = target.get("ids")
+    ticker = ids.get("ticker") if isinstance(ids, dict) else None
+    firsts = [text.strip() if isinstance(text, str) else "" for text in list(target.get("aliases") or [])[:2]]
+    heads = [name] if name else []
+    for index, text in enumerate(firsts):
+        if text and (rules.usable_alias(text, ticker) or (index == 1 and name and firsts[0].casefold() == name.casefold())):
+            heads.append(text)
     name_ko = next((text for text in heads if rules.has_hangul(text)), None)
     name_en = next((text for text in heads if not rules.has_hangul(text)), None)
     return dict(target, nameKo=name_ko, nameEn=name_en)

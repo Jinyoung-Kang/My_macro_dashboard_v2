@@ -19,6 +19,9 @@ app/services/search.py
   ``error``(단계 4 QA — 확인하지 못한 것을 '없음'으로 보이지 않음).
   단계 6(계약 §9-2)에서 모든 탭의 합친 줄에 같은 사건 묶기(search_rules.cluster_items)를 더함 — 줄마다 ``clusterId``, 대표 줄에
   ``cluster: {size, publishers}``. 줄을 빼지 않으므로 기간 건수·출처 건수는 그대로입니다.
+  단계 6(계약 §9-4)에서 ``aliases``(그 사용자가 관심 대상에 적은 별칭 — 백엔드가 넘김)를 풀린 대상의 별칭에 합쳐 검색식·저장본 대조를 만듦
+  (이름은 그대로, 규칙 5 그대로 — 네 글자 미만은 자유 검색어에 넣지 않음). 모양이 틀리면 400, 1~60자·제어 글자 없음에 맞지 않는 별칭은 그것만
+  뺌(등록 때 저장한 긴 별칭으로 결과가 깨지지 않게). 출처 캐시 키에 검색어가 들어 있어 별칭이 다르면 캐시도 따로입니다.
 - ``recent``(단계 3): 첫 화면 — 새 피드 묶음 최근 30건(+ 운영자는 속보 최근 20건). 저장본만, 바깥 호출 0건. 사용자 제외 매체는 60초 캐시 없이
   바로 읽음(값싼 저장본 경로 — 제외를 더한 직후 화면이 다시 읽으면 바로 빠짐, 단계 4 QA).
 - ``excludes``(단계 3): 매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙. 바깥 호출·DB 없음.
@@ -38,6 +41,7 @@ from __future__ import annotations
 
 import concurrent.futures as futures
 import dataclasses
+import json
 import logging
 import re
 import threading
@@ -99,6 +103,10 @@ OWNER_SOURCES = ("wire", "info", "guru")
 POST_SOURCES = ("info", "guru")    # 글 탭의 출처 — 모은 글에서 이 출처로 표시되는 줄은 뉴스 탭에 넣지 않음
 RECENT_FEEDS = 30               # 첫 화면 — 새 피드 묶음 최근 건수
 RECENT_WIRE = 20                # 첫 화면 — 운영자에게 더하는 속보 최근 건수
+ALIASES_MAX = 12                # 결과 경로의 별칭 인자 — 개수 상한(계약 §9-4, 백엔드의 등록·PATCH와 같음)
+ALIAS_MAX_CHARS = 60            # 검색식에 쓰는 별칭 하나의 글자 수 상한(앞뒤 공백을 뗀 뒤 — 넘는 별칭은 빼고 씀)
+ALIASES_PARAM_MAX_CHARS = 8_192  # 인자 글 전체의 상한 — JSON을 읽기 전에 자름(등록 때 저장한 100자 별칭 12개를 \uXXXX로 적어도 넉넉함)
+_ALIASES_ERROR = f"aliases는 문자열 JSON 배열입니다(최대 {ALIASES_MAX}개)."
 
 _KEY_PATTERNS = {
     "us": re.compile(r"^[A-Z0-9.\-]{1,15}$"),
@@ -107,6 +115,8 @@ _KEY_PATTERNS = {
     "wd": re.compile(r"^Q[1-9]\d{0,11}$"),
 }
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+# 별칭(계약 §9-4)의 제어 글자 — 백엔드 SearchWatchService·화면 infoSearch와 같은 범위(C1 U+0080~U+009F까지).
+_ALIAS_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 # ------------------------------------------------------------------ 입력 검사
@@ -138,6 +148,52 @@ def check_tab(tab: str | None) -> str:
     if tab not in TABS:
         raise ValueError(f"tab은 {', '.join(TABS)} 가운데 하나입니다.")
     return tab
+
+
+def check_aliases(values) -> tuple[str, ...]:
+    """
+    별칭 목록(계약 §9-4) → 검색식에 더할 별칭. 모양(글의 배열, 최대 12개)이 틀리면 ValueError — 백엔드가 보내는 모양이 아닙니다. 사유에 별칭을
+    되풀이하지 않습니다(검색어처럼 응답·로그에 남기지 않음).
+
+    하나하나는 앞뒤 공백을 뗀 1~60자이고 제어 글자가 없어야 하며(앞뒤 공백 자리의 줄바꿈·탭도), 맞지 않는 별칭은 400이 아니라 그 별칭만 뺍니다.
+    1~60자는 PATCH의 입력 규칙이고, 그보다 먼저 등록한 줄에는 대상 풀기에서 받아 100자까지 저장한 별칭(별칭이 없으면 200자까지의 이름)이 있을 수
+    있어서입니다 — 별칭은 검색을 넓히는 보조 입력이라 그 하나 때문에 결과 화면 전체를 깨지 않습니다. 공백을 가르는 범위도 백엔드(Java ``strip``)와
+    달라(U+00A0·U+0085 등은 여기서만 공백) 백엔드가 받은 글이 여기서 빈 글이 될 수 있습니다. 같은 글자는 대소문자 무시로 하나(먼저 온 것).
+    """
+    if not isinstance(values, (list, tuple)) or len(values) > ALIASES_MAX or not all(isinstance(value, str) for value in values):
+        raise ValueError(_ALIASES_ERROR)
+    texts = []
+    for value in values:
+        text = value.strip()
+        if text and len(text) <= ALIAS_MAX_CHARS and not _ALIAS_CONTROL.search(value):
+            texts.append(text)
+    return tuple(rules.dedupe_texts(texts))
+
+
+def parse_aliases(raw: str | None) -> tuple[str, ...] | None:
+    """
+    결과 경로의 ``aliases`` 인자(JSON 배열 글 — 쉼표로 나누지 않음) → 검사한 별칭(:func:`check_aliases` — 규칙에 맞지 않는 별칭은 뺌). 인자가 없으면
+    None, 모양이 틀리면(JSON이 아님·글의 배열이 아님·13개 이상·인자 글 8,192자 초과) ValueError.
+    """
+    if raw is None:
+        return None
+    if len(raw) > ALIASES_PARAM_MAX_CHARS:
+        raise ValueError(_ALIASES_ERROR)
+    try:
+        values = json.loads(raw)
+    except (ValueError, RecursionError):        # 깊게 겹친 배열은 RecursionError
+        raise ValueError(_ALIASES_ERROR) from None
+    return check_aliases(values)
+
+
+def with_aliases(target: dict, aliases: tuple[str, ...] | list[str] | None) -> dict:
+    """
+    풀린 대상 + 사용자가 적은 별칭 → 검색식을 만들 대상(새 dict — 하루 캐시의 대상은 바꾸지 않음). 대상의 별칭 뒤에 더하고 같은 글자(대소문자 무시)는
+    하나로, 이름(``name``·``nameKo``·``nameEn``)은 그대로입니다. 어느 별칭을 검색식에 넣을지는 규칙 5(search_rules.edition_terms·match_terms)가 정함.
+    """
+    if not aliases:
+        return target
+    return dict(target, aliases=rules.dedupe_texts([*(target.get("aliases") or []), *aliases]))
 
 
 def _now_iso() -> str:
@@ -600,14 +656,17 @@ def _run(specs: list[_Spec]) -> dict[str, sources.Fetched]:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refresh: bool = False, finviz: bool = True) -> dict:
+def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refresh: bool = False, finviz: bool = True,
+         aliases: tuple[str, ...] | list[str] | None = None) -> dict:
     """
     탭 하나의 결과 — 오늘(KST)부터 2년 안의 줄 전부(최신순), 출처마다 상태 한 줄, 기간별 건수. 화면이 7일·30일·1년·2년으로 자릅니다.
     ``refresh``면 출처 캐시를 건너뜁니다(대상 풀기 캐시는 그대로 — 외부 호출을 끈 요청에서는 캐시만, Finviz의 30분 캐시도 그대로).
     ``finviz``가 거짓이면(백엔드 — 사용자 한 명의 한 시간 한도를 넘음) Finviz를 줄에 넣지 않고 받아 둔 결과만 씁니다.
+    ``aliases``(계약 §9-4 — 그 사용자가 관심 대상에 적은 별칭)는 풀린 대상의 별칭에 합쳐 씁니다(:func:`with_aliases`). 대상을 풀지 못했으면 쓰지 않음.
     """
     prefix, value = parse_key(key)
     tab = check_tab(tab)
+    extra_aliases = check_aliases(aliases) if aliases is not None else ()
     norm = f"{prefix}:{value}"
     now = datetime.now(timezone.utc)
     today = rules.kst_today(now)
@@ -615,7 +674,7 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
     start = rules.window_start(today)
 
     resolved = entity(norm, external=external)
-    target = resolved["entity"]
+    target = with_aliases(resolved["entity"], extra_aliases) if resolved["entity"] is not None else None
     finviz_queued = False
     if target is None:
         specs = _unresolved_specs(norm, tab, owner=owner, external=external, refresh=refresh)

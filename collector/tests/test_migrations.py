@@ -182,3 +182,33 @@ def test_번호_파일이_없으면_아무것도_적용하지_않고_기동을_�
     """V*__*.sql 모양이어도 번호가 아니면 마이그레이션이 아닙니다. 그때도 기동이 멈추면 안 됩니다."""
     _write(tmp_path, "Vnext__draft.sql", "SELECT 1;")
     store.init_schema(str(tmp_path))
+
+
+def test_V38_관심_대상_알림_칸은_있던_줄도_꺼짐이고_다시_실행해도_안전하다(conn):
+    """정보 검색 알림함 연결(계약 §9-5) — search_watches에 notify(기본 꺼짐)·notified_at(처음엔 비어 있음). 백엔드 표라 백엔드만 씁니다."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v38 = next(m for m in found if m.version == 38)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 38])
+    user = conn.execute("INSERT INTO users (email, password_hash, role) VALUES ('v38@example.org', 'x', 'MEMBER') "
+                        "RETURNING id").fetchone()["id"]
+    conn.execute("INSERT INTO search_watches (user_id, entity_key, kind, name) VALUES (%s, 'topic:합성 주제', 'topic', '합성 주제')",
+                 (user,))
+
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 38]) == [38]
+    conn.execute(v38.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v38.sql)
+
+    row = conn.execute("SELECT notify, notified_at FROM search_watches").fetchone()
+    assert row == {"notify": False, "notified_at": None}, "있던 관심 대상의 알림은 꺼짐"
+    columns = {r["column_name"]: r for r in conn.execute(
+        "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = 'search_watches' AND column_name IN ('notify', 'notified_at')")}
+    assert columns["notify"]["data_type"] == "boolean" and columns["notify"]["is_nullable"] == "NO"
+    assert columns["notify"]["column_default"] == "false"
+    assert columns["notified_at"]["data_type"] == "timestamp with time zone" and columns["notified_at"]["is_nullable"] == "YES"
+
+    conn.execute("INSERT INTO search_watches (user_id, entity_key, kind, name) VALUES (%s, 'topic:합성 둘', 'topic', '합성 둘')",
+                 (user,))
+    assert conn.execute("SELECT notify FROM search_watches WHERE entity_key = 'topic:합성 둘'").fetchone()["notify"] is False
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        conn.execute("UPDATE search_watches SET notify = NULL")
