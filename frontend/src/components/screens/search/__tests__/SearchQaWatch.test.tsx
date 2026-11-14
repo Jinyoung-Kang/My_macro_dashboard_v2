@@ -46,9 +46,10 @@ describe("QA-418 관심 대상 목록 줄 — 이름이 배지·알림 단추에
     const row = within(list).getByRole("button", { name: "합성 반도체 공급주제화제새 글 10" });
     const name = within(row).getByText("합성 반도체 공급");
     expect(name.getAttribute("title")).toBe("합성 반도체 공급");
-    // 한 줄 말줄임이 아니라 두 줄까지 줄바꿈(긴 낱말도 칸 안에서 끊음)
+    // 한 줄 말줄임이 아니라 두 줄까지 줄바꿈 — 한국어는 낱말 사이에서('공 / 급'으로 끊지 않음), 칸보다 긴 낱말만 칸 안에서 끊음
     expect(name.className.split(/\s+/)).not.toContain("truncate");
     expect(name.className).toMatch(/(^|\s)line-clamp-2(\s|$)/);
+    expect(name.className).toMatch(/(^|\s)break-keep(\s|$)/);
     expect(name.className).toMatch(/wrap-anywhere/);
 
     const nameColumn = name.parentElement!;
