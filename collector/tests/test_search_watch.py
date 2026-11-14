@@ -83,7 +83,7 @@ class External:
         self.calls.append(("google", lang, tuple(terms), after))
         return self.google_results[lang]
 
-    def bing(self, terms_by_lang, *, session=None, before_retry=None):
+    def bing(self, terms_by_lang, *, session=None, before_retry=None, ticker=None):
         (lang, terms), = terms_by_lang.items()
         self.calls.append(("bing", lang, tuple(terms), None))
         return self.bing_results[lang]
@@ -372,7 +372,7 @@ def test_Bing의_두_번째_구문도_예산에서_한_건을_쓰고_간격을_�
     _watch(store, _user(store, "a@example.org"), ENTITY)
     allowed = []
 
-    def bing(terms_by_lang, *, session=None, before_retry=None):
+    def bing(terms_by_lang, *, session=None, before_retry=None, ticker=None):
         (lang, terms), = terms_by_lang.items()
         world.calls.append(("bing", lang, tuple(terms), None))
         allowed.append(before_retry())
@@ -394,7 +394,7 @@ def test_Bing의_두_번째_구문은_예산이_없으면_보내지_않는다(st
                      (rules.kst_today(NOW), task.DAILY_BUDGETS["www.bing.com"] - 1))
     allowed = []
 
-    def bing(terms_by_lang, *, session=None, before_retry=None):
+    def bing(terms_by_lang, *, session=None, before_retry=None, ticker=None):
         allowed.append(before_retry())
         return sources.Fetched(items=[])
 

@@ -356,7 +356,9 @@ def _news_specs(target: dict, *, owner: bool, external: bool, after: str, refres
             specs.append(_Spec(source, status="skipped",
                                message=f"{sources.EDITION_LABELS[lang]} 이름이 없어 묻지 않음"))
     if ko or en:
-        specs.append(_remote("bing", ("bing", tuple(ko), tuple(en)), lambda: sources.bing({"ko": ko, "en": en}), external, refresh))
+        us_ticker = ids.get("ticker") if target.get("kind") == "company" and ids.get("market") == "us" else None
+        specs.append(_remote("bing", ("bing", tuple(ko), tuple(en), us_ticker),
+                             lambda: sources.bing({"ko": ko, "en": en}, ticker=us_ticker), external, refresh))
     else:
         specs.append(_Spec("bing", status="skipped", message="검색할 이름이 없음"))
     if target.get("kind") == "company" and ids.get("market") == "us" and ids.get("ticker"):

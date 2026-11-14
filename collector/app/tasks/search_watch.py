@@ -20,7 +20,7 @@ polite 그룹(비주기 — 운영 서버에서만) — 정보 검색의 관심 
   1. 저장본 대조(외부 호출 0건): 새 피드 묶음(90일)·사건 뉴스(7일)·속보·수집 글에서 별칭이 제목·요약(수집 글은 본문까지)에 든 글. 영문은 단어 경계,
      한글은 포함, 네 글자 미만 별칭은 쓰지 않음(대상 이름은 짧아도 씀 — 정보 검색 규칙 5와 같은 대조어 rules.match_terms). 등록 표에는 이름 하나와
      별칭만 있어, 등록 때의 이름 둘(한·영)은 :func:`watch_entity`가 별칭 맨 앞에서 되살립니다(즉석 검색과 같은 검색어).
-  2. 바깥 질의: 구글 뉴스 RSS(한국어·영어 판)·Bing 뉴스 RSS(판마다 구문 하나, 0건이면 다음 구문으로 한 번 더 — sources.bing) — 단계 2의
+  2. 바깥 질의: 구글 뉴스 RSS(한국어·영어 판)·Bing 뉴스 RSS(판마다 검색식 하나 — 한 단어 이름뿐인 미국 종목은 영어 판에 티커를 붙임, 0건이면 다음 검색식으로 한 번 더 — sources.bing) — 단계 2의
      함수(services/search_sources)와 계약 4절의 검색식, 공용 세션.
      요청마다(Bing의 두 번째 구문 포함) 호스트 하루 예산(표 fetch_budgets, purpose ``watch`` — news.google.com 600·www.bing.com 600, KST 날짜)에서 한 건을 쓰고, 예산이
      없으면 그 질의를 보내지 않습니다(그 대상은 저장본 대조만 하고 다음 시각을 잡음). 한 번 깰 때의 바깥 요청은 차례로, 사이 2~5초(무작위) +
@@ -223,15 +223,17 @@ def _collect(target: dict, now: datetime, excludes: rules.Excludes, pace: dict) 
         sent["requests"] += 1
         return True
 
+    target_ids = target.get("ids") or {}
+    us_ticker = target_ids.get("ticker") if target.get("kind") == "company" and target_ids.get("market") == "us" else None
     queries = (
         ("bing", BING_HOST, ko, lambda: sources.bing({"ko": ko}, before_retry=lambda: take(BING_HOST))),
-        ("bing", BING_HOST, en, lambda: sources.bing({"en": en}, before_retry=lambda: take(BING_HOST))),
+        ("bing", BING_HOST, en, lambda: sources.bing({"en": en}, before_retry=lambda: take(BING_HOST), ticker=us_ticker)),
         ("google_ko", GOOGLE_HOST, ko, lambda: sources.google(ko, "ko", after=window_from)),
         ("google_en", GOOGLE_HOST, en, lambda: sources.google(en, "en", after=window_from)),
     )
     for source, host, edition, call in queries:
         # 보낼 질의가 없으면(따옴표·공백뿐인 주제 등) 예산·간격·요청 수를 쓰지 않습니다.
-        askable = sources.bing_phrases(edition) if host == BING_HOST else rules.build_query(edition)
+        askable = sources.bing_queries(edition) if host == BING_HOST else rules.build_query(edition)
         if not askable or not take(host):
             continue
         result = call()

@@ -70,6 +70,7 @@ class Stubs:
 
     def __init__(self, monkeypatch):
         self.calls: list[str] = []
+        self.bing_tickers: list[str | None] = []
         stored = _item("SynthChip unveils new accelerator", "https://www.example.org/a1", source="event_news", kind="headline")
         self.results = {
             "google_ko": sources.Fetched(items=[
@@ -101,7 +102,7 @@ class Stubs:
                                                   ago=timedelta(days=40))]),
         }
         monkeypatch.setattr(sources, "google", lambda terms, lang, after: self._hit(f"google_{lang}"))
-        monkeypatch.setattr(sources, "bing", lambda terms_by_lang: self._hit("bing"))
+        monkeypatch.setattr(sources, "bing", lambda terms_by_lang, ticker=None: self.bing_call(terms_by_lang, ticker))
         monkeypatch.setattr(sources, "yahoo_news", lambda ticker: self._hit("yahoo"))
         monkeypatch.setattr(sources, "infomax", lambda terms, after: self._hit("infomax"))
         monkeypatch.setattr(sources, "naver", lambda code: self._hit("naver"))
@@ -121,6 +122,10 @@ class Stubs:
     def _hit(self, source):
         self.calls.append(source)
         return self.results[source]
+
+    def bing_call(self, terms_by_lang, ticker):
+        self.bing_tickers.append(ticker)
+        return self._hit("bing")
 
 
 def _row(out, source):
@@ -285,11 +290,17 @@ def test_공시·리서치_탭은_빈_목록과_later(monkeypatch):
         assert out["rangeCounts"] == {"7d": 0, "30d": 0, "1y": 0, "2y": 0} and out["olderOnlyLatest"] is None
 
 
+def test_Bing에는_미국_종목의_티커만_넘긴다(monkeypatch):
+    stubs = Stubs(monkeypatch)
+    search.feed("us:SCHP", "news", owner=False, external=True)
+    assert stubs.bing_tickers == ["SCHP"]
+
+
 def test_늦은_출처는_상한_시각에_시간_초과(monkeypatch):
     stubs = Stubs(monkeypatch)
     monkeypatch.setattr(search, "SOURCE_DEADLINE", 0.3)
 
-    def slow(terms_by_lang):
+    def slow(terms_by_lang, ticker=None):
         time.sleep(1.0)
         return stubs.results["bing"]
 

@@ -316,19 +316,24 @@ def infomax(terms: list[str], *, after: str | None, session=None) -> Fetched:
 BING_PHRASES_PER_EDITION = 2     # 판마다 묻는 구문 수 상한 — 첫 구문이 0건일 때만 다음 구문
 
 
-def bing_phrases(terms: list[str]) -> list[str]:
-    """
-    Bing 한 판에서 차례로 물을 구문(최대 :data:`BING_PHRASES_PER_EDITION`개) — 여러 단어 구문 먼저, 같으면 원래 순서. 구문 안의 따옴표는 지우고
-    공백은 하나로, 대소문자만 다른 구문은 한 번. 서버 실측(2026-11-14): Bing 뉴스 RSS는 ``"A" OR "B"`` 모양과 아주 흔한 한 단어(``NVIDIA``)에
-    0건을 주고, 여러 단어 구문(``"Nvidia Corp"``)·한글 이름(``"삼성전자"``)에는 줍니다.
-    """
-    cleaned = rules.dedupe_texts(" ".join(term.replace('"', "").split()) for term in terms if term)
-    cleaned.sort(key=lambda phrase: len(phrase.split()) < 2)
-    return cleaned[:BING_PHRASES_PER_EDITION]
+_TICKER = re.compile(r"[A-Z0-9][A-Z0-9.\-]{0,9}")
 
 
-def _bing_once(phrase: str, lang: str, session) -> tuple[list[dict], str | None]:
-    params = {"q": f'"{phrase}"', "format": "rss"}
+def bing_queries(terms: list[str], *, ticker: str | None = None) -> list[str]:
+    """
+    Bing 한 판에서 차례로 물을 검색식(최대 :data:`BING_PHRASES_PER_EDITION`개) — 따옴표 구문 하나씩, 여러 단어 구문 먼저(같으면 원래 순서). 구문
+    안의 따옴표는 지우고 공백은 하나로, 대소문자만 다른 구문은 한 번. 서버 실측(2026-11-14): Bing 뉴스 RSS는 ``"A" OR "B"`` 모양과 아주 흔한 한
+    단어(``"NVIDIA"``)에 0건을 주고, 여러 단어 구문(``"Nvidia Corp"``)·한글 이름(``"삼성전자"``)·한 단어 + 티커(``"NVIDIA" NVDA`` 9건)에는 줍니다.
+    ``ticker``(미국 종목의 영어 판만)가 있으면 한 단어 구문은 ``"<이름>" <티커>``로 묻습니다 — 티커는 따옴표 밖 낱말이라 검색을 좁힙니다.
+    """
+    phrases = rules.dedupe_texts(" ".join(term.replace('"', "").split()) for term in terms if term)
+    phrases.sort(key=lambda phrase: len(phrase.split()) < 2)
+    narrow = f" {ticker}" if ticker and _TICKER.fullmatch(ticker) else ""
+    return [f'"{phrase}"' + (narrow if len(phrase.split()) < 2 else "") for phrase in phrases][:BING_PHRASES_PER_EDITION]
+
+
+def _bing_once(query: str, lang: str, session) -> tuple[list[dict], str | None]:
+    params = {"q": query, "format": "rss"}
     params.update(BING_EDITIONS[lang])
     try:
         res = _session(session).get(BING_NEWS_RSS, params=params, timeout=FETCH_TIMEOUT)
@@ -339,24 +344,25 @@ def _bing_once(phrase: str, lang: str, session) -> tuple[list[dict], str | None]
     return parse_bing(res.content, res.headers.get("Content-Type"), lang=lang), None
 
 
-def bing(terms_by_lang: dict[str, list[str]], *, session=None, before_retry: Callable[[], bool] | None = None) -> Fetched:
+def bing(terms_by_lang: dict[str, list[str]], *, session=None, before_retry: Callable[[], bool] | None = None,
+         ticker: str | None = None) -> Fetched:
     """
-    Bing 뉴스 RSS — 검색어가 있는 판(ko·en)마다 구문 하나(:func:`bing_phrases`). 받은 글이 0건이면 다음 구문으로 한 번 더 묻습니다(실패하면 다시
-    묻지 않음). ``before_retry``가 있으면 두 번째 구문 앞에 부르고, 거짓이면 묻지 않습니다(관심 대상 수집의 하루 예산·요청 간격). 한 판만 실패하면
-    받은 것과 안내, 모두 실패하면 오류.
+    Bing 뉴스 RSS — 검색어가 있는 판(ko·en)마다 검색식 하나(:func:`bing_queries` — ``ticker``는 영어 판에만). 받은 글이 0건이면 다음 검색식으로
+    한 번 더 묻습니다(실패하면 다시 묻지 않음). ``before_retry``가 있으면 두 번째 검색식 앞에 부르고, 거짓이면 묻지 않습니다(관심 대상 수집의 하루
+    예산·요청 간격). 한 판만 실패하면 받은 것과 안내, 모두 실패하면 오류.
     """
     items: list[dict] = []
     failures: list[str] = []
     asked = 0
     for lang in ("ko", "en"):
-        phrases = bing_phrases(terms_by_lang.get(lang) or [])
-        if not phrases:
+        queries = bing_queries(terms_by_lang.get(lang) or [], ticker=ticker if lang == "en" else None)
+        if not queries:
             continue
         asked += 1
-        for index, phrase in enumerate(phrases):
+        for index, query in enumerate(queries):
             if index and before_retry is not None and not before_retry():
                 break
-            got, failure = _bing_once(phrase, lang, session)
+            got, failure = _bing_once(query, lang, session)
             if failure:
                 failures.append(failure)
                 break

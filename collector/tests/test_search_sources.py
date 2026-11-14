@@ -146,10 +146,19 @@ EMPTY_RSS = b"""<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channe
 
 def test_Bing_구문은_판마다_하나씩_여러_단어_이름_먼저_최대_2개():
     """서버 실측(2026-11-14): Bing 뉴스 RSS는 '"A" OR "B"' 모양과 아주 흔한 한 단어(NVIDIA)에 0건 — 여러 단어 구문·한글 이름에는 줌."""
-    assert sources.bing_phrases(["NVIDIA", "Nvidia Corp", "NVIDIA Corporation"]) == ["Nvidia Corp", "NVIDIA Corporation"]
-    assert sources.bing_phrases(["엔비디아"]) == ["엔비디아"]
-    assert sources.bing_phrases(['  Ken   "Griffin"  ', "ken griffin", "Griffin"]) == ["Ken Griffin", "Griffin"]
-    assert sources.bing_phrases(["", '""', "  "]) == []
+    assert sources.bing_queries(["NVIDIA", "Nvidia Corp", "NVIDIA Corporation"]) == ['"Nvidia Corp"', '"NVIDIA Corporation"']
+    assert sources.bing_queries(["엔비디아"]) == ['"엔비디아"']
+    assert sources.bing_queries(['  Ken   "Griffin"  ', "ken griffin", "Griffin"]) == ['"Ken Griffin"', '"Griffin"']
+    assert sources.bing_queries(["", '""', "  "]) == []
+
+
+def test_Bing_한_단어_이름뿐인_미국_종목은_티커를_붙여_먼저_묻는다():
+    """서버 실측(2026-11-14): '"NVIDIA"'는 0건, '"NVIDIA" NVDA' 9건·'"Apple" AAPL' 12건 — 티커는 검색을 넓히지 않고 좁힘(따옴표 밖 낱말)."""
+    assert sources.bing_queries(["NVIDIA"], ticker="NVDA") == ['"NVIDIA" NVDA']
+    assert sources.bing_queries(["NVIDIA", "NVIDIA Corporation"], ticker="NVDA") == ['"NVIDIA Corporation"', '"NVIDIA" NVDA']
+    assert sources.bing_queries(["NVIDIA"], ticker="nv da") == ['"NVIDIA"'], "티커 모양이 아니면 붙이지 않음"
+    assert sources.bing_queries(["NVIDIA"], ticker="BRK.B") == ['"NVIDIA" BRK.B']
+    assert sources.bing_queries([], ticker="NVDA") == []
 
 
 def test_Bing은_구문_하나씩_묻고_0건이면_다음_구문으로_한_번_더(monkeypatch):
@@ -159,6 +168,12 @@ def test_Bing은_구문_하나씩_묻고_0건이면_다음_구문으로_한_번_
     assert queries == [("ko-KR", '"삼성전자"'), ("en-US", '"Samsung Electronics"'), ("en-US", '"Samsung"')]
     assert all(" OR " not in query for _, query in queries)
     assert len(fetched.items) == 2 and fetched.error is None, "한국어 판 0건(구문 하나뿐) + 영어 판 두 번째 구문"
+
+
+def test_Bing은_영어_판에만_티커를_붙인다():
+    session = FakeSession([(200, BING_RSS)])
+    sources.bing({"ko": ["엔비디아"], "en": ["NVIDIA"]}, session=session, ticker="NVDA")
+    assert [call["params"]["q"] for call in session.calls] == ['"엔비디아"', '"NVIDIA" NVDA']
 
 
 def test_Bing은_받은_글이_있거나_실패하면_다음_구문을_묻지_않는다():
