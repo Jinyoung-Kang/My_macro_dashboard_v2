@@ -416,5 +416,11 @@ def cadences() -> list[dict]:
                 f"장 밖 {NAVER_OFF_CADENCE.low_minutes:.0f}~{NAVER_OFF_CADENCE.high_minutes:.0f}분 · "
                 f"쉬는 날 {NAVER_HOLIDAY_CADENCE.low_minutes:.0f}~{NAVER_HOLIDAY_CADENCE.high_minutes:.0f}분"),
             row(KRX_TASK, KRX_CADENCE, "거래일 18:30 뒤 그날 것을 한 번 — 이미 받은 날은 외부 호출 0회")]
+    from . import search_watch
+
+    out.append(row(search_watch.TASK_NAME, search_watch.CADENCE,
+                   f"깨날 때마다 때가 된 관심 대상 {search_watch.ENTITIES_PER_WAKE}곳까지 — 대상마다 "
+                   f"{search_watch.ENTITY_MINUTES[0] / 60:.0f}~{search_watch.ENTITY_MINUTES[1] / 60:.0f}시간에 한 번, 구글·Bing 뉴스는 호스트 하루 예산 "
+                   + "·".join(f"{host} {limit}" for host, limit in search_watch.DAILY_BUDGETS.items())))
     return out
 

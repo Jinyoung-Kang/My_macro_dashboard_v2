@@ -95,6 +95,9 @@ SNAP_NEWS_STATUS = "news.headlines.status"
 # 모의 매매 한국 책 Claude 계좌 패킷 11b_events(v2 2단계 B9)의 한국 사건 헤드라인 수집 상태 — news.headlines.status와 같은 칸 + 피드별
 # 시각 형식(timeFormat)·형식이 다른 시각 수(skippedBadTime). 헤드라인 자체는 observations kr_news_headline에 있습니다.
 SNAP_KR_NEWS_STATUS = "kr.news.headlines.status"
+# 정보 검색의 새 피드 묶음(ADR 0041 결정 8, 계약 §6-1)의 수집 상태 — news.headlines.status와 같은 피드별 줄(tasks/news_feeds 모듈 설명 '상태')과
+# 90일 보관 건수. 글 자체는 observations search_feed_headline에 있습니다. 모의 매매 패킷은 읽지 않습니다.
+SNAP_SEARCH_FEEDS_STATUS = "search.feeds.status"
 # 모의 매매 Claude 계좌 패킷 8b_fundamentals의 EPS 서프라이즈(2단계 C)의 수집 상태 — 종목별 받은 시각·저장 행 수·최신 발표일·오류와
 # 실행 집계(universe·covered·withEstimate4·fetchedThisRun·failedThisRun). 분기 값 자체는 observations us.earnings_surprise에 있습니다.
 SNAP_EARNINGS_SURPRISE_STATUS = "us.earnings_surprise.status"
@@ -199,13 +202,19 @@ OBS_NEWS_HEADLINE = "news_headline"
 # 피드는 null), publishedDate, timePrecision(second·minute·date), knownAt, fetchedAt}. knownAt = '알 수 있는 시각' — 시각이 있으면 발행 시각,
 # 날짜만이면 min(처음 받은 시각, 그 KST 날짜 다음 자정)(명세 §4-11, 룩어헤드 없음). 7일이 지난 행은 태스크가 지웁니다.
 OBS_KR_NEWS_HEADLINE = "kr_news_headline"
+# 정보 검색의 새 피드 묶음(ADR 0041 결정 8, 계약 §6-1 — 보도자료·경제지 RSS 12개, services/search_feeds). 사건 뉴스 두 데이터셋과 따로이고
+# **모의 매매 패킷은 읽지 않습니다**(백엔드 구조 시험). entity = 같은 글 키(원문 주소면 info_text.item_id, 없으면 제목 앞 24자 — 정보 검색 규칙 4),
+# obs_date = 작성 시각(없으면 처음 받은 시각)의 UTC 날짜, payload {title, summary(피드의 description·summary만, 300자 — 본문 칸 안 씀), url,
+# publisher(피드 설정의 매체 이름), publisherDomain, feed, publishedAt(없으면 null), fetchedAt(처음 받은 시각), timeBasis(published·fetched),
+# lang}. 90일 안에 이미 있는 글은 다시 넣지 않고, 90일이 지난 행은 태스크가 지웁니다. 2년 밖·중국어 제목은 넣지 않습니다.
+OBS_SEARCH_FEED_HEADLINE = "search_feed_headline"
 # 모의 매매 어닝 서프라이즈(yfinance quoteSummary earnings.earningsChart, 2단계 C·D36). entity = 티커, obs_date = 실제 발표 시각
 # (reportedDate)의 미국 동부 날짜 — 백엔드가 obs_date ≤ 기준일로 시점(PIT)을 자릅니다. payload {periodEnd, actual, estimate,
 # surprisePct, currency, smallBase, reportedAt, source}. (날짜, 티커)마다 upsert(나중에 받은 값이 추정치를 채우거나 고침), 지우지 않음.
 OBS_US_EARNINGS_SURPRISE = "us.earnings_surprise"
 
 # 기간으로 지워도 되는 누적 데이터셋은 태스크가 스스로 보존 기한을 두는 fsc_price·fsc_etf_price·toss_stock_flow·kr_paper_universe·kr_paper_flow(각 400일)·
-# news_headline·kr_news_headline(7일)뿐입니다(QA-070).
+# news_headline·kr_news_headline(7일)·search_feed_headline(90일 — ADR 0041)뿐입니다(QA-070).
 # radar_ranking(다시 받을 수 없음, ADR 0005)·fred·fed_liquidity(증분 적재, 판정 성과가 전 구간을 씀, ADR 0009)·
 # krx_futures(원천이 최근 40일만 줌)·fsc_market(보충은 최근 7일만 함)·equity_close(모의 매매 트랙레코드가 10년 창을 통째로 쓰고,
 # 상장폐지되면 야후가 그 종목의 과거 종가를 더 주지 않음)·us.fundamentals(사실은 공시로 쌓이기만 하고, 그 시점 값을 고르려면

@@ -5,7 +5,7 @@ tests/test_table_ownership.py
 백엔드 쪽은 ArchitectureRulesTest가 "백엔드는 수집기 테이블에 쓰지 않는다"를 검사합니다. 여기는 그 반대입니다.
 수집기가 읽기만 하는 백엔드 테이블은 alert_rules(관심 종목 코드)·paper_positions·paper_books(장중 평가 범위 — ADR 0020)·
 paper_orders(Claude 계좌2 1분봉 범위 — ADR 0022)·paper_checkpoints(계좌2 장중 확인 감시 범위 — 단계 2, ADR 0022)·
-paper_intraday_plans(자유 시점 판의 장중 판단 감시 범위 — ADR 0027)입니다.
+paper_intraday_plans(자유 시점 판의 장중 판단 감시 범위 — ADR 0027)·search_watches·search_media_excludes(정보 검색 — ADR 0041)입니다.
 """
 from __future__ import annotations
 
@@ -49,6 +49,9 @@ BACKEND_TABLES = (
     "manual_accounts", "manual_ledger", "manual_instructions", "manual_sessions", "manual_stop_instructions",
     # 잔고 구조(V31, ADR 0034)도 같습니다.
     "manual_balance", "manual_positions", "manual_trades",
+    # 정보 검색의 관심 대상·사용자가 더한 제외 매체(V37, ADR 0041) — 백엔드 feature/search만 씁니다. 수집기는 읽기만 합니다
+    # (store.search_watch_targets·search_media_excludes — 관심 대상 정기 수집과 매체 제외).
+    "search_watches", "search_media_excludes",
 )
 WRITE = re.compile(
     r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(" + "|".join(BACKEND_TABLES) + r")\b"
@@ -144,3 +147,43 @@ def test_계좌2_감시_범위는_백엔드_표를_읽기만_한다():
     assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", plans)
     assert "paper_intraday_plans" in plans
     assert not re.search(r"(?i)\b(SELECT|INSERT|UPDATE|DELETE|TRUNCATE)\s", inspect.getsource(store.watch_plans))
+
+
+# 정보 검색(ADR 0041 단계 3) — 수집기 표 search_watch_items(관심 대상이 모은 글)·fetch_budgets(검색·관심 대상 호스트 예산)는 store.py만 쓰고,
+# 새 피드 묶음 데이터셋은 tasks/search_feeds.py만 씁니다(읽기는 어디서든 — 정보 검색·관심 대상 대조).
+SEARCH_TABLE_WRITE = re.compile(r"(?i)(INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE)\s+(search_watch_items|fetch_budgets)\b")
+SEARCH_WRITERS = {"OBS_SEARCH_FEED_HEADLINE": "tasks/search_feeds.py", "SNAP_SEARCH_FEEDS_STATUS": "tasks/search_feeds.py"}
+SEARCH_DATASET_WRITE = re.compile(
+    r"\b(put_snapshot|update_snapshot_payload|put_observations|put_entity_observations|replace_observations|insert_new_observations|"
+    r"add_headline_feeds|put_timeseries|delete_observations_before)\(\s*catalog\.(" + "|".join(SEARCH_WRITERS) + r")\b"
+)
+
+
+def test_정보_검색_수집기_표는_store_py만_쓴다():
+    writers = {}
+    for path in APP.rglob("*.py"):
+        for match in SEARCH_TABLE_WRITE.finditer(path.read_text(encoding="utf-8")):
+            writers.setdefault(match.group(2).lower(), set()).add(path.relative_to(APP).as_posix())
+    assert writers == {"search_watch_items": {"store.py"}, "fetch_budgets": {"store.py"}}
+
+
+def test_새_피드_묶음_데이터셋은_search_feeds_태스크만_쓴다():
+    writers = {}
+    for path in APP.rglob("*.py"):
+        for match in SEARCH_DATASET_WRITE.finditer(path.read_text(encoding="utf-8")):
+            writers.setdefault(match.group(2), set()).add(path.relative_to(APP).as_posix())
+    assert writers == {name: {module} for name, module in SEARCH_WRITERS.items()}
+
+
+def test_관심_대상_수집은_백엔드_표를_store_함수로만_읽는다():
+    """tasks/search_watch.py에는 SQL이 없고, 백엔드 표를 읽는 store 함수에는 쓰기 문장이 없습니다."""
+    import inspect
+
+    from app import store
+
+    code = (APP / "tasks" / "search_watch.py").read_text(encoding="utf-8").split('"""', 2)[2]     # 모듈 설명 뒤
+    assert ".execute(" not in code and "connection(" not in code
+    assert [name for name in BACKEND_TABLES if re.search(rf"\b{name}\b", code)] == []
+    for reader in (store.search_watch_targets, store.search_media_excludes):
+        source = inspect.getsource(reader)
+        assert not re.search(r"(?i)\b(INSERT|UPDATE|DELETE|TRUNCATE)\b", source), reader.__name__

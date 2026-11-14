@@ -97,6 +97,17 @@ class DatasetsParityTest {
         assertThat(constant(source, "SNAP_KR_NEWS_STATUS")).isEqualTo(Datasets.SNAP_KR_NEWS_STATUS);
         assertThat(constant(source, "OBS_US_EARNINGS_SURPRISE")).isEqualTo(Datasets.OBS_US_EARNINGS_SURPRISE);
         assertThat(constant(source, "SNAP_EARNINGS_SURPRISE_STATUS")).isEqualTo(Datasets.SNAP_EARNINGS_SURPRISE_STATUS);
+        assertThat(constant(source, "OBS_SEARCH_FEED_HEADLINE")).isEqualTo(Datasets.OBS_SEARCH_FEED_HEADLINE);
+        assertThat(constant(source, "SNAP_SEARCH_FEEDS_STATUS")).isEqualTo(Datasets.SNAP_SEARCH_FEEDS_STATUS);
+    }
+
+    @Test
+    @DisplayName("정보 검색 새 피드 묶음의 이름이 계약(docs/specs/2026-11-14-info-search-contract.md §6-1)과 같다 — 사건 뉴스 데이터셋과 다른 이름")
+    void searchFeedNamesFollowContract() {
+        assertThat(Datasets.OBS_SEARCH_FEED_HEADLINE).isEqualTo("search_feed_headline")
+                .isNotIn(Datasets.OBS_NEWS_HEADLINE, Datasets.OBS_KR_NEWS_HEADLINE);
+        assertThat(Datasets.SNAP_SEARCH_FEEDS_STATUS).isEqualTo("search.feeds.status")
+                .isNotIn(Datasets.SNAP_NEWS_STATUS, Datasets.SNAP_KR_NEWS_STATUS);
     }
 
     @Test

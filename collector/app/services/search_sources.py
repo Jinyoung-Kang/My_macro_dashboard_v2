@@ -126,13 +126,15 @@ def _hit(key: tuple) -> Fetched | None:
     return Fetched(items=list(value.items), error=value.error, note=value.note, cached=True)
 
 
-def cached(key: tuple, fetch: Callable[[], Fetched], *, external: bool = True) -> Fetched:
+def cached(key: tuple, fetch: Callable[[], Fetched], *, external: bool = True, refresh: bool = False) -> Fetched:
     """
     출처별 캐시 — 성공 SOURCE_TTL, 실패(error) FAILURE_TTL. ``external``이 거짓이면 캐시에 있는 것만 돌려주고 없으면 부르지 않고 ``offline``.
     캐시에서 온 결과는 ``cached=True``인 사본입니다. 같은 키를 이미 부르는 중이면 다시 보내지 않고 그 결과를 기다립니다 — 출처가 응답하지
     않는 동안 요청마다 같은 호출이 쌓이지 않게(기다림도 INFLIGHT_WAIT까지).
+    ``refresh``(화면의 '지금 새로 받기' — 계약 §6-4, 사용자당 빈도는 백엔드가 막음)면 캐시를 건너뛰고 부른 뒤 그 결과로 캐시를 고칩니다.
+    외부 호출을 끈 요청에서는 건너뛰지 않습니다(캐시만).
     """
-    hit = _hit(key)
+    hit = None if refresh and external else _hit(key)
     if hit is not None:
         return hit
     if not external:
@@ -311,26 +313,56 @@ def infomax(terms: list[str], *, after: str | None, session=None) -> Fetched:
     return Fetched(items=parse_google(content, content_type, source="infomax", lang="ko"))
 
 
-def bing(terms_by_lang: dict[str, list[str]], *, session=None) -> Fetched:
-    """Bing 뉴스 RSS — 검색어가 있는 판(ko·en)마다 한 번. 한 판만 실패하면 받은 것과 안내, 모두 실패하면 오류."""
+BING_PHRASES_PER_EDITION = 2     # 판마다 묻는 구문 수 상한 — 첫 구문이 0건일 때만 다음 구문
+
+
+def bing_phrases(terms: list[str]) -> list[str]:
+    """
+    Bing 한 판에서 차례로 물을 구문(최대 :data:`BING_PHRASES_PER_EDITION`개) — 여러 단어 구문 먼저, 같으면 원래 순서. 구문 안의 따옴표는 지우고
+    공백은 하나로, 대소문자만 다른 구문은 한 번. 서버 실측(2026-11-14): Bing 뉴스 RSS는 ``"A" OR "B"`` 모양과 아주 흔한 한 단어(``NVIDIA``)에
+    0건을 주고, 여러 단어 구문(``"Nvidia Corp"``)·한글 이름(``"삼성전자"``)에는 줍니다.
+    """
+    cleaned = rules.dedupe_texts(" ".join(term.replace('"', "").split()) for term in terms if term)
+    cleaned.sort(key=lambda phrase: len(phrase.split()) < 2)
+    return cleaned[:BING_PHRASES_PER_EDITION]
+
+
+def _bing_once(phrase: str, lang: str, session) -> tuple[list[dict], str | None]:
+    params = {"q": f'"{phrase}"', "format": "rss"}
+    params.update(BING_EDITIONS[lang])
+    try:
+        res = _session(session).get(BING_NEWS_RSS, params=params, timeout=FETCH_TIMEOUT)
+    except Exception as exc:  # noqa: BLE001
+        return [], f"{EDITION_LABELS[lang]} 판 {safe_reason(exc, http.host_of(BING_NEWS_RSS))}"
+    if res.status_code != 200:
+        return [], f"{EDITION_LABELS[lang]} 판 {_status_reason(BING_NEWS_RSS, res.status_code)}"
+    return parse_bing(res.content, res.headers.get("Content-Type"), lang=lang), None
+
+
+def bing(terms_by_lang: dict[str, list[str]], *, session=None, before_retry: Callable[[], bool] | None = None) -> Fetched:
+    """
+    Bing 뉴스 RSS — 검색어가 있는 판(ko·en)마다 구문 하나(:func:`bing_phrases`). 받은 글이 0건이면 다음 구문으로 한 번 더 묻습니다(실패하면 다시
+    묻지 않음). ``before_retry``가 있으면 두 번째 구문 앞에 부르고, 거짓이면 묻지 않습니다(관심 대상 수집의 하루 예산·요청 간격). 한 판만 실패하면
+    받은 것과 안내, 모두 실패하면 오류.
+    """
     items: list[dict] = []
     failures: list[str] = []
     asked = 0
     for lang in ("ko", "en"):
-        query = rules.build_query(terms_by_lang.get(lang) or [])
-        if query is None:
+        phrases = bing_phrases(terms_by_lang.get(lang) or [])
+        if not phrases:
             continue
         asked += 1
-        params = {"q": query, "format": "rss"}
-        params.update(BING_EDITIONS[lang])
-        try:
-            res = _session(session).get(BING_NEWS_RSS, params=params, timeout=FETCH_TIMEOUT)
-            if res.status_code != 200:
-                failures.append(f"{EDITION_LABELS[lang]} 판 {_status_reason(BING_NEWS_RSS, res.status_code)}")
-                continue
-            items.extend(parse_bing(res.content, res.headers.get("Content-Type"), lang=lang))
-        except Exception as exc:  # noqa: BLE001
-            failures.append(f"{EDITION_LABELS[lang]} 판 {safe_reason(exc, http.host_of(BING_NEWS_RSS))}")
+        for index, phrase in enumerate(phrases):
+            if index and before_retry is not None and not before_retry():
+                break
+            got, failure = _bing_once(phrase, lang, session)
+            if failure:
+                failures.append(failure)
+                break
+            if got:
+                items.extend(got)
+                break
     if asked and len(failures) == asked:
         return Fetched(error="; ".join(failures))
     return Fetched(items=items, note="; ".join(failures) or None)

@@ -7,7 +7,15 @@ app/services/search.py
   맨 끝에 언제나 ``topic:<q>``.
 - ``entity``: 대상 풀기(하루 캐시, 실패가 섞이면 60초) — search_entities.build.
 - ``feed``: 탭 하나의 결과(2년 묶음 한 번에) — 출처를 작은 스레드 풀로 함께 부르고(출처마다 캐시 — 성공 15분·실패 60초) 규칙(search_rules)을
-  적용해 합칩니다. 공시·리서치 탭은 다음 단계라 빈 목록과 상태 ``later``입니다.
+  적용해 합칩니다. 공시·리서치 탭은 다음 단계라 빈 목록과 상태 ``later``입니다. 단계 3에서 저장본 출처 둘을 더함 — 새 피드 묶음(``feeds``,
+  보도자료·경제지 — 회원에게도)과 관심 대상이 모은 글(``watch``). ``refresh``면 출처 캐시를 건너뜀('지금 새로 받기' — 빈도는 백엔드가 막음).
+  모은 글 가운데 수집 글·거장 견해에서 온 줄은 글이 섞이는 탭(타임라인)에만 두고(뉴스 탭에는 넣지 않음 — 계약 §3-4), 출처 상태 줄의 건수는
+  그 줄을 내준 출처에서 셉니다(모은 글은 표시 출처가 ``wire``·``info``여도 '관심 대상 수집' 줄 — 상태 줄 건수의 합 = 줄 수). 모은 글의 경유
+  주소(구글) 줄은 합칠 때 맨 뒤로 보내 같은 기사의 원문 주소 줄이 남게 합니다.
+- ``recent``(단계 3): 첫 화면 — 새 피드 묶음 최근 30건(+ 운영자는 속보 최근 20건). 저장본만, 바깥 호출 0건.
+- ``excludes``(단계 3): 매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙. 바깥 호출·DB 없음.
+
+매체 제외는 처음 값(코드 상수) + 사용자가 더한 매체(백엔드 표 search_media_excludes — search_store.user_excludes, 60초 캐시)입니다.
 
 운영자 전용 저장본(수집 글·거장 견해·속보)은 ``owner=true``일 때만 읽고, 아니면 상태 줄만 ``owner_only``로 둡니다(백엔드가 한 번 더 거름).
 ``external=false``(데모·``STORE_ONLY``)면 바깥 출처는 캐시만 보고 부르지 않습니다(상태 ``offline``). DB에 쓰지 않고, 검색어·경로를 로그에 남기지
@@ -16,6 +24,7 @@ app/services/search.py
 from __future__ import annotations
 
 import concurrent.futures as futures
+import dataclasses
 import re
 import threading
 import time
@@ -46,12 +55,17 @@ LABELS = {
     "google_ko": "구글 뉴스(한국어)", "google_en": "구글 뉴스(영어)", "bing": "Bing 뉴스", "yahoo": "Yahoo 종목 뉴스",
     "naver": "네이버 종목 뉴스", "infomax": "연합인포맥스", "event_news": "사건 뉴스(저장본)", "wire": "속보(Financial Juice)",
     "info": "수집 글", "guru": "거장 견해", "filings": "공시", "research": "리서치",
+    "feeds": "보도자료·경제지 피드", "watch": "관심 대상 수집",
 }
-DISPLAY_ORDER = ("google_ko", "google_en", "bing", "yahoo", "naver", "infomax", "event_news", "wire", "info", "guru",
-                 "filings", "research")
+DISPLAY_ORDER = ("google_ko", "google_en", "bing", "yahoo", "naver", "infomax", "event_news", "feeds", "watch", "wire", "info",
+                 "guru", "filings", "research")
 # 같은 글이 여러 출처에 있으면 앞의 출처가 남습니다(계약 §4-4: 저장본 > Yahoo·네이버 > Bing > 구글).
-MERGE_PRIORITY = ("event_news", "info", "guru", "wire", "yahoo", "naver", "bing", "infomax", "google_ko", "google_en")
+MERGE_PRIORITY = ("event_news", "feeds", "info", "guru", "wire", "watch", "yahoo", "naver", "bing", "infomax", "google_ko",
+                  "google_en")
 OWNER_SOURCES = ("wire", "info", "guru")
+POST_SOURCES = ("info", "guru")    # 글 탭의 출처 — 모은 글에서 이 출처로 표시되는 줄은 뉴스 탭에 넣지 않음
+RECENT_FEEDS = 30               # 첫 화면 — 새 피드 묶음 최근 건수
+RECENT_WIRE = 20                # 첫 화면 — 운영자에게 더하는 속보 최근 건수
 
 _KEY_PATTERNS = {
     "us": re.compile(r"^[A-Z0-9.\-]{1,15}$"),
@@ -125,6 +139,7 @@ def reset_cache() -> None:
         _entity_jobs.clear()
         _resolve_jobs.clear()
     sources.reset_cache()
+    search_store.reset_excludes()
     search_entities.reset()
 
 
@@ -303,15 +318,31 @@ def _status_row(source: str, status: str, count: int, dropped: dict | None, mess
             "dropped": dropped or rules.empty_dropped(), "message": message}
 
 
-def _remote(source: str, key: tuple, fetch: Callable[[], sources.Fetched], external: bool) -> _Spec:
-    return _Spec(source, run=lambda: sources.cached(key, fetch, external=external))
+def _remote(source: str, key: tuple, fetch: Callable[[], sources.Fetched], external: bool, refresh: bool = False) -> _Spec:
+    return _Spec(source, run=lambda: sources.cached(key, fetch, external=external, refresh=refresh))
 
 
-def _stored(source: str, key: tuple, fetch: Callable[[], sources.Fetched]) -> _Spec:
-    return _Spec(source, run=lambda: sources.cached(key, fetch, external=True))
+def _stored(source: str, key: tuple, fetch: Callable[[], sources.Fetched], refresh: bool = False) -> _Spec:
+    return _Spec(source, run=lambda: sources.cached(key, fetch, external=True, refresh=refresh))
 
 
-def _news_specs(target: dict, *, owner: bool, external: bool, after: str) -> list[_Spec]:
+def _watch_spec(entity_key: str, *, owner: bool, refresh: bool, posts: bool = False) -> _Spec:
+    """
+    관심 대상이 모은 글(대표 키) — 운영자 전용 출처에서 온 줄은 운영자에게만(캐시 키에 owner). ``posts``가 거짓(뉴스 탭)이면 수집 글·거장 견해에서
+    온 줄을 뺍니다(그 글은 글 탭의 것 — 계약 §3-4).
+    """
+    def run() -> sources.Fetched:
+        result = sources.cached(("watch", entity_key, owner), lambda: search_store.watch_items(entity_key, owner=owner),
+                                external=True, refresh=refresh)
+        if posts:
+            return result
+        return dataclasses.replace(result, items=[item for item in result.items if item.get("source") not in POST_SOURCES])
+
+    return _Spec("watch", run=run)
+
+
+def _news_specs(target: dict, *, owner: bool, external: bool, after: str, refresh: bool = False,
+                posts: bool = False) -> list[_Spec]:
     ko, en = rules.edition_terms(target, "ko"), rules.edition_terms(target, "en")
     match = rules.match_terms(target)
     ids = target.get("ids") or {}
@@ -320,42 +351,46 @@ def _news_specs(target: dict, *, owner: bool, external: bool, after: str) -> lis
         source = f"google_{lang}"
         if terms:
             specs.append(_remote(source, (source, tuple(terms), after),
-                                 lambda terms=terms, lang=lang: sources.google(terms, lang, after=after), external))
+                                 lambda terms=terms, lang=lang: sources.google(terms, lang, after=after), external, refresh))
         else:
             specs.append(_Spec(source, status="skipped",
                                message=f"{sources.EDITION_LABELS[lang]} 이름이 없어 묻지 않음"))
     if ko or en:
-        specs.append(_remote("bing", ("bing", tuple(ko), tuple(en)), lambda: sources.bing({"ko": ko, "en": en}), external))
+        specs.append(_remote("bing", ("bing", tuple(ko), tuple(en)), lambda: sources.bing({"ko": ko, "en": en}), external, refresh))
     else:
         specs.append(_Spec("bing", status="skipped", message="검색할 이름이 없음"))
     if target.get("kind") == "company" and ids.get("market") == "us" and ids.get("ticker"):
         ticker = ids["ticker"]
-        specs.append(_remote("yahoo", ("yahoo", ticker), lambda: sources.yahoo_news(ticker), external))
+        specs.append(_remote("yahoo", ("yahoo", ticker), lambda: sources.yahoo_news(ticker), external, refresh))
     if target.get("kind") == "company" and ids.get("market") == "kr" and ids.get("stockCode"):
         code = ids["stockCode"]
-        specs.append(_remote("naver", ("naver", code), lambda: sources.naver(code), external))
+        specs.append(_remote("naver", ("naver", code), lambda: sources.naver(code), external, refresh))
     if target.get("kind") == "company" and ids.get("market") in ("us", "kr"):
         terms = ko or en
         if terms:
             specs.append(_remote("infomax", ("infomax", tuple(terms), after),
-                                 lambda: sources.infomax(terms, after=after), external))
+                                 lambda: sources.infomax(terms, after=after), external, refresh))
     if match:
-        specs.append(_stored("event_news", ("event_news", tuple(match)), lambda: search_store.event_news(match)))
+        specs.append(_stored("event_news", ("event_news", tuple(match)), lambda: search_store.event_news(match), refresh))
+        specs.append(_stored("feeds", ("feeds", tuple(match)), lambda: search_store.feed_bundle(match), refresh))
     else:
         specs.append(_Spec("event_news", status="skipped", message="찾을 이름이 없음"))
+        specs.append(_Spec("feeds", status="skipped", message="찾을 이름이 없음"))
+    if target.get("key"):
+        specs.append(_watch_spec(target["key"], owner=owner, refresh=refresh, posts=posts))
     if owner:
-        specs.append(_stored("wire", ("wire", tuple(match)), lambda: search_store.wire(match)))
+        specs.append(_stored("wire", ("wire", tuple(match)), lambda: search_store.wire(match), refresh))
     else:
         specs.append(_Spec("wire", status="owner_only"))
     return specs
 
 
-def _post_specs(target: dict, *, owner: bool) -> list[_Spec]:
+def _post_specs(target: dict, *, owner: bool, refresh: bool = False) -> list[_Spec]:
     if not owner:
         return [_Spec("info", status="owner_only"), _Spec("guru", status="owner_only")]
     match = rules.match_terms(target)
-    return [_stored("info", ("info", tuple(match)), lambda: search_store.info_posts(match)),
-            _stored("guru", ("guru", tuple(match)), lambda: search_store.guru_views(match))]
+    return [_stored("info", ("info", tuple(match)), lambda: search_store.info_posts(match), refresh),
+            _stored("guru", ("guru", tuple(match)), lambda: search_store.guru_views(match), refresh)]
 
 
 def _later_specs(tab: str, target: dict | None) -> list[_Spec]:
@@ -395,9 +430,10 @@ def _run(specs: list[_Spec]) -> dict[str, sources.Fetched]:
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def feed(key: str, tab: str, *, owner: bool = False, external: bool = True) -> dict:
+def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refresh: bool = False) -> dict:
     """
     탭 하나의 결과 — 오늘(KST)부터 2년 안의 줄 전부(최신순), 출처마다 상태 한 줄, 기간별 건수. 화면이 7일·30일·1년·2년으로 자릅니다.
+    ``refresh``면 출처 캐시를 건너뜁니다(대상 풀기 캐시는 그대로 — 외부 호출을 끈 요청에서는 캐시만).
     """
     prefix, value = parse_key(key)
     tab = check_tab(tab)
@@ -419,6 +455,9 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True) -> d
                 specs += [_Spec(source, status="skipped" if external else "offline", message=note if external else OFFLINE)
                           for source in ("google_ko", "google_en", "bing")]
                 specs.append(_Spec("event_news", status="skipped", message=note))
+                specs.append(_Spec("feeds", status="skipped", message=note))
+                # 관심 대상이 모은 글은 이름 없이 키로 읽습니다(등록 때 푼 대표 키 — 대상을 지금 풀지 못해도 모은 글은 보임).
+                specs.append(_watch_spec(norm, owner=owner, refresh=refresh, posts=tab == "timeline"))
                 specs.append(_Spec("wire", status="owner_only" if not owner else "skipped", message=None if not owner else note))
             if tab in ("posts", "timeline"):
                 specs += [_Spec(source, status="owner_only" if not owner else "skipped", message=None if not owner else note)
@@ -426,13 +465,15 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True) -> d
         else:
             specs = []
             if tab in ("news", "timeline"):
-                specs += _news_specs(target, owner=owner, external=external, after=window_from)
+                specs += _news_specs(target, owner=owner, external=external, after=window_from, refresh=refresh,
+                                     posts=tab == "timeline")
             if tab in ("posts", "timeline"):
-                specs += _post_specs(target, owner=owner)
+                specs += _post_specs(target, owner=owner, refresh=refresh)
             if tab == "timeline":
                 specs += _later_specs(tab, target)
 
     fetched = _run(specs)
+    excludes = search_store.user_excludes() if fetched else rules.Excludes()
     groups: dict[str, list[dict]] = {}
     dropped_by: dict[str, dict] = {}
     latest_olds: list[str] = []
@@ -440,15 +481,18 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True) -> d
         result = fetched.get(spec.source)
         if result is None:
             continue
-        kept, dropped, latest_old = rules.apply_rules(result.items, start=start, now=now)
+        kept, dropped, latest_old = rules.apply_rules(result.items, start=start, now=now, excludes=excludes)
         groups[spec.source] = kept
         dropped_by[spec.source] = dropped
         if latest_old:
             latest_olds.append(latest_old)
-    merged = rules.merge(groups.get(source, []) for source in MERGE_PRIORITY)
+    merged = rules.merge(_merge_order(groups))
+    # 건수는 그 줄을 내준 출처에서 셉니다(모은 글의 줄은 표시 출처가 wire·info여도 'watch' — 상태 줄 건수의 합 = 줄 수).
+    giver = {id(item): source for source, kept in groups.items() for item in kept}
     counts: dict[str, int] = {}
     for item in merged:
-        counts[item["source"]] = counts.get(item["source"], 0) + 1
+        source = giver.get(id(item), item["source"])
+        counts[source] = counts.get(source, 0) + 1
 
     rows = []
     for spec in sorted(specs, key=lambda s: DISPLAY_ORDER.index(s.source)):
@@ -478,3 +522,47 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True) -> d
         "pending": False,
         "fetchedAt": rules.utc_iso(now),
     }
+
+
+def _merge_order(groups: dict[str, list[dict]]) -> list[list[dict]]:
+    """합칠 순서(MERGE_PRIORITY) — 모은 글의 경유 주소(구글) 줄만은 맨 뒤로(구글 줄과 같은 낮은 우선순위, 같은 기사의 원문 주소 줄이 남게)."""
+    ordered: list[list[dict]] = []
+    relayed: list[dict] = []
+    for source in MERGE_PRIORITY:
+        kept = groups.get(source, [])
+        if source == "watch":
+            relayed = [item for item in kept if rules.is_relay(item.get("url"))]
+            kept = [item for item in kept if not rules.is_relay(item.get("url"))]
+        ordered.append(kept)
+    ordered.append(relayed)
+    return ordered
+
+
+# ------------------------------------------------------------------ 첫 화면·제외 목록(단계 3)
+
+def recent(*, owner: bool = False) -> dict:
+    """
+    첫 화면(대상을 고르지 않은 때) — 새 피드 묶음 최근 RECENT_FEEDS건(회원에게도) + 운영자는 속보 최근 RECENT_WIRE건. 저장본만(바깥 호출 0건),
+    규칙(2년·중국어·매체 제외)을 거쳐 최신순. 읽지 못한 저장본은 ``errors``에 사유(빈 목록을 '없음'으로 보이지 않게).
+    """
+    now = datetime.now(timezone.utc)
+    start = rules.window_start(rules.kst_today(now))
+    groups: list[sources.Fetched] = [search_store.recent_bundle(RECENT_FEEDS)]
+    names = ["feeds"]
+    if owner:
+        groups.append(search_store.recent_wire(RECENT_WIRE))
+        names.append("wire")
+    excludes = search_store.user_excludes()
+    kept_groups = []
+    errors: dict[str, str] = {}
+    for name, result in zip(names, groups):
+        if result.error:
+            errors[name] = result.error
+        kept, _, _ = rules.apply_rules(result.items, start=start, now=now, excludes=excludes)
+        kept_groups.append(kept)
+    return {"items": rules.merge(kept_groups), "errors": errors, "fetchedAt": rules.utc_iso(now)}
+
+
+def excludes() -> dict:
+    """매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙 — 사용자가 더한 매체는 백엔드가 자기 표에서 붙입니다."""
+    return {"seed": rules.seed_list(), "fixedRules": list(rules.FIXED_RULES)}

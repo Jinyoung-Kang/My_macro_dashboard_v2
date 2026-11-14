@@ -301,6 +301,16 @@ public final class Datasets {
      */
     public static final String OBS_KR_NEWS_HEADLINE = "kr_news_headline";
     /**
+     * 정보 검색의 새 피드 묶음(ADR 0041 결정 8 — 연준·ECB·영란은행·Bloomberg·MarketWatch·CNBC 둘·Benzinga·Seeking Alpha·BBC·Economist·Nikkei Asia).
+     * entity = 같은 글 키(원문 주소 해시, 없으면 제목 키), payload {@code {title, summary, url, publisher, publisherDomain, feed, publishedAt|null,
+     * fetchedAt, timeBasis, lang}}(계약 docs/specs/2026-11-14-info-search-contract.md §6-1). 수집기만 쓰고(ADR 0008) 90일 보관.
+     * 사건 뉴스({@link #OBS_NEWS_HEADLINE}·{@link #OBS_KR_NEWS_HEADLINE})와 따로이고 <b>모의 매매 패킷은 읽지 않습니다</b>
+     * ({@code ArchitectureRulesTest} — feature.paper가 이 이름을 쓰지 않음). 정보 검색·정보 수집 화면만 읽습니다.
+     */
+    public static final String OBS_SEARCH_FEED_HEADLINE = "search_feed_headline";
+    /** 새 피드 묶음({@link #OBS_SEARCH_FEED_HEADLINE})의 수집 상태 — 사건 뉴스 상태와 같은 피드별 줄. 모의 매매 패킷은 읽지 않습니다. */
+    public static final String SNAP_SEARCH_FEEDS_STATUS = "search.feeds.status";
+    /**
      * 모의 매매 어닝 서프라이즈(yfinance quoteSummary {@code earnings.earningsChart}, 2단계 C·D36). entity = 티커, obs_date = 실제
      * 발표 시각({@code reportedDate})의 미국 동부 날짜, payload {@code {periodEnd, actual, estimate, surprisePct, currency, smallBase,
      * reportedAt, source}}({@code reportedAt}은 동부 시간대 오프셋을 붙인 ISO). 수집기만 쓰고(ADR 0008) (날짜, 티커)마다 덮어쓰며

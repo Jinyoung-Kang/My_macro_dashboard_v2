@@ -32,6 +32,10 @@ def _fresh(monkeypatch):
     search.reset_cache()
     monkeypatch.setattr(search_store, "dart_codes", lambda: {})
     monkeypatch.setattr(search_store, "guru_names", lambda: [])
+    # 단계 3의 저장본 출처·사용자 제외 매체 — 시험마다 따로 바꿔 끼우지 않으면 비어 있음(DB 없음).
+    monkeypatch.setattr(search_store, "feed_bundle", lambda terms: sources.Fetched(items=[]))
+    monkeypatch.setattr(search_store, "watch_items", lambda key, owner: sources.Fetched(items=[]))
+    monkeypatch.setattr(search_store, "user_excludes", lambda: search.rules.Excludes())
     yield
     search.reset_cache()
 
@@ -91,6 +95,10 @@ class Stubs:
             "info": sources.Fetched(items=[_item("On SynthChip margins", "https://blog.example.org/i1", source="info", kind="post",
                                                  reader="i1", basis="fetched", ago=timedelta(days=200))]),
             "guru": sources.Fetched(items=[]),
+            "feeds": sources.Fetched(items=[_item("Central bank notes SynthChip supply", "https://www.example.edu/f1",
+                                                  source="feeds", ago=timedelta(days=3))]),
+            "watch": sources.Fetched(items=[_item("SynthChip watch find", "https://www.example.info/w1", source="watch",
+                                                  ago=timedelta(days=40))]),
         }
         monkeypatch.setattr(sources, "google", lambda terms, lang, after: self._hit(f"google_{lang}"))
         monkeypatch.setattr(sources, "bing", lambda terms_by_lang: self._hit("bing"))
@@ -101,7 +109,14 @@ class Stubs:
         monkeypatch.setattr(search_store, "wire", lambda terms: self._hit("wire"))
         monkeypatch.setattr(search_store, "info_posts", lambda terms: self._hit("info"))
         monkeypatch.setattr(search_store, "guru_views", lambda terms: self._hit("guru"))
+        monkeypatch.setattr(search_store, "feed_bundle", lambda terms: self._hit("feeds"))
+        monkeypatch.setattr(search_store, "watch_items", lambda key, owner: self._watch(key, owner))
         monkeypatch.setattr(search, "entity", lambda key, external=True: {"entity": ENTITY, "errors": {}, "fetchedAt": None})
+        self.watch_calls: list[tuple] = []
+
+    def _watch(self, key, owner):
+        self.watch_calls.append((key, owner))
+        return self._hit("watch")
 
     def _hit(self, source):
         self.calls.append(source)
@@ -133,14 +148,15 @@ def test_경로는_검사한_값과_owner·external을_넘긴다(client, monkeyp
     monkeypatch.setattr(search, "resolve", lambda q, owner=False, external=True: seen.append(("resolve", q, owner, external))
                         or {"items": []})
     monkeypatch.setattr(search, "entity", lambda e, external=True: seen.append(("entity", e, external)) or {"entity": None})
-    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True: seen.append(("feed", e, tab, owner, external))
-                        or {"items": []})
+    monkeypatch.setattr(search, "feed", lambda e, tab, owner=False, external=True, refresh=False:
+                        seen.append(("feed", e, tab, owner, external, refresh)) or {"items": []})
     assert client.get("/live/search/suggest?q=%20합성%20&owner=true").status_code == 200
     assert client.get("/live/search/resolve?q=Synth&external=false").status_code == 200
     assert client.get("/live/search/entity?e=topic:AI%20반도체").status_code == 200
     assert client.get("/live/search/feed?e=us:BRK.B&tab=news&owner=true&external=false").status_code == 200
+    assert client.get("/live/search/feed?e=us:BRK.B&tab=news&refresh=true").status_code == 200
     assert seen == [("suggest", "합성", True), ("resolve", "Synth", False, False), ("entity", "topic:AI 반도체", True),
-                    ("feed", "us:BRK.B", "news", True, False)]
+                    ("feed", "us:BRK.B", "news", True, False, False), ("feed", "us:BRK.B", "news", False, True, True)]
 
 
 # ------------------------------------------------------------------ external=false
@@ -188,12 +204,13 @@ def test_결과는_규칙을_거쳐_합치고_출처마다_상태를_적는다(m
     out = search.feed("us:SCHP", "timeline", owner=True, external=True)
     titles = [item["title"] for item in out["items"]]
     assert titles == ["SYNTHCHIP HALTED", "합성칩, 새 가속기 공개", "SynthChip unveils new accelerator",
-                      "SynthChip quarterly preview", "On SynthChip margins"]
+                      "Central bank notes SynthChip supply", "SynthChip quarterly preview", "SynthChip watch find",
+                      "On SynthChip margins"]
     stamps = [item["publishedAt"] for item in out["items"]]
     assert stamps == sorted(stamps, reverse=True)
     assert out["entityKey"] == "us:SCHP" and out["tab"] == "timeline" and out["pending"] is False
     assert out["window"]["to"] == search.rules.kst_today().isoformat()
-    assert out["rangeCounts"] == {"7d": 3, "30d": 4, "1y": 5, "2y": 5}
+    assert out["rangeCounts"] == {"7d": 4, "30d": 5, "1y": 7, "2y": 7}
     assert out["olderOnlyLatest"] is None
 
     google_ko = _row(out, "google_ko")
@@ -211,8 +228,12 @@ def test_결과는_규칙을_거쳐_합치고_출처마다_상태를_적는다(m
     assert _row(out, "event_news")["count"] == 1 and _row(out, "wire")["count"] == 1
     assert _row(out, "guru")["status"] == "empty"
     assert _row(out, "filings")["status"] == "later" and _row(out, "research")["status"] == "later"
+    assert _row(out, "feeds") == {"source": "feeds", "label": "보도자료·경제지 피드", "status": "ok", "count": 1,
+                                  "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": None}
+    assert _row(out, "watch")["label"] == "관심 대상 수집" and _row(out, "watch")["count"] == 1
+    assert stubs.watch_calls == [("us:SCHP", True)], "관심 대상이 모은 글은 대표 키로 읽고 운영자 여부를 넘김"
     assert [row["source"] for row in out["sources"]] == ["google_ko", "google_en", "bing", "yahoo", "infomax", "event_news",
-                                                        "wire", "info", "guru", "filings", "research"]
+                                                        "feeds", "watch", "wire", "info", "guru", "filings", "research"]
     assert all(set(row) == {"source", "label", "status", "count", "dropped", "message"} for row in out["sources"])
     info = next(item for item in out["items"] if item["source"] == "info")
     assert info["timeBasis"] == "fetched" and info["readerId"] == "i1"
@@ -344,3 +365,93 @@ def test_외부_호출을_켠_요청에서_풀지_못한_대상은_skipped(monke
     out = search.feed("wd:Q900001", "news", owner=False, external=True)
     assert _row(out, "google_ko")["status"] == "skipped" and _row(out, "bing")["status"] == "skipped"
     assert _row(out, "wire")["status"] == "owner_only"
+
+
+# ------------------------------------------------------------------ 단계 3 — 지금 새로 받기·사용자 제외 매체·첫 화면·제외 목록
+
+def test_지금_새로_받기는_출처_캐시를_건너뛰고_새_결과로_캐시를_고친다(monkeypatch):
+    stubs = Stubs(monkeypatch)
+    search.feed("us:SCHP", "news", owner=False, external=True)
+    first = list(stubs.calls)
+    stubs.results["google_ko"] = sources.Fetched(items=[
+        _item("합성칩, 새 소식", "https://news.google.com/rss/articles/K9", source="google_ko", ago=timedelta(hours=1))])
+    out = search.feed("us:SCHP", "news", owner=False, external=True, refresh=True)
+    assert len(stubs.calls) == 2 * len(first), "출처마다 다시 부름(저장본 포함)"
+    assert _row(out, "google_ko")["status"] == "ok" and "합성칩, 새 소식" in [item["title"] for item in out["items"]]
+    again = search.feed("us:SCHP", "news", owner=False, external=True)
+    assert len(stubs.calls) == 2 * len(first) and _row(again, "google_ko")["status"] == "cached"
+    assert "합성칩, 새 소식" in [item["title"] for item in again["items"]], "새로 받은 결과가 캐시에 남음"
+
+
+def test_외부_호출을_끈_요청은_새로_받기여도_바깥을_부르지_않는다(monkeypatch):
+    stubs = Stubs(monkeypatch)
+    out = search.feed("us:SCHP", "news", owner=False, external=False, refresh=True)
+    assert not {"google_ko", "google_en", "bing", "yahoo", "infomax"} & set(stubs.calls)
+    assert _row(out, "google_ko")["status"] == "offline"
+
+
+def test_사용자가_더한_제외_매체는_처음_값과_함께_빠진다(monkeypatch):
+    Stubs(monkeypatch)
+    excludes = {"rows": [{"kind": "domain", "value": "Example.NET"}]}
+    monkeypatch.setattr(search_store, "user_excludes", lambda: search.rules.make_excludes(excludes["rows"]))
+    out = search.feed("us:SCHP", "news", owner=False, external=True)
+    assert _row(out, "bing")["dropped"]["excluded"] == 2, "example.net 두 줄(시각 없는 줄도 매체로 먼저 셈)"
+    assert _row(out, "google_en")["dropped"]["excluded"] == 1, "처음 값(xinhuanet.com)도 그대로"
+    assert "SynthChip quarterly preview" not in [item["title"] for item in out["items"]]
+
+    excludes["rows"] = [{"kind": "name", "value": "example"}]       # 이름은 대소문자 무시 완전 일치
+    search.reset_cache()
+    out = search.feed("us:SCHP", "news", owner=False, external=True)
+    assert out["items"] == [] and _row(out, "event_news")["dropped"]["excluded"] == 1
+
+
+def test_회원의_관심_대상_글은_운영자_아님으로_읽는다(monkeypatch):
+    stubs = Stubs(monkeypatch)
+    search.feed("us:SCHP", "timeline", owner=False, external=True)
+    assert stubs.watch_calls == [("us:SCHP", False)]
+
+
+def test_첫_화면은_새_피드_묶음과_운영자에게만_속보(monkeypatch):
+    bundle = [
+        _item("Fed statement on rates", "https://www.federalreserve.gov/p1", source="feeds", ago=timedelta(hours=3)),
+        _item("中国央行发布新政策", "https://www.example.org/zh", source="feeds", ago=timedelta(hours=2)),
+        _item("Nikkei story", "https://asia.nikkei.com/a1", source="feeds", basis="fetched", ago=timedelta(minutes=30)),
+    ]
+    wire = [_item("BREAKING: synthetic headline", "https://www.example.com/w9", source="wire", kind="wire", reader="w9",
+                  ago=timedelta(minutes=10))]
+    calls = []
+    monkeypatch.setattr(search_store, "recent_bundle", lambda limit: calls.append(("feeds", limit)) or sources.Fetched(items=bundle))
+    monkeypatch.setattr(search_store, "recent_wire", lambda limit: calls.append(("wire", limit)) or sources.Fetched(items=wire))
+    member = search.recent(owner=False)
+    assert [item["title"] for item in member["items"]] == ["Nikkei story", "Fed statement on rates"]
+    assert member["errors"] == {} and calls == [("feeds", 30)]
+    owner = search.recent(owner=True)
+    assert [item["title"] for item in owner["items"]] == ["BREAKING: synthetic headline", "Nikkei story", "Fed statement on rates"]
+    assert calls[-1] == ("wire", 20)
+    monkeypatch.setattr(search_store, "recent_bundle", lambda limit: sources.Fetched(error="저장소를 읽지 못함(OperationalError)"))
+    failed = search.recent(owner=False)
+    assert failed["items"] == [] and failed["errors"] == {"feeds": "저장소를 읽지 못함(OperationalError)"}
+
+
+def test_첫_화면·제외_목록_경로(client, monkeypatch):
+    monkeypatch.setattr(search, "recent", lambda owner=False: {"items": [], "errors": {}, "owner": owner})
+    assert client.get("/live/search/recent?owner=true").json()["owner"] is True
+    assert client.get("/live/search/recent").json()["owner"] is False
+    monkeypatch.delenv("POLITE_FETCH_ENABLED", raising=False)
+    body = client.get("/live/search/excludes").json()
+    assert body["politeEnabled"] is False
+    assert {"kind": "domain", "value": "xinhuanet.com", "group": "중국 국가·당 매체"} in body["seed"]
+    assert {"kind": "name", "value": "moomoo", "group": "중국 자본 금융 매체"} in body["seed"]
+    assert all(set(row) == {"kind", "value", "group"} and row["kind"] in ("domain", "name") for row in body["seed"])
+    assert len(body["seed"]) == len(search.rules.EXCLUDED_DOMAINS) + len(search.rules.EXCLUDED_NAMES)
+    assert body["fixedRules"] and all(isinstance(rule, str) for rule in body["fixedRules"])
+    monkeypatch.setenv("POLITE_FETCH_ENABLED", "true")
+    assert client.get("/live/search/excludes").json()["politeEnabled"] is True
+
+
+def test_상태_경로는_차단_통과_수집이_켜졌는지_알린다(client, monkeypatch):
+    monkeypatch.setattr(main.store, "store_stats", lambda task_names=None: {})
+    monkeypatch.delenv("POLITE_FETCH_ENABLED", raising=False)
+    assert client.get("/status").json()["politeEnabled"] is False
+    monkeypatch.setenv("POLITE_FETCH_ENABLED", "true")
+    assert client.get("/status").json()["politeEnabled"] is True

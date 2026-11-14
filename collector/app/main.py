@@ -407,6 +407,10 @@ def status() -> dict:
         group: settings.interval_seconds(group)
         for group in ("fast", "slow", "weekly", "session")
     }
+    # 차단 통과 수집(polite — 관심 대상 정기 수집 포함)이 이 수집기에서 도는가(POLITE_FETCH_ENABLED, ADR 0035·0041). 값만 — 비밀 없음.
+    from .tasks import polite
+
+    stats["politeEnabled"] = polite.enabled()
     return stats
 
 
@@ -753,13 +757,39 @@ def live_search_feed(
     tab: str | None = Query(None),
     owner: bool = Query(False),
     external: bool = Query(True),
+    refresh: bool = Query(False),
     x_service_token: str | None = Header(default=None),
 ) -> dict:
-    """정보 검색 — 탭 하나의 결과(최근 2년 묶음, 출처별 상태). 운영자 전용 저장본은 owner일 때만, external=false면 바깥 출처는 캐시만."""
+    """
+    정보 검색 — 탭 하나의 결과(최근 2년 묶음, 출처별 상태). 운영자 전용 저장본은 owner일 때만, external=false면 바깥 출처는 캐시만.
+    refresh면 출처 캐시를 건너뜀('지금 새로 받기' — 사용자당 빈도는 백엔드가 막음).
+    """
     _check_token(x_service_token)
     prefix, value = _search_input(search_service.parse_key, e)
     checked_tab = _search_input(search_service.check_tab, tab)
-    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external)
+    return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh)
+
+
+@app.get("/live/search/recent")
+def live_search_recent(
+    owner: bool = Query(False),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """정보 검색 첫 화면 — 새 피드 묶음 최근 30건(owner면 속보 최근 20건을 더함). 저장본만(바깥 호출 0건)."""
+    _check_token(x_service_token)
+    return search_service.recent(owner=owner)
+
+
+@app.get("/live/search/excludes")
+def live_search_excludes(x_service_token: str | None = Header(default=None)) -> dict:
+    """
+    정보 검색 매체 제외 목록의 처음 값(묶음 이름과 함께)과 늘 적용하는 규칙. 바깥 호출·DB 없음. 이 수집기에서 관심 대상 정기 수집이 도는지
+    (politeEnabled — POLITE_FETCH_ENABLED)도 함께 답합니다(백엔드의 /api/search/watch collecting — /status보다 가벼움).
+    """
+    _check_token(x_service_token)
+    from .tasks import polite
+
+    return {**search_service.excludes(), "politeEnabled": polite.enabled()}
 
 
 @app.get("/live/daum-intraday")

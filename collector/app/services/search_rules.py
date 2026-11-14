@@ -10,6 +10,7 @@ app/services/search_rules.py
    겹치는 것(The Standard — 런던, Phoenix·SMM·The Paper 같은 일반 낱말)은 이름으로 빼지 않고 도메인으로만 뺍니다.
    2026-11-14 사용자 허용(ADR 0041 결정 6): 대만 매체, Investing.com, StreetInsider, South China Morning Post(자매 매체 Inkstone 포함),
    소유가 불확실했던 매체(Webull·Tiger·AInvest 등)는 목록에 넣지 않습니다(중국어 제목 거름과 '.cn' 규칙은 그대로 적용).
+   사용자가 더하는 매체(단계 3 — 백엔드 표 search_media_excludes)는 :class:`Excludes`로 받아 처음 값에 더해 봅니다(읽기는 search_store, 60초 캐시).
 4. 같은 글: 원문 주소가 있으면 ``info_text.item_id(url)``, 경유 주소(구글 뉴스)뿐이면 제목 앞 24자. 먼저 온 출처(우선순위 순)를 남깁니다.
 5. 검색식: 따옴표 구문을 ' OR '로 묶음. 판마다 이름 + 네 글자 이상 별칭 최대 4개(긴 것 먼저), 티커는 넣지 않음.
 """
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 from urllib.parse import urlsplit
@@ -47,37 +49,51 @@ _MSN_TAIL = re.compile(r"\s+on\s+msn\s*$", re.IGNORECASE)
 _PG_SPECIAL = re.compile(r"([\\^$.|?*+()\[\]{}])")
 
 # ------------------------------------------------------------------ 매체 제외 목록(처음 값 — 진행 기록 2026-11-14, 사용자 허용 매체는 넣지 않음)
-EXCLUDED_DOMAINS: frozenset[str] = frozenset({
-    # 중국 국가·당 매체
-    "xinhuanet.com", "news.cn", "chinadaily.com.cn", "chinadailyhk.com", "chinadailyasia.com", "globaltimes.cn",
-    "people.cn", "people.com.cn", "peopledaily.com.cn", "cgtn.com", "cctv.com", "cri.cn", "ecns.cn", "chinanews.com.cn",
-    "china.org.cn", "bjreview.com", "sixthtone.com", "thepaper.cn", "yicaiglobal.com", "yicai.com", "shine.cn",
-    "shanghaidaily.com", "stcn.com", "cs.com.cn", "cnstock.com",
-    # 본토 민간
-    "caixinglobal.com", "caixin.com", "jiemian.com", "eeo.com.cn", "21jingji.com", "36kr.com", "technode.com", "pandaily.com",
-    "mysteel.net", "mysteel.com", "metal.com", "gasgoo.com", "cnevpost.com", "carnewschina.com",
-    # 홍콩
-    "thestandard.com.hk", "rthk.hk", "hongkongfp.com", "asiatimes.com", "ejinsight.com",
-    "hkej.com", "hket.com", "aastocks.com", "etnet.com.hk", "mingtiandi.com", "dimsumdaily.hk", "ifeng.com", "weekinchina.com",
-    # 마카오
-    "macaubusiness.com", "macaudailytimes.com.mo", "ggrasia.com", "asgam.com", "macaunews.mo",
-    # 중국 자본 금융 매체
-    "moomoo.com", "futunn.com", "futuhk.com", "futuholdings.com",
-    # 비중국 매체의 중국어 판 중 '.cn'이 잡지 못하는 것
-    "ftchinese.com",
-})
-EXCLUDED_NAMES: frozenset[str] = frozenset({
-    "Xinhua", "Xinhua News Agency", "Xinhuanet", "China Daily", "Global Times", "People's Daily", "People's Daily Online",
-    "CGTN", "CCTV", "China Radio International", "China News Service", "China.org.cn", "Beijing Review", "Sixth Tone",
-    "Yicai", "Yicai Global", "Shanghai Daily",
-    "Caixin", "Caixin Global", "Jiemian", "Economic Observer", "21st Century Business Herald", "36Kr", "TechNode", "Pandaily",
-    "Mysteel", "Shanghai Metals Market", "Gasgoo", "CnEVPost", "CarNewsChina",
-    "RTHK", "Hong Kong Free Press", "HKFP", "Asia Times", "EJ Insight",
-    "Hong Kong Economic Journal", "HKET", "Hong Kong Economic Times", "AASTOCKS", "ETNet", "Mingtiandi", "Dimsum Daily",
-    "Phoenix New Media", "Week in China",
-    "Macau Business", "Macau Daily Times", "GGRAsia", "Inside Asian Gaming", "Macau News Agency",
-    "Futu", "Futubull", "moomoo",
-})
+# (묶음 이름, 도메인, 이름) — 화면의 제외 목록(``/live/search/excludes``)이 묶음 이름과 함께 보입니다. 사용자가 더하는 매체는 백엔드 표
+# search_media_excludes(단계 3)에 있고 :class:`Excludes`로 받아 이 목록에 더해 봅니다.
+SEED_GROUPS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("중국 국가·당 매체", (
+        "xinhuanet.com", "news.cn", "chinadaily.com.cn", "chinadailyhk.com", "chinadailyasia.com", "globaltimes.cn",
+        "people.cn", "people.com.cn", "peopledaily.com.cn", "cgtn.com", "cctv.com", "cri.cn", "ecns.cn", "chinanews.com.cn",
+        "china.org.cn", "bjreview.com", "sixthtone.com", "thepaper.cn", "yicaiglobal.com", "yicai.com", "shine.cn",
+        "shanghaidaily.com", "stcn.com", "cs.com.cn", "cnstock.com",
+    ), (
+        "Xinhua", "Xinhua News Agency", "Xinhuanet", "China Daily", "Global Times", "People's Daily", "People's Daily Online",
+        "CGTN", "CCTV", "China Radio International", "China News Service", "China.org.cn", "Beijing Review", "Sixth Tone",
+        "Yicai", "Yicai Global", "Shanghai Daily",
+    )),
+    ("중국 본토 민간 매체", (
+        "caixinglobal.com", "caixin.com", "jiemian.com", "eeo.com.cn", "21jingji.com", "36kr.com", "technode.com", "pandaily.com",
+        "mysteel.net", "mysteel.com", "metal.com", "gasgoo.com", "cnevpost.com", "carnewschina.com",
+    ), (
+        "Caixin", "Caixin Global", "Jiemian", "Economic Observer", "21st Century Business Herald", "36Kr", "TechNode", "Pandaily",
+        "Mysteel", "Shanghai Metals Market", "Gasgoo", "CnEVPost", "CarNewsChina",
+    )),
+    ("홍콩 매체", (
+        "thestandard.com.hk", "rthk.hk", "hongkongfp.com", "asiatimes.com", "ejinsight.com",
+        "hkej.com", "hket.com", "aastocks.com", "etnet.com.hk", "mingtiandi.com", "dimsumdaily.hk", "ifeng.com", "weekinchina.com",
+    ), (
+        "RTHK", "Hong Kong Free Press", "HKFP", "Asia Times", "EJ Insight",
+        "Hong Kong Economic Journal", "HKET", "Hong Kong Economic Times", "AASTOCKS", "ETNet", "Mingtiandi", "Dimsum Daily",
+        "Phoenix New Media", "Week in China",
+    )),
+    ("마카오 매체", (
+        "macaubusiness.com", "macaudailytimes.com.mo", "ggrasia.com", "asgam.com", "macaunews.mo",
+    ), (
+        "Macau Business", "Macau Daily Times", "GGRAsia", "Inside Asian Gaming", "Macau News Agency",
+    )),
+    ("중국 자본 금융 매체", (
+        "moomoo.com", "futunn.com", "futuhk.com", "futuholdings.com",
+    ), (
+        "Futu", "Futubull", "moomoo",
+    )),
+    # '.cn' 규칙이 잡지 못하는 비중국 매체의 중국어 판
+    ("비중국 매체의 중국어 판", ("ftchinese.com",), ()),
+)
+EXCLUDED_DOMAINS: frozenset[str] = frozenset(domain for _, domains, _ in SEED_GROUPS for domain in domains)
+EXCLUDED_NAMES: frozenset[str] = frozenset(name for _, _, names in SEED_GROUPS for name in names)
+# 목록과 상관없이 늘 적용하는 규칙(코드 고정 — ADR 0041 결정 6). 화면의 제외 목록에 함께 보입니다.
+FIXED_RULES: tuple[str, ...] = ("제목이 중국어인 글(한글·가나가 있으면 남김)", "도메인이 .cn으로 끝나는 매체")
 _EXCLUDED_NAME_KEYS = frozenset(name.casefold() for name in EXCLUDED_NAMES)
 
 
@@ -195,9 +211,70 @@ def domain_of(url: str | None) -> str | None:
     return host or None
 
 
-def is_excluded_media(domain: str | None, name: str | None) -> bool:
-    """제외할 매체인가(규칙 3) — '.cn' 도메인, 목록 도메인(점 경계), 목록 이름(대소문자 무시 완전 일치, MSN 재게재 꼬리는 뗌)."""
-    host = (domain or "").strip().lower().rstrip(".")
+def ascii_host(host: str) -> str:
+    """
+    국제화 도메인 → punycode(``xn--``) — 화면·백엔드가 제외 도메인을 이 모양으로 저장합니다(Java ``IDN.toASCII``, Python ``idna`` 코덱과 같은
+    IDNA2003). ASCII 호스트는 그대로, 바꾸지 못하면 그대로 돌려줍니다.
+    """
+    if host.isascii():
+        return host
+    try:
+        return host.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return host
+
+
+def normalize_domain(value: str | None) -> str | None:
+    """제외 목록의 도메인 값 → 소문자 ASCII 호스트(앞의 www.·끝의 점 없음, 국제화 도메인은 punycode). 주소를 넣었으면 그 호스트. 비었으면 None."""
+    text = (value or "").strip()
+    if "://" in text:
+        host = domain_of(text)
+        return ascii_host(host) if host else None
+    host = text.lower().rstrip(".").split("/", 1)[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return ascii_host(host) if host else None
+
+
+def media_name_key(name: str | None) -> str:
+    """매체 이름 대조 키 — MSN 재게재 꼬리('on MSN')를 떼고 대소문자를 무시합니다."""
+    return _MSN_TAIL.sub("", (name or "").strip()).strip().casefold()
+
+
+@dataclass(frozen=True)
+class Excludes:
+    """사용자가 더한 제외 매체(백엔드 표 search_media_excludes) — 도메인(소문자 호스트)과 이름 대조 키."""
+
+    domains: frozenset[str] = frozenset()
+    names: frozenset[str] = frozenset()
+
+
+def make_excludes(rows: Iterable[dict]) -> Excludes:
+    """표의 행([{kind, value}]) → :class:`Excludes`. 모르는 종류·빈 값은 건너뜁니다."""
+    domains: set[str] = set()
+    names: set[str] = set()
+    for row in rows or []:
+        kind, value = row.get("kind"), row.get("value")
+        if not isinstance(value, str):
+            continue
+        if kind == "domain":
+            host = normalize_domain(value)
+            if host:
+                domains.add(host)
+        elif kind == "name":
+            key = media_name_key(value)
+            if key:
+                names.add(key)
+    return Excludes(frozenset(domains), frozenset(names))
+
+
+def is_excluded_media(domain: str | None, name: str | None, extra: Excludes | None = None) -> bool:
+    """
+    제외할 매체인가(규칙 3) — '.cn' 도메인, 목록 도메인(점 경계, 국제화 도메인은 punycode로 맞춰 봄), 목록 이름(대소문자 무시 완전 일치, MSN
+    재게재 꼬리는 뗌).
+    ``extra``는 사용자가 더한 매체(처음 값 목록에 더해 봄).
+    """
+    host = ascii_host((domain or "").strip().lower().rstrip("."))
     if host.startswith("www."):
         host = host[4:]
     if host:
@@ -205,11 +282,22 @@ def is_excluded_media(domain: str | None, name: str | None) -> bool:
             return True
         if any(host == excluded or host.endswith("." + excluded) for excluded in EXCLUDED_DOMAINS):
             return True
+        if extra is not None and any(host == excluded or host.endswith("." + excluded) for excluded in extra.domains):
+            return True
     if name:
-        key = _MSN_TAIL.sub("", name.strip()).strip().casefold()
-        if key in _EXCLUDED_NAME_KEYS:
+        key = media_name_key(name)
+        if key in _EXCLUDED_NAME_KEYS or (extra is not None and key in extra.names):
             return True
     return False
+
+
+def seed_list() -> list[dict]:
+    """처음 값 목록 → [{kind(domain·name), value, group}](묶음 순서, 묶음 안은 도메인 먼저). 화면의 제외 목록용."""
+    out: list[dict] = []
+    for group, domains, names in SEED_GROUPS:
+        out += [{"kind": "domain", "value": domain, "group": group} for domain in domains]
+        out += [{"kind": "name", "value": name, "group": group} for name in names]
+    return out
 
 
 # ------------------------------------------------------------------ 같은 글
@@ -264,9 +352,10 @@ def empty_dropped() -> dict[str, int]:
     return {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}
 
 
-def apply_rules(items: Iterable[dict], *, start: datetime, now: datetime) -> tuple[list[dict], dict[str, int], str | None]:
+def apply_rules(items: Iterable[dict], *, start: datetime, now: datetime,
+                excludes: Excludes | None = None) -> tuple[list[dict], dict[str, int], str | None]:
     """
-    매체 제외 → 중국어 제목 → 시각(2년·모름·미래) 순으로 가립니다. 한 줄은 한 번만 셉니다.
+    매체 제외(처음 값 + ``excludes`` — 사용자가 더한 매체) → 중국어 제목 → 시각(2년·모름·미래) 순으로 가립니다. 한 줄은 한 번만 셉니다.
 
     :returns: (남은 줄, 뺀 건수, 창보다 오래된 줄 가운데 가장 최근 날짜(KST, 없으면 None))
     """
@@ -274,7 +363,7 @@ def apply_rules(items: Iterable[dict], *, start: datetime, now: datetime) -> tup
     dropped = empty_dropped()
     latest_old: datetime | None = None
     for item in items:
-        if is_excluded_media(item.get("publisherDomain"), item.get("publisher")):
+        if is_excluded_media(item.get("publisherDomain"), item.get("publisher"), excludes):
             dropped["excluded"] += 1
             continue
         if is_chinese_title(item.get("title")):

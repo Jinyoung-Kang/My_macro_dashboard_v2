@@ -141,6 +141,46 @@ def test_Bing은_판마다_부르고_합친다(monkeypatch):
     assert len(fetched.items) == 4 and fetched.error is None
 
 
+EMPTY_RSS = b"""<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel><title>empty</title></channel></rss>"""
+
+
+def test_Bing_구문은_판마다_하나씩_여러_단어_이름_먼저_최대_2개():
+    """서버 실측(2026-11-14): Bing 뉴스 RSS는 '"A" OR "B"' 모양과 아주 흔한 한 단어(NVIDIA)에 0건 — 여러 단어 구문·한글 이름에는 줌."""
+    assert sources.bing_phrases(["NVIDIA", "Nvidia Corp", "NVIDIA Corporation"]) == ["Nvidia Corp", "NVIDIA Corporation"]
+    assert sources.bing_phrases(["엔비디아"]) == ["엔비디아"]
+    assert sources.bing_phrases(['  Ken   "Griffin"  ', "ken griffin", "Griffin"]) == ["Ken Griffin", "Griffin"]
+    assert sources.bing_phrases(["", '""', "  "]) == []
+
+
+def test_Bing은_구문_하나씩_묻고_0건이면_다음_구문으로_한_번_더(monkeypatch):
+    session = FakeSession([(200, EMPTY_RSS), (200, EMPTY_RSS), (200, BING_RSS)])
+    fetched = sources.bing({"ko": ["삼성전자"], "en": ["Samsung", "Samsung Electronics"]}, session=session)
+    queries = [(call["params"]["setlang"], call["params"]["q"]) for call in session.calls]
+    assert queries == [("ko-KR", '"삼성전자"'), ("en-US", '"Samsung Electronics"'), ("en-US", '"Samsung"')]
+    assert all(" OR " not in query for _, query in queries)
+    assert len(fetched.items) == 2 and fetched.error is None, "한국어 판 0건(구문 하나뿐) + 영어 판 두 번째 구문"
+
+
+def test_Bing은_받은_글이_있거나_실패하면_다음_구문을_묻지_않는다():
+    session = FakeSession([(200, BING_RSS)])
+    sources.bing({"en": ["Samsung Electronics", "Samsung Electronics Co"]}, session=session)
+    assert len(session.calls) == 1
+    failing = FakeSession([(503, b"")])
+    fetched = sources.bing({"en": ["Samsung Electronics", "Samsung Electronics Co"]}, session=failing)
+    assert len(failing.calls) == 1 and fetched.error and "503" in fetched.error
+
+
+def test_Bing_두_번째_구문은_before_retry가_허락할_때만():
+    asked = []
+    session = FakeSession([(200, EMPTY_RSS)])
+    fetched = sources.bing({"en": ["Samsung Electronics", "Samsung"]}, session=session,
+                           before_retry=lambda: asked.append("retry") or False)
+    assert asked == ["retry"] and len(session.calls) == 1 and fetched.items == [] and fetched.error is None
+    session = FakeSession([(200, EMPTY_RSS)])
+    sources.bing({"en": ["Samsung Electronics", "Samsung"]}, session=session, before_retry=lambda: True)
+    assert len(session.calls) == 2
+
+
 def test_Bing_한_판만_실패하면_받은_것과_안내():
     class Half(FakeSession):
         def get(self, url, params=None, timeout=None, headers=None):

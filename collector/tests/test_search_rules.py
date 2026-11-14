@@ -322,3 +322,63 @@ def test_DB_대조식은_한글은_ILIKE_영문은_단어_경계_정규식():
     ilike, regex = rules.sql_patterns(["삼성_전자%", "AT&T Inc."])
     assert ilike == ["%삼성\\_전자\\%%"]
     assert regex == ["(^|[^0-9a-z])at&t inc\\.([^0-9a-z]|$)"]
+
+
+# ------------------------------------------------------------------ 단계 3 — 처음 값 묶음·사용자가 더한 제외 매체
+
+def test_처음_값은_묶음마다_도메인과_이름이고_중복이_없다():
+    seed = rules.seed_list()
+    assert {(row["kind"], row["value"]) for row in seed if row["kind"] == "domain"} == {("domain", d) for d in rules.EXCLUDED_DOMAINS}
+    assert {row["value"] for row in seed if row["kind"] == "name"} == set(rules.EXCLUDED_NAMES)
+    assert len(seed) == len({(row["kind"], row["value"]) for row in seed}), "같은 값이 두 묶음에 있으면 안 됨"
+    assert {row["group"] for row in seed} == {group for group, _, _ in rules.SEED_GROUPS}
+    assert all(group and (domains or names) for group, domains, names in rules.SEED_GROUPS)
+
+
+@pytest.mark.parametrize("value, expected", [
+    ("Example.COM", "example.com"), (" www.example.com. ", "example.com"), ("https://www.Example.com/path?q=1", "example.com"),
+    ("news.example.co.uk/section", "news.example.co.uk"), ("", None), ("   ", None),
+])
+def test_제외_도메인_값_정규화(value, expected):
+    assert rules.normalize_domain(value) == expected
+
+
+def test_사용자가_더한_매체는_도메인_점_경계와_이름_완전_일치():
+    extra = rules.make_excludes([
+        {"kind": "domain", "value": "Example-Wire.com"}, {"kind": "name", "value": "Synthetic Daily"},
+        {"kind": "name", "value": "  "}, {"kind": "other", "value": "x.com"}, {"kind": "domain", "value": None},
+    ])
+    assert extra == rules.Excludes(frozenset({"example-wire.com"}), frozenset({"synthetic daily"}))
+    assert rules.is_excluded_media("news.example-wire.com", None, extra)
+    assert rules.is_excluded_media("example-wire.com", None, extra)
+    assert not rules.is_excluded_media("notexample-wire.com", None, extra), "점 경계"
+    assert not rules.is_excluded_media("example-wire.com", None), "더한 목록 없이는 남음"
+    assert rules.is_excluded_media(None, "SYNTHETIC DAILY on MSN", extra)
+    assert not rules.is_excluded_media(None, "Synthetic Daily Weekly", extra), "이름은 완전 일치"
+    assert rules.is_excluded_media("xinhuanet.com", None, extra) and rules.is_excluded_media("example.cn", None, extra)
+
+
+def test_국제화_도메인은_punycode로_맞춰_대조한다():
+    """화면·백엔드는 제외 도메인을 punycode(xn--)로 저장합니다(Java IDN.toASCII) — 글 주소의 유니코드 호스트도 같은 모양으로 바꿔 봅니다."""
+    assert rules.ascii_host("한겨레.한국") == "xn--h89at9srwx.xn--3e0b707e"
+    assert rules.ascii_host("example.com") == "example.com"
+    assert rules.ascii_host("bad..한국") == "bad..한국", "바꾸지 못하면 그대로"
+    assert rules.normalize_domain("한겨레.한국") == "xn--h89at9srwx.xn--3e0b707e"
+    assert rules.normalize_domain("https://www.한겨레.한국/a") == "xn--h89at9srwx.xn--3e0b707e"
+    extra = rules.make_excludes([{"kind": "domain", "value": "xn--h89at9srwx.xn--3e0b707e"}])
+    assert rules.is_excluded_media(rules.domain_of("https://news.한겨레.한국/a"), None, extra)
+    assert rules.is_excluded_media("한겨레.한국", None, extra)
+    unicode_extra = rules.make_excludes([{"kind": "domain", "value": "한겨레.한국"}])
+    assert rules.is_excluded_media("xn--h89at9srwx.xn--3e0b707e", None, unicode_extra)
+
+
+def test_규칙_적용은_사용자가_더한_매체를_뺀_건수로_센다():
+    now = datetime(2026, 11, 14, 3, tzinfo=timezone.utc)
+    start = rules.window_start(rules.kst_today(now))
+    items = [{"title": "Kept story", "publisherDomain": "example.org", "publisher": "Example", "publishedAt": "2026-11-13T00:00:00+00:00"},
+             {"title": "Added outlet", "publisherDomain": "example-wire.com", "publisher": "Wire", "publishedAt": "2026-11-13T00:00:00+00:00"}]
+    kept, dropped, _ = rules.apply_rules(items, start=start, now=now,
+                                         excludes=rules.make_excludes([{"kind": "domain", "value": "example-wire.com"}]))
+    assert [item["title"] for item in kept] == ["Kept story"] and dropped["excluded"] == 1
+    kept, dropped, _ = rules.apply_rules(items, start=start, now=now)
+    assert len(kept) == 2 and dropped["excluded"] == 0

@@ -31,6 +31,8 @@ from .paper_stopwatch import task_paper_stopwatch_kr, task_paper_stopwatch_us
 from .paper_watch import task_paper_watch_us
 from .paper_watch_kr import task_paper_watch_kr
 from .paper_live import task_paper_live_kr, task_paper_live_us
+from .search_feeds import due as search_feeds_due, task_search_feeds
+from .search_watch import ENTITIES_PER_WAKE as WATCH_PER_WAKE, task_search_watch
 from .series import (
     task_cot_history, task_daum_futures_trend, task_equity_history, task_fed_liquidity,
     task_fred_series, task_fx_history, task_krx_futures, task_sector_history, task_volatility_history,
@@ -83,6 +85,11 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("us_consensus_release", "flex", task_us_consensus_release,
          "미국 지표 실제치 발표 직후 — Nasdaq 오늘 줄만 발표 시각 + 2~4분에 다시 받음(패킷 발표만, 하루 8회까지), 운영 서버면 TradingView 캘린더 일정도 당김",
          due=release_due),
+    # 정보 검색의 새 피드 묶음(ADR 0041 결정 8) — 보도자료·경제지 RSS 12개, 사건 뉴스와 같은 flex 방식(로컬에서도 돎). 모의 매매 패킷은 읽지 않습니다.
+    Task("search_feeds", "flex", task_search_feeds,
+         "정보 검색 보도자료·경제지 RSS — 연준·ECB·영란은행·Bloomberg·MarketWatch·CNBC·Benzinga·Seeking Alpha·BBC·Economist·Nikkei Asia, "
+         "피드마다 탄력 주기·조건부 요청, 90일 보관 (정보 검색 화면 — 모의 매매 패킷은 읽지 않음)",
+         due=search_feeds_due),
     Task("volatility_history", "slow", task_volatility_history, "VIX·MOVE 변동성 시계열", yahoo=True),
     Task("cot_history", "slow", task_cot_history, "CFTC COT (주 1회 발표)"),
     Task("daum_futures_trend", "slow", task_daum_futures_trend, "Daum 선물 투자주체별 수급"),
@@ -120,6 +127,10 @@ ALL_TASKS: tuple[Task, ...] = (
     Task("info_wire_financialjuice", "polite", task_info_wire_financialjuice, "정보 수집 — Financial Juice 속보 RSS 제목·링크·시각 (25~70분에 한 번, 운영자 화면 전용)"),
     Task("info_naver_flows", "polite", task_info_naver_flows, "정보 수집 — 네이버 투자자별 매매동향·외국인·기관 매매상위 (정규장 40~90분·장 밖 3~6시간, 운영자 화면 전용)"),
     Task("info_krx_daily", "polite", task_info_krx_daily, "정보 수집 — KRX 정보데이터시스템(로그인) 투자자별 순매수 상위·시장 합계·외국인 보유·공매도 (거래일 18:30 뒤 하루 한 번, 레이더·정보 수집 화면)"),
+    # 정보 검색의 관심 대상(ADR 0041 결정 9) — 등록된 대상마다 3~8시간에 한 번, 저장본 대조 + 구글·Bing 뉴스(호스트 하루 예산). 서버에서만.
+    Task("search_watch", "polite", task_search_watch,
+         "정보 검색 관심 대상 — 대상마다 3~8시간에 한 번 저장본 대조·구글·Bing 뉴스 RSS "
+         f"(20~40분에 한 번 깨어 {WATCH_PER_WAKE}곳까지, 정보 검색 화면)"),
 )
 
 TASKS_BY_NAME = {task.name: task for task in ALL_TASKS}

@@ -1750,6 +1750,182 @@ def source_state(task: str) -> dict | None:
         return conn.execute("SELECT * FROM fetch_source_state WHERE task = %s", (task,)).fetchone()
 
 
+# ------------------------------------------------------------------ 정보 검색 (ADR 0041 단계 3, V37)
+# search_watches·search_media_excludes는 백엔드 표라 읽기만 합니다(ADR 0008 — paper_settings 선례). search_watch_items·fetch_budgets는
+# 수집기 표라 여기서만 씁니다(tests/test_table_ownership.py가 봄).
+def search_watch_targets() -> list[dict]:
+    """
+    관심 대상을 대표 키마다 하나로 → [{key, kind, name, aliases, ids, watchers}](키 순서). 여러 사용자가 같은 대상을 등록해도 한 번만 모읍니다 —
+    종류·이름·식별자는 가장 최근 등록의 것, 별칭은 모든 등록의 것을 합칩니다(최근 등록 먼저, 같은 글자는 대소문자 무시로 하나).
+    """
+    with connection() as conn:
+        rows = conn.execute(
+            "SELECT entity_key, kind, name, aliases, ids FROM search_watches ORDER BY entity_key, created_at DESC, id DESC"
+        ).fetchall()
+    targets: dict[str, dict] = {}
+    for row in rows:
+        target = targets.get(row["entity_key"])
+        if target is None:
+            target = {"key": row["entity_key"], "kind": row["kind"], "name": row["name"], "aliases": [],
+                      "ids": row["ids"] if isinstance(row["ids"], dict) else {}, "watchers": 0}
+            targets[row["entity_key"]] = target
+        target["watchers"] += 1
+        taken = {alias.casefold() for alias in target["aliases"]}
+        for alias in row["aliases"] if isinstance(row["aliases"], list) else []:
+            if isinstance(alias, str) and alias.strip() and alias.strip().casefold() not in taken:
+                target["aliases"].append(alias.strip())
+                taken.add(alias.strip().casefold())
+    return list(targets.values())
+
+
+def search_media_excludes() -> list[dict]:
+    """사용자가 더한 제외 매체 → [{kind, value}](kind는 domain·name). 처음 값(코드 상수)은 services/search_rules에 있습니다."""
+    with connection() as conn:
+        return conn.execute("SELECT kind, value FROM search_media_excludes ORDER BY id").fetchall()
+
+
+_WATCH_ITEM_COLUMNS = ("item_id", "kind", "title", "url", "publisher", "publisher_domain", "source", "lang", "summary",
+                       "published_at", "first_seen_at")
+
+
+def insert_search_watch_items(entity_key: str, items: Iterable[dict]) -> int:
+    """
+    관심 대상의 글을 **넣기만** 합니다 — 같은 (대상, 글)이 이미 있으면 그대로(처음 받은 시각을 지킴). 넣은 행 수.
+
+    :param items: {item_id, kind, title, url, publisher, publisher_domain, source, lang, summary, published_at(datetime|None),
+        first_seen_at(datetime)} — 규칙(2년·중국어·매체 제외)은 부르는 쪽(tasks/search_watch)이 적용한 뒤입니다
+    """
+    rows = [item for item in items if item.get("item_id") and item.get("title") and item.get("source") and item.get("first_seen_at")]
+    if not rows:
+        return 0
+    marks = ", ".join(["%s"] * (len(_WATCH_ITEM_COLUMNS) + 1))
+    sql = (f"INSERT INTO search_watch_items (entity_key, {', '.join(_WATCH_ITEM_COLUMNS)}) VALUES ({marks}) "
+           "ON CONFLICT (entity_key, item_id) DO NOTHING")
+    inserted = 0
+    with connection() as conn, conn.cursor() as cur:
+        for item in rows:
+            cur.execute(sql, (entity_key, *(item.get(column) for column in _WATCH_ITEM_COLUMNS)))
+            inserted += cur.rowcount or 0
+    return inserted
+
+
+def search_watch_items(entity_key: str, limit: int) -> list[dict]:
+    """그 대상의 모은 글(작성 시각, 없으면 처음 받은 시각의 최근부터) 최대 ``limit``건."""
+    with connection() as conn:
+        return conn.execute(
+            "SELECT * FROM search_watch_items WHERE entity_key = %s "
+            "ORDER BY COALESCE(published_at, first_seen_at) DESC, item_id LIMIT %s",
+            (entity_key, limit),
+        ).fetchall()
+
+
+def search_watch_item_titles(entity_key: str) -> list[dict]:
+    """그 대상의 모은 글의 (item_id, title, url) — 경유 주소(구글) 줄을 같은 제목의 글과 겹쳐 넣지 않으려고 씁니다."""
+    with connection() as conn:
+        return conn.execute("SELECT item_id, title, url FROM search_watch_items WHERE entity_key = %s",
+                            (entity_key,)).fetchall()
+
+
+# 관심 대상 글 정리 문장의 시간 상한 — 표가 커져도 태스크 하나가 오래 붙잡지 않게(넘으면 QueryCanceled, 부르는 쪽이 다음 깨기에 다시).
+SEARCH_PURGE_TIMEOUT_MS = 10_000
+
+
+def _purge_timeout(conn) -> None:
+    conn.execute("SELECT set_config('statement_timeout', %s, true)", (str(SEARCH_PURGE_TIMEOUT_MS),))
+
+
+def delete_search_watch_items_before(moment: datetime) -> int:
+    """작성 시각(없으면 처음 받은 시각)이 ``moment``보다 이른 글을 지웁니다(2년 규칙 — 색인 search_watch_items_time) → 지운 행 수."""
+    with connection() as conn:
+        _purge_timeout(conn)
+        cur = conn.execute("DELETE FROM search_watch_items WHERE COALESCE(published_at, first_seen_at) < %s", (moment,))
+        return cur.rowcount or 0
+
+
+def purge_unwatched_search_items(schedule_prefix: str, grace_days: int, hash_chars: int) -> tuple[int, int]:
+    """
+    아무도 등록하지 않은 대상의 글을 유예 뒤에 지웁니다 → (지운 글 수, 지운 일정 줄 수).
+
+    대상의 일정 줄 이름은 ``<schedule_prefix><md5(대표 키) 앞 hash_chars자>``입니다(tasks/search_watch.schedule_item — 대표 키를 그대로 두지
+    않음). 유예는 그 일정 줄이 마지막으로 고쳐진 때부터 잽니다 — 등록된 동안에는 처리할 때마다 고쳐지므로, 등록을 지운 뒤 ``grace_days``일 안에
+    다시 등록하면 모은 글이 남습니다. 유예가 지난 대상의 일정 줄도 함께 지웁니다.
+    """
+    pattern = schedule_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    params = {"pattern": pattern, "prefix": schedule_prefix, "days": grace_days, "chars": hash_chars}
+    with transaction() as conn:
+        _purge_timeout(conn)
+        items = conn.execute(
+            """
+            DELETE FROM search_watch_items i
+            WHERE i.entity_key IN (
+                SELECT k.entity_key FROM (SELECT DISTINCT entity_key FROM search_watch_items) k
+                WHERE NOT EXISTS (SELECT 1 FROM search_watches w WHERE w.entity_key = k.entity_key)
+                  AND NOT EXISTS (SELECT 1 FROM fetch_schedule s
+                                  WHERE s.task = %(prefix)s || left(md5(k.entity_key), %(chars)s)
+                                    AND s.updated_at >= now() - make_interval(days => %(days)s)))
+            """,
+            params,
+        ).rowcount or 0
+        rows = conn.execute(
+            """
+            DELETE FROM fetch_schedule s
+            WHERE s.task LIKE %(pattern)s ESCAPE '\\' AND s.updated_at < now() - make_interval(days => %(days)s)
+              AND NOT EXISTS (SELECT 1 FROM search_watches w WHERE %(prefix)s || left(md5(w.entity_key), %(chars)s) = s.task)
+            """,
+            params,
+        ).rowcount or 0
+    return items, rows
+
+
+def search_watch_item_publishers() -> list[dict]:
+    """모은 글의 서로 다른 (publisher, publisher_domain) — 제외 목록이 바뀌었을 때 지울 매체를 고르는 데 씁니다."""
+    with connection() as conn:
+        _purge_timeout(conn)
+        return conn.execute("SELECT DISTINCT publisher, publisher_domain FROM search_watch_items").fetchall()
+
+
+def delete_search_watch_items_by_publisher(pairs: Iterable[tuple[str | None, str | None]]) -> int:
+    """(publisher, publisher_domain)이 같은 글을 지웁니다(NULL끼리도 같음) → 지운 행 수."""
+    params = list(dict.fromkeys(pairs))
+    if not params:
+        return 0
+    removed = 0
+    with connection() as conn, conn.cursor() as cur:
+        _purge_timeout(cur)
+        for publisher, domain in params:
+            cur.execute(
+                "DELETE FROM search_watch_items WHERE publisher IS NOT DISTINCT FROM %s AND publisher_domain IS NOT DISTINCT FROM %s",
+                (publisher, domain),
+            )
+            removed += cur.rowcount or 0
+    return removed
+
+
+def take_search_budget(host: str, purpose: str, day: date, limit: int) -> bool:
+    """
+    그 호스트의 ``purpose``(watch·search) ``day``(KST 날짜) 요청 예산에서 한 건을 씁니다. 이미 ``limit``건을 썼으면 쓰지 않고 False.
+
+    :func:`take_fetch_budget`처럼 한 문장으로 세고 올립니다(정기 polite 예산 fetch_hosts와 따로 — 표 fetch_budgets). 날짜가 바뀌면 1부터.
+    """
+    if limit <= 0:
+        return False
+    with connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO fetch_budgets (host, purpose, budget_day, budget_used) VALUES (%s, %s, %s, 1)
+            ON CONFLICT (host, purpose) DO UPDATE SET
+                budget_used = CASE WHEN fetch_budgets.budget_day = EXCLUDED.budget_day
+                                   THEN fetch_budgets.budget_used + 1 ELSE 1 END,
+                budget_day  = EXCLUDED.budget_day,
+                updated_at  = now()
+            WHERE fetch_budgets.budget_day IS DISTINCT FROM EXCLUDED.budget_day OR fetch_budgets.budget_used < %s
+            RETURNING budget_used
+            """,
+            (host, purpose, day, limit),
+        ).fetchone()
+    return row is not None
+
+
 # ==============================================================================
 # 8. 내부 헬퍼
 # ==============================================================================
