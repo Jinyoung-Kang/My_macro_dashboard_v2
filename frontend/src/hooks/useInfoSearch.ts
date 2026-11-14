@@ -10,6 +10,7 @@ import { endpoints } from "@/lib/endpoints";
 import {
   FEED_PENDING_MAX_POLLS,
   FEED_PENDING_REFRESH_MS,
+  canonicalSearchHref,
   feedPendingPhase,
   isEntityKey,
   isSlashShortcut,
@@ -33,7 +34,7 @@ import type {
 
 /**
  * 주소가 화면 상태(계약 §5) — `?q=`(후보 보기) 또는 `?e=&tab=&range=`. 새로고침·뒤로 가기·북마크가 같은 화면이 되게 합니다.
- * 대상·검색어를 바꾸면 기록에 쌓고(pushState — 뒤로 가기), 탭·기간은 바꿔 씁니다(replaceState). Next(앱 라우터)는 이 두 함수를
+ * 대상·검색어를 바꾸면 기록에 쌓고(pushState — 뒤로 가기), 탭·기간은 바꿔 씁니다(replaceState — 주소의 모르는 탭·기간 값도 기본값으로). Next(앱 라우터)는 이 두 함수를
  * 라우터에 이어 useSearchParams를 바꾸므로, 다른 화면에서 /search?q=로 온 이동(통합 검색 등)도 같은 길로 읽힙니다.
  * useSearchParams를 쓰므로 라우트(page.tsx)가 Suspense로 감쌉니다(정적 빌드 조건).
  */
@@ -45,6 +46,13 @@ export function useInfoSearchUrl() {
     if (mode === "push") window.history.pushState(null, "", href);
     else window.history.replaceState(null, "", href);
   }, []);
+
+  // 주소의 모르는 탭·기간 값(tab=bogus 등)은 화면이 기본값으로 보이므로 주소도 그 값으로 바꿔 씁니다(기록에 쌓지 않음 — QA-421).
+  // 지금 주소(window.location)를 읽습니다 — 같은 커밋에서 EntityView가 고를 수 없는 탭을 먼저 바꿔 썼으면 그것을 앞 렌더의 주소로 되돌리지 않게.
+  useEffect(() => {
+    const href = canonicalSearchHref(window.location.search);
+    if (href) go(href, "replace");
+  }, [params, go]);
 
   const openEntity = useCallback(
     (key: string) => {

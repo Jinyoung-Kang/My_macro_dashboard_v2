@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
-import { linkGraphSize } from "@/lib/infoSearch";
+import { canonicalSearchHref, linkGraphSize } from "@/lib/infoSearch";
 import type { SearchFeedItem, SessionUser } from "@/lib/types";
 import { SearchScreen } from "../SearchScreen";
 import { setLocation } from "./fakeNavigation";
@@ -240,8 +240,8 @@ describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 
   const url = () => new URLSearchParams(window.location.search);
   const tabNames = async () => within(await screen.findByRole("tablist", { name: "결과 탭" })).getAllByRole("tab").map((tab) => tab.textContent);
 
-  // QA-421: 수정 전 실패: 화면은 타임라인인데 주소의 tab=bogus가 그대로 남음(파싱이 조용히 기본값으로 바꿔 EntityView의 비교에 드러나지 않음).
-  it.fails("모르는 탭 값(tab=bogus) — 주소를 timeline으로 바꿔 쓴다(기록에 쌓지 않음, 기간은 그대로)", async () => {
+  // QA-421: 화면은 타임라인인데 주소의 tab=bogus가 그대로 남았음(파싱이 조용히 기본값으로 바꿔 EntityView의 비교에 드러나지 않음).
+  it("모르는 탭 값(tab=bogus) — 주소를 timeline으로 바꿔 쓴다(기록에 쌓지 않음, 기간은 그대로)", async () => {
     reads[endpoints.search.entity(TOPIC_KEY)] = { available: true, entity: TOPIC, errors: {} };
     renderScreen(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=bogus&range=1y`);
     const before = window.history.length;
@@ -253,8 +253,8 @@ describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 
     expect(window.history.length).toBe(before);
   });
 
-  // QA-421: 수정 전 실패: 화면은 30일인데 주소의 range=9y가 그대로 남음(기간은 바꿔 쓰는 길이 없었음).
-  it.fails("모르는 기간 값(range=9y) — 주소를 30d로 바꿔 쓴다(기록에 쌓지 않음, 탭은 그대로)", async () => {
+  // QA-421: 화면은 30일인데 주소의 range=9y가 그대로 남았음(기간은 바꿔 쓰는 길이 없었음).
+  it("모르는 기간 값(range=9y) — 주소를 30d로 바꿔 쓴다(기록에 쌓지 않음, 탭은 그대로)", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     renderScreen("/search?e=us:NVDA&tab=news&range=9y");
     const before = window.history.length;
@@ -265,11 +265,61 @@ describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 
     expect(window.history.length).toBe(before);
   });
 
+  it("고를 수 없는 탭 + 모르는 기간(주제 + tab=filings&range=9y) — 두 바꿔 쓰기가 서로 되돌리지 않고 한 주소로 끝난다", async () => {
+    reads[endpoints.search.entity(TOPIC_KEY)] = { available: true, entity: TOPIC, errors: {} };
+    renderScreen(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=filings&range=9y`);
+    const before = window.history.length;
+    const writes = vi.spyOn(window.history, "replaceState");
+    try {
+      await tabNames();
+      await waitFor(() => expect([url().get("tab"), url().get("range")]).toEqual(["timeline", "30d"]));
+      expect(url().get("e")).toBe(TOPIC_KEY);
+      expect(window.history.length).toBe(before);
+      // 앞 렌더의 주소(tab=filings)로 되돌린 뒤 다시 바꿔 쓰지 않음.
+      expect(writes.mock.calls.map(([, , href]) => new URLSearchParams(String(href).split("?")[1]).get("tab"))).not.toContain("filings");
+    } finally {
+      writes.mockRestore();
+    }
+  });
+
+  it("wd: 키를 풀지 못했어도(종류를 모름) 모르는 탭 값은 바꿔 쓴다 — 이름이 맞는 탭(holdings)은 그대로", async () => {
+    renderScreen("/search?e=wd:Q4000001&tab=bogus");
+    await waitFor(() => expect(url().get("tab")).toBe("timeline"));
+    expect(url().get("range")).toBe("30d");
+    cleanup();
+    renderScreen("/search?e=wd:Q4000001&tab=holdings");
+    expect(screen.getByText("대상을 푸는 중…")).toBeTruthy();
+    expect(window.location.search).toBe("?e=wd:Q4000001&tab=holdings");
+  });
+
   it("탭·기간이 빠진 주소(알림의 /search?e=…&tab=timeline 등)는 기본값으로 보이고 주소는 그대로 둔다", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     renderScreen("/search?e=us:NVDA&tab=timeline");
     await tabNames();
     expect(screen.getByRole("tab", { name: "타임라인" }).getAttribute("aria-selected")).toBe("true");
     expect(window.location.search).toBe("?e=us:NVDA&tab=timeline");
+  });
+});
+
+describe("canonicalSearchHref — 주소의 모르는 탭·기간 값을 기본값으로 바꾼 주소(QA-421)", () => {
+  it("모르는 탭·기간이면 기본값으로 바꾼 주소, 아는 값은 그대로", () => {
+    expect(canonicalSearchHref("?e=us:NVDA&tab=bogus&range=1y")).toBe("/search?e=us:NVDA&tab=timeline&range=1y");
+    expect(canonicalSearchHref("?e=us:NVDA&tab=news&range=9y")).toBe("/search?e=us:NVDA&tab=news&range=30d");
+    expect(canonicalSearchHref("?e=us:NVDA&tab=&range=")).toBe("/search?e=us:NVDA&tab=timeline&range=30d");
+    expect(canonicalSearchHref(new URLSearchParams("e=topic:합성 반도체&tab=Timeline"))).toBe(
+      `/search?e=topic:${encodeURIComponent("합성 반도체")}&tab=timeline&range=30d`,
+    );
+  });
+
+  it("바꿀 것이 없으면 null — 아는 값, 빠진 값, 대상이 없거나 키 모양이 틀린 주소", () => {
+    expect(canonicalSearchHref("?e=us:NVDA&tab=news&range=1y")).toBeNull();
+    // 이름은 맞지만 이 대상에서 고를 수 없는 탭은 종류를 아는 EntityView가 맡음
+    expect(canonicalSearchHref("?e=topic:x&tab=filings&range=30d")).toBeNull();
+    expect(canonicalSearchHref("?e=us:NVDA&tab=timeline")).toBeNull();
+    expect(canonicalSearchHref("?e=us:NVDA")).toBeNull();
+    expect(canonicalSearchHref("?q=엔비디아&tab=bogus")).toBeNull();
+    expect(canonicalSearchHref("?e=us:nvda&tab=bogus")).toBeNull();
+    expect(canonicalSearchHref("")).toBeNull();
+    expect(canonicalSearchHref(null)).toBeNull();
   });
 });

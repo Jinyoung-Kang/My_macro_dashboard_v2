@@ -184,6 +184,21 @@ export function searchHref(state: { q?: string | null; e?: string | null; tab?: 
   return q ? `/search?q=${encodeValue(q)}` : "/search";
 }
 
+/**
+ * 주소에 모르는 탭·기간 값(tab=bogus·range=9y 등 — 화면은 기본값으로 보임)이 있으면 그 값을 기본값으로 바꾼 주소, 바꿀 것이 없으면 null(QA-421).
+ * 대상(e)이 있는 주소만 봅니다. 빠진 탭·기간은 기본값으로 읽히므로 그대로 둡니다(알림 링크 `?e=…&tab=timeline` 등). 이름은 맞지만 이 대상에서
+ * 고를 수 없는 탭(주제의 공시 등)은 대상의 종류를 알아야 해서 EntityView가 바꿔 씁니다.
+ */
+export function canonicalSearchHref(input: URLSearchParams | string | null | undefined): string | null {
+  const params = typeof input === "string" || input == null ? new URLSearchParams(input ?? "") : input;
+  const state = parseSearchUrl(params);
+  if (!state.e) return null;
+  const tab = params.get("tab");
+  const range = params.get("range");
+  const unknown = (tab !== null && tab !== state.tab) || (range !== null && range !== state.range);
+  return unknown ? searchHref({ e: state.e, tab: state.tab, range: state.range }) : null;
+}
+
 // ------------------------------------------------------------------ 후보
 
 const sameName = (a: string, b: string) => a.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase() === b.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
