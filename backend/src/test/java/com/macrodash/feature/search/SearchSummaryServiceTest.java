@@ -12,6 +12,7 @@ import com.macrodash.support.CurrentUser;
 import com.macrodash.support.InvalidRequestException;
 import com.macrodash.support.TooManyRequestsException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -805,6 +806,27 @@ class SearchSummaryServiceTest {
         assertThat(budget.usedToday()).isPositive();
         clock.advance(Duration.ofHours(12));                  // 2026-11-16 00:00 KST
         assertThat(budget.usedToday()).isZero();
+    }
+
+    // ------------------------------------------------------------------ QA
+
+    @Test
+    @Disabled("QA-427: 수정 전 실패 — stale 안내가 '받은 지 15분이 지나면 빠짐'으로 사유를 하나로 단정함")
+    @DisplayName("QA-427 stale 안내는 받아 둔 결과가 없는 까닭을 하나로 단정하지 않음 — 15분이 지난 성공·60초가 지난 실패·부르지 않은 출처가 모두 offline")
+    void qa427StaleMessageDoesNotAssertOneReason() {
+        // 수집기 출처 캐시(성공 15분·실패 60초)가 지난 뒤 external=false로 읽으면 성공이었는지 실패였는지 모두 offline — 사유를 가를 수 없음.
+        feedReturns("news", feed(List.of(), List.of(source("bing", "Bing 뉴스", "offline"))));
+
+        Map<String, Object> out = service().summarize(KEY, "news", "30d", OWNER);
+
+        assertThat(out.get("reason")).isEqualTo("stale");
+        assertThat((String) out.get("message"))
+                .contains("1곳")
+                .doesNotContain("15분이 지나면 빠짐")
+                .contains("15분")
+                .contains("받지 못했")
+                .contains("아직 부르지 않");
+        verifyNoEngine();
     }
 
     /** 고칠 수 있는 시계. */
