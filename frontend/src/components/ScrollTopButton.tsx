@@ -49,11 +49,13 @@ export function ScrollTopButton({ layer = "z-40" }: { layer?: string } = {}) {
     document.getElementById("main")?.focus({ preventScroll: true });
   };
   return (
+    // 이름은 보이는 글 'TOP'으로 시작하고 뜻을 덧붙입니다(WCAG 2.5.3 — 이름에 'TOP'이 없으면 음성 입력의 'TOP 누르기'가 단추를 찾지
+    // 못함). 숨긴 글(sr-only)로 덧붙이면 그 사이 띄어쓰기를 도구마다 달리 다뤄 'TOP맨 위로'가 되기도 해서 이름을 통째로 적습니다.
     <button
       type="button"
       style={{ translate: "0 calc(-1 * var(--bottom-sheet, 0px))" }}
       onClick={toTop}
-      aria-label="맨 위로"
+      aria-label="TOP 맨 위로"
       className={`fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 ${layer} inline-flex min-h-11 items-center justify-center gap-1 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-bright shadow-lg hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6 lg:min-h-0`}
     >
       <ChevronUpIcon size={14} />

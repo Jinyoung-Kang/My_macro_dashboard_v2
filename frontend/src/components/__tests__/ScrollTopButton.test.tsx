@@ -33,11 +33,11 @@ function scrollMain(top: number) {
 describe("ScrollTopButton", () => {
   it("맨 위에서는 없고, 본문이 400px 넘게 내려가면 나타났다가 다시 올라가면 사라진다", () => {
     render(<ScrollTopButton />);
-    expect(screen.queryByRole("button", { name: "맨 위로" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
     scrollMain(401);
-    expect(screen.getByRole("button", { name: "맨 위로" }).textContent).toContain("TOP");
+    expect(screen.getByRole("button", { name: "TOP 맨 위로" }).textContent).toContain("TOP");
     scrollMain(100);
-    expect(screen.queryByRole("button", { name: "맨 위로" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
   });
 
   it("창이 내려가도 나타나고, 누르면 창과 본문을 모두 맨 위로 부드럽게", () => {
@@ -46,7 +46,7 @@ describe("ScrollTopButton", () => {
       (window as { scrollY: number }).scrollY = 800;
       window.dispatchEvent(new Event("scroll"));
     });
-    fireEvent.click(screen.getByRole("button", { name: "맨 위로" }));
+    fireEvent.click(screen.getByRole("button", { name: "TOP 맨 위로" }));
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
     expect(main.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
@@ -54,11 +54,11 @@ describe("ScrollTopButton", () => {
   it("층(z-index)은 기본 z-40이고 화면이 낮출 수 있다 — 정보 검색은 휴대폰 미리보기 서랍(z-30) 아래", () => {
     const { unmount } = render(<ScrollTopButton />);
     scrollMain(500);
-    expect(screen.getByRole("button", { name: "맨 위로" }).className).toContain("z-40");
+    expect(screen.getByRole("button", { name: "TOP 맨 위로" }).className).toContain("z-40");
     unmount();
     render(<ScrollTopButton layer="z-20" />);
     scrollMain(600);
-    const lowered = screen.getByRole("button", { name: "맨 위로" }).className;
+    const lowered = screen.getByRole("button", { name: "TOP 맨 위로" }).className;
     expect(lowered).toContain("z-20");
     expect(lowered).not.toContain("z-40");
   });
@@ -67,7 +67,7 @@ describe("ScrollTopButton", () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
     render(<ScrollTopButton />);
     scrollMain(500);
-    fireEvent.click(screen.getByRole("button", { name: "맨 위로" }));
+    fireEvent.click(screen.getByRole("button", { name: "TOP 맨 위로" }));
     expect(main.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 });

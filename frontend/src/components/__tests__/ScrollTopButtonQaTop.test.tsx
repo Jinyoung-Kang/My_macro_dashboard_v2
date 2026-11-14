@@ -43,7 +43,7 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
     for (const layer of [undefined, "z-20"]) {
       const { unmount } = render(layer ? <ScrollTopButton layer={layer} /> : <ScrollTopButton />);
       scrollMain(500);
-      const className = screen.getByRole("button", { name: "맨 위로" }).className;
+      const className = screen.getByRole("button", { name: "TOP 맨 위로" }).className;
       expect(hasClass(className, "min-h-11")).toBe(true);
       expect(hasClass(className, "lg:min-h-0")).toBe(true);
       expect(hasClass(className, "items-center")).toBe(true);
@@ -69,18 +69,34 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
     for (const scroll of [scrollMain, scrollWindow]) {
       const { unmount } = render(<ScrollTopButton layer="z-20" />);
       scroll(1500);
-      const button = screen.getByRole("button", { name: "맨 위로" });
+      const button = screen.getByRole("button", { name: "TOP 맨 위로" });
       button.focus();
       expect(document.activeElement).toBe(button);
       fireEvent.click(button);
       scroll(0); // 맨 위에 닿아 단추가 사라짐
-      expect(screen.queryByRole("button", { name: "맨 위로" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
       expect(document.activeElement).toBe(main);
       // 포커스가 본문을 끌어당겨 부드러운 스크롤을 끊거나 창을 본문 머리로 옮기지 않게.
       expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
       unmount();
       main.blur();
       focus.mockClear();
+    }
+  });
+
+  // QA-426 검토 지적(WCAG 2.5.3 Label in Name): 보이는 글은 'TOP'인데 aria-label '맨 위로'가 이름을 덮어 이름에 'TOP'이 없었음 —
+  // 음성 입력의 'TOP 누르기'가 단추를 찾지 못함. 이름은 보이는 글로 시작하고 뜻(맨 위로)을 덧붙입니다.
+  it("이름은 보이는 글 'TOP'으로 시작하고 '맨 위로'를 덧붙인다(WCAG 2.5.3) — 두 층 모두", () => {
+    for (const layer of [undefined, "z-20"]) {
+      const { unmount } = render(layer ? <ScrollTopButton layer={layer} /> : <ScrollTopButton />);
+      scrollMain(500);
+      const button = screen.getByRole("button", { name: "TOP 맨 위로" });
+      // 눈에 보이는 글은 'TOP' 그대로(모양은 바뀌지 않음)이고, 이름이 그 글로 시작합니다.
+      const visible = button.textContent?.trim() ?? "";
+      expect(visible).toBe("TOP");
+      expect(button.getAttribute("aria-label")?.startsWith(visible)).toBe(true);
+      unmount();
+      scrollMain(0);
     }
   });
 
@@ -91,7 +107,7 @@ describe("ScrollTopButton — 정보 검색 QA", () => {
       (window as { scrollY: number }).scrollY = 900;
       window.dispatchEvent(new Event("scroll"));
     });
-    fireEvent.click(screen.getByRole("button", { name: "맨 위로" }));
+    fireEvent.click(screen.getByRole("button", { name: "TOP 맨 위로" }));
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 });

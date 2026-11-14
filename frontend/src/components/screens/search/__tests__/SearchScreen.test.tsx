@@ -114,12 +114,12 @@ describe("첫 화면", () => {
     document.body.appendChild(main);
     try {
       const { container } = renderScreen();
-      expect(screen.queryByRole("button", { name: "맨 위로" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
       act(() => {
         main.scrollTop = 900;
         main.dispatchEvent(new Event("scroll"));
       });
-      const top = screen.getByRole("button", { name: "맨 위로" });
+      const top = screen.getByRole("button", { name: "TOP 맨 위로" });
       expect(top.textContent).toContain("TOP");
       expect(container.querySelector('[data-scope="search"]')?.contains(top)).toBe(true);
       expect(top.className).toContain("z-20");
