@@ -68,7 +68,7 @@ public class SearchWatchService {
      * {@code dart}(DART 고유번호 저장본에 그 종목이 없음)는 다시 물어도 같아서 넣지 않습니다.
      */
     static final Set<String> RETRY_ERRORS = Set.of("entity", "wikidata", "sec");
-    private static final List<String> ID_FIELDS = List.of("ticker", "market", "stockCode", "cik", "dartCorpCode", "wikidata");
+    private static final List<String> ID_FIELDS = List.of("ticker", "market", "stockCode", "cik", "dartCorpCode", "wikidata", "lei");
     private static final String TOPIC = "topic:";
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
     private static final Pattern HOST_LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?");
@@ -439,7 +439,8 @@ public class SearchWatchService {
     }
 
     /**
-     * 도메인 → 소문자 호스트. 앞의 {@code http://}·{@code https://}와 끝의 '/'·'.'은 지우고, 국제화 도메인은 ASCII(punycode)로 바꿉니다.
+     * 도메인 → 소문자 호스트. 앞의 {@code http://}·{@code https://}·{@code www.}와 끝의 '/'·'.'은 지우고(수집기 normalize_domain과 같게 —
+     * 대조는 점 경계라 www 줄은 따로 둘 까닭이 없음), 국제화 도메인은 ASCII(punycode)로 바꿉니다.
      * 경로·인자·포트·사용자·공백, 253자 넘음, 점이 없는 이름, 규칙에 맞지 않는 이름표는 400.
      */
     static String host(String value) {
@@ -462,9 +463,13 @@ public class SearchWatchService {
         if (text.endsWith(".")) {
             text = text.substring(0, text.length() - 1);
         }
+        text = text.toLowerCase(Locale.ROOT);
+        if (text.startsWith("www.")) {
+            text = text.substring("www.".length());
+        }
         String ascii;
         try {
-            ascii = IDN.toASCII(text.toLowerCase(Locale.ROOT), IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
+            ascii = IDN.toASCII(text, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
         } catch (IllegalArgumentException e) {
             throw new InvalidRequestException("도메인 형식이 올바르지 않습니다(예: example.com).");
         }

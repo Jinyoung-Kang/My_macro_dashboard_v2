@@ -10,13 +10,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * 정보 검색(사이드바 '정보 검색' {@code /search}, ADR 0041) — 회원 경로 다섯. 응답 모양은 계약(docs/specs/2026-11-14-info-search-contract.md §3·§6-4)이
+ * 정보 검색(사이드바 '정보 검색' {@code /search}, ADR 0041) — 회원 경로 여섯. 응답 모양은 계약(docs/specs/2026-11-14-info-search-contract.md §3·§6-4·§7-5)이
  * 정본이고, 수집기 응답에 {@code available}을 더해 그대로 전합니다.
  *
  * <pre>
  *  GET /api/search/suggest?q=          치는 동안의 후보(외부 호출 없음)
  *  GET /api/search/resolve?q=          Enter의 후보(로컬 + Wikidata)
  *  GET /api/search/entity?e=           대상 풀기
+ *  GET /api/search/links?e=            연결 보강(내부자 명단·법인 관계 — 연결 탭을 열 때)
  *  GET /api/search/feed?e=&amp;tab=&amp;refresh=1   결과(2년 묶음, 글·논평 탭은 운영자만, refresh=1은 지금 새로 받기 — 사용자당 10분에 1번)
  *  GET /api/search/recent              첫 화면 최근 글(새 피드 묶음, 운영자는 속보도)
  * </pre>
@@ -48,6 +49,11 @@ public class SearchController {
     @GetMapping("/entity")
     public Map<String, Object> entity(@RequestParam(required = false) String e, HttpServletRequest request) {
         return search.entity(e, CurrentUser.of(request));
+    }
+
+    @GetMapping("/links")
+    public Map<String, Object> links(@RequestParam(required = false) String e, HttpServletRequest request) {
+        return search.links(e, CurrentUser.of(request));
     }
 
     @GetMapping("/feed")

@@ -229,15 +229,16 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 
 ### 정보 검색 (`/search` — [ADR 0041](adr/0041-info-search-watch.md), [계약](specs/2026-11-14-info-search-contract.md))
 
-기업·기관·사람·주제를 대상으로 풀어 최근 2년의 뉴스·글을 모읍니다(회원 — 운영자 전용 저장본의 줄과 글·논평 탭은 운영자에게만). 즉석 검색은 수집기 메모리
-캐시에만 두고 저장하지 않습니다. 데모 열람·`store_only`는 외부를 부르지 않고 저장본·캐시만(출처 상태 `offline`). 응답 모양은 계약 §3이 정본입니다.
+기업·기관·사람·주제를 대상으로 풀어 최근 2년의 뉴스·글·공시·리서치를 모읍니다(회원 — 운영자 전용 저장본의 줄과 글·논평 탭은 운영자에게만). 즉석 검색은 수집기 메모리
+캐시에만 두고 저장하지 않습니다. 데모 열람·`store_only`는 외부를 부르지 않고 저장본·캐시만(출처 상태 `offline`). 응답 모양은 계약 §3·§6·§7이 정본입니다.
 
 | 경로 | 설명 |
 |---|---|
 | `GET /api/search/suggest?q=` | 치는 동안의 후보(외부 호출 없음 — DART 고유번호·SEC 티커 저장본, 13F 기관, 거장 등) → `{items:[{key, kind, name, sub, source}], fetchedAt}`, 최대 12개. 검색어 1~60자 |
 | `GET /api/search/resolve?q=` | Enter의 후보 — 로컬 + Wikidata(한국어·영어, 1시간 캐시), 맨 끝에 `topic:<q>` → `{items, errors, fetchedAt}` |
-| `GET /api/search/entity?e=` | 대상 풀기(키 `us:`·`kr:`·`cik:`·`wd:`·`topic:` — 모양이 틀리면 400) → `{entity:{key, kind, name, nameKo, nameEn, aliases, description, ids:{ticker, market, stockCode, cik, dartCorpCode, wikidata}, links:[{relation, key, name, kind, source}], sources}, errors, fetchedAt}`, 하루 캐시 |
-| `GET /api/search/feed?e=&tab=timeline\|news\|posts\|filings\|research&refresh=1` | 2년 묶음 한 번에(화면이 7일·30일·1년·2년으로 자름) → `{entityKey, tab, items:[{id, kind, title, url, publisher, publisherDomain, publishedAt, timeBasis, source, lang, summary, readerId}], sources:[{source, label, status, count, dropped:{old, noTime, chinese, excluded}, message}], window:{from, to}, rangeCounts, olderOnlyLatest, pending, fetchedAt}` — 2년 밖·시각 모름·중국어 제목·`.cn`·제외 매체는 빼고 건수만, 15분 캐시. `posts`는 운영자만(그 밖 403). `refresh=1`은 캐시를 건너뛰는 '지금 새로 받기'(사용자당 10분에 1번, 데모·`STORE_ONLY`는 받지 않음) — 넘으면 캐시 그대로 부르고 `refreshNote`에 안내 한 줄(새로 받았으면 `null`, 묻지 않으면 칸 없음) |
+| `GET /api/search/entity?e=` | 대상 풀기(키 `us:`·`kr:`·`cik:`·`wd:`·`topic:` — 모양이 틀리면 400) → `{entity:{key, kind, name, nameKo, nameEn, aliases, description, ids:{ticker, market, stockCode, cik, dartCorpCode, wikidata, lei}, links:[{relation, key, name, kind, source, detail}], sources}, errors, fetchedAt}`, 하루 캐시. `lei`는 Wikidata P1278의 첫 값(20자 형식만, 없으면 null). `links`는 `links` 경로와 같은 모양이고, 여기의 Wikidata·13F 연결은 `detail`이 null |
+| `GET /api/search/links?e=` | 연결 보강(연결 탭을 열 때 — 대상 풀기의 `links`와 화면이 합침) → `{entityKey, links:[{relation, key, name, kind, source, detail}], sources:[SourceStatus], fetchedAt}` — 출처 `insiders`(미국 상장 회사의 Yahoo 내부자 명단 → `relation` `insider`, `source` `yahoo`)·`gleif`(`ids.lei`가 있을 때 GLEIF 모회사·최상위 모회사·자회사 20곳까지 → `parent`·`ultimate_parent`·`subsidiary`, `source` `gleif`). 해당이 없으면 그 출처는 `skipped`, 키는 null(누르면 그 이름으로 resolve). 중계만(운영자 전용 출처 없음), 키가 틀리면 400 |
+| `GET /api/search/feed?e=&tab=timeline\|news\|posts\|filings\|research&refresh=1` | 2년 묶음 한 번에(화면이 7일·30일·1년·2년으로 자름) → `{entityKey, tab, items:[{id, kind, title, url, publisher, publisherDomain, publishedAt, timeBasis, source, lang, summary, readerId}], sources:[{source, label, status, count, dropped:{old, noTime, chinese, excluded}, message}], window:{from, to}, rangeCounts, olderOnlyLatest, pending, fetchedAt}` — 2년 밖·시각 모름·중국어 제목·`.cn`·제외 매체는 빼고 건수만, 15분 캐시. `posts`는 운영자만(그 밖 403). `filings`(기업·기관·사람 — `kind` `filing`, 출처 `sec` 회사별 공시·`sec_fts` 이름 전문 검색(사람·13F 기관)·`dart`)·`research`(상장 기업 — `kind` `research`, 출처 `yahoo_research` 투자의견 변경(미국)·`naver_research` 증권사 리포트(국내))는 회원에게도 보이고 `timeline`에도 섞임(주제는 두 탭 출처 없음). `timeBasis`는 `published`·`fetched`·`date`(날짜만 아는 출처 — `publishedAt`은 그 출처 달력의 그 날 00:00, 화면은 날짜만). `refresh=1`은 캐시를 건너뛰는 '지금 새로 받기'(사용자당 10분에 1번, 데모·`STORE_ONLY`는 받지 않음) — 넘으면 캐시 그대로 부르고 `refreshNote`에 안내 한 줄(새로 받았으면 `null`, 묻지 않으면 칸 없음) |
 | `GET /api/search/recent` | 첫 화면 — 새 피드 묶음(보도자료·경제지 12곳) 최근 30건, 운영자에게는 속보 최근 20건을 더함 → `{available, items:[FeedItem], errors, fetchedAt}` — `errors`는 읽지 못한 저장본(`{출처: 사유}`, 없으면 빈 객체) |
 | `GET /api/search/watch` | 내 관심 대상 → `{available, items:[{id, key, kind, name, createdAt, lastSeenAt, newCount}], limits:{mine, max, serverUsed, serverMax}, collecting}` — `newCount`는 마지막으로 본 뒤 처음 받았고 작성 시각이 그때의 24시간 전과 등록 시각 가운데 늦은 것보다 늦은 글 수(회원에게는 운영자 전용 출처에서 온 글을 세지 않음), `collecting`은 서버 정기 수집이 켜진 곳인지(모르면 null) |
 | `POST /api/search/watch` | `{key}` → 대상을 풀어 이름·별칭·식별자와 함께 대표 키로 등록(데모·`store_only` 403). 상한 회원 10·운영자 50·서버 전체 서로 다른 대상 100 — 넘으면 409(`reason` user_limit·server_limit). 이미 있으면(다른 키로 등록한 같은 대상도) 그대로 200(`created:false`). 대상을 풀지 못하면 409(unresolved), 수집기에 닿지 못했거나 표가 없으면 503(`topic:` 키는 수집기 없이도 등록), 풀기가 덜 끝났으면(출처 일시 실패) 저장하지 않고 503(partial) |
@@ -443,7 +444,8 @@ CAGR 지수도 같음), 20일 미만이면 `cumReturnPct`만 있습니다. 변�
 | [토큰] `GET /live/search/suggest?q=&owner=&external=` | 정보 검색 — 치는 동안의 후보(로컬 색인만, 외부 호출 없음) |
 | [토큰] `GET /live/search/resolve?q=&owner=&external=` | 정보 검색 — Enter의 후보(로컬 + Wikidata, 1시간 캐시) |
 | [토큰] `GET /live/search/entity?e=&owner=&external=` | 정보 검색 — 대상 풀기(Wikidata·SEC·DART 표, 하루 캐시) |
-| [토큰] `GET /live/search/feed?e=&tab=&owner=&external=&refresh=` | 정보 검색 — 결과(구글·Bing·Yahoo·네이버·연합인포맥스 + 저장본(사건 뉴스·새 피드 묶음·관심 대상이 모은 글·운영자 전용 글), 2년 자르기·중국어·매체 거름, 15분 캐시). `external=false`면 외부를 부르지 않음, `refresh=true`면 출처 캐시를 건너뜀 |
+| [토큰] `GET /live/search/feed?e=&tab=&owner=&external=&refresh=` | 정보 검색 — 결과(구글·Bing·Yahoo·네이버·연합인포맥스 + 공시(SEC submissions·EDGAR 전문 검색·DART `list.json`)·리서치(yfinance 투자의견 변경·네이버 종목 리포트) + 저장본(사건 뉴스·새 피드 묶음·관심 대상이 모은 글·운영자 전용 글), 2년 자르기·중국어·매체 거름, 15분 캐시). `external=false`면 외부를 부르지 않음, `refresh=true`면 출처 캐시를 건너뜀 |
+| [토큰] `GET /live/search/links?e=&owner=&external=` | 정보 검색 — 연결 보강(yfinance 내부자 명단·GLEIF 법인 관계, 출처마다 캐시) → `{entityKey, links, sources, fetchedAt}`. `external=false`면 캐시만 |
 | [토큰] `GET /live/search/recent?owner=` | 정보 검색 첫 화면 — 새 피드 묶음·(운영자) 속보 최근 글(저장본만) → `{items, errors, fetchedAt}` |
 | [토큰] `GET /live/search/excludes` | 매체 제외 목록의 처음 값(코드 상수, 외부 호출·DB 없음) → `{seed:[{kind, value, group}], fixedRules, politeEnabled}` — `politeEnabled`는 관심 대상 정기 수집이 이 수집기에서 도는지 |
 | [토큰] `GET /verify/readings?market=&investor=&tradeType=` | 검증용 원자료 (판정은 백엔드, 읽는 코드는 `app/verification.py`) |

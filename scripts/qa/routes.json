@@ -490,6 +490,13 @@
     },
     {
       "m": "GET",
+      "p": "/api/search/links",
+      "q": {
+        "e": "str"
+      }
+    },
+    {
+      "m": "GET",
       "p": "/api/search/feed",
       "q": {
         "e": "str",

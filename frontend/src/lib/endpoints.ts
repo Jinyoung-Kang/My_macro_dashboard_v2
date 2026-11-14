@@ -128,6 +128,8 @@ export const endpoints = {
      * 계약 §6-4). 주지 않으면 지금까지와 같은 주소입니다.
      */
     feed: (e: string, tab: string, refresh?: boolean) => withQuery("/api/search/feed", { e, tab, refresh: refresh ? 1 : undefined }),
+    /** 연결 보강(계약 §7-5 — 내부자 명단·법인 관계). 연결 탭을 열 때만 부르고 대상 풀기의 links와 합쳐 보입니다. */
+    links: (e: string) => withQuery("/api/search/links", { e }),
     /** 첫 화면 — 새 피드 묶음의 최근 글(운영자는 속보를 더함). */
     recent: "/api/search/recent",
     /** 내 관심 대상 — GET 목록, POST `{key}` 등록(데모 403, 상한이면 409). */

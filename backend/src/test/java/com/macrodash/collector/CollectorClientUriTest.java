@@ -189,4 +189,22 @@ class CollectorClientUriTest {
         assertThat(decodedParam("owner")).isEqualTo("true");
         assertThat(receivedQueries.get(1)).isNull();
     }
+
+    @Test
+    @DisplayName("정보 검색 연결 보강 — 대상 키(한글·공백·콜론·'.')와 external·owner가 그대로 도착한다")
+    void searchLinksParametersArrive() {
+        client.liveSearchLinks("topic:AI 반도체", false, true);
+
+        assertThat(receivedPaths).containsExactly("/live/search/links");
+        assertThat(decodedParam("e")).isEqualTo("topic:AI 반도체");
+        assertThat(decodedParam("external")).isEqualTo("false");
+        assertThat(decodedParam("owner")).isEqualTo("true");
+        assertThat(receivedQueries.get(0)).doesNotContain("%25");
+
+        receivedQueries.clear();
+        client.liveSearchLinks("us:BRK.B", true, false);
+        assertThat(decodedParam("e")).isEqualTo("us:BRK.B");
+        assertThat(decodedParam("external")).isEqualTo("true");
+        assertThat(decodedParam("owner")).isEqualTo("false");
+    }
 }

@@ -117,6 +117,19 @@ public class SearchService {
         return relay(() -> collector.liveSearchEntity(key, external, owner), null);
     }
 
+    /**
+     * 연결 보강(계약 §7-5) — 내부자 명단(Yahoo)·법인 관계(GLEIF). 중계만 합니다: 운영자 전용 출처가 없어 회원에게서 지울 줄이 없고, 대상 풀기의
+     * {@code links}와 합치는 일은 화면이 합니다.
+     *
+     * @throws InvalidRequestException 대상 키가 틀림(400)
+     */
+    public Map<String, Object> links(String e, CurrentUser user) {
+        String key = entityKey(e);
+        boolean owner = owner(user);
+        boolean external = external(user);
+        return relay(() -> collector.liveSearchLinks(key, external, owner), null);
+    }
+
     /** 결과(계약 §3-4) — 새로 받기 없이. */
     public Map<String, Object> feed(String e, String tab, CurrentUser user) {
         return feed(e, tab, false, user);

@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 /**
- * 정보 검색 경로 네 개(계약 §3) — 컨트롤러가 요청의 사용자를 서비스에 넘기고, 400·403이 공통 오류 모양({@code {error, message}})으로 나가는지.
+ * 정보 검색 경로(계약 §3·§6-4·§7-5) — 컨트롤러가 요청의 사용자를 서비스에 넘기고, 400·403이 공통 오류 모양({@code {error, message}})으로 나가는지.
  * 경로 등급(회원)은 세션 필터가 {@code AccessPolicy}로 막으므로 여기서는 요청 속성의 사용자만 넣습니다.
  */
 class SearchControllerTest {
@@ -138,5 +138,35 @@ class SearchControllerTest {
         when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(MAPPER.readTree("{}")));
         assertThat(call("/api/search/feed", OWNER, 200, "e", "us:NVDA").has("refreshNote")).as("묻지 않으면 칸 없음").isFalse();
         assertThat(call("/api/search/feed", OWNER, 400, "e", "us:NVDA", "refresh", "maybe").path("error").asString()).isEqualTo("bad_request");
+    }
+
+    @Test
+    @DisplayName("연결 보강(/links, 계약 §7-5) — 수집기 응답에 available:true를 더해 중계하고, 운영자면 owner=true")
+    void linksRelays() throws Exception {
+        when(collector.liveSearchLinks(anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(MAPPER.readTree(
+                "{\"entityKey\":\"us:NVDA\",\"links\":[{\"relation\":\"insider\",\"key\":null,\"name\":\"합성 임원\",\"kind\":\"person\","
+                        + "\"source\":\"yahoo\",\"detail\":\"합성 직함\"}],\"sources\":[],\"fetchedAt\":\"2026-11-14T03:00:00+00:00\"}")));
+
+        JsonNode member = call("/api/search/links", MEMBER, 200, "e", "us:NVDA");
+        assertThat(member.path("available").asBoolean()).isTrue();
+        assertThat(member.path("entityKey").asString()).isEqualTo("us:NVDA");
+        assertThat(member.path("links").get(0).path("detail").asString()).isEqualTo("합성 직함");
+        verify(collector).liveSearchLinks("us:NVDA", true, false);
+
+        assertThat(call("/api/search/links", OWNER, 200, "e", "wd:Q182477").path("available").asBoolean()).isTrue();
+        verify(collector).liveSearchLinks("wd:Q182477", true, true);
+    }
+
+    @Test
+    @DisplayName("연결 보강 — 키가 없거나 틀리면 400(수집기를 부르지 않음), 수집기에 닿지 못하면 200 + available:false")
+    void linksBadInputAndCollectorDown() throws Exception {
+        assertThat(call("/api/search/links", MEMBER, 400).path("error").asString()).isEqualTo("bad_request");
+        assertThat(call("/api/search/links", MEMBER, 400, "e", "NVDA").path("message").asString()).isNotBlank();
+        verifyNoInteractions(collector);
+
+        when(collector.liveSearchLinks(anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.empty());
+        JsonNode body = call("/api/search/links", MEMBER, 200, "e", "kr:005930");
+        assertThat(body.path("available").asBoolean()).isFalse();
+        assertThat(body.path("message").asString()).isEqualTo("수집기에서 응답을 받지 못했습니다.");
     }
 }

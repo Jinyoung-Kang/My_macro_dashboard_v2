@@ -225,6 +225,7 @@ class SearchWatchServiceTest {
         assertThat(row.name()).isEqualTo("AI 반도체");
         assertThat(row.aliases()).containsExactly("AI 반도체");
         assertThat(row.ids().get("ticker").isNull()).isTrue();
+        assertThat(row.ids().has("lei") && row.ids().get("lei").isNull()).as("수집기 empty_ids와 같은 칸 — lei 포함").isTrue();
 
         when(collector.liveSearchEntity(anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.empty());
         assertThat(service.add(MEMBER, "topic:HBM").status()).as("수집기가 없어도 주제는 됨").isEqualTo(200);
@@ -519,7 +520,7 @@ class SearchWatchServiceTest {
     }
 
     @Test
-    @DisplayName("도메인은 소문자 호스트로(앞의 https://·끝의 '/'·'.'은 지움), 경로·공백·포트·사용자·253자 넘음·점 없음은 400")
+    @DisplayName("도메인은 소문자 호스트로(앞의 https://·www.·끝의 '/'·'.'은 지움), 경로·공백·포트·사용자·253자 넘음·점 없음은 400")
     void domainIsNormalised() {
         when(excludes.insert(anyString(), anyString(), any())).thenAnswer(call -> Optional.of(new SearchExcludeStore.Exclude(5,
                 call.getArgument(0), call.getArgument(1), call.getArgument(2), NOW)));
@@ -527,7 +528,7 @@ class SearchWatchServiceTest {
         good.put("Example.COM", "example.com");
         good.put("https://News.Example.com/", "news.example.com");
         good.put("http://example.co.kr", "example.co.kr");
-        good.put("  WWW.example.test.  ", "www.example.test");
+        good.put("  WWW.example.test.  ", "example.test");
         good.put("한국.example", "xn--3e0b707e.example");
         for (Map.Entry<String, String> entry : good.entrySet()) {
             SearchWatchService.Result result = service.addExclude(OWNER, "domain", entry.getKey(), "  ");
@@ -538,6 +539,19 @@ class SearchWatchServiceTest {
                 "user@example.com", "example", "", "   ", "a".repeat(250) + ".com", "example.com?x=1", "-bad-.com", "ftp://example.com"}) {
             assertThatThrownBy(() -> service.addExclude(OWNER, "domain", bad, null)).as(bad).isInstanceOf(InvalidRequestException.class);
         }
+    }
+
+    @Test
+    @DisplayName("도메인의 앞 www.는 뗀다(수집기 normalize_domain과 같게) — www 주소가 따로 한 줄이 되지 않음, www만 남으면 400")
+    void domainDropsLeadingWww() {
+        assertThat(SearchWatchService.host("www.example.com")).isEqualTo("example.com");
+        assertThat(SearchWatchService.host("https://WWW.Example.com/")).isEqualTo("example.com");
+        assertThat(SearchWatchService.host("WWW.한겨레.한국")).isEqualTo("xn--h89at9srwx.xn--3e0b707e");
+        assertThat(SearchWatchService.host("http://www.한겨레.한국")).isEqualTo(SearchWatchService.host("한겨레.한국"));
+        // 앞의 www.만 — 가운데의 www는 그대로
+        assertThat(SearchWatchService.host("news.www.example.com")).isEqualTo("news.www.example.com");
+        assertThat(SearchWatchService.host("wwwexample.com")).isEqualTo("wwwexample.com");
+        assertThatThrownBy(() -> SearchWatchService.host("www.com")).isInstanceOf(InvalidRequestException.class);
     }
 
     @Test

@@ -289,6 +289,18 @@ public class CollectorClient {
                 .build(Map.of("e", e, "tab", tab)), "/live/search/feed");
     }
 
+    /**
+     * 연결 보강(수집기 /live/search/links — 계약 §7-5: Yahoo 내부자 명단·GLEIF 법인 관계, 출처마다 캐시). 대상 풀기(하루 캐시)를 무겁게 하지 않으려고
+     * 따로 부르는 경로이고, 연결 탭을 열 때만 옵니다.
+     */
+    public Optional<JsonNode> liveSearchLinks(String e, boolean external, boolean owner) {
+        return getQuietly(client, uri -> uri.path("/live/search/links")
+                .queryParam("e", "{e}")
+                .queryParam("external", external)
+                .queryParam("owner", owner)
+                .build(Map.of("e", e)), "/live/search/links");
+    }
+
     /** 첫 화면 최근 글(수집기 /live/search/recent — 새 피드 묶음, owner면 속보도 — 저장본만, 외부 호출 없음). */
     public Optional<JsonNode> liveSearchRecent(boolean owner) {
         return getQuietly(client, uri -> uri.path("/live/search/recent")

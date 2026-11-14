@@ -83,7 +83,8 @@ class CollectorClientSearchLogTest {
             c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false),
             c -> c.liveSearchFeed("topic:" + CANARY, "news", true, false, true),
             c -> c.liveSearchRecent(false),
-            c -> c.liveSearchExcludes());
+            c -> c.liveSearchExcludes(),
+            c -> c.liveSearchLinks("topic:" + CANARY, true, false));
 
     @Test
     @DisplayName("수집기가 오류 상태와 본문을 내면 빈 값이고, 로그에는 경로 이름표와 상태 코드만")

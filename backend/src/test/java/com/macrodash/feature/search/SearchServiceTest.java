@@ -550,4 +550,180 @@ class SearchServiceTest {
         assertThat(out.get("refreshNote")).isInstanceOf(String.class);
         return (String) out.get("refreshNote");
     }
+
+    // ------------------------------------------------------------------ 단계 4 — 공시·리서치 출처는 회원에게도 (계약 §7-2·7-3·7-8)
+
+    private static final String FILINGS_FEED = """
+            {
+              "entityKey": "us:NVDA",
+              "tab": "timeline",
+              "items": [
+                {"id": "s1", "kind": "filing", "title": "8-K · 합성 설명", "url": "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/0000000001-26-000001-index.htm",
+                 "publisher": "합성 회사", "publisherDomain": "sec.gov", "publishedAt": "2026-11-13T21:05:00+00:00",
+                 "timeBasis": "published", "source": "sec", "lang": "en", "summary": "보고 기준일 2026-11-12", "readerId": null},
+                {"id": "s2", "kind": "filing", "title": "4 · 합성 제출자", "url": "https://www.sec.gov/Archives/edgar/data/2/000000000226000002/0000000002-26-000002-index.htm",
+                 "publisher": "합성 제출자", "publisherDomain": "sec.gov", "publishedAt": "2026-11-12T05:00:00+00:00",
+                 "timeBasis": "date", "source": "sec_fts", "lang": "en", "summary": "합성 설명", "readerId": null},
+                {"id": "d1", "kind": "filing", "title": "합성 주요사항보고서", "url": "https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20261112000001",
+                 "publisher": "합성 제출인", "publisherDomain": "dart.fss.or.kr", "publishedAt": "2026-11-11T15:00:00+00:00",
+                 "timeBasis": "date", "source": "dart", "lang": "ko", "summary": "비고 유", "readerId": "stray-2"},
+                {"id": "y1", "kind": "research", "title": "합성 증권: 상향 Hold → Buy", "url": "https://finance.yahoo.com/quote/NVDA/analysis/",
+                 "publisher": "합성 증권", "publisherDomain": null, "publishedAt": "2026-10-01T13:00:00+00:00",
+                 "timeBasis": "published", "source": "yahoo_research", "lang": "en", "summary": "목표가 100 → 120", "readerId": null},
+                {"id": "r1", "kind": "research", "title": "합성 리포트", "url": "https://finance.naver.com/research/",
+                 "publisher": "합성 증권사", "publisherDomain": null, "publishedAt": "2025-06-01T15:00:00+00:00",
+                 "timeBasis": "date", "source": "naver_research", "lang": "ko", "summary": null, "readerId": null},
+                {"id": "w1", "kind": "wire", "title": "합성 속보", "source": "wire", "publishedAt": "2026-11-13T22:00:00+00:00",
+                 "timeBasis": "published", "readerId": null}
+              ],
+              "sources": [
+                {"source": "sec", "label": "SEC 공시(회사별)", "status": "ok", "count": 1,
+                 "dropped": {"old": 4, "noTime": 0, "chinese": 0, "excluded": 0}, "message": "최근 1,000건만 — 그 앞은 SEC에서"},
+                {"source": "sec_fts", "label": "SEC 전문 검색(이름)", "status": "cached", "count": 1,
+                 "dropped": {"old": 0, "noTime": 1, "chinese": 0, "excluded": 0}, "message": null},
+                {"source": "dart", "label": "DART 공시", "status": "ok", "count": 1,
+                 "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": "최근 200건(전체 345건 — 그 앞은 DART에서)"},
+                {"source": "yahoo_research", "label": "투자의견 변경(Yahoo)", "status": "ok", "count": 1,
+                 "dropped": {"old": 2, "noTime": 0, "chinese": 0, "excluded": 0}, "message": null},
+                {"source": "naver_research", "label": "증권사 리포트(네이버)", "status": "error", "count": 1,
+                 "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": "합성 사유"},
+                {"source": "wire", "label": "속보", "status": "ok", "count": 1,
+                 "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": null}
+              ],
+              "window": {"from": "2024-11-14", "to": "2026-11-14"},
+              "rangeCounts": {"7d": 4, "30d": 4, "1y": 5, "2y": 6},
+              "olderOnlyLatest": null,
+              "pending": false,
+              "fetchedAt": "2026-11-14T03:00:00+00:00"
+            }
+            """;
+
+    @Test
+    @DisplayName("공시·리서치 출처(sec·sec_fts·dart·yahoo_research·naver_research)의 줄과 상태 줄은 회원에게도 그대로 — 운영자 전용 줄만 지운다")
+    void filingAndResearchSourcesReachMembers() {
+        when(collector.liveSearchFeed("us:NVDA", "timeline", true, false)).thenReturn(Optional.of(json(FILINGS_FEED)));
+
+        Map<String, Object> out = service.feed("us:NVDA", "timeline", MEMBER);
+
+        JsonNode original = json(FILINGS_FEED);
+        JsonNode items = (JsonNode) out.get("items");
+        assertThat(items.values().stream().map(item -> item.path("source").asString()).toList())
+                .containsExactly("sec", "sec_fts", "dart", "yahoo_research", "naver_research");
+        for (int i = 0; i < 5; i++) {
+            JsonNode row = items.get(i);
+            JsonNode before = original.get("items").get(i);
+            for (String key : List.of("id", "kind", "title", "url", "publisher", "publisherDomain", "publishedAt", "timeBasis", "lang", "summary")) {
+                assertThat(row.get(key)).as(before.path("source").asString() + "." + key).isEqualTo(before.get(key));
+            }
+            assertThat(row.get("readerId").isNull()).as("원문 팝업 id는 운영자에게만").isTrue();
+        }
+        assertThat(items.get(2).path("timeBasis").asString()).as("날짜만 아는 출처의 시각 칸(계약 §7-1)").isEqualTo("date");
+
+        JsonNode sources = (JsonNode) out.get("sources");
+        for (int i = 0; i < 5; i++) {
+            assertThat(sources.get(i)).as(sources.get(i).path("source").asString()).isEqualTo(original.get("sources").get(i));
+        }
+        assertThat(sources.get(5).path("status").asString()).isEqualTo("owner_only");
+
+        // 지운 줄은 속보 하나(오늘 — 모든 기간에서 뺌).
+        JsonNode counts = (JsonNode) out.get("rangeCounts");
+        assertThat(counts.path("7d").asInt()).isEqualTo(3);
+        assertThat(counts.path("30d").asInt()).isEqualTo(3);
+        assertThat(counts.path("1y").asInt()).isEqualTo(4);
+        assertThat(counts.path("2y").asInt()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("공시·리서치 탭도 회원이 부를 수 있다(403 아님) — 데모는 external=false")
+    void filingsAndResearchTabsAreMemberTabs() {
+        when(collector.liveSearchFeed(anyString(), anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(json(FILINGS_FEED)));
+
+        assertThat(service.feed("kr:005930", "filings", MEMBER)).containsEntry("available", true);
+        verify(collector).liveSearchFeed("kr:005930", "filings", true, false);
+        assertThat(service.feed("us:NVDA", "research", PRO)).containsEntry("available", true);
+        verify(collector).liveSearchFeed("us:NVDA", "research", true, false);
+        assertThat(service.feed("cik:0001067983", "filings", DEMO)).containsEntry("available", true);
+        verify(collector).liveSearchFeed("cik:0001067983", "filings", false, false);
+    }
+
+    // ------------------------------------------------------------------ 연결 보강 (계약 §7-5·7-8)
+
+    private static final String LINKS = """
+            {
+              "entityKey": "us:NVDA",
+              "links": [
+                {"relation": "insider", "key": null, "name": "합성 임원", "kind": "person", "source": "yahoo",
+                 "detail": "합성 직함 · 최근 합성 거래 2026-10-01"},
+                {"relation": "ultimate_parent", "key": null, "name": "합성 지주", "kind": "company", "source": "gleif",
+                 "detail": "US · LEI 00000000000000000000"},
+                {"relation": "subsidiary", "key": null, "name": "합성 자회사", "kind": "company", "source": "gleif", "detail": null}
+              ],
+              "sources": [
+                {"source": "insiders", "label": "내부자 명단(Yahoo)", "status": "ok", "count": 1,
+                 "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": null},
+                {"source": "gleif", "label": "법인 관계(GLEIF)", "status": "ok", "count": 2,
+                 "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": "자회사 20곳까지(전체 31곳)"}
+              ],
+              "fetchedAt": "2026-11-14T03:00:00+00:00"
+            }
+            """;
+
+    @Test
+    @DisplayName("연결 보강(/links)은 수집기 응답에 available:true를 더해 그대로 중계한다 — 회원에게도 거르지 않음")
+    void linksRelay() {
+        when(collector.liveSearchLinks("us:NVDA", true, false)).thenReturn(Optional.of(json(LINKS)));
+
+        Map<String, Object> out = service.links(" us:NVDA ", MEMBER);
+
+        assertThat(out.keySet()).containsExactly("available", "entityKey", "links", "sources", "fetchedAt");
+        assertThat(out).containsEntry("available", true);
+        JsonNode original = json(LINKS);
+        for (String key : List.of("entityKey", "links", "sources", "fetchedAt")) {
+            assertThat(out.get(key)).as(key).isEqualTo(original.get(key));
+        }
+        verify(collector).liveSearchLinks("us:NVDA", true, false);
+    }
+
+    @Test
+    @DisplayName("연결 보강 — 운영자는 owner=true, 데모·store_only·사용자 없음은 external=false, 주제 키는 수집기와 같은 모양으로")
+    void linksFlags() {
+        when(collector.liveSearchLinks(anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(json(LINKS)));
+
+        service.links("wd:Q182477", OWNER);
+        verify(collector).liveSearchLinks("wd:Q182477", true, true);
+        service.links("us:NVDA", DEMO);
+        verify(collector).liveSearchLinks("us:NVDA", false, false);
+        service.links("kr:005930", null);
+        verify(collector).liveSearchLinks("kr:005930", false, false);
+        service.links("topic:  AI   반도체 ", MEMBER);
+        verify(collector).liveSearchLinks("topic:AI 반도체", true, false);
+
+        when(store.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
+        assertThat(service.links("cik:0001067983", OWNER)).containsEntry("available", true);
+        verify(collector).liveSearchLinks("cik:0001067983", false, true);
+    }
+
+    @Test
+    @DisplayName("연결 보강 — 키가 틀리면 400이고 수집기를 부르지 않으며, 수집기에 닿지 못하면 available:false와 사유")
+    void linksInvalidAndUnavailable() {
+        for (String bad : new String[]{null, "", "NVDA", "us:nvda", "wd:Q0123", "topic:"}) {
+            assertThatThrownBy(() -> service.links(bad, MEMBER)).as(String.valueOf(bad)).isInstanceOf(InvalidRequestException.class);
+        }
+        verifyNoInteractions(collector);
+
+        when(collector.liveSearchLinks("us:NVDA", true, false)).thenReturn(Optional.empty());
+        assertThat(service.links("us:NVDA", MEMBER))
+                .containsExactly(Map.entry("available", false), Map.entry("message", "수집기에서 응답을 받지 못했습니다."));
+        when(collector.liveSearchLinks("us:AAPL", true, false)).thenReturn(Optional.of(json("[]")));
+        assertThat(service.links("us:AAPL", MEMBER)).containsEntry("available", false);
+    }
+
+    @Test
+    @DisplayName("연결 보강 — 수집기 응답 객체를 고치지 않는다")
+    void linksDoNotMutatePayload() {
+        JsonNode payload = json(LINKS);
+        when(collector.liveSearchLinks("us:NVDA", true, false)).thenReturn(Optional.of(payload));
+        service.links("us:NVDA", MEMBER);
+        assertThat(payload).isEqualTo(json(LINKS));
+    }
 }
