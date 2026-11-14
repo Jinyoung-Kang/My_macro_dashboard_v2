@@ -69,13 +69,18 @@ function serve(path: string): Promise<unknown> {
   return hit ? Promise.resolve(reads[hit]) : new Promise(() => {});
 }
 
-function renderScreen(path: string) {
-  setLocation(path);
+/** 지금 주소로 화면을 그립니다. render는 act 안에서 효과까지 돌리므로 주소를 바꿔 쓰는 효과는 이 함수가 돌아오기 전에 끝납니다. */
+function mountScreen() {
   return render(
     <SessionUserProvider user={MEMBER}>
       <SearchScreen />
     </SessionUserProvider>,
   );
+}
+
+function renderScreen(path: string) {
+  setLocation(path);
+  return mountScreen();
 }
 
 beforeEach(() => {
@@ -359,14 +364,16 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
 });
 
 describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 남음(계약 §5 — 탭·기간은 바꿔 씀)", () => {
+  // 기록 길이는 그리기 전에 읽습니다 — 바꿔 쓰기는 render(act) 안의 효과에서 일어나므로 그린 뒤에 읽으면 pushState여도 잡지 못합니다
+  // (QA-421 검토). setLocation은 replaceState라 길이를 바꾸지 않습니다.
   const url = () => new URLSearchParams(window.location.search);
   const tabNames = async () => within(await screen.findByRole("tablist", { name: "결과 탭" })).getAllByRole("tab").map((tab) => tab.textContent);
 
   // QA-421: 화면은 타임라인인데 주소의 tab=bogus가 그대로 남았음(파싱이 조용히 기본값으로 바꿔 EntityView의 비교에 드러나지 않음).
   it("모르는 탭 값(tab=bogus) — 주소를 timeline으로 바꿔 쓴다(기록에 쌓지 않음, 기간은 그대로)", async () => {
     reads[endpoints.search.entity(TOPIC_KEY)] = { available: true, entity: TOPIC, errors: {} };
-    renderScreen(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=bogus&range=1y`);
     const before = window.history.length;
+    renderScreen(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=bogus&range=1y`);
     expect(await tabNames()).toEqual(["타임라인", "뉴스", "연결"]);
     expect(screen.getByRole("tab", { name: "타임라인" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() => expect(url().get("tab")).toBe("timeline"));
@@ -378,8 +385,8 @@ describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 
   // QA-421: 화면은 30일인데 주소의 range=9y가 그대로 남았음(기간은 바꿔 쓰는 길이 없었음).
   it("모르는 기간 값(range=9y) — 주소를 30d로 바꿔 쓴다(기록에 쌓지 않음, 탭은 그대로)", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
-    renderScreen("/search?e=us:NVDA&tab=news&range=9y");
     const before = window.history.length;
+    renderScreen("/search?e=us:NVDA&tab=news&range=9y");
     await tabNames();
     expect(screen.getByRole("tab", { name: "뉴스" }).getAttribute("aria-selected")).toBe("true");
     await waitFor(() => expect(url().get("range")).toBe("30d"));
@@ -389,18 +396,25 @@ describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 
 
   it("고를 수 없는 탭 + 모르는 기간(주제 + tab=filings&range=9y) — 두 바꿔 쓰기가 서로 되돌리지 않고 한 주소로 끝난다", async () => {
     reads[endpoints.search.entity(TOPIC_KEY)] = { available: true, entity: TOPIC, errors: {} };
-    renderScreen(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=filings&range=9y`);
+    setLocation(`/search?e=${encodeURIComponent(TOPIC_KEY)}&tab=filings&range=9y`);
     const before = window.history.length;
+    // 시작 주소를 놓은 뒤, 그리기 전에 겁니다 — 바꿔 쓰기는 그리는 동안(render의 act) 일어납니다.
     const writes = vi.spyOn(window.history, "replaceState");
+    const pushes = vi.spyOn(window.history, "pushState");
     try {
+      mountScreen();
       await tabNames();
       await waitFor(() => expect([url().get("tab"), url().get("range")]).toEqual(["timeline", "30d"]));
       expect(url().get("e")).toBe(TOPIC_KEY);
       expect(window.history.length).toBe(before);
+      expect(pushes).not.toHaveBeenCalled();
       // 앞 렌더의 주소(tab=filings)로 되돌린 뒤 다시 바꿔 쓰지 않음.
-      expect(writes.mock.calls.map(([, , href]) => new URLSearchParams(String(href).split("?")[1]).get("tab"))).not.toContain("filings");
+      const tabs = writes.mock.calls.map(([, , href]) => new URLSearchParams(String(href).split("?")[1]).get("tab"));
+      expect(tabs.length).toBeGreaterThan(0);
+      expect(tabs).not.toContain("filings");
     } finally {
       writes.mockRestore();
+      pushes.mockRestore();
     }
   });
 
