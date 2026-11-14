@@ -74,3 +74,63 @@ describe("QA-418 관심 대상 목록 줄 — 이름이 배지·알림 단추에
     expect(within(quiet).getByText("기업").className).toMatch(/(^|\s)whitespace-nowrap(\s|$)/);
   });
 });
+
+describe("QA-419 관심 대상 50개 — 목록 아래 설명 글이 거르기·최근 글을 첫 화면 밖으로 다시 밀지 않음", () => {
+  /** 합성 관심 대상 n개(주제) — 첫 줄만 화제, 모두 알림 끔(서버가 알림 칸을 줌). */
+  function manyTopics(count: number): SearchWatchItem[] {
+    return Array.from({ length: count }, (_, at) => ({
+      ...QUIET_COMPANY, id: 100 + at, key: `topic:합성 주제 ${at}`, kind: "topic", name: `합성 주제 ${at}`, notify: false, hot: at === 0,
+    }));
+  }
+  const FULL = { mine: 50, max: 50, serverUsed: 50, serverMax: 100 };
+
+  // QA-419: 단계 5가 목록 높이 상한(LIST_SCROLL, 224px)으로 50개일 때 대상 화면(1440x900)의 거르기와 첫 화면(390x844)의 최근 글을 첫 화면 안으로 넣었는데,
+  // 단계 6이 목록 아래에 늘 펼친 설명 글(화제 정의 약 100px·알림 안내 약 80px)을 더해 거르기가 y=994, 최근 글이 y=820(아래 메뉴가 y=779부터 덮음)으로 다시 밀림.
+  // jsdom은 위치를 재지 못하므로, 고친 배치의 구조 — 설명 글(새 글 수·화제·알림의 뜻)은 기본으로 접힌 안내(details) 하나에 넣고 머리 한 줄만 보이며,
+  // 상태(상한 줄·정기 수집 안내·알림 실패)는 그 밖에서 늘 보임 — 를 대조합니다.
+  // 수정 전 실패: 설명 글이 details 안에 있지 않음(closest('details')가 null).
+  it.fails("설명 글은 기본으로 접힌 안내 하나에(머리에 든 것을 글로, 좁은 화면 44px) — 상한 줄·정기 수집 안내는 그 밖에서 늘 보임", () => {
+    render(<WatchPane watch={fakeWatch(watchData(manyTopics(50), { limits: FULL, collecting: false }))} demo={false} onOpen={() => {}} />);
+    const details = screen.getByText(/화제 = 지난 24시간에 처음 받은 글이 5건 이상/).closest("details");
+    expect(details).not.toBeNull();
+    expect(details!.hasAttribute("open")).toBe(false);
+    expect(details!.contains(screen.getByText(/새 글 수는 마지막으로 그 대상의 타임라인을 연 뒤/))).toBe(true);
+    expect(details!.contains(screen.getByText(/알림을 켠 대상은 새 글이 들어오면 알림함에 한 줄을 남깁니다/))).toBe(true);
+    // 머리(summary — 기본 요소라 키보드로 여닫음): 무엇이 들었는지 글로, 좁은 화면 누름 자리 44px, 포커스 링
+    const summary = details!.querySelector("summary");
+    expect(summary?.textContent).toBe("새 글 수·화제·알림 안내");
+    expect(summary!.className).toMatch(/(^|\s)min-h-11(\s|$)/);
+    expect(summary!.className).toMatch(/(^|\s)lg:min-h-0(\s|$)/);
+    expect(summary!.className).toMatch(/focus-visible:outline-2/);
+    // 늘 보이는 것 — 목록, 상한 줄, 정기 수집 안내(새 글이 모이지 않는 곳이라는 상태)
+    expect(details!.contains(screen.getByRole("region", { name: "관심 대상 목록 (위아래 스크롤)" }))).toBe(false);
+    expect(details!.contains(screen.getByText("내 목록 50 / 50 · 서버 전체 50 / 100"))).toBe(false);
+    expect(details!.contains(screen.getByText(/정기 수집은 서버에서만 돕니다/))).toBe(false);
+    // 안내 밖에 늘 펼친 설명 글은 없음 — 밖의 글 줄은 상한 줄과 정기 수집 안내뿐
+    const outside = Array.from(details!.parentElement!.children)
+      .filter((el) => el.tagName === "P")
+      .map((el) => el.textContent);
+    expect(outside).toEqual(["내 목록 50 / 50 · 서버 전체 50 / 100", expect.stringContaining("정기 수집은 서버에서만 돕니다")]);
+  });
+
+  // QA-419: 머리 글은 든 것만 말하고(화제인 대상이 없으면 '화제'를, 알림 칸을 모르면 '알림'을 뺌), 알림 실패 글(role=alert)은 접힌 안내 밖에 남음.
+  // 수정 전 실패: 접힌 안내(summary)가 없음.
+  it.fails("머리 글은 든 것만 — 화제·알림이 없으면 '새 글 수 안내', 알림 실패 글은 안내 밖(role=alert)", () => {
+    const quiet = manyTopics(3).map((item) => ({ ...item, hot: false }));
+    const watch = {
+      ...fakeWatch(watchData(quiet)),
+      notifyError: { id: 100, from: "list", message: "이 계정으로는 할 수 없습니다" },
+    } as unknown as InfoSearchWatch;
+    render(<WatchPane watch={watch} demo={false} onOpen={() => {}} />);
+    const summary = screen.getByText("새 글 수·알림 안내");
+    expect(summary.tagName).toBe("SUMMARY");
+    expect(screen.queryByText(/화제 = /)).toBeNull();
+    expect(summary.closest("details")!.contains(screen.getByRole("alert"))).toBe(false);
+    cleanup();
+
+    const unknownNotify = quiet.map((item) => ({ ...item, notify: undefined }));
+    render(<WatchPane watch={fakeWatch(watchData(unknownNotify))} demo={false} onOpen={() => {}} />);
+    expect(screen.getByText("새 글 수 안내").tagName).toBe("SUMMARY");
+    expect(screen.queryByText(/알림을 켠 대상은/)).toBeNull();
+  });
+});
