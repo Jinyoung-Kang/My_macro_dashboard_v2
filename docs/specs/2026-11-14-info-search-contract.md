@@ -331,3 +331,53 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - `GET /api/search/links?e=` — 회원(`AccessPolicy`), 키 검사는 `entityKey`, `external`·`owner` 인자는 다른 경로와 같음, 중계만(운영자 전용 출처 없음). `RouteInventoryTest`·`API.md`·
   `scripts/qa/routes.json`·화면 `endpoints.ts`.
 - 새 출처(`sec`·`sec_fts`·`dart`·`yahoo_research`·`naver_research`·`insiders`·`gleif`)는 회원에게도 보입니다(운영자 전용 아님) — `hideOwnerOnly`가 이 줄을 지우지 않는지 시험.
+
+## 8. 단계 5 — Finviz 종목 뉴스 (2026-11-14 추가)
+
+지시문 4.6·ADR 0041 결정 10(ADR 0026 결정 10 일부 개정)·단계 0 실측(서버 IP에서 계층 1 `curl_cffi` 200, `robots.txt`가 `quote.ashx`를 막지 않음, 뉴스 표 100줄)이
+근거입니다. **화면의 요청이 차단 통과 계층을 부르는 첫 길**이라 아래를 모두 지킵니다. 모의 매매 입력이 아닙니다.
+
+### 8-1. 호스트 정책
+- `fetch/policy.py` `POLICIES`에 `HostPolicy("finviz.com", (TIER_IMPERSONATE, TIER_BROWSER), daily_budget=250)` — 계층 1 → 계층 2(한 번 올림, 기존 규칙). 계층 예산 250은
+  호스트 전체(올림·되돌림 포함)이고, 그 안에서 용도별 하루 예산을 `fetch_budgets`로 따로 셉니다: `search` 60 · `watch` 100(KST 날짜). `compose.vultr.yml`
+  `BROWSER_ALLOWED_HOSTS`에 `finviz.com`(대조 시험). 리디렉트로 다른 호스트(`www.finviz.com` 등)가 나오면 표에 없어 실패로 끝남(그대로 — 넓히지 않음).
+- 받는 것: `https://finviz.com/quote.ashx?t=<티커>` 한 쪽의 뉴스 표(`id="news-table"`)만 — 시각·제목·매체·링크. 'Show Previous News'·`news.ashx`·유료·로그인·차트·
+  시세·스크리너·내려받기·Finviz 안쪽 글의 본문은 받지 않음. 검색 한 번이 보내는 요청은 1건(계층 올림 1건 더 가능).
+- 넓히지 않는 것(D-2): 프록시·IP 돌려쓰기, 퍼즐 풀이, 로그인·유료 장벽, 거부당한 뒤 다른 길로 다시 시도. 서버 IP로 지나가지 못하면 빼고 보고.
+
+### 8-2. 줄 세우기와 캐시(수집기 `services/search_finviz.py`)
+- 과정 하나에 **작업자 하나**(`ThreadPoolExecutor(max_workers=1)`) — 즉석 검색과 관심 대상 수집의 Finviz 요청이 모두 이 작업자(또는 같은 잠금)를 거쳐 `finviz.com`에 동시에
+  두 건이 나가지 않음. 요청 사이 간격은 계층 값 그대로(`pacing`). 작업은 `http.run_guarded(TaskGuard(deadline=…))`로 감싸 시간 상한을 둠(작업 하나 300초).
+- 티커마다 결과 캐시 30분(성공), 실패 5분. 같은 티커가 줄에 있거나 받는 중이면 새로 넣지 않음. 줄 길이 상한 5(넘으면 '대기열이 가득 참').
+- **`POLITE_FETCH_ENABLED`를 이 길이 직접 확인**(`polite.enabled()` — 계층은 스위치를 보지 않음). 꺼진 곳(로컬·QA)은 줄에 넣지 않고 상태 `server_only`
+  ("Finviz는 운영 서버에서만"). 시험으로 고정(외부 0건).
+- 즉석 검색이 줄에 넣기 전에 `fetch_budgets(finviz.com, search)`에서 한 건을 씀 — 없으면 상태 `skipped`("오늘 Finviz 검색 예산 소진"). 계층 예산이 바닥나면(`FetchSkipped`)
+  같은 안내. 거부(`FetchRejected` — 닫힘·포기)는 상태 `error`와 그 사유(`closed.message()`), 그리고 `store.note_source_state("search_watch", "blocked", …)`로 끊김 알림에
+  같이 걸림(관심 대상 수집의 다음 성공이 지움). 형식이 바뀌면(뉴스 표 없음) `error`("형식이 바뀜").
+
+### 8-3. 줄 만들기
+- 표의 줄마다: 날짜 칸이 `Nov-13-26 11:24PM`이면 날짜와 시각, `10:40PM`이면 앞 줄의 날짜를 이어받음, `Today 10:40PM`이면 그날(미국 동부) — 시각은 **미국 동부**
+  (`America/New_York`, 단계 5 배포 뒤 다른 출처의 같은 기사 시각과 몇 건 대조해 진행 기록에 남김). 날짜를 알 수 없는 줄은 시각 모름.
+- FeedItem: `kind:"news"`(뉴스·블로그를 가를 근거가 없으면 뉴스 — 지어내지 않음), `source:"finviz"`, 라벨 'Finviz 종목 뉴스', `title`(앵커 글), `url`(절대 주소 — 상대
+  경로면 `https://finviz.com` + 경로), `publisher`(줄의 매체 칸, 괄호 뗌), `publisherDomain`(원문 주소의 호스트, Finviz 안쪽 글이면 `finviz.com`), `publishedAt`,
+  `timeBasis:"published"`, `lang:"en"`, `summary:null`, `id` = `info_text.item_id(url)`. 4절 규칙(2년·중국어·매체 제외) 그대로.
+- 합치기 우선순위: `yahoo` 바로 뒤.
+
+### 8-4. 결과 경로에 더함(3-4)
+- 미국 상장 회사(`ids.market == "us"`, 티커)의 `news`·`timeline` 탭에 출처 `finviz`. 캐시가 있으면 `cached`(또는 막 받았으면 `ok`), 받는 중·줄에 있으면 `pending`
+  ("받는 중 — 몇 초 뒤 채움")이고 응답 `pending: true`. 외부를 끈 요청(`external=false`)은 캐시만(`offline`).
+- 수집기 응답에 `finvizQueued: true|false`(이 요청이 새로 줄에 넣었는지)를 둡니다 — 백엔드가 사용자 빈도를 셈.
+- 수집기 인자 `finviz=0`이면 줄에 넣지 않고(캐시는 씀) 상태 `skipped`("한 사람이 한 시간에 Finviz를 새로 부를 수 있는 횟수를 넘음 — 받아 둔 결과만").
+
+### 8-5. 백엔드
+- `feed`가 수집기에 `finviz` 인자를 넘김: 사용자마다 지난 1시간에 `finvizQueued:true`가 10번이면 `finviz=0`(메모리, 프로세스 하나 전제 — 새로 받기 한도와 같음).
+  `finvizQueued` 칸은 화면에 넘기지 않음(지움). 데모·`store_only`는 `external=false`라 Finviz를 부르지 않음.
+- Finviz 줄은 회원에게도 보임(D-1 — 운영자 전용 아님).
+
+### 8-6. 화면
+- 응답 `pending: true`면 5초 뒤 같은 결과를 다시 부름(최대 12번 — 1분, 그 뒤에는 '받는 중' 그대로 두고 '다시 확인' 단추). 다시 부를 때 보이던 줄은 그대로 두고
+  바꿔 끼움. 출처 상태 글: 대기·받는 중(`pending`)·받음·캐시·예산 소진·차단·서버에서만 — 색만으로 가르지 않음.
+
+### 8-7. 관심 대상 정기 수집(6-3에 더함)
+- 미국 상장 회사 대상이면 Finviz 한 쪽(같은 작업자·같은 30분 캐시 — 캐시가 있으면 요청 없음), `fetch_budgets(finviz.com, watch)` 100. 6-3의 예산·간격·판정 규칙을 따르고,
+  거부는 `failed`가 아니라 그 대상의 Finviz만 건너뜀(호스트 닫힘은 계층이 기록 — 다른 출처는 계속).
