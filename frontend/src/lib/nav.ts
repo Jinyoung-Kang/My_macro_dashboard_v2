@@ -1,5 +1,6 @@
 /**
- * 화면 메뉴(정보 구조) — 다섯 탭 + 더보기와 탭마다의 하위 화면(설계서 §4, 1단계 브리프 §1.3). React를 모르는 순수 함수(ADR 0004).
+ * 화면 메뉴(정보 구조) — 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기와 탭마다의 하위 화면(설계서 §4, 1단계 브리프 §1.3,
+ * 2026-11-14 재배치 — ADR 0041 결정 1: 한국 탭을 없애고 그 두 화면을 더보기의 '한국 시장' 묶음으로). React를 모르는 순수 함수(ADR 0004).
  *
  * 1단계는 옛 화면 경로를 그대로 쓰고(4단계에서 /markets/… 로 옮김), 탭은 그 화면들을 묶기만 합니다.
  * 누구에게 무엇을 보이는지는 lib/access.ts가 정합니다(운영자 전용 숨김·유료 잠금 — 경로 앞부분 일치).
@@ -8,7 +9,10 @@
 import { lockedFor, visibleMenus } from "./access";
 import type { SessionUser } from "./types";
 
-export type TabKey = "home" | "markets" | "institutions" | "korea" | "paper" | "info" | "more";
+export type TabKey = "home" | "markets" | "institutions" | "paper" | "search" | "info" | "more";
+
+/** 더보기 탭 안에서 따로 묶는 한국 시장 화면(수급 레이더·파생·투기세력) — 더보기 화면의 제목 묶음이자 하위 메뉴 줄의 범위(ADR 0041 결정 1). */
+export const KR_MARKET_GROUP = "한국 시장";
 
 export type NavItem = {
   href: string;
@@ -18,6 +22,11 @@ export type NavItem = {
   title?: string;
   /** 검색에서 함께 맞추는 말 — 화면 제목·옛 사이드바 메뉴 이름(예전 이름으로 찾아도 나오게). */
   keywords?: readonly string[];
+  /**
+   * 탭 안의 묶음 이름(예: "한국 시장"). 묶음이 있는 화면은 더보기 화면에서 그 제목 아래 따로 그리고, 하위 메뉴 줄은 같은 묶음의 화면만 보입니다
+   * (/radar에서 알림·운영 화면이 섞이지 않게, /alerts에서 레이더가 섞이지 않게). 없으면 그 탭의 기본 묶음.
+   */
+  group?: string;
 };
 
 export type NavTab = {
@@ -67,15 +76,6 @@ export const TABS: readonly NavTab[] = [
     ],
   },
   {
-    key: "korea",
-    label: "한국",
-    href: "/radar",
-    items: [
-      { href: "/radar", label: "수급 레이더", keywords: ["외국인/기관 수급 레이더 (KRX)"] },
-      { href: "/krx", label: "파생·투기세력(KRX)", keywords: ["국내 파생 & 투기세력 (KRX)"] },
-    ],
-  },
-  {
     key: "paper",
     label: "모의매매",
     // 시장마다 화면은 /paper/us·/paper/kr(개요)와 그 아래 탭 주소(/paper/kr/holdings 등 — 하위 화면 하나가 덮음)입니다. 옛 /paper는
@@ -89,7 +89,16 @@ export const TABS: readonly NavTab[] = [
     ],
   },
   {
+    // 정보 검색(ADR 0041) — 기업·기관·사람·주제를 대상으로 풀어 최근 2년의 뉴스·공시·리서치·글을 모아 봅니다. 회원 이상(운영자 전용이 아님 — D-1).
+    // 상단 통합 검색(메뉴·지표·기관·종목 찾기)과는 다른 기능입니다.
+    key: "search",
+    label: "정보 검색",
+    href: "/search",
+    items: [{ href: "/search", label: "정보 검색", keywords: ["대상 검색", "기업·기관·사람 뉴스·공시", "관심 대상"] }],
+  },
+  {
     // 정보 수집(ADR 0035·0036) — 수집기가 받는 모든 출처의 자료·상태와 작동 방식. 운영자 전용. 하위 메뉴 줄이 큰 분류(탭)입니다.
+    // 자리는 정보 검색과 더보기 사이(ADR 0041 결정 1 — 그 전에는 모의매매와 더보기 사이, ADR 0036 결정 1).
     // 좁은 화면의 아래쪽 탭 바에는 넣지 않고(6칸 유지 — 사용자 결정 2026-11-11) 더보기에서 엽니다(TabBar·MoreMenu).
     key: "info",
     label: "정보 수집",
@@ -117,6 +126,9 @@ export const TABS: readonly NavTab[] = [
       { href: "/connections", label: "외부 API 연결 테스트" },
       { href: "/admin/users", label: "사용자 관리" },
       { href: "/account", label: "내 계정" },
+      // 옛 한국 탭(ADR 0041 결정 1) — 주소는 그대로. 탭 이름이 검색어였으므로 '한국'을 검색어로 직접 둡니다.
+      { href: "/radar", label: "수급 레이더", group: KR_MARKET_GROUP, keywords: ["한국", "외국인/기관 수급 레이더 (KRX)"] },
+      { href: "/krx", label: "파생·투기세력(KRX)", group: KR_MARKET_GROUP, keywords: ["한국", "국내 파생 & 투기세력 (KRX)"] },
     ],
   },
 ];
@@ -144,7 +156,7 @@ export function activeTab(pathname: string): NavTab | null {
   return TABS.find((tab) => covers(tab.href, pathname) || (tab.sections ?? []).some((section) => covers(section, pathname))) ?? null;
 }
 
-/** 이 사용자에게 보이는 탭(운영자가 아니면 모의매매 탭이 빠짐 — lib/access.ts 앞부분 일치). */
+/** 이 사용자에게 보이는 탭(운영자가 아니면 모의매매·정보 수집 탭이 빠짐 — lib/access.ts 앞부분 일치). */
 export function visibleTabs(user: SessionUser | null | undefined): NavTab[] {
   return visibleMenus(TABS, user);
 }
@@ -156,6 +168,8 @@ export function visibleItems(tab: NavTab, user: SessionUser | null | undefined):
 
 export type SubNavModel = {
   tab: NavTab;
+  /** 줄의 이름(내비 이름표 "<이름> 하위 메뉴") — 묶음 화면이면 묶음 이름(한국 시장), 아니면 탭 이름. */
+  label: string;
   items: NavItem[];
   /** 지금 화면(고른 표시)의 href. 탭 영역 안이지만 하위 화면이 아니면(/more) null. */
   current: string | null;
@@ -174,13 +188,16 @@ export type SubNavModel = {
 export function subNav(pathname: string, user: SessionUser | null | undefined): SubNavModel | null {
   const tab = activeTab(pathname);
   if (!tab) return null;
-  const items = visibleItems(tab, user);
+  const item = activeItem(pathname);
+  // 같은 묶음의 화면만 — 묶음 화면(/radar)에서는 그 묶음, 하위 화면이 아니거나(/more) 묶음 없는 화면이면 묶음 없는 화면들.
+  const group = item && tab.items.includes(item) ? item.group : undefined;
+  const items = visibleItems(tab, user).filter((entry) => entry.group === group);
   const upcoming = tab.upcoming ?? [];
   if (items.length + upcoming.length < 2) return null;
-  const item = activeItem(pathname);
   const current = item && items.includes(item) ? item : null;
   return {
     tab,
+    label: group ?? tab.label,
     items,
     current: current ? current.href : null,
     currentAria: current ? (pathname === current.href ? "page" : "true") : null,
@@ -204,7 +221,7 @@ export function documentTitle(pathname: string): string {
 }
 
 /**
- * 통합 검색의 메뉴 항목 하나 — 보이는 화면만, 탭 이름이 보조 글. locked는 무료 회원에게 잠긴 유료 화면(하위 메뉴와 같은 잠금 표시).
+ * 통합 검색의 메뉴 항목 하나 — 보이는 화면만, 탭 이름(묶음 화면은 묶음 이름)이 보조 글. locked는 무료 회원에게 잠긴 유료 화면(하위 메뉴와 같은 잠금 표시).
  * tab은 그 화면이 속한 탭(결과 행 왼쪽 원에 그 탭의 아이콘을 그림).
  */
 export type NavSearchItem = { href: string; label: string; section: string; tab: TabKey; keywords: readonly string[]; locked: boolean };
@@ -220,9 +237,9 @@ export function navSearchItems(user: SessionUser | null | undefined): NavSearchI
       out.push({
         href: item.href,
         label: item.title ?? item.label,
-        section: tab.label,
+        section: item.group ?? tab.label,
         tab: tab.key,
-        keywords: [tab.label, ...(item.keywords ?? [])],
+        keywords: [tab.label, ...(item.group ? [item.group] : []), ...(item.keywords ?? [])],
         locked: lockedFor(user, item.href),
       });
     }

@@ -1,5 +1,6 @@
 /**
  * 더보기 화면(/more) — 좁은 화면에서 계정·읽기 모드·새로고침·테마·빌드 정보를 쓰는 곳. 하위 화면 행은 운영자 전용·유료 잠금·데모 규칙을 따른다.
+ * 옛 한국 탭의 두 화면은 '한국 시장' 묶음으로 따로(ADR 0041 결정 1) — '메뉴' 묶음(정보 수집이 맨 위) 다음.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,10 +30,12 @@ function renderMore(user: SessionUser | undefined, readMode?: string) {
   );
 }
 
-const rows = () => {
-  const section = screen.getByRole("region", { name: "메뉴" });
+const rows = (name = "메뉴") => {
+  const section = screen.getByRole("region", { name });
   return within(section).getAllByRole("link").map((link) => [link.textContent ?? "", link.getAttribute("href")]);
 };
+
+const KR_ROWS = [["수급 레이더", "/radar"], ["파생·투기세력(KRX)", "/krx"]];
 
 beforeEach(() => router.push.mockReset());
 afterEach(() => {
@@ -54,6 +57,23 @@ describe("더보기 화면", () => {
     expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
     expect(screen.getByRole("radiogroup", { name: "화면 테마" })).toBeTruthy();
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
+  });
+
+  it("한국 시장 묶음: 회원·데모·운영자 모두 수급 레이더·파생·투기세력 두 행, '메뉴' 묶음 다음 자리, 원 안 아이콘", () => {
+    for (const user of [
+      { email: "member@test.local", role: "MEMBER", tier: "FREE" },
+      { email: null, role: "MEMBER", tier: "PRO", demo: true },
+      { email: "owner@test.local", role: "OWNER", tier: "PRO", local: true },
+    ] as SessionUser[]) {
+      renderMore(user);
+      expect(rows("한국 시장")).toEqual(KR_ROWS);
+      const sections = screen.getAllByRole("region").map((section) => section.getAttribute("aria-labelledby"));
+      expect(sections.indexOf("more-kr")).toBe(sections.indexOf("more-menus") + 1);
+      for (const link of within(screen.getByRole("region", { name: "한국 시장" })).getAllByRole("link")) {
+        expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
+      }
+      cleanup();
+    }
   });
 
   it("행마다 왼쪽 원 안 아이콘은 장식(aria-hidden) — 링크 이름은 화면 이름 그대로", () => {

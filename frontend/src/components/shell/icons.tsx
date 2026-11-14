@@ -13,16 +13,18 @@ const TAB_PATHS: Record<TabKey, React.ReactNode> = {
   home: <path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
   markets: <path d="M3 17l6-6 4 4 8-8" />,
   institutions: <path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6" />,
-  korea: (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18" />
-    </>
-  ),
   paper: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M7 15l3-3 3 2 4-5" />
+    </>
+  ),
+  // 정보 검색 — 돋보기 안의 점(대상 하나를 찾아 봄). 상단바 통합 검색 단추의 빈 돋보기와 구분합니다.
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <circle cx="10.5" cy="10.5" r="2" />
+      <path d="M20 20l-4.8-4.8" />
     </>
   ),
   info: (
@@ -45,7 +47,7 @@ export function TabIcon({ tab, size = 18 }: { tab: TabKey; size?: number }) {
   return <IconBase size={size}>{TAB_PATHS[tab]}</IconBase>;
 }
 
-/** 더보기 하위 화면의 아이콘(경로별). 표에 없는 화면은 더보기 탭 아이콘. 뜻은 옆의 화면 이름이 나릅니다. */
+/** 더보기 하위 화면의 아이콘(경로별 — 한국 시장 묶음 포함). 표에 없는 화면은 더보기 탭 아이콘. 뜻은 옆의 화면 이름이 나릅니다. */
 const MENU_PATHS: Record<string, React.ReactNode> = {
   "/alerts": (
     <>
@@ -86,6 +88,14 @@ const MENU_PATHS: Record<string, React.ReactNode> = {
       <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
     </>
   ),
+  // 한국 시장 묶음(옛 한국 탭 — ADR 0041 결정 1). 수급 레이더는 옛 한국 탭의 지구본, 파생·투기세력은 막대.
+  "/radar": (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+    </>
+  ),
+  "/krx": <path d="M5 20V11M12 20V5M19 20v-6" />,
 };
 
 export function MenuIcon({ href, size = 18 }: { href: string; size?: number }) {

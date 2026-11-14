@@ -118,28 +118,39 @@ describe("계정 영역(옛 사이드바 계정 영역)", () => {
 });
 
 describe("탭 — 모의매매(미국)는 운영자만", () => {
-  it("운영자에게는 왼쪽 내비가 홈·시장·기관·한국·모의매매·정보 수집·더보기, 하단 탭은 정보 수집 없이 여섯 칸(더보기에서 엶)", () => {
+  it("운영자에게는 왼쪽 내비가 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기, 하단 탭은 정보 수집 없이 여섯 칸(더보기에서 엶)", () => {
     renderShell(LOCAL_OWNER);
 
-    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "한국", "모의매매", "정보 수집", "더보기"]);
+    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
     expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/info/overview");
-    expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "한국", "모의매매", "더보기"]);
+    expect(within(mainNav()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe("/search");
+    expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "더보기"]);
     for (const scope of [mainNav(), bottomNav()]) {
       expect(within(scope).getByRole("link", { name: "모의매매" }).getAttribute("href")).toBe("/paper/us");
     }
     expect(bottomNav().className).toContain("grid-cols-6");
   });
 
-  it("회원·데모 열람에게는 모의매매 탭이 없다(다섯 칸)", () => {
+  it("회원·데모 열람에게는 모의매매 탭이 없다(다섯 칸) — 정보 검색은 보인다(D-1)", () => {
     renderShell(MEMBER_PRO);
-    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "한국", "더보기"]);
-    expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "한국", "더보기"]);
+    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
+    expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     expect(bottomNav().className).toContain("grid-cols-5");
     cleanup();
 
     renderShell(DEMO, { readMode: "store_only" });
     expect(screen.queryAllByRole("link", { name: "모의매매" })).toHaveLength(0);
     expect(screen.queryAllByRole("link", { name: "정보 수집" })).toHaveLength(0);
+    expect(within(mainNav()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe("/search");
+  });
+
+  it("더보기로 옮긴 한국 화면(/radar)에서는 두 내비의 '더보기'가 aria-current=true, 하위 메뉴 줄은 '한국 시장' 두 화면", () => {
+    renderShell(MEMBER_PRO, { path: "/radar" });
+    expect(within(mainNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
+    expect(within(bottomNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
+    const sub = screen.getByRole("navigation", { name: "한국 시장 하위 메뉴" });
+    expect(linkLabels(sub)).toEqual(["수급 레이더", "파생·투기세력(KRX)"]);
+    expect(within(sub).getByRole("link", { name: "수급 레이더" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("지금 탭은 aria-current — 탭 첫 화면이면 page, 같은 탭의 다른 화면이면 true", () => {

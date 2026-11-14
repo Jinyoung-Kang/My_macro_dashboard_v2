@@ -1,8 +1,9 @@
 /**
- * 화면 메뉴(정보 구조) — 다섯 탭 + 더보기, 하위 화면, 지금 탭, 탭 제목, 검색 메뉴 항목(브리프 §1.3).
+ * 화면 메뉴(정보 구조) — 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기(ADR 0041 결정 1), 하위 화면, 지금 탭, 탭 제목, 검색 메뉴 항목.
  */
 import { describe, expect, it } from "vitest";
 import {
+  KR_MARKET_GROUP,
   TABS,
   activeItem,
   activeTab,
@@ -27,13 +28,13 @@ const tab = (key: string) => {
 };
 
 describe("탭 표(브리프 §1.3 그대로)", () => {
-  it("다섯 탭 + 정보 수집 + 더보기의 키·이름·이동 경로", () => {
+  it("홈·시장·기관·모의매매·정보 검색·정보 수집·더보기의 키·이름·이동 경로 — 한국 탭은 없다(ADR 0041 결정 1)", () => {
     expect(TABS.map((entry) => [entry.key, entry.label, entry.href])).toEqual([
       ["home", "홈", "/"],
       ["markets", "시장", "/macro"],
       ["institutions", "기관", "/institutions"],
-      ["korea", "한국", "/radar"],
       ["paper", "모의매매", "/paper/us"],
+      ["search", "정보 검색", "/search"],
       ["info", "정보 수집", "/info/overview"],
       ["more", "더보기", "/more"],
     ]);
@@ -48,19 +49,28 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     expect(items("institutions")).toEqual([
       "13F 포트폴리오 /institutions", "Money 교집합 /consensus", "스타일·위험 /style", "종목 스코어카드 /scorecard",
     ]);
-    expect(items("korea")).toEqual(["수급 레이더 /radar", "파생·투기세력(KRX) /krx"]);
+    expect(items("search")).toEqual(["정보 검색 /search"]);
     // 한국 책 화면(2단계 명세 §4-16, F2) — 예전 '한국 · 준비 중' 표시는 없어지고 링크가 됨.
     expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr"]);
     expect(tab("paper").upcoming).toBeUndefined();
-    // 정보 수집(ADR 0036 — 사이드바 모의매매와 더보기 사이) — 하위 메뉴 줄이 큰 분류 탭.
+    // 정보 수집(ADR 0036 — ADR 0041부터 정보 검색과 더보기 사이) — 하위 메뉴 줄이 큰 분류 탭.
     expect(items("info")).toEqual([
       "개요 /info/overview", "뉴스·글 /info/news", "국내 시장·수급 /info/kr", "해외 시장·거시 /info/global", "기관·공시 /info/filings",
       "모의매매 입력 /info/paper", "출처 상태 /info/status", "정보(메커니즘) /info/mechanism",
     ]);
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
-      "사용자 관리 /admin/users", "내 계정 /account",
+      "사용자 관리 /admin/users", "내 계정 /account", "수급 레이더 /radar", "파생·투기세력(KRX) /krx",
     ]);
+  });
+
+  it("옛 한국 탭의 두 화면은 주소 그대로 더보기의 '한국 시장' 묶음 — 나머지 더보기 화면은 묶음 없음", () => {
+    const grouped = tab("more").items.filter((item) => item.group === KR_MARKET_GROUP).map((item) => item.href);
+    expect(KR_MARKET_GROUP).toBe("한국 시장");
+    expect(grouped).toEqual(["/radar", "/krx"]);
+    for (const other of TABS.filter((entry) => entry.key !== "more")) {
+      expect(other.items.every((item) => item.group === undefined)).toBe(true);
+    }
   });
 });
 
@@ -73,8 +83,9 @@ describe("지금 탭·화면", () => {
     expect(keyOf("/regime")).toBe("markets");
     expect(keyOf("/institutions")).toBe("institutions");
     expect(keyOf("/scorecard")).toBe("institutions");
-    expect(keyOf("/radar")).toBe("korea");
-    expect(keyOf("/krx")).toBe("korea");
+    expect(keyOf("/radar")).toBe("more");
+    expect(keyOf("/krx")).toBe("more");
+    expect(keyOf("/search")).toBe("search");
     expect(keyOf("/paper")).toBe("paper");
     expect(keyOf("/paper/us")).toBe("paper");
     expect(keyOf("/paper/us/settings")).toBe("paper");
@@ -90,6 +101,9 @@ describe("지금 탭·화면", () => {
     expect(activeTab("/login")).toBeNull();
     expect(activeTab("/macroeconomics")).toBeNull();
     expect(activeTab("/paperclip")).toBeNull();
+    // /search는 시장 탭 영역 /s(종목 상세)의 아래가 아니다 — 조각 경계.
+    expect(activeTab("/searchx")).toBeNull();
+    expect(activeTab("/search")?.key).toBe("search");
     expect(activeItem("/login")).toBeNull();
   });
 
@@ -125,22 +139,26 @@ describe("지금 탭·화면", () => {
     expect(tabCurrent(tab("paper"), "/paper/us/holdings")).toBe("true");
     expect(tabCurrent(tab("more"), "/alerts")).toBe("true");
     expect(tabCurrent(tab("more"), "/more")).toBe("page");
+    // 더보기로 옮긴 한국 화면에서는 더보기 탭이 '이 탭 안'(true)
+    expect(tabCurrent(tab("more"), "/radar")).toBe("true");
+    expect(tabCurrent(tab("more"), "/krx")).toBe("true");
+    expect(tabCurrent(tab("search"), "/search")).toBe("page");
   });
 });
 
 describe("보이는 탭·하위 화면(lib/access 앞부분 일치)", () => {
-  it("운영자는 일곱 탭(정보 수집 포함), 회원·데모·모르는 사용자는 모의매매·정보 수집 탭이 빠진다", () => {
-    expect(visibleTabs(OWNER).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "한국", "모의매매", "정보 수집", "더보기"]);
+  it("운영자는 일곱 탭(정보 수집 포함), 회원·데모·모르는 사용자는 모의매매·정보 수집 탭이 빠지고 정보 검색은 보인다(D-1)", () => {
+    expect(visibleTabs(OWNER).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
     for (const user of [MEMBER, DEMO, undefined]) {
-      expect(visibleTabs(user).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "한국", "더보기"]);
+      expect(visibleTabs(user).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     }
   });
 
   it("더보기의 운영자 화면(저장소 상태·연결 테스트·사용자 관리)은 운영자에게만, 내 계정은 데모 열람에게 없다", () => {
-    expect(visibleItems(tab("more"), MEMBER).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account"]);
-    expect(visibleItems(tab("more"), DEMO).map((item) => item.href)).toEqual(["/alerts", "/ai/report"]);
+    expect(visibleItems(tab("more"), MEMBER).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account", "/radar", "/krx"]);
+    expect(visibleItems(tab("more"), DEMO).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/radar", "/krx"]);
     expect(visibleItems(tab("more"), OWNER).map((item) => item.href)).toEqual([
-      "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account",
+      "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account", "/radar", "/krx",
     ]);
   });
 });
@@ -152,7 +170,11 @@ describe("하위 메뉴 줄", () => {
     expect(markets?.items).toHaveLength(6);
     expect(markets?.current).toBe("/liquidity");
     expect(markets?.currentAria).toBe("page");
+    // 더보기 탭이지만 하위 메뉴 줄은 같은 묶음('한국 시장')만 — 알림·운영 화면이 섞이지 않는다.
     expect(subNav("/radar", MEMBER)?.items.map((item) => item.label)).toEqual(["수급 레이더", "파생·투기세력(KRX)"]);
+    expect(subNav("/radar", MEMBER)?.label).toBe("한국 시장");
+    expect(subNav("/krx", OWNER)?.current).toBe("/krx");
+    expect(subNav("/search", MEMBER)).toBeNull();
     expect(subNav("/", OWNER)).toBeNull();
     expect(subNav("/login", OWNER)).toBeNull();
   });
@@ -179,6 +201,7 @@ describe("하위 메뉴 줄", () => {
 
   it("더보기: 회원에게는 운영자 화면이 빠지고, 더보기 화면 자체(/more)에서는 고른 것이 없다", () => {
     expect(subNav("/alerts", MEMBER)?.items.map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account"]);
+    expect(subNav("/alerts", MEMBER)?.label).toBe("더보기");
     expect(subNav("/more", OWNER)?.current).toBeNull();
     expect(subNav("/more", OWNER)?.currentAria).toBeNull();
     expect(subNav("/more", OWNER)?.items).toHaveLength(6);
@@ -192,6 +215,10 @@ describe("브라우저 탭 제목", () => {
     expect(documentTitle("/")).toBe("홈 · 매크로 대시보드");
     expect(documentTitle("/account")).toBe("내 계정 · 매크로 대시보드");
     expect(documentTitle("/more")).toBe("더보기 · 매크로 대시보드");
+    // 더보기로 옮긴 한국 화면의 제목은 그대로
+    expect(documentTitle("/radar")).toBe("수급 레이더 · 매크로 대시보드");
+    expect(documentTitle("/krx")).toBe("파생·투기세력(KRX) · 매크로 대시보드");
+    expect(documentTitle("/search")).toBe("정보 검색 · 매크로 대시보드");
   });
 
   it("짧은 이름만으로 뜻이 모자라면 제목용 이름을 쓴다 — 모의매매 미국 화면은 '미국'이 아니라 '모의매매(미국)'", () => {
@@ -213,13 +240,21 @@ describe("통합 검색의 메뉴 항목", () => {
     const items = navSearchItems(MEMBER);
     expect(items.map((item) => item.href)).toEqual([
       "/", "/macro", "/liquidity", "/sector", "/correlation", "/cot", "/regime",
-      "/institutions", "/consensus", "/style", "/scorecard", "/radar", "/krx",
-      "/alerts", "/ai/report", "/account", "/more",
+      "/institutions", "/consensus", "/style", "/scorecard", "/search",
+      "/alerts", "/ai/report", "/account", "/radar", "/krx", "/more",
     ]);
     const liquidity = items.find((item) => item.href === "/liquidity");
     expect(liquidity).toEqual({
       href: "/liquidity", label: "순유동성", section: "시장", tab: "markets", keywords: ["시장", "연준 순유동성 트래커"], locked: false,
     });
+  });
+
+  it("옛 한국 탭의 두 화면은 '한국'으로 계속 찾힌다 — 보조 글은 묶음 이름(한국 시장), 아이콘 원은 더보기 탭", () => {
+    const radar = navSearchItems(MEMBER).find((item) => item.href === "/radar");
+    expect(radar?.section).toBe("한국 시장");
+    expect(radar?.tab).toBe("more");
+    expect(radar?.keywords).toContain("한국");
+    expect(navSearchItems(DEMO).find((item) => item.href === "/krx")?.keywords).toContain("한국");
   });
 
   it("유료 화면(AI 종합 분석)은 무료 회원에게만 잠김 — 하위 메뉴·더보기와 같은 규칙(lib/access lockedFor)", () => {
