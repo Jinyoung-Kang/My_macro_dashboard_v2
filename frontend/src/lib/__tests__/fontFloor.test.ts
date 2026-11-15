@@ -176,14 +176,18 @@ function offenders(): string[] {
   });
 }
 
+/** 제품 소스 전체를 읽는 검사의 시간 한도 — 바쁜 기계(병렬 시험)에서 5초 기본 한도를 넘긴 적이 있습니다. */
+const SOURCE_SCAN_TIMEOUT_MS = 30_000;
+
 describe("글자 하한 12px(QA-457)", () => {
   // 수정 전에는 네 곳이 걸렸다(재현 커밋에서는 it.fails):
   //  - components/patterns/ChangeChip.tsx — ▲▼ text-[0.8em](sm 13px 안에서 10.4px — 홈 27개·모의 개요 6개), 단위 text-[0.85em](sm에서 11.05px)
   //  - components/screens/detail/DetailParts.tsx — AI 요약 근거 번호 [n] 위첨자 text-[11px] 두 곳
   // 지금은 화살표·단위·위첨자 모두 text-xs(12px)다.
+  // 제품 소스 전체를 구문 분석해 보통 1~2초 — 여러 시험이 함께 도는 바쁜 기계에서 기본 한도(5초)를 넘긴 적이 있어 한도만 넓힙니다(검사 내용 그대로).
   it("src의 글자 크기는 모두 12px 이상이다 — 허용 목록 없음", () => {
     expect(offenders()).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 
   it("검사기 자체 — 클래스·글자 크기 이름의 속성·키·기본값·상수와 조건식·??·|| 갈래를 찾고, 주석·12px 이상·1em 이상·숫자가 아닌 값·다른 글꼴 속성은 건너뛴다", () => {
     const sample = [
