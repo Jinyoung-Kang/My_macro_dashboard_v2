@@ -72,7 +72,7 @@ def test_중국어_제목은_그대로_빠진다(title):
 US = {"key": "us:SCHP", "kind": "company", "name": "합성칩", "nameKo": "합성칩", "nameEn": "SynthChip", "aliases": ["SynthChip"],
       "description": None, "links": [], "sources": [],
       "ids": {"ticker": "SCHP", "market": "us", "stockCode": None, "cik": "0009000001", "dartCorpCode": None,
-              "wikidata": "Q900001", "lei": "SYNTH0000000000004142"}}
+              "wikidata": "Q900001", "lei": "SYNTH" + "0" * 13 + "42"}}
 
 
 @pytest.mark.xfail(strict=True, reason="QA-441: 연결 탭 GLEIF의 일본 자회사 법인명(株式会社…)을 중국어 제목으로 빼고 건수에 셈")
@@ -84,8 +84,10 @@ def test_GLEIF_일본_자회사_법인명은_연결에서_빠지지_않는다(mo
     ])
     monkeypatch.setattr(search, "entity", lambda key, external=True: {"entity": US, "errors": {}, "fetchedAt": None})
     monkeypatch.setattr(search_links, "insiders", lambda ticker: search_links.Linked())
-    monkeypatch.setattr(search_links, "gleif", lambda lei: gleif)
+    asked = []
+    monkeypatch.setattr(search_links, "gleif", lambda lei: asked.append(lei) or gleif)
     out = search.links("us:SCHP", external=True)
+    assert asked == [US["ids"]["lei"]], "시험의 전제: GLEIF를 물음(LEI 모양이 맞음)"
     assert [link["name"] for link in out["links"]] == ["株式会社架空銀行", "架空信託銀行株式会社"], "중국 자회사 이름만 뺌"
     row = next(row for row in out["sources"] if row["source"] == "gleif")
     assert (row["count"], row["dropped"]["chinese"]) == (2, 1)
