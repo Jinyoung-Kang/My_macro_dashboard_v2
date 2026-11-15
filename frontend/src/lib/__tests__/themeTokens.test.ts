@@ -335,8 +335,8 @@ describe("고대비(forced-colors) 차트 잉크", () => {
   // SVG(연결 그림 LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에 어두운 상자
   // rgb(28,33,39)·rgb(37,42,49)가 남음 — 범위 밖 같은 마크업은 Canvas). 범위 블록이 다시 적는 토큰 가운데 고대비 :root가 다시 정의하는 것은 범위
   // 선택자에서도 같은 값이어야 하고, 두 선택자의 우선순위가 같으므로(레이어 밖, (0,1,0)) 고대비 블록이 범위 블록보다 뒤에 있어야 이깁니다.
-  // 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-498: 고대비 블록의 토큰 재정의가 정보 검색 범위([data-scope=\"search\"])에도 닿는다 — 범위가 다시 적는 토큰은 같은 시스템 색", () => {
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-498: 고대비 블록의 토큰 재정의가 정보 검색 범위([data-scope=\"search\"])에도 닿는다 — 범위가 다시 적는 토큰은 같은 시스템 색", () => {
     const root = forcedDeclarations(":root") ?? {};
     const shared = Object.keys(declarations(blockBody(SCOPE_SELECTOR))).filter((token) => token in root);
     expect(shared.length).toBeGreaterThan(5);
