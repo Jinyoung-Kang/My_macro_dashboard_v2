@@ -3,6 +3,7 @@
  *  - role="status" + aria-busy, 이름·읽는 글은 label(기본 "불러오는 중"), 막대는 aria-hidden
  *  - 줄 수·블록 높이
  *  - 움직임 줄이기면 깜빡이지 않는다(motion-safe에서만 animate-pulse)
+ *  - 막대는 놓인 면보다 한 단계 위 면(bg-control-fill — 덮개 안에서도 보임), 고대비(forced-colors)에서는 테두리로 남는다
  *  - 숫자를 그리지 않는다 — 값 있음·없음·추정·오래됨은 값이 도착한 뒤의 상태라 Skeleton은 그 어느 것도 흉내 내지 않는다
  */
 import { cleanup, render, screen } from "@testing-library/react";
@@ -56,6 +57,15 @@ describe("Skeleton", () => {
     const all = bars(screen.getByRole("status"));
     expect(all).toHaveLength(3);
     expect(all[0].style.height).toBe("120px");
+  });
+
+  it("막대 바탕은 조작 바탕(덮개 안에서 한 단계 위), 고대비 모드에서는 1px 테두리 — 블록과 줄 모두", () => {
+    render(<Skeleton height={100} lines={2} />);
+    for (const bar of bars(screen.getByRole("status"))) {
+      const classes = bar.className.split(/\s+/);
+      expect(classes).toEqual(expect.arrayContaining(["bg-control-fill", "forced-colors:border"]));
+      expect(classes).not.toContain("bg-surface-2");
+    }
   });
 
   it("움직임 줄이기 — 깜빡임은 motion-safe에서만", () => {

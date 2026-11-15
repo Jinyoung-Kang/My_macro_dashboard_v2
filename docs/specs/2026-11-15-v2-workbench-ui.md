@@ -97,7 +97,7 @@ bg `#111418` / surface `#1c2127` / surface-2 `#252a31` / surface-3 `#2f343c`입�
 | `--surface` | #1c2127 | DARK_GRAY1 | — | 패널(1층), 패널 머리, 입력 바탕(2026-11-16 결정 — 아래) |
 | `--surface-2` | #252a31 | DARK_GRAY2 | — | hover, 선택, 기본 단추 바탕, 덮개(대화상자·팝오버·명령 팔레트·서랍·토스트) |
 | `--surface-3` (새) | #2f343c | DARK_GRAY3 | — | 덮개 안 hover, 눌림, 덮개 안 기본 단추 바탕(2026-11-16 결정 — `--control-fill`)만. **`text-3`·`accent`·`danger` 글자 금지** |
-| `--control-fill` (새, 별칭) | var(--surface-2) · 덮개 안 var(--surface-3) | — | — | 기본 단추 바탕·최소 단추 hover 바탕(`bg-control-fill`). 덮개 범위 `[data-overlay]`(대화상자·토스트 상자)에서 한 단계 위. 그 위 글자는 surface-3 금지 목록을 따름 |
+| `--control-fill` (새, 별칭) | var(--surface-2) · 덮개 안 var(--surface-3) | — | — | 기본 단추 바탕·최소 단추 hover 바탕(`bg-control-fill`), 불러오는 막대(`Skeleton` — 놓인 면보다 한 단계 위, 2026-11-16 검토 지적). 덮개 범위 `[data-overlay]`(대화상자·토스트 상자)에서 한 단계 위. 그 위 글자는 surface-3 금지 목록을 따름 |
 | `--border` | #383e47 | DARK_GRAY4 | 장식 | 패널 경계 |
 | `--border-subtle` (새) | #2f343c | DARK_GRAY3 | 장식 | 표 행 구분선, 큰 차트 가로 격자(W6) |
 | `--border-strong` | #738091 | GRAY2 | 4.60/4.03/3.59/3.12 | 입력, 체크박스 테두리(3:1) |

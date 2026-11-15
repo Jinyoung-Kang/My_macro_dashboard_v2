@@ -45,8 +45,9 @@
      경계는 box-shadow가 아니라 실제 테두리 색이라 고대비(forced-colors) 모드에서도 덮개 경계가 남습니다. */
   --border-overlay: rgb(255 255 255 / 0.12);
   --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
-  /* 조작 바탕(bg-control-fill) — 기본 단추의 바탕이자 최소 단추의 hover 바탕. 패널·바탕 위에서는 surface-2이고, 덮개 안([data-overlay] — 아래)에서는
-     한 단계 위 surface-3입니다(덮개 바탕이 surface-2라 같은 값이면 기본 단추 바탕과 최소 단추 hover가 보이지 않음 — 2026-11-16 결정, 실행 명세 §3-4). */
+  /* 조작 바탕(bg-control-fill) — 기본 단추의 바탕이자 최소 단추의 hover 바탕(과 불러오는 막대 Skeleton — 놓인 면보다 한 단계 위). 패널·바탕 위에서는
+     surface-2이고, 덮개 안([data-overlay] — 아래)에서는 한 단계 위 surface-3입니다(덮개 바탕이 surface-2라 같은 값이면 기본 단추 바탕과 최소 단추 hover가
+     보이지 않음 — 2026-11-16 결정, 실행 명세 §3-4). */
   --control-fill: var(--surface-2);
 }
 
