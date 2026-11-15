@@ -346,6 +346,20 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     const order = (selector: string) => RULES.findIndex((rule) => rule.selector === selector);
     expect(order(FORCED)).toBeGreaterThan(order(SCOPE_SELECTOR));
   });
+
+  // QA-507: 고대비 모드는 작성자가 시스템 색 키워드를 준 값은 그대로 두고, 그 밖의 색만 UA 값(링크 LinkText·비활성 GrayText·자리표시 GrayText)으로
+  // 되돌립니다. 그래서 위 재정의를 :root·정보 검색 범위(HTML 조상)에 두면 text-text-2 같은 토큰을 쓰는 HTML 링크·비활성 단추·자리표시 글까지 CanvasText로
+  // 고정됩니다 — D1 QA 스택 재확인(qa@6740c10a, 밝은·어두운 고대비 1440)에서 화면 링크의 LinkText가 / 39/39 → 1/39, /sector 16/16 → 1/16로 줄었고
+  // 비활성 '모두 읽음'·'이전'·'바꾼 값 되돌리기'와 /search 자리표시 글이 GrayText에서 CanvasText가 됐습니다. 재정의는 SVG 요소 자신(svg — 사용자 속성은
+  // 안쪽으로 물려줌)에만 둡니다. 범위 블록이 hex로 다시 적어도 svg 요소 자신의 선언이 이기므로 범위 안의 연결 그림에도 닿습니다.
+  it.fails("QA-507: 고대비 토큰 재정의는 SVG 안에만 — HTML 조상(:root·정보 검색 범위)에 두지 않아 링크·비활성·자리표시 글의 시스템 색을 덮지 않는다", () => {
+    expect(forcedDeclarations(":root"), `${FORCED} { :root { … } }`).toBeUndefined();
+    expect(forcedDeclarations(SCOPE_SELECTOR), `${FORCED} { ${SCOPE_SELECTOR} { … } }`).toBeUndefined();
+    const svg = forcedDeclarations("svg") ?? {};
+    for (const token of chartTokens().filter((name) => !NOT_REMAPPED.has(name))) {
+      expect(SYSTEM_COLORS.has(svg[token] ?? ""), `${token} = ${svg[token]}`).toBe(true);
+    }
+  });
 });
 
 describe("조작 바탕 — 덮개 안 단추(2026-11-16 결정, 명세 §3-4)", () => {
