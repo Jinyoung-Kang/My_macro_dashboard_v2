@@ -12,9 +12,10 @@ app/services/search_filings.py
   status 013(자료 없음)은 빈 결과.
 - 제목(QA-440·QA-451): 설명(``primaryDocDescription``)이 없거나 양식만 되풀이하면('8-K'·'FORM 6-K') 흔한 양식과 운영에서 본 드문 양식의 짧은
   한국어 뜻(:data:`FORM_LABELS`)을 양식 뒤에 붙이고, 모르는 양식은 양식 기호만. 전문 검색 줄은 '<양식> · <뜻> · <제출자>'이고, Form 3·4·5(·/A)는
-  같은 접수의 다른 이름(``display_names``의 둘째부터 — 보고자·발행사, 받은 순서 그대로)을 ' · '로 이어 붙입니다(줄마다 누구·어느 회사의 보고인지
-  가르게, QA-451). 회사별 목록(submissions)에는 상대 이름 칸이 없어 Form 3·4·5도 양식과 뜻만(SEC를 더 부르지 않음). 모은 글에 예전 꼴로 넣은 줄은
-  읽을 때 :func:`stored_title`로 다시 만듭니다(넣을 때 실은 다른 이름은 지킴).
+  같은 접수의 다른 이름(``display_names``의 둘째부터 — 보고자·발행사, 받은 순서 그대로)을 뜻과 제출자 사이에 끼웁니다('<양식> · <뜻> · <다른
+  이름>… · <제출자>' — 줄마다 누구·어느 회사의 보고인지 가르게, QA-451). 줄을 가르는 이름이 먼저인 것은 넓은 화면의 한 줄 제목이 앞만 보이고
+  제출자는 매체 칸에도 따로 보이기 때문입니다(검토 지적). 회사별 목록(submissions)에는 상대 이름 칸이 없어 Form 3·4·5도 양식과 뜻만(SEC를 더
+  부르지 않음). 모은 글에 예전 꼴로 넣은 줄은 읽을 때 :func:`stored_title`로 다시 만듭니다(넣을 때 실은 다른 이름은 지킴).
 - SEC 두 출처의 줄 id는 ``info_text.item_id("sec:" + 접수번호)`` — 같은 접수가 두 출처에서 와도 한 줄(합칠 때 ``sec``가 먼저). DART 줄 id는 공시
   뷰어 주소의 ``info_text.item_id``.
 - 시각(§7-1): DART 접수일·전문 검색 ``file_date``는 그 날짜의 그 출처 달력 00:00(DART = KST, SEC = 미국 동부)을 UTC로 바꾼 값과
@@ -239,17 +240,18 @@ def sec_title(form: str, described: str | None) -> str:
 def fts_title(form: str, filer: str | None, others: list[str] | tuple[str, ...] = ()) -> str:
     """
     EDGAR 전문 검색 줄의 제목 — '<양식> · <뜻> · <제출자>'(뜻을 모르는 양식·제출자가 없는 줄은 그 칸 없이). ``others``(지분 보고의 같은 접수의
-    다른 이름 — :func:`other_names`)가 있으면 뒤에 ' · '로 이어 붙입니다(QA-451).
+    다른 이름 — :func:`other_names`)가 있으면 뜻과 제출자 사이에 끼웁니다(QA-451 — 줄을 가르는 이름이 먼저: 넓은 화면의 한 줄 제목은 앞만 보이고
+    제출자는 매체 칸에도 있음).
     """
-    parts = [form_heading(form), *([filer] if filer else []), *others]
+    parts = [form_heading(form), *others, *([filer] if filer else [])]
     return NAME_JOIN.join(parts)
 
 
 def other_names(form: str, filer: str | None, names: list[Any]) -> list[str]:
     """
     지분 보고(:func:`is_ownership`) 줄의 같은 접수의 다른 이름 — 전문 검색 ``display_names``의 둘째부터를 다듬어(:func:`clean_filer_name`) 받은
-    순서대로, 제출자와 같거나 겹치는 이름은 한 번만. 그 밖의 양식과 제출자(첫 이름)가 없는 줄은 빈 목록 — 모은 줄을 읽을 때 제출자(``publisher``)
-    뒤의 이름만 되살리므로 넣을 때와 읽을 때 제목이 같게(QA-451 — 받은 자료에 있는 이름만, SEC를 더 부르지 않음).
+    순서대로, 제출자와 같거나 겹치는 이름은 한 번만. 그 밖의 양식과 제출자(첫 이름)가 없는 줄은 빈 목록 — 모은 줄을 읽을 때도 제출자(``publisher``)가
+    있는 지분 보고 줄에서만 되살리므로(:func:`_stored_others`) 넣을 때와 읽을 때 제목이 같게(QA-451 — 받은 자료에 있는 이름만, SEC를 더 부르지 않음).
     """
     if not filer or not is_ownership(form):
         return []
@@ -263,26 +265,33 @@ def other_names(form: str, filer: str | None, names: list[Any]) -> list[str]:
     return out
 
 
-def _stored_others(rest: str, publisher: str | None) -> list[str]:
-    """모은 전문 검색 줄 제목('<뜻> · <제출자> · <다른 이름>…' 또는 예전 꼴 '<제출자>')에서 제출자 뒤의 이름들 — 넣을 때 실은 것만."""
-    parts = rest.split(NAME_JOIN) if rest else []
-    if not publisher or publisher not in parts:
+def _stored_others(form: str, rest: str, publisher: str | None) -> list[str]:
+    """
+    모은 전문 검색 지분 보고 줄 제목의 양식 뒤(``rest`` — '<뜻> · <다른 이름>… · <제출자>', 예전 꼴 '<제출자>'·'<뜻> · <제출자>')에서 넣을 때 실은
+    다른 이름들 — 뜻과 제출자(``publisher``)를 뺀 나머지를 그 순서대로. 지분 보고가 아니거나 제출자가 없는 줄은 빈 목록(:func:`other_names`와 같음).
+    """
+    if not publisher or not is_ownership(form):
         return []
-    return parts[parts.index(publisher) + 1:]
+    parts = rest.split(NAME_JOIN) if rest else []
+    label = form_label(form)
+    if parts and label and parts[0] == label:
+        parts = parts[1:]
+    own = publisher.casefold()
+    return [part for part in parts if part and part.casefold() != own]
 
 
 def stored_title(source: str | None, title: str, publisher: str | None) -> str:
     """
     모은 글(search_watch_items)의 SEC 공시 줄 제목을 지금 규칙으로 다시 만듭니다 — QA-440 전에 '4'·'6-K · FORM 6-K'로 넣은 줄이 2년 남습니다
-    (표는 넣기만 하고 고치지 않음). 회사별 목록 줄은 '<양식>[ · <설명>]'에서, 전문 검색 줄은 양식과 제출자(``publisher``)에서 — 넣을 때 제출자
-    뒤에 실은 다른 이름(지분 보고 — QA-451)은 그대로 둡니다. 지금 규칙으로 넣은 줄은 그대로 나옵니다. 그 밖의 출처는 그대로.
+    (표는 넣기만 하고 고치지 않음). 회사별 목록 줄은 '<양식>[ · <설명>]'에서, 전문 검색 줄은 양식과 제출자(``publisher``)에서 — 넣을 때 실은
+    다른 이름(지분 보고 — QA-451)은 그대로 둡니다. 지금 규칙으로 넣은 줄은 그대로 나옵니다. 그 밖의 출처는 그대로.
     """
     if not title or source not in ("sec", "sec_fts"):
         return title
     form, _, rest = title.partition(NAME_JOIN)
     if source == "sec":
         return sec_title(form, rest or None)
-    return fts_title(form, publisher, _stored_others(rest, publisher))
+    return fts_title(form, publisher, _stored_others(form, rest, publisher))
 
 
 # ------------------------------------------------------------------ 줄 만들기(순수 함수)

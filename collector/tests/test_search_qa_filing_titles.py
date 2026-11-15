@@ -60,16 +60,16 @@ def test_QA451_전문_검색의_지분_보고_줄은_같은_접수의_다른_이
     )
     items, _, _ = search_filings.parse_fts(payload)
     assert [item["title"] for item in items] == [
-        "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHCHIP CORP",
-        "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHBANK GROUP INC",
-        "3/A · 최초 지분 보고 수정 · Synthetic Owner Jane · SYNTHCHIP CORP",
+        "4 · 지분 변동 보고 · SYNTHCHIP CORP · Synthetic Owner Jane",
+        "4 · 지분 변동 보고 · SYNTHBANK GROUP INC · Synthetic Owner Jane",
+        "3/A · 최초 지분 보고 수정 · SYNTHCHIP CORP · Synthetic Owner Jane",
     ]
     assert {item["publisher"] for item in items} == {"Synthetic Owner Jane"}, "매체 칸은 그대로 첫 이름"
 
 
 def test_QA451_모은_전문_검색_줄은_읽을_때_다른_이름을_지킨다(monkeypatch):
     sec_url = "https://www.sec.gov/Archives/edgar/data/9000077/000900007726000001/0009000077-26-000001-index.htm"
-    stored = "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHCHIP CORP"
+    stored = "4 · 지분 변동 보고 · SYNTHCHIP CORP · Synthetic Owner Jane"
     row = {"item_id": "f1", "kind": "filing", "title": stored, "url": sec_url, "publisher": "Synthetic Owner Jane",
            "publisher_domain": "sec.gov", "source": "sec_fts", "lang": "en", "summary": None, "published_at": NOW,
            "first_seen_at": NOW}
@@ -88,7 +88,7 @@ def test_QA451_전문_검색의_지분_보고가_아닌_줄과_이름이_하나�
     assert [item["title"] for item in items] == [
         "SCHEDULE 13G · 5% 초과 지분 보고(약식) · Synthetic Owner Jane",   # 지분 보고(3·4·5)만 다른 이름을 실음
         "4 · 지분 변동 보고 · Synthetic Owner Jane",
-        "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHCHIP CORP",       # 제출자와 같은 이름(대소문자만 다름)은 한 번만
+        "4 · 지분 변동 보고 · SYNTHCHIP CORP · Synthetic Owner Jane",       # 제출자와 같은 이름(대소문자만 다름)은 한 번만
     ]
 
 
@@ -113,3 +113,24 @@ def test_QA451_모은_줄의_제목은_넣을_때와_같다(monkeypatch):
     titles = {item["id"]: item["title"] for item in search_store.watch_items("wd:Q900077", owner=True).items}
     assert [titles[item["id"]] for item in live] == [item["title"] for item in live]
     assert titles["old"] == "4 · 지분 변동 보고 · Synthetic Owner Jane"
+
+
+def test_QA451_지분_보고_줄은_가르는_이름이_뜻_바로_뒤에_온다():
+    """
+    검토 지적: 넓은 화면(결과 목록 576px 이상 — 네 칸 배치)의 제목은 한 줄 말줄임이라 앞만 보이고, 제출자는 매체 칸에 따로 보입니다. 그래서
+    같은 제출자의 Form 4 줄을 가르는 이름(발행사·다른 보고자)은 뜻 바로 뒤, 제출자는 맨 끝. 레이아웃은 jsdom이 재지 못해 제목의 순서로 봅니다.
+    """
+    payload = _fts(_hit("0009000077-26-000001", "4", OWNER, "Synthetic Owner Bob  (CIK 0009000078)", ISSUER_A,
+                        ciks=("0009000077", "0009000078", "0009000088")))
+    items, _, _ = search_filings.parse_fts(payload)
+    title = items[0]["title"]
+    assert title.startswith("4 · 지분 변동 보고 · Synthetic Owner Bob · SYNTHCHIP CORP"), title
+    assert title.endswith(" · Synthetic Owner Jane"), "제출자(매체 칸에도 있음)는 맨 끝"
+
+
+def test_QA451_모은_줄은_넣을_때의_이름_순서와_상관없이_지금_순서로():
+    """제출자가 다른 이름 앞에 있는 제목('<뜻> · <제출자> · <다른 이름>')도 뜻과 제출자를 뺀 이름을 지금 순서로 되살립니다."""
+    rebuilt = search_filings.stored_title("sec_fts", "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHCHIP CORP", "Synthetic Owner Jane")
+    assert rebuilt == "4 · 지분 변동 보고 · SYNTHCHIP CORP · Synthetic Owner Jane"
+    assert search_filings.stored_title("sec_fts", "8-K · 수시 보고(주요 사건) · Synthetic Owner Jane", "Synthetic Owner Jane") \
+        == "8-K · 수시 보고(주요 사건) · Synthetic Owner Jane", "지분 보고가 아닌 줄은 다른 이름을 되살리지 않음"
