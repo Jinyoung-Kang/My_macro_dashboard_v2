@@ -16,8 +16,9 @@ import { TabIcon } from "./icons";
  *
  * 메뉴 칸은 4px 모서리(높이 48px). 지금 탭은 왼쪽 3px 강조 파랑 막대·선택 바탕(surface-2)·본문색 굵은 글입니다(작업대 실행 명세 §3-8·§5 —
  * 막대 폭은 고른 행 막대 SELECTED_BAR와 같음). 셸의 현재 메뉴는 누를 수 있는 것이라 막대에 강조 파랑을 쓰되(원칙 A1), 글자는 강조 파랑이
- * 아닙니다(QA-459 — 예전 accent 틴트 위 accent 글자는 4.47:1). 고대비(forced-colors) 모드에서는 바탕색·막대가 지워지므로 지금 탭에만 1px 테두리를
- * 더하고(D9), 나머지 칸에는 테두리를 두지 않습니다(투명 테두리는 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보임).
+ * 아닙니다(QA-459 — 예전 accent 틴트 위 accent 글자는 4.47:1). 고대비(forced-colors) 모드에서는 바탕색·막대 바탕이 지워지므로 지금 탭의 막대를 같은 폭(3px)의
+ * 왼쪽 테두리로 그립니다(명세 §3-8·D9 — 고른 행 막대 SELECTED_BAR와 같은 방법, 예전에는 칸 네 변의 1px 테두리라 폭이 달랐음 — 2026-11-16 검토 지적).
+ * 나머지 칸에는 테두리를 두지 않습니다(투명 테두리는 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보임).
  */
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   return (
@@ -34,7 +35,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
               aria-current={current}
               className={`flex h-12 items-center gap-3 rounded-control px-4 text-[15px] motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
                 current
-                  ? "relative bg-surface-2 font-semibold text-text before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-r before:bg-accent forced-colors:border"
+                  ? "relative bg-surface-2 font-semibold text-text before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-r before:bg-accent forced-colors:before:border-l-[3px]"
                   : "font-medium text-text-2 hover:bg-surface-2 hover:text-text"
               }`}
             >
