@@ -31,7 +31,8 @@ type HoldersQueryProps = { query: string; by: HoldersQuery["by"] };
 
 /**
  * 이름(또는 영문 이름이 없는 대상의 티커)으로 찾은 13F 보유 줄이 없을 때(QA-436) — 사용자가 치지 않은 검색이라 무엇으로 찾았는지와 그 한계를 적고, 없다고
- * 단정하지 않습니다(직접 치는 검색의 백엔드 안내 '대문자 영문입니다'를 쓰지 않음).
+ * 단정하지 않습니다. 백엔드의 0건 글('그 이름을 포함한 보유 종목이 없습니다…')은 넓힌 일치 규칙 전의 포함 기준이라 어느 화면도 쓰지 않고, 이 탭·종목 상세·
+ * 스타일 화면의 직접 검색이 모두 lib/detail holdersNoMatch를 씁니다.
  */
 function NoHolderMatch({ query, by }: HoldersQueryProps) {
   const text = holdersNoMatch(query, by);
@@ -64,7 +65,7 @@ function CompanyHolders({ query, by }: HoldersQueryProps) {
   if (!data || !now) {
     return holders.error ? <ErrorState message={holders.error} onRetry={() => void holders.reload()} /> : <Loading label="13F 보유 기관을 불러오는 중" />;
   }
-  // 백엔드는 검색어가 있으면 0건일 때만 available=false(안내는 직접 치는 검색의 글)라, 줄이 없으면 이 탭의 안내로 적습니다(QA-436).
+  // 백엔드는 검색어가 있으면 0건일 때만 available=false이고 그때 오는 글은 포함 기준이라(세 화면 모두 쓰지 않음), 줄이 없으면 holdersNoMatch로 적습니다(QA-436).
   const rows = data.rows ?? [];
   if (rows.length === 0) return <NoHolderMatch query={query} by={by} />;
   const span = holdingsWindow(rows.map((row) => row.reportDate), kstToday(now.getTime()));
