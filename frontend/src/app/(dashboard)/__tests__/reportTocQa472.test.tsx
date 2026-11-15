@@ -21,8 +21,8 @@ const REPORT = `## 1. 핵심 요약
 `;
 
 describe("AI 리포트 목차", () => {
-  // QA-472: 목차 링크가 알약(px-2.5 py-1 text-xs — 높이 약 26px)이라 좁은 화면 누르는 자리 44px에 못 미침.
-  it.fails("QA-472: 목차 링크는 좁은 화면에서 누르는 자리 44px", () => {
+  // QA-472: 목차 링크가 알약(px-2.5 py-1 text-xs — 높이 약 26px)이라 좁은 화면 누르는 자리 44px에 못 미쳤음. 고침: lg 미만 min-h-11.
+  it("QA-472: 목차 링크는 좁은 화면에서 누르는 자리 44px", () => {
     render(<ReportView markdown={REPORT} />);
     const toc = screen.getByRole("navigation", { name: "리포트 목차" });
     expect(toc.querySelectorAll("a")).toHaveLength(3);

@@ -41,7 +41,8 @@ export function ReportView({ markdown }: { markdown: string }) {
             <a
               key={section.id}
               href={`#${section.id}`}
-              className="rounded-full border border-border px-2.5 py-1 text-xs text-text-3 hover:border-accent/60 hover:text-text"
+              // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 글 높이 그대로.
+              className="inline-flex min-h-11 items-center rounded-full border border-border px-2.5 py-1 text-xs text-text-3 hover:border-accent/60 hover:text-text lg:min-h-0"
             >
               {section.title}
             </a>
