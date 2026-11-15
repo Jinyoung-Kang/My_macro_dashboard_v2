@@ -60,8 +60,10 @@ function CompanyHolders({ query }: { query: string }) {
         {recent.slice(0, ROWS_SHOWN).map((row) => (
           <li key={`${row.cik}:${row.cusip}`} className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-sm lg:min-h-8">
             <span className="min-w-0">
-              <Link href={institutionHref(row.cik)} className={LINK}>
-                {withoutLeadingIcon(row.institution)}
+              {/* 이름은 이 칸 안에서 줄바꿈(한국어는 낱말 사이, 칸보다 긴 낱말만 안에서 끊음 — 전체 이름이 보여 말줄임 없음). 줄바꿈 규칙은 inline-flex
+                  링크 상자의 항목인 안쪽 칸에 둡니다 — 상자에 글을 바로 넣으면 띄어쓰기 없는 긴 이름의 폭보다 줄지 못해 숫자 칸과 겹쳤습니다(QA-432). */}
+              <Link href={institutionHref(row.cik)} className={`${LINK} max-w-full`}>
+                <span className="min-w-0 break-keep wrap-anywhere">{withoutLeadingIcon(row.institution)}</span>
               </Link>
               <span className="block truncate text-xs text-text-3">
                 {row.name} · 보고일 {row.reportDate}

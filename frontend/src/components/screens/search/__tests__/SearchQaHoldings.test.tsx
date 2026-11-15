@@ -57,7 +57,7 @@ describe("보유 탭 — 기업의 13F 보유 기관 줄(QA-432)", () => {
   // QA-432: 기관 이름 링크가 LINK(inline-flex)만 써서 줄바꿈 규칙이 없었습니다 — inline-flex 상자는 띄어쓰기 없는 가장 긴 낱말의 폭(min-content)보다
   // 줄지 못해 min-w-0 이름 칸을 넘었고, 1280·390 화면에서 오른쪽 숫자 칸('44.34%')과 글자가 겹쳤습니다(390에서 목록 scrollWidth 391 > clientWidth 296).
   // 수정 전 실패: 링크에 max-w-full이 없고, 이름 글이 링크 상자에 바로 들어 있어 줄바꿈 규칙(break-keep·wrap-anywhere)을 실은 안쪽 칸이 없음(재현 커밋에서는 it.fails).
-  it.fails("이름은 제 칸 안에서 줄바꿈(한국어는 낱말 사이, 칸보다 긴 낱말만 안에서 끊음 — 말줄임 없음), 링크 상자는 칸 폭까지, 숫자는 따로 칸 — 44px·포커스 링 그대로", async () => {
+  it("이름은 제 칸 안에서 줄바꿈(한국어는 낱말 사이, 칸보다 긴 낱말만 안에서 끊음 — 말줄임 없음), 링크 상자는 칸 폭까지, 숫자는 따로 칸 — 44px·포커스 링 그대로", async () => {
     render(<HoldingsPanel entity={COMPANY} loading={false} />);
     await screen.findByRole("heading", { name: /13F 보유 기관/ });
 
