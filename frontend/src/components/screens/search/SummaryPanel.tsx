@@ -119,15 +119,16 @@ export function SummaryPanel({
       ) : null}
       {phase === "done" && response ? (
         <section aria-label="AI 요약" className="flex flex-col gap-2 border-b border-border bg-surface-2/40 px-3 py-2">
+          {/* 넓은 화면은 첫 줄 가운데를 30px 닫기 단추 가운데(15px)에 맞춤 — 12/16 글은 위 7px, 빈 결과 14/20 글은 위 5px(여러 줄이면 첫 줄 기준). */}
           <div className="flex items-start justify-between gap-2">
-            <p className={empty ? "pt-1 text-sm text-text-2 lg:pt-0.5" : "pt-1 text-xs font-semibold text-text-2 lg:pt-0.5"}>
+            <p className={empty ? "pt-1 text-sm text-text-2 lg:pt-[5px]" : "pt-1 text-xs font-semibold text-text-2 lg:pt-[7px]"}>
               {empty ?? summaryNoteText(response.basedOn)}
             </p>
             <button
               type="button"
               onClick={onClose}
               aria-label="요약 닫기"
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-7"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
             >
               <XIcon size={14} />
             </button>
