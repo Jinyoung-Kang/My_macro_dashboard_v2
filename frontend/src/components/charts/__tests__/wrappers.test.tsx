@@ -17,7 +17,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HorizontalBars, LineSeries, MultiLineSeries, ScatterPlot, SERIES_COLORS, SignedBars } from "@/components/charts";
-import { REFERENCE_DASH } from "@/components/charts/frame";
+import { ChartLegend, REFERENCE_DASH } from "@/components/charts/frame";
+import { LineChartTooltip } from "@/components/charts/LineChart";
 
 function observeAs(width: number, height: number) {
   vi.stubGlobal(
@@ -198,6 +199,47 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     );
     expect(screen.getByText("표시할 시계열이 없습니다.")).toBeTruthy();
     expect(container.querySelector("svg")).toBeNull();
+  });
+});
+
+// QA-497: 고대비(forced-colors)에서 Recharts SVG 선·조각은 작성자 색을 남기는데(크롬 svg forced-color-adjust: preserve-parent-color), 이름 옆
+// CSS 견본(범례 테두리·툴팁 바탕색)은 시스템 색(검정·흰색)으로 바뀌어 이름과 선을 맞출 수 없었습니다(/cot·/paper/us·/paper/kr 1440).
+// 견본도 그것이 가리키는 선·조각과 같은 규칙(작성자 색 유지 — forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails입니다.
+describe("고대비에서 견본은 계열 색 그대로(forced-color-adjust-none)", () => {
+  it.fails("QA-497: 글자 범례의 견본마다 forced-color-adjust-none", () => {
+    render(
+      <ChartLegend
+        entries={[
+          { key: "a", label: "규칙 계좌", color: SERIES_COLORS.blue },
+          { key: "b", label: "참고선(계좌 아님)", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    const items = within(screen.getByRole("list", { name: "범례" })).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      const swatch = item.querySelector(':scope > [aria-hidden="true"]');
+      expect(swatch, item.textContent ?? "").not.toBeNull();
+      expect((swatch?.getAttribute("class") ?? "").split(/\s+/), item.textContent ?? "").toContain("forced-color-adjust-none");
+    }
+  });
+
+  it.fails("QA-497: 선 차트 툴팁의 계열 견본마다 forced-color-adjust-none", () => {
+    const { container } = render(
+      <LineChartTooltip
+        model={{
+          date: "2026-10-30",
+          items: [
+            { key: "a", label: "규칙 계좌", color: SERIES_COLORS.blue, text: "100,600" },
+            { key: "b", label: "SPY 계좌", color: SERIES_COLORS.green, text: "100,700" },
+          ],
+          sourceLine: null,
+        }}
+      />,
+    );
+    const swatches = [...container.querySelectorAll('[aria-hidden="true"]')];
+    expect(swatches).toHaveLength(2);
+    for (const swatch of swatches) expect((swatch.getAttribute("class") ?? "").split(/\s+/)).toContain("forced-color-adjust-none");
   });
 });
 

@@ -376,6 +376,24 @@ describe("상세 패널의 내용", () => {
     expect(within(composition).queryByRole("img")).toBeNull();
   });
 
+  // QA-497: 고대비(forced-colors)에서 도넛 조각(SVG)은 계열 색을 남기는데 '구성 범례'와 구성 표의 견본(CSS 바탕색)은 Canvas(흰색·검정)로 지워져
+  // 이름과 조각을 맞출 수 없었습니다(계좌 상세 1440). 견본도 조각과 같은 규칙(forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-497: 구성 범례와 구성 표의 색 견본은 forced-color-adjust-none(조각 색 그대로)", async () => {
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
+    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    const composition = within(panel).getByRole("region", { name: "구성" });
+    const legend = await within(composition).findByRole("list", { name: "구성 범례" });
+    const legendSwatches = within(legend).getAllByRole("listitem").map((li) => li.querySelector('[aria-hidden="true"]') as HTMLElement);
+    const tableSwatches = [...within(composition).getByRole("table").querySelectorAll('td [aria-hidden="true"]')] as HTMLElement[];
+    expect(legendSwatches).toHaveLength(5);
+    expect(tableSwatches.length).toBeGreaterThan(0);
+    for (const swatch of [...legendSwatches, ...tableSwatches]) {
+      expect(swatch.style.backgroundColor, "견본 색").not.toBe("");
+      expect(swatch.className.split(/\s+/)).toContain("forced-color-adjust-none");
+    }
+  });
+
   it("의미 있는 묶음이 둘 이하(SPY + 잔돈)면 도넛 대신 한 줄 막대 + 범례 + 표", async () => {
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ }));
