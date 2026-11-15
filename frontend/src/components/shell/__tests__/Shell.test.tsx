@@ -269,14 +269,15 @@ describe("상단바 알림 벨", () => {
 });
 
 describe("본문", () => {
-  it("본문으로 건너뛰기 링크 → main#main(포커스 가능 tabIndex -1), 넓은 표가 페이지 가로 스크롤을 만들지 않게 min-w-0·overflow-x-hidden", () => {
+  it("본문으로 건너뛰기 링크 → main#main(포커스 가능 tabIndex -1), 넓은 표가 페이지 가로 스크롤을 만들지 않게 min-w-0·overflow-x-clip", () => {
     renderShell(MEMBER_PRO);
     expect(screen.getByRole("link", { name: "본문으로 건너뛰기" }).getAttribute("href")).toBe("#main");
     const main = screen.getByRole("main");
     expect(main.id).toBe("main");
     expect(main.getAttribute("tabindex")).toBe("-1");
     expect(main.className).toContain("min-w-0");
-    expect(main.className).toContain("overflow-x-hidden");
+    // hidden이 아니라 clip — lg 미만에서 본문이 스크롤하지 않는 스크롤 상자가 되어 sticky 머리가 붙지 않던 것(QA-450, ShellQaSticky.test).
+    expect(main.className.split(/\s+/)).toContain("overflow-x-clip");
     // 본문 안 sr-only 글(absolute)의 위치 기준 — 없으면 390px에서 페이지가 넓어지고 데스크톱에서 문서가 스크롤됐습니다.
     expect(main.className.split(/\s+/)).toContain("relative");
     expect(within(main).getByText("대시보드 본문")).toBeTruthy();

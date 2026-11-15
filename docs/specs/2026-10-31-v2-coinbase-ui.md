@@ -302,7 +302,7 @@ Tailwind 4.3.3은 `--text-*--line-height`·`--text-*--font-weight`·`--text-*--l
 
 ## 6. 셸 — `components/shell` (그리기만, `lib/nav.ts`의 탭·경로·라벨·접근 판정 그대로)
 
-- **Shell**: main 클래스(`min-w-0`·`overflow-x-hidden`·`pb-[calc(64px+1rem+env(safe-area-inset-bottom))]`·`lg:pb-6`)는 시험 단언이라 그대로. 안에 `<div className="mx-auto w-full max-w-7xl">`,
+- **Shell**: main 클래스(`min-w-0`·`overflow-x-hidden`·`pb-[calc(64px+1rem+env(safe-area-inset-bottom))]`·`lg:pb-6`)는 시험 단언이라 그대로(`overflow-x-hidden`은 2026-11-15 QA-450에서 `overflow-x-clip lg:overflow-x-hidden`으로 바뀜 — lg 미만 sticky 머리). 안에 `<div className="mx-auto w-full max-w-7xl">`,
   여백 `px-4 sm:px-6 lg:px-8`, 위 `pt-6 lg:pt-8`. MarketClock 상자는 main 맨 위에서 TopBar로.
 - **SideNav**(lg 이상): 폭 232 그대로. 항목 `h-12 rounded-full px-4 gap-3 text-[15px] font-medium` 아이콘 22, 현재 탭 `bg-accent-tint text-accent font-semibold`(셸 — A1 허용) +
   forced-colors 테두리, 나머지 `text-text-2 hover:bg-surface-2`. 아래 묶음 ReadModeNote · RefreshButton(primary sm 폭 전체) · AccountBox(아바타 원 + 역할 캡션, 로그아웃 secondary sm) · ThemeSwitch(세그먼트) · BuildInfo(micro).

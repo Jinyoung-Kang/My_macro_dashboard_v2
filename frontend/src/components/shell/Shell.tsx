@@ -16,7 +16,13 @@ import { TopBar } from "./TopBar";
  * 세션 호출 횟수를 고정). 읽기 모드는 본문 화면(더보기)도 읽도록 context로 내려 줍니다.
  * 주소는 usePathname만 씁니다(테스트의 next/navigation mock은 usePathname·useRouter뿐).
  *
- * 본문(main#main)은 min-w-0·overflow-x-hidden으로 넓은 표가 페이지 가로 스크롤을 만들지 않게 하고, 데스크톱에서는 본문만 스크롤됩니다.
+ * 본문(main#main)은 min-w-0과 가로 넘침 자르기로 넓은 표가 페이지 가로 스크롤을 만들지 않게 하고, 데스크톱에서는 본문만 스크롤됩니다.
+ * lg 미만의 가로 넘침은 hidden이 아니라 clip(overflow-x-clip)으로 자릅니다 — 둘 다 넘친 내용을 자르고 페이지 폭을 넓히지 않지만, hidden은 다른
+ * 축(visible)을 auto로 바꿔 본문을 스크롤 상자로 만듭니다. lg 미만에서 본문은 높이가 내용만큼이라 스크롤하지 않고 창이 스크롤하므로, 그 안의 sticky
+ * 머리(정보 검색 결과 목록의 날짜 머리 등)가 스크롤하지 않는 본문을 기준으로 붙어 화면 밖으로 사라졌습니다(QA-450). clip은 스크롤 상자를 만들지
+ * 않아 sticky가 창에 붙습니다. lg 이상은 전과 같습니다(lg:overflow-x-hidden·lg:overflow-y-auto — 본문이 스크롤 상자, sticky는 본문에 붙음).
+ * overflow: clip은 Chrome·Edge 90, Firefox 81, Safari 16부터 되고(caniuse), Next 16의 대상 브라우저(Chrome·Edge·Firefox 111, Safari 16.4 — next의
+ * modern-browserslist-target)는 모두 지원합니다.
  * 본문은 위치 기준(relative)이기도 합니다 — 본문 안의 sr-only 글(position:absolute — 상태 아이콘·상태 글 머리말·출처 머리말)은 위치 지정
  * 조상이 없으면 문서를 기준으로 놓여 표의 가로 스크롤 상자와 본문의 overflow를 벗어났습니다. 390px /admin/users에서 페이지가 544px로
  * 넓어져 하단 탭 바가 화면 밖으로 밀렸고, 데스크톱에서는 문서 높이가 본문 끝까지 늘어 본문 끝에서 휠을 더 굴리면 셸 전체가 위로 밀려 비었습니다.
@@ -53,7 +59,7 @@ export function Shell({
           <main
             id="main"
             tabIndex={-1}
-            className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-y-auto lg:pb-6"
+            className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-6"
           >
             <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
               <SourceAlertBanner user={user} />

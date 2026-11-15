@@ -505,7 +505,7 @@ export function FeedPanel({
                   listRef.current?.focus({ preventScroll: true });
                 };
                 // 줄마다 scroll-mt-7(28px — 붙어 있는 날짜 머리 약 25px보다 큼): ↑↓로 고른 줄을 scrollIntoView(block nearest)로 옮길 때
-                // 날짜 머리 밑이 아니라 그 아래에 멈추게 합니다(QA-435). 날짜 머리가 붙지 않는 좁은 화면(창이 스크롤)에서는 위 여백 28px만 더해집니다.
+                // 날짜 머리 밑이 아니라 그 아래에 멈추게 합니다(QA-435). 좁은 화면(lg 미만 — 창이 스크롤)에서도 날짜 머리가 창 위끝에 붙습니다(QA-450).
                 if (entry.type === "cluster") {
                   // 대표 줄 아래의 묶음 줄 — 누르기·Enter로 펼침/접기(누를 수 있는 것이라 강조 파랑, 상태는 글 '펼치기·접기'와 화살표 모양).
                   // 누르면 고르되 미리 보기는 열지 않습니다(pointerCluster — 아래 시트가 펼친 줄을 덮지 않게).

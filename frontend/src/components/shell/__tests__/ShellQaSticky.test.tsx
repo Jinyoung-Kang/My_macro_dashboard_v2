@@ -156,21 +156,22 @@ describe("QA-450 — 1024 미만에서도 날짜 머리(sticky top-0)가 위에 
   // 알 수 없었고, ↑↓로 고른 줄 위의 28px(scroll-mt-7) 자리에는 날짜 머리 대신 앞 줄 꼬리가 보였습니다. 셸 본문 main의 overflow-x-hidden이
   // 다른 축(overflow-y: visible)을 auto로 바꿔 lg 미만에서 main을 스크롤 상자로 만들지만, 높이가 내용만큼이라 main은 스크롤하지 않고 창이
   // 스크롤합니다 — sticky는 스크롤하지 않는 main을 기준으로 붙으므로 붙지 않았습니다(lg 이상은 lg:overflow-y-auto로 main이 실제로 스크롤해 정상).
-  // 수정 전 실패: main의 lg 미만 클래스에 overflow-x-hidden(스크롤 상자)이 있고 overflow-x-clip이 없음.
-  it.fails("본문 main은 lg 미만에서 스크롤 상자가 아니다 — 가로 넘침은 overflow-x-clip으로 자르고, 세로 스크롤 상자는 lg부터(lg:overflow-y-auto)", () => {
+  // 수정 전 실패: main의 lg 미만 클래스에 overflow-x-hidden(스크롤 상자)이 있고 overflow-x-clip이 없음(재현 커밋에서는 it.fails).
+  it("본문 main은 lg 미만에서 스크롤 상자가 아니다 — 가로 넘침은 overflow-x-clip으로 자르고, 세로 스크롤 상자는 lg부터(lg:overflow-y-auto)", () => {
     renderSearchInShell();
     const main = screen.getByRole("main");
     const tokens = classTokens(main);
     expect(tokens).toContain("overflow-x-clip");
     expect(belowLg(tokens).filter((token) => SCROLL_BOX.test(utility(token)))).toEqual([]);
-    // lg 이상은 그대로 — 본문만 스크롤(lg:overflow-y-auto와 함께면 clip은 hidden으로 계산됨)·넓은 표가 페이지를 넓히지 않음·sr-only 글의 위치 기준.
+    // lg 이상은 수정 전과 같은 값 — 가로 hidden·세로 auto(본문만 스크롤, 넓은 표가 페이지를 넓히지 않음)·sr-only 글의 위치 기준.
+    expect(tokens).toContain("lg:overflow-x-hidden");
     expect(tokens).toContain("lg:overflow-y-auto");
     expect(tokens).toContain("min-w-0");
     expect(tokens).toContain("relative");
   });
 
-  // 수정 전 실패: 날짜 머리의 조상 main#main이 lg 미만에서 overflow-x-hidden(스크롤하지 않는 스크롤 상자).
-  it.fails("lg 미만에서 쓰이는 sticky 요소는 overflow-hidden 조상 안에 있지 않고, 날짜 머리의 가장 가까운 스크롤 상자는 창이다", async () => {
+  // 수정 전 실패: 날짜 머리의 조상 main#main이 lg 미만에서 overflow-x-hidden(스크롤하지 않는 스크롤 상자 — 재현 커밋에서는 it.fails).
+  it("lg 미만에서 쓰이는 sticky 요소는 overflow-hidden 조상 안에 있지 않고, 날짜 머리의 가장 가까운 스크롤 상자는 창이다", async () => {
     renderSearchInShell();
     const list = await screen.findByRole("listbox", { name: "결과" });
     const headers = within(list)
