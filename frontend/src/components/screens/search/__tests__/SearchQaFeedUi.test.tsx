@@ -100,7 +100,11 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
   let main: HTMLElement;
   let restore: (() => void)[];
   const width = Object.getOwnPropertyDescriptor(window, "innerWidth");
+  const height = Object.getOwnPropertyDescriptor(window, "innerHeight");
   const setWidth = (value: number) => Object.defineProperty(window, "innerWidth", { configurable: true, enumerable: true, get: () => value });
+  const setHeight = (value: number) => Object.defineProperty(window, "innerHeight", { configurable: true, enumerable: true, get: () => value });
+  /** xl(1280) — 이 폭부터 미리 보기는 흐름 안의 오른쪽 칸(xl:static), 그 밑은 아래 시트(고정). jsdom은 클래스를 풀지 않으므로 창 폭으로 가짜로 줌. */
+  const XL = 1280;
   const isSheet = (element: Element) => element instanceof HTMLElement && element.className.split(/\s+/).includes("max-h-[50dvh]");
   const rect = (top: number, height: number) =>
     ({ x: 0, y: top, top, left: 0, right: 0, bottom: top + height, width: 0, height, toJSON: () => ({}) }) as DOMRect;
@@ -117,7 +121,7 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     setWidth(390);
     const realStyle = window.getComputedStyle.bind(window);
     const style = vi.spyOn(window, "getComputedStyle").mockImplementation((element: Element, pseudo?: string | null) => {
-      if (isSheet(element)) return { position: "fixed" } as CSSStyleDeclaration;
+      if (isSheet(element)) return { position: window.innerWidth < XL ? "fixed" : "static" } as CSSStyleDeclaration;
       const real = realStyle(element, pseudo);
       if (rowMargin === null || !isSelectedRow(element)) return real;
       const margin = rowMargin;
@@ -146,6 +150,7 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     main.remove();
     document.documentElement.style.removeProperty(BOTTOM_SHEET_VAR);
     if (width) Object.defineProperty(window, "innerWidth", width);
+    if (height) Object.defineProperty(window, "innerHeight", height);
   });
 
   /** 둘째 줄을 눌러 시트를 엽니다 — 열린 뒤 옮긴 기록은 비웁니다(창 크기를 바꾼 뒤의 것만 봄). */
@@ -158,7 +163,7 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     restore.push(() => scroll.mockRestore());
     const selected = within(list).getAllByRole("option")[1];
     fireEvent.click(selected);
-    expect(reserved()).toBe(`${SHEET_HEIGHT}px`);
+    expect(reserved()).toBe(window.innerWidth < XL ? `${SHEET_HEIGHT}px` : "");
     scrolled.length = 0;
     return { row: selected, scrolled, scroll };
   }
@@ -218,6 +223,52 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     selectedBox = { top: 120, bottom: 152 };
     resize(1024, 195);
     expect(scrolled).toEqual([row]);
+  });
+
+  // 검토 지적(xl 경계): xl(1280 이상)의 미리 보기는 흐름 안의 오른쪽 칸이라 잰 창 폭을 0으로 두어, 창 폭을 xl 밑으로 줄여(1300 → 1279, 큰 태블릿을
+  // 세로로 돌림·창 폭 줄임) 아래 시트로 바뀐 첫 측정을 폭 변화로 보지 않았습니다(덮을 때만). 이 경계에서 목록이 두 칸 배치(약 429px)에서 네 칸
+  // 배치(약 716px)로 바뀌어 줄이 낮아지므로 고른 줄이 보이는 자리 위로 올라갈 수 있습니다(스크롤 고정이 없는 브라우저). 반대로 xl로 넓히면 줄이
+  // 높아져 창 아래로 밀려날 수 있습니다 — 오른쪽 칸에는 덮는 시트가 없으므로 보이는 자리의 아래끝은 창 아래끝(본문 main이 창 바닥까지).
+  // 수정 전 실패: 1300 → 1279에서 고른 줄(40~72 — 보이는 자리 위끝 113 + 28 위)을 옮기지 않음, 1279 → 1300에서 창 아래(1030~1062)로 밀려난 줄도 그대로.
+  it("창 폭이 xl 경계를 넘어(1300 → 1279) 오른쪽 칸이 아래 시트로 바뀌며 고른 줄이 보이는 자리 위로 벗어나면 옮긴다", async () => {
+    setWidth(1300);
+    mainTop = 113;
+    rowMargin = "28px";
+    const { row, scrolled } = await openPreview();
+    selectedBox = { top: 40, bottom: 72 };
+    resize(1279, 384);
+    expect(reserved()).toBe(`${SHEET_HEIGHT}px`);
+    expect(scrolled).toEqual([row]);
+  });
+
+  it("창 폭이 xl 경계를 넘어(1279 → 1300) 아래 시트가 오른쪽 칸으로 바뀌며 고른 줄이 창 아래로 밀려나면 옮긴다 — 창 안이면 그대로", async () => {
+    setWidth(1279);
+    setHeight(1024);
+    mainTop = 113;
+    const { row, scrolled } = await openPreview();
+    selectedBox = { top: 980, bottom: 1012 };
+    resize(1300, 512);
+    expect(reserved()).toBe("");
+    expect(scrolled).toEqual([]);
+    // 시트 위(113 ~ 500 - 64)에 보이는 자리로 돌아간 뒤 다시 넓힘.
+    selectedBox = { top: 300, bottom: 332 };
+    resize(1279, 512);
+    expect(scrolled).toEqual([]);
+    selectedBox = { top: 1030, bottom: 1062 };
+    resize(1300, 512);
+    expect(scrolled).toEqual([row]);
+  });
+
+  it("xl 오른쪽 칸에서는 창 높이만 바뀌면(폭 그대로) 화면 밖으로 스크롤해 둔 고른 줄을 옮기지 않는다", async () => {
+    setWidth(1440);
+    setHeight(900);
+    mainTop = 113;
+    const { scrolled } = await openPreview();
+    selectedBox = { top: -200, bottom: -168 };
+    setHeight(700);
+    resize(1440, 350);
+    expect(reserved()).toBe("");
+    expect(scrolled).toEqual([]);
   });
 });
 

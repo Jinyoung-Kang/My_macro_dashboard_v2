@@ -60,7 +60,8 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * lg(1024~1279)는 두 칸(왼쪽 · 가운데 — 속성은 가운데 아래, 미리 보기는 아래 시트)입니다(entityGrid — QA-420).
  * 아래 시트가 열려 있으면 그 높이를 재서(useBottomSheet) 결과 아래에 같은 여백을 두고(끝 줄·출처 상태 줄이 시트 위로 올라오게), 스크롤 여백
  * (globals.css의 --bottom-sheet)으로 ↑↓·End로 고른 줄이 시트 밑에 숨지 않게 하며, 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다.
- * 열린 동안 창 폭이 바뀌어(휴대폰을 돌림) 고른 줄이 화면 위나 시트 아래로 밀려나도 옮깁니다(QA-447 — 높이만 바뀐 때는 덮을 때만).
+ * 열린 동안 창 폭이 바뀌어(휴대폰을 돌림·xl 경계를 넘음) 고른 줄이 화면 위나 시트(xl 오른쪽 칸이면 창) 아래로 밀려나도 옮깁니다(QA-447 —
+ * 높이만 바뀐 때는 덮을 때만).
  * 열린 동안 시트는 줄지 않습니다(sheetStyle — 닫으면 처음 높이부터).
  * 넓은 화면(lg)에서는 시트가 본문의 스크롤 막대를 덮지 않게 그 폭만큼 오른쪽을 비웁니다.
  *
@@ -100,8 +101,9 @@ const SHEET_TOP_BUTTON_BAND = 64;
 
 /**
  * 고른 줄이 보이는 자리 밖에 걸쳤는가(QA-447) — 보이는 자리는 스크롤 상자의 위끝(lg 이상은 본문 main, 그 밑은 창 위끝 — 본문이 창 위로
- * 올라가 있으면 창 위끝)에서 줄의 scroll-margin-top(붙는 날짜 머리 자리 — scroll-mt-7, QA-435)만큼 아래부터 bottom(시트 위 TOP 단추 띠의
- * 위끝)까지입니다. nearest로 옮기면 줄이 멈추는 자리와 같은 경계입니다(아래는 스크롤 여백 — globals.css).
+ * 올라가 있으면 창 위끝)에서 줄의 scroll-margin-top(붙는 날짜 머리 자리 — scroll-mt-7, QA-435)만큼 아래부터 bottom(아래 시트가 있으면 그 위
+ * TOP 단추 띠의 위끝, xl 오른쪽 칸이면 창 아래끝 — 본문 main이 창 바닥까지)까지입니다. nearest로 옮기면 줄이 멈추는 자리와 같은 경계입니다
+ * (아래는 스크롤 여백 — globals.css, 시트가 없으면 0).
  */
 function rowOutsideView(row: Element, box: DOMRect, bottom: number): boolean {
   const scrollerTop = Math.max(0, document.getElementById("main")?.getBoundingClientRect().top ?? 0);
@@ -234,14 +236,20 @@ export function FeedPanel({
   // 바뀐 때 등) 옮기지 않고, 거르기·막대로 목록이 바뀔 때도 옮기지 않습니다(왼쪽 칸에서 고르는 중일 수 있음).
   // 다만 열린 동안 창 폭이 바뀌면(휴대폰을 돌림·창 폭 조절) 줄 바꿈이 달라져 고른 줄이 화면 위나 시트 아래로 밀려나므로 — 사용자가 스크롤한
   // 것이 아니라 배치가 바뀐 것 — 그 줄이 보이는 자리(rowOutsideView) 밖에 걸쳤으면 옮깁니다(QA-447). 높이만 바뀐 때는 위 규칙 그대로입니다.
+  // xl 경계를 넘어 오른쪽 칸과 아래 시트가 서로 바뀌는 것도 폭 변화입니다(목록이 두 칸 배치 ↔ 네 칸 배치로 바뀌어 줄 높이가 크게 달라짐 — 검토 지적).
   const sheetWidth = useRef(0);
   useEffect(() => {
-    // 열린 동안의 폭끼리만 견줍니다 — 닫히면 0이라 다시 열 때는 바뀐 것으로 보지 않음(그때는 덮는지만).
+    // 열린 동안의 폭끼리만 견줍니다 — 닫히면 0이라 다시 열 때는 바뀐 것으로 보지 않음(그때는 덮는지만). 폭은 시트가 흐름 안(xl 오른쪽 칸)이어도 잽니다.
     const widthChanged = sheetWidth.current > 0 && sheet.width > 0 && sheet.width !== sheetWidth.current;
     sheetWidth.current = sheet.width;
     const row = listRef.current?.querySelector('[role="option"][aria-selected="true"]');
     const pane = sheetRef.current;
-    if (sheet.height <= 0 || !row || !pane) return;
+    if (!row || !pane) return;
+    if (sheet.height <= 0) {
+      // 흐름 안(xl 오른쪽 칸) — 덮는 시트가 없으므로 창 폭이 바뀐 때만 봅니다. 보이는 자리의 아래끝은 창 아래끝(스크롤 여백 0).
+      if (widthChanged && rowOutsideView(row, row.getBoundingClientRect(), window.innerHeight)) row.scrollIntoView({ block: "nearest" });
+      return;
+    }
     const box = row.getBoundingClientRect();
     const top = pane.getBoundingClientRect().top;
     // 시트 위로 올라간 TOP 단추 자리(SHEET_TOP_BUTTON_BAND)에 걸친 줄도 옮깁니다 — 스크롤 여백도 그만큼 더 두므로 nearest가 단추 위에 멈춥니다(QA-420 후속).

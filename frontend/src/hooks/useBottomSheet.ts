@@ -15,8 +15,9 @@ export type BottomSheetSpace = {
   /** 본문(main#main — 넓은 화면의 스크롤 상자)의 세로 스크롤 막대 폭(px). 시트의 오른쪽을 이만큼 비워 스크롤 막대를 덮지 않게 합니다. */
   gutter: number;
   /**
-   * 잰 때의 창 폭(window.innerWidth, px) — 고정 시트가 아니거나 닫혀 있으면 0. 창 폭이 바뀌면(휴대폰을 돌림·창 폭 조절) 줄 바꿈이 달라져
-   * 시트 밖의 내용이 움직이므로, 시트를 담은 화면이 높이만 바뀐 때(휴대폰 주소 막대)와 가를 때 씁니다(QA-447).
+   * 잰 때의 창 폭(window.innerWidth, px) — 닫혀 있으면 0. 시트가 흐름 안(xl의 오른쪽 칸)이어도 적습니다. 창 폭이 바뀌면(휴대폰을 돌림·창 폭
+   * 조절 — xl 경계를 넘어 오른쪽 칸과 아래 시트가 서로 바뀌는 것 포함) 줄 바꿈이 달라져 시트 밖의 내용이 움직이므로, 시트를 담은 화면이 높이만
+   * 바뀐 때(휴대폰 주소 막대)와 가를 때 씁니다(QA-447).
    */
   width: number;
 };
@@ -25,9 +26,9 @@ const NONE: BottomSheetSpace = { height: 0, gutter: 0, width: 0 };
 
 /**
  * 화면 아래에 붙은 고정 시트(정보 검색의 미리 보기 — xl 미만)가 열려 있는 동안 그 높이를 재서 문서 루트의 --bottom-sheet로 적고 돌려줍니다.
- * 시트가 고정(position: fixed)이 아니면(xl의 오른쪽 칸처럼 흐름 안에 있으면) 0이고 적지 않습니다 — 고정인지는 계산된 스타일로 보므로
- * 클래스의 창 폭 경계(xl:static 등)와 늘 같습니다. 시트 크기가 바뀌거나(ResizeObserver) 창 크기가 바뀌면 다시 재고(창 폭도 함께 돌려줌),
- * 닫히거나 화면을 떠나면 지웁니다.
+ * 시트가 고정(position: fixed)이 아니면(xl의 오른쪽 칸처럼 흐름 안에 있으면) 높이·스크롤 막대 폭은 0이고 적지 않습니다(창 폭은 돌려줌) —
+ * 고정인지는 계산된 스타일로 보므로 클래스의 창 폭 경계(xl:static 등)와 늘 같습니다. 시트 크기가 바뀌거나(ResizeObserver) 창 크기가 바뀌면
+ * 다시 재고(창 폭도 함께 돌려줌), 닫히거나 화면을 떠나면 지웁니다.
  */
 export function useBottomSheet(ref: RefObject<HTMLElement | null>, open: boolean): BottomSheetSpace {
   const [space, setSpace] = useState<BottomSheetSpace>(NONE);
@@ -41,7 +42,7 @@ export function useBottomSheet(ref: RefObject<HTMLElement | null>, open: boolean
       const fixed = window.getComputedStyle(sheet).position === "fixed";
       const height = fixed ? Math.ceil(sheet.getBoundingClientRect().height) : 0;
       const gutter = fixed && main ? Math.max(0, main.offsetWidth - main.clientWidth) : 0;
-      const width = fixed ? window.innerWidth : 0;
+      const width = window.innerWidth;
       if (height > 0) root.style.setProperty(BOTTOM_SHEET_VAR, `${height}px`);
       else root.style.removeProperty(BOTTOM_SHEET_VAR);
       setSpace((current) =>
