@@ -53,7 +53,7 @@ export function IntradayPlansPanel({
   const error = request.error && requestedFor === book ? request.error : null;
 
   return (
-    <section aria-label="장중 판단" className="mt-3 rounded-control border border-line px-4 py-3">
+    <section aria-label="장중 판단" className="mt-3 rounded-control border border-border px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">장중 판단(자유 시점 판)</h3>

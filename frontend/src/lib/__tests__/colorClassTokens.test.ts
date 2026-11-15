@@ -150,8 +150,9 @@ describe("색 클래스 — 토큰 이름만(소스 검사)", () => {
   });
 
   // QA-471: 모의매매 결정 탭의 '장중 판단' 칸(components/screens/paper/IntradayPlansPanel.tsx)이 없는 토큰 `border-line`을 써서 테두리 색이
-  // 나오지 않음 — 1px 테두리가 둘레 글자색(currentColor)으로 칠해져, 어두운 한 벌에서는 패널 경계(border #383e47)가 아니라 거의 흰 선(text #f6f7f9)이 됨.
-  it.fails("QA-471: 제품 소스의 색 클래스는 모두 globals.css 토큰 이름이다", () => {
+  // 나오지 않았음 — 1px 테두리가 둘레 글자색(currentColor)으로 칠해져, 어두운 한 벌에서는 패널 경계(border #383e47)가 아니라 거의 흰 선(text #f6f7f9)이 됨.
+  // 고침: 그 칸을 패널 경계 토큰(border-border)으로.
+  it("QA-471: 제품 소스의 색 클래스는 모두 globals.css 토큰 이름이다", () => {
     expect(offenders()).toEqual([]);
   });
 });
