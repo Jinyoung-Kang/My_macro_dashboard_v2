@@ -235,6 +235,13 @@ export function FeedPanel({
     summaryButtonRef.current?.focus();
   };
 
+  // 미리 보기의 '닫기' — 단추가 미리 보기째 사라지므로 포커스를 고른 줄이 있던 결과 목록(Escape로 닫을 때와 같은 자리)으로 옮깁니다(WCAG 2.4.3).
+  // 미리 보기는 목록의 줄을 골랐을 때만 그려지므로 목록이 있습니다. 아래 시트가 닫히며 페이지가 튀지 않게 preventScroll(QA-430).
+  const closePreview = () => {
+    setSelectedKey(null);
+    listRef.current?.focus({ preventScroll: true });
+  };
+
   const toggleCluster = (clusterId: string) =>
     setExpanded((current) => {
       const next = new Set(current);
@@ -486,7 +493,7 @@ export function FeedPanel({
       item={selected}
       label={sourceLabel(selected.source, statuses)}
       owner={owner}
-      onClose={() => setSelectedKey(null)}
+      onClose={closePreview}
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
     />
   ) : (

@@ -95,7 +95,7 @@ describe("QA-430 — 미리 보기 닫기 단추로 닫으면 포커스가 결�
   // Escape로 닫으면 포커스가 결과 목록에 남아 두 닫기의 결과가 달랐습니다(WCAG 2.4.3). 브라우저는 단추 위 Enter·Space를 click으로 바꾸고
   // 마우스로 누르면 단추에 포커스가 먼저 가므로, 포커스를 둔 뒤 click으로 누릅니다. 목록은 페이지가 튀지 않게 preventScroll로 받습니다.
   // 수정 전 실패: document.activeElement가 결과 목록이 아니라 body.
-  it.fails("닫기 단추를 누르면 미리 보기가 닫히고 포커스는 결과 목록(preventScroll) — ↓가 그 목록에서 이어 간다", async () => {
+  it("닫기 단추를 누르면 미리 보기가 닫히고 포커스는 결과 목록(preventScroll) — ↓가 그 목록에서 이어 간다", async () => {
     const { list, preview } = await openFirstPreview();
     const focus = vi.spyOn(list, "focus");
     const close = within(preview).getByRole("button", { name: "미리 보기 닫기" });
