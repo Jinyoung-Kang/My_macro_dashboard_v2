@@ -13,7 +13,7 @@ import { allowedRangeKey, rangeKeyAfter, visibleRanges } from "@/lib/patternRows
  * - role="tablist" + 탭마다 aria-selected. 키보드: ←·→ 이웃 탭(끝에서 돎), Home·End. 포커스를 옮기며 바로 고릅니다
  *   (구간 자르기는 즉시 끝나 서버를 부르지 않으므로 자동 선택이 낫습니다). Tab 키로는 고른 탭(없으면 첫 탭) 하나에만 들어옵니다.
  * - 그릴 탭이 하나도 없으면 아무것도 그리지 않습니다.
- * - 모양은 알약(`pillTabClasses`) — 고른 탭은 중립 바탕과 굵은 글(데이터 영역이라 강조 파랑을 쓰지 않음), 고대비 모드에서는 테두리.
+ * - 모양은 공용 기간 고르기 조각(`pillTabClasses` — 4px, lg 이상 30px) — 고른 탭은 중립 바탕·안쪽 선과 굵은 글(데이터 영역이라 강조 파랑을 쓰지 않음), 고대비 모드에서는 테두리.
  */
 export function RangeTabs<K extends string>({
   ranges,

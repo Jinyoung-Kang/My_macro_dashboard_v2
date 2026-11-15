@@ -14,7 +14,6 @@ import { belowLgTarget, smallTargets } from "./touchTargetAudit";
 
 const {
   buttonClasses,
-  denseSegmentClasses,
   filterChipClasses,
   inputClasses,
   LINK_CLASSES,
@@ -40,7 +39,6 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
-  denseSegmentClasses: () => BOTH.map((active): [string, string] => [String(active), denseSegmentClasses(active)]),
   toggleClasses: () =>
     BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
   LINK_CLASSES: () => [["", LINK_CLASSES]],

@@ -14,14 +14,15 @@ import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
 
 /*
  * 조작 조각(단추·기간 고르기·켜고 끄는 단추·글 링크·면)은 공용 키트 components/ui/classes.ts로 옮겼고(작업대 실행 명세 §6·§8-4 — 옮기는 커밋),
- * 이 화면의 부품이 쓰던 이름 그대로 여기서 다시 내보냅니다. 단추 둘은 공용 단추의 기본(default)·주(primary) 모양입니다.
+ * 이 화면의 부품이 쓰던 이름 그대로 여기서 다시 내보냅니다. 단추 둘은 공용 단추의 기본(default)·주(primary) 모양이고, 기간 고르기는
+ * 공용 기간 고르기(pillTabClasses)입니다.
  */
 export const BUTTON = buttonClasses("default");
 export const BUTTON_PRIMARY = buttonClasses("primary");
 export {
-  denseSegmentClasses as segmentClass,
   LINK_CLASSES as LINK,
   PANEL_CLASSES as PANEL,
+  pillTabClasses as segmentClass,
   toggleClasses as toggleClass,
 } from "@/components/ui/classes";
 

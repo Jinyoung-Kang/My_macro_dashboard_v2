@@ -71,35 +71,36 @@ export function inputClasses(size: InputSize = "md"): string {
 }
 
 /*
- * 고르기 조각 셋(기간 알약·세그먼트·밑줄 탭) — 명세 §4. 고른 것은 색만이 아니라 굵기로도 다르고, 고대비(forced-colors) 모드에서는
- * 바탕색·그림자(ring)가 지워지므로 고른 칸에만 1px 테두리를 더합니다(명세 D9). 나머지 칸에는 테두리를 두지 않습니다 — 투명 테두리는
- * 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보입니다.
+ * 고르기 조각(기간 고르기·세그먼트·밑줄 탭·거르기 칩·켜고 끄는 단추) — 실행 명세 §3-7·§3-8·§6. 모서리 4px, lg 이상 30px(세그먼트 칸은 트랙 안
+ * 24px), lg 미만 44px. 고른 것은 색만이 아니라 굵기로도 다르고, 고대비(forced-colors) 모드에서는 바탕색·그림자(ring)가 지워지므로 고른 칸에만
+ * 1px 테두리를 더합니다(명세 D9). 나머지 칸에는 테두리를 두지 않습니다 — 투명 테두리는 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보입니다.
  */
 const FORCED_SELECTED = "forced-colors:border";
 const SELECT_MOTION = "motion-safe:transition-colors motion-safe:duration-150";
 
 /**
- * 기간 알약(새 patterns/RangeTabs·옛 components/RangeTabs) — 이미 받은 시계열을 자르는 고르기. 데이터 영역이라 고른 칸도 강조 파랑이
- * 아니라 중립 바탕(surface-2)과 굵은 글입니다(명세 원칙 A1 — 강조 파랑은 하락 파랑과 색으로 구분되지 않음).
- * 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px.
+ * 기간 고르기(새 patterns/RangeTabs·옛 components/RangeTabs·정보 검색의 기간·연결 보기 — 이름은 옛 '기간 알약' 그대로) — 이미 받은 시계열을
+ * 자르는 고르기. 데이터 영역이라 고른 칸도 강조 파랑이 아니라 중립 바탕(surface-2)·진한 안쪽 선(border-strong)·굵은 글입니다(원칙 A1 —
+ * 강조 파랑은 하락 파랑과 색으로 구분되지 않음). 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px, 넓은 화면 30px.
  */
 export function pillTabClasses(active: boolean): string {
-  return `inline-flex min-h-11 items-center justify-center rounded-full px-3.5 text-[13px] tabular-nums lg:min-h-8 ${SELECT_MOTION} ${FOCUS_RING} ${
-    active ? `bg-surface-2 font-semibold text-text ${FORCED_SELECTED}` : "font-medium text-text-2 hover:text-text"
+  return `inline-flex min-h-11 items-center justify-center rounded-control px-3 text-sm tabular-nums lg:min-h-[30px] lg:px-2.5 ${SELECT_MOTION} ${FOCUS_RING} ${
+    active ? `bg-surface-2 font-semibold text-text ring-1 ring-inset ring-border-strong ${FORCED_SELECTED}` : "font-medium text-text-2 hover:bg-surface-2 hover:text-text"
   }`;
 }
 
-/** 세그먼트의 트랙(라디오 묶음) — 배치(flex·inline-flex·폭)는 부르는 쪽이 붙입니다. */
-export const SEGMENT_TRACK = "rounded-full bg-surface-2 p-1";
+/** 세그먼트의 트랙(라디오 묶음) — 4px·1px 경계, 놓인 면보다 어두운 바탕(bg) 위에 고른 칸이 뜹니다. 배치(flex·inline-flex·폭)는 부르는 쪽이 붙입니다. */
+export const SEGMENT_TRACK = "rounded-control border border-border bg-bg p-0.5";
 
 /**
- * 세그먼트 칸(테마 전환·홈 시장 고르기) — 가린 라디오 입력을 감싼 라벨에 붙입니다. 포커스 링은 라벨이 그립니다(has-[:focus-visible]).
- * 고른 칸은 트랙 위에 뜬 표면 칩(surface + 1px 링)입니다. 높이는 좁은 화면(lg 미만) 44px·넓은 화면 32px를 여기서 붙이고(QA-458 — 부르는
- * 쪽에 맡기면 새 화면이 빠뜨릴 수 있음), 여백·글자 크기는 부르는 쪽이 붙입니다.
+ * 세그먼트 칸(홈 시장 고르기·모의매매 실행 감사 계좌·결정 로그 보기) — 가린 라디오 입력을 감싼 라벨(또는 aria-pressed 단추)에 붙입니다.
+ * 포커스 링은 라벨이 그립니다(has-[:focus-visible]). 고른 칸은 트랙 위에 뜬 칩(surface-2 + 1px 링)입니다. 높이는 좁은 화면(lg 미만) 44px·
+ * 넓은 화면 24px(트랙의 2px 안쪽 여백·1px 경계와 합쳐 30px)를 여기서 붙이고(QA-458 — 부르는 쪽에 맡기면 새 화면이 빠뜨릴 수 있음),
+ * 여백·글자 크기는 부르는 쪽이 붙입니다.
  */
 export function segmentClasses(checked: boolean): string {
-  return `inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full lg:min-h-8 ${SELECT_MOTION} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
-    checked ? `bg-surface font-semibold text-text ring-1 ring-border ${FORCED_SELECTED}` : "font-medium text-text-2 hover:text-text"
+  return `inline-flex min-h-11 cursor-pointer items-center justify-center rounded-control lg:min-h-6 ${SELECT_MOTION} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
+    checked ? `bg-surface-2 font-semibold text-text ring-1 ring-border ${FORCED_SELECTED}` : "font-medium text-text-2 hover:text-text"
   }`;
 }
 
@@ -110,29 +111,49 @@ export function segmentClasses(checked: boolean): string {
  */
 export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
 
+/** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(TEXT_TARGET과 같은 규칙), 넓은 화면은 글 높이. */
+export const LINK_CLASSES = `${TEXT_TARGET} rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline ${FOCUS_RING}`;
+
 /**
- * 거르기 칩(교집합의 분석 대상 기관·환율 겹쳐 보기) — 여럿을 켜고 끄는 aria-pressed 단추. 누를 수 있는 것이라 켠 칩은 강조 파랑(틴트 바탕·
- * 파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기와 체크 아이콘(부르는 쪽이 켠 칩 앞에 둠)이 함께 바뀝니다.
+ * 거르기 칩(교집합의 분석 대상 기관·환율 겹쳐 보기·정보 수집의 거르기) — 여럿을 켜고 끄는 aria-pressed 단추. 누를 수 있는 것이라 켠 칩은
+ * 강조 파랑(틴트 바탕·파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기와 체크 아이콘(부르는 쪽이 켠 칩 앞에 둠)이 함께 바뀝니다.
  * 켠 칩의 글자는 본문색입니다 — accent 틴트 위 accent 글자는 4.47:1로 4.5에 못 미칩니다(QA-459, 작업대 실행 명세 §3-2).
- * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·아이콘으로 갈립니다. 좁은 화면에서 높이 44px.
+ * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·아이콘으로 갈립니다. 4px, lg 이상 30px, lg 미만 44px.
  */
 export function filterChipClasses(pressed: boolean): string {
-  return `inline-flex min-h-11 items-center gap-1 rounded-full border px-3.5 text-[13px] lg:min-h-8 ${SELECT_MOTION} ${FOCUS_RING} ${
+  return `inline-flex min-h-11 items-center gap-1 rounded-control border px-3 text-[13px] lg:min-h-[30px] lg:px-2.5 ${SELECT_MOTION} ${FOCUS_RING} ${
     pressed ? "border-accent bg-accent-tint font-semibold text-text" : "border-border bg-surface font-medium text-text-2 hover:bg-surface-2 hover:text-text"
+  }`;
+}
+
+/**
+ * 켜고 끄는 단추(aria-pressed — 관심 대상의 알림): 켠 칸은 진한 테두리·굵은 글, 끈 칸은 옅은 글(상태는 단추의 글 '켬'·'끔'이 나름 — 색만이 아님).
+ * 바꾸는 중에는 aria-disabled(포커스가 떨어지지 않게 disabled를 쓰지 않음). 모양·높이는 기본 단추와 같고(lg 이상 30px), compact는 목록 줄 —
+ * 좁은 화면 44px 정사각, 넓은 화면은 줄 높이 32px, 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
+ */
+export function toggleClasses(pressed: boolean, compact = false): string {
+  const shape = compact
+    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-8 lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+    : `${CONTROL_BASE} ${BUTTON_SIZE.md}`;
+  return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
+    pressed
+      ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
+      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
   }`;
 }
 
 export type UnderlineTabSize = "md" | "sm";
 
+// md는 하위 메뉴 줄(좁은 화면 48px·15px, 넓은 화면 40px·14px), sm은 화면 안의 탭 줄(44px, 넓은 화면 30px — 정보 검색 결과 탭과 같음).
 const UNDERLINE_SIZE: Record<UnderlineTabSize, string> = {
-  md: "h-12 text-[15px]",
-  sm: "h-11 text-sm",
+  md: "min-h-12 text-[15px] lg:min-h-10 lg:text-sm",
+  sm: "min-h-11 text-sm lg:min-h-[30px]",
 };
 
 /**
- * 밑줄 탭(하위 메뉴 줄·모의매매 화면 탭) — 지금 탭은 강조 파랑 밑줄과 굵은 글(셸·탐색은 누를 수 있는 것이라 강조 파랑을 씀 — A1),
- * 나머지는 보조 글. 줄을 바꾸지 않고 감싼 줄이 가로로 스크롤합니다. `sm`은 하위 메뉴 줄 아래 두 번째 탭 줄(모의매매 탭)용으로
- * 한 단계 작게 둬 두 줄의 위계를 가릅니다.
+ * 밑줄 탭(하위 메뉴 줄·모의매매 화면 탭·공용 Tabs) — 탭 모양은 이것 하나입니다(실행 명세 §6). 지금 탭은 강조 파랑 2px 밑줄과 굵은 글
+ * (셸·탐색은 누를 수 있는 것이라 강조 파랑을 씀 — A1), 나머지는 보조 글. 줄을 바꾸지 않고 감싼 줄이 가로로 스크롤합니다. `sm`은 하위 메뉴 줄
+ * 아래 두 번째 탭 줄(모의매매 탭)용으로 한 단계 작게 둬 두 줄의 위계를 가릅니다.
  * 나머지 탭의 투명 밑줄(글이 위아래로 흔들리지 않게 둔 자리)은 고대비(forced-colors) 모드에서 시스템 글자색으로 칠해져 모든 탭에 밑줄이
  * 생기므로, 그 모드에서는 지웁니다 — 지금 탭만 밑줄과 굵은 글이 남습니다(명세 D9, headless 크롬 forced-colors 흉내로 확인).
  */
@@ -142,43 +163,7 @@ export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "m
   }`;
 }
 
-/*
- * 조밀한 조작 조각(정보 검색 화면의 조각 — components/screens/search/parts.tsx에서 옮김, 작업대 실행 명세 §6·§8-4). 넓은 화면(lg)에서
- * 단추·입력 30px, 모서리 4px(rounded-control), 1px 경계. lg 미만은 누르는 자리 44px. 강조 파랑(accent)은 누를 수 있는 것(링크·주 단추·지금 탭)에만
- * 씁니다(명세 원칙 A1). parts.tsx가 옛 이름(segmentClass·toggleClass·LINK·PANEL)으로 그대로 다시 내보냅니다 — 단추 둘(BUTTON·BUTTON_PRIMARY)은
- * 공용 단추(buttonClasses의 default·primary)가 같은 모양이 되어 그것을 씁니다.
- */
-
-/** 조밀한 단추 바탕 — 좁은 화면 44px, 넓은 화면 30px. */
-const DENSE_CONTROL = `inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-control border px-3 text-sm lg:min-h-[30px] lg:px-2.5 motion-safe:transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
-
-/** 데이터를 자르는 고르기(기간) — 고른 칸도 강조 파랑이 아니라 중립 바탕·굵은 글, 고대비 모드에서는 테두리(명세 D9). */
-export function denseSegmentClasses(active: boolean): string {
-  return `${DENSE_CONTROL} tabular-nums ${
-    active ? "border-border-strong bg-surface-2 font-semibold text-text" : "border-transparent font-medium text-text-2 hover:bg-surface-2 hover:text-text"
-  }`;
-}
-
-/**
- * 켜고 끄는 단추(aria-pressed — 관심 대상의 알림): 켠 칸은 진한 테두리·굵은 글, 끈 칸은 옅은 글(상태는 단추의 글 '켬'·'끔'이 나름 — 색만이 아님).
- * 바꾸는 중에는 aria-disabled(포커스가 떨어지지 않게 disabled를 쓰지 않음). compact는 목록 줄 — 좁은 화면 44px 정사각, 넓은 화면은 줄 높이 32px,
- * 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
- */
-export function toggleClasses(pressed: boolean, compact = false): string {
-  const shape = compact
-    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-8 lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
-    : DENSE_CONTROL;
-  return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
-    pressed
-      ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
-      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
-  }`;
-}
-
-/** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(ADR 0041 결정 11), 넓은 화면은 글 높이. */
-export const LINK_CLASSES = `inline-flex min-h-11 items-center rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline lg:min-h-0 ${FOCUS_RING}`;
-
-/** 면(패널) — 1px 경계, 모서리 4px. */
+/** 면(패널) — 1px 경계, 모서리 4px(정보 검색 화면에서 옮김 — 공용 Panel과 같은 바탕·경계). */
 export const PANEL_CLASSES = "rounded-card border border-border bg-surface";
 
 /**
