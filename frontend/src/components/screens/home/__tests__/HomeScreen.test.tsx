@@ -427,6 +427,28 @@ describe("홈 — 불러오는 중·값 없음", () => {
     }
     expect((await countGroup(issues(0, 0), "tabular-nums")).hidden).toEqual([]);
   });
+
+  // QA-505 후속(검토): 수 묶음 앞에 아이콘(14px + 간격 6px)이 붙자 390px에서 한 줄이던 수 글이 두 줄이 되며 '… · 누락 데이터셋' / '1개'로,
+  // 360px에서는 '… · 누락 데이' / '터셋 1개'로 이름과 수가 다른 줄에 갈라졌습니다(QA 스택 실측 0/19/1). 항목(이름 + 수)마다 줄 바꿈 없는
+  // 덩어리로 두어 줄은 ' · ' 자리에서만 바뀝니다. 수를 모르는 칸('—' + 읽어 주는 '값 없음')도 같은 덩어리입니다.
+  it.fails("QA-505: 수 묶음의 항목(이름 + 수)마다 줄 바꿈 없는 덩어리 — 좁은 화면에서 이름과 수가 다른 줄로 갈라지지 않는다", async () => {
+    const warn = issues(0, 19);
+    warn.counts.missingDatasets = 1;
+    const cases = [
+      [warn, ["수집 태스크 오류 0건", "경고 19건", "누락 데이터셋 1개"]],
+      [issues(0, 0), ["수집 태스크 오류 0건", "경고 0건", "누락 데이터셋 0개"]],
+      [{ ...issues(), counts: undefined }, ["수집 태스크 오류 —값 없음", "경고 —값 없음", "누락 데이터셋 —값 없음"]],
+    ] as const;
+    for (const [response, expected] of cases) {
+      reads = { ...happyReads(), [ISSUES]: response };
+      const { unmount } = renderHome(OWNER);
+      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const group = within(line).getByText(/^수집 태스크 오류/).closest(".tabular-nums") as HTMLElement;
+      const items = Array.from(group.querySelectorAll(".whitespace-nowrap"), (node) => node.textContent);
+      expect(items, expected[2]).toEqual(expected);
+      unmount();
+    }
+  });
 });
 
 describe("홈 — 일부 실패", () => {
