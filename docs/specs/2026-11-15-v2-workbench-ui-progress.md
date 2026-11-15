@@ -3,13 +3,13 @@
 - 명세: [2026-11-15-v2-workbench-ui.md](2026-11-15-v2-workbench-ui.md) · 결정: [ADR 0042](../adr/0042-workbench-ui.md)
 - 기준 커밋: main `78431302`(정보 검색 다음 회차 후보 QA-450~456까지 들어간 main). 작업 브랜치 이름 규칙은 명세 §8-1(`claude/workbench-ui-2026-11`).
 - 승인 범위: 명세 §0 결정 W1~W14(2026-11-15 사용자 결정 1~4 + 계획 초안의 나머지 권장안). 실제 계좌·ISA·실제 매매의 재배치는 범위 밖(새 결정이 필요).
-- 새 결함 번호: 이 기록 시작 때 다음 번호는 QA-457이었고, P0이 QA-457(12px 미만 글자 — ▲▼·단위 0.85em(11.05px)·AI 요약 근거 번호·DetailParts 두 곳)·QA-458(lg 미만 44px 미만 누름 자리)을 써서 다음 번호는 QA-459였습니다. P1이 QA-459(accent 틴트 위 accent 글자 — 세 자리)를 쓰고 몫으로 받은 QA-460~462는 비워 두었습니다. P2에는 QA-463~474(공용 키트 463~466 · 패턴 467~470 · 알약 471~474)가 배정되었고, P2 공용 키트는 검토에서 QA-463~465를 쓰고 QA-466은 비워 두었습니다. 배정 밖의 QA-475는 주간 복기 출력 한도 고침 브랜치 `claude/review-maxtokens-2026-11`(이 개편 브랜치에 들지 않음)이 썼습니다. P2 마무리(`wb-complete`)는 몫으로 받은 QA-476~483을 쓰지 않았고(새 소스 검사 둘이 지금 어기는 자리를 찾지 못함 — 비워 둠), 같은 브랜치의 검토 반영이 몫으로 받은 QA-484~491 가운데 QA-484(세그먼트 고른 칸 링 대비)를 쓰고 QA-485~491은 비워 두었습니다. **다음 새 번호는 QA-492**입니다(docs/qa/2026-11-12-defects.md 끝 줄).
+- 새 결함 번호: 이 기록 시작 때 다음 번호는 QA-457이었고, P0이 QA-457(12px 미만 글자 — ▲▼·단위 0.85em(11.05px)·AI 요약 근거 번호·DetailParts 두 곳)·QA-458(lg 미만 44px 미만 누름 자리)을 써서 다음 번호는 QA-459였습니다. P1이 QA-459(accent 틴트 위 accent 글자 — 세 자리)를 쓰고 몫으로 받은 QA-460~462는 비워 두었습니다. P2에는 QA-463~474(공용 키트 463~466 · 패턴 467~470 · 알약 471~474)가 배정되었고, P2 공용 키트는 검토에서 QA-463~465를 쓰고 QA-466은 비워 두었습니다. 배정 밖의 QA-475는 주간 복기 출력 한도 고침 브랜치 `claude/review-maxtokens-2026-11`(이 개편 브랜치에 들지 않음)이 썼습니다. P2 마무리(`wb-complete`)는 몫으로 받은 QA-476~483을 쓰지 않았고(새 소스 검사 둘이 지금 어기는 자리를 찾지 못함 — 비워 둠), 같은 브랜치의 검토 반영이 몫으로 받은 QA-484~491 가운데 QA-484(세그먼트 고른 칸 링 대비)를 쓰고 QA-485~491은 비워 두었습니다. D1 QA 스택 확인(아래 'D1 QA 스택 확인')이 QA-492~506을 썼습니다. **다음 새 번호는 QA-507**입니다(docs/qa/2026-11-12-defects.md 끝 줄).
 
 | 단계 | 내용 | 상태 | 배포 |
 |---|---|---|---|
 | P0 | 문서(ADR 0042·명세·이 기록·가리키는 줄) + 시험 묶음(대비 행렬·12px 하한·조작 44px·팔레트 기록·데이터 칸 강조색 금지) | 문서 끝(아래 §P0), 시험 묶음 다섯 끝(마지막 둘은 §P2 '마무리'), QA 스택 개편 전 기준 끝([감사 기록](../qa/2026-11-16-workbench-ui-audit.md), 브랜치 `wb-audit`) | 없음 |
-| P1 | 토큰·테마·팔레트 | 코드·문서 끝(아래 §P1, 브랜치 `wb-p1`, 검토 반영 포함) — QA-459(세 자리)는 P2 공용 키트가 고침, 계좌2 색·K40 참고선 색은 2026-11-16 결정(§P2 '마무리'), Recharts `var()` 브라우저 확인은 남음(개편 전 기준은 P0 행) | P2와 함께 |
-| P2 | 공용 키트 | 세 갈래(공용 키트 `wb-p2-kit` — QA-463~465·패턴 `wb-p2-patterns`·화면 알약 `wb-p2-pills` — QA-471·472, 모두 검토 반영 포함)를 통합 브랜치 `wb-int`에 합치고(아래 §P2 '세 갈래 합치기') 마무리 브랜치 `wb-complete`에서 사용자에게 맡겨진 판단 여덟(D1~D8 — 2026-11-16 결정(사용자 위임 — 권장안))과 P0 시험 둘(팔레트 기록·데이터 칸 강조색 금지)을 끝냄(아래 §P2 '마무리') · 검토 반영(QA-484 + 겉모양·문서 지적, 사용자 판단 셋 남음 — 아래 '마무리'의 '검토 반영') · 새 부품 아홉(ActionBar·Drawer 포함)은 처음 쓰는 단계(P4·P5·P6·P7)에서 · **D1은 QA 스택 브라우저 확인 남음**(Recharts `var()`·390·1440·forced-colors, 아래 '마무리'의 볼 것) | D1 |
+| P1 | 토큰·테마·팔레트 | 코드·문서 끝(아래 §P1, 브랜치 `wb-p1`, 검토 반영 포함) — QA-459(세 자리)는 P2 공용 키트가 고침, 계좌2 색·K40 참고선 색은 2026-11-16 결정(§P2 '마무리'), Recharts `var()`는 크롬에서 모두 풀림(D1 QA — Firefox·Safari는 못 봄) | P2와 함께 |
+| P2 | 공용 키트 | 세 갈래(공용 키트 `wb-p2-kit` — QA-463~465·패턴 `wb-p2-patterns`·화면 알약 `wb-p2-pills` — QA-471·472, 모두 검토 반영 포함)를 통합 브랜치 `wb-int`에 합치고(아래 §P2 '세 갈래 합치기') 마무리 브랜치 `wb-complete`에서 사용자에게 맡겨진 판단 여덟(D1~D8 — 2026-11-16 결정(사용자 위임 — 권장안))과 P0 시험 둘(팔레트 기록·데이터 칸 강조색 금지)을 끝냄(아래 §P2 '마무리') · 검토 반영(QA-484 + 겉모양·문서 지적, 사용자 판단 셋 남음 — 아래 '마무리'의 '검토 반영') · 새 부품 아홉(ActionBar·Drawer 포함)은 처음 쓰는 단계(P4·P5·P6·P7)에서 · **D1 QA 스택 확인 끝**(아래 'D1 QA 스택 확인' — QA-492~506 고침, 35건은 다음 단계로) · D1 배포 남음 | D1 |
 | P3 | 셸(나무 메뉴·빵부스러기·명령 팔레트, Radix 두 개) | 시작 전 | P4와 함께 |
 | P4 | 대상 문법(상세 3종·홈) | 시작 전 | D2 |
 | P5a | 시장 6화면 | 시작 전 | D3 |
@@ -425,3 +425,76 @@ P2 마무리의 코드·문서 검토 지적 열일곱 가운데 열넷을 반�
 재현 시험은 고치기 전 코드에서 `it`으로 실패 까닭(`segmentClasses --border on --bg = 1.71`)을 본 뒤 `it.fails`로, 넓힌 검사 둘은 일부러 어긴 소스로 걸리는지 보고 되돌렸습니다. 숫자는 작업 폴더 하네스(`@tailwindcss/node` 컴파일 + 머리 없는 크롬, forced-colors는 CDP 흉내)로 쟀습니다. `make test`·QA 스택은 돌리지 않았습니다.
 
 D1 전 QA 스택에서 볼 것(검토 반영이 더한 것): 세그먼트 고른 칸 링(홈·결정 로그·실행 감사, 390·1440), 공용 표 행 높이와 정렬 머리 포커스 링(390), 스크롤바 손잡이, 왼쪽 내비 지금 탭의 forced-colors 막대.
+
+## D1 QA 스택 확인 (2026-11-16, `claude/workbench-ui-2026-11` `96031a2f` → 고침 묶음 다섯을 합친 `6740c10a`)
+
+P1·P2를 합친 `96031a2f`를 QA 스택에 올려 개편 뒤 감사를 재고([감사 기록](../qa/2026-11-16-workbench-ui-audit.md) §6), 영역 아홉을 머리 없는 크롬으로 확인했습니다
+(셸·홈과 시장·상세와 기관·모의 미국·모의 한국·정보 검색과 수집·더보기와 인증·차트와 팔레트·접근성 — 390·1024·1440, 강제 색, 키보드 Tab, hover, 움직임 줄이기,
+합성 API 응답으로 다섯 계좌·K40 선·결정 로그·알림 수를 그림). QA DB는 빈 DB 측정 뒤 로컬 2026-11-04 백업으로 복원했습니다(실제 매매·ISA 표 비움 — `qa-stack.sh restore`).
+운영 백업을 이 PC로 옮기는 것은 하지 않았습니다(권한 분류기가 막음 — 모의 장부 자료는 합성 응답으로 대신).
+
+- 발견 90 → 같은 원인 합쳐 57 → 하나씩 반박 검증: 지금 고침 17, 다음 단계로 넘김 35, 사용자 결정 2, 그대로 둠·범위 밖·기록됨 3(아래).
+- 지금 고친 것: QA-492~506(결함 기록 'D1 QA 스택 확인' 절)과 번호 없는 겉모양 고침 다섯. 서로 파일이 겹치지 않는 다섯 묶음(`wb-d1qa-kit-theme-charts`·`shell-chrome`·`data-table`·
+  `status-tone`·`search-close`)으로 고치고 묶음마다 검토 → 후속 고침을 거쳐 `--no-ff`로 합쳤습니다(충돌 없음). 합친 뒤 vitest 224개 파일 3,009 통과·`tsc`·eslint(오류 0).
+- D1 전 볼 것(§P2 '마무리'·'검토 반영'·'세 갈래 합치기' 목록) 결과: Recharts `var()`는 크롬에서 모든 차트(Recharts 35 + 손 SVG 1 + div 그림 3)가 실제 색으로 풀림(Firefox·Safari는
+  설치된 브라우저가 없어 못 봄). 계좌2 `#ba5db3`은 파랑과 맞닿는 자리·범례·아바타 고리에서 갈리고, K40 참고선과 판 경계선은 굵기·방향·점선·이름으로 갈림(범례 견본 점선은 QA-496으로 고침).
+  확인 대화상자 안 취소 단추는 surface-3로 대화상자 면과 갈리고 포커스가 갇힘. 홈 계좌 목록 구분선은 히어로 끝까지 닿음. 세그먼트 고른 칸 링은 border-strong(트랙 위 4.60). 표 칸 태그는
+  행을 키우지 않음. 왼쪽 내비 지금 탭은 고대비에서 3px 왼쪽 테두리. 맨 위로 단추 30px·덮개 경계. 스크롤바 손잡이 border-strong. 옛 theme 값이 있어도 첫 프레임부터 어두움(값은 지움).
+  상단바 벨은 4px, 알림 수는 `99+`로 묶임. 토스트는 쓰기 없이 띄울 자리가 없어(부르는 화면 0) 보지 못했습니다.
+- 강제 색(고대비)은 이번에 가장 많이 걸린 곳입니다: 밝은 고대비에서 차트 잉크가 어두운 토큰 값 그대로 남던 회귀(QA-498, S2), 범례·툴팁·구성 견본이 시스템 색으로 지워짐(QA-497),
+  켠 칩·지금 쪽이 굵기로만 갈림(QA-492), 알림 수 배지 상자가 사라짐(QA-501). 바탕색만으로 그린 다른 모양(/regime 띠·범례, /style 짝 표 막대, /liquidity 범례 견본)은 화면 단계로 넘깁니다.
+- 고친 커밋 메시지 두 곳의 잰 값이 실제 화면과 조금 다릅니다(`2c33be24`·`68e5551e` — 결함 기록 절 머리 참고). 이력을 다시 쓰지 않았습니다.
+
+### 다음 단계로 넘긴 것 (35 — 대부분 개편 전부터 있던 것, 그 화면을 다시 짜는 단계에서)
+
+| 단계 | 심각도 · 분류 | 내용 |
+|---|---|---|
+| P3·P6 | S3 · pre-existing | `scroll-strip-active-item-offscreen` — 좁은 화면 가로 스크롤 줄(하위 메뉴·모의매매 탭 줄)이 지금 탭이나 Tab으로 간 항목을 화면 안으로 스크롤하지 않음 — 프레임·메모·설정·실제 계좌·ISA 탭이 가려진 채 열리고, 반쯤 가려진 항목에 포커스해도 그대로 |
+| P3 | S4 · spec-deviation | `subnav-upcoming-item-height` — 하위 메뉴 '준비 중' 항목이 h-12·15px 그대로라, 항목이 생기면 넓은 화면 하위 메뉴 줄이 40px에서 48px로 늘고 지금 탭 밑줄이 8px 뜸(잠재) |
+| P3 | S4 · pre-existing | `search-input-native-clear-x` — 통합 검색 입력칸(type=search)의 브라우저 지우기 X가 어두운 color-scheme에서 굵은 흰색으로 그려져 바로 옆 대화상자 닫기 X와 헷갈림 |
+| P3 | S4 · spec-deviation | `more-refresh-primary-sm-24px` — /more '데이터 수동 새로고침' 주 단추가 넓은 화면에서 384x24px — 표 안용 작은 크기(sm)가 홀로 선 주 동작에 쓰임 |
+| P4·P6·P7 | S4 · pre-existing | `touch-targets-lt-lg-missed-by-qa458` — lg 미만 44px 누름 자리 누락(QA-458 고침·화면 DOM 감사가 덮지 않은 자리) — 기관 상세 13F 링크, 모의 설정 체크 label 폭 35px·넓은 화면 20px, 메모·프레임·결정 summary, 메모 체크, 정보 수집 네이버·KRX·출처 상태 링크, /alerts '읽음', /signup 동의 체크, 종목 글 단추 |
+| P4 | S4 · pre-existing | `old-ui-table-midword-wrap` — 옛 ui Table이 좁은 칸에서 낱말 중간에 줄을 바꿈 — 국면 판정 성과(1024·390), COT 자산별 요약 기준일(390) |
+| P4 | S4 · pre-existing | `stock-profile-value-truncate` — 종목 상세 '회사 개요' 값이 한 줄 말줄임 — 1024의 172px 칸에 영문 업종이 들어가면 잘림 |
+| P4·P7 | S4 · spec-deviation | `table-cell-controls-md-30` — 표 안 조작이 기본 크기(30px)라 공용 Table 행이 32px 단계로 오지 못함 — 저장소 상태 '다시 실행', 알림 규칙 단추, 사용자 관리 역할·등급 고르기 |
+| P4 | S4 · pre-existing | `metric-delta-colour-and-ascii-sign` — 공용 Metric의 변화 줄이 색과 ASCII 부호만으로 등락을 나름(▲▼·U+2212·낭독 글 없음) |
+| P5a·P5b·P7 | S4 · pre-existing | `chart-application-role-unnamed` — 이름 없는 role='application' 차트 14개가 Tab 정지점이고, 산점도는 aria-hidden 안에 tabindex=0 SVG가 있음 |
+| P5a | S4 · pre-existing | `scatter-dot-opacity-contrast` — /correlation 산점도 점의 실제 색(불투명도 0.55)이 패널 위 2.27:1로 그래픽 3:1 미달 |
+| P5b | S3 · pre-existing | `style-pairs-table-overflow-390` — /style '가장 닮은 짝'(기관 간 유사도) 표가 390에서 패널 밖으로 넘쳐 겹침 비중 값 끝이 잘리고 막대 칸이 0폭(가로 스크롤 없음) |
+| P5b | S3 · pre-existing | `rise-fall-colour-only-in-table-cells` — 기관 화면 표 칸이 색만으로 방향을 전함(▲▼·U+2212·sr 글 없음) — 변동성·최대낙폭·매수/매도 수 같은 등락 아닌 값에도 상승 빨강·하락 파랑 |
+| P5b | S4 · pre-existing | `inst-detail-holdings-subline-truncate` — 기관 상세 '상위 보유 종목' 보조 줄이 390에서 말줄임으로 비중 변화 값(%p)을 가림 |
+| P5b | S4 · pre-existing | `table-row-hover-sourcebadge` — 공용 표 행 hover에서 SourceBadge 바탕이 행 바탕과 같아짐(1.00:1), 기관 보유 표에서는 배지가 두 줄로 접힘 |
+| P5b | S4 · pre-existing | `institutions-ten-lines-crossing-delta-e` — 기관 비중 추이 10선 — 실제로 교차하는 선 쌍의 색약 ΔE가 0.3~3.6, 정상 시각도 8.1까지 가까움(기록은 이웃 쌍만 검증) |
+| P5b | S4 · pre-existing | `sequential-heatmap-uses-series-blue` — 순차 히트맵 두 곳이 계열 파랑(#3987e5, 강조와 ΔE 3.4)을 rgba()로 써서 명세 §3-5 '순차는 accent·up·down과 다른 계열'과 다르고 팔레트 기록 시험도 못 봄 |
+| P6 | S3 · pre-existing | `frame-boundary-labels-overlap-390` — 좁은 화면(390)에서 순자산 곡선의 판 경계 이름표('프레임 v2'·'프레임 v3')가 서로 겹쳐 읽히지 않음 |
+| P6 | S4 · pre-existing | `paper-table-korean-char-wrap` — 모의 좁은 표 칸에서 한글이 글자 단위로 끊김 — '매/수', '방/향', '사후/체결', '15거래/일'(미국 보유 기간 칸 모든 행 72px) |
+| P6 | S4 · design-question | `real-isa-banner-neutral-not-warn` — 실제 계좌·ISA 탭의 '실제' 표지가 명세 §3-4(warn 안내 상자와 태그)가 아니라 다른 중립 안내와 같은 모양 |
+| P6·P7 | S4 · pre-existing | `form-label-styles-mixed` — 같은 폼 안에서 라벨 모양이 두 가지(12px text-3 대 13px text-2)이고 고르기 폭(352)이 입력칸(384)과 다름 |
+| P6 | S4 · design-question | `exposure-chart-colour-mapping` — 모의 개요 'Claude 노출 추이'에서 파랑이 'Claude 계좌1 실제 노출'인데 같은 화면 순자산 곡선에서는 파랑이 '규칙 계좌' |
+| P7 | S3 · pre-existing | `info-status-table-narrow-columns` — /info/status 출처 상태 표의 짧은 칸(상태·접근·주기·실행 시각)이 한 글자 폭으로 눌려 세로로 한 자씩 줄바꿈(390·1024·1440) |
+| P7 | S3 · pre-existing | `status-tasks-table-overflow-1440` — /status 태스크별 최근 결과 표가 1440에서도 15px 넘쳐 '다시 실행' 단추 오른쪽과 포커스 링이 잘리고 실행 시각이 3줄로 접힘 |
+| P7 | S3 · pre-existing | `search-suggest-name-clipped-390` — 정보 검색 입력 후보 — 390에서 후보 이름이 거의 다 잘림(보조 글이 shrink-0) |
+| P7 | S3 · pre-existing | `status-snapshot-freshness-colour-only` — /status 스냅샷 신선도 표 — '오래됨'이 색(warn)만으로 표시되고 고대비에서는 완전히 사라짐, 상태 칸은 원시 코드 'ok'를 색으로만 |
+| P7 | S3 · pre-existing | `reflow-320-info-catalog-cards` — 320px 다시 흐름: 정보 수집 출처 카드가 끊기지 않는 글 때문에 그리드 칸보다 넓어져 잘림 |
+| P7 | S4 · pre-existing | `pager-number-button-narrower` — 쪽 넘기기(Pager) 번호 단추가 lg 미만에서 33.2px -> 29.2px 폭으로 좁아짐(44px 미달이 더 나빠짐) |
+| P7 | S4 · pre-existing | `search-overlays-not-overlay-tokens` — 정보 검색의 덮개 두 곳(입력 후보 목록·xl 미만 아래 미리 보기 시트)이 3층 덮개 토큰을 따르지 않음 — 경계 --border, 고른 줄 surface, 시트 바탕 surface |
+| P7 | S4 · pre-existing | `naver-card-source-line-break` — 네이버 카드 머리의 '출처 ·'가 혼자 한 줄에 남음 |
+| P7 | S4 · pre-existing | `auth-error-message-no-icon` — 인증·계정 화면의 오류 글에 아이콘이 없음(AuthMessage 오류 상자·비밀번호 불일치 문구) — 상태·위험은 늘 아이콘 + 글 규칙 위반 |
+| P7 | S4 · pre-existing | `admin-users-select-label-repeats-email` — /admin/users 표의 역할·등급 고르기가 칸마다 '<이메일> 역할/등급' 라벨을 보여 한 행에 이메일이 세 번 찍힘 |
+| P7 | S4 · pre-existing | `status-run-raw-empty-code` — /status '최근 수집 상태'가 원시 코드 'empty'를 영어 그대로 보임 |
+| P7 | S4 · pre-existing | `alerts-unread-dot-alone` — /alerts 관심 대상 알림(링크 제목)이 좁은 화면에서 읽지 않음 점 '●'만 첫 줄에 홀로 남음 |
+| P7 | S4 · pre-existing | `radar-banner-tiles-gap-zero` — /radar 외국인·기관 공통 순매수 — 주의 안내 상자와 지표 타일 사이 간격 0px |
+
+### 그대로 둔 것·범위 밖 (3)
+
+- `error-state-retry-button-on-danger-tint` — 오류 상자(위험 틴트) 안 '다시 시도' 단추의 바탕·경계가 틴트와 거의 같음(1.02·1.32:1). 단추 글은 읽히고(4.5 이상) 경계는 필수 그래픽이 아님.
+  덮개 안 단추(D5)처럼 틴트 안 단추 단계를 따로 두는 것은 P4 이후 화면에서 같은 자리가 늘면 다시 봅니다.
+- `search-suggest-zero-no-message` — 입력 후보 0건이면 안내가 없음. 개편과 무관한 동작 결정(정보 검색 P7 정리 때 함께 봄).
+- `lg-sort-header-summary-text-height` — 기록된 사용자 질문 1(따로 선 링크·정렬 머리·접기 머리의 넓은 화면 글 높이)에 증거로 더함.
+
+### 사용자 결정 거리 (D1 QA에서 새로 생긴 둘 + 묶음 검토가 남긴 둘)
+
+1. 정보 검색 기간 막대(lg 이상): 막대 하나가 4~18.7px 폭의 누르는 단추라 2.5.8(24px) 미달이고 lg에는 대체 고르기가 없음(개편 전부터). 권장: 넓은 화면에도 '날로/주로 좁히기' 고르기를 함께 두고 막대는 지름길로 — P7 정보 검색 정리 때.
+2. 툴팁 회색 견본(계좌 상세 도넛 '기타' `#6e6e7c`)이 덮개 면 위 2.88:1. 권장: 코드 그대로, 명세 §3-5에 '툴팁 견본은 이름 글과 늘 함께 나오는 보조 표지라 덮개 면 3:1을 요구하지 않음' 예외로 적음.
+3. /regime '지금 국면' 상자·사분면이 국면 범주색(ok·warn·danger 틴트)만 쓰고 아이콘이 없음 — 국면 범주색에도 '상태색은 늘 아이콘 + 글'을 적용할지(적용하면 국면마다 아이콘). P5a.
+4. /status 스냅샷 '상태'·'수집'·태스크 '상세' 칸의 색만 쓰는 상태 표시 — 정상 행에도 아이콘을 둘지(P7에서 결함 번호를 받아 처리).
