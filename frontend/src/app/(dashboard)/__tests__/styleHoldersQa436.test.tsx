@@ -33,7 +33,7 @@ function search(response: object, query: string) {
 describe("스타일 화면 보유 기관 검색 — QA-436 일치 규칙에 맞춘 안내(QA-436 후속)", () => {
   // QA-436 후속: 검색어가 들어가지 않은 잘린 공시 이름 줄('…FINANCIAL GRO')이 설명 없이 보였고, 칸 이름은 '종목명 일부'(포함 규칙)였습니다.
   // 수정 전 실패: '잘린 공시 이름'·'섞일 수 있' 안내가 없고 칸 이름이 '종목명 일부'(재현 커밋에서는 it.fails).
-  it.fails("줄이 있으면 잘린 공시 이름도 함께 찾아 다른 종목이 섞일 수 있다는 것을 적고, 칸 이름이 포함 규칙만 말하지 않는다", async () => {
+  it("줄이 있으면 잘린 공시 이름도 함께 찾아 다른 종목이 섞일 수 있다는 것을 적고, 칸 이름이 포함 규칙만 말하지 않는다", async () => {
     search({
       available: true, query: QUERY, totalMatches: 1, truncated: false,
       rows: [{ institution: "합성 자산운용", cik: "0000000001", name: "SYNTHETIC EXAMPLE FINANCIAL GRO", cusip: "000000101", weight: 1.25,
@@ -50,7 +50,7 @@ describe("스타일 화면 보유 기관 검색 — QA-436 일치 규칙에 맞�
 
   // QA-436 후속: 0건이면 백엔드의 '그 이름을 포함한 보유 종목이 없습니다'를 그대로 보여, 줄여 적은 공시 이름(FINANCIAL → FINL)이라 못 찾은 경우에도
   // 없다고 단정했습니다. 수정 전 실패: 백엔드 글이 보이고 '단정할 수 없습니다'가 없음(재현 커밋에서는 it.fails).
-  it.fails("0건이면 찾은 이름과 그 한계를 적고 없다고 단정하지 않는다(정보 검색 보유 탭·종목 상세와 같은 글)", async () => {
+  it("0건이면 찾은 이름과 그 한계를 적고 없다고 단정하지 않는다(정보 검색 보유 탭·종목 상세와 같은 글)", async () => {
     const query = "SYNTHETIC KAPPA MOTOR CORPORATION";
     search({
       available: false, query, rows: [], totalMatches: 0, truncated: false,

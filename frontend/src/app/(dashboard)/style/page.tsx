@@ -6,7 +6,6 @@ import {
   Banner,
   Button,
   Card,
-  EmptyState,
   ErrorState,
   Freshness,
   inputClasses,
@@ -20,6 +19,7 @@ import {
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
+import { holdersNoMatch } from "@/lib/detail";
 import { deltaColor, EMPTY, formatCurrency, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import type {
@@ -520,13 +520,18 @@ function RiskCard() {
   );
 }
 
-/** 이 종목을 누가 들고 있나. */
+/**
+ * 이 종목을 누가 들고 있나. 공시 이름에 검색어가 들어간 줄과, 앞부분만 남기고 잘린 공시 이름의 앞부분으로 검색어가 시작하는 줄을 함께 찾습니다
+ * (GET /api/guru/holders — QA-436). 그래서 다른 종목이 섞일 수 있다고 적고, 0건이면 정보 검색 보유 탭·종목 상세와 같은 글(lib/detail holdersNoMatch)로
+ * 찾은 이름과 그 한계를 적어 없다고 단정하지 않습니다 — 백엔드 글('그 이름을 포함한 보유 종목이 없습니다')은 넓힌 규칙과 맞지 않습니다.
+ */
 function HoldersCard() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const { data, loading, error, reload } = useApi<GuruHoldersResponse>(
     query ? endpoints.institution.guruHolders(query) : null,
   );
+  const noMatch = data && (data.rows?.length ?? 0) === 0 ? holdersNoMatch(data.query || query) : null;
 
   return (
     <Card
@@ -541,7 +546,7 @@ function HoldersCard() {
         }}
       >
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted">종목명 일부</span>
+          <span className="text-xs text-muted">종목명(일부 또는 전체)</span>
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -554,10 +559,19 @@ function HoldersCard() {
 
       {loading && query && <Loading />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <EmptyState message={data.message ?? "결과가 없습니다."} />}
+      {noMatch && (
+        <div role="status" className="mt-4 flex flex-col gap-1 rounded-control bg-surface-2/60 px-4 py-6 text-sm">
+          <p className="font-medium text-text">{noMatch.title}</p>
+          <p className="text-text-2">{noMatch.note}</p>
+        </div>
+      )}
 
       {(data?.rows?.length ?? 0) > 0 && (
         <div className="mt-4">
+          <p className="mb-2 text-xs leading-relaxed text-muted">
+            공시 이름에 검색어가 들어간 줄과 앞부분만 남기고 잘린 공시 이름(검색어가 그 앞부분으로 시작)을 함께 찾아 다른 종목이 섞일 수 있습니다 —
+            공시 이름과 CUSIP으로 가려 보세요.
+          </p>
           {/* 백엔드는 비중 상위 200행까지만 보냅니다(QA-133). 말하지 않으면 잘린 목록이 전부처럼 읽힙니다. */}
           {data!.truncated && (
             <p className="mb-2 text-xs leading-relaxed text-muted">
