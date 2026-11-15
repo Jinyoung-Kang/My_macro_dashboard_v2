@@ -1,9 +1,18 @@
 "use client";
 
-import { ReactNode, type SelectHTMLAttributes } from "react";
+import { ReactNode, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
-import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant, type InputSize } from "./classes";
-import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon } from "./icons";
+import {
+  buttonClasses,
+  FOCUS_RING,
+  inputClasses,
+  underlineTabClasses,
+  type ButtonSize,
+  type ButtonVariant,
+  type InputSize,
+  type UnderlineTabSize,
+} from "./classes";
+import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon, XIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {
@@ -504,6 +513,130 @@ export function SourceBadge({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-control bg-surface-2 px-2 py-0.5 text-xs leading-4 text-text-2">
       {children}
+    </span>
+  );
+}
+
+/** 탭 하나의 id — 탭 패널의 aria-labelledby가 같은 값을 씁니다. */
+export function tabId(idPrefix: string, key: string): string {
+  return `${idPrefix}-${key}`;
+}
+
+const TAB_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
+
+/**
+ * 탭 줄(ARIA tabs) — 탭 모양은 밑줄 탭 하나입니다(underlineTabClasses, 작업대 실행 명세 §6). role="tablist"(이름 `label`)와 탭마다
+ * role="tab"·aria-selected·aria-controls(panelId)·id(tabId)를 붙이고, Tab 키로는 고른 탭 하나에만 들어옵니다(나머지 tabIndex -1).
+ * ←·→(끝에서 돎)·Home·End는 포커스만 옮기고, 여는 것은 누르기·Enter·Space입니다 — 탭마다 자료를 읽거나 주소를 바꾸는 화면이 지나가며
+ * 부르지 않게 합니다(정보 검색 결과 탭과 같은 규칙). 탭 패널(role="tabpanel", id=panelId, aria-labelledby=tabId(idPrefix, value))과
+ * 탭을 바꿀 때의 일(주소 바꾸기 — 모의매매 탭의 history.replaceState 등)은 부르는 쪽이 onChange에서 합니다.
+ */
+export function Tabs<K extends string>({
+  label,
+  items,
+  value,
+  onChange,
+  idPrefix,
+  panelId,
+  size = "sm",
+  className = "",
+}: {
+  label: string;
+  /** 탭 목록 — suffix는 이름 뒤에 붙는 보조 글(예: '(준비 중)'). */
+  items: readonly { key: K; label: ReactNode; suffix?: ReactNode }[];
+  value: K;
+  onChange: (key: K) => void;
+  idPrefix: string;
+  panelId: string;
+  /** sm(화면 안 탭 줄 — lg 이상 30px)이 기본, md는 하위 메뉴 줄 크기(lg 이상 40px). */
+  size?: UnderlineTabSize;
+  /** 탭 줄의 배치 클래스(여백 등). */
+  className?: string;
+}) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const selectedIndex = items.findIndex((item) => item.key === value);
+  const entry = selectedIndex >= 0 ? selectedIndex : 0;
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!TAB_KEYS.has(event.key)) return;
+    event.preventDefault();
+    const next =
+      event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + items.length) % items.length;
+    refs.current[items[next].key]?.focus();
+  };
+  return (
+    <div role="tablist" aria-label={label} className={`flex overflow-x-auto border-b border-border ${className}`.trim()}>
+      {items.map((item, index) => (
+        <button
+          key={item.key}
+          ref={(element) => {
+            refs.current[item.key] = element;
+          }}
+          type="button"
+          role="tab"
+          id={tabId(idPrefix, item.key)}
+          aria-selected={item.key === value}
+          aria-controls={panelId}
+          tabIndex={index === entry ? 0 : -1}
+          onClick={() => onChange(item.key)}
+          onKeyDown={(event) => onKeyDown(event, index)}
+          className={underlineTabClasses(item.key === value, size)}
+        >
+          {item.label}
+          {item.suffix}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export type TagTone = "neutral" | "warn" | "danger" | "ok";
+
+const TAG_TONES: Record<TagTone, { box: string; glyph: ReactNode; srPrefix: string }> = {
+  neutral: { box: "border-border bg-surface-2 text-text-2", glyph: null, srPrefix: "" },
+  warn: { box: "border-warn/30 bg-warn-tint text-warn", glyph: <AlertTriangleIcon size={12} />, srPrefix: "주의: " },
+  danger: { box: "border-danger/30 bg-danger-tint text-danger", glyph: <AlertTriangleIcon size={12} />, srPrefix: "주의: " },
+  ok: { box: "border-ok/30 bg-ok-tint text-ok", glyph: <CheckCircleIcon size={12} />, srPrefix: "" },
+};
+
+/**
+ * 태그(작업대 실행 명세 §6) — 4px 모서리·1px 경계·12px 글. 중립(별칭·식별자·종류)과 의도 셋(주의·위험·정상)이고, 의도 태그는 늘 아이콘과
+ * 글을 함께 씁니다(상승색과 위험색은 색만으로 갈리지 않음 — 명세 §3-2-1). 주의·위험은 낭독기에 '주의: '를 먼저 읽힙니다. 파랑(정보) 태그는
+ * 없습니다 — 강조 파랑은 누를 수 있는 것에만(원칙 A1).
+ * onRemove를 주면 지울 수 있는 태그입니다 — 지우기 단추(이름 removeLabel, 없으면 '{글} 지우기')는 좁은 화면(lg 미만)에서 44px, 넓은 화면은 16px.
+ *
+ * @param icon 톤 기본 아이콘 대신 쓸 아이콘(장식). false면 아이콘 없이 글만(중립은 기본이 아이콘 없음).
+ */
+export function Tag({
+  tone = "neutral",
+  icon,
+  onRemove,
+  removeLabel,
+  children,
+}: {
+  tone?: TagTone;
+  icon?: ReactNode | false;
+  onRemove?: () => void;
+  removeLabel?: string;
+  children: ReactNode;
+}) {
+  const style = TAG_TONES[tone];
+  const glyph = icon === false ? null : (icon ?? style.glyph);
+  const name = removeLabel ?? (typeof children === "string" ? `${children} 지우기` : "지우기");
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-control border px-1.5 py-0.5 text-xs leading-4 ${style.box}`}>
+      {glyph}
+      {style.srPrefix ? <span className="sr-only">{style.srPrefix}</span> : null}
+      {children}
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={name}
+          className={`-mr-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm opacity-80 hover:opacity-100 lg:min-h-4 lg:min-w-4 ${FOCUS_RING}`}
+        >
+          <XIcon size={12} />
+        </button>
+      ) : null}
     </span>
   );
 }

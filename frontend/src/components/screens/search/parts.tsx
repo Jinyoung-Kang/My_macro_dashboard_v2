@@ -65,10 +65,8 @@ export function ItemKindTag({ kind }: { kind: string }) {
   return <span className="inline-flex items-center rounded-control border border-border-strong px-1 leading-4 text-text-2">{label}</span>;
 }
 
-/** 별칭·식별자 꼬리표. */
-export function Tag({ children }: { children: ReactNode }) {
-  return <span className="inline-flex items-center rounded-control border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-text-2">{children}</span>;
-}
+/** 별칭·식별자 꼬리표 — 공용 태그(ui Tag)의 중립 모양을 그대로 씁니다(작업대 실행 명세 §6). */
+export { Tag } from "@/components/ui";
 
 /** 상태마다 다른 모양의 아이콘(글과 함께 — 색만으로 가르지 않음). 받는 중은 시계, 운영 서버에서만은 자물쇠, 그 밖은 톤 기본. */
 function statusIcon(status: string) {
