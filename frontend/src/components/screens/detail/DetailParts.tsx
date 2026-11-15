@@ -147,9 +147,20 @@ export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) 
  * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)·연합인포맥스·구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 한 쪽에 5건씩(사용자 요청
  * 2026-11-02 — 이전·다음 단추와 'n / m쪽'), 경로가 바뀌면 첫 쪽으로. 제목은 원문 기사로 가는 새 창 링크, 아래 줄은 언론사·시각·받은 곳. 출처 하나가
  * 실패하면 그 사실을 한 줄로 적습니다(나머지는 그대로). `searchQuery`를 주면 카드 머리에 같은 말로 정보 검색(/search?q=, 최근 2년 — ADR 0041)으로
- * 가는 작은 링크를 둡니다(그 화면이 보이는 사용자에게만).
+ * 가는 작은 링크를 둡니다(그 화면이 보이는 사용자에게만). 경로가 null이면 부르지 않고 '불러오는 중'으로 두며, `idleText`를 주면 그 대신 그 글(부를 수 없는
+ * 까닭 — 검색어로 쓸 이름을 받지 못함 등)을 적습니다.
  */
-export function NewsCard({ path, title = "주요 뉴스", searchQuery }: { path: string | null; title?: string; searchQuery?: string | null }) {
+export function NewsCard({
+  path,
+  title = "주요 뉴스",
+  searchQuery,
+  idleText,
+}: {
+  path: string | null;
+  title?: string;
+  searchQuery?: string | null;
+  idleText?: string;
+}) {
   const user = useSessionUser();
   const infoSearch = searchQuery ? infoSearchEntry(searchQuery, user) : null;
   const news = useApi<DetailNewsResponse>(path);
@@ -162,7 +173,13 @@ export function NewsCard({ path, title = "주요 뉴스", searchQuery }: { path:
   const failures = Object.entries(news.data?.news?.errors ?? {});
   let body: ReactNode;
   if (!news.data) {
-    body = news.error ? <ErrorState message={news.error} onRetry={() => void news.reload()} /> : <Skeleton lines={5} label="뉴스를 불러오는 중" />;
+    body = news.error ? (
+      <ErrorState message={news.error} onRetry={() => void news.reload()} />
+    ) : !path && idleText ? (
+      <p className="text-sm text-text-2">{idleText}</p>
+    ) : (
+      <Skeleton lines={5} label="뉴스를 불러오는 중" />
+    );
   } else if (!news.data.available) {
     body = <p className="text-sm text-text-2">{news.data.message ?? "뉴스를 조회하지 않습니다."}</p>;
   } else if (all.length === 0) {
@@ -230,9 +247,16 @@ function summaryAllowed(user: SessionUser | null | undefined): boolean | null {
 
 /**
  * AI 요약 — 이 화면이 보여 주는 시세·지표·뉴스만 번호를 붙여 Claude(Haiku, effort medium)에게 넘기고, 근거 번호([1])를 출처 링크로 바꿔 보입니다.
- * 누를 때만 부릅니다(하루 한도 — 같은 날 같은 대상은 서버가 저장한 요약을 돌려줌). 투자 권유가 아니라는 안내를 늘 붙입니다.
+ * 누를 때만 부릅니다(하루 한도 — 같은 날 같은 대상은 서버가 저장한 요약을 돌려줌). 투자 권유가 아니라는 안내를 늘 붙입니다. `request`가 null이면
+ * 요약할 대상을 아직 몰라(기관 이름을 받기 전 등) 단추를 잠그고, `idleText`를 주면 안내 대신 그 글(요약할 수 없는 까닭)을 적습니다.
  */
-export function AiSummaryCard({ request }: { request: { market?: string; code?: string; q?: string; label?: string } }) {
+export function AiSummaryCard({
+  request,
+  idleText,
+}: {
+  request: { market?: string; code?: string; q?: string; label?: string } | null;
+  idleText?: string;
+}) {
   const user = useSessionUser();
   const allowed = summaryAllowed(user);
   const lockedText = isDemo(user) ? "데모 열람에서는 쓰지 않습니다" : "유료 등급 기능";
@@ -253,7 +277,7 @@ export function AiSummaryCard({ request }: { request: { market?: string; code?: 
             {lockedText}
           </span>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => void summary.run()} disabled={summary.busy || allowed === null}>
+          <Button size="sm" variant="secondary" onClick={() => void summary.run()} disabled={summary.busy || allowed === null || request === null}>
             {summary.busy ? "요약하는 중…" : result?.status ? "다시 불러오기" : "AI 요약 만들기"}
           </Button>
         )
@@ -315,7 +339,9 @@ export function AiSummaryCard({ request }: { request: { market?: string; code?: 
             ? isDemo(user)
               ? "데모 열람에서는 AI 요약을 쓰지 않습니다."
               : "유료 등급에서 쓸 수 있습니다."
-            : "단추를 누르면 요약합니다(하루 한도 안에서, 같은 날 같은 대상은 다시 부르지 않음)."}
+            : request === null && idleText
+              ? idleText
+              : "단추를 누르면 요약합니다(하루 한도 안에서, 같은 날 같은 대상은 다시 부르지 않음)."}
         </p>
       ) : null}
     </Card>

@@ -524,10 +524,19 @@ describe("뉴스 카드의 정보 검색 링크(ADR 0041)", () => {
     expect(within(await newsCard()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("S&P 500")}`);
     cleanup();
 
-    reads = {};
+    // 기관 이름은 13F 포트폴리오 응답에만 있어, 받은 뒤에 영문 이름으로(받기 전에는 자리표시 'CIK …'로 부르지 않음 — QA-453).
+    reads = {
+      [endpoints.institution.portfolio("0001067983", 8, 30)]: {
+        available: true,
+        cik: "0001067983",
+        institution: { name: "🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)", desc: "" },
+        quarters: [],
+        holdings: [],
+      },
+    };
     renderAs(PRO, <InstitutionDetailScreen cik="0001067983" />);
     await waitFor(async () =>
-      expect(within(await newsCard()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toMatch(/^\/search\?q=/),
+      expect(within(await newsCard()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("Berkshire Hathaway")}`),
     );
   });
 });

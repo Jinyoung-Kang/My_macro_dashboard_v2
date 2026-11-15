@@ -27,9 +27,14 @@ const HOLDINGS_SHOWN = 15;
 export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const portfolio = useApi<PortfolioResponse>(endpoints.institution.portfolio(cik, QUARTERS, TOP_N));
   const data = portfolio.data;
-  const names = institutionNames(data?.institution?.name ?? `CIK ${cik}`);
+  // 기관 이름은 포트폴리오 응답에만 있습니다 — 받기 전에는 제목만 자리표시('CIK …')로 두고, 뉴스·AI 요약은 이름을 받은 뒤에 부릅니다(QA-453 —
+  // 자리표시 이름으로 뉴스를 한 번 더 부르거나 'CIK …'를 요약하지 않게). 읽지 못했거나 이름이 없으면 두 카드에 그 까닭을 적습니다.
+  const name = data?.institution?.name;
+  const names = name ? institutionNames(name) : null;
+  const title = names?.display || `CIK ${cik}`;
   // 뉴스·AI 요약의 검색어·이름은 백엔드 상한(60자) 안으로(QA-448).
-  const query = detailQuery(names.query) ?? undefined;
+  const query = names ? (detailQuery(names.query) ?? undefined) : undefined;
+  const nameMissing = !query && Boolean(data || portfolio.error);
   const rows = institutionValueRows(data?.quarters);
   const holdings = data?.holdings ?? [];
 
@@ -43,7 +48,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
       <PageHeader
-        title={names.display}
+        title={title}
         description={`13F 기관 · CIK ${cik}`}
         actions={data ? <Freshness collectedAt={data.collectedAtKst} ageSeconds={data.ageSeconds} refreshError={portfolio.refreshError} /> : undefined}
       />
@@ -69,7 +74,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
             variant="hero"
             nonNegative
             valueFormat={(value) => formatUsd(value)}
-            ariaLabel={`${names.display} 분기별 13F 보고 평가액`}
+            ariaLabel={`${title} 분기별 13F 보고 평가액`}
           />
         ) : null}
       </Hero>
@@ -117,8 +122,15 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
             )}
             {holdings.length > HOLDINGS_SHOWN ? <p className="mt-2 text-xs text-text-3">{holdings.length}종목 가운데 비중 상위 {HOLDINGS_SHOWN}종목</p> : null}
           </Card>
-          <AiSummaryCard request={{ q: query, label: detailQuery(names.display) ?? undefined }} />
-          <NewsCard path={endpoints.detail.news({ q: query })} searchQuery={query} />
+          <AiSummaryCard
+            request={query ? { q: query, label: detailQuery(title) ?? undefined } : null}
+            idleText={nameMissing ? "기관 이름을 받지 못해 요약하지 않습니다." : undefined}
+          />
+          <NewsCard
+            path={query ? endpoints.detail.news({ q: query }) : null}
+            searchQuery={query}
+            idleText={nameMissing ? "기관 이름을 받지 못해 뉴스를 찾지 않습니다." : undefined}
+          />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           {data?.institution?.desc ? (

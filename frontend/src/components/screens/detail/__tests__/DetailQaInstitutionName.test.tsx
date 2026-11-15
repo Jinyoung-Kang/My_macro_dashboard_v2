@@ -81,7 +81,7 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
   // QA-453: 화면이 institutionNames(data?.institution?.name ?? `CIK ${cik}`)로 이름을 만들어, 포트폴리오가 오기 전에 GET /api/detail/news?q=CIK …를
   // 한 번 부르고 이름을 받은 뒤 다시 불렀습니다. 그 사이 AI 요약 단추도 눌리고 q가 'CIK …'였습니다.
   // 수정 전 실패: 포트폴리오를 기다리는 동안 뉴스 요청의 q가 'CIK 0009999999'이고 AI 요약 단추가 눌림(재현 커밋에서는 it.fails).
-  it.fails("포트폴리오를 기다리는 동안 뉴스를 부르지 않고 요약 단추는 잠김 — 이름을 받으면 영문 이름으로 한 번", async () => {
+  it("포트폴리오를 기다리는 동안 뉴스를 부르지 않고 요약 단추는 잠김 — 이름을 받으면 영문 이름으로 한 번", async () => {
     renderScreen();
     // 제목은 이름을 받기 전까지 자리표시('CIK …')로 둡니다.
     expect(await screen.findByRole("heading", { level: 1, name: `CIK ${CIK}` })).toBeTruthy();
@@ -102,7 +102,7 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
   });
 
   // 수정 전 실패: 포트폴리오를 읽지 못해도 'CIK 0009999999'로 뉴스를 불렀음(재현 커밋에서는 it.fails).
-  it.fails("포트폴리오를 읽지 못해 이름을 모르면 뉴스·요약을 부르지 않고 그 까닭을 적는다", async () => {
+  it("포트폴리오를 읽지 못해 이름을 모르면 뉴스·요약을 부르지 않고 그 까닭을 적는다", async () => {
     renderScreen();
     await act(async () => portfolio?.reject(new Error("13F 저장본을 읽지 못했습니다.")));
     await waitFor(() => expect(screen.getAllByText("13F 저장본을 읽지 못했습니다.").length).toBeGreaterThan(0));
