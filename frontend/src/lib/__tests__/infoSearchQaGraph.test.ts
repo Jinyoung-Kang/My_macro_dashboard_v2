@@ -7,10 +7,10 @@ import { fitGraphLabel, fitGraphLabelFrom, graphLabels, linkGraphLayout, linkGra
 import type { SearchLink } from "@/lib/types";
 
 /**
- * 그린 글의 폭 — QA 스택 브라우저에서 같은 SVG에 12px로 그려 잰 값: 한글 '가'와 말줄임표 '…'(U+2026)는 12px, 라틴 글자는 7.5px 어림 이하.
- * 한글·한자·가나·전각과 '…'는 12, 그 밖은 7.5.
+ * 그린 글의 폭 — QA 스택 브라우저에서 같은 SVG에 12px로 그려 잰 한글 '가'와 말줄임표 '…'(U+2026)는 12px. 한글·한자·가나·전각과 '…'는 12,
+ * 그 밖(라틴 글자 등)은 infoSearch의 어림 그대로 7.5.
  */
-const WIDE = /[ᄀ-ᇿ…⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+const WIDE = /[ᄀ-ᇿ…⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
 const renderedWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + (WIDE.test(char) ? 12 : 7.5), 0);
 
 /** QA가 kr:005930의 연결을 한글 이름 16개로 모의한 자료 꼴 — 앞머리 '가상'이 같고 '가상전자…'가 여럿. */
@@ -48,7 +48,7 @@ describe("연결 그림 — '…'가 든 노드 글도 그린 폭이 배정 폭 
   // 든 글이 배정 폭(이름 자리 − 14px)을 넘었습니다 — 390 화면 '가…디스플…' 72 > 66px, 1280 '가상바이오로직…' 96 > 95px, 1440 '가상전자글로벌반도…'
   // 120 > 116px. fitGraphLabelFrom의 '폭은 maxPx를 넘지 않습니다'가 어림에서만 참이었습니다.
   // 수정 전 실패: graphLabels가 폭 66에서 '가…디스플…'(그린 폭 72)를, 95에서 '가상바이오로직…'(96)을 돌려줌(재현 커밋에서는 it.fails).
-  it.fails("QA 자료 꼴(한글 이름 16개)과 라틴 이름을 폭 66·95·116에 맞추면 '…'를 12px로 잰 글 폭이 배정 폭 안", () => {
+  it("QA 자료 꼴(한글 이름 16개)과 라틴 이름을 폭 66·95·116에 맞추면 '…'를 12px로 잰 글 폭이 배정 폭 안", () => {
     for (const maxPx of [66, 95, 116]) {
       for (const names of [KOREAN_NAMES, LATIN_NAMES, [...KOREAN_NAMES, ...LATIN_NAMES]]) {
         const labels = graphLabels(names, maxPx);
@@ -61,7 +61,7 @@ describe("연결 그림 — '…'가 든 노드 글도 그린 폭이 배정 폭 
 
   // 수정 전 실패: 예산 66~160에서 '…'를 하나 단 글(끝 자름)은 4.5px, 둘 단 글(가운데 줄임 + 끝 자름)은 9px까지 예산을 넘고('가…전자디스…' 84 > 75),
   // 예산이 아주 작으면 '……'(24px)가 예산 12를 넘음(재현 커밋에서는 it.fails).
-  it.fails("fitGraphLabel·fitGraphLabelFrom — 한글·라틴 이름, 보이는 자리마다, 예산 12~160px 전부에서 '…'를 12px로 잰 폭이 예산 안", () => {
+  it("fitGraphLabel·fitGraphLabelFrom — 한글·라틴 이름, 보이는 자리마다, 예산 12~160px 전부에서 '…'를 12px로 잰 폭이 예산 안", () => {
     for (const name of [...KOREAN_NAMES, ...LATIN_NAMES]) {
       const length = Array.from(name).length;
       for (let maxPx = 12; maxPx <= 160; maxPx += 1) {
@@ -76,7 +76,7 @@ describe("연결 그림 — '…'가 든 노드 글도 그린 폭이 배정 폭 
   });
 
   // 수정 전 실패: 폭 280·296(390 화면)의 노드 글 '가…디스플…'(72)이 이름 자리(80) − 14 = 66을 넘음(재현 커밋에서는 it.fails).
-  it.fails("그림 배치 — 노드 글은 이름 자리(폭의 26%, 80~130px) − 14, 가운데 대상 글은 min(160, 가로 반지름 × 1.2) 안이고 가운데 상자 안", () => {
+  it("그림 배치 — 노드 글은 이름 자리(폭의 26%, 80~130px) − 14, 가운데 대상 글은 min(160, 가로 반지름 × 1.2) 안이고 가운데 상자 안", () => {
     const links: SearchLink[] = KOREAN_NAMES.map((name, at) => ({
       relation: at < 8 ? "subsidiary" : "owner_of",
       key: `wd:Q${900 + at}`,

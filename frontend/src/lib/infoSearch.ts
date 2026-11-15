@@ -1006,8 +1006,11 @@ const GRAPH_TAG_SEARCH = 240;
 /** 관계 글이 들 빈자리가 없을 때 세로 반지름을 늘리는 비율(한 번에)과 횟수. */
 const GRAPH_TAG_GROW = 0.15;
 const GRAPH_TAG_GROW_TRIES = 6;
-/** 글자 크기 12px에서 어림한 글자 폭 — 한글·한자·가나·전각은 12, 그 밖은 7.5. */
-const WIDE_CHAR = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+/**
+ * 글자 크기 12px에서 어림한 글자 폭 — 한글·한자·가나·전각과 말줄임표 '…'(U+2026 — 줄인 글마다 붙고 그림에서 12px로 그려짐, QA-423)는 12,
+ * 그 밖은 7.5.
+ */
+const WIDE_CHAR = /[\u1100-\u11ff\u2026\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
 const charWidth = (char: string) => (WIDE_CHAR.test(char) ? 12 : 7.5);
 const textWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + charWidth(char), 0);
 const ELLIPSIS = "…";
@@ -1041,7 +1044,7 @@ function fitChars(chars: readonly string[], maxPx: number): string[] {
 /**
  * 가운데를 줄인 노드 이름 — 앞부분 + '…' + from번째 글자(코드 포인트, 앞뒤 공백을 뗀 이름에서)부터의 뒷부분. 뒷부분이 끝까지 들면 앞부분은 남는 폭만큼,
  * 아니면 앞부분은 폭의 30%까지이고 뒷부분 끝에도 '…'. 다 들면 이름 그대로, 앞부분이 from 앞을 다 담으면(가운데를 줄일 것이 없음) fitGraphLabel과
- * 같습니다. 폭(12px 글자 어림)은 maxPx를 넘지 않습니다.
+ * 같고, 뒷부분이 한 글자도 들지 않을 만큼 폭이 작아도 끝을 자른 글입니다. 폭(12px 글자 어림 — '…'도 12)은 maxPx('…' 하나의 폭 12 이상)를 넘지 않습니다.
  */
 export function fitGraphLabelFrom(name: string, from: number, maxPx: number): string {
   const chars = Array.from(name.trim());
@@ -1055,7 +1058,10 @@ export function fitGraphLabelFrom(name: string, from: number, maxPx: number): st
   const shownHead = head.join("").trimEnd();
   const room = maxPx - textWidth(shownHead) - ellipsis;
   if (textWidth(tail) <= room) return `${shownHead}${ELLIPSIS}${tail}`;
-  return `${shownHead}${ELLIPSIS}${fitChars(Array.from(tail), room - ellipsis).join("").trimEnd()}${ELLIPSIS}`;
+  // 뒷부분 끝의 '…' 몫까지 빼고 남는 폭에 뒷부분이 한 글자도 들지 않으면(폭이 아주 작음) '……'가 아니라 끝을 자른 글.
+  const shownTail = fitChars(Array.from(tail), room - ellipsis).join("").trimEnd();
+  if (!shownTail) return fitGraphLabel(whole, maxPx);
+  return `${shownHead}${ELLIPSIS}${shownTail}${ELLIPSIS}`;
 }
 
 /** 줄인 글이 같은 이름들을 가를 때 갈리는 자리를 낱말 첫 글자로 물리는 최대 글자 수('…12'처럼 숫자·낱말을 통째로 보이게). */
