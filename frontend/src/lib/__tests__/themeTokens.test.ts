@@ -370,6 +370,25 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     expect(svg["--focus"], "--focus").toBe("Highlight");
     expect(svg["--accent"], "--accent").toBe("LinkText");
   });
+
+  // QA-508 후속(검토 지적): 위 시험은 차트 파일의 var() 리터럴만 읽어, SVG를 Tailwind 토큰 클래스로 칠하는 연결 그림(LinksGraph — 노드 g의
+  // 'text-accent hover:text-accent-hover', 선 'text-border-strong')을 보지 못했습니다. 밝은 고대비에서 가리킨 노드가 --accent-hover #8abbff로 바뀌어
+  // 흰 Canvas 위 1.98:1로 사라졌습니다(/search 연결 탭 '그림', qa@8f87edae). SVG를 그리는 화면 파일의 색 클래스가 가리키는 토큰도 svg 규칙이 모두
+  // 시스템 색으로 다시 정의해야 합니다.
+  it.fails("QA-508: SVG를 그리는 화면 파일(연결 그림)의 색 클래스 토큰도 고대비 svg 규칙이 시스템 색으로 다시 정의한다 — hover 색 포함", () => {
+    const svg = forcedDeclarations("svg") ?? {};
+    const rootTokens = declarations(blockBody(":root"));
+    const source = readFileSync(resolve(SRC, "components/screens/search/LinksGraph.tsx"), "utf8");
+    const used = [
+      ...new Set(
+        [...source.matchAll(/(?:^|[\s"'`:])(?:text|fill|stroke)-([a-z][a-z0-9-]*)/g)]
+          .map((match) => `--${match[1]}`)
+          .filter((token) => token in rootTokens),
+      ),
+    ].sort();
+    expect(used).toContain("--accent-hover");
+    for (const token of used) expect(SYSTEM_COLORS.has(svg[token] ?? ""), `${token} = ${svg[token]}`).toBe(true);
+  });
 });
 
 describe("조작 바탕 — 덮개 안 단추(2026-11-16 결정, 명세 §3-4)", () => {
