@@ -293,10 +293,13 @@ def media_name_key(name: str | None) -> str:
     return _MSN_TAIL.sub("", (name or "").strip()).strip().casefold()
 
 
-# 같은 매체 세기 키(QA-442)의 재료 — 도메인 꼴 이름, 두 글자 국가 도메인 앞의 2단계 이름표, 이름 끝에서 떼는 낱말.
+# 같은 매체 세기 키(QA-442)의 재료 — 도메인 꼴 이름, 두 글자 국가 도메인 앞의 2단계 이름표, 이어 붙인 키의 앞·끝에서 떼는 글자와 뗀 뒤 남아야
+# 하는 길이(짧은 이름의 서로 다른 매체 — 'AB News'·'AB Media' — 가 한 곳이 되지 않게).
 _HOST_NAME = re.compile(r"(?:www\d?\.)?((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})")
 _SECOND_LEVEL = frozenset({"ac", "co", "com", "edu", "go", "gov", "ne", "net", "or", "org"})
-_PUBLISHER_TAILS = frozenset({"media", "news"})
+_PUBLISHER_HEAD = "the"
+_PUBLISHER_TAILS = ("media", "news")
+_PUBLISHER_KEY_MIN = 3
 _NOT_WORD = re.compile(r"[\W_]+")
 
 
@@ -305,9 +308,10 @@ def publisher_key(name: str | None) -> str:
     같은 사건 묶음의 매체 수를 셀 때만 쓰는 매체 키(QA-442) — 같은 매체의 다른 표기('www.example.com'·'Example', 'Synth Alpha'·'SynthAlpha',
     'Kalsynth Media'·'Kalsynth')를 한 곳으로 봅니다. NFKC로 맞추고 MSN 재게재 꼬리를 뗀 소문자에서, 도메인 꼴이면 앞의 'www.'와 끝의 공개
     접미사(마지막 이름표, 두 글자 국가 도메인이면 그 앞의 co·com·net·org 등 하나 더)를 떼고 남은 이름표를 이어 붙입니다(하위 도메인은 남김 —
-    같은 호스팅의 다른 매체). 아니면 글자·숫자 낱말을 이어 붙이되(띄어쓰기·문장부호 무시) 낱말이 둘 이상이면 앞의 'the'와 끝의 'media'·'news'
-    한 낱말을 뗍니다. 매체 제외의 이름 대조는 이 키가 아니라 :func:`media_name_key`의 완전 일치 그대로입니다. 화면 ``infoSearch.publisherKey``와
-    같은 규칙(공유 고정본 ``tests/fixtures/search/publisher_keys.json``).
+    같은 호스팅의 다른 매체). 아니면 글자·숫자 낱말을 이어 붙입니다(띄어쓰기·문장부호 무시). 그렇게 이어 붙인 키에서 앞의 'the'와 끝의
+    'media'·'news' 하나를 떼되 뗀 뒤 세 글자 이상 남을 때만 뗍니다 — 낱말이 아니라 키에서 떼야 도메인 꼴·붙여 쓴 이름('www.kalsynthmedia.com'·
+    'TheSynth')과 띄어 쓴 이름이 같은 키가 됩니다(검토 지적). 매체 제외의 이름 대조는 이 키가 아니라 :func:`media_name_key`의 완전 일치
+    그대로입니다. 화면 ``infoSearch.publisherKey``와 같은 규칙(공유 고정본 ``tests/fixtures/search/publisher_keys.json``).
     """
     text = _MSN_TAIL.sub("", unicodedata.normalize("NFKC", name or "").strip()).strip().lower()
     host = _HOST_NAME.fullmatch(text)
@@ -316,13 +320,15 @@ def publisher_key(name: str | None) -> str:
         suffix = labels.pop()
         if len(suffix) == 2 and len(labels) > 1 and labels[-1] in _SECOND_LEVEL:
             labels.pop()
-        return "".join(labels)
-    words = [word for word in _NOT_WORD.split(text) if word]
-    if len(words) > 1 and words[0] == "the":
-        words = words[1:]
-    if len(words) > 1 and words[-1] in _PUBLISHER_TAILS:
-        words = words[:-1]
-    return "".join(words)
+        key = "".join(labels)
+    else:
+        key = "".join(word for word in _NOT_WORD.split(text) if word)
+    if key.startswith(_PUBLISHER_HEAD) and len(key) - len(_PUBLISHER_HEAD) >= _PUBLISHER_KEY_MIN:
+        key = key[len(_PUBLISHER_HEAD):]
+    for tail in _PUBLISHER_TAILS:
+        if key.endswith(tail) and len(key) - len(tail) >= _PUBLISHER_KEY_MIN:
+            return key[: -len(tail)]
+    return key
 
 
 @dataclass(frozen=True)

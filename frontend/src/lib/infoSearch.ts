@@ -517,31 +517,41 @@ function clusterLead(clusterId: string, rows: readonly SearchFeedItem[]): Search
 }
 
 const MSN_TAIL = /\s+on\s+msn\s*$/i;
-/** 도메인 꼴 이름(앞의 www.는 뗌), 두 글자 국가 도메인 앞의 2단계 이름표, 이름 끝에서 떼는 낱말 — publisherKey의 재료. */
+/**
+ * 도메인 꼴 이름(앞의 www.는 뗌), 두 글자 국가 도메인 앞의 2단계 이름표, 이어 붙인 키의 앞·끝에서 떼는 글자와 뗀 뒤 남아야 하는 길이(짧은 이름의
+ * 서로 다른 매체 — 'AB News'·'AB Media' — 가 한 곳이 되지 않게) — publisherKey의 재료.
+ */
 const HOST_NAME = /^(?:www\d?\.)?((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})$/;
 const SECOND_LEVEL = new Set(["ac", "co", "com", "edu", "go", "gov", "ne", "net", "or", "org"]);
-const PUBLISHER_TAILS = new Set(["media", "news"]);
+const PUBLISHER_HEAD = "the";
+const PUBLISHER_TAILS = ["media", "news"];
+const PUBLISHER_KEY_MIN = 3;
 
 /**
  * 같은 사건 묶음의 매체 수를 셀 때만 쓰는 매체 키(QA-442 — 수집기 search_rules.publisher_key와 같은 규칙, 공유 고정본
  * `collector/tests/fixtures/search/publisher_keys.json`) — 같은 매체의 다른 표기('www.example.com'·'Example', 'Synth Alpha'·'SynthAlpha',
  * 'Kalsynth Media'·'Kalsynth')를 한 곳으로 봅니다. NFKC로 맞추고 MSN 재게재 꼬리를 뗀 소문자에서, 도메인 꼴이면 앞의 'www.'와 끝의 공개
  * 접미사(마지막 이름표, 두 글자 국가 도메인이면 그 앞의 co·com·net·org 등 하나 더)를 떼고 남은 이름표를 이어 붙입니다(하위 도메인은 남김).
- * 아니면 글자·숫자 낱말을 이어 붙이되 낱말이 둘 이상이면 앞의 'the'와 끝의 'media'·'news' 한 낱말을 뗍니다.
+ * 아니면 글자·숫자 낱말을 이어 붙입니다. 그렇게 이어 붙인 키에서 앞의 'the'와 끝의 'media'·'news' 하나를 떼되 뗀 뒤 세 글자(코드 포인트)
+ * 이상 남을 때만 뗍니다 — 낱말이 아니라 키에서 떼야 도메인 꼴·붙여 쓴 이름('www.kalsynthmedia.com'·'TheSynth')과 띄어 쓴 이름이 같은 키가 됨.
  */
 export function publisherKey(name: string | null | undefined): string {
   const text = (name ?? "").normalize("NFKC").trim().replace(MSN_TAIL, "").trim().toLowerCase();
   const host = HOST_NAME.exec(text);
+  let key: string;
   if (host) {
     const labels = host[1].split(".");
     const suffix = labels.pop() as string;
     if (suffix.length === 2 && labels.length > 1 && SECOND_LEVEL.has(labels[labels.length - 1])) labels.pop();
-    return labels.join("");
+    key = labels.join("");
+  } else {
+    key = text.split(/[^\p{L}\p{N}]+/u).filter(Boolean).join("");
   }
-  let words = text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  if (words.length > 1 && words[0] === "the") words = words.slice(1);
-  if (words.length > 1 && PUBLISHER_TAILS.has(words[words.length - 1])) words = words.slice(0, -1);
-  return words.join("");
+  // 뗀 뒤 남는 길이는 수집기 len()과 같게 코드 포인트로 셈.
+  const leaves = (affix: string) => Array.from(key).length - affix.length >= PUBLISHER_KEY_MIN;
+  if (key.startsWith(PUBLISHER_HEAD) && leaves(PUBLISHER_HEAD)) key = key.slice(PUBLISHER_HEAD.length);
+  const tail = PUBLISHER_TAILS.find((word) => key.endsWith(word) && leaves(word));
+  return tail ? key.slice(0, -tail.length) : key;
 }
 
 /**
