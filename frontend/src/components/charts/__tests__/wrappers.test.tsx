@@ -337,6 +337,51 @@ describe("막대·산점도", () => {
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
   });
 
+  // QA-499: 가로 막대의 음수 값 라벨은 막대 바깥 끝 왼쪽(패널 면 위)에 있어야 합니다. Recharts 3.10.1의 가로 막대는 음수 막대를 x = 0선 자리,
+  // width = 음수로 넘기는데 라벨이 `x - 6`(0선 왼쪽 6px — 막대 안쪽 시작점)에 글 끝을 맞춰, 막대가 글보다 길면 하락 파랑 막대 위에 text-3 글
+  // (1.43:1)이 됐습니다(/sector 1M '-9.11%' 37px·'-12.15%' 45px 겹침, 390·1024·1440). 라벨이 막대 바깥으로 가려면 가장 음수인 막대의 바깥 끝과
+  // Y축 선 사이에 라벨 자리가 있어야 합니다. 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-499: 음수 막대의 값 라벨은 막대 바깥 끝 왼쪽 — 가장 음수인 막대 바깥 끝과 Y축 선 사이에 라벨 자리", () => {
+    /** 음수 막대 왼쪽에 남기는 라벨 자리(px) — charts/index.tsx HorizontalBars의 같은 이름 값(오른쪽 여백 68과 맞춤). */
+    const NEG_LABEL_ROOM = 60;
+    observeAs(600, 360);
+    const { container } = render(
+      <HorizontalBars data={[{ name: "삼성전자", value: 120.5 }, { name: "SK하이닉스", value: -40.2 }]} unit="억" />,
+    );
+    const bars = [...container.querySelectorAll(".recharts-bar-rectangle path")].map((path) => {
+      const x = Number(path.getAttribute("x"));
+      const width = Number(path.getAttribute("width"));
+      return { start: Math.min(x, x + width), end: Math.max(x, x + width), negative: width < 0 };
+    });
+    expect(bars).toHaveLength(2);
+    const negative = bars.find((bar) => bar.negative);
+    expect(negative, "음수 막대").toBeDefined();
+    const label = [...container.querySelectorAll("text")].find((node) => node.textContent === "-40.2억") as SVGTextElement;
+    expect(label.getAttribute("text-anchor")).toBe("end");
+    // (a) 라벨 글 끝이 막대 바깥 끝보다 6px 이상 왼쪽 — 막대와 겹치지 않음
+    expect(Number(label.getAttribute("x")), "라벨 x").toBeLessThanOrEqual((negative?.start ?? 0) - 6);
+    // (b) 가장 음수인 막대의 바깥 끝은 Y축 선에서 라벨 자리만큼 떨어짐 — 옮긴 라벨이 Y축 이름표 위에 겹치지 않음
+    const axisX = Number(container.querySelector(".recharts-yAxis line.recharts-cartesian-axis-line")?.getAttribute("x1"));
+    expect(Number.isFinite(axisX)).toBe(true);
+    expect((negative?.start ?? 0) - axisX, "막대 바깥 끝 - Y축 선").toBeGreaterThanOrEqual(NEG_LABEL_ROOM);
+    // 양수 막대 라벨은 그대로 막대 끝 오른쪽 6px
+    const positive = bars.find((bar) => !bar.negative);
+    const positiveLabel = [...container.querySelectorAll("text")].find((node) => node.textContent === "120.5억") as SVGTextElement;
+    expect(positiveLabel.getAttribute("text-anchor")).toBe("start");
+    expect(Number(positiveLabel.getAttribute("x"))).toBeCloseTo((positive?.end ?? 0) + 6, 3);
+  });
+
+  it("가로 막대 — 모두 양수면 왼쪽 라벨 자리를 두지 않는다(막대가 Y축 선에서 시작)", () => {
+    observeAs(600, 360);
+    const { container } = render(
+      <HorizontalBars data={[{ name: "삼성전자", value: 120.5 }, { name: "SK하이닉스", value: 40.2 }]} unit="억" />,
+    );
+    const axisX = Number(container.querySelector(".recharts-yAxis line.recharts-cartesian-axis-line")?.getAttribute("x1"));
+    const starts = [...container.querySelectorAll(".recharts-bar-rectangle path")].map((path) => Number(path.getAttribute("x")));
+    expect(starts).toHaveLength(2);
+    for (const start of starts) expect(start).toBeCloseTo(axisX, 3);
+  });
+
   it("세로 막대 — 격자 없음, 0 기준선", () => {
     observeAs(600, 320);
     const { container } = render(<SignedBars data={[{ name: "1월", value: 3 }, { name: "2월", value: -2 }]} />);
