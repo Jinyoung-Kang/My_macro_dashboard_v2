@@ -374,7 +374,7 @@ describe("DataTable — 밀도(행 높이)·개수 줄", () => {
     expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:pt-1", "lg:pb-[3px]"]));
     expect(classesOf(within(bodyRows()[bodyRows().length - 1]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1"]));
     expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toEqual(expect.arrayContaining(["pt-1", "pb-[3px]"]));
-    expect(classesOf(screen.getByRole("columnheader", { name: /비중/ }))).toEqual(expect.arrayContaining(["py-0", "lg:pt-1", "lg:pb-[3px]"]));
+    expect(classesOf(screen.getByRole("columnheader", { name: /비중/ }))).toEqual(expect.arrayContaining(["pt-1", "pb-0", "lg:pb-[3px]"]));
   });
 
   it("누를 수 있는 행은 좁은 화면(lg 미만)에서 44px(py-3), 넓은 화면은 32·28px", () => {
@@ -385,10 +385,10 @@ describe("DataTable — 밀도(행 높이)·개수 줄", () => {
     expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:pt-1", "lg:pb-[3px]"]));
   });
 
-  it("정렬 머리는 lg 미만에서 단추가 44px(min-h-11), 넓은 화면은 행과 같은 32px", () => {
+  it("정렬 머리는 lg 미만에서 단추가 44px(min-h-11)이고 위에 포커스 링 자리 4px(pt-1 — 스크롤 상자 위 끝에서 링이 잘리지 않게), 넓은 화면은 행과 같은 32px", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const header = screen.getByRole("columnheader", { name: /비중/ });
-    expect(classesOf(header)).toEqual(expect.arrayContaining(["py-0", "lg:pt-1.5", "lg:pb-[5px]"]));
+    expect(classesOf(header)).toEqual(expect.arrayContaining(["pt-1", "pb-0", "lg:pt-1.5", "lg:pb-[5px]"]));
     expect(classesOf(within(header).getByRole("button"))).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0"]));
   });
 

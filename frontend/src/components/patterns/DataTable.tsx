@@ -52,7 +52,7 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  *   (2026-11-16 검토 지적, 머리 없는 크롬으로 잼). 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서는 모든 행이 44px 이상입니다 —
  *   누를 수 있는 행(`onRowClick`)은 손가락 누름 자리(원칙 A8)이고, 누를 수 없는 행도 칸 안 종목 글 단추처럼 행마다 있는 작은 단추 사이를
  *   좁히지 않으려고 예전 높이를 둡니다(밀도는 넓은 화면에서만 올림 — 명세 §10 '휴대폰 밀도'). 머리 줄은 32·28px이고, 정렬 머리 단추는 lg 미만에서
- *   44px입니다. 행 사이 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계(border)입니다.
+ *   44px입니다(그 위에 포커스 링 자리 4px). 행 사이 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계(border)입니다.
  *   칸 안의 테두리 있는 태그(추정·이전 값 배지·공용 Tag — 12/16 글 + 위아래 1px + 테두리 = 20px, 글 흐름 안에서는 줄 위에 맞춤 — 2026-11-16 결정)는
  *   칸 글줄(20px)과 같은 높이라 태그가 든 행도 넓은 화면 32·28px 그대로입니다(머리 없는 크롬으로 잼 — 태그 없는 행과 같음. 예전 22px 태그는 그 행을
  *   2px 늘렸음). 태그가 두 줄로 접히면 그만큼 늘어납니다.
@@ -114,8 +114,9 @@ export function DataTable<T>({
   const cellY = (lined: boolean) =>
     dense ? (lined ? "py-3 lg:pt-1 lg:pb-[3px]" : "py-3 lg:py-1") : lined ? "py-3 lg:pt-1.5 lg:pb-[5px]" : "py-3 lg:py-1.5";
   const headY = dense ? "pt-1 pb-[3px]" : "pt-1.5 pb-[5px]";
-  // 정렬 머리는 lg 미만에서 단추(44px)가 높이를 정하므로 여백을 두지 않습니다.
-  const sortHeadY = dense ? "py-0 lg:pt-1 lg:pb-[3px]" : "py-0 lg:pt-1.5 lg:pb-[5px]";
+  // 정렬 머리는 lg 미만에서 단추(44px)가 높이를 정하므로 아래 여백을 두지 않고, 위에만 4px를 남깁니다 — 머리 줄이 가로 스크롤 상자(세로로도 자르는
+  // 스크롤 상자)의 위 끝에 붙어 있어, 여백이 없으면 단추의 바깥 포커스 링(2px + 간격 2px)의 위 변이 잘렸습니다(2026-11-16 검토 지적). 넓은 화면은 위 여백이 6·4px라 그대로.
+  const sortHeadY = dense ? "pt-1 pb-0 lg:pb-[3px]" : "pt-1 pb-0 lg:pt-1.5 lg:pb-[5px]";
   const countText =
     count === undefined || count === false ? null : typeof count === "function" ? count(rows.length) : `${rows.length.toLocaleString("ko-KR")}건`;
   const wide = scrollHint !== false && shown.length > 0;
