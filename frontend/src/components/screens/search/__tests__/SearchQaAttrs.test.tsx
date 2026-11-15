@@ -1,5 +1,6 @@
 /**
- * 정보 검색 대상 화면의 속성 칸 글(QA-420 후속 — 미리 보기 안내). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
+ * 정보 검색 대상 화면의 속성 칸 글(QA-420 후속 — 미리 보기 안내, QA-429 후속 — 받지 못한 출처의 이름). 응답은 모두 합성 값입니다
+ * (실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  *
  * jsdom은 미디어 쿼리를 셈하지 않습니다. 그래서 그 창 폭에서 보이는 글을 클래스의 display(hidden·inline 등과 그 앞의 lg:·xl: 등)로 셈해
  * 읽습니다(배치를 클래스 계약으로 시험 — 실제 화면은 QA 스택에서 봄).
@@ -19,6 +20,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
 import type { SearchFeedItem, SessionUser } from "@/lib/types";
+import { AttributesPanel } from "../EntityParts";
 import { SearchScreen } from "../SearchScreen";
 import { setLocation } from "./fakeNavigation";
 
@@ -156,5 +158,39 @@ describe("QA-420 후속 — 속성 칸의 미리 보기 안내가 그 탭·그 �
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     await screen.findByText("최근 2년 안의 자료가 없습니다");
     expect((await attributesPane()).textContent).not.toMatch(HINT);
+  });
+});
+
+describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 출처'는 출처 키 대신 이름을 보인다", () => {
+  const line = () => screen.getByText(/대상을 푸는 데 받지 못한 출처/).textContent ?? "";
+
+  // QA-429: 속성 칸이 대상 풀기 errors의 키를 그대로 붙여 새 내부 키가 'dart_store: DART 고유번호 저장본을 읽지 못함'으로 보였음
+  // (sec·wikidata·dart·entity도 키 그대로). 수정 전 실패: 줄에 'dart_store'·'wikidata' 같은 키가 그대로 있음.
+  it.fails("수집기가 보내는 키(entity·wikidata·sec·dart·dart_store)는 출처 이름으로, 모르는 키는 중립 이름으로 보인다", () => {
+    render(
+      <AttributesPanel
+        entity={null}
+        kind="company"
+        errors={{
+          dart_store: "DART 고유번호 저장본을 읽지 못함",
+          wikidata: "시간 초과",
+          sec: "HTTP 503",
+          entity: "대상 풀기가 8초를 넘어 저장본 이름으로만 답함",
+          new_source: "합성 사유",
+        }}
+      />,
+    );
+    const text = line();
+    for (const code of ["dart_store", "wikidata", "sec:", "entity", "new_source"]) expect(text, code).not.toContain(code);
+    expect(text).toContain("DART: DART 고유번호 저장본을 읽지 못함");
+    expect(text).toContain("Wikidata: 시간 초과");
+    expect(text).toContain("SEC: HTTP 503");
+    expect(text).toContain("외부 출처: 대상 풀기가 8초를 넘어 저장본 이름으로만 답함");
+    expect(text).toContain("기타 출처: 합성 사유");
+    cleanup();
+
+    render(<AttributesPanel entity={null} kind="company" errors={{ dart: "DART 고유번호 저장본에 이 종목이 없음" }} />);
+    expect(line()).toContain("DART: DART 고유번호 저장본에 이 종목이 없음");
+    expect(line()).not.toContain("dart:");
   });
 });
