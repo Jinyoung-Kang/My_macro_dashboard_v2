@@ -6,6 +6,7 @@ import {
   buttonClasses,
   FOCUS_RING,
   inputClasses,
+  TEXT_TARGET,
   underlineTabClasses,
   type ButtonSize,
   type ButtonVariant,
@@ -36,14 +37,19 @@ export {
 } from "./classes";
 
 /**
- * 섹션 카드 컨테이너.
+ * 패널(섹션 컨테이너 — 작업대 실행 명세 §3-3·§3-7·§6). 1층 면: surface 바탕·1px 경계·4px 모서리, 그림자 없음.
+ * 머리줄(제목·개수·동작)은 아래 1px 경계로 본문과 가르고, 본문 안쪽은 12px(lg 16px)입니다. 머리줄 바탕은 패널과 같은 surface입니다 —
+ * 명세 표의 '패널 머리 surface-2'로 칠하면 머리 동작에 놓이는 기본 단추·출처 배지(둘 다 surface-2)가 묻혀서, 정보 검색 패널(검증한
+ * 작업대 언어)처럼 경계로만 가릅니다.
  *
- * @param source 이 카드 숫자의 출처. 모든 카드가 같은 모양("출처 · …")으로 적도록 여기서 그립니다.
+ * @param count 표·목록의 개수(명세 §3-7 '머리에는 늘 개수') — 제목 옆 보조 글로 그리고, 제목(h2)의 이름에는 넣지 않습니다.
+ * @param source 이 패널 숫자의 출처. 모든 패널이 같은 모양("출처 · …")으로 적도록 여기서 그립니다.
  *               출처 문구는 `lib/sources.ts`에 모아 두었습니다 — 화면마다 따로 적으면 표기가 갈립니다.
  */
-export function Card({
+export function Panel({
   title,
   subtitle,
+  count,
   source,
   actions,
   children,
@@ -51,55 +57,79 @@ export function Card({
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
+  count?: ReactNode;
   source?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
+  // 패널 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다.
+  const heading = title ? <h2 className="text-heading-sm text-text">{typeof title === "string" ? withoutLeadingIcon(title) : title}</h2> : null;
+  const counted = count !== undefined && count !== null;
   return (
-    <section className={`rounded-card border border-border bg-surface p-5 lg:p-6 ${className}`}>
+    <section className={`rounded-card border border-border bg-surface ${className}`}>
       {(title || actions || source) && (
-        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-2.5 lg:px-4">
           <div className="min-w-0">
-            {/* 카드 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다. */}
-            {title && (
-              <h2 className="text-title-3 text-text">
-                {typeof title === "string" ? withoutLeadingIcon(title) : title}
-              </h2>
+            {heading && counted ? (
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                {heading}
+                <span className="text-[13px] tabular-nums text-text-3">{count}</span>
+              </div>
+            ) : (
+              heading
             )}
-            {subtitle && <p className="mt-1 text-[13px] leading-5 text-text-2">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 text-[13px] leading-5 text-text-2">{subtitle}</p>}
             {source && <SourceLine>{source}</SourceLine>}
           </div>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      {children}
+      <div className="p-3 lg:p-4">{children}</div>
     </section>
   );
 }
 
+/** 옛 이름 — Panel과 같습니다(부르는 곳 약 180곳을 한꺼번에 고치지 않으려고 남기고, 화면 단계에서 정리합니다). */
+export const Card = Panel;
+
 /**
- * 화면 머리 — h1(좁은 화면 24px, sm 이상 글자 단계 title-1 28px) · 설명(15px 보조 글) · 오른쪽 동작(신선도·고르기·단추).
+ * 화면 머리 — h1(글자 단계 heading 20px) · 설명(14px 보조 글 한 줄) · '자세히' 접기 · 오른쪽 동작 영역(신선도·고르기·단추 — 작업대 실행 명세 §6).
  * 화면마다 h1 모양을 따로 적던 곳을 하나로 모읍니다(명세 §7-1). 설명 아래에 덧붙일 줄(예: 매크로 자동 갱신 안내)은 children으로 넘깁니다.
+ * 긴 설명은 지우지 않고 `details`로 넘겨 '자세히' 접기 안에 둡니다(명세 §1 — 긴 설명 문단은 접기로 옮김). 처음에는 접혀 있습니다.
  * 동작은 넓은 화면에서 제목 묶음의 아래 끝에 맞춰 오른쪽에 두고(이름표가 위에 있는 고르기 상자의 상자가 설명 줄과 한 줄에 놓임),
  * 자리가 모자라면 제목 아래로 내려갑니다.
  */
 export function PageHeader({
   title,
   description,
+  details,
   actions,
   children,
 }: {
   title: ReactNode;
   description?: ReactNode;
+  /** '자세히' 접기 안의 긴 설명(최대 72자 폭). */
+  details?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold text-text sm:text-title-1">{title}</h1>
-        {description ? <p className="mt-1 text-body-md text-text-2">{description}</p> : null}
+        <h1 className="text-heading text-text">{title}</h1>
+        {description ? <p className="mt-0.5 text-sm text-text-2">{description}</p> : null}
+        {details ? (
+          <details className="group mt-0.5 text-sm text-text-2">
+            <summary
+              className={`${TEXT_TARGET} cursor-pointer list-none gap-1 rounded-sm text-[13px] text-text-2 hover:text-text [&::-webkit-details-marker]:hidden ${FOCUS_RING}`}
+            >
+              자세히
+              <ChevronDownIcon size={14} className="motion-safe:transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-1 max-w-[72ch] leading-relaxed">{details}</div>
+          </details>
+        ) : null}
         {children}
       </div>
       {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
@@ -107,7 +137,7 @@ export function PageHeader({
   );
 }
 
-/** 지표 카드 (구버전 st.metric에 해당) — 겉모양은 새 통계 타일(patterns/StatTile)과 같습니다. */
+/** 지표 칸 (구버전 st.metric에 해당) — 4px·1px 경계·안쪽 12px, 값은 KPI 크기(20px, lg 24px — 작업대 실행 명세 §3-6)·tabular-nums. */
 export function Metric({
   label,
   value,
@@ -132,9 +162,9 @@ export function Metric({
   tone?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-control border border-border bg-surface p-4">
+    <div className="min-w-0 rounded-control border border-border bg-surface p-3">
       <div className="text-[13px] font-medium text-text-2">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone ?? "text-text"}`}>
+      <div className={`mt-1 text-xl font-semibold tabular-nums lg:text-2xl ${tone ?? "text-text"}`}>
         {value}
       </div>
       {(deltaText || delta !== undefined) && (
@@ -427,7 +457,8 @@ export function NativeSelect({
 }
 
 /**
- * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다.
+ * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다. 조밀한 행(작업대 실행 명세 §3-7 — 행 32px: 14px 글 + 위아래 6px), 머리는 13px 보조 글과
+ * 1px 경계, 행 사이는 옅은 구분선(border-subtle).
  *
  * @param label 표 이름 — 좌우 스크롤 상자(region)의 이름 "{label} (좌우 스크롤)"이 됩니다. 한 화면에 표가 여럿이면 이름을 줘야
  *              랜드마크 목록에서 서로 구별됩니다(주지 않으면 "표 (좌우 스크롤)" — 새 DataTable의 caption과 같은 규칙).
@@ -470,7 +501,7 @@ export function Table<T>({
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-3 py-2.5 font-medium ${
+                  className={`px-3 py-1.5 font-medium ${
                     column.align === "right" ? "text-right" : "text-left"
                   } ${column.className ?? ""}`}
                 >
@@ -483,12 +514,12 @@ export function Table<T>({
             {rows.map((row, index) => (
               <tr
                 key={rowKey(row, index)}
-                className="border-b border-border last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
+                className="border-b border-border-subtle last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-3 py-3 tabular-nums ${
+                    className={`px-3 py-1.5 tabular-nums ${
                       column.align === "right" ? "text-right" : "text-left"
                     } ${column.className ?? ""}`}
                   >

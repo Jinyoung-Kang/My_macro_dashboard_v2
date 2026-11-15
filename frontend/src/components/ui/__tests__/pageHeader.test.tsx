@@ -1,5 +1,5 @@
 /**
- * 화면 머리(ui/index.tsx의 PageHeader) — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §7-1.
+ * 화면 머리(ui/index.tsx의 PageHeader) — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §7-1, 작업대 명세 docs/specs/2026-11-15-v2-workbench-ui.md §6(자세히 접기).
  *  - 화면마다 h1이 하나이고 그 이름이 제목 글이다(낭독기의 제목 목록·탭 제목과 같은 글)
  *  - 설명은 제목 바로 아래 보조 글, 덧붙일 줄(children)은 설명 아래, 동작(신선도·고르기)은 제목 묶음 밖의 따로 된 칸
  *  - 설명·동작을 주지 않으면 빈 칸을 그리지 않는다
@@ -33,6 +33,15 @@ describe("PageHeader", () => {
     expect(header.contains(action)).toBe(true);
     // 보조 글은 본문색이 아니라 보조색(text-2) — 제목과 위계를 나눕니다.
     expect(screen.getByText("성장·신용 축 × 유동성 축").className).toContain("text-text-2");
+  });
+
+  it("긴 설명(details)은 처음에 접힌 '자세히' 안에 — 지우지 않고 접기로 옮긴다(작업대 명세 §1·§6), h1은 heading 단계(20px)", () => {
+    const { container } = render(<PageHeader title="모의매매" description="네 계좌 비교" details={<p>같은 돈·같은 날 출발한 네 계좌의 긴 설명</p>} />);
+    const disclosure = container.querySelector("details") as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
+    expect((disclosure.querySelector("summary") as HTMLElement).textContent).toBe("자세히");
+    expect(within(disclosure).getByText("같은 돈·같은 날 출발한 네 계좌의 긴 설명")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "모의매매" }).className).toContain("text-heading");
   });
 
   it("설명·동작이 없으면 제목만 — 빈 칸을 그리지 않는다", () => {
