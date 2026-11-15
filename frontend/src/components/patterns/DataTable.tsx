@@ -42,6 +42,9 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  * - 넓은 표는 감싼 상자(overflow-x-auto) 안에서만 좌우로 넘어갑니다 — 페이지 폭을 넓히지 않습니다. 상자는 Tab으로 닿아 화살표로 넘길 수 있습니다.
  * - 머리는 `sticky top-0`입니다. 가로 스크롤 상자는 CSS상 세로로도 스크롤 상자가 되므로, 머리가 실제로 붙어 있으려면 상자에 높이 한도가
  *   있어야 합니다 — `maxHeight`(px)를 주면 그 높이에서 세로로도 스크롤되고 머리가 위에 남습니다(설계서 §1.5 계약에 더한 선택 props).
+ *   선은 행(tr)이 아니라 칸(th·td)의 아래 테두리로 긋고 표는 `border-separate border-spacing-0`입니다 — 겹친 테두리(border-collapse) 표의
+ *   선은 sticky 칸을 따라 움직이지 않아, 표를 내리면 머리 아래 선이 사라지고 행이 경계 없이 머리 밑으로 들어갔습니다. 그림자(box-shadow)로
+ *   긋지 않는 까닭은 고대비(forced-colors) 모드가 그림자를 지워 머리 선이 늘 없어지기 때문입니다(테두리는 시스템 색으로 남음).
  * - 행 높이(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-7): 넓은 화면(lg 이상) 기본 32px, `dense`(로그·출처 같은 조밀 표)면
  *   28px — 칸 글(14/20)에 위아래 여백을 더한 높이라 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서는 모든 행이 44px입니다 —
  *   누를 수 있는 행(`onRowClick`)은 손가락 누름 자리(원칙 A8)이고, 누를 수 없는 행도 칸 안 종목 글 단추처럼 행마다 있는 작은 단추 사이를
@@ -164,10 +167,10 @@ export function DataTable<T>({
         role="region"
         aria-label={`${caption ?? "표"} (좌우 스크롤)`}
       >
-        <table className={`w-full border-collapse text-sm ${wide ? "min-w-[640px]" : ""}`}>
+        <table className={`w-full border-separate border-spacing-0 text-sm ${wide ? "min-w-[640px]" : ""}`}>
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead className="sticky top-0 z-10 bg-surface">
-            <tr className="border-b border-border">
+            <tr>
               {columns.map((column) => {
                 const ariaSort = ariaSortOf(activeSort, column.key);
                 const arrow = ariaSort === "ascending" ? "↑" : ariaSort === "descending" ? "↓" : "↕";
@@ -176,7 +179,7 @@ export function DataTable<T>({
                     key={column.key}
                     scope="col"
                     aria-sort={ariaSort}
-                    className={`whitespace-nowrap px-3 text-caption leading-5 font-medium text-text-2 ${column.sortValue ? sortHeadY : headY} ${alignOf(column)} ${column.className ?? ""}`}
+                    className={`whitespace-nowrap border-b border-border px-3 text-caption leading-5 font-medium text-text-2 ${column.sortValue ? sortHeadY : headY} ${alignOf(column)} ${column.className ?? ""}`}
                   >
                     {column.sortValue ? (
                       <button
@@ -208,21 +211,23 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              shown.map((row) => (
+              shown.map((row, rowIndex) => (
                 <tr
                   key={rowKey(row)}
                   tabIndex={activate ? 0 : undefined}
                   onClick={activate ? activate.onClick(row) : undefined}
                   onKeyDown={activate ? activate.onKeyDown(row) : undefined}
-                  className={`border-b border-border-subtle last:border-0 ${
+                  className={
                     activate
                       ? "group cursor-pointer hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
-                      : ""
-                  }`}
+                      : undefined
+                  }
                 >
                   {columns.map((column, index) => {
                     const content = column.cell(row);
-                    const className = `px-3 ${cellY} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
+                    // 행 사이 구분선은 칸의 아래 테두리(위 설명 — sticky 머리) — 마지막 행에는 긋지 않습니다(감싼 상자의 끝).
+                    const divider = rowIndex < shown.length - 1 ? "border-b border-border-subtle" : "";
+                    const className = `px-3 ${cellY} ${divider} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
                     const shownContent = isMissingValue(content) ? (
                       <span className="text-text-3">
                         <Empty />

@@ -353,8 +353,16 @@ describe("DataTable — 밀도(행 높이)·개수 줄", () => {
     const cell = within(bodyRows()[0]).getAllByRole("cell")[1];
     expect(classesOf(cell)).toEqual(expect.arrayContaining(["py-3", "lg:py-1.5"]));
     expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toEqual(expect.arrayContaining(["py-1.5", "text-caption", "leading-5"]));
-    expect(classesOf(bodyRows()[0])).toContain("border-border-subtle");
-    expect(classesOf(screen.getByRole("table").querySelector("thead tr") as Element)).toContain("border-border");
+    // 선은 칸의 아래 테두리(sticky 머리를 내려도 머리 선이 따라옴 — 겹친 테두리 표의 행 선은 sticky 칸과 함께 움직이지 않음), 마지막 행은 선 없음.
+    expect(classesOf(screen.getByRole("table"))).toEqual(expect.arrayContaining(["border-separate", "border-spacing-0"]));
+    for (const header of screen.getAllByRole("columnheader")) {
+      expect(classesOf(header)).toEqual(expect.arrayContaining(["border-b", "border-border"]));
+    }
+    expect(classesOf(cell)).toEqual(expect.arrayContaining(["border-b", "border-border-subtle"]));
+    const last = bodyRows()[bodyRows().length - 1];
+    for (const lastCell of within(last).getAllByRole("cell")) {
+      expect(classesOf(lastCell)).not.toContain("border-b");
+    }
   });
 
   it("dense면 넓은 화면 28px(lg:py-1, 좁은 화면은 그대로 44px) — 머리 줄도 28px", () => {
