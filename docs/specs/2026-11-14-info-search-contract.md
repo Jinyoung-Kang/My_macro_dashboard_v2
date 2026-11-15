@@ -118,7 +118,7 @@ SourceStatus = {
   "label": "구글 뉴스(한국어)",
   "status": "ok" | "empty" | "error" | "cached" | "skipped" | "owner_only" | "offline" | "later" | "pending" | "server_only",
   "count": n,                       // 이 출처 줄로 결과에 남은 수(거르고 같은 글을 합친 뒤 — 상태 줄 건수의 합 = 줄 수)
-  "dropped": { "old": n, "noTime": n, "chinese": n, "excluded": n, "duplicate": n },   // 거른 건수(받은 자료 기준)
+  "dropped": { "old": n, "noTime": n, "chinese": n, "excluded": n, "duplicate": n },   // 거른 건수와 같은 글로 합친 수(받은 자료 기준)
   "message": "…" | null            // 실패 사유·안내(경로·검색어 없이)
 }
 ```
