@@ -158,13 +158,13 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
   // 선 모양을 되살리지 못합니다. jsdom은 Tailwind CSS를 계산하지 않으므로 클래스 목록으로 :focus-visible의 선 모양·폭을 계산해
   // (focusVisibleOutline) 실선 2px인지 봅니다(같은 화면 단추의 FOCUS 상수와 같은 모양).
   // 수정 전 실패: 세 자리 모두 선 모양이 none.
-  it.fails("결과 목록(listbox)은 :focus-visible에서 실선 2px 테두리를 그린다", async () => {
+  it("결과 목록(listbox)은 :focus-visible에서 실선 2px 테두리를 그린다", async () => {
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const list = await screen.findByRole("listbox", { name: "결과" });
     expect(focusVisibleOutline(list.className)).toEqual({ style: "solid", width: "2" });
   });
 
-  it.fails("받는 중 줄(p[role=status] — '다시 확인' 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
+  it("받는 중 줄(p[role=status] — '다시 확인' 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
     reads[endpoints.search.feed("us:NVDA", "timeline")] = {
       ...FEED,
       pending: true,
@@ -177,7 +177,7 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
     expect(focusVisibleOutline(status.className)).toEqual({ style: "solid", width: "2" });
   });
 
-  it.fails("빈 결과 안내(div[role=status] — 기간을 풀거나 다시 확인한 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
+  it("빈 결과 안내(div[role=status] — 기간을 풀거나 다시 확인한 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
     reads[endpoints.search.feed("us:NVDA", "timeline")] = {
       ...FEED,
       items: [],
@@ -192,7 +192,7 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
 
   // 같은 함정이 다른 화면에 다시 들어오지 않게 화면 소스 전체를 봅니다. 한 줄을 따옴표·백틱·중괄호로 나눈 조각마다(className 한 덩이) 포커스
   // 바깥선 폭이 있는데 계산한 선 모양이 none이면 걸립니다. 상수를 끼워 넣어 합친 클래스(`${FOCUS} outline-none`)는 위의 화면 시험이 봅니다.
-  it.fails("화면 소스에 outline-none·outline-hidden이 focus(-visible):outline-<n>의 선을 지우는 조합이 없다", () => {
+  it("화면 소스에 outline-none·outline-hidden이 focus(-visible):outline-<n>의 선을 지우는 조합이 없다", () => {
     const root = resolve(__dirname, "../../../..");
     const files: string[] = [];
     const walk = (dir: string) => {

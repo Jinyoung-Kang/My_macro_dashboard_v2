@@ -312,12 +312,15 @@ export function FeedPanel({
       pendingStalled: feed.pendingPhase === "stalled",
     });
     selectable = empty === null;
+    // 코드가 포커스를 보내는 자리(빈 결과 안내·결과 목록·목록 위 받는 중 줄)에는 outline-none을 붙이지 않습니다 — Tailwind v4의 outline-none은
+    // --tw-outline-style까지 none으로 둬 focus-visible:outline-2가 선을 그리지 못합니다(QA-433). 브라우저 기본 테두리도 :focus-visible에서만
+    // 그려지고 이 클래스가 덮으므로, 마우스로 눌러 옮긴 포커스에는 테두리가 없습니다(같은 화면 단추의 FOCUS와 같은 모양).
     body = empty ? (
       <div
         ref={emptyRef}
         role="status"
         tabIndex={-1}
-        className="flex flex-col items-start gap-2 px-3 py-8 text-sm outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+        className="flex flex-col items-start gap-2 px-3 py-8 text-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
       >
         <p className="font-medium text-text">{empty.message}</p>
         {empty.note ? <p className="text-text-2">{empty.note}</p> : null}
@@ -361,7 +364,7 @@ export function FeedPanel({
         tabIndex={0}
         aria-activedescendant={selectedIndex >= 0 ? optionId(selectedIndex) : undefined}
         onKeyDown={onListKeyDown}
-        className="outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+        className="focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
       >
         {/* 칸 머리(넓은 화면) — 낭독기는 줄마다 글을 읽으므로 장식으로 둡니다. */}
         <div aria-hidden="true" className="hidden grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] gap-3 border-b border-border px-3 py-1.5 text-xs text-text-3 lg:grid">
@@ -560,7 +563,7 @@ export function FeedPanel({
                 ref={pendingStatusRef}
                 role="status"
                 tabIndex={-1}
-                className="flex items-center gap-2 rounded-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                className="flex items-center gap-2 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
               >
                 {feed.pendingPhase === "polling" || feed.rechecking ? (
                   <SpinnerIcon size={12} className="shrink-0 motion-safe:animate-spin" />
