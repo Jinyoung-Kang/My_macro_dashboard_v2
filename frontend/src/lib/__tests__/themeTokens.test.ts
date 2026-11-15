@@ -9,11 +9,15 @@
  *  - 틴트(bg-*-tint — color-mix(in oklab, 톤 10%, surface)) 위 같은 톤 글자 4.5:1 — 못 미치는 톤은 FORBIDDEN_TONE_ON_TINT와 같아야 함 — 와 text·text-2·text-3.
  *  - 블록 모양: 맨 바깥 블록(@media·data-theme 안이 아님), color-scheme dark, 토큰 블록에는 사용자 속성과 color-scheme만, 바탕·글자색은 @layer base.
  *  - 정보 검색 범위 블록(`[data-scope="search"]`)은 P7에서 걷어 낼 때까지 `:root`와 같은 값만 다시 적습니다(겉모습 변화 0).
+ *  - 금지 쌍(surface-3 위 text-3·neutral·accent·danger 글자, accent 틴트 위 accent 글자)은 소스 검사로 막습니다 — 제품 소스(.ts·.tsx, 시험 제외)의
+ *    문자열·템플릿 조각 하나에 바탕 클래스와 글자 클래스가 함께 있으면 걸립니다(변형 접두어 hover: 등과 투명도 /50은 떼고 봄 — 눌렸을 때만 그 바탕이어도
+ *    그때 그 글자가 그 위에 놓임). 한계: 부모의 바탕을 물려받는 자식의 글자색, 변수로 나눠 붙인 클래스는 보지 않습니다.
  * 밝은 한 벌을 다시 더하면 TOKEN_BLOCKS에 그 선택자를 넣어 같은 행렬로 잽니다(값 후보: 명세 §3-2-2).
  * 대비는 WCAG 2.x 상대휘도, 틴트는 OKLab 10% 섞기(브라우저 결과와 마지막 자리가 다를 수 있음)입니다.
  */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const CSS = readFileSync(resolve(__dirname, "../../app/globals.css"), "utf8");
@@ -257,5 +261,105 @@ describe("정보 검색 범위 블록(P7에서 걷어 냄)", () => {
     expect(base, "@layer base { [data-scope=\"search\"] { … } }").toBeTruthy();
     expect(base?.[1]).toMatch(/background-color:\s*var\(--bg\);/);
     expect(base?.[1]).toMatch(/color:\s*var\(--text\);/);
+  });
+});
+
+// ------------------------------------------------------------------ 금지 쌍 — 소스 검사
+
+const SRC = resolve(__dirname, "../..");
+const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
+
+/** 토큰 이름(--text-3) → 글자 클래스(text-text-3). */
+const textClass = (token: string) => `text-${token.slice(2)}`;
+
+type PairRule = "surface-3" | "tint";
+
+/** 금지 쌍 — 바탕 클래스 하나와 그 위에 두지 않는 글자 클래스들. */
+const FORBIDDEN_PAIRS: readonly { rule: PairRule; back: string; fores: readonly string[] }[] = [
+  { rule: "surface-3", back: "bg-surface-3", fores: FORBIDDEN_ON_SURFACE_3.map(textClass) },
+  ...FORBIDDEN_TONE_ON_TINT.map((tone) => ({ rule: "tint" as const, back: `bg-${tone.slice(2)}-tint`, fores: [textClass(tone)] })),
+];
+
+/** 클래스 낱말 하나의 유틸리티 이름 — 중요 표시(!)·변형 접두어(hover:·[&>svg]: — 대괄호 안의 콜론은 건너뜀)·투명도(/50)를 뗍니다. */
+function utilityOf(token: string): string {
+  let depth = 0;
+  let cut = -1;
+  for (let index = 0; index < token.length; index += 1) {
+    const char = token[index];
+    if (char === "[") depth += 1;
+    else if (char === "]") depth -= 1;
+    else if (char === ":" && depth === 0) cut = index;
+  }
+  return token.slice(cut + 1).replace(/^!|!$/g, "").replace(/\/\d+$/, "");
+}
+
+/** .ts·.tsx 한 파일에서 금지 쌍이 있는 글(문자열·템플릿 조각) — "줄: 바탕 + 글자". 주석은 AST가 건너뜁니다. */
+function pairHits(fileName: string, text: string, rule: PairRule): string[] {
+  const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
+  const found: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)) {
+      const utilities = new Set(node.text.split(/\s+/).filter(Boolean).map(utilityOf));
+      for (const pair of FORBIDDEN_PAIRS.filter((entry) => entry.rule === rule && utilities.has(entry.back))) {
+        for (const fore of pair.fores.filter((name) => utilities.has(name))) {
+          const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+          found.push(`${line + 1}: ${pair.back} + ${fore}`);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      if (!SKIP_DIRS.has(name)) sourceFiles(path, out);
+    } else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) && !name.endsWith(".d.ts")) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+function offenders(rule: PairRule): string[] {
+  const files = sourceFiles(SRC);
+  expect(files.length).toBeGreaterThan(100);
+  return files.flatMap((path) => pairHits(path, readFileSync(path, "utf8"), rule).map((hit) => `${relative(SRC, path)}:${hit}`));
+}
+
+describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
+  it("검사기 자체 — 한 글 안의 바탕·글자 쌍을 변형 접두어·투명도를 떼고 찾고, 다른 글로 나뉜 쌍·비슷한 이름(accent-hover·accent-fg)·주석은 건너뛴다", () => {
+    const sample = [
+      "const a = \"hover:bg-accent-tint aria-[current=page]:text-accent/80\";",
+      "const b = { box: \"bg-accent-tint text-text\", icon: \"text-accent\" };",
+      "const c = `p-2 ${on ? \"bg-surface-3 [&>svg]:text-accent text-text-3\" : \"\"}`;",
+      "const d = \"bg-surface-3 text-accent-hover text-accent-fg bg-accent-tint/50 !text-text-2\";",
+      "// 주석의 bg-surface-3 text-danger는 건너뜀",
+      "const e = <div className=\"bg-surface-3/60 text-neutral\" />;",
+    ].join("\n");
+    expect(pairHits("sample.tsx", sample, "tint")).toEqual(["1: bg-accent-tint + text-accent"]);
+    expect(pairHits("sample.tsx", sample, "surface-3")).toEqual([
+      "3: bg-surface-3 + text-text-3",
+      "3: bg-surface-3 + text-accent",
+      "6: bg-surface-3 + text-neutral",
+    ]);
+  });
+
+  it("surface-3(덮개 안 hover·눌림) 바탕 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
+    expect(offenders("surface-3")).toEqual([]);
+  });
+
+  // QA-459: 어두운 한 벌(앞 커밋)에서 accent 틴트 위 accent 글자가 4.47:1로 4.5에 못 미친다. 지금 어기는 자리 두 곳:
+  //  - components/shell/SideNav.tsx — 현재 메뉴(`bg-accent-tint font-semibold text-accent`, lg 이상 모든 화면)
+  //  - components/ui/classes.ts — filterChipClasses 켠 상태(`border-accent bg-accent-tint font-semibold text-accent` — 컨센서스·환율 비교·정보 수집 둘)
+  // 실행 명세 §3-2는 토큰 값을 바꾸기 전에 글자만 text-text로 바꾸라고 했지만, 두 자리는 공용 키트 단계(P2)가 맡아 D1 배포 전에 고치고 이 표시를 풉니다.
+  it.fails("QA-459: accent 틴트 바탕 위에 accent 글자를 두지 않는다", () => {
+    expect(offenders("tint")).toEqual([]);
   });
 });
