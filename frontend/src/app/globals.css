@@ -225,8 +225,9 @@
   height: 10px;
 }
 
+/* 트랙은 비워 놓인 면(페이지 bg·카드 surface)을 그대로 비춥니다 — bg로 칠하면 카드 안 가로 스크롤 표·히트맵 아래에 더 어두운 띠가 생깁니다. */
 ::-webkit-scrollbar-track {
-  background: var(--bg);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
