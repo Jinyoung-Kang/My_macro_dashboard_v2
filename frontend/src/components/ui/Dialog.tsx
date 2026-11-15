@@ -83,7 +83,7 @@ export function Dialog({
   };
 
   const heading = (
-    <DialogPrimitive.Title className={`text-title-2 text-text ${showClose ? "pr-10" : ""}`}>{title}</DialogPrimitive.Title>
+    <DialogPrimitive.Title className={`text-heading text-text ${showClose ? "pr-10" : ""}`}>{title}</DialogPrimitive.Title>
   );
 
   return (

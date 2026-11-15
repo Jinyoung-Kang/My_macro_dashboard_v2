@@ -42,7 +42,7 @@ function QuickBody({ market, code }: { market: DetailMarket; code: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="min-w-0">
-        <p className="text-title-2 text-text">{name}</p>
+        <p className="text-heading text-text">{name}</p>
         {sub && <p className="text-xs text-text-2">{sub}</p>}
       </div>
       {brief ? <QuickProfileNote brief={brief} /> : null}

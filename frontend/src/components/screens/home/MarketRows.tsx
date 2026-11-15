@@ -56,7 +56,7 @@ export function MarketRows() {
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h2 id={headingId} className="text-title-2 text-text">
+        <h2 id={headingId} className="text-heading text-text">
           시장
         </h2>
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
