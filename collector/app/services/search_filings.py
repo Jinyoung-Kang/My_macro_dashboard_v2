@@ -92,7 +92,7 @@ _RCEPT_NO = re.compile(r"^\d{14}$")
 _ACCEPTED = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})")
 _DAY = re.compile(r"^(\d{4})[-.]?(\d{2})[-.]?(\d{2})$")
 _NAME_TAIL = re.compile(r"\s*\((?:CIK\s+\d+|[A-Z0-9.\-]+(?:\s*,\s*[A-Z0-9.\-]+)*)\)\s*$")
-_FORM_WORD = re.compile(r"^form\s*")
+_FORM_WORD = re.compile(r"^form")
 
 
 # ------------------------------------------------------------------ 로그에서 경로 지우기
@@ -187,8 +187,8 @@ def form_label(form: str) -> str | None:
 
 
 def _form_key(text: str) -> str:
-    """양식 대조 키 — 공백을 하나로, 대소문자 무시, 앞의 'FORM' 뗌('FORM 6-K' → '6-k')."""
-    return _FORM_WORD.sub("", " ".join(text.split()).casefold())
+    """양식 대조 키 — 빈칸을 모두 지우고 대소문자 무시, 앞의 'FORM' 뗌('FORM 6-K' → '6-k', 'FORM F-3 ASR' → 'f-3asr' = 'F-3ASR')."""
+    return _FORM_WORD.sub("", "".join(text.split()).casefold())
 
 
 def _repeats_form(described: str, form: str) -> bool:

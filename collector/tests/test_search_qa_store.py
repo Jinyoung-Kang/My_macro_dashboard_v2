@@ -113,7 +113,7 @@ def _submissions(rows):
 
 def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀이한_설명을_뺀다():
     forms = [("4", ""), ("3", ""), ("6-K", "FORM 6-K"), ("4/A", "FORM 4"), ("SC 13G/A", "SC 13G/A"), ("8-K", "8-K"),
-             ("10-Q", "Quarterly report"), ("N-PX", ""), ("20-F", "Form 20-F")]
+             ("10-Q", "Quarterly report"), ("N-PX", ""), ("20-F", "Form 20-F"), ("F-3ASR", "FORM F-3 ASR")]
     rows = [{"accessionNumber": f"0009000001-26-{n:06d}", "filingDate": "2026-11-10", "form": form, "primaryDocDescription": described}
             for n, (form, described) in enumerate(forms)]
     items, _ = search_filings.parse_submissions(_submissions(rows), cik=CIK, start_day="2024-11-15")
@@ -127,6 +127,7 @@ def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀�
         "10-Q · Quarterly report",        # 쓸 만한 설명은 그대로(뜻을 덧붙이지 않음)
         "N-PX",                           # 모르는 양식은 양식만
         "20-F · 외국 기업 연차 보고서",
+        "F-3ASR",                         # 설명이 양식 사이에 빈칸을 끼워 되풀이해도 되풀이(검토 지적)
     ]
 
 
@@ -157,6 +158,7 @@ def test_QA440_모은_글의_SEC_줄은_읽을_때_지금_규칙으로_제목을
         _watch_row("f6", title="4 · 지분 변동 보고 · Synthetic Owner Jane", source="sec_fts", kind="filing",
                    publisher="Synthetic Owner Jane", url=sec_url + "?6"),
         _watch_row("f7", title="분기보고서", source="dart", kind="filing", lang="ko", url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=1"),
+        _watch_row("f8", title="F-3ASR · FORM F-3 ASR", source="sec", kind="filing", url=sec_url + "?8"),
         _watch_row("n1", title="4", source="bing"),
     ]
     monkeypatch.setattr(search_store, "_watch_rows", lambda key, kinds: rows)
@@ -169,5 +171,6 @@ def test_QA440_모은_글의_SEC_줄은_읽을_때_지금_규칙으로_제목을
         "f5": "4 · 지분 변동 보고 · Synthetic Owner Jane",
         "f6": "4 · 지분 변동 보고 · Synthetic Owner Jane",
         "f7": "분기보고서",                                       # DART·뉴스 줄은 그대로
+        "f8": "F-3ASR",
         "n1": "4",
     }
