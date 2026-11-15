@@ -426,7 +426,7 @@ describe("QA-435 — 키보드로 고른 줄은 붙어 있는 날짜 머리 밑�
   // 수정 전 실패: 줄의 className에 scroll-mt-* 가 없음(재현 커밋에서는 it.fails).
   const SCROLL_MT = /^scroll-mt-(\d+(\.\d+)?|\[[^\]]+\])$/;
 
-  it.fails("결과 목록의 줄(role=option)마다 날짜 머리 높이만큼 scroll-margin-top을 둔다", async () => {
+  it("결과 목록의 줄(role=option)마다 날짜 머리 높이만큼 scroll-margin-top을 둔다", async () => {
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const list = await screen.findByRole("listbox", { name: "결과" });
     const header = within(list).getAllByRole("group")[0].firstElementChild as HTMLElement;
@@ -436,9 +436,10 @@ describe("QA-435 — 키보드로 고른 줄은 붙어 있는 날짜 머리 밑�
     for (const option of options) expect(option.className.split(/\s+/).some((token) => SCROLL_MT.test(token))).toBe(true);
   });
 
-  it.fails("묶음 줄을 포함해 FeedPanel의 role=option 요소는 모두 scroll-mt-* 를 가진다(소스 대조)", () => {
+  it("묶음 줄을 포함해 FeedPanel의 role=option 요소는 모두 scroll-mt-* 를 가진다(소스 대조)", () => {
     const source = readFileSync(resolve(__dirname, "../FeedPanel.tsx"), "utf8");
-    const blocks = source.split('role="option"').slice(1);
+    // JSX 속성 줄(role="option"만 있는 줄)로만 나눕니다 — 소스의 querySelector('[role="option"]…') 같은 글자는 요소가 아님.
+    const blocks = source.split(/\n[ \t]*role="option"[ \t]*\n/).slice(1);
     expect(blocks.length).toBeGreaterThanOrEqual(2);
     for (const block of blocks) {
       const className = /className=\{?`([^`]*)`|className="([^"]*)"/.exec(block);

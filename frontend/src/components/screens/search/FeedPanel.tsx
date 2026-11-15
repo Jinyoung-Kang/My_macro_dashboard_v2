@@ -419,6 +419,8 @@ export function FeedPanel({
                   setSelectedKey(entry.key);
                   listRef.current?.focus({ preventScroll: true });
                 };
+                // 줄마다 scroll-mt-7(28px — 붙어 있는 날짜 머리 약 25px보다 큼): ↑↓로 고른 줄을 scrollIntoView(block nearest)로 옮길 때
+                // 날짜 머리 밑이 아니라 그 아래에 멈추게 합니다(QA-435). 날짜 머리가 붙지 않는 좁은 화면(창이 스크롤)에서는 위 여백 28px만 더해집니다.
                 if (entry.type === "cluster") {
                   // 대표 줄 아래의 묶음 줄 — 누르기·Enter로 펼침/접기(누를 수 있는 것이라 강조 파랑, 상태는 글 '펼치기·접기'와 화살표 모양).
                   return (
@@ -431,7 +433,7 @@ export function FeedPanel({
                         choose();
                         toggleCluster(entry.clusterId);
                       }}
-                      className={`relative flex min-h-11 cursor-pointer items-center gap-1.5 border-b border-border py-1 pl-24 pr-3 text-xs text-accent lg:min-h-7 ${
+                      className={`relative flex min-h-11 scroll-mt-7 cursor-pointer items-center gap-1.5 border-b border-border py-1 pl-24 pr-3 text-xs text-accent lg:min-h-7 ${
                         isSelected ? "bg-surface-2" : "hover:bg-surface-2/60"
                       }`}
                     >
@@ -451,7 +453,7 @@ export function FeedPanel({
                     aria-selected={isSelected}
                     onClick={choose}
                     onDoubleClick={() => openOriginal(item)}
-                    className={`relative grid min-h-11 cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b border-border px-3 py-1.5 text-sm lg:min-h-8 lg:grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] lg:py-1 ${
+                    className={`relative grid min-h-11 scroll-mt-7 cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b border-border px-3 py-1.5 text-sm lg:min-h-8 lg:grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] lg:py-1 ${
                       isSelected ? "bg-surface-2" : "hover:bg-surface-2/60"
                     }`}
                   >
