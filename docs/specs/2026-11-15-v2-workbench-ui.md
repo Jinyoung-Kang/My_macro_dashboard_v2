@@ -228,7 +228,7 @@ Blueprint는 기본 14 / small 12 / large 16, 줄 높이 1.28입니다. 1.28은 
 
 ### 3-8. 모서리, 경계, 포커스, 모션
 - 모서리는 4px 하나(`--radius-card`, `--radius-control`). `rounded-full`은 상태 점, 토글 손잡이, 아바타에만.
-- 고른 칸·현재 항목은 2px 왼쪽 막대(`SELECTED_BAR`)와 굵기, forced-colors에서는 테두리로 보입니다(D9).
+- 고른 칸·현재 항목은 3px 왼쪽 막대(`SELECTED_BAR` — `ui/classes.ts`의 지금 값 그대로, 정보 검색이 이미 씀)와 굵기, forced-colors에서는 같은 폭의 테두리로 보입니다(D9).
 - 포커스는 `FOCUS_RING`(outline 2px, offset 2px) 유지, 색 `#8abbff`.
 - 모션은 색 전환 100~150ms만, `prefers-reduced-motion`이면 없앰. 숫자·차트 애니메이션 없음.
 
@@ -257,7 +257,7 @@ Blueprint는 기본 14 / small 12 / large 16, 줄 높이 1.28입니다. 1.28은 
 - **상단바 48px**: 왼쪽 앱 이름 · 빵부스러기(메뉴 › 하위 화면 › 대상 — `lib/breadcrumbs.ts` 순수 함수가 `nav.ts`에서 계산) · 오른쪽 명령 팔레트 입력(Ctrl/⌘K), **데이터 새로고침
   아이콘 단추**(이름 있음 — 지금 왼쪽 메뉴의 파란 주 단추를 옮김. 수집을 일으키는 쓰기라 지금처럼 운영자에게만 보이고(`isOwner`, 백엔드도 403), 결과 안내 문구
   (`role="status"`)도 남김), 장 시계(KOSPI·NASDAQ), 알림 벨, 계정 메뉴(읽기 모드와 빌드 정보를 그 안으로).
-- **왼쪽 나무 메뉴 220px**: 메뉴 7개, 현재 메뉴의 하위 항목을 펼침 — 그래서 **lg 이상의 하위 메뉴 줄(`SubNav`)은 없앰**. 항목 높이 32px, 현재 항목은 2px 막대·굵기·`aria-current`
+- **왼쪽 나무 메뉴 220px**: 메뉴 7개, 현재 메뉴의 하위 항목을 펼침 — 그래서 **lg 이상의 하위 메뉴 줄(`SubNav`)은 없앰**. 항목 높이 32px, 현재 항목은 3px 막대(`SELECTED_BAR`와 같은 폭)·굵기·`aria-current`
   (accent 틴트 위 accent 글자는 쓰지 않음 — §3-2). 접으면 48px 아이콘 레일, 접힘 상태는 보는 사람별 `localStorage`(try/catch).
 - **본문**: 화면이 칸 틀을 정합니다(공용 `SplitPane`/`MasterDetail` — 목록 / 가운데 / 오른쪽 검사 칸, 맨 아래 공용 출처 상태 줄 `SourceStatusLine`). `main#main`의 본문 건너뛰기,
   `relative`, `min-w-0`, lg 미만 `overflow-x-clip`·lg 이상 `overflow-x-hidden`(QA-450)은 유지합니다.
@@ -356,7 +356,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
   **켜는 설정의 재확인 흐름과 규칙 계좌 영향 확인은 그대로**(CLAUDE.md의 스위치 규칙 — 끈 판 바이트 불변, 켜는 저장은 시장별 사용자 확인).
 - **실제 계좌·ISA·실제 매매 — 지금은 겉모양만, 구조는 열어 둠**:
   - 이번에 바뀌는 것은 공용 토큰·키트를 통한 겉모양뿐입니다. `screens/realtrade`·`screens/isa`·`screens/brokerage`의 배치·대화상자·쓰기 경로, `PaperScreen`이 그 모듈을
-    부르는 한 자리(경계 시험이 지킴), 그 탭을 열 때만 따로 읽는 구조는 그대로입니다. `realTradeScreen.test`(40여 사례)와 경계 시험 3개(`realtradeBoundary`·`isaBoundary`·
+    부르는 한 자리(경계 시험이 지킴), 그 탭을 열 때만 따로 읽는 구조는 그대로입니다. `realTradeScreen.test`(53개 사례 — 기준 커밋 `78431302`)와 경계 시험 3개(`realtradeBoundary`·`isaBoundary`·
     `brokerageBoundary`)는 **손대지 않고** 통과해야 합니다.
   - 실제 매매 **끄기 단추는 '동작' 메뉴(접힌 메뉴)에 넣지 않고** 지금처럼 늘 보입니다(SEC-6 — 개요가 실패해도 닿음).
   - **확장 지점**(나중 재배치를 위해): ① 모의매매 머리의 ActionBar는 탭마다 동작 목록을 받는 꼴이라 실제 계좌·ISA 탭은 지금 빈 목록으로 두고, 나중에 그 탭의 동작을
