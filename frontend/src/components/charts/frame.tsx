@@ -4,8 +4,8 @@ import type { CSSProperties } from "react";
  * 차트 틀(축·기준선·툴팁·글자 범례)을 두 차트 파일(index.tsx의 래퍼들·LineChart.tsx)이 함께 씁니다 — 격자 없는 단일 선 문법
  * (docs/specs/2026-10-31-v2-coinbase-ui.md §5). index.tsx가 LineChart.tsx를 다시 내보내므로 둘이 서로 가져오지 않게 여기에 둡니다.
  *
- * 색은 디자인 토큰 CSS 변수(globals.css)라 라이트·다크가 :root에서 함께 바뀝니다. Recharts 기본값(축 #666·커서 #ccc·글자 #808080)은
- * 테마를 모르므로 축·기준선·커서·글자마다 이 값을 넘겨 덮습니다. 글자는 text-3(표면 대비 라이트 5.1·다크 6.0:1), 선은 border·text-3.
+ * 색은 디자인 토큰 CSS 변수(globals.css :root — 어두운 한 벌)입니다. Recharts 기본값(축 #666·커서 #ccc·글자 #808080)은
+ * 토큰을 모르므로 축·기준선·커서·글자마다 이 값을 넘겨 덮습니다. 글자는 text-3(bg·surface 대비 6.4·5.6:1), 선은 border·text-3.
  */
 export const AXIS_TEXT = "var(--text-3)";
 export const AXIS_LINE = "var(--border)";
@@ -26,7 +26,8 @@ export const ISOLATED_DOT_R = 2.5;
 /**
  * 시계열 색.
  *
- * dataviz 검증기(scripts/validate_palette.js)를 라이트(#ffffff)·다크(#141619) 표면 모두에서 통과한 조합입니다(명세 §2-2).
+ * dataviz 검증기(scripts/validate_palette.js)를 예전 라이트(#ffffff)·다크(#141619) 표면에서 통과했고, 어두운 한 벌의 두 면(surface #1c2127·
+ * bg #111418)에서도 모든 쌍이 통과합니다(색약 ΔE 최소 9.4·정상 시각 20.9, 대비 4.17~5.42 — 작업대 실행 명세 §3-5 기록).
  * 이전 조합(#58A6FF·#D29922·#F85149)은 적록색약에서 노랑↔빨강 ΔE가 5.8로
  * 구분 한계(6) 아래였습니다 — 화면에서도 두 선이 겹쳐 보였습니다.
  */
@@ -37,13 +38,14 @@ export const SERIES_COLORS = {
 } as const;
 
 /**
- * 툴팁 상자 — 떠 있는 덮개라 덮개 그림자(--elev-overlay)와 control 모서리(12px), 불투명한 표면색(surface)으로 선·막대를 가립니다.
- * 테두리는 옅은 경계(border) — 다크에서는 그림자가 잘 안 보여 상자 끝을 테두리가 보입니다. 글자는 본문색(text), 계열 색은 입히지 않습니다.
+ * 툴팁 상자 — 떠 있는 덮개(실행 명세 §3-3 3층)라 덮개 바탕(surface-2 — text-3 대비 5.0)·덮개 그림자(--elev-overlay)·4px 모서리(§3-5)이고,
+ * 불투명해서 선·막대를 가립니다. 테두리는 옅은 경계(border) — 어두운 면에서는 그림자가 잘 안 보여 상자 끝을 테두리가 보입니다.
+ * 글자는 본문색(text), 계열 색은 입히지 않습니다.
  */
 export const TOOLTIP_BOX: CSSProperties = {
-  backgroundColor: "var(--surface)",
+  backgroundColor: "var(--surface-2)",
   border: "1px solid var(--border)",
-  borderRadius: 12,
+  borderRadius: 4,
   boxShadow: "var(--elev-overlay)",
   fontSize: 12,
   padding: "8px 10px",

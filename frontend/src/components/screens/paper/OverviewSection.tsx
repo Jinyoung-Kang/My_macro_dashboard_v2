@@ -102,7 +102,7 @@ import { OverviewHero } from "./OverviewHero";
 const EXPOSURE_COLORS: Record<string, string> = {
   target: SERIES_COLORS.orange,
   actual: SERIES_COLORS.blue,
-  // 미국 Claude 계좌2의 실제 노출 — 순자산 곡선의 계좌2 색(위 BOOK_COLORS — 주황·파랑과 모든 쌍 통과).
+  // 미국 Claude 계좌2의 실제 노출 — 순자산 곡선의 계좌2 색(위 BOOK_COLORS). 파랑과는 색약 ΔE 6.3(보조 부호 필요 띠)이라 범례 이름이 함께 나릅니다(bookColors.ts).
   [CLAUDE2_EXPOSURE_KEY]: BOOK_COLORS.claude2,
 };
 

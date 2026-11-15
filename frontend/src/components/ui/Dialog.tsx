@@ -90,8 +90,8 @@ export function Dialog({
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       {trigger && <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>}
       <DialogPrimitive.Portal>
-        {/* 덮개는 두 테마 모두 검정 반투명입니다(밝은 덮개는 다크에서 화면을 씻어 냄). */}
-        <DialogPrimitive.Overlay className={`fixed inset-0 z-50 bg-black/50 ${FADE_IN}`} />
+        {/* 덮개 뒤 가림은 토큰 scrim(바탕색 70% — 원색 클래스 없이, 실행 명세 §3-2)입니다. */}
+        <DialogPrimitive.Overlay className={`fixed inset-0 z-50 bg-scrim ${FADE_IN}`} />
         <DialogPrimitive.Content
           data-scope={scopeValue}
           onOpenAutoFocus={() => {

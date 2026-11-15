@@ -96,7 +96,7 @@ function HeroExtremeLabel({
 
 /**
  * 툴팁 상자 — 날짜, 계열마다 짧은 색 선 · 이름 · 값(모르면 "—"), 출처 줄.
- * 상자는 차트 틀의 덮개 모양(TOOLTIP_BOX — 불투명 표면·12px 모서리·덮개 그림자). 글자에는 계열 색을 입히지 않습니다.
+ * 상자는 차트 틀의 덮개 모양(TOOLTIP_BOX — 불투명 덮개 바탕 surface-2·4px 모서리·덮개 그림자). 글자에는 계열 색을 입히지 않습니다.
  */
 export function LineChartTooltip({ model }: { model: LineTooltipModel | null }) {
   if (!model) {

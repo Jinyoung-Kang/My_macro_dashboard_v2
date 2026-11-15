@@ -354,7 +354,7 @@ describe("상세 패널의 내용", () => {
     ]);
     // 색은 상위 셋이 고정 순서(파랑·주황·청록), 기타·현금은 회색 — 주황과 가까운 넷째 색(노랑)은 쓰지 않습니다(DV-1).
     expect(slices.map((li) => li.getAttribute("data-color"))).toEqual([
-      "#3987e5", "#d95926", "#199e70", "#606870", "#9ea7b3",
+      "#3987e5", "#d95926", "#199e70", "#6e6e7c", "#9ea7b3",
     ]);
     // 설명 문장의 종목 수는 lib의 상수에서 옵니다(ACCT-5 — 상수를 바꾸면 문장도 같이).
     expect(within(composition).getByText(new RegExp(`상위 ${COMPOSITION_TOP_N}종목은 따로`))).toBeTruthy();

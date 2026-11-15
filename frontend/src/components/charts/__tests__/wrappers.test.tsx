@@ -83,7 +83,7 @@ describe("LineSeries(옛 화면) — 새 선 차트 문법", () => {
     expect(await within(tooltip).findByText("6.000조")).toBeTruthy();
     const box = tooltip.firstElementChild as HTMLElement;
     expect(box.style.boxShadow).toBe("var(--elev-overlay)");
-    expect(box.style.borderRadius).toBe("12px");
+    expect(box.style.borderRadius).toBe("4px");
   });
 
   it("값이 모두 없으면 빈 상태 문구(0 축을 지어내지 않음)", () => {
