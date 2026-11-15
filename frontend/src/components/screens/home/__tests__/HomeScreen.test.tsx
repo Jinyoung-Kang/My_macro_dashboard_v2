@@ -386,7 +386,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(screen.queryByText(/0\.00%/)).toBeNull();
   });
 
-  it("저장소 상태 — 수집기에 닿지 못하면 '연결 안 됨 — DB 기록만'(경고색), 누락 데이터셋은 모름 · 누락이 있으면 그 수", async () => {
+  it("저장소 상태 — 수집기에 닿지 못하면 '연결 안 됨 — DB 기록만'(주의 아이콘 + 주의색), 누락 데이터셋은 모름 · 누락이 있으면 그 수", async () => {
     const down = { ...issues(0, 0), collectorReachable: false };
     down.counts = { ...down.counts, missingDatasets: null };
     reads = { ...happyReads(), [ISSUES]: down };
@@ -394,8 +394,9 @@ describe("홈 — 불러오는 중·값 없음", () => {
     let line = await within(region("데이터 저장소 상태")).findByRole("link");
     expect(within(line).getByText(COLLECTOR_UNREACHABLE_NOTE)).toBeTruthy();
     expect(line.textContent).toContain("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 —값 없음");
-    // 수 묶음은 주의 아이콘과 함께 그려(QA-505) 색은 글을 감싼 상태 글(StatusText)에 있습니다.
-    expect(within(line).getByText(/^수집 태스크 오류/).closest(".text-warn")).not.toBeNull();
+    // 주의는 안내 한 곳(주의 아이콘 + 주의색)이 나르고, 오류·경고가 없는 수 묶음은 중립입니다(QA-505).
+    expect(within(line).getByText(COLLECTOR_UNREACHABLE_NOTE).closest(".text-warn")).not.toBeNull();
+    expect(storeCounts(line).closest(".text-warn")).toBeNull();
     unmount();
 
     const missing = issues(0, 0);
@@ -459,7 +460,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
   // 기록만'에도 주의 아이콘(12px)이 있어 한 링크 안에 같은 아이콘이 크기만 달리 두 번 섰습니다. 첫 아이콘은 '오류 0건' 앞이라 0건이 경고처럼
   // 읽힙니다. 상태 화면은 이때 수를 중립으로 두고 주의를 배너 한 곳에 둡니다(QA-102). 오류·경고·누락이 없으면 수 묶음은 중립(아이콘 없음),
   // 주의 아이콘은 안내 한 곳입니다. 경고가 있으면 수 묶음의 아이콘은 그 경고의 것이라 그대로입니다.
-  it.fails("QA-505: 수집기 연결 안 됨만이면 주의 아이콘은 안내 한 곳 — 수 묶음은 중립, 경고가 있으면 수 묶음도 주의", async () => {
+  it("QA-505: 수집기 연결 안 됨만이면 주의 아이콘은 안내 한 곳 — 수 묶음은 중립, 경고가 있으면 수 묶음도 주의", async () => {
     const iconsOf = async (warnings: number) => {
       const down = { ...issues(0, warnings), collectorReachable: false };
       down.counts = { ...down.counts, missingDatasets: null };

@@ -547,12 +547,14 @@ describe("storeStatusModel — 데이터 저장소 상태 한 줄", () => {
     expect(storeStatusModel(missing).tone).toBe("warn");
   });
 
-  it("수집기에 닿지 못하면 '연결 안 됨 — DB 기록만'(warn), 누락 데이터셋은 모름 — 0/0이 정상처럼 읽히지 않게(QA-102)", () => {
+  it("수집기에 닿지 못하면 '연결 안 됨 — DB 기록만' 안내, 누락 데이터셋은 모름 — 0/0이 정상처럼 읽히지 않게(QA-102)", () => {
     const down = { ...issues(0, 0), collectorReachable: false };
     down.counts = { ...down.counts, missingDatasets: null };
     const model = storeStatusModel(down);
     expect(model.notice).toBe(COLLECTOR_UNREACHABLE_NOTE);
-    expect(model.tone).toBe("warn");
+    // 주의는 안내 한 곳이 나릅니다 — 수 묶음의 톤은 수로만 정해, 오류·경고가 없으면 중립입니다(QA-505: 주의 아이콘이 두 번 섰음).
+    expect(model.tone).toBe("neutral");
+    expect(storeStatusModel({ ...issues(0, 2), collectorReachable: false }).tone).toBe("warn");
     expect(texts(model)).toEqual(["수집 태스크 오류 0건", "경고 0건", "누락 데이터셋 ?"]);
     // 예전 백엔드는 연결이 안 돼도 missingDatasets 0을 보냈습니다 — 연결 여부를 함께 봐 모름으로 둡니다.
     expect(storeStatusModel({ ...issues(0, 0), collectorReachable: false }).parts[2].text).toBeNull();

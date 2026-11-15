@@ -523,7 +523,10 @@ export type StoreStatusModel = {
   parts: StoreStatusPart[];
   /** 수집기에 닿지 못했으면 그 안내(이때 오류·경고 수는 DB 실행 기록만으로 센 것). 아니면 null. */
   notice: string | null;
-  /** 오류가 있으면 danger, 경고·누락 데이터셋·수집기 연결 안 됨이면 warn, 그 밖(없음·모름)은 neutral. 글이 본 뜻이고 색은 보조입니다. */
+  /**
+   * 수 묶음의 톤 — 오류가 있으면 danger, 경고·누락 데이터셋이 있으면 warn, 그 밖(없음·모름)은 neutral. 글이 본 뜻이고 색은 보조입니다.
+   * 수집기 연결 안 됨은 톤에 넣지 않습니다 — 그 주의는 안내(notice)가 아이콘과 함께 한 곳에서 나릅니다(QA-505, /status 배너와 같음).
+   */
   tone: "danger" | "warn" | "neutral";
   /** 백엔드가 모은 시각(generatedAt, KST 표시). 모르면 null. */
   checkedAt: string | null;
@@ -537,7 +540,9 @@ export const COLLECTOR_UNREACHABLE_NOTE = "수집기 연결 안 됨 — DB 기�
  * 기대 목록에 없는 데이터셋 수).
  *
  * 수집기에 닿지 못하면 백엔드는 DB 실행 기록만으로 셉니다 — 수집기가 멈추면 새 실패가 쌓이지 않아 0/0이 됩니다. 그래서 그때는
- * 안내와 warn 색을 붙이고, 누락 데이터셋은 모름("—")으로 둡니다(/status IssuesPanel·QA-102와 같은 규칙 — 예전 백엔드는 이때도 0을 보냄).
+ * 주의 안내를 붙이고, 누락 데이터셋은 모름("—")으로 둡니다(/status IssuesPanel·QA-102와 같은 규칙 — 예전 백엔드는 이때도 0을 보냄).
+ * 주의는 안내 한 곳이 나르고 수 묶음의 톤은 수로만 정합니다 — 수 묶음까지 주의로 그리면 한 줄에 주의 아이콘이 둘 서고 '오류 0건'
+ * 앞에 주의 아이콘이 붙습니다(QA-505). /status도 이때 수는 중립이고 주의는 배너 한 곳입니다.
  */
 export function storeStatusModel(issues: StatusIssuesResponse | null | undefined): StoreStatusModel {
   const errors = finite(issues?.counts?.errors);
@@ -548,7 +553,7 @@ export function storeStatusModel(issues: StatusIssuesResponse | null | undefined
   let tone: StoreStatusModel["tone"] = "neutral";
   if (errors !== null && errors > 0) {
     tone = "danger";
-  } else if ((warnings !== null && warnings > 0) || (missing !== null && missing > 0) || unreachable) {
+  } else if ((warnings !== null && warnings > 0) || (missing !== null && missing > 0)) {
     tone = "warn";
   }
   return {

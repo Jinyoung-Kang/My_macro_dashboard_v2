@@ -62,7 +62,8 @@ export function StoreStatusLine() {
       >
         <span className="font-medium text-text-2 group-hover:underline">{TITLE}</span>
         {/* 글이 본 뜻(오류 N건)이고 색은 보조입니다. 오류는 danger, 경고는 warn — danger는 상승 빨강과 거의 같은 색(ΔE 4.4 — W4)이라
-            늘 아이콘과 함께 그립니다(QA-505). 글에 이미 '오류'·'경고'가 있어 읽어 주는 머리말은 비웁니다. 모두 0이면 상태가 아니라 아이콘이 없습니다. */}
+            늘 아이콘과 함께 그립니다(QA-505). 글에 이미 '오류'·'경고'가 있어 읽어 주는 머리말은 비웁니다. 모두 0이면 상태가 아니라 아이콘이 없습니다.
+            수집기 연결 안 됨은 옆 안내가 주의 아이콘과 함께 나르므로 수 묶음의 톤에 넣지 않습니다(lib/home storeStatusModel). */}
         {model.tone === "neutral" ? (
           <span className="tabular-nums font-semibold text-text-2">{counts}</span>
         ) : (
