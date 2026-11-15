@@ -31,6 +31,8 @@ export type HeroScrub = {
 /**
  * 히어로 — 라벨(제목) · 큰 값(글자 단계 display: 좁은 화면 36px, sm 이상 44px) · 단위 · 변화 칩 · 한 줄 판정 글 · 배지(meta) · 기간 탭 · 본문(차트 등).
  *
+ * - 겉모양은 작업대 화면 언어의 패널(4px 모서리·1px 경계·안쪽 16px, lg 20px — 실행 명세 §3-7)이고 판정 글은 body(14px)입니다. 큰 값(display)은
+ *   홈·모의 개요의 히어로를 KPI 띠(값 20·24px)와 패널 차트로 바꾸는 단계(P4·P6, 명세 W7)까지 그대로 둡니다.
  * - 판정은 `verdict` 글로 적습니다. 색·선만으로 판정을 전하지 않습니다(PRINCIPLES "선 하나로 판정까지 전하지 않습니다").
  * - 값이 없으면(null·빈 글·"N/A"·NaN) "—". 사유를 보이려면 `value={<Empty reason="…" />}`로 넘깁니다(그때도 값 없음으로 봄).
  *   단위는 값이 있을 때만 붙입니다("— 원"은 값이 있는 것처럼 읽힘, QA-049).
@@ -97,26 +99,26 @@ export function Hero({
   const scrubDigits = scrubbing?.changeDigits ?? 2;
   const scrubChip = scrubbing !== null && changeChipModel(scrubbing.change, scrubbing.changePct, scrubDigits, 2) !== null;
   const scrubNote = presentText(scrubbing?.estimateNote);
-  const tabsBlock = tabs ? <div className="mt-4">{tabs}</div> : null;
+  const tabsBlock = tabs ? <div className="mt-3">{tabs}</div> : null;
   return (
-    <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-6 lg:p-8">
+    <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-4 lg:p-5">
       {actions ? (
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <Heading id={headingId} className="min-w-0 text-[15px] font-medium text-text-2">
+          <Heading id={headingId} className="min-w-0 text-body font-medium text-text-2">
             {label}
           </Heading>
           <div className="flex min-w-0 max-w-full items-center gap-2">{actions}</div>
         </div>
       ) : (
-        <Heading id={headingId} className="text-[15px] font-medium text-text-2">
+        <Heading id={headingId} className="text-body font-medium text-text-2">
           {label}
         </Heading>
       )}
       {/* 자리마다 순서를 고정합니다(자리표시 ↔ 값으로 바뀌어도 탭·본문이 같은 자리 — 다시 마운트되지 않음). */}
       {placeholder !== undefined ? (
-        <div className="mt-3 min-w-0">{placeholder}</div>
+        <div className="mt-2 min-w-0">{placeholder}</div>
       ) : scrubbing !== null ? (
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
           {/* 문지른 값은 눈으로만 — 읽어 주기는 아래 알림 영역이 하고, 이 자리는 지금 값을 읽습니다. */}
           <span aria-hidden="true" className={`text-display-sm tabular-nums sm:text-display ${scrubMissing ? "text-text-3" : "text-text"}`}>
             {scrubbing.valueText}
@@ -132,7 +134,7 @@ export function Hero({
           </span>
         </div>
       ) : (
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className={`${valueKind === "label" ? "text-title-1 sm:text-display-sm" : "text-display-sm tabular-nums sm:text-display"} ${missing ? "text-text-3" : "text-text"}`}>
             {missing && !givenEmpty ? <Empty /> : value}
           </span>
@@ -160,10 +162,10 @@ export function Hero({
       ) : placeholder === undefined && change ? (
         <div className="mt-1 empty:hidden">{change}</div>
       ) : null}
-      {placeholder === undefined && sentence ? <p className="mt-3 text-body-md text-text">{sentence}</p> : null}
-      {placeholder === undefined && meta ? <div className="mt-3 flex flex-wrap items-center gap-2 empty:hidden">{meta}</div> : null}
+      {placeholder === undefined && sentence ? <p className="mt-2 text-body text-text">{sentence}</p> : null}
+      {placeholder === undefined && meta ? <div className="mt-2 flex flex-wrap items-center gap-2 empty:hidden">{meta}</div> : null}
       {tabsPlacement === "above" ? tabsBlock : null}
-      {children ? <div className="mt-4 min-w-0">{children}</div> : null}
+      {children ? <div className="mt-3 min-w-0">{children}</div> : null}
       {tabsPlacement === "below" ? tabsBlock : null}
       {scrub !== undefined ? (
         // 조용한 알림 — 문지른 점의 '날짜 값'(추정 점이면 '추정'과 그 설명 — '추정 23:58', 장부 값 꼬리 점이면 '장부'). 문지르지 않으면 비워 둡니다.

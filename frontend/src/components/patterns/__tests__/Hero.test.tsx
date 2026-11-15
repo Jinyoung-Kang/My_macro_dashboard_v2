@@ -44,6 +44,9 @@ describe("Hero", () => {
     expect(within(region).getByRole("group", { name: "기간" })).toBeTruthy();
     expect(within(region).getByText("차트 자리")).toBeTruthy();
     expect(region.className).toContain("rounded-card");
+    // 작업대 패널 — 안쪽 16px(lg 20px), 판정 글은 body(14px)(실행 명세 §3-6·§3-7).
+    expect(region.className.split(/\s+/)).toEqual(expect.arrayContaining(["p-4", "lg:p-5"]));
+    expect(within(region).getByText("네 계좌 모두 기준선 위").className.split(/\s+/)).toContain("text-body");
   });
 
   it("valueKind='label'이면 판정 라벨 — 한 단계 작은 글자(좁은 화면 28px·sm 이상 36px), 숫자 자리 맞춤 없음", () => {

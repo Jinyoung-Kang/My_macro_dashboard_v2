@@ -19,8 +19,8 @@ export function Skeleton({ lines, height, label = "불러오는 중" }: { lines?
         <div
           key={index}
           aria-hidden="true"
-          // 마지막 줄을 짧게 — 글 문단처럼 보이게.
-          className={`h-3.5 rounded-full bg-surface-2 motion-safe:animate-pulse ${count > 1 && index === count - 1 ? "w-3/5" : "w-full"}`}
+          // 마지막 줄을 짧게 — 글 문단처럼 보이게. 모서리는 4px(rounded-full은 상태 점·토글 손잡이·아바타만 — 작업대 실행 명세 §3-8).
+          className={`h-3.5 rounded-control bg-surface-2 motion-safe:animate-pulse ${count > 1 && index === count - 1 ? "w-3/5" : "w-full"}`}
         />
       ))}
     </div>
