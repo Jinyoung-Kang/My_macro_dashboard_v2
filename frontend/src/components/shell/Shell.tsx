@@ -46,9 +46,10 @@ export function Shell({
   return (
     <ReadModeProvider readMode={readMode}>
       <div className="min-h-screen lg:flex">
+        {/* 안쪽 여백은 focus: 변형으로 둡니다 — focus:not-sr-only가 padding:0을 다시 넣고 특이도가 높아 변형 없는 px-4·py-2를 덮었습니다(QA-502). */}
         <a
           href="#main"
-          className="sr-only rounded-control bg-accent px-4 py-2 text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="sr-only rounded-control bg-accent text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:px-4 focus:py-2 focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           본문으로 건너뛰기
         </a>
