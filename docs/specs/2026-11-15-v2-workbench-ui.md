@@ -130,6 +130,9 @@ bg `#111418` / surface `#1c2127` / surface-2 `#252a31` / surface-3 `#2f343c`입�
   - `components/shell/SideNav.tsx`의 현재 메뉴(`bg-accent-tint font-semibold text-accent`, 15px) — lg 이상 모든 화면.
   - 공용 거르기 칩 `components/ui/classes.ts`의 `filterChipClasses` 켠 상태(`border-accent bg-accent-tint font-semibold text-accent`, 13px) — 쓰는 곳
     `app/(dashboard)/consensus/page.tsx`·`app/(dashboard)/macro/FxCompareSection.tsx`·`components/screens/info/StatusSection.tsx`·`components/screens/info/NewsSection.tsx`.
+  - (P1 검토에서 더 찾음 — 처음 셈에서 빠짐) 실제 계좌 탭 머리 안내 상자 안 링크 '…의 실제 계좌 탭'(`components/screens/brokerage/BrokerageSection.tsx`, `text-accent` 12px) —
+    바탕은 부모 `<Banner tone="info">`의 상자(`bg-accent-tint`)가 칠합니다. 실제 계좌 모듈은 겉모양만 공용 키트를 통해 바꾸므로(W3) 그 파일이 아니라 키트에서 고칩니다 —
+    §3-4대로 '정보' 안내를 중립(파랑 틴트 없음)으로 바꾸거나 안내 상자 안 링크 글자를 `text-text`로(QA-459, 진행 기록 §P1).
 
   지금 토큰(톤 글자 대비 라이트 5.4·다크 5.6 — `globals.css` 주석)에서는 통과하지만 P1 토큰 값으로 바뀌는 순간 4.47이 됩니다. 그래서 **P1에서 토큰 값을 바꾸는 커밋보다 먼저
   (D1 전)** 두 자리의 글자만 `text-text`로 바꿉니다 — 틴트 바탕·accent 테두리·굵기·칩의 체크 아이콘·`aria-current`/`aria-pressed`는 그대로라 켬·현재가 색 말고도 보입니다.
@@ -194,7 +197,7 @@ W1로 밝은 테마는 없앱니다. 나중에 다시 더할 때의 출발점으
 | `SERIES_COLORS` #3987e5·#d95926·#199e70 | 모두 통과(색약 최소 ΔE 9.4, 대비 4.17~4.76) | 그대로. P1 다시 잼: 모든 쌍 색약 9.4·정상 20.9, 대비 surface 4.17~4.76·bg 4.76~5.42 |
 | 기관 10색(`institutions/page.tsx`) | 모두 통과(색약 8.2, 정상 17.2) | 그대로. P1 다시 잼: 이웃 쌍 같음, 대비 surface 4.56~5.40·bg 5.20~6.15 |
 | 계좌 5색(`paper/bookColors.ts`) | 계좌2 `#a438a0` 대비 **2.82(3:1 미달)**. 60/40 회색 `#6b727e`는 채도 미달(의도한 중립 기준선 — 예외로 기록) | **P1: 계좌2(미국·한국) `#bd6bbd`**. 대비 surface 4.63·bg 5.28, 밝기 띠·채도 안. 순서(파랑·주황·자주·초록·회색) 이웃 쌍 통과(최악 초록↔회색 색약 8.8·정상 15.1). 모든 쌍으로는 자주↔파랑 색약 **6.3**(protan, 6~8 경고 띠 — 노출 추이 그림에서 맞닿음, 범례 이름이 보조 부호)·정상 18.4 — 아래 메모 |
-| 남는 색 `#a371f7` | `#bd6bbd`와 정상 시각 ΔE 9.7 | **P1: 한국 K40 참고선(`REFERENCE_COLOR`)을 옅은 중립 `#a7b0bd`(점선)로** — 다섯 계좌 색과 정상 최소 17.7(자주)·색약 최소 11.8, 대비 surface 7.40·bg 8.43(밝기 띠 밖 — 참고선이라 밝기로 가름). 남는 색 목록(`SPARE_COLORS`, 표에 없는 계좌용)은 그대로 |
+| 남는 색 `#a371f7` | `#bd6bbd`와 정상 시각 ΔE 9.7 | **P1: 한국 K40 참고선(`REFERENCE_COLOR`)을 옅은 중립 `#a7b0bd`(점선)로** — 다섯 계좌 색과 정상 최소 17.7(자주)·색약 최소 11.8, 대비 surface 7.40·bg 8.43(밝기 띠 밖 — 참고선이라 밝기로 가름). 남는 색 목록(`SPARE_COLORS`, 표에 없는 계좌용)은 그대로. **같은 그림의 판 경계 세로선**(`GUIDE` = text-3 `#8f99a8`, 1px, 점선 4 3)과 ΔE 7.4(예전 보라 17.6) [계산] — 둘 다 회색 점선이고, 회색 점선은 차트에서 '조건이 바뀜' 표시라 굵기 2px·가로 계열선·점선 6 4·밝기(L 0.754 vs 0.680)·범례 이름으로 가름. 색 유지 여부는 사용자 확인 남음(진행 기록 §P1) |
 | `AccountDetailPanel.tsx` `#606870` | 대비 2.86 미달 | **P1: 기타 `#6e6e7c`** — 대비 surface 3.23·bg 3.68, 도넛 다섯 색 모든 쌍 정상 최소 16.1·색약 최소 9.3(기타↔청록), 현금 `#9ea7b3`과 18.2 |
 | 환율 4색(`macro/FxCompareSection.tsx`) #4798ee·#d47d0d·#1caa5e·#a371f7 | P1 잼: 이웃 쌍 통과(색약 8.1·정상 22.0), 대비 surface 4.83~5.40·bg 5.51~6.15 | 그대로(선 그림 — 검증기 기본 이웃 쌍). 모든 쌍으로는 보라↔파랑 색약 2.1·정상 14.0이라 넷째 선은 범례 이름에 기댐(지금처럼) |
 | krx `#A371F7`(한국판 COT OI Index — 선 하나) | P1 잼: 대비 surface 4.83·bg 5.51, 밝기 띠·채도 안 | 그대로 |
@@ -433,6 +436,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
    - 기준: 글자 4.5, `border-strong`·`focus`·아이콘 3, `accent-fg`·`danger-fg`, 틴트 위 글자(같은 톤·`text-2`·`text-3`).
    - **금지 쌍**(surface-3 위의 `text-3`·`accent`·`danger` 글자, accent 틴트 위의 accent 글자)은 소스 검사로 막습니다. 지금 어기는 두 자리(`SideNav.tsx` 현재 메뉴,
      `ui/classes.ts` `filterChipClasses` 켠 상태 — §3-2)는 결함 번호를 받아 `it.fails`로 넣고, P1에서 토큰 값을 바꾸기 전에(D1 전) 고칩니다.
+     (P1 검토 뒤) 부모가 칠한 바탕 위 자식 글자도 봅니다 — 그래서 실제 계좌 탭 안내 상자 안 링크가 세 번째 자리로 잡힘(QA-459, 고침은 P2).
    - `@layer base` 규칙과 '맨 바깥 블록' 검사도 옮깁니다. 블록을 여러 개 받을 수 있게 써서 밝은 한 벌을 다시 더할 때 그대로 씁니다.
 2. **12px 하한 소스 검사(새)**: `text-[10px]`·`text-[11px]`, 12px 미만이 되는 em·rem 크기(`ChangeChip`의 `text-[0.8em]`처럼 부모 크기에 기대는 것 포함), 차트 `fontSize` 12 미만을
    막습니다. 지금 위반(`DetailParts` 2곳, ▲▼ 10.4px)은 결함 번호를 받아 `it.fails`로 재현한 뒤 고칩니다.
@@ -467,7 +471,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | A1·D4 혼동(accent와 down ΔE 14.1) | 데이터 칸 강조색 금지 시험(§9-5). 등락은 기호와 글로 함께 |
 | 계열 색 대비 미달(계좌2 2.82, `#606870` 2.86) | P1에서 교체하고 검증기 기록 |
 | surface-3 위 상승 4.51·danger 틴트 위 danger 4.52(여유 0.01~0.02) | 대비 행렬 시험이 값을 바꾸는 순간 잡음 |
-| accent 틴트 위 accent 글자 4.47 — 지금 `SideNav` 현재 메뉴(lg 이상 모든 화면)·`filterChipClasses` 켠 칩(화면 네 곳)이 P1 토큰으로 4.5 미달 | P0 금지 쌍 시험 `it.fails` → P1에서 토큰 값을 바꾸기 전에 글자만 `text-text`로(D1에 미달 상태로 나가지 않음) |
+| accent 틴트 위 accent 글자 4.47 — 지금 `SideNav` 현재 메뉴(lg 이상 모든 화면)·`filterChipClasses` 켠 칩(화면 네 곳)·실제 계좌 탭 안내 상자 안 링크(P1 검토에서 찾음)가 P1 토큰으로 4.5 미달 | P0 금지 쌍 시험 `it.fails` → P1에서 토큰 값을 바꾸기 전에 글자만 `text-text`로(D1에 미달 상태로 나가지 않음) |
 | 다른 작업과 충돌(`globals.css`, `ui/classes.ts`, `search/parts.tsx`, 셸) | 토큰과 키트를 먼저 끝내고 화면별로 커밋. 단계 시작 때 main을 다시 받음(`make update`) |
 | 겉모양 회귀를 CI가 못 잡음 | §9-9의 DOM 감사와 캡처를 단계마다 |
 | Recharts SVG 속성 안 `var()`가 Safari·Firefox에서 풀리지 않을 가능성(미확인) | P1에서 QA 스택으로 Firefox 확인. 안 되면 `charts/frame`이 계산한 값을 넘김 |
