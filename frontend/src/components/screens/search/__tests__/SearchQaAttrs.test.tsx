@@ -19,7 +19,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
-import { entityErrorSourceLabel } from "@/lib/infoSearch";
+import { entitySourceLabel } from "@/lib/infoSearch";
 import type { SearchEntity, SearchFeedItem, SessionUser } from "@/lib/types";
 import { AttributesPanel } from "../EntityParts";
 import { SearchScreen } from "../SearchScreen";
@@ -196,7 +196,7 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
   });
 
   it("객체 기본 속성 이름(toString 등)의 키도 코드 이름 대신 기타 출처로 보인다", () => {
-    for (const key of ["toString", "constructor", "__proto__", ""]) expect(entityErrorSourceLabel(key), key).toBe("기타 출처");
+    for (const key of ["toString", "constructor", "__proto__", ""]) expect(entitySourceLabel(key), key).toBe("기타 출처");
   });
 
   /** 속성 칸 표의 '푼 출처' 값. */
@@ -204,8 +204,8 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
 
   // QA-429(검토 지적): 같은 속성 칸의 '푼 출처' 줄은 entity.sources의 키를 그대로 이어 붙여, 바로 아래 받지 못한 출처 줄('SEC'·'Wikidata')과
   // 달리 'sec · wikidata'로 보였고 '13f'·'universe' 같은 코드 이름도 화면 글에 남았음.
-  // 수정 전 실패: '푼 출처'가 'sec · wikidata'·'13f · universe · dart · new_source'(키 그대로).
-  it.fails("'푼 출처' 줄도 수집기 키(sec·wikidata·13f·universe·dart) 대신 받지 못한 출처 줄·후보 목록과 같은 이름을 보인다", () => {
+  // 수정 전 실패: '푼 출처'가 'sec · wikidata'·'13f · universe · dart · new_source'(키 그대로 — 재현 커밋에서는 it.fails).
+  it("'푼 출처' 줄도 수집기 키(sec·wikidata·13f·universe·dart) 대신 받지 못한 출처 줄·후보 목록과 같은 이름을 보인다", () => {
     render(<AttributesPanel entity={NVIDIA as SearchEntity} kind={null} errors={{ wikidata: "시간 초과" }} />);
     expect(solvedBy()).toBe("SEC · Wikidata");
     expect(line()).toContain("Wikidata: 시간 초과");

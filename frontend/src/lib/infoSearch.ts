@@ -775,21 +775,24 @@ export function sourceLabel(source: string, statuses: readonly SearchSourceStatu
 }
 
 /**
- * 대상 풀기(GET /api/search/entity — 계약 §3-3) errors의 키 → 속성 칸의 출처 이름. 키는 수집기(search_entities·search)가 정하고, 이름은 후보 목록
- * (CandidateList)과 같습니다 — 이 sec·dart는 공시 피드가 아니라 CIK·고유번호 표라 출처 상태 줄의 'SEC 공시(회사별)'·'DART 공시'를 쓰지 않습니다.
- * dart('저장본에 이 종목이 없음')와 dart_store('저장본을 읽지 못함')는 같은 DART 고유번호 표라 둘 다 'DART'(사유 글이 둘을 가름), entity는 한 출처가
- * 아니라 풀기 전체의 시간 상한이라 '외부 출처'(저장본 이름으로만 답함). 모르는 키는 코드 이름 대신 '기타 출처'(QA-429).
+ * 대상 풀기(GET /api/search/entity — 계약 §3-3)의 출처 키 → 속성 칸의 출처 이름. '푼 출처'(entity.sources)와 '대상을 푸는 데 받지 못한 출처'(errors)가
+ * 함께 씁니다. 키는 수집기(search_entities·search)가 정하고, 이름은 후보 목록(CandidateList)과 같습니다 — 이 sec·dart는 공시 피드가 아니라 CIK·고유번호
+ * 표라 출처 상태 줄의 'SEC 공시(회사별)'·'DART 공시'를 쓰지 않습니다. dart('저장본에 이 종목이 없음')와 dart_store('저장본을 읽지 못함')는 같은 DART
+ * 고유번호 표라 둘 다 'DART'(사유 글이 둘을 가름), entity는 한 출처가 아니라 풀기 전체의 시간 상한이라 '외부 출처'(저장본 이름으로만 답함).
+ * 모르는 키는 코드 이름 대신 '기타 출처'(QA-429).
  */
-const ENTITY_ERROR_SOURCES: Record<string, string> = {
+const ENTITY_SOURCES: Record<string, string> = {
   wikidata: "Wikidata",
   sec: "SEC",
   dart: "DART",
+  "13f": "13F 기관",
+  universe: "종목 유니버스",
   dart_store: "DART",
   entity: "외부 출처",
 };
 
-export function entityErrorSourceLabel(source: string): string {
-  return Object.hasOwn(ENTITY_ERROR_SOURCES, source) ? ENTITY_ERROR_SOURCES[source] : "기타 출처";
+export function entitySourceLabel(source: string): string {
+  return Object.hasOwn(ENTITY_SOURCES, source) ? ENTITY_SOURCES[source] : "기타 출처";
 }
 
 const LANG_LABELS: Record<string, string> = { ko: "한국어", en: "영어", unknown: "모름" };

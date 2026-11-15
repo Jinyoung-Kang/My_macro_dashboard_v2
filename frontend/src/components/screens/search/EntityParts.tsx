@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { EMPTY } from "@/lib/format";
-import { entityErrorSourceLabel, entityKindLabel, entityShortcuts, identifierChips } from "@/lib/infoSearch";
+import { entityKindLabel, entityShortcuts, entitySourceLabel, identifierChips } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
 import { KindBadge, KindIcon, LINK, PaneHeading, Tag } from "./parts";
 
@@ -106,7 +106,8 @@ export function AttributesPanel({
         // 법인 식별자(계약 §7-5 — 연결 탭의 GLEIF 모회사·자회사를 찾는 키) — 있을 때만.
         ...(entity.ids.lei ? ([["LEI", entity.ids.lei]] as [string, string][]) : []),
         ["별칭", visibleAliases(entity).join(" · ") || EMPTY],
-        ["푼 출처", entity.sources.join(" · ") || EMPTY],
+        // 출처 키를 이름으로 — 모르는 키 여럿이 '기타 출처'로 거듭 잇지 않게 같은 이름은 한 번만(QA-429).
+        ["푼 출처", [...new Set(entity.sources.map(entitySourceLabel))].join(" · ") || EMPTY],
       ]
     : [["종류", kind ? entityKindLabel(kind) : EMPTY]];
   return (
@@ -123,7 +124,7 @@ export function AttributesPanel({
       {aliasEditor}
       {failures.length > 0 ? (
         <p className="text-xs text-text-3">
-          대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${entityErrorSourceLabel(source)}: ${reason}`).join(" · ")}
+          대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${entitySourceLabel(source)}: ${reason}`).join(" · ")}
         </p>
       ) : null}
       {previewHint ? (
