@@ -114,7 +114,10 @@ function CategoryTick({
  * 성격의 차트(수급 상위, 섹터 수익률)는 "얼마나"가 곧 내용이라, 막대 길이만
  * 보여 주고 숫자를 감추면 그 자리에서 표로 다시 눈을 옮겨야 합니다.
  *
- * <p>음수 막대는 0선 왼쪽으로 자라므로 라벨도 왼쪽에 붙입니다.
+ * <p>라벨은 막대 바깥 끝에서 6px 떨어진 패널 면 위에 적습니다 — 양수는 오른쪽 끝 오른쪽(글 시작 맞춤), 음수는 왼쪽 끝 왼쪽(글 끝 맞춤).
+ * Recharts의 가로 막대는 음수 막대를 x = 0선 자리, width = 음수로 넘기므로 두 끝을 min·max로 정리해 씁니다 — 예전 `x - 6`은 0선 왼쪽,
+ * 곧 막대 안쪽 시작점이라 막대가 글보다 길면 하락 파랑 막대 위에 축 글색(1.43:1)이 됐습니다(QA-499). 음수 라벨 자리는 HorizontalBars가
+ * X축 왼쪽 여백(NEG_LABEL_ROOM)으로 남깁니다.
  */
 function BarValueLabel({
   x,
@@ -141,11 +144,13 @@ function BarValueLabel({
   }
   const left = Number(x) || 0;
   const barWidth = Number(width) || 0;
+  const start = Math.min(left, left + barWidth);
+  const end = Math.max(left, left + barWidth);
   const positive = amount >= 0;
 
   return (
     <text
-      x={positive ? left + barWidth + 6 : left - 6}
+      x={positive ? end + 6 : start - 6}
       y={(Number(y) || 0) + (Number(height) || 0) / 2}
       dy={4}
       textAnchor={positive ? "start" : "end"}
@@ -487,7 +492,15 @@ export function MultiLineSeries({
   );
 }
 
-/** 가로 막대 (수급 순위·수익률 비교). */
+/**
+ * 음수 막대 왼쪽에 남기는 값 라벨 자리(px) — 가장 음수인 막대의 바깥 끝과 Y축 선 사이. 오른쪽 여백(68 — 양수 라벨 자리)과 맞춥니다(QA-499).
+ */
+const NEG_LABEL_ROOM = 60;
+
+/**
+ * 가로 막대 (수급 순위·수익률 비교). 값이 하나라도 음수면 X축 왼쪽 여백(padding.left)에 음수 라벨 자리(NEG_LABEL_ROOM)를 둡니다 — 막대 영역이
+ * 그만큼 좁아집니다. 바깥 여백(margin.left)은 Y축 이름표 바깥에 공간을 더할 뿐 축 선과 막대 사이를 벌리지 않아 쓰지 않습니다. 모두 양수면 그대로입니다.
+ */
 export function HorizontalBars({
   data,
   height = 360,
@@ -516,6 +529,7 @@ export function HorizontalBars({
   // 항목이 많으면 높이를 늘립니다. 고정 높이로 30개를 그리면 한 칸이 12px이라
   // 막대도 라벨도 읽을 수 없습니다.
   const chartHeight = Math.max(height, data.length * 26 + 48);
+  const hasNegative = data.some((entry) => entry.value < 0);
 
   return (
     <ResponsiveContainer width="100%" height={chartHeight}>
@@ -530,6 +544,7 @@ export function HorizontalBars({
           axisLine={false}
           tick={AXIS}
           tickLine={false}
+          padding={hasNegative ? { left: NEG_LABEL_ROOM } : undefined}
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
         />
         {/* 축 폭은 이름표 폭에 맞춥니다(width="auto") — 고정 150px은 12px 글자에서 영문 대문자가 섞인 24칸 이름('KODEX 코스닥150선물인버…')을 왼쪽에서 잘랐습니다. */}
