@@ -11,8 +11,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-import pytest
-
 from app import store
 from app.services import search_store
 
@@ -86,7 +84,6 @@ def test_QA438_모은_글의_수집_글·속보_줄은_읽을_때_원문_제목�
 
 # ------------------------------------------------------------------ QA-439 거장 견해의 날짜
 
-@pytest.mark.xfail(strict=True, reason="QA-439: 수정 전 실패 — 날짜만 있는 거장 견해가 timeBasis 'published'(KST 00:00)라 화면이 '00:00'")
 def test_QA439_날짜만_있는_거장_견해는_date(monkeypatch):
     payload = {"sourceUrl": "https://news.example.org/people", "gurus": [
         {"name": "합성 투자자", "stance": "중립", "score": -20, "asOf": "2026-11-15", "summary": "합성전자 관망"},

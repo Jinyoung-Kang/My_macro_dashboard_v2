@@ -181,7 +181,10 @@ def _guru_title(guru: dict) -> str:
 
 
 def guru_views(terms: list[str]) -> Fetched:
-    """거장 견해(운영자) — 이름이나 요약에 별칭이 든 거장마다 한 줄. 시각은 화면이 밝힌 기준일(00:00 KST), 없으면 저장 시각('fetched')."""
+    """
+    거장 견해(운영자) — 이름이나 요약에 별칭이 든 거장마다 한 줄. 시각은 화면이 밝힌 기준일 — 날짜만 알아 그 날 00:00 KST와 ``timeBasis: "date"``
+    (계약 §7-1 — 화면은 날짜만, QA-439), 없으면 저장 시각('fetched').
+    """
     if not terms:
         return Fetched()
     try:
@@ -196,7 +199,7 @@ def guru_views(terms: list[str]) -> Fetched:
         summary = guru.get("summary") if isinstance(guru.get("summary"), str) else None
         if not (rules.text_matches(guru["name"], terms) or rules.text_matches(summary, terms)):
             continue
-        published, basis = None, "published"
+        published, basis = None, "date"
         as_of = guru.get("asOf")
         if isinstance(as_of, str):
             try:

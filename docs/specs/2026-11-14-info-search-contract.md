@@ -249,7 +249,7 @@ SourceStatus = {
 
 ### 7-1. 시각 칸 — `timeBasis: "date"`(더함)
 
-날짜만 아는 출처(DART 접수일, EDGAR 전문 검색 `file_date`, 네이버 리포트 날짜)는 `publishedAt` = 그 날짜의 그 출처 달력 00:00(DART·네이버 = KST `+09:00`,
+날짜만 아는 출처(DART 접수일, EDGAR 전문 검색 `file_date`, 네이버 리포트 날짜, 거장 견해 기준일 — QA-439)는 `publishedAt` = 그 날짜의 그 출처 달력 00:00(DART·네이버·거장 견해 = KST `+09:00`,
 SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값, `timeBasis: "date"`. 2년 자르기·정렬은 그 값으로 하고, 화면은 날짜만(`YYYY-MM-DD`) 보입니다.
 
 ### 7-2. 공시 탭(`filings`) — 대상 종류: 기업·기관·사람(주제는 탭 없음, `timeline`에도 공시 출처 없음)
