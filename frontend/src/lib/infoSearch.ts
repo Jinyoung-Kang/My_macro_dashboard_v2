@@ -1183,9 +1183,9 @@ const DIGIT = /\p{N}/u;
  * 'E…2020…'·'E…2021…' — '…0'·'…1'로 읽히지 않게, QA-423 후속). 그 글로 그 이름들이 하나도 갈리지 않을 때만 갈리는 바로 그 글자부터. 그래도 같은
  * 글이 남은 이름들은 다음 차례에 그 이름들끼리 같은 방식으로 다시 가릅니다(둘째 차례 이후에도 번호·낱말을 통째로 — QA-423 후속). 낱말 경계에서
  * 갈리면(모든 이름이 거기서 끝나거나 빈칸·부호) 이어지는 이름은 그 뒤 첫 낱말부터('…주식회사' 뒤 ' 베트남'이면 '가상…베트남'), 거기서 끝나는 이름만 끝
- * 낱말로 물립니다('Exa…Ltd'). 갈리는 자리 뒤에 보일 가르는 낱말이 없는 이름 하나는 새 글 대신 앞 차례의 글(묶음 밖 이름들과 가른 낱말이 든 글)을 둘
- * 수 있어, 다시 줄이면서 앞 차례의 가르는 낱말이 빠지지 않습니다(한글 법인명 '가…디스…'·'가…글로…'·'가…베트남'·'가…파운…' — QA 재확인 개선
- * 제안). 그렇게 몇 차례 해도
+ * 낱말로 물립니다('Exa…Ltd'). 갈리는 자리 뒤에 보일 가르는 낱말이 없는 이름 하나는 새 글 대신 앞 차례의 글(묶음 밖 이름들과 가른 낱말이 든 글 —
+ * 그 낱말이 통째로 들지 않으면 앞부분을 첫 글자로 줄여 더 보임)을 둘 수 있어, 다시 줄이면서 앞 차례의 가르는 낱말이 빠지지 않습니다(한글 법인명
+ * '가…디스…'·'가…글로…'·'가…베트남'·'가…파운…', 배정 80에서 '가…글로벌…' — QA 재확인 개선 제안·검토 지적). 그렇게 몇 차례 해도
  * 같은 글이 남으면(같은 낱말이 되풀이되는 드문 이름 — 다른 자리의 글이 우연히 같아짐) 둘째 이름부터 아무도 쓰지 않은 글이 나올 때까지 보이는 자리를
  * 뒤로 옮깁니다. 겹치지 않는 이름의 글은 그대로이고, 같은 이름(앞뒤 공백 무시)은 같은 글. 돌려주는 표는 앞뒤 공백을 뗀 이름 → 글. 전체 이름은 노드의
  * <title>·낭독 이름과 목록에 있습니다.
@@ -1243,12 +1243,14 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
   /**
    * 묶음에서 새 글 대신 지금 글을 둘 이름(keeper)의 글 후보 — 앞 차례에서 다른 이름들과 가른 글이면 그 글. 아직 끝을 자른 글이면, 묶음 밖 이름
    * 가운데 앞머리가 가장 길게 같은 이름과 갈리는 자리(그 낱말의 첫 글자로 물림 — 6자 넘게 길거나 이름 첫머리까지면 물리지 않음)부터 보이는 글이 더
-   * 뒤까지 보이면 그 글 먼저('가상전자글…' 대신 '가상…글로…' — 줄인 앞머리는 그 이름과 같은 글자뿐), 그다음 끝을 자른 글.
+   * 뒤까지 보이면 그 글 먼저('가상전자글…' 대신 '가상…글로…' — 줄인 앞머리는 그 이름과 같은 글자뿐), 그다음 끝을 자른 글. 그 자리부터의 낱말(가르는
+   * 낱말)이 앞부분 몫(폭의 30%) 때문에 통째로 들지 않고 앞부분을 첫 글자 하나로 줄인 글이 그 낱말을 더 보이면, 그 글(narrow)을 함께 돌려줘 앞의 글을
+   * 둘 수 있을 때 대신 둠('가상…글로…' 대신 '가…글로벌…' — 검토 지적).
    */
-  const keeperLabels = (name: string, chars: readonly string[], members: readonly string[]) => {
+  const keeperLabels = (name: string, chars: readonly string[], members: readonly string[]): { label: string; narrow?: string }[] => {
     const current = labels.get(name)!;
     const cutEnd = fitGraphLabel(name, maxPx);
-    if (current !== cutEnd) return [current];
+    if (current !== cutEnd) return [{ label: current }];
     let outside = 0;
     for (const other of distinct) {
       if (members.includes(other)) continue;
@@ -1257,13 +1259,17 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
       while (common < chars.length && chars[common] === otherChars[common]) common += 1;
       outside = Math.max(outside, common);
     }
-    if (outside === 0 || outside >= chars.length) return [current];
+    if (outside === 0 || outside >= chars.length) return [{ label: current }];
     let from = outside;
     while (from > 0 && outside - from < GRAPH_WORD_BACK && LETTER_OR_DIGIT.test(chars[from - 1])) from -= 1;
     if (from === 0 || LETTER_OR_DIGIT.test(chars[from - 1])) from = outside;
     while (from < chars.length && /\s/.test(chars[from])) from += 1;
+    let wordEnd = from;
+    while (wordEnd < chars.length && LETTER_OR_DIGIT.test(chars[wordEnd])) wordEnd += 1;
     const wider = fitLabelFrom(chars, from, maxPx, maxPx * GRAPH_HEAD_SHARE);
-    return wider.end > Array.from(cutEnd).length - 1 ? [wider.label, current] : [current];
+    const narrow = wider.end < wordEnd ? fitLabelFrom(chars, from, maxPx, charWidth(chars[0])) : wider;
+    if (wider.end <= Array.from(cutEnd).length - 1) return [{ label: current }];
+    return [{ label: wider.label, narrow: narrow.end > wider.end ? narrow.label : undefined }, { label: current }];
   };
   const clashes = () => {
     const byLabel = new Map<string, string[]>();
@@ -1351,7 +1357,9 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
           });
           const reach = (label: string) => distinct.filter((name) => labelFitsName(label, name)).length;
           const fresh = reach(fits[keeper].label);
-          const kept = keeperLabels(group[keeper], charsOf[keeper], group).find((label) => !taken.has(label) && reach(label) <= fresh);
+          const fitsKeeper = (label: string) => !taken.has(label) && reach(label) <= fresh;
+          const choice = keeperLabels(group[keeper], charsOf[keeper], group).find((candidate) => fitsKeeper(candidate.label));
+          const kept = choice?.narrow !== undefined && fitsKeeper(choice.narrow) ? choice.narrow : choice?.label;
           if (kept !== undefined && kept !== fits[keeper].label) {
             keepers.set(group[keeper], { label: kept, fresh: fits[keeper].label, members: group });
             fits = fits.map((fit, at) => (at === keeper ? { label: kept, end: fit.end } : fit));
