@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.ClaudeSse;
 import com.macrodash.Golden;
 import com.macrodash.analytics.DailySeries;
 import com.macrodash.feature.ai.AiService;
@@ -17,13 +18,20 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.io.OutputStream;
+import java.lang.reflect.Constructor;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -31,11 +39,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -118,14 +128,17 @@ class ReviewServiceTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/messages", exchange -> {
             hits.incrementAndGet();
-            requests.add(MAPPER.readTree(exchange.getRequestBody().readAllBytes()));
+            JsonNode request = MAPPER.readTree(exchange.getRequestBody().readAllBytes());
+            requests.add(request);
             String[] answer;
             synchronized (answers) {
                 answer = answers.isEmpty() ? new String[]{"500", "{\"type\":\"error\",\"error\":{\"type\":\"api_error\","
                         + "\"message\":\"no answer queued\"}}"} : answers.poll();
             }
-            byte[] bytes = answer[1].getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            // 스트리밍 요청(QA-475)이면 같은 응답을 SSE 사건 열로 — 오류 상태는 스트리밍이어도 JSON 본문 그대로입니다.
+            boolean sse = "200".equals(answer[0]) && ClaudeSse.requested(request);
+            byte[] bytes = (sse ? ClaudeSse.fromMessage(answer[1]) : answer[1]).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", sse ? ClaudeSse.CONTENT_TYPE : "application/json");
             exchange.sendResponseHeaders(Integer.parseInt(answer[0]), bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
@@ -159,6 +172,16 @@ class ReviewServiceTest {
         String body = "{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5-5\","
                 + "\"content\":[{\"type\":\"text\",\"text\":" + MAPPER.writeValueAsString(json) + "}],"
                 + "\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":" + USAGE + "}";
+        synchronized (answers) {
+            answers.add(new String[]{"200", body});
+        }
+    }
+
+    /** 200 응답 한 건 — 블록 배열·멈춘 까닭·usage를 그대로(사고 블록만 있고 출력 한도로 끝난 응답 등). */
+    private void answerMessage(String content, String stopReason, String usage) {
+        String body = "{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-5-5\","
+                + "\"content\":" + content + ",\"stop_reason\":\"" + stopReason + "\",\"stop_sequence\":null,\"usage\":"
+                + usage + "}";
         synchronized (answers) {
             answers.add(new String[]{"200", body});
         }
@@ -535,6 +558,80 @@ class ReviewServiceTest {
         assertThat(row.path("verdictCounts").isNull()).as("형식 오류 행의 판정 수는 null(0이 아님)").isTrue();
         assertThat(list.get("latestWeekEnding")).isEqualTo("2026-10-30");
         assertThat(list.get("latestOpensAtKst")).isEqualTo(com.macrodash.Kst.stamp(Instant.parse("2026-11-01T12:00:00Z")));
+    }
+
+    // ------------------------------------------------------------------ QA-475(2026-11-15 운영: 두 시장 복기 모두 출력 한도 20,000토큰에서 FORMAT_ERROR)
+    @Test
+    @Disabled("QA-475: 수정 전 실패 — 복기 호출이 스트리밍이 아니고 출력 한도가 20,000토큰(AiService.STRUCTURED_MAX_TOKENS_CEILING)")
+    @DisplayName("QA-475: 복기는 스트리밍 요청(stream)으로 출력 한도 64,000토큰·effort high를 보내고, 스트림을 모은 응답으로 OK 행과 토큰 사용량을 남긴다")
+    void reviewStreamsWith64kOutputLimit() throws Exception {
+        long decisionId = scene();
+        answerJson(reviewJson(decisionId, "null"));
+
+        ReviewService.Outcome outcome = service().review(WE);
+
+        JsonNode sent = requests.get(0);
+        assertThat(sent.path("stream").asBoolean(false))
+                .as("스트리밍 — 사고가 긴 64,000토큰 응답을 연결 하나가 끝까지 조용히 기다리지 않게(SDK 권장)").isTrue();
+        assertThat(sent.path("max_tokens").asLong()).as("사용자 결정(2026-11-15)").isEqualTo(64_000L);
+        assertThat(sent.path("output_config").path("effort").asString()).as("effort는 high 그대로").isEqualTo("high");
+        assertThat(sent.path("output_config").path("format").path("type").asString()).isEqualTo("json_schema");
+        assertThat(outcome.kind()).isEqualTo(ReviewService.Kind.CALLED);
+        Review review = store.reviews.get(WE);
+        assertThat(review.status()).isEqualTo(Review.OK);
+        assertThat(review.response().path("verdicts").size()).isEqualTo(1);
+        assertThat(review.usage().path("inputTokens").asLong()).isEqualTo(9_000);
+        assertThat(review.usage().path("outputTokens").asLong()).isEqualTo(1_200);
+        assertThat(review.usage().path("cacheWriteTokens").asLong()).isEqualTo(5_000);
+        assertThat(review.usage().path("stopReason").asString()).isEqualTo("end_turn");
+        assertThat(hits.get()).isEqualTo(1);
+        assertThat(callsToday()).as("하루 호출 상한에 그대로 셈").isEqualTo(1);
+    }
+
+    @Test
+    @Disabled("QA-475: 수정 전 실패 — 오류가 운영과 같은 '[MAX_TOKENS] 출력 한도(20000 토큰)에 걸려 답을 쓰기 전에 끝났습니다'")
+    @DisplayName("QA-475: 사고만 하다 출력 한도로 끝나면 FORMAT_ERROR(그 주의 끝)이고 오류는 64,000토큰 한도를 적는다 — MAX_TOKENS·EMPTY → FORMAT_ERROR는 그대로")
+    void thinkingOnlyMaxTokensIsFormatErrorAt64k() throws Exception {
+        scene();
+        answerMessage("[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"sig\"}]", "max_tokens",
+                "{\"input_tokens\":61000,\"output_tokens\":64000,\"cache_read_input_tokens\":0,"
+                        + "\"cache_creation_input_tokens\":5000}");
+        ReviewService service = service();
+
+        Review review = service.review(WE).review();
+
+        assertThat(review.status()).isEqualTo(Review.FORMAT_ERROR);
+        assertThat(review.error()).isEqualTo("[MAX_TOKENS] 출력 한도(64000 토큰)에 걸려 답을 쓰기 전에 끝났습니다");
+        assertThat(review.responseRaw()).as("받은 텍스트 없음").isNull();
+        assertThat(review.usage().path("outputTokens").asLong()).isEqualTo(64_000);
+        assertThat(review.usage().path("stopReason").asString()).isEqualTo("max_tokens");
+        assertThat(review.usage().path("errorKind").asString()).isEqualTo("MAX_TOKENS");
+        assertThat(service.review(WE).kind()).as("형식 오류는 그 주의 끝 — 다시 부르지 않음").isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(hits.get()).isEqualTo(1);
+        assertThat(callsToday()).isEqualTo(1);
+    }
+
+    @Test
+    @Disabled("QA-475: 수정 전 실패 — 복기가 결정과 같은 대기 한도(dashboard.paper.claude-timeout-seconds 300초)를 씀")
+    @DisplayName("QA-475: 복기 대기 한도는 따로(application.yml dashboard.paper.review-timeout-seconds) — 64,000토큰 스트리밍에 맞춘 SDK 기본(1,800초) 이상, 결정 호출의 300초는 그대로")
+    void reviewHasItsOwnTimeout() throws Exception {
+        List<PropertySource<?>> yaml = new YamlPropertySourceLoader().load("application",
+                new ClassPathResource("application.yml"));
+        Object review = yaml.stream().map(source -> source.getProperty("dashboard.paper.review-timeout-seconds"))
+                .filter(Objects::nonNull).findFirst().orElse(null);
+        Object decision = yaml.stream().map(source -> source.getProperty("dashboard.paper.claude-timeout-seconds"))
+                .filter(Objects::nonNull).findFirst().orElse(null);
+        assertThat(review).as("dashboard.paper.review-timeout-seconds").isNotNull();
+        assertThat(Integer.parseInt(review.toString())).isGreaterThanOrEqualTo(1_800);
+        assertThat(String.valueOf(decision)).as("결정·제안·브리핑의 대기 한도는 그대로").isEqualTo("300");
+
+        Constructor<?> spring = Arrays.stream(ReviewService.class.getConstructors())
+                .filter(c -> c.isAnnotationPresent(Autowired.class)).findFirst().orElseThrow();
+        List<String> keys = Arrays.stream(spring.getParameters()).map(p -> p.getAnnotation(Value.class))
+                .filter(Objects::nonNull).map(Value::value).toList();
+        assertThat(keys).as("Spring 생성자가 읽는 키")
+                .anyMatch(key -> key.startsWith("${dashboard.paper.review-timeout-seconds:"))
+                .noneMatch(key -> key.startsWith("${dashboard.paper.claude-timeout-seconds"));
     }
 
     @Test

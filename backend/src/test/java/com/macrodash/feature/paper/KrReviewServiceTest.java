@@ -1,5 +1,6 @@
 package com.macrodash.feature.paper;
 
+import com.macrodash.ClaudeSse;
 import com.macrodash.Golden;
 import com.macrodash.analytics.KrxCalendar;
 import com.macrodash.analytics.ReviewFacts;
@@ -135,15 +136,18 @@ class KrReviewServiceTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/messages", exchange -> {
             hits.incrementAndGet();
-            requests.add(MAPPER.readTree(exchange.getRequestBody().readAllBytes()));
+            JsonNode request = MAPPER.readTree(exchange.getRequestBody().readAllBytes());
+            requests.add(request);
             String answer;
             synchronized (answers) {
                 answer = answers.poll();
             }
             String body = answer == null ? "{\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"no answer\"}}"
                     : answer;
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            // 스트리밍 요청(QA-475)이면 같은 응답을 SSE 사건 열로 — 오류(500)는 JSON 본문 그대로입니다.
+            boolean sse = answer != null && ClaudeSse.requested(request);
+            byte[] bytes = (sse ? ClaudeSse.fromMessage(body) : body).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", sse ? ClaudeSse.CONTENT_TYPE : "application/json");
             exchange.sendResponseHeaders(answer == null ? 500 : 200, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);
