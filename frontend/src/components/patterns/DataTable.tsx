@@ -206,8 +206,9 @@ export function DataTable<T>({
                         }`}
                       >
                         {column.header}
-                        {/* 방향은 aria-sort가 읽어 줍니다. 화살표는 눈으로 보는 보조 표시(정렬 전에는 흐린 ↕). */}
-                        <span aria-hidden="true" className={ariaSort ? "" : "opacity-50"}>
+                        {/* 방향은 aria-sort가 읽어 줍니다. 화살표는 눈으로 보는 보조 표시(정렬 전에는 흐린 ↕ — 흐린 단계는 불투명도가 아니라 글자 토큰
+                            text-3: 머리 바탕 surface 위 5.62:1. opacity-50은 토큰에 없는 색 #71767d(3.54:1)를 만들었음, QA-504). */}
+                        <span aria-hidden="true" className={ariaSort ? "" : "text-text-3"}>
                           {arrow}
                         </span>
                       </button>

@@ -289,7 +289,7 @@ describe("DataTable — 정렬", () => {
 
   // QA-504: 정렬 전 '↕'를 opacity-50으로 흐리게 그려 실제 색이 토큰에 없는 #71767d(머리 바탕 surface 위 3.54:1)가 됐다 — 토큰 대비 시험에도
   // 걸리지 않는다. 흐린 단계는 글자 토큰(text-3, 캡션·각주 — surface 위 5.62:1)으로 그린다.
-  it.fails("정렬 전 머리의 흐린 표시는 불투명도가 아니라 글자 토큰(text-text-3)으로 그린다 — 정렬한 열은 그대로 머리 글자색(QA-504)", () => {
+  it("정렬 전 머리의 흐린 표시는 불투명도가 아니라 글자 토큰(text-text-3)으로 그린다 — 정렬한 열은 그대로 머리 글자색(QA-504)", () => {
     const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
     const markOf = (name: RegExp) =>
       within(screen.getByRole("columnheader", { name })).getByRole("button").querySelector('span[aria-hidden="true"]') as HTMLElement;
