@@ -10,6 +10,7 @@ import {
   currencyUnit,
   externalLinks,
   holderQuery,
+  holdersNoMatch,
   institutionHref,
   marketStateText,
   priceDigits,
@@ -205,18 +206,23 @@ function ResearchCard({ quote }: { quote: DetailQuote }) {
 }
 
 /**
- * 13F 보유 기관 — 이 대시보드가 받은 13F 기관 가운데 공시 이름에 회사 이름이 들어간 보유 줄(비중 순). 이름으로 찾으므로 다른 회사가 섞일 수 있어
- * 공시 이름을 함께 적습니다. 기관 이름은 기관 상세로 가는 링크.
+ * 13F 보유 기관 — 이 대시보드가 받은 13F 기관 가운데 공시 이름이 회사 이름과 맞는 보유 줄(이름이 들어가거나 잘린 공시 이름의 앞부분으로 회사 이름이 시작함,
+ * 비중 순). 이름으로 찾으므로 다른 회사가 섞일 수 있어 공시 이름을 함께 적습니다. 기관 이름은 기관 상세로 가는 링크. 한 줄도 없으면 찾은 이름과 그 한계를
+ * 적고 없다고 단정하지 않습니다(QA-436).
  */
 function HoldersCard({ query }: { query: string }) {
   const holders = useApi<GuruHoldersResponse>(endpoints.institution.guruHolders(query));
   const rows = holders.data?.rows ?? [];
+  const noMatch = holdersNoMatch(query);
   return (
-    <Card title="13F 보유 기관" subtitle={`공시 이름에 '${query}'가 들어간 보유 줄 — 비중 순`} source="SEC EDGAR 13F(이 대시보드 저장본)">
+    <Card title="13F 보유 기관" subtitle={`‘${query}’ 이름으로 찾은 보유 줄(잘린 공시 이름 포함) — 비중 순`} source="SEC EDGAR 13F(이 대시보드 저장본)">
       {!holders.data ? (
         holders.error ? <p className="text-sm text-danger">{holders.error}</p> : <Skeleton lines={3} label="13F 보유 기관을 불러오는 중" />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-text-2">이 대시보드가 받은 13F 기관 가운데 보유한 곳이 없습니다.</p>
+        <div role="status" className="flex flex-col gap-1 text-sm">
+          <p className="font-medium text-text">{noMatch.title}</p>
+          <p className="text-text-2">{noMatch.note}</p>
+        </div>
       ) : (
         <ul className="-my-1 divide-y divide-border">
           {rows.slice(0, HOLDERS_SHOWN).map((row) => (

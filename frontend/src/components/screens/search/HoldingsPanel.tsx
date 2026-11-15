@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ErrorState, Loading } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
-import { institutionHref } from "@/lib/detail";
+import { holdersNoMatch, institutionHref } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatNumber, formatUsd, withoutLeadingIcon } from "@/lib/format";
 import { holdersQuery, holdingsWindow, kstToday } from "@/lib/infoSearch";
@@ -22,6 +22,20 @@ function TooOld({ latest }: { latest: string | null }) {
     <div role="status" className="flex flex-col gap-1 py-6 text-sm">
       <p className="font-medium text-text">최근 2년 안의 자료가 없습니다</p>
       {latest ? <p className="text-text-2">가장 최근 자료: {latest}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * 이름으로 찾은 13F 보유 줄이 없을 때(QA-436) — 사용자가 치지 않은 검색이라 무엇으로 찾았는지와 그 한계를 적고, 없다고 단정하지 않습니다(직접 치는 검색의
+ * 백엔드 안내 '대문자 영문입니다'를 쓰지 않음).
+ */
+function NoHolderMatch({ query }: { query: string }) {
+  const text = holdersNoMatch(query);
+  return (
+    <div role="status" className="flex flex-col gap-1 py-6 text-sm">
+      <p className="font-medium text-text">{text.title}</p>
+      <p className="text-text-2">{text.note}</p>
     </div>
   );
 }
@@ -47,15 +61,15 @@ function CompanyHolders({ query }: { query: string }) {
   if (!data || !now) {
     return holders.error ? <ErrorState message={holders.error} onRetry={() => void holders.reload()} /> : <Loading label="13F 보유 기관을 불러오는 중" />;
   }
-  if (!data.available) return <p className="py-6 text-sm text-text-2">{data.message ?? "13F 저장본이 아직 없습니다."}</p>;
+  // 백엔드는 검색어가 있으면 0건일 때만 available=false(안내는 직접 치는 검색의 글)라, 줄이 없으면 이 탭의 안내로 적습니다(QA-436).
   const rows = data.rows ?? [];
-  if (rows.length === 0) return <p className="py-6 text-sm text-text-2">이 대시보드가 받은 13F 기관 가운데 보유한 곳이 없습니다.</p>;
+  if (rows.length === 0) return <NoHolderMatch query={query} />;
   const span = holdingsWindow(rows.map((row) => row.reportDate), kstToday(now.getTime()));
   const recent = rows.filter((row) => span.recent.includes(row.reportDate));
   if (recent.length === 0) return <TooOld latest={span.latest} />;
   return (
     <section aria-labelledby="search-holders" className="flex flex-col gap-2">
-      <PaneHeading id="search-holders">13F 보유 기관 — 공시 이름에 ‘{query}’가 들어간 줄(비중 순)</PaneHeading>
+      <PaneHeading id="search-holders">13F 보유 기관 — ‘{query}’ 이름으로 찾은 줄(잘린 공시 이름 포함, 비중 순)</PaneHeading>
       <ul className="divide-y divide-border">
         {recent.slice(0, ROWS_SHOWN).map((row) => (
           <li key={`${row.cik}:${row.cusip}`} className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-sm lg:min-h-8">

@@ -138,7 +138,7 @@ GET·OPTIONS 밖(쓰기·HEAD)은 경로와 상관없이 403 `{"error":"demo_rea
 | `GET /api/sec13f/new-buys?ciks=&reportDate=&minHolders=3` | 이번 분기 공통 신규 매수 |
 | `GET /api/guru/profiles` | 기관별 성격 (집중도·유효 종목 수·회전율) |
 | `GET /api/guru/similarity` | 기관 간 유사도 행렬 (겹침 비중 + 코사인) |
-| `GET /api/guru/holders?q=NVIDIA` | 이 종목을 누가 들고 있나. `rows`는 비중 내림차순 **상위 200행까지**이고 `totalMatches`(자르기 전 일치 건수)·`truncated`(잘렸는지)를 함께 줍니다 — 빈 `q`면 두 필드 없이 안내 문구만. 검색어와 상관없는 보유 목록은 응답 캐시라 몰리면 429(QA-133) |
+| `GET /api/guru/holders?q=NVIDIA` | 이 종목을 누가 들고 있나. 공시 이름에 `q`가 들어간 줄과, 제출자가 잘라 적은 공시 이름(24자 이상 — 끝의 `ADR` 같은 증권 종류 낱말을 뗀 앞부분으로 `q`가 시작)도 함께 찾습니다(QA-436). `rows`는 비중 내림차순 **상위 200행까지**이고 `totalMatches`(자르기 전 일치 건수)·`truncated`(잘렸는지)를 함께 줍니다 — 빈 `q`면 두 필드 없이 안내 문구만. 검색어와 상관없는 보유 목록은 응답 캐시라 몰리면 429(QA-133) |
 | `GET /api/guru/risk?cik=&benchmark=SPY&years=1` | 기관 포트폴리오 위험 (기관 13F 스타일·위험 화면. API 경로는 호환을 위해 `guru` 유지). 응답의 `coverage`가 **덮은 비중**을 항상 담습니다 |
 | `GET /api/stock/universe` | 스코어카드를 낼 수 있는 종목 목록 |
 | `GET /api/stock/scorecard?symbol=AAPL&benchmark=SPY&years=1` | 종목 스코어카드 (가격 기반 지표만 — `missing`이 빠진 항목을 알려 줍니다) |

@@ -1,7 +1,6 @@
 package com.macrodash.feature.institution;
 
 import com.macrodash.read.StoreReader;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -34,11 +33,10 @@ class GuruServiceTruncatedNamesTest {
     }
 
     @Test
-    @Disabled("QA-436: 수정 전 실패 — 'MITSUBISHI UFJ FINANCIAL GROUP'으로 찾으면 잘린 공시 이름 두 줄이 걸리지 않아 0건")
     @DisplayName("QA-436 회사의 영문 이름 전체로 찾아도 제출자가 잘라 적은 공시 이름(앞부분이 같은 이름, 끝의 ADR 포함)이 걸린다")
     void truncatedIssuerNamesMatchTheFullName() {
         // QA-436: 일치 규칙이 '공시 이름에 검색어 전체가 들어감' 하나뿐이라, 공시 이름이 검색어보다 짧게 잘리면 같은 종목이어도 걸리지 않았습니다.
-        // 수정 전 실패: 'MITSUBISHI UFJ FINANCIAL GROUP'으로 찾으면 0건(available=false, '그 이름을 포함한 보유 종목이 없습니다').
+        // 수정 전 실패: 'MITSUBISHI UFJ FINANCIAL GROUP'으로 찾으면 0건(available=false, '그 이름을 포함한 보유 종목이 없습니다') — 재현 커밋에서는 @Disabled.
         List<GuruService.HoldingRow> index = List.of(
                 row(1, "MITSUBISHI UFJ FINANCIAL G ADR", "000000101", 2.5),
                 row(2, "MITSUBISHI UFJ FINANCIAL GRO", "000000101", 1.5),
@@ -51,5 +49,41 @@ class GuruServiceTruncatedNamesTest {
                 .containsExactly("MITSUBISHI UFJ FINANCIAL G ADR", "MITSUBISHI UFJ FINANCIAL GRO");
         assertThat(response.get("available")).isEqualTo(true);
         assertThat(response.get("totalMatches")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("QA-436 넓히지 않음 — 폭에 닿지 않은 짧은 이름, 같은 낱말로 시작해 갈라지는 이름, 너무 짧은 앞부분은 검색어가 그것으로 시작해도 걸리지 않는다")
+    void doesNotFloodWithOtherNames() {
+        List<GuruService.HoldingRow> index = List.of(
+                // 온전한 짧은 이름(24자 미만) — 검색어가 이 이름으로 시작해도 다른 종목
+                row(1, "ISHARES TR", "000000301", 5.0),
+                row(2, "SYNTHETIC EXAMPLE", "000000302", 4.0),
+                // 잘린 길이지만 검색어와 갈라지는 이름(같은 낱말 둘로 시작하는 다른 회사)
+                row(3, "SYNTHETIC EXAMPLE FINANCIAL SVCS", "000000303", 3.0),
+                // 증권 종류 낱말을 떼면 앞부분이 16자 미만
+                row(4, "SYNTHETIC SPONSORED ADR NEW SHS", "000000304", 2.0),
+                // 줄여 적은 이름은 여전히 걸리지 않음(이름으로 찾는 한계 — 화면이 그렇게 적음)
+                row(5, "SYNTHETIC EXAMPLE FINL GROUP INC", "000000305", 1.0));
+        GuruService guru = new GuruService(mock(StoreReader.class));
+
+        assertThat(names(guru.holders(index, "ISHARES TR RUSSELL 2000 ETF"))).isEmpty();
+        assertThat(names(guru.holders(index, "SYNTHETIC EXAMPLE FINANCIAL GROUP"))).isEmpty();
+        assertThat(names(guru.holders(index, "SYNTHETIC GLOBAL HOLDINGS"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("QA-436 지금까지의 규칙 그대로 — 이름 일부(대소문자 무시)로 찾으면 잘린 이름도 그 일부를 담고 있으면 걸린다")
+    void containsRuleUnchanged() {
+        List<GuruService.HoldingRow> index = List.of(
+                row(1, "MITSUBISHI UFJ FINANCIAL G ADR", "000000101", 2.5),
+                row(2, "MITSUBISHI UFJ FINANCIAL GRO", "000000101", 1.5),
+                row(3, "ISHARES TR", "000000301", 5.0));
+        GuruService guru = new GuruService(mock(StoreReader.class));
+
+        assertThat(names(guru.holders(index, "mitsubishi"))).containsExactly("MITSUBISHI UFJ FINANCIAL G ADR", "MITSUBISHI UFJ FINANCIAL GRO");
+        assertThat(names(guru.holders(index, "ISHARES"))).containsExactly("ISHARES TR");
+        // 화면에 보인 잘린 이름 그대로 찾아도 걸리고, 그보다 더 짧게 잘린 같은 종목의 이름도 함께 걸림
+        assertThat(names(guru.holders(index, "MITSUBISHI UFJ FINANCIAL GRO")))
+                .containsExactly("MITSUBISHI UFJ FINANCIAL G ADR", "MITSUBISHI UFJ FINANCIAL GRO");
     }
 }

@@ -1740,7 +1740,10 @@ export function entityShortcuts(entity: Pick<SearchEntity, "key" | "ids">): { la
 
 const HANGUL = /[가-힣]/;
 
-/** 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름은 대문자 영문) — 영문 이름에서 법인 꼬리를 떼고, 영문 이름이 없으면 티커. */
+/**
+ * 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름은 대문자 영문, 제출자가 잘라 적은 긴 이름은 백엔드가 앞부분으로 함께 찾음 — QA-436) — 영문 이름에서
+ * 법인 꼬리를 떼고, 영문 이름이 없으면 티커.
+ */
 export function holdersQuery(entity: Pick<SearchEntity, "name" | "nameEn" | "ids">): string | null {
   const english = entity.nameEn ?? (HANGUL.test(entity.name) ? null : entity.name);
   return holderQuery(english) ?? entity.ids.ticker ?? null;

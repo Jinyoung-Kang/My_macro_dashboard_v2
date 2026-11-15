@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -185,6 +186,43 @@ public class GuruService {
     static final int HOLDERS_MAX_ROWS = 200;
 
     /**
+     * 잘린 공시 이름으로 볼 최소 길이(QA-436). 13F 공시 이름(nameOfIssuer)은 제출자마다 정해진 폭에서 잘려 들어와(관측: 28자
+     * 'MITSUBISHI UFJ FINANCIAL GRO', 30자 'MITSUBISHI UFJ FINANCIAL G ADR') 회사의 영문 이름 전체로 찾으면 걸리지 않았습니다.
+     * 이보다 짧은 이름은 폭에 닿지 않은 온전한 이름이라, 검색어가 그 이름으로 시작해도 다른 종목으로 봅니다('ISHARES TR'로
+     * 'ISHARES TR RUSSELL 2000'을 찾지 않음).
+     */
+    static final int TRUNCATED_NAME_MIN_LENGTH = 24;
+
+    /** 잘린 공시 이름에서 끝의 증권 종류 낱말을 뗀 앞부분의 최소 길이 — 너무 짧은 앞부분은 다른 회사 이름의 앞과도 겹칩니다. */
+    static final int TRUNCATED_HEAD_MIN_LENGTH = 16;
+
+    /** 제출자가 잘린 이름 끝에 덧붙이는 증권 종류 낱말('… FINANCIAL G ADR') — 떼고 앞부분을 검색어와 견줍니다. */
+    private static final Set<String> SECURITY_TYPE_WORDS =
+            Set.of("ADR", "ADS", "SPON", "SPONS", "SPONSORED", "SP", "ORD", "SHS", "NEW");
+
+    /**
+     * 보유 한 줄의 공시 이름이 검색어({@code needle} — 대문자, 앞뒤 공백 없음)와 맞는가. 이름에 검색어가 들어 있거나, 이름이 잘린
+     * 이름({@value #TRUNCATED_NAME_MIN_LENGTH}자 이상)이고 끝의 증권 종류 낱말을 뗀 앞부분({@value #TRUNCATED_HEAD_MIN_LENGTH}자 이상)으로
+     * 검색어가 시작할 때입니다(QA-436). 줄여 적은 이름('FINANCIAL' → 'FINL')은 여전히 걸리지 않습니다.
+     */
+    static boolean nameMatches(String name, String needle) {
+        String upper = name.toUpperCase().trim();
+        if (upper.contains(needle)) {
+            return true;
+        }
+        if (upper.length() < TRUNCATED_NAME_MIN_LENGTH
+                || !needle.startsWith(upper.substring(0, TRUNCATED_HEAD_MIN_LENGTH))) {
+            return false;
+        }
+        String head = upper;
+        int space;
+        while ((space = head.lastIndexOf(' ')) > 0 && SECURITY_TYPE_WORDS.contains(head.substring(space + 1))) {
+            head = head.substring(0, space).trim();
+        }
+        return head.length() >= TRUNCATED_HEAD_MIN_LENGTH && needle.startsWith(head);
+    }
+
+    /**
      * 보유 기관 검색의 색인 한 줄 — 기관 하나의 최신 분기 13F 보유 하나. 검색어와 상관없고 바뀌지 않는 값이라 응답 캐시에
      * 두고 요청끼리 나눠 씁니다(QA-133).
      */
@@ -226,7 +264,8 @@ public class GuruService {
     }
 
     /**
-     * 이 종목을 누가 들고 있나 — {@link #holdersIndex()}에서 이름에 검색어가 들어간 행을 비중 순으로 찾습니다.
+     * 이 종목을 누가 들고 있나 — {@link #holdersIndex()}에서 공시 이름이 검색어와 맞는 행({@link #nameMatches} — 이름에 검색어가
+     * 들어가거나, 잘린 공시 이름의 앞부분으로 검색어가 시작함)을 비중 순으로 찾습니다.
      * 비중 상위 {@value #HOLDERS_MAX_ROWS}행까지만 돌려주고 원래 일치 건수와 잘렸는지를 함께 적습니다(QA-133).
      * {@code index}는 캐시가 나눠 쓰는 목록이라 바꾸지 않고, 응답 행은 요청마다 새로 만듭니다.
      */
@@ -244,7 +283,7 @@ public class GuruService {
 
         List<HoldingRow> matches = new ArrayList<>();
         for (HoldingRow holding : index) {
-            if (holding.name().toUpperCase().contains(needle)) {
+            if (nameMatches(holding.name(), needle)) {
                 matches.add(holding);
             }
         }

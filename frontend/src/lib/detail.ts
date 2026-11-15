@@ -379,8 +379,9 @@ export function institutionNames(name: string): { display: string; query: string
 }
 
 /**
- * 회사 이름 → 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름에 들어간 글로 찾음). 13F 공시 이름은 대문자 영문이고 'INC'·'CORP' 꼬리가
- * 다르게 붙어 법인 꼬리·앞의 THE·기호를 뗍니다("Apple Inc." → "APPLE", "The Walt Disney Company" → "WALT DISNEY"). 두 글자보다 짧으면 null(찾지 않음).
+ * 회사 이름 → 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름에 들어간 글로 찾고, 제출자가 잘라 적은 긴 공시 이름은 그 앞부분으로 검색어가 시작하면
+ * 함께 찾음 — QA-436). 13F 공시 이름은 대문자 영문이고 'INC'·'CORP' 꼬리가 다르게 붙어 법인 꼬리·앞의 THE·기호를 뗍니다("Apple Inc." → "APPLE",
+ * "The Walt Disney Company" → "WALT DISNEY"). 두 글자보다 짧으면 null(찾지 않음).
  */
 export function holderQuery(name: string | null | undefined): string | null {
   if (!name) return null;
@@ -395,6 +396,19 @@ export function holderQuery(name: string | null | undefined): string | null {
   if (words.length > 1 && words[0] === "THE") words.shift();
   const query = words.join(" ").trim();
   return query.length >= 2 ? query : null;
+}
+
+/**
+ * 13F 보유 기관을 회사 이름으로 찾아 한 줄도 없을 때의 안내(정보 검색 보유 탭·종목 상세 — 사용자가 치지 않은 검색, QA-436). 무엇으로 찾았는지와 그 한계를
+ * 적고 '보유한 곳이 없다'고 단정하지 않습니다 — 잘라 적은 공시 이름은 백엔드가 함께 찾지만, 줄여 적은 이름(FINANCIAL → FINL)은 이름으로 찾지 못합니다.
+ */
+export function holdersNoMatch(query: string): { title: string; note: string } {
+  return {
+    title: `‘${query}’ 이름으로 찾은 13F 보유 줄이 없습니다`,
+    note:
+      "이 대시보드가 받는 13F 기관의 공시 이름에서 찾았습니다. 앞부분만 남기고 잘린 공시 이름은 함께 찾지만 줄여 적은 이름(예: FINANCIAL → FINL)은 " +
+      "찾지 못하므로, 보유한 곳이 없다고 단정할 수 없습니다.",
+  };
 }
 
 // ------------------------------------------------------------------ 외부 링크

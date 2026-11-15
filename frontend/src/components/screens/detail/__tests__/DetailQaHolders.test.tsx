@@ -51,7 +51,7 @@ afterEach(cleanup);
 describe("종목 상세 — 13F 보유 기관이 이름으로 찾아 0건(QA-436)", () => {
   // QA-436: 0건이면 '이 대시보드가 받은 13F 기관 가운데 보유한 곳이 없습니다'로 없다고 단정했습니다(공시 이름이 잘리거나 줄여 적혀 못 찾은 경우에도).
   // 수정 전 실패: 찾은 이름을 적은 안내가 없고 '보유한 곳이 없습니다'가 보임(재현 커밋에서는 it.fails).
-  it.fails("카드는 찾은 이름과 '줄여 적은 공시 이름은 찾지 못함'을 적고, 보유한 곳이 없다고 단정하지 않는다", async () => {
+  it("카드는 찾은 이름과 '줄여 적은 공시 이름은 찾지 못함'을 적고, 보유한 곳이 없다고 단정하지 않는다", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNF" />
@@ -59,7 +59,7 @@ describe("종목 상세 — 13F 보유 기관이 이름으로 찾아 0건(QA-436
     );
     const heading = await screen.findByRole("heading", { name: "13F 보유 기관" });
     const card = heading.closest("section") as HTMLElement;
-    await within(card).findByText(/없습니다/);
+    await within(card).findAllByText(/없습니다/);
 
     expect(card.textContent).toContain(`‘${QUERY}’ 이름으로 찾은 13F 보유 줄이 없습니다`);
     expect(card.textContent).toContain("보유한 곳이 없다고 단정할 수 없습니다");
