@@ -10,8 +10,11 @@
 export const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 /**
- * 단추 네 종류(실행 명세 §3-4) — 기본(default: surface-2 바탕과 1px 경계), 주(primary: 강조 파랑 바탕 — 한 묶음에 하나), 위험(danger: 확인
- * 대화상자를 거치는 파괴적 동작에만, 늘 글과 함께), 최소(minimal: 투명 — 표 안·도구 줄). 강조 파랑은 누를 수 있는 것에만 씁니다(원칙 A1).
+ * 단추 네 종류(실행 명세 §3-4) — 기본(default: 조작 바탕과 1px 경계), 주(primary: 강조 파랑 바탕 — 한 묶음에 하나), 위험(danger: 확인
+ * 대화상자를 거치는 파괴적 동작에만, 늘 글과 함께), 최소(minimal: 투명 — 표 안·도구 줄, hover 때 조작 바탕). 강조 파랑은 누를 수 있는 것에만 씁니다(원칙 A1).
+ * 조작 바탕(bg-control-fill — globals.css)은 패널·바탕 위에서 surface-2, 덮개(대화상자·토스트 — data-overlay) 안에서 한 단계 위 surface-3입니다 —
+ * 덮개 바탕이 surface-2라 같은 값이면 기본 단추의 바탕과 최소 단추의 hover가 사라졌습니다(2026-11-16 결정). 기본 단추의 hover는 두 자리 모두 경계를
+ * border-strong으로 진하게 합니다. 그 바탕 위 글자는 text·text-2만 둡니다(surface-3 위 text-3·accent·danger 금지 — 부르는 쪽이 글자색을 덧붙일 때도).
  * secondary·ghost는 옛 이름으로 default·minimal과 같습니다 — 부르는 곳을 한꺼번에 고치지 않으려고 남깁니다.
  */
 export type ButtonVariant = "default" | "primary" | "danger" | "minimal" | "secondary" | "ghost";
@@ -27,11 +30,11 @@ export type ButtonSize = "md" | "sm" | "lg";
 const CONTROL_BASE = `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border text-center motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
 const BUTTON_KIND = {
-  default: "border-border bg-surface-2 font-medium text-text hover:border-border-strong",
+  default: "border-border bg-control-fill font-medium text-text hover:border-border-strong",
   primary: "border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover",
   // 위험 바탕 위 글자는 danger-fg(5.88:1 — 흰 글자는 3.14:1이라 쓰지 않음).
   danger: "border-transparent bg-danger font-semibold text-danger-fg hover:opacity-90",
-  minimal: "border-transparent bg-transparent font-medium text-text-2 hover:bg-surface-2 hover:text-text",
+  minimal: "border-transparent bg-transparent font-medium text-text-2 hover:bg-control-fill hover:text-text",
 } as const;
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = { ...BUTTON_KIND, secondary: BUTTON_KIND.default, ghost: BUTTON_KIND.minimal };

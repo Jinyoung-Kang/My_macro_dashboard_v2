@@ -30,7 +30,8 @@ const FADE_IN = "motion-safe:transition-opacity motion-safe:duration-150 motion-
 /**
  * 대화상자(모달) — Radix Dialog를 토큰 색으로 감싼 것. 모양은 덮개 3층(작업대 실행 명세 §3-3): 바탕 surface-2, 안쪽 1px 밝은 경계
  * (border-overlay), 바깥 그림자(shadow-overlay), 4px 모서리, 안쪽 16px. 덮개 안에서 누르는 칸의 hover는 surface-3이고, 그 위에는
- * text-3·accent·danger 글자를 두지 않습니다(대비 4.5:1 미만 — 금지 쌍 시험).
+ * text-3·accent·danger 글자를 두지 않습니다(대비 4.5:1 미만 — 금지 쌍 시험). 상자에 덮개 범위 표지(data-overlay)를 붙여, 안의 공용 단추가
+ * 조작 바탕을 한 단계 위(surface-3)로 씁니다 — 기본 단추 바탕·최소 단추 hover가 덮개 바탕(surface-2)에 묻히지 않게(globals.css, 2026-11-16 결정).
  *
  * 포커스 가두기·Esc로 닫기·바깥 누르면 닫기·뒤 화면 aria-hidden·스크롤 잠금은 Radix가 합니다. 여기서 더하는 것은
  * - 이름 필수: `title`이 대화상자의 이름(aria-labelledby)입니다. 화면에 안 보이게 하려면 `hideTitle`(이름은 남음).
@@ -96,6 +97,7 @@ export function Dialog({
         <DialogPrimitive.Overlay className={`fixed inset-0 z-50 bg-scrim ${FADE_IN}`} />
         <DialogPrimitive.Content
           data-scope={scopeValue}
+          data-overlay=""
           onOpenAutoFocus={() => {
             // 이 시점에는 아직 포커스가 옮겨지기 전입니다(Radix FocusScope가 옮기기 직전에 부름).
             const active = document.activeElement;

@@ -45,6 +45,16 @@
      경계는 box-shadow가 아니라 실제 테두리 색이라 고대비(forced-colors) 모드에서도 덮개 경계가 남습니다. */
   --border-overlay: rgb(255 255 255 / 0.12);
   --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
+  /* 조작 바탕(bg-control-fill) — 기본 단추의 바탕이자 최소 단추의 hover 바탕. 패널·바탕 위에서는 surface-2이고, 덮개 안([data-overlay] — 아래)에서는
+     한 단계 위 surface-3입니다(덮개 바탕이 surface-2라 같은 값이면 기본 단추 바탕과 최소 단추 hover가 보이지 않음 — 2026-11-16 결정, 실행 명세 §3-4). */
+  --control-fill: var(--surface-2);
+}
+
+/* 덮개 범위 — 대화상자·토스트의 상자에 data-overlay를 붙이면 그 안의 공용 단추가 한 단계 위 면(surface-3)을 바탕·hover로 씁니다. 단추를 부르는
+   화면 파일(실제 매매·ISA 대화상자 포함)은 고치지 않고 공용 키트가 붙인 표지로 따라옵니다. surface-3 위에는 text-3·neutral·accent·danger 글자를 두지
+   않습니다(themeTokens.test.ts가 bg-control-fill을 surface-3과 같은 금지 쌍으로 봄). */
+[data-overlay] {
+  --control-fill: var(--surface-3);
 }
 
 /* 정보 검색(/search) 내용 영역의 범위 토큰(ADR 0041 결정 11) — 앱이 밝을 때도 이 화면만 어둡게 그리던 장치입니다. 이제 :root가 같은 어두운 값이라
@@ -112,6 +122,7 @@
   --color-danger-fg: var(--danger-fg);
   --color-scrim: var(--scrim);
   --color-border-overlay: var(--border-overlay);
+  --color-control-fill: var(--control-fill);
   /* 옅은 톤 바탕(글자 배지·배너) — 투명 틴트(bg-warn/10)는 놓인 자리와 섞여 바탕마다 글자 대비가 달랐습니다. surface와 미리 섞은
      불투명 색이라 어디에 놓여도 패널 위와 같습니다. 톤 글자 대비 warn 6.1·ok 6.9·danger 4.54, 틴트 위 text 12.7 이상·text-2 8.4 이상·text-3 4.7 이상.
      accent 틴트 위 accent 글자는 4.47이라 쓰지 않습니다(금지 쌍 — 아이콘은 그래픽 3:1이라 됨). */

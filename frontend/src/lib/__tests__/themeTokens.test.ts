@@ -248,6 +248,30 @@ describe("어두운 한 벌(W1)", () => {
   });
 });
 
+describe("조작 바탕 — 덮개 안 단추(2026-11-16 결정, 명세 §3-4)", () => {
+  // 기본 단추 바탕·최소 단추 hover(bg-control-fill)가 패널·바탕 위에서는 surface-2, 덮개(대화상자·토스트 — 바탕 surface-2) 안에서는 surface-3입니다.
+  // 같은 값이면 덮개 안 기본 단추의 바탕(1.00:1)과 최소 단추의 hover가 보이지 않았습니다. 그 위 글자는 surface-3 금지 목록을 따릅니다(위 행렬·소스 검사).
+  it(":root는 surface-2, 덮개 범위([data-overlay] — 사용자 속성만)는 surface-3, @theme inline에서 클래스 이름이 된다", () => {
+    expect(declarations(blockBody(":root"))["--control-fill"]).toBe("var(--surface-2)");
+    const overlay = blockBody("[data-overlay]");
+    expect(declarations(overlay)).toEqual({ "--control-fill": "var(--surface-3)" });
+    expect(plainProperties(overlay)).toEqual([]);
+    const inline = declarations(RULES.find((rule) => rule.selector === "@theme inline")?.body ?? "");
+    expect(inline["--color-control-fill"]).toBe("var(--control-fill)");
+  });
+
+  it("두 자리의 바탕은 둘레 면과 한 단계 다르다 — 패널(surface) 위 surface-2, 덮개(surface-2) 안 surface-3", () => {
+    const t = declarations(blockBody(":root"));
+    // 면 단계가 서로 다른 값이어야 바탕이 보입니다(값이 같으면 1.00:1).
+    expect(ratio(t, "--surface-2", "--surface")).toBeGreaterThan(1.05);
+    expect(ratio(t, "--surface-3", "--surface-2")).toBeGreaterThan(1.05);
+    // 기본 단추의 글(text)과 최소 단추의 글(text-2)은 두 바탕 모두에서 4.5:1 이상입니다.
+    for (const back of ["--surface-2", "--surface-3"]) {
+      for (const fore of ["--text", "--text-2"]) expect(ratio(t, fore, back), `${fore} on ${back}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
 describe("글자 단계(명세 §3-6)", () => {
   it("micro 12/16 · caption 13/18 · body 14/20 · running 15/24 · heading-sm 16/24 · heading 20/28 · value-lg 28/36", () => {
     const theme = themeDeclarations();
@@ -309,9 +333,13 @@ const textClass = (token: string) => `text-${token.slice(2)}`;
 
 type PairRule = "surface-3" | "tint";
 
-/** 금지 쌍 — 바탕 클래스 하나와 그 위에 두지 않는 글자 클래스들. */
+/**
+ * 금지 쌍 — 바탕 클래스 하나와 그 위에 두지 않는 글자 클래스들. 조작 바탕(bg-control-fill — 기본 단추 바탕·최소 단추 hover)은 덮개 안([data-overlay])에서
+ * surface-3이 되므로 surface-3과 같은 글자를 막습니다(2026-11-16 결정, 아래 '조작 바탕' 시험).
+ */
 const FORBIDDEN_PAIRS: readonly { rule: PairRule; back: string; fores: readonly string[] }[] = [
   { rule: "surface-3", back: "bg-surface-3", fores: FORBIDDEN_ON_SURFACE_3.map(textClass) },
+  { rule: "surface-3", back: "bg-control-fill", fores: FORBIDDEN_ON_SURFACE_3.map(textClass) },
   ...FORBIDDEN_TONE_ON_TINT.map((tone) => ({ rule: "tint" as const, back: `bg-${tone.slice(2)}-tint`, fores: [textClass(tone)] })),
 ];
 
@@ -528,10 +556,10 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
     ]);
     expect(inheritedHits("sample.tsx", sample, "surface-3", tones)).toEqual(["8: bg-surface-3 요소(8행) 안 text-text-3"]);
     // 공용 키트(P2)가 안내(info)를 중립(surface-2 바탕)으로 바꿔 지금 표에는 accent 틴트를 칠하는 안내 상자 톤이 없습니다(QA-459).
-    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-accent-tint": [] });
+    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-control-fill": [], "bg-accent-tint": [] });
   });
 
-  it("surface-3(덮개 안 hover·눌림) 바탕 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
+  it("surface-3(덮개 안 hover·눌림)·조작 바탕(덮개 안에서 surface-3) 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
     expect(offenders("surface-3")).toEqual([]);
   }, SOURCE_SCAN_TIMEOUT_MS);
 

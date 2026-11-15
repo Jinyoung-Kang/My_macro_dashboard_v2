@@ -51,6 +51,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {items.map((item) => (
           <ToastPrimitive.Root
             key={item.id}
+            // 덮개 범위 표지 — 안에 공용 단추를 두면 조작 바탕이 한 단계 위(surface-3)가 됩니다(대화상자와 같음, globals.css).
+            data-overlay=""
             type={item.tone === "warn" ? "foreground" : "background"}
             onOpenChange={(open) => {
               if (!open) remove(item.id);

@@ -58,6 +58,12 @@ describe("띄우기", () => {
     expect(status.getAttribute("aria-live")).toBe("assertive");
   });
 
+  it("알림 상자는 덮개 범위(data-overlay) — 안의 공용 단추는 조작 바탕이 한 단계 위(surface-3)", async () => {
+    fireEvent.click(renderToast());
+    const item = await within(region()).findByText("설정을 저장했습니다");
+    expect(item.closest("li")?.hasAttribute("data-overlay")).toBe(true);
+  });
+
   it("닫기 단추로 닫힌다", async () => {
     fireEvent.click(renderToast());
     const item = await within(region()).findByText("설정을 저장했습니다");

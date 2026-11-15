@@ -55,6 +55,8 @@ describe("열림과 닫힘", () => {
     render(<Dialog open onOpenChange={() => {}} title="계좌 초기화">내용</Dialog>);
     const box = screen.getByRole("dialog", { name: "계좌 초기화" }).className.split(/\s+/);
     expect(box).toEqual(expect.arrayContaining(["bg-surface-2", "border", "border-border-overlay", "shadow-overlay", "rounded-card"]));
+    // 덮개 범위 표지 — 안의 공용 단추가 조작 바탕을 한 단계 위(surface-3)로 씁니다(globals.css [data-overlay], 2026-11-16 결정).
+    expect(screen.getByRole("dialog", { name: "계좌 초기화" }).hasAttribute("data-overlay")).toBe(true);
     const close = screen.getByRole("button", { name: "닫기" }).className.split(/\s+/);
     expect(close).toEqual(expect.arrayContaining(["rounded-control", "text-text-2", "hover:bg-surface-3", "h-11", "w-11"]));
     expect(close).not.toContain("text-text-3");

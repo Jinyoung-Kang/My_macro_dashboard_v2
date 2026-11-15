@@ -96,7 +96,8 @@ bg `#111418` / surface `#1c2127` / surface-2 `#252a31` / surface-3 `#2f343c`입�
 | `--bg` | #111418 | BLACK | — | 페이지 바탕(0층) |
 | `--surface` | #1c2127 | DARK_GRAY1 | — | 패널(1층), 패널 머리, 입력 바탕(2026-11-16 결정 — 아래) |
 | `--surface-2` | #252a31 | DARK_GRAY2 | — | hover, 선택, 기본 단추 바탕, 덮개(대화상자·팝오버·명령 팔레트·서랍·토스트) |
-| `--surface-3` (새) | #2f343c | DARK_GRAY3 | — | 덮개 안 hover, 눌림만. **`text-3`·`accent`·`danger` 글자 금지** |
+| `--surface-3` (새) | #2f343c | DARK_GRAY3 | — | 덮개 안 hover, 눌림, 덮개 안 기본 단추 바탕(2026-11-16 결정 — `--control-fill`)만. **`text-3`·`accent`·`danger` 글자 금지** |
+| `--control-fill` (새, 별칭) | var(--surface-2) · 덮개 안 var(--surface-3) | — | — | 기본 단추 바탕·최소 단추 hover 바탕(`bg-control-fill`). 덮개 범위 `[data-overlay]`(대화상자·토스트 상자)에서 한 단계 위. 그 위 글자는 surface-3 금지 목록을 따름 |
 | `--border` | #383e47 | DARK_GRAY4 | 장식 | 패널 경계 |
 | `--border-subtle` (새) | #2f343c | DARK_GRAY3 | 장식 | 표 행 구분선, 큰 차트 가로 격자(W6) |
 | `--border-strong` | #738091 | GRAY2 | 4.60/4.03/3.59/3.12 | 입력, 체크박스 테두리(3:1) |
@@ -189,6 +190,13 @@ W1로 밝은 테마는 없앱니다. 나중에 다시 더할 때의 출발점으
 ### 3-4. 의도색 쓰는 법
 - **단추 네 종류**: 기본(surface-2와 border), 주(accent 바탕 — 한 묶음에 하나), 위험(danger 바탕 — 확인 대화상자를 거치는 파괴적 동작에만, 늘 글), 최소(투명 — 표 안·도구 줄).
   한 묶음에 여러 색을 섞지 않습니다.
+- **덮개 안 단추 — 2026-11-16 결정(사용자 위임 — 권장안)**: 덮개(대화상자·토스트·팝오버) 바탕이 surface-2라 기본 단추(surface-2)의 바탕이 덮개와 같아지고(1.00:1),
+  최소 단추의 `hover:bg-surface-2`도 보이지 않았습니다. 그래서 기본 단추 바탕과 최소 단추 hover 바탕을 별칭 토큰 `--control-fill`(클래스 `bg-control-fill`)로 읽게 하고,
+  덮개 상자에 범위 표지 `data-overlay`를 붙여 그 안에서는 한 단계 위 surface-3이 되게 합니다(`globals.css`의 `[data-overlay]` 블록 — 공용 `Dialog`·`Toast`가 붙임.
+  정보 검색 입력 후보 목록 같은 팝오버는 안에 단추가 없어 지금은 붙이지 않음 — 단추를 두는 덮개(P3 메뉴·명령 팔레트, Drawer)를 만들 때 같은 표지를 붙임).
+  기본 단추의 hover는 두 자리 모두 경계를 `border-strong`으로 진하게 하므로(패널 위와 같은 규칙) surface-4는 들이지 않았습니다 — 한 자리 안에서 '최소 hover = 기본 바탕'
+  관계가 패널 위(surface-2)와 덮개 안(surface-3)에서 같습니다. 단추를 부르는 화면 파일(실제 매매·ISA 대화상자 포함)은 고치지 않고 공용 키트의 표지로 따라옵니다.
+  그 바탕 위 글자는 text·text-2만(surface-3 위 `text-3` 4.35·`accent` 3.91·`danger` 3.99 — 금지 쌍 시험이 `bg-control-fill`을 surface-3과 같이 봄).
 - **안내 상자(Callout)**: 중립·주의·위험·정상 네 가지, 늘 아이콘과 제목. '정보' 안내는 A1 때문에 파랑이 아니라 중립(border-strong 테두리)입니다.
 - **실제 계좌·ISA**: '실제' 표지를 warn 안내 상자와 태그로 늘 보입니다(모의 화면과 섞여 보이지 않게).
 
