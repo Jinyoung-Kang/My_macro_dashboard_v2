@@ -718,7 +718,7 @@ export function FeedPanel({
           style={sheetStyle(sheet)}
           className={`${
             previewOpen
-              ?"fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
+              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
               : "border-t border-border"
           } p-3 xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:border-l xl:border-t-0 xl:shadow-none`}
         >
