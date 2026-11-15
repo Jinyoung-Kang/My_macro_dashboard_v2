@@ -20,6 +20,8 @@ PostgreSQL ← 수집기(FastAPI, `collector/`). Docker Compose 네 컨테이너
 - **v2 프로그램**(순서·사용자 결정 V1~V8·AWS 교체 절차): [docs/specs/2026-10-26-v2-program-plan.md](docs/specs/2026-10-26-v2-program-plan.md) ·
   [0단계 체크리스트](docs/specs/2026-10-26-v2-step0-fork.md) · [UI/UX 설계](docs/specs/2026-10-26-v2-ui-design.md)(1단계 — 토큰·셸 시안 승인 뒤 홈 → 모의매매(미국)) ·
   [한국 증시 책 명세 초안](docs/specs/2026-10-26-v2-kr-paper-spec.md)(2단계) · [외부 OSS 채택 목록](docs/specs/2026-10-26-v2-oss-adoption.md) · [ADR 0020](docs/adr/0020-v2-program.md)
+- **화면 개편(작업대 화면 언어, 2026-11-15~ — UI 설계·Coinbase 명세보다 우선)**: [ADR 0042](docs/adr/0042-workbench-ui.md) · [실행 명세](docs/specs/2026-11-15-v2-workbench-ui.md)(결정 W1~W14·단계 P0~P8) ·
+  [진행 기록](docs/specs/2026-11-15-v2-workbench-ui-progress.md)
 
 ## 명령 (전부 `make`, 저장소 최상위에서)
 - 기동·진단: `make up` · `make doctor` · `make status` · `make logs S=backend`
