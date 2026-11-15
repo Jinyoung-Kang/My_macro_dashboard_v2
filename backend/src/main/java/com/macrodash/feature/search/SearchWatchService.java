@@ -88,9 +88,14 @@ public class SearchWatchService {
      * 다시 해 볼 때(DART 저장본이 섞이지 않은 partial) — 시점을 약속하지 않습니다. 수집기는 실패가 섞인 풀기를 60초만 캐시해서 시간 초과 같은 일시 실패는
      * 1분쯤 뒤 새로 풀지만, 거부(429·403)를 받은 출처는 수집기가 몇 분 동안 호출을 멈추고(사유에 '5분 동안 이 출처 호출을 멈춤'처럼 적힘 — 수집기
      * {@code http.REJECT_LATCH_SECONDS}), 설정 문제(SEC_USER_AGENT가 비었음 등)는 고칠 때까지 같아서 '1분쯤 뒤'라고만 하면 지키지 못합니다.
+     * 화면(lib/infoSearch의 {@code WATCH_PARTIAL_RETRY_LATER})이 같은 글을 씁니다 — 화면 시험 infoSearchWatchPartialParity가 이 줄을 읽어 대조하므로
+     * 한 줄 문자열로 둡니다.
      */
     static final String RETRY_LATER = "사유가 풀린 뒤 다시 등록하세요(시간 초과 같은 일시 실패는 1분쯤 뒤, 수집기가 호출을 멈춘 출처는 멈춘 시간이 지난 뒤, 설정 문제는 고친 뒤).";
-    /** DART 고유번호 저장본({@link #DART_STORE})이 섞였을 때의 다시 해 볼 때 — 저장본이 없거나 읽지 못하는 동안에는 다시 눌러도 같은 503입니다. */
+    /**
+     * DART 고유번호 저장본({@link #DART_STORE})이 섞였을 때의 다시 해 볼 때 — 저장본이 없거나 읽지 못하는 동안에는 다시 눌러도 같은 503입니다. 화면의
+     * {@code WATCH_PARTIAL_RETRY_DART_STORE}와 같은 글(같은 시험이 대조 — 한 줄 문자열로 둠).
+     */
     static final String RETRY_DART_STORE = "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
     /** 덜 풀린 등록(503 partial)의 안내. */
     static final String PARTIAL = PARTIAL_HEAD + " — " + RETRY_LATER;

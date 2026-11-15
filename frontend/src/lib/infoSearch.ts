@@ -2114,18 +2114,19 @@ export function writeErrorText(error: unknown, conflict: string): string {
   return error.message || "알 수 없는 오류";
 }
 
-/** DART 고유번호 저장본을 읽지 못한 출처 키(수집기 search_entities.DART_STORE) — 저장본이 없으면 1분 뒤에도 같습니다. */
-const DART_STORE = "dart_store";
+/** DART 고유번호 저장본을 읽지 못한 출처 키(수집기 search_entities.DART_STORE·백엔드 SearchWatchService.DART_STORE) — 저장본이 없으면 1분 뒤에도 같습니다. */
+export const WATCH_PARTIAL_DART_STORE = "dart_store";
 
 /**
- * 관심 대상 등록 503 partial의 다시 해 볼 때(백엔드 SearchWatchService.RETRY_LATER와 같은 글) — 시점을 약속하지 않습니다. 시간 초과 같은 일시 실패는
+ * 관심 대상 등록 503 partial의 다시 해 볼 때(백엔드 SearchWatchService.RETRY_LATER와 같은 글 — infoSearchWatchPartialParity 시험이 대조) — 시점을
+ * 약속하지 않습니다. 시간 초과 같은 일시 실패는
  * 수집기가 60초만 캐시해 1분쯤 뒤 새로 풀지만, 거부(429·403)를 받은 출처는 수집기가 몇 분 동안 호출을 멈추고(사유 '… · 5분 동안 이 출처 호출을 멈춤'),
  * 설정 문제(SEC_USER_AGENT)는 고칠 때까지 같습니다.
  */
-const WATCH_PARTIAL_RETRY_LATER =
+export const WATCH_PARTIAL_RETRY_LATER =
   "사유가 풀린 뒤 다시 등록하세요(시간 초과 같은 일시 실패는 1분쯤 뒤, 수집기가 호출을 멈춘 출처는 멈춘 시간이 지난 뒤, 설정 문제는 고친 뒤).";
-/** DART 고유번호 저장본(dart_store)이 섞였을 때(백엔드 SearchWatchService.RETRY_DART_STORE와 같은 글) — 저장본이 없으면 1분 뒤에도 같습니다. */
-const WATCH_PARTIAL_RETRY_DART_STORE =
+/** DART 고유번호 저장본(dart_store)이 섞였을 때(백엔드 SearchWatchService.RETRY_DART_STORE와 같은 글 — 같은 시험이 대조) — 저장본이 없으면 1분 뒤에도 같습니다. */
+export const WATCH_PARTIAL_RETRY_DART_STORE =
   "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
 
 /**
@@ -2146,7 +2147,7 @@ export function watchPartialText(body: unknown): string | null {
     const { source, message } = entry as Partial<Record<keyof SearchWatchPartialBody["failed"][number], unknown>>;
     const key = typeof source === "string" ? source.trim() : "";
     if (!key) continue;
-    if (key === DART_STORE) store = true;
+    if (key === WATCH_PARTIAL_DART_STORE) store = true;
     const text = typeof message === "string" ? message.trim() : "";
     parts.push(text ? `${entitySourceLabel(key)}(${text})` : entitySourceLabel(key));
   }
