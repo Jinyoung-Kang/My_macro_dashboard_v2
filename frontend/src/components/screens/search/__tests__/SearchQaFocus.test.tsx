@@ -279,6 +279,18 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
     expect(focusVisibleOutlineOffset(list.className)).toBeGreaterThanOrEqual(0);
   });
 
+  // QA-433 후속(QA 스택 재확인 3, 1280·1440): 바깥에 그린 목록 테두리의 오른쪽 변이 xl 오른쪽 칸(같은 칸 틀의 뒤 형제 — border-l·불투명
+  // bg-surface)에 덮였습니다(오른쪽 변 0/836px, 보이는 것은 1px). 뒤에 오는 형제는 위치가 없어도 나중에 칠해지므로, 목록이 :focus-visible일
+  // 때만 위치를 가진 층(relative + z)으로 올라가야 그 위에 그려집니다. jsdom은 칠하는 차례를 계산하지 않으므로 클래스 약속으로 봅니다.
+  // 수정 전 실패: 목록 className에 focus-visible:relative·focus-visible:z-* 가 없음.
+  it.fails("결과 목록은 :focus-visible에서 위치를 가진 층으로 올라가 뒤에 오는 xl 오른쪽 칸이 바깥 테두리를 덮지 못한다", async () => {
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const tokens = list.className.split(/\s+/);
+    expect(tokens).toContain("focus-visible:relative");
+    expect(tokens.some((token) => /^focus-visible:z-(\d+|\[\d+\])$/.test(token))).toBe(true);
+  });
+
   it("받는 중 줄(p[role=status] — '다시 확인' 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
     reads[endpoints.search.feed("us:NVDA", "timeline")] = {
       ...FEED,
