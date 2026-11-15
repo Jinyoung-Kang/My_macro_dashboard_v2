@@ -417,3 +417,34 @@ describe("QA-434 — '거르기 모두 풀기'를 누르면 사라진 단추 대
     expect(document.activeElement).toBe(within(pane).getByRole("button", { name: /^7일/, pressed: true }));
   });
 });
+
+describe("QA-435 — 키보드로 고른 줄은 붙어 있는 날짜 머리 밑에 숨지 않는다", () => {
+  // QA-435: QA 스택 재확인 3(1440·1280·1024)에서 목록에 포커스를 두고 맨 아래로 내린 뒤 ↓를 누르면 0번 줄이 본문 위끝으로 옮겨지는데
+  // (scrollIntoView block nearest), 그 자리에 sticky 날짜 머리(top-0 z-10, 높이 약 25px)가 붙어 있어 고른 줄이 7px만 보였습니다
+  // (WCAG 2.4.11 — 미리 보기에는 그 줄이 뜸). 줄마다 날짜 머리 높이 이상의 scroll-margin-top을 두어 옮길 때 머리 아래에 멈추게 합니다.
+  // jsdom은 스크롤·칠하기를 계산하지 않으므로 클래스 약속(scroll-mt-*)으로 보고, 묶음 줄(cluster)도 같은 약속인지 소스로 봅니다.
+  // 수정 전 실패: 줄의 className에 scroll-mt-* 가 없음(재현 커밋에서는 it.fails).
+  const SCROLL_MT = /^scroll-mt-(\d+(\.\d+)?|\[[^\]]+\])$/;
+
+  it.fails("결과 목록의 줄(role=option)마다 날짜 머리 높이만큼 scroll-margin-top을 둔다", async () => {
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const header = within(list).getAllByRole("group")[0].firstElementChild as HTMLElement;
+    expect(header.className).toMatch(/(?:^|\s)sticky(?:\s|$)/); // 줄을 덮을 수 있는 머리가 아직 있다(이 시험이 지키는 까닭)
+    const options = within(list).getAllByRole("option");
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) expect(option.className.split(/\s+/).some((token) => SCROLL_MT.test(token))).toBe(true);
+  });
+
+  it.fails("묶음 줄을 포함해 FeedPanel의 role=option 요소는 모두 scroll-mt-* 를 가진다(소스 대조)", () => {
+    const source = readFileSync(resolve(__dirname, "../FeedPanel.tsx"), "utf8");
+    const blocks = source.split('role="option"').slice(1);
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    for (const block of blocks) {
+      const className = /className=\{?`([^`]*)`|className="([^"]*)"/.exec(block);
+      expect(className).not.toBeNull();
+      const text = (className?.[1] ?? className?.[2] ?? "").split(/\s+/);
+      expect(text.some((token) => SCROLL_MT.test(token))).toBe(true);
+    }
+  });
+});
