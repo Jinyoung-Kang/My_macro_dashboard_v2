@@ -392,7 +392,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 |---|---|---|---|
 | P0 준비 | 이 명세·ADR 0042·진행 기록(문서 브랜치). 시험 묶음: 대비 행렬 일반화, 12px 하한 소스 검사, 조작 44px 검사, 팔레트 기록, 데이터 칸 강조색 금지(§9) — 지금 어기는 자리는 결함 번호를 받아 `it.fails`. P1 전에 감사 스크립트 `scripts/qa/ui-audit.js`와 QA 스택의 개편 전 기준(§9-9) | 0.5~1일 | 없음(문서·시험) |
 | P1 토큰·테마·팔레트 | 토큰 값을 바꾸기 전에 accent 틴트 위 accent 글자 두 자리(`SideNav` 현재 메뉴·`filterChipClasses` 켠 칩)를 `text-text`로(§3-2, `fix(QA-###)`). `:root`를 어두운 한 벌로(W1), 상승 `#ff6b6b`(W4), `surface-3`·`border-subtle`·`scrim`, 글자 단계, 모서리 4px. 범위 블록은 값만 같게 남김. ThemeSwitch·theme·useTheme 제거. 옛 별칭 5개 **이름만 바꾸는 커밋**(W9). 계좌2 색·회색 2개·K40 참고선, 툴팁 4px, 검증기 결과 기록. Recharts `var()`를 Firefox에서 확인 | 1.5~2일 | P2와 함께 |
-| P2 공용 키트 | §6 표 전부(Radix 두 개 제외). `rounded-full` 65곳 정리. 겉모양 단언 약 60줄을 같은 커밋에서 고침 | 2.5~3일 | **D1**: 모든 화면이 새 언어(배치는 그대로) |
+| P2 공용 키트 | §6 표 전부(Radix 두 개 제외 — 2026-11-16 조정: 새 패턴 부품 PropertyList·EntityHeader·SplitPane/MasterDetail·Timeline·SectionIndex·KpiStrip·그래프는 처음 쓰는 단계로 이월, 진행 기록 §P2 패턴·차트). `rounded-full` 65곳 정리. 겉모양 단언 약 60줄을 같은 커밋에서 고침 | 2.5~3일 | **D1**: 모든 화면이 새 언어(배치는 그대로) |
 | P3 셸 | 상단바, 빵부스러기, 나무 메뉴, lg 이상 SubNav 제거, 명령 팔레트 확장, 단축키 도움말, 새로고침 단추 이동. Radix 두 개(W12) | 1.5~2일 | P4와 함께 |
 | P4 대상 문법 | 상세 3종과 홈 | 2.5~3일 | **D2** |
 | P5a 시장 | 6화면 | 3~4일 | **D3** |
@@ -494,7 +494,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | `README.md` §2 겉모양 문단, `CLAUDE.md` '먼저 읽을 문서' | 짧은 대체 문장·링크 | P0(이 브랜치) |
 | `README.md` 더보기 행(테마 전환)·기술 스택 표(라이트·다크 토큰), `docs/ARCHITECTURE.md` §4-3 테마 문단 | 어두운 한 벌로 | P1 |
 | `docs/PRINCIPLES.md` '계열 색' | 새 면의 검증기 기록 위치(§3-5) | P1 |
-| `docs/adr/0004-frontend-layering.md` | 덧붙임: 새 공용 부품(ActionBar·PropertyList·EntityHeader·MasterDetail·Timeline·SectionIndex·KpiStrip·Drawer)과 지키는 시험 | P2 |
+| `docs/adr/0004-frontend-layering.md` | 덧붙임: 새 공용 부품(ActionBar·PropertyList·EntityHeader·MasterDetail·Timeline·SectionIndex·KpiStrip·Drawer)과 지키는 시험 | 부품을 만드는 단계(P2 — 이월한 새 패턴 부품은 그 부품을 만드는 단계, 진행 기록 §P2 패턴·차트) |
 | UI 설계 §0(목적·'휴대폰 접속 경로를 만들지 않는다'는 ADR 0023 뒤로 낡은 문장)·§3·§9 DoD·§10 | 이 명세로 링크 | P1~P3 |
 | 프로그램 계획서 §0·§4 | 4단계 중 별칭 제거만 함 | P1 |
 | 장중 명세 §4-1, 검색 상세 명세 §1 | 배치 대체 표시 | P4·P6 |
