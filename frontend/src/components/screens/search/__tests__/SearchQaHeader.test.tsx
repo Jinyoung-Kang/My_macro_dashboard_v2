@@ -1,8 +1,8 @@
 /**
- * 정보 검색 대상 머리 — 관심 대상 등록·해제 단추의 포커스(QA-444 — WCAG 2.4.3).
+ * 정보 검색 대상 머리 — 관심 대상 등록·해제 단추의 포커스(QA-444 — WCAG 2.4.3)와 긴 이름 옆 종류 꼬리표(QA-446 — ADR 0041 결정 11).
  * 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -172,5 +172,31 @@ describe("QA-444 — 관심 대상 등록·해제 단추는 요청 중에도 포
     expect(button.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(button);
     expect(api.apiPost).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("QA-446 — 긴 영문 이름 옆의 종류 꼬리표는 한 줄로 남고 이름이 남은 폭을 쓴다", () => {
+  // QA-446: 정보 검색 QA 스택 브라우저 확인(390, 이름을 긴 합성 영문 법인명으로 둔 대상)에서 대상 머리의 h2가 232px로 말줄임되고(title 없음)
+  // 옆 종류 꼬리표 '기업'이 42x38px로 눌려 '기'·'업'이 두 줄로 쪼개졌습니다. 머리 줄(flex)에서 꼬리표에 shrink-0·whitespace-nowrap이 없어
+  // 이름과 함께 줄어들고, 한글은 음절 사이에서 줄을 바꿀 수 있어서입니다(같은 화면의 다른 꼬리표·표지는 whitespace-nowrap).
+  // jsdom은 배치를 재지 않으므로 클래스 약속(꼬리표·아이콘은 줄지 않음, 이름은 min-w-0 truncate로 남은 폭을 씀)과 이름 전체의 title로 봅니다.
+  // 수정 전 실패: 꼬리표 className에 shrink-0·whitespace-nowrap이 없음(재현 커밋에서는 it.fails).
+  const LONG_NAME = "Fictional Universal Financial Holdings Group, Inc.";
+
+  it.fails("꼬리표는 줄지 않고 한 줄(shrink-0·whitespace-nowrap), 이름은 남은 폭에서 말줄임하고 title에 이름 전체", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: { ...NVIDIA, name: LONG_NAME, nameKo: null, nameEn: LONG_NAME }, errors: {} };
+    reads[endpoints.search.watch] = watchList([]);
+    renderScreen("/search?e=us:NVDA");
+    const heading = await screen.findByRole("heading", { level: 2, name: LONG_NAME });
+    const row = heading.parentElement as HTMLElement;
+    expect(row.className).toContain("flex");
+
+    const badge = within(row).getByText("기업");
+    expect(badge.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "whitespace-nowrap"]));
+    for (const child of Array.from(row.children)) {
+      if (child !== heading) expect(child.className.split(/\s+/)).toContain("shrink-0");
+    }
+    expect(heading.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-w-0", "truncate"]));
+    expect(heading.getAttribute("title")).toBe(LONG_NAME);
   });
 });
