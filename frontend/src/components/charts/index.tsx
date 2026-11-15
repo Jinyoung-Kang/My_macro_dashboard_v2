@@ -485,7 +485,13 @@ export function MultiLineSeries({
                         ) : null
                     : false
                 }
-                activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
+                // hover 점도 참고선이면 같은 표지 — 선과 다른 층(activeDot circle)이라 g의 표지가 닿지 않습니다(QA-509).
+                activeDot={{
+                  r: 4,
+                  strokeWidth: 2,
+                  stroke: "var(--surface)",
+                  ...(entry.dashed && entry.tailOf === undefined ? { className: REFERENCE_LINE_CLASS } : {}),
+                }}
                 connectNulls={false}
               />
             );

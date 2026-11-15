@@ -329,6 +329,8 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     const body = forcedBody();
     expect(innerRule(body, ".recharts-bar-rectangle path")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
     expect(innerRule(body, ".chart-ref-line :is(path, line)")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+    // 참고선 계열의 hover 점(activeDot circle 자신에 표지 — QA-509).
+    expect(innerRule(body, "circle.chart-ref-line")).toMatch(/(?:^|;)\s*fill:\s*CanvasText\s*;/);
   });
 
   // QA-498(정보 검색 범위): 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적어, 고대비 재정의가 그 범위 안의 SVG(연결 그림

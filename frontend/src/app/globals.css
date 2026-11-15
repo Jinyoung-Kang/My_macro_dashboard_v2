@@ -304,4 +304,9 @@
   .chart-ref-line :is(path, line) {
     stroke: CanvasText;
   }
+
+  /* 참고선 계열의 hover 점(Recharts activeDot — circle 자신에 표지, QA-509). */
+  circle.chart-ref-line {
+    fill: CanvasText;
+  }
 }
