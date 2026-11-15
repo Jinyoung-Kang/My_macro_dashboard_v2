@@ -15,9 +15,9 @@ import { sessionStatus, tradeDayFrom, tradeTimeFrom, type SessionState } from "@
  *
  * 색 — 초록(개장)만 눈에 띄게 하고 나머지는 회색 계열입니다. 이 화면의 빨강·파랑은
  * 상승·하락 전용이라 상태 표시에 쓰지 않습니다. 상태색은 늘 아이콘과 글을 함께 씁니다(작업대 실행 명세 §3-1) — 글 앞에 상단바 장 시계 칩과 같은
- * 상태 점(장식, 개장 ok·휴식 warn·그 밖 중립)을 둡니다. 모양은 4px 태그(명세 §6 Tag)입니다.
+ * 상태 점(장식, 개장 ok·휴식 warn·그 밖 중립)을 둡니다. 모양은 4px 태그(명세 §6 Tag — 높이 20px)입니다.
  */
-const TAG = "inline-flex items-center gap-1 rounded-control border px-1.5 py-0.5 text-xs leading-4";
+const TAG = "inline-flex items-center gap-1 rounded-control border px-1.5 py-px align-top text-xs leading-4";
 
 const DOT: Record<SessionState, StatusTone> = {
   open: "ok",

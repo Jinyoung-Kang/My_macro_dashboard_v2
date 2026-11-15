@@ -84,6 +84,9 @@ describe("Tag", () => {
     expect(tag.textContent).toBe("NVDA");
     expect(tag.querySelector("svg")).toBeNull();
     expect(tag.className.split(/\s+/)).toEqual(expect.arrayContaining(["rounded-control", "border", "text-xs"]));
+    // 높이 20px — 글줄 16px(leading-4) + 위아래 1px + 경계. 표 칸 글줄(14/20)과 같고 글 흐름 안에서는 줄 위에 맞춰, 태그가 든 행도 32·28px 그대로(2026-11-16 결정).
+    expect(tag.className.split(/\s+/)).toEqual(expect.arrayContaining(["leading-4", "py-px", "align-top"]));
+    expect(tag.className.split(/\s+/)).not.toContain("py-0.5");
   });
 
   it.each([

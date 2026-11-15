@@ -228,7 +228,7 @@ export function Freshness({
       {refreshError && (
         // 글은 이 span의 글자 그대로 둡니다(아이콘·sr 머리말은 따로) — '새로 읽지 못함'으로 찾은 요소가 title을 가진 이 알약입니다.
         <span
-          className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-0.5 text-xs text-warn"
+          className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-px align-top text-xs text-warn"
           title={`${refreshError} — 앞서 받은 값을 보여 줍니다`}
           role="status"
         >
@@ -251,7 +251,7 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
   if (stale) {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-0.5 text-xs text-warn"
+        className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-px align-top text-xs text-warn"
         title={title}
       >
         <AlertTriangleIcon size={12} />
@@ -649,7 +649,11 @@ const TAG_TONES: Record<TagTone, { box: string; glyph: ReactNode; srPrefix: stri
 };
 
 /**
- * 태그(작업대 실행 명세 §6) — 4px 모서리·1px 경계·12px 글. 중립(별칭·식별자·종류)과 의도 셋(주의·위험·정상)이고, 의도 태그는 늘 아이콘과
+ * 태그(작업대 실행 명세 §6) — 4px 모서리·1px 경계·12px 글. 높이는 20px(글줄 16px + 위아래 1px 여백 + 경계 — 2026-11-16 결정)로 칸 글줄(14/20)과 같아,
+ * 표 칸·속성 값에 들어가도 행이 32·28px 그대로입니다(추정·이전 값 배지·정보 검색 종류 표지·개장 배지·신선도 주의 표지가 같은 높이). 글 흐름 안(표 칸)에서는
+ * 줄 위에 맞춥니다(align-top) — 기준선에 맞추면 태그 안 글의 기준선 자리(글꼴 따라 0.5~1px)만큼 줄이 늘어 행이 1px 커졌습니다(머리 없는 크롬으로 잼).
+ * flex 줄(대부분의 자리) 안에서는 이 맞춤이 쓰이지 않습니다.
+ * 중립(별칭·식별자·종류)과 의도 셋(주의·위험·정상)이고, 의도 태그는 늘 아이콘과
  * 글을 함께 씁니다(상승색과 위험색은 색만으로 갈리지 않음 — 명세 §3-2-1). 주의·위험은 낭독기에 '주의: '를 먼저 읽힙니다. 파랑(정보) 태그는
  * 없습니다 — 강조 파랑은 누를 수 있는 것에만(원칙 A1).
  * onRemove를 주면 지울 수 있는 태그입니다 — 지우기 단추(이름 removeLabel, 없으면 '{글} 지우기')는 좁은 화면(lg 미만)에서 44px, 넓은 화면은
@@ -675,7 +679,7 @@ export function Tag({
   const glyph = icon === false ? null : (icon ?? style.glyph);
   const name = removeLabel ?? (typeof children === "string" ? `${children} 지우기` : "지우기");
   return (
-    <span className={`inline-flex items-center gap-1 rounded-control border px-1.5 py-0.5 text-xs leading-4 ${style.box}`}>
+    <span className={`inline-flex items-center gap-1 rounded-control border px-1.5 py-px align-top text-xs leading-4 ${style.box}`}>
       {glyph}
       {style.srPrefix ? <span className="sr-only">{style.srPrefix}</span> : null}
       {children}

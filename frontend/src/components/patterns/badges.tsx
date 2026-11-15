@@ -9,12 +9,13 @@ import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "
  * 플래그가 있으면 반드시 보입니다. 숨기는 옵션은 두지 않습니다.
  * 추정 배지·출처 캡션은 바탕을 칠하지 않고 놓인 자리(surface·bg)를 그대로 씁니다. 이전 값 배지만 경고 틴트(warn-tint) 바탕입니다 —
  * surface와 미리 섞은 불투명 색이라 어디에 놓여도 경고색 글자 대비가 같습니다(6.1:1, 작업대 실행 명세 §3-2). 투명 틴트(bg-warn/10)는 쓰지 않습니다.
- * 모양은 4px 태그(명세 §6 Tag — 정보 검색의 꼬리표와 같은 12px 글·좌우 6px 여백)입니다. 알약(rounded-full)이 아닌 까닭은 처음부터 그대로입니다 —
+ * 모양은 4px 태그(명세 §6 Tag — 정보 검색의 꼬리표와 같은 12px 글·좌우 6px 여백·위아래 1px, 한 줄이면 높이 20px — 표 칸 글줄과 같아 행이 32·28px 그대로,
+ * 2026-11-16 결정, 글 흐름 안에서는 줄 위에 맞춤 — ui Tag와 같은 까닭)입니다. 알약(rounded-full)이 아닌 까닭은 처음부터 그대로입니다 —
  * 사유가 길어 좁은 화면에서 두세 줄로 접히면 rounded-full은 타원이 되어 글이 모서리에 걸렸습니다(홈 모의매매 히어로·계좌 행, 390px).
  * 안은 flex가 아니라 글 흐름(inline-block)입니다 — flex 줄바꿈은 사유를 통째로 다음 줄로 넘겨 둘째 줄이 '· 관측치 …'처럼 가운뎃점으로
  * 시작했습니다(홈 1280px 계좌 행). 글 흐름이면 첫 줄을 채운 뒤 사유 중간에서 줄을 바꿉니다.
  */
-const TAG = "inline-block max-w-full rounded-control border px-1.5 py-0.5 text-xs leading-4";
+const TAG = "inline-block max-w-full rounded-control border px-1.5 py-px align-top text-xs leading-4";
 
 /**
  * 출처 캡션 — "출처 · 실시간|N분 지연 · 시각"을 작은 글(12px, text-3)로. 모르는 부분은 빼고, 전부 모르면 "출처 —".

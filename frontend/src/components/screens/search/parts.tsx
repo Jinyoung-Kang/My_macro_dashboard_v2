@@ -49,7 +49,7 @@ export function KindIcon({ kind, size = 16 }: { kind: SearchEntityKind | null | 
  */
 export function KindBadge({ kind }: { kind: SearchEntityKind | null | undefined }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-control border border-border px-1.5 py-0.5 text-xs text-text-2">
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-control border border-border px-1.5 py-px align-top text-xs text-text-2">
       <KindIcon kind={kind} size={12} />
       {entityKindLabel(kind)}
     </span>

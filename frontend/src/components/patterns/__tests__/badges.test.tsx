@@ -101,6 +101,8 @@ describe("StaleBadge", () => {
     expect(pill.className).toContain("rounded-control");
     expect(pill.className).not.toContain("rounded-full");
     expect(pill.className.split(/\s+/)).toContain("px-1.5");
+    // 한 줄이면 높이 20px(12/16 글 + 위아래 1px + 경계) — 공용 Tag와 같아 표 칸에 들어가도 행이 32·28px 그대로(2026-11-16 결정).
+    expect(pill.className.split(/\s+/)).toEqual(expect.arrayContaining(["leading-4", "py-px", "align-top"]));
     expect(pill.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("주의:").className).toContain("sr-only");
     expect(screen.getByText("· 이번 수집 실패 — 직전 저장본")).toBeTruthy();
