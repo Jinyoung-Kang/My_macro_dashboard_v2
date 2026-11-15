@@ -329,6 +329,9 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     const body = forcedBody();
     expect(innerRule(body, ".recharts-bar-rectangle path")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
     expect(innerRule(body, ".chart-ref-line :is(path, line)")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+    // 장식 격자는 CanvasText에 낮은 불투명도 — GrayText는 대비 테마에서 옅지 않아 값 점보다 도드라졌음(D1 QA 재확인).
+    expect(forcedDeclarations("svg")?.["--border-subtle"]).toBe("CanvasText");
+    expect(innerRule(body, ".recharts-cartesian-grid :is(line, path)")).toMatch(/(?:^|;)\s*stroke-opacity:\s*0\.35\s*;/);
     // 참고선 계열의 hover 점(activeDot circle 자신에 표지 — QA-509).
     expect(innerRule(body, "circle.chart-ref-line")).toMatch(/(?:^|;)\s*fill:\s*CanvasText\s*;/);
   });

@@ -271,7 +271,7 @@
    칠하는 선·축 글·기준선)는 강제하지 않아 작성자 색이 남습니다(명세 D9). 어두운 한 벌(:root 하나)이라 밝은 고대비(흰 Canvas)에서도 어두운 값이
    칠해져 히어로 선 1.07:1·축 글 2.88:1·막대 2.01~2.78:1이 됐습니다(QA-498 — 개편 전에는 prefers-color-scheme light로 밝은 토큰이 들어갔음).
    차트 파일이 쓰는 토큰을 이 모드에서만 시스템 색으로 다시 정의합니다: 글자·선 잉크는 CanvasText(SVG 글자는 4.5:1이 필요해 GrayText를 쓰지 않음),
-   면은 Canvas. 재정의는 SVG 요소 자신(svg)에만 둡니다 — 사용자 속성은 안쪽으로 물려주므로 SVG 안 모든 그림에 닿고, 선언이 svg 요소 자신에 있어
+   장식 격자는 CanvasText에 불투명도 0.35, 면은 Canvas. 재정의는 SVG 요소 자신(svg)에만 둡니다 — 사용자 속성은 안쪽으로 물려주므로 SVG 안 모든 그림에 닿고, 선언이 svg 요소 자신에 있어
    조상의 정보 검색 범위 블록([data-scope="search"] — 같은 토큰을 hex로 다시 적음)보다 이깁니다(그 범위 안의 연결 그림 LinksGraph). HTML 조상(:root)에
    두면 그 모드가 작성자의 시스템 색 키워드는 존중하므로 토큰을 쓰는 HTML 링크·비활성 단추·자리표시 글까지 CanvasText로 고정돼 UA 시스템 색
    (LinkText·GrayText)을 잃었습니다(QA-507). 보통 모드는 이 블록을 읽지 않습니다.
@@ -286,7 +286,9 @@
     --neutral: CanvasText;
     --border: CanvasText;
     --border-overlay: CanvasText;
-    --border-subtle: GrayText;
+    /* 장식 격자(GRID_LINE — 산점도·큰 차트 가로 격자)는 값 선보다 옅게: CanvasText에 아래 격자 규칙의 불투명도. GrayText는 '비활성 글자' 색이라
+       대비 테마에서 옅지 않아(어두운 팔레트 밝은 초록 13.98:1) 값 점보다 도드라졌습니다(D1 QA 재확인). */
+    --border-subtle: CanvasText;
     --bg: Canvas;
     --surface: Canvas;
     --surface-2: Canvas;
@@ -294,6 +296,10 @@
        SVG에서는 강제되지 않아 #4c90f0·#8abbff가 흰 Canvas 위 3.2·1.98:1로 남았습니다(QA-508). */
     --accent: LinkText;
     --focus: Highlight;
+  }
+
+  .recharts-cartesian-grid :is(line, path) {
+    stroke-opacity: 0.35;
   }
 
   .recharts-bar-rectangle path {
