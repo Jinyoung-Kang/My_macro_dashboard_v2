@@ -340,6 +340,8 @@ export function FeedPanel({
     // 결과 목록만 테두리를 상자 바깥(offset 0)에 그립니다. 안쪽(-outline-offset-2)이면 위치를 가진 자식(sticky 날짜 머리 z-10·고른 줄 relative,
     // 둘 다 불투명 바탕)이 목록의 테두리보다 나중에 칠해져 날짜 머리·고른 줄마다 좌우 변이 끊기고, lg 미만에서는 첫 자식이 날짜 머리라 윗변이
     // 보이지 않았습니다. 바깥 2px는 이웃의 경계선(위 줄 border-b, lg 이상 왼쪽 칸 border-r·xl 오른쪽 칸 border-l) 위에 겹쳐 그려집니다.
+    // 뒤에 오는 xl 오른쪽 칸(불투명 바탕)은 위치가 없어도 목록보다 나중에 칠해져 오른쪽 변을 덮으므로, :focus-visible일 때만 목록을 위치를 가진
+    // 층(relative z-10)으로 올립니다(QA-433 후속). z-10은 아래 시트(z-30)·TOP 단추(z-20)·하단 탭 바(z-40)보다 낮아 그것들을 덮지 않습니다.
     body = empty ? (
       <div
         ref={emptyRef}
@@ -389,7 +391,7 @@ export function FeedPanel({
         tabIndex={0}
         aria-activedescendant={selectedIndex >= 0 ? optionId(selectedIndex) : undefined}
         onKeyDown={onListKeyDown}
-        className="focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
+        className="focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
       >
         {/* 칸 머리(넓은 화면) — 낭독기는 줄마다 글을 읽으므로 장식으로 둡니다. */}
         <div aria-hidden="true" className="hidden grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] gap-3 border-b border-border px-3 py-1.5 text-xs text-text-3 lg:grid">
