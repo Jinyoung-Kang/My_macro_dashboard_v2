@@ -38,7 +38,7 @@ const columns = (first: string, firstClassName: string, proxyTitle: string): rea
         <span>{row.timing}</span>
         {row.proxy && (
           <span
-            className="whitespace-nowrap rounded-full border border-warn/40 bg-warn-tint px-2 py-px text-xs text-warn"
+            className="whitespace-nowrap rounded-control border border-warn/40 bg-warn-tint px-2 py-px text-xs text-warn"
             title={proxyTitle}
           >
             대리값
@@ -71,7 +71,7 @@ const KR_AUDITED = ["kr_claude2", "kr_claude"] as const;
 
 function BadgeChip({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );
@@ -194,7 +194,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
                 type="button"
                 aria-pressed={active}
                 onClick={() => setPicked(book.code)}
-                className={`px-3.5 text-[13px] ${segmentClasses(active)} ${FOCUS_RING}`}
+                className={`px-3 text-[13px] lg:px-2.5 ${segmentClasses(active)} ${FOCUS_RING}`}
               >
                 {book.label}
               </button>

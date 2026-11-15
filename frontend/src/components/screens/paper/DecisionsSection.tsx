@@ -170,8 +170,9 @@ export function DecisionsSection({
             type="button"
             aria-pressed={active}
             onClick={() => setView(entry.key)}
-            // 세그먼트(테마 전환과 같은 모양) — 고른 것은 트랙 위 표면 칩 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌).
-            className={`px-3.5 text-[13px] ${segmentClasses(active)} ${FOCUS_RING}`}
+            // 공용 세그먼트 — 고른 것은 트랙 위 표면 칩 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌). 높이(좁은 화면 44px)는
+            // segmentClasses가 정하고 여기서는 여백·글자 크기만 붙입니다.
+            className={`px-3 text-[13px] lg:px-2.5 ${segmentClasses(active)} ${FOCUS_RING}`}
           >
             {entry.label}
           </button>
@@ -823,7 +824,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}
+          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>

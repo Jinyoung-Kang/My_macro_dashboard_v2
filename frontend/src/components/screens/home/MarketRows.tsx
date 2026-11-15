@@ -39,7 +39,7 @@ export function MarketRows() {
     );
   } else if (groups.length === 0) {
     body = (
-      <p className="rounded-card border border-border bg-surface px-4 py-6 text-sm text-text-2">
+      <p className="rounded-card border border-border bg-surface p-3 text-sm text-text-2 lg:p-4">
         {presentText(data.message) ?? "매크로 카드 저장본이 아직 없습니다."}
       </p>
     );

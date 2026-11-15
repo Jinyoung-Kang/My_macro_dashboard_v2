@@ -270,7 +270,7 @@ function Badges({ badges }: { badges: Badge[] }) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       {badges.map((badge) => (
-        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
+        <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
           {badge.label}
         </span>
       ))}

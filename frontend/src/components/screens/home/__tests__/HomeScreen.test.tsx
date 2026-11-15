@@ -110,6 +110,24 @@ async function paperHero(): Promise<HTMLElement> {
   return region(PAPER_REGION);
 }
 
+/**
+ * 요소의 가로 간격 클래스(접두어 하나, 예: "p"·"px"·"-mx")를 px로 — 좁은 화면(기본)과 lg. lg 값이 없으면 기본 값을 물려받습니다.
+ * 간격 단위 4px(p-6 → 24, p-2.5 → 10), 임의 값은 [20px]. 없으면 0.
+ */
+function inlineSpacing(element: Element, prefixes: string[]): { base: number; lg: number } {
+  const px = (raw: string) => (raw.startsWith("[") ? Number.parseFloat(raw.slice(1)) : Number.parseFloat(raw) * 4);
+  const find = (variant: string) => {
+    for (const token of element.className.split(/\s+/)) {
+      for (const prefix of prefixes) {
+        if (token.startsWith(`${variant}${prefix}-`)) return px(token.slice(variant.length + prefix.length + 1));
+      }
+    }
+    return null;
+  };
+  const base = find("") ?? 0;
+  return { base, lg: find("lg:") ?? base };
+}
+
 /** 시장 행 한 줄(링크) — 이름 글자에서 가장 가까운 a. */
 function marketRow(name: string): HTMLElement {
   return screen.getByText(name).closest("a") as HTMLElement;
@@ -186,6 +204,24 @@ describe("홈 — 값 있음(운영자)", () => {
     // 홈에는 쓰기 버튼(초기화·리스크 실행·시작 등)이 없습니다 — 버튼이 하나도 없습니다.
     expect(screen.queryAllByRole("button")).toHaveLength(0);
     expect(api.apiPost).not.toHaveBeenCalled();
+  });
+
+  it("모의매매 — 계좌 행 구분선은 히어로 가장자리까지(음수 여백 = 히어로 안쪽 여백), 행 글자는 히어로 글과 같은 세로줄", async () => {
+    // 계좌 목록의 음수 여백·줄 여백은 패턴 Hero·AssetRow의 안쪽 여백에 묶여 있습니다. 그쪽 여백만 바뀌면 구분선이 카드 밖으로 삐져나가고
+    // 행 글자가 히어로 글의 세로줄에서 어긋나는데, 시험은 그대로 통과했습니다(검토 지적 — 작업대 P2의 갈래를 합칠 때).
+    reads = happyReads();
+    renderHome(OWNER);
+    const hero = await paperHero();
+    const list = hero.querySelector("ul") as HTMLElement;
+    const item = list.querySelector("li") as HTMLElement;
+    const row = item.firstElementChild as HTMLElement;
+    const frame = inlineSpacing(hero, ["p", "px"]);
+    const bleed = inlineSpacing(list, ["-mx"]);
+    const gutter = inlineSpacing(item, ["px", "p"]);
+    const inset = inlineSpacing(row, ["px", "p"]);
+    expect(frame.base).toBeGreaterThan(0);
+    expect(bleed).toEqual(frame);
+    expect({ base: gutter.base + inset.base, lg: gutter.lg + inset.lg }).toEqual(frame);
   });
 
   it("시장 — 범주별 자산 행(링크 → 지표 상세 /markets/i/<키>, 범주는 h3), 출처·장 상태·지연·시각 배지, 참고 시세, 저장본 수집 시각", async () => {
@@ -292,6 +328,18 @@ describe("홈 — 불러오는 중·값 없음", () => {
     // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
     expect(within(region("알림")).getByText("값 없음")).toBeTruthy();
     expect(screen.queryByText("0건")).toBeNull();
+  });
+
+  it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 히어로 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
+    // 예전에는 불러오는 중·오류를 홈 카드 틀(다른 안쪽 여백)로 그려, 값이 오는 순간 제목·본문이 lg에서 16px 튀었습니다(검토 지적).
+    renderHome(OWNER);
+    const loading = [region("오늘의 국면").className, region(PAPER_REGION).className];
+    cleanup();
+    reads = happyReads();
+    renderHome(OWNER);
+    await paperHero();
+    await screen.findByText("확장 (Expansion)");
+    expect([region("오늘의 국면").className, region(PAPER_REGION).className]).toEqual(loading);
   });
 
   it("판정 불가 + 받지 못한 입력, 빠진 신호는 '—'(받지 못함), 장부·매크로 없음 안내, 새 알림 없음", async () => {

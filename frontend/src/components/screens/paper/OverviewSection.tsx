@@ -768,7 +768,7 @@ function GroupList({ title, rows, empty }: { title: string; rows: SelectedFilerR
 
 function GroupBadge({ badge }: { badge: Badge }) {
   return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
+    <span title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
       {badge.label}
     </span>
   );

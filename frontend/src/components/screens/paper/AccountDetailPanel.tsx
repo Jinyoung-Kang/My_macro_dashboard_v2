@@ -142,7 +142,7 @@ export function AccountDetailPanel({
           <div className="flex flex-wrap items-center gap-2">
             {/* 열 때 초점을 받는 자리(tabIndex -1 — Tab 순서에는 넣지 않음). 단추가 아니라 초점 테두리는 그리지 않습니다. */}
             <h3 id={titleId} tabIndex={-1} className="text-base font-semibold text-text focus:outline-hidden">{book.label} 상세</h3>
-            <span className={`rounded-full border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
+            <span className={`rounded-control border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
           </div>
           {profile && <p className="mt-1 text-xs text-text-2">{profile.summary}</p>}
         </div>
@@ -249,7 +249,7 @@ export function AccountDetailPanel({
                   <span className="flex flex-wrap items-center gap-1">
                     <span><TickerName code={row.ticker} /></span>
                     {(korea ? krFillBadges(row) : fillBadges(row)).map((badge) => (
-                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}>
+                      <span key={badge.key} title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
                         {badge.label}
                       </span>
                     ))}
@@ -356,7 +356,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
                 />
                 <span className={row.isCash ? "text-text-2" : "font-semibold text-text"}>{row.label}</span>
                 {row.cashLike && (
-                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-full border border-border bg-surface-2 px-2 py-px text-xs text-text-2">
+                  <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-control border border-border bg-surface-2 px-2 py-px text-xs text-text-2">
                     현금성
                   </span>
                 )}

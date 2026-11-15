@@ -12,9 +12,9 @@ import { HOME_REFRESH_MS, paperHomeModel } from "@/lib/home";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { bookColor } from "../paper/bookColors";
-import { HomeCard, SectionError } from "./HomeCard";
+import { SectionError } from "./HomeCard";
 
-// 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(HomeCard와 Hero 제목). 큰 숫자가 무엇인지(Claude 계좌 순자산)를 제목에 함께 적어
+// 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(Hero 제목). 큰 숫자가 무엇인지(Claude 계좌 순자산)를 제목에 함께 적어
 // 숫자보다 먼저 읽히게 합니다 — 값 아래 설명(heroCaption)에만 있으면 숫자를 본 뒤에야 어느 계좌인지 알았습니다.
 const TITLE = "모의매매 · Claude 계좌 순자산";
 
@@ -58,10 +58,10 @@ export function PaperHero() {
     ) : (
       <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
     );
-    // 미국을 처음 읽는 동안은 고를 것이 없어 탭 없는 카드(예전 그대로). 한국을 고른 뒤의 읽는 중·실패는 아래 히어로와 같은 틀에 자리표시만 바꿔
-    // 그립니다 — 틀이 다르면 시장 라디오가 다시 마운트되어 초점이 body로 빠지고 자리도 옮겨 갔습니다.
-    if (!korea) return <HomeCard title={TITLE}>{placeholder}</HomeCard>;
-    return <Hero label={TITLE} value={null} placeholder={placeholder} tabs={marketSwitch} />;
+    // 읽는 중·실패도 아래 히어로와 같은 틀(Hero의 placeholder)에 자리표시만 바꿔 그립니다 — 값이 오면 같은 틀에 값만 들어와 틀 여백이 달라
+    // 제목·본문이 튀지 않습니다. 미국을 처음 읽는 동안은 고를 것이 없어 탭이 없고, 한국을 고른 뒤에는 탭을 둡니다 — 틀이 다르면 시장 라디오가
+    // 다시 마운트되어 초점이 body로 빠지고 자리도 옮겨 갔습니다.
+    return <Hero label={TITLE} value={null} placeholder={placeholder} tabs={korea ? marketSwitch : undefined} />;
   }
 
   const model = paperHomeModel(overview.data, status.data, { market });
@@ -114,8 +114,9 @@ export function PaperHero() {
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
       ) : (
-        // 구분선은 카드 가장자리까지 펼치고(-mx-3·lg:-mx-4 = 패턴 Hero의 안쪽 여백), 행 글자는 행 자체 여백(패턴 AssetRow의 px-3·lg:px-4)만으로
-        // 히어로 글과 같은 세로줄(12·16px)에 둡니다. Hero·AssetRow 여백이 바뀌면 이 값을 함께 고칩니다(어긋나면 구분선이 패널 밖으로 삐져나감).
+        // 구분선은 카드 가장자리까지 펼치고(-mx-3·lg:-mx-4 = 패턴 Hero의 안쪽 여백 p-3·lg:p-4), 줄 여백 없이 행 자체 여백(패턴 AssetRow의 px-3·lg:px-4)만으로
+        // 행 글자를 히어로 글과 같은 세로줄(12·16px)에 둡니다. Hero·AssetRow 여백이 바뀌면 이 값을 함께 고칩니다 — HomeScreen 시험이 클래스로 대조합니다
+        // (어긋나면 구분선이 패널 밖으로 삐져나감).
         <ul className="-mx-3 divide-y divide-border border-y border-border lg:-mx-4">
           {model.rows.map((row, index) => (
             <li key={row.id}>
@@ -164,7 +165,7 @@ function MarketSwitch({ value, onChange }: { value: PaperMarketCode; onChange: (
       {options.map((option) => {
         const checked = option.market === value;
         return (
-          <label key={option.market} className={`px-4 ${segmentClasses(checked)}`}>
+          <label key={option.market} className={`px-3 lg:px-2.5 ${segmentClasses(checked)}`}>
             <input
               type="radio"
               name={name}
