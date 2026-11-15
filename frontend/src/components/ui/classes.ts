@@ -101,13 +101,15 @@ export const SEGMENT_TRACK = "rounded-control border border-border bg-bg p-0.5";
 
 /**
  * 세그먼트 칸(홈 시장 고르기·모의매매 실행 감사 계좌·결정 로그 보기) — 가린 라디오 입력을 감싼 라벨(또는 aria-pressed 단추)에 붙입니다.
- * 포커스 링은 라벨이 그립니다(has-[:focus-visible]). 고른 칸은 트랙 위에 뜬 칩(surface-2 + 1px 링)입니다. 높이는 좁은 화면(lg 미만) 44px·
+ * 포커스 링은 라벨이 그립니다(has-[:focus-visible]). 고른 칸은 트랙 위에 뜬 칩(surface-2 + 1px 진한 링)입니다. 링은 기간 고르기와 같은
+ * border-strong입니다 — 칩 바탕(surface-2)은 트랙(bg)과 1.28:1이라 고른 칸을 알리는 표시가 링이고, 패널 경계(border)로 그리면 트랙 위 1.71:1로
+ * WCAG 1.4.11(3:1)에 못 미쳐 굵기만 남았습니다(QA-484 — border-strong은 bg 위 4.60·surface-2 위 3.59:1). 높이는 좁은 화면(lg 미만) 44px·
  * 넓은 화면 24px(트랙의 2px 안쪽 여백·1px 경계와 합쳐 30px)를 여기서 붙이고(QA-458 — 부르는 쪽에 맡기면 새 화면이 빠뜨릴 수 있음),
  * 여백·글자 크기는 부르는 쪽이 붙입니다.
  */
 export function segmentClasses(checked: boolean): string {
   return `inline-flex min-h-11 cursor-pointer items-center justify-center rounded-control lg:min-h-6 ${SELECT_MOTION} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
-    checked ? `bg-surface-2 font-semibold text-text ring-1 ring-border ${FORCED_SELECTED}` : "font-medium text-text-2 hover:text-text"
+    checked ? `bg-surface-2 font-semibold text-text ring-1 ring-border-strong ${FORCED_SELECTED}` : "font-medium text-text-2 hover:text-text"
   }`;
 }
 

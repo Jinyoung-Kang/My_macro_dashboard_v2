@@ -46,11 +46,11 @@ describe("기간 알약 pillTabClasses", () => {
 });
 
 describe("세그먼트 segmentClasses", () => {
-  it("트랙은 4px·1px 경계의 어두운 바탕, 고른 칸은 뜬 칩(surface-2·1px 링)과 굵은 글·고대비 테두리, 포커스 링은 감싼 라벨에", () => {
+  it("트랙은 4px·1px 경계의 어두운 바탕, 고른 칸은 뜬 칩(surface-2·1px 진한 링)과 굵은 글·고대비 테두리, 포커스 링은 감싼 라벨에", () => {
     expect(tokens(SEGMENT_TRACK)).toEqual(expect.arrayContaining(["rounded-control", "border", "bg-bg"]));
     const checked = tokens(segmentClasses(true));
     const idle = tokens(segmentClasses(false));
-    expect(checked).toEqual(expect.arrayContaining(["bg-surface-2", "font-semibold", "ring-1", "forced-colors:border"]));
+    expect(checked).toEqual(expect.arrayContaining(["bg-surface-2", "font-semibold", "ring-1", "ring-border-strong", "forced-colors:border"]));
     // 칸 24px + 트랙 안쪽 여백 2px×2 + 경계 1px×2 = 30px(lg 이상), lg 미만 44px.
     expect(checked).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-6"]));
     expect(idle).not.toContain("forced-colors:border");
@@ -92,9 +92,9 @@ function ringToken(classes: string): string | undefined {
 // 링이 패널 경계(ring-border #383e47)라 트랙 위 1.71:1·칩 바탕과 1.34:1이었고 칩 바탕도 트랙과 1.28:1이었습니다 — 고른 칸을 알리는 표시가 모두
 // WCAG 1.4.11(상태를 알리는 그래픽 3:1)에 못 미쳐 굵기(500 → 600)만 남았습니다(캡처에서 홈 '미국/한국'의 고른 칸이 거의 구분되지 않음).
 // 같은 키트의 기간 고르기(pillTabClasses)는 고른 칸에 진한 링(ring-border-strong)을 써 3:1을 넘습니다. 링은 칩 바탕(surface-2)과 둘레 면 모두에
-// 닿으므로 bg·surface·surface-2 위에서 셉니다. 고대비(forced-colors) 모드의 테두리는 그대로입니다.
+// 닿으므로 bg·surface·surface-2 위에서 셉니다. 고대비(forced-colors) 모드의 테두리는 그대로입니다. 재현 커밋에서는 it.fails였습니다.
 describe("고른 칸 표시의 대비(WCAG 1.4.11)", () => {
-  it.fails("QA-484: 세그먼트·기간 고르기의 고른 칸 링은 bg·surface·surface-2 위 3:1 이상이다", () => {
+  it("QA-484: 세그먼트·기간 고르기의 고른 칸 링은 bg·surface·surface-2 위 3:1 이상이다", () => {
     for (const [name, classes] of [
       ["segmentClasses", segmentClasses(true)],
       ["pillTabClasses", pillTabClasses(true)],
