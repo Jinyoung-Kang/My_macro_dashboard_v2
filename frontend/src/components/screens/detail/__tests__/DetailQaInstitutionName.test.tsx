@@ -74,8 +74,8 @@ function renderScreen() {
   );
 }
 
-const summaryButton = () =>
-  within(screen.getByRole("heading", { name: "AI 요약" }).closest("section") as HTMLElement).getByRole("button") as HTMLButtonElement;
+const summarySection = () => screen.getByRole("heading", { name: "AI 요약" }).closest("section") as HTMLElement;
+const summaryButton = () => within(summarySection()).getByRole("button") as HTMLButtonElement;
 
 describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부르지 않는다(QA-453)", () => {
   // QA-453: 화면이 institutionNames(data?.institution?.name ?? `CIK ${cik}`)로 이름을 만들어, 포트폴리오가 오기 전에 GET /api/detail/news?q=CIK …를
@@ -88,6 +88,9 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
     await act(async () => {});
     expect(newsQueries()).toEqual([]);
     expect(summaryButton().disabled).toBe(true);
+    // 잠긴 단추를 누르라는 글을 적지 않습니다(검토 지적) — 이름을 받으면 그때 안내가 바뀝니다.
+    expect(within(summarySection()).getByText("요약할 대상을 불러오는 중입니다.")).toBeTruthy();
+    expect(within(summarySection()).queryByText(/단추를 누르면 요약합니다/)).toBeNull();
 
     await act(async () => portfolio?.resolve(BODY));
     expect(await screen.findByRole("heading", { level: 1, name: `가상 자산운용 (${ENGLISH})` })).toBeTruthy();
@@ -95,6 +98,7 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
     expect(await screen.findByRole("link", { name: /합성 기사/ })).toBeTruthy();
 
     expect(summaryButton().disabled).toBe(false);
+    expect(within(summarySection()).getByText(/단추를 누르면 요약합니다/)).toBeTruthy();
     await act(async () => {
       fireEvent.click(summaryButton());
     });
@@ -113,7 +117,6 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
     expect(within(news).getByText("기관 이름을 받지 못해 뉴스를 찾지 않습니다.")).toBeTruthy();
 
     expect(summaryButton().disabled).toBe(true);
-    const summary = screen.getByRole("heading", { name: "AI 요약" }).closest("section") as HTMLElement;
-    expect(within(summary).getByText("기관 이름을 받지 못해 요약하지 않습니다.")).toBeTruthy();
+    expect(within(summarySection()).getByText("기관 이름을 받지 못해 요약하지 않습니다.")).toBeTruthy();
   });
 });

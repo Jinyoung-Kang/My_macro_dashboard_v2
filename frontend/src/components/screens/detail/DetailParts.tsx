@@ -251,7 +251,7 @@ function summaryAllowed(user: SessionUser | null | undefined): boolean | null {
 /**
  * AI 요약 — 이 화면이 보여 주는 시세·지표·뉴스만 번호를 붙여 Claude(Haiku, effort medium)에게 넘기고, 근거 번호([1])를 출처 링크로 바꿔 보입니다.
  * 누를 때만 부릅니다(하루 한도 — 같은 날 같은 대상은 서버가 저장한 요약을 돌려줌). 투자 권유가 아니라는 안내를 늘 붙입니다. `request`가 null이면
- * 요약할 대상을 아직 몰라(기관 이름을 받기 전 등) 단추를 잠그고, `idleText`를 주면 안내 대신 그 글(요약할 수 없는 까닭)을 적습니다.
+ * 요약할 대상을 아직 몰라(기관 이름을 받기 전 등) 단추를 잠그고 '불러오는 중'을 적으며, `idleText`를 주면 그 대신 그 글(요약할 수 없는 까닭)을 적습니다.
  */
 export function AiSummaryCard({
   request,
@@ -342,8 +342,9 @@ export function AiSummaryCard({
             ? isDemo(user)
               ? "데모 열람에서는 AI 요약을 쓰지 않습니다."
               : "유료 등급에서 쓸 수 있습니다."
-            : request === null && idleText
-              ? idleText
+            : request === null
+              // 대상을 모르는 동안은 단추가 잠겨 있으니 '누르면'이라고 적지 않습니다(QA-453 검토 — 잠긴 단추를 누르라는 글만 읽힘).
+              ? (idleText ?? "요약할 대상을 불러오는 중입니다.")
               : "단추를 누르면 요약합니다(하루 한도 안에서, 같은 날 같은 대상은 다시 부르지 않음)."}
         </p>
       ) : null}
