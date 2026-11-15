@@ -1,6 +1,7 @@
 /**
- * 정보 검색 연결 그림 노드 글(계약 §9-3·§9-7)의 QA-423 후속 재현·고정 시험 — 대문자(라틴·키릴·그리스) 글자의 폭 어림, 둘째 차례 이후의 번호·낱말 물림. 순수
- * 함수(fitGraphLabel·graphLabels·linkGraphLayout)를 숫자로 대조합니다. 표본은 모두 합성 값입니다(실제 법인·사람의 이름을 쓰지 않음).
+ * 정보 검색 연결 그림 노드 글(계약 §9-3·§9-7)의 QA-423 후속 재현·고정 시험 — 대문자(라틴·키릴·그리스) 글자의 폭 어림, 둘째 차례 이후의 번호·낱말 물림, 다시
+ * 줄여도 가르는 낱말이 남는 한글 법인명(QA 재확인 개선 제안). 순수 함수(fitGraphLabel·graphLabels·linkGraphLayout)를 숫자로 대조합니다. 표본은 모두 합성
+ * 값입니다(실제 법인·사람의 이름을 쓰지 않음).
  */
 import { describe, expect, it } from "vitest";
 import { fitGraphLabel, graphLabels, linkGraphLayout, linkGraphSize, linkGroups } from "@/lib/infoSearch";
@@ -188,6 +189,113 @@ describe("연결 그림 — 둘째 차례 이후에도 갈리는 번호·낱말�
           expect([width, label, numbersAfterEllipsis(label)]).toEqual([width, label, [name.match(/ (\d+) /)![1]]]);
         }
       }
+    }
+  });
+});
+
+/**
+ * 노드 글이 그 이름으로 읽힐 수 있는가 — '…'로 나눈 조각이 이름 안에 차례로 있음(첫 조각은 앞머리, 끝에 '…'가 없으면 마지막 조각은 끝). 읽는 사람이 글만
+ * 보고 이름을 짐작하는 방식.
+ */
+function readsAs(label: string, name: string): boolean {
+  const parts = label.split("…");
+  if (parts.length === 1) return label === name;
+  if (!name.startsWith(parts[0])) return false;
+  let at = parts[0].length;
+  for (let index = 1; index < parts.length; index += 1) {
+    if (parts[index] === "") continue;
+    if (index === parts.length - 1) return name.endsWith(parts[index]) && name.length - parts[index].length >= at;
+    const found = name.indexOf(parts[index], at);
+    if (found < 0) return false;
+    at = found + parts[index].length;
+  }
+  return true;
+}
+
+/** 글만 보고 이름을 다 가를 수 있는가 — 읽힐 수 있는 이름이 하나뿐인 글부터 그 이름에 붙이고 지우기를 되풀이해, 모든 글이 제 이름에 붙음. */
+function resolvable(labels: ReadonlyMap<string, string>): boolean {
+  const open = new Set(labels.keys());
+  let progress = true;
+  while (progress && open.size > 0) {
+    progress = false;
+    for (const owner of [...open]) {
+      const candidates = [...open].filter((name) => readsAs(labels.get(owner)!, name));
+      if (candidates.length !== 1) continue;
+      if (candidates[0] !== owner) return false;
+      open.delete(owner);
+      progress = true;
+    }
+  }
+  return open.size === 0;
+}
+
+describe("연결 그림 — 다시 줄여도 가르는 낱말이 남는 한글 법인명 노드 글(QA 재확인 개선 제안)", () => {
+  // QA 재확인(kr:005930 모의 — 390·1024·1280 화면): 글은 모두 서로 달랐지만, 둘째 차례 이후 다시 줄이면서 첫 차례에 보이던 가르는 낱말이 빠졌습니다 —
+  // 배정 66에서 '가상전자디스플레이 주식회사'가 '가상전자…'(가상전자로 시작하는 다섯 이름과 맞음), '…글로벌반도체 주식회사'가 '가…주식…', '…주식회사
+  // 베트남'이 '가… 베…', 80~83에서 '…글로벌반도체 주식회사'가 '가상…주식…', 87~101에서 '…베트남'이 '가상…주식회…'·'가상…주식회사…'(디스플레이도
+  // 베트남도 없음). 낱말 경계(' 베트남')에서 갈리면 앞의 같은 낱말('주식회사')로 물리고, 갈린 뒤 보일 낱말이 없는 이름까지 새로 줄였기 때문입니다.
+  // 이제 낱말 경계에서는 이어지는 이름을 다음 낱말부터 보이고, 가르는 낱말이 없는 이름 하나는 묶음 밖 이름들과 가른 글을 둡니다.
+  // 바꾸기 전 실패: 배정 66·72·87·93·95·101에서 글만으로 이름을 다 가를 수 없고, 66~83·116 등에서 '글로'·'베트남'이 든 글이 아님.
+  const KO = [
+    "가상전자디스플레이 주식회사",
+    "가상전자글로벌반도체 주식회사",
+    "가상바이오로직스 주식회사",
+    "가상전자디스플레이 주식회사 베트남",
+    "가상전자글로벌반도체파운드리솔루션즈코리아",
+    "가상전자로지텍",
+  ];
+  /** 이름마다 다른 이름들과 가르는 낱말의 앞부분 — 글에 들어 있어야 함. */
+  const WORDS = ["디스", "글로", "바이", "베트남", "파운", "로"];
+  /** 같은 그림에 함께 그려진 Wikidata·GLEIF 이름(QA 모의) — 섞여도 한글 이름의 글은 같음. */
+  const OTHERS = [
+    "Example Global Semiconductor Holdings Ltd",
+    "Example Global Semiconductor Holdings 1 Ltd",
+    "Example Global Semiconductor Holdings 12 Ltd",
+    "김민수",
+    "Alexander Fictional-Example Montgomery III",
+    "Fictional Electronics America Incorporated",
+    "Fictional Electronics Americas Incorporated",
+  ];
+
+  it("배정 66·80~83·93·101·116 — 가르는 낱말이 든 글(줄인 앞머리 + '…' + 갈리는 낱말)", () => {
+    const expected: Record<number, string[]> = {
+      66: ["가…디스…", "가…글로…", "가상바이…", "가…베트남", "가…파운…", "가…로지텍"],
+      80: ["가상…디스…", "가상…글로…", "가상바이오…", "가상…베트남", "가상…파운…", "가상전자로…"],
+      93: ["가상…디스플…", "가상…글로벌…", "가상바이오로…", "가상전…베트남", "가상…파운드…", "가상전자로지텍"],
+      101: ["가상…디스플레…", "가상…글로벌반…", "가상바이오로직…", "가상전자…베트남", "가상…파운드리…", "가상전자로지텍"],
+      116: ["가상…디스플레이…", "가상…글로벌반도…", "가상바이오로직스…", "가상전자디…베트남", "가상…파운드리솔…", "가상전자로지텍"],
+    };
+    for (const px of [81, 82, 83]) expected[px] = expected[80];
+    for (const [px, labels] of Object.entries(expected)) {
+      for (const names of [KO, [...OTHERS, ...KO]]) {
+        const got = graphLabels(names, Number(px));
+        expect([px, KO.map((name) => got.get(name))]).toEqual([px, labels]);
+      }
+    }
+  });
+
+  it("배정 66~116(그림의 모든 폭 — 이름 자리 80~130 − 14) 어디서나 — 글마다 가르는 낱말이 들고, 글만으로 이름을 다 가를 수 있으며, 서로 다르고 폭(12px 글자) 안", () => {
+    for (let px = 66; px <= 116; px += 1) {
+      for (const names of [KO, [...OTHERS, ...KO]]) {
+        const labels = graphLabels(names, px);
+        KO.forEach((name, at) => {
+          const label = labels.get(name)!;
+          expect([px, label, label.includes(WORDS[at]), Array.from(label).length * 12 <= px]).toEqual([px, label, true, true]);
+        });
+        expect([px, resolvable(labels)]).toEqual([px, true]);
+        expect(new Set(labels.values()).size).toBe(labels.size);
+      }
+    }
+  });
+
+  it("낱말 경계에서 갈리면 끝나는 이름은 끝 낱말로('…Ltd'), 이어지는 이름은 다음 낱말부터('…Asia'·'…Europe')", () => {
+    const names = ["Example Holdings Ltd", "Example Holdings Ltd Asia", "Example Holdings Ltd Europe", "Example Group"];
+    for (const px of [93, 101, 116]) {
+      const labels = graphLabels(names, px);
+      expect(labels.get(names[0])).toMatch(/…Ltd$/);
+      expect(labels.get(names[1])).toMatch(/…Asia$/);
+      expect(labels.get(names[2])).toMatch(/…Europe$/);
+      expect(resolvable(labels)).toBe(true);
     }
   });
 });
