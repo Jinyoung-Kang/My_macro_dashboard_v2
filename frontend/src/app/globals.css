@@ -3,97 +3,51 @@
    지정하지 않으면 빌드를 돌린 폴더 전체를 훑어, 맥과 Docker 빌드의 결과가 달라질 수 있습니다. */
 @import "tailwindcss" source("..");
 
-/* 디자인 토큰 — 라이트·다크 두 벌. 1단계 시안(잉크 액센트·따뜻한 회색)을 2026-10-31 Coinbase식 개편으로 바꿨습니다
-   (흰 바탕·차가운 회색 표면·강조 파랑 — docs/specs/2026-10-31-v2-coinbase-ui.md §2, 결정 D5).
+/* 디자인 토큰 — 어두운 한 벌(작업대 화면 언어, ADR 0042 결정 2·3 — 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-2).
+   2026-11-15까지는 라이트·다크 두 벌과 시스템 따름이었고(Coinbase식 개편 명세 §2), 정보 검색만 아래 범위 블록으로 늘 어두웠습니다. 이제 그 범위 값이
+   앱 전체의 값입니다. 값은 공개 디자인 시스템의 어두운 단계를 참고했고, 상승 #ff6b6b는 사용자가 고른 값입니다(결정 3).
    값은 여기 원래 변수(--bg 등)에만 둡니다. 차트·JS에서 색이 필요하면 var(--up)처럼 이 이름을 씁니다
    (아래 @theme inline의 --color-*는 CSS에 출력되지 않습니다).
-   적용: 속성이 없으면 시스템 설정을 따르고(기본), 사용자가 고르면 <html data-theme="light|dark">가 이깁니다
-   (lib/theme.ts의 인라인 스크립트가 첫 페인트 전에 붙임). 다크 값은 두 곳(data-theme·미디어 쿼리)에 같게 적습니다.
-   글자 대비(WCAG, surface / surface-2): 라이트 text 19.7/17.7 · text-2 6.8/6.2 · text-3 5.1/4.6 · accent 6.3/5.7 · up 5.2/4.7 · down 5.3/4.8 ·
-   warn 5.9/5.3 · ok 5.4/4.9 · danger 7.7/7.0, 다크 text 16.3/14.4 · text-2 9.6/8.5 · text-3 6.0/5.3 · accent 6.3/5.5 · up 5.4/4.8 · down 6.1/5.4 ·
-   warn 8.4/7.4 · ok 7.7/6.8 · danger 7.9/7.0 — 모두 surface-2(hover·선택 바탕) 위에서도 4.5:1 이상입니다.
-   강조 파랑(accent)과 하락 파랑(down)은 색으로 구분되지 않습니다(검증기 정상 시각 ΔE 10.3·8.4) — accent는 누를 수 있는 것(주 단추·링크·
-   포커스·현재 메뉴·알림 수)에만 쓰고, 데이터(값·표·차트·배지)는 중립과 up·down·warn·ok·danger만 씁니다(명세 원칙 A1). */
+   면 네 단계: bg 0층 바탕 · surface 1층 패널 · surface-2 hover·선택·입력·패널 머리·덮개 바탕 · surface-3 덮개 안 hover·눌림만.
+   글자 대비(WCAG, bg / surface / surface-2 / surface-3): text 17.2/15.1/13.5/11.7 · text-2 11.3/9.9/8.8/7.7 · text-3 6.4/5.6/5.0/4.35 ·
+   accent 5.8/5.1/4.5/3.91 · up 6.7/5.8/5.2/4.51 · down 9.2/8.1/7.2/6.2 · warn 8.1/7.1/6.4/5.5 · ok 9.4/8.2/7.3/6.3 · danger 5.9/5.2/4.6/3.99,
+   border-strong 4.6/4.0/3.6/3.1. 그래서 surface-3 위에는 text-3·neutral·accent·danger 글자를 두지 않고, accent 틴트 위에 accent 글자를 두지 않습니다(4.47).
+   상승(up)과 위험(danger)은 색만으로 갈리지 않고(OKLab ΔE 4.4), 강조(accent)와 하락(down)도 그렇습니다(14.1) — 상태·위험은 늘 아이콘과 글,
+   등락은 늘 ▲▼·부호·sr-only 글과 함께 쓰고, accent는 누를 수 있는 것(주 단추·링크·포커스·현재 메뉴·알림 수)에만 씁니다(원칙 A1·A2).
+   lib/__tests__/themeTokens.test.ts가 이 블록을 읽어 허용 쌍의 대비를 다시 세고, 금지 쌍은 소스에서 찾습니다.
+   밝은 한 벌을 다시 더하려면: 색은 이 변수로만 쓰고(dark: 변형·원색 클래스 없음) 밝은 값의 블록 하나(값 후보는 실행 명세 §3-2-2)와 고르는 방법을 더한 뒤,
+   themeTokens.test.ts의 TOKEN_BLOCKS에 그 블록을 넣어 같은 행렬로 잽니다. */
 :root {
-  color-scheme: light;
-  --bg: #ffffff; /* 페이지 바탕 */
-  --surface: #ffffff; /* 카드·표 — 바탕과 같은 흰색이고 1px 경계로 구분합니다 */
-  --surface-2: #f2f3f5; /* 선택된 탭·입력칸·눌림·hover */
-  --border: #e3e5e8; /* 1px 경계(그림자 대신) — 장식 구분선 */
-  --border-strong: #868c96; /* 입력칸·셀렉트·체크박스 테두리(3:1 — WCAG 1.4.11) */
-  --text: #0a0b0d; /* 본문·큰 숫자 */
-  --text-2: #555b66; /* 보조 글 */
-  --text-3: #686e79; /* 캡션·축 끝값 */
-  --accent: #3550dc; /* 상호작용 강조(파랑) — 주 단추 바탕·링크·현재 메뉴 */
-  --accent-fg: #ffffff; /* accent 바탕 위 글자 */
-  --accent-hover: #2a43c2; /* 주 단추 hover 바탕 */
-  --up: #cc2f2f; /* 상승(빨강, 한국 관행) */
-  --down: #0a6fb5; /* 하락(파랑) */
-  --warn: #8a5a00; /* 주의·오래된 값(아이콘·글과 함께) */
-  --neutral: #686e79; /* 변화 없음·판정 불가 */
-  --focus: var(--accent); /* 포커스 링 2px — 테마가 바뀌면 accent를 따라감 */
-  --ok: #157a3e; /* 상태 전용(정상) — 아이콘·글과 함께 */
-  --danger: #a3172c; /* 상태 전용(오류) — up과 다른 값 */
-  --danger-fg: #ffffff; /* danger 바탕 위 글자 */
-  /* 덮개(대화상자·토스트·검색)에만 쓰는 그림자 — 카드에는 그림자를 쓰지 않습니다. */
-  --elev-overlay: 0 12px 32px rgb(10 11 13 / 0.12), 0 2px 6px rgb(10 11 13 / 0.06);
-}
-
-:root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0a0b0d;
-  --surface: #141619;
-  --surface-2: #1f2226;
-  --border: #2c3036;
-  --border-strong: #6b717b;
-  --text: #f2f3f5;
-  --text-2: #b8bdc6;
-  --text-3: #8f959f;
-  --accent: #7a90ff;
-  --accent-fg: #0a0b0d;
-  --accent-hover: #95a6ff;
-  --up: #f4564f;
-  --down: #3d9de0;
-  --warn: #e3a535;
-  --neutral: #8f959f;
-  --ok: #3fbf6e;
-  --danger: #ff8a80;
-  --danger-fg: #0a0b0d; /* 흰 글자는 danger 위 2.3:1이라 쓰지 않습니다 */
-  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
+  --bg: #111418; /* 페이지 바탕(0층) */
+  --surface: #1c2127; /* 패널·표(1층) — 바탕과 1px 경계로 구분합니다 */
+  --surface-2: #252a31; /* hover·선택·입력칸·패널 머리, 덮개(대화상자·팝오버·서랍·토스트) 바탕 */
+  --surface-3: #2f343c; /* 덮개 안 hover·눌림만 — 위에 text-3·accent·danger 글자 금지 */
+  --border: #383e47; /* 1px 경계 — 장식 구분선 */
+  --border-subtle: #2f343c; /* 표 행 구분선, 큰 차트 가로 격자 */
+  --border-strong: #738091; /* 입력칸·셀렉트·체크박스 테두리(3:1 — WCAG 1.4.11) */
+  --text: #f6f7f9; /* 본문·값 */
+  --text-2: #c5cbd3; /* 보조 글 */
+  --text-3: #8f99a8; /* 캡션·축·각주 */
+  --accent: #4c90f0; /* 상호작용 강조(파랑) — 주 단추 바탕·링크·현재 메뉴 */
+  --accent-fg: #111418; /* accent 바탕 위 글자 — 흰 글자는 accent 위 3.2:1이라 쓰지 않습니다 */
+  --accent-hover: #8abbff; /* 주 단추 hover 바탕 */
+  --up: #ff6b6b; /* 상승(빨강, 한국 관행) */
+  --down: #68c1ee; /* 하락(파랑) */
+  --warn: #ec9a3c; /* 주의·오래된 값(아이콘·글과 함께) */
+  --neutral: #8f99a8; /* 변화 없음·판정 불가 */
+  --focus: #8abbff; /* 포커스 링 2px */
+  --ok: #72ca9b; /* 상태 전용(정상) — 아이콘·글과 함께 */
+  --danger: #e76a6e; /* 상태 전용(오류·파괴적 동작) — 상승과 거의 같은 색이라 늘 아이콘·글과 함께 */
+  --danger-fg: #111418; /* danger 바탕 위 글자 — 흰 글자는 3.1:1이라 쓰지 않습니다 */
+  --scrim: rgb(17 20 24 / 0.7); /* 덮개 뒤 가림(대화상자) */
+  /* 덮개(대화상자·토스트·검색)에만 쓰는 그림자 — 패널에는 그림자를 쓰지 않습니다. */
+  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #0a0b0d;
-    --surface: #141619;
-    --surface-2: #1f2226;
-    --border: #2c3036;
-    --border-strong: #6b717b;
-    --text: #f2f3f5;
-    --text-2: #b8bdc6;
-    --text-3: #8f959f;
-    --accent: #7a90ff;
-    --accent-fg: #0a0b0d;
-    --accent-hover: #95a6ff;
-    --up: #f4564f;
-    --down: #3d9de0;
-    --warn: #e3a535;
-    --neutral: #8f959f;
-    --ok: #3fbf6e;
-    --danger: #ff8a80;
-    --danger-fg: #0a0b0d;
-    --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
-  }
-}
-
-/* 정보 검색(/search) 내용 영역의 범위 토큰 — 앱의 밝음·어두움 설정과 상관없이 늘 어둡습니다(ADR 0041 결정 11). 셸(왼쪽 메뉴·상단바)은
-   앱 테마 그대로이고, 이 화면에서 연 대화상자(포털)에는 같은 표지(data-scope="search")를 붙입니다(ui/Dialog의 scope).
-   값은 공개 디자인 시스템의 어두운 단계(바탕 #111418 · 면 #1c2127 · #252a31)를 참고했고, 글자·상태색은 어두운 면 위 4.5:1을 넘는 밝은 단계만 씁니다.
-   var()로 정의된 토큰(--focus 등)은 :root에서 계산된 값이 상속되므로 모두 실제 값으로 다시 적습니다. 틴트(bg-*-tint)·그림자(shadow-overlay)는
-   @theme inline이 쓰는 자리에서 var(--톤)·var(--surface)를 풀어 따로 적지 않아도 이 값을 따릅니다.
-   대비(WCAG, bg / surface / surface-2): text 17.2/15.1/13.5 · text-2 11.3/9.9/8.8 · text-3 6.4/5.6/5.0 · accent 5.8/5.1/4.5 · ok 9.4/8.2/7.3 ·
-   warn 8.1/7.1/6.4 · danger 5.9/5.2/4.6, border-strong 4.0(surface) — lib/__tests__/themeTokens.test.ts가 이 블록을 읽어 다시 셉니다. */
+/* 정보 검색(/search) 내용 영역의 범위 토큰(ADR 0041 결정 11) — 앱이 밝을 때도 이 화면만 어둡게 그리던 장치입니다. 이제 :root가 같은 어두운 값이라
+   이 블록은 :root와 같은 값만 다시 적고(겉모습 변화 없음), 범위 장치(이 블록·ui/Dialog의 scope·DialogScope·SearchScreen의 표지)는 P7에서 걷어 냅니다
+   (ADR 0042 결정 2). themeTokens.test.ts가 값이 :root와 같은지 봅니다. */
 [data-scope="search"] {
   color-scheme: dark;
   --bg: #111418;
@@ -105,9 +59,9 @@
   --text-2: #c5cbd3;
   --text-3: #8f99a8;
   --accent: #4c90f0;
-  --accent-fg: #111418; /* 흰 글자는 accent 위 3.2:1이라 쓰지 않습니다 */
+  --accent-fg: #111418;
   --accent-hover: #8abbff;
-  --up: #fa999c;
+  --up: #ff6b6b;
   --down: #68c1ee;
   --warn: #ec9a3c;
   --neutral: #8f99a8;
@@ -130,13 +84,15 @@
 }
 
 /* bg-surface·text-up·border-border 같은 클래스가 이 이름에서 나옵니다. inline이어야 유틸리티가 var(--x)를 바로 참조해
-   하위 요소에서 바꾼 값도 먹고, bg-accent/15 같은 투명도는 color-mix로 나옵니다. 토큰이 테마마다 바뀌므로 dark: 변형은 쓰지 않습니다.
-   기본 팔레트(purple-500 등)는 그대로 남아 있습니다. */
+   하위 요소에서 바꾼 값도 먹고, bg-accent/15 같은 투명도는 color-mix로 나옵니다. 색은 토큰으로만 쓰고 dark: 변형은 쓰지 않습니다
+   (밝은 한 벌을 다시 더해도 토큰 블록만 늘면 되게). 기본 팔레트(purple-500 등)는 그대로 남아 있습니다. */
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
   --color-text: var(--text);
   --color-text-2: var(--text-2);
@@ -152,9 +108,10 @@
   --color-ok: var(--ok);
   --color-danger: var(--danger);
   --color-danger-fg: var(--danger-fg);
+  --color-scrim: var(--scrim);
   /* 옅은 톤 바탕(글자 배지·배너) — 투명 틴트(bg-warn/10)는 놓인 자리와 섞여 바탕마다 글자 대비가 달랐습니다. surface와 미리 섞은
-     불투명 색이라 어디에 놓여도 카드 위와 같습니다. 톤 글자 대비 라이트 accent 5.4·warn 5.1·ok 4.7·danger 6.6, 다크 5.6·7.2·6.7·6.9.
-     라이트 틴트 위의 text-3는 4.4:1로 모자라므로 틴트 위의 작은 글은 톤 색이나 text-2 이상으로 씁니다. */
+     불투명 색이라 어디에 놓여도 패널 위와 같습니다. 톤 글자 대비 warn 6.1·ok 6.9·danger 4.54, 틴트 위 text 12.7 이상·text-2 8.4 이상·text-3 4.7 이상.
+     accent 틴트 위 accent 글자는 4.47이라 쓰지 않습니다(금지 쌍 — 아이콘은 그래픽 3:1이라 됨). */
   --color-accent-tint: color-mix(in oklab, var(--accent) 10%, var(--surface));
   --color-warn-tint: color-mix(in oklab, var(--warn) 10%, var(--surface));
   --color-ok-tint: color-mix(in oklab, var(--ok) 10%, var(--surface));
@@ -203,9 +160,10 @@
   --text-micro: 0.75rem; /* 12px — 배지·축·출처 */
   --text-micro--line-height: 1rem;
 
-  /* 모서리: 카드·히어로·목록·대화상자는 card, 입력칸·셀렉트·타일·배너·토스트는 control. 단추·알약·칩·아바타는 rounded-full. */
-  --radius-card: 1rem;
-  --radius-control: 0.75rem;
+  /* 모서리는 4px 하나(실행 명세 §3-8) — 패널·목록·대화상자는 card, 입력칸·셀렉트·타일·배너·토스트는 control. rounded-full은 상태 점·토글 손잡이·
+     아바타에만 씁니다(아직 남은 알약 단추·칩은 공용 키트 단계 P2에서 정리). */
+  --radius-card: 4px;
+  --radius-control: 4px;
 }
 
 @layer base {

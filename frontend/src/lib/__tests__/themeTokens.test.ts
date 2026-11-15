@@ -1,51 +1,106 @@
 /**
- * 정보 검색 화면의 어두운 범위 토큰(globals.css의 [data-scope="search"] 블록 — ADR 0041 결정 11).
- *  - 앱 테마와 상관없이 늘 어두움(color-scheme: dark) — 블록이 미디어 쿼리·data-theme 안에 있지 않다
- *  - 화면이 쓰는 토큰을 모두 다시 선언한다(var()로 정의된 --focus 등은 :root에서 계산된 값이 상속되므로 빠지면 앱 테마 값이 남음)
- *  - WCAG 대비: 글자·상태·강조 색은 bg·surface·surface-2 위 4.5:1 이상, 경계(border-strong)·포커스 링은 surface 위 3:1 이상,
- *    톤 틴트(color-mix oklab 10%) 위 같은 톤 글자 4.5:1 이상, 강조·위험 바탕 위 글자 4.5:1 이상
- * 대비 계산은 명세(docs/specs/2026-10-31-v2-coinbase-ui.md)와 같은 WCAG 상대휘도입니다.
+ * 디자인 토큰 대비 행렬 — 작업대 화면 언어의 어두운 한 벌(ADR 0042 결정 2·3, 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-2·§9-1).
+ * 정보 검색의 어두운 범위 토큰 시험(ADR 0041 결정 11 — 옛 이름 searchTheme.test.ts)을 앱 전체 토큰으로 넓혔습니다.
+ *
+ * globals.css의 토큰 블록(TOKEN_BLOCKS — 지금은 `:root` 하나)을 읽어 허용 쌍의 WCAG 대비를 다시 셉니다.
+ *  - 글자 토큰 × 면 토큰(bg·surface·surface-2) 4.5:1. surface-3(덮개 안 hover·눌림) 위에서 4.5:1에 못 미치는 글자 토큰은
+ *    금지 목록(FORBIDDEN_ON_SURFACE_3)과 같아야 합니다 — 값을 바꿔 새로 못 미치는 토큰이 생기면 목록과 소스 검사에 더하라는 뜻입니다.
+ *  - 경계(border-strong)·포커스 링(focus) 3:1(WCAG 1.4.11), 강조·위험 바탕 위 글자(accent-fg·danger-fg) 4.5:1.
+ *  - 틴트(bg-*-tint — color-mix(in oklab, 톤 10%, surface)) 위 같은 톤 글자 4.5:1 — 못 미치는 톤은 FORBIDDEN_TONE_ON_TINT와 같아야 함 — 와 text·text-2·text-3.
+ *  - 블록 모양: 맨 바깥 블록(@media·data-theme 안이 아님), color-scheme dark, 토큰 블록에는 사용자 속성과 color-scheme만, 바탕·글자색은 @layer base.
+ *  - 정보 검색 범위 블록(`[data-scope="search"]`)은 P7에서 걷어 낼 때까지 `:root`와 같은 값만 다시 적습니다(겉모습 변화 0).
+ * 밝은 한 벌을 다시 더하면 TOKEN_BLOCKS에 그 선택자를 넣어 같은 행렬로 잽니다(값 후보: 명세 §3-2-2).
+ * 대비는 WCAG 2.x 상대휘도, 틴트는 OKLab 10% 섞기(브라우저 결과와 마지막 자리가 다를 수 있음)입니다.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const CSS = readFileSync(resolve(__dirname, "../../app/globals.css"), "utf8");
+const CSS_NO_COMMENTS = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
 
-/** 선택자가 정확히 [data-scope="search"]인 블록의 본문. */
-function scopeBlock(): string {
-  const match = /(^|\n)\[data-scope="search"\]\s*\{([^}]*)\}/.exec(CSS);
-  if (!match) throw new Error("[data-scope=\"search\"] 블록이 globals.css에 없습니다");
-  return match[2];
+/** 앱의 토큰 블록 선택자 — 블록마다 같은 허용 쌍 행렬을 잽니다. */
+const TOKEN_BLOCKS = [":root"] as const;
+/** P7까지 남기는 정보 검색 범위 블록(ADR 0041 결정 11 → ADR 0042 결정 2). */
+const SCOPE_SELECTOR = '[data-scope="search"]';
+
+/** 주석을 지운 CSS의 맨 바깥 규칙(선택자 → 본문). 안에 블록이 있는 규칙(@media·@layer·@theme)은 본문을 통째로 담습니다. */
+function topLevelRules(css: string): { selector: string; body: string }[] {
+  const out: { selector: string; body: string }[] = [];
+  let depth = 0;
+  let start = 0;
+  let selectorStart = 0;
+  for (let index = 0; index < css.length; index += 1) {
+    const char = css[index];
+    if (char === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        out.push({ selector: css.slice(selectorStart, start).replace(/^[\s;]+|\s+$/g, "").replace(/^@import[^;]*;\s*/, ""), body: css.slice(start + 1, index) });
+        selectorStart = index + 1;
+      }
+    } else if (char === ";" && depth === 0) {
+      selectorStart = index + 1;
+    }
+  }
+  return out;
 }
 
-function tokens(): Record<string, string> {
+const RULES = topLevelRules(CSS_NO_COMMENTS);
+
+function blockBody(selector: string): string {
+  const found = RULES.filter((rule) => rule.selector === selector);
+  if (found.length !== 1) throw new Error(`${selector} 블록이 globals.css 맨 바깥에 한 번 있어야 합니다(${found.length}번)`);
+  return found[0].body;
+}
+
+function declarations(body: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [, name, value] of scopeBlock().matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) out[name] = value.trim();
+  for (const [, name, value] of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) out[name] = value.trim();
   return out;
+}
+
+/** 블록 본문에서 사용자 속성(--*)이 아닌 선언의 이름. */
+function plainProperties(body: string): string[] {
+  return body
+    .split(";")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("--"))
+    .map((line) => line.split(":")[0].trim());
+}
+
+/** @theme(inline 아님) 블록의 선언 — 모서리·글자 단계. */
+function themeDeclarations(): Record<string, string> {
+  const theme = RULES.find((rule) => rule.selector === "@theme");
+  if (!theme) throw new Error("@theme 블록이 없습니다");
+  return declarations(theme.body);
 }
 
 // ------------------------------------------------------------------ 색 계산
 
-function rgb(hex: string): [number, number, number] {
+type Rgb = [number, number, number];
+
+function rgb(hex: string): Rgb {
   const match = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!match) throw new Error(`#rrggbb 꼴이 아닙니다: ${hex}`);
-  return [0, 2, 4].map((at) => parseInt(match[1].slice(at, at + 2), 16) / 255) as [number, number, number];
+  return [0, 2, 4].map((at) => parseInt(match[1].slice(at, at + 2), 16) / 255) as Rgb;
 }
 
 const linear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 const gamma = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
 
-function luminance([r, g, b]: [number, number, number]): number {
+function luminance([r, g, b]: Rgb): number {
   return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
 }
 
-function contrast(a: [number, number, number], b: [number, number, number]): number {
+function contrast(a: Rgb, b: Rgb): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
 
-function toOklab([r, g, b]: [number, number, number]): [number, number, number] {
+function toOklab([r, g, b]: Rgb): Rgb {
   const [lr, lg, lb] = [linear(r), linear(g), linear(b)];
   const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
   const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
@@ -57,7 +112,7 @@ function toOklab([r, g, b]: [number, number, number]): [number, number, number] 
   ];
 }
 
-function fromOklab([L, A, B]: [number, number, number]): [number, number, number] {
+function fromOklab([L, A, B]: Rgb): Rgb {
   const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
   const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
   const s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
@@ -66,88 +121,141 @@ function fromOklab([L, A, B]: [number, number, number]): [number, number, number
     -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
     -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
   ];
-  return out.map((c) => Math.min(1, Math.max(0, gamma(c)))) as [number, number, number];
+  return out.map((c) => Math.min(1, Math.max(0, gamma(c)))) as Rgb;
 }
 
 /** globals.css @theme inline의 틴트와 같은 계산 — color-mix(in oklab, tone 10%, surface). */
-function tint(tone: [number, number, number], surface: [number, number, number]): [number, number, number] {
+function tint(tone: Rgb, surface: Rgb): Rgb {
   const a = toOklab(tone);
   const b = toOklab(surface);
-  return fromOklab([0, 1, 2].map((i) => a[i] * 0.1 + b[i] * 0.9) as [number, number, number]);
+  return fromOklab([0, 1, 2].map((i) => a[i] * 0.1 + b[i] * 0.9) as Rgb);
 }
 
-// ------------------------------------------------------------------ 시험
+// ------------------------------------------------------------------ 행렬 정의
 
-const BACKGROUNDS = ["--bg", "--surface", "--surface-2"] as const;
-const TEXT_TOKENS = ["--text", "--text-2", "--text-3", "--accent", "--accent-hover", "--up", "--down", "--warn", "--neutral", "--ok", "--danger"] as const;
+const SURFACES = ["--bg", "--surface", "--surface-2"] as const;
+const TEXT_TOKENS = ["--text", "--text-2", "--text-3", "--neutral", "--accent", "--accent-hover", "--up", "--down", "--warn", "--ok", "--danger"] as const;
+const COLOR_TOKENS = [...SURFACES, "--surface-3", ...TEXT_TOKENS, "--border", "--border-subtle", "--border-strong", "--accent-fg", "--danger-fg", "--focus"] as const;
+/** surface-3 위에 두지 않는 글자 — 4.5:1 미만(명세 §3-2 표). neutral은 text-3과 같은 값입니다. */
+const FORBIDDEN_ON_SURFACE_3 = ["--text-3", "--neutral", "--accent", "--danger"] as const;
+/** 틴트 위에 같은 톤 글자로 두지 않는 톤(accent 틴트 위 accent 4.47 — 명세 §3-2). */
+const FORBIDDEN_TONE_ON_TINT = ["--accent"] as const;
+const TINT_TONES = ["--accent", "--warn", "--ok", "--danger"] as const;
 
-describe("어두운 범위 블록", () => {
-  it("앱 테마를 따르지 않는다 — 미디어 쿼리·data-theme 밖의 맨 바깥 블록이고 color-scheme은 dark", () => {
-    const block = scopeBlock();
-    expect(block).toMatch(/color-scheme:\s*dark;/);
-    const before = CSS.slice(0, CSS.indexOf('[data-scope="search"]'));
-    // 바로 앞의 열린 괄호가 모두 닫혔다 = 다른 블록(@media 등) 안에 있지 않다
-    expect((before.match(/\{/g) ?? []).length).toBe((before.match(/\}/g) ?? []).length);
+const ratio = (t: Record<string, string>, fore: string, back: string | Rgb) =>
+  contrast(rgb(t[fore]), typeof back === "string" ? rgb(t[back]) : back);
+
+describe.each(TOKEN_BLOCKS)("토큰 블록 %s", (selector) => {
+  const body = blockBody(selector);
+  const t = declarations(body);
+
+  it("맨 바깥 블록이고(@media·data-theme 안이 아님) color-scheme은 dark, 사용자 속성 말고는 color-scheme만", () => {
+    expect(body).toMatch(/color-scheme:\s*dark;/);
+    expect(plainProperties(body)).toEqual(["color-scheme"]);
   });
 
-  it("화면이 쓰는 토큰을 모두 다시 선언한다(--focus 등 var() 토큰 포함, 모서리 4px)", () => {
-    const t = tokens();
-    for (const name of [...BACKGROUNDS, ...TEXT_TOKENS, "--border", "--border-strong", "--accent-fg", "--danger-fg", "--focus", "--elev-overlay"]) {
-      expect(t[name], name).toBeTruthy();
+  it("색 토큰을 모두 실제 #rrggbb 값으로 둔다(var() 참조 없음) — 그림자·가림·면 값은 명세 §3-2", () => {
+    for (const name of COLOR_TOKENS) expect(t[name], name).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(t["--elev-overlay"]).toBeTruthy();
+    expect([t["--bg"], t["--surface"], t["--surface-2"], t["--surface-3"]].map((v) => v.toLowerCase())).toEqual([
+      "#111418", "#1c2127", "#252a31", "#2f343c",
+    ]);
+    expect(t["--border-subtle"].toLowerCase()).toBe("#2f343c");
+    expect(t["--scrim"]).toBe("rgb(17 20 24 / 0.7)");
+    // 상승은 사용자 결정 4의 선명한 빨강, 위험은 그대로(둘은 색만으로 갈리지 않음 — 늘 아이콘·글·기호와 함께).
+    expect(t["--up"].toLowerCase()).toBe("#ff6b6b");
+    expect(t["--danger"].toLowerCase()).toBe("#e76a6e");
+  });
+
+  it.each(TEXT_TOKENS)("%s — bg·surface·surface-2 위 4.5:1 이상", (name) => {
+    for (const back of SURFACES) {
+      const value = ratio(t, name, back);
+      expect(value, `${name} on ${back} = ${value.toFixed(2)}`).toBeGreaterThanOrEqual(4.5);
     }
-    expect(t["--radius-card"]).toBe("4px");
-    expect(t["--radius-control"]).toBe("4px");
-    // 셸의 :root 값이 따라 들어오지 않게 실제 색 값으로 둡니다(var() 참조 없음).
-    for (const name of [...BACKGROUNDS, ...TEXT_TOKENS, "--border", "--border-strong", "--accent-fg", "--danger-fg", "--focus"]) {
-      expect(t[name], name).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it("surface-3 위에서 4.5:1에 못 미치는 글자 토큰은 금지 목록과 같다 — 나머지는 4.5:1 이상", () => {
+    const below = TEXT_TOKENS.filter((name) => ratio(t, name, "--surface-3") < 4.5);
+    expect(below).toEqual([...FORBIDDEN_ON_SURFACE_3]);
+    // 상승은 여유 0.01(4.51) — 값을 조금만 바꿔도 여기서 걸립니다(ADR 0042 남은 위험).
+    expect(ratio(t, "--up", "--surface-3")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("입력칸 경계(border-strong)는 bg·surface·surface-2 위 3:1 이상, 포커스 링은 네 면 모두 3:1 이상", () => {
+    for (const back of SURFACES) expect(ratio(t, "--border-strong", back), back).toBeGreaterThanOrEqual(3);
+    for (const back of [...SURFACES, "--surface-3"]) expect(ratio(t, "--focus", back), back).toBeGreaterThanOrEqual(3);
+  });
+
+  it("강조·위험 바탕 위 글자(--accent-fg·--danger-fg)가 4.5:1 이상 — 주 단추 hover 바탕(accent-hover) 위에서도", () => {
+    expect(ratio(t, "--accent-fg", "--accent")).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(t, "--accent-fg", "--accent-hover")).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(t, "--danger-fg", "--danger")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("틴트 위 같은 톤 글자가 4.5:1에 못 미치는 톤은 금지 목록과 같다 — 틴트 위 text·text-2·text-3은 4.5:1 이상", () => {
+    const surface = rgb(t["--surface"]);
+    const below = TINT_TONES.filter((tone) => ratio(t, tone, tint(rgb(t[tone]), surface)) < 4.5);
+    expect(below).toEqual([...FORBIDDEN_TONE_ON_TINT]);
+    for (const tone of TINT_TONES) {
+      const back = tint(rgb(t[tone]), surface);
+      for (const fore of ["--text", "--text-2", "--text-3"]) {
+        expect(ratio(t, fore, back), `${fore} on ${tone}-tint`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+});
+
+describe("어두운 한 벌(W1)", () => {
+  it("밝은 값·시스템 따름 블록이 없다 — data-theme 선택자와 prefers-color-scheme 미디어 쿼리 0", () => {
+    expect(CSS_NO_COMMENTS).not.toMatch(/data-theme/);
+    expect(CSS_NO_COMMENTS).not.toMatch(/prefers-color-scheme/);
+    expect(RULES.filter((rule) => rule.selector === ":root")).toHaveLength(1);
+  });
+
+  it("문서 바탕·글자색은 @layer base에서 토큰으로 — html·body", () => {
+    const base = /@layer base\s*\{\s*html,\s*body\s*\{([^}]*)\}/.exec(CSS_NO_COMMENTS);
+    expect(base, "@layer base { html, body { … } }").toBeTruthy();
+    expect(base?.[1]).toMatch(/background-color:\s*var\(--bg\);/);
+    expect(base?.[1]).toMatch(/color:\s*var\(--text\);/);
+  });
+
+  it("새 토큰은 @theme inline에서 클래스 이름이 된다 — bg-surface-3·border-border-subtle·bg-scrim", () => {
+    const inline = RULES.find((rule) => rule.selector === "@theme inline");
+    const names = declarations(inline?.body ?? "");
+    expect(names["--color-surface-3"]).toBe("var(--surface-3)");
+    expect(names["--color-border-subtle"]).toBe("var(--border-subtle)");
+    expect(names["--color-scrim"]).toBe("var(--scrim)");
+  });
+
+  it("모서리는 4px 하나(card·control)", () => {
+    const theme = themeDeclarations();
+    expect(theme["--radius-card"]).toBe("4px");
+    expect(theme["--radius-control"]).toBe("4px");
+  });
+});
+
+describe("정보 검색 범위 블록(P7에서 걷어 냄)", () => {
+  const body = blockBody(SCOPE_SELECTOR);
+  const scope = declarations(body);
+  const root = declarations(blockBody(":root"));
+  const theme = themeDeclarations();
+
+  it("맨 바깥 블록이고 color-scheme은 dark, 사용자 속성 말고는 color-scheme만", () => {
+    expect(body).toMatch(/color-scheme:\s*dark;/);
+    expect(plainProperties(body)).toEqual(["color-scheme"]);
+  });
+
+  it(":root(모서리는 @theme)와 같은 값만 다시 적는다 — 이 화면의 겉모습이 앱과 같다", () => {
+    for (const [name, value] of Object.entries(scope)) {
+      expect(value, name).toBe(root[name] ?? theme[name]);
     }
   });
 
   it("바탕색·글자색은 레이어 밖 토큰 블록이 아니라 @layer base에 — 범위 표지를 단 대화상자의 bg-surface 같은 유틸리티가 이긴다", () => {
     // 레이어 밖 선언은 우선순위와 상관없이 @layer utilities를 이깁니다. 토큰 블록에는 사용자 속성(--*)과 color-scheme만 둡니다.
-    const plain = scopeBlock()
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split(";")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("--"));
-    expect(plain.map((line) => line.split(":")[0].trim())).toEqual(["color-scheme"]);
-    const base = /@layer base\s*\{\s*\[data-scope="search"\]\s*\{([^}]*)\}\s*\}/.exec(CSS);
+    const base = /@layer base\s*\{\s*\[data-scope="search"\]\s*\{([^}]*)\}\s*\}/.exec(CSS_NO_COMMENTS);
     expect(base, "@layer base { [data-scope=\"search\"] { … } }").toBeTruthy();
     expect(base?.[1]).toMatch(/background-color:\s*var\(--bg\);/);
     expect(base?.[1]).toMatch(/color:\s*var\(--text\);/);
-  });
-
-  it("바탕·면은 어두운 단계(#111418·#1c2127·#252a31)", () => {
-    const t = tokens();
-    expect([t["--bg"], t["--surface"], t["--surface-2"]].map((v) => v.toLowerCase())).toEqual(["#111418", "#1c2127", "#252a31"]);
-  });
-});
-
-describe("WCAG 대비", () => {
-  const t = tokens();
-
-  it.each(TEXT_TOKENS)("%s — bg·surface·surface-2 위 4.5:1 이상", (name) => {
-    for (const bg of BACKGROUNDS) {
-      const ratio = contrast(rgb(t[name]), rgb(t[bg]));
-      expect(ratio, `${name} on ${bg} = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(4.5);
-    }
-  });
-
-  it("입력칸 경계(border-strong)는 surface 위 3:1 이상, 포커스 링은 bg·surface·surface-2 위 3:1 이상", () => {
-    expect(contrast(rgb(t["--border-strong"]), rgb(t["--surface"]))).toBeGreaterThanOrEqual(3);
-    for (const bg of BACKGROUNDS) expect(contrast(rgb(t["--focus"]), rgb(t[bg]))).toBeGreaterThanOrEqual(3);
-  });
-
-  it("강조·위험 바탕 위 글자(--accent-fg·--danger-fg)가 4.5:1 이상 — 주 단추 hover 바탕(accent-hover) 위에서도", () => {
-    expect(contrast(rgb(t["--accent-fg"]), rgb(t["--accent"]))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(rgb(t["--accent-fg"]), rgb(t["--accent-hover"]))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(rgb(t["--danger-fg"]), rgb(t["--danger"]))).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it.each(["--warn", "--ok", "--danger"] as const)("%s 틴트(배너·배지 바탕) 위 같은 톤 글자 4.5:1 이상, 본문 글자도", (name) => {
-    const back = tint(rgb(t[name]), rgb(t["--surface"]));
-    expect(contrast(rgb(t[name]), back)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(rgb(t["--text"]), back)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(rgb(t["--text-2"]), tint(rgb(t["--accent"]), rgb(t["--surface"])))).toBeGreaterThanOrEqual(4.5);
   });
 });
