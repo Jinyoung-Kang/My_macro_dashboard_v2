@@ -22,7 +22,7 @@ describe("ChangeChip", () => {
     expect(chip.className).toContain("tabular-nums");
     expect(screen.getByText("▲").getAttribute("aria-hidden")).toBe("true");
     expect(screen.getByText("상승").className).toContain("sr-only");
-    expect(screen.getByText("원").className).toContain("text-[0.85em]");
+    expect(screen.getByText("원").className).toContain("text-xs");
     expect(screen.getByText("(+0.46%)")).toBeTruthy();
     expect(chip.textContent).toBe("▲상승+12.35원(+0.46%)");
   });

@@ -294,11 +294,11 @@ export function AiSummaryCard({
             const refs = line.refs.map((n) => ({ n, source: sourceOf(n) }));
             const marks = refs.map(({ n, source }) =>
               source?.url ? (
-                <ExternalAnchor key={n} href={source.url} className={`${LINK} ml-0.5 align-super text-[11px] text-text-2`}>
+                <ExternalAnchor key={n} href={source.url} className={`${LINK} ml-0.5 align-super text-xs text-text-2`}>
                   [{n}]
                 </ExternalAnchor>
               ) : (
-                <span key={n} className="ml-0.5 align-super text-[11px] text-text-3">
+                <span key={n} className="ml-0.5 align-super text-xs text-text-3">
                   [{n}]
                 </span>
               ),

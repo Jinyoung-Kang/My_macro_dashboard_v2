@@ -14,7 +14,8 @@ const ARROW: Record<ChangeDirection, string | null> = { up: "▲", down: "▼", 
 // 화살표는 읽어 주기에서 빼고 방향을 말로 읽습니다. 부호(+·−)도 글자로 남으므로 색만으로 뜻을 전하지 않습니다.
 const SPOKEN: Record<ChangeDirection, string> = { up: "상승", down: "하락", flat: "변화 없음" };
 
-// md는 히어로 값 아래(15px 굵게), sm은 자산 행 값 아래(13px).
+// md는 히어로 값 아래(15px 굵게), sm은 자산 행 값 아래(13px). 화살표·단위는 칩 크기와 상관없이 글자 하한 12px(text-xs)입니다 —
+// 칩 크기의 비율(0.8em·0.85em)로 두면 13px 칩 안에서 10.4px·11.05px가 되었습니다(QA-457).
 const SIZE: Record<"sm" | "md", string> = {
   sm: "text-[13px] font-medium",
   md: "text-[15px] font-semibold",
@@ -53,7 +54,7 @@ export function ChangeChip({
       className={`inline-flex flex-wrap items-baseline gap-x-1 tabular-nums ${SIZE[size]} ${TONE[model.direction]}`}
     >
       {arrow ? (
-        <span aria-hidden="true" className="text-[0.8em]">
+        <span aria-hidden="true" className="text-xs">
           {arrow}
         </span>
       ) : null}
@@ -61,7 +62,7 @@ export function ChangeChip({
       {model.change !== null ? (
         <span>
           {model.change}
-          {unit ? <span className="ml-0.5 text-[0.85em] font-normal">{unit}</span> : null}
+          {unit ? <span className="ml-0.5 text-xs font-normal">{unit}</span> : null}
         </span>
       ) : null}
       {model.changePct !== null ? <span>{model.change !== null ? `(${model.changePct})` : model.changePct}</span> : null}

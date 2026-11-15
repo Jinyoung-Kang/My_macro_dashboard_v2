@@ -142,10 +142,11 @@ function offenders(): string[] {
 }
 
 describe("글자 하한 12px(QA-457)", () => {
-  // 수정 전 실패(재현 커밋에서는 it.fails) — 지금 걸리는 곳:
+  // 수정 전에는 네 곳이 걸렸다(재현 커밋에서는 it.fails):
   //  - components/patterns/ChangeChip.tsx — ▲▼ text-[0.8em](sm 13px 안에서 10.4px — 홈 27개·모의 개요 6개), 단위 text-[0.85em](sm에서 11.05px)
   //  - components/screens/detail/DetailParts.tsx — AI 요약 근거 번호 [n] 위첨자 text-[11px] 두 곳
-  it.fails("src의 글자 크기는 모두 12px 이상이다 — 허용 목록 없음", () => {
+  // 지금은 화살표·단위·위첨자 모두 text-xs(12px)다.
+  it("src의 글자 크기는 모두 12px 이상이다 — 허용 목록 없음", () => {
     expect(offenders()).toEqual([]);
   });
 
