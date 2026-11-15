@@ -100,6 +100,7 @@ export function FeedPanel({
   owner: boolean;
   demo?: boolean;
   entity: SearchEntity | null;
+  /** 속성 칸에 보일 종류 — 확인한 것만(모르면 null). 탭을 고르려고 짐작한 종류는 넘기지 않습니다(QA-431). */
   kind: SearchEntityKind | null;
   entityErrors: Record<string, string>;
   onRange: (range: SearchRange) => void;

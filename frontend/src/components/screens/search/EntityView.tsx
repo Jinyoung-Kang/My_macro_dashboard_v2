@@ -80,7 +80,8 @@ export function EntityView({
   const resolved = useApi<SearchEntityResponse>(endpoints.search.entity(entityKey));
   const entity = resolved.data?.available ? (resolved.data.entity ?? null) : null;
   const settled = resolved.data !== null || resolved.error !== null;
-  // 종류: 풀린 대상 → 키 앞부분 → (wd: 키를 풀지 못했으면) 사람으로 봄(보유 탭 없음).
+  // 종류: 풀린 대상 → 키 앞부분 → (wd: 키를 풀지 못했으면) 사람으로 봄(보유 탭 없음). 짐작(kind)은 탭을 고르는 데만 쓰고, 머리·속성 칸에는
+  // 확인한 종류(known — 모르면 null)만 보입니다(QA-431 — 짐작을 사실처럼 보이지 않게).
   const known = entity?.kind ?? kindOfKey(entityKey);
   const kind = known ?? (settled ? "person" : null);
   const listed = isListedEntity(entityKey, entity);
@@ -192,7 +193,7 @@ export function EntityView({
                 owner={owner}
                 demo={demo}
                 entity={entity}
-                kind={kind}
+                kind={known}
                 entityErrors={errors}
                 onRange={onRange}
                 aside={watchPane}
@@ -211,7 +212,7 @@ export function EntityView({
                     )}
                   </div>
                   <div className="border-t border-border p-3 xl:border-l xl:border-t-0">
-                    <AttributesPanel entity={entity} kind={kind} errors={errors} aliasEditor={aliasEditor ? aliasEditor() : null} />
+                    <AttributesPanel entity={entity} kind={known} errors={errors} aliasEditor={aliasEditor ? aliasEditor() : null} />
                   </div>
                 </div>
                 {current === "links" ? (

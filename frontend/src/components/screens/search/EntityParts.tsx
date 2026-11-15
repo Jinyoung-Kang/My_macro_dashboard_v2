@@ -88,6 +88,7 @@ export function AttributesPanel({
   previewHint = false,
 }: {
   entity: SearchEntity | null;
+  /** 대상을 풀지 못했을 때 보일 종류 — 확인한 것만(키 앞부분 등, 모르면 null → '—'). 탭을 고르려고 짐작한 종류를 넘기지 않습니다(QA-431). */
   kind: SearchEntityKind | null;
   errors: Record<string, string>;
   aliasEditor?: ReactNode;
@@ -107,7 +108,7 @@ export function AttributesPanel({
         ["별칭", visibleAliases(entity).join(" · ") || EMPTY],
         ["푼 출처", entity.sources.join(" · ") || EMPTY],
       ]
-    : [["종류", entityKindLabel(kind)]];
+    : [["종류", kind ? entityKindLabel(kind) : EMPTY]];
   return (
     <section aria-labelledby="search-attributes" className="flex flex-col gap-2">
       <PaneHeading id="search-attributes">속성</PaneHeading>

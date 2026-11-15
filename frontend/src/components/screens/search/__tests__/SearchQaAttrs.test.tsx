@@ -206,8 +206,8 @@ describe("QA-431 — 풀지 못한 wd: 대상의 속성 칸 종류는 확인한 
 
   // QA-431: wd: 키를 풀지 못하면(Wikidata 실패 — entity:null) 탭을 고르려고 사람으로 짐작한 종류를 속성 칸에도 넘겨, 머리는 '대상'(모름)인데
   // 속성 칸은 '종류 사람'이었음. 결과 탭은 FeedPanel을 거쳐, 보유·연결 탭은 EntityView에서 바로 넘김.
-  // 수정 전 실패: 공시·연결 탭 모두 속성 칸 종류가 '사람'.
-  it.fails("공시 탭(결과 탭)과 연결 탭의 속성 칸 종류가 '—'이고 '사람'이 없다", async () => {
+  // 수정 전 실패: 공시·연결 탭 모두 속성 칸 종류가 '사람'(재현 커밋에서는 it.fails).
+  it("공시 탭(결과 탭)과 연결 탭의 속성 칸 종류가 '—'이고 '사람'이 없다", async () => {
     reads[endpoints.search.entity("wd:Q4000002")] = { available: true, entity: null, errors: { wikidata: "ProxyError" } };
     for (const tab of ["filings", "links"]) {
       renderScreen(`/search?e=wd:Q4000002&tab=${tab}&range=30d`);
