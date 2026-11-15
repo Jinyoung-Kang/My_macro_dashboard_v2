@@ -73,8 +73,9 @@ export type AssetRowDisclosure = {
   hint?: string | null;
 };
 
-// 행 높이 64px 이상(명세 §4). 배지가 있으면 둘째 줄로 내려가 행이 늘어납니다.
-const ROW = "relative flex min-h-16 w-full flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left lg:px-5";
+// 조밀한 행(작업대 실행 명세 §3-7) — 높이 44px 이상(좁은 화면의 누름 자리, 원칙 A8), 이름·보조 두 줄이면 52px. 안쪽 여백 12px(lg 16px).
+// 배지가 있으면 둘째 줄로 내려가 행이 늘어납니다.
+const ROW = "relative flex min-h-11 w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left lg:px-4";
 // 행은 카드 폭을 꽉 채우므로 포커스 링을 안쪽으로 그립니다(바깥으로 그리면 카드 테두리 밖으로 삐져나감).
 // 누를 수 있는 행은 hover에 surface-2 바탕을 깝니다 — 그 위에서도 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §2-1).
 const INTERACTIVE =
@@ -120,7 +121,7 @@ export function AssetRow({
       ) : null}
       {model.avatarText ? <Avatar text={model.avatarText} ring={row.avatarRing} /> : null}
       <span className="flex min-w-0 flex-1 basis-32 flex-col">
-        <span id={parts?.name} className="truncate text-[15px] font-semibold leading-5 text-text">
+        <span id={parts?.name} className="truncate text-body font-semibold text-text">
           {row.name}
           {hint ? (
             <>
@@ -147,11 +148,11 @@ export function AssetRow({
       {/* 값·칩은 늘 오른쪽 한 덩어리 — 좁은 화면에서 아바타·이름과 한 줄에 들지 않아 다음 줄로 내려가도 왼쪽이 아니라 오른쪽 끝에 둡니다(ml-auto). */}
       <span id={parts?.value} className="ml-auto flex shrink-0 flex-col items-end">
         {model.valueText === null ? (
-          <span className="text-[15px] font-semibold leading-5 text-text-3">
+          <span className="text-body font-semibold text-text-3">
             <Empty />
           </span>
         ) : (
-          <span className="text-[15px] font-semibold leading-5 tabular-nums text-text">
+          <span className="text-body font-semibold tabular-nums text-text">
             {model.valueText}
             {row.unit ? <span className="ml-0.5 text-xs font-normal text-text-3">{row.unit}</span> : null}
           </span>
@@ -159,8 +160,8 @@ export function AssetRow({
         <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" />
       </span>
       {model.hasBadges ? (
-        // 배지 줄은 아바타가 있으면 이름과 같은 세로줄에서 시작합니다(아바타 36·40px + 간격 12px).
-        <span id={parts?.badges} className={`flex basis-full flex-wrap items-center gap-1 ${model.avatarText ? "pl-12 sm:pl-[52px]" : ""}`}>
+        // 배지 줄은 아바타가 있으면 이름과 같은 세로줄에서 시작합니다(아바타 32px + 간격 12px).
+        <span id={parts?.badges} className={`flex basis-full flex-wrap items-center gap-1 ${model.avatarText ? "pl-11" : ""}`}>
           {/* 값의 기준 한 줄은 배지보다 앞 — '추정' 배지 바로 뒤에 '장중 추정 …'이 오면 눈에도 낭독에도 '추정 장중 추정'으로 겹칩니다.
               줄을 바꿀 때 한국어 낱말 중간에서 접히지 않게(break-keep — '잠정 대 / 비'). */}
           {model.caption ? <span className="break-keep text-xs leading-4 tabular-nums text-text-2">{model.caption}</span> : null}
@@ -215,7 +216,8 @@ export function AssetRow({
 }
 
 /**
- * 자산 행 목록 — 카드(1px 경계, 16px 모서리) 안에 제목(h2, 있으면 영역 이름)과 행들. 행 사이는 1px 윗선으로 나눕니다.
+ * 자산 행 목록 — 패널(1px 경계, 4px 모서리) 안에 제목(h2, 있으면 영역 이름 — 패널 제목 heading-sm 16px)과 행들. 행 사이는 1px 옅은 윗선
+ * (border-subtle — 표 행 구분선과 같음)으로 나눕니다.
  *
  * - 행이 없으면 `emptyText`(기본 "표시할 항목이 없습니다.").
  * - `onSelect`·`selectedId`는 각 행에 넘깁니다(href가 있는 행은 링크가 이김).
@@ -249,17 +251,17 @@ export function AssetList({
   return (
     <section aria-labelledby={labelled ? headingId : undefined} className="min-w-0 overflow-hidden rounded-card border border-border bg-surface">
       {title ? (
-        // 제목 글은 행 글과 같은 세로줄(px-4 · lg:px-5)에 둡니다.
-        <Heading id={headingId} className="px-4 pb-2 pt-5 text-title-3 text-text lg:px-5">
+        // 제목 글은 행 글과 같은 세로줄(px-3 · lg:px-4)에 둡니다.
+        <Heading id={headingId} className="px-3 pb-1 pt-3 text-heading-sm text-text lg:px-4">
           {title}
         </Heading>
       ) : null}
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-text-3 lg:px-5">{emptyText}</p>
+        <p className="px-3 py-6 text-sm text-text-3 lg:px-4">{emptyText}</p>
       ) : (
         <ul>
           {rows.map((row) => (
-            <li key={row.id} className="border-t border-border first:border-t-0">
+            <li key={row.id} className="border-t border-border-subtle first:border-t-0">
               <AssetRow
                 row={row}
                 onSelect={onSelect}

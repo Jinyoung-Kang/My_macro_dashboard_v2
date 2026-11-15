@@ -29,7 +29,8 @@ describe("AssetRow", () => {
     const { container } = render(<AssetRow row={SPX} />);
     const row = container.firstElementChild as HTMLElement;
     expect(row.tagName).toBe("DIV");
-    expect(row.className).toContain("min-h-16");
+    // 조밀한 행 — 44px 이상(좁은 화면 누름 자리), 안쪽 여백 12px(lg 16px). 작업대 실행 명세 §3-7.
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-11", "px-3", "lg:px-4"]));
     // 누를 수 없는 줄에는 hover 표시가 없습니다.
     expect(row.className).not.toMatch(/hover:bg-/);
     expect(screen.getByText("S&P 500")).toBeTruthy();
@@ -273,7 +274,7 @@ describe("AssetRow", () => {
     const ids = (button.getAttribute("aria-describedby") ?? "").split(" ");
     expect(ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" | ")).toContain("장부 10-30 23:15");
     const badges = screen.getByText("장부 10-30 23:15").closest(".basis-full") as HTMLElement;
-    expect(badges.className.split(/\s+/)).toEqual(expect.arrayContaining(["pl-12", "sm:pl-[52px]"]));
+    expect(badges.className.split(/\s+/)).toContain("pl-11");
   });
 
   it("href와 onSelect가 함께 오면 링크가 이긴다", () => {
@@ -284,7 +285,7 @@ describe("AssetRow", () => {
 });
 
 describe("AssetRow — 아바타(avatarText)", () => {
-  const avatarOf = (container: HTMLElement) => container.querySelector('[aria-hidden="true"].rounded-full.size-9') as HTMLElement | null;
+  const avatarOf = (container: HTMLElement) => container.querySelector('[aria-hidden="true"].rounded-full.size-8') as HTMLElement | null;
 
   it("값 있음 — 이름 왼쪽에 모노그램 원(장식), 고리 색은 변수로", () => {
     const { container } = render(<AssetRow row={{ ...SPX, avatarText: "GSP", avatarRing: "#3987e5" }} />);
@@ -313,13 +314,14 @@ describe("AssetRow — 아바타(avatarText)", () => {
     expect(screen.getByText("추정")).toBeTruthy();
     expect(screen.getByText("이전 값").parentElement?.className).toContain("text-warn");
     const badges = screen.getByText("추정").closest(".basis-full") as HTMLElement;
-    expect(badges.className.split(/\s+/)).toEqual(expect.arrayContaining(["pl-12", "sm:pl-[52px]"]));
+    // 아바타 32px + 간격 12px.
+    expect(badges.className.split(/\s+/)).toContain("pl-11");
   });
 
   it("글자가 없거나 'N/A'면 아바타 칸도, 배지 줄 들여쓰기도 없다(지금 행 모양 그대로)", () => {
     const { container } = render(<AssetRow row={{ ...SPX, avatarText: "N/A", isEstimated: true }} />);
     expect(avatarOf(container)).toBeNull();
-    expect((screen.getByText("추정").closest(".basis-full") as HTMLElement).className).not.toContain("pl-12");
+    expect((screen.getByText("추정").closest(".basis-full") as HTMLElement).className).not.toContain("pl-11");
   });
 
   it("펼침 단추 — 아바타 글자는 단추 이름·설명에 들어가지 않는다", () => {
@@ -346,7 +348,7 @@ describe("AssetList", () => {
     { id: "vix", name: "VIX", value: 18.4, isStale: true, staleReason: "이번 수집 실패" },
   ];
 
-  it("제목이 있으면 h2 + 그 이름의 영역, 행마다 목록 항목, 둘째 행부터 1px 윗선", () => {
+  it("제목이 있으면 h2 + 그 이름의 영역, 행마다 목록 항목, 둘째 행부터 1px 옅은 윗선(border-subtle)", () => {
     render(<AssetList title="시장" rows={ROWS} />);
     const region = screen.getByRole("region", { name: "시장" });
     expect(within(region).getByRole("heading", { level: 2, name: "시장" })).toBeTruthy();
@@ -354,7 +356,7 @@ describe("AssetList", () => {
     expect(items).toHaveLength(3);
     for (const item of items) {
       expect(item.className).toContain("border-t");
-      expect(item.className).toContain("border-border");
+      expect(item.className.split(/\s+/)).toContain("border-border-subtle");
     }
     expect(items[0].className).toContain("first:border-t-0");
   });
