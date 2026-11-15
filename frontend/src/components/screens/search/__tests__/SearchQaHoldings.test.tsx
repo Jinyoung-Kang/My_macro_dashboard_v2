@@ -56,8 +56,8 @@ afterEach(cleanup);
 describe("보유 탭 — 기업의 13F 보유 기관 줄(QA-432)", () => {
   // QA-432: 기관 이름 링크가 LINK(inline-flex)만 써서 줄바꿈 규칙이 없었습니다 — inline-flex 상자는 띄어쓰기 없는 가장 긴 낱말의 폭(min-content)보다
   // 줄지 못해 min-w-0 이름 칸을 넘었고, 1280·390 화면에서 오른쪽 숫자 칸('44.34%')과 글자가 겹쳤습니다(390에서 목록 scrollWidth 391 > clientWidth 296).
-  // 수정 전 실패: 링크에 max-w-full이 없고, 이름 글이 링크 상자에 바로 들어 있어 줄바꿈 규칙(break-keep·wrap-anywhere)을 실은 안쪽 칸이 없음(재현 커밋에서는 it.fails).
-  it("이름은 제 칸 안에서 줄바꿈(한국어는 낱말 사이, 칸보다 긴 낱말만 안에서 끊음 — 말줄임 없음), 링크 상자는 칸 폭까지, 숫자는 따로 칸 — 44px·포커스 링 그대로", async () => {
+  // 수정 전 실패: 이름 글을 담은 요소와 그 조상(링크까지) 어디에도 줄바꿈 규칙(wrap-anywhere·break-keep)이 없음(재현 커밋에서는 it.fails).
+  it("이름은 제 칸 안에서 줄바꿈(한국어는 낱말 사이, 칸보다 긴 낱말만 안에서 끊음 — 말줄임 없음), 숫자는 따로 칸 — 44px·포커스 링 그대로", async () => {
     render(<HoldingsPanel entity={COMPANY} loading={false} />);
     await screen.findByRole("heading", { name: /13F 보유 기관/ });
 
@@ -76,13 +76,17 @@ describe("보유 탭 — 기업의 13F 보유 기관 줄(QA-432)", () => {
 
       // 따로 선 링크라 lg 미만 누르는 자리 44px, 포커스 링(바깥 outline)은 링크에 그대로.
       expect(classes(link)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "focus-visible:outline-2", "focus-visible:outline-offset-2"]));
-      // 링크 상자는 이름 칸 폭을 넘지 않음.
-      expect(classes(link)).toContain("max-w-full");
-      // 이름 글은 줄바꿈 규칙을 실은 안쪽 칸(inline-flex 상자의 항목)에 — 그래야 항목의 최소 폭이 긴 낱말 폭이 아니라 칸 안에서 끊긴 폭이 됨.
+      // 겹침의 원인 규칙: 링크 상자 안의 이름 글에 overflow-wrap:anywhere(wrap-anywhere)가 걸려야 상자의 최소 폭(min-content)이 긴 낱말 폭보다 줄어
+      // 칸 폭에 맞춰짐. overflow-wrap·word-break는 상속되므로 규칙은 이름 글을 담은 요소나 그 조상(링크까지) 어디에 있어도 됨 — 자리는 묻지 않음.
+      // max-w-full만으로는 고쳐지지 않음(상자는 칸 폭으로 잘려도 글이 상자 밖으로 넘침 — QA 브라우저 측정).
       const name = within(link).getByText(institution);
-      expect(name).not.toBe(link);
-      expect(classes(name)).toEqual(expect.arrayContaining(["min-w-0", "break-keep", "wrap-anywhere"]));
-      expect(classes(name)).not.toContain("truncate");
+      const chain: Element[] = [];
+      for (let node: Element | null = name; node && link.contains(node); node = node.parentElement) chain.push(node);
+      const inChain = (word: string) => chain.some((node) => classes(node).includes(word));
+      expect(inChain("wrap-anywhere")).toBe(true);
+      expect(inChain("break-keep")).toBe(true);
+      // 전체 이름이 보임(말줄임 없음).
+      expect(inChain("truncate")).toBe(false);
     }
   });
 });
