@@ -69,7 +69,13 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  *   최소 폭과 안내가 같은 경계라 안내가 거짓이 되지 않습니다. 행이 없으면 둘 다 없습니다(넘길 칸이 없음).
  *   `scrollHint="overflow"`는 여기에 더해 상자 폭을 재서(ResizeObserver) 표가 상자보다 넓으면 폭과 상관없이 안내를 보입니다 — 데스크톱에서도
  *   칸이 많은 표가 넘치면(스크롤바가 숨는 환경에서는 단서가 없음) 가려진 칸이 있다는 것을 알 수 있게. 잴 수 없는 환경이면 `true`와 같습니다.
- * - 행이 없으면 머리는 그대로 두고 `emptyText` 한 줄.
+ * - 행이 없으면 머리는 그대로 두고 `emptyText` 한 줄 — 상자의 보이는 폭에 붙입니다. 열이 많은 표는 머리 칸이 줄을 바꾸지 않아 좁은 화면에서
+ *   상자보다 넓어지는데, 문구를 표 전체 폭의 가운데에 두면 상자 밖으로 밀려 잘렸습니다(QA-503 — 390px '최근 실제 주문'). 그래서 행이 없을 때만
+ *   상자를 크기 질의 기준(`@container`, container-type: inline-size)으로 두고, 합친 칸 안의 문구를 `sticky left-0`·상자 폭(`100cqw`)으로 그려
+ *   좌우로 넘겨도 그 자리에 남습니다. 크기 질의 기준은 내용 폭을 바깥에 알리지 않아(0) 내용 폭에 맞춰 줄어드는 부모(자동 basis flex 행 항목·
+ *   inline-block·w-fit·auto 격자 칸)에서는 상자가 옆 글 폭까지 줄어듭니다 — 그래서 행이 있는 표에는 붙이지 않습니다(2026-11-16 검토 지적:
+ *   붙이면 그런 부모 안에서 상자가 표보다 좁아져 표가 잘림). 행 없는 표를 그런 자리에 둘 때만 바깥이 폭을 정해 줍니다(minmax(0,1fr)·flex-1 등).
+ *   칸 안의 크기 질의(@ 변형·cq 단위)는 이 상자를 기준으로 삼지 않습니다(행이 있을 때 상자는 기준이 아님).
  */
 export function DataTable<T>({
   columns,
@@ -173,7 +179,7 @@ export function DataTable<T>({
       ) : null}
       <div
         ref={boxRef}
-        className="w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className={`${shown.length === 0 ? "@container " : ""}w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
         style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
         tabIndex={0}
         role="region"
@@ -202,8 +208,9 @@ export function DataTable<T>({
                         }`}
                       >
                         {column.header}
-                        {/* 방향은 aria-sort가 읽어 줍니다. 화살표는 눈으로 보는 보조 표시(정렬 전에는 흐린 ↕). */}
-                        <span aria-hidden="true" className={ariaSort ? "" : "opacity-50"}>
+                        {/* 방향은 aria-sort가 읽어 줍니다. 화살표는 눈으로 보는 보조 표시(정렬 전에는 흐린 ↕ — 흐린 단계는 불투명도가 아니라 글자 토큰
+                            text-3: 머리 바탕 surface 위 5.62:1. opacity-50은 토큰에 없는 색 #71767d(3.54:1)를 만들었음, QA-504). */}
+                        <span aria-hidden="true" className={ariaSort ? "" : "text-text-3"}>
                           {arrow}
                         </span>
                       </button>
@@ -218,8 +225,9 @@ export function DataTable<T>({
           <tbody>
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-6 text-center text-sm text-text-3">
-                  {emptyText}
+                {/* 문구는 표 전체 폭이 아니라 상자의 보이는 폭(100cqw — 행이 없을 때만 상자가 크기 질의 기준)에 붙입니다 — 넓은 표에서 상자 밖으로 밀리지 않게(위 설명, QA-503). */}
+                <td colSpan={columns.length} className="p-0">
+                  <div className="sticky left-0 w-[100cqw] px-3 py-6 text-center text-sm text-text-3">{emptyText}</div>
                 </td>
               </tr>
             ) : (

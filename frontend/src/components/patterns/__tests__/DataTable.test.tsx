@@ -108,6 +108,39 @@ describe("DataTable — 네 상태", () => {
     expect(screen.getByText("표시할 데이터가 없습니다.")).toBeTruthy();
   });
 
+  // QA-503: 열이 많은 표는 좁은 화면에서 상자보다 넓어지는데(머리 칸 nowrap), 행 없음 문구가 표 전체 폭의 가운데에 놓여 상자 밖으로 밀렸다
+  // (390px '최근 실제 주문' — '이 기능이 낸 '까지만 보임). 문구를 상자의 보이는 폭(100cqw)에 붙여 두면 넘겨도 그 자리에 남는다.
+  // jsdom에는 배치가 없으므로 구조(클래스)로 단언합니다 — 잰 값은 QA 스택에서 확인.
+  it("행이 없으면 emptyText는 감싼 상자의 보이는 폭에 붙는다 — 상자는 크기 질의 기준(@container), 문구는 sticky left-0 w-[100cqw](QA-503)", () => {
+    const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    render(<DataTable columns={COLUMNS} rows={[]} rowKey={(row) => row.ticker} caption="최근 주문" emptyText="주문이 없습니다." />);
+    const cell = screen.getByRole("cell", { name: "주문이 없습니다." });
+    expect(cell.getAttribute("colspan")).toBe("4");
+    const text = within(cell).getByText("주문이 없습니다.");
+    expect(classesOf(text)).toEqual(expect.arrayContaining(["sticky", "left-0", "w-[100cqw]"]));
+    // 100cqw가 감싼 상자의 보이는 폭이 되려면 상자가 크기 질의 기준(container-type: inline-size)이어야 합니다.
+    expect(classesOf(screen.getByRole("region", { name: "최근 주문 (좌우 스크롤)" }))).toContain("@container");
+    // 여백·글 모양은 칸이 아니라 안쪽 문구가 집니다 — 칸에 여백이 남으면 100cqw 문구가 상자 오른쪽 끝을 넘습니다. 모양(위아래 24px·가운데·보조 글자)은 예전 그대로.
+    expect(classesOf(cell)).toEqual(["p-0"]);
+    expect(classesOf(text)).toEqual(expect.arrayContaining(["px-3", "py-6", "text-center", "text-sm", "text-text-3"]));
+  });
+
+  // 크기 질의 기준(container-type: inline-size)은 상자의 내용 폭을 바깥에 0으로 알립니다 — 내용 폭에 맞춰 줄어드는 부모(자동 basis flex 행 항목·
+  // inline-block·w-fit) 안에서는 상자가 옆 글 폭까지 줄어 표가 잘립니다(2026-11-16 검토 지적 — 크롬 하네스에서 표 상자 439px -> 52px).
+  // 그래서 기준은 행 없음 문구(100cqw)가 필요한 빈 표에만 붙이고, 행이 있는 표의 상자는 예전처럼 표 폭을 바깥에 알립니다.
+  it("크기 질의 기준(@container)은 행이 없을 때만 — 행이 있는 표의 상자는 기준이 아니다", () => {
+    const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    const region = () => screen.getByRole("region", { name: "보유 (좌우 스크롤)" });
+    const { rerender } = render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} caption="보유" scrollHint />);
+    // 이름 붙은 기준(@container/이름)도 같은 성질이라 함께 막습니다.
+    expect(region().className).not.toMatch(/(^|\s)@container(\/\S+)?(\s|$)/);
+    // 행이 모두 빠지면 기준이 붙고(문구가 상자 폭에 붙음), 다시 행이 생기면 떨어집니다.
+    rerender(<DataTable columns={COLUMNS} rows={[]} rowKey={(row) => row.ticker} caption="보유" scrollHint />);
+    expect(classesOf(region())).toContain("@container");
+    rerender(<DataTable columns={COLUMNS} rows={ROWS.slice(0, 1)} rowKey={(row) => row.ticker} caption="보유" scrollHint />);
+    expect(classesOf(region())).not.toContain("@container");
+  });
+
   it("추정·대리 — 칸 안의 배지가 그대로 보인다", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const aapl = within(bodyRows()[2]).getAllByRole("cell")[1];
@@ -268,6 +301,26 @@ describe("DataTable — 정렬", () => {
     expect(firstCells()).toEqual(["AAPL", "BRK", "MSFT", "NVDA"]);
     expect(tickerHeader.getAttribute("aria-sort")).toBe("ascending");
     expect(screen.getByRole("columnheader", { name: /비중/ }).hasAttribute("aria-sort")).toBe(false);
+  });
+
+  // QA-504: 정렬 전 '↕'를 opacity-50으로 흐리게 그려 실제 색이 토큰에 없는 #71767d(머리 바탕 surface 위 3.54:1)가 됐다 — 토큰 대비 시험에도
+  // 걸리지 않는다. 흐린 단계는 글자 토큰(text-3, 캡션·각주 — surface 위 5.62:1)으로 그린다.
+  it("정렬 전 머리의 흐린 표시는 불투명도가 아니라 글자 토큰(text-text-3)으로 그린다 — 정렬한 열은 그대로 머리 글자색(QA-504)", () => {
+    const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+    const markOf = (name: RegExp) =>
+      within(screen.getByRole("columnheader", { name })).getByRole("button").querySelector('span[aria-hidden="true"]') as HTMLElement;
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
+    for (const name of [/종목/, /비중/]) {
+      const mark = markOf(name);
+      expect(mark.textContent).toBe("↕");
+      expect(classesOf(mark).filter((cls) => /^opacity-/.test(cls))).toEqual([]);
+      expect(classesOf(mark)).toContain("text-text-3");
+    }
+    // 정렬한 열의 화살표는 따로 색을 주지 않고 단추의 글자색(text-text)을 물려받습니다.
+    fireEvent.click(within(screen.getByRole("columnheader", { name: /비중/ })).getByRole("button"));
+    expect(markOf(/비중/).textContent).toBe("↑");
+    expect(classesOf(markOf(/비중/))).toEqual([]);
+    expect(classesOf(markOf(/종목/))).toContain("text-text-3");
   });
 
   it("정렬할 수 없는 열을 가리키는 initialSort는 무시한다(받은 순서, aria-sort 없음)", () => {
