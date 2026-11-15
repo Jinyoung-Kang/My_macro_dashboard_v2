@@ -2,7 +2,7 @@
  * 종목 상세의 13F 보유 기관 카드 — 정보 검색 보유 탭과 같은 검색어(lib/detail holderQuery)·같은 경로를 씁니다(QA-436). 응답은 모두 합성 값입니다.
  * 이름으로 찾아 0건이면 무엇으로 찾았는지와 그 한계를 적고 '보유한 곳이 없다'고 단정하지 않습니다(공시 이름이 줄여 적힌 보유는 이름으로 못 찾음).
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
@@ -59,10 +59,12 @@ describe("종목 상세 — 13F 보유 기관이 이름으로 찾아 0건(QA-436
     );
     const heading = await screen.findByRole("heading", { name: "13F 보유 기관" });
     const card = heading.closest("section") as HTMLElement;
-    await within(card).findAllByText(/없습니다/);
+    // 카드의 불러오는 중 자리표시가 사라질 때까지 기다립니다 — 안내가 몇 요소에 담기든, 수정 전 화면이든 같은 기다림입니다.
+    await waitFor(() => expect(within(card).queryByText(/불러오는 중/)).toBeNull());
 
+    // 결함을 직접 보는 단언 먼저(수정 전에는 여기서 실패) — 없다는 단정이 없어야 합니다.
+    expect(within(card).queryByText(/보유한 곳이 없습니다/)).toBeNull();
     expect(card.textContent).toContain(`‘${QUERY}’ 이름으로 찾은 13F 보유 줄이 없습니다`);
     expect(card.textContent).toContain("보유한 곳이 없다고 단정할 수 없습니다");
-    expect(within(card).queryByText(/보유한 곳이 없습니다/)).toBeNull();
   });
 });

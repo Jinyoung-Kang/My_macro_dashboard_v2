@@ -4,7 +4,7 @@
  * 보유 탭은 사용자가 아무것도 치지 않고 대상의 영문 이름으로 찾습니다. 13F 공시 이름은 제출자가 잘라 적거나 줄여 적어 이름으로 못 찾을 수 있으므로,
  * 0건이면 무엇으로 찾았는지와 그 한계를 적고 '보유한 곳이 없다'고 단정하지 않습니다. 직접 치는 검색의 안내('대문자 영문입니다')는 이 탭에 맞지 않습니다.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -51,15 +51,18 @@ describe("보유 탭 — 이름으로 찾은 13F 보유 줄이 없을 때(QA-436
   // 아무것도 치지 않은 탭에서 '보유 종목이 없다'고 단정했습니다(공시 이름이 잘려 못 찾은 경우에도).
   // 수정 전 실패: 찾은 이름을 적은 안내가 없고 '대문자 영문'·'보유 종목이 없습니다'가 보임(재현 커밋에서는 it.fails).
   it("찾은 이름과 '줄여 적은 공시 이름은 찾지 못함'을 적고, 보유한 곳이 없다고 단정하지 않는다", async () => {
-    render(<HoldingsPanel entity={COMPANY} loading={false} />);
-    await screen.findAllByText(/없습니다/);
+    const { container } = render(<HoldingsPanel entity={COMPANY} loading={false} />);
+    // 불러오는 중 표시가 사라질 때까지 기다립니다 — 안내가 몇 요소에 담기든, 수정 전 화면이든 같은 기다림입니다.
+    await waitFor(() => expect(screen.queryByText(/불러오는 중/)).toBeNull());
 
-    const status = screen.getByRole("status");
-    expect(status.textContent).toContain(`‘${QUERY}’ 이름으로 찾은 13F 보유 줄이 없습니다`);
-    expect(status.textContent).toContain("앞부분만 남기고 잘린 공시 이름은 함께 찾지만");
-    expect(status.textContent).toContain("보유한 곳이 없다고 단정할 수 없습니다");
+    // 결함을 직접 보는 단언 먼저(수정 전에는 여기서 실패) — 직접 치는 검색의 안내도, 없다는 단정도 없어야 합니다.
     expect(screen.queryByText(/대문자 영문/)).toBeNull();
     expect(screen.queryByText(/보유 종목이 없습니다|보유한 곳이 없습니다/)).toBeNull();
+    expect(container.textContent).toContain(`‘${QUERY}’ 이름으로 찾은 13F 보유 줄이 없습니다`);
+    expect(container.textContent).toContain("앞부분만 남기고 잘린 공시 이름은 함께 찾지만");
+    expect(container.textContent).toContain("보유한 곳이 없다고 단정할 수 없습니다");
+    // 수정이 정한 구조(결함 재현의 전제가 아님) — 안내 두 줄은 읽어 주기 한 묶음(role=status)입니다.
+    expect(screen.getByRole("status").textContent).toContain(`‘${QUERY}’ 이름으로 찾은 13F 보유 줄이 없습니다`);
   });
 
   it("줄이 있으면 머리에 찾은 이름과 '잘린 공시 이름 포함'을 적는다(백엔드가 잘린 공시 이름도 앞부분으로 찾음)", async () => {
