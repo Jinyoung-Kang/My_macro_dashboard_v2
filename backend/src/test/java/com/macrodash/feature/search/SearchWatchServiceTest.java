@@ -322,6 +322,11 @@ class SearchWatchServiceTest {
         assertThat(store.status()).isEqualTo(503);
         assertThat(store.body()).containsEntry("reason", "partial").containsEntry("message", SearchWatchService.PARTIAL_DART_STORE);
         assertThat((String) store.body().get("message")).as("저장본이 없으면 1분 뒤에도 같음 — 곧 된다고 하지 않음").doesNotContain("1분").contains("저장본");
+        assertThat((String) store.body().get("message")).as("앞머리는 받지 못한 출처와 상관없이 같음 — Wikidata도 실패했는데 DART만 실패한 것처럼 읽히지 않게")
+                .startsWith("대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — ")
+                .startsWith(SearchWatchService.PARTIAL_HEAD)
+                .contains("DART 고유번호 저장본");
+        assertThat(SearchWatchService.PARTIAL).startsWith(SearchWatchService.PARTIAL_HEAD + " — ");
         assertThat(failed(store)).containsExactly(failedItem("dart_store", "DART 고유번호 저장본을 읽지 못함"), failedItem("wikidata", "합성 사유"));
 
         resolves("us:AAPL", withErrors(entity("us:AAPL", "company", "합성 회사", "합성 회사"),

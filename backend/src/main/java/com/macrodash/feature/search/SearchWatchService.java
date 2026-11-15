@@ -78,11 +78,20 @@ public class SearchWatchService {
     static final String DART_STORE = "dart_store";
     /** partial 본문 {@code failed}의 사유 하나의 글자 수 상한. */
     static final int MAX_FAILED_REASON = 200;
-    /** 덜 풀린 등록(503 partial)의 안내 — 수집기는 실패가 섞인 풀기를 60초만 캐시해서 시간 초과·Wikidata·SEC 일시 실패는 잠시 뒤 새로 풉니다. */
-    static final String PARTIAL = "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 1분쯤 뒤 다시 등록하세요.";
-    /** DART 고유번호 저장본({@link #DART_STORE})이 섞인 partial의 안내 — 저장본이 없거나 읽지 못하는 동안에는 다시 눌러도 같은 503입니다. */
-    static final String PARTIAL_DART_STORE = "대상 정보를 다 받지 못했습니다(DART 고유번호 저장본을 읽지 못함) — 저장본을 다시 읽을 수 있을 때까지는 "
-            + "다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
+    /**
+     * 덜 풀린 등록(503 partial) 안내의 앞머리 — 받지 못한 출처가 무엇이든 같습니다(어느 출처인지는 본문 {@code failed}). DART 저장본이 섞였는지는
+     * 뒤에 붙는 다시 해 볼 때({@link #RETRY_SOON}·{@link #RETRY_DART_STORE})가 가릅니다 — 앞머리에 한 출처만 적으면 다른 출처도 실패한 응답이 그 출처만
+     * 실패한 것처럼 읽힙니다.
+     */
+    static final String PARTIAL_HEAD = "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함)";
+    /** 다시 해 볼 때 — 수집기는 실패가 섞인 풀기를 60초만 캐시해서 시간 초과·Wikidata·SEC 일시 실패는 잠시 뒤 새로 풉니다. */
+    static final String RETRY_SOON = "1분쯤 뒤 다시 등록하세요.";
+    /** DART 고유번호 저장본({@link #DART_STORE})이 섞였을 때의 다시 해 볼 때 — 저장본이 없거나 읽지 못하는 동안에는 다시 눌러도 같은 503입니다. */
+    static final String RETRY_DART_STORE = "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
+    /** 덜 풀린 등록(503 partial)의 안내. */
+    static final String PARTIAL = PARTIAL_HEAD + " — " + RETRY_SOON;
+    /** DART 고유번호 저장본({@link #DART_STORE})이 섞인 partial의 안내 — 앞머리는 {@link #PARTIAL}과 같습니다. */
+    static final String PARTIAL_DART_STORE = PARTIAL_HEAD + " — " + RETRY_DART_STORE;
     private static final List<String> ID_FIELDS = List.of("ticker", "market", "stockCode", "cik", "dartCorpCode", "wikidata", "lei");
     private static final String TOPIC = "topic:";
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
