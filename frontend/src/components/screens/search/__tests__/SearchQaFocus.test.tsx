@@ -1,8 +1,11 @@
 /**
- * 정보 검색 대상 화면에서 누른 단추가 사라질 때의 포커스(QA-430 — WCAG 2.4.3). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
+ * 정보 검색 대상 화면의 포커스 — 누른 단추가 사라질 때 옮길 자리(QA-430 — WCAG 2.4.3)와 코드가 포커스를 보내는 자리의 포커스 테두리
+ * (QA-433 — WCAG 2.4.7). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  *
  * 미리 보기는 창 폭마다 자리(xl 미만은 아래 시트, xl은 오른쪽 칸)만 다르고 닫는 동작은 같으므로 jsdom에서 한 번에 봅니다.
  */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -117,5 +120,104 @@ describe("QA-430 — 미리 보기 닫기 단추로 닫으면 포커스가 결�
     expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
     expect(document.activeElement).toBe(list);
     expect(list.getAttribute("aria-activedescendant")).toBeNull();
+  });
+});
+
+/**
+ * Tailwind v4가 :focus-visible에서 그리는 바깥선의 모양·폭 — jsdom은 Tailwind CSS를 계산하지 않으므로 클래스 목록으로 셉니다.
+ * v4의 outline-<n>은 선 모양을 var(--tw-outline-style)(@property 처음 값 solid)에서 읽고, outline-none·outline-hidden은 그 변수까지 none으로
+ * 둡니다(설치된 tailwindcss 4.3.5의 dist/lib.js). 그래서 outline-none 옆의 focus-visible:outline-2는 폭·색만 바꾸고 선을 그리지 않습니다.
+ * 변형은 바탕 클래스보다 뒤에 나오므로(focus → focus-visible 순) 그 순서로 덮어 씁니다. 폭 클래스가 없으면 width는 null입니다.
+ */
+function focusVisibleOutline(className: string): { style: string; width: string | null } {
+  const tokens = className.split(/\s+/).filter(Boolean);
+  let style = "solid";
+  let width: string | null = null;
+  for (const variant of ["", "focus:", "focus-visible:"]) {
+    for (const token of tokens) {
+      if (variant && !token.startsWith(variant)) continue;
+      const rest = token.slice(variant.length);
+      if (rest.includes(":")) continue; // 다른 변형(hover: 등)
+      const shape = /^outline-(none|hidden|solid|dashed|dotted|double)$/.exec(rest);
+      if (shape) style = shape[1] === "hidden" ? "none" : shape[1];
+      const size = /^outline(?:-(\d+))?$/.exec(rest);
+      if (size) width = size[1] ?? "1";
+    }
+  }
+  return { style, width };
+}
+
+/** 포커스 테두리를 그리겠다는 클래스(focus:·focus-visible:의 바깥선 폭)가 있는 조각. */
+const FOCUS_OUTLINE_WIDTH = /(?:^|\s)(?:focus|focus-visible):outline(?:-\d+)?(?:\s|$)/;
+
+describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 키보드 포커스 테두리를 그린다", () => {
+  // QA-433: 정보 검색 QA 스택 브라우저 확인(1024·1440·390)에서 미리 보기를 닫은 뒤(QA-430)·Tab으로 들어온 결과 목록(listbox '결과'),
+  // '다시 확인' 뒤의 받는 중 줄(p[role=status]), 기간을 풀거나 다시 확인한 뒤의 빈 결과 안내(div[role=status])가 :focus-visible인데
+  // outline-style이 none이라(폭 2px·색만 바뀜) 화면에 포커스 자리가 보이지 않았습니다(WCAG 2.4.7). 세 자리의 className이
+  // 'outline-none focus-visible:outline-2 …'였고, Tailwind v4의 outline-none은 --tw-outline-style까지 none으로 둬 focus-visible:outline-2가
+  // 선 모양을 되살리지 못합니다. jsdom은 Tailwind CSS를 계산하지 않으므로 클래스 목록으로 :focus-visible의 선 모양·폭을 계산해
+  // (focusVisibleOutline) 실선 2px인지 봅니다(같은 화면 단추의 FOCUS 상수와 같은 모양).
+  // 수정 전 실패: 세 자리 모두 선 모양이 none.
+  it.fails("결과 목록(listbox)은 :focus-visible에서 실선 2px 테두리를 그린다", async () => {
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    expect(focusVisibleOutline(list.className)).toEqual({ style: "solid", width: "2" });
+  });
+
+  it.fails("받는 중 줄(p[role=status] — '다시 확인' 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = {
+      ...FEED,
+      pending: true,
+      sources: [...FEED.sources, { source: "finviz", label: "Finviz 종목 뉴스", status: "pending", count: 0, dropped: null, message: null }],
+    };
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const status = (await screen.findByText(/받는 중인 출처가 있어/)).closest("p") as HTMLElement;
+    expect(status.getAttribute("role")).toBe("status");
+    expect(status.tabIndex).toBe(-1);
+    expect(focusVisibleOutline(status.className)).toEqual({ style: "solid", width: "2" });
+  });
+
+  it.fails("빈 결과 안내(div[role=status] — 기간을 풀거나 다시 확인한 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = {
+      ...FEED,
+      items: [],
+      sources: [{ ...FEED.sources[0], count: 0 }],
+      rangeCounts: { "7d": 0, "30d": 0, "1y": 0, "2y": 0 },
+    };
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const empty = (await screen.findByText("최근 2년 안의 자료가 없습니다")).closest('[role="status"]') as HTMLElement;
+    expect(empty.tabIndex).toBe(-1);
+    expect(focusVisibleOutline(empty.className)).toEqual({ style: "solid", width: "2" });
+  });
+
+  // 같은 함정이 다른 화면에 다시 들어오지 않게 화면 소스 전체를 봅니다. 한 줄을 따옴표·백틱·중괄호로 나눈 조각마다(className 한 덩이) 포커스
+  // 바깥선 폭이 있는데 계산한 선 모양이 none이면 걸립니다. 상수를 끼워 넣어 합친 클래스(`${FOCUS} outline-none`)는 위의 화면 시험이 봅니다.
+  it.fails("화면 소스에 outline-none·outline-hidden이 focus(-visible):outline-<n>의 선을 지우는 조합이 없다", () => {
+    const root = resolve(__dirname, "../../../..");
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          if (name !== "__tests__" && name !== "__checks__") walk(path);
+        } else if (/\.tsx?$/.test(name)) {
+          files.push(path);
+        }
+      }
+    };
+    walk(root);
+    expect(files.length).toBeGreaterThan(50);
+    const offenders: string[] = [];
+    for (const path of files) {
+      readFileSync(path, "utf8")
+        .split("\n")
+        .forEach((line, index) => {
+          const hit = line
+            .split(/["'`{}]/)
+            .some((piece) => FOCUS_OUTLINE_WIDTH.test(piece) && focusVisibleOutline(piece).style === "none");
+          if (hit) offenders.push(`${relative(root, path)}:${index + 1}`);
+        });
+    }
+    expect(offenders).toEqual([]);
   });
 });
