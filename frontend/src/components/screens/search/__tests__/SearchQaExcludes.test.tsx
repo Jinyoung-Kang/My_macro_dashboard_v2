@@ -119,20 +119,29 @@ describe("QA-444 후속 — 매체 제외 '지우기'는 요청 중에도 포커
     fireEvent.click(other);
     expect(api.apiDelete).toHaveBeenCalledTimes(1);
 
+    // 포커스를 받는 순간의 상태 — 화면 낭독기는 focus 때의 속성을 읽으므로 그때 이미 aria-disabled가 없어야 합니다(QA-444 검토 지적).
+    const atFocus: (string | null)[] = [];
+    other.addEventListener("focus", () => atFocus.push(other.getAttribute("aria-disabled")));
     await act(async () => pending!.release());
     await waitFor(() => expect(screen.queryByRole("button", { name: "first.example 지우기" })).toBeNull());
     const next = screen.getByRole("button", { name: "second.example 지우기" });
+    expect(next).toBe(other);
     expect(document.activeElement).toBe(next);
     expect(next.getAttribute("aria-disabled")).toBeNull();
+    expect(atFocus).toEqual([null]);
   });
 
   it("마지막 줄을 지우면 앞 줄의 '지우기'로, 하나 남은 줄을 지우면 더하기의 값 칸으로 포커스를 옮긴다", async () => {
     await openList(ROWS.slice(1));
     let button = pressRemove("Third Example Wire");
     expectBusyButKeepsFocus(button);
+    const previous = screen.getByRole("button", { name: "second.example 지우기" });
+    const atFocus: (string | null)[] = [];
+    previous.addEventListener("focus", () => atFocus.push(previous.getAttribute("aria-disabled")));
     await act(async () => pending!.release());
     await waitFor(() => expect(screen.queryByRole("button", { name: "Third Example Wire 지우기" })).toBeNull());
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "second.example 지우기" }));
+    expect(document.activeElement).toBe(previous);
+    expect(atFocus).toEqual([null]);
 
     button = pressRemove("second.example");
     expectBusyButKeepsFocus(button);

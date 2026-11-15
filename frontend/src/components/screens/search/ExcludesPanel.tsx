@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { NativeSelect, inputClasses } from "@/components/ui";
 import { ChevronDownIcon, StatusText } from "@/components/ui/icons";
 import { useInfoSearchExcludes } from "@/hooks/useInfoSearchWatch";
@@ -29,6 +29,18 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
   // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(aria-disabled는 다시 그린 뒤에 걸림 — '더하기'와 같은 방식).
   const removing = useRef(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
+  // 지운 줄이 사라진 뒤 포커스를 옮길 자리. 옮기는 것은 busy=false가 그려진 뒤입니다 — 응답을 받은 자리에서 바로 옮기면 받는 단추에 아직
+  // aria-disabled가 남아 있어 화면 낭독기가 '사용할 수 없음'으로 읽을 수 있습니다(QA-444 검토 지적).
+  const [refocus, setRefocus] = useState<{ from: HTMLButtonElement; target: number | null } | null>(null);
+  useLayoutEffect(() => {
+    if (!refocus || busy) return;
+    setRefocus(null);
+    // 기다리는 동안 다른 곳으로 옮겨 간 포커스는 건드리지 않습니다(지운 단추에 있던 포커스는 줄과 함께 사라져 body에 있음).
+    const active = document.activeElement;
+    if (active !== refocus.from && active !== document.body && active !== null) return;
+    const next = refocus.target === null ? null : listRef.current?.querySelector<HTMLButtonElement>(`button[data-exclude-id="${refocus.target}"]`);
+    (next ?? addValueRef.current)?.focus();
+  }, [refocus, busy]);
   const add = useCallback(
     async (body: Parameters<typeof addExclude>[0]) => {
       const ok = await addExclude(body);
@@ -50,12 +62,8 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
       try {
         if (await removeExclude(id)) {
           // 지운 줄은 다시 그리면 사라져 그 단추에 있던 포커스가 body로 떨어지므로, 다음 줄의 '지우기'(없으면 앞 줄, 줄이 없으면 더하기의 값 칸)로
-          // 옮깁니다. 기다리는 동안 다른 곳으로 옮겨 간 포커스는 건드리지 않습니다. 실패하면 줄과 단추가 그대로라 포커스도 그 단추에 남습니다.
-          const active = document.activeElement;
-          if (hadFocus && (active === button || active === document.body || active === null)) {
-            const next = target === null ? null : listRef.current?.querySelector<HTMLButtonElement>(`button[data-exclude-id="${target}"]`);
-            (next ?? addValueRef.current)?.focus();
-          }
+          // 옮깁니다 — busy=false가 그려진 뒤에(위 useLayoutEffect). 실패하면 줄과 단추가 그대로라 포커스도 그 단추에 남습니다.
+          if (hadFocus) setRefocus({ from: button, target });
           onChanged?.();
         }
       } finally {
