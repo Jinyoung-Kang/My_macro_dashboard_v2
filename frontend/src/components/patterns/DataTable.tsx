@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
+import { SELECTED_BAR } from "@/components/ui/classes";
 import { ariaSortOf, nextSort, sortRows, type SortState, type SortValue } from "@/lib/dataTable";
 import { isMissingValue } from "@/lib/patterns";
 
@@ -57,6 +58,9 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  *   surface-2 위에서도 칸 안의 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §3-2 — AssetRow와 같은 규칙). 누를 수 없는 행에는 hover 표시가 없습니다.
  * - `count`(선택): 표 위에 행 개수 줄('12건' — 함수를 주면 그 글)을 둡니다(명세 §3-7 '표와 목록 머리에는 개수'). 보이는 제목·개수를 이미 적는
  *   카드 머리가 있는 화면은 주지 않습니다. 행이 없으면 '0건'입니다.
+ * - `selectedKey`(선택, 기본 없음): 고른 행(옆 칸에 상세가 열린 행 등)의 `rowKey` — 그 행에 중립 바탕(surface-2)과 첫 칸 왼쪽 3px 잉크 막대
+ *   (`SELECTED_BAR` — 자산 행·정보 검색과 같은 꼴, 명세 §3-8, 고대비 모드에서는 같은 폭의 테두리)를 그리고 `aria-current="true"`로 읽힙니다.
+ *   데이터 영역이라 강조 파랑을 쓰지 않습니다(A1). 무엇을 고를지와 고른 뒤의 일은 부르는 쪽이 정합니다(보통 `onRowClick`과 함께).
  * - 모르는 칸의 "—"는 보조 글자색(text-3) — 타일·히어로·자산 행과 같습니다. 칸 글자는 모두 `tabular-nums`(날짜·시각 열도 자릿수가 맞게).
  * - `scrollHint`(계약에 더한 선택 prop): 폰에서 좌우로 넘겨야 하는 넓은 표 — 표를 최소 640px로 두고 그 폭(sm) 아래에서만 "← 표를 좌우로
  *   넘겨 보세요" 한 줄을 띄웁니다(옛 ui Table과 같음). 스크롤바가 안 보이는 기기에서는 오른쪽에 칸이 더 있다는 것을 알 수 없어서이고,
@@ -77,6 +81,7 @@ export function DataTable<T>({
   scrollHint = false,
   dense = false,
   count,
+  selectedKey,
 }: {
   columns: readonly Column<T>[];
   rows: readonly T[];
@@ -92,6 +97,8 @@ export function DataTable<T>({
   dense?: boolean;
   /** 표 위 행 개수 줄 — true면 'N건', 함수면 그 글(위 설명). */
   count?: boolean | ((count: number) => string);
+  /** 고른 행의 rowKey — 막대·바탕·aria-current(위 설명). */
+  selectedKey?: string | null;
 }): JSX.Element {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const sortColumn = sort ? columns.find((column) => column.key === sort.key && column.sortValue) : undefined;
@@ -211,43 +218,62 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              shown.map((row, rowIndex) => (
-                <tr
-                  key={rowKey(row)}
-                  tabIndex={activate ? 0 : undefined}
-                  onClick={activate ? activate.onClick(row) : undefined}
-                  onKeyDown={activate ? activate.onKeyDown(row) : undefined}
-                  className={
-                    activate
-                      ? "group cursor-pointer hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
-                      : undefined
-                  }
-                >
-                  {columns.map((column, index) => {
-                    const content = column.cell(row);
-                    // 행 사이 구분선은 칸의 아래 테두리(위 설명 — sticky 머리) — 마지막 행에는 긋지 않습니다(감싼 상자의 끝).
-                    const divider = rowIndex < shown.length - 1 ? "border-b border-border-subtle" : "";
-                    const className = `px-3 ${cellY} ${divider} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
-                    const shownContent = isMissingValue(content) ? (
-                      <span className="text-text-3">
-                        <Empty />
-                      </span>
-                    ) : (
-                      content
-                    );
-                    // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
-                    return column.rowHeader ? (
-                      <th key={column.key} scope="row" className={`font-normal ${className}`}>
-                        {shownContent}
-                      </th>
-                    ) : (
-                      <td key={column.key} className={className}>
-                        {shownContent}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+              shown.map((row, rowIndex) => {
+                const key = rowKey(row);
+                const selected = selectedKey !== undefined && selectedKey !== null && key === selectedKey;
+                const rowClass = [
+                  activate
+                    ? "group cursor-pointer hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                    : "",
+                  selected ? "bg-surface-2" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <tr
+                    key={key}
+                    tabIndex={activate ? 0 : undefined}
+                    onClick={activate ? activate.onClick(row) : undefined}
+                    onKeyDown={activate ? activate.onKeyDown(row) : undefined}
+                    aria-current={selected ? "true" : undefined}
+                    className={rowClass || undefined}
+                  >
+                    {columns.map((column, index) => {
+                      const content = column.cell(row);
+                      // 행 사이 구분선은 칸의 아래 테두리(위 설명 — sticky 머리) — 마지막 행에는 긋지 않습니다(감싼 상자의 끝).
+                      const divider = rowIndex < shown.length - 1 ? "border-b border-border-subtle" : "";
+                      // 고른 행의 막대는 첫 칸 안에 둡니다(칸이 relative — 행(tr)을 기준 상자로 쓰지 않음).
+                      const bar = selected && index === 0;
+                      const className = `px-3 ${cellY} ${divider} ${bar ? "relative" : ""} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
+                      const value = isMissingValue(content) ? (
+                        <span className="text-text-3">
+                          <Empty />
+                        </span>
+                      ) : (
+                        content
+                      );
+                      const shownContent = bar ? (
+                        <>
+                          <span aria-hidden="true" className={SELECTED_BAR} />
+                          {value}
+                        </>
+                      ) : (
+                        value
+                      );
+                      // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
+                      return column.rowHeader ? (
+                        <th key={column.key} scope="row" className={`font-normal ${className}`}>
+                          {shownContent}
+                        </th>
+                      ) : (
+                        <td key={column.key} className={className}>
+                          {shownContent}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

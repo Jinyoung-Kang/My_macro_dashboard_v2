@@ -4,9 +4,12 @@
  * 정렬: 머리 단추 + 정렬한 열의 th에만 aria-sort, 모르는 값은 방향과 무관하게 맨 뒤. 행 클릭: Tab으로 닿고 Enter·Space로 열림.
  * 틀: 가로 스크롤 상자·sticky 머리·maxHeight, scrollHint(최소 640px + 폰 안내 줄, "overflow"면 넘칠 때 늘 안내), 행 머리(rowHeader → th scope=row).
  * 밀도(작업대 실행 명세 §3-7): 넓은 화면 행 32px·조밀 28px, 좁은 화면의 행은 모두 44px, 정렬 머리 단추 lg 미만 44px, 행 구분선 border-subtle, 개수 줄(count).
+ * 고른 행(selectedKey, 명세 §3-8): 첫 칸 왼쪽 3px 막대(SELECTED_BAR — 장식)·중립 바탕·aria-current, 기본은 없음.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { SELECTED_BAR } from "@/components/ui/classes";
 
 import { EstimateBadge, StaleBadge } from "../badges";
 import { type Column, DataTable } from "../DataTable";
@@ -413,5 +416,62 @@ describe("DataTable — 밀도(행 높이)·개수 줄", () => {
     expect(hint.parentElement).toBe(screen.getByText("4건").parentElement);
     expect(classesOf(hint)).toContain("sm:hidden");
     expect(hint.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
+describe("DataTable — 고른 행(selectedKey)", () => {
+  const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+  const barOf = (row: HTMLElement) => row.querySelector('span[aria-hidden="true"].absolute') as HTMLElement | null;
+
+  it("고른 행 — aria-current, 중립 바탕(surface-2), 첫 칸 안 왼쪽 막대(장식 — 이름에 들어가지 않음)", () => {
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} selectedKey="AAPL" onRowClick={() => {}} />);
+    const rows = bodyRows();
+    const chosen = rows[2];
+    expect(within(chosen).getAllByRole("cell")[0].textContent).toBe("AAPL");
+    expect(chosen.getAttribute("aria-current")).toBe("true");
+    expect(classesOf(chosen)).toContain("bg-surface-2");
+    const firstCell = within(chosen).getAllByRole("cell")[0];
+    const bar = barOf(chosen);
+    expect(bar).not.toBeNull();
+    expect(firstCell.contains(bar)).toBe(true);
+    expect(classesOf(firstCell)).toContain("relative");
+    expect(bar?.className).toBe(SELECTED_BAR);
+    // 데이터 영역 — 강조 파랑을 쓰지 않습니다(A1).
+    expect(chosen.outerHTML).not.toMatch(/accent/);
+    for (const other of [rows[0], rows[1], rows[3]]) {
+      expect(other.getAttribute("aria-current")).toBeNull();
+      expect(barOf(other)).toBeNull();
+      expect(classesOf(other)).not.toContain("bg-surface-2");
+    }
+  });
+
+  it("기본(주지 않음)·null·없는 키면 고른 행이 없다 — 행 클릭 없이도 쓸 수 있다", () => {
+    const { unmount } = render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
+    expect(bodyRows().some((row) => row.getAttribute("aria-current") !== null || barOf(row) !== null)).toBe(false);
+    unmount();
+    const second = render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} selectedKey={null} />);
+    expect(bodyRows().some((row) => row.getAttribute("aria-current") !== null)).toBe(false);
+    second.unmount();
+    const third = render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} selectedKey="TSLA" />);
+    expect(bodyRows().some((row) => row.getAttribute("aria-current") !== null)).toBe(false);
+    third.unmount();
+    // 행 클릭이 없어도 고른 행을 보일 수 있습니다(무엇을 고를지는 부르는 쪽).
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} selectedKey="NVDA" />);
+    expect(bodyRows()[0].getAttribute("aria-current")).toBe("true");
+    expect(bodyRows()[0].getAttribute("tabindex")).toBeNull();
+  });
+
+  it("값 없는 칸이 첫 칸이어도 막대와 '—'를 함께 그리고, 정렬해도 고른 행을 따라간다", () => {
+    const columns: Column<Holding>[] = [
+      { key: "weight", header: "비중", align: "right", cell: (row) => (row.weight === null ? null : `${row.weight}`), sortValue: (row) => row.weight },
+      COLUMNS[0],
+    ];
+    render(<DataTable columns={columns} rows={ROWS} rowKey={(row) => row.ticker} selectedKey="MSFT" />);
+    const chosen = bodyRows().find((row) => row.getAttribute("aria-current") === "true") as HTMLElement;
+    expect(within(within(chosen).getAllByRole("cell")[0]).getByText("—")).toBeTruthy();
+    expect(barOf(chosen)).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /비중/ }));
+    const after = bodyRows().find((row) => row.getAttribute("aria-current") === "true") as HTMLElement;
+    expect(within(after).getAllByRole("cell")[1].textContent).toBe("MSFT");
   });
 });
