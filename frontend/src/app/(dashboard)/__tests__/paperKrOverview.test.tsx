@@ -149,6 +149,18 @@ describe("쉬는 한국", () => {
     expect(screen.getByText(/수익률을 서로 비교하지 않습니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "접기" }).getAttribute("aria-expanded")).toBe("true");
   });
+
+  // QA-494: 접힌 한계 카드는 머리만 있는 상자여야 합니다 — 공용 Panel이 false 본문에도 빈 본문 칸(p-3 lg:p-4)과 머리 아래 경계를 그려 빈 띠가
+  // 남았습니다(/paper/kr 아홉 탭, 1440 32px·390 24px). 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-494: 접힌 '이 장부의 한계' 카드는 머리(header)만 — 펼치면 본문 칸이 생긴다", async () => {
+    reads["/api/paper/overview?market=KR"] = () => Promise.resolve(DORMANT);
+    render(<PaperPage market="KR" />);
+    expect(await screen.findByText(/한국 계좌가 쉬고 있습니다/)).toBeTruthy();
+    const limits = screen.getByText("이 장부의 한계").closest("section") as HTMLElement;
+    expect(limits.lastElementChild?.tagName).toBe("HEADER");
+    fireEvent.click(within(limits).getByRole("button", { name: /펼치기/ }));
+    expect(limits.lastElementChild?.tagName).not.toBe("HEADER");
+  });
 });
 
 describe("오류", () => {
