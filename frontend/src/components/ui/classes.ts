@@ -29,12 +29,19 @@ export type ButtonSize = "md" | "sm" | "lg";
  */
 const CONTROL_BASE = `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border text-center motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
+/*
+ * hover는 누를 수 있을 때만 — 비활성(disabled·aria-disabled="true") 단추가 경계를 진하게 하거나 바탕을 밝히면 누를 수 있는 것처럼 보입니다(QA-493).
+ * `not-disabled:not-aria-disabled:hover:`는 :not(:disabled):not([aria-disabled="true"]):hover라 단추 모양 링크(<a> — 읽기 창 '원문 열기')에도 맞습니다.
+ * `enabled:`(:enabled — 폼 요소에만 맞음)는 그 링크의 hover를 지우므로 쓰지 않고, pointer-events-none은 비활성 단추의 안내(title·툴팁)까지 막아 쓰지 않습니다.
+ * 클래스 이름은 조각을 이어 붙이지 않고 통째로 적습니다 — Tailwind는 소스의 글자 그대로를 훑어 CSS를 만듭니다.
+ */
 const BUTTON_KIND = {
-  default: "border-border bg-control-fill font-medium text-text hover:border-border-strong",
-  primary: "border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover",
+  default: "border-border bg-control-fill font-medium text-text not-disabled:not-aria-disabled:hover:border-border-strong",
+  primary: "border-transparent bg-accent font-semibold text-accent-fg not-disabled:not-aria-disabled:hover:bg-accent-hover",
   // 위험 바탕 위 글자는 danger-fg(5.88:1 — 흰 글자는 3.14:1이라 쓰지 않음).
-  danger: "border-transparent bg-danger font-semibold text-danger-fg hover:opacity-90",
-  minimal: "border-transparent bg-transparent font-medium text-text-2 hover:bg-control-fill hover:text-text",
+  danger: "border-transparent bg-danger font-semibold text-danger-fg not-disabled:not-aria-disabled:hover:opacity-90",
+  minimal:
+    "border-transparent bg-transparent font-medium text-text-2 not-disabled:not-aria-disabled:hover:bg-control-fill not-disabled:not-aria-disabled:hover:text-text",
 } as const;
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = { ...BUTTON_KIND, secondary: BUTTON_KIND.default, ghost: BUTTON_KIND.minimal };
@@ -152,7 +159,8 @@ export function toggleClasses(pressed: boolean, compact = false): string {
   return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
     pressed
       ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
-      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
+      : // 바꾸는 중(aria-disabled)에는 hover에 반응하지 않습니다(QA-493 — 단추와 같은 이유).
+        "border-border font-medium text-text-2 not-aria-disabled:hover:border-border-strong not-aria-disabled:hover:text-text"
   }`;
 }
 

@@ -19,8 +19,8 @@ const hoverTokens = (classes: string) => tokens(classes).filter((name) => /(^|:)
 describe("비활성 단추의 hover", () => {
   // QA-493: BUTTON_KIND의 hover(기본 경계 border-strong·주 바탕 accent-hover·위험 opacity-90·최소 바탕 control-fill)와 켜고 끄는 단추 끈 칸의
   // hover가 :disabled·[aria-disabled=true]를 거르지 않아, 마우스가 있는 화면에서 비활성 '모두 읽음'의 경계가 #383e47 → #738091, 비활성
-  // '회원 만들기'의 바탕이 #4c90f0 → #8abbff로 바뀌었습니다(cursor는 not-allowed). 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-493: 단추 hover는 모두 not-disabled:not-aria-disabled: 뒤에, 켜고 끄는 단추 hover는 not-aria-disabled: 뒤에 — 맨 hover: 없음", () => {
+  // '회원 만들기'의 바탕이 #4c90f0 → #8abbff로 바뀌었습니다(cursor는 not-allowed). 재현 커밋에서는 it.fails였습니다.
+  it("QA-493: 단추 hover는 모두 not-disabled:not-aria-disabled: 뒤에, 켜고 끄는 단추 hover는 not-aria-disabled: 뒤에 — 맨 hover: 없음", () => {
     for (const variant of VARIANTS) {
       for (const size of SIZES) {
         const classes = buttonClasses(variant, size);
