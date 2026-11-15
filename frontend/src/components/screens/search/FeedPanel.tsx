@@ -280,9 +280,12 @@ export function FeedPanel({
   };
 
   // 미리 보기 안(아래 시트·xl 오른쪽 칸 — '원문 열기'·'받아 둔 글 보기'·닫기 단추)에 포커스가 있을 때의 Escape — 목록에서처럼 닫고 포커스를 결과
-  // 목록으로(닫기 단추와 같은 자리). 원문 팝업(ReaderDialog — Radix 대화상자)은 body 끝에 그려져 그 안의 키가 이 영역을 지나지 않고, Escape를 문서
-  // 캡처 단계에서 먼저 받아 preventDefault한 뒤 닫습니다. 그래서 이미 처리된 Escape와 팝업이 열려 있는 동안은 건너뜁니다 — 한 번의 Escape가 팝업과
-  // 미리 보기를 함께 닫지 않게(팝업이 닫히면 포커스는 '받아 둔 글 보기'로 돌아오고 다음 Escape가 미리 보기를 닫음).
+  // 목록으로(닫기 단추와 같은 자리). 원문 팝업(ReaderDialog — Radix 대화상자)의 키가 지금 이 영역의 onKeyDown에 오지 않는 것은 팝업이 React
+  // 트리에서 이 영역 밖(FeedPanel 루트의 자식)에 그려지기 때문입니다 — DOM에서 body 끝에 그려져서가 아닙니다. React 합성 이벤트는 포털 안에서 나도
+  // DOM이 아니라 React 트리를 따라 올라가므로, 팝업을 미리 보기 안으로 옮기면 그 안의 Escape가 이 영역까지 옵니다. 그때는 아래 두 가드가 막습니다
+  // — Radix가 Escape를 문서 캡처 단계에서 먼저 받아 preventDefault한 뒤 팝업을 닫으므로 이미 처리된 Escape를 건너뛰고(defaultPrevented), 팝업이
+  // 열려 있는 동안도 건너뜁니다(reader). 한 번의 Escape가 팝업과 미리 보기를 함께 닫지 않게(팝업이 닫히면 포커스는 '받아 둔 글 보기'로 돌아오고
+  // 다음 Escape가 미리 보기를 닫음).
   const onPreviewKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "Escape" || event.defaultPrevented || reader !== null) return;
     event.preventDefault();

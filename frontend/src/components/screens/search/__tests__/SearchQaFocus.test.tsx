@@ -187,6 +187,31 @@ describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Esca
     expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
     expect(document.activeElement).toBe(list);
   });
+
+  // 2차 검토 지적: 위 시험은 팝업이 React 트리에서 미리 보기 밖(FeedPanel 루트)에 그려져 팝업 안의 키가 미리 보기의 onKeyDown에 오지 않아서
+  // 통과하므로, 미리 보기의 두 가드(이미 처리된 Escape·팝업이 열려 있는 동안)를 지워도 통과했습니다. React 합성 이벤트는 포털 안에서 나도 React
+  // 트리를 따라 올라가므로 팝업을 미리 보기 안으로 옮기면 팝업의 Escape가 미리 보기의 onKeyDown을 지납니다 — 그 길을 미리 보기 안의 단추에서 낸
+  // Escape로 직접 거칩니다. 팝업(Radix)이 문서 캡처 단계에서 받아 닫고, 미리 보기는 그대로(두 가드를 모두 지우면 실패).
+  it("원문 팝업이 열려 있는 동안 미리 보기 영역을 지나는 Escape는 팝업만 닫는다 — 미리 보기의 가드를 직접 거침", async () => {
+    const READER = "0123456789abcdef01234567";
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = {
+      ...FEED,
+      items: [row({ id: "q1", title: "받아 둔 글 확인용", kind: "post", source: "info", readerId: READER }), ...FEED.items],
+      rangeCounts: { "7d": 3, "30d": 3, "1y": 3, "2y": 3 },
+    };
+    reads[endpoints.info.item(READER)] = { available: true, item: { id: READER, body: "받아 둔 본문", summary: null } };
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d", OWNER);
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    fireEvent.click(within(list).getByRole("option", { name: /받아 둔 글 확인용/ }));
+    const preview = screen.getByRole("region", { name: "미리 보기" });
+    const read = within(preview).getByRole("button", { name: "받아 둔 글 보기" });
+    read.focus();
+    fireEvent.click(read);
+    await screen.findByRole("dialog", { name: "받아 둔 글 확인용" });
+    fireEvent.keyDown(read, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("region", { name: "미리 보기" })).toBe(preview);
+  });
 });
 
 describe("개선 제안 — 미리 보기를 닫은 뒤 ↑↓는 닫기 전에 고른 줄에서 이어 간다", () => {
