@@ -112,34 +112,37 @@ export function LinksPanel({
                       1030~1140 화면에서 같은 이름들이 둘째 줄 끝에서 똑같이 잘렸음(검토 지적 — 줄 수를 정하면 그보다 긴 이름은 늘 남음). 설명은 한 줄(말줄임 + title). 패널은 가운데 칸의 안쪽 여백 px-3 안이라 칸보다 24px 좁아, 창 폭 V와 본문 세로 스크롤 막대 폭 s로 lg는
                       V-572-s, xl은 V-860-s(QA-420 뒤). s는 본문이 넘칠 때 globals.css의 ::-webkit-scrollbar 10px(겹쳐 그리는 막대나 넘치지 않는 본문은
                       0)이라 줄바꿈 배치는 390 화면과 lg 1024~약 1029·xl 1280~약 1317 화면(QA 브라우저 실측 패널 폭 1024에서 442px, 1280에서 410px),
-                      s가 0이면 lg는 한 줄이고 xl 1280~약 1307만. 아이콘·꺾쇠는 첫 줄(20px)에 맞춤. 줄 높이는 화면 폭 기준(lg 미만 44px). */}
+                      s가 0이면 lg는 한 줄이고 xl 1280~약 1307만. 아이콘·꺾쇠는 패널 폭과 상관없이 이름의 첫 줄(20px)에, 넓은 패널의 메타는 이름 첫 줄의 글자 밑선에 맞춤(이름이 여러 줄이어도 — 2차 검토 지적). 줄 높이는 화면 폭 기준(lg 미만 44px). */}
                   <button
                     type="button"
                     onClick={() => onTarget(linkTarget(link))}
-                    className="flex min-h-11 w-full items-start gap-2 rounded-control px-1.5 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8 @md:items-center"
+                    className="flex min-h-11 w-full items-center rounded-control px-1.5 py-1 text-left text-sm hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-8"
                   >
-                    <span className="flex h-5 shrink-0 items-center text-text-3">
-                      <KindIcon kind={link.kind} size={14} />
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-center @md:gap-2">
-                      <span className="flex min-w-0 flex-col @md:flex-1">
-                        <span className="break-words text-accent" title={link.name}>
-                          {link.name}
-                        </span>
-                        {link.detail ? (
-                          <span className="break-words text-xs text-text-2 @md:truncate" title={link.detail}>
-                            {link.detail}
+                    {/* 줄 안의 글 묶음은 줄 높이보다 낮으면 세로 가운데(한 줄 이름), 그 안에서 아이콘·꺾쇠는 이름의 첫 줄에 맞춤. */}
+                    <span className="flex w-full min-w-0 items-start gap-2">
+                      <span className="flex h-5 shrink-0 items-center text-text-3">
+                        <KindIcon kind={link.kind} size={14} />
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-baseline @md:gap-2">
+                        <span className="flex min-w-0 flex-col @md:flex-1">
+                          <span className="break-words text-accent" title={link.name}>
+                            {link.name}
                           </span>
-                        ) : null}
+                          {link.detail ? (
+                            <span className="break-words text-xs text-text-2 @md:truncate" title={link.detail}>
+                              {link.detail}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="text-xs text-text-3 @md:shrink-0">
+                          {[link.kind ? entityKindLabel(link.kind) : null, linkSourceLabel(link.source), link.key ? null : "이름으로 찾기"]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
                       </span>
-                      <span className="text-xs text-text-3 @md:shrink-0">
-                        {[link.kind ? entityKindLabel(link.kind) : null, linkSourceLabel(link.source), link.key ? null : "이름으로 찾기"]
-                          .filter(Boolean)
-                          .join(" · ")}
+                      <span className="flex h-5 shrink-0 items-center">
+                        <ChevronRightIcon size={14} className="text-text-3" />
                       </span>
-                    </span>
-                    <span className="flex h-5 shrink-0 items-center">
-                      <ChevronRightIcon size={14} className="text-text-3" />
                     </span>
                   </button>
                 </li>

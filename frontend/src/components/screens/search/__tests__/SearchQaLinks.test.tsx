@@ -51,7 +51,9 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
     for (const link of [...SUBSIDIARIES, INSIDER]) {
       const button = screen.getByRole("button", { name: new RegExp(link.name) });
       expect(classes(button)).toContain("min-h-11");
-      expect(classes(button)).toEqual(expect.arrayContaining(["items-start", "@md:items-center"]));
+      // 줄 안의 글 묶음은 세로 가운데(한 줄 이름), 그 안에서 아이콘·꺾쇠는 이름 첫 줄에(아래 '넓은 패널' 시험 — 패널 폭과 상관없이).
+      expect(classes(button)).toContain("items-center");
+      expect(classes(button.firstElementChild!)).toContain("items-start");
       expect(button.className).not.toMatch(/(^|\s)lg:(items-center|flex-row|truncate|shrink-0|flex-1)(\s|$)/);
 
       const name = within(button).getByText(link.name);
@@ -119,8 +121,30 @@ describe("연결 탭 '목록' 보기 — 넓은 패널(28rem 이상)에서 끝�
       // 오른쪽 메타 칸(28rem 이상에서 줄어들지 않음)과 이름·설명 칸의 가로 배치는 그대로.
       const meta = within(button).getByText(link.kind === "person" ? "사람 · Yahoo · 이름으로 찾기" : "기업 · GLEIF · 이름으로 찾기");
       expect(classes(meta)).toContain("@md:shrink-0");
-      expect(classes(meta.parentElement!)).toEqual(expect.arrayContaining(["@md:flex-row", "@md:items-center"]));
+      expect(classes(meta.parentElement!)).toEqual(expect.arrayContaining(["@md:flex-row", "@md:items-baseline"]));
       expect(classes(name.parentElement!)).toEqual(expect.arrayContaining(["min-w-0", "@md:flex-1"]));
+    }
+  });
+
+  it("넓은 패널에서도 아이콘·꺾쇠는 이름의 첫 줄, 메타는 이름 첫 줄의 글자 밑선에 — 여러 줄 이름의 세로 가운데로 내려가지 않음(2차 검토 지적)", () => {
+    // 2차 검토 지적: 28rem 이상에서도 이름이 여러 줄이 되면서(3b7283a0·1a6aa5c6), 줄 단추와 가운데 칸의 '@md:items-center' 때문에 종류 아이콘·꺾쇠·메타가
+    // 여러 줄 이름의 세로 가운데로 내려갔습니다 — Chromium에서 패널 470(1100 화면)의 110자 이름(4줄)이 아이콘·꺾쇠 38px·메타 40px 아래, 496에서 28px,
+    // 570에서 18px(좁은 패널 296·410·442는 0px). 이제 줄 단추는 글 묶음 전체만 세로 가운데에 두고(한 줄 이름은 지금처럼 가운데), 묶음 안에서 아이콘·꺾쇠는
+    // 첫 줄(20px 칸), 메타는 첫 줄의 글자 밑선(items-baseline)에 맞춥니다 — 같은 마크업을 Chromium에서 재면 패널 296~570 모두 아이콘·꺾쇠 0px, 넓은
+    // 패널의 메타 3px(12px 글자의 밑선이 14px 글자의 밑선과 같음), 줄 높이는 그대로(커밋 글).
+    // 바꾸기 전 실패: 줄 단추와 가운데 칸에 '@md:items-center'.
+    const view: LinksView = { groups: linkGroups([...LONG, INSIDER]), extra: null, sources: [], empty: null, entityNote: null };
+    render(<LinksPanel view={view} centerName="Example Corp" onTarget={() => {}} onRetry={() => {}} />);
+    for (const link of [...LONG, INSIDER]) {
+      const button = screen.getByRole("button", { name: new RegExp(link.name) });
+      const row = button.firstElementChild!;
+      expect([...button.querySelectorAll("*"), button].filter((element) => classes(element).includes("@md:items-center"))).toEqual([]);
+      expect(classes(row)).toEqual(expect.arrayContaining(["flex", "items-start"]));
+      const name = within(button).getByText(link.name);
+      const [icon, middle, chevron] = [...row.children];
+      expect(middle.contains(name)).toBe(true);
+      for (const box of [icon, chevron]) expect(classes(box)).toEqual(expect.arrayContaining(["h-5", "items-center", "shrink-0"]));
+      expect(classes(middle)).toEqual(expect.arrayContaining(["@md:flex-row", "@md:items-baseline"]));
     }
   });
 });
