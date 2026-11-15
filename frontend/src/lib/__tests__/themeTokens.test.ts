@@ -7,9 +7,10 @@
  *    금지 목록(FORBIDDEN_ON_SURFACE_3)과 같아야 합니다 — 값을 바꿔 새로 못 미치는 토큰이 생기면 목록과 소스 검사에 더하라는 뜻입니다.
  *  - 경계(border-strong)·포커스 링(focus) 3:1(WCAG 1.4.11), 강조·위험 바탕 위 글자(accent-fg·danger-fg) 4.5:1.
  *  - 틴트(bg-*-tint — color-mix(in oklab, 톤 10%, surface)) 위 같은 톤 글자 4.5:1 — 못 미치는 톤은 FORBIDDEN_TONE_ON_TINT와 같아야 함 — 와 text·text-2·text-3.
+ *    틴트 위 accent 글자(링크)가 4.5:1에 못 미치는 틴트는 FORBIDDEN_ACCENT_ON_TINT와 같아야 합니다(지금은 네 틴트 모두 — 명세 §3-2 틴트 표).
  *  - 블록 모양: 맨 바깥 블록(@media·data-theme 안이 아님), color-scheme dark, 토큰 블록에는 사용자 속성과 color-scheme만, 바탕·글자색은 @layer base.
  *  - 정보 검색 범위 블록(`[data-scope="search"]`)은 P7에서 걷어 낼 때까지 `:root`와 같은 값만 다시 적습니다(겉모습 변화 0).
- *  - 금지 쌍(surface-3 위 text-3·neutral·accent·danger 글자, accent 틴트 위 accent 글자)은 소스 검사로 막습니다 — 제품 소스(.ts·.tsx, 시험 제외)의
+ *  - 금지 쌍(surface-3 위 text-3·neutral·accent·danger 글자, accent 틴트 위 accent 글자, 주의·정상·위험 틴트 위 accent 글자)은 소스 검사로 막습니다 — 제품 소스(.ts·.tsx, 시험 제외)의
  *    문자열·템플릿 조각 하나에 바탕 클래스와 글자 클래스가 함께 있으면 걸립니다(변형 접두어 hover: 등과 투명도 /50은 떼고 봄 — 눌렸을 때만 그 바탕이어도
  *    그때 그 글자가 그 위에 놓임). 부모가 칠한 바탕을 물려받는 자식 글자는 따로 봅니다 — className 글에 그 바탕이 있는 JSX 요소와 그 바탕을 칠하는
  *    톤의 <Callout>·<Banner>(ui/index.tsx CALLOUT_TONES에서 읽음)의 자식 글. 한계: 변수로 나눠 붙인 클래스, 변수로만 넘긴 톤, 다른 부품이 안에서 칠하는 바탕은 보지 않습니다.
@@ -146,6 +147,11 @@ const FORBIDDEN_ON_SURFACE_3 = ["--text-3", "--neutral", "--accent", "--danger"]
 /** 틴트 위에 같은 톤 글자로 두지 않는 톤(accent 틴트 위 accent 4.47 — 명세 §3-2). */
 const FORBIDDEN_TONE_ON_TINT = ["--accent"] as const;
 const TINT_TONES = ["--accent", "--warn", "--ok", "--danger"] as const;
+/**
+ * accent 글자(링크)를 두지 않는 틴트 — accent 4.46·warn 4.32·ok 4.26·danger 4.45:1(이 파일의 OKLab 근사, 브라우저 계산 4.47·4.33·4.25·4.44 — 명세 §3-2).
+ * 안내 상자(Callout·Banner — Banner의 기본 톤이 warn) 안 링크는 본문색 밑줄 링크로 그립니다. 중립 안내(surface-2 위 4.51)는 됩니다.
+ */
+const FORBIDDEN_ACCENT_ON_TINT = ["--accent", "--warn", "--ok", "--danger"] as const;
 
 const ratio = (t: Record<string, string>, fore: string, back: string | Rgb) =>
   contrast(rgb(t[fore]), typeof back === "string" ? rgb(t[back]) : back);
@@ -210,6 +216,12 @@ describe.each(TOKEN_BLOCKS)("토큰 블록 %s", (selector) => {
         expect(ratio(t, fore, back), `${fore} on ${tone}-tint`).toBeGreaterThanOrEqual(4.5);
       }
     }
+  });
+
+  it("틴트 위 accent 글자(링크)가 4.5:1에 못 미치는 틴트는 금지 목록과 같다 — 값을 바꿔 4.5를 넘으면 목록에서 빼라는 뜻", () => {
+    const surface = rgb(t["--surface"]);
+    const below = TINT_TONES.filter((tone) => ratio(t, "--accent", tint(rgb(t[tone]), surface)) < 4.5);
+    expect(below).toEqual([...FORBIDDEN_ACCENT_ON_TINT]);
   });
 });
 
@@ -331,16 +343,22 @@ const SOURCE_SCAN_TIMEOUT_MS = 30_000;
 /** 토큰 이름(--text-3) → 글자 클래스(text-text-3). */
 const textClass = (token: string) => `text-${token.slice(2)}`;
 
-type PairRule = "surface-3" | "tint";
+type PairRule = "surface-3" | "tint" | "accent-on-tint";
 
 /**
  * 금지 쌍 — 바탕 클래스 하나와 그 위에 두지 않는 글자 클래스들. 조작 바탕(bg-control-fill — 기본 단추 바탕·최소 단추 hover)은 덮개 안([data-overlay])에서
- * surface-3이 되므로 surface-3과 같은 글자를 막습니다(2026-11-16 결정, 아래 '조작 바탕' 시험).
+ * surface-3이 되므로 surface-3과 같은 글자를 막습니다(2026-11-16 결정, 아래 '조작 바탕' 시험). accent 틴트 위 accent 글자는 QA-459의 "tint" 규칙이,
+ * 나머지 틴트(주의·정상·위험) 위 accent 글자는 "accent-on-tint" 규칙이 봅니다(2026-11-16 검토 지적).
  */
 const FORBIDDEN_PAIRS: readonly { rule: PairRule; back: string; fores: readonly string[] }[] = [
   { rule: "surface-3", back: "bg-surface-3", fores: FORBIDDEN_ON_SURFACE_3.map(textClass) },
   { rule: "surface-3", back: "bg-control-fill", fores: FORBIDDEN_ON_SURFACE_3.map(textClass) },
   ...FORBIDDEN_TONE_ON_TINT.map((tone) => ({ rule: "tint" as const, back: `bg-${tone.slice(2)}-tint`, fores: [textClass(tone)] })),
+  ...FORBIDDEN_ACCENT_ON_TINT.filter((tone) => !(FORBIDDEN_TONE_ON_TINT as readonly string[]).includes(tone)).map((tone) => ({
+    rule: "accent-on-tint" as const,
+    back: `bg-${tone.slice(2)}-tint`,
+    fores: [textClass("--accent")],
+  })),
 ];
 
 /** 클래스 낱말 하나의 유틸리티 이름 — 중요 표시(!)·변형 접두어(hover:·[&>svg]: — 대괄호 안의 콜론은 건너뜀)·투명도(/50)를 뗍니다. */
@@ -556,7 +574,15 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
     ]);
     expect(inheritedHits("sample.tsx", sample, "surface-3", tones)).toEqual(["8: bg-surface-3 요소(8행) 안 text-text-3"]);
     // 공용 키트(P2)가 안내(info)를 중립(surface-2 바탕)으로 바꿔 지금 표에는 accent 틴트를 칠하는 안내 상자 톤이 없습니다(QA-459).
-    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-control-fill": [], "bg-accent-tint": [] });
+    // 주의·위험·정상 톤은 저마다의 틴트를 칠합니다(Banner의 기본 톤 warn 포함 — 아래 accent-on-tint 검사).
+    expect(bannerTonesByBack()).toEqual({
+      "bg-surface-3": [],
+      "bg-control-fill": [],
+      "bg-accent-tint": [],
+      "bg-warn-tint": ["warn"],
+      "bg-ok-tint": ["ok"],
+      "bg-danger-tint": ["danger"],
+    });
   });
 
   it("surface-3(덮개 안 hover·눌림)·조작 바탕(덮개 안에서 surface-3) 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
@@ -571,6 +597,12 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
   //    실제 계좌 모듈은 겉모양만 공용 키트를 통해 바꾸므로(ADR 0042 결정 8) 그 파일이 아니라 키트에서 — 안내 톤을 중립(surface-2 바탕, 명세 §3-4)으로.
   it("QA-459: accent 틴트 바탕 위에 accent 글자를 두지 않는다", () => {
     expect(offenders("tint")).toEqual([]);
+  }, SOURCE_SCAN_TIMEOUT_MS);
+
+  // 주의·정상·위험 틴트 위 accent 글자(링크)도 4.5:1에 못 미칩니다(warn 4.33·ok 4.25·danger 4.44 — 브라우저 계산). Banner의 기본 톤이 warn이라
+  // 안내 상자 안에 강조 파랑 링크를 하나만 넣어도 걸립니다(2026-11-16 검토 지적 — 그때 어기는 자리는 없었음). 안내 상자 안 링크는 본문색 밑줄 링크로.
+  it("주의·정상·위험 틴트(Banner 기본 톤 warn 포함) 위에 accent 글자를 두지 않는다", () => {
+    expect(offenders("accent-on-tint")).toEqual([]);
   }, SOURCE_SCAN_TIMEOUT_MS);
 });
 
