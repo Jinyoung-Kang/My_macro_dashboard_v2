@@ -18,6 +18,7 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -606,6 +607,80 @@ class ReviewServiceTest {
         assertThat(service.review(WE).kind()).as("형식 오류는 그 주의 끝 — 다시 부르지 않음").isEqualTo(ReviewService.Kind.EXISTING);
         assertThat(hits.get()).isEqualTo(1);
         assertThat(callsToday()).isEqualTo(1);
+    }
+
+    @Test
+    @Disabled("QA-475: 수정 전 실패 — 수동 실행도 FORMAT_ERROR 행(재시도 0)을 EXISTING으로 돌려주고 다시 부르지 않음")
+    @DisplayName("QA-475: 출력 한도로 끝난 FORMAT_ERROR 주는 수동 실행만 같은 행에서 한 번 더 부른다(재시도 0 → 1, 하루 호출 수·추정 비용 그대로 셈) — 정기 실행은 다시 부르지 않고, 다시 부른 뒤에는 수동도 끝(사용자 결정 2026-11-15)")
+    void manualRunRetriesFormatErrorOnceOnSameRow() throws Exception {
+        long decisionId = scene();
+        answerMessage("[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"sig\"}]", "max_tokens",
+                "{\"input_tokens\":61000,\"output_tokens\":64000,\"cache_read_input_tokens\":0,"
+                        + "\"cache_creation_input_tokens\":5000}");
+        ReviewService service = service();
+
+        Review failed = service.review(UsPaperMarket.INSTANCE, WE, true).review();
+        assertThat(failed.status()).isEqualTo(Review.FORMAT_ERROR);
+        assertThat(failed.retryCount()).isZero();
+        assertThat(service.review(UsPaperMarket.INSTANCE, WE, true).kind())
+                .as("정기 실행은 형식 오류를 다시 부르지 않음 — 30분마다 유료 호출을 되풀이하지 않게").isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(hits.get()).isEqualTo(1);
+        double costAfterFirst = store.apiUsage(TODAY_KST).orElseThrow().estCostUsd();
+
+        answerJson(reviewJson(decisionId, "null"));
+        ReviewService.Outcome manual = service.review(UsPaperMarket.INSTANCE, WE, false);
+
+        assertThat(manual.kind()).as("수동 실행은 같은 주를 한 번 더 부름").isEqualTo(ReviewService.Kind.CALLED);
+        Review retried = store.reviews.get(WE);
+        assertThat(retried.status()).isEqualTo(Review.OK);
+        assertThat(retried.retryCount()).as("같은 행, 재시도 0 → 1").isEqualTo(1);
+        assertThat(retried.error()).isNull();
+        assertThat(retried.response().path("verdicts").size()).isEqualTo(1);
+        assertThat(retried.usage().path("outputTokens").asLong()).as("다시 부른 호출의 사용량").isEqualTo(1_200);
+        assertThat(store.reviews).hasSize(1);
+        assertThat(hits.get()).isEqualTo(2);
+        assertThat(callsToday()).as("하루 호출 상한에 그대로 셈").isEqualTo(2);
+        assertThat(store.apiUsage(TODAY_KST).orElseThrow().estCostUsd()).as("추정 비용도 더함").isGreaterThan(costAfterFirst);
+
+        assertThat(service.review(UsPaperMarket.INSTANCE, WE, false).kind()).as("재시도는 한 번 — 수동도 끝")
+                .isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(service.review(UsPaperMarket.INSTANCE, WE, true).kind()).isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(hits.get()).isEqualTo(2);
+    }
+
+    @Test
+    @Disabled("QA-475: 수정 전 실패 — 수동 실행이 FORMAT_ERROR 행(재시도 0)을 상한 판정 전에 EXISTING으로 돌려줌")
+    @DisplayName("QA-475: 형식 오류의 수동 재시도도 수동 문턱(상한 − 정기 몫 예약)을 지킨다 — 닿았으면 CAP_REACHED(행 그대로·부르지 않음), 다시 부른 형식 오류·거절·건너뜀·완료는 수동도 EXISTING")
+    void manualFormatErrorRetryKeepsCapAndFinalStatuses() {
+        scene();
+        Review format = new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, "claude-sonnet-5-5", null,
+                Review.FORMAT_ERROR, "[MAX_TOKENS] 출력 한도(20000 토큰)에 걸려 답을 쓰기 전에 끝났습니다", null, 1, 0, null);
+        store.reviews.put(WE, format);
+        store.apiUsage.put(TODAY_KST, new ApiUsage(TODAY_KST, 23, 0, 0, 0, 0));
+
+        ReviewService.Outcome capped = service().review(UsPaperMarket.INSTANCE, WE, false);
+
+        assertThat(capped.kind()).isEqualTo(ReviewService.Kind.CAP_REACHED);
+        assertThat(capped.message()).contains("정기 작업 몫 7회를 남겨 수동 호출은 23회까지");
+        assertThat(store.reviews.get(WE)).as("행 그대로").isEqualTo(format);
+        assertThat(hits.get()).isZero();
+
+        store.apiUsage.clear();
+        for (Review done : List.of(
+                new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.FORMAT_ERROR, "x", null, 1,
+                        1, null),
+                new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.REFUSED, "x", null, 1, 0,
+                        null),
+                new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.SKIPPED,
+                        ReviewService.NO_DECISIONS, null, 1, 0, null),
+                new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, null, null, Review.OK, null, null, 1, 0,
+                        null))) {
+            store.reviews.put(WE, done);
+            assertThat(service().review(UsPaperMarket.INSTANCE, WE, false).kind())
+                    .as(done.status() + " 재시도 " + done.retryCount()).isEqualTo(ReviewService.Kind.EXISTING);
+        }
+        assertThat(hits.get()).isZero();
+        assertThat(callsToday()).isZero();
     }
 
     @Test
