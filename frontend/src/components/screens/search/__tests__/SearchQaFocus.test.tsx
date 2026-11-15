@@ -1,5 +1,5 @@
 /**
- * 정보 검색 대상 화면의 포커스 — 누른 단추가 사라질 때 옮길 자리(QA-430 — WCAG 2.4.3)와 코드가 포커스를 보내는 자리의 포커스 테두리
+ * 정보 검색 대상 화면의 포커스 — 누른 단추가 사라질 때 옮길 자리(QA-430·QA-434 — WCAG 2.4.3)와 코드가 포커스를 보내는 자리의 포커스 테두리
  * (QA-433 — WCAG 2.4.7). 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  *
  * 미리 보기는 창 폭마다 자리(xl 미만은 아래 시트, xl은 오른쪽 칸)만 다르고 닫는 동작은 같으므로 jsdom에서 한 번에 봅니다.
@@ -219,5 +219,62 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
         });
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("QA-434 — '거르기 모두 풀기'를 누르면 사라진 단추 대신 논리적인 자리로 포커스가 간다", () => {
+  // QA-434: 정보 검색 QA 스택 브라우저 확인(1024·390 — 390은 '거르기 · 기간' 서랍을 연 뒤)에서 '거르기 모두 풀기'를 Enter로 누르면 단추가
+  // 사라지고(빈 결과 안내는 결과 목록으로 바뀌고, 거르기 칸의 단추는 거른 것이 없어져 빠짐) document.activeElement가 BODY가 됐습니다.
+  // 빈 결과 안내 쪽 뒤의 Tab은 결과 목록을 건너뛰고 속성 칸으로, 거르기 칸 쪽 뒤의 Tab은 '지금 새로 받기'로 갔습니다(WCAG 2.4.3).
+  // 같은 안내의 '좁히기 풀기'는 포커스를 결과 목록으로 옮깁니다. 브라우저는 단추 위 Enter·Space를 click으로 바꾸므로 포커스를 둔 뒤 click으로 누릅니다.
+  // 수정 전 실패: document.activeElement가 body.
+
+  /** 결과 목록이 그려진 뒤의 거르기 칸. */
+  async function filterPane() {
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    await screen.findByRole("listbox", { name: "결과" });
+    return screen.getByRole("region", { name: "거르기" });
+  }
+
+  it.fails("빈 결과 안내의 단추 → 다시 나타난 결과 목록", async () => {
+    const pane = await filterPane();
+    fireEvent.click(within(pane).getByRole("checkbox", { name: "뉴스 2건" }));
+    const notice = screen.getByText("고른 거르기에 맞는 자료가 없습니다").closest('[role="status"]') as HTMLElement;
+    const clear = within(notice).getByRole("button", { name: "거르기 모두 풀기" });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(screen.queryByText("고른 거르기에 맞는 자료가 없습니다")).toBeNull();
+    const list = screen.getByRole("listbox", { name: "결과" });
+    expect(document.activeElement).toBe(list);
+    // 포커스가 목록에 있으므로 ↓가 곧바로 첫 줄을 고릅니다.
+    fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    expect(within(list).getAllByRole("option")[0].getAttribute("aria-selected")).toBe("true");
+  });
+
+  it.fails("거르기 칸의 단추 → 그 칸의 첫 체크 상자(모두 켜진 것을 바로 듣게)", async () => {
+    const pane = await filterPane();
+    fireEvent.click(within(pane).getByRole("checkbox", { name: "영어 2건" }));
+    const clear = within(pane).getByRole("button", { name: "거르기 모두 풀기" });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(within(pane).queryByRole("button", { name: "거르기 모두 풀기" })).toBeNull();
+    const first = within(pane).getAllByRole("checkbox")[0] as HTMLInputElement;
+    expect(document.activeElement).toBe(first);
+    expect(first.checked).toBe(true);
+  });
+
+  it.fails("거르기 칸에 체크 상자가 없으면(고른 기간에 받은 줄이 없음) 그 칸의 지금 기간 단추", async () => {
+    // 거르기는 기간을 바꿔도 남으므로, 7일에 받은 줄이 없으면 체크 상자 없이 '거르기 모두 풀기'만 남습니다(서버가 센 기간별 건수 — 7일 0건).
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = { ...FEED, rangeCounts: { "7d": 0, "30d": 2, "1y": 2, "2y": 2 } };
+    const pane = await filterPane();
+    fireEvent.click(within(pane).getByRole("checkbox", { name: "영어 2건" }));
+    fireEvent.click(within(pane).getByRole("button", { name: /^7일/ }));
+    expect(await screen.findByText("이 기간에는 자료가 없습니다")).toBeTruthy();
+    expect(within(pane).queryAllByRole("checkbox")).toHaveLength(0);
+    const clear = within(pane).getByRole("button", { name: "거르기 모두 풀기" });
+    clear.focus();
+    fireEvent.click(clear);
+    expect(within(pane).queryByRole("button", { name: "거르기 모두 풀기" })).toBeNull();
+    expect(document.activeElement).toBe(within(pane).getByRole("button", { name: /^7일/, pressed: true }));
   });
 });
