@@ -7,7 +7,7 @@ import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatNumber, formatUsd, withoutLeadingIcon } from "@/lib/format";
-import { holdersQuery, holdingsWindow, kstToday } from "@/lib/infoSearch";
+import { holdersQuery, holdingsWindow, kstToday, type HoldersQuery } from "@/lib/infoSearch";
 import type { GuruHoldersResponse, PortfolioResponse, SearchEntity } from "@/lib/types";
 import { LINK, PaneHeading } from "./parts";
 
@@ -26,12 +26,15 @@ function TooOld({ latest }: { latest: string | null }) {
   );
 }
 
+/** 회사 보유 줄의 검색어와 무엇으로 찾았는지(이름·티커 — 머리·0건 안내·끝의 한 줄이 다름). */
+type HoldersQueryProps = { query: string; by: HoldersQuery["by"] };
+
 /**
- * 이름으로 찾은 13F 보유 줄이 없을 때(QA-436) — 사용자가 치지 않은 검색이라 무엇으로 찾았는지와 그 한계를 적고, 없다고 단정하지 않습니다(직접 치는 검색의
- * 백엔드 안내 '대문자 영문입니다'를 쓰지 않음).
+ * 이름(또는 영문 이름이 없는 대상의 티커)으로 찾은 13F 보유 줄이 없을 때(QA-436) — 사용자가 치지 않은 검색이라 무엇으로 찾았는지와 그 한계를 적고, 없다고
+ * 단정하지 않습니다(직접 치는 검색의 백엔드 안내 '대문자 영문입니다'를 쓰지 않음).
  */
-function NoHolderMatch({ query }: { query: string }) {
-  const text = holdersNoMatch(query);
+function NoHolderMatch({ query, by }: HoldersQueryProps) {
+  const text = holdersNoMatch(query, by);
   return (
     <div role="status" className="flex flex-col gap-1 py-6 text-sm">
       <p className="font-medium text-text">{text.title}</p>
@@ -49,12 +52,12 @@ export function HoldingsPanel({ entity, loading }: { entity: SearchEntity | null
   if (entity.key.startsWith("cik:")) return <PortfolioHoldings cik={entity.key.slice("cik:".length)} />;
   if (entity.kind === "company") {
     const query = holdersQuery(entity);
-    return query ? <CompanyHolders query={query} /> : <p className="py-6 text-sm text-text-2">13F 공시 이름으로 찾을 영문 이름·티커가 없습니다.</p>;
+    return query ? <CompanyHolders query={query.text} by={query.by} /> : <p className="py-6 text-sm text-text-2">13F 공시 이름으로 찾을 영문 이름·티커가 없습니다.</p>;
   }
   return <p className="py-6 text-sm text-text-2">이 대시보드가 받는 13F 기관(12곳)이 아니라 보유 자료가 없습니다.</p>;
 }
 
-function CompanyHolders({ query }: { query: string }) {
+function CompanyHolders({ query, by }: HoldersQueryProps) {
   const holders = useApi<GuruHoldersResponse>(endpoints.institution.guruHolders(query));
   const now = useMinuteClock();
   const data = holders.data;
@@ -63,13 +66,15 @@ function CompanyHolders({ query }: { query: string }) {
   }
   // 백엔드는 검색어가 있으면 0건일 때만 available=false(안내는 직접 치는 검색의 글)라, 줄이 없으면 이 탭의 안내로 적습니다(QA-436).
   const rows = data.rows ?? [];
-  if (rows.length === 0) return <NoHolderMatch query={query} />;
+  if (rows.length === 0) return <NoHolderMatch query={query} by={by} />;
   const span = holdingsWindow(rows.map((row) => row.reportDate), kstToday(now.getTime()));
   const recent = rows.filter((row) => span.recent.includes(row.reportDate));
   if (recent.length === 0) return <TooOld latest={span.latest} />;
   return (
     <section aria-labelledby="search-holders" className="flex flex-col gap-2">
-      <PaneHeading id="search-holders">13F 보유 기관 — ‘{query}’ 이름으로 찾은 줄(잘린 공시 이름 포함, 비중 순)</PaneHeading>
+      <PaneHeading id="search-holders">
+        {by === "ticker" ? `13F 보유 기관 — 공시 이름에 ‘${query}’ 티커 글자가 들어간 줄(비중 순)` : `13F 보유 기관 — ‘${query}’ 이름으로 찾은 줄(잘린 공시 이름 포함, 비중 순)`}
+      </PaneHeading>
       <ul className="divide-y divide-border">
         {recent.slice(0, ROWS_SHOWN).map((row) => (
           <li key={`${row.cik}:${row.cusip}`} className="grid min-h-11 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-sm lg:min-h-8">
@@ -92,7 +97,7 @@ function CompanyHolders({ query }: { query: string }) {
         ))}
       </ul>
       <p className="text-xs text-text-3">
-        받은 자료 기준 — 이 대시보드가 받는 13F 기관만 봅니다. 이름으로 찾아 다른 회사가 섞일 수 있어 공시 이름을 함께 적습니다.
+        받은 자료 기준 — 이 대시보드가 받는 13F 기관만 봅니다. {by === "ticker" ? "티커 글자로" : "이름으로"} 찾아 다른 회사가 섞일 수 있어 공시 이름을 함께 적습니다.
         {recent.length > ROWS_SHOWN ? ` ${recent.length}줄 가운데 비중 상위 ${ROWS_SHOWN}줄.` : ""}
       </p>
     </section>

@@ -82,3 +82,47 @@ describe("보유 탭 — 이름으로 찾은 13F 보유 줄이 없을 때(QA-436
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+describe("보유 탭 — 영문 이름이 없어 티커로 찾을 때(QA-436 검토 지적)", () => {
+  const TICKER = "SYNKF";
+  /** 한글 이름만 있고 영문 이름이 없는 합성 대상 — 보유 탭은 티커로 찾습니다(lib/infoSearch holdersQuery). */
+  const NO_ENGLISH: SearchEntity = {
+    ...COMPANY,
+    key: "us:SYNKF", name: "합성전자", nameKo: "합성전자", nameEn: null,
+    ids: { ...COMPANY.ids, ticker: TICKER },
+  };
+
+  it("0건이면 이름이 아니라 티커로 찾았다는 것과 그 까닭(13F 공시 이름에는 티커가 없음)을 적고, 없다고 단정하지 않는다", async () => {
+    // 검토 지적: 티커로 찾은 0건도 '‘SYNKF’ 이름으로 찾은 …'이라 적고 까닭으로 잘린·줄여 적은 이름을 들었습니다.
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === endpoints.institution.guruHolders(TICKER) ? Promise.resolve({ ...NO_MATCH, query: TICKER }) : new Promise(() => {}),
+    );
+    const { container } = render(<HoldingsPanel entity={NO_ENGLISH} loading={false} />);
+    await waitFor(() => expect(screen.queryByText(/불러오는 중/)).toBeNull());
+
+    expect(container.textContent).not.toContain("이름으로 찾은");
+    expect(container.textContent).not.toContain("줄여 적은 이름");
+    expect(screen.queryByText(/대문자 영문|보유 종목이 없습니다|보유한 곳이 없습니다/)).toBeNull();
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain(`‘${TICKER}’ 티커로 찾은 13F 보유 줄이 없습니다`);
+    expect(status.textContent).toContain("13F 공시 이름에는 티커가 적히지 않아");
+    expect(status.textContent).toContain("보유한 곳이 없다고 단정할 수 없습니다");
+  });
+
+  it("줄이 있으면 머리와 끝의 한 줄이 '티커 글자'로 찾았다고 적는다(이름으로 찾았다고 하지 않음)", async () => {
+    const reportDate = rangeStart("30d", kstToday(Date.now()));
+    const found: GuruHoldersResponse = {
+      query: TICKER, available: true, totalMatches: 1, truncated: false,
+      rows: [{ institution: "합성 자산운용", cik: "0000000001", name: "SYNKF HOLDINGS INC", cusip: "000000701", weight: 0.5, value: 500_000, reportDate }],
+    };
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === endpoints.institution.guruHolders(TICKER) ? Promise.resolve(found) : new Promise(() => {}),
+    );
+    render(<HoldingsPanel entity={NO_ENGLISH} loading={false} />);
+
+    const heading = await screen.findByRole("heading", { name: /13F 보유 기관/ });
+    expect(heading.textContent).toBe(`13F 보유 기관 — 공시 이름에 ‘${TICKER}’ 티커 글자가 들어간 줄(비중 순)`);
+    expect(screen.getByText(/티커 글자로 찾아 다른 회사가 섞일 수 있어/)).toBeTruthy();
+    expect(screen.queryByText(/이름으로 찾아 다른 회사가/)).toBeNull();
+  });
+});

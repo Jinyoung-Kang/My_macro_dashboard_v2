@@ -1740,13 +1740,18 @@ export function entityShortcuts(entity: Pick<SearchEntity, "key" | "ids">): { la
 
 const HANGUL = /[가-힣]/;
 
+/** 보유 탭의 13F 검색어와 무엇으로 찾는지 — 영문 이름(name)인지, 영문 이름이 없어 쓴 티커(ticker)인지(화면의 머리·0건 안내가 다름, QA-436). */
+export type HoldersQuery = { text: string; by: "name" | "ticker" };
+
 /**
  * 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름은 대문자 영문, 제출자가 잘라 적은 긴 이름은 백엔드가 앞부분으로 함께 찾음 — QA-436) — 영문 이름에서
- * 법인 꼬리를 떼고, 영문 이름이 없으면 티커.
+ * 법인 꼬리를 떼고, 영문 이름이 없으면 티커(13F 공시 이름에는 티커가 적히지 않아 찾기 어려움 — 화면이 그렇게 적음).
  */
-export function holdersQuery(entity: Pick<SearchEntity, "name" | "nameEn" | "ids">): string | null {
+export function holdersQuery(entity: Pick<SearchEntity, "name" | "nameEn" | "ids">): HoldersQuery | null {
   const english = entity.nameEn ?? (HANGUL.test(entity.name) ? null : entity.name);
-  return holderQuery(english) ?? entity.ids.ticker ?? null;
+  const name = holderQuery(english);
+  if (name) return { text: name, by: "name" };
+  return entity.ids.ticker ? { text: entity.ids.ticker, by: "ticker" } : null;
 }
 
 /** 보유 자료(13F 보고 날짜들)의 2년 규칙 — 2년 안의 날짜와 가장 최근 날짜. 2년 안이 비면 화면은 '최근 2년 안의 자료가 없습니다'. */

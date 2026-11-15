@@ -559,11 +559,13 @@ describe("대상 머리·바로가기·보유", () => {
       .toEqual([]);
   });
 
-  it("13F 보유 기관 검색어 — 영문 이름(법인 꼬리 뗌), 없으면 티커", () => {
-    expect(holdersQuery(entity())).toBe("NVIDIA");
+  it("13F 보유 기관 검색어 — 영문 이름(법인 꼬리 뗌), 없으면 티커(무엇으로 찾는지 함께 — 화면 안내가 다름)", () => {
+    expect(holdersQuery(entity())).toEqual({ text: "NVIDIA", by: "name" });
     expect(holdersQuery(entity({ name: "삼성전자", nameEn: null, ids: { ticker: "SSNLF", market: "us", stockCode: null, cik: null, dartCorpCode: null, wikidata: null } })))
-      .toBe("SSNLF");
-    expect(holdersQuery(entity({ name: "Apple Inc.", nameEn: null }))).toBe("APPLE");
+      .toEqual({ text: "SSNLF", by: "ticker" });
+    expect(holdersQuery(entity({ name: "Apple Inc.", nameEn: null }))).toEqual({ text: "APPLE", by: "name" });
+    expect(holdersQuery(entity({ name: "삼성전자", nameEn: null, ids: { ticker: null, market: "kr", stockCode: "005930", cik: null, dartCorpCode: null, wikidata: null } })))
+      .toBeNull();
   });
 
   it("보유 자료의 2년 규칙 — 가장 최근 보고가 2년보다 오래면 보이지 않고 그 날짜만", () => {

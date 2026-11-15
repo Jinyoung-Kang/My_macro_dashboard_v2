@@ -401,8 +401,18 @@ export function holderQuery(name: string | null | undefined): string | null {
 /**
  * 13F 보유 기관을 회사 이름으로 찾아 한 줄도 없을 때의 안내(정보 검색 보유 탭·종목 상세 — 사용자가 치지 않은 검색, QA-436). 무엇으로 찾았는지와 그 한계를
  * 적고 '보유한 곳이 없다'고 단정하지 않습니다 — 잘라 적은 공시 이름은 백엔드가 함께 찾지만, 줄여 적은 이름(FINANCIAL → FINL)은 이름으로 찾지 못합니다.
+ * 정보 검색 보유 탭은 영문 이름이 없는 대상을 티커로 찾으므로(`by: "ticker"`) 그때는 이름이 아니라 티커로 찾았다는 것과 그 까닭(13F 공시 이름에는 티커가
+ * 적히지 않음)을 적습니다.
  */
-export function holdersNoMatch(query: string): { title: string; note: string } {
+export function holdersNoMatch(query: string, by: "name" | "ticker" = "name"): { title: string; note: string } {
+  if (by === "ticker") {
+    return {
+      title: `‘${query}’ 티커로 찾은 13F 보유 줄이 없습니다`,
+      note:
+        "영문 이름이 없어 티커로 이 대시보드가 받는 13F 기관의 공시 이름에서 찾았습니다. 13F 공시 이름에는 티커가 적히지 않아 티커로는 보유 줄을 " +
+        "찾기 어려우므로, 보유한 곳이 없다고 단정할 수 없습니다.",
+    };
+  }
   return {
     title: `‘${query}’ 이름으로 찾은 13F 보유 줄이 없습니다`,
     note:
