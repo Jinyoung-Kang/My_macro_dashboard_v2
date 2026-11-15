@@ -683,34 +683,47 @@ describe("관심 대상(계약 §6-4)", () => {
   });
 
   describe("관심 대상 등록 503 partial — 받지 못한 출처를 속성 칸과 같은 이름으로(계약 §6-4)", () => {
-    const SERVER = "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 1분쯤 뒤 다시 등록하세요.";
+    const LATER = "사유가 풀린 뒤 다시 등록하세요(시간 초과 같은 일시 실패는 1분쯤 뒤, 수집기가 호출을 멈춘 출처는 멈춘 시간이 지난 뒤, 설정 문제는 고친 뒤).";
+    const SERVER = `대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — ${LATER}`;
     const partial = (failed: unknown, over: Record<string, unknown> = {}) =>
       Object.assign(new Error(SERVER), { status: 503, body: { ok: false, reason: "partial", message: SERVER, failed, ...over } });
 
-    it("DART 고유번호 저장본(dart_store)은 내부 키 대신 'DART'와 사유, 1분 뒤에도 같을 수 있어 '1분쯤 뒤'라고 하지 않는다", () => {
+    it("DART 고유번호 저장본(dart_store)은 내부 키 대신 'DART'와 괄호 속 사유, 1분 뒤에도 같을 수 있어 '1분쯤 뒤'라고 하지 않는다", () => {
       const text = writeErrorText(partial([{ source: "dart_store", message: "DART 고유번호 저장본을 읽지 못함" }]), "x");
       expect(text).toBe(
-        "대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처 — DART: DART 고유번호 저장본을 읽지 못함. "
+        "대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처: DART(DART 고유번호 저장본을 읽지 못함). "
           + "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).",
       );
       expect(text).not.toContain("dart_store");
       expect(text).not.toContain("1분");
     });
 
-    it("시간 초과·Wikidata·SEC 일시 실패는 이름과 사유를 받은 순서대로, 다시 해 볼 때는 '1분쯤 뒤'", () => {
+    it("시간 초과·Wikidata·SEC 실패는 이름과 괄호 속 사유를 받은 순서대로 쉼표로 잇고, 다시 해 볼 때는 시점을 약속하지 않는다", () => {
       expect(writeErrorText(partial([
         { source: "wikidata", message: "합성.wikidata.test HTTP 429" },
         { source: "sec", message: null },
         { source: "entity", message: "대상 풀기가 15초를 넘어 저장본 이름으로만 답함" },
       ]), "x")).toBe(
-        "대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처 — Wikidata: 합성.wikidata.test HTTP 429 · SEC · "
-          + "외부 출처: 대상 풀기가 15초를 넘어 저장본 이름으로만 답함. 1분쯤 뒤 다시 등록하세요.",
+        "대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처: Wikidata(합성.wikidata.test HTTP 429), SEC, "
+          + `외부 출처(대상 풀기가 15초를 넘어 저장본 이름으로만 답함). ${LATER}`,
       );
+    });
+
+    // 검토 지적: 거부(429)로 수집기가 5분 동안 호출을 멈춘 Wikidata, SEC_USER_AGENT 설정 문제에도 '1분쯤 뒤 다시 등록하세요'라고 해, 사유와 안내가
+    // 한 문장 안에서 어긋났다. 사유 안의 ' · '도 출처 사이 구분(' · ')과 같아 '5분 동안 이 출처 호출을 멈춤'이 출처 하나처럼 읽혔다.
+    it("거부로 호출을 멈춘 출처·설정 문제에 '1분쯤 뒤 다시 등록하세요'를 약속하지 않고, 사유 안의 ' · '·' — '는 괄호 안에 둔다", () => {
+      const latch = "거부됨 — www.wikidata.org HTTP 429 · 5분 동안 이 출처 호출을 멈춤";
+      const config = "SEC_USER_AGENT가 비어 있거나 올바르지 않아 SEC 표를 받지 못함";
+      const text = watchPartialText({ reason: "partial", failed: [{ source: "wikidata", message: latch }, { source: "sec", message: config }] }) ?? "";
+      expect(text).toBe(`대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처: Wikidata(${latch}), SEC(${config}). ${LATER}`);
+      expect(text).not.toContain("1분쯤 뒤 다시 등록하세요");
+      expect(text).toContain("멈춘 시간이 지난 뒤");
+      expect(text).toContain("설정 문제는 고친 뒤");
     });
 
     it("DART 저장본이 다른 출처와 섞여도 '1분쯤 뒤'라고 하지 않고, 모르는 키는 '기타 출처'", () => {
       const text = watchPartialText({ reason: "partial", failed: [{ source: "wikidata", message: "합성 사유" }, { source: "dart_store" }, { source: "합성_키", message: "합성" }] }) ?? "";
-      expect(text).toContain("받지 못한 출처 — Wikidata: 합성 사유 · DART · 기타 출처: 합성.");
+      expect(text).toContain("받지 못한 출처: Wikidata(합성 사유), DART, 기타 출처(합성).");
       expect(text).toContain("다시 등록해도 같습니다");
       expect(text).not.toContain("1분");
     });

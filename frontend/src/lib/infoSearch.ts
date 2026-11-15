@@ -2118,9 +2118,21 @@ export function writeErrorText(error: unknown, conflict: string): string {
 const DART_STORE = "dart_store";
 
 /**
+ * 관심 대상 등록 503 partial의 다시 해 볼 때(백엔드 SearchWatchService.RETRY_LATER와 같은 글) — 시점을 약속하지 않습니다. 시간 초과 같은 일시 실패는
+ * 수집기가 60초만 캐시해 1분쯤 뒤 새로 풀지만, 거부(429·403)를 받은 출처는 수집기가 몇 분 동안 호출을 멈추고(사유 '… · 5분 동안 이 출처 호출을 멈춤'),
+ * 설정 문제(SEC_USER_AGENT)는 고칠 때까지 같습니다.
+ */
+const WATCH_PARTIAL_RETRY_LATER =
+  "사유가 풀린 뒤 다시 등록하세요(시간 초과 같은 일시 실패는 1분쯤 뒤, 수집기가 호출을 멈춘 출처는 멈춘 시간이 지난 뒤, 설정 문제는 고친 뒤).";
+/** DART 고유번호 저장본(dart_store)이 섞였을 때(백엔드 SearchWatchService.RETRY_DART_STORE와 같은 글) — 저장본이 없으면 1분 뒤에도 같습니다. */
+const WATCH_PARTIAL_RETRY_DART_STORE =
+  "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
+
+/**
  * 관심 대상 등록의 503 partial 본문(POST /api/search/watch — 계약 §6-4) → 받지 못한 출처를 적은 글. 출처 이름은 속성 칸의 '대상을 푸는 데 받지 못한
- * 출처'와 같습니다(entitySourceLabel — 'DART: DART 고유번호 저장본을 읽지 못함'). 다시 해 볼 때는 출처마다 다릅니다 — 시간 초과·Wikidata·SEC
- * 일시 실패는 수집기가 60초만 캐시해 '1분쯤 뒤', DART 고유번호 저장본(dart_store)은 저장본이 없으면 1분 뒤에도 같아서 곧 된다고 하지 않습니다.
+ * 출처'와 같고(entitySourceLabel), 사유는 이름 뒤 괄호에 묶습니다('DART(DART 고유번호 저장본을 읽지 못함)') — 수집기 사유에는 ' · '·' — '가 들어
+ * 있어(거부 사유 '거부됨 — 호스트 HTTP 429 · 5분 동안 이 출처 호출을 멈춤') 출처 사이 구분과 섞이지 않게 출처는 쉼표로 잇습니다. 다시 해 볼 때는
+ * DART 고유번호 저장본(dart_store)이 섞이면 저장본을 다시 읽을 때까지 같다고 하고, 아니면 시점을 약속하지 않는 WATCH_PARTIAL_RETRY_LATER.
  * partial이 아니거나 failed에 읽을 줄이 없으면 null(서버 사유를 그대로 씀). 사유가 없는 줄은 이름만.
  */
 export function watchPartialText(body: unknown): string | null {
@@ -2136,13 +2148,11 @@ export function watchPartialText(body: unknown): string | null {
     if (!key) continue;
     if (key === DART_STORE) store = true;
     const text = typeof message === "string" ? message.trim() : "";
-    parts.push(text ? `${entitySourceLabel(key)}: ${text}` : entitySourceLabel(key));
+    parts.push(text ? `${entitySourceLabel(key)}(${text})` : entitySourceLabel(key));
   }
   if (parts.length === 0) return null;
-  const retry = store
-    ? "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠)."
-    : "1분쯤 뒤 다시 등록하세요.";
-  return `대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처 — ${[...new Set(parts)].join(" · ")}. ${retry}`;
+  const retry = store ? WATCH_PARTIAL_RETRY_DART_STORE : WATCH_PARTIAL_RETRY_LATER;
+  return `대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처: ${[...new Set(parts)].join(", ")}. ${retry}`;
 }
 
 /** 새로 받기에서 받지 못한 출처의 상태(실패·외부 조회 안 함) — 받음·캐시·결과 없음·건너뜀은 받지 못한 것이 아닙니다. */

@@ -306,13 +306,16 @@ class SearchWatchServiceTest {
 
     @Test
     @DisplayName("덜 풀린 등록(503 partial)은 본문 failed에 받지 못한 출처 키와 수집기 사유를 받은 순서대로 싣는다 — 등록을 막지 않는 오류(dart 등)는 빼고, "
-            + "사유가 문자열이 아니거나 비었거나 주소가 섞이면 null, 제어 글자는 공백으로. DART 저장본(dart_store)이 섞이면 '1분쯤 뒤'라고 하지 않음")
+            + "사유가 문자열이 아니거나 비었거나 주소가 섞이면 null, 제어 글자는 공백으로. 다시 해 볼 때는 '1분쯤 뒤'를 약속하지 않고(거부로 멈춘 출처·설정 문제), "
+            + "DART 저장본(dart_store)이 섞이면 저장본을 다시 읽을 때까지 같다고 함")
     void partialNamesFailedSources() {
         resolves("us:NVDA", withErrors(entity("us:NVDA", "company", "NVIDIA", "NVIDIA"),
                 "{\"universe\": \"합성 유니버스 사유\", \"wikidata\": \"합성.wikidata.test HTTP 429\", \"sec\": \"합성\\u0007사유\"}"));
         SearchWatchService.Result soon = service.add(MEMBER, "us:NVDA");
         assertThat(soon.status()).isEqualTo(503);
         assertThat(soon.body()).containsEntry("reason", "partial").containsEntry("message", SearchWatchService.PARTIAL);
+        assertThat((String) soon.body().get("message")).as("거부로 5분 멈춘 출처·설정 문제도 섞일 수 있어 시점을 약속하지 않음")
+                .doesNotContain("1분쯤 뒤 다시 등록").contains("사유가 풀린 뒤 다시 등록하세요");
         assertThat(failed(soon)).as("다시 물으면 달라질 출처만, 받은 순서")
                 .containsExactly(failedItem("wikidata", "합성.wikidata.test HTTP 429"), failedItem("sec", "합성 사유"));
 
@@ -338,6 +341,13 @@ class SearchWatchServiceTest {
         resolves("us:MSFT", withErrors(entity("us:MSFT", "company", "합성 회사", "합성 회사"), "{\"sec\": \"" + longReason + "\"}"));
         assertThat(failed(service.add(MEMBER, "us:MSFT"))).singleElement()
                 .satisfies(item -> assertThat((String) item.get("message")).hasSize(SearchWatchService.MAX_FAILED_REASON));
+
+        // 수집기가 거부(429)로 호출을 멈춘 출처의 사유(http.SourceRejected 모양)는 호스트만 있어 그대로 싣는다 — 화면이 멈춘 시간을 보일 수 있게.
+        String latch = "거부됨 — 합성.wikidata.test HTTP 429 · 5분 동안 이 출처 호출을 멈춤";
+        resolves("us:AMZN", withErrors(entity("us:AMZN", "company", "합성 회사", "합성 회사"), "{\"wikidata\": \"" + latch + "\"}"));
+        SearchWatchService.Result latched = service.add(MEMBER, "us:AMZN");
+        assertThat(latched.body()).containsEntry("message", SearchWatchService.PARTIAL);
+        assertThat(failed(latched)).containsExactly(failedItem("wikidata", latch));
 
         assertThat(watches.rows).isEmpty();
     }

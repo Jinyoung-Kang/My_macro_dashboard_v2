@@ -281,7 +281,7 @@ describe("등록·해제(대상 머리)", () => {
 
   it("덜 풀린 대상(503 partial)이면 받지 못한 출처를 속성 칸과 같은 이름으로 — DART 저장본은 곧 된다고 하지 않음", async () => {
     reads[endpoints.search.watch] = watchList([WATCH_BRK]);
-    const server = "대상 정보를 다 받지 못했습니다(DART 고유번호 저장본을 읽지 못함) — 합성 서버 안내";
+    const server = "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 합성 서버 안내";
     api.apiPost.mockRejectedValue(Object.assign(new Error(server), {
       status: 503,
       body: { ok: false, reason: "partial", message: server, failed: [{ source: "dart_store", message: "DART 고유번호 저장본을 읽지 못함" }] },
@@ -292,7 +292,7 @@ describe("등록·해제(대상 머리)", () => {
     await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(add);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("받지 못한 출처 — DART: DART 고유번호 저장본을 읽지 못함");
+    expect(alert.textContent).toContain("받지 못한 출처: DART(DART 고유번호 저장본을 읽지 못함)");
     expect(alert.textContent).toContain("다시 등록해도 같습니다");
     expect(alert.textContent).not.toContain("dart_store");
     expect(alert.textContent).not.toContain("1분");
