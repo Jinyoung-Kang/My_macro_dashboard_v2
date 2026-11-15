@@ -8,7 +8,7 @@
    앱 전체의 값입니다. 값은 공개 디자인 시스템의 어두운 단계를 참고했고, 상승 #ff6b6b는 사용자가 고른 값입니다(결정 3).
    값은 여기 원래 변수(--bg 등)에만 둡니다. 차트·JS에서 색이 필요하면 var(--up)처럼 이 이름을 씁니다
    (아래 @theme inline의 --color-*는 CSS에 출력되지 않습니다).
-   면 네 단계: bg 0층 바탕 · surface 1층 패널 · surface-2 hover·선택·입력·패널 머리·덮개 바탕 · surface-3 덮개 안 hover·눌림만.
+   면 네 단계: bg 0층 바탕 · surface 1층 패널(패널 머리·입력칸 바탕도) · surface-2 hover·선택·기본 단추·덮개 바탕 · surface-3 덮개 안 hover·눌림만.
    글자 대비(WCAG, bg / surface / surface-2 / surface-3): text 17.2/15.1/13.5/11.7 · text-2 11.3/9.9/8.8/7.7 · text-3 6.4/5.6/5.0/4.35 ·
    accent 5.8/5.1/4.5/3.91 · up 6.7/5.8/5.2/4.51 · down 9.2/8.1/7.2/6.2 · warn 8.1/7.1/6.4/5.5 · ok 9.4/8.2/7.3/6.3 · danger 5.9/5.2/4.6/3.99,
    border-strong 4.6/4.0/3.6/3.1. 그래서 surface-3 위에는 text-3·neutral·accent·danger 글자를 두지 않고, accent 틴트 위에 accent 글자를 두지 않습니다(4.47).
@@ -21,7 +21,7 @@
   color-scheme: dark;
   --bg: #111418; /* 페이지 바탕(0층) */
   --surface: #1c2127; /* 패널·표(1층) — 바탕과 1px 경계로 구분합니다 */
-  --surface-2: #252a31; /* hover·선택·입력칸·패널 머리, 덮개(대화상자·팝오버·서랍·토스트) 바탕 */
+  --surface-2: #252a31; /* hover·선택·기본 단추, 덮개(대화상자·팝오버·서랍·토스트) 바탕 — 패널 머리·입력칸은 surface */
   --surface-3: #2f343c; /* 덮개 안 hover·눌림만 — 위에 text-3·accent·danger 글자 금지 */
   --border: #383e47; /* 1px 경계 — 장식 구분선 */
   --border-subtle: #2f343c; /* 표 행 구분선, 큰 차트 가로 격자 */
