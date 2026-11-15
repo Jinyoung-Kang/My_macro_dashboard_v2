@@ -7,7 +7,8 @@
  *  - MultiLineSeries 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 범례 없음, 점선 "3 3"(참고선 "6 4"와 다름), 툴팁 줄은 꼬리 점에만
  *    (꼬리가 시작하는 마지막 줄에서는 없음 — Recharts가 formatter의 null을 그리지 않음), 앞 값 없는 외딴 꼬리 점은 점
  *  - 막대(HorizontalBars·SignedBars): 격자 없음, 0 기준선(text-3)
- *  - 산점도만 옅은 격자(border 50%)
+ *  - 산점도는 늘 옅은 격자(border-subtle)
+ *  - 격자 선택(grid — 작업대 실행 명세 W6): LineSeries·MultiLineSeries·SignedBars는 grid면 Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음
  *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(그림자·12px 모서리)
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(LineChart.test와 같음).
@@ -249,13 +250,68 @@ describe("막대·산점도", () => {
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
   });
 
-  it("산점도만 옅은 격자(두 축이 다 데이터) — border 50%", () => {
+  it("산점도는 늘 옅은 격자(두 축이 다 데이터) — 옅은 경계(border-subtle) 1px", () => {
     observeAs(600, 320);
     const { container } = render(
       <ScatterPlot data={[{ x: 1, y: 2, date: "a" }, { x: -1, y: 0.5, date: "b" }]} xLabel="금리 변화" yLabel="지수 변화" />,
     );
     const grid = container.querySelector(".recharts-cartesian-grid line, .recharts-cartesian-grid-horizontal line") as SVGLineElement;
-    expect(grid.getAttribute("stroke")).toBe("var(--border)");
-    expect(grid.getAttribute("stroke-opacity")).toBe("0.5");
+    expect(grid.getAttribute("stroke")).toBe("var(--border-subtle)");
+    expect(grid.getAttribute("stroke-width")).toBe("1");
+    expect(container.querySelector(".recharts-cartesian-grid-vertical line")).not.toBeNull();
+  });
+});
+
+describe("격자 선택(grid) — 큰 분석 차트의 옅은 가로 격자(작업대 실행 명세 W6)", () => {
+  const horizontal = (container: HTMLElement) => [...container.querySelectorAll(".recharts-cartesian-grid-horizontal line")];
+
+  it("LineSeries — grid면 Y 눈금마다 가로선 하나(1px border-subtle), 세로 격자 없음", () => {
+    observeAs(600, 260);
+    const { container } = render(<LineSeries data={LIQUIDITY} unit="조" precision={2} grid />);
+    const lines = horizontal(container);
+    expect(lines).toHaveLength(yTicks(container).length);
+    for (const line of lines) {
+      expect(line.getAttribute("stroke")).toBe("var(--border-subtle)");
+      expect(line.getAttribute("stroke-width")).toBe("1");
+    }
+    expect(container.querySelector(".recharts-cartesian-grid-vertical")).toBeNull();
+  });
+
+  it("MultiLineSeries — 왼쪽 축 눈금에만 긋고(오른쪽 축 눈금과 섞지 않음), 계열이 모두 오른쪽이면 오른쪽 축 눈금에", () => {
+    const ROWS = [
+      { date: "2026-10-01", a: 100, oi: 300_000 },
+      { date: "2026-10-02", a: 101, oi: 310_000 },
+      { date: "2026-10-03", a: 103, oi: 305_000 },
+    ];
+    observeAs(600, 300);
+    const both = render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[
+          { key: "a", name: "종가", color: SERIES_COLORS.blue },
+          { key: "oi", name: "미결제약정 (우)", color: SERIES_COLORS.orange, axis: "right" },
+        ]}
+        grid
+      />,
+    );
+    const leftTicks = texts(both.container.querySelectorAll(".recharts-yAxis-tick-labels text")).filter((text) => !String(text).includes(","));
+    expect(horizontal(both.container)).toHaveLength(leftTicks.length);
+    expect(horizontal(both.container)[0].getAttribute("stroke")).toBe("var(--border-subtle)");
+    both.unmount();
+
+    const rightOnly = render(
+      <MultiLineSeries data={ROWS} series={[{ key: "oi", name: "미결제약정 (우)", color: SERIES_COLORS.orange, axis: "right" }]} grid />,
+    );
+    expect(horizontal(rightOnly.container).length).toBeGreaterThan(0);
+    expect(horizontal(rightOnly.container)).toHaveLength(yTicks(rightOnly.container).length);
+  });
+
+  it("SignedBars — grid면 가로 격자, 주지 않으면 없음(위 시험)", () => {
+    observeAs(600, 320);
+    const { container } = render(<SignedBars data={[{ name: "1월", value: 3 }, { name: "2월", value: -2 }]} grid />);
+    const lines = horizontal(container);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.every((line) => line.getAttribute("stroke") === "var(--border-subtle)")).toBe(true);
+    expect(container.querySelector(".recharts-cartesian-grid-vertical")).toBeNull();
   });
 });

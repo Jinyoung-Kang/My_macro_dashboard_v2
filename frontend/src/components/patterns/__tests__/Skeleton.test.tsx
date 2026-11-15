@@ -26,6 +26,11 @@ describe("Skeleton", () => {
     expect(lines).toHaveLength(3);
     expect(lines[2].className).toContain("w-3/5");
     expect(lines[0].className).toContain("w-full");
+    // 4px 모서리(작업대 실행 명세 §3-8 — rounded-full은 상태 점·토글 손잡이·아바타만).
+    for (const line of lines) {
+      expect(line.className.split(/\s+/)).toContain("rounded-control");
+      expect(line.className.split(/\s+/)).not.toContain("rounded-full");
+    }
   });
 
   it("label을 바꾸면 이름과 읽는 글이 함께 바뀐다", () => {

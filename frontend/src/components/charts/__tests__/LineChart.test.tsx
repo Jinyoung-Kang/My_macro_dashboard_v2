@@ -11,6 +11,7 @@
  *    Y는 기본 차트와 같은 눈금에 더해 본 계열의 실제 최고(점 위)·최저(점 아래) — 꼬리 계열은 빼고 봄,
  *    문지르기 onScrub(순번 | null) — 마우스 이동·벗어남, 터치를 떼면 null. 범례에서 뺀 계열(legend: false)
  *  - 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 점선 "3 3"·범례 없음·본 계열 색, 툴팁 줄은 꼬리 점에만, 앞 값 없는 외딴 꼬리 점은 점
+ *  - 격자 선택(grid — 작업대 실행 명세 W6): Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음, 히어로에서는 무시
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(DonutChart.test와 같음).
  * 호버는 감싼 상자의 getBoundingClientRect를 차트 크기로 맞춘 뒤 mousemove를 보냅니다.
@@ -68,6 +69,30 @@ const texts = (nodes: Iterable<Element>) => [...nodes].map((node) => node.textCo
 const xTickTexts = (container: HTMLElement) => texts(container.querySelectorAll(".recharts-xAxis-tick-labels text"));
 const yTickTexts = (container: HTMLElement) => texts(container.querySelectorAll(".recharts-yAxis-tick-labels text"));
 const linePaths = (container: HTMLElement) => [...container.querySelectorAll("path.recharts-line-curve")];
+
+describe("LineChart — 격자 선택(grid)", () => {
+  const horizontal = (container: HTMLElement) => [...container.querySelectorAll(".recharts-cartesian-grid-horizontal line")];
+
+  it("grid면 Y 눈금마다 옅은 가로선 하나(1px var(--border-subtle)) — 세로 격자 없음, 선·축은 그대로", () => {
+    observeAs(600, 240);
+    const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} valueFormat={pct} grid />);
+    expect(yTickTexts(container)).toEqual(["5.8%", "5.9%", "6.0%", "6.1%"]);
+    const lines = horizontal(container);
+    expect(lines).toHaveLength(4);
+    for (const line of lines) {
+      expect(line.getAttribute("stroke")).toBe("var(--border-subtle)");
+      expect(line.getAttribute("stroke-width")).toBe("1");
+    }
+    expect(container.querySelector(".recharts-cartesian-grid-vertical")).toBeNull();
+    expect(linePaths(container)[0].getAttribute("stroke")).toBe(SERIES_COLORS.blue);
+  });
+
+  it("히어로에서는 grid를 줘도 격자가 없다(히어로·스파크라인은 격자 없음)", () => {
+    observeAs(600, 260);
+    const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} variant="hero" grid />);
+    expect(container.querySelector(".recharts-cartesian-grid")).toBeNull();
+  });
+});
 
 describe("LineChart — 값 있음", () => {
   it("격자 없음 · Y축은 끝과 중간의 둥근 눈금(valueFormat) · X축은 첫·마지막과 중간 날짜 · 선 2px · 첫 기본 색", () => {

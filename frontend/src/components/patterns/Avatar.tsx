@@ -3,7 +3,7 @@ import type { CSSProperties, JSX } from "react";
 import { presentText } from "@/lib/patterns";
 
 /**
- * 아바타 — 자산 행 왼쪽의 원(40px, 좁은 화면 36px) 안에 짧은 모노그램(티커 앞 글자·계좌 약칭, `lib/patternRows`의 `assetMonogram`·
+ * 아바타 — 자산 행 왼쪽의 원(32px — 조밀한 행, 작업대 실행 명세 §3-7) 안에 짧은 모노그램(티커 앞 글자·계좌 약칭, `lib/patternRows`의 `assetMonogram`·
  * `lib/paperOverview`의 `bookMonogram`이 정함). 자산 로고 이미지는 쓰지 않습니다(명세 §1 — 이미지 자산 없음).
  *
  * - 장식입니다(aria-hidden) — 무엇의 행인지는 옆의 이름 글이 나릅니다. 단추·링크 이름에도 섞이지 않습니다.
@@ -19,7 +19,7 @@ export function Avatar({ text, ring }: { text?: string | null; ring?: string | n
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[13px] font-semibold leading-none text-text-2 sm:size-10 ${
+      className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold leading-none text-text-2 ${
         color ? "ring-2 ring-(--avatar-ring)" : ""
       }`}
       // 고리 색은 부르는 쪽 값(차트 계열 색)이라 클래스로 미리 만들 수 없어 변수로 넘깁니다.

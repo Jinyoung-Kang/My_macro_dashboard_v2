@@ -114,11 +114,11 @@ export function PaperHero() {
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
       ) : (
-        // 구분선은 카드 가장자리까지 펼치고(-mx-6·lg:-mx-8 = 히어로 안쪽 여백), 줄 안쪽 여백(px-2·lg:px-3)을 더해 행 글자(행 자체 px-4·lg:px-5)를
-        // 히어로 글과 같은 세로줄(24·32px)에 맞춥니다.
-        <ul className="-mx-6 divide-y divide-border border-y border-border lg:-mx-8">
+        // 구분선은 카드 가장자리까지 펼치고(-mx-3·lg:-mx-4 = 패턴 Hero의 안쪽 여백), 행 글자는 행 자체 여백(패턴 AssetRow의 px-3·lg:px-4)만으로
+        // 히어로 글과 같은 세로줄(12·16px)에 둡니다. Hero·AssetRow 여백이 바뀌면 이 값을 함께 고칩니다(어긋나면 구분선이 패널 밖으로 삐져나감).
+        <ul className="-mx-3 divide-y divide-border border-y border-border lg:-mx-4">
           {model.rows.map((row, index) => (
-            <li key={row.id} className="px-2 lg:px-3">
+            <li key={row.id}>
               {/* 아바타 고리는 모의매매 개요의 그 계좌 곡선 색(같은 색 표 — 장식, 뜻은 계좌 이름이 나름). */}
               <AssetRow row={{ ...row, avatarRing: bookColor(row.id, index) }} />
             </li>

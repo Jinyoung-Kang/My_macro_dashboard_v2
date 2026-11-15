@@ -149,5 +149,14 @@ describe("StatGrid", () => {
     expect(two.className).toContain("grid-cols-2");
     expect(two.className).not.toContain("md:grid-cols");
     expect(within(four).getByRole("group", { name: "a" })).toBeTruthy();
+    // 타일 사이 8px(작업대 실행 명세 §3-7).
+    expect(four.className.split(/\s+/)).toContain("gap-2");
+  });
+
+  it("조밀한 칸 — 안쪽 여백 12·10px, 라벨은 caption(13px)", () => {
+    render(<StatTile label="샤프 비율" value={1.2345} />);
+    const tile = screen.getByRole("group", { name: "샤프 비율" });
+    expect(tile.className.split(/\s+/)).toEqual(expect.arrayContaining(["px-3", "py-2.5"]));
+    expect(within(tile).getByText("샤프 비율").className).toContain("text-caption");
   });
 });

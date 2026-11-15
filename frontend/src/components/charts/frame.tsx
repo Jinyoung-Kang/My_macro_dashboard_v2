@@ -1,16 +1,22 @@
 import type { CSSProperties } from "react";
 
 /*
- * 차트 틀(축·기준선·툴팁·글자 범례)을 두 차트 파일(index.tsx의 래퍼들·LineChart.tsx)이 함께 씁니다 — 격자 없는 단일 선 문법
- * (docs/specs/2026-10-31-v2-coinbase-ui.md §5). index.tsx가 LineChart.tsx를 다시 내보내므로 둘이 서로 가져오지 않게 여기에 둡니다.
+ * 차트 틀(축·기준선·격자·툴팁·글자 범례)을 두 차트 파일(index.tsx의 래퍼들·LineChart.tsx)이 함께 씁니다. 기본은 격자 없는 단일 선 문법
+ * (docs/specs/2026-10-31-v2-coinbase-ui.md §5)이고, 큰 분석 차트만 옅은 가로 격자를 켭니다(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md
+ * W6 — `grid`). index.tsx가 LineChart.tsx를 다시 내보내므로 둘이 서로 가져오지 않게 여기에 둡니다.
  *
  * 색은 디자인 토큰 CSS 변수(globals.css :root — 어두운 한 벌)입니다. Recharts 기본값(축 #666·커서 #ccc·글자 #808080)은
  * 토큰을 모르므로 축·기준선·커서·글자마다 이 값을 넘겨 덮습니다. 글자는 text-3(bg·surface 대비 6.4·5.6:1), 선은 border·text-3.
  */
 export const AXIS_TEXT = "var(--text-3)";
 export const AXIS_LINE = "var(--border)";
-/** 0선·경계선·커서 선 — 격자가 없으니 기준선이 유일한 가로선입니다. 축선(border)보다 진하게(text-3). */
+/** 0선·경계선·커서 선 — 격자보다 진한 기준선입니다. 축선(border)보다 진하게(text-3). */
 export const GUIDE = "var(--text-3)";
+/**
+ * 옅은 격자 선(작업대 실행 명세 W6 — 1px 옅은 경계 border-subtle). 큰 분석 차트에서 `grid`를 켤 때의 가로선과 산점도 격자에만 씁니다 —
+ * 스파크라인·히어로 차트에는 격자가 없습니다. 기준선(GUIDE)·축선(AXIS_LINE)보다 옅어 값 선과 0선을 가리지 않습니다.
+ */
+export const GRID_LINE = "var(--border-subtle)";
 /** 차트 SVG 글자 크기 — 최소 글자 단계(micro 12px, 명세 D9). 10·11px은 쓰지 않습니다. */
 export const CHART_FONT = 12;
 

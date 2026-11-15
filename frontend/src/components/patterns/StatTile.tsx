@@ -8,6 +8,8 @@ import { Empty } from "./Empty";
 /**
  * 통계 타일 — 라벨 · 값(카드 숫자 24px) · 단위 · 보조 글(백분위·표본).
  *
+ * - 조밀한 칸(작업대 실행 명세 §3-7): 4px 모서리·1px 경계, 안쪽 여백 12px(위아래 10px), 라벨은 caption(13px), 타일 사이 8px(StatGrid).
+ *   값 글자는 24px(text-2xl — KPI 값의 넓은 화면 크기)이고 `tabular-nums`입니다.
  * - 값을 모르면 "—"와 사유(`emptyReason`, 예: 표본 부족). 단위는 붙이지 않습니다("—%"는 값이 있는 것처럼 읽힘, QA-049).
  * - 수집기의 "N/A"·빈 글도 값 없음으로 봅니다. 숫자는 `format`(없으면 소수 둘째 자리)으로 찍습니다.
  * - 추정·대리·이전 값 플래그가 있으면 배지가 반드시 보입니다. `isProxy`·`isStale`·`staleReason`은
@@ -45,9 +47,9 @@ export function StatTile({
   const flagged = Boolean(isEstimated || isProxy || isStale);
   const detail = presentText(note);
   return (
-    <div role="group" aria-label={label} className="min-w-0 rounded-control border border-border bg-surface p-4">
-      <div className="text-[13px] font-medium text-text-2">{label}</div>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-1">
+    <div role="group" aria-label={label} className="min-w-0 rounded-control border border-border bg-surface px-3 py-2.5">
+      <div className="text-caption font-medium text-text-2">{label}</div>
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1">
         {text === null ? (
           <span className="text-2xl font-semibold text-text-3">
             <Empty reason={emptyReason} />
@@ -60,12 +62,12 @@ export function StatTile({
         )}
       </div>
       {flagged ? (
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="mt-1.5 flex flex-wrap gap-1">
           <EstimateBadge estimated={isEstimated} proxy={isProxy} />
           <StaleBadge stale={isStale} reason={staleReason} />
         </div>
       ) : null}
-      {detail ? <p className="mt-1 text-xs leading-relaxed text-text-3">{detail}</p> : null}
+      {detail ? <p className="mt-1 text-xs leading-4 text-text-3">{detail}</p> : null}
     </div>
   );
 }
@@ -77,7 +79,7 @@ const COLS: Record<2 | 3 | 4, string> = {
   4: "grid-cols-2 md:grid-cols-4",
 };
 
-/** 통계 타일 격자. 좁은 화면은 두 칸, md(768px) 이상에서 `cols` 칸(기본 4). */
+/** 통계 타일 격자. 좁은 화면은 두 칸, md(768px) 이상에서 `cols` 칸(기본 4). 타일 사이 8px(작업대 실행 명세 §3-7 — 패널 사이 8~12px). */
 export function StatGrid({ children, cols = 4 }: { children: ReactNode; cols?: 2 | 3 | 4 }) {
-  return <div className={`grid min-w-0 gap-3 ${COLS[cols]}`}>{children}</div>;
+  return <div className={`grid min-w-0 gap-2 ${COLS[cols]}`}>{children}</div>;
 }

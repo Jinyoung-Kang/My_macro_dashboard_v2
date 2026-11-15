@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
+import { SELECTED_BAR } from "@/components/ui/classes";
 import { ariaSortOf, nextSort, sortRows, type SortState, type SortValue } from "@/lib/dataTable";
 import { isMissingValue } from "@/lib/patterns";
 
@@ -42,8 +43,24 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  * - 넓은 표는 감싼 상자(overflow-x-auto) 안에서만 좌우로 넘어갑니다 — 페이지 폭을 넓히지 않습니다. 상자는 Tab으로 닿아 화살표로 넘길 수 있습니다.
  * - 머리는 `sticky top-0`입니다. 가로 스크롤 상자는 CSS상 세로로도 스크롤 상자가 되므로, 머리가 실제로 붙어 있으려면 상자에 높이 한도가
  *   있어야 합니다 — `maxHeight`(px)를 주면 그 높이에서 세로로도 스크롤되고 머리가 위에 남습니다(설계서 §1.5 계약에 더한 선택 props).
+ *   선은 행(tr)이 아니라 칸(th·td)의 아래 테두리로 긋고 표는 `border-separate border-spacing-0`입니다 — 겹친 테두리(border-collapse) 표의
+ *   선은 sticky 칸을 따라 움직이지 않아, 표를 내리면 머리 아래 선이 사라지고 행이 경계 없이 머리 밑으로 들어갔습니다. 그림자(box-shadow)로
+ *   긋지 않는 까닭은 고대비(forced-colors) 모드가 그림자를 지워 머리 선이 늘 없어지기 때문입니다(테두리는 시스템 색으로 남음).
+ * - 행 높이(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-7): 넓은 화면(lg 이상) 기본 32px, `dense`(로그·출처 같은 조밀 표)면
+ *   28px — 칸 글(14/20)에 위아래 여백을 더한 높이라 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서는 모든 행이 44px입니다 —
+ *   누를 수 있는 행(`onRowClick`)은 손가락 누름 자리(원칙 A8)이고, 누를 수 없는 행도 칸 안 종목 글 단추처럼 행마다 있는 작은 단추 사이를
+ *   좁히지 않으려고 예전 높이를 둡니다(밀도는 넓은 화면에서만 올림 — 명세 §10 '휴대폰 밀도'). 머리 줄은 32·28px이고, 정렬 머리 단추는 lg 미만에서
+ *   44px입니다. 행 사이 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계(border)입니다.
+ *   한계: 칸 안에 테두리 있는 태그(추정·이전 값 배지 — 12/16 글 + 위아래 2px + 테두리 = 22px)가 들어가면 태그가 칸 글줄(20px)보다 높아
+ *   그 행만 넓은 화면에서 약 35px(조밀 31px)가 됩니다. 태그 높이는 공용 키트의 태그와 함께 정할 일이라 표 칸에 태그를 넣는 단계(P4~P6 —
+ *   PropertyList·DenseTable 값 칸) 전에 정합니다(진행 기록 §P2 패턴·차트).
  * - `onRowClick`이 있으면 행이 Tab으로 닿고(tabIndex 0) Enter·Space로도 열립니다. 마우스를 올리면 바탕(surface-2)과 첫 칸 밑줄 —
- *   surface-2 위에서도 칸 안의 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §2-1 — AssetRow와 같은 규칙). 누를 수 없는 행에는 hover 표시가 없습니다.
+ *   surface-2 위에서도 칸 안의 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §3-2 — AssetRow와 같은 규칙). 누를 수 없는 행에는 hover 표시가 없습니다.
+ * - `count`(선택): 표 위에 행 개수 줄('12건' — 함수를 주면 그 글)을 둡니다(명세 §3-7 '표와 목록 머리에는 개수'). 보이는 제목·개수를 이미 적는
+ *   카드 머리가 있는 화면은 주지 않습니다. 행이 없으면 '0건'입니다.
+ * - `selectedKey`(선택, 기본 없음): 고른 행(옆 칸에 상세가 열린 행 등)의 `rowKey` — 그 행에 중립 바탕(surface-2)과 첫 칸 왼쪽 3px 잉크 막대
+ *   (`SELECTED_BAR` — 자산 행·정보 검색과 같은 꼴, 명세 §3-8, 고대비 모드에서는 같은 폭의 테두리)를 그리고 `aria-current="true"`로 읽힙니다.
+ *   데이터 영역이라 강조 파랑을 쓰지 않습니다(A1). 무엇을 고를지와 고른 뒤의 일은 부르는 쪽이 정합니다(보통 `onRowClick`과 함께).
  * - 모르는 칸의 "—"는 보조 글자색(text-3) — 타일·히어로·자산 행과 같습니다. 칸 글자는 모두 `tabular-nums`(날짜·시각 열도 자릿수가 맞게).
  * - `scrollHint`(계약에 더한 선택 prop): 폰에서 좌우로 넘겨야 하는 넓은 표 — 표를 최소 640px로 두고 그 폭(sm) 아래에서만 "← 표를 좌우로
  *   넘겨 보세요" 한 줄을 띄웁니다(옛 ui Table과 같음). 스크롤바가 안 보이는 기기에서는 오른쪽에 칸이 더 있다는 것을 알 수 없어서이고,
@@ -62,6 +79,9 @@ export function DataTable<T>({
   initialSort,
   maxHeight,
   scrollHint = false,
+  dense = false,
+  count,
+  selectedKey,
 }: {
   columns: readonly Column<T>[];
   rows: readonly T[];
@@ -73,6 +93,12 @@ export function DataTable<T>({
   initialSort?: SortState;
   maxHeight?: number;
   scrollHint?: boolean | "overflow";
+  /** 조밀 표(행 28px — 로그·출처 같은 표). 기본은 32px. */
+  dense?: boolean;
+  /** 표 위 행 개수 줄 — true면 'N건', 함수면 그 글(위 설명). */
+  count?: boolean | ((count: number) => string);
+  /** 고른 행의 rowKey — 막대·바탕·aria-current(위 설명). */
+  selectedKey?: string | null;
 }): JSX.Element {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const sortColumn = sort ? columns.find((column) => column.key === sort.key && column.sortValue) : undefined;
@@ -81,6 +107,13 @@ export function DataTable<T>({
   const shown = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
 
   const alignOf = (column: Column<T>) => (column.align === "right" ? "text-right whitespace-nowrap" : "text-left");
+  // 칸·머리의 위아래 여백 — 행 높이를 정합니다(위 설명: 넓은 화면 32·28px, 좁은 화면의 행은 모두 44px). Tailwind가 찾도록 클래스 이름을 통째로 적습니다.
+  const cellY = dense ? "py-3 lg:py-1" : "py-3 lg:py-1.5";
+  const headY = dense ? "py-1" : "py-1.5";
+  // 정렬 머리는 lg 미만에서 단추(44px)가 높이를 정하므로 여백을 두지 않습니다.
+  const sortHeadY = dense ? "py-0 lg:py-1" : "py-0 lg:py-1.5";
+  const countText =
+    count === undefined || count === false ? null : typeof count === "function" ? count(rows.length) : `${rows.length.toLocaleString("ko-KR")}건`;
   const wide = scrollHint !== false && shown.length > 0;
   // "overflow" — 상자보다 표가 넓은지 재서 안내를 폭과 상관없이 보입니다(첫 관찰은 ResizeObserver가 observe 때 한 번 알려 줌).
   const measured = scrollHint === "overflow" && shown.length > 0;
@@ -118,8 +151,17 @@ export function DataTable<T>({
 
   return (
     <>
-      {/* 눈으로 보는 안내 — 낭독기에는 감싼 상자의 이름("… (좌우 스크롤)")이 같은 말을 하므로 숨깁니다. */}
-      {wide ? (
+      {/* 눈으로 보는 안내 — 낭독기에는 감싼 상자의 이름("… (좌우 스크롤)")이 같은 말을 하므로 숨깁니다. 개수 줄이 있으면 그 줄 오른쪽에 둡니다. */}
+      {countText !== null ? (
+        <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3">
+          <p className="text-xs tabular-nums text-text-2">{countText}</p>
+          {wide ? (
+            <p aria-hidden="true" className={`text-xs text-text-3 ${measured && overflowing ? "" : "sm:hidden"}`}>
+              ← 표를 좌우로 넘겨 보세요
+            </p>
+          ) : null}
+        </div>
+      ) : wide ? (
         <p aria-hidden="true" className={`mb-1 text-xs text-text-3 ${measured && overflowing ? "" : "sm:hidden"}`}>
           ← 표를 좌우로 넘겨 보세요
         </p>
@@ -132,10 +174,10 @@ export function DataTable<T>({
         role="region"
         aria-label={`${caption ?? "표"} (좌우 스크롤)`}
       >
-        <table className={`w-full border-collapse text-sm ${wide ? "min-w-[640px]" : ""}`}>
+        <table className={`w-full border-separate border-spacing-0 text-sm ${wide ? "min-w-[640px]" : ""}`}>
           {caption ? <caption className="sr-only">{caption}</caption> : null}
           <thead className="sticky top-0 z-10 bg-surface">
-            <tr className="border-b border-border">
+            <tr>
               {columns.map((column) => {
                 const ariaSort = ariaSortOf(activeSort, column.key);
                 const arrow = ariaSort === "ascending" ? "↑" : ariaSort === "descending" ? "↓" : "↕";
@@ -144,7 +186,7 @@ export function DataTable<T>({
                     key={column.key}
                     scope="col"
                     aria-sort={ariaSort}
-                    className={`whitespace-nowrap px-3 text-[13px] font-medium text-text-2 ${column.sortValue ? "py-0 lg:py-2.5" : "py-2.5"} ${alignOf(column)} ${column.className ?? ""}`}
+                    className={`whitespace-nowrap border-b border-border px-3 text-caption leading-5 font-medium text-text-2 ${column.sortValue ? sortHeadY : headY} ${alignOf(column)} ${column.className ?? ""}`}
                   >
                     {column.sortValue ? (
                       <button
@@ -176,41 +218,62 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              shown.map((row) => (
-                <tr
-                  key={rowKey(row)}
-                  tabIndex={activate ? 0 : undefined}
-                  onClick={activate ? activate.onClick(row) : undefined}
-                  onKeyDown={activate ? activate.onKeyDown(row) : undefined}
-                  className={`border-b border-border last:border-0 ${
-                    activate
-                      ? "group cursor-pointer hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
-                      : ""
-                  }`}
-                >
-                  {columns.map((column, index) => {
-                    const content = column.cell(row);
-                    const className = `px-3 py-3 tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
-                    const shownContent = isMissingValue(content) ? (
-                      <span className="text-text-3">
-                        <Empty />
-                      </span>
-                    ) : (
-                      content
-                    );
-                    // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
-                    return column.rowHeader ? (
-                      <th key={column.key} scope="row" className={`font-normal ${className}`}>
-                        {shownContent}
-                      </th>
-                    ) : (
-                      <td key={column.key} className={className}>
-                        {shownContent}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+              shown.map((row, rowIndex) => {
+                const key = rowKey(row);
+                const selected = selectedKey !== undefined && selectedKey !== null && key === selectedKey;
+                const rowClass = [
+                  activate
+                    ? "group cursor-pointer hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                    : "",
+                  selected ? "bg-surface-2" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ");
+                return (
+                  <tr
+                    key={key}
+                    tabIndex={activate ? 0 : undefined}
+                    onClick={activate ? activate.onClick(row) : undefined}
+                    onKeyDown={activate ? activate.onKeyDown(row) : undefined}
+                    aria-current={selected ? "true" : undefined}
+                    className={rowClass || undefined}
+                  >
+                    {columns.map((column, index) => {
+                      const content = column.cell(row);
+                      // 행 사이 구분선은 칸의 아래 테두리(위 설명 — sticky 머리) — 마지막 행에는 긋지 않습니다(감싼 상자의 끝).
+                      const divider = rowIndex < shown.length - 1 ? "border-b border-border-subtle" : "";
+                      // 고른 행의 막대는 첫 칸 안에 둡니다(칸이 relative — 행(tr)을 기준 상자로 쓰지 않음).
+                      const bar = selected && index === 0;
+                      const className = `px-3 ${cellY} ${divider} ${bar ? "relative" : ""} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
+                      const value = isMissingValue(content) ? (
+                        <span className="text-text-3">
+                          <Empty />
+                        </span>
+                      ) : (
+                        content
+                      );
+                      const shownContent = bar ? (
+                        <>
+                          <span aria-hidden="true" className={SELECTED_BAR} />
+                          {value}
+                        </>
+                      ) : (
+                        value
+                      );
+                      // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
+                      return column.rowHeader ? (
+                        <th key={column.key} scope="row" className={`font-normal ${className}`}>
+                          {shownContent}
+                        </th>
+                      ) : (
+                        <td key={column.key} className={className}>
+                          {shownContent}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

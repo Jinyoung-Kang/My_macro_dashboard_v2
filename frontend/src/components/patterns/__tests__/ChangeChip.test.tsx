@@ -73,7 +73,7 @@ describe("ChangeChip", () => {
     expect(screen.getByText("하락")).toBeTruthy();
   });
 
-  it("size — sm(자산 행)은 13px, 기본 md(히어로)는 15px 굵게", () => {
+  it("size — sm(자산 행·표)은 caption 13px, 기본 md(히어로·KPI)는 body 14px 굵게(글자 단계, 작업대 실행 명세 §3-6)", () => {
     const { container } = render(
       <>
         <ChangeChip changePct={1} size="sm" />
@@ -81,8 +81,8 @@ describe("ChangeChip", () => {
       </>,
     );
     const [small, medium] = Array.from(container.children) as HTMLElement[];
-    expect(small.className).toContain("text-[13px]");
-    expect(medium.className).toContain("text-[15px]");
+    expect(small.className.split(/\s+/)).toContain("text-caption");
+    expect(medium.className.split(/\s+/)).toContain("text-body");
     expect(medium.className).toContain("font-semibold");
   });
 

@@ -69,7 +69,8 @@ export function RawSnapshotCard() {
                 수집 실패 항목은 숫자를 만들어내지 않고 &apos;수집 실패&apos;로 적습니다.
                 &apos;추정치&apos;로 표시된 값은 공식 확정치가 아닙니다.
               </p>
-              <pre tabIndex={0} className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-bg p-3 text-xs leading-relaxed text-text-3">
+              {/* 원본 글은 읽는 본문이라 보조 글자색(text-2, 바탕 위 11.3:1) — 캡션색(text-3)은 각주·축에만 씁니다(작업대 실행 명세 §3-2). */}
+              <pre tabIndex={0} className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-control border border-border bg-bg p-3 text-xs leading-relaxed text-text-2">
                 {snapshot.data.text}
               </pre>
             </>
