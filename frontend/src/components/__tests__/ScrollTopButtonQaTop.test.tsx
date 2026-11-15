@@ -37,15 +37,16 @@ function hasClass(className: string, name: string): boolean {
 describe("ScrollTopButton — 정보 검색 QA", () => {
   // QA-425: lg 미만 누름 자리가 44px에 못 미침(py-2 16 + text-xs 줄 높이 16 + 테두리 2 = 34px, 390에서 68x34 측정).
   // ADR 0041 결정 11 'lg 미만 누름 자리 44px'. jsdom은 레이아웃을 재지 못하므로 고친 뒤의 클래스 약속(lg 미만 최소 높이 44px =
-  // min-h-11, 넓은 화면은 지금 모양 그대로 lg:min-h-0, 글은 세로 가운데, 아래 탭 막대 위 자리 그대로)을 봅니다.
+  // min-h-11, 넓은 화면은 기본 조작 높이 30px(작업대 명세 §3-7 — 예전 lg:min-h-0의 34px에서 바꿈), 글은 세로 가운데, 아래 탭 막대 위 자리 그대로)을 봅니다.
   // 수정 전 실패: 클래스에 min-h-11이 없음.
-  it("lg 미만 누름 자리 44px(min-h-11), 넓은 화면은 지금 모양 — 두 층 모두(ADR 0041 결정 11)", () => {
+  it("lg 미만 누름 자리 44px(min-h-11), 넓은 화면은 30px — 두 층 모두(ADR 0041 결정 11)", () => {
     for (const layer of [undefined, "z-20"]) {
       const { unmount } = render(layer ? <ScrollTopButton layer={layer} /> : <ScrollTopButton />);
       scrollMain(500);
       const className = screen.getByRole("button", { name: "TOP 맨 위로" }).className;
       expect(hasClass(className, "min-h-11")).toBe(true);
-      expect(hasClass(className, "lg:min-h-0")).toBe(true);
+      expect(hasClass(className, "lg:min-h-[30px]")).toBe(true);
+      expect(hasClass(className, "lg:py-1")).toBe(true);
       expect(hasClass(className, "items-center")).toBe(true);
       expect(hasClass(className, "bottom-[calc(64px+1rem+env(safe-area-inset-bottom))]")).toBe(true);
       expect(hasClass(className, "lg:bottom-6")).toBe(true);

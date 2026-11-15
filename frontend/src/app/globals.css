@@ -216,7 +216,7 @@
      탭 바 밑에 숨지 않게 그만큼 스크롤 여백을 둡니다(WCAG 2.4.11). lg 이상은 탭 바가 없고 본문 main이 스크롤 상자입니다.
      화면 아래에 붙은 고정 시트(정보 검색의 미리 보기 — xl 미만)가 열려 있으면 그 높이(--bottom-sheet — 시트가 문서 루트에 적음,
      hooks/useBottomSheet)도 더합니다. 고른 줄(scrollIntoView)·Tab으로 옮긴 포커스가 시트 밑에 숨지 않게(QA-420 검토).
-     시트가 열려 있으면 그 위로 올라간 TOP 단추(ScrollTopButton — lg 미만 16 + 44, lg 이상 24 + 34px)도 고른 줄을 덮지 않게 64px를 더 둡니다.
+     시트가 열려 있으면 그 위로 올라간 TOP 단추(ScrollTopButton — lg 미만 16 + 44, lg 이상 24 + 30px)도 고른 줄을 덮지 않게 64px를 더 둡니다.
      min(시트 높이, 64px)라 시트가 없으면 0입니다(QA-420 후속). */
   @media (width < 64rem) {
     html {
