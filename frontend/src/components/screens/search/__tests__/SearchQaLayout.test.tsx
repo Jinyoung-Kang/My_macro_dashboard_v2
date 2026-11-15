@@ -361,6 +361,17 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
     );
     expect(css).toMatch(/@media \(width >= 64rem\) \{\s*#main \{\s*scroll-padding-bottom: var\(--bottom-sheet, 0px\);/);
   });
+
+  // QA-420 후속(QA 스택 재확인 3, 390·1024): 시트가 열리면 TOP 단추가 시트 바로 위로 올라가는데(4cd7b845), ↑↓로 고른 줄은 스크롤 여백대로
+  // 시트 위끝에 맞춰 멈춰 그 줄의 오른쪽 끝을 단추가 덮었습니다(390에서 54x35px, 17줄 가운데 9줄). 단추가 차지하는 높이(lg 미만 16 + 44,
+  // lg 이상 24 + 34 — 많아야 60px)를 시트가 열렸을 때만 스크롤 여백에 더해야 합니다(시트가 없으면 0 — min(시트 높이, 64px)).
+  // 수정 전 실패: 두 규칙 모두 시트 높이만 더함(재현 커밋에서는 it.fails).
+  it.fails("시트가 열렸을 때만 TOP 단추 자리(64px)를 스크롤 여백에 더해 고른 줄이 단추 밑에 멈추지 않는다", () => {
+    const css = readFileSync(resolve(__dirname, "../../../../app/globals.css"), "utf8");
+    const narrow = /@media \(width < 64rem\) \{\s*html \{\s*scroll-padding-bottom: ([^;]+);/.exec(css)?.[1] ?? "";
+    const wide = /@media \(width >= 64rem\) \{\s*#main \{\s*scroll-padding-bottom: ([^;]+);/.exec(css)?.[1] ?? "";
+    for (const rule of [narrow, wide]) expect(rule).toContain("min(var(--bottom-sheet, 0px), 64px)");
+  });
 });
 
 describe("QA-421 — 주소의 모르는 탭·기간 값이 주소에 그대로 남음(계약 §5 — 탭·기간은 바꿔 씀)", () => {
