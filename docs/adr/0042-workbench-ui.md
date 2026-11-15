@@ -19,8 +19,8 @@
     셈(글자 4.5, `border-strong`·`focus`·아이콘 3, `accent-fg`·`danger-fg`, 틴트 위 글자), 금지 쌍(`surface-3` 위의 `text-3`·`accent`·`danger` 글자, accent 틴트 위의
     `accent` 글자)은 소스 검사로 막음,
     `@layer base` 규칙과 '맨 바깥 블록' 검사를 옮겨 옴.
-  - **글자 하한 12px**: 소스 검사 시험(예정 `lib/__tests__/typeFloor.test.ts`) — `text-[10px]`·`text-[11px]`, 12px 미만이 되는 em·rem 크기, 차트 `fontSize` 12 미만을 막음.
-  - **조작 44px**: 공용 조작 클래스(단추·입력·탭·링크·표 정렬 머리·체크박스)가 lg 미만 `min-h-11`과 lg 이상 조밀 변형을 함께 갖는지(예정 `components/ui/__tests__/touchTargets.test.ts`).
+  - **글자 하한 12px**: 소스 검사 시험 `frontend/src/lib/__tests__/fontFloor.test.ts`(P0, QA-457) — `text-[10px]`·`text-[11px]`, 12px 미만이 되는 em·rem 크기, 차트 `fontSize` 12 미만을 막음.
+  - **조작 44px**: 공용 조작 클래스(단추·입력·탭·링크·표 정렬 머리·체크박스)가 lg 미만 `min-h-11`과 lg 이상 조밀 변형을 함께 갖는지 — `frontend/src/lib/__tests__/touchTargets.test.ts`(감사 도구 `touchTargetAudit.ts`, P0, QA-458).
   - **팔레트 기록**: 확정한 계열 색 hex 목록(시험 코드 안의 기대 상수 — 문서 표는 파싱하지 않음)이 실제 소스와 같은지, 어두운 두 면(`#111418`·`#1c2127`) 위 그래픽 대비
     3:1(예정 `components/charts/__tests__/paletteRecord.test.ts`). 검증기 결과는 실행 명세 §3-5에 기록.
   - **데이터 칸의 강조색 금지**: 데이터를 그리는 패턴·차트 소스에 `accent` 토큰이 없는지(예정 `lib/__tests__/accentInData.test.ts` — A1을 소스 검사로).
