@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { EMPTY } from "@/lib/format";
-import { entityKindLabel, entityShortcuts, entitySourceLabel, identifierChips } from "@/lib/infoSearch";
+import { entityFailuresText, entityKindLabel, entityShortcuts, entitySourceLabel, identifierChips } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
 import { KindBadge, KindIcon, LINK, PaneHeading, Tag } from "./parts";
 
@@ -122,9 +122,10 @@ export function AttributesPanel({
         ))}
       </dl>
       {aliasEditor}
+      {/* 등록 503 partial 안내와 같은 글 — 사유 안의 ' · '·' — '가 출처 사이 구분과 섞이지 않게 '이름(사유)'를 쉼표로 이음 */}
       {failures.length > 0 ? (
         <p className="text-xs text-text-3">
-          대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${entitySourceLabel(source)}: ${reason}`).join(" · ")}
+          대상을 푸는 데 받지 못한 출처 — {entityFailuresText(failures)}
         </p>
       ) : null}
       {previewHint ? (

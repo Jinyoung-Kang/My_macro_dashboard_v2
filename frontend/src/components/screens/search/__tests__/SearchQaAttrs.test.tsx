@@ -19,7 +19,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
-import { entitySourceLabel } from "@/lib/infoSearch";
+import { entitySourceLabel, watchPartialText } from "@/lib/infoSearch";
 import type { SearchEntity, SearchFeedItem, SessionUser } from "@/lib/types";
 import { AttributesPanel } from "../EntityParts";
 import { SearchScreen } from "../SearchScreen";
@@ -183,16 +183,30 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
     );
     const text = line();
     for (const code of ["dart_store", "wikidata", "sec:", "entity", "new_source"]) expect(text, code).not.toContain(code);
-    expect(text).toContain("DART: DART 고유번호 저장본을 읽지 못함");
-    expect(text).toContain("Wikidata: 시간 초과");
-    expect(text).toContain("SEC: HTTP 503");
-    expect(text).toContain("외부 출처: 대상 풀기가 8초를 넘어 저장본 이름으로만 답함");
-    expect(text).toContain("기타 출처: 합성 사유");
+    expect(text).toContain("DART(DART 고유번호 저장본을 읽지 못함)");
+    expect(text).toContain("Wikidata(시간 초과)");
+    expect(text).toContain("SEC(HTTP 503)");
+    expect(text).toContain("외부 출처(대상 풀기가 8초를 넘어 저장본 이름으로만 답함)");
+    expect(text).toContain("기타 출처(합성 사유)");
     cleanup();
 
     render(<AttributesPanel entity={null} kind="company" errors={{ dart: "DART 고유번호 저장본에 이 종목이 없음" }} />);
-    expect(line()).toContain("DART: DART 고유번호 저장본에 이 종목이 없음");
+    expect(line()).toContain("DART(DART 고유번호 저장본에 이 종목이 없음)");
     expect(line()).not.toContain("dart:");
+  });
+
+  // 2차 검토 지적: 관심 대상 등록 안내(watchPartialText)는 사유를 괄호에 묶고 출처를 쉼표로 이었는데(2e496ca7), 같은 화면 속성 칸의 이 줄은
+  // '이름: 사유'를 ' · '로 이어 같은 실패가 두 모양으로 보였고, 거부 사유 안의 ' · 5분 동안 이 출처 호출을 멈춤'이 출처 하나처럼 읽혔음.
+  // 수정 전 실패: 'Wikidata: 거부됨 — … · 5분 동안 이 출처 호출을 멈춤 · SEC: …'.
+  it("사유에 ' · '·' — '가 든 실패도 등록 안내와 같은 글('이름(사유)'를 쉼표로 이음)로 보인다", () => {
+    const latch = "거부됨 — www.wikidata.org HTTP 429 · 5분 동안 이 출처 호출을 멈춤";
+    const config = "www.sec.gov HTTP 403 — 합성 사유";
+    render(<AttributesPanel entity={null} kind={null} errors={{ wikidata: latch, sec: config }} />);
+    const shown = `Wikidata(${latch}), SEC(${config})`;
+    expect(line()).toBe(`대상을 푸는 데 받지 못한 출처 — ${shown}`);
+    // 등록 503 partial의 안내와 같은 글(한 화면에서 같은 실패가 같은 모양)
+    const partial = watchPartialText({ reason: "partial", failed: [{ source: "wikidata", message: latch }, { source: "sec", message: config }] }) ?? "";
+    expect(partial).toContain(`받지 못한 출처: ${shown}.`);
   });
 
   it("객체 기본 속성 이름(toString 등)의 키도 코드 이름 대신 기타 출처로 보인다", () => {
@@ -208,7 +222,7 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
   it("'푼 출처' 줄도 수집기 키(sec·wikidata·13f·universe·dart) 대신 받지 못한 출처 줄·후보 목록과 같은 이름을 보인다", () => {
     render(<AttributesPanel entity={NVIDIA as SearchEntity} kind={null} errors={{ wikidata: "시간 초과" }} />);
     expect(solvedBy()).toBe("SEC · Wikidata");
-    expect(line()).toContain("Wikidata: 시간 초과");
+    expect(line()).toContain("Wikidata(시간 초과)");
     cleanup();
 
     const sources = ["13f", "universe", "dart", "new_source", "other_source"];

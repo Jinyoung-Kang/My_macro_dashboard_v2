@@ -853,6 +853,19 @@ export function entitySourceLabel(source: string): string {
   return Object.hasOwn(ENTITY_SOURCES, source) ? ENTITY_SOURCES[source] : "기타 출처";
 }
 
+/**
+ * 대상을 푸는 데 받지 못한 출처의 글 — 출처마다 '이름(사유)'(사유가 없거나 비면 이름만), 출처 사이는 쉼표, 같은 글은 한 번만. 수집기 사유에는 ' · '·' — '가
+ * 들어 있어(거부 사유 '거부됨 — 호스트 HTTP 429 · 5분 동안 이 출처 호출을 멈춤') 사유를 괄호에 묶고 출처를 쉼표로 이어야 출처 사이 구분과 섞이지 않습니다.
+ * 속성 칸의 '대상을 푸는 데 받지 못한 출처'(errors)와 관심 대상 등록 503 partial 안내(watchPartialText)가 함께 씁니다 — 한 화면에서 같은 실패가 같은 글로.
+ */
+export function entityFailuresText(failures: readonly (readonly [source: string, reason: unknown])[]): string {
+  const parts = failures.map(([source, reason]) => {
+    const text = typeof reason === "string" ? reason.trim() : "";
+    return text ? `${entitySourceLabel(source)}(${text})` : entitySourceLabel(source);
+  });
+  return [...new Set(parts)].join(", ");
+}
+
 const LANG_LABELS: Record<string, string> = { ko: "한국어", en: "영어", unknown: "모름" };
 const langKey = (lang: string | null | undefined) => lang || "unknown";
 
@@ -2342,9 +2355,8 @@ export const WATCH_PARTIAL_RETRY_DART_STORE =
   "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
 
 /**
- * 관심 대상 등록의 503 partial 본문(POST /api/search/watch — 계약 §6-4) → 받지 못한 출처를 적은 글. 출처 이름은 속성 칸의 '대상을 푸는 데 받지 못한
- * 출처'와 같고(entitySourceLabel), 사유는 이름 뒤 괄호에 묶습니다('DART(DART 고유번호 저장본을 읽지 못함)') — 수집기 사유에는 ' · '·' — '가 들어
- * 있어(거부 사유 '거부됨 — 호스트 HTTP 429 · 5분 동안 이 출처 호출을 멈춤') 출처 사이 구분과 섞이지 않게 출처는 쉼표로 잇습니다. 다시 해 볼 때는
+ * 관심 대상 등록의 503 partial 본문(POST /api/search/watch — 계약 §6-4) → 받지 못한 출처를 적은 글. 출처 글은 속성 칸의 '대상을 푸는 데 받지 못한
+ * 출처'와 같은 함수(entityFailuresText — 사유는 이름 뒤 괄호, 출처는 쉼표로 이음: 'DART(DART 고유번호 저장본을 읽지 못함)')로 만듭니다. 다시 해 볼 때는
  * DART 고유번호 저장본(dart_store)이 섞이면 저장본을 다시 읽을 때까지 같다고 하고, 아니면 시점을 약속하지 않는 WATCH_PARTIAL_RETRY_LATER.
  * partial이 아니거나 failed에 읽을 줄이 없으면 null(서버 사유를 그대로 씀). 사유가 없는 줄은 이름만.
  */
@@ -2352,7 +2364,7 @@ export function watchPartialText(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const { reason, failed } = body as Partial<Record<keyof SearchWatchPartialBody, unknown>>;
   if (reason !== "partial" || !Array.isArray(failed)) return null;
-  const parts: string[] = [];
+  const failures: [string, unknown][] = [];
   let store = false;
   for (const entry of failed as unknown[]) {
     if (typeof entry !== "object" || entry === null) continue;
@@ -2360,12 +2372,11 @@ export function watchPartialText(body: unknown): string | null {
     const key = typeof source === "string" ? source.trim() : "";
     if (!key) continue;
     if (key === WATCH_PARTIAL_DART_STORE) store = true;
-    const text = typeof message === "string" ? message.trim() : "";
-    parts.push(text ? `${entitySourceLabel(key)}(${text})` : entitySourceLabel(key));
+    failures.push([key, message]);
   }
-  if (parts.length === 0) return null;
+  if (failures.length === 0) return null;
   const retry = store ? WATCH_PARTIAL_RETRY_DART_STORE : WATCH_PARTIAL_RETRY_LATER;
-  return `대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처: ${[...new Set(parts)].join(", ")}. ${retry}`;
+  return `대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처: ${entityFailuresText(failures)}. ${retry}`;
 }
 
 /** 새로 받기에서 받지 못한 출처의 상태(실패·외부 조회 안 함) — 받음·캐시·결과 없음·건너뜀은 받지 못한 것이 아닙니다. */
