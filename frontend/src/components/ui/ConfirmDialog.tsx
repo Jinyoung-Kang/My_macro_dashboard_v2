@@ -4,7 +4,7 @@ import { useId, useState, type ReactNode } from "react";
 import { buttonClasses, inputClasses } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 
-// 확인은 주 단추(강조 바탕), 위험한 확인은 danger 바탕에 danger-fg 글자(두 테마 모두 대비 7.7:1 이상) — 공용 단추 모양(buttonClasses).
+// 확인은 주 단추(강조 바탕), 위험한 확인은 danger 바탕에 danger-fg 글자(대비 5.88:1 — 흰 글자는 3.14:1이라 쓰지 않음) — 공용 단추 모양(buttonClasses).
 const CONFIRM_TONE = {
   default: buttonClasses("primary"),
   danger: buttonClasses("danger"),

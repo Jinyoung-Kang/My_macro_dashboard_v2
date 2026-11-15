@@ -1,13 +1,13 @@
 /**
  * 모든 화면 테스트 앞에 한 번 도는 준비(vitest.config.mts의 setupFiles).
  *
- * jsdom 29에 없는 브라우저 API 네 가지의 최소 스텁만 둡니다 — Radix(Dialog·Toast 등)와 테마 훅이 그릴 때 부르기 때문입니다.
+ * jsdom 29에 없는 브라우저 API 네 가지의 최소 스텁만 둡니다 — Radix(Dialog·Toast 등)와 움직임 줄이기 확인(matchMedia)이 그릴 때 부르기 때문입니다.
  * 이미 있으면 덮지 않고, 동작은 "아무 일도 하지 않음"뿐입니다. 동작을 확인해야 하는 테스트는 지금처럼 그 테스트 안에서
  * vi.stubGlobal·Element.prototype 대입으로 덮어씁니다(그쪽이 이깁니다).
  */
 
 if (typeof window.matchMedia !== "function") {
-  // 어떤 미디어 쿼리도 맞지 않는다고 답합니다(움직임 줄이기·다크 모드 꺼짐 = 기본 화면).
+  // 어떤 미디어 쿼리도 맞지 않는다고 답합니다(움직임 줄이기 꺼짐 = 기본 화면).
   window.matchMedia = (query: string): MediaQueryList =>
     ({
       matches: false,

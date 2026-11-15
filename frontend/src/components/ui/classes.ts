@@ -38,7 +38,7 @@ export function buttonClasses(variant: ButtonVariant = "secondary", size: Button
   return `${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]}`;
 }
 
-/** 포커스 링 — 키보드로 옮긴 곳을 2px 바깥선으로 보입니다(바탕 대비 라이트 6.3·다크 6.8:1). */
+/** 포커스 링 — 키보드로 옮긴 곳을 2px 바깥선으로 보입니다(focus 대비 bg 9.35·surface 8.20·surface-2 7.31·surface-3 6.34:1). */
 export const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 export type InputSize = "md" | "sm" | "lg";
