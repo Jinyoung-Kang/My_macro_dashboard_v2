@@ -48,7 +48,7 @@ export function Shell({
       <div className="min-h-screen lg:flex">
         <a
           href="#main"
-          className="sr-only rounded-full bg-accent px-4 py-2 text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="sr-only rounded-control bg-accent px-4 py-2 text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           본문으로 건너뛰기
         </a>

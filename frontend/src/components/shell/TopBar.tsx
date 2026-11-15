@@ -37,14 +37,15 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
         href="/alerts"
         aria-label={bellLabel(unread)}
         aria-current={pathname === "/alerts" ? "page" : undefined}
-        className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-full text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         <BellIcon size={20} />
-        {/* 수 배지는 알림을 여는 단추의 일부라 강조 파랑(명세 원칙 A1 — 알림 수). 이름(aria-label)이 수를 읽으므로 배지는 장식입니다. */}
+        {/* 수 배지는 알림을 여는 단추의 일부라 강조 파랑(명세 원칙 A1 — 알림 수). 이름(aria-label)이 수를 읽으므로 배지는 장식입니다.
+            벨 단추와 수 배지는 4px 모서리입니다 — 수가 두 자리면 알약이 되던 rounded-full을 공용 단추·태그와 같은 모서리로(작업대 실행 명세 §3-8). */}
         {badge && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-xs font-semibold leading-none tabular-nums text-accent-fg"
+            className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-control bg-accent px-1 text-xs font-semibold leading-none tabular-nums text-accent-fg"
           >
             {badge}
           </span>

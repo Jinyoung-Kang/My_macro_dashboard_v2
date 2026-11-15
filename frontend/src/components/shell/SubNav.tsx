@@ -48,7 +48,7 @@ export function SubNav({ pathname, user }: { pathname: string; user?: SessionUse
             <span aria-disabled="true" className="inline-flex h-12 items-center gap-1.5 whitespace-nowrap px-3 text-[15px] text-text-3">
               {entry.label} · {entry.note}
               {entry.opensIn ? (
-                <span className="rounded-full border border-border px-2 text-xs leading-5">
+                <span className="rounded-control border border-border px-2 text-xs leading-5">
                   <span className="sr-only"> (</span>
                   {entry.opensIn}
                   <span className="sr-only">에서 엽니다)</span>
