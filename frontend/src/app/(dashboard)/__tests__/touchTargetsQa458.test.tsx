@@ -201,8 +201,10 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     fireEvent.click(await screen.findByRole("tab", { name: "설정" }));
     const checkbox = (await screen.findByLabelText("parkCashInShy")) as HTMLInputElement;
     expect(checkbox.type).toBe("checkbox");
-    const row = checkbox.closest(".grid") as HTMLElement;
-    expect(smallTargets(row)).toEqual([]);
+    // 배치 클래스(.grid 등)가 아니라 구조로 — 상자(또는 감싼 label)가 놓인 칸. 재배치 뒤에도 감싼 label이 없으면 상자가 걸립니다.
+    const cell = (checkbox.closest("label") ?? checkbox).parentElement;
+    expect(cell).not.toBeNull();
+    expect(smallTargets(cell as HTMLElement)).toEqual([]);
   });
 
   //  - 정렬할 수 있는 표 머리(DataTable — 보유·체결 표 등): ↕ 단추
