@@ -18,8 +18,9 @@ type ToastApi = { show: (message: string, tone?: ToastTone) => void };
 // Provider 밖(페이지·섹션만 그리는 테스트 등)에서는 아무것도 하지 않습니다. 알림은 보조 수단이라 결과는 화면 본문에도 남깁니다.
 const ToastContext = createContext<ToastApi>({ show: () => {} });
 
+// 덮개 3층(작업대 실행 명세 §3-3) — 안내는 안쪽 밝은 경계(border-overlay), 주의는 주의 색 경계(아이콘·'주의: '와 함께).
 const TONE = {
-  info: "border-border",
+  info: "border-border-overlay",
   warn: "border-warn",
 } as const;
 
@@ -54,15 +55,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             onOpenChange={(open) => {
               if (!open) remove(item.id);
             }}
-            className={`flex items-start gap-3 rounded-control border bg-surface py-3 pl-4 pr-2 text-sm text-text shadow-overlay focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0 ${TONE[item.tone]}`}
+            className={`flex items-start gap-3 rounded-control border bg-surface-2 py-2.5 pl-3 pr-2 text-sm text-text shadow-overlay focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0 ${TONE[item.tone]}`}
           >
-            {/* 톤 아이콘은 장식 — 주의는 경고 삼각형(+ 낭독기용 '주의: '), 안내는 i(배너 info와 같은 표지, 글은 본문색). */}
+            {/* 톤 아이콘은 장식 — 주의는 경고 삼각형(+ 낭독기용 '주의: '), 안내는 i(안내 상자 중립과 같은 표지 — 보조색, 강조 파랑 아님). */}
             <span className="shrink-0 py-1 leading-relaxed">
               <LineIcon>
                 {item.tone === "warn" ? (
                   <AlertTriangleIcon size={16} className="text-warn" />
                 ) : (
-                  <InfoIcon size={16} className="text-accent" />
+                  <InfoIcon size={16} className="text-text-2" />
                 )}
               </LineIcon>
             </span>
@@ -72,7 +73,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </ToastPrimitive.Description>
             <ToastPrimitive.Close
               aria-label="닫기"
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-text-3 hover:bg-surface-2 hover:text-text motion-safe:transition-colors lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-text-2 hover:bg-surface-3 hover:text-text motion-safe:transition-colors lg:h-[30px] lg:w-[30px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
               <XIcon size={14} />
             </ToastPrimitive.Close>

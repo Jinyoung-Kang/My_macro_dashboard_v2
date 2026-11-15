@@ -28,7 +28,9 @@ export function DialogScope({ value, children }: { value: string; children: Reac
 const FADE_IN = "motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0";
 
 /**
- * 대화상자(모달) — Radix Dialog를 토큰 색으로 감싼 것.
+ * 대화상자(모달) — Radix Dialog를 토큰 색으로 감싼 것. 모양은 덮개 3층(작업대 실행 명세 §3-3): 바탕 surface-2, 안쪽 1px 밝은 경계
+ * (border-overlay), 바깥 그림자(shadow-overlay), 4px 모서리, 안쪽 16px. 덮개 안에서 누르는 칸의 hover는 surface-3이고, 그 위에는
+ * text-3·accent·danger 글자를 두지 않습니다(대비 4.5:1 미만 — 금지 쌍 시험).
  *
  * 포커스 가두기·Esc로 닫기·바깥 누르면 닫기·뒤 화면 aria-hidden·스크롤 잠금은 Radix가 합니다. 여기서 더하는 것은
  * - 이름 필수: `title`이 대화상자의 이름(aria-labelledby)입니다. 화면에 안 보이게 하려면 `hideTitle`(이름은 남음).
@@ -118,7 +120,7 @@ export function Dialog({
             placement === "top"
               ? "top-4 max-h-[calc(100dvh-2rem)] sm:top-[12dvh] sm:max-h-[calc(88dvh-1rem)]"
               : "top-1/2 max-h-[calc(100dvh-2rem)] -translate-y-1/2"
-          } overflow-y-auto rounded-card border border-border bg-surface p-6 text-text shadow-overlay outline-none ${FADE_IN}`}
+          } overflow-y-auto rounded-card border border-border-overlay bg-surface-2 p-4 text-text shadow-overlay outline-none ${FADE_IN}`}
         >
           {hideTitle ? <VisuallyHidden.Root asChild>{heading}</VisuallyHidden.Root> : heading}
           {description && (
@@ -128,12 +130,13 @@ export function Dialog({
           )}
           {children}
           {/* 닫기 단추는 DOM 맨 끝에 둡니다 — 열었을 때 첫 포커스가 내용(입력칸·취소 단추)으로 가게(보이기는 오른쪽 위).
-              좁은 화면(lg 미만)에서는 누르는 칸을 44px로 키우고 위치를 그만큼 당겨 X 아이콘 자리는 그대로 둡니다. */}
+              좁은 화면(lg 미만)에서는 누르는 칸을 44px로 키우고 위치를 그만큼 당겨 X 아이콘 자리는 그대로 둡니다. 넓은 화면은 최소 단추 30px.
+              덮개 안 hover 바탕은 surface-3이라 아이콘 색은 text-3이 아니라 text-2입니다(금지 쌍). */}
           {showClose && (
             <DialogPrimitive.Close
               aria-label="닫기"
               disabled={!dismissible}
-              className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-full text-text-3 hover:bg-surface-2 hover:text-text motion-safe:transition-colors lg:right-4 lg:top-4 lg:h-8 lg:w-8 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              className="absolute right-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-control text-text-2 hover:bg-surface-3 hover:text-text motion-safe:transition-colors lg:right-3 lg:top-3 lg:h-[30px] lg:w-[30px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
             >
               <XIcon size={16} />
             </DialogPrimitive.Close>

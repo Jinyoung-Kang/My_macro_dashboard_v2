@@ -6,6 +6,7 @@
  *  - Esc·닫기 단추는 onOpenChange(false) — dismissible=false면 둘 다 막힌다(처리 중)
  *  - Trigger 없이 연 창도 닫으면 연 단추로 포커스가 돌아간다
  *  - 움직임은 motion-safe: 안에만(움직임 줄이기면 없음)
+ *  - 모양은 덮개 3층(작업대 명세 §3-3): 바탕 surface-2·안쪽 밝은 경계(border-overlay)·그림자, 닫기 단추의 덮개 안 hover는 surface-3(그 위 text-3 금지)
  *  - 범위 표지(scope): 기본은 없고(앱 테마 그대로), scope나 DialogScope로 주면 대화상자 상자에 data-scope가 붙는다(포털이라 화면의 범위 토큰이 닿지 않음)
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -48,6 +49,15 @@ describe("열림과 닫힘", () => {
     const heading = screen.getByRole("heading", { name: "통합 검색" });
     expect(heading.style.position).toBe("absolute");
     expect(heading.style.width).toBe("1px");
+  });
+
+  it("덮개 3층 모양 — surface-2 바탕·안쪽 밝은 경계·그림자·4px, 닫기 단추는 4px·보조색 아이콘(덮개 안 hover surface-3 위 text-3 금지)", () => {
+    render(<Dialog open onOpenChange={() => {}} title="계좌 초기화">내용</Dialog>);
+    const box = screen.getByRole("dialog", { name: "계좌 초기화" }).className.split(/\s+/);
+    expect(box).toEqual(expect.arrayContaining(["bg-surface-2", "border", "border-border-overlay", "shadow-overlay", "rounded-card"]));
+    const close = screen.getByRole("button", { name: "닫기" }).className.split(/\s+/);
+    expect(close).toEqual(expect.arrayContaining(["rounded-control", "text-text-2", "hover:bg-surface-3", "h-11", "w-11"]));
+    expect(close).not.toContain("text-text-3");
   });
 
   it("showClose={false}면 닫기 단추가 없다", () => {

@@ -167,6 +167,9 @@ describe.each(TOKEN_BLOCKS)("토큰 블록 %s", (selector) => {
     ]);
     expect(t["--border-subtle"].toLowerCase()).toBe("#2f343c");
     expect(t["--scrim"]).toBe("rgb(17 20 24 / 0.7)");
+    // 덮개 3층(명세 §3-3) — 안쪽 1px 밝은 경계와 바깥 그림자.
+    expect(t["--border-overlay"]).toBe("rgb(255 255 255 / 0.12)");
+    expect(t["--elev-overlay"]).toBe("0 12px 32px rgb(0 0 0 / 0.6)");
     // 상승은 사용자 결정 4의 선명한 빨강, 위험은 그대로(둘은 색만으로 갈리지 않음 — 늘 아이콘·글·기호와 함께).
     expect(t["--up"].toLowerCase()).toBe("#ff6b6b");
     expect(t["--danger"].toLowerCase()).toBe("#e76a6e");
@@ -224,12 +227,13 @@ describe("어두운 한 벌(W1)", () => {
     expect(base?.[1]).toMatch(/color:\s*var\(--text\);/);
   });
 
-  it("새 토큰은 @theme inline에서 클래스 이름이 된다 — bg-surface-3·border-border-subtle·bg-scrim", () => {
+  it("새 토큰은 @theme inline에서 클래스 이름이 된다 — bg-surface-3·border-border-subtle·bg-scrim·border-border-overlay", () => {
     const inline = RULES.find((rule) => rule.selector === "@theme inline");
     const names = declarations(inline?.body ?? "");
     expect(names["--color-surface-3"]).toBe("var(--surface-3)");
     expect(names["--color-border-subtle"]).toBe("var(--border-subtle)");
     expect(names["--color-scrim"]).toBe("var(--scrim)");
+    expect(names["--color-border-overlay"]).toBe("var(--border-overlay)");
   });
 
   it("모서리는 4px 하나(card·control)", () => {

@@ -41,8 +41,10 @@
   --danger: #e76a6e; /* 상태 전용(오류·파괴적 동작) — 상승과 거의 같은 색이라 늘 아이콘·글과 함께 */
   --danger-fg: #111418; /* danger 바탕 위 글자 — 흰 글자는 3.1:1이라 쓰지 않습니다 */
   --scrim: rgb(17 20 24 / 0.7); /* 덮개 뒤 가림(대화상자) */
-  /* 덮개(대화상자·토스트·검색)에만 쓰는 그림자 — 패널에는 그림자를 쓰지 않습니다. */
-  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
+  /* 덮개(대화상자·토스트·검색 — 바탕 surface-2)의 3층 모양(실행 명세 §3-3): 안쪽 1px 밝은 경계 + 바깥 그림자. 패널에는 그림자를 쓰지 않습니다.
+     경계는 box-shadow가 아니라 실제 테두리 색이라 고대비(forced-colors) 모드에서도 덮개 경계가 남습니다. */
+  --border-overlay: rgb(255 255 255 / 0.12);
+  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
 }
 
 /* 정보 검색(/search) 내용 영역의 범위 토큰(ADR 0041 결정 11) — 앱이 밝을 때도 이 화면만 어둡게 그리던 장치입니다. 이제 :root가 같은 어두운 값이라
@@ -69,7 +71,7 @@
   --ok: #72ca9b;
   --danger: #e76a6e;
   --danger-fg: #111418;
-  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.4);
+  --elev-overlay: 0 12px 32px rgb(0 0 0 / 0.6);
   --radius-card: 4px;
   --radius-control: 4px;
 }
@@ -109,6 +111,7 @@
   --color-danger: var(--danger);
   --color-danger-fg: var(--danger-fg);
   --color-scrim: var(--scrim);
+  --color-border-overlay: var(--border-overlay);
   /* 옅은 톤 바탕(글자 배지·배너) — 투명 틴트(bg-warn/10)는 놓인 자리와 섞여 바탕마다 글자 대비가 달랐습니다. surface와 미리 섞은
      불투명 색이라 어디에 놓여도 패널 위와 같습니다. 톤 글자 대비 warn 6.1·ok 6.9·danger 4.54, 틴트 위 text 12.7 이상·text-2 8.4 이상·text-3 4.7 이상.
      accent 틴트 위 accent 글자는 4.47이라 쓰지 않습니다(금지 쌍 — 아이콘은 그래픽 3:1이라 됨). */

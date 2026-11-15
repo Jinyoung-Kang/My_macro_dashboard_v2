@@ -182,8 +182,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         </button>
       }
     >
-      {/* 입력칸은 대화상자 닫기 단추(오른쪽 위) 앞에서 끝납니다 — 안쪽 여백으로 비키면 입력칸 테두리·포커스 링 위에 닫기 단추가 겹쳤습니다. */}
-      <div className="mr-10 mt-1 flex items-center gap-3 rounded-control bg-surface-2 px-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus">
+      {/* 입력칸은 대화상자 닫기 단추(오른쪽 위) 앞에서 끝납니다 — 안쪽 여백으로 비키면 입력칸 테두리·포커스 링 위에 닫기 단추가 겹쳤습니다.
+          덮개 바탕이 surface-2라(작업대 명세 §3-3) 입력칸은 공용 입력칸처럼 한 단계 어두운 surface와 border-strong 경계로 그립니다. */}
+      <div className="mr-10 mt-1 flex items-center gap-3 rounded-control border border-border-strong bg-surface px-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus">
         <SearchIcon size={18} />
         <input
           type="search"
@@ -244,15 +245,15 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                     onMouseMove={() => {
                       if (!selected) setActive(index);
                     }}
-                    className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 ${selected ? "bg-surface-2" : ""}`}
+                    className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 ${selected ? "bg-surface" : ""}`}
                   >
-                    {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, surface-2 바탕만으로는 대비가 1.1:1이라 왼쪽 잉크 막대를
-                        함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}
+                    {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, 고른 줄 바탕(surface — 덮개 surface-2보다 한 단계 어두움)만으로는
+                        대비가 1.1:1이라 왼쪽 잉크 막대를 함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}
                     {selected && <span aria-hidden="true" className={SELECTED_BAR} />}
                     <span
                       aria-hidden="true"
                       className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-text-2 ${
-                        selected ? "bg-surface" : "bg-surface-2"
+                        selected ? "bg-surface-2" : "bg-surface"
                       }`}
                     >
                       {entry.avatar && "tab" in entry.avatar ? <TabIcon tab={entry.avatar.tab} size={16} /> : entry.avatar?.text}
@@ -288,9 +289,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         <Link
           href={infoSearch.href}
           onClick={() => changeOpen(false)}
-          className={`mt-2 flex min-h-12 items-center gap-3 rounded-control px-3 py-2 hover:bg-surface-2 ${FOCUS_RING}`}
+          className={`mt-2 flex min-h-12 items-center gap-3 rounded-control px-3 py-2 hover:bg-surface ${FOCUS_RING}`}
         >
-          <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-text-2">
+          <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface text-text-2">
             <TabIcon tab="search" size={16} />
           </span>
           <span className="min-w-0 flex-1 truncate text-[15px] text-accent">{infoSearch.label}</span>
