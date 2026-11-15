@@ -337,6 +337,9 @@ export function FeedPanel({
     // 코드가 포커스를 보내는 자리(빈 결과 안내·결과 목록·목록 위 받는 중 줄)에는 outline-none을 붙이지 않습니다 — Tailwind v4의 outline-none은
     // --tw-outline-style까지 none으로 둬 focus-visible:outline-2가 선을 그리지 못합니다(QA-433). 브라우저 기본 테두리도 :focus-visible에서만
     // 그려지고 이 클래스가 덮으므로, 마우스로 눌러 옮긴 포커스에는 테두리가 없습니다(같은 화면 단추의 FOCUS와 같은 모양).
+    // 결과 목록만 테두리를 상자 바깥(offset 0)에 그립니다. 안쪽(-outline-offset-2)이면 위치를 가진 자식(sticky 날짜 머리 z-10·고른 줄 relative,
+    // 둘 다 불투명 바탕)이 목록의 테두리보다 나중에 칠해져 날짜 머리·고른 줄마다 좌우 변이 끊기고, lg 미만에서는 첫 자식이 날짜 머리라 윗변이
+    // 보이지 않았습니다. 바깥 2px는 이웃의 경계선(위 줄 border-b, lg 이상 왼쪽 칸 border-r·xl 오른쪽 칸 border-l) 위에 겹쳐 그려집니다.
     body = empty ? (
       <div
         ref={emptyRef}
@@ -386,7 +389,7 @@ export function FeedPanel({
         tabIndex={0}
         aria-activedescendant={selectedIndex >= 0 ? optionId(selectedIndex) : undefined}
         onKeyDown={onListKeyDown}
-        className="focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+        className="focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
       >
         {/* 칸 머리(넓은 화면) — 낭독기는 줄마다 글을 읽으므로 장식으로 둡니다. */}
         <div aria-hidden="true" className="hidden grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] gap-3 border-b border-border px-3 py-1.5 text-xs text-text-3 lg:grid">

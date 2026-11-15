@@ -147,6 +147,19 @@ function focusVisibleOutline(className: string): { style: string; width: string 
   return { style, width };
 }
 
+/** :focus-visible 바깥선의 offset(px) — outline-offset-<n>은 n px, -outline-offset-<n>은 -n px, 없으면 0(브라우저 처음 값). */
+function focusVisibleOutlineOffset(className: string): number {
+  let offset = 0;
+  for (const variant of ["", "focus:", "focus-visible:"]) {
+    for (const token of className.split(/\s+/)) {
+      if (variant && !token.startsWith(variant)) continue;
+      const hit = /^(-?)outline-offset-(\d+)$/.exec(token.slice(variant.length));
+      if (hit) offset = (hit[1] ? -1 : 1) * Number(hit[2]);
+    }
+  }
+  return offset;
+}
+
 /** 포커스 테두리를 그리겠다는 클래스(focus:·focus-visible:의 바깥선 폭)가 있는 조각. */
 const FOCUS_OUTLINE_WIDTH = /(?:^|\s)(?:focus|focus-visible):outline(?:-\d+)?(?:\s|$)/;
 
@@ -162,6 +175,17 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const list = await screen.findByRole("listbox", { name: "결과" });
     expect(focusVisibleOutline(list.className)).toEqual({ style: "solid", width: "2" });
+  });
+
+  // 검토 지적: 목록의 테두리를 안쪽(-outline-offset-2)에 그리면 위치를 가진 자식(sticky 날짜 머리 z-10·고른 줄 relative, 둘 다 불투명 바탕)이
+  // 나중에 칠해져 테두리를 덮습니다 — Chromium 재현에서 날짜 머리·고른 줄 높이마다 좌우 변이 끊기고 윗변이 보이지 않았습니다. jsdom은 칠하는
+  // 차례를 계산하지 않으므로 테두리가 상자 바깥(offset 0 이상)에 있다는 클래스 약속으로 봅니다.
+  it("결과 목록의 테두리는 상자 바깥(offset 0 이상)에 그려 날짜 머리·고른 줄이 덮지 못한다", async () => {
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const header = within(list).getAllByRole("group")[0].firstElementChild as HTMLElement;
+    expect(header.className).toMatch(/(?:^|\s)sticky(?:\s|$)/); // 덮을 수 있는 자식이 아직 있다(이 시험이 지키는 까닭)
+    expect(focusVisibleOutlineOffset(list.className)).toBeGreaterThanOrEqual(0);
   });
 
   it("받는 중 줄(p[role=status] — '다시 확인' 뒤 포커스 자리)도 실선 2px 테두리를 그린다", async () => {
