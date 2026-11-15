@@ -144,3 +144,13 @@
 - Recharts SVG 속성 안의 `var()`가 Firefox·Safari에서 풀리는지 확인하지 않았습니다 [추정 — 위험]. P1에서 QA 스택으로 확인하고, 안 되면 `charts/frame`이 계산한 값을 넘깁니다.
 - 실제 계좌·ISA·실제 매매의 재배치는 이 결정 밖입니다. 하게 되면 새 결정(사용자 승인)과 경계 시험·`realTradeScreen.test`를 그대로 두는 조건으로 합니다.
 - 코드 주석의 Coinbase 언급(조사 시점 frontend/src 23개 파일)은 고치러 들어간 파일에서만 고칩니다.
+
+## P1 구현 메모 (2026-11-15, 브랜치 `wb-p1`)
+
+- 결정 2·3·10의 코드가 들어갔습니다: `:root` 어두운 한 벌·`color-scheme: dark`, 테마 전환 제거(남은 `localStorage` `theme`는 `lib/legacyTheme.ts`가 지움), 옛 색 별칭 다섯은 이름만 바꾸는 커밋으로 지움,
+  모서리 4px, 새 토큰 `surface-3`·`border-subtle`·`scrim`. 지키는 시험 `lib/__tests__/themeTokens.test.ts`는 블록 목록을 받는 대비 행렬과 금지 쌍 소스 검사입니다.
+- 결정 3의 accent 틴트 두 자리는 P1에서 재현 시험만 넣고(QA-459, `it.fails`) 고침은 P2(D1 전)로 옮겼습니다 — 명세 §3-2의 '토큰 커밋보다 먼저'와 순서만 다르고, D1은 P1+P2를 함께 배포합니다.
+- 계열 색: 계좌2 `#bd6bbd`(모든 쌍으로는 파랑과 색약 6.3 — 범례 이름이 보조 부호), 한국 K40 참고선은 옅은 중립 `#a7b0bd` 점선(어두운 밝기 띠 안에서 다섯 계좌 색 모두와 정상 15를 넘는 색을
+  찾지 못함), 계좌 상세 기타 `#6e6e7c`. 숫자는 실행 명세 §3-5.
+- 글자 단계: 명세 §3-6의 일곱 단계를 갖췄고, 없앨 옛 단계(display·display-sm·title-1·title-3·body-md)는 쓰는 부품을 다시 짜는 P2·P4·P6까지 값 그대로 남깁니다.
+- 아직 못 한 것: Recharts SVG 속성 안 `var()`의 Firefox·Safari 확인과 QA 스택 개편 전 기준(명세 §9-9) — QA 스택이 필요해 D1 전 확인으로 넘깁니다.

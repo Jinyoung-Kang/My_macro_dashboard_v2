@@ -8,7 +8,7 @@
 | 단계 | 내용 | 상태 | 배포 |
 |---|---|---|---|
 | P0 | 문서(ADR 0042·명세·이 기록·가리키는 줄) + 시험 묶음(대비 행렬·12px 하한·조작 44px·팔레트 기록·데이터 칸 강조색 금지) | 문서 끝(아래 §P0), 시험 묶음·QA 스택 개편 전 기준 남음 | 없음 |
-| P1 | 토큰·테마·팔레트 | 시작 전 | P2와 함께 |
+| P1 | 토큰·테마·팔레트 | 코드·문서 끝(아래 §P1, 브랜치 `wb-p1`) — QA-459 고침은 P2, Recharts `var()` 브라우저 확인과 QA 스택 개편 전 기준은 남음 | P2와 함께 |
 | P2 | 공용 키트 | 시작 전 | D1 |
 | P3 | 셸(나무 메뉴·빵부스러기·명령 팔레트, Radix 두 개) | 시작 전 | P4와 함께 |
 | P4 | 대상 문법(상세 3종·홈) | 시작 전 | D2 |
@@ -55,3 +55,44 @@
 
 명세 §9-1~9-5. 지금 어기는 자리는 결함 번호를 받아 `it.fails`로 넣고 P1·P2에서 고칩니다. P1 전에 감사 스크립트(`scripts/qa/ui-audit.js`)를 만들고 QA 스택에서 개편 전
 기준(캡처·DOM 감사 숫자)을 재어 숫자를 docs/qa에 기록합니다(명세 §9-9).
+
+## P1 — 토큰·테마·팔레트 (2026-11-15, 브랜치 `wb-p1` — `606ad301`에서)
+
+커밋(순서대로 — 옮기는 커밋과 고치는 커밋을 나눔):
+
+| 커밋 | 종류 | 내용 |
+|---|---|---|
+| `d558cd67` | 이름만 | 옛 색 별칭 다섯을 대상 토큰 클래스로(70개 파일 587곳 — `text-muted`→`text-text-3`, `text-body`→`text-text-2`, `text-bright`→`text-text`, `bg-canvas`→`bg-bg`, `bg-surface-hover`→`bg-surface-2`, 변형·투명도 그대로), `@theme inline`의 별칭 정의 지움. codemod는 작업 폴더의 파이썬 스크립트(접두어 + 뒤에 글자·`-`가 없는 이름만 — `text-body-md`는 그대로) |
+| `6aee9438` | 옮김 | `searchTheme.test.ts` → `themeTokens.test.ts`(내용 그대로, 가리키는 경로 둘) |
+| `47a124c7` | 옮김 | 글자 단계 `title-2`→`heading`, `label`→`body`(값 같음) |
+| `d642ce9d` | 고침 | `:root` 어두운 한 벌(§3-2 표 값, `color-scheme: dark`), 라이트·`data-theme`·`prefers-color-scheme` 블록 지움, 새 `surface-3`·`border-subtle`·`scrim`, 상승 `#ff6b6b`, 모서리 4px, 범위 블록은 `:root`와 같은 값. 대비 행렬 시험 |
+| `e054573c` | 시험 | QA-459 재현(accent 틴트 위 accent 글자 — 금지 쌍 소스 검사, `it.fails`) |
+| `972c34b1` | 고침 | 글자 단계 §3-6(running·heading-sm·value-lg 더함), 고정폭 스택 앞에 `ui-monospace` |
+| `032f3670` | 고침 | 테마 전환 제거(`ThemeSwitch`·`lib/theme.ts`·`hooks/useTheme`과 시험 셋), 남은 `localStorage` `theme`는 `lib/legacyTheme.ts`의 첫 페인트 스크립트가 try/catch 안에서 지움 |
+| `6e1bab63` | 고침 | 팔레트(계좌2 `#bd6bbd`, K40 참고선 `#a7b0bd`, 계좌 상세 기타 `#6e6e7c`), 대화상자 `bg-scrim`, 차트 툴팁 4px·surface-2, 검증기 결과는 명세 §3-5 표 |
+
+정한 것·명세와 다른 것:
+- **QA-459의 고침 순서**: 명세 §3-2·§8-2는 '토큰 값을 바꾸는 커밋보다 먼저' 두 자리의 글자를 `text-text`로 바꾸라고 했지만, 워크플로가 두 자리(`SideNav` 현재 메뉴·`filterChipClasses` 켠 칩)를
+  공용 키트 단계(P2)에 맡겼습니다. 그래서 P1에서는 재현 시험(`it.fails`)만 넣었고, P1 끝 상태에서는 두 자리가 4.47:1입니다. D1은 P1+P2를 함께 배포하므로 미달 상태로 나가지는 않습니다 —
+  P2가 고치며 `themeTokens.test.ts`의 `it.fails`를 `it`으로 바꿉니다.
+- **대비 행렬 시험**(`lib/__tests__/themeTokens.test.ts`): 토큰 블록 목록(`TOKEN_BLOCKS` — 지금 `:root` 하나)을 받아 글자 × 면(bg·surface·surface-2) 4.5, surface-3 위와 틴트 위에서 4.5에 못 미치는
+  토큰을 값에서 계산해 금지 목록(`FORBIDDEN_ON_SURFACE_3` — text-3·neutral·accent·danger, `FORBIDDEN_TONE_ON_TINT` — accent)과 대조합니다(값을 바꿔 새로 못 미치는 토큰이 생기면 목록과 소스 검사에 더하라는 뜻).
+  neutral은 text-3과 같은 값이라 surface-3 금지에 넣었습니다(명세 표에는 없던 한 줄). 금지 쌍 소스 검사는 문자열·템플릿 조각 하나 안의 바탕·글자 클래스 쌍을 변형 접두어·투명도를 떼고 봅니다 —
+  부모에게서 물려받는 글자색은 보지 않습니다(한계, 시험 머리 주석). 범위 블록은 `:root`와 같은 값만 다시 적는지 봅니다(P7에서 걷어 낼 때 지움).
+- **글자 단계**: 명세 §3-6이 없앤 단계(display·display-sm·title-1·title-3·body-md)는 값 그대로 남기고 '옛 단계'로 표시했습니다 — 쓰는 부품(Hero·PageHeader·카드 제목·인증 머리·AssetRow 제목·상세 AI 요약)을
+  P1에서 바꾸면 그 부품을 다시 짜는 P2·P4·P6과 겹치기 때문입니다. 값이 같은 둘만 새 이름으로 옮겼습니다.
+- **테마 값 지우기**: 명세 §4의 '한 번 try/catch 안에서 지움'은 매 페이지 첫 페인트 전 스크립트 한 줄(`removeItem` 한 번)로 했습니다(값을 읽지 않음, 지울 값이 없으면 아무 일 없음).
+  `<html>`에 테마 속성을 붙이지 않으므로 `suppressHydrationWarning`도 뺐습니다.
+- **팔레트**(명세 §3-5 표에 숫자): 계좌2는 명세대로 `#bd6bbd` — 순자산 곡선 순서의 이웃 쌍은 모두 통과지만, 모든 쌍으로는 파랑과 색약 6.3(경고 띠)이라 범례 이름이 보조 부호입니다. 같은 조건에서 모든 쌍이 8을 넘는
+  자주(`#ba5db3`)가 있어 표 메모에 남겼습니다(바꾸려면 사용자 확인). K40 참고선은 어두운 밝기 띠 안에서 다섯 계좌 색 모두와 정상 15를 넘는 색이 없어 옅은 중립 `#a7b0bd` 점선으로,
+  금색은 주의 색과 거의 같아 버렸습니다. 환율 4색·krx·cot·등락 막대는 통과해 그대로입니다(cot 회색↔파랑은 모든 쌍으로 정상 14.9).
+  검증기는 dataviz skill 묶음의 `validate_palette.js`를 작업 폴더에 복사해 `--mode dark`로 돌렸습니다(저장소에는 넣지 않음).
+- 팔레트 기록 시험(`components/charts/__tests__/paletteRecord.test.ts`, 명세 §9-4)과 데이터 칸 강조색 금지 시험(§9-5)은 이 단계에서 만들지 않았습니다(P0 시험 묶음의 남은 것).
+- 모의매매 쪽은 색(계좌2·K40·기타 회색)과 주석만 바뀌었고, 시험은 hex를 고정한 두 줄(`paperAccountDetail` 도넛 색, `paperClaude2` 고리 색)만 고쳤습니다. 실제 계좌·ISA·실제 매매 모듈은 건드리지 않았습니다.
+
+확인:
+- 이 PC(작업 폴더)에서 `npx vitest run` 전체(커밋마다 — 마지막 211개 파일 2,846 통과 + 1 예상 실패 QA-459), `npx tsc --noEmit -p .`, 바꾼 파일의 eslint, `npm run check`. Tailwind 컴파일(작업 폴더의 postcss 스크립트)로
+  `text-heading`·`bg-scrim`·`bg-surface-2/60` 같은 바뀐 클래스가 나오는지 봤고, `next build --webpack`도 통과했습니다(결과 CSS에 `data-theme`·`prefers-color-scheme` 0, `color-scheme:dark`).
+  `make test`·QA 스택·브라우저는 돌리지 않았습니다.
+- **남은 확인**: Recharts SVG 속성 안 `var()`가 Firefox·Safari에서 풀리는지(ADR 0042 남은 위험)와 QA 스택의 개편 전 기준(§9-9)은 이 단계에서 하지 못했습니다 — QA 스택이 필요합니다.
+  D1 전 QA 스택 확인 때 모든 화면이 어두운 바탕·4px 모서리로 바뀌었는지(배치 그대로), 대화상자 가림, 차트 툴팁, 모의 개요(계좌2 자주·K40 참고선)와 계좌 상세 도넛을 봅니다.
