@@ -58,8 +58,9 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
       expect(classes(name)).not.toContain("truncate");
       expect(classes(name)).not.toContain("lg:truncate");
       expect(classes(name)).not.toContain("line-clamp-2");
-      // 28rem 이상의 이름은 두 줄까지(아래 '넓은 패널' 시험).
-      expect(classes(name)).toEqual(expect.arrayContaining(["break-words", "@md:line-clamp-2"]));
+      // 28rem 이상의 이름도 끝까지 줄바꿈(아래 '넓은 패널' 시험).
+      expect(classes(name)).toContain("break-words");
+      expect(classes(name).filter((word) => /line-clamp/.test(word))).toEqual([]);
       expect(name.getAttribute("title")).toBe(link.name);
 
       const detail = within(button).getByText(link.detail!);
@@ -86,9 +87,10 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
 describe("연결 탭 '목록' 보기 — 넓은 패널(28rem 이상)에서 끝만 다른 긴 이름도 가름(QA 재확인 개선 제안)", () => {
   // 1440 화면(패널 570px)에서 이름 칸(약 351px)이 한 줄 말줄임(@md:truncate)이라, 약 50자를 넘고 끝만 다른 GLEIF 법인명 둘이
   // 'Example Subsidiary International Holdings Asia Pacific …'로 똑같이 보였습니다(전체 이름은 title, 설명 줄의 LEI만 달랐음).
-  // 이제 28rem 이상에서도 이름을 두 줄까지 줄바꿈하고(넘으면 둘째 줄 끝에서 말줄임), 오른쪽 메타 칸·title·줄 높이는 그대로입니다.
-  // jsdom은 줄 수를 재지 못하므로 클래스를 대조합니다(Chromium에서 같은 마크업으로 잰 값: 패널 570·640에서 두 줄로 끝까지 보임 — 커밋 글).
-  // 바꾸기 전 실패: 이름 span의 넓은 패널 클래스가 '@md:truncate'(한 줄)라 '@md:line-clamp-2'가 없음.
+  // 첫 고침은 28rem 이상에서 두 줄까지(@md:line-clamp-2)였는데, 이름 칸이 약 340px 미만(1366 화면 패널 496, lg 약 1030~1140 화면 패널 448~약 540)이면
+  // 이 110자 이름이 세 줄 이상이라 둘째 줄 끝에서 똑같이 잘렸습니다(검토 지적). 이제 28rem 이상에서도 좁은 패널처럼 끝까지 줄바꿈하고(줄 수 제한 없음),
+  // 오른쪽 메타 칸·title·설명 한 줄·줄 높이는 그대로입니다. jsdom은 줄 수를 재지 못하므로 클래스를 대조합니다(Chromium에서 같은 마크업으로 잰 값 —
+  // 커밋 글). 바꾸기 전 실패: 이름 span의 넓은 패널 클래스가 '@md:line-clamp-2'(두 줄 제한).
   const LONG: SearchLink[] = [1, 2].map((n) => ({
     relation: "subsidiary",
     key: null,
@@ -98,7 +100,7 @@ describe("연결 탭 '목록' 보기 — 넓은 패널(28rem 이상)에서 끝�
     detail: `SG · LEI 0000EXAMPLE00000000L0${n}`,
   }));
 
-  it("이름은 두 줄까지(@md:line-clamp-2 — 한 줄 말줄임이 아님)·전체 이름은 title, 설명은 한 줄, 메타는 오른쪽 칸, 줄 높이 lg 미만 44px", () => {
+  it("이름은 끝까지 줄바꿈(줄 수 제한·말줄임 없음)·전체 이름은 title, 설명은 한 줄, 메타는 오른쪽 칸, 줄 높이 lg 미만 44px", () => {
     const view: LinksView = { groups: linkGroups([...LONG, INSIDER]), extra: null, sources: [], empty: null, entityNote: null };
     render(<LinksPanel view={view} centerName="Example Corp" onTarget={() => {}} onRetry={() => {}} />);
     for (const link of [...LONG, INSIDER]) {
@@ -106,8 +108,8 @@ describe("연결 탭 '목록' 보기 — 넓은 패널(28rem 이상)에서 끝�
       expect(classes(button)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-8"]));
 
       const name = within(button).getByText(link.name);
-      expect(classes(name)).toEqual(expect.arrayContaining(["break-words", "@md:line-clamp-2"]));
-      expect(classes(name).filter((word) => /truncate/.test(word))).toEqual([]);
+      expect(classes(name)).toContain("break-words");
+      expect(classes(name).filter((word) => /truncate|line-clamp/.test(word))).toEqual([]);
       expect(name.getAttribute("title")).toBe(link.name);
 
       const detail = within(button).getByText(link.detail!);
