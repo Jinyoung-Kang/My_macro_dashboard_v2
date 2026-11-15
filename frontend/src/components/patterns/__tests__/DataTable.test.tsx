@@ -111,7 +111,7 @@ describe("DataTable — 네 상태", () => {
   // QA-503: 열이 많은 표는 좁은 화면에서 상자보다 넓어지는데(머리 칸 nowrap), 행 없음 문구가 표 전체 폭의 가운데에 놓여 상자 밖으로 밀렸다
   // (390px '최근 실제 주문' — '이 기능이 낸 '까지만 보임). 문구를 상자의 보이는 폭(100cqw)에 붙여 두면 넘겨도 그 자리에 남는다.
   // jsdom에는 배치가 없으므로 구조(클래스)로 단언합니다 — 잰 값은 QA 스택에서 확인.
-  it.fails("행이 없으면 emptyText는 감싼 상자의 보이는 폭에 붙는다 — 상자는 크기 질의 기준(@container), 문구는 sticky left-0 w-[100cqw](QA-503)", () => {
+  it("행이 없으면 emptyText는 감싼 상자의 보이는 폭에 붙는다 — 상자는 크기 질의 기준(@container), 문구는 sticky left-0 w-[100cqw](QA-503)", () => {
     const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
     render(<DataTable columns={COLUMNS} rows={[]} rowKey={(row) => row.ticker} caption="최근 주문" emptyText="주문이 없습니다." />);
     const cell = screen.getByRole("cell", { name: "주문이 없습니다." });
@@ -120,6 +120,9 @@ describe("DataTable — 네 상태", () => {
     expect(classesOf(text)).toEqual(expect.arrayContaining(["sticky", "left-0", "w-[100cqw]"]));
     // 100cqw가 감싼 상자의 보이는 폭이 되려면 상자가 크기 질의 기준(container-type: inline-size)이어야 합니다.
     expect(classesOf(screen.getByRole("region", { name: "최근 주문 (좌우 스크롤)" }))).toContain("@container");
+    // 여백·글 모양은 칸이 아니라 안쪽 문구가 집니다 — 칸에 여백이 남으면 100cqw 문구가 상자 오른쪽 끝을 넘습니다. 모양(위아래 24px·가운데·보조 글자)은 예전 그대로.
+    expect(classesOf(cell)).toEqual(["p-0"]);
+    expect(classesOf(text)).toEqual(expect.arrayContaining(["px-3", "py-6", "text-center", "text-sm", "text-text-3"]));
   });
 
   it("추정·대리 — 칸 안의 배지가 그대로 보인다", () => {
