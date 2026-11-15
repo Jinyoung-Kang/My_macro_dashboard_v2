@@ -389,7 +389,8 @@ describe("홈 — 불러오는 중·값 없음", () => {
     let line = await within(region("데이터 저장소 상태")).findByRole("link");
     expect(within(line).getByText(COLLECTOR_UNREACHABLE_NOTE)).toBeTruthy();
     expect(line.textContent).toContain("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 —값 없음");
-    expect(within(line).getByText(/^수집 태스크 오류/).className).toContain("text-warn");
+    // 수 묶음은 주의 아이콘과 함께 그려(QA-505) 색은 글을 감싼 상태 글(StatusText)에 있습니다.
+    expect(within(line).getByText(/^수집 태스크 오류/).closest(".text-warn")).not.toBeNull();
     unmount();
 
     const missing = issues(0, 0);
@@ -397,14 +398,14 @@ describe("홈 — 불러오는 중·값 없음", () => {
     reads = { ...happyReads(), [ISSUES]: missing };
     renderHome(OWNER);
     line = await within(region("데이터 저장소 상태")).findByRole("link");
-    expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개").className).toContain("text-warn");
+    expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개").closest(".text-warn")).not.toBeNull();
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
   });
 
   // QA-505: 저장소 상태 줄의 수 묶음은 오류면 위험색(text-danger), 경고·누락이면 주의색(text-warn)으로 글만 칠하고 아이콘이 없었습니다.
   // 위험색 #e76a6e는 상승 빨강 #ff6b6b와 ΔE 4.4로 거의 같은 색이라(W4) 시장 행의 상승 값과 같은 뜻으로 읽힙니다 — 명세 §3-2·ADR 0042
   // 결정 3 '상태·위험은 늘 아이콘 + 글'. 글에 이미 '오류'·'경고'가 있어 아이콘은 장식(aria-hidden)이고, 모두 0이면 상태가 아니라 아이콘이 없습니다.
-  it.fails("QA-505: 오류가 있으면 수 묶음 앞에 아이콘 + 위험색, 경고만 있으면 아이콘 + 주의색, 모두 0이면 아이콘 없음", async () => {
+  it("QA-505: 오류가 있으면 수 묶음 앞에 아이콘 + 위험색, 경고만 있으면 아이콘 + 주의색, 모두 0이면 아이콘 없음", async () => {
     const countGroup = async (response: ReturnType<typeof issues>, toneClass: string) => {
       reads = { ...happyReads(), [ISSUES]: response };
       const { unmount } = renderHome(OWNER);

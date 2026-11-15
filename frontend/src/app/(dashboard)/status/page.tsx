@@ -477,8 +477,23 @@ function IssuesPanel() {
       {data && (
         <>
           <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Metric label="현재 오류" value={`${counts?.errors ?? 0}건`} tone={counts?.errors ? "text-danger" : undefined} />
-            <Metric label="현재 경고" value={`${counts?.warnings ?? 0}건`} tone={counts?.warnings ? "text-warn" : undefined} />
+            {/* 오류·경고 수는 글 색만으로 전하지 않고 아이콘을 붙입니다(위험색은 상승 빨강과 거의 같은 색 — W4, QA-505). 이름에 이미
+                '오류'·'경고'가 있어 읽어 주는 머리말은 더하지 않습니다. 0건은 상태가 아니라 아이콘이 없습니다. align-top은 값 줄 안의
+                inline-flex가 기준선에 앉아 줄이 2~3px 높아지지 않게 합니다. */}
+            <Metric
+              label="현재 오류"
+              value={counts?.errors ? (
+                <StatusText tone="danger" srPrefix="" iconSize={20} className="align-top">{`${counts.errors}건`}</StatusText>
+              ) : `${counts?.errors ?? 0}건`}
+              tone={counts?.errors ? "text-danger" : undefined}
+            />
+            <Metric
+              label="현재 경고"
+              value={counts?.warnings ? (
+                <StatusText tone="warn" srPrefix="" iconSize={20} className="align-top">{`${counts.warnings}건`}</StatusText>
+              ) : `${counts?.warnings ?? 0}건`}
+              tone={counts?.warnings ? "text-warn" : undefined}
+            />
             <Metric label="최근 실패 유형" value={`${counts?.recentGroups ?? 0}개`} />
             <Metric label="누락 데이터셋" value={missingUnknown ? EMPTY : formatWithUnit(counts?.missingDatasets, 0, "개")} />
           </div>
