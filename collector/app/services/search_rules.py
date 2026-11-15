@@ -6,7 +6,8 @@ app/services/search_rules.py
    시각을 모르거나 지금 + 1일을 넘는 미래면 noTime.
 2. 중국어 제목: 한글(가-힣)이나 가나(ぁ-ヿ)가 하나라도 있으면 남김. 가나가 없어도 일본 법인 형태(株式会社·有限会社·合同会社 등 — 이름 앞·뒤이거나
    앞이나 뒤 글자가 한자가 아닐 때만)나 일본 신자체(중국 간체·번체·홍콩 표에 없는 글자)·'々'가 있으면 일본어로 보고 남김(QA-441 — 한자로만
-   쓴 GLEIF 일본 법인명).
+   쓴 GLEIF 일본 법인명). 다만 간체 전용 글자(GB 2312에만 있고 cp932·Big5에 없는 글자)가 하나라도 있으면 이 표지를 보지 않음(일본 회사 이름을
+   그대로 옮겨 쓴 간체 중국어 글).
    아니면 한자(一-鿿) 2자 이상이고 한자 / (한자 + 라틴 글자) ≥ 0.3이면 뺌.
 3. 매체 제외: 도메인이 '.cn'으로 끝나거나 목록의 도메인과 점 경계로 같거나, 매체 이름이 목록의 이름과 대소문자 무시 완전 일치면 뺌.
    목록의 처음 값은 진행 기록(2026-11-14-info-search-progress.md '매체 제외 목록의 처음 값')의 확실한 것만입니다. 이름이 다른 나라의 매체와
@@ -202,15 +203,38 @@ def has_hangul(text: str | None) -> bool:
     return bool(text) and bool(_HANGUL.search(text))
 
 
+def is_simplified_only(char: str) -> bool:
+    """
+    간체 전용 글자인가 — 중국 본토 표(GB 2312)에는 있고 일본어 표(cp932)·번체 표(Big5)에는 없는 글자(发·银·铁 등). 일본어 글(GLEIF 법인명 포함)에는
+    나오지 않으므로, 이 글자가 있는 글은 일본어 표지가 있어도 중국어로 봅니다(QA-441 검토 지적).
+    """
+    try:
+        char.encode("gb2312")
+    except UnicodeEncodeError:
+        return False
+    for codec in ("cp932", "big5"):
+        try:
+            char.encode(codec)
+        except UnicodeEncodeError:
+            continue
+        return False
+    return True
+
+
 def _japanese_without_kana(text: str) -> bool:
-    """가나 없이도 일본어인가(QA-441) — 법인 형태가 놓이는 자리의 일본 법인 형태(株式会社·有限会社·合同会社 등)나 일본 신자체·'々'가 있으면."""
-    return bool(_JA_COMPANY.search(text) or _JA_MARK.search(text))
+    """
+    가나 없이도 일본어인가(QA-441) — 법인 형태가 놓이는 자리의 일본 법인 형태(株式会社·有限会社·合同会社 등)나 일본 신자체·'々'가 있으면.
+    간체 전용 글자가 하나라도 있으면 아님(일본 회사 이름 'XX株式会社'나 신자체를 그대로 옮겨 쓴 간체 중국어 글 — 검토 지적).
+    """
+    if not (_JA_COMPANY.search(text) or _JA_MARK.search(text)):
+        return False
+    return not any(is_simplified_only(char) for char in _HAN.findall(text))
 
 
 def is_chinese_title(title: str | None) -> bool:
     """
-    중국어 제목인가 — 한글·가나가 있으면 아님(한국어·일본어), 가나가 없어도 일본 법인 형태·신자체가 있으면 아님(일본어 — QA-441),
-    아니면 한자 2자 이상이고 한자/(한자+라틴) ≥ 0.3.
+    중국어 제목인가 — 한글·가나가 있으면 아님(한국어·일본어), 가나가 없어도 간체 전용 글자 없이 일본 법인 형태·신자체가 있으면 아님(일본어 —
+    QA-441), 아니면 한자 2자 이상이고 한자/(한자+라틴) ≥ 0.3.
     """
     if not title or _HANGUL.search(title) or _KANA.search(title) or _japanese_without_kana(title):
         return False

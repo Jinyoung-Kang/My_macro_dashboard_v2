@@ -3,7 +3,8 @@ tests/test_search_qa_rules.py
 정보 검색 규칙(계약 §4·§9-7)의 QA 결함 재현·고정 시험 — 네트워크·DB 없이 합성 값으로(실제 법인 이름을 쓰지 않음).
 
 - QA-441: 가나 없이 한자로만 쓴 일본 법인명('株式会社…'·'…株式会社' — GLEIF 법인명의 꼴)과 일본 신자체가 든 제목은 중국어 제목으로 빼지 않음
-  (연결 탭 GLEIF 이름 포함). 중국어 제목(간체·번체 '股份有限公司', '会社'가 낱말 경계에 걸친 중국어 글)은 그대로 뺌
+  (연결 탭 GLEIF 이름 포함). 중국어 제목(간체·번체 '股份有限公司', '会社'가 낱말 경계에 걸친 중국어 글, 일본 법인 형태·신자체를 옮겨 쓴
+  간체 글)은 그대로 뺌
 - QA-442: 같은 매체의 다른 표기(도메인 꼴 이름·붙여 쓴 이름·꼬리 'Media')는 같은 사건 묶음의 '매체 n곳'에서 한 곳으로 셈 — 화면
   (infoSearch publisherCount)과 같은 고정본(fixtures/search/publisher_keys.json)으로 대조. 서로 다른 매체는 그대로 따로
 """
@@ -78,11 +79,31 @@ def test_가나가_있거나_라틴이_많은_글은_지금처럼_남는다(titl
     "架空芯片上海有限公司",
     "两会社会保障议题",                     # '会社'가 낱말 경계(两会 + 社会)에 걸친 중국어 글
     "签订劳动合同会社保自动缴纳吗",          # '合同会社'가 낱말 경계(合同 + 会 + 社保)에 걸친 중국어 글(검토 지적)
+    # 일본 회사 이름(법인 형태)이나 신자체를 그대로 옮겨 쓴 간체 중국어 글 — 간체 전용 글자가 있으면 일본어 표지를 보지 않음(검토 지적)
+    "株式会社架空银行",
+    "架空日联银行株式会社",
+    "架空株式会社 发布财报",
+    "架空元気饮料发布新品",
     "華爾街日報：美聯儲官員暗示降息",
     "英伟达发布新一代芯片",
 ])
 def test_중국어_제목은_그대로_빠진다(title):
     assert rules.is_chinese_title(title) is True
+
+
+def test_간체_전용_글자는_GB2312에만_있고_일본어·번체_표에는_없는_글자다():
+    """일본어 글(시험의 일본어 법인명·신자체 목록·법인 형태 글자)에는 간체 전용 글자가 없어야 QA-441의 일본어 표지가 그대로 삶."""
+    for char in "发银铁购钢联财报华设饮":
+        assert rules.is_simplified_only(char) is True, char
+    for char in "会社株式有限合同銀行信託経済々一中国日本某":
+        assert rules.is_simplified_only(char) is False, char
+    japanese = "".join(JAPANESE_WITHOUT_KANA) + rules.JA_ONLY_KANJI
+    assert [char for char in japanese if rules.is_simplified_only(char)] == []
+    for char in "发银铁":
+        char.encode("gb2312")
+        for codec in ("cp932", "big5"):
+            with pytest.raises(UnicodeEncodeError):
+                char.encode(codec)
 
 
 @pytest.mark.parametrize(("text", "japanese"), [
