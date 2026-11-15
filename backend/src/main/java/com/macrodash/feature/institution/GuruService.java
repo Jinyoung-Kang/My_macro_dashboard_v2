@@ -189,7 +189,9 @@ public class GuruService {
      * 잘린 공시 이름으로 볼 최소 길이(QA-436). 13F 공시 이름(nameOfIssuer)은 제출자마다 정해진 폭에서 잘려 들어와(관측: 28자
      * 'MITSUBISHI UFJ FINANCIAL GRO', 30자 'MITSUBISHI UFJ FINANCIAL G ADR') 회사의 영문 이름 전체로 찾으면 걸리지 않았습니다.
      * 이보다 짧은 이름은 폭에 닿지 않은 온전한 이름이라, 검색어가 그 이름으로 시작해도 다른 종목으로 봅니다('ISHARES TR'로
-     * 'ISHARES TR RUSSELL 2000'을 찾지 않음).
+     * 'ISHARES TR RUSSELL 2000'을 찾지 않음). 이 길이 이상이면 잘렸는지를 가르지 않고 모두 잘린 이름처럼 봅니다 — 잘림은 낱말 가운데
+     * ('…FINANCIAL GRO')만큼 낱말 경계에서도 흔해 경계로는 가를 수 없고, 그래서 이 길이 이상인 온전한 이름(펀드 묶음 이름 같은 것)도
+     * 검색어가 그 이름 뒤에 낱말을 더 이어 가면 함께 걸립니다. 응답 줄마다 공시 이름과 CUSIP이 있어 화면이 공시 이름을 함께 적습니다.
      */
     static final int TRUNCATED_NAME_MIN_LENGTH = 24;
 
@@ -203,7 +205,9 @@ public class GuruService {
     /**
      * 보유 한 줄의 공시 이름이 검색어({@code needle} — 대문자, 앞뒤 공백 없음)와 맞는가. 이름에 검색어가 들어 있거나, 이름이 잘린
      * 이름({@value #TRUNCATED_NAME_MIN_LENGTH}자 이상)이고 끝의 증권 종류 낱말을 뗀 앞부분({@value #TRUNCATED_HEAD_MIN_LENGTH}자 이상)으로
-     * 검색어가 시작할 때입니다(QA-436). 줄여 적은 이름('FINANCIAL' → 'FINL')은 여전히 걸리지 않습니다.
+     * 검색어가 시작할 때입니다(QA-436). 잘렸는지는 길이로만 보므로 그 길이 이상의 온전한 이름도 검색어가 그 이름으로 시작하면 걸리고(낱말
+     * 경계에서 잘린 이름과 가를 수 없음), 검색어와 중간에서 갈라지는 이름은 걸리지 않습니다. 줄여 적은 이름('FINANCIAL' → 'FINL')은 여전히
+     * 걸리지 않습니다.
      */
     static boolean nameMatches(String name, String needle) {
         String upper = name.toUpperCase().trim();

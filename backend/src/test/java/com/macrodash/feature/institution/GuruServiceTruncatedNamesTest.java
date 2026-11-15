@@ -74,6 +74,23 @@ class GuruServiceTruncatedNamesTest {
     }
 
     @Test
+    @DisplayName("QA-436 잘렸는지는 길이로만 가른다 — 낱말 경계에서 잘린 이름도 걸리고, 그래서 24자 이상 온전한 이름도 검색어가 그 뒤에 낱말을 이어 가면 함께 걸린다")
+    void longNamesAreTreatedAsTruncatedEvenAtWordBoundaries() {
+        List<GuruService.HoldingRow> index = List.of(
+                // 같은 종목, 낱말 경계에서 잘린 이름(뒤의 'EQUITY'가 잘려 나감) — 경계에서 잘림은 낱말 가운데만큼 흔해 걸려야 함
+                row(1, "SYNTHETIC EXAMPLE DIVIDEND VALUE", "000000401", 2.0),
+                // 다른 종목, 24자 이상인 온전한 이름(펀드 묶음 이름 꼴) — 위와 가를 수 없어 검색어가 이 이름 뒤에 낱말을 이어 가면 함께 걸림(알려진 섞임)
+                row(2, "SYNTHETIC EXAMPLE TRADED FUND", "000000501", 1.0),
+                row(3, "SYNTHETIC EXAMPLE TRADED FUND II", "000000601", 0.5));
+        GuruService guru = new GuruService(mock(StoreReader.class));
+
+        assertThat(names(guru.holders(index, "SYNTHETIC EXAMPLE DIVIDEND VALUE EQUITY")))
+                .containsExactly("SYNTHETIC EXAMPLE DIVIDEND VALUE");
+        assertThat(names(guru.holders(index, "SYNTHETIC EXAMPLE TRADED FUND II")))
+                .containsExactly("SYNTHETIC EXAMPLE TRADED FUND", "SYNTHETIC EXAMPLE TRADED FUND II");
+    }
+
+    @Test
     @DisplayName("QA-436 지금까지의 규칙 그대로 — 이름 일부(대소문자 무시)로 찾으면 잘린 이름도 그 일부를 담고 있으면 걸린다")
     void containsRuleUnchanged() {
         List<GuruService.HoldingRow> index = List.of(
