@@ -303,11 +303,18 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(?:^|[;{}])\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(body)?.[1];
   };
+  /** 고대비 블록 안에서 선택자 목록에 그 선택자가 든 규칙들의 사용자 속성(--*)을 합친 것 — 규칙이 없으면 undefined. */
+  const forcedDeclarations = (selector: string) => {
+    const rules = [...forcedBody().matchAll(/([^{};]+)\{([^}]*)\}/g)]
+      .filter((match) => match[1].split(",").map((part) => part.trim()).includes(selector))
+      .map((match) => declarations(match[2]));
+    return rules.length > 0 ? (Object.assign({}, ...rules) as Record<string, string>) : undefined;
+  };
 
   it("QA-498: 맨 바깥 @media (forced-colors: active) 블록이 하나 — 그 :root가 차트 파일의 var() 토큰을 모두 시스템 색으로 다시 정의한다", () => {
-    const root = innerRule(forcedBody(), ":root");
+    const root = forcedDeclarations(":root");
     expect(root, `${FORCED} { :root { … } }`).toBeDefined();
-    const remapped = declarations(root ?? "");
+    const remapped = root ?? {};
     const tokens = chartTokens();
     expect(tokens.length).toBeGreaterThan(5);
     for (const token of tokens.filter((name) => !NOT_REMAPPED.has(name))) {
@@ -322,6 +329,22 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     const body = forcedBody();
     expect(innerRule(body, ".recharts-bar-rectangle path")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
     expect(innerRule(body, ".chart-ref-line :is(path, line)")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+  });
+
+  // QA-498(정보 검색 범위): 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적어, 고대비 :root의 시스템 색 재정의가 그 범위 안의
+  // SVG(연결 그림 LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에 어두운 상자
+  // rgb(28,33,39)·rgb(37,42,49)가 남음 — 범위 밖 같은 마크업은 Canvas). 범위 블록이 다시 적는 토큰 가운데 고대비 :root가 다시 정의하는 것은 범위
+  // 선택자에서도 같은 값이어야 하고, 두 선택자의 우선순위가 같으므로(레이어 밖, (0,1,0)) 고대비 블록이 범위 블록보다 뒤에 있어야 이깁니다.
+  // 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-498: 고대비 블록의 토큰 재정의가 정보 검색 범위([data-scope=\"search\"])에도 닿는다 — 범위가 다시 적는 토큰은 같은 시스템 색", () => {
+    const root = forcedDeclarations(":root") ?? {};
+    const shared = Object.keys(declarations(blockBody(SCOPE_SELECTOR))).filter((token) => token in root);
+    expect(shared.length).toBeGreaterThan(5);
+    const scope = forcedDeclarations(SCOPE_SELECTOR);
+    expect(scope, `${FORCED} { … ${SCOPE_SELECTOR} … }`).toBeDefined();
+    for (const token of shared) expect(scope?.[token], token).toBe(root[token]);
+    const order = (selector: string) => RULES.findIndex((rule) => rule.selector === selector);
+    expect(order(FORCED)).toBeGreaterThan(order(SCOPE_SELECTOR));
   });
 });
 
