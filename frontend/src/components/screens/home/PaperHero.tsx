@@ -114,8 +114,9 @@ export function PaperHero() {
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
       ) : (
-        // 구분선은 카드 가장자리까지 펼치고(-mx-6·lg:-mx-8 = 히어로 안쪽 여백), 줄 안쪽 여백(px-2·lg:px-3)을 더해 행 글자(행 자체 px-4·lg:px-5)를
-        // 히어로 글과 같은 세로줄(24·32px)에 맞춥니다.
+        // 구분선은 카드 가장자리까지 펼치고(음수 여백 = 패턴 Hero의 안쪽 여백), 줄 안쪽 여백 + 행 안쪽 여백(패턴 AssetRow) = Hero 안쪽 여백으로
+        // 행 글자를 히어로 글과 같은 세로줄에 둡니다. Hero·AssetRow 여백이 바뀌면 두 값을 함께 고칩니다 — HomeScreen 시험이 클래스로 대조합니다
+        // (어긋나면 구분선이 카드 밖으로 삐져나감).
         <ul className="-mx-6 divide-y divide-border border-y border-border lg:-mx-8">
           {model.rows.map((row, index) => (
             <li key={row.id} className="px-2 lg:px-3">
