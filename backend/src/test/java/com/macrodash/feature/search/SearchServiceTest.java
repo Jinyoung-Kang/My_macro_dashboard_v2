@@ -355,9 +355,9 @@ class SearchServiceTest {
               ],
               "sources": [
                 {"source": "google_ko", "label": "구글 뉴스(한국어)", "status": "ok", "count": 1,
-                 "dropped": {"old": 2, "noTime": 0, "chinese": 1, "excluded": 0}, "message": null},
+                 "dropped": {"old": 2, "noTime": 0, "chinese": 1, "excluded": 0, "duplicate": 1}, "message": null},
                 {"source": "wire", "label": "속보", "status": "ok", "count": 1,
-                 "dropped": {"old": 0, "noTime": 3, "chinese": 0, "excluded": 0}, "message": "합성 안내"},
+                 "dropped": {"old": 0, "noTime": 3, "chinese": 0, "excluded": 0, "duplicate": 2}, "message": "합성 안내"},
                 {"source": "info", "label": "수집 글", "status": "error", "count": 1,
                  "dropped": {"old": 1, "noTime": 0, "chinese": 0, "excluded": 0}, "message": "합성 사유"},
                 {"source": "guru", "label": "거장 견해", "status": "ok", "count": 1,
@@ -387,12 +387,14 @@ class SearchServiceTest {
         assertThat(sources.get(0).path("status").asString()).isEqualTo("ok");
         assertThat(sources.get(0).path("count").asInt()).isEqualTo(1);
         assertThat(sources.get(0).path("dropped").path("old").asInt()).as("공개 출처는 그대로").isEqualTo(2);
+        assertThat(sources.get(0).path("dropped").path("duplicate").asInt()).as("같은 글로 합친 수도 그대로(QA-437)").isEqualTo(1);
         for (int i = 1; i <= 3; i++) {
             JsonNode row = sources.get(i);
             assertThat(row.path("status").asString()).as(row.path("source").asString()).isEqualTo("owner_only");
             assertThat(row.path("count").asInt()).isZero();
             assertThat(row.get("message").isNull()).isTrue();
-            for (String key : List.of("old", "noTime", "chinese", "excluded")) {
+            for (String key : List.of("old", "noTime", "chinese", "excluded", "duplicate")) {
+                assertThat(row.path("dropped").has(key)).as(key).isTrue();
                 assertThat(row.path("dropped").path(key).asInt()).isZero();
             }
             assertThat(row.path("label").asString()).as("이름은 그대로").isNotBlank();

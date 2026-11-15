@@ -101,7 +101,6 @@ def _finviz_case(monkeypatch, answer_status: str) -> Net:
     return net
 
 
-@pytest.mark.xfail(strict=True, reason="QA-437: 수정 전 실패 — 관심 대상 수집과 같은 글뿐인 Finviz가 막 받았는데 '결과 없음'이고 합친 건수가 없음")
 def test_Finviz_줄이_모두_관심_대상_수집과_같은_글이어도_받음이고_합친_건수를_적는다(monkeypatch):
     _finviz_case(monkeypatch, "ok")
     out = search.feed("us:SYNB", "timeline", owner=False, external=True)
@@ -115,7 +114,6 @@ def test_Finviz_줄이_모두_관심_대상_수집과_같은_글이어도_받음
     assert sum(row["count"] for row in out["sources"]) == len(out["items"])
 
 
-@pytest.mark.xfail(strict=True, reason="QA-437: 수정 전 실패 — 캐시에서 읽은 Finviz도 합친 건수가 없어 '캐시 · 0건'만")
 def test_뉴스_탭의_캐시된_Finviz도_합친_건수를_적는다(monkeypatch):
     _finviz_case(monkeypatch, "cached")
     out = search.feed("us:SYNB", "news", owner=False, external=True)
@@ -124,7 +122,6 @@ def test_뉴스_탭의_캐시된_Finviz도_합친_건수를_적는다(monkeypatc
     assert finviz["dropped"].get("duplicate") == 3
 
 
-@pytest.mark.xfail(strict=True, reason="QA-437: 수정 전 실패 — 관심 대상 수집과 같은 글뿐인 Bing이 '결과 없음 · 0건'")
 def test_사람의_Bing_줄이_관심_대상_수집과_겹치면_합친_건수를_적는다(monkeypatch):
     net = Net(monkeypatch, PERSON)
     shared = [("Synth Investor backs new fund", "https://www.example.net/backs-fund", timedelta(days=1)),
@@ -143,7 +140,6 @@ def test_사람의_Bing_줄이_관심_대상_수집과_겹치면_합친_건수�
     assert (bing["status"], bing["count"], bing["dropped"].get("duplicate")) == ("ok", 1, 2)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-437: 수정 전 실패 — 같은 글로 합친 줄이 어디에도 세지 않아 받은 줄 수와 맞지 않음")
 def test_받은_줄은_이_출처_건수와_뺀_건수의_합(monkeypatch):
     """출처마다 받은 줄 = 이 출처 줄로 남은 수 + 뺀 수(2년 밖·시각 모름·중국어 제목·제외 매체·같은 글). 같은 출처 안의 같은 글도 셈."""
     net = Net(monkeypatch, COMPANY)

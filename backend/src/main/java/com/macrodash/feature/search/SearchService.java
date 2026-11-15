@@ -490,7 +490,7 @@ public class SearchService {
     }
 
     /**
-     * 회원에게 가는 결과에서 운영자 전용 줄을 지웁니다 — 줄은 빼고, 그 출처의 상태 줄은 {@code owner_only}·0건(거른 건수 0, 사유 없음),
+     * 회원에게 가는 결과에서 운영자 전용 줄을 지웁니다 — 줄은 빼고, 그 출처의 상태 줄은 {@code owner_only}·0건(거른 건수·같은 글로 합친 수 0, 사유 없음),
      * 남은 줄의 원문 팝업 id({@code readerId} — 운영자 화면 전용)는 null. 지운 줄이 있으면 받은 건수({@code rangeCounts})에서도 뺍니다.
      * 출처를 알 수 없는 줄(객체가 아니거나 {@code source}가 없거나 글이 아님)도 운영자 전용인지 가릴 수 없어 지웁니다(닫힌 실패).
      * 출처 칸이 없는 상태 줄은 본문이 없으므로 그대로 둡니다.
@@ -519,7 +519,7 @@ public class SearchService {
                     row.put("status", OWNER_ONLY);
                     row.put("count", 0);
                     ObjectNode dropped = row.putObject("dropped");
-                    dropped.put("old", 0).put("noTime", 0).put("chinese", 0).put("excluded", 0);
+                    dropped.put("old", 0).put("noTime", 0).put("chinese", 0).put("excluded", 0).put("duplicate", 0);
                     row.putNull("message");
                 }
             }

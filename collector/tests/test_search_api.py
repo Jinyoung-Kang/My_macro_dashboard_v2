@@ -312,14 +312,15 @@ def test_결과는_규칙을_거쳐_합치고_출처마다_상태를_적는다(m
 
     google_ko = _row(out, "google_ko")
     assert google_ko["status"] == "ok" and google_ko["count"] == 1
-    assert google_ko["dropped"] == {"old": 1, "noTime": 0, "chinese": 1, "excluded": 0}
+    assert google_ko["dropped"] == {"old": 1, "noTime": 0, "chinese": 1, "excluded": 0, "duplicate": 0}
     google_en = _row(out, "google_en")
-    assert google_en["count"] == 0 and google_en["dropped"]["excluded"] == 1 and google_en["status"] == "empty", \
-        "같은 글은 저장본이 남음"
+    assert google_en["count"] == 0 and google_en["dropped"]["excluded"] == 1, "같은 글은 저장본이 남음"
+    assert google_en["status"] == "ok" and google_en["dropped"]["duplicate"] == 1, \
+        "줄을 줬으면 '결과 없음'이 아니고 합친 수를 셈(QA-437)"
     bing = _row(out, "bing")
     assert bing["count"] == 1 and bing["dropped"]["noTime"] == 1
     assert _row(out, "yahoo") == {"source": "yahoo", "label": "Yahoo 종목 뉴스", "status": "error", "count": 0,
-                                  "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0},
+                                  "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0, "duplicate": 0},
                                   "message": "finance.yahoo.com HTTP 503"}
     assert _row(out, "infomax")["status"] == "empty"
     assert _row(out, "event_news")["count"] == 1 and _row(out, "wire")["count"] == 1
@@ -329,7 +330,8 @@ def test_결과는_규칙을_거쳐_합치고_출처마다_상태를_적는다(m
         "미국 회사 — 이름 전문 검색(사람·기관)·DART(국내)·네이버 리포트(국내)는 줄 없음"
     assert all(row["status"] != "later" for row in out["sources"])
     assert _row(out, "feeds") == {"source": "feeds", "label": "보도자료·경제지 피드", "status": "ok", "count": 1,
-                                  "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0}, "message": None}
+                                  "dropped": {"old": 0, "noTime": 0, "chinese": 0, "excluded": 0, "duplicate": 0},
+                                  "message": None}
     assert _row(out, "watch")["label"] == "관심 대상 수집" and _row(out, "watch")["count"] == 1
     assert stubs.watch_calls == [("us:SCHP", True)], "관심 대상이 모은 글은 대표 키로 읽고 운영자 여부를 넘김"
     assert [row["source"] for row in out["sources"]] == ["google_ko", "google_en", "bing", "yahoo", "finviz", "infomax",

@@ -12,7 +12,9 @@ app/services/search.py
   보도자료·경제지 — 회원에게도)과 관심 대상이 모은 글(``watch``). ``refresh``면 출처 캐시를 건너뜀('지금 새로 받기' — 빈도는 백엔드가 막음).
   모은 글 가운데 수집 글·거장 견해에서 온 줄은 글이 섞이는 탭(타임라인)에만 두고(뉴스 탭에는 넣지 않음 — 계약 §3-4), 출처 상태 줄의 건수는
   그 줄을 내준 출처에서 셉니다(모은 글은 표시 출처가 ``wire``·``info``여도 '관심 대상 수집' 줄 — 상태 줄 건수의 합 = 줄 수). 모은 글의 경유
-  주소(구글) 줄은 합칠 때 맨 뒤로 보내 같은 기사의 원문 주소 줄이 남게 합니다.
+  주소(구글) 줄은 합칠 때 맨 뒤로 보내 같은 기사의 원문 주소 줄이 남게 합니다. 같은 글이라 다른 줄과 합친 수는 그 출처 상태 줄의
+  ``dropped.duplicate``에 세고, 거른 뒤 남은 줄이 있으면(모두 합쳤어도) 상태는 ``ok`` — 관심 대상 수집이 같은 기사를 모아 두었을 때 줄을 준
+  Finviz·Bing이 '결과 없음 · 0건'으로 보이지 않게(QA-437, 계약 §3-4).
   단계 5(계약 §8-4)에서 미국 상장 회사의 뉴스·타임라인에 Finviz 종목 뉴스(``finviz`` — search_finviz)를 더함: 바로 답하고 받기는 작업자가 —
   받는 중이면 상태 ``pending``과 응답 ``pending: true``, 이 요청이 새로 줄에 넣었으면 ``finvizQueued: true``(백엔드가 사용자 빈도를 셈),
   ``finviz=False``면 줄에 넣지 않음(캐시는 씀). 공시 출처는 대상 풀기가 SEC 표·DART 저장본을 읽지 못해 식별자를 모르면 '건너뜀'이 아니라
@@ -404,9 +406,16 @@ class _Spec:
     message: str | None = None
 
 
-def _status_row(source: str, status: str, count: int, dropped: dict | None, message: str | None) -> dict:
-    return {"source": source, "label": LABELS[source], "status": status, "count": count,
-            "dropped": dropped or rules.empty_dropped(), "message": message}
+def _status_row(source: str, status: str, count: int, dropped: dict | None, message: str | None, *,
+                duplicate: int | None = None) -> dict:
+    """
+    출처 상태 한 줄(계약 §3-4). ``duplicate``(결과 경로만 — 연결 경로는 합치지 않아 넘기지 않음)는 같은 글(4절 규칙 4)이라 다른 줄과 합쳐
+    이 출처 건수에 들지 않은 수로 ``dropped.duplicate``에 둡니다.
+    """
+    dropped = dict(dropped or rules.empty_dropped())
+    if duplicate is not None:
+        dropped["duplicate"] = duplicate
+    return {"source": source, "label": LABELS[source], "status": status, "count": count, "dropped": dropped, "message": message}
 
 
 def _remote(source: str, key: tuple, fetch: Callable[[], sources.Fetched], external: bool, refresh: bool = False) -> _Spec:
@@ -724,9 +733,12 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
     for spec in sorted(specs, key=lambda s: DISPLAY_ORDER.index(s.source)):
         result = fetched.get(spec.source)
         if result is None:
-            rows.append(_status_row(spec.source, spec.status or "skipped", 0, None, spec.message))
+            rows.append(_status_row(spec.source, spec.status or "skipped", 0, None, spec.message, duplicate=0))
             continue
         count = counts.get(spec.source, 0)
+        kept = groups.get(spec.source, [])
+        # 거른 뒤 남았지만 같은 글(우선순위가 앞선 출처의 줄, 또는 같은 출처의 다른 줄)이라 합친 수 — 받은 줄 = 건수 + 뺀 건수의 합(QA-437).
+        duplicate = len(kept) - count
         if result.offline:
             status, message = "offline", OFFLINE
         elif result.error:
@@ -734,8 +746,9 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
         elif result.cached:
             status, message = "cached", result.note
         else:
-            status, message = ("ok" if count else "empty"), result.note
-        rows.append(_status_row(spec.source, status, count, dropped_by.get(spec.source), message))
+            # 줄을 준 출처는 모두 다른 줄과 합쳤어도 '받음' — '결과 없음'은 거른 뒤 남은 줄이 없을 때만(QA-437).
+            status, message = ("ok" if kept else "empty"), result.note
+        rows.append(_status_row(spec.source, status, count, dropped_by.get(spec.source), message, duplicate=duplicate))
 
     return {
         "entityKey": norm,

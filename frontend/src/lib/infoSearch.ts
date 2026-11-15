@@ -1599,7 +1599,11 @@ function redundantMessage(status: SearchSourceStatus): boolean {
   return false;
 }
 
-/** 거른 건수 한 줄 — 0이 아닌 것만. 모두 0이거나 모르면 null. */
+/**
+ * 거른 건수 한 줄 — 0이 아닌 것만. 모두 0이거나 모르면 null.
+ * 같은 글이라 다른 줄과 합친 수(duplicate — QA-437)는 결과에 다른 줄로 남아 있으므로 '뺀 줄' 목록과 섞지 않고 앞에 따로 적습니다
+ * (건수가 '0건'이어도 그 출처가 받은 것이 없다는 뜻이 아니게).
+ */
 export function droppedText(dropped: SearchSourceStatus["dropped"]): string | null {
   if (!dropped) return null;
   const parts = [
@@ -1608,7 +1612,10 @@ export function droppedText(dropped: SearchSourceStatus["dropped"]): string | nu
     dropped.chinese > 0 ? `중국어 제목 ${dropped.chinese}건` : null,
     dropped.excluded > 0 ? `제외 매체 ${dropped.excluded}건` : null,
   ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? `뺀 줄: ${parts.join(" · ")}` : null;
+  const duplicate = typeof dropped.duplicate === "number" && dropped.duplicate > 0 ? `같은 글이라 다른 줄과 합침 ${dropped.duplicate}건` : null;
+  const removed = parts.length > 0 ? `뺀 줄: ${parts.join(" · ")}` : null;
+  const text = [duplicate, removed].filter((part): part is string => part !== null).join(" · ");
+  return text || null;
 }
 
 export type SourceStatusView = {

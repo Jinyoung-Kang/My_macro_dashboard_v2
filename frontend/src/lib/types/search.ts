@@ -136,7 +136,11 @@ export type SearchSourceStatusCode =
   | "pending"
   | "server_only";
 
-export type SearchDropped = { old: number; noTime: number; chinese: number; excluded: number };
+/**
+ * 출처마다 뺀 건수(받은 자료 기준 — 계약 §3-4). duplicate = 거른 뒤 남았지만 같은 글(§4 규칙 4)이라 다른 줄과 합쳐 이 출처 건수에 들지 않은 수
+ * (결과 경로만 — QA-437). 받은 줄 = count + 이 칸들의 합. 옛 응답에는 duplicate가 없습니다.
+ */
+export type SearchDropped = { old: number; noTime: number; chinese: number; excluded: number; duplicate?: number };
 
 export type SearchSourceStatus = {
   source: string;

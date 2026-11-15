@@ -117,11 +117,16 @@ SourceStatus = {
   "source": "google_ko",
   "label": "구글 뉴스(한국어)",
   "status": "ok" | "empty" | "error" | "cached" | "skipped" | "owner_only" | "offline" | "later" | "pending" | "server_only",
-  "count": n,                       // 이 출처에서 남은 줄 수(거른 뒤)
-  "dropped": { "old": n, "noTime": n, "chinese": n, "excluded": n },   // 거른 건수(받은 자료 기준)
+  "count": n,                       // 이 출처 줄로 결과에 남은 수(거르고 같은 글을 합친 뒤 — 상태 줄 건수의 합 = 줄 수)
+  "dropped": { "old": n, "noTime": n, "chinese": n, "excluded": n, "duplicate": n },   // 거른 건수(받은 자료 기준)
   "message": "…" | null            // 실패 사유·안내(경로·검색어 없이)
 }
 ```
+
+- `dropped.duplicate`(QA-437 — 2026-11-15): 거른 뒤 남았지만 같은 글(4절 규칙 4)이 우선순위가 앞선 줄(다른 출처, 또는 같은 출처의 앞 줄)에 있어 그 줄로
+  합친 수. 받은 줄 = `count` + `dropped`의 합. 상태는 거른 뒤 남은 줄이 있으면 모두 합쳤어도 `ok`(캐시면 `cached`), 하나도 없을 때만 `empty` — 관심 대상
+  수집이 같은 기사를 모아 두었을 때 줄을 준 Finviz·Bing이 '결과 없음 · 0건'으로 보이지 않게. 합치는 우선순위는 그대로. 결과 경로만(연결 경로 7-5의 상태 줄에는
+  없음). 화면은 '같은 글이라 다른 줄과 합침 n건'을 '뺀 줄' 목록 앞에 따로 적습니다.
 
 - 출처와 탭: `news` = 구글(ko·en)·Bing·사건 뉴스 저장본(`news_headline`·`kr_news_headline` — 보관 7일), 종목이면 Yahoo(`relatedTickers`에 그 티커가 있는 줄만)·네이버 종목 뉴스·
   연합인포맥스. `posts`(운영자) = 수집 글(`info_items`의 블로그·waedge — 제목·한국어 제목·요약·본문에서 별칭 찾기, 건수 상한 200·문 시간 상한)·거장 견해. 속보(`wire`)는
