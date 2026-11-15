@@ -35,8 +35,8 @@ describe("기간 알약 pillTabClasses", () => {
 
   // QA-464: 정보 검색 피드의 기간 고르기(FeedPanel — 단추 안에 '{이름} '과 건수 span)가 이 조각을 쓰게 되면서 옛 정보 검색 조각의
   // gap-1.5·whitespace-nowrap이 빠졌습니다. inline-flex 안에서는 이름 끝 빈칸이 줄 끝 빈칸으로 접혀 '30일148건'처럼 붙어 보이고, 좁은 칸에서는
-  // 단추 글이 접힐 수 있습니다(낭독 이름은 DOM 글이라 '30일 148건' 그대로 — 겉모양만의 문제).
-  it.fails("칸 안의 글 조각 사이를 띄우고(gap-1.5) 줄을 바꾸지 않는다 (QA-464)", () => {
+  // 단추 글이 접힐 수 있습니다(낭독 이름은 DOM 글이라 '30일 148건' 그대로 — 겉모양만의 문제). 재현 커밋에서는 it.fails였습니다.
+  it("칸 안의 글 조각 사이를 띄우고(gap-1.5) 줄을 바꾸지 않는다 (QA-464)", () => {
     for (const active of [true, false]) {
       expect(tokens(pillTabClasses(active))).toEqual(expect.arrayContaining(["gap-1.5", "whitespace-nowrap"]));
     }

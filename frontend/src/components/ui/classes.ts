@@ -82,9 +82,11 @@ const SELECT_MOTION = "motion-safe:transition-colors motion-safe:duration-150";
  * 기간 고르기(새 patterns/RangeTabs·옛 components/RangeTabs·정보 검색의 기간·연결 보기 — 이름은 옛 '기간 알약' 그대로) — 이미 받은 시계열을
  * 자르는 고르기. 데이터 영역이라 고른 칸도 강조 파랑이 아니라 중립 바탕(surface-2)·진한 안쪽 선(border-strong)·굵은 글입니다(원칙 A1 —
  * 강조 파랑은 하락 파랑과 색으로 구분되지 않음). 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px, 넓은 화면 30px.
+ * 칸 안에 글 조각이 여럿이면(정보 검색 기간의 '{이름} {N건}') 사이를 6px 띄우고 줄을 바꾸지 않습니다 — inline-flex 안에서는 이름 끝 빈칸이
+ * 접혀 '30일148건'처럼 붙었습니다(QA-464).
  */
 export function pillTabClasses(active: boolean): string {
-  return `inline-flex min-h-11 items-center justify-center rounded-control px-3 text-sm tabular-nums lg:min-h-[30px] lg:px-2.5 ${SELECT_MOTION} ${FOCUS_RING} ${
+  return `inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-control px-3 text-sm tabular-nums lg:min-h-[30px] lg:px-2.5 ${SELECT_MOTION} ${FOCUS_RING} ${
     active ? `bg-surface-2 font-semibold text-text ring-1 ring-inset ring-border-strong ${FORCED_SELECTED}` : "font-medium text-text-2 hover:bg-surface-2 hover:text-text"
   }`;
 }
