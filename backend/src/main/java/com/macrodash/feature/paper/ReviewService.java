@@ -63,7 +63,8 @@ import java.util.regex.Pattern;
  *
  * <p><b>호출</b>: 시스템 = {@link ClaudePrompts#REVIEW} + 지금 프레임 판의 렌더링({@link FrameworkService#render} — 설정은 그 실행이 읽은 판
  * {@link MarketRun#settingsBody}, 실행 문맥이 아니면 지금 설정), 사용자 =
- * 구분자로 감싼 입력 JSON(자료일 뿐 지시가 아님). 모델·effort·대기 한도는 결정과 같은 설정이고, 하루 호출 상한({@code apiDailyCallCap})을
+ * 구분자로 감싼 입력 JSON(자료일 뿐 지시가 아님). 모델·effort는 결정과 같은 설정이고, 호출은 스트리밍으로 출력 한도 {@value #MAX_TOKENS}토큰·
+ * 대기 한도 {@code dashboard.paper.review-timeout-seconds}(결정의 300초와 따로 — QA-475)입니다. 하루 호출 상한({@code apiDailyCallCap})을
  * 결정·제안과 함께 셉니다({@link PaperApiCalls} — 상한에 닿았으면 행을 남기지 않고 다음 기회에, 키가 없어 보내지 않았으면 잡은 호출을
  * 되돌림). 응답은 {@code review.schema.json} 전체로 검사하고(D26), 코드가 알아볼 수 있는 계약 — 기준일이 입력과 같음, 판정한 결정이
  * 입력에 있음, 한 결정을 두 번 판정하지 않음 — 도 함께 봅니다(어기면 FORMAT_ERROR).
@@ -101,8 +102,11 @@ public class ReviewService {
     static final int LEDGER_SCAN = 5_000;
     /** 종가 이력을 읽는 기간(달력일) — 200거래일 이동평균(약 290달력일)과 4주 창이 들어가는 여유. */
     static final int HISTORY_CALENDAR_DAYS = 420;
-    /** 복기 응답 한도(토큰) — 두 계좌의 판정(상한 80건)이 들어가게 결정 호출의 기본 한도보다 크게(ADR 0038). */
-    static final long MAX_TOKENS = AiService.STRUCTURED_MAX_TOKENS_CEILING;
+    /**
+     * 복기 응답 한도(토큰, 사고 포함) — 사용자 결정 2026-11-15(QA-475). 입력 판 2(ADR 0038)로 입력이 커진 뒤 effort high의 사고가 그전 한도
+     * 20,000을 다 써 두 시장 복기가 답 없이 끝났습니다. 이 크기는 스트리밍으로만 보냅니다({@link AiService#structuredStreaming}).
+     */
+    static final long MAX_TOKENS = 64_000L;
     static final int ERROR_CHARS = 1_000;
     static final int VIOLATIONS_IN_ERROR = 5;
     /** 시장을 받지 않는 옛 시그니처·화면 응답의 시장(클래스 설명). */
@@ -164,7 +168,7 @@ public class ReviewService {
     @Autowired
     public ReviewService(PaperStore store, StoreReader reader, PaperMarketData marketData, FrameworkService framework,
                          PaperApiCalls calls, AiService ai, PaperSettingsService settings, ObjectMapper mapper,
-                         @Value("${dashboard.paper.claude-timeout-seconds:300}") int timeoutSeconds) {
+                         @Value("${dashboard.paper.review-timeout-seconds:1800}") int timeoutSeconds) {
         this(store, reader, marketData, framework, calls, ai, settings, mapper, timeoutSeconds, Clock.systemUTC());
     }
 
@@ -267,8 +271,8 @@ public class ReviewService {
         String system = systemPrompt(market, frame.body(), frame.version(), settingsBody);
         AiService.StructuredResult result;
         try {
-            result = ai.structured(claude.model(), system, userMessage(built.text()), schema.forApi(), claude.effort(),
-                    timeoutSeconds, MAX_TOKENS);
+            result = ai.structuredStreaming(claude.model(), system, userMessage(built.text()), schema.forApi(),
+                    claude.effort(), timeoutSeconds, MAX_TOKENS);
         } catch (RuntimeException e) {
             // 요청을 보내기 전에 멈춘 경우(인자 검사 — 코드 오류)라 잡은 호출을 돌려놓고 그대로 던집니다.
             calls.release(today);

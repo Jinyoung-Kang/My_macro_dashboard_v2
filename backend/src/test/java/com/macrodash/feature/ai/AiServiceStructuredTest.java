@@ -3,6 +3,7 @@ package com.macrodash.feature.ai;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.macrodash.ClaudeSse;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -11,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -30,6 +32,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>요청 모양(스키마·effort·시스템 캐시 블록·temperature/thinking 없음·출력 한도), 정상 응답의 텍스트와 토큰(캐시 포함),
  * 거절·출력 한도·빈 응답·HTTP 오류·연결 실패·시간 초과의 종류와 과금 표시, 키 없음, 로그에 키·주소가 남지 않음을 고정합니다.
+ * 스트리밍 판({@link AiService#structuredStreaming} — 주간 복기, QA-475)은 가짜 서버가 같은 응답을 SSE 사건 열로 답해({@link ClaudeSse})
+ * 같은 결과·종류가 나오는지와, 스트리밍에만 있는 실패(스트림 도중 오류 사건·끝 사건 없음·스트림 도중 시간 초과)를 봅니다.
  */
 class AiServiceStructuredTest {
 
@@ -75,7 +79,8 @@ class AiServiceStructuredTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/messages", exchange -> {
             hits.incrementAndGet();
-            requests.add(MAPPER.readTree(exchange.getRequestBody().readAllBytes()));
+            JsonNode request = MAPPER.readTree(exchange.getRequestBody().readAllBytes());
+            requests.add(request);
             apiKeys.add(String.valueOf(exchange.getRequestHeaders().getFirst("x-api-key")));
             if (delayMillis > 0) {
                 try {
@@ -84,8 +89,10 @@ class AiServiceStructuredTest {
                     Thread.currentThread().interrupt();
                 }
             }
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            // 스트리밍 요청(QA-475)이면 같은 응답을 SSE 사건 열로 — 오류 상태는 스트리밍이어도 JSON 본문 그대로입니다.
+            boolean sse = status == 200 && ClaudeSse.requested(request);
+            byte[] bytes = (sse ? ClaudeSse.fromMessage(body) : body).getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", sse ? ClaudeSse.CONTENT_TYPE : "application/json");
             try {
                 exchange.sendResponseHeaders(status, bytes.length);
                 try (OutputStream out = exchange.getResponseBody()) {
@@ -93,6 +100,36 @@ class AiServiceStructuredTest {
                 }
             } catch (java.io.IOException ignored) {
                 // 시간 초과 시험에서는 클라이언트가 먼저 끊습니다.
+            }
+        });
+        server.start();
+        return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    /**
+     * 스트림 응답을 사건 단위로 보내는 가짜 Claude API(200, SSE) — {@code first}를 보내 비우고 {@code pauseMillis}만큼 쉰 뒤 {@code rest}를
+     * 보냅니다(스트림 도중 시간 초과·오류 사건·끝 사건 없는 스트림 시험).
+     */
+    private String startStreamServer(List<String> first, long pauseMillis, List<String> rest) throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/messages", exchange -> {
+            hits.incrementAndGet();
+            requests.add(MAPPER.readTree(exchange.getRequestBody().readAllBytes()));
+            exchange.getResponseHeaders().set("Content-Type", ClaudeSse.CONTENT_TYPE);
+            try {
+                exchange.sendResponseHeaders(200, 0);   // 0 = 길이를 정하지 않음(조각 전송)
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(String.join("", first).getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    if (pauseMillis > 0) {
+                        Thread.sleep(pauseMillis);
+                    }
+                    out.write(String.join("", rest).getBytes(StandardCharsets.UTF_8));
+                }
+            } catch (java.io.IOException ignored) {
+                // 시간 초과 시험에서는 클라이언트가 먼저 끊습니다.
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         });
         server.start();
@@ -411,6 +448,186 @@ class AiServiceStructuredTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.structured(MODEL, "s", "u", schema, "high", 0))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThat(hits.get()).isZero();
+    }
+
+    // ------------------------------------------------------------------ 스트리밍 구조화 출력(QA-475 — 주간 복기)
+    @Test
+    @DisplayName("스트리밍 요청 본문은 스트리밍이 아닌 요청과 같고 stream만 더한다 — 64,000토큰 한도, 기본 경로의 위 끝 20,000은 그대로")
+    void streamingRequestIsTheSameRequestPlusStream() throws Exception {
+        String base = startServer(200, message(textBlock(ANSWER), "end_turn", "", USAGE));
+        AiService service = service(base, KEY);
+
+        service.structured(MODEL, "프레임 — 시스템", "패킷", schema(), "high", 120, AiService.STRUCTURED_MAX_TOKENS_CEILING);
+        service.structuredStreaming(MODEL, "프레임 — 시스템", "패킷", schema(), "high", 120,
+                AiService.STRUCTURED_MAX_TOKENS_CEILING);
+        service.structuredStreaming(MODEL, "프레임 — 시스템", "패킷", schema(), "high", 120, 64_000);
+
+        assertThat(requests.get(0).has("stream")).as("스트리밍이 아닌 경로(결정·제안·브리핑·장중 판단)는 stream을 보내지 않음").isFalse();
+        ObjectNode streamed = (ObjectNode) requests.get(1).deepCopy();
+        assertThat(streamed.path("stream").asBoolean(false)).isTrue();
+        streamed.remove("stream");
+        assertThat(streamed).as("stream 말고는 바이트까지 같은 요청(스키마·effort·시스템 캐시 블록·thinking 없음)").isEqualTo(requests.get(0));
+        assertThat(requests.get(2).path("max_tokens").asLong()).isEqualTo(64_000L)
+                .isEqualTo(AiService.STRUCTURED_STREAMING_MAX_TOKENS_CEILING);
+        assertThat(requests.get(2).path("output_config").path("effort").asString()).isEqualTo("high");
+        assertThat(AiService.STRUCTURED_MAX_TOKENS_CEILING).as("다른 호출의 위 끝은 그대로").isEqualTo(20_000L);
+    }
+
+    @Test
+    @DisplayName("스트리밍 정상 응답: 사건을 모은 Message에서 사고 블록 뒤의 텍스트와 토큰(캐시 포함)을 스트리밍이 아닌 경로와 같게 돌려준다")
+    void streamingReturnsAccumulatedTextAndUsage() throws Exception {
+        String base = startServer(200, message(textBlock(ANSWER), "end_turn", "", USAGE));
+
+        AiService.StructuredResult result = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임 v1", "패킷", schema(), "high", 120, 64_000);
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.text()).isEqualTo(ANSWER);
+        assertThat(result.stopReason()).isEqualTo("end_turn");
+        assertThat(result.errorKind()).isNull();
+        assertThat(result.charged()).isTrue();
+        assertThat(result.inputTokens()).isEqualTo(21_000L);
+        assertThat(result.outputTokens()).isEqualTo(3_100L);
+        assertThat(result.cacheReadTokens()).isEqualTo(7_800L);
+        assertThat(result.cacheWriteTokens()).isEqualTo(0L);
+        assertThat(hits.get()).isEqualTo(1);
+        assertThat(apiKeys).containsExactly(KEY);
+    }
+
+    @Test
+    @DisplayName("스트리밍의 출력 한도·거절·빈 응답은 스트리밍이 아닌 경로와 같은 종류 — 한도 문구는 64,000, 잘린 텍스트는 원문으로 남김")
+    void streamingStopReasonsMatchNonStreaming() throws Exception {
+        String base = startServer(200, message(textBlock("{\"schemaVersion\":2,\"stance\":\"RIS"), "max_tokens", "", USAGE));
+        AiService.StructuredResult cut = service(base, KEY).structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60,
+                64_000);
+        assertThat(cut.ok()).isFalse();
+        assertThat(cut.errorKind()).isEqualTo("MAX_TOKENS");
+        assertThat(cut.charged()).isTrue();
+        assertThat(cut.text()).isEqualTo("{\"schemaVersion\":2,\"stance\":\"RIS");
+        assertThat(cut.error()).isEqualTo("출력 한도(64000 토큰)에 걸려 응답이 중간에 잘렸습니다");
+        assertThat(cut.outputTokens()).isEqualTo(3_100L);
+        stop();
+
+        base = startServer(200, message("[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"sig\"}]", "max_tokens",
+                "", USAGE));
+        AiService.StructuredResult thinkingOnly = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+        assertThat(thinkingOnly.errorKind()).isEqualTo("MAX_TOKENS");
+        assertThat(thinkingOnly.text()).isNull();
+        assertThat(thinkingOnly.error()).isEqualTo("출력 한도(64000 토큰)에 걸려 답을 쓰기 전에 끝났습니다");
+        stop();
+
+        base = startServer(200, message("[]", "refusal",
+                ",\"stop_details\":{\"type\":\"refusal\",\"category\":\"cyber\",\"explanation\":\"정책상 답할 수 없습니다\"}",
+                "{\"input_tokens\":20000,\"output_tokens\":12}"));
+        AiService.StructuredResult refused = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+        assertThat(refused.errorKind()).isEqualTo("REFUSAL");
+        assertThat(refused.charged()).isTrue();
+        assertThat(refused.error()).contains("거절", "cyber", "정책상 답할 수 없습니다");
+        assertThat(refused.inputTokens()).isEqualTo(20_000L);
+        assertThat(refused.cacheReadTokens()).as("API가 주지 않은 값은 null").isNull();
+        stop();
+
+        base = startServer(200, message("[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"sig\"}]", "end_turn",
+                "", USAGE));
+        AiService.StructuredResult empty = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+        assertThat(empty.errorKind()).isEqualTo("EMPTY");
+        assertThat(empty.charged()).isTrue();
+        assertThat(empty.outputTokens()).isEqualTo(3_100L);
+        assertThat(hits.get()).as("모두 한 번씩 — SDK 재시도 없음").isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("스트림 전의 HTTP 오류(429)는 스트리밍이 아닌 경로와 같게 RATE_LIMIT·과금 안 됨, 다시 보내지 않는다")
+    void streamingHttpErrorBeforeTheStream() throws Exception {
+        String base = startServer(429,
+                "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"slow down\"}}");
+
+        AiService.StructuredResult result = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorKind()).isEqualTo("RATE_LIMIT");
+        assertThat(result.charged()).isFalse();
+        assertThat(result.text()).isNull();
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("스트림 도중의 오류 사건(과부하)은 HTTP·과금됨 — 200을 받은 뒤라 모델에 닿았음, 받은 데까지의 텍스트는 남기지 않음")
+    void midStreamErrorEventIsChargedHttp() throws Exception {
+        List<String> events = ClaudeSse.events(message(textBlock(ANSWER), "end_turn", "", USAGE));
+        String base = startStreamServer(events.subList(0, 3), 0,
+                List.of(ClaudeSse.error("overloaded_error", "Overloaded")));
+
+        AiService.StructuredResult result = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorKind()).isEqualTo("HTTP");
+        assertThat(result.charged()).isTrue();
+        assertThat(result.error()).contains("스트림 도중", "overloaded_error", "과부하").doesNotContain(KEY);
+        assertThat(result.text()).isNull();
+        assertThat(result.inputTokens()).isNull();
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("끝 사건(message_stop) 없이 스트림이 끝나면 IO·과금됨 — 한국어 사유, 잘린 응답을 성공으로 읽지 않음")
+    void streamWithoutMessageStopIsChargedIo() throws Exception {
+        List<String> events = ClaudeSse.events(message(textBlock(ANSWER), "end_turn", "", USAGE));
+        String base = startStreamServer(events.subList(0, events.size() - 2), 0, List.of());
+
+        AiService.StructuredResult result = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorKind()).isEqualTo("IO");
+        assertThat(result.charged()).isTrue();
+        assertThat(result.error()).contains("message_stop");
+        assertThat(result.text()).isNull();
+    }
+
+    @Test
+    @DisplayName("대기 한도는 스트림 전체에 걸린다 — 첫 사건을 받은 뒤 멈춘 스트림도 한도에서 TIMEOUT·과금됨")
+    void streamingTimeoutCoversTheWholeStream() throws Exception {
+        List<String> events = ClaudeSse.events(message(textBlock(ANSWER), "end_turn", "", USAGE));
+        String base = startStreamServer(events.subList(0, 1), 3_000, events.subList(1, events.size()));
+
+        AiService.StructuredResult result = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 1, 64_000);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorKind()).isEqualTo("TIMEOUT");
+        assertThat(result.charged()).isTrue();
+        assertThat(result.error()).contains("1초", "스트림").doesNotContain("자동 탐색");
+        assertThat(result.latencyMs()).isLessThan(3_000L);
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("한도 범위: 스트리밍은 16,000~64,000, 스트리밍이 아닌 경로는 16,000~20,000 그대로 — 밖이면 호출 전에 멈춤, 키 없음·허용 목록 밖은 나가지 않음")
+    void streamingLimitsAndGuards() throws Exception {
+        String base = startServer(200, message(textBlock(ANSWER), "end_turn", "", USAGE));
+        AiService service = service(base, KEY);
+        Map<String, Object> schema = schema();
+
+        assertThatThrownBy(() -> service.structuredStreaming(MODEL, "s", "u", schema, "high", 60, 64_001))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("64000");
+        assertThatThrownBy(() -> service.structuredStreaming(MODEL, "s", "u", schema, "high", 60, 15_999))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.structured(MODEL, "s", "u", schema, "high", 60, 64_000))
+                .as("스트리밍이 아닌 요청은 큰 한도를 받지 않음").isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("20000");
+        assertThatThrownBy(() -> service.structuredStreaming(MODEL, "s", "u", schema, "extreme", 60, 64_000))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("effort");
+        assertThat(service(base, "").structuredStreaming(MODEL, "s", "u", schema, "high", 60, 64_000).errorKind())
+                .isEqualTo("NO_KEY");
+        assertThat(restricted(base, KEY, "anthropic_haiku").structuredStreaming(MODEL, "s", "u", schema, "high", 60, 64_000)
+                .errorKind()).isEqualTo("NOT_ALLOWED");
         assertThat(hits.get()).isZero();
     }
 }

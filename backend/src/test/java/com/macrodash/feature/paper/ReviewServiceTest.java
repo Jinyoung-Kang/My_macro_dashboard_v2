@@ -18,7 +18,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -562,7 +561,6 @@ class ReviewServiceTest {
 
     // ------------------------------------------------------------------ QA-475(2026-11-15 운영: 두 시장 복기 모두 출력 한도 20,000토큰에서 FORMAT_ERROR)
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 복기 호출이 스트리밍이 아니고 출력 한도가 20,000토큰(AiService.STRUCTURED_MAX_TOKENS_CEILING)")
     @DisplayName("QA-475: 복기는 스트리밍 요청(stream)으로 출력 한도 64,000토큰·effort high를 보내고, 스트림을 모은 응답으로 OK 행과 토큰 사용량을 남긴다")
     void reviewStreamsWith64kOutputLimit() throws Exception {
         long decisionId = scene();
@@ -589,7 +587,6 @@ class ReviewServiceTest {
     }
 
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 오류가 운영과 같은 '[MAX_TOKENS] 출력 한도(20000 토큰)에 걸려 답을 쓰기 전에 끝났습니다'")
     @DisplayName("QA-475: 사고만 하다 출력 한도로 끝나면 FORMAT_ERROR(그 주의 끝)이고 오류는 64,000토큰 한도를 적는다 — MAX_TOKENS·EMPTY → FORMAT_ERROR는 그대로")
     void thinkingOnlyMaxTokensIsFormatErrorAt64k() throws Exception {
         scene();
@@ -612,7 +609,6 @@ class ReviewServiceTest {
     }
 
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 복기가 결정과 같은 대기 한도(dashboard.paper.claude-timeout-seconds 300초)를 씀")
     @DisplayName("QA-475: 복기 대기 한도는 따로(application.yml dashboard.paper.review-timeout-seconds) — 64,000토큰 스트리밍에 맞춘 SDK 기본(1,800초) 이상, 결정 호출의 300초는 그대로")
     void reviewHasItsOwnTimeout() throws Exception {
         List<PropertySource<?>> yaml = new YamlPropertySourceLoader().load("application",

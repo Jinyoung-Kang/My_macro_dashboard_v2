@@ -4,17 +4,21 @@ import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.JsonValue;
 import com.anthropic.core.RequestOptions;
+import com.anthropic.core.http.StreamResponse;
 import com.anthropic.errors.AnthropicInvalidDataException;
 import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.errors.NotFoundException;
 import com.anthropic.errors.PermissionDeniedException;
 import com.anthropic.errors.RateLimitException;
+import com.anthropic.errors.SseException;
 import com.anthropic.errors.UnauthorizedException;
+import com.anthropic.helpers.MessageAccumulator;
 import com.anthropic.models.messages.CacheControlEphemeral;
 import com.anthropic.models.messages.JsonOutputFormat;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
+import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
@@ -190,9 +194,15 @@ public class AiService {
 
     /**
      * 부르는 쪽이 정할 수 있는 구조화 출력 응답 한도의 위 끝(토큰). 스트리밍이 아닌 요청이라 응답이 길면 한 연결이 오래 열립니다 — 한도를 다 써도
-     * 10분 안에 끝나는 크기까지만 받습니다.
+     * 10분 안에 끝나는 크기까지만 받습니다. 더 큰 한도는 스트리밍({@link #STRUCTURED_STREAMING_MAX_TOKENS_CEILING})으로만.
      */
     public static final long STRUCTURED_MAX_TOKENS_CEILING = 20_000L;
+
+    /**
+     * 스트리밍 구조화 출력({@link #structuredStreaming})의 응답 한도 위 끝(토큰) — 주간 복기의 한도(사용자 결정 2026-11-15, QA-475). 스트리밍이라
+     * 응답이 길어도 연결이 사건을 계속 받습니다. 모델의 출력 상한까지 열지 않고 쓰는 값까지만 받습니다(비용 상한 — 출력 토큰이 곧 비용).
+     */
+    public static final long STRUCTURED_STREAMING_MAX_TOKENS_CEILING = 64_000L;
 
     /**
      * 남은 예산이 이보다 적으면 다음 엔진을 부르지 않습니다(초). 번역도 같습니다 — 원문을 그대로 보여 줍니다(QA-094).
@@ -891,7 +901,9 @@ public class AiService {
      * SDK 예외 → {@link AnthropicError}. 401·403·404·429·그 밖의 HTTP 오류 상태는 제공자가 요청을 받지 않았으므로 과금되지
      * 않았고({@code charged=false}), 연결·시간 초과 등은 {@link #reachedModel}로 판단합니다(QA-021).
      *
-     * <p>하위 예외(401·403·404·429)를 먼저 봅니다 — 모두 {@link AnthropicServiceException}의 하위 클래스입니다.
+     * 스트림 도중의 오류 사건({@link SseException} — 스트리밍 구조화 출력만)은 HTTP 200 뒤라 과금된 것으로 봅니다.
+     *
+     * <p>하위 예외(401·403·404·429·스트림 오류)를 먼저 봅니다 — 모두 {@link AnthropicServiceException}의 하위 클래스입니다.
      * 응답은 왔는데 모양을 읽지 못한 경우({@link AnthropicInvalidDataException})는 모델이 이미 답한 것이라 {@code EMPTY}입니다.
      */
     private AnthropicError classifyAnthropic(RuntimeException e, String model, int attemptSeconds) {
@@ -906,6 +918,12 @@ public class AiService {
         }
         if (e instanceof RateLimitException) {
             return new AnthropicError("RATE_LIMIT", "호출 한도에 걸렸습니다(429). 잠시 후 다시 시도하거나 다른 엔진을 고르세요.", false);
+        }
+        if (e instanceof SseException sse) {
+            // 스트림 도중의 오류 사건(스트리밍 구조화 출력만 — QA-475). HTTP 200을 받은 뒤라 모델에 닿았을 수 있어 과금된 것으로 봅니다.
+            String type = sse.errorType().map(String::valueOf).orElse("알 수 없음");
+            return new AnthropicError("HTTP", "응답 스트림 도중 오류(%s)%s".formatted(type,
+                    "overloaded_error".equals(type) ? " — Anthropic 서버가 과부하입니다. 잠시 후 다시 시도하세요." : ""), true);
         }
         if (e instanceof AnthropicServiceException service) {
             String type = service.errorType().map(String::valueOf).orElse("알 수 없음");
@@ -1006,8 +1024,9 @@ public class AiService {
     }
 
     /**
-     * {@link #structured(String, String, String, Map, String, int)}와 같되 응답 한도를 부르는 쪽이 정합니다 — 주간 복기처럼 판정 수가 많아
-     * 기본 한도({@value #STRUCTURED_MAX_TOKENS})로는 잘릴 수 있는 호출용입니다(ADR 0038). 결정 호출은 기본 한도 그대로입니다(실험 조건, C2).
+     * {@link #structured(String, String, String, Map, String, int)}와 같되 응답 한도를 부르는 쪽이 정합니다 — 기본 한도
+     * ({@value #STRUCTURED_MAX_TOKENS})로는 잘릴 수 있는 호출용입니다. 결정 호출은 기본 한도 그대로입니다(실험 조건, C2). 이보다 큰 한도는
+     * {@link #structuredStreaming}을 씁니다(주간 복기 — QA-475).
      *
      * @param maxTokens 응답 한도(토큰) — {@value #STRUCTURED_MAX_TOKENS} 이상 {@value #STRUCTURED_MAX_TOKENS_CEILING} 이하
      * @throws IllegalArgumentException 한도가 그 범위 밖(스트리밍이 아닌 요청이라 너무 큰 한도는 받지 않음)
@@ -1018,6 +1037,36 @@ public class AiService {
             throw new IllegalArgumentException("응답 한도는 " + STRUCTURED_MAX_TOKENS + "~" + STRUCTURED_MAX_TOKENS_CEILING
                     + " 토큰이어야 합니다: " + maxTokens);
         }
+        return structuredCall(model, system, user, apiSchema, effort, timeoutSeconds, maxTokens, false);
+    }
+
+    /**
+     * 스트리밍 구조화 출력(QA-475) — {@link #structured(String, String, String, Map, String, int, long)}와 같은 요청에 {@code stream}만
+     * 더하고, 받은 사건을 SDK의 {@link MessageAccumulator}로 모아 스트리밍이 아닌 응답과 같은 {@link Message}로 읽습니다. 그래서 거절·출력
+     * 한도·빈 응답의 종류, 받은 텍스트, 토큰 사용량, 예외의 종류·과금 표시는 그 경로와 같습니다. 주간 복기의 출력 한도(64,000토큰 — 사용자
+     * 결정 2026-11-15)처럼 큰 한도용입니다: 스트리밍이 아니면 응답이 끝날 때까지 연결 하나가 아무것도 받지 않고 열려 있어야 해, SDK가 큰
+     * 출력에는 스트리밍을 권합니다(SDK가 스스로 고르는 대기 한도도 스트리밍이 아니면 10분이 위 끝).
+     *
+     * <p>대기 한도({@code timeoutSeconds})는 스트림을 끝까지 받는 데까지 전체에 겁니다(OkHttp 호출 한도 — 응답 본문 읽기 포함). 스트림 도중의
+     * 오류 사건(과부하 등)은 HTTP 200을 받은 뒤라 {@code HTTP}·과금됨, 끝 사건({@code message_stop}) 없이 스트림이 끝나면 {@code IO}·과금됨이고,
+     * 둘 다 그때까지 받은 텍스트·토큰은 남기지 않습니다(스트리밍이 아닌 경로의 시간 초과와 같음).
+     *
+     * @param maxTokens 응답 한도(토큰) — {@value #STRUCTURED_MAX_TOKENS} 이상 {@value #STRUCTURED_STREAMING_MAX_TOKENS_CEILING} 이하
+     * @throws IllegalArgumentException 한도가 그 범위 밖이거나, {@link #structured(String, String, String, Map, String, int)}와 같은 인자
+     *                                  검사에 걸렸을 때(과금되는 호출을 보내지 않음)
+     */
+    public StructuredResult structuredStreaming(String model, String system, String user, Map<String, Object> apiSchema,
+                                                String effort, int timeoutSeconds, long maxTokens) {
+        if (maxTokens < STRUCTURED_MAX_TOKENS || maxTokens > STRUCTURED_STREAMING_MAX_TOKENS_CEILING) {
+            throw new IllegalArgumentException("스트리밍 응답 한도는 " + STRUCTURED_MAX_TOKENS + "~"
+                    + STRUCTURED_STREAMING_MAX_TOKENS_CEILING + " 토큰이어야 합니다: " + maxTokens);
+        }
+        return structuredCall(model, system, user, apiSchema, effort, timeoutSeconds, maxTokens, true);
+    }
+
+    /** 구조화 출력 한 번 — 스트리밍이든 아니든 요청·결과 분류는 같습니다({@code stream}은 받는 방식만 가름). 한도 검사는 부른 쪽. */
+    private StructuredResult structuredCall(String model, String system, String user, Map<String, Object> apiSchema,
+                                            String effort, int timeoutSeconds, long maxTokens, boolean stream) {
         if (model == null || model.isBlank()) {
             throw new IllegalArgumentException("모델 ID가 비었습니다");
         }
@@ -1065,8 +1114,9 @@ public class AiService {
 
         long started = System.currentTimeMillis();
         try {
-            Message message = anthropicClient().messages().create(params.build(),
-                    RequestOptions.builder().timeout(Duration.ofSeconds(timeoutSeconds)).build());
+            RequestOptions options = RequestOptions.builder().timeout(Duration.ofSeconds(timeoutSeconds)).build();
+            Message message = stream ? streamed(params.build(), options)
+                    : anthropicClient().messages().create(params.build(), options);
             long elapsed = System.currentTimeMillis() - started;
 
             StopReason stop = message.stopReason().orElse(null);
@@ -1101,13 +1151,37 @@ public class AiService {
             // 리포트용 문구 중 "다른 엔진을 고르세요"·"자동 탐색" 안내는 이 경로에 맞지 않아(엔진 선택 없음, D5) 바꿉니다.
             String message = switch (failure.kind()) {
                 case "RATE_LIMIT" -> "호출 한도에 걸렸습니다(429).";
-                case "TIMEOUT" -> "%d초 안에 응답하지 않았습니다(대기 한도 초과).".formatted(timeoutSeconds);
+                case "TIMEOUT" -> (stream ? "%d초 안에 응답 스트림을 다 받지 못했습니다(대기 한도 초과)."
+                        : "%d초 안에 응답하지 않았습니다(대기 한도 초과).").formatted(timeoutSeconds);
                 default -> failure.message();
             };
             // 예외 문구에는 키가 들어가지 않지만, 요청 주소는 지웁니다(describe와 같은 규칙, QA-025).
             log.warn("Claude 구조화 출력 호출 실패 ({}): {} — {}", model, failure.kind(), withoutUrls(e.getMessage()));
             return new StructuredResult(false, null, null, failure.kind(), message, failure.charged(),
                     null, null, null, null, elapsed);
+        }
+    }
+
+    /**
+     * 스트리밍으로 보내고 받은 사건을 끝까지 모읍니다({@link #structuredStreaming}). 응답 스트림은 다 읽거나 예외가 나면 닫습니다(연결을
+     * 붙잡아 두지 않게). 끝 사건 없이 스트림이 끝났으면 {@link StreamCut}입니다.
+     */
+    private Message streamed(MessageCreateParams params, RequestOptions options) {
+        MessageAccumulator accumulator = MessageAccumulator.create();
+        try (StreamResponse<RawMessageStreamEvent> response = anthropicClient().messages().createStreaming(params, options)) {
+            response.stream().forEach(accumulator::accumulate);
+        }
+        try {
+            return accumulator.message();
+        } catch (IllegalStateException e) {
+            throw new StreamCut(e);
+        }
+    }
+
+    /** 응답 스트림이 끝 사건({@code message_stop}) 없이 끝남 — HTTP 200을 받은 뒤라 모델에 닿은 것으로 봅니다({@link #reachedModel}). */
+    static final class StreamCut extends IllegalStateException {
+        StreamCut(Throwable cause) {
+            super("응답 스트림이 끝 사건(message_stop) 없이 끊겼습니다", cause);
         }
     }
 

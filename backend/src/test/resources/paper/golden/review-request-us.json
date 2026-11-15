@@ -1,5 +1,5 @@
 {
-  "max_tokens" : 20000,
+  "max_tokens" : 64000,
   "messages" : [ {
     "content" : "<<고정본 review-user-us.txt>>",
     "role" : "user"
@@ -103,5 +103,6 @@
     "cache_control" : {
       "type" : "ephemeral"
     }
-  } ]
+  } ],
+  "stream" : true
 }
