@@ -363,6 +363,38 @@ export function newsPage<T>(items: readonly T[], page: number, perPage: number =
 
 // ------------------------------------------------------------------ 검색어·이름
 
+/**
+ * 주요 뉴스(GET /api/detail/news)·AI 요약(POST /api/detail/summary)의 검색어(q)·이름(label) 상한. 백엔드 DetailService.MAX_QUERY와 같은 값이고,
+ * 백엔드는 앞뒤 공백을 뺀 Java 길이(UTF-16 단위)로 재서 넘으면 400입니다(수집기 /live/news는 글자 수로 같은 60).
+ */
+export const DETAIL_QUERY_MAX = 60;
+
+/** 상한에서 자른 끝에 남으면 떼는 이음 기호·여는 괄호(쉼표·&·하이픈 등 — 'Holdings,' → 'Holdings'). 마침표는 'Inc.' 같은 약칭이라 둡니다. */
+const QUERY_TAIL = /[\s,;:·&+/(（[{、，–—-]+$/u;
+
+/**
+ * 이름 → 상세 화면의 뉴스·AI 요약 검색어(QA-448). 시세 이름은 Yahoo의 긴 이름(longName)이라 60자를 넘을 수 있어, 넘으면 백엔드 상한 안으로
+ * 줄입니다 — 공백을 하나로 줄이고, 글자(코드 포인트)를 가르지 않으면서 백엔드가 세는 UTF-16 길이로 `max` 안까지 담은 뒤 낱말 가운데면 앞 낱말
+ * 끝까지(앞 절반 안에 공백밖에 없으면 그대로 — 띄어 쓰지 않은 긴 이름), 뒤 절반에서 열려 잘리는 바람에 닫히지 않은 괄호는 그 앞까지(덧붙인 설명이라),
+ * 끝에 남은 쉼표·이음 기호를 뗍니다. 상한 안이면 공백만 정리한 그대로, 비면 null.
+ */
+export function detailQuery(name: string | null | undefined, max: number = DETAIL_QUERY_MAX): string | null {
+  const flat = (name ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  if (flat.length <= max) return flat;
+  let cut = "";
+  for (const char of flat) {
+    if (cut.length + char.length > max) break;
+    cut += char;
+  }
+  const atBoundary = flat[cut.length] === " ";
+  const space = cut.lastIndexOf(" ");
+  let words = atBoundary || space <= max / 2 ? cut : cut.slice(0, space);
+  const open = words.lastIndexOf("(");
+  if (open > max / 2 && !words.includes(")", open)) words = words.slice(0, open);
+  return words.replace(QUERY_TAIL, "") || null;
+}
+
 /** 지표 이름 → 뉴스 검색어 — 괄호 안(영문 약칭·단위)과 '($)' 같은 단위 꼬리를 뗍니다("미국채 10년물 수익률(%)" → "미국채 10년물 수익률"). */
 export function indicatorNewsQuery(name: string): string {
   const stripped = withoutLeadingIcon(name).replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();

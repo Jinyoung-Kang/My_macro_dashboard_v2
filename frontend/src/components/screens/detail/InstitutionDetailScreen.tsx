@@ -5,7 +5,7 @@ import { LineChart } from "@/components/charts";
 import { Hero, ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Banner, Card, ErrorState, Freshness, PageHeader } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { CHART_KEY, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
+import { CHART_KEY, detailQuery, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatNumber, formatSignedMinus, formatUsd, withoutLeadingIcon } from "@/lib/format";
 import type { PortfolioResponse } from "@/lib/types";
@@ -28,6 +28,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const portfolio = useApi<PortfolioResponse>(endpoints.institution.portfolio(cik, QUARTERS, TOP_N));
   const data = portfolio.data;
   const names = institutionNames(data?.institution?.name ?? `CIK ${cik}`);
+  // 뉴스·AI 요약의 검색어·이름은 백엔드 상한(60자) 안으로(QA-448).
+  const query = detailQuery(names.query) ?? undefined;
   const rows = institutionValueRows(data?.quarters);
   const holdings = data?.holdings ?? [];
 
@@ -115,8 +117,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
             )}
             {holdings.length > HOLDINGS_SHOWN ? <p className="mt-2 text-xs text-text-3">{holdings.length}종목 가운데 비중 상위 {HOLDINGS_SHOWN}종목</p> : null}
           </Card>
-          <AiSummaryCard request={{ q: names.query, label: names.display }} />
-          <NewsCard path={endpoints.detail.news({ q: names.query })} searchQuery={names.query} />
+          <AiSummaryCard request={{ q: query, label: detailQuery(names.display) ?? undefined }} />
+          <NewsCard path={endpoints.detail.news({ q: query })} searchQuery={query} />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
           {data?.institution?.desc ? (

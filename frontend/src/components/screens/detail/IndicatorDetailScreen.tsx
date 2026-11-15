@@ -7,6 +7,7 @@ import { useApi } from "@/hooks/useApi";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import {
+  detailQuery,
   externalLinks,
   findIndicator,
   INDICATOR_NO_CHART,
@@ -63,7 +64,9 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
   const row = macroCardRow(item, clock);
   const symbol = indicatorChartSymbol(item);
   const categoryTitle = withoutLeadingIcon(category.title) || category.title;
-  const query = indicatorNewsQuery(item.name);
+  // 뉴스·AI 요약의 검색어·이름은 백엔드 상한(60자) 안으로(QA-448).
+  const query = detailQuery(indicatorNewsQuery(item.name)) ?? undefined;
+  const label = detailQuery(item.name) ?? undefined;
   const related = category.items.filter((entry) => entry.key !== item.key).map((entry) => macroCardRow(entry, clock, indicatorHref(entry.key)));
 
   return (
@@ -104,7 +107,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:gap-8">
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
-          <AiSummaryCard request={symbol ? { market: "us", code: symbol, q: query, label: item.name } : { q: query, label: item.name }} />
+          <AiSummaryCard request={symbol ? { market: "us", code: symbol, q: query, label } : { q: query, label }} />
           <NewsCard path={endpoints.detail.news({ q: query })} searchQuery={query} />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">

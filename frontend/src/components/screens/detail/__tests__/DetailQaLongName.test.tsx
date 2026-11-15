@@ -78,7 +78,8 @@ describe("종목 상세 — 60자를 넘는 시세 이름의 뉴스·AI 요약 �
   // QA-448: 시세 이름이 60자를 넘으면(Yahoo longName) 화면이 GET /api/detail/news?q=<이름 전체>를 불러 400을 받고 '주요 뉴스' 카드에
   // "검색어는 60자 이하로 입력하세요."와 '다시 시도'가 떴습니다. AI 요약(POST /api/detail/summary)의 q·label도 같은 60자 검사를 받습니다.
   // 수정 전 실패: 뉴스 요청의 q가 71자 이름 전체라 가짜 백엔드가 400으로 거절하고 카드에 오류 문구가 보임(재현 커밋에서는 it.fails).
-  it.fails("뉴스 요청의 q는 낱말 경계에서 60자 안으로 줄인 이름이고, 카드에 기사가 보인다", async () => {
+  // 고침: lib/detail의 detailQuery로 낱말 경계에서 60자 안으로 줄여 보냄(지표·기관 상세도 같은 함수).
+  it("뉴스 요청의 q는 낱말 경계에서 60자 안으로 줄인 이름이고, 카드에 기사가 보인다", async () => {
     render(
       <SessionUserProvider user={PRO}>
         <StockDetailScreen market="us" code="FUFH" />
@@ -94,7 +95,7 @@ describe("종목 상세 — 60자를 넘는 시세 이름의 뉴스·AI 요약 �
     for (const path of news) expect(newsQuery(path)).toBe(CLAMPED);
   });
 
-  it.fails("AI 요약 요청의 q·label도 같은 검색어로 60자 안 — 요약이 보인다", async () => {
+  it("AI 요약 요청의 q·label도 같은 검색어로 60자 안 — 요약이 보인다", async () => {
     render(
       <SessionUserProvider user={PRO}>
         <StockDetailScreen market="us" code="FUFH" />
