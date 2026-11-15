@@ -608,7 +608,7 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(within(limits).getByText(/장중 확인은 세션당 최대 한 번/)).toBeTruthy();
     // 순자산 곡선의 계좌2 색(검증한 자주색).
     const nav = screen.getByRole("list", { name: "차트 순자산 곡선" });
-    expect(within(nav).getByText("Claude 계좌2").getAttribute("data-color")).toBe("#bd6bbd");
+    expect(within(nav).getByText("Claude 계좌2").getAttribute("data-color")).toBe("#ba5db3");
   });
 
   it("계좌2가 출발했으면 S = 100 선(계좌1·계좌2·SPY 계좌)과 노출 추이의 계좌2 선", async () => {
