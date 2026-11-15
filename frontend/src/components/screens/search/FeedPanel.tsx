@@ -80,6 +80,10 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 한 번에 하나만 만들므로(겹치면 429), 앞서 누른 요약이 끝나기 전에는 기간·탭을 바꿔도 단추를 잠그고 그 까닭을 적습니다(훅이 모듈에 기억 —
  * 읽는 중인 기간·탭으로 돌아오면 읽는 중으로 보이고 그 응답을 받음).
  */
+/** 시트가 열려 있을 때 시트 위로 올라간 TOP 단추(ScrollTopButton)가 차지하는 띠 — lg 미만 16 + 44, lg 이상 24 + 34px를 덮는 64px.
+ *  globals.css의 스크롤 여백(min(--bottom-sheet, 64px))과 같은 값이어야 합니다(QA-420 후속). */
+const SHEET_TOP_BUTTON_BAND = 64;
+
 export function FeedPanel({
   entityKey,
   feedTab,
@@ -199,7 +203,9 @@ export function FeedPanel({
     if (sheet.height <= 0 || !row || !pane) return;
     const box = row.getBoundingClientRect();
     const top = pane.getBoundingClientRect().top;
-    if (box.bottom > top && box.top < top + sheet.height) row.scrollIntoView({ block: "nearest" });
+    // 시트 위로 올라간 TOP 단추 자리(SHEET_TOP_BUTTON_BAND)에 걸친 줄도 옮깁니다 — 스크롤 여백도 그만큼 더 두므로 nearest가 단추 위에 멈춥니다(QA-420 후속).
+    const band = Math.min(sheet.height, SHEET_TOP_BUTTON_BAND);
+    if (box.bottom > top - band && box.top < top + sheet.height) row.scrollIntoView({ block: "nearest" });
   }, [sheet.height]);
 
   const select = (index: number) => {

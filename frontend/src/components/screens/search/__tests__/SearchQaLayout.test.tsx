@@ -336,7 +336,7 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
   // 시트 위끝 바로 위 — 시트 위로 올라간 TOP 단추 자리(64px, globals.css의 스크롤 여백과 같은 값) — 에 있으면 단추가 그 줄을 덮었는데
   // (1024에서 29x15px), 다시 옮기는 조건이 '시트가 줄을 덮을 때'뿐이었습니다. 그 띠에 걸친 줄도 옮겨야 합니다.
   // 수정 전 실패: 줄 450~482(시트 위끝 500, 띠 436~500)를 옮기지 않음(재현 커밋에서는 it.fails).
-  it.fails("시트가 열릴 때 고른 줄이 시트 위 TOP 단추 자리(64px 띠)에 걸치면 그 줄도 옮긴다", async () => {
+  it("시트가 열릴 때 고른 줄이 시트 위 TOP 단추 자리(64px 띠)에 걸치면 그 줄도 옮긴다", async () => {
     selectedBox = { top: 450, bottom: 482 };
     const { row, scrolled } = await openPreview(1);
     await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
