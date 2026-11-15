@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { ErrorState, Loading } from "@/components/ui";
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { ChevronDownIcon, ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
-import { useBottomSheet } from "@/hooks/useBottomSheet";
+import { useBottomSheet, type BottomSheetSpace } from "@/hooks/useBottomSheet";
 import { useInfoSearchFeed } from "@/hooks/useInfoSearch";
 import { useInfoSearchSummary } from "@/hooks/useInfoSearchSummary";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -59,6 +59,7 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * lg(1024~1279)는 두 칸(왼쪽 · 가운데 — 속성은 가운데 아래, 미리 보기는 아래 시트)입니다(entityGrid — QA-420).
  * 아래 시트가 열려 있으면 그 높이를 재서(useBottomSheet) 결과 아래에 같은 여백을 두고(끝 줄·출처 상태 줄이 시트 위로 올라오게), 스크롤 여백
  * (globals.css의 --bottom-sheet)으로 ↑↓·End로 고른 줄이 시트 밑에 숨지 않게 하며, 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다.
+ * 열린 동안 시트는 줄지 않습니다(sheetStyle — 닫으면 처음 높이부터).
  * 넓은 화면(lg)에서는 시트가 본문의 스크롤 막대를 덮지 않게 그 폭만큼 오른쪽을 비웁니다.
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
@@ -77,7 +78,8 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 목록을 좁힙니다(기간을 바꾸면 풂). 목록은 기본으로 같은 사건을 묶어(대표 줄 + '같은 사건 n건 · 매체 m곳 — 펼치기' 줄) 보이고 '묶어 보기'
  * 전환으로 모든 줄을 봅니다. 묶음 줄도 목록의 한 줄이라 ↑↓로 지나가고 Enter·누르기로 펼치거나 접습니다(결과 줄의 Enter는 그대로 원문).
  * 묶음 줄을 고르면 미리 보기 자리(xl 미만은 아래 시트)에 그 묶음(건수·매체 수, 대표 줄, 다른 보도, 펼치는 법)을 보입니다 — ↑↓로 지나갈 때
- * 시트가 닫혔다 열리며 화면 아래가 깜빡이거나 본문 높이가 바뀌어 고른 줄이 움직이지 않게(시트·--bottom-sheet·TOP 단추가 그대로).
+ * 시트가 닫혔다 열리며 화면 아래가 깜빡이지 않게. 묶음 미리 보기는 결과 줄의 미리 보기보다 대개 높아(1024에서 약 343px 대 240~265px) 지날 때
+ * 시트가 커지지만, 열린 동안 줄지는 않으므로(sheetStyle) 다음 줄로 옮길 때 본문 높이가 줄어 고른 줄이 움직이지 않습니다.
  *
  * 단계 6 묶음 2(계약 §9-4): 이 대상이 내 관심 대상이면 속성 칸에 별칭 편집(aliasEditor)을 두고, 저장하면 이 결과를 다시 부릅니다(별칭이 검색어라).
  *
@@ -706,7 +708,7 @@ export function FeedPanel({
             232px 옆, 본문 스크롤 막대 옆까지). */}
         <div
           ref={sheetRef}
-          style={sheet.gutter > 0 ? { right: sheet.gutter } : undefined}
+          style={sheetStyle(sheet)}
           className={`${
             previewOpen
               ?"fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
@@ -721,6 +723,21 @@ export function FeedPanel({
       {owner ? <ReaderDialog entry={reader} onClose={() => setReader(null)} /> : null}
     </div>
   );
+}
+
+/**
+ * 열린 아래 시트(xl 미만)의 모양 — 오른쪽은 본문 스크롤 막대만큼 비우고(sheet.gutter), 높이는 잰 높이(sheet.height) 아래로 줄지 않게
+ * min-height로 둡니다(시트의 max-h와 같은 50dvh 상한 안). 그러면 잰 높이는 열린 동안 커지기만 해서, ↑↓로 높은 미리 보기(묶음 줄·긴 요약)에서
+ * 낮은 미리 보기(요약 없는 줄 등)로 옮겨도 시트·결과 아래 여백(marginBottom)·--bottom-sheet·TOP 단추가 내려오지 않습니다. 줄면 본문의 스크롤
+ * 높이가 줄어 목록 끝 근처에서 스크롤 위치가 당겨지고 고른 줄이 그만큼 움직였습니다(1024에서 묶음 343px → 결과 줄 240px이면 약 103px).
+ * 닫으면 잰 높이가 0이 되어 풀립니다(다음에 열 때는 그 미리 보기의 높이부터). 시트가 흐름 안(xl 오른쪽 칸)이면 잰 높이가 0이라 두지 않습니다.
+ */
+function sheetStyle(sheet: BottomSheetSpace): CSSProperties | undefined {
+  if (sheet.height <= 0 && sheet.gutter <= 0) return undefined;
+  return {
+    ...(sheet.gutter > 0 ? { right: sheet.gutter } : {}),
+    ...(sheet.height > 0 ? { minHeight: `min(${sheet.height}px, 50dvh)` } : {}),
+  };
 }
 
 /** 거르기 한 묶음 — 값마다 체크 상자(켜면 보임)와 건수. 값이 없으면 그리지 않습니다. */

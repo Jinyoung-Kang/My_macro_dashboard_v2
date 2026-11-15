@@ -337,6 +337,8 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
   const SHEET_TOP = 500;
   const SHEET_HEIGHT = 240;
   let sheetFixed: boolean;
+  /** 시트 안 내용의 높이 — 시트의 높이는 이것과 시트의 min-height(인라인 'min(Npx, 50dvh)' — CSS처럼) 가운데 큰 쪽입니다. */
+  let contentHeight: (sheet: HTMLElement) => number;
   /** 고른 줄의 화면 위 자리(위·아래 끝). */
   let selectedBox: { top: number; bottom: number };
   let main: HTMLElement;
@@ -345,9 +347,21 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
   const rect = (top: number, height: number) =>
     ({ x: 0, y: top, top, left: 0, right: 0, bottom: top + height, width: 0, height, toJSON: () => ({}) }) as DOMRect;
   const reserved = () => document.documentElement.style.getPropertyValue(BOTTOM_SHEET_VAR);
+  const minHeightOf = (element: HTMLElement) => Number(/^min\((\d+)px/.exec(element.style.minHeight)?.[1] ?? 0);
+  /** 같은 사건 묶음(대표 줄 + 다른 보도 하나)과 다음 결과 줄 — 목록은 대표 줄 · 묶음 줄 · 다음 줄. */
+  const CLUSTERED = {
+    ...FEED,
+    items: [
+      row({ id: "a1", title: "묶음 대표", clusterId: "a1", cluster: { size: 2, publishers: 2 }, publishedAt: "2026-11-13T23:00:00+00:00" }),
+      row({ id: "a2", title: "묶음 둘째", clusterId: "a1", publisher: "Other Wire", publisherDomain: "other.example", publishedAt: "2026-11-14T00:00:00+00:00" }),
+      row({ id: "b1", title: "다음 기사", publishedAt: "2026-11-13T10:00:00+00:00" }),
+    ],
+    rangeCounts: { "7d": 3, "30d": 3, "1y": 3, "2y": 3 },
+  };
 
   beforeEach(() => {
     sheetFixed = true;
+    contentHeight = () => SHEET_HEIGHT;
     selectedBox = { top: 600, bottom: 632 };
     const realStyle = window.getComputedStyle.bind(window);
     const style = vi
@@ -356,7 +370,7 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
         sheetFixed && isSheet(element) ? ({ position: "fixed" } as CSSStyleDeclaration) : realStyle(element, pseudo),
       );
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      if (isSheet(this)) return rect(SHEET_TOP, SHEET_HEIGHT);
+      if (isSheet(this)) return rect(SHEET_TOP, Math.max(contentHeight(this), minHeightOf(this)));
       if (this.getAttribute("role") === "option" && this.getAttribute("aria-selected") === "true") {
         return rect(selectedBox.top, selectedBox.bottom - selectedBox.top);
       }
@@ -434,17 +448,8 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
   // 결과 아래 여백이 사라짐 — 1024에서 본문 높이 2504 → 2688, TOP 단추도 내려옴) 다음 ↓에서 다시 열렸습니다. 묶음 줄도 미리 보기(묶음)를 보이므로
   // 시트·스크롤 여백·결과 아래 여백이 그대로입니다. 수정 전 실패: 묶음 줄에서 미리 보기가 사라지고 --bottom-sheet가 지워짐.
   it("↑↓로 묶음 줄을 지나도 시트가 닫히지 않는다 — --bottom-sheet·결과 아래 여백이 그대로", async () => {
-    const clustered = {
-      ...FEED,
-      items: [
-        row({ id: "a1", title: "묶음 대표", clusterId: "a1", cluster: { size: 2, publishers: 2 }, publishedAt: "2026-11-13T23:00:00+00:00" }),
-        row({ id: "a2", title: "묶음 둘째", clusterId: "a1", publisher: "Other Wire", publisherDomain: "other.example", publishedAt: "2026-11-14T00:00:00+00:00" }),
-        row({ id: "b1", title: "다음 기사", publishedAt: "2026-11-13T10:00:00+00:00" }),
-      ],
-      rangeCounts: { "7d": 3, "30d": 3, "1y": 3, "2y": 3 },
-    };
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
-    reads[endpoints.search.feed("us:NVDA", "timeline")] = clustered;
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = CLUSTERED;
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const list = await screen.findByRole("listbox", { name: "결과" });
     const panel = entityGridOf(list).parentElement as HTMLElement;
@@ -470,6 +475,63 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
       expect(panel.style.marginBottom).toBe(`${SHEET_HEIGHT}px`);
     }
     expect(removed).not.toHaveBeenCalledWith(BOTTOM_SHEET_VAR);
+  });
+
+  // 검토 지적(위 시험의 고침 — 1024 스크롤 당김): 묶음 미리 보기(1024에서 약 343px)는 결과 줄의 미리 보기(240~265px)보다 높아, 시트가 닫히지는
+  // 않아도 묶음 줄에서 다음 줄로 옮기면 시트·결과 아래 여백·--bottom-sheet가 약 103px 줄었습니다. 목록 끝 근처에서는 본문의 스크롤 높이가 그만큼
+  // 줄어 스크롤 위치가 당겨지고 고른 줄이 움직였습니다(원래 지적한 약 104px와 같은 작동). 열린 동안 시트는 잰 높이 아래로 줄지 않습니다.
+  // 수정 전 실패: 다음 줄에서 시트의 min-height가 없고 결과 아래 여백이 240px로 줄어듦.
+  it("열린 동안 시트는 줄지 않는다 — 높은 묶음 미리 보기에서 낮은 결과 줄로 옮겨도 결과 아래 여백·--bottom-sheet가 그대로, 닫으면 풀림", async () => {
+    const CLUSTER_HEIGHT = 343;
+    contentHeight = (sheet) => (sheet.querySelector('ul[aria-label="같은 사건의 다른 보도"]') ? CLUSTER_HEIGHT : SHEET_HEIGHT);
+    // jsdom에는 ResizeObserver가 없습니다 — 시트의 크기가 바뀐 것을 알리는 자리를 손으로 부릅니다.
+    const observers: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    restore.push(() => vi.unstubAllGlobals());
+    const resized = () => act(() => observers.forEach((callback) => callback()));
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = CLUSTERED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const panel = entityGridOf(list).parentElement as HTMLElement;
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    restore.push(() => scroll.mockRestore());
+    list.focus();
+    fireEvent.keyDown(list, { key: "Home" });
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    const sheet = screen.getByRole("region", { name: "미리 보기" }).parentElement?.parentElement as HTMLElement;
+    expect(sheet.style.minHeight).toBe(`min(${SHEET_HEIGHT}px, 50dvh)`);
+
+    // 묶음 줄 — 시트가 커짐(그만큼 결과 아래 여백도).
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    resized();
+    expect(reserved()).toBe(`${CLUSTER_HEIGHT}px`);
+    expect(panel.style.marginBottom).toBe(`${CLUSTER_HEIGHT}px`);
+
+    // 다음 결과 줄 — 내용은 240px이지만 시트·여백은 줄지 않음.
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    resized();
+    expect(within(list).getAllByRole("option")[2].getAttribute("aria-selected")).toBe("true");
+    expect(sheet.style.minHeight).toBe(`min(${CLUSTER_HEIGHT}px, 50dvh)`);
+    expect(reserved()).toBe(`${CLUSTER_HEIGHT}px`);
+    expect(panel.style.marginBottom).toBe(`${CLUSTER_HEIGHT}px`);
+
+    // 닫으면 풀리고, 다시 열면 그 미리 보기의 높이부터.
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(sheet.style.minHeight).toBe("");
+    expect(panel.style.marginBottom).toBe("");
+    fireEvent.keyDown(list, { key: "Home" });
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    expect(panel.style.marginBottom).toBe(`${SHEET_HEIGHT}px`);
   });
 
   it("xl(오른쪽 칸 — 흐름 안)에서는 비우지 않는다", async () => {
