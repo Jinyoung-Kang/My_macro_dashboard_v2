@@ -85,6 +85,8 @@ function textPieces(node: ts.Node, out: TextPiece[] = []): TextPiece[] {
 }
 
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
+/** 제품 소스 전체를 구문 분석하는 검사의 시간 한도 — 보통 1~2초지만 바쁜 기계(병렬 시험)에서 5초 기본 한도를 넘긴 적이 있습니다(검사 내용 그대로). */
+const SOURCE_SCAN_TIMEOUT_MS = 30_000;
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -154,5 +156,5 @@ describe("색 클래스 — 토큰 이름만(소스 검사)", () => {
   // 고침: 그 칸을 패널 경계 토큰(border-border)으로.
   it("QA-471: 제품 소스의 색 클래스는 모두 globals.css 토큰 이름이다", () => {
     expect(offenders()).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 });

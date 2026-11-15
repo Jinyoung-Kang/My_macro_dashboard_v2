@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 const SRC = resolve(__dirname, "../..");
 const SCREEN_DIRS = [resolve(SRC, "components/screens"), resolve(SRC, "app")];
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
+/** 화면 소스 전체를 구문 분석하는 검사의 시간 한도 — 보통 1초 남짓이지만 바쁜 기계(병렬 시험)에서 5초 기본 한도를 넘길 수 있습니다(검사 내용 그대로). */
+const SOURCE_SCAN_TIMEOUT_MS = 30_000;
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -78,5 +80,5 @@ describe("화면의 알약 모양 — 소스 검사(명세 §3-8)", () => {
       pillHits(path, readFileSync(path, "utf8")).map((hit) => `${relative(SRC, path)}:${hit}`),
     );
     expect(hits).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 });

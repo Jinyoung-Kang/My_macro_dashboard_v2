@@ -297,6 +297,8 @@ describe("정보 검색 범위 블록(P7에서 걷어 냄)", () => {
 
 const SRC = resolve(__dirname, "../..");
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
+/** 제품 소스 전체를 구문 분석하는 검사의 시간 한도 — 보통 1~2초지만 바쁜 기계(병렬 시험)에서 5초 기본 한도를 넘긴 적이 있습니다(검사 내용 그대로). */
+const SOURCE_SCAN_TIMEOUT_MS = 30_000;
 
 /** 토큰 이름(--text-3) → 글자 클래스(text-text-3). */
 const textClass = (token: string) => `text-${token.slice(2)}`;
@@ -519,7 +521,7 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
 
   it("surface-3(덮개 안 hover·눌림) 바탕 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
     expect(offenders("surface-3")).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 
   // QA-459: 어두운 한 벌(앞 커밋)에서 accent 틴트 위 accent 글자가 4.47:1로 4.5에 못 미친다. 지금 어기는 자리 세 곳:
   //  - components/shell/SideNav.tsx — 현재 메뉴(`bg-accent-tint font-semibold text-accent`, lg 이상 모든 화면)
@@ -546,5 +548,5 @@ describe("모서리 — 소스 검사(명세 §3-8)", () => {
         .map((piece) => `${relative(SRC, path)}:${lineOf(source, piece)}`);
     });
     expect(hits).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 });
