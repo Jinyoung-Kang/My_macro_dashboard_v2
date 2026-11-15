@@ -343,6 +343,48 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
     expect(scrolled).toEqual([row]);
   });
 
+  // 개선 제안(QA 스택 재확인 1, 1024·390): ↓로 '같은 사건 n건 — 펼치기' 묶음 줄을 지나면 미리 보기가 없어 시트가 닫히고(--bottom-sheet를 지우고
+  // 결과 아래 여백이 사라짐 — 1024에서 본문 높이 2504 → 2688, TOP 단추도 내려옴) 다음 ↓에서 다시 열렸습니다. 묶음 줄도 미리 보기(묶음)를 보이므로
+  // 시트·스크롤 여백·결과 아래 여백이 그대로입니다. 수정 전 실패: 묶음 줄에서 미리 보기가 사라지고 --bottom-sheet가 지워짐.
+  it("↑↓로 묶음 줄을 지나도 시트가 닫히지 않는다 — --bottom-sheet·결과 아래 여백이 그대로", async () => {
+    const clustered = {
+      ...FEED,
+      items: [
+        row({ id: "a1", title: "묶음 대표", clusterId: "a1", cluster: { size: 2, publishers: 2 }, publishedAt: "2026-11-13T23:00:00+00:00" }),
+        row({ id: "a2", title: "묶음 둘째", clusterId: "a1", publisher: "Other Wire", publisherDomain: "other.example", publishedAt: "2026-11-14T00:00:00+00:00" }),
+        row({ id: "b1", title: "다음 기사", publishedAt: "2026-11-13T10:00:00+00:00" }),
+      ],
+      rangeCounts: { "7d": 3, "30d": 3, "1y": 3, "2y": 3 },
+    };
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = clustered;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const panel = entityGridOf(list).parentElement as HTMLElement;
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    restore.push(() => scroll.mockRestore());
+    list.focus();
+    fireEvent.keyDown(list, { key: "Home" });
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    const sheet = screen.getByRole("region", { name: "미리 보기" }).parentElement?.parentElement as HTMLElement;
+    const removed = vi.spyOn(document.documentElement.style, "removeProperty");
+    restore.push(() => removed.mockRestore());
+    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      expect.stringContaining("묶음 대표"),
+      "같은 사건 2건 · 매체 2곳 — 펼치기",
+      expect.stringContaining("다음 기사"),
+    ]);
+    for (const at of [1, 2]) {
+      fireEvent.keyDown(list, { key: "ArrowDown" });
+      expect(within(list).getAllByRole("option")[at].getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("region", { name: "미리 보기" }).parentElement?.parentElement).toBe(sheet);
+      expect(sheet.className.split(/\s+/)).toContain("fixed");
+      expect(reserved()).toBe(`${SHEET_HEIGHT}px`);
+      expect(panel.style.marginBottom).toBe(`${SHEET_HEIGHT}px`);
+    }
+    expect(removed).not.toHaveBeenCalledWith(BOTTOM_SHEET_VAR);
+  });
+
   it("xl(오른쪽 칸 — 흐름 안)에서는 비우지 않는다", async () => {
     sheetFixed = false;
     const { panel, sheet, scrolled } = await openPreview(1);

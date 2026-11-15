@@ -16,6 +16,7 @@ import {
   NO_FILTERS,
   SEARCH_RANGES,
   applyFilters,
+  clusterSizeText,
   clusterToggleText,
   cutByRange,
   facetCounts,
@@ -38,6 +39,7 @@ import {
   refreshNoteText,
   rowTimeText,
   sourceLabel,
+  type FeedClusterEntry,
   type FeedFacet,
   type FeedFilters,
   type PeriodBin,
@@ -71,6 +73,8 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 단계 6(계약 §9-1·9-2): 목록 위에 고른 기간의 건수 막대(PeriodBars — 거르기를 거친 줄, 묶기와 상관없이 줄 수)를 두고, 막대를 누르면 그 날·주로
  * 목록을 좁힙니다(기간을 바꾸면 풂). 목록은 기본으로 같은 사건을 묶어(대표 줄 + '같은 사건 n건 · 매체 m곳 — 펼치기' 줄) 보이고 '묶어 보기'
  * 전환으로 모든 줄을 봅니다. 묶음 줄도 목록의 한 줄이라 ↑↓로 지나가고 Enter·누르기로 펼치거나 접습니다(결과 줄의 Enter는 그대로 원문).
+ * 묶음 줄을 고르면 미리 보기 자리(xl 미만은 아래 시트)에 그 묶음(건수·매체 수, 대표 줄, 다른 보도, 펼치는 법)을 보입니다 — ↑↓로 지나갈 때
+ * 시트가 닫혔다 열리며 화면 아래가 깜빡이거나 본문 높이가 바뀌어 고른 줄이 움직이지 않게(시트·--bottom-sheet·TOP 단추가 그대로).
  *
  * 단계 6 묶음 2(계약 §9-4): 이 대상이 내 관심 대상이면 속성 칸에 별칭 편집(aliasEditor)을 두고, 저장하면 이 결과를 다시 부릅니다(별칭이 검색어라).
  *
@@ -188,11 +192,13 @@ export function FeedPanel({
   const selectedIndex = selectedKey === null ? -1 : flat.findIndex((entry) => entry.key === selectedKey);
   const selectedEntry = selectedIndex >= 0 ? flat[selectedIndex] : null;
   const selected = selectedEntry?.type === "item" ? selectedEntry.item : null;
+  /** 미리 보기가 열려 있는가 — 결과 줄이든 묶음 줄이든 고른 줄이 있으면(묶음 줄은 묶음 미리 보기). */
+  const previewOpen = selectedEntry !== null;
   /** 요약의 근거 단추로 갈 수 있는 줄 — 기간·거르기·막대 좁히기를 거친 줄(접힌 같은 사건 묶음의 줄 포함 — 누르면 펼침). */
   const reachableIds = useMemo(() => new Set(narrowed.map((item) => item.id)), [narrowed]);
   /** 오른쪽 칸 — xl 미만에서 줄을 고르면 아래 시트(고정)가 됩니다. 시트의 높이·본문 스크롤 막대 폭(QA-420 검토). */
   const sheetRef = useRef<HTMLDivElement>(null);
-  const sheet = useBottomSheet(sheetRef, selected !== null);
+  const sheet = useBottomSheet(sheetRef, previewOpen);
 
   // 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다(스크롤 여백을 따름 — nearest). 처음 고른 줄은 시트가 열리기
   // 전에 옮겨졌고, 누른 줄은 열린 시트에 덮일 수 있습니다. 덮지 않았으면(사용자가 다른 곳으로 스크롤한 뒤 휴대폰 주소 막대로 시트 높이가
@@ -534,6 +540,8 @@ export function FeedPanel({
       onClose={closePreview}
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
     />
+  ) : selectedEntry?.type === "cluster" ? (
+    <ClusterPreview entry={selectedEntry} onClose={closePreview} />
   ) : (
     <AttributesPanel
       entity={entity}
@@ -664,14 +672,14 @@ export function FeedPanel({
           ) : null}
           {body}
         </div>
-        {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴 232px 옆,
-            본문 스크롤 막대 옆까지). */}
+        {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄(묶음 줄 포함)의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴
+            232px 옆, 본문 스크롤 막대 옆까지). */}
         <div
           ref={sheetRef}
           style={sheet.gutter > 0 ? { right: sheet.gutter } : undefined}
           className={`${
-            selected
-              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
+            previewOpen
+              ?"fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
               : "border-t border-border"
           } p-3 xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:border-l xl:border-t-0 xl:shadow-none`}
         >
@@ -708,6 +716,95 @@ function FacetGroup({ title, facets, off, onToggle }: { title: string; facets: F
   );
 }
 
+/**
+ * 미리 보기의 틀 — 이름이 '미리 보기'인 영역, 머리와 닫기 단추. 결과 줄(FeedPreview)과 묶음 줄(ClusterPreview)이 같이 씁니다. 닫으면 부르는 쪽이
+ * 포커스를 결과 목록으로 옮깁니다(QA-430).
+ */
+function PreviewFrame({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <section aria-label="미리 보기" className="flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <PaneHeading>미리 보기</PaneHeading>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="미리 보기 닫기"
+          className="inline-flex size-11 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-7"
+        >
+          <XIcon size={14} />
+        </button>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** 줄의 시각(날짜만 아는 줄은 날짜)과 매체 — 미리 보기의 속성 줄. */
+function itemFactRows(item: SearchFeedItem): [string, string][] {
+  return [
+    isDateOnly(item)
+      ? ["날짜", `${itemTimeText(item)} (출처가 날짜만 줌)`]
+      : ["시각", `${itemTimeText(item)}${item.timeBasis === "fetched" ? " (받은 시각 — 출처가 작성 시각을 주지 않음)" : ""}`],
+    ["매체", [item.publisher, item.publisherDomain].filter(Boolean).join(" · ") || EMPTY],
+  ];
+}
+
+function FactList({ rows }: { rows: [string, string][] }) {
+  return (
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+      {rows.map(([name, value]) => (
+        <div key={name} className="contents">
+          <dt className="text-text-3">{name}</dt>
+          <dd className="min-w-0 break-words text-text-2">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** 묶음 미리 보기에 이름을 보일 다른 보도 수 — 나머지는 건수만(펼치면 목록에 모두). 시트 높이가 묶음 크기(최대 30줄)만큼 늘지 않게. */
+const CLUSTER_PREVIEW_MEMBERS = 5;
+
+/**
+ * 고른 묶음 줄의 미리 보기 — 묶음 줄과 같은 건수·매체 수(같은 셈), 대표 줄의 제목·매체·시각, 같은 사건의 다른 보도(앞 5건의 제목·매체·시각),
+ * 펼치는 법. 묶음 줄을 지날 때 미리 보기(xl 미만은 아래 시트)가 닫히지 않게 합니다.
+ */
+function ClusterPreview({ entry, onClose }: { entry: FeedClusterEntry; onClose: () => void }) {
+  const shown = entry.members.slice(0, CLUSTER_PREVIEW_MEMBERS);
+  const more = entry.members.length - shown.length;
+  return (
+    <PreviewFrame onClose={onClose}>
+      <p className="text-sm font-semibold leading-snug text-text">{clusterSizeText(entry)}</p>
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-text-3">대표 보도 — 가장 이른 줄</p>
+        <p className="text-sm leading-snug text-text">{entry.lead.title}</p>
+        <FactList rows={itemFactRows(entry.lead)} />
+      </div>
+      {shown.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-text-3">같은 사건의 다른 보도 {entry.members.length}건</p>
+          <ul aria-label="같은 사건의 다른 보도" className="flex flex-col gap-1.5">
+            {shown.map((item) => (
+              <li key={item.id} className="flex flex-col gap-0.5 border-l border-border-strong pl-2">
+                <span className="line-clamp-2 break-words text-sm leading-snug text-text-2">{item.title}</span>
+                <span className="text-xs text-text-3">
+                  {item.publisher ?? EMPTY} · {itemTimeText(item)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {more > 0 ? <p className="text-xs text-text-3">그 밖에 {more}건 — 펼치면 목록에 모두 나옵니다.</p> : null}
+        </div>
+      ) : null}
+      <p className="text-xs text-text-3">
+        {entry.expanded
+          ? "접기: 결과 목록에서 Enter(또는 묶음 줄 누르기) — 대표 줄만 남습니다."
+          : `펼치기: 결과 목록에서 Enter(또는 묶음 줄 누르기) — 나머지 ${entry.members.length}건이 대표 줄 아래에 나옵니다.`}
+      </p>
+    </PreviewFrame>
+  );
+}
+
 /** 고른 줄의 미리 보기 — 출처가 준 요약·매체·시각과 원문 열기. 본문은 받지 않습니다(D-3). 수집 글은 운영자에게 받아 둔 글 보기. */
 function FeedPreview({
   item,
@@ -723,36 +820,11 @@ function FeedPreview({
   onRead: () => void;
 }) {
   const url = httpUrl(item.url);
-  const rows: [string, string][] = [
-    isDateOnly(item)
-      ? ["날짜", `${itemTimeText(item)} (출처가 날짜만 줌)`]
-      : ["시각", `${itemTimeText(item)}${item.timeBasis === "fetched" ? " (받은 시각 — 출처가 작성 시각을 주지 않음)" : ""}`],
-    ["매체", [item.publisher, item.publisherDomain].filter(Boolean).join(" · ") || EMPTY],
-    ["종류", itemKindLabel(item.kind)],
-    ["받은 곳", label],
-  ];
+  const rows: [string, string][] = [...itemFactRows(item), ["종류", itemKindLabel(item.kind)], ["받은 곳", label]];
   return (
-    <section aria-label="미리 보기" className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-2">
-        <PaneHeading>미리 보기</PaneHeading>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="미리 보기 닫기"
-          className="inline-flex size-11 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-7"
-        >
-          <XIcon size={14} />
-        </button>
-      </div>
+    <PreviewFrame onClose={onClose}>
       <p className="text-sm font-semibold leading-snug text-text">{item.title}</p>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
-        {rows.map(([name, value]) => (
-          <div key={name} className="contents">
-            <dt className="text-text-3">{name}</dt>
-            <dd className="min-w-0 break-words text-text-2">{value}</dd>
-          </div>
-        ))}
-      </dl>
+      <FactList rows={rows} />
       {item.summary ? (
         <p className="whitespace-pre-wrap rounded-control bg-surface-2 p-2 text-sm leading-6 text-text-2">{item.summary}</p>
       ) : (
@@ -775,6 +847,6 @@ function FeedPreview({
         ) : null}
       </div>
       <p className="text-xs text-text-3">기사 본문은 받지 않습니다 — 제목·매체·시각·요약만입니다.</p>
-    </section>
+    </PreviewFrame>
   );
 }

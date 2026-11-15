@@ -489,8 +489,18 @@ export type FeedItemEntry = { type: "item"; key: string; item: SearchFeedItem; m
 /**
  * 대표 줄 아래의 묶음 줄('같은 사건 n건 · 매체 m곳 — 펼치기'). size·publishers는 보이는 줄로 센 값이고(매체 수는 서버 값을 넘지 않음),
  * 보이는 줄이 묶음 전체이면 매체 수는 서버(규칙 원본)의 값입니다. 매체를 하나도 모르면 publishers는 null. key = 'cluster:' + 묶음 id.
+ * lead는 그 위의 대표 줄, members는 나머지 보이는 줄(펼치면 그 아래에 놓이는 차례 — 최근순) — 묶음 줄을 고르면 미리 보기가 이것을 보입니다.
  */
-export type FeedClusterEntry = { type: "cluster"; key: string; clusterId: string; size: number; publishers: number | null; expanded: boolean };
+export type FeedClusterEntry = {
+  type: "cluster";
+  key: string;
+  clusterId: string;
+  size: number;
+  publishers: number | null;
+  expanded: boolean;
+  lead: SearchFeedItem;
+  members: SearchFeedItem[];
+};
 
 export type FeedEntry = FeedItemEntry | FeedClusterEntry;
 
@@ -584,14 +594,22 @@ const serverPublishers = (value: number | null | undefined) => (typeof value ===
 /**
  * 묶음 줄 — 건수는 보이는 줄. 매체 수는 보이는 줄이 묶음 전체면 서버(규칙 원본)의 값, 일부면 보이는 줄로 센 값이되 서버 값(묶음 전체의 매체
  * 수)을 넘지 않게 합니다(일부의 매체가 전체보다 많을 수 없음 — 이름 없는 줄의 도메인 규칙은 일부만 보면 따로 셀 수 있음).
+ * @param lead 보이는 대표 줄(clusterLead), rows의 나머지가 members
  * @param server 서버 대표 줄(id = 묶음 id — 거르기로 숨었어도 거르기 전 줄에서 찾음), 모르면 null
  */
-function clusterEntry(clusterId: string, rows: readonly SearchFeedItem[], server: SearchFeedItem | null, expanded: boolean): FeedClusterEntry {
+function clusterEntry(
+  clusterId: string,
+  rows: readonly SearchFeedItem[],
+  lead: SearchFeedItem,
+  server: SearchFeedItem | null,
+  expanded: boolean,
+): FeedClusterEntry {
   const known = serverPublishers(server?.cluster?.publishers);
   const whole = server !== null && server.cluster?.size === rows.length && rows.some((row) => row.id === server.id);
   const counted = publisherCount(rows);
   const publishers = whole && known !== null ? known : counted !== null && known !== null ? Math.min(counted, known) : counted;
-  return { type: "cluster", key: `cluster:${clusterId}`, clusterId, size: rows.length, publishers, expanded };
+  const members = rows.filter((row) => row !== lead);
+  return { type: "cluster", key: `cluster:${clusterId}`, clusterId, size: rows.length, publishers, expanded, lead, members };
 }
 
 const itemEntry = (item: SearchFeedItem, member: boolean): FeedItemEntry => ({ type: "item", key: item.id, item, member });
@@ -630,17 +648,23 @@ export function feedEntryGroups(
       const id = item.clusterId as string;
       const rows = clusters.get(id) as SearchFeedItem[];
       const open = options.expanded.has(id);
-      const out: FeedEntry[] = [itemEntry(item, false), clusterEntry(id, rows, servers.get(id) ?? null, open)];
-      if (open) out.push(...rows.filter((row) => row !== item).map((row) => itemEntry(row, true)));
+      const cluster = clusterEntry(id, rows, item, servers.get(id) ?? null, open);
+      const out: FeedEntry[] = [itemEntry(item, false), cluster];
+      if (open) out.push(...cluster.members.map((row) => itemEntry(row, true)));
       return out;
     }),
   }));
 }
 
+/** 묶음의 건수 글 — '같은 사건 n건 · 매체 m곳'(매체 수를 모르면 그 칸 없이). 묶음 줄과 그 미리 보기의 머리가 같이 씁니다. */
+export function clusterSizeText(entry: Pick<FeedClusterEntry, "size" | "publishers">): string {
+  const publishers = entry.publishers !== null ? ` · 매체 ${entry.publishers}곳` : "";
+  return `같은 사건 ${entry.size}건${publishers}`;
+}
+
 /** 묶음 줄의 글 — '같은 사건 n건 · 매체 m곳 — 펼치기'(펼쳤으면 '접기', 매체 수를 모르면 그 칸 없이). */
 export function clusterToggleText(entry: Pick<FeedClusterEntry, "size" | "publishers" | "expanded">): string {
-  const publishers = entry.publishers !== null ? ` · 매체 ${entry.publishers}곳` : "";
-  return `같은 사건 ${entry.size}건${publishers} — ${entry.expanded ? "접기" : "펼치기"}`;
+  return `${clusterSizeText(entry)} — ${entry.expanded ? "접기" : "펼치기"}`;
 }
 
 /** 펼친 줄이 놓인 날짜 묶음과 다른 KST 날짜면 'MM-DD'(시각 칸에 덧붙임). 같거나 모르거나 날짜만 아는 줄(이미 날짜)이면 null. */

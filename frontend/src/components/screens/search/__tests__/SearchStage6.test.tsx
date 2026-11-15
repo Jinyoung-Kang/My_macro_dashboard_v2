@@ -320,6 +320,65 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     expect(screen.queryByRole("option", { name: /둘째 보도/ })).toBeNull();
   });
 
+  // 개선 제안(QA 스택 재확인 1, 1024·390): ↓로 묶음 줄을 지나면 고른 것이 결과 줄이 아니라 미리 보기가 사라지고(아래 시트가 닫힘) 다음 ↓에서
+  // 다시 열렸습니다 — 화면 아래 264px가 깜빡이고 1024에서는 본문 높이가 바뀌어 고른 줄이 약 104px 움직였습니다. 묶음 줄을 고르면 같은 미리 보기
+  // 자리에 그 묶음을 보입니다(머리는 묶음 줄과 같은 셈, 대표 줄, 다른 보도, 펼치는 법, 같은 닫기 단추).
+  it("묶음 줄을 고르면 미리 보기가 닫히지 않고 그 묶음을 보인다 — 건수·매체 수, 대표 줄, 다른 보도, 펼치는 법", async () => {
+    renderScreen("/search?e=us:NVDA");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("region", { name: "미리 보기" })).toBeTruthy();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건/ }).getAttribute("aria-selected")).toBe("true");
+    const preview = screen.getByRole("region", { name: "미리 보기" });
+    expect(within(preview).getByText("같은 사건 3건 · 매체 2곳")).toBeTruthy();
+    expect(within(preview).getByText("대표 기사")).toBeTruthy();
+    expect(within(preview).getByText("2026-11-13 10:00 KST")).toBeTruthy();
+    expect(within(preview).getByText("Alpha · alpha.example")).toBeTruthy();
+    const others = within(preview).getByRole("list", { name: "같은 사건의 다른 보도" });
+    // 펼치면 놓이는 차례(최근순)와 같게, 매체·시각과 함께.
+    expect(within(others).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "둘째 보도Beta · 2026-11-14 07:00 KST",
+      "셋째 보도Alpha · 2026-11-13 14:00 KST",
+    ]);
+    expect(within(preview).getByText(/^펼치기: 결과 목록에서 Enter.*나머지 2건이 대표 줄 아래에 나옵니다/)).toBeTruthy();
+    // 속성 칸(xl 오른쪽 칸)으로 돌아가지 않음.
+    expect(screen.queryByRole("heading", { name: "속성" })).toBeNull();
+
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(within(screen.getByRole("region", { name: "미리 보기" })).getByText(/^접기: 결과 목록에서 Enter/)).toBeTruthy();
+
+    // 닫기 단추는 결과 줄의 미리 보기와 같음 — 포커스는 결과 목록(QA-430).
+    const close = within(screen.getByRole("region", { name: "미리 보기" })).getByRole("button", { name: "미리 보기 닫기" });
+    close.focus();
+    fireEvent.click(close);
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(document.activeElement).toBe(list);
+  });
+
+  it("묶음 미리 보기는 다른 보도를 앞 5건만 이름으로 — 나머지는 건수(펼치면 목록에 모두)", async () => {
+    const at = (hour: number) => `2026-11-13T${String(hour).padStart(2, "0")}:00:00+00:00`;
+    const big = [
+      row({ id: "b0", title: "큰 묶음 대표", clusterId: "b0", cluster: { size: 8, publishers: 8 }, publisher: "P0", publishedAt: at(1) }),
+      ...Array.from({ length: 7 }, (_, index) =>
+        row({ id: `b${index + 1}`, title: `큰 묶음 보도 ${index + 1}`, clusterId: "b0", publisher: `P${index + 1}`, publishedAt: at(index + 2) }),
+      ),
+    ];
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = feed({ items: big, rangeCounts: { "7d": 8, "30d": 8, "1y": 8, "2y": 8 } });
+    renderScreen("/search?e=us:NVDA");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    fireEvent.click(screen.getByRole("option", { name: /같은 사건 8건 · 매체 8곳/ }));
+    // 누르면 펼쳐지고(지금 동작) 미리 보기는 그 묶음.
+    const preview = screen.getByRole("region", { name: "미리 보기" });
+    expect(document.activeElement).toBe(list);
+    expect(within(preview).getByText("같은 사건의 다른 보도 7건")).toBeTruthy();
+    const names = within(within(preview).getByRole("list", { name: "같은 사건의 다른 보도" })).getAllByRole("listitem");
+    expect(names.map((item) => item.firstElementChild?.textContent)).toEqual([7, 6, 5, 4, 3].map((at) => `큰 묶음 보도 ${at}`));
+    expect(within(preview).getByText("그 밖에 2건 — 펼치면 목록에 모두 나옵니다.")).toBeTruthy();
+  });
+
   it("'묶어 보기'를 끄면 모든 줄을 지금처럼(묶음 줄 없음)", async () => {
     renderScreen("/search?e=us:NVDA");
     await screen.findByRole("listbox", { name: "결과" });

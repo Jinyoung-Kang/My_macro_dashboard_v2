@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   LINK_GRAPH_MAX,
   PERIOD_BARS_NOTE,
+  clusterSizeText,
   clusterToggleText,
   feedClusterCount,
   feedEmptyState,
@@ -270,6 +271,29 @@ describe("같은 사건 묶음 보기(계약 §9-2)", () => {
     expect(clusterToggleText({ size: 3, publishers: 2, expanded: false })).toBe("같은 사건 3건 · 매체 2곳 — 펼치기");
     expect(clusterToggleText({ size: 3, publishers: 2, expanded: true })).toBe("같은 사건 3건 · 매체 2곳 — 접기");
     expect(clusterToggleText({ size: 2, publishers: null, expanded: false })).toBe("같은 사건 2건 — 펼치기");
+  });
+
+  // 개선 제안(QA 스택 재확인 1, 1024·390): 묶음 줄을 고르면 미리 보기가 없어 아래 시트가 닫혔다가 다음 줄에서 다시 열렸습니다. 묶음 줄을
+  // 고르면 미리 보기 자리에 그 묶음을 보이도록, 묶음 줄이 대표 줄과 나머지 줄을 함께 갖고, 머리 글은 묶음 줄과 같은 셈을 씁니다.
+  it("묶음 줄은 대표 줄과 나머지 보이는 줄(펼친 차례 — 최근순)을 갖는다 — 묶음 미리 보기가 씀", () => {
+    const closed = clusterOf(sorted);
+    expect(closed?.lead).toBe(lead);
+    expect(closed?.members).toEqual([second, third]);
+    // 펼친 줄의 차례와 같음.
+    const open = feedEntryGroups(sorted, { grouped: true, expanded: new Set(["c1a"]) }).flatMap((group) => group.entries);
+    const opened = open.find((entry): entry is FeedClusterEntry => entry.type === "cluster");
+    expect(opened?.members.map((item) => item.id)).toEqual(open.filter((entry) => entry.type === "item" && entry.member).map((entry) => entry.key));
+    // 대표 줄이 보이지 않으면 보이는 줄 가운데 가장 이른 줄이 대표, 나머지가 members.
+    const partial = clusterOf([plain, second, third]);
+    expect(partial?.lead).toBe(third);
+    expect(partial?.members).toEqual([second]);
+  });
+
+  it("묶음 미리 보기의 머리 — 묶음 줄의 글에서 펼치기/접기만 뺀 것(같은 셈)", () => {
+    expect(clusterSizeText({ size: 3, publishers: 2 })).toBe("같은 사건 3건 · 매체 2곳");
+    expect(clusterSizeText({ size: 2, publishers: null })).toBe("같은 사건 2건");
+    const entry = clusterOf(sorted) as FeedClusterEntry;
+    expect(clusterToggleText(entry).startsWith(`${clusterSizeText(entry)} — `)).toBe(true);
   });
 
   it("펼친 줄이 대표와 다른 KST 날짜면 날짜를 덧붙임(날짜만 아는 줄은 이미 날짜라 없음)", () => {
