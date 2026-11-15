@@ -590,6 +590,18 @@ function publisherCount(rows: readonly SearchFeedItem[]): number | null {
   return counted.size || null;
 }
 
+/**
+ * 결과 목록·묶음 미리 보기의 매체 칸 — 매체 이름, 이름이 없으면 매체 도메인(받은 그대로 — 미리 보기 '매체' 칸의 글과 같음), 둘 다 없으면
+ * null('—'). 묶음의 매체 수는 이름 없는 줄을 도메인으로 세므로(publisherCount) 그 줄의 매체 칸도 '—' 대신 도메인을 보여 무엇으로 셌는지
+ * 보이게 합니다(QA 스택 기록 R3-SG3-5). domain이면 화면은 이름보다 덜 눈에 띄게 둡니다.
+ */
+export function publisherLabel(item: Pick<SearchFeedItem, "publisher" | "publisherDomain">): { text: string; domain: boolean } | null {
+  const name = (item.publisher ?? "").trim();
+  if (name) return { text: name, domain: false };
+  const domain = (item.publisherDomain ?? "").trim();
+  return domain ? { text: domain, domain: true } : null;
+}
+
 /** 서버가 준 매체 수(양수일 때만 — 0이나 모양이 틀린 값은 모름). */
 const serverPublishers = (value: number | null | undefined) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null);
 

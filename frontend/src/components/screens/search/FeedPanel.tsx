@@ -34,6 +34,7 @@ import {
   nextRowIndex,
   otherDateText,
   periodBars,
+  publisherLabel,
   rangeCountsOf,
   readerOfFeedItem,
   refreshNoteText,
@@ -523,6 +524,8 @@ export function FeedPanel({
                 }
                 const { item, member } = entry;
                 const otherDate = member ? otherDateText(item, group.date) : null;
+                // 매체 칸 — 이름이 없으면 도메인(묶음 매체 수도 그것으로 셈, 이름보다 덜 눈에 띄게), 둘 다 없으면 '—'.
+                const publisher = publisherLabel(item);
                 return (
                   <div
                     key={entry.key}
@@ -547,9 +550,9 @@ export function FeedPanel({
                     </span>
                     <span className="col-start-2 row-start-2 text-xs text-text-3 @xl:col-start-auto @xl:row-start-auto">
                       <ItemKindTag kind={item.kind} />
-                      <span className="@xl:hidden"> · {item.publisher ?? EMPTY}</span>
+                      <span className="@xl:hidden"> · {publisher?.text ?? EMPTY}</span>
                     </span>
-                    <span className="hidden truncate text-xs text-text-2 @xl:block">{item.publisher ?? EMPTY}</span>
+                    <span className={`hidden truncate text-xs @xl:block ${publisher?.domain ? "text-text-3" : "text-text-2"}`}>{publisher?.text ?? EMPTY}</span>
                     {/* 제목 — 두 칸 배치에서는 두 줄까지(넘으면 말줄임), 네 칸에서는 한 줄 말줄임. 전체 제목은 고르면 미리 보기에. */}
                     <span className="col-start-2 row-start-1 line-clamp-2 min-w-0 break-words text-text @xl:col-start-auto @xl:row-start-auto @xl:block @xl:truncate">
                       {member ? <span className="sr-only">같은 사건의 다른 보도: </span> : null}
@@ -889,7 +892,7 @@ function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: F
               <li key={item.id} className="flex flex-col gap-0.5 border-l border-border-strong pl-2">
                 <span className="line-clamp-2 break-words text-sm leading-snug text-text-2">{item.title}</span>
                 <span className="text-xs text-text-3">
-                  {item.publisher ?? EMPTY} · {itemTimeText(item)}
+                  {publisherLabel(item)?.text ?? EMPTY} · {itemTimeText(item)}
                 </span>
               </li>
             ))}

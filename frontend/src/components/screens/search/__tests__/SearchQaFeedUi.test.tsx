@@ -285,3 +285,36 @@ describe("결과 줄을 두 번 눌러 원문 열기는 마우스만(QA 스택 �
     }
   });
 });
+
+describe("매체 이름이 없는 줄의 매체 칸은 도메인(QA 스택 기록 R3-SG3-5)", () => {
+  // QA 스택(1440): 매체 이름이 없고 도메인('www.kalsynthmedia…')만 있는 줄을 묶음의 매체 수는 그 도메인으로 세는데(같은 계열과 한 곳), 목록의
+  // 매체 칸과 묶음 미리 보기의 다른 보도 줄은 '—'라 왜 그 줄이 이미 센 매체로 들어갔는지 볼 수 없었습니다. 이름이 없으면 도메인, 둘 다 없을 때만 '—'.
+  const DOMAIN = "www.kalsynthmedia.example";
+  const at = (hour: number) => `2026-11-13T${String(hour).padStart(2, "0")}:00:00+00:00`;
+  const CLUSTER = feed([
+    row({ id: "k0", title: "합성 대표 보도", clusterId: "k0", cluster: { size: 3, publishers: 2 }, publisher: "Kalsynth Media", publisherDomain: DOMAIN, publishedAt: at(1) }),
+    row({ id: "k1", title: "합성 도메인만 보도", clusterId: "k0", publisher: null, publisherDomain: DOMAIN, publishedAt: at(3) }),
+    row({ id: "k2", title: "합성 매체 모름 보도", clusterId: "k0", publisher: null, publisherDomain: null, publishedAt: at(2) }),
+  ]);
+
+  it("묶음 미리 보기의 다른 보도 줄과 펼친 목록의 매체 칸에 도메인을 보인다 — 둘 다 없는 줄만 '—'", async () => {
+    const list = await renderFeed(CLUSTER);
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    const preview = screen.getByRole("region", { name: "미리 보기" });
+    expect(within(preview).getByText("같은 사건 3건 · 매체 2곳")).toBeTruthy();
+    const lines = within(within(preview).getByRole("list", { name: "같은 사건의 다른 보도" })).getAllByRole("listitem");
+    expect(lines.map((line) => line.lastElementChild?.textContent?.split(" · ")[0])).toEqual([DOMAIN, "—"]);
+
+    fireEvent.keyDown(list, { key: "Enter" });
+    const option = (title: string) => screen.getByRole("option", { name: new RegExp(title) });
+    // 넓은 목록의 매체 칸(@xl) — 도메인은 이름보다 덜 눈에 띄게(text-text-3).
+    const domainCell = within(option("합성 도메인만 보도")).getByText(DOMAIN);
+    expect(domainCell.className.split(/\s+/)).toEqual(expect.arrayContaining(["@xl:block", "text-text-3"]));
+    // 좁은 목록의 종류 · 매체 줄도 같은 글.
+    expect(within(option("합성 도메인만 보도")).getByText(`· ${DOMAIN}`)).toBeTruthy();
+    expect(within(option("합성 매체 모름 보도")).getByText("—").className.split(/\s+/)).toContain("@xl:block");
+    expect(within(option("합성 대표 보도")).getByText("Kalsynth Media").className.split(/\s+/)).toContain("text-text-2");
+  });
+});
