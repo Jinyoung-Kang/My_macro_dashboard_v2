@@ -792,14 +792,21 @@ export interface DonutSegment {
   label?: string | null;
 }
 
-/** 도넛 툴팁 — 값이 앞(굵게), 이름이 뒤. 이름 앞의 짧은 선이 조각 색입니다(글자에는 계열 색을 입히지 않음). */
+/**
+ * 도넛 툴팁 — 값이 앞(굵게), 이름이 뒤. 이름 앞의 짧은 선이 조각 색입니다(글자에는 계열 색을 입히지 않음). 그 견본은 고대비(forced-colors)에서도
+ * 조각 색 그대로입니다(forced-color-adjust-none — 조각 SVG와 같은 규칙, QA-497).
+ */
 function DonutTooltip({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) {
   const datum = payload?.[0]?.payload as DonutSegment | undefined;
   if (!active || !datum) return null;
   return (
     <div style={tooltipStyle().contentStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span aria-hidden style={{ display: "inline-block", width: 12, height: 2, borderRadius: 1, backgroundColor: datum.color }} />
+        <span
+          aria-hidden
+          className="forced-color-adjust-none"
+          style={{ display: "inline-block", width: 12, height: 2, borderRadius: 1, backgroundColor: datum.color }}
+        />
         <strong style={{ color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{datum.valueText}</strong>
         <span style={{ color: "var(--text-2)" }}>{datum.name}</span>
       </div>

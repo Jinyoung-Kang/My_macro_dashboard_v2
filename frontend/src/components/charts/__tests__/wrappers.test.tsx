@@ -204,9 +204,9 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
 
 // QA-497: 고대비(forced-colors)에서 Recharts SVG 선·조각은 작성자 색을 남기는데(크롬 svg forced-color-adjust: preserve-parent-color), 이름 옆
 // CSS 견본(범례 테두리·툴팁 바탕색)은 시스템 색(검정·흰색)으로 바뀌어 이름과 선을 맞출 수 없었습니다(/cot·/paper/us·/paper/kr 1440).
-// 견본도 그것이 가리키는 선·조각과 같은 규칙(작성자 색 유지 — forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails입니다.
+// 견본도 그것이 가리키는 선·조각과 같은 규칙(작성자 색 유지 — forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails였습니다.
 describe("고대비에서 견본은 계열 색 그대로(forced-color-adjust-none)", () => {
-  it.fails("QA-497: 글자 범례의 견본마다 forced-color-adjust-none", () => {
+  it("QA-497: 글자 범례의 견본마다 forced-color-adjust-none", () => {
     render(
       <ChartLegend
         entries={[
@@ -224,7 +224,7 @@ describe("고대비에서 견본은 계열 색 그대로(forced-color-adjust-non
     }
   });
 
-  it.fails("QA-497: 선 차트 툴팁의 계열 견본마다 forced-color-adjust-none", () => {
+  it("QA-497: 선 차트 툴팁의 계열 견본마다 forced-color-adjust-none", () => {
     const { container } = render(
       <LineChartTooltip
         model={{

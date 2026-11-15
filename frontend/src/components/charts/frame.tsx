@@ -92,6 +92,8 @@ export function EdgeDateTick({
  * 글자 범례 한 줄 — 색 짧은 선(점선 계열은 그림 선과 같은 점선 REFERENCE_DASH) + 이름. 색은 보조이고 이름이 본 뜻입니다.
  * 견본은 SVG 선(16px — 점선 한 주기 6 + 4 + 6)입니다. CSS 테두리(border-top dashed, 12px)는 크롬이 굵기 2px에서 토막 6 x 2 이하 길이를
  * 실선으로 칠해 점선 견본이 실선 토막이 됐습니다(QA-496 — 테두리 점선 모양은 엔진마다 다름).
+ * 고대비(forced-colors)에서도 견본은 그림 선과 같은 계열 색입니다(forced-color-adjust-none) — 그 모드에서 SVG 선은 작성자 색이 남는데 견본만
+ * 시스템 색이 되면 이름과 선을 맞출 수 없었습니다(QA-497).
  */
 export type LegendEntry = { key: string; label: string; color: string; dashed?: boolean };
 
@@ -110,7 +112,7 @@ export function ChartLegend({ entries }: { entries: readonly LegendEntry[] }) {
     <ul aria-label="범례" className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
       {entries.map((entry) => (
         <li key={entry.key} className="inline-flex items-center gap-1.5">
-          <svg aria-hidden="true" width={LEGEND_SWATCH_WIDTH} height={2} className="shrink-0">
+          <svg aria-hidden="true" width={LEGEND_SWATCH_WIDTH} height={2} className="shrink-0 forced-color-adjust-none">
             <line
               x1={0}
               y1={1}
