@@ -5,6 +5,8 @@
  *  - 데이터 영역의 고르기(기간 알약·세그먼트)는 강조 파랑을 쓰지 않는다(원칙 A1), 탐색(밑줄 탭)의 지금 탭만 강조 파랑 밑줄
  *  - 좁은 화면에서 누르는 자리는 44px, 포커스는 2px 바깥선
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -56,6 +58,55 @@ describe("세그먼트 segmentClasses", () => {
     for (const classes of [checked, idle]) {
       expect(classes).toContain("has-[:focus-visible]:outline-2");
       expect(classes.some((name) => name.includes("accent"))).toBe(false);
+    }
+  });
+});
+
+/** globals.css :root의 색 토큰 값(#rrggbb) — 고른 칸 표시의 대비를 세려고 읽습니다. */
+const ROOT_TOKENS: Record<string, string> = (() => {
+  const css = readFileSync(resolve(__dirname, "../../../app/globals.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const root = /(?:^|[;}])\s*:root\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+  return Object.fromEntries([...root.matchAll(/(--[\w-]+)\s*:\s*(#[0-9a-f]{6})\s*;/gi)].map(([, name, value]) => [name, value.toLowerCase()]));
+})();
+
+/** WCAG 2.x 대비 — 두 #rrggbb. */
+function contrastOf(a: string, b: string): number {
+  const luminance = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((at) => {
+      const c = parseInt(hex.slice(at, at + 2), 16) / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** 고른 칸 클래스의 링 색 토큰 이름(ring-border-strong → --border-strong). ring-1·ring-inset 같은 폭·위치 이름은 건너뜁니다. */
+function ringToken(classes: string): string | undefined {
+  const color = tokens(classes).find((name) => /^ring-(?!\d|inset$)[\w-]+$/.test(name));
+  return color ? `--${color.slice("ring-".length)}` : undefined;
+}
+
+// QA-484: 세그먼트(홈 시장 고르기·결정 로그 보기·실행 감사 계좌)의 고른 칸은 어두운 트랙(bg) 위에 뜬 칩(surface-2)과 1px 링으로 그리는데,
+// 링이 패널 경계(ring-border #383e47)라 트랙 위 1.71:1·칩 바탕과 1.34:1이었고 칩 바탕도 트랙과 1.28:1이었습니다 — 고른 칸을 알리는 표시가 모두
+// WCAG 1.4.11(상태를 알리는 그래픽 3:1)에 못 미쳐 굵기(500 → 600)만 남았습니다(캡처에서 홈 '미국/한국'의 고른 칸이 거의 구분되지 않음).
+// 같은 키트의 기간 고르기(pillTabClasses)는 고른 칸에 진한 링(ring-border-strong)을 써 3:1을 넘습니다. 링은 칩 바탕(surface-2)과 둘레 면 모두에
+// 닿으므로 bg·surface·surface-2 위에서 셉니다. 고대비(forced-colors) 모드의 테두리는 그대로입니다.
+describe("고른 칸 표시의 대비(WCAG 1.4.11)", () => {
+  it.fails("QA-484: 세그먼트·기간 고르기의 고른 칸 링은 bg·surface·surface-2 위 3:1 이상이다", () => {
+    for (const [name, classes] of [
+      ["segmentClasses", segmentClasses(true)],
+      ["pillTabClasses", pillTabClasses(true)],
+    ] as const) {
+      const ring = ringToken(classes);
+      expect(ring, `${name}의 링 색`).toBeDefined();
+      const value = ROOT_TOKENS[ring ?? ""];
+      expect(value, `${name}의 링 토큰 ${ring}`).toMatch(/^#[0-9a-f]{6}$/);
+      for (const back of ["--bg", "--surface", "--surface-2"]) {
+        const ratio = contrastOf(value, ROOT_TOKENS[back]);
+        expect(ratio, `${name} ${ring} on ${back} = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(3);
+      }
     }
   });
 });
