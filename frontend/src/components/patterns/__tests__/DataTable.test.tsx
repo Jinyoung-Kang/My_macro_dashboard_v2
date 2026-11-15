@@ -287,6 +287,26 @@ describe("DataTable — 정렬", () => {
     expect(screen.getByRole("columnheader", { name: /비중/ }).hasAttribute("aria-sort")).toBe(false);
   });
 
+  // QA-504: 정렬 전 '↕'를 opacity-50으로 흐리게 그려 실제 색이 토큰에 없는 #71767d(머리 바탕 surface 위 3.54:1)가 됐다 — 토큰 대비 시험에도
+  // 걸리지 않는다. 흐린 단계는 글자 토큰(text-3, 캡션·각주 — surface 위 5.62:1)으로 그린다.
+  it.fails("정렬 전 머리의 흐린 표시는 불투명도가 아니라 글자 토큰(text-text-3)으로 그린다 — 정렬한 열은 그대로 머리 글자색(QA-504)", () => {
+    const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+    const markOf = (name: RegExp) =>
+      within(screen.getByRole("columnheader", { name })).getByRole("button").querySelector('span[aria-hidden="true"]') as HTMLElement;
+    render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
+    for (const name of [/종목/, /비중/]) {
+      const mark = markOf(name);
+      expect(mark.textContent).toBe("↕");
+      expect(classesOf(mark).filter((cls) => /^opacity-/.test(cls))).toEqual([]);
+      expect(classesOf(mark)).toContain("text-text-3");
+    }
+    // 정렬한 열의 화살표는 따로 색을 주지 않고 단추의 글자색(text-text)을 물려받습니다.
+    fireEvent.click(within(screen.getByRole("columnheader", { name: /비중/ })).getByRole("button"));
+    expect(markOf(/비중/).textContent).toBe("↑");
+    expect(classesOf(markOf(/비중/))).toEqual([]);
+    expect(classesOf(markOf(/종목/))).toContain("text-text-3");
+  });
+
   it("정렬할 수 없는 열을 가리키는 initialSort는 무시한다(받은 순서, aria-sort 없음)", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} initialSort={{ key: "name", dir: "asc" }} />);
     expect(firstCells()).toEqual(["NVDA", "MSFT", "AAPL", "BRK"]);
