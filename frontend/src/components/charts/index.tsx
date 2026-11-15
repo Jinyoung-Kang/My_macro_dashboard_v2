@@ -48,6 +48,7 @@ import {
   GUIDE,
   ISOLATED_DOT_R,
   REFERENCE_DASH,
+  REFERENCE_LINE_CLASS,
   SERIES_COLORS,
   TAIL_DASH,
   TOOLTIP_BOX,
@@ -465,6 +466,8 @@ export function MultiLineSeries({
                 stroke={entry.color}
                 strokeWidth={2}
                 strokeDasharray={entry.tailOf !== undefined ? TAIL_DASH : entry.dashed ? REFERENCE_DASH : undefined}
+                // 계산한 참고선 표지 — 고대비에서 CanvasText로(globals.css, QA-498). 꼬리 계열은 계좌 색 그대로.
+                className={entry.dashed && entry.tailOf === undefined ? REFERENCE_LINE_CLASS : undefined}
                 dot={
                   isolated
                     ? (dot) =>

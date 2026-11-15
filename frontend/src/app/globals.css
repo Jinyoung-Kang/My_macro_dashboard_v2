@@ -265,3 +265,35 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-2);
 }
+
+/* 고대비(forced-colors) 차트 잉크 — 그 모드는 HTML의 글자·바탕·테두리는 시스템 색으로 강제하지만 SVG fill·stroke(Recharts가 var() 토큰으로
+   칠하는 선·축 글·기준선)는 강제하지 않아 작성자 색이 남습니다(명세 D9). 어두운 한 벌(:root 하나)이라 밝은 고대비(흰 Canvas)에서도 어두운 값이
+   칠해져 히어로 선 1.07:1·축 글 2.88:1·막대 2.01~2.78:1이 됐습니다(QA-498 — 개편 전에는 prefers-color-scheme light로 밝은 토큰이 들어갔음).
+   차트 파일이 쓰는 토큰을 이 모드에서만 시스템 색으로 다시 정의합니다: 글자·선 잉크는 CanvasText(SVG 글자는 4.5:1이 필요해 GrayText를 쓰지 않음),
+   장식 격자(border-subtle)는 값 선보다 옅게 GrayText, 면은 Canvas. HTML은 이미 강제되므로 겉모습이 바뀌지 않고, 보통 모드는 이 블록을 읽지 않습니다.
+   등락 막대의 채움(--up·--down)은 그대로 두고 CanvasText 1px 테두리로 경계를 남기며(뜻은 ▲▼·부호·글이 나름), 계산한 참고선(K40 — 색은 토큰 밖 hex)은
+   표지 클래스 chart-ref-line(선과 범례 견본)으로 CanvasText를 줍니다(점선 6 4·범례 '(계좌 아님)'으로 계좌 선과 갈림). 맨 위 :root보다 뒤에 둡니다 —
+   :root 값을 읽는 시험들이 첫 :root 블록을 읽습니다. 정보 검색 범위 블록([data-scope="search"])은 그 안에서 값을 다시 적지만 그 화면에는 Recharts가 없습니다. */
+@media (forced-colors: active) {
+  :root {
+    --text: CanvasText;
+    --text-2: CanvasText;
+    --text-3: CanvasText;
+    --neutral: CanvasText;
+    --border: CanvasText;
+    --border-overlay: CanvasText;
+    --border-subtle: GrayText;
+    --bg: Canvas;
+    --surface: Canvas;
+    --surface-2: Canvas;
+  }
+
+  .recharts-bar-rectangle path {
+    stroke: CanvasText;
+    stroke-width: 1px;
+  }
+
+  .chart-ref-line :is(path, line) {
+    stroke: CanvasText;
+  }
+}

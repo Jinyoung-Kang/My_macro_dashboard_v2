@@ -25,6 +25,11 @@ export const CHART_FONT = 12;
  * "3 3". 둘이 한 그림에 함께 있어도 선 모양이 갈립니다(뜻은 이름 — 참고선은 범례 '…(계좌 아님)', 꼬리는 툴팁 '… · 추정 HH:MM' — 이 나름).
  */
 export const REFERENCE_DASH = "6 4";
+/**
+ * 계산한 참고선의 표지 클래스 — 선(MultiLineSeries의 Line)과 범례 견본에 붙입니다. 참고선 색은 토큰 밖 hex(모의매매 K40 #a7b0bd)라 고대비(forced-colors)의
+ * 밝은 Canvas 위에서 2.19:1이었고, globals.css의 고대비 블록이 이 표지로 CanvasText를 줍니다(QA-498).
+ */
+export const REFERENCE_LINE_CLASS = "chart-ref-line";
 export const TAIL_DASH = "3 3";
 /** 앞뒤가 모름인 외딴 값의 점 반지름 — 선(connectNulls=false)만으로는 사라지는 값을 점으로 남깁니다(두 선 차트가 같은 값). */
 export const ISOLATED_DOT_R = 2.5;
@@ -112,7 +117,12 @@ export function ChartLegend({ entries }: { entries: readonly LegendEntry[] }) {
     <ul aria-label="범례" className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
       {entries.map((entry) => (
         <li key={entry.key} className="inline-flex items-center gap-1.5">
-          <svg aria-hidden="true" width={LEGEND_SWATCH_WIDTH} height={2} className="shrink-0 forced-color-adjust-none">
+          <svg
+            aria-hidden="true"
+            width={LEGEND_SWATCH_WIDTH}
+            height={2}
+            className={`shrink-0 forced-color-adjust-none${entry.dashed ? ` ${REFERENCE_LINE_CLASS}` : ""}`}
+          >
             <line
               x1={0}
               y1={1}
