@@ -237,7 +237,10 @@ def test_서로_다른_매체는_그대로_따로_센다(case):
 
 @pytest.mark.parametrize("case", PUBLISHER_CASES["acceptedMerges"], ids=lambda case: f"rows{len(case['rows'])}")
 def test_알고_받아들인_장단도_고정본대로_센다(case):
-    """2단계 이름이 같은 다른 나라 매체의 도메인 꼴은 한 곳(검토 지적 — 나라를 남기면 같은 매체의 이름과 도메인 꼴이 두 곳이 됨, 계약 §9-7)."""
+    """
+    2단계 이름이 같은 다른 나라 매체의 도메인 꼴은 한 곳(검토 지적 — 나라를 남기면 같은 매체의 이름과 도메인 꼴이 두 곳이 됨), 앞 'the'·끝
+    'news'·'media'만 다른 서로 다른 매체도 한 곳(2차 검토 지적 — 같은 매체의 다른 표기와 가를 수 없음). 계약 §9-7.
+    """
     assert _cluster_publishers(case["rows"]) == case["publishers"]
 
 

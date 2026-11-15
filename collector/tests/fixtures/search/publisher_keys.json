@@ -21,6 +21,11 @@
     ["www.thesynthwire.com", "synthwire"],
     ["Theorysynth", "orysynth"],
     ["theorysynth.com", "orysynth"],
+    ["Synthvest.com", "synthvest"],
+    ["Synthvest News", "synthvest"],
+    ["synthvestnews.com", "synthvest"],
+    ["Insynth Media", "insynth"],
+    ["The Insynth", "insynth"],
     ["AB News", "abnews"],
     ["abnews.com", "abnews"],
     ["AB Media", "abmedia"],
@@ -116,6 +121,24 @@
         ["synthcourier.com.my", null],
         ["Synth Courier", null],
         ["www.synthcourier.co.uk", null]
+      ],
+      "publishers": 1
+    },
+    {
+      "about": "알고 받아들인 장단(2차 검토 지적) — 이어 붙인 키의 끝 'news'·'media'를 떼므로 이름이 그 꼬리만 다른 서로 다른 매체('X.com'·'X News'·'xnews.com')도 한 곳으로 셈. 매체 목록 없이는 같은 매체의 다른 표기('Kalsynth'·'Kalsynth Media')와 가를 수 없음. 같은 묶음에 뗀 키와 같은 매체가 있을 때만 떼어도, 두 표기가 한 묶음에 함께 있으면 결과가 같아 가르지 못함",
+      "rows": [
+        ["Synthvest.com", null],
+        ["Synthvest News", null],
+        ["synthvestnews.com", null]
+      ],
+      "publishers": 1
+    },
+    {
+      "about": "알고 받아들인 장단(2차 검토 지적) — 앞 'the'와 끝 'media'를 떼므로 'X'·'X Media'·'The X'처럼 그것만 다른 서로 다른 매체도 한 곳으로 셈(위와 같은 까닭)",
+      "rows": [
+        ["Insynth", null],
+        ["Insynth Media", null],
+        ["The Insynth", null]
       ],
       "publishers": 1
     }

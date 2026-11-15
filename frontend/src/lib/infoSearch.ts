@@ -545,6 +545,7 @@ const PUBLISHER_KEY_MIN = 3;
  * 접미사(마지막 이름표, 두 글자 국가 도메인이면 그 앞의 co·com·net·org 등 하나 더)를 떼고 남은 이름표를 이어 붙입니다(하위 도메인은 남김).
  * 아니면 글자·숫자 낱말을 이어 붙입니다. 그렇게 이어 붙인 키에서 앞의 'the'와 끝의 'media'·'news' 하나를 떼되 뗀 뒤 세 글자(코드 포인트)
  * 이상 남을 때만 뗍니다 — 낱말이 아니라 키에서 떼야 도메인 꼴·붙여 쓴 이름('www.kalsynthmedia.com'·'TheSynth')과 띄어 쓴 이름이 같은 키가 됨.
+ * 받아들인 장단(계약 §9-7, 고정본 acceptedMerges): 앞 'the'·끝 'news'·'media'만 다른 서로 다른 매체('X.com'·'X News')도 한 곳으로 셈.
  */
 export function publisherKey(name: string | null | undefined): string {
   const text = (name ?? "").normalize("NFKC").trim().replace(MSN_TAIL, "").trim().toLowerCase();

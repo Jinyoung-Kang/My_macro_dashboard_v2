@@ -50,7 +50,8 @@ describe("같은 사건 묶음의 매체 수 — 수집기와 같은 고정본(Q
     for (const sample of shared.distinctOutlets) expect(counted(sample.rows), sample.about).toBe(sample.publishers);
   });
 
-  // 2단계 이름이 같은 다른 나라 매체의 도메인 꼴은 한 곳(검토 지적 — 나라를 남기면 같은 매체의 이름과 도메인 꼴이 두 곳이 됨, 계약 §9-7).
+  // 2단계 이름이 같은 다른 나라 매체의 도메인 꼴은 한 곳(검토 지적 — 나라를 남기면 같은 매체의 이름과 도메인 꼴이 두 곳이 됨), 앞 'the'·끝
+  // 'news'·'media'만 다른 서로 다른 매체도 한 곳(2차 검토 지적 — 같은 매체의 다른 표기와 가를 수 없음). 계약 §9-7.
   it("알고 받아들인 장단도 고정본대로 센다", () => {
     for (const sample of shared.acceptedMerges) expect(counted(sample.rows), sample.about).toBe(sample.publishers);
   });

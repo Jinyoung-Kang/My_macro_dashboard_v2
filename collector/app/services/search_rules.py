@@ -324,6 +324,8 @@ def publisher_key(name: str | None) -> str:
     'media'·'news' 하나를 떼되 뗀 뒤 세 글자 이상 남을 때만 뗍니다 — 낱말이 아니라 키에서 떼야 도메인 꼴·붙여 쓴 이름('www.kalsynthmedia.com'·
     'TheSynth')과 띄어 쓴 이름이 같은 키가 됩니다(검토 지적). 매체 제외의 이름 대조는 이 키가 아니라 :func:`media_name_key`의 완전 일치
     그대로입니다. 화면 ``infoSearch.publisherKey``와 같은 규칙(공유 고정본 ``tests/fixtures/search/publisher_keys.json``).
+    받아들인 장단(계약 §9-7, 고정본 ``acceptedMerges``): 앞 'the'·끝 'news'·'media'만 다른 서로 다른 매체('X.com'·'X News')도 한 곳으로 셉니다
+    (매체 목록 없이는 같은 매체의 다른 표기와 가를 수 없음 — 2차 검토 지적).
     """
     text = _MSN_TAIL.sub("", unicodedata.normalize("NFKC", name or "").strip()).strip().lower()
     host = _HOST_NAME.fullmatch(text)
