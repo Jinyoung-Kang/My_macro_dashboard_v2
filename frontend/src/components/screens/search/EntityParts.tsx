@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { EMPTY } from "@/lib/format";
-import { entityKindLabel, entityShortcuts, identifierChips } from "@/lib/infoSearch";
+import { entityErrorSourceLabel, entityKindLabel, entityShortcuts, identifierChips } from "@/lib/infoSearch";
 import type { SearchEntity, SearchEntityKind } from "@/lib/types";
 import { KindBadge, KindIcon, LINK, PaneHeading, Tag } from "./parts";
 
@@ -122,7 +122,7 @@ export function AttributesPanel({
       {aliasEditor}
       {failures.length > 0 ? (
         <p className="text-xs text-text-3">
-          대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}
+          대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${entityErrorSourceLabel(source)}: ${reason}`).join(" · ")}
         </p>
       ) : null}
       {previewHint ? (

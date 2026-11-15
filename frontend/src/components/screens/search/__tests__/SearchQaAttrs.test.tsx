@@ -19,6 +19,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
+import { entityErrorSourceLabel } from "@/lib/infoSearch";
 import type { SearchFeedItem, SessionUser } from "@/lib/types";
 import { AttributesPanel } from "../EntityParts";
 import { SearchScreen } from "../SearchScreen";
@@ -165,8 +166,8 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
   const line = () => screen.getByText(/대상을 푸는 데 받지 못한 출처/).textContent ?? "";
 
   // QA-429: 속성 칸이 대상 풀기 errors의 키를 그대로 붙여 새 내부 키가 'dart_store: DART 고유번호 저장본을 읽지 못함'으로 보였음
-  // (sec·wikidata·dart·entity도 키 그대로). 수정 전 실패: 줄에 'dart_store'·'wikidata' 같은 키가 그대로 있음.
-  it.fails("수집기가 보내는 키(entity·wikidata·sec·dart·dart_store)는 출처 이름으로, 모르는 키는 중립 이름으로 보인다", () => {
+  // (sec·wikidata·dart·entity도 키 그대로). 수정 전 실패: 줄에 'dart_store'·'wikidata' 같은 키가 그대로 있음(재현 커밋에서는 it.fails).
+  it("수집기가 보내는 키(entity·wikidata·sec·dart·dart_store)는 출처 이름으로, 모르는 키는 중립 이름으로 보인다", () => {
     render(
       <AttributesPanel
         entity={null}
@@ -192,5 +193,9 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
     render(<AttributesPanel entity={null} kind="company" errors={{ dart: "DART 고유번호 저장본에 이 종목이 없음" }} />);
     expect(line()).toContain("DART: DART 고유번호 저장본에 이 종목이 없음");
     expect(line()).not.toContain("dart:");
+  });
+
+  it("객체 기본 속성 이름(toString 등)의 키도 코드 이름 대신 기타 출처로 보인다", () => {
+    for (const key of ["toString", "constructor", "__proto__", ""]) expect(entityErrorSourceLabel(key), key).toBe("기타 출처");
   });
 });
