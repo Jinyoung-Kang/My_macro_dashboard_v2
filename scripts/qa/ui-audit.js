@@ -634,8 +634,8 @@ function pageAudit(opts) {
     }
     // (d) 대비
     if (el.closest(DISABLED)) { contrast.disabledSkipped += 1; continue; }
-    let fgText = isSvg ? s.fill : s.color;
-    if (!isSvg && s.webkitTextFillColor && s.webkitTextFillColor !== s.color) fgText = s.webkitTextFillColor;
+    // -webkit-text-fill-color는 보지 않습니다 — 강제 색 모드에서 color는 시스템 색으로 바뀌어도 이 값은 작성자 색 그대로 남아(실제 그림과 다름) 틀린 미달을 냈습니다.
+    const fgText = isSvg ? s.fill : s.color;
     const bg = backgroundOf(el);
     const fg = parseColor(fgText);
     let unknownReason = null;
@@ -865,20 +865,49 @@ async function openPage(cdp, opts) {
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: MUTATION_TRACKER });
   await page.send('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Seoul' }).catch(() => {});
   await page.send('Emulation.setLocaleOverride', { locale: 'ko-KR' }).catch(() => {});
-  const features = [];
-  if (opts.forcedColors) features.push({ name: 'forced-colors', value: 'active' });
-  if (opts.reducedMotion) features.push({ name: 'prefers-reduced-motion', value: 'reduce' });
-  if (opts.colorScheme) features.push({ name: 'prefers-color-scheme', value: opts.colorScheme });
-  await page.send('Emulation.setEmulatedMedia', { media: '', features });
+  page.mediaFeatures = [];
+  if (opts.forcedColors) page.mediaFeatures.push({ name: 'forced-colors', value: 'active' });
+  if (opts.reducedMotion) page.mediaFeatures.push({ name: 'prefers-reduced-motion', value: 'reduce' });
+  if (opts.colorScheme) page.mediaFeatures.push({ name: 'prefers-color-scheme', value: opts.colorScheme });
   await cdp.send('Browser.setDownloadBehavior', { behavior: 'deny' }).catch(() => {});
   return page;
 }
 
-async function setViewport(page, width) {
+/**
+ * 폭(과 높이)을 맞추고 미디어 흉내(강제 색·동작 줄이기·색 체계)를 그 뒤에 다시 겁니다. 경로마다 이동 전에 부릅니다 — 창 크기를 바꾸는
+ * 캡처(아래) 뒤에도 다음 경로가 같은 조건에서 시작하게.
+ */
+async function setViewport(page, width, heightOverride = null) {
   const mobile = width < MOBILE_BELOW;
-  const height = mobile ? MOBILE_HEIGHT : DESKTOP_HEIGHT;
-  await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile, screenWidth: width, screenHeight: height });
+  const screenHeight = mobile ? MOBILE_HEIGHT : DESKTOP_HEIGHT;
+  const height = heightOverride || screenHeight;
+  await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile, screenWidth: width, screenHeight });
   await page.send('Emulation.setTouchEmulationEnabled', mobile ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+  await page.send('Emulation.setEmulatedMedia', { media: '', features: page.mediaFeatures });
+}
+
+/**
+ * 전체 화면 캡처. 미디어 흉내가 없으면 captureBeyondViewport, 있으면 창 높이를 화면 높이로 늘려 찍고(흉내를 다시 건 뒤) 되돌립니다 —
+ * Chrome 157에서 captureBeyondViewport 캡처는 강제 색 흉내 없이 그려졌습니다(미디어 쿼리 규칙만 남고 색 강제는 빠짐, 2026-11-16 확인).
+ */
+async function captureFullPage(page, width, shotFile) {
+  const metrics = await page.send('Page.getLayoutMetrics');
+  const size = metrics.cssContentSize || metrics.contentSize;
+  const height = Math.max(1, Math.min(Math.ceil(size.height), SHOT_MAX_HEIGHT));
+  let shot;
+  if (!page.mediaFeatures.length) {
+    shot = await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: 1 } }, 90000);
+  } else {
+    try {
+      await setViewport(page, width, height);
+      await sleep(300);
+      shot = await page.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width, height, scale: 1 } }, 90000);
+    } finally {
+      await setViewport(page, width);
+    }
+  }
+  fs.writeFileSync(shotFile, Buffer.from(shot.data, 'base64'));
+  return { file: path.basename(shotFile), height, cut: Math.ceil(size.height) > SHOT_MAX_HEIGHT || undefined };
 }
 
 async function blank(page) {
@@ -890,6 +919,7 @@ async function blank(page) {
 
 async function auditRoute(page, opts, route, width, shotFile) {
   await blank(page);
+  await setViewport(page, width);
   page.state = page.freshState();
   const started = Date.now();
   const nav = await page.send('Page.navigate', { url: opts.base + route }, 30000);
@@ -914,14 +944,7 @@ async function auditRoute(page, opts, route, width, shotFile) {
   };
   if (shotFile) {
     try {
-      const metrics = await page.send('Page.getLayoutMetrics');
-      const size = metrics.cssContentSize || metrics.contentSize;
-      const height = Math.max(1, Math.min(Math.ceil(size.height), SHOT_MAX_HEIGHT));
-      const shot = await page.send('Page.captureScreenshot', {
-        format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: 1 },
-      }, 90000);
-      fs.writeFileSync(shotFile, Buffer.from(shot.data, 'base64'));
-      result.shot = { file: path.basename(shotFile), height, cut: Math.ceil(size.height) > SHOT_MAX_HEIGHT || undefined };
+      result.shot = await captureFullPage(page, width, shotFile);
     } catch (error) {
       result.shot = { error: error.message };
     }
@@ -1042,7 +1065,6 @@ async function main() {
     const usedNames = new Set();
     let done = 0;
     for (const width of opts.widths) {
-      await setViewport(page, width);
       for (const route of routeInfo.routes) {
         done += 1;
         let base = `${slugOf(route)}__w${width}`;
