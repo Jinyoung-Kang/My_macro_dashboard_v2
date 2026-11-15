@@ -125,8 +125,15 @@ bg `#111418` / surface `#1c2127` / surface-2 `#252a31` / surface-3 `#2f343c`입�
   | danger | #2f292e | 4.52 | 8.70 | 4.93 |
   | (up — 지금 토큰 없음) | #31292e | 5.09 | 8.65 | 4.90 |
 
-  **accent 글자를 accent 틴트 위에 두지 않습니다**(4.47). 지금 `SideNav.tsx`의 현재 메뉴(`bg-accent-tint text-accent`)는 이 값에서 4.5에 못 미치므로, 새 나무 메뉴의 현재 항목은
-  §3-8의 2px 막대·굵기·`aria-current`와 `text-text`로 그립니다. danger 틴트 위 danger 글자는 여유 0.02입니다.
+  **accent 글자를 accent 틴트 위에 두지 않습니다**(4.47). 지금 이 꼴인 글자 자리는 두 곳입니다 [확인 코드 — main `78431302`]:
+  - `components/shell/SideNav.tsx`의 현재 메뉴(`bg-accent-tint font-semibold text-accent`, 15px) — lg 이상 모든 화면.
+  - 공용 거르기 칩 `components/ui/classes.ts`의 `filterChipClasses` 켠 상태(`border-accent bg-accent-tint font-semibold text-accent`, 13px) — 쓰는 곳
+    `app/(dashboard)/consensus/page.tsx`·`app/(dashboard)/macro/FxCompareSection.tsx`·`components/screens/info/StatusSection.tsx`·`components/screens/info/NewsSection.tsx`.
+
+  지금 토큰(톤 글자 대비 라이트 5.4·다크 5.6 — `globals.css` 주석)에서는 통과하지만 P1 토큰 값으로 바뀌는 순간 4.47이 됩니다. 그래서 **P1에서 토큰 값을 바꾸는 커밋보다 먼저
+  (D1 전)** 두 자리의 글자만 `text-text`로 바꿉니다 — 틴트 바탕·accent 테두리·굵기·칩의 체크 아이콘·`aria-current`/`aria-pressed`는 그대로라 켬·현재가 색 말고도 보입니다.
+  P0 금지 쌍 시험(§9-1)은 이 두 자리를 결함 번호를 받아 `it.fails`로 잡고, 그 고침 커밋에서 풉니다. P3의 새 나무 메뉴 현재 항목은 §3-8의 막대·굵기·`aria-current`와
+  `text-text`로 그립니다. 아이콘(그래픽 3:1)은 이 금지에 들지 않습니다(Banner 정보 아이콘 4.47). danger 틴트 위 danger 글자는 여유 0.02입니다.
 
 #### 3-2-1. 상승색 `#ff6b6b` 다시 잰 값 (W4)
 이 문서를 쓸 때 python3로 다시 계산했습니다 [계산]. 식은 WCAG 2.x 상대 휘도·대비, OKLab(Ottosson 2020) 유클리드 거리 × 100입니다(초안의 accent-down 14.1과 같은 척도 —
@@ -363,7 +370,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | 단계 | 내용 | 공수 [추정] | 배포 |
 |---|---|---|---|
 | P0 준비 | 이 명세·ADR 0042·진행 기록(문서 브랜치). 시험 묶음: 대비 행렬 일반화, 12px 하한 소스 검사, 조작 44px 검사, 팔레트 기록, 데이터 칸 강조색 금지(§9) — 지금 어기는 자리는 결함 번호를 받아 `it.fails` | 0.5~1일 | 없음(문서·시험) |
-| P1 토큰·테마·팔레트 | `:root`를 어두운 한 벌로(W1), 상승 `#ff6b6b`(W4), `surface-3`·`border-subtle`·`scrim`, 글자 단계, 모서리 4px. 범위 블록은 값만 같게 남김. ThemeSwitch·theme·useTheme 제거. 옛 별칭 5개 **이름만 바꾸는 커밋**(W9). 계좌2 색·회색 2개·K40 참고선, 툴팁 4px, 검증기 결과 기록. Recharts `var()`를 Firefox에서 확인 | 1.5~2일 | P2와 함께 |
+| P1 토큰·테마·팔레트 | 토큰 값을 바꾸기 전에 accent 틴트 위 accent 글자 두 자리(`SideNav` 현재 메뉴·`filterChipClasses` 켠 칩)를 `text-text`로(§3-2, `fix(QA-###)`). `:root`를 어두운 한 벌로(W1), 상승 `#ff6b6b`(W4), `surface-3`·`border-subtle`·`scrim`, 글자 단계, 모서리 4px. 범위 블록은 값만 같게 남김. ThemeSwitch·theme·useTheme 제거. 옛 별칭 5개 **이름만 바꾸는 커밋**(W9). 계좌2 색·회색 2개·K40 참고선, 툴팁 4px, 검증기 결과 기록. Recharts `var()`를 Firefox에서 확인 | 1.5~2일 | P2와 함께 |
 | P2 공용 키트 | §6 표 전부(Radix 두 개 제외). `rounded-full` 65곳 정리. 겉모양 단언 약 60줄을 같은 커밋에서 고침 | 2.5~3일 | **D1**: 모든 화면이 새 언어(배치는 그대로) |
 | P3 셸 | 상단바, 빵부스러기, 나무 메뉴, lg 이상 SubNav 제거, 명령 팔레트 확장, 단축키 도움말, 새로고침 단추 이동. Radix 두 개(W12) | 1.5~2일 | P4와 함께 |
 | P4 대상 문법 | 상세 3종과 홈 | 2.5~3일 | **D2** |
@@ -401,7 +408,8 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 1. **토큰 대비 행렬**: `lib/__tests__/searchTheme.test.ts`를 `themeTokens.test.ts`로 일반화합니다.
    - `globals.css`의 토큰 블록(P0에서는 지금 블록들 — `:root` 라이트, 다크 두 곳, 범위 블록 / P1 뒤에는 `:root` 한 벌)을 읽어 **허용 쌍 행렬**(글자 토큰 × 면 토큰)을 셉니다.
    - 기준: 글자 4.5, `border-strong`·`focus`·아이콘 3, `accent-fg`·`danger-fg`, 틴트 위 글자(같은 톤·`text-2`·`text-3`).
-   - **금지 쌍**(surface-3 위의 `text-3`·`accent`·`danger` 글자, accent 틴트 위의 accent 글자)은 소스 검사로 막습니다.
+   - **금지 쌍**(surface-3 위의 `text-3`·`accent`·`danger` 글자, accent 틴트 위의 accent 글자)은 소스 검사로 막습니다. 지금 어기는 두 자리(`SideNav.tsx` 현재 메뉴,
+     `ui/classes.ts` `filterChipClasses` 켠 상태 — §3-2)는 결함 번호를 받아 `it.fails`로 넣고, P1에서 토큰 값을 바꾸기 전에(D1 전) 고칩니다.
    - `@layer base` 규칙과 '맨 바깥 블록' 검사도 옮깁니다. 블록을 여러 개 받을 수 있게 써서 밝은 한 벌을 다시 더할 때 그대로 씁니다.
 2. **12px 하한 소스 검사(새)**: `text-[10px]`·`text-[11px]`, 12px 미만이 되는 em·rem 크기(`ChangeChip`의 `text-[0.8em]`처럼 부모 크기에 기대는 것 포함), 차트 `fontSize` 12 미만을
    막습니다. 지금 위반(`DetailParts` 2곳, ▲▼ 10.4px)은 결함 번호를 받아 `it.fails`로 재현한 뒤 고칩니다.
@@ -433,6 +441,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | A1·D4 혼동(accent와 down ΔE 14.1) | 데이터 칸 강조색 금지 시험(§9-5). 등락은 기호와 글로 함께 |
 | 계열 색 대비 미달(계좌2 2.82, `#606870` 2.86) | P1에서 교체하고 검증기 기록 |
 | surface-3 위 상승 4.51·danger 틴트 위 danger 4.52(여유 0.01~0.02) | 대비 행렬 시험이 값을 바꾸는 순간 잡음 |
+| accent 틴트 위 accent 글자 4.47 — 지금 `SideNav` 현재 메뉴(lg 이상 모든 화면)·`filterChipClasses` 켠 칩(화면 네 곳)이 P1 토큰으로 4.5 미달 | P0 금지 쌍 시험 `it.fails` → P1에서 토큰 값을 바꾸기 전에 글자만 `text-text`로(D1에 미달 상태로 나가지 않음) |
 | 다른 작업과 충돌(`globals.css`, `ui/classes.ts`, `search/parts.tsx`, 셸) | 토큰과 키트를 먼저 끝내고 화면별로 커밋. 단계 시작 때 main을 다시 받음(`make update`) |
 | 겉모양 회귀를 CI가 못 잡음 | §9-9의 DOM 감사와 캡처를 단계마다 |
 | Recharts SVG 속성 안 `var()`가 Safari·Firefox에서 풀리지 않을 가능성(미확인) | P1에서 QA 스택으로 Firefox 확인. 안 되면 `charts/frame`이 계산한 값을 넘김 |

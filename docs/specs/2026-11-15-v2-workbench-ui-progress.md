@@ -26,8 +26,9 @@
 - 가리키는 줄: `CLAUDE.md` '먼저 읽을 문서', `README.md` §2 겉모양 문단(테마 스위치는 P1까지 남는다고 적음).
 - 다시 잰 값 [계산 — python3, WCAG 2.x 대비·OKLab ΔE × 100, 명세 §3-2-1]:
   - 상승 `#ff6b6b` 대비 bg/s1/s2/s3 = 6.66/5.84/5.20/4.51, 위험 `#e76a6e`와 ΔE 4.4, 강조와 30.8, 하락과 28.6, 주의와 13.0. 강조 ↔ 하락 14.1(초안 값과 같음).
-  - 새로 드러난 것: 어두운 한 벌에서 accent 틴트 위 accent 글자가 4.47로 4.5에 못 미침(지금 `SideNav`의 현재 메뉴 `bg-accent-tint text-accent`와 같은 꼴) — 명세 §3-2에
-    금지 쌍으로 적고, 새 나무 메뉴의 현재 항목은 막대·굵기·`text-text`로 그리기로 함. danger 틴트 위 danger 글자는 4.52(여유 0.02).
+  - 새로 드러난 것: 어두운 한 벌에서 accent 틴트 위 accent 글자가 4.47로 4.5에 못 미침. 지금 이 꼴은 `SideNav`의 현재 메뉴(`bg-accent-tint text-accent`)와 공용 거르기 칩
+    `ui/classes.ts` `filterChipClasses`의 켠 상태(화면 네 곳) — 명세 §3-2에 금지 쌍으로 적고, 두 자리는 P0 금지 쌍 시험의 `it.fails` → P1에서 토큰 값을 바꾸기 전에(D1 전)
+    글자만 `text-text`로, 새 나무 메뉴의 현재 항목은 막대·굵기·`text-text`로 그리기로 함. danger 틴트 위 danger 글자는 4.52(여유 0.02).
 - 확인: 결정 로그의 펼친 상세는 `DecisionsSection.tsx:453`(`min-w-[820px]`)·`:474`(`colSpan`), 같은 꼴이 `SelectionSection.tsx:491`. ▲▼ 10.4px의 원인은 `ChangeChip.tsx`의
   `text-[0.8em]`(13px × 0.8), AI 요약 위첨자 `text-[11px]`는 `DetailParts.tsx` 297·301행(조사 시점 270·274행에서 옮겨짐).
 - ADR 번호 0042: main과 모든 로컬 브랜치 이력에 없음을 확인.
