@@ -1008,14 +1008,24 @@ const GRAPH_TAG_GROW = 0.15;
 const GRAPH_TAG_GROW_TRIES = 6;
 /**
  * 글자 크기 12px에서 어림한 글자 폭(넉넉히 — 글꼴을 싣지 않아 그리는 글꼴은 기기마다 다름) — 한글·한자·가나·전각과 말줄임표 '…'(U+2026 — 줄인
- * 글마다 붙고 그림에서 12px로 그려짐, QA-423)와 대문자 M·W는 12, 그 밖의 대문자는 9, 나머지(소문자·숫자·빈칸·문장 부호)는 7.5. 글꼴 스택에서 쓰일
- * 글꼴들(Pretendard·Segoe UI·Arial·DejaVu Sans·맑은 고딕)의 12px 폭은 대문자 평균 7.4~8.1(M·W 10~11.9, 그 밖에서 가장 넓은 O 9.5),
- * 소문자 평균 5.9~6.8이라, 대문자를 7.5로 세면 대문자가 많은 이름(GLEIF 법인명 등)의 글이 배정 폭을 넘었습니다(QA-423 후속).
+ * 글마다 붙고 그림에서 12px로 그려짐, QA-423)와 넓은 대문자(라틴 M·W·Æ, 그리스 Μ·Ψ, 키릴 М·Ф·Ъ·Ы)는 12, 더 넓은 대문자(키릴 Ж·Ш·Щ·Ю, 라틴 Œ)는
+ * 13.5, 그 밖의 키릴·그리스 대문자는 9.5, 그 밖의 대문자는 9, 나머지(소문자·숫자·빈칸·문장 부호)는 7.5. 글꼴 스택에서 쓰일 글꼴들(Pretendard·
+ * Segoe UI·Arial·DejaVu Sans·맑은 고딕)의 12px 폭은 라틴 대문자 평균 7.4~8.1(M·W 10~11.9, 그 밖에서 가장 넓은 O 9.5), 키릴 Ж·Ш·Щ·Ю
+ * 10.4~13.1, 그 밖의 넓은 대문자 8.5~12, 그 밖의 키릴 대문자는 О·Д·Ц 9.4~9.5를 비롯해 9를 넘는 것이 많고, 소문자 평균 5.9~6.8이라, 대문자를
+ * 7.5로 세면 대문자가 많은 이름(GLEIF 법인명 등)의 글이 배정 폭을 넘었습니다(QA-423 후속). 소문자는 고르게 세므로 넓은 소문자(m·w, 키릴 ж·ш·щ·ю
+ * — DejaVu Sans에서 9.8~11.7)만 몰린 글은 몇 px 넘을 수 있습니다.
  */
 const WIDE_CHAR = /[\u1100-\u11ff\u2026\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
-const WIDE_UPPER = /[MW]/;
+const WIDE_UPPER = /[MWÆΜΨМФЪЫ]/;
+const WIDER_UPPER = /[ЖШЩЮŒ]/;
+const CYRILLIC_GREEK_UPPER = /[\u0386\u0388-\u038f\u0391-\u03ab\u0400-\u042f]/;
 const UPPER = /\p{Lu}/u;
-const charWidth = (char: string) => (WIDE_CHAR.test(char) || WIDE_UPPER.test(char) ? 12 : UPPER.test(char) ? 9 : 7.5);
+function charWidth(char: string): number {
+  if (WIDER_UPPER.test(char)) return 13.5;
+  if (WIDE_CHAR.test(char) || WIDE_UPPER.test(char)) return 12;
+  if (CYRILLIC_GREEK_UPPER.test(char)) return 9.5;
+  return UPPER.test(char) ? 9 : 7.5;
+}
 const textWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + charWidth(char), 0);
 const ELLIPSIS = "…";
 
@@ -1051,7 +1061,7 @@ const GRAPH_HEAD_SHARE = 0.3;
 /**
  * 가운데를 줄인 노드 이름 — 앞부분 + '…' + from번째 글자(코드 포인트, 앞뒤 공백을 뗀 이름에서)부터의 뒷부분. 뒷부분이 끝까지 들면 앞부분은 남는 폭만큼,
  * 아니면 앞부분은 폭의 30%까지이고 뒷부분 끝에도 '…'. 다 들면 이름 그대로, 앞부분이 from 앞을 다 담으면(가운데를 줄일 것이 없음) fitGraphLabel과
- * 같고, 뒷부분이 한 글자도 들지 않을 만큼 폭이 작아도 끝을 자른 글입니다. 폭(12px 글자 어림 charWidth — '…'·대문자 M·W도 12, 그 밖의 대문자 9)은 maxPx('…' 하나의 폭 12 이상)를 넘지 않습니다.
+ * 같고, 뒷부분이 한 글자도 들지 않을 만큼 폭이 작아도 끝을 자른 글입니다. 폭(12px 글자 어림 charWidth — '…'·넓은 대문자도 12 이상, 그 밖의 대문자 9~9.5)은 maxPx('…' 하나의 폭 12 이상)를 넘지 않습니다.
  */
 export function fitGraphLabelFrom(name: string, from: number, maxPx: number): string {
   return fitLabelFrom(Array.from(name.trim()), from, maxPx, maxPx * GRAPH_HEAD_SHARE).label;
