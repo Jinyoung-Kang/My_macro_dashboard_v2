@@ -31,8 +31,9 @@ export type HeroScrub = {
 /**
  * 히어로 — 라벨(제목) · 큰 값(글자 단계 display: 좁은 화면 36px, sm 이상 44px) · 단위 · 변화 칩 · 한 줄 판정 글 · 배지(meta) · 기간 탭 · 본문(차트 등).
  *
- * - 겉모양은 작업대 화면 언어의 패널(4px 모서리·1px 경계·안쪽 16px, lg 20px — 실행 명세 §3-7)이고 판정 글은 body(14px)입니다. 큰 값(display)은
- *   홈·모의 개요의 히어로를 KPI 띠(값 20·24px)와 패널 차트로 바꾸는 단계(P4·P6, 명세 W7)까지 그대로 둡니다.
+ * - 겉모양은 작업대 화면 언어의 패널(4px 모서리·1px 경계·안쪽 12px, lg 16px — 실행 명세 §3-7)이고 판정 글은 body(14px)입니다. 큰 값(display)은
+ *   홈·모의 개요의 히어로를 KPI 띠(값 20·24px)와 패널 차트로 바꾸는 단계(P4·P6, 명세 W7)까지 그대로 둡니다. 안쪽 여백을 바꾸면 그 여백에 맞춘
+ *   홈 모의매매 히어로의 계좌 목록 음수 여백(`PaperHero`)도 같이 바꿉니다(어긋나면 구분선이 패널 밖으로 삐져나감).
  * - 판정은 `verdict` 글로 적습니다. 색·선만으로 판정을 전하지 않습니다(PRINCIPLES "선 하나로 판정까지 전하지 않습니다").
  * - 값이 없으면(null·빈 글·"N/A"·NaN) "—". 사유를 보이려면 `value={<Empty reason="…" />}`로 넘깁니다(그때도 값 없음으로 봄).
  *   단위는 값이 있을 때만 붙입니다("— 원"은 값이 있는 것처럼 읽힘, QA-049).
@@ -101,7 +102,7 @@ export function Hero({
   const scrubNote = presentText(scrubbing?.estimateNote);
   const tabsBlock = tabs ? <div className="mt-3">{tabs}</div> : null;
   return (
-    <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-4 lg:p-5">
+    <section aria-labelledby={headingId} className="min-w-0 rounded-card border border-border bg-surface p-3 lg:p-4">
       {actions ? (
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <Heading id={headingId} className="min-w-0 text-body font-medium text-text-2">

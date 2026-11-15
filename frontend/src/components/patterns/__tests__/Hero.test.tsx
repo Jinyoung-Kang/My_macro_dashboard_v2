@@ -44,8 +44,8 @@ describe("Hero", () => {
     expect(within(region).getByRole("group", { name: "기간" })).toBeTruthy();
     expect(within(region).getByText("차트 자리")).toBeTruthy();
     expect(region.className).toContain("rounded-card");
-    // 작업대 패널 — 안쪽 16px(lg 20px), 판정 글은 body(14px)(실행 명세 §3-6·§3-7).
-    expect(region.className.split(/\s+/)).toEqual(expect.arrayContaining(["p-4", "lg:p-5"]));
+    // 작업대 패널 — 안쪽 12px(lg 16px, 실행 명세 §3-7), 판정 글은 body(14px, §3-6).
+    expect(region.className.split(/\s+/)).toEqual(expect.arrayContaining(["p-3", "lg:p-4"]));
     expect(within(region).getByText("네 계좌 모두 기준선 위").className.split(/\s+/)).toContain("text-body");
   });
 
