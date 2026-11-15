@@ -299,7 +299,7 @@ describe("실패·비우기", () => {
     }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("요약하지 못했습니다 — 출처 2곳의 받아 둔 결과가 서버에 없습니다");
-    expect(alert.textContent).toContain("받아 둔 결과가 없는 출처: 구글 뉴스(한국어)·Bing 뉴스.");
+    expect(alert.textContent).toContain("받아 둔 결과가 없는 출처: 구글 뉴스(한국어), Bing 뉴스.");
   });
 
   it("서버가 읽은 줄이 0건이면 그렇다고 — 'AI 요약 … 보고 만든 것' 안내·'받았습니다' 상태 글을 붙이지 않음", async () => {

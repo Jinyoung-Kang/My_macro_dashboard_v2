@@ -12,7 +12,7 @@ describe("QA-427 요약에 들지 않은 출처의 사유(summaryOfflineText)", 
   // '들어갑니다'라고 약속했음.
   it("받아 둔 결과가 없는 까닭을 셋 모두 적고, 새로 받기에 성공해야 들어간다고 적음", () => {
     const text = summaryOfflineText({ offlineSources: ["google_en", "bing"] }) ?? "";
-    expect(text).toContain("요약에 들지 않은 출처: 구글 뉴스(영어)·Bing 뉴스");
+    expect(text).toContain("요약에 들지 않은 출처: 구글 뉴스(영어), Bing 뉴스");
     expect(text).not.toContain("받은 지 15분이 지나 서버에");
     expect(text).toContain("15분");
     expect(text).toContain("받지 못했");
@@ -45,7 +45,7 @@ describe("QA-428 실패 글의 앞머리는 한 번만(summaryUnavailableText·s
       message: "출처 2곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.",
     });
     once(text);
-    expect(text).toContain("받아 둔 결과가 없는 출처: 구글 뉴스(한국어)·Bing 뉴스");
+    expect(text).toContain("받아 둔 결과가 없는 출처: 구글 뉴스(한국어), Bing 뉴스");
     expect(text).not.toContain("받은 지 15분이 지나 서버에");
   });
 

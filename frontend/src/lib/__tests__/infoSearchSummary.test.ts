@@ -49,7 +49,7 @@ describe("머리 안내(summaryNoteText)", () => {
 describe("요약에 들지 않은 출처(summaryOfflineText)", () => {
   it("서버가 받아 둔 결과가 없어 뺀 출처(offlineSources)를 출처 이름으로 한 줄에 — 없으면 null", () => {
     expect(summaryOfflineText({ offlineSources: ["google_en", "bing"] })).toBe(
-      "요약에 들지 않은 출처: 구글 뉴스(영어)·Bing 뉴스 — 서버에 받아 둔 결과가 없음(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음). 새로 받기에 성공한 뒤 다시 요약하면 들어갑니다.",
+      "요약에 들지 않은 출처: 구글 뉴스(영어), Bing 뉴스 — 서버에 받아 둔 결과가 없음(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음). 새로 받기에 성공한 뒤 다시 요약하면 들어갑니다.",
     );
     expect(summaryOfflineText({ offlineSources: [] })).toBeNull();
     expect(summaryOfflineText({})).toBeNull();
@@ -141,15 +141,28 @@ describe("빈 요약·실패 글", () => {
   it("받아 둔 결과가 없어 요약하지 못했으면(stale) 그 출처를 '요약에 들지 않은 출처'와 같은 이름으로 — 서버 사유는 곳 수만 말함", () => {
     const stale = "출처 2곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.";
     const text = summaryUnavailableText({ available: false, message: stale, offlineSources: ["구글 뉴스(한국어)", "bing"] });
-    expect(text).toBe(`요약하지 못했습니다 — ${stale} 받아 둔 결과가 없는 출처: 구글 뉴스(한국어)·Bing 뉴스.`);
+    expect(text).toBe(`요약하지 못했습니다 — ${stale} 받아 둔 결과가 없는 출처: 구글 뉴스(한국어), Bing 뉴스.`);
     // 출처 이름은 요약 패널의 '요약에 들지 않은 출처'와 같음(키는 출처 상태 줄의 이름으로, 이름은 그대로)
-    expect(summaryOfflineText({ offlineSources: ["구글 뉴스(한국어)", "bing"] })).toContain("요약에 들지 않은 출처: 구글 뉴스(한국어)·Bing 뉴스");
+    expect(summaryOfflineText({ offlineSources: ["구글 뉴스(한국어)", "bing"] })).toContain("요약에 들지 않은 출처: 구글 뉴스(한국어), Bing 뉴스");
     // 서버 사유가 마침표로 끝나지 않거나 없어도 문장이 이어 붙지 않음, 빈 이름은 뺌
     expect(summaryUnavailableText({ available: false, message: "합성 사유", offlineSources: ["google_en", " "] })).toBe(
       "요약하지 못했습니다 — 합성 사유. 받아 둔 결과가 없는 출처: 구글 뉴스(영어).",
     );
     expect(summaryUnavailableText({ available: false, offlineSources: ["google_en"] })).toBe("요약하지 못했습니다. 받아 둔 결과가 없는 출처: 구글 뉴스(영어).");
     expect(summaryUnavailableText({ available: false, message: stale, offlineSources: [] })).toBe(`요약하지 못했습니다 — ${stale}`);
+  });
+
+  // 2차 검토 지적: 출처 이름 '보도자료·경제지 피드'(수집기 LABELS의 feeds — 키도 같은 이름)에 '·'가 들어 있어, 이름을 '·'로 이으면 서버 안내의 '출처 2곳'이
+  // '보도자료'·'경제지 피드'·'Bing 뉴스' 셋으로 읽혔음. 관심 대상 등록 안내(watchPartialText)처럼 출처는 쉼표로 이음.
+  // 수정 전 실패: '… 출처: 보도자료·경제지 피드·Bing 뉴스.'
+  it("이름에 '·'가 든 출처(보도자료·경제지 피드)도 출처 사이 구분과 섞이지 않게 쉼표로 이음 — 실패 글·요약에 들지 않은 출처 둘 다", () => {
+    const stale = "출처 2곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.";
+    expect(summaryUnavailableText({ available: false, message: stale, offlineSources: ["보도자료·경제지 피드", "bing"] })).toBe(
+      `요약하지 못했습니다 — ${stale} 받아 둔 결과가 없는 출처: 보도자료·경제지 피드, Bing 뉴스.`,
+    );
+    expect(summaryOfflineText({ offlineSources: ["feeds", "구글 뉴스(한국어)"] })).toContain(
+      "요약에 들지 않은 출처: 보도자료·경제지 피드, 구글 뉴스(한국어) — ",
+    );
   });
 
   it("요청 실패 — 서버 사유는 그대로, 권한(403)은 사유가 없으면 '이 계정으로는 할 수 없습니다'", () => {

@@ -2578,14 +2578,20 @@ export function summaryMetaText(response: Pick<SearchSummaryResponse, "model" | 
 }
 
 /**
+ * 받아 둔 결과가 없는 출처 이름 사이 — 쉼표. 출처 이름에 '·'가 든 것이 있어('보도자료·경제지 피드') '·'로 이으면 출처 경계가 사라져 서버 안내의
+ * '출처 N곳'과 보이는 이름 수가 어긋납니다(관심 대상 등록 안내 watchPartialText와 같은 까닭으로 같은 구분).
+ */
+const OFFLINE_SOURCE_GLUE = ", ";
+
+/**
  * 요약에 들지 않은 출처의 한 줄(없으면 null) — 서버는 받아 둔 결과(수집기 출처 캐시 — 성공 15분·실패 60초)만 읽어 요약하므로, 캐시에 없는 바깥
  * 출처와 막 실패한 출처는 요약에 없습니다(화면 목록에는 보일 수 있음). 캐시가 지난 뒤에는 받은 지 15분이 지난 것·받지 못한 것·아직 부르지 않은
- * 것을 가를 수 없어 사유를 하나로 단정하지 않습니다(QA-427). 실패를 '없음'으로 보이지 않게 이름을 적습니다.
+ * 것을 가를 수 없어 사유를 하나로 단정하지 않습니다(QA-427). 실패를 '없음'으로 보이지 않게 이름을 적습니다(출처는 쉼표로 이음 — OFFLINE_SOURCE_GLUE).
  */
 export function summaryOfflineText(response: Partial<Pick<SearchSummaryResponse, "offlineSources">>): string | null {
   const names = offlineSourceNames(response);
   return names.length
-    ? `요약에 들지 않은 출처: ${names.join("·")} — 서버에 받아 둔 결과가 없음(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음). 새로 받기에 성공한 뒤 다시 요약하면 들어갑니다.`
+    ? `요약에 들지 않은 출처: ${names.join(OFFLINE_SOURCE_GLUE)} — 서버에 받아 둔 결과가 없음(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음). 새로 받기에 성공한 뒤 다시 요약하면 들어갑니다.`
     : null;
 }
 
@@ -2612,7 +2618,7 @@ export function summaryUnavailableText(
   const base = message ? `${SUMMARY_FAILED} — ${message}` : `${SUMMARY_FAILED}.`;
   const names = offlineSourceNames(response);
   if (!names.length) return base;
-  return `${base}${/[.!?]$/.test(base) ? "" : "."} 받아 둔 결과가 없는 출처: ${names.join("·")}.`;
+  return `${base}${/[.!?]$/.test(base) ? "" : "."} 받아 둔 결과가 없는 출처: ${names.join(OFFLINE_SOURCE_GLUE)}.`;
 }
 
 /**
