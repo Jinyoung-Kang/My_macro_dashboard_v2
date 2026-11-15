@@ -332,6 +332,17 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
     expect(again.scrolled).toEqual([]);
   });
 
+  // QA-420 후속(QA 스택 재확인 3, 1024·1100·1279·390): 시트가 새로 열리거나 커지는 순간(묶음 줄 다음 줄을 고를 때 등) 고른 줄의 아래끝이
+  // 시트 위끝 바로 위 — 시트 위로 올라간 TOP 단추 자리(64px, globals.css의 스크롤 여백과 같은 값) — 에 있으면 단추가 그 줄을 덮었는데
+  // (1024에서 29x15px), 다시 옮기는 조건이 '시트가 줄을 덮을 때'뿐이었습니다. 그 띠에 걸친 줄도 옮겨야 합니다.
+  // 수정 전 실패: 줄 450~482(시트 위끝 500, 띠 436~500)를 옮기지 않음(재현 커밋에서는 it.fails).
+  it.fails("시트가 열릴 때 고른 줄이 시트 위 TOP 단추 자리(64px 띠)에 걸치면 그 줄도 옮긴다", async () => {
+    selectedBox = { top: 450, bottom: 482 };
+    const { row, scrolled } = await openPreview(1);
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    expect(scrolled).toEqual([row]);
+  });
+
   it("xl(오른쪽 칸 — 흐름 안)에서는 비우지 않는다", async () => {
     sheetFixed = false;
     const { panel, sheet, scrolled } = await openPreview(1);
