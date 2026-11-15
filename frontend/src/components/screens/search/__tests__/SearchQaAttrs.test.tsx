@@ -115,8 +115,8 @@ const HINT = /미리 보기가 나옵니다/;
 
 describe("QA-420 후속 — 속성 칸의 미리 보기 안내가 그 탭·그 창 폭의 동작과 맞음", () => {
   // QA-420: 안내 '줄을 고르면 이 칸에 그 글의 미리 보기가 나옵니다'를 속성 칸이 늘 그려 고를 줄이 없는 보유·연결 탭에도 보였음(1판부터).
-  // 수정 전 실패: 보유·연결 탭의 속성 칸에 안내가 있음.
-  it.fails("보유·연결 탭의 속성 칸에는 줄 미리 보기 안내가 없다(고를 줄이 없음)", async () => {
+  // 수정 전 실패: 보유·연결 탭의 속성 칸에 안내가 있음(재현 커밋에서는 it.fails).
+  it("보유·연결 탭의 속성 칸에는 줄 미리 보기 안내가 없다(고를 줄이 없음)", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.links("us:NVDA")] = LINKS;
     for (const tab of ["holdings", "links"]) {
@@ -128,8 +128,8 @@ describe("QA-420 후속 — 속성 칸의 미리 보기 안내가 그 탭·그 �
   });
 
   // QA-420: lg(1024~1279)도 xl 미만이라 고른 줄의 미리 보기가 이 칸이 아니라 화면 아래 시트로 뜸(lg 미만은 전부터) — 안내는 '이 칸에'라고 말했음.
-  // 수정 전 실패: 1024·390에서 보이는 안내가 '이 칸에'라고 말함.
-  it.fails("결과 탭의 안내는 xl 미만에서 화면 아래(시트)를, xl부터 이 칸을 가리킨다", async () => {
+  // 수정 전 실패: 1024·390에서 보이는 안내가 '이 칸에'라고 말함(재현 커밋에서는 it.fails).
+  it("결과 탭의 안내는 xl 미만에서 화면 아래(시트)를, xl부터 이 칸을 가리킨다", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.feed("us:NVDA", "timeline")] = feed([row({ id: "r1", title: "첫째 기사" })]);
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
@@ -149,8 +149,8 @@ describe("QA-420 후속 — 속성 칸의 미리 보기 안내가 그 탭·그 �
     }
   });
 
-  // QA-420: 결과가 없으면 고를 줄이 없는데도 안내가 보였음. 수정 전 실패: 빈 결과의 속성 칸에 안내가 있음.
-  it.fails("결과 탭이라도 고를 줄이 없으면(빈 결과) 안내를 두지 않는다", async () => {
+  // QA-420: 결과가 없으면 고를 줄이 없는데도 안내가 보였음. 수정 전 실패: 빈 결과의 속성 칸에 안내가 있음(재현 커밋에서는 it.fails).
+  it("결과 탭이라도 고를 줄이 없으면(빈 결과) 안내를 두지 않는다", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.feed("us:NVDA", "timeline")] = feed([]);
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");

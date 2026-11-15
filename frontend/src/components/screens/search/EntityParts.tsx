@@ -77,17 +77,22 @@ export function EntityHeader({
  * 오른쪽 칸(줄을 고르지 않았을 때) — 대상의 속성. 모르는 값은 '—'.
  * aliasEditor(단계 6 묶음 2 — 이 대상이 내 관심 대상일 때의 별칭 편집)를 주면 표 아래에 둡니다. 표의 '별칭' 줄(대상 풀기의 별칭)은 그대로 둡니다 —
  * 결과 검색은 그 별칭에 관심 대상 줄의 별칭을 더해 쓰므로(수집기 with_aliases — 합집합) 편집에서 빼도 쓰이는 별칭을 숨기지 않습니다(편집 칸의 안내).
+ * previewHint는 고를 줄이 있을 때만(결과 탭의 결과 목록 — FeedPanel) 줍니다. 그 안내의 미리 보기 자리는 xl부터 이 칸(세 칸의 오른쪽), 그 아래는
+ * 화면 아래 시트입니다(FeedPanel 오른쪽 칸의 xl:static·entityGrid의 xl 세 칸과 같은 기준 — QA-420).
  */
 export function AttributesPanel({
   entity,
   kind,
   errors,
   aliasEditor = null,
+  previewHint = false,
 }: {
   entity: SearchEntity | null;
   kind: SearchEntityKind | null;
   errors: Record<string, string>;
   aliasEditor?: ReactNode;
+  /** 줄을 고르면 미리 보기가 나온다는 안내 — 고를 줄이 있을 때만. */
+  previewHint?: boolean;
 }) {
   const failures = Object.entries(errors);
   const rows: [string, string][] = entity
@@ -120,7 +125,12 @@ export function AttributesPanel({
           대상을 푸는 데 받지 못한 출처 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}
         </p>
       ) : null}
-      <p className="text-xs text-text-3">줄을 고르면 이 칸에 그 글의 미리 보기가 나옵니다(↑↓로 옮기고 Enter로 원문).</p>
+      {previewHint ? (
+        <p className="text-xs text-text-3">
+          줄을 고르면 <span className="xl:hidden">화면 아래에</span>
+          <span className="hidden xl:inline">이 칸에</span> 그 글의 미리 보기가 나옵니다(↑↓로 옮기고 Enter로 원문).
+        </p>
+      ) : null}
     </section>
   );
 }

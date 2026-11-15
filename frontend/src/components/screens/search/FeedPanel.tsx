@@ -281,6 +281,8 @@ export function FeedPanel({
 
   // ------------------------------------------------------------------ 가운데 칸
   let body: ReactNode;
+  /** 고를 줄이 있는가(결과 목록을 그림) — 속성 칸의 미리 보기 안내는 이때만 둡니다(빈 결과·받는 중·실패에는 고를 줄이 없음). */
+  let selectable = false;
   if (!data) {
     body = feed.error ? (
       <ErrorState message={feed.error} onRetry={() => void feed.reload()} />
@@ -301,6 +303,7 @@ export function FeedPanel({
       sources: statuses,
       pendingStalled: feed.pendingPhase === "stalled",
     });
+    selectable = empty === null;
     body = empty ? (
       <div
         ref={emptyRef}
@@ -486,7 +489,13 @@ export function FeedPanel({
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
     />
   ) : (
-    <AttributesPanel entity={entity} kind={kind} errors={entityErrors} aliasEditor={aliasEditor ? aliasEditor(reloadFeed) : null} />
+    <AttributesPanel
+      entity={entity}
+      kind={kind}
+      errors={entityErrors}
+      aliasEditor={aliasEditor ? aliasEditor(reloadFeed) : null}
+      previewHint={selectable}
+    />
   );
 
   return (
