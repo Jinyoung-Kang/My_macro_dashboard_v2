@@ -120,8 +120,13 @@ SEED_GROUPS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
 )
 EXCLUDED_DOMAINS: frozenset[str] = frozenset(domain for _, domains, _ in SEED_GROUPS for domain in domains)
 EXCLUDED_NAMES: frozenset[str] = frozenset(name for _, _, names in SEED_GROUPS for name in names)
-# 목록과 상관없이 늘 적용하는 규칙(코드 고정 — ADR 0041 결정 6). 화면의 제외 목록에 함께 보입니다.
-FIXED_RULES: tuple[str, ...] = ("제목이 중국어인 글(한글·가나나 일본 법인 형태·신자체가 있으면 남김)", "도메인이 .cn으로 끝나는 매체")
+# 목록과 상관없이 늘 적용하는 규칙(코드 고정 — ADR 0041 결정 6). 수집기 /live/search/excludes 응답의 fixedRules로 나갑니다(백엔드는 화면에
+# 넘기지 않고 화면 ExcludesPanel은 자기 안내 글을 씀 — 계약 §6-4). 지금 규칙(규칙 2)과 같게 적습니다(2차 검토 지적 — '한글·가나나'·'신자체').
+FIXED_RULES: tuple[str, ...] = (
+    "제목이 중국어인 글(한글·가나가 있으면 남김. 가나가 없어도 일본 회사 형태(株式会社 등)나 일본에서만 쓰는 한자가 있으면 남기되, "
+    "중국 간체에만 쓰는 글자가 있으면 뺌)",
+    "도메인이 .cn으로 끝나는 매체",
+)
 _EXCLUDED_NAME_KEYS = frozenset(name.casefold() for name in EXCLUDED_NAMES)
 
 

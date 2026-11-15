@@ -147,6 +147,16 @@ def test_받아들인_한계는_계약대로다(title, chinese):
     assert rules.is_chinese_title(title) is chinese
 
 
+def test_고정_규칙_글은_지금_중국어_제목_규칙을_적는다():
+    """2차 검토 지적 — 수집기 제외 목록 응답(fixedRules)의 글이 '한글·가나나'·'신자체'처럼 읽기 어렵고 간체 전용 글자 예외를 빠뜨렸음."""
+    chinese_rule = rules.FIXED_RULES[0]
+    for word in ("한글·가나가 있으면 남김", "株式会社", "일본에서만 쓰는 한자", "간체에만 쓰는 글자가 있으면 뺌"):
+        assert word in chinese_rule, word
+    assert "가나나" not in chinese_rule and "신자체" not in chinese_rule
+    # 글이 말하는 예외가 동작과 같음: 법인 형태가 있어도 간체 전용 글자가 있으면 뺌
+    assert rules.is_chinese_title("株式会社架空银行") is True and rules.is_chinese_title("株式会社架空銀行") is False
+
+
 def test_간체_전용_글자는_GB2312에만_있고_일본어·번체_표에는_없는_글자다():
     """일본어 글(시험의 일본어 법인명·신자체 목록·법인 형태 글자)에는 간체 전용 글자가 없어야 QA-441의 일본어 표지가 그대로 삶."""
     for char in "发银铁购钢联财报华设饮":
