@@ -93,7 +93,7 @@
    var()로 정의된 토큰(--focus 등)은 :root에서 계산된 값이 상속되므로 모두 실제 값으로 다시 적습니다. 틴트(bg-*-tint)·그림자(shadow-overlay)는
    @theme inline이 쓰는 자리에서 var(--톤)·var(--surface)를 풀어 따로 적지 않아도 이 값을 따릅니다.
    대비(WCAG, bg / surface / surface-2): text 17.2/15.1/13.5 · text-2 11.3/9.9/8.8 · text-3 6.4/5.6/5.0 · accent 5.8/5.1/4.5 · ok 9.4/8.2/7.3 ·
-   warn 8.1/7.1/6.4 · danger 5.9/5.2/4.6, border-strong 4.0(surface) — lib/__tests__/searchTheme.test.ts가 이 블록을 읽어 다시 셉니다. */
+   warn 8.1/7.1/6.4 · danger 5.9/5.2/4.6, border-strong 4.0(surface) — lib/__tests__/themeTokens.test.ts가 이 블록을 읽어 다시 셉니다. */
 [data-scope="search"] {
   color-scheme: dark;
   --bg: #111418;

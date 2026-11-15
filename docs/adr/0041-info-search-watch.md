@@ -21,7 +21,7 @@
   - 백엔드 입력 검사·데모/`STORE_ONLY`의 `external=false`·회원에게서 운영자 전용 줄 지우기·`posts` 403·실패 로그에 검색어 없음:
     `SearchServiceTest`·`SearchControllerTest`·`CollectorClientSearchLogTest`·`CollectorClientUriTest`(단계 2)
   - 화면 주소 상태·기간 자르기·KST 날짜 묶음·빈 결과 안내·후보 자동 고르기 금지: `lib/__tests__/infoSearch.test.ts`, 화면 상태(없음·2년 밖만·일부 실패·
-    운영자/회원 탭·키보드): `components/screens/search/__tests__/SearchScreen.test.tsx`, 어두운 범위 토큰의 대비·레이어: `lib/__tests__/searchTheme.test.ts`(단계 2)
+    운영자/회원 탭·키보드): `components/screens/search/__tests__/SearchScreen.test.tsx`, 어두운 범위 토큰의 대비·레이어: `lib/__tests__/searchTheme.test.ts`(단계 2 — 2026-11-15 `themeTokens.test.ts`로 이름을 바꿈, ADR 0042)
   - 표 소유(ADR 0008): `collector/tests/test_table_ownership.py`·백엔드 `ArchitectureRulesTest`(단계 3)
   - 서버에서만(Finviz·관심 대상 정기 수집): `POLITE_FETCH_ENABLED`가 꺼진 곳에서 외부 호출 0건(단계 3·5)
   - 경로 등급: `AccessPolicyTest`·`RouteInventoryTest`·`endpoints.test.ts`(단계 2~)
