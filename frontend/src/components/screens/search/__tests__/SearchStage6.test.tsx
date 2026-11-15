@@ -356,6 +356,20 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     fireEvent.click(close);
     expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
     expect(document.activeElement).toBe(list);
+
+    // 2차 검토 지적: 미리 보기 안의 Escape(결과 목록으로 닫기)는 결과 줄 미리 보기에서만 시험해, 묶음 미리 보기에 그 키 처리가 이어져 있는지
+    // 지키는 시험이 없었습니다(끊겨도 모두 통과). 묶음 미리 보기 안의 닫기 단추에서도 Escape로 닫고 포커스는 결과 목록.
+    fireEvent.keyDown(list, { key: "Home" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건/ }).getAttribute("aria-selected")).toBe("true");
+    const clusterPreview = screen.getByRole("region", { name: "미리 보기" });
+    expect(within(clusterPreview).getByText("같은 사건 3건 · 매체 2곳")).toBeTruthy();
+    const clusterClose = within(clusterPreview).getByRole("button", { name: "미리 보기 닫기" });
+    clusterClose.focus();
+    fireEvent.keyDown(clusterClose, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(document.activeElement).toBe(list);
   });
 
   it("묶음 미리 보기는 다른 보도를 앞 5건만 이름으로 — 나머지는 건수(접혀 있으면 펼치는 길, 펼쳤으면 목록에 있다고)", async () => {
