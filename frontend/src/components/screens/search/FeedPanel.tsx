@@ -61,6 +61,7 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 넓은 화면(lg)에서는 시트가 본문의 스크롤 막대를 덮지 않게 그 폭만큼 오른쪽을 비웁니다.
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
+ * Escape는 목록에서든 미리 보기(아래 시트·xl 오른쪽 칸) 안에서든 미리 보기를 닫고 포커스를 결과 목록에 둡니다(닫기 단추와 같은 자리).
  * 날짜만 아는 줄(공시 접수일·리포트 날짜·거장 견해 기준일 — timeBasis "date", 계약 §7-1)은 시각 칸에 날짜만 두고, 공시·리서치 줄은 종류를 테두리 표지로 둡니다.
  * 수집 글(readerId)의 원문 팝업은 운영자에게만(그 경로가 운영자 전용 — D-1).
  *
@@ -256,6 +257,16 @@ export function FeedPanel({
   const closePreview = () => {
     setSelectedKey(null);
     listRef.current?.focus({ preventScroll: true });
+  };
+
+  // 미리 보기 안(아래 시트·xl 오른쪽 칸 — '원문 열기'·'받아 둔 글 보기'·닫기 단추)에 포커스가 있을 때의 Escape — 목록에서처럼 닫고 포커스를 결과
+  // 목록으로(닫기 단추와 같은 자리). 원문 팝업(ReaderDialog — Radix 대화상자)은 body 끝에 그려져 그 안의 키가 이 영역을 지나지 않고, Escape를 문서
+  // 캡처 단계에서 먼저 받아 preventDefault한 뒤 닫습니다. 그래서 이미 처리된 Escape와 팝업이 열려 있는 동안은 건너뜁니다 — 한 번의 Escape가 팝업과
+  // 미리 보기를 함께 닫지 않게(팝업이 닫히면 포커스는 '받아 둔 글 보기'로 돌아오고 다음 Escape가 미리 보기를 닫음).
+  const onPreviewKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape" || event.defaultPrevented || reader !== null) return;
+    event.preventDefault();
+    closePreview();
   };
 
   const toggleCluster = (clusterId: string) =>
@@ -543,10 +554,11 @@ export function FeedPanel({
       label={sourceLabel(selected.source, statuses)}
       owner={owner}
       onClose={closePreview}
+      onKeyDown={onPreviewKeyDown}
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
     />
   ) : selectedEntry?.type === "cluster" ? (
-    <ClusterPreview entry={selectedEntry} onClose={closePreview} />
+    <ClusterPreview entry={selectedEntry} onClose={closePreview} onKeyDown={onPreviewKeyDown} />
   ) : (
     <AttributesPanel
       entity={entity}
@@ -721,13 +733,13 @@ function FacetGroup({ title, facets, off, onToggle }: { title: string; facets: F
   );
 }
 
-/**
- * 미리 보기의 틀 — 이름이 '미리 보기'인 영역, 머리와 닫기 단추. 결과 줄(FeedPreview)과 묶음 줄(ClusterPreview)이 같이 씁니다. 닫으면 부르는 쪽이
- * 포커스를 결과 목록으로 옮깁니다(QA-430).
- */
-function PreviewFrame({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+/** 미리 보기의 닫기 — 닫기 단추와 영역 안의 키(Escape). 닫으면 부르는 쪽이 포커스를 결과 목록으로 옮깁니다(QA-430). */
+type PreviewClose = { onClose: () => void; onKeyDown: (event: KeyboardEvent<HTMLElement>) => void };
+
+/** 미리 보기의 틀 — 이름이 '미리 보기'인 영역, 머리와 닫기 단추. 결과 줄(FeedPreview)과 묶음 줄(ClusterPreview)이 같이 씁니다. */
+function PreviewFrame({ onClose, onKeyDown, children }: PreviewClose & { children: ReactNode }) {
   return (
-    <section aria-label="미리 보기" className="flex flex-col gap-2">
+    <section aria-label="미리 보기" onKeyDown={onKeyDown} className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <PaneHeading>미리 보기</PaneHeading>
         <button
@@ -774,11 +786,11 @@ const CLUSTER_PREVIEW_MEMBERS = 5;
  * 고른 묶음 줄의 미리 보기 — 묶음 줄과 같은 건수·매체 수(같은 셈), 대표 줄의 제목·매체·시각, 같은 사건의 다른 보도(앞 5건의 제목·매체·시각),
  * 펼치는 법. 묶음 줄을 지날 때 미리 보기(xl 미만은 아래 시트)가 닫히지 않게 합니다.
  */
-function ClusterPreview({ entry, onClose }: { entry: FeedClusterEntry; onClose: () => void }) {
+function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: FeedClusterEntry }) {
   const shown = entry.members.slice(0, CLUSTER_PREVIEW_MEMBERS);
   const more = entry.members.length - shown.length;
   return (
-    <PreviewFrame onClose={onClose}>
+    <PreviewFrame onClose={onClose} onKeyDown={onKeyDown}>
       <p className="text-sm font-semibold leading-snug text-text">{clusterSizeText(entry)}</p>
       <div className="flex flex-col gap-1">
         <p className="text-xs text-text-3">대표 보도 — 가장 이른 줄</p>
@@ -816,18 +828,18 @@ function FeedPreview({
   label,
   owner,
   onClose,
+  onKeyDown,
   onRead,
-}: {
+}: PreviewClose & {
   item: SearchFeedItem;
   label: string;
   owner: boolean;
-  onClose: () => void;
   onRead: () => void;
 }) {
   const url = httpUrl(item.url);
   const rows: [string, string][] = [...itemFactRows(item), ["종류", itemKindLabel(item.kind)], ["받은 곳", label]];
   return (
-    <PreviewFrame onClose={onClose}>
+    <PreviewFrame onClose={onClose} onKeyDown={onKeyDown}>
       <p className="text-sm font-semibold leading-snug text-text">{item.title}</p>
       <FactList rows={rows} />
       {item.summary ? (

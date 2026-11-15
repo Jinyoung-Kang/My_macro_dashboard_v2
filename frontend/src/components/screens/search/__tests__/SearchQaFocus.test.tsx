@@ -6,7 +6,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -25,6 +25,7 @@ import { SearchScreen } from "../SearchScreen";
 import { setLocation } from "./fakeNavigation";
 
 const MEMBER: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "FREE" };
+const OWNER: SessionUser = { email: "o@test.local", role: "OWNER", tier: "PRO" };
 
 const NVIDIA = {
   key: "us:NVDA", kind: "company", name: "엔비디아", nameKo: "엔비디아", nameEn: "NVIDIA Corp", aliases: ["NVIDIA", "엔비디아"],
@@ -58,10 +59,10 @@ function serve(path: string): Promise<unknown> {
   return hit ? Promise.resolve(reads[hit]) : new Promise(() => {});
 }
 
-function renderScreen(path: string) {
+function renderScreen(path: string, user: SessionUser = MEMBER) {
   setLocation(path);
   return render(
-    <SessionUserProvider user={MEMBER}>
+    <SessionUserProvider user={user}>
       <SearchScreen />
     </SessionUserProvider>,
   );
@@ -120,6 +121,71 @@ describe("QA-430 — 미리 보기 닫기 단추로 닫으면 포커스가 결�
     expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
     expect(document.activeElement).toBe(list);
     expect(list.getAttribute("aria-activedescendant")).toBeNull();
+  });
+});
+
+describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Escape로 닫는다(포커스는 결과 목록)", () => {
+  // 개선 제안(QA 스택 재확인 3, 390·1024·1180): 미리 보기 시트의 Escape 닫기는 결과 목록에 포커스가 있을 때만(onListKeyDown)이라, 시트 안의
+  // '원문 열기'·'받아 둔 글 보기'·닫기 단추에 포커스가 있으면 Escape가 아무것도 하지 않았습니다. 목록에서와 같이 닫고 포커스를 결과 목록(닫기
+  // 단추와 같은 자리 — QA-430)으로 옮깁니다. 원문 팝업이 열려 있으면 그 Escape는 팝업만 닫습니다(한 번에 둘을 닫지 않음).
+  // 수정 전 실패: 미리 보기 안의 Escape 뒤에도 미리 보기가 그대로.
+  it("'원문 열기'·닫기 단추에서 Escape — 미리 보기를 닫고 포커스는 결과 목록", async () => {
+    const { list, preview } = await openFirstPreview();
+    const link = within(preview).getByRole("link", { name: /원문 열기/ });
+    link.focus();
+    fireEvent.keyDown(link, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(document.activeElement).toBe(list);
+
+    fireEvent.keyDown(list, { key: "Home" });
+    const close = within(screen.getByRole("region", { name: "미리 보기" })).getByRole("button", { name: "미리 보기 닫기" });
+    close.focus();
+    fireEvent.keyDown(close, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(document.activeElement).toBe(list);
+  });
+
+  it("이미 다른 층(대화상자 등)이 처리한 Escape는 미리 보기를 닫지 않는다", async () => {
+    const { preview } = await openFirstPreview();
+    const link = within(preview).getByRole("link", { name: /원문 열기/ });
+    link.focus();
+    // Radix 대화상자처럼 문서 캡처 단계에서 Escape를 받아 처리한 층.
+    const layer = (event: KeyboardEvent) => {
+      if (event.key === "Escape") event.preventDefault();
+    };
+    document.addEventListener("keydown", layer, { capture: true });
+    try {
+      fireEvent.keyDown(link, { key: "Escape" });
+    } finally {
+      document.removeEventListener("keydown", layer, { capture: true });
+    }
+    expect(screen.getByRole("region", { name: "미리 보기" })).toBe(preview);
+    expect(document.activeElement).toBe(link);
+  });
+
+  it("원문 팝업이 열려 있으면 Escape는 팝업만 닫고, 포커스가 '받아 둔 글 보기'로 돌아온 뒤의 Escape가 미리 보기를 닫는다", async () => {
+    const READER = "0123456789abcdef01234567";
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = {
+      ...FEED,
+      items: [row({ id: "q1", title: "받아 둔 글 확인용", kind: "post", source: "info", readerId: READER }), ...FEED.items],
+      rangeCounts: { "7d": 3, "30d": 3, "1y": 3, "2y": 3 },
+    };
+    reads[endpoints.info.item(READER)] = { available: true, item: { id: READER, body: "받아 둔 본문", summary: null } };
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d", OWNER);
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    fireEvent.click(within(list).getByRole("option", { name: /받아 둔 글 확인용/ }));
+    const preview = screen.getByRole("region", { name: "미리 보기" });
+    const read = within(preview).getByRole("button", { name: "받아 둔 글 보기" });
+    read.focus();
+    fireEvent.click(read);
+    const dialog = await screen.findByRole("dialog", { name: "받아 둔 글 확인용" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("region", { name: "미리 보기" })).toBe(preview);
+    await waitFor(() => expect(document.activeElement).toBe(read));
+    fireEvent.keyDown(read, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(document.activeElement).toBe(list);
   });
 });
 
