@@ -48,9 +48,10 @@ const DESKTOP_HEIGHT = 900;
 const SHOT_MAX_HEIGHT = 16384; // 이보다 긴 화면은 위에서부터 이 높이까지만 찍습니다(결과에 표시)
 const SAMPLE_MAX = 10;
 // 기다림 규칙: 로드 뒤, 셀 수 있는 요청이 0인 채로 1.5초, 불러오는 중 표시(aria-busy·progressbar·pulse·spin) 개수가 1초 그대로,
-// 그 표시가 0개이거나 네트워크가 4초 조용함, DOM 변경이 0.5초 없음(12초가 지나면 이 조건은 뺌). 최대 --settle-max(기본 25초).
-const SETTLE = { netIdleMs: 1500, busyStableMs: 1000, leftoverIdleMs: 4000, domQuietMs: 500, noisyDomAfterMs: 12000, pollMs: 250, maxMs: 25000 };
-const LONG_REQUEST_MS = 20000; // 이보다 오래 열린 요청(긴 폴링)은 기다림 계산에서 뺍니다 — 첫 계산이 느린 API(10초 안팎)는 기다림
+// 그 표시가 0개이거나 네트워크가 4초 조용함, DOM 변경이 0.5초 없음(12초가 지나면 이 조건은 뺌). 최대 --settle-max(기본 40초 — QA 스택의
+// 국면 판정·스냅숏 글 API는 캐시가 식으면 17~20초 넘게 걸렸습니다). 넘으면 그대로 재고 결과에 '대기 초과'와 그때 열린 요청을 적습니다.
+// 셀 수 있는 요청 = EventSource·WebSocket(실시간 시세 등 늘 열린 연결) 밖의 모든 요청.
+const SETTLE = { netIdleMs: 1500, busyStableMs: 1000, leftoverIdleMs: 4000, domQuietMs: 500, noisyDomAfterMs: 12000, pollMs: 250, maxMs: 40000 };
 const LONG_LIVED_TYPES = new Set(['EventSource', 'WebSocket']);
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -169,7 +170,13 @@ function launchOne(executable, timeoutMs = 20000) {
     const child = spawn(executable, args, { stdio: ['ignore', 'ignore', 'pipe'], env });
     let settled = false;
     let stderr = '';
-    const cleanupDir = () => { try { fs.rmSync(userDir, { recursive: true, force: true }); } catch { /* 지우지 못해도 계속 */ } };
+    // Chrome의 보조 프로세스가 본 프로세스보다 늦게 끝나며 폴더를 다시 만들 수 있어, 조금 기다렸다가 다시 지웁니다.
+    const cleanupDir = async () => {
+      for (let attempt = 0; attempt < 3 && fs.existsSync(userDir); attempt += 1) {
+        await sleep(500);
+        try { fs.rmSync(userDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* 다음 차례에 다시 */ }
+      }
+    };
     const close = async () => {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill('SIGTERM');
@@ -179,7 +186,7 @@ function launchOne(executable, timeoutMs = 20000) {
         });
         if (!exited) child.kill('SIGKILL');
       }
-      cleanupDir();
+      await cleanupDir();
     };
     const fail = (message) => {
       if (settled) return;
@@ -385,7 +392,7 @@ class PageSession {
   countInflight(now) {
     let count = 0;
     for (const request of this.state.inflight.values()) {
-      if (LONG_LIVED_TYPES.has(request.type) || now - request.t > LONG_REQUEST_MS) continue;
+      if (LONG_LIVED_TYPES.has(request.type)) continue;
       count += 1;
     }
     return count;
