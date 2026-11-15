@@ -261,7 +261,7 @@ describe("상단바 알림 벨", () => {
   // 숫자만 위첨자처럼 남은 채 그 Canvas 바탕이 벨 아이콘 오른쪽 위를 가렸습니다(4px 모서리라 한두 자리 수에서도 벨이 이 빠진 모양 — 작업대 D8).
   // 작업대 명세 A8/D9처럼 고대비에서는 1px 테두리(색은 고대비가 정함)로 상자를 남깁니다 — Skeleton·PeriodBars·고른 칸(FORCED_SELECTED)과 같은 방식.
   // 수정 전(재현 커밋에서는 it.fails)에는 배지 클래스 16개에 forced-colors 변형이 하나도 없었습니다.
-  it.fails("고대비에서도 수 배지가 상자로 남는다 — 배지에 forced-colors:border(1px 테두리) (QA-501)", () => {
+  it("고대비에서도 수 배지가 상자로 남는다 — 배지에 forced-colors:border(1px 테두리) (QA-501)", () => {
     renderShell(MEMBER_PRO, { unread: 42 });
     const bell = screen.getByRole("link", { name: "알림 — 읽지 않음 42건" });
     const badge = bell.querySelector('span[aria-hidden="true"]') as HTMLElement;
