@@ -14,8 +14,9 @@ import { TabIcon } from "./icons";
  * 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2).
  * 좁은 화면에서는 숨기고(하단 탭 바 + 더보기 화면이 대신), 데스크톱에서는 화면 높이에 붙어 본문만 스크롤됩니다.
  *
- * 메뉴는 알약 모양(높이 48px). 지금 탭은 옅은 강조 파랑 바탕·강조 파랑 글·굵은 글입니다 — 셸의 현재 메뉴는 누를 수 있는 것이라
- * 강조 파랑을 씁니다(명세 원칙 A1). 고대비(forced-colors) 모드에서는 바탕색이 지워지므로 지금 탭에만 1px 테두리를 더하고(D9),
+ * 메뉴는 알약 모양(높이 48px). 지금 탭은 옅은 강조 파랑 바탕·본문색 글·굵은 글입니다 — 셸의 현재 메뉴는 누를 수 있는 것이라
+ * 강조 파랑 바탕을 쓰되(명세 원칙 A1), 글자는 강조 파랑이 아닙니다(accent 틴트 위 accent 글자는 4.47:1 — QA-459, 작업대 실행 명세 §3-2).
+ * 고대비(forced-colors) 모드에서는 바탕색이 지워지므로 지금 탭에만 1px 테두리를 더하고(D9),
  * 나머지 칸에는 테두리를 두지 않습니다(투명 테두리는 그 모드에서 시스템 색으로 보여 모든 칸이 고른 것처럼 보임).
  */
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
@@ -33,7 +34,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
               aria-current={current}
               className={`flex h-12 items-center gap-3 rounded-full px-4 text-[15px] motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
                 current
-                  ? "bg-accent-tint font-semibold text-accent forced-colors:border"
+                  ? "bg-accent-tint font-semibold text-text forced-colors:border"
                   : "font-medium text-text-2 hover:bg-surface-2 hover:text-text"
               }`}
             >

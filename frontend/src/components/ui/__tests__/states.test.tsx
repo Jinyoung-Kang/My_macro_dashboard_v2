@@ -1,6 +1,6 @@
 /**
  * 배너·상태 조각(ui/index.tsx의 Banner·Loading·EmptyState·ErrorState) — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §3.
- *  - 배너 네 톤은 모두 불투명 틴트 바탕(놓인 자리와 섞이지 않음)과 톤 글자색 — 안내(info)만 글이 본문색(강조 파랑 글자 아님, 원칙 A1)
+ *  - 배너 네 톤은 모두 불투명 바탕(놓인 자리와 섞이지 않음)과 톤 글자색 — 안내(info)는 파랑이 아닌 중립(surface-2 바탕·본문색 글, 원칙 A1·작업대 명세 §3-4)
  *  - 배너 앞의 톤 아이콘은 장식(aria-hidden), 주의·심각에는 낭독기용 '주의: ', 글은 톤 글자색 div로 감쌈(글로 찾은 요소가 톤 색을 가짐, 명세 D8 b)
  *  - 신선도: '새로 읽지 못함'·'오래된 저장본'은 경고 알약 + 아이콘(이모지 아님), 평상시는 알약 없이 시계 아이콘 + '수집' + 시각
  *  - 불러오는 중은 도는 아이콘(움직임 줄이기면 멈춤 — motion-safe에서만) + 글, 강조색 점이 아니다
@@ -18,9 +18,9 @@ describe("Banner", () => {
   it.each([
     ["warn", "bg-warn-tint", "text-warn"],
     ["danger", "bg-danger-tint", "text-danger"],
-    ["info", "bg-accent-tint", "text-text"],
+    ["info", "bg-surface-2", "text-text"],
     ["ok", "bg-ok-tint", "text-ok"],
-  ] as const)("%s — 불투명 틴트 %s와 글자색 %s", (tone, tint, text) => {
+  ] as const)("%s — 불투명 바탕 %s와 글자색 %s", (tone, tint, text) => {
     const { container } = render(<Banner tone={tone}>값의 성격 안내</Banner>);
     expect(screen.getByText("값의 성격 안내")).toBeTruthy();
     const classes = (container.firstElementChild as HTMLElement).className.split(/\s+/);
@@ -66,11 +66,15 @@ describe("Banner 톤 아이콘과 감쌈", () => {
     expect(box.textContent).toBe(`${prefix}첫 줄둘째 줄`);
   });
 
-  it("안내 톤은 아이콘만 강조색 — 글은 본문색", () => {
+  it("안내 톤은 중립 — 아이콘도 글도 강조 파랑이 아니고 바탕에 파랑 틴트가 없다(QA-459)", () => {
     const { container } = render(<Banner tone="info">안내</Banner>);
-    const icon = (container.firstElementChild as HTMLElement).querySelector("svg") as SVGSVGElement;
-    expect(icon.closest(".text-accent")).not.toBeNull();
+    const box = container.firstElementChild as HTMLElement;
+    const icon = box.querySelector("svg") as SVGSVGElement;
+    expect(icon.closest(".text-text-2")).not.toBeNull();
+    expect(icon.closest(".text-accent")).toBeNull();
     expect(screen.getByText("안내").closest(".text-accent")).toBeNull();
+    expect(box.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface-2"]));
+    expect(box.className).not.toContain("accent");
   });
 
   it("icon={false}면 아이콘 없이, icon을 주면 그 아이콘으로(잠금 같은 이름 있는 그림)", () => {

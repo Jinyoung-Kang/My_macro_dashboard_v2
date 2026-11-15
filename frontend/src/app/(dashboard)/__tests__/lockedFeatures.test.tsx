@@ -40,7 +40,8 @@ describe("유료 등급 표시", () => {
 
     const message = await screen.findByText("판정 성과는 유료 등급 기능입니다.");
     const banner = message.closest("div")?.parentElement as HTMLElement;
-    expect(banner.className).toContain("bg-accent-tint");
+    // 안내 상자(info — 중립 surface-2 바탕, QA-459)
+    expect(banner.className).toContain("bg-surface-2");
     expect(screen.getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
     expect(banner.textContent).not.toMatch(PICTOGRAPH);
   });

@@ -49,10 +49,12 @@ describe("세그먼트 segmentClasses", () => {
 });
 
 describe("거르기 칩 filterChipClasses", () => {
-  it("켠 칩은 강조 파랑(누를 수 있는 것) + 굵은 글, 끈 칩은 중립 — 두 상태 모두 테두리(고대비에서 경계가 남음), 44px·포커스 링", () => {
+  it("켠 칩은 강조 파랑 테두리·틴트(누를 수 있는 것) + 굵은 본문색 글, 끈 칩은 중립 — 두 상태 모두 테두리(고대비에서 경계가 남음), 44px·포커스 링", () => {
     const on = tokens(filterChipClasses(true));
     const off = tokens(filterChipClasses(false));
-    expect(on).toEqual(expect.arrayContaining(["rounded-full", "border", "border-accent", "bg-accent-tint", "text-accent", "font-semibold"]));
+    // 켠 칩 글자는 본문색 — accent 틴트 위 accent 글자는 4.47:1(QA-459).
+    expect(on).toEqual(expect.arrayContaining(["rounded-full", "border", "border-accent", "bg-accent-tint", "text-text", "font-semibold"]));
+    expect(on).not.toContain("text-accent");
     expect(off).toEqual(expect.arrayContaining(["rounded-full", "border", "border-border", "text-text-2", "font-medium"]));
     expect(off.some((name) => name.includes("accent"))).toBe(false);
     for (const classes of [on, off]) {

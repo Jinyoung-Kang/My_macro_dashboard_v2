@@ -231,8 +231,9 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
 
 /**
  * 배너 — 추정치·이력 대체처럼 "값의 성격"을 알리거나(warn), 실패·심각한 주의(danger)·안내(info)·완료(ok)를 알릴 때.
- * 바탕은 모두 불투명 틴트(globals.css의 *-tint)라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다(톤 글자 4.7:1 이상).
- * 안내(info)는 글을 본문색으로 둡니다 — 강조 파랑 글자는 링크로 읽히고 하락 파랑과 구분되지 않습니다(명세 원칙 A1).
+ * 바탕은 모두 불투명(톤은 globals.css의 *-tint, 안내는 surface-2)이라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다.
+ * 안내(info)는 파랑이 아니라 중립입니다(작업대 실행 명세 §3-4) — 바탕 surface-2·테두리 border-strong·아이콘과 글은 중립색. 강조 파랑은
+ * 누를 수 있는 것에만 쓰고(원칙 A1), 안내 상자 안의 링크(text-accent)가 accent 틴트 위 4.47:1로 4.5에 못 미치지 않게 합니다(QA-459 — surface-2 위 4.51).
  *
  * 앞에 톤 아이콘(장식)을 둡니다 — 예전에 부르는 쪽이 글 앞에 붙이던 경고 이모지 자리. 주의(warn)·심각(danger)은 낭독기에 '주의: '를
  * 먼저 읽힙니다(아이콘은 aria-hidden). danger는 실패만이 아니라 추정치 모드·금리 역전 같은 심각한 주의에도 쓰여 '오류'라 읽히지 않게 합니다.
@@ -262,8 +263,8 @@ export function Banner({
 const BANNER_TONES = {
   warn: { box: "border-warn/30 bg-warn-tint text-warn", text: "text-warn", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
   danger: { box: "border-danger/30 bg-danger-tint text-danger", text: "text-danger", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
-  // 안내의 아이콘만 강조색 — 안내 톤의 표지이고, 글은 본문색입니다.
-  info: { box: "border-accent/25 bg-accent-tint text-text", text: "text-text", icon: "text-accent", glyph: <InfoIcon size={16} />, srPrefix: "" },
+  // 안내는 중립 — 파랑 틴트·파랑 아이콘 없이 surface-2 바탕과 border-strong 테두리, 아이콘은 보조색, 글은 본문색입니다.
+  info: { box: "border-border-strong bg-surface-2 text-text", text: "text-text", icon: "text-text-2", glyph: <InfoIcon size={16} />, srPrefix: "" },
   ok: { box: "border-ok/30 bg-ok-tint text-ok", text: "text-ok", icon: "", glyph: <CheckCircleIcon size={16} />, srPrefix: "" },
 } as const;
 

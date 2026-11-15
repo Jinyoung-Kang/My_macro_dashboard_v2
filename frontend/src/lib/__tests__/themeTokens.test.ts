@@ -513,22 +513,21 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
       "6: bg-accent-tint 요소(6행) 안 text-accent",
     ]);
     expect(inheritedHits("sample.tsx", sample, "surface-3", tones)).toEqual(["8: bg-surface-3 요소(8행) 안 text-text-3"]);
-    // 지금 표에서 accent 틴트를 칠하는 Banner 톤은 안내(info) 하나 — 공용 키트(P2)가 안내를 중립으로 바꾸면 빈 목록이 됩니다.
-    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-accent-tint": ["info"] });
+    // 공용 키트(P2)가 안내(info)를 중립(surface-2 바탕)으로 바꿔 지금 표에는 accent 틴트를 칠하는 Banner 톤이 없습니다(QA-459).
+    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-accent-tint": [] });
   });
 
   it("surface-3(덮개 안 hover·눌림) 바탕 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
     expect(offenders("surface-3")).toEqual([]);
   });
 
-  // QA-459: 어두운 한 벌(앞 커밋)에서 accent 틴트 위 accent 글자가 4.47:1로 4.5에 못 미친다. 지금 어기는 자리 세 곳:
-  //  - components/shell/SideNav.tsx — 현재 메뉴(`bg-accent-tint font-semibold text-accent`, lg 이상 모든 화면)
-  //  - components/ui/classes.ts — filterChipClasses 켠 상태(`border-accent bg-accent-tint font-semibold text-accent` — 컨센서스·환율 비교·정보 수집 둘)
+  // QA-459: 어두운 한 벌(P1)에서 accent 틴트 위 accent 글자가 4.47:1로 4.5에 못 미쳤다. 고치기 전에 어기던 자리 세 곳:
+  //  - components/shell/SideNav.tsx — 현재 메뉴(`bg-accent-tint font-semibold text-accent`, lg 이상 모든 화면) → 글자만 text-text
+  //  - components/ui/classes.ts — filterChipClasses 켠 상태(`border-accent bg-accent-tint font-semibold text-accent` — 컨센서스·환율 비교·정보 수집 둘) → 글자만 text-text
   //  - components/screens/brokerage/BrokerageSection.tsx — 실제 계좌 탭 안내 상자(`<Banner tone="info">` — 상자 바탕 bg-accent-tint) 안 링크
   //    '…의 실제 계좌 탭'(`text-accent`, 12px). 바탕은 부모 Banner가 칠해 같은 글 검사로는 안 보였고(P1 검토 지적), 부모 바탕 검사(inheritedHits)가 잡습니다.
-  //    실제 계좌 모듈은 겉모양만 공용 키트를 통해 바꾸므로(ADR 0042 결정 8) 그 파일이 아니라 키트(안내 톤)에서 고칩니다.
-  // 실행 명세 §3-2는 토큰 값을 바꾸기 전에 글자만 text-text로 바꾸라고 했지만, 세 자리는 공용 키트 단계(P2)가 맡아 D1 배포 전에 고치고 이 표시를 풉니다.
-  it.fails("QA-459: accent 틴트 바탕 위에 accent 글자를 두지 않는다", () => {
+  //    실제 계좌 모듈은 겉모양만 공용 키트를 통해 바꾸므로(ADR 0042 결정 8) 그 파일이 아니라 키트에서 — 안내 톤을 중립(surface-2 바탕, 명세 §3-4)으로.
+  it("QA-459: accent 틴트 바탕 위에 accent 글자를 두지 않는다", () => {
     expect(offenders("tint")).toEqual([]);
   });
 });
