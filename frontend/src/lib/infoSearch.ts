@@ -1045,40 +1045,58 @@ function fitChars(chars: readonly string[], maxPx: number): string[] {
   return out;
 }
 
+/** 가운데를 줄일 때 뒷부분이 끝까지 들지 않으면 앞부분에 남기는 폭(배정 폭에 대한 비율). */
+const GRAPH_HEAD_SHARE = 0.3;
+
 /**
  * 가운데를 줄인 노드 이름 — 앞부분 + '…' + from번째 글자(코드 포인트, 앞뒤 공백을 뗀 이름에서)부터의 뒷부분. 뒷부분이 끝까지 들면 앞부분은 남는 폭만큼,
  * 아니면 앞부분은 폭의 30%까지이고 뒷부분 끝에도 '…'. 다 들면 이름 그대로, 앞부분이 from 앞을 다 담으면(가운데를 줄일 것이 없음) fitGraphLabel과
  * 같고, 뒷부분이 한 글자도 들지 않을 만큼 폭이 작아도 끝을 자른 글입니다. 폭(12px 글자 어림 charWidth — '…'·대문자 M·W도 12, 그 밖의 대문자 9)은 maxPx('…' 하나의 폭 12 이상)를 넘지 않습니다.
  */
 export function fitGraphLabelFrom(name: string, from: number, maxPx: number): string {
-  const chars = Array.from(name.trim());
+  return fitLabelFrom(Array.from(name.trim()), from, maxPx, maxPx * GRAPH_HEAD_SHARE).label;
+}
+
+/**
+ * fitGraphLabelFrom의 본체 — 앞부분 폭의 하한(minHeadPx)을 받고, 글과 함께 그 글이 이름의 몇째 글자까지 보이는지(end — 보인 마지막 글자 다음
+ * 자리, 뒷부분이 끝까지 들면 이름 길이)를 돌려줍니다. chars는 앞뒤 공백을 뗀 이름의 글자들.
+ */
+function fitLabelFrom(chars: readonly string[], from: number, maxPx: number, minHeadPx: number): { label: string; end: number } {
   const whole = chars.join("");
-  if (textWidth(whole) <= maxPx) return whole;
+  if (textWidth(whole) <= maxPx) return { label: whole, end: chars.length };
+  const cutEnd = () => {
+    const label = fitGraphLabel(whole, maxPx);
+    return { label, end: Array.from(label).length - 1 };
+  };
   const start = Math.min(Math.max(0, Math.floor(from)), chars.length);
   const ellipsis = charWidth(ELLIPSIS);
-  const tail = chars.slice(start).join("");
-  const head = fitChars(chars.slice(0, start), Math.max(maxPx * 0.3, maxPx - ellipsis - textWidth(tail)));
-  if (head.length >= start) return fitGraphLabel(whole, maxPx);
+  const tailChars = chars.slice(start);
+  const tail = tailChars.join("");
+  const head = fitChars(chars.slice(0, start), Math.max(minHeadPx, maxPx - ellipsis - textWidth(tail)));
+  if (head.length >= start) return cutEnd();
   const shownHead = head.join("").trimEnd();
   const room = maxPx - textWidth(shownHead) - ellipsis;
-  if (textWidth(tail) <= room) return `${shownHead}${ELLIPSIS}${tail}`;
+  if (textWidth(tail) <= room) return { label: `${shownHead}${ELLIPSIS}${tail}`, end: chars.length };
   // 뒷부분 끝의 '…' 몫까지 빼고 남는 폭에 뒷부분이 한 글자도 들지 않으면(폭이 아주 작음) '……'가 아니라 끝을 자른 글.
-  const shownTail = fitChars(Array.from(tail), room - ellipsis).join("").trimEnd();
-  if (!shownTail) return fitGraphLabel(whole, maxPx);
-  return `${shownHead}${ELLIPSIS}${shownTail}${ELLIPSIS}`;
+  const shownTail = Array.from(fitChars(tailChars, room - ellipsis).join("").trimEnd());
+  if (shownTail.length === 0) return cutEnd();
+  return { label: `${shownHead}${ELLIPSIS}${shownTail.join("")}${ELLIPSIS}`, end: start + shownTail.length };
 }
 
 /** 줄인 글이 같은 이름들을 가를 때 갈리는 자리를 낱말 첫 글자로 물리는 최대 글자 수('…12'처럼 숫자·낱말을 통째로 보이게). */
 const GRAPH_WORD_BACK = 6;
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+const DIGIT = /\p{N}/u;
 
 /**
  * 그림의 노드 글(QA-423) — 이름마다 fitGraphLabel(끝을 자름)로 맞추되, 서로 다른 이름의 글이 같아지면(앞머리가 같은 자회사 법인명·내부자 등) 그 이름들은
  * 가운데를 줄여(fitGraphLabelFrom) 서로 갈리는 자리부터 보입니다 — 그 자리가 든 낱말·숫자의 첫 글자부터(많아야 GRAPH_WORD_BACK자 앞, 빈칸이면 그
- * 뒤 글자부터)이고, 그 글로 그 이름들이 하나도 갈리지 않을 때만 갈리는 바로 그 글자부터. 그래도 같은 글이 남은 이름들은 다음 차례에 그 이름들끼리 같은
- * 방식으로 다시 가릅니다(둘째 차례 이후에도 번호·낱말을 통째로 — QA-423 후속). 그렇게 몇 차례 해도 같은 글이 남으면(같은 낱말이 되풀이되는 드문
- * 이름 — 다른 자리의 글이 우연히 같아짐) 둘째 이름부터 아무도 쓰지 않은 글이 나올 때까지 보이는 자리를 뒤로 옮깁니다. 겹치지 않는 이름의 글은 그대로이고,
- * 같은 이름(앞뒤 공백 무시)은 같은 글. 돌려주는 표는 앞뒤 공백을 뗀 이름 → 글. 전체 이름은 노드의 <title>·낭독 이름과 목록에 있습니다.
+ * 뒤 글자부터)이고, 갈리는 글자가 숫자면 그 숫자의 끝까지 보이게 앞부분(보통 폭의 30%)을 첫 글자 하나로 줄이기도 합니다(좁은 그림의 네 자리 번호
+ * 'E…2020…'·'E…2021…' — '…0'·'…1'로 읽히지 않게, QA-423 후속). 그 글로 그 이름들이 하나도 갈리지 않을 때만 갈리는 바로 그 글자부터. 그래도 같은
+ * 글이 남은 이름들은 다음 차례에 그 이름들끼리 같은 방식으로 다시 가릅니다(둘째 차례 이후에도 번호·낱말을 통째로 — QA-423 후속). 그렇게 몇 차례 해도
+ * 같은 글이 남으면(같은 낱말이 되풀이되는 드문 이름 — 다른 자리의 글이 우연히 같아짐) 둘째 이름부터 아무도 쓰지 않은 글이 나올 때까지 보이는 자리를
+ * 뒤로 옮깁니다. 겹치지 않는 이름의 글은 그대로이고, 같은 이름(앞뒤 공백 무시)은 같은 글. 돌려주는 표는 앞뒤 공백을 뗀 이름 → 글. 전체 이름은 노드의
+ * <title>·낭독 이름과 목록에 있습니다.
  */
 export function graphLabels(names: readonly string[], maxPx: number): Map<string, string> {
   const distinct = [...new Set(names.map((name) => name.trim()))];
@@ -1103,18 +1121,41 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
       let back = split;
       while (back > 0 && split - back < GRAPH_WORD_BACK && LETTER_OR_DIGIT.test(charsOf[0][back - 1])) back -= 1;
       if (back > 0 && LETTER_OR_DIGIT.test(charsOf[0][back - 1])) back = split; // 낱말이 길면 물리지 않음
-      const shown = (from: number, skipSpace: boolean) =>
-        group.map((name, at) => {
+      // narrowHead면 앞부분을 첫 글자 하나로 줄여 뒷부분에 폭을 더 줌.
+      const shown = (from: number, skipSpace: boolean, narrowHead = false) =>
+        charsOf.map((chars) => {
           let start = from;
           // '…' 뒤에 빈칸을 두지 않음(이름마다 — 갈리는 글자가 빈칸인 이름).
-          while (skipSpace && start < charsOf[at].length && /\s/.test(charsOf[at][start])) start += 1;
-          return fitGraphLabelFrom(name, start, maxPx);
+          while (skipSpace && start < chars.length && /\s/.test(chars[start])) start += 1;
+          return fitLabelFrom(chars, start, maxPx, narrowHead ? charWidth(chars[0]) : maxPx * GRAPH_HEAD_SHARE);
         });
-      let next = shown(back, true);
+      // 이름마다 글에 보여야 할 끝 — 갈리는 글자가 숫자면 그 자리부터 이어지는 숫자의 끝까지('…1000'이 '…100…'으로, '…2021'이 '…202…'로
+      // 잘리지 않게), 글자면 그 글자까지, 아니면(빈칸·부호, 이름이 거기서 끝남) 갈리는 자리 앞까지.
+      const needEnd = charsOf.map((chars) => {
+        let end = split;
+        if (DIGIT.test(chars[end] ?? "")) while (end < chars.length && DIGIT.test(chars[end])) end += 1;
+        else if (LETTER_OR_DIGIT.test(chars[end] ?? "")) end += 1;
+        return end;
+      });
+      let fits = shown(back, true);
+      // 앞부분 몫 때문에 거기까지 보이지 않는 이름(좁은 그림의 네 자리 번호 등)은 앞부분을 첫 글자 하나로 줄인 글로 — 그렇게 해서 이 묶음의 이름이
+      // 모두 거기까지 보일 때만. 그리고 줄인 글이 갈리는 글자가 다른 이름과 같은 뒷부분을 보이면(뒷부분 끝의 '…'만 다른 '가…주식회사'·
+      // '가…주식회사…' 등) 줄이지 않음 — 갈리는 글자가 같은 이름끼리는 같아도 다음 차례에 다시 가름.
+      if (fits.some((fit, at) => fit.end < needEnd[at])) {
+        const narrow = shown(back, true, true);
+        const mixed = fits.map((fit, at) => (fit.end < needEnd[at] ? narrow[at] : fit));
+        const tails = mixed.map((fit, at) => charsOf[at].slice(back, fit.end).join("").trim());
+        const blurred = mixed.some(
+          (fit, at) =>
+            fit !== fits[at] &&
+            tails.some((tail, other) => other !== at && tail === tails[at] && charsOf[other][split] !== charsOf[at][split]),
+        );
+        if (!blurred && mixed.every((fit, at) => fit.end >= needEnd[at])) fits = mixed;
+      }
       // 그 글로 이 이름들이 하나도 갈리지 않으면(모두 같은 글 — 물린 몫 때문에 갈리는 글자가 글에 들지 않음 등) 갈리는 바로 그 글자부터(빈칸도 그대로).
       // 일부만 갈리면 물린 글을 두고, 같은 글이 남은 이름들은 다음 차례에 그 이름들끼리 다시 가름(차례 수에 상한이 있어 늘 끝남).
-      if (new Set(next).size === 1) next = shown(split, false);
-      group.forEach((name, at) => labels.set(name, next[at]));
+      if (new Set(fits.map((fit) => fit.label)).size === 1) fits = shown(split, false);
+      group.forEach((name, at) => labels.set(name, fits[at].label));
     }
   }
   for (const group of clashes()) {

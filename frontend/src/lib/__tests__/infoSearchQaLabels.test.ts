@@ -109,18 +109,42 @@ describe("연결 그림 — 둘째 차례 이후에도 갈리는 번호·낱말�
   // 번호들의 첫 자리가 같으면(1·12·13, 2·21·22·23 …) 둘째 차례가 번호 가운데에서 갈림.
   // 수정 전 실패: 폭 66~95에서 번호 21·22·23의 글이 'Fi…1 L…'·'Ficti…2 Ltd'처럼, 10·100이 'Ficti…0 Ltd'·'Fict…00 Ltd'처럼 번호의 뒷자리부터 보이고
   // 번호 2·5의 글에는 번호가 없음('Fictio… Ltd')(재현 커밋에서는 it.fails).
-  it("첫 자리가 같은 번호가 여럿인 법인명 묶음 — '…' 바로 뒤의 숫자는 늘 번호의 첫 자리부터(뒷자리만 보여 다른 번호로 읽히지 않음)", () => {
-    for (const numbers of [[1, 12, 13], [2, 21, 22, 23], [10, 11, 100], [5, 51, 52]]) {
+  // 앞자리 셋 이상이 같은 번호(2020·2021, 1001·1002, 100·1000 — 검토 지적)는 폭 66에서 앞부분 몫(폭의 30%) 때문에 '…202…'처럼 번호가 다 들지 않아
+  // 갈리는 바로 그 글자부터('Fi…0 L…'·'Fi…1 L…') 보였음 — 이제 앞부분을 첫 글자 하나로 줄여 번호를 통째로('F…2020…').
+  it("첫 자리가 같은 번호가 여럿인 법인명 묶음 — '…' 바로 뒤에 번호가 통째로(뒷자리만·앞자리만 보여 다른 번호로 읽히지 않음)", () => {
+    const sets = [[1, 12, 13], [2, 21, 22, 23], [10, 11, 100], [5, 51, 52], [2020, 2021], [1001, 1002], [100, 1000], [10, 1009], [1, 1000, 1001]];
+    for (const numbers of sets) {
       const numbered = numbers.map((n) => `Fictional Example Semiconductor Holdings ${n} Ltd`);
       const names = ["Fictional Graphics Example Holdings Ltd", ...numbered];
-      for (const maxPx of [66, 87, 93, 95, 101, 116]) {
+      for (const maxPx of [66, 72, 80, 87, 93, 95, 101, 116]) {
         const labels = graphLabels(names, maxPx);
         numbered.forEach((name, at) => {
           const label = labels.get(name)!;
           const shown = numbersAfterEllipsis(label);
-          expect([maxPx, label, shown.length > 0 && shown.every((digits) => String(numbers[at]).startsWith(digits))]).toEqual([maxPx, label, true]);
+          expect([maxPx, label, shown.length > 0 && shown.every((digits) => digits === String(numbers[at]))]).toEqual([maxPx, label, true]);
         });
         expect(new Set(labels.values()).size).toBe(names.length);
+      }
+    }
+  });
+
+  // 검토 지적: 그림 폭 280~309(320·390 화면, 배정 66)에서 연도·네 자리 번호가 든 이름이 'Ex…0 L…'·'Ex…1 L…'(2020·2021), 'Ex…3 LP'·'Ex…4 LP'
+  // (2023·2024), 'Sa…2 B…'·'Sa…100…'(2·1002)로 그려져 번호가 다른 번호로 읽혔음(수정 전 61d09c59의 출력).
+  it("좁은 그림(폭 280·300)의 연도·네 자리 번호 이름 — 노드 글에 번호가 통째로", () => {
+    const pairs = [
+      ["Example Funding 2020 Ltd", "Example Funding 2021 Ltd"],
+      ["Example Capital Fund 2023 LP", "Example Capital Fund 2024 LP"],
+      ["Example Semiconductor Holdings 1001 Ltd", "Example Semiconductor Holdings 1002 Ltd"],
+      ["Sample Holdings Trust Series 2 B.V.", "Sample Holdings Trust Series 1002 LTD"],
+    ];
+    for (const pair of pairs) {
+      const links: SearchLink[] = pair.map((name) => ({ relation: "subsidiary", key: null, name, kind: "company", source: "gleif", detail: null }));
+      for (const width of [280, 300]) {
+        const layout = linkGraphLayout(linkGroups(links), linkGraphSize(width), { centerName: "Example Center Co." });
+        for (const name of pair) {
+          const label = layout.nodes.find((node) => node.link.name === name)!.label;
+          expect([width, label, numbersAfterEllipsis(label)]).toEqual([width, label, [name.match(/ (\d+) /)![1]]]);
+        }
       }
     }
   });
