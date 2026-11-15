@@ -359,8 +359,8 @@ describe("고대비(forced-colors) 차트 잉크", () => {
   // QA-508: 크롬은 svg에 forced-color-adjust: preserve-parent-color를 주므로 고대비에서도 SVG의 outline·fill 색을 강제하지 않습니다. 그래서 포커스 링
   // 기본 규칙(QA-495 — outline var(--focus))이 차트 표면(svg[role=application])에 #8abbff 그대로 남아 밝은 고대비(흰 Canvas) 위 1.98:1이 됐고
   // (고치기 전에는 크롬 기본 'auto' 링이 어두운 두 겹으로 그려져 잘 보였음), 연결 그림(LinksGraph)의 노드 이름·원 테두리(text-accent)도 #4c90f0
-  // 그대로 3.2:1이었습니다. 누를 수 있는 것의 색(--accent — 결정 A1)과 포커스 색(--focus)도 svg 규칙에서 시스템 색으로 다시 정의합니다.
-  it.fails("QA-508: 고대비 svg 규칙이 포커스 색(--focus)과 강조 색(--accent)도 시스템 색으로 — 차트 표면 포커스 링·연결 그림 노드가 흰 Canvas에서 보인다", () => {
+  // 그대로 3.2:1이었습니다. 누를 수 있는 것의 색(--accent — 결정 A1)과 포커스 색(--focus)도 svg 규칙에서 시스템 색으로 다시 정의합니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-508: 고대비 svg 규칙이 포커스 색(--focus)과 강조 색(--accent)도 시스템 색으로 — 차트 표면 포커스 링·연결 그림 노드가 흰 Canvas에서 보인다", () => {
     const svg = forcedDeclarations("svg") ?? {};
     expect(svg["--focus"], "--focus").toBe("Highlight");
     expect(svg["--accent"], "--accent").toBe("LinkText");
