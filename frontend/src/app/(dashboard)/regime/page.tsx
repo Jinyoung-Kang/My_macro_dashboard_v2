@@ -165,7 +165,13 @@ export default function RegimePage() {
                 label={signal.label}
                 value={`${formatNumber(signal.value, 2)}${signal.unit ?? ""}`}
                 tone={signal.healthy ? "text-ok" : "text-warn"}
-                caption={signal.state}
+                // 정상·주의 판정을 값 색만으로 전하지 않습니다 — 캡션 글은 보조 색 그대로, 아이콘만 톤 색(주의는 읽어 주는 '주의:'도, QA-505).
+                // align-top: 글 줄 안의 inline-flex가 기준선에 앉아 캡션 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음).
+                caption={
+                  <StatusText tone={signal.healthy ? "ok" : "warn"} colorText={false} iconSize={12} className="align-top">
+                    {signal.state}
+                  </StatusText>
+                }
                 note={signal.reading}
               />
             ))}

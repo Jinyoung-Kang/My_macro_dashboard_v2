@@ -218,6 +218,29 @@ describe("결정 로그 — Claude 책", () => {
     expect(packet.textContent).toContain("현금 비중 상·하한은 없다");
   });
 
+  // QA-506: 검증 표 '거절 사유' 칸은 값과 상관없이 주의색(text-warn)으로 그려, 통과한 주문의 빈 값 '—'까지 주황 대시로 줄줄이 섰습니다
+  // (초록 '통과' 옆 — 값이 없는 칸이 경고처럼 보임). 같은 상세의 다른 빈 칸(라벨)처럼 '—'는 보조 글 색, 거절 사유가 있을 때만 주의색입니다.
+  it("QA-506: 검증 표 거절 사유 칸 — 통과 행의 빈 값 '—'은 보조 글 색(text-3), 거절 사유가 있는 행만 주의색", async () => {
+    await openClaudeDecisions();
+    fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-26 정기" })).getByRole("button", { name: "상세 펼치기" }));
+    const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });
+    const validation = within(detail).getByRole("region", { name: "검증" });
+    const reasonOf = (ticker: string) => {
+      const row = within(validation).getAllByRole("row").slice(1)
+        .find((tr) => within(tr).getAllByRole("cell")[0].textContent === ticker) as HTMLElement;
+      // 다섯째 칸(거절 사유)의 글 span.
+      return within(row).getAllByRole("cell")[4].querySelector("span") as HTMLElement;
+    };
+
+    const passed = reasonOf("XLV");
+    expect(passed.textContent).toBe("—");
+    expect(passed.className, "통과 행 거절 사유").not.toContain("text-warn");
+    expect(passed.className, "통과 행 거절 사유").toContain("text-text-3");
+    const rejected = reasonOf("NVDA");
+    expect(rejected.textContent).toBe("비중 상한 초과 (WEIGHT_CAP)");
+    expect(rejected.className, "거절 행 거절 사유").toContain("text-warn");
+  });
+
   it("응답이 없으면(형식 오류) '응답 없음'과 오류 — 모델 원문은 접어서, 빈 제안 표는 그리지 않는다", async () => {
     reads["/api/paper/decisions?book=claude"] = () => Promise.resolve({
       available: true, decisions: [decision(22, { status: "FORMAT_ERROR", orderCount: 0, rejectedCount: 0, targetExposurePct: null, summary: null })],

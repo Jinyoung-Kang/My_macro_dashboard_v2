@@ -99,6 +99,11 @@ function renderHome(user: SessionUser | undefined, page: ReactElement = <HomeScr
 
 const requested = () => api.apiGetShared.mock.calls.map(([path]) => path as string);
 const region = (name: string | RegExp) => screen.getByRole("region", { name });
+/**
+ * 저장소 상태 줄의 수 묶음(수 글 전체를 감싼 tabular-nums 상자 — 상태가 있으면 StatusText). 항목(이름 + 수)마다 줄 바꿈 없는
+ * 덩어리라(QA-505) 수 글 전체는 getByText 한 번으로 찾을 수 없어 이 상자의 textContent로 봅니다.
+ */
+const storeCounts = (container: HTMLElement) => within(container).getByText(/^수집 태스크 오류/).closest(".tabular-nums") as HTMLElement;
 
 /** 모의매매 히어로 구역 이름 — 불러오는 중·오류·읽은 뒤 모두 같습니다(큰 숫자가 무엇인지 제목이 먼저 말함). */
 const PAPER_REGION = "모의매매 · Claude 계좌 순자산";
@@ -288,7 +293,7 @@ describe("홈 — 값 있음(운영자)", () => {
     const status = region("데이터 저장소 상태");
     const line = within(status).getByRole("link");
     expect(line.getAttribute("href")).toBe("/status");
-    expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개")).toBeTruthy();
+    expect(storeCounts(line).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
     expect(within(line).getByText("확인 2026-10-26 16:54")).toBeTruthy();
     // 데이터 카드마다 출처 줄(PRINCIPLES) — 상태 화면의 수집 오류·경고 로그와 같은 출처.
     expect(within(line).getByText(SOURCES.collectorRuns)).toBeTruthy();
@@ -381,7 +386,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(screen.queryByText(/0\.00%/)).toBeNull();
   });
 
-  it("저장소 상태 — 수집기에 닿지 못하면 '연결 안 됨 — DB 기록만'(경고색), 누락 데이터셋은 모름 · 누락이 있으면 그 수", async () => {
+  it("저장소 상태 — 수집기에 닿지 못하면 '연결 안 됨 — DB 기록만'(주의 아이콘 + 주의색), 누락 데이터셋은 모름 · 누락이 있으면 그 수", async () => {
     const down = { ...issues(0, 0), collectorReachable: false };
     down.counts = { ...down.counts, missingDatasets: null };
     reads = { ...happyReads(), [ISSUES]: down };
@@ -389,7 +394,9 @@ describe("홈 — 불러오는 중·값 없음", () => {
     let line = await within(region("데이터 저장소 상태")).findByRole("link");
     expect(within(line).getByText(COLLECTOR_UNREACHABLE_NOTE)).toBeTruthy();
     expect(line.textContent).toContain("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 —값 없음");
-    expect(within(line).getByText(/^수집 태스크 오류/).className).toContain("text-warn");
+    // 주의는 안내 한 곳(주의 아이콘 + 주의색)이 나르고, 오류·경고가 없는 수 묶음은 중립입니다(QA-505).
+    expect(within(line).getByText(COLLECTOR_UNREACHABLE_NOTE).closest(".text-warn")).not.toBeNull();
+    expect(storeCounts(line).closest(".text-warn")).toBeNull();
     unmount();
 
     const missing = issues(0, 0);
@@ -397,8 +404,81 @@ describe("홈 — 불러오는 중·값 없음", () => {
     reads = { ...happyReads(), [ISSUES]: missing };
     renderHome(OWNER);
     line = await within(region("데이터 저장소 상태")).findByRole("link");
-    expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개").className).toContain("text-warn");
+    expect(storeCounts(line).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개");
+    expect(storeCounts(line).closest(".text-warn")).not.toBeNull();
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
+  });
+
+  // QA-505: 저장소 상태 줄의 수 묶음은 오류면 위험색(text-danger), 경고·누락이면 주의색(text-warn)으로 글만 칠하고 아이콘이 없었습니다.
+  // 위험색 #e76a6e는 상승 빨강 #ff6b6b와 ΔE 4.4로 거의 같은 색이라(W4) 시장 행의 상승 값과 같은 뜻으로 읽힙니다 — 명세 §3-2·ADR 0042
+  // 결정 3 '상태·위험은 늘 아이콘 + 글'. 글에 이미 '오류'·'경고'가 있어 아이콘은 장식(aria-hidden)이고, 모두 0이면 상태가 아니라 아이콘이 없습니다.
+  it("QA-505: 오류가 있으면 수 묶음 앞에 아이콘 + 위험색, 경고만 있으면 아이콘 + 주의색, 모두 0이면 아이콘 없음", async () => {
+    const countGroup = async (response: ReturnType<typeof issues>, toneClass: string) => {
+      reads = { ...happyReads(), [ISSUES]: response };
+      const { unmount } = renderHome(OWNER);
+      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const text = within(line).getByText(/^수집 태스크 오류/);
+      const group = text.closest(`.${toneClass}`) as HTMLElement | null;
+      expect(group, `${toneClass} 수 묶음`).not.toBeNull();
+      const icons = Array.from((group as HTMLElement).querySelectorAll("svg"));
+      // 아이콘이 수 글 앞에 서는지(문서 순서).
+      const iconFirst = icons.length > 0 && Boolean(icons[0].compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING);
+      unmount();
+      return { hidden: icons.map((icon) => icon.getAttribute("aria-hidden")), iconFirst };
+    };
+
+    for (const [response, toneClass] of [[issues(3, 19), "text-danger"], [issues(0, 19), "text-warn"]] as const) {
+      const { hidden, iconFirst } = await countGroup(response, toneClass);
+      expect(hidden, `${toneClass} 수 묶음의 아이콘`).toEqual(["true"]);
+      expect(iconFirst, `${toneClass} 아이콘이 수 글 앞`).toBe(true);
+    }
+    expect((await countGroup(issues(0, 0), "tabular-nums")).hidden).toEqual([]);
+  });
+
+  // QA-505 후속(검토): 수 묶음 앞에 아이콘(14px + 간격 6px)이 붙자 390px에서 한 줄이던 수 글이 두 줄이 되며 '… · 누락 데이터셋' / '1개'로,
+  // 360px에서는 '… · 누락 데이' / '터셋 1개'로 이름과 수가 다른 줄에 갈라졌습니다(QA 스택 실측 0/19/1). 항목(이름 + 수)마다 줄 바꿈 없는
+  // 덩어리로 두어 줄은 ' · ' 자리에서만 바뀝니다. 수를 모르는 칸('—' + 읽어 주는 '값 없음')도 같은 덩어리입니다.
+  it("QA-505: 수 묶음의 항목(이름 + 수)마다 줄 바꿈 없는 덩어리 — 좁은 화면에서 이름과 수가 다른 줄로 갈라지지 않는다", async () => {
+    const warn = issues(0, 19);
+    warn.counts.missingDatasets = 1;
+    const cases = [
+      [warn, ["수집 태스크 오류 0건", "경고 19건", "누락 데이터셋 1개"]],
+      [issues(0, 0), ["수집 태스크 오류 0건", "경고 0건", "누락 데이터셋 0개"]],
+      [{ ...issues(), counts: undefined }, ["수집 태스크 오류 —값 없음", "경고 —값 없음", "누락 데이터셋 —값 없음"]],
+    ] as const;
+    for (const [response, expected] of cases) {
+      reads = { ...happyReads(), [ISSUES]: response };
+      const { unmount } = renderHome(OWNER);
+      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const items = Array.from(storeCounts(line).querySelectorAll(".whitespace-nowrap"), (node) => node.textContent);
+      expect(items, expected[2]).toEqual(expected);
+      unmount();
+    }
+  });
+
+  // QA-505 후속(검토): 수집기에 닿지 못하면 모델 톤이 warn이라 수 묶음 앞에 주의 아이콘(14px)이 붙고, 바로 옆 안내 '수집기 연결 안 됨 — DB
+  // 기록만'에도 주의 아이콘(12px)이 있어 한 링크 안에 같은 아이콘이 크기만 달리 두 번 섰습니다. 첫 아이콘은 '오류 0건' 앞이라 0건이 경고처럼
+  // 읽힙니다. 상태 화면은 이때 수를 중립으로 두고 주의를 배너 한 곳에 둡니다(QA-102). 오류·경고·누락이 없으면 수 묶음은 중립(아이콘 없음),
+  // 주의 아이콘은 안내 한 곳입니다. 경고가 있으면 수 묶음의 아이콘은 그 경고의 것이라 그대로입니다.
+  it("QA-505: 수집기 연결 안 됨만이면 주의 아이콘은 안내 한 곳 — 수 묶음은 중립, 경고가 있으면 수 묶음도 주의", async () => {
+    const iconsOf = async (warnings: number) => {
+      const down = { ...issues(0, warnings), collectorReachable: false };
+      down.counts = { ...down.counts, missingDatasets: null };
+      reads = { ...happyReads(), [ISSUES]: down };
+      const { unmount } = renderHome(OWNER);
+      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const counts = storeCounts(line);
+      const notice = within(line).getByText(COLLECTOR_UNREACHABLE_NOTE).closest(".text-warn") as HTMLElement;
+      const result = {
+        counts: counts.querySelectorAll("svg").length,
+        countsWarn: counts.closest(".text-warn") !== null,
+        notice: notice.querySelectorAll("svg").length,
+      };
+      unmount();
+      return result;
+    };
+    expect(await iconsOf(0), "연결 안 됨 · 오류 0건 · 경고 0건").toEqual({ counts: 0, countsWarn: false, notice: 1 });
+    expect(await iconsOf(19), "연결 안 됨 · 경고 19건").toEqual({ counts: 1, countsWarn: true, notice: 1 });
   });
 });
 
@@ -415,7 +495,7 @@ describe("홈 — 일부 실패", () => {
     expect(screen.getByText("확장 (Expansion)")).toBeTruthy();
     expect(await paperHero()).toBeTruthy();
     expect(screen.getByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
-    expect(screen.getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개")).toBeTruthy();
+    expect(storeCounts(region("데이터 저장소 상태")).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
 
     reads[MACRO] = macroOverview();
     fireEvent.click(within(market).getByRole("button", { name: "다시 시도" }));
