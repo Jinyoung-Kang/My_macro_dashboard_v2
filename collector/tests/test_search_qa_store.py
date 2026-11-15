@@ -10,8 +10,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-import pytest
-
 from app import store
 from app.services import search_store
 
@@ -49,7 +47,6 @@ ENGLISH_POST = _info_row("i1", title="Longform links: synthetic demographic assu
 KOREAN_POST = _info_row("i2", source="waedge.brief", kind="brief", title="합성전자 수급 정리")
 
 
-@pytest.mark.xfail(strict=True, reason="QA-438: 수정 전 실패 — 수집 글의 언어를 번역 제목(title_ko)으로 정해 영어 글이 'ko'")
 def test_QA438_수집_글의_언어는_화면이_보이는_원문_제목으로(monkeypatch):
     monkeypatch.setattr(search_store, "_info_rows", lambda kinds, terms: [ENGLISH_POST, KOREAN_POST])
     items = {item["readerId"]: item for item in search_store.info_posts(["synthetic", "합성전자"]).items}
@@ -58,7 +55,6 @@ def test_QA438_수집_글의_언어는_화면이_보이는_원문_제목으로(m
     assert items["i2"]["lang"] == "ko"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-438: 수정 전 실패 — 첫 화면의 최근 속보도 번역 제목으로 언어를 정함")
 def test_QA438_첫_화면의_최근_속보도_원문_제목으로(monkeypatch):
     wire_row = _info_row("w1", source="wire.financialjuice", kind="headline", title="SYNTHETIC CENTRAL BANK HOLDS RATES",
                          title_ko="합성 중앙은행 금리 동결")
@@ -72,7 +68,6 @@ def test_QA438_첫_화면의_최근_속보도_원문_제목으로(monkeypatch):
     assert [(item["readerId"], item["lang"]) for item in items] == [("w1", "en")]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-438: 수정 전 실패 — 모은 글에 이미 'ko'로 들어간 영어 수집 글이 그대로 'ko'")
 def test_QA438_모은_글의_수집_글·속보_줄은_읽을_때_원문_제목으로_언어를_다시_가름(monkeypatch):
     rows = [
         _watch_row("i1", title="Longform links: synthetic demographic assumptions", source="info", kind="post", lang="ko"),

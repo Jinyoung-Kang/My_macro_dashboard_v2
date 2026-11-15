@@ -44,6 +44,9 @@ EXCLUDES_FAILURE_TTL = 10.0     # 읽지 못했을 때 다시 읽기까지(초) 
 EVENT_DATASETS = (catalog.OBS_NEWS_HEADLINE, catalog.OBS_KR_NEWS_HEADLINE)
 # 관심 대상이 모은 글 가운데 운영자 전용 출처에서 온 것(백엔드도 회원에게서 이 출처의 줄을 지움 — 계약 §3-4).
 OWNER_ONLY_ORIGINS = ("wire", "info", "guru")
+# 이 모듈이 원문 제목으로 언어를 정하는 출처(:func:`_title_lang`) — 모은 글에 넣은 그 출처의 줄도 읽을 때 같은 규칙으로 다시 가릅니다(QA-438 전에
+# 번역 제목으로 정해 넣은 줄이 2년 남음 — 표는 넣기만 하고 고치지 않음). 뉴스 출처의 lang은 받은 판이라 넣은 값 그대로.
+TITLE_LANG_ORIGINS = ("info", "wire")
 POST_KINDS = ("article", "brief", "guru")
 WIRE_KINDS = ("headline",)
 _BLOG_LABELS = {blog.key: blog.label for blog in info_blogs.BLOGS}
@@ -61,6 +64,11 @@ def _set_timeout(conn) -> None:
 
 def _lang(text: str | None) -> str:
     return "ko" if rules.has_hangul(text) else "en"
+
+
+def _title_lang(row: dict) -> str:
+    """수집 글·속보 줄의 언어 — 화면이 보이는 원문 제목(``title``)으로 가릅니다. 번역 제목(``title_ko``)으로 정하면 영어 글이 '한국어'로 셈(QA-438)."""
+    return _lang(row["title"])
 
 
 # ------------------------------------------------------------------ 사건 뉴스
@@ -140,7 +148,7 @@ def _info_items(kinds: tuple[str, ...], terms: list[str], *, source: str) -> Fet
         kind = {"guru": "opinion", "headline": "wire"}.get(row["kind"], "post")
         items.append(feed_item(title=row["title"], url=row["url"], publisher=_publisher(row["source"]),
                                domain=rules.domain_of(row["url"]), published=published, basis=basis, source=source, kind=kind,
-                               lang=_lang(row["title_ko"] or row["title"]), summary=row["summary"], reader_id=row["id"]))
+                               lang=_title_lang(row), summary=row["summary"], reader_id=row["id"]))
     note = f"최근 {INFO_ROW_LIMIT}건까지만 찾음" if len(rows) >= INFO_ROW_LIMIT else None
     return Fetched(items=items, note=note)
 
@@ -321,7 +329,7 @@ def recent_wire(limit: int) -> Fetched:
             published, basis = row["first_seen_at"], "fetched"
         items.append(feed_item(title=row["title"], url=row["url"], publisher=_publisher(row["source"]),
                                domain=rules.domain_of(row["url"]), published=published, basis=basis, source="wire", kind="wire",
-                               lang=_lang(row["title_ko"] or row["title"]), summary=row["summary"], reader_id=row["id"]))
+                               lang=_title_lang(row), summary=row["summary"], reader_id=row["id"]))
     return Fetched(items=items)
 
 
@@ -344,7 +352,7 @@ def watch_items(entity_key: str, *, owner: bool, kinds: tuple[str, ...] | None =
     """
     그 대상(대표 키)의 모은 글 — 출처 표시는 ``watch``이고, 운영자 전용 출처(속보·수집 글)에서 온 줄은 운영자에게만 그 출처 이름 그대로 둡니다
     (백엔드가 회원에게서 한 번 더 지움). 경유 주소(구글) 줄은 뒤로 — 같은 글의 원문 주소 줄이 먼저 남게(규칙 4). ``kinds``가 있으면 그 종류의 줄만
-    (계약 §7-6 — 뉴스 탭·공시 탭). 날짜만 아는 공시 줄은 ``timeBasis: "date"``.
+    (계약 §7-6 — 뉴스 탭·공시 탭). 날짜만 아는 공시 줄은 ``timeBasis: "date"``. 수집 글·속보 줄의 언어는 원문 제목으로 다시 가릅니다(QA-438).
     """
     try:
         rows = _watch_rows(entity_key, kinds)
@@ -359,9 +367,10 @@ def watch_items(entity_key: str, *, owner: bool, kinds: tuple[str, ...] | None =
         if published is None:
             published, basis = row["first_seen_at"], "fetched"
         reader = row["item_id"] if origin in ("wire", "info") else None
+        lang = _title_lang(row) if origin in TITLE_LANG_ORIGINS else row["lang"]
         items.append(feed_item(title=row["title"], url=row["url"], publisher=row["publisher"], domain=row["publisher_domain"],
                                published=published, basis=basis, source=origin if origin in OWNER_ONLY_ORIGINS else "watch",
-                               kind=row["kind"] or "news", lang=row["lang"], summary=row["summary"], reader_id=reader,
+                               kind=row["kind"] or "news", lang=lang, summary=row["summary"], reader_id=reader,
                                item_id=row["item_id"]))
     items.sort(key=lambda item: rules.is_relay(item["url"]))
     note = f"최근 {WATCH_ROW_LIMIT}건까지만 읽음" if len(rows) >= WATCH_ROW_LIMIT else None
