@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { BellIcon, BellOffIcon, ChevronDownIcon, SpinnerIcon, StarIcon, StatusText } from "@/components/ui/icons";
 import type { InfoSearchWatch, NotifyFrom } from "@/hooks/useInfoSearchWatch";
@@ -237,6 +237,8 @@ function NotifyToggle({ watch, item, from }: { watch: InfoSearchWatch; item: Sea
  * 대상 머리의 등록·해제 단추(계약 §6-4) — 대표 키로 등록하고(풀린 대상의 key), 해제는 그 줄의 번호로 지웁니다. 상한(409)은 서버가 준 사유를 글로.
  * 등록한 대상이면 옆에 새 글 알림 켜기(§9-5)를 둡니다(실패 문구는 이 자리에서 누른 것만).
  * 데모 열람은 등록하지 못합니다(단추를 끄고 조회만 된다고 적음). 대상을 다 풀기 전에는 대표 키를 몰라 단추를 끕니다.
+ * 보내는 동안에는 disabled로 바꾸지 않습니다(누른 단추가 disabled가 되면 브라우저가 포커스를 body로 보냄 — QA-444, WCAG 2.4.3) —
+ * aria-disabled·aria-busy와 도는 아이콘으로 알리고 누름은 한 번만 보냅니다. 끝나면 같은 단추의 글만 '등록'·'해제'로 바뀌어 포커스가 그대로 남습니다.
  */
 export function WatchButton({
   watch,
@@ -253,6 +255,8 @@ export function WatchButton({
   settled: boolean;
 }) {
   const hintId = useId();
+  // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(aria-disabled는 다시 그린 뒤에 걸림 — AliasEditor와 같은 방식).
+  const sending = useRef(false);
   const data = watch.data;
   const items = data?.available ? (data.items ?? []) : [];
   const watched = findWatch(items, entityKey, entity);
@@ -273,9 +277,16 @@ export function WatchButton({
 
   const unavailable = data !== null && !data.available;
   const ready = data !== null && data.available && settled;
-  const onClick = () => {
-    if (watched) void watch.remove(watched.id);
-    else void watch.add(watchKeyOf(entityKey, entity));
+  const busy = watch.busy;
+  const onClick = async () => {
+    if (!ready || busy || sending.current) return;
+    sending.current = true;
+    try {
+      if (watched) await watch.remove(watched.id);
+      else await watch.add(watchKeyOf(entityKey, entity));
+    } finally {
+      sending.current = false;
+    }
   };
 
   const notifyError = watched && watch.notifyError?.from === "header" && watch.notifyError.id === watched.id ? watch.notifyError : null;
@@ -283,8 +294,19 @@ export function WatchButton({
   return (
     <div className="flex flex-col items-start gap-1 sm:items-end">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={BUTTON} disabled={!ready || watch.busy} onClick={onClick}>
-          <StarIcon size={14} filled={watched !== null} className={watched ? "text-accent" : ""} />
+        <button
+          type="button"
+          className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+          disabled={!ready}
+          aria-disabled={busy || undefined}
+          aria-busy={busy || undefined}
+          onClick={() => void onClick()}
+        >
+          {busy ? (
+            <SpinnerIcon size={14} className="motion-safe:animate-spin" />
+          ) : (
+            <StarIcon size={14} filled={watched !== null} className={watched ? "text-accent" : ""} />
+          )}
           {watched ? "관심 대상 해제" : "관심 대상 등록"}
         </button>
         {watched ? <NotifyToggle watch={watch} item={watched} from="header" /> : null}

@@ -88,7 +88,7 @@ describe("QA-444 — 관심 대상 등록·해제 단추는 요청 중에도 포
   // 다음 Tab은 페이지 맨 처음부터였습니다(WCAG 2.4.3). 같은 화면의 알림 단추·'요약'·별칭 '저장'은 aria-disabled와 누름 가드로 피합니다.
   // jsdom은 disabled가 된 요소의 포커스를 body로 옮기지 않으므로 속성(disabled·aria-disabled)과 단추 노드가 그대로인지로 봅니다.
   // 수정 전 실패: 요청 중 단추의 disabled가 true(aria-disabled·aria-busy 없음)(재현 커밋에서는 it.fails).
-  it.fails("등록 — 요청 중에는 aria-disabled(진짜 disabled 아님)이고 두 번 눌러도 한 번만 보내며, 끝나면 같은 단추가 '해제'로 바뀌어 포커스를 지닌다", async () => {
+  it("등록 — 요청 중에는 aria-disabled(진짜 disabled 아님)이고 두 번 눌러도 한 번만 보내며, 끝나면 같은 단추가 '해제'로 바뀌어 포커스를 지닌다", async () => {
     let registered = false;
     let release: () => void = () => {};
     reads[endpoints.search.watch] = () => watchList(registered ? [WATCH_NVDA] : []);
@@ -119,7 +119,7 @@ describe("QA-444 — 관심 대상 등록·해제 단추는 요청 중에도 포
     expect(button.disabled).toBe(false);
   });
 
-  it.fails("해제 — 요청 중에는 aria-disabled이고, 끝나면 같은 단추가 '등록'으로 바뀌어 포커스를 지닌다", async () => {
+  it("해제 — 요청 중에는 aria-disabled이고, 끝나면 같은 단추가 '등록'으로 바뀌어 포커스를 지닌다", async () => {
     let removed = false;
     let release: () => void = () => {};
     reads[endpoints.search.watch] = () => watchList(removed ? [] : [WATCH_NVDA]);
@@ -149,7 +149,7 @@ describe("QA-444 — 관심 대상 등록·해제 단추는 요청 중에도 포
     await waitFor(() => expect(button.getAttribute("aria-disabled")).toBeNull());
   });
 
-  it.fails("실패(상한 409)로 끝나도 같은 단추에 포커스가 남고 사유는 role=alert 글 — 그 단추로 바로 다시 누를 수 있다", async () => {
+  it("실패(상한 409)로 끝나도 같은 단추에 포커스가 남고 사유는 role=alert 글 — 그 단추로 바로 다시 누를 수 있다", async () => {
     let reject: (failure: Error) => void = () => {};
     reads[endpoints.search.watch] = () => watchList([]);
     api.apiPost.mockImplementation(
