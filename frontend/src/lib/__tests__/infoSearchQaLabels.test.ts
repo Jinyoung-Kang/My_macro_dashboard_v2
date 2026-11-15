@@ -194,6 +194,74 @@ describe("연결 그림 — 둘째 차례 이후에도 갈리는 번호·낱말�
 });
 
 /**
+ * 글에 번호가 통째로 보이는가 — 글의 숫자마다 번호와 같거나(뒤에 글자가 이어짐), 끝을 '…'로 자른 번호의 앞자리. 가운데를 줄인 글에 숫자가 없거나 번호
+ * 가운데부터 보이면('12'가 '2', '2020'이 '0') 거짓. 끝만 자른 글('가상전자…')은 번호를 보이지 않아도 됨(번호를 가리키지 않음).
+ */
+function numberWhole(label: string, number: string): boolean {
+  const runs = [...label.matchAll(/\d+/g)];
+  if (runs.length === 0) return label.indexOf("…") === label.length - 1;
+  return runs.every((run) => {
+    const next = label[run.index + run[0].length];
+    return next === "…" || next === undefined ? number.startsWith(run[0]) : run[0] === number;
+  });
+}
+
+describe("연결 그림 — 낱말에 붙은 번호('제12호'·'Fund2020')도 번호의 첫 자리부터(2차 검토 지적)", () => {
+  // 2차 검토 지적: 갈리는 자리가 6자보다 긴 낱말 안이면 낱말 물림을 되돌리고(GRAPH_WORD_BACK), 낱말이 이름 첫머리부터 이어지면 물림이 0까지 가 쓸 수
+  // 없어, 낱말에 붙은 번호는 갈리는 바로 그 글자부터 보였습니다 — 12호가 '…2호', 2020이 '…0'으로 읽히고 1차는 번호가 빠짐. 이제 갈리는 자리가 숫자
+  // 가운데면 그 숫자의 첫 자리로 물리고, 낱말 첫 글자부터의 글이 서로 같으면 갈리는 바로 그 글자보다 먼저 숫자의 첫 자리부터 봅니다.
+  // 바꾸기 전 실패: 그림 폭 410에서 '가상…차유동…'·'가상…2차유동…', 296에서 '가…제1…'·'가…호…'·'가…3호…', 362에서 '가상…2호스팩'·'가상…3호스팩',
+  // 배정 66~116 모두에서 'Ex…0 L…'·'Example…1 Ltd' 꼴(98d6f93c부터 같은 출력).
+  const nodeLabels = (names: readonly string[], width: number) => {
+    const links: SearchLink[] = names.map((name) => ({ relation: "subsidiary", key: null, name, kind: "company", source: "gleif", detail: null }));
+    const layout = linkGraphLayout(linkGroups(links), linkGraphSize(width), { centerName: "Example Center Co." });
+    return names.map((name) => layout.nodes.find((node) => node.link.name === name)!.label);
+  };
+
+  it("검토 지적의 그림 — 번호가 통째로", () => {
+    expect(nodeLabels(["가상캐피탈제1차유동화전문 유한회사", "가상캐피탈제12차유동화전문 유한회사", "가상캐피탈제2차유동화전문 유한회사"], 410)).toEqual([
+      "가상…1차유동…",
+      "가상…12차유…",
+      "가상캐피탈제2…",
+    ]);
+    expect(nodeLabels(["가상반도체 제1호 주식회사", "가상반도체 제12호 주식회사", "가상반도체 제123호 주식회사"], 296)).toEqual(["가…제1…", "가…12호…", "가…123…"]);
+    expect(nodeLabels(["가상증권제12호스팩", "가상증권제13호스팩", "가상증권제2호스팩"], 362)).toEqual(["가상…12호…", "가상…13호…", "가상증권제2…"]);
+    for (let px = 66; px <= 116; px += 1) {
+      const names = ["Example Capital Fund2020 Ltd", "Example Capital Fund2021 Ltd"];
+      const labels = graphLabels(names, px);
+      expect([px, names.map((name) => numbersAfterEllipsis(labels.get(name)!))]).toEqual([px, [["2020"], ["2021"]]]);
+    }
+  });
+
+  it("번호가 낱말에 붙은 이름 묶음 8가지 x 번호 묶음 8개 x 배정 66~116 — 번호가 빠지거나 가운데부터 보이지 않고, 글이 서로 다름", () => {
+    const templates = [
+      "가상캐피탈제{n}차유동화전문 유한회사",
+      "가상반도체 제{n}호 주식회사",
+      "가상증권제{n}호스팩",
+      "Example Capital Fund{n} Ltd",
+      "가상스팩{n}호",
+      "예시금융지주 제{n}차 사채",
+      "Sample Holdings Series{n} LLC",
+      "샘플그룹제{n}호사모투자합자회사",
+    ];
+    const sets = [[1, 12, 2], [1, 12, 123], [12, 13, 2], [2020, 2021], [1, 2, 3], [10, 11, 100], [5, 51, 52], [1001, 1002]];
+    for (const template of templates) {
+      for (const numbers of sets) {
+        const names = numbers.map((number) => template.replace("{n}", String(number)));
+        for (let px = 66; px <= 116; px += 1) {
+          const labels = graphLabels(names, px);
+          expect(new Set(labels.values()).size).toBe(names.length);
+          names.forEach((name, at) => {
+            const label = labels.get(name)!;
+            expect([px, name, label, numberWhole(label, String(numbers[at]))]).toEqual([px, name, label, true]);
+          });
+        }
+      }
+    }
+  });
+});
+
+/**
  * 노드 글이 그 이름으로 읽힐 수 있는가 — '…'로 나눈 조각이 이름 안에 차례로 있음(첫 조각은 앞머리, 끝에 '…'가 없으면 마지막 조각은 끝). 읽는 사람이 글만
  * 보고 이름을 짐작하는 방식.
  */
