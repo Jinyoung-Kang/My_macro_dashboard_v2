@@ -181,16 +181,16 @@ frontend/src/
 ├── components/ui/                 기본 조각(index.tsx) + Radix 감싼 Dialog·ConfirmDialog·Toast(하위 경로로 가져옴, 배럴에 넣지 않음)
 ├── components/patterns/           화면 패턴(AssetRow·Hero·StatTile·DataTable·배지·Empty…) — `@/components/patterns` 배럴로만
 ├── components/charts/             Recharts 래퍼 — 화면은 `@/components/charts`(index.tsx)에서만 가져옴
-├── components/shell/              셸(왼쪽 내비·상단바·하위 메뉴 줄·하단 탭·검색·계정·테마·빌드 정보)
+├── components/shell/              셸(왼쪽 내비·상단바·하위 메뉴 줄·하단 탭·검색·계정·빌드 정보)
 ├── components/screens/<탭>/       새 화면 조립(home·paper)
-├── hooks/                         useApi·useAsyncAction·useTheme·새로고침 신호 …
-└── lib/                           순수 함수 — 서식·거래소 달력, 메뉴 표(nav)·검색 색인(search)·테마(theme), 화면 모델(home·paperOverview·patterns…)
+├── hooks/                         useApi·useAsyncAction·새로고침 신호 …
+└── lib/                           순수 함수 — 서식·거래소 달력, 메뉴 표(nav)·검색 색인(search), 화면 모델(home·paperOverview·patterns…)
 ```
 
 화면 테스트 규칙:
 - 테스트 파일은 `src/**/__tests__/**/*.test.{ts,tsx}`에만 둡니다(밖에 두면 vitest가 조용히 건너뜀). 파일마다 `afterEach(() => cleanup())`.
 - `vitest.setup.ts`(모든 테스트 앞)는 jsdom에 없는 `matchMedia`·`ResizeObserver`·`scrollIntoView`·포인터 캡처의 "아무 일도 안 함" 스텁만
-  둡니다(Radix·테마 훅용, 이미 있으면 덮지 않음). 동작을 봐야 하는 테스트는 그 안에서 `vi.stubGlobal`·prototype 대입으로 덮어씁니다.
+  둡니다(Radix·움직임 줄이기 확인용, 이미 있으면 덮지 않음). 동작을 봐야 하는 테스트는 그 안에서 `vi.stubGlobal`·prototype 대입으로 덮어씁니다.
 - **네 상태**: 새 패턴은 값 있음·값 없음·추정·오래됨 렌더링 테스트를, 새 화면은 데이터 없음·일부 실패·추정·오래됨을 고정 응답으로
   보는 테스트를 갖습니다(예: `HomeScreen.test.tsx`·`paperOverviewStates.test.tsx`). 패턴 파일을 더하면 배럴과
   `patterns/__tests__/index.test.ts`의 목록에 함께 넣습니다(빠지면 그 테스트가 막음).

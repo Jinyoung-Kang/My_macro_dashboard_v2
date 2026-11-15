@@ -255,7 +255,7 @@ make down            # 정지
 │   └── src/
 │       ├── app/(dashboard)/ 메뉴별 라우트(새 화면은 그리기만 — 옛 화면은 섹션 파일까지 여기, 4단계에 옮김)
 │       ├── components/      shell(왼쪽 내비·하단 탭·검색·알림 벨) · screens/<탭>(홈·모의매매·검색 상세) · patterns(자산 행·배지·표) · charts · ui
-│       ├── hooks/           useApi · useTheme · useUsdKrw · 새로고침 신호
+│       ├── hooks/           useApi · useUsdKrw · 새로고침 신호
 │       └── lib/             순수 함수 — 포맷·거래소 달력·메뉴 표(nav)·검색·화면 모델·타입
 ├── db/migrations/      스키마
 ├── deploy/vultr/      Vultr 서버의 앞단 설정(Caddyfile)
