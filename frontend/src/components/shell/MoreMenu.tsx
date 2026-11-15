@@ -11,7 +11,6 @@ import { PageHeader } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { ReadModeNote } from "./ReadMode";
 import { RefreshButton } from "./RefreshButton";
-import { ThemeSwitch } from "./ThemeSwitch";
 import { ChevronRightIcon, MenuIcon } from "./icons";
 
 const MORE = TABS.find((tab) => tab.key === "more");
@@ -19,10 +18,10 @@ const MORE = TABS.find((tab) => tab.key === "more");
 const INFO = TABS.find((tab) => tab.key === "info");
 
 /**
- * 더보기 화면(/more) — 더보기 하위 화면 목록(행) + 계정 영역 + 읽기 모드·수동 새로고침(운영자) + 테마 전환 + 빌드 정보.
+ * 더보기 화면(/more) — 더보기 하위 화면 목록(행) + 계정 영역 + 읽기 모드·수동 새로고침(운영자) + 빌드 정보.
  *
- * 좁은 화면에서는 왼쪽 내비가 없어 계정·읽기 모드·새로고침·테마·빌드 정보를 여기서 씁니다. 데스크톱에서도 열립니다(같은 내용이 왼쪽 내비에도 있음 —
- * 테마 전환 둘은 같은 탭 안 이벤트로 함께 바뀝니다). 운영자 전용 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘.
+ * 좁은 화면에서는 왼쪽 내비가 없어 계정·읽기 모드·새로고침·빌드 정보를 여기서 씁니다. 데스크톱에서도 열립니다(같은 내용이 왼쪽 내비에도 있음).
+ * 테마 전환 행은 없습니다(어두운 한 벌 — ADR 0042 결정 2). 운영자 전용 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘.
  * 하위 화면은 목록 행(높이 64px — 원 안 아이콘 · 화면 이름 · 오른쪽 화살표)이고, 행 전체가 링크입니다(hover 바탕).
  * 묶음은 둘 — '메뉴'(정보 수집 행이 맨 위 + 묶음 없는 더보기 화면)와 그다음 '한국 시장'(옛 한국 탭의 수급 레이더·파생·투기세력, ADR 0041 결정 1).
  */
@@ -34,7 +33,7 @@ export function MoreMenu() {
   const krItems = visible.filter((item) => item.group === KR_MARKET_GROUP);
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
-      <PageHeader title="더보기" description="알림·한국 시장·계정·운영 화면과 화면 설정" />
+      <PageHeader title="더보기" description="알림·한국 시장·계정·운영 화면과 빌드 정보" />
 
       <section aria-labelledby="more-menus" className="flex flex-col gap-2">
         <h2 id="more-menus" className="text-sm font-semibold text-text-2">메뉴</h2>
@@ -60,13 +59,6 @@ export function MoreMenu() {
         <div className="flex max-w-sm flex-col gap-3">
           <ReadModeNote />
           <RefreshButton user={user} />
-        </div>
-      </section>
-
-      <section aria-labelledby="more-theme" className="flex flex-col gap-2">
-        <h2 id="more-theme" className="text-sm font-semibold text-text-2">화면 테마</h2>
-        <div className="max-w-sm">
-          <ThemeSwitch />
         </div>
       </section>
 

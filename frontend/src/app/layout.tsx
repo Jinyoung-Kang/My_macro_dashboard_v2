@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { THEME_SCRIPT } from "@/lib/theme";
+import { LEGACY_THEME_CLEANUP_SCRIPT } from "@/lib/legacyTheme";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -11,13 +11,12 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // 테마: <head>의 인라인 스크립트가 저장된 선택(light|dark)을 첫 페인트 전에 <html data-theme>로 붙입니다(없으면 시스템 따름).
-  // 스크립트가 바꾼 속성을 하이드레이션이 오류로 보지 않게 suppressHydrationWarning을 주고, JSX에는 data-theme를 쓰지 않습니다
-  // (적으면 Strict Mode 재마운트가 그 값으로 되돌림 — useTheme이 다시 붙임).
+  // 테마는 어두운 한 벌 하나입니다(ADR 0042 결정 2 — globals.css의 :root, color-scheme: dark). <head>의 인라인 스크립트는 없앤 테마 선택이
+  // 브라우저에 남긴 값(localStorage "theme")을 읽지 않고 지우기만 합니다(lib/legacyTheme.ts). <html>에는 테마 속성을 붙이지 않습니다.
   return (
-    <html lang="ko" suppressHydrationWarning>
+    <html lang="ko">
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: LEGACY_THEME_CLEANUP_SCRIPT }} />
       </head>
       <body className="min-h-screen bg-bg text-text antialiased">{children}</body>
     </html>

@@ -1,5 +1,5 @@
 /**
- * 더보기 화면(/more) — 좁은 화면에서 계정·읽기 모드·새로고침·테마·빌드 정보를 쓰는 곳. 하위 화면 행은 운영자 전용·유료 잠금·데모 규칙을 따른다.
+ * 더보기 화면(/more) — 좁은 화면에서 계정·읽기 모드·새로고침·빌드 정보를 쓰는 곳(테마 전환은 없음 — ADR 0042 결정 2). 하위 화면 행은 운영자 전용·유료 잠금·데모 규칙을 따른다.
  * 옛 한국 탭의 두 화면은 '한국 시장' 묶음으로 따로(ADR 0041 결정 1) — '메뉴' 묶음(정보 수집이 맨 위) 다음.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
@@ -41,12 +41,11 @@ beforeEach(() => router.push.mockReset());
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
-  document.documentElement.removeAttribute("data-theme");
   window.localStorage.clear();
 });
 
 describe("더보기 화면", () => {
-  it("회원: 알림·AI 종합 분석·내 계정 행, 이메일·등급 링크와 로그아웃, 새로고침 없음, 테마 전환·빌드 정보", () => {
+  it("회원: 알림·AI 종합 분석·내 계정 행, 이메일·등급 링크와 로그아웃, 새로고침 없음, 빌드 정보 — 테마 전환은 없음(어두운 한 벌)", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "main@1ccad1c");
     renderMore({ email: "member@test.local", role: "MEMBER", tier: "PRO" });
 
@@ -55,7 +54,7 @@ describe("더보기 화면", () => {
     expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
     expect(within(screen.getByRole("region", { name: "계정" })).getByRole("link").textContent).toContain("member@test.local");
     expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
-    expect(screen.getByRole("radiogroup", { name: "화면 테마" })).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "화면 테마" })).toBeNull();
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
   });
 

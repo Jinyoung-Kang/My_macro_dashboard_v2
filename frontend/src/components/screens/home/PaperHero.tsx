@@ -150,7 +150,7 @@ export function PaperHero() {
 }
 
 /**
- * 미국 | 한국 — 화면 테마 전환(ThemeSwitch)과 같은 브라우저 기본 라디오 묶음이고 모양도 같은 세그먼트입니다(고른 시장이 "선택됨"으로 읽힘).
+ * 미국 | 한국 — 브라우저 기본 라디오 묶음이고 모양은 공용 세그먼트(segmentClasses)입니다(고른 시장이 "선택됨"으로 읽힘).
  * 고르면 그 시장의 개요를 히어로에 그립니다(한국 2단계 명세 §4-16 — 예전 '한국 · 준비 중' 막힘 해제).
  */
 function MarketSwitch({ value, onChange }: { value: PaperMarketCode; onChange: (market: PaperMarketCode) => void }) {

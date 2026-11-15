@@ -58,7 +58,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
-  document.documentElement.removeAttribute("data-theme");
   window.localStorage.clear();
 });
 
@@ -325,6 +324,8 @@ describe("빌드 정보(옛 사이드바 아래)", () => {
 
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
     expect(screen.getByText("최종 수정 2026-10-20")).toBeTruthy();
+    // 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2). 왼쪽 내비 아래에도 라디오 묶음이 없다.
+    expect(screen.queryByRole("radiogroup", { name: "화면 테마" })).toBeNull();
   });
 
   it("날짜가 없거나 날짜 형식이 아니면 '최종 수정'을 표시하지 않는다", () => {
