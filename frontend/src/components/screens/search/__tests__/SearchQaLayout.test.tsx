@@ -114,20 +114,35 @@ const ROW_GAP = 12;
 const TITLE_MIN = 80;
 
 const BREAKPOINTS: Record<string, number> = { "": 0, "sm:": 640, "md:": 768, "lg:": 1024, "xl:": 1280, "2xl:": 1536 };
+/** 컨테이너 쿼리 크기(rem — 설치된 Tailwind v4의 --container-*). `@xl:`은 그 칸을 담은 @container 요소의 폭이 36rem 이상일 때. */
+const CONTAINERS: Record<string, number> = { "3xs": 16, "2xs": 18, xs: 20, sm: 24, md: 28, lg: 32, xl: 36, "2xl": 42, "3xl": 48 };
 /** 확인할 창 폭 — 1024~1279는 왼쪽 메뉴가 있는 가장 좁은 넓은 화면, 1280은 xl 경계, 1440은 QA의 넓은 화면. */
 const WIDTHS = [1024, 1100, 1180, 1279, 1280, 1440];
 
 /** 결과 패널 안쪽의 폭(창 폭 → 칸 틀이 나눌 폭). */
 const gridWidth = (viewport: number) => Math.min(viewport - SIDE_NAV - SCROLLBAR, MAIN_MAX) - MAIN_PAD - SCREEN_FRAME - PANEL_BORDER;
 
-/** 그 창 폭에서 쓰이는 칸 틀(`grid-cols-[a_b_c]` → ["a","b","c"]) — 앞머리(lg: 등)가 창 폭 이하인 것 가운데 가장 큰 것. */
-function activeTracks(element: Element, viewport: number): string[] {
-  let best: { min: number; tracks: string[] } | null = null;
+/**
+ * 그 창 폭에서 쓰이는 칸 틀(`grid-cols-[a_b_c]` → ["a","b","c"]) — 앞머리(lg: 등)가 창 폭 이하인 것 가운데 가장 큰 것. 컨테이너 앞머리(@xl: 등)는
+ * 둘러싼 @container의 폭(container)으로 고르고, Tailwind가 그 규칙을 창 폭 규칙보다 뒤에 두므로 맞으면 창 폭 앞머리보다 앞섭니다.
+ */
+function activeTracks(element: Element, viewport: number, container?: number): string[] {
+  let best: { rank: number; tracks: string[] } | null = null;
   for (const token of element.className.split(/\s+/)) {
-    const match = /^((?:sm|md|lg|xl|2xl):)?grid-cols-\[([^\]]+)\]$/.exec(token);
+    const match = /^(?:((?:sm|md|lg|xl|2xl):)|@([0-9a-z]+):)?grid-cols-\[([^\]]+)\]$/.exec(token);
     if (!match) continue;
-    const min = BREAKPOINTS[match[1] ?? ""];
-    if (min <= viewport && (!best || min > best.min)) best = { min, tracks: match[2].split("_") };
+    let rank: number;
+    if (match[2] !== undefined) {
+      if (container === undefined) throw new Error(`컨테이너 폭이 있어야 고를 수 있는 칸 틀입니다: ${token}`);
+      const min = CONTAINERS[match[2]] * REM;
+      if (!(container >= min)) continue;
+      rank = 10_000 + min;
+    } else {
+      const min = BREAKPOINTS[match[1] ?? ""];
+      if (min > viewport) continue;
+      rank = min;
+    }
+    if (!best || rank > best.rank) best = { rank, tracks: match[3].split("_") };
   }
   if (!best) throw new Error(`칸 틀이 없습니다: ${element.className}`);
   return best.tracks;
@@ -166,7 +181,7 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     for (const viewport of WIDTHS) {
       const middle = middleWidth(grid, viewport);
       for (const line of rows) {
-        const tracks = activeTracks(line, viewport);
+        const tracks = activeTracks(line, viewport, middle); // 결과 목록은 가운데 칸의 폭 그대로(@container)
         const need = ROW_PAD + fixedPx(tracks) + ROW_GAP * (tracks.length - 1) + TITLE_MIN;
         expect({ viewport, middle }).toEqual({ viewport, middle: Math.max(middle, need) });
       }
@@ -241,6 +256,78 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     const grid = entityGridOf(await screen.findByRole("listbox", { name: "결과" }));
     expect(activeTracks(grid, 1440)).toEqual(["13rem", "minmax(0,1fr)", "18rem"]);
     expect(middleWidth(grid, 1440)).toBe(589);
+  });
+});
+
+describe("개선 제안 — 타임라인 줄의 배치는 창 폭이 아니라 결과 목록의 폭(@container)으로 정해 제목 칸이 좁아지지 않는다", () => {
+  // 개선 제안(QA 스택 재확인 1): 줄의 네 칸(시각 · 종류 · 매체 · 제목)을 창 폭 lg(1024)부터 써서 제목 칸이 1024 126px·1100 202px, xl 세 칸이
+  // 시작하는 1280에서 94px(1279는 381px)로 줄었습니다 — '합성 반도체 공급 감소 전망'·'… 증가 전망'이 둘 다 '합성 반도체 공급 …'로 보였습니다.
+  // 네 칸은 결과 목록이 36rem(@xl, 576px — 제목 칸 236px) 이상일 때만, 그 밑은 lg 미만의 두 칸(시각 · 제목 두 줄까지 + 종류 · 매체 줄)입니다.
+  // 수정 전 실패: 1024·1100·1280에서 네 칸이라 제목 칸이 121·197·89px(셈은 위 QA-420 시험과 같은 셸 폭).
+  const FOUR = 4;
+  const TWO = 2;
+  /** 네 칸일 때 제목 칸이 적어도 남길 폭 — 앞머리가 같은 제목을 가를 만큼(14px 한글 열여섯 자 남짓). */
+  const TITLE_WIDE = 236;
+  /** 창 폭마다 바라는 배치 — 390은 왼쪽 메뉴·칸 틀이 없어 목록이 창보다 좁음(창 폭으로 위 끝을 셈). */
+  const EXPECTED: [number, number][] = [
+    [390, TWO],
+    [1024, TWO],
+    [1100, TWO],
+    [1180, FOUR],
+    [1279, FOUR],
+    [1280, TWO],
+    [1440, FOUR],
+  ];
+
+  it("390·1024·1100·1280은 두 칸, 1180·1279·1440은 네 칸 — 어느 쪽이든 제목 칸이 236px 이상(칸 머리는 네 칸일 때만)", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const grid = entityGridOf(list);
+    const header = list.firstElementChild as Element;
+    const rows = within(list).getAllByRole("option");
+    const seen: [number, number][] = [];
+    for (const [viewport] of EXPECTED) {
+      const width = viewport < BREAKPOINTS["lg:"] ? viewport : middleWidth(grid, viewport);
+      const layouts = rows.map((line) => activeTracks(line, viewport, width).length);
+      expect(new Set(layouts).size).toBe(1);
+      seen.push([viewport, layouts[0]]);
+      const tracks = activeTracks(rows[0], viewport, width);
+      const title = width - ROW_PAD - fixedPx(tracks) - ROW_GAP * (tracks.length - 1);
+      if (viewport >= BREAKPOINTS["lg:"]) expect({ viewport, title }).toEqual({ viewport, title: Math.max(title, TITLE_WIDE) });
+      // 칸 머리는 네 칸과 같은 기준(@xl)으로만 보입니다.
+      expect(activeTracks(header, viewport, width)).toEqual(["4.5rem", "4rem", "9rem", "minmax(0,1fr)"]);
+    }
+    expect(seen).toEqual(EXPECTED);
+    // 줄의 @xl:을 가르는 것은 결과 목록(가운데 칸의 폭 그대로)입니다.
+    expect(list.className.split(/\s+/)).toContain("@container");
+    expect(header.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "@xl:grid"]));
+    // 36rem 경계에서 네 칸의 제목 칸 — 576 - 24 - 280 - 36.
+    expect(CONTAINERS.xl * REM - ROW_PAD - fixedPx(["4.5rem", "4rem", "9rem"]) - ROW_GAP * 3).toBe(TITLE_WIDE);
+  });
+
+  it("배치를 바꾸는 클래스는 모두 목록 폭(@xl:) — 창 폭(lg:)은 누르는 자리(줄 높이·위아래 여백)만, 두 칸의 제목은 두 줄까지", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const header = list.firstElementChild as HTMLElement;
+    for (const element of [header, ...within(list).getAllByRole("option"), ...within(list).getAllByRole("option").flatMap((row) => [...row.querySelectorAll("*")])]) {
+      const tokens = element.getAttribute("class")?.split(/\s+/) ?? [];
+      expect(tokens.filter((token) => /^lg:(grid|block|hidden|truncate|grid-cols-|col-start-|row-start-|text-)/.test(token))).toEqual([]);
+    }
+    const row = within(list).getAllByRole("option")[0];
+    const tokens = row.className.split(/\s+/);
+    expect(tokens).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-8", "scroll-mt-7", "grid-cols-[4.5rem_minmax(0,1fr)]", "@xl:grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)]"]));
+    const title = within(row).getByText("첫째 기사");
+    expect(title.className.split(/\s+/)).toEqual(expect.arrayContaining(["line-clamp-2", "break-words", "@xl:block", "@xl:truncate"]));
+    expect(title.className.split(/\s+/)).not.toContain("truncate");
+    // 두 칸에서는 종류 뒤에 매체를 같은 줄에, 네 칸에서는 매체 칸에.
+    const inline = within(row).getByText((_, element) => element?.textContent === " · Example Wire");
+    expect(inline.className).toBe("@xl:hidden");
+    const column = [...row.children].find((child) => child.textContent === "Example Wire") as HTMLElement;
+    expect(column.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "@xl:block"]));
   });
 });
 

@@ -350,8 +350,8 @@ export function FeedPanel({
     // --tw-outline-style까지 none으로 둬 focus-visible:outline-2가 선을 그리지 못합니다(QA-433). 브라우저 기본 테두리도 :focus-visible에서만
     // 그려지고 이 클래스가 덮으므로, 마우스로 눌러 옮긴 포커스에는 테두리가 없습니다(같은 화면 단추의 FOCUS와 같은 모양).
     // 결과 목록만 테두리를 상자 바깥(offset 0)에 그립니다. 안쪽(-outline-offset-2)이면 위치를 가진 자식(sticky 날짜 머리 z-10·고른 줄 relative,
-    // 둘 다 불투명 바탕)이 목록의 테두리보다 나중에 칠해져 날짜 머리·고른 줄마다 좌우 변이 끊기고, lg 미만에서는 첫 자식이 날짜 머리라 윗변이
-    // 보이지 않았습니다. 바깥 2px는 이웃의 경계선(위 줄 border-b, lg 이상 왼쪽 칸 border-r·xl 오른쪽 칸 border-l) 위에 겹쳐 그려집니다.
+    // 둘 다 불투명 바탕)이 목록의 테두리보다 나중에 칠해져 날짜 머리·고른 줄마다 좌우 변이 끊기고, 칸 머리가 없는 좁은 목록에서는 첫 자식이 날짜
+    // 머리라 윗변이 보이지 않았습니다. 바깥 2px는 이웃의 경계선(위 줄 border-b, lg 이상 왼쪽 칸 border-r·xl 오른쪽 칸 border-l) 위에 겹쳐 그려집니다.
     // 뒤에 오는 xl 오른쪽 칸(불투명 바탕)은 위치가 없어도 목록보다 나중에 칠해져 오른쪽 변을 덮으므로, :focus-visible일 때만 목록을 위치를 가진
     // 층(relative z-10)으로 올립니다(QA-433 후속). z-10은 아래 시트(z-30)·TOP 단추(z-20)·하단 탭 바(z-40)보다 낮아 그것들을 덮지 않습니다.
     body = empty ? (
@@ -403,10 +403,14 @@ export function FeedPanel({
         tabIndex={0}
         aria-activedescendant={selectedIndex >= 0 ? optionId(selectedIndex) : undefined}
         onKeyDown={onListKeyDown}
-        className="focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
+        className="@container focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
       >
-        {/* 칸 머리(넓은 화면) — 낭독기는 줄마다 글을 읽으므로 장식으로 둡니다. */}
-        <div aria-hidden="true" className="hidden grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] gap-3 border-b border-border px-3 py-1.5 text-xs text-text-3 lg:grid">
+        {/* 줄의 배치는 창 폭이 아니라 이 목록의 폭(@container)으로 정합니다. 36rem(@xl, 576px) 이상이면 네 칸(시각 · 종류 · 매체 · 제목 — 제목 칸
+            236px 이상)과 칸 머리, 그 밑은 두 칸(시각 · 제목 두 줄까지 + 그 밑 종류 · 매체 줄)입니다. 창 폭으로 가르면 xl 1280의 가운데 칸(429px)에서
+            제목 칸이 89px, lg 1024(461px)에서 121px로 줄어 앞머리가 같은 제목을 가를 수 없었습니다. 목록 폭은 lg 1024~약 1138·xl 1280~약 1426에서
+            576px 미만입니다(entityGrid). 누르는 자리(lg 미만 44px)는 입력 장치를 따르므로 창 폭(lg:) 그대로입니다.
+            칸 머리 — 낭독기는 줄마다 글을 읽으므로 장식으로 둡니다. */}
+        <div aria-hidden="true" className="hidden grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] gap-3 border-b border-border px-3 py-1.5 text-xs text-text-3 @xl:grid">
           <span>시각(KST)</span>
           <span>종류</span>
           <span>매체</span>
@@ -465,24 +469,25 @@ export function FeedPanel({
                     aria-selected={isSelected}
                     onClick={choose}
                     onDoubleClick={() => openOriginal(item)}
-                    className={`relative grid min-h-11 scroll-mt-7 cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b border-border px-3 py-1.5 text-sm lg:min-h-8 lg:grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] lg:py-1 ${
+                    className={`relative grid min-h-11 scroll-mt-7 cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b border-border px-3 py-1.5 text-sm lg:min-h-8 lg:py-1 @xl:grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] ${
                       isSelected ? "bg-surface-2" : "hover:bg-surface-2/60"
                     }`}
                   >
                     {isSelected ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
                     {/* 펼친 묶음의 줄 — 왼쪽 안쪽 세로선(모양)과 낭독용 머리말(글)로 대표 줄에 딸린 줄임을 보입니다. */}
                     {member ? <span aria-hidden="true" className="absolute inset-y-0 left-1.5 w-px bg-border-strong forced-colors:border-l" /> : null}
-                    <span className={`flex flex-col text-xs tabular-nums text-text-2 ${isDateOnly(item) ? "whitespace-nowrap" : "lg:text-sm"}`}>
+                    <span className={`flex flex-col text-xs tabular-nums text-text-2 ${isDateOnly(item) ? "whitespace-nowrap" : "@xl:text-sm"}`}>
                       {otherDate ? <span className="text-xs text-text-3">{otherDate}</span> : null}
                       <span>{rowTimeText(item)}</span>
                       {item.timeBasis === "fetched" ? <span className="text-xs text-text-3">받은 시각</span> : null}
                     </span>
-                    <span className="col-start-2 row-start-2 text-xs text-text-3 lg:col-start-auto lg:row-start-auto">
+                    <span className="col-start-2 row-start-2 text-xs text-text-3 @xl:col-start-auto @xl:row-start-auto">
                       <ItemKindTag kind={item.kind} />
-                      <span className="lg:hidden"> · {item.publisher ?? EMPTY}</span>
+                      <span className="@xl:hidden"> · {item.publisher ?? EMPTY}</span>
                     </span>
-                    <span className="hidden truncate text-xs text-text-2 lg:block">{item.publisher ?? EMPTY}</span>
-                    <span className="col-start-2 row-start-1 min-w-0 truncate text-text lg:col-start-auto lg:row-start-auto">
+                    <span className="hidden truncate text-xs text-text-2 @xl:block">{item.publisher ?? EMPTY}</span>
+                    {/* 제목 — 두 칸 배치에서는 두 줄까지(넘으면 말줄임), 네 칸에서는 한 줄 말줄임. 전체 제목은 고르면 미리 보기에. */}
+                    <span className="col-start-2 row-start-1 line-clamp-2 min-w-0 break-words text-text @xl:col-start-auto @xl:row-start-auto @xl:block @xl:truncate">
                       {member ? <span className="sr-only">같은 사건의 다른 보도: </span> : null}
                       {item.title}
                     </span>
