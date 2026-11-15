@@ -14,6 +14,9 @@
  * 파일 목록(DATA_FILES)은 지금 있는 데이터 패턴·차트입니다. 명세 §9-5가 꼽은 KpiStrip·PropertyList·Timeline(과 그래프)은 아직 없습니다 — 그 부품이 들어오는
  * 단계(명세 §8-2 '새 부품을 만드는 단계' — P4·P5·P6·P7)에서 이 목록에 더합니다. 공용 표(DataTable)는 값 칸과 정렬 머리·누를 수 있는 행이 같은 파일에
  * 있어 파일 전체를 봅니다 — 누를 수 있는 부분도 데이터 영역이라 중립 바탕·밑줄·focus 링으로 그립니다.
+ * 공용 키트(components/ui/index.tsx)는 단추·링크(강조 파랑을 쓰는 것)와 한 파일이라 파일 전체가 아니라 데이터를 그리는 함수 몸통만 봅니다(DATA_FUNCTIONS) —
+ * 명세 §6이 DenseTable의 '지금'으로 꼽은 Table과 KpiStrip의 '지금'인 Metric(과 그 변화 값 색을 정하는 lib/format의 deltaColor). 화면 대부분이 이 둘을 씁니다.
+ * 함수 몸통 안에서 부르는 다른 함수(EmptyState·SourceLine 등)의 몸통은 보지 않습니다(한계).
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -42,6 +45,18 @@ const DATA_FILES = [
   "components/charts/index.tsx",
   "components/charts/LineChart.tsx",
   "components/charts/frame.tsx",
+] as const;
+
+/**
+ * 데이터를 그리는 부품이 강조 파랑을 쓰는 단추·링크와 한 파일에 있는 곳 — 그 이름의 함수 선언 몸통만 봅니다(위 머리 주석). P4에서 DenseTable·KpiStrip으로
+ * 바뀌면 그 패턴 파일을 DATA_FILES에 더하고 여기서 뺍니다.
+ */
+const DATA_FUNCTIONS = [
+  // 공용 키트의 표(값 칸·머리·행 hover)와 지표 칸(값·변화·캡션·출처 줄).
+  { path: "components/ui/index.tsx", name: "Table" },
+  { path: "components/ui/index.tsx", name: "Metric" },
+  // 지표 칸 변화 값의 색(상승·하락·보합·없음).
+  { path: "lib/format.ts", name: "deltaColor" },
 ] as const;
 
 const CSS = readFileSync(resolve(SRC, "app/globals.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -89,10 +104,13 @@ function isTextPiece(node: ts.Node): node is TextPiece {
     ts.isTemplateTail(node);
 }
 
-/** 파일 하나의 강조색 자리 — "줄: 걸린 것". 주석은 건너뜁니다. */
-function accentHits(fileName: string, text: string): string[] {
+function parse(fileName: string, text: string): ts.SourceFile {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
+  return ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
+}
+
+/** 노드 하나(파일 전체 또는 함수 몸통) 아래의 강조색 자리 — "줄: 걸린 것". 주석은 건너뜁니다. */
+function accentHitsIn(source: ts.SourceFile, root: ts.Node): string[] {
   const hits: string[] = [];
   const visit = (node: ts.Node) => {
     if (isTextPiece(node)) {
@@ -102,8 +120,33 @@ function accentHits(fileName: string, text: string): string[] {
     }
     ts.forEachChild(node, visit);
   };
-  visit(source);
+  visit(root);
   return hits;
+}
+
+/** 파일 하나의 강조색 자리. */
+function accentHits(fileName: string, text: string): string[] {
+  const source = parse(fileName, text);
+  return accentHitsIn(source, source);
+}
+
+/** 파일 안에서 그 이름으로 선언한 함수(function 이름(…) {…}) — 모두. */
+function functionsNamed(source: ts.SourceFile, name: string): ts.FunctionDeclaration[] {
+  const found: ts.FunctionDeclaration[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) found.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/** 그 함수 몸통의 강조색 자리. 함수를 못 찾으면 멈춥니다(검사가 조용히 비지 않게). */
+function functionAccentHits(fileName: string, text: string, name: string): string[] {
+  const source = parse(fileName, text);
+  const found = functionsNamed(source, name);
+  if (found.length !== 1) throw new Error(`${fileName}에서 함수 ${name}을 한 번 찾아야 합니다(${found.length}번)`);
+  return accentHitsIn(source, found[0]);
 }
 
 describe("데이터 칸의 강조색 금지 — 소스 검사(명세 §9-5)", () => {
@@ -134,5 +177,20 @@ describe("데이터 칸의 강조색 금지 — 소스 검사(명세 §9-5)", ()
 
   it.each(DATA_FILES)("%s에 강조 파랑(accent 토큰·변수·hex)이 없다", (file) => {
     expect(accentHits(file, readFileSync(resolve(SRC, file), "utf8"))).toEqual([]);
+  });
+
+  it("검사기: 함수 몸통만 보고 같은 파일의 다른 함수(단추·링크)는 건너뛰며, 없는 함수는 멈춘다", () => {
+    const sample = [
+      'export function Table() { return <td className="tabular-nums text-accent" />; }',
+      'export function Button() { return <button className="bg-accent text-accent-fg" />; }',
+      'export function Metric() { return <div className="text-text" />; }',
+    ].join("\n");
+    expect(functionAccentHits("sample.tsx", sample, "Table")).toEqual(["1: text-accent"]);
+    expect(functionAccentHits("sample.tsx", sample, "Metric")).toEqual([]);
+    expect(() => functionAccentHits("sample.tsx", sample, "Hero")).toThrow(/Hero/);
+  });
+
+  it.each(DATA_FUNCTIONS)("$name 함수 몸통 — $path — 강조 파랑(accent 토큰·변수·hex)이 없다", ({ path, name }) => {
+    expect(functionAccentHits(path, readFileSync(resolve(SRC, path), "utf8"), name)).toEqual([]);
   });
 });

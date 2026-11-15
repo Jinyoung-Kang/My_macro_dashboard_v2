@@ -495,6 +495,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 5. **데이터 칸 강조색 금지(새)**: 데이터를 그리는 패턴(`KpiStrip`·`PropertyList`·`DenseTable` 값 칸·`Timeline`·`AssetRow`·`Sparkline`)과 차트 소스에 `accent` 토큰이 없는지(A1).
    범위의 정확한 파일 목록은 P0 시험 커밋이 정합니다.
    → `frontend/src/lib/__tests__/accentInData.test.ts`(P2 마무리 2026-11-16 — 지금 있는 데이터 패턴과 차트 셋, 새 데이터 패턴은 들어오는 단계에서 목록에 더함, §8-2).
+   공용 키트의 `Table`·`Metric`(DenseTable·KpiStrip의 '지금' — 단추·링크와 한 파일)은 파일이 아니라 그 함수 몸통만 봅니다(검토 지적으로 더함, `deltaColor` 포함).
 6. **명령 팔레트의 쓰기 동작 금지**: 팔레트 항목 목록에 POST를 부르는 동작이 없음을 단언합니다(P3). 예외는 없습니다 — 데이터 새로고침(`POST /api/status/refresh`)도
    팔레트에 넣지 않습니다(§5).
 7. **겉모양과 뜻의 분리**: §8-4의 4번.
