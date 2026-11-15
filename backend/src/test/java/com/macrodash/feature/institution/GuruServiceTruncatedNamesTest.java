@@ -68,7 +68,9 @@ class GuruServiceTruncatedNamesTest {
 
         assertThat(names(guru.holders(index, "ISHARES TR RUSSELL 2000 ETF"))).isEmpty();
         assertThat(names(guru.holders(index, "SYNTHETIC EXAMPLE FINANCIAL GROUP"))).isEmpty();
-        assertThat(names(guru.holders(index, "SYNTHETIC GLOBAL HOLDINGS"))).isEmpty();
+        // 넷째 줄의 앞 16자('SYNTHETIC SPONSO')로 시작하는 검색어라 앞부분 길이 막음까지 갑니다 — 증권 종류 낱말 넷을 떼면 'SYNTHETIC'(9자)만
+        // 남고, 검색어가 그것으로 시작해도 앞부분이 16자 미만이라 걸리지 않습니다(이 막음이 빠지면 이 줄이 걸림).
+        assertThat(names(guru.holders(index, "SYNTHETIC SPONSORED HOLDINGS"))).isEmpty();
     }
 
     @Test
