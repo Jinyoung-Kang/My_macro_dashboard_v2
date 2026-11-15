@@ -194,7 +194,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
                 type="button"
                 aria-pressed={active}
                 onClick={() => setPicked(book.code)}
-                className={`min-h-11 px-3.5 text-[13px] lg:min-h-8 ${segmentClasses(active)} ${FOCUS_RING}`}
+                className={`px-3 text-[13px] lg:px-2.5 ${segmentClasses(active)} ${FOCUS_RING}`}
               >
                 {book.label}
               </button>
