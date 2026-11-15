@@ -131,6 +131,46 @@ export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "m
   }`;
 }
 
+/*
+ * 조밀한 조작 조각(정보 검색 화면의 조각 — components/screens/search/parts.tsx에서 옮김, 작업대 실행 명세 §6·§8-4). 넓은 화면(lg)에서
+ * 단추·입력 30px, 모서리 4px(rounded-control), 1px 경계. lg 미만은 누르는 자리 44px. 강조 파랑(accent)은 누를 수 있는 것(링크·주 단추·지금 탭)에만
+ * 씁니다(명세 원칙 A1). parts.tsx가 옛 이름(BUTTON·BUTTON_PRIMARY·segmentClass·toggleClass·LINK·PANEL)으로 그대로 다시 내보냅니다.
+ */
+
+/** 조밀한 단추 바탕 — 좁은 화면 44px, 넓은 화면 30px. */
+const DENSE_CONTROL = `inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-control border px-3 text-sm lg:min-h-[30px] lg:px-2.5 motion-safe:transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
+
+export const DENSE_BUTTON = `${DENSE_CONTROL} border-border bg-surface-2 font-medium text-text hover:border-border-strong`;
+export const DENSE_BUTTON_PRIMARY = `${DENSE_CONTROL} border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover`;
+/** 데이터를 자르는 고르기(기간) — 고른 칸도 강조 파랑이 아니라 중립 바탕·굵은 글, 고대비 모드에서는 테두리(명세 D9). */
+export function denseSegmentClasses(active: boolean): string {
+  return `${DENSE_CONTROL} tabular-nums ${
+    active ? "border-border-strong bg-surface-2 font-semibold text-text" : "border-transparent font-medium text-text-2 hover:bg-surface-2 hover:text-text"
+  }`;
+}
+
+/**
+ * 켜고 끄는 단추(aria-pressed — 관심 대상의 알림): 켠 칸은 진한 테두리·굵은 글, 끈 칸은 옅은 글(상태는 단추의 글 '켬'·'끔'이 나름 — 색만이 아님).
+ * 바꾸는 중에는 aria-disabled(포커스가 떨어지지 않게 disabled를 쓰지 않음). compact는 목록 줄 — 좁은 화면 44px 정사각, 넓은 화면은 줄 높이 32px,
+ * 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
+ */
+export function toggleClasses(pressed: boolean, compact = false): string {
+  const shape = compact
+    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-8 lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+    : DENSE_CONTROL;
+  return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
+    pressed
+      ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
+      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
+  }`;
+}
+
+/** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(ADR 0041 결정 11), 넓은 화면은 글 높이. */
+export const LINK_CLASSES = `inline-flex min-h-11 items-center rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline lg:min-h-0 ${FOCUS_RING}`;
+
+/** 면(패널) — 1px 경계, 모서리 4px. */
+export const PANEL_CLASSES = "rounded-card border border-border bg-surface";
+
 /**
  * 고른 행의 왼쪽 막대(자산 행·검색 결과 — 감싼 행이 relative) — 3px 잉크(데이터 영역이라 강조 파랑 아님, 원칙 A1). 고른 행의 바탕(surface-2)과
  * 막대의 바탕색은 고대비(forced-colors) 모드에서 지워지므로, 그 모드에서는 같은 폭의 왼쪽 테두리로 그립니다 — 테두리는 시스템 글자색으로

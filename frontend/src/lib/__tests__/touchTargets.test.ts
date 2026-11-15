@@ -14,11 +14,16 @@ import { belowLgTarget, smallTargets } from "./touchTargetAudit";
 
 const {
   buttonClasses,
+  DENSE_BUTTON,
+  DENSE_BUTTON_PRIMARY,
+  denseSegmentClasses,
   filterChipClasses,
   inputClasses,
+  LINK_CLASSES,
   pillTabClasses,
   segmentClasses,
   TEXT_TARGET,
+  toggleClasses,
   underlineTabClasses,
 } = uiClasses;
 const { BUTTON, BUTTON_PRIMARY, LINK, segmentClass, toggleClass } = searchParts;
@@ -37,10 +42,17 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
+  DENSE_BUTTON: () => [["", DENSE_BUTTON]],
+  DENSE_BUTTON_PRIMARY: () => [["", DENSE_BUTTON_PRIMARY]],
+  denseSegmentClasses: () => BOTH.map((active): [string, string] => [String(active), denseSegmentClasses(active)]),
+  toggleClasses: () =>
+    BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
+  LINK_CLASSES: () => [["", LINK_CLASSES]],
 };
 
 /** 누르는 조각이 아닌 것 — 까닭. */
 const UI_OTHERS: Record<string, string> = {
+  PANEL_CLASSES: "면(패널) 테두리 — 누르지 않음",
   FOCUS_RING: "포커스 링 조각 — 혼자 쓰지 않고 누르는 조각에 붙음",
   SEGMENT_TRACK: "세그먼트의 트랙(바탕) — 누르는 칸은 segmentClasses",
   SELECTED_BAR: "고른 행의 장식 막대 — 누르는 자리는 감싼 행",
