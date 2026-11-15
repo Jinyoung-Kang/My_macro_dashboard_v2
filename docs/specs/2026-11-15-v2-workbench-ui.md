@@ -261,6 +261,10 @@ Blueprint는 기본 14 / small 12 / large 16, 줄 높이 1.28입니다. 1.28은 
 ### 3-8. 모서리, 경계, 포커스, 모션
 - 모서리는 4px 하나(`--radius-card`, `--radius-control`). `rounded-full`은 상태 점, 토글 손잡이, 아바타에만.
 - 고른 칸·현재 항목은 3px 왼쪽 막대(`SELECTED_BAR` — `ui/classes.ts`의 지금 값 그대로, 정보 검색이 이미 씀)와 굵기, forced-colors에서는 같은 폭의 테두리로 보입니다(D9).
+- **막대 폭과 밑줄 폭 — 2026-11-16 결정(사용자 위임 — 권장안)**: 왼쪽 내비의 현재 항목 막대(지금 `SideNav`, P3의 나무 메뉴)는 **3px**입니다 — P2 공용 키트 갈래에 내려간
+  지시는 2px였지만 이 절과 §5(`SELECTED_BAR`와 같은 폭)대로 3px로 확정합니다. 색은 현재 메뉴라 강조 파랑(A1이 허용 — 데이터 영역의 `SELECTED_BAR`는 잉크).
+  밑줄 탭(공용 `Tabs`·하위 메뉴 줄·모의매매 탭 — `underlineTabClasses`)의 지금 탭 표시는 **2px 밑줄** 그대로입니다(§6) — 줄 아래 가로 표시라 세로 막대와 다른 문법이고,
+  탭 글 아래 2px이 탭 줄 경계(1px)와 갈리기에 충분합니다.
 - 포커스는 `FOCUS_RING`(outline 2px, offset 2px) 유지, 색 `#8abbff`.
 - 모션은 색 전환 100~150ms만, `prefers-reduced-motion`이면 없앰. 숫자·차트 애니메이션 없음.
 
