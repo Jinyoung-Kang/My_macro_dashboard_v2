@@ -136,6 +136,7 @@
 
 ## 2026-10-26 · 테마는 CSS 변수 토큰 + `data-theme`, 기본은 시스템 따름(`dark:` 변형 안 씀)
 
+- **2026-11-15 뒤집힘 — [ADR 0042](adr/0042-workbench-ui.md)**: 앱 전체를 어두운 한 벌로 하고 시스템·라이트·다크 스위치를 없앤다(사용자 결정 1, 코드는 P1에서). CSS 변수 토큰 구조와 `dark:` 변형을 쓰지 않는 규칙은 그대로다.
 - 문제: 라이트·다크 두 벌이 필요하고(UI 설계 §3), 4단계까지 남는 옛 화면도 함께 바뀌어야 한다.
 - 원인: Tailwind `dark:` 변형으로 하면 옛 화면의 클래스마다 고쳐야 하고, 고른 테마를 React 상태로만 붙이면 첫 페인트에 반대 테마가 잠깐 보인다.
 - 선택: `globals.css`의 `:root`에 라이트, `[data-theme="dark"]`와 속성이 없을 때의 `prefers-color-scheme: dark`에 다크 값을 두고 Tailwind `@theme inline`으로 이름을 잇는다. 고른 값은 `localStorage`와 `<html data-theme>`, 첫 페인트 전 인라인 스크립트(`lib/theme.ts`). 옛 색 이름(`canvas`·`muted` 등)은 별칭(4단계에 지움).

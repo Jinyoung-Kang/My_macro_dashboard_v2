@@ -476,8 +476,9 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | 이 명세, 진행 기록 | 새로 씀 | P0(이 브랜치) |
 | ADR 0041 결정 11, ADR 0020 Coinbase 덧붙임 | '일부 개정 — ADR 0042' 한 줄씩 | P0(이 브랜치) |
 | UI 설계·Coinbase 명세 상태 머리 | '일부 대체됨 — ADR 0042' | P0(이 브랜치) |
+| `docs/decisions.md` 2026-10-26 테마 항목 | '뒤집힘 — ADR 0042' 한 줄 | P0(이 브랜치) |
 | `README.md` §2 겉모양 문단, `CLAUDE.md` '먼저 읽을 문서' | 짧은 대체 문장·링크 | P0(이 브랜치) |
-| `README.md` 더보기 행(테마 전환)·기술 스택 표(라이트·다크 토큰), `docs/ARCHITECTURE.md` §4-3 테마 문단, `docs/decisions.md`(2026-10-26 테마 항목에 대체 표시) | 어두운 한 벌로 | P1 |
+| `README.md` 더보기 행(테마 전환)·기술 스택 표(라이트·다크 토큰), `docs/ARCHITECTURE.md` §4-3 테마 문단 | 어두운 한 벌로 | P1 |
 | `docs/PRINCIPLES.md` '계열 색' | 새 면의 검증기 기록 위치(§3-5) | P1 |
 | `docs/adr/0004-frontend-layering.md` | 덧붙임: 새 공용 부품(ActionBar·PropertyList·EntityHeader·MasterDetail·Timeline·SectionIndex·KpiStrip·Drawer)과 지키는 시험 | P2 |
 | UI 설계 §0(목적·'휴대폰 접속 경로를 만들지 않는다'는 ADR 0023 뒤로 낡은 문장)·§3·§9 DoD·§10 | 이 명세로 링크 | P1~P3 |

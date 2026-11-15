@@ -18,11 +18,12 @@
 | P7 | 정보 수집·더보기·인증·정보 검색 범위 장치 정리 | 시작 전 | D6 |
 | P8 | 전 화면 QA·문서 | 시작 전 | 문서만(필요하면 D7) |
 
-## P0 — 문서 (2026-11-15, 브랜치 `wb-p0-docs`, main `78431302`에서)
+## P0 — 문서 (2026-11-15, main `78431302`에서)
 
 - 새로 씀: `docs/adr/0042-workbench-ui.md`, `docs/specs/2026-11-15-v2-workbench-ui.md`, 이 기록. `docs/adr/README.md` 표에 0042 줄.
 - 계획 초안 `docs/specs/2026-11-15-workbench-ui-plan.md`는 저장소에 넣지 않았습니다(본체 폴더에만 있던 추적되지 않은 작업 파일 — 명세가 대체). 초안의 질문 11개는 명세 §0 결정 표로 옮겼습니다.
 - 한 줄 표시: ADR 0041 결정 11과 ADR 0020의 Coinbase 덧붙임에 '일부 개정 — ADR 0042', ADR README의 두 줄에도 같은 표시. UI 설계·Coinbase 명세의 상태 머리에 '일부 대체됨 — ADR 0042'.
+  `docs/decisions.md`의 2026-10-26 테마 항목에 '2026-11-15 뒤집힘 — ADR 0042' 한 줄.
 - 가리키는 줄: `CLAUDE.md` '먼저 읽을 문서', `README.md` §2 겉모양 문단(테마 스위치는 P1까지 남는다고 적음).
 - 다시 잰 값 [계산 — python3, WCAG 2.x 대비·OKLab ΔE × 100, 명세 §3-2-1]:
   - 상승 `#ff6b6b` 대비 bg/s1/s2/s3 = 6.66/5.84/5.20/4.51, 위험 `#e76a6e`와 ΔE 4.4, 강조와 30.8, 하락과 28.6, 주의와 13.0. 강조 ↔ 하락 14.1(초안 값과 같음).
@@ -35,7 +36,7 @@
 - 시험(이 PC, 문서만 바뀐 커밋이라 `make test` 전체는 돌리지 않음): `npx vitest run src/lib/__tests__/noEmoji.test.ts`(문서·README·CLAUDE.md의 그림 문자 검사) 4 통과,
   README·CLAUDE.md를 읽는 수집기 시험 `test_task_registry.py`·`test_deploy_migrations.py`·`test_code_defaults.py` 22 통과.
 - P1에서 같이 고칠 문서(이 브랜치에서 하지 않음): `README.md`의 더보기 행(테마 전환)·기술 스택 표(라이트·다크 토큰), `docs/ARCHITECTURE.md` §4-3 테마 문단,
-  `docs/decisions.md` 2026-10-26 테마 항목, `docs/PRINCIPLES.md` '계열 색' — 명세 §11.
+  `docs/PRINCIPLES.md` '계열 색' — 명세 §11.
 
 ### 조사 때 화면 측정 (참고값 — 운영 화면)
 
