@@ -245,11 +245,14 @@
   background: transparent;
 }
 
+/* 손잡이는 입력칸 경계와 같은 border-strong(surface 위 4.03·bg 위 4.60:1 — 그래픽 3:1)입니다. 넓은 화면에서 가로로 넘치는 표는 '좌우로 넘겨 보세요'
+   안내가 기본으로 숨어 손잡이가 넘침을 알리는 단서인데, 패널 경계(border — surface 위 1.50:1)로 칠하면 어두운 면 위에서 거의 보이지 않았습니다
+   (2026-11-16 검토 지적). hover는 한 단계 밝은 text-2. */
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-strong);
   border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-3);
+  background: var(--text-2);
 }
