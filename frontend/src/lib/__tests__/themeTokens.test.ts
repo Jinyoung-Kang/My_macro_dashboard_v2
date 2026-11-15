@@ -525,3 +525,19 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
     expect(offenders("tint")).toEqual([]);
   });
 });
+
+describe("모서리 — 소스 검사(명세 §3-8)", () => {
+  // 모서리 토큰(card·control)만 4px로 바뀌고 Tailwind 기본 단계(md 6px·lg 8px·xl 12px…)는 그대로 나오므로, 그 이름을 쓰면 4px 하나에서 벗어납니다.
+  // 알약(rounded-full)은 상태 점·토글 손잡이·아바타 말고는 공용 키트 단계(P2)에서 정리합니다 — 여기서는 보지 않습니다.
+  const WIDE_RADIUS = /^rounded(-(t|r|b|l|s|e|tl|tr|bl|br|ss|se|es|ee))?-(md|lg|xl|2xl|3xl|4xl)$/;
+
+  it("제품 소스의 클래스 글에 rounded-md·lg·xl·2xl·3xl·4xl(변 방향 포함)이 없다 — 모서리는 rounded-card·rounded-control", () => {
+    const hits = sourceFiles(SRC).flatMap((path) => {
+      const source = parse(path, readFileSync(path, "utf8"));
+      return textPieces(source)
+        .filter((piece) => [...utilitiesOf(piece.text)].some((name) => WIDE_RADIUS.test(name)))
+        .map((piece) => `${relative(SRC, path)}:${lineOf(source, piece)}`);
+    });
+    expect(hits).toEqual([]);
+  });
+});

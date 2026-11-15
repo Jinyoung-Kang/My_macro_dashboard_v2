@@ -57,7 +57,7 @@ function FlowCard({ data }: { data: MechanismResponse }) {
     <Card title="한 바퀴" source={`상태 확인 ${data.checkedAt}`}>
       <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {steps.map(([title, body]) => (
-          <li key={title} className="rounded-lg border border-border bg-surface-2 p-3">
+          <li key={title} className="rounded-card border border-border bg-surface-2 p-3">
             <p className="text-sm font-semibold text-text">{title}</p>
             <p className="mt-1 text-xs leading-5 text-text-2">{body}</p>
           </li>
