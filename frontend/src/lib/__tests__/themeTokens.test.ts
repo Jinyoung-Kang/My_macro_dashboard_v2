@@ -342,9 +342,16 @@ function textPieces(node: ts.Node, out: TextPiece[] = []): TextPiece[] {
 /** 글 하나의 유틸리티 이름 모음(변형 접두어·투명도를 뗌). */
 const utilitiesOf = (text: string) => new Set(text.split(/\s+/).filter(Boolean).map(utilityOf));
 
+/** 파일마다 한 번만 구문 분석합니다 — 소스 검사 여럿(같은 글 쌍·부모 바탕·모서리)이 같은 파일을 다시 읽어도 글이 같으면 그 나무를 씁니다. */
+const PARSED = new Map<string, { text: string; source: ts.SourceFile }>();
+
 function parse(fileName: string, text: string): ts.SourceFile {
+  const cached = PARSED.get(fileName);
+  if (cached?.text === text) return cached.source;
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  return ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
+  PARSED.set(fileName, { text, source });
+  return source;
 }
 
 const lineOf = (source: ts.SourceFile, node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
