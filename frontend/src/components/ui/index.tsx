@@ -451,6 +451,8 @@ export function Select({
  * 아이콘을 둡니다 — 고대비 모드에서도 글자색으로 보이고, 같은 화면의 고르기 상자가 한 모양이 됩니다(예전에는 날 select만 브라우저 화살표).
  * 이름은 부르는 쪽이 붙입니다(감싼 label·aria-label·id). `Select`(라벨·선택지 목록까지 그림)로 안 되는 자리 — 설정 표의 칸·카드 머리의
  * 작은 고르기 — 에 씁니다. 폭은 `className`(select)·`wrapperClassName`(감싼 칸).
+ * 화살표 자리(오른쪽 32px)는 모든 폭에서 비웁니다 — 입력칸 모양이 넓은 화면 가로 여백(`lg:px-*`)을 따로 두고, Tailwind는 변형 규칙을
+ * 뒤에 내보내므로 `pr-8` 하나만 두면 lg부터 덮여 고른 글이 화살표 밑으로 들어갑니다(QA-463). 그래서 `lg:pr-8`을 함께 붙입니다.
  */
 export function NativeSelect({
   inputSize = "md",
@@ -465,7 +467,7 @@ export function NativeSelect({
 }) {
   return (
     <span className={`relative max-w-full ${wrapperClassName}`.trim()}>
-      <select {...props} className={`w-full max-w-full appearance-none pr-8 ${inputClasses(inputSize)} ${className}`.trim()}>
+      <select {...props} className={`w-full max-w-full appearance-none pr-8 ${inputClasses(inputSize)} lg:pr-8 ${className}`.trim()}>
         {children}
       </select>
       <ChevronDownIcon size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3" />
