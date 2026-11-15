@@ -297,7 +297,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
         <span className="min-w-0">{message}</span>
       </p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className={`mt-3 ${buttonClasses("secondary", "sm")}`}>
+        <button type="button" onClick={onRetry} className={`mt-3 ${buttonClasses("default", "sm")}`}>
           다시 시도
         </button>
       )}
@@ -318,8 +318,8 @@ export function Button({
 }: {
   children: ReactNode;
   onClick?: () => void;
-  /** "default"는 옛 이름으로 secondary와 같습니다 — variant를 주지 않은 곳(약 48곳)을 한꺼번에 고치지 않으려고 남깁니다. */
-  variant?: ButtonVariant | "default";
+  /** 단추 네 종류(default·primary·danger·minimal — 옛 이름 secondary·ghost도 받음). 주지 않으면 기본(default). */
+  variant?: ButtonVariant;
   size?: ButtonSize;
   /** 글 앞 아이콘(장식 — components/ui/icons의 aria-hidden 아이콘). 뜻은 단추 글이 나릅니다. */
   icon?: ReactNode;
@@ -335,7 +335,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`${buttonClasses(variant === "default" ? "secondary" : variant, size)} ${className}`.trim()}
+      className={`${buttonClasses(variant, size)} ${className}`.trim()}
     >
       {icon}
       {children}

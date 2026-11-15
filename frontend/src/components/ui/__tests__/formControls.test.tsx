@@ -25,9 +25,9 @@ describe("inputClasses", () => {
       expect(classes).not.toContain("outline-hidden");
     }
     expect(FOCUS_RING).toContain("focus-visible:outline-2");
-    // 인증 화면 입력칸(lg) — 같은 테두리·포커스 링, 높이 48px
+    // 인증 화면 입력칸(lg) — 같은 테두리·포커스 링, 좁은 화면 44px·넓은 화면 큰 조작 40px(작업대 실행 명세 §3-7)
     const large = inputClasses("lg").split(/\s+/);
-    expect(large).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface", "min-h-12", ...FOCUS_RING.split(/\s+/)]));
+    expect(large).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface", "min-h-11", "lg:min-h-10", ...FOCUS_RING.split(/\s+/)]));
   });
 });
 

@@ -112,7 +112,7 @@ function ConfirmForm({
         </div>
       )}
       <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("secondary")}>
+        <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("default")}>
           {cancelLabel}
         </button>
         <button type="submit" disabled={!canConfirm} className={CONFIRM_TONE[tone]}>

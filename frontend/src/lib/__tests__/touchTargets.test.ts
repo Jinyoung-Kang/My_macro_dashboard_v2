@@ -14,8 +14,6 @@ import { belowLgTarget, smallTargets } from "./touchTargetAudit";
 
 const {
   buttonClasses,
-  DENSE_BUTTON,
-  DENSE_BUTTON_PRIMARY,
   denseSegmentClasses,
   filterChipClasses,
   inputClasses,
@@ -33,8 +31,8 @@ const BOTH = [true, false] as const;
 /** 누르는 조각 — 이름 → 받을 수 있는 인자를 모두 넣은 클래스 문자열(이름표 붙임). */
 const UI_CONTROLS: Record<string, () => [string, string][]> = {
   buttonClasses: () =>
-    (["primary", "secondary", "ghost", "danger"] as const).flatMap((variant) =>
-      (["md", "sm"] as const).map((size): [string, string] => [`${variant}/${size}`, buttonClasses(variant, size)])),
+    (["default", "primary", "danger", "minimal", "secondary", "ghost"] as const).flatMap((variant) =>
+      (["md", "sm", "lg"] as const).map((size): [string, string] => [`${variant}/${size}`, buttonClasses(variant, size)])),
   inputClasses: () => (["md", "sm", "lg"] as const).map((size): [string, string] => [size, inputClasses(size)]),
   pillTabClasses: () => BOTH.map((active): [string, string] => [String(active), pillTabClasses(active)]),
   segmentClasses: () => BOTH.map((checked): [string, string] => [String(checked), segmentClasses(checked)]),
@@ -42,8 +40,6 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
-  DENSE_BUTTON: () => [["", DENSE_BUTTON]],
-  DENSE_BUTTON_PRIMARY: () => [["", DENSE_BUTTON_PRIMARY]],
   denseSegmentClasses: () => BOTH.map((active): [string, string] => [String(active), denseSegmentClasses(active)]),
   toggleClasses: () =>
     BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),

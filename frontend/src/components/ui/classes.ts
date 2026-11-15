@@ -1,59 +1,70 @@
 /*
  * 공용 조각의 클래스 문자열 — React를 모르는 순수 모듈이라 서버 컴포넌트(인증 화면 카드 등)도 부를 수 있습니다
  * ("use client"인 ui/index.tsx에서 내보낸 함수는 서버에서 부를 수 없습니다). ui/index.tsx가 그대로 다시 내보내므로
- * 클라이언트 쪽은 `@/components/ui`에서 가져와도 됩니다. 모양의 근거는 docs/specs/2026-10-31-v2-coinbase-ui.md §3.
+ * 클라이언트 쪽은 `@/components/ui`에서 가져와도 됩니다. 모양의 근거는 작업대 화면 언어 실행 명세
+ * docs/specs/2026-11-15-v2-workbench-ui.md §3-4·§3-7·§3-8·§6 — 모서리 4px, 넓은 화면(lg 이상) 조작 30px(작은 것 24·큰 것 40),
+ * 좁은 화면(lg 미만) 누르는 자리 44px.
  */
 
-/** 단추 모양(명세 §3) — 주 단추만 강조 파랑이고 나머지는 중립입니다. 강조 파랑은 누를 수 있는 것에만 씁니다(명세 원칙 A1). */
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-export type ButtonSize = "md" | "sm";
+/** 포커스 링 — 키보드로 옮긴 곳을 2px 바깥선으로 보입니다(focus 대비 bg 9.35·surface 8.20·surface-2 7.31·surface-3 6.34:1). */
+export const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+
+/**
+ * 단추 네 종류(실행 명세 §3-4) — 기본(default: surface-2 바탕과 1px 경계), 주(primary: 강조 파랑 바탕 — 한 묶음에 하나), 위험(danger: 확인
+ * 대화상자를 거치는 파괴적 동작에만, 늘 글과 함께), 최소(minimal: 투명 — 표 안·도구 줄). 강조 파랑은 누를 수 있는 것에만 씁니다(원칙 A1).
+ * secondary·ghost는 옛 이름으로 default·minimal과 같습니다 — 부르는 곳을 한꺼번에 고치지 않으려고 남깁니다.
+ */
+export type ButtonVariant = "default" | "primary" | "danger" | "minimal" | "secondary" | "ghost";
+/** md는 기본(lg 이상 30px), sm은 작은 것(24px — 표 안·카드 머리), lg는 큰 것(40px — 인증 화면처럼 화면에 하나뿐인 주 동작). */
+export type ButtonSize = "md" | "sm" | "lg";
 
 /*
- * 알약 모양·굵은 글·색만 바뀌는 전환(움직임 줄이기면 없음)·포커스 링 2px(바탕 대비 6.3:1).
- * 투명 1px 테두리는 고대비(forced-colors) 모드에서 시스템 색 테두리로 보여 단추 경계가 남게 합니다(바탕색은 그 모드에서 지워짐).
- * 글은 줄을 바꾸지 않습니다(whitespace-nowrap) — 단추 글은 짧다는 전제이고, 표의 좁은 칸에서 접히면 알약이 세로로 길어져
- * '상세 펼치 / 기'·'다시 실행'(한 글자씩 세로로) 같은 캡슐이 됐습니다. 접히지 않는 대신 칸이 단추 폭만큼 넓어집니다.
+ * 4px 모서리·색만 바뀌는 전환(움직임 줄이기면 없음)·포커스 링 2px. 모든 종류에 1px 테두리가 있어(주·위험·최소는 투명) 고대비(forced-colors)
+ * 모드에서 시스템 색 테두리로 단추 경계가 남습니다(바탕색은 그 모드에서 지워짐).
+ * 글은 줄을 바꾸지 않습니다(whitespace-nowrap) — 단추 글은 짧다는 전제이고, 표의 좁은 칸에서 접히면 단추가 세로로 길어져
+ * '상세 펼치 / 기'·'다시 실행'(한 글자씩 세로로) 같은 꼴이 됐습니다. 접히지 않는 대신 칸이 단추 폭만큼 넓어집니다.
  */
-const BUTTON_BASE =
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full border border-transparent text-center font-semibold motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+const CONTROL_BASE = `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border text-center motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
-const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-accent-fg hover:bg-accent-hover",
-  secondary: "bg-surface-2 text-text hover:bg-[color-mix(in_oklab,var(--text)_8%,var(--surface-2))]",
-  ghost: "bg-transparent text-text-2 hover:bg-surface-2 hover:text-text",
-  danger: "bg-danger text-danger-fg hover:opacity-90",
-};
+const BUTTON_KIND = {
+  default: "border-border bg-surface-2 font-medium text-text hover:border-border-strong",
+  primary: "border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover",
+  // 위험 바탕 위 글자는 danger-fg(5.88:1 — 흰 글자는 3.14:1이라 쓰지 않음).
+  danger: "border-transparent bg-danger font-semibold text-danger-fg hover:opacity-90",
+  minimal: "border-transparent bg-transparent font-medium text-text-2 hover:bg-surface-2 hover:text-text",
+} as const;
 
-// 좁은 화면(lg 미만 — 손가락)에서는 두 크기 모두 높이 44px 이상, 왼쪽 내비가 있는 넓은 화면에서는 40·32px.
+const BUTTON_VARIANT: Record<ButtonVariant, string> = { ...BUTTON_KIND, secondary: BUTTON_KIND.default, ghost: BUTTON_KIND.minimal };
+
+// 좁은 화면(lg 미만 — 손가락)에서는 모든 크기가 높이 44px 이상, 넓은 화면에서는 30·24·40px.
 const BUTTON_SIZE: Record<ButtonSize, string> = {
-  md: "min-h-11 px-4 text-sm lg:min-h-10",
-  sm: "min-h-11 px-3 text-[13px] lg:min-h-8",
+  md: "min-h-11 px-3 text-sm lg:min-h-[30px] lg:px-2.5",
+  sm: "min-h-11 px-2.5 text-[13px] lg:min-h-6 lg:px-2",
+  lg: "min-h-11 px-4 text-sm lg:min-h-10 lg:px-3.5",
 };
 
 /**
  * 단추 클래스 — `Button`을 쓸 수 없는 단추(확인 창의 submit·셸의 새로고침·로그아웃)도 같은 모양이 되게 내보냅니다.
  * 폭·여백 같은 배치 클래스는 부르는 쪽이 뒤에 붙입니다.
  */
-export function buttonClasses(variant: ButtonVariant = "secondary", size: ButtonSize = "md"): string {
-  return `${BUTTON_BASE} ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]}`;
+export function buttonClasses(variant: ButtonVariant = "default", size: ButtonSize = "md"): string {
+  return `${CONTROL_BASE} ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]}`;
 }
-
-/** 포커스 링 — 키보드로 옮긴 곳을 2px 바깥선으로 보입니다(focus 대비 bg 9.35·surface 8.20·surface-2 7.31·surface-3 6.34:1). */
-export const FOCUS_RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 export type InputSize = "md" | "sm" | "lg";
 
+// 단추와 같은 높이 — lg 이상 기본 30px·작은 것 24px·큰 것(인증 화면) 40px, lg 미만은 모두 44px.
 const INPUT_SIZE: Record<InputSize, string> = {
-  md: "min-h-11 px-3 py-2 text-sm lg:min-h-10",
-  sm: "min-h-11 px-2.5 py-1 text-[13px] lg:min-h-8",
-  // 인증 화면(로그인·가입·재설정)의 입력칸 — 화면 가운데 카드 하나라 넉넉하게 48px·15px(명세 §7-3).
-  lg: "min-h-12 px-3.5 py-2.5 text-[15px]",
+  md: "min-h-11 px-3 py-2 text-sm lg:min-h-[30px] lg:px-2.5 lg:py-1",
+  sm: "min-h-11 px-2.5 py-1 text-[13px] lg:min-h-6 lg:px-2 lg:py-0.5",
+  // 인증 화면(로그인·가입·재설정)의 입력칸 — 화면 가운데 카드 하나라 큰 것(40px).
+  lg: "min-h-11 px-3 py-2 text-sm lg:min-h-10",
 };
 
 /**
- * 날 입력칸(input·textarea·select) 모양 — 테두리 border-strong(3:1, WCAG 1.4.11), 바탕 surface, 포커스 링 2px.
+ * 날 입력칸(input·textarea·select) 모양 — 테두리 border-strong(3:1, WCAG 1.4.11), 바탕 surface, 포커스 링 2px, 모서리 4px.
  * 예전 모양(`outline-hidden focus:border-accent`)은 포커스 표시가 테두리 색 하나(1.9:1)뿐이라 모자랐습니다(명세 D9).
- * 폭·여백 같은 배치 클래스는 부르는 쪽이 붙입니다. sm은 카드 머리의 작은 고르기(새로고침 간격 등)용, lg는 인증 화면용입니다.
+ * 폭·여백 같은 배치 클래스는 부르는 쪽이 붙입니다. sm은 카드 머리·표 안의 작은 고르기(새로고침 간격 등)용, lg는 인증 화면용입니다.
  */
 export function inputClasses(size: InputSize = "md"): string {
   return `rounded-control border border-border-strong bg-surface text-text placeholder:text-text-3 disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING} ${INPUT_SIZE[size]}`;
@@ -134,14 +145,13 @@ export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "m
 /*
  * 조밀한 조작 조각(정보 검색 화면의 조각 — components/screens/search/parts.tsx에서 옮김, 작업대 실행 명세 §6·§8-4). 넓은 화면(lg)에서
  * 단추·입력 30px, 모서리 4px(rounded-control), 1px 경계. lg 미만은 누르는 자리 44px. 강조 파랑(accent)은 누를 수 있는 것(링크·주 단추·지금 탭)에만
- * 씁니다(명세 원칙 A1). parts.tsx가 옛 이름(BUTTON·BUTTON_PRIMARY·segmentClass·toggleClass·LINK·PANEL)으로 그대로 다시 내보냅니다.
+ * 씁니다(명세 원칙 A1). parts.tsx가 옛 이름(segmentClass·toggleClass·LINK·PANEL)으로 그대로 다시 내보냅니다 — 단추 둘(BUTTON·BUTTON_PRIMARY)은
+ * 공용 단추(buttonClasses의 default·primary)가 같은 모양이 되어 그것을 씁니다.
  */
 
 /** 조밀한 단추 바탕 — 좁은 화면 44px, 넓은 화면 30px. */
 const DENSE_CONTROL = `inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-control border px-3 text-sm lg:min-h-[30px] lg:px-2.5 motion-safe:transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
-export const DENSE_BUTTON = `${DENSE_CONTROL} border-border bg-surface-2 font-medium text-text hover:border-border-strong`;
-export const DENSE_BUTTON_PRIMARY = `${DENSE_CONTROL} border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover`;
 /** 데이터를 자르는 고르기(기간) — 고른 칸도 강조 파랑이 아니라 중립 바탕·굵은 글, 고대비 모드에서는 테두리(명세 D9). */
 export function denseSegmentClasses(active: boolean): string {
   return `${DENSE_CONTROL} tabular-nums ${
