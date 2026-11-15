@@ -162,6 +162,16 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
     renderShell(MEMBER_PRO, { path: "/macro" });
     expect(within(mainNav()).getByRole("link", { name: "시장" }).getAttribute("aria-current")).toBe("page");
   });
+
+  it("왼쪽 내비의 지금 탭은 왼쪽 막대·굵은 본문색 글·고대비 테두리 — 글자는 강조 파랑이 아니다(QA-459, 작업대 명세 §3-8)", () => {
+    renderShell(MEMBER_PRO, { path: "/macro" });
+    const current = within(mainNav()).getByRole("link", { name: "시장" }).className.split(/\s+/);
+    expect(current).toEqual(expect.arrayContaining(["font-semibold", "text-text", "before:w-[3px]", "before:bg-accent", "forced-colors:border"]));
+    expect(current).not.toContain("text-accent");
+    const other = within(mainNav()).getByRole("link", { name: "홈" }).className.split(/\s+/);
+    expect(other.some((name) => name.startsWith("before:"))).toBe(false);
+    expect(other).not.toContain("forced-colors:border");
+  });
 });
 
 describe("하위 메뉴 줄", () => {
