@@ -5,14 +5,17 @@ tests/test_search_qa_store.py
 
 - QA-438: 수집 글·속보의 언어는 화면이 보이는 원문 제목으로 가름(번역 제목 title_ko가 아님) — 모은 글에 이미 들어간 줄도 읽을 때 같은 규칙
 - QA-439: 날짜만 있는 거장 견해는 timeBasis 'date'(계약 §7-1 — 화면이 날짜만), 날짜가 없으면 저장 시각('fetched')
+- QA-440: SEC 공시 제목 — 설명이 없거나 양식만 되풀이하면 흔한 양식의 짧은 한국어 뜻(모르는 양식은 양식만), 모은 글의 줄도 읽을 때 같은 규칙
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
+import pytest
+
 from app import store
-from app.services import search_store
+from app.services import search_filings, search_store
 
 NOW = datetime(2026, 11, 15, 5, 0, tzinfo=timezone.utc)
 
@@ -97,3 +100,79 @@ def test_QA439_날짜만_있는_거장_견해는_date(monkeypatch):
     assert dated["timeBasis"] == "date", "출처가 날짜만 줌 — 화면은 날짜만(계약 §7-1)"
     undated = items["다른 합성 투자자"]
     assert (undated["publishedAt"], undated["timeBasis"]) == ("2026-11-15T03:10:00+00:00", "fetched"), "날짜가 없으면 저장 시각"
+
+
+# ------------------------------------------------------------------ QA-440 SEC 공시 제목
+
+CIK = "0009000001"
+
+
+def _submissions(rows):
+    columns = ("accessionNumber", "filingDate", "reportDate", "acceptanceDateTime", "form", "primaryDocDescription")
+    recent = {column: [row.get(column, "") for row in rows] for column in columns}
+    return {"cik": "9000001", "name": "SYNTHETIC FINANCIAL GROUP INC", "filings": {"recent": recent, "files": []}}
+
+
+@pytest.mark.xfail(strict=True, reason="QA-440: 수정 전 실패 — Form 4·3 제목이 '4'·'3'뿐이고 6-K는 '6-K · FORM 6-K'로 겹침")
+def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀이한_설명을_뺀다():
+    forms = [("4", ""), ("3", ""), ("6-K", "FORM 6-K"), ("4/A", "FORM 4"), ("SC 13G/A", "SC 13G/A"), ("8-K", "8-K"),
+             ("10-Q", "Quarterly report"), ("N-PX", ""), ("20-F", "Form 20-F")]
+    rows = [{"accessionNumber": f"0009000001-26-{n:06d}", "filingDate": "2026-11-10", "form": form, "primaryDocDescription": described}
+            for n, (form, described) in enumerate(forms)]
+    items, _ = search_filings.parse_submissions(_submissions(rows), cik=CIK, start_day="2024-11-15")
+    assert [item["title"] for item in items] == [
+        "4 · 지분 변동 보고",
+        "3 · 최초 지분 보고",
+        "6-K · 외국 기업 수시 보고",
+        "4/A · 지분 변동 보고 정정",
+        "SC 13G/A · 5% 이상 지분 보고(약식) 정정",
+        "8-K · 수시 보고(주요 사건)",
+        "10-Q · Quarterly report",        # 쓸 만한 설명은 그대로(뜻을 덧붙이지 않음)
+        "N-PX",                           # 모르는 양식은 양식만
+        "20-F · 외국 기업 연차 보고서",
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-440: 수정 전 실패 — 전문 검색의 Form 4 제목이 '4 · <제출자>'라 무슨 공시인지 모름")
+def test_QA440_전문_검색_제목은_양식_뜻과_제출자():
+    def hit(adsh, form, name):
+        return {"_id": f"{adsh}:doc.xml", "_source": {"adsh": adsh, "ciks": ["0009000077"], "display_names": [name],
+                                                       "file_date": "2026-11-02", "form": form, "root_forms": [form]}}
+
+    payload = {"hits": {"total": {"value": 3, "relation": "eq"}, "hits": [
+        hit("0009000077-26-000001", "4", "Synthetic Owner Jane  (CIK 0009000077)"),
+        hit("0009000077-26-000002", "N-PX", "Synthetic Fund Trust  (CIK 0009000077)"),
+        hit("0009000077-26-000003", "10-K", ""),
+    ]}}
+    items, _, _ = search_filings.parse_fts(payload)
+    assert [item["title"] for item in items] == ["4 · 지분 변동 보고 · Synthetic Owner Jane", "N-PX · Synthetic Fund Trust",
+                                                 "10-K · 연차 보고서"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-440: 수정 전 실패 — 모은 글에 '4'·'6-K · FORM 6-K'로 들어간 SEC 줄이 그대로")
+def test_QA440_모은_글의_SEC_줄은_읽을_때_지금_규칙으로_제목을_다시_만든다(monkeypatch):
+    sec_url = "https://www.sec.gov/Archives/edgar/data/9000001/000900000126000001/0009000001-26-000001-index.htm"
+    rows = [
+        _watch_row("f1", title="4", source="sec", kind="filing", publisher="SYNTHETIC FINANCIAL GROUP INC", url=sec_url),
+        _watch_row("f2", title="6-K · FORM 6-K", source="sec", kind="filing", url=sec_url + "?2"),
+        _watch_row("f3", title="10-Q · Quarterly report", source="sec", kind="filing", url=sec_url + "?3"),
+        _watch_row("f4", title="4 · 지분 변동 보고", source="sec", kind="filing", url=sec_url + "?4"),
+        _watch_row("f5", title="4 · Synthetic Owner Jane", source="sec_fts", kind="filing", publisher="Synthetic Owner Jane",
+                   url=sec_url + "?5"),
+        _watch_row("f6", title="4 · 지분 변동 보고 · Synthetic Owner Jane", source="sec_fts", kind="filing",
+                   publisher="Synthetic Owner Jane", url=sec_url + "?6"),
+        _watch_row("f7", title="분기보고서", source="dart", kind="filing", lang="ko", url="https://dart.fss.or.kr/dsaf001/main.do?rcpNo=1"),
+        _watch_row("n1", title="4", source="bing"),
+    ]
+    monkeypatch.setattr(search_store, "_watch_rows", lambda key, kinds: rows)
+    titles = {item["id"]: item["title"] for item in search_store.watch_items("us:SYNF", owner=True).items}
+    assert titles == {
+        "f1": "4 · 지분 변동 보고",
+        "f2": "6-K · 외국 기업 수시 보고",
+        "f3": "10-Q · Quarterly report",
+        "f4": "4 · 지분 변동 보고",                              # 이미 지금 규칙으로 넣은 줄은 그대로
+        "f5": "4 · 지분 변동 보고 · Synthetic Owner Jane",
+        "f6": "4 · 지분 변동 보고 · Synthetic Owner Jane",
+        "f7": "분기보고서",                                       # DART·뉴스 줄은 그대로
+        "n1": "4",
+    }
