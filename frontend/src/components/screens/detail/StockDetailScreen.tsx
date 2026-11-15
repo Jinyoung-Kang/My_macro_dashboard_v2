@@ -20,7 +20,7 @@ import {
   statText,
 } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
-import { EMPTY, formatKst, formatNumber, formatUsd, withoutLeadingIcon } from "@/lib/format";
+import { EMPTY, formatKst, formatNumber, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { liveStatusText, tradedAtText } from "@/lib/livePrices";
 import type { DetailMarket, DetailQuote, GuruHoldersResponse } from "@/lib/types";
 import { AiSummaryCard, ExternalAnchor, ExternalLinksCard, KeyStats, NewsCard, PriceHero, statRows } from "./DetailParts";
@@ -246,7 +246,7 @@ function HoldersCard({ query }: { query: string }) {
                 </span>
               </span>
               <span className="shrink-0 text-right tabular-nums">
-                <span className="block font-medium text-text">{formatNumber(row.weight, 2)}%</span>
+                <span className="block font-medium text-text">{formatWeightPercent(row.weight)}</span>
                 <span className="block text-xs text-text-3">{formatUsd(row.value)}</span>
               </span>
             </li>

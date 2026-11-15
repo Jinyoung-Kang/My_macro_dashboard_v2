@@ -20,7 +20,7 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch } from "@/lib/detail";
-import { deltaColor, EMPTY, formatCurrency, formatNumber, formatPercent, formatWithUnit } from "@/lib/format";
+import { deltaColor, EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
@@ -393,7 +393,7 @@ function RiskCard() {
                     목록은 응답마다 통째로 바뀌므로 순서를 키에 넣습니다(QA-135). */}
                 {coverage.uncovered.map((row, index) => (
                   <li key={`${index}:${row.name}`}>
-                    {row.name} — {formatWithUnit(row.weight, 2, "%")}
+                    {row.name} — {formatWeightPercent(row.weight)}
                     {row.reason && <span className="text-muted"> · {row.reason}</span>}
                   </li>
                 ))}
@@ -477,7 +477,7 @@ function RiskCard() {
                 key: "weight",
                 header: "비중",
                 align: "right",
-                render: (row) => formatWithUnit(row.weight, 2, "%"),
+                render: (row) => formatWeightPercent(row.weight),
               },
               {
                 key: "volatility",
@@ -599,7 +599,7 @@ function HoldersCard() {
                 header: "비중",
                 align: "right",
                 render: (row) => (
-                  <span className="font-semibold">{formatPercent(row.weight).replace("+", "")}</span>
+                  <span className="font-semibold">{formatWeightPercent(row.weight)}</span>
                 ),
               },
               {

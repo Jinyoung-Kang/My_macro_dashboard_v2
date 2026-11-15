@@ -85,7 +85,7 @@ function expectTiny(root: HTMLElement) {
 describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", () => {
   // QA-454: formatNumber(weight, 2)로 0.0032가 '0.00%'가 되어 3.2억 달러 보유가 없는 값처럼 읽혔습니다.
   // 수정 전 실패: 아래 화면 모두 '0.00%'가 보이고 '<0.01%'가 없음(재현 커밋에서는 it.fails).
-  it.fails("정보 검색 보유 탭 — 회사의 13F 보유 기관 줄", async () => {
+  it("정보 검색 보유 탭 — 회사의 13F 보유 기관 줄", async () => {
     reads = { [endpoints.institution.guruHolders(QUERY)]: holders() };
     const company: SearchEntity = {
       key: "us:SYTH", kind: "company", name: "합성 소형", nameKo: "합성 소형", nameEn: "Synthetic Tiny Holdings", aliases: [], description: null,
@@ -97,7 +97,7 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(section);
   });
 
-  it.fails("정보 검색 보유 탭 — 13F 기관의 상위 보유 종목", async () => {
+  it("정보 검색 보유 탭 — 13F 기관의 상위 보유 종목", async () => {
     reads = { [endpoints.institution.portfolio(CIK, 8, 30)]: portfolio() };
     const institution: SearchEntity = {
       key: `cik:${CIK}`, kind: "institution", name: "가상 대형운용", nameKo: "가상 대형운용", nameEn: "Fictional Mega Advisors", aliases: [], description: null,
@@ -108,7 +108,7 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(section);
   });
 
-  it.fails("종목 상세 — 13F 보유 기관 카드", async () => {
+  it("종목 상세 — 13F 보유 기관 카드", async () => {
     const quote: DetailQuote = {
       market: "us", code: "SYTH", yahooSymbol: "SYTH", name: "Synthetic Tiny Holdings, Inc.", exchange: "NYSE", currency: "USD", kind: "EQUITY",
       price: 10, previousClose: 10, change: 0, changePct: 0, asOf: "2026-11-14T21:00:00+00:00", marketState: "CLOSED",
@@ -126,7 +126,7 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(card);
   });
 
-  it.fails("기관 상세 — 상위 보유 종목", async () => {
+  it("기관 상세 — 상위 보유 종목", async () => {
     reads = { [endpoints.institution.portfolio(CIK, 8, 30)]: portfolio() };
     render(
       <SessionUserProvider user={MEMBER}>
@@ -138,7 +138,7 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(card);
   });
 
-  it.fails("13F 포트폴리오 화면 — 보유 종목 표", async () => {
+  it("13F 포트폴리오 화면 — 보유 종목 표", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/sec13f/institutions")) return Promise.resolve({ institutions: [{ key: "mega", name: "가상 대형운용", cik: CIK, desc: "" }] });
       if (path.startsWith("/api/sec13f/portfolio")) return Promise.resolve(portfolio());
@@ -150,7 +150,7 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(table);
   });
 
-  it.fails("공통 보유 — 교집합·공통 신규 매수의 평균·최대 비중", async () => {
+  it("공통 보유 — 교집합·공통 신규 매수의 평균·최대 비중", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/sec13f/consensus")) {
         return Promise.resolve({
@@ -176,7 +176,7 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     expectTiny(fresh);
   });
 
-  it.fails("스타일 화면 — 이 종목을 누가 들고 있나", async () => {
+  it("스타일 화면 — 이 종목을 누가 들고 있나", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path.startsWith("/api/guru/holders") ? Promise.resolve(holders()) : new Promise(() => {}));
     render(<GuruPage />);

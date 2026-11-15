@@ -31,7 +31,7 @@ import {
   deltaColor,
   EMPTY,
   formatCurrency,
-  formatNumber, formatWithUnit } from "@/lib/format";
+  formatNumber, formatWeightPercent } from "@/lib/format";
 import { filerName, holdingActionView, type HoldingActionKind } from "@/lib/holdings";
 import type { PortfolioResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
@@ -213,7 +213,7 @@ export default function InstitutionsPage() {
                   key: "weight",
                   header: "비중",
                   align: "right",
-                  render: (row) => formatWithUnit(row.weight, 2, "%"),
+                  render: (row) => formatWeightPercent(row.weight),
                 },
                 {
                   key: "weightDiff",

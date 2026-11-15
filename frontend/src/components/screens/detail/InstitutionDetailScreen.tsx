@@ -7,7 +7,7 @@ import { Banner, Card, ErrorState, Freshness, PageHeader } from "@/components/ui
 import { useApi } from "@/hooks/useApi";
 import { CHART_KEY, detailQuery, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
-import { EMPTY, formatNumber, formatSignedMinus, formatUsd, withoutLeadingIcon } from "@/lib/format";
+import { formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import type { PortfolioResponse } from "@/lib/types";
 import { AiSummaryCard, ExternalLinksCard, NewsCard } from "./DetailParts";
 
@@ -113,7 +113,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
                       </span>
                     </span>
                     <span className="shrink-0 text-right tabular-nums">
-                      <span className="block font-medium text-text">{holding.weight !== null ? `${formatNumber(holding.weight, 2)}%` : EMPTY}</span>
+                      <span className="block font-medium text-text">{formatWeightPercent(holding.weight)}</span>
                       <span className="block text-xs text-text-3">{formatUsd(holding.value)}</span>
                     </span>
                   </li>

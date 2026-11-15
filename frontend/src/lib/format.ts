@@ -496,6 +496,16 @@ export function formatWithUnit(value: number | null | undefined, digits: number,
   return text === EMPTY ? EMPTY : `${text}${unit}`;
 }
 
+/**
+ * 보유 비중(%) — 13F 보유 줄·포트폴리오 비중. 0보다 크지만 보이는 자릿수로 반올림하면 0이 되는 값(2자리면 0.005 미만)은 `<0.01%`로 적습니다 —
+ * 큰 기관의 3억 달러 남짓한 보유가 '0.00%'로 보여 없는 값처럼 읽혔습니다(QA-454). 정확히 0은 '0.00%', 모르는 값은 "—"(지어내지 않음).
+ */
+export function formatWeightPercent(value: number | null | undefined, digits = 2): string {
+  if (missing(value)) return EMPTY;
+  const text = formatNumber(value, digits);
+  return value > 0 && !hasNonZeroDigit(text) ? `<${formatNumber(10 ** -digits, digits)}%` : `${text}%`;
+}
+
 /** 밀리초를 사람이 읽는 시간으로. 3분 42초가 "222134ms"로 보이면 감이 안 옵니다. */
 export function formatLatency(latencyMs?: number): string {
   if (latencyMs === undefined || latencyMs === null) {

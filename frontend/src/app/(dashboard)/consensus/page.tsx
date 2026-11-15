@@ -20,7 +20,7 @@ import { useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { consensusBars, securityNote } from "@/lib/consensus";
-import { EMPTY, formatCurrency, formatNumber } from "@/lib/format";
+import { EMPTY, formatCurrency, formatWeightPercent } from "@/lib/format";
 import { filerName, filerShortName } from "@/lib/holdings";
 import { isSelected, toggleSelection } from "@/lib/selection";
 import type { ConsensusResponse, NewBuysResponse } from "@/lib/types";
@@ -166,13 +166,13 @@ export default function ConsensusPage() {
                   key: "avgWeight",
                   header: "평균 비중",
                   align: "right",
-                  render: (row) => (row.avgWeight == null ? "—" : `${formatNumber(row.avgWeight, 2)}%`),
+                  render: (row) => formatWeightPercent(row.avgWeight),
                 },
                 {
                   key: "maxWeight",
                   header: "최대 비중",
                   align: "right",
-                  render: (row) => (row.maxWeight == null ? "—" : `${formatNumber(row.maxWeight, 2)}%`),
+                  render: (row) => formatWeightPercent(row.maxWeight),
                 },
                 {
                   key: "totalValue",
@@ -287,7 +287,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                 key: "avgWeight",
                 header: "평균 비중",
                 align: "right",
-                render: (row) => (row.avgWeight == null ? "—" : `${formatNumber(row.avgWeight, 2)}%`),
+                render: (row) => formatWeightPercent(row.avgWeight),
               },
               {
                 key: "totalValue",

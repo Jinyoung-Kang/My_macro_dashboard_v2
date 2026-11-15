@@ -6,7 +6,7 @@ import { useApi } from "@/hooks/useApi";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
-import { EMPTY, formatNumber, formatUsd, withoutLeadingIcon } from "@/lib/format";
+import { formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { holdersQuery, holdingsWindow, kstToday, type HoldersQuery } from "@/lib/infoSearch";
 import type { GuruHoldersResponse, PortfolioResponse, SearchEntity } from "@/lib/types";
 import { LINK, PaneHeading } from "./parts";
@@ -93,7 +93,7 @@ function CompanyHolders({ query, by }: HoldersQueryProps) {
               </span>
             </span>
             <span className="text-right tabular-nums">
-              <span className="block text-text">{formatNumber(row.weight, 2)}%</span>
+              <span className="block text-text">{formatWeightPercent(row.weight)}</span>
               <span className="block text-xs text-text-3">{formatUsd(row.value)}</span>
             </span>
           </li>
@@ -133,7 +133,7 @@ function PortfolioHoldings({ cik }: { cik: string }) {
                 <span className="block truncate text-xs text-text-3">{[holding.class, withoutLeadingIcon(holding.action)].filter(Boolean).join(" · ")}</span>
               </span>
               <span className="text-right tabular-nums">
-                <span className="block text-text">{holding.weight !== null ? `${formatNumber(holding.weight, 2)}%` : EMPTY}</span>
+                <span className="block text-text">{formatWeightPercent(holding.weight)}</span>
                 <span className="block text-xs text-text-3">{formatUsd(holding.value)}</span>
               </span>
             </li>
