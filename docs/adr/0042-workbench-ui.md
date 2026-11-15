@@ -22,8 +22,9 @@
   - **글자 하한 12px**: 소스 검사 시험 `frontend/src/lib/__tests__/fontFloor.test.ts`(P0, QA-457) — `text-[10px]`·`text-[11px]`, 12px 미만이 되는 em·rem 크기, 차트 `fontSize` 12 미만을 막음.
   - **조작 44px**: 공용 조작 클래스(단추·입력·탭·링크·표 정렬 머리·체크박스)가 lg 미만 `min-h-11`과 lg 이상 조밀 변형을 함께 갖는지 — `frontend/src/lib/__tests__/touchTargets.test.ts`(감사 도구 `touchTargetAudit.ts`, P0, QA-458).
   - **팔레트 기록**: 확정한 계열 색 hex 목록(시험 코드 안의 기대 상수 — 문서 표는 파싱하지 않음)이 실제 소스와 같은지, 어두운 두 면(`#111418`·`#1c2127`) 위 그래픽 대비
-    3:1(예정 `components/charts/__tests__/paletteRecord.test.ts`). 검증기 결과는 실행 명세 §3-5에 기록.
-  - **데이터 칸의 강조색 금지**: 데이터를 그리는 패턴·차트 소스에 `accent` 토큰이 없는지(예정 `lib/__tests__/accentInData.test.ts` — A1을 소스 검사로).
+    3:1 — `frontend/src/lib/__tests__/paletteRecord.test.ts`(P2 마무리, 처음 예정한 자리는 `components/charts/__tests__/`). 검증기 결과는 실행 명세 §3-5에 기록.
+  - **데이터 칸의 강조색 금지**: 데이터를 그리는 패턴·차트 소스에 `accent` 토큰이 없는지 — `frontend/src/lib/__tests__/accentInData.test.ts`(P2 마무리, A1을 소스 검사로 —
+    파일 목록은 시험이 정하고 새 데이터 패턴은 들어오는 단계에서 더함).
   - 그대로 통과해야 하는 것: 실제 매매 `components/screens/realtrade/__tests__/realTradeScreen.test.tsx`, 경계 시험 `realtradeBoundary`·`isaBoundary`·`brokerageBoundary`,
     데모 열람 `app/(dashboard)/__tests__/demoViewer.test.tsx`, `a11y.test.tsx`, `noEmoji.test.ts`, `endpoints.test.ts`, `nav.test.ts`(메뉴 표·순서 불변),
     `patterns/__tests__/index.test.ts`, `charts/__tests__/frameBoundary.test.ts`, 백엔드 `ArchitectureRulesTest`·`AccessPolicyTest`·`RouteInventoryTest`(경로·등급 불변).
@@ -178,3 +179,6 @@
   화면 단계에서 다시 고치게 되기 때문입니다. [ADR 0004](0004-frontend-layering.md) 덧붙임 한 줄은 부품이 들어가는 커밋 묶음에서 그때마다 더합니다(명세 §8-2·§11).
 - **2026-11-16 결정(사용자 위임 — 권장안)** 화면 밖에 남은 알약(셸의 본문 건너뛰기·알림 벨과 수 배지·하위 메뉴 표지·통합 검색 여는 단추)을 4px로 바꿨고, 원은 상태 점과
   장식 원판(아바타·메뉴 아이콘·검색 결과 종류)만 남깁니다(결정 4). 알약 소스 검사를 `components`·`app` 전체로 넓히고 장식 원판은 허용 목록으로 둡니다(명세 §3-8).
+- P0 시험 묶음의 남은 둘을 넣었습니다 — 팔레트 기록(`lib/__tests__/paletteRecord.test.ts`, 계좌2 `#ba5db3` 뒤의 값)과 데이터 칸 강조색 금지(`lib/__tests__/accentInData.test.ts`).
+  둘 다 지금 어기는 자리가 없어 결함 번호를 쓰지 않았습니다. 알약 소스 검사(`screenPills.test.ts`)는 위 결정대로 `components`·`app` 전체로 넓혔습니다.
+- 아직 못 한 것: Recharts SVG 속성 안 `var()`의 Firefox·Safari 확인, QA 스택 개편 전 기준과 D1 전 브라우저 확인(390·1440·forced-colors — 진행 기록 §P2 '마무리'의 볼 것).
