@@ -220,7 +220,7 @@ describe("결정 로그 — Claude 책", () => {
 
   // QA-506: 검증 표 '거절 사유' 칸은 값과 상관없이 주의색(text-warn)으로 그려, 통과한 주문의 빈 값 '—'까지 주황 대시로 줄줄이 섰습니다
   // (초록 '통과' 옆 — 값이 없는 칸이 경고처럼 보임). 같은 상세의 다른 빈 칸(라벨)처럼 '—'는 보조 글 색, 거절 사유가 있을 때만 주의색입니다.
-  it.fails("QA-506: 검증 표 거절 사유 칸 — 통과 행의 빈 값 '—'은 보조 글 색(text-3), 거절 사유가 있는 행만 주의색", async () => {
+  it("QA-506: 검증 표 거절 사유 칸 — 통과 행의 빈 값 '—'은 보조 글 색(text-3), 거절 사유가 있는 행만 주의색", async () => {
     await openClaudeDecisions();
     fireEvent.click(within(await screen.findByRole("row", { name: "2026-10-26 정기" })).getByRole("button", { name: "상세 펼치기" }));
     const detail = await screen.findByRole("region", { name: "2026-10-26 정기 상세" });

@@ -158,7 +158,10 @@ export function ClaudeDecisionBody({
               {
                 key: "reason",
                 header: "거절 사유",
-                render: (row) => <span className="text-xs text-warn" title={row.reasonTitle}>{row.reason}</span>,
+                // 사유가 없는 행(통과)의 '—'은 값이 없는 칸이라 다른 빈 칸처럼 보조 글 색 — 주의색은 거절 사유가 있을 때만(QA-506).
+                render: (row) => (row.reason === EMPTY
+                  ? <span className="text-xs text-text-3">{EMPTY}</span>
+                  : <span className="text-xs text-warn" title={row.reasonTitle}>{row.reason}</span>),
               },
               { key: "detail", header: "설명", render: (row) => <span className="text-xs text-text-2">{row.detail}</span> },
             ]}
