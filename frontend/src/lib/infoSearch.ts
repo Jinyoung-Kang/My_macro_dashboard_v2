@@ -1189,10 +1189,57 @@ const DIGIT = /\p{N}/u;
  * 같은 글이 남으면(같은 낱말이 되풀이되는 드문 이름 — 다른 자리의 글이 우연히 같아짐) 둘째 이름부터 아무도 쓰지 않은 글이 나올 때까지 보이는 자리를
  * 뒤로 옮깁니다. 겹치지 않는 이름의 글은 그대로이고, 같은 이름(앞뒤 공백 무시)은 같은 글. 돌려주는 표는 앞뒤 공백을 뗀 이름 → 글. 전체 이름은 노드의
  * <title>·낭독 이름과 목록에 있습니다.
+ * 그렇게 고른 글이 기본 글(refine: false — 갈리는 자리를 낱말 첫 글자로 물리기만 하고, 낱말 경계의 물림·지킬 글은 쓰지 않음)보다 글만으로 가를 수
+ * 없는 이름(unresolvedLabels)이 많으면 기본 글을 씁니다 — 지킬 글이 여러 묶음에 걸쳐 어긋나는 드문 이름 묶음에서도 기본 글보다 나빠지지 않게(검토 지적).
  */
-export function graphLabels(names: readonly string[], maxPx: number): Map<string, string> {
+export function graphLabels(names: readonly string[], maxPx: number, { refine = true }: { refine?: boolean } = {}): Map<string, string> {
   const distinct = [...new Set(names.map((name) => name.trim()))];
+  const refined = splitGraphLabels(distinct, maxPx, refine);
+  if (!refine) return refined;
+  const plain = splitGraphLabels(distinct, maxPx, false);
+  if (distinct.every((name) => plain.get(name) === refined.get(name))) return refined;
+  return unresolvedLabels(plain) < unresolvedLabels(refined) ? plain : refined;
+}
+
+/**
+ * 글만 보고 가를 수 없는 이름의 수 — 읽힐 수 있는 이름(labelFitsName)이 하나뿐인 글부터 그 이름에 붙이고 빼기를 되풀이한 뒤 남는 이름(읽는 사람이
+ * 글을 보고 이름을 짐작하는 방식). 글이 제 이름이 아닌 이름 하나로만 읽히면 모두.
+ */
+function unresolvedLabels(labels: ReadonlyMap<string, string>): number {
+  const open = new Set(labels.keys());
+  for (let progress = true; progress && open.size > 0; ) {
+    progress = false;
+    for (const owner of [...open]) {
+      const readers = [...open].filter((name) => labelFitsName(labels.get(owner)!, name));
+      if (readers.length !== 1) continue;
+      if (readers[0] !== owner) return labels.size;
+      open.delete(owner);
+      progress = true;
+    }
+  }
+  return open.size;
+}
+
+/** graphLabels의 본체 — refine이 거짓이면 낱말 경계의 물림·지킬 글 없이(기본 글). distinct는 앞뒤 공백을 뗀 서로 다른 이름들. */
+function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: boolean): Map<string, string> {
   const labels = new Map(distinct.map((name) => [name, fitGraphLabel(name, maxPx)]));
+  /**
+   * 지킬 글을 둔 이름 → 둔 글·그 차례의 새 글·묶음. 다음 차례에 묶음의 다른 이름 글이 바뀌어 그 이름으로도 읽히게 되면(둔 글은 묶음 모두로 읽혀 다른
+   * 이름들의 글로 가려지는데, 그 글이 가르지 못하게 됨) 새 글로 되돌리고 그 이름에는 다시 두지 않음(recheck — 검토 지적).
+   */
+  const keepers = new Map<string, { label: string; fresh: string; members: readonly string[] }>();
+  const noKeep = new Set<string>();
+  const recheck = () => {
+    for (const [name, kept] of keepers) {
+      if (labels.get(name) !== kept.label) {
+        keepers.delete(name);
+      } else if (kept.members.some((other) => other !== name && labelFitsName(labels.get(other)!, name))) {
+        labels.set(name, kept.fresh);
+        keepers.delete(name);
+        noKeep.add(name);
+      }
+    }
+  };
   /**
    * 묶음에서 새 글 대신 지금 글을 둘 이름(keeper)의 글 후보 — 앞 차례에서 다른 이름들과 가른 글이면 그 글. 아직 끝을 자른 글이면, 묶음 밖 이름
    * 가운데 앞머리가 가장 길게 같은 이름과 갈리는 자리(그 낱말의 첫 글자로 물림 — 6자 넘게 길거나 이름 첫머리까지면 물리지 않음)부터 보이는 글이 더
@@ -1227,6 +1274,7 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
     return [...byLabel.values()].filter((group) => group.length > 1);
   };
   for (let round = 0; round < 8; round += 1) {
+    recheck();
     const groups = clashes();
     if (groups.length === 0) break;
     for (const group of groups) {
@@ -1243,7 +1291,7 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
       let wordBack = split;
       while (wordBack > 0 && split - wordBack < GRAPH_WORD_BACK && LETTER_OR_DIGIT.test(charsOf[0][wordBack - 1])) wordBack -= 1;
       if (wordBack > 0 && LETTER_OR_DIGIT.test(charsOf[0][wordBack - 1])) wordBack = split; // 낱말이 길면 물리지 않음
-      const back = inWord ? wordBack : split;
+      const back = inWord || !refine ? wordBack : split;
       const starts = charsOf.map((chars) => (!inWord && split >= chars.length ? wordBack : back));
       // narrowHead면 앞부분을 첫 글자 하나로 줄여 뒷부분에 폭을 더 줌.
       const shown = (from: readonly number[], skipSpace: boolean, narrowHead = false) =>
@@ -1258,7 +1306,7 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
       // (숫자면 그 숫자의 끝)까지.
       const needEnd = charsOf.map((chars) => {
         let end = split;
-        if (!inWord) while (end < chars.length && !LETTER_OR_DIGIT.test(chars[end])) end += 1;
+        if (refine && !inWord) while (end < chars.length && !LETTER_OR_DIGIT.test(chars[end])) end += 1;
         if (DIGIT.test(chars[end] ?? "")) while (end < chars.length && DIGIT.test(chars[end])) end += 1;
         else if (LETTER_OR_DIGIT.test(chars[end] ?? "")) end += 1;
         else end = split;
@@ -1287,24 +1335,33 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
       // 묶음 밖 이름들과 가르는 글(keeperLabels)을 둘 수 있음 — 다음 차례에 다시 줄이면서 앞 차례의 가르는 낱말('…디스…'·'…글로…')이 빠지고
       // '가…주식…'처럼 여러 이름과 맞는 글이 되지 않게(QA 재확인 개선 제안). 그 글로 읽힐 수 있는 이름(labelFitsName)이 새 글보다 많지 않을 때만
       // ('…Ltd'처럼 끝 낱말로 하나만 가리키는 새 글은 그대로), 아무도 쓰지 않은 글일 때만, 다른 이름들의 새 글이 그 이름으로는 읽히지 않을 때만
-      // (둔 글은 묶음 모두로 읽혀 다른 이름들의 글로 가려지므로).
-      const keeper = group
-        .map((_, at) => at)
-        .filter((at) => back === split && !continues[at] && (inWord || split >= charsOf[at].length))
-        .sort((a, b) => Number(split < charsOf[a].length) - Number(split < charsOf[b].length) || a - b)[0];
+      // (둔 글은 묶음 모두로 읽혀 다른 이름들의 글로 가려지므로). 다른 이름들의 새 글이 묶음 밖 이름이 쓰는 글과 같으면 두지 않음 — 다음 차례에 그
+      // 이름을 다시 가르면 둔 글로 돌아와, 두 묶음이 차례마다 같은 글을 주고받다 상한에 닿음(검토 지적). 기본 글(refine 거짓)에는 두지 않음.
+      const keeper = !refine
+        ? undefined
+        : group
+            .map((_, at) => at)
+            .filter((at) => back === split && !continues[at] && (inWord || split >= charsOf[at].length) && !noKeep.has(group[at]))
+            .sort((a, b) => Number(split < charsOf[a].length) - Number(split < charsOf[b].length) || a - b)[0];
       if (keeper !== undefined && fits.every((fit, at) => at === keeper || !labelFitsName(fit.label, group[keeper]))) {
         const taken = new Set(distinct.filter((name) => !group.includes(name)).map((name) => labels.get(name)!));
-        fits.forEach((fit, at) => {
-          if (at !== keeper) taken.add(fit.label);
-        });
-        const reach = (label: string) => distinct.filter((name) => labelFitsName(label, name)).length;
-        const fresh = reach(fits[keeper].label);
-        const kept = keeperLabels(group[keeper], charsOf[keeper], group).find((label) => !taken.has(label) && reach(label) <= fresh);
-        if (kept !== undefined) fits = fits.map((fit, at) => (at === keeper ? { label: kept, end: fit.end } : fit));
+        if (fits.every((fit, at) => at === keeper || !taken.has(fit.label))) {
+          fits.forEach((fit, at) => {
+            if (at !== keeper) taken.add(fit.label);
+          });
+          const reach = (label: string) => distinct.filter((name) => labelFitsName(label, name)).length;
+          const fresh = reach(fits[keeper].label);
+          const kept = keeperLabels(group[keeper], charsOf[keeper], group).find((label) => !taken.has(label) && reach(label) <= fresh);
+          if (kept !== undefined && kept !== fits[keeper].label) {
+            keepers.set(group[keeper], { label: kept, fresh: fits[keeper].label, members: group });
+            fits = fits.map((fit, at) => (at === keeper ? { label: kept, end: fit.end } : fit));
+          }
+        }
       }
       group.forEach((name, at) => labels.set(name, fits[at].label));
     }
   }
+  recheck();
   for (const group of clashes()) {
     for (const name of group.slice(1)) {
       const used = new Set(labels.values());

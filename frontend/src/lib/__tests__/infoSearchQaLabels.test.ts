@@ -212,8 +212,11 @@ function readsAs(label: string, name: string): boolean {
   return true;
 }
 
-/** 글만 보고 이름을 다 가를 수 있는가 — 읽힐 수 있는 이름이 하나뿐인 글부터 그 이름에 붙이고 지우기를 되풀이해, 모든 글이 제 이름에 붙음. */
-function resolvable(labels: ReadonlyMap<string, string>): boolean {
+/**
+ * 글만 보고 가를 수 없는 이름의 수 — 읽힐 수 있는 이름이 하나뿐인 글부터 그 이름에 붙이고 지우기를 되풀이한 뒤 남는 이름(글이 제 이름이 아닌 이름에
+ * 붙으면 모두).
+ */
+function unresolvedCount(labels: ReadonlyMap<string, string>): number {
   const open = new Set(labels.keys());
   let progress = true;
   while (progress && open.size > 0) {
@@ -221,13 +224,16 @@ function resolvable(labels: ReadonlyMap<string, string>): boolean {
     for (const owner of [...open]) {
       const candidates = [...open].filter((name) => readsAs(labels.get(owner)!, name));
       if (candidates.length !== 1) continue;
-      if (candidates[0] !== owner) return false;
+      if (candidates[0] !== owner) return labels.size;
       open.delete(owner);
       progress = true;
     }
   }
-  return open.size === 0;
+  return open.size;
 }
+
+/** 글만 보고 이름을 다 가를 수 있는가 — 모든 글이 제 이름에 붙음. */
+const resolvable = (labels: ReadonlyMap<string, string>) => unresolvedCount(labels) === 0;
 
 describe("연결 그림 — 다시 줄여도 가르는 낱말이 남는 한글 법인명 노드 글(QA 재확인 개선 제안)", () => {
   // QA 재확인(kr:005930 모의 — 390·1024·1280 화면): 글은 모두 서로 달랐지만, 둘째 차례 이후 다시 줄이면서 첫 차례에 보이던 가르는 낱말이 빠졌습니다 —
@@ -296,6 +302,88 @@ describe("연결 그림 — 다시 줄여도 가르는 낱말이 남는 한글 �
       expect(labels.get(names[1])).toMatch(/…Asia$/);
       expect(labels.get(names[2])).toMatch(/…Europe$/);
       expect(resolvable(labels)).toBe(true);
+    }
+  });
+});
+
+describe("연결 그림 — 지킬 글이 다른 묶음과 번갈아 바뀌지 않고, 기본 글보다 가르기 어려워지지 않음(검토 지적)", () => {
+  // 검토 지적: 지킬 글(묶음 밖 이름들과 가른 앞 차례의 글)을 둘 때 다른 이름의 새 글이 묶음 밖 이름이 쓰는 글과 같아지는 것을 막지 않아, 다음 차례에
+  // 그 둘을 다시 가르면 둔 글로 돌아오고 두 묶음이 차례마다 같은 글을 주고받다 상한(8차례)에 닿았습니다 — 마지막 겹침 풀기가 '샘플그룹…'·'예시금융…'처럼
+  // 모든 이름과 맞는 글을 줘, 바꾸기 전(기본 글)에는 글만으로 다 가를 수 있던 묶음을 가를 수 없게 됐습니다. 또 지킬 글을 둘 조건(다른 이름들의 글이 그
+  // 이름으로 읽히지 않음)을 그 차례에 한 번만 봐, 다음 차례에 상대 이름의 글이 바뀌어 그 이름으로도 읽히게 돼도('가상전자글…') 그대로 뒀습니다.
+  // 바꾸기 전 실패: 아래 세 묶음에서 가를 수 없는 이름이 3·3·2개.
+  it("두 묶음이 같은 글을 주고받던 이름들 — 기본 글처럼 글만으로 다 가름", () => {
+    const sample = ["샘플그룹디스플레이 아메리카", "샘플그룹바이오로직스생명과학 아메리카", "샘플그룹디스플레이전자 주식회사 베트남", "샘플그룹전자 주식회사 미국"];
+    const got = graphLabels(sample, 66);
+    expect(sample.map((name) => got.get(name))).toEqual(["샘…아메…", "샘…바이…", "샘…디스…", "샘…전자…"]);
+    const finance = [
+      "예시금융지주파운드리솔루션즈 홀딩스",
+      "예시금융지주증권 홀딩스",
+      "예시금융지주중공업파운드리솔루션즈",
+      "예시금융지주바이오로직스 주식회사 베트남",
+      "예시금융지주중공업 주식회사 베트남",
+      "예시금융지주 유한회사",
+    ];
+    for (const px of [66, 72, 80, 87, 95]) {
+      const labels = graphLabels(finance, px);
+      expect([px, resolvable(labels)]).toEqual([px, true]);
+      expect([px, finance.filter((name) => finance.every((other) => readsAs(labels.get(name)!, other)))]).toEqual([px, []]);
+    }
+  });
+
+  it("지킬 글을 둔 뒤 상대 이름의 글이 그 이름으로도 읽히게 되면 지킬 글을 거둠 — 한글 표본 + '가상전자로지텍파운드리솔루션즈'", () => {
+    const names = [
+      "가상전자디스플레이 주식회사",
+      "가상전자글로벌반도체 주식회사",
+      "가상바이오로직스 주식회사",
+      "가상전자디스플레이 주식회사 베트남",
+      "가상전자글로벌반도체파운드리솔루션즈코리아",
+      "가상전자로지텍",
+      "가상전자로지텍파운드리솔루션즈",
+    ];
+    for (const px of [80, 81, 82, 83]) {
+      const labels = graphLabels(names, px);
+      expect([px, resolvable(labels), new Set(labels.values()).size]).toEqual([px, true, names.length]);
+      expect(labels.get("가상전자디스플레이 주식회사 베트남")).toBe("가상…베트남");
+    }
+  });
+
+  it("기본 글(refine: false)은 낱말 경계의 물림·지킬 글이 없는 글 — QA 재확인 때의 배정 66 글", () => {
+    const names = ["가상전자디스플레이 주식회사", "가상전자글로벌반도체 주식회사", "가상바이오로직스 주식회사", "가상전자디스플레이 주식회사 베트남", "가상전자글로벌반도체파운드리솔루션즈코리아", "가상전자로지텍"];
+    const plain = graphLabels(names, 66, { refine: false });
+    expect(names.map((name) => plain.get(name))).toEqual(["가상전자…", "가…주식…", "가상바이…", "가… 베…", "가…파운…", "가…로지텍"]);
+  });
+
+  it("앞머리를 함께 쓰는 한글 이름 묶음 무작위 240개 x 배정 7개 — 글이 서로 다르고 폭 안이며, 글만으로 가를 수 없는 이름이 기본 글보다 많지 않음", () => {
+    // 시드를 정한 의사 난수(mulberry32) — 늘 같은 묶음.
+    let seed = 20261115;
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const pick = <T,>(items: readonly T[]) => items[Math.floor(random() * items.length)];
+    const HEADS = ["가상전자", "샘플그룹", "예시금융지주", "가상"];
+    const WORDS = ["디스플레이", "글로벌반도체", "바이오로직스", "로지텍", "중공업", "파운드리솔루션즈", "증권", "전자", "생명과학", "디스플레이전자", "글로벌"];
+    const TAILS = [" 주식회사", " 홀딩스", " 아메리카", " 베트남", " 미국", " 유한회사", " 주식회사 베트남", " 주식회사 미국", "", ""];
+    for (let index = 0; index < 240; index += 1) {
+      const head = pick(HEADS);
+      const size = 3 + Math.floor(random() * 5);
+      const names = new Set<string>();
+      while (names.size < size) {
+        let name = random() < 0.8 ? head : pick(HEADS);
+        for (let count = Math.floor(random() * 3); count > 0; count -= 1) name += pick(WORDS);
+        names.add(`${name}${pick(TAILS)}`);
+      }
+      for (const px of [66, 72, 80, 87, 93, 101, 116]) {
+        const labels = graphLabels([...names], px);
+        const plain = graphLabels([...names], px, { refine: false });
+        expect(new Set(labels.values()).size).toBe(names.size);
+        for (const label of labels.values()) expect([px, label, renderedWidth(label) <= px]).toEqual([px, label, true]);
+        expect([px, [...names], unresolvedCount(labels) <= unresolvedCount(plain)]).toEqual([px, [...names], true]);
+      }
     }
   });
 });
