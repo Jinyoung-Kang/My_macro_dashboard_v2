@@ -323,7 +323,7 @@ export function OverviewSection({
 
       {prompt && (
         <Card title={prompt.title} source={PAPER_SOURCES.ledger}>
-          <p className="text-sm leading-relaxed text-body">{prompt.body}</p>
+          <p className="text-sm leading-relaxed text-text-2">{prompt.body}</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <Button variant="primary" onClick={() => void runInit()} disabled={init.busy}>
               {init.busy ? `초기화 중… ${initElapsed}초` : "초기화"}
@@ -339,7 +339,7 @@ export function OverviewSection({
 
       {startPrompt && (
         <Card title={startPrompt.title} subtitle="초기 결정 — 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
-          <p className="text-sm leading-relaxed text-body">{startPrompt.body}</p>
+          <p className="text-sm leading-relaxed text-text-2">{startPrompt.body}</p>
           {confirmingStart ? (
             <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-3 py-3">
               <p className="text-sm leading-relaxed text-warn">{startPrompt.confirm}</p>
@@ -398,7 +398,7 @@ export function OverviewSection({
           <div className="mb-3"><RiskResult view={korea ? krRiskResultView(risk.result) : riskResultView(risk.result)} /></div>
         )}
         {books.length === 0 ? (
-          <p className="text-sm text-muted">
+          <p className="text-sm text-text-3">
             {korea
               ? "한국 계좌가 없습니다 — 한국 초기화를 하면 네 계좌가 현금만 든 '시작 전'으로 생깁니다(쉬는 사유는 화면 위)."
               : "계좌가 없습니다. 초기화하면 생깁니다."}
@@ -477,12 +477,12 @@ export function OverviewSection({
           // 원 단위 정수 눈금("100,000,000")은 기본 폭(64px)에서 잘립니다 — 한국만 넓힙니다.
           axisWidth={korea ? 84 : undefined}
         />
-        {tailNote && <p className="mt-2 text-xs text-muted">{tailNote}</p>}
-        {boundaries.text && <p className="mt-2 text-xs text-muted">{boundaries.text}</p>}
+        {tailNote && <p className="mt-2 text-xs text-text-3">{tailNote}</p>}
+        {boundaries.text && <p className="mt-2 text-xs text-text-3">{boundaries.text}</p>}
         {/* 규칙 계좌 결과는 종목 신호와 주식 노출이 섞인 값 — 미국(남는 현금 SHY)·한국(153130, 참고선과 함께) 같은 함수(2단계 명세 §4-16). */}
-        <p className="mt-2 text-xs text-muted">{exposureNote(market)}</p>
+        <p className="mt-2 text-xs text-text-3">{exposureNote(market)}</p>
         {referenceNotes && (
-          <ul aria-label="노출 맞춘 참고선 설명" className="mt-2 flex flex-col gap-0.5 text-xs text-muted">
+          <ul aria-label="노출 맞춘 참고선 설명" className="mt-2 flex flex-col gap-0.5 text-xs text-text-3">
             {referenceNotes.map((note) => <li key={note}>{note}</li>)}
           </ul>
         )}
@@ -503,7 +503,7 @@ export function OverviewSection({
           source={PAPER_SOURCES.exposure}
         >
           {exposure.rows.length === 0 ? (
-            <p className="text-sm text-muted">
+            <p className="text-sm text-text-3">
               {korea
                 ? "아직 한국 Claude 결정 기록이 없습니다 — 한국 네 계좌가 출발하면 결정마다 정한 목표 노출과 그 KR 거래일의 실제 노출을 그립니다."
                 : "아직 Claude 결정 기록이 없습니다 — Claude 계좌를 시작하면 결정마다 정한 목표 노출과 그 거래일의 실제 노출을 그립니다."}
@@ -519,7 +519,7 @@ export function OverviewSection({
                 domain={[0, 100]}
                 ariaLabel="Claude 노출 추이(목표 대비 실제)"
               />
-              {exposure.latest && <p className="mt-2 text-xs text-muted">마지막 {exposure.latest}</p>}
+              {exposure.latest && <p className="mt-2 text-xs text-text-3">마지막 {exposure.latest}</p>}
             </>
           )}
         </Card>
@@ -548,8 +548,8 @@ export function OverviewSection({
               정기 작업은 하루 상한까지 부릅니다.
             </p>
           )}
-          <p className="mt-2 text-xs text-muted">{usage.costNote}</p>
-          {usage.note && <p className="mt-1 text-xs text-muted">{usage.note}</p>}
+          <p className="mt-2 text-xs text-text-3">{usage.costNote}</p>
+          {usage.note && <p className="mt-1 text-xs text-text-3">{usage.note}</p>}
         </Card>
       )}
 
@@ -564,9 +564,9 @@ export function OverviewSection({
           source={PAPER_SOURCES.selection}
         >
           {!selection ? (
-            <p className="text-sm text-muted">아직 기관 선정이 없습니다 — 규칙 계좌를 시작하면 출발일 기준으로 선정하고, 그 뒤는 재선정일마다 다시 뽑습니다.</p>
+            <p className="text-sm text-text-3">아직 기관 선정이 없습니다 — 규칙 계좌를 시작하면 출발일 기준으로 선정하고, 그 뒤는 재선정일마다 다시 뽑습니다.</p>
           ) : selection.groupA.length === 0 && selection.pool.length === 0 ? (
-            <p className="text-sm text-muted">선정이 비어 있습니다 — 자격 있는 기관이 없었습니다(규칙 계좌는 매수 없이 SHY만 듭니다).</p>
+            <p className="text-sm text-text-3">선정이 비어 있습니다 — 자격 있는 기관이 없었습니다(규칙 계좌는 매수 없이 SHY만 듭니다).</p>
           ) : (
             <div className="flex flex-col gap-4">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -583,17 +583,17 @@ export function OverviewSection({
               </div>
               {selection.pool.length > 0 && (
                 <section aria-label="신호 풀" className="flex flex-col gap-1">
-                  <h3 className="text-xs font-semibold text-bright">신호 풀 · 기관 가중</h3>
+                  <h3 className="text-xs font-semibold text-text">신호 풀 · 기관 가중</h3>
                   <Table<PoolRow>
                     label="신호 풀"
                     rows={selection.pool}
                     rowKey={(row) => row.key}
                     columns={[
-                      { key: "name", header: "기관", render: (row) => <span className="font-semibold text-bright">{row.name}</span> },
+                      { key: "name", header: "기관", render: (row) => <span className="font-semibold text-text">{row.name}</span> },
                       {
                         key: "group",
                         header: "그룹",
-                        render: (row) => (row.group ? <GroupBadge badge={row.group} /> : <span className="text-muted">{EMPTY}</span>),
+                        render: (row) => (row.group ? <GroupBadge badge={row.group} /> : <span className="text-text-3">{EMPTY}</span>),
                       },
                       { key: "ranks", header: "순위", render: (row) => <span className="whitespace-nowrap">{row.ranks}</span> },
                       { key: "weight", header: "기관 가중", align: "right", render: (row) => row.weight },
@@ -624,21 +624,21 @@ export function OverviewSection({
             )
           }
         >
-          <p className="text-sm text-body">{quotesLine(quotes)}</p>
+          <p className="text-sm text-text-2">{quotesLine(quotes)}</p>
           {staleNames.length > 0 && (
             <p className="mt-1 text-xs text-warn">지난 값을 이어 쓴 티커: {staleNames.join(", ")}</p>
           )}
-          {barsLine && <p className="mt-1 text-xs text-muted">{barsLine}</p>}
-          {checkpointLine && <p aria-label="오늘 장중 확인" className="mt-1 text-xs text-muted">{checkpointLine}</p>}
-          {fundamentals && <p className="mt-1 text-xs text-muted">{fundamentals}</p>}
-          {calendar && <p className="mt-1 text-xs text-muted">{calendar}</p>}
-          {news && <p className="mt-1 text-xs text-muted">{news}</p>}
-          {earnings && <p className="mt-1 text-xs text-muted">{earnings}</p>}
+          {barsLine && <p className="mt-1 text-xs text-text-3">{barsLine}</p>}
+          {checkpointLine && <p aria-label="오늘 장중 확인" className="mt-1 text-xs text-text-3">{checkpointLine}</p>}
+          {fundamentals && <p className="mt-1 text-xs text-text-3">{fundamentals}</p>}
+          {calendar && <p className="mt-1 text-xs text-text-3">{calendar}</p>}
+          {news && <p className="mt-1 text-xs text-text-3">{news}</p>}
+          {earnings && <p className="mt-1 text-xs text-text-3">{earnings}</p>}
         </Card>
       )}
 
       <Card title="작업 기록" subtitle={jobsCardSubtitle(market)} source={PAPER_SOURCES.jobs}>
-        {watchLine && <p aria-label="장중 스탑 감시" className="mb-2 text-xs text-muted">{watchLine}</p>}
+        {watchLine && <p aria-label="장중 스탑 감시" className="mb-2 text-xs text-text-3">{watchLine}</p>}
         <Table<PaperJobRun>
           label="작업 기록"
           // 미국 개요 응답의 작업 기록은 한국 kr.* 줄도 담아(미국 응답 글자 그대로 — x3) 화면에서 그 시장 줄만 남깁니다.
@@ -658,7 +658,7 @@ export function OverviewSection({
               key: "detail",
               header: "상세",
               render: (row) => (
-                <span className="text-xs text-muted" title={jsonTitle(row.detail)}>
+                <span className="text-xs text-text-3" title={jsonTitle(row.detail)}>
                   {korea ? krJobDetailText(row) : jsonSummary(row.detail)}
                 </span>
               ),
@@ -689,11 +689,11 @@ function SameWindowCard({ overview, books }: { overview: PaperOverviewResponse; 
       source={PAPER_SOURCES.sameWindow}
     >
       {!view ? (
-        <p className="text-sm text-muted">아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어(—) 그리지 않습니다.</p>
+        <p className="text-sm text-text-3">아직 계좌2가 출발하지 않았습니다 — 출발 전 구간은 계좌2 값이 없어(—) 그리지 않습니다.</p>
       ) : (
         <>
           <MultiLineSeries data={view.rows} series={series} precision={1} height={240} ariaLabel="S = 100 같은 구간" />
-          {view.latest && <p className="mt-2 text-xs text-muted">마지막 {view.latest}</p>}
+          {view.latest && <p className="mt-2 text-xs text-text-3">마지막 {view.latest}</p>}
           {view.missingBase.length > 0 && (
             <p className="mt-1 text-xs text-warn">기준일에 순자산 기록이 없어 선을 그리지 않은 계좌: {view.missingBase.join(", ")}</p>
           )}
@@ -736,7 +736,7 @@ function RiskResult({ view }: { view: RiskResultView }) {
 function UsageCells({ label, cells }: { label: string; cells: readonly { key: string; label: string; value: string }[] }) {
   return (
     <section aria-label={`Claude 호출 사용량 ${label}`} className="flex flex-col gap-1">
-      <h3 className="text-xs font-semibold text-bright">{label}</h3>
+      <h3 className="text-xs font-semibold text-text">{label}</h3>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
         {cells.map((cell) => (
           <Cell key={cell.key} label={cell.label} value={cell.value} small />
@@ -750,14 +750,14 @@ function UsageCells({ label, cells }: { label: string; cells: readonly { key: st
 function GroupList({ title, rows, empty }: { title: string; rows: SelectedFilerRow[]; empty: string }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-xs font-semibold text-bright">{title}</h3>
+      <h3 className="text-xs font-semibold text-text">{title}</h3>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted">{empty}</p>
+        <p className="text-xs text-text-3">{empty}</p>
       ) : (
-        <ol className="space-y-0.5 text-xs text-body">
+        <ol className="space-y-0.5 text-xs text-text-2">
           {rows.map((row) => (
             <li key={row.key} title={`CIK ${row.cik}`}>
-              <span className="tabular-nums text-muted">{row.rank}</span> <span>{row.name}</span>
+              <span className="tabular-nums text-text-3">{row.rank}</span> <span>{row.name}</span>
             </li>
           ))}
         </ol>
@@ -777,8 +777,8 @@ function GroupBadge({ badge }: { badge: Badge }) {
 function Cell({ label, value, small }: { label: string; value: string; small?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className={`tabular-nums text-bright ${small ? "text-xs" : "text-sm font-semibold"}`}>{value}</dd>
+      <dt className="text-xs text-text-3">{label}</dt>
+      <dd className={`tabular-nums text-text ${small ? "text-xs" : "text-sm font-semibold"}`}>{value}</dd>
     </div>
   );
 }

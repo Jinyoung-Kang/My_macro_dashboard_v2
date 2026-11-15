@@ -58,8 +58,8 @@ export function RegimeLogSection({ tone }: { tone: Record<string, string> }) {
                   <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
                     {regimeInputCells(row.inputs).map((cell) => (
                       <span key={cell.key} className="whitespace-nowrap">
-                        <span className="text-muted">{cell.label}</span> {cell.value}
-                        <span className="text-muted"> ({cell.asOf})</span>
+                        <span className="text-text-3">{cell.label}</span> {cell.value}
+                        <span className="text-text-3"> ({cell.asOf})</span>
                       </span>
                     ))}
                   </span>
@@ -72,9 +72,9 @@ export function RegimeLogSection({ tone }: { tone: Record<string, string> }) {
               },
             ]}
           />
-          {data.note && <p className="mt-2 text-xs text-muted">{data.note}</p>}
+          {data.note && <p className="mt-2 text-xs text-text-3">{data.note}</p>}
           {data.limitedTo && (
-            <p className="mt-1 flex items-start gap-1 text-xs text-muted">
+            <p className="mt-1 flex items-start gap-1 text-xs text-text-3">
               {/* 장식 — 뜻은 옆의 글이 나릅니다. */}
               <LineIcon>
                 <LockIcon size={12} />

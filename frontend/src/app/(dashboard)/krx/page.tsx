@@ -122,14 +122,14 @@ export default function KrxPage() {
               value={latest.marketBasis === null ? "데이터 미제공" : formatNumber(latest.marketBasis, 2)}
               caption={latest.basisState}
               note={latest.basisNote}
-              tone={latest.marketBasis === null ? "text-muted" : undefined}
+              tone={latest.marketBasis === null ? "text-text-3" : undefined}
             />
             <Metric
               label="4대 국면 판정"
               source="대시보드 판정 — 선물 가격 방향 × 미결제약정 증감"
               value={latest.marketPhase ?? EMPTY}
               tone={
-                latest.marketPhase?.includes("판정 불가") ? "text-muted" : "text-bright"
+                latest.marketPhase?.includes("판정 불가") ? "text-text-3" : "text-text"
               }
               caption={
                 latest.marketPhase?.includes("판정 불가")
@@ -368,7 +368,7 @@ function MarketTotalsCard() {
               ]}
             />
           ) : (
-            <p className="text-xs text-muted">기준일이 하루뿐이라 추이는 이틀째부터 그려집니다.</p>
+            <p className="text-xs text-text-3">기준일이 하루뿐이라 추이는 이틀째부터 그려집니다.</p>
           )}
         </>
       )}

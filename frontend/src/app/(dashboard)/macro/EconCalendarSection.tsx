@@ -47,7 +47,7 @@ export function EconCalendarSection() {
       {loading && !data && <Loading />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && (
-        <p className="text-sm text-muted">
+        <p className="text-sm text-text-3">
           아직 받은 일정이 없습니다. 수집은 몇 시간에 한 번 불규칙한 시각에 돌고, 출처가 거부하면 상태 화면의
           econ_calendar_tradingview 기록에 사유가 남습니다.
         </p>
@@ -66,7 +66,7 @@ export function EconCalendarSection() {
               render: (row) => (
                 <span>
                   {row.title}
-                  {row.period ? <span className="text-xs text-muted"> · {row.period}</span> : null}
+                  {row.period ? <span className="text-xs text-text-3"> · {row.period}</span> : null}
                 </span>
               ),
             },

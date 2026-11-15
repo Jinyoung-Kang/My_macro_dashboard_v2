@@ -79,7 +79,7 @@ export function BrokerageSection({ market, extraActions }: { market: PaperMarket
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div className="text-xs tabular-nums text-text-2">
             <p>
-              기준 시각 <strong className="font-semibold text-bright">{view?.kind === "ok" ? brokerageBasisText(data) : "—"}</strong>
+              기준 시각 <strong className="font-semibold text-text">{view?.kind === "ok" ? brokerageBasisText(data) : "—"}</strong>
             </p>
             <p className="mt-0.5 text-text-3">토스가 그 시각 가격으로 계산한 평가·손익(수집기가 토스에서 받은 시각)</p>
           </div>

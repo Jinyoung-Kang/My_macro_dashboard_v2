@@ -152,12 +152,6 @@
   --color-ok: var(--ok);
   --color-danger: var(--danger);
   --color-danger-fg: var(--danger-fg);
-  /* 옛 이름 별칭 — 4단계에서 옛 화면을 옮긴 뒤 지운다 */
-  --color-canvas: var(--bg);
-  --color-surface-hover: var(--surface-2);
-  --color-muted: var(--text-3);
-  --color-body: var(--text-2);
-  --color-bright: var(--text);
   /* 옅은 톤 바탕(글자 배지·배너) — 투명 틴트(bg-warn/10)는 놓인 자리와 섞여 바탕마다 글자 대비가 달랐습니다. surface와 미리 섞은
      불투명 색이라 어디에 놓여도 카드 위와 같습니다. 톤 글자 대비 라이트 accent 5.4·warn 5.1·ok 4.7·danger 6.6, 다크 5.6·7.2·6.7·6.9.
      라이트 틴트 위의 text-3는 4.4:1로 모자라므로 틴트 위의 작은 글은 톤 색이나 text-2 이상으로 씁니다. */

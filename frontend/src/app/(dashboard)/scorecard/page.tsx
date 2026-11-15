@@ -162,8 +162,8 @@ export default function ScorecardPage() {
                       header: "지표",
                       render: (row) => (
                         <span className="flex flex-col">
-                          <span className="text-body">{row.label}</span>
-                          <span className="text-xs text-muted">{row.how}</span>
+                          <span className="text-text-2">{row.label}</span>
+                          <span className="text-xs text-text-3">{row.how}</span>
                         </span>
                       ),
                     },
@@ -184,7 +184,7 @@ export default function ScorecardPage() {
                       render: (row) =>
                         row.score === null ? (
                           <span
-                            className="text-muted"
+                            className="text-text-3"
                             // 값 자체가 없으면(표본 부족) 원인은 비교 대상 수가 아닙니다 — 두 경우를 나눠 적습니다(QA-088).
                             title={
                               row.value === null

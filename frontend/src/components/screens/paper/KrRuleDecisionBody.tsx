@@ -36,7 +36,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
               rowKey={(row) => row.key}
               columns={[
                 { key: "rank", header: "순서", align: "right", render: (row) => row.rank },
-                { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.code} /></span> },
+                { key: "code", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
                 { key: "score", header: "점수", align: "right", render: (row) => row.score },
                 { key: "weight", header: "목표 비중", align: "right", render: (row) => row.weight },
               ]}
@@ -51,10 +51,10 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
           note={`점수 순(매일 셈 — 재선정일이 아니면 참고)${view.candidatesMore > 0 ? ` · 앞 ${view.candidates.length}종목, ${view.candidatesMore}종목 더` : ""}`}
         >
           {view.exclusions.length > 0 && (
-            <p className="text-xs text-body">제외 — {view.exclusions.map((row) => `${row.reason} ${row.count}`).join(" · ")}</p>
+            <p className="text-xs text-text-2">제외 — {view.exclusions.map((row) => `${row.reason} ${row.count}`).join(" · ")}</p>
           )}
           <details className="rounded-control border border-border px-3 py-2 text-xs">
-            <summary className="cursor-pointer text-muted">후보 표 보기</summary>
+            <summary className="cursor-pointer text-text-3">후보 표 보기</summary>
             <div className="mt-2">
               <Table
                 label="후보"
@@ -62,7 +62,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
                 rowKey={(row) => row.key}
                 emptyMessage="후보가 없습니다 — 외국인·기관 20일 순매수가 둘 다 0보다 큰 U 종목이 없었습니다."
                 columns={[
-                  { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.code} /></span> },
+                  { key: "code", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
                   { key: "rank", header: "U 순위", align: "right", render: (row) => row.rank },
                   { key: "score", header: "점수", align: "right", render: (row) => row.score },
                 ]}
@@ -79,11 +79,11 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
             rows={view.holdings}
             rowKey={(row) => row.key}
             columns={[
-              { key: "code", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.code} /></span> },
+              { key: "code", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.code} /></span> },
               { key: "qty", header: "수량(주)", align: "right", render: (row) => row.qty },
               { key: "weight", header: "비중", align: "right", render: (row) => row.weight },
-              { key: "sell", header: "판정", render: (row) => <span className={row.sell === "매도" ? "text-down" : "text-body"}>{row.sell}</span> },
-              { key: "reasons", header: "사유", render: (row) => <span className="text-xs text-body">{row.reasons}</span> },
+              { key: "sell", header: "판정", render: (row) => <span className={row.sell === "매도" ? "text-down" : "text-text-2"}>{row.sell}</span> },
+              { key: "reasons", header: "사유", render: (row) => <span className="text-xs text-text-2">{row.reasons}</span> },
             ]}
           />
         </Part>
@@ -97,7 +97,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
             rowKey={(row) => row.key}
             columns={[
               { key: "ticker", header: "종목", render: (row) => <TickerName code={row.ticker} /> },
-              { key: "reason", header: "사유", render: (row) => <span className="text-xs text-body">{row.reason}</span> },
+              { key: "reason", header: "사유", render: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
             ]}
           />
         </Part>
@@ -105,7 +105,7 @@ export function KrRuleDecisionBody({ view }: { view: KrRuleDecisionView }) {
 
       {view.notes.length > 0 && (
         <Part title="처리 메모" note="서버 문장 그대로 — '지금은 체결할 수 없음'은 정지·기업행위 보류 보유의 매도 주문이 남는 까닭(그동안 그 계좌 순자산 줄은 잠정)입니다.">
-          <ul aria-label="결정 메모" className="list-disc space-y-0.5 pl-5 text-xs text-body">
+          <ul aria-label="결정 메모" className="list-disc space-y-0.5 pl-5 text-xs text-text-2">
             {view.notes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}
           </ul>
         </Part>
@@ -138,11 +138,11 @@ export function KrDecisionExtrasParts({ extras }: { extras: KrDecisionExtras }) 
           </dl>
           {past.reason && <p className="text-xs text-warn">사유 — {past.reason}</p>}
           {past.waitedFor.length > 0 ? (
-            <ul aria-label="기다린 게이트" className="list-disc space-y-0.5 pl-5 text-xs text-body">
+            <ul aria-label="기다린 게이트" className="list-disc space-y-0.5 pl-5 text-xs text-text-2">
               {past.waitedFor.map((gate) => <li key={gate}>{gate}</li>)}
             </ul>
           ) : (
-            <p className="text-xs text-muted">기다린 게이트 — {EMPTY}(그 세션 판정 기록 없음 — 기한 뒤 첫 실행이었거나 일시정지)</p>
+            <p className="text-xs text-text-3">기다린 게이트 — {EMPTY}(그 세션 판정 기록 없음 — 기한 뒤 첫 실행이었거나 일시정지)</p>
           )}
         </Part>
       )}
@@ -174,13 +174,13 @@ export function KrGateTable({ rows, label }: { rows: KrGateRow[]; label: string 
       rows={rows}
       rowKey={(row) => row.key}
       columns={[
-        { key: "gate", header: "게이트", className: "whitespace-nowrap", render: (row) => <span className="font-semibold text-bright">{row.gate}</span> },
+        { key: "gate", header: "게이트", className: "whitespace-nowrap", render: (row) => <span className="font-semibold text-text">{row.gate}</span> },
         { key: "status", header: "판정", className: "whitespace-nowrap", render: (row) => <Badges badges={[row.badge]} /> },
         {
           key: "note",
           header: "판정 문장",
           render: (row) => (
-            <span className="text-xs text-body">
+            <span className="text-xs text-text-2">
               {row.note}
               {row.extraClosures && (
                 <>
@@ -225,13 +225,13 @@ export function KrEventsPart({ packet }: { packet: unknown }) {
               </span>
             ),
           },
-          { key: "matched", header: "걸린 이유", render: (row) => <span className="text-xs text-body">{row.matched}</span> },
+          { key: "matched", header: "걸린 이유", render: (row) => <span className="text-xs text-text-2">{row.matched}</span> },
         ]}
       />
       {events.text && (
         <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted">사건 패킷 글(제목)</summary>
-          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{events.text}</pre>
+          <summary className="cursor-pointer text-text-3">사건 패킷 글(제목)</summary>
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{events.text}</pre>
         </details>
       )}
     </Part>
@@ -249,8 +249,8 @@ function Cells({ cells }: { cells: KrCell[] }) {
 function Cell({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-muted">{label}</dt>
-      <dd className="tabular-nums font-semibold text-bright">{value}</dd>
+      <dt className="text-text-3">{label}</dt>
+      <dd className="tabular-nums font-semibold text-text">{value}</dd>
     </div>
   );
 }
@@ -259,8 +259,8 @@ function Cell({ label, value }: { label: string; value: string }) {
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
+      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>
   );

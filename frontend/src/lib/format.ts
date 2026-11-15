@@ -112,7 +112,7 @@ export function deltaColor(
   digits = 2,
 ): string {
   if (missing(value)) {
-    return "text-muted";
+    return "text-text-3";
   }
   const shown = roundForDisplay(value, digits);
   if (shown > 0) {
@@ -121,7 +121,7 @@ export function deltaColor(
   if (shown < 0) {
     return "text-down";
   }
-  return "text-body";
+  return "text-text-2";
 }
 
 export function formatCurrency(value: number | null | undefined): string {
@@ -461,7 +461,7 @@ export function statusColor(color: string | null | undefined): string {
     case "red":
       return "text-danger";
     default:
-      return "text-body";
+      return "text-text-2";
   }
 }
 

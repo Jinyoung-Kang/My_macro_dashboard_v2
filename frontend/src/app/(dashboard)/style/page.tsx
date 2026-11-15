@@ -89,8 +89,8 @@ function ProfilesCard() {
               header: "기관",
               render: (row) => (
                 <span className="flex flex-col">
-                  <span className="text-body">{filerName(row.name) ?? `CIK ${row.cik}`}</span>
-                  <span className="text-xs text-muted">{row.desc}</span>
+                  <span className="text-text-2">{filerName(row.name) ?? `CIK ${row.cik}`}</span>
+                  <span className="text-xs text-text-3">{row.desc}</span>
                 </span>
               ),
             },
@@ -102,7 +102,7 @@ function ProfilesCard() {
                 <span className="flex flex-col items-end">
                   <span>{formatCurrency(row.totalValue)}</span>
                   {usdKrw.toKrw(row.totalValue) && (
-                    <span className="text-xs text-muted">{usdKrw.toKrw(row.totalValue)}</span>
+                    <span className="text-xs text-text-3">{usdKrw.toKrw(row.totalValue)}</span>
                   )}
                 </span>
               ),
@@ -120,7 +120,7 @@ function ProfilesCard() {
               render: (row) => (
                 <span className="flex flex-col items-end">
                   <span className="font-semibold">{formatNumber(row.effectiveHoldings, 1)}</span>
-                  <span className="text-xs text-muted">1 ÷ HHI</span>
+                  <span className="text-xs text-text-3">1 ÷ HHI</span>
                 </span>
               ),
             },
@@ -136,7 +136,7 @@ function ProfilesCard() {
               align: "right",
               render: (row) =>
                 row.turnover === null ? (
-                  <span className="text-muted" title="직전 분기가 없어 계산할 수 없습니다">
+                  <span className="text-text-3" title="직전 분기가 없어 계산할 수 없습니다">
                     {EMPTY}
                   </span>
                 ) : (
@@ -154,7 +154,7 @@ function ProfilesCard() {
         />
       )}
 
-      <p className="mt-3 text-xs leading-relaxed text-muted">
+      <p className="mt-3 text-xs leading-relaxed text-text-3">
         <b>유효 종목 수</b> = 1 ÷ 허핀달 지수. 한 종목에 몰아넣었으면 1에 가깝고, 고르게
         나눴으면 실제 종목 수에 가까워집니다. <b>회전율</b>은 분기 사이에 갈아탄 비중이며,
         100%면 포트폴리오가 통째로 바뀐 것입니다. 직전 분기가 없으면 {EMPTY}입니다 — 0으로
@@ -199,7 +199,7 @@ function SimilarityCard() {
 
       {pairs.length > 0 && (
         <>
-          <h3 className="mb-2 text-xs font-semibold text-body">
+          <h3 className="mb-2 text-xs font-semibold text-text-2">
             가장 닮은 짝 — {mode === "overlap" ? "겹침 비중" : "코사인 유사도"} 순 상위 {pairs.length}
           </h3>
           {/* 막대 차트 축 라벨은 폭이 좁아 두 기관 이름이 "블랙… ↔ 뱅가…"로 잘렸습니다.
@@ -207,7 +207,7 @@ function SimilarityCard() {
               막대는 크기 감만 주는 보조이고, 색은 중립색(빨강 = 매수·상승 약속과 섞이지 않게). */}
           <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="text-xs text-muted">
+              <tr className="text-xs text-text-3">
                 <th className="w-8 px-2 py-1.5 text-right font-medium">#</th>
                 <th className="px-2 py-1.5 text-left font-medium">기관 A</th>
                 <th className="px-2 py-1.5 text-left font-medium">기관 B</th>
@@ -219,9 +219,9 @@ function SimilarityCard() {
             <tbody>
               {pairs.map((pair, index) => (
                 <tr key={`${pair.left}-${pair.right}`} className="border-t border-border">
-                  <td className="px-2 py-1.5 text-right tabular-nums text-muted">{index + 1}</td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-body">{pair.left}</td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-body">{pair.right}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-text-3">{index + 1}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-text-2">{pair.left}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5 text-text-2">{pair.right}</td>
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-2">
                       <div className="h-2 flex-1 rounded-sm bg-surface-2">
@@ -230,7 +230,7 @@ function SimilarityCard() {
                           style={{ width: `${Math.min(100, (pair.value / max) * 100)}%` }}
                         />
                       </div>
-                      <span className="w-12 text-right tabular-nums text-body">
+                      <span className="w-12 text-right tabular-nums text-text-2">
                         {formatNumber(pair.value, mode === "overlap" ? 1 : 2)}
                       </span>
                     </div>
@@ -246,7 +246,7 @@ function SimilarityCard() {
         <div className="mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="기관 간 유사도 행렬 (좌우 스크롤)">
           <table className="w-full min-w-[720px] border-collapse text-xs">
             <thead>
-              <tr className="text-xs text-muted">
+              <tr className="text-xs text-text-3">
                 <th className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">기관</th>
                 {names.map((entry) => (
                   <th
@@ -264,7 +264,7 @@ function SimilarityCard() {
                 <tr key={entry.cik} className="border-t border-border">
                   <td
                     title={filerName(entry.name) ?? entry.name}
-                    className="sticky left-0 whitespace-nowrap bg-surface px-3 py-2 text-body"
+                    className="sticky left-0 whitespace-nowrap bg-surface px-3 py-2 text-text-2"
                   >
                     {shortName(entry.name)}
                   </td>
@@ -301,7 +301,7 @@ function SimilarityCard() {
         </div>
       )}
 
-      <p className="mt-3 text-xs leading-relaxed text-muted">
+      <p className="mt-3 text-xs leading-relaxed text-text-3">
         <b>겹침 비중</b>은 각 종목에서 작은 쪽 비중을 더한 값입니다 — 애플을 한쪽이 10%,
         다른 쪽이 3% 들고 있으면 겹치는 것은 3%입니다. <b>코사인</b>은 비중의 모양만 봅니다.
         종목 수가 크게 다른 두 곳에서는 두 값이 엇갈릴 수 있고, 그 엇갈림 자체가 정보입니다.
@@ -394,7 +394,7 @@ function RiskCard() {
                 {coverage.uncovered.map((row, index) => (
                   <li key={`${index}:${row.name}`}>
                     {row.name} — {formatWeightPercent(row.weight)}
-                    {row.reason && <span className="text-muted"> · {row.reason}</span>}
+                    {row.reason && <span className="text-text-3"> · {row.reason}</span>}
                   </li>
                 ))}
               </ul>
@@ -439,8 +439,8 @@ function RiskCard() {
 
       {(data?.sectors?.length ?? 0) > 0 && (
         <div className="mt-5">
-          <h3 className="mb-2 text-xs font-semibold text-body">
-            섹터 노출 <span className="font-normal text-muted">(커버된 종목만으로 100%)</span>
+          <h3 className="mb-2 text-xs font-semibold text-text-2">
+            섹터 노출 <span className="font-normal text-text-3">(커버된 종목만으로 100%)</span>
           </h3>
           <HorizontalBars
             data={data!.sectors!.map((row) => ({ name: row.sector, value: row.weight }))}
@@ -455,7 +455,7 @@ function RiskCard() {
 
       {(data?.contributions?.length ?? 0) > 0 && (
         <div className="mt-5">
-          <h3 className="mb-2 text-xs font-semibold text-body">종목별 위험 기여</h3>
+          <h3 className="mb-2 text-xs font-semibold text-text-2">종목별 위험 기여</h3>
           <Table
             rows={data!.contributions!}
             rowKey={(row) => row.ticker}
@@ -465,8 +465,8 @@ function RiskCard() {
                 header: "종목",
                 render: (row) => (
                   <span className="flex flex-col">
-                    <span className="text-body">{row.name}</span>
-                    <span className="text-xs text-muted">
+                    <span className="text-text-2">{row.name}</span>
+                    <span className="text-xs text-text-3">
                       {row.ticker}
                       {row.sector ? ` · ${row.sector}` : ""}
                     </span>
@@ -503,7 +503,7 @@ function RiskCard() {
               },
             ]}
           />
-          <p className="mt-2 text-xs leading-relaxed text-muted">
+          <p className="mt-2 text-xs leading-relaxed text-text-3">
             <b>기여의 합 = 포트폴리오 변동성</b>입니다. 개별 변동성을 그냥 더하면 분산 효과가
             사라져 합이 맞지 않습니다. 비중이 큰 종목이 곧 위험이 큰 종목은 아닙니다 — 조용한
             대형주 20%와 널뛰는 종목 5%의 기여가 뒤집히는 일이 흔합니다.
@@ -512,7 +512,7 @@ function RiskCard() {
       )}
 
       {data?.note && (
-        <p className="mt-3 text-xs leading-relaxed text-muted">
+        <p className="mt-3 text-xs leading-relaxed text-text-3">
           <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
         </p>
       )}
@@ -546,7 +546,7 @@ function HoldersCard() {
         }}
       >
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted">종목명(일부 또는 전체)</span>
+          <span className="text-xs text-text-3">종목명(일부 또는 전체)</span>
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -568,13 +568,13 @@ function HoldersCard() {
 
       {(data?.rows?.length ?? 0) > 0 && (
         <div className="mt-4">
-          <p className="mb-2 text-xs leading-relaxed text-muted">
+          <p className="mb-2 text-xs leading-relaxed text-text-3">
             공시 이름에 검색어가 들어간 줄과 앞부분만 남기고 잘린 공시 이름(검색어가 그 앞부분으로 시작)을 함께 찾아 다른 종목이 섞일 수 있습니다 —
             공시 이름과 CUSIP으로 가려 보세요.
           </p>
           {/* 백엔드는 비중 상위 200행까지만 보냅니다(QA-133). 말하지 않으면 잘린 목록이 전부처럼 읽힙니다. */}
           {data!.truncated && (
-            <p className="mb-2 text-xs leading-relaxed text-muted">
+            <p className="mb-2 text-xs leading-relaxed text-text-3">
               일치 {formatNumber(data!.totalMatches, 0)}건 중 비중 상위 {data!.rows.length}건만 보입니다 — 종목명을
               더 길게 적어 좁히세요.
             </p>
@@ -589,8 +589,8 @@ function HoldersCard() {
                 header: "종목",
                 render: (row) => (
                   <span className="flex flex-col">
-                    <span className="text-body">{row.name}</span>
-                    <span className="text-xs text-muted">CUSIP {row.cusip}</span>
+                    <span className="text-text-2">{row.name}</span>
+                    <span className="text-xs text-text-3">CUSIP {row.cusip}</span>
                   </span>
                 ),
               },

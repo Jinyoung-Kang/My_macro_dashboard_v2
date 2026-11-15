@@ -40,9 +40,9 @@ export function SpreadSection({
       */}
       <div className="grid gap-3 2xl:grid-cols-2">
         <div className="rounded-control border border-border bg-surface p-4">
-          <p className="mb-2 text-xs font-semibold text-body">
+          <p className="mb-2 text-xs font-semibold text-text-2">
             공식 확정치 · FRED
-            <span className="ml-1 font-normal text-muted">(일별, 하루 이상 지연)</span>
+            <span className="ml-1 font-normal text-text-3">(일별, 하루 이상 지연)</span>
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric
@@ -73,9 +73,9 @@ export function SpreadSection({
         </div>
 
         <div className="rounded-control border border-border bg-surface p-4">
-          <p className="mb-2 text-xs font-semibold text-body">
+          <p className="mb-2 text-xs font-semibold text-text-2">
             스크래핑 참고 시세 · TradingView
-            <span className="ml-1 font-normal text-muted">(지금, 공식 확정치 아님)</span>
+            <span className="ml-1 font-normal text-text-3">(지금, 공식 확정치 아님)</span>
             {scraped?.isStale && (
               <StatusText tone="warn" iconSize={12} className="ml-1 align-top font-normal">이전 값 포함(수집 실패)</StatusText>
             )}
@@ -113,7 +113,7 @@ export function SpreadSection({
               />
             </div>
           ) : (
-            <p className="py-4 text-xs text-muted">
+            <p className="py-4 text-xs text-text-3">
               스크래핑 시세를 받지 못했습니다. 공식 확정치만 표시합니다.
             </p>
           )}
@@ -130,8 +130,8 @@ export function SpreadSection({
       )}
 
       <div className="mt-4">
-        <p className="mb-2 text-xs text-muted">
-          아래 차트는 <strong className="text-body">공식 확정치</strong> 시계열입니다
+        <p className="mb-2 text-xs text-text-3">
+          아래 차트는 <strong className="text-text-2">공식 확정치</strong> 시계열입니다
           (스크래핑 값은 지금 시점 한 점이라 추이로 그리지 않습니다).
         </p>
         <LineSeries

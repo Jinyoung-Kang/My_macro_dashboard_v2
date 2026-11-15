@@ -41,7 +41,7 @@ function symbolCell(name: string | null, symbol: string | null) {
   if (!shown) return EMPTY;
   return (
     <span className="flex flex-col">
-      <span className="font-semibold text-bright">{shown}</span>
+      <span className="font-semibold text-text">{shown}</span>
       {name && symbol && name !== symbol ? <span className="text-xs text-text-3">{symbol}</span> : null}
     </span>
   );

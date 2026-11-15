@@ -52,13 +52,13 @@ export function KrSelectionSection() {
   const referenceLine = latestId === null ? null : latest.error ? (
     <p className="text-xs text-warn">가장 최근 결정(#{latestId})을 읽지 못했습니다 — {latest.error}</p>
   ) : reference ? (
-    <p className="text-xs leading-relaxed text-body">{reference}</p>
+    <p className="text-xs leading-relaxed text-text-2">{reference}</p>
   ) : null;
 
   if (selectionId === null) {
     return (
       <Card title="종목 선정(한국 규칙 계좌)" source={PAPER_SOURCES.krSelection} actions={<Freshness refreshError={list.refreshError} />}>
-        <p className="text-sm leading-relaxed text-muted">{NO_SELECTION_YET}</p>
+        <p className="text-sm leading-relaxed text-text-3">{NO_SELECTION_YET}</p>
         {referenceLine && <div className="mt-3">{referenceLine}</div>}
       </Card>
     );
@@ -81,7 +81,7 @@ export function KrSelectionSection() {
       >
         <div className="flex flex-col gap-4">
           <Cells cells={view.head} />
-          {view.summary && <p className="text-xs text-body">{view.summary}</p>}
+          {view.summary && <p className="text-xs text-text-2">{view.summary}</p>}
           {!view.recognized && (
             <Banner tone="warn">이 결정 기록에는 입력 구성원(input.members)이 없어 선정 표를 그릴 수 없습니다 — 결정 로그 탭에서 원래 기록을 보세요.</Banner>
           )}
@@ -114,8 +114,8 @@ export function KrSelectionSection() {
             </Part>
           )}
           {view.notChosen.length > 0 && (
-            <p className="text-xs leading-relaxed text-body">
-              <span className="text-muted">후보였지만 고르지 않음(종목 수 상한·배분 밖) — </span>
+            <p className="text-xs leading-relaxed text-text-2">
+              <span className="text-text-3">후보였지만 고르지 않음(종목 수 상한·배분 밖) — </span>
               {view.notChosen.join(", ")}
             </p>
           )}
@@ -143,7 +143,7 @@ export function KrSelectionSection() {
               {view.noData.length > 0 ? (
                 <NoteList label="자료 없음 사유" notes={view.noData} />
               ) : (
-                <p className="text-xs text-muted">자료 없음으로 빠진 종목이 없습니다.</p>
+                <p className="text-xs text-text-3">자료 없음으로 빠진 종목이 없습니다.</p>
               )}
             </Part>
           </div>
@@ -172,7 +172,7 @@ export function KrSelectionSection() {
         <Card title="입력" subtitle="결정이 읽은 자료 — 금융위원회(공공데이터포털) 유니버스·토스증권 수급·금융감독원 DART 재무.">
           <Cells cells={view.input} />
           {view.notes.length > 0 && (
-            <ul aria-label="처리 메모" className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-body">
+            <ul aria-label="처리 메모" className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-text-2">
               {view.notes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}
             </ul>
           )}
@@ -252,7 +252,7 @@ function signed(text: string, value: number | null) {
 function CodeName({ code, name }: { code: string; name: string }) {
   return (
     <span>
-      <span className="whitespace-nowrap font-semibold text-bright">{code}</span>
+      <span className="whitespace-nowrap font-semibold text-text">{code}</span>
       {name && name !== "—" && <span className="ml-1 text-xs text-text-2">{name}</span>}
     </span>
   );
@@ -275,8 +275,8 @@ function Cells({ cells }: { cells: KrCell[] }) {
     <dl className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
       {cells.map((cell) => (
         <div key={cell.key} className="min-w-0">
-          <dt className="text-muted">{cell.label}</dt>
-          <dd className="break-words tabular-nums font-semibold text-bright">{cell.value}</dd>
+          <dt className="text-text-3">{cell.label}</dt>
+          <dd className="break-words tabular-nums font-semibold text-text">{cell.value}</dd>
         </div>
       ))}
     </dl>
@@ -287,8 +287,8 @@ function Cells({ cells }: { cells: KrCell[] }) {
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
+      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>
   );

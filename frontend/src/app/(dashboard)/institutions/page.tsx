@@ -124,7 +124,7 @@ export default function InstitutionsPage() {
             }))}
           />
         </div>
-        {selected?.desc && <p className="mt-3 text-xs text-muted">{selected.desc}</p>}
+        {selected?.desc && <p className="mt-3 text-xs text-text-3">{selected.desc}</p>}
       </Card>
 
       {loading && !data && <Loading label="13F 공시를 불러오는 중…" />}
@@ -202,8 +202,8 @@ export default function InstitutionsPage() {
                   header: "종목",
                   render: (row) => (
                     <span className="flex flex-col">
-                      <span className="text-body">{row.name}</span>
-                      <span className="text-xs text-muted">
+                      <span className="text-text-2">{row.name}</span>
+                      <span className="text-xs text-text-3">
                         CUSIP {row.cusip} · {row.class}
                       </span>
                     </span>
@@ -235,7 +235,7 @@ export default function InstitutionsPage() {
                     <span className="flex flex-col items-end">
                       <span>{formatCurrency(row.value)}</span>
                       {usdKrw.toKrw(row.value) && (
-                        <span className="text-xs text-muted">
+                        <span className="text-xs text-text-3">
                           {usdKrw.toKrw(row.value)}
                         </span>
                       )}

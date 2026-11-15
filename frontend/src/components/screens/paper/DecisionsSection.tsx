@@ -239,7 +239,7 @@ export function DecisionsSection({
             </Button>
           )}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-muted">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
+        <p className="mt-3 text-xs leading-relaxed text-text-3">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
         {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
         {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
         {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}
@@ -341,8 +341,8 @@ function KrStartRecordsCard({
           ) : (
             <ul aria-label="출발 기록" className="flex flex-col gap-1.5 text-xs">
               {records.map((record) => (
-                <li key={record.key} className="leading-relaxed text-body">
-                  <span className="whitespace-nowrap font-semibold text-bright">{record.at} {record.outcome}</span>
+                <li key={record.key} className="leading-relaxed text-text-2">
+                  <span className="whitespace-nowrap font-semibold text-text">{record.at} {record.outcome}</span>
                   {record.parts.length > 0 && <span> · {record.parts.join(" · ")}</span>}
                 </li>
               ))}
@@ -350,7 +350,7 @@ function KrStartRecordsCard({
           )}
           {judged.map((entry) => (
             <section key={entry.label} aria-label={`${entry.label} 마지막 게이트 판정`} className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-bright">
+              <h3 className="text-sm font-semibold text-text">
                 {entry.label} 마지막 게이트 판정 — 세션 {entry.session} · {entry.judgedAt}
               </h3>
               <KrGateTable rows={entry.rows} label={`${entry.label} 게이트`} />
@@ -388,7 +388,7 @@ function DecisionTable({
   const kindLabel = korea ? krDecisionKindLabel : decisionKindLabel;
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-text-3">
         {korea
           ? "아직 결정 기록이 없습니다 — 한국 네 계좌가 출발하면(개요의 '출발 지금 실행' 또는 출발일 밤 정기 출발) 출발 결정부터 KR 거래일마다 결정 창에서 남깁니다."
           : "아직 결정 기록이 없습니다 — 계좌를 시작한 뒤 거래일마다(KST 07:30 이후) 결정 작업이 남깁니다."}
@@ -404,7 +404,7 @@ function DecisionTable({
         const expanded = open.includes(row.id);
         return (
           <div className="flex flex-col items-start gap-1">
-            <span className="whitespace-nowrap font-semibold text-bright">{row.asOfTradingDate}</span>
+            <span className="whitespace-nowrap font-semibold text-text">{row.asOfTradingDate}</span>
             <Button variant="ghost" expanded={expanded} onClick={() => onToggle(row.id)}>
               {expanded ? "상세 접기" : "상세 펼치기"}
             </Button>
@@ -432,7 +432,7 @@ function DecisionTable({
         render: (row: PaperDecisionSummary) => <span className="whitespace-nowrap">{formatWithUnit(row.targetExposurePct, 1, "%")}</span>,
       }]
       : []),
-    { key: "summary", header: "요약", render: (row) => <span className="text-xs text-body">{row.summary || EMPTY}</span> },
+    { key: "summary", header: "요약", render: (row) => <span className="text-xs text-text-2">{row.summary || EMPTY}</span> },
     {
       key: "prices",
       header: "가격",
@@ -448,11 +448,11 @@ function DecisionTable({
 
   return (
     <>
-      <p className="mb-1 text-xs text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
+      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
       <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="결정 기록 표 (좌우 스크롤)">
         <table className="w-full min-w-[820px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">
+            <tr className="border-b border-border text-xs uppercase tracking-wide text-text-3">
               {columns.map((column) => (
                 <th key={column.key} className={`px-3 py-2 font-medium ${align(column)}`}>{column.header}</th>
               ))}
@@ -462,7 +462,7 @@ function DecisionTable({
             {rows.map((row) => (
               <Fragment key={row.id}>
                 <tr
-                  className="border-b border-border/50 align-top hover:bg-surface-hover/60"
+                  className="border-b border-border/50 align-top hover:bg-surface-2/60"
                   aria-label={`${row.asOfTradingDate} ${kindLabel(row.kind)}`}
                 >
                   {columns.map((column) => (
@@ -470,7 +470,7 @@ function DecisionTable({
                   ))}
                 </tr>
                 {open.includes(row.id) && (
-                  <tr className="border-b border-border/50 bg-canvas">
+                  <tr className="border-b border-border/50 bg-bg">
                     <td colSpan={columns.length} className="px-3 py-3">
                       <DecisionDetail id={row.id} market={market} />
                     </td>
@@ -531,8 +531,8 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {meta.map((cell) => (
           <div key={cell.key}>
-            <dt className="text-muted">{cell.label}</dt>
-            <dd className="tabular-nums font-semibold text-bright" title={cell.title}>{cell.value}</dd>
+            <dt className="text-text-3">{cell.label}</dt>
+            <dd className="tabular-nums font-semibold text-text" title={cell.title}>{cell.value}</dd>
           </div>
         ))}
       </dl>
@@ -549,7 +549,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
 
       {view.notes.length > 0 && !krRules?.recognized && (
         <Part title="처리 메모">
-          <ul aria-label="결정 메모" className="list-disc space-y-0.5 pl-5 text-xs text-body">
+          <ul aria-label="결정 메모" className="list-disc space-y-0.5 pl-5 text-xs text-text-2">
             {view.notes.map((note, index) => <li key={`${index}-${note}`}>{note}</li>)}
           </ul>
         </Part>
@@ -579,7 +579,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                 {
                   key: "group",
                   header: "그룹",
-                  render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-muted">{EMPTY}</span>),
+                  render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
                 },
                 { key: "rankA", header: "그룹 A 순위", align: "right", render: (row) => row.rankA },
                 { key: "rankB", header: "그룹 B 순위", align: "right", render: (row) => row.rankB },
@@ -617,7 +617,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
               emptyMessage="신호 이벤트가 없습니다 — 신호 기관의 최신 분기에 신규 편입·확대·전량 매도가 없었습니다."
               columns={[
                 { key: "filer", header: "기관(순위)", render: (row) => <span className="text-xs">{row.filer}</span> },
-                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
                 {
                   key: "action",
                   header: "행동",
@@ -631,14 +631,14 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
           </Part>
 
           <Part title="매수 후보" note={candidatesNote(decision.kind)}>
-            {view.allocation && <p className="text-xs leading-relaxed text-body">{view.allocation}</p>}
+            {view.allocation && <p className="text-xs leading-relaxed text-text-2">{view.allocation}</p>}
             <Table<SignalCandidateRow>
               label="매수 후보"
               rows={view.candidates}
               rowKey={(row) => row.ticker}
               emptyMessage="매수 후보가 없습니다 — 여러 기관이 함께 신규 편입·확대한 종목이 없었습니다."
               columns={[
-                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
                 { key: "buyers", header: "매수 기관(순위)", render: (row) => <span className="text-xs">{row.buyers}</span> },
                 { key: "buyerCount", header: "기관 수", align: "right", render: (row) => row.buyerCount },
                 // 섞은 뒤 기록은 점수 순, 섞기 전 기록은 순위 합 순이라 정렬 기준 칸을 기록 모양에 맞춥니다.
@@ -658,12 +658,12 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
                 rowKey={(row) => row.key}
                 emptyMessage="점수 기여 기록이 없습니다."
                 columns={[
-                  { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+                  { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
                   { key: "filer", header: "기관(순위)", render: (row) => <span className="text-xs">{row.filer}</span> },
                   {
                     key: "group",
                     header: "그룹",
-                    render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-muted">{EMPTY}</span>),
+                    render: (row) => (row.group ? <Badges badges={[row.group]} /> : <span className="text-text-3">{EMPTY}</span>),
                   },
                   { key: "filerWeight", header: "기관 가중", align: "right", render: (row) => row.filerWeight },
                   { key: "conviction", header: "확신도", align: "right", render: (row) => row.conviction },
@@ -680,7 +680,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
               rowKey={(row) => row.ticker}
               emptyMessage="전량 매도가 없습니다."
               columns={[
-                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright">{row.ticker}</span> },
+                { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text">{row.ticker}</span> },
                 { key: "filers", header: "기관(순위)", render: (row) => <span className="text-xs">{row.filers}</span> },
                 { key: "count", header: "기관 수", align: "right", render: (row) => row.count },
               ]}
@@ -709,7 +709,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
           rowKey={(row) => String(row.id)}
           emptyMessage="이 결정은 주문을 내지 않았습니다."
           columns={[
-            { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
+            { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
             { key: "side", header: "방향", render: (row) => <span className={sideClass(row.side)}>{sideLabel(row.side)}</span> },
             { key: "size", header: "크기", align: "right", render: (row) => orderSizeText(row) },
             {
@@ -728,7 +728,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
               key: "reason",
               header: "근거",
               render: (row) => (
-                <span className="text-xs text-muted" title={jsonTitle(row.reason)}>{orderReasonText(row.reason, 120)}</span>
+                <span className="text-xs text-text-3" title={jsonTitle(row.reason)}>{orderReasonText(row.reason, 120)}</span>
               ),
             },
           ]}
@@ -743,7 +743,7 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
             rowKey={(row) => row.key}
             columns={[
               { key: "ticker", header: "종목", render: (row) => row.ticker },
-              { key: "reason", header: "사유", render: (row) => <span className="text-xs text-body">{row.reason}</span> },
+              { key: "reason", header: "사유", render: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
             ]}
           />
         </Part>
@@ -757,20 +757,20 @@ function DecisionDetail({ id, market }: { id: number; market: PaperMarketCode })
 
       {response && (
         <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted">결정 기록 원본(JSON)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{response}</pre>
+          <summary className="cursor-pointer text-text-3">결정 기록 원본(JSON)</summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{response}</pre>
         </details>
       )}
       {raw && (
         <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted">모델 응답 원문</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{raw}</pre>
+          <summary className="cursor-pointer text-text-3">모델 응답 원문</summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{raw}</pre>
         </details>
       )}
       {packet && (
         <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted">입력 패킷(JSON)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{packet}</pre>
+          <summary className="cursor-pointer text-text-3">입력 패킷(JSON)</summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{packet}</pre>
         </details>
       )}
     </section>
@@ -793,7 +793,7 @@ function RankingTable({ rows, label }: { rows: RankingRow[]; label: string }) {
           header: "선정",
           render: (row) => {
             const badge = selectedBadge(row);
-            return badge ? <Badges badges={[badge]} /> : <span className="text-muted">{EMPTY}</span>;
+            return badge ? <Badges badges={[badge]} /> : <span className="text-text-3">{EMPTY}</span>;
           },
         },
         { key: "cagr", header: "CAGR", align: "right", render: (row) => row.cagr },
@@ -809,8 +809,8 @@ function RankingTable({ rows, label }: { rows: RankingRow[]; label: string }) {
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
+      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>
   );

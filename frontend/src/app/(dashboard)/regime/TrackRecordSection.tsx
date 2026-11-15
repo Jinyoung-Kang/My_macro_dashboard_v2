@@ -90,11 +90,11 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
           <div className="mt-4 flex flex-col gap-4">
             {regimes.map((regime) => (
               <div key={regime.code} className="rounded-control border border-border bg-surface p-4">
-                <p className="flex items-center gap-2 text-sm font-semibold text-bright">
+                <p className="flex items-center gap-2 text-sm font-semibold text-text">
                   <span className={`h-2 w-4 rounded-xs ${tone[regime.code] ?? "bg-border"}`} />
                   {regime.label}
                 </p>
-                <p className="mt-0.5 text-xs text-muted">
+                <p className="mt-0.5 text-xs text-text-3">
                   {view === "start"
                     ? `시작 ${regime.weeks}번`
                     : `${regime.weeks}주 · ${regime.episodes}개 구간`}
@@ -111,7 +111,7 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
                         header: "평균",
                         align: "right",
                         render: (row) => (
-                          <span className={row.sufficient ? "" : "text-muted"}>{row.mean}</span>
+                          <span className={row.sufficient ? "" : "text-text-3"}>{row.mean}</span>
                         ),
                       },
                       { key: "median", header: "중앙값", align: "right", render: (row) => row.median },
@@ -121,7 +121,7 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
                         key: "baseline",
                         header: "비교: 아무 때나",
                         align: "right",
-                        render: (row) => <span className="text-muted">{row.baseline}</span>,
+                        render: (row) => <span className="text-text-3">{row.baseline}</span>,
                       },
                     ]}
                   />
@@ -129,12 +129,12 @@ export function TrackRecordSection({ tone }: { tone: Record<string, string> }) {
               </div>
             ))}
           </div>
-          <ul className="mt-4 list-disc space-y-1 pl-5 text-xs text-muted">
+          <ul className="mt-4 list-disc space-y-1 pl-5 text-xs text-text-3">
             {data.limits.map((limit) => (
               <li key={limit}>{limit}</li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 text-xs text-text-3">
             가격 {data.priceFrom} ~ {data.priceTo}. 아직 기간이 끝나지 않은 최근 판정은 표본에서 빠집니다.
           </p>
         </>

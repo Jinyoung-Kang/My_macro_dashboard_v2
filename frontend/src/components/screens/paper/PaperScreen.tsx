@@ -199,7 +199,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
             >
               {limitsOpen && (
               <div id="paper-ledger-limits">
-              <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-body">
+              <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-text-2">
                 {(data.limits ?? []).map((limit) => (
                   <li key={limit}>{limit}</li>
                 ))}
@@ -207,8 +207,8 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
               {/* 미국 Claude 계좌2가 있으면 그 계좌에만 해당하는 한계(계좌2 명세 §13-3) — 위 목록(계좌1·벤치마크)은 서버 문구 그대로입니다. */}
               {book2 && (
                 <section aria-label="Claude 계좌2의 한계" className="mt-3 border-t border-border pt-2">
-                  <h3 className="text-xs font-semibold text-bright">{book2.label}(체결 시점 실험)</h3>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
+                  <h3 className="text-xs font-semibold text-text">{book2.label}(체결 시점 실험)</h3>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-relaxed text-text-2">
                     {CLAUDE2_LIMITS.map((limit) => <li key={limit}>{limit}</li>)}
                   </ul>
                 </section>
@@ -239,7 +239,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
                     className={underlineTabClasses(active, "sm")}
                   >
                     {entry.label}
-                    {entry.opensIn && <span className="ml-1 text-xs text-muted">(준비 중)</span>}
+                    {entry.opensIn && <span className="ml-1 text-xs text-text-3">(준비 중)</span>}
                   </button>
                 );
               })}

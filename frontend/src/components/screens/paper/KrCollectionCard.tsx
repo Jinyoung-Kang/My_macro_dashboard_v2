@@ -14,7 +14,7 @@ const STATE_TONE: Record<KrCollectionState, string> = {
   늦음: "border-warn/40 bg-warn-tint text-warn",
   뒤처짐: "border-warn/40 bg-warn-tint text-warn",
   없음: "border-warn/40 bg-warn-tint text-warn",
-  모름: "border-border bg-surface-hover text-muted",
+  모름: "border-border bg-surface-2 text-text-3",
 };
 
 
@@ -73,7 +73,7 @@ export function KrCollectionCard({
       {status.loading && !status.data && <Loading label="한국 수집 상태를 읽는 중…" />}
       {status.error && <ErrorState message={`한국 수집 상태를 읽지 못했습니다 — ${status.error}`} onRetry={status.reload} />}
       {!status.error && status.data && !collection && (
-        <p className="text-sm text-body">
+        <p className="text-sm text-text-2">
           이 서버는 한국 수집 상태를 보내지 않습니다 — 관측치 한 줄만: {quotesLine(quotes, "KR")}
         </p>
       )}

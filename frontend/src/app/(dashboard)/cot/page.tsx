@@ -76,8 +76,8 @@ export default function CotPage() {
                 header: "자산",
                 render: (row) => (
                   <span className="flex flex-col">
-                    <span className="text-body">{row.asset}</span>
-                    <span className="text-xs text-muted">{row.category}</span>
+                    <span className="text-text-2">{row.asset}</span>
+                    <span className="text-xs text-text-3">{row.category}</span>
                   </span>
                 ),
               },
@@ -88,10 +88,10 @@ export default function CotPage() {
                   row.available ? (
                     <span className="flex flex-col">
                       <span>{row.date}</span>
-                      <span className="text-xs text-muted">{formatWithUnit(row.ageDays, 0, "일 전 공시")}</span>
+                      <span className="text-xs text-text-3">{formatWithUnit(row.ageDays, 0, "일 전 공시")}</span>
                     </span>
                   ) : (
-                    <span className="text-muted">{row.error ?? "데이터 없음"}</span>
+                    <span className="text-text-3">{row.error ?? "데이터 없음"}</span>
                   ),
               },
               {
@@ -231,7 +231,7 @@ export default function CotPage() {
               precision={0}
               height={320}
             />
-            <p className="mt-3 text-xs text-muted">
+            <p className="mt-3 text-xs text-text-3">
               <SourceBadge>계약 코드 {detail.data.code}</SourceBadge> 비상업과 상업은 구조적으로
               반대 방향입니다. 비상업이 역사적 극단에 도달하면 되돌림 위험이 커집니다.
             </p>
@@ -304,8 +304,8 @@ function ExtremesPanel({ asset }: { asset: string }) {
           <div className="mt-4 flex flex-col gap-4">
             {(data.sides ?? []).map((side) => (
               <div key={side.side} className="rounded-control border border-border bg-surface p-4">
-                <p className="text-sm font-semibold text-bright">{side.side}</p>
-                <p className="mt-0.5 text-xs text-muted">{side.rule}</p>
+                <p className="text-sm font-semibold text-text">{side.side}</p>
+                <p className="mt-0.5 text-xs text-text-3">{side.rule}</p>
                 <div className="mt-3">
                   <Table
                     rows={[
@@ -351,7 +351,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
                         header: "비교: 아무 때나",
                         align: "right",
                         render: (row) => (
-                          <span className="text-muted">
+                          <span className="text-text-3">
                             {formatPercent(row.base.mean)} ·{" "}
                             {row.base.winRate === null
                               ? EMPTY
@@ -367,7 +367,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
           </div>
 
           <div className="mt-5">
-            <h3 className="mb-2 text-sm font-semibold text-bright">최근 극단 신호</h3>
+            <h3 className="mb-2 text-sm font-semibold text-text">최근 극단 신호</h3>
             <Table
               rows={data.recentEvents ?? []}
               rowKey={(row) => `${row.date}-${row.side}`}
@@ -405,7 +405,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
                 },
               ]}
             />
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-2 text-xs text-text-3">
               아직 4·13주가 지나지 않은 최근 신호는 수익률을 {EMPTY}로 둡니다 — 없는 미래를
               0으로 채우지 않습니다.
             </p>

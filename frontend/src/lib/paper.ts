@@ -192,7 +192,7 @@ const TONE = {
   ok: "border-ok/40 bg-ok-tint text-ok",
   warn: "border-warn/40 bg-warn-tint text-warn",
   info: "border-border bg-surface-2 text-text-2",
-  muted: "border-border bg-surface-hover text-muted",
+  muted: "border-border bg-surface-2 text-text-3",
 } as const;
 
 export type BadgeTone = keyof typeof TONE;
@@ -1275,7 +1275,7 @@ export function jsonTitle(value: unknown): string | undefined {
 
 /** 작업 결과 글자색 — 오류·실패만 경고색. 모르는 값은 본문색. */
 export function jobOutcomeClass(outcome: string | null | undefined): string {
-  return outcome && /error|fail|오류|실패/i.test(outcome) ? "text-warn" : "text-body";
+  return outcome && /error|fail|오류|실패/i.test(outcome) ? "text-warn" : "text-text-2";
 }
 
 const SIDE: Record<string, string> = { BUY: "매수", SELL: "매도" };
@@ -1365,7 +1365,7 @@ export const sourceLabel = (source: string | null | undefined) => labelOf(SOURCE
 
 /** 매수는 상승색, 매도는 하락색(한국 관행, format.deltaColor와 같음). */
 export function sideClass(side: string | null | undefined): string {
-  return side === "BUY" ? "text-up" : side === "SELL" ? "text-down" : "text-body";
+  return side === "BUY" ? "text-up" : side === "SELL" ? "text-down" : "text-text-2";
 }
 
 export function orderStatusBadge(status: string | null | undefined): Badge {
@@ -2204,9 +2204,9 @@ export function decisionOrdersText(decision: Pick<PaperDecisionSummary, "orderCo
 
 /** 가격 칸 — 확정 종가로 냈는지. false는 경고색(마감 확정 전 값으로 낸 결정), 모르면 "—". */
 export function pricesFinalText(value: boolean | null | undefined): { label: string; className: string } {
-  if (value === true) return { label: "확정 종가", className: "text-body" };
+  if (value === true) return { label: "확정 종가", className: "text-text-2" };
   if (value === false) return { label: "확정 전 값", className: "text-warn" };
-  return { label: EMPTY, className: "text-muted" };
+  return { label: EMPTY, className: "text-text-3" };
 }
 
 /** 결정을 내는 책(규칙·Claude) — 벤치마크는 결정을 내지 않습니다. 순서는 서버가 준 책 순서. */
@@ -2869,7 +2869,7 @@ export function gateView(gate: PaperGateIndicator | null | undefined): GateView 
       key,
       label: `${key} ${gateConditionLabel(key, t)}${reference ? " (참고 — 단계에 쓰지 않음)" : ""}`,
       state: holds === true ? "충족" : holds === false ? "미충족" : EMPTY,
-      stateClass: holds === true ? "text-ok" : "text-muted",
+      stateClass: holds === true ? "text-ok" : "text-text-3",
       streak: isNumber(streak) ? `${formatNumber(streak, 0)}거래일 연속` : EMPTY,
       reference,
     };

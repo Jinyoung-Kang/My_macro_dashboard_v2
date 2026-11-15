@@ -95,7 +95,7 @@ export function KrStartSection({
   if (state.kind === "dormant") {
     return (
       <Card title="한국 출발" subtitle="쉬는 동안에는 초기화·출발 단추가 없습니다" source={PAPER_SOURCES.krLedger}>
-        <p className="text-sm leading-relaxed text-body">
+        <p className="text-sm leading-relaxed text-text-2">
           출발일이 정해지면 한국 초기화(네 계좌·kr.* 기본 설정)를 한 뒤, 출발일 밤 결정 창에서 네 계좌가 함께 출발합니다(다음 KR 거래일 시가
           체결 — 사후 체결 없음). 지금 쉬는 사유는 화면 위 경고에 있습니다.
         </p>
@@ -106,7 +106,7 @@ export function KrStartSection({
   if (state.kind === "init") {
     return (
       <Card title="한국 초기화" subtitle={`출발일 ${state.startDate}`} source={PAPER_SOURCES.krLedger}>
-        <p className="text-sm leading-relaxed text-body">
+        <p className="text-sm leading-relaxed text-text-2">
           초기화하면 한국 네 계좌(규칙 · Claude · KODEX 200 · 한국 60/40)를 계좌마다 {cash === null ? "배포 설정의 처음 현금" : formatMoney(cash, "KR")}
           의 &apos;시작 전&apos;(현금만)으로 만들고, 설정 행에 없는 kr.* 키를 기본값으로 채웁니다(판을 한 번 올림). 사후 체결은 없습니다 —
           출발은 출발일 밤 결정 창에서 정기 결정 작업이나 &apos;출발 지금 실행&apos;이 합니다. 여러 번 눌러도 이미 있는 계좌·설정은 그대로입니다.
@@ -127,12 +127,12 @@ export function KrStartSection({
   const windowText = settings.data?.available ? krDecisionWindowText(settings.data.body) : `${EMPTY} ~ ${EMPTY} KST`;
   return (
     <Card title="한국 출발 대기" subtitle={`출발일 ${state.startDate} · 결정 창 ${windowText}`} source={PAPER_SOURCES.krDecisions}>
-      <p className="text-sm leading-relaxed text-body">
+      <p className="text-sm leading-relaxed text-text-2">
         네 계좌가 모두 &apos;시작 전&apos;입니다. 출발일 밤 결정 창에서 정기 결정 작업이 자료 게이트를 기다려 네 계좌를 한 번에 출발시키고(다음 KR
         거래일 시가 체결), 아래 단추는 같은 창·같은 게이트·같은 네 계좌 몫으로 그것을 앞당깁니다. 창 밖·게이트 미달·이미 미룬 세션이면 서버가
         거절합니다. 출발 계획이 실패하면(Claude 호출 실패 등) 네 계좌 모두 다음 KR 거래일로 함께 미뤄집니다.
       </p>
-      <p className="mt-2 text-xs text-muted">
+      <p className="mt-2 text-xs text-text-3">
         {record ? `최근 출발 기록: ${krStartRecordLine(record)}` : "이 출발의 작업 기록은 아직 없습니다(결정 창에서 기다리거나 미루면 한 줄이 생깁니다)."}
       </p>
       <div className="mt-3">

@@ -30,7 +30,7 @@ export function TossSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-base font-semibold text-bright">토스증권</h2>
+      <h2 className="text-base font-semibold text-text">토스증권</h2>
 
       <Card
         title="연결 상태" source={SOURCES.toss}
@@ -41,7 +41,7 @@ export function TossSection() {
           </Button>
         }
       >
-        {runId === null && <p className="text-sm text-muted">버튼을 누르면 토스 서버에 한 번 연결해 봅니다.</p>}
+        {runId === null && <p className="text-sm text-text-3">버튼을 누르면 토스 서버에 한 번 연결해 봅니다.</p>}
         {diagnostics.loading && !diagnostics.data && <Loading />}
         {/* 진단 요청 자체가 실패하면(백엔드 5xx·연결 끊김·운영자 아님 403) 빈 카드가 아니라 이유를 보입니다(QA-103).
             수집기에 닿지 못한 것은 백엔드가 200 {ok:false}로 감싸 아래에서 '연결 실패'로 그립니다. */}
@@ -54,7 +54,7 @@ export function TossSection() {
               </StatusText>
               {diagnostics.data.stage && <SourceBadge>{diagnostics.data.stage}</SourceBadge>}
             </p>
-            <p className="text-sm text-muted">{diagnostics.data.message}</p>
+            <p className="text-sm text-text-3">{diagnostics.data.message}</p>
           </div>
         )}
       </Card>
@@ -82,14 +82,14 @@ export function TossSection() {
         )}
 
         {result !== null && (
-          <pre className="mt-4 max-h-80 overflow-auto rounded-sm border border-border bg-canvas p-3 text-xs text-muted">
+          <pre className="mt-4 max-h-80 overflow-auto rounded-sm border border-border bg-bg p-3 text-xs text-text-3">
             {JSON.stringify(result, null, 2)}
           </pre>
         )}
       </Card>
 
       <Card title="참고">
-        <ul className="list-disc pl-5 text-xs leading-relaxed text-muted">
+        <ul className="list-disc pl-5 text-xs leading-relaxed text-text-3">
           <li>토스 Open API는 허용 IP 목록을 사용합니다. HTTP 403이면 IP 등록을 확인하세요.</li>
           <li>키는 수집기 쪽에만 설정합니다(백엔드·프런트는 키를 보관하지 않습니다).</li>
           <li>키가 없으면 이 영역만 비활성화되고 다른 메뉴는 정상 동작합니다.</li>

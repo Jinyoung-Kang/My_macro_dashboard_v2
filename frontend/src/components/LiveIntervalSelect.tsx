@@ -11,7 +11,7 @@ import { LIVE_SECONDS_OPTIONS } from "@/lib/livePrices";
 export function LiveIntervalSelect({ label = "실시간 시세" }: { label?: string }) {
   const [seconds, setSeconds] = useLiveSeconds();
   return (
-    <label className="flex items-center gap-1.5 text-xs text-muted">
+    <label className="flex items-center gap-1.5 text-xs text-text-3">
       <span className="whitespace-nowrap">{label}</span>
       <NativeSelect
         value={String(seconds)}

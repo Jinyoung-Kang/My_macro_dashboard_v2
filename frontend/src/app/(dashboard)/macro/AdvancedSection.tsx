@@ -102,7 +102,7 @@ export function AdvancedSection({
                 : formatSigned(entry.delta, entry.digits)
             }
             deltaDigits={entry.digits}
-            tone={entry.available ? statusColor(entry.color) : "text-muted"}
+            tone={entry.available ? statusColor(entry.color) : "text-text-3"}
             caption={
               entry.available ? (
                 <span className="flex flex-col gap-0.5">
@@ -124,7 +124,7 @@ export function AdvancedSection({
       </div>
 
       {data?.derived?.decomposition && (
-        <p className="mt-4 rounded-sm border border-border bg-canvas px-3 py-2 text-xs text-muted">
+        <p className="mt-4 rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">
           {data.derived.decomposition}
           <span className="ml-2">
             (세 값의 기준 시점이 다르면 오차가 생기므로 참고용입니다.)
@@ -140,7 +140,7 @@ export function AdvancedSection({
             onChange={setSelected}
             options={entries.map((entry) => ({ value: entry.id, label: entry.label }))}
           />
-          <p className="text-xs text-muted">
+          <p className="text-xs text-text-3">
             {data?.latest[selected]?.why} · 출처: {data?.latest[selected]?.source}
           </p>
         </div>

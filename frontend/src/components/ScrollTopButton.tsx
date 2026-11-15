@@ -56,7 +56,7 @@ export function ScrollTopButton({ layer = "z-40" }: { layer?: string } = {}) {
       style={{ translate: "0 calc(-1 * var(--bottom-sheet, 0px))" }}
       onClick={toTop}
       aria-label="TOP 맨 위로"
-      className={`fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 ${layer} inline-flex min-h-11 items-center justify-center gap-1 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-bright shadow-lg hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6 lg:min-h-0`}
+      className={`fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 ${layer} inline-flex min-h-11 items-center justify-center gap-1 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-text shadow-lg hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6 lg:min-h-0`}
     >
       <ChevronUpIcon size={14} />
       TOP

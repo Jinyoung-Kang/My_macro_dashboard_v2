@@ -116,7 +116,7 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
           : "설정 행이 아직 없습니다(초기화 전) — 아래 값은 기본값입니다. 개요 탭에서 초기화하면 v1이 생깁니다."}
         source={PAPER_SOURCES.settings}
       >
-        <p className="text-xs leading-relaxed text-muted">
+        <p className="text-xs leading-relaxed text-text-3">
           형·범위는 저장할 때 서버가 검사합니다. <span className={`rounded-full border px-1.5 ${RULES_BADGE}`}>규칙 계좌 영향</span>이 붙은
           키는 규칙 계좌(동결된 대조군)의 조건을 바꿉니다(한국 키 kr.*는 한국 규칙 계좌) — 저장 전에 한 번 더 묻습니다. 결정 기록마다 그때의
           설정 버전이 남습니다.
@@ -134,14 +134,14 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
         )}
 
         <section aria-label="바꿀 값" className="mt-4 flex flex-col gap-2">
-          <h3 className="text-sm font-semibold text-bright">바꿀 값 ({changes.length})</h3>
+          <h3 className="text-sm font-semibold text-text">바꿀 값 ({changes.length})</h3>
           {changes.length === 0 ? (
-            <p className="text-xs text-muted">아직 바꾼 값이 없습니다 — 아래 키의 값을 고치면 여기에 모입니다.</p>
+            <p className="text-xs text-text-3">아직 바꾼 값이 없습니다 — 아래 키의 값을 고치면 여기에 모입니다.</p>
           ) : (
-            <ul className="space-y-0.5 text-xs text-body">
+            <ul className="space-y-0.5 text-xs text-text-2">
               {changes.map((change) => (
                 <li key={change.key} className="flex flex-wrap items-center gap-1">
-                  <code className="text-bright">{change.key}</code>
+                  <code className="text-text">{change.key}</code>
                   <span>: {change.from} → {change.to}</span>
                   {change.affectsRules && (
                     <span className={`rounded-full border px-1.5 text-xs ${RULES_BADGE}`}>
@@ -222,15 +222,15 @@ export function SettingsSection({ market = "US" }: { market?: PaperMarketCode })
             rowKey={(row) => row.key}
             emptyMessage="아직 설정 이력이 없습니다 — 초기화하면 v1(처음 값)이 남습니다."
             columns={[
-              { key: "version", header: "버전", render: (row) => <span className="font-semibold text-bright">{row.version}</span> },
+              { key: "version", header: "버전", render: (row) => <span className="font-semibold text-text">{row.version}</span> },
               { key: "createdAt", header: "저장 시각", render: (row) => <span className="whitespace-nowrap">{row.createdAt}</span> },
-              { key: "changes", header: "바뀐 값", render: (row) => <span className="text-xs text-body">{row.changes}</span> },
+              { key: "changes", header: "바뀐 값", render: (row) => <span className="text-xs text-text-2">{row.changes}</span> },
               {
                 key: "rules",
                 header: "규칙 계좌 영향",
                 render: (row) => (row.rulesAffected
                   ? <span className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${RULES_BADGE}`}>규칙 계좌 영향</span>
-                  : <span className="text-muted">{EMPTY}</span>),
+                  : <span className="text-text-3">{EMPTY}</span>),
               },
             ]}
           />
@@ -280,7 +280,7 @@ function SettingField({
     <div className="grid gap-2 border-b border-border/50 py-3 last:border-0 sm:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1">
-          <label htmlFor={id} className="break-all font-mono text-xs font-semibold text-bright">{row.key}</label>
+          <label htmlFor={id} className="break-all font-mono text-xs font-semibold text-text">{row.key}</label>
           {marketLabel && (
             <span className="whitespace-nowrap rounded-full border border-border px-2 py-px text-xs text-text-2">{marketLabel}</span>
           )}
@@ -296,11 +296,11 @@ function SettingField({
           )}
           {changed && <span className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${CHANGED_BADGE}`}>바꿈</span>}
         </div>
-        {row.description && <p id={descriptionId} className="mt-0.5 text-xs leading-relaxed text-muted">{row.description}</p>}
+        {row.description && <p id={descriptionId} className="mt-0.5 text-xs leading-relaxed text-text-3">{row.description}</p>}
       </div>
       <div className="min-w-0">
         <SettingInput row={row} id={id} value={value} describedBy={descriptionId} onChange={onChange} />
-        <p className="mt-1 text-xs text-muted">{meta}</p>
+        <p className="mt-1 text-xs text-text-3">{meta}</p>
         {error && <p className="mt-1 text-xs text-warn">{error}</p>}
       </div>
     </div>
@@ -341,7 +341,7 @@ function SettingInput({
       // 내용에 맞춰(w-fit) 넓은 화면은 예전 줄 높이 그대로이고, 누르는 자리는 행 전체가 아니라 상자와 글까지입니다. 상자의 이름은 키
       // label(htmlFor) 그대로이고, 켬·끔은 상자가 읽어 주므로 '예·아니오' 글은 낭독기에서 뺍니다(이름에 붙어 '키 예'로 읽히지 않게).
       return (
-        <label className="flex w-fit min-h-11 cursor-pointer items-center gap-2 text-sm text-body lg:min-h-0">
+        <label className="flex w-fit min-h-11 cursor-pointer items-center gap-2 text-sm text-text-2 lg:min-h-0">
           <input
             id={id}
             type="checkbox"
@@ -385,14 +385,14 @@ function SettingInput({
             onChange={(event) => onChange(event.target.value)}
             className={`${INPUT} font-mono text-xs`}
           />
-          <p className="text-xs text-muted">{MULTILINE_HINT[row.kind]}</p>
+          <p className="text-xs text-text-3">{MULTILINE_HINT[row.kind]}</p>
         </>
       );
     }
     case "json":
       return (
-        <p className="text-xs text-muted">
-          <code id={id} className="break-all text-body">{row.current}</code> — 이 화면에서 바꾸지 않는 값입니다.
+        <p className="text-xs text-text-3">
+          <code id={id} className="break-all text-text-2">{row.current}</code> — 이 화면에서 바꾸지 않는 값입니다.
         </p>
       );
     default:

@@ -41,7 +41,7 @@ export function ReportView({ markdown }: { markdown: string }) {
             <a
               key={section.id}
               href={`#${section.id}`}
-              className="rounded-full border border-border px-2.5 py-1 text-xs text-muted hover:border-accent/60 hover:text-bright"
+              className="rounded-full border border-border px-2.5 py-1 text-xs text-text-3 hover:border-accent/60 hover:text-text"
             >
               {section.title}
             </a>
@@ -70,14 +70,14 @@ function ReportSection({ section }: { section: Section }) {
       {section.title && (
         <h3
           className={`mb-3 flex items-center gap-2 font-semibold ${
-            kind === "summary" ? "text-base text-bright" : "text-sm text-bright"
+            kind === "summary" ? "text-base text-text" : "text-sm text-text"
           }`}
         >
           {kind === "reliability" && <AlertTriangleIcon size={16} className="text-warn" />}
           {section.title}
         </h3>
       )}
-      <div className={`flex flex-col gap-3 ${kind === "summary" ? "text-[15px]" : "text-sm"} leading-relaxed text-body`}>
+      <div className={`flex flex-col gap-3 ${kind === "summary" ? "text-[15px]" : "text-sm"} leading-relaxed text-text-2`}>
         {section.blocks.map((block, index) => (
           <BlockView key={index} block={block} emphasize={kind === "summary"} />
         ))}
@@ -89,13 +89,13 @@ function ReportSection({ section }: { section: Section }) {
 function BlockView({ block, emphasize }: { block: Block; emphasize: boolean }) {
   switch (block.type) {
     case "heading":
-      return <h4 className="mt-1 text-[13px] font-semibold text-bright">{renderInline(block.text)}</h4>;
+      return <h4 className="mt-1 text-[13px] font-semibold text-text">{renderInline(block.text)}</h4>;
     case "paragraph":
       return <p>{renderInline(block.text)}</p>;
     case "list": {
       const Tag = block.ordered ? "ol" : "ul";
       return (
-        <Tag className={`${block.ordered ? "list-decimal" : "list-disc"} flex flex-col ${emphasize ? "gap-2" : "gap-1"} pl-5 marker:text-muted`}>
+        <Tag className={`${block.ordered ? "list-decimal" : "list-disc"} flex flex-col ${emphasize ? "gap-2" : "gap-1"} pl-5 marker:text-text-3`}>
           {block.items.map((item, index) => (
             <li key={index}>{renderInline(item)}</li>
           ))}
@@ -105,7 +105,7 @@ function BlockView({ block, emphasize }: { block: Block; emphasize: boolean }) {
     case "table":
       return <ReportTable header={block.header} rows={block.rows} />;
     case "quote":
-      return <blockquote className="border-l-2 border-border pl-3 text-muted">{renderInline(block.text)}</blockquote>;
+      return <blockquote className="border-l-2 border-border pl-3 text-text-3">{renderInline(block.text)}</blockquote>;
     case "hr":
       return <hr className="border-border" />;
   }
@@ -118,7 +118,7 @@ function ReportTable({ header, rows }: { header: string[]; rows: string[][] }) {
     <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="리포트 표 (좌우 스크롤)">
       <table className="w-full min-w-[520px] border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-border text-xs text-muted">
+          <tr className="border-b border-border text-xs text-text-3">
             {header.map((cell, index) => (
               <th key={index} className={`px-3 py-2 font-medium ${numeric[index] ? "text-right" : "text-left"}`}>
                 {renderInline(cell)}
@@ -133,7 +133,7 @@ function ReportTable({ header, rows }: { header: string[]; rows: string[][] }) {
                 <td
                   key={index}
                   className={`px-3 py-2 ${numeric[index] ? "whitespace-nowrap text-right tabular-nums" : "text-left"} ${
-                    index === 0 ? "font-medium text-bright" : ""
+                    index === 0 ? "font-medium text-text" : ""
                   }`}
                 >
                   {renderInline(cell)}
@@ -150,11 +150,11 @@ function ReportTable({ header, rows }: { header: string[]; rows: string[][] }) {
 function renderInline(text: string): ReactNode {
   return parseInline(text).map((part, index) =>
     part.bold ? (
-      <strong key={index} className="font-semibold text-bright">
+      <strong key={index} className="font-semibold text-text">
         {withVerdicts(part.text)}
       </strong>
     ) : part.code ? (
-      <code key={index} className="rounded-sm bg-canvas px-1 py-0.5 text-[12px]">
+      <code key={index} className="rounded-sm bg-bg px-1 py-0.5 text-[12px]">
         {part.text}
       </code>
     ) : (

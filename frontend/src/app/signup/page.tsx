@@ -40,12 +40,12 @@ export default function SignupPage() {
         <AuthMessage tone="ok">{done}</AuthMessage>
       ) : (
         <form onSubmit={submit}>
-          <p className="mt-1 text-xs text-muted">무료 회원으로 가입합니다. 비밀번호는 10자 이상입니다.</p>
+          <p className="mt-1 text-xs text-text-3">무료 회원으로 가입합니다. 비밀번호는 10자 이상입니다.</p>
           <AuthField label="이메일" type="email" value={email} onChange={setEmail} autoComplete="email" autoFocus />
           <AuthField label="비밀번호" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
           <AuthField label="비밀번호 확인" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password" />
           {mismatch && <p className="mt-2 text-xs text-danger">비밀번호가 서로 다릅니다.</p>}
-          <label className="mt-4 flex items-start gap-2 text-xs text-body">
+          <label className="mt-4 flex items-start gap-2 text-xs text-text-2">
             <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className={`mt-0.5 size-4 shrink-0 accent-accent ${FOCUS_RING}`} />
             <span>
               <Link href="/privacy" className="text-accent underline">개인정보 수집·이용</Link>(이메일·비밀번호 해시·알림 설정)에

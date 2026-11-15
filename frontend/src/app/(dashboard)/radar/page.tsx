@@ -158,14 +158,14 @@ export default function RadarPage() {
         </div>
 
         {unsupportedInvestors.length > 0 && (
-          <p className="mt-3 text-xs text-muted">
+          <p className="mt-3 text-xs text-text-3">
             ⓘ {unsupportedInvestors.join(" · ")}는 <b>지원 안 함</b>입니다.{" "}
             {options.data?.unsupportedInvestorNote}
           </p>
         )}
         {/* 토스 폴백으로 여섯 모두 고를 수 있을 때도, 넷은 한계가 있는 순위라 적어 둡니다 */}
         {unsupportedInvestors.length === 0 && TOSS_ONLY.includes(investor) && options.data?.unsupportedInvestorNote && (
-          <p className="mt-3 text-xs text-muted">ⓘ {options.data.unsupportedInvestorNote}</p>
+          <p className="mt-3 text-xs text-text-3">ⓘ {options.data.unsupportedInvestorNote}</p>
         )}
       </Card>
 
@@ -225,9 +225,9 @@ export default function RadarPage() {
                   header: "종목",
                   render: (row) => (
                     <span className="flex flex-col">
-                      <span className="text-body">{row.name}</span>
+                      <span className="text-text-2">{row.name}</span>
                       {/* 종목코드는 앞자리 0을 포함한 문자열 그대로 표시합니다. */}
-                      <span className="text-xs text-muted">{row.code}</span>
+                      <span className="text-xs text-text-3">{row.code}</span>
                     </span>
                   ),
                 },
@@ -295,7 +295,7 @@ const TOSS_ONLY = ["개인", "연기금", "금융투자", "투신"];
 function OmittedNote({ count }: { count: number }) {
   if (count === 0) return null;
   return (
-    <p className="mt-2 text-xs text-muted">
+    <p className="mt-2 text-xs text-text-3">
       금액을 모르는 {count}개 종목은 차트에서 뺐습니다(아래 표에 &quot;{EMPTY}&quot;로 표시).
     </p>
   );
@@ -382,13 +382,13 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
 
       {(data?.available || data?.priceDate) && (
         <>
-          <p className="mb-2 text-xs text-muted">
+          <p className="mb-2 text-xs text-text-3">
             {covered}/{all.length}개 종목 재무 확보 · ETF·ETN·스팩은 DART 재무 대상이 아닙니다 ·
             이자보상배율은 주요계정에 이자비용이 없어 표시하지 않습니다
             {data.priceDate ? ` · 시가총액 기준일 ${data.priceDate} (재무와 시점이 다름)` : " · 공식 시세 없음 → PER·PBR 생략"}
           </p>
           {empty.length > 0 && (
-            <p className="mb-2 text-xs text-muted">
+            <p className="mb-2 text-xs text-text-3">
               재무·시세 모두 없음 {empty.length}개 (ETF·신규 상장·수집 전):{" "}
               {empty.slice(0, 10).map((row) => row.name ?? row.code).join(", ")}
               {empty.length > 10 ? " 외" : ""}
@@ -404,8 +404,8 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
                   header: "종목",
                   render: (row) => (
                     <span className="flex flex-col">
-                      <span className="text-body">{row.name ?? row.code}</span>
-                      <span className="text-xs text-muted">
+                      <span className="text-text-2">{row.name ?? row.code}</span>
+                      <span className="text-xs text-text-3">
                         {row.available ? `${row.bsnsYear} ${row.fsLabel}` : "재무 없음"}
                       </span>
                     </span>
@@ -551,8 +551,8 @@ function ConsensusPanel({
                   header: "종목",
                   render: (row) => (
                     <span className="flex flex-col">
-                      <span className="text-body">{row.name}</span>
-                      <span className="text-xs text-muted">{row.code}</span>
+                      <span className="text-text-2">{row.name}</span>
+                      <span className="text-xs text-text-3">{row.code}</span>
                     </span>
                   ),
                 },
@@ -575,7 +575,7 @@ function ConsensusPanel({
                       <span className={deltaColor(row.foreignEok, 1)}>
                         {formatNumber(row.foreignEok, 1)}
                       </span>
-                      <span className="text-xs text-muted">
+                      <span className="text-xs text-text-3">
                         {row.foreignRank === null ? EMPTY : `${row.foreignRank}위`}
                       </span>
                     </span>
@@ -590,7 +590,7 @@ function ConsensusPanel({
                       <span className={deltaColor(row.institutionEok, 1)}>
                         {formatNumber(row.institutionEok, 1)}
                       </span>
-                      <span className="text-xs text-muted">
+                      <span className="text-xs text-text-3">
                         {row.institutionRank === null ? EMPTY : `${row.institutionRank}위`}
                       </span>
                     </span>
@@ -610,7 +610,7 @@ function ConsensusPanel({
             />
           </div>
 
-          <p className="mt-2 text-xs leading-relaxed text-muted">
+          <p className="mt-2 text-xs leading-relaxed text-text-3">
             {buying
               ? "두 주체가 함께 담은 종목입니다. 한쪽만 사는 종목보다 수급의 방향이 뚜렷하지만, 그것이 수익을 뜻하지는 않습니다."
               : "두 주체가 함께 던진 종목입니다. 금액이 음수인 것은 순매도라는 뜻이며, 표기를 바꾸지 않았습니다."}{" "}
@@ -690,7 +690,7 @@ function HistoryPanel({
         />
       )}
       {!loading && dates.length > 0 && rows.length === 0 && (
-        <p className="text-xs text-muted">{EMPTY} 해당 조건의 이력이 없습니다.</p>
+        <p className="text-xs text-text-3">{EMPTY} 해당 조건의 이력이 없습니다.</p>
       )}
     </Card>
   );

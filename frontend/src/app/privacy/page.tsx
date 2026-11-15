@@ -17,8 +17,8 @@ export default function PrivacyPage() {
       <dl className="mt-3 flex flex-col gap-3 text-xs">
         {rows.map(([term, detail]) => (
           <div key={term}>
-            <dt className="font-semibold text-bright">{term}</dt>
-            <dd className="mt-0.5 leading-relaxed text-body">{detail}</dd>
+            <dt className="font-semibold text-text">{term}</dt>
+            <dd className="mt-0.5 leading-relaxed text-text-2">{detail}</dd>
           </div>
         ))}
       </dl>

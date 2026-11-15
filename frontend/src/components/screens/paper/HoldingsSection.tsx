@@ -98,7 +98,7 @@ const POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright"><TickerQuickView market="US" code={row.ticker}>{row.ticker}</TickerQuickView></span>
+        <span className="font-semibold text-text"><TickerQuickView market="US" code={row.ticker}>{row.ticker}</TickerQuickView></span>
         <Badges badges={positionBadges(row)} />
       </span>
     ),
@@ -149,10 +149,10 @@ function liveColumn(prices: Readonly<Record<string, LivePrice>>, market: PaperMa
       const pct = returnVsCost(shown.price, row.avgCost);
       return (
         <span className="inline-flex flex-col items-end" title={livePriceTitle(live, price)}>
-          <span className="tabular-nums text-bright">{price(shown.price)}</span>
+          <span className="tabular-nums text-text">{price(shown.price)}</span>
           <span className="whitespace-nowrap text-xs tabular-nums">
-            <span className={pct === null ? "text-muted" : deltaColor(pct)}>{formatPercent(pct)}</span>
-            <span className="text-muted"> · {shown.session ? `${shown.session} ` : ""}{tradedAtText(shown.tradedAt)}</span>
+            <span className={pct === null ? "text-text-3" : deltaColor(pct)}>{formatPercent(pct)}</span>
+            <span className="text-text-3"> · {shown.session ? `${shown.session} ` : ""}{tradedAtText(shown.tradedAt)}</span>
           </span>
         </span>
       );
@@ -201,7 +201,7 @@ const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
     cell: (row) => {
       const text = orderReasonText(row.reason, 80);
       return text === EMPTY ? text : (
-        <span className="text-xs text-muted" title={jsonTitle(row.reason)}>
+        <span className="text-xs text-text-3" title={jsonTitle(row.reason)}>
           {text}
         </span>
       );
@@ -339,8 +339,8 @@ function timedOrderColumns(audit: ReadonlyMap<number, PaperExecutionOrder>): Col
         if (note === EMPTY && reason === EMPTY) return EMPTY;
         return (
           <span className="flex flex-col gap-0.5 text-xs">
-            <span className={note === EMPTY ? "text-text-3" : "text-body"}>{part(note)}</span>
-            <span className="text-muted" title={jsonTitle(row.reason)}>{part(reason)}</span>
+            <span className={note === EMPTY ? "text-text-3" : "text-text-2"}>{part(note)}</span>
+            <span className="text-text-3" title={jsonTitle(row.reason)}>{part(reason)}</span>
           </span>
         );
       },
@@ -438,7 +438,7 @@ const KR_POSITION_COLUMNS: readonly Column<PaperPosition>[] = [
     sortValue: (row) => row.ticker,
     cell: (row) => (
       <span className="flex flex-wrap items-center gap-1">
-        <span className="font-semibold text-bright"><TickerQuickView market="KR" code={row.ticker} /></span>
+        <span className="font-semibold text-text"><TickerQuickView market="KR" code={row.ticker} /></span>
         <Badges badges={krPositionBadges(row)} />
       </span>
     ),
@@ -561,7 +561,7 @@ const KR_ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
     className: "min-w-[11rem] break-keep",
     cell: (row) => {
       const text = krStopBasisText(row.reason) ?? orderReasonText(row.reason, 80);
-      return text === EMPTY ? text : <span className="text-xs text-muted" title={jsonTitle(row.reason)}>{text}</span>;
+      return text === EMPTY ? text : <span className="text-xs text-text-3" title={jsonTitle(row.reason)}>{text}</span>;
     },
   },
 ];
@@ -651,8 +651,8 @@ const KR_NAV_COLUMNS: readonly Column<KrNavRow>[] = [
     header: "잠정 사유",
     className: "min-w-[16rem]",
     cell: (row) => (row.reason === null ? EMPTY : row.reason === EMPTY
-      ? <span className="text-xs text-muted">{EMPTY} 최근 작업 기록에 사유 없음</span>
-      : <span className="text-xs text-body">{row.reason}</span>),
+      ? <span className="text-xs text-text-3">{EMPTY} 최근 작업 기록에 사유 없음</span>
+      : <span className="text-xs text-text-2">{row.reason}</span>),
   },
 ];
 
@@ -787,7 +787,7 @@ export function HoldingsSection({
           {summary && (
             <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
               <div>
-                <dt className="text-muted">상태</dt>
+                <dt className="text-text-3">상태</dt>
                 <dd><span className={`rounded-full border px-2 py-0.5 text-xs ${summary.status.className}`}>{summary.status.label}</span></dd>
               </div>
               <Pair label="순자산" value={summary.nav} />
@@ -801,8 +801,8 @@ export function HoldingsSection({
 
         <div className="mt-4 grid gap-4 border-t border-border pt-4 md:grid-cols-2">
           <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-bright">일시정지 · 재개</h3>
-            <p className="text-xs leading-relaxed text-muted">
+            <h3 className="text-sm font-semibold text-text">일시정지 · 재개</h3>
+            <p className="text-xs leading-relaxed text-text-3">
               일시정지하면 대기 주문을 취소하고 새 체결·스탑을 멈춥니다. 평가(순자산 기록)는 계속합니다.
             </p>
             {action ? (
@@ -812,20 +812,20 @@ export function HoldingsSection({
                 </Button>
               </div>
             ) : (
-              <p className="text-xs text-muted">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
+              <p className="text-xs text-text-3">{korea ? krNotStartedNote() : notStartedNote(book?.kind, book)}</p>
             )}
             {toggle.error && <Banner tone="warn">{toggle.error}</Banner>}
             {toggleResult && <Banner tone="info">{statusResultText(toggleResult)}</Banner>}
           </div>
 
           <div className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-bright">계좌 초기화</h3>
+            <h3 className="text-sm font-semibold text-text">계좌 초기화</h3>
             {korea ? (
-              <p className="text-xs leading-relaxed text-muted">
+              <p className="text-xs leading-relaxed text-text-3">
                 이 계좌의 체결·주문·보유·재진입 금지·확정 조정·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다. {KR_RESET_NOTE}
               </p>
             ) : (
-              <p className="text-xs leading-relaxed text-muted">
+              <p className="text-xs leading-relaxed text-text-3">
                 이 계좌의 체결·주문·보유·재진입 금지·순자산 기록을 모두 지웁니다. 되돌릴 수 없습니다. 벤치마크 계좌는 출발일 종가로
                 다시 사후 체결하고(종가가 없으면 &quot;시작 전&quot;으로 남고 사유를 보입니다), 규칙·Claude 계좌는 현금만 든
                 &quot;시작 전&quot;으로 돌아갑니다.
@@ -897,10 +897,10 @@ export function HoldingsSection({
                 emptyText="보유가 없습니다 — 현금만 들고 있습니다."
               />
             )}
-            <p className="mt-2 text-xs text-muted">
+            <p className="mt-2 text-xs text-text-3">
               {korea ? `현금 ${formatMoney(positions.data.cash, "KR")}` : `현금 ${formatNumber(positions.data.cash, 2)} 달러`}
             </p>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-xs text-text-3">
               {liveSeconds === 0
                 ? "실시간 칸은 화면을 열 때 한 번 읽음(자동 새로고침 꺼짐)"
                 : `실시간 칸은 ${liveSecondsText(liveSeconds)}마다 서버가 보냄(장이 닫혀 있으면 5분 이상 간격) — 표시 전용, 체결·스탑은 장부 가격`}
@@ -983,7 +983,7 @@ export function HoldingsSection({
         {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
         {fills.data?.available && (
           <>
-            {totalText && <p className="mb-2 text-xs font-semibold tabular-nums text-bright">{totalText}</p>}
+            {totalText && <p className="mb-2 text-xs font-semibold tabular-nums text-text">{totalText}</p>}
             {cautions.length > 0 && (
               <div className="mb-2">
                 <Banner tone="warn">
@@ -1066,8 +1066,8 @@ function KrEmpty({ children }: { children: ReactNode }) {
 function Pair({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>
-      <dt className="text-muted">{label}</dt>
-      <dd className={`tabular-nums font-semibold ${tone ?? "text-bright"}`}>{value}</dd>
+      <dt className="text-text-3">{label}</dt>
+      <dd className={`tabular-nums font-semibold ${tone ?? "text-text"}`}>{value}</dd>
     </div>
   );
 }

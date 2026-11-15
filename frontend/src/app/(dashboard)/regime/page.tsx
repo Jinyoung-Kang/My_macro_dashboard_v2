@@ -125,7 +125,7 @@ export default function RegimePage() {
           >
             <div
               className={`rounded-control border px-4 py-4 ${
-                current?.tone ?? "border-border bg-surface-hover text-muted"
+                current?.tone ?? "border-border bg-surface-2 text-text-3"
               }`}
             >
               <p className="text-2xl font-bold">{verdict.label}</p>
@@ -143,7 +143,7 @@ export default function RegimePage() {
                   className={`rounded-control border px-3 py-2 text-xs ${
                     quadrant.code === verdict.code
                       ? quadrant.tone
-                      : "border-border bg-canvas text-muted"
+                      : "border-border bg-bg text-text-3"
                   }`}
                 >
                   <p className="font-semibold">{quadrant.label}</p>
@@ -171,7 +171,7 @@ export default function RegimePage() {
             ))}
           </div>
           {(verdict?.signals ?? []).length === 0 && (
-            <p className="text-sm text-muted">판정에 쓸 신호를 하나도 받지 못했습니다.</p>
+            <p className="text-sm text-text-3">판정에 쓸 신호를 하나도 받지 못했습니다.</p>
           )}
         </Card>
 
@@ -199,7 +199,7 @@ export default function RegimePage() {
               />
             ))}
           </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted">
+          <div className="mt-2 flex flex-wrap gap-3 text-xs text-text-3">
             {QUADRANTS.map((quadrant) => (
               <span key={quadrant.code} className="flex items-center gap-1">
                 <span className={`h-2 w-4 rounded-xs ${TIMELINE_COLOR[quadrant.code]}`} />
@@ -213,7 +213,7 @@ export default function RegimePage() {
           </div>
 
           <div className="mt-5">
-            <h3 className="mb-2 text-sm font-semibold text-bright">과거 구간 (최근 순)</h3>
+            <h3 className="mb-2 text-sm font-semibold text-text">과거 구간 (최근 순)</h3>
             <Table
               rows={(data?.episodes ?? []).slice(0, 15)}
               rowKey={(row) => `${row.code}-${row.start}`}
@@ -243,7 +243,7 @@ export default function RegimePage() {
         </Card>
 
         {data?.note && (
-          <p className="rounded-sm border border-border bg-canvas px-3 py-2 text-xs text-muted">
+          <p className="rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">
             <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
           </p>
         )}

@@ -60,7 +60,7 @@ export default function LoginPage() {
   // 로그인할 필요가 없으면 첫 화면으로 가는 동안 로그인 칸을 보이지 않습니다.
   if (leaving) {
     return (
-      <main className="flex min-h-screen items-center justify-center text-sm text-muted">
+      <main className="flex min-h-screen items-center justify-center text-sm text-text-3">
         대시보드로 이동하는 중…
       </main>
     );

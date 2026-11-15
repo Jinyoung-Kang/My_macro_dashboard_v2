@@ -73,7 +73,7 @@ export default function SectorPage() {
           </>
         }
       >
-        {live.error && <p className="mt-1 text-xs text-muted">실시간 시세: {live.error} — 현재가는 저장본 값입니다.</p>}
+        {live.error && <p className="mt-1 text-xs text-text-3">실시간 시세: {live.error} — 현재가는 저장본 값입니다.</p>}
       </PageHeader>
 
       {/* 선택 상자가 있는 첫 카드는 늘 그리고 본문만 로딩·오류로 바꿉니다 — 페이지 전체를 바꾸면 방금 조작한
@@ -175,8 +175,8 @@ function ReturnsTable({
           header: "이름",
           render: (row) => (
             <span className="flex flex-col">
-              <span className="text-body">{row.name}</span>
-              <span className="text-xs text-muted">{row.ticker}</span>
+              <span className="text-text-2">{row.name}</span>
+              <span className="text-xs text-text-3">{row.ticker}</span>
               {row.isStale && (
                 <span className="text-xs" title={row.staleReason ?? undefined}>
                   <StatusText tone="warn" iconSize={12}>이전 값(수집 실패)</StatusText>
@@ -198,7 +198,7 @@ function ReturnsTable({
           key: window,
           header: window === period ? `${window} ▪` : window,
           align: "right" as const,
-          className: window === period ? "bg-surface-hover/50" : undefined,
+          className: window === period ? "bg-surface-2/50" : undefined,
           render: (row: SectorRow) => (
             <span
               className={`${deltaColor(row.returns?.[window] ?? null)} ${

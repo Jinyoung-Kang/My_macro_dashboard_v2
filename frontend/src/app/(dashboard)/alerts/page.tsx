@@ -94,7 +94,7 @@ export default function AlertsPage() {
         {!inbox.data ? (
           inbox.loading ? <Loading /> : null
         ) : items.length === 0 ? (
-          <p className="text-xs text-muted">
+          <p className="text-xs text-text-3">
             {demo ? `아직 알림이 없습니다. ${DEMO_READ_ONLY}(알림 규칙은 계정으로 로그인해야 만들 수 있습니다).`
               : "아직 알림이 없습니다. 아래에서 알림 규칙을 만드세요. 정보 검색에서 관심 대상의 ‘알림’을 켜면 그 대상의 새 글 알림은 규칙 없이 여기에 들어옵니다."}
           </p>
@@ -107,20 +107,20 @@ export default function AlertsPage() {
                 className={`rounded-control border p-4 ${item.read || item.late ? "border-border bg-surface-2/50" : "border-border-strong bg-surface"}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-bright">
+                  <p className="text-sm font-semibold text-text">
                     {!item.read && !item.late && <span className="mr-1 text-text">●</span>}
                     {/* 제목·본문은 서버가 만든 글이라 예전 알림에는 국기·나침반 같은 그림 문자가 있습니다 — 화면에서 뗍니다 */}
                     <InboxTitle item={item} />
                   </p>
-                  <span className="text-xs text-muted">
+                  <span className="text-xs text-text-3">
                     {item.occurredOn}{item.late ? " · 지난 사건" : ""}
                   </span>
                 </div>
-                <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-body">{withoutLeadingIcon(item.body)}</p>
+                <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-text-2">{withoutLeadingIcon(item.body)}</p>
                 {!item.read && !demo && (
                   <button
                     type="button"
-                    className="mt-2 text-xs text-muted underline hover:text-accent"
+                    className="mt-2 text-xs text-text-3 underline hover:text-accent"
                     onClick={async () => { await read.run([item.id]); void inbox.reload(); notifyAlertsRead(); }}
                   >
                     읽음
@@ -164,11 +164,11 @@ export default function AlertsPage() {
         />
 
         <form onSubmit={submit} className="mt-5 flex max-w-md flex-col gap-3">
-          <h3 className="text-sm font-semibold text-bright">규칙 만들기</h3>
+          <h3 className="text-sm font-semibold text-text">규칙 만들기</h3>
           <Select label="알림 종류" value={kind} onChange={(value) => setKind(value as AlertKind)}
             options={ALERT_KINDS.map((k) => ({ value: k.value, label: k.pro ? `${k.label} · 유료` : k.label }))} />
           {!demo && (
-            <p className="text-xs text-muted">
+            <p className="text-xs text-text-3">
               정보 검색 관심 대상의 새 글 알림은 규칙을 만들지 않습니다 — 정보 검색의 관심 대상 목록, 또는 대상을 열었을 때 ‘관심 대상 해제’ 옆에 있는 종 모양
               ‘알림’ 단추로 대상마다 켜고 끕니다.
               켠 대상은 새 글이 들어오면 위 알림함에 한 줄을 남깁니다(15분마다 확인).
@@ -180,7 +180,7 @@ export default function AlertsPage() {
                 options={[{ value: "KOSPI", label: "코스피 전체" }, { value: "KOSDAQ", label: "코스닥 전체" },
                   { value: "STOCK", label: "관심 종목" }]} />
               {target === "STOCK" && (
-                <label className="text-xs text-muted">
+                <label className="text-xs text-text-3">
                   종목코드(6자리)
                   <input value={code} onChange={(event) => setCode(event.target.value.trim())} placeholder="005930"
                     className={`mt-1 w-full ${inputClasses()}`} />
@@ -188,7 +188,7 @@ export default function AlertsPage() {
               )}
               <Select label="연속 일수" value={days} onChange={setDays}
                 options={[3, 5, 7, 10, 15, 20].map((n) => ({ value: String(n), label: `${n}일` }))} />
-              <p className="text-xs text-muted">
+              <p className="text-xs text-text-3">
                 토스증권 확정 기록 기준(당일 잠정치 제외). 시장 전체의 외국인은 등록+비등록, 종목은 등록 외국인입니다.
               </p>
             </>
@@ -205,7 +205,7 @@ export default function AlertsPage() {
             disabled={demo || create.busy || (kind === "INSTITUTION_NEW" && !cik) || (kind === "FOREIGN_STREAK" && target === "STOCK" && !/^\d{6}$/.test(code))}>
             {create.busy ? "만드는 중…" : "규칙 만들기"}
           </Button>
-          {demo && <p className="text-xs text-muted">{DEMO_READ_ONLY}</p>}
+          {demo && <p className="text-xs text-text-3">{DEMO_READ_ONLY}</p>}
         </form>
       </Card>
     </div>

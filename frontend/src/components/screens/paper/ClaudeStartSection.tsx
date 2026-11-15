@@ -87,11 +87,11 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
 
   return (
     <Card title={prompt.title} subtitle="초기 결정 — 출발일 기준 입력 패킷 · 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
-      <p className="text-sm leading-relaxed text-body">{prompt.body}</p>
+      <p className="text-sm leading-relaxed text-text-2">{prompt.body}</p>
       <div className="mt-3">
         <Banner tone={prompt.framework.tone}>{prompt.framework.text}</Banner>
       </div>
-      <p className="mt-2 text-xs text-muted">비용: {prompt.cost}</p>
+      <p className="mt-2 text-xs text-text-3">비용: {prompt.cost}</p>
 
       {confirming ? (
         <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
@@ -127,8 +127,8 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
           {previewBody && <ClaudeDecisionBody view={previewBody} />}
           {previewPacket && (
             <details className="rounded-control border border-border px-3 py-2 text-xs">
-              <summary className="cursor-pointer text-muted">입력 패킷(JSON)</summary>
-              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{previewPacket}</pre>
+              <summary className="cursor-pointer text-text-3">입력 패킷(JSON)</summary>
+              <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{previewPacket}</pre>
             </details>
           )}
         </section>

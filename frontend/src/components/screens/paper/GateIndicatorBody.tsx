@@ -15,7 +15,7 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
   const view = gateView(gate);
   if (!view) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-text-3">
         아직 게이트 기록이 없습니다 — 결정 작업이 거래일마다 매크로 카드 값으로 한 번 남깁니다.
       </p>
     );
@@ -24,11 +24,11 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${view.level.className}`}>{view.level.label}</span>
-        <span className="rounded-full border border-border bg-surface-hover px-2 py-0.5 text-xs text-muted">참고 — 구속하지 않음</span>
-        <span className="text-xs text-muted">거래일 {view.tradingDate}</span>
+        <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-text-3">참고 — 구속하지 않음</span>
+        <span className="text-xs text-text-3">거래일 {view.tradingDate}</span>
       </div>
-      {view.levelNote && <p className="text-xs leading-relaxed text-body">{view.levelNote}</p>}
-      <p className="text-xs leading-relaxed text-muted">
+      {view.levelNote && <p className="text-xs leading-relaxed text-text-2">{view.levelNote}</p>}
+      <p className="text-xs leading-relaxed text-text-3">
         {view.note}. 규칙 계좌는 이 지표를 쓰지 않고(매크로 게이트 없음), Claude 계좌에는 참고 자료로만 들어갑니다.
       </p>
       <section aria-label="게이트 조건" className="flex flex-col gap-1">
@@ -40,7 +40,7 @@ export function GateIndicatorBody({ gate, compact = false }: { gate: PaperGateIn
             {
               key: "label",
               header: "조건",
-              render: (row) => <span className={row.reference ? "text-muted" : "text-body"}>{row.label}</span>,
+              render: (row) => <span className={row.reference ? "text-text-3" : "text-text-2"}>{row.label}</span>,
             },
             { key: "state", header: "그날", render: (row) => <span className={row.stateClass}>{row.state}</span> },
             { key: "streak", header: "연속", align: "right", render: (row) => row.streak },

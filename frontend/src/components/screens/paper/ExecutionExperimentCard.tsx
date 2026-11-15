@@ -207,7 +207,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
       {execution.data && !execution.data.available && <Banner tone="warn">{execution.data.message ?? "실행 감사를 읽을 수 없습니다."}</Banner>}
       {view && (
         <>
-          <p className="mb-2 text-xs text-muted">{view.head}</p>
+          <p className="mb-2 text-xs text-text-3">{view.head}</p>
           {view.chosen ? (
             <section aria-label="고른 시점(M1 — 주 판정)" className="mb-3">
               <h3 className="mb-1 text-xs font-semibold text-text-2">고른 시점 — 실제 체결 대비 계좌1식(M1 — 주 판정)</h3>
@@ -225,7 +225,7 @@ export function ExecutionExperimentCard({ books, market = "US" }: { books: reado
           {view.checkpoints && (
             <section aria-label="장중 확인(M8 — 서술)" className="mb-3">
               <h3 className="mb-1 text-xs font-semibold text-text-2">장중 확인 — 이용·자료·응답(M8 — 서술, 판정 없음)</h3>
-              <ul className="flex flex-col gap-0.5 text-xs text-body">
+              <ul className="flex flex-col gap-0.5 text-xs text-text-2">
                 {view.checkpoints.map((line) => <li key={line}>{line}</li>)}
               </ul>
               {checkpointRows && (

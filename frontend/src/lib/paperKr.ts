@@ -737,8 +737,8 @@ export function krPricesFinalText(value: boolean | null | undefined): { label: s
   if (value === false) {
     return { label: "잠정(토스)", className: "text-text-3", title: "한국 결정은 늘 금융위 확정 전 — 토스 잠정 관측치로 냅니다(확정은 체결 뒤 확정 조정)." };
   }
-  if (value === true) return { label: "확정", className: "text-body" };
-  return { label: EMPTY, className: "text-muted" };
+  if (value === true) return { label: "확정", className: "text-text-2" };
+  return { label: EMPTY, className: "text-text-3" };
 }
 
 /**

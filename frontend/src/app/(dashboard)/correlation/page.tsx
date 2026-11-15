@@ -111,7 +111,7 @@ export default function CorrelationPage() {
           </div>
 
           {(data.notes ?? []).map((note) => (
-            <p key={note} className="rounded-sm border border-border bg-canvas px-3 py-2 text-xs text-muted">
+            <p key={note} className="rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">
               <StatusText tone="warn" colorText={false} iconSize={12}>{note}</StatusText>
             </p>
           ))}

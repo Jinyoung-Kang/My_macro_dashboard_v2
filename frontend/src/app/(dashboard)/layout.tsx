@@ -149,7 +149,7 @@ function DashboardShell({
   // 이미 로그인이 확인됐으면, 다시 확인하는 동안(loading)에도 화면을 그대로 둡니다.
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-center justify-center text-sm text-muted">
+      <main className="flex min-h-screen items-center justify-center text-sm text-text-3">
         세션을 확인하는 중…
       </main>
     );
@@ -194,16 +194,16 @@ function BackendUnavailable({
           백엔드 API에 연결하지 못했습니다
         </h1>
         <p className="mt-2 text-warn">{reason}</p>
-        <p className="mt-4 text-muted">
+        <p className="mt-4 text-text-3">
           화면은 떠 있지만 데이터를 주는 백엔드가 응답하지 않습니다. 터미널에서 확인하세요.
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-control border border-border bg-surface-2 px-3 py-2 text-xs text-body">
+        <pre className="mt-2 overflow-x-auto rounded-control border border-border bg-surface-2 px-3 py-2 text-xs text-text-2">
 {`make doctor          # 어디가 막혔는지 한 번에
 docker compose ps    # backend가 running인지
 make logs S=backend  # 기동 실패 원인`}
         </pre>
-        <p className="mt-3 text-xs text-muted">
-          화면이 찾는 주소: <code className="text-body">{apiBase() || "같은 출처 /api"}</code> ·{" "}
+        <p className="mt-3 text-xs text-text-3">
+          화면이 찾는 주소: <code className="text-text-2">{apiBase() || "같은 출처 /api"}</code> ·{" "}
           {retrying ? "다시 확인하는 중…" : `${SESSION_RETRY_MS / 1000}초마다 자동으로 다시 확인합니다`}
         </p>
         <button
@@ -237,16 +237,16 @@ function OwnerMissing({ retrying, onRetry }: { retrying: boolean; onRetry: () =>
         <p className="mt-2 text-warn">
           로컬 실행은 로그인 없이 운영자 계정으로 열립니다. .env에 OWNER_EMAIL·APP_PASSWORD를 넣고 make up 하세요.
         </p>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-muted">
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-text-3">
           <li>.env의 OWNER_EMAIL·APP_PASSWORD가 비어 있음 — 계정이 하나도 없을 때만 그 값으로 운영자를 만듭니다</li>
           <li>스키마가 아직 적용되지 않음(docker compose up을 직접 쓴 경우) — make migrate 또는 make doctor</li>
           <li>복원한 백업에 운영자 없이 회원만 있음 — 계정이 하나라도 있으면 새로 만들지 않으니 운영자가 있는 백업인지 확인하세요</li>
         </ul>
-        <pre className="mt-2 overflow-x-auto rounded-control border border-border bg-surface-2 px-3 py-2 text-xs text-body">
+        <pre className="mt-2 overflow-x-auto rounded-control border border-border bg-surface-2 px-3 py-2 text-xs text-text-2">
 {`make up              # .env를 고친 뒤 — 백엔드가 기동하며 운영자 계정을 만듦
 make logs S=backend  # 그래도 이 화면이면 원인 확인`}
         </pre>
-        <p className="mt-3 text-xs text-muted">
+        <p className="mt-3 text-xs text-text-3">
           {retrying ? "다시 확인하는 중…" : `${SESSION_RETRY_MS / 1000}초마다 자동으로 다시 확인합니다`}
         </p>
         <button

@@ -21,7 +21,7 @@ export default function VerifyPage() {
   return (
     <AuthCard title="메일 인증">
       {result === null ? (
-        <p className="mt-3 text-xs text-muted">확인하는 중…</p>
+        <p className="mt-3 text-xs text-text-3">확인하는 중…</p>
       ) : (
         <AuthMessage tone={result.ok ? "ok" : "error"}>{result.message}</AuthMessage>
       )}

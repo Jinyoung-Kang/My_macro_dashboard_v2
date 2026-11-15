@@ -26,7 +26,7 @@ describe("값이 없으면 —", () => {
       expect(formatUsd(value)).toBe("—");
       expect(formatShares(value)).toBe("—");
       expect(formatAge(value)).toBe("—");
-      expect(deltaColor(value)).toBe("text-muted");
+      expect(deltaColor(value)).toBe("text-text-3");
     }
   });
 });
@@ -35,7 +35,7 @@ describe("부호와 색은 보이는 숫자 기준", () => {
   it("-0.004는 2자리에서 0.00이고 중립색", () => {
     expect(formatNumber(-0.004)).toBe("0.00");
     expect(formatSigned(-0.004)).toBe("0.00");
-    expect(deltaColor(-0.004)).toBe("text-body");
+    expect(deltaColor(-0.004)).toBe("text-text-2");
     expect(deltaColor(-0.004, 3)).toBe("text-down");
     expect(formatSigned(0.006)).toBe("+0.01");
   });
@@ -196,7 +196,7 @@ describe("부호 −(U+2212) — 변화 칩(formatSignedMinus)", () => {
 describe("해석 색(statusColor) — 강조 파랑을 쓰지 않는 네 단계(명세 원칙 A1)", () => {
   it("green·blue·orange·red와 모름이 서로 다른 클래스이고, 어느 것도 강조색(accent)이 아니다", () => {
     const classes = ["green", "blue", "orange", "red", null].map((color) => statusColor(color));
-    expect(classes).toEqual(["text-ok", "text-text", "text-warn", "text-danger", "text-body"]);
+    expect(classes).toEqual(["text-ok", "text-text", "text-warn", "text-danger", "text-text-2"]);
     expect(new Set(classes).size).toBe(5);
     expect(classes.some((name) => name.includes("accent"))).toBe(false);
   });

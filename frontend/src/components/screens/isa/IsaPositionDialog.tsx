@@ -110,7 +110,7 @@ function PositionForm({
       {field("quantity", "수량", "10", undefined, true)}
       {field("price", "가격(평균 매입가)", "12,000", "평균 매입가입니다. 여기를 고쳐도 현금은 바뀌지 않습니다 — 체결 금액이 틀렸으면 매매 내역의 '고치기'를 쓰세요.", true)}
       <p className="text-sm text-text-2">
-        매입 금액 = 수량 × 가격: <strong className="font-semibold text-bright">{amount === null ? "—" : formatWon(amount)}</strong>
+        매입 금액 = 수량 × 가격: <strong className="font-semibold text-text">{amount === null ? "—" : formatWon(amount)}</strong>
       </p>
 
       {!checked.ok && (

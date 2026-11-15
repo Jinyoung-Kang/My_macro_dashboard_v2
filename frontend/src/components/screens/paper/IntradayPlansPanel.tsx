@@ -57,7 +57,7 @@ export function IntradayPlansPanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">장중 판단(자유 시점 판)</h3>
-          <p className="text-xs text-muted">{view.summary}</p>
+          <p className="text-xs text-text-3">{view.summary}</p>
         </div>
         <Button onClick={() => setConfirmingFor(book)} disabled={request.busy || confirming || view.blocked !== null}>
           {request.busy ? "예약 중…" : "지금 장중 판단 요청"}
@@ -65,16 +65,16 @@ export function IntradayPlansPanel({
       </div>
       {view.blocked && <p className="mt-2 text-xs text-warn">{view.blocked}</p>}
       {view.rows.length === 0 ? (
-        <p className="mt-2 text-xs text-muted">이 세션에 예약된 장중 판단이 없습니다.</p>
+        <p className="mt-2 text-xs text-text-3">이 세션에 예약된 장중 판단이 없습니다.</p>
       ) : (
         <ul className="mt-2 flex flex-col gap-1.5">
           {view.rows.map((row) => (
             <li key={row.key} className="text-xs leading-relaxed">
               <span className={`mr-2 inline-flex rounded-control px-1.5 py-0.5 ${row.badge.className}`}>{row.badge.label}</span>
               <span>{row.text}</span>
-              {row.question && <span className="text-muted"> — {row.question}</span>}
-              {row.trigger && <span className="block text-muted">{row.trigger}</span>}
-              {row.reason && <span className="block text-muted">사유: {row.reason}</span>}
+              {row.question && <span className="text-text-3"> — {row.question}</span>}
+              {row.trigger && <span className="block text-text-3">{row.trigger}</span>}
+              {row.reason && <span className="block text-text-3">사유: {row.reason}</span>}
             </li>
           ))}
         </ul>

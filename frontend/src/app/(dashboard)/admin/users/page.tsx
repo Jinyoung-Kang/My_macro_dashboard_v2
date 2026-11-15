@@ -150,7 +150,7 @@ export default function AdminUsersPage() {
         showClose={false}
       >
         <form onSubmit={confirmPromote} className="mt-4 flex flex-col gap-3" aria-busy={update.busy}>
-          <label className="text-xs text-muted">
+          <label className="text-xs text-text-3">
             운영자 비밀번호
             <input type="password" autoComplete="off" value={promotePassword} disabled={update.busy}
               onChange={(event) => setPromotePassword(event.target.value)}
@@ -168,12 +168,12 @@ export default function AdminUsersPage() {
 
       <Card title="회원 만들기" subtitle="메일 없이 인증된 회원을 만듭니다. 처음 비밀번호는 직접 전달하고, 회원이 내 계정에서 바꾸도록 안내하세요.">
         <form onSubmit={submit} className="flex max-w-sm flex-col gap-3">
-          <label className="text-xs text-muted">
+          <label className="text-xs text-text-3">
             이메일
             <input type="email" value={email} onChange={(event) => setEmail(event.target.value)}
               className={`mt-1 w-full ${inputClasses()}`} />
           </label>
-          <label className="text-xs text-muted">
+          <label className="text-xs text-text-3">
             처음 비밀번호(10자 이상)
             <input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)}
               className={`mt-1 w-full ${inputClasses()}`} />
@@ -197,7 +197,7 @@ export default function AdminUsersPage() {
             { key: "at", header: "시각", render: (row) => formatKst(row.at) },
             { key: "user", header: "사용자 번호", render: (row) => (row.userId === null ? "—" : String(row.userId)) },
             { key: "action", header: "동작", render: (row) => row.action },
-            { key: "detail", header: "내용", render: (row) => <span className="text-xs text-muted">{row.detail}</span> },
+            { key: "detail", header: "내용", render: (row) => <span className="text-xs text-text-3">{row.detail}</span> },
           ]}
         />
       </Card>

@@ -69,13 +69,13 @@ export function Claude2StartSection({
       // 닫지 않는 까닭: 한 번의 일시 오류로 출발을 막지 않고, 지금 켜져 있는지·창 안인지는 서버가 다시 판정합니다(꺼짐·창 밖·사슬 준비 중은 400 — 기록 없음).
       actions={<Freshness refreshError={statusRefreshError} />}
     >
-      <p className="text-sm leading-relaxed text-body">{view.body}</p>
+      <p className="text-sm leading-relaxed text-text-2">{view.body}</p>
       <div className="mt-3">
         <Banner tone={view.armTone}>{view.armNote}</Banner>
       </div>
       <Claude2WindowList lines={view.lines} className="mt-3" />
       <Claude2CheckpointLine line={claude2CheckpointLine(status?.available ? status.claude2 : null)} />
-      <p className="mt-2 text-xs text-muted">비용: {view.cost}</p>
+      <p className="mt-2 text-xs text-text-3">비용: {view.cost}</p>
 
       {confirming ? (
         <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
@@ -112,7 +112,7 @@ export function Claude2StartSection({
 /** '오늘 장중 확인' 한 줄(lib/paper claude2CheckpointLine — 단계 2). 줄이 없으면(칸을 보내지 않는 백엔드) 그리지 않습니다. */
 export function Claude2CheckpointLine({ line, className = "mt-2" }: { line: string | null; className?: string }) {
   if (!line) return null;
-  return <p aria-label="오늘 장중 확인" className={`text-xs leading-relaxed text-muted ${className}`}>{line}</p>;
+  return <p aria-label="오늘 장중 확인" className={`text-xs leading-relaxed text-text-3 ${className}`}>{line}</p>;
 }
 
 /**
@@ -124,8 +124,8 @@ export function Claude2WindowList({ lines, className = "" }: { lines: readonly D
     <dl aria-label="계좌2 결정 창" className={`grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 ${className}`}>
       {lines.map((line) => (
         <div key={line.key} className="min-w-0">
-          <dt className="text-muted">{line.label}</dt>
-          <dd className="tabular-nums text-bright">{line.value}</dd>
+          <dt className="text-text-3">{line.label}</dt>
+          <dd className="tabular-nums text-text">{line.value}</dd>
         </div>
       ))}
     </dl>

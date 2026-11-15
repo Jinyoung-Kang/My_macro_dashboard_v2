@@ -35,7 +35,7 @@ export function AiEngineSection() {
 
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-base font-semibold text-bright">AI 엔진</h2>
+      <h2 className="text-base font-semibold text-text">AI 엔진</h2>
 
       {engines.loading && !engines.data && <Loading />}
       {/* 엔진 목록을 받지 못하면 엔진 표가 없고 호출 버튼이 이유 없이 꺼져 있었습니다(QA-103, ai/report의 QA-050과 같음). */}
@@ -61,7 +61,7 @@ export function AiEngineSection() {
                 className: "break-keep",
                 // available은 "허용됐고 키도 있음"입니다(ADR 0014). 허용 목록 밖이면 키가 있어도 쓰지 않으므로 따로 적습니다.
                 render: (row) => (
-                  <span className={row.available ? "text-ok" : "text-muted"}>
+                  <span className={row.available ? "text-ok" : "text-text-3"}>
                     {row.available ? "설정됨" : row.unavailableReason === "not_allowed" ? "이 배포에서 사용 안 함" : "없음"}
                   </span>
                 ),
@@ -119,7 +119,7 @@ export function AiEngineSection() {
           }
         >
           {result.status ? (
-            <article className="whitespace-pre-wrap text-sm leading-relaxed text-body">
+            <article className="whitespace-pre-wrap text-sm leading-relaxed text-text-2">
               {result.response}
             </article>
           ) : (
@@ -127,12 +127,12 @@ export function AiEngineSection() {
             <Banner tone="danger">{withoutLeadingIcon(result.error ?? "")}</Banner>
           )}
           {result.failoverPath && (
-            <p className="mt-3 text-xs text-muted">
+            <p className="mt-3 text-xs text-text-3">
               폴오버 경로: {result.failoverPath.map((step) => withoutLeadingIcon(step)).join(" → ")}
             </p>
           )}
           {result.translationInfo && (
-            <p className="mt-1 text-xs text-muted">{result.translationInfo}</p>
+            <p className="mt-1 text-xs text-text-3">{result.translationInfo}</p>
           )}
         </Card>
       )}

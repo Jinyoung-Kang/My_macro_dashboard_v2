@@ -120,8 +120,8 @@ export function ReviewsSection({
   return (
     <>
       <Card title="주간 복기" source={source} actions={<Freshness refreshError={list.refreshError} />}>
-        <p className="text-xs leading-relaxed text-muted">{korea ? KR_REVIEW_SCHEDULE_NOTE : REVIEW_SCHEDULE_NOTE}</p>
-        {note && <p className="mt-2 text-xs text-body">{note}</p>}
+        <p className="text-xs leading-relaxed text-text-3">{korea ? KR_REVIEW_SCHEDULE_NOTE : REVIEW_SCHEDULE_NOTE}</p>
+        {note && <p className="mt-2 text-xs text-text-2">{note}</p>}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button onClick={() => setConfirming(true)} disabled={run.busy || confirming}>
             {run.busy ? `복기 중… ${elapsed}초` : "지금 복기 실행"}
@@ -150,7 +150,7 @@ export function ReviewsSection({
         source={source}
       >
         {rows.length === 0 ? (
-          <p className="text-sm text-muted">
+          <p className="text-sm text-text-3">
             {korea ? KR_REVIEW_EMPTY : "아직 복기가 없습니다 — Claude 계좌가 시작한 다음 주 일요일 21:00(KST) 뒤에 첫 복기가 생깁니다."}
           </p>
         ) : (
@@ -174,12 +174,12 @@ export function ReviewsSection({
                 render: (row) => (
                   <span className="flex flex-col gap-1">
                     <Chip badge={row.status} />
-                    {row.note && <span className="text-xs text-muted">{row.note}</span>}
+                    {row.note && <span className="text-xs text-text-3">{row.note}</span>}
                   </span>
                 ),
               },
-              { key: "window", header: "창", render: (row) => <span className="text-xs text-body">{row.window}</span> },
-              { key: "counts", header: "판정", render: (row) => <span className="text-xs text-body">{row.counts}</span> },
+              { key: "window", header: "창", render: (row) => <span className="text-xs text-text-2">{row.window}</span> },
+              { key: "counts", header: "판정", render: (row) => <span className="text-xs text-text-2">{row.counts}</span> },
               {
                 key: "proposal",
                 header: "제안",
@@ -188,11 +188,11 @@ export function ReviewsSection({
                   return id !== null && onOpenProposal ? (
                     <Button variant="ghost" onClick={() => onOpenProposal(id)}>{row.proposal}</Button>
                   ) : (
-                    <span className="text-xs text-body">{row.proposal}</span>
+                    <span className="text-xs text-text-2">{row.proposal}</span>
                   );
                 },
               },
-              { key: "createdAt", header: "남긴 시각", render: (row) => <span className="text-xs text-muted">{row.createdAt}</span> },
+              { key: "createdAt", header: "남긴 시각", render: (row) => <span className="text-xs text-text-3">{row.createdAt}</span> },
             ]}
           />
         )}
@@ -234,7 +234,7 @@ function ReviewBody({
     <section aria-label={view.title} className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center gap-2">
         <Chip badge={view.status} />
-        <span className="text-xs text-muted">{`판정 ${view.counts}`}</span>
+        <span className="text-xs text-text-3">{`판정 ${view.counts}`}</span>
       </header>
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
         {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
@@ -248,15 +248,15 @@ function ReviewBody({
             rows={view.verdicts}
             rowKey={(row) => row.key}
             columns={[
-              { key: "decision", header: "결정", render: (row) => <code className="text-xs text-body">{row.decision}</code> },
-              { key: "book", header: "계좌", render: (row) => <span className="whitespace-nowrap text-xs text-muted">{row.book}</span> },
-              { key: "asOf", header: "기준 거래일", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.asOf}</span> },
-              { key: "kind", header: "종류", render: (row) => <span className="text-xs text-muted">{row.kind}</span> },
+              { key: "decision", header: "결정", render: (row) => <code className="text-xs text-text-2">{row.decision}</code> },
+              { key: "book", header: "계좌", render: (row) => <span className="whitespace-nowrap text-xs text-text-3">{row.book}</span> },
+              { key: "asOf", header: "기준 거래일", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.asOf}</span> },
+              { key: "kind", header: "종류", render: (row) => <span className="text-xs text-text-3">{row.kind}</span> },
               { key: "thesis", header: "판정", render: (row) => <Chip badge={row.thesisHeld} /> },
-              { key: "note", header: "근거", render: (row) => <span className="text-xs text-body">{row.note}</span> },
+              { key: "note", header: "근거", render: (row) => <span className="text-xs text-text-2">{row.note}</span> },
             ]}
           />
-          {view.missing && <p className="mt-2 text-xs text-muted">{view.missing}</p>}
+          {view.missing && <p className="mt-2 text-xs text-text-3">{view.missing}</p>}
         </Part>
       )}
 
@@ -267,8 +267,8 @@ function ReviewBody({
             rows={entries}
             rowKey={(row) => row.key}
             columns={[
-              { key: "decision", header: "결정", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.decision}</span> },
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
+              { key: "decision", header: "결정", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.decision}</span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
               // 방향이 있어야 변화의 부호를 읽을 수 있습니다 — 매도의 음수는 피한 하락(손실이 아님).
               {
                 key: "side",
@@ -277,14 +277,14 @@ function ReviewBody({
                 render: (row) => <span className={`text-xs ${sideClass(row.sideCode)}`}>{row.side}</span>,
               },
               { key: "reject", header: "거절 사유", render: (row) => <span className="text-xs text-warn">{row.rejectReason}</span> },
-              { key: "entryDate", header: "진입일", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.entryDate}</span> },
+              { key: "entryDate", header: "진입일", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.entryDate}</span> },
               { key: "entryPrice", header: "진입가(원)", align: "right", className: "whitespace-nowrap", render: (row) => row.entryPrice },
               {
                 key: "source",
                 header: "진입가 출처",
                 render: (row) => (row.badges.length > 0 ? (
                   <span className="flex flex-wrap gap-1">{row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}</span>
-                ) : <span className="text-xs text-muted">—</span>),
+                ) : <span className="text-xs text-text-3">—</span>),
               },
               {
                 key: "returnPct",
@@ -311,8 +311,8 @@ function ReviewBody({
             {comparison.rows.map((row) => (
               <li key={row.key} className="flex flex-wrap items-center gap-2">
                 {/* 다른 한국 화면처럼 계좌 이름 — 코드는 마우스를 올려 봅니다. */}
-                <span className="font-medium text-body" title={row.code}>{row.book}</span>
-                <span className="tabular-nums font-semibold text-bright">{row.returnPct}</span>
+                <span className="font-medium text-text-2" title={row.code}>{row.book}</span>
+                <span className="tabular-nums font-semibold text-text">{row.returnPct}</span>
                 {row.reason && <span className="text-text-3">{row.reason}</span>}
                 {row.badges.map((badge) => <Chip key={badge.key} badge={badge} />)}
               </li>
@@ -323,21 +323,21 @@ function ReviewBody({
 
       {view.recurringErrors.length > 0 && (
         <Part title="반복되는 오류">
-          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
+          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-text-2">
             {view.recurringErrors.map((text) => <li key={text}>{text}</li>)}
           </ul>
         </Part>
       )}
       {view.keep.length > 0 && (
         <Part title="지킬 것">
-          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
+          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-text-2">
             {view.keep.map((text) => <li key={text}>{text}</li>)}
           </ul>
         </Part>
       )}
       {view.watchItems.length > 0 && (
         <Part title="지켜볼 것" note="규칙을 바꾸기에는 근거가 모자라 다음 복기가 이어받아 따지는 항목입니다.">
-          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-body">
+          <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-text-2">
             {view.watchItems.map((text) => <li key={text}>{text}</li>)}
           </ul>
         </Part>
@@ -346,9 +346,9 @@ function ReviewBody({
       {proposal && (
         <Part title="프레임 제안" note="자동 반영은 없습니다 — 프레임 탭에서 승인해야 새 판이 됩니다.">
           <div className="flex flex-col gap-2 rounded-control border border-border px-3 py-2">
-            <p className="text-sm font-semibold text-bright">{proposal.label}</p>
-            {proposal.summary && <p className="text-xs leading-relaxed text-body">{proposal.summary}</p>}
-            <p className="text-xs text-muted">{proposal.detail}</p>
+            <p className="text-sm font-semibold text-text">{proposal.label}</p>
+            {proposal.summary && <p className="text-xs leading-relaxed text-text-2">{proposal.summary}</p>}
+            <p className="text-xs text-text-3">{proposal.detail}</p>
             {onOpenProposal && (
               <div>
                 <Button onClick={() => onOpenProposal(proposal.id)}>프레임 탭에서 이 제안 보기</Button>
@@ -357,7 +357,7 @@ function ReviewBody({
           </div>
         </Part>
       )}
-      {view.noProposal && <p className="text-xs text-muted">제안 없음 — 이번 복기는 프레임을 고칠 반복 오류를 찾지 않았습니다.</p>}
+      {view.noProposal && <p className="text-xs text-text-3">제안 없음 — 이번 복기는 프레임을 고칠 반복 오류를 찾지 않았습니다.</p>}
 
       {view.usage.length > 0 && (
         <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -366,14 +366,14 @@ function ReviewBody({
       )}
       {view.input && (
         <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted">복기 입력(JSON — 서버가 장부에서 만든 사실)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{view.input}</pre>
+          <summary className="cursor-pointer text-text-3">복기 입력(JSON — 서버가 장부에서 만든 사실)</summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{view.input}</pre>
         </details>
       )}
       {view.response && (
         <details className="rounded-control border border-border px-3 py-2 text-xs">
-          <summary className="cursor-pointer text-muted">복기 응답(JSON)</summary>
-          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-body">{view.response}</pre>
+          <summary className="cursor-pointer text-text-3">복기 응답(JSON)</summary>
+          <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{view.response}</pre>
         </details>
       )}
     </section>
@@ -383,8 +383,8 @@ function ReviewBody({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-1">
-      <dt className="text-muted">{label}</dt>
-      <dd className="text-body">{value}</dd>
+      <dt className="text-text-3">{label}</dt>
+      <dd className="text-text-2">{value}</dd>
     </div>
   );
 }
@@ -392,8 +392,8 @@ function Meta({ label, value }: { label: string; value: string }) {
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold text-bright">{title}</h3>
-      {note && <p className="text-xs text-muted">{note}</p>}
+      <h3 className="text-xs font-semibold text-text">{title}</h3>
+      {note && <p className="text-xs text-text-3">{note}</p>}
       {children}
     </section>
   );

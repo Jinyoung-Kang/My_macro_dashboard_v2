@@ -104,7 +104,7 @@ export function RiskSection({
                   ? EMPTY
                   : `${formatSigned(item.delta, entry.digits)}${entry.unit}`
               }
-              tone={item?.available ? undefined : "text-muted"}
+              tone={item?.available ? undefined : "text-text-3"}
               caption={item?.asOf ? `기준일 ${item.asOf}` : undefined}
               source={RISK_SOURCES[entry.key]}
               note={
@@ -120,7 +120,7 @@ export function RiskSection({
       </div>
 
       <div className="mt-5">
-        <h3 className="mb-2 text-sm font-semibold text-bright">
+        <h3 className="mb-2 text-sm font-semibold text-text">
           신용·은행권·변동성 핵심 해석 기준표
         </h3>
         <Table

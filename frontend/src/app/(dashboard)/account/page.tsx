@@ -88,7 +88,7 @@ export default function AccountPage() {
             { label: "새 비밀번호", value: next, set: setNext, auto: "new-password" },
             { label: "새 비밀번호 확인", value: confirm, set: setConfirm, auto: "new-password" },
           ].map((field) => (
-            <label key={field.label} className="text-xs text-muted">
+            <label key={field.label} className="text-xs text-text-3">
               {field.label}
               <input
                 type="password"
@@ -124,7 +124,7 @@ export default function AccountPage() {
               }}
               className="flex max-w-sm flex-col gap-3"
             >
-              <label className="text-xs text-muted">
+              <label className="text-xs text-text-3">
                 비밀번호 확인
                 <input
                   type="password"

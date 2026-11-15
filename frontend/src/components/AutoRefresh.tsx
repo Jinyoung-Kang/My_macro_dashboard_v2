@@ -109,7 +109,7 @@ export function AutoRefreshControl({
 
   return (
     <div className="flex items-center gap-2">
-      <label className="flex items-center gap-1.5 text-xs text-muted">
+      <label className="flex items-center gap-1.5 text-xs text-text-3">
         <span className="whitespace-nowrap">자동 갱신</span>
         <NativeSelect
           value={String(seconds)}
@@ -125,7 +125,7 @@ export function AutoRefreshControl({
         </NativeSelect>
       </label>
 
-      <span className="text-xs tabular-nums text-muted">
+      <span className="text-xs tabular-nums text-text-3">
         {seconds === 0 ? (
           "수동"
         ) : loading ? (

@@ -145,7 +145,7 @@ export function SelectionSection() {
         }
       >
         {rerankFeedback && <div className="mb-3 flex flex-col gap-2">{rerankFeedback}</div>}
-        <p className="mb-3 text-xs leading-relaxed text-muted">
+        <p className="mb-3 text-xs leading-relaxed text-text-3">
           수익률은 공시를 본 다음 거래일 종가에 사서 다음 공시의 다음 거래일까지 든 <strong>복제 수익률</strong>이고, 티커가 붙은
           보유(커버 보유분)만으로 냅니다 — 커버리지가 100% 미만이면 &quot;커버 보유분 기준&quot;입니다. 행의 &quot;구간 펼치기&quot;로 분기마다의
           값을 봅니다.
@@ -180,7 +180,7 @@ export function SelectionSection() {
 
       {limits.length > 0 && (
         <Card title="트랙레코드의 한계" source={PAPER_SOURCES.trackRecord}>
-          <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-body">
+          <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-text-2">
             {limits.map((limit) => (
               <li key={limit}>{limit}</li>
             ))}
@@ -201,7 +201,7 @@ export function SelectionSection() {
           emptyText="아직 선정 기록이 없습니다 — 초기 선정은 규칙 계좌 초기화 때, 그 뒤는 재선정일마다 남습니다."
           columns={[
             { key: "asOf", header: "기준일", className: "whitespace-nowrap", cell: (row) => row.asOfDate },
-            { key: "names", header: "선정 기관", cell: (row) => <span className="text-xs text-body">{row.names}</span> },
+            { key: "names", header: "선정 기관", cell: (row) => <span className="text-xs text-text-2">{row.names}</span> },
           ]}
         />
       </Card>
@@ -240,7 +240,7 @@ function GroupBCard({
       ].filter(Boolean).join(" · ")}
       source={PAPER_SOURCES.groupB}
     >
-      <p className="mb-3 text-xs leading-relaxed text-muted">
+      <p className="mb-3 text-xs leading-relaxed text-text-3">
         이미 지켜보던 &quot;기관 13F 포트폴리오 분석&quot; 메뉴의 기관을 그룹 A와 같은 방법(공시 다음 거래일 복제, 수정주가)으로
         잽니다. 출처 q30은 후보 수집 저장본(CUSIP 매핑 티커), q8은 기존 메뉴 저장본(이름 매핑 티커)입니다. 인덱스·연기금은 덮인
         대형주 쪽만 보여 복제 수익률이 부풀기 쉬워, 수익률이 높아도 커버리지 기준에서 빠질 수 있습니다.{" "}
@@ -269,7 +269,7 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
         : "규칙 계좌가 13F 신호를 읽는 기관(두 그룹의 선정)"}
       source={PAPER_SOURCES.pool}
     >
-      <p className="mb-3 text-xs leading-relaxed text-muted">{poolWeightNote(groupWeightA)}</p>
+      <p className="mb-3 text-xs leading-relaxed text-text-3">{poolWeightNote(groupWeightA)}</p>
       <section aria-label="신호 풀 표">
         <DataTable<PoolRow>
           rows={rows}
@@ -283,8 +283,8 @@ function PoolCard({ rows, asOfDate, groupWeightA }: { rows: PoolRow[]; asOfDate:
               header: "기관",
               cell: (row) => (
                 <div className="flex flex-col">
-                  <span className="font-semibold text-bright">{row.name}</span>
-                  <span className="text-xs text-muted">CIK {row.cik}</span>
+                  <span className="font-semibold text-text">{row.name}</span>
+                  <span className="text-xs text-text-3">CIK {row.cik}</span>
                 </div>
               ),
             },
@@ -326,7 +326,7 @@ function CollectionCard({
         </>
       )}
     >
-      <p className={`text-sm ${collection ? "text-body" : "text-muted"}`}>{line}</p>
+      <p className={`text-sm ${collection ? "text-text-2" : "text-text-3"}`}>{line}</p>
       {children && <div className="mt-3 flex flex-col gap-2">{children}</div>}
     </Card>
   );
@@ -359,7 +359,7 @@ function CandidateTable({
 }) {
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-muted">
+      <p className="text-sm text-text-3">
         {group === "A"
           ? "후보 기관이 없습니다 — 수집기의 후보 목록(sec.13f.track_record_index)이 비어 있습니다."
           : "그룹 B 후보가 없습니다 — 기존 13F 메뉴 기관의 저장본(q30·q8)이 아직 없거나 이 기준일에 계산하지 않았습니다."}
@@ -379,8 +379,8 @@ function CandidateTable({
         const about = group === "B" ? (row.desc ?? row.style) : row.style;
         return (
           <div className="flex min-w-[12rem] flex-col items-start gap-1">
-            <span className="font-semibold text-bright">{nameOf(row)}</span>
-            <span className="text-xs text-muted">{about ?? EMPTY} · CIK {row.cik}</span>
+            <span className="font-semibold text-text">{nameOf(row)}</span>
+            <span className="text-xs text-text-3">{about ?? EMPTY} · CIK {row.cik}</span>
             <Button variant="ghost" expanded={expanded} onClick={() => onToggle(openKey(row))}>
               {expanded ? "구간 접기" : "구간 펼치기"}
             </Button>
@@ -403,7 +403,7 @@ function CandidateTable({
       header: "선정",
       render: (row) => {
         const badge = selectedBadge(row);
-        return badge ? <Badges badges={[badge]} /> : <span className="text-muted">{EMPTY}</span>;
+        return badge ? <Badges badges={[badge]} /> : <span className="text-text-3">{EMPTY}</span>;
       },
     },
     group === "A"
@@ -425,7 +425,7 @@ function CandidateTable({
       render: (row) => (
         <div className="flex flex-col items-end">
           <span>{periodsText(row)}</span>
-          <span className="whitespace-nowrap text-xs text-muted">{filingSpanText(row)}</span>
+          <span className="whitespace-nowrap text-xs text-text-3">{filingSpanText(row)}</span>
         </div>
       ),
     },
@@ -459,7 +459,7 @@ function CandidateTable({
 
   return (
     <>
-      <p className="mb-1 text-xs text-muted sm:hidden">← 표를 좌우로 넘겨 보세요</p>
+      <p className="mb-1 text-xs text-text-3 sm:hidden">← 표를 좌우로 넘겨 보세요</p>
       <div
         className="overflow-x-auto"
         tabIndex={0}
@@ -468,7 +468,7 @@ function CandidateTable({
       >
         <table className="w-full min-w-[1100px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">
+            <tr className="border-b border-border text-xs uppercase tracking-wide text-text-3">
               {columns.map((column) => (
                 <th key={column.key} title={column.title} className={`px-3 py-2 font-medium ${align(column)}`}>
                   {column.header}
@@ -479,7 +479,7 @@ function CandidateTable({
           <tbody>
             {rows.map((row) => (
               <Fragment key={row.cik}>
-                <tr className="border-b border-border/50 align-top hover:bg-surface-hover/60" aria-label={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`}>
+                <tr className="border-b border-border/50 align-top hover:bg-surface-2/60" aria-label={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`}>
                   {columns.map((column) => (
                     <td key={column.key} className={`px-3 py-2 tabular-nums ${align(column)}`}>
                       {column.render(row)}
@@ -487,7 +487,7 @@ function CandidateTable({
                   ))}
                 </tr>
                 {open.includes(openKey(row)) && (
-                  <tr className="border-b border-border/50 bg-canvas">
+                  <tr className="border-b border-border/50 bg-bg">
                     <td colSpan={columns.length} className="px-3 py-3">
                       <PeriodTable name={`${nameOf(row)}${group === "B" ? " (그룹 B)" : ""}`} span={span} periods={row.periods ?? []} />
                     </td>
@@ -506,7 +506,7 @@ function CandidateTable({
 function PeriodTable({ name, span, periods }: { name: string; span: string; periods: PaperTrackRecordPeriod[] }) {
   return (
     <section aria-label={`${name} 구간`} className="flex flex-col gap-2">
-      <p className="text-xs text-muted">
+      <p className="text-xs text-text-3">
         {name} — 공시 다음 거래일 종가에 사서 다음 공시의 다음 거래일 종가까지(마지막 구간은 기준일까지). 첫 구간은 {span} 시작으로
         자릅니다. 수익률이 &quot;—&quot;인 구간은 커버된 보유가 없어 누적·통계에서 뺐습니다.
       </p>

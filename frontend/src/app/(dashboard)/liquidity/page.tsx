@@ -182,10 +182,10 @@ export default function LiquidityPage() {
                     className="h-2 w-2 shrink-0 rounded-full"
                     style={{ backgroundColor: component.color }}
                   />
-                  <h3 className="text-xs font-semibold text-body">{component.name}</h3>
-                  <span className="text-xs text-muted">{component.unit}</span>
+                  <h3 className="text-xs font-semibold text-text-2">{component.name}</h3>
+                  <span className="text-xs text-text-3">{component.unit}</span>
                 </div>
-                <p className="mb-2 text-xs leading-relaxed text-muted">
+                <p className="mb-2 text-xs leading-relaxed text-text-3">
                   {component.note}
                 </p>
                 <LineSeries

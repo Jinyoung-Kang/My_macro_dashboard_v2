@@ -54,7 +54,7 @@ const RECENT_FILLS = 5;
 const SLOT_COLORS = [SERIES_COLORS.blue, SERIES_COLORS.orange, SERIES_COLORS.green];
 const OTHER_COLOR = "#606870";
 const CASH_COLOR = "#9ea7b3";
-/** 패널 바탕(bg-canvas = 토큰 bg) — 도넛 조각 사이 2px 틈의 색이라 바탕과 같아야 틈으로 보입니다(라이트·다크를 따라 바뀜). */
+/** 패널 바탕(bg-bg = 토큰 bg) — 도넛 조각 사이 2px 틈의 색이라 바탕과 같아야 틈으로 보입니다(라이트·다크를 따라 바뀜). */
 const PANEL_SURFACE = "var(--bg)";
 
 function segmentColor(segment: Pick<CompositionSegment, "kind" | "slot">): string {
@@ -133,16 +133,16 @@ export function AccountDetailPanel({
         if (event.key === "Escape") onClose();
       }}
       // 열린 계좌 상세는 잉크 테두리 — 강조 파랑은 누를 수 있는 것에만(명세 A1).
-      className="mt-4 flex flex-col gap-5 rounded-control border border-text bg-canvas px-4 py-4"
+      className="mt-4 flex flex-col gap-5 rounded-control border border-text bg-bg px-4 py-4"
     >
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {/* 열 때 초점을 받는 자리(tabIndex -1 — Tab 순서에는 넣지 않음). 단추가 아니라 초점 테두리는 그리지 않습니다. */}
-            <h3 id={titleId} tabIndex={-1} className="text-base font-semibold text-bright focus:outline-hidden">{book.label} 상세</h3>
+            <h3 id={titleId} tabIndex={-1} className="text-base font-semibold text-text focus:outline-hidden">{book.label} 상세</h3>
             <span className={`rounded-full border px-2 py-0.5 text-xs ${card.status.className}`}>{card.status.label}</span>
           </div>
-          {profile && <p className="mt-1 text-xs text-body">{profile.summary}</p>}
+          {profile && <p className="mt-1 text-xs text-text-2">{profile.summary}</p>}
         </div>
         <div className="flex items-center gap-2">
           <Freshness refreshError={positions.refreshError ?? fills.refreshError} />
@@ -152,27 +152,27 @@ export function AccountDetailPanel({
 
       <div className="grid gap-5 lg:grid-cols-2">
         <section aria-label="정의" className="flex flex-col gap-2">
-          <h4 className="text-xs font-semibold text-bright">정의</h4>
+          <h4 className="text-xs font-semibold text-text">정의</h4>
           {profile ? (
             <dl className="flex flex-col gap-2 text-xs leading-relaxed">
               {profile.definitions.map((definition) => (
                 <div key={definition.key} className="grid gap-x-3 sm:grid-cols-[6.5rem_minmax(0,1fr)]">
-                  <dt className="font-semibold text-muted">{definition.label}</dt>
-                  <dd className="text-body">{definition.text}</dd>
+                  <dt className="font-semibold text-text-3">{definition.label}</dt>
+                  <dd className="text-text-2">{definition.text}</dd>
                 </div>
               ))}
             </dl>
           ) : (
-            <p className="text-xs text-muted">이 계좌({book.code})의 정의가 화면에 없습니다 — 장부 숫자만 보입니다.</p>
+            <p className="text-xs text-text-3">이 계좌({book.code})의 정의가 화면에 없습니다 — 장부 숫자만 보입니다.</p>
           )}
           {settingRows.length > 0 && (
             <div className="mt-2 border-t border-border pt-2">
-              <h4 className="text-xs font-semibold text-bright">지금 설정</h4>
+              <h4 className="text-xs font-semibold text-text">지금 설정</h4>
               <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
                 {settingRows.map((row) => (
                   <div key={row.key} className="flex min-w-0 items-baseline justify-between gap-2">
-                    <dt className="text-muted" title={row.key}>{row.label}</dt>
-                    <dd className="text-right tabular-nums text-body">{row.value}</dd>
+                    <dt className="text-text-3" title={row.key}>{row.label}</dt>
+                    <dd className="text-right tabular-nums text-text-2">{row.value}</dd>
                   </div>
                 ))}
               </dl>
@@ -183,7 +183,7 @@ export function AccountDetailPanel({
 
         <section aria-label="핵심 숫자" className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-xs font-semibold text-bright">핵심 숫자</h4>
+            <h4 className="text-xs font-semibold text-text">핵심 숫자</h4>
             {/* 장중 추정이면 같은 격자의 장부 타일(현금·보유 수)과 섞여 확정처럼 읽히지 않게 머리 옆에도 배지(반박 검토). */}
             <EstimateBadge estimated={estimated} note={estimated ? "순자산·수익률·주식 노출" : null} />
           </div>
@@ -215,8 +215,8 @@ export function AccountDetailPanel({
 
       <section aria-label="구성" className="flex flex-col gap-3 border-t border-border pt-4">
         <div>
-          <h4 className="text-xs font-semibold text-bright">구성 — 순자산 대비 비중</h4>
-          <p className="mt-0.5 text-xs text-muted">
+          <h4 className="text-xs font-semibold text-text">구성 — 순자산 대비 비중</h4>
+          <p className="mt-0.5 text-xs text-text-3">
             상위 {COMPOSITION_TOP_N}종목은 따로, 나머지 종목은 &quot;기타&quot;(하나뿐이면 그 종목 이름), 현금과 현금성 종목({meta.cashLike} 등 — 설정
             {korea ? "kr.cashLikeTickers" : "cashLikeTickers"})은 한 묶음입니다. 비중은 장부의 평가액 ÷ 순자산입니다.
           </p>
@@ -228,7 +228,7 @@ export function AccountDetailPanel({
       </section>
 
       <section aria-label="최근 체결" className="flex flex-col gap-2 border-t border-border pt-4">
-        <h4 className="text-xs font-semibold text-bright">최근 체결 ({RECENT_FILLS}건)</h4>
+        <h4 className="text-xs font-semibold text-text">최근 체결 ({RECENT_FILLS}건)</h4>
         {fills.loading && !fills.data && <Loading label="체결을 읽는 중…" />}
         {fills.error && <ErrorState message={fills.error} onRetry={fills.reload} />}
         {fills.data && !fills.data.available && <Banner tone="warn">{fills.data.message}</Banner>}
@@ -300,7 +300,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
   const summary = segments.map((segment) => `${segment.label} ${segment.shareText}`).join(", ");
   return (
     <>
-      {note && <p className="text-xs text-muted">{note}</p>}
+      {note && <p className="text-xs text-text-3">{note}</p>}
       {form === "donut" && (
         <div className="grid items-center gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <DonutChart
@@ -352,7 +352,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
                   className="inline-block h-2.5 w-2.5 shrink-0 rounded-[2px]"
                   style={{ backgroundColor: colorOf.get(row.segmentKey) ?? "transparent" }}
                 />
-                <span className={row.isCash ? "text-body" : "font-semibold text-bright"}>{row.label}</span>
+                <span className={row.isCash ? "text-text-2" : "font-semibold text-text"}>{row.label}</span>
                 {row.cashLike && (
                   <span title="현금성 ETF — 트레일링 스탑을 적용하지 않습니다." className="rounded-full border border-border bg-surface-2 px-2 py-px text-xs text-text-2">
                     현금성
@@ -387,11 +387,11 @@ function Legend({ segments }: { segments: readonly CompositionSegment[] }) {
             className="mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-[2px]"
             style={{ backgroundColor: segmentColor(segment) }}
           />
-          <span className="min-w-0 flex-1 text-body">
+          <span className="min-w-0 flex-1 text-text-2">
             {segment.label}
-            {segment.detail && <span className="block text-xs text-muted">{segment.detail}</span>}
+            {segment.detail && <span className="block text-xs text-text-3">{segment.detail}</span>}
           </span>
-          <span className="tabular-nums font-semibold text-bright">{segment.shareText}</span>
+          <span className="tabular-nums font-semibold text-text">{segment.shareText}</span>
         </li>
       ))}
     </ul>
@@ -402,9 +402,9 @@ function Legend({ segments }: { segments: readonly CompositionSegment[] }) {
 function Tile({ label, value, tone, caption }: { label: string; value: string; tone?: string; caption?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className={`text-sm font-semibold ${tone ?? "text-bright"}`}>{value}</dd>
-      {caption && <dd className="text-xs text-muted">{caption}</dd>}
+      <dt className="text-xs text-text-3">{label}</dt>
+      <dd className={`text-sm font-semibold ${tone ?? "text-text"}`}>{value}</dd>
+      {caption && <dd className="text-xs text-text-3">{caption}</dd>}
     </div>
   );
 }

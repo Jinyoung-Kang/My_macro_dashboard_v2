@@ -177,12 +177,12 @@ export function LiveValuationCard({
       key: "price",
       header: "가격",
       align: "right",
-      cell: (row) => <span className={`tabular-nums ${row.realtime ? "text-bright" : ""}`} title={row.priceTitle ?? undefined}>{row.price}</span>,
+      cell: (row) => <span className={`tabular-nums ${row.realtime ? "text-text" : ""}`} title={row.priceTitle ?? undefined}>{row.price}</span>,
     },
     {
       key: "at",
       header: "가격 기준",
-      cell: (row) => <span className={`whitespace-nowrap text-xs ${row.live ? "text-text-2" : "text-muted"}`}>{row.priceAt}</span>,
+      cell: (row) => <span className={`whitespace-nowrap text-xs ${row.live ? "text-text-2" : "text-text-3"}`}>{row.priceAt}</span>,
     },
     { key: "day", header: "직전 종가 대비", align: "right", cell: (row) => <Delta text={row.dayText} value={row.dayChangePct} /> },
     { key: "return", header: "평균 단가 대비", align: "right", cell: (row) => <Delta text={row.returnText} value={row.returnPct} /> },
@@ -204,7 +204,7 @@ export function LiveValuationCard({
         </div>
       }
     >
-      <p className="mb-3 text-xs text-muted">
+      <p className="mb-3 text-xs text-text-3">
         {session.live
           ? seconds === 0
             ? "자동 새로고침이 꺼져 있습니다 — '지금 새로 읽기'를 누를 때만 다시 읽습니다."
@@ -235,12 +235,12 @@ export function LiveValuationCard({
           />
         </>
       ) : (
-        <p className="text-sm text-muted">계좌가 없습니다.</p>
+        <p className="text-sm text-text-3">계좌가 없습니다.</p>
       )}
     </Card>
   );
 }
 
 function Delta({ text, value }: { text: string; value: number | null }) {
-  return <span className={`tabular-nums ${text === EMPTY ? "text-muted" : deltaColor(value)}`}>{text}</span>;
+  return <span className={`tabular-nums ${text === EMPTY ? "text-text-3" : deltaColor(value)}`}>{text}</span>;
 }

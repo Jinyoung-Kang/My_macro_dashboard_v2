@@ -137,12 +137,12 @@ export default function MacroPage() {
         {/* 고른 간격보다 값이 늦게 바뀌는 이유를 화면에서 바로 알 수 있게 적습니다.
             적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
         {refreshSeconds > 0 && (
-          <p className="mt-1 text-xs text-muted">
+          <p className="mt-1 text-xs text-text-3">
             카드 시세는 고른 간격마다 서버가 바로 받아 밀어 줍니다(TradingView·네이버, 저장하지 않음). 출처가 지연 시세인
             카드(선물·상하이)는 배지에 그 지연을 적습니다.
           </p>
         )}
-        {liveNotice && <p className="mt-1 text-xs text-muted">{liveNotice}</p>}
+        {liveNotice && <p className="mt-1 text-xs text-text-3">{liveNotice}</p>}
       </PageHeader>
 
       {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
@@ -200,7 +200,7 @@ export default function MacroPage() {
                   value={item.status === "fail" ? "수집 실패" : item.priceStr ?? EMPTY}
                   delta={item.delta}
                   deltaText={item.deltaStr ?? EMPTY}
-                  tone={item.status === "fail" ? "text-muted" : undefined}
+                  tone={item.status === "fail" ? "text-text-3" : undefined}
                   source={itemSource(item)}
                   caption={
                     <span className="flex flex-col gap-0.5">

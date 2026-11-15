@@ -155,7 +155,7 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
         )}
         {proposals.data?.available && focus.note && <div className="mb-3"><Banner tone="info">{focus.note}</Banner></div>}
         {proposals.data?.available && (proposalList.length === 0 ? (
-          <p className="text-sm text-muted">{`아직 제안이 없습니다 — 위 '${sourceCard.title}'에서 요청하면 생깁니다.`}</p>
+          <p className="text-sm text-text-3">{`아직 제안이 없습니다 — 위 '${sourceCard.title}'에서 요청하면 생깁니다.`}</p>
         ) : (
           <div className="flex flex-col gap-4">
             {proposalList.map((proposal) => (
@@ -184,7 +184,7 @@ function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
   if (!view) {
     return (
       <Card title="지금 프레임" source={PAPER_SOURCES.framework}>
-        <p className="text-sm text-muted">아직 판이 없습니다 — 서버가 프레임 표를 처음 읽을 때 임시 v0을 만듭니다. 잠시 뒤 다시 읽어 보세요.</p>
+        <p className="text-sm text-text-3">아직 판이 없습니다 — 서버가 프레임 표를 처음 읽을 때 임시 v0을 만듭니다. 잠시 뒤 다시 읽어 보세요.</p>
       </Card>
     );
   }
@@ -198,20 +198,20 @@ function CurrentCard({ view }: { view: FrameworkCurrentView | null }) {
         <Meta label="렌더링 크기" value={view.tokens} />
       </dl>
       {view.overBudget && <div className="mt-3"><Banner tone="warn">{view.overBudget}</Banner></div>}
-      <p className="mt-3 text-xs text-body">
-        <span className="text-muted">바꾼 내용 </span>
+      <p className="mt-3 text-xs text-text-2">
+        <span className="text-text-3">바꾼 내용 </span>
         {view.changelog}
       </p>
-      <p className="mt-2 text-xs leading-relaxed text-muted">
+      <p className="mt-2 text-xs leading-relaxed text-text-3">
         토큰은 서버의 문자 수 어림입니다(한글 1자 ≈ 1토큰, 영문 4자 ≈ 1토큰). 아래 렌더링은 이 판을 만들 때의 글이고, 결정의 시스템
         프롬프트는 결정 시점의 설정(하드 규칙 수치)으로 다시 렌더링합니다 — 결정 기록마다 프레임 판과 설정 버전이 남습니다.
       </p>
       <details className="mt-3 rounded-control border border-border px-3 py-2 text-xs">
-        <summary className="cursor-pointer text-muted">렌더링 미리보기(시스템 프롬프트)</summary>
+        <summary className="cursor-pointer text-text-3">렌더링 미리보기(시스템 프롬프트)</summary>
         {view.rendered ? (
-          <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-body">{view.rendered}</pre>
+          <pre className="mt-2 max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-text-2">{view.rendered}</pre>
         ) : (
-          <p className="mt-2 text-muted">서버가 렌더링을 보내지 않았습니다.</p>
+          <p className="mt-2 text-text-3">서버가 렌더링을 보내지 않았습니다.</p>
         )}
       </details>
     </Card>
@@ -302,7 +302,7 @@ function OsSourceCard({
 
   return (
     <Card title={card.title} subtitle={card.subtitle} source={PAPER_SOURCES.proposals}>
-      <p className="text-xs leading-relaxed text-muted">{card.intro}</p>
+      <p className="text-xs leading-relaxed text-text-3">{card.intro}</p>
 
       <div className="mt-3 flex flex-col gap-2">
         {noteOptions.length > 0 && (
@@ -314,7 +314,7 @@ function OsSourceCard({
             options={[{ value: "", label: "고르지 않음 — 아래에 글을 붙여 새 메모로" }, ...noteOptions]}
           />
         )}
-        <label className="flex flex-col gap-1 text-xs text-muted">
+        <label className="flex flex-col gap-1 text-xs text-text-3">
           {`메모 제목(비우면 "${card.defaultTitle}")`}
           <input
             type="text"
@@ -325,7 +325,7 @@ function OsSourceCard({
           />
         </label>
         <div className="flex flex-col gap-1">
-          <label className="flex flex-col gap-1 text-xs text-muted">
+          <label className="flex flex-col gap-1 text-xs text-text-3">
             {card.bodyLabel}
             <textarea
               value={body}
@@ -335,7 +335,7 @@ function OsSourceCard({
               className={`${INPUT} font-mono text-xs leading-relaxed`}
             />
           </label>
-          <span className="text-xs text-muted">
+          <span className="text-xs text-text-3">
             {picked !== null && savedId === null
               ? `메모 #${picked}의 글로 요청합니다 — 새 메모를 만들지 않습니다.`
               : `${formatNumber(count, 0)}자`}
@@ -352,7 +352,7 @@ function OsSourceCard({
       </div>
 
       <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
-        <p className="text-xs text-muted">비용: {PROPOSAL_COST_NOTE}</p>
+        <p className="text-xs text-text-3">비용: {PROPOSAL_COST_NOTE}</p>
         {confirming ? (
           <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">
@@ -438,7 +438,7 @@ function ProposalItem({
       }`}
     >
       <header className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold text-bright">{view.title}</h3>
+        <h3 className="text-sm font-semibold text-text">{view.title}</h3>
         <BadgeChip badge={view.status} />
         {highlighted && <span className="text-xs font-semibold text-text">주간 복기에서 연 제안</span>}
       </header>
@@ -446,7 +446,7 @@ function ProposalItem({
         {view.meta.map((cell) => <Meta key={cell.key} label={cell.label} value={cell.value} />)}
       </dl>
       {view.error && <Banner tone="warn">오류 — {view.error}</Banner>}
-      {view.summary && <p className="whitespace-pre-wrap text-sm leading-relaxed text-body">{view.summary}</p>}
+      {view.summary && <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-2">{view.summary}</p>}
 
       {view.assessment.length > 0 && (
         <Part title="평가 (OS 절차 B)" note="원문의 주장마다 지금 판과 대조한 결과입니다 — Claude 응답 그대로.">
@@ -455,9 +455,9 @@ function ProposalItem({
             rows={view.assessment}
             rowKey={(row) => row.key}
             columns={[
-              { key: "point", header: "주장", render: (row) => <span className="text-xs text-body">{row.point}</span> },
+              { key: "point", header: "주장", render: (row) => <span className="text-xs text-text-2">{row.point}</span> },
               { key: "verdict", header: "평가", render: (row) => <BadgeChip badge={row.verdict} /> },
-              { key: "reason", header: "이유", render: (row) => <span className="text-xs text-body">{row.reason}</span> },
+              { key: "reason", header: "이유", render: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
             ]}
           />
         </Part>
@@ -471,20 +471,20 @@ function ProposalItem({
             rowKey={(row) => row.key}
             emptyMessage={view.emptyMessage}
             columns={[
-              { key: "op", header: "변경", render: (row) => <span className="whitespace-nowrap font-semibold text-bright">{row.op}</span> },
-              { key: "target", header: "대상", render: (row) => <code className="text-xs text-body">{row.target}</code> },
-              { key: "before", header: view.beforeHeader, render: (row) => <span className="text-xs text-muted">{row.before}</span> },
+              { key: "op", header: "변경", render: (row) => <span className="whitespace-nowrap font-semibold text-text">{row.op}</span> },
+              { key: "target", header: "대상", render: (row) => <code className="text-xs text-text-2">{row.target}</code> },
+              { key: "before", header: view.beforeHeader, render: (row) => <span className="text-xs text-text-3">{row.before}</span> },
               {
                 key: "after",
                 header: "바꿀 글",
                 render: (row) => (
-                  <span className="flex flex-col gap-1 text-xs text-body">
+                  <span className="flex flex-col gap-1 text-xs text-text-2">
                     <span>{row.after}</span>
                     {row.warning && <span className="text-warn">{row.warning}</span>}
                   </span>
                 ),
               },
-              { key: "why", header: "이유", render: (row) => <span className="text-xs text-body">{row.why}</span> },
+              { key: "why", header: "이유", render: (row) => <span className="text-xs text-text-2">{row.why}</span> },
             ]}
           />
         </Part>
@@ -492,7 +492,7 @@ function ProposalItem({
 
       {view.beforeAfter && (
         <Part title="전후 비교">
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-body">{view.beforeAfter}</p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-text-2">{view.beforeAfter}</p>
         </Part>
       )}
 
@@ -516,7 +516,7 @@ function ProposalItem({
             </Button>
             <Button onClick={() => setDeciding("reject")} disabled={busy}>{`${view.title} 거절`}</Button>
           </div>
-          <p className="text-xs text-muted">{APPROVE_COST_NOTE}</p>
+          <p className="text-xs text-text-3">{APPROVE_COST_NOTE}</p>
         </div>
       ))}
 
@@ -561,21 +561,21 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
             key: "version",
             header: "판",
             render: (row) => (
-              <span className="whitespace-nowrap font-semibold text-bright">
+              <span className="whitespace-nowrap font-semibold text-text">
                 {row.version}
                 {row.current && <span className="ml-1 text-xs font-normal text-text-2">지금</span>}
               </span>
             ),
           },
-          { key: "title", header: "제목", render: (row) => <span className="text-xs text-body">{row.title}</span> },
-          { key: "changelog", header: "바꾼 내용", render: (row) => <span className="text-xs text-body">{row.changelog}</span> },
+          { key: "title", header: "제목", render: (row) => <span className="text-xs text-text-2">{row.title}</span> },
+          { key: "changelog", header: "바꾼 내용", render: (row) => <span className="text-xs text-text-2">{row.changelog}</span> },
           { key: "source", header: "출처", render: (row) => <span className="whitespace-nowrap text-xs">{row.source}</span> },
           { key: "createdAt", header: "만든 시각", render: (row) => <span className="whitespace-nowrap">{row.createdAt}</span> },
         ]}
       />
 
       {options.length < 2 ? (
-        <p className="mt-3 text-xs text-muted">판이 하나뿐입니다 — 새 판이 생기면 두 판의 렌더링을 나란히 비교할 수 있습니다.</p>
+        <p className="mt-3 text-xs text-text-3">판이 하나뿐입니다 — 새 판이 생기면 두 판의 렌더링을 나란히 비교할 수 있습니다.</p>
       ) : (
         <section aria-label="두 판 비교" className="mt-4 flex flex-col gap-3">
           <div className="flex flex-wrap gap-3">
@@ -592,7 +592,7 @@ function VersionsCard({ response }: { response: PaperFrameworkResponse }) {
               options={[{ value: "", label: "고르기" }, ...options]}
             />
           </div>
-          <p className="text-xs text-muted">
+          <p className="text-xs text-text-3">
             강조한 줄은 다른 쪽 렌더링에 똑같은 줄이 없는 줄입니다(왼쪽 {compare.changedLeft}줄 · 오른쪽 {compare.changedRight}줄). 줄 순서를
             맞추는 비교가 아니라서 자리만 옮긴 줄은 강조하지 않습니다.
           </p>
@@ -638,14 +638,14 @@ function RenderedPane({
 }) {
   return (
     <section aria-label={label} className="min-w-0 rounded-control border border-border px-3 py-2">
-      <h4 className="text-xs font-semibold text-bright">
+      <h4 className="text-xs font-semibold text-text">
         {version ? `${frameworkVersionLabel(version.version, version.status)} — ${version.title ?? ""}` : label}
       </h4>
       {loading && <Loading label="판을 읽는 중…" />}
       {error && <p className="mt-1 text-xs text-warn">{error}</p>}
       {message && <p className="mt-1 text-xs text-warn">{message}</p>}
       {version && (lines.length === 0 ? (
-        <p className="mt-1 text-xs text-muted">서버가 렌더링을 보내지 않았습니다.</p>
+        <p className="mt-1 text-xs text-text-3">서버가 렌더링을 보내지 않았습니다.</p>
       ) : (
         <pre className="mt-2 max-h-[32rem] overflow-auto text-xs leading-relaxed">
           {lines.map((line) => (
@@ -653,7 +653,7 @@ function RenderedPane({
               key={line.key}
               data-changed={line.changed ? "true" : undefined}
               // 강조한 줄은 회색 바탕 + 굵은 잉크 글(강조 파랑 아님 — 명세 A1). 굵기는 고대비 모드에서 바탕이 지워져도 남습니다.
-              className={`block whitespace-pre-wrap break-words ${line.changed ? "bg-surface-2 font-semibold text-text" : "text-body"}`}
+              className={`block whitespace-pre-wrap break-words ${line.changed ? "bg-surface-2 font-semibold text-text" : "text-text-2"}`}
             >
               {line.text || " "}
             </span>
@@ -703,7 +703,7 @@ function EditCard({
     return (
       <Card title="직접 고치기" subtitle="지금 판을 복사해 원칙·엔진·규칙을 고치고 새 판으로 저장합니다(사용자 판). Claude를 부르지 않습니다." source={PAPER_SOURCES.framework}>
         <Button onClick={start} disabled={!startable}>지금 판으로 편집 시작</Button>
-        {!startable && <p className="mt-2 text-xs text-muted">지금 판의 본문을 읽지 못해 편집할 수 없습니다.</p>}
+        {!startable && <p className="mt-2 text-xs text-text-3">지금 판의 본문을 읽지 못해 편집할 수 없습니다.</p>}
         {result && <div className="mt-3"><Banner tone={result.tone}>{result.text}</Banner></div>}
         {result?.warning && <div className="mt-3"><Banner tone="warn">{result.warning}</Banner></div>}
       </Card>
@@ -736,13 +736,13 @@ function EditCard({
           if (canSave) setConfirming(true);
         }}
       >
-        <label className="flex flex-col gap-1 text-xs text-muted">
+        <label className="flex flex-col gap-1 text-xs text-text-3">
           제목
           <input type="text" value={draft.title} onChange={(event) => edit({ type: "title", value: event.target.value })} className={INPUT} />
         </label>
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-semibold text-bright">원칙</legend>
+          <legend className="text-sm font-semibold text-text">원칙</legend>
           {draft.principles.map((entry, index) => (
             <TextRow
               key={`${entry.id}-${index}`}
@@ -758,8 +758,8 @@ function EditCard({
 
         {draft.engines.map((engine, engineIndex) => (
           <fieldset key={`${engine.id}-${engineIndex}`} className="flex flex-col gap-2 rounded-control border border-border px-3 py-2">
-            <legend className="px-1 text-sm font-semibold text-bright">엔진 {engine.id}</legend>
-            <label className="flex flex-col gap-1 text-xs text-muted">
+            <legend className="px-1 text-sm font-semibold text-text">엔진 {engine.id}</legend>
+            <label className="flex flex-col gap-1 text-xs text-text-3">
               이름
               <input
                 type="text"
@@ -769,7 +769,7 @@ function EditCard({
                 className={INPUT}
               />
             </label>
-            {engine.rules.length === 0 && <p className="text-xs text-muted">규칙이 없습니다.</p>}
+            {engine.rules.length === 0 && <p className="text-xs text-text-3">규칙이 없습니다.</p>}
             {engine.rules.map((rule, index) => (
               <TextRow
                 key={`${rule.id}-${index}`}
@@ -788,7 +788,7 @@ function EditCard({
         ))}
 
         <div className="flex flex-col gap-1">
-          <label className="flex flex-col gap-1 text-xs text-muted">
+          <label className="flex flex-col gap-1 text-xs text-text-3">
             지침(엔진 밖 자유 지침)
             <textarea
               value={draft.guidance}
@@ -797,10 +797,10 @@ function EditCard({
               className={`${INPUT} leading-relaxed`}
             />
           </label>
-          <span className={`text-xs ${guidance.over ? "text-warn" : "text-muted"}`}>{guidance.text}</span>
+          <span className={`text-xs ${guidance.over ? "text-warn" : "text-text-3"}`}>{guidance.text}</span>
         </div>
 
-        <label className="flex flex-col gap-1 text-xs text-muted">
+        <label className="flex flex-col gap-1 text-xs text-text-3">
           바꾼 내용(changelog — 판 목록에 남음)
           <input
             type="text"
@@ -867,7 +867,7 @@ function TextRow({
   const count = charCount(text.trim(), FRAMEWORK_TEXT_LIMIT);
   return (
     <div className="grid gap-1 sm:grid-cols-[5rem_minmax(0,1fr)_auto] sm:items-start">
-      <code className="pt-2 text-xs text-muted">{id}</code>
+      <code className="pt-2 text-xs text-text-3">{id}</code>
       <div className="min-w-0">
         <textarea
           aria-label={label}
@@ -876,7 +876,7 @@ function TextRow({
           onChange={(event) => onChange(event.target.value)}
           className={`${INPUT} leading-relaxed`}
         />
-        <p className={`text-xs ${count.over ? "text-warn" : "text-muted"}`}>
+        <p className={`text-xs ${count.over ? "text-warn" : "text-text-3"}`}>
           {count.text}
           {note ? ` · ${note}` : ""}
         </p>
@@ -889,8 +889,8 @@ function TextRow({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-muted">{label}</dt>
-      <dd className="tabular-nums font-semibold text-bright">{value}</dd>
+      <dt className="text-text-3">{label}</dt>
+      <dd className="tabular-nums font-semibold text-text">{value}</dd>
     </div>
   );
 }
@@ -899,8 +899,8 @@ function Meta({ label, value }: { label: string; value: string }) {
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h4 className="text-sm font-semibold text-bright">{title}</h4>
-      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
+      <h4 className="text-sm font-semibold text-text">{title}</h4>
+      {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>
   );

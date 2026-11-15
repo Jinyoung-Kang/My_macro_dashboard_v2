@@ -123,7 +123,7 @@ export default function StatusPage() {
                 className={`rounded-full border px-3 py-1 text-xs ${
                   present
                     ? "border-ok/40 bg-ok-tint text-ok"
-                    : "border-border bg-surface-hover text-muted"
+                    : "border-border bg-surface-2 text-text-3"
                 }`}
               >
                 {name.toUpperCase()} {present ? "설정됨" : "없음"}
@@ -165,7 +165,7 @@ export default function StatusPage() {
               render: (row) => (
                 <span className="flex items-center gap-2">
                   <TaskStatusIcon status={row.status} />
-                  <span className="text-body">{row.task}</span>
+                  <span className="text-text-2">{row.task}</span>
                   {row.speed && <SourceBadge>{row.speed}</SourceBadge>}
                 </span>
               ),
@@ -186,7 +186,7 @@ export default function StatusPage() {
               key: "detail",
               header: "상세",
               render: (row) => (
-                <span className={row.status === "ok" ? "text-muted" : "text-warn"}>
+                <span className={row.status === "ok" ? "text-text-3" : "text-warn"}>
                   {row.detail ? withoutLeadingIcon(row.detail) : EMPTY}
                 </span>
               ),
@@ -240,7 +240,7 @@ export default function StatusPage() {
               header: "수집",
               align: "right",
               render: (row) => (
-                <span className={row.stale ? "text-warn" : "text-muted"}>
+                <span className={row.stale ? "text-warn" : "text-text-3"}>
                   {formatAge(row.ageSeconds ?? null)}
                 </span>
               ),
@@ -260,7 +260,7 @@ export default function StatusPage() {
       >
         {/* 목록이 없으면(수집기에 닿지 못함 등) 누락이 없는 것이 아니라 모르는 것입니다(QA-045). */}
         {data && !data.missingDatasets ? (
-          <p className="text-sm text-muted">누락 여부를 확인하지 못했습니다 — 수집기에 연결되지 않아 기대 목록을 받지 못했습니다.</p>
+          <p className="text-sm text-text-3">누락 여부를 확인하지 못했습니다 — 수집기에 연결되지 않아 기대 목록을 받지 못했습니다.</p>
         ) : (data?.missingDatasets ?? []).length === 0 ? (
           <p className="text-sm text-ok">누락된 데이터셋이 없습니다.</p>
         ) : (
@@ -309,7 +309,7 @@ function PublicApiPanel() {
       }
     >
       {runId === null && (
-        <p className="text-sm text-muted">
+        <p className="text-sm text-text-3">
           .env에 키를 넣고 수집기를 다시 띄운 뒤 눌러 보세요. 결과에 키 값은 표시되지 않습니다.
         </p>
       )}
@@ -350,7 +350,7 @@ function PublicApiPanel() {
 const VERDICT_STYLE: Record<string, string> = {
   match: "text-ok",
   mismatch: "text-danger",
-  skipped: "text-muted",
+  skipped: "text-text-3",
   error: "text-warn",
 };
 
@@ -400,14 +400,14 @@ function VerificationPanel() {
 
       {result?.available && (
         <>
-          <p className="mb-3 text-sm text-body">
+          <p className="mb-3 text-sm text-text-2">
             {result.headline} · 검증 시각 {formatKst(result.checkedAt)}
           </p>
           <div className="flex flex-col gap-3">
             {result.results?.map((entry) => (
               <div key={entry.name} className="rounded-control border border-border bg-surface p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-sm text-bright">
+                  <span className="inline-flex items-center gap-1.5 text-sm text-text">
                     <VerdictIcon verdict={entry.verdict} />
                     {entry.name}
                   </span>
@@ -417,7 +417,7 @@ function VerificationPanel() {
                   </span>
                 </div>
                 {entry.readings.length > 0 && (
-                  <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
+                  <ul className="mt-2 flex flex-col gap-1 text-xs text-text-3">
                     {entry.readings.map((reading) => (
                       <li key={reading.source} className="flex justify-between gap-3">
                         <span>{reading.source}</span>
@@ -432,7 +432,7 @@ function VerificationPanel() {
                     ))}
                   </ul>
                 )}
-                {entry.note && <p className="mt-2 text-xs text-muted">{entry.note}</p>}
+                {entry.note && <p className="mt-2 text-xs text-text-3">{entry.note}</p>}
               </div>
             ))}
           </div>
@@ -486,11 +486,11 @@ function IssuesPanel() {
             <Banner tone="warn">수집기에 연결하지 못해 DB 기록만으로 만들었습니다(누락 데이터셋·없앤 태스크 거르기 제외).</Banner>
           )}
           {hasIssues ? (
-            <pre tabIndex={0} className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-sm border border-border bg-canvas p-3 text-xs leading-relaxed text-body">
+            <pre tabIndex={0} className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-sm border border-border bg-bg p-3 text-xs leading-relaxed text-text-2">
               {data.text}
             </pre>
           ) : missingUnknown ? (
-            <p className="text-sm text-muted">
+            <p className="text-sm text-text-3">
               실행 기록에는 최근 {data.lookbackHours}시간 동안 오류·경고가 없지만, 수집기에 연결하지 못해 누락 데이터셋은
               확인하지 못했습니다.
             </p>

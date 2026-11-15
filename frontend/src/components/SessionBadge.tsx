@@ -18,9 +18,9 @@ import { sessionStatus, tradeDayFrom, tradeTimeFrom, type SessionState } from "@
 const STYLES: Record<SessionState, string> = {
   open: "border-ok/40 bg-ok-tint text-ok",
   break: "border-warn/40 bg-warn-tint text-warn",
-  closed: "border-border bg-surface-hover text-muted",
-  holiday: "border-border bg-surface-hover text-muted",
-  idle: "border-border bg-surface-hover text-muted",
+  closed: "border-border bg-surface-2 text-text-3",
+  holiday: "border-border bg-surface-2 text-text-3",
+  idle: "border-border bg-surface-2 text-text-3",
 };
 
 import { useMinuteClock } from "@/hooks/useMinuteClock";

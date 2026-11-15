@@ -147,7 +147,7 @@ export default function ConsensusPage() {
                   header: "동시 매수",
                   align: "right",
                   render: (row) => (
-                    <span className={row.buyCount > 0 ? "text-up" : "text-muted"}>
+                    <span className={row.buyCount > 0 ? "text-up" : "text-text-3"}>
                       {row.buyCount}
                     </span>
                   ),
@@ -157,7 +157,7 @@ export default function ConsensusPage() {
                   header: "동시 매도",
                   align: "right",
                   render: (row) => (
-                    <span className={row.sellCount > 0 ? "text-down" : "text-muted"}>
+                    <span className={row.sellCount > 0 ? "text-down" : "text-text-3"}>
                       {row.sellCount}
                     </span>
                   ),
@@ -182,7 +182,7 @@ export default function ConsensusPage() {
                     <span className="flex flex-col items-end">
                       <span>{formatCurrency(row.totalValue)}</span>
                       {usdKrw.toKrw(row.totalValue) && (
-                        <span className="text-xs text-muted">
+                        <span className="text-xs text-text-3">
                           {usdKrw.toKrw(row.totalValue)}
                         </span>
                       )}
@@ -204,7 +204,7 @@ export default function ConsensusPage() {
             />
           </Card>
 
-          <p className="text-xs text-muted">
+          <p className="text-xs text-text-3">
             참여 기관: {data.participants.map((name) => filerName(name) ?? name).join(", ") || EMPTY}
           </p>
         </>
@@ -224,8 +224,8 @@ function SecurityName({ row }: { row: { key: string; name: string; cusip?: strin
   const note = securityNote(row);
   return (
     <span className="flex flex-col">
-      <span className="text-body">{row.name}</span>
-      {note && <span className="text-xs text-muted">{note}</span>}
+      <span className="text-text-2">{row.name}</span>
+      {note && <span className="text-xs text-text-3">{note}</span>}
     </span>
   );
 }
@@ -297,7 +297,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                   <span className="flex flex-col items-end">
                     <span>{formatCurrency(row.totalValue)}</span>
                     {usdKrw.toKrw(row.totalValue) && (
-                      <span className="text-xs text-muted">
+                      <span className="text-xs text-text-3">
                         {usdKrw.toKrw(row.totalValue)}
                       </span>
                     )}
@@ -317,7 +317,7 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
               },
             ]}
           />
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 text-xs text-text-3">
             기준 분기 {data.rows[0]?.reportDate ?? EMPTY} · {data.note}
           </p>
         </>

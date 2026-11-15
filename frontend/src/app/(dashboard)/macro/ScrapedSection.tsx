@@ -71,7 +71,7 @@ export function ScrapedSection() {
                 <span className="flex flex-wrap items-center gap-1">
                   <SourceBadge>{row.provider}</SourceBadge>
                   {row.status === "ok" && delayLabel(row.delayMinutes) && (
-                    <span className="text-xs text-muted">{delayLabel(row.delayMinutes)}</span>
+                    <span className="text-xs text-text-3">{delayLabel(row.delayMinutes)}</span>
                   )}
                 </span>
               ),
@@ -101,7 +101,7 @@ export function ScrapedSection() {
               key: "error",
               header: "비고",
               render: (row) => (
-                <span className="text-xs text-muted">
+                <span className="text-xs text-text-3">
                   {row.isStale ? (
                     <StatusText tone="warn" iconSize={12}>이전 값 — {row.staleReason ?? "수집 실패"}</StatusText>
                   ) : (row.error ?? "")}

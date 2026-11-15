@@ -41,7 +41,7 @@ export function ClaudeDecisionBody({
             <MetaRow label="요청">{view.checkpoint.request}</MetaRow>
             {view.checkpoint.trigger && <MetaRow label="호출 이유">{view.checkpoint.trigger}</MetaRow>}
             <MetaRow label="응답">
-              {view.checkpoint.action ? <Badges badges={[view.checkpoint.action]} /> : <span className="text-muted">{EMPTY}</span>}
+              {view.checkpoint.action ? <Badges badges={[view.checkpoint.action]} /> : <span className="text-text-3">{EMPTY}</span>}
             </MetaRow>
             <MetaRow label="적용">{view.checkpoint.applied}</MetaRow>
             <MetaRow label="대신한 대기 주문">{view.checkpoint.superseded}</MetaRow>
@@ -60,7 +60,7 @@ export function ClaudeDecisionBody({
               </MetaRow>
             )}
           </dl>
-          <p className="text-xs leading-relaxed text-muted">{view.checkpoint.retry}</p>
+          <p className="text-xs leading-relaxed text-text-3">{view.checkpoint.retry}</p>
         </Part>
       )}
       <Part
@@ -73,19 +73,19 @@ export function ClaudeDecisionBody({
           <>
             {!view.checkpoint && <dl className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs">
               <div>
-                <dt className="text-muted">자세</dt>
-                <dd>{view.stance ? <Badges badges={[view.stance]} /> : <span className="text-muted">{EMPTY}</span>}</dd>
+                <dt className="text-text-3">자세</dt>
+                <dd>{view.stance ? <Badges badges={[view.stance]} /> : <span className="text-text-3">{EMPTY}</span>}</dd>
               </div>
               <div>
-                <dt className="text-muted">목표 주식 노출</dt>
-                <dd className="flex items-center gap-1 tabular-nums font-semibold text-bright">
+                <dt className="text-text-3">목표 주식 노출</dt>
+                <dd className="flex items-center gap-1 tabular-nums font-semibold text-text">
                   {view.targetExposure}
                   {view.mismatch && <Badges badges={[view.mismatch]} />}
                 </dd>
               </div>
               <div>
-                <dt className="text-muted">확신도</dt>
-                <dd className="tabular-nums font-semibold text-bright">{view.confidence}</dd>
+                <dt className="text-text-3">확신도</dt>
+                <dd className="tabular-nums font-semibold text-text">{view.confidence}</dd>
               </div>
             </dl>}
             {view.mismatch && <p className="text-xs leading-relaxed text-warn">{view.mismatch.title}</p>}
@@ -98,7 +98,7 @@ export function ClaudeDecisionBody({
             {view.skipped && <p className="text-xs leading-relaxed text-warn">{view.skipped}</p>}
           </>
         ) : (
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted">{view.noResponse}</p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-text-3">{view.noResponse}</p>
         )}
       </Part>
 
@@ -110,7 +110,7 @@ export function ClaudeDecisionBody({
             rowKey={(row) => row.key}
             emptyMessage="모델이 주문을 내지 않았습니다."
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
               { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
               { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
               {
@@ -124,13 +124,13 @@ export function ClaudeDecisionBody({
                   </span>
                 ) : <span className="whitespace-nowrap">{row.timing}</span>),
               },
-              { key: "thesis", header: "근거", render: (row) => <span className="text-xs text-body">{row.thesis}</span> },
+              { key: "thesis", header: "근거", render: (row) => <span className="text-xs text-text-2">{row.thesis}</span> },
               {
                 key: "labels",
                 header: "라벨",
-                render: (row) => (row.labels.length > 0 ? <Badges badges={row.labels} /> : <span className="text-muted">{EMPTY}</span>),
+                render: (row) => (row.labels.length > 0 ? <Badges badges={row.labels} /> : <span className="text-text-3">{EMPTY}</span>),
               },
-              { key: "invalidation", header: "무효화 조건", render: (row) => <span className="text-xs text-body">{row.invalidation}</span> },
+              { key: "invalidation", header: "무효화 조건", render: (row) => <span className="text-xs text-text-2">{row.invalidation}</span> },
             ]}
           />
         </Part>
@@ -151,7 +151,7 @@ export function ClaudeDecisionBody({
             rowKey={(row) => row.key}
             emptyMessage="검증한 주문이 없습니다."
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
               { key: "side", header: "방향", render: (row) => <span className={sideClass(row.sideKey)}>{row.side}</span> },
               { key: "size", header: "크기", align: "right", render: (row) => <span className="whitespace-nowrap">{row.size}</span> },
               { key: "result", header: "결과", render: (row) => <Badges badges={[row.result]} /> },
@@ -160,7 +160,7 @@ export function ClaudeDecisionBody({
                 header: "거절 사유",
                 render: (row) => <span className="text-xs text-warn" title={row.reasonTitle}>{row.reason}</span>,
               },
-              { key: "detail", header: "설명", render: (row) => <span className="text-xs text-body">{row.detail}</span> },
+              { key: "detail", header: "설명", render: (row) => <span className="text-xs text-text-2">{row.detail}</span> },
             ]}
           />
         </Part>
@@ -173,8 +173,8 @@ export function ClaudeDecisionBody({
             rows={view.watchlist}
             rowKey={(row) => row.key}
             columns={[
-              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-bright"><TickerName code={row.ticker} /></span> },
-              { key: "condition", header: "조건", render: (row) => <span className="text-xs text-body">{row.condition}</span> },
+              { key: "ticker", header: "종목", render: (row) => <span className="font-semibold text-text"><TickerName code={row.ticker} /></span> },
+              { key: "condition", header: "조건", render: (row) => <span className="text-xs text-text-2">{row.condition}</span> },
             ]}
           />
         </Part>
@@ -187,9 +187,9 @@ export function ClaudeDecisionBody({
             rows={view.conditions}
             rowKey={(row) => row.key}
             columns={[
-              { key: "holding", header: "종목", render: (row) => <span className="whitespace-nowrap text-xs text-body">{row.holding}</span> },
-              { key: "rule", header: "조건", render: (row) => <code className="whitespace-nowrap text-xs text-bright">{row.rule}</code> },
-              { key: "then", header: "충족되면", render: (row) => <span className="text-xs text-body">{row.then}</span> },
+              { key: "holding", header: "종목", render: (row) => <span className="whitespace-nowrap text-xs text-text-2">{row.holding}</span> },
+              { key: "rule", header: "조건", render: (row) => <code className="whitespace-nowrap text-xs text-text">{row.rule}</code> },
+              { key: "then", header: "충족되면", render: (row) => <span className="text-xs text-text-2">{row.then}</span> },
             ]}
           />
         </Part>
@@ -202,8 +202,8 @@ export function ClaudeDecisionBody({
           <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
             {view.usage.map((cell) => (
               <div key={cell.key}>
-                <dt className="text-muted">{cell.label}</dt>
-                <dd className="tabular-nums font-semibold text-bright">{cell.value}</dd>
+                <dt className="text-text-3">{cell.label}</dt>
+                <dd className="tabular-nums font-semibold text-text">{cell.value}</dd>
               </div>
             ))}
           </dl>
@@ -217,8 +217,8 @@ export function ClaudeDecisionBody({
 function MetaRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-wrap gap-x-2">
-      <dt className="min-w-[7rem] text-muted">{label}</dt>
-      <dd className="min-w-0 flex-1 leading-relaxed text-body">{children}</dd>
+      <dt className="min-w-[7rem] text-text-3">{label}</dt>
+      <dd className="min-w-0 flex-1 leading-relaxed text-text-2">{children}</dd>
     </div>
   );
 }
@@ -227,8 +227,8 @@ function MetaRow({ label, children }: { label: string; children: ReactNode }) {
 function Text({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="text-xs">
-      <p className="text-muted">{label}</p>
-      <p className="whitespace-pre-wrap leading-relaxed text-body">{value || EMPTY}</p>
+      <p className="text-text-3">{label}</p>
+      <p className="whitespace-pre-wrap leading-relaxed text-text-2">{value || EMPTY}</p>
     </div>
   );
 }
@@ -238,8 +238,8 @@ function Text({ label, value }: { label: string; value: string | null }) {
 function Part({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1">
-      <h3 className="text-sm font-semibold text-bright">{title}</h3>
-      {note && <p className="text-xs leading-relaxed text-muted">{note}</p>}
+      <h3 className="text-sm font-semibold text-text">{title}</h3>
+      {note && <p className="text-xs leading-relaxed text-text-3">{note}</p>}
       {children}
     </section>
   );

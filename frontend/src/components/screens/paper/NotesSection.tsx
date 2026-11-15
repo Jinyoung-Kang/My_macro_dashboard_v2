@@ -91,13 +91,13 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
           : "Claude 계좌의 자료 — 시황 메모는 결정 패킷에, 방법론 메모는 프레임 제안에"}
         source={PAPER_SOURCES.notes}
         actions={
-          <label className="flex items-center gap-2 text-xs text-muted">
+          <label className="flex items-center gap-2 text-xs text-text-3">
             <input type="checkbox" checked={includeExpired} onChange={(event) => setIncludeExpired(event.target.checked)} />
             만료한 메모도 보기
           </label>
         }
       >
-        <p className="mb-3 text-xs leading-relaxed text-muted">
+        <p className="mb-3 text-xs leading-relaxed text-text-3">
           {notesIntro(startDate, market)}
           {notes.data?.available && notes.data.referenceDate ? ` 유효 여부는 ${notes.data.referenceDate} 기준(서버 판정)입니다.` : ""}
         </p>
@@ -111,7 +111,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
         )}
         {/* 쉬는 사유는 화면 맨 위 배너가 적습니다(PaperScreen) — 여기서는 메모를 써도 되는지만. */}
         {dormantReason && (
-          <p className="mb-3 text-xs leading-relaxed text-muted">
+          <p className="mb-3 text-xs leading-relaxed text-text-3">
             한국 계좌가 쉬는 동안에도 메모는 쓸 수 있습니다(글일 뿐) — 한국 결정이 돌기 시작하면 그 거래일에 유효한 메모가 실립니다.
           </p>
         )}
@@ -125,7 +125,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
             rowKey={(row) => row.key}
             emptyMessage={includeExpired ? "메모가 없습니다." : "유효한 메모가 없습니다 — 만료한 메모는 위 '만료한 메모도 보기'로 봅니다."}
             columns={[
-              { key: "id", header: "번호", render: (row) => <span className="tabular-nums text-muted">{row.idText}</span> },
+              { key: "id", header: "번호", render: (row) => <span className="tabular-nums text-text-3">{row.idText}</span> },
               {
                 key: "kind",
                 header: "종류·상태",
@@ -143,8 +143,8 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                 className: "min-w-[12rem]",
                 render: (row) => (
                   <details className="text-xs">
-                    <summary className="cursor-pointer font-semibold text-bright">{row.title}</summary>
-                    <p className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap leading-relaxed text-body">{row.body}</p>
+                    <summary className="cursor-pointer font-semibold text-text">{row.title}</summary>
+                    <p className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap leading-relaxed text-text-2">{row.body}</p>
                   </details>
                 ),
               },
@@ -156,7 +156,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                 key: "archive",
                 header: "보관",
                 render: (row) => (row.archived ? (
-                  <span className="text-xs text-muted">보관함</span>
+                  <span className="text-xs text-text-3">보관함</span>
                 ) : (
                   <Button
                     onClick={() => setConfirmingArchive(row.id)}
@@ -201,7 +201,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
           }}
         >
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1 text-xs text-muted">
+            <label className="flex flex-col gap-1 text-xs text-text-3">
               종류
               <NativeSelect
                 value={draft.kind}
@@ -213,7 +213,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
               </NativeSelect>
             </label>
             <div className="flex flex-col gap-1">
-              <label className="flex flex-col gap-1 text-xs text-muted">
+              <label className="flex flex-col gap-1 text-xs text-text-3">
                 기준일(선택)
                 <input
                   type="date"
@@ -223,11 +223,11 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                   className={INPUT}
                 />
               </label>
-              <span id="paper-note-asof-hint" className="text-xs text-muted">{noteAsOfHint(referenceDate, market)}</span>
+              <span id="paper-note-asof-hint" className="text-xs text-text-3">{noteAsOfHint(referenceDate, market)}</span>
             </div>
             {draft.kind === "MARKET" ? (
               <div className="flex flex-col gap-1">
-                <label className="flex flex-col gap-1 text-xs text-muted">
+                <label className="flex flex-col gap-1 text-xs text-text-3">
                   만료일(선택)
                   <input
                     type="date"
@@ -237,18 +237,18 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                     className={INPUT}
                   />
                 </label>
-                <span id="paper-note-expiry-hint" className="text-xs text-muted">{expiryHint}</span>
+                <span id="paper-note-expiry-hint" className="text-xs text-text-3">{expiryHint}</span>
               </div>
             ) : (
-              <p className="self-end text-xs text-muted">방법론 메모는 만료가 없습니다.</p>
+              <p className="self-end text-xs text-text-3">방법론 메모는 만료가 없습니다.</p>
             )}
           </div>
-          <label className="flex flex-col gap-1 text-xs text-muted">
+          <label className="flex flex-col gap-1 text-xs text-text-3">
             제목
             <input type="text" value={draft.title} onChange={(event) => edit({ title: event.target.value })} className={INPUT} />
           </label>
           <div className="flex flex-col gap-1">
-            <label className="flex flex-col gap-1 text-xs text-muted">
+            <label className="flex flex-col gap-1 text-xs text-text-3">
               본문
               <textarea
                 value={draft.body}
@@ -257,7 +257,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                 className={`${INPUT} leading-relaxed`}
               />
             </label>
-            <span className={`text-xs ${check.bodyCount.over ? "text-warn" : "text-muted"}`}>
+            <span className={`text-xs ${check.bodyCount.over ? "text-warn" : "text-text-3"}`}>
               {check.bodyCount.text}
               {draft.kind === "MARKET" ? " — 패킷에는 유효한 메모를 합쳐 설정 notesMaxCharsInPacket까지 싣습니다." : ""}
             </span>
