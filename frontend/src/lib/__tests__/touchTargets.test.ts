@@ -1,5 +1,5 @@
 /**
- * 공용 조작 조각의 좁은 화면 누르는 자리 44px(원칙 A8, 작업대 화면 언어 계획 docs/specs/2026-11-15-workbench-ui-plan.md §9-3) — QA-458.
+ * 공용 조작 조각의 좁은 화면 누르는 자리 44px(원칙 A8, 작업대 화면 언어 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §9-3) — QA-458.
  *
  * components/ui/classes.ts와 정보 검색 조각(components/screens/search/parts.tsx)이 내보내는 것을 모두 '누르는 조각'과 '아닌 것'으로 나눠 둡니다.
  * 새로 내보낸 이름이 어느 쪽에도 없으면 실패합니다 — 새 조각을 만들 때 이 표에 넣으며 44px을 따지게 합니다. 누르는 조각은 받을 수 있는 인자를
