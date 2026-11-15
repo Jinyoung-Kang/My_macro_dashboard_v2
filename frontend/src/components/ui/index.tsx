@@ -557,11 +557,13 @@ export function Table<T>({
 /**
  * 작은 글 배지(출처 종류·모델 이름·기준 분기 등). 모서리는 rounded-full이 아니라 4px(rounded-control) — 표의 좁은 칸에서 두 줄로 접히면
  * rounded-full은 글이 모서리에 걸린 타원이 됐습니다(추정·이전 값 배지와 같은 까닭). 테두리 있는 꼬리표는 Tag(중립)입니다.
+ * 높이는 20px(12/16 글 + 위아래 2px, 테두리 없음)로 Tag와 같고, 표 칸 같은 글 흐름 안에서는 Tag처럼 줄 위에 맞춥니다(align-top) — 기준선에 맞추면
+ * 공용 표(Table) 칸에 든 행이 1px 늘었습니다(머리 없는 크롬으로 잼, 2026-11-16 태그 20px 결정과 같은 까닭). flex 줄 안에서는 이 맞춤이 쓰이지 않습니다.
  * 날짜처럼 접히면 안 되는 값은 부르는 쪽(표 칸의 className)이 whitespace-nowrap을 붙입니다.
  */
 export function SourceBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-control bg-surface-2 px-2 py-0.5 text-xs leading-4 text-text-2">
+    <span className="inline-flex items-center rounded-control bg-surface-2 px-2 py-0.5 align-top text-xs leading-4 text-text-2">
       {children}
     </span>
   );

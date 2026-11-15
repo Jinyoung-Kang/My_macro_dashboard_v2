@@ -345,7 +345,7 @@ Blueprint는 기본 14 / small 12 / large 16, 줄 높이 1.28입니다. 1.28은 
 | EntityHeader (새) | search `EntityView` 안 | 종류 아이콘, 이름, 식별자, 태그, 주 값, 동작 | patterns |
 | DenseTable | Table·DataTable | 행 32/28px, sticky 머리, 개수, 정렬 머리 lg 미만 44px, 고른 행 막대, 가로 스크롤 안내(지금 기능 유지) | patterns |
 | Tabs | 밑줄·알약 탭 여러 종 | 한 종류(밑줄 2px, ARIA tabs, 화살표 키). 모의매매 탭은 `replaceState` 동작 유지 | ui |
-| Tag | `search/parts` Tag·KindBadge·알약 칩 | 4px 태그(중립, 의도 4종), 지울 수 있는 태그. **높이 20px — 2026-11-16 결정(사용자 위임 — 권장안)**: 12/16 글 + 위아래 1px + 1px 경계, 글 흐름 안에서는 줄 위 맞춤(`align-top`) — 표 칸 글줄(14/20)과 같아 태그가 든 행도 32·28px. 공용 `Tag`·패턴 추정·이전 값 배지·신선도 주의 표지·정보 검색 종류 표지(`KindBadge`)·개장 배지(`SessionBadge`)가 같은 높이. 화면 안 자체 배지(모의매매 상태 배지 등 `px-2 py-0.5` 22px)는 그 화면이 공용 Tag로 옮기는 단계(P4~P6)에서 맞춤 | ui |
+| Tag | `search/parts` Tag·KindBadge·알약 칩 | 4px 태그(중립, 의도 4종), 지울 수 있는 태그. **높이 20px — 2026-11-16 결정(사용자 위임 — 권장안)**: 12/16 글 + 위아래 1px + 1px 경계, 글 흐름 안에서는 줄 위 맞춤(`align-top`) — 표 칸 글줄(14/20)과 같아 태그가 든 행도 32·28px. 공용 `Tag`·패턴 추정·이전 값 배지·신선도 주의 표지·정보 검색 종류 표지(`KindBadge`)·개장 배지(`SessionBadge`)가 같은 높이. 테두리 없는 글 배지 `SourceBadge`(12/16 글 + 위아래 2px — 공용 표 칸에서 씀)도 20px이고 같은 줄 위 맞춤(2026-11-16 검토 지적 — 빠져 있어 그 행이 1px 늘었음). 화면 안 자체 배지(모의매매 상태 배지 등 `px-2 py-0.5` 22px)는 그 화면이 공용 Tag로 옮기는 단계(P4~P6)에서 맞춤 | ui |
 | Callout | Banner(218회) | 의도 4종, 아이콘, 제목. Banner는 별칭으로 두고 단계마다 바꿈 | ui |
 | Toast | Radix Toast | 겉모양만(덮개 3층) | ui |
 | SplitPane / MasterDetail (새) | `search/entityGrid.ts` | lg 두 칸, xl 세 칸 틀을 공용으로. 좁은 화면은 한 칸, 검사는 시트. **모의매매 전용으로 만들지 않음**(§7-1 확장 지점) | patterns |
