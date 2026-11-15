@@ -454,6 +454,31 @@ describe("홈 — 불러오는 중·값 없음", () => {
       unmount();
     }
   });
+
+  // QA-505 후속(검토): 수집기에 닿지 못하면 모델 톤이 warn이라 수 묶음 앞에 주의 아이콘(14px)이 붙고, 바로 옆 안내 '수집기 연결 안 됨 — DB
+  // 기록만'에도 주의 아이콘(12px)이 있어 한 링크 안에 같은 아이콘이 크기만 달리 두 번 섰습니다. 첫 아이콘은 '오류 0건' 앞이라 0건이 경고처럼
+  // 읽힙니다. 상태 화면은 이때 수를 중립으로 두고 주의를 배너 한 곳에 둡니다(QA-102). 오류·경고·누락이 없으면 수 묶음은 중립(아이콘 없음),
+  // 주의 아이콘은 안내 한 곳입니다. 경고가 있으면 수 묶음의 아이콘은 그 경고의 것이라 그대로입니다.
+  it.fails("QA-505: 수집기 연결 안 됨만이면 주의 아이콘은 안내 한 곳 — 수 묶음은 중립, 경고가 있으면 수 묶음도 주의", async () => {
+    const iconsOf = async (warnings: number) => {
+      const down = { ...issues(0, warnings), collectorReachable: false };
+      down.counts = { ...down.counts, missingDatasets: null };
+      reads = { ...happyReads(), [ISSUES]: down };
+      const { unmount } = renderHome(OWNER);
+      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const counts = storeCounts(line);
+      const notice = within(line).getByText(COLLECTOR_UNREACHABLE_NOTE).closest(".text-warn") as HTMLElement;
+      const result = {
+        counts: counts.querySelectorAll("svg").length,
+        countsWarn: counts.closest(".text-warn") !== null,
+        notice: notice.querySelectorAll("svg").length,
+      };
+      unmount();
+      return result;
+    };
+    expect(await iconsOf(0), "연결 안 됨 · 오류 0건 · 경고 0건").toEqual({ counts: 0, countsWarn: false, notice: 1 });
+    expect(await iconsOf(19), "연결 안 됨 · 경고 19건").toEqual({ counts: 1, countsWarn: true, notice: 1 });
+  });
 });
 
 describe("홈 — 일부 실패", () => {
