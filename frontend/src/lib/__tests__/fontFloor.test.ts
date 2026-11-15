@@ -1,14 +1,18 @@
 /**
- * 글자 하한 12px(원칙 A8 — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §2-3 '최소 크기는 micro(12px)', 작업대 화면 언어 계획
- * docs/specs/2026-11-15-workbench-ui-plan.md §9-2) — QA-457.
+ * 글자 하한 12px(Coinbase 명세 docs/specs/2026-10-31-v2-coinbase-ui.md 원칙 A9·§2-3 표 — `text-micro` 12/16, 10·11px은 없앰. 작업대 화면 언어
+ * 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §9-2) — QA-457.
  *
- * src의 제품 소스(시험·자가 검증 폴더 제외)에서 글자 크기를 정하는 곳을 모두 보고, 12px보다 작아질 수 있는 값을 찾습니다. 허용 목록은 없습니다.
+ * src의 제품 소스(시험·자가 검증 폴더 제외)에서 소스에 적은 글자 크기 값(리터럴)을 보고, 12px보다 작아질 수 있는 값을 찾습니다. 허용 목록은 없습니다.
  *  - .ts·.tsx: TypeScript AST(createSourceFile)로 문자열·템플릿 조각 안의 임의 크기 클래스(`text-[11px]`·`lg:text-[0.7rem]`·
- *    `text-[0.8em]`·`text-[length:11px]`·`[font-size:11px]`)와, 이름이 fontSize인 JSX 속성·객체 키·구조 분해 기본값(`fontSize={10}`·
- *    `style={{ fontSize: "0.7rem" }}`·차트 `tick={{ fontSize: 10 }}`), 이름이 …_FONT·…FontSize인 상수(`CHART_FONT = 12`)의 숫자를 봅니다.
- *    주석은 AST가 건너뜁니다.
+ *    `text-[0.8em]`·`text-[length:11px]`·`[font-size:11px]`)와, 이름이 글자 크기인 JSX 속성·객체 키·변수·구조 분해 기본값(`fontSize={10}`·
+ *    `style={{ fontSize: "0.7rem" }}`·차트 `tick={{ fontSize: 10 }}`·`CHART_FONT = 12`·`CHART_FONT_SM`·`tickFontSize`)의 값을 봅니다.
+ *    글자 크기 이름은 낱말(camelCase·snake_case·kebab-case로 가름)에 font가 있고 굵기·글꼴 이름 같은 다른 글꼴 속성 낱말(NOT_SIZE)이 없는 이름입니다.
+ *    값은 리터럴과, 조건식의 두 갈래·`??`·`||`·`&&`의 양쪽(`compact ? 10 : 12`, `options.fontSize ?? 10`)까지 따라갑니다. 이름이 글자 크기인
+ *    값 뒤의 기본값(`layout(w, options.fontSize ?? 10)`처럼 함수 인자 자리에 있어도)도 봅니다. 주석은 AST가 건너뜁니다.
  *  - .css: 주석을 지운 뒤 `font-size:` 선언, 글자 단계 변수(`--text-micro: 0.75rem` — `--text-*--line-height` 같은 딸린 값은 뺌),
  *    그리고 같은 임의 크기 클래스(@apply 등).
+ *  - 한계: 변수·연산·함수 호출로 계산한 크기(`fontSize={base - 2}`·`Math.max(10, x)`)와 글자 크기 이름이 아닌 변수에 담은 값은 보지 않습니다.
+ *    상수는 선언 자리에서 이름으로 잡으므로, 글자 크기를 담는 상수에는 font가 든 이름을 붙입니다.
  *
  * 하한 아래로 보는 값: px·단위 없음(React style·SVG의 숫자는 px) 12 미만, rem 0.75 미만, em·% 1(100%) 미만. em·%는 부모 크기에 따라
  * 달라져 소스만으로 12px 이상임을 증명할 수 없습니다 — 부모가 하한(12px)이면 그 아래로 내려갑니다. 실제로 13px 변화 칩 안의 0.8em ▲▼가
@@ -47,8 +51,20 @@ function classHits(text: string): string[] {
     .map((match) => match[0]);
 }
 
-/** 글자 크기를 담는 이름 — fontSize 속성·키와 …_FONT·…_FONT_SIZE·…FontSize 상수. */
-const FONT_NAME = /^(fontSize|font-size)$|(^|_)FONT(_SIZE)?$|FontSize$/;
+/** 글자 크기가 아닌 글꼴 속성 낱말 — 이름에 있으면 크기로 보지 않습니다(fontWeight·FONT_FAMILY·fontVariantNumeric·font line-height 등). */
+const NOT_SIZE = new Set(["weight", "family", "style", "variant", "feature", "features", "stretch", "kerning", "synthesis", "smoothing", "display",
+  "face", "color", "line", "spacing"]);
+
+/** 이름을 소문자 낱말로 — camelCase·snake_case·kebab-case를 가릅니다(`tickFontSize` → tick·font·size, `CHART_FONT_SM` → chart·font·sm). */
+function wordsOf(name: string): string[] {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[\s_-]+/).filter(Boolean).map((word) => word.toLowerCase());
+}
+
+/** 글자 크기를 담는 이름 — 낱말에 font가 있고 다른 글꼴 속성 낱말은 없음(fontSize·font-size·tickFontSize·CHART_FONT·CHART_FONT_SM). */
+function isFontName(name: string): boolean {
+  const words = wordsOf(name);
+  return words.includes("font") && !words.some((word) => NOT_SIZE.has(word));
+}
 
 function nameOf(name: ts.Node | undefined): string | null {
   if (!name) return null;
@@ -56,49 +72,68 @@ function nameOf(name: ts.Node | undefined): string | null {
   return null;
 }
 
-/** 크기 값으로 읽을 수 있는 식(숫자·문자열·JSX의 {숫자}) → 글, 아니면 null. */
-function literalOf(node: ts.Node | undefined): string | null {
-  if (!node) return null;
-  if (ts.isJsxExpression(node)) return literalOf(node.expression);
-  if (ts.isParenthesizedExpression(node)) return literalOf(node.expression);
-  if (ts.isNumericLiteral(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+/** 값을 읽는 식의 이름 — `fontSize`·`options.fontSize`·`opts!.fontSize` → fontSize, 아니면 null. */
+function nameOfExpression(node: ts.Expression): string | null {
+  if (ts.isIdentifier(node)) return node.text;
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node)) return nameOfExpression(node.expression);
   return null;
+}
+
+/** 값이 갈래로 갈리는 연산자 — 양쪽 모두 값이 될 수 있습니다. */
+const BRANCH_OPERATORS = new Set<ts.SyntaxKind>([ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken]);
+
+/**
+ * 식이 낼 수 있는 리터럴 값(숫자·문자열·JSX의 {숫자}) — 조건식의 두 갈래와 ??·||·&&의 양쪽, 괄호·as·satisfies·!를 따라갑니다. 계산한 값은 없음([]).
+ */
+function literalsOf(node: ts.Node | undefined): string[] {
+  if (!node) return [];
+  if (ts.isJsxExpression(node)) return literalsOf(node.expression);
+  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isNonNullExpression(node)) {
+    return literalsOf(node.expression);
+  }
+  if (ts.isNumericLiteral(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isConditionalExpression(node)) return [...literalsOf(node.whenTrue), ...literalsOf(node.whenFalse)];
+  if (ts.isBinaryExpression(node) && BRANCH_OPERATORS.has(node.operatorToken.kind)) return [...literalsOf(node.left), ...literalsOf(node.right)];
+  return [];
 }
 
 /** .ts·.tsx 한 파일에서 하한 아래의 글자 크기 — "줄: 찾은 글". */
 function tsFontHits(fileName: string, text: string): string[] {
   const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
-  const found: string[] = [];
+  // 같은 줄의 같은 값은 한 번만 — `fontSize: options.fontSize ?? 10`은 키와 기본값 두 규칙이 함께 잡습니다.
+  const found = new Set<string>();
   const add = (node: ts.Node, hit: string) => {
     const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
-    found.push(`${line + 1}: ${hit}`);
+    found.add(`${line + 1}: ${hit}`);
+  };
+  const check = (node: ts.Node, name: string | null, values: string[]) => {
+    if (name === null || !isFontName(name)) return;
+    for (const value of values) {
+      const size = parseSize(value);
+      if (size && belowFloor(size.value, size.unit)) add(node, `${name} ${value}`);
+    }
   };
   const visit = (node: ts.Node) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ||
       ts.isTemplateTail(node)) {
       for (const hit of classHits(node.text)) add(node, hit);
     }
-    let name: string | null = null;
-    let value: string | null = null;
     if (ts.isJsxAttribute(node)) {
-      name = nameOf(node.name);
-      value = literalOf(node.initializer);
+      check(node, nameOf(node.name), literalsOf(node.initializer));
     } else if (ts.isPropertyAssignment(node)) {
-      name = nameOf(node.name);
-      value = literalOf(node.initializer);
+      check(node, nameOf(node.name), literalsOf(node.initializer));
     } else if (ts.isBindingElement(node) || ts.isParameter(node) || ts.isVariableDeclaration(node)) {
-      name = nameOf(ts.isBindingElement(node) && node.propertyName ? node.propertyName : node.name);
-      value = literalOf(node.initializer);
-    }
-    if (name !== null && value !== null && FONT_NAME.test(name)) {
-      const size = parseSize(value);
-      if (size && belowFloor(size.value, size.unit)) add(node, `${name} ${value}`);
+      check(node, nameOf(ts.isBindingElement(node) && node.propertyName ? node.propertyName : node.name), literalsOf(node.initializer));
+    } else if (ts.isBinaryExpression(node) && BRANCH_OPERATORS.has(node.operatorToken.kind)) {
+      // 글자 크기 값 뒤의 기본값 — 이름 붙은 자리가 아니어도(함수 인자 등) `options.fontSize ?? 10`의 10.
+      check(node, nameOfExpression(node.left), literalsOf(node.right));
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  return found;
+  return [...found];
 }
 
 /** .css 한 파일에서 하한 아래의 글자 크기 — 주석을 지우고(줄 수는 그대로) font-size 선언·글자 단계 변수·임의 크기 클래스. */
@@ -150,7 +185,7 @@ describe("글자 하한 12px(QA-457)", () => {
     expect(offenders()).toEqual([]);
   });
 
-  it("검사기 자체 — 클래스·fontSize 속성·키·기본값·상수를 찾고, 주석·12px 이상·1em 이상·숫자가 아닌 값은 건너뛴다", () => {
+  it("검사기 자체 — 클래스·글자 크기 이름의 속성·키·기본값·상수와 조건식·??·|| 갈래를 찾고, 주석·12px 이상·1em 이상·숫자가 아닌 값·다른 글꼴 속성은 건너뛴다", () => {
     const sample = [
       "// 주석의 text-[10px]는 건너뜀",
       "const a = \"px-2 text-[11px] lg:text-[13px]\";",
@@ -163,6 +198,10 @@ describe("글자 하한 12px(QA-457)", () => {
       "const e = { fontSize: CHART_FONT, lineHeight: 10, fontSize2: 8 };",
       "const f = \"[font-size:11px] [font-size:12px]\";",
       "const g = <svg><text fontSize=\"0.8em\" /><text fontSize={12} /></svg>;",
+      "const h = <text fontSize={compact ? 10 : 12} />;",
+      "const i = { fontSize: options.fontSize ?? 10, tick: layout(w, options.fontSize ?? 9), size: opts.fontSize || 12 };",
+      "export const CHART_FONT_SM = 10, tickFontSize = 11 as number;",
+      "const j = { fontWeight: 5, fontLineHeight: 1.2, fontVariantNumeric: \"tabular-nums\", fontSize: big ? 14 : CHART_FONT };",
     ].join("\n");
     expect(tsFontHits("sample.tsx", sample)).toEqual([
       "2: text-[11px]",
@@ -174,8 +213,14 @@ describe("글자 하한 12px(QA-457)", () => {
       "6: fontSize 11",
       "7: fontSize 10",
       "8: CHART_FONT 11",
+      "9: fontSize2 8",
       "10: [font-size:11px]",
       "11: fontSize 0.8em",
+      "12: fontSize 10",
+      "13: fontSize 10",
+      "13: fontSize 9",
+      "14: CHART_FONT_SM 10",
+      "14: tickFontSize 11",
     ]);
   });
 
