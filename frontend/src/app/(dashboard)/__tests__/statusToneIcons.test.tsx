@@ -4,6 +4,7 @@
  *
  *  - 국면(/regime) 판정 근거: 지표 칸 캡션(정상·완화적·축소…)에 정상·주의 아이콘, 주의 칸은 읽어 주는 '주의:' 머리말
  *  - 상태(/status) 수집 오류·경고 로그: '현재 오류'·'현재 경고' 수가 0보다 크면 값 옆에 위험·주의 아이콘(새 낱말 없이), 0이면 아이콘 없음
+ *  - 상태(/status) '최근 수집 상태'가 중단이면 값 옆 주의 아이콘과 '주의:' — 값 줄 안의 상태 글은 위에 맞춤(align-top)
  *
  * 홈 저장소 상태 줄은 HomeScreen.test.tsx가 봅니다.
  */
@@ -120,5 +121,21 @@ describe("상태 화면 수집 오류·경고 로그 — 현재 오류·경고 �
       expect(metric.textContent).toBe(`${label}0건`);
       expect(metric.querySelectorAll("svg"), `${label} 0건 아이콘`).toHaveLength(0);
     }
+  });
+});
+
+describe("상태 화면 최근 수집 상태 — 중단은 주의 아이콘 + 글, 값 줄 높이는 이웃 칸과 같게", () => {
+  // 값 줄(text-xl·lg:text-2xl) 안의 상태 글(inline-flex)이 기준선에 앉으면 글이 한 줄일 때 값 줄이 2~3px 높아집니다(QA 스택 실측 — 짧은 글로
+  // 1440px 32 → 34·390px 28 → 31, align-top이면 32·28). 지금의 중단 글은 늘 두 줄 넘게 접혀 차이가 없지만, 같은 화면의 오류·경고 수와 같이 위에 맞춥니다.
+  it("중단이면 값 옆 주의 아이콘 하나·읽어 주는 '주의:', 상태 글은 align-top", async () => {
+    reads["/api/status"] = { readMode: "auto", collectorReachable: true, lastRunStatus: "interrupted" };
+    render(<StatusPage />);
+    const metric = (await screen.findByText("최근 수집 상태")).parentElement as HTMLElement;
+    expect(within(metric).getByText(/^비정상 종료/)).toBeTruthy();
+    const icons = Array.from(metric.querySelectorAll("svg"));
+    expect(icons.map((icon) => icon.getAttribute("aria-hidden"))).toEqual(["true"]);
+    expect(icons[0].closest(".text-warn"), "아이콘 톤").not.toBeNull();
+    expect(icons[0].closest(".inline-flex")?.className, "상태 글 세로 맞춤").toContain("align-top");
+    expect(within(metric).getByText("주의:")).toBeTruthy();
   });
 });

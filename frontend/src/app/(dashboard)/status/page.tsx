@@ -78,11 +78,12 @@ export default function StatusPage() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {/* align-top: 값 줄 안의 상태 글(inline-flex)이 기준선에 앉아 값 줄이 높아지지 않게 — 아래 수집 오류·경고 수(QA-505)와 같음. */}
         <Metric
           label="최근 수집 상태"
           value={
             resolvedStatus === "interrupted" ? (
-              <StatusText tone="warn" iconSize={20}>{RUN_STATUS_LABEL.interrupted}</StatusText>
+              <StatusText tone="warn" iconSize={20} className="align-top">{RUN_STATUS_LABEL.interrupted}</StatusText>
             ) : (
               RUN_STATUS_LABEL[resolvedStatus] ?? resolvedStatus
             )
