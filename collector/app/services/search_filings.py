@@ -10,9 +10,11 @@ app/services/search_filings.py
   같은 접수의 여러 문서는 한 줄. 제출자 CIK가 없는 줄은 연결할 쪽이 없어 뺍니다.
 - ``dart``: Open DART ``list.json``(``DART_API_KEY`` — publicapi의 키 처리) 첫 쪽(100건), ``total_page``가 1보다 크면 2쪽 한 번(최대 200건).
   status 013(자료 없음)은 빈 결과.
-- 제목(QA-440): 설명(``primaryDocDescription``)이 없거나 양식만 되풀이하면('8-K'·'FORM 6-K') 흔한 양식의 짧은 한국어 뜻(:data:`FORM_LABELS`)을
-  양식 뒤에 붙이고, 모르는 양식은 양식 기호만. 전문 검색 줄은 '<양식> · <뜻> · <제출자>'. 보고자(Form 3·4·5의 내부자)는 회사별 목록에 칸이 없어
-  싣지 않습니다(SEC를 더 부르지 않음). 모은 글에 예전 꼴로 넣은 줄은 읽을 때 :func:`stored_title`로 다시 만듭니다.
+- 제목(QA-440·QA-451): 설명(``primaryDocDescription``)이 없거나 양식만 되풀이하면('8-K'·'FORM 6-K') 흔한 양식과 운영에서 본 드문 양식의 짧은
+  한국어 뜻(:data:`FORM_LABELS`)을 양식 뒤에 붙이고, 모르는 양식은 양식 기호만. 전문 검색 줄은 '<양식> · <뜻> · <제출자>'이고, Form 3·4·5(·/A)는
+  같은 접수의 다른 이름(``display_names``의 둘째부터 — 보고자·발행사, 받은 순서 그대로)을 ' · '로 이어 붙입니다(줄마다 누구·어느 회사의 보고인지
+  가르게, QA-451). 회사별 목록(submissions)에는 상대 이름 칸이 없어 Form 3·4·5도 양식과 뜻만(SEC를 더 부르지 않음). 모은 글에 예전 꼴로 넣은 줄은
+  읽을 때 :func:`stored_title`로 다시 만듭니다(넣을 때 실은 다른 이름은 지킴).
 - SEC 두 출처의 줄 id는 ``info_text.item_id("sec:" + 접수번호)`` — 같은 접수가 두 출처에서 와도 한 줄(합칠 때 ``sec``가 먼저). DART 줄 id는 공시
   뷰어 주소의 ``info_text.item_id``.
 - 시각(§7-1): DART 접수일·전문 검색 ``file_date``는 그 날짜의 그 출처 달력 00:00(DART = KST, SEC = 미국 동부)을 UTC로 바꾼 값과
@@ -67,7 +69,10 @@ DATE_SOURCES = frozenset({"sec_fts", "dart", "naver_research"})
 # 흔한 SEC 양식의 짧은 뜻(QA-440) — 설명이 없거나 양식만 되풀이할 때 제목에 붙입니다. '/A'(amendment)는 같은 뜻 + ' 수정' — 오류 정정만이 아니라
 # 13D·13G의 보유 변동 반영, 8-K의 보완도 '/A'라 '정정'이라 하지 않습니다. 13D·13G는 5% '초과' 보유자의 보고(Exchange Act 13(d)(1) —
 # more than five percent)이고, 2024-12부터 'SCHEDULE 13D'·'SCHEDULE 13G'로 접수됩니다(그 전은 'SC 13D'·'SC 13G'). 여기 없는 양식은 양식 기호만
-# (뜻을 짐작하지 않음).
+# (뜻을 짐작하지 않음). 드문 양식(QA-451 — 운영 화면에서 기호만 보인 것): F-N은 미국에서 증권을 공모하는 외국 은행·보험사(와 그 지주·금융
+# 자회사)의 송달 대리인 지정, F-3ASR은 외국 기업(F-3)의 자동 효력 일괄 신고서(well-known seasoned issuer), N-PX는 연간 의결권 행사 기록(등록 펀드,
+# 2024-07부터 13F 기관의 say-on-pay 투표도 — 그래서 '펀드'를 붙이지 않음), S-8은 임직원 보상 계획(employee benefit plan)으로 내주는 증권의 신고서,
+# IRANNOTICE는 정기 보고서에 이란 관련 활동을 적었다는 통지(Exchange Act 13(r)).
 FORM_LABELS = {
     "3": "최초 지분 보고",
     "4": "지분 변동 보고",
@@ -85,8 +90,16 @@ FORM_LABELS = {
     "S-1": "증권 신고서",
     "DEF 14A": "주주총회 위임장 설명서",
     "13F-HR": "기관 보유 종목 보고(분기)",
+    "F-N": "외국 금융기관의 송달 대리인 지정",
+    "F-3ASR": "외국 기업 일괄 증권 신고서(자동 효력)",
+    "N-PX": "연간 의결권 행사 기록",
+    "S-8": "임직원 보상 계획 증권 신고서",
+    "IRANNOTICE": "이란 관련 활동 공시 통지",
 }
 AMENDMENT = "/A"
+# 지분 보고(Form 3·4·5) — 전문 검색 줄에 같은 접수의 다른 이름(보고자·발행사)을 싣는 양식(QA-451).
+OWNERSHIP_FORMS = frozenset({"3", "4", "5"})
+NAME_JOIN = " · "
 
 _ACCESSION = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 _CIK = re.compile(r"^\d{1,10}$")
@@ -176,16 +189,27 @@ def stored_basis(source: str | None, published_at: datetime | None) -> str:
     return "published"
 
 
-# ------------------------------------------------------------------ 제목(QA-440)
+# ------------------------------------------------------------------ 제목(QA-440·QA-451)
+
+def _base_form(form: str) -> tuple[str, bool]:
+    """양식 → (대조 키 — 빈칸 하나로·대문자, '/A'를 뗌, 수정 양식인지)."""
+    key = " ".join(form.split()).upper()
+    amended = key.endswith(AMENDMENT)
+    return (key[:-len(AMENDMENT)] if amended else key), amended
+
 
 def form_label(form: str) -> str | None:
     """양식의 짧은 한국어 뜻(:data:`FORM_LABELS`) — '/A'(amendment)는 그 뜻 + ' 수정'. 모르는 양식은 None."""
-    key = " ".join(form.split()).upper()
-    amended = key.endswith(AMENDMENT)
-    label = FORM_LABELS.get(key[:-len(AMENDMENT)] if amended else key)
+    base, amended = _base_form(form)
+    label = FORM_LABELS.get(base)
     if label is None:
         return None
     return f"{label} 수정" if amended else label
+
+
+def is_ownership(form: str) -> bool:
+    """지분 보고(Form 3·4·5와 그 '/A')인가 — 전문 검색 줄에 같은 접수의 다른 이름을 싣는 양식(QA-451)."""
+    return _base_form(form)[0] in OWNERSHIP_FORMS
 
 
 def _form_key(text: str) -> str:
@@ -212,24 +236,53 @@ def sec_title(form: str, described: str | None) -> str:
     return form_heading(form)
 
 
-def fts_title(form: str, filer: str | None) -> str:
-    """EDGAR 전문 검색 줄의 제목 — '<양식> · <뜻> · <제출자>'(뜻을 모르는 양식·제출자가 없는 줄은 그 칸 없이)."""
-    heading = form_heading(form)
-    return f"{heading} · {filer}" if filer else heading
+def fts_title(form: str, filer: str | None, others: list[str] | tuple[str, ...] = ()) -> str:
+    """
+    EDGAR 전문 검색 줄의 제목 — '<양식> · <뜻> · <제출자>'(뜻을 모르는 양식·제출자가 없는 줄은 그 칸 없이). ``others``(지분 보고의 같은 접수의
+    다른 이름 — :func:`other_names`)가 있으면 뒤에 ' · '로 이어 붙입니다(QA-451).
+    """
+    parts = [form_heading(form), *([filer] if filer else []), *others]
+    return NAME_JOIN.join(parts)
+
+
+def other_names(form: str, filer: str | None, names: list[Any]) -> list[str]:
+    """
+    지분 보고(:func:`is_ownership`) 줄의 같은 접수의 다른 이름 — 전문 검색 ``display_names``의 둘째부터를 다듬어(:func:`clean_filer_name`) 받은
+    순서대로, 제출자와 같거나 겹치는 이름은 한 번만. 그 밖의 양식과 제출자(첫 이름)가 없는 줄은 빈 목록 — 모은 줄을 읽을 때 제출자(``publisher``)
+    뒤의 이름만 되살리므로 넣을 때와 읽을 때 제목이 같게(QA-451 — 받은 자료에 있는 이름만, SEC를 더 부르지 않음).
+    """
+    if not filer or not is_ownership(form):
+        return []
+    seen = {filer.casefold()}
+    out: list[str] = []
+    for raw in names[1:]:
+        name = clean_filer_name(raw)
+        if name and name.casefold() not in seen:
+            seen.add(name.casefold())
+            out.append(name)
+    return out
+
+
+def _stored_others(rest: str, publisher: str | None) -> list[str]:
+    """모은 전문 검색 줄 제목('<뜻> · <제출자> · <다른 이름>…' 또는 예전 꼴 '<제출자>')에서 제출자 뒤의 이름들 — 넣을 때 실은 것만."""
+    parts = rest.split(NAME_JOIN) if rest else []
+    if not publisher or publisher not in parts:
+        return []
+    return parts[parts.index(publisher) + 1:]
 
 
 def stored_title(source: str | None, title: str, publisher: str | None) -> str:
     """
     모은 글(search_watch_items)의 SEC 공시 줄 제목을 지금 규칙으로 다시 만듭니다 — QA-440 전에 '4'·'6-K · FORM 6-K'로 넣은 줄이 2년 남습니다
-    (표는 넣기만 하고 고치지 않음). 회사별 목록 줄은 '<양식>[ · <설명>]'에서, 전문 검색 줄은 양식과 제출자(``publisher``)에서 — 지금 규칙으로
-    넣은 줄은 그대로 나옵니다. 그 밖의 출처는 그대로.
+    (표는 넣기만 하고 고치지 않음). 회사별 목록 줄은 '<양식>[ · <설명>]'에서, 전문 검색 줄은 양식과 제출자(``publisher``)에서 — 넣을 때 제출자
+    뒤에 실은 다른 이름(지분 보고 — QA-451)은 그대로 둡니다. 지금 규칙으로 넣은 줄은 그대로 나옵니다. 그 밖의 출처는 그대로.
     """
     if not title or source not in ("sec", "sec_fts"):
         return title
-    form, _, rest = title.partition(" · ")
+    form, _, rest = title.partition(NAME_JOIN)
     if source == "sec":
         return sec_title(form, rest or None)
-    return fts_title(form, publisher)
+    return fts_title(form, publisher, _stored_others(rest, publisher))
 
 
 # ------------------------------------------------------------------ 줄 만들기(순수 함수)
@@ -333,9 +386,9 @@ def parse_fts(payload: Any) -> tuple[list[dict], int | None, bool]:
         filer = clean_filer_name(names[0]) if names else None
         roots = source.get("root_forms") if isinstance(source.get("root_forms"), list) else []
         form = _text(source.get("form")) or (_text(roots[0]) if roots else None) or "공시"
-        items.append(feed_item(title=fts_title(form, filer), url=url, publisher=filer, domain=SEC_DOMAIN,
-                               published=date_moment(source.get("file_date"), NEW_YORK), basis="date", source="sec_fts",
-                               lang="en", kind="filing", summary=_text(source.get("file_description")),
+        items.append(feed_item(title=fts_title(form, filer, other_names(form, filer, names)), url=url, publisher=filer,
+                               domain=SEC_DOMAIN, published=date_moment(source.get("file_date"), NEW_YORK), basis="date",
+                               source="sec_fts", lang="en", kind="filing", summary=_text(source.get("file_description")),
                                item_id=sec_item_id(accession)))
     return items, total, at_least
 

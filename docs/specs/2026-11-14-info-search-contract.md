@@ -268,12 +268,15 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 | `dart` | DART 공시 | `ids.dartCorpCode`가 있는 국내 회사 | `https://opendart.fss.or.kr/api/list.json?corp_code=&bgn_de=<창 시작 YYYYMMDD>&end_de=<오늘>&sort=date&sort_mth=desc&page_count=100&page_no=1`(+ `total_page`가 1보다 크면 `page_no=2` 한 번 — 최대 200건). `DART_API_KEY`(기존 `publicapi`). `total_count` > 받은 수면 `message` = "최근 200건(전체 n건 — 그 앞은 DART에서)". status `013`(자료 없음)은 `empty` |
 
 - FeedItem(공통): `kind:"filing"`, `lang` SEC `en`·DART `ko`, `summary` ≤ 300자, `readerId:null`.
-  - `sec`: `title` = `<form> · <primaryDocDescription>`(설명이 없거나 양식만 되풀이하면(`8-K`·`FORM 6-K`) `<form> · <양식 뜻>` — 흔한 양식만 짧은 한국어 뜻
-    (`search_filings.FORM_LABELS` — 3 최초 지분 보고, 4 지분 변동 보고, 6-K 외국 기업 수시 보고, 13D·13G 5% 초과 지분 보고 등, `/A`(amendment)는 뜻 + ' 수정'), 모르는 양식은 양식만 — QA-440), `url` = 접수 색인 쪽
+  - `sec`: `title` = `<form> · <primaryDocDescription>`(설명이 없거나 양식만 되풀이하면(`8-K`·`FORM 6-K`) `<form> · <양식 뜻>` — 표에 있는 양식만 짧은 한국어 뜻
+    (`search_filings.FORM_LABELS` — 3 최초 지분 보고, 4 지분 변동 보고, 6-K 외국 기업 수시 보고, 13D·13G 5% 초과 지분 보고 등, 운영에서 본 드문 양식 F-N 외국 금융기관의 송달 대리인 지정·
+    F-3ASR 외국 기업 일괄 증권 신고서(자동 효력)·N-PX 연간 의결권 행사 기록·S-8 임직원 보상 계획 증권 신고서·IRANNOTICE 이란 관련 활동 공시 통지 — QA-451, `/A`(amendment)는 뜻 + ' 수정'),
+    모르는 양식은 양식만 — QA-440. submissions에는 보고자·발행사 이름 칸이 없어 Form 3·4·5도 양식과 뜻만 — SEC를 더 부르지 않음), `url` = 접수 색인 쪽
     `https://www.sec.gov/Archives/edgar/data/<CIK 숫자>/<접수번호 대시 없음>/<접수번호>-index.htm`, `publisher` = 회사 이름(submissions `name`), `publisherDomain` = `sec.gov`,
     `publishedAt` = `acceptanceDateTime`(꼬리 `Z` 그대로 UTC — 서버 실측 2026-11-14: `…T13:52:41.000Z` = 접수 색인 쪽 'Accepted 08:52:41' 미국 동부 표준시, 있으면
     `timeBasis:"published"`) 없으면 `filingDate`(`"date"`), `summary` = "보고 기준일 <reportDate>"(있을 때).
-  - `sec_fts`: `title` = `<form> · <양식 뜻> · <제출자 이름>`(뜻을 모르는 양식은 뜻 칸 없이 — QA-440, 제출자 이름은 `display_names[0]`에서 꼬리 ` (CIK …)`·티커 괄호를 뗌), `url` = 같은 접수 색인 쪽(`ciks[0]`), `publisher` = 제출자 이름,
+  - `sec_fts`: `title` = `<form> · <양식 뜻> · <제출자 이름>`(뜻을 모르는 양식은 뜻 칸 없이 — QA-440, 제출자 이름은 `display_names[0]`에서 꼬리 ` (CIK …)`·티커 괄호를 뗌 —
+    Form 3·4·5(와 `/A`)는 같은 접수의 다른 이름(`display_names`의 둘째부터, 같은 꼴로 다듬어 받은 순서대로, 제출자와 같은 이름은 빼고 — 보고자·발행사)을 ` · `로 이어 붙임 — QA-451), `url` = 같은 접수 색인 쪽(`ciks[0]`), `publisher` = 제출자 이름,
     `publishedAt` = `file_date`(`"date"`), `summary` = `file_description`.
   - 실패: 전문 검색에서 받은 줄 없이 두 번째 구문이 실패하면 `error`(60초 캐시). DART 2쪽이 실패하면 1쪽 줄과 안내("2쪽을 받지 못함(…)")를 둡니다. SEC submissions 404는
     빈 결과와 안내. 전문 검색에서 제출자 CIK가 없는 줄은 연결할 쪽이 없어 뺍니다. 2년 밖 줄은 규칙(4절)이 잘라 `dropped.old`에 셉니다.
@@ -326,7 +329,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - 대상에 `ids.cik`가 있으면 SEC submissions(호스트 `data.sec.gov`, 하루 예산 600), 종류가 사람·13F 기관이면 EDGAR 전문 검색 첫 구문 한 번(호스트 `efts.sec.gov`, 300 —
   두 번째 구문은 묻지 않음), `ids.dartCorpCode`가 있으면 DART 첫 쪽(호스트 `opendart.fss.or.kr`, 600). 예산·간격·판정 규칙은 6-3과 같고, 넣는 줄은 `kind:"filing"`.
 - 공시 줄의 저장 id = 7-2의 `id`(접수번호·DART 주소). 리서치·연결은 모으지 않습니다. 모은 SEC 줄의 제목은 읽을 때 7-2의 지금 규칙으로 다시 만듭니다(QA-440 전에
-  넣은 '4'·'6-K · FORM 6-K' 꼴 — 표는 넣기만 함).
+  넣은 '4'·'6-K · FORM 6-K' 꼴 — 표는 넣기만 함). 전문 검색 지분 보고 줄에 넣을 때 실은 다른 이름(제출자 뒤 — QA-451)은 그대로 둡니다(표에 이름 칸이 없어 제목에서 되살림).
 - `feed`의 저장본 출처 `watch`는 탭에 맞는 종류만 섞습니다: `news` 탭은 `kind` `news`·`headline`·`wire`(속보 — 운영자에게만 남음, 3-4), `filings` 탭은 `filing`,
   `timeline`은 전부(공시 탭이 없는 주제는 공시 줄도 없음). 모은 공시 줄은 합칠 때 `dart` 바로 뒤(같은 접수는 실시간 출처 줄로 남고 건수도 그쪽에 셈 — 실시간 출처가 실패하면
   모은 줄이 그 자리를 채움).

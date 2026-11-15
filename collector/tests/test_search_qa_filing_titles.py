@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
 from app.services import search_filings, search_store
 
 CIK = "0009000001"
@@ -39,7 +37,6 @@ ISSUER_A = "SYNTHCHIP CORP  (SYNC)  (CIK 0009000088)"
 ISSUER_B = "SYNTHBANK GROUP INC  (SYNB, SYNB-PA)  (CIK 0009000099)"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-451: 수정 전 실패 — 드문 양식은 뜻 없이 양식 기호만")
 def test_QA451_드문_SEC_양식에도_짧은_뜻을_붙인다():
     forms = [("F-N", ""), ("F-3ASR", "FORM F-3 ASR"), ("N-PX", ""), ("S-8", "S-8"), ("IRANNOTICE", ""), ("N-PX/A", "")]
     rows = [{"accessionNumber": f"0009000001-26-{n:06d}", "filingDate": "2026-11-10", "form": form, "primaryDocDescription": described}
@@ -55,7 +52,6 @@ def test_QA451_드문_SEC_양식에도_짧은_뜻을_붙인다():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-451: 수정 전 실패 — 전문 검색의 Form 4 줄이 첫 이름(보고자)만 실어 발행사가 다른 줄을 가를 수 없음")
 def test_QA451_전문_검색의_지분_보고_줄은_같은_접수의_다른_이름도_싣는다():
     payload = _fts(
         _hit("0009000077-26-000001", "4", OWNER, ISSUER_A, ciks=("0009000077", "0009000088")),
@@ -71,7 +67,6 @@ def test_QA451_전문_검색의_지분_보고_줄은_같은_접수의_다른_이
     assert {item["publisher"] for item in items} == {"Synthetic Owner Jane"}, "매체 칸은 그대로 첫 이름"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-451: 수정 전 실패 — 모은 전문 검색 줄의 제목을 첫 이름으로만 다시 만들어 다른 이름을 지움")
 def test_QA451_모은_전문_검색_줄은_읽을_때_다른_이름을_지킨다(monkeypatch):
     sec_url = "https://www.sec.gov/Archives/edgar/data/9000077/000900007726000001/0009000077-26-000001-index.htm"
     stored = "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHCHIP CORP"
@@ -81,3 +76,40 @@ def test_QA451_모은_전문_검색_줄은_읽을_때_다른_이름을_지킨다
     monkeypatch.setattr(search_store, "_watch_rows", lambda key, kinds: [row])
     items = search_store.watch_items("wd:Q900077", owner=True).items
     assert [item["title"] for item in items] == [stored]
+
+
+def test_QA451_전문_검색의_지분_보고가_아닌_줄과_이름이_하나뿐인_줄은_제출자만():
+    payload = _fts(
+        _hit("0009000077-26-000004", "SCHEDULE 13G", OWNER, ISSUER_A, ciks=("0009000077", "0009000088")),
+        _hit("0009000077-26-000005", "4", OWNER),
+        _hit("0009000077-26-000006", "4", OWNER, "Synthetic Owner JANE  (CIK 0009000077)", ISSUER_A),
+    )
+    items, _, _ = search_filings.parse_fts(payload)
+    assert [item["title"] for item in items] == [
+        "SCHEDULE 13G · 5% 초과 지분 보고(약식) · Synthetic Owner Jane",   # 지분 보고(3·4·5)만 다른 이름을 실음
+        "4 · 지분 변동 보고 · Synthetic Owner Jane",
+        "4 · 지분 변동 보고 · Synthetic Owner Jane · SYNTHCHIP CORP",       # 제출자와 같은 이름(대소문자만 다름)은 한 번만
+    ]
+
+
+def test_QA451_회사별_목록의_지분_보고는_상대_이름_칸이_없어_양식과_뜻만():
+    """submissions의 filings.recent에는 보고자·발행사 이름 칸이 없음 — 이름을 짐작하거나 SEC를 더 부르지 않음."""
+    rows = [{"accessionNumber": "0009000001-26-000001", "filingDate": "2026-11-10", "form": "4", "primaryDocDescription": ""}]
+    items, _ = search_filings.parse_submissions(_submissions(rows), cik=CIK, start_day="2024-11-15")
+    assert [(item["title"], item["publisher"]) for item in items] == [("4 · 지분 변동 보고", "SYNTHETIC FINANCIAL GROUP INC")]
+
+
+def test_QA451_모은_줄의_제목은_넣을_때와_같다(monkeypatch):
+    """전문 검색 줄을 넣을 때의 제목과 읽을 때 다시 만든 제목이 같음 — 예전 꼴('4 · <제출자>')만 지금 규칙으로 바뀜."""
+    payload = _fts(_hit("0009000077-26-000001", "4", OWNER, ISSUER_A, ciks=("0009000077", "0009000088")),
+                   _hit("0009000077-26-000002", "8-K", OWNER, ISSUER_A, ciks=("0009000077", "0009000088")),
+                   _hit("0009000077-26-000003", "5", ""))
+    live, _, _ = search_filings.parse_fts(payload)
+    rows = [{"item_id": item["id"], "kind": "filing", "title": item["title"], "url": item["url"], "publisher": item["publisher"],
+             "publisher_domain": "sec.gov", "source": "sec_fts", "lang": "en", "summary": None, "published_at": NOW,
+             "first_seen_at": NOW} for item in live]
+    rows.append(dict(rows[0], item_id="old", title="4 · Synthetic Owner Jane"))
+    monkeypatch.setattr(search_store, "_watch_rows", lambda key, kinds: rows)
+    titles = {item["id"]: item["title"] for item in search_store.watch_items("wd:Q900077", owner=True).items}
+    assert [titles[item["id"]] for item in live] == [item["title"] for item in live]
+    assert titles["old"] == "4 · 지분 변동 보고 · Synthetic Owner Jane"

@@ -113,7 +113,7 @@ def _submissions(rows):
 
 def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀이한_설명을_뺀다():
     forms = [("4", ""), ("3", ""), ("6-K", "FORM 6-K"), ("4/A", "FORM 4"), ("SC 13G/A", "SC 13G/A"), ("8-K", "8-K"),
-             ("10-Q", "Quarterly report"), ("N-PX", ""), ("20-F", "Form 20-F"), ("F-3ASR", "FORM F-3 ASR")]
+             ("10-Q", "Quarterly report"), ("N-PX", ""), ("20-F", "Form 20-F"), ("F-3ASR", "FORM F-3 ASR"), ("CORRESP", "")]
     rows = [{"accessionNumber": f"0009000001-26-{n:06d}", "filingDate": "2026-11-10", "form": form, "primaryDocDescription": described}
             for n, (form, described) in enumerate(forms)]
     items, _ = search_filings.parse_submissions(_submissions(rows), cik=CIK, start_day="2024-11-15")
@@ -125,9 +125,10 @@ def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀�
         "SC 13G/A · 5% 초과 지분 보고(약식) 수정",  # 13D·13G는 5% 초과(more than five percent) 보유자의 보고
         "8-K · 수시 보고(주요 사건)",
         "10-Q · Quarterly report",        # 쓸 만한 설명은 그대로(뜻을 덧붙이지 않음)
-        "N-PX",                           # 모르는 양식은 양식만
+        "N-PX · 연간 의결권 행사 기록",      # 운영에서 기호만 보인 드문 양식도 뜻(QA-451)
         "20-F · 외국 기업 연차 보고서",
-        "F-3ASR",                         # 설명이 양식 사이에 빈칸을 끼워 되풀이해도 되풀이(검토 지적)
+        "F-3ASR · 외국 기업 일괄 증권 신고서(자동 효력)",  # 설명이 양식 사이에 빈칸을 끼워 되풀이해도 되풀이(검토 지적)
+        "CORRESP",                        # 모르는 양식은 양식만
     ]
 
 
@@ -142,8 +143,8 @@ def test_QA440_전문_검색_제목은_양식_뜻과_제출자():
         hit("0009000077-26-000003", "10-K", ""),
     ]}}
     items, _, _ = search_filings.parse_fts(payload)
-    assert [item["title"] for item in items] == ["4 · 지분 변동 보고 · Synthetic Owner Jane", "N-PX · Synthetic Fund Trust",
-                                                 "10-K · 연차 보고서"]
+    assert [item["title"] for item in items] == ["4 · 지분 변동 보고 · Synthetic Owner Jane",
+                                                 "N-PX · 연간 의결권 행사 기록 · Synthetic Fund Trust", "10-K · 연차 보고서"]
 
 
 def test_QA440_모은_글의_SEC_줄은_읽을_때_지금_규칙으로_제목을_다시_만든다(monkeypatch):
@@ -171,6 +172,6 @@ def test_QA440_모은_글의_SEC_줄은_읽을_때_지금_규칙으로_제목을
         "f5": "4 · 지분 변동 보고 · Synthetic Owner Jane",
         "f6": "4 · 지분 변동 보고 · Synthetic Owner Jane",
         "f7": "분기보고서",                                       # DART·뉴스 줄은 그대로
-        "f8": "F-3ASR",
+        "f8": "F-3ASR · 외국 기업 일괄 증권 신고서(자동 효력)",
         "n1": "4",
     }
