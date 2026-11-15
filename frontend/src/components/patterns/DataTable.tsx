@@ -47,13 +47,15 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  *   선은 sticky 칸을 따라 움직이지 않아, 표를 내리면 머리 아래 선이 사라지고 행이 경계 없이 머리 밑으로 들어갔습니다. 그림자(box-shadow)로
  *   긋지 않는 까닭은 고대비(forced-colors) 모드가 그림자를 지워 머리 선이 늘 없어지기 때문입니다(테두리는 시스템 색으로 남음).
  * - 행 높이(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-7): 넓은 화면(lg 이상) 기본 32px, `dense`(로그·출처 같은 조밀 표)면
- *   28px — 칸 글(14/20)에 위아래 여백을 더한 높이라 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서는 모든 행이 44px입니다 —
+ *   28px — 칸 글(14/20)에 위아래 여백과 칸 아래 구분선(1px)을 더한 높이입니다. 구분선을 높이 안에 넣으려고 선이 있는 칸은 아래 여백을 1px 줄입니다
+ *   (6 + 20 + 5 + 1 = 32, 4 + 20 + 3 + 1 = 28 — 선이 없는 마지막 행은 위아래 같은 여백, 머리 줄도 아래 선까지 32·28px). 예전에는 선을 더해 33·29px였습니다
+ *   (2026-11-16 검토 지적, 머리 없는 크롬으로 잼). 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서는 모든 행이 44px 이상입니다 —
  *   누를 수 있는 행(`onRowClick`)은 손가락 누름 자리(원칙 A8)이고, 누를 수 없는 행도 칸 안 종목 글 단추처럼 행마다 있는 작은 단추 사이를
  *   좁히지 않으려고 예전 높이를 둡니다(밀도는 넓은 화면에서만 올림 — 명세 §10 '휴대폰 밀도'). 머리 줄은 32·28px이고, 정렬 머리 단추는 lg 미만에서
  *   44px입니다. 행 사이 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계(border)입니다.
  *   칸 안의 테두리 있는 태그(추정·이전 값 배지·공용 Tag — 12/16 글 + 위아래 1px + 테두리 = 20px, 글 흐름 안에서는 줄 위에 맞춤 — 2026-11-16 결정)는
- *   칸 글줄(20px)과 같은 높이라 태그가 든 행도 넓은 화면 32·28px 그대로입니다(머리 없는 크롬으로 잼 — 칸 아래 테두리 1px를 더하면 33·29px로 태그 없는 행과
- *   같음. 예전 22px 태그는 그 행을 2px 늘렸음). 태그가 두 줄로 접히면 그만큼 늘어납니다.
+ *   칸 글줄(20px)과 같은 높이라 태그가 든 행도 넓은 화면 32·28px 그대로입니다(머리 없는 크롬으로 잼 — 태그 없는 행과 같음. 예전 22px 태그는 그 행을
+ *   2px 늘렸음). 태그가 두 줄로 접히면 그만큼 늘어납니다.
  * - `onRowClick`이 있으면 행이 Tab으로 닿고(tabIndex 0) Enter·Space로도 열립니다. 마우스를 올리면 바탕(surface-2)과 첫 칸 밑줄 —
  *   surface-2 위에서도 칸 안의 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §3-2 — AssetRow와 같은 규칙). 누를 수 없는 행에는 hover 표시가 없습니다.
  * - `count`(선택): 표 위에 행 개수 줄('12건' — 함수를 주면 그 글)을 둡니다(명세 §3-7 '표와 목록 머리에는 개수'). 보이는 제목·개수를 이미 적는
@@ -107,11 +109,13 @@ export function DataTable<T>({
   const shown = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
 
   const alignOf = (column: Column<T>) => (column.align === "right" ? "text-right whitespace-nowrap" : "text-left");
-  // 칸·머리의 위아래 여백 — 행 높이를 정합니다(위 설명: 넓은 화면 32·28px, 좁은 화면의 행은 모두 44px). Tailwind가 찾도록 클래스 이름을 통째로 적습니다.
-  const cellY = dense ? "py-3 lg:py-1" : "py-3 lg:py-1.5";
-  const headY = dense ? "py-1" : "py-1.5";
+  // 칸·머리의 위아래 여백 — 행 높이를 정합니다(위 설명: 넓은 화면 32·28px — 아래 구분선 1px 포함, 좁은 화면의 행은 모두 44px 이상).
+  // 아래 선이 있는 칸(lined)은 넓은 화면 아래 여백을 1px 줄여 선까지 32·28px로 둡니다. Tailwind가 찾도록 클래스 이름을 통째로 적습니다.
+  const cellY = (lined: boolean) =>
+    dense ? (lined ? "py-3 lg:pt-1 lg:pb-[3px]" : "py-3 lg:py-1") : lined ? "py-3 lg:pt-1.5 lg:pb-[5px]" : "py-3 lg:py-1.5";
+  const headY = dense ? "pt-1 pb-[3px]" : "pt-1.5 pb-[5px]";
   // 정렬 머리는 lg 미만에서 단추(44px)가 높이를 정하므로 여백을 두지 않습니다.
-  const sortHeadY = dense ? "py-0 lg:py-1" : "py-0 lg:py-1.5";
+  const sortHeadY = dense ? "py-0 lg:pt-1 lg:pb-[3px]" : "py-0 lg:pt-1.5 lg:pb-[5px]";
   const countText =
     count === undefined || count === false ? null : typeof count === "function" ? count(rows.length) : `${rows.length.toLocaleString("ko-KR")}건`;
   const wide = scrollHint !== false && shown.length > 0;
@@ -241,10 +245,11 @@ export function DataTable<T>({
                     {columns.map((column, index) => {
                       const content = column.cell(row);
                       // 행 사이 구분선은 칸의 아래 테두리(위 설명 — sticky 머리) — 마지막 행에는 긋지 않습니다(감싼 상자의 끝).
-                      const divider = rowIndex < shown.length - 1 ? "border-b border-border-subtle" : "";
+                      const lined = rowIndex < shown.length - 1;
+                      const divider = lined ? "border-b border-border-subtle" : "";
                       // 고른 행의 막대는 첫 칸 안에 둡니다(칸이 relative — 행(tr)을 기준 상자로 쓰지 않음).
                       const bar = selected && index === 0;
-                      const className = `px-3 ${cellY} ${divider} ${bar ? "relative" : ""} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
+                      const className = `px-3 ${cellY(lined)} ${divider} ${bar ? "relative" : ""} tabular-nums text-text ${activate && index === 0 ? "group-hover:underline" : ""} ${alignOf(column)} ${column.className ?? ""}`;
                       const value = isMissingValue(content) ? (
                         <span className="text-text-3">
                           <Empty />

@@ -351,11 +351,12 @@ describe("DataTable — 행 클릭 · 키보드", () => {
 describe("DataTable — 밀도(행 높이)·개수 줄", () => {
   const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
 
-  it("기본 행은 넓은 화면 32px(칸 위아래 여백 lg:py-1.5)·좁은 화면 44px(py-3 — 누를 수 없는 행도), 머리 줄은 32px — 행 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계", () => {
+  it("기본 행은 넓은 화면 32px(구분선 1px 포함 — 선 있는 칸 lg:pt-1.5 lg:pb-[5px], 마지막 행 lg:py-1.5)·좁은 화면 44px(py-3 — 누를 수 없는 행도), 머리 줄은 32px — 행 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const cell = within(bodyRows()[0]).getAllByRole("cell")[1];
-    expect(classesOf(cell)).toEqual(expect.arrayContaining(["py-3", "lg:py-1.5"]));
-    expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toEqual(expect.arrayContaining(["py-1.5", "text-caption", "leading-5"]));
+    expect(classesOf(cell)).toEqual(expect.arrayContaining(["py-3", "lg:pt-1.5", "lg:pb-[5px]"]));
+    expect(classesOf(within(bodyRows()[bodyRows().length - 1]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1.5"]));
+    expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toEqual(expect.arrayContaining(["pt-1.5", "pb-[5px]", "text-caption", "leading-5"]));
     // 선은 칸의 아래 테두리(sticky 머리를 내려도 머리 선이 따라옴 — 겹친 테두리 표의 행 선은 sticky 칸과 함께 움직이지 않음), 마지막 행은 선 없음.
     expect(classesOf(screen.getByRole("table"))).toEqual(expect.arrayContaining(["border-separate", "border-spacing-0"]));
     for (const header of screen.getAllByRole("columnheader")) {
@@ -368,25 +369,26 @@ describe("DataTable — 밀도(행 높이)·개수 줄", () => {
     }
   });
 
-  it("dense면 넓은 화면 28px(lg:py-1, 좁은 화면은 그대로 44px) — 머리 줄도 28px", () => {
+  it("dense면 넓은 화면 28px(구분선 포함 — lg:pt-1 lg:pb-[3px], 마지막 행 lg:py-1, 좁은 화면은 그대로 44px) — 머리 줄도 28px", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} dense />);
-    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1"]));
-    expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toContain("py-1");
-    expect(classesOf(screen.getByRole("columnheader", { name: /비중/ }))).toEqual(expect.arrayContaining(["py-0", "lg:py-1"]));
+    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:pt-1", "lg:pb-[3px]"]));
+    expect(classesOf(within(bodyRows()[bodyRows().length - 1]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1"]));
+    expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toEqual(expect.arrayContaining(["pt-1", "pb-[3px]"]));
+    expect(classesOf(screen.getByRole("columnheader", { name: /비중/ }))).toEqual(expect.arrayContaining(["py-0", "lg:pt-1", "lg:pb-[3px]"]));
   });
 
   it("누를 수 있는 행은 좁은 화면(lg 미만)에서 44px(py-3), 넓은 화면은 32·28px", () => {
     const { unmount } = render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} onRowClick={() => {}} />);
-    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1.5"]));
+    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:pt-1.5", "lg:pb-[5px]"]));
     unmount();
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} onRowClick={() => {}} dense />);
-    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1"]));
+    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:pt-1", "lg:pb-[3px]"]));
   });
 
   it("정렬 머리는 lg 미만에서 단추가 44px(min-h-11), 넓은 화면은 행과 같은 32px", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const header = screen.getByRole("columnheader", { name: /비중/ });
-    expect(classesOf(header)).toEqual(expect.arrayContaining(["py-0", "lg:py-1.5"]));
+    expect(classesOf(header)).toEqual(expect.arrayContaining(["py-0", "lg:pt-1.5", "lg:pb-[5px]"]));
     expect(classesOf(within(header).getByRole("button"))).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0"]));
   });
 
