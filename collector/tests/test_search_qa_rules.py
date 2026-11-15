@@ -45,6 +45,10 @@ JAPANESE_WITHOUT_KANA = [
     "架空生命保険相互会社",
     "架空経済研究所",
     "佐々木架空",
+    # 2차 검토 지적 — 처음 목록에 빠져 있던 일본 전용 한자(産·戸·説)만 표지인 이름
+    "架空不動産",
+    "戸建架空住宅",
+    "架空説明資料",
 ]
 
 
@@ -61,6 +65,32 @@ def test_일본_신자체_목록은_중국_간체·번체·홍콩_표에_없는_
         for codec in ("gb2312", "big5", "big5hkscs"):
             with pytest.raises(UnicodeEncodeError):
                 char.encode(codec)
+
+
+def _encodes(char: str, codec: str) -> bool:
+    try:
+        char.encode(codec)
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def test_일본_전용_한자_목록은_JIS_1수준에서_중국_세_표에_없는_글자_전부다():
+    """
+    2차 검토 지적 — 목록이 JIS 1수준(JIS X 0208 16~47구, EUC-JP 첫 바이트 0xB0~0xCF)의 한자 가운데 GB 2312·Big5·HKSCS 어느 표에도 없는 글자를
+    빠짐없이 담는지(産·戸·説처럼 빠진 글자가 있으면 그 글자만 표지인 일본어 이름이 중국어로 빠짐). 코드 포인트 순.
+    """
+    level1 = []
+    for row in range(16, 48):
+        for cell in range(1, 95):
+            try:
+                level1.append(bytes([0xA0 + row, 0xA0 + cell]).decode("euc_jp"))
+            except UnicodeDecodeError:
+                continue
+    assert len(level1) == 2965, "시험의 전제: JIS 1수준 한자 2965자"
+    expected = sorted(char for char in level1 if not any(_encodes(char, codec) for codec in ("gb2312", "big5", "big5hkscs")))
+    assert rules.JA_ONLY_KANJI == "".join(expected)
+    assert len(rules.JA_ONLY_KANJI) == 213
 
 
 @pytest.mark.parametrize("title", [
