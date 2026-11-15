@@ -372,10 +372,14 @@ export const DETAIL_QUERY_MAX = 60;
 /** 상한에서 자른 끝에 남으면 떼는 이음 기호·여는 괄호(쉼표·&·하이픈 등 — 'Holdings,' → 'Holdings'). 마침표는 'Inc.' 같은 약칭이라 둡니다. */
 const QUERY_TAIL = /[\s,;:·&+/(（[{、，–—-]+$/u;
 
+/** 낱말을 잇는 글자 — 자른 자리 다음 글자가 이것이면 낱말 가운데입니다(글자·숫자·결합 부호). 공백·문장 부호면 낱말 끝입니다. */
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
+
 /**
  * 이름 → 상세 화면의 뉴스·AI 요약 검색어(QA-448). 시세 이름은 Yahoo의 긴 이름(longName)이라 60자를 넘을 수 있어, 넘으면 백엔드 상한 안으로
- * 줄입니다 — 공백을 하나로 줄이고, 글자(코드 포인트)를 가르지 않으면서 백엔드가 세는 UTF-16 길이로 `max` 안까지 담은 뒤 낱말 가운데면 앞 낱말
- * 끝까지(앞 절반 안에 공백밖에 없으면 그대로 — 띄어 쓰지 않은 긴 이름), 뒤 절반에서 열려 잘리는 바람에 닫히지 않은 괄호는 그 앞까지(덧붙인 설명이라),
+ * 줄입니다 — 공백을 하나로 줄이고, 글자(코드 포인트)를 가르지 않으면서 백엔드가 세는 UTF-16 길이로 `max` 안까지 담은 뒤 낱말 가운데(다음 글자가
+ * 글자·숫자·결합 부호 — 공백이나 'Partner, Inc.'의 쉼표 같은 문장 부호면 낱말 끝)면 앞 낱말 끝까지(앞 절반 안에 공백밖에 없으면 그대로 — 띄어 쓰지
+ * 않은 긴 이름), 뒤 절반에서 열려 잘리는 바람에 닫히지 않은 괄호는 그 앞까지(덧붙인 설명이라),
  * 끝에 남은 쉼표·이음 기호를 뗍니다. 상한 안이면 공백만 정리한 그대로, 비면 null.
  */
 export function detailQuery(name: string | null | undefined, max: number = DETAIL_QUERY_MAX): string | null {
@@ -387,7 +391,8 @@ export function detailQuery(name: string | null | undefined, max: number = DETAI
     if (cut.length + char.length > max) break;
     cut += char;
   }
-  const atBoundary = flat[cut.length] === " ";
+  const next = flat.codePointAt(cut.length);
+  const atBoundary = next === undefined || !WORD_CHAR.test(String.fromCodePoint(next));
   const space = cut.lastIndexOf(" ");
   let words = atBoundary || space <= max / 2 ? cut : cut.slice(0, space);
   const open = words.lastIndexOf("(");

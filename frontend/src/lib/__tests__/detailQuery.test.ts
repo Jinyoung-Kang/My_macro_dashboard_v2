@@ -46,6 +46,18 @@ describe("detailQuery — 상세 화면의 뉴스·AI 요약 검색어(QA-448)",
     expect(detailQuery(`${head} Extra`)).toBe(head);
   });
 
+  it("상한이 낱말 끝에 걸리고 다음 글자가 문장 부호면 그 낱말까지 담는다 — 낱말 가운데로 보지 않음(검토 지적)", () => {
+    const base = "Synthetic Example Financial Group Holdings Worldwide"; // 52자
+    expect(`${base} Partner`).toHaveLength(60);
+    expect(detailQuery(`${base} Partner, Inc.`)).toBe(`${base} Partner`);
+    expect(detailQuery(`${base} Partner) Limited`)).toBe(`${base} Partner`);
+    expect(detailQuery(`${base} Partner-Owned Fund`)).toBe(`${base} Partner`);
+    // 다음 글자가 글자·숫자·결합 부호면 낱말 가운데 — 앞 낱말 끝까지.
+    expect(detailQuery(`${base} Partners Inc.`)).toBe(base);
+    expect(detailQuery(`${base} Partner2 Inc.`)).toBe(base);
+    expect(detailQuery(`${base} Partner\u0301 Inc.`)).toBe(base); // 마지막 r에 붙는 결합 부호 — 글자를 가르지 않게
+  });
+
   it("끝에 남은 쉼표·이음 기호와 잘려서 닫히지 않은 괄호는 뗀다 — 마침표(약칭)와 닫힌 괄호는 둠", () => {
     const base = "Synthetic Example Financial Group Holdings Worldwide"; // 52자
     expect(base).toHaveLength(52);
