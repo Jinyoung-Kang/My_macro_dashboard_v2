@@ -26,8 +26,8 @@ export const CHART_FONT = 12;
  */
 export const REFERENCE_DASH = "6 4";
 /**
- * 계산한 참고선의 표지 클래스 — 선(MultiLineSeries의 Line)과 범례 견본에 붙입니다. 참고선 색은 토큰 밖 hex(모의매매 K40 #a7b0bd)라 고대비(forced-colors)의
- * 밝은 Canvas 위에서 2.19:1이었고, globals.css의 고대비 블록이 이 표지로 CanvasText를 줍니다(QA-498).
+ * 계산한 참고선의 표지 클래스 — 선(MultiLineSeries의 Line), 그 계열의 hover 점(activeDot circle — QA-509), 범례 견본에 붙입니다. 참고선 색은 토큰 밖
+ * hex(모의매매 K40 #a7b0bd)라 고대비(forced-colors)의 밝은 Canvas 위에서 2.19:1이었고, globals.css의 고대비 블록이 이 표지로 CanvasText를 줍니다(QA-498).
  */
 export const REFERENCE_LINE_CLASS = "chart-ref-line";
 export const TAIL_DASH = "3 3";

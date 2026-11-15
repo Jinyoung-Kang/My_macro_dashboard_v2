@@ -276,8 +276,8 @@
    두면 그 모드가 작성자의 시스템 색 키워드는 존중하므로 토큰을 쓰는 HTML 링크·비활성 단추·자리표시 글까지 CanvasText로 고정돼 UA 시스템 색
    (LinkText·GrayText)을 잃었습니다(QA-507). 보통 모드는 이 블록을 읽지 않습니다.
    등락 막대의 채움(--up·--down)은 그대로 두고 CanvasText 1px 테두리로 경계를 남기며(뜻은 ▲▼·부호·글이 나름), 계산한 참고선(K40 — 색은 토큰 밖 hex)은
-   표지 클래스 chart-ref-line(선과 범례 견본)으로 CanvasText를 줍니다(점선 6 4·범례 '(계좌 아님)'으로 계좌 선과 갈림). 맨 위 :root보다 뒤에 둡니다 —
-   :root 값을 읽는 시험들이 첫 :root 블록을 읽습니다. */
+   표지 클래스 chart-ref-line(선·범례 견본·hover 점 — QA-509)으로 CanvasText를 줍니다(점선 6 4·범례 '(계좌 아님)'으로 계좌 선과 갈림).
+   themeTokens.test.ts가 이 블록의 svg 규칙을 읽습니다. */
 @media (forced-colors: active) {
   svg {
     --text: CanvasText;
