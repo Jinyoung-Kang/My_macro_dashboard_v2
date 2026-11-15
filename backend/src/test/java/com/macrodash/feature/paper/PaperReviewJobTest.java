@@ -211,6 +211,34 @@ class PaperReviewJobTest {
     }
 
     @Test
+    @DisplayName("QA-475: 그 주가 형식 오류(재시도 0)로 끝났으면 정기 실행은 부르지 않고(ALREADY_REVIEWED), 수동 실행만 한 번 더 부른다 — 이미 다시 부른 형식 오류·거절·건너뜀·완료는 수동도 부르지 않음(사용자 결정 2026-11-15)")
+    void manualRunRetriesFormatErrorButScheduledDoesNot() {
+        finalNav(WE, true);
+        answers(WE);
+        store.reviews.put(WE, row(WE, Review.FORMAT_ERROR, 0));
+
+        assertThat(job(OPENS).run().outcome()).as("정기 실행").isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
+        verify(reviews, never()).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+
+        Map<String, Object> out = job(OPENS).runNow();
+
+        assertThat(out).containsEntry("ok", true).containsEntry("outcome", PaperReviewJob.REVIEWED);
+        verify(reviews, times(1)).review(market(US), eq(WE), eq(false));   // 수동 문턱(상한 − 정기 몫 예약)으로 부름
+        assertThat(store.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.outcome()).isEqualTo(PaperReviewJob.REVIEWED);
+            assertThat(run.detail().path("manual").asBoolean()).isTrue();
+        });
+
+        for (Review done : List.of(row(WE, Review.FORMAT_ERROR, 1), row(WE, Review.REFUSED, 0),
+                row(WE, Review.SKIPPED, 0), row(WE, Review.OK, 0))) {
+            store.reviews.put(WE, done);
+            assertThat(job(OPENS).runNow()).as(done.status() + " 재시도 " + done.retryCount())
+                    .containsEntry("outcome", PaperReviewJob.ALREADY_REVIEWED);
+        }
+        verify(reviews, times(1)).review(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
     @DisplayName("놓친 복기 창(서버 꺼짐)은 다음 금요일 마감 전까지 그 주로 다시 잡고, 다음 주 마감 뒤에는 새 주를 기다림")
     void missedWindowRunsUntilNextFridayClose() {
         finalNav(WE, true);

@@ -4,7 +4,7 @@
  *
  *  - 결정 로그 → '주간 복기': 목록(상태·창·판정 수·제안) → 가장 최근 주를 펼침(판정 표·반복 오류·지킬 것·제안)
  *  - 제안 링크 → 프레임 탭으로 옮겨 그 제안을 강조(자동 반영 없음 — 승인은 프레임 탭)
- *  - 수동 실행은 확인 단계("Sonnet 5.5 호출 1회(약 $0.1), 하루 호출 상한에 포함") → POST /api/paper/reviews/run → 결과 한 줄, 서버 400은 경고로
+ *  - 수동 실행은 확인 단계("Sonnet 5.5 호출 1회(… 최대 약 $0.9 …), 하루 호출 상한에 포함") → POST /api/paper/reviews/run → 결과 한 줄, 서버 400은 경고로
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -253,7 +253,7 @@ describe("결정 로그 — 주간 복기", () => {
   it("수동 실행은 확인(비용·하루 상한) 뒤 POST /api/paper/reviews/run, 결과 한 줄 — 취소하면 부르지 않음, 서버 400은 경고로", async () => {
     await openReviews();
     fireEvent.click(await screen.findByRole("button", { name: "지금 복기 실행" }));
-    expect(screen.getByText(/Sonnet 5\.5 호출 1회\(약 \$0\.1\), 하루 호출 상한에 포함/)).toBeTruthy();
+    expect(screen.getByText(/Sonnet 5\.5 호출 1회\(.*최대 약 \$0\.9.*\), 하루 호출 상한에 포함/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     expect(api.apiPost).not.toHaveBeenCalled();
 

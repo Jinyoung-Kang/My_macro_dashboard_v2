@@ -248,4 +248,40 @@ class KrReviewJobTest {
         verify(reviews, never()).reviewView(any(Review.class));
         assertThat(store.jobRuns).singleElement().satisfies(run -> assertThat(run.job()).isEqualTo("kr.review"));
     }
+
+    @Test
+    @DisplayName("QA-475: 한국 그 주가 형식 오류(재시도 0)로 끝났으면 정기 실행은 부르지 않고(ALREADY_REVIEWED), 수동 실행(?market=KR)만 같은 주를 한 번 더 부른다 — 같은 주 미국 행(완료·형식 오류)과 상관없이 한국 행으로 판정")
+    void manualKrRunRetriesFormatErrorButScheduledDoesNot() {
+        provisionalNav(WE);
+        answers(WE);
+        Review krFormatError = new Review(WE, 4, MAPPER.createObjectNode(), null, null, null, "claude-sonnet-5-5", null,
+                Review.FORMAT_ERROR, "[MAX_TOKENS] 출력 한도(20000 토큰)에 걸려 답을 쓰기 전에 끝났습니다", null, 0, 0, null,
+                Book.MARKET_KR);
+        assertThat(store.insertReviewIfAbsent(krFormatError)).isTrue();
+        // 같은 주 미국 행은 끝난 완료(OK) — 한국 수동 실행이 미국 행을 읽으면 ALREADY_REVIEWED가 되어 아래 수동 실행 단언이 깨짐.
+        assertThat(store.insertReviewIfAbsent(new Review(WE, 4, MAPPER.createObjectNode(), null, null, null,
+                "claude-sonnet-5-5", null, Review.OK, null, null, 0, 0, null, Book.MARKET_US))).isTrue();
+
+        assertThat(job(OPENS).run(KR).outcome()).as("정기 실행").isEqualTo(PaperReviewJob.ALREADY_REVIEWED);
+        verify(reviews, never()).review(any(), any(), anyBoolean());
+
+        java.util.Map<String, Object> out = job(OPENS).runNow(KR);
+
+        assertThat(out).containsEntry("ok", true).containsEntry("market", "KR")
+                .containsEntry("outcome", PaperReviewJob.REVIEWED);
+        verify(reviews, times(1)).review(market(KR), eq(WE), eq(false));
+        assertThat(store.jobRuns).singleElement().satisfies(run -> {
+            assertThat(run.job()).isEqualTo("kr.review");
+            assertThat(run.detail().path("manual").asBoolean()).isTrue();
+        });
+
+        // 거꾸로 — 한국 행은 끝난 완료(OK)이고 같은 주 미국 행이 형식 오류(재시도 0)여도 한국 수동 실행은 부르지 않음.
+        store.reviewsOf(Book.MARKET_KR).put(WE, krRow(WE));
+        store.reviewsOf(Book.MARKET_US).put(WE, new Review(WE, 4, MAPPER.createObjectNode(), null, null, null,
+                "claude-sonnet-5-5", null, Review.FORMAT_ERROR, krFormatError.error(), null, 0, 0, null, Book.MARKET_US));
+
+        assertThat(job(OPENS).runNow(KR)).as("한국 OK · 미국 형식 오류(재시도 0)")
+                .containsEntry("market", "KR").containsEntry("outcome", PaperReviewJob.ALREADY_REVIEWED);
+        verify(reviews, times(1)).review(any(), any(), anyBoolean());
+    }
 }

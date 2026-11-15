@@ -125,8 +125,29 @@ describe("주간 복기 목록", () => {
     expect(latestReviewNote(null, null, [])).toBeNull();
   });
 
+  it("QA-475: 가장 최근 주가 응답 형식 오류(재시도 0)면 수동 실행만 한 번 더 부른다고 적고, 다시 부른 형식 오류는 끝난 행", () => {
+    const formatError = { status: "FORMAT_ERROR", verdictCounts: null, proposalId: null, proposalStatus: null,
+      error: "[MAX_TOKENS] 출력 한도(20000 토큰)에 걸려 답을 쓰기 전에 끝났습니다" };
+    const fresh = latestReviewNote("2026-10-30", "2026-11-01 21:00", [summary({ ...formatError, retryCount: 0 })]);
+    expect(fresh).toBe("가장 최근 복기 주 2026-10-30 · 정기 복기 2026-11-01 21:00 — 응답 형식 오류로 끝남. 정기 복기는 다시 부르지 않고, "
+      + "지금 복기 실행(수동)은 같은 기록에서 한 번 더 부릅니다.");
+    expect(fresh).not.toContain("실행해도 부르지 않고");
+    expect(latestReviewNote("2026-10-30", null, [summary({ ...formatError, retryCount: 1 })]))
+      .toContain("이미 남김(응답 형식 오류). 실행해도 부르지 않고 그 기록을 보여 줍니다.");
+    expect(latestReviewNote("2026-10-30", null, [summary({ ...formatError, status: "REFUSED", retryCount: 0 })]))
+      .toContain("이미 남김(모델 거절)");
+  });
+
   it("수동 실행 확인 문구는 비용과 하루 상한을 함께 적는다", () => {
-    expect(REVIEW_COST_NOTE).toContain("Sonnet 5.5 호출 1회(약 $0.1), 하루 호출 상한에 포함");
+    expect(REVIEW_COST_NOTE).toContain("하루 호출 상한에 포함");
+    // 출력 한도 64,000토큰(QA-475)을 다 쓸 때의 위 끝 — 그전의 '약 $0.1'(결정 1회 규모)은 몇 배 낮은 숫자라 쓰지 않음(검토 지적).
+    expect(REVIEW_COST_NOTE).toContain("출력 한도 64,000토큰을 다 쓰면 기본 단가로 최대 약 $0.9 — 출력만 약 $0.64");
+    expect(REVIEW_COST_NOTE).not.toContain("약 $0.1)");
+    // QA-475: 이미 있는 주라도 아직 다시 부르지 않은 API 오류·응답 형식 오류 주는 수동 실행이 한 번 더 부른다(서버 ReviewService.retryable).
+    expect(REVIEW_COST_NOTE).toContain("API 오류·응답 형식 오류로 끝나 아직 다시 부르지 않은 주만 같은 기록에서 한 번 더 부릅니다");
+    // 다시 부르면 서버가 같은 행을 통째로 바꿔 그 주 기록에는 마지막 호출의 사용량만 남는다(검토 지적).
+    expect(REVIEW_COST_NOTE).toContain("같은 기록에서 다시 부르면 그 기록에는 마지막 호출 몫만 남고, 두 호출 모두 개요의 Claude 호출 사용량에 "
+      + "들어갑니다");
   });
 });
 
@@ -191,6 +212,20 @@ describe("주간 복기 한 건", () => {
     const format = reviewDetailView(detail({ status: "FORMAT_ERROR", error: "위반 2건", retryCount: 1 }));
     expect(format.notices[1]).toContain("이것으로 끝");
     expect(format.meta.find((cell) => cell.key === "retry")?.value).toBe("1회");
+    // 다시 부른 행의 사용량은 마지막 호출 몫만(서버가 같은 행을 통째로 바꿈) — 앞 호출은 하루 사용량에만(검토 지적).
+    expect(format.notices[2]).toBe("같은 기록에서 다시 부른 주면 아래 사용량·추정 비용은 마지막 호출 몫입니다 — 앞 호출의 토큰·비용은 "
+      + "개요의 Claude 호출 사용량(오늘·이달)에만 들어 있습니다.");
+    expect(reviewDetailView(detail({ status: "OK", retryCount: 1 })).notices).toEqual([format.notices[2]]);
+    expect(reviewDetailView(detail({ status: "API_ERROR", error: "끊김", retryCount: 1, usage: null, proposal: null })).notices)
+      .toEqual(["오류 — 끊김"]);
+
+    // QA-475: 아직 다시 부르지 않은 형식 오류는 정기 복기만 끝 — 가장 최근 주면 수동 실행이 한 번 더 부른다.
+    const formatFresh = reviewDetailView(detail({ status: "FORMAT_ERROR", error: "위반 2건", retryCount: 0 }));
+    expect(formatFresh.notices).toEqual(["오류 — 위반 2건",
+      "정기 복기는 이 주를 다시 부르지 않습니다(같은 입력이면 같은 답일 가능성이 큼). 가장 최근 복기 주면 지금 복기 실행(수동)이 "
+        + "같은 기록에서 한 번 더 부릅니다."]);
+    const refused = reviewDetailView(detail({ status: "REFUSED", error: "거절", retryCount: 0 }));
+    expect(refused.notices[1]).toContain("이것으로 끝");
   });
 
   it("수동 실행 결과 — 이미 있던 행은 부르지 않았다고, 건너뜀·남김·실패", () => {

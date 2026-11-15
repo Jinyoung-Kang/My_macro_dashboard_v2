@@ -655,8 +655,8 @@ public class PaperStore {
      * 부르지 않은 SKIPPED도 무엇을 보고 건너뛰었는지 남김), {@code inputText}는 Claude에 보낸 그 입력 JSON 문자열 그대로(구분자·안내
      * 문장 빼고 — 부르지 않았으면 null)입니다. 읽을 때 {@code inputText}가 있으면 {@code input}도 그 문자열에서 읽어 보낸 키 순서를
      * 지킵니다(JSONB는 키를 다시 정렬 — {@link Decision}의 패킷과 같은 방식). {@code proposalId}는 이 복기가 낸 프레임 제안(없으면 null),
-     * {@code retryCount}는 API 오류 뒤 다시 부른 횟수(0·1), {@code createdAt}은 넣을 때 null이면 DB가 지금으로 채웁니다. 시장을 받지
-     * 않는 생성자는 미국입니다(V14 열 기본값).
+     * {@code retryCount}는 API 오류(수동 실행은 형식 오류도 — QA-475) 뒤 다시 부른 횟수(0·1), {@code createdAt}은 넣을 때 null이면 DB가
+     * 지금으로 채웁니다. 시장을 받지 않는 생성자는 미국입니다(V14 열 기본값).
      */
     public record Review(LocalDate weekEnding, Integer windowWeeks, JsonNode input, String inputText, JsonNode response,
                          String responseRaw, String model, JsonNode usage, String status, String error, Long proposalId,
@@ -664,7 +664,10 @@ public class PaperStore {
 
         /** 형식을 지난 응답. 아래 다섯은 DB CHECK와 같은 문자열입니다. */
         public static final String OK = "OK";
-        /** 형식 위반 — 그 주는 이것으로 끝(다시 부르지 않음). */
+        /**
+         * 형식 위반 — 정기 실행은 다시 부르지 않고, 수동 실행만 같은 행에서 한 번 더 부름({@link PaperStore#updateReviewRetry} —
+         * QA-475).
+         */
         public static final String FORMAT_ERROR = "FORMAT_ERROR";
         /** 호출 실패 — 같은 행에서 한 번만 다시 부름({@link PaperStore#updateReviewRetry}). */
         public static final String API_ERROR = "API_ERROR";
@@ -2976,12 +2979,13 @@ public class PaperStore {
     }
 
     /**
-     * API 오류로 끝난 복기를 <b>같은 행</b>에서 한 번 더 부른 결과로 바꿉니다(결정의 C7 재시도와 같은 규칙 — 형식 오류·거절은 그 주의
-     * 끝). 그 시장·그 주의 행이 아직 {@code status = 'API_ERROR'}이고 {@code retry_count = 0}일 때만 바꾸고 {@code retry_count}를 1
-     * 올립니다 — 정기 작업과 수동 실행이 동시에 재시도해도 한 번만 반영됩니다. 시장·주는 그대로이고 나머지 열은 {@code r}의 값으로
-     * 통째로 씁니다({@code createdAt}이 null이면 지금 — 남은 내용을 만든 시각).
+     * API 오류·형식 오류로 끝난 복기를 <b>같은 행</b>에서 한 번 더 부른 결과로 바꿉니다(API 오류는 결정의 C7 재시도와 같은 규칙, 형식
+     * 오류는 수동 실행만 — QA-475, 정기 실행을 막는 것은 서비스의 판정 {@code ReviewService.retryable} — 거절·건너뜀·완료는 그 주의 끝).
+     * 그 시장·그 주의 행이 아직 {@code status}가 {@code 'API_ERROR'}·{@code 'FORMAT_ERROR'}이고 {@code retry_count = 0}일 때만 바꾸고
+     * {@code retry_count}를 1 올립니다 — 정기 작업과 수동 실행이 동시에 재시도해도 한 번만 반영됩니다. 시장·주는 그대로이고 나머지 열은
+     * {@code r}의 값으로 통째로 씁니다({@code createdAt}이 null이면 지금 — 남은 내용을 만든 시각).
      *
-     * @return 바꿨으면 true, 이미 재시도했거나 상태가 API 오류가 아니거나 그 시장·그 주의 행이 없으면 false(아무것도 바꾸지 않음)
+     * @return 바꿨으면 true, 이미 재시도했거나 상태가 API 오류·형식 오류가 아니거나 그 시장·그 주의 행이 없으면 false(아무것도 바꾸지 않음)
      * @throws IllegalArgumentException {@code inputText}가 JSON 문자열이 아님
      */
     public boolean updateReviewRetry(Review r) {
@@ -2993,7 +2997,8 @@ public class PaperStore {
                         + "response = CAST(? AS jsonb), response_raw = ?, model = ?, usage = CAST(? AS jsonb), status = ?, "
                         + "error = ?, proposal_id = ?, framework_version = ?, retry_count = retry_count + 1, "
                         + "created_at = COALESCE(CAST(? AS timestamptz), now()) "
-                        + "WHERE market = ? AND week_ending = ? AND status = 'API_ERROR' AND retry_count = 0",
+                        + "WHERE market = ? AND week_ending = ? AND status IN ('API_ERROR', 'FORMAT_ERROR') "
+                        + "AND retry_count = 0",
                 ps -> {
                     setInteger(ps, 1, r.windowWeeks());
                     ps.setString(2, input);

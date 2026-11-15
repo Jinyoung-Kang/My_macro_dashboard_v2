@@ -2106,8 +2106,8 @@ export interface PaperNoteCreateResult {
 // ------------------------------------------------------------------ 주간 복기(2단계 명세 §3 D1~D6)
 
 /**
- * 복기 상태 — OK(형식 통과) · FORMAT_ERROR(형식 위반, 그 주는 끝) · API_ERROR(호출 실패, 같은 행에서 한 번 다시) · REFUSED(모델 거절, 끝) ·
- * SKIPPED(창 안에 복기할 결정이 없어 부르지 않음).
+ * 복기 상태 — OK(형식 통과) · FORMAT_ERROR(형식 위반 — 정기 실행에는 끝, 재시도 0이면 수동 실행만 같은 행에서 한 번 더, QA-475) ·
+ * API_ERROR(호출 실패, 같은 행에서 한 번 다시) · REFUSED(모델 거절, 끝) · SKIPPED(창 안에 복기할 결정이 없어 부르지 않음).
  */
 export type PaperReviewStatus = "OK" | "FORMAT_ERROR" | "API_ERROR" | "REFUSED" | "SKIPPED";
 

@@ -1273,14 +1273,18 @@ class FakePaperStore extends PaperStore {
         }).toList();
     }
 
-    /** API 오류이고 아직 재시도하지 않은 행만 통째로 바꾸고 재시도 수 +1(실제 저장소의 조건과 같음). */
+    /**
+     * API 오류·형식 오류(QA-475 — 수동 실행만 부름)이고 아직 재시도하지 않은 행만 통째로 바꾸고 재시도 수 +1(실제 저장소의 조건과
+     * 같음).
+     */
     @Override
     public boolean updateReviewRetry(Review r) {
         requireJson(r.inputText());
         requireProposal(r.proposalId());
         TreeMap<LocalDate, Review> table = reviewsOf(r.market());
         Review old = table.get(r.weekEnding());
-        if (old == null || !Review.API_ERROR.equals(old.status()) || old.retryCount() != 0) {
+        if (old == null || !(Review.API_ERROR.equals(old.status()) || Review.FORMAT_ERROR.equals(old.status()))
+                || old.retryCount() != 0) {
             return false;
         }
         table.put(r.weekEnding(), withCreatedAt(r, old.retryCount() + 1, r.createdAt() == null ? dbNow : r.createdAt()));

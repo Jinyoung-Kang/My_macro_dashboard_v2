@@ -1654,7 +1654,7 @@ class PaperStoreDbTest {
     }
 
     @Test
-    @DisplayName("복기 재시도: API 오류·재시도 전 행만 같은 행에서 한 번 바꾸고 재시도 수 1 — 제안은 한 번만 이어지고, 제안을 지우면 연결만 비움 — 시험 뒤 되돌림")
+    @DisplayName("복기 재시도: API 오류·형식 오류(QA-475 — 수동 실행만)이고 재시도 전인 행만 같은 행에서 한 번 바꾸고 재시도 수 1, 거절·건너뜀은 끝 — 제안은 한 번만 이어지고, 제안을 지우면 연결만 비움 — 시험 뒤 되돌림")
     void reviewRetryOnceAndProposalLink() {
         class Rollback extends RuntimeException {
         }
@@ -1682,10 +1682,16 @@ class PaperStoreDbTest {
                 assertThat(saved.createdAt()).isNotNull();
 
                 assertThat(store.updateReviewRetry(retry)).as("이미 재시도함").isFalse();
-                assertThat(store.updateReviewRetry(withWeek(retry, W2))).as("형식 오류는 그 주의 끝").isFalse();
                 assertThat(store.updateReviewRetry(withWeek(retry, W3))).as("건너뛴 주").isFalse();
                 assertThat(store.updateReviewRetry(withWeek(retry, W4))).as("없는 주").isFalse();
-                assertThat(store.review(W2).orElseThrow().status()).isEqualTo("FORMAT_ERROR");
+                LocalDate refusedWeek = LocalDate.of(1999, 2, 5);
+                assertThat(store.insertReviewIfAbsent(review(refusedWeek, "REFUSED", null, null))).isTrue();
+                assertThat(store.updateReviewRetry(withWeek(retry, refusedWeek))).as("거절은 그 주의 끝").isFalse();
+                // 형식 오류(재시도 0)도 같은 행에서 한 번 — 수동 실행만 부릅니다(QA-475, 정기 실행을 막는 것은 ReviewService.retryable).
+                assertThat(store.updateReviewRetry(withWeek(retry, W2))).as("형식 오류의 수동 재시도").isTrue();
+                assertThat(store.review(W2).orElseThrow()).extracting(PaperStore.Review::status,
+                        PaperStore.Review::retryCount).containsExactly("OK", 1);
+                assertThat(store.updateReviewRetry(withWeek(retry, W2))).as("형식 오류도 한 번만").isFalse();
 
                 long first = store.insertProposal(new PaperStore.FrameworkProposal(0, null, 5, "주간 복기 1999-01-08",
                         "claude-haiku-5-5", MAPPER.readTree("{\"summary\":\"요지\"}"), null, "PENDING", null, null,
