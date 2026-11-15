@@ -102,11 +102,12 @@ function statusFor(
 }
 
 /**
- * 칩 모양 — 좁은 화면(상단바 둘째 줄)은 12px·높이 28px, 넓은 화면(상단바 한 줄 64px)은 13px·높이 32px.
+ * 칩 모양 — 좁은 화면(상단바 둘째 줄)은 12px·높이 28px, 넓은 화면(상단바 한 줄 64px)은 13px·높이 32px. 모서리는 4px 태그
+ * (작업대 실행 명세 §3-8 — 알약은 쓰지 않음, 상태 점만 둥긂).
  * 가장 좁은 화면(sm 미만)의 안쪽 여백은 6px — 8px이면 390px에서 '휴장 (주말)' 칩 둘이 줄(358px)보다 4px 넓어 둘째 칩 끝이 잘렸습니다.
  */
 const CHIP =
-  "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-1.5 text-xs text-text sm:gap-1.5 sm:px-2.5 lg:h-8 lg:px-3 lg:text-[13px]";
+  "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-control border border-border px-1.5 text-xs text-text sm:gap-1.5 sm:px-2.5 lg:h-8 lg:px-3 lg:text-[13px]";
 
 export function MarketClock() {
   const [now, setNow] = useState<Date | null>(null);

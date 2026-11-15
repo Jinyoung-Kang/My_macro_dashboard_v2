@@ -63,6 +63,14 @@ describe("ScrollTopButton", () => {
     expect(lowered).not.toContain("z-40");
   });
 
+  it("떠 있는 덮개 모양 — 4px 모서리·surface-2 바탕·덮개 그림자, hover는 덮개 안 hover 면(작업대 실행 명세 §3-3·§3-8)", () => {
+    render(<ScrollTopButton />);
+    scrollMain(500);
+    const classes = screen.getByRole("button", { name: "TOP 맨 위로" }).className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(["rounded-control", "bg-surface-2", "shadow-overlay", "hover:bg-surface-3"]));
+    expect(classes).not.toContain("rounded-full");
+  });
+
   it("움직임을 줄이는 설정이면 바로 올린다", () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
     render(<ScrollTopButton />);

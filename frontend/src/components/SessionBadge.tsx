@@ -1,5 +1,6 @@
 "use client";
 
+import { StatusDot, type StatusTone } from "@/components/ui/icons";
 import { delayLabel } from "@/lib/format";
 import { sessionStatus, tradeDayFrom, tradeTimeFrom, type SessionState } from "@/lib/marketSessions";
 
@@ -13,8 +14,19 @@ import { sessionStatus, tradeDayFrom, tradeTimeFrom, type SessionState } from "@
  * 다시 그리기만 합니다. 데이터를 다시 받지 않으므로 서버 부하가 없습니다.
  *
  * 색 — 초록(개장)만 눈에 띄게 하고 나머지는 회색 계열입니다. 이 화면의 빨강·파랑은
- * 상승·하락 전용이라 상태 표시에 쓰지 않습니다.
+ * 상승·하락 전용이라 상태 표시에 쓰지 않습니다. 상태색은 늘 아이콘과 글을 함께 씁니다(작업대 실행 명세 §3-1) — 글 앞에 상단바 장 시계 칩과 같은
+ * 상태 점(장식, 개장 ok·휴식 warn·그 밖 중립)을 둡니다. 모양은 4px 태그(명세 §6 Tag)입니다.
  */
+const TAG = "inline-flex items-center gap-1 rounded-control border px-1.5 py-0.5 text-xs leading-4";
+
+const DOT: Record<SessionState, StatusTone> = {
+  open: "ok",
+  break: "warn",
+  closed: "neutral",
+  holiday: "neutral",
+  idle: "neutral",
+};
+
 const STYLES: Record<SessionState, string> = {
   open: "border-ok/40 bg-ok-tint text-ok",
   break: "border-warn/40 bg-warn-tint text-warn",
@@ -57,16 +69,17 @@ export function SessionBadge({
   if (!status) {
     // 시간표를 모르는 시장이면 지연만 적습니다.
     return delay ? (
-      <span className={`rounded-full border px-2 py-0.5 text-xs ${STYLES.idle}`} title="시세 지연(출처 기준)">
+      <span className={`${TAG} ${STYLES.idle}`} title="시세 지연(출처 기준)">
         {delay}
       </span>
     ) : null;
   }
   return (
     <span
-      className={`rounded-full border px-2 py-0.5 text-xs ${STYLES[status.state]}`}
+      className={`${TAG} ${STYLES[status.state]}`}
       title={delay ? `${status.detail} · 시세 ${delay}(출처 기준)` : status.detail}
     >
+      <StatusDot tone={DOT[status.state]} />
       {status.state === "open" && delay ? `${status.label} · ${delay}` : status.label}
     </span>
   );

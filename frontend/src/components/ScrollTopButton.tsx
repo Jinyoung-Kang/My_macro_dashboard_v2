@@ -20,7 +20,8 @@ function offset(target: Window | HTMLElement): number {
  * 맨 위로(TOP) 단추 — 사용자 요청(2026-11-03, 모의 매매 화면 · 2026-11-15 정보 검색). 조금 내려가면 오른쪽 아래에 나타나고, 누르면 본문과 창을
  * 모두 맨 위로 부드럽게 올립니다(움직임을 줄이는 설정이면 바로). 휴대폰에서는 아래 탭 막대 위에 둡니다.
  * lg 미만에서는 누름 자리를 44px 이상으로 둡니다(min-h-11 — ADR 0041 결정 11, QA-425). 아래 끝이 고정이라 위로 자라고 탭 막대를 덮지
- * 않습니다. 넓은 화면은 처음 모양(34px) 그대로입니다. 누르면 포커스를 본문 시작으로 옮깁니다(사라지는 단추에서 body로 떨어지지 않게 — QA-426).
+ * 않습니다. 넓은 화면은 처음 높이(34px) 그대로입니다. 누르면 포커스를 본문 시작으로 옮깁니다(사라지는 단추에서 body로 떨어지지 않게 — QA-426).
+ * 모양은 떠 있는 덮개(작업대 실행 명세 §3-3 3층 — surface-2 바탕·1px 경계·덮개 그림자, 4px 모서리)이고 hover는 덮개 안 hover 면(surface-3)입니다.
  *
  * 화면 아래에 붙은 고정 시트(정보 검색의 미리 보기 — xl 미만)가 열려 있으면 그 높이(문서 루트의 --bottom-sheet, hooks/useBottomSheet)만큼
  * 위로 올라갑니다 — 시트 밑에 숨은 채 Tab 차례에 남지 않게(WCAG 2.4.11, QA-420 검토). 시트가 없으면 0이라 자리는 그대로입니다.
@@ -56,7 +57,7 @@ export function ScrollTopButton({ layer = "z-40" }: { layer?: string } = {}) {
       style={{ translate: "0 calc(-1 * var(--bottom-sheet, 0px))" }}
       onClick={toTop}
       aria-label="TOP 맨 위로"
-      className={`fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 ${layer} inline-flex min-h-11 items-center justify-center gap-1 rounded-full border border-border bg-surface px-3 py-2 text-xs font-semibold text-text shadow-lg hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6 lg:min-h-0`}
+      className={`fixed bottom-[calc(64px+1rem+env(safe-area-inset-bottom))] right-4 ${layer} inline-flex min-h-11 items-center justify-center gap-1 rounded-control border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-text shadow-overlay hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:bottom-6 lg:right-6 lg:min-h-0`}
     >
       <ChevronUpIcon size={14} />
       TOP

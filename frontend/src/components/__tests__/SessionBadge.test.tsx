@@ -60,3 +60,29 @@ describe("개장 상태와 시세 지연을 배지 하나로", () => {
     expect(screen.getByText("15분 지연")).toBeTruthy();
   });
 });
+
+describe("모양 — 4px 태그와 상태 점(상태색은 늘 아이콘과 글 — 작업대 실행 명세 §3-1·§6)", () => {
+  const TUE_1954_KST = new Date("2026-10-20T10:54:00Z");
+  const dotOf = (badge: HTMLElement) => badge.querySelector("span[aria-hidden='true'].rounded-full");
+
+  it("개장은 ok 점 + 글, 마감은 중립 점 + 글 — 태그는 rounded-control(알약 아님), 점은 읽어 주지 않는다", () => {
+    render(<SessionBadge market="cme" now={TUE_1954_KST} krOfficial={null} delayMinutes={10} />);
+    const open = screen.getByText("개장 · 10분 지연");
+    expect(open.className.split(/\s+/)).toEqual(expect.arrayContaining(["rounded-control", "text-ok"]));
+    expect(open.className.split(/\s+/)).not.toContain("rounded-full");
+    expect(dotOf(open)?.classList.contains("text-ok")).toBe(true);
+    expect(open.textContent).toBe("개장 · 10분 지연");
+    cleanup();
+
+    render(<SessionBadge market="nyse" now={TUE_1954_KST} krOfficial={null} delayMinutes={0} />);
+    const closed = screen.getByText("마감");
+    expect(dotOf(closed)?.classList.contains("text-text-3")).toBe(true);
+  });
+
+  it("시간표를 모르는 시장의 지연만 배지는 점 없이 글만(상태가 아님)", () => {
+    render(<SessionBadge market="unknown" now={TUE_1954_KST} krOfficial={null} delayMinutes={15} />);
+    const badge = screen.getByText("15분 지연");
+    expect(badge.className.split(/\s+/)).toContain("rounded-control");
+    expect(dotOf(badge)).toBeNull();
+  });
+});

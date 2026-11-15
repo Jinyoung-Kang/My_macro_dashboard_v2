@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { copyText } from "@/lib/clipboard";
 
 /**
@@ -66,7 +67,12 @@ export function CopyButton({
       >
         {state === "working" ? "복사 중…" : state === "copied" ? copiedLabel : label}
       </Button>
-      {error && <span className="text-xs text-danger">{error}</span>}
+      {/* 오류는 위험색 글만이 아니라 아이콘·'오류:' 머리말과 함께(상승 빨강과 색으로 갈리지 않음 — 작업대 실행 명세 §3-2-1). */}
+      {error && (
+        <StatusText tone="danger" iconSize={12} className="text-xs">
+          {error}
+        </StatusText>
+      )}
     </span>
   );
 }

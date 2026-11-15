@@ -75,6 +75,15 @@ describe("장 상태 칩", () => {
     }
   });
 
+  it("칩은 4px 태그(알약 아님) — 둥근 것은 상태 점뿐(작업대 실행 명세 §3-8)", async () => {
+    await renderAt("2026-11-03T01:00:00Z");
+    for (const market of ["KOSPI", "NASDAQ"] as const) {
+      const classes = chip(market).className.split(/\s+/);
+      expect(classes).toContain("rounded-control");
+      expect(classes).not.toContain("rounded-full");
+    }
+  });
+
   it("시장 이름은 글이 나른다 — 국기·여신상 같은 그림 문자가 없다", async () => {
     const { container } = await renderAt("2026-11-03T01:00:00Z");
     expect(container.textContent).not.toMatch(/[\p{Extended_Pictographic}\p{Regional_Indicator}]/u);
