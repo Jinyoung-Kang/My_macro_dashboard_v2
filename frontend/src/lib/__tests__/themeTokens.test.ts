@@ -265,8 +265,8 @@ describe("포커스 링 기본값(명세 §3-8 — FOCUS_RING과 같은 모양)"
   // (svg[role=application])·스크롤 영역·pre·summary가 브라우저 기본 링(outline auto 1px — 1440 7경로 91곳)으로 돌아갔습니다. 한 화면에 포커스
   // 모양이 둘이었고 차트 표면의 기본 링은 offset 0이라 왼쪽 눈금 글 위에 겹쳤습니다. 기본 층(@layer base)에 같은 모양을 두면 FOCUS_RING과 화면별
   // 유틸리티(-outline-offset-2·outline-hidden·has-[:focus-visible] 라벨 링)는 그대로 이깁니다 — 레이어 밖에 두면 그 유틸리티를 이깁니다.
-  // 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-495: 포커스 링 기본값은 @layer base의 :focus-visible — outline 2px solid var(--focus), offset 2px", () => {
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-495: 포커스 링 기본값은 @layer base의 :focus-visible — outline 2px solid var(--focus), offset 2px", () => {
     const bases = RULES.filter((rule) => rule.selector === "@layer base");
     const rules = bases.flatMap((rule) => [...rule.body.matchAll(/(?:^|[;{}])\s*:focus-visible\s*\{([^}]*)\}/g)].map((match) => match[1]));
     expect(rules, "@layer base { :focus-visible { … } }").toHaveLength(1);
