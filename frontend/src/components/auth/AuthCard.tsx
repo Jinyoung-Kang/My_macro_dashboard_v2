@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { AUTH_CARD, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
+import { AUTH_CARD, AUTH_LINK, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui/classes";
 
 /**
@@ -15,7 +15,7 @@ export function AuthCard({ title, children, footer }: { title: string; children:
         <h1 className={AUTH_TITLE}>{title}</h1>
         {children}
         <div className="mt-6 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-text-2">
-          {footer ?? <Link href="/login" className="hover:text-accent">← 로그인</Link>}
+          {footer ?? <Link href="/login" className={AUTH_LINK}>← 로그인</Link>}
         </div>
       </div>
     </main>

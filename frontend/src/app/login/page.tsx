@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { AUTH_CARD, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
+import { AUTH_CARD, AUTH_LINK, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui";
 import { isDemo, isLocalOwner } from "@/lib/access";
 import { auth } from "@/lib/api";
@@ -115,8 +115,8 @@ export default function LoginPage() {
 
         {mailAvailable && (
           <div className="mt-5 flex justify-between text-[13px] text-text-2">
-            <Link href="/signup" className="hover:text-accent">가입하기</Link>
-            <Link href="/reset" className="hover:text-accent">비밀번호를 잊었나요?</Link>
+            <Link href="/signup" className={AUTH_LINK}>가입하기</Link>
+            <Link href="/reset" className={AUTH_LINK}>비밀번호를 잊었나요?</Link>
           </div>
         )}
       </form>
