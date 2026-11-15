@@ -77,9 +77,11 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 단계 6(계약 §9-1·9-2): 목록 위에 고른 기간의 건수 막대(PeriodBars — 거르기를 거친 줄, 묶기와 상관없이 줄 수)를 두고, 막대를 누르면 그 날·주로
  * 목록을 좁힙니다(기간을 바꾸면 풂). 목록은 기본으로 같은 사건을 묶어(대표 줄 + '같은 사건 n건 · 매체 m곳 — 펼치기' 줄) 보이고 '묶어 보기'
  * 전환으로 모든 줄을 봅니다. 묶음 줄도 목록의 한 줄이라 ↑↓로 지나가고 Enter·누르기로 펼치거나 접습니다(결과 줄의 Enter는 그대로 원문).
- * 묶음 줄을 고르면 미리 보기 자리(xl 미만은 아래 시트)에 그 묶음(건수·매체 수, 대표 줄, 다른 보도, 펼치는 법)을 보입니다 — ↑↓로 지나갈 때
- * 시트가 닫혔다 열리며 화면 아래가 깜빡이지 않게. 묶음 미리 보기는 결과 줄의 미리 보기보다 대개 높아(1024에서 약 343px 대 240~265px) 지날 때
- * 시트가 커지지만, 열린 동안 줄지는 않으므로(sheetStyle) 다음 줄로 옮길 때 본문 높이가 줄어 고른 줄이 움직이지 않습니다.
+ * 묶음 줄을 ↑↓·Home·End로 고르면 미리 보기 자리(xl 미만은 아래 시트)에 그 묶음(건수·매체 수, 대표 줄, 다른 보도, 펼치는 법)을 보입니다 — ↑↓로
+ * 지나갈 때 시트가 닫혔다 열리며 화면 아래가 깜빡이지 않게. 묶음 미리 보기는 결과 줄의 미리 보기보다 대개 높아(1024에서 약 343px 대 240~265px)
+ * 지날 때 시트가 커지지만, 열린 동안 줄지는 않으므로(sheetStyle) 다음 줄로 옮길 때 본문 높이가 줄어 고른 줄이 움직이지 않습니다.
+ * 누르기(터치·마우스)로 고른 묶음 줄은 펼치기·접기만 하고 미리 보기를 열지 않습니다(열려 있던 미리 보기는 닫힘) — 누르기의 목적은 펼친 줄을 보는
+ * 것인데, 열린 시트가 누른 줄을 시트 위로 옮기면 바로 밑에 펼친 줄이 시트에 덮였습니다. 고른 줄은 남아 ↑↓가 거기서 이어 갑니다.
  *
  * 단계 6 묶음 2(계약 §9-4): 이 대상이 내 관심 대상이면 속성 칸에 별칭 편집(aliasEditor)을 두고, 저장하면 이 결과를 다시 부릅니다(별칭이 검색어라).
  *
@@ -138,6 +140,8 @@ export function FeedPanel({
   const [filters, setFilters] = useState<FeedFilters>(NO_FILTERS);
   /** 목록에서 고른 줄의 key(결과 줄은 id, 묶음 줄은 'cluster:' + 묶음 id). */
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  /** 누르기로 고른 묶음 줄의 key — 그 줄은 미리 보기를 열지 않습니다. 키보드로 고르면(select) 지웁니다. */
+  const [pointerCluster, setPointerCluster] = useState<string | null>(null);
   /** 막대로 좁힌 칸(단위와 시작 날짜) — 기간을 바꾸면 풉니다. */
   const [period, setPeriod] = useState<{ unit: PeriodUnit; start: string } | null>(null);
   const [periodRange, setPeriodRange] = useState(range);
@@ -200,8 +204,8 @@ export function FeedPanel({
   const selectedIndex = selectedKey === null ? -1 : flat.findIndex((entry) => entry.key === selectedKey);
   const selectedEntry = selectedIndex >= 0 ? flat[selectedIndex] : null;
   const selected = selectedEntry?.type === "item" ? selectedEntry.item : null;
-  /** 미리 보기가 열려 있는가 — 결과 줄이든 묶음 줄이든 고른 줄이 있으면(묶음 줄은 묶음 미리 보기). */
-  const previewOpen = selectedEntry !== null;
+  /** 미리 보기가 열려 있는가 — 고른 결과 줄, 또는 키보드로 고른 묶음 줄(묶음 미리 보기). 누르기로 고른 묶음 줄은 펼치기만. */
+  const previewOpen = selectedEntry !== null && !(selectedEntry.type === "cluster" && selectedEntry.key === pointerCluster);
   /** 요약의 근거 단추로 갈 수 있는 줄 — 기간·거르기·막대 좁히기를 거친 줄(접힌 같은 사건 묶음의 줄 포함 — 누르면 펼침). */
   const reachableIds = useMemo(() => new Set(narrowed.map((item) => item.id)), [narrowed]);
   /** 오른쪽 칸 — xl 미만에서 줄을 고르면 아래 시트(고정)가 됩니다. 시트의 높이·본문 스크롤 막대 폭(QA-420 검토). */
@@ -226,6 +230,7 @@ export function FeedPanel({
     const entry = flat[index];
     if (!entry) return;
     setSelectedKey(entry.key);
+    setPointerCluster(null);
     document.getElementById(optionId(index))?.scrollIntoView({ block: "nearest" });
   };
 
@@ -465,6 +470,7 @@ export function FeedPanel({
                 // 날짜 머리 밑이 아니라 그 아래에 멈추게 합니다(QA-435). 날짜 머리가 붙지 않는 좁은 화면(창이 스크롤)에서는 위 여백 28px만 더해집니다.
                 if (entry.type === "cluster") {
                   // 대표 줄 아래의 묶음 줄 — 누르기·Enter로 펼침/접기(누를 수 있는 것이라 강조 파랑, 상태는 글 '펼치기·접기'와 화살표 모양).
+                  // 누르면 고르되 미리 보기는 열지 않습니다(pointerCluster — 아래 시트가 펼친 줄을 덮지 않게).
                   return (
                     <div
                       key={entry.key}
@@ -473,6 +479,7 @@ export function FeedPanel({
                       aria-selected={isSelected}
                       onClick={() => {
                         choose();
+                        setPointerCluster(entry.key);
                         toggleCluster(entry.clusterId);
                       }}
                       className={`relative flex min-h-11 scroll-mt-7 cursor-pointer items-center gap-1.5 border-b border-border py-1 pl-24 pr-3 text-xs text-accent lg:min-h-7 ${
@@ -572,7 +579,7 @@ export function FeedPanel({
       onKeyDown={onPreviewKeyDown}
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
     />
-  ) : selectedEntry?.type === "cluster" ? (
+  ) : previewOpen && selectedEntry?.type === "cluster" ? (
     <ClusterPreview entry={selectedEntry} onClose={closePreview} onKeyDown={onPreviewKeyDown} />
   ) : (
     <AttributesPanel

@@ -534,6 +534,33 @@ describe("QA-420 검토 — xl 미만의 아래 시트가 차지한 높이만큼
     expect(panel.style.marginBottom).toBe(`${SHEET_HEIGHT}px`);
   });
 
+  // 검토 지적(항목 1 — 누르기): 묶음 줄을 누르면 아래 시트가 열려 누른 줄을 시트 위로 옮기고 바로 밑에 펼친 줄을 덮었습니다. 누르기로 고른 묶음
+  // 줄은 시트를 열지 않고, 열려 있던 시트는 닫습니다(--bottom-sheet·결과 아래 여백을 지움). 수정 전 실패: 시트가 열린 채(고정) 남음.
+  it("묶음 줄을 누르면 시트를 열지 않는다 — 열려 있던 시트도 닫혀 펼친 줄을 덮지 않음", async () => {
+    reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = CLUSTERED;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    const panel = entityGridOf(list).parentElement as HTMLElement;
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    restore.push(() => scroll.mockRestore());
+    const rows = () => within(list).getAllByRole("option");
+    fireEvent.click(rows()[0]);
+    await waitFor(() => expect(reserved()).toBe(`${SHEET_HEIGHT}px`));
+    const sheet = screen.getByRole("region", { name: "미리 보기" }).parentElement?.parentElement as HTMLElement;
+    fireEvent.click(rows()[1]);
+    expect(rows().map((option) => option.textContent)).toEqual([
+      expect.stringContaining("묶음 대표"),
+      "같은 사건 2건 · 매체 2곳 — 접기",
+      expect.stringContaining("묶음 둘째"),
+      expect.stringContaining("다음 기사"),
+    ]);
+    expect(rows()[1].getAttribute("aria-selected")).toBe("true");
+    expect(sheet.className.split(/\s+/)).not.toContain("fixed");
+    expect(reserved()).toBe("");
+    expect(panel.style.marginBottom).toBe("");
+  });
+
   it("xl(오른쪽 칸 — 흐름 안)에서는 비우지 않는다", async () => {
     sheetFixed = false;
     const { panel, sheet, scrolled } = await openPreview(1);

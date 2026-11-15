@@ -369,14 +369,48 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     reads[endpoints.search.feed("us:NVDA", "timeline")] = feed({ items: big, rangeCounts: { "7d": 8, "30d": 8, "1y": 8, "2y": 8 } });
     renderScreen("/search?e=us:NVDA");
     const list = await screen.findByRole("listbox", { name: "결과" });
-    fireEvent.click(screen.getByRole("option", { name: /같은 사건 8건 · 매체 8곳/ }));
-    // 누르면 펼쳐지고(지금 동작) 미리 보기는 그 묶음.
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 8건 · 매체 8곳/ }).getAttribute("aria-selected")).toBe("true");
     const preview = screen.getByRole("region", { name: "미리 보기" });
-    expect(document.activeElement).toBe(list);
     expect(within(preview).getByText("같은 사건의 다른 보도 7건")).toBeTruthy();
     const names = within(within(preview).getByRole("list", { name: "같은 사건의 다른 보도" })).getAllByRole("listitem");
     expect(names.map((item) => item.firstElementChild?.textContent)).toEqual([7, 6, 5, 4, 3].map((at) => `큰 묶음 보도 ${at}`));
     expect(within(preview).getByText("그 밖에 2건 — 펼치면 목록에 모두 나옵니다.")).toBeTruthy();
+  });
+
+  // 검토 지적(항목 1 — 누르기): 묶음 미리 보기를 더하면서 묶음 줄을 누르기만 해도 아래 시트(390에서 376~422px)가 열려, 누른 줄을 시트 위로
+  // 옮기고 바로 밑에 펼친 줄을 시트·TOP 단추 띠 밑에 덮었습니다. 누르기는 펼치기만(전과 같이), 묶음 미리 보기는 ↑↓·Home·End로 고를 때만.
+  // 수정 전 실패: 묶음 줄을 누르면 미리 보기(묶음)가 열림.
+  it("묶음 줄을 누르면 펼치기만 하고 미리 보기는 열지 않는다 — 열려 있던 미리 보기는 닫히고, ↑↓로 다시 고르면 묶음 미리 보기", async () => {
+    renderScreen("/search?e=us:NVDA");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    fireEvent.click(screen.getByRole("option", { name: /대표 기사/ }));
+    expect(screen.getByRole("region", { name: "미리 보기" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("option", { name: "같은 사건 3건 · 매체 2곳 — 펼치기" }));
+    const toggle = screen.getByRole("option", { name: "같은 사건 3건 · 매체 2곳 — 접기" });
+    expect(toggle.getAttribute("aria-selected")).toBe("true");
+    expect(list.getAttribute("aria-activedescendant")).toBe(toggle.id);
+    expect(document.activeElement).toBe(list);
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "속성" })).toBeTruthy();
+    // 다시 누르면 접힘 — 여전히 미리 보기 없음.
+    fireEvent.click(toggle);
+    expect(screen.getByRole("option", { name: "같은 사건 3건 · 매체 2곳 — 펼치기" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    // Enter도 펼치기만(누르기로 고른 줄).
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건 · 매체 2곳 — 접기/ })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+
+    // ↑↓는 그 줄에서 이어 가고, 키보드로 묶음 줄에 돌아오면 묶음 미리 보기.
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /둘째 보도/ }).getAttribute("aria-selected")).toBe("true");
+    expect(within(screen.getByRole("region", { name: "미리 보기" })).getByText("둘째 요약")).toBeTruthy();
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    expect(within(screen.getByRole("region", { name: "미리 보기" })).getByText("같은 사건 3건 · 매체 2곳")).toBeTruthy();
   });
 
   it("'묶어 보기'를 끄면 모든 줄을 지금처럼(묶음 줄 없음)", async () => {
