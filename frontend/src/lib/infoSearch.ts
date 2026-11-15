@@ -1807,7 +1807,7 @@ export function httpUrl(url: string | null | undefined): string | null {
 type TimedItem = Pick<SearchFeedItem, "publishedAt"> & Partial<Pick<SearchFeedItem, "timeBasis">>;
 
 /**
- * 날짜만 아는 줄인가(계약 §7-1 — DART 접수일·EDGAR 전문 검색 접수일·네이버 리포트 날짜). publishedAt은 그 날짜의 출처 달력 00:00을 UTC로 바꾼 값이라
+ * 날짜만 아는 줄인가(계약 §7-1 — DART 접수일·EDGAR 전문 검색 접수일·네이버 리포트 날짜·거장 견해 기준일(KST)). publishedAt은 그 날짜의 출처 달력 00:00을 UTC로 바꾼 값이라
  * KST 날짜가 출처의 날짜와 같고, 시각은 뜻이 없어 보이지 않습니다.
  */
 export function isDateOnly(item: Partial<Pick<SearchFeedItem, "timeBasis">>): boolean {

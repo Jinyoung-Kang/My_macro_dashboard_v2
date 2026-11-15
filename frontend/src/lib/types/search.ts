@@ -102,7 +102,7 @@ export type SearchFeedItem = {
   publisher: string | null;
   publisherDomain: string | null;
   /**
-   * 작성 시각(timeBasis가 fetched면 처음 받은 시각, date면 그 날짜의 출처 달력 00:00 — DART·네이버 KST, SEC 미국 동부). UTC ISO.
+   * 작성 시각(timeBasis가 fetched면 처음 받은 시각, date면 그 날짜의 출처 달력 00:00 — DART·네이버·거장 견해 KST, SEC 미국 동부). UTC ISO.
    */
   publishedAt: string | null;
   /** published = 작성 시각, fetched = 처음 받은 시각(시각 칸 없는 피드), date = 날짜만 아는 출처(단계 4 — 화면은 날짜만). */
