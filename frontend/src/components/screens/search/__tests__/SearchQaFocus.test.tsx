@@ -163,6 +163,97 @@ function focusVisibleOutlineOffset(className: string): number {
 /** 포커스 테두리를 그리겠다는 클래스(focus:·focus-visible:의 바깥선 폭)가 있는 조각. */
 const FOCUS_OUTLINE_WIDTH = /(?:^|\s)(?:focus|focus-visible):outline(?:-\d+)?(?:\s|$)/;
 
+/** 포커스 테두리를 그리겠다면서(폭) 계산한 선 모양이 none인 클래스 묶음인가. */
+const erasesFocusOutline = (classes: string) => FOCUS_OUTLINE_WIDTH.test(classes) && focusVisibleOutline(classes).style === "none";
+
+/** 대문자 상수 정의(`const FOCUS = "…"`, 백틱도) — 여는 따옴표까지. */
+const CONSTANT_START = /(?:^|\n)[ \t]*(?:export[ \t]+)?const[ \t]+([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*(["'`])/g;
+
+const lineOf = (source: string, index: number) => source.slice(0, index).split("\n").length;
+
+/** start의 따옴표를 닫는 자리. 백틱 안의 ${…}는 중괄호 깊이로 건넙니다. */
+function closingQuote(source: string, start: number): number {
+  const quote = source[start];
+  let depth = 0;
+  for (let at = start + 1; at < source.length; at++) {
+    const char = source[at];
+    if (char === "\\") at++;
+    else if (quote === "`" && char === "$" && source[at + 1] === "{") {
+      depth++;
+      at++;
+    } else if (depth > 0) {
+      if (char === "{") depth++;
+      else if (char === "}") depth--;
+    } else if (char === quote) return at;
+  }
+  return source.length;
+}
+
+/** className= 뒤 식(따옴표 하나 또는 중괄호 한 덩이 — 여러 줄 가능)이 끝나는 자리. 식이 아니면 -1. */
+function expressionEnd(source: string, start: number): number {
+  const open = source[start];
+  if (open === '"' || open === "'") return closingQuote(source, start);
+  if (open !== "{") return -1;
+  let depth = 0;
+  for (let at = start; at < source.length; at++) {
+    const char = source[at];
+    if (char === '"' || char === "'" || char === "`") at = closingQuote(source, at);
+    else if (char === "{") depth++;
+    else if (char === "}" && --depth === 0) return at;
+  }
+  return source.length;
+}
+
+/**
+ * outline-none·outline-hidden이 focus(-visible):outline-<n>의 선을 지우는 자리(경로:줄). 세 가지로 봅니다.
+ * (1) 한 줄을 따옴표·백틱·중괄호로 나눈 조각 하나(문자열 하나). (2) className= 뒤의 식 하나(여러 줄 템플릿, cn("…", "…")처럼 나눈 인자,
+ * 삼항의 두 갈래까지 한 덩이로 — 걸리면 갈래를 따로 확인). (3) 대문자 상수 정의 하나. (2)·(3)은 식 안의 대문자 이름을 상수의 글로 풀어
+ * 합칩니다(같은 파일 정의를 먼저, 없으면 다른 파일의 같은 이름 전부 — `${FOCUS} outline-none`). 함수가 돌려주는 클래스·소문자 변수·props로
+ * 넘긴 클래스는 보지 못합니다.
+ */
+function outlineOffenders(files: { path: string; source: string }[]): string[] {
+  const shared = new Map<string, string[]>();
+  const local = new Map<string, Map<string, string[]>>();
+  const definitions: { path: string; line: number; value: string }[] = [];
+  for (const { path, source } of files) {
+    const own = new Map<string, string[]>();
+    for (const match of source.matchAll(CONSTANT_START)) {
+      const quote = (match.index ?? 0) + match[0].length - 1;
+      const value = source.slice(quote + 1, closingQuote(source, quote));
+      for (const map of [own, shared]) map.set(match[1], [...(map.get(match[1]) ?? []), value]);
+      definitions.push({ path, line: lineOf(source, quote), value });
+    }
+    local.set(path, own);
+  }
+  const classesOf = (path: string, text: string): string => {
+    const expand = (part: string, depth: number): string =>
+      depth > 4
+        ? part
+        : part.replace(/\b[A-Z][A-Z0-9_]*\b/g, (name) => {
+            const values = local.get(path)?.get(name) ?? shared.get(name);
+            return values ? ` ${values.map((value) => expand(value, depth + 1)).join(" ")} ` : name;
+          });
+    return expand(text, 0).split(/[\s"'`{}(),$]+/).join(" ");
+  };
+  const offenders = new Set<string>();
+  for (const { path, source } of files) {
+    source.split("\n").forEach((line, index) => {
+      if (line.split(/["'`{}]/).some(erasesFocusOutline)) offenders.add(`${path}:${index + 1}`);
+    });
+    for (const match of source.matchAll(/className=/g)) {
+      const start = (match.index ?? 0) + match[0].length;
+      const end = expressionEnd(source, start);
+      if (end >= 0 && erasesFocusOutline(classesOf(path, source.slice(start, end + 1)))) {
+        offenders.add(`${path}:${lineOf(source, match.index ?? 0)}`);
+      }
+    }
+  }
+  for (const { path, line, value } of definitions) {
+    if (erasesFocusOutline(classesOf(path, value))) offenders.add(`${path}:${line}`);
+  }
+  return [...offenders].sort();
+}
+
 describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 키보드 포커스 테두리를 그린다", () => {
   // QA-433: 정보 검색 QA 스택 브라우저 확인(1024·1440·390)에서 미리 보기를 닫은 뒤(QA-430)·Tab으로 들어온 결과 목록(listbox '결과'),
   // '다시 확인' 뒤의 받는 중 줄(p[role=status]), 기간을 풀거나 다시 확인한 뒤의 빈 결과 안내(div[role=status])가 :focus-visible인데
@@ -214,35 +305,47 @@ describe("QA-433 — 코드가 포커스를 보내는 결과 칸 세 자리는 �
     expect(focusVisibleOutline(empty.className)).toEqual({ style: "solid", width: "2" });
   });
 
-  // 같은 함정이 다른 화면에 다시 들어오지 않게 화면 소스 전체를 봅니다. 한 줄을 따옴표·백틱·중괄호로 나눈 조각마다(className 한 덩이) 포커스
-  // 바깥선 폭이 있는데 계산한 선 모양이 none이면 걸립니다. 상수를 끼워 넣어 합친 클래스(`${FOCUS} outline-none`)는 위의 화면 시험이 봅니다.
+  // 같은 함정이 다른 화면에 다시 들어오지 않게 화면 소스 전체를 봅니다(outlineOffenders — 한 줄 조각, 여러 줄 className 식, 대문자 상수를
+  // 풀어 합친 클래스). 함수가 돌려주는 클래스·소문자 변수·props로 넘긴 클래스는 보지 못하므로, 코드가 포커스를 보내는 FeedPanel 세 자리는
+  // 위의 화면 시험이 따로 봅니다.
+  it("소스 검사는 한 줄·여러 줄 템플릿·cn 인자 나누기·상수 끼워 넣기·상수 정의를 모두 찾는다(검사 자체의 확인)", () => {
+    const hits = outlineOffenders([
+      { path: "ring.ts", source: 'export const RING = "focus-visible:outline-2 focus-visible:outline-focus";\n' },
+      {
+        path: "a.tsx",
+        source: [
+          '<div className="outline-none focus-visible:outline-2" />',
+          "<div className={`outline-none",
+          "  focus-visible:outline-2`} />",
+          "<div className={`${RING} outline-none`} />",
+          '<div className={cn("outline-none", "focus-visible:outline-2")} />',
+          "const BAD = `outline-hidden ${RING}`;",
+          // 아래 셋은 걸리지 않습니다 — 선 모양을 되살림, 포커스 테두리를 그리지 않음, outline-none 없음.
+          '<div className="outline-none focus-visible:outline-solid focus-visible:outline-2" />',
+          '<input className="outline-none" />',
+          "<div className={`${RING} px-3`} />",
+        ].join("\n"),
+      },
+    ]);
+    expect(hits).toEqual(["a.tsx:1", "a.tsx:2", "a.tsx:4", "a.tsx:5", "a.tsx:6"]);
+  });
+
   it("화면 소스에 outline-none·outline-hidden이 focus(-visible):outline-<n>의 선을 지우는 조합이 없다", () => {
     const root = resolve(__dirname, "../../../..");
-    const files: string[] = [];
+    const files: { path: string; source: string }[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
         const path = join(dir, name);
         if (statSync(path).isDirectory()) {
           if (name !== "__tests__" && name !== "__checks__") walk(path);
         } else if (/\.tsx?$/.test(name)) {
-          files.push(path);
+          files.push({ path: relative(root, path), source: readFileSync(path, "utf8") });
         }
       }
     };
     walk(root);
     expect(files.length).toBeGreaterThan(50);
-    const offenders: string[] = [];
-    for (const path of files) {
-      readFileSync(path, "utf8")
-        .split("\n")
-        .forEach((line, index) => {
-          const hit = line
-            .split(/["'`{}]/)
-            .some((piece) => FOCUS_OUTLINE_WIDTH.test(piece) && focusVisibleOutline(piece).style === "none");
-          if (hit) offenders.push(`${relative(root, path)}:${index + 1}`);
-        });
-    }
-    expect(offenders).toEqual([]);
+    expect(outlineOffenders(files)).toEqual([]);
   });
 });
 
