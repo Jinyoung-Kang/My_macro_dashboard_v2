@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
+import { Children, ReactNode, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
@@ -38,7 +38,8 @@ export {
 
 /**
  * 패널(섹션 컨테이너 — 작업대 실행 명세 §3-3·§3-7·§6). 1층 면: surface 바탕·1px 경계·4px 모서리, 그림자 없음.
- * 머리줄(제목·개수·동작)은 아래 1px 경계로 본문과 가르고, 본문 안쪽은 12px(lg 16px)입니다. 머리줄 바탕은 패널과 같은 surface입니다 —
+ * 머리줄(제목·개수·동작)은 아래 1px 경계로 본문과 가르고, 본문 안쪽은 12px(lg 16px)입니다. 본문이 비면(접힌 패널 — children이 false·null)
+ * 머리만 있는 상자입니다 — 본문 칸과 머리 아래 경계를 그리지 않습니다(빈 칸이 경계 밑에 띠로 남았음 — QA-494). 머리줄 바탕은 패널과 같은 surface입니다 —
  * 명세 표의 '패널 머리 surface-2'로 칠하면 머리 동작에 놓이는 기본 단추·출처 배지(둘 다 surface-2)가 묻혀서, 정보 검색 패널(검증한
  * 작업대 언어)처럼 경계로만 가릅니다.
  *
@@ -66,10 +67,12 @@ export function Panel({
   // 패널 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다.
   const heading = title ? <h2 className="text-heading-sm text-text">{typeof title === "string" ? withoutLeadingIcon(title) : title}</h2> : null;
   const counted = count !== undefined && count !== null;
+  // 본문이 비면(접힌 패널) 머리만 있는 상자 — false·null·undefined는 Children.toArray에서 빠집니다.
+  const hasBody = Children.toArray(children).length > 0;
   return (
     <section className={`rounded-card border border-border bg-surface ${className}`}>
       {(title || actions || source) && (
-        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-2.5 lg:px-4">
+        <header className={`flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-3 py-2.5 lg:px-4${hasBody ? " border-b border-border" : ""}`}>
           <div className="min-w-0">
             {heading && counted ? (
               <div className="flex flex-wrap items-baseline gap-x-2">
@@ -85,7 +88,7 @@ export function Panel({
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className="p-3 lg:p-4">{children}</div>
+      {hasBody && <div className="p-3 lg:p-4">{children}</div>}
     </section>
   );
 }

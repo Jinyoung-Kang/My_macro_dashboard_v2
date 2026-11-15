@@ -59,8 +59,8 @@ describe("Panel", () => {
   });
 
   // QA-494: 접힌 패널(모의매매 '이 장부의 한계' — children이 `{open && …}`라 false)도 본문 칸(p-3 lg:p-4)을 늘 그려, 머리 아래 1px 경계 밑에
-  // 빈 띠(넓은 화면 32px·좁은 화면 24px)가 남았습니다. 본문이 비면(false·null·undefined) 머리만 있는 상자여야 합니다. 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-494: 본문이 비면(false·null) 본문 칸과 머리 아래 경계를 그리지 않는다 — 머리만 있는 상자", () => {
+  // 빈 띠(넓은 화면 32px·좁은 화면 24px)가 남았습니다. 본문이 비면(false·null·undefined) 머리만 있는 상자여야 합니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-494: 본문이 비면(false·null) 본문 칸과 머리 아래 경계를 그리지 않는다 — 머리만 있는 상자", () => {
     for (const empty of [false, null]) {
       render(
         <Panel title="한계" actions={<button type="button">펼치기</button>}>
