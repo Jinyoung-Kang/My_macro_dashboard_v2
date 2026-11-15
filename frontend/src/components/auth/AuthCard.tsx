@@ -4,8 +4,9 @@ import { AUTH_CARD, AUTH_SUBMIT, AUTH_TITLE } from "@/components/auth/classes";
 import { inputClasses } from "@/components/ui/classes";
 
 /**
- * 로그인 밖 화면(로그인·가입·인증·재설정·처리방침)의 공통 틀 — 화면 가운데 카드 하나(16px 모서리, 넓은 화면 안쪽 32px), 제목 24px,
- * 입력칸 48px, 주 단추는 폭 전체 강조 파랑 알약(명세 §7-3). 클래스는 서버 컴포넌트(/privacy)도 쓰므로 순수 모듈에서 가져옵니다.
+ * 로그인 밖 화면(로그인·가입·인증·재설정·처리방침)의 공통 틀 — 화면 가운데 카드 하나(4px 모서리, 안쪽 24px), 제목 20px,
+ * 입력칸·주 단추는 큰 조작(넓은 화면 40px, 좁은 화면 44px), 주 단추는 폭 전체 강조 파랑(명세 §7-3 배치, 작업대 화면 언어 겉모양).
+ * 클래스는 서버 컴포넌트(/privacy)도 쓰므로 순수 모듈에서 가져옵니다.
  */
 export function AuthCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
