@@ -309,7 +309,7 @@ describe("본문", () => {
   // not-sr-only 뒤에 나옴(@tailwindcss/node 4.3.5 컴파일로 확인). 기본 px-4·py-2만 두면 포커스 때 링크가 여백 0(약 116x20)으로 그려져 글자가 파란
   // 상자 가장자리에 붙고 상자 아래로 상표 글이 비쳤습니다. 숨어 있을 때는 sr-only가 여백 0을 두므로 기본 여백은 필요 없습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 여백이 변형 없는 px-4·py-2뿐이었습니다.
-  it.fails("건너뛰기 링크의 안쪽 여백은 포커스 때 보이게 하는 것과 같은 focus: 변형으로 둔다 — focus:not-sr-only의 padding:0에 덮이지 않게 (QA-502)", () => {
+  it("건너뛰기 링크의 안쪽 여백은 포커스 때 보이게 하는 것과 같은 focus: 변형으로 둔다 — focus:not-sr-only의 padding:0에 덮이지 않게 (QA-502)", () => {
     renderShell(MEMBER_PRO);
     const classes = screen.getByRole("link", { name: "본문으로 건너뛰기" }).className.split(/\s+/);
     expect(classes).toContain("focus:not-sr-only");
