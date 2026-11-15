@@ -41,8 +41,9 @@ export function ReportView({ markdown }: { markdown: string }) {
             <a
               key={section.id}
               href={`#${section.id}`}
-              // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 작은 조작 24px. 모서리 4px(작업대 실행 명세 §3-8).
-              className="inline-flex min-h-11 items-center rounded-control border border-border px-2 text-xs text-text-3 hover:border-accent/60 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-6"
+              // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 기본 조작 30px — 표 밖의 따로 선 링크라 작은 조작(24px, 표 안)이
+              // 아닙니다(상세 화면 '다른 곳에서 보기'와 같은 값). 모서리 4px(작업대 실행 명세 §3-7·§3-8).
+              className="inline-flex min-h-11 items-center rounded-control border border-border px-3 text-xs text-text-3 hover:border-accent/60 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-[30px] lg:px-2.5"
             >
               {section.title}
             </a>

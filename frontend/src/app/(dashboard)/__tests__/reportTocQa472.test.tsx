@@ -28,4 +28,14 @@ describe("AI 리포트 목차", () => {
     expect(toc.querySelectorAll("a")).toHaveLength(3);
     expect(smallTargets(toc)).toEqual([]);
   });
+
+  it("넓은 화면(lg 이상)은 기본 조작 높이 30px — 표 밖의 따로 선 링크(명세 §3-7, 상세 화면 '다른 곳에서 보기'와 같음)", () => {
+    render(<ReportView markdown={REPORT} />);
+    const links = Array.from(screen.getByRole("navigation", { name: "리포트 목차" }).querySelectorAll("a"));
+    expect(links.map((link) => link.className.split(/\s+/).filter((name) => name.startsWith("lg:min-h-")))).toEqual([
+      ["lg:min-h-[30px]"],
+      ["lg:min-h-[30px]"],
+      ["lg:min-h-[30px]"],
+    ]);
+  });
 });
