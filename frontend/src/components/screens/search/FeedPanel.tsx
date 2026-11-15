@@ -829,7 +829,8 @@ type PreviewClose = { onClose: () => void; onKeyDown: (event: KeyboardEvent<HTML
 function PreviewFrame({ onClose, onKeyDown, children }: PreviewClose & { children: ReactNode }) {
   return (
     <section aria-label="미리 보기" onKeyDown={onKeyDown} className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-2">
+      {/* 머리 글은 늘 한 줄('미리 보기')이라 넓은 화면은 30px 닫기 단추와 가운데 맞춤. */}
+      <div className="flex items-start justify-between gap-2 lg:items-center">
         <PaneHeading>미리 보기</PaneHeading>
         <button
           type="button"

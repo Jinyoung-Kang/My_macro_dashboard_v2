@@ -395,6 +395,31 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     }
   });
 
+  // D1 QA 검토 지적(같은 겉모양 항목): 머리 줄이 위 맞춤(items-start)이면 넓은 화면에서 '미리 보기'(12/16 글) 가운데와 30px 단추의 X 가운데가
+  // 7px 어긋납니다. 머리 글은 늘 한 줄이라 넓은 화면은 가운데 맞춤(lg:items-center) — 좁은 화면(44px 단추)은 그대로.
+  it("넓은 화면에서 미리 보기 머리 글은 30px 닫기 단추와 가운데 맞춤(lg:items-center) — 결과 줄·묶음 줄 모두", async () => {
+    renderScreen("/search?e=us:NVDA");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    list.focus();
+    const headClasses = () => {
+      const region = screen.getByRole("region", { name: "미리 보기" });
+      const head = within(region).getByRole("button", { name: "미리 보기 닫기" }).parentElement!;
+      expect(within(head).getByRole("heading", { name: "미리 보기" })).toBeTruthy();
+      return head.className.split(/\s+/);
+    };
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건/ }).getAttribute("aria-selected")).toBe("false");
+    const rowHead = headClasses();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건/ }).getAttribute("aria-selected")).toBe("true");
+    const clusterHead = headClasses();
+    for (const classes of [rowHead, clusterHead]) {
+      expect(classes).toContain("items-start");
+      expect(classes).toContain("lg:items-center");
+    }
+  });
+
   it("묶음 미리 보기는 다른 보도를 앞 5건만 이름으로 — 나머지는 건수(접혀 있으면 펼치는 길, 펼쳤으면 목록에 있다고)", async () => {
     const at = (hour: number) => `2026-11-13T${String(hour).padStart(2, "0")}:00:00+00:00`;
     const big = [

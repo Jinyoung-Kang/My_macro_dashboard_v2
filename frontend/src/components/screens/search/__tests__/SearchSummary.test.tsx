@@ -427,4 +427,27 @@ describe("실패·비우기", () => {
     expect(classes).toContain("lg:size-[30px]");
     expect(classes).not.toContain("lg:size-7");
   });
+
+  // D1 QA 검토 지적(같은 겉모양 항목): 단추만 30px로 키우고 제목 위 여백을 28px 단추에 맞춘 값(lg:pt-0.5)으로 두면 넓은 화면에서 제목 첫 줄과
+  // X의 세로 가운데가 5px(빈 결과 글은 3px) 어긋납니다. 첫 줄 가운데를 단추 가운데(15px)에 — 12/16 글은 위 7px, 빈 결과 14/20 글은 위 5px.
+  it("넓은 화면에서 제목 첫 줄은 30px 닫기 단추 가운데에 맞춤(요약 글 lg:pt-[7px], 빈 결과 글 lg:pt-[5px])", async () => {
+    renderScreen(OWNER);
+    const region = await summarize();
+    const head = within(region).getByRole("button", { name: "요약 닫기" }).parentElement!;
+    expect(head.className.split(/\s+/)).toContain("items-start");
+    const note = within(region).getByText(/보고 만든 것/);
+    expect(note.parentElement).toBe(head);
+    expect(note.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "pt-1", "lg:pt-[7px]"]));
+    expect(note.className.split(/\s+/)).not.toContain("lg:pt-0.5");
+    fireEvent.click(within(region).getByRole("button", { name: "요약 닫기" }));
+
+    fireEvent.click(await summaryButton());
+    await waitFor(() => expect(summaries).toHaveLength(2));
+    await act(async () => summaries[1].resolve({ ...SUMMARY, summary: [], basedOn: 0, model: null, generatedAt: null }));
+    const emptyRegion = await panel();
+    const empty = within(emptyRegion).getByText("고른 기간에 받아 둔 자료가 없어 요약하지 않았습니다.");
+    expect(empty.parentElement).toBe(within(emptyRegion).getByRole("button", { name: "요약 닫기" }).parentElement);
+    expect(empty.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-sm", "pt-1", "lg:pt-[5px]"]));
+    expect(empty.className.split(/\s+/)).not.toContain("lg:pt-0.5");
+  });
 });
