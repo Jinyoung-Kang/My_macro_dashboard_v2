@@ -652,7 +652,9 @@ const TAG_TONES: Record<TagTone, { box: string; glyph: ReactNode; srPrefix: stri
  * 태그(작업대 실행 명세 §6) — 4px 모서리·1px 경계·12px 글. 중립(별칭·식별자·종류)과 의도 셋(주의·위험·정상)이고, 의도 태그는 늘 아이콘과
  * 글을 함께 씁니다(상승색과 위험색은 색만으로 갈리지 않음 — 명세 §3-2-1). 주의·위험은 낭독기에 '주의: '를 먼저 읽힙니다. 파랑(정보) 태그는
  * 없습니다 — 강조 파랑은 누를 수 있는 것에만(원칙 A1).
- * onRemove를 주면 지울 수 있는 태그입니다 — 지우기 단추(이름 removeLabel, 없으면 '{글} 지우기')는 좁은 화면(lg 미만)에서 44px, 넓은 화면은 16px.
+ * onRemove를 주면 지울 수 있는 태그입니다 — 지우기 단추(이름 removeLabel, 없으면 '{글} 지우기')는 좁은 화면(lg 미만)에서 44px, 넓은 화면은
+ * 작은 조작 24px(명세 §3-7)입니다. 단추는 위아래 음수 여백으로 줄 높이(16px)만 차지해 태그 높이를 키우지 않고(누르는 자리는 태그 위아래로
+ * 넘침), 오른쪽은 태그 안쪽 여백까지만 씁니다 — 왼쪽으로는 넘치지 않아 태그 글을 눌러 지우는 일이 없습니다. 좁은 화면에서는 태그가 그만큼 넓어집니다.
  *
  * @param icon 톤 기본 아이콘 대신 쓸 아이콘(장식). false면 아이콘 없이 글만(중립은 기본이 아이콘 없음).
  */
@@ -682,7 +684,7 @@ export function Tag({
           type="button"
           onClick={onRemove}
           aria-label={name}
-          className={`-mr-0.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm opacity-80 hover:opacity-100 lg:min-h-4 lg:min-w-4 ${FOCUS_RING}`}
+          className={`-my-3.5 -mr-1.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm opacity-80 hover:opacity-100 lg:-my-1 lg:min-h-6 lg:min-w-6 ${FOCUS_RING}`}
         >
           <XIcon size={12} />
         </button>

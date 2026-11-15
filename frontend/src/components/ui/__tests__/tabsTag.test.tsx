@@ -120,6 +120,8 @@ describe("Tag", () => {
     );
     const remove = screen.getByRole("button", { name: "삼성전자 지우기" });
     expect(remove.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-11", "min-w-11"]));
+    // 넓은 화면은 작은 조작 24px(명세 §3-7), 위아래 음수 여백으로 줄 높이 16px만 차지해 태그 높이를 키우지 않는다(44 − 28, 24 − 8).
+    expect(remove.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:min-h-6", "lg:min-w-6", "-my-3.5", "lg:-my-1"]));
     expect(remove.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     fireEvent.click(remove);
     expect(onRemove).toHaveBeenCalledTimes(1);
