@@ -115,6 +115,8 @@ bg `#111418` / surface `#1c2127` / surface-2 `#252a31` / surface-3 `#2f343c`입�
 | `--danger-fg` | #111418 | — | danger 위 5.88 | 위험 단추 글자(흰 글자 3.14 — 쓰지 않음) |
 | `--neutral` | #8f99a8 | GRAY3 | text-3과 같음 | 변화 없음 |
 | `--scrim` (새) | rgb(17 20 24 / .7) | — | — | 덮개 뒤 가림. `bg-black/50` 대체 |
+| `--border-overlay` (새, P2) | rgb(255 255 255 / .12) | — | 장식 | 덮개 3층의 안쪽 1px 밝은 경계(`border-border-overlay` — 대화상자·토스트·맨 위로 단추, §3-3). 그림자가 아니라 실제 테두리라 고대비(forced-colors)에서도 덮개 경계가 남음 |
+| `--elev-overlay` | 0 12px 32px rgb(0 0 0 / .6) | — | — | 덮개 3층의 바깥 그림자(`shadow-overlay`, §3-3 — 값은 P2에서 이 값으로). 패널에는 쓰지 않음 |
 
 - `#ff6b6b`는 Blueprint 단계 값이 아닙니다(사용자가 고른 값). 이 표의 나머지 단계 이름은 Blueprint 공개 색 상수의 이름입니다.
 - **패널 머리·입력 바탕은 surface — 2026-11-16 결정(사용자 위임 — 권장안)**: 이 표의 처음 판은 둘을 surface-2로 적었지만 P2 공용 키트가 surface로 두었고 그대로 갑니다.
