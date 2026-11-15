@@ -44,6 +44,7 @@ import {
   CHART_FONT,
   ChartLegend,
   EdgeDateTick,
+  GRID_LINE,
   GUIDE,
   ISOLATED_DOT_R,
   REFERENCE_DASH,
@@ -54,13 +55,13 @@ import {
 import { LineChart as SingleLineChart } from "./LineChart";
 
 /*
- * 차트 래퍼 — 격자 없는 단일 선 문법(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5): 선 차트는 격자·면적 그라디언트 없이 끝과 중간 눈금
- * (lib/lineChart의 lineYAxis·lineXAxis — Y는 둥근 간격, X는 날짜 경계), 글자 범례, 덮개 모양 툴팁. 막대는 격자 없이 0 기준선. 산점도만 옅은 격자(두 축이 다 데이터).
- * 축·기준선 색과 툴팁 상자·글자 범례·계열 색은 차트 틀(frame.tsx — LineChart와 함께 씀). SVG 글자는 12px 이상(명세 D9).
+ * 차트 래퍼 — 기본은 격자 없는 단일 선 문법(명세 docs/specs/2026-10-31-v2-coinbase-ui.md §5): 선 차트는 격자·면적 그라디언트 없이 끝과 중간 눈금
+ * (lib/lineChart의 lineYAxis·lineXAxis — Y는 둥근 간격, X는 날짜 경계), 글자 범례, 덮개 모양 툴팁. 막대는 격자 없이 0 기준선.
+ * 큰 분석 차트는 `grid`로 옅은 가로 격자를 켭니다(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md W6 — 선 차트 세 개와 세로 막대, 1px
+ * border-subtle, Y 눈금 자리에만). 어느 화면에서 켤지는 화면 단계(P5)가 정합니다. 산점도는 늘 옅은 격자(두 축이 다 데이터).
+ * 축·기준선·격자 색과 툴팁 상자·글자 범례·계열 색은 차트 틀(frame.tsx — LineChart와 함께 씀). SVG 글자는 12px 이상(명세 D9).
  */
 const AXIS = { fill: AXIS_TEXT, fontSize: CHART_FONT };
-/** 산점도 격자 — 두 축이 다 데이터라 남기되 옅게(border 50%). */
-const GRID = "var(--border)";
 
 export { SERIES_COLORS };
 
@@ -178,9 +179,9 @@ function tooltipStyle() {
 /**
  * 막대 차트의 마우스 커서(행 강조) 색.
  *
- * <p>Recharts 기본값은 밝은 회색(#ccc)입니다. 어두운 테마에서는
+ * <p>Recharts 기본값은 밝은 회색(#ccc)입니다. 어두운 면에서는
  * 이 회색이 막대보다 밝아, 가리키는 막대의 값 라벨이 <b>흰 배경 위 흰 글씨</b>가
- * 됩니다. 강조는 남기되 색은 hover 토큰(surface-2)으로 바꿉니다 — 테마마다 표면보다 한 단계만 다릅니다.
+ * 됩니다. 강조는 남기되 색은 hover 토큰(surface-2)으로 바꿉니다 — 패널 면(surface)보다 한 단계만 밝습니다.
  */
 const BAR_CURSOR = { fill: "var(--surface-2)" };
 
@@ -198,6 +199,7 @@ export function LineSeries({
   unit = "",
   zeroLine = false,
   precision = 2,
+  grid = false,
 }: {
   data: Point[];
   color?: string;
@@ -220,12 +222,15 @@ export function LineSeries({
    * 늘어나므로 0을 넘겨 주세요.
    */
   precision?: number;
+  /** 큰 분석 차트의 옅은 가로 격자(작업대 실행 명세 W6) — 선 차트 LineChart의 `grid`와 같습니다. */
+  grid?: boolean;
 }) {
   return (
     <SingleLineChart
       data={data}
       series={[{ key: "value", label: "값", color }]}
       height={height}
+      grid={grid}
       includeZero={zeroLine}
       valueFormat={(value) => `${formatNumber(value, precision)}${unit}`}
       tooltipFormat={(value) => `${formatNumber(value, precision + 1)}${unit}`}
@@ -283,6 +288,7 @@ export function MultiLineSeries({
   markers = [],
   ariaLabel,
   axisWidth,
+  grid = false,
 }: {
   data: Record<string, unknown>[];
   series: MultiSeries[];
@@ -319,6 +325,11 @@ export function MultiLineSeries({
    * ('193,971 계약')이 두 줄로 접혀 위 끝값이 SVG 밖으로 잘렸습니다. 여러 차트의 축을 같은 폭으로 맞출 때만 줍니다.
    */
   axisWidth?: number;
+  /**
+   * 큰 분석 차트의 옅은 가로 격자(작업대 실행 명세 W6 — 1px border-subtle). 왼쪽 축 눈금 자리에 긋고, 계열이 모두 오른쪽 축이면 오른쪽 축 눈금에 긋습니다
+   * (두 축의 눈금을 섞어 긋지 않음).
+   */
+  grid?: boolean;
 }) {
   const rows = data as unknown as readonly LineRow[];
   const specsOf = (side: "left" | "right") =>
@@ -357,6 +368,9 @@ export function MultiLineSeries({
       <ChartLegend entries={legend} />
       <ResponsiveContainer width="100%" height={height} onResize={(nextWidth) => setWidth(nextWidth)}>
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
+          {grid ? (
+            <CartesianGrid yAxisId={leftAxis ? "left" : "right"} vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks />
+          ) : null}
           <XAxis
             dataKey="date"
             ticks={xTicks}
@@ -531,7 +545,7 @@ export function HorizontalBars({
           formatter={(value) => [`${formatNumber(Number(value), digits)}${unit}`, valueName]}
         />
         <ReferenceLine x={0} stroke={GUIDE} />
-        {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 — 상승·하락 토큰(테마마다 표면 대비 4.5:1 이상) */}
+        {/* 한국 관행: 양수(순매수·상승) 빨강, 음수 파랑 — 상승·하락 토큰(패널 면 surface 위 그래픽 대비 5.84·8.06:1 — 작업대 실행 명세 §3-5) */}
         <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {data.map((entry) => (
             <Cell
@@ -555,6 +569,7 @@ export function SignedBars({
   height = 320,
   unit = "",
   valueName = "순매수",
+  grid = false,
 }: {
   /**
    * color를 주면 부호 색(빨강=+, 파랑=−) 대신 그 색으로 칠합니다. 거래량처럼 부호가
@@ -564,6 +579,8 @@ export function SignedBars({
   height?: number;
   unit?: string;
   valueName?: string;
+  /** 큰 분석 차트의 옅은 가로 격자(작업대 실행 명세 W6 — 1px border-subtle, Y 눈금 자리에만). */
+  grid?: boolean;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-text-3">표시할 데이터가 없습니다.</div>;
@@ -572,6 +589,7 @@ export function SignedBars({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        {grid ? <CartesianGrid vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
         <XAxis dataKey="name" stroke={AXIS_LINE} tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
         {/* 축 폭은 눈금 글 폭에 맞춥니다(width="auto") — 고정 64px은 음수 부호·긴 단위('-16,000계약')의 앞자리를 잘랐습니다. */}
         <YAxis
@@ -631,7 +649,8 @@ export function ScatterPlot({
     <div aria-hidden="true">
     <ResponsiveContainer width="100%" height={height}>
       <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
-        <CartesianGrid stroke={GRID} strokeOpacity={0.5} />
+        {/* 두 축이 다 데이터라 격자를 남기되 옅게(옅은 경계 border-subtle — 큰 차트의 가로 격자와 같은 색). */}
+        <CartesianGrid stroke={GRID_LINE} strokeWidth={1} />
         <XAxis
           type="number"
           dataKey="x"
@@ -727,8 +746,8 @@ export function WeightHeatmap({
                         typeof value === "number" && value > 0
                           ? `rgba(57, 135, 229, ${0.08 + ratio * 0.62})`
                           : "transparent",
-                      // 칠한 칸의 숫자는 본문색(text) — 농도 전 범위(불투명도 0.08~0.70)에서 라이트 8.2:1·다크 5.1:1 이상(WCAG AA 4.5:1).
-                      // 예전 흰 글자는 다크 전용이었고, 라이트 표면 위 옅은 파랑에서는 2.4:1 아래로 떨어집니다.
+                      // 칠한 칸의 숫자는 본문색(text) — 농도 전 범위(불투명도 0.08~0.70)에서 패널 면(surface) 위 13.7~5.3:1(WCAG AA 4.5:1).
+                      // 보조 글자색(text-2)은 가장 진한 칸에서 3.5:1이라 쓰지 않습니다.
                       color: typeof value === "number" && value > 0 ? "var(--text)" : undefined,
                     }}
                     title={`${name} · ${dates[index] ?? ""}`}

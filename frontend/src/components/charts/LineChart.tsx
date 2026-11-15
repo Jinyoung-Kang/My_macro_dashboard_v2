@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type JSX, type PointerEvent } from "react";
 import {
+  CartesianGrid,
   Line,
   LineChart as RechartsLineChart,
   ReferenceDot,
@@ -40,6 +41,7 @@ import {
   CHART_FONT,
   ChartLegend,
   EdgeDateTick,
+  GRID_LINE,
   GUIDE,
   ISOLATED_DOT_R,
   SERIES_COLORS,
@@ -140,7 +142,7 @@ function ScrubReporter({
 }
 
 /**
- * 선 차트 — 격자 없음, Y축은 둥근 간격의 눈금(데이터 범위를 그 간격의 배수로 — 히어로는 여기에 실제 최고·최저를 그 점에), X축은 첫·마지막 날짜와
+ * 선 차트 — 격자 없음(큰 분석 차트는 `grid`로 옅은 가로 격자), Y축은 둥근 간격의 눈금(데이터 범위를 그 간격의 배수로 — 히어로는 여기에 실제 최고·최저를 그 점에), X축은 첫·마지막 날짜와
  * 그 사이 날짜 경계의 중간 눈금(그림 너비에 맞춘 개수), 0 기준선은 뜻이 있을 때만, 이중 축 없음, 축 글자 12px.
  *
  * - Y 범위·눈금·0선·X 눈금·색·툴팁 글은 `lib/lineChart.ts`가 정합니다(여기서는 그리기만 — ADR 0004). X 눈금 개수를 고르려고 그림 너비를
@@ -155,6 +157,9 @@ function ScrubReporter({
  *   그 점을 읽습니다(`scrubModel`의 estimate).
  *
  * `estimated`·`stale`·`staleReason`·`ariaLabel`은 설계서 §1.5 계약에 더한 선택 props입니다.
+ *
+ * `grid`(선택, 기본 끔): 큰 분석 차트에만 옅은 가로 격자(1px border-subtle, Y 눈금 자리에만 — 작업대 실행 명세 W6). 세로 격자는 없고, 히어로에서는
+ * 켜지 않습니다(히어로·스파크라인은 격자 없음). 어느 화면에서 켤지는 화면 단계(P5)가 정합니다.
  *
  * `variant="hero"`(히어로 안의 큰 차트, 명세 §5): 선은 중립 잉크(var(--text)) 하나 — 계열 색을 넘기지 않으면 — , 툴팁 상자 없이 세로 커서와
  * 활성 점만, Y는 기본 차트와 같은 둥근 간격 눈금에 더해 본 계열의 실제 최고·최저 값을 그 점 위·아래에(12px text-3 — 선과 겹치지 않음, 꼬리 계열은
@@ -178,6 +183,7 @@ export function LineChart({
   ariaLabel,
   variant = "default",
   onScrub,
+  grid = false,
 }: {
   data: readonly LineRow[];
   series: readonly LineSeriesSpec[];
@@ -201,6 +207,8 @@ export function LineChart({
   variant?: "default" | "hero";
   /** 가리킨 점의 행 순번(없으면 null) — 문지르기(위 설명). */
   onScrub?: (index: number | null) => void;
+  /** 큰 분석 차트의 옅은 가로 격자(위 설명) — 히어로에서는 무시합니다. */
+  grid?: boolean;
 }): JSX.Element {
   const hero = variant === "hero";
   // 터치를 뗀 뒤 커서를 감추는 표시 — 다음 터치·마우스 움직임에서 풉니다.
@@ -270,6 +278,7 @@ export function LineChart({
         aria-label={ariaLabel ?? lineChartLabel(rows, series)}
         margin={hero ? { top: 4, right: 0, bottom: 0, left: 0 } : { top: 8, right: 8, bottom: 0, left: 0 }}
       >
+        {grid && !hero ? <CartesianGrid vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
         <XAxis
           dataKey="date"
           ticks={xTicks}
