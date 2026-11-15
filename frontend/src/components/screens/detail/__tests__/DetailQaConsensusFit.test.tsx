@@ -61,7 +61,7 @@ afterEach(cleanup);
 describe("종목 상세 — 애널리스트 의견·핵심 지표 값이 잘리지 않는다(QA-455)", () => {
   // QA-455: 값 칸(dd)이 truncate라 옆 칸 두 칸 격자에서 '23.77 USD'가 '23.77 …'로 잘렸습니다(1440 — 칸 61px, 글 68px).
   // 수정 전 실패: 값 글의 dd에 truncate가 있고, 옆 칸 표가 lg 이상에서도 두 칸(sm:grid-cols-2)(재현 커밋에서는 it.fails).
-  it.fails("옆 칸 애널리스트 의견 표는 lg 이상에서 한 칸이고, 값 글에서 카드까지 말줄임·줄바꿈 금지가 없다 — 핵심 지표 값도 말줄임 없음", async () => {
+  it("옆 칸 애널리스트 의견 표는 lg 이상에서 한 칸이고, 값 글에서 카드까지 말줄임·줄바꿈 금지가 없다 — 핵심 지표 값도 말줄임 없음", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNQ" />

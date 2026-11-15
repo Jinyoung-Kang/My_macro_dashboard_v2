@@ -182,7 +182,8 @@ function ConsensusCard({ market, quote }: { market: DetailMarket; quote: DetailQ
   ];
   return (
     <Card title="애널리스트 의견" subtitle="증권사 의견의 평균입니다 — 이 화면의 판단이 아닙니다." source={quote.source?.label ?? undefined}>
-      <KeyStats rows={rows} />
+      {/* 옆 칸(lg 이상 1/3 폭)이라 lg 이상은 한 칸 표 — 두 칸이면 값 칸이 라벨에 밀려 '23.77 USD'가 잘렸습니다(QA-455). */}
+      <KeyStats rows={rows} side />
     </Card>
   );
 }

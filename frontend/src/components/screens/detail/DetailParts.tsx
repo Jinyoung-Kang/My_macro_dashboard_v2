@@ -121,17 +121,19 @@ export function PriceHero({
   );
 }
 
-/** 핵심 지표 표 — 라벨 왼쪽·값 오른쪽 두 줄 격자(Google Finance·Yahoo Finance의 통계 표). 값이 없으면 "—". */
-export function KeyStats({ rows }: { rows: readonly { label: string; value: string }[] }) {
+/**
+ * 핵심 지표 표 — 라벨 왼쪽·값 오른쪽 두 줄 격자(Google Finance·Yahoo Finance의 통계 표). 값이 없으면 "—". 값(숫자)은 말줄임으로 자르지 않습니다 —
+ * 칸이 좁으면 숫자와 단위 사이의 공백에서 먼저 줄을 바꾸고 칸보다 긴 낱말만 칸 안에서 끊습니다(QA-455 — 한 줄 말줄임이라 옆 칸에서 '23.77 USD'가
+ * '23.77 …'로 잘렸음). `side`는 lg 이상에서 1/3 폭 옆 칸에 놓이는 표 — 그 폭에서 두 칸이면 값 칸이 라벨에 밀려 좁아져 lg 이상은 한 칸으로 둡니다.
+ */
+export function KeyStats({ rows, side = false }: { rows: readonly { label: string; value: string }[]; side?: boolean }) {
   if (rows.length === 0) return <p className="text-sm text-text-2">핵심 지표를 받지 못했습니다.</p>;
   return (
-    <dl className="grid min-w-0 gap-x-6 sm:grid-cols-2">
+    <dl className={side ? "grid min-w-0 gap-x-6 sm:grid-cols-2 lg:grid-cols-1" : "grid min-w-0 gap-x-6 sm:grid-cols-2"}>
       {rows.map((row) => (
         <div key={row.label} className="flex min-w-0 items-baseline justify-between gap-3 border-b border-border py-2.5 text-sm">
           <dt className="shrink-0 text-text-2">{row.label}</dt>
-          <dd className="min-w-0 truncate text-right font-medium tabular-nums text-text" title={row.value}>
-            {row.value}
-          </dd>
+          <dd className="min-w-0 break-keep text-right font-medium tabular-nums text-text wrap-anywhere">{row.value}</dd>
         </div>
       ))}
     </dl>
