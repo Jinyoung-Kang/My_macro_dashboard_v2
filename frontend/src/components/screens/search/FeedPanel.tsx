@@ -847,7 +847,12 @@ function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: F
               </li>
             ))}
           </ul>
-          {more > 0 ? <p className="text-xs text-text-3">그 밖에 {more}건 — 펼치면 목록에 모두 나옵니다.</p> : null}
+          {/* 펼친 상태에 맞게 — 접혀 있으면 펼치는 길, 펼쳤으면 이미 목록에 있음(아래 펼치기·접기 안내와 같은 상태). */}
+          {more > 0 ? (
+            <p className="text-xs text-text-3">
+              {`그 밖에 ${more}건 — ${entry.expanded ? "목록에 모두 나와 있습니다." : "펼치면 목록에 모두 나옵니다."}`}
+            </p>
+          ) : null}
         </div>
       ) : null}
       <p className="text-xs text-text-3">

@@ -358,7 +358,7 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     expect(document.activeElement).toBe(list);
   });
 
-  it("묶음 미리 보기는 다른 보도를 앞 5건만 이름으로 — 나머지는 건수(펼치면 목록에 모두)", async () => {
+  it("묶음 미리 보기는 다른 보도를 앞 5건만 이름으로 — 나머지는 건수(접혀 있으면 펼치는 길, 펼쳤으면 목록에 있다고)", async () => {
     const at = (hour: number) => `2026-11-13T${String(hour).padStart(2, "0")}:00:00+00:00`;
     const big = [
       row({ id: "b0", title: "큰 묶음 대표", clusterId: "b0", cluster: { size: 8, publishers: 8 }, publisher: "P0", publishedAt: at(1) }),
@@ -378,6 +378,14 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     const names = within(within(preview).getByRole("list", { name: "같은 사건의 다른 보도" })).getAllByRole("listitem");
     expect(names.map((item) => item.firstElementChild?.textContent)).toEqual([7, 6, 5, 4, 3].map((at) => `큰 묶음 보도 ${at}`));
     expect(within(preview).getByText("그 밖에 2건 — 펼치면 목록에 모두 나옵니다.")).toBeTruthy();
+
+    // 검토 지적(묶음 미리 보기의 글): 펼친 뒤에도 '펼치면 목록에 모두 나옵니다'가 그대로라 바로 아래의 '접기' 안내와 어긋났습니다.
+    // 수정 전 실패: Enter로 펼친 뒤에도 같은 글.
+    fireEvent.keyDown(list, { key: "Enter" });
+    const expanded = screen.getByRole("region", { name: "미리 보기" });
+    expect(within(expanded).getByText("그 밖에 2건 — 목록에 모두 나와 있습니다.")).toBeTruthy();
+    expect(within(expanded).queryByText(/펼치면 목록에/)).toBeNull();
+    expect(within(expanded).getByText(/^접기: 결과 목록에서 Enter/)).toBeTruthy();
   });
 
   // 검토 지적(항목 1 — 누르기): 묶음 미리 보기를 더하면서 묶음 줄을 누르기만 해도 아래 시트(390에서 376~422px)가 열려, 누른 줄을 시트 위로
