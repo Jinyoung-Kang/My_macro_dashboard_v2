@@ -400,6 +400,32 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개").className).toContain("text-warn");
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
   });
+
+  // QA-505: 저장소 상태 줄의 수 묶음은 오류면 위험색(text-danger), 경고·누락이면 주의색(text-warn)으로 글만 칠하고 아이콘이 없었습니다.
+  // 위험색 #e76a6e는 상승 빨강 #ff6b6b와 ΔE 4.4로 거의 같은 색이라(W4) 시장 행의 상승 값과 같은 뜻으로 읽힙니다 — 명세 §3-2·ADR 0042
+  // 결정 3 '상태·위험은 늘 아이콘 + 글'. 글에 이미 '오류'·'경고'가 있어 아이콘은 장식(aria-hidden)이고, 모두 0이면 상태가 아니라 아이콘이 없습니다.
+  it.fails("QA-505: 오류가 있으면 수 묶음 앞에 아이콘 + 위험색, 경고만 있으면 아이콘 + 주의색, 모두 0이면 아이콘 없음", async () => {
+    const countGroup = async (response: ReturnType<typeof issues>, toneClass: string) => {
+      reads = { ...happyReads(), [ISSUES]: response };
+      const { unmount } = renderHome(OWNER);
+      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const text = within(line).getByText(/^수집 태스크 오류/);
+      const group = text.closest(`.${toneClass}`) as HTMLElement | null;
+      expect(group, `${toneClass} 수 묶음`).not.toBeNull();
+      const icons = Array.from((group as HTMLElement).querySelectorAll("svg"));
+      // 아이콘이 수 글 앞에 서는지(문서 순서).
+      const iconFirst = icons.length > 0 && Boolean(icons[0].compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING);
+      unmount();
+      return { hidden: icons.map((icon) => icon.getAttribute("aria-hidden")), iconFirst };
+    };
+
+    for (const [response, toneClass] of [[issues(3, 19), "text-danger"], [issues(0, 19), "text-warn"]] as const) {
+      const { hidden, iconFirst } = await countGroup(response, toneClass);
+      expect(hidden, `${toneClass} 수 묶음의 아이콘`).toEqual(["true"]);
+      expect(iconFirst, `${toneClass} 아이콘이 수 글 앞`).toBe(true);
+    }
+    expect((await countGroup(issues(0, 0), "tabular-nums")).hidden).toEqual([]);
+  });
 });
 
 describe("홈 — 일부 실패", () => {
