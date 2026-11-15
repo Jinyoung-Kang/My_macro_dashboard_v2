@@ -867,7 +867,8 @@ def test_모은_글은_탭에_맞는_종류만_읽고_날짜만_아는_공시는
              source="dart", published_at=search_filings.date_moment("20261110", search_filings.KST)),
     ])
     filings = search_store.watch_items("us:SCHP", owner=True, kinds=("filing",))
-    assert {item["title"]: item["timeBasis"] for item in filings.items} == {"8-K": "date", "10-Q": "published", "분기보고서": "date"}
+    assert {item["title"]: item["timeBasis"] for item in filings.items} == {"8-K · 수시 보고(주요 사건)": "date", "10-Q · 분기 보고서": "published",
+                                                                          "분기보고서": "date"}, "SEC 줄 제목은 읽을 때 지금 규칙으로(QA-440)"
     assert all(item["kind"] == "filing" and item["source"] == "watch" for item in filings.items)
     news = search_store.watch_items("us:SCHP", owner=False, kinds=("news", "headline", "wire"))
     assert [item["title"] for item in news.items] == ["SynthChip news"], "회원에게 속보 줄은 없음"

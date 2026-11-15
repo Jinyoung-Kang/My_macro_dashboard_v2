@@ -355,7 +355,8 @@ def watch_items(entity_key: str, *, owner: bool, kinds: tuple[str, ...] | None =
     """
     그 대상(대표 키)의 모은 글 — 출처 표시는 ``watch``이고, 운영자 전용 출처(속보·수집 글)에서 온 줄은 운영자에게만 그 출처 이름 그대로 둡니다
     (백엔드가 회원에게서 한 번 더 지움). 경유 주소(구글) 줄은 뒤로 — 같은 글의 원문 주소 줄이 먼저 남게(규칙 4). ``kinds``가 있으면 그 종류의 줄만
-    (계약 §7-6 — 뉴스 탭·공시 탭). 날짜만 아는 공시 줄은 ``timeBasis: "date"``. 수집 글·속보 줄의 언어는 원문 제목으로 다시 가릅니다(QA-438).
+    (계약 §7-6 — 뉴스 탭·공시 탭). 날짜만 아는 공시 줄은 ``timeBasis: "date"``. 수집 글·속보 줄의 언어는 원문 제목으로(QA-438), SEC 공시 줄의 제목은 지금 규칙으로(QA-440)
+    다시 만듭니다.
     """
     try:
         rows = _watch_rows(entity_key, kinds)
@@ -371,7 +372,8 @@ def watch_items(entity_key: str, *, owner: bool, kinds: tuple[str, ...] | None =
             published, basis = row["first_seen_at"], "fetched"
         reader = row["item_id"] if origin in ("wire", "info") else None
         lang = _title_lang(row) if origin in TITLE_LANG_ORIGINS else row["lang"]
-        items.append(feed_item(title=row["title"], url=row["url"], publisher=row["publisher"], domain=row["publisher_domain"],
+        title = search_filings.stored_title(origin, row["title"], row["publisher"])
+        items.append(feed_item(title=title, url=row["url"], publisher=row["publisher"], domain=row["publisher_domain"],
                                published=published, basis=basis, source=origin if origin in OWNER_ONLY_ORIGINS else "watch",
                                kind=row["kind"] or "news", lang=lang, summary=row["summary"], reader_id=reader,
                                item_id=row["item_id"]))

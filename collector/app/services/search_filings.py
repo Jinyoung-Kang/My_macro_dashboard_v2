@@ -10,6 +10,9 @@ app/services/search_filings.py
   같은 접수의 여러 문서는 한 줄. 제출자 CIK가 없는 줄은 연결할 쪽이 없어 뺍니다.
 - ``dart``: Open DART ``list.json``(``DART_API_KEY`` — publicapi의 키 처리) 첫 쪽(100건), ``total_page``가 1보다 크면 2쪽 한 번(최대 200건).
   status 013(자료 없음)은 빈 결과.
+- 제목(QA-440): 설명(``primaryDocDescription``)이 없거나 양식만 되풀이하면('8-K'·'FORM 6-K') 흔한 양식의 짧은 한국어 뜻(:data:`FORM_LABELS`)을
+  양식 뒤에 붙이고, 모르는 양식은 양식 기호만. 전문 검색 줄은 '<양식> · <뜻> · <제출자>'. 보고자(Form 3·4·5의 내부자)는 회사별 목록에 칸이 없어
+  싣지 않습니다(SEC를 더 부르지 않음). 모은 글에 예전 꼴로 넣은 줄은 읽을 때 :func:`stored_title`로 다시 만듭니다.
 - SEC 두 출처의 줄 id는 ``info_text.item_id("sec:" + 접수번호)`` — 같은 접수가 두 출처에서 와도 한 줄(합칠 때 ``sec``가 먼저). DART 줄 id는 공시
   뷰어 주소의 ``info_text.item_id``.
 - 시각(§7-1): DART 접수일·전문 검색 ``file_date``는 그 날짜의 그 출처 달력 00:00(DART = KST, SEC = 미국 동부)을 UTC로 바꾼 값과
@@ -61,12 +64,35 @@ DART_UNREADY = "DART_API_KEY가 설정되지 않아 부르지 않음"
 # 날짜만 아는 출처 — 모은 글(search_watch_items)에서 읽을 때 timeBasis를 'date'로 되살립니다(표에 시각 기준 칸이 없음).
 DATE_SOURCES = frozenset({"sec_fts", "dart", "naver_research"})
 
+# 흔한 SEC 양식의 짧은 뜻(QA-440) — 설명이 없거나 양식만 되풀이할 때 제목에 붙입니다. 정정('/A')은 같은 뜻 + ' 정정'. 13D·13G는 2024-12부터
+# 'SCHEDULE 13D'·'SCHEDULE 13G'로 접수됩니다(그 전은 'SC 13D'·'SC 13G'). 여기 없는 양식은 양식 기호만(뜻을 짐작하지 않음).
+FORM_LABELS = {
+    "3": "최초 지분 보고",
+    "4": "지분 변동 보고",
+    "5": "연간 지분 변동 보고",
+    "144": "매도 예정 신고",
+    "SC 13D": "5% 이상 지분 보고",
+    "SCHEDULE 13D": "5% 이상 지분 보고",
+    "SC 13G": "5% 이상 지분 보고(약식)",
+    "SCHEDULE 13G": "5% 이상 지분 보고(약식)",
+    "8-K": "수시 보고(주요 사건)",
+    "10-K": "연차 보고서",
+    "10-Q": "분기 보고서",
+    "6-K": "외국 기업 수시 보고",
+    "20-F": "외국 기업 연차 보고서",
+    "S-1": "증권 신고서",
+    "DEF 14A": "주주총회 위임장 설명서",
+    "13F-HR": "기관 보유 종목 보고(분기)",
+}
+AMENDMENT = "/A"
+
 _ACCESSION = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 _CIK = re.compile(r"^\d{1,10}$")
 _RCEPT_NO = re.compile(r"^\d{14}$")
 _ACCEPTED = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})")
 _DAY = re.compile(r"^(\d{4})[-.]?(\d{2})[-.]?(\d{2})$")
 _NAME_TAIL = re.compile(r"\s*\((?:CIK\s+\d+|[A-Z0-9.\-]+(?:\s*,\s*[A-Z0-9.\-]+)*)\)\s*$")
+_FORM_WORD = re.compile(r"^form\s*")
 
 
 # ------------------------------------------------------------------ 로그에서 경로 지우기
@@ -148,6 +174,62 @@ def stored_basis(source: str | None, published_at: datetime | None) -> str:
     return "published"
 
 
+# ------------------------------------------------------------------ 제목(QA-440)
+
+def form_label(form: str) -> str | None:
+    """양식의 짧은 한국어 뜻(:data:`FORM_LABELS`) — 정정('/A')은 그 뜻 + ' 정정'. 모르는 양식은 None."""
+    key = " ".join(form.split()).upper()
+    amended = key.endswith(AMENDMENT)
+    label = FORM_LABELS.get(key[:-len(AMENDMENT)] if amended else key)
+    if label is None:
+        return None
+    return f"{label} 정정" if amended else label
+
+
+def _form_key(text: str) -> str:
+    """양식 대조 키 — 공백을 하나로, 대소문자 무시, 앞의 'FORM' 뗌('FORM 6-K' → '6-k')."""
+    return _FORM_WORD.sub("", " ".join(text.split()).casefold())
+
+
+def _repeats_form(described: str, form: str) -> bool:
+    """설명이 양식만 되풀이하는가 — '8-K'·'FORM 6-K', 정정 양식(4/A)의 'FORM 4'도."""
+    base = form[:-len(AMENDMENT)] if form.upper().endswith(AMENDMENT) else form
+    return _form_key(described) in {_form_key(form), _form_key(base)}
+
+
+def form_heading(form: str) -> str:
+    """'<양식> · <뜻>'(뜻을 아는 양식), 모르면 양식만."""
+    label = form_label(form)
+    return f"{form} · {label}" if label else form
+
+
+def sec_title(form: str, described: str | None) -> str:
+    """SEC 회사별 목록 줄의 제목 — '<양식> · <설명>', 설명이 없거나 양식만 되풀이하면 :func:`form_heading`."""
+    if described and not _repeats_form(described, form):
+        return f"{form} · {described}"
+    return form_heading(form)
+
+
+def fts_title(form: str, filer: str | None) -> str:
+    """EDGAR 전문 검색 줄의 제목 — '<양식> · <뜻> · <제출자>'(뜻을 모르는 양식·제출자가 없는 줄은 그 칸 없이)."""
+    heading = form_heading(form)
+    return f"{heading} · {filer}" if filer else heading
+
+
+def stored_title(source: str | None, title: str, publisher: str | None) -> str:
+    """
+    모은 글(search_watch_items)의 SEC 공시 줄 제목을 지금 규칙으로 다시 만듭니다 — QA-440 전에 '4'·'6-K · FORM 6-K'로 넣은 줄이 2년 남습니다
+    (표는 넣기만 하고 고치지 않음). 회사별 목록 줄은 '<양식>[ · <설명>]'에서, 전문 검색 줄은 양식과 제출자(``publisher``)에서 — 지금 규칙으로
+    넣은 줄은 그대로 나옵니다. 그 밖의 출처는 그대로.
+    """
+    if not title or source not in ("sec", "sec_fts"):
+        return title
+    form, _, rest = title.partition(" · ")
+    if source == "sec":
+        return sec_title(form, rest or None)
+    return fts_title(form, publisher)
+
+
 # ------------------------------------------------------------------ 줄 만들기(순수 함수)
 
 def sec_item_id(accession: str) -> str:
@@ -196,7 +278,7 @@ def parse_submissions(payload: Any, *, cik: str, start_day: str) -> tuple[list[d
         url = sec_index_url(cik, accession)
         form = _text(_column(recent, "form", index)) or "공시"
         described = _text(_column(recent, "primaryDocDescription", index))
-        title = form if not described or described.casefold() == form.casefold() else f"{form} · {described}"
+        title = sec_title(form, described)
         moment, basis = _accepted(_column(recent, "acceptanceDateTime", index)), "published"
         if moment is None:
             moment, basis = date_moment(filed, NEW_YORK), "date"
@@ -249,7 +331,7 @@ def parse_fts(payload: Any) -> tuple[list[dict], int | None, bool]:
         filer = clean_filer_name(names[0]) if names else None
         roots = source.get("root_forms") if isinstance(source.get("root_forms"), list) else []
         form = _text(source.get("form")) or (_text(roots[0]) if roots else None) or "공시"
-        items.append(feed_item(title=f"{form} · {filer}" if filer else form, url=url, publisher=filer, domain=SEC_DOMAIN,
+        items.append(feed_item(title=fts_title(form, filer), url=url, publisher=filer, domain=SEC_DOMAIN,
                                published=date_moment(source.get("file_date"), NEW_YORK), basis="date", source="sec_fts",
                                lang="en", kind="filing", summary=_text(source.get("file_description")),
                                item_id=sec_item_id(accession)))

@@ -3,7 +3,7 @@ tests/test_search_filings.py
 정보 검색 공시 탭의 출처(services/search_filings — 계약 §7-1·§7-2, ADR 0041 단계 4) — 네트워크 없이 합성 응답으로.
 
 - 날짜만 아는 줄(timeBasis "date"): 그 출처 달력(DART KST·SEC 미국 동부)의 00:00을 UTC ISO로
-- SEC submissions: 제목(양식 · 설명), 접수 색인 쪽 주소, id = item_id("sec:" + 접수번호), 접수 시각(미국 동부 벽시계)·없으면 접수일(date),
+- SEC submissions: 제목(양식 · 설명 — 설명이 없거나 양식만 되풀이하면 양식 · 뜻), 접수 색인 쪽 주소, id = item_id("sec:" + 접수번호), 접수 시각(미국 동부 벽시계)·없으면 접수일(date),
   최근 블록의 가장 오래된 접수일이 창 안이고 그 앞 파일이 있으면 안내, SEC 세션·토큰 버킷
 - EDGAR 전문 검색: 제출자 이름 다듬기, 같은 접수는 한 줄, 첫 구문이 0건이면 다음 구문 한 번(앞에 before_retry), 첫 쪽만
 - DART list.json: 제목·주소·제출인·접수일(KST)·비고, 2쪽까지, 013은 빈 결과, 인증키는 사유·로그 어디에도 남지 않음
@@ -103,7 +103,7 @@ def test_SEC_회사별_공시_줄():
     # 접수 시각은 꼬리의 Z 그대로 UTC — 서버 실측(2026-11-14): submissions '…T13:52:41.000Z' = 색인 쪽 'Accepted 08:52:41'(EST).
     assert first["publishedAt"] == "2026-11-12T18:08:27+00:00" and first["timeBasis"] == "published"
     assert first["summary"] == "보고 기준일 2026-10-26" and first["readerId"] is None
-    assert second["title"] == "8-K", "설명이 양식과 같으면 양식만"
+    assert second["title"] == "8-K · 수시 보고(주요 사건)", "설명이 양식과 같으면 양식과 그 뜻(QA-440)"
     assert second["publishedAt"] == "2026-11-10T05:00:00+00:00" and second["timeBasis"] == "date"
     assert second["summary"] is None
 
@@ -185,7 +185,8 @@ def test_전문_검색_줄은_제출자_이름을_다듬고_같은_접수는_한
              "form": "8-K"}]
     items, total, at_least = filings.parse_fts(_fts(hits))
     assert (total, at_least) == (4, False)
-    assert [item["title"] for item in items] == ["13F-HR · Synthetic Family Office LLC", "S-1 · SYNTH CORP"], \
+    assert [item["title"] for item in items] == ["13F-HR · 기관 보유 종목 보고(분기) · Synthetic Family Office LLC",
+                                                 "S-1 · 증권 신고서 · SYNTH CORP"], \
         "같은 접수(문서 둘)는 한 줄, CIK가 없는 줄은 연결할 쪽이 없어 뺌"
     first = items[0]
     assert first["id"] == info_text.item_id("sec:0009000077-26-000005"), "SEC 회사별 목록과 같은 id(접수번호)"

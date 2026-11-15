@@ -12,8 +12,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-import pytest
-
 from app import store
 from app.services import search_filings, search_store
 
@@ -113,7 +111,6 @@ def _submissions(rows):
     return {"cik": "9000001", "name": "SYNTHETIC FINANCIAL GROUP INC", "filings": {"recent": recent, "files": []}}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-440: 수정 전 실패 — Form 4·3 제목이 '4'·'3'뿐이고 6-K는 '6-K · FORM 6-K'로 겹침")
 def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀이한_설명을_뺀다():
     forms = [("4", ""), ("3", ""), ("6-K", "FORM 6-K"), ("4/A", "FORM 4"), ("SC 13G/A", "SC 13G/A"), ("8-K", "8-K"),
              ("10-Q", "Quarterly report"), ("N-PX", ""), ("20-F", "Form 20-F")]
@@ -133,7 +130,6 @@ def test_QA440_SEC_회사별_공시_제목은_양식_뜻을_덧붙이고_되풀�
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-440: 수정 전 실패 — 전문 검색의 Form 4 제목이 '4 · <제출자>'라 무슨 공시인지 모름")
 def test_QA440_전문_검색_제목은_양식_뜻과_제출자():
     def hit(adsh, form, name):
         return {"_id": f"{adsh}:doc.xml", "_source": {"adsh": adsh, "ciks": ["0009000077"], "display_names": [name],
@@ -149,7 +145,6 @@ def test_QA440_전문_검색_제목은_양식_뜻과_제출자():
                                                  "10-K · 연차 보고서"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-440: 수정 전 실패 — 모은 글에 '4'·'6-K · FORM 6-K'로 들어간 SEC 줄이 그대로")
 def test_QA440_모은_글의_SEC_줄은_읽을_때_지금_규칙으로_제목을_다시_만든다(monkeypatch):
     sec_url = "https://www.sec.gov/Archives/edgar/data/9000001/000900000126000001/0009000001-26-000001-index.htm"
     rows = [
