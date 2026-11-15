@@ -166,6 +166,29 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     expect(solid?.getAttribute("stroke")).toBe(SERIES_COLORS.blue);
   });
 
+  // QA-498: 계산한 참고선(K40 — 색은 토큰 밖 hex #a7b0bd)은 고대비(forced-colors)의 밝은 Canvas 위에서 2.19:1이었습니다. 그 선과 범례 견본에 표지
+  // 클래스(chart-ref-line)를 달아 globals.css의 고대비 블록이 CanvasText로 칠합니다(실선 계열에는 달지 않음). 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-498: 점선 계열의 선(g.chart-ref-line)과 범례 견본 svg에 참고선 표지 — 실선 계열에는 없다", () => {
+    observeAs(600, 300);
+    const { container } = render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[
+          { key: "a", name: "종가", color: SERIES_COLORS.blue },
+          { key: "b", name: "참고선", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    const marked = [...container.querySelectorAll("g.chart-ref-line")];
+    expect(marked).toHaveLength(1);
+    expect(marked[0].querySelector("path.recharts-line-curve")?.getAttribute("stroke-dasharray")).toBe(REFERENCE_DASH);
+    expect(container.querySelectorAll(".recharts-line")).toHaveLength(2);
+    const items = within(screen.getByRole("list", { name: "범례" })).getAllByRole("listitem");
+    const svgClasses = (item: HTMLElement) => (item.querySelector('svg[aria-hidden="true"]')?.getAttribute("class") ?? "").split(/\s+/);
+    expect(svgClasses(items[1])).toContain("chart-ref-line");
+    expect(svgClasses(items[0])).not.toContain("chart-ref-line");
+  });
+
   it("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
     observeAs(600, 300);
     const { container } = render(

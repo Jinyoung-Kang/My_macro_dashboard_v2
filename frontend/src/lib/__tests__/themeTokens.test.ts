@@ -277,6 +277,54 @@ describe("포커스 링 기본값(명세 §3-8 — FOCUS_RING과 같은 모양)"
   });
 });
 
+describe("고대비(forced-colors) 차트 잉크", () => {
+  // QA-498: 크롬 forced-colors는 HTML의 글자·바탕·테두리는 시스템 색으로 강제하지만 SVG fill·stroke(Recharts가 var() 토큰으로 칠함)는 강제하지
+  // 않습니다(명세 D9). 어두운 한 벌(W1)은 :root 하나라, 밝은 고대비(흰 Canvas)에서도 어두운 토큰 값이 칠해져 히어로 선 #f6f7f9 1.07:1, 축·판 경계
+  // 글 #8f99a8 2.88:1, 하락 막대 2.01·상승 막대 2.78:1, K40 참고선 #a7b0bd 2.19:1이 됐습니다(개편 전에는 prefers-color-scheme light로 밝은 토큰이
+  // 들어가 통과). 차트 파일이 쓰는 var() 토큰을 그 모드에서 시스템 색으로 다시 정의하고, 등락 막대(채움 --up·--down은 그대로)에는 CanvasText 테두리,
+  // 계산한 참고선(hex — 토큰 밖)은 표지 클래스(chart-ref-line)로 CanvasText를 줍니다. 재현 커밋에서는 it.fails입니다.
+  const FORCED = "@media (forced-colors: active)";
+  const SYSTEM_COLORS = new Set([
+    "AccentColor", "AccentColorText", "ActiveText", "ButtonBorder", "ButtonFace", "ButtonText", "Canvas", "CanvasText", "Field", "FieldText",
+    "GrayText", "Highlight", "HighlightText", "LinkText", "Mark", "MarkText", "SelectedItem", "SelectedItemText", "VisitedText",
+  ]);
+  /** 시스템 색으로 다시 정의하지 않는 토큰 — 등락 채움(막대 테두리 규칙이 대신)과 그림자(그 모드에서 지워짐). */
+  const NOT_REMAPPED = new Set(["--up", "--down", "--elev-overlay"]);
+  const CHART_FILES = ["components/charts/frame.tsx", "components/charts/LineChart.tsx", "components/charts/index.tsx"];
+  const chartTokens = () =>
+    [...new Set(CHART_FILES.flatMap((file) => [...readFileSync(resolve(SRC, file), "utf8").matchAll(/var\((--[\w-]+)\)/g)].map((match) => match[1])))].sort();
+  const forcedBody = () => {
+    const found = RULES.filter((rule) => rule.selector === FORCED);
+    if (found.length !== 1) throw new Error(`${FORCED} 블록이 globals.css 맨 바깥에 한 번 있어야 합니다(${found.length}번)`);
+    return found[0].body;
+  };
+  /** 블록 본문 안 규칙 하나(선택자 그대로)의 선언. */
+  const innerRule = (body: string, selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[;{}])\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(body)?.[1];
+  };
+
+  it.fails("QA-498: 맨 바깥 @media (forced-colors: active) 블록이 하나 — 그 :root가 차트 파일의 var() 토큰을 모두 시스템 색으로 다시 정의한다", () => {
+    const root = innerRule(forcedBody(), ":root");
+    expect(root, `${FORCED} { :root { … } }`).toBeDefined();
+    const remapped = declarations(root ?? "");
+    const tokens = chartTokens();
+    expect(tokens.length).toBeGreaterThan(5);
+    for (const token of tokens.filter((name) => !NOT_REMAPPED.has(name))) {
+      expect(SYSTEM_COLORS.has(remapped[token] ?? ""), `${token} = ${remapped[token]}`).toBe(true);
+    }
+    // 글자·선 잉크는 CanvasText(SVG 글자는 4.5:1이 필요해 GrayText를 쓰지 않음), 면은 Canvas.
+    for (const token of ["--text", "--text-2", "--text-3", "--border"]) expect(remapped[token], token).toBe("CanvasText");
+    for (const token of ["--bg", "--surface", "--surface-2"]) expect(remapped[token], token).toBe("Canvas");
+  });
+
+  it.fails("QA-498: 같은 블록에 등락 막대 테두리(.recharts-bar-rectangle path — CanvasText)와 참고선 표지(.chart-ref-line path·line — CanvasText)", () => {
+    const body = forcedBody();
+    expect(innerRule(body, ".recharts-bar-rectangle path")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+    expect(innerRule(body, ".chart-ref-line :is(path, line)")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+  });
+});
+
 describe("조작 바탕 — 덮개 안 단추(2026-11-16 결정, 명세 §3-4)", () => {
   // 기본 단추 바탕·최소 단추 hover(bg-control-fill)가 패널·바탕 위에서는 surface-2, 덮개(대화상자·토스트 — 바탕 surface-2) 안에서는 surface-3입니다.
   // 같은 값이면 덮개 안 기본 단추의 바탕(1.00:1)과 최소 단추의 hover가 보이지 않았습니다. 그 위 글자는 surface-3 금지 목록을 따릅니다(위 행렬·소스 검사).
