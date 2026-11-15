@@ -294,6 +294,18 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(screen.queryByText("0건")).toBeNull();
   });
 
+  it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 히어로 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
+    // 예전에는 불러오는 중·오류를 홈 카드 틀(다른 안쪽 여백)로 그려, 값이 오는 순간 제목·본문이 lg에서 16px 튀었습니다(검토 지적).
+    renderHome(OWNER);
+    const loading = [region("오늘의 국면").className, region(PAPER_REGION).className];
+    cleanup();
+    reads = happyReads();
+    renderHome(OWNER);
+    await paperHero();
+    await screen.findByText("확장 (Expansion)");
+    expect([region("오늘의 국면").className, region(PAPER_REGION).className]).toEqual(loading);
+  });
+
   it("판정 불가 + 받지 못한 입력, 빠진 신호는 '—'(받지 못함), 장부·매크로 없음 안내, 새 알림 없음", async () => {
     reads = {
       [REGIME]: regimeUnknown(),

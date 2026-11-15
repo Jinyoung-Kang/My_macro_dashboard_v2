@@ -9,7 +9,7 @@ import { endpoints } from "@/lib/endpoints";
 import { HOME_REFRESH_MS, HOME_REGIME_YEARS, REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
 import { SOURCES } from "@/lib/sources";
 import type { RegimeResponse } from "@/lib/types";
-import { HOME_LINK, HomeCard, SectionError } from "./HomeCard";
+import { HOME_LINK, SectionError } from "./HomeCard";
 
 const TITLE = "오늘의 국면";
 
@@ -29,14 +29,15 @@ export function RegimeHero() {
   );
 
   if (!data) {
+    // 불러오는 중·오류도 히어로 틀(Hero의 placeholder) — 값이 오면 같은 틀에 값만 들어와, 틀 여백이 달라 제목·본문이 튀지 않습니다.
     return (
-      <HomeCard title={TITLE}>
-        {error ? (
-          <SectionError message={error} onRetry={() => void reload()} />
-        ) : (
-          <Skeleton lines={5} label="오늘의 국면을 불러오는 중" />
-        )}
-      </HomeCard>
+      <Hero
+        label={TITLE}
+        value={null}
+        placeholder={
+          error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton lines={5} label="오늘의 국면을 불러오는 중" />
+        }
+      />
     );
   }
 

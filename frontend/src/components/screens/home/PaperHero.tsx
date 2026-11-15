@@ -12,9 +12,9 @@ import { HOME_REFRESH_MS, paperHomeModel } from "@/lib/home";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { bookColor } from "../paper/bookColors";
-import { HomeCard, SectionError } from "./HomeCard";
+import { SectionError } from "./HomeCard";
 
-// 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(HomeCard와 Hero 제목). 큰 숫자가 무엇인지(Claude 계좌 순자산)를 제목에 함께 적어
+// 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(Hero 제목). 큰 숫자가 무엇인지(Claude 계좌 순자산)를 제목에 함께 적어
 // 숫자보다 먼저 읽히게 합니다 — 값 아래 설명(heroCaption)에만 있으면 숫자를 본 뒤에야 어느 계좌인지 알았습니다.
 const TITLE = "모의매매 · Claude 계좌 순자산";
 
@@ -58,10 +58,10 @@ export function PaperHero() {
     ) : (
       <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
     );
-    // 미국을 처음 읽는 동안은 고를 것이 없어 탭 없는 카드(예전 그대로). 한국을 고른 뒤의 읽는 중·실패는 아래 히어로와 같은 틀에 자리표시만 바꿔
-    // 그립니다 — 틀이 다르면 시장 라디오가 다시 마운트되어 초점이 body로 빠지고 자리도 옮겨 갔습니다.
-    if (!korea) return <HomeCard title={TITLE}>{placeholder}</HomeCard>;
-    return <Hero label={TITLE} value={null} placeholder={placeholder} tabs={marketSwitch} />;
+    // 읽는 중·실패도 아래 히어로와 같은 틀(Hero의 placeholder)에 자리표시만 바꿔 그립니다 — 값이 오면 같은 틀에 값만 들어와 틀 여백이 달라
+    // 제목·본문이 튀지 않습니다. 미국을 처음 읽는 동안은 고를 것이 없어 탭이 없고, 한국을 고른 뒤에는 탭을 둡니다 — 틀이 다르면 시장 라디오가
+    // 다시 마운트되어 초점이 body로 빠지고 자리도 옮겨 갔습니다.
+    return <Hero label={TITLE} value={null} placeholder={placeholder} tabs={korea ? marketSwitch : undefined} />;
   }
 
   const model = paperHomeModel(overview.data, status.data, { market });
