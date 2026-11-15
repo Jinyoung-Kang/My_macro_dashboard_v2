@@ -44,13 +44,13 @@ export const SERIES_COLORS = {
 } as const;
 
 /**
- * 툴팁 상자 — 떠 있는 덮개(실행 명세 §3-3 3층)라 덮개 바탕(surface-2 — text-3 대비 5.0)·덮개 그림자(--elev-overlay)·4px 모서리(§3-5)이고,
- * 불투명해서 선·막대를 가립니다. 테두리는 옅은 경계(border) — 어두운 면에서는 그림자가 잘 안 보여 상자 끝을 테두리가 보입니다.
- * 글자는 본문색(text), 계열 색은 입히지 않습니다.
+ * 툴팁 상자 — 떠 있는 덮개(실행 명세 §3-3 3층): 바탕 surface-2(text-3 대비 5.0)·안쪽 밝은 1px 경계(border-overlay — 대화상자·토스트·맨 위로
+ * 단추와 같은 토큰)·덮개 그림자(--elev-overlay)·4px 모서리(§3-5)이고, 불투명해서 선·막대를 가립니다. 어두운 면에서는 그림자가 잘 안 보여 경계가
+ * 상자 끝을 보입니다(패널 경계 border였을 때 surface 위 1.50, border-overlay 1.64 [계산]). 글자는 본문색(text), 계열 색은 입히지 않습니다.
  */
 export const TOOLTIP_BOX: CSSProperties = {
   backgroundColor: "var(--surface-2)",
-  border: "1px solid var(--border)",
+  border: "1px solid var(--border-overlay)",
   borderRadius: 4,
   boxShadow: "var(--elev-overlay)",
   fontSize: 12,

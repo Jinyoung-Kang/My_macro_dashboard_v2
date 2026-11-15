@@ -164,8 +164,8 @@ function BarValueLabel({
  * 않았습니다. 막대 위에 겹치면 글자가 막대 색과 뒤섞여 숫자를 읽을 수
  * 없었습니다(실제로 화면에서 그랬습니다).
  *
- * <p>고친 것: 바탕은 불투명한 덮개 바탕(surface-2)으로 막대·선을 가리고, 떠 있는 덮개라 덮개 그림자와 4px 모서리(차트 틀 TOOLTIP_BOX —
- * 새 LineChart 툴팁과 같은 상자). 글자는 본문색(text), 날짜는 보조색(text-2).
+ * <p>고친 것: 바탕은 불투명한 덮개 바탕(surface-2)으로 막대·선을 가리고, 떠 있는 덮개라 안쪽 밝은 1px 경계(border-overlay)·덮개 그림자·
+ * 4px 모서리(차트 틀 TOOLTIP_BOX — 새 LineChart 툴팁과 같은 상자). 글자는 본문색(text), 날짜는 보조색(text-2).
  */
 function tooltipStyle() {
   return {

@@ -9,7 +9,7 @@
  *  - 막대(HorizontalBars·SignedBars): 격자 없음, 0 기준선(text-3)
  *  - 산점도는 늘 옅은 격자(border-subtle)
  *  - 격자 선택(grid — 작업대 실행 명세 W6): LineSeries·MultiLineSeries·SignedBars는 grid면 Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음
- *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(그림자·12px 모서리)
+ *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(덮개 경계 border-overlay·그림자·4px 모서리)
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(LineChart.test와 같음).
  */
@@ -87,6 +87,8 @@ describe("LineSeries(옛 화면) — 새 선 차트 문법", () => {
     const box = tooltip.firstElementChild as HTMLElement;
     expect(box.style.boxShadow).toBe("var(--elev-overlay)");
     expect(box.style.borderRadius).toBe("4px");
+    // 경계는 덮개 경계(대화상자·토스트·맨 위로 단추와 같은 토큰 — 명세 §3-3 3층) — 패널 경계(--border)가 아님.
+    expect(box.style.border).toBe("1px solid var(--border-overlay)");
   });
 
   it("값이 모두 없으면 빈 상태 문구(0 축을 지어내지 않음)", () => {

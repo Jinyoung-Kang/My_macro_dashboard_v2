@@ -221,6 +221,7 @@ describe("LineChart — 호버 툴팁", () => {
     expect(within(tooltip).getByText("10년−2년").nextElementSibling?.textContent).toBe("0.3%");
     expect(within(tooltip).getByText("출처 · FRED")).toBeTruthy();
     expect((tooltip.firstElementChild as HTMLElement).style.backgroundColor).toBe("var(--surface-2)");
+    expect((tooltip.firstElementChild as HTMLElement).style.border).toBe("1px solid var(--border-overlay)");
   });
 });
 
