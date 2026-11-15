@@ -1,0 +1,80 @@
+# scripts/qa/ui-audit-routes.txt — 화면 감사(scripts/qa/ui-audit.js)가 여는 경로. 한 줄에 하나, '#' 뒤는 주석.
+# 작업대 화면 언어 개편(ADR 0042)의 전후 비교는 이 목록 그대로 잽니다 — 바꾸면 docs/qa의 감사 기록에 무엇을 바꿨는지 적습니다.
+# 출처: frontend/src/app/**/page.tsx와 lib/nav.ts(TABS), 모의매매 탭은 lib/paper.ts(PAPER_TABS — 개요는 뿌리 경로, ISA는 한국만),
+# 정보 수집 탭은 lib/info.ts(INFO_TAB_SLUGS), 정보 검색은 lib/infoSearch.ts의 주소 문법(?q= 후보, ?e=&tab=&range= 대상 화면).
+# 표본 대상(공개 식별자만): 지표 us10y(수집기 indicators.py 카드 키), 종목 NVDA·005930, 기관 CIK 0001608046(13F 추적 목록 nps).
+
+# 홈
+/
+
+# 시장
+/macro
+/liquidity
+/sector
+/correlation
+/cot
+/regime
+/markets/i/us10y
+/s/us/NVDA
+/s/kr/005930
+
+# 기관
+/institutions
+/institutions/0001608046
+/consensus
+/style
+/scorecard
+
+# 모의매매(미국) — 개요 + 일곱 탭
+/paper/us
+/paper/us/selection
+/paper/us/holdings
+/paper/us/decisions
+/paper/us/framework
+/paper/us/notes
+/paper/us/settings
+/paper/us/real
+
+# 모의매매(한국) — 개요 + 여덟 탭(ISA 포함)
+/paper/kr
+/paper/kr/selection
+/paper/kr/holdings
+/paper/kr/decisions
+/paper/kr/framework
+/paper/kr/notes
+/paper/kr/settings
+/paper/kr/real
+/paper/kr/isa
+
+# 정보 검색 — 빈 화면, 후보, 대상 화면
+/search
+/search?q=NVDA
+/search?e=us:NVDA&tab=timeline&range=30d
+
+# 정보 수집 여덟 탭
+/info/overview
+/info/news
+/info/kr
+/info/global
+/info/filings
+/info/paper
+/info/status
+/info/mechanism
+
+# 더보기
+/more
+/alerts
+/ai/report
+/status
+/connections
+/admin/users
+/account
+/radar
+/krx
+
+# 인증 — /login은 로그인 없이 운영자로 여는 스택에서 홈으로 보내므로 뺐습니다(2026-11-16 확인). /verify는 열 때 인증 확인 POST를 보내려 하고
+# 감사 스크립트가 브라우저 안에서 막습니다(결과의 '막은 쓰기' 1 — 서버에 닿지 않음).
+/signup
+/reset
+/verify
+/privacy
