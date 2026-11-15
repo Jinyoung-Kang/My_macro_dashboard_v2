@@ -96,7 +96,7 @@ export default function AlertsPage() {
         ) : items.length === 0 ? (
           <p className="text-xs text-muted">
             {demo ? `아직 알림이 없습니다. ${DEMO_READ_ONLY}(알림 규칙은 계정으로 로그인해야 만들 수 있습니다).`
-              : "아직 알림이 없습니다. 아래에서 알림 규칙을 만들거나, 정보 검색에서 관심 대상의 ‘알림’을 켜면 그 대상의 새 글 알림이 규칙 없이 여기에 들어옵니다."}
+              : "아직 알림이 없습니다. 아래에서 알림 규칙을 만드세요. 정보 검색에서 관심 대상의 ‘알림’을 켜면 그 대상의 새 글 알림은 규칙 없이 여기에 들어옵니다."}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -169,7 +169,8 @@ export default function AlertsPage() {
             options={ALERT_KINDS.map((k) => ({ value: k.value, label: k.pro ? `${k.label} · 유료` : k.label }))} />
           {!demo && (
             <p className="text-xs text-muted">
-              정보 검색 관심 대상의 새 글 알림은 규칙을 만들지 않습니다 — 정보 검색의 관심 대상 목록이나 대상 머리에서 ‘알림’ 단추로 대상마다 켜고 끕니다.
+              정보 검색 관심 대상의 새 글 알림은 규칙을 만들지 않습니다 — 정보 검색의 관심 대상 목록, 또는 대상을 열었을 때 ‘관심 대상 해제’ 옆에 있는 종 모양
+              ‘알림’ 단추로 대상마다 켜고 끕니다.
               켠 대상은 새 글이 들어오면 위 알림함에 한 줄을 남깁니다(15분마다 확인).
             </p>
           )}

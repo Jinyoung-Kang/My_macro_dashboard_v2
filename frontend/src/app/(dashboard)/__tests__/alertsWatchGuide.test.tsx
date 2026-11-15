@@ -50,12 +50,14 @@ describe("알림 화면 — 관심 대상 새 글 알림의 안내(QA-443)", () 
     renderAs(MEMBER);
     const empty = await screen.findByText(/아직 알림이 없습니다/);
     expect(empty.textContent).toBe(
-      "아직 알림이 없습니다. 아래에서 알림 규칙을 만들거나, 정보 검색에서 관심 대상의 ‘알림’을 켜면 그 대상의 새 글 알림이 규칙 없이 여기에 들어옵니다.",
+      "아직 알림이 없습니다. 아래에서 알림 규칙을 만드세요. 정보 검색에서 관심 대상의 ‘알림’을 켜면 그 대상의 새 글 알림은 규칙 없이 여기에 들어옵니다.",
     );
 
     const form = screen.getByRole("heading", { name: "규칙 만들기" }).closest("form") as HTMLElement;
     const note = within(form).getByText(/정보 검색 관심 대상의 새 글 알림은 규칙을 만들지 않습니다/);
-    expect(note.textContent).toContain("관심 대상 목록이나 대상 머리에서 ‘알림’ 단추로 대상마다 켜고 끕니다");
+    // 켜고 끄는 자리는 화면에 보이는 말로 적습니다(검토 지적 — '대상 머리'는 화면에 그 이름으로 드러나지 않음).
+    expect(note.textContent).toContain("관심 대상 목록, 또는 대상을 열었을 때 ‘관심 대상 해제’ 옆에 있는 종 모양 ‘알림’ 단추로 대상마다 켜고 끕니다");
+    expect(note.textContent).not.toContain("대상 머리");
     expect(note.textContent).toContain("15분마다 확인");
   });
 
