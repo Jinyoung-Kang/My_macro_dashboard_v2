@@ -20,6 +20,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => 
 import AlertsPage from "../alerts/page";
 
 const MEMBER: SessionUser = { email: "member@test.local", role: "MEMBER", tier: "FREE" };
+const DEMO: SessionUser = { email: null, role: "MEMBER", tier: "PRO", demo: true };
 
 const READS: Record<string, unknown> = {
   "/api/alerts/inbox?limit=50": { items: [], unread: 0 },
@@ -45,7 +46,7 @@ describe("알림 화면 — 관심 대상 새 글 알림의 안내(QA-443)", () 
   // QA-443: 빈 알림함은 '아래에서 알림 규칙을 만드세요'만 적고 알림 종류 목록에도 관심 대상 알림이 없어, 정보 검색에서 '알림'을 켠 관심 대상의
   // 새 글 알림이 규칙 없이 들어온다는 것(어디서 켜고 끄는지)을 이 화면에서 알 수 없었습니다.
   // 수정 전 실패: 빈 알림함 글과 규칙 만들기 칸 어디에도 정보 검색 관심 대상 알림의 안내가 없음(재현 커밋에서는 it.fails).
-  it.fails("빈 알림함과 규칙 만들기에 '정보 검색에서 관심 대상의 알림을 켜면 규칙 없이 들어옴'을 적는다", async () => {
+  it("빈 알림함과 규칙 만들기에 '정보 검색에서 관심 대상의 알림을 켜면 규칙 없이 들어옴'을 적는다", async () => {
     renderAs(MEMBER);
     const empty = await screen.findByText(/아직 알림이 없습니다/);
     expect(empty.textContent).toBe(
@@ -56,5 +57,12 @@ describe("알림 화면 — 관심 대상 새 글 알림의 안내(QA-443)", () 
     const note = within(form).getByText(/정보 검색 관심 대상의 새 글 알림은 규칙을 만들지 않습니다/);
     expect(note.textContent).toContain("관심 대상 목록이나 대상 머리에서 ‘알림’ 단추로 대상마다 켜고 끕니다");
     expect(note.textContent).toContain("15분마다 확인");
+  });
+
+  it("데모 열람은 관심 대상을 읽지 않아 이 안내를 넣지 않는다(빈 알림함은 지금 글 그대로)", async () => {
+    renderAs(DEMO);
+    const empty = await screen.findByText(/아직 알림이 없습니다/);
+    expect(empty.textContent).not.toContain("정보 검색");
+    expect(screen.queryByText(/정보 검색 관심 대상의 새 글 알림은 규칙을 만들지 않습니다/)).toBeNull();
   });
 });
