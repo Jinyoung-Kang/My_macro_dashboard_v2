@@ -835,7 +835,7 @@ function PreviewFrame({ onClose, onKeyDown, children }: PreviewClose & { childre
           type="button"
           onClick={onClose}
           aria-label="미리 보기 닫기"
-          className="inline-flex size-11 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-7"
+          className="inline-flex size-11 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
         >
           <XIcon size={14} />
         </button>

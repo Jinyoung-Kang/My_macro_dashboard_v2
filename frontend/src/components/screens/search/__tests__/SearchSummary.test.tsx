@@ -415,4 +415,16 @@ describe("실패·비우기", () => {
     expect(screen.queryByRole("region", { name: "AI 요약" })).toBeNull();
     expect(document.activeElement).toBe(await summaryButton());
   });
+
+  // D1 QA 지적(겉모양 단계 맞춤): 넓은 화면의 닫기 단추가 28px(lg:size-7)로 조작 높이 단계(명세 §3-7 — 기본 30·표 안 24·검색창 40px)
+  // 밖이었습니다. 공용 Dialog·Toast 닫기 단추와 같은 30px, 좁은 화면(lg 미만)은 그대로 44px(QA-458).
+  it("닫기 단추는 좁은 화면 44px(size-11), 넓은 화면 30px(lg:size-[30px]) — 28px(lg:size-7)가 아님", async () => {
+    renderScreen(OWNER);
+    const region = await summarize();
+    const close = within(region).getByRole("button", { name: "요약 닫기" });
+    const classes = close.className.split(/\s+/);
+    expect(classes).toContain("size-11");
+    expect(classes).toContain("lg:size-[30px]");
+    expect(classes).not.toContain("lg:size-7");
+  });
 });

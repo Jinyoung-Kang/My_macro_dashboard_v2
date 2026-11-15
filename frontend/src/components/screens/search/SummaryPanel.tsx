@@ -127,7 +127,7 @@ export function SummaryPanel({
               type="button"
               onClick={onClose}
               aria-label="요약 닫기"
-              className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-7"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text-3 hover:bg-surface-2 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:size-[30px]"
             >
               <XIcon size={14} />
             </button>

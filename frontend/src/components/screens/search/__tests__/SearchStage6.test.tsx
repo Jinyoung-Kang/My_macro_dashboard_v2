@@ -372,6 +372,29 @@ describe("같은 사건 묶기(계약 §9-2)", () => {
     expect(document.activeElement).toBe(list);
   });
 
+  // D1 QA 지적(겉모양 단계 맞춤): 넓은 화면의 미리 보기 닫기 단추가 28px(lg:size-7)로 조작 높이 단계(명세 §3-7 — 기본 30·표 안 24·
+  // 검색창 40px) 밖이었습니다. 공용 Dialog·Toast 닫기 단추와 같은 30px, 좁은 화면(lg 미만)은 그대로 44px(QA-458). 결과 줄·묶음 줄의
+  // 미리 보기가 같은 틀(PreviewFrame)이라 둘 다 봅니다.
+  it("미리 보기 닫기 단추는 좁은 화면 44px(size-11), 넓은 화면 30px(lg:size-[30px]) — 28px(lg:size-7)가 아님", async () => {
+    renderScreen("/search?e=us:NVDA");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    list.focus();
+    const closeClasses = () =>
+      within(screen.getByRole("region", { name: "미리 보기" })).getByRole("button", { name: "미리 보기 닫기" }).className.split(/\s+/);
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건/ }).getAttribute("aria-selected")).toBe("false");
+    const rowClose = closeClasses();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 3건/ }).getAttribute("aria-selected")).toBe("true");
+    const clusterClose = closeClasses();
+    for (const classes of [rowClose, clusterClose]) {
+      expect(classes).toContain("size-11");
+      expect(classes).toContain("lg:size-[30px]");
+      expect(classes).not.toContain("lg:size-7");
+    }
+  });
+
   it("묶음 미리 보기는 다른 보도를 앞 5건만 이름으로 — 나머지는 건수(접혀 있으면 펼치는 길, 펼쳤으면 목록에 있다고)", async () => {
     const at = (hour: number) => `2026-11-13T${String(hour).padStart(2, "0")}:00:00+00:00`;
     const big = [
