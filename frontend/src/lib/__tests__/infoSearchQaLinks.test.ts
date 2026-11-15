@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest";
 import { fitGraphLabel, fitGraphLabelFrom, graphLabels, linkGraphLayout, linkGraphSize, linkGroups } from "@/lib/infoSearch";
 import type { SearchLink } from "@/lib/types";
 
-/** 글 폭 어림 — infoSearch의 그림 글과 같은 기준(12px 글자에서 한글·한자·가나·전각과 말줄임표 '…'는 12, 그 밖은 7.5 — '…'는 QA-423 후속). */
+/**
+ * 글 폭 어림 — infoSearch의 그림 글과 같은 기준(12px 글자에서 한글·한자·가나·전각과 말줄임표 '…', 대문자 M·W는 12, 그 밖의 대문자는 9, 나머지는
+ * 7.5 — '…'와 대문자는 QA-423 후속).
+ */
 const WIDE_CHAR = /[ᄀ-ᇿ…⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
-const textWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + (WIDE_CHAR.test(char) ? 12 : 7.5), 0);
+const textWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + (WIDE_CHAR.test(char) || /[MW]/.test(char) ? 12 : /\p{Lu}/u.test(char) ? 9 : 7.5), 0);
 
 const link =(over: Partial<SearchLink>): SearchLink => ({ relation: "subsidiary", key: null, name: "X", kind: "company", source: "wikidata", detail: null, ...over });
 const named = (relation: string, names: readonly string[], source: string, keyed: boolean) =>
@@ -61,9 +64,9 @@ describe("연결 그림 — 앞머리가 같은 이름의 노드도 보이는 �
 
   it("가운데 줄임 — 갈리는 낱말부터(번호는 통째로), 겹치지 않는 이름은 끝을 자른 글 그대로, 같은 이름은 같은 글", () => {
     // 뒷부분이 다 들면 앞부분은 남는 폭만큼, 길면 앞부분은 폭의 30%까지이고 끝에도 '…'.
-    expect(fitGraphLabelFrom("Example Subsidiary 1 Ltd", 19, 116)).toBe("Example…1 Ltd"); // '…'는 12px — 'Example S…1 Ltd'(117)는 넘침(QA-423 후속)
-    expect(fitGraphLabelFrom("Example Subsidiary 1 Ltd", 19, 66)).toBe("Ex…1 Ltd");
-    expect(fitGraphLabelFrom("Sample Electronics America, Inc.", 19, 116)).toBe("Samp…America,…");
+    expect(fitGraphLabelFrom("Example Subsidiary 1 Ltd", 19, 116)).toBe("Example…1 Ltd"); // '…'는 12px — 'Example S…1 Ltd'(121.5)는 넘침(QA-423 후속)
+    expect(fitGraphLabelFrom("Example Subsidiary 1 Ltd", 19, 66)).toBe("Ex…1 L…"); // 대문자는 9px — 'Ex…1 Ltd'(67.5)는 넘침(QA-423 후속)
+    expect(fitGraphLabelFrom("Sample Electronics America, Inc.", 19, 116)).toBe("Samp…America…");
     // 다 들면 그대로, 앞부분이 from 앞을 다 담으면 끝을 자른 글과 같음.
     expect(fitGraphLabelFrom("Mellanox", 3, 66)).toBe("Mellanox");
     expect(fitGraphLabelFrom("Example Subsidiary 1 Ltd", 3, 116)).toBe(fitGraphLabel("Example Subsidiary 1 Ltd", 116));
@@ -90,13 +93,13 @@ describe("연결 그림 — 앞머리가 같은 이름의 노드도 보이는 �
     // 한 이름이 다른 이름의 앞부분이어도, 갈리는 자리가 빈칸이어도('…' 뒤에 빈칸 없음).
     expect([...graphLabels(["Example Holdings", "Example Holdings Asia", "Example Holdings Asia Pacific"], 66)]).toEqual([
       ["Example Holdings", "Example…"],
-      ["Example Holdings Asia", "Exa…Asia"],
+      ["Example Holdings Asia", "Ex…Asia"],
       ["Example Holdings Asia Pacific", "Ex…Asi…"],
     ]);
     // 첫 차례에 같은 글이 남으면(갈리는 낱말 뒤에서 또 갈림) 그 이름들끼리 다시.
     expect([...graphLabels(["Example Alpha One Holdings Ltd", "Example Alpha One Holdings Inc", "Example Alpha Two Holdings Ltd"], 66)]).toEqual([
-      ["Example Alpha One Holdings Ltd", "Exam…Ltd"],
-      ["Example Alpha One Holdings Inc", "Exam…Inc"],
+      ["Example Alpha One Holdings Ltd", "Exa…Ltd"],
+      ["Example Alpha One Holdings Inc", "Exa…Inc"],
       ["Example Alpha Two Holdings Ltd", "Ex…Two…"],
     ]);
   });

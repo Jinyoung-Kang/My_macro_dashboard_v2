@@ -50,7 +50,7 @@ describe("연결 그림 — 대문자 라틴 이름의 노드 글도 그린 폭�
   // 안팎이라 대문자가 많은 이름(GLEIF 법인명·대문자 내부자 이름)의 글이 배정 폭(이름 자리 − 14px)을 넘었습니다 — 1280 화면(배정 95) 'MMMWWW MANA…'
   // 114px(+19, 뷰박스 왼쪽 밖으로 나가 첫 글자가 잘림), 'WOLFGANG MA…' 103.3px(+8.3), 390 화면(배정 66) 'WWW MMM…' 79.3px(+13.3).
   // 수정 전 실패: graphLabels가 폭 66에서 'MMMWWW…'(잰 폭 상한 81.0)·'WWW MMM…'(85.3)을, 95에서 'MMMWWW MANA…'(122.2)를 돌려줌(재현 커밋에서는 it.fails).
-  it.fails("대문자 이름을 폭 66·95·116에 맞추면 잰 글자 폭으로도 배정 폭 안이고, 서로 다른 이름은 서로 다른 글", () => {
+  it("대문자 이름을 폭 66·95·116에 맞추면 잰 글자 폭으로도 배정 폭 안이고, 서로 다른 이름은 서로 다른 글", () => {
     for (const maxPx of [66, 95, 116]) {
       const labels = graphLabels(UPPER_NAMES, maxPx);
       for (const [name, label] of labels) expect([maxPx, name, label, renderedWidth(label) <= maxPx]).toEqual([maxPx, name, label, true]);
@@ -65,7 +65,7 @@ describe("연결 그림 — 대문자 라틴 이름의 노드 글도 그린 폭�
 
   // 수정 전 실패: 폭 280(그림의 가장 작은 폭 — 320 화면)의 'WOLFGAN…'(잰 폭 상한 74.4)이 배정 폭 66을 넘고, 폭 419(1280 화면)의 왼쪽 노드 글 'MMMWWW MANA…'(122.2)는
   // 배정 폭 95를 넘어 뷰박스 왼쪽 밖(−21.9)에서 시작함(재현 커밋에서는 it.fails).
-  it.fails("그림 배치 — 대문자 이름의 노드 글을 잰 폭으로 그려도 배정 폭(이름 자리 − 14) 안이고 그림 폭(뷰박스 0~폭) 안", () => {
+  it("그림 배치 — 대문자 이름의 노드 글을 잰 폭으로 그려도 배정 폭(이름 자리 − 14) 안이고 그림 폭(뷰박스 0~폭) 안", () => {
     const links: SearchLink[] = UPPER_NAMES.map((name, at) => ({
       relation: at < 6 ? "subsidiary" : "insider",
       key: null,

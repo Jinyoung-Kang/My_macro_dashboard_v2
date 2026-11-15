@@ -8,10 +8,10 @@ import type { SearchLink } from "@/lib/types";
 
 /**
  * 그린 글의 폭 — QA 스택 브라우저에서 같은 SVG에 12px로 그려 잰 한글 '가'와 말줄임표 '…'(U+2026)는 12px. 한글·한자·가나·전각과 '…'는 12,
- * 그 밖(라틴 글자 등)은 infoSearch의 어림 그대로 7.5.
+ * 그 밖(라틴 글자 등)은 infoSearch의 어림 그대로(대문자 M·W 12, 그 밖의 대문자 9, 나머지 7.5 — 대문자의 잰 폭 대조는 infoSearchQaLabels 시험).
  */
 const WIDE = /[ᄀ-ᇿ…⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
-const renderedWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + (WIDE.test(char) ? 12 : 7.5), 0);
+const renderedWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + (WIDE.test(char) || /[MW]/.test(char) ? 12 : /\p{Lu}/u.test(char) ? 9 : 7.5), 0);
 
 /** QA가 kr:005930의 연결을 한글 이름 16개로 모의한 자료 꼴 — 앞머리 '가상'이 같고 '가상전자…'가 여럿. */
 const KOREAN_NAMES = [

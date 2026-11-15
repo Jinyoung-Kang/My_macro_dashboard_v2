@@ -1007,11 +1007,15 @@ const GRAPH_TAG_SEARCH = 240;
 const GRAPH_TAG_GROW = 0.15;
 const GRAPH_TAG_GROW_TRIES = 6;
 /**
- * 글자 크기 12px에서 어림한 글자 폭 — 한글·한자·가나·전각과 말줄임표 '…'(U+2026 — 줄인 글마다 붙고 그림에서 12px로 그려짐, QA-423)는 12,
- * 그 밖은 7.5.
+ * 글자 크기 12px에서 어림한 글자 폭(넉넉히 — 글꼴을 싣지 않아 그리는 글꼴은 기기마다 다름) — 한글·한자·가나·전각과 말줄임표 '…'(U+2026 — 줄인
+ * 글마다 붙고 그림에서 12px로 그려짐, QA-423)와 대문자 M·W는 12, 그 밖의 대문자는 9, 나머지(소문자·숫자·빈칸·문장 부호)는 7.5. 글꼴 스택에서 쓰일
+ * 글꼴들(Pretendard·Segoe UI·Arial·DejaVu Sans·맑은 고딕)의 12px 폭은 대문자 평균 7.4~8.1(M·W 10~11.9, 그 밖에서 가장 넓은 O 9.5),
+ * 소문자 평균 5.9~6.8이라, 대문자를 7.5로 세면 대문자가 많은 이름(GLEIF 법인명 등)의 글이 배정 폭을 넘었습니다(QA-423 후속).
  */
 const WIDE_CHAR = /[\u1100-\u11ff\u2026\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
-const charWidth = (char: string) => (WIDE_CHAR.test(char) ? 12 : 7.5);
+const WIDE_UPPER = /[MW]/;
+const UPPER = /\p{Lu}/u;
+const charWidth = (char: string) => (WIDE_CHAR.test(char) || WIDE_UPPER.test(char) ? 12 : UPPER.test(char) ? 9 : 7.5);
 const textWidth = (text: string) => Array.from(text).reduce((sum, char) => sum + charWidth(char), 0);
 const ELLIPSIS = "…";
 
@@ -1044,7 +1048,7 @@ function fitChars(chars: readonly string[], maxPx: number): string[] {
 /**
  * 가운데를 줄인 노드 이름 — 앞부분 + '…' + from번째 글자(코드 포인트, 앞뒤 공백을 뗀 이름에서)부터의 뒷부분. 뒷부분이 끝까지 들면 앞부분은 남는 폭만큼,
  * 아니면 앞부분은 폭의 30%까지이고 뒷부분 끝에도 '…'. 다 들면 이름 그대로, 앞부분이 from 앞을 다 담으면(가운데를 줄일 것이 없음) fitGraphLabel과
- * 같고, 뒷부분이 한 글자도 들지 않을 만큼 폭이 작아도 끝을 자른 글입니다. 폭(12px 글자 어림 — '…'도 12)은 maxPx('…' 하나의 폭 12 이상)를 넘지 않습니다.
+ * 같고, 뒷부분이 한 글자도 들지 않을 만큼 폭이 작아도 끝을 자른 글입니다. 폭(12px 글자 어림 charWidth — '…'·대문자 M·W도 12, 그 밖의 대문자 9)은 maxPx('…' 하나의 폭 12 이상)를 넘지 않습니다.
  */
 export function fitGraphLabelFrom(name: string, from: number, maxPx: number): string {
   const chars = Array.from(name.trim());
