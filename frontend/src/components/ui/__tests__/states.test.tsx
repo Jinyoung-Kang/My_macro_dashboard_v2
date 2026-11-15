@@ -1,5 +1,6 @@
 /**
- * 배너·상태 조각(ui/index.tsx의 Banner·Loading·EmptyState·ErrorState) — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §3.
+ * 안내 상자·상태 조각(ui/index.tsx의 Callout·Banner·Loading·EmptyState·ErrorState) — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §3,
+ * 작업대 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-4(안내 상자 네 톤·제목, Banner는 옛 이름).
  *  - 배너 네 톤은 모두 불투명 바탕(놓인 자리와 섞이지 않음)과 톤 글자색 — 안내(info)는 파랑이 아닌 중립(surface-2 바탕·본문색 글, 원칙 A1·작업대 명세 §3-4)
  *  - 배너 앞의 톤 아이콘은 장식(aria-hidden), 주의·심각에는 낭독기용 '주의: ', 글은 톤 글자색 div로 감쌈(글로 찾은 요소가 톤 색을 가짐, 명세 D8 b)
  *  - 신선도: '새로 읽지 못함'·'오래된 저장본'은 경고 알약 + 아이콘(이모지 아님), 평상시는 알약 없이 시계 아이콘 + '수집' + 시각
@@ -9,7 +10,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Banner, EmptyState, ErrorState, Freshness, Loading } from "@/components/ui";
+import { Banner, Callout, EmptyState, ErrorState, Freshness, Loading } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 
 afterEach(() => cleanup());
@@ -92,13 +93,43 @@ describe("Banner 톤 아이콘과 감쌈", () => {
   });
 });
 
+describe("Callout(안내 상자)", () => {
+  it("제목은 본문 위 굵은 한 줄 — 톤 글자색 div 안(글로 찾은 요소가 톤 색), 아이콘은 하나", () => {
+    const { container } = render(
+      <Callout tone="warn" title="추정치">
+        값은 대리 지표로 셈했습니다.
+      </Callout>,
+    );
+    const title = screen.getByText("추정치");
+    expect(title.className).toContain("font-semibold");
+    expect((title.closest("div") as HTMLElement).className).toContain("text-warn");
+    expect(container.querySelectorAll("svg")).toHaveLength(1);
+    expect((container.firstElementChild as HTMLElement).textContent).toBe("주의: 추정치값은 대리 지표로 셈했습니다.");
+  });
+
+  it("Callout 기본 톤은 중립, Banner 기본 톤은 예전처럼 주의 — 옛 톤 이름 info는 중립과 같은 모양", () => {
+    const { container } = render(
+      <>
+        <Callout>중립</Callout>
+        <Banner>주의 기본</Banner>
+        <Banner tone="info">정보</Banner>
+        <Callout tone="neutral">중립 2</Callout>
+      </>,
+    );
+    const [neutral, banner, info, neutral2] = [...container.children] as HTMLElement[];
+    expect(neutral.className).toContain("bg-surface-2");
+    expect(banner.className).toContain("bg-warn-tint");
+    expect(info.className).toBe(neutral2.className);
+  });
+});
+
 describe("Freshness — 이모지 대신 아이콘", () => {
   it("새로 읽지 못함 — 경고 알약(title·role=status는 그 알약), 장식 아이콘, 낭독기용 '주의: '", () => {
     render(<Freshness refreshError="백엔드 API에 연결하지 못했습니다" />);
     const pill = screen.getByText("새로 읽지 못함");
     expect(pill.getAttribute("role")).toBe("status");
     expect(pill.getAttribute("title")).toContain("백엔드 API에 연결하지 못했습니다");
-    expect(pill.className).toContain("rounded-full");
+    expect(pill.className).toContain("rounded-control");
     expect(pill.className).toContain("bg-warn-tint");
     expect(pill.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
     expect(pill.textContent).toBe("주의: 새로 읽지 못함");

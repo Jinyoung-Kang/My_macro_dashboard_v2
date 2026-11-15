@@ -228,7 +228,7 @@ export function Freshness({
       {refreshError && (
         // 글은 이 span의 글자 그대로 둡니다(아이콘·sr 머리말은 따로) — '새로 읽지 못함'으로 찾은 요소가 title을 가진 이 알약입니다.
         <span
-          className="inline-flex items-center gap-1 rounded-full border border-warn/30 bg-warn-tint px-2 py-0.5 text-xs text-warn"
+          className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-0.5 text-xs text-warn"
           title={`${refreshError} — 앞서 받은 값을 보여 줍니다`}
           role="status"
         >
@@ -251,7 +251,7 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
   if (stale) {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-full border border-warn/30 bg-warn-tint px-2 py-0.5 text-xs text-warn"
+        className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-0.5 text-xs text-warn"
         title={title}
       >
         <AlertTriangleIcon size={12} />
@@ -271,48 +271,65 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
   );
 }
 
+export type CalloutTone = "neutral" | "warn" | "danger" | "ok";
+
 /**
- * 배너 — 추정치·이력 대체처럼 "값의 성격"을 알리거나(warn), 실패·심각한 주의(danger)·안내(info)·완료(ok)를 알릴 때.
- * 바탕은 모두 불투명(톤은 globals.css의 *-tint, 안내는 surface-2)이라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다.
- * 안내(info)는 파랑이 아니라 중립입니다(작업대 실행 명세 §3-4) — 바탕 surface-2·테두리 border-strong·아이콘과 글은 중립색. 강조 파랑은
- * 누를 수 있는 것에만 쓰고(원칙 A1), 안내 상자 안의 링크(text-accent)가 accent 틴트 위 4.47:1로 4.5에 못 미치지 않게 합니다(QA-459 — surface-2 위 4.51).
+ * 안내 상자(Callout — 작업대 실행 명세 §3-4) — 중립·주의·위험·정상 네 가지이고 늘 톤 아이콘과 함께(제목은 title로). 추정치·이력 대체처럼
+ * "값의 성격"을 알리거나(warn), 실패·심각한 주의(danger)·안내(neutral)·완료(ok)를 알릴 때 씁니다. 옛 톤 이름 '정보'(info)는 중립과 같습니다.
+ * 바탕은 모두 불투명(톤은 globals.css의 *-tint, 중립은 surface-2)이라 패널 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다.
+ * 중립은 파랑이 아닙니다 — 바탕 surface-2·테두리 border-strong·아이콘과 글은 중립색. 강조 파랑은 누를 수 있는 것에만 쓰고(원칙 A1), 상자 안의
+ * 링크(text-accent)가 accent 틴트 위 4.47:1로 4.5에 못 미치지 않게 합니다(QA-459 — surface-2 위 4.51).
  *
- * 앞에 톤 아이콘(장식)을 둡니다 — 예전에 부르는 쪽이 글 앞에 붙이던 경고 이모지 자리. 주의(warn)·심각(danger)은 낭독기에 '주의: '를
- * 먼저 읽힙니다(아이콘은 aria-hidden). danger는 실패만이 아니라 추정치 모드·금리 역전 같은 심각한 주의에도 쓰여 '오류'라 읽히지 않게 합니다.
- * 글은 톤 글자색을 가진 div로 감쌉니다 — 글로 찾은 요소(또는 그 closest div)가 톤 글자색을 그대로 가집니다(명세 D8 b).
+ * 앞에 톤 아이콘(장식)을 둡니다 — 예전에 부르는 쪽이 글 앞에 붙이던 경고 이모지 자리. 상승색과 위험색은 색만으로 갈리지 않으므로(명세 §3-2-1)
+ * 상태·위험은 늘 아이콘과 글입니다. 주의(warn)·위험(danger)은 낭독기에 '주의: '를 먼저 읽힙니다(아이콘은 aria-hidden). danger는 실패만이
+ * 아니라 추정치 모드·금리 역전 같은 심각한 주의에도 쓰여 '오류'라 읽히지 않게 합니다.
+ * 글(제목 포함)은 톤 글자색을 가진 div로 감쌉니다 — 글로 찾은 요소(또는 그 closest div)가 톤 글자색을 그대로 가집니다(명세 D8 b).
  *
+ * @param title 상자 제목(굵은 한 줄) — 본문 위에 둡니다.
  * @param icon 톤 기본 아이콘 대신 쓸 아이콘(예: 잠금). false면 아이콘 없이 글만.
  */
-export function Banner({
-  tone = "warn",
+export function Callout({
+  tone = "neutral",
+  title,
   icon,
   children,
 }: {
-  tone?: "warn" | "danger" | "info" | "ok";
+  tone?: CalloutTone | "info";
+  title?: ReactNode;
   icon?: ReactNode | false;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
-  const style = BANNER_TONES[tone];
+  const style = CALLOUT_TONES[tone === "info" ? "neutral" : tone];
   return (
-    <div className={`flex items-start gap-2.5 rounded-control border px-4 py-3 text-sm leading-relaxed ${style.box}`}>
+    <div className={`flex items-start gap-2 rounded-control border p-3 text-sm leading-relaxed ${style.box}`}>
       {icon === false ? null : <LineIcon className={style.icon}>{icon ?? style.glyph}</LineIcon>}
       {style.srPrefix && <span className="sr-only">{style.srPrefix}</span>}
-      <div className={`min-w-0 flex-1 ${style.text}`}>{children}</div>
+      <div className={`min-w-0 flex-1 ${style.text}`}>
+        {title ? <p className="font-semibold">{title}</p> : null}
+        {children}
+      </div>
     </div>
   );
 }
 
-const BANNER_TONES = {
+/**
+ * 배너 — 안내 상자(Callout)의 옛 이름(부르는 곳 약 220곳을 한꺼번에 고치지 않으려고 남기고, 화면 단계에서 정리합니다). 기본 톤은 예전처럼
+ * 주의(warn)이고, '정보'(info)는 중립과 같습니다.
+ */
+export function Banner({ tone = "warn", ...props }: { tone?: CalloutTone | "info"; title?: ReactNode; icon?: ReactNode | false; children: ReactNode }) {
+  return <Callout tone={tone} {...props} />;
+}
+
+const CALLOUT_TONES = {
+  neutral: { box: "border-border-strong bg-surface-2 text-text", text: "text-text", icon: "text-text-2", glyph: <InfoIcon size={16} />, srPrefix: "" },
   warn: { box: "border-warn/30 bg-warn-tint text-warn", text: "text-warn", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
   danger: { box: "border-danger/30 bg-danger-tint text-danger", text: "text-danger", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
-  // 안내는 중립 — 파랑 틴트·파랑 아이콘 없이 surface-2 바탕과 border-strong 테두리, 아이콘은 보조색, 글은 본문색입니다.
-  info: { box: "border-border-strong bg-surface-2 text-text", text: "text-text", icon: "text-text-2", glyph: <InfoIcon size={16} />, srPrefix: "" },
   ok: { box: "border-ok/30 bg-ok-tint text-ok", text: "text-ok", icon: "", glyph: <CheckCircleIcon size={16} />, srPrefix: "" },
 } as const;
 
 export function Loading({ label = "불러오는 중…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-text-3">
+    <div className="flex items-center gap-2 py-6 text-sm text-text-3">
       {/* 도는 것은 움직임 줄이기(prefers-reduced-motion)가 꺼져 있을 때만 — 켜져 있으면 멈춘 호와 글 */}
       <SpinnerIcon size={16} className="motion-safe:animate-spin" />
       {label}
@@ -322,7 +339,7 @@ export function Loading({ label = "불러오는 중…" }: { label?: string }) {
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-control bg-surface-2/60 px-4 py-10 text-center text-sm text-text-2">
+    <div className="rounded-control bg-surface-2/60 px-3 py-6 text-center text-sm text-text-2">
       {message}
     </div>
   );
@@ -330,13 +347,13 @@ export function EmptyState({ message }: { message: string }) {
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-control border border-danger/30 bg-danger-tint px-4 py-4 text-sm text-danger">
+    <div className="rounded-control border border-danger/30 bg-danger-tint p-3 text-sm text-danger">
       <p className="flex items-start gap-2">
         <XCircleIcon size={16} className="mt-0.5" />
         <span className="min-w-0">{message}</span>
       </p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className={`mt-3 ${buttonClasses("default", "sm")}`}>
+        <button type="button" onClick={onRetry} className={`mt-2 ${buttonClasses("default", "sm")}`}>
           다시 시도
         </button>
       )}
@@ -448,10 +465,10 @@ export function NativeSelect({
 }) {
   return (
     <span className={`relative max-w-full ${wrapperClassName}`.trim()}>
-      <select {...props} className={`w-full max-w-full appearance-none pr-9 ${inputClasses(inputSize)} ${className}`.trim()}>
+      <select {...props} className={`w-full max-w-full appearance-none pr-8 ${inputClasses(inputSize)} ${className}`.trim()}>
         {children}
       </select>
-      <ChevronDownIcon size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-3" />
+      <ChevronDownIcon size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3" />
     </span>
   );
 }
@@ -536,8 +553,8 @@ export function Table<T>({
 }
 
 /**
- * 작은 글 배지(출처 종류·모델 이름·기준 분기 등). 모서리는 rounded-full이 아니라 12px(rounded-control) — 한 줄이면 높이 20px라 알약과
- * 같고, 표의 좁은 칸에서 두 줄로 접히면 rounded-full은 글이 모서리에 걸린 타원이 됐습니다(추정·이전 값 배지와 같은 까닭).
+ * 작은 글 배지(출처 종류·모델 이름·기준 분기 등). 모서리는 rounded-full이 아니라 4px(rounded-control) — 표의 좁은 칸에서 두 줄로 접히면
+ * rounded-full은 글이 모서리에 걸린 타원이 됐습니다(추정·이전 값 배지와 같은 까닭). 테두리 있는 꼬리표는 Tag(중립)입니다.
  * 날짜처럼 접히면 안 되는 값은 부르는 쪽(표 칸의 className)이 whitespace-nowrap을 붙입니다.
  */
 export function SourceBadge({ children }: { children: ReactNode }) {
