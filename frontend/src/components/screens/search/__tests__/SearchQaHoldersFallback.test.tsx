@@ -51,7 +51,7 @@ afterEach(cleanup);
 describe("보유 탭 검색어 — name이 키의 티커·종목코드(대체값)이면 영문 이름이 아니라 티커로 찾는다(QA-436 후속)", () => {
   // QA-436 후속: holdersQuery가 한글이 없는 name을 모두 영문 이름으로 봐서, 이름을 얻지 못해 name이 티커·종목코드로 채워진 대상도 by 'name'이 됐습니다.
   // 수정 전 실패: { text: "SYNKF", by: "name" }·{ text: "999990", by: "name" }(재현 커밋에서는 it.fails).
-  it.fails("대체값 name(대소문자 무관)은 영문 이름으로 보지 않고 티커로 찾는다", () => {
+  it("대체값 name(대소문자 무관)은 영문 이름으로 보지 않고 티커로 찾는다", () => {
     expect(holdersQuery(US_FALLBACK)).toEqual({ text: "SYNKF", by: "ticker" });
     expect(holdersQuery(KR_FALLBACK)).toEqual({ text: "999990", by: "ticker" });
     expect(holdersQuery({ ...US_FALLBACK, name: "synkf" })).toEqual({ text: "SYNKF", by: "ticker" });
@@ -64,7 +64,7 @@ describe("보유 탭 검색어 — name이 키의 티커·종목코드(대체값
 
   // QA-436 후속: 화면은 '‘SYNKF’ 이름으로 찾은 13F 보유 줄이 없습니다'와 잘린·줄여 적은 이름 설명을 보였습니다(티커로 찾았는데).
   // 수정 전 실패: 안내가 '이름으로 찾은'이고 '13F 공시 이름에는 티커가 적히지 않아'가 없음(재현 커밋에서는 it.fails).
-  it.fails.each([
+  it.each([
     ["us:SYNKF", US_FALLBACK, "SYNKF"],
     ["kr:999990", KR_FALLBACK, "999990"],
   ] as const)("%s — 0건 안내는 티커로 찾았다는 것과 그 까닭을 적는다", async (_key, entity, ticker) => {

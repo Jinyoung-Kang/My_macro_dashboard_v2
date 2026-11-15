@@ -2035,11 +2035,22 @@ const HANGUL = /[가-힣]/;
 export type HoldersQuery = { text: string; by: "name" | "ticker" };
 
 /**
- * 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름은 대문자 영문, 제출자가 잘라 적은 긴 이름은 백엔드가 앞부분으로 함께 찾음 — QA-436) — 영문 이름에서
- * 법인 꼬리를 떼고, 영문 이름이 없으면 티커(13F 공시 이름에는 티커가 적히지 않아 찾기 어려움 — 화면이 그렇게 적음).
+ * 대상 이름이 수집기가 이름을 얻지 못해 채운 대체값인가 — 수집기(search_entities finish)는 한글·영문 이름이 하나도 없으면 name을 키의 티커(us:)·
+ * 종목코드(kr:)·QID(wd:)로 채웁니다(SEC 표에 없는 티커, 출처 일시 실패, DART 저장본 읽기 실패 때). 이 값은 영문 이름이 아닙니다(QA-436 후속).
  */
-export function holdersQuery(entity: Pick<SearchEntity, "name" | "nameEn" | "ids">): HoldersQuery | null {
-  const english = entity.nameEn ?? (HANGUL.test(entity.name) ? null : entity.name);
+function isFallbackName(entity: Pick<SearchEntity, "key" | "name" | "ids">): boolean {
+  const name = entity.name.trim().toUpperCase();
+  const keyCode = entity.key.slice(entity.key.indexOf(":") + 1);
+  return [entity.ids.ticker, entity.ids.stockCode, keyCode, entity.key].some((code) => code != null && code.trim().toUpperCase() === name);
+}
+
+/**
+ * 13F 보유 기관 검색어(GET /api/guru/holders — 공시 이름은 대문자 영문, 제출자가 잘라 적은 긴 이름은 백엔드가 앞부분으로 함께 찾음 — QA-436) — 영문 이름에서
+ * 법인 꼬리를 떼고, 영문 이름이 없으면 티커(13F 공시 이름에는 티커가 적히지 않아 찾기 어려움 — 화면이 그렇게 적음). 영문 이름이 없을 때 한글이 없는 name을
+ * 영문 이름으로 쓰되, 이름을 얻지 못해 키의 티커·종목코드로 채운 name은 영문 이름이 아니라 티커로 찾습니다(QA-436 후속).
+ */
+export function holdersQuery(entity: Pick<SearchEntity, "key" | "name" | "nameEn" | "ids">): HoldersQuery | null {
+  const english = entity.nameEn ?? (HANGUL.test(entity.name) || isFallbackName(entity) ? null : entity.name);
   const name = holderQuery(english);
   if (name) return { text: name, by: "name" };
   return entity.ids.ticker ? { text: entity.ids.ticker, by: "ticker" } : null;
