@@ -1,6 +1,6 @@
 /**
- * 정보 검색 연결 그림 노드 글(계약 §9-3·§9-7)의 QA-423 후속 재현·고정 시험 — 대문자 라틴 글자의 폭 어림. 순수 함수(fitGraphLabel·graphLabels·
- * linkGraphLayout)를 숫자로 대조합니다. 표본은 모두 합성 값입니다(실제 법인·사람의 이름을 쓰지 않음).
+ * 정보 검색 연결 그림 노드 글(계약 §9-3·§9-7)의 QA-423 후속 재현·고정 시험 — 대문자 라틴 글자의 폭 어림, 둘째 차례 이후의 번호·낱말 물림. 순수
+ * 함수(fitGraphLabel·graphLabels·linkGraphLayout)를 숫자로 대조합니다. 표본은 모두 합성 값입니다(실제 법인·사람의 이름을 쓰지 않음).
  */
 import { describe, expect, it } from "vitest";
 import { fitGraphLabel, graphLabels, linkGraphLayout, linkGraphSize, linkGroups } from "@/lib/infoSearch";
@@ -81,6 +81,45 @@ describe("연결 그림 — 대문자 라틴 이름의 노드 글도 그린 폭�
         const drawn = renderedWidth(node.label);
         const left = node.anchor === "start" ? node.labelX : node.labelX - drawn;
         expect([width, node.label, drawn <= budget, left >= 0, left + drawn <= layout.width]).toEqual([width, node.label, true, true, true]);
+      }
+    }
+  });
+});
+
+/** 글에서 '…' 바로 뒤에 보이는 숫자들(가운데를 줄인 글의 뒷부분이 숫자로 시작하면 그 숫자). */
+const numbersAfterEllipsis = (label: string) => [...label.matchAll(/…(\d+)/g)].map((match) => match[1]);
+
+describe("연결 그림 — 둘째 차례 이후에도 갈리는 번호·낱말을 통째로 보임(QA-423 후속)", () => {
+  // QA-423: graphLabels가 갈리는 자리를 낱말·숫자의 첫 글자로 물리는 처리(GRAPH_WORD_BACK)를 첫 차례에만 해, 첫 차례에 앞머리가 같은 다른 이름과 함께
+  // 묶였다가 둘째 차례로 넘어온 이름들은 갈리는 바로 그 글자부터 보였습니다 — 1280 화면(배정 93)에서 'Fictional Example Semiconductor Holdings 1 Ltd'·
+  // '… 12 Ltd'가 'Fictio… Ltd'·'Ficti…2 Ltd'로 그려져 번호 1이 빠지고 12가 2로 읽혔습니다('…'를 12px로 센 뒤 세 이름의 끝을 자른 글이 모두
+  // 'Fictional…'로 같아져, 첫 차례는 셋을 'Fictional ' 뒤에서 가르고 번호 둘은 둘째 차례로 넘어감).
+  // 수정 전 실패: 폭 93에서 'Ficti… Ltd'·'Fict…2 Ltd'(대문자 어림 9px 뒤), 66에서 'Fi… Ltd'·'Fi…2 L…'(재현 커밋에서는 it.fails).
+  it.fails("앞머리가 같은 이름 셋(번호 1·12) — 폭 66~116 어디서나 '…1'·'…12'처럼 번호를 통째로, 서로 다른 글", () => {
+    const names = ["Fictional Graphics Example Holdings Ltd", "Fictional Example Semiconductor Holdings 1 Ltd", "Fictional Example Semiconductor Holdings 12 Ltd"];
+    for (const maxPx of [66, 87, 93, 95, 101, 116]) {
+      const labels = graphLabels(names, maxPx);
+      expect([maxPx, labels.get(names[1]), numbersAfterEllipsis(labels.get(names[1])!)]).toEqual([maxPx, labels.get(names[1]), ["1"]]);
+      expect([maxPx, labels.get(names[2]), numbersAfterEllipsis(labels.get(names[2])!)]).toEqual([maxPx, labels.get(names[2]), ["12"]]);
+      expect(new Set(labels.values()).size).toBe(3);
+    }
+  });
+
+  // 번호들의 첫 자리가 같으면(1·12·13, 2·21·22·23 …) 둘째 차례가 번호 가운데에서 갈림.
+  // 수정 전 실패: 폭 66~95에서 번호 21·22·23의 글이 'Fi…1 L…'·'Ficti…2 Ltd'처럼, 10·100이 'Ficti…0 Ltd'·'Fict…00 Ltd'처럼 번호의 뒷자리부터 보이고
+  // 번호 2·5의 글에는 번호가 없음('Fictio… Ltd')(재현 커밋에서는 it.fails).
+  it.fails("첫 자리가 같은 번호가 여럿인 법인명 묶음 — '…' 바로 뒤의 숫자는 늘 번호의 첫 자리부터(뒷자리만 보여 다른 번호로 읽히지 않음)", () => {
+    for (const numbers of [[1, 12, 13], [2, 21, 22, 23], [10, 11, 100], [5, 51, 52]]) {
+      const numbered = numbers.map((n) => `Fictional Example Semiconductor Holdings ${n} Ltd`);
+      const names = ["Fictional Graphics Example Holdings Ltd", ...numbered];
+      for (const maxPx of [66, 87, 93, 95, 101, 116]) {
+        const labels = graphLabels(names, maxPx);
+        numbered.forEach((name, at) => {
+          const label = labels.get(name)!;
+          const shown = numbersAfterEllipsis(label);
+          expect([maxPx, label, shown.length > 0 && shown.every((digits) => String(numbers[at]).startsWith(digits))]).toEqual([maxPx, label, true]);
+        });
+        expect(new Set(labels.values()).size).toBe(names.length);
       }
     }
   });
