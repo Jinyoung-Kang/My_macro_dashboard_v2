@@ -85,8 +85,10 @@ function CompanyHolders({ query, by }: HoldersQueryProps) {
               <Link href={institutionHref(row.cik)} className={LINK}>
                 <span className="min-w-0 break-keep wrap-anywhere">{withoutLeadingIcon(row.institution)}</span>
               </Link>
-              <span className="block truncate text-xs text-text-3">
-                {row.name} · 보고일 {row.reportDate}
+              {/* 공시 이름은 다른 회사가 섞였는지 가를 근거라(잘린 공시 이름도 함께 찾음 — QA-436) 말줄임 없이 이 칸 안에서 줄바꿈하고, 보고일(2년 규칙의
+                  근거)은 끊기지 않는 한 덩어리로 이름 뒤에 둡니다 — 한 줄 말줄임일 때 좁은 칸에서 보고일이 먼저 잘렸습니다(QA-445, 종목 상세와 같은 처리). */}
+              <span className="block text-xs text-text-3 wrap-anywhere">
+                {row.name} <span className="whitespace-nowrap">· 보고일 {row.reportDate}</span>
               </span>
             </span>
             <span className="text-right tabular-nums">

@@ -81,7 +81,7 @@ afterEach(cleanup);
 describe("보유 탭 — 13F 보유 줄의 공시 이름·보고일(QA-445)", () => {
   // QA-445: '{공시 이름} · 보고일 {날짜}'를 한 줄 말줄임(block truncate)으로 묶어, 좁은 칸에서 긴 공시 이름이면 보고일이 먼저 잘리고 title도 없어 전체를
   // 볼 수 없었습니다. 수정 전 실패: 보고일·공시 이름을 담은 요소의 조상(줄까지)에 truncate가 있음(재현 커밋에서는 it.fails).
-  it.fails("공시 이름은 제 칸 안에서 줄바꿈(말줄임 없음)하고 보고일은 끊기지 않는 한 덩어리로 늘 보인다 — 숫자 칸은 따로, lg 미만 44px 그대로", async () => {
+  it("공시 이름은 제 칸 안에서 줄바꿈(말줄임 없음)하고 보고일은 끊기지 않는 한 덩어리로 늘 보인다 — 숫자 칸은 따로, lg 미만 44px 그대로", async () => {
     render(<HoldingsPanel entity={COMPANY} loading={false} />);
     await screen.findByRole("heading", { name: /13F 보유 기관/ });
 

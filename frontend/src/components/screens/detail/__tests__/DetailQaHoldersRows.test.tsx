@@ -81,7 +81,7 @@ afterEach(cleanup);
 describe("종목 상세 — 13F 보유 줄의 공시 이름·보고일(QA-445)", () => {
   // QA-445: '{공시 이름} · {보고일}'을 한 줄 말줄임(block truncate)으로 묶어, 긴 공시 이름이면 보고일과 이름 끝이 잘리고 title도 없어 전체를 볼 수
   // 없었습니다. 수정 전 실패: 보고일·공시 이름을 담은 요소의 조상(줄까지)에 truncate가 있음(재현 커밋에서는 it.fails).
-  it.fails("공시 이름은 제 칸 안에서 줄바꿈(말줄임 없음)하고 보고일은 끊기지 않는 한 덩어리로 늘 보인다 — 숫자는 따로 제 폭", async () => {
+  it("공시 이름은 제 칸 안에서 줄바꿈(말줄임 없음)하고 보고일은 끊기지 않는 한 덩어리로 늘 보인다 — 숫자는 따로 제 폭", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNF" />

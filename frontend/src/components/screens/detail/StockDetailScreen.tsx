@@ -231,8 +231,10 @@ function HoldersCard({ query }: { query: string }) {
                 <Link href={institutionHref(row.cik)} className="rounded-sm text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">
                   {withoutLeadingIcon(row.institution)}
                 </Link>
-                <span className="block truncate text-xs text-text-3">
-                  {row.name} · {row.reportDate}
+                {/* 공시 이름은 말줄임 없이 이 칸 안에서 줄바꿈하고 보고일은 끊기지 않는 한 덩어리로 이름 뒤에 둡니다 — 한 줄 말줄임일 때 긴 공시 이름이면
+                    보고일과 이름 끝이 잘려 무엇이 걸렸는지 가를 수 없었습니다(QA-445, 정보 검색 보유 탭과 같은 처리). */}
+                <span className="block text-xs text-text-3 wrap-anywhere">
+                  {row.name} <span className="whitespace-nowrap">· {row.reportDate}</span>
                 </span>
               </span>
               <span className="shrink-0 text-right tabular-nums">

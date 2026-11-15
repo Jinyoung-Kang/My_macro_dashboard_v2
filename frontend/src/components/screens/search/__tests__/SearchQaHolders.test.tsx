@@ -78,7 +78,9 @@ describe("보유 탭 — 이름으로 찾은 13F 보유 줄이 없을 때(QA-436
 
     const heading = await screen.findByRole("heading", { name: /13F 보유 기관/ });
     expect(heading.textContent).toBe(`13F 보유 기관 — ‘${QUERY}’ 이름으로 찾은 줄(잘린 공시 이름 포함, 비중 순)`);
-    expect(screen.getByText(/SYNTHETIC EXAMPLE FINANCIAL GRO · 보고일/)).toBeTruthy();
+    // 공시 이름 줄 — 보고일은 끊기지 않는 한 덩어리로 이름 뒤에 따로 둠(QA-445).
+    const filing = screen.getByText("SYNTHETIC EXAMPLE FINANCIAL GRO");
+    expect(filing.textContent).toBe(`SYNTHETIC EXAMPLE FINANCIAL GRO · 보고일 ${reportDate}`);
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
