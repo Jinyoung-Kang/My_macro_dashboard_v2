@@ -32,8 +32,8 @@ describe("Pager", () => {
   });
 
   // QA-492: 고대비에서 지금 쪽은 바탕(강조 파랑)이 지워지고 테두리는 모든 번호 단추와 같은 1px 시스템 색이라 글 굵기(600·500)로만 갈렸습니다.
-  // 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-492: 고대비에서는 지금 쪽 단추에만 2px 테두리(forced-colors:border-2)", () => {
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-492: 고대비에서는 지금 쪽 단추에만 2px 테두리(forced-colors:border-2)", () => {
     render(<Pager page={2} pages={3} onChange={() => {}} label="뉴스" />);
     const nav = screen.getByRole("navigation", { name: "뉴스 쪽" });
     const numbers = within(nav)

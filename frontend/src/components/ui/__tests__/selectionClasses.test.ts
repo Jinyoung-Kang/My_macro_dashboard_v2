@@ -127,8 +127,8 @@ describe("거르기 칩 filterChipClasses", () => {
 
   // QA-492: 고대비(forced-colors)에서는 바탕색(틴트)이 지워지고 두 상태의 1px 테두리가 같은 시스템 색이 되어, 켠 칩과 끈 칩이 글 굵기(600·500)로만
   // 갈렸습니다(/info/news·/info/status — 그 두 화면은 체크 아이콘을 붙이지 않음). 켜고 끄는 단추(toggleClasses)처럼 켠 칩만 그 모드에서 2px 테두리.
-  // 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-492: 고대비에서는 켠 칩에만 2px 테두리(forced-colors:border-2) — 끈 칩에는 없다", () => {
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-492: 고대비에서는 켠 칩에만 2px 테두리(forced-colors:border-2) — 끈 칩에는 없다", () => {
     expect(tokens(filterChipClasses(true))).toContain("forced-colors:border-2");
     expect(tokens(filterChipClasses(false))).not.toContain("forced-colors:border-2");
   });

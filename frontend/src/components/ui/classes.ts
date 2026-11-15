@@ -125,13 +125,17 @@ export const LINK_CLASSES = `${TEXT_TARGET} rounded-sm text-accent underline-off
 
 /**
  * 거르기 칩(교집합의 분석 대상 기관·환율 겹쳐 보기·정보 수집의 거르기) — 여럿을 켜고 끄는 aria-pressed 단추. 누를 수 있는 것이라 켠 칩은
- * 강조 파랑(틴트 바탕·파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기와 체크 아이콘(부르는 쪽이 켠 칩 앞에 둠)이 함께 바뀝니다.
+ * 강조 파랑(틴트 바탕·파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기가 함께 바뀝니다(체크 아이콘은 부르는 쪽이 켠 칩 앞에 둘 때만 —
+ * 컨센서스·환율 비교는 두고, 정보 수집 두 화면은 없음).
  * 켠 칩의 글자는 본문색입니다 — accent 틴트 위 accent 글자는 4.47:1로 4.5에 못 미칩니다(QA-459, 작업대 실행 명세 §3-2).
- * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·아이콘으로 갈립니다. 4px, lg 이상 30px, lg 미만 44px.
+ * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·고대비 2px 테두리로 갈립니다(그 모드는 틴트 바탕을 지우고
+ * 두 상태의 테두리를 같은 시스템 색으로 칠해, 굵기만 남았습니다 — QA-492, 켜고 끄는 단추와 같은 방법). 4px, lg 이상 30px, lg 미만 44px.
  */
 export function filterChipClasses(pressed: boolean): string {
   return `inline-flex min-h-11 items-center gap-1 rounded-control border px-3 text-[13px] lg:min-h-[30px] lg:px-2.5 ${SELECT_MOTION} ${FOCUS_RING} ${
-    pressed ? "border-accent bg-accent-tint font-semibold text-text" : "border-border bg-surface font-medium text-text-2 hover:bg-surface-2 hover:text-text"
+    pressed
+      ? "border-accent bg-accent-tint font-semibold text-text forced-colors:border-2"
+      : "border-border bg-surface font-medium text-text-2 hover:bg-surface-2 hover:text-text"
   }`;
 }
 
