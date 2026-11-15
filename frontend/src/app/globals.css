@@ -4,7 +4,7 @@
 @import "tailwindcss" source("..");
 
 /* 디자인 토큰 — 어두운 한 벌(작업대 화면 언어, ADR 0042 결정 2·3 — 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-2).
-   2026-11-15까지는 라이트·다크 두 벌과 시스템 따름이었고(Coinbase식 개편 명세 §2), 정보 검색만 아래 범위 블록으로 늘 어두웠습니다. 이제 그 범위 값이
+   2026-11-15까지는 라이트·다크 두 벌과 시스템 따름이었고(2026-10-31 화면 개편 명세 §2), 정보 검색만 아래 범위 블록으로 늘 어두웠습니다. 이제 그 범위 값이
    앱 전체의 값입니다. 값은 공개 디자인 시스템의 어두운 단계를 참고했고, 상승 #ff6b6b는 사용자가 고른 값입니다(결정 3).
    값은 여기 원래 변수(--bg 등)에만 둡니다. 차트·JS에서 색이 필요하면 var(--up)처럼 이 이름을 씁니다
    (아래 @theme inline의 --color-*는 CSS에 출력되지 않습니다).
@@ -121,7 +121,7 @@
 
 @theme {
   --font-sans: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; /* 식별자(티커·CIK·시리즈 id·사유 코드·설정 키·로그) — 시스템 고정폭 */
 
   /* 글자 크기별 줄 높이를 v3처럼 rem(절대값)으로 둡니다. v4 기본값은 비율(text-sm이면 1.43)이라, 그 안의 작은 글씨
      (text-[11px])가 부모의 20px 대신 비율을 물려받아 15.7px가 되고 표 행·배지가 v3보다 4~9px 낮아졌습니다
@@ -133,32 +133,44 @@
   --text-xl--line-height: 1.75rem;
   --text-2xl--line-height: 2rem;
 
-  /* 글자 단계(명세 §2-3). 굵기는 머리 단계에만 둡니다 — 본문·라벨·캡션에 두면 굵은 부모 안에서 400으로 되돌아갑니다(font-* 클래스가 이김).
-     본문 단계 이름이 body가 아닌 것은 옛 색 별칭 --color-body와 겹쳐 text-body가 색만 내기 때문입니다. 최소 크기는 micro(12px)입니다. */
-  --text-display: 2.75rem; /* 44px — 히어로 숫자(sm 이상) */
+  /* 글자 단계(작업대 실행 명세 §3-6) — micro 12/16 · caption 13/18 · body 14/20 · running 15/24 · heading-sm 16/24 · heading 20/28 · value-lg 28/36.
+     굵기는 머리 단계에만 둡니다 — 본문·캡션에 두면 굵은 부모 안에서 400으로 되돌아갑니다(font-* 클래스가 이김). 최소 크기는 micro(12px)입니다.
+     body는 기본 UI 글(모든 폭), running은 긴 글(AI 리포트·프레임 원문·메모 — 최대 72ch), value-lg는 대상 머리의 주 값 하나만. */
+  --text-micro: 0.75rem; /* 12px — 태그·축·각주(하한) */
+  --text-micro--line-height: 1rem;
+  --text-caption: 0.8125rem; /* 13px — 표 머리·보조 줄 */
+  --text-caption--line-height: 1.125rem;
+  --text-body: 0.875rem; /* 14px — 기본 UI 글 */
+  --text-body--line-height: 1.25rem;
+  --text-running: 0.9375rem; /* 15px — 긴 글 */
+  --text-running--line-height: 1.5rem;
+  --text-heading-sm: 1rem; /* 16px — 패널 제목 */
+  --text-heading-sm--line-height: 1.5rem;
+  --text-heading-sm--font-weight: 600;
+  --text-heading: 1.25rem; /* 20px — 화면 제목(H1 하나)·대화상자 제목 */
+  --text-heading--line-height: 1.75rem;
+  --text-heading--font-weight: 700;
+  --text-value-lg: 1.75rem; /* 28px — 대상 머리의 주 값 */
+  --text-value-lg--line-height: 2.25rem;
+  --text-value-lg--font-weight: 700;
+  /* 옛 단계(2026-10-31 명세 §2-3) — 명세 §3-6이 없앤 단계입니다. 쓰는 부품을 새 단계로 옮길 때 지웁니다:
+     display·display-sm(히어로 숫자 — Hero, P4·P6의 KPI 띠), title-1(PageHeader h1·Hero 글 값 — P2 PageHeader 20px), title-3(카드·목록 제목·인증 머리 —
+     P2 Panel 머리는 heading-sm), body-md(PageHeader 설명·Hero 문장·상세 AI 요약 — P2·P4에서 body·running). */
+  --text-display: 2.75rem; /* 44px */
   --text-display--line-height: 3.25rem;
   --text-display--font-weight: 700;
   --text-display--letter-spacing: -0.02em;
-  --text-display-sm: 2.25rem; /* 36px — 히어로 숫자(좁은 화면) */
+  --text-display-sm: 2.25rem; /* 36px */
   --text-display-sm--line-height: 2.75rem;
   --text-display-sm--font-weight: 700;
-  --text-title-1: 1.75rem; /* 28px — 페이지 h1 */
+  --text-title-1: 1.75rem; /* 28px */
   --text-title-1--line-height: 2.25rem;
   --text-title-1--font-weight: 700;
-  --text-heading: 1.25rem; /* 20px — 카드 밖 구역 제목·대화상자 제목 */
-  --text-heading--line-height: 1.75rem;
-  --text-heading--font-weight: 700;
-  --text-title-3: 1.0625rem; /* 17px — 카드·목록 제목 */
+  --text-title-3: 1.0625rem; /* 17px */
   --text-title-3--line-height: 1.5rem;
   --text-title-3--font-weight: 600;
-  --text-body-md: 0.9375rem; /* 15px — 넉넉한 본문 */
+  --text-body-md: 0.9375rem; /* 15px */
   --text-body-md--line-height: 1.375rem;
-  --text-body: 0.875rem; /* 14px — 단추·탭·표 본문 */
-  --text-body--line-height: 1.25rem;
-  --text-caption: 0.8125rem; /* 13px — 보조 글·표 머리 */
-  --text-caption--line-height: 1.125rem;
-  --text-micro: 0.75rem; /* 12px — 배지·축·출처 */
-  --text-micro--line-height: 1rem;
 
   /* 모서리는 4px 하나(실행 명세 §3-8) — 패널·목록·대화상자는 card, 입력칸·셀렉트·타일·배너·토스트는 control. rounded-full은 상태 점·토글 손잡이·
      아바타에만 씁니다(아직 남은 알약 단추·칩은 공용 키트 단계 P2에서 정리). */

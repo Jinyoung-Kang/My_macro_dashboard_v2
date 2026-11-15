@@ -236,6 +236,34 @@ describe("어두운 한 벌(W1)", () => {
     expect(theme["--radius-card"]).toBe("4px");
     expect(theme["--radius-control"]).toBe("4px");
   });
+
+  it("옛 색 별칭 다섯(muted·body·bright·canvas·surface-hover)이 없다 — text-body는 글자 크기만 낸다(ADR 0042 결정 10)", () => {
+    const inline = declarations(RULES.find((rule) => rule.selector === "@theme inline")?.body ?? "");
+    for (const name of ["muted", "body", "bright", "canvas", "surface-hover"]) expect(inline[`--color-${name}`], name).toBeUndefined();
+  });
+});
+
+describe("글자 단계(명세 §3-6)", () => {
+  it("micro 12/16 · caption 13/18 · body 14/20 · running 15/24 · heading-sm 16/24 · heading 20/28 · value-lg 28/36", () => {
+    const theme = themeDeclarations();
+    const scale: Record<string, [string, string]> = {
+      micro: ["0.75rem", "1rem"],
+      caption: ["0.8125rem", "1.125rem"],
+      body: ["0.875rem", "1.25rem"],
+      running: ["0.9375rem", "1.5rem"],
+      "heading-sm": ["1rem", "1.5rem"],
+      heading: ["1.25rem", "1.75rem"],
+      "value-lg": ["1.75rem", "2.25rem"],
+    };
+    for (const [name, [size, line]] of Object.entries(scale)) {
+      expect(theme[`--text-${name}`], name).toBe(size);
+      expect(theme[`--text-${name}--line-height`], name).toBe(line);
+    }
+  });
+
+  it("식별자 글꼴은 시스템 고정폭 스택(웹폰트 없음)", () => {
+    expect(themeDeclarations()["--font-mono"]).toMatch(/^ui-monospace, SFMono-Regular, Menlo, Consolas/);
+  });
 });
 
 describe("정보 검색 범위 블록(P7에서 걷어 냄)", () => {
