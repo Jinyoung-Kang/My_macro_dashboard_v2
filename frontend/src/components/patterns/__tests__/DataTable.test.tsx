@@ -125,6 +125,22 @@ describe("DataTable — 네 상태", () => {
     expect(classesOf(text)).toEqual(expect.arrayContaining(["px-3", "py-6", "text-center", "text-sm", "text-text-3"]));
   });
 
+  // 크기 질의 기준(container-type: inline-size)은 상자의 내용 폭을 바깥에 0으로 알립니다 — 내용 폭에 맞춰 줄어드는 부모(자동 basis flex 행 항목·
+  // inline-block·w-fit) 안에서는 상자가 옆 글 폭까지 줄어 표가 잘립니다(2026-11-16 검토 지적 — 크롬 하네스에서 표 상자 439px -> 52px).
+  // 그래서 기준은 행 없음 문구(100cqw)가 필요한 빈 표에만 붙이고, 행이 있는 표의 상자는 예전처럼 표 폭을 바깥에 알립니다.
+  it("크기 질의 기준(@container)은 행이 없을 때만 — 행이 있는 표의 상자는 기준이 아니다", () => {
+    const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    const region = () => screen.getByRole("region", { name: "보유 (좌우 스크롤)" });
+    const { rerender } = render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} caption="보유" scrollHint />);
+    // 이름 붙은 기준(@container/이름)도 같은 성질이라 함께 막습니다.
+    expect(region().className).not.toMatch(/(^|\s)@container(\/\S+)?(\s|$)/);
+    // 행이 모두 빠지면 기준이 붙고(문구가 상자 폭에 붙음), 다시 행이 생기면 떨어집니다.
+    rerender(<DataTable columns={COLUMNS} rows={[]} rowKey={(row) => row.ticker} caption="보유" scrollHint />);
+    expect(classesOf(region())).toContain("@container");
+    rerender(<DataTable columns={COLUMNS} rows={ROWS.slice(0, 1)} rowKey={(row) => row.ticker} caption="보유" scrollHint />);
+    expect(classesOf(region())).not.toContain("@container");
+  });
+
   it("추정·대리 — 칸 안의 배지가 그대로 보인다", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const aapl = within(bodyRows()[2]).getAllByRole("cell")[1];
