@@ -70,7 +70,8 @@ describe("종목 상세 — 13F 보유 기관 이름의 줄바꿈(QA-449)", () =
   // QA-449: 기관 이름 링크(Link)에 word-break 규칙이 없어(기본 normal) 한글 이름이 음절 사이에서 끊겼습니다('운/용'·'법/인'). 정보 검색 보유 탭은
   // 이름 글에 break-keep(낱말 사이에서만)과 wrap-anywhere(칸보다 긴 낱말만 칸 안에서 끊음)를 겁니다.
   // 수정 전 실패: 이름 글에서 줄(li)까지 어디에도 break-keep·wrap-anywhere가 없음(재현 커밋에서는 it.fails).
-  it.fails("기관 이름은 낱말 사이에서만 줄을 바꾸고(break-keep) 칸보다 긴 낱말만 칸 안에서 끊는다(wrap-anywhere) — 말줄임 없음, 링크·숫자 칸 그대로", async () => {
+  // 고침: 기관 이름 링크에 break-keep·wrap-anywhere.
+  it("기관 이름은 낱말 사이에서만 줄을 바꾸고(break-keep) 칸보다 긴 낱말만 칸 안에서 끊는다(wrap-anywhere) — 말줄임 없음, 링크·숫자 칸 그대로", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNE" />

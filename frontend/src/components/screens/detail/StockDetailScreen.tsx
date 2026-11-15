@@ -231,7 +231,12 @@ function HoldersCard({ query }: { query: string }) {
           {rows.slice(0, HOLDERS_SHOWN).map((row) => (
             <li key={`${row.cik}:${row.cusip}`} className="flex items-baseline justify-between gap-3 py-2.5 text-sm">
               <span className="min-w-0">
-                <Link href={institutionHref(row.cik)} className="rounded-sm text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">
+                {/* 기관 이름(한글)은 낱말 사이에서만 줄을 바꾸고(break-keep — '운/용'처럼 음절 사이에서 끊지 않음), 칸보다 긴 낱말만 칸 안에서
+                    끊습니다(wrap-anywhere) — 정보 검색 보유 탭과 같은 처리(QA-449). */}
+                <Link
+                  href={institutionHref(row.cik)}
+                  className="break-keep rounded-sm text-text underline-offset-2 wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                >
                   {withoutLeadingIcon(row.institution)}
                 </Link>
                 {/* 공시 이름은 말줄임 없이 이 칸 안에서 줄바꿈하고 보고일은 끊기지 않는 한 덩어리로 이름 뒤에 둡니다 — 한 줄 말줄임일 때 긴 공시 이름이면
