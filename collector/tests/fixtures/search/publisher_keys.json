@@ -107,5 +107,17 @@
       ],
       "publishers": 3
     }
+  ],
+  "acceptedMerges": [
+    {
+      "about": "알고 받아들인 장단(검토 지적) — 국가 도메인과 그 앞의 2단계 이름표를 떼므로 2단계 이름이 같은 다른 나라 매체의 도메인 꼴('synthcourier.com'·'synthcourier.com.my')은 한 곳으로 셈. 이름에는 나라가 없어, 나라를 키에 남기면 같은 매체의 이름과 도메인 꼴('Synth Courier'·'www.synthcourier.co.uk')이 두 곳이 됨",
+      "rows": [
+        ["synthcourier.com", null],
+        ["synthcourier.com.my", null],
+        ["Synth Courier", null],
+        ["www.synthcourier.co.uk", null]
+      ],
+      "publishers": 1
+    }
   ]
 }

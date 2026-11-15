@@ -12,7 +12,12 @@ import { feedEntryGroups, publisherKey, type FeedClusterEntry } from "@/lib/info
 import type { SearchFeedItem } from "@/lib/types";
 
 type PublisherCase = { about: string; rows: [string | null, string | null][]; publishers: number };
-type Shared = { keys: [string | null, string][]; sameOutlet: PublisherCase[]; distinctOutlets: PublisherCase[] };
+type Shared = {
+  keys: [string | null, string][];
+  sameOutlet: PublisherCase[];
+  distinctOutlets: PublisherCase[];
+  acceptedMerges: PublisherCase[];
+};
 
 const shared: Shared = JSON.parse(
   readFileSync(resolve(__dirname, "../../../../collector/tests/fixtures/search/publisher_keys.json"), "utf8"),
@@ -43,6 +48,11 @@ describe("같은 사건 묶음의 매체 수 — 수집기와 같은 고정본(Q
 
   it("서로 다른 매체는 그대로 따로 센다", () => {
     for (const sample of shared.distinctOutlets) expect(counted(sample.rows), sample.about).toBe(sample.publishers);
+  });
+
+  // 2단계 이름이 같은 다른 나라 매체의 도메인 꼴은 한 곳(검토 지적 — 나라를 남기면 같은 매체의 이름과 도메인 꼴이 두 곳이 됨, 계약 §9-7).
+  it("알고 받아들인 장단도 고정본대로 센다", () => {
+    for (const sample of shared.acceptedMerges) expect(counted(sample.rows), sample.about).toBe(sample.publishers);
   });
 
   it("매체 세기 키는 수집기(publisher_key)와 같은 고정본대로", () => {
