@@ -437,3 +437,39 @@ describe("연결 그림 — 낱말 가운데에서 갈린 묶음 안에서 낱�
     }
   });
 });
+
+describe("연결 그림 — 지킬 글을 둔 이름이 든 작은 묶음은 다시 가르지 않음(2차 검토 지적)", () => {
+  // 2차 검토 지적: 다시 가르기(4d116f36)는 작은 묶음 안의 이름끼리만 보고 다음 차례에 그 이름들의 글을 새로 줄여, 앞 차례에 묶음 밖 이름들과 가르려고
+  // 둔 지킬 글까지 덮어썼습니다 — 배정 66에서 '가상전자글로벌 베트남'의 지킬 글 '가…글로…'가 '가…베트남'(베트남 법인 셋 모두로 읽힘)으로 바뀌어 글만으로
+  // 가를 수 없는 이름이 둘 남았고, graphLabels가 기본 글로 물러났습니다(02340a72에서는 글만으로 다 가름). 샘플그룹 묶음도 '샘…파운드…'가 '샘…주식회…'로
+  // 바뀌었습니다. 이제 지킬 글을 가진 이름이 든 작은 묶음은 다시 가르지 않습니다.
+  // 바꾸기 전 실패: 첫 묶음은 배정 66~71, 둘째 묶음은 66~79에서 글만으로 가를 수 없는 이름이 2개(기본 글과 같은 글).
+  const GLOBAL = ["가상전자글로벌 베트남", "가상전자중공업 주식회사 베트남", "가상전자글로벌반도체글로벌반도체 12호", "가상전자전자 주식회사 베트남", "가상전자글로벌 아메리카"];
+  const SAMPLE = [
+    "샘플그룹파운드리솔루션즈 주식회사 베트남",
+    "샘플그룹파운드리솔루션즈전자 100 12호",
+    "샘플그룹생명과학디스플레이전자 주식회사 미국",
+    "샘플그룹 주식회사 베트남",
+    "샘플그룹파운드리솔루션즈 미국",
+  ];
+
+  it("배정 66(390·320 화면)과 72 — 지킬 글('가…글로…'·'샘…파운드…')이 남아 글만으로 다 가름", () => {
+    const global = graphLabels(GLOBAL, 66);
+    expect(GLOBAL.map((name) => global.get(name))).toEqual(["가…글로…", "가…중공…", "가…반도…", "가…전자…", "가…아메…"]);
+    expect(resolvable(global)).toBe(true);
+    const sample = graphLabels(SAMPLE, 72);
+    expect(SAMPLE.map((name) => sample.get(name))).toEqual(["샘…파운드…", "샘…전자…", "샘플그룹생…", "샘플그룹…", "샘플그…미국"]);
+    expect(resolvable(sample)).toBe(true);
+  });
+
+  it("배정 66~116 어디서나 — 글이 서로 다르고 폭 안이며 글만으로 다 가름", () => {
+    for (const names of [GLOBAL, SAMPLE]) {
+      for (let px = 66; px <= 116; px += 1) {
+        const labels = graphLabels(names, px);
+        expect(new Set(labels.values()).size).toBe(names.length);
+        for (const label of labels.values()) expect([px, label, renderedWidth(label) <= px]).toEqual([px, label, true]);
+        expect([px, names[0], resolvable(labels)]).toEqual([px, names[0], true]);
+      }
+    }
+  });
+});

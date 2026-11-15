@@ -1379,7 +1379,9 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
       // 낱말 가운데에서 갈린 묶음에서 갈리는 자리의 글자가 같은 이름들(둘 다 거기서 빈칸 — '…디스플레이 주식회사'와 '…디스플레이 주식회사 베트남'이
       // '…디스플레이로지텍'과 갈리는 자리)은 그 자리부터의 글로는 서로 갈리지 않고, 끝까지 드는지에 따라서만 글이 달라짐('가상전…주식회사'·
       // '가상…주식회사…' — 뒤의 글이 앞 이름으로도 읽힘). 낱말 경계의 물림도 받지 못했으므로, 그 이름들의 글이 서로 다르고 한 글이 다른 이름으로도
-      // 읽히면 다음 차례에 그 이름들끼리 다시 가름('가상전자…베트남' — 검토 지적). 낱말 경계에서 갈린 묶음은 이미 그 물림을 받아 그대로.
+      // 읽히면 다음 차례에 그 이름들끼리 다시 가름('가상전자…베트남' — 검토 지적). 낱말 경계에서 갈린 묶음은 이미 그 물림을 받아 그대로. 지킬 글을 둔
+      // 이름이 든 작은 묶음도 그대로 — 다시 가르면 그 이름들끼리만 보고 새로 줄여, 묶음 밖 이름들과 가르려고 둔 글('가…글로…')이 묶음 밖 이름으로도
+      // 읽히는 글('가…베트남')로 바뀜(2차 검토 지적).
       if (refine && inWord) {
         const byChar = new Map<string, number[]>();
         charsOf.forEach((chars, at) => byChar.set(chars[split] ?? "", [...(byChar.get(chars[split] ?? "") ?? []), at]));
@@ -1387,6 +1389,7 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
           const sub = ats.map((at) => group[at]);
           const key = sub.join("\n");
           if (ats.length < 2 || regrouped.has(key) || new Set(ats.map((at) => fits[at].label)).size < ats.length) continue;
+          if (ats.some((at) => keepers.get(group[at])?.label === fits[at].label)) continue;
           if (!ats.some((at) => ats.some((other) => other !== at && labelFitsName(fits[at].label, group[other])))) continue;
           regroup.push(sub);
           regrouped.add(key);
