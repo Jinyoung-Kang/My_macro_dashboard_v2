@@ -17,6 +17,7 @@ import com.anthropic.models.messages.CacheControlEphemeral;
 import com.anthropic.models.messages.JsonOutputFormat;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
+import com.anthropic.models.messages.MessageDeltaUsage;
 import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.StopReason;
@@ -1048,8 +1049,10 @@ public class AiService {
      * 출력에는 스트리밍을 권합니다(SDK가 스스로 고르는 대기 한도도 스트리밍이 아니면 10분이 위 끝).
      *
      * <p>대기 한도({@code timeoutSeconds})는 스트림을 끝까지 받는 데까지 전체에 겁니다(OkHttp 호출 한도 — 응답 본문 읽기 포함). 스트림 도중의
-     * 오류 사건(과부하 등)은 HTTP 200을 받은 뒤라 {@code HTTP}·과금됨, 끝 사건({@code message_stop}) 없이 스트림이 끝나면 {@code IO}·과금됨이고,
-     * 둘 다 그때까지 받은 텍스트·토큰은 남기지 않습니다(스트리밍이 아닌 경로의 시간 초과와 같음).
+     * 오류 사건(과부하 등)은 HTTP 200을 받은 뒤라 {@code HTTP}·과금됨, 끝 사건({@code message_stop}) 없이 스트림이 끝나면 {@code IO}·과금됨입니다.
+     * 이렇게 스트림 도중에 실패하면(시간 초과 포함) 그때까지 받은 텍스트는 남기지 않고, 토큰은 그때까지 받은 사건의 사용량만 남깁니다
+     * ({@link StreamUsage} — 입력·캐시 토큰은 {@code message_start}, 출력 토큰은 {@code message_delta}를 받았을 때만. 받지 못한 칸은 null이라
+     * 추정 비용은 세지 않음 — 검토 지적). 스트리밍이 아닌 경로의 실패는 그대로 토큰 없음입니다.
      *
      * @param maxTokens 응답 한도(토큰) — {@value #STRUCTURED_MAX_TOKENS} 이상 {@value #STRUCTURED_STREAMING_MAX_TOKENS_CEILING} 이하
      * @throws IllegalArgumentException 한도가 그 범위 밖이거나, {@link #structured(String, String, String, Map, String, int)}와 같은 인자
@@ -1113,9 +1116,10 @@ public class AiService {
         }
 
         long started = System.currentTimeMillis();
+        StreamUsage partial = stream ? new StreamUsage() : null;
         try {
             RequestOptions options = RequestOptions.builder().timeout(Duration.ofSeconds(timeoutSeconds)).build();
-            Message message = stream ? streamed(params.build(), options)
+            Message message = stream ? streamed(params.build(), options, partial)
                     : anthropicClient().messages().create(params.build(), options);
             long elapsed = System.currentTimeMillis() - started;
 
@@ -1157,19 +1161,28 @@ public class AiService {
             };
             // 예외 문구에는 키가 들어가지 않지만, 요청 주소는 지웁니다(describe와 같은 규칙, QA-025).
             log.warn("Claude 구조화 출력 호출 실패 ({}): {} — {}", model, failure.kind(), withoutUrls(e.getMessage()));
+            if (partial != null) {
+                // 스트림 도중의 실패도 그때까지 받은 사용량은 남깁니다(과금된 토큰이 사용량에서 빠지지 않게 — 검토 지적).
+                return new StructuredResult(false, null, null, failure.kind(), message, failure.charged(),
+                        partial.input, partial.output, partial.cacheRead, partial.cacheWrite, elapsed);
+            }
             return new StructuredResult(false, null, null, failure.kind(), message, failure.charged(),
                     null, null, null, null, elapsed);
         }
     }
 
     /**
-     * 스트리밍으로 보내고 받은 사건을 끝까지 모읍니다({@link #structuredStreaming}). 응답 스트림은 다 읽거나 예외가 나면 닫습니다(연결을
-     * 붙잡아 두지 않게). 끝 사건 없이 스트림이 끝났으면 {@link StreamCut}입니다.
+     * 스트리밍으로 보내고 받은 사건을 끝까지 모읍니다({@link #structuredStreaming}). 사건마다 사용량을 {@code usage}에 먼저 붙잡아 두어, 스트림
+     * 도중에 실패해도 그때까지의 토큰을 남길 수 있습니다. 응답 스트림은 다 읽거나 예외가 나면 닫습니다(연결을 붙잡아 두지 않게). 끝 사건 없이
+     * 스트림이 끝났으면 {@link StreamCut}입니다.
      */
-    private Message streamed(MessageCreateParams params, RequestOptions options) {
+    private Message streamed(MessageCreateParams params, RequestOptions options, StreamUsage usage) {
         MessageAccumulator accumulator = MessageAccumulator.create();
         try (StreamResponse<RawMessageStreamEvent> response = anthropicClient().messages().createStreaming(params, options)) {
-            response.stream().forEach(accumulator::accumulate);
+            response.stream().forEach(event -> {
+                usage.accept(event);
+                accumulator.accumulate(event);
+            });
         }
         try {
             return accumulator.message();
@@ -1182,6 +1195,38 @@ public class AiService {
     static final class StreamCut extends IllegalStateException {
         StreamCut(Throwable cause) {
             super("응답 스트림이 끝 사건(message_stop) 없이 끊겼습니다", cause);
+        }
+    }
+
+    /**
+     * 스트림에서 그때까지 받은 사용량(QA-475 검토 지적) — 스트림 도중에 실패한 호출도 과금된 토큰을 사용량에 남기려고 사건마다 붙잡습니다.
+     * 입력·캐시 토큰은 {@code message_start}의 usage, 출력 토큰은 {@code message_delta}의 누적 값만 씁니다({@code message_start}의 출력
+     * 토큰은 시작 때의 값이라 쓰지 않음 — {@code message_delta} 전에 끊기면 출력은 모름). {@code message_delta}에 입력·캐시 값이 있으면 그것으로
+     * 바꿉니다. 받지 못했거나 모양을 읽지 못한 칸은 null입니다(없는 숫자를 만들지 않음 — 토큰 넷 중 하나라도 모르면 추정 비용을 세지 않음).
+     */
+    static final class StreamUsage {
+        Long input;
+        Long output;
+        Long cacheRead;
+        Long cacheWrite;
+
+        void accept(RawMessageStreamEvent event) {
+            try {
+                if (event.isMessageStart()) {
+                    Usage usage = event.asMessageStart().message().usage();
+                    input = usage.inputTokens();
+                    cacheRead = usage.cacheReadInputTokens().orElse(null);
+                    cacheWrite = usage.cacheCreationInputTokens().orElse(null);
+                } else if (event.isMessageDelta()) {
+                    MessageDeltaUsage usage = event.asMessageDelta().usage();
+                    output = usage.outputTokens();
+                    usage.inputTokens().ifPresent(value -> input = value);
+                    usage.cacheReadInputTokens().ifPresent(value -> cacheRead = value);
+                    usage.cacheCreationInputTokens().ifPresent(value -> cacheWrite = value);
+                }
+            } catch (AnthropicInvalidDataException e) {
+                // 사용량 모양을 읽지 못한 칸은 모르는 채로 둡니다 — 사건 모으기는 그대로 계속합니다.
+            }
         }
     }
 

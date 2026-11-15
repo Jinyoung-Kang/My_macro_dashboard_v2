@@ -33,7 +33,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>요청 모양(스키마·effort·시스템 캐시 블록·temperature/thinking 없음·출력 한도), 정상 응답의 텍스트와 토큰(캐시 포함),
  * 거절·출력 한도·빈 응답·HTTP 오류·연결 실패·시간 초과의 종류와 과금 표시, 키 없음, 로그에 키·주소가 남지 않음을 고정합니다.
  * 스트리밍 판({@link AiService#structuredStreaming} — 주간 복기, QA-475)은 가짜 서버가 같은 응답을 SSE 사건 열로 답해({@link ClaudeSse})
- * 같은 결과·종류가 나오는지와, 스트리밍에만 있는 실패(스트림 도중 오류 사건·끝 사건 없음·스트림 도중 시간 초과)를 봅니다.
+ * 같은 결과·종류가 나오는지와, 스트리밍에만 있는 실패(스트림 도중 오류 사건·끝 사건 없음·스트림 도중 시간 초과)와 그때 남기는
+ * 사용량(받은 사건의 토큰만 — 검토 지적)을 봅니다.
  */
 class AiServiceStructuredTest {
 
@@ -557,7 +558,7 @@ class AiServiceStructuredTest {
     }
 
     @Test
-    @DisplayName("스트림 도중의 오류 사건(과부하)은 HTTP·과금됨 — 200을 받은 뒤라 모델에 닿았음, 받은 데까지의 텍스트는 남기지 않음")
+    @DisplayName("스트림 도중의 오류 사건(과부하)은 HTTP·과금됨 — 200을 받은 뒤라 모델에 닿았음, 텍스트는 남기지 않고 받은 사용량(입력·캐시)만 남김")
     void midStreamErrorEventIsChargedHttp() throws Exception {
         List<String> events = ClaudeSse.events(message(textBlock(ANSWER), "end_turn", "", USAGE));
         String base = startStreamServer(events.subList(0, 3), 0,
@@ -571,12 +572,16 @@ class AiServiceStructuredTest {
         assertThat(result.charged()).isTrue();
         assertThat(result.error()).contains("스트림 도중", "overloaded_error", "과부하").doesNotContain(KEY);
         assertThat(result.text()).isNull();
-        assertThat(result.inputTokens()).isNull();
+        // message_start의 사용량은 받았음(과금된 입력이 사용량에서 빠지지 않게), message_delta 전이라 출력은 모름 — 0으로 채우지 않음.
+        assertThat(result.inputTokens()).isEqualTo(21_000L);
+        assertThat(result.cacheReadTokens()).isEqualTo(7_800L);
+        assertThat(result.cacheWriteTokens()).isEqualTo(0L);
+        assertThat(result.outputTokens()).isNull();
         assertThat(hits.get()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("끝 사건(message_stop) 없이 스트림이 끝나면 IO·과금됨 — 한국어 사유, 잘린 응답을 성공으로 읽지 않음")
+    @DisplayName("끝 사건(message_stop) 없이 스트림이 끝나면 IO·과금됨 — 한국어 사유, 잘린 응답을 성공으로 읽지 않음, 받은 사건의 토큰만 남김")
     void streamWithoutMessageStopIsChargedIo() throws Exception {
         List<String> events = ClaudeSse.events(message(textBlock(ANSWER), "end_turn", "", USAGE));
         String base = startStreamServer(events.subList(0, events.size() - 2), 0, List.of());
@@ -589,6 +594,20 @@ class AiServiceStructuredTest {
         assertThat(result.charged()).isTrue();
         assertThat(result.error()).contains("message_stop");
         assertThat(result.text()).isNull();
+        assertThat(result.inputTokens()).as("message_start의 입력").isEqualTo(21_000L);
+        assertThat(result.outputTokens()).as("message_delta 전에 끊김 — 출력은 모름").isNull();
+        stop();
+
+        // message_delta(누적 출력 토큰)까지 받고 끝 사건만 빠진 스트림 — 토큰 넷을 모두 알아 추정 비용을 셀 수 있음.
+        base = startStreamServer(events.subList(0, events.size() - 1), 0, List.of());
+        AiService.StructuredResult afterDelta = service(base, KEY)
+                .structuredStreaming(MODEL, "프레임", "패킷", schema(), "high", 60, 64_000);
+        assertThat(afterDelta.errorKind()).isEqualTo("IO");
+        assertThat(afterDelta.text()).isNull();
+        assertThat(afterDelta.inputTokens()).isEqualTo(21_000L);
+        assertThat(afterDelta.outputTokens()).isEqualTo(3_100L);
+        assertThat(afterDelta.cacheReadTokens()).isEqualTo(7_800L);
+        assertThat(afterDelta.cacheWriteTokens()).isEqualTo(0L);
     }
 
     @Test
@@ -605,6 +624,8 @@ class AiServiceStructuredTest {
         assertThat(result.charged()).isTrue();
         assertThat(result.error()).contains("1초", "스트림").doesNotContain("자동 탐색");
         assertThat(result.latencyMs()).isLessThan(3_000L);
+        assertThat(result.inputTokens()).as("첫 사건(message_start)의 입력은 남김").isEqualTo(21_000L);
+        assertThat(result.outputTokens()).isNull();
         assertThat(hits.get()).isEqualTo(1);
     }
 
