@@ -39,6 +39,16 @@ describe("QA-428 실패 글의 앞머리는 한 번만(summaryUnavailableText·s
     once(text);
   });
 
+  it("받아 둔 결과 없음(stale) — 출처 이름을 덧붙여도 앞머리 하나, 사유는 하나로 단정하지 않음(QA-427)", () => {
+    const text = summaryUnavailableText({
+      available: false, offlineSources: ["google_ko", "bing"],
+      message: "출처 2곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.",
+    });
+    once(text);
+    expect(text).toContain("받아 둔 결과가 없는 출처: 구글 뉴스(한국어)·Bing 뉴스");
+    expect(text).not.toContain("받은 지 15분이 지나 서버에");
+  });
+
   it("하루 글자 상한(429) — 사유 본문에 '요약하지 않았습니다'가 없어 앞머리 하나", () => {
     const text = summaryErrorText(
       new FakeApiError("오늘 AI 글자 상한(번역과 함께 원문 1,000자)에 닿았습니다(오늘 990자 씀) — 내일(KST) 다시 됩니다", 429),

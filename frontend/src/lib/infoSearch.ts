@@ -2360,7 +2360,7 @@ export function summaryMetaText(response: Pick<SearchSummaryResponse, "model" | 
  * 것을 가를 수 없어 사유를 하나로 단정하지 않습니다(QA-427). 실패를 '없음'으로 보이지 않게 이름을 적습니다.
  */
 export function summaryOfflineText(response: Partial<Pick<SearchSummaryResponse, "offlineSources">>): string | null {
-  const names = (response.offlineSources ?? []).filter((name) => typeof name === "string" && name.trim()).map((name) => sourceLabel(name.trim()));
+  const names = offlineSourceNames(response);
   return names.length
     ? `요약에 들지 않은 출처: ${names.join("·")} — 서버에 받아 둔 결과가 없음(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음). 새로 받기에 성공한 뒤 다시 요약하면 들어갑니다.`
     : null;
@@ -2371,13 +2371,25 @@ export function summaryEmptyText(response: Pick<SearchSummaryResponse, "basedOn"
   return response.basedOn === 0 ? "고른 기간에 받아 둔 자료가 없어 요약하지 않았습니다." : "요약 줄을 받지 못했습니다.";
 }
 
+/** 받아 둔 결과가 서버에 없는 출처의 이름(offlineSources — 키면 출처 상태 줄과 같은 이름으로, 빈 글은 뺌). */
+function offlineSourceNames(response: Partial<Pick<SearchSummaryResponse, "offlineSources">>): string[] {
+  return (response.offlineSources ?? []).filter((name) => typeof name === "string" && name.trim()).map((name) => sourceLabel(name.trim()));
+}
+
 /**
  * 수집기·엔진에 닿지 못한 응답(available:false — 엔진 키 없음·수집기·받아 둔 결과 없음·엔진 실패)의 글. 서버 사유가 없으면 기본 글.
- * 서버 사유(message)는 본문만 담으므로 '요약하지 못했습니다'는 여기서 한 번만 붙입니다(QA-428).
+ * 서버 사유(message)는 본문만 담으므로 '요약하지 못했습니다'는 여기서 한 번만 붙입니다(QA-428). 받아 둔 결과가 없는 출처(stale의
+ * offlineSources)가 있으면 그 이름을 '요약에 들지 않은 출처'와 같은 이름으로 덧붙입니다 — 서버 사유는 곳 수만 말하므로(사유 글은 서버 것 그대로 —
+ * 하나로 단정하지 않음, QA-427).
  */
-export function summaryUnavailableText(response: Partial<Pick<SearchSummaryResponse, "available" | "message">>): string {
+export function summaryUnavailableText(
+  response: Partial<Pick<SearchSummaryResponse, "available" | "message" | "offlineSources">>,
+): string {
   const message = typeof response.message === "string" ? response.message.trim() : "";
-  return message ? `${SUMMARY_FAILED} — ${message}` : `${SUMMARY_FAILED}.`;
+  const base = message ? `${SUMMARY_FAILED} — ${message}` : `${SUMMARY_FAILED}.`;
+  const names = offlineSourceNames(response);
+  if (!names.length) return base;
+  return `${base}${/[.!?]$/.test(base) ? "" : "."} 받아 둔 결과가 없는 출처: ${names.join("·")}.`;
 }
 
 /**

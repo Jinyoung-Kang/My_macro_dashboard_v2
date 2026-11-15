@@ -289,6 +289,19 @@ describe("실패·비우기", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("요약하지 못했습니다 — 오늘 AI 글자 상한을 다 썼습니다.");
   });
 
+  it("받아 둔 결과가 없어 요약하지 못했으면(stale) 서버 사유와 함께 그 출처 이름(role=alert) — 곳 수만 보이지 않음", async () => {
+    renderScreen(OWNER);
+    fireEvent.click(await summaryButton());
+    await waitFor(() => expect(summaries).toHaveLength(1));
+    await act(async () => summaries[0].resolve({
+      available: false, reason: "stale", offlineSources: ["구글 뉴스(한국어)", "Bing 뉴스"],
+      message: "출처 2곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.",
+    }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("요약하지 못했습니다 — 출처 2곳의 받아 둔 결과가 서버에 없습니다");
+    expect(alert.textContent).toContain("받아 둔 결과가 없는 출처: 구글 뉴스(한국어)·Bing 뉴스.");
+  });
+
   it("서버가 읽은 줄이 0건이면 그렇다고 — 'AI 요약 … 보고 만든 것' 안내·'받았습니다' 상태 글을 붙이지 않음", async () => {
     renderScreen(OWNER);
     const region = await summarize({ ...SUMMARY, summary: [], basedOn: 0, model: null, generatedAt: null });

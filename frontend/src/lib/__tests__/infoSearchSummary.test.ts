@@ -138,6 +138,20 @@ describe("빈 요약·실패 글", () => {
     expect(summaryUnavailableText({ available: false, message: "  " })).toBe("요약하지 못했습니다.");
   });
 
+  it("받아 둔 결과가 없어 요약하지 못했으면(stale) 그 출처를 '요약에 들지 않은 출처'와 같은 이름으로 — 서버 사유는 곳 수만 말함", () => {
+    const stale = "출처 2곳의 받아 둔 결과가 서버에 없습니다(받은 지 15분이 지났거나, 받지 못했거나, 아직 부르지 않음) — 새로 받기에 성공한 뒤 다시 요약하세요.";
+    const text = summaryUnavailableText({ available: false, message: stale, offlineSources: ["구글 뉴스(한국어)", "bing"] });
+    expect(text).toBe(`요약하지 못했습니다 — ${stale} 받아 둔 결과가 없는 출처: 구글 뉴스(한국어)·Bing 뉴스.`);
+    // 출처 이름은 요약 패널의 '요약에 들지 않은 출처'와 같음(키는 출처 상태 줄의 이름으로, 이름은 그대로)
+    expect(summaryOfflineText({ offlineSources: ["구글 뉴스(한국어)", "bing"] })).toContain("요약에 들지 않은 출처: 구글 뉴스(한국어)·Bing 뉴스");
+    // 서버 사유가 마침표로 끝나지 않거나 없어도 문장이 이어 붙지 않음, 빈 이름은 뺌
+    expect(summaryUnavailableText({ available: false, message: "합성 사유", offlineSources: ["google_en", " "] })).toBe(
+      "요약하지 못했습니다 — 합성 사유. 받아 둔 결과가 없는 출처: 구글 뉴스(영어).",
+    );
+    expect(summaryUnavailableText({ available: false, offlineSources: ["google_en"] })).toBe("요약하지 못했습니다. 받아 둔 결과가 없는 출처: 구글 뉴스(영어).");
+    expect(summaryUnavailableText({ available: false, message: stale, offlineSources: [] })).toBe(`요약하지 못했습니다 — ${stale}`);
+  });
+
   it("요청 실패 — 서버 사유는 그대로, 권한(403)은 사유가 없으면 '이 계정으로는 할 수 없습니다'", () => {
     class FakeApiError extends Error {
       constructor(
