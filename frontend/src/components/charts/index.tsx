@@ -23,7 +23,7 @@ import {
   YAxis,
   ZAxis,
 } from "recharts";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { EMPTY, formatNumber, formatWeightPercent } from "@/lib/format";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
 import {
   axisLabelWidth,
@@ -735,7 +735,8 @@ export function WeightHeatmap({
                   >
                     {typeof value === "number"
                       ? value > 0
-                        ? `${formatNumber(value, 1)}${unit}`
+                        // 들고 있었지만 0.05% 미만인 칸은 '<0.1%' — '0.0%'면 미보유('·')처럼 없는 값으로 읽힙니다(QA-454).
+                        ? unit === "%" ? formatWeightPercent(value, 1) : `${formatNumber(value, 1)}${unit}`
                         // 0%는 "미보유"입니다. 값을 모르는 것(EMPTY)과 같은 기호를
                         // 쓰면 둘을 구분할 수 없습니다.
                         : "·"
