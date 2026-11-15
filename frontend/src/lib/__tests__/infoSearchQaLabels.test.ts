@@ -407,3 +407,33 @@ describe("연결 그림 — 지킬 글이 다른 묶음과 번갈아 바뀌지 �
     }
   });
 });
+
+describe("연결 그림 — 낱말 가운데에서 갈린 묶음 안에서 낱말 경계로만 갈리는 이름들은 다시 가름(검토 지적)", () => {
+  // 검토 지적: '…디스플레이 주식회사'와 '…디스플레이 주식회사 베트남'이 '…디스플레이로지텍'과 한 묶음이 되면 갈리는 자리(디스플레이 뒤)가 로지텍 쪽
+  // 낱말 가운데라, 두 '주식회사' 이름은 그 자리부터 같은 '주식회사'를 보이고 끝까지 드는지로만 글이 달랐습니다 — 베트남 법인이 '가…주식회…'(72)·
+  // '가상…주식회…'(87·95)·'가상…주식회사…'(101)처럼 디스플레이도 베트남도 없는 글이고 앞 이름으로도 읽혔습니다(R4-N3과 같은 증상, 바꾸기 전부터).
+  // 이제 그 둘을 다음 차례에 다시 갈라 낱말 경계의 물림('…베트남')을 받게 합니다(116은 '가상…주식회사 베…' — '베'로 그 이름으로만 읽힘). 바꾸기 전
+  // 실패: 배정 72~79·84~115에서 베트남 법인의 글이 앞 이름으로도 읽히고 '베트남'이 없음.
+  const names = ["가상전자디스플레이 주식회사", "가상전자디스플레이 주식회사 베트남", "가상전자로지텍", "가상전자디스플레이로지텍"];
+  const VIETNAM = names[1];
+
+  it("배정 72·87·95·101 — 베트남 법인의 글이 '…베트남'이고 그 이름으로만 읽힘", () => {
+    const expected: Record<number, string> = { 72: "가상…베트남", 87: "가상전…베트남", 95: "가상전…베트남", 101: "가상전자…베트남" };
+    for (const [px, label] of Object.entries(expected)) {
+      const labels = graphLabels(names, Number(px));
+      expect([px, labels.get(VIETNAM)]).toEqual([px, label]);
+      expect([px, names.filter((name) => readsAs(label, name))]).toEqual([px, [VIETNAM]]);
+    }
+  });
+
+  it("배정 66~116 어디서나 — 글이 서로 다르고 폭 안이며, 베트남 법인의 글은 그 이름으로만 읽히고 글만으로 다 가름", () => {
+    for (let px = 66; px <= 116; px += 1) {
+      const labels = graphLabels(names, px);
+      const label = labels.get(VIETNAM)!;
+      expect(new Set(labels.values()).size).toBe(names.length);
+      for (const each of labels.values()) expect([px, each, renderedWidth(each) <= px]).toEqual([px, each, true]);
+      expect([px, label, names.filter((name) => readsAs(label, name))]).toEqual([px, label, [VIETNAM]]);
+      expect([px, resolvable(labels)]).toEqual([px, true]);
+    }
+  });
+});

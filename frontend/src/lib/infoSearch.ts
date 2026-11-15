@@ -1279,9 +1279,18 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
     }
     return [...byLabel.values()].filter((group) => group.length > 1);
   };
+  /**
+   * 다음 차례에 다시 가를 작은 묶음(글은 서로 달라도 글만으로 서로 갈리지 않는 이름들 — 아래 group.forEach 뒤)과, 이미 다시 가른 작은 묶음(한 번만).
+   * 같은 차례에 겹친 글 묶음에 든 이름이 있으면 그 묶음에 맡김.
+   */
+  let regroup: string[][] = [];
+  const regrouped = new Set<string>();
   for (let round = 0; round < 8; round += 1) {
     recheck();
-    const groups = clashes();
+    const same = clashes();
+    const inSame = new Set(same.flat());
+    const groups = [...same, ...regroup.filter((group) => group.every((name) => !inSame.has(name)))];
+    regroup = [];
     if (groups.length === 0) break;
     for (const group of groups) {
       const charsOf = group.map((name) => Array.from(name));
@@ -1367,6 +1376,22 @@ function splitGraphLabels(distinct: readonly string[], maxPx: number, refine: bo
         }
       }
       group.forEach((name, at) => labels.set(name, fits[at].label));
+      // 낱말 가운데에서 갈린 묶음에서 갈리는 자리의 글자가 같은 이름들(둘 다 거기서 빈칸 — '…디스플레이 주식회사'와 '…디스플레이 주식회사 베트남'이
+      // '…디스플레이로지텍'과 갈리는 자리)은 그 자리부터의 글로는 서로 갈리지 않고, 끝까지 드는지에 따라서만 글이 달라짐('가상전…주식회사'·
+      // '가상…주식회사…' — 뒤의 글이 앞 이름으로도 읽힘). 낱말 경계의 물림도 받지 못했으므로, 그 이름들의 글이 서로 다르고 한 글이 다른 이름으로도
+      // 읽히면 다음 차례에 그 이름들끼리 다시 가름('가상전자…베트남' — 검토 지적). 낱말 경계에서 갈린 묶음은 이미 그 물림을 받아 그대로.
+      if (refine && inWord) {
+        const byChar = new Map<string, number[]>();
+        charsOf.forEach((chars, at) => byChar.set(chars[split] ?? "", [...(byChar.get(chars[split] ?? "") ?? []), at]));
+        for (const ats of byChar.values()) {
+          const sub = ats.map((at) => group[at]);
+          const key = sub.join("\n");
+          if (ats.length < 2 || regrouped.has(key) || new Set(ats.map((at) => fits[at].label)).size < ats.length) continue;
+          if (!ats.some((at) => ats.some((other) => other !== at && labelFitsName(fits[at].label, group[other])))) continue;
+          regroup.push(sub);
+          regrouped.add(key);
+        }
+      }
     }
   }
   recheck();
