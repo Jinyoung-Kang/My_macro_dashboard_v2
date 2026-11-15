@@ -1,0 +1,193 @@
+/**
+ * 글자 하한 12px(원칙 A8 — 명세 docs/specs/2026-10-31-v2-coinbase-ui.md §2-3 '최소 크기는 micro(12px)', 작업대 화면 언어 계획
+ * docs/specs/2026-11-15-workbench-ui-plan.md §9-2) — QA-457.
+ *
+ * src의 제품 소스(시험·자가 검증 폴더 제외)에서 글자 크기를 정하는 곳을 모두 보고, 12px보다 작아질 수 있는 값을 찾습니다. 허용 목록은 없습니다.
+ *  - .ts·.tsx: TypeScript AST(createSourceFile)로 문자열·템플릿 조각 안의 임의 크기 클래스(`text-[11px]`·`lg:text-[0.7rem]`·
+ *    `text-[0.8em]`·`text-[length:11px]`·`[font-size:11px]`)와, 이름이 fontSize인 JSX 속성·객체 키·구조 분해 기본값(`fontSize={10}`·
+ *    `style={{ fontSize: "0.7rem" }}`·차트 `tick={{ fontSize: 10 }}`), 이름이 …_FONT·…FontSize인 상수(`CHART_FONT = 12`)의 숫자를 봅니다.
+ *    주석은 AST가 건너뜁니다.
+ *  - .css: 주석을 지운 뒤 `font-size:` 선언, 글자 단계 변수(`--text-micro: 0.75rem` — `--text-*--line-height` 같은 딸린 값은 뺌),
+ *    그리고 같은 임의 크기 클래스(@apply 등).
+ *
+ * 하한 아래로 보는 값: px·단위 없음(React style·SVG의 숫자는 px) 12 미만, rem 0.75 미만, em·% 1(100%) 미만. em·%는 부모 크기에 따라
+ * 달라져 소스만으로 12px 이상임을 증명할 수 없습니다 — 부모가 하한(12px)이면 그 아래로 내려갑니다. 실제로 13px 변화 칩 안의 0.8em ▲▼가
+ * 10.4px였습니다(홈·모의 개요, QA-457). 변수·calc 같은 숫자가 아닌 값(`text-[var(--x)]`, 글자색 `text-[#fff]`)은 크기를 알 수 없어 보지 않습니다.
+ */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
+import ts from "typescript";
+import { describe, expect, it } from "vitest";
+
+const SRC = resolve(__dirname, "../..");
+const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
+
+type Unit = "px" | "rem" | "em" | "%" | "";
+
+/** 크기 하나가 하한(12px) 아래로 내려갈 수 있는가. */
+function belowFloor(value: number, unit: Unit): boolean {
+  if (unit === "rem") return value < 0.75;
+  if (unit === "em") return value < 1;
+  if (unit === "%") return value < 100;
+  return value < 12;
+}
+
+/** "11px"·"0.7rem"·"0.8em"·"80%"·"10" → 크기, 숫자가 아니면 null. */
+function parseSize(text: string): { value: number; unit: Unit } | null {
+  const match = /^\s*(\d*\.?\d+)(px|rem|em|%)?\s*$/.exec(text);
+  return match ? { value: Number(match[1]), unit: (match[2] ?? "") as Unit } : null;
+}
+
+/** 글 안의 임의 크기 클래스(변형 접두어·! 포함)와 임의 속성 [font-size:…]. */
+const SIZE_CLASS = /(?<![\w-])text-\[(?:length:)?(\d*\.?\d+)(px|rem|em|%)\]|\[font-size:(\d*\.?\d+)(px|rem|em|%)\]/g;
+
+function classHits(text: string): string[] {
+  return [...text.matchAll(SIZE_CLASS)]
+    .filter((match) => belowFloor(Number(match[1] ?? match[3]), (match[2] ?? match[4]) as Unit))
+    .map((match) => match[0]);
+}
+
+/** 글자 크기를 담는 이름 — fontSize 속성·키와 …_FONT·…_FONT_SIZE·…FontSize 상수. */
+const FONT_NAME = /^(fontSize|font-size)$|(^|_)FONT(_SIZE)?$|FontSize$/;
+
+function nameOf(name: ts.Node | undefined): string | null {
+  if (!name) return null;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isPrivateIdentifier(name)) return name.text;
+  return null;
+}
+
+/** 크기 값으로 읽을 수 있는 식(숫자·문자열·JSX의 {숫자}) → 글, 아니면 null. */
+function literalOf(node: ts.Node | undefined): string | null {
+  if (!node) return null;
+  if (ts.isJsxExpression(node)) return literalOf(node.expression);
+  if (ts.isParenthesizedExpression(node)) return literalOf(node.expression);
+  if (ts.isNumericLiteral(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  return null;
+}
+
+/** .ts·.tsx 한 파일에서 하한 아래의 글자 크기 — "줄: 찾은 글". */
+function tsFontHits(fileName: string, text: string): string[] {
+  const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true, kind);
+  const found: string[] = [];
+  const add = (node: ts.Node, hit: string) => {
+    const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+    found.push(`${line + 1}: ${hit}`);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)) {
+      for (const hit of classHits(node.text)) add(node, hit);
+    }
+    let name: string | null = null;
+    let value: string | null = null;
+    if (ts.isJsxAttribute(node)) {
+      name = nameOf(node.name);
+      value = literalOf(node.initializer);
+    } else if (ts.isPropertyAssignment(node)) {
+      name = nameOf(node.name);
+      value = literalOf(node.initializer);
+    } else if (ts.isBindingElement(node) || ts.isParameter(node) || ts.isVariableDeclaration(node)) {
+      name = nameOf(ts.isBindingElement(node) && node.propertyName ? node.propertyName : node.name);
+      value = literalOf(node.initializer);
+    }
+    if (name !== null && value !== null && FONT_NAME.test(name)) {
+      const size = parseSize(value);
+      if (size && belowFloor(size.value, size.unit)) add(node, `${name} ${value}`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/** .css 한 파일에서 하한 아래의 글자 크기 — 주석을 지우고(줄 수는 그대로) font-size 선언·글자 단계 변수·임의 크기 클래스. */
+function cssFontHits(text: string): string[] {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
+  return code.split("\n").flatMap((line, index) => {
+    const hits = [
+      ...[...line.matchAll(/(?<![\w-])font-size\s*:\s*(\d*\.?\d+)(px|rem|em|%)/g)]
+        .filter((match) => belowFloor(Number(match[1]), match[2] as Unit))
+        .map((match) => match[0]),
+      ...[...line.matchAll(/--text-([a-z0-9-]+)\s*:\s*(\d*\.?\d+)(px|rem|em)\b/g)]
+        .filter((match) => !match[1].includes("--") && belowFloor(Number(match[2]), match[3] as Unit))
+        .map((match) => match[0]),
+      ...classHits(line),
+    ];
+    return hits.map((hit) => `${index + 1}: ${hit}`);
+  });
+}
+
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) {
+      if (!SKIP_DIRS.has(name)) sourceFiles(path, out);
+    } else if (/\.(ts|tsx|css)$/.test(name) && !/\.test\.tsx?$/.test(name) && !name.endsWith(".d.ts")) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+function offenders(): string[] {
+  const files = sourceFiles(SRC);
+  expect(files.length).toBeGreaterThan(100);
+  expect(files.some((path) => path.endsWith("globals.css"))).toBe(true);
+  return files.flatMap((path) => {
+    const text = readFileSync(path, "utf8");
+    const hits = path.endsWith(".css") ? cssFontHits(text) : tsFontHits(path, text);
+    return hits.map((hit) => `${relative(SRC, path)}:${hit}`);
+  });
+}
+
+describe("글자 하한 12px(QA-457)", () => {
+  // 수정 전 실패(재현 커밋에서는 it.fails) — 지금 걸리는 곳:
+  //  - components/patterns/ChangeChip.tsx — ▲▼ text-[0.8em](sm 13px 안에서 10.4px — 홈 27개·모의 개요 6개), 단위 text-[0.85em](sm에서 11.05px)
+  //  - components/screens/detail/DetailParts.tsx — AI 요약 근거 번호 [n] 위첨자 text-[11px] 두 곳
+  it.fails("src의 글자 크기는 모두 12px 이상이다 — 허용 목록 없음", () => {
+    expect(offenders()).toEqual([]);
+  });
+
+  it("검사기 자체 — 클래스·fontSize 속성·키·기본값·상수를 찾고, 주석·12px 이상·1em 이상·숫자가 아닌 값은 건너뛴다", () => {
+    const sample = [
+      "// 주석의 text-[10px]는 건너뜀",
+      "const a = \"px-2 text-[11px] lg:text-[13px]\";",
+      "const b = `ml-1 ${x} lg:text-[0.7rem] text-[0.75rem]`;",
+      "const c = \"text-[0.8em] text-[1em] text-[100%] text-[var(--x)] text-[#fff] text-[12px] text-micro\";",
+      "export const View = () => <text fontSize={10} className=\"!text-[length:9px]\">a</text>;",
+      "const d = { fontSize: \"0.7rem\", style: { fontSize: 11 } };",
+      "function Tick({ fontSize = 10 }: { fontSize?: number }) { return fontSize; }",
+      "export const CHART_FONT = 11;",
+      "const e = { fontSize: CHART_FONT, lineHeight: 10, fontSize2: 8 };",
+      "const f = \"[font-size:11px] [font-size:12px]\";",
+      "const g = <svg><text fontSize=\"0.8em\" /><text fontSize={12} /></svg>;",
+    ].join("\n");
+    expect(tsFontHits("sample.tsx", sample)).toEqual([
+      "2: text-[11px]",
+      "3: text-[0.7rem]",
+      "4: text-[0.8em]",
+      "5: fontSize 10",
+      "5: text-[length:9px]",
+      "6: fontSize 0.7rem",
+      "6: fontSize 11",
+      "7: fontSize 10",
+      "8: CHART_FONT 11",
+      "10: [font-size:11px]",
+      "11: fontSize 0.8em",
+    ]);
+  });
+
+  it("검사기 자체(CSS) — 주석을 지우고 font-size·글자 단계 변수만, 딸린 값(--line-height·letter-spacing)과 색 토큰은 건너뛴다", () => {
+    const css = [
+      "/* 옛 text-[11px] 설명은 건너뜀",
+      "   font-size: 9px도 */",
+      ".a { font-size: 11px; }",
+      ".b { font-size: 0.75rem; letter-spacing: -0.02em; }",
+      "@theme { --text-tiny: 0.625rem; --text-micro: 0.75rem; --text-micro--line-height: 0.5rem; }",
+      ":root { --text-3: #8f99a8; --text-display--letter-spacing: -0.02em; }",
+      ".c { @apply text-[10px]; }",
+    ].join("\n");
+    expect(cssFontHits(css)).toEqual(["3: font-size: 11px", "5: --text-tiny: 0.625rem", "7: text-[10px]"]);
+  });
+});
