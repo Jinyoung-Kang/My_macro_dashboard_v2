@@ -126,7 +126,10 @@ describe("주간 복기 목록", () => {
   });
 
   it("수동 실행 확인 문구는 비용과 하루 상한을 함께 적는다", () => {
-    expect(REVIEW_COST_NOTE).toContain("Sonnet 5.5 호출 1회(약 $0.1), 하루 호출 상한에 포함");
+    expect(REVIEW_COST_NOTE).toContain("하루 호출 상한에 포함");
+    // 출력 한도 64,000토큰(QA-475)을 다 쓸 때의 위 끝 — 그전의 '약 $0.1'(결정 1회 규모)은 몇 배 낮은 숫자라 쓰지 않음(검토 지적).
+    expect(REVIEW_COST_NOTE).toContain("출력 한도 64,000토큰을 다 쓰면 기본 단가로 최대 약 $0.9 — 출력만 약 $0.64");
+    expect(REVIEW_COST_NOTE).not.toContain("약 $0.1)");
   });
 });
 
