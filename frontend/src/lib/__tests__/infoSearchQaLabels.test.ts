@@ -392,6 +392,25 @@ describe("연결 그림 — 다시 줄여도 가르는 낱말이 남는 한글 �
       expect(resolvable(labels)).toBe(true);
     }
   });
+
+  it("낱말 경계 뒤의 번호 — 보여야 할 끝을 그 뒤 첫 낱말(번호면 번호의 끝)까지 잡아 '…2020…'이 '…202…'로 잘리지 않음(2차 검토 지적)", () => {
+    // 2차 검토 지적: 낱말 경계에서 갈릴 때 보여야 할 끝을 그 뒤 첫 낱말까지 잡는 처리(2f952ec2)를 지워도 시험이 통과했습니다 — 지운 판은 배정 66~70
+    // (390·320 화면)에서 'Ex…202…'·'Sa…202…'로 번호를 자름.
+    const sets: [string[], (string | null)[]][] = [
+      [["Example Holdings 2020 Ltd", "Example Holdings Asia", "Example Holdings"], ["2020", null, null]],
+      [["Sample Holdings 2020 LLC", "Sample Holdings", "Sample Holdings 2021"], ["2020", null, "2021"]],
+    ];
+    for (const [names, numbers] of sets) {
+      for (let px = 66; px <= 116; px += 1) {
+        const labels = graphLabels(names, px);
+        names.forEach((name, at) => {
+          const label = labels.get(name)!;
+          if (numbers[at] !== null) expect([px, label, numbersAfterEllipsis(label)]).toEqual([px, label, [numbers[at]]]);
+        });
+        expect([px, resolvable(labels)]).toEqual([px, true]);
+      }
+    }
+  });
 });
 
 describe("연결 그림 — 지킬 글이 다른 묶음과 번갈아 바뀌지 않고, 기본 글보다 가르기 어려워지지 않음(검토 지적)", () => {
@@ -417,6 +436,20 @@ describe("연결 그림 — 지킬 글이 다른 묶음과 번갈아 바뀌지 �
       expect([px, resolvable(labels)]).toEqual([px, true]);
       expect([px, finance.filter((name) => finance.every((other) => readsAs(labels.get(name)!, other)))]).toEqual([px, []]);
     }
+  });
+
+  it("다른 이름의 새 글이 묶음 밖 이름이 쓰는 글과 같으면 지킬 글을 두지 않음 — '가상전자로지텍'이 '…로지텍'으로 끝남(2차 검토 지적)", () => {
+    // 2차 검토 지적: 위 시험은 기본 글 되돌림만으로도 통과해, 이 검사(다른 이름의 새 글이 묶음 밖 이름이 쓰는 글과 같으면 지킬 글을 두지 않음)를 지워도
+    // 잡지 못했습니다. 지운 판은 배정 72~79에서 '가상전자로지텍'이 '가상전자로…'(로지텍으로 시작하는 세 이름과 맞음)이고 글만으로 가를 수 없는 이름이
+    // 2개에서 3개로 늘어남.
+    const names = ["가상전자 미국", "가상전자디스플레이전자 주식회사 미국", "가상전자파운드리솔루션즈로지텍 주식회사", "샘플그룹 아메리카", "가상전자로지텍 미국", "가상전자로지텍", "가상전자 베트남"];
+    for (let px = 66; px <= 116; px += 1) {
+      const labels = graphLabels(names, px);
+      const plain = graphLabels(names, px, { refine: false });
+      expect([px, labels.get("가상전자로지텍")!.endsWith("로지텍")]).toEqual([px, true]);
+      expect([px, unresolvedCount(labels) <= unresolvedCount(plain)]).toEqual([px, true]);
+    }
+    expect(graphLabels(names, 72).get("가상전자로지텍")).toBe("가상…로지텍");
   });
 
   it("지킬 글을 둔 뒤 상대 이름의 글이 그 이름으로도 읽히게 되면 지킬 글을 거둠 — 한글 표본 + '가상전자로지텍파운드리솔루션즈'", () => {
@@ -501,6 +534,26 @@ describe("연결 그림 — 낱말 가운데에서 갈린 묶음 안에서 낱�
       expect(new Set(labels.values()).size).toBe(names.length);
       for (const each of labels.values()) expect([px, each, renderedWidth(each) <= px]).toEqual([px, each, true]);
       expect([px, label, names.filter((name) => readsAs(label, name))]).toEqual([px, label, [VIETNAM]]);
+      expect([px, resolvable(labels)]).toEqual([px, true]);
+    }
+  });
+
+  it("글이 서로 갈리는 작은 묶음은 다시 가르지 않음 — 제 이름으로만 읽히던 글이 그대로(2차 검토 지적)", () => {
+    // 2차 검토 지적: 다시 가르는 조건(갈리는 글자가 같은 이름들 가운데 한 글이 다른 이름으로도 읽힐 때만)을 지워도 시험이 통과했습니다 — 지운 판은
+    // 이미 제 이름으로만 읽히던 글까지 다시 줄여, 아래 묶음에서 '가상…베트남'(세 이름 모두로 읽힘)·'예시금융…2호'·'EX…Inc.'처럼 여러 이름으로 읽히는
+    // 글을 줌.
+    const cases: [number, string[], string[][]][] = [
+      [
+        72,
+        ["가상전자 12 베트남", "가상전자 12 주식회사 베트남", "가상전자 주식회사 베트남"],
+        [["가상전자 12 베트남"], ["가상전자 12 주식회사 베트남"], ["가상전자 12 주식회사 베트남", "가상전자 주식회사 베트남"]],
+      ],
+      [87, ["예시금융지주 21 2호", "예시금융지주증권", "예시금융지주증권 2호"], [["예시금융지주 21 2호"], ["예시금융지주증권"], ["예시금융지주증권 2호"]]],
+      [66, ["EXAMPLE 1 Inc.", "EXAMPLE 1 B.V.", "EXAMPLE 9 Inc."], [["EXAMPLE 1 Inc."], ["EXAMPLE 1 B.V."], ["EXAMPLE 9 Inc."]]],
+    ];
+    for (const [px, group, readers] of cases) {
+      const labels = graphLabels(group, px);
+      expect([px, group.map((name) => group.filter((other) => readsAs(labels.get(name)!, other)))]).toEqual([px, readers]);
       expect([px, resolvable(labels)]).toEqual([px, true]);
     }
   });
