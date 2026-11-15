@@ -17,6 +17,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HorizontalBars, LineSeries, MultiLineSeries, ScatterPlot, SERIES_COLORS, SignedBars } from "@/components/charts";
+import { REFERENCE_DASH } from "@/components/charts/frame";
 
 function observeAs(width: number, height: number) {
   vi.stubGlobal(
@@ -133,6 +134,33 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     expect(screen.getByText("프레임 v1")).toBeTruthy();
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
     expect(container.querySelector("svg.recharts-surface")?.getAttribute("aria-label")).toBe("종가와 미결제약정");
+  });
+
+  // QA-496: 점선 계열(K40 참고선)의 범례 견본은 폭 12px span의 border-top 2px dashed였는데, 크롬은 굵기 2px에서 길이가 토막 6px × 2 이하인
+  // dashed 테두리를 실선으로 칠합니다(12px 실선, 14px부터 끊김 — /paper/kr 390·1024·1440). 견본을 그림 선과 같은 SVG 선(stroke-dasharray
+  // REFERENCE_DASH '6 4')으로, 한 주기(6 + 4 + 6 = 16px) 이상 길게 그려야 엔진과 무관하게 점선으로 보입니다. 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-496: 점선 계열 견본은 SVG 선(stroke-dasharray '6 4', 길이 16px 이상), 실선 계열 견본은 dasharray 없음", () => {
+    observeAs(600, 300);
+    render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[
+          { key: "a", name: "종가", color: SERIES_COLORS.blue },
+          { key: "b", name: "참고선", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    const items = within(screen.getByRole("list", { name: "범례" })).getAllByRole("listitem");
+    const line = (item: HTMLElement) => item.querySelector('svg[aria-hidden="true"] line');
+    const dashed = line(items[1]);
+    expect(dashed, "점선 견본 svg line").not.toBeNull();
+    expect(dashed?.getAttribute("stroke-dasharray")).toBe(REFERENCE_DASH);
+    expect(dashed?.getAttribute("stroke")).toBe("#a7b0bd");
+    expect(Number(dashed?.getAttribute("x2")) - Number(dashed?.getAttribute("x1"))).toBeGreaterThanOrEqual(16);
+    const solid = line(items[0]);
+    expect(solid, "실선 견본 svg line").not.toBeNull();
+    expect(solid?.getAttribute("stroke-dasharray")).toBeNull();
+    expect(solid?.getAttribute("stroke")).toBe(SERIES_COLORS.blue);
   });
 
   it("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
