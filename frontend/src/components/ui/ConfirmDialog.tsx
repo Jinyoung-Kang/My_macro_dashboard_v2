@@ -96,7 +96,7 @@ function ConfirmForm({
         <div className="flex flex-col gap-1.5">
           <label htmlFor={inputId} className="text-sm text-text-2">
             확인하려면 다음 글자를 그대로 입력하세요:{" "}
-            <code className="rounded-sm bg-surface-2 px-1 font-mono text-text">{requireText}</code>
+            <code className="rounded-sm border border-border px-1 font-mono text-text">{requireText}</code>
           </label>
           <input
             id={inputId}
@@ -112,7 +112,7 @@ function ConfirmForm({
         </div>
       )}
       <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("secondary")}>
+        <button type="button" onClick={onCancel} disabled={busy} className={buttonClasses("default")}>
           {cancelLabel}
         </button>
         <button type="submit" disabled={!canConfirm} className={CONFIRM_TONE[tone]}>

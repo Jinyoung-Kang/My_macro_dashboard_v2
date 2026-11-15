@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { buttonClasses } from "@/components/ui/classes";
 import { BuildingIcon, ClockIcon, LandmarkIcon, LockIcon, PersonIcon, StatusText, TagIcon } from "@/components/ui/icons";
 import { entityKindLabel, itemKindLabel, sourceStatusView } from "@/lib/infoSearch";
 import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
@@ -11,41 +12,19 @@ import type { SearchEntityKind, SearchSourceStatus } from "@/lib/types";
  * 강조 파랑(accent)은 누를 수 있는 것(링크·주 단추·지금 탭)에만 씁니다(명세 원칙 A1).
  */
 
-const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
-
-/** 조밀한 단추 바탕 — 좁은 화면 44px, 넓은 화면 30px. */
-const CONTROL = `inline-flex min-h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-control border px-3 text-sm lg:min-h-[30px] lg:px-2.5 motion-safe:transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`;
-
-export const BUTTON = `${CONTROL} border-border bg-surface-2 font-medium text-text hover:border-border-strong`;
-export const BUTTON_PRIMARY = `${CONTROL} border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover`;
-/** 데이터를 자르는 고르기(기간) — 고른 칸도 강조 파랑이 아니라 중립 바탕·굵은 글, 고대비 모드에서는 테두리(명세 D9). */
-export function segmentClass(active: boolean): string {
-  return `${CONTROL} tabular-nums ${
-    active ? "border-border-strong bg-surface-2 font-semibold text-text" : "border-transparent font-medium text-text-2 hover:bg-surface-2 hover:text-text"
-  }`;
-}
-
-/**
- * 켜고 끄는 단추(aria-pressed — 관심 대상의 알림): 켠 칸은 진한 테두리·굵은 글, 끈 칸은 옅은 글(상태는 단추의 글 '켬'·'끔'이 나름 — 색만이 아님).
- * 바꾸는 중에는 aria-disabled(포커스가 떨어지지 않게 disabled를 쓰지 않음). compact는 목록 줄 — 좁은 화면 44px 정사각, 넓은 화면은 줄 높이 32px,
- * 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
+/*
+ * 조작 조각(단추·기간 고르기·켜고 끄는 단추·글 링크·면)은 공용 키트 components/ui/classes.ts로 옮겼고(작업대 실행 명세 §6·§8-4 — 옮기는 커밋),
+ * 이 화면의 부품이 쓰던 이름 그대로 여기서 다시 내보냅니다. 단추 둘은 공용 단추의 기본(default)·주(primary) 모양이고, 기간 고르기는
+ * 공용 기간 고르기(pillTabClasses)입니다.
  */
-export function toggleClass(pressed: boolean, compact = false): string {
-  const shape = compact
-    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-8 lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
-    : CONTROL;
-  return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
-    pressed
-      ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
-      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
-  }`;
-}
-
-/** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(ADR 0041 결정 11), 넓은 화면은 글 높이. */
-export const LINK = `inline-flex min-h-11 items-center rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline lg:min-h-0 ${FOCUS}`;
-
-/** 면(패널) — 1px 경계, 모서리 4px. */
-export const PANEL = "rounded-card border border-border bg-surface";
+export const BUTTON = buttonClasses("default");
+export const BUTTON_PRIMARY = buttonClasses("primary");
+export {
+  LINK_CLASSES as LINK,
+  PANEL_CLASSES as PANEL,
+  pillTabClasses as segmentClass,
+  toggleClasses as toggleClass,
+} from "@/components/ui/classes";
 
 /** 작은 글 머리(패널 안 구획 이름). */
 export function PaneHeading({ id, children }: { id?: string; children: ReactNode }) {
@@ -86,10 +65,8 @@ export function ItemKindTag({ kind }: { kind: string }) {
   return <span className="inline-flex items-center rounded-control border border-border-strong px-1 leading-4 text-text-2">{label}</span>;
 }
 
-/** 별칭·식별자 꼬리표. */
-export function Tag({ children }: { children: ReactNode }) {
-  return <span className="inline-flex items-center rounded-control border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-text-2">{children}</span>;
-}
+/** 별칭·식별자 꼬리표 — 공용 태그(ui Tag)의 중립 모양을 그대로 씁니다(작업대 실행 명세 §6). */
+export { Tag } from "@/components/ui";
 
 /** 상태마다 다른 모양의 아이콘(글과 함께 — 색만으로 가르지 않음). 받는 중은 시계, 운영 서버에서만은 자물쇠, 그 밖은 톤 기본. */
 function statusIcon(status: string) {

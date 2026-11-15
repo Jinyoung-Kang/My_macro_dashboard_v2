@@ -25,9 +25,14 @@ describe("inputClasses", () => {
       expect(classes).not.toContain("outline-hidden");
     }
     expect(FOCUS_RING).toContain("focus-visible:outline-2");
-    // 인증 화면 입력칸(lg) — 같은 테두리·포커스 링, 높이 48px
+    // 넓은 화면 높이 = 줄 높이 + 여백 + 경계라 줄 높이를 글자 단계로 고정한다 — sm은 caption(13/18 → 24px, sm 단추와 같음). 임의 크기
+    // text-[13px]는 부모 줄 높이(19.5px)를 물려받아 25.5px가 됐다.
+    expect(inputClasses("sm").split(/\s+/)).toEqual(expect.arrayContaining(["text-caption", "lg:min-h-6", "lg:py-0.5"]));
+    expect(inputClasses("sm")).not.toContain("text-[13px]");
+    expect(inputClasses("md").split(/\s+/)).toEqual(expect.arrayContaining(["text-sm", "lg:min-h-[30px]", "lg:py-1"]));
+    // 인증 화면 입력칸(lg) — 같은 테두리·포커스 링, 좁은 화면 44px·넓은 화면 큰 조작 40px(작업대 실행 명세 §3-7)
     const large = inputClasses("lg").split(/\s+/);
-    expect(large).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface", "min-h-12", ...FOCUS_RING.split(/\s+/)]));
+    expect(large).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface", "min-h-11", "lg:min-h-10", ...FOCUS_RING.split(/\s+/)]));
   });
 });
 
@@ -71,6 +76,26 @@ describe("NativeSelect", () => {
     fireEvent.change(select, { target: { value: "0" } });
     expect(onChange).toHaveBeenCalledWith("0");
     expect((container.querySelector("svg") as SVGSVGElement).getAttribute("aria-hidden")).toBe("true");
+  });
+
+  // QA-463: 입력칸 모양(inputClasses)이 넓은 화면 가로 여백을 lg 변형(lg:px-*)으로 따로 두면, Tailwind는 변형 규칙을 변형 없는 규칙보다
+  // 뒤(미디어 쿼리 안)에 내보내므로 화살표 자리로 비운 pr-8(32px)이 lg부터 lg:px-*(10·8px)에 덮여 고른 글 끝이 화살표 아이콘 밑으로 들어갑니다.
+  // 같은 변형 안에서는 padding-right가 padding-inline 뒤에 나오므로(@tailwindcss/node 4.3.5 컴파일로 확인), 가로 여백을 두는 폭 변형마다
+  // 같은 변형의 pr-8이 있어야 모든 폭에서 오른쪽 32px이 남습니다. 수정 전(재현 커밋에서는 it.fails)에는 md·sm의 lg: 변형에 pr-8이 없었습니다.
+  it("모든 폭에서 화살표 자리(오른쪽 32px)를 비운다 — 가로 여백(px)을 두는 폭 변형마다 같은 변형의 pr-8 (QA-463)", () => {
+    for (const inputSize of ["md", "sm", "lg"] as const) {
+      render(
+        <NativeSelect aria-label={`크기 ${inputSize}`} inputSize={inputSize}>
+          <option value="a">Claude Opus 4.1 (기본 엔진)</option>
+        </NativeSelect>,
+      );
+      const classes = screen.getByRole("combobox", { name: `크기 ${inputSize}` }).className.split(/\s+/);
+      const prefixes = new Set(
+        classes.filter((name) => /^(?:[a-z0-9]+:)*px-/.test(name)).map((name) => name.slice(0, name.lastIndexOf("px-"))),
+      );
+      expect(prefixes.size).toBeGreaterThan(0);
+      for (const prefix of prefixes) expect(classes, `${inputSize} ${prefix || "(변형 없음)"}`).toContain(`${prefix}pr-8`);
+    }
   });
 });
 

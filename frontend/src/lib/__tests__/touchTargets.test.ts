@@ -16,9 +16,11 @@ const {
   buttonClasses,
   filterChipClasses,
   inputClasses,
+  LINK_CLASSES,
   pillTabClasses,
   segmentClasses,
   TEXT_TARGET,
+  toggleClasses,
   underlineTabClasses,
 } = uiClasses;
 const { BUTTON, BUTTON_PRIMARY, LINK, segmentClass, toggleClass } = searchParts;
@@ -28,8 +30,8 @@ const BOTH = [true, false] as const;
 /** 누르는 조각 — 이름 → 받을 수 있는 인자를 모두 넣은 클래스 문자열(이름표 붙임). */
 const UI_CONTROLS: Record<string, () => [string, string][]> = {
   buttonClasses: () =>
-    (["primary", "secondary", "ghost", "danger"] as const).flatMap((variant) =>
-      (["md", "sm"] as const).map((size): [string, string] => [`${variant}/${size}`, buttonClasses(variant, size)])),
+    (["default", "primary", "danger", "minimal", "secondary", "ghost"] as const).flatMap((variant) =>
+      (["md", "sm", "lg"] as const).map((size): [string, string] => [`${variant}/${size}`, buttonClasses(variant, size)])),
   inputClasses: () => (["md", "sm", "lg"] as const).map((size): [string, string] => [size, inputClasses(size)]),
   pillTabClasses: () => BOTH.map((active): [string, string] => [String(active), pillTabClasses(active)]),
   segmentClasses: () => BOTH.map((checked): [string, string] => [String(checked), segmentClasses(checked)]),
@@ -37,10 +39,14 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
+  toggleClasses: () =>
+    BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
+  LINK_CLASSES: () => [["", LINK_CLASSES]],
 };
 
 /** 누르는 조각이 아닌 것 — 까닭. */
 const UI_OTHERS: Record<string, string> = {
+  PANEL_CLASSES: "면(패널) 테두리 — 누르지 않음",
   FOCUS_RING: "포커스 링 조각 — 혼자 쓰지 않고 누르는 조각에 붙음",
   SEGMENT_TRACK: "세그먼트의 트랙(바탕) — 누르는 칸은 segmentClasses",
   SELECTED_BAR: "고른 행의 장식 막대 — 누르는 자리는 감싼 행",

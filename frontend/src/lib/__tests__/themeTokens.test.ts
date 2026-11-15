@@ -12,7 +12,7 @@
  *  - 금지 쌍(surface-3 위 text-3·neutral·accent·danger 글자, accent 틴트 위 accent 글자)은 소스 검사로 막습니다 — 제품 소스(.ts·.tsx, 시험 제외)의
  *    문자열·템플릿 조각 하나에 바탕 클래스와 글자 클래스가 함께 있으면 걸립니다(변형 접두어 hover: 등과 투명도 /50은 떼고 봄 — 눌렸을 때만 그 바탕이어도
  *    그때 그 글자가 그 위에 놓임). 부모가 칠한 바탕을 물려받는 자식 글자는 따로 봅니다 — className 글에 그 바탕이 있는 JSX 요소와 그 바탕을 칠하는
- *    톤의 <Banner>(ui/index.tsx BANNER_TONES에서 읽음)의 자식 글. 한계: 변수로 나눠 붙인 클래스, 변수로만 넘긴 Banner 톤, 다른 부품이 안에서 칠하는 바탕은 보지 않습니다.
+ *    톤의 <Callout>·<Banner>(ui/index.tsx CALLOUT_TONES에서 읽음)의 자식 글. 한계: 변수로 나눠 붙인 클래스, 변수로만 넘긴 톤, 다른 부품이 안에서 칠하는 바탕은 보지 않습니다.
  * 밝은 한 벌을 다시 더하면 TOKEN_BLOCKS에 그 선택자를 넣어 같은 행렬로 잽니다(값 후보: 명세 §3-2-2).
  * 대비는 WCAG 2.x 상대휘도, 틴트는 OKLab 10% 섞기(브라우저 결과와 마지막 자리가 다를 수 있음)입니다.
  */
@@ -167,6 +167,9 @@ describe.each(TOKEN_BLOCKS)("토큰 블록 %s", (selector) => {
     ]);
     expect(t["--border-subtle"].toLowerCase()).toBe("#2f343c");
     expect(t["--scrim"]).toBe("rgb(17 20 24 / 0.7)");
+    // 덮개 3층(명세 §3-3) — 안쪽 1px 밝은 경계와 바깥 그림자.
+    expect(t["--border-overlay"]).toBe("rgb(255 255 255 / 0.12)");
+    expect(t["--elev-overlay"]).toBe("0 12px 32px rgb(0 0 0 / 0.6)");
     // 상승은 사용자 결정 4의 선명한 빨강, 위험은 그대로(둘은 색만으로 갈리지 않음 — 늘 아이콘·글·기호와 함께).
     expect(t["--up"].toLowerCase()).toBe("#ff6b6b");
     expect(t["--danger"].toLowerCase()).toBe("#e76a6e");
@@ -224,12 +227,13 @@ describe("어두운 한 벌(W1)", () => {
     expect(base?.[1]).toMatch(/color:\s*var\(--text\);/);
   });
 
-  it("새 토큰은 @theme inline에서 클래스 이름이 된다 — bg-surface-3·border-border-subtle·bg-scrim", () => {
+  it("새 토큰은 @theme inline에서 클래스 이름이 된다 — bg-surface-3·border-border-subtle·bg-scrim·border-border-overlay", () => {
     const inline = RULES.find((rule) => rule.selector === "@theme inline");
     const names = declarations(inline?.body ?? "");
     expect(names["--color-surface-3"]).toBe("var(--surface-3)");
     expect(names["--color-border-subtle"]).toBe("var(--border-subtle)");
     expect(names["--color-scrim"]).toBe("var(--scrim)");
+    expect(names["--color-border-overlay"]).toBe("var(--border-overlay)");
   });
 
   it("모서리는 4px 하나(card·control)", () => {
@@ -297,6 +301,8 @@ describe("정보 검색 범위 블록(P7에서 걷어 냄)", () => {
 
 const SRC = resolve(__dirname, "../..");
 const SKIP_DIRS = new Set(["__tests__", "__checks__", "node_modules"]);
+/** 제품 소스 전체를 구문 분석하는 검사의 시간 한도 — 보통 1~2초지만 바쁜 기계(병렬 시험)에서 5초 기본 한도를 넘긴 적이 있습니다(검사 내용 그대로). */
+const SOURCE_SCAN_TIMEOUT_MS = 30_000;
 
 /** 토큰 이름(--text-3) → 글자 클래스(text-text-3). */
 const textClass = (token: string) => `text-${token.slice(2)}`;
@@ -376,25 +382,25 @@ function pairHits(fileName: string, text: string, rule: PairRule): string[] {
   return found;
 }
 
-/** 안내 상자(Banner)의 톤 표 — 상자 바탕(box)을 칠하는 톤을 여기서 읽습니다. */
+/** 안내 상자(Callout — 옛 이름 Banner)의 톤 표 — 상자 바탕(box)을 칠하는 톤을 여기서 읽습니다. */
 const UI_INDEX = resolve(SRC, "components/ui/index.tsx");
 
 /**
- * Banner 톤 가운데 상자 바탕에 `back` 클래스를 칠하는 톤의 이름 — ui/index.tsx의 BANNER_TONES 표의 box 글에서 읽습니다.
+ * 안내 상자 톤 가운데 상자 바탕에 `back` 클래스를 칠하는 톤의 이름 — ui/index.tsx의 CALLOUT_TONES 표의 box 글에서 읽습니다.
  * 표를 고치면(예: 안내 톤을 파랑 틴트 없는 중립으로 — 명세 §3-4) 자식 검사도 따라 바뀝니다. 표를 못 찾으면 멈춥니다(검사가 조용히 비지 않게).
  */
 function bannerTonesPainting(back: string): string[] {
   const source = parse(UI_INDEX, readFileSync(UI_INDEX, "utf8"));
   let table: ts.ObjectLiteralExpression | undefined;
   const visit = (node: ts.Node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "BANNER_TONES" && node.initializer) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "CALLOUT_TONES" && node.initializer) {
       const value = ts.isAsExpression(node.initializer) ? node.initializer.expression : node.initializer;
       if (ts.isObjectLiteralExpression(value)) table = value;
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  if (!table) throw new Error("ui/index.tsx에서 BANNER_TONES 표를 찾지 못했습니다 — 바탕을 칠하는 부품을 읽는 bannerTonesPainting을 고치십시오");
+  if (!table) throw new Error("ui/index.tsx에서 CALLOUT_TONES 표를 찾지 못했습니다 — 바탕을 칠하는 부품을 읽는 bannerTonesPainting을 고치십시오");
   return table.properties.flatMap((tone) => {
     if (!ts.isPropertyAssignment(tone) || !ts.isObjectLiteralExpression(tone.initializer)) return [];
     const box = tone.initializer.properties.find((entry) => ts.isPropertyAssignment(entry) && entry.name.getText(source) === "box");
@@ -403,20 +409,24 @@ function bannerTonesPainting(back: string): string[] {
   });
 }
 
-/** 바탕 클래스 → 그 바탕을 칠하는 Banner 톤 이름(기본 톤은 Banner의 기본값 warn). */
+/** 바탕 클래스 → 그 바탕을 칠하는 안내 상자 톤 이름. 톤을 주지 않으면 부품의 기본값(Banner warn·Callout neutral), 옛 톤 이름 info는 neutral. */
 type BannerTones = Readonly<Record<string, readonly string[]>>;
-const BANNER_DEFAULT_TONE = "warn";
+const CALLOUT_DEFAULT_TONE: Readonly<Record<string, string>> = { Banner: "warn", Callout: "neutral" };
+const CALLOUT_TONE_ALIAS: Readonly<Record<string, string>> = { info: "neutral" };
 
 /** JSX 여는 꼬리표가 `back` 바탕을 칠하면 그 표시 글(어디서 칠하는지), 아니면 null. */
 function painterLabel(opening: ts.JsxOpeningElement, back: string, bannerTones: BannerTones, source: ts.SourceFile): string | null {
   const attribute = (name: string) =>
     opening.attributes.properties.find((entry): entry is ts.JsxAttribute => ts.isJsxAttribute(entry) && entry.name.getText(source) === name);
-  if (opening.tagName.getText(source) === "Banner") {
+  const tag = opening.tagName.getText(source);
+  if (tag in CALLOUT_DEFAULT_TONE) {
     const tones = bannerTones[back] ?? [];
     const tone = attribute("tone");
     // 톤이 식이면 그 안에 칠하는 톤 이름 글이 있을 때 칠한다고 봅니다(`tone={ok ? "info" : "warn"}`). 변수만 넘기면 보지 않습니다(한계).
-    const named = !tone?.initializer ? [BANNER_DEFAULT_TONE] : textPieces(tone.initializer).map((piece) => piece.text);
-    return named.some((name) => tones.includes(name)) ? `<Banner${tone ? ` ${tone.getText(source)}` : ""}>(${lineOf(source, opening)}행)` : null;
+    const named = (!tone?.initializer ? [CALLOUT_DEFAULT_TONE[tag]] : textPieces(tone.initializer).map((piece) => piece.text)).map(
+      (name) => CALLOUT_TONE_ALIAS[name] ?? name,
+    );
+    return named.some((name) => tones.includes(name)) ? `<${tag}${tone ? ` ${tone.getText(source)}` : ""}>(${lineOf(source, opening)}행)` : null;
   }
   const className = attribute("className");
   if (className?.initializer && textPieces(className.initializer).some((piece) => utilitiesOf(piece.text).has(back))) {
@@ -426,8 +436,8 @@ function painterLabel(opening: ts.JsxOpeningElement, back: string, bannerTones: 
 }
 
 /**
- * 부모가 칠한 바탕 위에 놓이는 자식의 글자 — 바탕은 부모(className 글에 그 바탕 클래스가 있는 요소, 또는 BANNER_TONES에서 그 바탕을 칠하는
- * 톤의 <Banner>)에, 글자색은 자식 쪽 글에 있는 꼴입니다(QA-459의 실제 계좌 탭 안내 상자 안 링크). 부모 자신의 className 안 다른 글은 보지
+ * 부모가 칠한 바탕 위에 놓이는 자식의 글자 — 바탕은 부모(className 글에 그 바탕 클래스가 있는 요소, 또는 CALLOUT_TONES에서 그 바탕을 칠하는
+ * 톤의 <Callout>·<Banner>)에, 글자색은 자식 쪽 글에 있는 꼴입니다(QA-459의 실제 계좌 탭 안내 상자 안 링크). 부모 자신의 className 안 다른 글은 보지
  * 않습니다(조건식의 다른 갈래일 수 있음 — 같은 글 안의 쌍은 pairHits가 봄). 자식이 스스로 다른 바탕을 칠해도 잡으니, 걸리면 그 자식 바탕을 보고 판단합니다.
  */
 function inheritedHits(fileName: string, text: string, rule: PairRule, bannerTones: BannerTones): string[] {
@@ -462,7 +472,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** 금지 쌍의 바탕마다 그 바탕을 칠하는 Banner 톤. */
+/** 금지 쌍의 바탕마다 그 바탕을 칠하는 안내 상자(Callout·Banner) 톤. */
 function bannerTonesByBack(): BannerTones {
   return Object.fromEntries(FORBIDDEN_PAIRS.map((pair) => [pair.back, bannerTonesPainting(pair.back)]));
 }
@@ -495,7 +505,7 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
     ]);
   });
 
-  it("검사기 자체 — 부모가 칠한 바탕(className 글, 그 바탕을 칠하는 톤의 Banner) 위 자식 글자를 찾고, 칠하지 않는 톤·변수 톤·자식 없는 요소는 건너뛴다", () => {
+  it("검사기 자체 — 부모가 칠한 바탕(className 글, 그 바탕을 칠하는 톤의 Callout·Banner — 옛 톤 이름 info는 neutral, 톤이 없으면 부품 기본값) 위 자식 글자를 찾고, 칠하지 않는 톤·변수 톤·자식 없는 요소는 건너뛴다", () => {
     const sample = [
       "const a = <Banner tone=\"info\"><p className=\"text-xs\"><Link className=\"text-accent underline\">x</Link></p></Banner>;",
       "const b = <Banner tone=\"warn\"><Link className=\"text-accent\">x</Link></Banner>;",
@@ -505,32 +515,35 @@ describe("금지 쌍 — 소스 검사(명세 §3-2·§9-1)", () => {
       "const f = <li className={`p-2 ${on ? \"bg-accent-tint\" : \"\"}`}><span className=\"text-accent-fg text-text\" /><b className=\"text-accent/80\" /></li>;",
       "const g = <div className=\"bg-accent-tint text-accent\" />;",
       "const h = <div className=\"hover:bg-surface-3\"><span className=\"text-text-3\">x</span></div>;",
+      "const i = <Callout><span className=\"text-accent\" /></Callout>;",
+      "const j = <Callout tone=\"warn\"><span className=\"text-accent\" /></Callout>;",
     ].join("\n");
-    const tones = { "bg-accent-tint": ["info"], "bg-surface-3": [] };
+    // 검사기만 보려고 중립 톤이 accent 틴트를 칠한다고 가정한 표(지금 실제 표에서는 칠하는 톤이 없음 — 아래 bannerTonesByBack).
+    const tones = { "bg-accent-tint": ["neutral"], "bg-surface-3": [] };
     expect(inheritedHits("sample.tsx", sample, "tint", tones)).toEqual([
       "1: <Banner tone=\"info\">(1행) 안 text-accent",
       "4: <Banner tone={ok ? \"info\" : \"warn\"}>(4행) 안 text-accent",
       "6: bg-accent-tint 요소(6행) 안 text-accent",
+      "9: <Callout>(9행) 안 text-accent",
     ]);
     expect(inheritedHits("sample.tsx", sample, "surface-3", tones)).toEqual(["8: bg-surface-3 요소(8행) 안 text-text-3"]);
-    // 지금 표에서 accent 틴트를 칠하는 Banner 톤은 안내(info) 하나 — 공용 키트(P2)가 안내를 중립으로 바꾸면 빈 목록이 됩니다.
-    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-accent-tint": ["info"] });
+    // 공용 키트(P2)가 안내(info)를 중립(surface-2 바탕)으로 바꿔 지금 표에는 accent 틴트를 칠하는 안내 상자 톤이 없습니다(QA-459).
+    expect(bannerTonesByBack()).toEqual({ "bg-surface-3": [], "bg-accent-tint": [] });
   });
 
   it("surface-3(덮개 안 hover·눌림) 바탕 위에 text-3·neutral·accent·danger 글자를 두지 않는다", () => {
     expect(offenders("surface-3")).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 
-  // QA-459: 어두운 한 벌(앞 커밋)에서 accent 틴트 위 accent 글자가 4.47:1로 4.5에 못 미친다. 지금 어기는 자리 세 곳:
-  //  - components/shell/SideNav.tsx — 현재 메뉴(`bg-accent-tint font-semibold text-accent`, lg 이상 모든 화면)
-  //  - components/ui/classes.ts — filterChipClasses 켠 상태(`border-accent bg-accent-tint font-semibold text-accent` — 컨센서스·환율 비교·정보 수집 둘)
+  // QA-459: 어두운 한 벌(P1)에서 accent 틴트 위 accent 글자가 4.47:1로 4.5에 못 미쳤다. 고치기 전에 어기던 자리 세 곳:
+  //  - components/shell/SideNav.tsx — 현재 메뉴(`bg-accent-tint font-semibold text-accent`, lg 이상 모든 화면) → 글자만 text-text
+  //  - components/ui/classes.ts — filterChipClasses 켠 상태(`border-accent bg-accent-tint font-semibold text-accent` — 컨센서스·환율 비교·정보 수집 둘) → 글자만 text-text
   //  - components/screens/brokerage/BrokerageSection.tsx — 실제 계좌 탭 안내 상자(`<Banner tone="info">` — 상자 바탕 bg-accent-tint) 안 링크
   //    '…의 실제 계좌 탭'(`text-accent`, 12px). 바탕은 부모 Banner가 칠해 같은 글 검사로는 안 보였고(P1 검토 지적), 부모 바탕 검사(inheritedHits)가 잡습니다.
-  //    실제 계좌 모듈은 겉모양만 공용 키트를 통해 바꾸므로(ADR 0042 결정 8) 그 파일이 아니라 키트(안내 톤)에서 고칩니다.
-  // 실행 명세 §3-2는 토큰 값을 바꾸기 전에 글자만 text-text로 바꾸라고 했지만, 세 자리는 공용 키트 단계(P2)가 맡아 D1 배포 전에 고치고 이 표시를 풉니다.
-  it.fails("QA-459: accent 틴트 바탕 위에 accent 글자를 두지 않는다", () => {
+  //    실제 계좌 모듈은 겉모양만 공용 키트를 통해 바꾸므로(ADR 0042 결정 8) 그 파일이 아니라 키트에서 — 안내 톤을 중립(surface-2 바탕, 명세 §3-4)으로.
+  it("QA-459: accent 틴트 바탕 위에 accent 글자를 두지 않는다", () => {
     expect(offenders("tint")).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 });
 
 describe("모서리 — 소스 검사(명세 §3-8)", () => {
@@ -546,5 +559,5 @@ describe("모서리 — 소스 검사(명세 §3-8)", () => {
         .map((piece) => `${relative(SRC, path)}:${lineOf(source, piece)}`);
     });
     expect(hits).toEqual([]);
-  });
+  }, SOURCE_SCAN_TIMEOUT_MS);
 });

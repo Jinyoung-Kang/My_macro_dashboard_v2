@@ -11,7 +11,7 @@ import type { SearchWatchItem } from "@/lib/types";
 import { BUTTON, BUTTON_PRIMARY, PaneHeading } from "./parts";
 
 /** 입력칸 — 공용 모양(테두리 3:1·포커스 링 2px·lg 미만 44px), 칸 폭을 다 씀. */
-const FIELD = `${inputClasses("sm")} min-w-0 flex-1`;
+const FIELD = `${inputClasses("md")} min-w-0 flex-1`;
 
 /** 별칭 칩 — 긴 별칭(60자)도 칸 폭 안에서 줄을 바꿈. */
 const CHIP = "inline-flex max-w-full items-center rounded-control border border-border bg-surface-2 text-xs text-text-2";

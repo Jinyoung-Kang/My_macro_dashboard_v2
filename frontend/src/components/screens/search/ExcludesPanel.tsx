@@ -9,7 +9,7 @@ import { excludeDraft, excludeKindLabel, excludeSeedGroups, type ExcludeKind } f
 import { BUTTON, BUTTON_PRIMARY, PANEL, PaneHeading } from "./parts";
 
 /** 입력칸 — 공용 모양(테두리 3:1·포커스 링 2px·lg 미만 44px), 칸 폭을 다 씀. */
-const FIELD = `${inputClasses("sm")} w-full`;
+const FIELD = `${inputClasses("md")} w-full`;
 
 /**
  * 매체 제외 목록(계약 §6-2·6-4, ADR 0041 결정 6) — 펼칠 때만 읽습니다(GET /api/search/excludes — 회원). 처음 값(코드 상수 — 중국 국가·당 매체,
@@ -233,7 +233,7 @@ function AddExcludeForm({
           종류
           <NativeSelect
             id={ids.kind}
-            inputSize="sm"
+            inputSize="md"
             wrapperClassName="block w-full"
             value={kind}
             onChange={(event) => setKind(event.target.value as ExcludeKind)}

@@ -1,9 +1,19 @@
 "use client";
 
-import { ReactNode, type SelectHTMLAttributes } from "react";
+import { ReactNode, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
-import { buttonClasses, FOCUS_RING, inputClasses, type ButtonSize, type ButtonVariant, type InputSize } from "./classes";
-import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon } from "./icons";
+import {
+  buttonClasses,
+  FOCUS_RING,
+  inputClasses,
+  TEXT_TARGET,
+  underlineTabClasses,
+  type ButtonSize,
+  type ButtonVariant,
+  type InputSize,
+  type UnderlineTabSize,
+} from "./classes";
+import { AlertTriangleIcon, CheckCircleIcon, ChevronDownIcon, ClockIcon, InfoIcon, LineIcon, SpinnerIcon, XCircleIcon, XIcon } from "./icons";
 
 // 클래스 문자열은 서버 컴포넌트도 부를 수 있게 순수 모듈(classes.ts)에 두고 여기서 다시 내보냅니다.
 export {
@@ -11,11 +21,14 @@ export {
   filterChipClasses,
   FOCUS_RING,
   inputClasses,
+  LINK_CLASSES,
+  PANEL_CLASSES,
   pillTabClasses,
   SEGMENT_TRACK,
   SELECTED_BAR,
   segmentClasses,
   TEXT_TARGET,
+  toggleClasses,
   underlineTabClasses,
   type ButtonSize,
   type ButtonVariant,
@@ -24,14 +37,19 @@ export {
 } from "./classes";
 
 /**
- * 섹션 카드 컨테이너.
+ * 패널(섹션 컨테이너 — 작업대 실행 명세 §3-3·§3-7·§6). 1층 면: surface 바탕·1px 경계·4px 모서리, 그림자 없음.
+ * 머리줄(제목·개수·동작)은 아래 1px 경계로 본문과 가르고, 본문 안쪽은 12px(lg 16px)입니다. 머리줄 바탕은 패널과 같은 surface입니다 —
+ * 명세 표의 '패널 머리 surface-2'로 칠하면 머리 동작에 놓이는 기본 단추·출처 배지(둘 다 surface-2)가 묻혀서, 정보 검색 패널(검증한
+ * 작업대 언어)처럼 경계로만 가릅니다.
  *
- * @param source 이 카드 숫자의 출처. 모든 카드가 같은 모양("출처 · …")으로 적도록 여기서 그립니다.
+ * @param count 표·목록의 개수(명세 §3-7 '머리에는 늘 개수') — 제목 옆 보조 글로 그리고, 제목(h2)의 이름에는 넣지 않습니다.
+ * @param source 이 패널 숫자의 출처. 모든 패널이 같은 모양("출처 · …")으로 적도록 여기서 그립니다.
  *               출처 문구는 `lib/sources.ts`에 모아 두었습니다 — 화면마다 따로 적으면 표기가 갈립니다.
  */
-export function Card({
+export function Panel({
   title,
   subtitle,
+  count,
   source,
   actions,
   children,
@@ -39,55 +57,79 @@ export function Card({
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
+  count?: ReactNode;
   source?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
+  // 패널 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다.
+  const heading = title ? <h2 className="text-heading-sm text-text">{typeof title === "string" ? withoutLeadingIcon(title) : title}</h2> : null;
+  const counted = count !== undefined && count !== null;
   return (
-    <section className={`rounded-card border border-border bg-surface p-5 lg:p-6 ${className}`}>
+    <section className={`rounded-card border border-border bg-surface ${className}`}>
       {(title || actions || source) && (
-        <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-2.5 lg:px-4">
           <div className="min-w-0">
-            {/* 카드 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다. */}
-            {title && (
-              <h2 className="text-title-3 text-text">
-                {typeof title === "string" ? withoutLeadingIcon(title) : title}
-              </h2>
+            {heading && counted ? (
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                {heading}
+                <span className="text-[13px] tabular-nums text-text-3">{count}</span>
+              </div>
+            ) : (
+              heading
             )}
-            {subtitle && <p className="mt-1 text-[13px] leading-5 text-text-2">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 text-[13px] leading-5 text-text-2">{subtitle}</p>}
             {source && <SourceLine>{source}</SourceLine>}
           </div>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      {children}
+      <div className="p-3 lg:p-4">{children}</div>
     </section>
   );
 }
 
+/** 옛 이름 — Panel과 같습니다(부르는 곳 약 180곳을 한꺼번에 고치지 않으려고 남기고, 화면 단계에서 정리합니다). */
+export const Card = Panel;
+
 /**
- * 화면 머리 — h1(좁은 화면 24px, sm 이상 글자 단계 title-1 28px) · 설명(15px 보조 글) · 오른쪽 동작(신선도·고르기·단추).
+ * 화면 머리 — h1(글자 단계 heading 20px) · 설명(14px 보조 글 한 줄) · '자세히' 접기 · 오른쪽 동작 영역(신선도·고르기·단추 — 작업대 실행 명세 §6).
  * 화면마다 h1 모양을 따로 적던 곳을 하나로 모읍니다(명세 §7-1). 설명 아래에 덧붙일 줄(예: 매크로 자동 갱신 안내)은 children으로 넘깁니다.
+ * 긴 설명은 지우지 않고 `details`로 넘겨 '자세히' 접기 안에 둡니다(명세 §1 — 긴 설명 문단은 접기로 옮김). 처음에는 접혀 있습니다.
  * 동작은 넓은 화면에서 제목 묶음의 아래 끝에 맞춰 오른쪽에 두고(이름표가 위에 있는 고르기 상자의 상자가 설명 줄과 한 줄에 놓임),
  * 자리가 모자라면 제목 아래로 내려갑니다.
  */
 export function PageHeader({
   title,
   description,
+  details,
   actions,
   children,
 }: {
   title: ReactNode;
   description?: ReactNode;
+  /** '자세히' 접기 안의 긴 설명(최대 72자 폭). */
+  details?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold text-text sm:text-title-1">{title}</h1>
-        {description ? <p className="mt-1 text-body-md text-text-2">{description}</p> : null}
+        <h1 className="text-heading text-text">{title}</h1>
+        {description ? <p className="mt-0.5 text-sm text-text-2">{description}</p> : null}
+        {details ? (
+          <details className="group mt-0.5 text-sm text-text-2">
+            <summary
+              className={`${TEXT_TARGET} cursor-pointer list-none gap-1 rounded-sm text-[13px] text-text-2 hover:text-text [&::-webkit-details-marker]:hidden ${FOCUS_RING}`}
+            >
+              자세히
+              <ChevronDownIcon size={14} className="motion-safe:transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-1 max-w-[72ch] leading-relaxed">{details}</div>
+          </details>
+        ) : null}
         {children}
       </div>
       {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div> : null}
@@ -95,7 +137,7 @@ export function PageHeader({
   );
 }
 
-/** 지표 카드 (구버전 st.metric에 해당) — 겉모양은 새 통계 타일(patterns/StatTile)과 같습니다. */
+/** 지표 칸 (구버전 st.metric에 해당) — 4px·1px 경계·안쪽 12px, 값은 KPI 크기(20px, lg 24px — 작업대 실행 명세 §3-6)·tabular-nums. */
 export function Metric({
   label,
   value,
@@ -120,9 +162,9 @@ export function Metric({
   tone?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-control border border-border bg-surface p-4">
+    <div className="min-w-0 rounded-control border border-border bg-surface p-3">
       <div className="text-[13px] font-medium text-text-2">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone ?? "text-text"}`}>
+      <div className={`mt-1 text-xl font-semibold tabular-nums lg:text-2xl ${tone ?? "text-text"}`}>
         {value}
       </div>
       {(deltaText || delta !== undefined) && (
@@ -186,7 +228,7 @@ export function Freshness({
       {refreshError && (
         // 글은 이 span의 글자 그대로 둡니다(아이콘·sr 머리말은 따로) — '새로 읽지 못함'으로 찾은 요소가 title을 가진 이 알약입니다.
         <span
-          className="inline-flex items-center gap-1 rounded-full border border-warn/30 bg-warn-tint px-2 py-0.5 text-xs text-warn"
+          className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-0.5 text-xs text-warn"
           title={`${refreshError} — 앞서 받은 값을 보여 줍니다`}
           role="status"
         >
@@ -209,7 +251,7 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
   if (stale) {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-full border border-warn/30 bg-warn-tint px-2 py-0.5 text-xs text-warn"
+        className="inline-flex items-center gap-1 rounded-control border border-warn/30 bg-warn-tint px-1.5 py-0.5 text-xs text-warn"
         title={title}
       >
         <AlertTriangleIcon size={12} />
@@ -229,47 +271,65 @@ function FreshnessBadge({ collectedAt, age, stale }: { collectedAt?: string | nu
   );
 }
 
+export type CalloutTone = "neutral" | "warn" | "danger" | "ok";
+
 /**
- * 배너 — 추정치·이력 대체처럼 "값의 성격"을 알리거나(warn), 실패·심각한 주의(danger)·안내(info)·완료(ok)를 알릴 때.
- * 바탕은 모두 불투명 틴트(globals.css의 *-tint)라 카드 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다(톤 글자 4.7:1 이상).
- * 안내(info)는 글을 본문색으로 둡니다 — 강조 파랑 글자는 링크로 읽히고 하락 파랑과 구분되지 않습니다(명세 원칙 A1).
+ * 안내 상자(Callout — 작업대 실행 명세 §3-4) — 중립·주의·위험·정상 네 가지이고 늘 톤 아이콘과 함께(제목은 title로). 추정치·이력 대체처럼
+ * "값의 성격"을 알리거나(warn), 실패·심각한 주의(danger)·안내(neutral)·완료(ok)를 알릴 때 씁니다. 옛 톤 이름 '정보'(info)는 중립과 같습니다.
+ * 바탕은 모두 불투명(톤은 globals.css의 *-tint, 중립은 surface-2)이라 패널 밖 페이지 바탕 위에 놓여도 글자 대비가 같습니다.
+ * 중립은 파랑이 아닙니다 — 바탕 surface-2·테두리 border-strong·아이콘과 글은 중립색. 강조 파랑은 누를 수 있는 것에만 쓰고(원칙 A1), 상자 안의
+ * 링크(text-accent)가 accent 틴트 위 4.47:1로 4.5에 못 미치지 않게 합니다(QA-459 — surface-2 위 4.51).
  *
- * 앞에 톤 아이콘(장식)을 둡니다 — 예전에 부르는 쪽이 글 앞에 붙이던 경고 이모지 자리. 주의(warn)·심각(danger)은 낭독기에 '주의: '를
- * 먼저 읽힙니다(아이콘은 aria-hidden). danger는 실패만이 아니라 추정치 모드·금리 역전 같은 심각한 주의에도 쓰여 '오류'라 읽히지 않게 합니다.
- * 글은 톤 글자색을 가진 div로 감쌉니다 — 글로 찾은 요소(또는 그 closest div)가 톤 글자색을 그대로 가집니다(명세 D8 b).
+ * 앞에 톤 아이콘(장식)을 둡니다 — 예전에 부르는 쪽이 글 앞에 붙이던 경고 이모지 자리. 상승색과 위험색은 색만으로 갈리지 않으므로(명세 §3-2-1)
+ * 상태·위험은 늘 아이콘과 글입니다. 주의(warn)·위험(danger)은 낭독기에 '주의: '를 먼저 읽힙니다(아이콘은 aria-hidden). danger는 실패만이
+ * 아니라 추정치 모드·금리 역전 같은 심각한 주의에도 쓰여 '오류'라 읽히지 않게 합니다.
+ * 글(제목 포함)은 톤 글자색을 가진 div로 감쌉니다 — 글로 찾은 요소(또는 그 closest div)가 톤 글자색을 그대로 가집니다(명세 D8 b).
  *
+ * @param title 상자 제목(굵은 한 줄) — 본문 위에 둡니다.
  * @param icon 톤 기본 아이콘 대신 쓸 아이콘(예: 잠금). false면 아이콘 없이 글만.
  */
-export function Banner({
-  tone = "warn",
+export function Callout({
+  tone = "neutral",
+  title,
   icon,
   children,
 }: {
-  tone?: "warn" | "danger" | "info" | "ok";
+  tone?: CalloutTone | "info";
+  title?: ReactNode;
   icon?: ReactNode | false;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
-  const style = BANNER_TONES[tone];
+  const style = CALLOUT_TONES[tone === "info" ? "neutral" : tone];
   return (
-    <div className={`flex items-start gap-2.5 rounded-control border px-4 py-3 text-sm leading-relaxed ${style.box}`}>
+    <div className={`flex items-start gap-2 rounded-control border p-3 text-sm leading-relaxed ${style.box}`}>
       {icon === false ? null : <LineIcon className={style.icon}>{icon ?? style.glyph}</LineIcon>}
       {style.srPrefix && <span className="sr-only">{style.srPrefix}</span>}
-      <div className={`min-w-0 flex-1 ${style.text}`}>{children}</div>
+      <div className={`min-w-0 flex-1 ${style.text}`}>
+        {title ? <p className="font-semibold">{title}</p> : null}
+        {children}
+      </div>
     </div>
   );
 }
 
-const BANNER_TONES = {
+/**
+ * 배너 — 안내 상자(Callout)의 옛 이름(부르는 곳 약 220곳을 한꺼번에 고치지 않으려고 남기고, 화면 단계에서 정리합니다). 기본 톤은 예전처럼
+ * 주의(warn)이고, '정보'(info)는 중립과 같습니다.
+ */
+export function Banner({ tone = "warn", ...props }: { tone?: CalloutTone | "info"; title?: ReactNode; icon?: ReactNode | false; children: ReactNode }) {
+  return <Callout tone={tone} {...props} />;
+}
+
+const CALLOUT_TONES = {
+  neutral: { box: "border-border-strong bg-surface-2 text-text", text: "text-text", icon: "text-text-2", glyph: <InfoIcon size={16} />, srPrefix: "" },
   warn: { box: "border-warn/30 bg-warn-tint text-warn", text: "text-warn", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
   danger: { box: "border-danger/30 bg-danger-tint text-danger", text: "text-danger", icon: "", glyph: <AlertTriangleIcon size={16} />, srPrefix: "주의: " },
-  // 안내의 아이콘만 강조색 — 안내 톤의 표지이고, 글은 본문색입니다.
-  info: { box: "border-accent/25 bg-accent-tint text-text", text: "text-text", icon: "text-accent", glyph: <InfoIcon size={16} />, srPrefix: "" },
   ok: { box: "border-ok/30 bg-ok-tint text-ok", text: "text-ok", icon: "", glyph: <CheckCircleIcon size={16} />, srPrefix: "" },
 } as const;
 
 export function Loading({ label = "불러오는 중…" }: { label?: string }) {
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-text-3">
+    <div className="flex items-center gap-2 py-6 text-sm text-text-3">
       {/* 도는 것은 움직임 줄이기(prefers-reduced-motion)가 꺼져 있을 때만 — 켜져 있으면 멈춘 호와 글 */}
       <SpinnerIcon size={16} className="motion-safe:animate-spin" />
       {label}
@@ -279,7 +339,7 @@ export function Loading({ label = "불러오는 중…" }: { label?: string }) {
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-control bg-surface-2/60 px-4 py-10 text-center text-sm text-text-2">
+    <div className="rounded-control bg-surface-2/60 px-3 py-6 text-center text-sm text-text-2">
       {message}
     </div>
   );
@@ -287,13 +347,13 @@ export function EmptyState({ message }: { message: string }) {
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-control border border-danger/30 bg-danger-tint px-4 py-4 text-sm text-danger">
+    <div className="rounded-control border border-danger/30 bg-danger-tint p-3 text-sm text-danger">
       <p className="flex items-start gap-2">
         <XCircleIcon size={16} className="mt-0.5" />
         <span className="min-w-0">{message}</span>
       </p>
       {onRetry && (
-        <button type="button" onClick={onRetry} className={`mt-3 ${buttonClasses("secondary", "sm")}`}>
+        <button type="button" onClick={onRetry} className={`mt-2 ${buttonClasses("default", "sm")}`}>
           다시 시도
         </button>
       )}
@@ -314,8 +374,8 @@ export function Button({
 }: {
   children: ReactNode;
   onClick?: () => void;
-  /** "default"는 옛 이름으로 secondary와 같습니다 — variant를 주지 않은 곳(약 48곳)을 한꺼번에 고치지 않으려고 남깁니다. */
-  variant?: ButtonVariant | "default";
+  /** 단추 네 종류(default·primary·danger·minimal — 옛 이름 secondary·ghost도 받음). 주지 않으면 기본(default). */
+  variant?: ButtonVariant;
   size?: ButtonSize;
   /** 글 앞 아이콘(장식 — components/ui/icons의 aria-hidden 아이콘). 뜻은 단추 글이 나릅니다. */
   icon?: ReactNode;
@@ -331,7 +391,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`${buttonClasses(variant === "default" ? "secondary" : variant, size)} ${className}`.trim()}
+      className={`${buttonClasses(variant, size)} ${className}`.trim()}
     >
       {icon}
       {children}
@@ -391,6 +451,8 @@ export function Select({
  * 아이콘을 둡니다 — 고대비 모드에서도 글자색으로 보이고, 같은 화면의 고르기 상자가 한 모양이 됩니다(예전에는 날 select만 브라우저 화살표).
  * 이름은 부르는 쪽이 붙입니다(감싼 label·aria-label·id). `Select`(라벨·선택지 목록까지 그림)로 안 되는 자리 — 설정 표의 칸·카드 머리의
  * 작은 고르기 — 에 씁니다. 폭은 `className`(select)·`wrapperClassName`(감싼 칸).
+ * 화살표 자리(오른쪽 32px)는 모든 폭에서 비웁니다 — 입력칸 모양이 넓은 화면 가로 여백(`lg:px-*`)을 따로 두고, Tailwind는 변형 규칙을
+ * 뒤에 내보내므로 `pr-8` 하나만 두면 lg부터 덮여 고른 글이 화살표 밑으로 들어갑니다(QA-463). 그래서 `lg:pr-8`을 함께 붙입니다.
  */
 export function NativeSelect({
   inputSize = "md",
@@ -405,16 +467,17 @@ export function NativeSelect({
 }) {
   return (
     <span className={`relative max-w-full ${wrapperClassName}`.trim()}>
-      <select {...props} className={`w-full max-w-full appearance-none pr-9 ${inputClasses(inputSize)} ${className}`.trim()}>
+      <select {...props} className={`w-full max-w-full appearance-none pr-8 ${inputClasses(inputSize)} lg:pr-8 ${className}`.trim()}>
         {children}
       </select>
-      <ChevronDownIcon size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-3" />
+      <ChevronDownIcon size={16} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-text-3" />
     </span>
   );
 }
 
 /**
- * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다.
+ * 단순 테이블. 컬럼 정의로 정렬/포맷을 제어합니다. 조밀한 행(작업대 실행 명세 §3-7 — 행 32px: 14px 글 + 위아래 6px), 머리는 13px 보조 글과
+ * 1px 경계, 행 사이는 옅은 구분선(border-subtle).
  *
  * @param label 표 이름 — 좌우 스크롤 상자(region)의 이름 "{label} (좌우 스크롤)"이 됩니다. 한 화면에 표가 여럿이면 이름을 줘야
  *              랜드마크 목록에서 서로 구별됩니다(주지 않으면 "표 (좌우 스크롤)" — 새 DataTable의 caption과 같은 규칙).
@@ -457,7 +520,7 @@ export function Table<T>({
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-3 py-2.5 font-medium ${
+                  className={`px-3 py-1.5 font-medium ${
                     column.align === "right" ? "text-right" : "text-left"
                   } ${column.className ?? ""}`}
                 >
@@ -470,12 +533,12 @@ export function Table<T>({
             {rows.map((row, index) => (
               <tr
                 key={rowKey(row, index)}
-                className="border-b border-border last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
+                className="border-b border-border-subtle last:border-0 hover:bg-surface-2 motion-safe:transition-colors"
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-3 py-3 tabular-nums ${
+                    className={`px-3 py-1.5 tabular-nums ${
                       column.align === "right" ? "text-right" : "text-left"
                     } ${column.className ?? ""}`}
                   >
@@ -492,14 +555,140 @@ export function Table<T>({
 }
 
 /**
- * 작은 글 배지(출처 종류·모델 이름·기준 분기 등). 모서리는 rounded-full이 아니라 12px(rounded-control) — 한 줄이면 높이 20px라 알약과
- * 같고, 표의 좁은 칸에서 두 줄로 접히면 rounded-full은 글이 모서리에 걸린 타원이 됐습니다(추정·이전 값 배지와 같은 까닭).
+ * 작은 글 배지(출처 종류·모델 이름·기준 분기 등). 모서리는 rounded-full이 아니라 4px(rounded-control) — 표의 좁은 칸에서 두 줄로 접히면
+ * rounded-full은 글이 모서리에 걸린 타원이 됐습니다(추정·이전 값 배지와 같은 까닭). 테두리 있는 꼬리표는 Tag(중립)입니다.
  * 날짜처럼 접히면 안 되는 값은 부르는 쪽(표 칸의 className)이 whitespace-nowrap을 붙입니다.
  */
 export function SourceBadge({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-control bg-surface-2 px-2 py-0.5 text-xs leading-4 text-text-2">
       {children}
+    </span>
+  );
+}
+
+/** 탭 하나의 id — 탭 패널의 aria-labelledby가 같은 값을 씁니다. */
+export function tabId(idPrefix: string, key: string): string {
+  return `${idPrefix}-${key}`;
+}
+
+const TAB_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
+
+/**
+ * 탭 줄(ARIA tabs) — 탭 모양은 밑줄 탭 하나입니다(underlineTabClasses, 작업대 실행 명세 §6). role="tablist"(이름 `label`)와 탭마다
+ * role="tab"·aria-selected·aria-controls(panelId)·id(tabId)를 붙이고, Tab 키로는 고른 탭 하나에만 들어옵니다(나머지 tabIndex -1).
+ * ←·→(끝에서 돎)·Home·End는 포커스만 옮기고, 여는 것은 누르기·Enter·Space입니다 — 탭마다 자료를 읽거나 주소를 바꾸는 화면이 지나가며
+ * 부르지 않게 합니다(정보 검색 결과 탭과 같은 규칙). 탭 패널(role="tabpanel", id=panelId, aria-labelledby=tabId(idPrefix, value))과
+ * 탭을 바꿀 때의 일(주소 바꾸기 — 모의매매 탭의 history.replaceState 등)은 부르는 쪽이 onChange에서 합니다.
+ */
+export function Tabs<K extends string>({
+  label,
+  items,
+  value,
+  onChange,
+  idPrefix,
+  panelId,
+  size = "sm",
+  className = "",
+}: {
+  label: string;
+  /** 탭 목록 — suffix는 이름 뒤에 붙는 보조 글(예: '(준비 중)'). */
+  items: readonly { key: K; label: ReactNode; suffix?: ReactNode }[];
+  value: K;
+  onChange: (key: K) => void;
+  idPrefix: string;
+  panelId: string;
+  /** sm(화면 안 탭 줄 — lg 이상 30px)이 기본, md는 하위 메뉴 줄 크기(lg 이상 40px). */
+  size?: UnderlineTabSize;
+  /** 탭 줄의 배치 클래스(여백 등). */
+  className?: string;
+}) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const selectedIndex = items.findIndex((item) => item.key === value);
+  const entry = selectedIndex >= 0 ? selectedIndex : 0;
+  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!TAB_KEYS.has(event.key)) return;
+    event.preventDefault();
+    const next =
+      event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + items.length) % items.length;
+    refs.current[items[next].key]?.focus();
+  };
+  return (
+    <div role="tablist" aria-label={label} className={`flex overflow-x-auto border-b border-border ${className}`.trim()}>
+      {items.map((item, index) => (
+        <button
+          key={item.key}
+          ref={(element) => {
+            refs.current[item.key] = element;
+          }}
+          type="button"
+          role="tab"
+          id={tabId(idPrefix, item.key)}
+          aria-selected={item.key === value}
+          aria-controls={panelId}
+          tabIndex={index === entry ? 0 : -1}
+          onClick={() => onChange(item.key)}
+          onKeyDown={(event) => onKeyDown(event, index)}
+          className={underlineTabClasses(item.key === value, size)}
+        >
+          {item.label}
+          {item.suffix}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export type TagTone = "neutral" | "warn" | "danger" | "ok";
+
+const TAG_TONES: Record<TagTone, { box: string; glyph: ReactNode; srPrefix: string }> = {
+  neutral: { box: "border-border bg-surface-2 text-text-2", glyph: null, srPrefix: "" },
+  warn: { box: "border-warn/30 bg-warn-tint text-warn", glyph: <AlertTriangleIcon size={12} />, srPrefix: "주의: " },
+  danger: { box: "border-danger/30 bg-danger-tint text-danger", glyph: <AlertTriangleIcon size={12} />, srPrefix: "주의: " },
+  ok: { box: "border-ok/30 bg-ok-tint text-ok", glyph: <CheckCircleIcon size={12} />, srPrefix: "" },
+};
+
+/**
+ * 태그(작업대 실행 명세 §6) — 4px 모서리·1px 경계·12px 글. 중립(별칭·식별자·종류)과 의도 셋(주의·위험·정상)이고, 의도 태그는 늘 아이콘과
+ * 글을 함께 씁니다(상승색과 위험색은 색만으로 갈리지 않음 — 명세 §3-2-1). 주의·위험은 낭독기에 '주의: '를 먼저 읽힙니다. 파랑(정보) 태그는
+ * 없습니다 — 강조 파랑은 누를 수 있는 것에만(원칙 A1).
+ * onRemove를 주면 지울 수 있는 태그입니다 — 지우기 단추(이름 removeLabel, 없으면 '{글} 지우기')는 좁은 화면(lg 미만)에서 44px, 넓은 화면은
+ * 작은 조작 24px(명세 §3-7)입니다. 단추는 위아래 음수 여백으로 줄 높이(16px)만 차지해 태그 높이를 키우지 않고(누르는 자리는 태그 위아래로
+ * 넘침), 오른쪽은 태그 안쪽 여백까지만 씁니다 — 왼쪽으로는 넘치지 않아 태그 글을 눌러 지우는 일이 없습니다. 좁은 화면에서는 태그가 그만큼 넓어집니다.
+ *
+ * @param icon 톤 기본 아이콘 대신 쓸 아이콘(장식). false면 아이콘 없이 글만(중립은 기본이 아이콘 없음).
+ */
+export function Tag({
+  tone = "neutral",
+  icon,
+  onRemove,
+  removeLabel,
+  children,
+}: {
+  tone?: TagTone;
+  icon?: ReactNode | false;
+  onRemove?: () => void;
+  removeLabel?: string;
+  children: ReactNode;
+}) {
+  const style = TAG_TONES[tone];
+  const glyph = icon === false ? null : (icon ?? style.glyph);
+  const name = removeLabel ?? (typeof children === "string" ? `${children} 지우기` : "지우기");
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-control border px-1.5 py-0.5 text-xs leading-4 ${style.box}`}>
+      {glyph}
+      {style.srPrefix ? <span className="sr-only">{style.srPrefix}</span> : null}
+      {children}
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={name}
+          className={`-my-3.5 -mr-1.5 inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm opacity-80 hover:opacity-100 lg:-my-1 lg:min-h-6 lg:min-w-6 ${FOCUS_RING}`}
+        >
+          <XIcon size={12} />
+        </button>
+      ) : null}
     </span>
   );
 }

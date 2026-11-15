@@ -164,7 +164,7 @@ function MarketSwitch({ value, onChange }: { value: PaperMarketCode; onChange: (
       {options.map((option) => {
         const checked = option.market === value;
         return (
-          <label key={option.market} className={`min-h-11 px-4 lg:min-h-8 ${segmentClasses(checked)}`}>
+          <label key={option.market} className={`px-4 ${segmentClasses(checked)}`}>
             <input
               type="radio"
               name={name}

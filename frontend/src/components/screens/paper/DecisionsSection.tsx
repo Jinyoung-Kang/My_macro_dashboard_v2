@@ -171,7 +171,7 @@ export function DecisionsSection({
             aria-pressed={active}
             onClick={() => setView(entry.key)}
             // 세그먼트(테마 전환과 같은 모양) — 고른 것은 트랙 위 표면 칩 + 굵게(색만으로 고름을 전하지 않음, aria-pressed가 읽어 줌).
-            className={`min-h-11 px-3.5 text-[13px] lg:min-h-8 ${segmentClasses(active)} ${FOCUS_RING}`}
+            className={`px-3.5 text-[13px] ${segmentClasses(active)} ${FOCUS_RING}`}
           >
             {entry.label}
           </button>
