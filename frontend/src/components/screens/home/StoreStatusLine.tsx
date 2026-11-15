@@ -44,10 +44,14 @@ export function StoreStatusLine() {
   }
 
   const model = storeStatusModel(issues.data);
+  // 항목(이름 + 수)마다 줄 바꿈 없는 덩어리 — 좁은 화면에서 줄은 ' · ' 자리에서만 바뀌고 '누락 데이터셋' / '1개'처럼 이름과 수가
+  // 갈라지지 않습니다(QA-505 — 아이콘이 붙자 390px에서 한 줄이 넘쳤음).
   const counts = model.parts.map((part, index) => (
     <Fragment key={part.label}>
       {index > 0 ? " · " : null}
-      {part.label} {part.text ?? <Empty />}
+      <span className="whitespace-nowrap">
+        {part.label} {part.text ?? <Empty />}
+      </span>
     </Fragment>
   ));
   return (

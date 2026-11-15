@@ -99,6 +99,11 @@ function renderHome(user: SessionUser | undefined, page: ReactElement = <HomeScr
 
 const requested = () => api.apiGetShared.mock.calls.map(([path]) => path as string);
 const region = (name: string | RegExp) => screen.getByRole("region", { name });
+/**
+ * 저장소 상태 줄의 수 묶음(수 글 전체를 감싼 tabular-nums 상자 — 상태가 있으면 StatusText). 항목(이름 + 수)마다 줄 바꿈 없는
+ * 덩어리라(QA-505) 수 글 전체는 getByText 한 번으로 찾을 수 없어 이 상자의 textContent로 봅니다.
+ */
+const storeCounts = (container: HTMLElement) => within(container).getByText(/^수집 태스크 오류/).closest(".tabular-nums") as HTMLElement;
 
 /** 모의매매 히어로 구역 이름 — 불러오는 중·오류·읽은 뒤 모두 같습니다(큰 숫자가 무엇인지 제목이 먼저 말함). */
 const PAPER_REGION = "모의매매 · Claude 계좌 순자산";
@@ -288,7 +293,7 @@ describe("홈 — 값 있음(운영자)", () => {
     const status = region("데이터 저장소 상태");
     const line = within(status).getByRole("link");
     expect(line.getAttribute("href")).toBe("/status");
-    expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개")).toBeTruthy();
+    expect(storeCounts(line).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
     expect(within(line).getByText("확인 2026-10-26 16:54")).toBeTruthy();
     // 데이터 카드마다 출처 줄(PRINCIPLES) — 상태 화면의 수집 오류·경고 로그와 같은 출처.
     expect(within(line).getByText(SOURCES.collectorRuns)).toBeTruthy();
@@ -398,7 +403,8 @@ describe("홈 — 불러오는 중·값 없음", () => {
     reads = { ...happyReads(), [ISSUES]: missing };
     renderHome(OWNER);
     line = await within(region("데이터 저장소 상태")).findByRole("link");
-    expect(within(line).getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개").closest(".text-warn")).not.toBeNull();
+    expect(storeCounts(line).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개");
+    expect(storeCounts(line).closest(".text-warn")).not.toBeNull();
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
   });
 
@@ -431,7 +437,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
   // QA-505 후속(검토): 수 묶음 앞에 아이콘(14px + 간격 6px)이 붙자 390px에서 한 줄이던 수 글이 두 줄이 되며 '… · 누락 데이터셋' / '1개'로,
   // 360px에서는 '… · 누락 데이' / '터셋 1개'로 이름과 수가 다른 줄에 갈라졌습니다(QA 스택 실측 0/19/1). 항목(이름 + 수)마다 줄 바꿈 없는
   // 덩어리로 두어 줄은 ' · ' 자리에서만 바뀝니다. 수를 모르는 칸('—' + 읽어 주는 '값 없음')도 같은 덩어리입니다.
-  it.fails("QA-505: 수 묶음의 항목(이름 + 수)마다 줄 바꿈 없는 덩어리 — 좁은 화면에서 이름과 수가 다른 줄로 갈라지지 않는다", async () => {
+  it("QA-505: 수 묶음의 항목(이름 + 수)마다 줄 바꿈 없는 덩어리 — 좁은 화면에서 이름과 수가 다른 줄로 갈라지지 않는다", async () => {
     const warn = issues(0, 19);
     warn.counts.missingDatasets = 1;
     const cases = [
@@ -443,8 +449,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
       reads = { ...happyReads(), [ISSUES]: response };
       const { unmount } = renderHome(OWNER);
       const line = await within(region("데이터 저장소 상태")).findByRole("link");
-      const group = within(line).getByText(/^수집 태스크 오류/).closest(".tabular-nums") as HTMLElement;
-      const items = Array.from(group.querySelectorAll(".whitespace-nowrap"), (node) => node.textContent);
+      const items = Array.from(storeCounts(line).querySelectorAll(".whitespace-nowrap"), (node) => node.textContent);
       expect(items, expected[2]).toEqual(expected);
       unmount();
     }
@@ -464,7 +469,7 @@ describe("홈 — 일부 실패", () => {
     expect(screen.getByText("확장 (Expansion)")).toBeTruthy();
     expect(await paperHero()).toBeTruthy();
     expect(screen.getByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
-    expect(screen.getByText("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개")).toBeTruthy();
+    expect(storeCounts(region("데이터 저장소 상태")).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
 
     reads[MACRO] = macroOverview();
     fireEvent.click(within(market).getByRole("button", { name: "다시 시도" }));
