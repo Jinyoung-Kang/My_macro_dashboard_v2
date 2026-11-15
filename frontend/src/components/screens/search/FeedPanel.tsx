@@ -59,6 +59,7 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * lg(1024~1279)는 두 칸(왼쪽 · 가운데 — 속성은 가운데 아래, 미리 보기는 아래 시트)입니다(entityGrid — QA-420).
  * 아래 시트가 열려 있으면 그 높이를 재서(useBottomSheet) 결과 아래에 같은 여백을 두고(끝 줄·출처 상태 줄이 시트 위로 올라오게), 스크롤 여백
  * (globals.css의 --bottom-sheet)으로 ↑↓·End로 고른 줄이 시트 밑에 숨지 않게 하며, 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다.
+ * 열린 동안 창 폭이 바뀌어(휴대폰을 돌림) 고른 줄이 화면 위나 시트 아래로 밀려나도 옮깁니다(QA-447 — 높이만 바뀐 때는 덮을 때만).
  * 열린 동안 시트는 줄지 않습니다(sheetStyle — 닫으면 처음 높이부터).
  * 넓은 화면(lg)에서는 시트가 본문의 스크롤 막대를 덮지 않게 그 폭만큼 오른쪽을 비웁니다.
  *
@@ -94,6 +95,17 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
 /** 시트가 열려 있을 때 시트 위로 올라간 TOP 단추(ScrollTopButton)가 차지하는 띠 — lg 미만 16 + 44, lg 이상 24 + 34px를 덮는 64px.
  *  globals.css의 스크롤 여백(min(--bottom-sheet, 64px))과 같은 값이어야 합니다(QA-420 후속). */
 const SHEET_TOP_BUTTON_BAND = 64;
+
+/**
+ * 고른 줄이 보이는 자리 밖에 걸쳤는가(QA-447) — 보이는 자리는 스크롤 상자의 위끝(lg 이상은 본문 main, 그 밑은 창 위끝 — 본문이 창 위로
+ * 올라가 있으면 창 위끝)에서 줄의 scroll-margin-top(붙는 날짜 머리 자리 — scroll-mt-7, QA-435)만큼 아래부터 bottom(시트 위 TOP 단추 띠의
+ * 위끝)까지입니다. nearest로 옮기면 줄이 멈추는 자리와 같은 경계입니다(아래는 스크롤 여백 — globals.css).
+ */
+function rowOutsideView(row: Element, box: DOMRect, bottom: number): boolean {
+  const scrollerTop = Math.max(0, document.getElementById("main")?.getBoundingClientRect().top ?? 0);
+  const margin = Number.parseFloat(window.getComputedStyle(row).scrollMarginTop) || 0;
+  return box.top < scrollerTop + margin || box.bottom > bottom;
+}
 
 export function FeedPanel({
   entityKey,
@@ -215,7 +227,13 @@ export function FeedPanel({
   // 시트가 열리거나 높이가 바뀌어 고른 줄을 덮으면 그 줄을 시트 위로 옮깁니다(스크롤 여백을 따름 — nearest). 처음 고른 줄은 시트가 열리기
   // 전에 옮겨졌고, 누른 줄은 열린 시트에 덮일 수 있습니다. 덮지 않았으면(사용자가 다른 곳으로 스크롤한 뒤 휴대폰 주소 막대로 시트 높이가
   // 바뀐 때 등) 옮기지 않고, 거르기·막대로 목록이 바뀔 때도 옮기지 않습니다(왼쪽 칸에서 고르는 중일 수 있음).
+  // 다만 열린 동안 창 폭이 바뀌면(휴대폰을 돌림·창 폭 조절) 줄 바꿈이 달라져 고른 줄이 화면 위나 시트 아래로 밀려나므로 — 사용자가 스크롤한
+  // 것이 아니라 배치가 바뀐 것 — 그 줄이 보이는 자리(rowOutsideView) 밖에 걸쳤으면 옮깁니다(QA-447). 높이만 바뀐 때는 위 규칙 그대로입니다.
+  const sheetWidth = useRef(0);
   useEffect(() => {
+    // 열린 동안의 폭끼리만 견줍니다 — 닫히면 0이라 다시 열 때는 바뀐 것으로 보지 않음(그때는 덮는지만).
+    const widthChanged = sheetWidth.current > 0 && sheet.width > 0 && sheet.width !== sheetWidth.current;
+    sheetWidth.current = sheet.width;
     const row = listRef.current?.querySelector('[role="option"][aria-selected="true"]');
     const pane = sheetRef.current;
     if (sheet.height <= 0 || !row || !pane) return;
@@ -223,8 +241,9 @@ export function FeedPanel({
     const top = pane.getBoundingClientRect().top;
     // 시트 위로 올라간 TOP 단추 자리(SHEET_TOP_BUTTON_BAND)에 걸친 줄도 옮깁니다 — 스크롤 여백도 그만큼 더 두므로 nearest가 단추 위에 멈춥니다(QA-420 후속).
     const band = Math.min(sheet.height, SHEET_TOP_BUTTON_BAND);
-    if (box.bottom > top - band && box.top < top + sheet.height) row.scrollIntoView({ block: "nearest" });
-  }, [sheet.height]);
+    const covered = box.bottom > top - band && box.top < top + sheet.height;
+    if (covered || (widthChanged && rowOutsideView(row, box, top - band))) row.scrollIntoView({ block: "nearest" });
+  }, [sheet.height, sheet.width]);
 
   const select = (index: number) => {
     const entry = flat[index];

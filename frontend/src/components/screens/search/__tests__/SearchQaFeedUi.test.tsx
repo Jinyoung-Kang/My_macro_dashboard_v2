@@ -93,6 +93,10 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
   let cap: number;
   /** 고른 줄의 화면 위 자리(위·아래 끝). */
   let selectedBox: { top: number; bottom: number };
+  /** 본문(main#main)의 화면 위 위끝 — lg 이상은 본문이 스크롤 상자라 그 위(상단바·하위 메뉴 줄)는 줄이 보이지 않는 자리. */
+  let mainTop: number;
+  /** 고른 줄의 계산된 scroll-margin-top(scroll-mt-7 — jsdom은 Tailwind 클래스를 풀지 않으므로 가짜로 줌). 없으면 jsdom 그대로. */
+  let rowMargin: string | null;
   let main: HTMLElement;
   let restore: (() => void)[];
   const width = Object.getOwnPropertyDescriptor(window, "innerWidth");
@@ -103,22 +107,32 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
   const reserved = () => document.documentElement.style.getPropertyValue(BOTTOM_SHEET_VAR);
   /** 시트의 min-height(인라인 'min(Npx, 50dvh)')의 px — CSS처럼 상한(cap) 안에서만 받칩니다. */
   const minHeightOf = (element: HTMLElement) => Number(/^min\((\d+)px/.exec(element.style.minHeight)?.[1] ?? 0);
+  const isSelectedRow = (element: Element) => element.getAttribute("role") === "option" && element.getAttribute("aria-selected") === "true";
 
   beforeEach(() => {
     cap = Number.POSITIVE_INFINITY;
     selectedBox = { top: 100, bottom: 144 };
+    mainTop = 0;
+    rowMargin = null;
     setWidth(390);
     const realStyle = window.getComputedStyle.bind(window);
-    const style = vi
-      .spyOn(window, "getComputedStyle")
-      .mockImplementation((element: Element, pseudo?: string | null) =>
-        isSheet(element) ? ({ position: "fixed" } as CSSStyleDeclaration) : realStyle(element, pseudo),
-      );
+    const style = vi.spyOn(window, "getComputedStyle").mockImplementation((element: Element, pseudo?: string | null) => {
+      if (isSheet(element)) return { position: "fixed" } as CSSStyleDeclaration;
+      const real = realStyle(element, pseudo);
+      if (rowMargin === null || !isSelectedRow(element)) return real;
+      const margin = rowMargin;
+      return new Proxy(real, {
+        get: (target, key) => {
+          if (key === "scrollMarginTop") return margin;
+          const value: unknown = Reflect.get(target, key);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    });
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       if (isSheet(this)) return rect(SHEET_TOP, Math.min(cap, Math.max(SHEET_HEIGHT, minHeightOf(this))));
-      if (this.getAttribute("role") === "option" && this.getAttribute("aria-selected") === "true") {
-        return rect(selectedBox.top, selectedBox.bottom - selectedBox.top);
-      }
+      if (isSelectedRow(this)) return rect(selectedBox.top, selectedBox.bottom - selectedBox.top);
+      if (this === main) return rect(mainTop, 0);
       return rect(0, 0);
     });
     main = document.createElement("main");
@@ -157,7 +171,7 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
   };
 
   // QA-447: 수정 전 실패: 시트가 195px로 줄고 고른 줄이 -103~-59(화면 위)에 남는데 옮기지 않음(재현 커밋에서는 it.fails).
-  it.fails("돌려서(390 → 844) 고른 줄이 화면 위로 벗어나면 그 줄을 다시 옮긴다(nearest — 스크롤 여백을 따름)", async () => {
+  it("돌려서(390 → 844) 고른 줄이 화면 위로 벗어나면 그 줄을 다시 옮긴다(nearest — 스크롤 여백을 따름)", async () => {
     const { row, scrolled, scroll } = await openPreview();
     selectedBox = { top: -103, bottom: -59 };
     resize(844, 195);
@@ -166,8 +180,8 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
   });
 
-  // QA-447: 수정 전 실패: 가로에서 세로로 돌려 줄 바꿈이 늘어 고른 줄이 시트 아래(720~764 — 시트 500~740 밑)로 밀려도 옮기지 않음.
-  it.fails("돌려서(844 → 390) 고른 줄이 시트 아래로 밀려나도 그 줄을 다시 옮긴다", async () => {
+  // QA-447: 수정 전 실패: 가로에서 세로로 돌려 줄 바꿈이 늘어 고른 줄이 시트 아래(760~804 — 시트 500~740 밑)로 밀려도 옮기지 않음.
+  it("돌려서(844 → 390) 고른 줄이 시트 아래로 밀려나도 그 줄을 다시 옮긴다", async () => {
     setWidth(844);
     const { row, scrolled } = await openPreview();
     selectedBox = { top: 760, bottom: 804 };
@@ -189,5 +203,20 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     resize(844, 195);
     expect(reserved()).toBe("195px");
     expect(scrolled).toEqual([]);
+  });
+
+  // 태블릿을 돌릴 때(1024 ↔ 768) 등 — lg 이상은 본문 main이 스크롤 상자라 그 위끝(상단바 아래)이 보이는 자리의 위끝이고, 날짜 머리가 거기 붙으므로
+  // 줄의 scroll-margin-top(28px)만큼 더 아래부터 보입니다. nearest로 옮기면 줄이 멈추는 자리와 같은 경계.
+  it("보이는 자리의 위끝은 스크롤 상자(본문 main)의 위끝 + 줄의 scroll-margin-top(붙는 날짜 머리 자리) — 그 위에 걸친 줄만 옮긴다", async () => {
+    setWidth(1024);
+    mainTop = 104;
+    rowMargin = "28px";
+    const { row, scrolled } = await openPreview();
+    selectedBox = { top: 140, bottom: 172 };
+    resize(768, 195);
+    expect(scrolled).toEqual([]);
+    selectedBox = { top: 120, bottom: 152 };
+    resize(1024, 195);
+    expect(scrolled).toEqual([row]);
   });
 });
