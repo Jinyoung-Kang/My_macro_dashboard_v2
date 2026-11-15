@@ -143,6 +143,21 @@ class SearchWatchControllerTest {
         assertThat(body.path("message").asString()).isNotBlank();
     }
 
+    // 2차 검토 지적: wd: 키를 일시 실패로 풀지 못한 응답(entity:null + errors.entity)이 409 unresolved로 나가 받지 못한 출처가 응답에 없었음.
+    @Test
+    @DisplayName("wd: 키를 풀기 시간 상한으로 풀지 못하면 503 partial과 failed(받지 못한 출처·사유) — 409 unresolved가 아님")
+    void unresolvedByDeadlineIs503Partial() throws Exception {
+        when(collector.liveSearchEntity(anyString(), anyBoolean(), anyBoolean())).thenReturn(Optional.of(MAPPER.readTree(
+                "{\"entity\":null,\"errors\":{\"entity\":\"대상 풀기가 15초를 넘어 저장본 이름으로만 답함\"}}")));
+
+        JsonNode body = call(json(post("/api/search/watch"), "{\"key\":\"wd:Q42\"}"), MEMBER, 503);
+        assertThat(body.path("ok").asBoolean()).isFalse();
+        assertThat(body.path("reason").asString()).isEqualTo("partial");
+        assertThat(body.path("failed").get(0).path("source").asString()).isEqualTo("entity");
+        assertThat(body.path("failed").get(0).path("message").asString()).isEqualTo("대상 풀기가 15초를 넘어 저장본 이름으로만 답함");
+        assertThat(watches.rows).isEmpty();
+    }
+
     @Test
     @DisplayName("매체 제외 — 목록은 회원도 읽고, 더하기·지우기는 운영자만(회원은 403)")
     void excludes() throws Exception {

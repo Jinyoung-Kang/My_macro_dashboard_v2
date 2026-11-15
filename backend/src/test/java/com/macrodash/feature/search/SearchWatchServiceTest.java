@@ -352,6 +352,48 @@ class SearchWatchServiceTest {
         assertThat(watches.rows).isEmpty();
     }
 
+    // 2차 검토 지적: wd: 키는 Wikidata가 거부(429 래치)·프록시 오류를 내거나 풀기 전체가 시간 상한에 걸리면 수집기가 entity:null과 errors.wikidata(또는
+    // errors.entity)를 돌려주는데, 백엔드가 errors를 보지 않고 409 unresolved('찾지 못해 … 대상을 연 뒤 다시 등록하세요')를 내 일시 실패를 '없음'으로
+    // 단정하고 받지 못한 출처(failed)도 싣지 않았음. 수정 전 실패: 409 unresolved, failed 없음.
+    @Test
+    @DisplayName("wd: 키를 일시 실패(Wikidata 거부·시간 상한 등 — errors에 다시 물으면 달라질 출처)로 풀지 못했으면(entity:null) 409 unresolved로 단정하지 않고 "
+            + "503 partial + failed. Wikidata에 그 항목이 없음(WD_MISSING — 다시 물어도 같음)·오류 없음은 그대로 409 unresolved")
+    void unresolvedByRetryErrorIsPartial() {
+        String latch = "거부됨 — 합성.wikidata.test HTTP 429 · 5분 동안 이 출처 호출을 멈춤";
+        resolves("wd:Q3195170", json("{\"entity\": null, \"errors\": {\"wikidata\": \"" + latch + "\"}}"));
+        SearchWatchService.Result latched = service.add(MEMBER, "wd:Q3195170");
+        assertThat(latched.status()).isEqualTo(503);
+        assertThat(latched.body()).containsEntry("ok", false).containsEntry("reason", "partial").containsEntry("message", SearchWatchService.PARTIAL);
+        assertThat(failed(latched)).containsExactly(failedItem("wikidata", latch));
+
+        String deadline = "대상 풀기가 15초를 넘어 저장본 이름으로만 답함";
+        resolves("wd:Q42", json("{\"entity\": null, \"errors\": {\"entity\": \"" + deadline + "\"}}"));
+        SearchWatchService.Result slow = service.add(MEMBER, "wd:Q42");
+        assertThat(slow.status()).isEqualTo(503);
+        assertThat(slow.body()).containsEntry("reason", "partial");
+        assertThat(failed(slow)).containsExactly(failedItem("entity", deadline));
+
+        resolves("wd:Q4000001", json("{\"entity\": null, \"errors\": {\"wikidata\": \"" + SearchWatchService.WD_MISSING + "\"}}"));
+        SearchWatchService.Result missing = service.add(MEMBER, "wd:Q4000001");
+        assertThat(missing.status()).as("Wikidata에 그 항목이 없음 — 다시 물어도 같음").isEqualTo(409);
+        assertThat(missing.body()).containsEntry("reason", "unresolved").doesNotContainKey("failed");
+
+        resolves("wd:Q4000002", json("{\"entity\": null, \"errors\": {\"dart\": \"합성 사유\"}}"));
+        assertThat(service.add(MEMBER, "wd:Q4000002").body()).as("등록을 막지 않는 오류만이면 찾지 못함").containsEntry("reason", "unresolved");
+
+        assertThat(watches.rows).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Wikidata에 그 항목이 없다는 사유(WD_MISSING)는 수집기 services/search_entities의 WD_MISSING과 같다")
+    void wdMissingMatchesCollector() throws IOException {
+        Path file = Path.of("../collector/app/services/search_entities.py");
+        assumeTrue(Files.exists(file), "collector/app/services/search_entities.py를 찾을 수 없습니다");
+        Matcher line = Pattern.compile("^WD_MISSING = \"([^\"]*)\"$", Pattern.MULTILINE).matcher(Files.readString(file));
+        assertThat(line.find()).as("WD_MISSING 줄").isTrue();
+        assertThat(SearchWatchService.WD_MISSING).isEqualTo(line.group(1));
+    }
+
     @Test
     @DisplayName("상한에 닿아도 다른 키로 이미 등록한 대상(wd: → 대표 키 us:)은 200(created:false), 새 대상·풀지 못한 대상은 409(user_limit)")
     void atLimitSameEntityViaOtherKey() {

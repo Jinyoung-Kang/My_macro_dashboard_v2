@@ -74,6 +74,11 @@ public class SearchWatchService {
      * {@code dart}(저장본을 읽었는데 그 종목이 없음 — ETF·우선주 등)는 다시 물어도 같아서 넣지 않습니다.
      */
     static final Set<String> RETRY_ERRORS = Set.of("entity", "wikidata", "sec", "dart_store");
+    /**
+     * Wikidata를 받았는데 그 항목이 없다는 수집기 사유({@code errors.wikidata} — 수집기 {@code search_entities.WD_MISSING}과 같은 글, 시험
+     * {@code wdMissingMatchesCollector}가 대조). 다시 물어도 같아서 {@link #RETRY_ERRORS}의 wikidata라도 덜 풀린 것으로 보지 않습니다.
+     */
+    static final String WD_MISSING = "Wikidata에 이 항목이 없음";
     /** DART 고유번호 저장본을 읽지 못함 — 저장본이 없으면 1분 뒤에도 같아서 이 출처가 섞인 partial은 곧 된다고 하지 않습니다. */
     static final String DART_STORE = "dart_store";
     /** partial 본문 {@code failed}의 사유 하나의 글자 수 상한. */
@@ -202,8 +207,9 @@ public class SearchWatchService {
 
     /**
      * 등록 — {@code key}를 검사하고(틀리면 400) 수집기로 풀어 대표 키로 저장합니다. 데모·store_only는 403, 이미 있으면(다른 키로 등록한 같은 대상도)
-     * 그대로 200({@code created:false}), 상한을 넘으면 409({@code reason} user_limit·server_limit), 대상을 풀지 못하면 409(unresolved),
-     * 수집기에 닿지 못하면 503(주제 키는 키의 글로 등록), 풀기가 덜 끝났으면 503(partial — 저장하지 않음, 본문 {@code failed}에 받지 못한 출처와 사유).
+     * 그대로 200({@code created:false}), 상한을 넘으면 409({@code reason} user_limit·server_limit), 대상을 찾지 못하면 409(unresolved — 다시 물으면 달라질
+     * 출처 오류 없이 풀지 못함, Wikidata에 그 항목이 없음 등), 수집기에 닿지 못하면 503(주제 키는 키의 글로 등록), 풀기가 덜 끝났거나 다시 물으면 달라질
+     * 출처 오류로 풀지 못했으면(wd: 키의 Wikidata 거부·시간 상한 등 — 대상이 없어도) 503(partial — 저장하지 않음, 본문 {@code failed}에 받지 못한 출처와 사유).
      *
      * @throws InvalidRequestException 키 모양이 틀림(400)
      */
@@ -235,9 +241,15 @@ public class SearchWatchService {
             if (full) {
                 return userLimit(user);
             }
-            return answer.isEmpty()
-                    ? failure(503, null, "수집기에서 응답을 받지 못해 대상을 풀지 못했습니다. 잠시 뒤 다시 등록하세요.")
-                    : failure(409, "unresolved", "이 대상의 이름·식별자를 찾지 못해 등록하지 못했습니다. 검색에서 대상을 연 뒤 다시 등록하세요.");
+            if (answer.isEmpty()) {
+                return failure(503, null, "수집기에서 응답을 받지 못해 대상을 풀지 못했습니다. 잠시 뒤 다시 등록하세요.");
+            }
+            // 풀지 못한 까닭이 다시 물으면 달라질 출처 오류(wd: 키의 Wikidata 거부·시간 초과, 풀기 전체의 시간 상한 등)면 '찾지 못함'으로 단정하지 않고
+            // 덜 풀린 등록과 같은 503 partial로 받지 못한 출처와 사유를 싣습니다. 오류가 없거나 Wikidata에 그 항목이 없음(WD_MISSING)이면 409 unresolved.
+            List<Map<String, Object>> failed = retryFailures(errors(answer));
+            return failed.isEmpty()
+                    ? failure(409, "unresolved", "이 대상의 이름·식별자를 찾지 못해 등록하지 못했습니다. 검색에서 대상을 연 뒤 다시 등록하세요.")
+                    : partial(failed);
         }
         synchronized (capLock) {
             Optional<SearchWatchStore.Watch> same = watches.find(user.id(), resolved.key());
@@ -424,7 +436,8 @@ public class SearchWatchService {
     /**
      * 수집기의 대상 풀기 응답에서 저장할 값을 고릅니다. 대표 키가 문법에 맞지 않으면 물은 키, 모르는 종류는 키 모양으로(wd:는 알 수 없어 null —
      * 등록하지 않음), 이름이 없으면 키의 값, 별칭은 문자열만·빈 것과 겹친 것 없이 12개까지(없으면 이름 하나), 식별자는 객체일 때만(아니면 null —
-     * 표에는 빈 객체), {@code errors}에 다시 물으면 달라질 출처({@link #RETRY_ERRORS})가 있으면 partial. 대상이 없으면 주제 키만 키의 글로 만들고 그 밖은 null.
+     * 표에는 빈 객체), {@code errors}에 다시 물으면 달라질 출처({@link #RETRY_ERRORS})가 있으면 partial. 대상이 없으면 주제 키만 키의 글로 만들고 그 밖은 null
+     * (null이면 {@link #add}가 {@code errors}를 다시 봐 partial·unresolved를 가름).
      */
     private Resolved resolve(String key, Optional<JsonNode> answer) {
         JsonNode entity = answer.map(body -> body.get("entity")).filter(JsonNode::isObject).orElse(null);
@@ -471,16 +484,20 @@ public class SearchWatchService {
             aliases.add(name);
         }
         JsonNode ids = entity.get("ids");
-        JsonNode errors = answer.map(body -> body.get("errors")).filter(JsonNode::isObject).orElse(null);
         return new Resolved(representative, kind, name, givenName(entity, "nameKo"), givenName(entity, "nameEn"), List.copyOf(aliases),
-                ids != null && ids.isObject() ? ids.deepCopy() : null, retryFailures(errors));
+                ids != null && ids.isObject() ? ids.deepCopy() : null, retryFailures(errors(answer)));
+    }
+
+    /** 대상 풀기 응답의 {@code errors}(객체가 아니면 null). */
+    private static JsonNode errors(Optional<JsonNode> answer) {
+        return answer.map(body -> body.get("errors")).filter(JsonNode::isObject).orElse(null);
     }
 
     /**
      * 대상 풀기 응답 {@code errors}에서 다시 물으면 달라질 출처({@link #RETRY_ERRORS})만 받은 순서대로 {@code [{source, message}]} — 503 partial 본문의
      * {@code failed}. {@code source}는 오류 키 그대로(화면이 속성 칸과 같은 이름으로 바꿈), {@code message}는 수집기의 짧은 사유(호스트·상태만 — 주소·인자
      * 없음)인데 문자열이 아니거나 비었거나 주소 모양이 섞이면 null(화면은 이름만), 제어 글자는 공백으로, {@link #MAX_FAILED_REASON}자까지.
-     * 그 밖의 오류({@code dart} — 저장본에 그 종목이 없음 등)는 등록을 막지 않으므로 넣지 않습니다.
+     * 그 밖의 오류({@code dart} — 저장본에 그 종목이 없음 등)와 Wikidata에 그 항목이 없다는 사유({@link #WD_MISSING} — 다시 물어도 같음)는 넣지 않습니다.
      */
     static List<Map<String, Object>> retryFailures(JsonNode errors) {
         if (errors == null || !errors.isObject()) {
@@ -488,7 +505,7 @@ public class SearchWatchService {
         }
         List<Map<String, Object>> out = new ArrayList<>();
         for (Map.Entry<String, JsonNode> entry : errors.properties()) {
-            if (!RETRY_ERRORS.contains(entry.getKey())) {
+            if (!RETRY_ERRORS.contains(entry.getKey()) || wdMissing(entry.getKey(), entry.getValue())) {
                 continue;
             }
             Map<String, Object> item = new LinkedHashMap<>();
@@ -497,6 +514,10 @@ public class SearchWatchService {
             out.add(item);
         }
         return List.copyOf(out);
+    }
+
+    private static boolean wdMissing(String source, JsonNode value) {
+        return "wikidata".equals(source) && value != null && value.isString() && WD_MISSING.equals(value.stringValue().strip());
     }
 
     private static String failedReason(JsonNode value) {

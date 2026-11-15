@@ -30,7 +30,8 @@ from . import search_store, sec_fundamentals
 from . import search_wikidata as wd
 
 OFFLINE = "외부 호출을 끈 요청이라 부르지 않음(저장본만)"
-# Wikidata가 답했지만 그 항목이 없을 때의 사유 — 실패가 아님(연결 보강이 'LEI 없음'과 'LEI를 모름'을 가를 때 씀).
+# Wikidata가 답했지만 그 항목이 없을 때의 사유 — 실패가 아님(연결 보강이 'LEI 없음'과 'LEI를 모름'을 가를 때 씀). 관심 대상 등록도 이 글로
+# '찾지 못함'(409 unresolved)과 일시 실패(503 partial)를 가릅니다(백엔드 SearchWatchService.WD_MISSING과 같은 글 — 백엔드 시험이 이 줄을 읽어 대조, 계약 §6-4).
 WD_MISSING = "Wikidata에 이 항목이 없음"
 # 국내 종목에 DART 고유번호가 없을 때의 사유 — 저장본을 읽었는데 그 종목이 없음(ETF·우선주 등 — errors['dart'], 다시 물어도 같음)과
 # 저장본이 없거나 읽지 못함(errors['dart_store'] — 다시 물으면 달라짐: 관심 대상 등록이 partial로 받아 저장하지 않음, 계약 §3-3·§6-4).
