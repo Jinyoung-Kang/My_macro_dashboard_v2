@@ -179,7 +179,7 @@ export default function LiquidityPage() {
                 <div className="mb-1 flex items-baseline gap-2">
                   <span
                     aria-hidden
-                    className="h-2 w-2 shrink-0 rounded-full"
+                    className="h-2 w-2 shrink-0 rounded-[2px]"
                     style={{ backgroundColor: component.color }}
                   />
                   <h3 className="text-xs font-semibold text-text-2">{component.name}</h3>

@@ -120,7 +120,7 @@ export default function StatusPage() {
             {Object.entries(data.keys).map(([name, present]) => (
               <span
                 key={name}
-                className={`rounded-full border px-3 py-1 text-xs ${
+                className={`rounded-control border px-2 py-0.5 text-xs ${
                   present
                     ? "border-ok/40 bg-ok-tint text-ok"
                     : "border-border bg-surface-2 text-text-3"
@@ -268,7 +268,7 @@ export default function StatusPage() {
             {data?.missingDatasets?.map((entry) => (
               <span
                 key={entry.name}
-                className="rounded-full border border-warn/40 bg-warn-tint px-2.5 py-1 text-xs text-warn"
+                className="rounded-control border border-warn/40 bg-warn-tint px-2 py-0.5 text-xs text-warn"
                 title={entry.name}
               >
                 {entry.label}

@@ -373,7 +373,7 @@ export function ExternalLinksCard({ links, title = "다른 곳에서 보기" }: 
           <li key={link.url}>
             <ExternalAnchor
               href={link.url}
-              className="inline-flex min-h-11 items-center rounded-full border border-border px-3 text-sm text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-9"
+              className="inline-flex min-h-11 items-center rounded-control border border-border px-3 text-sm text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-[30px] lg:px-2.5"
             >
               {link.label}
             </ExternalAnchor>

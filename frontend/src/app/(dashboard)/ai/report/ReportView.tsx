@@ -41,8 +41,8 @@ export function ReportView({ markdown }: { markdown: string }) {
             <a
               key={section.id}
               href={`#${section.id}`}
-              // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 글 높이 그대로.
-              className="inline-flex min-h-11 items-center rounded-full border border-border px-2.5 py-1 text-xs text-text-3 hover:border-accent/60 hover:text-text lg:min-h-0"
+              // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 작은 조작 24px. 모서리 4px(작업대 실행 명세 §3-8).
+              className="inline-flex min-h-11 items-center rounded-control border border-border px-2 text-xs text-text-3 hover:border-accent/60 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-6"
             >
               {section.title}
             </a>
@@ -185,7 +185,7 @@ const VERDICT_ICON: Record<Verdict, ReactNode> = {
  */
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   return (
-    <span className="mr-1 inline-flex items-center gap-1 rounded-full bg-surface-2 px-1.5 py-px align-[1px] text-xs font-medium leading-4 text-text-2">
+    <span className="mr-1 inline-flex items-center gap-1 rounded-control bg-surface-2 px-1.5 py-px align-[1px] text-xs font-medium leading-4 text-text-2">
       {VERDICT_ICON[verdict]}
       {VERDICT_LABEL[verdict]}
     </span>
