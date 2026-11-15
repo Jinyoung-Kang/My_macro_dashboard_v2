@@ -110,9 +110,9 @@ describe("QA-430 — 미리 보기 닫기 단추로 닫으면 포커스가 결�
     expect(document.activeElement).toBe(list);
     expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
     expect(list.getAttribute("aria-activedescendant")).toBeNull();
-    // 포커스가 목록에 있으므로 ↓가 곧바로 첫 줄을 다시 고릅니다(Escape로 닫은 뒤와 같음).
+    // 포커스가 목록에 있으므로 ↓가 곧바로 닫기 전 줄(첫 줄)의 다음 줄을 고릅니다(Escape로 닫은 뒤와 같음 — 아래 '닫은 뒤 ↑↓' 시험).
     fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
-    expect(within(list).getAllByRole("option")[0].getAttribute("aria-selected")).toBe("true");
+    expect(within(list).getAllByRole("option")[1].getAttribute("aria-selected")).toBe("true");
   });
 
   it("Escape로 닫아도 포커스는 결과 목록에 그대로 — 두 닫기의 자리가 같다", async () => {
@@ -186,6 +186,91 @@ describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Esca
     fireEvent.keyDown(read, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
     expect(document.activeElement).toBe(list);
+  });
+});
+
+describe("개선 제안 — 미리 보기를 닫은 뒤 ↑↓는 닫기 전에 고른 줄에서 이어 간다", () => {
+  // 개선 제안(QA 스택 재확인 5, 390·1024·1280): End로 마지막 줄을 고른 뒤 닫기 단추나 Escape로 닫으면 고른 줄이 풀리고(aria-activedescendant
+  // 없음) ↓가 첫 줄을 골라 목록 맨 위로 돌아갔습니다(390에서 658px, 1024에서 381px 위로). 닫기 전 줄을 기억해 ↓·↑는 그 다음·앞 줄을 고르고,
+  // Home·End는 그대로 양 끝, 목록이 바뀌면(거르기·기간·자료) 잊습니다. 닫은 뒤에는 고른 줄이 없는 것도 그대로입니다.
+  // 수정 전 실패: 닫은 뒤의 ↑가 첫 줄을 고름.
+  const FIVE = {
+    ...FEED,
+    items: [1, 2, 3, 4, 5].map((at) => row({ id: `n${at}`, title: `기사 ${at}`, publishedAt: `2026-11-13T0${at}:00:00+00:00` })),
+    rangeCounts: { "7d": 5, "30d": 5, "1y": 5, "2y": 5 },
+  };
+  /** 지금 고른 줄의 제목(없으면 null). */
+  const selectedTitle = (list: HTMLElement) =>
+    within(list)
+      .getAllByRole("option")
+      .find((option) => option.getAttribute("aria-selected") === "true")
+      ?.textContent?.replace(/^.*?(기사 \d)$/, "$1") ?? null;
+
+  async function openList() {
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = FIVE;
+    renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
+    const list = await screen.findByRole("listbox", { name: "결과" });
+    list.focus();
+    return list;
+  }
+
+  it("Escape로 닫은 뒤 ↑는 닫기 전 줄의 앞 줄, ↓는 다음 줄 — 닫은 동안은 고른 줄이 없다", async () => {
+    const list = await openList();
+    fireEvent.keyDown(list, { key: "End" });
+    expect(selectedTitle(list)).toBe("기사 1");
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "미리 보기" })).toBeNull();
+    expect(list.getAttribute("aria-activedescendant")).toBeNull();
+    expect(selectedTitle(list)).toBeNull();
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    expect(selectedTitle(list)).toBe("기사 2");
+    fireEvent.keyDown(list, { key: "Escape" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(selectedTitle(list)).toBe("기사 1");
+  });
+
+  it("닫기 단추·미리 보기 안의 Escape로 닫아도 같다 — 가운데 줄에서 닫으면 ↓는 그 다음 줄", async () => {
+    const list = await openList();
+    fireEvent.keyDown(list, { key: "Home" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(selectedTitle(list)).toBe("기사 3");
+    const close = within(screen.getByRole("region", { name: "미리 보기" })).getByRole("button", { name: "미리 보기 닫기" });
+    close.focus();
+    fireEvent.click(close);
+    fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    expect(selectedTitle(list)).toBe("기사 2");
+    const link = within(screen.getByRole("region", { name: "미리 보기" })).getByRole("link", { name: /원문 열기/ });
+    link.focus();
+    fireEvent.keyDown(link, { key: "Escape" });
+    expect(document.activeElement).toBe(list);
+    fireEvent.keyDown(list, { key: "ArrowUp" });
+    expect(selectedTitle(list)).toBe("기사 3");
+  });
+
+  it("Home·End는 닫은 뒤에도 양 끝", async () => {
+    const list = await openList();
+    fireEvent.keyDown(list, { key: "Home" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "Escape" });
+    fireEvent.keyDown(list, { key: "Home" });
+    expect(selectedTitle(list)).toBe("기사 5");
+    fireEvent.keyDown(list, { key: "Escape" });
+    fireEvent.keyDown(list, { key: "End" });
+    expect(selectedTitle(list)).toBe("기사 1");
+  });
+
+  it("목록이 바뀌면(거르기를 바꿨다 되돌려도) 잊고 ↓는 첫 줄부터", async () => {
+    const list = await openList();
+    fireEvent.keyDown(list, { key: "End" });
+    fireEvent.keyDown(list, { key: "Escape" });
+    const pane = screen.getByRole("region", { name: "거르기" });
+    fireEvent.click(within(pane).getByRole("checkbox", { name: "영어 5건" }));
+    fireEvent.click(within(pane).getByRole("checkbox", { name: "영어 5건" }));
+    const again = screen.getByRole("listbox", { name: "결과" });
+    again.focus();
+    fireEvent.keyDown(again, { key: "ArrowDown" });
+    expect(selectedTitle(again)).toBe("기사 5");
   });
 });
 

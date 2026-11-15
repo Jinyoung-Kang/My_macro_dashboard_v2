@@ -40,6 +40,7 @@ import {
   rowTimeText,
   sourceLabel,
   type FeedClusterEntry,
+  type FeedEntry,
   type FeedFacet,
   type FeedFilters,
   type PeriodBin,
@@ -62,6 +63,7 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  *
  * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
  * Escape는 목록에서든 미리 보기(아래 시트·xl 오른쪽 칸) 안에서든 미리 보기를 닫고 포커스를 결과 목록에 둡니다(닫기 단추와 같은 자리).
+ * 닫은 뒤의 ↑↓는 닫기 전에 고른 줄의 앞·다음 줄로 이어 갑니다(목록이 바뀌면 처음부터 — Home·End는 늘 양 끝).
  * 날짜만 아는 줄(공시 접수일·리포트 날짜·거장 견해 기준일 — timeBasis "date", 계약 §7-1)은 시각 칸에 날짜만 두고, 공시·리서치 줄은 종류를 테두리 표지로 둡니다.
  * 수집 글(readerId)의 원문 팝업은 운영자에게만(그 경로가 운영자 전용 — D-1).
  *
@@ -167,6 +169,9 @@ export function FeedPanel({
   const summaryButtonRef = useRef<HTMLButtonElement>(null);
   // 근거 단추로 접힌 묶음을 펼쳤을 때 — 펼친 줄이 그려진 뒤 그 줄로 옮기고 포커스를 목록에 둡니다.
   const revealPending = useRef<string | null>(null);
+  // 미리 보기를 닫을 때 고른 줄과 그때의 목록(flat) — 닫으면 고른 줄이 풀려(aria-activedescendant 없음) ↓가 첫 줄로 돌아갔습니다. 같은 목록일
+  // 때만 그 줄에서 이어 가고, 목록이 바뀌면(거르기·기간·막대 좁히기·묶어 보기·펼침·받은 자료) 버립니다(flat이 새로 만들어짐).
+  const closedAt = useRef<{ key: string; flat: readonly FeedEntry[] } | null>(null);
 
   useEffect(() => {
     if (feed.rechecking || !recheckHadFocus.current) return;
@@ -254,9 +259,17 @@ export function FeedPanel({
 
   // 미리 보기의 '닫기' — 단추가 미리 보기째 사라지므로 포커스를 고른 줄이 있던 결과 목록(Escape로 닫을 때와 같은 자리)으로 옮깁니다(WCAG 2.4.3).
   // 미리 보기는 목록의 줄을 골랐을 때만 그려지므로 목록이 있습니다. 아래 시트가 닫히며 페이지가 튀지 않게 preventScroll(QA-430).
+  // 닫기 단추·목록의 Escape·미리 보기 안의 Escape가 모두 이 길로 닫습니다 — 닫기 전 줄을 기억해 다음 ↑↓가 그 줄에서 이어 가게.
   const closePreview = () => {
+    if (selectedKey !== null) closedAt.current = { key: selectedKey, flat };
     setSelectedKey(null);
     listRef.current?.focus({ preventScroll: true });
+  };
+
+  /** 고른 줄이 없을 때 ↑↓가 이어 갈 줄 — 같은 목록에서 미리 보기를 닫기 전에 고른 줄, 없으면 -1(첫 줄부터). */
+  const resumeIndex = () => {
+    const closed = closedAt.current;
+    return closed !== null && closed.flat === flat ? flat.findIndex((entry) => entry.key === closed.key) : -1;
   };
 
   // 미리 보기 안(아래 시트·xl 오른쪽 칸 — '원문 열기'·'받아 둔 글 보기'·닫기 단추)에 포커스가 있을 때의 Escape — 목록에서처럼 닫고 포커스를 결과
@@ -312,7 +325,7 @@ export function FeedPanel({
   const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      select(nextRowIndex(selectedIndex, event.key, flat.length));
+      select(nextRowIndex(selectedIndex >= 0 ? selectedIndex : resumeIndex(), event.key, flat.length));
     } else if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       select(event.key === "Home" ? 0 : flat.length - 1);
@@ -322,7 +335,7 @@ export function FeedPanel({
       else openOriginal(selected);
     } else if (event.key === "Escape" && selectedEntry) {
       event.preventDefault();
-      setSelectedKey(null);
+      closePreview();
     }
   };
 
