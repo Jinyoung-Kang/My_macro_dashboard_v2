@@ -150,4 +150,4 @@ P2를 셋(공용 키트·패턴·알약 정리)으로 나눈 가운데 공용 �
 
 흔들림: P1 기록의 '전체 실행 때 이름 모를 1건 실패'는 `fontFloor`의 'src의 글자 크기는 모두 12px 이상이다'와 `themeTokens`의 'surface-3 … 글자를 두지 않는다'였습니다 — 둘 다 'Test timed out in 5000ms'(같은 기계에서 다른 작업이 함께 돌아 부하 평균 40 안팎, 평소 1~2초). 검사 내용은 그대로 두고 한도만 30초로 넓혔습니다.
 
-확인(이 PC, 작업 폴더): 커밋마다 `npx vitest run` 전체(마지막 214개 파일 2,870 통과 — 예상 실패 0), `npx tsc --noEmit -p .`, 바꾼 파일의 eslint, 끝에 `npm run check`. Tailwind 컴파일(작업 폴더의 postcss 스크립트)로 새 클래스(`border-border-overlay`·`lg:min-h-[30px]`·`before:bg-accent`·`group-open:rotate-180` 등)가 나오는지 봤고, 키트를 한 쪽에 그린 HTML을 헤드리스 크롬으로 1440·390 폭에서 캡처해 겉모양을 봤습니다(캡처는 작업 폴더에만). `make test`·QA 스택·`next build`는 돌리지 않았습니다.
+확인(이 PC, 작업 폴더): 커밋마다 `npx vitest run` 전체(마지막 213개 파일 2,869 통과 — 예상 실패 0), `npx tsc --noEmit -p .`, 바꾼 파일의 eslint, 끝에 `npm run check`. Tailwind 컴파일(작업 폴더의 postcss 스크립트)로 새 클래스(`border-border-overlay`·`lg:min-h-[30px]`·`before:bg-accent`·`group-open:rotate-180` 등)가 나오는지 봤고, 키트를 한 쪽에 그린 HTML을 헤드리스 크롬으로 1440·390 폭에서 캡처해 겉모양을 봤습니다(캡처는 작업 폴더에만). `make test`·QA 스택·`next build`는 돌리지 않았습니다.
