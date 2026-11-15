@@ -236,7 +236,7 @@ describe("QA-434 — '거르기 모두 풀기'를 누르면 사라진 단추 대
     return screen.getByRole("region", { name: "거르기" });
   }
 
-  it.fails("빈 결과 안내의 단추 → 다시 나타난 결과 목록", async () => {
+  it("빈 결과 안내의 단추 → 다시 나타난 결과 목록", async () => {
     const pane = await filterPane();
     fireEvent.click(within(pane).getByRole("checkbox", { name: "뉴스 2건" }));
     const notice = screen.getByText("고른 거르기에 맞는 자료가 없습니다").closest('[role="status"]') as HTMLElement;
@@ -251,7 +251,7 @@ describe("QA-434 — '거르기 모두 풀기'를 누르면 사라진 단추 대
     expect(within(list).getAllByRole("option")[0].getAttribute("aria-selected")).toBe("true");
   });
 
-  it.fails("거르기 칸의 단추 → 그 칸의 첫 체크 상자(모두 켜진 것을 바로 듣게)", async () => {
+  it("거르기 칸의 단추 → 그 칸의 첫 체크 상자(모두 켜진 것을 바로 듣게)", async () => {
     const pane = await filterPane();
     fireEvent.click(within(pane).getByRole("checkbox", { name: "영어 2건" }));
     const clear = within(pane).getByRole("button", { name: "거르기 모두 풀기" });
@@ -263,7 +263,7 @@ describe("QA-434 — '거르기 모두 풀기'를 누르면 사라진 단추 대
     expect(first.checked).toBe(true);
   });
 
-  it.fails("거르기 칸에 체크 상자가 없으면(고른 기간에 받은 줄이 없음) 그 칸의 지금 기간 단추", async () => {
+  it("거르기 칸에 체크 상자가 없으면(고른 기간에 받은 줄이 없음) 그 칸의 지금 기간 단추", async () => {
     // 거르기는 기간을 바꿔도 남으므로, 7일에 받은 줄이 없으면 체크 상자 없이 '거르기 모두 풀기'만 남습니다(서버가 센 기간별 건수 — 7일 0건).
     reads[endpoints.search.feed("us:NVDA", "timeline")] = { ...FEED, rangeCounts: { "7d": 0, "30d": 2, "1y": 2, "2y": 2 } };
     const pane = await filterPane();

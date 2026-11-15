@@ -145,6 +145,10 @@ export function FeedPanel({
   const recheckHadFocus = useRef(false);
   // 빈 결과 안내의 '좁히기 풀기'를 눌렀는가 — 안내가 단추째 사라지므로 포커스를 결과 목록(없으면 안내 자리)으로 옮깁니다(WCAG 2.4.3).
   const periodClearedFromEmpty = useRef(false);
+  // '거르기 모두 풀기'를 누른 자리 — 단추가 사라지므로(빈 결과 안내는 결과 목록으로 바뀌고, 거르기 칸의 단추는 거른 것이 없어져 빠짐) 포커스를
+  // 빈 결과 안내에서는 결과 목록(없으면 안내 자리)으로, 거르기 칸에서는 그 칸의 첫 체크 상자(없으면 지금 기간 단추)로 옮깁니다(WCAG 2.4.3 — QA-434).
+  const filtersClearedFrom = useRef<"empty" | "pane" | null>(null);
+  const filterPaneRef = useRef<HTMLElement>(null);
   const baseId = useId();
   const optionId = (index: number) => `${baseId}-row-${index}`;
   const drawerId = `${baseId}-filters`;
@@ -256,6 +260,24 @@ export function FeedPanel({
     (listRef.current ?? emptyRef.current)?.focus();
   }, [period]);
 
+  const clearFilters = (from: "empty" | "pane") => {
+    filtersClearedFrom.current = from;
+    setFilters(NO_FILTERS);
+  };
+
+  // 거르기를 모두 푼 그림이 그려진 뒤에 옮깁니다. 거르기 칸에서는 기간 단추가 체크 상자보다 앞에 있으므로 체크 상자를 먼저 따로 찾습니다.
+  useEffect(() => {
+    const from = filtersClearedFrom.current;
+    if (from === null || filters !== NO_FILTERS) return;
+    filtersClearedFrom.current = null;
+    if (from === "empty") {
+      (listRef.current ?? emptyRef.current)?.focus();
+      return;
+    }
+    const pane = filterPaneRef.current;
+    (pane?.querySelector<HTMLElement>('input[type="checkbox"]') ?? pane?.querySelector<HTMLElement>('button[aria-pressed="true"]'))?.focus();
+  }, [filters]);
+
   const togglePeriod = (bin: PeriodBin) =>
     setPeriod((current) => (current && current.unit === bars.unit && current.start === bin.start ? null : { unit: bars.unit, start: bin.start }));
 
@@ -339,7 +361,7 @@ export function FeedPanel({
           </div>
         ) : null}
         {empty.kind === "filtered" ? (
-          <button type="button" className={BUTTON} onClick={() => setFilters(NO_FILTERS)}>
+          <button type="button" className={BUTTON} onClick={() => clearFilters("empty")}>
             거르기 모두 풀기
           </button>
         ) : null}
@@ -457,7 +479,7 @@ export function FeedPanel({
 
   // ------------------------------------------------------------------ 왼쪽 칸(거르기)
   const filterPane = (
-    <section aria-label="거르기" className="flex flex-col gap-4">
+    <section ref={filterPaneRef} aria-label="거르기" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <PaneHeading>기간</PaneHeading>
         <div className="flex flex-wrap gap-1">
@@ -479,7 +501,7 @@ export function FeedPanel({
       <FacetGroup title="출처" facets={facets.source} off={filters.source} onToggle={(key) => toggle("source", key)} />
       <FacetGroup title="언어" facets={facets.lang} off={filters.lang} onToggle={(key) => toggle("lang", key)} />
       {hasFilters(filters) ? (
-        <button type="button" className={BUTTON} onClick={() => setFilters(NO_FILTERS)}>
+        <button type="button" className={BUTTON} onClick={() => clearFilters("pane")}>
           거르기 모두 풀기
         </button>
       ) : null}
