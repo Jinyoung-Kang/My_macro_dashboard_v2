@@ -1,6 +1,6 @@
 /**
- * 정보 검색 대상 화면의 속성 칸 글(QA-420 후속 — 미리 보기 안내, QA-429 후속 — 받지 못한 출처의 이름). 응답은 모두 합성 값입니다
- * (실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
+ * 정보 검색 대상 화면의 속성 칸 글(QA-420 후속 — 미리 보기 안내, QA-429 후속 — 받지 못한 출처의 이름, QA-431 — 풀지 못한 대상의 종류).
+ * 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  *
  * jsdom은 미디어 쿼리를 셈하지 않습니다. 그래서 그 창 폭에서 보이는 글을 클래스의 display(hidden·inline 등과 그 앞의 lg:·xl: 등)로 셈해
  * 읽습니다(배치를 클래스 계약으로 시험 — 실제 화면은 QA 스택에서 봄).
@@ -197,5 +197,25 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
 
   it("객체 기본 속성 이름(toString 등)의 키도 코드 이름 대신 기타 출처로 보인다", () => {
     for (const key of ["toString", "constructor", "__proto__", ""]) expect(entityErrorSourceLabel(key), key).toBe("기타 출처");
+  });
+});
+
+describe("QA-431 — 풀지 못한 wd: 대상의 속성 칸 종류는 확인한 값만(탭을 고르려고 짐작한 '사람'을 보이지 않음)", () => {
+  /** 속성 칸의 '종류' 값. */
+  const kindValue = (pane: HTMLElement) => within(pane).getByText("종류").nextElementSibling?.textContent;
+
+  // QA-431: wd: 키를 풀지 못하면(Wikidata 실패 — entity:null) 탭을 고르려고 사람으로 짐작한 종류를 속성 칸에도 넘겨, 머리는 '대상'(모름)인데
+  // 속성 칸은 '종류 사람'이었음. 결과 탭은 FeedPanel을 거쳐, 보유·연결 탭은 EntityView에서 바로 넘김.
+  // 수정 전 실패: 공시·연결 탭 모두 속성 칸 종류가 '사람'.
+  it.fails("공시 탭(결과 탭)과 연결 탭의 속성 칸 종류가 '—'이고 '사람'이 없다", async () => {
+    reads[endpoints.search.entity("wd:Q4000002")] = { available: true, entity: null, errors: { wikidata: "ProxyError" } };
+    for (const tab of ["filings", "links"]) {
+      renderScreen(`/search?e=wd:Q4000002&tab=${tab}&range=30d`);
+      const pane = await screen.findByRole("region", { name: "속성" });
+      expect(screen.getByRole("tab", { selected: true }).textContent).toBe(tab === "filings" ? "공시" : "연결");
+      expect({ tab, kind: kindValue(pane) }).toEqual({ tab, kind: "—" });
+      expect(pane.textContent, tab).not.toContain("사람");
+      cleanup();
+    }
   });
 });
