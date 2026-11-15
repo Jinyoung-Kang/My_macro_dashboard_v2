@@ -423,7 +423,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 |---|---|---|---|
 | P0 준비 | 이 명세·ADR 0042·진행 기록(문서 브랜치). 시험 묶음: 대비 행렬 일반화, 12px 하한 소스 검사, 조작 44px 검사, 팔레트 기록, 데이터 칸 강조색 금지(§9) — 지금 어기는 자리는 결함 번호를 받아 `it.fails`. P1 전에 감사 스크립트 `scripts/qa/ui-audit.js`와 QA 스택의 개편 전 기준(§9-9) | 0.5~1일 | 없음(문서·시험) |
 | P1 토큰·테마·팔레트 | 토큰 값을 바꾸기 전에 accent 틴트 위 accent 글자 두 자리(`SideNav` 현재 메뉴·`filterChipClasses` 켠 칩)를 `text-text`로(§3-2, `fix(QA-###)`). `:root`를 어두운 한 벌로(W1), 상승 `#ff6b6b`(W4), `surface-3`·`border-subtle`·`scrim`, 글자 단계, 모서리 4px. 범위 블록은 값만 같게 남김. ThemeSwitch·theme·useTheme 제거. 옛 별칭 5개 **이름만 바꾸는 커밋**(W9). 계좌2 색·회색 2개·K40 참고선, 툴팁 4px, 검증기 결과 기록. Recharts `var()`를 Firefox에서 확인 | 1.5~2일 | P2와 함께 |
-| P2 공용 키트 | §6 표 전부(Radix 두 개 제외 — 2026-11-16 조정: 새 패턴 부품 PropertyList·EntityHeader·SplitPane/MasterDetail·Timeline·SectionIndex·KpiStrip·그래프는 처음 쓰는 단계로 이월, 진행 기록 §P2 패턴·차트). `rounded-full` 65곳 정리. 겉모양 단언 약 60줄을 같은 커밋에서 고침 | 2.5~3일 | **D1**: 모든 화면이 새 언어(배치는 그대로) |
+| P2 공용 키트 | §6 표 전부(Radix 두 개 제외 — **2026-11-16 결정(사용자 위임 — 권장안)**: 아직 쓰는 화면이 없는 새 부품 아홉은 P2에서 만들지 않고 처음 쓰는 단계에서 만듦 — 아래 '새 부품을 만드는 단계'). `rounded-full` 65곳 정리. 겉모양 단언 약 60줄을 같은 커밋에서 고침 | 2.5~3일 | **D1**: 모든 화면이 새 언어(배치는 그대로) |
 | P3 셸 | 상단바, 빵부스러기, 나무 메뉴, lg 이상 SubNav 제거, 명령 팔레트 확장, 단축키 도움말, 새로고침 단추 이동. Radix 두 개(W12) | 1.5~2일 | P4와 함께 |
 | P4 대상 문법 | 상세 3종과 홈 | 2.5~3일 | **D2** |
 | P5a 시장 | 6화면 | 3~4일 | **D3** |
@@ -432,6 +432,18 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | P7 나머지 | 정보 수집, 더보기, 인증, 정보 검색 정리(범위 장치 제거 — 겉모습 변화 0) | 3~4일 | **D6** |
 | P8 마무리 | 전 화면 QA(조사 시점 47화면 × 3폭, forced-colors, reduced-motion), lighthouse 7화면 전후 비교, 문서(§11), docs/qa 기록 | 1.5~2일 | 문서만(필요하면 D7) |
 | **합계** | | **약 22~30 작업일** | 6~7회 |
+
+**새 부품을 만드는 단계 — 2026-11-16 결정(사용자 위임 — 권장안)**: §6 표의 새 부품 가운데 P2 세 갈래가 만들지 않은 아홉은 그 부품을 처음 쓰는 화면 단계에서
+만듭니다 — API를 실제로 부를 화면에 맞춰 설계하려는 것이고(부르는 곳 없이 만들면 P4~P7에서 다시 고치게 됨), 그 단계의 커밋 순서(§8-4 8번 — 키트 → 화면)는 그대로입니다.
+
+| 부품 | 위치 | 만드는 단계 | 처음 쓰는 곳 |
+|---|---|---|---|
+| EntityHeader · PropertyList · KpiStrip · SplitPane/MasterDetail | patterns | P4 | 상세 3종의 대상 머리·속성 목록, 홈 KPI 띠, 목록-검사 틀 |
+| Timeline · ActionBar · Drawer | patterns · ui · ui | P6 | 결정 로그 타임라인(W13), 모의매매 머리 '동작', '이 장부의 한계' 서랍 — Drawer는 P4·P5에서 먼저 필요하면 그 단계에서 |
+| SectionIndex · 그래프(`LinksGraph`를 공용으로) | patterns | P5a/P5b 또는 P7 | 긴 화면 목차(매크로 P5a, 저장소 상태 P7 — 프레임·설정은 P6에서 먼저 쓰면 P6), 정보 검색 연결 탭(P7) 또는 시장·기관 연결(P5) 중 먼저 쓰는 쪽 |
+
+부품이 들어갈 때마다 그 커밋 묶음에서 ADR 0004 덧붙임에 한 줄(부품·층·지키는 시험)을 더하고, 패턴이면 `patterns/index.ts` 배럴 대조·네 상태 시험을 함께 넣습니다(§6 끝).
+데이터를 그리는 패턴(KpiStrip·PropertyList·Timeline·그래프)은 들어갈 때 데이터 칸 강조색 금지 시험(§9-5 — `lib/__tests__/accentInData.test.ts`의 파일 목록)에 더합니다.
 
 ### 8-3. 배포 시각
 - Vultr 배포(`bash ~/My_macro_dashboard_v2/scripts/vultr/deploy.sh`)는 **한국 거래 창 밖**에서 합니다 — 평일 08:45~15:35 KST, 장 시간 변경일은 개장 −15분 ~ 마감 +5분
@@ -525,7 +537,7 @@ KRX 화면의 이중 축 차트 2곳(PRINCIPLES·dataviz 위반)은 나누면 �
 | `README.md` §2 겉모양 문단, `CLAUDE.md` '먼저 읽을 문서' | 짧은 대체 문장·링크 | P0(이 브랜치) |
 | `README.md` 더보기 행(테마 전환)·기술 스택 표(라이트·다크 토큰), `docs/ARCHITECTURE.md` §4-3 테마 문단 | 어두운 한 벌로 | P1 |
 | `docs/PRINCIPLES.md` '계열 색' | 새 면의 검증기 기록 위치(§3-5) | P1 |
-| `docs/adr/0004-frontend-layering.md` | 덧붙임: 새 공용 부품(ActionBar·PropertyList·EntityHeader·MasterDetail·Timeline·SectionIndex·KpiStrip·Drawer)과 지키는 시험 | 부품을 만드는 단계(P2 — 이월한 새 패턴 부품은 그 부품을 만드는 단계, 진행 기록 §P2 패턴·차트) |
+| `docs/adr/0004-frontend-layering.md` | 덧붙임: 새 공용 부품(ActionBar·PropertyList·EntityHeader·MasterDetail·Timeline·SectionIndex·KpiStrip·Drawer·그래프)과 지키는 시험 — 부품마다 한 줄 | 그 부품을 만드는 단계(§8-2 '새 부품을 만드는 단계' — P4·P5·P6·P7, 2026-11-16 결정). P2에서 들어간 부품(Panel·Callout·Tabs·Tag·단추 네 종류)은 화면 층 규칙이 바뀌지 않아 덧붙임 없음 |
 | UI 설계 §0(목적·'휴대폰 접속 경로를 만들지 않는다'는 ADR 0023 뒤로 낡은 문장)·§3·§9 DoD·§10 | 이 명세로 링크 | P1~P3 |
 | 프로그램 계획서 §0·§4 | 4단계 중 별칭 제거만 함 | P1 |
 | 장중 명세 §4-1, 검색 상세 명세 §1 | 배치 대체 표시 | P4·P6 |
