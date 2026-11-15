@@ -182,3 +182,5 @@
 - P0 시험 묶음의 남은 둘을 넣었습니다 — 팔레트 기록(`lib/__tests__/paletteRecord.test.ts`, 계좌2 `#ba5db3` 뒤의 값)과 데이터 칸 강조색 금지(`lib/__tests__/accentInData.test.ts`).
   둘 다 지금 어기는 자리가 없어 결함 번호를 쓰지 않았습니다. 알약 소스 검사(`screenPills.test.ts`)는 위 결정대로 `components`·`app` 전체로 넓혔습니다.
 - 아직 못 한 것: Recharts SVG 속성 안 `var()`의 Firefox·Safari 확인, QA 스택 개편 전 기준과 D1 전 브라우저 확인(390·1440·forced-colors — 진행 기록 §P2 '마무리'의 볼 것).
+  → 2026-11-16: QA 스택 개편 전 기준([감사 기록](../qa/2026-11-16-workbench-ui-audit.md))과 D1 전 브라우저 확인을 끝냈습니다(영역 아홉, 크롬에서 모든 차트의 `var()`가 풀림 — 진행 기록
+  'D1 QA 스택 확인'). 찾은 것 가운데 지금 고칠 17건은 QA-492~506 등으로 D1에 넣고, 개편 전부터 있던 35건은 그 화면을 다시 짜는 단계(P3~P7)로 넘겼습니다. Firefox·Safari는 여전히 못 봤습니다.
