@@ -48,7 +48,11 @@ export function demoQuotaNote(quota: AiQuota | null | undefined): string {
   return "데모 방문자 전체가 하루 한도를 함께 씁니다.";
 }
 
-/** 결과 카드의 사용량 표기. 데모 공용 한도면 "데모 전체"를 붙입니다. */
+/**
+ * 결과 카드의 오늘 사용량 표기(AI 리포트·상세 화면 AI 요약). 데모 공용 한도면 "데모 전체"를 붙입니다. 하루 상한이 없으면(운영자 — limit null)
+ * '오늘 N건(상한 없음)' — 'N/M건' 꼴에 '무제한'을 끼우면 '오늘 1/무제한건'이 되었습니다(QA-456).
+ */
 export function quotaLabel(quota: AiQuota): string {
-  return `${quota.shared ? "데모 전체 " : ""}오늘 ${quota.used}/${quota.limit ?? "무제한"}건`;
+  const prefix = quota.shared ? "데모 전체 " : "";
+  return quota.limit === null || quota.limit === undefined ? `${prefix}오늘 ${quota.used}건(상한 없음)` : `${prefix}오늘 ${quota.used}/${quota.limit}건`;
 }

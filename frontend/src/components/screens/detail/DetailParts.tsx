@@ -12,6 +12,7 @@ import { useChartScrub } from "@/hooks/useChartScrub";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
+import { quotaLabel } from "@/lib/aiEngines";
 import { apiPost } from "@/lib/api";
 import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, indicatorChartRows, newsPage, newsTime, summaryLines } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
@@ -330,7 +331,7 @@ export function AiSummaryCard({
       ) : null}
       {result?.status ? (
         <p className="mt-2 text-xs text-text-3">
-          {[result.model, result.generatedAtKst, result.cached ? "오늘 만든 요약을 다시 보임" : null, result.quota ? `오늘 ${result.quota.used}/${result.quota.limit ?? "무제한"}건` : null]
+          {[result.model, result.generatedAtKst, result.cached ? "오늘 만든 요약을 다시 보임" : null, result.quota ? quotaLabel(result.quota) : null]
             .filter(Boolean)
             .join(" · ")}
         </p>

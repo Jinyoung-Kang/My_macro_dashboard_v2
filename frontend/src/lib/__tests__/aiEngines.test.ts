@@ -51,10 +51,10 @@ describe("데모 공용 한도 안내", () => {
     expect(demoQuotaNote({ used: 0, limit: null })).toBe("데모 방문자 전체가 하루 한도를 함께 씁니다.");
   });
 
-  it("결과 카드의 사용량 — 데모 공용 한도면 '데모 전체', 운영자는 '무제한'", () => {
+  it("결과 카드의 사용량 — 데모 공용 한도면 '데모 전체', 운영자는 '상한 없음'(QA-456)", () => {
     expect(quotaLabel({ used: 4, limit: 20, shared: true })).toBe("데모 전체 오늘 4/20건");
     expect(quotaLabel({ used: 4, limit: 20 })).toBe("오늘 4/20건");
-    expect(quotaLabel({ used: 9, limit: null })).toBe("오늘 9/무제한건");
+    expect(quotaLabel({ used: 9, limit: null })).toBe("오늘 9건(상한 없음)");
   });
 });
 

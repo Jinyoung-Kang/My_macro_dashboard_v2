@@ -63,7 +63,7 @@ async function footer(): Promise<string> {
 describe("오늘 사용량 꼬리 — 하루 상한이 없을 때(QA-456)", () => {
   // QA-456: quota.limit이 null이면 `오늘 ${used}/${limit ?? "무제한"}건`이 '오늘 1/무제한건'이 되었습니다.
   // 수정 전 실패: 꼬리가 '… · 오늘 1/무제한건'(재현 커밋에서는 it.fails).
-  it.fails("종목 상세 AI 요약 카드 — '오늘 1건(상한 없음)', 상한이 있으면 '오늘 2/20건'", async () => {
+  it("종목 상세 AI 요약 카드 — '오늘 1건(상한 없음)', 상한이 있으면 '오늘 2/20건'", async () => {
     expect(await footer()).toBe("test-model · 2026-11-15 09:00 KST · 오늘 1건(상한 없음)");
     cleanup();
     quota = { used: 2, limit: 20 };
@@ -71,7 +71,7 @@ describe("오늘 사용량 꼬리 — 하루 상한이 없을 때(QA-456)", () =
   });
 
   // 수정 전 실패: quotaLabel({ used: 9, limit: null })이 '오늘 9/무제한건'(재현 커밋에서는 it.fails).
-  it.fails("AI 리포트 결과 카드의 사용량(quotaLabel)도 같은 글 — 데모 공용 한도의 '데모 전체'는 그대로", () => {
+  it("AI 리포트 결과 카드의 사용량(quotaLabel)도 같은 글 — 데모 공용 한도의 '데모 전체'는 그대로", () => {
     expect(quotaLabel({ used: 9, limit: null })).toBe("오늘 9건(상한 없음)");
     expect(quotaLabel({ used: 4, limit: 20 })).toBe("오늘 4/20건");
     expect(quotaLabel({ used: 4, limit: 20, shared: true })).toBe("데모 전체 오늘 4/20건");
