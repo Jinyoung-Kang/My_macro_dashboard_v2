@@ -88,8 +88,15 @@ export function EdgeDateTick({
   );
 }
 
-/** 글자 범례 한 줄 — 색 짧은 선(점선 계열은 점선) + 이름. 색은 보조이고 이름이 본 뜻입니다. */
+/**
+ * 글자 범례 한 줄 — 색 짧은 선(점선 계열은 그림 선과 같은 점선 REFERENCE_DASH) + 이름. 색은 보조이고 이름이 본 뜻입니다.
+ * 견본은 SVG 선(16px — 점선 한 주기 6 + 4 + 6)입니다. CSS 테두리(border-top dashed, 12px)는 크롬이 굵기 2px에서 토막 6 x 2 이하 길이를
+ * 실선으로 칠해 점선 견본이 실선 토막이 됐습니다(QA-496 — 테두리 점선 모양은 엔진마다 다름).
+ */
 export type LegendEntry = { key: string; label: string; color: string; dashed?: boolean };
+
+/** 범례 견본 길이(px) — 점선 REFERENCE_DASH("6 4")의 한 주기와 토막 하나(6 + 4 + 6). 실선 견본도 같은 길이로 맞춰 범례 줄을 고르게 둡니다. */
+const LEGEND_SWATCH_WIDTH = 16;
 
 /**
  * 글자 범례 — 그림 위에 둡니다(Recharts Legend 대신). 이름 글자에는 계열 색을 입히지 않습니다(글자 대비).
@@ -103,11 +110,17 @@ export function ChartLegend({ entries }: { entries: readonly LegendEntry[] }) {
     <ul aria-label="범례" className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-2">
       {entries.map((entry) => (
         <li key={entry.key} className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className="inline-block w-3"
-            style={{ borderTop: `2px ${entry.dashed ? "dashed" : "solid"} ${entry.color}` }}
-          />
+          <svg aria-hidden="true" width={LEGEND_SWATCH_WIDTH} height={2} className="shrink-0">
+            <line
+              x1={0}
+              y1={1}
+              x2={LEGEND_SWATCH_WIDTH}
+              y2={1}
+              stroke={entry.color}
+              strokeWidth={2}
+              strokeDasharray={entry.dashed ? REFERENCE_DASH : undefined}
+            />
+          </svg>
           {entry.label}
         </li>
       ))}

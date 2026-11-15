@@ -122,9 +122,9 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     const legend = screen.getByRole("list", { name: "범례" });
     const items = within(legend).getAllByRole("listitem");
     expect(items.map((item) => item.textContent)).toEqual(["종가", "참고선", "미결제약정 (우)"]);
-    const swatch = (item: HTMLElement) => item.querySelector('[aria-hidden="true"]') as HTMLElement;
-    expect(swatch(items[1]).style.borderTop).toContain("dashed");
-    expect(swatch(items[0]).style.borderTop).toContain("solid");
+    const swatch = (item: HTMLElement) => item.querySelector('svg[aria-hidden="true"] line') as SVGLineElement;
+    expect(swatch(items[1]).getAttribute("stroke-dasharray")).toBe(REFERENCE_DASH);
+    expect(swatch(items[0]).getAttribute("stroke-dasharray")).toBeNull();
     // 왼쪽 축은 데이터 범위 98~103을 2 간격으로(0 바닥을 지어내지 않음), 오른쪽 축은 30만대를 5,000 간격으로
     expect(yTicks(container)).toEqual([
       "96.0", "98.0", "100.0", "102.0", "104.0",
@@ -138,8 +138,8 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
 
   // QA-496: 점선 계열(K40 참고선)의 범례 견본은 폭 12px span의 border-top 2px dashed였는데, 크롬은 굵기 2px에서 길이가 토막 6px × 2 이하인
   // dashed 테두리를 실선으로 칠합니다(12px 실선, 14px부터 끊김 — /paper/kr 390·1024·1440). 견본을 그림 선과 같은 SVG 선(stroke-dasharray
-  // REFERENCE_DASH '6 4')으로, 한 주기(6 + 4 + 6 = 16px) 이상 길게 그려야 엔진과 무관하게 점선으로 보입니다. 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-496: 점선 계열 견본은 SVG 선(stroke-dasharray '6 4', 길이 16px 이상), 실선 계열 견본은 dasharray 없음", () => {
+  // REFERENCE_DASH '6 4')으로, 한 주기(6 + 4 + 6 = 16px) 이상 길게 그려야 엔진과 무관하게 점선으로 보입니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-496: 점선 계열 견본은 SVG 선(stroke-dasharray '6 4', 길이 16px 이상), 실선 계열 견본은 dasharray 없음", () => {
     observeAs(600, 300);
     render(
       <MultiLineSeries
