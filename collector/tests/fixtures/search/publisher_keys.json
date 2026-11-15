@@ -1,0 +1,40 @@
+{
+  "about": "같은 사건 묶음의 '매체 n곳'(계약 §9-2·§9-7) 대조 고정본 — 수집기 search_rules._publisher_count(규칙 원본)와 화면 infoSearch publisherCount가 같은 값을 내는지 두 쪽 시험이 함께 읽습니다(QA-442). 매체 이름은 모두 합성 값입니다. rows = [매체 이름, 매체 도메인], 같은 제목·48시간 안이라 한 묶음입니다.",
+  "sameOutlet": [
+    {
+      "about": "같은 매체의 다른 표기 — 도메인 꼴 이름과 이름, 붙여 쓴 이름과 띄어 쓴 이름, 꼬리 'Media'가 붙은 이름",
+      "rows": [
+        ["www.screensynth.com", null],
+        ["ScreenSynth", "screensynth.example"],
+        ["SynthAlpha", null],
+        ["Synth Alpha", "synthalpha.example"],
+        ["Kalsynth", null],
+        ["Kalsynth Media", "kalsynthmedia.example"]
+      ],
+      "publishers": 3
+    },
+    {
+      "about": "이름 없는 줄의 도메인이 다른 줄의 매체 이름과 같은 매체",
+      "rows": [
+        ["Kalsynth Media", "kalsynthmedia.example"],
+        [null, "kalsynth.example"]
+      ],
+      "publishers": 1
+    }
+  ],
+  "distinctOutlets": [
+    {
+      "about": "서로 다른 매체는 그대로 따로 — 낱말 하나가 다른 이름, 같은 호스팅의 다른 하위 도메인",
+      "rows": [
+        ["Synth Business", null],
+        ["Synth News", null],
+        ["Synth Post", null],
+        ["Synth Journal", null],
+        ["Synth Journal Asia", null],
+        ["alpha.synthstack.com", null],
+        ["beta.synthstack.com", null]
+      ],
+      "publishers": 7
+    }
+  ]
+}

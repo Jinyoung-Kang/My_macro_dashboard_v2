@@ -4,8 +4,14 @@ tests/test_search_qa_rules.py
 
 - QA-441: 가나 없이 한자로만 쓴 일본 법인명('株式会社…'·'…株式会社' — GLEIF 법인명의 꼴)과 일본 신자체가 든 제목은 중국어 제목으로 빼지 않음
   (연결 탭 GLEIF 이름 포함). 중국어 제목(간체·번체 '股份有限公司', '会社'가 낱말 경계에 걸친 중국어 글)은 그대로 뺌
+- QA-442: 같은 매체의 다른 표기(도메인 꼴 이름·붙여 쓴 이름·꼬리 'Media')는 같은 사건 묶음의 '매체 n곳'에서 한 곳으로 셈 — 화면
+  (infoSearch publisherCount)과 같은 고정본(fixtures/search/publisher_keys.json)으로 대조. 서로 다른 매체는 그대로 따로
 """
 from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -99,3 +105,31 @@ def test_GLEIF_일본_자회사_법인명은_연결에서_빠지지_않는다(mo
     assert [link["name"] for link in out["links"]] == ["株式会社架空銀行", "架空信託銀行株式会社"], "중국 자회사 이름만 뺌"
     row = next(row for row in out["sources"] if row["source"] == "gleif")
     assert (row["count"], row["dropped"]["chinese"]) == (2, 1)
+
+
+# ------------------------------------------------------------------ QA-442 같은 매체의 다른 표기
+
+PUBLISHER_CASES = json.loads((Path(__file__).parent / "fixtures" / "search" / "publisher_keys.json").read_text(encoding="utf-8"))
+_BASE = datetime(2026, 11, 13, 1, 0, tzinfo=timezone.utc)
+
+
+def _cluster_publishers(rows: list) -> int | None:
+    """고정본의 줄([이름, 도메인]) → 같은 제목·한 시간 간격의 묶음 하나 → 대표 줄의 매체 수."""
+    items = [{"id": f"p{n}", "kind": "news", "title": "SynthChip recalls accelerator boards", "url": f"https://news.example/p{n}",
+              "publisher": name, "publisherDomain": domain, "timeBasis": "published", "source": "bing", "lang": "en",
+              "publishedAt": (_BASE + timedelta(hours=n)).isoformat(), "summary": None, "readerId": None}
+             for n, (name, domain) in enumerate(rows)]
+    leads = [row for row in rules.cluster_items(items) if row["cluster"]]
+    assert len(leads) == 1 and leads[0]["cluster"]["size"] == len(rows), "시험의 전제: 줄이 모두 한 묶음"
+    return leads[0]["cluster"]["publishers"]
+
+
+@pytest.mark.xfail(strict=True, reason="QA-442: 같은 매체의 다른 표기('www.…com'·붙여 쓴 이름·꼬리 Media)를 다른 매체로 셈")
+@pytest.mark.parametrize("case", PUBLISHER_CASES["sameOutlet"], ids=lambda case: f"rows{len(case['rows'])}")
+def test_같은_매체의_다른_표기는_한_곳으로_센다(case):
+    assert _cluster_publishers(case["rows"]) == case["publishers"]
+
+
+@pytest.mark.parametrize("case", PUBLISHER_CASES["distinctOutlets"], ids=lambda case: f"rows{len(case['rows'])}")
+def test_서로_다른_매체는_그대로_따로_센다(case):
+    assert _cluster_publishers(case["rows"]) == case["publishers"]
