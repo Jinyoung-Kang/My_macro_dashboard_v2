@@ -4,7 +4,9 @@ app/services/search_rules.py
 
 1. 2년 자르기: 창 시작 = 오늘(KST) − 2년의 날짜 00:00 KST. 작성 시각이 그보다 이르면 old(가장 최근 날짜를 기억 — ``olderOnlyLatest``),
    시각을 모르거나 지금 + 1일을 넘는 미래면 noTime.
-2. 중국어 제목: 한글(가-힣)이나 가나(ぁ-ヿ)가 하나라도 있으면 남김. 아니면 한자(一-鿿) 2자 이상이고 한자 / (한자 + 라틴 글자) ≥ 0.3이면 뺌.
+2. 중국어 제목: 한글(가-힣)이나 가나(ぁ-ヿ)가 하나라도 있으면 남김. 가나가 없어도 일본 법인 형태(株式会社·有限会社·合同会社 등)나 일본
+   신자체(중국 간체·번체·홍콩 표에 없는 글자)·'々'가 있으면 일본어로 보고 남김(QA-441 — 한자로만 쓴 GLEIF 일본 법인명).
+   아니면 한자(一-鿿) 2자 이상이고 한자 / (한자 + 라틴 글자) ≥ 0.3이면 뺌.
 3. 매체 제외: 도메인이 '.cn'으로 끝나거나 목록의 도메인과 점 경계로 같거나, 매체 이름이 목록의 이름과 대소문자 무시 완전 일치면 뺌.
    목록의 처음 값은 진행 기록(2026-11-14-info-search-progress.md '매체 제외 목록의 처음 값')의 확실한 것만입니다. 이름이 다른 나라의 매체와
    겹치는 것(The Standard — 런던, Phoenix·SMM·The Paper 같은 일반 낱말)은 이름으로 빼지 않고 도메인으로만 뺍니다.
@@ -46,6 +48,16 @@ RELAY_HOSTS = frozenset({"news.google.com"})
 _HANGUL = re.compile(r"[가-힣]")
 _KANA = re.compile(r"[ぁ-ヿ]")
 _HAN = re.compile(r"[一-鿿]")
+# 가나가 없어도 일본어로 보는 표지(QA-441) — GLEIF 법인명처럼 한자(와 전각 라틴)만으로 쓴 일본 법인명과 신자체 글이 중국어로 빠지지 않게.
+# 법인 형태는 '会社' 앞 낱말까지 맞춰 봅니다('会社'만으로는 '两会社会' 같은 중국어 글의 낱말 경계에도 걸림).
+_JA_COMPANY = re.compile(r"(?:株式|有限|合同|合資|合名|相互|特定目的)会社")
+# 일본 신자체 — 중국 간체(GB 2312)·번체(Big5)·홍콩(HKSCS) 어느 표에도 없는 상용 한자(시험이 확인)와 반복 부호 '々'.
+JA_ONLY_KANJI = (
+    "乗仏価倹児処剣剤剰労勧勲単厳収営団囲図圏圧塁壌変奨嬢対専巣巻帯庁廃弐弾徳徴応悩戦戯払抜択拠拡挙挿捜揺摂撃斎暁査桜桟検楽様権"
+    "歓歩殻毎気浄涙済渋渓満焼犠猟獣畳砕稲穂穏粋粛経継続緑縁縄縦繊聴脳臓舎舗荘蔵薬覚観訳読謡譲軽逓遅酔醸釈鉱銭闘陥険隷雑霊頼顕駆騒"
+    "験髄髪鶏黒黙"
+)
+_JA_MARK = re.compile(f"[々{JA_ONLY_KANJI}]")
 _LATIN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ɏ]")
 _NON_LATIN_TEXT = re.compile(r"[^\x00-\x7fÀ-ÖØ-öø-ɏ]")
 _MSN_TAIL = re.compile(r"\s+on\s+msn\s*$", re.IGNORECASE)
@@ -96,7 +108,7 @@ SEED_GROUPS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
 EXCLUDED_DOMAINS: frozenset[str] = frozenset(domain for _, domains, _ in SEED_GROUPS for domain in domains)
 EXCLUDED_NAMES: frozenset[str] = frozenset(name for _, _, names in SEED_GROUPS for name in names)
 # 목록과 상관없이 늘 적용하는 규칙(코드 고정 — ADR 0041 결정 6). 화면의 제외 목록에 함께 보입니다.
-FIXED_RULES: tuple[str, ...] = ("제목이 중국어인 글(한글·가나가 있으면 남김)", "도메인이 .cn으로 끝나는 매체")
+FIXED_RULES: tuple[str, ...] = ("제목이 중국어인 글(한글·가나나 일본 법인 형태·신자체가 있으면 남김)", "도메인이 .cn으로 끝나는 매체")
 _EXCLUDED_NAME_KEYS = frozenset(name.casefold() for name in EXCLUDED_NAMES)
 
 
@@ -185,9 +197,17 @@ def has_hangul(text: str | None) -> bool:
     return bool(text) and bool(_HANGUL.search(text))
 
 
+def _japanese_without_kana(text: str) -> bool:
+    """가나 없이도 일본어인가(QA-441) — 일본 법인 형태(株式会社·有限会社·合同会社 등)나 일본 신자체·'々'가 있으면."""
+    return bool(_JA_COMPANY.search(text) or _JA_MARK.search(text))
+
+
 def is_chinese_title(title: str | None) -> bool:
-    """중국어 제목인가 — 한글·가나가 있으면 아님(한국어·일본어), 아니면 한자 2자 이상이고 한자/(한자+라틴) ≥ 0.3."""
-    if not title or _HANGUL.search(title) or _KANA.search(title):
+    """
+    중국어 제목인가 — 한글·가나가 있으면 아님(한국어·일본어), 가나가 없어도 일본 법인 형태·신자체가 있으면 아님(일본어 — QA-441),
+    아니면 한자 2자 이상이고 한자/(한자+라틴) ≥ 0.3.
+    """
+    if not title or _HANGUL.search(title) or _KANA.search(title) or _japanese_without_kana(title):
         return False
     han = len(_HAN.findall(title))
     if han < 2:

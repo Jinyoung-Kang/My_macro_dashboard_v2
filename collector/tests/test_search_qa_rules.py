@@ -41,10 +41,19 @@ JAPANESE_WITHOUT_KANA = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-441: 가나 없이 한자로만 쓴 일본 법인명·신자체 글을 중국어 제목으로 봄")
 @pytest.mark.parametrize("title", JAPANESE_WITHOUT_KANA)
 def test_가나_없는_일본_법인명과_신자체_글은_중국어_제목이_아니다(title):
     assert rules.is_chinese_title(title) is False
+
+
+def test_일본_신자체_목록은_중국_간체·번체·홍콩_표에_없는_일본_한자뿐이다():
+    """목록에 중국어 글에도 쓰는 글자가 들어가면 그 글자가 든 중국어 제목이 남으므로, 세 표 어디에도 없고 일본 표(JIS)에는 있는 글자만."""
+    assert len(set(rules.JA_ONLY_KANJI)) == len(rules.JA_ONLY_KANJI)
+    for char in rules.JA_ONLY_KANJI:
+        char.encode("shift_jis")
+        for codec in ("gb2312", "big5", "big5hkscs"):
+            with pytest.raises(UnicodeEncodeError):
+                char.encode(codec)
 
 
 @pytest.mark.parametrize("title", [
@@ -75,7 +84,6 @@ US = {"key": "us:SCHP", "kind": "company", "name": "합성칩", "nameKo": "합�
               "wikidata": "Q900001", "lei": "SYNTH" + "0" * 13 + "42"}}
 
 
-@pytest.mark.xfail(strict=True, reason="QA-441: 연결 탭 GLEIF의 일본 자회사 법인명(株式会社…)을 중국어 제목으로 빼고 건수에 셈")
 def test_GLEIF_일본_자회사_법인명은_연결에서_빠지지_않는다(monkeypatch):
     gleif = search_links.Linked(items=[
         {"relation": "subsidiary", "key": None, "name": "株式会社架空銀行", "kind": "company", "source": "gleif", "detail": "JP · LEI A"},
