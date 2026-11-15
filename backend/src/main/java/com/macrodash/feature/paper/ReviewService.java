@@ -69,9 +69,10 @@ import java.util.regex.Pattern;
  * 되돌림). 응답은 {@code review.schema.json} 전체로 검사하고(D26), 코드가 알아볼 수 있는 계약 — 기준일이 입력과 같음, 판정한 결정이
  * 입력에 있음, 한 결정을 두 번 판정하지 않음 — 도 함께 봅니다(어기면 FORMAT_ERROR).
  *
- * <p><b>상태</b>: OK · FORMAT_ERROR · REFUSED(그 주는 이것으로 끝) · API_ERROR(같은 행에서 한 번만 다시 부름 — 결정의 C7과 같은 규칙)
- * · SKIPPED(창 안에 복기할 결정 OK·NO_TRADE가 없어 부르지 않음). 응답을 받은 뒤(과금됨) 저장이 예외로 끝나면 원문·사용량을 다시 부르지
- * 않는 API_ERROR({@code retry_count = 1})로 따로 남깁니다(결정과 같은 이유 — 행이 없으면 30분마다 또 부름).
+ * <p><b>상태</b>: OK · REFUSED(그 주는 이것으로 끝) · API_ERROR(같은 행에서 한 번만 다시 부름 — 결정의 C7과 같은 규칙) · FORMAT_ERROR
+ * (정기 실행은 다시 부르지 않고, 수동 실행만 같은 행에서 한 번 더 — QA-475, {@link #retryable}) · SKIPPED(창 안에 복기할 결정 OK·NO_TRADE가
+ * 없어 부르지 않음). 응답을 받은 뒤(과금됨) 저장이 예외로 끝나면 원문·사용량을 다시 부르지 않는 API_ERROR({@code retry_count = 1})로 따로
+ * 남깁니다(결정과 같은 이유 — 행이 없으면 30분마다 또 부름).
  *
  * <p><b>제안</b>: 응답의 {@code proposal}에 연산이 있으면 프레임 제안 흐름(F2)의 사전 검사를 거쳐 {@code paper_framework_proposals}에
  * PENDING(적용할 수 없으면 FAILED)으로 넣고 복기 행에 잇습니다 — 복기 행과 한 트랜잭션. <b>자동 반영은 없습니다</b>(판은 사용자가
@@ -121,7 +122,7 @@ public class ReviewService {
 
     /** 한 번 실행의 결과 종류. */
     public enum Kind {
-        /** 그 주의 행이 이미 있고 다시 부르지 않음(API 오류 한 번 재시도 뒤 포함). */
+        /** 그 주의 행이 이미 있고 다시 부르지 않음({@link #retryable}이 거짓 — 한 번 다시 부른 뒤, 정기 실행의 형식 오류 포함). */
         EXISTING,
         /** 창 안에 복기할 결정이 없어 부르지 않고 SKIPPED 행을 남김. */
         SKIPPED,
@@ -190,14 +191,26 @@ public class ReviewService {
         this.schema = StructuredSchema.load(SCHEMA_RESOURCE);
     }
 
-    /** 같은 주에 한 번 더 부를 행인가 — API 오류이고 아직 재시도하지 않음(결정의 C7과 같은 규칙). */
-    static boolean retryable(Review r) {
-        return r != null && Review.API_ERROR.equals(r.status()) && r.retryCount() == 0;
+    /**
+     * 같은 주에 한 번 더 부를 행인가 — 아직 다시 부르지 않았고({@code retry_count = 0}) API 오류이거나(정기·수동 — 결정의 C7과 같은 규칙),
+     * 응답 형식 오류인데 수동 실행일 때(QA-475, 사용자 결정 2026-11-15 — 출력 한도로 답 없이 끝난 주를 사람이 한 번 다시 냄). 정기 실행은
+     * 형식 오류를 다시 부르지 않습니다(같은 입력이면 같은 답일 가능성이 커 30분마다 유료 호출을 되풀이하지 않게). 거절·건너뜀·완료와 한 번
+     * 다시 부른 행은 그 주의 끝입니다. 다시 부르면 같은 행을 바꾸고 {@code retry_count}가 1이 됩니다({@link PaperStore#updateReviewRetry}).
+     *
+     * @param scheduled 정기 실행이면 참, 수동 실행({@link PaperReviewJob#runNow})이면 거짓
+     */
+    static boolean retryable(Review r, boolean scheduled) {
+        if (r == null || r.retryCount() != 0) {
+            return false;
+        }
+        return Review.API_ERROR.equals(r.status()) || (!scheduled && Review.FORMAT_ERROR.equals(r.status()));
     }
 
     /**
-     * 화면의 {@code retryable} — {@link #retryable}이면서 그 주가 지금 가장 최근 복기 주일 때만 참. 정기·수동 실행은 가장 최근 주만 보므로
-     * ({@link PaperReviewJob}), 지난 주의 API 오류 행은 다시 부를 수단이 없습니다 — "다음 실행이 같은 주를 한 번 더 부른다"고 보이면 안 됨.
+     * 화면의 {@code retryable} — 정기 실행도 다시 부를 행({@link #retryable}{@code (r, true)} — API 오류)이면서 그 주가 지금 가장 최근 복기
+     * 주일 때만 참. 정기·수동 실행은 가장 최근 주만 보므로({@link PaperReviewJob}), 지난 주의 API 오류 행은 다시 부를 수단이 없습니다 —
+     * "다음 실행이 같은 주를 한 번 더 부른다"고 보이면 안 됨. 수동 실행만 다시 부르는 형식 오류(QA-475)는 넣지 않습니다 — 화면이 그 행의
+     * 상태·재시도 수로 따로 안내합니다.
      */
     private static boolean retryableNow(LocalDate weekEnding, String status, int retryCount, LocalDate latest) {
         return Review.API_ERROR.equals(status) && retryCount == 0 && weekEnding.equals(latest);
@@ -219,7 +232,7 @@ public class ReviewService {
 
     // ------------------------------------------------------------------ 실행
     /**
-     * 그 주의 복기(클래스 설명). 그 주의 행이 이미 있으면 그대로 돌려주고(부르지 않음), 다시 부를 API 오류면 같은 행에서 한 번 더
+     * 그 주의 복기(클래스 설명) — 정기 복기. 그 주의 행이 이미 있으면 그대로 돌려주고(부르지 않음), 다시 부를 API 오류면 같은 행에서 한 번 더
      * 부릅니다. 부르는 조건(시각·확정 종가·계좌 상태)은 부르는 쪽({@link PaperReviewJob})이 이미 봤다고 가정합니다.
      *
      * @param weekEnding 복기 기준일 — 그 ISO 주의 마지막 거래일({@link ReviewFacts#weekEnding})
@@ -239,13 +252,14 @@ public class ReviewService {
     }
 
     /**
-     * 그 시장의 그 주 복기 — 호출 문턱만 부르는 쪽이 정합니다: 정기 복기({@code scheduled})는 하루 상한까지, 수동 실행은 정기 작업 몫 예약을 남긴
-     * 문턱까지({@code apiScheduledReserve} — 2단계 명세 §4-10, {@link ClaudeBookService.ClaudeSettings#callLimit}).
+     * 그 시장의 그 주 복기 — 호출 문턱과 다시 부를 행은 부르는 쪽이 정합니다: 정기 복기({@code scheduled})는 하루 상한까지, 수동 실행은 정기
+     * 작업 몫 예약을 남긴 문턱까지({@code apiScheduledReserve} — 2단계 명세 §4-10, {@link ClaudeBookService.ClaudeSettings#callLimit}). 그 주의
+     * 행이 있으면 {@link #retryable}{@code (행, scheduled)}일 때만 같은 행에서 한 번 더 부릅니다(형식 오류는 수동만 — QA-475).
      */
     Outcome review(PaperMarket market, LocalDate weekEnding, boolean scheduled) {
         requireReady();
         Optional<Review> existing = store.review(market.code(), weekEnding);
-        if (existing.isPresent() && !retryable(existing.get())) {
+        if (existing.isPresent() && !retryable(existing.get(), scheduled)) {
             return new Outcome(Kind.EXISTING, existing.get(), null);
         }
         Review retrying = existing.orElse(null);

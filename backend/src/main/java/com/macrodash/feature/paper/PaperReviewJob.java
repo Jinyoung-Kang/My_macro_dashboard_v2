@@ -34,7 +34,8 @@ import java.util.concurrent.locks.ReentrantLock;
  *  그 시장 달력이 앞 창(직전 세션 ~ 10거래일)의 해를 모름 → NO_CALENDAR(정기 실행은 그 시장·KST 날짜·빠진 해마다 한 번 기록 — 명세 K35)
  *  w = 지금 마감이 끝난 가장 최근 복기 주(그 ISO 주의 마지막 거래일 — 금요일, 휴장이면 목요일)
  *  w 주 여는 순간 전(미국 일요일 21:00·한국 일요일 22:00 KST)  → TOO_EARLY(기록 안 함)
- *  w의 행이 이미 있음(다시 부를 API 오류가 아니면)              → ALREADY_REVIEWED
+ *  w의 행이 이미 있음(다시 부를 행이 아니면 — 재시도 0의 API 오류, 수동 실행은 형식 오류도 — QA-475)
+ *                                                            → ALREADY_REVIEWED
  *  Claude 계좌가 운용 중(ACTIVE)이 아니거나 출발일이 w 전이 아님 → NOT_ACTIVE(복기 없음 — 초기 결정뿐인 주·일시정지 중)
  *  w 확정 종가가 아직 없음(장부의 w 확정 순자산 줄이 없고, 관측치 저장본의 w 확정 종가를 장부가 아직 반영하지 않음)
  *                                                            → WAITING_FINAL_CLOSE(다음 주기에 다시)
@@ -230,7 +231,8 @@ public class PaperReviewJob {
 
     /**
      * POST /api/paper/reviews/run — 지금 마감이 끝난 가장 최근 복기 주를 지금 복기합니다. 여는 시각 조건만 빼고 정기 실행과 같은
-     * 조건이며, 그 주의 행이 이미 있으면 부르지 않고 그 행을 돌려줍니다(API 오류였으면 한 번 다시 부름).
+     * 조건이며, 그 주의 행이 이미 있으면 부르지 않고 그 행을 돌려줍니다(API 오류·응답 형식 오류로 끝나 아직 다시 부르지 않은 행이면 같은
+     * 행에서 한 번 다시 부름 — 형식 오류는 수동 실행만, QA-475 — {@link ReviewService#retryable}).
      *
      * @return {@code {ok, outcome, review}} — 테이블이 없으면 {@code {available:false, ok:false, message}}
      * @throws InvalidRequestException  Claude 계좌가 운용 중이 아님·출발일이 그 주 전이 아님·확정 종가가 아직 없음·하루 호출 상한·
@@ -313,7 +315,10 @@ public class PaperReviewJob {
         return market.dormantReason(config, () -> store.books(market.code()));
     }
 
-    /** 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 여는 시각 조건과 포기 횟수를 보지 않습니다. */
+    /**
+     * 조건을 보고(클래스 설명) 복기합니다. {@code scheduled}가 거짓(수동)이면 여는 시각 조건과 포기 횟수를 보지 않고, 형식 오류로 끝난 그 주
+     * 행(재시도 0)도 다시 부릅니다({@link ReviewService#retryable} — QA-475).
+     */
     private Result runLocked(PaperMarket market, Instant now, boolean scheduled) {
         if (!store.ready()) {
             return new Result(NOT_READY, null, null, PaperQueryService.NOT_READY_MESSAGE);
@@ -335,7 +340,7 @@ public class PaperReviewJob {
             return new Result(TOO_EARLY, week, null, "복기 시각 " + Kst.stamp(opens) + " 전");
         }
         Optional<Review> existing = store.review(market.code(), week);
-        if (existing.isPresent() && !ReviewService.retryable(existing.get())) {
+        if (existing.isPresent() && !ReviewService.retryable(existing.get(), scheduled)) {
             return new Result(ALREADY_REVIEWED, week, existing.get(), week + " 복기를 이미 남겼습니다("
                     + existing.get().status() + ")");
         }

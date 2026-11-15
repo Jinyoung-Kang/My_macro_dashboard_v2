@@ -7,7 +7,6 @@ import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Review;
 import com.macrodash.support.InvalidRequestException;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -212,7 +211,6 @@ class PaperReviewJobTest {
     }
 
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 수동 실행도 FORMAT_ERROR 행(재시도 0)이면 ALREADY_REVIEWED로 그 행을 돌려주고 복기를 부르지 않음")
     @DisplayName("QA-475: 그 주가 형식 오류(재시도 0)로 끝났으면 정기 실행은 부르지 않고(ALREADY_REVIEWED), 수동 실행만 한 번 더 부른다 — 이미 다시 부른 형식 오류·거절·건너뜀·완료는 수동도 부르지 않음(사용자 결정 2026-11-15)")
     void manualRunRetriesFormatErrorButScheduledDoesNot() {
         finalNav(WE, true);

@@ -18,7 +18,6 @@ import com.macrodash.support.InvalidRequestException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -531,7 +530,7 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("형식 오류는 그 주의 끝 — 스키마 위반, 입력에 없는 결정 id·같은 결정 두 번·다른 기준일(코드 계약), 제안은 넣지 않음")
+    @DisplayName("형식 오류는 정기 실행에는 그 주의 끝(수동 한 번 재시도는 QA-475 시험) — 스키마 위반, 입력에 없는 결정 id·같은 결정 두 번·다른 기준일(코드 계약), 제안은 넣지 않음")
     void formatErrorsAreFinal() throws Exception {
         long decisionId = scene();
         String twice = "{\"schemaVersion\":2,\"weekEnding\":\"2026-10-23\",\"verdicts\":["
@@ -588,7 +587,7 @@ class ReviewServiceTest {
     }
 
     @Test
-    @DisplayName("QA-475: 사고만 하다 출력 한도로 끝나면 FORMAT_ERROR(그 주의 끝)이고 오류는 64,000토큰 한도를 적는다 — MAX_TOKENS·EMPTY → FORMAT_ERROR는 그대로")
+    @DisplayName("QA-475: 사고만 하다 출력 한도로 끝나면 FORMAT_ERROR(정기 실행에는 그 주의 끝)이고 오류는 64,000토큰 한도를 적는다 — MAX_TOKENS·EMPTY → FORMAT_ERROR는 그대로")
     void thinkingOnlyMaxTokensIsFormatErrorAt64k() throws Exception {
         scene();
         answerMessage("[{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"sig\"}]", "max_tokens",
@@ -604,13 +603,12 @@ class ReviewServiceTest {
         assertThat(review.usage().path("outputTokens").asLong()).isEqualTo(64_000);
         assertThat(review.usage().path("stopReason").asString()).isEqualTo("max_tokens");
         assertThat(review.usage().path("errorKind").asString()).isEqualTo("MAX_TOKENS");
-        assertThat(service.review(WE).kind()).as("형식 오류는 그 주의 끝 — 다시 부르지 않음").isEqualTo(ReviewService.Kind.EXISTING);
+        assertThat(service.review(WE).kind()).as("정기 실행은 형식 오류를 다시 부르지 않음").isEqualTo(ReviewService.Kind.EXISTING);
         assertThat(hits.get()).isEqualTo(1);
         assertThat(callsToday()).isEqualTo(1);
     }
 
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 수동 실행도 FORMAT_ERROR 행(재시도 0)을 EXISTING으로 돌려주고 다시 부르지 않음")
     @DisplayName("QA-475: 출력 한도로 끝난 FORMAT_ERROR 주는 수동 실행만 같은 행에서 한 번 더 부른다(재시도 0 → 1, 하루 호출 수·추정 비용 그대로 셈) — 정기 실행은 다시 부르지 않고, 다시 부른 뒤에는 수동도 끝(사용자 결정 2026-11-15)")
     void manualRunRetriesFormatErrorOnceOnSameRow() throws Exception {
         long decisionId = scene();
@@ -649,7 +647,6 @@ class ReviewServiceTest {
     }
 
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 수동 실행이 FORMAT_ERROR 행(재시도 0)을 상한 판정 전에 EXISTING으로 돌려줌")
     @DisplayName("QA-475: 형식 오류의 수동 재시도도 수동 문턱(상한 − 정기 몫 예약)을 지킨다 — 닿았으면 CAP_REACHED(행 그대로·부르지 않음), 다시 부른 형식 오류·거절·건너뜀·완료는 수동도 EXISTING")
     void manualFormatErrorRetryKeepsCapAndFinalStatuses() {
         scene();

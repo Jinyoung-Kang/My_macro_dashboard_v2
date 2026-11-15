@@ -7,7 +7,6 @@ import com.macrodash.store.PaperStore.Book;
 import com.macrodash.store.PaperStore.NavRow;
 import com.macrodash.store.PaperStore.Review;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -251,7 +250,6 @@ class KrReviewJobTest {
     }
 
     @Test
-    @Disabled("QA-475: 수정 전 실패 — 한국 수동 실행도 FORMAT_ERROR 행(재시도 0)이면 ALREADY_REVIEWED로 그 행을 돌려주고 복기를 부르지 않음")
     @DisplayName("QA-475: 한국 그 주가 형식 오류(재시도 0)로 끝났으면 정기 실행은 부르지 않고(ALREADY_REVIEWED), 수동 실행(?market=KR)만 같은 주를 한 번 더 부른다 — 같은 주 미국 행과 상관없이 한국 행으로 판정")
     void manualKrRunRetriesFormatErrorButScheduledDoesNot() {
         provisionalNav(WE);
