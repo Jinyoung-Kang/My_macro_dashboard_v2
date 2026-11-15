@@ -1074,8 +1074,9 @@ const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 
 /**
  * 그림의 노드 글(QA-423) — 이름마다 fitGraphLabel(끝을 자름)로 맞추되, 서로 다른 이름의 글이 같아지면(앞머리가 같은 자회사 법인명·내부자 등) 그 이름들은
- * 가운데를 줄여(fitGraphLabelFrom) 서로 갈리는 자리부터 보입니다 — 처음에는 그 자리가 든 낱말의 첫 글자부터(많아야 GRAPH_WORD_BACK자 앞, 빈칸이면 그
- * 뒤 글자부터), 그래도 같은 글이 남으면 그 이름들끼리 다시 갈리는 바로 그 글자부터. 그렇게 몇 차례 해도 같은 글이 남으면(같은 낱말이 되풀이되는 드문
+ * 가운데를 줄여(fitGraphLabelFrom) 서로 갈리는 자리부터 보입니다 — 그 자리가 든 낱말·숫자의 첫 글자부터(많아야 GRAPH_WORD_BACK자 앞, 빈칸이면 그
+ * 뒤 글자부터)이고, 그 글로 그 이름들이 하나도 갈리지 않을 때만 갈리는 바로 그 글자부터. 그래도 같은 글이 남은 이름들은 다음 차례에 그 이름들끼리 같은
+ * 방식으로 다시 가릅니다(둘째 차례 이후에도 번호·낱말을 통째로 — QA-423 후속). 그렇게 몇 차례 해도 같은 글이 남으면(같은 낱말이 되풀이되는 드문
  * 이름 — 다른 자리의 글이 우연히 같아짐) 둘째 이름부터 아무도 쓰지 않은 글이 나올 때까지 보이는 자리를 뒤로 옮깁니다. 겹치지 않는 이름의 글은 그대로이고,
  * 같은 이름(앞뒤 공백 무시)은 같은 글. 돌려주는 표는 앞뒤 공백을 뗀 이름 → 글. 전체 이름은 노드의 <title>·낭독 이름과 목록에 있습니다.
  */
@@ -1098,17 +1099,22 @@ export function graphLabels(names: readonly string[], maxPx: number): Map<string
       const shortest = Math.min(...charsOf.map((chars) => chars.length));
       let split = 0;
       while (split < shortest && charsOf.every((chars) => chars[split] === charsOf[0][split])) split += 1;
-      let from = split;
-      if (round === 0) {
-        while (from > 0 && split - from < GRAPH_WORD_BACK && LETTER_OR_DIGIT.test(charsOf[0][from - 1])) from -= 1;
-        if (from > 0 && LETTER_OR_DIGIT.test(charsOf[0][from - 1])) from = split; // 낱말이 길면 물리지 않음
-      }
-      group.forEach((name, at) => {
-        let start = from;
-        // 처음에는 '…' 뒤에 빈칸을 두지 않음(이름마다 — 갈리는 글자가 빈칸인 이름).
-        while (round === 0 && start < charsOf[at].length && /\s/.test(charsOf[at][start])) start += 1;
-        labels.set(name, fitGraphLabelFrom(name, start, maxPx));
-      });
+      // 차례마다 먼저 갈리는 자리가 든 낱말·숫자의 첫 글자부터('…12'가 '…2'로 읽히지 않게 — 둘째 차례 이후도, QA-423 후속).
+      let back = split;
+      while (back > 0 && split - back < GRAPH_WORD_BACK && LETTER_OR_DIGIT.test(charsOf[0][back - 1])) back -= 1;
+      if (back > 0 && LETTER_OR_DIGIT.test(charsOf[0][back - 1])) back = split; // 낱말이 길면 물리지 않음
+      const shown = (from: number, skipSpace: boolean) =>
+        group.map((name, at) => {
+          let start = from;
+          // '…' 뒤에 빈칸을 두지 않음(이름마다 — 갈리는 글자가 빈칸인 이름).
+          while (skipSpace && start < charsOf[at].length && /\s/.test(charsOf[at][start])) start += 1;
+          return fitGraphLabelFrom(name, start, maxPx);
+        });
+      let next = shown(back, true);
+      // 그 글로 이 이름들이 하나도 갈리지 않으면(모두 같은 글 — 물린 몫 때문에 갈리는 글자가 글에 들지 않음 등) 갈리는 바로 그 글자부터(빈칸도 그대로).
+      // 일부만 갈리면 물린 글을 두고, 같은 글이 남은 이름들은 다음 차례에 그 이름들끼리 다시 가름(차례 수에 상한이 있어 늘 끝남).
+      if (new Set(next).size === 1) next = shown(split, false);
+      group.forEach((name, at) => labels.set(name, next[at]));
     }
   }
   for (const group of clashes()) {
