@@ -823,7 +823,7 @@ function Badges({ badges }: { badges: Badge[] }) {
         <span
           key={badge.key}
           title={badge.title}
-          className={`whitespace-nowrap rounded-full border px-2 py-px text-xs ${badge.className}`}
+          className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}
         >
           {badge.label}
         </span>
