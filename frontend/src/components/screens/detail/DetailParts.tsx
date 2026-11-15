@@ -27,7 +27,7 @@ import type { DetailNewsResponse, DetailStat, DetailSummaryResponse, SessionUser
  */
 
 const LINK = "rounded-sm text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
-/** 따로 선 링크(목록의 제목·카드 안 한 줄 링크) — 좁은 화면(lg 미만) 누르는 자리 44px(QA-458). 문장 안·위첨자 링크는 LINK 그대로. */
+/** 따로 선 링크(목록의 제목·근거 줄·카드 안 한 줄 링크) — 좁은 화면(lg 미만) 누르는 자리 44px(QA-458). 문장 안·위첨자 링크는 LINK 그대로. */
 const TARGET_LINK = `${LINK} ${TEXT_TARGET}`;
 
 /**
@@ -325,10 +325,18 @@ export function AiSummaryCard({
       ) : null}
       {result?.status && sources.length > 0 ? (
         <ol aria-label="요약 근거" className="mt-4 flex flex-col gap-1 border-t border-border pt-3 text-xs text-text-3">
-          {/* 근거 줄은 '[n] 이름' 한 줄 글 안의 링크라 글 높이 그대로 둡니다(글 안 링크 — 말줄임이 링크 글까지 걸리게). */}
+          {/* 근거 줄은 따로 선 링크가 세로로 쌓인 목록이라(문장 안 링크가 아님) 링크가 좁은 화면(lg 미만) 누르는 자리 44px입니다(QA-458).
+              번호는 늘 보이고, 이름만 줄 안에서 말줄임합니다. */}
           {sources.map((source) => (
-            <li key={source.n} className="min-w-0 truncate">
-              [{source.n}] {source.url ? <ExternalAnchor href={source.url} className={LINK}>{source.label}</ExternalAnchor> : source.label}
+            <li key={source.n} className="flex min-w-0 items-center gap-1">
+              <span className="shrink-0">[{source.n}]</span>
+              {source.url ? (
+                <ExternalAnchor href={source.url} className={`${TARGET_LINK} min-w-0`}>
+                  <span className="min-w-0 truncate">{source.label}</span>
+                </ExternalAnchor>
+              ) : (
+                <span className="min-w-0 truncate">{source.label}</span>
+              )}
             </li>
           ))}
         </ol>

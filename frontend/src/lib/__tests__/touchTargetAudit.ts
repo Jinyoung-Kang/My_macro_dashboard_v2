@@ -6,8 +6,8 @@
  *   `min-h-16`·`min-h-[44px]` 등), lg 미만에도 걸리는 sm:·md: 변형이 그보다 낮추지 않으면 통과(null). lg:·xl:·2xl: 변형은 더 작아도
  *   됩니다(넓은 화면은 30·32px 조밀 조작). 아니면 까닭 글을 돌려줍니다.
  * - `smallTargets(root)`: 그린 DOM에서 누를 수 있는 요소(링크·단추·입력·summary·역할이 단추·탭인 요소)마다 그 요소(체크 상자·라디오는 감싼
- *   label도)가 `belowLgTarget`을 통과하는지 봅니다. 문장 안의 링크·단추(같은 부모에 글이 함께 있는 요소 — WCAG 2.5.8의 글 안 예외)와
- *   화면에 보이지 않는 요소(sr-only·hidden)는 셈에서 뺍니다. 걸린 요소를 "태그「글」 — 까닭"으로 돌려줍니다.
+ *   label도)가 `belowLgTarget`을 통과하는지 봅니다. 문장 안의 링크·단추(같은 부모의 글 마디에 그 요소보다 글자가 많음 — WCAG 2.5.8의 글 안
+ *   예외, `inSentence`)와 화면에 보이지 않는 요소(sr-only·hidden)는 셈에서 뺍니다. 걸린 요소를 "태그「글」 — 까닭"으로 돌려줍니다.
  */
 
 /** 클래스 하나를 변형(lg:·hover:·has-[…]: 등)과 유틸리티로 나눕니다 — 대괄호 안의 콜론은 가르지 않습니다. */
@@ -73,16 +73,35 @@ const INTERACTIVE = [
   "[role=switch]",
 ].join(", ");
 
+/** 글자(\p{L} — 한글·라틴 등) 수 — 번호·괄호·문장부호·빈칸은 세지 않습니다. */
+function letterCount(text: string): number {
+  return (text.match(/\p{L}/gu) ?? []).length;
+}
+
+/** 요소의 보이는 글 — 낭독기 전용 글(sr-only, 예: 링크 안의 '(새 창)')은 뺍니다. */
+function visibleText(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  copy.querySelectorAll(".sr-only").forEach((node) => node.remove());
+  return copy.textContent ?? "";
+}
+
 /**
- * 문장 안의 링크·단추 — 같은 부모 아래 비지 않은 글 마디가 함께 있다(WCAG 2.5.8 글 안 예외: 줄 높이에 묶인 링크). 입력·summary는 글과 함께
- * 있어도 예외가 아닙니다(체크 상자 옆의 '예'는 문장이 아님 — 감싼 label이 누름 자리를 맡아야 함).
+ * 문장 안의 링크·단추 — 같은 부모 아래 요소 밖 글 마디의 글자가 있고, 그 수가 요소의 보이는 글자 수 이상이다(WCAG 2.5.8 글 안 예외: 문장의
+ * 줄 높이에 묶인 링크). 번호·점만 앞에 붙은 목록 줄(`<li>[1] <a>…</a></li>`·`<li>· <a>…</a></li>`)이나 짧은 머리말 뒤의 긴 링크
+ * (`<p>출처: <a>합성 출처 사이트</a></p>`)는 문장이 아니라 따로 선 링크로 셉니다. 입력·summary는 글과 함께 있어도 예외가 아닙니다(체크
+ * 상자 옆의 '예'는 문장이 아님 — 감싼 label이 누름 자리를 맡아야 함).
  */
 function inSentence(element: Element): boolean {
   const role = element.getAttribute("role");
   if (!(element.tagName === "A" || element.tagName === "BUTTON" || role === "link" || role === "button")) return false;
   const parent = element.parentElement;
   if (!parent) return false;
-  return Array.from(parent.childNodes).some((node) => node.nodeType === 3 && (node.textContent ?? "").trim() !== "");
+  const around = Array.from(parent.childNodes)
+    .filter((node) => node.nodeType === 3)
+    .map((node) => node.textContent ?? "")
+    .join("");
+  const letters = letterCount(around);
+  return letters > 0 && letters >= letterCount(visibleText(element));
 }
 
 function hidden(element: Element): boolean {

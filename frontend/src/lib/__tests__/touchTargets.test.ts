@@ -103,7 +103,7 @@ describe("공용 조작 조각의 좁은 화면 누르는 자리(QA-458)", () =>
     expect(belowLgTarget("min-h-11 md:h-9")).toContain("md:h-9");
   });
 
-  it("DOM 검사기 자체 — 문장 안 링크·보이지 않는 요소는 빼고, 체크 상자는 감싼 label로 따진다", () => {
+  it("DOM 검사기 자체 — 문장 안 링크·보이지 않는 요소는 빼고, 번호·머리말만 붙은 링크는 세고, 체크 상자는 감싼 label로 따진다", () => {
     const root = document.createElement("div");
     root.innerHTML = [
       "<p>설명 글 <a href='/x' class='text-accent'>안의 링크</a>는 뺀다.</p>",
@@ -115,12 +115,17 @@ describe("공용 조작 조각의 좁은 화면 누르는 자리(QA-458)", () =>
       "<label class='min-h-11'><input type='radio' class='sr-only'>고르기</label>",
       "<details><summary class='cursor-pointer text-xs'>더 보기</summary></details>",
       "<a class='text-accent'>주소 없는 a</a>",
+      "<ol><li>[1] <a href='/s' class='text-text'>근거 출처 이름</a></li></ol>",
+      "<p>출처: <a href='/t' class='text-accent'>합성 출처 사이트</a></p>",
+      "<p>자세한 뜻은 <a href='/v' class='text-accent'>용어 풀이<span class='sr-only'> (새 창)</span></a>에 있습니다.</p>",
     ].join("");
     expect(smallTargets(root)).toEqual([
       "a「따로 선 링크」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
       "button「번역」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
       "input[checkbox]「작은 상자」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
       "summary「더 보기」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
+      "a「근거 출처 이름」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
+      "a「합성 출처 사이트」 — lg 미만 44px 높이 클래스(min-h-11 등) 없음",
     ]);
   });
 });

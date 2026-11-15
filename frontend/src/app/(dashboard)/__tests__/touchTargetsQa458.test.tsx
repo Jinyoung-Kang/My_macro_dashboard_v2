@@ -8,7 +8,7 @@
  * (lib/__tests__/touchTargetAudit — 문장 안의 링크는 WCAG 2.5.8 글 안 예외로 셈에서 뺌). 정보 검색(/search)은 행 전체가 min-h-11이라
  * 조사의 안쪽 링크 숫자(51개)는 과대 계산이었습니다 — 여기서 보지 않습니다.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,6 +33,7 @@ vi.mock("@/components/charts", () => ({
 }));
 
 import { DataTable } from "@/components/patterns";
+import { AiSummaryCard } from "@/components/screens/detail/DetailParts";
 import { SourceCard } from "@/components/screens/info/CatalogSection";
 import { NewsSection } from "@/components/screens/info/NewsSection";
 import { IndicatorDetailScreen } from "@/components/screens/detail/IndicatorDetailScreen";
@@ -170,6 +171,28 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     await screen.findByRole("link", { name: /Synthetic headline/ });
     await screen.findByRole("link", { name: "합성 자산운용" });
     expect(smallTargets(container)).toEqual([]);
+  });
+
+  //  - 상세 화면 공용 AI 요약: '요약 근거' 목록의 출처 링크(따로 선 링크가 4px 간격으로 쌓인 목록 — 검토 지적). 문장 끝의 위첨자 [n]은
+  //    문장 안 링크(글 안 예외)라 셈에서 빠집니다 — 이 시험이 그 예외가 실제로 쓰이는 자리입니다.
+  it("AI 요약 — 요약 근거 목록의 출처 링크", async () => {
+    api.apiPost.mockResolvedValue({
+      status: true, summary: "한 줄 요약: 합성 회사는 올랐다 [1]\n- 실적 상회 [2]", model: "claude-haiku-5-5", generatedAtKst: "2026-11-15 10:00 KST",
+      cached: false, quota: { used: 1, limit: 20 }, error: null,
+      sources: [
+        { n: 1, label: "시세·지표 — 합성 시세", url: "https://quote.example/SYNQ" },
+        { n: 2, label: "Wire — Synthetic headline", url: "https://news.example/a" },
+      ],
+    });
+    renderAs(<AiSummaryCard request={{ market: "us", code: "SYNQ", q: "Synthetic Quote Inc.", label: "Synthetic Quote Inc." }} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "AI 요약 만들기" }));
+    });
+    const list = await screen.findByRole("list", { name: "요약 근거" });
+    expect(within(list).getAllByRole("link")).toHaveLength(2);
+    const card = list.closest("section") as HTMLElement;
+    expect(within(card).getAllByRole("link", { name: /^\[\d\]/ })).toHaveLength(2);
+    expect(smallTargets(card)).toEqual([]);
   });
 
   //  - 지표 상세: '정보 검색', 뉴스 제목, 'Yahoo 시세 상세' 링크, '다른 곳에서 보기'(min-h-9)
