@@ -6003,11 +6003,14 @@ export type DecisionViewKey = (typeof DECISION_VIEWS)[number]["key"];
  * $0.12와 시스템(복기 지시문 + 프레임, 프레임 예산 안) 캐시 쓰기 약 $0.1 남짓 — 합쳐 1회 최대 약 $0.9. 그전 문구의 '약 $0.1'(결정 1회와
  * 같은 규모)은 출력 한도를 올린 뒤에는 위 끝보다 몇 배 낮아 바꿨습니다(검토 지적). 결정·제안과 같은 하루 상한을 씁니다(D4). 이미 있는 주는
  * 부르지 않되, 아직 다시 부르지 않은 API 오류·응답 형식 오류 주는 수동 실행이 같은 기록에서 한 번 더 부릅니다(서버 ReviewService.retryable
- * — 형식 오류는 수동만, QA-475).
+ * — 형식 오류는 수동만, QA-475). 다시 부르면 서버가 같은 행을 통째로 바꿔(PaperStore.updateReviewRetry) 그 주 기록의 사용량에는 마지막 호출
+ * 몫만 남고, 두 호출 모두 하루 호출 사용량(개요의 Claude 호출 사용량)에 들어갑니다 — 출력 한도로 끝난 첫 호출이 그 주 비용의 큰 몫이라
+ * 적습니다(검토 지적).
  */
 export const REVIEW_COST_NOTE = "Sonnet 5.5 호출 1회(사고를 포함한 출력 한도 64,000토큰을 다 쓰면 기본 단가로 최대 약 $0.9 — 출력만 약 "
   + "$0.64), 하루 호출 상한에 포함 — 기본 모델 기준(설정 탭에서 모델을 바꿨으면 그 모델). 실제 추정 비용은 그 주 복기 기록의 사용량에 "
-  + "남습니다. 이 주 복기가 이미 있으면 부르지 않고 그 기록을 보여 줍니다 — API 오류·응답 형식 오류로 끝나 아직 다시 부르지 않은 주만 "
+  + "남습니다(같은 기록에서 다시 부르면 그 기록에는 마지막 호출 몫만 남고, 두 호출 모두 개요의 Claude 호출 사용량에 들어갑니다). "
+  + "이 주 복기가 이미 있으면 부르지 않고 그 기록을 보여 줍니다 — API 오류·응답 형식 오류로 끝나 아직 다시 부르지 않은 주만 "
   + "같은 기록에서 한 번 더 부릅니다.";
 
 /** 복기가 언제 생기는지 한 문단 — 정기 작업의 조건(서버 PaperReviewJob)을 사람이 읽는 말로. */
@@ -6208,6 +6211,13 @@ export function reviewDetailView(review: PaperReviewDetail): ReviewDetailView {
       + "같은 기록에서 한 번 더 부릅니다.");
   } else if (status === "FORMAT_ERROR" || status === "REFUSED") {
     notices.push("이 주 복기는 이것으로 끝입니다(같은 입력이면 같은 답일 가능성이 커 다시 부르지 않음).");
+  }
+  // 다시 부르면 서버가 같은 행을 통째로 바꿔(PaperStore.updateReviewRetry) 앞 호출의 사용량이 이 기록에서 사라집니다 — 출력 한도로 끝난
+  // 형식 오류(QA-475)는 앞 호출이 그 주 비용의 큰 몫이라 '추정 비용'이 실제보다 적게 보입니다(검토 지적). 재시도 수 1은 응답 뒤 저장 오류로
+  // 남긴 API 오류(한 번만 부름)에도 붙어 조건으로 적습니다.
+  if (isNumber(review.retryCount) && review.retryCount > 0 && isRecord(review.usage)) {
+    notices.push("같은 기록에서 다시 부른 주면 아래 사용량·추정 비용은 마지막 호출 몫입니다 — 앞 호출의 토큰·비용은 개요의 Claude 호출 "
+      + "사용량(오늘·이달)에만 들어 있습니다.");
   }
   const meta: DecisionMetaCell[] = [
     { key: "weekEnding", label: "복기 주", value: review.weekEnding },

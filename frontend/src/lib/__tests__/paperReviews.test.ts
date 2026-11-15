@@ -145,6 +145,9 @@ describe("주간 복기 목록", () => {
     expect(REVIEW_COST_NOTE).not.toContain("약 $0.1)");
     // QA-475: 이미 있는 주라도 아직 다시 부르지 않은 API 오류·응답 형식 오류 주는 수동 실행이 한 번 더 부른다(서버 ReviewService.retryable).
     expect(REVIEW_COST_NOTE).toContain("API 오류·응답 형식 오류로 끝나 아직 다시 부르지 않은 주만 같은 기록에서 한 번 더 부릅니다");
+    // 다시 부르면 서버가 같은 행을 통째로 바꿔 그 주 기록에는 마지막 호출의 사용량만 남는다(검토 지적).
+    expect(REVIEW_COST_NOTE).toContain("같은 기록에서 다시 부르면 그 기록에는 마지막 호출 몫만 남고, 두 호출 모두 개요의 Claude 호출 사용량에 "
+      + "들어갑니다");
   });
 });
 
@@ -209,6 +212,12 @@ describe("주간 복기 한 건", () => {
     const format = reviewDetailView(detail({ status: "FORMAT_ERROR", error: "위반 2건", retryCount: 1 }));
     expect(format.notices[1]).toContain("이것으로 끝");
     expect(format.meta.find((cell) => cell.key === "retry")?.value).toBe("1회");
+    // 다시 부른 행의 사용량은 마지막 호출 몫만(서버가 같은 행을 통째로 바꿈) — 앞 호출은 하루 사용량에만(검토 지적).
+    expect(format.notices[2]).toBe("같은 기록에서 다시 부른 주면 아래 사용량·추정 비용은 마지막 호출 몫입니다 — 앞 호출의 토큰·비용은 "
+      + "개요의 Claude 호출 사용량(오늘·이달)에만 들어 있습니다.");
+    expect(reviewDetailView(detail({ status: "OK", retryCount: 1 })).notices).toEqual([format.notices[2]]);
+    expect(reviewDetailView(detail({ status: "API_ERROR", error: "끊김", retryCount: 1, usage: null, proposal: null })).notices)
+      .toEqual(["오류 — 끊김"]);
 
     // QA-475: 아직 다시 부르지 않은 형식 오류는 정기 복기만 끝 — 가장 최근 주면 수동 실행이 한 번 더 부른다.
     const formatFresh = reviewDetailView(detail({ status: "FORMAT_ERROR", error: "위반 2건", retryCount: 0 }));
