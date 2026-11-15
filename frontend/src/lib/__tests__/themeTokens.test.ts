@@ -260,6 +260,23 @@ describe("어두운 한 벌(W1)", () => {
   });
 });
 
+describe("포커스 링 기본값(명세 §3-8 — FOCUS_RING과 같은 모양)", () => {
+  // QA-495: 포커스 링은 공용 키트의 FOCUS_RING을 className에 붙인 곳에만 있어, 키트 밖의 화면 링크·네이티브 체크 상자·Recharts 표면
+  // (svg[role=application])·스크롤 영역·pre·summary가 브라우저 기본 링(outline auto 1px — 1440 7경로 91곳)으로 돌아갔습니다. 한 화면에 포커스
+  // 모양이 둘이었고 차트 표면의 기본 링은 offset 0이라 왼쪽 눈금 글 위에 겹쳤습니다. 기본 층(@layer base)에 같은 모양을 두면 FOCUS_RING과 화면별
+  // 유틸리티(-outline-offset-2·outline-hidden·has-[:focus-visible] 라벨 링)는 그대로 이깁니다 — 레이어 밖에 두면 그 유틸리티를 이깁니다.
+  // 재현 커밋에서는 it.fails입니다.
+  it.fails("QA-495: 포커스 링 기본값은 @layer base의 :focus-visible — outline 2px solid var(--focus), offset 2px", () => {
+    const bases = RULES.filter((rule) => rule.selector === "@layer base");
+    const rules = bases.flatMap((rule) => [...rule.body.matchAll(/(?:^|[;{}])\s*:focus-visible\s*\{([^}]*)\}/g)].map((match) => match[1]));
+    expect(rules, "@layer base { :focus-visible { … } }").toHaveLength(1);
+    expect(rules[0]).toMatch(/(?:^|;)\s*outline:\s*2px solid var\(--focus\)\s*;/);
+    expect(rules[0]).toMatch(/outline-offset:\s*2px\s*;/);
+    // 맨 바깥(레이어 밖)에는 포커스 규칙을 두지 않습니다.
+    expect(RULES.filter((rule) => rule.selector.includes(":focus-visible"))).toEqual([]);
+  });
+});
+
 describe("조작 바탕 — 덮개 안 단추(2026-11-16 결정, 명세 §3-4)", () => {
   // 기본 단추 바탕·최소 단추 hover(bg-control-fill)가 패널·바탕 위에서는 surface-2, 덮개(대화상자·토스트 — 바탕 surface-2) 안에서는 surface-3입니다.
   // 같은 값이면 덮개 안 기본 단추의 바탕(1.00:1)과 최소 단추의 hover가 보이지 않았습니다. 그 위 글자는 surface-3 금지 목록을 따릅니다(위 행렬·소스 검사).
