@@ -29,6 +29,7 @@ import type {
   SearchSummaryResponse,
   SearchWatchItem,
   SearchWatchLimits,
+  SearchWatchPartialBody,
 } from "./types";
 
 // ------------------------------------------------------------------ 탭·기간
@@ -2100,6 +2101,7 @@ const GENERIC_FAILURE = /^요청 실패 \(HTTP \d+\)$/;
 /**
  * 쓰기(관심 대상 등록·해제, 제외 매체 더하기·지우기)의 실패 문구 — 상한·중복(409)·입력(400)은 서버가 준 사유를 그대로 글로 보이고,
  * 사유가 없으면 conflict(409)·일반 문구. 권한(403 — 데모 등)은 서버 사유, 없으면 '이 계정으로는 할 수 없습니다'.
+ * 관심 대상 등록이 덜 풀린 대상이라 저장되지 않았으면(503 partial) 받지 못한 출처를 이름으로 적은 글(watchPartialText).
  */
 export function writeErrorText(error: unknown, conflict: string): string {
   if (!(error instanceof Error)) return "알 수 없는 오류";
@@ -2107,7 +2109,40 @@ export function writeErrorText(error: unknown, conflict: string): string {
   const generic = !error.message || GENERIC_FAILURE.test(error.message);
   if (status === 409 && generic) return conflict;
   if (status === 403 && generic) return "이 계정으로는 할 수 없습니다";
+  const partial = status === 503 ? watchPartialText((error as { body?: unknown }).body) : null;
+  if (partial) return partial;
   return error.message || "알 수 없는 오류";
+}
+
+/** DART 고유번호 저장본을 읽지 못한 출처 키(수집기 search_entities.DART_STORE) — 저장본이 없으면 1분 뒤에도 같습니다. */
+const DART_STORE = "dart_store";
+
+/**
+ * 관심 대상 등록의 503 partial 본문(POST /api/search/watch — 계약 §6-4) → 받지 못한 출처를 적은 글. 출처 이름은 속성 칸의 '대상을 푸는 데 받지 못한
+ * 출처'와 같습니다(entitySourceLabel — 'DART: DART 고유번호 저장본을 읽지 못함'). 다시 해 볼 때는 출처마다 다릅니다 — 시간 초과·Wikidata·SEC
+ * 일시 실패는 수집기가 60초만 캐시해 '1분쯤 뒤', DART 고유번호 저장본(dart_store)은 저장본이 없으면 1분 뒤에도 같아서 곧 된다고 하지 않습니다.
+ * partial이 아니거나 failed에 읽을 줄이 없으면 null(서버 사유를 그대로 씀). 사유가 없는 줄은 이름만.
+ */
+export function watchPartialText(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { reason, failed } = body as Partial<Record<keyof SearchWatchPartialBody, unknown>>;
+  if (reason !== "partial" || !Array.isArray(failed)) return null;
+  const parts: string[] = [];
+  let store = false;
+  for (const entry of failed as unknown[]) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { source, message } = entry as Partial<Record<keyof SearchWatchPartialBody["failed"][number], unknown>>;
+    const key = typeof source === "string" ? source.trim() : "";
+    if (!key) continue;
+    if (key === DART_STORE) store = true;
+    const text = typeof message === "string" ? message.trim() : "";
+    parts.push(text ? `${entitySourceLabel(key)}: ${text}` : entitySourceLabel(key));
+  }
+  if (parts.length === 0) return null;
+  const retry = store
+    ? "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠)."
+    : "1분쯤 뒤 다시 등록하세요.";
+  return `대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처 — ${[...new Set(parts)].join(" · ")}. ${retry}`;
 }
 
 /** 새로 받기에서 받지 못한 출처의 상태(실패·외부 조회 안 함) — 받음·캐시·결과 없음·건너뜀은 받지 못한 것이 아닙니다. */

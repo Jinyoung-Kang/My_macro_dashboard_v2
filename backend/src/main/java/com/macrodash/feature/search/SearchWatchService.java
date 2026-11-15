@@ -74,6 +74,15 @@ public class SearchWatchService {
      * {@code dart}(저장본을 읽었는데 그 종목이 없음 — ETF·우선주 등)는 다시 물어도 같아서 넣지 않습니다.
      */
     static final Set<String> RETRY_ERRORS = Set.of("entity", "wikidata", "sec", "dart_store");
+    /** DART 고유번호 저장본을 읽지 못함 — 저장본이 없으면 1분 뒤에도 같아서 이 출처가 섞인 partial은 곧 된다고 하지 않습니다. */
+    static final String DART_STORE = "dart_store";
+    /** partial 본문 {@code failed}의 사유 하나의 글자 수 상한. */
+    static final int MAX_FAILED_REASON = 200;
+    /** 덜 풀린 등록(503 partial)의 안내 — 수집기는 실패가 섞인 풀기를 60초만 캐시해서 시간 초과·Wikidata·SEC 일시 실패는 잠시 뒤 새로 풉니다. */
+    static final String PARTIAL = "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 1분쯤 뒤 다시 등록하세요.";
+    /** DART 고유번호 저장본({@link #DART_STORE})이 섞인 partial의 안내 — 저장본이 없거나 읽지 못하는 동안에는 다시 눌러도 같은 503입니다. */
+    static final String PARTIAL_DART_STORE = "대상 정보를 다 받지 못했습니다(DART 고유번호 저장본을 읽지 못함) — 저장본을 다시 읽을 수 있을 때까지는 "
+            + "다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).";
     private static final List<String> ID_FIELDS = List.of("ticker", "market", "stockCode", "cik", "dartCorpCode", "wikidata", "lei");
     private static final String TOPIC = "topic:";
     private static final Pattern CONTROL = Pattern.compile("\\p{Cntrl}");
@@ -82,6 +91,8 @@ public class SearchWatchService {
     /** 별칭의 공백 — 유니코드 공백과 U+FEFF(화면 정규식 {@code \s}와 같은 범위). */
     private static final Pattern ALIAS_SPACES = Pattern.compile("(?U)[\\s\\x{FEFF}]+");
     private static final Pattern HOST_LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?");
+    /** 주소 모양(스킴://) — partial 사유에 섞이면 그 사유는 싣지 않습니다(수집기 사유는 호스트·상태만이지만 한 번 더). */
+    private static final Pattern URL_LIKE = Pattern.compile("(?i)[a-z][a-z0-9+.-]*://");
     private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssxxx");
 
     static final String NOT_READY = "관심 대상 표가 아직 없습니다 — 수집기가 스키마를 적용한 뒤(make up) 다시 보세요.";
@@ -92,9 +103,15 @@ public class SearchWatchService {
     public record Result(int status, Map<String, Object> body) {
     }
 
-    /** 수집기가 풀어 준 대상(또는 주제 키에서 만든 것). {@code partial}은 다시 물으면 달라질 출처 오류가 섞인 풀기({@link #RETRY_ERRORS}). */
+    /**
+     * 수집기가 풀어 준 대상(또는 주제 키에서 만든 것). {@code failed}는 다시 물으면 달라질 출처 오류({@link #RETRY_ERRORS} — {@link #retryFailures}의
+     * {@code [{source, message}]}), 하나라도 있으면 덜 풀린 것({@link #partial()}).
+     */
     private record Resolved(String key, String kind, String name, String nameKo, String nameEn, List<String> aliases, JsonNode ids,
-                            boolean partial) {
+                            List<Map<String, Object>> failed) {
+        boolean partial() {
+            return !failed.isEmpty();
+        }
     }
 
     private record Collecting(Boolean value, Instant until) {
@@ -168,7 +185,7 @@ public class SearchWatchService {
     /**
      * 등록 — {@code key}를 검사하고(틀리면 400) 수집기로 풀어 대표 키로 저장합니다. 데모·store_only는 403, 이미 있으면(다른 키로 등록한 같은 대상도)
      * 그대로 200({@code created:false}), 상한을 넘으면 409({@code reason} user_limit·server_limit), 대상을 풀지 못하면 409(unresolved),
-     * 수집기에 닿지 못하면 503(주제 키는 키의 글로 등록), 풀기가 덜 끝났으면 503(partial — 저장하지 않음).
+     * 수집기에 닿지 못하면 503(주제 키는 키의 글로 등록), 풀기가 덜 끝났으면 503(partial — 저장하지 않음, 본문 {@code failed}에 받지 못한 출처와 사유).
      *
      * @throws InvalidRequestException 키 모양이 틀림(400)
      */
@@ -216,10 +233,10 @@ public class SearchWatchService {
                 return failure(409, "server_limit", "서버 전체 관심 대상이 %d개(서로 다른 대상)로 찼습니다 — 이미 누군가 등록한 대상만 더할 수 있습니다."
                         .formatted(SERVER_WATCHES));
             }
-            // 덜 풀린 대상(시간 초과·Wikidata·SEC 일시 실패)의 이름·별칭은 저장하면 고쳐지지 않고 정기 수집의 검색식이 되므로 받지 않습니다.
-            // 수집기는 실패가 섞인 풀기를 60초만 캐시해서 잠시 뒤 다시 누르면 새로 풉니다.
+            // 덜 풀린 대상(시간 초과·Wikidata·SEC 일시 실패·DART 저장본을 읽지 못함)의 이름·별칭은 저장하면 고쳐지지 않고 정기 수집의 검색식이 되므로
+            // 받지 않습니다. 수집기는 실패가 섞인 풀기를 60초만 캐시해서 잠시 뒤 다시 누르면 새로 풉니다(DART 저장본은 다시 읽을 수 있어야 달라짐).
             if (resolved.partial()) {
-                return failure(503, "partial", "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 1분쯤 뒤 다시 등록하세요.");
+                return partial(resolved.failed());
             }
             SearchWatchStore.Watch row = watches.insert(user.id(), resolved.key(), resolved.kind(), resolved.name(), resolved.nameKo(),
                     resolved.nameEn(), resolved.aliases(), resolved.ids(), clock.instant());
@@ -399,7 +416,7 @@ public class SearchWatchService {
             String text = key.substring(TOPIC.length());
             ObjectNode ids = JsonNodeFactory.instance.objectNode();
             ID_FIELDS.forEach(ids::putNull);
-            return new Resolved(key, "topic", text, null, null, List.of(text), ids, false);
+            return new Resolved(key, "topic", text, null, null, List.of(text), ids, List.of());
         }
         String representative = key;
         String given = text(entity, "key");
@@ -436,9 +453,50 @@ public class SearchWatchService {
         }
         JsonNode ids = entity.get("ids");
         JsonNode errors = answer.map(body -> body.get("errors")).filter(JsonNode::isObject).orElse(null);
-        boolean partial = errors != null && RETRY_ERRORS.stream().anyMatch(errors::has);
         return new Resolved(representative, kind, name, givenName(entity, "nameKo"), givenName(entity, "nameEn"), List.copyOf(aliases),
-                ids != null && ids.isObject() ? ids.deepCopy() : null, partial);
+                ids != null && ids.isObject() ? ids.deepCopy() : null, retryFailures(errors));
+    }
+
+    /**
+     * 대상 풀기 응답 {@code errors}에서 다시 물으면 달라질 출처({@link #RETRY_ERRORS})만 받은 순서대로 {@code [{source, message}]} — 503 partial 본문의
+     * {@code failed}. {@code source}는 오류 키 그대로(화면이 속성 칸과 같은 이름으로 바꿈), {@code message}는 수집기의 짧은 사유(호스트·상태만 — 주소·인자
+     * 없음)인데 문자열이 아니거나 비었거나 주소 모양이 섞이면 null(화면은 이름만), 제어 글자는 공백으로, {@link #MAX_FAILED_REASON}자까지.
+     * 그 밖의 오류({@code dart} — 저장본에 그 종목이 없음 등)는 등록을 막지 않으므로 넣지 않습니다.
+     */
+    static List<Map<String, Object>> retryFailures(JsonNode errors) {
+        if (errors == null || !errors.isObject()) {
+            return List.of();
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map.Entry<String, JsonNode> entry : errors.properties()) {
+            if (!RETRY_ERRORS.contains(entry.getKey())) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("source", entry.getKey());
+            item.put("message", failedReason(entry.getValue()));
+            out.add(item);
+        }
+        return List.copyOf(out);
+    }
+
+    private static String failedReason(JsonNode value) {
+        if (value == null || !value.isString()) {
+            return null;
+        }
+        String text = ALIAS_CONTROL.matcher(value.stringValue()).replaceAll(" ").strip();
+        if (text.isEmpty() || URL_LIKE.matcher(text).find()) {
+            return null;
+        }
+        return cut(text, MAX_FAILED_REASON);
+    }
+
+    /** 덜 풀린 등록 — 503 partial과 받지 못한 출처({@code failed}). DART 저장본이 섞이면 '1분쯤 뒤' 대신 저장본을 다시 읽을 때까지 같다고 합니다. */
+    private static Result partial(List<Map<String, Object>> failed) {
+        boolean store = failed.stream().anyMatch(item -> DART_STORE.equals(item.get("source")));
+        Result result = failure(503, "partial", store ? PARTIAL_DART_STORE : PARTIAL);
+        result.body().put("failed", failed);
+        return result;
     }
 
     /** 키 모양이 정하는 종류(계약 §2) — 상장사 us:·kr:는 회사, cik:는 13F 기관, topic:은 주제. wd:는 키만으로 알 수 없어 null. */

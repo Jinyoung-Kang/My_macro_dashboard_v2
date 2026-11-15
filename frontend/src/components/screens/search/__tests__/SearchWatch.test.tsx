@@ -279,6 +279,26 @@ describe("등록·해제(대상 머리)", () => {
     expect(screen.getByRole("button", { name: "관심 대상 등록" })).toBeTruthy();
   });
 
+  it("덜 풀린 대상(503 partial)이면 받지 못한 출처를 속성 칸과 같은 이름으로 — DART 저장본은 곧 된다고 하지 않음", async () => {
+    reads[endpoints.search.watch] = watchList([WATCH_BRK]);
+    const server = "대상 정보를 다 받지 못했습니다(DART 고유번호 저장본을 읽지 못함) — 합성 서버 안내";
+    api.apiPost.mockRejectedValue(Object.assign(new Error(server), {
+      status: 503,
+      body: { ok: false, reason: "partial", message: server, failed: [{ source: "dart_store", message: "DART 고유번호 저장본을 읽지 못함" }] },
+    }));
+    renderScreen(MEMBER, "/search?e=wd:Q182477");
+    await screen.findByRole("heading", { level: 2, name: "엔비디아" });
+    const add = await screen.findByRole("button", { name: "관심 대상 등록" });
+    await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(add);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("받지 못한 출처 — DART: DART 고유번호 저장본을 읽지 못함");
+    expect(alert.textContent).toContain("다시 등록해도 같습니다");
+    expect(alert.textContent).not.toContain("dart_store");
+    expect(alert.textContent).not.toContain("1분");
+    expect(screen.getByRole("button", { name: "관심 대상 등록" })).toBeTruthy();
+  });
+
   it("데모는 등록하지 못한다 — 단추가 꺼져 있고 조회만 된다는 글, 관심 대상을 부르지도 쓰지도 않음", async () => {
     renderScreen(DEMO, "/search?e=wd:Q182477");
     await screen.findByRole("heading", { level: 2, name: "엔비디아" });

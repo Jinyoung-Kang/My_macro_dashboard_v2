@@ -43,11 +43,14 @@ export const API_BASE = apiBase();
 export class ApiError extends Error {
   /**
    * @param code 서버 오류 본문의 `error` 칸(있으면 — 예: 실제 매매 켜기의 `password-invalid`). 화면이 코드별 문구를 고를 때 씁니다.
+   * @param body 서버 오류 본문(JSON이면 읽은 값 그대로, 아니면 null). 화면이 사유 밖의 칸을 읽을 때 씁니다(정보 검색 관심 대상 등록의
+   *             503 partial `failed` — 받지 못한 출처).
    */
   constructor(
     message: string,
     readonly status: number,
     readonly code: string | null = null,
+    readonly body: unknown = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -143,7 +146,7 @@ async function request<T>(
 
   if (!response.ok) {
     const body = await errorBodyOf(response);
-    throw new ApiError(body.message ?? `요청 실패 (HTTP ${response.status})`, response.status, body.code);
+    throw new ApiError(body.message ?? `요청 실패 (HTTP ${response.status})`, response.status, body.code, body.json);
   }
 
   if (response.status === 204) {
@@ -157,15 +160,15 @@ async function messageOf(response: Response): Promise<string | null> {
   return (await errorBodyOf(response)).message;
 }
 
-/** 오류 본문의 `message`·`error`(코드). 본문이 JSON이 아니거나 칸이 비면 null. */
-async function errorBodyOf(response: Response): Promise<{ message: string | null; code: string | null }> {
+/** 오류 본문의 `message`·`error`(코드)와 본문 전체(json). 본문이 JSON이 아니거나 칸이 비면 null. */
+async function errorBodyOf(response: Response): Promise<{ message: string | null; code: string | null; json: unknown }> {
   try {
     const body = await response.json();
     const message = typeof body?.message === "string" && body.message ? body.message : null;
     const code = typeof body?.error === "string" && body.error ? body.error : null;
-    return { message, code };
+    return { message, code, json: (body as unknown) ?? null };
   } catch {
-    return { message: null, code: null };
+    return { message: null, code: null, json: null };
   }
 }
 

@@ -206,6 +206,12 @@ export type SearchWatchItem = {
   notify?: boolean | null;
 };
 
+/**
+ * POST /api/search/watch가 503(reason partial — 대상 풀기가 덜 끝나 저장하지 않음)일 때의 본문(계약 §6-4). failed = 받지 못한 출처, 받은 순서 —
+ * source는 대상 풀기 errors의 키(entity·wikidata·sec·dart_store), message는 수집기 사유(싣지 못하면 null). 화면은 lib/api의 ApiError.body로 읽습니다.
+ */
+export type SearchWatchPartialBody = { ok: false; reason: "partial"; message: string; failed: { source: string; message: string | null }[] };
+
 /** PATCH /api/search/watch/{id} — 별칭이나 알림 하나를 고칩니다(자기 줄만, 데모·store_only 403). */
 export type SearchWatchPatch = { aliases: string[] } | { notify: boolean };
 

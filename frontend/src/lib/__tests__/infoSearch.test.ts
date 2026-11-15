@@ -64,6 +64,7 @@ import {
   watchKeyOf,
   watchLimitsText,
   watchNewTotal,
+  watchPartialText,
   writeErrorText,
 } from "../infoSearch";
 import type {
@@ -679,6 +680,51 @@ describe("관심 대상(계약 §6-4)", () => {
     expect(writeErrorText(failed(403, "요청 실패 (HTTP 403)"), "x")).toBe("이 계정으로는 할 수 없습니다");
     expect(writeErrorText(failed(0, "백엔드 API(http://x)에 연결하지 못했습니다"), "x")).toBe("백엔드 API(http://x)에 연결하지 못했습니다");
     expect(writeErrorText("문자열", "x")).toBe("알 수 없는 오류");
+  });
+
+  describe("관심 대상 등록 503 partial — 받지 못한 출처를 속성 칸과 같은 이름으로(계약 §6-4)", () => {
+    const SERVER = "대상 정보를 다 받지 못했습니다(일부 출처가 늦거나 실패함) — 1분쯤 뒤 다시 등록하세요.";
+    const partial = (failed: unknown, over: Record<string, unknown> = {}) =>
+      Object.assign(new Error(SERVER), { status: 503, body: { ok: false, reason: "partial", message: SERVER, failed, ...over } });
+
+    it("DART 고유번호 저장본(dart_store)은 내부 키 대신 'DART'와 사유, 1분 뒤에도 같을 수 있어 '1분쯤 뒤'라고 하지 않는다", () => {
+      const text = writeErrorText(partial([{ source: "dart_store", message: "DART 고유번호 저장본을 읽지 못함" }]), "x");
+      expect(text).toBe(
+        "대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처 — DART: DART 고유번호 저장본을 읽지 못함. "
+          + "DART 고유번호 저장본을 다시 읽을 수 있을 때까지는 다시 등록해도 같습니다(저장본은 수집기의 DART 재무 수집이 받아 둠).",
+      );
+      expect(text).not.toContain("dart_store");
+      expect(text).not.toContain("1분");
+    });
+
+    it("시간 초과·Wikidata·SEC 일시 실패는 이름과 사유를 받은 순서대로, 다시 해 볼 때는 '1분쯤 뒤'", () => {
+      expect(writeErrorText(partial([
+        { source: "wikidata", message: "합성.wikidata.test HTTP 429" },
+        { source: "sec", message: null },
+        { source: "entity", message: "대상 풀기가 15초를 넘어 저장본 이름으로만 답함" },
+      ]), "x")).toBe(
+        "대상 정보를 다 받지 못해 등록하지 않았습니다. 받지 못한 출처 — Wikidata: 합성.wikidata.test HTTP 429 · SEC · "
+          + "외부 출처: 대상 풀기가 15초를 넘어 저장본 이름으로만 답함. 1분쯤 뒤 다시 등록하세요.",
+      );
+    });
+
+    it("DART 저장본이 다른 출처와 섞여도 '1분쯤 뒤'라고 하지 않고, 모르는 키는 '기타 출처'", () => {
+      const text = watchPartialText({ reason: "partial", failed: [{ source: "wikidata", message: "합성 사유" }, { source: "dart_store" }, { source: "합성_키", message: "합성" }] }) ?? "";
+      expect(text).toContain("받지 못한 출처 — Wikidata: 합성 사유 · DART · 기타 출처: 합성.");
+      expect(text).toContain("다시 등록해도 같습니다");
+      expect(text).not.toContain("1분");
+    });
+
+    it("failed가 없거나 읽을 줄이 없거나 partial이 아니면 서버 사유 그대로(예전 백엔드)", () => {
+      expect(writeErrorText(Object.assign(new Error(SERVER), { status: 503 }), "x")).toBe(SERVER);
+      expect(writeErrorText(partial(undefined), "x")).toBe(SERVER);
+      expect(writeErrorText(partial([]), "x")).toBe(SERVER);
+      expect(writeErrorText(partial([null, 3, { source: "  " }, { message: "이름 없음" }]), "x")).toBe(SERVER);
+      expect(writeErrorText(partial([{ source: "wikidata", message: "합성" }], { reason: "unresolved" }), "x")).toBe(SERVER);
+      expect(writeErrorText(Object.assign(partial([{ source: "wikidata", message: "합성" }]), { status: 409 }), "x")).toBe(SERVER);
+      expect(watchPartialText(null)).toBeNull();
+      expect(watchPartialText("partial")).toBeNull();
+    });
   });
 
   it("'지금 새로 받기' 뒤의 한 줄 — 서버가 준 글(10분 상한 등)이 있으면 그것, 없으면 받은 시각", () => {

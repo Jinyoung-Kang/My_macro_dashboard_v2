@@ -285,6 +285,58 @@ class SearchWatchServiceTest {
         assertThat(watches.rows).hasSize(2);
     }
 
+    /** 대상 풀기 응답에 출처 오류 여럿을 붙인 것 — 값은 JSON 그대로(문자열이 아닌 것도). */
+    private static JsonNode withErrors(JsonNode answer, String errors) {
+        ObjectNode copy = (ObjectNode) answer.deepCopy();
+        copy.set("errors", json(errors));
+        return copy;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> failed(SearchWatchService.Result result) {
+        return (List<Map<String, Object>>) result.body().get("failed");
+    }
+
+    private static Map<String, Object> failedItem(String source, String message) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("source", source);
+        item.put("message", message);
+        return item;
+    }
+
+    @Test
+    @DisplayName("덜 풀린 등록(503 partial)은 본문 failed에 받지 못한 출처 키와 수집기 사유를 받은 순서대로 싣는다 — 등록을 막지 않는 오류(dart 등)는 빼고, "
+            + "사유가 문자열이 아니거나 비었거나 주소가 섞이면 null, 제어 글자는 공백으로. DART 저장본(dart_store)이 섞이면 '1분쯤 뒤'라고 하지 않음")
+    void partialNamesFailedSources() {
+        resolves("us:NVDA", withErrors(entity("us:NVDA", "company", "NVIDIA", "NVIDIA"),
+                "{\"universe\": \"합성 유니버스 사유\", \"wikidata\": \"합성.wikidata.test HTTP 429\", \"sec\": \"합성\\u0007사유\"}"));
+        SearchWatchService.Result soon = service.add(MEMBER, "us:NVDA");
+        assertThat(soon.status()).isEqualTo(503);
+        assertThat(soon.body()).containsEntry("reason", "partial").containsEntry("message", SearchWatchService.PARTIAL);
+        assertThat(failed(soon)).as("다시 물으면 달라질 출처만, 받은 순서")
+                .containsExactly(failedItem("wikidata", "합성.wikidata.test HTTP 429"), failedItem("sec", "합성 사유"));
+
+        resolves("kr:005930", withErrors(entity("kr:005930", "company", "합성 종목", "합성 종목"),
+                "{\"dart_store\": \"DART 고유번호 저장본을 읽지 못함\", \"wikidata\": \"합성 사유\"}"));
+        SearchWatchService.Result store = service.add(MEMBER, "kr:005930");
+        assertThat(store.status()).isEqualTo(503);
+        assertThat(store.body()).containsEntry("reason", "partial").containsEntry("message", SearchWatchService.PARTIAL_DART_STORE);
+        assertThat((String) store.body().get("message")).as("저장본이 없으면 1분 뒤에도 같음 — 곧 된다고 하지 않음").doesNotContain("1분").contains("저장본");
+        assertThat(failed(store)).containsExactly(failedItem("dart_store", "DART 고유번호 저장본을 읽지 못함"), failedItem("wikidata", "합성 사유"));
+
+        resolves("us:AAPL", withErrors(entity("us:AAPL", "company", "합성 회사", "합성 회사"),
+                "{\"entity\": 15, \"wikidata\": \"   \", \"sec\": \"합성 사유 https://합성.test/경로?q=1\"}"));
+        assertThat(failed(service.add(MEMBER, "us:AAPL"))).as("사유를 싣지 못하면 이름만(null)")
+                .containsExactly(failedItem("entity", null), failedItem("wikidata", null), failedItem("sec", null));
+
+        String longReason = "가".repeat(SearchWatchService.MAX_FAILED_REASON + 30);
+        resolves("us:MSFT", withErrors(entity("us:MSFT", "company", "합성 회사", "합성 회사"), "{\"sec\": \"" + longReason + "\"}"));
+        assertThat(failed(service.add(MEMBER, "us:MSFT"))).singleElement()
+                .satisfies(item -> assertThat((String) item.get("message")).hasSize(SearchWatchService.MAX_FAILED_REASON));
+
+        assertThat(watches.rows).isEmpty();
+    }
+
     @Test
     @DisplayName("상한에 닿아도 다른 키로 이미 등록한 대상(wd: → 대표 키 us:)은 200(created:false), 새 대상·풀지 못한 대상은 409(user_limit)")
     void atLimitSameEntityViaOtherKey() {

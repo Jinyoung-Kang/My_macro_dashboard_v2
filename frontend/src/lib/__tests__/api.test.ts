@@ -167,6 +167,26 @@ describe("오류 본문의 코드", () => {
     const failure = (await apiPost("/api/realtrade/enable", {}).catch((e: unknown) => e)) as ApiError;
 
     expect(failure.code).toBeNull();
+    expect(failure.body).toBeNull();
     expect(failure.message).toBe("요청 실패 (HTTP 500)");
+  });
+
+  it("서버 오류 본문 전체를 ApiError.body로 나른다 — 정보 검색 관심 대상 등록 503 partial의 받지 못한 출처(failed)를 화면이 읽음", async () => {
+    const body = {
+      ok: false, reason: "partial", message: "합성 사유",
+      failed: [{ source: "dart_store", message: "DART 고유번호 저장본을 읽지 못함" }, { source: "wikidata", message: null }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify(body),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    )));
+    vi.stubGlobal("window", { location: { protocol: "http:", hostname: "localhost" } });
+
+    const failure = (await apiPost("/api/search/watch", { key: "kr:005930" }).catch((e: unknown) => e)) as ApiError;
+
+    expect(failure).toBeInstanceOf(ApiError);
+    expect(failure.status).toBe(503);
+    expect(failure.message).toBe("합성 사유");
+    expect(failure.body).toEqual(body);
   });
 });
