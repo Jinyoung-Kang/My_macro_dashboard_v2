@@ -13,7 +13,7 @@
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(LineChart.test와 같음).
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HorizontalBars, LineSeries, MultiLineSeries, ScatterPlot, SERIES_COLORS, SignedBars } from "@/components/charts";
@@ -399,6 +399,47 @@ describe("막대·산점도", () => {
     expect(grid.getAttribute("stroke")).toBe("var(--border-subtle)");
     expect(grid.getAttribute("stroke-width")).toBe("1");
     expect(container.querySelector(".recharts-cartesian-grid-vertical line")).not.toBeNull();
+  });
+});
+
+// QA-500: 래퍼 차트의 툴팁(tooltipStyle()을 펼치는 넷)은 isAnimationActive를 넘기지 않아 Recharts 기본값 'auto'를 따랐습니다 — 움직임 줄이기를
+// 켜지 않은 화면에서 툴팁이 'transform 400ms ease'로 미끄러졌습니다(명세 §3-8 '차트 애니메이션 없음' — 새 LineChart는 이미 false).
+// 시험 환경의 matchMedia는 움직임 줄이기 꺼짐입니다. 재현 커밋에서는 it.fails입니다.
+describe("툴팁은 미끄러지지 않는다(명세 §3-8)", () => {
+  function sizeAs(width: number, height: number) {
+    observeAs(width, height);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}),
+    } as DOMRect);
+  }
+  const ROWS = [
+    { date: "2026-10-01", a: 100, b: 98 },
+    { date: "2026-10-02", a: 101, b: 99 },
+    { date: "2026-10-03", a: 103, b: 97 },
+  ];
+  const BARS = [{ name: "1월", value: 3 }, { name: "2월", value: -2 }, { name: "3월", value: 5 }];
+
+  /** 그림 위로 마우스를 옮겨(산점도는 점에 올려) 뜬 툴팁 감싸개. */
+  async function hoverTooltip(container: HTMLElement, target: "wrapper" | "symbol"): Promise<HTMLElement> {
+    await act(async () => {
+      if (target === "symbol") fireEvent.mouseEnter(container.querySelector(".recharts-scatter-symbol") as Element);
+      else fireEvent.mouseMove(container.querySelector(".recharts-wrapper") as Element, { clientX: 300, clientY: 100 });
+    });
+    const wrapper = container.querySelector(".recharts-tooltip-wrapper") as HTMLElement;
+    // Recharts는 마우스 이동을 다음 프레임에 반영합니다 — 툴팁이 뜰 때까지 기다립니다.
+    await waitFor(() => expect(wrapper.style.visibility).toBe("visible"));
+    return wrapper;
+  }
+
+  it.fails.each([
+    ["MultiLineSeries", () => <MultiLineSeries data={ROWS} series={[{ key: "a", name: "A", color: SERIES_COLORS.blue }, { key: "b", name: "B", color: SERIES_COLORS.orange }]} />, "wrapper"],
+    ["HorizontalBars", () => <HorizontalBars data={BARS} />, "wrapper"],
+    ["SignedBars", () => <SignedBars data={BARS} />, "wrapper"],
+    ["ScatterPlot", () => <ScatterPlot data={[{ x: 1, y: 2, date: "a" }, { x: -1, y: 0.5, date: "b" }]} xLabel="X" yLabel="Y" />, "symbol"],
+  ] as const)("QA-500: %s 툴팁에 transition이 없다", async (_name, chart, target) => {
+    sizeAs(600, 300);
+    const { container } = render(chart());
+    expect((await hoverTooltip(container, target)).style.transition).toBe("");
   });
 });
 
