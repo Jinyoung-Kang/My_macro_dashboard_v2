@@ -83,13 +83,21 @@ export const SEGMENT_TRACK = "rounded-full bg-surface-2 p-1";
 
 /**
  * 세그먼트 칸(테마 전환·홈 시장 고르기) — 가린 라디오 입력을 감싼 라벨에 붙입니다. 포커스 링은 라벨이 그립니다(has-[:focus-visible]).
- * 고른 칸은 트랙 위에 뜬 표면 칩(surface + 1px 링)입니다. 높이·글자 크기는 부르는 쪽이 붙입니다.
+ * 고른 칸은 트랙 위에 뜬 표면 칩(surface + 1px 링)입니다. 높이는 좁은 화면(lg 미만) 44px·넓은 화면 32px를 여기서 붙이고(QA-458 — 부르는
+ * 쪽에 맡기면 새 화면이 빠뜨릴 수 있음), 여백·글자 크기는 부르는 쪽이 붙입니다.
  */
 export function segmentClasses(checked: boolean): string {
-  return `inline-flex cursor-pointer items-center justify-center rounded-full ${SELECT_MOTION} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
+  return `inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full lg:min-h-8 ${SELECT_MOTION} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
     checked ? `bg-surface font-semibold text-text ring-1 ring-border ${FORCED_SELECTED}` : "font-medium text-text-2 hover:text-text"
   }`;
 }
+
+/**
+ * 따로 선 글 링크·글 단추(목록의 '원문 열기'·'본문 보기'·'번역', 카드 머리의 작은 링크 등)의 누르는 자리 — 좁은 화면(lg 미만)은 높이 44px
+ * (원칙 A8, QA-458), 넓은 화면은 글 높이 그대로입니다. 색·밑줄·글자 크기는 부르는 쪽이 붙입니다. 문장 안의 링크에는 붙이지 않습니다
+ * (줄 높이에 묶인 글 안 링크 — WCAG 2.5.8 예외, 붙이면 줄 가운데가 44px로 벌어짐).
+ */
+export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
 
 /**
  * 거르기 칩(교집합의 분석 대상 기관·환율 겹쳐 보기) — 여럿을 켜고 끄는 aria-pressed 단추. 누를 수 있는 것이라 켠 칩은 강조 파랑(틴트 바탕·

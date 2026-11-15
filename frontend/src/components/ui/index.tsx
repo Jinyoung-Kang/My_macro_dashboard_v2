@@ -15,6 +15,7 @@ export {
   SEGMENT_TRACK,
   SELECTED_BAR,
   segmentClasses,
+  TEXT_TARGET,
   underlineTabClasses,
   type ButtonSize,
   type ButtonVariant,

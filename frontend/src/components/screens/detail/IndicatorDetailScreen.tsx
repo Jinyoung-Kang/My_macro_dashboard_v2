@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AssetList, EstimateBadge, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
-import { Banner, Card, Freshness, PageHeader } from "@/components/ui";
+import { Banner, Card, Freshness, PageHeader, TEXT_TARGET } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -119,7 +119,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
           {symbol ? (
             <Card title="Yahoo 시세 상세">
               <p className="text-sm text-text-2">
-                <Link href={stockHref("us", symbol)} className="text-text underline underline-offset-2">
+                <Link href={stockHref("us", symbol)} className={`${TEXT_TARGET} text-text underline underline-offset-2`}>
                   {symbol} 시세·핵심 지표 보기
                 </Link>
               </p>

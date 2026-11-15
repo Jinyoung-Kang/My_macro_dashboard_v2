@@ -336,8 +336,10 @@ function SettingInput({
 }) {
   switch (row.kind) {
     case "boolean":
+      // 감싼 label이 '예·아니오' 글까지 누르는 자리로 넓힙니다 — 좁은 화면(lg 미만) 44px(QA-458, 13px 상자만 눌렸음). 상자의 이름은 키
+      // label(htmlFor) 그대로이고, 켬·끔은 상자가 읽어 주므로 '예·아니오' 글은 낭독기에서 뺍니다(이름에 붙어 '키 예'로 읽히지 않게).
       return (
-        <span className="flex items-center gap-2 text-sm text-body">
+        <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-body lg:min-h-0">
           <input
             id={id}
             type="checkbox"
@@ -345,8 +347,8 @@ function SettingInput({
             aria-describedby={describedBy}
             onChange={(event) => onChange(event.target.checked ? "true" : "false")}
           />
-          {value === "true" ? "예" : "아니오"}
-        </span>
+          <span aria-hidden="true">{value === "true" ? "예" : "아니오"}</span>
+        </label>
       );
     case "choice":
       return (

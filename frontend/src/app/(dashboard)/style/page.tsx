@@ -385,7 +385,7 @@ function RiskCard() {
           </div>
           {coverage.uncovered.length > 0 && (
             <details className="mt-2">
-              <summary className="cursor-pointer text-xs">
+              <summary className="min-h-11 cursor-pointer py-3.5 text-xs lg:min-h-0 lg:py-0">
                 미커버 {coverage.uncoveredCount}종목 보기
               </summary>
               <ul className="mt-1 space-y-0.5 text-xs">

@@ -18,6 +18,7 @@ const {
   inputClasses,
   pillTabClasses,
   segmentClasses,
+  TEXT_TARGET,
   underlineTabClasses,
 } = uiClasses;
 const { BUTTON, BUTTON_PRIMARY, LINK, segmentClass, toggleClass } = searchParts;
@@ -33,6 +34,7 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   pillTabClasses: () => BOTH.map((active): [string, string] => [String(active), pillTabClasses(active)]),
   segmentClasses: () => BOTH.map((checked): [string, string] => [String(checked), segmentClasses(checked)]),
   filterChipClasses: () => BOTH.map((pressed): [string, string] => [String(pressed), filterChipClasses(pressed)]),
+  TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
     BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
 };
@@ -75,9 +77,9 @@ describe("공용 조작 조각의 좁은 화면 누르는 자리(QA-458)", () =>
     }
   });
 
-  // 수정 전 실패(재현 커밋에서는 it.fails): 세그먼트 칸(segmentClasses)은 높이를 부르는 쪽에 맡겨 클래스에 44px이 없다
-  // (지금 부르는 네 곳 — 테마 전환·홈 시장 고르기·실행 감사 계좌·결정 로그 보기 — 은 저마다 붙이지만 새 화면이 빠뜨릴 수 있음).
-  it.fails("누르는 조각은 받을 수 있는 모든 인자에서 lg 미만 44px — lg 이상 변형만 더 작다", () => {
+  // 수정 전에는 세그먼트 칸(segmentClasses)이 높이를 부르는 쪽에 맡겨 클래스에 44px이 없었다(재현 커밋에서는 it.fails — 부르는 네 곳은
+  // 저마다 붙였지만 새 화면이 빠뜨릴 수 있음). 지금은 segmentClasses가 min-h-11 lg:min-h-8을 갖는다.
+  it("누르는 조각은 받을 수 있는 모든 인자에서 lg 미만 44px — lg 이상 변형만 더 작다", () => {
     const offenders = MODULES.flatMap(({ name, controls }) =>
       Object.entries(controls).flatMap(([control, variants]) =>
         variants().flatMap(([label, classes]) => {

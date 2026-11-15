@@ -439,7 +439,7 @@ function FundamentalsPanel({ codes }: { codes: string[] }) {
                   align: "right",
                   render: (row) =>
                     row.dartUrl ? (
-                      <a href={row.dartUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-6 min-w-6 items-center justify-center px-1 text-accent underline">
+                      <a href={row.dartUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 min-w-11 items-center justify-center px-1 text-accent underline lg:min-h-6 lg:min-w-6">
                         원문
                       </a>
                     ) : (

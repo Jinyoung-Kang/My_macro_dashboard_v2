@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Pager } from "@/components/Pager";
-import { Card, ErrorState, Loading, SourceBadge } from "@/components/ui";
+import { Card, ErrorState, Loading, SourceBadge, TEXT_TARGET } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
@@ -86,12 +86,12 @@ export function SourceCard({ source }: { source: CatalogSource }) {
       )}
       <div className="flex flex-wrap gap-3 text-xs">
         {source.siteUrl && (
-          <a href={source.siteUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+          <a href={source.siteUrl} target="_blank" rel="noopener noreferrer" className={`${TEXT_TARGET} text-accent hover:underline`}>
             출처 사이트
           </a>
         )}
         {source.screen && (
-          <Link href={source.screen} className="text-accent hover:underline">
+          <Link href={source.screen} className={`${TEXT_TARGET} text-accent hover:underline`}>
             자료 보기
           </Link>
         )}

@@ -104,9 +104,10 @@ const NEWS = {
 };
 
 describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458)", () => {
-  // 수정 전 실패(재현 커밋에서는 it.fails) — 조사 값과 걸리는 누름 자리:
+  // 수정 전에는 아래 누름 자리가 모두 걸렸다(재현 커밋에서는 it.fails). 지금은 따로 선 글 링크·단추에 TEXT_TARGET(ui/classes —
+  // 좁은 화면 min-h-11, lg 이상 글 높이), 체크 상자는 감싼 label, 표 머리·레이더 '원문'·'다른 곳에서 보기'·summary는 각자 min-h-11과 lg 변형.
   //  - 정보 수집 뉴스·글: 제목 단추, '번역', '본문 보기', '원문 열기'(블로그 글·헤드라인 모두)
-  it.fails("정보 수집 뉴스·글 — 제목 단추와 '번역·본문 보기·원문 열기'", async () => {
+  it("정보 수집 뉴스·글 — 제목 단추와 '번역·본문 보기·원문 열기'", async () => {
     reads = {
       [endpoints.info.catalog]: CATALOG,
       "/api/info/items?kind=blog": { available: true, items: [ARTICLE], page: 1, size: 10, total: 11, pages: 2 },
@@ -126,14 +127,14 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 해외·공시·모의매매 입력 출처 카드: '출처 사이트', '자료 보기'
-  it.fails("정보 수집 출처 카드 — '출처 사이트·자료 보기'", () => {
+  it("정보 수집 출처 카드 — '출처 사이트·자료 보기'", () => {
     const { container } = render(<ul><SourceCard source={SOURCE} /></ul>);
     expect(screen.getByRole("link", { name: "자료 보기" })).toBeTruthy();
     expect(smallTargets(container)).toEqual([]);
   });
 
   //  - 수급 레이더 재무 표: '원문'(min-h-6 — 24px)
-  it.fails("수급 레이더 재무 표 — '원문'", async () => {
+  it("수급 레이더 재무 표 — '원문'", async () => {
     reads = {
       "/api/radar/ranking": {
         available: true, market: "KOSPI", investor: "외국인", tradeType: "순매수", readMode: "auto", source: "합성 순위", sourceKind: "krx",
@@ -154,7 +155,7 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 종목 상세: '출처 보기', '정보 검색', 뉴스 제목, 리서치·회사 개요 출처·홈페이지 링크, 13F 보유 기관 이름, '다른 곳에서 보기'(min-h-9)
-  it.fails("종목 상세 — 출처·뉴스·리서치·개요·보유 기관·다른 곳에서 보기 링크", async () => {
+  it("종목 상세 — 출처·뉴스·리서치·개요·보유 기관·다른 곳에서 보기 링크", async () => {
     reads = {
       [endpoints.detail.quote("us", "SYNQ")]: { available: true, quote: quote() },
       "/api/detail/news": NEWS,
@@ -172,7 +173,7 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 지표 상세: '정보 검색', 뉴스 제목, 'Yahoo 시세 상세' 링크, '다른 곳에서 보기'(min-h-9)
-  it.fails("지표 상세 — 뉴스·시세 상세·다른 곳에서 보기 링크", async () => {
+  it("지표 상세 — 뉴스·시세 상세·다른 곳에서 보기 링크", async () => {
     reads = {
       [endpoints.macro.overview(false)]: macroOverview(),
       "/api/calendar/kr-holidays": { available: true, years: {} },
@@ -184,7 +185,7 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 모의 설정: 참·거짓 키의 체크 상자(13px, 감싼 label 없음)
-  it.fails("모의 설정 — 참·거짓 키의 체크 상자", async () => {
+  it("모의 설정 — 참·거짓 키의 체크 상자", async () => {
     reads = {
       "/api/paper/overview": {
         available: true, initialized: true, startDate: "2026-10-23", limits: [], jobs: [], pendingBackfill: [], books: [],
@@ -205,7 +206,7 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 정렬할 수 있는 표 머리(DataTable — 보유·체결 표 등): ↕ 단추
-  it.fails("정렬할 수 있는 표 머리 단추", () => {
+  it("정렬할 수 있는 표 머리 단추", () => {
     const { container } = render(
       <DataTable
         caption="합성 표"
@@ -222,7 +223,7 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
   });
 
   //  - 스타일·위험: '미커버 N종목 보기'(summary 16px)
-  it.fails("스타일·위험 — '미커버 N종목 보기'", async () => {
+  it("스타일·위험 — '미커버 N종목 보기'", async () => {
     reads = {
       "/api/guru/risk": {
         available: false, message: "가격을 찾을 수 있는 종목이 없습니다.", cik: "0001067983", benchmark: "SPY", years: 1,

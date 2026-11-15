@@ -10,6 +10,7 @@ import {
   Loading,
   NativeSelect,
   SourceBadge,
+  TEXT_TARGET,
   buttonClasses,
   filterChipClasses,
   inputClasses,
@@ -59,8 +60,13 @@ const VIEWS: readonly { key: View; label: string }[] = [
   { key: "rss-world", label: "보도자료·경제지" },
 ];
 
-/** 제목 단추 — 누르면 원문 팝업이 열립니다(새 창의 원문은 '원문 열기' 링크). */
-const TITLE_BUTTON = "mt-1 block text-left text-[15px] font-semibold leading-snug text-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+/**
+ * 제목 단추 — 누르면 원문 팝업이 열립니다(새 창의 원문은 '원문 열기' 링크). 좁은 화면(lg 미만)은 한 줄 제목도 누르는 자리 44px(QA-458),
+ * 넓은 화면은 글 높이 그대로.
+ */
+const TITLE_BUTTON = "mt-1 flex min-h-11 items-center text-left text-[15px] font-semibold leading-snug text-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0";
+/** 따로 선 글 링크·단추('본문 보기'·'원문 열기'·'번역') — 좁은 화면 44px(QA-458). */
+const TEXT_LINK = `${TEXT_TARGET} text-accent hover:underline`;
 
 /**
  * 뉴스·글 — 해외 블로그·속보·waedge 글·거장 견해·사건 뉴스 RSS·보도자료·경제지 RSS를 한 카드에서 골라 봅니다. 목록은 10편씩 쪽을 나누고, 제목을 누르면 받아 둔
@@ -208,11 +214,11 @@ function ArticleRow({ item, onOpen }: { item: InfoItem; onOpen: Open }) {
       {item.summary && <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-text-2">{item.summary}</p>}
       <div className="mt-1 flex flex-wrap gap-3 text-xs">
         {item.bodyStatus !== "none" && (
-          <button type="button" onClick={open} aria-haspopup="dialog" className="text-accent hover:underline">
+          <button type="button" onClick={open} aria-haspopup="dialog" className={TEXT_LINK}>
             {item.bodyStatus === "full" ? "본문 보기" : "요약 보기"}
           </button>
         )}
-        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+        <a href={item.url} target="_blank" rel="noopener noreferrer" className={TEXT_LINK}>
           원문 열기
         </a>
       </div>
@@ -250,7 +256,7 @@ function HeadlineList({ set, path, onPage, onOpen }: { set: HeadlineSet; path: s
               <TitleTranslation title={row.title} />
               {row.summary && <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-text-2">{row.summary}</p>}
               {link && (
-                <a href={link} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-xs text-accent hover:underline">
+                <a href={link} target="_blank" rel="noopener noreferrer" className={`mt-1 text-xs ${TEXT_LINK}`}>
                   원문 열기
                 </a>
               )}
@@ -283,7 +289,7 @@ function TitleTranslation({ title, titleKo }: { title: string | null; titleKo?: 
   }
   return (
     <p className="text-xs">
-      <button type="button" onClick={translate} disabled={busy} className="text-accent hover:underline disabled:opacity-60" aria-label={`제목 번역: ${title}`}>
+      <button type="button" onClick={translate} disabled={busy} className={`${TEXT_LINK} disabled:opacity-60`} aria-label={`제목 번역: ${title}`}>
         {busy ? "번역 중…" : "번역"}
       </button>
       {error && <span className="ml-2 text-danger">{error}</span>}

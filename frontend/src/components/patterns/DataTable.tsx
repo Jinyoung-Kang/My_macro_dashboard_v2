@@ -144,13 +144,13 @@ export function DataTable<T>({
                     key={column.key}
                     scope="col"
                     aria-sort={ariaSort}
-                    className={`whitespace-nowrap px-3 py-2.5 text-[13px] font-medium text-text-2 ${alignOf(column)} ${column.className ?? ""}`}
+                    className={`whitespace-nowrap px-3 text-[13px] font-medium text-text-2 ${column.sortValue ? "py-0 lg:py-2.5" : "py-2.5"} ${alignOf(column)} ${column.className ?? ""}`}
                   >
                     {column.sortValue ? (
                       <button
                         type="button"
                         onClick={() => setSort(nextSort(activeSort, column.key))}
-                        className={`inline-flex items-center gap-1 rounded-sm hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+                        className={`inline-flex min-h-11 items-center gap-1 rounded-sm hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0 ${
                           ariaSort ? "text-text" : ""
                         }`}
                       >

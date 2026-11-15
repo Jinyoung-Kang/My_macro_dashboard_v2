@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { ProvenanceBadge, Skeleton } from "@/components/patterns";
-import { Banner, Card, ErrorState, PageHeader } from "@/components/ui";
+import { Banner, Card, ErrorState, PageHeader, TEXT_TARGET } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import {
   countryKo,
@@ -82,7 +82,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
               {realtime.error ? <span className="text-xs text-warn">{realtime.error}</span> : null}
               <ProvenanceBadge source={quote.source?.label} asOf={quote.asOf ? formatKst(quote.asOf) : null} />
               {quote.source?.url ? (
-                <ExternalAnchor href={quote.source.url} className="rounded-sm text-xs text-text-2 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-focus">
+                <ExternalAnchor href={quote.source.url} className={`${TEXT_TARGET} rounded-sm text-xs text-text-2 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-focus`}>
                   출처 보기
                 </ExternalAnchor>
               ) : null}
@@ -236,7 +236,7 @@ function HoldersCard({ query }: { query: string }) {
                     끊습니다(wrap-anywhere) — 정보 검색 보유 탭과 같은 처리(QA-449). */}
                 <Link
                   href={institutionHref(row.cik)}
-                  className="break-keep rounded-sm text-text underline-offset-2 wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                  className={`${TEXT_TARGET} break-keep rounded-sm text-text underline-offset-2 wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-focus`}
                 >
                   {withoutLeadingIcon(row.institution)}
                 </Link>

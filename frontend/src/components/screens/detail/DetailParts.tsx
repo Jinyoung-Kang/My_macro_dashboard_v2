@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, Hero, RangeTabs, Skeleton } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, TEXT_TARGET } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -27,12 +27,15 @@ import type { DetailNewsResponse, DetailStat, DetailSummaryResponse, SessionUser
  */
 
 const LINK = "rounded-sm text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+/** 따로 선 링크(목록의 제목·카드 안 한 줄 링크) — 좁은 화면(lg 미만) 누르는 자리 44px(QA-458). 문장 안·위첨자 링크는 LINK 그대로. */
+const TARGET_LINK = `${LINK} ${TEXT_TARGET}`;
 
 /**
  * 외부 링크 — 새 창, 보낸 쪽 정보 없이(noopener noreferrer). 낭독기에는 '새 창'을 함께 읽습니다.
  * 주소는 수집한 글(뉴스·리포트·홈페이지)이라 http(s)만 링크로 두고, 그 밖이면 글만 그립니다(javascript: 등을 href에 넣지 않음).
+ * 기본 모양은 따로 선 링크(좁은 화면 44px)이고, 글 안의 링크는 부르는 쪽이 모양을 넘깁니다.
  */
-export function ExternalAnchor({ href, children, className = LINK }: { href: string; children: ReactNode; className?: string }) {
+export function ExternalAnchor({ href, children, className = TARGET_LINK }: { href: string; children: ReactNode; className?: string }) {
   if (!/^https?:\/\//i.test(href)) return <span>{children}</span>;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
@@ -192,7 +195,7 @@ export function NewsCard({
       <ul className="-my-1 divide-y divide-border">
         {items.map((item) => (
           <li key={item.url} className="py-3">
-            <ExternalAnchor href={item.url} className={`${LINK} text-[15px] font-medium leading-snug`}>
+            <ExternalAnchor href={item.url} className={`${TARGET_LINK} text-[15px] font-medium leading-snug`}>
               {item.title}
             </ExternalAnchor>
             <p className="mt-1 text-xs text-text-3">
@@ -209,7 +212,7 @@ export function NewsCard({
       source="Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사"
       actions={
         infoSearch ? (
-          <Link href={infoSearch.href} title={`${infoSearch.label} — 최근 2년의 기사·글`} className="rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+          <Link href={infoSearch.href} title={`${infoSearch.label} — 최근 2년의 기사·글`} className={`${TEXT_TARGET} rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}>
             정보 검색
           </Link>
         ) : undefined
@@ -322,9 +325,10 @@ export function AiSummaryCard({
       ) : null}
       {result?.status && sources.length > 0 ? (
         <ol aria-label="요약 근거" className="mt-4 flex flex-col gap-1 border-t border-border pt-3 text-xs text-text-3">
+          {/* 근거 줄은 '[n] 이름' 한 줄 글 안의 링크라 글 높이 그대로 둡니다(글 안 링크 — 말줄임이 링크 글까지 걸리게). */}
           {sources.map((source) => (
             <li key={source.n} className="min-w-0 truncate">
-              [{source.n}] {source.url ? <ExternalAnchor href={source.url}>{source.label}</ExternalAnchor> : source.label}
+              [{source.n}] {source.url ? <ExternalAnchor href={source.url} className={LINK}>{source.label}</ExternalAnchor> : source.label}
             </li>
           ))}
         </ol>
@@ -361,7 +365,7 @@ export function ExternalLinksCard({ links, title = "다른 곳에서 보기" }: 
           <li key={link.url}>
             <ExternalAnchor
               href={link.url}
-              className="inline-flex min-h-9 items-center rounded-full border border-border px-3 text-sm text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+              className="inline-flex min-h-11 items-center rounded-full border border-border px-3 text-sm text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-9"
             >
               {link.label}
             </ExternalAnchor>
