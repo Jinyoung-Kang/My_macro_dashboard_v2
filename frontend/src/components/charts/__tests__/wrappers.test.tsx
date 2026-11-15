@@ -189,6 +189,33 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     expect(svgClasses(items[0])).not.toContain("chart-ref-line");
   });
 
+  // QA-509: 고대비 블록은 참고선(K40)의 선과 범례 견본을 표지 클래스(chart-ref-line)로 CanvasText로 칠하지만, 마우스를 올렸을 때 나오는 그 계열의
+  // hover 점(Recharts activeDot — 선과 다른 층의 circle)에는 표지가 없어 #a7b0bd 그대로였습니다(밝은 고대비 흰 Canvas 위 2.19:1 — /paper/kr
+  // 1440, D1 QA 재확인). 점선 계열의 hover 점에도 같은 표지를 달아 globals.css 고대비 블록이 칠하게 합니다. 실선 계열의 점에는 달지 않습니다.
+  it.fails("QA-509: 점선(참고선) 계열의 hover 점에 참고선 표지 — 실선 계열의 hover 점에는 없다", async () => {
+    observeAs(600, 300);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, x: 0, y: 0, width: 600, height: 300, right: 600, bottom: 300, toJSON: () => ({}),
+    } as DOMRect);
+    const { container } = render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[
+          { key: "a", name: "종가", color: SERIES_COLORS.blue },
+          { key: "b", name: "참고선", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    await act(async () => {
+      fireEvent.mouseMove(container.querySelector(".recharts-wrapper") as Element, { clientX: 300, clientY: 150 });
+    });
+    await waitFor(() => expect(container.querySelectorAll(".recharts-active-dot circle")).toHaveLength(2));
+    const dots = [...container.querySelectorAll(".recharts-active-dot circle")];
+    const marked = dots.filter((dot) => (dot.getAttribute("class") ?? "").split(/\s+/).includes("chart-ref-line"));
+    expect(marked).toHaveLength(1);
+    expect(marked[0].getAttribute("fill")).toBe("#a7b0bd");
+  });
+
   it("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
     observeAs(600, 300);
     const { container } = render(
