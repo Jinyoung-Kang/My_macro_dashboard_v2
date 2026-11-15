@@ -311,9 +311,9 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     return rules.length > 0 ? (Object.assign({}, ...rules) as Record<string, string>) : undefined;
   };
 
-  it("QA-498: 맨 바깥 @media (forced-colors: active) 블록이 하나 — 그 :root가 차트 파일의 var() 토큰을 모두 시스템 색으로 다시 정의한다", () => {
-    const root = forcedDeclarations(":root");
-    expect(root, `${FORCED} { :root { … } }`).toBeDefined();
+  it("QA-498: 맨 바깥 @media (forced-colors: active) 블록이 하나 — 그 svg 규칙이 차트 파일의 var() 토큰을 모두 시스템 색으로 다시 정의한다", () => {
+    const root = forcedDeclarations("svg");
+    expect(root, `${FORCED} { svg { … } }`).toBeDefined();
     const remapped = root ?? {};
     const tokens = chartTokens();
     expect(tokens.length).toBeGreaterThan(5);
@@ -331,28 +331,23 @@ describe("고대비(forced-colors) 차트 잉크", () => {
     expect(innerRule(body, ".chart-ref-line :is(path, line)")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
   });
 
-  // QA-498(정보 검색 범위): 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적어, 고대비 :root의 시스템 색 재정의가 그 범위 안의
-  // SVG(연결 그림 LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에 어두운 상자
-  // rgb(28,33,39)·rgb(37,42,49)가 남음 — 범위 밖 같은 마크업은 Canvas). 범위 블록이 다시 적는 토큰 가운데 고대비 :root가 다시 정의하는 것은 범위
-  // 선택자에서도 같은 값이어야 하고, 두 선택자의 우선순위가 같으므로(레이어 밖, (0,1,0)) 고대비 블록이 범위 블록보다 뒤에 있어야 이깁니다.
-  // 재현 커밋에서는 it.fails였습니다.
-  it("QA-498: 고대비 블록의 토큰 재정의가 정보 검색 범위([data-scope=\"search\"])에도 닿는다 — 범위가 다시 적는 토큰은 같은 시스템 색", () => {
-    const root = forcedDeclarations(":root") ?? {};
-    const shared = Object.keys(declarations(blockBody(SCOPE_SELECTOR))).filter((token) => token in root);
+  // QA-498(정보 검색 범위): 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적어, 고대비 재정의가 그 범위 안의 SVG(연결 그림
+  // LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에 어두운 상자 rgb(28,33,39)·
+  // rgb(37,42,49)가 남음). 재정의를 svg 요소 자신에 두면(QA-507) 조상인 범위 블록의 값보다 svg 자신의 선언이 이기므로, 범위 블록이 다시 적는 토큰
+  // 가운데 차트가 쓰는 것은 svg 규칙이 모두 시스템 색으로 다시 정의하기만 하면 됩니다(블록 순서와 상관없음). 재현 커밋에서는 it.fails였습니다.
+  it("QA-498: 고대비 재정의가 정보 검색 범위([data-scope=\"search\"]) 안의 SVG에도 닿는다 — 범위가 다시 적는 토큰을 svg 규칙이 시스템 색으로", () => {
+    const svg = forcedDeclarations("svg") ?? {};
+    const shared = Object.keys(declarations(blockBody(SCOPE_SELECTOR))).filter((token) => token in svg);
     expect(shared.length).toBeGreaterThan(5);
-    const scope = forcedDeclarations(SCOPE_SELECTOR);
-    expect(scope, `${FORCED} { … ${SCOPE_SELECTOR} … }`).toBeDefined();
-    for (const token of shared) expect(scope?.[token], token).toBe(root[token]);
-    const order = (selector: string) => RULES.findIndex((rule) => rule.selector === selector);
-    expect(order(FORCED)).toBeGreaterThan(order(SCOPE_SELECTOR));
+    for (const token of shared) expect(SYSTEM_COLORS.has(svg[token] ?? ""), `${token} = ${svg[token]}`).toBe(true);
   });
 
   // QA-507: 고대비 모드는 작성자가 시스템 색 키워드를 준 값은 그대로 두고, 그 밖의 색만 UA 값(링크 LinkText·비활성 GrayText·자리표시 GrayText)으로
   // 되돌립니다. 그래서 위 재정의를 :root·정보 검색 범위(HTML 조상)에 두면 text-text-2 같은 토큰을 쓰는 HTML 링크·비활성 단추·자리표시 글까지 CanvasText로
   // 고정됩니다 — D1 QA 스택 재확인(qa@6740c10a, 밝은·어두운 고대비 1440)에서 화면 링크의 LinkText가 / 39/39 → 1/39, /sector 16/16 → 1/16로 줄었고
   // 비활성 '모두 읽음'·'이전'·'바꾼 값 되돌리기'와 /search 자리표시 글이 GrayText에서 CanvasText가 됐습니다. 재정의는 SVG 요소 자신(svg — 사용자 속성은
-  // 안쪽으로 물려줌)에만 둡니다. 범위 블록이 hex로 다시 적어도 svg 요소 자신의 선언이 이기므로 범위 안의 연결 그림에도 닿습니다.
-  it.fails("QA-507: 고대비 토큰 재정의는 SVG 안에만 — HTML 조상(:root·정보 검색 범위)에 두지 않아 링크·비활성·자리표시 글의 시스템 색을 덮지 않는다", () => {
+  // 안쪽으로 물려줌)에만 둡니다. 범위 블록이 hex로 다시 적어도 svg 요소 자신의 선언이 이기므로 범위 안의 연결 그림에도 닿습니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-507: 고대비 토큰 재정의는 SVG 안에만 — HTML 조상(:root·정보 검색 범위)에 두지 않아 링크·비활성·자리표시 글의 시스템 색을 덮지 않는다", () => {
     expect(forcedDeclarations(":root"), `${FORCED} { :root { … } }`).toBeUndefined();
     expect(forcedDeclarations(SCOPE_SELECTOR), `${FORCED} { ${SCOPE_SELECTOR} { … } }`).toBeUndefined();
     const svg = forcedDeclarations("svg") ?? {};
