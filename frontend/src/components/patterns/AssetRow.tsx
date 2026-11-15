@@ -225,6 +225,9 @@ export function AssetRow({
  * - `headingLevel`(기본 2, 계약에 더한 선택 prop)이 3이면 제목을 h3으로 그리고 영역(region)으로 만들지 않습니다 — 이미 이름 붙은
  *   구역 안의 소제목이라(예: 홈 "시장" 안의 범주) 랜드마크를 겹쳐 늘리지 않습니다. 제목 탐색은 그대로 됩니다.
  * - `children`은 행 아래에 그립니다(더 보기 링크·주석 등).
+ * - `count`(선택, 기본 끔): 제목 줄 오른쪽에 행 개수('3건' — 함수를 주면 그 글)를 둡니다(작업대 실행 명세 §3-7 '표와 목록 머리에는 개수' —
+ *   DataTable의 `count`와 같은 꼴). 개수는 제목(영역 이름) 밖의 글이라 영역 이름에 섞이지 않습니다. 행이 없으면 '0건'입니다. 끄면 머리 모양은
+ *   예전 그대로입니다.
  */
 export function AssetList({
   title,
@@ -234,6 +237,7 @@ export function AssetList({
   selectedId,
   showProvenance = false,
   headingLevel = 2,
+  count,
   children,
 }: {
   title?: string;
@@ -243,14 +247,28 @@ export function AssetList({
   selectedId?: string | null;
   showProvenance?: boolean;
   headingLevel?: 2 | 3;
+  /** 제목 줄 오른쪽 행 개수 — true면 'N건', 함수면 그 글(위 설명). */
+  count?: boolean | ((count: number) => string);
   children?: ReactNode;
 }): JSX.Element {
   const headingId = useId();
   const Heading = headingLevel === 3 ? "h3" : "h2";
   const labelled = Boolean(title) && headingLevel === 2;
+  const countText =
+    count === undefined || count === false ? null : typeof count === "function" ? count(rows.length) : `${rows.length.toLocaleString("ko-KR")}건`;
   return (
     <section aria-labelledby={labelled ? headingId : undefined} className="min-w-0 overflow-hidden rounded-card border border-border bg-surface">
-      {title ? (
+      {countText !== null ? (
+        // 개수가 있으면 제목과 한 줄(제목 왼쪽, 개수 오른쪽) — 줄 여백은 제목만 있을 때와 같습니다.
+        <div className="flex items-baseline gap-x-3 px-3 pb-1 pt-3 lg:px-4">
+          {title ? (
+            <Heading id={headingId} className="min-w-0 text-heading-sm text-text">
+              {title}
+            </Heading>
+          ) : null}
+          <p className="ml-auto shrink-0 text-xs tabular-nums text-text-2">{countText}</p>
+        </div>
+      ) : title ? (
         // 제목 글은 행 글과 같은 세로줄(px-3 · lg:px-4)에 둡니다.
         <Heading id={headingId} className="px-3 pb-1 pt-3 text-heading-sm text-text lg:px-4">
           {title}

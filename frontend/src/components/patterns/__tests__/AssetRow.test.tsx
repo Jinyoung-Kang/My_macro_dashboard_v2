@@ -419,4 +419,44 @@ describe("AssetList", () => {
     expect(screen.queryByRole("heading")).toBeNull();
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
   });
+
+  describe("count — 머리의 행 개수(작업대 실행 명세 §3-7)", () => {
+    it("값 있음 — 제목 줄 오른쪽에 'N건'(tabular-nums), 영역 이름은 제목 그대로(개수가 섞이지 않음)", () => {
+      render(<AssetList title="시장" rows={ROWS} count />);
+      const region = screen.getByRole("region", { name: "시장" });
+      const line = within(region).getByText("3건");
+      expect(line.className.split(/\s+/)).toEqual(expect.arrayContaining(["tabular-nums", "text-xs"]));
+      const heading = within(region).getByRole("heading", { level: 2, name: "시장" });
+      expect(line.parentElement).toBe(heading.parentElement);
+      expect(heading.contains(line)).toBe(false);
+      // 제목 줄은 목록보다 앞(문서 순서).
+      expect(line.compareDocumentPosition(within(region).getByRole("list")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("값 없음 — 행이 없으면 '0건'과 빈 문구", () => {
+      render(<AssetList title="시장" rows={[]} count emptyText="표시할 시장이 없습니다." />);
+      expect(screen.getByText("0건")).toBeTruthy();
+      expect(screen.getByText("표시할 시장이 없습니다.")).toBeTruthy();
+    });
+
+    it("함수면 그 글, 제목이 없어도 개수 줄만 둔다", () => {
+      const { unmount } = render(<AssetList title="시장" rows={ROWS} count={(n) => `지표 ${n}개`} />);
+      expect(screen.getByText("지표 3개")).toBeTruthy();
+      unmount();
+      render(<AssetList rows={ROWS} count />);
+      expect(screen.queryByRole("heading")).toBeNull();
+      expect(screen.getByText("3건")).toBeTruthy();
+    });
+
+    it("기본(주지 않음)·false면 개수 줄이 없고 제목 모양은 예전 그대로 — 추정·이전 값 배지는 그대로 보인다", () => {
+      const { unmount } = render(<AssetList title="시장" rows={ROWS} />);
+      expect(screen.queryByText(/건$/)).toBeNull();
+      const heading = screen.getByRole("heading", { level: 2, name: "시장" });
+      expect(heading.className.split(/\s+/)).toEqual(expect.arrayContaining(["px-3", "pt-3", "lg:px-4"]));
+      expect(screen.getByText("이전 값")).toBeTruthy();
+      unmount();
+      render(<AssetList title="시장" rows={ROWS} count={false} />);
+      expect(screen.queryByText(/건$/)).toBeNull();
+    });
+  });
 });
