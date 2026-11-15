@@ -63,7 +63,8 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 열린 동안 시트는 줄지 않습니다(sheetStyle — 닫으면 처음 높이부터).
  * 넓은 화면(lg)에서는 시트가 본문의 스크롤 막대를 덮지 않게 그 폭만큼 오른쪽을 비웁니다.
  *
- * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다.
+ * 결과는 대상·탭마다 한 번(2년 묶음) 받고, 기간은 화면이 자릅니다(다시 부르지 않음). 목록은 ↑↓로 고르고 Enter로 원문을 새 창으로 엽니다
+ * (마우스로는 줄을 두 번 눌러도 — 터치·펜으로 빠르게 두 번 누른 것은 열지 않음).
  * Escape는 목록에서든 미리 보기(아래 시트·xl 오른쪽 칸) 안에서든 미리 보기를 닫고 포커스를 결과 목록에 둡니다(닫기 단추와 같은 자리).
  * 닫은 뒤의 ↑↓는 닫기 전에 고른 줄의 앞·다음 줄로 이어 갑니다(목록이 바뀌면 처음부터 — Home·End는 늘 양 끝).
  * 날짜만 아는 줄(공시 접수일·리포트 날짜·거장 견해 기준일 — timeBasis "date", 계약 §7-1)은 시각 칸에 날짜만 두고, 공시·리서치 줄은 종류를 테두리 표지로 둡니다.
@@ -167,6 +168,9 @@ export function FeedPanel({
   const [drawer, setDrawer] = useState(false);
   const [reader, setReader] = useState<ReaderEntry | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // 결과 목록을 마지막으로 누른 포인터의 종류(pointerdown) — 줄을 두 번 눌러 원문 열기는 마우스 단축 동작이라 터치·펜이면 하지 않습니다. 휴대폰에서
+  // 줄을 빠르게 두 번 누르면 브라우저가 dblclick을 내 뜻하지 않게 원문 새 창이 열렸습니다(QA 스택 기록 R3-SG3-4). Enter는 입력 장치와 상관없이 엶.
+  const lastPointer = useRef("");
   const emptyRef = useRef<HTMLDivElement>(null);
   const pendingStatusRef = useRef<HTMLParagraphElement>(null);
   // '다시 확인'을 누를 때 그 단추에 포커스가 있었는가 — 읽기가 끝나 단추가 사라지면(받았거나 아직 받는 중이라 다시 12번) 포커스를 같은 자리
@@ -456,6 +460,9 @@ export function FeedPanel({
         tabIndex={0}
         aria-activedescendant={selectedIndex >= 0 ? optionId(selectedIndex) : undefined}
         onKeyDown={onListKeyDown}
+        onPointerDown={(event) => {
+          lastPointer.current = event.pointerType;
+        }}
         className="@container focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus"
       >
         {/* 줄의 배치는 창 폭이 아니라 이 목록의 폭(@container)으로 정합니다. 36rem(@xl, 576px) 이상이면 네 칸(시각 · 종류 · 매체 · 제목 — 제목 칸
@@ -523,7 +530,9 @@ export function FeedPanel({
                     role="option"
                     aria-selected={isSelected}
                     onClick={choose}
-                    onDoubleClick={() => openOriginal(item)}
+                    onDoubleClick={() => {
+                      if (lastPointer.current !== "touch" && lastPointer.current !== "pen") openOriginal(item);
+                    }}
                     className={`relative grid min-h-11 scroll-mt-7 cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b border-border px-3 py-1.5 text-sm lg:min-h-8 lg:py-1 @xl:grid-cols-[4.5rem_4rem_9rem_minmax(0,1fr)] ${
                       isSelected ? "bg-surface-2" : "hover:bg-surface-2/60"
                     }`}

@@ -251,3 +251,37 @@ describe("묶음 미리 보기의 펼치는 법은 머리 바로 아래(QA 스�
     }
   });
 });
+
+describe("결과 줄을 두 번 눌러 원문 열기는 마우스만(QA 스택 기록 R3-SG3-4)", () => {
+  // QA 스택(390, 터치): 결과 줄을 120ms 간격으로 두 번 탭하면 브라우저가 dblclick을 내 원문 새 창이 열렸습니다(그 줄의 미리 보기 시트도 열림).
+  // 두 번 눌러 열기는 데스크톱 단축 동작이라 마우스로만 — 터치·펜은 고르기(미리 보기)만 하고, 원문은 미리 보기의 '원문 열기'나 Enter로 엽니다.
+  it("터치·펜으로 두 번 누르면 원문을 열지 않고 줄만 고른다 — 마우스로 두 번 누르거나 Enter면 연다", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    try {
+      const list = await renderFeed(FEED);
+      const target = within(list).getAllByRole("option")[0];
+      for (const pointerType of ["touch", "pen"]) {
+        for (let tap = 0; tap < 2; tap += 1) {
+          fireEvent.pointerDown(target, { pointerType });
+          fireEvent.click(target);
+        }
+        fireEvent.doubleClick(target);
+      }
+      expect(open).not.toHaveBeenCalled();
+      expect(target.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("region", { name: "미리 보기" })).toBeTruthy();
+
+      fireEvent.pointerDown(target, { pointerType: "mouse" });
+      fireEvent.doubleClick(target);
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenLastCalledWith("https://news.example/a", "_blank", "noopener,noreferrer");
+
+      // Enter는 마지막 포인터와 상관없이 엶.
+      fireEvent.pointerDown(target, { pointerType: "touch" });
+      fireEvent.keyDown(list, { key: "Enter" });
+      expect(open).toHaveBeenCalledTimes(2);
+    } finally {
+      open.mockRestore();
+    }
+  });
+});
