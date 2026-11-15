@@ -4,11 +4,14 @@ tests/test_search_qa_store.py
 (합성 행 — 실제 계좌·운영 자료 없음).
 
 - QA-438: 수집 글·속보의 언어는 화면이 보이는 원문 제목으로 가름(번역 제목 title_ko가 아님) — 모은 글에 이미 들어간 줄도 읽을 때 같은 규칙
+- QA-439: 날짜만 있는 거장 견해는 timeBasis 'date'(계약 §7-1 — 화면이 날짜만), 날짜가 없으면 저장 시각('fetched')
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+
+import pytest
 
 from app import store
 from app.services import search_store
@@ -79,3 +82,21 @@ def test_QA438_모은_글의_수집_글·속보_줄은_읽을_때_원문_제목�
     monkeypatch.setattr(search_store, "_watch_rows", lambda key, kinds: rows)
     items = {item["id"]: item for item in search_store.watch_items("topic:Synthetic", owner=True).items}
     assert {key: item["lang"] for key, item in items.items()} == {"i1": "en", "w1": "en", "i2": "ko", "g1": "ko"}
+
+
+# ------------------------------------------------------------------ QA-439 거장 견해의 날짜
+
+@pytest.mark.xfail(strict=True, reason="QA-439: 수정 전 실패 — 날짜만 있는 거장 견해가 timeBasis 'published'(KST 00:00)라 화면이 '00:00'")
+def test_QA439_날짜만_있는_거장_견해는_date(monkeypatch):
+    payload = {"sourceUrl": "https://news.example.org/people", "gurus": [
+        {"name": "합성 투자자", "stance": "중립", "score": -20, "asOf": "2026-11-15", "summary": "합성전자 관망"},
+        {"name": "다른 합성 투자자", "stance": "강세", "score": 10, "asOf": None, "summary": "합성전자 비중 확대"},
+    ]}
+    collected = datetime(2026, 11, 15, 3, 10, tzinfo=timezone.utc)
+    monkeypatch.setattr(search_store, "_guru_snapshot", lambda: (payload, collected))
+    items = {item["title"].split(" 시장 견해")[0]: item for item in search_store.guru_views(["합성전자"]).items}
+    dated = items["합성 투자자"]
+    assert dated["publishedAt"] == "2026-11-14T15:00:00+00:00", "기준일의 KST 00:00 — 2년 자르기·정렬·기간 막대는 그 날짜"
+    assert dated["timeBasis"] == "date", "출처가 날짜만 줌 — 화면은 날짜만(계약 §7-1)"
+    undated = items["다른 합성 투자자"]
+    assert (undated["publishedAt"], undated["timeBasis"]) == ("2026-11-15T03:10:00+00:00", "fetched"), "날짜가 없으면 저장 시각"
