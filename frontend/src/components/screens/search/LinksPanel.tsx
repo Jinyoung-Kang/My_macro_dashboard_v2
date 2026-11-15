@@ -106,8 +106,9 @@ export function LinksPanel({
               {group.links.map((link, index) => (
                 <li key={`${link.key ?? "name"}:${link.name}:${index}`}>
                   {/* 패널 폭이 28rem(@md = 448px) 미만이면 이름·설명을 줄바꿈하고 메타(종류·출처·이름으로 찾기)를 그 밑의 제 줄로 — 오른쪽 칸이 폭을
-                      먼저 차지하면 앞머리가 같은 이름(자회사 법인명 등)이 똑같이 잘리거나 0px로 눌려 가를 수 없음(QA-422). 28rem 이상은 한 줄(말줄임 +
-                      title)과 오른쪽 메타 칸. 패널은 가운데 칸의 안쪽 여백 px-3 안이라 칸보다 24px 좁아, 창 폭 V와 본문 세로 스크롤 막대 폭 s로 lg는
+                      먼저 차지하면 앞머리가 같은 이름(자회사 법인명 등)이 똑같이 잘리거나 0px로 눌려 가를 수 없음(QA-422). 28rem 이상은 이름 칸과
+                      오른쪽 메타 칸을 한 줄에 두되, 이름은 두 줄까지 줄바꿈(넘으면 둘째 줄 끝에서 말줄임 + title) — 한 줄 말줄임이면 약 50자를 넘고
+                      끝만 다른 법인명(GLEIF '… Number 1'·'… Number 2' 등)이 똑같이 보였음. 설명은 한 줄(말줄임 + title). 패널은 가운데 칸의 안쪽 여백 px-3 안이라 칸보다 24px 좁아, 창 폭 V와 본문 세로 스크롤 막대 폭 s로 lg는
                       V-572-s, xl은 V-860-s(QA-420 뒤). s는 본문이 넘칠 때 globals.css의 ::-webkit-scrollbar 10px(겹쳐 그리는 막대나 넘치지 않는 본문은
                       0)이라 줄바꿈 배치는 390 화면과 lg 1024~약 1029·xl 1280~약 1317 화면(QA 브라우저 실측 패널 폭 1024에서 442px, 1280에서 410px),
                       s가 0이면 lg는 한 줄이고 xl 1280~약 1307만. 아이콘·꺾쇠는 첫 줄(20px)에 맞춤. 줄 높이는 화면 폭 기준(lg 미만 44px). */}
@@ -121,7 +122,7 @@ export function LinksPanel({
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-center @md:gap-2">
                       <span className="flex min-w-0 flex-col @md:flex-1">
-                        <span className="break-words text-accent @md:truncate" title={link.name}>
+                        <span className="break-words text-accent @md:line-clamp-2" title={link.name}>
                           {link.name}
                         </span>
                         {link.detail ? (

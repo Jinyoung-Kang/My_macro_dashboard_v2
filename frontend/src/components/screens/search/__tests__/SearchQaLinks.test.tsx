@@ -44,7 +44,7 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
   // 수정 전 실패: 이름 span에 접두 없는 truncate가 있고 title이 없음, 메타 span이 이름 칸 밖의 shrink-0 칸(재현 커밋에서는 it.fails).
   // 검토 지적: 첫 고침은 화면 폭 lg(1024)부터 한 줄 배치로 돌아가, 가운데 칸이 390보다 좁은 1024~약 1160 화면(칸 안쪽 약 164px)에서 키 없는 줄의
   // 이름 칸이 0px로 눌렸습니다 — 전환 기준을 패널 폭(@container, 28rem = @md)으로 바꿨습니다.
-  it("패널 폭이 28rem 미만이면 이름·설명을 줄바꿈하고(말줄임은 @md에서만, 잘릴 수 있는 글에는 title) 메타는 이름 칸 밑의 제 줄 — 줄 높이 44px 그대로", () => {
+  it("패널 폭이 28rem 미만이면 이름·설명을 줄바꿈하고(줄 수 제한·말줄임은 @md에서만, 잘릴 수 있는 글에는 title) 메타는 이름 칸 밑의 제 줄 — 줄 높이 44px 그대로", () => {
     const { container } = renderList();
     // 한 줄 배치를 가르는 것은 화면 폭(lg)이 아니라 이 패널의 폭(컨테이너 쿼리).
     expect(classes(container.firstElementChild!)).toContain("@container");
@@ -57,7 +57,9 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
       const name = within(button).getByText(link.name);
       expect(classes(name)).not.toContain("truncate");
       expect(classes(name)).not.toContain("lg:truncate");
-      expect(classes(name)).toEqual(expect.arrayContaining(["break-words", "@md:truncate"]));
+      expect(classes(name)).not.toContain("line-clamp-2");
+      // 28rem 이상의 이름은 두 줄까지(아래 '넓은 패널' 시험).
+      expect(classes(name)).toEqual(expect.arrayContaining(["break-words", "@md:line-clamp-2"]));
       expect(name.getAttribute("title")).toBe(link.name);
 
       const detail = within(button).getByText(link.detail!);
@@ -76,6 +78,46 @@ describe("연결 탭 '목록' 보기 — 좁은 칸(390 화면·1024 화면의 �
       expect(stack.contains(name)).toBe(true);
       expect(classes(stack)).toEqual(expect.arrayContaining(["min-w-0", "flex-1", "flex-col", "@md:flex-row"]));
       expect(classes(stack)).not.toContain("lg:flex-row");
+      expect(classes(name.parentElement!)).toEqual(expect.arrayContaining(["min-w-0", "@md:flex-1"]));
+    }
+  });
+});
+
+describe("연결 탭 '목록' 보기 — 넓은 패널(28rem 이상)에서 끝만 다른 긴 이름도 가름(QA 재확인 개선 제안)", () => {
+  // 1440 화면(패널 570px)에서 이름 칸(약 351px)이 한 줄 말줄임(@md:truncate)이라, 약 50자를 넘고 끝만 다른 GLEIF 법인명 둘이
+  // 'Example Subsidiary International Holdings Asia Pacific …'로 똑같이 보였습니다(전체 이름은 title, 설명 줄의 LEI만 달랐음).
+  // 이제 28rem 이상에서도 이름을 두 줄까지 줄바꿈하고(넘으면 둘째 줄 끝에서 말줄임), 오른쪽 메타 칸·title·줄 높이는 그대로입니다.
+  // jsdom은 줄 수를 재지 못하므로 클래스를 대조합니다(Chromium에서 같은 마크업으로 잰 값: 패널 570·640에서 두 줄로 끝까지 보임 — 커밋 글).
+  // 바꾸기 전 실패: 이름 span의 넓은 패널 클래스가 '@md:truncate'(한 줄)라 '@md:line-clamp-2'가 없음.
+  const LONG: SearchLink[] = [1, 2].map((n) => ({
+    relation: "subsidiary",
+    key: null,
+    name: `Example Subsidiary International Holdings Asia Pacific Regional Operations Limited Partnership Number ${n}`,
+    kind: "company",
+    source: "gleif",
+    detail: `SG · LEI 0000EXAMPLE00000000L0${n}`,
+  }));
+
+  it("이름은 두 줄까지(@md:line-clamp-2 — 한 줄 말줄임이 아님)·전체 이름은 title, 설명은 한 줄, 메타는 오른쪽 칸, 줄 높이 lg 미만 44px", () => {
+    const view: LinksView = { groups: linkGroups([...LONG, INSIDER]), extra: null, sources: [], empty: null, entityNote: null };
+    render(<LinksPanel view={view} centerName="Example Corp" onTarget={() => {}} onRetry={() => {}} />);
+    for (const link of [...LONG, INSIDER]) {
+      const button = screen.getByRole("button", { name: new RegExp(link.name) });
+      expect(classes(button)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-8"]));
+
+      const name = within(button).getByText(link.name);
+      expect(classes(name)).toEqual(expect.arrayContaining(["break-words", "@md:line-clamp-2"]));
+      expect(classes(name).filter((word) => /truncate/.test(word))).toEqual([]);
+      expect(name.getAttribute("title")).toBe(link.name);
+
+      const detail = within(button).getByText(link.detail!);
+      expect(classes(detail)).toContain("@md:truncate");
+      expect(detail.getAttribute("title")).toBe(link.detail);
+
+      // 오른쪽 메타 칸(28rem 이상에서 줄어들지 않음)과 이름·설명 칸의 가로 배치는 그대로.
+      const meta = within(button).getByText(link.kind === "person" ? "사람 · Yahoo · 이름으로 찾기" : "기업 · GLEIF · 이름으로 찾기");
+      expect(classes(meta)).toContain("@md:shrink-0");
+      expect(classes(meta.parentElement!)).toEqual(expect.arrayContaining(["@md:flex-row", "@md:items-center"]));
       expect(classes(name.parentElement!)).toEqual(expect.arrayContaining(["min-w-0", "@md:flex-1"]));
     }
   });
