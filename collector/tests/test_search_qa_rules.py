@@ -124,7 +124,6 @@ def _cluster_publishers(rows: list) -> int | None:
     return leads[0]["cluster"]["publishers"]
 
 
-@pytest.mark.xfail(strict=True, reason="QA-442: 같은 매체의 다른 표기('www.…com'·붙여 쓴 이름·꼬리 Media)를 다른 매체로 셈")
 @pytest.mark.parametrize("case", PUBLISHER_CASES["sameOutlet"], ids=lambda case: f"rows{len(case['rows'])}")
 def test_같은_매체의_다른_표기는_한_곳으로_센다(case):
     assert _cluster_publishers(case["rows"]) == case["publishers"]
@@ -133,3 +132,17 @@ def test_같은_매체의_다른_표기는_한_곳으로_센다(case):
 @pytest.mark.parametrize("case", PUBLISHER_CASES["distinctOutlets"], ids=lambda case: f"rows{len(case['rows'])}")
 def test_서로_다른_매체는_그대로_따로_센다(case):
     assert _cluster_publishers(case["rows"]) == case["publishers"]
+
+
+def test_매체_세기_키는_화면과_같은_고정본대로():
+    for name, key in PUBLISHER_CASES["keys"]:
+        assert rules.publisher_key(name) == key, name
+
+
+def test_매체_제외의_이름_대조는_세기_키가_아니라_지금처럼_완전_일치():
+    """세기 키는 '매체 n곳'에만 — 사용자가 더한 이름 'Kalsynth'가 'Kalsynth Media'·'www.kalsynth.com'까지 빼지 않음(계약 §4-3)."""
+    extra = rules.make_excludes([{"kind": "name", "value": "Kalsynth"}])
+    assert rules.is_excluded_media(None, "KALSYNTH on MSN", extra) is True
+    assert rules.is_excluded_media(None, "Kalsynth Media", extra) is False
+    assert rules.is_excluded_media(None, "www.kalsynth.com", extra) is False
+    assert rules.is_excluded_media(None, "Xinhua News", None) is False and rules.is_excluded_media(None, "xinhua", None) is True

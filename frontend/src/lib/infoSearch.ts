@@ -516,23 +516,45 @@ function clusterLead(clusterId: string, rows: readonly SearchFeedItem[]): Search
   return rows.reduce((best, row) => (row.publishedAt !== null && (best.publishedAt === null || row.publishedAt < best.publishedAt) ? row : best));
 }
 
-/** 매체 이름 대조 키 — MSN 재게재 꼬리(' on MSN')를 떼고 대소문자를 무시합니다(수집기 search_rules.media_name_key와 같은 규칙). */
 const MSN_TAIL = /\s+on\s+msn\s*$/i;
-function mediaNameKey(name: string | null | undefined): string {
-  return (name ?? "").trim().replace(MSN_TAIL, "").trim().toLowerCase();
+/** 도메인 꼴 이름(앞의 www.는 뗌), 두 글자 국가 도메인 앞의 2단계 이름표, 이름 끝에서 떼는 낱말 — publisherKey의 재료. */
+const HOST_NAME = /^(?:www\d?\.)?((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})$/;
+const SECOND_LEVEL = new Set(["ac", "co", "com", "edu", "go", "gov", "ne", "net", "or", "org"]);
+const PUBLISHER_TAILS = new Set(["media", "news"]);
+
+/**
+ * 같은 사건 묶음의 매체 수를 셀 때만 쓰는 매체 키(QA-442 — 수집기 search_rules.publisher_key와 같은 규칙, 공유 고정본
+ * `collector/tests/fixtures/search/publisher_keys.json`) — 같은 매체의 다른 표기('www.example.com'·'Example', 'Synth Alpha'·'SynthAlpha',
+ * 'Kalsynth Media'·'Kalsynth')를 한 곳으로 봅니다. NFKC로 맞추고 MSN 재게재 꼬리를 뗀 소문자에서, 도메인 꼴이면 앞의 'www.'와 끝의 공개
+ * 접미사(마지막 이름표, 두 글자 국가 도메인이면 그 앞의 co·com·net·org 등 하나 더)를 떼고 남은 이름표를 이어 붙입니다(하위 도메인은 남김).
+ * 아니면 글자·숫자 낱말을 이어 붙이되 낱말이 둘 이상이면 앞의 'the'와 끝의 'media'·'news' 한 낱말을 뗍니다.
+ */
+export function publisherKey(name: string | null | undefined): string {
+  const text = (name ?? "").normalize("NFKC").trim().replace(MSN_TAIL, "").trim().toLowerCase();
+  const host = HOST_NAME.exec(text);
+  if (host) {
+    const labels = host[1].split(".");
+    const suffix = labels.pop() as string;
+    if (suffix.length === 2 && labels.length > 1 && SECOND_LEVEL.has(labels[labels.length - 1])) labels.pop();
+    return labels.join("");
+  }
+  let words = text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length > 1 && words[0] === "the") words = words.slice(1);
+  if (words.length > 1 && PUBLISHER_TAILS.has(words[words.length - 1])) words = words.slice(0, -1);
+  return words.join("");
 }
 
 /**
- * 서로 다른 매체 수 — 수집기 _publisher_count(규칙 원본)와 같은 규칙: 매체 이름(대소문자 무시, MSN 재게재 꼬리 뗌)으로 세고, 이름이 없는 줄은
- * 매체 도메인으로 세되 그 도메인을 묶음 안에서 이름 하나만 썼으면 그 매체로 봅니다. 보이는 줄이 묶음의 일부일 때만 씁니다. 하나도 모르면
- * null(0으로 채우지 않음).
+ * 서로 다른 매체 수 — 수집기 _publisher_count(규칙 원본)와 같은 규칙: 매체 키(publisherKey — 같은 매체의 다른 표기는 한 곳)로 세고, 이름이 없는
+ * 줄은 매체 도메인으로 세되 그 도메인을 묶음 안에서 매체 하나만 썼으면 그 매체로, 아니면 그 도메인의 키로 봅니다(다른 줄의 매체 키와 같으면
+ * 한 곳). 보이는 줄이 묶음의 일부일 때만 씁니다. 하나도 모르면 null(0으로 채우지 않음).
  */
 function publisherCount(rows: readonly SearchFeedItem[]): number | null {
   const names = new Set<string>();
   const namesByDomain = new Map<string, Set<string>>();
   const bareDomains = new Set<string>();
   for (const row of rows) {
-    const name = mediaNameKey(row.publisher);
+    const name = publisherKey(row.publisher);
     const domain = (row.publisherDomain ?? "").trim().toLowerCase();
     if (name) {
       names.add(name);
@@ -541,8 +563,9 @@ function publisherCount(rows: readonly SearchFeedItem[]): number | null {
       bareDomains.add(domain);
     }
   }
-  const unnamed = [...bareDomains].filter((domain) => namesByDomain.get(domain)?.size !== 1).length;
-  return names.size + unnamed || null;
+  const counted = new Set(names);
+  for (const domain of bareDomains) if (namesByDomain.get(domain)?.size !== 1) counted.add(publisherKey(domain) || domain);
+  return counted.size || null;
 }
 
 /** 서버가 준 매체 수(양수일 때만 — 0이나 모양이 틀린 값은 모름). */

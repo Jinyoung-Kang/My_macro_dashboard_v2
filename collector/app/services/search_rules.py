@@ -17,12 +17,14 @@ app/services/search_rules.py
 5. 검색식: 따옴표 구문을 ' OR '로 묶음. 판마다 이름 + 네 글자 이상 별칭 최대 4개(긴 것 먼저), 티커는 넣지 않음.
 6. 같은 사건 묶기(계약 §9-2 — 단계 6): 같은 언어(제목 글자로 가름)의 제목 낱말 집합(라틴 소문자 3글자 이상·불용어 제외, 한글 2글자 이상)의
    자카드 ≥ 0.5이고 시각 차이 ≤ 48시간이면 같은 묶음(시각순 단일 연결, 묶음 하나 최대 30줄, 모든 줄이 대표 줄로부터 48시간 안). 대표는 가장 이른 줄.
-   공시·리서치·거장 견해 줄과 작성 시각을 모르는 줄(``timeBasis: fetched``)은 묶지 않습니다.
+   공시·리서치·거장 견해 줄과 작성 시각을 모르는 줄(``timeBasis: fetched``)은 묶지 않습니다. 묶음의 매체 수는 같은 매체의 다른 표기를 한 곳으로
+   보는 키(:func:`publisher_key` — QA-442)로 셉니다(매체 제외의 이름 대조와는 다른 키).
 """
 from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
@@ -260,8 +262,40 @@ def normalize_domain(value: str | None) -> str | None:
 
 
 def media_name_key(name: str | None) -> str:
-    """매체 이름 대조 키 — MSN 재게재 꼬리('on MSN')를 떼고 대소문자를 무시합니다."""
+    """매체 이름 대조 키 — MSN 재게재 꼬리('on MSN')를 떼고 대소문자를 무시합니다(매체 제외는 이 키의 완전 일치)."""
     return _MSN_TAIL.sub("", (name or "").strip()).strip().casefold()
+
+
+# 같은 매체 세기 키(QA-442)의 재료 — 도메인 꼴 이름, 두 글자 국가 도메인 앞의 2단계 이름표, 이름 끝에서 떼는 낱말.
+_HOST_NAME = re.compile(r"(?:www\d?\.)?((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})")
+_SECOND_LEVEL = frozenset({"ac", "co", "com", "edu", "go", "gov", "ne", "net", "or", "org"})
+_PUBLISHER_TAILS = frozenset({"media", "news"})
+_NOT_WORD = re.compile(r"[\W_]+")
+
+
+def publisher_key(name: str | None) -> str:
+    """
+    같은 사건 묶음의 매체 수를 셀 때만 쓰는 매체 키(QA-442) — 같은 매체의 다른 표기('www.example.com'·'Example', 'Synth Alpha'·'SynthAlpha',
+    'Kalsynth Media'·'Kalsynth')를 한 곳으로 봅니다. NFKC로 맞추고 MSN 재게재 꼬리를 뗀 소문자에서, 도메인 꼴이면 앞의 'www.'와 끝의 공개
+    접미사(마지막 이름표, 두 글자 국가 도메인이면 그 앞의 co·com·net·org 등 하나 더)를 떼고 남은 이름표를 이어 붙입니다(하위 도메인은 남김 —
+    같은 호스팅의 다른 매체). 아니면 글자·숫자 낱말을 이어 붙이되(띄어쓰기·문장부호 무시) 낱말이 둘 이상이면 앞의 'the'와 끝의 'media'·'news'
+    한 낱말을 뗍니다. 매체 제외의 이름 대조는 이 키가 아니라 :func:`media_name_key`의 완전 일치 그대로입니다. 화면 ``infoSearch.publisherKey``와
+    같은 규칙(공유 고정본 ``tests/fixtures/search/publisher_keys.json``).
+    """
+    text = _MSN_TAIL.sub("", unicodedata.normalize("NFKC", name or "").strip()).strip().lower()
+    host = _HOST_NAME.fullmatch(text)
+    if host:
+        labels = host.group(1).split(".")
+        suffix = labels.pop()
+        if len(suffix) == 2 and len(labels) > 1 and labels[-1] in _SECOND_LEVEL:
+            labels.pop()
+        return "".join(labels)
+    words = [word for word in _NOT_WORD.split(text) if word]
+    if len(words) > 1 and words[0] == "the":
+        words = words[1:]
+    if len(words) > 1 and words[-1] in _PUBLISHER_TAILS:
+        words = words[:-1]
+    return "".join(words)
 
 
 @dataclass(frozen=True)
@@ -486,14 +520,15 @@ def _prefix_size(count: int) -> int:
 
 def _publisher_count(rows: Iterable[dict]) -> int | None:
     """
-    묶음의 서로 다른 매체 수 — 매체 이름(대소문자 무시, MSN 재게재 꼬리 뗌)으로 세고, 이름이 없는 줄은 매체 도메인으로 셉니다. 이름 없는 줄의 도메인을
-    묶음 안에서 이름 하나만 썼으면 그 매체로 봅니다. 매체를 하나도 모르면 None(0이 아님).
+    묶음의 서로 다른 매체 수 — 매체 키(:func:`publisher_key` — 같은 매체의 다른 표기를 한 곳으로, QA-442)로 세고, 이름이 없는 줄은 매체 도메인으로
+    셉니다. 이름 없는 줄의 도메인을 묶음 안에서 매체 하나만 썼으면 그 매체로 보고, 아니면 그 도메인의 키로 셉니다(다른 줄의 매체 키와 같으면 한 곳).
+    매체를 하나도 모르면 None(0이 아님).
     """
     names: set[str] = set()
     names_by_domain: dict[str, set[str]] = {}
     bare_domains: set[str] = set()
     for row in rows:
-        name = media_name_key(row.get("publisher"))
+        name = publisher_key(row.get("publisher"))
         domain = (row.get("publisherDomain") or "").strip().lower() or None
         if name:
             names.add(name)
@@ -501,8 +536,8 @@ def _publisher_count(rows: Iterable[dict]) -> int | None:
                 names_by_domain.setdefault(domain, set()).add(name)
         elif domain:
             bare_domains.add(domain)
-    unnamed = {domain for domain in bare_domains if len(names_by_domain.get(domain, ())) != 1}
-    return (len(names) + len(unnamed)) or None
+    unnamed = {publisher_key(domain) or domain for domain in bare_domains if len(names_by_domain.get(domain, ())) != 1}
+    return len(names | unnamed) or None
 
 
 def cluster_items(items: Sequence[dict], *, ignore: Iterable[str] = ()) -> list[dict]:

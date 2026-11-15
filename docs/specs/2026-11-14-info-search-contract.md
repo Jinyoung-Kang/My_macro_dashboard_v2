@@ -458,6 +458,9 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
   - 묶는 종류는 `news`·`headline`·`post`·`wire`. 공시·리서치·거장 견해(틀이 같은 제목의 다른 문서)와 작성 시각을 모르는 줄(`timeBasis: fetched`)은 `clusterId: null`.
   - 언어는 줄의 `lang`이 아니라 제목 글자로 가름. 한글이면 ko, 라틴이면 en, 가나가 있으면 묶지 않음.
   - 매체 수는 이름(대소문자 무시, MSN 꼬리 뗌)으로 세고, 이름이 없으면 도메인으로 셈. 모르면 null.
+    같은 매체의 다른 표기는 한 곳(QA-442 — `search_rules.publisher_key`·화면 `publisherKey`, 공유 고정본 `collector/tests/fixtures/search/publisher_keys.json`):
+    NFKC로 맞추고 띄어쓰기·문장부호를 무시하며, 이름이 도메인 꼴이면 앞의 `www.`와 끝의 공개 접미사를 떼고(하위 도메인은 남김), 낱말이 둘 이상이면 앞의 `the`와
+    끝의 `media`·`news` 한 낱말을 뗌. 이름 없는 줄의 도메인도 같은 키로 봄. 매체 제외의 이름 대조는 이 키가 아니라 4절 규칙 3의 완전 일치 그대로.
   - 백엔드가 회원 응답에서 운영자 전용 줄을 지우면, 그 줄을 가리키던 남은 줄의 묶음 칸을 비움(닫힌 실패).
 - **화제** 규칙을 덧붙임:
   - 받을 때 작성 시각이 이미 하루 넘게 지난 글은 세지 않음. 날짜만 아는 줄은 그 날의 끝으로 봄.
