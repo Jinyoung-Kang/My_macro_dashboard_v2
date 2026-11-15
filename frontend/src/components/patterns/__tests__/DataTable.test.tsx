@@ -3,7 +3,7 @@
  * 네 상태: 값 있음(숫자 열 오른쪽·tabular-nums), 값 없음(칸 "—"·행 없음 문구), 추정·대리(칸 배지), 오래됨(칸에 경고 아이콘과 '이전 값').
  * 정렬: 머리 단추 + 정렬한 열의 th에만 aria-sort, 모르는 값은 방향과 무관하게 맨 뒤. 행 클릭: Tab으로 닿고 Enter·Space로 열림.
  * 틀: 가로 스크롤 상자·sticky 머리·maxHeight, scrollHint(최소 640px + 폰 안내 줄, "overflow"면 넘칠 때 늘 안내), 행 머리(rowHeader → th scope=row).
- * 밀도(작업대 실행 명세 §3-7): 행 32px·조밀 28px, 좁은 화면의 누를 수 있는 행 44px, 정렬 머리 단추 lg 미만 44px, 행 구분선 border-subtle, 개수 줄(count).
+ * 밀도(작업대 실행 명세 §3-7): 넓은 화면 행 32px·조밀 28px, 좁은 화면의 행은 모두 44px, 정렬 머리 단추 lg 미만 44px, 행 구분선 border-subtle, 개수 줄(count).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -348,19 +348,18 @@ describe("DataTable — 행 클릭 · 키보드", () => {
 describe("DataTable — 밀도(행 높이)·개수 줄", () => {
   const classesOf = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
 
-  it("기본 행은 32px(칸 위아래 여백 py-1.5), 머리 줄도 같은 높이 — 행 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계", () => {
+  it("기본 행은 넓은 화면 32px(칸 위아래 여백 lg:py-1.5)·좁은 화면 44px(py-3 — 누를 수 없는 행도), 머리 줄은 32px — 행 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} />);
     const cell = within(bodyRows()[0]).getAllByRole("cell")[1];
-    expect(classesOf(cell)).toContain("py-1.5");
-    expect(classesOf(cell)).not.toContain("py-3");
+    expect(classesOf(cell)).toEqual(expect.arrayContaining(["py-3", "lg:py-1.5"]));
     expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toEqual(expect.arrayContaining(["py-1.5", "text-caption", "leading-5"]));
     expect(classesOf(bodyRows()[0])).toContain("border-border-subtle");
     expect(classesOf(screen.getByRole("table").querySelector("thead tr") as Element)).toContain("border-border");
   });
 
-  it("dense면 28px(py-1) — 머리 줄도", () => {
+  it("dense면 넓은 화면 28px(lg:py-1, 좁은 화면은 그대로 44px) — 머리 줄도 28px", () => {
     render(<DataTable columns={COLUMNS} rows={ROWS} rowKey={(row) => row.ticker} dense />);
-    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toContain("py-1");
+    expect(classesOf(within(bodyRows()[0]).getAllByRole("cell")[1])).toEqual(expect.arrayContaining(["py-3", "lg:py-1"]));
     expect(classesOf(screen.getByRole("columnheader", { name: "이름" }))).toContain("py-1");
     expect(classesOf(screen.getByRole("columnheader", { name: /비중/ }))).toEqual(expect.arrayContaining(["py-0", "lg:py-1"]));
   });

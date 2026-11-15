@@ -42,10 +42,14 @@ function fromInnerControl(event: MouseEvent<HTMLTableRowElement>): boolean {
  * - 넓은 표는 감싼 상자(overflow-x-auto) 안에서만 좌우로 넘어갑니다 — 페이지 폭을 넓히지 않습니다. 상자는 Tab으로 닿아 화살표로 넘길 수 있습니다.
  * - 머리는 `sticky top-0`입니다. 가로 스크롤 상자는 CSS상 세로로도 스크롤 상자가 되므로, 머리가 실제로 붙어 있으려면 상자에 높이 한도가
  *   있어야 합니다 — `maxHeight`(px)를 주면 그 높이에서 세로로도 스크롤되고 머리가 위에 남습니다(설계서 §1.5 계약에 더한 선택 props).
- * - 행 높이(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-7): 기본 32px, `dense`(로그·출처 같은 조밀 표)면 28px — 칸 글(14/20)에
- *   위아래 여백을 더한 높이라 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서 누를 수 있는 행(`onRowClick`)은 손가락 누름 자리
- *   44px입니다(원칙 A8). 머리 줄도 같은 높이이고, 정렬 머리 단추는 lg 미만에서 44px입니다. 행 사이 구분선은 옅은 경계(border-subtle),
- *   머리 아래 선은 경계(border)입니다.
+ * - 행 높이(작업대 실행 명세 docs/specs/2026-11-15-v2-workbench-ui.md §3-7): 넓은 화면(lg 이상) 기본 32px, `dense`(로그·출처 같은 조밀 표)면
+ *   28px — 칸 글(14/20)에 위아래 여백을 더한 높이라 칸 안이 두 줄이면 그만큼 늘어납니다. 좁은 화면(lg 미만)에서는 모든 행이 44px입니다 —
+ *   누를 수 있는 행(`onRowClick`)은 손가락 누름 자리(원칙 A8)이고, 누를 수 없는 행도 칸 안 종목 글 단추처럼 행마다 있는 작은 단추 사이를
+ *   좁히지 않으려고 예전 높이를 둡니다(밀도는 넓은 화면에서만 올림 — 명세 §10 '휴대폰 밀도'). 머리 줄은 32·28px이고, 정렬 머리 단추는 lg 미만에서
+ *   44px입니다. 행 사이 구분선은 옅은 경계(border-subtle), 머리 아래 선은 경계(border)입니다.
+ *   한계: 칸 안에 테두리 있는 태그(추정·이전 값 배지 — 12/16 글 + 위아래 2px + 테두리 = 22px)가 들어가면 태그가 칸 글줄(20px)보다 높아
+ *   그 행만 넓은 화면에서 약 35px(조밀 31px)가 됩니다. 태그 높이는 공용 키트의 태그와 함께 정할 일이라 표 칸에 태그를 넣는 단계(P4~P6 —
+ *   PropertyList·DenseTable 값 칸) 전에 정합니다(진행 기록 §P2 패턴·차트).
  * - `onRowClick`이 있으면 행이 Tab으로 닿고(tabIndex 0) Enter·Space로도 열립니다. 마우스를 올리면 바탕(surface-2)과 첫 칸 밑줄 —
  *   surface-2 위에서도 칸 안의 상승·하락·보조 글자가 4.5:1 이상입니다(토큰 대비, 명세 §3-2 — AssetRow와 같은 규칙). 누를 수 없는 행에는 hover 표시가 없습니다.
  * - `count`(선택): 표 위에 행 개수 줄('12건' — 함수를 주면 그 글)을 둡니다(명세 §3-7 '표와 목록 머리에는 개수'). 보이는 제목·개수를 이미 적는
@@ -93,8 +97,8 @@ export function DataTable<T>({
   const shown = sortColumn && activeSort ? sortRows(rows, sortColumn.sortValue, activeSort.dir) : rows;
 
   const alignOf = (column: Column<T>) => (column.align === "right" ? "text-right whitespace-nowrap" : "text-left");
-  // 칸·머리의 위아래 여백 — 행 높이를 정합니다(위 설명: 32·28px, 좁은 화면의 누를 수 있는 행 44px). Tailwind가 찾도록 클래스 이름을 통째로 적습니다.
-  const cellY = onRowClick ? (dense ? "py-3 lg:py-1" : "py-3 lg:py-1.5") : dense ? "py-1" : "py-1.5";
+  // 칸·머리의 위아래 여백 — 행 높이를 정합니다(위 설명: 넓은 화면 32·28px, 좁은 화면의 행은 모두 44px). Tailwind가 찾도록 클래스 이름을 통째로 적습니다.
+  const cellY = dense ? "py-3 lg:py-1" : "py-3 lg:py-1.5";
   const headY = dense ? "py-1" : "py-1.5";
   // 정렬 머리는 lg 미만에서 단추(44px)가 높이를 정하므로 여백을 두지 않습니다.
   const sortHeadY = dense ? "py-0 lg:py-1" : "py-0 lg:py-1.5";
