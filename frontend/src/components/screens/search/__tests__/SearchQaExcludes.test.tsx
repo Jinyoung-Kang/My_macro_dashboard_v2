@@ -103,7 +103,8 @@ describe("QA-444 후속 — 매체 제외 '지우기'는 요청 중에도 포커
   // disabled(disabled={excludes.busy})가 되어 포커스가 body로 떨어졌고, 모의 500으로 실패해 줄이 남아도 포커스는 body였습니다. 성공해 줄이
   // 사라질 때도 포커스가 갈 곳이 없었습니다. jsdom은 disabled가 된 요소의 포커스를 body로 옮기지 않으므로 속성(disabled·aria-disabled)과
   // activeElement로 봅니다. 수정 전 실패: 요청 중 단추의 disabled가 true(aria-disabled·aria-busy 없음)(재현 커밋에서는 it.fails).
-  it.fails("요청 중에는 aria-disabled·aria-busy(진짜 disabled 아님)이고 두 번 눌러도 한 번만 보내며, 성공하면 다음 줄의 '지우기'로 포커스를 옮긴다", async () => {
+  // 고침: 요청 중 aria-disabled(모든 줄)·aria-busy(누른 줄)와 누름 가드, 성공하면 다음 줄 → 앞 줄 → 더하기 값 칸으로 포커스.
+  it("요청 중에는 aria-disabled·aria-busy(진짜 disabled 아님)이고 두 번 눌러도 한 번만 보내며, 성공하면 다음 줄의 '지우기'로 포커스를 옮긴다", async () => {
     await openList();
     const button = pressRemove("first.example");
     expect(api.apiDelete).toHaveBeenCalledTimes(1);
@@ -125,7 +126,7 @@ describe("QA-444 후속 — 매체 제외 '지우기'는 요청 중에도 포커
     expect(next.getAttribute("aria-disabled")).toBeNull();
   });
 
-  it.fails("마지막 줄을 지우면 앞 줄의 '지우기'로, 하나 남은 줄을 지우면 더하기의 값 칸으로 포커스를 옮긴다", async () => {
+  it("마지막 줄을 지우면 앞 줄의 '지우기'로, 하나 남은 줄을 지우면 더하기의 값 칸으로 포커스를 옮긴다", async () => {
     await openList(ROWS.slice(1));
     let button = pressRemove("Third Example Wire");
     expectBusyButKeepsFocus(button);
@@ -141,7 +142,7 @@ describe("QA-444 후속 — 매체 제외 '지우기'는 요청 중에도 포커
     expect(document.activeElement).toBe(within(form).getByLabelText("값"));
   });
 
-  it.fails("실패(500)로 끝나면 줄이 남고 같은 단추에 포커스가 남는다 — 사유는 role=alert 글, 그 단추로 바로 다시 누를 수 있다", async () => {
+  it("실패(500)로 끝나면 줄이 남고 같은 단추에 포커스가 남는다 — 사유는 role=alert 글, 그 단추로 바로 다시 누를 수 있다", async () => {
     await openList();
     const button = pressRemove("second.example");
     expectBusyButKeepsFocus(button);

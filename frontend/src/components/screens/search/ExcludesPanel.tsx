@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, type FormEvent } from "react";
+import { useCallback, useId, useRef, useState, type FormEvent, type RefObject } from "react";
 import { NativeSelect, inputClasses } from "@/components/ui";
 import { ChevronDownIcon, StatusText } from "@/components/ui/icons";
 import { useInfoSearchExcludes } from "@/hooks/useInfoSearchWatch";
@@ -16,13 +16,19 @@ const FIELD = `${inputClasses("sm")} w-full`;
  * 본토·홍콩·마카오 매체, 중국 자본 금융 매체)은 묶음별로 읽기만, 운영자가 더한 것은 운영자만 더하고 지웁니다(POST·DELETE — 운영자).
  * 중국어 제목과 주소가 .cn인 매체는 이 목록과 상관없이 늘 빠집니다(수집기가 거름).
  * 더하기·지우기가 성공하면 onChanged를 부릅니다(첫 화면이 최근 글을 다시 읽음 — 서버는 이미 바뀐 목록으로 거른 글을 줌).
+ * 보내는 동안 단추는 disabled가 아니라 aria-disabled·aria-busy입니다(누른 단추가 disabled가 되면 포커스가 body로 떨어짐 — QA-444).
  */
 export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?: () => void }) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const excludes = useInfoSearchExcludes(open);
   const data = excludes.data;
-  const { add: addExclude, remove: removeExclude } = excludes;
+  const { add: addExclude, remove: removeExclude, busy } = excludes;
+  const listRef = useRef<HTMLUListElement>(null);
+  const addValueRef = useRef<HTMLInputElement>(null);
+  // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(aria-disabled는 다시 그린 뒤에 걸림 — '더하기'와 같은 방식).
+  const removing = useRef(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
   const add = useCallback(
     async (body: Parameters<typeof addExclude>[0]) => {
       const ok = await addExclude(body);
@@ -32,10 +38,32 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
     [addExclude, onChanged],
   );
   const remove = useCallback(
-    async (id: number) => {
-      if (await removeExclude(id)) onChanged?.();
+    async (id: number, button: HTMLButtonElement) => {
+      // 보내는 동안 단추는 disabled가 아니라 aria-disabled라(QA-444) 누름을 여기서 막습니다.
+      if (busy || removing.current) return;
+      const order = (data?.available ? (data.added ?? []) : []).map((row) => row.id);
+      const at = order.indexOf(id);
+      const target = order[at + 1] ?? order[at - 1] ?? null;
+      const hadFocus = document.activeElement === button;
+      removing.current = true;
+      setRemovingId(id);
+      try {
+        if (await removeExclude(id)) {
+          // 지운 줄은 다시 그리면 사라져 그 단추에 있던 포커스가 body로 떨어지므로, 다음 줄의 '지우기'(없으면 앞 줄, 줄이 없으면 더하기의 값 칸)로
+          // 옮깁니다. 기다리는 동안 다른 곳으로 옮겨 간 포커스는 건드리지 않습니다. 실패하면 줄과 단추가 그대로라 포커스도 그 단추에 남습니다.
+          const active = document.activeElement;
+          if (hadFocus && (active === button || active === document.body || active === null)) {
+            const next = target === null ? null : listRef.current?.querySelector<HTMLButtonElement>(`button[data-exclude-id="${target}"]`);
+            (next ?? addValueRef.current)?.focus();
+          }
+          onChanged?.();
+        }
+      } finally {
+        removing.current = false;
+        setRemovingId(null);
+      }
     },
-    [removeExclude, onChanged],
+    [busy, data, removeExclude, onChanged],
   );
   const seed = data?.available ? (data.seed ?? []) : [];
   const added = data?.available ? (data.added ?? []) : [];
@@ -62,7 +90,7 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
             {added.length === 0 ? (
               <p className="text-xs text-text-3">더한 매체가 없습니다.</p>
             ) : (
-              <ul aria-label="더한 제외 매체" className="flex flex-col divide-y divide-border rounded-control border border-border">
+              <ul ref={listRef} aria-label="더한 제외 매체" className="flex flex-col divide-y divide-border rounded-control border border-border">
                 {added.map((row) => (
                   // 좁은 화면(sm 미만)은 메모를 줄 끝으로 내려 한 줄을 다 쓰게 합니다 — 값 옆에 끼우면 메모 칸이 좁아져 글자마다 끊깁니다.
                   <li key={row.id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1 text-sm lg:min-h-8">
@@ -72,12 +100,15 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
                       <span className="order-last basis-full break-words text-xs text-text-2 sm:order-none sm:min-w-0 sm:flex-1 sm:basis-0">{row.note}</span>
                     ) : null}
                     <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-text-3">{row.createdAt ? formatKst(row.createdAt) : EMPTY}</span>
+                    {/* 보내는 동안은 disabled가 아니라 aria-disabled(모든 줄)·aria-busy(누른 줄) — 포커스가 body로 떨어지지 않게(QA-444). */}
                     {owner ? (
                       <button
                         type="button"
-                        className={BUTTON}
-                        disabled={excludes.busy}
-                        onClick={() => void remove(row.id)}
+                        data-exclude-id={row.id}
+                        className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+                        aria-disabled={busy || undefined}
+                        aria-busy={removingId === row.id || undefined}
+                        onClick={(event) => void remove(row.id, event.currentTarget)}
                         aria-label={`${row.value} 지우기`}
                       >
                         지우기
@@ -90,7 +121,8 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
           </div>
           {owner ? (
             <AddExcludeForm
-              busy={excludes.busy}
+              valueRef={addValueRef}
+              busy={busy}
               error={excludes.actionError}
               existing={[...seed, ...added]}
               onError={excludes.setActionError}
@@ -141,12 +173,15 @@ export function ExcludesPanel({ owner, onChanged }: { owner: boolean; onChanged?
 
 /** 운영자의 더하기 칸 — 종류(도메인·이름)·값·메모. 값은 lib/infoSearch의 excludeDraft로 다듬고, 틀리거나 이미 있으면 보내지 않고 사유를 글로. */
 function AddExcludeForm({
+  valueRef,
   busy,
   error,
   existing,
   onError,
   onAdd,
 }: {
+  /** 값 칸 — 패널도 씁니다(마지막 더한 매체를 지우면 포커스를 이 칸으로). */
+  valueRef: RefObject<HTMLInputElement | null>;
   busy: boolean;
   error: string | null;
   existing: readonly { kind: string; value: string }[];
@@ -157,7 +192,6 @@ function AddExcludeForm({
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
   const ids = { kind: useId(), value: useId(), note: useId() };
-  const valueRef = useRef<HTMLInputElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
   // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(aria-disabled는 다시 그린 뒤에 걸림 — AliasEditor와 같은 방식).
   const sending = useRef(false);
