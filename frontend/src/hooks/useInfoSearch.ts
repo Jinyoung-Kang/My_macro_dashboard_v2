@@ -176,8 +176,9 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
   const [poll, setPoll] = useState<PendingPoll | null>(null);
   const [rechecking, setRechecking] = useState(false);
   const [recheckError, setRecheckError] = useState<RecheckError | null>(null);
-  // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(단추를 끄는 것은 다시 그린 뒤라).
+  // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(단추를 끄는 것은 다시 그린 뒤라). '지금 새로 받기'도 같습니다.
   const recheckBusy = useRef(false);
+  const refreshBusy = useRef(false);
   const { reload: reloadFeed, loading: feedLoading } = feed;
   // 마지막으로 그린 때 보통 읽기(처음 읽기·수동 새로고침)가 진행 중이었는가 — 쓰기 뒤 다시 읽기가 그것을 먼저 받게.
   const loadingRef = useRef(feedLoading);
@@ -255,7 +256,8 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
   }, [path, base, mounted, notifyUnauthorized]);
 
   const refresh = useCallback(async () => {
-    if (!path || !refreshPath) return;
+    if (!path || !refreshPath || refreshBusy.current) return;
+    refreshBusy.current = true;
     setRefreshing(true);
     setRefreshError(null);
     try {
@@ -268,6 +270,7 @@ export function useInfoSearchFeed(path: string | null, refreshPath: string | nul
       if (error instanceof UnauthorizedError) notifyUnauthorized();
       if (mounted.current) setRefreshError(error instanceof Error ? error.message : "알 수 없는 오류");
     } finally {
+      refreshBusy.current = false;
       if (mounted.current) setRefreshing(false);
     }
   }, [path, refreshPath, mounted, notifyUnauthorized]);

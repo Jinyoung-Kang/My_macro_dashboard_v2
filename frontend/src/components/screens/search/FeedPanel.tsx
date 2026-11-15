@@ -612,7 +612,17 @@ export function FeedPanel({
         <div className="min-w-0">
           {!demo && data?.available ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5">
-              <button type="button" className={BUTTON} disabled={feed.refreshing} onClick={() => void feed.refresh()}>
+              {/* 받는 동안 disabled로 바꾸지 않습니다(누른 단추가 disabled가 되면 포커스가 body로 떨어짐 — QA-444) — aria-disabled·aria-busy로
+                  알리고 누름은 훅이 한 번만 보냅니다. */}
+              <button
+                type="button"
+                className={`${BUTTON} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+                aria-disabled={feed.refreshing || undefined}
+                aria-busy={feed.refreshing || undefined}
+                onClick={() => {
+                  if (!feed.refreshing) void feed.refresh();
+                }}
+              >
                 {feed.refreshing ? <SpinnerIcon size={14} className="motion-safe:animate-spin" /> : <RefreshIcon size={14} />}
                 지금 새로 받기
               </button>

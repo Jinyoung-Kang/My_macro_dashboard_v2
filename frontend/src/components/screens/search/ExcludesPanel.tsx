@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useState, type FormEvent } from "react";
+import { useCallback, useId, useRef, useState, type FormEvent } from "react";
 import { NativeSelect, inputClasses } from "@/components/ui";
 import { ChevronDownIcon, StatusText } from "@/components/ui/icons";
 import { useInfoSearchExcludes } from "@/hooks/useInfoSearchWatch";
@@ -157,17 +157,30 @@ function AddExcludeForm({
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
   const ids = { kind: useId(), value: useId(), note: useId() };
+  const valueRef = useRef<HTMLInputElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  // 다시 그리기 전에 두 번 눌러도 한 번만 보내게(aria-disabled는 다시 그린 뒤에 걸림 — AliasEditor와 같은 방식).
+  const sending = useRef(false);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    // 보내는 동안 단추는 disabled가 아니라 aria-disabled라(QA-444) 값 칸의 Enter 제출도 여기서 막습니다.
+    if (busy || sending.current) return;
     const draft = excludeDraft(kind, value, note, existing);
     if (!draft.ok) {
       onError(draft.message);
       return;
     }
-    if (await onAdd(draft.body)) {
-      setValue("");
-      setNote("");
+    sending.current = true;
+    try {
+      if (await onAdd(draft.body)) {
+        // 값을 비우면 '더하기'가 빈 값이라 disabled가 되어 그 단추에 있던 포커스가 body로 떨어지므로, 다음 값을 적을 칸으로 옮깁니다.
+        if (document.activeElement === submitRef.current) valueRef.current?.focus();
+        setValue("");
+        setNote("");
+      }
+    } finally {
+      sending.current = false;
     }
   };
 
@@ -190,6 +203,7 @@ function AddExcludeForm({
         <label htmlFor={ids.value} className="flex flex-col gap-1 text-xs text-text-2">
           값
           <input
+            ref={valueRef}
             id={ids.value}
             value={value}
             onChange={(event) => setValue(event.target.value)}
@@ -203,7 +217,15 @@ function AddExcludeForm({
           메모(선택)
           <input id={ids.note} value={note} onChange={(event) => setNote(event.target.value)} maxLength={200} autoComplete="off" className={FIELD} />
         </label>
-        <button type="submit" className={BUTTON_PRIMARY} disabled={busy || !value.trim()}>
+        {/* 빈 값이면 아직 누를 것이 없어 disabled, 보내는 동안은 aria-disabled·aria-busy(포커스가 body로 떨어지지 않게 — QA-444). */}
+        <button
+          ref={submitRef}
+          type="submit"
+          className={`${BUTTON_PRIMARY} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+          disabled={!value.trim()}
+          aria-disabled={busy || undefined}
+          aria-busy={busy || undefined}
+        >
           더하기
         </button>
       </div>

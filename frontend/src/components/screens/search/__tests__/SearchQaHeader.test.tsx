@@ -200,3 +200,121 @@ describe("QA-446 — 긴 영문 이름 옆의 종류 꼬리표는 한 줄로 남
     expect(heading.getAttribute("title")).toBe(LONG_NAME);
   });
 });
+
+describe("QA-444 검토 지적 — 같은 화면의 '지금 새로 받기'·매체 제외 '더하기'도 요청 중에 포커스를 잃지 않는다", () => {
+  // QA-444 검토 지적: WatchButton과 같은 결함(누른 단추가 요청 동안 진짜 disabled가 되어 브라우저가 포커스를 body로 보냄 — WCAG 2.4.3)이
+  // 결과 머리의 '지금 새로 받기'(disabled={feed.refreshing})와 첫 화면 매체 제외의 '더하기'(disabled={busy || !value.trim()})에 남아
+  // 있었습니다. '더하기'는 성공 뒤 값을 비우면 빈 값이라 다시 disabled가 되므로, 그 단추에 있던 포커스는 다음 값을 적을 칸으로 옮깁니다.
+  // jsdom은 disabled가 된 요소의 포커스를 body로 옮기지 않으므로 속성(disabled·aria-disabled)과 activeElement로 봅니다.
+  const OWNER: SessionUser = { email: "o@test.local", role: "OWNER", tier: "PRO" };
+
+  function feedRow(id: string, title: string) {
+    return {
+      id, kind: "headline", title, url: `https://news.example/${id}`, publisher: "Example Wire", publisherDomain: "news.example",
+      publishedAt: "2026-11-14T00:30:00+00:00", timeBasis: "published", source: "feeds", lang: "en", summary: null, readerId: null,
+    };
+  }
+  function feedResponse(items: unknown[], fetchedAt = "2026-11-14T01:00:00+00:00") {
+    return {
+      available: true, entityKey: "us:NVDA", tab: "timeline", items,
+      sources: [{ source: "feeds", label: "보도자료·경제지 피드", status: "ok", count: items.length, dropped: null, message: null }],
+      window: { from: "2024-11-14", to: "2026-11-14" }, rangeCounts: { "7d": items.length, "30d": items.length, "1y": items.length, "2y": items.length },
+      olderOnlyLatest: null, pending: false, fetchedAt,
+    };
+  }
+
+  it("'지금 새로 받기' — 받는 중에는 aria-disabled·aria-busy(진짜 disabled 아님)이고 두 번 눌러도 한 번만 부르며, 끝나면 같은 단추가 포커스를 지닌다", async () => {
+    let release: () => void = () => {};
+    reads[endpoints.search.watch] = watchList([]);
+    reads[endpoints.search.feed("us:NVDA", "timeline")] = feedResponse([feedRow("f1", "합성 보도 한 줄")]);
+    reads[endpoints.search.feed("us:NVDA", "timeline", true)] = () =>
+      new Promise((resolve) => {
+        release = () => resolve(feedResponse([feedRow("n1", "방금 받은 합성 기사")], "2026-11-14T01:05:00+00:00"));
+      });
+    renderScreen("/search?e=us:NVDA");
+    await screen.findByRole("option", { name: /합성 보도 한 줄/ });
+    const button = screen.getByRole("button", { name: "지금 새로 받기" }) as HTMLButtonElement;
+    button.focus();
+    const refreshCalls = () => api.apiGet.mock.calls.filter(([path]) => path === endpoints.search.feed("us:NVDA", "timeline", true)).length;
+
+    fireEvent.click(button);
+    expect(refreshCalls()).toBe(1);
+    expectBusyButKeepsFocus(button);
+    fireEvent.click(button);
+    expect(refreshCalls()).toBe(1);
+
+    await act(async () => release());
+    await screen.findByRole("option", { name: /방금 받은 합성 기사/ });
+    expect(screen.getByRole("button", { name: "지금 새로 받기" })).toBe(button);
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute("aria-disabled")).toBeNull();
+    expect(button.getAttribute("aria-busy")).toBeNull();
+    expect(button.disabled).toBe(false);
+  });
+
+  async function openAddForm() {
+    reads[endpoints.search.watch] = watchList([]);
+    reads[endpoints.search.recent] = { available: true, items: [], fetchedAt: null };
+    reads[endpoints.search.excludes] = { available: true, seed: [{ kind: "domain", value: "seed.example", group: "합성 묶음" }], added: [] };
+    renderScreen("/search", OWNER);
+    fireEvent.click(await screen.findByRole("button", { name: /매체 제외 목록/ }));
+    const form = await screen.findByRole("form", { name: "제외 매체 더하기" });
+    const input = within(form).getByLabelText("값") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "example.org" } });
+    const button = within(form).getByRole("button", { name: "더하기" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    button.focus();
+    return { form, input, button };
+  }
+
+  it("'더하기' — 보내는 중에는 aria-disabled·aria-busy이고 다시 누르거나 Enter로 제출해도 한 번만 보내며, 성공하면 포커스를 비운 값 칸으로 옮긴다", async () => {
+    let release: () => void = () => {};
+    api.apiPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: true });
+        }),
+    );
+    const { form, input, button } = await openAddForm();
+
+    fireEvent.click(button);
+    expect(api.apiPost).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.className).toContain("aria-disabled:opacity-50");
+    expect(document.activeElement).toBe(button);
+    fireEvent.click(button);
+    fireEvent.submit(form);
+    expect(api.apiPost).toHaveBeenCalledTimes(1);
+
+    await act(async () => release());
+    await waitFor(() => expect(input.value).toBe(""));
+    expect(document.activeElement).toBe(input);
+    expect(button.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("'더하기'가 실패하면 같은 단추에 포커스가 남고 사유는 role=alert 글 — 그 단추로 바로 다시 보낼 수 있다", async () => {
+    let reject: (failure: Error) => void = () => {};
+    api.apiPost.mockImplementation(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    );
+    const { form, input, button } = await openAddForm();
+
+    fireEvent.click(button);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(button);
+
+    await act(async () => reject(Object.assign(new Error("도메인 형식이 올바르지 않습니다"), { status: 400 })));
+    expect((await within(form).findByRole("alert")).textContent).toContain("도메인 형식이 올바르지 않습니다");
+    expect(input.value).toBe("example.org");
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(button);
+    expect(api.apiPost).toHaveBeenCalledTimes(2);
+  });
+});
