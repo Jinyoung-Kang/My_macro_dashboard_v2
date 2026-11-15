@@ -64,17 +64,19 @@ DART_UNREADY = "DART_API_KEY가 설정되지 않아 부르지 않음"
 # 날짜만 아는 출처 — 모은 글(search_watch_items)에서 읽을 때 timeBasis를 'date'로 되살립니다(표에 시각 기준 칸이 없음).
 DATE_SOURCES = frozenset({"sec_fts", "dart", "naver_research"})
 
-# 흔한 SEC 양식의 짧은 뜻(QA-440) — 설명이 없거나 양식만 되풀이할 때 제목에 붙입니다. 정정('/A')은 같은 뜻 + ' 정정'. 13D·13G는 2024-12부터
-# 'SCHEDULE 13D'·'SCHEDULE 13G'로 접수됩니다(그 전은 'SC 13D'·'SC 13G'). 여기 없는 양식은 양식 기호만(뜻을 짐작하지 않음).
+# 흔한 SEC 양식의 짧은 뜻(QA-440) — 설명이 없거나 양식만 되풀이할 때 제목에 붙입니다. '/A'(amendment)는 같은 뜻 + ' 수정' — 오류 정정만이 아니라
+# 13D·13G의 보유 변동 반영, 8-K의 보완도 '/A'라 '정정'이라 하지 않습니다. 13D·13G는 5% '초과' 보유자의 보고(Exchange Act 13(d)(1) —
+# more than five percent)이고, 2024-12부터 'SCHEDULE 13D'·'SCHEDULE 13G'로 접수됩니다(그 전은 'SC 13D'·'SC 13G'). 여기 없는 양식은 양식 기호만
+# (뜻을 짐작하지 않음).
 FORM_LABELS = {
     "3": "최초 지분 보고",
     "4": "지분 변동 보고",
     "5": "연간 지분 변동 보고",
     "144": "매도 예정 신고",
-    "SC 13D": "5% 이상 지분 보고",
-    "SCHEDULE 13D": "5% 이상 지분 보고",
-    "SC 13G": "5% 이상 지분 보고(약식)",
-    "SCHEDULE 13G": "5% 이상 지분 보고(약식)",
+    "SC 13D": "5% 초과 지분 보고",
+    "SCHEDULE 13D": "5% 초과 지분 보고",
+    "SC 13G": "5% 초과 지분 보고(약식)",
+    "SCHEDULE 13G": "5% 초과 지분 보고(약식)",
     "8-K": "수시 보고(주요 사건)",
     "10-K": "연차 보고서",
     "10-Q": "분기 보고서",
@@ -177,13 +179,13 @@ def stored_basis(source: str | None, published_at: datetime | None) -> str:
 # ------------------------------------------------------------------ 제목(QA-440)
 
 def form_label(form: str) -> str | None:
-    """양식의 짧은 한국어 뜻(:data:`FORM_LABELS`) — 정정('/A')은 그 뜻 + ' 정정'. 모르는 양식은 None."""
+    """양식의 짧은 한국어 뜻(:data:`FORM_LABELS`) — '/A'(amendment)는 그 뜻 + ' 수정'. 모르는 양식은 None."""
     key = " ".join(form.split()).upper()
     amended = key.endswith(AMENDMENT)
     label = FORM_LABELS.get(key[:-len(AMENDMENT)] if amended else key)
     if label is None:
         return None
-    return f"{label} 정정" if amended else label
+    return f"{label} 수정" if amended else label
 
 
 def _form_key(text: str) -> str:
@@ -192,7 +194,7 @@ def _form_key(text: str) -> str:
 
 
 def _repeats_form(described: str, form: str) -> bool:
-    """설명이 양식만 되풀이하는가 — '8-K'·'FORM 6-K', 정정 양식(4/A)의 'FORM 4'도."""
+    """설명이 양식만 되풀이하는가 — '8-K'·'FORM 6-K', 수정 양식(4/A)의 'FORM 4'도."""
     base = form[:-len(AMENDMENT)] if form.upper().endswith(AMENDMENT) else form
     return _form_key(described) in {_form_key(form), _form_key(base)}
 

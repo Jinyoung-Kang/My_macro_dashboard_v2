@@ -262,7 +262,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 
 - FeedItem(공통): `kind:"filing"`, `lang` SEC `en`·DART `ko`, `summary` ≤ 300자, `readerId:null`.
   - `sec`: `title` = `<form> · <primaryDocDescription>`(설명이 없거나 양식만 되풀이하면(`8-K`·`FORM 6-K`) `<form> · <양식 뜻>` — 흔한 양식만 짧은 한국어 뜻
-    (`search_filings.FORM_LABELS` — 3 최초 지분 보고, 4 지분 변동 보고, 6-K 외국 기업 수시 보고 등, 정정 `/A`는 뜻 + ' 정정'), 모르는 양식은 양식만 — QA-440), `url` = 접수 색인 쪽
+    (`search_filings.FORM_LABELS` — 3 최초 지분 보고, 4 지분 변동 보고, 6-K 외국 기업 수시 보고, 13D·13G 5% 초과 지분 보고 등, `/A`(amendment)는 뜻 + ' 수정'), 모르는 양식은 양식만 — QA-440), `url` = 접수 색인 쪽
     `https://www.sec.gov/Archives/edgar/data/<CIK 숫자>/<접수번호 대시 없음>/<접수번호>-index.htm`, `publisher` = 회사 이름(submissions `name`), `publisherDomain` = `sec.gov`,
     `publishedAt` = `acceptanceDateTime`(꼬리 `Z` 그대로 UTC — 서버 실측 2026-11-14: `…T13:52:41.000Z` = 접수 색인 쪽 'Accepted 08:52:41' 미국 동부 표준시, 있으면
     `timeBasis:"published"`) 없으면 `filingDate`(`"date"`), `summary` = "보고 기준일 <reportDate>"(있을 때).
