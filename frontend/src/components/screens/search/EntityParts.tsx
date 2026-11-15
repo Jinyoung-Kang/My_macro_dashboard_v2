@@ -38,7 +38,10 @@ export function EntityHeader({
           <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-border bg-surface-2 text-text-2">
             <KindIcon kind={kind} size={18} />
           </span>
-          <h2 className="min-w-0 truncate text-lg font-semibold text-text">{name}</h2>
+          {/* 이름이 남은 폭을 쓰고 넘치면 말줄임(옆 아이콘·종류 꼬리표는 줄지 않음 — QA-446), 이름 전체는 title. */}
+          <h2 className="min-w-0 truncate text-lg font-semibold text-text" title={name}>
+            {name}
+          </h2>
           <KindBadge kind={kind} />
         </div>
         {entity ? (

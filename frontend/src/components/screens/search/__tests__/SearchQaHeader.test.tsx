@@ -183,7 +183,7 @@ describe("QA-446 — 긴 영문 이름 옆의 종류 꼬리표는 한 줄로 남
   // 수정 전 실패: 꼬리표 className에 shrink-0·whitespace-nowrap이 없음(재현 커밋에서는 it.fails).
   const LONG_NAME = "Fictional Universal Financial Holdings Group, Inc.";
 
-  it.fails("꼬리표는 줄지 않고 한 줄(shrink-0·whitespace-nowrap), 이름은 남은 폭에서 말줄임하고 title에 이름 전체", async () => {
+  it("꼬리표는 줄지 않고 한 줄(shrink-0·whitespace-nowrap), 이름은 남은 폭에서 말줄임하고 title에 이름 전체", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: { ...NVIDIA, name: LONG_NAME, nameKo: null, nameEn: LONG_NAME }, errors: {} };
     reads[endpoints.search.watch] = watchList([]);
     renderScreen("/search?e=us:NVDA");

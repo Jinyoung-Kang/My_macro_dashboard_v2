@@ -64,10 +64,13 @@ export function KindIcon({ kind, size = 16 }: { kind: SearchEntityKind | null | 
   return <TagIcon size={size} />;
 }
 
-/** 종류 아이콘 + 종류 글(색만으로 가르지 않음). */
+/**
+ * 종류 아이콘 + 종류 글(색만으로 가르지 않음). 줄지 않고 한 줄로 둡니다(shrink-0·whitespace-nowrap) — 긴 이름 옆에서 함께 눌리면
+ * 한글 종류 글이 음절마다 끊겼습니다(QA-446). 줄어드는 것은 옆의 이름입니다.
+ */
 export function KindBadge({ kind }: { kind: SearchEntityKind | null | undefined }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-control border border-border px-1.5 py-0.5 text-xs text-text-2">
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-control border border-border px-1.5 py-0.5 text-xs text-text-2">
       <KindIcon kind={kind} size={12} />
       {entityKindLabel(kind)}
     </span>
