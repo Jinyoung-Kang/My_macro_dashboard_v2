@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { linkGraphLayout, linkGraphSize, linkTarget, type LinkGraphNode, type LinkGroup, type SearchTarget } from "@/lib/infoSearch";
+import { useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import {
+  graphFocusScrollLeft,
+  linkGraphLayout,
+  linkGraphSize,
+  linkTarget,
+  type LinkGraphNode,
+  type LinkGroup,
+  type SearchTarget,
+} from "@/lib/infoSearch";
 import { LINK } from "./parts";
 
 /** 그림 아래에 늘 적는 한 줄(계약 §9-3). */
@@ -14,6 +22,7 @@ const GRAPH_NOTE = "받은 자료 기준 — 출처에 없는 관계는 그리�
  * 그림의 폭은 담는 칸의 폭을 재서 맞추고(좁은 화면 390에서도 — 글자 12px이 줄지 않게 뷰박스를 칸 폭과 같게), 재지 못하면 360으로 그려 칸에 맞춰
  * 줄입니다. 칸이 그림의 가장 작은 폭(280 — linkGraphSize)보다 좁으면(폭 약 374px 미만의 좁은 휴대폰 등 — 390 화면의 칸은 296px. QA-420 전에는 세 칸이던 1024~약 1140 화면의 가운데 칸도 그랬음) 줄여 그리지 않고 제 폭 그대로 두어
  * 칸 안에서 가로로 넘기고(글자 12px 그대로), 처음에는 가운데 대상이 보이게 가운데로 넘겨 둡니다. 노드는 Tab으로 차례로 닿고(낭독 이름 = 이름 · 관계), 누르기·Enter·Space로 그 대상으로(키가 없으면 그 이름으로 찾기) 갑니다.
+ * 가로로 넘길 때 포커스가 간 노드의 고리·이름이 칸 밖에 걸치면 그 칸만 넘겨 다 보이게 합니다(graphFocusScrollLeft).
  * 노드는 누를 수 있는 것이라 강조 파랑(이름·테두리), 선·관계 글은 데이터라 중립입니다(명세 A1). 포커스는 노드를 둘러싼 2px 고리로 보입니다
  * (브라우저 기본 바깥선은 투명 — 고대비 모드에서는 시스템 색으로 보임).
  * 색은 currentColor로 칠해 고대비 모드에서도 시스템 글자색으로 남습니다.
@@ -50,6 +59,28 @@ export function LinksGraph({
     const box = boxRef.current;
     if (box && overflowing) box.scrollLeft = (layout.width - measured) / 2;
   }, [overflowing, layout.width, measured]);
+
+  /**
+   * 가로로 넘기는 칸에서 포커스가 간 노드(Tab 등)의 고리와 이름이 칸 밖에 걸치면 그 칸만 가로로 넘겨 다 보이게 합니다 — 페이지는 넘기지 않음
+   * (scrollIntoView를 쓰지 않음). 이름 폭은 그린 글을 재고(getBBox — 재지 못하면 어림), 움직임 줄이기면 바로 옮깁니다.
+   */
+  const onFocus = (event: FocusEvent<SVGGElement>, node: LinkGraphNode) => {
+    const box = boxRef.current;
+    if (!box || !overflowing) return;
+    let labelWidth: number | undefined;
+    try {
+      const measuredWidth = event.currentTarget.querySelector("text")?.getBBox?.().width;
+      if (measuredWidth && measuredWidth > 0) labelWidth = measuredWidth;
+    } catch {
+      // 그려지지 않은 글은 getBBox가 던질 수 있음 — 어림 폭으로.
+    }
+    const drawnWidth = box.querySelector("svg")?.getBoundingClientRect().width ?? 0;
+    const next = graphFocusScrollLeft(node, box, { width: layout.width, scale: drawnWidth / layout.width, labelWidth });
+    if (next === null) return;
+    const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (typeof box.scrollTo === "function") box.scrollTo({ left: next, behavior: reduce ? "auto" : "smooth" });
+    else box.scrollLeft = next;
+  };
 
   const open = (node: LinkGraphNode) => onTarget(linkTarget(node.link));
   const onKeyDown = (event: KeyboardEvent<SVGGElement>, node: LinkGraphNode) => {
@@ -106,6 +137,7 @@ export function LinksGraph({
               aria-label={node.ariaLabel}
               onClick={() => open(node)}
               onKeyDown={(event) => onKeyDown(event, node)}
+              onFocus={(event) => onFocus(event, node)}
               className="group/node cursor-pointer text-accent outline-hidden hover:text-accent-hover"
             >
               {/* 마우스로 가리키면 이름·관계(줄인 이름의 전체 — 낭독 이름과 같은 글). */}

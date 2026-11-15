@@ -1251,6 +1251,33 @@ export function linkGraphSize(measuredWidth: number): { width: number; height: n
   return { width, height: Math.min(480, Math.max(340, Math.round(width * 0.75))) };
 }
 
+/** 노드 포커스 고리의 바깥 반지름(px — 그린 원 r 11 + 테두리 2의 절반)과, 포커스 간 노드를 칸 안에 들일 때 칸 가장자리에 남기는 여유(px). */
+const GRAPH_FOCUS_RING = 12;
+const GRAPH_SCROLL_PAD = 4;
+
+/**
+ * 칸이 그림보다 좁아 그림을 가로로 넘길 때(QA-424) 키보드 포커스가 간 노드의 포커스 고리와 이름이 칸 안에 다 보이게 하는 칸의 scrollLeft — 이미 다
+ * 보이면 null. 노드의 가로 범위는 그림 좌표(포커스 고리 x ± 12, 이름은 labelX에서 정렬 쪽으로 labelWidth — 재지 못했으면 어림 폭)이고, scale(그린 폭 ÷
+ * 그림 폭 — 넘길 때는 1)로 칸 좌표로 바꿔 칸 가장자리에서 4px 안쪽에 들게 가장 적게 넘깁니다. 범위가 칸보다 넓으면 노드 원 쪽(이름이 시작하는 쪽)을
+ * 맞추고, 결과는 0 ~ (그림 폭 × scale − 칸 폭)으로 자릅니다.
+ */
+export function graphFocusScrollLeft(
+  node: Pick<LinkGraphNode, "x" | "labelX" | "anchor" | "label">,
+  box: { scrollLeft: number; clientWidth: number },
+  graph: { width: number; scale?: number; labelWidth?: number },
+): number | null {
+  const scale = graph.scale && graph.scale > 0 ? graph.scale : 1;
+  const labelWidth = graph.labelWidth ?? textWidth(node.label);
+  const start = node.anchor === "start";
+  const left = (start ? node.x - GRAPH_FOCUS_RING : Math.min(node.x - GRAPH_FOCUS_RING, node.labelX - labelWidth)) * scale - GRAPH_SCROLL_PAD;
+  const right = (start ? Math.max(node.x + GRAPH_FOCUS_RING, node.labelX + labelWidth) : node.x + GRAPH_FOCUS_RING) * scale + GRAPH_SCROLL_PAD;
+  const { scrollLeft, clientWidth } = box;
+  if (left >= scrollLeft && right <= scrollLeft + clientWidth) return null;
+  const target = right - left > clientWidth ? (start ? left : right - clientWidth) : left < scrollLeft ? left : right - clientWidth;
+  const next = Math.min(Math.max(0, graph.width * scale - clientWidth), Math.max(0, target));
+  return Math.abs(next - scrollLeft) < 0.5 ? null : next;
+}
+
 /**
  * 그림에 그릴 연결 — 관계 묶음마다 돌아가며 하나씩 골라(한 관계 — 내부자 명단 등 — 가 자리를 다 차지하지 않게) 최대 max개. 묶음 순서와 묶음 안의
  * 순서는 그대로이고, hidden은 그리지 않은 연결 수(목록에는 모두 있음).

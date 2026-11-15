@@ -3,7 +3,7 @@
  * 자료를 쓰지 않음).
  * 배치를 재지 못하는 jsdom이라, 고침이 세우는 구조(클래스·title·요소의 자리)를 대조하고 실제 폭은 QA 스택 브라우저(390·1024·1440)로 확인합니다.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { linkGroups, type LinksView } from "@/lib/infoSearch";
 import type { SearchLink } from "@/lib/types";
@@ -153,5 +153,107 @@ describe("연결 그림 — 칸이 그림의 가장 작은 폭(280)보다 좁으
       expect(classes(box)).not.toContain("overflow-x-auto");
       cleanup();
     }
+  });
+});
+
+describe("연결 그림 — 가로로 넘기는 칸에서 Tab으로 간 노드의 고리·이름이 칸 안에 다 보이게 그 칸만 넘김(QA 재확인 개선 제안)", () => {
+  // 320 화면(칸 226 < 그림 280)에서 처음 가운데로 넘긴 자리(scrollLeft 27)의 양끝 노드 이름이 칸 밖으로 18~19px 잘렸고, Tab으로 그 노드에 닿아도
+  // 칸이 넘겨지지 않았습니다(포커스 고리만 칸 안). 이제 포커스가 간 노드의 고리와 이름(그린 글의 폭 — jsdom은 재지 못해 어림 폭)이 칸 가장자리 4px
+  // 안쪽에 들게 그 칸만 가장 적게 넘깁니다(페이지는 넘기지 않음, 움직임 줄이기면 바로).
+  // 바꾸기 전 실패: 노드에 포커스해도 칸의 scrollLeft가 27 그대로이고 scrollTo를 부르지 않음.
+  const WIDE_CHAR = /[ᄀ-ᇿ…⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+  const estimate = (text: string) =>
+    Array.from(text).reduce((sum, char) => sum + (WIDE_CHAR.test(char) || /[MW]/.test(char) ? 12 : /\p{Lu}/u.test(char) ? 9 : 7.5), 0);
+  const WIKIDATA: SearchLink[] = [
+    ["owner_of", "Sample Owned Subsidiary Holdings"],
+    ["owned_by", "Sample Owner Investment Fund One"],
+    ["founded_by", "Sample Founder Alexander Example"],
+    ["founded_by", "Sample Founder Benjamin Example"],
+    ["employer", "Sample Employer Corporation"],
+    ["ceo", "Sample Chief Executive Person"],
+    ["parent", "Sample Parent Holdings Group"],
+    ["subsidiary", "Sample Subsidiary One"],
+  ].map(([relation, name], at) => ({ relation, key: `wd:Q${700 + at}`, name, kind: "company", source: "wikidata", detail: null }));
+
+  const renderGraph = (width: number) => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(width);
+    render(<LinksGraph groups={linkGroups(WIKIDATA)} centerName="Sample Center Co." onTarget={() => {}} onShowList={() => {}} />);
+    const svg = screen.getByRole("group", { name: /Sample Center Co\.의 연결 그림/ });
+    const nodes = within(svg).getAllByRole("button");
+    return { box: svg.parentElement!, nodes };
+  };
+  /** 노드의 가로 범위(그림 좌표 = 칸 좌표, 넘길 때 그림은 뷰박스와 같은 px 폭) — 포커스 고리(r 11 + 테두리 1)와 이름(어림 폭). */
+  const extentOf = (node: HTMLElement) => {
+    const x = Number(node.querySelector("circle")!.getAttribute("cx"));
+    const text = node.querySelector("text")!;
+    const labelX = Number(text.getAttribute("x"));
+    const width = estimate(text.textContent ?? "");
+    return text.getAttribute("text-anchor") === "start"
+      ? { left: x - 12, right: Math.max(x + 12, labelX + width) }
+      : { left: Math.min(x - 12, labelX - width), right: x + 12 };
+  };
+  const withScrollTo = (run: (scrollTo: ReturnType<typeof vi.fn>) => void) => {
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", { value: scrollTo, configurable: true, writable: true });
+    try {
+      run(scrollTo);
+    } finally {
+      delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+    }
+  };
+
+  it("칸 226px — 노드마다 Tab으로 가면 그 노드의 고리·이름이 칸 안(가장자리 4px 안쪽), 처음 자리에서 잘린 노드가 있었음", () => {
+    const { box, nodes } = renderGraph(226);
+    expect(box.scrollLeft).toBe(27);
+    const clippedAtStart = nodes.filter((node) => {
+      const { left, right } = extentOf(node);
+      return left < 27 || right > 27 + 226;
+    });
+    expect(clippedAtStart.length).toBeGreaterThan(0);
+    for (const node of nodes) {
+      act(() => node.focus());
+      expect(document.activeElement).toBe(node);
+      const { left, right } = extentOf(node);
+      const label = node.querySelector("text")!.textContent;
+      expect([label, left - 4 >= box.scrollLeft - 1e-9, right + 4 <= box.scrollLeft + 226 + 1e-9]).toEqual([label, true, true]);
+      expect(box.scrollLeft).toBeGreaterThanOrEqual(0);
+      expect(box.scrollLeft).toBeLessThanOrEqual(280 - 226);
+    }
+  });
+
+  it("칸의 scrollTo로 부드럽게(움직임 줄이기면 바로) — 페이지(window)는 넘기지 않고, 이미 다 보이는 노드·넘기지 않는 칸에서는 부르지 않음", () => {
+    withScrollTo((scrollTo) => {
+      const windowScroll = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+      const { box, nodes } = renderGraph(226);
+      const clipped = nodes.find((node) => extentOf(node).right > 27 + 226)!;
+      act(() => clipped.focus());
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      const [{ left, behavior }] = scrollTo.mock.calls[0] as [{ left: number; behavior: string }];
+      expect(behavior).toBe("smooth");
+      expect(left).toBeCloseTo(Math.min(280 - 226, extentOf(clipped).right + 4 - 226), 6);
+      expect(scrollTo.mock.instances[0]).toBe(box);
+      expect(windowScroll).not.toHaveBeenCalled();
+
+      // 넘긴 뒤(가짜 scrollTo라 자리를 직접 옮김) 그 노드에 다시 오면 이미 다 보여 부르지 않음.
+      box.scrollLeft = left;
+      act(() => clipped.blur());
+      act(() => clipped.focus());
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+
+      // 움직임 줄이기 — 바로 옮김.
+      vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({ matches: query.includes("reduce"), media: query }) as MediaQueryList);
+      const leftClipped = nodes.find((node) => extentOf(node).left < 27)!;
+      act(() => leftClipped.focus());
+      expect(scrollTo).toHaveBeenCalledTimes(2);
+      expect((scrollTo.mock.calls[1] as [{ behavior: string }])[0].behavior).toBe("auto");
+      cleanup();
+
+      // 칸이 그림보다 넓으면(넘기지 않음) 부르지 않음.
+      scrollTo.mockClear();
+      const wide = renderGraph(570);
+      for (const node of wide.nodes) act(() => node.focus());
+      expect(scrollTo).not.toHaveBeenCalled();
+      expect(windowScroll).not.toHaveBeenCalled();
+    });
   });
 });
