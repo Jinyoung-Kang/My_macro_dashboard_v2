@@ -53,10 +53,12 @@ export function buttonClasses(variant: ButtonVariant = "default", size: ButtonSi
 
 export type InputSize = "md" | "sm" | "lg";
 
-// 단추와 같은 높이 — lg 이상 기본 30px·작은 것 24px·큰 것(인증 화면) 40px, lg 미만은 모두 44px.
+// 단추와 같은 높이 — lg 이상 기본 30px·작은 것 24px·큰 것(인증 화면) 40px, lg 미만은 모두 44px. 높이는 줄 높이 + 위아래 여백 + 경계 2px라
+// 줄 높이를 글자 단계로 고정합니다 — md는 text-sm(14/20 → 20+8+2), sm은 caption(13/18 → 18+4+2). 임의 크기 text-[13px]는 줄 높이를 정하지 않아
+// 부모의 줄 높이(본문 1.5 → 19.5px)를 물려받아 sm이 25.5px로 같은 줄의 sm 단추(24px)와 어긋났습니다.
 const INPUT_SIZE: Record<InputSize, string> = {
   md: "min-h-11 px-3 py-2 text-sm lg:min-h-[30px] lg:px-2.5 lg:py-1",
-  sm: "min-h-11 px-2.5 py-1 text-[13px] lg:min-h-6 lg:px-2 lg:py-0.5",
+  sm: "min-h-11 px-2.5 py-1 text-caption lg:min-h-6 lg:px-2 lg:py-0.5",
   // 인증 화면(로그인·가입·재설정)의 입력칸 — 화면 가운데 카드 하나라 큰 것(40px).
   lg: "min-h-11 px-3 py-2 text-sm lg:min-h-10",
 };

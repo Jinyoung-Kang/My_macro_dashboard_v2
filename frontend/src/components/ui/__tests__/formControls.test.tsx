@@ -25,6 +25,11 @@ describe("inputClasses", () => {
       expect(classes).not.toContain("outline-hidden");
     }
     expect(FOCUS_RING).toContain("focus-visible:outline-2");
+    // 넓은 화면 높이 = 줄 높이 + 여백 + 경계라 줄 높이를 글자 단계로 고정한다 — sm은 caption(13/18 → 24px, sm 단추와 같음). 임의 크기
+    // text-[13px]는 부모 줄 높이(19.5px)를 물려받아 25.5px가 됐다.
+    expect(inputClasses("sm").split(/\s+/)).toEqual(expect.arrayContaining(["text-caption", "lg:min-h-6", "lg:py-0.5"]));
+    expect(inputClasses("sm")).not.toContain("text-[13px]");
+    expect(inputClasses("md").split(/\s+/)).toEqual(expect.arrayContaining(["text-sm", "lg:min-h-[30px]", "lg:py-1"]));
     // 인증 화면 입력칸(lg) — 같은 테두리·포커스 링, 좁은 화면 44px·넓은 화면 큰 조작 40px(작업대 실행 명세 §3-7)
     const large = inputClasses("lg").split(/\s+/);
     expect(large).toEqual(expect.arrayContaining(["border-border-strong", "bg-surface", "min-h-11", "lg:min-h-10", ...FOCUS_RING.split(/\s+/)]));
