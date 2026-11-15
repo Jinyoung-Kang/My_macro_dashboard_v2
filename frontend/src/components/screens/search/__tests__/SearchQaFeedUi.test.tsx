@@ -220,3 +220,34 @@ describe("QA-447 — 아래 시트가 열린 채 휴대폰을 돌리면(창 폭�
     expect(scrolled).toEqual([row]);
   });
 });
+
+describe("묶음 미리 보기의 펼치는 법은 머리 바로 아래(QA 스택 기록 R1-SG1-N2)", () => {
+  // QA 스택(1024·390): 다른 보도가 5건 넘는 묶음은 미리 보기가 시트의 50dvh 상한(384·422px)에 닿아, 끝에 둔 펼치는 법('펼치기: 결과 목록에서
+  // Enter …')이 처음에는 시트 밑으로 48~54px 밀려 시트 안을 스크롤해야 보였습니다. jsdom은 배치를 재지 않으므로 그린 차례로 봅니다 — 머리(건수·
+  // 매체 수) 바로 다음이고 대표 줄·다른 보도 목록보다 앞.
+  const at = (hour: number) => `2026-11-13T${String(hour).padStart(2, "0")}:00:00+00:00`;
+  const BIG = feed([
+    row({ id: "b0", title: "큰 묶음 대표", clusterId: "b0", cluster: { size: 8, publishers: 8 }, publisher: "P0", publishedAt: at(1) }),
+    ...Array.from({ length: 7 }, (_, index) =>
+      row({ id: `b${index + 1}`, title: `큰 묶음 보도 ${index + 1}`, clusterId: "b0", publisher: `P${index + 1}`, publishedAt: at(index + 2) }),
+    ),
+  ]);
+  const follows = (first: Node, second: Node) => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  it("접혀 있든 펼쳤든 펼치기·접기 안내가 머리 바로 다음, 대표 줄·다른 보도보다 앞에 있다", async () => {
+    const list = await renderFeed(BIG);
+    list.focus();
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /같은 사건 8건 · 매체 8곳/ }).getAttribute("aria-selected")).toBe("true");
+    for (const hint of [/^펼치기: 결과 목록에서 Enter.*나머지 7건이 대표 줄 아래에 나옵니다/, /^접기: 결과 목록에서 Enter/]) {
+      const preview = screen.getByRole("region", { name: "미리 보기" });
+      const heading = within(preview).getByText("같은 사건 8건 · 매체 8곳");
+      const note = within(preview).getByText(hint);
+      expect(heading.nextElementSibling).toBe(note);
+      expect(follows(note, within(preview).getByText("대표 보도 — 가장 이른 줄"))).toBe(true);
+      expect(follows(note, within(preview).getByRole("list", { name: "같은 사건의 다른 보도" }))).toBe(true);
+      fireEvent.keyDown(list, { key: "Enter" });
+    }
+  });
+});

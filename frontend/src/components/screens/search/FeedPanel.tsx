@@ -78,7 +78,7 @@ import { SummaryButton, SummaryPanel } from "./SummaryPanel";
  * 단계 6(계약 §9-1·9-2): 목록 위에 고른 기간의 건수 막대(PeriodBars — 거르기를 거친 줄, 묶기와 상관없이 줄 수)를 두고, 막대를 누르면 그 날·주로
  * 목록을 좁힙니다(기간을 바꾸면 풂). 목록은 기본으로 같은 사건을 묶어(대표 줄 + '같은 사건 n건 · 매체 m곳 — 펼치기' 줄) 보이고 '묶어 보기'
  * 전환으로 모든 줄을 봅니다. 묶음 줄도 목록의 한 줄이라 ↑↓로 지나가고 Enter·누르기로 펼치거나 접습니다(결과 줄의 Enter는 그대로 원문).
- * 묶음 줄을 ↑↓·Home·End로 고르면 미리 보기 자리(xl 미만은 아래 시트)에 그 묶음(건수·매체 수, 대표 줄, 다른 보도, 펼치는 법)을 보입니다 — ↑↓로
+ * 묶음 줄을 ↑↓·Home·End로 고르면 미리 보기 자리(xl 미만은 아래 시트)에 그 묶음(건수·매체 수, 펼치는 법, 대표 줄, 다른 보도)을 보입니다 — ↑↓로
  * 지나갈 때 시트가 닫혔다 열리며 화면 아래가 깜빡이지 않게. 묶음 미리 보기는 결과 줄의 미리 보기보다 대개 높아(1024에서 약 343px 대 240~265px)
  * 지날 때 시트가 커지지만, 열린 동안 줄지는 않으므로(sheetStyle) 다음 줄로 옮길 때 본문 높이가 줄어 고른 줄이 움직이지 않습니다.
  * 누르기(터치·마우스)로 고른 묶음 줄은 펼치기·접기만 하고 미리 보기를 열지 않습니다(열려 있던 미리 보기는 닫힘) — 누르기의 목적은 펼친 줄을 보는
@@ -852,8 +852,8 @@ function FactList({ rows }: { rows: [string, string][] }) {
 const CLUSTER_PREVIEW_MEMBERS = 5;
 
 /**
- * 고른 묶음 줄의 미리 보기 — 묶음 줄과 같은 건수·매체 수(같은 셈), 대표 줄의 제목·매체·시각, 같은 사건의 다른 보도(앞 5건의 제목·매체·시각),
- * 펼치는 법. 묶음 줄을 지날 때 미리 보기(xl 미만은 아래 시트)가 닫히지 않게 합니다.
+ * 고른 묶음 줄의 미리 보기 — 묶음 줄과 같은 건수·매체 수(같은 셈), 그 바로 아래 펼치는 법, 대표 줄의 제목·매체·시각, 같은 사건의 다른 보도
+ * (앞 5건의 제목·매체·시각). 묶음 줄을 지날 때 미리 보기(xl 미만은 아래 시트)가 닫히지 않게 합니다.
  */
 function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: FeedClusterEntry }) {
   const shown = entry.members.slice(0, CLUSTER_PREVIEW_MEMBERS);
@@ -861,6 +861,12 @@ function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: F
   return (
     <PreviewFrame onClose={onClose} onKeyDown={onKeyDown}>
       <p className="text-sm font-semibold leading-snug text-text">{clusterSizeText(entry)}</p>
+      {/* 펼치는 법은 머리 바로 아래 — 끝에 두면 다른 보도가 많은 묶음에서 시트(50dvh 상한) 밑으로 밀려 시트 안을 스크롤해야 보였습니다. */}
+      <p className="text-xs text-text-3">
+        {entry.expanded
+          ? "접기: 결과 목록에서 Enter(또는 묶음 줄 누르기) — 대표 줄만 남습니다."
+          : `펼치기: 결과 목록에서 Enter(또는 묶음 줄 누르기) — 나머지 ${entry.members.length}건이 대표 줄 아래에 나옵니다.`}
+      </p>
       <div className="flex flex-col gap-1">
         <p className="text-xs text-text-3">대표 보도 — 가장 이른 줄</p>
         <p className="text-sm leading-snug text-text">{entry.lead.title}</p>
@@ -879,7 +885,7 @@ function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: F
               </li>
             ))}
           </ul>
-          {/* 펼친 상태에 맞게 — 접혀 있으면 펼치는 길, 펼쳤으면 이미 목록에 있음(아래 펼치기·접기 안내와 같은 상태). */}
+          {/* 펼친 상태에 맞게 — 접혀 있으면 펼치는 길, 펼쳤으면 이미 목록에 있음(위 펼치기·접기 안내와 같은 상태). */}
           {more > 0 ? (
             <p className="text-xs text-text-3">
               {`그 밖에 ${more}건 — ${entry.expanded ? "목록에 모두 나와 있습니다." : "펼치면 목록에 모두 나옵니다."}`}
@@ -887,11 +893,6 @@ function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: F
           ) : null}
         </div>
       ) : null}
-      <p className="text-xs text-text-3">
-        {entry.expanded
-          ? "접기: 결과 목록에서 Enter(또는 묶음 줄 누르기) — 대표 줄만 남습니다."
-          : `펼치기: 결과 목록에서 Enter(또는 묶음 줄 누르기) — 나머지 ${entry.members.length}건이 대표 줄 아래에 나옵니다.`}
-      </p>
     </PreviewFrame>
   );
 }
