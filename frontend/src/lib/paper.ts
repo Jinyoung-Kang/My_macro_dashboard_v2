@@ -13,6 +13,7 @@ import {
   formatNumber,
   formatPercent,
   formatSigned,
+  formatWeightPercent,
   formatWithUnit,
   withoutLeadingIcon,
 } from "./format";
@@ -2668,8 +2669,9 @@ export function ruleDecisionView(response: unknown): RuleDecisionView {
       action: signalActionLabel(action),
       actionKey: action ?? "",
       sharesChange: formatPercent(numberOf(event.sharesChangePct)),
-      weight: formatWithUnit(numberOf(event.weightPct), 2, "%"),
-      previousWeight: formatWithUnit(numberOf(event.previousWeightPct), 2, "%"),
+      // 13F 총액 대비 비중 — 0보다 크지만 0.005% 미만이면 '<0.01%'(QA-454, 정보 검색·종목 상세의 13F 비중과 같은 표기).
+      weight: formatWeightPercent(numberOf(event.weightPct)),
+      previousWeight: formatWeightPercent(numberOf(event.previousWeightPct)),
     }];
   });
 
@@ -2682,7 +2684,7 @@ export function ruleDecisionView(response: unknown): RuleDecisionView {
       buyerCount: `${formatNumber(buyers.length, 0)}곳`,
       score: formatScore(numberOf(candidate.score)),
       rankSum: formatNumber(numberOf(candidate.rankSum), 0),
-      combinedWeight: formatWithUnit(numberOf(candidate.combinedWeightPct), 2, "%"),
+      combinedWeight: formatWeightPercent(numberOf(candidate.combinedWeightPct)),
     };
   });
   const scored = candidateEntries.some((candidate) => isNumber(candidate.score) || Array.isArray(candidate.contributions));
