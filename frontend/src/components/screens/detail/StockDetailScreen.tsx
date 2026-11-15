@@ -42,7 +42,7 @@ const HOLDERS_SHOWN = 10;
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
   const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub } = useStockQuote(market, code);
   const holders = market === "us" && (quote?.kind ?? "").toUpperCase() === "EQUITY" ? holderQuery(quote?.name) : null;
-  // 뉴스·AI 요약의 검색어는 백엔드 상한(60자) 안으로 — 시세 이름은 Yahoo의 긴 이름이라 넘으면 400(QA-448).
+  // 뉴스·AI 요약의 검색어는 백엔드 상한(60자) 안으로 — 시세 이름은 Yahoo의 긴 이름이라 넘으면 400(QA-448). 뉴스 카드의 정보 검색 링크도 같은 말로.
   const newsQuery = detailQuery(quote?.name) ?? undefined;
 
   let placeholder;
@@ -110,7 +110,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
           {/* 회사 이름(구글 뉴스 검색어)은 시세 응답에 있어, 시세를 읽기 전에는 부르지 않습니다 — 이름 없이 한 번, 이름과 함께 또 한 번 부르지 않게. */}
           <NewsCard
             path={quoteState.data || quoteState.error ? endpoints.detail.news({ market, code, q: newsQuery }) : null}
-            searchQuery={quote?.name ?? code}
+            searchQuery={newsQuery ?? code}
           />
         </div>
         <div className="flex min-w-0 flex-col gap-6 lg:gap-8">

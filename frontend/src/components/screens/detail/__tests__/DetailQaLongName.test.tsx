@@ -93,6 +93,12 @@ describe("종목 상세 — 60자를 넘는 시세 이름의 뉴스·AI 요약 �
     const news = requested().filter((path) => path.startsWith("/api/detail/news"));
     expect(news.length).toBeGreaterThan(0);
     for (const path of news) expect(newsQuery(path)).toBe(CLAMPED);
+
+    // 카드 머리의 '정보 검색' 링크도 같은 말로(NewsCard — 지표·기관 상세와 같게). 이름 전체를 넘기면 정보 검색 연결이 60글자에서 낱말 가운데로
+    // 잘라 '…Incorporated In'이 되어 카드의 검색어와 달랐습니다(QA-448 검토 지적).
+    const link = within(card).getByRole("link", { name: "정보 검색" });
+    expect(link.getAttribute("href")).toBe(`/search?q=${encodeURIComponent(CLAMPED)}`);
+    expect(link.getAttribute("title")).toBe(`‘${CLAMPED}’ 정보 검색 — 최근 2년의 기사·글`);
   });
 
   it("AI 요약 요청의 q·label도 같은 검색어로 60자 안 — 요약이 보인다", async () => {
