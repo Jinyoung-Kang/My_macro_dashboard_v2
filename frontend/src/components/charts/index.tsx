@@ -172,9 +172,13 @@ function BarValueLabel({
  *
  * <p>고친 것: 바탕은 불투명한 덮개 바탕(surface-2)으로 막대·선을 가리고, 떠 있는 덮개라 안쪽 밝은 1px 경계(border-overlay)·덮개 그림자·
  * 4px 모서리(차트 틀 TOOLTIP_BOX — 새 LineChart 툴팁과 같은 상자). 글자는 본문색(text), 날짜는 보조색(text-2).
+ *
+ * <p>툴팁은 미끄러지지 않습니다(isAnimationActive: false — 명세 §3-8 '차트 애니메이션 없음', 새 LineChart와 같음). Recharts 기본값 'auto'는
+ * 움직임 줄이기를 켜지 않은 화면에서 툴팁을 0.4초 동안 옮겼습니다(QA-500).
  */
 function tooltipStyle() {
   return {
+    isAnimationActive: false,
     contentStyle: TOOLTIP_BOX,
     labelStyle: { color: "var(--text-2)", fontWeight: 600, marginBottom: 4 },
     itemStyle: { color: "var(--text)", padding: 0 },
@@ -703,7 +707,8 @@ export function ScatterPlot({
           ]}
           labelFormatter={() => ""}
         />
-        <Scatter data={data} fill={color} fillOpacity={0.55} />
+        {/* 등장 애니메이션 없음(명세 §3-8, QA-500 — 기본값 'auto'는 점이 0에서 자라며 나타남). */}
+        <Scatter data={data} fill={color} fillOpacity={0.55} isAnimationActive={false} />
       </ScatterChart>
     </ResponsiveContainer>
     </div>
@@ -891,7 +896,12 @@ export function DonutChart({
           이름을 다시 달지 않습니다(두 번 읽힘).
         */}
         <PieChart aria-label={ariaLabel} margin={{ top: margin, right: margin, bottom: margin, left: margin }}>
-          <Tooltip content={(props) => <DonutTooltip active={props.active} payload={props.payload} />} wrapperStyle={{ outline: "none", zIndex: 40 }} />
+          {/* 툴팁은 미끄러지지 않습니다(명세 §3-8, QA-500 — 상자 모양만 tooltipStyle()과 같고 펼치지는 않음). */}
+          <Tooltip
+            content={(props) => <DonutTooltip active={props.active} payload={props.payload} />}
+            wrapperStyle={{ outline: "none", zIndex: 40 }}
+            isAnimationActive={false}
+          />
           <Pie
             data={data}
             dataKey="value"

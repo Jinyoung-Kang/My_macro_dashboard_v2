@@ -75,8 +75,8 @@ function tooltipStyleStill(): boolean {
 
 describe("차트 움직임 없음(명세 §3-8)", () => {
   // QA-500: tooltipStyle()이 isAnimationActive를 넘기지 않아 그것을 펼치는 <Tooltip> 넷(여러 선·가로 막대·세로 막대·산점도)과 도넛의 <Tooltip>,
-  // <Scatter>가 Recharts 기본값 'auto'를 따랐습니다(QA 스택 1440 — 툴팁 'transform 0.4s', 산점 기호 폭 0 → 9.0이 약 490ms). 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-500: 차트 두 파일의 Tooltip·Scatter·Line·Bar·Pie·Area는 모두 isAnimationActive={false}(또는 그것을 담은 tooltipStyle() 펼침)", () => {
+  // <Scatter>가 Recharts 기본값 'auto'를 따랐습니다(QA 스택 1440 — 툴팁 'transform 0.4s', 산점 기호 폭 0 → 9.0이 약 490ms). 재현 커밋에서는 it.fails였습니다.
+  it("QA-500: 차트 두 파일의 Tooltip·Scatter·Line·Bar·Pie·Area는 모두 isAnimationActive={false}(또는 그것을 담은 tooltipStyle() 펼침)", () => {
     const elements = CHART_FILES.flatMap(animatedElements);
     // 검사기가 요소를 찾는지 — 선·막대·도넛·산점도·툴팁이 모두 있어야 합니다.
     for (const tag of ["Tooltip", "Scatter", "Line", "Bar", "Pie"]) {

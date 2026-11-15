@@ -404,7 +404,7 @@ describe("막대·산점도", () => {
 
 // QA-500: 래퍼 차트의 툴팁(tooltipStyle()을 펼치는 넷)은 isAnimationActive를 넘기지 않아 Recharts 기본값 'auto'를 따랐습니다 — 움직임 줄이기를
 // 켜지 않은 화면에서 툴팁이 'transform 400ms ease'로 미끄러졌습니다(명세 §3-8 '차트 애니메이션 없음' — 새 LineChart는 이미 false).
-// 시험 환경의 matchMedia는 움직임 줄이기 꺼짐입니다. 재현 커밋에서는 it.fails입니다.
+// 시험 환경의 matchMedia는 움직임 줄이기 꺼짐입니다. 재현 커밋에서는 it.fails였습니다.
 describe("툴팁은 미끄러지지 않는다(명세 §3-8)", () => {
   function sizeAs(width: number, height: number) {
     observeAs(width, height);
@@ -431,7 +431,7 @@ describe("툴팁은 미끄러지지 않는다(명세 §3-8)", () => {
     return wrapper;
   }
 
-  it.fails.each([
+  it.each([
     ["MultiLineSeries", () => <MultiLineSeries data={ROWS} series={[{ key: "a", name: "A", color: SERIES_COLORS.blue }, { key: "b", name: "B", color: SERIES_COLORS.orange }]} />, "wrapper"],
     ["HorizontalBars", () => <HorizontalBars data={BARS} />, "wrapper"],
     ["SignedBars", () => <SignedBars data={BARS} />, "wrapper"],

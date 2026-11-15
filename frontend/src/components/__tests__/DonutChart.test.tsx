@@ -83,8 +83,8 @@ describe("DonutChart", () => {
   // QA-497: 고대비(forced-colors)에서 조각(SVG fill)은 작성자 색을 남기는데 툴팁의 조각 견본(CSS 바탕색)은 Canvas로 지워졌습니다(툴팁 상자
   // 바탕도 Canvas라 견본이 사라짐 — 계좌 상세 1440). 견본도 조각과 같은 규칙(forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails였습니다.
   // QA-500: 도넛 툴팁은 tooltipStyle()을 펼치지 않고 wrapperStyle만 따로 주어 isAnimationActive가 Recharts 기본값 'auto'였습니다 — 움직임 줄이기를
-  // 켜지 않은 화면에서 'transform 400ms ease'로 미끄러졌습니다(계좌 상세 구성 도넛, 명세 §3-8). 재현 커밋에서는 it.fails입니다.
-  it.fails("QA-500: 조각을 가리키면 뜨는 툴팁에 transition이 없다", async () => {
+  // 켜지 않은 화면에서 'transform 400ms ease'로 미끄러졌습니다(계좌 상세 구성 도넛, 명세 §3-8). 재현 커밋에서는 it.fails였습니다.
+  it("QA-500: 조각을 가리키면 뜨는 툴팁에 transition이 없다", async () => {
     observeAs(480, 220);
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       left: 0, top: 0, x: 0, y: 0, width: 480, height: 220, right: 480, bottom: 220, toJSON: () => ({}),
