@@ -48,6 +48,7 @@ import {
   GUIDE,
   ISOLATED_DOT_R,
   REFERENCE_DASH,
+  REFERENCE_LINE_CLASS,
   SERIES_COLORS,
   TAIL_DASH,
   TOOLTIP_BOX,
@@ -113,7 +114,10 @@ function CategoryTick({
  * 성격의 차트(수급 상위, 섹터 수익률)는 "얼마나"가 곧 내용이라, 막대 길이만
  * 보여 주고 숫자를 감추면 그 자리에서 표로 다시 눈을 옮겨야 합니다.
  *
- * <p>음수 막대는 0선 왼쪽으로 자라므로 라벨도 왼쪽에 붙입니다.
+ * <p>라벨은 막대 바깥 끝에서 6px 떨어진 패널 면 위에 적습니다 — 양수는 오른쪽 끝 오른쪽(글 시작 맞춤), 음수는 왼쪽 끝 왼쪽(글 끝 맞춤).
+ * Recharts의 가로 막대는 음수 막대를 x = 0선 자리, width = 음수로 넘기므로 두 끝을 min·max로 정리해 씁니다 — 예전 `x - 6`은 0선 왼쪽,
+ * 곧 막대 안쪽 시작점이라 막대가 글보다 길면 하락 파랑 막대 위에 축 글색(1.43:1)이 됐습니다(QA-499). 음수 라벨 자리는 HorizontalBars가
+ * X축 왼쪽 여백(NEG_LABEL_ROOM)으로 남깁니다.
  */
 function BarValueLabel({
   x,
@@ -140,11 +144,13 @@ function BarValueLabel({
   }
   const left = Number(x) || 0;
   const barWidth = Number(width) || 0;
+  const start = Math.min(left, left + barWidth);
+  const end = Math.max(left, left + barWidth);
   const positive = amount >= 0;
 
   return (
     <text
-      x={positive ? left + barWidth + 6 : left - 6}
+      x={positive ? end + 6 : start - 6}
       y={(Number(y) || 0) + (Number(height) || 0) / 2}
       dy={4}
       textAnchor={positive ? "start" : "end"}
@@ -164,11 +170,15 @@ function BarValueLabel({
  * 않았습니다. 막대 위에 겹치면 글자가 막대 색과 뒤섞여 숫자를 읽을 수
  * 없었습니다(실제로 화면에서 그랬습니다).
  *
- * <p>고친 것: 바탕은 불투명한 덮개 바탕(surface-2)으로 막대·선을 가리고, 떠 있는 덮개라 덮개 그림자와 4px 모서리(차트 틀 TOOLTIP_BOX —
- * 새 LineChart 툴팁과 같은 상자). 글자는 본문색(text), 날짜는 보조색(text-2).
+ * <p>고친 것: 바탕은 불투명한 덮개 바탕(surface-2)으로 막대·선을 가리고, 떠 있는 덮개라 안쪽 밝은 1px 경계(border-overlay)·덮개 그림자·
+ * 4px 모서리(차트 틀 TOOLTIP_BOX — 새 LineChart 툴팁과 같은 상자). 글자는 본문색(text), 날짜는 보조색(text-2).
+ *
+ * <p>툴팁은 미끄러지지 않습니다(isAnimationActive: false — 명세 §3-8 '차트 애니메이션 없음', 새 LineChart와 같음). Recharts 기본값 'auto'는
+ * 움직임 줄이기를 켜지 않은 화면에서 툴팁을 0.4초 동안 옮겼습니다(QA-500).
  */
 function tooltipStyle() {
   return {
+    isAnimationActive: false,
     contentStyle: TOOLTIP_BOX,
     labelStyle: { color: "var(--text-2)", fontWeight: 600, marginBottom: 4 },
     itemStyle: { color: "var(--text)", padding: 0 },
@@ -465,6 +475,8 @@ export function MultiLineSeries({
                 stroke={entry.color}
                 strokeWidth={2}
                 strokeDasharray={entry.tailOf !== undefined ? TAIL_DASH : entry.dashed ? REFERENCE_DASH : undefined}
+                // 계산한 참고선 표지 — 고대비에서 CanvasText로(globals.css, QA-498). 꼬리 계열은 계좌 색 그대로.
+                className={entry.dashed && entry.tailOf === undefined ? REFERENCE_LINE_CLASS : undefined}
                 dot={
                   isolated
                     ? (dot) =>
@@ -484,7 +496,15 @@ export function MultiLineSeries({
   );
 }
 
-/** 가로 막대 (수급 순위·수익률 비교). */
+/**
+ * 음수 막대 왼쪽에 남기는 값 라벨 자리(px) — 가장 음수인 막대의 바깥 끝과 Y축 선 사이. 오른쪽 여백(68 — 양수 라벨 자리)과 맞춥니다(QA-499).
+ */
+const NEG_LABEL_ROOM = 60;
+
+/**
+ * 가로 막대 (수급 순위·수익률 비교). 값이 하나라도 음수면 X축 왼쪽 여백(padding.left)에 음수 라벨 자리(NEG_LABEL_ROOM)를 둡니다 — 막대 영역이
+ * 그만큼 좁아집니다. 바깥 여백(margin.left)은 Y축 이름표 바깥에 공간을 더할 뿐 축 선과 막대 사이를 벌리지 않아 쓰지 않습니다. 모두 양수면 그대로입니다.
+ */
 export function HorizontalBars({
   data,
   height = 360,
@@ -513,6 +533,7 @@ export function HorizontalBars({
   // 항목이 많으면 높이를 늘립니다. 고정 높이로 30개를 그리면 한 칸이 12px이라
   // 막대도 라벨도 읽을 수 없습니다.
   const chartHeight = Math.max(height, data.length * 26 + 48);
+  const hasNegative = data.some((entry) => entry.value < 0);
 
   return (
     <ResponsiveContainer width="100%" height={chartHeight}>
@@ -527,6 +548,7 @@ export function HorizontalBars({
           axisLine={false}
           tick={AXIS}
           tickLine={false}
+          padding={hasNegative ? { left: NEG_LABEL_ROOM } : undefined}
           tickFormatter={(value: number) => `${formatNumber(value, 0)}${unit}`}
         />
         {/* 축 폭은 이름표 폭에 맞춥니다(width="auto") — 고정 150px은 12px 글자에서 영문 대문자가 섞인 24칸 이름('KODEX 코스닥150선물인버…')을 왼쪽에서 잘랐습니다. */}
@@ -685,7 +707,8 @@ export function ScatterPlot({
           ]}
           labelFormatter={() => ""}
         />
-        <Scatter data={data} fill={color} fillOpacity={0.55} />
+        {/* 등장 애니메이션 없음(명세 §3-8, QA-500 — 기본값 'auto'는 점이 0에서 자라며 나타남). */}
+        <Scatter data={data} fill={color} fillOpacity={0.55} isAnimationActive={false} />
       </ScatterChart>
     </ResponsiveContainer>
     </div>
@@ -792,14 +815,21 @@ export interface DonutSegment {
   label?: string | null;
 }
 
-/** 도넛 툴팁 — 값이 앞(굵게), 이름이 뒤. 이름 앞의 짧은 선이 조각 색입니다(글자에는 계열 색을 입히지 않음). */
+/**
+ * 도넛 툴팁 — 값이 앞(굵게), 이름이 뒤. 이름 앞의 짧은 선이 조각 색입니다(글자에는 계열 색을 입히지 않음). 그 견본은 고대비(forced-colors)에서도
+ * 조각 색 그대로입니다(forced-color-adjust-none — 조각 SVG와 같은 규칙, QA-497).
+ */
 function DonutTooltip({ active, payload }: { active?: boolean; payload?: ReadonlyArray<{ payload?: unknown }> }) {
   const datum = payload?.[0]?.payload as DonutSegment | undefined;
   if (!active || !datum) return null;
   return (
     <div style={tooltipStyle().contentStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span aria-hidden style={{ display: "inline-block", width: 12, height: 2, borderRadius: 1, backgroundColor: datum.color }} />
+        <span
+          aria-hidden
+          className="forced-color-adjust-none"
+          style={{ display: "inline-block", width: 12, height: 2, borderRadius: 1, backgroundColor: datum.color }}
+        />
         <strong style={{ color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{datum.valueText}</strong>
         <span style={{ color: "var(--text-2)" }}>{datum.name}</span>
       </div>
@@ -866,7 +896,12 @@ export function DonutChart({
           이름을 다시 달지 않습니다(두 번 읽힘).
         */}
         <PieChart aria-label={ariaLabel} margin={{ top: margin, right: margin, bottom: margin, left: margin }}>
-          <Tooltip content={(props) => <DonutTooltip active={props.active} payload={props.payload} />} wrapperStyle={{ outline: "none", zIndex: 40 }} />
+          {/* 툴팁은 미끄러지지 않습니다(명세 §3-8, QA-500 — 상자 모양만 tooltipStyle()과 같고 펼치지는 않음). */}
+          <Tooltip
+            content={(props) => <DonutTooltip active={props.active} payload={props.payload} />}
+            wrapperStyle={{ outline: "none", zIndex: 40 }}
+            isAnimationActive={false}
+          />
           <Pie
             data={data}
             dataKey="value"

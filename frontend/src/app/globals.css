@@ -59,8 +59,9 @@
 }
 
 /* 정보 검색(/search) 내용 영역의 범위 토큰(ADR 0041 결정 11) — 앱이 밝을 때도 이 화면만 어둡게 그리던 장치입니다. 이제 :root가 같은 어두운 값이라
-   이 블록은 :root와 같은 값만 다시 적고(겉모습 변화 없음), 범위 장치(이 블록·ui/Dialog의 scope·DialogScope·SearchScreen의 표지)는 P7에서 걷어 냅니다
-   (ADR 0042 결정 2). themeTokens.test.ts가 값이 :root와 같은지 봅니다. */
+   이 블록은 :root와 같은 값만 다시 적고(겉모습 변화 없음 — 고대비에서는 맨 끝 고대비 블록이 이 범위에도 같은 시스템 색을 줌), 범위 장치(이 블록·
+   고대비 블록의 범위 선택자·ui/Dialog의 scope·DialogScope·SearchScreen의 표지)는 P7에서 걷어 냅니다(ADR 0042 결정 2). themeTokens.test.ts가 값이
+   :root와 같은지 봅니다. */
 [data-scope="search"] {
   color-scheme: dark;
   --bg: #111418;
@@ -212,6 +213,15 @@
     color: var(--text-3);
   }
 
+  /* 포커스 링 기본값 — 키트 밖의 링크·체크 상자·차트 표면(Recharts svg[role=application])·스크롤 영역·pre·summary의 기본 링을
+     FOCUS_RING(components/ui/classes.ts — 2px 바깥선 focus, offset 2px, 명세 §3-8)과 같게 합니다. 없으면 크롬 기본 링(outline auto 1px)으로
+     돌아가 한 화면에 포커스 모양이 둘이었고, 차트 표면 링은 offset 0이라 왼쪽 눈금 글 위에 겹쳤습니다(QA-495). base 층이라 FOCUS_RING과
+     화면별 유틸리티(-outline-offset-2·outline-hidden·has-[:focus-visible] 라벨 링)가 그대로 이깁니다. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
   /* 좁은 화면(lg 미만)에서는 하단 탭 바(64px + 안전 영역)가 화면 아래에 붙어 있고 문서(html)가 스크롤됩니다. Tab으로 옮긴 포커스가
      탭 바 밑에 숨지 않게 그만큼 스크롤 여백을 둡니다(WCAG 2.4.11). lg 이상은 탭 바가 없고 본문 main이 스크롤 상자입니다.
      화면 아래에 붙은 고정 시트(정보 검색의 미리 보기 — xl 미만)가 열려 있으면 그 높이(--bottom-sheet — 시트가 문서 루트에 적음,
@@ -255,4 +265,39 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-2);
+}
+
+/* 고대비(forced-colors) 차트 잉크 — 그 모드는 HTML의 글자·바탕·테두리는 시스템 색으로 강제하지만 SVG fill·stroke(Recharts가 var() 토큰으로
+   칠하는 선·축 글·기준선)는 강제하지 않아 작성자 색이 남습니다(명세 D9). 어두운 한 벌(:root 하나)이라 밝은 고대비(흰 Canvas)에서도 어두운 값이
+   칠해져 히어로 선 1.07:1·축 글 2.88:1·막대 2.01~2.78:1이 됐습니다(QA-498 — 개편 전에는 prefers-color-scheme light로 밝은 토큰이 들어갔음).
+   차트 파일이 쓰는 토큰을 이 모드에서만 시스템 색으로 다시 정의합니다: 글자·선 잉크는 CanvasText(SVG 글자는 4.5:1이 필요해 GrayText를 쓰지 않음),
+   장식 격자(border-subtle)는 값 선보다 옅게 GrayText, 면은 Canvas. HTML은 이미 강제되므로 겉모습이 바뀌지 않고, 보통 모드는 이 블록을 읽지 않습니다.
+   등락 막대의 채움(--up·--down)은 그대로 두고 CanvasText 1px 테두리로 경계를 남기며(뜻은 ▲▼·부호·글이 나름), 계산한 참고선(K40 — 색은 토큰 밖 hex)은
+   표지 클래스 chart-ref-line(선과 범례 견본)으로 CanvasText를 줍니다(점선 6 4·범례 '(계좌 아님)'으로 계좌 선과 갈림). 맨 위 :root보다 뒤에 둡니다 —
+   :root 값을 읽는 시험들이 첫 :root 블록을 읽습니다. 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적으므로 범위 선택자도
+   함께 둡니다 — 그 범위 안의 연결 그림(LinksGraph) SVG가 var(--surface)·var(--surface-2)와 currentColor 글로 그립니다(QA-498). 두 선택자는
+   우선순위가 같아(레이어 밖) 이 블록이 범위 블록보다 뒤에 있어야 이깁니다. */
+@media (forced-colors: active) {
+  :root,
+  [data-scope="search"] {
+    --text: CanvasText;
+    --text-2: CanvasText;
+    --text-3: CanvasText;
+    --neutral: CanvasText;
+    --border: CanvasText;
+    --border-overlay: CanvasText;
+    --border-subtle: GrayText;
+    --bg: Canvas;
+    --surface: Canvas;
+    --surface-2: Canvas;
+  }
+
+  .recharts-bar-rectangle path {
+    stroke: CanvasText;
+    stroke-width: 1px;
+  }
+
+  .chart-ref-line :is(path, line) {
+    stroke: CanvasText;
+  }
 }

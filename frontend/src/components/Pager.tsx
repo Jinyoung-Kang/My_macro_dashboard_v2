@@ -6,6 +6,8 @@ import { pageNumbers } from "@/lib/info";
 /**
  * 쪽 넘기기 — 이전 · 번호(처음·끝·지금 앞뒤, 사이는 말줄임) · 다음. 한 쪽뿐이면 그리지 않습니다.
  * 긴 목록을 한 화면에 늘어놓지 않고 5~10줄씩 나눠 보이는 화면이 씁니다(정보 수집 — 사용자 요청 2026-11-11).
+ * 지금 쪽은 주 단추(강조 바탕)·aria-current이고, 고대비(forced-colors)에서는 바탕이 지워지고 모든 번호의 테두리가 같은 시스템 색이라 지금 쪽에만
+ * 2px 테두리를 둡니다(QA-492 — 켜고 끄는 단추·거르기 칩과 같은 방법).
  */
 export function Pager({ page, pages, onChange, label }: { page: number; pages: number; onChange: (page: number) => void; label: string }) {
   if (pages <= 1) return null;
@@ -24,7 +26,7 @@ export function Pager({ page, pages, onChange, label }: { page: number; pages: n
             key={n}
             type="button"
             aria-current={n === page ? "page" : undefined}
-            className={buttonClasses(n === page ? "primary" : "ghost", "sm")}
+            className={n === page ? `${buttonClasses("primary", "sm")} forced-colors:border-2` : buttonClasses("ghost", "sm")}
             onClick={() => onChange(n)}
           >
             {n}

@@ -9,14 +9,16 @@
  *  - 막대(HorizontalBars·SignedBars): 격자 없음, 0 기준선(text-3)
  *  - 산점도는 늘 옅은 격자(border-subtle)
  *  - 격자 선택(grid — 작업대 실행 명세 W6): LineSeries·MultiLineSeries·SignedBars는 grid면 Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음
- *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(그림자·12px 모서리)
+ *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(덮개 경계 border-overlay·그림자·4px 모서리)
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(LineChart.test와 같음).
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HorizontalBars, LineSeries, MultiLineSeries, ScatterPlot, SERIES_COLORS, SignedBars } from "@/components/charts";
+import { ChartLegend, REFERENCE_DASH } from "@/components/charts/frame";
+import { LineChartTooltip } from "@/components/charts/LineChart";
 
 function observeAs(width: number, height: number) {
   vi.stubGlobal(
@@ -85,6 +87,8 @@ describe("LineSeries(옛 화면) — 새 선 차트 문법", () => {
     const box = tooltip.firstElementChild as HTMLElement;
     expect(box.style.boxShadow).toBe("var(--elev-overlay)");
     expect(box.style.borderRadius).toBe("4px");
+    // 경계는 덮개 경계(대화상자·토스트·맨 위로 단추와 같은 토큰 — 명세 §3-3 3층) — 패널 경계(--border)가 아님.
+    expect(box.style.border).toBe("1px solid var(--border-overlay)");
   });
 
   it("값이 모두 없으면 빈 상태 문구(0 축을 지어내지 않음)", () => {
@@ -121,9 +125,9 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     const legend = screen.getByRole("list", { name: "범례" });
     const items = within(legend).getAllByRole("listitem");
     expect(items.map((item) => item.textContent)).toEqual(["종가", "참고선", "미결제약정 (우)"]);
-    const swatch = (item: HTMLElement) => item.querySelector('[aria-hidden="true"]') as HTMLElement;
-    expect(swatch(items[1]).style.borderTop).toContain("dashed");
-    expect(swatch(items[0]).style.borderTop).toContain("solid");
+    const swatch = (item: HTMLElement) => item.querySelector('svg[aria-hidden="true"] line') as SVGLineElement;
+    expect(swatch(items[1]).getAttribute("stroke-dasharray")).toBe(REFERENCE_DASH);
+    expect(swatch(items[0]).getAttribute("stroke-dasharray")).toBeNull();
     // 왼쪽 축은 데이터 범위 98~103을 2 간격으로(0 바닥을 지어내지 않음), 오른쪽 축은 30만대를 5,000 간격으로
     expect(yTicks(container)).toEqual([
       "96.0", "98.0", "100.0", "102.0", "104.0",
@@ -133,6 +137,56 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     expect(screen.getByText("프레임 v1")).toBeTruthy();
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
     expect(container.querySelector("svg.recharts-surface")?.getAttribute("aria-label")).toBe("종가와 미결제약정");
+  });
+
+  // QA-496: 점선 계열(K40 참고선)의 범례 견본은 폭 12px span의 border-top 2px dashed였는데, 크롬은 굵기 2px에서 길이가 토막 6px × 2 이하인
+  // dashed 테두리를 실선으로 칠합니다(12px 실선, 14px부터 끊김 — /paper/kr 390·1024·1440). 견본을 그림 선과 같은 SVG 선(stroke-dasharray
+  // REFERENCE_DASH '6 4')으로, 한 주기(6 + 4 + 6 = 16px) 이상 길게 그려야 엔진과 무관하게 점선으로 보입니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-496: 점선 계열 견본은 SVG 선(stroke-dasharray '6 4', 길이 16px 이상), 실선 계열 견본은 dasharray 없음", () => {
+    observeAs(600, 300);
+    render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[
+          { key: "a", name: "종가", color: SERIES_COLORS.blue },
+          { key: "b", name: "참고선", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    const items = within(screen.getByRole("list", { name: "범례" })).getAllByRole("listitem");
+    const line = (item: HTMLElement) => item.querySelector('svg[aria-hidden="true"] line');
+    const dashed = line(items[1]);
+    expect(dashed, "점선 견본 svg line").not.toBeNull();
+    expect(dashed?.getAttribute("stroke-dasharray")).toBe(REFERENCE_DASH);
+    expect(dashed?.getAttribute("stroke")).toBe("#a7b0bd");
+    expect(Number(dashed?.getAttribute("x2")) - Number(dashed?.getAttribute("x1"))).toBeGreaterThanOrEqual(16);
+    const solid = line(items[0]);
+    expect(solid, "실선 견본 svg line").not.toBeNull();
+    expect(solid?.getAttribute("stroke-dasharray")).toBeNull();
+    expect(solid?.getAttribute("stroke")).toBe(SERIES_COLORS.blue);
+  });
+
+  // QA-498: 계산한 참고선(K40 — 색은 토큰 밖 hex #a7b0bd)은 고대비(forced-colors)의 밝은 Canvas 위에서 2.19:1이었습니다. 그 선과 범례 견본에 표지
+  // 클래스(chart-ref-line)를 달아 globals.css의 고대비 블록이 CanvasText로 칠합니다(실선 계열에는 달지 않음). 재현 커밋에서는 it.fails였습니다.
+  it("QA-498: 점선 계열의 선(g.chart-ref-line)과 범례 견본 svg에 참고선 표지 — 실선 계열에는 없다", () => {
+    observeAs(600, 300);
+    const { container } = render(
+      <MultiLineSeries
+        data={ROWS}
+        series={[
+          { key: "a", name: "종가", color: SERIES_COLORS.blue },
+          { key: "b", name: "참고선", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    const marked = [...container.querySelectorAll("g.chart-ref-line")];
+    expect(marked).toHaveLength(1);
+    expect(marked[0].querySelector("path.recharts-line-curve")?.getAttribute("stroke-dasharray")).toBe(REFERENCE_DASH);
+    expect(container.querySelectorAll(".recharts-line")).toHaveLength(2);
+    const items = within(screen.getByRole("list", { name: "범례" })).getAllByRole("listitem");
+    const svgClasses = (item: HTMLElement) => (item.querySelector('svg[aria-hidden="true"]')?.getAttribute("class") ?? "").split(/\s+/);
+    expect(svgClasses(items[1])).toContain("chart-ref-line");
+    expect(svgClasses(items[0])).not.toContain("chart-ref-line");
   });
 
   it("표시선 이름은 선 오른쪽, 마지막 날짜의 선은 왼쪽(그림 끝에서 잘리지 않게)", () => {
@@ -170,6 +224,47 @@ describe("MultiLineSeries — 격자 없는 여러 선", () => {
     );
     expect(screen.getByText("표시할 시계열이 없습니다.")).toBeTruthy();
     expect(container.querySelector("svg")).toBeNull();
+  });
+});
+
+// QA-497: 고대비(forced-colors)에서 Recharts SVG 선·조각은 작성자 색을 남기는데(크롬 svg forced-color-adjust: preserve-parent-color), 이름 옆
+// CSS 견본(범례 테두리·툴팁 바탕색)은 시스템 색(검정·흰색)으로 바뀌어 이름과 선을 맞출 수 없었습니다(/cot·/paper/us·/paper/kr 1440).
+// 견본도 그것이 가리키는 선·조각과 같은 규칙(작성자 색 유지 — forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails였습니다.
+describe("고대비에서 견본은 계열 색 그대로(forced-color-adjust-none)", () => {
+  it("QA-497: 글자 범례의 견본마다 forced-color-adjust-none", () => {
+    render(
+      <ChartLegend
+        entries={[
+          { key: "a", label: "규칙 계좌", color: SERIES_COLORS.blue },
+          { key: "b", label: "참고선(계좌 아님)", color: "#a7b0bd", dashed: true },
+        ]}
+      />,
+    );
+    const items = within(screen.getByRole("list", { name: "범례" })).getAllByRole("listitem");
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      const swatch = item.querySelector(':scope > [aria-hidden="true"]');
+      expect(swatch, item.textContent ?? "").not.toBeNull();
+      expect((swatch?.getAttribute("class") ?? "").split(/\s+/), item.textContent ?? "").toContain("forced-color-adjust-none");
+    }
+  });
+
+  it("QA-497: 선 차트 툴팁의 계열 견본마다 forced-color-adjust-none", () => {
+    const { container } = render(
+      <LineChartTooltip
+        model={{
+          date: "2026-10-30",
+          items: [
+            { key: "a", label: "규칙 계좌", color: SERIES_COLORS.blue, text: "100,600" },
+            { key: "b", label: "SPY 계좌", color: SERIES_COLORS.green, text: "100,700" },
+          ],
+          sourceLine: null,
+        }}
+      />,
+    );
+    const swatches = [...container.querySelectorAll('[aria-hidden="true"]')];
+    expect(swatches).toHaveLength(2);
+    for (const swatch of swatches) expect((swatch.getAttribute("class") ?? "").split(/\s+/)).toContain("forced-color-adjust-none");
   });
 });
 
@@ -242,6 +337,51 @@ describe("막대·산점도", () => {
     expect(svgFontSizes(container).every((size) => size >= 12)).toBe(true);
   });
 
+  // QA-499: 가로 막대의 음수 값 라벨은 막대 바깥 끝 왼쪽(패널 면 위)에 있어야 합니다. Recharts 3.10.1의 가로 막대는 음수 막대를 x = 0선 자리,
+  // width = 음수로 넘기는데 라벨이 `x - 6`(0선 왼쪽 6px — 막대 안쪽 시작점)에 글 끝을 맞춰, 막대가 글보다 길면 하락 파랑 막대 위에 text-3 글
+  // (1.43:1)이 됐습니다(/sector 1M '-9.11%' 37px·'-12.15%' 45px 겹침, 390·1024·1440). 라벨이 막대 바깥으로 가려면 가장 음수인 막대의 바깥 끝과
+  // Y축 선 사이에 라벨 자리가 있어야 합니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-499: 음수 막대의 값 라벨은 막대 바깥 끝 왼쪽 — 가장 음수인 막대 바깥 끝과 Y축 선 사이에 라벨 자리", () => {
+    /** 음수 막대 왼쪽에 남기는 라벨 자리(px) — charts/index.tsx HorizontalBars의 같은 이름 값(오른쪽 여백 68과 맞춤). */
+    const NEG_LABEL_ROOM = 60;
+    observeAs(600, 360);
+    const { container } = render(
+      <HorizontalBars data={[{ name: "삼성전자", value: 120.5 }, { name: "SK하이닉스", value: -40.2 }]} unit="억" />,
+    );
+    const bars = [...container.querySelectorAll(".recharts-bar-rectangle path")].map((path) => {
+      const x = Number(path.getAttribute("x"));
+      const width = Number(path.getAttribute("width"));
+      return { start: Math.min(x, x + width), end: Math.max(x, x + width), negative: width < 0 };
+    });
+    expect(bars).toHaveLength(2);
+    const negative = bars.find((bar) => bar.negative);
+    expect(negative, "음수 막대").toBeDefined();
+    const label = [...container.querySelectorAll("text")].find((node) => node.textContent === "-40.2억") as SVGTextElement;
+    expect(label.getAttribute("text-anchor")).toBe("end");
+    // (a) 라벨 글 끝이 막대 바깥 끝보다 6px 이상 왼쪽 — 막대와 겹치지 않음
+    expect(Number(label.getAttribute("x")), "라벨 x").toBeLessThanOrEqual((negative?.start ?? 0) - 6);
+    // (b) 가장 음수인 막대의 바깥 끝은 Y축 선에서 라벨 자리만큼 떨어짐 — 옮긴 라벨이 Y축 이름표 위에 겹치지 않음
+    const axisX = Number(container.querySelector(".recharts-yAxis line.recharts-cartesian-axis-line")?.getAttribute("x1"));
+    expect(Number.isFinite(axisX)).toBe(true);
+    expect((negative?.start ?? 0) - axisX, "막대 바깥 끝 - Y축 선").toBeGreaterThanOrEqual(NEG_LABEL_ROOM);
+    // 양수 막대 라벨은 그대로 막대 끝 오른쪽 6px
+    const positive = bars.find((bar) => !bar.negative);
+    const positiveLabel = [...container.querySelectorAll("text")].find((node) => node.textContent === "120.5억") as SVGTextElement;
+    expect(positiveLabel.getAttribute("text-anchor")).toBe("start");
+    expect(Number(positiveLabel.getAttribute("x"))).toBeCloseTo((positive?.end ?? 0) + 6, 3);
+  });
+
+  it("가로 막대 — 모두 양수면 왼쪽 라벨 자리를 두지 않는다(막대가 Y축 선에서 시작)", () => {
+    observeAs(600, 360);
+    const { container } = render(
+      <HorizontalBars data={[{ name: "삼성전자", value: 120.5 }, { name: "SK하이닉스", value: 40.2 }]} unit="억" />,
+    );
+    const axisX = Number(container.querySelector(".recharts-yAxis line.recharts-cartesian-axis-line")?.getAttribute("x1"));
+    const starts = [...container.querySelectorAll(".recharts-bar-rectangle path")].map((path) => Number(path.getAttribute("x")));
+    expect(starts).toHaveLength(2);
+    for (const start of starts) expect(start).toBeCloseTo(axisX, 3);
+  });
+
   it("세로 막대 — 격자 없음, 0 기준선", () => {
     observeAs(600, 320);
     const { container } = render(<SignedBars data={[{ name: "1월", value: 3 }, { name: "2월", value: -2 }]} />);
@@ -259,6 +399,47 @@ describe("막대·산점도", () => {
     expect(grid.getAttribute("stroke")).toBe("var(--border-subtle)");
     expect(grid.getAttribute("stroke-width")).toBe("1");
     expect(container.querySelector(".recharts-cartesian-grid-vertical line")).not.toBeNull();
+  });
+});
+
+// QA-500: 래퍼 차트의 툴팁(tooltipStyle()을 펼치는 넷)은 isAnimationActive를 넘기지 않아 Recharts 기본값 'auto'를 따랐습니다 — 움직임 줄이기를
+// 켜지 않은 화면에서 툴팁이 'transform 400ms ease'로 미끄러졌습니다(명세 §3-8 '차트 애니메이션 없음' — 새 LineChart는 이미 false).
+// 시험 환경의 matchMedia는 움직임 줄이기 꺼짐입니다. 재현 커밋에서는 it.fails였습니다.
+describe("툴팁은 미끄러지지 않는다(명세 §3-8)", () => {
+  function sizeAs(width: number, height: number) {
+    observeAs(width, height);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, x: 0, y: 0, width, height, right: width, bottom: height, toJSON: () => ({}),
+    } as DOMRect);
+  }
+  const ROWS = [
+    { date: "2026-10-01", a: 100, b: 98 },
+    { date: "2026-10-02", a: 101, b: 99 },
+    { date: "2026-10-03", a: 103, b: 97 },
+  ];
+  const BARS = [{ name: "1월", value: 3 }, { name: "2월", value: -2 }, { name: "3월", value: 5 }];
+
+  /** 그림 위로 마우스를 옮겨(산점도는 점에 올려) 뜬 툴팁 감싸개. */
+  async function hoverTooltip(container: HTMLElement, target: "wrapper" | "symbol"): Promise<HTMLElement> {
+    await act(async () => {
+      if (target === "symbol") fireEvent.mouseEnter(container.querySelector(".recharts-scatter-symbol") as Element);
+      else fireEvent.mouseMove(container.querySelector(".recharts-wrapper") as Element, { clientX: 300, clientY: 100 });
+    });
+    const wrapper = container.querySelector(".recharts-tooltip-wrapper") as HTMLElement;
+    // Recharts는 마우스 이동을 다음 프레임에 반영합니다 — 툴팁이 뜰 때까지 기다립니다.
+    await waitFor(() => expect(wrapper.style.visibility).toBe("visible"));
+    return wrapper;
+  }
+
+  it.each([
+    ["MultiLineSeries", () => <MultiLineSeries data={ROWS} series={[{ key: "a", name: "A", color: SERIES_COLORS.blue }, { key: "b", name: "B", color: SERIES_COLORS.orange }]} />, "wrapper"],
+    ["HorizontalBars", () => <HorizontalBars data={BARS} />, "wrapper"],
+    ["SignedBars", () => <SignedBars data={BARS} />, "wrapper"],
+    ["ScatterPlot", () => <ScatterPlot data={[{ x: 1, y: 2, date: "a" }, { x: -1, y: 0.5, date: "b" }]} xLabel="X" yLabel="Y" />, "symbol"],
+  ] as const)("QA-500: %s 툴팁에 transition이 없다", async (_name, chart, target) => {
+    sizeAs(600, 300);
+    const { container } = render(chart());
+    expect((await hoverTooltip(container, target)).style.transition).toBe("");
   });
 });
 

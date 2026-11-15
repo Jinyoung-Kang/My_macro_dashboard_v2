@@ -260,6 +260,94 @@ describe("어두운 한 벌(W1)", () => {
   });
 });
 
+describe("포커스 링 기본값(명세 §3-8 — FOCUS_RING과 같은 모양)", () => {
+  // QA-495: 포커스 링은 공용 키트의 FOCUS_RING을 className에 붙인 곳에만 있어, 키트 밖의 화면 링크·네이티브 체크 상자·Recharts 표면
+  // (svg[role=application])·스크롤 영역·pre·summary가 브라우저 기본 링(outline auto 1px — 1440 7경로 91곳)으로 돌아갔습니다. 한 화면에 포커스
+  // 모양이 둘이었고 차트 표면의 기본 링은 offset 0이라 왼쪽 눈금 글 위에 겹쳤습니다. 기본 층(@layer base)에 같은 모양을 두면 FOCUS_RING과 화면별
+  // 유틸리티(-outline-offset-2·outline-hidden·has-[:focus-visible] 라벨 링)는 그대로 이깁니다 — 레이어 밖에 두면 그 유틸리티를 이깁니다.
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-495: 포커스 링 기본값은 @layer base의 :focus-visible — outline 2px solid var(--focus), offset 2px", () => {
+    const bases = RULES.filter((rule) => rule.selector === "@layer base");
+    const rules = bases.flatMap((rule) => [...rule.body.matchAll(/(?:^|[;{}])\s*:focus-visible\s*\{([^}]*)\}/g)].map((match) => match[1]));
+    expect(rules, "@layer base { :focus-visible { … } }").toHaveLength(1);
+    expect(rules[0]).toMatch(/(?:^|;)\s*outline:\s*2px solid var\(--focus\)\s*;/);
+    expect(rules[0]).toMatch(/outline-offset:\s*2px\s*;/);
+    // 맨 바깥(레이어 밖)에는 포커스 규칙을 두지 않습니다.
+    expect(RULES.filter((rule) => rule.selector.includes(":focus-visible"))).toEqual([]);
+  });
+});
+
+describe("고대비(forced-colors) 차트 잉크", () => {
+  // QA-498: 크롬 forced-colors는 HTML의 글자·바탕·테두리는 시스템 색으로 강제하지만 SVG fill·stroke(Recharts가 var() 토큰으로 칠함)는 강제하지
+  // 않습니다(명세 D9). 어두운 한 벌(W1)은 :root 하나라, 밝은 고대비(흰 Canvas)에서도 어두운 토큰 값이 칠해져 히어로 선 #f6f7f9 1.07:1, 축·판 경계
+  // 글 #8f99a8 2.88:1, 하락 막대 2.01·상승 막대 2.78:1, K40 참고선 #a7b0bd 2.19:1이 됐습니다(개편 전에는 prefers-color-scheme light로 밝은 토큰이
+  // 들어가 통과). 차트 파일이 쓰는 var() 토큰을 그 모드에서 시스템 색으로 다시 정의하고, 등락 막대(채움 --up·--down은 그대로)에는 CanvasText 테두리,
+  // 계산한 참고선(hex — 토큰 밖)은 표지 클래스(chart-ref-line)로 CanvasText를 줍니다. 재현 커밋에서는 it.fails였습니다.
+  const FORCED = "@media (forced-colors: active)";
+  const SYSTEM_COLORS = new Set([
+    "AccentColor", "AccentColorText", "ActiveText", "ButtonBorder", "ButtonFace", "ButtonText", "Canvas", "CanvasText", "Field", "FieldText",
+    "GrayText", "Highlight", "HighlightText", "LinkText", "Mark", "MarkText", "SelectedItem", "SelectedItemText", "VisitedText",
+  ]);
+  /** 시스템 색으로 다시 정의하지 않는 토큰 — 등락 채움(막대 테두리 규칙이 대신)과 그림자(그 모드에서 지워짐). */
+  const NOT_REMAPPED = new Set(["--up", "--down", "--elev-overlay"]);
+  const CHART_FILES = ["components/charts/frame.tsx", "components/charts/LineChart.tsx", "components/charts/index.tsx"];
+  const chartTokens = () =>
+    [...new Set(CHART_FILES.flatMap((file) => [...readFileSync(resolve(SRC, file), "utf8").matchAll(/var\((--[\w-]+)\)/g)].map((match) => match[1])))].sort();
+  const forcedBody = () => {
+    const found = RULES.filter((rule) => rule.selector === FORCED);
+    if (found.length !== 1) throw new Error(`${FORCED} 블록이 globals.css 맨 바깥에 한 번 있어야 합니다(${found.length}번)`);
+    return found[0].body;
+  };
+  /** 블록 본문 안 규칙 하나(선택자 그대로)의 선언. */
+  const innerRule = (body: string, selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?:^|[;{}])\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(body)?.[1];
+  };
+  /** 고대비 블록 안에서 선택자 목록에 그 선택자가 든 규칙들의 사용자 속성(--*)을 합친 것 — 규칙이 없으면 undefined. */
+  const forcedDeclarations = (selector: string) => {
+    const rules = [...forcedBody().matchAll(/([^{};]+)\{([^}]*)\}/g)]
+      .filter((match) => match[1].split(",").map((part) => part.trim()).includes(selector))
+      .map((match) => declarations(match[2]));
+    return rules.length > 0 ? (Object.assign({}, ...rules) as Record<string, string>) : undefined;
+  };
+
+  it("QA-498: 맨 바깥 @media (forced-colors: active) 블록이 하나 — 그 :root가 차트 파일의 var() 토큰을 모두 시스템 색으로 다시 정의한다", () => {
+    const root = forcedDeclarations(":root");
+    expect(root, `${FORCED} { :root { … } }`).toBeDefined();
+    const remapped = root ?? {};
+    const tokens = chartTokens();
+    expect(tokens.length).toBeGreaterThan(5);
+    for (const token of tokens.filter((name) => !NOT_REMAPPED.has(name))) {
+      expect(SYSTEM_COLORS.has(remapped[token] ?? ""), `${token} = ${remapped[token]}`).toBe(true);
+    }
+    // 글자·선 잉크는 CanvasText(SVG 글자는 4.5:1이 필요해 GrayText를 쓰지 않음), 면은 Canvas.
+    for (const token of ["--text", "--text-2", "--text-3", "--border"]) expect(remapped[token], token).toBe("CanvasText");
+    for (const token of ["--bg", "--surface", "--surface-2"]) expect(remapped[token], token).toBe("Canvas");
+  });
+
+  it("QA-498: 같은 블록에 등락 막대 테두리(.recharts-bar-rectangle path — CanvasText)와 참고선 표지(.chart-ref-line path·line — CanvasText)", () => {
+    const body = forcedBody();
+    expect(innerRule(body, ".recharts-bar-rectangle path")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+    expect(innerRule(body, ".chart-ref-line :is(path, line)")).toMatch(/(?:^|;)\s*stroke:\s*CanvasText\s*;/);
+  });
+
+  // QA-498(정보 검색 범위): 정보 검색 범위 블록([data-scope="search"])은 같은 토큰을 hex로 다시 적어, 고대비 :root의 시스템 색 재정의가 그 범위 안의
+  // SVG(연결 그림 LinksGraph — fill="var(--surface)"·var(--surface-2)와 currentColor 글)에 닿지 않았습니다(밝은 고대비 흰 Canvas 위에 어두운 상자
+  // rgb(28,33,39)·rgb(37,42,49)가 남음 — 범위 밖 같은 마크업은 Canvas). 범위 블록이 다시 적는 토큰 가운데 고대비 :root가 다시 정의하는 것은 범위
+  // 선택자에서도 같은 값이어야 하고, 두 선택자의 우선순위가 같으므로(레이어 밖, (0,1,0)) 고대비 블록이 범위 블록보다 뒤에 있어야 이깁니다.
+  // 재현 커밋에서는 it.fails였습니다.
+  it("QA-498: 고대비 블록의 토큰 재정의가 정보 검색 범위([data-scope=\"search\"])에도 닿는다 — 범위가 다시 적는 토큰은 같은 시스템 색", () => {
+    const root = forcedDeclarations(":root") ?? {};
+    const shared = Object.keys(declarations(blockBody(SCOPE_SELECTOR))).filter((token) => token in root);
+    expect(shared.length).toBeGreaterThan(5);
+    const scope = forcedDeclarations(SCOPE_SELECTOR);
+    expect(scope, `${FORCED} { … ${SCOPE_SELECTOR} … }`).toBeDefined();
+    for (const token of shared) expect(scope?.[token], token).toBe(root[token]);
+    const order = (selector: string) => RULES.findIndex((rule) => rule.selector === selector);
+    expect(order(FORCED)).toBeGreaterThan(order(SCOPE_SELECTOR));
+  });
+});
+
 describe("조작 바탕 — 덮개 안 단추(2026-11-16 결정, 명세 §3-4)", () => {
   // 기본 단추 바탕·최소 단추 hover(bg-control-fill)가 패널·바탕 위에서는 surface-2, 덮개(대화상자·토스트 — 바탕 surface-2) 안에서는 surface-3입니다.
   // 같은 값이면 덮개 안 기본 단추의 바탕(1.00:1)과 최소 단추의 hover가 보이지 않았습니다. 그 위 글자는 surface-3 금지 목록을 따릅니다(위 행렬·소스 검사).

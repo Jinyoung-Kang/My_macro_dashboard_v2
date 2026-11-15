@@ -170,7 +170,7 @@ describe("tone", () => {
   it("취소(기본 단추)는 조작 바탕(bg-control-fill)이고 덮개 범위(data-overlay) 안에 있다 — 덮개 안에서는 surface-3이라 덮개 바탕(surface-2)에 묻히지 않는다", () => {
     renderConfirm();
     const cancel = cancelButton();
-    expect(cancel.className.split(/\s+/)).toEqual(expect.arrayContaining(["bg-control-fill", "border-border", "hover:border-border-strong", "text-text"]));
+    expect(cancel.className.split(/\s+/)).toEqual(expect.arrayContaining(["bg-control-fill", "border-border", "not-disabled:not-aria-disabled:hover:border-border-strong", "text-text"]));
     expect(cancel.className.split(/\s+/)).not.toContain("bg-surface-2");
     expect(cancel.closest("[data-overlay]")).toBe(screen.getByRole("dialog", { name: "계좌 초기화" }));
   });

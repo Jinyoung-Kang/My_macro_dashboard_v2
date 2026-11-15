@@ -29,12 +29,19 @@ export type ButtonSize = "md" | "sm" | "lg";
  */
 const CONTROL_BASE = `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border text-center motion-safe:transition-colors motion-safe:duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 
+/*
+ * hover는 누를 수 있을 때만 — 비활성(disabled·aria-disabled="true") 단추가 경계를 진하게 하거나 바탕을 밝히면 누를 수 있는 것처럼 보입니다(QA-493).
+ * `not-disabled:not-aria-disabled:hover:`는 :not(:disabled):not([aria-disabled="true"]):hover라 단추 모양 링크(<a> — 읽기 창 '원문 열기')에도 맞습니다.
+ * `enabled:`(:enabled — 폼 요소에만 맞음)는 그 링크의 hover를 지우므로 쓰지 않고, pointer-events-none은 비활성 단추의 안내(title·툴팁)까지 막아 쓰지 않습니다.
+ * 클래스 이름은 조각을 이어 붙이지 않고 통째로 적습니다 — Tailwind는 소스의 글자 그대로를 훑어 CSS를 만듭니다.
+ */
 const BUTTON_KIND = {
-  default: "border-border bg-control-fill font-medium text-text hover:border-border-strong",
-  primary: "border-transparent bg-accent font-semibold text-accent-fg hover:bg-accent-hover",
+  default: "border-border bg-control-fill font-medium text-text not-disabled:not-aria-disabled:hover:border-border-strong",
+  primary: "border-transparent bg-accent font-semibold text-accent-fg not-disabled:not-aria-disabled:hover:bg-accent-hover",
   // 위험 바탕 위 글자는 danger-fg(5.88:1 — 흰 글자는 3.14:1이라 쓰지 않음).
-  danger: "border-transparent bg-danger font-semibold text-danger-fg hover:opacity-90",
-  minimal: "border-transparent bg-transparent font-medium text-text-2 hover:bg-control-fill hover:text-text",
+  danger: "border-transparent bg-danger font-semibold text-danger-fg not-disabled:not-aria-disabled:hover:opacity-90",
+  minimal:
+    "border-transparent bg-transparent font-medium text-text-2 not-disabled:not-aria-disabled:hover:bg-control-fill not-disabled:not-aria-disabled:hover:text-text",
 } as const;
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = { ...BUTTON_KIND, secondary: BUTTON_KIND.default, ghost: BUTTON_KIND.minimal };
@@ -125,13 +132,17 @@ export const LINK_CLASSES = `${TEXT_TARGET} rounded-sm text-accent underline-off
 
 /**
  * 거르기 칩(교집합의 분석 대상 기관·환율 겹쳐 보기·정보 수집의 거르기) — 여럿을 켜고 끄는 aria-pressed 단추. 누를 수 있는 것이라 켠 칩은
- * 강조 파랑(틴트 바탕·파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기와 체크 아이콘(부르는 쪽이 켠 칩 앞에 둠)이 함께 바뀝니다.
+ * 강조 파랑(틴트 바탕·파랑 테두리, 명세 원칙 A1이 허용)이고, 색만으로 켬을 전하지 않게 굵기가 함께 바뀝니다(체크 아이콘은 부르는 쪽이 켠 칩 앞에 둘 때만 —
+ * 컨센서스·환율 비교는 두고, 정보 수집 두 화면은 없음).
  * 켠 칩의 글자는 본문색입니다 — accent 틴트 위 accent 글자는 4.47:1로 4.5에 못 미칩니다(QA-459, 작업대 실행 명세 §3-2).
- * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·아이콘으로 갈립니다. 4px, lg 이상 30px, lg 미만 44px.
+ * 두 상태 모두 테두리가 있어 고대비(forced-colors) 모드에서도 칩 경계가 남고, 켬은 굵기·고대비 2px 테두리로 갈립니다(그 모드는 틴트 바탕을 지우고
+ * 두 상태의 테두리를 같은 시스템 색으로 칠해, 굵기만 남았습니다 — QA-492, 켜고 끄는 단추와 같은 방법). 4px, lg 이상 30px, lg 미만 44px.
  */
 export function filterChipClasses(pressed: boolean): string {
   return `inline-flex min-h-11 items-center gap-1 rounded-control border px-3 text-[13px] lg:min-h-[30px] lg:px-2.5 ${SELECT_MOTION} ${FOCUS_RING} ${
-    pressed ? "border-accent bg-accent-tint font-semibold text-text" : "border-border bg-surface font-medium text-text-2 hover:bg-surface-2 hover:text-text"
+    pressed
+      ? "border-accent bg-accent-tint font-semibold text-text forced-colors:border-2"
+      : "border-border bg-surface font-medium text-text-2 hover:bg-surface-2 hover:text-text"
   }`;
 }
 
@@ -148,7 +159,8 @@ export function toggleClasses(pressed: boolean, compact = false): string {
   return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
     pressed
       ? "border-border-strong bg-surface-2 font-semibold text-text forced-colors:border-2"
-      : "border-border font-medium text-text-2 hover:border-border-strong hover:text-text"
+      : // 바꾸는 중(aria-disabled)에는 hover에 반응하지 않습니다(QA-493 — 단추와 같은 이유).
+        "border-border font-medium text-text-2 not-aria-disabled:hover:border-border-strong not-aria-disabled:hover:text-text"
   }`;
 }
 

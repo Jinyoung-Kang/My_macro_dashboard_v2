@@ -324,13 +324,14 @@ function CompositionView({ label, composition }: { label: string; composition: A
       )}
       {form === "meter" && (
         <div className="flex flex-col gap-2">
-          {/* 묶음이 둘 이하면 도넛 대신 한 줄 막대 — 두 조각 파이는 숫자보다 읽기 어렵습니다. 조각 사이 2px 틈은 바탕색. */}
+          {/* 묶음이 둘 이하면 도넛 대신 한 줄 막대 — 두 조각 파이는 숫자보다 읽기 어렵습니다. 조각 사이 2px 틈은 바탕색.
+              조각은 범례 견본과 같이 고대비(forced-colors)에서도 계열 색 그대로입니다(forced-color-adjust-none, QA-497). */}
           <div role="img" aria-label={`${label} 구성: ${summary}`} className="flex h-3 w-full gap-[2px] overflow-hidden rounded-sm">
             {segments.map((segment) => (
               <div
                 key={segment.key}
                 title={`${segment.label} ${segment.shareText} · 평가액 ${segment.valueText}`}
-                className="h-full"
+                className="h-full forced-color-adjust-none"
                 style={{ flexGrow: segment.sharePct, flexBasis: 0, backgroundColor: segmentColor(segment) }}
               />
             ))}
@@ -351,7 +352,7 @@ function CompositionView({ label, composition }: { label: string; composition: A
               <span className="flex items-center gap-2">
                 <span
                   aria-hidden
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-[2px] forced-color-adjust-none"
                   style={{ backgroundColor: colorOf.get(row.segmentKey) ?? "transparent" }}
                 />
                 <span className={row.isCash ? "text-text-2" : "font-semibold text-text"}>{row.label}</span>
@@ -378,7 +379,10 @@ function CompositionView({ label, composition }: { label: string; composition: A
   );
 }
 
-/** 범례 — 늘 보입니다(색만으로 묶음을 가리지 않게). 이름·내역은 본문 글자색, 색은 옆의 네모가 나릅니다. */
+/**
+ * 범례 — 늘 보입니다(색만으로 묶음을 가리지 않게). 이름·내역은 본문 글자색, 색은 옆의 네모가 나릅니다. 네모(와 구성 표의 네모)는 고대비
+ * (forced-colors)에서도 조각 색 그대로입니다(forced-color-adjust-none — 도넛 조각 SVG·한 줄 막대 조각과 같은 규칙, QA-497).
+ */
 function Legend({ segments }: { segments: readonly CompositionSegment[] }) {
   return (
     <ul aria-label="구성 범례" className="flex w-full max-w-md flex-col gap-1.5 text-xs">
@@ -386,7 +390,7 @@ function Legend({ segments }: { segments: readonly CompositionSegment[] }) {
         <li key={segment.key} className="flex items-start gap-2">
           <span
             aria-hidden
-            className="mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-[2px]"
+            className="mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-[2px] forced-color-adjust-none"
             style={{ backgroundColor: segmentColor(segment) }}
           />
           <span className="min-w-0 flex-1 text-text-2">

@@ -376,6 +376,24 @@ describe("상세 패널의 내용", () => {
     expect(within(composition).queryByRole("img")).toBeNull();
   });
 
+  // QA-497: 고대비(forced-colors)에서 도넛 조각(SVG)은 계열 색을 남기는데 '구성 범례'와 구성 표의 견본(CSS 바탕색)은 Canvas(흰색·검정)로 지워져
+  // 이름과 조각을 맞출 수 없었습니다(계좌 상세 1440). 견본도 조각과 같은 규칙(forced-color-adjust-none)이어야 합니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-497: 구성 범례와 구성 표의 색 견본은 forced-color-adjust-none(조각 색 그대로)", async () => {
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
+    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    const composition = within(panel).getByRole("region", { name: "구성" });
+    const legend = await within(composition).findByRole("list", { name: "구성 범례" });
+    const legendSwatches = within(legend).getAllByRole("listitem").map((li) => li.querySelector('[aria-hidden="true"]') as HTMLElement);
+    const tableSwatches = [...within(composition).getByRole("table").querySelectorAll('td [aria-hidden="true"]')] as HTMLElement[];
+    expect(legendSwatches).toHaveLength(5);
+    expect(tableSwatches.length).toBeGreaterThan(0);
+    for (const swatch of [...legendSwatches, ...tableSwatches]) {
+      expect(swatch.style.backgroundColor, "견본 색").not.toBe("");
+      expect(swatch.className.split(/\s+/)).toContain("forced-color-adjust-none");
+    }
+  });
+
   it("의미 있는 묶음이 둘 이하(SPY + 잔돈)면 도넛 대신 한 줄 막대 + 범례 + 표", async () => {
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ }));
@@ -389,6 +407,25 @@ describe("상세 패널의 내용", () => {
     // 벤치마크는 결정을 내지 않으므로 결정 로그 단추가 없습니다.
     expect(within(panel).queryByRole("button", { name: "결정 로그 보기" })).toBeNull();
     expect(within(panel).getByText("체결이 없습니다.")).toBeTruthy();
+  });
+
+  // QA-497(한 줄 막대): 묶음이 둘 이하인 계좌의 한 줄 막대(meter)는 조각을 CSS 바탕색으로만 그립니다. 범례·표 견본만 forced-color-adjust-none이면
+  // 고대비에서 견본은 계열 색으로 남고 그 견본이 가리키는 막대 조각은 Canvas로 지워졌습니다(SPY 계좌 상세 1440 — 조각 둘 모두 rgb(255,255,255)).
+  // 조각도 견본과 같은 규칙이어야 합니다. 재현 커밋에서는 it.fails였습니다.
+  it("QA-497: 한 줄 막대(meter)의 조각도 범례 견본과 같은 색·같은 규칙(forced-color-adjust-none)", async () => {
+    render(<PaperPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ }));
+    const panel = await screen.findByRole("region", { name: "SPY 계좌 상세" });
+    const composition = within(panel).getByRole("region", { name: "구성" });
+    const meter = await within(composition).findByRole("img", { name: "SPY 계좌 구성: SPY 99.8%, 현금 0.2%" });
+    const pieces = [...meter.children] as HTMLElement[];
+    const legend = within(composition).getByRole("list", { name: "구성 범례" });
+    const swatches = within(legend).getAllByRole("listitem").map((li) => li.querySelector('[aria-hidden="true"]') as HTMLElement);
+    expect(pieces).toHaveLength(2);
+    expect(pieces.map((piece) => piece.style.backgroundColor)).toEqual(swatches.map((swatch) => swatch.style.backgroundColor));
+    for (const element of [...pieces, ...swatches]) {
+      expect(element.className.split(/\s+/), element.getAttribute("title") ?? "견본").toContain("forced-color-adjust-none");
+    }
   });
 
   it("최근 체결은 다섯 건만 읽는다(limit=5)", async () => {
