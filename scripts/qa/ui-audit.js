@@ -22,7 +22,7 @@
 //       바탕 그림·그라디언트 위 글과 SVG fill이 색이 아닌 글은 '모름'으로 따로 셉니다. disabled 조작 안의 글은 세지 않습니다.
 //   (e) 참고 지표: 모서리가 9999px 이상이거나 50%인 요소 가운데 정사각형에 가깝지 않은 것(알약 모양)과 4px을 넘는 모서리.
 //   (f) 콘솔 오류(console.error·잡히지 않은 예외·네트워크 밖 브라우저 오류). HTTP 4xx·5xx 응답은 따로 셉니다.
-//   그 밖에 문서 높이, 최종 주소(리디렉션), 기다린 시간과 이유를 남깁니다.
+//   그 밖에 화면 높이(문서 + 본문 스크롤 상자가 넘친 만큼), 최종 주소(리디렉션), 기다린 시간과 이유를 남깁니다.
 //
 // 안전:
 //   - 주소 이동(GET)만 합니다. 단추를 누르거나 글을 넣지 않습니다. 페이지가 스스로 보내는 GET·HEAD·OPTIONS 밖의 요청(POST·PUT·PATCH·DELETE)은
@@ -728,6 +728,10 @@ function pageAudit(opts) {
     count: 0, escaping: 0, clipped: 0, bag: new Map(),
   };
   const flagged = new Set();
+  // 본문 스크롤 상자 — lg 이상 셸은 문서가 아니라 <main>이 세로로 스크롤해 문서 높이가 창 높이와 같습니다. 문서가 스크롤하지 않을 때만,
+  // 창 높이의 절반·창 폭의 절반 이상이고 세로로 넘친 상자 가운데 가장 긴 것을 본문으로 보고 그 넘친 만큼을 더한 값을 화면 높이(contentHeight)로 적습니다.
+  const docScrolls = doc.scrollHeight > window.innerHeight + 1;
+  let pageScroller = null;
   const shape = { pills: 0, pillsPainted: 0, circles: 0, roundedOver4: 0, pillByKind: {}, radiusOver4: {}, bag: new Map() };
   const isFull = (value) => {
     if (!value) return false;
@@ -742,6 +746,8 @@ function pageAudit(opts) {
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
     if (hiddenByTree(el)) continue;
+    if (!docScrolls && (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.clientHeight >= window.innerHeight * 0.5 && el.clientWidth >= vw * 0.5
+      && el.scrollHeight > el.clientHeight + 1 && (!pageScroller || el.scrollHeight > pageScroller.scrollHeight)) pageScroller = el;
     // (e)
     const corners = [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius];
     if (isFull(corners[0]) && isFull(corners[2])) {
@@ -802,6 +808,8 @@ function pageAudit(opts) {
     h1: h1 ? snippet(h1.textContent) : null,
     viewport: { width: vw, innerWidth: window.innerWidth, height: window.innerHeight, targetMin },
     docHeight: doc.scrollHeight,
+    contentHeight: doc.scrollHeight + (pageScroller ? pageScroller.scrollHeight - pageScroller.clientHeight : 0),
+    pageScroller: pageScroller ? cssPath(pageScroller) : null,
     mainTop: main ? round1(main.getBoundingClientRect().top + window.scrollY) : null,
     textElements,
     smallText: { count: small.count, bySize: small.bySize, distinct: small.bag.size, samples: topOf(small.bag, (a, b) => a.px - b.px || b.n - a.n) },
@@ -894,27 +902,22 @@ async function setViewport(page, width, heightOverride = null) {
 }
 
 /**
- * 전체 화면 캡처. 미디어 흉내가 없으면 captureBeyondViewport, 있으면 창 높이를 화면 높이로 늘려 찍고(흉내를 다시 건 뒤) 되돌립니다 —
- * Chrome 157에서 captureBeyondViewport 캡처는 강제 색 흉내 없이 그려졌습니다(미디어 쿼리 규칙만 남고 색 강제는 빠짐, 2026-11-16 확인).
+ * 전체 화면 캡처 — 창 높이를 화면 높이(contentHeight, 문서 + 본문 스크롤 상자가 넘친 만큼)로 늘리고 미디어 흉내를 다시 건 뒤 찍고 되돌립니다.
+ * captureBeyondViewport를 쓰지 않는 이유: lg 이상 셸은 <main>이 스크롤 상자라 문서 밖으로 늘려도 첫 화면(900px)만 찍혔고,
+ * Chrome 157에서는 그 캡처가 강제 색 흉내 없이 그려졌습니다(2026-11-16 확인). 창을 늘리면 고정 요소(아래 탭 바 등)가 화면 맨 아래에 그려집니다.
  */
-async function captureFullPage(page, width, shotFile) {
-  const metrics = await page.send('Page.getLayoutMetrics');
-  const size = metrics.cssContentSize || metrics.contentSize;
-  const height = Math.max(1, Math.min(Math.ceil(size.height), SHOT_MAX_HEIGHT));
+async function captureFullPage(page, width, contentHeight, shotFile) {
+  const height = Math.max(1, Math.min(Math.ceil(contentHeight), SHOT_MAX_HEIGHT));
   let shot;
-  if (!page.mediaFeatures.length) {
-    shot = await page.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: 1 } }, 90000);
-  } else {
-    try {
-      await setViewport(page, width, height);
-      await sleep(300);
-      shot = await page.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width, height, scale: 1 } }, 90000);
-    } finally {
-      await setViewport(page, width);
-    }
+  try {
+    await setViewport(page, width, height);
+    await sleep(400);
+    shot = await page.send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width, height, scale: 1 } }, 90000);
+  } finally {
+    await setViewport(page, width);
   }
   fs.writeFileSync(shotFile, Buffer.from(shot.data, 'base64'));
-  return { file: path.basename(shotFile), height, cut: Math.ceil(size.height) > SHOT_MAX_HEIGHT || undefined };
+  return { file: path.basename(shotFile), height, cut: Math.ceil(contentHeight) > SHOT_MAX_HEIGHT || undefined };
 }
 
 async function blank(page) {
@@ -951,7 +954,7 @@ async function auditRoute(page, opts, route, width, shotFile) {
   };
   if (shotFile) {
     try {
-      result.shot = await captureFullPage(page, width, shotFile);
+      result.shot = await captureFullPage(page, width, audit.contentHeight, shotFile);
     } catch (error) {
       result.shot = { error: error.message };
     }
@@ -973,6 +976,7 @@ function countsOf(result) {
     console: result.console.errors,
     httpErrors: result.network.httpErrors,
     blockedWrites: result.network.blockedWrites.length,
+    height: result.contentHeight,
   };
 }
 
@@ -993,10 +997,10 @@ function renderSummary(meta, rows) {
   lines.push(`- 기준 주소: ${meta.base} · 시각(KST): ${meta.startedKst} ~ ${meta.finishedKst || '진행 중'}`);
   lines.push(`- 폭: ${meta.widths.join(', ')} · 강제 색: ${meta.forcedColors ? '켬' : '끔'} · 동작 줄이기: ${meta.reducedMotion ? '켬' : '끔'} · 색 체계 흉내: ${meta.colorScheme || '없음(브라우저 기본)'}`);
   lines.push(`- 스크립트: ${meta.scriptVersion || '알 수 없음'} · 브라우저: ${meta.browser} · 경로 ${meta.routeCount}개(${meta.routesFile || '기본 목록'})`);
-  lines.push('- 칸: 12px 미만 글 요소 · 작은 누름 자리(문장 속 링크 뺌) · 문장 속 링크 · 문서 가로 넘침(px) · 넘친 요소 · 대비 미달 · 대비 모름 · 알약 모양 · 콘솔 오류');
+  lines.push('- 칸: 12px 미만 글 요소 · 작은 누름 자리(문장 속 링크 뺌) · 문장 속 링크 · 문서 가로 넘침(px) · 넘친 요소 · 대비 미달 · 대비 모름 · 알약 모양 · 콘솔 오류 · 화면 높이(px, 합계 없음)');
   lines.push('- 이 요약에는 화면 글을 넣지 않습니다. 표본은 경로별 JSON에 있습니다(커밋 금지).', '');
-  const header = '| 경로 | 12px 미만 | 작은 누름 | 문장 속 링크 | 문서 넘침 | 넘친 요소 | 대비 미달 | 대비 모름 | 알약 | 콘솔 오류 | 비고 |';
-  const rule = '|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|';
+  const header = '| 경로 | 12px 미만 | 작은 누름 | 문장 속 링크 | 문서 넘침 | 넘친 요소 | 대비 미달 | 대비 모름 | 알약 | 콘솔 오류 | 높이 | 비고 |';
+  const rule = '|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|---|';
   const keys = ['small', 'targets', 'inline', 'overflowPage', 'overflowEls', 'contrastFail', 'contrastUnknown', 'pills', 'console'];
   const grand = Object.fromEntries(keys.map((key) => [key, 0]));
   for (const width of meta.widths) {
@@ -1011,12 +1015,12 @@ function renderSummary(meta, rows) {
         for (const key of keys) total[key] += key === 'overflowPage' ? 0 : c[key];
         if (c.overflowPage > 0) overflowRoutes += 1;
       }
-      const cells = c ? keys.map((key) => String(c[key])) : keys.map(() => '-');
+      const cells = c ? [...keys.map((key) => String(c[key])), String(c.height)] : [...keys.map(() => '-'), '-'];
       lines.push(`| \`${row.route}\` | ${cells.join(' | ')} | ${noteOf(row)} |`);
     }
     total.overflowPage = overflowRoutes;
     for (const key of keys) grand[key] += total[key];
-    lines.push(`| **합계(${part.length}개)** | ${keys.map((key) => (key === 'overflowPage' ? `${total[key]}곳` : String(total[key]))).join(' | ')} | |`, '');
+    lines.push(`| **합계(${part.length}개)** | ${keys.map((key) => (key === 'overflowPage' ? `${total[key]}곳` : String(total[key]))).join(' | ')} | | |`, '');
   }
   lines.push('## 전체 합계', '', '| 폭 묶음 | 12px 미만 | 작은 누름 | 문장 속 링크 | 문서 넘침(곳) | 넘친 요소 | 대비 미달 | 대비 모름 | 알약 | 콘솔 오류 |',
     '|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|', `| 모든 폭 | ${keys.map((key) => String(grand[key])).join(' | ')} |`, '');
