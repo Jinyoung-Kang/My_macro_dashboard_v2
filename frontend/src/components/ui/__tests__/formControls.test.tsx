@@ -76,6 +76,8 @@ describe("NativeSelect", () => {
     fireEvent.change(select, { target: { value: "0" } });
     expect(onChange).toHaveBeenCalledWith("0");
     expect((container.querySelector("svg") as SVGSVGElement).getAttribute("aria-hidden")).toBe("true");
+    // 감싼 칸은 기본 inline-flex — inline-block이면 칸 안의 줄 상자 때문에 sm(24px) 고르기의 칸이 25px로 늘었습니다(놓인 글의 줄 높이에 따라).
+    expect((select.parentElement as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["relative", "inline-flex"]));
   });
 
   // QA-463: 입력칸 모양(inputClasses)이 넓은 화면 가로 여백을 lg 변형(lg:px-*)으로 따로 두면, Tailwind는 변형 규칙을 변형 없는 규칙보다

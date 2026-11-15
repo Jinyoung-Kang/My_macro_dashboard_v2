@@ -453,16 +453,18 @@ export function Select({
  * 작은 고르기 — 에 씁니다. 폭은 `className`(select)·`wrapperClassName`(감싼 칸).
  * 화살표 자리(오른쪽 32px)는 모든 폭에서 비웁니다 — 입력칸 모양이 넓은 화면 가로 여백(`lg:px-*`)을 따로 두고, Tailwind는 변형 규칙을
  * 뒤에 내보내므로 `pr-8` 하나만 두면 lg부터 덮여 고른 글이 화살표 밑으로 들어갑니다(QA-463). 그래서 `lg:pr-8`을 함께 붙입니다.
+ * 감싼 칸은 기본 inline-flex입니다 — inline-block이면 칸 안에 줄 상자가 생겨, 놓인 글의 줄 높이(본문 16/24 등)에 따라 sm(24px) 고르기를 감싼 칸이
+ * 25px(줄 높이가 더 크면 26px)로 늘어 같은 줄의 sm 단추(24px)와 어긋났습니다(2026-11-16 검토 지적 — 머리 없는 크롬으로 잼). flex 칸이면 칸 높이가 고르기 높이와 같습니다.
  */
 export function NativeSelect({
   inputSize = "md",
   className = "",
-  wrapperClassName = "inline-block",
+  wrapperClassName = "inline-flex",
   children,
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & {
   inputSize?: InputSize;
-  /** 감싼 칸의 배치(표시 방식·폭). 기본은 글 흐름 안의 inline-block — 한 줄을 다 쓰려면 "block w-full". */
+  /** 감싼 칸의 배치(표시 방식·폭). 기본은 글 흐름 안의 inline-flex — 한 줄을 다 쓰려면 "block w-full"(넓은 화면 sm이면 "flex w-full"). */
   wrapperClassName?: string;
 }) {
   return (

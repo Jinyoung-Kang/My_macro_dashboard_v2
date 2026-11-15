@@ -138,11 +138,12 @@ export function filterChipClasses(pressed: boolean): string {
 /**
  * 켜고 끄는 단추(aria-pressed — 관심 대상의 알림): 켠 칸은 진한 테두리·굵은 글, 끈 칸은 옅은 글(상태는 단추의 글 '켬'·'끔'이 나름 — 색만이 아님).
  * 바꾸는 중에는 aria-disabled(포커스가 떨어지지 않게 disabled를 쓰지 않음). 모양·높이는 기본 단추와 같고(lg 이상 30px), compact는 목록 줄 —
- * 좁은 화면 44px 정사각, 넓은 화면은 줄 높이 32px, 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
+ * 좁은 화면 44px 정사각, 넓은 화면은 기본 조작 높이 30px(명세 §3-7 높이 단계 — 32px 목록 줄 가운데에 놓임, 예전 32px는 단계 밖이었음 — 2026-11-16 검토 지적),
+ * 넘침을 자르는 스크롤 영역 안이라 포커스 링을 안쪽에 그립니다.
  */
 export function toggleClasses(pressed: boolean, compact = false): string {
   const shape = compact
-    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-8 lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+    ? "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-control border px-2 text-xs lg:min-h-[30px] lg:min-w-0 lg:px-1.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
     : `${CONTROL_BASE} ${BUTTON_SIZE.md}`;
   return `${shape} aria-disabled:cursor-not-allowed aria-disabled:opacity-50 motion-safe:transition-colors ${
     pressed

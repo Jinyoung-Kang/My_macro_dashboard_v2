@@ -114,7 +114,7 @@ export function OverviewHero({
               onChange={(event) => onPick(event.target.value)}
               inputSize="sm"
               aria-label="순자산을 볼 계좌"
-              wrapperClassName="inline-block max-w-full"
+              wrapperClassName="inline-flex max-w-full"
             >
               {accounts.map((account) => (
                 <option key={account.code} value={account.code}>
