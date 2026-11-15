@@ -272,7 +272,8 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
   - `sec`: `title` = `<form> · <primaryDocDescription>`(설명이 없거나 양식만 되풀이하면(`8-K`·`FORM 6-K`) `<form> · <양식 뜻>` — 표에 있는 양식만 짧은 한국어 뜻
     (`search_filings.FORM_LABELS` — 3 최초 지분 보고, 4 지분 변동 보고, 6-K 외국 기업 수시 보고, 13D·13G 5% 초과 지분 보고 등, 운영에서 본 드문 양식 F-N 외국 금융기관의 송달 대리인 지정·
     F-3ASR 외국 기업 일괄 증권 신고서(자동 효력)·N-PX 연간 의결권 행사 기록·S-8 임직원 보상 계획 증권 신고서·IRANNOTICE 이란 관련 활동 공시 통지 — QA-451, `/A`(amendment)는 뜻 + ' 수정'),
-    모르는 양식은 양식만 — QA-440. submissions에는 보고자·발행사 이름 칸이 없어 Form 3·4·5도 양식과 뜻만 — SEC를 더 부르지 않음), `url` = 접수 색인 쪽
+    모르는 양식은 양식만 — QA-440. submissions에는 보고자·발행사 이름 칸이 없어 Form 3·4·5도 양식과 뜻만 — SEC를 더 부르지 않음. 같은 접수를 `sec_fts`도 받았으면 아래 '같은 공시 가리기'처럼
+    그 이름을 뒤에 이어 붙임), `url` = 접수 색인 쪽
     `https://www.sec.gov/Archives/edgar/data/<CIK 숫자>/<접수번호 대시 없음>/<접수번호>-index.htm`, `publisher` = 회사 이름(submissions `name`), `publisherDomain` = `sec.gov`,
     `publishedAt` = `acceptanceDateTime`(꼬리 `Z` 그대로 UTC — 서버 실측 2026-11-14: `…T13:52:41.000Z` = 접수 색인 쪽 'Accepted 08:52:41' 미국 동부 표준시, 있으면
     `timeBasis:"published"`) 없으면 `filingDate`(`"date"`), `summary` = "보고 기준일 <reportDate>"(있을 때).
@@ -283,6 +284,9 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
   - 실패: 전문 검색에서 받은 줄 없이 두 번째 구문이 실패하면 `error`(60초 캐시). DART 2쪽이 실패하면 1쪽 줄과 안내("2쪽을 받지 못함(…)")를 둡니다. SEC submissions 404는
     빈 결과와 안내. 전문 검색에서 제출자 CIK가 없는 줄은 연결할 쪽이 없어 뺍니다. 2년 밖 줄은 규칙(4절)이 잘라 `dropped.old`에 셉니다.
   - **같은 공시 가리기**: SEC 두 출처는 `id` = `info_text.item_id("sec:" + 접수번호)`(쪽 주소가 아니라 접수번호 — 같은 접수가 두 출처에서 와도 한 줄, `sec`가 먼저).
+    지분 보고(Form 3·4·5와 `/A`)는 합치기 전에 같은 `id`의 `sec_fts` 줄 제목에 실린 이름(다른 이름과 제출자) 가운데 `sec` 줄의 `publisher`(대소문자 무시)가 아닌 것을 `sec` 줄 `title` 뒤에
+    ` · `로 이어 붙임(`<form> · <양식 뜻> · <다른 이름>…` — CIK가 있는 13F 기관·사람이 낸 지분 보고는 거의 모두 자기 submissions에도 있어 이름이 버려지지 않게, QA-451 검토 지적).
+    제목 밖의 칸·우선순위·건수는 그대로이고 SEC를 더 부르지 않음. 관심 대상 수집(7-6)도 넣기 전에 같게 합니다.
   - `dart`: `title` = `report_nm`(앞뒤 공백 정리), `url` = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=<rcept_no>`, `publisher` = `flr_nm`(제출인), `publisherDomain` = `dart.fss.or.kr`,
     `publishedAt` = `rcept_dt`(KST 날짜, `"date"`), `summary` = `rm` 표지(유·코·채·넥·공·연·정·철 — 있으면 "비고 <rm>"), `id` = `info_text.item_id(url)`.
 - 중국어·매체 제외 규칙은 그대로 거칩니다(공시는 걸릴 일이 거의 없음). 시각 모름은 `noTime`.

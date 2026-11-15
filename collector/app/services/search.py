@@ -721,6 +721,9 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
         dropped_by[spec.source] = dropped
         if latest_old:
             latest_olds.append(latest_old)
+    # 같은 접수의 지분 보고는 합칠 때 회사별 목록 줄이 남으므로 전문 검색이 받은 이름을 그 줄 제목에 옮겨 싣습니다(QA-451 — SEC를 더 부르지 않음).
+    if groups.get("sec") and groups.get("sec_fts"):
+        groups["sec"] = search_filings.carry_ownership_names(groups["sec"], groups["sec_fts"])
     merged = rules.merge(_merge_order(groups))
     # 건수는 그 줄을 내준 출처에서 셉니다(모은 글의 줄은 표시 출처가 wire·info여도 'watch' — 상태 줄 건수의 합 = 줄 수).
     giver = {id(item): source for source, kept in groups.items() for item in kept}

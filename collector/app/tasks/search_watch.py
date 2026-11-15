@@ -324,7 +324,9 @@ def _collect(target: dict, now: datetime, excludes: rules.Excludes, pace: dict) 
         groups["finviz"] = list(answer.items)
     requests = sent["requests"]
 
-    # 5. 규칙 → 같은 글 가리기 → 넣기.
+    # 5. 규칙 → 같은 글 가리기 → 넣기. 같은 접수의 지분 보고는 회사별 목록 줄이 남으므로 전문 검색이 받은 이름을 그 줄에 옮겨 싣습니다(QA-451).
+    if groups.get("sec") and groups.get("sec_fts"):
+        groups["sec"] = search_filings.carry_ownership_names(groups["sec"], groups["sec_fts"])
     start = rules.window_start(today)
     kept_groups = []
     for source in PRIORITY:

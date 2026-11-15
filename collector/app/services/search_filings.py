@@ -16,8 +16,9 @@ app/services/search_filings.py
   이름>… · <제출자>' — 줄마다 누구·어느 회사의 보고인지 가르게, QA-451). 줄을 가르는 이름이 먼저인 것은 넓은 화면의 한 줄 제목이 앞만 보이고
   제출자는 매체 칸에도 따로 보이기 때문입니다(검토 지적). 회사별 목록(submissions)에는 상대 이름 칸이 없어 Form 3·4·5도 양식과 뜻만(SEC를 더
   부르지 않음). 모은 글에 예전 꼴로 넣은 줄은 읽을 때 :func:`stored_title`로 다시 만듭니다(넣을 때 실은 다른 이름은 지킴).
-- SEC 두 출처의 줄 id는 ``info_text.item_id("sec:" + 접수번호)`` — 같은 접수가 두 출처에서 와도 한 줄(합칠 때 ``sec``가 먼저). DART 줄 id는 공시
-  뷰어 주소의 ``info_text.item_id``.
+- SEC 두 출처의 줄 id는 ``info_text.item_id("sec:" + 접수번호)`` — 같은 접수가 두 출처에서 와도 한 줄(합칠 때 ``sec``가 먼저). 그래서 지분 보고는
+  합치기 전에 :func:`carry_ownership_names`로 전문 검색 줄이 받은 이름을 같은 접수의 ``sec`` 줄 제목에 옮겨 싣습니다(CIK가 있는 13F 기관·사람의
+  자기 지분 보고 — QA-451 검토 지적). DART 줄 id는 공시 뷰어 주소의 ``info_text.item_id``.
 - 시각(§7-1): DART 접수일·전문 검색 ``file_date``는 그 날짜의 그 출처 달력 00:00(DART = KST, SEC = 미국 동부)을 UTC로 바꾼 값과
   ``timeBasis: "date"``. SEC 회사별 목록의 ``acceptanceDateTime``은 꼬리의 ``Z`` 그대로 UTC입니다(서버 실측 2026-11-14 — ``…T13:52:41.000Z``가
   접수 색인 쪽의 'Accepted 08:52:41'(미국 동부 표준시)과 같은 순간). 없으면 접수일(``date``).
@@ -278,6 +279,36 @@ def _stored_others(form: str, rest: str, publisher: str | None) -> list[str]:
         parts = parts[1:]
     own = publisher.casefold()
     return [part for part in parts if part and part.casefold() != own]
+
+
+def carry_ownership_names(sec_items: list[dict], fts_items: list[dict]) -> list[dict]:
+    """
+    같은 접수의 지분 보고(:func:`is_ownership`)가 회사별 목록(``sec``)과 전문 검색(``sec_fts``)에서 함께 오면 합칠 때 ``sec`` 줄이 남는데(같은 id —
+    ``sec``가 먼저), 회사별 목록에는 상대 이름 칸이 없어 전문 검색이 받은 이름이 버려집니다(QA-451 검토 지적 — CIK가 있는 13F 기관·사람이 낸
+    Form 3·4·5는 거의 모두 자기 submissions에도 있음). 그래서 같은 id의 전문 검색 지분 보고 줄 제목에 실린 이름(다른 이름과 제출자) 가운데
+    ``sec`` 줄의 제출자(``publisher`` — submissions ``name``, 대소문자 무시 — 매체 칸에 따로 보임)가 아닌 것을 ``sec`` 줄 제목 뒤에 ' · '로 이어
+    붙인 새 줄로 바꿉니다. 제목 밖의 칸(시각·주소·제출자)은 회사별 목록 그대로이고, 받은 줄(출처 캐시가 같이 씀)은 고치지 않으며, SEC를 더
+    부르지 않습니다. 이렇게 넣은 줄은 읽을 때 :func:`stored_title`이 설명 자리로 그대로 돌려줍니다.
+    """
+    names_by_id: dict[str, list[str]] = {}
+    for item in fts_items:
+        form, _, rest = (item.get("title") or "").partition(NAME_JOIN)
+        publisher = item.get("publisher")
+        if item.get("id") and publisher and is_ownership(form):
+            names_by_id.setdefault(item["id"], [*_stored_others(form, rest, publisher), publisher])
+    if not names_by_id:
+        return list(sec_items)
+    out: list[dict] = []
+    for item in sec_items:
+        names = names_by_id.get(item.get("id"))
+        title = item.get("title") or ""
+        if names and is_ownership(title.partition(NAME_JOIN)[0]):
+            own = (item.get("publisher") or "").casefold()
+            others = [name for name in names if name.casefold() != own]
+            if others:
+                item = dict(item, title=NAME_JOIN.join([title, *others]))
+        out.append(item)
+    return out
 
 
 def stored_title(source: str | None, title: str, publisher: str | None) -> str:
