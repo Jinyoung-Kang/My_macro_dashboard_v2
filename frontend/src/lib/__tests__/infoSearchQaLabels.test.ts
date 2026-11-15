@@ -94,7 +94,8 @@ describe("연결 그림 — 둘째 차례 이후에도 갈리는 번호·낱말�
   // 묶였다가 둘째 차례로 넘어온 이름들은 갈리는 바로 그 글자부터 보였습니다 — 1280 화면(배정 93)에서 'Fictional Example Semiconductor Holdings 1 Ltd'·
   // '… 12 Ltd'가 'Fictio… Ltd'·'Ficti…2 Ltd'로 그려져 번호 1이 빠지고 12가 2로 읽혔습니다('…'를 12px로 센 뒤 세 이름의 끝을 자른 글이 모두
   // 'Fictional…'로 같아져, 첫 차례는 셋을 'Fictional ' 뒤에서 가르고 번호 둘은 둘째 차례로 넘어감).
-  // 수정 전 실패: 폭 93에서 'Ficti… Ltd'·'Fict…2 Ltd'(대문자 어림 9px 뒤), 66에서 'Fi… Ltd'·'Fi…2 L…'(재현 커밋에서는 it.fails).
+  // 수정 전 실패: 폭 93에서 'Fictio… Ltd'·'Ficti…2 Ltd'(대문자 어림 9px 뒤 — 87에서는 'Ficti… Ltd'·'Fict…2 Ltd'), 66에서 'Fi… Ltd'·'Fi…2 L…'
+  // (재현 커밋에서는 it.fails).
   it("앞머리가 같은 이름 셋(번호 1·12) — 폭 66~116 어디서나 '…1'·'…12'처럼 번호를 통째로, 서로 다른 글", () => {
     const names = ["Fictional Graphics Example Holdings Ltd", "Fictional Example Semiconductor Holdings 1 Ltd", "Fictional Example Semiconductor Holdings 12 Ltd"];
     for (const maxPx of [66, 87, 93, 95, 101, 116]) {
