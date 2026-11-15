@@ -61,8 +61,20 @@ export function LinksGraph({
   }, [overflowing, layout.width, measured]);
 
   /**
+   * 마지막으로 부드럽게 넘기기 시작한 목표(scrollLeft) — 넘김이 그 자리에 닿거나(scroll) 끝나면(scrollend) 비움. 진행 중에 다른 노드로 가면 지금
+   * 자리가 아니라 넘김이 멈출 이 자리에서도 그 노드가 보이는지 봅니다(2차 검토 지적).
+   */
+  const scrollGoal = useRef<number | null>(null);
+  const onBoxScroll = () => {
+    const box = boxRef.current;
+    if (box && scrollGoal.current !== null && Math.abs(box.scrollLeft - scrollGoal.current) < 1) scrollGoal.current = null;
+  };
+
+  /**
    * 가로로 넘기는 칸에서 포커스가 간 노드(Tab 등)의 고리와 이름이 칸 밖에 걸치면 그 칸만 가로로 넘겨 다 보이게 합니다 — 페이지는 넘기지 않음
-   * (scrollIntoView를 쓰지 않음). 이름 폭은 그린 글을 재고(getBBox — 재지 못하면 어림), 움직임 줄이기면 바로 옮깁니다.
+   * (scrollIntoView를 쓰지 않음). 이름 폭은 그린 글을 재고(getBBox — 재지 못하면 어림), 움직임 줄이기면 바로 옮깁니다. 앞 노드로 가는 부드러운
+   * 넘김이 진행 중이면(지금 자리에서는 다 보여도) 그 넘김이 멈출 자리에서 다시 재어, 칸 밖에 걸치면 거기서부터의 목표로 넘김을 바꿉니다 — 빠른
+   * Tab·Shift+Tab에서 방금 간 노드의 이름이 앞 노드의 목표에서 잘리지 않게(2차 검토 지적).
    */
   const onFocus = (event: FocusEvent<SVGGElement>, node: LinkGraphNode) => {
     const box = boxRef.current;
@@ -75,11 +87,21 @@ export function LinksGraph({
       // 그려지지 않은 글은 getBBox가 던질 수 있음 — 어림 폭으로.
     }
     const drawnWidth = box.querySelector("svg")?.getBoundingClientRect().width ?? 0;
-    const next = graphFocusScrollLeft(node, box, { width: layout.width, scale: drawnWidth / layout.width, labelWidth });
+    const graph = { width: layout.width, scale: drawnWidth / layout.width, labelWidth };
+    let next = graphFocusScrollLeft(node, box, graph);
+    const goal = scrollGoal.current;
+    if (next === null && goal !== null && Math.abs(goal - box.scrollLeft) >= 1) {
+      next = graphFocusScrollLeft(node, { scrollLeft: goal, clientWidth: box.clientWidth }, graph);
+    }
     if (next === null) return;
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (typeof box.scrollTo === "function") box.scrollTo({ left: next, behavior: reduce ? "auto" : "smooth" });
-    else box.scrollLeft = next;
+    if (typeof box.scrollTo === "function") {
+      scrollGoal.current = reduce ? null : next;
+      box.scrollTo({ left: next, behavior: reduce ? "auto" : "smooth" });
+    } else {
+      scrollGoal.current = null;
+      box.scrollLeft = next;
+    }
   };
 
   const open = (node: LinkGraphNode) => onTarget(linkTarget(node.link));
@@ -91,7 +113,14 @@ export function LinksGraph({
 
   return (
     <div className="flex flex-col gap-2">
-      <div ref={boxRef} className={overflowing ? "w-full overflow-x-auto" : "w-full"}>
+      <div
+        ref={boxRef}
+        className={overflowing ? "w-full overflow-x-auto" : "w-full"}
+        onScroll={onBoxScroll}
+        onScrollEnd={() => {
+          scrollGoal.current = null;
+        }}
+      >
         <svg
           role="group"
           aria-label={`${centerName}의 연결 그림 — 노드 ${layout.nodes.length}개`}

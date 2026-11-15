@@ -258,4 +258,53 @@ describe("연결 그림 — 가로로 넘기는 칸에서 Tab으로 간 노드�
       expect(windowScroll).not.toHaveBeenCalled();
     });
   });
+
+  it("앞 노드로 가는 부드러운 넘김이 끝나기 전에 다른 노드로 가면, 넘김이 멈출 자리에서도 그 노드가 다 보이게 목표를 다시 정함(2차 검토 지적)", () => {
+    // 2차 검토 지적: 넘김을 지금의 scrollLeft로만 판정해, 앞 노드로 가는 부드러운 넘김(scrollTo smooth)이 진행 중일 때 다른 노드로 가면 지금 자리에서는
+    // '다 보임'이라 아무것도 하지 않았고, 넘김이 앞 노드의 목표까지 가서 방금 포커스한 노드의 이름이 칸 밖으로 잘렸습니다(빠른 Tab·Shift+Tab — 칸 226에서
+    // scrollLeft 51.7에 'Sa…Emp…'로 가 22.5로 넘기는 동안 'Sa…Ben…'으로 돌아오면 22.5에서 이름 오른쪽 14.5px가 잘림). 가짜 scrollTo는 자리를 옮기지 않아
+    // (넘김이 막 시작한 상태) scrollLeft가 그 자리 그대로입니다.
+    // 바꾸기 전 실패: 둘째 노드에서 scrollTo를 부르지 않아 마지막 목표(첫 노드의 목표)에서 둘째 노드가 칸 밖.
+    withScrollTo((scrollTo) => {
+      const { box, nodes } = renderGraph(226);
+      const visibleAt = (node: HTMLElement, scrollLeft: number) => {
+        const { left, right } = extentOf(node);
+        return left - 4 >= scrollLeft - 1e-9 && right + 4 <= scrollLeft + 226 + 1e-9;
+      };
+      /** from에서 그 노드로 갈 때의 목표(칸 밖에 걸친 쪽만 맞춤). */
+      const target = (node: HTMLElement, from: number) => {
+        const { left, right } = extentOf(node);
+        return Math.min(280 - 226, Math.max(0, left - 4 < from ? left - 4 : right + 4 - 226));
+      };
+      const starts = [...new Set(nodes.map((node) => target(node, 27)))];
+      const cases = starts.flatMap((from) =>
+        nodes.flatMap((first) =>
+          visibleAt(first, from)
+            ? []
+            : nodes.filter((second) => visibleAt(second, from) && !visibleAt(second, target(first, from))).map((second) => ({ from, first, second })),
+        ),
+      );
+      expect(cases.length).toBeGreaterThan(0);
+      for (const { from, first, second } of cases) {
+        act(() => (document.activeElement as HTMLElement | null)?.blur());
+        box.scrollLeft = from;
+        act(() => box.dispatchEvent(new Event("scroll")));
+        scrollTo.mockClear();
+        act(() => first.focus());
+        expect(scrollTo).toHaveBeenCalledTimes(1);
+        act(() => second.focus());
+        const calls = scrollTo.mock.calls as [{ left: number }][];
+        const end = calls[calls.length - 1][0].left;
+        const label = second.querySelector("text")!.textContent;
+        expect([from, label, visibleAt(second, end)]).toEqual([from, label, true]);
+        // 넘김이 끝나면(그 자리에 닿아 scroll 사건) 다시 지금 자리에서 판정 — 다 보이는 노드에 다시 와도 부르지 않음.
+        box.scrollLeft = end;
+        act(() => box.dispatchEvent(new Event("scroll")));
+        scrollTo.mockClear();
+        act(() => second.blur());
+        act(() => second.focus());
+        expect(scrollTo).not.toHaveBeenCalled();
+      }
+    });
+  });
 });
