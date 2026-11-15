@@ -1,5 +1,5 @@
 /**
- * 정보 검색 대상 화면의 속성 칸 글(QA-420 후속 — 미리 보기 안내, QA-429 후속 — 받지 못한 출처의 이름, QA-431 — 풀지 못한 대상의 종류).
+ * 정보 검색 대상 화면의 속성 칸 글(QA-420 후속 — 미리 보기 안내, QA-429 후속 — 받지 못한 출처·푼 출처의 이름, QA-431 — 풀지 못한 대상의 종류).
  * 응답은 모두 합성 값입니다(실제 응답 원문을 쓰지 않음 — ADR 0026 결정 12).
  *
  * jsdom은 미디어 쿼리를 셈하지 않습니다. 그래서 그 창 폭에서 보이는 글을 클래스의 display(hidden·inline 등과 그 앞의 lg:·xl: 등)로 셈해
@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
 import { entityErrorSourceLabel } from "@/lib/infoSearch";
-import type { SearchFeedItem, SessionUser } from "@/lib/types";
+import type { SearchEntity, SearchFeedItem, SessionUser } from "@/lib/types";
 import { AttributesPanel } from "../EntityParts";
 import { SearchScreen } from "../SearchScreen";
 import { setLocation } from "./fakeNavigation";
@@ -197,6 +197,24 @@ describe("QA-429 후속 — 속성 칸의 '대상을 푸는 데 받지 못한 �
 
   it("객체 기본 속성 이름(toString 등)의 키도 코드 이름 대신 기타 출처로 보인다", () => {
     for (const key of ["toString", "constructor", "__proto__", ""]) expect(entityErrorSourceLabel(key), key).toBe("기타 출처");
+  });
+
+  /** 속성 칸 표의 '푼 출처' 값. */
+  const solvedBy = () => screen.getByText("푼 출처").nextElementSibling?.textContent;
+
+  // QA-429(검토 지적): 같은 속성 칸의 '푼 출처' 줄은 entity.sources의 키를 그대로 이어 붙여, 바로 아래 받지 못한 출처 줄('SEC'·'Wikidata')과
+  // 달리 'sec · wikidata'로 보였고 '13f'·'universe' 같은 코드 이름도 화면 글에 남았음.
+  // 수정 전 실패: '푼 출처'가 'sec · wikidata'·'13f · universe · dart · new_source'(키 그대로).
+  it.fails("'푼 출처' 줄도 수집기 키(sec·wikidata·13f·universe·dart) 대신 받지 못한 출처 줄·후보 목록과 같은 이름을 보인다", () => {
+    render(<AttributesPanel entity={NVIDIA as SearchEntity} kind={null} errors={{ wikidata: "시간 초과" }} />);
+    expect(solvedBy()).toBe("SEC · Wikidata");
+    expect(line()).toContain("Wikidata: 시간 초과");
+    cleanup();
+
+    const sources = ["13f", "universe", "dart", "new_source", "other_source"];
+    render(<AttributesPanel entity={{ ...(NVIDIA as SearchEntity), sources }} kind={null} errors={{}} />);
+    // 모르는 키는 코드 이름 대신 '기타 출처' 하나(같은 이름을 거듭 잇지 않음).
+    expect(solvedBy()).toBe("13F 기관 · 종목 유니버스 · DART · 기타 출처");
   });
 });
 
