@@ -72,6 +72,26 @@ describe("NativeSelect", () => {
     expect(onChange).toHaveBeenCalledWith("0");
     expect((container.querySelector("svg") as SVGSVGElement).getAttribute("aria-hidden")).toBe("true");
   });
+
+  // QA-463: 입력칸 모양(inputClasses)이 넓은 화면 가로 여백을 lg 변형(lg:px-*)으로 따로 두면, Tailwind는 변형 규칙을 변형 없는 규칙보다
+  // 뒤(미디어 쿼리 안)에 내보내므로 화살표 자리로 비운 pr-8(32px)이 lg부터 lg:px-*(10·8px)에 덮여 고른 글 끝이 화살표 아이콘 밑으로 들어갑니다.
+  // 같은 변형 안에서는 padding-right가 padding-inline 뒤에 나오므로(@tailwindcss/node 4.3.5 컴파일로 확인), 가로 여백을 두는 폭 변형마다
+  // 같은 변형의 pr-8이 있어야 모든 폭에서 오른쪽 32px이 남습니다.
+  it.fails("모든 폭에서 화살표 자리(오른쪽 32px)를 비운다 — 가로 여백(px)을 두는 폭 변형마다 같은 변형의 pr-8 (QA-463)", () => {
+    for (const inputSize of ["md", "sm", "lg"] as const) {
+      render(
+        <NativeSelect aria-label={`크기 ${inputSize}`} inputSize={inputSize}>
+          <option value="a">Claude Opus 4.1 (기본 엔진)</option>
+        </NativeSelect>,
+      );
+      const classes = screen.getByRole("combobox", { name: `크기 ${inputSize}` }).className.split(/\s+/);
+      const prefixes = new Set(
+        classes.filter((name) => /^(?:[a-z0-9]+:)*px-/.test(name)).map((name) => name.slice(0, name.lastIndexOf("px-"))),
+      );
+      expect(prefixes.size).toBeGreaterThan(0);
+      for (const prefix of prefixes) expect(classes, `${inputSize} ${prefix || "(변형 없음)"}`).toContain(`${prefix}pr-8`);
+    }
+  });
 });
 
 describe("화면 소스", () => {
