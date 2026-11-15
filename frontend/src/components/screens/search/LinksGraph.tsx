@@ -25,7 +25,8 @@ const GRAPH_NOTE = "받은 자료 기준 — 출처에 없는 관계는 그리�
  * 가로로 넘길 때 포커스가 간 노드의 고리·이름이 칸 밖에 걸치면 그 칸만 넘겨 다 보이게 합니다(graphFocusScrollLeft).
  * 노드는 누를 수 있는 것이라 강조 파랑(이름·테두리), 선·관계 글은 데이터라 중립입니다(명세 A1). 포커스는 노드를 둘러싼 2px 고리로 보입니다
  * (브라우저 기본 바깥선은 투명 — 고대비 모드에서는 시스템 색으로 보임).
- * 색은 currentColor로 칠해 고대비 모드에서도 시스템 글자색으로 남습니다.
+ * 색은 currentColor로 칠하고 그 색을 토큰 클래스(text-accent 등)로 줍니다. SVG는 고대비 모드에서도 색이 강제되지 않으므로(크롬 svg
+ * preserve-parent-color), 고대비 색은 globals.css 고대비 블록의 svg 규칙이 토큰을 시스템 색으로 다시 정의해서 얻습니다(QA-498·QA-508).
  */
 export function LinksGraph({
   groups,
