@@ -84,6 +84,15 @@ describe("장 상태 칩", () => {
     }
   });
 
+  it("넓은 화면(48px 상단바)에서 칩은 높이 24px·caption 글 — 같은 줄 30px 조작보다 작다(좁은 화면 28px·12px 그대로)", async () => {
+    await renderAt("2026-11-03T01:00:00Z");
+    for (const market of ["KOSPI", "NASDAQ"] as const) {
+      const classes = chip(market).className.split(/\s+/);
+      expect(classes).toEqual(expect.arrayContaining(["h-7", "text-xs", "lg:h-6", "lg:px-2", "lg:text-caption"]));
+      expect(classes).not.toContain("lg:h-8");
+    }
+  });
+
   it("시장 이름은 글이 나른다 — 국기·여신상 같은 그림 문자가 없다", async () => {
     const { container } = await renderAt("2026-11-03T01:00:00Z");
     expect(container.textContent).not.toMatch(/[\p{Extended_Pictographic}\p{Regional_Indicator}]/u);
