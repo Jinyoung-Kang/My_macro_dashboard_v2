@@ -6,7 +6,7 @@ import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs
 import { Banner, Card, Metric } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { SOURCES } from "@/lib/sources";
-import { spreadSummary } from "@/lib/spread";
+import { spreadSummary, spreadValueText } from "@/lib/spread";
 import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
 import type { MacroOverview } from "@/lib/types";
 
@@ -47,11 +47,7 @@ export function SpreadSection({
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric
               label={`${pair} 스프레드`}
-              value={
-                block?.latest === null || block?.latest === undefined
-                  ? EMPTY
-                  : `${formatSigned(block.latest, 3)}%p`
-              }
+              value={spreadValueText(block?.latest)}
               delta={change}
               deltaText={change === null ? EMPTY : `${formatSigned(change, 3)}%p`}
               deltaDigits={3}
@@ -63,11 +59,7 @@ export function SpreadSection({
             />
             <Metric
               label="직전 확정치"
-              value={
-                block?.previous === null || block?.previous === undefined
-                  ? EMPTY
-                  : `${formatSigned(block.previous, 3)}%p`
-              }
+              value={spreadValueText(block?.previous)}
             />
           </div>
         </div>
@@ -85,11 +77,7 @@ export function SpreadSection({
             <div className="grid gap-3 md:grid-cols-3">
               <Metric
                 label={`${pair} 스프레드`}
-                value={
-                  scraped.spread === null
-                    ? "수집 실패"
-                    : `${formatSigned(scraped.spread, 3)}%p`
-                }
+                value={scraped.spread === null ? "수집 실패" : spreadValueText(scraped.spread)}
                 delta={scraped.delta}
                 deltaText={
                   scraped.delta === null ? EMPTY : `${formatSigned(scraped.delta, 3)}%p`
