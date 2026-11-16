@@ -75,6 +75,26 @@ describe("가격 차트 패널", () => {
     expect(live.textContent).toBe("");
   });
 
+  // QA-571: 읽기 줄이 min-h-5(20px) 한 줄 자리만 잡아, 좁은 화면(390 — 줄 폭 332px)에서 문지른 내용(날짜·값·단위·칩·'기간 시작 대비' 약 350~390px)이
+  // 두 줄(38px)로 늘며 차트가 18px 아래로 밀렸습니다(손가락 아래에서 차트가 움직임 — 진행 기록 §P4 '정한 것' 2의 줄 높이 고정과 어긋남).
+  // 고친 뒤: sm 미만은 처음부터 두 줄 자리(2.375rem = 38px), sm 이상은 한 줄(20px — 가장 좁은 xl 가운데 칸 434px도 가장 긴 내용보다 넓음).
+  // jsdom은 배치를 재지 못하므로 안내·문지른 상태가 같은 요소이고 두 클래스를 함께 가지는지 봅니다(높이는 브라우저 하네스로 잼).
+  // 수정 전 실패: 읽기 줄 클래스가 min-h-5뿐(min-h-[2.375rem]·sm:min-h-5 없음)(재현 커밋에서는 it.fails).
+  it.fails("읽기 줄은 좁은 화면에서 두 줄 자리를 늘 잡아 둔다 — 안내와 문지른 상태가 같은 요소이고 min-h-[2.375rem]·sm:min-h-5", async () => {
+    reads[TICKER] = { available: true, points: [{ date: "2026-11-12", close: 10 }, { date: "2026-11-13", close: 9.5 }, { date: "2026-11-14", close: 11 }] };
+    render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} unit="원" />);
+    const panel = screen.getByRole("region", { name: "합성 종목 시세" });
+    await within(panel).findByRole("img", { name: "합성 종목 시세 가격 차트" });
+    const tokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    const hintLine = within(panel).getByText("차트를 누르거나 가리키면 그 날 값").closest('[aria-hidden="true"]') as HTMLElement;
+    expect(tokens(hintLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "sm:min-h-5"]));
+    expect(tokens(hintLine)).not.toContain("min-h-5");
+    act(() => charts.last?.onScrub?.(2));
+    const heldLine = within(panel).getByText("11.00").closest('[aria-hidden="true"]') as HTMLElement;
+    expect(heldLine).toBe(hintLine);
+    expect(tokens(heldLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "sm:min-h-5"]));
+  });
+
   it("기간을 누르면 그 기간 시계열을 읽는다(기본 1년)", async () => {
     reads[TICKER] = { available: true, points: [{ date: "2026-11-14", close: 11 }] };
     render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} />);
