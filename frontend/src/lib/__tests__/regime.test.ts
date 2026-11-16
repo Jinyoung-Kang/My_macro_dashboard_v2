@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { regimeBandLabel, regimeInputCells, trackRecordRow } from "../regime";
+import { regimeBandLabel, regimeInputCells, regimeTone, trackRecordRow } from "../regime";
 
 describe("국면 판정 기록의 근거 표기", () => {
   it("단위를 다른 화면과 같게 적고, 기준일은 월-일로 줄인다 — 음수는 −(U+2212, QA-636)", () => {
@@ -55,5 +55,19 @@ describe("국면 이력 띠의 이름", () => {
     expect(regimeBandLabel(timeline, 2)).toBe("국면 이력 띠 — 2021-11-18 ~ 2021-11-25, 주간 판정 2번·구간 2개(최근 구간은 아래 표)");
     expect(regimeBandLabel([], 0)).toBeNull();
     expect(regimeBandLabel(undefined, 0)).toBeNull();
+  });
+});
+
+describe("국면 범주의 톤·아이콘", () => {
+  it("네 국면과 판정 불가가 모두 아이콘을 갖는다 — 회복·판정 불가는 중립, 모르는 코드는 판정 불가와 같다", () => {
+    expect(["EXPANSION", "LATE", "CONTRACTION", "RECOVERY", "UNKNOWN"].map((code) => regimeTone(code))).toEqual([
+      { tone: "ok", icon: "check" },
+      { tone: "warn", icon: "alert" },
+      { tone: "danger", icon: "alert" },
+      { tone: "neutral", icon: "info" },
+      { tone: "neutral", icon: "unknown" },
+    ]);
+    expect(regimeTone("SOMETHING_NEW")).toEqual({ tone: "neutral", icon: "unknown" });
+    expect(regimeTone(null)).toEqual({ tone: "neutral", icon: "unknown" });
   });
 });

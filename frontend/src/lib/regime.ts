@@ -90,3 +90,30 @@ export function regimeBandLabel(timeline: RegimeResponse["timeline"], episodeCou
   const last = points[points.length - 1].date;
   return `국면 이력 띠 — ${first} ~ ${last}, 주간 판정 ${points.length}번·구간 ${episodeCount}개(최근 구간은 아래 표)`;
 }
+
+/** 국면 범주의 톤 — 공용 태그(Tag)의 의도 셋과 중립. */
+export type RegimeTone = "ok" | "warn" | "danger" | "neutral";
+/** 국면 범주의 아이콘 이름 — 화면이 아이콘 부품으로 바꿉니다(이 모듈은 React를 모름). */
+export type RegimeIcon = "check" | "alert" | "info" | "unknown";
+
+/**
+ * 국면 범주의 톤과 아이콘(D1 결정 거리 3 — '상태색은 늘 아이콘 + 글'을 국면 범주색에도, 권장안). 색만으로 국면을 가르지 않게 네 국면과 판정 불가가
+ * 모두 아이콘과 글(국면 이름)을 함께 씁니다 — 사분면·이력 띠 범례·판정 기록·판정 성과의 국면 태그가 이 규칙 하나를 씁니다.
+ *
+ * - 확장: 정상(체크) · 후퇴 경계: 주의(삼각) · 침체 경계: 위험(삼각 — 공용 태그가 낭독기에 '주의:'를 먼저 읽힘)
+ * - 회복: 중립(안내 아이콘 — 강조 파랑은 누를 수 있는 것에만, 원칙 A1) · 판정 불가와 모르는 코드: 중립(점선 원)
+ */
+export function regimeTone(code: string | null | undefined): { tone: RegimeTone; icon: RegimeIcon } {
+  switch (code) {
+    case "EXPANSION":
+      return { tone: "ok", icon: "check" };
+    case "LATE":
+      return { tone: "warn", icon: "alert" };
+    case "CONTRACTION":
+      return { tone: "danger", icon: "alert" };
+    case "RECOVERY":
+      return { tone: "neutral", icon: "info" };
+    default:
+      return { tone: "neutral", icon: "unknown" };
+  }
+}
