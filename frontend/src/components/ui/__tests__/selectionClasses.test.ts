@@ -183,6 +183,20 @@ describe("밑줄 탭 underlineTabClasses", () => {
     expect(tokens(underlineTabClasses(true, "sm"))).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-[30px]"]));
     expect(tokens(underlineTabClasses(true, "md"))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
   });
+
+  // 2026-11-16 결정 1 검토 지적: 고대비(forced-colors)에서 wrap 탭 줄은 모든 탭에 선이 남아(줄마다 바닥선), 고른 탭이 선 두께 2px 대 1px과 굵은 글로만
+  // 갈렸습니다(한 줄 탭은 고른 탭에만 선). 고른 탭의 밑줄을 시스템 강조색(Highlight — 작성자가 지정한 시스템 색은 그 모드에서도 남음)으로 그립니다.
+  // 바꾸기 전에는 실패합니다.
+  it("wrap — 고대비에서 고른 탭의 밑줄은 시스템 강조색(Highlight), 나머지 탭의 1px 선은 시스템 글자색 그대로", () => {
+    for (const size of ["sm", "md"] as const) {
+      expect(tokens(underlineTabClasses(true, size, true))).toContain("forced-colors:border-[Highlight]");
+      const idle = tokens(underlineTabClasses(false, size, true));
+      expect(idle.filter((token) => token.startsWith("forced-colors:"))).toEqual([]);
+    }
+    // 한 줄 탭은 그대로 — 고른 탭만 밑줄(시스템 글자색), 나머지는 지움(명세 D9).
+    expect(tokens(underlineTabClasses(true, "sm")).filter((token) => token.startsWith("forced-colors:"))).toEqual([]);
+    expect(tokens(underlineTabClasses(false, "sm"))).toContain("forced-colors:border-b-0");
+  });
 });
 
 describe("고른 행 막대 SELECTED_BAR", () => {
