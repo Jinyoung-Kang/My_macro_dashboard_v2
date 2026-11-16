@@ -7,9 +7,14 @@
  * 클라이언트 이동 뒤에는 바로잡혔습니다. metadata.title·APP_TITLE은 그대로 둡니다(QA-270 사용자 결정).
  *
  * jsdom에서는 서버 HTML의 <title>을 head에 넣어 두고, 메뉴 제목이 된 뒤 그 글 노드를 루트 제목으로 덮어써 React의 늦은 커밋을 흉내 냅니다.
- * 목 구성(api·next/navigation usePathname '/macro')은 layoutSession.test.tsx와 같습니다.
+ * 목 구성(api·next/navigation usePathname — 기본 '/macro')은 layoutSession.test.tsx와 같습니다.
+ *
+ * QA-594: 상세 화면(지표·종목·기관)의 탭 제목에 대상 이름이 없어(지표·종목 상세는 모두 '시장 · 매크로 대시보드', 기관 상세는 목록과 같은 '13F 포트폴리오 ·
+ * 매크로 대시보드') 상세 탭 여러 개를 제목으로 구분할 수 없었습니다. 빵부스러기 마지막 칸과 같은 글(상세 화면이 넘긴 이름 — hooks/useEntityCrumb, 받기 전은
+ * 주소의 식별자)을 제목 앞에 붙입니다. 시험의 CIK는 늘 10자리입니다.
  */
 import { act, cleanup, render, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionResponse } from "@/lib/types";
 
@@ -27,8 +32,10 @@ const api = vi.hoisted(() => {
 vi.mock("@/lib/api", () => api);
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => "/macro" }));
+const nav = vi.hoisted(() => ({ pathname: "/macro" }));
+vi.mock("next/navigation", () => ({ useRouter: () => router, usePathname: () => nav.pathname }));
 
+import { resetEntityCrumbForTest, useEntityCrumb } from "@/hooks/useEntityCrumb";
 import DashboardLayout from "../layout";
 
 const SESSION = "/api/auth/session";
@@ -80,6 +87,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   for (const title of document.head.querySelectorAll("title")) title.remove();
+  nav.pathname = "/macro";
+  act(() => resetEntityCrumbForTest());
 });
 
 describe("QA-565 — 탭 제목이 루트 metadata의 <title>에 덮여도 메뉴 제목으로 돌아온다", () => {
@@ -101,5 +110,55 @@ describe("QA-565 — 탭 제목이 루트 metadata의 <title>에 덮여도 메�
 
     await act(async () => overwriteWithRootTitle());
     await waitFor(() => expect(document.title).toBe(`(3) ${MACRO_TITLE}`));
+  });
+});
+
+const INSTITUTION = "/institutions/0001608046";
+const NPS = "국민연금 (National Pension Service)";
+const NPS_TITLE = `${NPS} · 13F 포트폴리오 · 매크로 대시보드`;
+
+/** 기관 상세 화면 대역 — 읽은 이름을 셸에 넘깁니다(InstitutionDetailScreen과 같은 훅). */
+function InstitutionScreen({ href = INSTITUTION }: { href?: string }) {
+  useEntityCrumb(href, NPS);
+  return <p>기관 상세</p>;
+}
+
+function renderAt(pathname: string, child: ReactNode) {
+  nav.pathname = pathname;
+  return render(<DashboardLayout>{child}</DashboardLayout>);
+}
+
+describe("QA-594 — 상세 화면 탭 제목에 대상 이름(빵부스러기 마지막 칸과 같은 글)", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 이름을 받아도 '13F 포트폴리오 · 매크로 대시보드'(기관 목록과 같은 제목)였습니다.
+  it.fails("기관 상세가 이름을 넘기면 '국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드' — 루트 제목에 덮여도 그 제목으로 돌아온다", async () => {
+    reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: new Error("500") };
+    renderAt(INSTITUTION, <InstitutionScreen />);
+    await waitFor(() => expect(document.title).toBe(NPS_TITLE));
+
+    await act(async () => overwriteWithRootTitle());
+    await waitFor(() => expect(document.title).toBe(NPS_TITLE));
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 '(3) 13F 포트폴리오 · 매크로 대시보드'였습니다.
+  it.fails("읽지 않은 알림이 3건이면 '(3) 국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드'", async () => {
+    reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: { unread: 3 } };
+    renderAt(INSTITUTION, <InstitutionScreen />);
+    await waitFor(() => expect(document.title).toBe(`(3) ${NPS_TITLE}`));
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 'CIK …' 없이 '13F 포트폴리오 · 매크로 대시보드'였습니다.
+  it.fails("이름을 받기 전·다른 주소의 이름이면 빵부스러기처럼 주소의 식별자 — 'CIK 0001608046 · 13F 포트폴리오 · 매크로 대시보드'", async () => {
+    reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: new Error("500") };
+    renderAt(INSTITUTION, <InstitutionScreen href="/institutions/0001767640" />);
+    await waitFor(() => expect(document.title).toBe("CIK 0001608046 · 13F 포트폴리오 · 매크로 대시보드"));
+  });
+
+  it("목록 화면·모의매매 탭은 대상 칸이 없어 메뉴 제목 그대로 — 남아 있는 이름을 붙이지 않는다", async () => {
+    reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: new Error("500") };
+    renderAt("/institutions", <InstitutionScreen />);
+    await waitFor(() => expect(document.title).toBe("13F 포트폴리오 · 매크로 대시보드"));
+    cleanup();
+    renderAt("/paper/us/holdings", <InstitutionScreen href="/paper/us/holdings" />);
+    await waitFor(() => expect(document.title).toBe("모의매매(미국) · 매크로 대시보드"));
   });
 });
