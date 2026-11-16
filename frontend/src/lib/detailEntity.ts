@@ -115,7 +115,7 @@ export type IndicatorRowFields = Pick<HomeRow, "valueText" | "asOf" | "isEstimat
 
 /**
  * 지표 속성(지표 상세 왼쪽 칸) — 범주·티커·카드 키(고정폭)·값(추정·이전 값 배지)·전일·값 출처·장 상태·기준 시각·경고(있을 때만). 값 출처와 장 상태는
- * 부르는 쪽이 홈 시장 행과 같은 규칙(lib/home macroItemSource·macroCardSession)으로 넘깁니다 — 이 모듈은 lib/home을 가져오지 않습니다(형식만).
+ * 부르는 쪽이 홈 시장 표와 같은 규칙(lib/home macroItemSource·macroCardSession)으로 넘깁니다 — 이 모듈은 lib/home을 가져오지 않습니다(형식만).
  */
 export function indicatorProperties(
   item: Pick<MacroItem, "key" | "ticker" | "prevStr">,

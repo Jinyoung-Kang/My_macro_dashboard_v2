@@ -740,7 +740,7 @@ export function isTimedBook(code: string | null | undefined): boolean {
 }
 
 /**
- * 그 시장의 기본 Claude 계좌 — kind CLAUDE 가운데 시각 지정 체결 계좌(계좌2)가 아닌 첫 계좌(미국 claude·한국 kr_claude). 시작 카드·홈 히어로·
+ * 그 시장의 기본 Claude 계좌 — kind CLAUDE 가운데 시각 지정 체결 계좌(계좌2)가 아닌 첫 계좌(미국 claude·한국 kr_claude). 시작 카드·
  * 사용량처럼 Claude 계좌를 하나로 읽는 곳이 계좌1 동작 그대로 남게(계좌2 명세 §13-3). 없으면 null.
  */
 export function primaryClaudeBook<B extends Pick<PaperBookSummary, "code" | "kind">>(books: readonly B[]): B | null {

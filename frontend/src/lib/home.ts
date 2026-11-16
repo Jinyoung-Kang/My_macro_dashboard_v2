@@ -60,7 +60,7 @@ export const MARKET_HREF = "/macro";
 export const PAPER_HREF = TABS.find((tab) => tab.key === "paper")?.href ?? "/paper";
 
 /**
- * 홈 시장 행 한 줄 — components/patterns `AssetRowData`와 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음).
+ * 홈 시장 표 한 줄 — components/patterns `AssetRowData`와 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음).
  * 변화를 모르면 null(칩 생략), 값을 모르면 value·valueText 둘 다 null("—"). 계좌 손익 표의 줄은 `PaperPnlRow`.
  */
 export type HomeRow = {

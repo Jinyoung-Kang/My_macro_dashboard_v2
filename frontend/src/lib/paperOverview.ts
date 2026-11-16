@@ -232,7 +232,7 @@ export function latestObserved(books: readonly PaperBookSummary[]): string | nul
 /**
  * 히어로 계좌 — 고른 계좌가 목록에 있으면 그것, 아니면(고르지 않음·목록에서 사라짐) 그 시장의 규칙 계좌(kind RULES — 미국 rules·한국 kr_rules,
  * 사용자 결정 2026-11-13: 모의매매 화면에 처음 보이는 계좌를 Claude 계좌1에서 규칙 계좌로). 규칙 계좌가 없으면 예전 기본인 Claude 계좌1
- * (lib/paper `primaryClaudeBook`), 그것도 없으면 첫 계좌. 계좌가 없으면 null. 홈 화면의 히어로(lib/home)는 이 규칙을 쓰지 않습니다(Claude 계좌1 그대로).
+ * (lib/paper `primaryClaudeBook`), 그것도 없으면 첫 계좌. 계좌가 없으면 null. 홈 계좌 손익 표(lib/home)는 계좌를 모두 적어 이 규칙을 쓰지 않습니다.
  */
 export function heroBookCode(books: readonly Pick<PaperBookSummary, "code" | "kind">[], pick: string | null | undefined): string | null {
   if (pick && books.some((book) => book.code === pick)) return pick;
