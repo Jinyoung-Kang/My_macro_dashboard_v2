@@ -314,18 +314,17 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
   // QA 스택 1280(xl에서 앱 이름·검색 단추·장 시계가 한꺼번에 넓어져 자리 251px, 1024의 267px보다 좁음) /institutions/0001608046이 5.2px 모자라
   // '기... › 13F 포트폴... › CIK 0001608...'(27.4·95.8·102.8px), /krx가 '더... › 한국 ... › 파생·투기세력(K...'. 마지막 칸(대상·지금 화면 — 전체 글은
   // title)만 큰 축소 비중(shrink-100000 — 처음 고칠 때 1000이었으나 모자란 폭이 크면 앞 칸에도 0.1px 남짓이 나뉘어 말줄임됨, 정적 하네스로 확인)을 줘
-  // 모자란 폭을 먼저 받게 하고, 앞 칸은 1·min-w-0 그대로 둡니다(앞 칸을 shrink-0으로 두면 자리가 아주 좁을 때
-  // 칸이 검색 단추를 덮음). 마지막 칸이 0이 된 뒤에야 앞 칸이 줄어듭니다.
+  // 모자란 폭을 먼저 받게 하고, 가운데 칸은 1·min-w-0 그대로 둡니다. 검토 뒤(QA-547 후속) 마지막 칸은 글 칸 2.5rem 아래로 줄지 않고(그다음 가운데 칸이
+  // 줄어듦), 첫 칸(메뉴 이름 — 두~네 글자)은 줄지 않습니다(shrink-0 — nav 하한 112px이 첫 칸과 마지막 칸 하한을 담음).
   // 수정 전(재현 커밋에서는 it.fails)에는 세 칸 모두 'flex min-w-0 items-center gap-1'(축소 비중 1)이었습니다.
-  it("모자란 폭은 마지막 칸이 먼저 받는다 — 마지막 칸(li)만 축소 비중 100000(shrink-100000), 앞 칸은 1·min-w-0 그대로 (QA-548)", () => {
+  it("모자란 폭은 마지막 칸이 먼저 받는다 — 마지막 칸(li)만 축소 비중 100000(shrink-100000), 가운데 칸은 1·min-w-0, 첫 칸은 줄지 않음 (QA-548)", () => {
     renderShell(MEMBER_PRO, { path: "/institutions/0001608046" });
     const classes = crumbItems().map((item) => item.className.split(/\s+/));
     expect(classes).toHaveLength(3);
     expect(classes[2]).toContain("shrink-100000");
-    for (const front of classes.slice(0, 2)) {
-      expect(front.some((name) => name.startsWith("shrink-"))).toBe(false);
-      expect(front).toContain("min-w-0");
-    }
+    expect(classes[0]).toContain("shrink-0");
+    expect(classes[1].some((name) => name.startsWith("shrink-"))).toBe(false);
+    expect(classes[1]).toContain("min-w-0");
   });
 
   it("종목 상세는 시장 › 종목(미국) › 코드 — 중간 칸은 주소가 없어 링크 없는 글", () => {
@@ -549,7 +548,7 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     const button = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
     // 막는 것은 aria-disabled(진짜 disabled는 포커스를 body로 떨어뜨림 — QA-553, QA-444와 같은 방식)
     expect(button.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
+    expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").closest("[role=status]")).not.toBeNull();
   });
 
   // QA-553: 수집 중에 단추가 진짜 disabled라, 키보드(Enter·Space)나 마우스로 누른 단추가 disabled가 되는 순간 브라우저가 포커스를 문서(body)로
@@ -579,7 +578,7 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     expectBusy(screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement, screen.getByRole("status"));
   });
 
-  it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 말줄임하고 전체 글은 title", () => {
+  it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 안쪽 글에서 말줄임하고 전체 글은 title", () => {
     signal.message = "수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.";
     renderShell(LOCAL_OWNER);
     const button = screen.getByRole("button", { name: "데이터 수동 새로고침" });
@@ -591,23 +590,25 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
     const status = within(row).getByRole("status");
     expect(status.getAttribute("title")).toBe("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.");
-    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["truncate", "max-w-40"]));
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72"]));
+    expect(status.querySelector(".truncate")?.textContent).toBe("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.");
   });
 
   // QA-547: 상단바 새로고침 안내(role=status — 다음 새로고침까지, 화면을 옮겨도 남음)가 빵부스러기와 폭을 다퉜습니다. 빵부스러기 nav가 lg:flex-1·min-w-0
   // (flex-basis 0, 하한 0)이라 다른 항목이 자기 폭을 먼저 가져간 뒤 남는 폭만 받았고, 안내를 감싼 상자(min-w-0 shrink)는 글 폭(최대 160·288px)을 그대로 차지했습니다.
   // QA 스택(1024·1280) — 성공 안내가 뜨면 nav 267.7 → 99.7px(1024, 칸마다 말줄임), 1280(xl — 앱 이름이 길어지고 안내 상한 288px)에서는 막힌 POST 실패 글·
   // store_only 글로 nav 0px이 되어 칸 링크가 0폭인 채 Tab 순서에 남았습니다. 로그아웃 실패 글(계정 메뉴 왼쪽, 같은 폭)도 같은 꼴입니다.
-  // 빵부스러기에 하한(lg:min-w-40 — 160px)을 두고, 안내를 감싼 상자가 모자란 폭을 먼저 내주되(shrink-[100]) 아이콘 단추 30px + 사이 8px 아래로는 줄지 않게
-  // (min-w-[38px]) 합니다. 안내가 없으면 상자는 단추 폭 그대로입니다(shrink-0 — 늘 38px 하한을 두면 단추가 8px씩 왼쪽으로 밀림, QA 스택 1024·1440에서 잼).
+  // 빵부스러기에 하한을 두고, 안내를 감싼 상자가 모자란 폭을 먼저 내주게 합니다. 안내가 없으면 상자는 단추 폭 그대로입니다(shrink-0 — 늘 하한을 두면
+  // 단추가 8px씩 왼쪽으로 밀림, QA 스택 1024·1440에서 잼). 처음 고칠 때의 값(nav 하한 160px·basis 0, 상자 하한 38px·shrink-[100])은 검토 뒤 아래
+  // '대상 칸이 먼저 사라지지 않는다' 시험의 값(nav 글 폭 주장·하한 112px, 상자는 내용의 하한·shrink-100000)으로 바꿨습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'hidden min-w-0 lg:flex lg:flex-1'(하한 없음), 감싼 상자가 안내와 상관없이 'min-w-0 shrink'였습니다.
-  it("안내 글이 떠 있어도 빵부스러기는 하한 160px — 모자란 폭은 안내를 감싼 상자가 먼저 내주고(단추 30px + 사이 8px까지), 안내가 없으면 상자는 단추 폭 그대로 (QA-547)", () => {
+  it("안내 글이 떠 있어도 빵부스러기는 하한이 있다 — 모자란 폭은 안내를 감싼 상자가 먼저 내주고, 안내가 없으면 상자는 단추 폭 그대로 (QA-547)", () => {
     const refreshBox = () => (screen.getByRole("button", { name: "데이터 수동 새로고침" }).closest("header > div") as HTMLElement).className.split(/\s+/);
     signal.message = "수집이 끝나 화면을 갱신했습니다.";
     renderShell(LOCAL_OWNER, { path: "/krx" });
-    expect(screen.getByRole("navigation", { name: "현재 위치" }).className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-1", "lg:min-w-40"]));
+    expect(screen.getByRole("navigation", { name: "현재 위치" }).className.split(/\s+/)).toContain("lg:min-w-28");
     const withNotice = refreshBox();
-    expect(withNotice).toEqual(expect.arrayContaining(["min-w-[38px]", "shrink-[100]"]));
+    expect(withNotice).toContain("shrink-100000");
     expect(withNotice).not.toContain("min-w-0");
     cleanup();
 
@@ -627,7 +628,7 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
   // 않습니다(그다음 가운데 칸 — 첫 칸(메뉴 이름)은 줄지 않음). 로그아웃 실패 글이 함께 뜨면 새로고침 안내는 아이콘만 남깁니다(둘 다 하한을 지키면 1280에서 넘침).
   // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'hidden min-w-0 lg:flex lg:min-w-40 lg:flex-1', 칸이 첫·가운데 'flex min-w-0 items-center gap-1'·마지막
   // 'flex min-w-0 shrink-100000 items-center gap-1', 안내를 감싼 상자가 'min-w-[38px] shrink-[100]', 실패 글은 한 덩이 말줄임이었습니다.
-  it.fails("안내 글이 떠 있어도 대상 칸이 먼저 사라지지 않는다 — nav는 글 폭을 주장하고, 안내와 대상 칸은 내용의 하한까지만 준다 (QA-547)", () => {
+  it("안내 글이 떠 있어도 대상 칸이 먼저 사라지지 않는다 — nav는 글 폭을 주장하고, 안내와 대상 칸은 내용의 하한까지만 준다 (QA-547)", () => {
     const crumbClasses = () =>
       within(screen.getByRole("navigation", { name: "현재 위치" })).getAllByRole("listitem").map((item) => item.className.split(/\s+/));
     const status = () => within(screen.getByRole("banner")).getByRole("status");

@@ -41,7 +41,7 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
           My Macro<span className="hidden xl:inline"> Dashboard</span> v2
         </span>
       </span>
-      {/* 빵부스러기가 남는 폭을 차지합니다(lg:flex-1 — 예전 빈칸 자리). 좁은 화면에는 없습니다. */}
+      {/* 빵부스러기가 자기 글 폭을 주장하고 남는 폭을 차지합니다(lg:flex-auto — 예전 빈칸 자리, 폭 배분은 Breadcrumbs). 좁은 화면에는 없습니다. */}
       <Breadcrumbs pathname={pathname} user={user} />
       <SearchCommand user={user} />
       {/* 운영자의 데이터 새로고침 — 넓은 화면만, 결과 안내(role=status)가 단추 왼쪽에(좁은 화면은 더보기 '데이터 읽기'). */}

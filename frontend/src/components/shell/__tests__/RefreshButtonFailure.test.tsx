@@ -59,10 +59,11 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
     fireEvent.click(button);
     const full = `새로고침 실패 — ${NETWORK_REASON}`;
     await waitFor(() => expect(status.getAttribute("title")).toBe(full));
-    expect(status.querySelector(".truncate")?.textContent).toBe(full);
     expectWarn(status);
-    // 폭(160px, xl 288px)은 그대로 — 말줄임은 안쪽 글에
-    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72", "min-w-0"]));
+    // 폭(160px, xl 288px)은 그대로 — 결과 낱말은 말줄임 밖, 사유만 말줄임(QA-547 후속 — 두 조각을 이으면 원래 글)
+    expect(status.textContent).toBe(`주의: ${full}`);
+    expect(status.querySelector(".text-ellipsis")?.textContent).toBe(` — ${NETWORK_REASON}`);
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72", "overflow-hidden"]));
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 수집기에 닿지 못한 200 응답도 성공 글과 같은 회색(text-text-3)이었습니다.
@@ -81,7 +82,7 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
     fireEvent.click(button);
     await waitFor(() => expect(status.textContent).toContain(`새로고침 실패 — ${NETWORK_REASON}`));
     expectWarn(status);
-    expect(status.querySelector(".truncate")).toBeNull();
+    expect(status.querySelector(".truncate, .text-ellipsis")).toBeNull();
   });
 
   it("성공 응답(store_only 다시 읽기·수집 끝남)은 지금 그대로 — 경고 톤·아이콘 없이 회색 한 줄", async () => {
@@ -91,7 +92,8 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
     await waitFor(() => expect(first.status.textContent).toMatch(/^store_only 모드입니다/));
     expect(first.status.querySelector("svg")).toBeNull();
     expect(first.status.querySelector(".text-warn")).toBeNull();
-    expect(first.status.className.split(/\s+/)).toEqual(expect.arrayContaining(["truncate", "text-text-3", "max-w-40"]));
+    expect(first.status.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-text-3", "max-w-40"]));
+    expect(first.status.querySelector(".truncate")?.textContent).toMatch(/^store_only 모드입니다/);
     cleanup();
 
     vi.useFakeTimers({ shouldAdvanceTime: true });

@@ -145,13 +145,13 @@ describe("로그아웃", () => {
     fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
-    expect(alert.getAttribute("title")).toBe("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
+    expect(alert.textContent).toBe("주의: 로그아웃 실패 — 서버에 닿지 못했습니다");
+    expect(alert.getAttribute("title")).toBe("로그아웃 실패 — 서버에 닿지 못했습니다");
     expect(alert.closest('[role="menu"]')).toBeNull();
     expect(alert.parentElement).toBe(trigger.parentElement);
-    // 한 줄로 줄임 — 상단바 새로고침 안내와 같은 폭(빵부스러기 자리를 덜 먹게)
+    // 한 줄로 줄임 — 상단바 새로고침 안내와 같은 폭(빵부스러기 자리를 덜 먹게), 결과 낱말은 말줄임 밖이고 사유만 말줄임(QA-547 후속)
     expect(alert.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72"]));
-    expect(alert.querySelector(".truncate")?.textContent).toBe("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
+    expect(alert.querySelector(".text-ellipsis")?.textContent).toBe(" — 서버에 닿지 못했습니다");
     expect(router.push).not.toHaveBeenCalled();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
 
@@ -162,10 +162,11 @@ describe("로그아웃", () => {
   });
 
   // QA-547: 로그아웃 실패 글(상단바 새로고침 안내와 같은 폭 160·288px)을 감싼 상자가 'min-w-0 shrink'라 글 폭을 그대로 차지해, 떠 있는 동안 빵부스러기 자리가
-  // 1440에서 412 → 116px, 새로고침 안내와 함께 뜨면 1280에서 0px까지 줄었습니다(QA 스택 확인 — Shell.test의 같은 번호 시험이 빵부스러기 하한을 봄).
-  // 실패 글이 떠 있는 동안 상자가 모자란 폭을 먼저 내주되(shrink-[100]) 여는 단추 30px + 사이 8px 아래로는 줄지 않게(min-w-[38px]), 글이 없으면 단추 폭 그대로(shrink-0).
+  // 1440에서 412 → 116px, 새로고침 안내와 함께 뜨면 1280에서 0px까지 줄었습니다(QA 스택 확인 — Shell.test의 같은 번호 시험이 빵부스러기 쪽을 봄).
+  // 실패 글이 떠 있는 동안 상자가 모자란 폭을 먼저 내주고(shrink-100000), 글이 없으면 단추 폭 그대로(shrink-0 — 늘 하한을 두면 단추가 밀림).
+  // 처음 고칠 때 둔 정한 하한(min-w-[38px] — 단추 + 사이)은 검토 뒤 내용의 하한(아이콘 + 결과 낱말 + 사이 + 단추)으로 바꿨습니다(아래 시험).
   // 수정 전(재현 커밋에서는 it.fails)에는 글이 있든 없든 'min-w-0 shrink'였습니다.
-  it("실패 글이 떠 있는 동안 감싼 상자는 모자란 폭을 먼저 내주되 단추 30px + 사이 8px 아래로는 줄지 않고, 글이 없으면 단추 폭 그대로 (QA-547)", async () => {
+  it("실패 글이 떠 있는 동안 감싼 상자는 모자란 폭을 먼저 내주고, 글이 없으면 단추 폭 그대로 (QA-547)", async () => {
     api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
     const trigger = renderMenu(MEMBER);
     const quiet = (trigger.parentElement as HTMLElement).className.split(/\s+/);
@@ -176,7 +177,7 @@ describe("로그아웃", () => {
     fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
     const alert = await screen.findByRole("alert");
     const box = (alert.parentElement as HTMLElement).className.split(/\s+/);
-    expect(box).toEqual(expect.arrayContaining(["min-w-[38px]", "shrink-[100]"]));
+    expect(box).toContain("shrink-100000");
     expect(box).not.toContain("min-w-0");
   });
 
@@ -184,7 +185,7 @@ describe("로그아웃", () => {
   // 결과 낱말 '로그아웃하지 못했습니다'(11자, 약 130px)를 하한으로 두면 새로고침 실패 글과 함께 뜰 때 1280에서 상단바가 넘치므로, 새로고침 실패와 같은
   // 짧은 결과 낱말 '로그아웃 실패 — 사유'로 쓰고 결과 낱말은 말줄임 밖에 둡니다(사유만 말줄임). 감싼 상자는 정한 38px가 아니라 그 내용의 하한까지 줍니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 글이 '로그아웃하지 못했습니다 — 사유' 한 덩이 말줄임, 감싼 상자가 'min-w-[38px] shrink-[100]'이었습니다.
-  it.fails("실패 글은 짧은 결과 낱말 먼저('로그아웃 실패 — 사유') — 결과 낱말은 말줄임 밖이고, 감싼 상자는 내용의 하한까지만 준다 (QA-547)", async () => {
+  it("실패 글은 짧은 결과 낱말 먼저('로그아웃 실패 — 사유') — 결과 낱말은 말줄임 밖이고, 감싼 상자는 내용의 하한까지만 준다 (QA-547)", async () => {
     api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
     const trigger = renderMenu(MEMBER);
     fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));

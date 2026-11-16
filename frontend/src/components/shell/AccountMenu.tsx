@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator } from "@/components/ui/DropdownMenu";
-import { AlertTriangleIcon, PersonIcon, StatusText } from "@/components/ui/icons";
+import { PersonIcon } from "@/components/ui/icons";
 import { useLogout } from "@/hooks/useLogout";
 import { useWideShell } from "@/hooks/useWideShell";
 import { accountInitial, isDemo, isLocalOwner, noLoginName, roleLabel } from "@/lib/access";
@@ -10,6 +10,7 @@ import { sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 import { AccountAvatar, DemoNote } from "./AccountBox";
 import { BuildInfo } from "./BuildInfo";
+import { FailureNotice } from "./FailureNotice";
 import { ReadModeNote } from "./ReadMode";
 
 /*
@@ -62,15 +63,14 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
   const local = !demo && isLocalOwner(user);
 
   return (
-    <div className={`hidden items-center gap-2 lg:flex ${error ? "min-w-[38px] shrink-[100]" : "shrink-0"}`}>
-      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px)이고, 빵부스러기 자리는
-          하한 160px — 안내 글이 먼저 줄어듦(떠 있는 동안 감싼 상자가 모자란 폭을 먼저 내주되 여는 단추 30px + 사이 8px까지, QA-547). 글이 없으면 상자는
-          단추 폭 그대로(shrink-0). 다음 로그아웃 때 지움. */}
+    <div className={`hidden items-center gap-2 lg:flex ${error ? "shrink-100000" : "shrink-0"}`}>
+      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px). 떠 있는 동안
+          감싼 상자가 상단바에서 모자란 폭을 먼저 내주되(shrink-100000) 내용의 하한 — 경고 아이콘 + 결과 낱말 '로그아웃 실패'(FailureNotice) + 사이 + 여는
+          단추 — 까지만 내주고, 그다음 빵부스러기가 줄어듭니다(QA-547 — 새로고침 안내의 NOTICE_BOX와 같은 규칙). 글이 없으면 상자는 단추 폭 그대로(shrink-0).
+          다음 로그아웃 때 지움. */}
       {error && (
         <p role="alert" title={error} className="flex min-w-0 max-w-40 text-xs leading-5 text-warn xl:max-w-72">
-          <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />} className="min-w-0">
-            <span className="block truncate">{error}</span>
-          </StatusText>
+          <FailureNotice message={error} oneLine />
         </p>
       )}
       <DropdownMenu
