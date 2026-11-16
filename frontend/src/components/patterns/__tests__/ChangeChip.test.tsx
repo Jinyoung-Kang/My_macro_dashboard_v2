@@ -4,7 +4,7 @@
  * 추정·오래됨은 칩이 아니라 옆 배지가 말한다 — 칩은 같은 모양을 유지한다.
  * 부호 기호는 −(U+2212)·+, 방향은 화살표(읽어 주기에서 뺌)와 말("상승"/"하락"/"변화 없음")로.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChangeChip } from "../ChangeChip";
@@ -110,5 +110,39 @@ describe("ChangeChip", () => {
     expect(screen.getByText("+0.50%")).toBeTruthy();
     expect(screen.getByText("추정")).toBeTruthy();
     expect(screen.getByText("이전 값")).toBeTruthy();
+  });
+});
+
+// QA-595: 칩이 inline-flex flex-wrap이라 표 자동 배치가 칸에 최소 내용 폭(숫자 하나)만 주면, 홈 계좌 손익 표의 '▼'가 숫자와 다른 줄에 홀로 남고
+// 시장 표의 변화량과 변화율이 두 줄로 갈렸습니다(390~1920 모든 폭). 칸의 whitespace-nowrap은 flex 항목 사이의 줄바꿈을 막지 못합니다.
+// 수정 전(재현 커밋에서는 it.fails) 칩 바깥 상자는 'inline-flex flex-wrap items-baseline gap-x-1 tabular-nums …'이고 화살표의 부모가 그 상자였습니다.
+describe("ChangeChip — 줄바꿈 (QA-595)", () => {
+  it("nowrap — 표 칸 안의 칩은 flex-nowrap(변화량과 변화율도 한 줄), 주지 않으면 flex-wrap 그대로", () => {
+    const { container } = render(
+      <>
+        <ChangeChip changePct={-0.48} size="sm" nowrap />
+        <ChangeChip changePct={-0.48} size="sm" />
+      </>,
+    );
+    const [inCell, plain] = Array.from(container.children) as HTMLElement[];
+    expect(inCell.className.split(/\s+/)).toContain("flex-nowrap");
+    expect(inCell.className.split(/\s+/)).not.toContain("flex-wrap");
+    expect(plain.className.split(/\s+/)).toContain("flex-wrap");
+  });
+
+  it("화살표는 첫 값과 줄 바꿈 없는 묶음 — 변화량이 있으면 변화량, 없으면 변화율과 함께(화살표만 윗줄에 홀로 남지 않음)", () => {
+    render(<ChangeChip change={-0.42} changePct={-0.42} size="sm" />);
+    const group = screen.getByText("▼").parentElement as HTMLElement;
+    expect(group.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(within(group).getByText(`${MINUS}0.42`)).toBeTruthy();
+    expect(within(group).getByText("하락").className).toContain("sr-only");
+    // 줄바꿈은 변화량과 변화율 사이에서만 — 변화율은 묶음 밖입니다.
+    expect(within(group).queryByText(`(${MINUS}0.42%)`)).toBeNull();
+    cleanup();
+
+    render(<ChangeChip changePct={-0.48} size="sm" />);
+    const alone = screen.getByText("▼").parentElement as HTMLElement;
+    expect(alone.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(within(alone).getByText(`${MINUS}0.48%`)).toBeTruthy();
   });
 });

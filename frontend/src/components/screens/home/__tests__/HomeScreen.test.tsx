@@ -201,6 +201,24 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(screen.queryByText(/3일 확정/)).toBeNull();
   });
 
+  // QA-600: 국면 패널 신호 값의 음수가 ASCII 하이픈('-0.496')이라 같은 화면 변화 칩·KPI의 −(U+2212)와 섞였습니다.
+  // 수정 전(재현 커밋에서는 it.fails) NFCI 줄은 '-0.496완화적 · …'이었습니다.
+  it("오늘의 국면 — 신호 값의 음수는 −(U+2212), 숫자 앞 ASCII 하이픈이 없다 (QA-600)", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    await inRegime().findByText("확장 (Expansion)");
+    const signals = signalRows(region("오늘의 국면"));
+    expect(signals[1].querySelector("dd")?.textContent).toContain("\u22120.496");
+    // 숫자 앞(글 마디의 처음·공백·'(' 뒤) 하이픈 — '10Y-3M'·'2026-10-16'의 하이픈은 숫자 앞이 아닙니다. 구역 글 전체(textContent)로 보면
+    // 신호 이름(dt) 바로 뒤에 값이 이어 붙어 '…지수-0.496'이 되어 걸리지 않으므로 글 마디마다 봅니다.
+    const walker = document.createTreeWalker(region("오늘의 국면"), NodeFilter.SHOW_TEXT);
+    const hyphenated: string[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (/(^|[\s(])-(?=[\d.])/.test(node.textContent ?? "")) hyphenated.push(node.textContent ?? "");
+    }
+    expect(hyphenated).toEqual([]);
+  });
+
   it("계좌 손익 표 — 네 계좌(이름은 모의매매 화면 링크·종류·상태·계좌 색 견본)·순자산·출발 대비·기준·출처·출발 줄·정기 작업 꺼짐 안내, 쓰기 버튼은 없다", async () => {
     reads = happyReads();
     renderHome(OWNER);
@@ -422,8 +440,8 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
     expect(within(sp500).getByText("전일 대비").className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "text-text-3"]));
     const provenance = within(sp500).getByText(/^Yahoo Finance \(\^GSPC\) · .*2026-10-24 04:59$/);
     expect(within(provenance).getByText("출처:").className).toContain("sr-only");
-    expect(within(kpi("원/달러")).getByText("1,322.28")).toBeTruthy();
-    expect(within(kpi("원/달러")).getByText("원")).toBeTruthy();
+    // 단위는 값의 마지막 글자와 한 묶음(QA-599)이라 글 마디가 나뉩니다 — 값 글 전체로 봅니다.
+    expect(within(kpi("원/달러")).getByText("원").closest(".tabular-nums")?.textContent).toBe("1,322.28원");
     // 저장본에 그 카드가 없으면 '—'(읽어 주기 '값 없음') + 사유 — 0으로 적지 않습니다.
     for (const label of ["코스피", "미국채 10년물"]) {
       expect(within(kpi(label)).getByText("값 없음")).toBeTruthy();
@@ -507,6 +525,38 @@ describe("홈 — 불러오는 중·값 없음", () => {
     // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
     expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();
     expect(screen.queryByText("0건")).toBeNull();
+  });
+
+  // QA-598: 자리표시가 읽은 뒤보다 훨씬 낮아(KPI 타일 64→208px, 국면 패널 189→582px, 계좌 181→509~680px, 시장 309→414px) 값이 오는 동안
+  // 화면이 아래로 밀렸습니다(QA 스택 /api/* 1.5초 지연 CLS 390 0.63·1024 0.37·1440 0.24 — QA-283의 홈 몫 + P4 새 KPI 띠).
+  // 수정 전(재현 커밋에서는 it.fails) 타일 막대는 모두 1개, 세 패널 자리표시는 높이 없는 줄(lines 5·5·6)이었습니다.
+  it("읽는 중 자리는 읽은 뒤 높이에 가깝다 — 시장 KPI 타일은 자리 줄 막대, 국면·계좌·시장 패널 자리표시는 높이를 가진 블록 (QA-598)", () => {
+    renderHome(OWNER);
+    const strip = region("오늘 요약");
+    const bars = (label: string) => within(strip).getByRole("status", { name: `${label} 불러오는 중` }).closest("li")?.querySelectorAll(".bg-control-fill").length;
+    // 수집 오류 타일은 상태 글 한 줄 자리(두 칸·세 칸에서 마지막 줄에 혼자 남음 — lib/home KPI_ERRORS_PENDING_LINES).
+    expect(["국면", "S&P 500", "코스피", "원/달러", "미국채 10년물", "읽지 않은 알림", "수집 오류"].map(bars)).toEqual([1, 6, 6, 6, 6, 1, 2]);
+    const blockHeight = (name: string) => {
+      const block = within(region(name)).getByRole("status").querySelector<HTMLElement>("[style]");
+      return block ? Number.parseFloat(block.style.height) : null;
+    };
+    // 읽은 뒤 본문(QA 스택 1024·1440): 국면 414~544px(넓을수록 낮음), 계좌 529~548px, 시장은 QA-595 뒤 패널 446px에 맞춤(아래 시험).
+    const regime = blockHeight("오늘의 국면");
+    const paper = blockHeight(PAPER_REGION);
+    const market = blockHeight("시장");
+    expect(regime !== null && regime >= 480 && regime <= 520, `국면 ${regime}`).toBe(true);
+    expect(paper !== null && paper >= 400 && paper <= 460, `계좌 ${paper}`).toBe(true);
+    expect(market !== null && market >= 300 && market <= 365, `시장 ${market}`).toBe(true);
+  });
+
+  // QA-598(시장 패널): 변화 칩을 칸 안에서 꺾지 않게 한 뒤(QA-595 — 넓어진 '변화' 칸 몫만큼 '기준' 칸이 좁아져 넉 줄 모두 출처 두 줄) 시장 패널의 읽은 뒤
+  // 높이는 446px(루프백 빌드 1280·1440·1920)인데, 자리표시 330px로는 패널이 417px라 값이 오면 29px 자랐습니다.
+  // 수정 전(재현 커밋에서는 it.fails) 시장 자리표시 높이는 330px였습니다.
+  it("시장 패널 자리표시는 QA-595 뒤 읽은 뒤 높이(패널 446px)에 맞춘 높이 — 355~365px (QA-598)", () => {
+    renderHome(OWNER);
+    const block = within(region("시장")).getByRole("status").querySelector<HTMLElement>("[style]");
+    const height = block ? Number.parseFloat(block.style.height) : null;
+    expect(height !== null && height >= 355 && height <= 365, `시장 ${height}`).toBe(true);
   });
 
   it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
@@ -992,6 +1042,64 @@ describe("홈 — 등락 표시(▲▼ 12px · 읽어 주는 방향)", () => {
     for (const arrow of arrows.filter((node) => node.textContent === "▼")) {
       expect(arrow.parentElement?.textContent).not.toMatch(/-\d/);
       expect(arrow.parentElement?.textContent).toMatch(/−\d/);
+    }
+  });
+});
+
+/** 칸 안의 변화 칩(바깥 상자) — 읽어 주는 방향 글에서 올라가 tabular-nums 상자를 찾습니다(칸 td는 span이 아니라 걸리지 않음). */
+const chipIn = (cell: HTMLElement, direction: "상승" | "하락") => within(cell).getByText(direction).closest("span.tabular-nums") as HTMLElement;
+
+// QA-595: 표 자동 배치가 칩 칸에 최소 내용 폭(숫자 하나)만 주면 flex-wrap 칩이 꺾여, 계좌 표의 '▼'가 숫자와 다른 줄에 홀로 남고
+// 시장 표의 변화량과 변화율이 두 줄로 갈렸습니다(QA 스택 390~1920 모든 폭, 표가 넘치지 않는 768에서도).
+// 수정 전(재현 커밋에서는 it.fails) 세 칩 모두 'inline-flex flex-wrap …'이었습니다.
+describe("홈 — 표 칸 안의 변화 칩 (QA-595)", () => {
+  it("계좌 손익 표의 출발 대비·최근 변화와 시장 표의 변화 칩은 칸 안에서 꺾이지 않는다(flex-nowrap)", async () => {
+    const overview = paperOverview();
+    overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
+    overview.books![1] = {
+      ...overview.books![1],
+      current: {
+        nav: 100123.45, returnPct: 0.12, exposurePct: 97.5, dayChangePct: 0.3, previousTradingDate: "2026-10-23", previousNavFinal: false,
+        basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-26", atKst: "2026-10-26 23:58 KST", isEstimated: true, livePriced: 9,
+        positionCount: 9, pendingOrders: 0, neutral: false, note: null,
+      },
+    };
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: overview };
+    renderHome(OWNER);
+    await act(async () => {});
+
+    // 계좌 표 — 칸 순서: 계좌·순자산·출발 대비·최근 변화·기준
+    const cells = Array.from(bookRow(region(PAPER_REGION), "Claude 계좌").children) as HTMLElement[];
+    // 시장 표 — 칸 순서: 지표·값·변화·기준(원/달러 ▼ −1.38 (−0.10%))
+    const marketCells = Array.from(marketRow("원/달러 (USD/KRW)").children) as HTMLElement[];
+    for (const [name, chip] of [
+      ["출발 대비", chipIn(cells[2], "상승")],
+      ["최근 변화", chipIn(cells[3], "상승")],
+      ["시장 변화", chipIn(marketCells[2], "하락")],
+    ] as const) {
+      expect(chip.className.split(/\s+/), name).toContain("flex-nowrap");
+      expect(chip.className.split(/\s+/), name).not.toContain("flex-wrap");
+    }
+  });
+});
+
+// 국면 패널 본문·고지와 계좌 패널 각주 문장이 좁은 칸에서 '판단의 근거|가 아닙'·'출발 대|비'·'집행·통화|가 달라'처럼 낱말 안에서 꺾였습니다
+// (QA 스택 1024~1920 — 개편 전부터, 공용 키트 고침과 같은 규칙). jsdom은 줄을 재지 않아 클래스로 봅니다.
+describe("홈 — 문장 글의 낱말 단위 줄바꿈", () => {
+  it("국면 패널 문장·기준일·고지와 계좌 패널 출발 줄·비교하지 않음 문구는 break-keep(+ 긴 낱말은 wrap-break-word)", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    const panel = await paperPanel();
+    const hero = region("오늘의 국면");
+    const texts = [
+      within(hero).getByText(/위험자산에 우호적인 조합입니다/),
+      within(hero).getByText(/네 입력 계열의 마지막 날짜 중 가장 이른 날/),
+      within(hero).getByText("임계치는 역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다."),
+      within(panel).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"),
+      within(panel).getByText(PAPER_COMPARE_NOTE),
+    ];
+    for (const node of texts) {
+      expect(node.className.split(/\s+/), node.textContent ?? "").toEqual(expect.arrayContaining(["break-keep", "wrap-break-word"]));
     }
   });
 });

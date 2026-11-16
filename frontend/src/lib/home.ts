@@ -6,7 +6,7 @@
  * 일간 변화처럼 응답에 없는 숫자를 빼기로 만들지 않습니다. 모르는 값은 null(화면 "—")이고 0으로 채우지 않습니다.
  */
 import { indicatorHref } from "./detail";
-import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
+import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSignedMinus, formatWithUnit, withoutLeadingIcon } from "./format";
 import type { InfoSourcesResponse } from "./info";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
@@ -120,13 +120,14 @@ export type RegimeTile = {
  * 판정 신호 네 자리(백엔드 Regime.classify의 순서). 백엔드는 입력이 없는 신호를 signals에서 아예 빼고 missing에 이름만 적으므로,
  * 자리를 여기 고정해 둬야 빠진 신호가 "—"로 남습니다(조용히 사라지지 않음). 라벨은 그때만 쓰는 대신 값이고, 신호가 오면 백엔드 라벨을 씁니다.
  * 자릿수는 승인된 홈 시안(금리차·하이일드 소수 둘째, NFCI·순유동성 4주 변화 소수 셋째 — 0.031조 달러를 0.03으로 뭉개지 않음)을 따르고,
- * 방향이 뜻을 가진 셋(역전·긴축·유입)은 부호를 붙입니다(/regime 판정 기록 표와 같은 규칙, lib/regime.ts).
+ * 방향이 뜻을 가진 셋(역전·긴축·유입)은 부호를 붙입니다 — 부호 규칙은 /regime 판정 기록 표(lib/regime.ts)와 같고, 음수 글자는 −(U+2212)입니다
+ * (같은 홈 화면의 변화 칩·KPI와 같은 글자 — 명세 D4, QA-600). /regime 표의 음수 글자는 P5a에서 맞춥니다.
  */
 const REGIME_SLOTS: readonly { id: string; label: string; format: (value: number) => string }[] = [
-  { id: "curve", label: "장단기 금리차 10Y-3M", format: (value) => formatSigned(value, 2) },
-  { id: "nfci", label: "시카고 연준 금융상황지수", format: (value) => formatSigned(value, 3) },
+  { id: "curve", label: "장단기 금리차 10Y-3M", format: (value) => formatSignedMinus(value, 2).text },
+  { id: "nfci", label: "시카고 연준 금융상황지수", format: (value) => formatSignedMinus(value, 3).text },
   { id: "hyOas", label: "하이일드 스프레드", format: (value) => formatNumber(value, 2) },
-  { id: "liquidity", label: "연준 순유동성 4주 변화", format: (value) => formatSigned(value, 3) },
+  { id: "liquidity", label: "연준 순유동성 4주 변화", format: (value) => formatSignedMinus(value, 3).text },
 ];
 
 function regimeTile(id: string, fallbackLabel: string, signal: RegimeSignal | undefined, format: (value: number) => string): RegimeTile {
@@ -667,6 +668,7 @@ export type HomeKpi = {
   note?: string | null;
   emptyReason?: string | null;
   pending?: boolean;
+  pendingLines?: number;
   isEstimated?: boolean;
   isProxy?: boolean;
   isStale?: boolean;
@@ -714,12 +716,26 @@ export const KPI_READ_FAILED = "읽지 못함";
 /** 저장본에 그 카드가 없을 때의 사유(수집기 카드 목록이 바뀌었거나 아직 수집 전). */
 export const KPI_NOT_IN_SNAPSHOT = "저장본에 없음";
 
-/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). */
-function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>): HomeKpi | null {
+/**
+ * 읽는 중 시장 타일의 자리 줄 수 — 값이 온 뒤의 변화 칩 1 · 이전 값 배지 1 · 출처 줄 3줄(140~180px 타일에서 접힌 줄 수) 자리입니다.
+ * 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 시장 타일에만 주면 띠 높이가 맞습니다(국면·알림 타일은 자리표시 한 줄 — QA-598).
+ */
+const KPI_MARKET_PENDING_LINES = 5;
+/**
+ * 읽는 중 수집 오류 타일(운영자)의 자리 줄 수 — 값 뒤 상태 글 한 줄(경고·누락 수) 자리입니다. 일곱 타일의 마지막이라 두 칸(390)·세 칸(sm)에서는 마지막 줄에
+ * 혼자 남아 그 줄 높이를 이 타일이 정합니다(QA 데이터 390 읽은 뒤 92px — 자리 줄이 없으면 64px, 하나면 88px). 다른 배치에서는 같은 줄의 시장 타일이 더 높습니다.
+ */
+const KPI_ERRORS_PENDING_LINES = 1;
+
+/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). `pendingLines`는 읽는 중일 때만 넘깁니다. */
+function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>, pendingLines?: number): HomeKpi | null {
   if (read.data !== null) {
     return null;
   }
-  return read.error !== null ? { ...base, value: null, emptyReason: KPI_READ_FAILED } : { ...base, value: null, pending: true };
+  if (read.error !== null) {
+    return { ...base, value: null, emptyReason: KPI_READ_FAILED };
+  }
+  return { ...base, value: null, pending: true, ...(pendingLines ? { pendingLines } : {}) };
 }
 
 function regimeKpi(read: HomeReadState<RegimeResponse>): HomeKpi {
@@ -739,7 +755,7 @@ function marketKpi(
   const { label, unit } = HOME_KPI_MARKET_LABELS[key];
   const href = indicatorHref(key);
   const base: HomeKpi = { key, label, value: null, href };
-  const state = kpiReadState(base, read);
+  const state = kpiReadState(base, read, KPI_MARKET_PENDING_LINES);
   if (state) return state;
   const overview = read.data as MacroOverview;
   const item = (overview.categories ?? []).flatMap((category) => category.items ?? []).find((card) => card.key === key);
@@ -777,7 +793,7 @@ function unreadKpi(read: HomeReadState<{ unread?: number | null }>): HomeKpi {
 
 function issuesKpi(read: HomeReadState<StatusIssuesResponse>): HomeKpi {
   const base: HomeKpi = { key: "errors", label: "수집 오류", value: null, unit: "건", format: (value) => formatNumber(value, 0), href: "/status" };
-  const state = kpiReadState(base, read);
+  const state = kpiReadState(base, read, KPI_ERRORS_PENDING_LINES);
   if (state) return state;
   const model = storeStatusModel(read.data);
   // 상태 글은 그 글이 말하는 것의 톤으로만 — 경고·누락이 있으면 그 수, 수집기에 닿지 못하면 그 사실(둘 다 주의). 오류 수는 타일 값이 나르므로

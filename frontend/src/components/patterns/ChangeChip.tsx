@@ -29,6 +29,9 @@ const SIZE: Record<"sm" | "md", string> = {
  * - 음수 부호는 −(U+2212). 단위(`unit`)는 변화량 바로 옆에 작게, 변화율은 "%"를 붙입니다.
  * - `digits`(기본 2)는 변화량·변화율에 함께 씁니다. 변화율만 다르게 찍으려면 `pctDigits`(설계서 §1.5 계약에 더한 선택 prop —
  *   금리 카드의 "−0.007 (−0.14%)"처럼 수집기가 두 자릿수를 따로 정할 때).
+ * - 화살표·읽어 주는 방향 글·첫 값(변화량, 없으면 변화율)은 줄 바꿈 없는 묶음 하나라, 줄은 변화량과 변화율 사이에서만 바뀝니다(화살표만 윗줄에 남지 않음 — QA-595).
+ * - `nowrap`(기본 false — 설계서 §1.5 계약에 더한 선택 prop): 표 칸 안의 칩은 변화량과 변화율 사이에서도 꺾지 않습니다(flex-nowrap). 칸의
+ *   `whitespace-nowrap`(DataTable 오른쪽 정렬 칸)은 flex 항목 사이의 줄바꿈을 막지 못해, 표 자동 배치가 칸에 최소 내용 폭(숫자 하나)만 주면 칩이 꺾였습니다(QA-595).
  */
 export function ChangeChip({
   change,
@@ -37,6 +40,7 @@ export function ChangeChip({
   pctDigits,
   unit,
   size = "md",
+  nowrap = false,
 }: {
   change?: number | null;
   changePct?: number | null;
@@ -44,29 +48,36 @@ export function ChangeChip({
   pctDigits?: number;
   unit?: string;
   size?: "sm" | "md";
+  nowrap?: boolean;
 }): JSX.Element | null {
   const model = changeChipModel(change, changePct, digits, pctDigits ?? digits);
   if (model === null) {
     return null;
   }
   const arrow = ARROW[model.direction];
+  const amount =
+    model.change !== null ? (
+      <span>
+        {model.change}
+        {unit ? <span className="ml-0.5 text-xs font-normal">{unit}</span> : null}
+      </span>
+    ) : null;
+  const pct = model.changePct !== null ? <span>{model.change !== null ? `(${model.changePct})` : model.changePct}</span> : null;
   return (
     <span
-      className={`inline-flex flex-wrap items-baseline gap-x-1 tabular-nums ${SIZE[size]} ${TONE[model.direction]}`}
+      className={`inline-flex ${nowrap ? "flex-nowrap" : "flex-wrap"} items-baseline gap-x-1 tabular-nums ${SIZE[size]} ${TONE[model.direction]}`}
     >
-      {arrow ? (
-        <span aria-hidden="true" className="text-xs">
-          {arrow}
-        </span>
-      ) : null}
-      <span className="sr-only">{SPOKEN[model.direction]}</span>
-      {model.change !== null ? (
-        <span>
-          {model.change}
-          {unit ? <span className="ml-0.5 text-xs font-normal">{unit}</span> : null}
-        </span>
-      ) : null}
-      {model.changePct !== null ? <span>{model.change !== null ? `(${model.changePct})` : model.changePct}</span> : null}
+      {/* 화살표·방향 글·첫 값을 한 덩어리로 — 화살표만 윗줄에 홀로 남지 않게(QA-595). */}
+      <span className="inline-flex items-baseline gap-x-1 whitespace-nowrap">
+        {arrow ? (
+          <span aria-hidden="true" className="text-xs">
+            {arrow}
+          </span>
+        ) : null}
+        <span className="sr-only">{SPOKEN[model.direction]}</span>
+        {amount ?? pct}
+      </span>
+      {amount ? pct : null}
     </span>
   );
 }

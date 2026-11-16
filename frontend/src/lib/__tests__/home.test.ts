@@ -18,6 +18,7 @@ import {
   deltaDigits,
   HOME_KPI_MARKET_KEYS,
   HOME_REFRESH_MS,
+  type HomeKpi,
   type HomeKpiInput,
   homeKpiItems,
   KPI_NOT_IN_SNAPSHOT,
@@ -87,10 +88,29 @@ describe("regimeHeroModel — 오늘의 국면", () => {
     const [curve, nfci, hyOas, liquidity] = regimeHeroModel(regimeExpansion()).tiles;
     expect(curve).toMatchObject({ label: "장단기 금리차 10Y-3M", valueText: "+0.78", unit: "%p", emptyReason: null });
     expect(curve.note).toBe("정상 · 장기 금리가 단기보다 높습니다(정상 구조).");
-    expect(nfci).toMatchObject({ valueText: "-0.496", unit: null });
+    expect(nfci).toMatchObject({ valueText: "\u22120.496", unit: null });
     expect(hyOas).toMatchObject({ valueText: "3.40", unit: "%p" });
     // 0.031조 달러를 0.03으로 뭉개지 않습니다.
     expect(liquidity).toMatchObject({ valueText: "+0.031", unit: "조 달러", note: "확대 · 최근 4주 동안 시장으로 유동성이 들어왔습니다." });
+  });
+
+  // QA-600: 부호 있는 세 신호(금리차·NFCI·순유동성 4주 변화)가 formatSigned(ASCII 하이픈)로 찍혀, 같은 홈 화면의 변화 칩·KPI(−, U+2212)와
+  // 음수 글자가 섞였습니다(QA 스택 '-0.487'·'-0.048' — 개편 전부터). 명세 D4: 등락은 ▲▼와 U+2212.
+  // 수정 전(재현 커밋에서는 it.fails) 값은 '-0.12'·'-0.496'·'-0.048'(ASCII 하이픈)이었습니다.
+  it("부호 있는 신호의 음수는 −(U+2212) — ASCII 하이픈이 아니다, 반올림 뒤 0은 부호 없음 (QA-600)", () => {
+    const response = regimeExpansion();
+    const signal = (id: string) => response.verdict!.signals.find((entry) => entry.id === id)!;
+    signal("curve").value = -0.12;
+    signal("liquidity").value = -0.048462;
+    const [curve, nfci, hyOas, liquidity] = regimeHeroModel(response).tiles;
+    expect([curve.valueText, nfci.valueText, liquidity.valueText]).toEqual(["\u22120.12", "\u22120.496", "\u22120.048"]);
+    for (const tile of [curve, nfci, hyOas, liquidity]) {
+      expect(tile.valueText, tile.id).not.toMatch(/(^|[\s(])-(?=[\d.])/);
+    }
+    signal("curve").value = 0.0004;
+    signal("nfci").value = -0.0004;
+    const [flatCurve, flatNfci] = regimeHeroModel(response).tiles;
+    expect([flatCurve.valueText, flatNfci.valueText]).toEqual(["0.00", "0.000"]);
   });
 
   it("판정 불가 — 라벨·문장은 백엔드 그대로, 받지 못한 입력 목록, 빠진 신호 자리는 '—'(받지 못함)로 남는다", () => {
@@ -792,6 +812,40 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
       ["unread", true, null, null],
       ["errors", false, 0, null],
     ]);
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails) 일곱 타일 모두 자리 줄이 0이었습니다.
+  it("읽는 중이면 시장 타일 넷은 자리 줄 5(변화 1·배지 1·출처 3), 수집 오류 타일은 1(상태 글)을 받는다 — 값이 온 뒤의 높이에 가깝게 자리를 잡음 (QA-598)", () => {
+    const pending = homeKpiItems(
+      ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
+      { owner: true, clock: CLOCK_ONLY },
+    );
+    const lines = (item: HomeKpi) => item.pendingLines ?? 0;
+    expect(pending.map((item) => [item.key, item.pending === true, lines(item)])).toEqual([
+      ["regime", true, 0],
+      ["sp500", true, 5],
+      ["kospi", true, 5],
+      ["usdkrw", true, 5],
+      ["us10y", true, 5],
+      ["unread", true, 0],
+      ["errors", true, 1],
+    ]);
+    // 읽지 못했거나 값이 오면 자리 줄은 없습니다.
+    const failed = homeKpiItems(ready({ macro: { data: null, error: "요청 실패 (HTTP 500)" } }), { owner: true, clock: CLOCK_ONLY });
+    const loaded = homeKpiItems(ready(), { owner: true, clock: CLOCK_ONLY });
+    expect([...failed, ...loaded].map(lines).every((count) => count === 0)).toBe(true);
+  });
+
+  // QA-598(마지막 타일): 수집 오류 타일은 일곱 타일의 마지막이라 두 칸(390)·세 칸(sm)에서 마지막 줄에 혼자 남아 그 줄 높이를 정하는데, 읽는 중 64px에서
+  // 읽은 뒤 92px(값 + 상태 글 한 줄)로 자랐습니다(루프백 빌드 390 — 같은 줄에 더 높은 시장 타일이 없음).
+  // 수정 전(재현 커밋에서는 it.fails) 수집 오류 타일의 자리 줄은 0이었습니다.
+  it("읽는 중 수집 오류 타일은 자리 줄 1(상태 글 한 줄 자리) — 국면·알림 타일은 0 그대로 (QA-598)", () => {
+    const pending = homeKpiItems(
+      ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
+      { owner: true, clock: CLOCK_ONLY },
+    );
+    const lines = (key: string) => pending.find((item) => item.key === key)?.pendingLines ?? 0;
+    expect([lines("errors"), lines("regime"), lines("unread")]).toEqual([1, 0, 0]);
   });
 
   it("읽지 않은 알림 — 'N건', 모르면 '—'(0으로 적지 않음)", () => {

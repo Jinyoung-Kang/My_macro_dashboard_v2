@@ -14,6 +14,13 @@ import type { ApiRead } from "./useHomeData";
 
 const TITLE = "시장";
 
+/**
+ * 읽는 중 자리표시 높이(px) — 읽은 뒤 패널 높이에 맞춥니다(QA-598). QA 데이터(루프백 빌드) 1280·1440·1920 읽은 뒤 패널 446px(묶음 탭 + 표 넉 줄 — 변화 칩을 꺾지 않아
+ * 넓어진 '변화' 칸 몫만큼 '기준' 칸이 좁아져 넉 줄 모두 출처 두 줄, QA-595 뒤)이고, 자리표시 330px일 때 패널이 417px였습니다. 1024는 470px, 390은 표가
+ * 가로로 넘쳐 555px로 더 높지만 첫 화면 밖입니다(패널 위 끝 1024 1120px·390 2153px — 창 높이 900·844px, KPI 띠·국면·계좌 패널 아래).
+ */
+const MARKET_PENDING_HEIGHT = 359;
+
 /** 지표 한 줄의 칸 — 지표(이름은 그 지표의 상세 링크) · 값 · 변화 · 기준(출처·장 상태·지연·시각과 배지). */
 const COLUMNS: readonly Column<HomeRow>[] = [
   {
@@ -32,9 +39,10 @@ const COLUMNS: readonly Column<HomeRow>[] = [
     header: "변화",
     align: "right",
     // 직전 값이 없는 카드(delta·pct 모두 null — deltaStr "N/A")는 칩 대신 "—" — 0.00%를 만들지 않습니다. 변화량 자릿수는 수집기 deltaStr을 따릅니다.
+    // 칩은 칸 안에서 꺾지 않습니다(nowrap — 변화량과 변화율이 두 줄로 갈리던 것, QA-595).
     cell: (row) =>
       row.change === null && row.changePct === null ? null : (
-        <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" />
+        <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" nowrap />
       ),
   },
   {
@@ -84,7 +92,7 @@ export function MarketPanel({
 
   let body: ReactNode;
   if (!data) {
-    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton lines={6} label="시장 시세를 불러오는 중" />;
+    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton height={MARKET_PENDING_HEIGHT} label="시장 시세를 불러오는 중" />;
   } else if (!current) {
     body = <p className="text-sm text-text-2">{presentText(data.message) ?? "매크로 카드 저장본이 아직 없습니다."}</p>;
   } else {

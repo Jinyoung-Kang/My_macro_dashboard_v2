@@ -18,6 +18,9 @@ import { SectionError } from "./HomeCard";
 // 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(패널 제목 — 영역 이름).
 const TITLE = "모의매매 계좌";
 
+/** 읽는 중 자리표시 높이(px) — 계좌 표 네~다섯 줄 + 출처·출발·비교 줄의 높이에 가깝게(QA 스택 읽은 뒤 본문 529~607px의 아래쪽, QA-598). */
+const PAPER_PENDING_HEIGHT = 430;
+
 /**
  * ② 계좌 손익 표 패널 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
  *
@@ -67,7 +70,7 @@ export function PaperPnlPanel() {
         {overview.error ? (
           <SectionError message={overview.error} onRetry={() => void overview.reload()} />
         ) : (
-          <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
+          <Skeleton height={PAPER_PENDING_HEIGHT} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
         )}
       </Panel>
     );
@@ -82,8 +85,9 @@ export function PaperPnlPanel() {
       count={model.rows.length > 0 ? `${model.rows.length.toLocaleString("ko-KR")}개` : undefined}
       actions={actions}
     >
+      {/* 안내·각주 문장은 낱말 사이에서만 줄을 바꿉니다(break-keep — '출발 대|비'처럼 낱말 안에서 꺾이지 않게, 공용 키트와 같은 규칙). */}
       {model.message ? (
-        <p className="text-sm text-text-2">{model.message}</p>
+        <p className="break-keep text-sm text-text-2 wrap-break-word">{model.message}</p>
       ) : (
         <PnlTable rows={model.rows} korea={korea} />
       )}
@@ -92,16 +96,16 @@ export function PaperPnlPanel() {
           <ProvenanceBadge source={model.source} />
         </p>
       ) : null}
-      {model.available ? <p className="mt-1 text-xs leading-relaxed text-text-3">{model.startLine}</p> : null}
+      {model.available ? <p className="mt-1 break-keep text-xs leading-relaxed text-text-3 wrap-break-word">{model.startLine}</p> : null}
       {model.dormantNote ? (
-        <p className="mt-1 text-xs leading-relaxed text-warn">
+        <p className="mt-1 break-keep text-xs leading-relaxed text-warn wrap-break-word">
           <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
             {model.dormantNote}
           </StatusText>
         </p>
       ) : null}
       {model.disabledNote ? (
-        <p className="mt-1 text-xs leading-relaxed text-warn">
+        <p className="mt-1 break-keep text-xs leading-relaxed text-warn wrap-break-word">
           <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
             {model.disabledNote}
           </StatusText>
@@ -109,14 +113,17 @@ export function PaperPnlPanel() {
       ) : null}
       {/* 정기 작업이 켜졌는지 모르면(상태 응답 실패) 모른다고 적습니다 — 꺼짐 안내가 없다고 켜진 것은 아닙니다. */}
       {!status.data && status.error ? (
-        <p className="mt-1 text-xs text-text-3">정기 작업 상태를 확인하지 못했습니다 — {status.error}</p>
+        <p className="mt-1 break-keep text-xs text-text-3 wrap-break-word">정기 작업 상태를 확인하지 못했습니다 — {status.error}</p>
       ) : null}
-      <p className="mt-1 text-xs leading-relaxed text-text-3">{model.compareNote}</p>
+      <p className="mt-1 break-keep text-xs leading-relaxed text-text-3 wrap-break-word">{model.compareNote}</p>
     </Panel>
   );
 }
 
-/** 계좌 손익 표 — 열 다섯(계좌·순자산·출발 대비·최근 변화·기준). 모르는 칸은 null을 돌려 표가 "—"를 그립니다(0을 만들지 않음). */
+/**
+ * 계좌 손익 표 — 열 다섯(계좌·순자산·출발 대비·최근 변화·기준). 모르는 칸은 null을 돌려 표가 "—"를 그립니다(0을 만들지 않음).
+ * 칸 안의 변화 칩은 꺾지 않습니다(`nowrap` — 표 자동 배치가 칸에 숫자 하나 폭만 주면 '▼'가 숫자와 다른 줄에 홀로 남았음, QA-595).
+ */
 function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolean }) {
   // 계좌 색은 모의매매 개요의 순자산 곡선과 같은 표(코드 → 색, 모르는 계좌는 자리대로 남는 색).
   const colors = new Map(rows.map((row, index) => [row.id, bookColor(row.id, index)] as const));
@@ -158,7 +165,7 @@ function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolea
       key: "return",
       header: "출발 대비",
       align: "right",
-      cell: (row) => (row.returnPct === null ? null : <ChangeChip changePct={row.returnPct} size="sm" />),
+      cell: (row) => (row.returnPct === null ? null : <ChangeChip changePct={row.returnPct} size="sm" nowrap />),
     },
     {
       key: "day",
@@ -169,7 +176,7 @@ function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolea
           <>
             <span className="inline-flex items-baseline gap-x-1.5">
               <span className="text-xs text-text-2">{row.day.label}</span>
-              <ChangeChip changePct={row.day.pct} size="sm" />
+              <ChangeChip changePct={row.day.pct} size="sm" nowrap />
             </span>
             {row.day.base ? <span className="block text-xs leading-4 text-text-3">{row.day.base}</span> : null}
           </>

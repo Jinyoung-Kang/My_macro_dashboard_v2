@@ -14,6 +14,12 @@ import type { ApiRead } from "./useHomeData";
 const TITLE = "오늘의 국면";
 
 /**
+ * 읽는 중 자리표시 높이(px) — 읽은 뒤 본문(라벨·문장·기준일·출처·신호 넷·고지)의 높이에 가깝게(QA 스택 414~544px — 넓을수록 낮음). 줄 수로 두면
+ * 189px라 값이 오는 순간 아래 패널이 400px 가까이 밀렸습니다(QA-598 — QA-283의 홈 몫). lg 2×2의 같은 줄은 높은 쪽(계좌 표)에 맞춰집니다.
+ */
+const REGIME_PENDING_HEIGHT = 490;
+
+/**
  * ① 오늘의 국면 패널 — 판정 라벨 · 백엔드 판정 문장 · 기준일(뜻 포함) · 출처 · 받지 못한 입력 · 신호 넷(속성 목록 — 값+단위, 상태·해석 글) · 백엔드 고지.
  * 머리에는 다시 읽기 실패 표시와 '국면 판정 자세히'(/regime).
  *
@@ -39,22 +45,23 @@ export function RegimePanel({ read }: { read: ApiRead<RegimeResponse> }) {
 
   let body: ReactNode;
   if (!data) {
-    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton lines={5} label="오늘의 국면을 불러오는 중" />;
+    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton height={REGIME_PENDING_HEIGHT} label="오늘의 국면을 불러오는 중" />;
   } else {
     const model = regimeHeroModel(data);
     body = (
       <>
         {/* 값은 숫자가 아니라 판정 라벨 — 패널 제목과 같은 글자 단계(heading-sm). 판정 불가는 판정 난 라벨과 같은 잉크로 그리지 않습니다(중립색). */}
         <p className={`text-heading-sm ${model.known ? "text-text" : "text-neutral"}`}>{model.label}</p>
-        {model.summary ? <p className="mt-1 text-sm leading-relaxed text-text-2">{model.summary}</p> : null}
-        <p className="mt-2 text-xs text-text-3">
+        {/* 문장 글은 낱말 사이에서만 줄을 바꿉니다(break-keep — 좁은 칸에서 '근거|가'처럼 낱말 안에서 꺾이지 않게, 공용 키트와 같은 규칙). */}
+        {model.summary ? <p className="mt-1 break-keep text-sm leading-relaxed text-text-2 wrap-break-word">{model.summary}</p> : null}
+        <p className="mt-2 break-keep text-xs text-text-3 wrap-break-word">
           기준일 <span className="tabular-nums text-text-2">{model.asOf ?? <Empty />}</span> · {REGIME_AS_OF_NOTE}
         </p>
         <p className="mt-1 leading-4">
           <ProvenanceBadge source={SOURCES.regime} />
         </p>
         {model.missing.length > 0 ? (
-          <p className="mt-3 text-sm text-warn">
+          <p className="mt-3 break-keep text-sm text-warn wrap-break-word">
             <StatusText tone="warn">받지 못한 입력: {model.missing.join(" · ")}</StatusText>
           </p>
         ) : null}
@@ -71,7 +78,7 @@ export function RegimePanel({ read }: { read: ApiRead<RegimeResponse> }) {
             }))}
           />
         </div>
-        {model.note ? <p className="mt-3 text-xs leading-relaxed text-text-3">{model.note}</p> : null}
+        {model.note ? <p className="mt-3 break-keep text-xs leading-relaxed text-text-3 wrap-break-word">{model.note}</p> : null}
       </>
     );
   }
