@@ -359,6 +359,9 @@ export function NewsCard({
   const shown = newsPage(all, page);
   const items = shown.items;
   const failures = Object.entries(news.data?.news?.errors ?? {});
+  // 항목이 0건이면 본문이 수집기의 오류 글(출처별 사유를 이은 것)을 적으므로 아래 '일부 출처' 줄은 생략합니다 — 같은 사유가 두 번, 모두 실패했는데
+  // '일부'라고 나왔습니다(QA-572). 일부만 실패하고 항목이 있으면 실패 줄은 그대로입니다.
+  const bodyShowsError = Boolean(news.data?.available) && all.length === 0 && Boolean(news.data?.news?.error);
   let body: ReactNode;
   if (!news.data) {
     body = news.error ? (
@@ -414,7 +417,7 @@ export function NewsCard({
           </Button>
         </nav>
       ) : null}
-      {failures.length > 0 ? (
+      {failures.length > 0 && !bodyShowsError ? (
         <p className="mt-3 text-xs text-text-3">
           일부 출처를 받지 못했습니다 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}
         </p>
