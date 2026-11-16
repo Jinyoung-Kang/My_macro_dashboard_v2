@@ -386,6 +386,28 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(region(ALERTS_REGION)).queryByText("끊긴 출처가 없습니다")).toBeNull();
   });
 
+  // QA-605: 패널 머리의 읽지 않은 수는 읽는 중에도 실패에도 같은 '—'(읽어 주기 '값 없음')라 둘이 갈리지 않았습니다. 같은 수를 그리는 KPI 띠는
+  // 읽는 중 자리표시(role=status) · 실패 '— 읽지 못함'(P4 '정한 것' 11)이라 한 화면에서 두 규칙이었습니다.
+  // 수정 전(재현 커밋에서는 it.fails) 읽는 중 머리는 '읽지 않음 —값 없음'(role=status 없음), 실패도 '읽지 않음 —값 없음'이었습니다.
+  it.fails("알림 패널 머리의 읽지 않은 수 — 읽는 중은 '—'(값 없음)가 아니라 자리표시(role=status) (QA-605)", async () => {
+    // unread-count 응답만 오지 않습니다(나머지 경로는 값).
+    reads = happyReads();
+    delete reads[UNREAD];
+    renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    expect(within(unreadCount()).queryByText("값 없음")).toBeNull();
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
+  });
+
+  it.fails("알림 패널 머리의 읽지 않은 수 — 실패는 '— 읽지 못함'(KPI 띠와 같은 사유, 오류 글·다시 시도는 두지 않음) (QA-605)", async () => {
+    reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
+    renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    await waitFor(() => expect(unreadCount().textContent).toContain("읽지 못함"));
+    expect(within(unreadCount()).queryByRole("status")).toBeNull();
+    expect(within(region(ALERTS_REGION)).queryAllByRole("alert")).toHaveLength(0);
+  });
+
   it("알림 — 지난 사건(late)은 읽지 않은 수에 들지 않아 강조(점·굵은 글씨) 없이 '지난 사건'", async () => {
     const response = inbox();
     response.items[0] = { ...response.items[0], late: true, read: false };
