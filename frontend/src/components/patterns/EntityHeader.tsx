@@ -51,7 +51,8 @@ function EntityChangeLine({ value }: { value: EntityChange }): JSX.Element | nul
  *   pctDigits, caption }` — 변화 칩 + 12px 캡션, 둘 다 모르면 없음)이나 그린 요소를 받습니다.
  * - 배지 줄(`badges` — 출처·추정·이전 값·장 상태)은 값 줄 아래에 늘 보이고, 비면(그린 것이 없으면) 접힙니다.
  * - 동작(`actions` — 바로가기 링크·신선도·주기 고르기)은 넓은 화면(lg 이상) 오른쪽, 좁은 화면은 아래로 내려갑니다.
- * - `placeholder`(불러오는 중 Skeleton·오류 글)는 값 줄·배지 줄 자리만 바꿉니다 — 이름·종류·식별자·동작은 그대로 남고 다시 마운트되지 않습니다.
+ * - `placeholder`(불러오는 중 Skeleton·오류 글)는 값 줄·배지 줄 자리만 바꿉니다 — 이름·종류·식별자·동작은 그대로 남고 다시 마운트되지 않습니다. 자리표시는
+ *   이름 줄 폭이 아니라 머리에서 쓸 수 있는 폭(동작 영역 왼쪽) 전체를 씁니다(QA-591).
  * - 데이터 영역이라 강조 파랑을 쓰지 않습니다(A1 — 값·태그·아이콘 칸 모두 중립 잉크, lib/__tests__/accentInData.test.ts).
  */
 export function EntityHeader({
@@ -106,7 +107,9 @@ export function EntityHeader({
 
   return (
     <header className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-      <div className="flex min-w-0 items-start gap-3">
+      {/* 왼쪽 줄·글 칸은 남는 폭을 차지합니다 — 자리표시(Skeleton 막대 w-full·오류 글)가 이름 줄 폭이 아니라 머리에서 쓸 수 있는 폭 전체를 쓰게(QA-591).
+          왼쪽 줄의 flex-1은 가로 머리(lg)에서만 — 좁은 화면의 세로 머리에서는 flex-basis 0%가 높이에 걸립니다. */}
+      <div className="flex min-w-0 items-start gap-3 lg:flex-1">
         {/* 종류 아이콘 칸 — 장식(뜻은 이름 옆 종류 태그가 나름). 넓은 화면에서 제목 줄(28px) 가운데에 오게 2px 내립니다. */}
         <span
           aria-hidden="true"
@@ -114,7 +117,7 @@ export function EntityHeader({
         >
           <Icon size={18} />
         </span>
-        <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <Heading className="min-w-0 break-keep wrap-anywhere text-heading text-text">{name}</Heading>
             <Tag>{kindLabel}</Tag>

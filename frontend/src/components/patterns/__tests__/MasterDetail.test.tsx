@@ -153,7 +153,8 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
     }
   });
 
-  it("대화상자가 열린 채 넓은 화면으로 바뀌면 닫히고, 다시 좁아져도 저절로 다시 열리지 않는다", () => {
+  // QA-590 뒤: 닫히면서 대화상자로 본 줄을 고릅니다(그 전에는 '고른 줄 없음' 안내 글).
+  it("대화상자가 열린 채 넓은 화면으로 바뀌면 닫히고 그 줄을 고르며, 다시 좁아져도 저절로 다시 열리지 않는다", () => {
     let wide = false;
     const listeners = new Set<() => void>();
     vi.stubGlobal(
@@ -176,7 +177,8 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
     expect(screen.getByRole("dialog", { name: "Apple Inc." })).toBeTruthy();
     resize(true);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("region", { name: "상위 보유 종목 — 고른 줄 없음" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "상위 보유 종목 — Apple Inc." })).toBeTruthy();
+    expect(row("Apple").getAttribute("aria-current")).toBe("true");
     resize(false);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -339,7 +341,8 @@ describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
     expect(screen.getByRole("dialog", { name: "Bank of America" })).toBeTruthy();
   });
 
-  it("틀 폭이 바뀌면 동작이 따라간다 — 옆 → 좁은 틀이면 검사 칸이 빠지고, 다시 넓어지면 열린 대화상자를 닫고 고른 줄을 다시 보인다", () => {
+  // QA-590 뒤: 다시 넓어지면 대화상자로 본 줄(Apple)을 고르고 포커스도 그 줄입니다(그 전에는 앞서 고른 Bank of America를 다시 보였음 — 포커스와 갈라짐).
+  it("틀 폭이 바뀌면 동작이 따라간다 — 옆 → 좁은 틀이면 검사 칸이 빠지고, 다시 넓어지면 열린 대화상자를 닫고 대화상자로 본 줄을 고른다", async () => {
     stubWide();
     const frame = stubFrameWidth(600);
     renderList();
@@ -352,8 +355,122 @@ describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
     expect(screen.getByRole("dialog", { name: "Apple Inc." })).toBeTruthy();
     frame.resize(594);
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(row("Apple").getAttribute("aria-current")).toBe("true");
+    expect(row("Bank of America").hasAttribute("aria-current")).toBe(false);
+    expect(screen.getByRole("heading", { level: 3, name: "Apple Inc." })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(row("Apple")));
+    expect(rows().map((button) => button.tabIndex)).toEqual([0, -1, -1]);
+  });
+
+  // QA-590: 대화상자 배치(좁은 틀)에서 키로 포커스를 옮기거나 대화상자로 줄을 본 뒤 옆 칸 배치로 넓어지면, 고른 줄이 그 줄을 따라가지 않고 예전 고름이나
+  // autoSelectFirst의 첫 줄로 돌아갔습니다 — 포커스 링(7번 줄)과 고른 막대·검사 칸(0번 줄)이 갈라지고, Tab 정지점이 포커스 줄이 아닌 고른 줄이라 Shift+Tab이
+  // 같은 목록의 다른 줄로 갔습니다(QA 스택 /institutions/0001608046 보유 종목 — 1280에서 메뉴 접기, 1440 → 1280 → 1440).
+  // 수정 전(재현 커밋에서는 it.fails)에는 셋째 줄에 포커스가 있어도 첫 줄(Apple)이 aria-current·tabIndex 0이었습니다. 이제 바뀌는 그리기에서 그 줄을 고릅니다.
+  it("좁은 틀에서 키로 옮긴 줄은 넓어지면 고른 줄이 된다 — 포커스·aria-current·Tab 정지점·검사 칸이 한 줄 (QA-590)", () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    renderList({ autoSelectFirst: true });
+    expect(rows()[0].getAttribute("aria-current")).toBe("true");
+    frame.resize(434);
+    const [first, second, third] = rows();
+    first.focus();
+    fireEvent.keyDown(first, { key: "j" });
+    fireEvent.keyDown(second, { key: "j" });
+    expect(document.activeElement).toBe(third);
+    frame.resize(594);
+    expect(document.activeElement).toBe(row("American Express"));
+    expect(rows().map((button) => button.getAttribute("aria-current"))).toEqual([null, null, "true"]);
+    expect(rows().map((button) => button.tabIndex)).toEqual([-1, -1, 0]);
+    expect(screen.getByRole("heading", { level: 3, name: "American Express" })).toBeTruthy();
+  });
+
+  // QA-590: 앞서 옆 칸에서 고른 줄이 있으면 그 줄이 남아 Tab 정지점이 되고, 포커스가 있는 줄은 tabIndex -1이었습니다(정지점 하나가 깨짐).
+  // 수정 전(재현 커밋에서는 it.fails)에는 Tab 정지점이 Bank of America(앞서 고른 줄), 포커스는 American Express였습니다.
+  it("앞서 고른 줄이 있어도 좁은 틀에서 포커스를 옮긴 줄이 넓어진 뒤의 고른 줄이자 하나뿐인 Tab 정지점이다 (QA-590)", () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    const onChange = vi.fn();
+    renderList({ onSelectedKeyChange: onChange });
+    fireEvent.click(row("Bank of America"));
+    frame.resize(434);
+    const boa = row("Bank of America");
+    boa.focus();
+    fireEvent.keyDown(boa, { key: "j" });
+    expect(document.activeElement).toBe(row("American Express"));
+    frame.resize(594);
+    const stops = rows().filter((button) => button.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toBe(document.activeElement);
+    expect(stops[0]).toBe(row("American Express"));
+    expect(row("American Express").getAttribute("aria-current")).toBe("true");
+    expect(onChange.mock.calls.map(([key]) => key)).toEqual(["060505104", "025816109"]);
+  });
+
+  // QA-590 후속(검토): 넓어질 때 포커스 줄을 무조건 골라, 옆 칸에서 Esc로 일부러 고름을 푼 뒤(포커스는 그 줄에 남음) 목록을 건드리지 않고 폭만 좁혔다
+  // 넓혀도 그 줄이 다시 골라지고 onSelectedKeyChange도 다시 불렸습니다. 수정 전(이 커밋에서는 it.fails) aria-current [null, null, 'true'], 검사 칸
+  // '상위 보유 종목 — American Express', 호출 [060505104, 025816109, null, 025816109]. 이제 고른 줄이 없고 대화상자 배치 동안 목록을 건드리지 않았으면
+  // 고르지 않습니다.
+  it("옆 칸에서 Esc로 고름을 푼 뒤 목록을 건드리지 않고 좁혔다 넓히면 고른 줄 없음 그대로 — 다시 고르지 않고 onSelectedKeyChange도 부르지 않는다 (QA-590)", () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    const onChange = vi.fn();
+    renderList({ onSelectedKeyChange: onChange });
+    const [first] = rows();
+    first.focus();
+    fireEvent.keyDown(first, { key: "j" });
+    fireEvent.keyDown(row("Bank of America"), { key: "j" });
+    fireEvent.keyDown(row("American Express"), { key: "Escape" });
+    expect(document.activeElement).toBe(row("American Express"));
+    frame.resize(434);
+    frame.resize(594);
+    expect(rows().map((button) => button.getAttribute("aria-current"))).toEqual([null, null, null]);
+    expect(screen.getByRole("region", { name: "상위 보유 종목 — 고른 줄 없음" })).toBeTruthy();
+    expect(onChange.mock.calls.map(([key]) => key)).toEqual(["060505104", "025816109", null]);
+    // 포커스 줄이 하나뿐인 Tab 정지점(고른 줄이 없으니 갈라지지 않음)
+    expect(rows().map((button) => button.tabIndex)).toEqual([-1, -1, 0]);
+  });
+
+  it("Esc로 푼 뒤라도 좁은 틀에서 포커스를 옮기거나 대화상자로 줄을 보았으면 넓어질 때 그 줄을 고른다 (QA-590)", async () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    const onChange = vi.fn();
+    renderList({ onSelectedKeyChange: onChange });
+    fireEvent.click(row("Bank of America"));
+    fireEvent.keyDown(row("Bank of America"), { key: "Escape" });
+    frame.resize(434);
+    // 키로 옮김 → 넓히면 옮긴 줄
+    fireEvent.keyDown(row("Bank of America"), { key: "j" });
+    expect(document.activeElement).toBe(row("American Express"));
+    frame.resize(594);
+    expect(rows().map((button) => button.getAttribute("aria-current"))).toEqual([null, null, "true"]);
+    // 다시 Esc로 풀고 좁힌 뒤 같은 줄을 대화상자로 열었다 닫음 → 넓히면 그 줄
+    fireEvent.keyDown(row("American Express"), { key: "Escape" });
+    frame.resize(434);
+    fireEvent.click(row("American Express"));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "American Express" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(row("American Express")));
+    frame.resize(594);
+    expect(row("American Express").getAttribute("aria-current")).toBe("true");
+    expect(onChange.mock.calls.map(([key]) => key)).toEqual(["060505104", null, "025816109", null, "025816109"]);
+  });
+
+  it("포커스가 목록 밖이면 넓어져도 앞서 고른 줄(없으면 autoSelectFirst의 첫 줄)을 그대로 보인다 (QA-590)", () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    renderList();
+    fireEvent.click(row("Bank of America"));
+    frame.resize(434);
+    (document.activeElement as HTMLElement).blur();
+    frame.resize(594);
     expect(row("Bank of America").getAttribute("aria-current")).toBe("true");
-    expect(screen.getByRole("heading", { level: 3, name: "Bank of America" })).toBeTruthy();
+    cleanup();
+
+    const again = stubFrameWidth(600);
+    renderList({ autoSelectFirst: true });
+    again.resize(434);
+    again.resize(594);
+    expect(rows().map((button) => button.getAttribute("aria-current"))).toEqual(["true", null, null]);
   });
 
   it("폭을 모르면(0 — 숨긴 탭 안·배치 없는 대역) 크기 질의 배치에 맡겨 옆 검사 칸 동작 그대로", () => {

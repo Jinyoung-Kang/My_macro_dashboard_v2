@@ -7,6 +7,7 @@ import { buttonClasses } from "@/components/ui/classes";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AlertTriangleIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { useEntityCrumbLabel } from "@/hooks/useEntityCrumb";
 import { apiBase } from "@/lib/api";
 import { RefreshProvider, useRefreshSignal } from "@/hooks/useRefreshSignal";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
@@ -14,6 +15,7 @@ import { endpoints } from "@/lib/endpoints";
 import type { SessionResponse } from "@/lib/types";
 import { ALERTS_READ_EVENT, titleWithUnread } from "@/lib/alerts";
 import { isNoLogin } from "@/lib/access";
+import { entityCrumbLabel } from "@/lib/breadcrumbs";
 import { documentTitle } from "@/lib/nav";
 
 /**
@@ -42,19 +44,25 @@ export default function DashboardLayout({
 }
 
 /**
- * 브라우저 탭 제목을 현재 메뉴 이름으로 바꿉니다(lib/nav documentTitle — "순유동성 · 매크로 대시보드").
+ * 브라우저 탭 제목을 현재 메뉴 이름으로 바꿉니다(lib/nav documentTitle — "순유동성 · 매크로 대시보드"). 상세 화면(지표·종목·기관)이면 앞에
+ * 대상 이름을 붙입니다 — 빵부스러기 마지막 칸과 같은 글(상세 화면이 넘긴 이름 hooks/useEntityCrumb, 받기 전은 주소의 식별자 — lib/breadcrumbs
+ * entityCrumbLabel): "국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드", 이름을 받기 전 "CIK 0001608046 · 13F 포트폴리오 · …",
+ * 알림이 있으면 "(3) 국민연금 … · 13F 포트폴리오 · 매크로 대시보드"(QA-594 — 전에는 상세 탭이 모두 '시장'·'13F 포트폴리오'라 구분되지 않았음).
+ * 모의매매 탭과 목록 화면은 대상 칸이 없어 메뉴 이름 그대로입니다.
  *
  * <p>모든 화면이 클라이언트 컴포넌트라 Next의 정적 metadata를 페이지마다 둘 수
  * 없습니다. 그대로 두면 탭 12개가 전부 같은 제목이라, 매크로·레이더·13F를 함께
  * 띄워 두고 비교할 때 어느 탭이 무엇인지 구분할 수 없습니다.
  *
- * <p>쓴 뒤에도 head를 지켜보다 제목이 바뀌면 다시 씁니다. 처음 열 때 루트 metadata의 제목이 이 효과보다 늦게 들어와 덮으면, 주소·알림 수가
+ * <p>쓴 뒤에도 head를 지켜보다 제목이 바뀌면 다시 씁니다. 처음 열 때 루트 metadata의 제목이 이 효과보다 늦게 들어와 덮으면, 주소·알림 수·대상 이름이
  * 바뀌지 않는 한 효과가 다시 돌지 않아 그 제목이 남았습니다(알림 수 요청이 실패하면 늘 — QA-565).
  */
 function useDocumentTitle(pathname: string, unread: number | null) {
+  const entity = useEntityCrumbLabel();
+  const label = entityCrumbLabel(pathname, entity);
   useEffect(() => {
     // 읽지 않은 알림이 있으면 앞에 수를 붙입니다(화면 알림함만이라 알아차리는 길이 이것뿐입니다).
-    const want = titleWithUnread(documentTitle(pathname), unread);
+    const want = titleWithUnread(documentTitle(pathname, label), unread);
     document.title = want;
     // Next 루트 metadata의 <title>을 React가 늦게 커밋하며 덮음 — QA-565. 다를 때만 다시 써서 자기 쓰기로 되먹임하지 않습니다.
     const observer = new MutationObserver(() => {
@@ -62,7 +70,7 @@ function useDocumentTitle(pathname: string, unread: number | null) {
     });
     observer.observe(document.head, { subtree: true, childList: true, characterData: true });
     return () => observer.disconnect();
-  }, [pathname, unread]);
+  }, [pathname, unread, label]);
 }
 
 /** 세션 확인이 이 시간 안에 끝나지 않으면 "응답 없음"으로 보여 줍니다. */

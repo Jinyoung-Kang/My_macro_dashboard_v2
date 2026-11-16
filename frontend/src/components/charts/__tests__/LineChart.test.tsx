@@ -284,7 +284,10 @@ describe("LineChart — 히어로 · 문지르기", () => {
     expect(container.querySelector(".recharts-tooltip-cursor")).toBeNull();
   });
 
-  it("터치를 떼면 null — 커서를 감추고 지금 값으로 돌아가게", async () => {
+  // QA-592: 손을 떼면 읽기 줄·커서·툴팁은 돌아갔지만 선 위의 활성 점(.recharts-active-dot)은 그 자리에 남았습니다 — Recharts 3은 touchend에 활성 순번을
+  // 지우지 않고, 활성 점은 Tooltip active가 아니라 그 순번을 봅니다(QA 스택 /markets/i/us10y 390 터치 끌기·한 번 탭, 손 뗀 뒤 4.7초에도 점 1개).
+  // 수정 전(재현 커밋에서는 it.fails)에는 touchEnd 뒤에도 활성 점이 1개였습니다.
+  it("터치를 떼면 null — 커서와 활성 점을 감추고 지금 값으로 돌아가게 (QA-592)", async () => {
     sizeAs(600, 240);
     const onScrub = vi.fn();
     const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} variant="hero" height={240} onScrub={onScrub} />);
@@ -293,11 +296,13 @@ describe("LineChart — 히어로 · 문지르기", () => {
       fireEvent.mouseMove(wrapper, { clientX: 590, clientY: 100 });
     });
     await vi.waitFor(() => expect(onScrub).toHaveBeenLastCalledWith(3));
+    expect(container.querySelectorAll(".recharts-active-dot")).toHaveLength(1);
     await act(async () => {
       fireEvent.touchEnd(wrapper);
     });
     expect(onScrub).toHaveBeenLastCalledWith(null);
     expect(container.querySelector(".recharts-tooltip-cursor")).toBeNull();
+    expect(container.querySelectorAll(".recharts-active-dot")).toHaveLength(0);
   });
 
   it("기본 차트에 onScrub을 주면 툴팁 상자는 그대로 두고 순번도 알린다", async () => {

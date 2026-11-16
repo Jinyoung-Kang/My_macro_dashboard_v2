@@ -276,10 +276,16 @@ export function menuTitle(pathname: string): string | null {
 
 export const APP_TITLE = "매크로 대시보드";
 
-/** 브라우저 탭 제목 — "순유동성 · 매크로 대시보드". 읽지 않은 알림 접두사는 lib/alerts의 titleWithUnread가 붙입니다. */
-export function documentTitle(pathname: string): string {
+/**
+ * 브라우저 탭 제목 — "순유동성 · 매크로 대시보드". 읽지 않은 알림 접두사는 lib/alerts의 titleWithUnread가 붙입니다.
+ * 상세 화면이면 대상 이름(`entityLabel` — 빵부스러기 마지막 칸 글, lib/breadcrumbs entityCrumbLabel)을 앞에 붙여 상세 탭 여러 개를 구분합니다(QA-594) —
+ * "국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드". 없거나 비면 붙이지 않습니다.
+ */
+export function documentTitle(pathname: string, entityLabel?: string | null): string {
   const name = menuTitle(pathname);
-  return name ? `${name} · ${APP_TITLE}` : APP_TITLE;
+  const base = name ? `${name} · ${APP_TITLE}` : APP_TITLE;
+  const prefix = entityLabel?.trim();
+  return prefix ? `${prefix} · ${base}` : base;
 }
 
 /**

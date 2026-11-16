@@ -183,6 +183,31 @@ describe("EntityHeader — 불러오는 중·오류(placeholder)", () => {
     expect(screen.getByRole("link", { name: "정보 검색에서 보기" })).toBe(link);
   });
 
+  // QA-591: 머리 글 칸(flex-col)이 늘지 않고 왼쪽 줄도 넓은 화면에서 내용 폭이라, 불러오는 중 Skeleton(막대 w-full)과 오류 글이 이름 줄 폭만큼만
+  // 그려졌습니다 — QA 스택 1440 us10y·NVDA 103px, /s/us/T 58px(머리에서 쓸 수 있는 폭 1112·968px), 390 103px(314px). jsdom은 배치를 재지 않아 클래스로 봅니다:
+  // 글 칸은 flex-1, 왼쪽 줄(아이콘 칸의 부모)은 넓은 화면(lg — 가로 머리)에서만 flex-1(좁은 화면의 세로 머리에서 flex-basis 0%가 높이에 걸리지 않게).
+  // 수정 전(재현 커밋에서는 it.fails)에는 글 칸 'flex min-w-0 flex-col gap-1', 왼쪽 줄 'flex min-w-0 items-start gap-3'이었습니다.
+  it("자리표시는 머리에서 쓸 수 있는 폭 전체를 쓴다 — 글 칸 flex-1, 왼쪽 줄 lg:flex-1 (QA-591)", () => {
+    const { container } = render(
+      <EntityHeader
+        kind="indicator"
+        name="us10y"
+        value={null}
+        actions={<a href="/macro">매크로 지표</a>}
+        placeholder={<Skeleton lines={4} label="지표를 불러오는 중" />}
+      />,
+    );
+    const status = screen.getByRole("status", { name: "지표를 불러오는 중" });
+    const left = container.querySelector("header > div:first-child") as HTMLElement;
+    expect(left.querySelector(":scope > span[aria-hidden='true']")).not.toBeNull();
+    const column = left.lastElementChild as HTMLElement;
+    expect(column.contains(status)).toBe(true);
+    expect(column.className.split(/\s+/)).toEqual(expect.arrayContaining(["flex", "min-w-0", "flex-1", "flex-col"]));
+    const leftClasses = left.className.split(/\s+/);
+    expect(leftClasses).toContain("lg:flex-1");
+    expect(leftClasses).not.toContain("flex-1");
+  });
+
   it("오류면 값 자리에 오류 글 — 이름은 그대로", () => {
     const { container } = render(<EntityHeader kind="stock" name="AAPL" value={null} placeholder={<p role="alert">시세를 불러오지 못했습니다.</p>} />);
     expect(screen.getByRole("alert").textContent).toBe("시세를 불러오지 못했습니다.");

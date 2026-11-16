@@ -21,8 +21,11 @@ import { activeItem, activeTab, visibleItems, visibleTabs, type NavTab } from ".
 import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
 import type { SessionUser } from "./types";
 
-/** 빵부스러기 한 칸 — href가 null이면 링크 없이 글만(묶음 이름·보이지 않는 메뉴·주소가 따로 없는 칸·뒤 칸과 주소가 같은 칸). */
-export type Crumb = { label: string; href: string | null };
+/**
+ * 빵부스러기 한 칸 — href가 null이면 링크 없이 글만(묶음 이름·보이지 않는 메뉴·주소가 따로 없는 칸·뒤 칸과 주소가 같은 칸).
+ * `title`은 접힌 빵부스러기(foldedBreadcrumbs)의 첫 칸에만 있는 전체 글('모의매매 › 한국' — 숨긴 가운데 칸까지)입니다. 없으면 셸이 칸 글을 title로 씁니다.
+ */
+export type Crumb = { label: string; href: string | null; title?: string };
 
 /** 종목 상세의 중간 칸 이름 — 시장별(주소가 따로 없는 글 칸). */
 const STOCK_SECTION: Record<"us" | "kr", string> = { us: "종목(미국)", kr: "종목(한국)" };
@@ -105,14 +108,34 @@ function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => 
   return NO_DETAIL;
 }
 
+/** 넘겨받은 대상 이름 — 그 주소가 대상 칸의 정규 주소와 같고 이름이 비어 있지 않을 때만(앞뒤 공백 없이), 아니면 빈 글. 빵부스러기·탭 제목이 같이 씁니다. */
+function matchedEntityName(detail: DetailCrumbs, entity: { href: string; label: string } | null | undefined): string {
+  return entity && detail.entityHref !== null && entity.href === detail.entityHref ? entity.label.trim() : "";
+}
+
 /**
- * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
- * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/1067983` → 기관 › 13F 포트폴리오 › CIK 1067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
- * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
- * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
- * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
+ * 지금 주소의 대상 칸 글 — 빵부스러기 마지막 칸과 같은 글(브라우저 탭 제목 앞에 붙임, QA-594 — app/(dashboard)/layout useDocumentTitle).
+ * 상세 화면이 넘긴 이름의 주소가 대상 칸의 정규 주소와 같으면 그 이름, 아니면 대상 칸 글(지표 키·종목 코드·'CIK …'). 대상 칸이 없는 주소(모의매매 탭 —
+ * 그 칸은 탭 이름이라 상세 대상이 아님, 목록 화면, 형식이 틀린 주소, 메뉴 밖)는 null입니다.
+ * 예 — `/institutions/0001608046` + {href:'/institutions/0001608046', label:'국민연금 (National Pension Service)'} → 그 이름, 이름이 없으면 'CIK 0001608046'.
  */
-export function breadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
+export function entityCrumbLabel(pathname: string, entity?: { href: string; label: string } | null): string | null {
+  const tab = activeTab(pathname);
+  if (!tab) return null;
+  const detail = detailCrumbs(pathname, tab, (href) => href);
+  if (detail.entityHref === null) return null;
+  return matchedEntityName(detail, entity) || (detail.crumbs.at(-1)?.label ?? null);
+}
+
+/** 뒤 칸 어느 것과 주소가 같은 칸은 글 칸으로 — 지금 화면으로 가는 링크·같은 곳으로 가는 링크 둘을 두지 않습니다(QA-549). 그려지는 칸들에 씁니다. */
+function withoutRepeatedLinks(crumbs: Crumb[]): Crumb[] {
+  return crumbs.map((crumb, index) =>
+    crumb.href !== null && crumbs.slice(index + 1).some((later) => later.href === crumb.href) ? { ...crumb, href: null } : crumb,
+  );
+}
+
+/** 칸 계산(QA-549 처리 전) — breadcrumbs·foldedBreadcrumbs가 같이 씁니다. */
+function allCrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
   const tab = activeTab(pathname);
   if (!tab) return [];
   const tabVisible = visibleTabs(user).includes(tab);
@@ -127,13 +150,43 @@ export function breadcrumbs(pathname: string, user: SessionUser | null | undefin
     crumbs.push({ label: item.label, href: shown.has(item.href) ? item.href : null });
   }
   const detail = detailCrumbs(pathname, tab, visible);
-  const named = entity && detail.entityHref !== null && entity.href === detail.entityHref ? entity.label.trim() : "";
+  const named = matchedEntityName(detail, entity);
   const tail = named
     ? detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb))
     : detail.crumbs;
-  const all = [...crumbs, ...tail];
-  // 뒤 칸 어느 것과 주소가 같은 칸은 글 칸으로 — 지금 화면으로 가는 링크·같은 곳으로 가는 링크 둘을 두지 않습니다(QA-549).
-  return all.map((crumb, index) =>
-    crumb.href !== null && all.slice(index + 1).some((later) => later.href === crumb.href) ? { ...crumb, href: null } : crumb,
-  );
+  return [...crumbs, ...tail];
+}
+
+/**
+ * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
+ * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/0001067983` → 기관 › 13F 포트폴리오 › CIK 0001067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
+ * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
+ * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
+ * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
+ */
+export function breadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
+  return withoutRepeatedLinks(allCrumbs(pathname, user, entity));
+}
+
+/**
+ * 가운데 칸을 접은 빵부스러기(셸이 가운데 칸 글이 하한 아래로 줄 때 그림 — components/shell/Breadcrumbs, QA-593) — 첫 칸과 마지막 칸만.
+ * 첫 칸은 숨긴 가운데 칸 가운데 가장 가까운 부모(링크가 있는 마지막 가운데 칸)로 가는 링크이고(없으면 첫 칸 자신의 주소), 전체 글(`title`)은 숨긴 칸까지
+ * 잇습니다. 그다음 뒤 칸과 주소가 같은 칸을 글 칸으로 하는 처리(QA-549)는 그려지는 두 칸에만 씁니다 — 숨긴 칸까지 넣어 계산하면 접힌 빵부스러기에 위로
+ * 가는 링크가 없었습니다(검토: '모의매매'·'기관'·'시장'이 숨긴 '미국'·'13F 포트폴리오'·'매크로 지표'와 주소가 같아 글 칸, /paper/kr/*에 남는 링크는 다른
+ * 시장으로 가는 '모의매매' → /paper/us).
+ * 예 — `/paper/kr/holdings` → 모의매매(→ /paper/kr, 전체 글 '모의매매 › 한국') › 보유·체결, `/institutions/0001608046` → 기관(→ /institutions) › CIK …,
+ * `/s/kr/005930` → 시장(→ 탭 주소 — 가운데 '종목(한국)'은 링크 없음) › 005930. 가운데 칸이 없으면 breadcrumbs와 같습니다.
+ */
+export function foldedBreadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
+  const all = allCrumbs(pathname, user, entity);
+  if (all.length < 3) return withoutRepeatedLinks(all);
+  const [first] = all;
+  const middle = all.slice(1, -1);
+  const parent = [...middle].reverse().find((crumb) => crumb.href !== null);
+  const folded: Crumb = {
+    label: first.label,
+    href: parent ? parent.href : first.href,
+    title: [first, ...middle].map((crumb) => crumb.label).join(" › "),
+  };
+  return withoutRepeatedLinks([folded, all[all.length - 1]]);
 }
