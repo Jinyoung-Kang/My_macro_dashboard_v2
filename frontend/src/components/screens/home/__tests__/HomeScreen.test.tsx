@@ -1,6 +1,6 @@
 /**
  * 홈(/) 화면 — 고정 응답 이야기로 네 상태를 확인한다(설계서 §9 DoD "없음·일부 실패·추정·오래됨").
- *  - 값 있음: 국면 히어로(백엔드 라벨·문장·기준일·출처·고지·신호 네 타일), 모의매매 히어로(Claude 순자산·마지막 관측·출처·네 계좌·출발 줄),
+ *  - 값 있음: 국면 패널(백엔드 라벨·문장·기준일·출처·고지·신호 넷), 계좌 손익 표(네 계좌 — 순자산·출발 대비·최근 변화·기준, 출처·출발 줄),
  *    시장 행(장 상태 — 열린 장만 지연), 알림(지난 사건은 강조하지 않음), 저장소 상태(누락 데이터셋·수집기 연결)
  *  - 값 없음: 판정 불가(중립색) + 받지 못한 입력, 장부 없음 안내, 매크로 저장본 없음, "새 알림이 없습니다", 모르는 수는 "—"(읽어 주기 "값 없음")
  *  - 일부 실패: 한 경로가 실패해도 그 구역만 오류(role="alert", 다시 시도), 나머지는 그린다
@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { COLLECTOR_UNREACHABLE_NOTE, PAPER_COMPARE_NOTE, PAPER_HREF, PAPER_KR_HREF } from "@/lib/home";
 import { PAPER_SOURCES } from "@/lib/paper";
+import { bookColor } from "../../paper/bookColors";
 import { SOURCES } from "@/lib/sources";
 import type { SessionUser } from "@/lib/types";
 import {
@@ -106,32 +107,27 @@ const region = (name: string | RegExp) => screen.getByRole("region", { name });
  */
 const storeCounts = (container: HTMLElement) => within(container).getByText(/^수집 태스크 오류/).closest(".tabular-nums") as HTMLElement;
 
-/** 모의매매 히어로 구역 이름 — 불러오는 중·오류·읽은 뒤 모두 같습니다(큰 숫자가 무엇인지 제목이 먼저 말함). */
-const PAPER_REGION = "모의매매 · Claude 계좌 순자산";
+/** 계좌 손익 표 구역 이름 — 불러오는 중·오류·읽은 뒤 모두 같습니다. */
+const PAPER_REGION = "모의매매 계좌";
 
-/** 모의매매 히어로(운영자, 장부를 읽은 뒤) — 같은 이름의 구역에 평가 시각 줄·계좌 행이 그려진 뒤. */
-async function paperHero(): Promise<HTMLElement> {
-  // 제목에도 "Claude 계좌 순자산"이 있어(불러오는 중에도) 평가 시각 줄로 기다립니다.
-  await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/);
+/** 계좌 손익 표(운영자, 장부를 읽은 뒤) — 같은 이름의 구역에 계좌 줄이 그려진 뒤. `book`은 기다릴 계좌 이름(링크). */
+async function paperPanel(book = "Claude 계좌"): Promise<HTMLElement> {
+  await within(region(PAPER_REGION)).findByRole("link", { name: book });
   return region(PAPER_REGION);
 }
 
-/**
- * 요소의 가로 간격 클래스(접두어 하나, 예: "p"·"px"·"-mx")를 px로 — 좁은 화면(기본)과 lg. lg 값이 없으면 기본 값을 물려받습니다.
- * 간격 단위 4px(p-6 → 24, p-2.5 → 10), 임의 값은 [20px]. 없으면 0.
- */
-function inlineSpacing(element: Element, prefixes: string[]): { base: number; lg: number } {
-  const px = (raw: string) => (raw.startsWith("[") ? Number.parseFloat(raw.slice(1)) : Number.parseFloat(raw) * 4);
-  const find = (variant: string) => {
-    for (const token of element.className.split(/\s+/)) {
-      for (const prefix of prefixes) {
-        if (token.startsWith(`${variant}${prefix}-`)) return px(token.slice(variant.length + prefix.length + 1));
-      }
-    }
-    return null;
-  };
-  const base = find("") ?? 0;
-  return { base, lg: find("lg:") ?? base };
+/** 계좌 표의 한 줄(tr) — 계좌 이름 링크에서. */
+function bookRow(panel: HTMLElement, book: string): HTMLElement {
+  return within(panel).getByRole("link", { name: book }).closest("tr") as HTMLElement;
+}
+
+/** 표 한 줄의 칸 글(열 순서 — 계좌·순자산·출발 대비·최근 변화·기준). 읽어 주기 전용 글(sr-only)은 뺍니다. */
+function cellTexts(row: HTMLElement): string[] {
+  return Array.from(row.children, (cell) => {
+    const copy = cell.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll(".sr-only").forEach((node) => node.remove());
+    return copy.textContent ?? "";
+  });
 }
 
 /** 시장 행 한 줄(링크) — 시장 구역 안 이름 글자에서 가장 가까운 a(맨 위 KPI 띠에도 같은 이름이 있음). */
@@ -178,63 +174,48 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(screen.queryByText(/3일 확정/)).toBeNull();
   });
 
-  it("모의매매 — Claude 계좌 순자산 히어로·출발 대비·마지막 관측·출처·네 계좌 행(링크)·출발 줄·정기 작업 꺼짐 안내, 쓰기 버튼은 없다", async () => {
+  it("계좌 손익 표 — 네 계좌(이름은 모의매매 화면 링크·종류·상태·계좌 색 견본)·순자산·출발 대비·기준·출처·출발 줄·정기 작업 꺼짐 안내, 쓰기 버튼은 없다", async () => {
     reads = happyReads();
     renderHome(OWNER);
-    const hero = await paperHero();
-    // 구역 이름은 불러오는 중·오류일 때와 같고, 큰 숫자가 무엇인지(Claude 계좌 순자산)를 숫자보다 먼저 말합니다.
-    expect(within(hero).getByRole("heading", { level: 2 }).textContent).toBe(PAPER_REGION);
-    // 히어로 값과 Claude 계좌 행이 같은 순자산을 적습니다.
-    expect(within(hero).getAllByText("99,967.28")).toHaveLength(2);
-    expect(within(hero).getByText("출발 대비")).toBeTruthy();   // 히어로 변화 칩 옆 — 일간 변화가 아님
-    // 평가 시각은 정기 작업 켜짐·꺼짐과 상관없이 늘 보입니다.
-    expect(within(hero).getByText(/^Claude 계좌 순자산 · 마지막 관측/).textContent).toBe("Claude 계좌 순자산 · 마지막 관측 2026-10-26 04:56");
-    expect(within(hero).getByText(PAPER_SOURCES.ledger)).toBeTruthy();
-    const rows = within(hero).getAllByRole("link");
-    expect(rows.map((row) => row.getAttribute("href"))).toEqual([PAPER_HREF, PAPER_HREF, PAPER_HREF, PAPER_HREF]);
-    expect(within(rows[1]).getByText("Claude 계좌")).toBeTruthy();
-    // 계좌 행 아바타(약칭)와 모의매매 개요 곡선과 같은 계좌 색 고리(Claude = 주황) — 장식이라 링크 이름에 섞이지 않음
-    const avatar = rows[1].querySelector('[aria-hidden="true"].rounded-full') as HTMLElement;
-    expect(avatar.textContent).toBe("C1");
-    expect(avatar.style.getPropertyValue("--avatar-ring")).toBe("#d95926");
-    expect(within(rows[1]).getByText(/^Claude · 운용 중/)).toBeTruthy();
-    expect(within(rows[1]).getByText("−0.03%")).toBeTruthy();
-    expect(within(hero).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();
-    expect(within(hero).getByText("정기 작업 꺼짐(PAPER_ENABLED=false) — 이 화면은 읽기 전용 사본")).toBeTruthy();
+    const panel = await paperPanel();
+    expect(within(panel).getByRole("heading", { level: 2 }).textContent).toBe(PAPER_REGION);
+    // 머리 개수 — 계좌 수
+    expect(within(panel).getByText("4개")).toBeTruthy();
+    const table = within(panel).getByRole("table");
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["계좌", "순자산", "출발 대비", "최근 변화", "기준"]);
+    const links = within(table).getAllByRole("link");
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["규칙 계좌", PAPER_HREF], ["Claude 계좌", PAPER_HREF], ["SPY 계좌", PAPER_HREF], ["60/40 계좌", PAPER_HREF],
+    ]);
+    // 줄마다 칸: 계좌(이름·종류·상태) · 순자산(달러) · 출발 대비(−0.03%) · 최근 변화(옛 응답이라 모름 '—') · 기준(마지막 관측)
+    const claude = bookRow(panel, "Claude 계좌");
+    expect(cellTexts(claude)).toEqual(["Claude 계좌Claude · 운용 중", "99,967.28달러", "▼−0.03%", "—", "마지막 관측 2026-10-26 04:56"]);
+    expect(within(claude).getByText("하락")).toBeTruthy();
+    expect(within(claude).getByText("값 없음")).toBeTruthy();
+    // 계좌 행 이름 칸은 행 머리(th scope=row) — 낭독기가 칸을 옮길 때 계좌 이름을 함께 읽음
+    expect(claude.querySelector("th[scope=row]")?.textContent).toContain("Claude 계좌");
+    // 계좌 색 견본(장식)은 모의매매 개요 곡선과 같은 색(Claude = 주황) — 링크 이름에 섞이지 않음
+    const swatch = claude.querySelector('[aria-hidden="true"][style]') as HTMLElement;
+    expect(swatch.style.getPropertyValue("--book-color")).toBe(bookColor("claude", 1));
+    expect(within(panel).getByText(PAPER_SOURCES.ledger)).toBeTruthy();
+    expect(within(panel).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();
+    expect(within(panel).getByText("정기 작업 꺼짐(PAPER_ENABLED=false) — 이 화면은 읽기 전용 사본")).toBeTruthy();
 
-    // 미국 | 한국 — 라디오 묶음(화면 테마 전환과 같은 뜻): 미국이 골라져 있고, 한국은 고를 수 있습니다(2단계 명세 §4-16 — '준비 중' 해제).
-    const switcher = within(hero).getByRole("radiogroup", { name: "모의매매 시장" });
+    // 미국 | 한국 — 라디오 묶음: 미국이 골라져 있고, 한국은 고를 수 있습니다(2단계 명세 §4-16 — '준비 중' 해제).
+    const switcher = within(panel).getByRole("radiogroup", { name: "모의매매 시장" });
     const us = within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement;
     expect(us.checked).toBe(true);
     const korea = within(switcher).getByRole("radio", { name: "한국" }) as HTMLInputElement;
     expect(korea.disabled).toBe(false);
     expect(korea.checked).toBe(false);
     // 두 책을 견주지 않는다는 문구는 미국 탭에도(탭마다 — 2단계 명세 §3).
-    expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
+    expect(within(panel).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
     // 한국을 고르기 전에는 한국 요청이 없습니다.
     expect(requested().filter((path) => path.includes("market=KR"))).toEqual([]);
 
     // 홈에는 쓰기 버튼(초기화·리스크 실행·시작 등)이 없습니다 — 버튼이 하나도 없습니다.
     expect(screen.queryAllByRole("button")).toHaveLength(0);
     expect(api.apiPost).not.toHaveBeenCalled();
-  });
-
-  it("모의매매 — 계좌 행 구분선은 히어로 가장자리까지(음수 여백 = 히어로 안쪽 여백), 행 글자는 히어로 글과 같은 세로줄", async () => {
-    // 계좌 목록의 음수 여백·줄 여백은 패턴 Hero·AssetRow의 안쪽 여백에 묶여 있습니다. 그쪽 여백만 바뀌면 구분선이 카드 밖으로 삐져나가고
-    // 행 글자가 히어로 글의 세로줄에서 어긋나는데, 시험은 그대로 통과했습니다(검토 지적 — 작업대 P2의 갈래를 합칠 때).
-    reads = happyReads();
-    renderHome(OWNER);
-    const hero = await paperHero();
-    const list = hero.querySelector("ul") as HTMLElement;
-    const item = list.querySelector("li") as HTMLElement;
-    const row = item.firstElementChild as HTMLElement;
-    const frame = inlineSpacing(hero, ["p", "px"]);
-    const bleed = inlineSpacing(list, ["-mx"]);
-    const gutter = inlineSpacing(item, ["px", "p"]);
-    const inset = inlineSpacing(row, ["px", "p"]);
-    expect(frame.base).toBeGreaterThan(0);
-    expect(bleed).toEqual(frame);
-    expect({ base: gutter.base + inset.base, lg: gutter.lg + inset.lg }).toEqual(frame);
   });
 
   it("시장 — 범주별 자산 행(링크 → 지표 상세 /markets/i/<키>, 범주는 h3), 출처·장 상태·지연·시각 배지, 참고 시세, 저장본 수집 시각", async () => {
@@ -433,7 +414,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
       "알림을 불러오는 중",
       "데이터 저장소 상태를 불러오는 중",
     ]);
-    // 모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 이름 — 무엇을 불러오는지(Claude 계좌 순자산) 제목이 말합니다.
+    // 계좌 구역은 불러오는 중에도 읽은 뒤와 같은 이름입니다.
     expect(within(region(PAPER_REGION)).getByRole("status").getAttribute("aria-label")).toBe("모의매매 계좌를 불러오는 중");
     // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
     expect(within(region("알림")).getByText("값 없음")).toBeTruthy();
@@ -447,7 +428,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     cleanup();
     reads = happyReads();
     renderHome(OWNER);
-    await paperHero();
+    await paperPanel();
     await inRegime().findByText("확장 (Expansion)");
     expect([region("오늘의 국면").className, region(PAPER_REGION).className]).toEqual(loading);
   });
@@ -479,9 +460,11 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(within(hero).getByText(/^기준일/).textContent).toBe("기준일 —값 없음 · 네 입력 계열의 마지막 날짜 중 가장 이른 날");
 
     const paper = (await screen.findByText("모의 매매 테이블이 아직 없습니다")).closest("section") as HTMLElement;
-    // 순자산과 마지막 관측 둘 다 모름
-    expect(within(paper).getAllByText("값 없음")).toHaveLength(2);
+    expect(paper).toBe(region(PAPER_REGION));
+    // 장부를 읽을 수 없으면 표·계좌 링크·개수 없이 서버 안내만 — 순자산을 짓지 않습니다.
+    expect(within(paper).queryByRole("table")).toBeNull();
     expect(within(paper).queryByRole("link")).toBeNull();
+    expect(within(paper).queryByText(/\d개$/)).toBeNull();
     expect(within(paper).queryByText(/정기 작업 꺼짐/)).toBeNull();
 
     expect(within(region("시장")).getByText("매크로 저장본이 아직 없습니다 — 수집 전")).toBeTruthy();
@@ -600,7 +583,7 @@ describe("홈 — 일부 실패", () => {
     expect(within(market).getByRole("alert").textContent).toContain("요청 실패 (HTTP 500)");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(inRegime().getByText("확장 (Expansion)")).toBeTruthy();
-    expect(await paperHero()).toBeTruthy();
+    expect(await paperPanel()).toBeTruthy();
     expect(screen.getByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
     expect(storeCounts(region("데이터 저장소 상태")).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
 
@@ -620,7 +603,7 @@ describe("홈 — 일부 실패", () => {
 
     expect(await within(region("오늘의 국면")).findByText("백엔드 API에 연결하지 못했습니다")).toBeTruthy();
     expect(await screen.findByText("원/달러 (USD/KRW)")).toBeTruthy();
-    const paper = await paperHero();
+    const paper = await paperPanel();
     expect(await within(paper).findByText("정기 작업 상태를 확인하지 못했습니다 — 요청 실패 (HTTP 503)")).toBeTruthy();
     expect(within(paper).queryByText(/정기 작업 꺼짐/)).toBeNull();
     // 처음 현금은 상태 응답 대신 계좌들의 같은 값으로 적습니다.
@@ -686,17 +669,17 @@ describe("홈 — 추정·오래됨 배지", () => {
     expect(within(usdkrw).getByText("Yahoo Finance (KRW=X) · 개장 · 2026-10-26 16:51")).toBeTruthy();
     expect(within(usdkrw).getByText("1,322.28")).toBeTruthy();   // 값은 그대로 두고 배지로 알립니다
 
-    const paper = await paperHero();
-    const claude = within(paper).getByText("Claude 계좌").closest("a") as HTMLElement;
+    const paper = await paperPanel();
+    const claude = bookRow(paper, "Claude 계좌");
     expect(within(claude).getByText("이전 값")).toBeTruthy();
     expect(within(claude).getByText("· 가격 없음 2종목 — 지난 값으로 평가")).toBeTruthy();
-    // 히어로(Claude 계좌 순자산)에도 같은 배지가 붙습니다.
-    expect(within(paper).getAllByText("· 가격 없음 2종목 — 지난 값으로 평가")).toHaveLength(2);
-    const rules = within(paper).getByText("규칙 계좌").closest("a") as HTMLElement;
-    expect(within(rules).queryByText("이전 값")).toBeNull();
+    // 값은 그대로 두고 배지로 알립니다(같은 사유가 표에 한 번).
+    expect(within(claude).getByText("99,967.28")).toBeTruthy();
+    expect(within(paper).getAllByText("· 가격 없음 2종목 — 지난 값으로 평가")).toHaveLength(1);
+    expect(within(bookRow(paper, "규칙 계좌")).queryByText("이전 값")).toBeNull();
   });
 
-  it("지금 값(current) — 히어로는 개요와 같은 단계 표기·추정 배지·변화 한 줄, Claude 행도 같은 지금 값", async () => {
+  it("지금 값(current) — Claude 줄은 개요와 같은 지금 값·단계 표기·추정 배지, 최근 변화는 서버 값과 그 기준", async () => {
     const overview = paperOverview();
     overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
     overview.books![1] = {
@@ -713,19 +696,21 @@ describe("홈 — 추정·오래됨 배지", () => {
     // 곧바로 resolve하는 목 응답을 끝까지 반영합니다(QA-147·148 — 벽시계 한도가 있는 findBy 대신).
     await act(async () => {});
 
-    // 값의 기준 줄 — 계좌 이름 뒤에 단계 표기(개요와 같은 함수), 옛 응답의 '마지막 관측' 대신.
-    const stage = screen.getByText((_, element) => element?.tagName === "SPAN" && element.textContent === "Claude 계좌 순자산 · 장중 추정 23:58");
-    expect(stage).toBeTruthy();
-    const hero = region(PAPER_REGION);
-    // 히어로 값과 Claude 계좌 행이 같은 지금 값을 적습니다(한 카드에 두 숫자가 보이지 않음).
-    expect(within(hero).getAllByText("100,123.45")).toHaveLength(2);
-    expect(within(hero).getAllByText("추정")).toHaveLength(2);
-    expect(within(hero).getByText("출발 대비")).toBeTruthy();
-    expect(within(hero).getByText("· 10-23 잠정 대비")).toBeTruthy();
-    expect(within(hero).getByText("오늘")).toBeTruthy();
-    const claude = within(hero).getByText("Claude 계좌").closest("a") as HTMLElement;
-    expect(within(claude).getByText("장중 추정 23:58 · 오늘 +0.30% · 10-23 잠정 대비")).toBeTruthy();
-    expect(within(hero).queryByText(/· 마지막 관측/)).toBeNull();
+    // Claude 줄 — 지금 값(순자산·출발 대비), 최근 변화(서버 dayChangePct — '오늘'과 그 기준), 기준(단계 표기) + 추정 배지.
+    const panel = region(PAPER_REGION);
+    const claude = bookRow(panel, "Claude 계좌");
+    expect(cellTexts(claude)).toEqual([
+      "Claude 계좌Claude · 운용 중", "100,123.45달러", "▲+0.12%", "오늘▲+0.30%10-23 잠정 대비", "장중 추정 23:58추정",
+    ]);
+    expect(within(claude).getAllByText("상승")).toHaveLength(2);
+    // 기준 글은 추정 배지보다 앞(눈에도 낭독에도 '추정 장중 추정'으로 겹치지 않게).
+    const stage = within(claude).getByText("장중 추정 23:58");
+    const badge = within(claude).getByText("추정");
+    expect(Boolean(stage.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    // 장중 추정인 줄이 있으면 출처에 장중 시세로 다시 평가했다는 말을 붙입니다.
+    expect(within(panel).getByText(/보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정/)).toBeTruthy();
+    // current가 없는 다른 계좌는 장부 값 그대로, 최근 변화는 모름('—')
+    expect(cellTexts(bookRow(panel, "규칙 계좌")).slice(1, 4)).toEqual(["99,951.00달러", "▼−0.05%", "—"]);
   });
 
   it("장부 관측치 저장본이 늦으면(백엔드 quotes.stale) 네 계좌 모두 '이전 값'(모의매매 개요와 같은 사유)", async () => {
@@ -734,18 +719,19 @@ describe("홈 — 추정·오래됨 배지", () => {
     reads = { ...happyReads(), [PAPER_OVERVIEW]: ledger };
     renderHome(OWNER);
 
-    const paper = await paperHero();
-    // 네 행은 사유에 마지막 관측 시각, 히어로는 그 시각을 값의 기준 줄('… · 마지막 관측 2026-10-26 04:56')에 이미 적어 사유에서 뺌
-    expect(within(paper).getAllByText("· 관측치 저장본이 늦음 · 마지막 관측 2026-10-26 04:56")).toHaveLength(4);
-    expect(within(paper).getAllByText("· 관측치 저장본이 늦음")).toHaveLength(1);
+    const paper = await paperPanel();
+    // 네 줄 모두 이전 값 — 마지막 관측 시각은 기준 칸이 이미 적어 사유에서 뺍니다(같은 시각을 한 줄에 두 번 적지 않음).
+    expect(within(paper).getAllByText("· 관측치 저장본이 늦음")).toHaveLength(4);
+    expect(within(paper).getAllByText("마지막 관측 2026-10-26 04:56")).toHaveLength(4);
+    expect(within(paper).queryByText(/관측치 저장본이 늦음 · 마지막 관측/)).toBeNull();
   });
 });
 
 describe("홈 — 모의매매 한국 탭", () => {
-  /** 미국 히어로가 그려진 뒤 한국을 고릅니다. */
+  /** 미국 계좌 표가 그려진 뒤 한국을 고릅니다. */
   async function pickKorea() {
-    const hero = await paperHero();
-    fireEvent.click(within(hero).getByRole("radio", { name: "한국" }));
+    const panel = await paperPanel();
+    fireEvent.click(within(panel).getByRole("radio", { name: "한국" }));
   }
 
   it("불러오는 중: 한국을 고르면 그때 ?market=KR을 읽고 자리표시 — 탭은 남아 미국으로 돌아갈 수 있다", async () => {
@@ -756,10 +742,10 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(requested()).toEqual(expect.arrayContaining([PAPER_KR_OVERVIEW, PAPER_KR_STATUS]));
     const card = region(PAPER_REGION);
     fireEvent.click(within(card).getByRole("radio", { name: "미국" }));
-    expect(await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/)).toBeTruthy();
+    expect(await paperPanel("Claude 계좌")).toBeTruthy();
   });
 
-  // 예전에는 한국을 고르면 읽는 중 카드(히어로와 다른 틀)에 라디오가 다시 그려져 초점이 body로 빠지고, 미국을 갔다 오면 한국 값을
+  // 예전에는 한국을 고르면 읽는 중 카드(값을 그린 틀과 다른 틀)에 라디오가 다시 그려져 초점이 body로 빠지고, 미국을 갔다 오면 한국 값을
   // 지워 다시 자리표시였습니다.
   it("키보드로 시장을 고르면 초점이 그 라디오에 남는다 — 읽는 중·읽은 뒤 모두, 미국 → 한국을 다시 골라도 자리표시 없이", async () => {
     let resolveKr: (body: unknown) => void = () => {};
@@ -768,8 +754,8 @@ describe("홈 — 모의매매 한국 탭", () => {
     const base = api.apiGetShared.getMockImplementation();
     api.apiGetShared.mockImplementation((path: string) => (path === PAPER_KR_OVERVIEW ? krOverview : base?.(path)));
     renderHome(OWNER);
-    const hero = await paperHero();
-    const korea = within(hero).getByRole("radio", { name: "한국" }) as HTMLInputElement;
+    const panel = await paperPanel();
+    const korea = within(panel).getByRole("radio", { name: "한국" }) as HTMLInputElement;
     korea.focus();
     fireEvent.click(korea);
     expect(await screen.findByRole("status", { name: "한국 모의매매 계좌를 불러오는 중" })).toBeTruthy();
@@ -777,19 +763,19 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(document.activeElement).toBe(korea);
 
     await act(async () => resolveKr(paperOverviewKr()));
-    await screen.findByText(/^한국 Claude 계좌 순자산 · 마지막 관측/);
+    await paperPanel("한국 Claude 계좌");
     expect(document.activeElement).toBe(korea);
 
     const us = within(region(PAPER_REGION)).getByRole("radio", { name: "미국" }) as HTMLInputElement;
     us.focus();
     fireEvent.click(us);
-    await screen.findByText(/^Claude 계좌 순자산 · 마지막 관측/);
+    await paperPanel("Claude 계좌");
     expect(document.activeElement).toBe(us);
     korea.focus();
     fireEvent.click(korea);
     // 한 번 읽은 한국 값은 남아 있어 자리표시 없이 바로 그립니다.
     expect(screen.queryByRole("status", { name: "한국 모의매매 계좌를 불러오는 중" })).toBeNull();
-    expect(screen.getByText(/^한국 Claude 계좌 순자산 · 마지막 관측/)).toBeTruthy();
+    expect(within(region(PAPER_REGION)).getByRole("link", { name: "한국 Claude 계좌" })).toBeTruthy();
     expect(document.activeElement).toBe(korea);
   });
 
@@ -799,10 +785,11 @@ describe("홈 — 모의매매 한국 탭", () => {
     renderHome(OWNER);
     await pickKorea();
     expect(await screen.findByText(`한국 계좌가 쉬고 있습니다 — ${reason}`)).toBeTruthy();
-    const hero = region(PAPER_REGION);
-    expect(within(hero).queryAllByRole("link")).toHaveLength(0);
-    expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
-    expect((within(hero).getByRole("radio", { name: "한국" }) as HTMLInputElement).checked).toBe(true);
+    const panel = region(PAPER_REGION);
+    expect(within(panel).queryAllByRole("link")).toHaveLength(0);
+    expect(within(panel).queryByRole("table")).toBeNull();
+    expect(within(panel).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
+    expect((within(panel).getByRole("radio", { name: "한국" }) as HTMLInputElement).checked).toBe(true);
   });
 
   it("오류: 한국 개요를 못 읽으면 그 구역만 오류 + 다시 시도, 탭은 남는다", async () => {
@@ -815,26 +802,26 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(within(region(PAPER_REGION)).getByRole("radiogroup", { name: "모의매매 시장" })).toBeTruthy();
   });
 
-  it("자료: 한국 Claude 계좌 순자산(원 정수)·출발 대비·네 계좌 행(원, 링크 /paper/kr)·출발 줄(원)·비교하지 않음 문구·한국 출처", async () => {
+  it("자료: 한국 네 계좌(원 정수, 링크 /paper/kr)·출발 대비·출발 줄(원)·비교하지 않음 문구·한국 출처", async () => {
     reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: paperOverviewKr(), [PAPER_KR_STATUS]: paperStatusKr(false) };
     renderHome(OWNER);
     await pickKorea();
-    await screen.findByText(/^한국 Claude 계좌 순자산 · 마지막 관측/);
-    const hero = region(PAPER_REGION);
-    // 히어로 값과 한국 Claude 계좌 행이 같은 원 단위 정수를 적습니다(소수 없음).
-    expect(within(hero).getAllByText("100,312,450")).toHaveLength(2);
-    expect(within(hero).getAllByText("원").length).toBeGreaterThan(0);
-    expect(within(hero).getByText(/^한국 Claude 계좌 순자산 · 마지막 관측/).textContent).toBe("한국 Claude 계좌 순자산 · 마지막 관측 2026-11-03 21:57");
-    const rows = within(hero).getAllByRole("link");
-    expect(rows.map((row) => row.getAttribute("href"))).toEqual([PAPER_KR_HREF, PAPER_KR_HREF, PAPER_KR_HREF, PAPER_KR_HREF]);
+    const panel = await paperPanel("한국 Claude 계좌");
+    const table = within(panel).getByRole("table");
+    const rows = within(table).getAllByRole("link");
+    expect(rows.map((row) => [row.textContent, row.getAttribute("href")])).toEqual([
+      ["한국 규칙 계좌", PAPER_KR_HREF], ["한국 Claude 계좌", PAPER_KR_HREF], ["KODEX 200 계좌", PAPER_KR_HREF], ["한국 60/40 계좌", PAPER_KR_HREF],
+    ]);
     expect(PAPER_KR_HREF).toBe("/paper/kr");
-    expect(within(rows[2]).getByText("KODEX 200 계좌")).toBeTruthy();
-    expect(within(rows[2]).getByText("100,528,900")).toBeTruthy();
-    expect(within(hero).getByText("출발 2026-10-29 · 처음 현금 100,000,000원 · 변화율은 출발 대비")).toBeTruthy();
-    expect(within(hero).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
-    expect(within(hero).getByText(PAPER_SOURCES.krLedger)).toBeTruthy();
+    // 순자산은 원 단위 정수(소수 없음), 기준은 그 계좌의 마지막 관측
+    expect(cellTexts(bookRow(panel, "한국 Claude 계좌")).slice(1, 3)).toEqual(["100,312,450원", "▲+0.31%"]);
+    expect(cellTexts(bookRow(panel, "KODEX 200 계좌"))[1]).toBe("100,528,900원");
+    expect(cellTexts(bookRow(panel, "한국 Claude 계좌"))[4]).toBe("마지막 관측 2026-11-03 21:57");
+    expect(within(panel).getByText("출발 2026-10-29 · 처음 현금 100,000,000원 · 변화율은 출발 대비")).toBeTruthy();
+    expect(within(panel).getByText(PAPER_COMPARE_NOTE)).toBeTruthy();
+    expect(within(panel).getByText(PAPER_SOURCES.krLedger)).toBeTruthy();
     // 사후 체결 대기 경고는 한국에 없습니다(네 계좌가 S+1 시가에 함께 출발).
-    expect(within(hero).queryByText(/출발일 종가 대기/)).toBeNull();
+    expect(within(panel).queryByText(/출발일 종가 대기/)).toBeNull();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 });
