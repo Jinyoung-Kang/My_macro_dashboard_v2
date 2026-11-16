@@ -95,7 +95,8 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
   return (
     <>
       <div className={`text-caption font-medium text-text-2 ${item.href ? "underline-offset-2 group-hover:underline" : ""}`.trim()}>{item.label}</div>
-      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1">
+      {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
+      <div className={item.pending ? "mt-0.5" : "mt-0.5 flex flex-wrap items-baseline gap-x-1"}>
         <KpiValue item={item} />
       </div>
       {change && changeShown ? (

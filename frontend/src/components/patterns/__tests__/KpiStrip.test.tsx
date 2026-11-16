@@ -146,7 +146,7 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
   // QA-596: 값 줄이 flex 행(mt-0.5 flex flex-wrap items-baseline)이라 폭을 정하지 않은 Skeleton 상자가 flex 항목이 되어 폭 0으로 줄었습니다
   // (QA 스택 1440 상자 0x22·막대 0x14, 390도 0, 고대비 2px — 타일에 이름만 보임). jsdom은 폭을 재지 못해 클래스로 봅니다.
   // 수정 전(재현 커밋에서는 it.fails) role=status의 부모는 'mt-0.5 flex flex-wrap items-baseline gap-x-1'이었습니다.
-  it.fails("읽는 중이면 값 줄은 flex 행이 아닌 블록 — 자리표시 막대가 타일 폭 전체가 된다 (QA-596)", () => {
+  it("읽는 중이면 값 줄은 flex 행이 아닌 블록 — 자리표시 막대가 타일 폭 전체가 된다 (QA-596)", () => {
     render(<KpiStrip label="요약" items={[{ key: "sp500", label: "S&P 500", value: null, pending: true }]} />);
     const status = within(tile("S&P 500")).getByRole("status", { name: "S&P 500 불러오는 중" });
     const row = (status.parentElement as HTMLElement).className.split(/\s+/);
