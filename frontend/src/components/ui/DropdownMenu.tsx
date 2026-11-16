@@ -56,7 +56,10 @@ const DESCRIPTION = "-mx-1 mt-1 flex flex-col gap-1.5 border-t border-border px-
  * - `onCloseAutoFocus`는 닫힌 뒤 포커스를 옮기기 직전에 불립니다(Radix 그대로) — 부르는 쪽이 event.preventDefault()로 기본 동작(여는 단추로)을 바꿀 수 있습니다.
  * - `tooltip`은 아이콘 여는 단추의 이름을 마우스 사용자에게 보이는 툴팁입니다(공용 Tooltip labelOnly — 글은 단추의 접근 이름과 같게). 툴팁 트리거가 메뉴
  *   트리거를 감싸 두 Radix 트리거의 속성·처리기가 한 단추에 합쳐지는데, data-state는 툴팁 것이 남으므로 여는 단추의 열림 모양은 data-state가 아니라
- *   aria-expanded로 그립니다(`aria-expanded:` 변형).
+ *   aria-expanded로 그립니다(`aria-expanded:` 변형). `tooltipDisabled`면 그 툴팁을 열지 않습니다(구조는 그대로 — 공용 Tooltip disabled) — 넓은 화면
+ *   전용 여는 단추가 좁은 화면에서 숨는 동안(QA-554).
+ * - `open`·`onOpenChange`를 주면 열림을 부르는 쪽이 쥡니다(Radix Root 제어 — 주지 않으면 지금처럼 Radix가 쥠). 넓은 화면 전용 메뉴가 폭이 lg 아래로
+ *   바뀔 때 닫는 데 씁니다(계정 메뉴 — QA-554: 여는 단추가 CSS로 숨어도 Radix는 메뉴를 닫지 않아 좁은 상단바 왼쪽 위에 남았음).
  */
 export function DropdownMenu({
   trigger,
@@ -65,7 +68,10 @@ export function DropdownMenu({
   label,
   description,
   tooltip,
+  tooltipDisabled = false,
   onCloseAutoFocus,
+  open,
+  onOpenChange,
 }: {
   /** 여는 단추(요소 하나). */
   trigger: ReactElement;
@@ -78,8 +84,14 @@ export function DropdownMenu({
   description?: ReactNode;
   /** 아이콘 여는 단추의 이름 툴팁(글은 단추의 접근 이름과 같게 — 설명으로 잇지 않음). */
   tooltip?: string;
+  /** 이름 툴팁을 열지 않음(구조는 그대로). */
+  tooltipDisabled?: boolean;
   /** 닫힌 뒤 포커스를 옮기기 직전(Radix onCloseAutoFocus). */
   onCloseAutoFocus?: (event: Event) => void;
+  /** 열림(제어) — 주면 onOpenChange와 함께. 주지 않으면 Radix가 쥡니다. */
+  open?: boolean;
+  /** 열림이 바뀌려 할 때(Radix onOpenChange — 여는 단추·Esc·바깥 누르기·항목 고르기). */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const descriptionId = useId();
   // aria-labelledby(여는 단추)가 aria-label보다 앞서므로, 이름을 따로 줄 때는 그것을 지웁니다.
@@ -87,9 +99,9 @@ export function DropdownMenu({
   const hasDescription = description !== undefined && description !== null && description !== false;
   const menuTrigger = <DropdownMenuPrimitive.Trigger asChild>{trigger}</DropdownMenuPrimitive.Trigger>;
   return (
-    <DropdownMenuPrimitive.Root>
+    <DropdownMenuPrimitive.Root open={open} onOpenChange={onOpenChange}>
       {tooltip ? (
-        <Tooltip content={tooltip} labelOnly>
+        <Tooltip content={tooltip} labelOnly disabled={tooltipDisabled}>
           {menuTrigger}
         </Tooltip>
       ) : (

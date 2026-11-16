@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef } from "react";
 import { LockIcon, PanelLeftIcon } from "@/components/ui/icons";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useNavCollapsed } from "@/hooks/useNavCollapsed";
+import { useWideShell } from "@/hooks/useWideShell";
 import { navTree, type NavTreeLeaf, type NavTreeNode, type UpcomingItem } from "@/lib/nav";
 import { onShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
@@ -51,12 +52,15 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * 하위 화면은 숨깁니다(펼치기·명령 팔레트·빵부스러기로 닿음). 막대는 보이는 칸 가운데 가장 깊은 지금 칸 — 레일에서는 지금 탭 칸입니다. 접힘은 보는 사람별로
  * 이 브라우저에 기억합니다(useNavCollapsed — 저장소를 못 써도 동작). 폭은 움직이지 않고 바로 바뀝니다(명세 §3-8 — 모션은 색 전환만).
  * 탭 링크는 접고 펼 때 같은 요소로 남아(툴팁 감쌈을 늘 두고 펼친 동안은 열지 않음) 포커스가 그대로이고, 포커스가 사라지는 하위 칸에 있었으면 접기 단추로 옮깁니다.
+ * 툴팁(레일의 탭 이름·접기 단추)은 넓은 화면에서만 엽니다(useWideShell — 폭이 lg 아래로 바뀌면 닫힘, QA-554).
  */
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   const tree = navTree(pathname, user);
   const idBase = useId();
   const navId = `${idBase}-nav`;
   const [collapsed, toggle] = useNavCollapsed();
+  // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554).
+  const wide = useWideShell();
   const asideRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   // 접고 펴기 직전에 포커스가 이 메뉴 안에 있었는가 — 그린 뒤 포커스가 사라졌으면(하위 칸) 접기 단추로 옮깁니다.
@@ -90,7 +94,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
             const marked = collapsed ? node.current !== undefined : node.marked;
             return (
               <li key={node.tab.key}>
-                <Tooltip content={node.tab.label} side="right" labelOnly disabled={!collapsed}>
+                <Tooltip content={node.tab.label} side="right" labelOnly disabled={!collapsed || !wide}>
                   <Link
                     data-nav-tab=""
                     href={node.tab.href}
@@ -110,7 +114,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
       <div className="mt-auto border-t border-border p-2">
         {/* 이름은 상태와 상관없이 '왼쪽 메뉴 접기'(보이는 글 '메뉴 접기'가 이름 안에 있음), 접혔는지는 aria-pressed. 툴팁은 이름과 같은 글 + 단축키라
             설명으로 잇지 않습니다(labelOnly — 단축키는 aria-keyshortcuts가 읽힘). */}
-        <Tooltip content="왼쪽 메뉴 접기 ([)" side="right" labelOnly>
+        <Tooltip content="왼쪽 메뉴 접기 ([)" side="right" labelOnly disabled={!wide}>
           <button
             ref={toggleRef}
             type="button"

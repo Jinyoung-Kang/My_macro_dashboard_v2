@@ -3,12 +3,13 @@
  * 여기서는 그린 모양을 봅니다: 지금 탭의 하위 칸을 같은 nav 안에 펼침, '한국 시장' 묶음 글 머리와 그 목록, 잠금 아이콘, aria-current,
  * 하위 목록 이름이 '…하위 메뉴'가 아님(좁은 화면 줄과 겹치지 않게), 32px 칸·16px 아이콘, 고대비 테두리는 막대 칸 하나.
  * 접힘(48px 아이콘 레일): 링크 이름은 그대로(sr-only 글), 하위 칸 없음, 포커스로 이름 툴팁(설명 연결 없음), 접기 단추(aria-pressed·aria-keyshortcuts '['),
- * 셸 명령 toggle-nav로 접고 폄, 저장값 '1'이면 접힌 채 시작, 사라지는 칸에 있던 포커스는 접기 단추로.
+ * 셸 명령 toggle-nav로 접고 폄, 저장값 '1'이면 접힌 채 시작, 사라지는 칸에 있던 포커스는 접기 단추로. 툴팁은 넓은 화면에서만 열린다(QA-554 — 툴팁을 보는
+ * 시험은 넓은 화면 matchMedia 대역을 둠).
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
-import { sendShellCommand } from "@/lib/shellCommands";
+import { WIDE_SHELL_MEDIA, sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
 import { SideNav } from "../SideNav";
@@ -19,9 +20,15 @@ const MEMBER: SessionUser = { email: "member@test.local", role: "MEMBER", tier: 
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.localStorage.clear();
   resetNavCollapsedForTest();
 });
+
+/** 넓은 화면(lg 이상) matchMedia 대역 — 왼쪽 메뉴의 툴팁은 넓은 화면에서만 열립니다(QA-554). */
+function stubWide() {
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
+}
 
 const mainNav = () => screen.getByRole("navigation", { name: "주 메뉴" });
 const labels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent);
@@ -141,6 +148,7 @@ describe("접힘(48px 아이콘 레일)", () => {
   });
 
   it("접힌 탭 링크에 포커스하면 오른쪽에 이름 툴팁 — 이름과 같은 글이라 설명(aria-describedby)으로 잇지 않는다. 펼친 동안은 툴팁이 없다", () => {
+    stubWide();
     render(<SideNav pathname="/macro" user={MEMBER} />);
     const home = within(mainNav()).getByRole("link", { name: "홈" });
     act(() => home.focus());
@@ -154,6 +162,7 @@ describe("접힘(48px 아이콘 레일)", () => {
   });
 
   it("접기 단추의 툴팁은 접힘과 상관없이 이름과 같은 글에 단축키 — '왼쪽 메뉴 접기 ([)', 설명(aria-describedby)으로 잇지 않는다", () => {
+    stubWide();
     render(<SideNav pathname="/macro" user={MEMBER} />);
     for (const pressed of ["false", "true"]) {
       const button = toggleButton();
@@ -164,6 +173,15 @@ describe("접힘(48px 아이콘 레일)", () => {
       act(() => button.blur());
       fireEvent.click(button);
     }
+  });
+
+  it("좁은 화면(lg 미만 — 메뉴가 숨음)에서는 레일의 탭 이름·접기 단추 툴팁을 열지 않는다 (QA-554)", () => {
+    window.localStorage.setItem("shell.navCollapsed", "1");
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    act(() => within(mainNav()).getByRole("link", { name: "홈" }).focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => toggleButton().focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   it("셸 명령 toggle-nav([ 키·명령 팔레트가 넓은 화면에서 보냄)로 접고 편다", () => {

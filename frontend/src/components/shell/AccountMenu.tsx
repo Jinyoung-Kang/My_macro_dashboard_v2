@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator } from "@/components/ui/DropdownMenu";
 import { AlertTriangleIcon, PersonIcon, StatusText } from "@/components/ui/icons";
 import { useLogout } from "@/hooks/useLogout";
+import { useWideShell } from "@/hooks/useWideShell";
 import { accountInitial, isDemo, isLocalOwner, noLoginName, roleLabel } from "@/lib/access";
 import { sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
@@ -39,9 +40,20 @@ const TRIGGER =
  * (lib/shellCommands — 두 부분이 서로의 모듈을 가져오지 않음). 창을 닫으면 포커스가 이 여는 단추로 돌아옵니다.
  * 메뉴 항목 글은 text·text-2만 둡니다(가리킨 항목 바탕 surface-3 위 text-3 금지 — 계정 줄의 역할 글도 text-2). 설명 칸의 글은 항목이 아니라
  * 덮개 바탕(surface-2) 위 text-3(5.01:1)을 그대로 씁니다.
+ * 넓은 화면 전용이라 열림을 여기서 쥐고, 폭이 넓은 화면에서 좁은 화면(lg 미만 — 태블릿 회전·창 줄이기)으로 바뀌면 닫습니다 — 여는 단추가 CSS로 숨어도
+ * Radix는 메뉴를 닫지 않아, 좁은 상단바 왼쪽 위에 모달로 남아 화면을 막았습니다(QA-554). 다시 넓혀도 저절로 열리지 않고, 이름 툴팁도 넓은 화면에서만 엽니다.
+ * 닫을 때는 넓음 → 좁음으로 바뀌는 그 순간만 봅니다('열림 && 넓음'으로 두면 matchMedia가 늘 거짓인 시험 환경·첫 하이드레이션에서 메뉴를 열 수 없음).
  */
 export function AccountMenu({ user }: { user?: SessionUser }) {
   const { logout, error } = useLogout();
+  const wide = useWideShell();
+  const [open, setOpen] = useState(false);
+  // 넓음 → 좁음으로 바뀐 그리기에서 메뉴를 닫습니다(그리는 중에 앞 값과 견줘 바로 고침 — 효과로 하면 한 번 열린 채 그려짐).
+  const [wasWide, setWasWide] = useState(wide);
+  if (wasWide !== wide) {
+    setWasWide(wide);
+    if (!wide) setOpen(false);
+  }
   const triggerRef = useRef<HTMLButtonElement>(null);
   // '단축키 도움말'을 골랐는가 — 메뉴가 닫힌 뒤(onCloseAutoFocus) 한 번 신호를 보내고 지웁니다.
   const helpRequested = useRef(false);
@@ -64,6 +76,9 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
       <DropdownMenu
         label="계정 메뉴"
         tooltip="계정 메뉴"
+        tooltipDisabled={!wide}
+        open={open}
+        onOpenChange={setOpen}
         description={
           <>
             {demo && <DemoNote user={user} boxed={false} />}

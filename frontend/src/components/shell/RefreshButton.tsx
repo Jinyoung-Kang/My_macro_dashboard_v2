@@ -4,6 +4,7 @@ import { buttonClasses } from "@/components/ui";
 import { AlertTriangleIcon, RefreshIcon, SpinnerIcon, StatusText } from "@/components/ui/icons";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useRefreshSignal } from "@/hooks/useRefreshSignal";
+import { useWideShell } from "@/hooks/useWideShell";
 import { isOwner } from "@/lib/access";
 import type { SessionUser } from "@/lib/types";
 
@@ -42,6 +43,8 @@ const ICON_BUTTON =
  */
 export function RefreshButton({ user, variant = "block" }: { user?: SessionUser; variant?: "block" | "icon" }) {
   const { requestRefresh, collecting, message, failed } = useRefreshSignal();
+  // 아이콘 단추의 이름 툴팁은 넓은 화면에서만 — 단추가 CSS로 숨어도 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554, 알림 벨과 같은 방식).
+  const wide = useWideShell();
   const name = collecting ? NAME_COLLECTING : NAME;
   // 안내 영역의 글 — 안내가 없으면 수집 중에는 진행 글(보이게 하는 클래스는 안내가 있을 때만, 없으면 sr-only).
   const statusText = message ?? (collecting ? NAME_COLLECTING : "");
@@ -68,7 +71,7 @@ export function RefreshButton({ user, variant = "block" }: { user?: SessionUser;
         >
           {message && failed ? <FailureText message={message} truncate /> : statusText}
         </p>
-        <Tooltip content={name} labelOnly>
+        <Tooltip content={name} labelOnly disabled={!wide}>
           <button
             type="button"
             aria-label={name}

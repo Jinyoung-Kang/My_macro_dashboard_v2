@@ -5,10 +5,11 @@
  *  - 로그아웃은 고르면 메뉴를 닫고 요청 — 실패하면 메뉴 밖(여는 단추 왼쪽) role=alert(QA-051), 성공하면 /login
  *  - '단축키 도움말'은 메뉴가 닫히고 포커스가 여는 단추로 돌아온 뒤 셸 명령 신호(open-shortcut-help)를 한 번 보낸다(lib/shellCommands)
  *  - 여는 단추는 30px·4px 경계 단추(원 아님 — 누르는 것), 메뉴 항목 글에 text-3이 없다(가리킨 항목 바탕 surface-3 위 금지 쌍)
+ *  - 이름 툴팁은 넓은 화면에서만(QA-554 — 툴팁을 보는 시험은 넓은 화면 matchMedia 대역을 둠). 폭이 lg 아래로 바뀌면 메뉴가 닫히는 것은 Shell.test가 봄
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SHELL_COMMAND_EVENT } from "@/lib/shellCommands";
+import { SHELL_COMMAND_EVENT, WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => ({ auth: { logout: vi.fn() } }));
@@ -76,6 +77,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("누가 보고 있는지에 따른 내용", () => {
@@ -214,6 +216,8 @@ describe("단축키 도움말", () => {
 
 describe("모양", () => {
   it("여는 단추는 30px·4px·1px 경계 단추(원 아님), 안의 머리글자는 장식 — 넓은 화면에서만 보인다", () => {
+    // 이름 툴팁은 넓은 화면에서만 열린다(QA-554)
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
     const trigger = renderMenu(MEMBER);
     const classes = trigger.className.split(/\s+/);
     expect(classes).toEqual(expect.arrayContaining(["size-[30px]", "rounded-control", "border", "border-border"]));
@@ -229,6 +233,13 @@ describe("모양", () => {
     act(() => trigger.focus());
     expect(screen.getByRole("tooltip").textContent).toBe("계정 메뉴");
     expect(trigger.hasAttribute("aria-describedby")).toBe(false);
+    cleanup();
+    vi.unstubAllGlobals();
+
+    // 좁은 화면(여는 단추가 숨음)에서는 툴팁을 열지 않는다
+    const narrow = renderMenu(MEMBER);
+    act(() => narrow.focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
     cleanup();
 
     // 이메일이 없으면(데모) 사람 아이콘 — 빈 원이나 빈 글자가 없다

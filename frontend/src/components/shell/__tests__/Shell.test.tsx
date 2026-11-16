@@ -635,7 +635,7 @@ describe("넓은 화면 전용 덮개(계정 메뉴·아이콘 단추의 이름 
   // 묶여(useWideShell) 바로 닫혔습니다. 넓은 화면에서 좁은 화면으로 바뀌면 계정 메뉴를 닫고(다시 넓혀도 저절로 열리지 않음), 넓은 화면 전용 단추의
   // 이름 툴팁은 넓은 화면에서만 엽니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 resize(false) 뒤에도 role=menu가 남고 여는 단추가 aria-expanded=true였습니다.
-  it.fails("넓게 연 계정 메뉴는 폭이 lg 아래로 바뀌면 닫히고(aria-expanded false) 다시 넓혀도 닫힌 채 — 새로고침·접기 단추의 이름 툴팁도 닫힌다 (QA-554)", async () => {
+  it("넓게 연 계정 메뉴는 폭이 lg 아래로 바뀌면 닫히고(aria-expanded false) 다시 넓혀도 닫힌 채 — 새로고침·접기 단추의 이름 툴팁도 닫힌다 (QA-554)", async () => {
     const media = stubMedia(true);
     try {
       renderShell(LOCAL_OWNER);
