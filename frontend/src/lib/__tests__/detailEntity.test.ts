@@ -98,6 +98,18 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     ]);
   });
 
+  // QA-580 검토: Yahoo는 커버리지가 없는 종목에 recommendationKey 'none'(의견 없음 표지)을 주고 목표가·의견 수는 비웁니다. 이 표지를 받은 값으로
+  // 세어 '평균 목표가 —, 투자의견 의견 없음, 의견 수 —' 패널이 남았습니다 — 고치려던 '—' 세 줄 패널과 같은 꼴입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 'none'만 있는 의견이 세 줄(null·'의견 없음'·null)이었습니다.
+  it.fails("애널리스트 의견 — 'none'(의견 없음 표지)뿐이면 빈 목록, 다른 값이 있으면 '의견 없음' 그대로 (QA-580)", () => {
+    expect(consensusItems("us", quote({ consensus: { targetMean: null, recommendation: "none", analysts: null } }))).toEqual([]);
+    expect(consensusItems("us", quote({ consensus: { targetMean: 12.5, recommendation: "none", analysts: null } })).map((row) => row.value)).toEqual([
+      "12.50 USD",
+      "의견 없음",
+      null,
+    ]);
+  });
+
   it("지표 — 범주·티커·카드 키(고정폭)·값(추정·이전 값)·전일·출처·장 상태·기준 시각, 경고는 있을 때만", () => {
     const rows = indicatorProperties(
       { key: "sp500", ticker: "^GSPC", prevStr: "7,600.00" },
