@@ -42,3 +42,18 @@ describe("SpreadSection 스크래핑 패널 (QA-060)", () => {
     expect(screen.getByText(/이전 값/)).toBeTruthy();
   });
 });
+
+// QA-622: 금리차 값·직전 확정치·스크래핑 스프레드는 formatSigned(ASCII '-')로 찍혀, 같은 칸의 변화 줄(−, U+2212 — 공용 지표 칸 QA-525)과 부호가
+// 달랐습니다(실행 명세 §3-1 '음수 부호는 −').
+describe("QA-622 금리차 음수 부호는 −(U+2212)", () => {
+  it.fails("공식 값·직전 확정치·스크래핑 스프레드의 음수가 −로 찍힌다", () => {
+    const scraped = { longValue: 4.0, shortValue: 4.3, spread: -0.3, previousSpread: -0.28, delta: -0.02 };
+    const { container } = render(<SpreadSection title="10Y−2Y" block={block({ latest: -0.25, previous: -0.2, scraped })} />);
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("−0.250%p");
+    expect(text).toContain("−0.200%p");
+    expect(text).toContain("−0.300%p");
+    expect(text).not.toMatch(/(^|[^\d])-0\.(250|200|300)%p/);
+  });
+});
