@@ -67,8 +67,8 @@ function token(name: string): string {
 }
 
 describe("QA-615 산점도 점의 대비", () => {
-  // 고치기 전: 두 점 모두 surface 위 2.27:1·bg 위 2.37:1(fill #3987e5 × fill-opacity 0.55) — 재현 커밋에서는 it.fails.
-  it.fails("그린 점의 색과 불투명도로 섞인 색이 패널 면(surface)·페이지 바탕(bg) 위 모두 3:1 이상이다", () => {
+  // 고치기 전: 두 점 모두 surface 위 2.27:1·bg 위 2.37:1(fill #3987e5 × fill-opacity 0.55) — 재현 커밋에서는 it.fails. 고친 뒤 0.8: 3.34·3.67:1.
+  it("그린 점의 색과 불투명도로 섞인 색이 패널 면(surface)·페이지 바탕(bg) 위 모두 3:1 이상이다", () => {
     observeAs(600, 320);
     const { container } = render(
       <ScatterPlot data={[{ x: 1, y: 2, date: "2026-01-02" }, { x: -1, y: 0.5, date: "2026-01-09" }]} xLabel="금리 변화" yLabel="지수 변화" />,

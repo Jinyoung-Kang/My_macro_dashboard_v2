@@ -721,8 +721,11 @@ export function ScatterPlot({
           ]}
           labelFormatter={() => ""}
         />
-        {/* 등장 애니메이션 없음(명세 §3-8, QA-500 — 기본값 'auto'는 점이 0에서 자라며 나타남). */}
-        <Scatter data={data} fill={color} fillOpacity={0.55} isAnimationActive={false} />
+        {/*
+          등장 애니메이션 없음(명세 §3-8, QA-500 — 기본값 'auto'는 점이 0에서 자라며 나타남). 불투명도 0.8 — 바탕과 섞인 점 색이 패널 면(surface) 위 3.34:1,
+          페이지 바탕(bg) 위 3.67:1(그래픽 3:1 — QA-615, 예전 0.55는 2.27·2.37:1). 겹친 점은 더 진해 보여 몰린 곳은 그대로 드러납니다.
+        */}
+        <Scatter data={data} fill={color} fillOpacity={0.8} isAnimationActive={false} />
       </ScatterChart>
     </ResponsiveContainer>
     </ChartSizeHold>
