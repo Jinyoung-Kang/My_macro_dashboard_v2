@@ -98,7 +98,7 @@ describe("KpiStrip — 값 있음", () => {
   // QA-599: 값 줄이 flex-wrap이라 운영자 일곱 타일의 xl 한 줄(1280 펼친 메뉴 — 타일 135.4px, 안쪽 109.4px)에서 '1,339.28'(약 93px) + '원'이
   // 1.6px 모자라 단위만 다음 줄로 넘어갔습니다. 숫자는 쉼표에서도 꺾이지 않으므로 값과 단위를 한 줄에 둡니다. jsdom은 배치를 재지 않아 클래스로 봅니다.
   // 수정 전(재현 커밋에서는 it.fails) 숫자 값 줄은 'mt-0.5 flex flex-wrap items-baseline gap-x-1'이었습니다.
-  it.fails("숫자 값과 단위는 한 덩어리 — 숫자 값 줄은 flex-nowrap, 판정 라벨 줄은 flex-wrap 그대로 (QA-599)", () => {
+  it("숫자 값과 단위는 한 덩어리 — 숫자 값 줄은 flex-nowrap, 판정 라벨 줄은 flex-wrap 그대로 (QA-599)", () => {
     render(
       <KpiStrip
         label="요약"

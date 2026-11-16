@@ -117,6 +117,17 @@ function KpiValue({ item }: { item: KpiItem }): JSX.Element {
   );
 }
 
+/**
+ * 값 줄 — 읽는 중이면 블록(QA-596). 숫자 값은 단위와 한 덩어리라 줄을 바꾸지 않습니다(flex-nowrap — 숫자는 쉼표에서도 꺾이지 않으므로 넘치는 몫은
+ * 단위 폭 하나뿐: 1280 운영자 일곱 타일 한 줄에서 '1,339.28' + '원'이 안쪽 폭을 2px 넘지만 타일 안 — QA-599). 판정 라벨은 낱말 사이에서 꺾습니다.
+ */
+function valueRowClass(item: KpiItem): string {
+  if (item.pending) {
+    return "mt-0.5";
+  }
+  return `mt-0.5 flex ${item.valueKind === "label" ? "flex-wrap" : "flex-nowrap"} items-baseline gap-x-1`;
+}
+
 function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
   const change = item.change && !item.pending ? item.change : null;
   // 변화량·변화율을 둘 다 모르면 칩이 그려지지 않으므로(ChangeChip) 캡션만 남지 않게 줄째 뺍니다.
@@ -135,7 +146,7 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
         {item.label}
       </div>
       {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
-      <div className={item.pending ? "mt-0.5" : "mt-0.5 flex flex-wrap items-baseline gap-x-1"}>
+      <div className={valueRowClass(item)}>
         <KpiValue item={item} />
       </div>
       {change && changeShown ? (
