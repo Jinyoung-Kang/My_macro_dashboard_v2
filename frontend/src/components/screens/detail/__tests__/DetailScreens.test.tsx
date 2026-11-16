@@ -331,6 +331,28 @@ describe("종목 상세 — 미국", () => {
     client.mockRestore();
   });
 
+  // QA-610: '자세히'·'접기'는 글자 셋·둘인 따로 선 글 단추라 TEXT_TARGET(높이 44px)만으로는 가로가 글 폭(42·28px)이었습니다 — lg 미만 누름 자리 44x44
+  // (명세 §3)에 못 미침. 가로 하한(min-w-11)을 lg 미만에만 줍니다(넓은 화면은 글 폭 그대로). jsdom은 배치를 재지 않아 클래스로 봅니다(실제 크기는
+  // 브라우저 측정). 수정 전(재현 커밋에서는 it.fails)에는 두 단추의 class 목록에 'min-w-11'·'lg:min-w-0'이 없었습니다.
+  it.fails("회사 소개 '자세히'·'접기' 단추는 lg 미만에서 가로도 44px(min-w-11), 넓은 화면은 글 폭(lg:min-w-0)", async () => {
+    reads = appleReads();
+    const scroll = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(400);
+    const client = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(240);
+    try {
+      renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+      const about = (await screen.findByRole("heading", { name: "회사 소개" })).closest("section") as HTMLElement;
+      const classTokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+      const more = await within(about).findByRole("button", { name: "자세히" });
+      expect(classTokens(more)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "min-w-11", "lg:min-w-0"]));
+      fireEvent.click(more);
+      const less = within(about).getByRole("button", { name: "접기" });
+      expect(classTokens(less)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "min-w-11", "lg:min-w-0"]));
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
+  });
+
   it("뉴스는 한 쪽에 5건 — 이전·다음 단추와 쪽 표시", async () => {
     reads = appleReads();
     reads[NEWS] = {
