@@ -3,7 +3,7 @@
  * hooks/useNavResize). 숫자·규칙은 lib/__tests__/navWidth.test, 기억은 hooks/__tests__/useNavWidth.test가 보고, 여기서는 그린 손잡이를 봅니다.
  *
  * - 접근성: role=separator '왼쪽 메뉴 폭', 세로, 주 메뉴를 가리킴, 값 200~320·지금 폭·px 읽는 글(접혔으면 하한과 '접힘…'), Tab 순서는 접기 단추 다음, 포커스 링,
- *   글 없음(12px 하한과 무관), 고대비에서 가리킨·잡은 동안 Highlight 윤곽선.
+ *   글 없음(12px 하한과 무관), 고대비에서 가리킨·잡은 동안 Highlight 윤곽선, 고대비에서 ::before 숨김(QA-602 — 클래스를 Tailwind로 컴파일해 확인).
  * - 키보드: ←·→ 16px(Shift 64)·Home·End는 바로 저장, Enter는 접기·펼치기(기억한 폭으로 — 누르고 있는 반복은 받지 않음), 받은 키는 기본 동작을 막고
  *   받지 않는 키는 그대로.
  * - 두 번 누르기: 접기·펼치기. 끌고 바로 한 번 더 눌러 생긴 두 번 누르기는 받지 않음.
@@ -18,6 +18,8 @@
  *   키 걸음·다른 탭의 폭 바뀜·움직임 줄이기의 접고 펴기에는 켜지 않고, 끄는 도중 레일로 접혀 켠 전환의 타이머가 끝나도 끌기가 이어지면 켜진 채.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import postcss, { type AtRule, type Rule } from "postcss";
+import { compile } from "tailwindcss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
 import { NAV_RESIZING_ATTR } from "@/hooks/useNavResize";
@@ -150,6 +152,26 @@ describe("접근성", () => {
   it("QA-602: 고대비에서는 ::before(가리킴·잡음·포커스 선)를 숨긴다 — 경계선과 Highlight 윤곽선을 덮지 않음", () => {
     render(<SideNav pathname="/macro" user={MEMBER} />);
     expect(classes(handle())).toContain("forced-colors:before:hidden");
+  });
+
+  // QA-602 후속(검토 지적): 위 시험은 클래스 글자만 봐서, 그 변형이 CSS로 만들어지지 않거나 같은 손잡이의 다른 ::before display 규칙에 덮여도
+  // 통과했습니다(예: hover:before:flex는 :hover 때문에 명시도가 (0,2,1)이라 고대비 규칙 (0,1,1)을 이김). 그래서
+  // 그린 손잡이의 클래스를 이 저장소와 같은 Tailwind(4.3.5)로 컴파일해, ::before의 display를 정하는 규칙이 고대비 미디어 안의 none 하나뿐인지
+  // 봅니다. 바탕색 토큰(border-strong 등)은 globals.css의 테마에 있어 여기서는 만들어지지 않지만 display와는 무관합니다.
+  it("QA-602: 손잡이 클래스를 컴파일하면 ::before의 display 규칙은 @media (forced-colors: active) 안의 none 하나뿐", async () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    const compiler = await compile("@tailwind utilities;");
+    const found: string[] = [];
+    postcss.parse(compiler.build(classes(handle()))).walkDecls("display", (decl) => {
+      const rule = decl.parent;
+      if (rule?.type !== "rule" || !(rule as Rule).selector.includes("::before")) return;
+      const at: string[] = [];
+      for (let node = rule.parent; node && node.type !== "root"; node = node.parent) {
+        if (node.type === "atrule") at.unshift(`@${(node as AtRule).name} ${(node as AtRule).params}`);
+      }
+      found.push([...at, `${(rule as Rule).selector} { display: ${decl.value} }`].join(" "));
+    });
+    expect(found).toEqual(["@media (forced-colors: active) .forced-colors\\:before\\:hidden::before { display: none }"]);
   });
 
   it("접혔으면 값은 하한 200(가장 왼쪽 자리)이고 읽는 글은 접힘과 펼 때의 폭", () => {
