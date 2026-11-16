@@ -45,7 +45,7 @@ const liveOf = (element: Element) => element.closest('[role="status"],[role="ale
 describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭독", () => {
   // 수정 전 실패: (a) 누른 뒤 단추가 disabled=true·aria-disabled 없음, 한 번에 두 번 누르면 POST 2건 (b)(c) 경고·오류 글의 live 조상 없음
   // (d) 카드 안 role=status 영역 없음(재현 커밋에서는 it.fails).
-  it.fails("(a) 진행 중 단추는 disabled가 아니라 aria-disabled·aria-busy이고 누르기를 무시한다 — 다시 그리기 전 두 번 눌러도 요청 하나", async () => {
+  it("(a) 진행 중 단추는 disabled가 아니라 aria-disabled·aria-busy이고 누르기를 무시한다 — 다시 그리기 전 두 번 눌러도 요청 하나", async () => {
     api.apiPost.mockReturnValue(new Promise(() => {}));
     const card = renderCard();
     const button = within(card).getByRole("button", { name: "AI 요약 만들기" }) as HTMLButtonElement;
@@ -64,7 +64,7 @@ describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭
     expect(api.apiPost).toHaveBeenCalledTimes(1);
   });
 
-  it.fails("(b) 요약을 만들지 못함(status false)의 경고 안내는 늘 있는 알림 영역(role=status) 안", async () => {
+  it("(b) 요약을 만들지 못함(status false)의 경고 안내는 늘 있는 알림 영역(role=status) 안", async () => {
     api.apiPost.mockResolvedValue({ status: false, summary: null, error: "하루 한도를 넘었습니다(합성)" });
     const card = renderCard();
     const region = within(card).getByRole("status");
@@ -77,7 +77,7 @@ describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭
     expect(within(card).getAllByRole("status")).toHaveLength(1);
   });
 
-  it.fails("(c) 연결 실패 오류 상자는 role=alert 상자 안", async () => {
+  it("(c) 연결 실패 오류 상자는 role=alert 상자 안", async () => {
     api.apiPost.mockRejectedValue(new Error("백엔드 API에 연결하지 못했습니다(합성)"));
     const card = renderCard();
     await act(async () => {
@@ -91,7 +91,7 @@ describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭
     expect(button.getAttribute("aria-disabled")).toBeNull();
   });
 
-  it.fails("(d) 요약을 받으면 같은 알림 영역이 완료 글을 읽힌다 — 영역은 하나", async () => {
+  it("(d) 요약을 받으면 같은 알림 영역이 완료 글을 읽힌다 — 영역은 하나", async () => {
     api.apiPost.mockResolvedValue({ status: true, summary: "한 줄 요약: 합성 요약", model: "test-model", generatedAtKst: null, cached: false, sources: [], quota: null, error: null });
     const card = renderCard();
     const region = within(card).getByRole("status");

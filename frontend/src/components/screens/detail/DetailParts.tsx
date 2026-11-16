@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, EstimateBadge, Hero, type PropertyItem, RangeTabs, Skeleton } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { Banner, Button, buttonClasses, Card, ErrorState, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -441,6 +441,10 @@ function summaryAllowed(user: SessionUser | null | undefined): boolean | null {
  * AI 요약 — 이 화면이 보여 주는 시세·지표·뉴스만 번호를 붙여 Claude(Haiku, effort medium)에게 넘기고, 근거 번호([1])를 출처 링크로 바꿔 보입니다.
  * 누를 때만 부릅니다(하루 한도 — 같은 날 같은 대상은 서버가 저장한 요약을 돌려줌). 투자 권유가 아니라는 안내를 늘 붙입니다. `request`가 null이면
  * 요약할 대상을 아직 몰라(기관 이름을 받기 전 등) 단추를 잠그고 '불러오는 중'을 적으며, `idleText`를 주면 그 대신 그 글(요약할 수 없는 까닭)을 적습니다.
+ *
+ * 진행 중 단추는 disabled가 아니라 aria-disabled·aria-busy이고 누르기를 무시합니다 — 진짜 disabled면 크롬이 포커스를 body로 옮겼습니다(QA-574,
+ * 새로고침 단추 QA-553과 같은 꼴). 진짜 disabled는 대상·사용자를 모르는 정적 잠금에만 둡니다(QA-453). 경고 안내와 진행·완료 글은 늘 그려 두는
+ * role=status 영역 하나에, 연결 실패 오류 상자는 role=alert 상자에 둡니다(공용 Callout·ErrorState에는 role을 주지 않음 — QA-268).
  */
 export function AiSummaryCard({
   request,
@@ -453,6 +457,16 @@ export function AiSummaryCard({
   const allowed = summaryAllowed(user);
   const lockedText = isDemo(user) ? "데모 열람에서는 쓰지 않습니다" : "유료 등급 기능";
   const summary = useAsyncAction(() => apiPost<DetailSummaryResponse>(endpoints.detail.summary, request), "AI 요약을 만들지 못했습니다.");
+  // 진행 중 가드 — 다시 그리기 전(busy가 아직 false)에 두 번 눌러도 요청은 하나.
+  const inFlight = useRef(false);
+  const locked = allowed === null || request === null;
+  const start = () => {
+    if (locked || summary.busy || inFlight.current) return;
+    inFlight.current = true;
+    void summary.run().finally(() => {
+      inFlight.current = false;
+    });
+  };
   const result = summary.result;
   const lines = result?.status ? summaryLines(result.summary) : [];
   const sources = result?.sources ?? [];
@@ -469,14 +483,29 @@ export function AiSummaryCard({
             {lockedText}
           </span>
         ) : (
-          <Button size="sm" variant="secondary" onClick={() => void summary.run()} disabled={summary.busy || allowed === null || request === null}>
+          <button
+            type="button"
+            onClick={start}
+            disabled={locked}
+            aria-disabled={summary.busy || undefined}
+            aria-busy={summary.busy || undefined}
+            className={`${buttonClasses("secondary", "sm")} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
+          >
             {summary.busy ? "요약하는 중…" : result?.status ? "다시 불러오기" : "AI 요약 만들기"}
-          </Button>
+          </button>
         )
       }
     >
-      {summary.error ? <ErrorState message={summary.error} /> : null}
-      {result && !result.status ? <Banner tone="warn">{result.error ?? "요약을 만들지 못했습니다."}</Banner> : null}
+      {summary.error ? (
+        <div role="alert">
+          <ErrorState message={summary.error} />
+        </div>
+      ) : null}
+      {/* 늘 그려 두는 알림 영역 — 경고 안내와 진행·완료 글(비면 높이 0). 결과가 올 때 새로 넣으면 낭독기가 읽지 않기도 합니다. */}
+      <div role="status">
+        {result && !result.status ? <Banner tone="warn">{result.error ?? "요약을 만들지 못했습니다."}</Banner> : null}
+        <span className="sr-only">{summary.busy ? "요약하는 중…" : result?.status ? "AI 요약을 만들었습니다." : ""}</span>
+      </div>
       {lines.length > 0 ? (
         // 긴 글 단계(running 15/24, 한 줄 최대 72자). 근거 번호는 위로 올리되 줄 높이를 밀지 않게(align-super 대신 상대 위치 — 번호가 있는 줄만 줄 간격이 벌어졌음).
         <div className="flex max-w-[72ch] flex-col gap-1.5 text-running text-text">
