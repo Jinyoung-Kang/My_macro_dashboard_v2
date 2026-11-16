@@ -8,12 +8,14 @@
  * - 탭의 화면이 하나뿐이고 그것이 탭 첫 화면이면(홈·정보 검색) 하위 화면 칸을 생략합니다(같은 이름이 두 번 나오지 않게).
  * - 하위 화면에 묶음이 있으면(더보기의 '한국 시장') 그 앞에 묶음 이름 칸을 링크 없이 둡니다.
  * - 이 사용자에게 보이지 않는 탭·화면(lib/access visibleMenus — 회원이 주소로 연 /paper/us 등)은 링크 없이 글만 둡니다.
- * - 대상 칸은 형식이 맞을 때만(lib/detail parse 함수·lib/paperRoutes) — 틀리면 그 앞 칸에서 끝납니다. 메뉴에 없는 경로(/login 등)는 빈 목록.
+ * - 대상 칸은 형식이 맞을 때만(lib/detail parse 함수·모의매매 탭 주소 규칙) — 틀리면 그 앞 칸에서 끝납니다. 메뉴에 없는 경로(/login 등)는 빈 목록.
+ *
+ * 셸은 모든 화면이 싣습니다. 그래서 모의매매 탭 이름은 lib/paper(PAPER_TABS)·lib/paperRoutes를 가져오지 않고 아래 작은 표로 둡니다 — 가져오면 모의매매 모듈
+ * 묶음(압축 전 약 175KB)이 모든 화면의 첫 적재에 실렸습니다(webpack 빌드로 잼, /more 첫 적재 gzip 256 → 337KB). 표와 주소 규칙이 PAPER_TABS·
+ * paperRouteFromPath와 같은지는 breadcrumbs.test가 대조합니다.
  */
 import { activeItem, activeTab, visibleItems, visibleTabs, type NavTab } from "./nav";
 import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
-import { PAPER_TABS, paperTabInMarket } from "./paper";
-import { paperRouteFromPath, paperTabPath } from "./paperRoutes";
 import type { SessionUser } from "./types";
 
 /** 빵부스러기 한 칸 — href가 null이면 링크 없이 글만(묶음 이름·보이지 않는 메뉴·주소가 따로 없는 칸). */
@@ -25,6 +27,23 @@ const STOCK_SECTION: Record<"us" | "kr", string> = { us: "종목(미국)", kr: "
 /** 지표 상세의 중간 칸 — 매크로 지표 화면(지표 카드가 있는 곳). */
 const MACRO_HREF = "/macro";
 
+/**
+ * 모의매매 탭 주소 조각 → 이름과 그 탭이 있는 시장(lib/paper PAPER_TABS의 개요 밖 탭과 같음 — 시험이 대조). 'ISA 계좌'는 한국 화면에만 있습니다.
+ */
+export const PAPER_TAB_CRUMBS: Readonly<Record<string, { label: string; markets: readonly ("us" | "kr")[] }>> = {
+  selection: { label: "기관 선정", markets: ["us", "kr"] },
+  holdings: { label: "보유·체결", markets: ["us", "kr"] },
+  decisions: { label: "결정 로그", markets: ["us", "kr"] },
+  framework: { label: "프레임", markets: ["us", "kr"] },
+  notes: { label: "메모", markets: ["us", "kr"] },
+  settings: { label: "설정", markets: ["us", "kr"] },
+  real: { label: "실제 계좌", markets: ["us", "kr"] },
+  isa: { label: "ISA 계좌", markets: ["kr"] },
+};
+
+/** 모의매매 탭 주소 `/paper/<us|kr>/<조각>`(끝 '/' 하나 허용 — lib/paperRoutes paperRouteFromPath와 같은 규칙). 개요(뿌리 주소)는 탭 칸이 없습니다. */
+const PAPER_TAB_PATH = /^\/paper\/(us|kr)\/([^/]+)\/?$/;
+
 /** 주소의 마지막 조각 하나(`/markets/i/<조각>` 꼴) — 더 깊거나 비면 null. */
 function singleSegment(pathname: string, prefix: string): string | null {
   if (!pathname.startsWith(prefix)) return null;
@@ -35,10 +54,12 @@ function singleSegment(pathname: string, prefix: string): string | null {
 /** 대상 칸(상세 세 종류·모의매매 탭) — 탭·하위 화면 칸 뒤에 붙입니다. */
 function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => string | null): Crumb[] {
   if (tab.key === "paper") {
-    const route = paperRouteFromPath(pathname);
-    if (!route || route.tab === "overview" || !paperTabInMarket(route.tab, route.market)) return [];
-    const label = PAPER_TABS.find((entry) => entry.key === route.tab)?.label;
-    return label ? [{ label, href: visible(paperTabPath(route.tab, route.market)) }] : [];
+    const match = PAPER_TAB_PATH.exec(pathname);
+    if (!match) return [];
+    const market = match[1] as "us" | "kr";
+    const entry = Object.hasOwn(PAPER_TAB_CRUMBS, match[2]) ? PAPER_TAB_CRUMBS[match[2]] : undefined;
+    if (!entry || !entry.markets.includes(market)) return [];
+    return [{ label: entry.label, href: visible(`/paper/${market}/${match[2]}`) }];
   }
   if (tab.key === "markets") {
     const indicator = singleSegment(pathname, "/markets/i/");

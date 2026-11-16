@@ -5,7 +5,9 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { breadcrumbs, type Crumb } from "../breadcrumbs";
+import { PAPER_TAB_CRUMBS, breadcrumbs, type Crumb } from "../breadcrumbs";
+import { PAPER_TABS, paperTabInMarket } from "../paper";
+import { paperRouteFromPath, paperTabPath } from "../paperRoutes";
 import type { SessionUser } from "../types";
 
 const OWNER: SessionUser = { email: "owner@test.local", role: "OWNER", tier: "PRO", local: true };
@@ -119,5 +121,36 @@ describe("모의매매(운영자)", () => {
       { label: "더보기", href: "/more" },
       { label: "내 계정", href: null },
     ]);
+  });
+});
+
+describe("모의매매 탭 이름표 — 셸이 모의매매 모듈을 싣지 않게 따로 둔 표가 PAPER_TABS·paperRouteFromPath와 같다", () => {
+  it("개요 밖 탭의 이름과 시장(ISA는 한국만)이 PAPER_TABS와 같다", () => {
+    const expected = Object.fromEntries(
+      PAPER_TABS.filter((entry) => entry.key !== "overview").map((entry) => [
+        entry.key,
+        { label: entry.label, markets: (["us", "kr"] as const).filter((market) => paperTabInMarket(entry.key, market === "us" ? "US" : "KR")) },
+      ]),
+    );
+    expect(PAPER_TAB_CRUMBS).toEqual(expected);
+  });
+
+  it("주소 규칙이 paperRouteFromPath와 같다 — 탭 칸이 생기는 주소와 그 이름·주소", () => {
+    const paths = [
+      "/paper", "/paper/us", "/paper/kr", "/paper/us/", "/paper/us/holdings", "/paper/us/holdings/", "/paper/kr/isa", "/paper/us/isa",
+      "/paper/us/overview", "/paper/us/Holdings", "/paper/KR/holdings", "/paper/us/holdings/x", "/paper/jp/holdings", "/paper/us/constructor",
+      "/paper/us/toString", "/paper/kr/real",
+    ];
+    for (const path of paths) {
+      const route = paperRouteFromPath(path);
+      const expected =
+        route && route.tab !== "overview" && paperTabInMarket(route.tab, route.market)
+          ? { label: PAPER_TABS.find((entry) => entry.key === route.tab)?.label, href: paperTabPath(route.tab, route.market) }
+          : null;
+      const crumbs = breadcrumbs(path, OWNER);
+      const last = crumbs[crumbs.length - 1];
+      const detail = crumbs.length === 3 ? last : null;
+      expect(detail, path).toEqual(expected);
+    }
   });
 });
