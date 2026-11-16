@@ -127,6 +127,13 @@ async function storeLine(): Promise<HTMLElement> {
 /** 알림 패널 머리의 '읽지 않음 N건'(이름과 수). */
 const unreadCount = (name = ALERTS_REGION) => within(region(name)).getByText(/^읽지 않음/);
 
+/** 눈에 보이는 글 — 읽어 주기 전용(sr-only) 글을 뺀 textContent(공백은 하나로). jsdom은 배치를 재지 않아 보이는 글의 길이로 폭을 가늠합니다. */
+function visibleText(node: HTMLElement): string {
+  const copy = node.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll(".sr-only").forEach((hidden) => hidden.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 /** 운영자 알림 패널의 최근 알림 줄(이름 있는 목록 '최근 알림'의 줄 — 끊긴 출처 줄과 섞이지 않게). */
 const alertItems = () => within(within(region(ALERTS_REGION)).getByRole("list", { name: "최근 알림" })).getAllByRole("listitem");
 
@@ -406,6 +413,65 @@ describe("홈 — 값 있음(운영자)", () => {
     await waitFor(() => expect(unreadCount().textContent).toContain("읽지 못함"));
     expect(within(unreadCount()).queryByRole("status")).toBeNull();
     expect(within(region(ALERTS_REGION)).queryAllByRole("alert")).toHaveLength(0);
+  });
+
+  // QA-605 후속(검토): 첫 고침은 실패를 '— 읽지 못함'으로 보여 머리 값이 66.7px → 122px로 넓어졌고, 남은 폭이 적은 360·375px와 1024px(메뉴 256·280)에서
+  // 패널 머리가 두 줄로 꺾였습니다(65 → 97px, 45 → 69px — 99f161ae는 같은 실패에서 한 줄). 보이는 글은 '—'만 두고 사유는 읽어 주기로 둡니다
+  // (보이는 사유는 같은 화면 KPI 띠의 '읽지 않은 알림' 타일이 적음 — 읽는 중은 자리표시 막대라 눈으로도 갈림).
+  // 수정 전(재현 커밋에서는 it.fails) 보이는 글이 '읽지 않음 —읽지 못함'이고, '읽지 못함'은 sr-only가 아닌 보조 글(text-xs font-normal text-text-3)이었습니다.
+  it.fails("알림 패널 머리의 읽지 않은 수 — 실패 때 보이는 글은 '—'만(머리가 꺾이지 않게), '읽지 못함'은 읽어 주기(sr-only)로 (QA-605)", async () => {
+    reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
+    renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    await waitFor(() => expect(unreadCount().textContent).toContain("읽지 못함"));
+    expect(visibleText(unreadCount())).toBe("읽지 않음 —");
+    expect(within(unreadCount()).getByText("읽지 못함").className.split(/\s+/)).toContain("sr-only");
+    expect(within(unreadCount()).getByText("값 없음").className.split(/\s+/)).toContain("sr-only");
+  });
+
+  // QA-605 후속(검토): 실패 갈래를 error로 정해, useApi가 다시 읽기를 시작하며 error를 비우면 수가 계속 실패하는 동안에도 다시 읽을 때마다
+  // (300초 자동 갱신·탭 복귀·수동 새로고침) 머리가 실패 → 자리표시 → 실패로 오가며 패널 본문이 위아래로 움직였습니다(QA-608과 같은 까닭 — 360 CLS 0.283).
+  // 같은 수를 그리는 KPI 띠 타일도 같은 규칙(lib/home kpiReadState)이라 함께 봅니다 — 둘 다 실패 시각(failedAt)으로 정합니다.
+  // 수정 전(재현 커밋에서는 it.fails) 다시 읽는 동안 머리에 role=status '읽지 않은 수 불러오는 중'이 있었습니다(KPI 타일도 '읽지 않은 알림 불러오는 중').
+  it.fails("알림 패널 머리의 읽지 않은 수 — 실패 뒤 다시 읽는 동안에도 자리표시로 바뀌지 않고 실패를 지킨다, KPI 타일도 같다 — 처음 읽는 동안만 자리표시 (QA-605)", async () => {
+    reads = happyReads();
+    let rejectFirst: (error: Error) => void = () => {};
+    let resolveRetry: (body: unknown) => void = () => {};
+    const first = new Promise((_, reject) => { rejectFirst = reject; });
+    const retry = new Promise((resolve) => { resolveRetry = resolve; });
+    let unreadCalls = 0;
+    const base = api.apiGetShared.getMockImplementation();
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path !== UNREAD) return base?.(path);
+      unreadCalls += 1;
+      return unreadCalls === 1 ? first : retry;
+    });
+    const unreadTile = () => {
+      const tile = within(region("오늘 요약")).getAllByRole("link").find((link) => link.firstElementChild?.textContent === "읽지 않은 알림");
+      if (!tile) throw new Error("KPI 타일 없음: 읽지 않은 알림");
+      return tile;
+    };
+    const { rerender } = renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    // 처음 읽는 동안은 자리표시(그대로).
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
+
+    await act(async () => rejectFirst(new Error("요청 실패 (HTTP 500)")));
+    expect(within(unreadCount()).getByText("읽지 못함")).toBeTruthy();
+    expect(within(unreadTile()).getByText("읽지 못함")).toBeTruthy();
+
+    // 수동 새로고침(공용 신호) — 모든 경로를 다시 읽고, useApi는 시작할 때 error를 비웁니다. 읽지 않은 수의 두 번째 응답은 아직 오지 않습니다.
+    signal.token += 1;
+    await act(async () => rerender(<SessionUserProvider user={OWNER}><HomeScreen /></SessionUserProvider>));
+    await waitFor(() => expect(unreadCalls).toBe(2));
+    expect(within(unreadCount()).queryByRole("status")).toBeNull();
+    expect(within(unreadCount()).getByText("읽지 못함")).toBeTruthy();
+    expect(within(unreadTile()).queryByRole("status")).toBeNull();
+    expect(within(unreadTile()).getByText("읽지 못함")).toBeTruthy();
+
+    await act(async () => resolveRetry({ unread: 12 }));
+    expect(unreadCount().textContent).toBe("읽지 않음 12건");
+    expect(unreadTile().textContent).toBe("읽지 않은 알림12건");
   });
 
   // QA-606: 최근 알림 제목은 한 줄 말줄임(truncate)에 title이 없어, 반 칸(390 312px · 1024 308px · 1280)에서 13F 알림의 기관 이름 뒷부분과 종목 수가

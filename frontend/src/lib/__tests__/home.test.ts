@@ -814,6 +814,25 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
     ]);
   });
 
+  // QA-605 후속(검토): useApi는 다시 읽기를 시작할 때 error를 비우고 실패 시각(failedAt)은 남깁니다. error로만 정하면 실패가 이어지는 동안 다시 읽을 때마다
+  // 타일이 '읽지 못함' → 자리표시(시장 타일은 자리 줄 5) → '읽지 못함'으로 오갔습니다(홈 알림 패널 머리와 같은 규칙 — QA-608과 같은 까닭).
+  // 수정 전(재현 커밋에서는 it.fails) 다시 읽는 중(error 없음·failedAt 있음)의 타일은 pending이고 사유가 없었습니다.
+  it.fails("실패 뒤 다시 읽는 중(error는 비고 failedAt만 남음)이면 자리표시가 아니라 '—' + '읽지 못함' — 처음 읽는 중(failedAt 없음)만 자리표시 (QA-605)", () => {
+    // useApi가 다시 읽기를 시작한 뒤의 상태(값 없음·오류 비움·실패 시각 남음)와 처음 읽는 중(실패 시각 없음).
+    const retrying = { data: null, error: null, failedAt: new Date("2026-10-26T07:50:00Z") };
+    const first = { data: null, error: null, failedAt: null };
+    const items = homeKpiItems(ready({ regime: retrying, macro: retrying, unread: retrying, issues: first }), { owner: true, clock: CLOCK_ONLY });
+    expect(items.map((item) => [item.key, item.pending === true, item.emptyReason ?? null, item.pendingLines ?? 0])).toEqual([
+      ["regime", false, KPI_READ_FAILED, 0],
+      ["sp500", false, KPI_READ_FAILED, 0],
+      ["kospi", false, KPI_READ_FAILED, 0],
+      ["usdkrw", false, KPI_READ_FAILED, 0],
+      ["us10y", false, KPI_READ_FAILED, 0],
+      ["unread", false, KPI_READ_FAILED, 0],
+      ["errors", true, null, 1],
+    ]);
+  });
+
   // 수정 전(재현 커밋에서는 it.fails) 일곱 타일 모두 자리 줄이 0이었습니다.
   it("읽는 중이면 시장 타일 넷은 자리 줄 5(변화 1·배지 1·출처 3), 수집 오류 타일은 1(상태 글)을 받는다 — 값이 온 뒤의 높이에 가깝게 자리를 잡음 (QA-598)", () => {
     const pending = homeKpiItems(
