@@ -139,7 +139,7 @@ export function PriceHero({
   );
 }
 
-/** 문지르지 않을 때 읽기 줄의 안내 — 한 줄 자리를 지켜 문지르기 시작해도 차트가 위아래로 움직이지 않게 합니다. */
+/** 문지르지 않을 때 읽기 줄의 안내 — 읽기 줄 자리(좁은 화면 두 줄·sm 이상 한 줄)를 지켜 문지르기 시작해도 차트가 위아래로 움직이지 않게 합니다. */
 const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
 
 /**
@@ -150,6 +150,7 @@ const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
  * - 문지르기는 이 패널에 있습니다(명세 W7 — 대상 머리는 늘 지금 값). 차트를 문지르는 동안 읽기 줄에 그 날 날짜·값·기간 시작 대비 칩(모르면 생략)·추정
  *   배지를 보입니다. 읽기 줄은 눈으로 보는 줄(aria-hidden)이고, 읽어 주기는 따로 둔 조용한 알림 영역(aria-live polite)이 '날짜 값'으로 합니다(차트에
  *   초점을 두고 ←·→로 옮기는 낭독기 사용자). 문지르지 않을 때는 같은 자리에 짧은 안내를 두어 줄 높이가 바뀌지 않습니다.
+ *   좁은 화면(sm 미만)은 문지른 내용이 두 줄로 접히므로 처음부터 두 줄 자리(38px)를 잡아 둡니다(QA-571 — 한 줄 자리만 잡아 문지르면 차트가 18px 밀렸음).
  * - 틀은 공용 패널의 이름 있는 영역(Panel `region` — 머리줄과 본문을 1px 경계로 가르고 제목 h2가 영역 이름)이고, 기간 탭은 머리 동작 자리입니다.
  *   제목(긴 종목·지표 이름)은 낱말 사이에서 줄을 바꾸고 칸보다 긴 낱말만 꺾습니다.
  */
@@ -212,7 +213,7 @@ export function PriceChartPanel({
       actions={symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} /> : undefined}
     >
       {scrubbable ? (
-        <div aria-hidden="true" className="mb-2 flex min-h-5 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption">
+        <div aria-hidden="true" className="mb-2 flex min-h-[2.375rem] flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption sm:min-h-5">
           {point !== null ? (
             <>
               <span className="tabular-nums text-text-2">{point.dateText}</span>
