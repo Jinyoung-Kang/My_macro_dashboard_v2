@@ -25,8 +25,11 @@ export type KpiItem = {
   valueKind?: "number" | "label";
   /** 판정 불가 같은 중립 값 — 중립 잉크(text-neutral). 뜻은 글이 나릅니다. */
   neutral?: boolean;
-  /** 변화 — 변화 칩(▲▼·부호·sr '상승/하락')과 12px 캡션('전일 대비'). 변화량·변화율을 둘 다 모르면 줄이 없습니다. */
-  change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null };
+  /**
+   * 변화 — 변화 칩(▲▼·부호·sr '상승/하락')과 12px 캡션('전일 대비'). 변화량·변화율을 둘 다 모르면 줄이 없습니다. `unit`은 변화량 바로 옆의 작은 단위
+   * (공용 변화 칩의 unit — 금리차 '%p'·계약 등, 주지 않으면 단위 없음 — 홈 띠 그대로).
+   */
+  change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null; unit?: string | null };
   /** 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). */
   status?: { tone: "ok" | "warn" | "danger"; text: string };
   /** 12px 보조 글(기준일 등 — 값의 시각은 출처 줄의 `asOf`로). */
@@ -204,7 +207,14 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
       </div>
       {change && changeShown ? (
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
-          <ChangeChip size="sm" change={change.change} changePct={change.changePct} digits={change.digits} pctDigits={change.pctDigits} />
+          <ChangeChip
+            size="sm"
+            change={change.change}
+            changePct={change.changePct}
+            digits={change.digits}
+            pctDigits={change.pctDigits}
+            unit={change.unit ?? undefined}
+          />
           {caption ? <span className="text-xs text-text-3">{caption}</span> : null}
         </div>
       ) : null}

@@ -90,6 +90,24 @@ describe("KpiStrip — 값 있음", () => {
     expect(within(tile("모름")).queryByText("전일 대비")).toBeNull();
   });
 
+  it("변화 단위(change.unit)는 변화량 바로 옆에 작게(공용 변화 칩의 unit) — 주지 않으면 단위 없음(홈 띠 그대로)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "spread", label: "10Y-3M", value: -0.42, unit: "%p", change: { change: -0.032, digits: 3, unit: "%p", caption: "전일 대비" } },
+          { key: "kospi", label: "코스피", value: 2612.5, change: { change: 12.3, changePct: 0.47 } },
+        ]}
+      />,
+    );
+    const amount = within(tile("10Y-3M")).getByText("−0.032");
+    expect(amount.textContent).toBe("−0.032%p");
+    expect(within(amount).getByText("%p").className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "font-normal"]));
+    // 주지 않으면 변화량 옆에 단위 칸이 없다
+    const plain = within(tile("코스피")).getByText("+12.30");
+    expect(plain.children).toHaveLength(0);
+  });
+
   it("href가 있으면 타일 전체가 링크(이름에 라벨) — 중립 잉크·hover surface-2·포커스 링, 강조 파랑 클래스 없음", () => {
     render(<KpiStrip label="요약" items={[{ key: "sp500", label: "S&P 500", value: 6012, href: "/markets/i/sp500" }]} />);
     const link = screen.getByRole("link", { name: /S&P 500/ });
