@@ -31,6 +31,11 @@ interface RefreshState {
   /** 수집이 끝나기를 기다리는 중인가. */
   collecting: boolean;
   message: string | null;
+  /**
+   * 마지막 새로고침이 실패했는가(QA-552) — 요청 자체가 실패했거나(글은 '새로고침하지 못했습니다 — 사유', 같은 상단바 로그아웃 실패와 같은 꼴),
+   * 200이라도 수집을 시작하지 못했을 때(store_only가 아닌데 triggered=false — 백엔드 '수집기에 연결하지 못했습니다…'). 셸이 안내를 경고 톤으로 그립니다.
+   */
+  failed: boolean;
   requestRefresh: () => Promise<void>;
   /** 수집 없이 지금 화면만 다시 읽기. */
   reloadAll: () => void;
@@ -45,6 +50,7 @@ const FALLBACK: RefreshState = {
   token: 0,
   collecting: false,
   message: null,
+  failed: false,
   requestRefresh: async () => {},
   reloadAll: () => {},
   sessionLost: false,
@@ -65,6 +71,8 @@ interface StatusShape {
 }
 
 interface RefreshResponse {
+  /** 백엔드 읽기 모드(DataStatusService.refresh — 'auto'·'store_only'). store_only면 수집을 일으키지 않는 것이 정상입니다. */
+  readMode?: string;
   message?: string;
   triggered?: boolean;
   baselineRunId?: number | null;
@@ -74,6 +82,7 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState(0);
   const [collecting, setCollecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [sessionLost, setSessionLost] = useState(false);
   const [unauthorizedCount, setUnauthorizedCount] = useState(0);
   const inFlight = useRef(false);
@@ -92,12 +101,15 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
     inFlight.current = true;
     setCollecting(true);
     setMessage(null);
+    setFailed(false);
 
     try {
       const result = await apiPost<RefreshResponse>(
         endpoints.status.refresh(true),
       );
       setMessage(result.message ?? "새로고침을 요청했습니다.");
+      // 프런트는 늘 runFast=true로 부르므로, store_only가 아닌데 triggered=false면 수집기에 닿지 못한 것입니다(백엔드 글 그대로 — 실패 꼴로).
+      if (result.readMode !== "store_only" && result.triggered === false) setFailed(true);
 
       if (result.triggered) {
         const finished = await waitForCollection(result.baselineRunId ?? null);
@@ -108,9 +120,10 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
         );
       }
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "새로고침에 실패했습니다.",
-      );
+      // 결과 낱말을 앞에 둡니다 — 상단바 안내는 160px(xl 288px) 한 줄이라, 사유('백엔드 API(<주소>)에 연결하지 못했습니다')부터 쓰면 실패 낱말이
+      // 잘려 나갔습니다(QA-552). 같은 상단바의 로그아웃 실패(useLogout)와 같은 꼴입니다.
+      setMessage(`새로고침하지 못했습니다 — ${error instanceof Error ? error.message : "다시 시도하세요"}`);
+      setFailed(true);
     } finally {
       // 성공이든 실패든 화면은 다시 읽습니다. 실패했더라도 그 사이 스케줄러가
       // 받아 둔 값이 있을 수 있고, 사용자가 브라우저를 새로고침하게 두는 것보다
@@ -122,8 +135,8 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
   }, [reloadAll]);
 
   const value = useMemo(
-    () => ({ token, collecting, message, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized }),
-    [token, collecting, message, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized],
+    () => ({ token, collecting, message, failed, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized }),
+    [token, collecting, message, failed, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized],
   );
 
   return (

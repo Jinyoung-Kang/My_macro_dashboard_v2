@@ -53,7 +53,7 @@ afterEach(() => {
 describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아이콘 (QA-552)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 글이 '백엔드 API(http://127.0.0.1:18082)에 연결하지 못했습니다'로 시작했고(160px에서 실패 낱말이 잘림),
   // 안내 p가 'max-w-40 truncate text-xs leading-5 text-text-3 xl:max-w-72' — 경고 글색·아이콘·'주의: '가 없었습니다.
-  it.fails("백엔드에 닿지 못하면(NetworkError) '새로고침하지 못했습니다 — 사유'를 경고 톤과 아이콘으로, 전체 글은 title", async () => {
+  it("백엔드에 닿지 못하면(NetworkError) '새로고침하지 못했습니다 — 사유'를 경고 톤과 아이콘으로, 전체 글은 title", async () => {
     api.apiPost.mockRejectedValue(new NetworkError(NETWORK_REASON));
     const { button, status } = renderRefresh();
     fireEvent.click(button);
@@ -66,7 +66,7 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 수집기에 닿지 못한 200 응답도 성공 글과 같은 회색(text-text-3)이었습니다.
-  it.fails("200이라도 수집을 시작하지 못한 응답(auto 모드 triggered=false — 수집기에 닿지 못함)은 실패 — 서버 글 그대로 경고 톤", async () => {
+  it("200이라도 수집을 시작하지 못한 응답(auto 모드 triggered=false — 수집기에 닿지 못함)은 실패 — 서버 글 그대로 경고 톤", async () => {
     api.apiPost.mockResolvedValue({ readMode: "auto", triggered: false, message: COLLECTOR_DOWN });
     const { button, status } = renderRefresh();
     fireEvent.click(button);
@@ -75,7 +75,7 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 더보기(좁은 화면)의 안내도 실패·성공이 같은 회색 글이었습니다.
-  it.fails("더보기의 폭 전체 단추(block) 아래 안내도 실패면 경고 톤 + 아이콘 — 줄바꿈이라 말줄임은 없다", async () => {
+  it("더보기의 폭 전체 단추(block) 아래 안내도 실패면 경고 톤 + 아이콘 — 줄바꿈이라 말줄임은 없다", async () => {
     api.apiPost.mockRejectedValue(new NetworkError(NETWORK_REASON));
     const { button, status } = renderRefresh("block");
     fireEvent.click(button);

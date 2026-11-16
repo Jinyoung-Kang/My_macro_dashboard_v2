@@ -25,7 +25,7 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname, useRouter: () => router }));
 
 const signal = vi.hoisted(() => ({
-  token: 0, reloadAll: () => {}, notifyUnauthorized: () => {}, requestRefresh: vi.fn(), collecting: false, message: null as string | null,
+  token: 0, reloadAll: () => {}, notifyUnauthorized: () => {}, requestRefresh: vi.fn(), collecting: false, message: null as string | null, failed: false,
 }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
@@ -65,6 +65,7 @@ beforeEach(() => {
   signal.requestRefresh.mockReset();
   signal.collecting = false;
   signal.message = null;
+  signal.failed = false;
 });
 
 afterEach(() => {
