@@ -155,6 +155,26 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(row).not.toContain("flex-wrap");
   });
 
+  // QA-597: 읽는 중인 링크 타일은 이름 칸('S&P 500')과 안의 자리표시 이름('S&P 500 불러오는 중')이 함께 링크 이름이 되어
+  // 'S&P 500 S&P 500 불러오는 중'으로 이름이 두 번 읽혔습니다(QA 스택 홈 여섯 타일, CDP 접근성 트리).
+  // 수정 전(재현 커밋에서는 it.fails) 링크 이름은 'S&P 500 S&P 500 불러오는 중'이었습니다.
+  it.fails("읽는 중인 링크 타일의 이름은 '{이름} 불러오는 중' 한 번 — 이름 칸은 읽는 동안 읽어 주기에서 뺀다, 묶음 타일은 그대로 (QA-597)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "sp500", label: "S&P 500", value: null, pending: true, href: "/markets/i/sp500" },
+          { key: "kospi", label: "코스피", value: null, pending: true },
+        ]}
+      />,
+    );
+    const link = screen.getByRole("link", { name: "S&P 500 불러오는 중" });
+    expect(within(link).getByRole("status").getAttribute("aria-label")).toBe("S&P 500 불러오는 중");
+    expect(within(link).getByRole("status", { name: "S&P 500 불러오는 중" })).toBeTruthy();
+    // 링크가 아닌 타일은 묶음 이름(aria-label)이 이름 그대로입니다.
+    expect(within(tile("코스피")).getByRole("status", { name: "코스피 불러오는 중" })).toBeTruthy();
+  });
+
   it("상태 글(오류·주의)은 아이콘 + 읽어 주는 머리말 + 글 — 색만으로 뜻을 전하지 않는다", () => {
     render(
       <KpiStrip
