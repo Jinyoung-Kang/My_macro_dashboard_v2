@@ -38,7 +38,7 @@ const ICON_BUTTON =
  *   줄지 않음, QA-547). 안내가 없으면 상자는 단추 폭 그대로입니다(shrink-0 — 늘 38px 하한을 두면 단추가 8px 왼쪽으로 밀림).
  *
  * 실패(훅의 failed — 요청 실패·수집기에 닿지 못함)면 두 변형 모두 안내를 경고 톤 + 아이콘(sr-only '주의: ')으로 그립니다 — 같은 상단바의 로그아웃 실패
- * (AccountMenu)·더보기의 로그아웃 실패(AccountBox)와 같은 꼴이고, 글은 결과 낱말이 먼저입니다('새로고침하지 못했습니다 — 사유', QA-552). 성공 글은
+ * (AccountMenu)·더보기의 로그아웃 실패(AccountBox)와 같은 꼴이고, 글은 짧은 결과 낱말이 먼저입니다('새로고침 실패 — 사유', QA-552). 성공 글은
  * 회색(text-3) 그대로입니다.
  */
 export function RefreshButton({ user, variant = "block" }: { user?: SessionUser; variant?: "block" | "icon" }) {

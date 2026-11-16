@@ -5,9 +5,9 @@
  * QA-552: 넓은 화면 상단바의 안내는 단추 왼쪽 한 줄(160px, xl 288px 말줄임 — 전체 글은 title)인데, 실패 글이 사유부터 시작하고('백엔드 API(<주소>)에
  * 연결하지 못했습니다' — 훅이 오류 글을 그대로 넣음) 성공 글과 같은 회색(text-3)이었습니다. QA 스택 1024에서 막힌 POST 뒤 보이는 글은
  * '백엔드 API(http://127.0.0.1:...'뿐이라 실패를 뜻하는 낱말이 잘려 나갔고, 톤·아이콘으로도 실패가 구분되지 않았습니다(전체 글은 마우스 전용 title).
- * 같은 상단바의 로그아웃 실패(결과 낱말 먼저 '로그아웃하지 못했습니다 — 사유', 경고 톤 + 아이콘)와 같은 꼴로 둡니다: 훅이 실패 여부(failed)를 내보내고,
- * 요청 실패는 '새로고침하지 못했습니다 — 사유', 200이라도 수집을 시작하지 못한 응답(store_only가 아니고 triggered=false — 백엔드 '수집기에 연결하지
- * 못했습니다…')은 실패로 봅니다. 성공 글은 지금 그대로(회색 말줄임)입니다.
+ * 같은 상단바의 로그아웃 실패(결과 낱말 먼저, 경고 톤 + 아이콘)와 같은 꼴로 둡니다: 훅이 실패 여부(failed)를 내보내고, 요청 실패와 200이라도 수집을
+ * 시작하지 못한 응답(store_only가 아니고 triggered=false — 백엔드 '수집기에 연결하지 못했습니다…') 모두 '새로고침 실패 — 사유'(검토 뒤 짧은 결과 낱말로)
+ * 입니다. 성공 글은 지금 그대로(회색 말줄임)입니다.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,11 +53,11 @@ afterEach(() => {
 describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아이콘 (QA-552)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 글이 '백엔드 API(http://127.0.0.1:18082)에 연결하지 못했습니다'로 시작했고(160px에서 실패 낱말이 잘림),
   // 안내 p가 'max-w-40 truncate text-xs leading-5 text-text-3 xl:max-w-72' — 경고 글색·아이콘·'주의: '가 없었습니다.
-  it("백엔드에 닿지 못하면(NetworkError) '새로고침하지 못했습니다 — 사유'를 경고 톤과 아이콘으로, 전체 글은 title", async () => {
+  it("백엔드에 닿지 못하면(NetworkError) '새로고침 실패 — 사유'를 경고 톤과 아이콘으로, 전체 글은 title", async () => {
     api.apiPost.mockRejectedValue(new NetworkError(NETWORK_REASON));
     const { button, status } = renderRefresh();
     fireEvent.click(button);
-    const full = `새로고침하지 못했습니다 — ${NETWORK_REASON}`;
+    const full = `새로고침 실패 — ${NETWORK_REASON}`;
     await waitFor(() => expect(status.getAttribute("title")).toBe(full));
     expect(status.querySelector(".truncate")?.textContent).toBe(full);
     expectWarn(status);
@@ -66,11 +66,11 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 수집기에 닿지 못한 200 응답도 성공 글과 같은 회색(text-text-3)이었습니다.
-  it("200이라도 수집을 시작하지 못한 응답(auto 모드 triggered=false — 수집기에 닿지 못함)은 실패 — 서버 글 그대로 경고 톤", async () => {
+  it("200이라도 수집을 시작하지 못한 응답(auto 모드 triggered=false — 수집기에 닿지 못함)은 실패 — 서버 글에 결과 낱말 머리말을 붙여 경고 톤", async () => {
     api.apiPost.mockResolvedValue({ readMode: "auto", triggered: false, message: COLLECTOR_DOWN });
     const { button, status } = renderRefresh();
     fireEvent.click(button);
-    await waitFor(() => expect(status.getAttribute("title")).toBe(COLLECTOR_DOWN));
+    await waitFor(() => expect(status.getAttribute("title")).toBe(`새로고침 실패 — ${COLLECTOR_DOWN}`));
     expectWarn(status);
   });
 
@@ -79,7 +79,7 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
     api.apiPost.mockRejectedValue(new NetworkError(NETWORK_REASON));
     const { button, status } = renderRefresh("block");
     fireEvent.click(button);
-    await waitFor(() => expect(status.textContent).toContain(`새로고침하지 못했습니다 — ${NETWORK_REASON}`));
+    await waitFor(() => expect(status.textContent).toContain(`새로고침 실패 — ${NETWORK_REASON}`));
     expectWarn(status);
     expect(status.querySelector(".truncate")).toBeNull();
   });
@@ -112,7 +112,7 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
   // 서버 글로 시작해('수집기에 연…'·'수집기…') 결과 낱말이 문장 끝에 있었습니다. 두 갈래 모두 짧은 결과 낱말 '새로고침 실패'를 앞에 둡니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 title이 '새로고침하지 못했습니다 — 백엔드 API(…)에 연결하지 못했습니다'와
   // '수집기에 연결하지 못했습니다. 저장본을 그대로 표시합니다.'(머리말 없음)였습니다.
-  it.fails("두 실패 갈래 모두 짧은 결과 낱말이 먼저 — 요청 실패도, 수집기에 닿지 못한 200 응답도 '새로고침 실패 — 사유' (QA-552)", async () => {
+  it("두 실패 갈래 모두 짧은 결과 낱말이 먼저 — 요청 실패도, 수집기에 닿지 못한 200 응답도 '새로고침 실패 — 사유' (QA-552)", async () => {
     api.apiPost.mockRejectedValue(new NetworkError(NETWORK_REASON));
     const first = renderRefresh();
     fireEvent.click(first.button);
