@@ -280,6 +280,11 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
     // 좁은 화면에는 없다(지금 구조 — 명세 §5)
     expect(crumbs().className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
     expect(crumbs().closest("header")).not.toBeNull();
+    // 링크는 글 줄(text-sm 20px)에 위아래 2px — 누르는 높이 24px(넓은 화면 작은 조작, 명세 §3-7)
+    for (const link of within(crumbs()).getAllByRole("link")) {
+      expect(link.className.split(/\s+/)).toEqual(expect.arrayContaining(["py-0.5", "truncate"]));
+    }
+    expect(within(crumbs()).getByRole("list").className.split(/\s+/)).toContain("text-sm");
   });
 
   it("종목 상세는 시장 › 종목(미국) › 코드 — 중간 칸은 주소가 없어 링크 없는 글", () => {
