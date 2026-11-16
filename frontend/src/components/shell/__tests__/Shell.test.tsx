@@ -288,6 +288,23 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
     expect(within(crumbs()).getByRole("list").className.split(/\s+/)).toContain("text-sm");
   });
 
+  // QA-548: 칸(li)마다 flex-shrink 1이라 모자란 폭이 칸 폭 비율대로 모든 칸에 나뉘어, 1~5px만 모자라도 짧은 앞 칸까지 함께 말줄임됐습니다 —
+  // QA 스택 1280(xl에서 앱 이름·검색 단추·장 시계가 한꺼번에 넓어져 자리 251px, 1024의 267px보다 좁음) /institutions/0001608046이 5.2px 모자라
+  // '기... › 13F 포트폴... › CIK 0001608...'(27.4·95.8·102.8px), /krx가 '더... › 한국 ... › 파생·투기세력(K...'. 마지막 칸(대상·지금 화면 — 전체 글은
+  // title)만 큰 축소 비중(shrink-1000)을 줘 모자란 폭을 먼저 받게 하고, 앞 칸은 1·min-w-0 그대로 둡니다(앞 칸을 shrink-0으로 두면 자리가 아주 좁을 때
+  // 칸이 검색 단추를 덮음). 마지막 칸이 0이 된 뒤에야 앞 칸이 줄어듭니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 세 칸 모두 'flex min-w-0 items-center gap-1'(축소 비중 1)이었습니다.
+  it.fails("모자란 폭은 마지막 칸이 먼저 받는다 — 마지막 칸(li)만 축소 비중 1000(shrink-1000), 앞 칸은 1·min-w-0 그대로 (QA-548)", () => {
+    renderShell(MEMBER_PRO, { path: "/institutions/0001608046" });
+    const classes = crumbItems().map((item) => item.className.split(/\s+/));
+    expect(classes).toHaveLength(3);
+    expect(classes[2]).toContain("shrink-1000");
+    for (const front of classes.slice(0, 2)) {
+      expect(front).not.toContain("shrink-1000");
+      expect(front).toContain("min-w-0");
+    }
+  });
+
   it("종목 상세는 시장 › 종목(미국) › 코드 — 중간 칸은 주소가 없어 링크 없는 글", () => {
     renderShell(MEMBER_PRO, { path: "/s/us/NVDA" });
     expect(crumbItems().map((item) => item.textContent)).toEqual(["시장", "›종목(미국)", "›NVDA"]);
