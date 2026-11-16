@@ -16,6 +16,7 @@ import * as Empty from "../Empty";
 import * as EntityHeader from "../EntityHeader";
 import * as Hero from "../Hero";
 import * as patterns from "../index";
+import * as InspectorFrame from "../InspectorFrame";
 import * as KpiStrip from "../KpiStrip";
 import * as MasterDetail from "../MasterDetail";
 import * as PropertyList from "../PropertyList";
@@ -35,6 +36,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   Empty,
   EntityHeader,
   Hero,
+  InspectorFrame,
   KpiStrip,
   MasterDetail,
   PropertyList,
@@ -78,6 +80,8 @@ describe("components/patterns 배럴", () => {
         "EntityHeader",
         "EstimateBadge",
         "Hero",
+        "InspectorFrame",
+        "InspectorTrigger",
         "KpiStrip",
         "MasterDetail",
         "PropertyList",

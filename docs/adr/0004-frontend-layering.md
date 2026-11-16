@@ -16,7 +16,8 @@
     `components/patterns/__tests__/PropertyList.test.tsx`(속성 목록), `components/patterns/__tests__/KpiStrip.test.tsx`(KPI 띠),
     `components/patterns/__tests__/EntityHeader.test.tsx`(대상 머리), `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`(칸 틀),
     `components/patterns/__tests__/MasterDetail.test.tsx`(목록-검사),
-    `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`(긴 화면 목차)
+    `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`(긴 화면 목차),
+    `components/patterns/__tests__/InspectorFrame.test.tsx`(검사 칸 틀)
 
 ## 배경
 
@@ -125,3 +126,9 @@
   `lib/sectionIndex`(하위 칸이 부모보다 앞인 고르는 차례)가 정합니다. 내비라 지금 칸 막대·밑줄에 강조 파랑을 써서 데이터 칸 강조색 금지 목록에는 넣지 않습니다.
   처음 쓰는 곳은 매크로(P5a — 절 주소의 정본은 `lib/marketSections`), P6 프레임·설정, P7 저장소 상태. 지키는 시험은
   `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`.
+- 검사 칸 틀 `components/patterns/InspectorFrame.tsx` — 화면 패턴(줄 안에 조작이 있는 표·목록 + 고른 줄의 옆 검사 칸 또는 공용 `Dialog`(위쪽 고정) — 배치 md(틀 32rem부터 옆 15rem)·
+  lg(52rem부터 옆 18rem)·dialog(늘 대화상자), 줄 단추 `InspectorTrigger`(중립 잉크·좁은 화면 44px), 표에는 `shownKey`를 고른 행으로 넘김, 기본 키(`defaultKey` — 콜백 없음)·
+  자료에서 사라진 키 안내·Esc(사용자가 고른 것만 풂)·대화상자 배치에서 옆 칸 배치로 바뀌면 열린 키를 고름 — 목록-검사의 QA-590과 같은 규칙). 틀 폭 재기는 화면 층 훅
+  `hooks/useSideBySide`를 목록-검사(`MasterDetail`)와 함께 씁니다(기준 폭 인자). 줄 전체가 단추인 목록은 `MasterDetail`, 줄 안에 링크·단추가 있는 표는 이 틀입니다.
+  데이터 칸 강조색 금지 목록에 넣습니다. 처음 쓰는 곳은 매크로 지표 표(lg)·섹터 표(dialog)(P5a), P5b 보유 표·P6 계좌 비교 표가 같은 틀을 씁니다.
+  지키는 시험은 `components/patterns/__tests__/InspectorFrame.test.tsx`.

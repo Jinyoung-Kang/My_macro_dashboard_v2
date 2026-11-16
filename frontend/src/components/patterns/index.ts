@@ -13,6 +13,7 @@ export { type Column, DataTable } from "./DataTable";
 export { Empty } from "./Empty";
 export { type EntityChange, EntityHeader, type EntityKind, type EntityKindSpec } from "./EntityHeader";
 export { Hero } from "./Hero";
+export { type InspectorContext, InspectorFrame, type InspectorLayout, InspectorTrigger, type InspectorTriggerProps } from "./InspectorFrame";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
 export { MasterDetail } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";
