@@ -51,6 +51,8 @@ function openAccountMenu(): HTMLElement {
 }
 const bottomNav = () => screen.getByRole("navigation", { name: "하단 메뉴" });
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
+/** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(W2) 탭 칸만 고릅니다(P3 계획 §3-5-2). */
+const tabLinkLabels = (scope: HTMLElement) => [...scope.querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent ?? "");
 
 beforeEach(() => {
   api.apiGetShared.mockReset();
@@ -137,7 +139,7 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
   it("운영자에게는 왼쪽 내비가 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기, 하단 탭은 정보 수집 없이 여섯 칸(더보기에서 엶)", () => {
     renderShell(LOCAL_OWNER);
 
-    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
+    expect(tabLinkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
     expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/info/overview");
     expect(within(mainNav()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe("/search");
     expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "더보기"]);
@@ -149,7 +151,7 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
 
   it("회원·데모 열람에게는 모의매매 탭이 없다(다섯 칸) — 정보 검색은 보인다(D-1)", () => {
     renderShell(MEMBER_PRO);
-    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
+    expect(tabLinkLabels(mainNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     expect(bottomNav().className).toContain("grid-cols-5");
     cleanup();
@@ -180,15 +182,19 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
     expect(within(mainNav()).getByRole("link", { name: "시장" }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("왼쪽 내비의 지금 탭은 왼쪽 3px 막대(고대비에서는 같은 폭의 왼쪽 테두리)·굵은 본문색 글 — 글자는 강조 파랑이 아니다(QA-459, 작업대 명세 §3-8)", () => {
+  it("왼쪽 내비의 가장 깊은 지금 칸(/macro에서는 '매크로 지표')은 왼쪽 3px 막대(고대비에서는 같은 폭의 왼쪽 테두리)·굵은 본문색 글, 펼친 지금 탭('시장')은 굵은 본문색 글만 — 글자는 강조 파랑이 아니다(QA-459, 작업대 명세 §3-8·§5)", () => {
     renderShell(MEMBER_PRO, { path: "/macro" });
-    const current = within(mainNav()).getByRole("link", { name: "시장" }).className.split(/\s+/);
+    const current = within(mainNav()).getByRole("link", { name: "매크로 지표" }).className.split(/\s+/);
     expect(current).toEqual(
       expect.arrayContaining(["font-semibold", "text-text", "before:w-[3px]", "before:bg-accent", "forced-colors:before:border-l-[3px]"]),
     );
     expect(current).not.toContain("text-accent");
+    const tab = within(mainNav()).getByRole("link", { name: "시장" }).className.split(/\s+/);
+    expect(tab).toEqual(expect.arrayContaining(["font-semibold", "text-text"]));
+    expect(tab.some((name) => name.startsWith("before:") || name.startsWith("forced-colors:"))).toBe(false);
     const other = within(mainNav()).getByRole("link", { name: "홈" }).className.split(/\s+/);
     expect(other.some((name) => name.startsWith("before:") || name.startsWith("forced-colors:"))).toBe(false);
+    expect(mainNav().querySelector(".text-accent")).toBeNull();
   });
 });
 
@@ -367,6 +373,13 @@ describe("본문", () => {
     const classes = screen.getByRole("link", { name: "본문으로 건너뛰기" }).className.split(/\s+/);
     expect(classes).toContain("focus:not-sr-only");
     expect(classes).toEqual(expect.arrayContaining(["focus:px-4", "focus:py-2"]));
+  });
+
+  it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(220px)로 둔다 — 고정 위치 덮개(정보 검색 아래 시트)가 메뉴 옆에서 시작", () => {
+    renderShell(MEMBER_PRO);
+    const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
+    expect(root.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-col", "lg:[--shell-nav-w:220px]"]));
+    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-[220px]");
   });
 
   it("좁은 화면에서는 하단 탭 바(64px + 안전 영역)만큼 아래 여백, 데스크톱에서는 되돌린다", () => {

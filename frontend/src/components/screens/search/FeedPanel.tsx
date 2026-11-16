@@ -764,13 +764,13 @@ export function FeedPanel({
           {body}
         </div>
         {/* 오른쪽 칸 — xl 미만은 가운데 아래(속성)이고, 고른 줄(묶음 줄 포함)의 미리 보기는 아래 시트(lg는 하단 탭 바가 없어 바닥에, 왼쪽 메뉴
-            232px 옆, 본문 스크롤 막대 옆까지). */}
+            옆(셸 변수 --shell-nav-w — 220px, 접으면 48px), 본문 스크롤 막대 옆까지). */}
         <div
           ref={sheetRef}
           style={sheetStyle(sheet)}
           className={`${
             previewOpen
-              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[232px]"
+              ? "fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 max-h-[50dvh] overflow-y-auto border-t border-border-strong bg-surface shadow-overlay lg:bottom-0 lg:left-[var(--shell-nav-w)]"
               : "border-t border-border"
           } p-3 xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:border-l xl:border-t-0 xl:shadow-none`}
         >

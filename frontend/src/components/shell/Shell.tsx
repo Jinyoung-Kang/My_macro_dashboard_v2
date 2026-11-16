@@ -17,6 +17,8 @@ import { TopBar } from "./TopBar";
  * 좁은 화면은 지금 구조 그대로입니다 — 상단바 → 하위 메뉴 줄 → 본문 → 아래 탭 바(왼쪽 메뉴는 숨김). DOM 순서는 두 폭이 같습니다
  * (건너뛰기 링크 → 상단바 → 왼쪽 메뉴·하위 메뉴 줄·본문 → 탭 바). 감싼 줄(div)에는 lg 미만 overflow 클래스를 두지 않습니다(QA-450 — 아래, ShellQaSticky.test).
  * 툴팁 묶음(TooltipProvider — 여는 지연 300ms)은 셸에 하나입니다.
+ * 셸 뿌리는 넓은 화면에서 왼쪽 메뉴의 폭을 CSS 변수 --shell-nav-w(220px)로 둡니다 — 화면에 고정 위치로 붙는 덮개(정보 검색의 아래 미리 보기 시트)가 왼쪽 메뉴
+ * 옆에서 시작하게(그 화면이 폭 숫자를 따로 들고 있지 않게).
  *
  * 세션은 다시 읽지 않습니다 — 사용자·읽기 모드·읽지 않은 알림 수는 대시보드 레이아웃이 한 번 읽어 넘깁니다(레이아웃 세션 테스트가
  * 세션 호출 횟수를 고정). 읽기 모드는 본문 화면(더보기)도 읽도록 context로 내려 줍니다.
@@ -52,7 +54,7 @@ export function Shell({
   return (
     <ReadModeProvider readMode={readMode}>
       <TooltipProvider>
-        <div className="min-h-screen lg:flex lg:h-screen lg:flex-col">
+        <div className="min-h-screen lg:flex lg:h-screen lg:flex-col lg:[--shell-nav-w:220px]">
           {/* 안쪽 여백은 focus: 변형으로 둡니다 — focus:not-sr-only가 padding:0을 다시 넣고 특이도가 높아 변형 없는 px-4·py-2를 덮었습니다(QA-502). */}
           <a
             href="#main"
