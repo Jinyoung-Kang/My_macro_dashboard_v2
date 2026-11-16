@@ -183,7 +183,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
               ) : quoteState.error ? (
                 <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
               ) : quoteState.data ? (
-                <p className="text-sm text-text-2">시세를 받지 않아 핵심 지표가 없습니다.</p>
+                <p className="break-keep text-sm text-text-2">시세를 받지 않아 핵심 지표가 없습니다.</p>
               ) : (
                 <Skeleton lines={4} label="핵심 지표를 불러오는 중" />
               )}
@@ -370,8 +370,8 @@ function HoldersPanel({ query }: { query: string }) {
         }
         emptyText={
           <div role="status" className="flex flex-col gap-1 text-sm">
-            <p className="font-medium text-text">{noMatch.title}</p>
-            <p className="text-text-2">{noMatch.note}</p>
+            <p className="break-keep font-medium text-text">{noMatch.title}</p>
+            <p className="break-keep text-text-2">{noMatch.note}</p>
           </div>
         }
         renderItem={(row) => (

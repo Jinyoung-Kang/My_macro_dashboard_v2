@@ -82,7 +82,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
     return (
       <div className={ROOT}>
         <PageHeader title="지표를 찾지 못했습니다" />
-        <p className="text-sm text-text-2">
+        <p className="break-keep text-sm text-text-2">
           매크로 카드 저장본에 ‘{indicatorKey}’ 지표가 없습니다.{" "}
           <Link href={MARKET_HREF} className="text-text underline underline-offset-2">
             매크로 지표 전체 보기
