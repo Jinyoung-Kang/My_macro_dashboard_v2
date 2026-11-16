@@ -395,7 +395,8 @@ function HoldersPanel({ query }: { query: string }) {
         renderDetail={(row) => (
           <div className="flex min-w-0 flex-col gap-2">
             <PropertyList items={propertyItems(holderDetailItems(row))} />
-            <Link href={institutionHref(row.cik)} className={`${LINK_CLASSES} text-sm`}>
+            {/* 링크는 자기 줄에서 글 폭만(self-start) — flex-col 상자의 늘림을 받으면 검사 칸·대화상자 폭 전체가 누르는 자리였습니다(QA-582). */}
+            <Link href={institutionHref(row.cik)} className={`${LINK_CLASSES} self-start text-sm`}>
               기관 상세 열기
             </Link>
           </div>

@@ -240,8 +240,9 @@ function HoldingsPanel({ data, error, onRetry }: { data: PortfolioResponse | nul
           return (
             <div className="flex min-w-0 flex-col gap-2">
               <PropertyList items={propertyItems(holdingDetailItems(holding))} />
+              {/* 링크는 자기 줄에서 글 폭만(self-start) — flex-col 상자의 늘림을 받으면 검사 칸·대화상자 폭 전체가 누르는 자리였습니다(QA-582). */}
               {search ? (
-                <Link href={search.href} className={`${LINK_CLASSES} text-sm`}>
+                <Link href={search.href} className={`${LINK_CLASSES} self-start text-sm`}>
                   정보 검색에서 찾기
                 </Link>
               ) : null}

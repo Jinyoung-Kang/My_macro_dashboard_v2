@@ -80,7 +80,7 @@ function expectTextWidth(link: HTMLElement) {
 
 describe("목록-검사의 따로 선 링크는 글 폭만 누르는 자리 (QA-582)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 두 링크 모두 self-start가 없어 대화상자 폭 전체로 늘어났습니다.
-  it.fails("좁은 화면 대화상자 — 종목 '기관 상세 열기'와 기관 '정보 검색에서 찾기'", async () => {
+  it("좁은 화면 대화상자 — 종목 '기관 상세 열기'와 기관 '정보 검색에서 찾기'", async () => {
     renderAs(<StockDetailScreen market="us" code="SYNL" />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 기관" }));
     fireEvent.click(within(await screen.findByRole("list", { name: "13F 보유 기관" })).getByRole("button"));
@@ -93,7 +93,7 @@ describe("목록-검사의 따로 선 링크는 글 폭만 누르는 자리 (QA-
     expectTextWidth(within(await screen.findByRole("dialog", { name: "SYNTHETIC LINK INC" })).getByRole("link", { name: "정보 검색에서 찾기" }));
   });
 
-  it.fails("넓은 화면 옆 검사 칸 — 종목 '기관 상세 열기'와 기관 '정보 검색에서 찾기'", async () => {
+  it("넓은 화면 옆 검사 칸 — 종목 '기관 상세 열기'와 기관 '정보 검색에서 찾기'", async () => {
     stubWide();
     renderAs(<StockDetailScreen market="us" code="SYNL" />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 기관" }));
