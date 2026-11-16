@@ -401,7 +401,7 @@ describe("정보 검색으로 넘기기(ADR 0041)", () => {
 // (D1 QA 스택 확인 — search-input-native-clear-x, 개편 전부터). 고치기 전 입력칸 클래스는 8개
 // ["h-12", "min-w-0", "flex-1", "bg-transparent", "text-[17px]", "text-text", "outline-none", "placeholder:text-text-3"]로 지우기 X를 숨기는 변형이 없었다.
 describe("입력칸(QA-515)", () => {
-  it.fails("브라우저 기본 지우기 X를 숨긴다 — 휴대폰 자판의 검색 키를 위해 type=search는 그대로", () => {
+  it("브라우저 기본 지우기 X를 숨긴다 — 휴대폰 자판의 검색 키를 위해 type=search는 그대로", () => {
     openSearch();
     expect(input().getAttribute("type")).toBe("search");
     expect(input().className.split(/\s+/)).toContain("[&::-webkit-search-cancel-button]:hidden");

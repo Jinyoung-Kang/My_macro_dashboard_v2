@@ -204,7 +204,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             setActive(0);
           }}
           onKeyDown={onInputKeyDown}
-          className="h-12 min-w-0 flex-1 bg-transparent text-[17px] text-text outline-none placeholder:text-text-3"
+          // 브라우저 기본 지우기 X는 숨깁니다(QA-515) — 어두운 화면에서 굵은 흰색으로 그려져 바로 옆 대화상자 닫기 X와 헷갈렸습니다. type=search는
+          // 휴대폰 자판의 검색 키 때문에 그대로 두고, 따로 지우기 단추는 두지 않습니다(Esc·닫기로 닫으면 다음에 빈 칸으로 열림).
+          className="h-12 min-w-0 flex-1 bg-transparent text-[17px] text-text outline-none placeholder:text-text-3 [&::-webkit-search-cancel-button]:hidden"
         />
       </div>
 
