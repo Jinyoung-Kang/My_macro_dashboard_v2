@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import { underlineTabClasses } from "@/components/ui/classes";
 import { LockIcon } from "@/components/ui/icons";
+import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { lockedFor } from "@/lib/access";
 import { subNav } from "@/lib/nav";
 import type { SessionUser } from "@/lib/types";
@@ -13,6 +15,8 @@ import type { SessionUser } from "@/lib/types";
  * 준비 중인 화면(lib/nav upcoming — 지금은 없음, 예전 모의매매 한국)은 링크 없이 이름만 흐리게 보이고, 언제 여는지("2단계")를 작은 표시로 붙입니다 — title이 아니라
  * 보이는 글이라 키보드·터치 사용자도 봅니다. 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내).
  * 고른 링크의 aria-current는 그 주소 그대로면 "page", 그 화면의 아래 주소(/paper/us/holdings)면 "true"입니다(lib/nav currentAria).
+ * 줄이 화면보다 길면 지금 칸과 Tab으로 옮긴 칸을 줄 안에 보이게 스크롤합니다(QA-510 — 예전에는 뒤쪽 칸을 연 화면에서 지금 칸이 가려진 채 열림).
+ * 줄의 scrollLeft만 옮기고(창 세로 스크롤은 그대로), 그래서 목록이 위치 기준(relative)입니다(hooks/useScrollStripActive).
  *
  * 모양은 밑줄 탭(`underlineTabClasses` md — 좁은 화면 15px·높이 48px). 준비 중 칸도 같은 높이(min-h-12)·글 크기라 줄 높이가 칸에 따라 바뀌지 않습니다.
  * 모의매매 화면 안의 탭 줄은 한 단계 작은 sm(14px — 좁은 화면 44px)이라 두 줄이 같은 모양으로 겹쳐 위계가 흐려지지 않습니다(명세 §4). 바깥 줄은 폭 전체,
@@ -20,10 +24,13 @@ import type { SessionUser } from "@/lib/types";
  */
 export function SubNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   const model = subNav(pathname, user);
+  const listRef = useRef<HTMLUListElement>(null);
+  // 주소가 바뀔 때마다(줄이 새로 생길 때 포함) 지금 칸을 줄 안에 보이게 — 같은 주소에서 다시 그릴 때는 줄을 움직이지 않음.
+  useScrollStripActive(listRef, pathname);
   if (!model) return null;
   return (
     <nav aria-label={`${model.label} 하위 메뉴`} className="shrink-0 border-b border-border bg-surface lg:hidden">
-      <ul className="mx-auto flex max-w-7xl overflow-x-auto px-1 sm:px-3 lg:px-5">
+      <ul ref={listRef} className="relative mx-auto flex max-w-7xl overflow-x-auto px-1 sm:px-3 lg:px-5">
         {model.items.map((item) => {
           const current = item.href === model.current;
           return (

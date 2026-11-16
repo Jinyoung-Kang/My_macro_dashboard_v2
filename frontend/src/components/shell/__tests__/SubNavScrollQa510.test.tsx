@@ -47,7 +47,7 @@ const strip = (name: string) => screen.getByRole("navigation", { name }).querySe
 
 describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한 칸을 줄 안으로 스크롤한다", () => {
   // 수정 전(재현 커밋에서는 it.fails): scrollLeft 0 그대로 — 여덟째 칸(왼쪽 844 ~ 오른쪽 964px)이 358px 줄 밖에 가려진 채 열림.
-  it.fails("뒤쪽 칸(/info/mechanism — 여덟째)을 연 화면에서는 그 칸이 오른쪽 여백 16px까지 보이게 줄을 스크롤해 둔다", () => {
+  it("뒤쪽 칸(/info/mechanism — 여덟째)을 연 화면에서는 그 칸이 오른쪽 여백 16px까지 보이게 줄을 스크롤해 둔다", () => {
     render(<SubNav pathname="/info/mechanism" user={OWNER} />);
     const list = strip("정보 수집 하위 메뉴");
     expect(screen.getByRole("link", { name: "정보(메커니즘)" }).getAttribute("aria-current")).toBe("page");
@@ -56,7 +56,7 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
   });
 
   // 수정 전(재현 커밋에서는 it.fails): scrollLeft 0 그대로 — 오른쪽이 6px 잘린 셋째 칸(244 ~ 364px)에 Tab으로 가도 줄이 움직이지 않음.
-  it.fails("Tab으로 옮긴 칸이 잘려 있으면 그 칸이 보이게 줄을 스크롤하고, 다 보이는 칸이면 그대로 둔다", () => {
+  it("Tab으로 옮긴 칸이 잘려 있으면 그 칸이 보이게 줄을 스크롤하고, 다 보이는 칸이면 그대로 둔다", () => {
     render(<SubNav pathname="/info/overview" user={OWNER} />);
     const list = strip("정보 수집 하위 메뉴");
     expect(list.scrollLeft).toBe(0);
@@ -73,10 +73,23 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
     expect(list.scrollLeft).toBe(0);
   });
 
-  it("창 세로 스크롤을 건드리는 scrollIntoView는 쓰지 않는다", () => {
+  it("줄이 없던 화면에서 줄이 있는 화면으로 오면 그 줄에서도 지금 칸·포커스한 칸을 보이게 한다 — 같은 주소로 다시 그릴 때는 밀어 둔 줄을 되돌리지 않는다", () => {
+    const { rerender } = render(<SubNav pathname="/" user={OWNER} />);
+    expect(screen.queryByRole("navigation")).toBeNull();
+    rerender(<SubNav pathname="/info/mechanism" user={OWNER} />);
+    const list = strip("정보 수집 하위 메뉴");
+    expect(list.scrollLeft).toBe(622);
+    act(() => screen.getByRole("link", { name: "개요" }).focus());
+    expect(list.scrollLeft).toBe(0);
+    rerender(<SubNav pathname="/info/mechanism" user={OWNER} />);
+    expect(list.scrollLeft).toBe(0);
+  });
+
+  it("창 세로 스크롤을 건드리는 scrollIntoView는 쓰지 않는다 — 줄은 위치 기준(relative)이라 칸의 offsetLeft가 줄 안 좌표", () => {
     const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
     render(<SubNav pathname="/info/mechanism" user={OWNER} />);
     act(() => screen.getByRole("link", { name: "출처 상태" }).focus());
     expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(strip("정보 수집 하위 메뉴").className.split(/\s+/)).toContain("relative");
   });
 });
