@@ -48,6 +48,8 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * - 하위 화면 목록은 nav가 아니라 이름 있는 목록('{탭} 화면')입니다 — '…하위 메뉴' 이름의 내비는 좁은 화면 하위 메뉴 줄 하나로 남습니다.
  * - 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내 — 하위 메뉴 줄과 같음). 준비 중 화면은 링크 없는 흐린 글(aria-disabled).
  * - 탭 링크에는 data-nav-tab을 붙입니다(시험이 탭 링크만 고를 때 — 펼친 하위 칸과 가름).
+ * - 감싼 aside는 이름 있는 보조 영역('왼쪽 메뉴')입니다 — 이름이 없으면 안의 nav '주 메뉴'와 겹치는 이름 없는 랜드마크가 되고, /search에서는 화면 안의
+ *   이름 없는 aside와 갈리지 않았습니다(QA-556, axe landmark-unique).
  *
  * **접힘(48px 아이콘 레일)**: 맨 아래 접기 단추(이름 '왼쪽 메뉴 접기' — 켜고 끄는 단추라 이름은 그대로, aria-pressed가 접힘, 단축키 [ — 명령 팔레트
  * 쪽이 넓은 화면에서만 셸 명령 toggle-nav를 보내고 여기서 받음)로 접고 폅니다. 툴팁은 상태와 상관없이 이름과 같은 글에 단축키를 붙인 '왼쪽 메뉴 접기 ([)'이고
@@ -93,6 +95,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
   return (
     <aside
       ref={asideRef}
+      aria-label="왼쪽 메뉴"
       className="hidden shrink-0 flex-col border-r border-border bg-surface lg:flex lg:w-[var(--shell-nav-w)]"
     >
       <nav ref={navRef} id={navId} aria-label="주 메뉴" className="min-h-0 flex-1 overflow-y-auto p-2">

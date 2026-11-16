@@ -122,7 +122,7 @@ describe("랜드마크", () => {
   // 1024·1440, 개편 전부터). 접기 단추 이름('왼쪽 메뉴 접기')·명세 §5 '왼쪽 나무 메뉴'에 맞춰 이름 '왼쪽 메뉴'를 둡니다(aside를 div로 바꾸는 안도 위반이
   // 없었지만, 메뉴 상자를 closest("aside")로 찾는 시험 넷을 그대로 두려고 이름을 고름). 정보 검색 화면 aside의 이름은 그 화면 정리(P7) 몫입니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 aside에 aria-label·aria-labelledby가 없어 이름 '왼쪽 메뉴'인 complementary가 없었습니다.
-  it.fails("왼쪽 메뉴를 감싼 보조 영역(aside)의 이름은 '왼쪽 메뉴'이고 주 메뉴를 담는다 (QA-556)", () => {
+  it("왼쪽 메뉴를 감싼 보조 영역(aside)의 이름은 '왼쪽 메뉴'이고 주 메뉴를 담는다 (QA-556)", () => {
     render(<SideNav pathname="/search" user={MEMBER} />);
     const region = screen.getByRole("complementary", { name: "왼쪽 메뉴" });
     expect(region.contains(mainNav())).toBe(true);
