@@ -189,7 +189,7 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
 });
 
 describe("MasterDetail — 넓은 화면(검사 칸)", () => {
-  it("고른 줄이 없으면 검사 칸에 안내 글, 줄을 누르면 aria-current와 검사 칸(제목 h3 = 줄 이름)", () => {
+  it("고른 줄이 없으면 검사 칸에 안내 글, 줄을 누르면 aria-current와 검사 칸(영역 이름 = 목록 이름 — 줄 이름, 제목 h3 = 줄 이름)", () => {
     stubWide();
     renderList();
     const inspector = screen.getByRole("region", { name: "상위 보유 종목 — 고른 줄 없음" });
@@ -198,7 +198,8 @@ describe("MasterDetail — 넓은 화면(검사 칸)", () => {
     expect(rows()[0].getAttribute("aria-haspopup")).toBeNull();
     fireEvent.click(row("Bank of America"));
     expect(row("Bank of America").getAttribute("aria-current")).toBe("true");
-    const region = screen.getByRole("region", { name: "Bank of America" });
+    // 영역 이름은 목록 이름 + 고른 줄 이름(무엇을 위한 칸인지 — 낭독기 영역 목록), 제목 h3은 줄 이름
+    const region = screen.getByRole("region", { name: "상위 보유 종목 — Bank of America" });
     expect(within(region).getByRole("heading", { level: 3, name: "Bank of America" })).toBeTruthy();
     expect(within(region).getByText("060505104")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();

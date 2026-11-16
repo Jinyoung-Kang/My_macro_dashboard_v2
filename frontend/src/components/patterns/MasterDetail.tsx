@@ -49,7 +49,8 @@ function useSideBySide(ref: RefObject<HTMLDivElement | null>, enabled: boolean):
  *
  * - 넓은 화면(lg 이상 — 왼쪽 메뉴가 보이는 폭, useWideShell)이고 이 틀의 폭이 32rem 이상이면: 목록 오른쪽에 검사 칸(15rem — 크기 질의 @container, 그래서 이
  *   부품의 바깥은 폭을 정해 주는 자리여야 합니다: 격자 minmax(0,1fr)·flex 늘임 등, 내용 폭에 맞춰 줄어드는 부모 안에서는 크기 질의 기준이 0으로 줄어듦).
- *   검사 칸은 고른 줄 이름(h3)으로 이름 붙은 영역이고, 고른 줄이 없으면 안내 글(`inspectorHint`)입니다. 목록이 길어도 고른 줄의 내용이 화면 밖에서 바뀌지
+ *   검사 칸은 이름 있는 영역 '{목록 이름} — {고른 줄 이름}'(낭독기 영역 목록에서 무엇을 위한 칸인지 보이게 — 고른 줄이 없으면 '{목록 이름} — 고른 줄 없음')이고,
+ *   고른 줄 이름은 제목(h3)으로도 보입니다. 고른 줄이 없으면 안내 글(`inspectorHint`)입니다. 목록이 길어도 고른 줄의 내용이 화면 밖에서 바뀌지
  *   않게 검사 칸은 스크롤 영역 위쪽에 붙어 따라옵니다(sticky).
  *   고름이 포커스를 따라갑니다 — j/k·↑↓·Home·End가 포커스와 고름을 함께 옮기고, 누르기·Enter·Space도 고릅니다. Esc는 고른 줄이 있을 때만 고름을 풉니다.
  *   줄 단추는 고른 줄에 aria-current="true", 모든 줄에 aria-controls(검사 칸).
@@ -108,7 +109,6 @@ export function MasterDetail<T>({
   const inline = wide && side !== false;
   const baseId = useId();
   const inspectorId = `${baseId}-inspector`;
-  const headingId = `${baseId}-inspector-title`;
   const [ownSelected, setOwnSelected] = useState<string | null>(null);
   // 사용자가 직접 고르거나 닫은 뒤에는 첫 줄을 저절로 고르지 않습니다.
   const [autoOff, setAutoOff] = useState(false);
@@ -218,21 +218,18 @@ export function MasterDetail<T>({
         {list}
         {inline && !hasPlaceholder && items.length > 0 ? (
           // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 목록 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
-          <section id={inspectorId} aria-labelledby={headingId} className="min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-4">
+          <section
+            id={inspectorId}
+            aria-label={`${label} — ${currentItem !== null && currentItem !== undefined ? itemLabel(currentItem) : "고른 줄 없음"}`}
+            className="min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-4"
+          >
             {currentItem !== null && currentItem !== undefined ? (
               <>
-                <h3 id={headingId} className="break-keep wrap-anywhere text-heading-sm text-text">
-                  {itemLabel(currentItem)}
-                </h3>
+                <h3 className="break-keep wrap-anywhere text-heading-sm text-text">{itemLabel(currentItem)}</h3>
                 <div className="mt-2 min-w-0">{renderDetail(currentItem)}</div>
               </>
             ) : (
-              <>
-                <h3 id={headingId} className="sr-only">
-                  {`${label} — 고른 줄 없음`}
-                </h3>
-                <p className="text-sm text-text-2">{inspectorHint}</p>
-              </>
+              <p className="text-sm text-text-2">{inspectorHint}</p>
             )}
           </section>
         ) : null}

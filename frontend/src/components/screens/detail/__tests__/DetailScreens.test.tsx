@@ -207,7 +207,7 @@ describe("종목 상세 — 미국", () => {
     ]);
   });
 
-  it("넓은 화면의 보유 기관 — 줄을 고르면 대화상자 없이 검사 칸(줄 이름의 영역)에 속성과 '기관 상세 열기', j/k로 옮김", async () => {
+  it("넓은 화면의 보유 기관 — 줄을 고르면 대화상자 없이 검사 칸(목록 이름 — 줄 이름의 영역)에 속성과 '기관 상세 열기', j/k로 옮김", async () => {
     stubWide();
     reads = appleReads();
     (reads[HOLDERS] as { rows: unknown[] }).rows.push({
@@ -221,13 +221,13 @@ describe("종목 상세 — 미국", () => {
     const [first, second] = within(list).getAllByRole("button");
     fireEvent.click(first);
     expect(screen.queryByRole("dialog")).toBeNull();
-    const inspector = screen.getByRole("region", { name: "버크셔 해서웨이 (Berkshire Hathaway)" });
+    const inspector = screen.getByRole("region", { name: "13F 보유 기관 — 버크셔 해서웨이 (Berkshire Hathaway)" });
     expect(first.getAttribute("aria-current")).toBe("true");
     expect(within(inspector).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe("/institutions/0001067983");
     expect(within(inspector).getByText("2026-06-30")).toBeTruthy();
     fireEvent.keyDown(first, { key: "j" });
     expect(document.activeElement).toBe(second);
-    expect(screen.getByRole("region", { name: "합성 연기금" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "13F 보유 기관 — 합성 연기금" })).toBeTruthy();
   });
 
   it("가운데 탭 — 개요·뉴스·보유 기관(리서치는 리포트가 있을 때만), 숨긴 탭의 뉴스·13F도 처음에 읽는다", async () => {
@@ -726,13 +726,13 @@ describe("기관 상세", () => {
     };
     renderAs(PRO, <InstitutionDetailScreen cik="0001067983" />);
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
-    const inspector = await screen.findByRole("region", { name: "APPLE INC" });
+    const inspector = await screen.findByRole("region", { name: "상위 보유 종목 — APPLE INC" });
     expect(within(inspector).getByText("037833100").className).toContain("font-mono");
     expect(within(inspector).getByText("\u22121.25%p")).toBeTruthy();
     const second = within(screen.getByRole("list", { name: "상위 보유 종목" })).getByRole("button", { name: /BANK AMER CORP/ });
     fireEvent.click(second);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("region", { name: "BANK AMER CORP" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "상위 보유 종목 — BANK AMER CORP" })).toBeTruthy();
     expect(second.getAttribute("aria-current")).toBe("true");
   });
 
