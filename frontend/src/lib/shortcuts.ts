@@ -23,14 +23,16 @@ export type Shortcut = {
   action: string;
   /** 보이는 조건 — wide: 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만, filter: 지금 화면에 거르기 칸이 있을 때만. */
   when?: "wide" | "filter";
+  /** 입력칸에서는 글자로 들어가는 한 글자 키 — 도움말 창 끝 문장이 보이는 줄 가운데 이 표지가 있는 줄의 키를 적습니다(QA-563). */
+  typesInInput?: true;
 };
 
 /** 단축키 표(닫힌 목록) — 도움말 창이 이 순서로 그립니다. */
 export const SHORTCUTS: readonly Shortcut[] = [
   { id: "palette", keys: { mac: ["⌘K"], other: ["Ctrl K"] }, action: "명령 팔레트(통합 검색) 열기" },
-  { id: "help", keys: { mac: ["?"], other: ["?"] }, action: "단축키 도움말" },
-  { id: "filter", keys: { mac: ["/"], other: ["/"] }, action: "이 화면의 거르기 칸으로", when: "filter" },
-  { id: "toggleNav", keys: { mac: ["["], other: ["["] }, action: "왼쪽 메뉴 접기·펼치기", when: "wide" },
+  { id: "help", keys: { mac: ["?"], other: ["?"] }, action: "단축키 도움말", typesInInput: true },
+  { id: "filter", keys: { mac: ["/"], other: ["/"] }, action: "이 화면의 거르기 칸으로", when: "filter", typesInInput: true },
+  { id: "toggleNav", keys: { mac: ["["], other: ["["] }, action: "왼쪽 메뉴 접기·펼치기", when: "wide", typesInInput: true },
   { id: "close", keys: { mac: ["Esc"], other: ["Esc"] }, action: "열린 창·메뉴 닫기" },
   {
     id: "move",

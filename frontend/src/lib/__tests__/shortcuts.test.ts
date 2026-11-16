@@ -164,9 +164,11 @@ describe("거르기 칸 찾기('/' 규약)", () => {
 });
 
 describe("단축키 표", () => {
-  it("닫힌 표 — 팔레트·도움말·거르기·메뉴 접기·닫기·결과 이동 순서이고, 조건은 거르기(filter)·메뉴 접기(wide)에만", () => {
+  it("닫힌 표 — 팔레트·도움말·거르기·메뉴 접기·닫기·결과 이동 순서이고, 조건은 거르기(filter)·메뉴 접기(wide)에만, 한 글자 키 표지는 ?·/·[에만", () => {
     expect(SHORTCUTS.map((row) => row.id)).toEqual(["palette", "help", "filter", "toggleNav", "close", "move"]);
     expect(SHORTCUTS.filter((row) => row.when).map((row) => [row.id, row.when])).toEqual([["filter", "filter"], ["toggleNav", "wide"]]);
+    // 입력칸에서는 글자로 들어가는 한 글자 키 — 도움말 끝 문장이 보이는 줄 가운데 이 표지가 있는 줄만 적는다(QA-563).
+    expect(SHORTCUTS.filter((row) => row.typesInInput).map((row) => row.id)).toEqual(["help", "filter", "toggleNav"]);
     const palette = SHORTCUTS[0];
     expect(palette.keys).toEqual({ mac: ["⌘K"], other: ["Ctrl K"] });
   });

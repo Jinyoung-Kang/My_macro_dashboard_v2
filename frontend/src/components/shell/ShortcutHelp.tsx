@@ -20,7 +20,8 @@ export function shortcutConditionsNow(): ShortcutConditions {
 
 /**
  * 단축키 도움말 창(작업대 실행 명세 §5 '단축키', P3) — `?`, 계정 메뉴의 '단축키 도움말', 명령 팔레트의 '단축키 도움말' 명령이 엽니다.
- * 줄은 lib/shortcuts의 표에서 가져오고, 지금 쓸 수 없는 줄(좁은 화면의 메뉴 접기, 거르기 칸이 없는 화면의 '/')은 빼고 보입니다.
+ * 줄은 lib/shortcuts의 표에서 가져오고, 지금 쓸 수 없는 줄(좁은 화면의 메뉴 접기, 거르기 칸이 없는 화면의 '/')은 빼고 보입니다. 끝 문장(입력칸에서는
+ * 글자로 들어가는 키)도 보이는 줄 가운데 typesInInput 표지가 있는 줄의 키만 표 순서대로 적습니다(QA-563 — 표에서 뺀 키를 다시 꺼내지 않음).
  * 이 창은 보기만 합니다 — 단축키를 바꾸는 설정은 없습니다.
  */
 export function ShortcutHelp({
@@ -35,6 +36,7 @@ export function ShortcutHelp({
   conditions: ShortcutConditions;
 }) {
   const rows = visibleShortcuts(conditions);
+  const typedKeys = rows.filter((row) => row.typesInInput).flatMap((row) => (isMac ? row.keys.mac : row.keys.other));
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="단축키" size="md">
       <table className="mt-3 w-full border-collapse text-sm">
@@ -70,7 +72,11 @@ export function ShortcutHelp({
           })}
         </tbody>
       </table>
-      <p className="mt-3 text-sm text-text-2">입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?·/·[가 글자로 들어갑니다.</p>
+      {typedKeys.length > 0 && (
+        <p className="mt-3 text-sm text-text-2">
+          입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 {typedKeys.join("·")}가 글자로 들어갑니다.
+        </p>
+      )}
     </Dialog>
   );
 }

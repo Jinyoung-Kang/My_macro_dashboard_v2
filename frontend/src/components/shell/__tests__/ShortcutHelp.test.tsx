@@ -119,7 +119,7 @@ describe("? — 단축키 도움말", () => {
 
 describe("도움말 표 — 줄은 조건대로", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 끝 문단이 고정 글('…?·/·[가 글자로 들어갑니다.')이라 표에서 뺀 '/'·'['도 적었다(QA-563).
-  it.fails("좁은 화면·거르기 칸 없음: 팔레트·도움말·닫기·결과 이동만 — 메뉴 접기([)와 거르기(/)는 빠지고 끝 문장도 ?만 적는다", () => {
+  it("좁은 화면·거르기 칸 없음: 팔레트·도움말·닫기·결과 이동만 — 메뉴 접기([)와 거르기(/)는 빠지고 끝 문장도 ?만 적는다", () => {
     render(<SearchCommand user={MEMBER} />);
     fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
     expect(rows()).toEqual([
@@ -155,7 +155,7 @@ describe("도움말 표 — 줄은 조건대로", () => {
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 끝 문단이 고정 글이라 거르기 칸이 없는 넓은 화면(홈 등)에서도 표에 없는 '/'를 적었다(QA-563).
-  it.fails("넓은 화면·거르기 칸 없음: 거르기(/)만 빠지고 끝 문장은 ?·[", () => {
+  it("넓은 화면·거르기 칸 없음: 거르기(/)만 빠지고 끝 문장은 ?·[", () => {
     stubWide(true);
     render(<SearchCommand user={MEMBER} />);
     fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
