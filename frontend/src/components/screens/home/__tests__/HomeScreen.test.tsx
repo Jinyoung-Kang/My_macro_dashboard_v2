@@ -408,6 +408,34 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(region(ALERTS_REGION)).queryAllByRole("alert")).toHaveLength(0);
   });
 
+  // QA-606: 최근 알림 제목은 한 줄 말줄임(truncate)에 title이 없어, 반 칸(390 312px · 1024 308px · 1280)에서 13F 알림의 기관 이름 뒷부분과 종목 수가
+  // 가려지고 링크가 아닌 종류는 홈에서 전체 제목을 볼 길이 없었습니다(알림 전체 보기로 가야 함). QA-418(관심 대상 이름)과 같은 무늬로 고칩니다.
+  // 수정 전(재현 커밋에서는 it.fails) 두 제목 모두 title이 null, 클래스는 truncate(line-clamp-2 없음)였습니다.
+  it.fails("최근 알림 제목은 두 줄까지(line-clamp-2·낱말 단위 줄바꿈)와 전체 제목 title — 링크가 아닌 13F 알림·관심 대상 링크 모두 (QA-606)", async () => {
+    // 13F 알림 제목은 백엔드 AlertText.institutionNew의 꼴('[13F 신규 편입] {기관 이름} — N종목')에 실제 기관 이름을 넣은 것입니다.
+    const institutionTitle = "[13F 신규 편입] 사우디 국부펀드 (Public Investment Fund - PIF) — 12종목";
+    const watchTitle = "관심 대상 '합성 반도체 지주회사 (Synthetic Semiconductor Holdings Corporation)' 새 글 12건";
+    const response = inbox();
+    response.items = [
+      { ...response.items[0], id: 21, kind: "INSTITUTION_NEW", title: institutionTitle },
+      { ...response.items[1], id: 20, kind: "SEARCH_WATCH", title: watchTitle, payload: { href: "/search?e=us:SYNT&tab=timeline" } },
+    ];
+    reads = { ...happyReads(), [INBOX]: response };
+    renderHome(OWNER);
+    const plain = await within(region(ALERTS_REGION)).findByText(institutionTitle);
+    const link = within(region(ALERTS_REGION)).getByRole("link", { name: watchTitle });
+    expect(plain.tagName).toBe("SPAN");
+    for (const [node, title] of [[plain, institutionTitle], [link, watchTitle]] as const) {
+      const classes = node.className.split(/\s+/);
+      expect(node.getAttribute("title"), title).toBe(title);
+      expect(classes, title).toEqual(expect.arrayContaining(["line-clamp-2", "break-keep", "wrap-anywhere"]));
+      expect(classes, title).not.toContain("truncate");
+    }
+    // 링크는 줄 전체가 누르는 자리(after:absolute inset-0 — 줄 li가 기준)이고 포커스 고리도 그대로입니다.
+    expect(link.className.split(/\s+/)).toEqual(expect.arrayContaining(["after:absolute", "after:inset-0", "focus-visible:outline-2"]));
+    expect(link.closest("li")?.className.split(/\s+/)).toContain("relative");
+  });
+
   it("알림 — 지난 사건(late)은 읽지 않은 수에 들지 않아 강조(점·굵은 글씨) 없이 '지난 사건'", async () => {
     const response = inbox();
     response.items[0] = { ...response.items[0], late: true, read: false };
