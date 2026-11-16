@@ -27,7 +27,7 @@ function shortDate(value: string | null | undefined): string {
   return value && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(5, 10) : (value ?? EMPTY);
 }
 
-/** 판정 근거를 표시 순서대로: [{label, value, asOf}]. */
+/** 판정 근거를 표시 순서대로: [{label, value, asOf, asOfDate}] — asOf는 월-일로 줄인 글, asOfDate는 받은 기준일 그대로(모르면 null). */
 export function regimeInputCells(inputs: RegimeLogEntry["inputs"]) {
   return ORDER.map(({ key, label, format }) => {
     const input: RegimeLogInput | undefined = inputs?.[key];
@@ -37,8 +37,20 @@ export function regimeInputCells(inputs: RegimeLogEntry["inputs"]) {
       label,
       value: value === null || value === undefined || !Number.isFinite(value) ? EMPTY : format(value),
       asOf: input?.asOf ? shortDate(input.asOf) : EMPTY,
+      asOfDate: input?.asOf ?? null,
     };
   });
+}
+
+/**
+ * 판정 기록 한 건의 한 줄 요약(타임라인 줄) — 근거 넷을 '이름 값'으로 잇고(모르는 값은 —), 판정하지 못한 날은 받지 못한 입력 수를 덧붙입니다.
+ * 기준일·사유·규칙 판은 검사 칸에 둡니다.
+ */
+export function regimeLogSummary(entry: Pick<RegimeLogEntry, "inputs" | "missing">): string {
+  const parts = regimeInputCells(entry.inputs).map((cell) => `${cell.label} ${cell.value}`);
+  const missing = (entry.missing ?? []).length;
+  if (missing > 0) parts.push(`받지 못한 입력 ${missing}`);
+  return parts.join(" · ");
 }
 
 /**

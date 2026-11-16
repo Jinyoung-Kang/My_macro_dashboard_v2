@@ -197,7 +197,7 @@ export default function RegimePage() {
           두면 함께 내려가 판정 성과에서 고른 자산·관점이 처음으로 돌아갔습니다(QA-066). */}
       <TrackRecordSection tone={TIMELINE_COLOR} />
 
-      <RegimeLogSection tone={TIMELINE_COLOR} />
+      <RegimeLogSection />
 
       {data && (
         <>

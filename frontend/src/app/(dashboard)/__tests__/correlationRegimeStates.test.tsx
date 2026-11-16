@@ -172,7 +172,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
     { name: "판정 성과", make: () => <TrackRecordSection tone={{}} />, card: "판정 성과",
       bodies: { [endpoints.insight.regimeTrackRecord("SPY")]: { available: false, locked: false, message: "가격이 부족합니다.",
         asset: "SPY", assetLabel: "S&P 500 (SPY)", assets: [{ ticker: "SPY", label: "S&P 500 (SPY)" }], horizons: [], limits: [] } } },
-    { name: "판정 기록", make: () => <RegimeLogSection tone={{}} />, card: "판정 기록",
+    { name: "판정 기록", make: () => <RegimeLogSection />, card: "판정 기록",
       bodies: { [endpoints.insight.regimeLog(60)]: { available: true, entries: [], count: 0 } } },
   ];
 

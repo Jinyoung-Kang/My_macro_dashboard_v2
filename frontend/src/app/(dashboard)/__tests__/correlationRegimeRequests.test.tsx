@@ -8,7 +8,7 @@
  * 개편 전 코드에서 통과시켜 두고, 개편 커밋들이 그대로 통과해야 합니다(계획 §4 '요청 지킴 시험'). 탭·판정 기록 고르기처럼 개편이 새로 만드는
  * 조작의 '+0' 사례는 그 조작을 만드는 커밋에서 더합니다.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -118,6 +118,25 @@ describe("국면 화면의 요청", () => {
     const next = endpoints.insight.regime("10");
     await waitFor(() => expect(counts()[next]).toBe(1));
     expect(counts()).toEqual({ [REGIME]: 1, [REGIME_LOG]: 1, [TRACK_SPY]: 1, [next]: 1 });
+  });
+
+  it("판정 기록에서 줄을 골라도(좁은 화면 대화상자) 요청은 늘지 않는다", async () => {
+    reads[REGIME_LOG] = {
+      available: true, count: 2, recordHourKst: 18,
+      entries: [
+        { date: "2026-10-09", code: "EXPANSION", label: "확장 (Expansion)", inputs: {}, missing: [], ruleVersion: "regime-v1" },
+        { date: "2026-10-08", code: "LATE", label: "후퇴 경계 (Late cycle)", inputs: {}, missing: [], ruleVersion: "regime-v1" },
+      ],
+    };
+    render(<RegimePage />);
+    const list = await screen.findByRole("list", { name: "판정 기록" });
+    const before = counts();
+
+    fireEvent.click(within(list).getAllByRole("button")[1]);
+    await screen.findByRole("dialog", { name: "2026-10-08 판정 — 후퇴 경계 (Late cycle)" });
+
+    expect(counts()).toEqual(before);
+    expect(before).toEqual({ [REGIME]: 1, [REGIME_LOG]: 1, [TRACK_SPY]: 1 });
   });
 
   it("판정 성과의 자산을 바꾸면 그 성과만 한 번 더", async () => {
