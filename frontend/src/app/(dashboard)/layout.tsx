@@ -47,11 +47,21 @@ export default function DashboardLayout({
  * <p>모든 화면이 클라이언트 컴포넌트라 Next의 정적 metadata를 페이지마다 둘 수
  * 없습니다. 그대로 두면 탭 12개가 전부 같은 제목이라, 매크로·레이더·13F를 함께
  * 띄워 두고 비교할 때 어느 탭이 무엇인지 구분할 수 없습니다.
+ *
+ * <p>쓴 뒤에도 head를 지켜보다 제목이 바뀌면 다시 씁니다. 처음 열 때 루트 metadata의 제목이 이 효과보다 늦게 들어와 덮으면, 주소·알림 수가
+ * 바뀌지 않는 한 효과가 다시 돌지 않아 그 제목이 남았습니다(알림 수 요청이 실패하면 늘 — QA-565).
  */
 function useDocumentTitle(pathname: string, unread: number | null) {
   useEffect(() => {
     // 읽지 않은 알림이 있으면 앞에 수를 붙입니다(화면 알림함만이라 알아차리는 길이 이것뿐입니다).
-    document.title = titleWithUnread(documentTitle(pathname), unread);
+    const want = titleWithUnread(documentTitle(pathname), unread);
+    document.title = want;
+    // Next 루트 metadata의 <title>을 React가 늦게 커밋하며 덮음 — QA-565. 다를 때만 다시 써서 자기 쓰기로 되먹임하지 않습니다.
+    const observer = new MutationObserver(() => {
+      if (document.title !== want) document.title = want;
+    });
+    observer.observe(document.head, { subtree: true, childList: true, characterData: true });
+    return () => observer.disconnect();
   }, [pathname, unread]);
 }
 
