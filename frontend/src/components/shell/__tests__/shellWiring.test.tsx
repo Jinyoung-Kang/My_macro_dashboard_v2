@@ -176,30 +176,30 @@ describe("계정 메뉴 '왼쪽 메뉴 폭' → 왼쪽 메뉴(작업대 P3 추�
     fireEvent.click(within(within(menu).getByRole("group", { name: "왼쪽 메뉴 폭" })).getByRole("menuitemradio", { name }));
   }
 
-  it("펼친 동안 '넓게 280px'를 고르면 셸 변수와 손잡이 값이 280px — 전환 없이 바로(손잡이 Home·End와 같음), 저장하고 펼친 채", async () => {
+  it("펼친 동안 '넓게 272px'를 고르면 셸 변수와 손잡이 값이 272px — 전환 없이 바로(손잡이 Home·End와 같음), 저장하고 펼친 채", async () => {
     stubWide(true);
     renderShell();
-    choose("넓게 280px");
-    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("280px");
-    expect(navWidthValue()).toBe("280");
+    choose("넓게 272px");
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("272px");
+    expect(navWidthValue()).toBe("272");
     expect(hasMotion()).toBe(false);
     expect(navToggle().getAttribute("aria-pressed")).toBe("false");
-    expect(window.localStorage.getItem("shell.navWidth")).toBe("280");
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("272");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(accountTrigger()));
   });
 
-  it("접힌 동안 '좁게 200px'를 고르면 접기 단추와 같은 길로 그 폭으로 펼친다(150ms 전환 켬, 저장 '0') — 포커스는 계정 메뉴 여는 단추로", async () => {
+  it("접힌 동안 '좁게 206px'를 고르면 접기 단추와 같은 길로 그 폭으로 펼친다(150ms 전환 켬, 저장 '0') — 포커스는 계정 메뉴 여는 단추로", async () => {
     stubWide(true);
     window.localStorage.setItem("shell.navCollapsed", "1");
     renderShell();
     expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("48px");
-    choose("좁게 200px");
+    choose("좁게 206px");
     expect(navToggle().getAttribute("aria-pressed")).toBe("false");
     expect(shellRoot().getAttribute("data-nav")).toBe("expanded");
-    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("200px");
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("206px");
     expect(hasMotion()).toBe(true);
-    expect(window.localStorage.getItem("shell.navWidth")).toBe("200");
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("206");
     expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(accountTrigger()));

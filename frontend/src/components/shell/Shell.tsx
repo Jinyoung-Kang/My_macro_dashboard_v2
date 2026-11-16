@@ -21,7 +21,7 @@ import { TopBar } from "./TopBar";
  * 좁은 화면은 지금 구조 그대로입니다 — 상단바 → 하위 메뉴 줄 → 본문 → 아래 탭 바(왼쪽 메뉴는 숨김). DOM 순서는 두 폭이 같습니다
  * (건너뛰기 링크 → 상단바 → 왼쪽 메뉴·하위 메뉴 줄·본문 → 탭 바). 감싼 줄(div)에는 lg 미만 overflow 클래스를 두지 않습니다(QA-450 — 아래, ShellQaSticky.test).
  * 툴팁 묶음(TooltipProvider — 여는 지연 300ms)은 셸에 하나입니다.
- * 셸 뿌리는 왼쪽 메뉴의 폭을 CSS 변수 --shell-nav-w로 둡니다(인라인 style — 펼친 폭은 보는 사람이 끌어 200~320px로 바꾸고 기본 220px, 아이콘 레일로
+ * 셸 뿌리는 왼쪽 메뉴의 폭을 CSS 변수 --shell-nav-w로 둡니다(인라인 style — 펼친 폭은 보는 사람이 끌어 206~320px로 바꾸고 기본 220px, 아이콘 레일로
  * 접으면 48px — data-nav. 숫자는 lib/navWidth, 값은 hooks/useNavCollapsed·useNavWidth). 변수는 늘 있지만 읽는 쪽이 모두 lg: 변형이라 넓은 화면에서만
  * 쓰입니다 — 왼쪽 메뉴(SideNav lg:w-[var(--shell-nav-w)])와 화면에 고정 위치로 붙는 덮개(정보 검색의 아래 미리 보기 시트 — 왼쪽 메뉴 옆에서 시작)가
  * 이 변수를 읽습니다(한쪽만 고쳐 어긋나지 않게 — 검토 지적).
@@ -42,7 +42,8 @@ import { TopBar } from "./TopBar";
  * 넓어져 하단 탭 바가 화면 밖으로 밀렸고, 데스크톱에서는 문서 높이가 본문 끝까지 늘어 본문 끝에서 휠을 더 굴리면 셸 전체가 위로 밀려 비었습니다.
  * 좁은 화면에서는 하단 탭 바(64px + 안전 영역)에 끝 내용이 가리지 않게 그만큼 아래 여백을 둡니다.
  * 본문 열은 최대 1280px(max-w-7xl)로 가운데에 두고, 좌우 여백(16·24·32px)은 하위 메뉴 줄의 글과 같은 세로줄입니다.
- * 본문 맨 위에는 운영자에게만 수집 출처 끊김 안내 띠가 뜹니다(ADR 0035 — 끊긴 출처가 있을 때만, 닫을 수 있음).
+ * 본문 맨 위에는 운영자에게만 수집 출처 끊김 안내 띠가 뜹니다(ADR 0035 — 끊긴 출처가 있을 때만, 닫을 수 있음). 홈('/')에서는 그리지 않습니다 —
+ * 홈의 '알림·끊긴 출처' 패널이 같은 사건을 적어 겹치고, 응답 뒤 끼어든 띠가 홈 전체를 밀어 내렸습니다(QA-613, SourceAlertBanner).
  */
 export function Shell({
   user,
@@ -83,7 +84,7 @@ export function Shell({
                 className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-6"
               >
                 <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
-                  <SourceAlertBanner user={user} />
+                  {pathname !== "/" && <SourceAlertBanner user={user} />}
                   {children}
                 </div>
               </main>

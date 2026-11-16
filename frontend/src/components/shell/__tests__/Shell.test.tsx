@@ -544,7 +544,7 @@ describe("본문", () => {
     expect(classes).toEqual(expect.arrayContaining(["focus:px-4", "focus:py-2"]));
   });
 
-  // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 200~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
+  // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 206~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
   // 왼쪽 메뉴', 2026-11-16 사용자 결정). 뜻(셸 뿌리 한 곳이 폭을 정하고 왼쪽 메뉴·덮개가 읽음)은 그대로입니다.
   it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(기본 220px)로 둔다 — 왼쪽 메뉴와 고정 위치 덮개(정보 검색 아래 시트)가 같은 변수를 읽음", () => {
     renderShell(MEMBER_PRO);
@@ -602,6 +602,36 @@ describe("본문", () => {
     openAccountMenu();
     expect(screen.getByText("store_only")).toBeTruthy();
     expect(screen.getByText(/저장본만 사용합니다/)).toBeTruthy();
+  });
+
+  // QA-613: 수집 끊김 안내 띠(SourceAlertBanner — 운영자 전용)는 /api/info/sources가 돌아온 뒤 본문 맨 위에 끼어들어 홈 전체를 아래로 밀었습니다
+  // (CLS 390 0.17(185px)·768 0.13(140px)·1024 0.12(120px)·1440 이상 0.03~0.07). 홈은 '알림·끊긴 출처' 패널(screens/home/AlertsSummary)이 같은 경로의
+  // 같은 사건을(띠를 닫았는지와 상관없이) 같은 '출처 상태 보기' 링크와 함께 이미 적어 띠가 겹치므로, 홈('/')에서만 띠를 그리지 않습니다 — 다른 화면은 그대로.
+  // 재현 커밋에서는 it.fails였습니다(실패 값: AssertionError: expected <div class="mb-4" …(1)>…(1)</div> to be null — '/'에서도 띠가 그려짐).
+  it("QA-613: 홈('/')에서는 운영자에게 끊긴 출처가 있어도 셸의 수집 끊김 안내 띠를 그리지 않고 경로도 부르지 않는다 — 다른 화면('/macro')은 그대로", async () => {
+    const sources = "/api/info/sources";
+    const incident = {
+      key: "info_blog_wolfstreet|blocked", task: "info_blog_wolfstreet", label: "Wolf Street", kind: "blocked",
+      kindLabel: "차단됨 — 그 출처만 잠시 멈춤", reason: "HTTP 403", since: null,
+    };
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === sources ? Promise.resolve({ checkedAt: "x", available: true, sources: [], incidents: [incident] }) : new Promise(() => {}));
+    const sourceCalls = () => api.apiGetShared.mock.calls.filter(([path]) => path === sources).length;
+
+    renderShell(LOCAL_OWNER, { path: "/" });
+    // 띠가 있었다면 응답을 받아 그릴 때까지 기다림(약속 몇 번)
+    await act(async () => {
+      for (let index = 0; index < 5; index += 1) await Promise.resolve();
+    });
+    expect(screen.queryByTestId("source-alert-banner")).toBeNull();
+    expect(sourceCalls()).toBe(0);
+    cleanup();
+
+    renderShell(LOCAL_OWNER, { path: "/macro" });
+    const banner = await screen.findByTestId("source-alert-banner");
+    expect(within(banner).getByText(/수집 출처 1곳이 끊겼습니다: Wolf Street/)).toBeTruthy();
+    expect(within(banner).getByRole("link", { name: "출처 상태 보기" }).getAttribute("href")).toBe("/info/status");
+    expect(sourceCalls()).toBe(1);
   });
 });
 

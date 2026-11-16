@@ -34,7 +34,7 @@ const SUBHEAD = "text-caption font-semibold text-text-2";
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 제목이 그 대상의 타임라인으로 가는 링크입니다(/alerts와 같음 — 정보 검색 화면 안쪽 주소만).
  *
  * 끊긴 출처는 셸의 수집 끊김 안내 띠와 같은 응답(/api/info/sources)이고, 띠를 닫았는지와 상관없이 지금 끊긴 출처를 모두 적습니다(lib/home
- * sourceIncidentsModel — 판정 기록이 없으면 '없다'고 적지 않음). 수집 상태 줄은 상태 화면의 오류·경고·누락 수(StoreStatusLine).
+ * sourceIncidentsModel — 판정 기록이 없으면 '없다'고 적지 않음). 홈에서는 셸이 그 띠를 그리지 않아 이 칸이 대신합니다(QA-613). 수집 상태 줄은 상태 화면의 오류·경고·누락 수(StoreStatusLine).
  *
  * 알려진 한계: 알림 테이블이 아직 없으면 백엔드가 unread 0·빈 목록을 보내(AlertController — 응답 모양은 1단계에서 바꾸지 않음)
  * 그때는 모름이 "0건"·"새 알림이 없습니다"로 보입니다.
