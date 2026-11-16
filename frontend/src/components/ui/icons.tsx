@@ -250,6 +250,20 @@ export function LandmarkIcon(props: IconProps) {
   );
 }
 
+/**
+ * 판정(저울 — 기둥·받침·가로대와 양쪽 접시) — 판정 대상(시장 국면 화면 대상 머리 EntityHeader, P5a)의 대상 종류. 16·20px에서 읽히게 선을 줄였습니다
+ * (접시는 줄 둘과 반원 그릇 — 다른 아이콘과 같은 24 뷰박스·선 굵기 2).
+ */
+export function ScaleIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 4v16M8 20h8M4 7h16" />
+      <path d="M4 7 1.5 13M4 7l2.5 6M1.5 13a2.5 2.5 0 0 0 5 0z" />
+      <path d="m20 7-2.5 6M20 7l2.5 6M17.5 13a2.5 2.5 0 0 0 5 0z" />
+    </IconBase>
+  );
+}
+
 /** 왼쪽 메뉴 접기·펼치기 — 사각 틀과 왼쪽 세로줄(왼쪽 칸). 넓은 화면 셸의 접기 단추(16·20px). */
 export function PanelLeftIcon(props: IconProps) {
   return (
