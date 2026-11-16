@@ -146,3 +146,77 @@ describe("QA-566 — 주소가 바뀔 때 지금 칸이 없으면 줄을 처음�
     expect(alerts.offsetLeft + alerts.offsetWidth).toBeLessThanOrEqual(list.scrollLeft + STRIP_WIDTH);
   });
 });
+
+/**
+ * QA-567: QA-566의 '줄 안 포커스가 지금 칸보다 우선' 규칙이 키보드 포커스와 포인터 포커스를 가리지 않았습니다. Chrome에서 줄의 칸을 손가락이나 마우스로
+ * 누르면 그 링크에 포커스가 남는데(:focus-visible 아님), 그 칸으로 간 뒤 뒤로 가기 하면 지금 칸 대신 앞서 누른 칸을 보이게 해 지금 칸이 줄 밖에 가려진 채
+ * 열렸습니다(QA-510이 고친 증상이 되살아남). 지금 칸이 없는 화면(/more)에서 줄을 처음으로 두는 규칙도 포인터 포커스가 남아 있으면 건너뛰었습니다.
+ * jsdom의 focus()는 키보드 포커스처럼 :focus-visible이 참이라, 포인터로 누른 경우는 matches(':focus-visible')를 거짓으로 바꿔 흉내 냅니다.
+ */
+describe("QA-567 — 손가락·마우스로 누른 칸에 남은 포커스는 주소가 바뀔 때 지금 칸보다 앞서지 않는다", () => {
+  beforeEach(() => {
+    const original = Element.prototype.matches;
+    vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, selector: string) {
+      return selector === ":focus-visible" ? false : original.call(this, selector);
+    });
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 /alerts로 돌아와도 scrollLeft 142 그대로 — 지금 칸 '알림'(4 ~ 124px)이 줄 기준 -138 ~ -18px로 가려짐.
+  it.fails("/alerts에서 '외부 API 연결 테스트'를 눌러 /connections로 갔다가 뒤로 가기로 /alerts에 오면 지금 칸 '알림'을 줄 안에 둔다", () => {
+    const { rerender } = render(<SubNav pathname="/alerts" user={OWNER} />);
+    const list = strip("더보기 하위 메뉴");
+    expect(list.scrollLeft).toBe(0);
+    const tapped = screen.getByRole("link", { name: "외부 API 연결 테스트" });
+    act(() => tapped.focus());
+    expect(tapped.matches(":focus-visible")).toBe(false);
+    // 364 + 120 + 16 − 358 — 누른 칸이 잘려 있으면 보이게(QA-510 그대로)
+    expect(list.scrollLeft).toBe(142);
+
+    rerender(<SubNav pathname="/connections" user={OWNER} />);
+    expect(list.scrollLeft).toBe(142);
+
+    rerender(<SubNav pathname="/alerts" user={OWNER} />);
+    expect(document.activeElement).toBe(tapped);
+    const current = screen.getByRole("link", { name: "알림" });
+    expect(current.getAttribute("aria-current")).toBe("page");
+    expect(list.scrollLeft).toBe(0);
+    expect(current.offsetLeft).toBeGreaterThanOrEqual(list.scrollLeft);
+    expect(current.offsetLeft + current.offsetWidth).toBeLessThanOrEqual(list.scrollLeft + STRIP_WIDTH);
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 /regime으로 돌아와도 scrollLeft 0 그대로 — 지금 칸 '국면 판정'(604 ~ 724px)이 358px 줄 밖.
+  it.fails("/regime에서 '매크로 지표'를 눌러 /macro로 갔다가 뒤로 가기로 /regime에 오면 지금 칸 '국면 판정'을 줄 안에 둔다", () => {
+    const { rerender } = render(<SubNav pathname="/regime" user={OWNER} />);
+    const list = strip("시장 하위 메뉴");
+    expect(list.scrollLeft).toBe(382);
+    const tapped = screen.getByRole("link", { name: "매크로 지표" });
+    act(() => tapped.focus());
+    expect(list.scrollLeft).toBe(0);
+
+    rerender(<SubNav pathname="/macro" user={OWNER} />);
+    expect(list.scrollLeft).toBe(0);
+
+    rerender(<SubNav pathname="/regime" user={OWNER} />);
+    expect(document.activeElement).toBe(tapped);
+    // 604 + 120 + 16 − 358
+    expect(list.scrollLeft).toBe(382);
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 /more로 돌아와도 scrollLeft 142 그대로 — 첫 칸 '알림'이 줄 밖(새로 열면 0).
+  it.fails("/more에서 '외부 API 연결 테스트'를 눌러 /connections로 갔다가 뒤로 가기로 /more에 오면 줄을 처음(0)으로 둔다", () => {
+    const { rerender } = render(<SubNav pathname="/more" user={OWNER} />);
+    const list = strip("더보기 하위 메뉴");
+    expect(list.scrollLeft).toBe(0);
+    const tapped = screen.getByRole("link", { name: "외부 API 연결 테스트" });
+    act(() => tapped.focus());
+    expect(list.scrollLeft).toBe(142);
+
+    rerender(<SubNav pathname="/connections" user={OWNER} />);
+    expect(list.scrollLeft).toBe(142);
+
+    rerender(<SubNav pathname="/more" user={OWNER} />);
+    expect(document.activeElement).toBe(tapped);
+    expect(list.querySelector("[aria-current]")).toBeNull();
+    expect(list.scrollLeft).toBe(0);
+  });
+});
