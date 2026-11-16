@@ -225,6 +225,14 @@ describe("MasterDetail — 넓은 화면(검사 칸)", () => {
     expect(onChange.mock.calls.map(([key]) => key)).toEqual(["060505104", "025816109"]);
   });
 
+  it("headingLevel로 검사 칸 제목 단계를 바꾼다 — 기본 h3, 2면 h2(글자 단계는 그대로)", () => {
+    stubWide();
+    renderList({ autoSelectFirst: true, headingLevel: 2 });
+    const heading = screen.getByRole("heading", { level: 2, name: "Apple Inc." });
+    expect(heading.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-heading-sm", "text-text"]));
+    expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+  });
+
   it("Esc는 고른 줄이 있을 때만 고름을 풀고(안내 글) 기본 동작을 막는다 — 없으면 그대로", () => {
     stubWide();
     renderList();

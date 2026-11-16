@@ -50,7 +50,7 @@ function useSideBySide(ref: RefObject<HTMLDivElement | null>, enabled: boolean):
  * - 넓은 화면(lg 이상 — 왼쪽 메뉴가 보이는 폭, useWideShell)이고 이 틀의 폭이 32rem 이상이면: 목록 오른쪽에 검사 칸(15rem — 크기 질의 @container, 그래서 이
  *   부품의 바깥은 폭을 정해 주는 자리여야 합니다: 격자 minmax(0,1fr)·flex 늘임 등, 내용 폭에 맞춰 줄어드는 부모 안에서는 크기 질의 기준이 0으로 줄어듦).
  *   검사 칸은 이름 있는 영역 '{목록 이름} — {고른 줄 이름}'(낭독기 영역 목록에서 무엇을 위한 칸인지 보이게 — 고른 줄이 없으면 '{목록 이름} — 고른 줄 없음')이고,
- *   고른 줄 이름은 제목(h3)으로도 보입니다. 고른 줄이 없으면 안내 글(`inspectorHint`)입니다. 목록이 길어도 고른 줄의 내용이 화면 밖에서 바뀌지
+ *   고른 줄 이름은 제목(기본 h3 — `headingLevel`)으로도 보입니다. 고른 줄이 없으면 안내 글(`inspectorHint`)입니다. 목록이 길어도 고른 줄의 내용이 화면 밖에서 바뀌지
  *   않게 검사 칸은 스크롤 영역 위쪽에 붙어 따라옵니다(sticky).
  *   고름이 포커스를 따라갑니다 — j/k·↑↓·Home·End가 포커스와 고름을 함께 옮기고, 누르기·Enter·Space도 고릅니다. Esc는 고른 줄이 있을 때만 고름을 풉니다.
  *   줄 단추는 고른 줄에 aria-current="true", 모든 줄에 aria-controls(검사 칸).
@@ -81,12 +81,13 @@ export function MasterDetail<T>({
   emptyText = "표시할 항목이 없습니다.",
   placeholder,
   inspectorHint = DEFAULT_HINT,
+  headingLevel = 3,
 }: {
   /** 목록 이름(ul aria-label) — 예 '상위 보유 종목'. */
   label: string;
   items: readonly T[];
   itemKey: (item: T) => string;
-  /** 검사 칸 제목(h3)·대화상자 이름 — 줄 단추 안에는 `renderItem`만 그립니다(줄 단추 이름은 그 글). */
+  /** 검사 칸 제목(기본 h3)·대화상자 이름 — 줄 단추 안에는 `renderItem`만 그립니다(줄 단추 이름은 그 글). */
   itemLabel: (item: T) => string;
   /** 줄 내용(단추 안 — 링크·단추를 넣지 않음). */
   renderItem: (item: T) => ReactNode;
@@ -101,8 +102,11 @@ export function MasterDetail<T>({
   emptyText?: ReactNode;
   placeholder?: ReactNode;
   inspectorHint?: string;
+  /** 넓은 화면 검사 칸 제목의 단계 — 기본 3(패널 h2 안의 목록). 목록이 화면 제목(h1) 바로 아래에 놓이면 2, 패널 안 작은 제목(h3) 아래면 4. */
+  headingLevel?: 2 | 3 | 4;
 }): JSX.Element {
   const wide = useWideShell();
+  const Heading = headingLevel === 2 ? "h2" : headingLevel === 4 ? "h4" : "h3";
   const frameRef = useRef<HTMLDivElement>(null);
   const side = useSideBySide(frameRef, wide);
   // 검사 칸을 목록 옆에 두는가 — 넓은 화면이고 틀 폭이 32rem 이상(재지 못했으면 크기 질의 배치에 맡김). 아니면 좁은 화면처럼 대화상자로 엽니다.
@@ -225,7 +229,7 @@ export function MasterDetail<T>({
           >
             {currentItem !== null && currentItem !== undefined ? (
               <>
-                <h3 className="break-keep wrap-anywhere text-heading-sm text-text">{itemLabel(currentItem)}</h3>
+                <Heading className="break-keep wrap-anywhere text-heading-sm text-text">{itemLabel(currentItem)}</Heading>
                 <div className="mt-2 min-w-0">{renderDetail(currentItem)}</div>
               </>
             ) : (
