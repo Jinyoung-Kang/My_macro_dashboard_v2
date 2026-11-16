@@ -304,6 +304,25 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
   });
 });
 
+describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px 한 줄, 좁은 화면은 지금 구조)", () => {
+  const classes = (element: Element) => element.className.split(/\s+/);
+
+  it("넓은 화면 상단바는 48px 한 줄(lg:h-12, 줄바꿈 없음) — 좁은 화면의 앱 이름 줄은 64px 그대로", () => {
+    renderShell(MEMBER_PRO);
+    const header = screen.getByRole("banner");
+    expect(classes(header)).toEqual(expect.arrayContaining(["lg:h-12", "lg:flex-nowrap", "flex-wrap"]));
+    expect(classes(header).some((name) => /^(lg:)?h-16$/.test(name))).toBe(false);
+    const appName = within(header).getByText(/^My Macro/);
+    expect(classes(appName)).toEqual(expect.arrayContaining(["h-16", "lg:h-auto"]));
+  });
+
+  it("알림 벨은 좁은 화면 44px·넓은 화면 30px(상단바 조작 높이 — 검색·새로고침·계정과 같음)", () => {
+    renderShell(MEMBER_PRO, { unread: 1 });
+    const bell = screen.getByRole("link", { name: "알림 — 읽지 않음 1건" });
+    expect(classes(bell)).toEqual(expect.arrayContaining(["size-11", "lg:size-[30px]", "rounded-control"]));
+  });
+});
+
 describe("상단바 알림 벨", () => {
   it("읽지 않은 수를 이름에 담고, 1건 이상이면 숫자 배지(99건 넘으면 99+)", () => {
     renderShell(MEMBER_PRO, { unread: 3 });
