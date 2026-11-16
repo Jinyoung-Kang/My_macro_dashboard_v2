@@ -66,7 +66,7 @@ afterEach(cleanup);
 
 describe("기관 상세 보유 줄 보조 글 — '비중'과 값·동작 라벨이 갈라지지 않음 (QA-586)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 '비중 −12.35%p'가 든 가장 안쪽 요소가 보조 글 전체(break-keep) 한 칸이라 그 사슬에 whitespace-nowrap이 없었습니다.
-  it.fails("끝 조각 '· 비중 <값>%p'와 동작 라벨은 끊기지 않는 한 덩어리, 클래스 조각은 끊길 수 있음, 말줄임 없음", async () => {
+  it("끝 조각 '· 비중 <값>%p'와 동작 라벨은 끊기지 않는 한 덩어리, 클래스 조각은 끊길 수 있음, 말줄임 없음", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <InstitutionDetailScreen cik={CIK} />

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Fragment, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { EntityHeader, MasterDetail, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
@@ -220,11 +221,40 @@ function UntrackedNotice({ cik, link = false }: { cik: string; link?: boolean })
   );
 }
 
-/** 보유 줄의 보조 글 — 클래스·동작·비중 변화(%p, −는 U+2212). 말줄임하지 않습니다(좁은 화면에서 비중 변화 값이 잘렸음 — D1 넘김 P5b). */
-function holdingSubline(holding: Holding): string {
-  return [holding.class, withoutLeadingIcon(holding.action), holding.weightDiff !== null ? `비중 ${formatSignedMinus(holding.weightDiff, 2).text}%p` : null]
-    .filter(Boolean)
-    .join(" · ");
+/**
+ * 보유 줄의 보조 글 — 클래스 · 동작 · 비중 변화(%p, −는 U+2212). 말줄임하지 않습니다(좁은 화면에서 비중 변화 값이 잘렸음 — D1 넘김 P5b).
+ * 동작 라벨(백엔드 고정 어휘 — 가장 긴 것이 '비중 축소 (Reduced)')과 끝 조각 '· 비중 <값>%p'는 끊기지 않는 한 덩어리입니다 — 문자열 하나로 두면
+ * 낱말 단위 줄바꿈에서 '비중'과 값이 다른 줄로 갈라졌습니다(QA-586, 종목 상세 보유 기관 QA-445와 같은 처리). 클래스 조각(SEC 원문 — 길이를
+ * 모름)은 칸 안에서 끊길 수 있게 둡니다.
+ */
+function HoldingSubline({ holding }: { holding: Holding }) {
+  const action = withoutLeadingIcon(holding.action);
+  const lead: ReactNode[] = [];
+  if (holding.class) lead.push(holding.class);
+  if (action) {
+    lead.push(
+      <span key="action" className="whitespace-nowrap">
+        {action}
+      </span>,
+    );
+  }
+  const weight = holding.weightDiff !== null ? `비중 ${formatSignedMinus(holding.weightDiff, 2).text}%p` : null;
+  return (
+    <>
+      {lead.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 ? " · " : null}
+          {part}
+        </Fragment>
+      ))}
+      {weight ? (
+        <>
+          {lead.length > 0 ? " " : null}
+          <span className="whitespace-nowrap">{lead.length > 0 ? `· ${weight}` : weight}</span>
+        </>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -281,7 +311,9 @@ function HoldingsPanel({
           <span className="flex items-baseline justify-between gap-3">
             <span className="min-w-0">
               <span className="block break-keep font-medium text-text wrap-anywhere">{holding.name}</span>
-              <span className="block break-keep text-xs text-text-3 wrap-anywhere">{holdingSubline(holding)}</span>
+              <span className="block break-keep text-xs text-text-3 wrap-anywhere">
+                <HoldingSubline holding={holding} />
+              </span>
             </span>
             <span className="shrink-0 text-right tabular-nums">
               <span className="block font-medium text-text">{formatWeightPercent(holding.weight)}</span>

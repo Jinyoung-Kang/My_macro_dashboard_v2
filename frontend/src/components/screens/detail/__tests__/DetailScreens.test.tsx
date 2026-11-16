@@ -84,6 +84,9 @@ function renderAs(user: SessionUser | undefined, page: ReactElement) {
 
 const requested = () => api.apiGetShared.mock.calls.map(([path]) => path as string);
 
+/** 기관 보유 줄의 보조 글(클래스 · 동작 · 비중 변화) — 조각(span)으로 나뉘어 있어 보조 글 칸(text-xs)의 글 전체로 찾습니다(QA-586). */
+const subline = (text: string) => (_: string, element: Element | null) => Boolean(element?.classList.contains("text-xs") && element.textContent === text);
+
 function appleQuote(overrides: Partial<DetailQuote> = {}): DetailQuote {
   return {
     market: "us",
@@ -666,7 +669,7 @@ describe("기관 상세", () => {
     // 보유 종목(가운데 '보유 종목' 탭) — 줄의 보조 글·비중, 모르는 값은 "—"
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
     const list = screen.getByRole("list", { name: "상위 보유 종목" });
-    expect(within(list).getByText("COM · 감소 · 비중 −1.25%p")).toBeTruthy();
+    expect(within(list).getByText(subline("COM · 감소 · 비중 −1.25%p"))).toBeTruthy();
     expect(within(list).getByText("21.50%")).toBeTruthy();
     expect(within(list).getAllByText("—").length).toBeGreaterThan(0);
     // 기관 소개는 왼쪽 속성의 긴 글 줄
@@ -704,12 +707,12 @@ describe("기관 상세", () => {
     expect(within(list).getAllByRole("button")).toHaveLength(30);
     expect(screen.getByText("32종목 가운데 비중 상위 30종목")).toBeTruthy();
     // 보조 줄(클래스·동작·비중 변화)은 말줄임 없이 줄바꿈 — 좁은 화면에서 비중 변화 값이 잘렸던 자리(D1 넘김)
-    const subline = within(list).getByText("COM · 감소 · 비중 −12.35%p");
-    const row = subline.closest("li") as HTMLElement;
-    for (let node: Element | null = subline; node && row.contains(node); node = node.parentElement) {
+    const sub = within(list).getByText(subline("COM · 감소 · 비중 −12.35%p"));
+    const row = sub.closest("li") as HTMLElement;
+    for (let node: Element | null = sub; node && row.contains(node); node = node.parentElement) {
       expect((node.getAttribute("class") ?? "").split(/\s+/)).not.toContain("truncate");
     }
-    expect(subline.className).toContain("wrap-anywhere");
+    expect(sub.className).toContain("wrap-anywhere");
 
     fireEvent.click(within(list).getAllByRole("button")[0]);
     const dialog = await screen.findByRole("dialog", { name: "SYNTHETIC HOLDING 1" });
