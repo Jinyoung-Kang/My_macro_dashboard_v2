@@ -392,6 +392,19 @@ describe("상단바 알림 벨", () => {
     expect([...badge.classList]).toContain("forced-colors:border");
   });
 
+  // QA-551: P3가 넓은 화면 벨을 44px에서 30px(lg:size-[30px])로 줄이면서 아이콘(20px)·배지(-right-0.5 -top-0.5 h-5 min-w-5 — 44px 단추에 맞춘 값)는
+  // 그대로 둬, 단추 모서리에 붙은 배지가 아이콘 가운데로 들어왔습니다 — QA 스택 1440에서 '3' 배지가 아이콘 상자의 42%, '42' 47%, '99+' 65%를 덮어
+  // 종 아래 받침선만 보였습니다(44px 벨 — 좁은 화면·D1 넓은 화면 — 은 9%·11%·22%). 넓은 화면 배지만 16px 높이로 줄이고 아이콘 바깥 오른쪽 위로 뺍니다
+  // (lg:h-4 lg:min-w-4 lg:-right-1 lg:-top-1.5 — 글자 12px 하한은 그대로). 벨 30px·아이콘 20px·좁은 화면 값은 바꾸지 않습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 배지 클래스에 lg: 변형이 하나도 없었습니다.
+  it.fails("넓은 화면 30px 벨의 수 배지는 16px로 아이콘 바깥 오른쪽 위에 — 좁은 화면 44px 벨의 배지 값은 그대로 (QA-551)", () => {
+    renderShell(MEMBER_PRO, { unread: 42 });
+    const badge = screen.getByRole("link", { name: "알림 — 읽지 않음 42건" }).querySelector('span[aria-hidden="true"]') as HTMLElement;
+    expect([...badge.classList]).toEqual(
+      expect.arrayContaining(["lg:h-4", "lg:min-w-4", "lg:-right-1", "lg:-top-1.5", "h-5", "min-w-5", "-right-0.5", "-top-0.5", "text-xs"]),
+    );
+  });
+
   it("넓은 화면에서만 이름과 같은 글의 툴팁(설명으로 잇지 않음) — 좁은 화면은 툴팁 없이 지금 그대로", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
     try {
