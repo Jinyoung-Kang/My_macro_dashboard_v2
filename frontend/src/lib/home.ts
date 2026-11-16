@@ -31,7 +31,8 @@ import type {
 } from "./types";
 
 /**
- * 자동 갱신 간격(ms) — 기존 화면의 간격을 그대로 따릅니다(국면 /regime 5분, 모의매매 /paper 1분, 알림 레이아웃 5분, 상태 /status 1분).
+ * 자동 갱신 간격(ms) — 기존 화면의 간격을 그대로 따릅니다(국면 /regime 5분, 모의매매 /paper 1분, 알림 레이아웃 5분, 상태 /status 1분,
+ * 끊긴 출처는 셸의 수집 끊김 안내 띠와 같은 5분 — 같은 경로라 동시에 나가면 요청 하나).
  * 매크로는 5분입니다 — /macro의 기본 60초(=live=true, 신선도 기준 60초)를 쓰면 백엔드가 Yahoo 수집을 그만큼 자주 깨웁니다(429 이력).
  */
 export const HOME_REFRESH_MS = {
@@ -40,6 +41,7 @@ export const HOME_REFRESH_MS = {
   paper: 60_000,
   alerts: 300_000,
   storeStatus: 60_000,
+  sources: 300_000,
 } as const;
 
 /** 국면 이력 기간 — /regime 화면의 기본(5년)과 같게 둬 백엔드 응답 캐시(analytics.regime:5)를 함께 씁니다. */

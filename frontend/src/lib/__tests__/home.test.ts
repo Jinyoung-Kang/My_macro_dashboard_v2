@@ -852,6 +852,6 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
   });
 });
 
-it("자동 갱신 간격 — 매크로는 live 없이 5분(Yahoo 429), 모의매매·상태 1분, 국면·알림 5분", () => {
-  expect(HOME_REFRESH_MS).toEqual({ regime: 300_000, macro: 300_000, paper: 60_000, alerts: 300_000, storeStatus: 60_000 });
+it("자동 갱신 간격 — 매크로는 live 없이 5분(Yahoo 429), 모의매매·상태 1분, 국면·알림·끊긴 출처 5분", () => {
+  expect(HOME_REFRESH_MS).toEqual({ regime: 300_000, macro: 300_000, paper: 60_000, alerts: 300_000, storeStatus: 60_000, sources: 300_000 });
 });

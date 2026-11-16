@@ -1,11 +1,11 @@
 /**
  * 홈(/) 화면 — 고정 응답 이야기로 네 상태를 확인한다(설계서 §9 DoD "없음·일부 실패·추정·오래됨").
  *  - 값 있음: 국면 패널(백엔드 라벨·문장·기준일·출처·고지·신호 넷), 계좌 손익 표(네 계좌 — 순자산·출발 대비·최근 변화·기준, 출처·출발 줄),
- *    시장 묶음 표(범주 탭, 장 상태 — 열린 장만 지연), 알림(지난 사건은 강조하지 않음), 저장소 상태(누락 데이터셋·수집기 연결)
+ *    시장 묶음 표(범주 탭, 장 상태 — 열린 장만 지연), 알림·끊긴 출처(지난 사건은 강조하지 않음, 끊긴 출처, 수집 상태 — 누락 데이터셋·수집기 연결)
  *  - 값 없음: 판정 불가(중립색) + 받지 못한 입력, 장부 없음 안내, 매크로 저장본 없음, "새 알림이 없습니다", 모르는 수는 "—"(읽어 주기 "값 없음")
  *  - 일부 실패: 한 경로가 실패해도 그 구역만 오류(role="alert", 다시 시도), 나머지는 그린다
  *  - 추정: isEstimated 카드에 '추정' 배지 / 오래됨: isStale 카드·가격 없는 보유 계좌·늦은 관측치에 '이전 값' + 사유
- *  - 회원(운영자 아님): /api/paper/*·/api/status*를 부르지 않고 그 구역이 없다
+ *  - 회원(운영자 아님): /api/paper/*·/api/status*·/api/info/sources를 부르지 않고 그 구역·칸이 없다
  *  - 맨 위 KPI 띠(오늘 요약): 타일마다 대상 화면 링크, 값·'—' + 사유·자리표시·변화 칩·수집 오류 아이콘 + 글, 모의매매 값 없음
  *
  * 보는 시각은 2026-10-26(월) 16:51 KST로 고정합니다(장 상태가 시각에 따라 바뀜) — 외환·CME 개장, 뉴욕 증시 마감, KRX 선물 휴식.
@@ -21,6 +21,8 @@ import { SOURCES } from "@/lib/sources";
 import type { SessionUser } from "@/lib/types";
 import {
   inbox,
+  incident,
+  infoSources,
   issues,
   macroItem,
   macroOverview,
@@ -55,6 +57,8 @@ const MACRO = "/api/macro/overview";
 const UNREAD = "/api/alerts/unread-count";
 const INBOX = "/api/alerts/inbox?limit=3";
 const ISSUES = "/api/status/issues";
+// 끊긴 출처 — 셸의 수집 끊김 안내 띠와 같은 경로(운영자 전용).
+const INFO_SOURCES = "/api/info/sources";
 // 장 상태(KRX 휴장) 판정에 보태는 한국 공휴일 — /macro와 같은 훅이 읽습니다(회원 경로).
 const KR_HOLIDAYS = "/api/calendar/kr-holidays";
 
@@ -74,6 +78,7 @@ function happyReads(): Record<string, unknown> {
     [UNREAD]: { unread: 2 },
     [INBOX]: inbox(),
     [ISSUES]: issues(0, 0),
+    [INFO_SOURCES]: infoSources(),
     [KR_HOLIDAYS]: { available: true, years: {} },
   };
 }
@@ -106,6 +111,20 @@ const region = (name: string | RegExp) => screen.getByRole("region", { name });
  * 덩어리라(QA-505) 수 글 전체는 getByText 한 번으로 찾을 수 없어 이 상자의 textContent로 봅니다.
  */
 const storeCounts = (container: HTMLElement) => within(container).getByText(/^수집 태스크 오류/).closest(".tabular-nums") as HTMLElement;
+
+/** 알림 패널 이름 — 운영자는 끊긴 출처·수집 상태가 함께라 '알림·끊긴 출처', 회원·데모는 알림만이라 '알림'. */
+const ALERTS_REGION = "알림·끊긴 출처";
+
+/** 운영자 알림 패널 안 수집 상태 줄(상태 화면 링크) — 수를 읽은 뒤. */
+async function storeLine(): Promise<HTMLElement> {
+  return within(region(ALERTS_REGION)).findByRole("link", { name: /^수집 태스크 오류/ });
+}
+
+/** 알림 패널 머리의 '읽지 않음 N건'(이름과 수). */
+const unreadCount = (name = ALERTS_REGION) => within(region(name)).getByText(/^읽지 않음/);
+
+/** 운영자 알림 패널의 최근 알림 줄(이름 있는 목록 '최근 알림'의 줄 — 끊긴 출처 줄과 섞이지 않게). */
+const alertItems = () => within(within(region(ALERTS_REGION)).getByRole("list", { name: "최근 알림" })).getAllByRole("listitem");
 
 /** 계좌 손익 표 구역 이름 — 불러오는 중·오류·읽은 뒤 모두 같습니다. */
 const PAPER_REGION = "모의매매 계좌";
@@ -287,27 +306,62 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(us10y).getByText("하락")).toBeTruthy();
   });
 
-  it("알림 요약 — 읽지 않은 수·최근 세 건(제목·발생일·읽음)·알림함 링크 / 저장소 상태 한 줄(→ /status)", async () => {
+  it("알림·끊긴 출처 — 읽지 않은 수·최근 세 건(제목·발생일·읽음)·알림함 링크 / 끊긴 출처 없음 / 수집 상태 한 줄(→ /status)", async () => {
     reads = happyReads();
     renderHome(OWNER);
     await screen.findByText("[국면 전환] 후퇴 경계 → 확장");
-    const alerts = region("알림");
-    expect(within(alerts).getByText("2건")).toBeTruthy();
-    expect(within(alerts).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    const alerts = region(ALERTS_REGION);
+    expect(unreadCount().textContent).toBe("읽지 않음 2건");
+    // 패널 안 작은 제목 셋(운영자) — 최근 알림 · 끊긴 출처 · 수집 상태
+    expect(within(alerts).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual(["최근 알림", "끊긴 출처", "수집 상태"]);
+    expect(alertItems().map((item) => item.textContent)).toEqual([
       "[국면 전환] 후퇴 경계 → 확장2026-10-25 · 안 읽음",
       "Berkshire 13F 신규 편입2026-10-20 · 읽음",
       "외국인 5일 연속 순매수2026-10-18 · 안 읽음",
     ]);
     expect(within(alerts).getByRole("link", { name: "알림 전체 보기" }).getAttribute("href")).toBe("/alerts");
+    expect(await within(alerts).findByText("끊긴 출처가 없습니다")).toBeTruthy();
+    expect(within(alerts).getByRole("link", { name: "출처 상태 보기" }).getAttribute("href")).toBe("/info/status");
 
-    const status = region("데이터 저장소 상태");
-    const line = within(status).getByRole("link");
+    const line = await storeLine();
     expect(line.getAttribute("href")).toBe("/status");
     expect(storeCounts(line).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
     expect(within(line).getByText("확인 2026-10-26 16:54")).toBeTruthy();
     // 데이터 카드마다 출처 줄(PRINCIPLES) — 상태 화면의 수집 오류·경고 로그와 같은 출처.
     expect(within(line).getByText(SOURCES.collectorRuns)).toBeTruthy();
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
+    // 끊긴 출처는 셸 안내 띠와 같은 경로를 한 번 읽습니다.
+    expect(requested().filter((path) => path === INFO_SOURCES)).toHaveLength(1);
+  });
+
+  it("끊긴 출처 — 서버 순서대로 이름 · 끊긴 종류(주의 아이콘 + 글) · 사유 · 끊긴 시각, 판정 기록이 없으면 '없다'고 적지 않는다", async () => {
+    reads = {
+      ...happyReads(),
+      [INFO_SOURCES]: infoSources([
+        incident({ key: "wolf|blocked", label: "Wolf Street" }),
+        incident({ key: "waedge|format", label: "waedge 시장", kind: "format", kindLabel: "형식 바뀜", reason: null, since: null }),
+      ]),
+    };
+    const { unmount } = renderHome(OWNER);
+    const alerts = region(ALERTS_REGION);
+    const list = await within(alerts).findByRole("list", { name: "끊긴 출처" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent?.replace(/주의: /, ""))).toEqual([
+      "Wolf Street차단됨 — 잠시 멈춤HTTP 403 · 2026-10-26 15:10부터",
+      "waedge 시장형식 바뀜",
+    ]);
+    // 끊긴 종류는 색만이 아니라 아이콘(장식) + 읽어 주는 머리말 + 글
+    const kind = within(rows[0]).getByText("차단됨 — 잠시 멈춤").closest(".text-warn") as HTMLElement;
+    expect(kind.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(within(alerts).queryByText("끊긴 출처가 없습니다")).toBeNull();
+    // 최근 알림 줄과 섞이지 않습니다.
+    expect(alertItems()).toHaveLength(3);
+    unmount();
+
+    reads = { ...happyReads(), [INFO_SOURCES]: { ...infoSources(), recorded: false } };
+    renderHome(OWNER);
+    expect(await within(region(ALERTS_REGION)).findByText("출처 판정 기록이 없습니다 — 판정은 운영 서버에서만 합니다")).toBeTruthy();
+    expect(within(region(ALERTS_REGION)).queryByText("끊긴 출처가 없습니다")).toBeNull();
   });
 
   it("알림 — 지난 사건(late)은 읽지 않은 수에 들지 않아 강조(점·굵은 글씨) 없이 '지난 사건'", async () => {
@@ -316,7 +370,7 @@ describe("홈 — 값 있음(운영자)", () => {
     reads = { ...happyReads(), [UNREAD]: { unread: 1 }, [INBOX]: response };
     renderHome(OWNER);
     const title = await screen.findByText("[국면 전환] 후퇴 경계 → 확장");
-    const [late, , unread] = within(region("알림")).getAllByRole("listitem");
+    const [late, , unread] = alertItems();
     expect(late.textContent).toBe("[국면 전환] 후퇴 경계 → 확장2026-10-25 · 지난 사건");
     expect(title.className).not.toContain("font-semibold");
     expect(late.querySelector(".border-4")).toBeNull();
@@ -341,8 +395,8 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
     renderHome(OWNER);
     await inRegime().findByText("확장 (Expansion)");
     await within(region("시장")).findByText("원/달러 (USD/KRW)");
-    await within(region("알림")).findByText("[국면 전환] 후퇴 경계 → 확장");
-    await within(region("데이터 저장소 상태")).findByRole("link");
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    await storeLine();
     const strip = region("오늘 요약");
     expect(within(strip).getAllByRole("link").map((link) => [link.firstElementChild?.textContent, link.getAttribute("href")])).toEqual([
       ["국면", "/regime"],
@@ -381,7 +435,7 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
     for (const [response, tone, text] of [[issues(3, 19), "text-danger", "경고 19건 · 누락 0개"], [issues(0, 19), "text-warn", "경고 19건 · 누락 0개"]] as const) {
       reads = { ...happyReads(), [ISSUES]: response };
       const { unmount } = renderHome(OWNER);
-      await within(region("데이터 저장소 상태")).findByRole("link");
+      await storeLine();
       const tile = kpi("수집 오류");
       const status = within(tile).getByText(text).closest(`.${tone}`) as HTMLElement;
       expect(status, tone).not.toBeNull();
@@ -433,12 +487,13 @@ describe("홈 — 불러오는 중·값 없음", () => {
       "모의매매 계좌를 불러오는 중",
       "시장 시세를 불러오는 중",
       "알림을 불러오는 중",
-      "데이터 저장소 상태를 불러오는 중",
+      "끊긴 출처를 불러오는 중",
+      "수집 상태를 불러오는 중",
     ]);
     // 계좌 구역은 불러오는 중에도 읽은 뒤와 같은 이름입니다.
     expect(within(region(PAPER_REGION)).getByRole("status").getAttribute("aria-label")).toBe("모의매매 계좌를 불러오는 중");
     // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
-    expect(within(region("알림")).getByText("값 없음")).toBeTruthy();
+    expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();
     expect(screen.queryByText("0건")).toBeNull();
   });
 
@@ -489,9 +544,9 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(within(paper).queryByText(/정기 작업 꺼짐/)).toBeNull();
 
     expect(within(region("시장")).getByText("매크로 저장본이 아직 없습니다 — 수집 전")).toBeTruthy();
-    expect(await within(region("알림")).findByText("새 알림이 없습니다")).toBeTruthy();
-    expect(within(region("알림")).getByText("값 없음")).toBeTruthy();   // 읽지 않은 수 응답 전
-    const line = await within(region("데이터 저장소 상태")).findByRole("link");
+    expect(await within(region(ALERTS_REGION)).findByText("새 알림이 없습니다")).toBeTruthy();
+    expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();   // 읽지 않은 수 응답 전
+    const line = await storeLine();
     expect(line.textContent).toContain("수집 태스크 오류 —값 없음 · 경고 —값 없음 · 누락 데이터셋 —값 없음");
     expect(within(line).getAllByText("값 없음")).toHaveLength(3);
     expect(screen.queryByText(/0\.00%/)).toBeNull();
@@ -502,7 +557,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     down.counts = { ...down.counts, missingDatasets: null };
     reads = { ...happyReads(), [ISSUES]: down };
     const { unmount } = renderHome(OWNER);
-    let line = await within(region("데이터 저장소 상태")).findByRole("link");
+    let line = await storeLine();
     expect(within(line).getByText(COLLECTOR_UNREACHABLE_NOTE)).toBeTruthy();
     expect(line.textContent).toContain("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 —값 없음");
     // 주의는 안내 한 곳(주의 아이콘 + 주의색)이 나르고, 오류·경고가 없는 수 묶음은 중립입니다(QA-505).
@@ -514,7 +569,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     missing.counts.missingDatasets = 3;
     reads = { ...happyReads(), [ISSUES]: missing };
     renderHome(OWNER);
-    line = await within(region("데이터 저장소 상태")).findByRole("link");
+    line = await storeLine();
     expect(storeCounts(line).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 3개");
     expect(storeCounts(line).closest(".text-warn")).not.toBeNull();
     expect(within(line).queryByText(COLLECTOR_UNREACHABLE_NOTE)).toBeNull();
@@ -527,7 +582,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     const countGroup = async (response: ReturnType<typeof issues>, toneClass: string) => {
       reads = { ...happyReads(), [ISSUES]: response };
       const { unmount } = renderHome(OWNER);
-      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const line = await storeLine();
       const text = within(line).getByText(/^수집 태스크 오류/);
       const group = text.closest(`.${toneClass}`) as HTMLElement | null;
       expect(group, `${toneClass} 수 묶음`).not.toBeNull();
@@ -560,7 +615,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     for (const [response, expected] of cases) {
       reads = { ...happyReads(), [ISSUES]: response };
       const { unmount } = renderHome(OWNER);
-      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const line = await storeLine();
       const items = Array.from(storeCounts(line).querySelectorAll(".whitespace-nowrap"), (node) => node.textContent);
       expect(items, expected[2]).toEqual(expected);
       unmount();
@@ -577,7 +632,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
       down.counts = { ...down.counts, missingDatasets: null };
       reads = { ...happyReads(), [ISSUES]: down };
       const { unmount } = renderHome(OWNER);
-      const line = await within(region("데이터 저장소 상태")).findByRole("link");
+      const line = await storeLine();
       const counts = storeCounts(line);
       const notice = within(line).getByText(COLLECTOR_UNREACHABLE_NOTE).closest(".text-warn") as HTMLElement;
       const result = {
@@ -606,7 +661,7 @@ describe("홈 — 일부 실패", () => {
     expect(inRegime().getByText("확장 (Expansion)")).toBeTruthy();
     expect(await paperPanel()).toBeTruthy();
     expect(screen.getByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
-    expect(storeCounts(region("데이터 저장소 상태")).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
+    expect(storeCounts(await storeLine()).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
 
     reads[MACRO] = macroOverview();
     fireEvent.click(within(market).getByRole("button", { name: "다시 시도" }));
@@ -631,16 +686,32 @@ describe("홈 — 일부 실패", () => {
     expect(within(paper).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();
   });
 
-  it("장부 개요가 실패하면 모의매매 구역은 제목과 오류만, 저장소 상태가 실패하면 그 줄만 오류", async () => {
-    reads = { ...happyReads(), [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"), [ISSUES]: new Error("요청 실패 (HTTP 502)") };
+  it("장부 개요가 실패하면 모의매매 구역은 제목과 오류만, 수집 상태·끊긴 출처가 실패하면 그 칸만 오류(알림은 그대로)", async () => {
+    reads = {
+      ...happyReads(),
+      [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"),
+      [ISSUES]: new Error("요청 실패 (HTTP 502)"),
+      [INFO_SOURCES]: new Error("요청 실패 (HTTP 504)"),
+    };
     renderHome(OWNER);
 
     expect(await within(region(PAPER_REGION)).findByText("요청 실패 (HTTP 500)")).toBeTruthy();
-    expect(await within(region("데이터 저장소 상태")).findByText("요청 실패 (HTTP 502)")).toBeTruthy();
+    const alerts = region(ALERTS_REGION);
+    expect(await within(alerts).findByText("요청 실패 (HTTP 502)")).toBeTruthy();
+    expect(await within(alerts).findByText("요청 실패 (HTTP 504)")).toBeTruthy();
     expect(within(region(PAPER_REGION)).getByRole("alert")).toBeTruthy();
-    expect(within(region("데이터 저장소 상태")).getByRole("alert")).toBeTruthy();
+    expect(within(alerts).getAllByRole("alert").map((node) => node.textContent)).toEqual([
+      expect.stringContaining("요청 실패 (HTTP 504)"),
+      expect.stringContaining("요청 실패 (HTTP 502)"),
+    ]);
+    expect(within(alerts).getAllByRole("button", { name: "다시 시도" })).toHaveLength(2);
     expect(screen.queryByText(/수집 태스크 오류/)).toBeNull();
+    expect(await within(alerts).findByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
     expect(inRegime().getByText("확장 (Expansion)")).toBeTruthy();
+
+    reads[INFO_SOURCES] = infoSources();
+    fireEvent.click(within(alerts).getAllByRole("button", { name: "다시 시도" })[0]);
+    expect(await within(alerts).findByText("끊긴 출처가 없습니다")).toBeTruthy();
   });
 
   it("자동 갱신이 실패하면 앞서 받은 시장 행을 두고 '새로 읽지 못함'(QA-067)", async () => {
@@ -851,17 +922,22 @@ describe("홈 — 모의매매 한국 탭", () => {
 
 describe("홈 — 운영자가 아닌 사용자", () => {
   for (const [name, user] of [["회원", MEMBER], ["데모 열람", DEMO], ["사용자 모름(레이아웃 밖)", undefined]] as const) {
-    it(`${name}: 모의매매·저장소 상태를 요청하지 않고 그 구역이 없다 — 국면·시장·알림은 그린다`, async () => {
+    it(`${name}: 모의매매·저장소 상태·끊긴 출처를 요청하지 않고 그 구역이 없다 — 국면·시장·알림은 그린다`, async () => {
       reads = happyReads();
       renderHome(user);
 
       expect(await inRegime().findByText("확장 (Expansion)")).toBeTruthy();
       expect(await screen.findByText("원/달러 (USD/KRW)")).toBeTruthy();
       expect(await screen.findByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
-      expect(requested().some((path) => path.startsWith("/api/paper") || path.startsWith("/api/status"))).toBe(false);
+      expect(requested().some((path) => path.startsWith("/api/paper") || path.startsWith("/api/status") || path.startsWith("/api/info"))).toBe(false);
       expect(requested().sort()).toEqual([INBOX, KR_HOLIDAYS, MACRO, REGIME, UNREAD].sort());
       expect(screen.queryByRole("heading", { name: /모의매매/ })).toBeNull();
-      expect(screen.queryByRole("region", { name: "데이터 저장소 상태" })).toBeNull();
+      // 알림 패널은 알림만(제목도 '알림') — 끊긴 출처·수집 상태 칸이 없습니다.
+      const alerts = region("알림");
+      expect(within(alerts).queryAllByRole("heading", { level: 3 })).toHaveLength(0);
+      expect(within(alerts).getAllByRole("listitem")).toHaveLength(3);
+      expect(screen.queryByRole("region", { name: ALERTS_REGION })).toBeNull();
+      expect(screen.queryByText("끊긴 출처")).toBeNull();
       expect(screen.queryByText(/수집 태스크 오류/)).toBeNull();
       expect(screen.queryByRole("radiogroup", { name: "모의매매 시장" })).toBeNull();
       // KPI 띠에도 수집 오류(운영자) 타일이 없습니다.
