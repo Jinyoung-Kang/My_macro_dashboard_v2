@@ -88,7 +88,7 @@ describe("상세 화면 방문 → 최근 연 대상", () => {
   // 보고 방문을 넣어, 코드만 있는 항목(label·sub 모두 코드)이 같은 주소의 이름 있는 항목(팔레트가 넣은 것·앞선 정상 방문)을 덮었습니다
   // (P4 '정한 것' 7 — 이름을 읽은 뒤에만). 빵부스러기 저장소에도 코드가 이름으로 들어갔습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 recent()가 [{label:'SYNV', sub:'SYNV · NYSE · 주식 · USD', …}]이고 빵부스러기 저장소가 'SYNV'였습니다.
-  it.fails("종목 — 시세 객체는 왔지만 이름이 없으면(name:null + error) 넣지 않고, 같은 주소의 이름 있는 항목을 덮지 않는다 (QA-577)", async () => {
+  it("종목 — 시세 객체는 왔지만 이름이 없으면(name:null + error) 넣지 않고, 같은 주소의 이름 있는 항목을 덮지 않는다 (QA-577)", async () => {
     const named = { kind: "ticker" as const, label: "합성 방문", sub: "Synthetic Visit Inc. · SYNV · 정보기술", href: "/s/us/SYNV", dest: "종목 상세" };
     window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([named]));
     act(() => resetRecentEntitiesForTest());

@@ -71,10 +71,14 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   const unit = currencyUnit(quote?.currency);
   const indicator = indicatorForSymbol(macro.data, quote ? symbol : null);
   const entityLink = infoSearchEntityLink(stockEntityKey(market, code), "정보 검색에서 보기", user);
-  // 넓은 화면 빵부스러기의 마지막 칸을 코드 대신 종목 이름으로(시세를 읽은 뒤에만 — 셸이 같은 주소일 때만 씀).
-  useEntityCrumb(quote ? stockHref(market, code) : null, quote ? name : null);
-  // 명령 팔레트의 최근 연 대상 — 시세를 읽은 뒤에만(조회하지 않음·실패는 넣지 않음).
-  useDetailVisit("ticker", quote ? stockHref(market, code) : null, quote ? name : null, quote ? sub : null);
+  // 시세가 준 종목 이름 — 수집기는 출처 실패·정보 없는 심볼에도 available:true + quote{name:null, error}를 돌려주므로 quote 객체가 있는지가 아니라
+  // 이름을 읽었는지로 가릅니다(화면 제목 `name`은 이름이 없으면 코드로 대신함 — QA-577).
+  const readName = quote?.nameKo ?? quote?.name ?? null;
+  const namedHref = readName ? stockHref(market, code) : null;
+  // 넓은 화면 빵부스러기의 마지막 칸을 코드 대신 종목 이름으로(이름을 읽은 뒤에만 — 셸이 같은 주소일 때만 씀).
+  useEntityCrumb(namedHref, readName);
+  // 명령 팔레트의 최근 연 대상 — 이름을 읽은 뒤에만(조회하지 않음·실패·이름 없는 응답은 넣지 않아, 같은 주소의 이름 있는 항목을 코드로 덮지 않음).
+  useDetailVisit("ticker", namedHref, readName, readName ? sub : null);
 
   let placeholder;
   if (!quoteState.data) {
