@@ -1,7 +1,7 @@
 /**
  * 홈(/) 화면 — 고정 응답 이야기로 네 상태를 확인한다(설계서 §9 DoD "없음·일부 실패·추정·오래됨").
  *  - 값 있음: 국면 패널(백엔드 라벨·문장·기준일·출처·고지·신호 넷), 계좌 손익 표(네 계좌 — 순자산·출발 대비·최근 변화·기준, 출처·출발 줄),
- *    시장 행(장 상태 — 열린 장만 지연), 알림(지난 사건은 강조하지 않음), 저장소 상태(누락 데이터셋·수집기 연결)
+ *    시장 묶음 표(범주 탭, 장 상태 — 열린 장만 지연), 알림(지난 사건은 강조하지 않음), 저장소 상태(누락 데이터셋·수집기 연결)
  *  - 값 없음: 판정 불가(중립색) + 받지 못한 입력, 장부 없음 안내, 매크로 저장본 없음, "새 알림이 없습니다", 모르는 수는 "—"(읽어 주기 "값 없음")
  *  - 일부 실패: 한 경로가 실패해도 그 구역만 오류(role="alert", 다시 시도), 나머지는 그린다
  *  - 추정: isEstimated 카드에 '추정' 배지 / 오래됨: isStale 카드·가격 없는 보유 계좌·늦은 관측치에 '이전 값' + 사유
@@ -130,9 +130,14 @@ function cellTexts(row: HTMLElement): string[] {
   });
 }
 
-/** 시장 행 한 줄(링크) — 시장 구역 안 이름 글자에서 가장 가까운 a(맨 위 KPI 띠에도 같은 이름이 있음). */
+/** 시장 표 한 줄(tr) — 시장 구역 안 지표 이름 링크에서(맨 위 KPI 띠에도 비슷한 이름이 있음). 그 묶음 탭이 골라져 있어야 합니다. */
 function marketRow(name: string): HTMLElement {
-  return within(region("시장")).getByText(name).closest("a") as HTMLElement;
+  return within(region("시장")).getByRole("link", { name }).closest("tr") as HTMLElement;
+}
+
+/** 시장 묶음 탭을 고릅니다(처음은 첫 범주 — 고른 묶음의 표만 그림). */
+function showGroup(title: string) {
+  fireEvent.click(within(region("시장")).getByRole("tab", { name: title }));
 }
 
 /** 국면 구역 안의 글 — 맨 위 KPI 띠의 국면 타일에도 같은 판정 라벨이 있어 구역으로 좁힙니다. */
@@ -218,33 +223,48 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it("시장 — 범주별 자산 행(링크 → 지표 상세 /markets/i/<키>, 범주는 h3), 출처·장 상태·지연·시각 배지, 참고 시세, 저장본 수집 시각", async () => {
+  it("시장 — 범주 탭(처음은 첫 범주)·고른 묶음의 표(이름은 지표 상세 /markets/i/<키> 링크), 출처·장 상태·지연·시각, 참고 시세, 저장본 수집 시각", async () => {
     reads = happyReads();
     renderHome(OWNER);
-    await screen.findByText("원/달러 (USD/KRW)");
+    await within(region("시장")).findByRole("link", { name: "원/달러 (USD/KRW)" });
     const market = region("시장");
-    // "시장"만 h2, 범주는 그 아래 h3 — 범주는 영역(랜드마크)을 겹쳐 만들지 않습니다.
-    expect(within(market).getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(["시장"]);
-    expect(within(market).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent))
-      .toEqual(["통화 및 환율", "미국 주가지수 및 선물", "아시아 주요 주가지수"]);
-    expect(within(market).queryAllByRole("region")).toHaveLength(0);
+    // 범주는 탭(이름 있는 탭 줄) — 범주마다 제목이나 영역을 겹쳐 만들지 않습니다(표의 가로 스크롤 상자 하나만 영역).
+    expect(within(market).getAllByRole("heading").map((heading) => heading.textContent)).toEqual(["시장"]);
+    const tabs = within(within(market).getByRole("tablist", { name: "시장 묶음" })).getAllByRole("tab");
+    expect(tabs.map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
+      ["통화 및 환율", "true"], ["미국 주가지수 및 선물", "false"], ["아시아 주요 주가지수", "false"],
+    ]);
+    const panel = within(market).getByRole("tabpanel");
+    expect(panel.getAttribute("aria-labelledby")).toBe(tabs[0].id);
+    expect(within(panel).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["지표", "값", "변화", "기준"]);
+    // 머리 개수 — 고른 묶음의 지표 수
+    expect(within(market).getByText("1개")).toBeTruthy();
     const usdkrw = marketRow("원/달러 (USD/KRW)");
-    expect(usdkrw.getAttribute("href")).toBe("/markets/i/usdkrw");
+    expect(within(usdkrw).getByRole("link").getAttribute("href")).toBe("/markets/i/usdkrw");
     expect(within(usdkrw).getByText("1,322.28")).toBeTruthy();
     // 열린 장만 지연을 적습니다("개장 · 실시간", "개장 · 10분 지연" — /macro SessionBadge와 같은 규칙).
     expect(within(usdkrw).getByText("Yahoo Finance (KRW=X) · 개장 · 실시간 · 2026-10-26 16:51")).toBeTruthy();
+
+    showGroup("미국 주가지수 및 선물");
+    expect(within(market).getByRole("tab", { name: "미국 주가지수 및 선물" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(market).queryByRole("link", { name: "원/달러 (USD/KRW)" })).toBeNull();
+    expect(within(market).getByText("2개")).toBeTruthy();
     expect(within(marketRow("S&P 500 선물 (ES)")).getByText("Yahoo Finance (ES=F) · 개장 · 10분 지연 · 2026-10-26 16:41")).toBeTruthy();
     // 닫힌 장(뉴욕 증시, 토요일 04:59 종가)에는 '실시간'을 찍지 않고 '마감'만.
     const sp500 = marketRow("S&P 500");
+    expect(within(sp500).getByRole("link").getAttribute("href")).toBe("/markets/i/sp500");
     expect(within(sp500).getByText("Yahoo Finance (^GSPC) · 마감 · 2026-10-24 04:59")).toBeTruthy();
     expect(within(sp500).queryByText(/실시간|지연/)).toBeNull();
+
+    showGroup("아시아 주요 주가지수");
     // '장 밖' 야간선물 카드(20분 지연)도 장이 닫혀 있으면 지연을 적지 않습니다.
     const night = marketRow("코스피200 야간선물");
     expect(within(night).getByText(/^TradingView Scanner · 참고 시세 · 휴식 · 2026-10-26 16:51/)).toBeTruthy();
     expect(within(night).queryByText(/지연|실시간/)).toBeNull();
-    // 직전 값이 없는 카드(delta·pct null, deltaStr "N/A")는 변화 칩을 생략합니다 — 0.00%를 만들지 않습니다.
+    // 직전 값이 없는 카드(delta·pct null, deltaStr "N/A")는 변화 칩 대신 '—' — 0.00%를 만들지 않습니다.
     expect(within(night).queryByText(/%/)).toBeNull();
     expect(within(night).queryByText("N/A")).toBeNull();
+    expect(within(night).getByText("값 없음")).toBeTruthy();
     expect(within(market).getByText("2026-10-26 16:51", { selector: "span.tabular-nums" })).toBeTruthy();
     expect(within(market).getByRole("link", { name: "매크로 지표 전체 보기" }).getAttribute("href")).toBe("/macro");
     expect(requested()).toContain(MACRO);
@@ -259,7 +279,8 @@ describe("홈 — 값 있음(운영자)", () => {
     }));
     reads = { ...happyReads(), [MACRO]: overview };
     renderHome(OWNER);
-    const us10y = (await within(region("시장")).findByText("미국채 10년물 수익률(%)")).closest("a") as HTMLElement;
+    await within(region("시장")).findByRole("link", { name: "미국채 10년물 수익률(%)" });
+    const us10y = marketRow("미국채 10년물 수익률(%)");
     expect(within(us10y).getByText("4.992")).toBeTruthy();
     expect(within(us10y).getByText("−0.007")).toBeTruthy();
     expect(within(us10y).getByText("(−0.14%)")).toBeTruthy();
@@ -646,9 +667,10 @@ describe("홈 — 추정·오래됨 배지", () => {
     reads = { ...happyReads(), [MACRO]: overview };
     renderHome(OWNER);
 
-    const night = (await within(region("시장")).findByText("코스피200 야간선물")).closest("a") as HTMLElement;
-    expect(within(night).getByText("추정")).toBeTruthy();
+    await within(region("시장")).findByRole("link", { name: "원/달러 (USD/KRW)" });
     expect(within(marketRow("원/달러 (USD/KRW)")).queryByText("추정")).toBeNull();
+    showGroup("아시아 주요 주가지수");
+    expect(within(marketRow("코스피200 야간선물")).getByText("추정")).toBeTruthy();
   });
 
   it("이어받은 카드(isStale)·가격 없는 보유 계좌에는 '이전 값' + 사유, 이어받은 카드에는 열린 장이어도 '실시간'을 붙이지 않는다", async () => {
@@ -663,7 +685,8 @@ describe("홈 — 추정·오래됨 배지", () => {
     reads = { ...happyReads(), [MACRO]: overview, [PAPER_OVERVIEW]: ledger };
     renderHome(OWNER);
 
-    const usdkrw = (await within(region("시장")).findByText("원/달러 (USD/KRW)")).closest("a") as HTMLElement;
+    await within(region("시장")).findByRole("link", { name: "원/달러 (USD/KRW)" });
+    const usdkrw = marketRow("원/달러 (USD/KRW)");
     expect(within(usdkrw).getByText("이전 값")).toBeTruthy();
     expect(within(usdkrw).getByText("· Yahoo 429 — 직전 저장본 값")).toBeTruthy();
     expect(within(usdkrw).getByText("Yahoo Finance (KRW=X) · 개장 · 2026-10-26 16:51")).toBeTruthy();

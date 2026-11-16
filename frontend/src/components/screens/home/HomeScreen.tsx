@@ -2,14 +2,14 @@
 
 import { AlertsSummary } from "./AlertsSummary";
 import { HomeKpis } from "./HomeKpis";
-import { MarketRows } from "./MarketRows";
+import { MarketPanel } from "./MarketPanel";
 import { PaperPnlPanel } from "./PaperPnlPanel";
 import { RegimePanel } from "./RegimePanel";
 import { StoreStatusLine } from "./StoreStatusLine";
 import { useHomeData } from "./useHomeData";
 
 /**
- * 홈(/) — 첫 화면(설계서 §7). 맨 위 KPI 띠(오늘 요약), 그 아래: 오늘의 국면 패널(왼쪽) · 계좌 손익 표 패널(오른쪽, 운영자만), 아래 전체 폭: 시장 행 → 알림 요약 →
+ * 홈(/) — 첫 화면(설계서 §7). 맨 위 KPI 띠(오늘 요약), 그 아래: 오늘의 국면 패널(왼쪽) · 계좌 손익 표 패널(오른쪽, 운영자만), 아래 전체 폭: 시장 묶음 표 → 알림 요약 →
  * 데이터 저장소 상태 한 줄(운영자만). lg(1024px) 미만은 한 칸으로 쌓습니다.
  *
  * 읽기는 화면 훅(useHomeData)이 경로마다 한 번 하고 구역 부품은 그 결과를 받습니다(모의매매만 계좌 패널이 시장을 고른 뒤 따로 읽음).
@@ -28,7 +28,7 @@ export default function HomeScreen() {
         <RegimePanel read={data.regime} />
         {owner ? <PaperPnlPanel /> : null}
       </div>
-      <MarketRows read={data.macro} clock={data.clock} />
+      <MarketPanel read={data.macro} clock={data.clock} />
       <AlertsSummary alerts={data.alerts} />
       {owner ? <StoreStatusLine read={data.issues} /> : null}
     </div>

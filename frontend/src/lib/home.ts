@@ -48,7 +48,7 @@ export const HOME_REGIME_YEARS = 5;
 /** 알림 요약에 보일 최근 알림 수. */
 export const HOME_ALERT_LIMIT = 3;
 
-/** 시장 행이 가는 화면. 1단계에는 지표 상세 화면이 없어 매크로 지표 화면으로 보냅니다. */
+/** 매크로 지표 전체 표 화면 — '매크로 지표 전체 보기'(홈 시장 패널·지표를 찾지 못한 지표 상세)가 갑니다. 행 하나는 그 지표의 상세(indicatorHref)로 갑니다. */
 export const MARKET_HREF = "/macro";
 
 /**
