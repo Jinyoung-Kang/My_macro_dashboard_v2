@@ -85,8 +85,10 @@ export function Dialog({
     if (!dismissible) event.preventDefault();
   };
 
+  // 제목은 데이터 이름(13F 보유 종목·기관 이름)이 들어오기도 해 대상 머리 h1·검사 칸 제목과 같은 이름 규칙 — 말줄임 없이 낱말 사이에서 줄을 바꾸고
+  // 칸보다 긴 낱말만 칸 안에서 끊습니다(QA-569 — 공백 없는 긴 이름이 닫기 단추 밑으로 넘쳐 대화상자가 가로로 스크롤됐음).
   const heading = (
-    <DialogPrimitive.Title className={`text-heading text-text ${showClose ? "pr-10" : ""}`}>{title}</DialogPrimitive.Title>
+    <DialogPrimitive.Title className={`min-w-0 break-keep wrap-anywhere text-heading text-text ${showClose ? "pr-10" : ""}`.trim()}>{title}</DialogPrimitive.Title>
   );
 
   return (

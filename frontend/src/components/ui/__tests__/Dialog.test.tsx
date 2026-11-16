@@ -66,7 +66,7 @@ describe("열림과 닫힘", () => {
   // (기관 상세 보유 종목 대화상자 390 — h2 scrollWidth 1002 > 324). 대상 머리 h1·목록-검사 검사 칸 제목과 같은 이름 규칙 — 말줄임 없이 낱말 사이 줄바꿈,
   // 칸보다 긴 낱말만 칸 안에서 끊음(min-w-0 break-keep wrap-anywhere, QA-449와 같은 원칙).
   // 수정 전 실패: 제목 클래스가 'text-heading text-text pr-10'뿐(재현 커밋에서는 it.fails).
-  it.fails("제목은 말줄임 없이 낱말 사이에서 줄을 바꾸고 아주 긴 낱말은 칸 안에서 끊는다 — 닫기 단추 자리(pr-10)는 그대로", () => {
+  it("제목은 말줄임 없이 낱말 사이에서 줄을 바꾸고 아주 긴 낱말은 칸 안에서 끊는다 — 닫기 단추 자리(pr-10)는 그대로", () => {
     render(<Dialog open onOpenChange={() => {}} title="계좌 초기화">내용</Dialog>);
     const heading = screen.getByRole("heading", { name: "계좌 초기화" }).className.split(/\s+/);
     expect(heading).toEqual(expect.arrayContaining(["min-w-0", "break-keep", "wrap-anywhere", "pr-10"]));
