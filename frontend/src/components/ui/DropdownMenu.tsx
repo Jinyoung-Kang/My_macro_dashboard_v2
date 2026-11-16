@@ -18,8 +18,11 @@ const CONTENT = `z-50 min-w-56 max-w-xs rounded-card border border-border-overla
  * 화살표로 옮긴 항목)의 바탕은 조작 바탕(bg-control-fill — 덮개 안이라 surface-3)이고, 그 위 글자는 text·text-2만 둡니다(surface-3 위 text-3·accent·danger는
  * 4.5:1 미만 — 금지 쌍). 키보드로 옮긴 항목에는 포커스 링(2px, 안쪽)도 그립니다 — 고대비(forced-colors)에서는 바탕이 지워져도 링이 남습니다.
  * 항목에는 outline-none을 두지 않습니다 — Tailwind 4의 outline-none은 --tw-outline-style을 none으로 두어 focus-visible:outline-2의 선 모양까지 none이 됩니다.
- * 마우스로 가리킨 항목은 :focus-visible이 아니라 링이 생기지 않고 바탕만 바뀌는데, 고대비에서는 그 바탕이 Canvas로 지워지므로 가리킨 항목에 안쪽 2px
- * 시스템 강조색(Highlight) 테두리를 그 모드에서만 둡니다(검토 지적 — 마우스 사용자에게 지금 항목 표시가 없었음).
+ * 마우스로 가리켜도 Radix는 그 항목에 실제 포커스를 줍니다(item.focus() — 마우스로 열 때도 메뉴 상자에 스크립트 포커스). 크로미움은 스크립트 포커스의
+ * :focus-visible을 직전 포커스 상태로 정하므로, 화면을 연 뒤 마우스 클릭으로 포커스가 옮겨진 적이 없거나 직전 포커스가 키보드였으면 마우스로 가리킨 항목에도
+ * 링이 그려지고, 클릭으로 포커스가 옮겨진 뒤에는 바탕만 바뀝니다(QA 스택 Chrome 157에서 확인 — 브라우저 표준 판단이라 막지 않음, 링도 Enter가 고를 지금
+ * 항목을 맞게 가리킴). 바탕만 바뀌는 경우 고대비에서는 그 바탕이 Canvas로 지워지므로 가리킨 항목에 안쪽 2px 시스템 강조색(Highlight) 테두리를 그 모드에서만
+ * 둡니다(검토 지적 — 마우스 사용자에게 지금 항목 표시가 없었음). 링이 그려지는 경우에는 같은 2px 안쪽 선으로 겹쳐 해가 없습니다.
  * 클래스는 이 파일 안에만 둡니다(ui/classes.ts에 내보내지 않음 — 그 표의 누르는 조각 검사(touchTargets)와 따로).
  */
 const ITEM =
