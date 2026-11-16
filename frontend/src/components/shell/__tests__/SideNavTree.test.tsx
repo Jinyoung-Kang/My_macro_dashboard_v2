@@ -9,6 +9,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { resetNavWidthForTest } from "@/hooks/useNavWidth";
 import { WIDE_SHELL_MEDIA, sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
@@ -23,6 +24,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
   resetNavCollapsedForTest();
+  resetNavWidthForTest();
 });
 
 /** 넓은 화면(lg 이상) matchMedia 대역 — 왼쪽 메뉴의 툴팁은 넓은 화면에서만 열립니다(QA-554). */
