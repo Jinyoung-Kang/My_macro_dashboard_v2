@@ -7,8 +7,9 @@
  * - 키보드: ←·→ 16px(Shift 64)·Home·End는 바로 저장, Enter는 접기·펼치기(기억한 폭으로), 받은 키는 기본 동작을 막고 받지 않는 키는 그대로.
  * - 두 번 누르기: 접기·펼치기. 끌고 바로 한 번 더 눌러 생긴 두 번 누르기는 받지 않음.
  * - 끌기(jsdom 포인터 이벤트 — setPointerCapture는 jsdom에 없어 대역): 3px 문턱, 한 프레임에 한 번(requestAnimationFrame 대역), 끄는 동안은 저장하지 않고
- *   놓을 때 한 번, 140px 아래로 끌면 레일(끌기 전 폭 기억), 레일을 끌어내면 끈 폭으로 펼침, 놓을 때 기다리던 프레임 반영, pointercancel·lostpointercapture도
- *   끝냄, 잡은 동안 html의 data-nav-resizing(커서·글 고르기 — globals.css)과 툴팁 막기, 끄는 도중 사라지면 표지를 떼고 그린 폭을 저장.
+ *   놓을 때 한 번, 140px 아래로 끌면 레일(끌기 전 폭 기억), 레일을 끌어내면 끈 폭으로 펼침, 같은 끌기에서 되돌아가는 문턱은 16px 여유(손떨림),
+ *   놓을 때 기다리던 프레임 반영, pointercancel·lostpointercapture도 끝냄, 잡은 동안 html의 data-nav-resizing(커서·글 고르기 — globals.css)과
+ *   툴팁 막기, 끄는 도중 사라지면 표지를 떼고 그린 폭을 저장.
  * - 전환: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 문턱)만 motion-safe:transition-[width](150ms) — 처음 그릴 때·끄는 동안·키 걸음에는 없음
  *   (단추로 접고 편 직후 끌기를 시작해도 그때 끔).
  * - 저장소가 던져도 기본 폭으로 그려지고 끌기·키가 동작.
@@ -309,7 +310,7 @@ describe("끌기", () => {
     expect(window.localStorage.getItem("shell.navWidth")).toBe("200");
   });
 
-  it("140px 아래로 끌면 레일로 접히고(그 바뀜에만 150ms 전환) 펼친 폭은 끌기 전 값 — 다시 끌어내면 펼침", () => {
+  it("140px 아래로 끌면 레일로 접히고(그 바뀜에만 150ms 전환) 펼친 폭은 끌기 전 값 — 같은 끌기에서 156px 너머로 다시 끌어내면 펼침", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     window.localStorage.setItem("shell.navWidth", "260");
     render(<SideNav pathname="/macro" user={MEMBER} />);
@@ -328,7 +329,11 @@ describe("끌기", () => {
     // 끄는 동안이라 아직 저장하지 않음
     expect(window.localStorage.getItem("shell.navCollapsed")).toBeNull();
 
+    // 되돌림 여유 — 잡을 때의 펼침으로 돌아가려면 156 이상
     move(150);
+    runFrames();
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    move(156);
     runFrames();
     expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
     expect(value().now).toBe("180");
@@ -360,6 +365,20 @@ describe("끌기", () => {
     up(290);
     expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
     expect(window.localStorage.getItem("shell.navWidth")).toBe("290");
+  });
+
+  it("문턱 근처의 손떨림(139·141을 번갈아)은 한 번만 접는다 — 접힘이 프레임마다 바뀌지 않음", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    const pressed: (string | null)[] = [];
+    down(220);
+    for (const x of [141, 139, 141, 139, 141, 139, 141]) {
+      move(x);
+      runFrames();
+      pressed.push(toggleButton().getAttribute("aria-pressed"));
+    }
+    expect(pressed).toEqual(["false", "true", "true", "true", "true", "true", "true"]);
+    up(141);
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("1");
   });
 
   it("pointercancel·lostpointercapture도 끌기를 끝내고 그때까지의 폭을 저장한다 — 다른 포인터의 이벤트는 무시", () => {

@@ -10,6 +10,7 @@ import {
   NAV_KEY_STEP_LARGE,
   NAV_MOTION_MS,
   NAV_RAIL_WIDTH,
+  NAV_SNAP_HYSTERESIS,
   NAV_SNAP_WIDTH,
   NAV_WIDTH_DEFAULT,
   NAV_WIDTH_MAX,
@@ -19,6 +20,7 @@ import {
   navKeyLayout,
   navSeparatorValue,
   navShownWidth,
+  navSnapThreshold,
   parseNavWidth,
 } from "../navWidth";
 
@@ -35,6 +37,10 @@ describe("숫자", () => {
     expect(NAV_SNAP_WIDTH).toBeLessThan(NAV_WIDTH_MIN);
     expect(NAV_SNAP_WIDTH).toBeGreaterThan(NAV_RAIL_WIDTH);
     expect([NAV_KEY_STEP, NAV_KEY_STEP_LARGE, NAV_DRAG_SLOP, NAV_MOTION_MS]).toEqual([16, 64, 3, 150]);
+    // 되돌림 여유 16 — 되돌아가는 문턱(124·156)도 레일보다 넓고 하한보다 좁음
+    expect(NAV_SNAP_HYSTERESIS).toBe(16);
+    expect(NAV_SNAP_WIDTH - NAV_SNAP_HYSTERESIS).toBeGreaterThan(NAV_RAIL_WIDTH);
+    expect(NAV_SNAP_WIDTH + NAV_SNAP_HYSTERESIS).toBeLessThan(NAV_WIDTH_MIN);
   });
 });
 
@@ -87,6 +93,42 @@ describe("navDragLayout — 끄는 동안", () => {
     expect(navDragLayout(139, 260)).toEqual({ collapsed: true, width: 260 });
     expect(navDragLayout(48, 300)).toEqual({ collapsed: true, width: 300 });
     expect(navDragLayout(-40, 220)).toEqual({ collapsed: true, width: 220 });
+  });
+
+  it("잡을 때의 접힘에서 벗어나는 첫 문턱은 140 — 펼친 채 잡으면 139에서 접고, 레일에서 잡으면 140에서 편다", () => {
+    expect(navDragLayout(139, 260, { startCollapsed: false, collapsed: false })).toEqual({ collapsed: true, width: 260 });
+    expect(navDragLayout(140, 260, { startCollapsed: false, collapsed: false })).toEqual({ collapsed: false, width: 180 });
+    expect(navDragLayout(139, 260, { startCollapsed: true, collapsed: true })).toEqual({ collapsed: true, width: 260 });
+    expect(navDragLayout(140, 260, { startCollapsed: true, collapsed: true })).toEqual({ collapsed: false, width: 180 });
+  });
+
+  it("벗어났다가 되돌아가려면 16px 더 — 펼친 채 잡아 접었으면 156부터 펴고, 레일에서 끌어내 폈으면 124 아래에서 접는다", () => {
+    const foldedInDrag = { startCollapsed: false, collapsed: true };
+    expect(navSnapThreshold(foldedInDrag)).toBe(156);
+    expect(navDragLayout(141, 260, foldedInDrag)).toEqual({ collapsed: true, width: 260 });
+    expect(navDragLayout(155, 260, foldedInDrag)).toEqual({ collapsed: true, width: 260 });
+    expect(navDragLayout(156, 260, foldedInDrag)).toEqual({ collapsed: false, width: 180 });
+
+    const openedInDrag = { startCollapsed: true, collapsed: false };
+    expect(navSnapThreshold(openedInDrag)).toBe(124);
+    expect(navDragLayout(139, 230, openedInDrag)).toEqual({ collapsed: false, width: 180 });
+    expect(navDragLayout(124, 230, openedInDrag)).toEqual({ collapsed: false, width: 180 });
+    expect(navDragLayout(123, 230, openedInDrag)).toEqual({ collapsed: true, width: 230 });
+
+    expect(navSnapThreshold()).toBe(140);
+    expect(navSnapThreshold({ startCollapsed: true, collapsed: true })).toBe(140);
+  });
+
+  it("문턱 근처의 손떨림(139·141을 번갈아)은 한 번만 접는다", () => {
+    let collapsed = false;
+    let flips = 0;
+    for (const pointer of [141, 139, 141, 139, 141, 139, 141]) {
+      const next = navDragLayout(pointer, 220, { startCollapsed: false, collapsed });
+      if (next.collapsed !== collapsed) flips += 1;
+      collapsed = next.collapsed;
+    }
+    expect(flips).toBe(1);
+    expect(collapsed).toBe(true);
   });
 });
 

@@ -4,7 +4,8 @@
  *
  * - 펼친 폭은 180~320px(기본 220px)이고, 접으면 48px 아이콘 레일입니다. 접어도 펼친 폭은 기억해 두었다가 펼 때 되돌립니다.
  * - 끌기: 손잡이를 잡은 자리에서 옮긴 만큼 폭이 따라오고(180~320 안으로 자름), 140px 아래로 끌면 레일로 접히며(끌기 전 펼친 폭을 기억),
- *   레일을 140px 넘어 끌어내면 끈 폭으로 펼칩니다(180 아래면 180).
+ *   레일을 140px 넘어 끌어내면 끈 폭으로 펼칩니다(180 아래면 180). 같은 끌기 안에서 잡을 때의 접힘으로 되돌아가려면 16px 더 끌어야 합니다
+ *   (문턱 근처의 손떨림이 프레임마다 접고 펴지 않게).
  * - 키보드(손잡이 — role=separator): ←·→ 16px(Shift 64px), Home 최소·End 최대, Enter 접기·펼치기. 접힌 동안 →·Enter는 기억한 폭으로,
  *   End는 최대 폭으로 펼치고 ←·Home은 그대로입니다(이미 가장 왼쪽).
  */
@@ -17,6 +18,11 @@ export const NAV_WIDTH_DEFAULT = 220;
 export const NAV_RAIL_WIDTH = 48;
 /** 끌어서 이 폭(px) 아래로 놓이면 레일로 접힙니다 — 하한(180)보다 조금 더 끌어야 접혀 실수로 접히지 않습니다. */
 export const NAV_SNAP_WIDTH = 140;
+/**
+ * 끄는 동안 문턱의 되돌림 여유(px) — 같은 끌기 안에서 잡을 때의 접힘으로 되돌아가려면 문턱에서 이만큼 더 끌어야 합니다(펼친 채 잡아 접었으면 156 이상에서
+ * 다시 펴고, 레일에서 끌어내 폈으면 124 아래에서 다시 접음). 문턱 근처에서 포인터가 1~2px 떨려도 프레임마다 접고 펴며 본문이 오가지 않게 합니다.
+ */
+export const NAV_SNAP_HYSTERESIS = 16;
 /** 화살표 한 번에 바뀌는 폭(px) — Shift와 함께면 큰 걸음. */
 export const NAV_KEY_STEP = 16;
 export const NAV_KEY_STEP_LARGE = 64;
@@ -48,12 +54,25 @@ export function navShownWidth(layout: NavLayout): number {
   return layout.collapsed ? NAV_RAIL_WIDTH : clampNavWidth(layout.width);
 }
 
+/** 끄는 동안의 접힘 — 손잡이를 잡을 때(`startCollapsed`)와 지금(`collapsed` — 바로 앞 프레임까지 그린 것). */
+export type NavDragState = { startCollapsed: boolean; collapsed: boolean };
+
 /**
- * 끄는 동안의 배치 — `pointerWidth`는 손잡이를 잡은 자리에서 옮긴 만큼 더한 폭(잡을 때 보이던 폭 + 옮긴 거리), `restoreWidth`는 끌기 전 펼친 폭.
- * 140px 아래면 레일로 접고 펼친 폭은 끌기 전 값으로 둡니다(지나며 자른 180이 아니라 — 펼치면 끌기 전 폭으로 돌아감). 그 밖은 끈 폭으로 펼칩니다(180~320).
+ * 끄는 동안 접힘을 가르는 폭 — 잡을 때의 접힘에서 벗어나는 쪽은 140, 이미 벗어났다가 되돌아가는 쪽은 16px 더(펼친 채 잡았으면 156, 레일에서 잡았으면 124).
+ * `state`가 없으면 140입니다.
  */
-export function navDragLayout(pointerWidth: number, restoreWidth: number): NavLayout {
-  if (!(pointerWidth >= NAV_SNAP_WIDTH)) return { collapsed: true, width: clampNavWidth(restoreWidth) };
+export function navSnapThreshold(state?: NavDragState): number {
+  if (!state || state.collapsed === state.startCollapsed) return NAV_SNAP_WIDTH;
+  return state.startCollapsed ? NAV_SNAP_WIDTH - NAV_SNAP_HYSTERESIS : NAV_SNAP_WIDTH + NAV_SNAP_HYSTERESIS;
+}
+
+/**
+ * 끄는 동안의 배치 — `pointerWidth`는 손잡이를 잡은 자리에서 옮긴 만큼 더한 폭(잡을 때 보이던 폭 + 옮긴 거리), `restoreWidth`는 끌기 전 펼친 폭,
+ * `state`는 잡을 때와 지금의 접힘(문턱의 되돌림 여유 — navSnapThreshold).
+ * 문턱 아래면 레일로 접고 펼친 폭은 끌기 전 값으로 둡니다(지나며 자른 180이 아니라 — 펼치면 끌기 전 폭으로 돌아감). 그 밖은 끈 폭으로 펼칩니다(180~320).
+ */
+export function navDragLayout(pointerWidth: number, restoreWidth: number, state?: NavDragState): NavLayout {
+  if (!(pointerWidth >= navSnapThreshold(state))) return { collapsed: true, width: clampNavWidth(restoreWidth) };
   return { collapsed: false, width: clampNavWidth(pointerWidth) };
 }
 
