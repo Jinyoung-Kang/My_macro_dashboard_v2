@@ -51,7 +51,8 @@ const NAV_MOTION = "motion-safe:transition-[width] motion-safe:duration-150";
  * 2px 선과 포커스 링(FOCUS_RING)이 보입니다. 커서는 col-resize, 손가락으로 끌어도 화면이 밀리지 않게 touch-none, 글은 없습니다.
  * 본문 왼쪽 7px에 걸치므로(본문 글 열은 안쪽 여백 32px라 그 아래 누를 것은 없음) 본문(relative)보다 위(z-20) — 덮개(시트 z-30·툴팁·대화상자)보다는 아래.
  * 고대비(forced-colors)에서는 바탕색(선)이 지워지므로 가리킨 동안·잡은 동안 안쪽 2px Highlight 윤곽선을 그립니다(포커스는 FOCUS_RING 윤곽선이 남음).
- * 누름 자리가 8px로 좁은 것(WCAG 2.5.8·2.5.7)의 판단은 진행 기록 'P3 추가 — 가변 폭 왼쪽 메뉴'에 적었습니다.
+ * 누름 자리가 8px로 좁은 것(WCAG 2.5.8·2.5.7)은 같은 일을 하는 24px 이상의 포인터 조작으로 메웁니다 — 접기·펼치기는 맨 아래 접기 단추, 폭 맞추기는
+ * 상단바 계정 메뉴의 '왼쪽 메뉴 폭' 세 단계(shell/AccountMenu, 2026-11-16 결정). 판단은 진행 기록 'P3 추가 — 가변 폭 왼쪽 메뉴'에 적었습니다.
  */
 const HANDLE = [
   "absolute inset-y-0 -right-2 z-20 w-2 cursor-col-resize touch-none select-none",
@@ -97,6 +98,7 @@ const HANDLE = [
  * 펼친 폭이 200~320px(기본 220) 사이에서 바뀌고, 140px 아래로 끌어 놓으면 레일로 접히며 레일을 그 너머로 끌어내면 끈 폭으로 펼칩니다. 두 번 누르면 접기·펼치기,
  * 키보드는 ←·→ 16px(Shift 64)·Home·End·Enter(접기·펼치기). 펼친 폭은 보는 사람별로 기억하고(useNavWidth — 키 shell.navWidth), 접기 단추·[로 펴면
  * 그 폭으로 돌아갑니다. 끄는 동안은 폭 전환이 없고(포인터를 바로 따라감) 툴팁이 열리지 않습니다. 셸 뿌리가 같은 값으로 --shell-nav-w를 둡니다(Shell).
+ * 끌지 않고 폭을 고르는 길은 상단바 계정 메뉴의 '왼쪽 메뉴 폭'(좁게 200·기본 220·넓게 280 — 접혀 있으면 셸 명령 toggle-nav로 이 메뉴의 접기·펼치기 길을 탐)입니다.
  */
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   const tree = navTree(pathname, user);
