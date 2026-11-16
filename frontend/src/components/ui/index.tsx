@@ -1,7 +1,7 @@
 "use client";
 
 import { Children, ReactNode, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
-import { deltaColor, EMPTY, formatAge, formatKst, withoutLeadingIcon } from "@/lib/format";
+import { deltaColor, deltaDirection, EMPTY, formatAge, formatKst, withMinusSign, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
   FOCUS_RING,
@@ -164,6 +164,10 @@ export function Metric({
   source?: ReactNode;
   tone?: string;
 }) {
+  // 변화 줄 — 색만으로 등락을 전하지 않게 ▲▼(읽기에서 뺌, 12px)와 읽어 주는 방향 글을 붙이고, 음수 부호는 −(U+2212)로 그립니다(변화 칩과 같은 문법 — QA-525).
+  // 방향은 색과 같은 판정(보이는 자릿수로 반올림한 값)이고, 글이 '—'(모름)이면 방향 표시를 두지 않습니다.
+  const shownDelta = deltaText ?? EMPTY;
+  const direction = shownDelta.trim() === "" || shownDelta.trim() === EMPTY ? null : deltaDirection(delta, deltaDigits);
   return (
     <div className="min-w-0 rounded-control border border-border bg-surface p-3">
       <div className="text-[13px] font-medium text-text-2">{label}</div>
@@ -172,7 +176,13 @@ export function Metric({
       </div>
       {(deltaText || delta !== undefined) && (
         <div className={`mt-1 text-sm tabular-nums ${deltaColor(delta, deltaDigits)}`}>
-          {deltaText ?? EMPTY}
+          {direction === "up" || direction === "down" ? (
+            <span aria-hidden="true" className="mr-1 text-xs">
+              {direction === "up" ? "▲" : "▼"}
+            </span>
+          ) : null}
+          {direction ? <span className="sr-only">{direction === "up" ? "상승" : direction === "down" ? "하락" : "변화 없음"}</span> : null}
+          <span>{withMinusSign(shownDelta)}</span>
         </div>
       )}
       {caption && <div className="mt-1 text-xs text-text-3">{caption}</div>}

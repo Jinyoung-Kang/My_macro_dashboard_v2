@@ -31,7 +31,7 @@ function deltaRow(props: { delta?: number | null; deltaText?: string; deltaDigit
 }
 
 describe("QA-525 공용 지표 칸의 변화 줄 — ▲▼·방향 글·−(U+2212)", () => {
-  it.fails("하락(−1.5, '-1.50%')은 ▼(12px, 읽기에서 뺌)·sr '하락'·보이는 '−1.50%'이고 하락색이다", () => {
+  it("하락(−1.5, '-1.50%')은 ▼(12px, 읽기에서 뺌)·sr '하락'·보이는 '−1.50%'이고 하락색이다", () => {
     expect(deltaRow({ delta: -1.5, deltaText: "-1.50%" })).toEqual({
       arrow: "▼",
       arrowSmall: true,
@@ -41,7 +41,7 @@ describe("QA-525 공용 지표 칸의 변화 줄 — ▲▼·방향 글·−(U+2
     });
   });
 
-  it.fails("상승(+0.2, '+0.20%')은 ▲·sr '상승'이고 상승색이다", () => {
+  it("상승(+0.2, '+0.20%')은 ▲·sr '상승'이고 상승색이다", () => {
     expect(deltaRow({ delta: 0.2, deltaText: "+0.20%" })).toEqual({
       arrow: "▲",
       arrowSmall: true,
@@ -51,7 +51,7 @@ describe("QA-525 공용 지표 칸의 변화 줄 — ▲▼·방향 글·−(U+2
     });
   });
 
-  it.fails("0으로 찍히는 값(0.001, 자릿수 2)은 화살표 없이 sr '변화 없음'이다", () => {
+  it("0으로 찍히는 값(0.001, 자릿수 2)은 화살표 없이 sr '변화 없음'이다", () => {
     expect(deltaRow({ delta: 0.001, deltaText: "0.00%" })).toEqual({
       arrow: null,
       arrowSmall: null,
@@ -71,7 +71,7 @@ describe("QA-525 공용 지표 칸의 변화 줄 — ▲▼·방향 글·−(U+2
     });
   });
 
-  it.fails("글 안의 날짜 하이픈은 그대로 두고 숫자 앞 음수 부호만 −로 그린다('기준 2026-11-10 -3', 자릿수 0)", () => {
+  it("글 안의 날짜 하이픈은 그대로 두고 숫자 앞 음수 부호만 −로 그린다('기준 2026-11-10 -3', 자릿수 0)", () => {
     expect(deltaRow({ delta: -3, deltaText: "기준 2026-11-10 -3", deltaDigits: 0 })).toEqual({
       arrow: "▼",
       arrowSmall: true,

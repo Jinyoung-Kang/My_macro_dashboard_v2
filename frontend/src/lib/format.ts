@@ -98,6 +98,26 @@ export function delayLabel(minutes: number | null | undefined): string | null {
 }
 
 /**
+ * 등락 방향 — **보이는**(그 자리 자릿수로 반올림한) 값의 부호. 0으로 찍히면 "flat", 값을 모르면 null.
+ * 색(`deltaColor`)과 ▲▼·읽어 주는 방향 글(공용 지표 칸 Metric — QA-525)이 같은 판정을 쓰게 한 곳에 둡니다.
+ *
+ * @param digits 그 자리에 함께 찍는 숫자의 자릿수(deltaColor와 같음)
+ */
+export function deltaDirection(
+  value: number | null | undefined,
+  digits = 2,
+): "up" | "down" | "flat" | null {
+  if (missing(value)) {
+    return null;
+  }
+  const shown = roundForDisplay(value, digits);
+  if (shown > 0) {
+    return "up";
+  }
+  return shown < 0 ? "down" : "flat";
+}
+
+/**
  * 등락 색상 클래스. 한국 시장 관행대로 상승은 빨강, 하락은 파랑입니다.
  *
  * @param value  등락 값
@@ -105,23 +125,30 @@ export function delayLabel(minutes: number | null | undefined): string | null {
  * @returns Tailwind 클래스명. 값이 없으면 중립색
  *
  * `digits`를 맞추지 않으면 "0.00인데 파란색" 같은 화면이 나옵니다 — 반올림 후
- * 0이 된 값에 하락색이 남기 때문입니다.
+ * 0이 된 값에 하락색이 남기 때문입니다. 판정은 `deltaDirection`과 같습니다.
  */
 export function deltaColor(
   value: number | null | undefined,
   digits = 2,
 ): string {
-  if (missing(value)) {
+  const direction = deltaDirection(value, digits);
+  if (direction === null) {
     return "text-text-3";
   }
-  const shown = roundForDisplay(value, digits);
-  if (shown > 0) {
+  if (direction === "up") {
     return "text-up";
   }
-  if (shown < 0) {
-    return "text-down";
-  }
-  return "text-text-2";
+  return direction === "down" ? "text-down" : "text-text-2";
+}
+
+/**
+ * 이미 만든 글 속 숫자의 음수 부호를 하이픈(-)에서 −(U+2212)로 바꿉니다 — 화면이 `formatSigned`로 만든 변화 글('-1.50%'·'1주 -3')을
+ * 변화 칩과 같은 부호로 그릴 때(공용 지표 칸 Metric — QA-525).
+ *
+ * 줄 처음·공백·여는 괄호 바로 뒤의 '-'가 숫자나 소수점 앞일 때만 바꿉니다 — 날짜('2026-11-10')·코드('BRK-B')·낱말 사이의 하이픈은 그대로입니다.
+ */
+export function withMinusSign(text: string): string {
+  return text.replace(/(^|[\s(])-(?=[\d.])/g, `$1${MINUS}`);
 }
 
 export function formatCurrency(value: number | null | undefined): string {

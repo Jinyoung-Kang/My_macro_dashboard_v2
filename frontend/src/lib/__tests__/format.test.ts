@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  deltaColor, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
+  deltaColor, deltaDirection, withMinusSign, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
   formatSigned, formatSignedKrw, formatTrillionDelta, formatTrillionUsd, formatUsd, formatUsdWithKrw,
   formatKstSeconds,
   formatLatency,
@@ -190,6 +190,38 @@ describe("부호 −(U+2212) — 변화 칩(formatSignedMinus)", () => {
   it("천 단위 구분과 자릿수", () => {
     expect(formatSignedMinus(-12345.678, 1).text).toBe(`${MINUS}12,345.7`);
     expect(formatSignedMinus(1500, 0).text).toBe("+1,500");
+  });
+});
+
+describe("QA-525 등락 방향(deltaDirection)과 글 속 음수 부호(withMinusSign) — 공용 지표 칸 Metric", () => {
+  it("방향은 보이는 자릿수로 반올림한 값의 부호 — deltaColor와 같은 판정, 모르면 null", () => {
+    expect(deltaDirection(1.5)).toBe("up");
+    expect(deltaDirection(-1.5)).toBe("down");
+    expect(deltaDirection(0.001)).toBe("flat");
+    expect(deltaDirection(-0.004)).toBe("flat");
+    expect(deltaDirection(-0.004, 3)).toBe("down");
+    expect(deltaDirection(0)).toBe("flat");
+    for (const value of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(deltaDirection(value), String(value)).toBeNull();
+    }
+    for (const [value, digits] of [[1.5, 2], [-1.5, 2], [-0.004, 2], [-0.004, 3], [null, 2]] as const) {
+      const color = { up: "text-up", down: "text-down", flat: "text-text-2" }[deltaDirection(value, digits) ?? "flat"];
+      expect(deltaColor(value, digits), `${value}/${digits}`).toBe(value === null ? "text-text-3" : color);
+    }
+  });
+
+  it("줄 처음·공백·여는 괄호 뒤의 '-'가 숫자·소수점 앞일 때만 −(U+2212)로 — 날짜·코드·낱말 하이픈은 그대로", () => {
+    expect(withMinusSign("-1.50%")).toBe(`${MINUS}1.50%`);
+    expect(withMinusSign("1주 -1,234")).toBe(`1주 ${MINUS}1,234`);
+    expect(withMinusSign("기간 -0.12%")).toBe(`기간 ${MINUS}0.12%`);
+    expect(withMinusSign("-0.007%p (-0.14%)")).toBe(`${MINUS}0.007%p (${MINUS}0.14%)`);
+    expect(withMinusSign("-.5")).toBe(`${MINUS}.5`);
+    expect(withMinusSign("기준 2026-11-10 -3")).toBe(`기준 2026-11-10 ${MINUS}3`);
+    expect(withMinusSign("BRK-B -2")).toBe(`BRK-B ${MINUS}2`);
+    expect(withMinusSign("+1.50%")).toBe("+1.50%");
+    expect(withMinusSign("—")).toBe("—");
+    expect(withMinusSign("- 없음")).toBe("- 없음");
+    expect(withMinusSign(`${MINUS}1.00`)).toBe(`${MINUS}1.00`);
   });
 });
 
