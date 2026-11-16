@@ -16,10 +16,10 @@ import {
   Loading,
   Metric,
   PageHeader,
+  Panel,
   SourceBadge,
-  Table,
 } from "@/components/ui";
-import { EstimateBadge } from "@/components/patterns";
+import { type Column, DataTable, EstimateBadge } from "@/components/patterns";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
@@ -42,6 +42,7 @@ import { AdvancedSection } from "./AdvancedSection";
 import { SingleChartSection } from "./SingleChartSection";
 import { ScrapedSection } from "./ScrapedSection";
 import { EconCalendarSection } from "./EconCalendarSection";
+import { CriteriaDetails } from "./CriteriaDetails";
 import { endpoints } from "@/lib/endpoints";
 
 /** warn이면 그 상태를 경고 아이콘과 함께 그립니다(글에는 기호를 넣지 않음). */
@@ -65,6 +66,19 @@ const SPREAD_TABLE: { state: string; warn?: boolean; value: string; reading: str
     reading: "현재 인플레이션을 잡기 위해 금리를 올렸으나 미래 경기 침체를 확신합니다.",
     outcome: "역사적으로 1~2년 내 경기 침체 도래",
   },
+];
+
+/** 해석 기준표의 칸 — 시장 상태(행 머리, 역전은 경고 상태 글)·스프레드·해석·귀결. */
+const SPREAD_COLUMNS: readonly Column<(typeof SPREAD_TABLE)[number]>[] = [
+  {
+    key: "state",
+    header: "시장 상태",
+    rowHeader: true,
+    cell: (row) => (row.warn ? <StatusText tone="warn">{row.state}</StatusText> : row.state),
+  },
+  { key: "value", header: "스프레드", cell: (row) => row.value },
+  { key: "reading", header: "시장의 심리 및 해석", cell: (row) => row.reading },
+  { key: "outcome", header: "경제적 귀결", cell: (row) => row.outcome },
 ];
 
 export default function MacroPage() {
@@ -239,26 +253,22 @@ export default function MacroPage() {
             title="30Y−2Y 장단기 금리차"
             block={data.spreads.official30y2y}
           />
-          <Card
+          <Panel
             title="장단기 금리차 해석 기준"
             subtitle="역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다."
             source={SOURCES.internalRules}
           >
-            <Table
-              rows={SPREAD_TABLE}
-              rowKey={(row) => row.state}
-              columns={[
-                {
-                  key: "state",
-                  header: "시장 상태",
-                  render: (row) => (row.warn ? <StatusText tone="warn">{row.state}</StatusText> : row.state),
-                },
-                { key: "value", header: "스프레드", render: (row) => row.value },
-                { key: "reading", header: "시장의 심리 및 해석", render: (row) => row.reading },
-                { key: "outcome", header: "경제적 귀결", render: (row) => row.outcome },
-              ]}
-            />
-          </Card>
+            {/* 참고 표라 처음에는 접어 둡니다(긴 화면 — 실행 명세 §9-10). */}
+            <CriteriaDetails summary="해석 기준 보기">
+              <DataTable
+                columns={SPREAD_COLUMNS}
+                rows={SPREAD_TABLE}
+                rowKey={(row) => row.state}
+                caption="장단기 금리차 해석 기준"
+                scrollHint="overflow"
+              />
+            </CriteriaDetails>
+          </Panel>
         </>
       )}
 

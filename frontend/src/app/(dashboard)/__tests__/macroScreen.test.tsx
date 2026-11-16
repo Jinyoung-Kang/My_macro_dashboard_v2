@@ -1,6 +1,7 @@
 /**
  * 매크로 화면(/macro) — 작업대 화면 언어 P5a 배치에서 고정하는 것.
  *  - 원본 데이터: 화면 머리의 동작 둘('원본 데이터 보기' 대화상자·'원본 데이터 복사'), 열 때만 읽음, 생성 시각·글자 수·다시 읽기·오류와 다시 시도
+ *  - 장단기 금리차: 묶음 머리(h3) + KPI 띠 둘(값 부호·'%p' 단위·변화 칩), 해석 기준표는 처음에 접힘(펼치기 머리 + 공용 표)
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,5 +108,52 @@ describe("QA-623 원본 데이터 '다시 읽기' 실패를 알린다", () => {
 
     expect(within(dialog).queryByText("새로 읽지 못함")).not.toBeNull();
     expect(within(dialog).getByText("원본 글")).toBeTruthy();
+  });
+});
+
+describe("장단기 금리차", () => {
+  const block = (over: Record<string, unknown>) => ({
+    longId: "DGS10", shortId: "DGS2", points: [{ date: "2026-11-13", value: 0.512 }], latest: 0.512, previous: 0.5,
+    scraped: { longValue: 4.1, shortValue: 3.6, spread: 0.5, previousSpread: 0.52, delta: -0.02 }, ...over,
+  });
+  const overview = {
+    available: true, collectedAtKst: "2026-11-17 06:30 KST", categories: [],
+    spreads: { realtime: { longValue: null, shortValue: null, spread: null, previousSpread: null, delta: null },
+      official10y2y: block({}), official30y2y: block({ longId: "DGS30" }) },
+  };
+
+  it("묶음 머리(h3)와 KPI 띠 둘 — 값은 부호·셋째 자리에 '%p' 단위를 따로, 변화는 칩, 기준일·출처 줄", async () => {
+    reads["/api/macro/overview"] = () => Promise.resolve(overview);
+    render(<MacroPage />);
+
+    const panel = (await screen.findByRole("heading", { level: 2, name: "10Y−2Y 장단기 금리차" })).closest("section") as HTMLElement;
+    expect(within(panel).getByRole("heading", { level: 3, name: /공식 확정치 · FRED/ })).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: /스크래핑 참고 시세 · TradingView/ })).toBeTruthy();
+    const official = within(panel).getByRole("region", { name: "10Y−2Y 공식 확정치" });
+    const tile = within(official).getByRole("group", { name: "10Y−2Y 스프레드" });
+    // 값 단위(첫째)는 값과 따로 작은 보조 글, 변화 칩의 단위는 칩 안(둘째).
+    expect(within(tile).getAllByText("%p")[0].className).toContain("text-text-3");
+    expect(tile.textContent).toContain("+0.512%p");
+    expect(tile.textContent).toContain("+0.012%p");
+    expect(tile.textContent).toContain("직전 확정치 대비");
+    expect(tile.textContent).toContain("FRED DGS10 − DGS2 · 2026-11-13");
+    const scraped = within(panel).getByRole("region", { name: "10Y−2Y 스크래핑 참고 시세" });
+    expect(within(scraped).getByRole("group", { name: "10Y−2Y 스프레드" }).textContent).toContain("−0.020%p");
+    expect(within(scraped).getByText("하락").className).toContain("sr-only");
+  });
+
+  it("해석 기준표는 처음에 접혀 있고(펼치기 머리 '해석 기준 보기') 안에 공용 표 — '역전'은 경고 상태 글", async () => {
+    reads["/api/macro/overview"] = () => Promise.resolve(overview);
+    render(<MacroPage />);
+
+    const panel = (await screen.findByRole("heading", { level: 2, name: "장단기 금리차 해석 기준" })).closest("section") as HTMLElement;
+    const details = panel.querySelector("details") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    expect(within(details).getByText("해석 기준 보기").tagName).toBe("SUMMARY");
+    const table = details.querySelector("table") as HTMLTableElement;
+    expect(table.querySelector("caption")?.textContent).toBe("장단기 금리차 해석 기준");
+    expect(within(table).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual([
+      "정상 (Normal)", "평탄화 (Flattening)", "주의: 역전 (Inversion)",
+    ]);
   });
 });
