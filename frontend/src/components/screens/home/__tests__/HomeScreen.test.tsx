@@ -6,6 +6,7 @@
  *  - 일부 실패: 한 경로가 실패해도 그 구역만 오류(role="alert", 다시 시도), 나머지는 그린다
  *  - 추정: isEstimated 카드에 '추정' 배지 / 오래됨: isStale 카드·가격 없는 보유 계좌·늦은 관측치에 '이전 값' + 사유
  *  - 회원(운영자 아님): /api/paper/*·/api/status*를 부르지 않고 그 구역이 없다
+ *  - 맨 위 KPI 띠(오늘 요약): 타일마다 대상 화면 링크, 값·'—' + 사유·자리표시·변화 칩·수집 오류 아이콘 + 글, 모의매매 값 없음
  *
  * 보는 시각은 2026-10-26(월) 16:51 KST로 고정합니다(장 상태가 시각에 따라 바뀜) — 외환·CME 개장, 뉴욕 증시 마감, KRX 선물 휴식.
  */
@@ -133,10 +134,13 @@ function inlineSpacing(element: Element, prefixes: string[]): { base: number; lg
   return { base, lg: find("lg:") ?? base };
 }
 
-/** 시장 행 한 줄(링크) — 이름 글자에서 가장 가까운 a. */
+/** 시장 행 한 줄(링크) — 시장 구역 안 이름 글자에서 가장 가까운 a(맨 위 KPI 띠에도 같은 이름이 있음). */
 function marketRow(name: string): HTMLElement {
-  return screen.getByText(name).closest("a") as HTMLElement;
+  return within(region("시장")).getByText(name).closest("a") as HTMLElement;
 }
+
+/** 국면 구역 안의 글 — 맨 위 KPI 띠의 국면 타일에도 같은 판정 라벨이 있어 구역으로 좁힙니다. */
+const inRegime = () => within(region("오늘의 국면"));
 
 describe("홈 — 값 있음(운영자)", () => {
   it("라우트 /는 홈 화면을 그린다(옛 /macro 리디렉션 대신)", async () => {
@@ -149,7 +153,7 @@ describe("홈 — 값 있음(운영자)", () => {
   it("오늘의 국면 — 백엔드 라벨·판정 문장·기준일(뜻 포함)·신호 네 타일·자세히 링크, '3일 확정'은 없다", async () => {
     reads = happyReads();
     renderHome(OWNER);
-    const label = await screen.findByText("확장 (Expansion)");
+    const label = await inRegime().findByText("확장 (Expansion)");
     // 판정이 났으면 큰 글자 잉크 그대로(판정 불가만 중립색).
     expect(label.className).not.toContain("text-neutral");
     const hero = region("오늘의 국면");
@@ -270,7 +274,7 @@ describe("홈 — 값 있음(운영자)", () => {
     }));
     reads = { ...happyReads(), [MACRO]: overview };
     renderHome(OWNER);
-    const us10y = (await screen.findByText("미국채 10년물 수익률(%)")).closest("a") as HTMLElement;
+    const us10y = (await within(region("시장")).findByText("미국채 10년물 수익률(%)")).closest("a") as HTMLElement;
     expect(within(us10y).getByText("4.992")).toBeTruthy();
     expect(within(us10y).getByText("−0.007")).toBeTruthy();
     expect(within(us10y).getByText("(−0.14%)")).toBeTruthy();
@@ -317,11 +321,108 @@ describe("홈 — 값 있음(운영자)", () => {
   });
 });
 
+describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
+  /** KPI 띠의 타일(링크) — 이름(첫 줄 글)으로 찾습니다. */
+  const kpi = (label: string) => {
+    const strip = region("오늘 요약");
+    const tile = within(strip).getAllByRole("link").find((link) => link.firstElementChild?.textContent === label);
+    if (!tile) throw new Error(`KPI 타일 없음: ${label}`);
+    return tile;
+  };
+
+  it("운영자 — 국면·시장 넷·읽지 않은 알림·수집 오류, 타일마다 대상 화면 링크 · 모의매매 값은 없다", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    await inRegime().findByText("확장 (Expansion)");
+    await within(region("시장")).findByText("원/달러 (USD/KRW)");
+    await within(region("알림")).findByText("[국면 전환] 후퇴 경계 → 확장");
+    await within(region("데이터 저장소 상태")).findByRole("link");
+    const strip = region("오늘 요약");
+    expect(within(strip).getAllByRole("link").map((link) => [link.firstElementChild?.textContent, link.getAttribute("href")])).toEqual([
+      ["국면", "/regime"],
+      ["S&P 500", "/markets/i/sp500"],
+      ["코스피", "/markets/i/kospi"],
+      ["원/달러", "/markets/i/usdkrw"],
+      ["미국채 10년물", "/markets/i/us10y"],
+      ["읽지 않은 알림", "/alerts"],
+      ["수집 오류", "/status"],
+    ]);
+    // 국면 — 백엔드 라벨(판정이 났으면 중립색이 아님)과 기준일
+    expect(within(kpi("국면")).getByText("확장 (Expansion)").className).not.toContain("text-neutral");
+    expect(within(kpi("국면")).getByText("기준일 2026-10-16")).toBeTruthy();
+    // 시장 — 값은 수집기 priceStr, 변화 칩(▲▼·− 부호·읽어 주는 방향), 시각
+    const sp500 = kpi("S&P 500");
+    expect(within(sp500).getByText("7,622.99")).toBeTruthy();
+    expect(within(sp500).getByText("하락")).toBeTruthy();
+    expect(within(sp500).getByText("−40.46")).toBeTruthy();
+    expect(within(sp500).getByText("2026-10-24 04:59")).toBeTruthy();
+    expect(within(kpi("원/달러")).getByText("1,322.28")).toBeTruthy();
+    expect(within(kpi("원/달러")).getByText("원")).toBeTruthy();
+    // 저장본에 그 카드가 없으면 '—'(읽어 주기 '값 없음') + 사유 — 0으로 적지 않습니다.
+    for (const label of ["코스피", "미국채 10년물"]) {
+      expect(within(kpi(label)).getByText("값 없음")).toBeTruthy();
+      expect(within(kpi(label)).getByText("저장본에 없음")).toBeTruthy();
+    }
+    expect(kpi("읽지 않은 알림").textContent).toBe("읽지 않은 알림2건");
+    // 오류·경고·누락이 모두 0이면 상태 글(아이콘)이 없습니다.
+    expect(kpi("수집 오류").textContent).toBe("수집 오류0건");
+    expect(kpi("수집 오류").querySelector("svg")).toBeNull();
+    // KPI 띠에는 모의매매 값이 없습니다(모의 자료는 계좌 구역 하나만).
+    expect(strip.textContent).not.toMatch(/Claude|계좌|99,967/);
+  });
+
+  it("수집 오류 — 오류가 있으면 위험 아이콘 + 글(경고·누락 수), 경고만 있으면 주의 아이콘 + 글 · 색만으로 전하지 않음", async () => {
+    for (const [response, tone, text] of [[issues(3, 19), "text-danger", "경고 19건 · 누락 0개"], [issues(0, 19), "text-warn", "경고 19건 · 누락 0개"]] as const) {
+      reads = { ...happyReads(), [ISSUES]: response };
+      const { unmount } = renderHome(OWNER);
+      await within(region("데이터 저장소 상태")).findByRole("link");
+      const tile = kpi("수집 오류");
+      const status = within(tile).getByText(text).closest(`.${tone}`) as HTMLElement;
+      expect(status, tone).not.toBeNull();
+      expect(Array.from(status.querySelectorAll("svg")).map((icon) => icon.getAttribute("aria-hidden"))).toEqual(["true"]);
+      // 아이콘 옆 읽어 주는 머리말(위험·주의)도 있습니다.
+      expect(status.querySelector(".sr-only")?.textContent).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it("읽는 중이면 타일마다 자리표시, 읽지 못한 경로의 타일은 '—' + '읽지 못함'(오류 글·다시 시도는 그 구역에만)", async () => {
+    reads = { ...happyReads(), [MACRO]: new Error("요청 실패 (HTTP 500)") };
+    renderHome(OWNER);
+    await within(region("시장")).findByText("요청 실패 (HTTP 500)");
+    for (const label of ["S&P 500", "코스피", "원/달러", "미국채 10년물"]) {
+      expect(within(kpi(label)).getByText("값 없음")).toBeTruthy();
+      expect(within(kpi(label)).getByText("읽지 못함")).toBeTruthy();
+    }
+    // 실패 알림(role=alert)과 다시 시도는 시장 구역 하나에만 — KPI 띠는 같은 실패를 다시 알리지 않습니다.
+    expect(within(region("오늘 요약")).queryAllByRole("alert")).toHaveLength(0);
+    expect(within(region("오늘 요약")).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("판정 불가 — 국면 타일은 중립색, 기준일을 모르면 그 줄이 없다", async () => {
+    reads = { ...happyReads(), [REGIME]: regimeUnknown() };
+    renderHome(OWNER);
+    await inRegime().findByText("판정 불가");
+    const tile = kpi("국면");
+    expect(within(tile).getByText("판정 불가").className).toContain("text-neutral");
+    expect(within(tile).queryByText(/기준일/)).toBeNull();
+  });
+});
+
 describe("홈 — 불러오는 중·값 없음", () => {
   it("응답 전에는 구역마다 자리표시(Skeleton) — 한 구역이 화면 전체를 막지 않는다", () => {
     renderHome(OWNER);
     const labels = screen.getAllByRole("status").map((node) => node.getAttribute("aria-label"));
     expect(labels).toEqual([
+      // 맨 위 KPI 띠 — 타일마다(읽는 경로가 다른 타일이 서로를 기다리지 않음)
+      "국면 불러오는 중",
+      "S&P 500 불러오는 중",
+      "코스피 불러오는 중",
+      "원/달러 불러오는 중",
+      "미국채 10년물 불러오는 중",
+      "읽지 않은 알림 불러오는 중",
+      "수집 오류 불러오는 중",
       "오늘의 국면을 불러오는 중",
       "모의매매 계좌를 불러오는 중",
       "시장 시세를 불러오는 중",
@@ -343,7 +444,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     reads = happyReads();
     renderHome(OWNER);
     await paperHero();
-    await screen.findByText("확장 (Expansion)");
+    await inRegime().findByText("확장 (Expansion)");
     expect([region("오늘의 국면").className, region(PAPER_REGION).className]).toEqual(loading);
   });
 
@@ -358,7 +459,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
     };
     renderHome(OWNER);
 
-    const unknown = await screen.findByText("판정 불가");
+    const unknown = await inRegime().findByText("판정 불가");
     // 판정 불가는 판정 난 라벨과 같은 잉크로 그리지 않습니다(중립색).
     expect(unknown.className).toContain("text-neutral");
     const hero = unknown.closest("section") as HTMLElement;
@@ -492,7 +593,7 @@ describe("홈 — 일부 실패", () => {
     // 실패는 알림(role="alert")으로 보조 기술에 알립니다 — 자리표시(role="status")가 사라지기만 하면 실패를 모릅니다.
     expect(within(market).getByRole("alert").textContent).toContain("요청 실패 (HTTP 500)");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
-    expect(screen.getByText("확장 (Expansion)")).toBeTruthy();
+    expect(inRegime().getByText("확장 (Expansion)")).toBeTruthy();
     expect(await paperHero()).toBeTruthy();
     expect(screen.getByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
     expect(storeCounts(region("데이터 저장소 상태")).textContent).toBe("수집 태스크 오류 0건 · 경고 0건 · 누락 데이터셋 0개");
@@ -529,7 +630,7 @@ describe("홈 — 일부 실패", () => {
     expect(within(region(PAPER_REGION)).getByRole("alert")).toBeTruthy();
     expect(within(region("데이터 저장소 상태")).getByRole("alert")).toBeTruthy();
     expect(screen.queryByText(/수집 태스크 오류/)).toBeNull();
-    expect(screen.getByText("확장 (Expansion)")).toBeTruthy();
+    expect(inRegime().getByText("확장 (Expansion)")).toBeTruthy();
   });
 
   it("자동 갱신이 실패하면 앞서 받은 시장 행을 두고 '새로 읽지 못함'(QA-067)", async () => {
@@ -556,7 +657,7 @@ describe("홈 — 추정·오래됨 배지", () => {
     reads = { ...happyReads(), [MACRO]: overview };
     renderHome(OWNER);
 
-    const night = (await screen.findByText("코스피200 야간선물")).closest("a") as HTMLElement;
+    const night = (await within(region("시장")).findByText("코스피200 야간선물")).closest("a") as HTMLElement;
     expect(within(night).getByText("추정")).toBeTruthy();
     expect(within(marketRow("원/달러 (USD/KRW)")).queryByText("추정")).toBeNull();
   });
@@ -573,7 +674,7 @@ describe("홈 — 추정·오래됨 배지", () => {
     reads = { ...happyReads(), [MACRO]: overview, [PAPER_OVERVIEW]: ledger };
     renderHome(OWNER);
 
-    const usdkrw = (await screen.findByText("원/달러 (USD/KRW)")).closest("a") as HTMLElement;
+    const usdkrw = (await within(region("시장")).findByText("원/달러 (USD/KRW)")).closest("a") as HTMLElement;
     expect(within(usdkrw).getByText("이전 값")).toBeTruthy();
     expect(within(usdkrw).getByText("· Yahoo 429 — 직전 저장본 값")).toBeTruthy();
     expect(within(usdkrw).getByText("Yahoo Finance (KRW=X) · 개장 · 2026-10-26 16:51")).toBeTruthy();
@@ -738,7 +839,7 @@ describe("홈 — 운영자가 아닌 사용자", () => {
       reads = happyReads();
       renderHome(user);
 
-      expect(await screen.findByText("확장 (Expansion)")).toBeTruthy();
+      expect(await inRegime().findByText("확장 (Expansion)")).toBeTruthy();
       expect(await screen.findByText("원/달러 (USD/KRW)")).toBeTruthy();
       expect(await screen.findByText("[국면 전환] 후퇴 경계 → 확장")).toBeTruthy();
       expect(requested().some((path) => path.startsWith("/api/paper") || path.startsWith("/api/status"))).toBe(false);
@@ -747,6 +848,9 @@ describe("홈 — 운영자가 아닌 사용자", () => {
       expect(screen.queryByRole("region", { name: "데이터 저장소 상태" })).toBeNull();
       expect(screen.queryByText(/수집 태스크 오류/)).toBeNull();
       expect(screen.queryByRole("radiogroup", { name: "모의매매 시장" })).toBeNull();
+      // KPI 띠에도 수집 오류(운영자) 타일이 없습니다.
+      expect(within(region("오늘 요약")).getAllByRole("link").map((link) => link.getAttribute("href")))
+        .toEqual(["/regime", "/markets/i/sp500", "/markets/i/kospi", "/markets/i/usdkrw", "/markets/i/us10y", "/alerts"]);
     });
   }
 });
