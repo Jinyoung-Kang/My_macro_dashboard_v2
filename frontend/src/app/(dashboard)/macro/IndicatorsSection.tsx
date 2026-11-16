@@ -60,8 +60,10 @@ function indicatorColumns(inspector: InspectorContext): Column<MacroIndicatorRow
       key: "name",
       header: "지표",
       rowHeader: true,
+      // 이름 칸은 최소 7.5rem — 옆 미리보기와 나란한 넓은 화면(표 약 590px)에서 기준 칸이 폭을 다 가져가 'DX-Y.NYB · 외환시장'·짧은 이름까지
+      // 줄을 바꾸던 것(자기 빌드 1440 — 이름 칸 약 100px).
       cell: (row) => (
-        <span className="flex min-w-0 flex-col items-start">
+        <span className="flex min-w-[7.5rem] flex-col items-start">
           <InspectorTrigger inspector={inspector} itemKey={row.id}>
             {row.name}
           </InspectorTrigger>
