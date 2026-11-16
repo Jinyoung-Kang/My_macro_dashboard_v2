@@ -6,7 +6,7 @@
  * 않은 자리(그 시험은 기관 상세를 그리지 않음). 따로 선 링크라 문장 안 예외(WCAG 2.5.8)도 아닙니다. 포커스 링(focus-visible 바깥선)도 없어
  * 키보드로 옮기면 어디 있는지 보이지 않았습니다. 높이는 클래스로 따집니다(lib/__tests__/touchTargetAudit — jsdom은 배치를 재지 않음).
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
@@ -60,6 +60,8 @@ describe("기관 상세 — '13F 포트폴리오에서 자세히' 링크의 누�
         <InstitutionDetailScreen cik={CIK} />
       </SessionUserProvider>,
     );
+    // 상위 보유 종목은 가운데 '보유 종목' 탭(대상 문법 — P4) — 탭을 열면 보입니다.
+    fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
     const link = await screen.findByRole("link", { name: "13F 포트폴리오에서 자세히" });
     expect(link.getAttribute("href")).toBe("/institutions");
 

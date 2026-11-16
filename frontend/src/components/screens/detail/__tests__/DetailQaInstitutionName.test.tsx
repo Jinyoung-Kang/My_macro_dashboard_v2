@@ -95,7 +95,10 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
     await act(async () => portfolio?.resolve(BODY));
     expect(await screen.findByRole("heading", { level: 1, name: `가상 자산운용 (${ENGLISH})` })).toBeTruthy();
     await waitFor(() => expect(newsQueries()).toEqual([ENGLISH]));
+    // 뉴스는 가운데 '뉴스' 탭(대상 문법 — P4) — 요청은 탭과 상관없이 이름을 받은 뒤 한 번, 기사는 탭을 열면 보입니다.
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     expect(await screen.findByRole("link", { name: /합성 기사/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "개요" }));
 
     expect(summaryButton().disabled).toBe(false);
     expect(within(summarySection()).getByText(/단추를 누르면 요약합니다/)).toBeTruthy();
@@ -112,9 +115,11 @@ describe("기관 상세 — 이름을 받기 전에는 뉴스·AI 요약을 부�
     await waitFor(() => expect(screen.getAllByText("13F 저장본을 읽지 못했습니다.").length).toBeGreaterThan(0));
     expect(newsQueries()).toEqual([]);
 
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     const news = screen.getByRole("heading", { name: "주요 뉴스" }).closest("section") as HTMLElement;
     expect(within(news).queryByRole("status", { name: "뉴스를 불러오는 중" })).toBeNull();
     expect(within(news).getByText("기관 이름을 받지 못해 뉴스를 찾지 않습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "개요" }));
 
     expect(summaryButton().disabled).toBe(true);
     expect(within(summarySection()).getByText("기관 이름을 받지 못해 요약하지 않습니다.")).toBeTruthy();
