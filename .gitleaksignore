@@ -73,3 +73,6 @@ a4e8018db27f1d6e9e3e4232742c04f75b177b73:backend/src/test/resources/paper/golden
 # 2026-11-13 이어받기 판 2(ADR 0038 결정 8): 같은 고정본을 다시 만든 커밋 — 위 a4e8018과 같은 데이터셋 키 문자열("kospi200_night_scraped",
 # .env 값과 일치 0건).
 3b7de1df73a1f444f78341e39804df752d8e2a57:backend/src/test/resources/paper/golden/packet-kr-ft-continuity-scheduled.json:generic-api-key:1
+
+# 2026-11-16 작업대 P4 지표 상세 시험(IndicatorDetailScreen indicatorKey="kospi200_night_scraped"): 위와 같은 데이터셋 키 문자열(.env 값과 일치 0건).
+21df680c07815798854d273c7c37ecf2b9a6355e:frontend/src/components/screens/detail/__tests__/DetailScreens.test.tsx:generic-api-key:403
