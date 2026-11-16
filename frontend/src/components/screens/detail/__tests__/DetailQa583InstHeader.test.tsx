@@ -46,7 +46,7 @@ async function header() {
 
 describe("기관 상세 대상 머리 — 자리표시 이름이면 CIK 태그 없음 (QA-583)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 두 경우 모두 머리 안 'CIK 1234567' 글이 2개(h1과 태그 안 font-mono span)였습니다.
-  it.fails("포트폴리오 읽기가 실패하면 머리의 'CIK …'는 제목 한 번(고정폭 태그 없음)", async () => {
+  it("포트폴리오 읽기가 실패하면 머리의 'CIK …'는 제목 한 번(고정폭 태그 없음)", async () => {
     api.apiGetShared.mockImplementation((path: string) => (path === PORTFOLIO ? Promise.reject(new Error("13F 저장본을 읽지 못했습니다.")) : new Promise(() => {})));
     renderScreen();
     const head = await header();
@@ -55,7 +55,7 @@ describe("기관 상세 대상 머리 — 자리표시 이름이면 CIK 태그 �
     expect(head.querySelectorAll(".font-mono")).toHaveLength(0);
   });
 
-  it.fails("불러오는 중에도 머리의 'CIK …'는 제목 한 번(고정폭 태그 없음)", async () => {
+  it("불러오는 중에도 머리의 'CIK …'는 제목 한 번(고정폭 태그 없음)", async () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     renderScreen();
     const head = await header();

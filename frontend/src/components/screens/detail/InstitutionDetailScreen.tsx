@@ -103,7 +103,9 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
       <EntityHeader
         kind="institution"
         name={title}
-        identifiers={[`CIK ${cik}`]}
+        // CIK는 고정폭 식별자 태그(명세 §3-6) — 이름을 받기 전·받지 못했을 때는 제목이 이미 'CIK …'라 같은 글을 두 번 적지 않습니다(종목·지표 상세와
+        // 같은 규칙 — QA-583).
+        identifiers={names?.display ? [`CIK ${cik}`] : undefined}
         description="13F 기관"
         valueLabel="13F 보고 평가액"
         value={total !== null ? formatUsd(total) : null}
