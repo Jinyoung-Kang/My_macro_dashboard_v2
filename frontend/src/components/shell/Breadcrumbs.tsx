@@ -32,45 +32,58 @@ function itemClass(index: number, count: number, label: string): string {
 /** 가운데 칸 글의 하한(px) — 첫 글자와 말줄임('미…')이 보이는 폭. 이보다 좁으면 가운데 칸을 접습니다(QA-593). */
 const MIDDLE_MIN = 24;
 /**
- * 접힌 뒤 다시 펼 때의 몫(px, 가운데 칸 하나마다) — 하한 24px + 여유 12px. 펴는 nav 너비 = 접힐 때의 nav 너비 + 이 몫 − 그때 가운데 칸 글이 가졌던 폭
- * (하한까지). 펼친 배치에서 가운데 칸은 nav가 넓어진 만큼 그대로 받으므로(마지막 칸은 이미 하한) 펴면 가운데 칸 글이 적어도 36px — 다시 접히지 않아
+ * 접힌 뒤 다시 펼 때의 몫(px, 가운데 칸 하나마다) — 하한 24px + 여유 12px. 펼친 배치에서 넓어진 폭은 가운데 칸 글이 그대로 받으므로(곁의 안내 상자는
+ * 이미 하한, 마지막 칸도 하한) 접힐 때보다 Σ(이 몫 − 그때 가운데 칸 글 폭(하한까지))만큼 넓어지면 펴도 가운데 칸 글이 적어도 36px — 다시 접히지 않아
  * 접고 펴기를 오가며 깜박이지 않습니다. 접힐 때의 폭을 빼지 않으면 20px에서 접힌 칸이 원래 폭으로 돌아와도 펴지지 않았습니다(정적 하네스).
  */
 const REOPEN_ROOM = 36;
 
+/** 접힌 상태 — 접혔을 때의 칸 표지와 다시 펼 nav·상단바 너비(상단바 너비를 모르면 null). */
+type Fold = { signature: string; reopenAt: number; reopenBarAt: number | null };
+
 /**
- * 가운데 칸을 접는가(QA-593) — nav를 ResizeObserver로 재어, 펼친 상태에서 가운데 칸 글 하나라도 MIDDLE_MIN 아래면 접고 다시 펼 nav 너비(REOPEN_ROOM)를
- * 기억합니다. 접힌 뒤에는 nav가 그 너비 이상이 되면 폅니다. 칸이 바뀌면(주소·대상 이름 — `signature`) 펼친 상태로 다시 잽니다.
- * nav 너비가 0이면(좁은 화면에서 숨김·배치를 하지 않는 시험 대역) 아무것도 정하지 않습니다 — 재기 전에는 접지 않습니다. ResizeObserver가 없으면 펼친 그대로.
- * 재기와 접기는 layout effect라 칠하기 전에 끝납니다(0폭 칸이 한 번 그려졌다 사라지지 않음).
+ * 가운데 칸을 접는가(QA-593) — nav와 상단바(nav의 부모)를 ResizeObserver로 재어, 펼친 상태에서 가운데 칸 글 하나라도 MIDDLE_MIN 아래면 접고 다시 펼
+ * 너비를 기억합니다. 접힌 뒤에는 둘 가운데 하나면 폅니다.
+ * - 상단바가 접힐 때 너비 + 몫(REOPEN_ROOM 셈) 이상: 창을 넓힌 경우. 접어서 생긴 폭은 곁의 새로고침 안내 상자가 먼저 가져가(축소 비중 100000) 접힌 nav는
+ *   창을 넓혀도 접힌 크기에 머물므로 nav 너비로는 알 수 없습니다(검토 — nav만 보던 때는 1280에서 접힌 칸이 1536에서야 펴졌고, 펼친 배치면 가운데 칸 글이
+ *   다 들어가는 1310~1512에서도 '미국'·'한국' 링크가 없었음).
+ * - nav가 접힐 때 너비 + 몫 이상: 안내가 사라져 nav가 남는 폭을 받은 경우(상단바 너비는 그대로).
+ * 칸이 바뀌면(주소·대상 이름 — `signature`) 펼친 상태로 다시 잽니다. nav 너비가 0이면(좁은 화면에서 숨김·배치를 하지 않는 시험 대역) 아무것도 정하지
+ * 않습니다 — 재기 전에는 접지 않습니다. ResizeObserver가 없으면 펼친 그대로. 재기와 접기는 layout effect라 칠하기 전에 끝납니다(0폭 칸이 한 번 그려졌다
+ * 사라지지 않음). 펴 본 배치에서도 가운데 칸 글이 하한 아래면(곁의 다른 칸 폭이 바뀐 경우 등) 칠하기 전에 그 너비로 다시 접습니다.
  */
 function useFoldedMiddle(navRef: RefObject<HTMLElement | null>, signature: string, middleCount: number): boolean {
-  // 접혔을 때의 칸 표지와 다시 펼 nav 너비. 표지가 지금 칸과 다르면 펼친 것으로 칩니다.
-  const [fold, setFold] = useState<{ signature: string; reopenAt: number } | null>(null);
+  // 표지가 지금 칸과 다르면 펼친 것으로 칩니다.
+  const [fold, setFold] = useState<Fold | null>(null);
   const folded = middleCount > 0 && fold !== null && fold.signature === signature;
   const reopenAt = folded ? fold.reopenAt : null;
+  const reopenBarAt = folded ? fold.reopenBarAt : null;
   useLayoutEffect(() => {
     const nav = navRef.current;
     if (!nav || middleCount === 0 || typeof ResizeObserver !== "function") return undefined;
+    const bar = nav.parentElement;
     const measure = () => {
       const width = nav.getBoundingClientRect().width;
       if (!(width > 0)) return;
+      const barWidth = bar ? bar.getBoundingClientRect().width : 0;
       if (reopenAt !== null) {
-        if (width >= reopenAt) setFold(null);
+        if (width >= reopenAt || (reopenBarAt !== null && barWidth >= reopenBarAt)) setFold(null);
         return;
       }
       const widths = [...nav.querySelectorAll<HTMLElement>(":scope > ol > li")]
         .slice(1, -1)
         .map((item) => (item.lastElementChild instanceof HTMLElement ? item.lastElementChild.getBoundingClientRect().width : MIDDLE_MIN));
       if (widths.some((text) => text < MIDDLE_MIN)) {
-        setFold({ signature, reopenAt: widths.reduce((sum, text) => sum + REOPEN_ROOM - Math.min(text, MIDDLE_MIN), width) });
+        const room = widths.reduce((sum, text) => sum + REOPEN_ROOM - Math.min(text, MIDDLE_MIN), 0);
+        setFold({ signature, reopenAt: width + room, reopenBarAt: barWidth > 0 ? barWidth + room : null });
       }
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(nav);
+    if (bar) observer.observe(bar);
     return () => observer.disconnect();
-  }, [navRef, signature, middleCount, reopenAt]);
+  }, [navRef, signature, middleCount, reopenAt, reopenBarAt]);
   return folded;
 }
 
