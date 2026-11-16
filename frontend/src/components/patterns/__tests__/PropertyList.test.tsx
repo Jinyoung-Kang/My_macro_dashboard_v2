@@ -83,6 +83,33 @@ describe("PropertyList — 값 있음", () => {
     }
   });
 
+  // QA-570: 이름 칸(dt)이 max-w-[50%] shrink-0이라 값이 짧아 자리가 남아도 13rem 왼쪽 칸(줄 174px)에서 이름이 87px에서 꺾였습니다
+  // ('PER(최근 / 4분기)' — 값 '33.71배' 49px, 줄 32 → 50px). 기관 상세 '13F 보고 평가액'은 이름에 밀려 값까지 '1,551억 / 달러'로 갈렸습니다.
+  // 고친 뒤: 줄은 auto 두 트랙 그리드(양 끝 정렬) — 둘 다 들어가면 자연 폭, 모자라면 남는 폭을 두 칸에 고르게 나눠 짧은 쪽이 다 들어가고 나머지를
+  // 긴 쪽이 씁니다(둘 다 길면 거의 반씩 — 이름도 값도 절반 밑으로 눌리지 않음). 아주 긴 낱말만 칸 안에서 꺾습니다(min-w-0 wrap-anywhere).
+  // 수정 전 실패: 줄이 flex이고 이름 칸이 max-w-[50%] shrink-0(재현 커밋에서는 it.fails).
+  it.fails("값이 짧으면 이름이 남은 폭을 쓴다 — 줄은 auto 두 트랙 그리드, 이름 칸에 절반 상한·shrink-0이 없다(긴 글 block 줄은 그대로 세로)", () => {
+    render(
+      <PropertyList
+        items={[
+          { label: "PER(최근 4분기)", value: "33.71배" },
+          { label: "소개", value: "합성 기관 소개 글입니다.", block: true },
+        ]}
+      />,
+    );
+    const term = screen.getByText("PER(최근 4분기)", { selector: "dt" });
+    const row = (term.parentElement as HTMLElement).className.split(/\s+/);
+    expect(row).toEqual(expect.arrayContaining(["grid", "grid-cols-[auto_auto]", "items-baseline", "justify-between", "gap-x-3", "min-w-0"]));
+    expect(row).not.toContain("flex");
+    const termClasses = term.className.split(/\s+/);
+    expect(termClasses).toEqual(expect.arrayContaining(["min-w-0", "break-keep", "wrap-anywhere"]));
+    expect(termClasses).not.toContain("max-w-[50%]");
+    expect(termClasses).not.toContain("shrink-0");
+    const block = (screen.getByText("소개", { selector: "dt" }).parentElement as HTMLElement).className.split(/\s+/);
+    expect(block).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-0.5"]));
+    expect(block).not.toContain("grid");
+  });
+
   it("넓은 화면 줄 높이는 32px(기본)·28px(dense) 여백 — 아래 구분선 1px을 높이 안에 넣고 마지막 줄은 위아래 같게, 옅은 경계", () => {
     const { container, rerender } = render(<PropertyList items={[{ label: "가", value: "1" }, { label: "나", value: "2" }]} />);
     const row = () => container.querySelector("dl > div") as HTMLElement;
