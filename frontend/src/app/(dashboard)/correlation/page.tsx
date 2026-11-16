@@ -16,7 +16,7 @@ import {
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
-import { formatNumber, withMinusSign } from "@/lib/format";
+import { EMPTY, formatNumber, withMinusSign } from "@/lib/format";
 import { correlationEstimated, correlationStrength } from "@/lib/correlation";
 import type { CorrelationResponse, SeriesRef } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
@@ -46,7 +46,7 @@ function seriesItems(ref: SeriesRef | null): PropertyItem[] {
  * <p>상관은 <b>인과가 아닙니다.</b> 화면은 계산 결과와 함께 표본 수와 주의
  * 문구를 항상 같이 보여 줍니다.
  *
- * <p>칸 틀(작업대 실행 명세 §7 — 고른 쌍 검사): 왼쪽 '비교할 지표'(고르기 다섯), 가운데 KPI 띠·주의 글·롤링 상관·산점도, 오른쪽 '고른 쌍' 속성.
+ * <p>칸 틀(작업대 실행 명세 §7 — 고른 쌍 검사): 왼쪽 '비교할 지표'(고르기 다섯), 가운데 KPI 띠(상관계수·표본 수)·주의 글·롤링 상관·산점도, 오른쪽 '고른 쌍' 속성.
  * 넓은 화면(xl)은 세 칸, lg는 '고른 쌍'이 가운데 아래, 좁은 화면은 한 칸(고르기 → 결과 → 고른 쌍). 상관 행렬(발산 팔레트)은 두지 않습니다 —
  * 상관 API가 한 쌍씩만 계산해(계열 20개면 190번 요청) 행렬 경로가 없습니다(새 API는 별도 결정).
  */
@@ -75,6 +75,8 @@ export default function CorrelationPage() {
   const pairPending = !xRef && !yRef && (catalog.loading || loading);
   const modeLabel = MODES.find((entry) => entry.value === mode)?.label ?? mode;
 
+  // 계산 기간 — 두 계열이 모두 값을 가진 첫날 ~ 마지막 날(응답). 둘 다 모르면 없음.
+  const period = data?.available && (data.firstDate || data.lastDate) ? `${data.firstDate ?? EMPTY} ~ ${data.lastDate ?? EMPTY}` : null;
   const kpis: KpiItem[] = data?.available
     ? [
         {
@@ -86,17 +88,16 @@ export default function CorrelationPage() {
           // 두 계열 가운데 하나라도 추정치면 상관계수도 추정치입니다 — 배지를 늘 보입니다(QA-634).
           isEstimated: correlationEstimated(data),
         },
+        // 계산 기간은 표본 수의 보조 글로 — 날짜를 타일 값(20·24px)으로 두면 타일이 좁은 배치(lg 네 칸 115~123px — 1024~약 1400)에서 날짜 안에서
+        // '2024-11-|05'로 꺾였습니다. 표본을 세는 규칙은 '고른 쌍 > 비교'의 계산 기간 줄에 둡니다.
         {
           key: "samples",
           label: "표본 수",
           value: data.samples,
           format: (value) => value.toLocaleString("ko-KR"),
           unit: "개",
-          note: "두 지표가 모두 값을 가진 날짜만 셉니다.",
+          note: period,
         },
-        // 날짜는 계산하는 숫자가 아니라 판정 글 크기(16·20px)로 — 좁은 타일에서도 한 줄에 들어갑니다.
-        { key: "first", label: "기간 시작", value: data.firstDate ?? null, valueKind: "label" },
-        { key: "last", label: "기간 끝", value: data.lastDate ?? null, valueKind: "label" },
       ]
     : [];
   const pairSource = data?.available ? `${data.x?.label}: ${data.x?.source} · ${data.y?.label}: ${data.y?.source}` : undefined;
@@ -146,6 +147,7 @@ export default function CorrelationPage() {
                   // 롤링 창은 응답이 쓴 값(백엔드가 표본에 맞춰 줄였으면 그 값) — 응답 전에는 고른 값.
                   { label: "롤링 창", value: `${data?.window ?? window} 관측` },
                   { label: "조회 기간", value: `최근 ${years}년` },
+                  { label: "계산 기간", value: period, note: "두 지표가 모두 값을 가진 날짜만 표본으로 셉니다." },
                 ]}
               />
             </div>

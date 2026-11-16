@@ -108,19 +108,17 @@ describe("상관 화면의 칸 틀", () => {
     }
   });
 
-  it("KPI 띠 넷 — 상관계수(소수 셋째, 음수 −, 세기 글)·표본 수(개)·기간 시작·끝", async () => {
+  it("KPI 띠 둘 — 상관계수(소수 셋째, 음수 −, 세기 글)·표본 수(개, 보조 글 계산 기간)", async () => {
     reads[CORRELATION] = correlation();
     render(<CorrelationPage />);
     const strip = await screen.findByRole("region", { name: "상관 요약" });
     const tiles = within(strip).getAllByRole("group");
-    expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual(["상관계수 (변화)", "표본 수", "기간 시작", "기간 끝"]);
+    expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual(["상관계수 (변화)", "표본 수"]);
     expect(tiles[0].textContent).toContain("−0.231");
     expect(tiles[0].textContent).not.toContain("+");
     expect(within(tiles[0]).getByText("약하게 반대 방향으로 움직였습니다.")).toBeTruthy();
     expect(tiles[1].textContent).toContain("496개");
-    expect(tiles[1].textContent).toContain("두 지표가 모두 값을 가진 날짜만 셉니다.");
-    expect(tiles[2].textContent).toContain("2023-11-17");
-    expect(tiles[3].textContent).toContain("2026-11-14");
+    expect(within(tiles[1]).getByText("2023-11-17 ~ 2026-11-14")).toBeTruthy();
   });
 
   it("상관계수를 계산하지 못했으면 0이 아니라 —와 '계산할 수 없습니다.'", async () => {
@@ -167,6 +165,7 @@ describe("상관 화면의 칸 틀", () => {
     expect(propertyValue(compare, "방식").textContent).toBe("변화끼리 (권장)");
     expect(propertyValue(compare, "롤링 창").textContent).toBe("60 관측");
     expect(propertyValue(compare, "조회 기간").textContent).toBe("최근 3년");
+    expect(propertyValue(compare, "계산 기간").textContent).toBe("2023-11-17 ~ 2026-11-14두 지표가 모두 값을 가진 날짜만 표본으로 셉니다.");
     expect(within(pair).queryAllByRole("link")).toHaveLength(0);
   });
 
