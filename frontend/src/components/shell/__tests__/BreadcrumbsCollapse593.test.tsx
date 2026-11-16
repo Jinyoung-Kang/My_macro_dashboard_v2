@@ -144,16 +144,17 @@ describe("빵부스러기 가운데 칸 — 하한(24px) 아래면 접는다 (QA
 
   // QA-593 후속(검토): 접어도 '뒤 칸과 주소가 같은 칸은 글 칸'(QA-549)을 숨긴 가운데 칸까지 넣어 계산한 그대로 두어, 접힌 빵부스러기에 위로 가는 링크가
   // 없었습니다 — '모의매매'(→ /paper/us)·'기관'(→ /institutions)·'시장'(→ /macro)은 숨긴 '미국'·'13F 포트폴리오'·'매크로 지표'와 주소가 같아 글 칸,
-  // /paper/kr/*에 남는 링크는 다른 시장으로 가는 '모의매매' → /paper/us 하나. 수정 전(이 커밋에서는 it.fails) /paper/us/holdings의 링크는 [].
-  it.fails("접히면 첫 칸이 숨긴 가운데 칸 가운데 가장 가까운 부모로 가는 링크 — 모의매매 미국·한국, 기관 상세, 지표 상세", () => {
+  // /paper/kr/*에 남는 링크는 다른 시장으로 가는 '모의매매' → /paper/us 하나. 수정 전(재현 커밋에서는 it.fails) /paper/us/holdings의 링크는 [].
+  // 이제 첫 칸은 가장 가까운 부모로 가는 링크이고, 전체 글(title)은 숨긴 칸까지 잇습니다(lib/breadcrumbs foldedBreadcrumbs).
+  it("접히면 첫 칸이 숨긴 가운데 칸 가운데 가장 가까운 부모로 가는 링크 — 모의매매 미국·한국, 기관 상세, 지표 상세", () => {
     stubLayout({ nav: 120, middle: 0 });
-    const cases: [string, string, string][] = [
-      ["/paper/us/holdings", "모의매매", "/paper/us"],
-      ["/paper/kr/holdings", "모의매매", "/paper/kr"],
-      ["/institutions/0001608046", "기관", "/institutions"],
-      ["/markets/i/us10y", "시장", "/macro"],
+    const cases: [string, string, string, string][] = [
+      ["/paper/us/holdings", "모의매매", "/paper/us", "모의매매 › 미국"],
+      ["/paper/kr/holdings", "모의매매", "/paper/kr", "모의매매 › 한국"],
+      ["/institutions/0001608046", "기관", "/institutions", "기관 › 13F 포트폴리오"],
+      ["/markets/i/us10y", "시장", "/macro", "시장 › 매크로 지표"],
     ];
-    for (const [path, first, href] of cases) {
+    for (const [path, first, href, title] of cases) {
       render(<Breadcrumbs pathname={path} user={LOCAL_OWNER} />);
       expect(items(), path).toHaveLength(2);
       expect(
@@ -162,6 +163,7 @@ describe("빵부스러기 가운데 칸 — 하한(24px) 아래면 접는다 (QA
           .map((link) => [link.textContent, link.getAttribute("href")]),
         path,
       ).toEqual([[first, href]]);
+      expect(within(crumbs()).getByRole("link").getAttribute("title"), path).toBe(title);
       cleanup();
     }
   });

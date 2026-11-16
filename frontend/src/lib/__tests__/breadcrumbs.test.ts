@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { PAPER_TAB_CRUMBS, breadcrumbs, type Crumb } from "../breadcrumbs";
+import { PAPER_TAB_CRUMBS, breadcrumbs, foldedBreadcrumbs, type Crumb } from "../breadcrumbs";
 import { TABS } from "../nav";
 import { PAPER_TABS, paperTabInMarket } from "../paper";
 import { paperRouteFromPath, paperTabPath } from "../paperRoutes";
@@ -192,6 +192,57 @@ describe("같은 곳으로 가는 링크 칸 없음", () => {
       }
     }
     expect(overlaps).toEqual([]);
+  });
+});
+
+describe("가운데 칸을 접은 빵부스러기(foldedBreadcrumbs — 셸이 가운데 칸 글이 24px 아래로 줄면 그림, QA-593)", () => {
+  // 검토(QA-593 후속): 접어도 QA-549 처리를 숨긴 가운데 칸까지 넣어 계산한 그대로라 접힌 빵부스러기에 위로 가는 링크가 없었습니다. 첫 칸은 숨긴 가운데 칸
+  // 가운데 가장 가까운 부모로 가는 링크이고, 전체 글(title)은 숨긴 칸까지 잇습니다.
+  it("첫 칸은 숨긴 가운데 칸 가운데 가장 가까운 부모로 가는 링크 — 모의매매 미국·한국, 기관 상세, 지표 상세", () => {
+    expect(foldedBreadcrumbs("/paper/us/holdings", OWNER)).toEqual([
+      { label: "모의매매", href: "/paper/us", title: "모의매매 › 미국" },
+      { label: "보유·체결", href: "/paper/us/holdings" },
+    ]);
+    expect(foldedBreadcrumbs("/paper/kr/holdings", OWNER)[0]).toEqual({ label: "모의매매", href: "/paper/kr", title: "모의매매 › 한국" });
+    expect(foldedBreadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/1067983", label: "버크셔 해서웨이" })).toEqual([
+      { label: "기관", href: "/institutions", title: "기관 › 13F 포트폴리오" },
+      { label: "버크셔 해서웨이", href: "/institutions/1067983" },
+    ]);
+    expect(foldedBreadcrumbs("/markets/i/vix", MEMBER)[0]).toEqual({ label: "시장", href: "/macro", title: "시장 › 매크로 지표" });
+  });
+
+  it("숨긴 가운데 칸에 링크가 없으면(종목 시장 칸·묶음 이름) 첫 칸 자신의 주소, 보이지 않는 탭은 링크 없이", () => {
+    expect(foldedBreadcrumbs("/s/kr/005930", MEMBER)[0]).toEqual({ label: "시장", href: "/macro", title: "시장 › 종목(한국)" });
+    expect(foldedBreadcrumbs("/radar", MEMBER)[0]).toEqual({ label: "더보기", href: "/more", title: "더보기 › 한국 시장" });
+    expect(foldedBreadcrumbs("/paper/us/holdings", MEMBER)).toEqual([
+      { label: "모의매매", href: null, title: "모의매매 › 미국" },
+      { label: "보유·체결", href: null },
+    ]);
+  });
+
+  it("가운데 칸이 없으면 breadcrumbs와 같다 — 접을 칸이 없음", () => {
+    for (const path of ["/", "/macro", "/paper/us", "/account", "/login"]) {
+      expect(foldedBreadcrumbs(path, OWNER), path).toEqual(breadcrumbs(path, OWNER));
+    }
+  });
+
+  it("접힌 두 칸은 같은 곳으로 가지 않고, 첫 칸의 링크는 탭 주소이거나 펼친 칸 가운데 하나의 주소 — 운영자·회원 × 모든 탭 하위 화면 + 상세 표본", () => {
+    const paths = [
+      ...new Set([...TABS.flatMap((tab) => tab.items.map((item) => item.href)), "/markets/i/vix", "/institutions/1067983", "/paper/us/holdings", "/paper/kr/isa", "/s/us/NVDA"]),
+    ];
+    const problems: string[] = [];
+    for (const user of [OWNER, MEMBER]) {
+      for (const path of paths) {
+        const [first, last] = foldedBreadcrumbs(path, user);
+        if (last === undefined) continue;
+        if (first.href !== null && first.href === last.href) problems.push(`${user.role} ${path} 같은 곳`);
+        const hrefs = breadcrumbs(path, user).map((crumb) => crumb.href);
+        if (first.href !== null && !hrefs.includes(first.href) && first.href !== TABS.find((tab) => tab.label === first.label)?.href) {
+          problems.push(`${user.role} ${path} '${first.label}' → ${first.href}`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });
 

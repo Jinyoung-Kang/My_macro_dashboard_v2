@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useEntityCrumbLabel } from "@/hooks/useEntityCrumb";
-import { breadcrumbs } from "@/lib/breadcrumbs";
+import { breadcrumbs, foldedBreadcrumbs } from "@/lib/breadcrumbs";
 import type { SessionUser } from "@/lib/types";
 
 /*
@@ -15,7 +15,8 @@ import type { SessionUser } from "@/lib/types";
  * (1/64px) 아래라 줄지 않습니다.
  * 가운데 칸에는 CSS 하한이 없습니다(min-w-0 — 하한을 두면 1024 주말 두 안내 상태에서 상단바가 9px 넘침). 대신 그 글(링크·글 칸)이 MIDDLE_MIN(24px —
  * 첫 글자와 말줄임) 아래로 줄면 가운데 칸을 통째로 접습니다(그리지 않음 — 아래 useFoldedMiddle, QA-593). 0폭 링크가 Tab 순서·낭독에 남고 '모의매매 › › 보…'로
- * 구분 기호 둘이 붙던 것이 '모의매매 › 보…'가 되고, 비운 폭은 마지막 칸이 받습니다.
+ * 구분 기호 둘이 붙던 것이 '모의매매 › 보…'가 되고, 비운 폭은 마지막 칸이 받습니다. 접힌 첫 칸은 숨긴 가운데 칸 가운데 가장 가까운 부모로 가는 링크이고
+ * 전체 글(title)이 숨긴 칸까지 잇습니다('모의매매 › 한국' → /paper/kr — lib/breadcrumbs foldedBreadcrumbs).
  */
 const FIRST_ITEM = "flex shrink-0 items-center gap-1";
 const MIDDLE_ITEM = "flex min-w-0 items-center gap-1";
@@ -112,8 +113,10 @@ export function Breadcrumbs({ pathname, user }: { pathname: string; user?: Sessi
   const signature = crumbs.map((crumb) => `${crumb.label}\u0000${crumb.href ?? ""}`).join("\u0001");
   const folded = useFoldedMiddle(navRef, signature, middleCount);
   if (crumbs.length === 0) return null;
-  // 접히면 첫 칸과 마지막 칸만 — 칸 열쇠는 원래 순번 그대로(마지막 칸이 다시 마운트되지 않게).
-  const shown = crumbs.map((crumb, index) => ({ crumb, index })).filter(({ index }) => !folded || index === 0 || index === crumbs.length - 1);
+  // 접히면 첫 칸과 마지막 칸만(첫 칸은 가장 가까운 부모로 가는 링크) — 칸 열쇠는 원래 순번 그대로(마지막 칸이 다시 마운트되지 않게).
+  const shown = folded
+    ? foldedBreadcrumbs(pathname, user, entity).map((crumb, index) => ({ crumb, index: index === 0 ? 0 : crumbs.length - 1 }))
+    : crumbs.map((crumb, index) => ({ crumb, index }));
   return (
     <nav ref={navRef} aria-label="현재 위치" className="hidden min-w-0 lg:flex lg:min-w-28 lg:flex-auto">
       <ol className="flex min-w-0 items-center gap-1 text-sm">
@@ -133,13 +136,13 @@ export function Breadcrumbs({ pathname, user }: { pathname: string; user?: Sessi
               ) : crumb.href ? (
                 <Link
                   href={crumb.href}
-                  title={crumb.label}
+                  title={crumb.title ?? crumb.label}
                   className="max-w-[12rem] truncate rounded-sm py-0.5 text-text-2 hover:text-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 >
                   {crumb.label}
                 </Link>
               ) : (
-                <span title={crumb.label} className="max-w-[12rem] truncate text-text-2">
+                <span title={crumb.title ?? crumb.label} className="max-w-[12rem] truncate text-text-2">
                   {crumb.label}
                 </span>
               )}
