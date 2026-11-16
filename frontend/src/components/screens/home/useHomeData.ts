@@ -31,7 +31,7 @@ export type HomeData = {
   alerts: HomeAlertsRead;
   /** 수집 오류·경고·누락 데이터셋 수 — 운영자만(아니면 요청 없이 값이 늘 null). */
   issues: ApiRead<StatusIssuesResponse>;
-  /** 끊긴 출처(셸의 수집 끊김 안내 띠와 같은 경로·간격 — 동시에 나가면 요청 하나) — 운영자만(아니면 요청 없이 값이 늘 null). */
+  /** 끊긴 출처(셸의 수집 끊김 안내 띠와 같은 경로·간격 — 홈에서는 셸이 띠를 그리지 않고 알림 패널이 대신 적음, QA-613) — 운영자만(아니면 요청 없이 값이 늘 null). */
   sources: ApiRead<InfoSourcesResponse>;
 };
 

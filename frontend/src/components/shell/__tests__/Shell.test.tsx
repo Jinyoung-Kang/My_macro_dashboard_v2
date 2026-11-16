@@ -607,8 +607,8 @@ describe("본문", () => {
   // QA-613: 수집 끊김 안내 띠(SourceAlertBanner — 운영자 전용)는 /api/info/sources가 돌아온 뒤 본문 맨 위에 끼어들어 홈 전체를 아래로 밀었습니다
   // (CLS 390 0.17(185px)·768 0.13(140px)·1024 0.12(120px)·1440 이상 0.03~0.07). 홈은 '알림·끊긴 출처' 패널(screens/home/AlertsSummary)이 같은 경로의
   // 같은 사건을(띠를 닫았는지와 상관없이) 같은 '출처 상태 보기' 링크와 함께 이미 적어 띠가 겹치므로, 홈('/')에서만 띠를 그리지 않습니다 — 다른 화면은 그대로.
-  // 수정 전 실패: AssertionError: expected <div class="mb-4" …(1)>…(1)</div> to be null — '/'에서도 띠(data-testid="source-alert-banner")가 그려짐.
-  it.fails("QA-613: 홈('/')에서는 운영자에게 끊긴 출처가 있어도 셸의 수집 끊김 안내 띠를 그리지 않고 경로도 부르지 않는다 — 다른 화면('/macro')은 그대로", async () => {
+  // 재현 커밋에서는 it.fails였습니다(실패 값: AssertionError: expected <div class="mb-4" …(1)>…(1)</div> to be null — '/'에서도 띠가 그려짐).
+  it("QA-613: 홈('/')에서는 운영자에게 끊긴 출처가 있어도 셸의 수집 끊김 안내 띠를 그리지 않고 경로도 부르지 않는다 — 다른 화면('/macro')은 그대로", async () => {
     const sources = "/api/info/sources";
     const incident = {
       key: "info_blog_wolfstreet|blocked", task: "info_blog_wolfstreet", label: "Wolf Street", kind: "blocked",
