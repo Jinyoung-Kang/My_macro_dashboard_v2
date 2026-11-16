@@ -46,6 +46,7 @@ const FILING_NOTE = "분기마다 45일 안에 공시 — 지금 보유와 다�
  *   분기 수를 바꿔 보는 표·비중 추이는 13F 포트폴리오 화면에 있습니다.
  * - 기관 이름은 포트폴리오 응답에만 있습니다 — 받기 전에는 제목만 자리표시('CIK …')로 두고, 뉴스·AI 요약은 이름을 받은 뒤에 부릅니다(QA-453).
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs). 결정·사건 기록 API가 없어 타임라인 탭은 없습니다.
+ * - 좁은 화면(lg 미만)은 왼쪽 '속성' 칸을 처음에 접고 펼치기 단추 하나를 둡니다(SplitPane collapseLeft, 2026-11-16 결정 2). 넓은 화면은 늘 펼침.
  */
 export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const portfolio = useApi<PortfolioResponse>(endpoints.institution.portfolio(cik, QUARTERS, TOP_N));
@@ -156,6 +157,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
         }
       />
       <SplitPane
+        collapseLeft="속성"
         left={
           <Panel title="속성">
             <PropertyList items={propertyItems(institutionProperties(data, cik))} />

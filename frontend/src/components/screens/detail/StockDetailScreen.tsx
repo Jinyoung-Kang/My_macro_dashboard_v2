@@ -62,6 +62,8 @@ type StockTab = "overview" | "news" | "research" | "holders";
  * - 같은 Yahoo 심볼의 매크로 카드(/s/us/^GSPC → S&P 500)가 있으면 그 지표 상세로 잇습니다 — 매크로 개요 저장본(GET /api/macro/overview?live=false,
  *   지표 상세·홈과 같은 경로·응답 캐시)을 한 번 읽습니다. 매크로 카드 티커는 Yahoo 심볼이라 국내 6자리 종목에서는 읽지 않습니다.
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs — 요청이 탭 전과 같음). 결정·사건 기록 API가 없어 타임라인 탭은 없습니다.
+ * - 좁은 화면(lg 미만)은 왼쪽 칸(핵심 지표·회사 개요·의견)을 처음에 접고 펼치기 단추 하나를 둡니다 — 머리 바로 아래에 탭·차트(SplitPane collapseLeft,
+ *   2026-11-16 결정 2). 넓은 화면은 늘 펼침.
  */
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
   const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub, detailSub } = useStockQuote(market, code);
@@ -89,6 +91,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   } else if (!quoteState.data.available) {
     placeholder = <p className="text-sm text-text-2">{quoteState.data.message ?? "시세를 조회하지 않습니다."}</p>;
   }
+
+  // 좁은 화면(lg 미만)에서 접는 왼쪽 칸의 이름 — 그 칸에 있는 패널 이름으로(회사 개요는 받은 값이 있을 때만 그려짐 — ProfilePanel).
+  const leftName = quote && quote.profile && profileItems(quote).length > 0 ? "핵심 지표·회사 개요" : "핵심 지표";
 
   const links: DetailLink[] = [
     ...(indicator ? [{ label: `${indicator.name} 지표 상세`, href: indicator.href }] : []),
@@ -176,6 +181,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         }
       />
       <SplitPane
+        collapseLeft={leftName}
         left={
           <>
             <Panel title="핵심 지표" source={quote?.source?.label ?? undefined}>

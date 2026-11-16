@@ -48,6 +48,8 @@ const ROOT = "flex min-w-0 flex-col gap-3 lg:gap-4";
  * - 차트는 카드 티커의 Yahoo 시계열입니다. 카드 값이 TradingView 실시간 시세면 차트(Yahoo)와 마지막 값이 조금 다를 수 있어 차트 출처를 따로 적습니다.
  *   점은 카드와 같은 단위입니다(엔/원 100엔당 — QA-185). 문지르기는 차트 패널의 읽기 줄(대상 머리는 늘 지금 값 — 명세 W7).
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs). 결정·사건 기록을 주는 API가 없어 타임라인 탭은 두지 않습니다.
+ * - 좁은 화면(lg 미만)은 왼쪽 '속성' 칸을 처음에 접고 펼치기 단추 하나를 둡니다(SplitPane collapseLeft, 2026-11-16 결정 2 — 속성 여덟 줄은 머리의
+ *   값·출처·시각과 대부분 겹침). 넓은 화면은 늘 펼침.
  */
 export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }) {
   const overview = useApi<MacroOverview>(endpoints.macro.overview(false), HOME_REFRESH_MS.macro);
@@ -155,6 +157,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         }
       />
       <SplitPane
+        collapseLeft="속성"
         left={
           <Panel title="속성">
             <PropertyList items={propertyItems(properties)} />
