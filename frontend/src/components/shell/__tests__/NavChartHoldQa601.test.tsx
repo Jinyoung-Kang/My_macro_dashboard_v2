@@ -8,7 +8,9 @@
  *
  * 왼쪽 메뉴(SideNav)와 공용 선 차트(LineChart)를 한 트리로 그려 봅니다. jsdom에는 크기가 없어 ResizeObserver 대역이 폭 600을 알리고, 차트를 감싼
  * 상자의 getBoundingClientRect도 600을 돌려줍니다(CSS와 무관하게 콜백이 오므로 '콜백을 무시함'이 아니라 '고정한 px 폭'을 봅니다).
- * 재현 커밋에서는 ResponsiveContainer를 감싼 상자가 없어(부모가 figure — style.width '') 세 시험 모두 it.fails였습니다.
+ * 재현 커밋에서는 ResponsiveContainer를 감싼 상자가 없어(부모가 figure — style.width '') 세 시험 모두 it.fails였습니다. 다만 셋째(끄는 도중 메뉴만
+ * 사라지면 풂)는 결함을 재현하지 않고 고침이 둔 장치의 정리를 봅니다 — 고침 전에는 고정 장치가 없어 첫 고정 단언에서 실패했을 뿐입니다(신호 쪽 정리는
+ * SideNavResize '차트 폭 잡아 두기 신호'의 언마운트 사례가 봄). 세 시험 모두 증상(프레임마다 다시 그림)이 아니라 구현(고정한 px 폭)을 봅니다.
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -145,7 +147,7 @@ describe("QA-601: 셸 폭이 바뀌는 동안 차트 폭 잡아 두기", () => {
     expect(heldWidth(container)).toBe("");
   });
 
-  // 재현 커밋 실패 값: AssertionError: expected '' to be '600px'.
+  // 장치 시험(결함 재현 아님 — 파일 머리말). 재현 커밋 실패 값: AssertionError: expected '' to be '600px'(첫 고정 단언 — '풂'에는 닿지 못함).
   it("끄는 도중 왼쪽 메뉴만 사라지면(로그아웃 등) 남은 차트의 고정을 풂", () => {
     const { container, rerender } = render(<Page />);
     down(220);
