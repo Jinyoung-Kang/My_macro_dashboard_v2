@@ -6,6 +6,7 @@ import { LineChart } from "@/components/charts";
 import { EntityHeader, MasterDetail, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, PANEL_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import {
   CHART_KEY,
@@ -13,6 +14,7 @@ import {
   holdingDetailItems,
   infoSearchEntityLink,
   institutionEntityKey,
+  institutionHref,
   institutionLinks,
   institutionNames,
   institutionProperties,
@@ -63,6 +65,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const total = data?.latest?.totalValue ?? null;
   const entityLink = infoSearchEntityLink(institutionEntityKey(cik), "정보 검색에서 보기", user);
   const chartHeadingId = useId();
+  // 넓은 화면 빵부스러기의 마지막 칸을 'CIK …' 대신 기관 이름으로(이름을 받은 뒤에만 — 셸이 같은 주소일 때만 씀).
+  useEntityCrumb(names?.display ? institutionHref(cik) : null, names?.display || null);
 
   let placeholder;
   if (!data) {

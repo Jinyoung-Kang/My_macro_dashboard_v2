@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AssetList, ChangeChip, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
 import { Banner, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -46,6 +47,8 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
   const krOfficial = useKrOfficialHolidays(now);
   const user = useSessionUser();
   const found = findIndicator(overview.data, indicatorKey);
+  // 넓은 화면 빵부스러기의 마지막 칸을 키 대신 지표 이름으로(찾은 뒤에만 — 셸이 같은 주소일 때만 씀).
+  useEntityCrumb(found ? indicatorHref(found.item.key) : null, found?.item.name ?? null);
 
   if (!overview.data) {
     return (

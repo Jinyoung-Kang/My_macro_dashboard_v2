@@ -87,6 +87,41 @@ describe("대상(상세)", () => {
   });
 });
 
+describe("대상 이름(상세 화면이 읽은 이름 — P4)", () => {
+  it("넘긴 이름의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로(주소·링크 그대로)", () => {
+    expect(breadcrumbs("/s/kr/005930", MEMBER, { href: "/s/kr/005930", label: "삼성전자" })).toEqual([
+      { label: "시장", href: "/macro" },
+      { label: "종목(한국)", href: null },
+      { label: "삼성전자", href: "/s/kr/005930" },
+    ]);
+    // 주소 조각의 대소문자·인코딩이 달라도 정규 주소(stockHref)로 대조
+    expect(labels(breadcrumbs("/s/us/nvda", MEMBER, { href: "/s/us/NVDA", label: "엔비디아" }))).toEqual(["시장", "종목(미국)", "엔비디아"]);
+    expect(labels(breadcrumbs(`/s/us/${encodeURIComponent("^GSPC")}`, MEMBER, { href: "/s/us/%5EGSPC", label: "S&P 500" }))).toEqual([
+      "시장",
+      "종목(미국)",
+      "S&P 500",
+    ]);
+    expect(labels(breadcrumbs("/markets/i/vix", MEMBER, { href: "/markets/i/vix", label: "VIX 변동성 지수" }))).toEqual(["시장", "매크로 지표", "VIX 변동성 지수"]);
+    expect(breadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/1067983", label: "버크셔 해서웨이" }).at(-1)).toEqual({
+      label: "버크셔 해서웨이",
+      href: "/institutions/1067983",
+    });
+  });
+
+  it("다른 주소의 이름은 무시한다 — 앞 화면의 이름이 남지 않음, 앞의 0이 다른 CIK도 다른 주소", () => {
+    expect(labels(breadcrumbs("/s/kr/005930", MEMBER, { href: "/s/kr/000660", label: "SK하이닉스" }))).toEqual(["시장", "종목(한국)", "005930"]);
+    expect(labels(breadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/0001067983", label: "버크셔" })).at(-1)).toBe("CIK 1067983");
+    expect(labels(breadcrumbs("/markets/i/vix", MEMBER, null))).toEqual(["시장", "매크로 지표", "vix"]);
+  });
+
+  it("대상 칸이 없는 주소(형식 틀림·메뉴 화면·모의매매 탭)와 빈 이름은 그대로", () => {
+    expect(labels(breadcrumbs("/markets/i/bad%20key!", MEMBER, { href: "/markets/i/bad%20key!", label: "x" }))).toEqual(["시장", "매크로 지표"]);
+    expect(labels(breadcrumbs("/macro", MEMBER, { href: "/macro", label: "x" }))).toEqual(["시장", "매크로 지표"]);
+    expect(labels(breadcrumbs("/paper/us/holdings", OWNER, { href: "/paper/us/holdings", label: "x" }))).toEqual(["모의매매", "미국", "보유·체결"]);
+    expect(labels(breadcrumbs("/s/kr/005930", MEMBER, { href: "/s/kr/005930", label: "  " }))).toEqual(["시장", "종목(한국)", "005930"]);
+  });
+});
+
 describe("모의매매(운영자)", () => {
   it("개요는 모의매매 › 미국, 탭 주소는 그 탭 이름(PAPER_TABS)까지", () => {
     expect(breadcrumbs("/paper/us", OWNER)).toEqual([

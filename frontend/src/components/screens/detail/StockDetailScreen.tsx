@@ -7,6 +7,7 @@ import { ChangeChip, EntityHeader, MasterDetail, type PropertyItem, PropertyList
 import { Banner, ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import {
   consensusItems,
@@ -22,6 +23,7 @@ import {
   marketStateText,
   profileItems,
   stockEntityKey,
+  stockHref,
   stockStatItems,
 } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
@@ -75,6 +77,8 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   const unit = currencyUnit(quote?.currency);
   const indicator = indicatorForSymbol(macro.data, quote ? symbol : null);
   const entityLink = infoSearchEntityLink(stockEntityKey(market, code), "정보 검색에서 보기", user);
+  // 넓은 화면 빵부스러기의 마지막 칸을 코드 대신 종목 이름으로(시세를 읽은 뒤에만 — 셸이 같은 주소일 때만 씀).
+  useEntityCrumb(quote ? stockHref(market, code) : null, quote ? name : null);
 
   let placeholder;
   if (!quoteState.data) {

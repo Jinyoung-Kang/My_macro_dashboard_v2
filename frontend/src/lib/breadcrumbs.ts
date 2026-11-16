@@ -1,8 +1,8 @@
 /**
  * 넓은 화면 상단바의 빵부스러기(메뉴 › 하위 화면 › 대상) — 주소만으로 계산하는 순수 함수(ADR 0004, 작업대 실행 명세 §5, ADR 0042 결정 5).
- * 메뉴 표는 lib/nav.ts 하나를 씁니다(셸의 다른 부분과 같은 표). API를 부르지 않습니다 — 대상의 이름(삼성전자·기관 이름)은 상세 화면이 이미 읽은
- * 값으로 다음 단계(P4 대상 머리)가 셸에 넘길 때 덮어쓰고, 지금은 주소의 식별자(키·코드·CIK)를 적습니다(2026-11-16 결정 — 부를 화면 없이 연결점을
- * 먼저 만들지 않음).
+ * 메뉴 표는 lib/nav.ts 하나를 씁니다(셸의 다른 부분과 같은 표). API를 부르지 않습니다 — 대상 칸은 주소의 식별자(키·코드·CIK)이고, 상세 화면이 이미
+ * 읽은 이름(삼성전자·기관 이름·지표 이름)을 넘기면(`entity` — hooks/useEntityCrumb, P4 대상 머리) 그 칸의 주소와 같을 때만 글을 그 이름으로 바꿉니다
+ * (주소·링크 여부는 그대로, 다른 주소의 이름은 무시 — 앞 화면의 이름이 남지 않음).
  *
  * 칸 순서: 탭 → 하위 화면 → 대상(상세·모의매매 탭). 마지막 칸이 지금 화면입니다(셸이 링크 없이 aria-current="page"로 그림).
  * - 탭의 화면이 하나뿐이고 그것이 탭 첫 화면이면(홈·정보 검색) 하위 화면 칸을 생략합니다(같은 이름이 두 번 나오지 않게).
@@ -51,51 +51,64 @@ function singleSegment(pathname: string, prefix: string): string | null {
   return rest && !rest.includes("/") ? rest : null;
 }
 
+/** 대상 칸 계산 결과 — 칸들과, 마지막 칸이 상세 대상이면 그 정규 주소(보임과 상관없는 원래 주소 — 넘겨받은 이름과 대조). */
+type DetailCrumbs = { crumbs: Crumb[]; entityHref: string | null };
+
+const NO_DETAIL: DetailCrumbs = { crumbs: [], entityHref: null };
+
 /** 대상 칸(상세 세 종류·모의매매 탭) — 탭·하위 화면 칸 뒤에 붙입니다. */
-function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => string | null): Crumb[] {
+function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => string | null): DetailCrumbs {
   if (tab.key === "paper") {
     const match = PAPER_TAB_PATH.exec(pathname);
-    if (!match) return [];
+    if (!match) return NO_DETAIL;
     const market = match[1] as "us" | "kr";
     const entry = Object.hasOwn(PAPER_TAB_CRUMBS, match[2]) ? PAPER_TAB_CRUMBS[match[2]] : undefined;
-    if (!entry || !entry.markets.includes(market)) return [];
-    return [{ label: entry.label, href: visible(`/paper/${market}/${match[2]}`) }];
+    if (!entry || !entry.markets.includes(market)) return NO_DETAIL;
+    return { crumbs: [{ label: entry.label, href: visible(`/paper/${market}/${match[2]}`) }], entityHref: null };
   }
   if (tab.key === "markets") {
     const indicator = singleSegment(pathname, "/markets/i/");
     if (indicator !== null) {
       const key = parseIndicatorKey(indicator);
       const macro = tab.items.find((item) => item.href === MACRO_HREF);
-      return [
-        ...(macro ? [{ label: macro.label, href: visible(macro.href) }] : []),
-        ...(key ? [{ label: key, href: visible(indicatorHref(key)) }] : []),
-      ];
+      const href = key ? indicatorHref(key) : null;
+      return {
+        crumbs: [
+          ...(macro ? [{ label: macro.label, href: visible(macro.href) }] : []),
+          ...(key && href ? [{ label: key, href: visible(href) }] : []),
+        ],
+        entityHref: href,
+      };
     }
     const stock = /^\/s\/([^/]+)\/([^/]+)\/?$/.exec(pathname);
     if (stock) {
       const market = stock[1].trim().toLowerCase();
-      if (market !== "us" && market !== "kr") return [];
+      if (market !== "us" && market !== "kr") return NO_DETAIL;
       const parsed = parseStockRoute(stock[1], stock[2]);
-      return [
-        { label: STOCK_SECTION[market], href: null },
-        ...(parsed ? [{ label: parsed.code, href: visible(stockHref(parsed.market, parsed.code)) }] : []),
-      ];
+      const href = parsed ? stockHref(parsed.market, parsed.code) : null;
+      return {
+        crumbs: [{ label: STOCK_SECTION[market], href: null }, ...(parsed && href ? [{ label: parsed.code, href: visible(href) }] : [])],
+        entityHref: href,
+      };
     }
-    return [];
+    return NO_DETAIL;
   }
   if (tab.key === "institutions") {
     const raw = singleSegment(pathname, "/institutions/");
     const cik = raw === null ? null : parseCik(raw);
-    return cik ? [{ label: `CIK ${cik}`, href: visible(institutionHref(cik)) }] : [];
+    const href = cik ? institutionHref(cik) : null;
+    return cik && href ? { crumbs: [{ label: `CIK ${cik}`, href: visible(href) }], entityHref: href } : NO_DETAIL;
   }
-  return [];
+  return NO_DETAIL;
 }
 
 /**
  * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
  * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/1067983` → 기관 › 13F 포트폴리오 › CIK 1067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
+ * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
+ * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
  */
-export function breadcrumbs(pathname: string, user: SessionUser | null | undefined): Crumb[] {
+export function breadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
   const tab = activeTab(pathname);
   if (!tab) return [];
   const tabVisible = visibleTabs(user).includes(tab);
@@ -109,5 +122,10 @@ export function breadcrumbs(pathname: string, user: SessionUser | null | undefin
     if (item.group) crumbs.push({ label: item.group, href: null });
     crumbs.push({ label: item.label, href: shown.has(item.href) ? item.href : null });
   }
-  return [...crumbs, ...detailCrumbs(pathname, tab, visible)];
+  const detail = detailCrumbs(pathname, tab, visible);
+  const named = entity && detail.entityHref !== null && entity.href === detail.entityHref ? entity.label.trim() : "";
+  const tail = named
+    ? detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb))
+    : detail.crumbs;
+  return [...crumbs, ...tail];
 }
