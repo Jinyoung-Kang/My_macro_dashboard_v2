@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef } from "react";
 import { LockIcon, PanelLeftIcon } from "@/components/ui/icons";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useNavCollapsed } from "@/hooks/useNavCollapsed";
+import { useScrollNavActive } from "@/hooks/useScrollNavActive";
 import { useWideShell } from "@/hooks/useWideShell";
 import { navTree, type NavTreeLeaf, type NavTreeNode, type UpcomingItem } from "@/lib/nav";
 import { onShellCommand } from "@/lib/shellCommands";
@@ -38,6 +39,9 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * (ADR 0004 1단계 덧붙임). 앱 이름은 폭 전체의 상단바 맨 왼쪽에 있고(메뉴 맨 위 상표는 없앰), 예전 아래쪽의 읽기 모드·수동 새로고침·계정·빌드 정보는 상단바로
  * 옮겼습니다(새로고침은 아이콘 단추, 나머지는 계정 메뉴). 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2).
  * 좁은 화면에서는 숨기고(하단 탭 바 + 하위 메뉴 줄 + 더보기 화면이 대신), 데스크톱에서는 상단바 아래 남는 높이에 붙어 본문만 스크롤됩니다(메뉴가 길면 메뉴만 따로 스크롤).
+ * 스크롤 상자는 메뉴(nav — min-h-0 flex-1 overflow-y-auto)이고 맨 아래 접기 영역은 그 밖에서 줄지 않아(shrink-0) 창이 낮아도 늘 보입니다 — 예전에는
+ * aside 전체가 스크롤 상자라 펼친 메뉴가 길면 접기 단추가 메뉴와 함께 화면 밖으로 밀렸습니다(QA-555: 1024x600 /more에서 단추 609~641px). 그래서 지금 칸이
+ * 메뉴 끝 쪽이면 주소가 바뀌거나 접고 펼 때 메뉴만 스크롤해 보입니다(useScrollNavActive — scrollIntoView 아님).
  *
  * - 칸은 32px, 탭 아이콘 16px. 하위 칸은 탭 이름과 같은 세로줄로 들여 씁니다. 묶음(더보기의 '한국 시장')은 누르지 않는 글 머리 아래 따로 목록.
  * - aria-current는 nav.ts 규칙 그대로 — 탭 링크는 tabCurrent(첫 화면 page·같은 탭의 다른 화면 true), 하위 칸은 지금 화면만(주소 그대로 page·아래 주소 true).
@@ -62,6 +66,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
   // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554).
   const wide = useWideShell();
   const asideRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   // 접고 펴기 직전에 포커스가 이 메뉴 안에 있었는가 — 그린 뒤 포커스가 사라졌으면(하위 칸) 접기 단추로 옮깁니다.
   const refocus = useRef(false);
@@ -71,6 +76,9 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
     refocus.current = Boolean(asideRef.current && active && asideRef.current.contains(active));
     toggle();
   }, [toggle]);
+
+  // 지금 칸이 메뉴 아래(접기 영역 뒤)에 가려져 열리지 않게 — 메뉴(nav)만 스크롤합니다(QA-555).
+  useScrollNavActive(navRef, pathname, collapsed);
 
   // 셸 명령 신호 — [ 키·명령 팔레트의 '왼쪽 메뉴 접기·펼치기'(넓은 화면에서만 보냄, lib/shellCommands).
   useEffect(() => onShellCommand("toggle-nav", handleToggle), [handleToggle]);
@@ -85,9 +93,9 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
   return (
     <aside
       ref={asideRef}
-      className="hidden shrink-0 flex-col border-r border-border bg-surface lg:flex lg:w-[var(--shell-nav-w)] lg:overflow-y-auto"
+      className="hidden shrink-0 flex-col border-r border-border bg-surface lg:flex lg:w-[var(--shell-nav-w)]"
     >
-      <nav id={navId} aria-label="주 메뉴" className="p-2">
+      <nav ref={navRef} id={navId} aria-label="주 메뉴" className="min-h-0 flex-1 overflow-y-auto p-2">
         <ul className="flex flex-col gap-0.5">
           {tree.map((node) => {
             // 막대 — 펼친 메뉴는 가장 깊은 지금 칸(navTree), 레일은 하위 칸이 숨으므로 지금 탭 칸.
@@ -111,7 +119,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
           })}
         </ul>
       </nav>
-      <div className="mt-auto border-t border-border p-2">
+      <div className="mt-auto shrink-0 border-t border-border p-2">
         {/* 이름은 상태와 상관없이 '왼쪽 메뉴 접기'(보이는 글 '메뉴 접기'가 이름 안에 있음), 접혔는지는 aria-pressed. 툴팁은 이름과 같은 글 + 단축키라
             설명으로 잇지 않습니다(labelOnly — 단축키는 aria-keyshortcuts가 읽힘). */}
         <Tooltip content="왼쪽 메뉴 접기 ([)" side="right" labelOnly disabled={!wide}>

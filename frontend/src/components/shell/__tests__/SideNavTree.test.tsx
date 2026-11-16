@@ -122,7 +122,7 @@ describe("긴 메뉴의 스크롤", () => {
   // 513~545. 더보기 묶음 화면은 창 높이 649px, 정보 수집 화면은 621px 미만이면 단추가 잘렸습니다(마우스 사용자는 메뉴를 굴려야 보임). 스크롤 상자를 nav로
   // 옮기고(min-h-0 flex-1 overflow-y-auto) 접기 영역은 줄지 않게(shrink-0) 둡니다. jsdom은 배치를 재지 못하므로 클래스로 봅니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'p-2'뿐이고 aside에 lg:overflow-y-auto, 접기 영역이 'mt-auto border-t border-border p-2'였습니다.
-  it.fails("메뉴가 길면 메뉴(nav)만 스크롤하고 아래 접기 단추는 그 스크롤 상자 밖에 늘 보인다 — 스크롤 상자는 aside가 아니라 nav (QA-555)", () => {
+  it("메뉴가 길면 메뉴(nav)만 스크롤하고 아래 접기 단추는 그 스크롤 상자 밖에 늘 보인다 — 스크롤 상자는 aside가 아니라 nav (QA-555)", () => {
     render(<SideNav pathname="/krx" user={MEMBER} />);
     expect(mainNav().className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-0", "flex-1", "overflow-y-auto"]));
     expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).not.toContain("lg:overflow-y-auto");
