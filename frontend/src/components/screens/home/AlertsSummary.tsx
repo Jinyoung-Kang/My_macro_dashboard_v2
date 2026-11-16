@@ -185,15 +185,24 @@ function SourceIncidents({ read }: { read: ApiRead<InfoSourcesResponse> }) {
 /**
  * 알림 한 줄의 제목 — 가는 주소가 있으면(관심 대상 새 글 알림) 링크로, 누르는 자리는 줄 전체(줄 높이 56px 이상 — 좁은 화면 44px 조건)로 넓힙니다.
  * 링크는 누를 수 있는 것이라 강조 파랑(명세 A1), 읽지 않음은 굵기로(색만이 아님 — 옆의 '안 읽음' 글).
+ *
+ * 제목은 두 줄까지 보이고(낱말 사이에서 줄바꿈 — 긴 영문 토큰만 칸 안에서 꺾음) 넘치면 말줄임, 전체 제목은 title로 둡니다(QA-418 관심 대상 이름과 같은 무늬).
+ * 한 줄 말줄임이던 때는 반 칸(390·1024·1280)에서 13F 알림의 기관 이름 뒷부분과 종목 수가 가려지고, 링크가 아닌 종류는 홈에서 전체 제목을 볼 길이
+ * 없었습니다(QA-606). 링크의 줄 전체 누르는 자리(::after)는 줄(li)이 기준이라 제목의 overflow에 잘리지 않습니다.
  */
 function RowTitle({ title, unread, href }: { title: string; unread: boolean; href: string | null }) {
   if (!href) {
-    return <span className={`truncate text-[15px] leading-5 ${unread ? "font-semibold text-text" : "text-text-2"}`}>{title}</span>;
+    return (
+      <span title={title} className={`line-clamp-2 break-keep text-[15px] leading-5 wrap-anywhere ${unread ? "font-semibold text-text" : "text-text-2"}`}>
+        {title}
+      </span>
+    );
   }
   return (
     <Link
       href={href}
-      className={`truncate rounded-sm text-[15px] leading-5 text-accent underline-offset-2 after:absolute after:inset-0 after:content-[''] hover:text-accent-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+      title={title}
+      className={`line-clamp-2 break-keep rounded-sm text-[15px] leading-5 text-accent underline-offset-2 wrap-anywhere after:absolute after:inset-0 after:content-[''] hover:text-accent-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
         unread ? "font-semibold" : ""
       }`}
     >
