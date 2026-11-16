@@ -46,6 +46,11 @@ export type KpiItem = {
    * 링크 타일의 이름이 '이름 + 이름 불러오는 중'으로 겹치지 않게, QA-597).
    */
   pending?: boolean;
+  /**
+   * 읽는 중 자리 줄 수(기본 0) — 값 자리표시 아래 같은 블록에 글 없는 막대(읽어 주기에서 뺌)를 이만큼 더 그려, 값이 온 뒤의 변화·배지·출처 줄 자리를
+   * 미리 잡습니다(값이 와도 띠 높이가 크게 뛰지 않게 — QA-598). 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 타일에만 주면 됩니다.
+   */
+  pendingLines?: number;
   isEstimated?: boolean;
   isProxy?: boolean;
   isStale?: boolean;
@@ -62,12 +67,38 @@ const TILE = "block h-full min-w-0 rounded-control border border-border bg-surfa
  */
 const LINK_TILE = `group min-h-11 text-text hover:bg-surface-2 motion-safe:transition-colors ${FOCUS_RING}`;
 
+/**
+ * 읽는 중 자리 줄의 막대 — 공용 Skeleton 막대와 같은 모양(놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). 막대 14px + 사이 14px로
+ * 다섯 줄이면 136px(+ 이름·값 자리표시·여백 64px = 200px) — 홈 시장 타일의 읽은 뒤 높이(QA 스택 1024·1440 191~208px, 390 170~204px)에 맞춘 값입니다.
+ */
+const PENDING_BAR = "h-3.5 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+
+function PendingLines({ count }: { count: number | undefined }): JSX.Element | null {
+  const lines = typeof count === "number" && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  if (lines === 0) {
+    return null;
+  }
+  return (
+    <div aria-hidden="true" className="mt-2.5 flex flex-col gap-3.5">
+      {Array.from({ length: lines }, (_, index) => (
+        // 마지막 줄을 짧게 — 글 문단처럼(공용 Skeleton과 같은 규칙).
+        <div key={index} className={`${PENDING_BAR} ${lines > 1 && index === lines - 1 ? "w-3/5" : "w-full"}`} />
+      ))}
+    </div>
+  );
+}
+
 const VALUE_NUMBER = "text-xl font-semibold tabular-nums lg:text-2xl";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
 function KpiValue({ item }: { item: KpiItem }): JSX.Element {
   if (item.pending) {
-    return <Skeleton lines={1} label={`${item.label} 불러오는 중`} />;
+    return (
+      <>
+        <Skeleton lines={1} label={`${item.label} 불러오는 중`} />
+        <PendingLines count={item.pendingLines} />
+      </>
+    );
   }
   const text = statValueText(item.value, item.format);
   if (text === null) {
@@ -143,7 +174,8 @@ const MAX_ONE_ROW = 8;
  * KPI 띠(작업대 실행 명세 §6 KpiStrip·W7 — 홈·모의 개요의 44px 히어로 대신): 화면 맨 위 요약 값 타일을 한 줄로.
  *
  * - 값은 20px(lg 24px)·굵게·`tabular-nums`. 판정 라벨(`valueKind: "label"` — 국면)은 숫자가 아니라 tabular 없이 16·20px.
- * - 값을 모르면 "—"와 사유, 단위는 값이 있을 때만. 추정·대리·이전 값 배지는 늘 보입니다. 읽는 중이면 값 자리에 Skeleton(role=status).
+ * - 값을 모르면 "—"와 사유, 단위는 값이 있을 때만. 추정·대리·이전 값 배지는 늘 보입니다. 읽는 중이면 값 자리에 Skeleton(role=status)과
+ *   `pendingLines`만큼의 글 없는 자리 줄(값이 온 뒤의 높이를 미리 잡음 — QA-598).
  * - 바깥에서 온 숫자는 출처 줄(공용 출처 배지 — 출처·장 상태·지연·시각, 참고 시세 표기)을 타일 아래에 늘 둡니다(원칙 '모든 숫자에 출처' — 밀도를 위해 숨기지 않음).
  * - 변화는 공용 변화 칩(▲▼ 12px·부호 −·sr '상승/하락')과 12px 캡션, 상태는 공용 상태 글(아이콘 + 글 — 색만으로 뜻을 전하지 않음).
  * - `href`가 있으면 타일 전체가 그 대상 화면 링크입니다(중립 잉크·hover surface-2 + 이름 밑줄·포커스 링 — 데이터 영역이라 강조 파랑을 쓰지 않음, A1).

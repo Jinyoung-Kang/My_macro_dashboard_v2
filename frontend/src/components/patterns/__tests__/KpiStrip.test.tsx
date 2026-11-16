@@ -178,13 +178,16 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
   // QA-598: 읽는 중 타일은 이름 + 자리표시 한 줄(64px)이라 값·변화·배지·출처 줄이 오면 1440 타일 64→208px, 390 띠 280→677px로 자라
   // 아래 2×2 패널 전체가 밀렸습니다(QA 스택 /api/* 1.5초 지연 CLS 390 0.63·1024 0.37·1440 0.24).
   // 수정 전(재현 커밋에서는 it.fails) 막대는 값 자리표시의 1개뿐이었습니다.
-  it.fails("읽는 중 자리 줄(pendingLines) — 값 자리표시 아래 같은 블록에 글 없는 막대를 그 수만큼 더 그리고, 읽어 주는 상태는 하나 (QA-598)", () => {
-    // 재현 커밋에는 아직 없는 칸이라 타입 단언으로 넘깁니다.
-    const items = [
-      { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 4 },
-      { key: "alerts", label: "읽지 않은 알림", value: null, pending: true },
-    ] as KpiItem[];
-    render(<KpiStrip label="요약" items={items} />);
+  it("읽는 중 자리 줄(pendingLines) — 값 자리표시 아래 같은 블록에 글 없는 막대를 그 수만큼 더 그리고, 읽어 주는 상태는 하나 (QA-598)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 4 },
+          { key: "alerts", label: "읽지 않은 알림", value: null, pending: true },
+        ]}
+      />,
+    );
     const market = tile("S&P 500");
     const status = within(market).getByRole("status", { name: "S&P 500 불러오는 중" });
     expect(within(market).getAllByRole("status")).toHaveLength(1);

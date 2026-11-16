@@ -18,6 +18,9 @@ import { SectionError } from "./HomeCard";
 // 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(패널 제목 — 영역 이름).
 const TITLE = "모의매매 계좌";
 
+/** 읽는 중 자리표시 높이(px) — 계좌 표 네~다섯 줄 + 출처·출발·비교 줄의 높이에 가깝게(QA 스택 읽은 뒤 본문 529~607px의 아래쪽, QA-598). */
+const PAPER_PENDING_HEIGHT = 430;
+
 /**
  * ② 계좌 손익 표 패널 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
  *
@@ -67,7 +70,7 @@ export function PaperPnlPanel() {
         {overview.error ? (
           <SectionError message={overview.error} onRetry={() => void overview.reload()} />
         ) : (
-          <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
+          <Skeleton height={PAPER_PENDING_HEIGHT} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
         )}
       </Panel>
     );

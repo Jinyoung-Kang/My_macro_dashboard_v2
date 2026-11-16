@@ -14,6 +14,12 @@ import type { ApiRead } from "./useHomeData";
 const TITLE = "오늘의 국면";
 
 /**
+ * 읽는 중 자리표시 높이(px) — 읽은 뒤 본문(라벨·문장·기준일·출처·신호 넷·고지)의 높이에 가깝게(QA 스택 414~544px — 넓을수록 낮음). 줄 수로 두면
+ * 189px라 값이 오는 순간 아래 패널이 400px 가까이 밀렸습니다(QA-598 — QA-283의 홈 몫). lg 2×2의 같은 줄은 높은 쪽(계좌 표)에 맞춰집니다.
+ */
+const REGIME_PENDING_HEIGHT = 490;
+
+/**
  * ① 오늘의 국면 패널 — 판정 라벨 · 백엔드 판정 문장 · 기준일(뜻 포함) · 출처 · 받지 못한 입력 · 신호 넷(속성 목록 — 값+단위, 상태·해석 글) · 백엔드 고지.
  * 머리에는 다시 읽기 실패 표시와 '국면 판정 자세히'(/regime).
  *
@@ -39,7 +45,7 @@ export function RegimePanel({ read }: { read: ApiRead<RegimeResponse> }) {
 
   let body: ReactNode;
   if (!data) {
-    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton lines={5} label="오늘의 국면을 불러오는 중" />;
+    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton height={REGIME_PENDING_HEIGHT} label="오늘의 국면을 불러오는 중" />;
   } else {
     const model = regimeHeroModel(data);
     body = (

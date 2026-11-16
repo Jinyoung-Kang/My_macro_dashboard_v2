@@ -796,13 +796,12 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
   });
 
   // 수정 전(재현 커밋에서는 it.fails) 일곱 타일 모두 자리 줄이 0이었습니다.
-  it.fails("읽는 중이면 시장 타일 넷만 자리 줄(pendingLines 5 — 변화 1·배지 1·출처 3)을 받는다 — 값이 온 뒤의 높이에 가깝게 자리를 잡음 (QA-598)", () => {
+  it("읽는 중이면 시장 타일 넷만 자리 줄(pendingLines 5 — 변화 1·배지 1·출처 3)을 받는다 — 값이 온 뒤의 높이에 가깝게 자리를 잡음 (QA-598)", () => {
     const pending = homeKpiItems(
       ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
       { owner: true, clock: CLOCK_ONLY },
     );
-    // 재현 커밋에는 아직 없는 칸이라 이름으로 읽습니다.
-    const lines = (item: HomeKpi) => (item as Record<string, unknown>).pendingLines ?? 0;
+    const lines = (item: HomeKpi) => item.pendingLines ?? 0;
     expect(pending.map((item) => [item.key, item.pending === true, lines(item)])).toEqual([
       ["regime", true, 0],
       ["sp500", true, 5],

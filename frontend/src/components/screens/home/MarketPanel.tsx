@@ -14,6 +14,9 @@ import type { ApiRead } from "./useHomeData";
 
 const TITLE = "시장";
 
+/** 읽는 중 자리표시 높이(px) — 묶음 탭 + 표(QA 스택 읽은 뒤 본문 367px — 탭 뒤 표 넉 줄)에 가깝게(QA-598). */
+const MARKET_PENDING_HEIGHT = 330;
+
 /** 지표 한 줄의 칸 — 지표(이름은 그 지표의 상세 링크) · 값 · 변화 · 기준(출처·장 상태·지연·시각과 배지). */
 const COLUMNS: readonly Column<HomeRow>[] = [
   {
@@ -85,7 +88,7 @@ export function MarketPanel({
 
   let body: ReactNode;
   if (!data) {
-    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton lines={6} label="시장 시세를 불러오는 중" />;
+    body = error ? <SectionError message={error} onRetry={() => void reload()} /> : <Skeleton height={MARKET_PENDING_HEIGHT} label="시장 시세를 불러오는 중" />;
   } else if (!current) {
     body = <p className="text-sm text-text-2">{presentText(data.message) ?? "매크로 카드 저장본이 아직 없습니다."}</p>;
   } else {

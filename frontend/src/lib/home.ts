@@ -667,6 +667,7 @@ export type HomeKpi = {
   note?: string | null;
   emptyReason?: string | null;
   pending?: boolean;
+  pendingLines?: number;
   isEstimated?: boolean;
   isProxy?: boolean;
   isStale?: boolean;
@@ -714,12 +715,21 @@ export const KPI_READ_FAILED = "읽지 못함";
 /** 저장본에 그 카드가 없을 때의 사유(수집기 카드 목록이 바뀌었거나 아직 수집 전). */
 export const KPI_NOT_IN_SNAPSHOT = "저장본에 없음";
 
-/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). */
-function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>): HomeKpi | null {
+/**
+ * 읽는 중 시장 타일의 자리 줄 수 — 값이 온 뒤의 변화 칩 1 · 이전 값 배지 1 · 출처 줄 3줄(140~180px 타일에서 접힌 줄 수) 자리입니다.
+ * 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 시장 타일에만 주면 띠 높이가 맞습니다(국면·알림·오류 타일은 자리표시 한 줄 — QA-598).
+ */
+const KPI_MARKET_PENDING_LINES = 5;
+
+/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). `pendingLines`는 읽는 중일 때만 넘깁니다. */
+function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>, pendingLines?: number): HomeKpi | null {
   if (read.data !== null) {
     return null;
   }
-  return read.error !== null ? { ...base, value: null, emptyReason: KPI_READ_FAILED } : { ...base, value: null, pending: true };
+  if (read.error !== null) {
+    return { ...base, value: null, emptyReason: KPI_READ_FAILED };
+  }
+  return { ...base, value: null, pending: true, ...(pendingLines ? { pendingLines } : {}) };
 }
 
 function regimeKpi(read: HomeReadState<RegimeResponse>): HomeKpi {
@@ -739,7 +749,7 @@ function marketKpi(
   const { label, unit } = HOME_KPI_MARKET_LABELS[key];
   const href = indicatorHref(key);
   const base: HomeKpi = { key, label, value: null, href };
-  const state = kpiReadState(base, read);
+  const state = kpiReadState(base, read, KPI_MARKET_PENDING_LINES);
   if (state) return state;
   const overview = read.data as MacroOverview;
   const item = (overview.categories ?? []).flatMap((category) => category.items ?? []).find((card) => card.key === key);

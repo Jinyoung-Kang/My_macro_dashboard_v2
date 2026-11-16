@@ -512,7 +512,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
   // QA-598: 자리표시가 읽은 뒤보다 훨씬 낮아(KPI 타일 64→208px, 국면 패널 189→582px, 계좌 181→509~680px, 시장 309→414px) 값이 오는 동안
   // 화면이 아래로 밀렸습니다(QA 스택 /api/* 1.5초 지연 CLS 390 0.63·1024 0.37·1440 0.24 — QA-283의 홈 몫 + P4 새 KPI 띠).
   // 수정 전(재현 커밋에서는 it.fails) 타일 막대는 모두 1개, 세 패널 자리표시는 높이 없는 줄(lines 5·5·6)이었습니다.
-  it.fails("읽는 중 자리는 읽은 뒤 높이에 가깝다 — 시장 KPI 타일은 자리 줄 막대, 국면·계좌·시장 패널 자리표시는 높이를 가진 블록 (QA-598)", () => {
+  it("읽는 중 자리는 읽은 뒤 높이에 가깝다 — 시장 KPI 타일은 자리 줄 막대, 국면·계좌·시장 패널 자리표시는 높이를 가진 블록 (QA-598)", () => {
     renderHome(OWNER);
     const strip = region("오늘 요약");
     const bars = (label: string) => within(strip).getByRole("status", { name: `${label} 불러오는 중` }).closest("li")?.querySelectorAll(".bg-control-fill").length;
