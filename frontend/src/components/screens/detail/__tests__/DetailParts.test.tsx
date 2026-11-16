@@ -104,6 +104,27 @@ describe("가격 차트 패널", () => {
     await waitFor(() => expect(api.apiGetShared.mock.calls.map(([path]) => path)).toContain(endpoints.macro.ticker("SYNQ", "5y")));
   });
 
+  // 기간마다 서버(GET /api/macro/ticker → 백엔드 → 수집기 → Yahoo)를 부르므로 기간 탭은 수동 활성 — 화살표로 지나가는 기간은 부르지 않고 Enter로 고른 기간만
+  // 부릅니다(QA 스택에서 5년 → ← 세 번이 1y·6mo·1mo 세 요청을 냈음).
+  it("기간 탭을 화살표로 지나가도 시계열을 부르지 않고, Enter로 고른 기간만 부른다", async () => {
+    const tnx = (period: string) => endpoints.macro.ticker("^TNX", period);
+    reads[tnx("1y")] = { available: true, points: [{ date: "2026-11-14", close: 4.1 }] };
+    render(<PriceChartPanel title="미국채 10년물" symbol="^TNX" valueDigits={3} />);
+    await screen.findByRole("img", { name: "미국채 10년물 가격 차트" });
+    const tickerCalls = () => api.apiGetShared.mock.calls.map(([path]) => path as string).filter((path) => path.startsWith("/api/macro/ticker"));
+    expect(tickerCalls()).toEqual([tnx("1y")]);
+    const year = screen.getByRole("tab", { name: "1년" });
+    year.focus();
+    fireEvent.keyDown(year, { key: "ArrowLeft" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "1개월" }));
+    await act(async () => {});
+    expect(tickerCalls()).toEqual([tnx("1y")]);
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    await waitFor(() => expect(tickerCalls()).toEqual([tnx("1y"), tnx("1mo")]));
+    expect(screen.getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
+  });
+
   it("불러오는 중은 Skeleton(role=status), 오류는 다시 시도, 받지 않음은 그 글", async () => {
     const { unmount } = render(<PriceChartPanel title="합성 시세" symbol="SYNQ" valueDigits={2} />);
     expect(screen.getByRole("status", { name: "차트를 불러오는 중" })).toBeTruthy();

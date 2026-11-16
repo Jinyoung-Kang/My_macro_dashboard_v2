@@ -152,6 +152,7 @@ const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
  *   초점을 두고 ←·→로 옮기는 낭독기 사용자). 문지르지 않을 때는 같은 자리에 짧은 안내를 두어 줄 높이가 바뀌지 않습니다.
  *   좁은 화면(sm 미만)은 문지른 내용이 두 줄로 접히므로 처음부터 두 줄 자리(38px)를 잡아 둡니다(QA-571 — 한 줄 자리만 잡아 문지르면 차트가 18px 밀렸음).
  * - 틀은 공용 패널의 이름 있는 영역(Panel `region` — 머리줄과 본문을 1px 경계로 가르고 제목 h2가 영역 이름)이고, 기간 탭은 머리 동작 자리입니다.
+ *   기간마다 시계열을 서버에서 읽으므로 기간 탭은 수동 활성입니다(화살표는 포커스만, 누르기·Enter·Space로 고름 — 지나가는 기간마다 Yahoo를 부르지 않게).
  *   제목(긴 종목·지표 이름)은 낱말 사이에서 줄을 바꾸고 칸보다 긴 낱말만 꺾습니다.
  */
 export function PriceChartPanel({
@@ -210,7 +211,9 @@ export function PriceChartPanel({
       region
       className="min-w-0"
       title={<span className="break-keep wrap-anywhere">{title}</span>}
-      actions={symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} /> : undefined}
+      actions={
+        symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} activation="manual" /> : undefined
+      }
     >
       {scrubbable ? (
         <div aria-hidden="true" className="mb-2 flex min-h-[2.375rem] flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption sm:min-h-5">
