@@ -276,7 +276,7 @@ app/(dashboard)/layout.tsx  세션·읽지 않은 알림 수를 한 번 읽어 �
 components/shell/           1024px 이상: 왼쪽 나무 메뉴(접으면 아이콘 레일)·48px 상단바(빵부스러기·명령 팔레트 ⌘K·새로고침 아이콘(운영자)·알림 벨·계정 메뉴)
                             그 아래: 상단바(통합 검색·알림 벨)·하위 메뉴 줄·하단 탭 — 메뉴 표는 lib/nav.ts 하나(빵부스러기 lib/breadcrumbs, ADR 0042 결정 5)
 components/screens/<탭>/    화면 조립(홈·모의매매 — 미국·한국은 같은 조립에 시장 인자, 검색 상세 — 종목·지표·기관) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
-components/patterns/        자산 행·히어로·통계 타일·표·배지 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
+components/patterns/        자산 행·히어로·통계 타일·표·배지·KPI 띠·속성 목록·대상 머리·칸 틀·목록-검사 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
 components/charts/ · ui/    Recharts 래퍼(축 규칙) · 기본 조각(Radix 대화상자·토스트·메뉴·툴팁)
 lib/                        표시 규칙(서식·메뉴·검색·화면 모델) — React를 모르는 순수 함수
 ```
@@ -286,7 +286,9 @@ lib/                        표시 규칙(서식·메뉴·검색·화면 모델)
   4단계입니다. 모의매매만 `/paper/us/*`로 옮겼고(옛 `/paper`는 리디렉션) 한국 책은 `/paper/kr/*`(같은 탭, 2단계 F2)입니다. 두 시장 모두 탭 '실제 계좌'는 모의 장부와 별개인 토스증권 실계좌 읽기 전용 조회입니다([ADR 0025](adr/0025-toss-real-account-readonly.md)). 한국 탭은 그 맨 위에 실제 매매 칸(켜기·끄기 — [ADR 0028](adr/0028-real-trade-mirror.md))이 있고, 계좌 읽기·모의 개요가 실패해도 그 칸과 끄기 단추는 보입니다. 한국 탭 줄에만 그 옆에 'ISA 계좌'(장부와 다음 시가 매매 지시, 주문 기능 없음 — [ADR 0029](adr/0029-isa-manual-account.md))가 있습니다. 검색 상세 화면
   (지표 `/markets/i/<키>`·종목 `/s/<시장>/<코드>`·기관 `/institutions/<CIK>`)은 2026-11-01에 열었습니다 — 시세·뉴스·종목 찾기는 백엔드
   `feature.detail`이 수집기 `/live/quote`·`/live/news`·`/live/symbols`(Yahoo·네이버·구글 뉴스, 짧은 캐시)를 중계하고 저장하지 않으며, 차트·13F는
-  기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)).
+  기존 경로를 씁니다([명세](specs/2026-11-01-search-detail.md)). 2026-11-16(작업대 P4, [ADR 0042](adr/0042-workbench-ui.md))부터 세 화면은 대상 머리 + 칸 틀(왼쪽 속성 · 가운데 탭 ·
+  오른쪽 연결·출처)로 그리고, 탭은 화면 안 상태라 주소가 그대로입니다. 주소·차트 행·서식은 `lib/detail`(셸의 빵부스러기·명령 팔레트도 씀), 속성·연결 모델은 상세만 싣는
+  `lib/detailEntity`입니다. 상세가 읽은 대상 이름은 넓은 화면 빵부스러기 마지막 칸(`hooks/useEntityCrumb`)과 명령 팔레트 '최근 연 대상'에 쓰입니다.
 - **정보 검색(`/search`, [ADR 0041](adr/0041-info-search-watch.md))**: 화면이 백엔드 `feature.search`(`/api/search/{suggest,resolve,entity,feed,links}` — 회원)를 부르면
   백엔드는 입력을 검사하고 `external`(데모·`store_only`면 false)·`owner`를 붙여 수집기 `/live/search/*`를 중계합니다. 대상 풀기(Wikidata·SEC·DART·13F)와 출처 호출
   (구글·Bing·Yahoo·네이버·연합인포맥스, 단계 4부터 SEC 공시·EDGAR 전문 검색·DART 공시·Yahoo 투자의견·내부자 명단·GLEIF)·저장본 읽기·2년 자르기·중국어 제목·매체 제외·같은 글 가리기는 모두 수집기(`services/search*.py`)가 하고 결과는 메모리 캐시에만 둡니다.
@@ -302,8 +304,8 @@ lib/                        표시 규칙(서식·메뉴·검색·화면 모델)
   참고선)은 `lib/paperKr.ts`가 화면 모델로 바꿉니다. 미국 응답은 글자 그대로(고정본 `paper-overview-us.json`·`paper-status-us.json` — 장부 응답이고, 개요 경로가 덧붙이는 지금 값
   칸은 `PaperOverviewServiceTest`가 장부 부분 불변과 함께 지킴, [명세 2026-10-31](specs/2026-10-31-paper-live-overview.md))라 미국 화면은
   기본값(US)으로 예전과 같고, 프레임·설정은 두 시장이 한 판·한 행을 함께 쓰는 공용 화면입니다. 미국 Claude 계좌2(ADR 0022)는 kind가 계좌1과 같은
-  `CLAUDE`라 화면은 kind가 아니라 계좌 소개(`ACCOUNT_PROFILES`의 `timed`·시작 전·결정 안내)로 가르고, Claude 계좌를 하나로 읽는 곳(시작 카드·홈 히어로·
-  사용량)은 기본 Claude 계좌(`primaryClaudeBook` — 계좌1)를 고릅니다. 홈 히어로 끝 줄은 계좌2가 다른 날(앞으로 체결로 늦게) 출발했으면
+  `CLAUDE`라 화면은 kind가 아니라 계좌 소개(`ACCOUNT_PROFILES`의 `timed`·시작 전·결정 안내)로 가르고, Claude 계좌를 하나로 읽는 곳(시작 카드·
+  사용량)은 기본 Claude 계좌(`primaryClaudeBook` — 계좌1)를 고릅니다(홈 계좌 손익 표는 계좌를 모두 적음 — 작업대 P4). 홈 계좌 표 아래 출발 줄은 계좌2가 다른 날(앞으로 체결로 늦게) 출발했으면
   그 출발을 덧붙입니다(계좌2 행의 수익률은 계좌2 자기 출발 대비). 상태 응답의 계좌2 묶음은 시작 전에는 출발 카드, 출발 뒤에는 개요 '장부 관측치'의
   1분봉 한 줄과 결정 로그(계좌2를 고름)의 결정 창 세 줄이 씁니다. 'S = 100 같은 구간'은 개요 순자산 곡선 값을 계좌2 출발일 값으로 나눈 서술용 보기입니다.
 - **읽기는 브라우저에서**(`useApi`): 설계서의 "라우트는 서버 컴포넌트에서 fetch"는 하지 않았습니다. 세션이 브라우저 쿠키라 서버에서
