@@ -207,10 +207,16 @@ describe("가운데 칸을 접은 빵부스러기(foldedBreadcrumbs — 셸이 �
       { label: "보유·체결", href: "/paper/us/holdings" },
     ]);
     expect(foldedBreadcrumbs("/paper/kr/holdings", OWNER)[0]).toEqual({ label: "모의매매", href: "/paper/kr", title: "모의매매 › 한국" });
-    expect(foldedBreadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/1067983", label: "버크셔 해서웨이" })).toEqual([
+    // 기관 주소는 10자리 정규 CIK로 읽습니다(QA-584 — 화면이 넘기는 대상 주소도 institutionHref(10자리)).
+    expect(foldedBreadcrumbs("/institutions/0001067983", MEMBER, { href: "/institutions/0001067983", label: "버크셔 해서웨이" })).toEqual([
       { label: "기관", href: "/institutions", title: "기관 › 13F 포트폴리오" },
-      { label: "버크셔 해서웨이", href: "/institutions/1067983" },
+      { label: "버크셔 해서웨이", href: "/institutions/0001067983" },
     ]);
+    // 앞 0 없는 주소로 와도 대상 칸은 정규 주소이고 화면이 넘기는 이름이 붙습니다.
+    expect(foldedBreadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/0001067983", label: "버크셔 해서웨이" })[1]).toEqual({
+      label: "버크셔 해서웨이",
+      href: "/institutions/0001067983",
+    });
     expect(foldedBreadcrumbs("/markets/i/vix", MEMBER)[0]).toEqual({ label: "시장", href: "/macro", title: "시장 › 매크로 지표" });
   });
 
