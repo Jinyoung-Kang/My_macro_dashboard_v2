@@ -224,11 +224,11 @@ describe("navSeparatorValue — 손잡이의 aria-valuenow·aria-valuetext", () 
 });
 
 describe("NAV_WIDTH_PRESETS·navWidthPreset — 계정 메뉴 '왼쪽 메뉴 폭'의 단계(끌지 않는 포인터 수단)", () => {
-  it("좁게 206(하한)·기본 220(기본 폭)·넓게 280 — 모두 하한·상한 안의 정수이고, 넓게는 상한(320)보다 낮다(정보 검색 칸 틀 — 1280에서 317 넘으면 모자람)", () => {
+  it("좁게 206(하한)·기본 220(기본 폭)·넓게 272 — 모두 하한·상한 안의 정수이고, 넓게는 상한(320)보다 낮다(정보 검색 칸 틀 — 1280에서 317, 640px 표 — 1024에서 277 넘으면 모자람)", () => {
     expect(NAV_WIDTH_PRESETS.map((preset) => [preset.label, preset.width])).toEqual([
       ["좁게", 206],
       ["기본", 220],
-      ["넓게", 280],
+      ["넓게", 272],
     ]);
     expect(NAV_WIDTH_PRESETS[0].width).toBe(NAV_WIDTH_MIN);
     expect(NAV_WIDTH_PRESETS[1].width).toBe(NAV_WIDTH_DEFAULT);
@@ -239,8 +239,8 @@ describe("NAV_WIDTH_PRESETS·navWidthPreset — 계정 메뉴 '왼쪽 메뉴 폭
   // QA-612: 창 폭 1024~1027에서 10px 스크롤 막대를 그리는 브라우저(Windows Chrome·Edge)는 '넓게 280'을 고르면 최소 폭 640px 표(홈 두 표·/macro·
   // /institutions·/radar·/paper/us)가 4px 넘쳐 홈에 '← 표를 좌우로 넘겨 보세요'가 떴습니다. 잰 넘침은 메뉴 277px(10px 막대)·287px(겹쳐 그리는 막대)부터
   // 시작하고 272·276은 다섯 화면 모두 0 — 메뉴가 고르게 하는 폭은 1024에서도 넘치지 않는 272로.
-  // 수정 전 실패: AssertionError: expected 280 to be 272.
-  it.fails("QA-612: 넓게는 272 — 1024에서 10px 스크롤 막대가 서도 640px 표가 넘치지 않는 폭(277 아래)", () => {
+  // 재현 커밋에서는 it.fails였습니다(실패 값: AssertionError: expected 280 to be 272).
+  it("QA-612: 넓게는 272 — 1024에서 10px 스크롤 막대가 서도 640px 표가 넘치지 않는 폭(277 아래)", () => {
     const wide = NAV_WIDTH_PRESETS.find((preset) => preset.label === "넓게");
     expect(wide?.width).toBe(272);
     expect(wide?.width).toBeLessThan(277);
@@ -252,7 +252,7 @@ describe("NAV_WIDTH_PRESETS·navWidthPreset — 계정 메뉴 '왼쪽 메뉴 폭
 
   it("펼친 폭과 같은 단계, 없으면 null(끌어서 정한 폭) — 잘라서 견준다(하한 아래 190·200은 좁게, 1000은 320이라 없음)", () => {
     expect(navWidthPreset(220)?.label).toBe("기본");
-    expect(navWidthPreset(280)?.label).toBe("넓게");
+    expect(navWidthPreset(272)?.label).toBe("넓게");
     expect(navWidthPreset(206)?.label).toBe("좁게");
     expect(navWidthPreset(200)?.label).toBe("좁게");
     expect(navWidthPreset(190)?.label).toBe("좁게");

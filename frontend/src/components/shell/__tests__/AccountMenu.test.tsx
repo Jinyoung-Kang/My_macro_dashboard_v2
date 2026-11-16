@@ -7,7 +7,7 @@
  *  - 여는 단추는 30px·4px 경계 단추(원 아님 — 누르는 것), 메뉴 항목 글에 text-3이 없다(가리킨 항목 바탕 surface-3 위 금지 쌍)
  *  - 이름 툴팁은 넓은 화면에서만(QA-554 — 툴팁을 보는 시험은 넓은 화면 matchMedia 대역을 둠). 폭이 lg 아래로 바뀌면 메뉴가 닫히는 것은 Shell.test가 봄
  *  - '왼쪽 메뉴 폭'(작업대 P3 추가, 2026-11-16 결정 — 끌지 않는 포인터 수단): 단축키 도움말 다음·로그아웃 앞의 이름 있는 단일 선택 묶음(좁게 206 · 기본 220 ·
- *    넓게 280), 고른 항목은 기억한 펼친 폭과 같은 단계, 고르면 폭을 저장하고 접혀 있으면 셸 명령 toggle-nav(왼쪽 메뉴가 펼침 — 셸 전체는 shellWiring.test),
+ *    넓게 272), 고른 항목은 기억한 펼친 폭과 같은 단계, 고르면 폭을 저장하고 접혀 있으면 셸 명령 toggle-nav(왼쪽 메뉴가 펼침 — 셸 전체는 shellWiring.test),
  *    좁은 화면의 더보기 계정 영역에는 없음
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -304,13 +304,13 @@ describe("왼쪽 메뉴 폭(작업대 P3 추가 — 손잡이를 끌지 않는 �
     return { received, stop: () => window.removeEventListener(SHELL_COMMAND_EVENT, listener) };
   }
 
-  it("누가 보든 이름 있는 묶음 '왼쪽 메뉴 폭' — 좁게 206px · 기본 220px · 넓게 280px(menuitemradio), 저장값이 없으면 기본", () => {
+  it("누가 보든 이름 있는 묶음 '왼쪽 메뉴 폭' — 좁게 206px · 기본 220px · 넓게 272px(menuitemradio), 저장값이 없으면 기본", () => {
     for (const user of [MEMBER, LOCAL_OWNER, DEMO]) {
       const menu = open(renderMenu(user));
       expect(within(group(menu)).getAllByRole("menuitemradio").map((item) => item.textContent), user.email ?? "demo").toEqual([
         "좁게 206px",
         "기본 220px",
-        "넓게 280px",
+        "넓게 272px",
       ]);
       expect(checked(menu)).toEqual(["기본 220px"]);
       // 고른 항목은 색이 아닌 체크 아이콘으로도 가림
@@ -338,10 +338,11 @@ describe("왼쪽 메뉴 폭(작업대 P3 추가 — 손잡이를 끌지 않는 �
     expect(descriptionText(menu)).toMatch(/^읽기 모드: auto/);
   });
 
-  it("고른 항목은 기억한 펼친 폭과 같은 단계 — 접혀 있어도 펼 때의 폭, 끌어서 정한 폭(250)이면 없음, 하한을 올리기 전의 190·200은 206(좁게)", () => {
+  it("고른 항목은 기억한 펼친 폭과 같은 단계 — 접혀 있어도 펼 때의 폭, 끌어서 정한 폭(250, 넓게를 내리기 전의 280)이면 없음, 하한을 올리기 전의 190·200은 206(좁게)", () => {
     const cases: [Record<string, string>, string[]][] = [
-      [{ "shell.navWidth": "280" }, ["넓게 280px"]],
+      [{ "shell.navWidth": "272" }, ["넓게 272px"]],
       [{ "shell.navWidth": "250" }, []],
+      [{ "shell.navWidth": "280" }, []],
       [{ "shell.navWidth": "190" }, ["좁게 206px"]],
       [{ "shell.navWidth": "200" }, ["좁게 206px"]],
       [{ "shell.navWidth": "220", "shell.navCollapsed": "1" }, ["기본 220px"]],
@@ -360,12 +361,12 @@ describe("왼쪽 메뉴 폭(작업대 P3 추가 — 손잡이를 끌지 않는 �
     const commands = recordCommands();
     try {
       const trigger = renderMenu(MEMBER);
-      fireEvent.click(within(open(trigger)).getByRole("menuitemradio", { name: "넓게 280px" }));
-      expect(window.localStorage.getItem("shell.navWidth")).toBe("280");
+      fireEvent.click(within(open(trigger)).getByRole("menuitemradio", { name: "넓게 272px" }));
+      expect(window.localStorage.getItem("shell.navWidth")).toBe("272");
       await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
       await waitFor(() => expect(document.activeElement).toBe(trigger));
       expect(commands.received).toEqual([]);
-      expect(checked(open(trigger))).toEqual(["넓게 280px"]);
+      expect(checked(open(trigger))).toEqual(["넓게 272px"]);
     } finally {
       commands.stop();
     }
