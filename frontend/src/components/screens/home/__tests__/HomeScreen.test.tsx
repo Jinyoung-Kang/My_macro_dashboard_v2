@@ -1021,6 +1021,66 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(within(region(PAPER_REGION)).getByRole("radiogroup", { name: "모의매매 시장" })).toBeTruthy();
   });
 
+  // QA-608: 미국 개요를 처음 읽다 실패하면 머리에 미국|한국 고르기가 없어(switchShown = korea || 미국 값 있음) 홈 패널에서 한국 계좌로 갈 수
+  // 없었습니다. 고치는 조건은 오류(error)가 아니라 실패 시각(failedAt) — useApi는 다시 읽기를 시작할 때 error를 비우므로 error로 정하면 다시 시도·
+  // 60초 자동 갱신 때마다 고르기가 사라졌다 다시 마운트되어 키보드 초점을 잃습니다(failedAt은 다시 읽는 동안에도 남음).
+  // 수정 전(재현 커밋에서는 it.fails) 미국 개요 실패 때 모의매매 구역에 radiogroup이 없었습니다(글: '모의매매 계좌 요청 실패 (HTTP 500) 다시 시도').
+  it.fails("미국 개요를 처음 읽다 실패해도 고르기가 남아 한국으로 갈 수 있고, 미국으로 돌아오면 오류와 고르기 (QA-608)", async () => {
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"), [PAPER_KR_OVERVIEW]: paperOverviewKr(), [PAPER_KR_STATUS]: paperStatusKr(false) };
+    renderHome(OWNER);
+    const panel = region(PAPER_REGION);
+    expect(within(await within(panel).findByRole("alert")).getByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    const switcher = within(panel).getByRole("radiogroup", { name: "모의매매 시장" });
+    expect((within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement).checked).toBe(true);
+    expect(requested()).not.toContain(PAPER_KR_OVERVIEW);
+
+    fireEvent.click(within(switcher).getByRole("radio", { name: "한국" }));
+    expect(await paperPanel("한국 Claude 계좌")).toBe(panel);
+    expect(requested()).toEqual(expect.arrayContaining([PAPER_KR_OVERVIEW, PAPER_KR_STATUS]));
+    expect(within(panel).queryByRole("alert")).toBeNull();
+
+    fireEvent.click(within(panel).getByRole("radio", { name: "미국" }));
+    expect(within(within(panel).getByRole("alert")).getByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    expect(within(panel).getByRole("radiogroup", { name: "모의매매 시장" })).toBe(switcher);
+    expect((within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it.fails("미국 개요 실패 뒤 다시 읽는 동안에도 고르기는 같은 노드로 남아 초점을 잃지 않는다 — 처음 읽는 동안만 고르기가 없다 (QA-608)", async () => {
+    reads = happyReads();
+    let rejectFirst: (error: Error) => void = () => {};
+    let resolveRetry: (body: unknown) => void = () => {};
+    const first = new Promise((_, reject) => { rejectFirst = reject; });
+    const retry = new Promise((resolve) => { resolveRetry = resolve; });
+    let overviewCalls = 0;
+    const base = api.apiGetShared.getMockImplementation();
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path !== PAPER_OVERVIEW) return base?.(path);
+      overviewCalls += 1;
+      return overviewCalls === 1 ? first : retry;
+    });
+    renderHome(OWNER);
+    const panel = region(PAPER_REGION);
+    // 처음 읽는 동안은 고를 것이 없어 고르기를 두지 않습니다(그대로).
+    expect(within(panel).getByRole("status", { name: "모의매매 계좌를 불러오는 중" })).toBeTruthy();
+    expect(within(panel).queryByRole("radiogroup")).toBeNull();
+
+    await act(async () => rejectFirst(new Error("요청 실패 (HTTP 500)")));
+    const switcher = within(panel).getByRole("radiogroup", { name: "모의매매 시장" });
+    const us = within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement;
+    us.focus();
+    fireEvent.click(within(panel).getByRole("button", { name: "다시 시도" }));
+    // 다시 읽는 동안(error는 비었고 값은 아직 없음) — 자리표시와 고르기가 함께, 고르기는 다시 마운트되지 않습니다.
+    expect(await within(panel).findByRole("status", { name: "모의매매 계좌를 불러오는 중" })).toBeTruthy();
+    expect(overviewCalls).toBe(2);
+    expect(within(panel).getByRole("radiogroup", { name: "모의매매 시장" })).toBe(switcher);
+    expect(document.activeElement).toBe(us);
+
+    await act(async () => resolveRetry(paperOverview()));
+    expect(await paperPanel("Claude 계좌")).toBe(panel);
+    expect(within(panel).getByRole("radiogroup", { name: "모의매매 시장" })).toBe(switcher);
+    expect(document.activeElement).toBe(us);
+  });
+
   it("자료: 한국 네 계좌(원 정수, 링크 /paper/kr)·출발 대비·출발 줄(원)·비교하지 않음 문구·한국 출처", async () => {
     reads = { ...happyReads(), [PAPER_KR_OVERVIEW]: paperOverviewKr(), [PAPER_KR_STATUS]: paperStatusKr(false) };
     renderHome(OWNER);
