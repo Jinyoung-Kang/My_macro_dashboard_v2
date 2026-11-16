@@ -29,10 +29,13 @@ export function AccountAvatar({ user }: { user: SessionUser | null | undefined }
   );
 }
 
-/** 데모 열람 한 줄 — "데모 열람 · 데모에서는 조회만 가능합니다"(계정·세션이 없어 내 계정·로그아웃 대신, ADR 0013). */
-export function DemoNote({ user }: { user: SessionUser | null | undefined }) {
+/**
+ * 데모 열람 한 줄 — "데모 열람 · 데모에서는 조회만 가능합니다"(계정·세션이 없어 내 계정·로그아웃 대신, ADR 0013). 더보기에서는 상자(surface-2)로,
+ * 넓은 화면 계정 메뉴의 설명 칸에서는 상자 없이(`boxed={false}` — 덮개 바탕이 이미 surface-2) 그립니다.
+ */
+export function DemoNote({ user, boxed = true }: { user: SessionUser | null | undefined; boxed?: boolean }) {
   return (
-    <p className="rounded-control bg-surface-2 px-3 py-2 text-xs leading-5 text-text-2">
+    <p className={`${boxed ? "rounded-control bg-surface-2 px-3 py-2 " : ""}text-xs leading-5 text-text-2`}>
       {roleLabel(user)}
       <span className="ml-1 text-text-3">· {DEMO_READ_ONLY}</span>
     </p>
