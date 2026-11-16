@@ -84,7 +84,7 @@ afterEach(() => {
 
 describe("QA-565 — 탭 제목이 루트 metadata의 <title>에 덮여도 메뉴 제목으로 돌아온다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 덮어쓴 뒤 'Global Macro & 13F Dashboard'에 머묾 — unread가 실패(null 그대로)라 효과가 다시 돌지 않음.
-  it.fails("읽지 않은 알림 수 요청이 실패해도(500) 덮어쓴 뒤 '매크로 지표 · 매크로 대시보드'로 돌아온다", async () => {
+  it("읽지 않은 알림 수 요청이 실패해도(500) 덮어쓴 뒤 '매크로 지표 · 매크로 대시보드'로 돌아온다", async () => {
     reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: new Error("500") };
     renderLayout();
     await waitFor(() => expect(document.title).toBe(MACRO_TITLE));
@@ -94,7 +94,7 @@ describe("QA-565 — 탭 제목이 루트 metadata의 <title>에 덮여도 메�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 덮어쓴 뒤 'Global Macro & 13F Dashboard'에 머묾 — 응답이 덮어쓰기보다 먼저 와 효과가 다시 돌지 않음.
-  it.fails("읽지 않은 알림이 3건이면 덮어쓴 뒤 '(3) 매크로 지표 · 매크로 대시보드'로 돌아온다", async () => {
+  it("읽지 않은 알림이 3건이면 덮어쓴 뒤 '(3) 매크로 지표 · 매크로 대시보드'로 돌아온다", async () => {
     reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: { unread: 3 } };
     renderLayout();
     await waitFor(() => expect(document.title).toBe(`(3) ${MACRO_TITLE}`));
