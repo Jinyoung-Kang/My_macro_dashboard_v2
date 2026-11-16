@@ -50,6 +50,8 @@ const DATA_FILES = [
   // 목록-검사(줄 단추·고른 줄 막대·검사 칸 — 누르는 줄도 데이터 영역이라 중립 바탕·잉크 막대·focus 링, P4).
   "components/patterns/MasterDetail.tsx",
   // 칸 틀(SplitPane, P4)은 넣지 않습니다 — 색 클래스 없이 칸 자리만 정하는 틀이고, 칸 안의 데이터는 위 패턴들이 그립니다.
+  // 긴 화면 목차(SectionIndex, P5a)도 넣지 않습니다 — 같은 화면 절로 가는 내비(누를 수 있는 것)라 지금 칸 막대·가로 줄 밑줄이 강조 파랑이고(셸의 현재 메뉴와
+  // 같은 규칙 — 원칙 A1), 데이터 칸이 없습니다(개수는 보조 글색).
   // 차트(래퍼·선 차트·차트 틀 — 축·기준선·격자·툴팁·계열 색).
   "components/charts/index.tsx",
   "components/charts/LineChart.tsx",

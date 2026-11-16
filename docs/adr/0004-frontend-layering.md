@@ -15,7 +15,8 @@
   - 작업대 화면 언어(아래 세 번째 덧붙임 — 공용 부품마다 한 줄): `components/ui/__tests__/DropdownMenu.test.tsx`(메뉴), `components/ui/__tests__/Tooltip.test.tsx`(툴팁),
     `components/patterns/__tests__/PropertyList.test.tsx`(속성 목록), `components/patterns/__tests__/KpiStrip.test.tsx`(KPI 띠),
     `components/patterns/__tests__/EntityHeader.test.tsx`(대상 머리), `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`(칸 틀),
-    `components/patterns/__tests__/MasterDetail.test.tsx`(목록-검사)
+    `components/patterns/__tests__/MasterDetail.test.tsx`(목록-검사),
+    `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`(긴 화면 목차)
 
 ## 배경
 
@@ -118,3 +119,9 @@
   단축키 도움말 '목록' 묶음), roving tabindex, 고른 줄은 잉크 막대 `SELECTED_BAR` — 데이터 칸 강조색 금지 목록). 화면 층의 `hooks/useWideShell`·`ui/Dialog`를 씁니다.
   처음 쓰는 곳은 상세 화면의 보유 탭(P4), 모의매매 목록 + 검사 칸(P6)도 이것을 씁니다(모의매매 전용으로 만들지 않음 — 명세 §6). 지키는 시험은
   `components/patterns/__tests__/MasterDetail.test.tsx`·`lib/__tests__/shortcuts.test.ts`·`components/shell/__tests__/ShortcutHelp.test.tsx`.
+- 목차 `components/patterns/SectionIndex.tsx` — 화면 패턴(긴 화면 목차 `SectionIndex`와 절 닻 `SectionAnchor` — `columnFrom`(lg·xl) 이상은 왼쪽 13rem 세로 목록(하위 칸
+  들여씀, 스크롤 영역 위쪽에 붙음), 그 아래는 본문 위에 붙는 가로 줄(첫 단계 칸만, 밑줄 탭 모양 — 좁은 화면 44px), 이름 있는 내비 하나·칸은 같은 화면 절 링크·
+  지금 칸 aria-current="location", 개수는 숫자일 때만). 지금 절은 화면 층 훅 `hooks/useSectionSpy`(IntersectionObserver — 뷰포트 위 34% 띠)와 순수 규칙
+  `lib/sectionIndex`(하위 칸이 부모보다 앞인 고르는 차례)가 정합니다. 내비라 지금 칸 막대·밑줄에 강조 파랑을 써서 데이터 칸 강조색 금지 목록에는 넣지 않습니다.
+  처음 쓰는 곳은 매크로(P5a — 절 주소의 정본은 `lib/marketSections`), P6 프레임·설정, P7 저장소 상태. 지키는 시험은
+  `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`.

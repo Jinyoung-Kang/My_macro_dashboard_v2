@@ -17,6 +17,7 @@ export { type KpiItem, KpiStrip } from "./KpiStrip";
 export { MasterDetail } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
+export { SectionAnchor, SectionIndex, type SectionIndexItem, type SectionIndexLeaf } from "./SectionIndex";
 export { Skeleton } from "./Skeleton";
 export { Sparkline } from "./Sparkline";
 export { SplitPane } from "./SplitPane";

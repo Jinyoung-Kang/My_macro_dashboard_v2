@@ -20,6 +20,7 @@ import * as KpiStrip from "../KpiStrip";
 import * as MasterDetail from "../MasterDetail";
 import * as PropertyList from "../PropertyList";
 import * as RangeTabs from "../RangeTabs";
+import * as SectionIndex from "../SectionIndex";
 import * as Skeleton from "../Skeleton";
 import * as Sparkline from "../Sparkline";
 import * as SplitPane from "../SplitPane";
@@ -38,6 +39,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   MasterDetail,
   PropertyList,
   RangeTabs,
+  SectionIndex,
   Skeleton,
   Sparkline,
   SplitPane,
@@ -81,6 +83,8 @@ describe("components/patterns 배럴", () => {
         "PropertyList",
         "ProvenanceBadge",
         "RangeTabs",
+        "SectionAnchor",
+        "SectionIndex",
         "Skeleton",
         "Sparkline",
         "SplitPane",
