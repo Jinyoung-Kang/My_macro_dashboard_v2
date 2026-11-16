@@ -397,7 +397,7 @@ describe("상단바 알림 벨", () => {
   // 종 아래 받침선만 보였습니다(44px 벨 — 좁은 화면·D1 넓은 화면 — 은 9%·11%·22%). 넓은 화면 배지만 16px 높이로 줄이고 아이콘 바깥 오른쪽 위로 뺍니다
   // (lg:h-4 lg:min-w-4 lg:-right-1 lg:-top-1.5 — 글자 12px 하한은 그대로). 벨 30px·아이콘 20px·좁은 화면 값은 바꾸지 않습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 배지 클래스에 lg: 변형이 하나도 없었습니다.
-  it.fails("넓은 화면 30px 벨의 수 배지는 16px로 아이콘 바깥 오른쪽 위에 — 좁은 화면 44px 벨의 배지 값은 그대로 (QA-551)", () => {
+  it("넓은 화면 30px 벨의 수 배지는 16px로 아이콘 바깥 오른쪽 위에 — 좁은 화면 44px 벨의 배지 값은 그대로 (QA-551)", () => {
     renderShell(MEMBER_PRO, { unread: 42 });
     const badge = screen.getByRole("link", { name: "알림 — 읽지 않음 42건" }).querySelector('span[aria-hidden="true"]') as HTMLElement;
     expect([...badge.classList]).toEqual(
