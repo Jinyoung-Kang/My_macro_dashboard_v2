@@ -733,17 +733,17 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
     expect(unknown).toMatchObject({ value: "판정 불가", neutral: true, note: null });
   });
 
-  it("시장 — 값은 수집기 priceStr, 변화는 delta·pct 그대로(수집기 자릿수), 단위, 출처 줄(출처·장 상태·시각) · 저장본에 없는 카드는 '—' + '저장본에 없음'", () => {
+  it("시장 — 값은 수집기 priceStr, 변화는 delta·pct 그대로(수집기 자릿수)와 캡션 '전일 대비', 단위, 출처 줄(출처·장 상태·시각) · 저장본에 없는 카드는 '—' + '저장본에 없음'", () => {
     const items = homeKpiItems(ready(), { owner: true, clock: CLOCK_ONLY });
     const byKey = new Map(items.map((item) => [item.key, item]));
     expect(byKey.get("sp500")).toMatchObject({
-      value: "7,622.99", unit: null, change: { change: -40.4599609375, changePct: -0.5279601211768575, digits: 2, pctDigits: 2 },
+      value: "7,622.99", unit: null, change: { change: -40.4599609375, changePct: -0.5279601211768575, digits: 2, pctDigits: 2, caption: "전일 대비" },
       source: "Yahoo Finance (^GSPC) · 마감", asOf: "2026-10-24 04:59 KST", delayMin: null, isEstimated: false, isStale: false,
     });
     // 값의 시각은 출처 줄이 적습니다(따로 된 시각 줄 없음).
     expect(byKey.get("sp500")?.note ?? null).toBeNull();
     expect(byKey.get("usdkrw")).toMatchObject({ value: "1,322.28", unit: "원" });
-    expect(byKey.get("us10y")).toMatchObject({ value: "4.992", unit: "%", change: { change: -0.007, changePct: -0.14, digits: 3, pctDigits: 2 } });
+    expect(byKey.get("us10y")).toMatchObject({ value: "4.992", unit: "%", change: { change: -0.007, changePct: -0.14, digits: 3, pctDigits: 2, caption: "전일 대비" } });
     expect(byKey.get("kospi")).toMatchObject({ value: null, emptyReason: KPI_NOT_IN_SNAPSHOT });
   });
 

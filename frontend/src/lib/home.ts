@@ -705,6 +705,9 @@ const HOME_KPI_MARKET_LABELS: Record<(typeof HOME_KPI_MARKET_KEYS)[number], { la
   us10y: { label: "미국채 10년물", unit: "%" },
 };
 
+/** 시장 타일 변화 칩의 캡션 — 무엇과 견준 변화인지(지표 상세 대상 머리와 같은 말). */
+export const KPI_CHANGE_CAPTION = "전일 대비";
+
 /** 읽기에 실패한 타일의 사유 — 오류 글과 다시 시도는 그 패널이 보입니다. */
 export const KPI_READ_FAILED = "읽지 못함";
 
@@ -750,7 +753,8 @@ function marketKpi(
     ...base,
     value,
     unit,
-    change: { change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2 },
+    // 변화의 기준을 캡션으로 — 수집기 delta·pct는 직전 종가 대비입니다(미국채 참고 시세는 TradingView 전일 종가, 없으면 FRED 공식 확정치 — 지표 상세 머리와 같은 말).
+    change: { change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2, caption: KPI_CHANGE_CAPTION },
     // 값이 없으면 경고('수집 실패' 등)가 그 사유, 값이 있으면 경고를 상태 글(아이콘 + 글)로.
     emptyReason: value === null ? row.warning : null,
     ...(value !== null && row.warning ? { status: { tone: "warn" as const, text: row.warning } } : {}),
