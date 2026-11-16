@@ -112,8 +112,8 @@
   새 랜드마크 없음). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 순수 모듈 `components/ui/classes.ts`로
   옮겼고 칸 틀 패턴과 정보 검색 entityGrid가 함께 가져갑니다(entityGridPin.test — 정보 검색 겉모습 고정, 정보 검색이 패턴 배럴을 싣지 않게 배럴 밖에 둠). 색 클래스가 없는 틀이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 상세 3종(P4),
   지키는 시험은 `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`.
-- 목록-검사 `components/patterns/MasterDetail.tsx` — 화면 패턴(목록 `ul[data-shell-list]` + 넓은 화면 검사 칸(크기 질의 — 칸 폭 32rem 이상이면 옆 15rem) /
-  좁은 화면 공용 `Dialog`(위쪽 고정) — Drawer는 만들지 않음, 고름이 포커스를 따라감(넓은 화면), 목록 키는 `lib/shortcuts` `listKeyAction`(목록에 포커스가 있을 때만 —
+- 목록-검사 `components/patterns/MasterDetail.tsx` — 화면 패턴(목록 `ul[data-shell-list]` + 넓은 화면 검사 칸(크기 질의 — 칸 폭 32rem 이상이면 옆 15rem, 스크롤 영역 위쪽에 붙음) /
+  좁은 화면과 넓은 화면의 좁은 틀(32rem 미만 — ResizeObserver로 잼) 공용 `Dialog`(위쪽 고정) — Drawer는 만들지 않음, 고름이 포커스를 따라감(옆 검사 칸일 때), 목록 키는 `lib/shortcuts` `listKeyAction`(목록에 포커스가 있을 때만 —
   단축키 도움말 '목록' 묶음), roving tabindex, 고른 줄은 잉크 막대 `SELECTED_BAR` — 데이터 칸 강조색 금지 목록). 화면 층의 `hooks/useWideShell`·`ui/Dialog`를 씁니다.
   처음 쓰는 곳은 상세 화면의 보유 탭(P4), 모의매매 목록 + 검사 칸(P6)도 이것을 씁니다(모의매매 전용으로 만들지 않음 — 명세 §6). 지키는 시험은
   `components/patterns/__tests__/MasterDetail.test.tsx`·`lib/__tests__/shortcuts.test.ts`·`components/shell/__tests__/ShortcutHelp.test.tsx`.

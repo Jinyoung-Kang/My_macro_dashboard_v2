@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
@@ -17,15 +17,46 @@ const ROW = `relative flex min-h-11 w-full min-w-0 items-center gap-2 px-3 py-2 
 const ROW_LINED = "border-b border-border-subtle lg:pt-1.5 lg:pb-[5px]";
 const ROW_LAST = "lg:py-1.5";
 
+/** 검사 칸이 목록 옆에 놓이는 칸 폭(rem) — 아래 크기 질의 `@lg`(32rem)와 같은 값입니다. 바꾸면 둘을 함께 고칩니다. */
+const SIDE_MIN_REM = 32;
+
+/**
+ * 목록-검사 틀의 폭이 검사 칸을 옆에 둘 만한가(32rem 이상) — ResizeObserver로 잽니다. 폭이 0이면(숨긴 탭 안·배치를 하지 않는 시험 대역) 모른다(null)로 두고,
+ * 보이게 되어 폭이 생기면 그때 정합니다. 크기 질의(CSS)가 자리를 정하고, 이 값은 아래로 쌓인 배치에서 동작(대화상자로 엶)을 바꾸는 데 씁니다.
+ */
+function useSideBySide(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean | null {
+  const [side, setSide] = useState<boolean | null>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!enabled || !element) return undefined;
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      if (!(width > 0)) return;
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      setSide(width >= SIDE_MIN_REM * rem);
+    };
+    measure();
+    if (typeof ResizeObserver !== "function") return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, enabled]);
+  return side;
+}
+
 /**
  * 목록-검사(작업대 실행 명세 §6 SplitPane/MasterDetail — 상세 화면의 보유 탭 등, P4): 왼쪽 목록에서 줄을 고르면 그 줄의 자세한 값을 검사 칸에.
  *
- * - 넓은 화면(lg 이상 — 왼쪽 메뉴가 보이는 폭, useWideShell): 목록 오른쪽에 검사 칸(15rem). 칸 폭이 32rem 미만이면(좁은 가운데 칸) 검사 칸이 목록 아래로
- *   갑니다(크기 질의 @container — 그래서 이 부품의 바깥은 폭을 정해 주는 자리여야 합니다: 격자 minmax(0,1fr)·flex 늘임 등, 내용 폭에 맞춰 줄어드는 부모 안에서는
- *   크기 질의 기준이 0으로 줄어듦). 검사 칸은 고른 줄 이름(h3)으로 이름 붙은 영역이고, 고른 줄이 없으면 안내 글(`inspectorHint`)입니다.
+ * - 넓은 화면(lg 이상 — 왼쪽 메뉴가 보이는 폭, useWideShell)이고 이 틀의 폭이 32rem 이상이면: 목록 오른쪽에 검사 칸(15rem — 크기 질의 @container, 그래서 이
+ *   부품의 바깥은 폭을 정해 주는 자리여야 합니다: 격자 minmax(0,1fr)·flex 늘임 등, 내용 폭에 맞춰 줄어드는 부모 안에서는 크기 질의 기준이 0으로 줄어듦).
+ *   검사 칸은 고른 줄 이름(h3)으로 이름 붙은 영역이고, 고른 줄이 없으면 안내 글(`inspectorHint`)입니다. 목록이 길어도 고른 줄의 내용이 화면 밖에서 바뀌지
+ *   않게 검사 칸은 스크롤 영역 위쪽에 붙어 따라옵니다(sticky).
  *   고름이 포커스를 따라갑니다 — j/k·↑↓·Home·End가 포커스와 고름을 함께 옮기고, 누르기·Enter·Space도 고릅니다. Esc는 고른 줄이 있을 때만 고름을 풉니다.
  *   줄 단추는 고른 줄에 aria-current="true", 모든 줄에 aria-controls(검사 칸).
- * - 좁은 화면: 목록만. 키는 포커스만 옮기고, 누르기·Enter·Space가 공용 대화상자(위쪽 고정·넓은 폭)로 검사 내용을 엽니다(줄 단추 aria-haspopup="dialog").
+ * - 넓은 화면이라도 틀의 폭이 32rem 미만이면(1024~약 1053·1280~약 1357의 좁은 가운데 칸 — 기본 폭 나무 메뉴, 잰 값은 진행 기록 §P4) 검사 칸을 목록 아래에
+ *   두지 않고 좁은 화면처럼 대화상자로 엽니다 — 아래로 쌓으면 30줄 목록에서 고름이 바뀐 내용이 약 1,350px 아래(화면 밖)에서 그려졌습니다. 폭은
+ *   ResizeObserver로 재고(폭 0 — 숨긴 탭·시험 대역 — 이면 모름으로 두고 크기 질의 배치 그대로), 폭이 바뀌면 동작도 따라 바뀝니다.
+ * - 좁은 화면(과 위의 좁은 틀): 목록만. 키는 포커스만 옮기고, 누르기·Enter·Space가 공용 대화상자(위쪽 고정·넓은 폭)로 검사 내용을 엽니다(줄 단추 aria-haspopup="dialog").
  *   닫으면 그 줄로 포커스가 돌아갑니다(대화상자의 여는 단추 되돌리기). Esc는 대화상자(Radix)가 닫습니다. 화면을 열 때 대화상자가 저절로 열리지 않게
  *   `autoSelectFirst`는 넓은 화면에서만 씁니다.
  * - 목록 키는 목록에 포커스가 있을 때만 이 목록이 받습니다(셸 단축키 아님 — 판정은 lib/shortcuts listKeyAction, 도움말 창의 '목록' 묶음은 이 목록의
@@ -71,6 +102,10 @@ export function MasterDetail<T>({
   inspectorHint?: string;
 }): JSX.Element {
   const wide = useWideShell();
+  const frameRef = useRef<HTMLDivElement>(null);
+  const side = useSideBySide(frameRef, wide);
+  // 검사 칸을 목록 옆에 두는가 — 넓은 화면이고 틀 폭이 32rem 이상(재지 못했으면 크기 질의 배치에 맡김). 아니면 좁은 화면처럼 대화상자로 엽니다.
+  const inline = wide && side !== false;
   const baseId = useId();
   const inspectorId = `${baseId}-inspector`;
   const headingId = `${baseId}-inspector-title`;
@@ -84,14 +119,14 @@ export function MasterDetail<T>({
   const keys = items.map(itemKey);
   const chosen = selectedKey !== undefined ? selectedKey : ownSelected;
   const known = chosen !== null && keys.includes(chosen) ? chosen : null;
-  const autoKey = wide && autoSelectFirst && !autoOff && keys.length > 0 ? keys[0] : null;
-  // 넓은 화면의 고른 줄(검사 칸에 보이는 줄). 좁은 화면에는 고른 줄이 없습니다(대화상자로 엶).
-  const current = wide ? (known ?? autoKey) : null;
+  const autoKey = inline && autoSelectFirst && !autoOff && keys.length > 0 ? keys[0] : null;
+  // 옆 검사 칸의 고른 줄(검사 칸에 보이는 줄). 대화상자로 여는 배치에는 고른 줄이 없습니다.
+  const current = inline ? (known ?? autoKey) : null;
   const currentItem = current === null ? null : items[keys.indexOf(current)];
   const tabStop = current ?? (focusKey !== null && keys.includes(focusKey) ? focusKey : null) ?? keys[0] ?? null;
-  // 넓은 화면으로 바뀌면 열려 있던 대화상자를 닫은 것으로 칩니다 — 그대로 두면 다시 좁아질 때 대화상자가 저절로 다시 열립니다(그리는 중 상태 맞추기).
-  if (wide && dialogKey !== null) setDialogKey(null);
-  const dialogIndex = !wide && dialogKey !== null ? keys.indexOf(dialogKey) : -1;
+  // 옆 검사 칸 배치로 바뀌면 열려 있던 대화상자를 닫은 것으로 칩니다 — 그대로 두면 다시 좁아질 때 대화상자가 저절로 다시 열립니다(그리는 중 상태 맞추기).
+  if (inline && dialogKey !== null) setDialogKey(null);
+  const dialogIndex = !inline && dialogKey !== null ? keys.indexOf(dialogKey) : -1;
   const dialogItem = dialogIndex >= 0 ? items[dialogIndex] : null;
 
   const select = (key: string | null) => {
@@ -104,7 +139,7 @@ export function MasterDetail<T>({
     // 누르기가 포커스를 옮기지 않는 브라우저(사파리)에서도 대화상자를 닫은 뒤 이 줄로 돌아오게 먼저 포커스를 둡니다.
     event.currentTarget.focus();
     setFocusKey(key);
-    if (wide) {
+    if (inline) {
       if (key !== current) select(key);
     } else {
       setDialogKey(key);
@@ -115,7 +150,7 @@ export function MasterDetail<T>({
     const action = listKeyAction(event.nativeEvent);
     if (action === null || keys.length === 0) return;
     if (action === "close") {
-      if (wide && current !== null) {
+      if (inline && current !== null) {
         event.preventDefault();
         select(null);
       }
@@ -130,7 +165,7 @@ export function MasterDetail<T>({
     const key = keys[to];
     buttons.current.get(key)?.focus();
     setFocusKey(key);
-    if (wide && key !== current) select(key);
+    if (inline && key !== current) select(key);
   };
 
   const countText =
@@ -158,10 +193,10 @@ export function MasterDetail<T>({
                 }}
                 data-item-key={key}
                 tabIndex={key === tabStop ? 0 : -1}
-                aria-current={wide && isCurrent ? "true" : undefined}
-                aria-controls={wide ? inspectorId : undefined}
-                aria-haspopup={wide ? undefined : "dialog"}
-                aria-expanded={wide ? undefined : dialogKey === key}
+                aria-current={inline && isCurrent ? "true" : undefined}
+                aria-controls={inline ? inspectorId : undefined}
+                aria-haspopup={inline ? undefined : "dialog"}
+                aria-expanded={inline ? undefined : dialogKey === key}
                 onClick={(event) => onRowClick(key, event)}
                 onFocus={() => setFocusKey(key)}
                 className={`${ROW} ${index === items.length - 1 ? ROW_LAST : ROW_LINED} ${isCurrent ? "bg-surface-2" : ""}`.trim()}
@@ -177,12 +212,13 @@ export function MasterDetail<T>({
   }
 
   return (
-    <div className="@container min-w-0">
+    <div ref={frameRef} className="@container min-w-0">
       {countText !== null && !hasPlaceholder ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
-      <div className={`grid min-w-0 gap-3 ${wide ? "@lg:grid-cols-[minmax(0,1fr)_15rem]" : ""}`.trim()}>
+      <div className={`grid min-w-0 gap-3 ${inline ? "@lg:grid-cols-[minmax(0,1fr)_15rem]" : ""}`.trim()}>
         {list}
-        {wide && !hasPlaceholder && items.length > 0 ? (
-          <section id={inspectorId} aria-labelledby={headingId} className="min-w-0 self-start rounded-control border border-border p-3">
+        {inline && !hasPlaceholder && items.length > 0 ? (
+          // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 목록 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
+          <section id={inspectorId} aria-labelledby={headingId} className="min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-4">
             {currentItem !== null && currentItem !== undefined ? (
               <>
                 <h3 id={headingId} className="break-keep wrap-anywhere text-heading-sm text-text">
@@ -201,7 +237,7 @@ export function MasterDetail<T>({
           </section>
         ) : null}
       </div>
-      {/* 좁은 화면의 검사 대화상자 — 닫혀 있으면 내용이 DOM에 없습니다. 넓은 화면으로 바뀌면(dialogItem이 없어짐) 닫힙니다. */}
+      {/* 좁은 화면·좁은 틀의 검사 대화상자 — 닫혀 있으면 내용이 DOM에 없습니다. 옆 검사 칸 배치로 바뀌면(dialogItem이 없어짐) 닫힙니다. */}
       <Dialog
         open={dialogItem !== null && dialogItem !== undefined}
         onOpenChange={(open) => {

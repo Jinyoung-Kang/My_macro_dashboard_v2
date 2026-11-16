@@ -3,7 +3,8 @@
  * 네 상태: 불러오는 중(placeholder Skeleton), 빈 값(줄 없음 → emptyText), 오류(placeholder 글), 값 있음(줄 + 검사 칸 / 대화상자).
  * 좁은 화면(기본 — jsdom의 matchMedia는 늘 거짓): 누르기 → 대화상자(이름 = 줄 이름), Esc → 닫히고 그 줄로 포커스, 목록 키는 포커스만 옮김.
  * 넓은 화면(matchMedia 대역 참): 고름이 포커스를 따라감(aria-current·검사 칸 제목), Esc → 안내 글, autoSelectFirst. 목록 표지 data-shell-list, 고른 줄 막대.
- * jsdom은 크기 질의를 계산하지 않으므로 검사 칸 자리(@lg 옆·아래)는 클래스로만 봅니다(실제 폭은 D2 전 브라우저 확인).
+ * jsdom은 크기 질의를 계산하지 않으므로 검사 칸 자리(@lg 옆)는 클래스로만 봅니다(실제 폭은 D2 전 브라우저 확인). 넓은 화면의 좁은 틀(32rem 미만 — 검사 칸이
+ * 아래로 쌓이던 폭)은 틀 폭(getBoundingClientRect)과 ResizeObserver 대역으로 흉내 내어, 대화상자로 여는지·폭이 바뀌면 따라가는지 봅니다.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -267,13 +268,91 @@ describe("MasterDetail — 넓은 화면(검사 칸)", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Apple Inc." })).toBeTruthy();
   });
 
-  it("검사 칸은 칸 폭 32rem 이상이면 목록 옆(15rem), 아니면 아래 — 크기 질의 클래스", () => {
+  it("검사 칸은 칸 폭 32rem 이상이면 목록 옆(15rem) — 크기 질의 클래스, 옆에서는 스크롤 영역 위쪽에 붙어 따라온다(sticky)", () => {
     stubWide();
     const { container } = renderList();
     const root = container.firstElementChild as HTMLElement;
     expect(root.className.split(/\s+/)).toContain("@container");
     const grid = list().parentElement as HTMLElement;
     expect(grid.className.split(/\s+/)).toEqual(expect.arrayContaining(["grid", "gap-3", "@lg:grid-cols-[minmax(0,1fr)_15rem]"]));
+    expect(screen.getByRole("region").className.split(/\s+/)).toEqual(expect.arrayContaining(["self-start", "@lg:sticky", "@lg:top-4"]));
+  });
+});
+
+describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
+  /** 틀(@container) 폭을 흉내 냅니다 — width를 바꾸고 resize()를 부르면 ResizeObserver 콜백이 돕니다. */
+  function stubFrameWidth(initial: number) {
+    const frame = { width: initial };
+    const callbacks = new Set<() => void>();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly callback: () => void;
+        constructor(callback: () => void) {
+          this.callback = callback;
+        }
+        observe() {
+          callbacks.add(this.callback);
+        }
+        unobserve() {}
+        disconnect() {
+          callbacks.delete(this.callback);
+        }
+      },
+    );
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("@container") ? ({ width: frame.width, height: 0, top: 0, left: 0, right: frame.width, bottom: 0, x: 0, y: 0 } as DOMRect) : original.call(this);
+    });
+    return {
+      resize: (width: number) =>
+        act(() => {
+          frame.width = width;
+          for (const callback of [...callbacks]) callback();
+        }),
+    };
+  }
+
+  it("틀 폭이 32rem(512px) 미만이면 검사 칸을 목록 아래에 두지 않고 대화상자로 연다 — 키는 포커스만 옮기고 autoSelectFirst도 고르지 않는다", () => {
+    stubWide();
+    stubFrameWidth(482);
+    renderList({ autoSelectFirst: true });
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(rows().some((button) => button.hasAttribute("aria-current"))).toBe(false);
+    expect(rows()[0].getAttribute("aria-haspopup")).toBe("dialog");
+    const [first, second] = rows();
+    first.focus();
+    fireEvent.keyDown(first, { key: "j" });
+    expect(document.activeElement).toBe(second);
+    expect(second.hasAttribute("aria-current")).toBe(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(second);
+    expect(screen.getByRole("dialog", { name: "Bank of America" })).toBeTruthy();
+  });
+
+  it("틀 폭이 바뀌면 동작이 따라간다 — 옆 → 좁은 틀이면 검사 칸이 빠지고, 다시 넓어지면 열린 대화상자를 닫고 고른 줄을 다시 보인다", () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    renderList();
+    fireEvent.click(row("Bank of America"));
+    expect(screen.getByRole("heading", { level: 3, name: "Bank of America" })).toBeTruthy();
+    frame.resize(434);
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(row("Bank of America").hasAttribute("aria-current")).toBe(false);
+    fireEvent.click(row("Apple"));
+    expect(screen.getByRole("dialog", { name: "Apple Inc." })).toBeTruthy();
+    frame.resize(594);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(row("Bank of America").getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("heading", { level: 3, name: "Bank of America" })).toBeTruthy();
+  });
+
+  it("폭을 모르면(0 — 숨긴 탭 안·배치 없는 대역) 크기 질의 배치에 맡겨 옆 검사 칸 동작 그대로", () => {
+    stubWide();
+    stubFrameWidth(0);
+    renderList();
+    expect(screen.getByRole("region")).toBeTruthy();
+    expect(rows()[0].getAttribute("aria-haspopup")).toBeNull();
   });
 });
 
