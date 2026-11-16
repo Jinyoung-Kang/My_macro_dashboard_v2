@@ -361,9 +361,14 @@ function HoldersPanel({ query }: { query: string }) {
         itemKey={(row) => `${row.cik}:${row.cusip}`}
         itemLabel={(row) => withoutLeadingIcon(row.institution)}
         count={rows.length > HOLDERS_SHOWN ? () => `${rows.length}줄 가운데 비중 상위 ${HOLDERS_SHOWN}줄` : undefined}
+        // 읽기 실패는 공용 오류 상자(아이콘 + 글 + 다시 시도) — 위험색 글만이고 다시 읽을 방법이 없었습니다(QA-532, QA-190과 같은 원칙).
         placeholder={
           !holders.data ? (
-            holders.error ? <p className="text-sm text-danger">{holders.error}</p> : <Skeleton lines={3} label="13F 보유 기관을 불러오는 중" />
+            holders.error ? (
+              <ErrorState message={holders.error} onRetry={() => void holders.reload()} />
+            ) : (
+              <Skeleton lines={3} label="13F 보유 기관을 불러오는 중" />
+            )
           ) : undefined
         }
         emptyText={

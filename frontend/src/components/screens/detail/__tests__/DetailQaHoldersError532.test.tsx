@@ -46,7 +46,8 @@ afterEach(cleanup);
 describe("종목 상세 — 13F 보유 기관 읽기 실패(QA-532)", () => {
   // QA-532: 실패 글이 <p class="text-sm text-danger">뿐이라 아이콘이 없고 다시 읽을 방법이 없었습니다(화면을 새로 열어야 함).
   // 수정 전 실패: 카드 안에 '다시 시도' 단추가 없음(재현 커밋에서는 it.fails).
-  it.fails("오류는 아이콘과 글, '다시 시도'를 누르면 보유 기관을 다시 읽는다", async () => {
+  // 고침: 공용 ErrorState(XCircleIcon + 글 + '다시 시도' → holders.reload).
+  it("오류는 아이콘과 글, '다시 시도'를 누르면 보유 기관을 다시 읽는다", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNX" />
