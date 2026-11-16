@@ -13,11 +13,12 @@ import { ReadModeNote } from "./ReadMode";
 
 /*
  * 여는 단추 — 30px 정사각·4px 모서리·1px 경계의 기본 단추 꼴(누르는 것이라 원이 아님 — 명세 §3-8 2026-11-16 결정), 안에 이메일 첫 글자(없으면 사람 아이콘).
- * 글자는 장식이고 이름은 aria-label('계정 메뉴'). 넓은 화면에서만 보여(감싼 상자가 hidden lg:flex) 좁은 화면 44px 누름 자리를 두지 않습니다 —
+ * 글자는 장식이고 이름은 aria-label('계정 메뉴') — 마우스 사용자에게는 같은 글의 툴팁으로 보입니다(공용 메뉴 tooltip). 열린 동안의 모양은 aria-expanded로
+ * 그립니다(툴팁 트리거와 합쳐지면 data-state는 툴팁 것). 넓은 화면에서만 보여(감싼 상자가 hidden lg:flex) 좁은 화면 44px 누름 자리를 두지 않습니다 —
  * 좁은 화면은 더보기의 계정 영역(AccountBox)이 대신합니다.
  */
 const TRIGGER =
-  "inline-flex size-[30px] shrink-0 items-center justify-center rounded-control border border-border bg-control-fill text-[13px] font-semibold text-text-2 motion-safe:transition-colors motion-safe:duration-150 hover:border-border-strong hover:text-text data-[state=open]:border-border-strong data-[state=open]:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
+  "inline-flex size-[30px] shrink-0 items-center justify-center rounded-control border border-border bg-control-fill text-[13px] font-semibold text-text-2 motion-safe:transition-colors motion-safe:duration-150 hover:border-border-strong hover:text-text aria-expanded:border-border-strong aria-expanded:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
 /**
  * 넓은 화면(lg 이상) 상단바 맨 오른쪽의 계정 메뉴(공용 DropdownMenu — 작업대 실행 명세 §5, ADR 0042 결정 5·9). 예전 왼쪽 메뉴 아래에 있던 계정·읽기 모드·
@@ -60,6 +61,7 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
       )}
       <DropdownMenu
         label="계정 메뉴"
+        tooltip="계정 메뉴"
         description={
           <>
             {demo && <DemoNote user={user} boxed={false} />}

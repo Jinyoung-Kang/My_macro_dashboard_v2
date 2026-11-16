@@ -3,6 +3,7 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { useId, type ReactElement, type ReactNode } from "react";
+import { Tooltip } from "./Tooltip";
 
 /*
  * 움직임은 나타날 때의 짧은 흐려짐(150ms) 하나뿐이고, 움직임 줄이기(prefers-reduced-motion)면 없습니다 — 대화상자(ui/Dialog)의 FADE_IN과 같습니다.
@@ -53,6 +54,9 @@ const DESCRIPTION = "-mx-1 mt-1 flex flex-col gap-1.5 border-t border-border px-
  *   역할이 있는 요소(role=alert·status 등)는 두지 않습니다 — 메뉴(role=menu)의 자식은 항목·구분선·묶음뿐이고(ARIA), 열린 동안 뒤 화면이 가려져
  *   실시간 영역은 메뉴 밖에 두어도 읽히지 않습니다(결과 안내는 메뉴를 닫은 뒤 메뉴 밖에).
  * - `onCloseAutoFocus`는 닫힌 뒤 포커스를 옮기기 직전에 불립니다(Radix 그대로) — 부르는 쪽이 event.preventDefault()로 기본 동작(여는 단추로)을 바꿀 수 있습니다.
+ * - `tooltip`은 아이콘 여는 단추의 이름을 마우스 사용자에게 보이는 툴팁입니다(공용 Tooltip labelOnly — 글은 단추의 접근 이름과 같게). 툴팁 트리거가 메뉴
+ *   트리거를 감싸 두 Radix 트리거의 속성·처리기가 한 단추에 합쳐지는데, data-state는 툴팁 것이 남으므로 여는 단추의 열림 모양은 data-state가 아니라
+ *   aria-expanded로 그립니다(`aria-expanded:` 변형).
  */
 export function DropdownMenu({
   trigger,
@@ -60,6 +64,7 @@ export function DropdownMenu({
   align = "end",
   label,
   description,
+  tooltip,
   onCloseAutoFocus,
 }: {
   /** 여는 단추(요소 하나). */
@@ -71,6 +76,8 @@ export function DropdownMenu({
   label?: string;
   /** 항목이 아닌 글 — 항목 아래에 그리고 메뉴의 설명(aria-describedby)으로 잇습니다. 역할 있는 요소는 두지 않습니다. */
   description?: ReactNode;
+  /** 아이콘 여는 단추의 이름 툴팁(글은 단추의 접근 이름과 같게 — 설명으로 잇지 않음). */
+  tooltip?: string;
   /** 닫힌 뒤 포커스를 옮기기 직전(Radix onCloseAutoFocus). */
   onCloseAutoFocus?: (event: Event) => void;
 }) {
@@ -78,9 +85,16 @@ export function DropdownMenu({
   // aria-labelledby(여는 단추)가 aria-label보다 앞서므로, 이름을 따로 줄 때는 그것을 지웁니다.
   const naming = label ? { "aria-label": label, "aria-labelledby": undefined } : {};
   const hasDescription = description !== undefined && description !== null && description !== false;
+  const menuTrigger = <DropdownMenuPrimitive.Trigger asChild>{trigger}</DropdownMenuPrimitive.Trigger>;
   return (
     <DropdownMenuPrimitive.Root>
-      <DropdownMenuPrimitive.Trigger asChild>{trigger}</DropdownMenuPrimitive.Trigger>
+      {tooltip ? (
+        <Tooltip content={tooltip} labelOnly>
+          {menuTrigger}
+        </Tooltip>
+      ) : (
+        menuTrigger
+      )}
       <DropdownMenuPrimitive.Portal>
         <DropdownMenuPrimitive.Content
           data-overlay=""

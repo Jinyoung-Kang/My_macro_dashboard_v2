@@ -200,6 +200,13 @@ describe("모양", () => {
     expect(trigger.querySelector('[aria-hidden="true"]')?.textContent).toBe("M");
     expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
     expect((trigger.parentElement as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    // 열린 모양은 aria-expanded로(이름 툴팁 트리거와 합쳐지면 data-state는 툴팁 것 — 공용 메뉴 tooltip)
+    expect(classes).toEqual(expect.arrayContaining(["aria-expanded:border-border-strong", "aria-expanded:text-text"]));
+    expect(classes.some((name) => name.startsWith("data-[state=open]:"))).toBe(false);
+    // 마우스 사용자에게 이름(aria-label)을 같은 글의 툴팁으로 — 설명으로 잇지 않음
+    act(() => trigger.focus());
+    expect(screen.getByRole("tooltip").textContent).toBe("계정 메뉴");
+    expect(trigger.hasAttribute("aria-describedby")).toBe(false);
     cleanup();
 
     // 이메일이 없으면(데모) 사람 아이콘 — 빈 원이나 빈 글자가 없다

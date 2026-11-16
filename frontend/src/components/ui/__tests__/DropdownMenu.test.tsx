@@ -5,8 +5,9 @@
  *  - 링크 항목은 a[role=menuitem][href], 항목은 좁은 화면 44px·넓은 화면 32px, 항목 글에 text-3이 없다(surface-3 위 금지 쌍)
  *  - 닫힌 뒤 포커스 처리(onCloseAutoFocus)를 부르는 쪽에 넘긴다
  *  - 항목이 아닌 글(description)은 항목 아래에 두고 메뉴의 설명(aria-describedby)으로 잇는다 — 화살표는 그 글에 서지 않는다
+ *  - tooltip을 주면 여는 단추가 이름 툴팁(공용 Tooltip labelOnly)과 메뉴 트리거를 함께 가진다 — 열림은 aria-expanded로 본다(data-state는 툴팁 것)
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -138,6 +139,54 @@ describe("설명 칸(description — 항목이 아닌 글)", () => {
     const menu = renderWithDescription();
     expect(menu.hasAttribute("aria-describedby")).toBe(false);
     expect(menu.lastElementChild?.getAttribute("role")).toBe("menuitem");
+  });
+});
+
+describe("이름 툴팁(tooltip — 아이콘 여는 단추)", () => {
+  function renderWithTooltip() {
+    render(
+      <DropdownMenu
+        label="예시 메뉴"
+        tooltip="메뉴 열기"
+        trigger={
+          <button type="button" aria-label="메뉴 열기" className="aria-expanded:border-border-strong">
+            M
+          </button>
+        }
+      >
+        <DropdownMenuItem>첫 항목</DropdownMenuItem>
+      </DropdownMenu>,
+    );
+    return screen.getByRole("button", { name: "메뉴 열기" });
+  }
+
+  it("포커스하면 이름과 같은 글의 툴팁 — 설명(aria-describedby)으로 잇지 않고, 메뉴 트리거 속성(aria-haspopup·aria-expanded)과 클래스는 그대로", () => {
+    const trigger = renderWithTooltip();
+    act(() => trigger.focus());
+    expect(screen.getByRole("tooltip").textContent).toBe("메뉴 열기");
+    expect(trigger.hasAttribute("aria-describedby")).toBe(false);
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.className).toBe("aria-expanded:border-border-strong");
+  });
+
+  it("Enter로 메뉴가 열리고(aria-expanded=true — 툴팁은 닫힘) 포커스가 항목으로, Esc로 닫히면 여는 단추로 돌아온다", async () => {
+    const trigger = renderWithTooltip();
+    act(() => trigger.focus());
+    const menu = open(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() => expect(document.activeElement).toBe(within(menu).getByRole("menuitem")));
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("마우스로 누르면(pointerdown) 메뉴가 열린다", () => {
+    const trigger = renderWithTooltip();
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    expect(screen.getByRole("menu", { name: "예시 메뉴" })).toBeTruthy();
   });
 });
 

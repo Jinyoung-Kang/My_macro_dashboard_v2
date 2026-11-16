@@ -7,9 +7,10 @@
  * (뜻 단언 예외 — ADR 0042 결정 5·9가 계정 메뉴를 메뉴로 정함, P3 계획 §3-5). 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
  * jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => {
@@ -330,6 +331,24 @@ describe("상단바 알림 벨", () => {
     const badge = bell.querySelector('span[aria-hidden="true"]') as HTMLElement;
     expect(badge.textContent).toBe("42");
     expect([...badge.classList]).toContain("forced-colors:border");
+  });
+
+  it("넓은 화면에서만 이름과 같은 글의 툴팁(설명으로 잇지 않음) — 좁은 화면은 툴팁 없이 지금 그대로", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
+    try {
+      renderShell(MEMBER_PRO, { unread: 3 });
+      const bell = screen.getByRole("link", { name: "알림 — 읽지 않음 3건" });
+      act(() => bell.focus());
+      expect(screen.getByRole("tooltip").textContent).toBe("알림 — 읽지 않음 3건");
+      expect(bell.hasAttribute("aria-describedby")).toBe(false);
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+    }
+
+    renderShell(MEMBER_PRO, { unread: 3 });
+    act(() => screen.getByRole("link", { name: "알림 — 읽지 않음 3건" }).focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   // 좁은 화면(둘째 줄)과 넓은 화면(한 줄)은 같은 인스턴스의 자리만 바뀐다 — 둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생긴다.
