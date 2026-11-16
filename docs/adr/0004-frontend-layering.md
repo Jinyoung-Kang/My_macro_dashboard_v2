@@ -105,8 +105,9 @@
   `href`면 타일 전체가 중립 잉크 링크(좁은 화면 44px 하한 클래스) — 데이터 칸 강조색 금지 목록). 처음 쓰는 곳은 홈 맨 위 요약(P4),
   지키는 시험은 `components/patterns/__tests__/KpiStrip.test.tsx`.
 - 대상 머리 `components/patterns/EntityHeader.tsx` — 화면 패턴(종류 아이콘 칸(장식) + 종류 글 태그·이름 h1(말줄임 없음)·고정폭 식별자 태그·주 값 하나 28px·
-  배지 줄(비면 접힘)·동작 영역, `placeholder`는 값·배지 자리만 바꿈 — 데이터 칸 강조색 금지 목록). 공용 `Tag`(`@/components/ui`)와 대상 종류 아이콘
-  (`ChartLineIcon`·`CandlestickIcon`·`LandmarkIcon`)을 씁니다. 처음 쓰는 곳은 상세 3종의 맨 위(P4 — 지금 화면 머리 자리), 정보 검색 대상 화면은 겉모습이 달라 P7,
+  변화(KPI 띠와 같은 구조화된 꼴 — 변화 칩 + 캡션, 또는 그린 요소)·배지 줄(비면 접힘)·동작 영역, `placeholder`는 값·배지 자리만 바꿈 — 데이터 칸 강조색 금지 목록).
+  공용 `Tag`(`@/components/ui`)와 대상 종류 아이콘(`ChartLineIcon`·`CandlestickIcon`·`LandmarkIcon` — 상세 셋의 종류)을 씁니다. 상세 셋 밖의 종류(정보 검색의 회사·인물·주제,
+  모의 계좌 등)는 부르는 쪽이 종류 글과 아이콘(`EntityKindSpec`)을 넘깁니다. 처음 쓰는 곳은 상세 3종의 맨 위(P4 — 지금 화면 머리 자리), 정보 검색 대상 화면은 겉모습이 달라 P7,
   지키는 시험은 `components/patterns/__tests__/EntityHeader.test.tsx`.
 - 칸 틀 `components/patterns/SplitPane.tsx` — 화면 패턴(틀 — 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처, lg 두 칸·xl 세 칸·lg 미만 한 칸, 읽는 차례는 늘 왼쪽 → 가운데 → 오른쪽,
   새 랜드마크 없음). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 순수 모듈 `components/ui/classes.ts`로

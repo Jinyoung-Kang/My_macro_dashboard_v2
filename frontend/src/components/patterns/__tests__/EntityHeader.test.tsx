@@ -2,10 +2,13 @@
  * EntityHeader — 대상 머리(작업대 실행 명세 §6, P4 — 상세 화면 셋의 맨 위).
  * 네 상태: 불러오는 중(placeholder Skeleton — 값·배지 자리만 바뀌고 이름·종류·동작은 그대로), 빈 값('—' + 사유, 단위 없음), 오류(placeholder 글),
  * 값 있음(28px tabular-nums·캡션·단위·변화). 데이터 패턴의 넷: 값·'—'·추정/대리 배지·이전 값(배지 줄은 늘 보임, 비면 접힘).
- * a11y: 이름은 h1(headingLevel 2면 h2), 종류는 아이콘(장식) + 글 태그, 식별자는 고정폭.
+ * a11y: 이름은 h1(headingLevel 2면 h2), 종류는 아이콘(장식) + 글 태그, 식별자는 고정폭. 상세 셋 밖의 종류는 부르는 쪽이 글·아이콘을 넘기고(열린 꼴),
+ * 변화는 KPI 띠와 같은 구조화된 꼴(변화 칩 + 캡션)도 받습니다.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { PersonIcon } from "@/components/ui/icons";
 
 import { EstimateBadge, StaleBadge } from "../badges";
 import { ChangeChip } from "../ChangeChip";
@@ -36,6 +39,26 @@ describe("EntityHeader — 값 있음", () => {
     rerender(<EntityHeader kind="institution" name="Berkshire Hathaway" identifiers={["CIK 0001067983"]} />);
     expect(screen.getByText("기관")).toBeTruthy();
     expect(screen.getByText("CIK 0001067983").className).toContain("font-mono");
+  });
+
+  it("상세 셋 밖의 종류는 부르는 쪽이 글과 장식 아이콘을 넘긴다 — 패턴을 고치지 않고 종류를 더함", () => {
+    const { container } = render(<EntityHeader kind={{ label: "인물", icon: PersonIcon }} name="합성 인물" headingLevel={2} />);
+    expect(screen.getByText("인물")).toBeTruthy();
+    const iconBox = container.querySelector("header span[aria-hidden='true']") as HTMLElement;
+    expect(iconBox.querySelector("svg")).toBeTruthy();
+  });
+
+  it("변화는 구조화된 꼴(KPI 띠와 같음)도 받는다 — 변화 칩(▲▼ 장식·sr 방향·부호 −)과 12px 캡션, 둘 다 모르면 줄이 없다", () => {
+    const { rerender } = render(
+      <EntityHeader kind="indicator" name="S&P 500" value="7,622.99" change={{ change: -40.46, changePct: -0.53, digits: 2, pctDigits: 2, caption: "전일 대비" }} />,
+    );
+    expect(screen.getByText("▼").getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByText("하락").className).toContain("sr-only");
+    expect(screen.getByText("−40.46")).toBeTruthy();
+    expect(screen.getByText("전일 대비").className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "text-text-3"]));
+    rerender(<EntityHeader kind="indicator" name="S&P 500" value="7,622.99" change={{ change: null, changePct: null, caption: "전일 대비" }} />);
+    expect(screen.queryByText("전일 대비")).toBeNull();
+    expect(screen.queryByText(/0\.00%/)).toBeNull();
   });
 
   it("headingLevel 2면 h2 — 화면 안의 머리", () => {
