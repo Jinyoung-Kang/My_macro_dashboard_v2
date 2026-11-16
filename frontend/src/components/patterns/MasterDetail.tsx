@@ -54,7 +54,7 @@ export function MasterDetail<T>({
   label: string;
   items: readonly T[];
   itemKey: (item: T) => string;
-  /** 줄 단추 이름의 앞부분·검사 칸 제목(h3)·대화상자 이름. */
+  /** 검사 칸 제목(h3)·대화상자 이름 — 줄 단추 안에는 `renderItem`만 그립니다(줄 단추 이름은 그 글). */
   itemLabel: (item: T) => string;
   /** 줄 내용(단추 안 — 링크·단추를 넣지 않음). */
   renderItem: (item: T) => ReactNode;

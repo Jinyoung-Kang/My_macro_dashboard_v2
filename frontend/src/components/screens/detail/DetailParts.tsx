@@ -34,7 +34,7 @@ import type { DetailNewsResponse, DetailStat, DetailSummaryResponse, SessionUser
 
 /**
  * 검색 상세 화면(종목·지표·기관) 공용 부품 — 가격 차트 패널(기간·문지르기 읽기 줄)·링크 목록·속성 줄 바꾸기·주요 뉴스·AI 요약·외부 링크.
- * 표시 규칙은 lib/detail(순수 함수), 여기서는 그리기만 합니다(ADR 0004). 외부 출처는 새 창 링크로 적습니다.
+ * 표시 규칙은 lib/detail·lib/detailEntity(순수 함수), 여기서는 그리기만 합니다(ADR 0004). 외부 출처는 새 창 링크로 적습니다.
  * 시세 히어로(PriceHero)·핵심 지표 표(KeyStats·statRows)는 종목 팝업 창(StockQuickView — 모의·실제 계좌·ISA 표가 씀) 몫으로 남깁니다 — 상세 세 화면은
  * 작업대 대상 문법(P4 — 대상 머리·속성 목록·가격 차트 패널)으로 옮겼고, 팝업 창은 모의매매 단계(P6)에서 함께 바꿉니다.
  */
@@ -282,7 +282,7 @@ export function LinkListPanel({ title, links }: { title: string; links: readonly
 }
 
 /**
- * lib/detail의 속성 줄 → 속성 목록 줄 — `link`가 있으면 값 글을 그 링크로 그립니다(바깥이면 새 창). 값 칸 안의 링크도 따로 선 링크라 좁은 화면 44px입니다.
+ * lib/detailEntity의 속성 줄 → 속성 목록 줄 — `link`가 있으면 값 글을 그 링크로 그립니다(바깥이면 새 창). 값 칸 안의 링크도 따로 선 링크라 좁은 화면 44px입니다.
  */
 export function propertyItems(rows: readonly DetailProperty[]): PropertyItem[] {
   return rows.map(({ link, ...row }) => {
@@ -322,7 +322,7 @@ export function KeyStats({ rows }: { rows: readonly { label: string; value: stri
   );
 }
 
-/** DetailStat 목록 → 표 줄(통화 금액은 그 통화로) — 종목 팝업 창 몫(상세 화면은 lib/detail stockStatItems). */
+/** DetailStat 목록 → 표 줄(통화 금액은 그 통화로) — 종목 팝업 창 몫(상세 화면은 lib/detailEntity stockStatItems). */
 export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) => string): { label: string; value: string }[] {
   return stats.map((stat) => ({ label: stat.label, value: text(stat) }));
 }
