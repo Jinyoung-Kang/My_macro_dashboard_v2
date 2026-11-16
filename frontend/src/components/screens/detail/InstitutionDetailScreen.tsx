@@ -70,17 +70,19 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   useDetailVisit("institution", names?.display ? institutionHref(cik) : null, names?.display || null, `13F · CIK ${cik}`);
 
   // 추적하지 않는 CIK — 백엔드가 400으로 알립니다. 그 문구는 API 호출자를 위한 글('/api/sec13f/institutions 목록의 cik를 쓰세요')이라 화면 글로
-  // 바꾸고, 다시 해도 같은 400이라 다시 시도를 두지 않습니다(QA-584). 서버·연결 실패는 그대로 오류 글(보유 탭은 다시 시도 — QA-190).
+  // 바꾸고, 다시 해도 같은 400이라 다시 시도를 두지 않습니다(QA-584). 서버·연결 실패는 오류 글과 다시 시도를 늘 보이는 대상 머리에 하나(QA-609).
   const untracked = !data && portfolio.errorStatus === 400;
   // 뉴스·AI 요약을 부르지 않는 까닭 — 추적하지 않는 기관이면 머리 안내와 같은 말, 읽지 못했거나 이름이 없으면 이름을 받지 못했다고(QA-584).
   const idleText = (what: string) => (untracked ? `추적하지 않는 기관이라 ${what}` : nameMissing ? `기관 이름을 받지 못해 ${what}` : undefined);
 
   let placeholder;
   if (!data) {
+    // 서버·연결 실패의 다시 시도는 늘 보이는 대상 머리에 하나(종목 상세 시세 실패·지표 상세 QA-588과 같은 자리 — QA-609). 보유 종목은 기본이 아닌
+    // 탭(숨김)이고 왼쪽 칸은 좁은 화면에서 처음에 접혀(결정 2) 그 안에 두면 첫 화면에서 다시 읽을 방법이 보이지 않습니다. 보유 탭은 까닭 글만.
     placeholder = untracked ? (
       <UntrackedNotice cik={cik} link />
     ) : portfolio.error ? (
-      <Banner tone="danger">{portfolio.error}</Banner>
+      <ErrorState message={portfolio.error} onRetry={() => void portfolio.reload()} />
     ) : (
       <Skeleton lines={2} label="13F 포트폴리오를 불러오는 중" />
     );
@@ -196,7 +198,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
               key: "holdings",
               label: "보유 종목",
               content: (
-                <HoldingsPanel data={data} error={portfolio.error} untrackedCik={untracked ? cik : null} onRetry={() => void portfolio.reload()} />
+                <HoldingsPanel data={data} error={portfolio.error} untrackedCik={untracked ? cik : null} />
               ),
             },
             {
@@ -273,20 +275,19 @@ function HoldingSubline({ holding }: { holding: Holding }) {
 
 /**
  * 상위 보유 종목(가운데 '보유 종목' 탭) — 목록-검사(MasterDetail): 줄 = 이름·보조 줄(클래스·동작·비중 변화)·비중·평가액, 줄을 고르면 넓은 화면은
- * 오른쪽 검사 칸(처음에 첫 줄), 좁은 화면은 대화상자에 그 줄의 속성과 '정보 검색에서 찾기'. 읽기가 실패하면 '불러오는 중'이 아니라 오류와 다시
- * 시도(QA-190). 추적하지 않는 CIK(백엔드 400)는 다시 해도 같아 다시 시도 없이 그 안내(QA-584).
+ * 오른쪽 검사 칸(처음에 첫 줄), 좁은 화면은 대화상자에 그 줄의 속성과 '정보 검색에서 찾기'. 읽기가 실패하면 '불러오는 중'이 아니라 그 까닭 글
+ * (QA-190) — 오류 글과 다시 시도는 늘 보이는 대상 머리에 하나입니다(이 탭은 기본이 아니라 처음에 숨어 있음 — QA-609). 추적하지 않는 CIK(백엔드
+ * 400)는 다시 해도 같아 다시 시도 없이 그 안내(QA-584).
  */
 function HoldingsPanel({
   data,
   error,
   untrackedCik,
-  onRetry,
 }: {
   data: PortfolioResponse | null;
   error: string | null;
-  /** 추적하지 않는 CIK(포트폴리오 400)면 그 CIK — 오류·다시 시도 대신 안내. */
+  /** 추적하지 않는 CIK(포트폴리오 400)면 그 CIK — 읽기 실패 글 대신 안내. */
   untrackedCik: string | null;
-  onRetry: () => void;
 }) {
   const user = useSessionUser();
   const shown = (data?.holdings ?? []).slice(0, HOLDINGS_SHOWN);
@@ -317,7 +318,7 @@ function HoldingsPanel({
           data ? undefined : untrackedCik ? (
             <UntrackedNotice cik={untrackedCik} />
           ) : error ? (
-            <ErrorState message={error} onRetry={onRetry} />
+            <p className="break-keep text-sm text-text-2">13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.</p>
           ) : (
             <Skeleton lines={5} label="보유 종목을 불러오는 중" />
           )

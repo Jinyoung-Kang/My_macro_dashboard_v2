@@ -50,7 +50,7 @@ const shown = (element: HTMLElement) => element.closest("[hidden]") === null;
 
 describe("기관 상세 — 포트폴리오 서버 실패의 다시 시도는 대상 머리에 (QA-609)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 대상 머리 안 '다시 시도'가 0개였고, 하나뿐인 단추가 숨긴 '보유 종목' 탭 안에 있었습니다.
-  it.fails("포트폴리오 500 — 기본 '개요' 탭 그대로 대상 머리에 '다시 시도' 하나, 숨긴 탭 밖 보이는 다시 시도도 하나, 누르면 다시 읽음", async () => {
+  it("포트폴리오 500 — 기본 '개요' 탭 그대로 대상 머리에 '다시 시도' 하나, 숨긴 탭 밖 보이는 다시 시도도 하나, 누르면 다시 읽음", async () => {
     reads[PATH] = await apiError("합성 서버 오류", 500);
     render(
       <SessionUserProvider user={MEMBER}>
@@ -64,6 +64,13 @@ describe("기관 상세 — 포트폴리오 서버 실패의 다시 시도는 �
     const retries = within(header).getAllByRole("button", { name: "다시 시도" });
     expect(retries).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "다시 시도" }).filter(shown)).toHaveLength(1);
+    // 좁은 화면(lg 미만)에서 처음에 접히는 왼쪽 '속성' 칸(결정 2) 안이 아님 — 숨긴 보유 탭에도 다시 시도가 없음(까닭 글만)
+    const toggle = screen.getByRole("button", { name: "속성 펼치기" });
+    const column = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(column.contains(retries[0])).toBe(false);
+    const holdings = screen.getByRole("heading", { level: 2, name: "상위 보유 종목", hidden: true }).closest("section") as HTMLElement;
+    expect(within(holdings).queryAllByRole("button", { name: "다시 시도", hidden: true })).toHaveLength(0);
+    expect(holdings.textContent).toContain("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.");
     const calls = () => api.apiGetShared.mock.calls.filter(([requested]) => requested === PATH).length;
     expect(calls()).toBe(1);
     fireEvent.click(retries[0]);

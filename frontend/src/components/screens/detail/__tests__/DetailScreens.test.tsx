@@ -781,8 +781,9 @@ describe("기관 상세", () => {
   });
 
   // QA-190: 13F 포트폴리오 읽기가 실패하면(추적하지 않는 CIK는 400, 백엔드 일시 실패) 히어로는 오류를 보였지만 상위 보유 종목 카드는 error를 보지 않아
-  // '불러오는 중'(role=status, aria-busy)으로 남았습니다. 카드도 오류와 다시 시도 단추를 그립니다.
-  it("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 오류와 다시 시도", async () => {
+  // '불러오는 중'(role=status, aria-busy)으로 남았습니다. 카드도 그 까닭을 적고, 다시 시도 단추는 늘 보이는 대상 머리에 하나입니다(보유 종목은 기본이
+  // 아닌 탭이라 처음에 숨어 있음 — QA-609, 종목 상세 시세 실패와 같은 자리). 카드에는 까닭 글만 남습니다.
+  it("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 그 까닭(다시 시도는 머리에)", async () => {
     const path = endpoints.institution.portfolio("1234567", 8, 30);
     reads = { [path]: new Error("추적하지 않는 기관입니다.") };
     renderAs(PRO, <InstitutionDetailScreen cik="1234567" />);
@@ -791,8 +792,11 @@ describe("기관 상세", () => {
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
     expect(screen.queryByRole("status", { name: "보유 종목을 불러오는 중" })).toBeNull();
     const card = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
-    expect(within(card).getByText("추적하지 않는 기관입니다.")).toBeTruthy();
-    fireEvent.click(within(card).getByRole("button", { name: "다시 시도" }));
+    expect(within(card).getByText("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.")).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    const header = screen.getByRole("heading", { level: 1, name: "CIK 1234567" }).closest("header") as HTMLElement;
+    expect(within(header).getByText("추적하지 않는 기관입니다.")).toBeTruthy();
+    fireEvent.click(within(header).getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(requested().filter((entry) => entry === path)).toHaveLength(2));
   });
 });

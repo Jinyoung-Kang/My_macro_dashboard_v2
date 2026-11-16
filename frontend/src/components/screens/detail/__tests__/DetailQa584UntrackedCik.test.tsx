@@ -4,7 +4,7 @@
  * - 주소의 CIK는 숫자 1~10자리를 그대로 넘겨, 같은 기관의 앞 0 없는 주소(/institutions/1608046)가 백엔드에서 400이었습니다 — 10자리로 채워 읽습니다.
  * - 추적하지 않는 CIK의 400 응답 문구는 API 호출자를 위한 글('(/api/sec13f/institutions 목록의 cik를 쓰세요)')인데 머리와 보유 탭에 그대로 나왔고,
  *   다시 해도 같은 400인데 '다시 시도'가 있었습니다. 400이면 화면 글('이 대시보드가 추적하는 13F 기관이 아닙니다')과 기관 목록 링크를 보이고
- *   다시 시도를 두지 않습니다. 서버·연결 실패(5xx·0)는 지금처럼 오류와 다시 시도(QA-190)입니다.
+ *   다시 시도를 두지 않습니다. 서버·연결 실패(5xx·0)는 오류와 다시 시도이고, 다시 시도는 늘 보이는 대상 머리에 하나입니다(QA-190·QA-609).
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -106,14 +106,19 @@ describe("기관 상세 — 앞 0 없는 CIK와 추적하지 않는 CIK (QA-584)
     expect(screen.queryByText(/읽지 못해|받지 못해/)).toBeNull();
   });
 
-  it("서버 실패(500)는 지금처럼 보유 탭에 오류와 다시 시도(QA-190)", async () => {
+  // 서버·연결 실패의 다시 시도는 늘 보이는 대상 머리에 하나 — 보유 탭(기본이 아니라 처음에 숨음)에는 까닭 글만 둡니다(QA-609).
+  it("서버 실패(500)는 다시 시도를 대상 머리에, 보유 탭에는 까닭 글만(다시 시도 없음)", async () => {
     const path = endpoints.institution.portfolio(UNTRACKED, 8, 30);
     reads[path] = await apiError("13F 저장본을 읽지 못했습니다.", 500);
     renderAs(<InstitutionDetailScreen cik={UNTRACKED} />);
-    await waitFor(() => expect(screen.getAllByText("13F 저장본을 읽지 못했습니다.").length).toBeGreaterThan(0));
+    const header = (await screen.findByRole("heading", { level: 1, name: `CIK ${UNTRACKED}` })).closest("header") as HTMLElement;
+    await waitFor(() => expect(within(header).getByText("13F 저장본을 읽지 못했습니다.")).toBeTruthy());
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
     const holdings = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
-    fireEvent.click(within(holdings).getByRole("button", { name: "다시 시도" }));
+    expect(within(holdings).getByText("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.")).toBeTruthy();
+    expect(within(holdings).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "다시 시도" })).toHaveLength(1);
+    fireEvent.click(within(header).getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(requested().filter((entry) => entry === path)).toHaveLength(2));
   });
 });
