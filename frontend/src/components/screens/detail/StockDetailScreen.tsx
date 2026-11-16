@@ -19,7 +19,6 @@ import {
   isEnglishProfile,
   marketStateText,
   stockHref,
-  stockKindLabel,
 } from "@/lib/detail";
 import {
   consensusItems,
@@ -30,6 +29,7 @@ import {
   infoSearchEntityLink,
   profileItems,
   stockEntityKey,
+  stockKindLabel,
   stockStatItems,
 } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";

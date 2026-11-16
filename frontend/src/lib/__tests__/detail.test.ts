@@ -20,7 +20,6 @@ import {
   institutionNames,
   institutionValueRows,
   kindText,
-  stockKindLabel,
   countryKo,
   marketStateText,
   moneyText,
@@ -184,33 +183,6 @@ describe("값 글", () => {
     expect(kindText("stock")).toBe("주식");
     expect(kindText("OPTION")).toBe("OPTION");
     expect(kindText(null)).toBeNull();
-  });
-
-  // 2026-11-16 결정 7 — 종목 상세 대상 머리의 종류 태그: 지수·환율·선물 심볼(/s/us/^GSPC·KRW=X·ZT=F)이 '종목'으로 보였음.
-  it("종목 상세 종류 태그 — 시세 종류(Yahoo quoteType)대로 지수·환율·선물, 그 밖은 '종목'", () => {
-    expect(stockKindLabel("us", "^GSPC", "INDEX")).toBe("지수");
-    expect(stockKindLabel("us", "KRW=X", "CURRENCY")).toBe("환율");
-    expect(stockKindLabel("us", "ZT=F", "FUTURE")).toBe("선물");
-    expect(stockKindLabel("us", "^GSPC", "index")).toBe("지수");
-    expect(stockKindLabel("us", "AAPL", "EQUITY")).toBe("종목");
-    expect(stockKindLabel("us", "SPY", "ETF")).toBe("종목");
-    expect(stockKindLabel("us", "BTC-USD", "CRYPTOCURRENCY")).toBe("종목");
-    // 시세에 종류가 있으면 그것을 따름(코드 꼴보다 먼저)
-    expect(stockKindLabel("us", "^ODD", "EQUITY")).toBe("종목");
-  });
-
-  it("종목 상세 종류 태그 — 시세 전·실패(종류 없음)는 코드 꼴(^ 지수 · =X 환율 · =F 선물), 국내는 늘 '종목'", () => {
-    expect(stockKindLabel("us", "^GSPC", null)).toBe("지수");
-    expect(stockKindLabel("us", "^N225", undefined)).toBe("지수");
-    expect(stockKindLabel("us", "KRW=X", null)).toBe("환율");
-    expect(stockKindLabel("us", "eurusd=x", null)).toBe("환율");
-    expect(stockKindLabel("us", "ZT=F", null)).toBe("선물");
-    expect(stockKindLabel("us", "GC=F", "")).toBe("선물");
-    expect(stockKindLabel("us", "AAPL", null)).toBe("종목");
-    expect(stockKindLabel("us", "BRK-B", null)).toBe("종목");
-    expect(stockKindLabel("kr", "005930", "stock")).toBe("종목");
-    expect(stockKindLabel("kr", "069500", "etf")).toBe("종목");
-    expect(stockKindLabel("kr", "005930", null)).toBe("종목");
   });
 
   it("뉴스 시각 — 분·시간·일 전, 일주일이 넘거나 앞날이면 KST 시각, 모르면 '시각 모름'", () => {

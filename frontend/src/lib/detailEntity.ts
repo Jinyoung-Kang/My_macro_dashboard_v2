@@ -26,6 +26,27 @@ import type { GuruHoldersResponse, Holding, PortfolioResponse } from "./types/in
 import type { MacroItem, MacroOverview } from "./types/macro";
 import type { SessionUser } from "./types";
 
+// ------------------------------------------------------------------ 대상 머리
+
+/** 종목 상세 대상 머리의 종류 태그 글 — 사고파는 종목이 아닌 Yahoo 종류(quoteType). */
+const NON_STOCK_KIND: Record<string, string> = { INDEX: "지수", CURRENCY: "환율", FUTURE: "선물" };
+
+/**
+ * 종목 상세(/s/…) 대상 머리의 종류 태그 글 — 지수는 '지수', 환율은 '환율', 선물은 '선물', 그 밖(주식·ETF·국내)은 '종목'(2026-11-16 결정 7).
+ * 시세의 종류(미국·해외는 Yahoo quoteType INDEX·CURRENCY·FUTURE — 수집기 services/detail.py quote_from_yahoo의 kind)를 따르고, 시세가 오기 전·
+ * 실패해 종류가 없으면 코드 꼴(앞 '^' → 지수, 끝 '=X' → 환율, 끝 '=F' → 선물 — Yahoo 심볼 규칙)로 정합니다. 국내(6자리 — 네이버 stockEndType)는 늘
+ * '종목'. 아이콘·빵부스러기 '종목(미국)'·팔레트 '→ 종목 상세'는 화면 이름이라 이 글을 쓰지 않습니다.
+ */
+export function stockKindLabel(market: DetailMarket, code: string, kind: string | null | undefined): string {
+  if (market !== "us") return "종목";
+  if (kind) return NON_STOCK_KIND[kind.toUpperCase()] ?? "종목";
+  const symbol = code.toUpperCase();
+  if (symbol.startsWith("^")) return "지수";
+  if (symbol.endsWith("=X")) return "환율";
+  if (symbol.endsWith("=F")) return "선물";
+  return "종목";
+}
+
 // ------------------------------------------------------------------ 속성(대상 화면 왼쪽 칸·검사 칸)
 
 /**
