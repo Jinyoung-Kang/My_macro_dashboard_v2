@@ -116,3 +116,20 @@ describe("매크로 카드 배지", () => {
     expect(screen.getByText("시세: 종목마다 다름 — 카드 배지 참고")).toBeTruthy();
   });
 });
+
+// QA-620: 수집기는 TradingView 참고 시세 카드에 isEstimated를 보냅니다(형 주석 — '추정' 배지를 반드시 보임). 홈 시장 표(lib/home macroCardRow)는 배지를
+// 보이는데 /macro 카드는 이 칸을 읽지 않아 추정치가 확정치처럼 보였습니다.
+describe("QA-620 추정 카드는 '추정' 배지를 보인다", () => {
+  it.fails("isEstimated 카드에 '추정' 배지가 늘 보인다(홈 시장 표와 같음)", async () => {
+    const estimated = { ...OVERVIEW, categories: [{ id: "ust", title: "미국 국채 수익률", items: [
+      card({ key: "us10y", name: "미국채 10년물 수익률(%)", market: "ust", delayMinutes: 0, isReference: true, isEstimated: true,
+             source: "TradingView Scanner", lastTs: "2026-10-20 19:54 KST (TradingView 수집 시각)" }),
+    ] }] };
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/macro/overview") ? Promise.resolve(estimated) : new Promise(() => {}));
+    render(<MacroPage />);
+
+    await screen.findAllByText("미국채 10년물 수익률(%)");
+    expect(screen.queryAllByText("추정").length).toBeGreaterThan(0);
+  });
+});
