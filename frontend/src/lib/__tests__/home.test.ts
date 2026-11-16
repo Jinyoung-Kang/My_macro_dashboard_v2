@@ -94,6 +94,25 @@ describe("regimeHeroModel — 오늘의 국면", () => {
     expect(liquidity).toMatchObject({ valueText: "+0.031", unit: "조 달러", note: "확대 · 최근 4주 동안 시장으로 유동성이 들어왔습니다." });
   });
 
+  // QA-600: 부호 있는 세 신호(금리차·NFCI·순유동성 4주 변화)가 formatSigned(ASCII 하이픈)로 찍혀, 같은 홈 화면의 변화 칩·KPI(−, U+2212)와
+  // 음수 글자가 섞였습니다(QA 스택 '-0.487'·'-0.048' — 개편 전부터). 명세 D4: 등락은 ▲▼와 U+2212.
+  // 수정 전(재현 커밋에서는 it.fails) 값은 '-0.12'·'-0.496'·'-0.048'(ASCII 하이픈)이었습니다.
+  it.fails("부호 있는 신호의 음수는 −(U+2212) — ASCII 하이픈이 아니다, 반올림 뒤 0은 부호 없음 (QA-600)", () => {
+    const response = regimeExpansion();
+    const signal = (id: string) => response.verdict!.signals.find((entry) => entry.id === id)!;
+    signal("curve").value = -0.12;
+    signal("liquidity").value = -0.048462;
+    const [curve, nfci, hyOas, liquidity] = regimeHeroModel(response).tiles;
+    expect([curve.valueText, nfci.valueText, liquidity.valueText]).toEqual(["\u22120.12", "\u22120.496", "\u22120.048"]);
+    for (const tile of [curve, nfci, hyOas, liquidity]) {
+      expect(tile.valueText, tile.id).not.toMatch(/(^|[\s(])-(?=[\d.])/);
+    }
+    signal("curve").value = 0.0004;
+    signal("nfci").value = -0.0004;
+    const [flatCurve, flatNfci] = regimeHeroModel(response).tiles;
+    expect([flatCurve.valueText, flatNfci.valueText]).toEqual(["0.00", "0.000"]);
+  });
+
   it("판정 불가 — 라벨·문장은 백엔드 그대로, 받지 못한 입력 목록, 빠진 신호 자리는 '—'(받지 못함)로 남는다", () => {
     const model = regimeHeroModel(regimeUnknown());
     expect(model.label).toBe("판정 불가");
