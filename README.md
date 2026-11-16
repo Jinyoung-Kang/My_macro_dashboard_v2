@@ -484,7 +484,7 @@ ssh ubuntu@my-macro-app                    # 서버 셸(Tailscale SSH) — 그 �
 
 | 영역 | 채택 | 왜 |
 |---|---|---|
-| Frontend | TypeScript · React 19 · Next.js 16 · Tailwind · Recharts · Radix UI(dialog·toast·visually-hidden) | 여러 화면이 같은 패턴(자산 행·배지·표·차트)을 다시 쓰므로 공용 컴포넌트가 크게 이득. 대화상자·토스트의 포커스·키보드·ARIA는 Radix에 맡김. 색은 CSS 변수 토큰의 어두운 한 벌(테마 전환 없음 — ADR 0042) |
+| Frontend | TypeScript · React 19 · Next.js 16 · Tailwind · Recharts · Radix UI(dialog·toast·visually-hidden·dropdown-menu·tooltip) | 여러 화면이 같은 패턴(자산 행·배지·표·차트)을 다시 쓰므로 공용 컴포넌트가 크게 이득. 대화상자·토스트·메뉴·툴팁의 포커스·키보드·ARIA는 Radix에 맡김. 색은 CSS 변수 토큰의 어두운 한 벌(테마 전환 없음 — ADR 0042) |
 | Backend | Java 21 · Spring Boot 4.1 | 모든 계산을 한 계층에 모아 타입과 테스트로 고정 |
 | AI | Claude API (Haiku 5.5, 공식 Java SDK) · NVIDIA · Cerebras · Cloudflare | 수집 원본으로 리포트 생성. 엔진이 실패하면 다음 엔진으로 자동 전환. 모의 매매 Claude 계좌는 같은 SDK의 구조화 출력으로 Sonnet 5.5(설정에서 Haiku 5.5) 한 모델만 부름(전환 없음) |
 | Store | PostgreSQL 16 | 수집기와 API가 다른 프로세스라 파일 공유 불가. JSONB로 저장해 SQL로 질의 |
