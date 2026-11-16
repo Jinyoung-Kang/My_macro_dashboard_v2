@@ -3,6 +3,7 @@
  *  - 원본 데이터: 화면 머리의 동작 둘('원본 데이터 보기' 대화상자·'원본 데이터 복사'), 열 때만 읽음, 생성 시각·글자 수·다시 읽기·오류와 다시 시도
  *  - 장단기 금리차: 묶음 머리(h3) + KPI 띠 둘(값 부호·'%p' 단위·변화 칩), 해석 기준표는 처음에 접힘(펼치기 머리 + 공용 표)
  *  - 신용·변동성: KPI 띠(단위·변화 칩·기준일·출처, 못 받은 값 '—'+'수집 실패', MOVE는 '대리 지표' 배지 + 주의 상태 글), 해석 기준표 접힘
+ *  - 심화 지표: KPI 띠 — 해석 색은 상태 아이콘 + 글(빨강 위험은 '주의:' 머리말, 값 글자색으로 전하지 않음), 메모 '표본 백분위 · 표본 · 기준일'
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -210,5 +211,55 @@ describe("신용·변동성", () => {
     expect(summary.tagName).toBe("SUMMARY");
     expect((summary.closest("details") as HTMLDetailsElement).open).toBe(false);
     expect(within(summary.closest("details") as HTMLElement).getAllByRole("rowheader")).toHaveLength(5);
+  });
+});
+
+describe("심화 지표", () => {
+  const advanced = {
+    order: ["T10Y3M", "BAMLC0A0CM", "NFCI", "DFII10"],
+    latest: {
+      T10Y3M: { id: "T10Y3M", label: "10Y-3M", unit: "%p", digits: 2, group: "금리", why: "역전 신호", source: "FRED T10Y3M", available: true,
+        value: -0.62, delta: -0.04, asOf: "2026-11-13", percentile: 3.4, percentileFrom: "2016-11-14", percentileCount: 2500, percentileYears: 10,
+        status: "깊은 역전", color: "red", note: "침체가 뒤따른 구간입니다." },
+      BAMLC0A0CM: { id: "BAMLC0A0CM", label: "IG 스프레드", unit: "%p", digits: 2, group: "신용", why: "", source: "FRED BAMLC0A0CM", available: true,
+        value: 1.2, delta: 0.01, status: "경계", color: "orange" },
+      NFCI: { id: "NFCI", label: "NFCI", unit: "", digits: 3, group: "금융상황", why: "", source: "FRED NFCI", available: true,
+        value: -0.5, delta: 0.01, asOf: "2026-11-07", status: "매우 완화", color: "green" },
+      DFII10: { id: "DFII10", label: "10년 실질금리", unit: "%", digits: 2, group: "금리", why: "", source: "FRED DFII10", available: false },
+    },
+    derived: {},
+  };
+
+  it("해석 색은 상태 아이콘 + 글 — 위험(빨강)은 '오류:'가 아니라 '주의:', 주의(주황)·정상(초록), 값 글자색으로 전하지 않는다", async () => {
+    reads["/api/macro/advanced"] = () => Promise.resolve(advanced);
+    render(<MacroPage />);
+
+    const strip = await screen.findByRole("region", { name: "심화 지표" });
+    const curve = within(strip).getByRole("group", { name: "10Y-3M" });
+    const deep = within(curve).getByText("깊은 역전");
+    expect(deep.parentElement?.className).toContain("text-danger");
+    expect(deep.parentElement?.querySelector("svg[aria-hidden='true']")).toBeTruthy();
+    expect(within(curve).getByText("주의:").className).toContain("sr-only");
+    expect(within(curve).queryByText("오류:")).toBeNull();
+    // 값 글은 본문 잉크 — 해석 색(예전 statusColor)으로 칠하지 않습니다.
+    const value = within(curve).getByText("−0.6", { exact: false });
+    expect(value.className).toContain("text-text");
+    expect(value.className).not.toMatch(/text-(danger|warn|ok)/);
+
+    expect(within(within(strip).getByRole("group", { name: "IG 스프레드" })).getByText("경계").parentElement?.className).toContain("text-warn");
+    expect(within(within(strip).getByRole("group", { name: "NFCI" })).getByText("매우 완화").parentElement?.className).toContain("text-ok");
+  });
+
+  it("메모는 해석 글 다음에 '표본 백분위 · 표본 · 기준일', 못 받은 지표는 '—'와 '수집 실패'", async () => {
+    reads["/api/macro/advanced"] = () => Promise.resolve(advanced);
+    render(<MacroPage />);
+
+    const strip = await screen.findByRole("region", { name: "심화 지표" });
+    expect(within(strip).getByRole("group", { name: "10Y-3M" }).textContent).toContain(
+      "침체가 뒤따른 구간입니다. 표본 백분위 3.4% · 표본 2016-11-14 이후 2,500개 · 약 10.0년 · 기준일 2026-11-13",
+    );
+    const real = within(strip).getByRole("group", { name: "10년 실질금리" });
+    expect(within(real).getByText("수집 실패")).toBeTruthy();
+    expect(real.textContent).not.toContain("—%");
   });
 });
