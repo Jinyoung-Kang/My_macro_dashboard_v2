@@ -82,9 +82,10 @@ describe("펼친 하위 화면", () => {
 });
 
 describe("모양", () => {
-  it("메뉴 폭 220px, 칸 높이 32px, 탭 아이콘 16px, 하위 칸은 탭 이름과 같은 세로줄로 들여 씀", () => {
+  it("메뉴 폭은 셸 변수 --shell-nav-w(220px), 칸 높이 32px, 탭 아이콘 16px, 하위 칸은 탭 이름과 같은 세로줄로 들여 씀", () => {
     render(<SideNav pathname="/macro" user={MEMBER} />);
-    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-[220px]");
+    // 폭(220px·접으면 48px)은 셸 뿌리의 변수 --shell-nav-w에서 읽는다(값은 Shell.test가 봄).
+    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
     const tab = within(mainNav()).getByRole("link", { name: "시장" });
     expect(tab.className.split(/\s+/)).toEqual(expect.arrayContaining(["h-8", "rounded-control", "text-sm"]));
     expect(tab.querySelector("svg")?.getAttribute("width")).toBe("16");
@@ -123,7 +124,6 @@ describe("접힘(48px 아이콘 레일)", () => {
     expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
     expect(toggleButton().textContent).toBe("");
     expect(window.localStorage.getItem("shell.navCollapsed")).toBe("1");
-    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-12");
   });
 
   it("접히면 탭 아이콘(20px)만 — 링크 이름은 그대로(sr-only 글), 하위 칸은 없고, 막대는 지금 탭 칸", () => {
