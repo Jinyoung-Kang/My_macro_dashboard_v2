@@ -334,6 +334,22 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
     expect(classes(appName)).toEqual(expect.arrayContaining(["h-16", "lg:h-auto"]));
   });
 
+  // QA-550: 앱 이름 상자가 flex(좁은 화면 64px 줄의 세로 가운데 맞춤)라 그 안의 글 조각 'My Macro'·' v2'와 안쪽 <span> Dashboard</span>가 각각 flex
+  // 항목이 되어, 항목마다 맨 앞 공백이 접혔습니다 — xl(1280px 이상)에서 'My MacroDashboardv2'(그린 폭 175.2px, 같은 글꼴 한 줄 184.1px, innerText
+  // 'My Macro\nDashboard\nv2'). xl 미만은 안쪽 span이 숨어 두 조각이 한 항목이라 정상이었고, textContent 단언만 있어 jsdom 시험이 보지 못했습니다.
+  // 바깥 flex 상자는 그대로 두고 글 전체를 인라인 span 하나로 감쌉니다(flex 항목이 하나 — 공백이 그대로). jsdom은 배치를 하지 않아 구조로 봅니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 flex 상자의 직접 자식에 글 노드 'My Macro'·' v2'가 있었습니다.
+  it.fails("앱 이름 글은 flex 상자 안의 인라인 span 하나에 담는다 — 글 조각이 따로 flex 항목이 되어 xl에서 단어 사이 공백이 사라지지 않게 (QA-550)", () => {
+    renderShell(MEMBER_PRO);
+    const header = screen.getByRole("banner");
+    const box = [...header.children].find((child) => child.tagName === "SPAN" && child.textContent === "My Macro Dashboard v2") as HTMLElement;
+    expect(box).toBeTruthy();
+    const looseText = [...box.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "");
+    expect(looseText.map((node) => node.textContent)).toEqual([]);
+    expect(box.children).toHaveLength(1);
+    expect(box.children[0].className.split(/\s+/)).not.toContain("flex");
+  });
+
   it("알림 벨은 좁은 화면 44px·넓은 화면 30px(상단바 조작 높이 — 검색·새로고침·계정과 같음)", () => {
     renderShell(MEMBER_PRO, { unread: 1 });
     const bell = screen.getByRole("link", { name: "알림 — 읽지 않음 1건" });
