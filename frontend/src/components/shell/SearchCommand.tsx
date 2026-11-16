@@ -393,14 +393,16 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           })}
         </div>
 
+        {/* 두 문단은 목록 상자처럼 위에 12px(mt-3)을 둡니다(QA-559) — 대화상자 본문은 형제 사이 간격을 각 요소의 margin이 정해, 없으면 최근 연 대상
+            목록 바로 아래·입력칸 아래 경계에 0px로 붙었습니다. */}
         {trimmed === "" && (
-          <p className="px-3 text-sm text-text-2">
+          <p className="mt-3 px-3 text-sm text-text-2">
             메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커·국내 코드를 입력하세요. 지표·기관·종목은 시세·지표·뉴스를 모은 상세 화면으로
             갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음).
             {wide && " ?를 치고 Enter를 누르면 단축키 도움말을 봅니다."}
           </p>
         )}
-        {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
+        {trimmed !== "" && flat.length === 0 && <p className="mt-3 px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
         {infoSearch && (
           <Link
             href={infoSearch.href}
