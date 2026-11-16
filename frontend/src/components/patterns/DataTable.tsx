@@ -181,7 +181,9 @@ export function DataTable<T>({
       ) : null}
       <div
         ref={boxRef}
-        className={`${shown.length === 0 ? "@container " : ""}w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
+        // relative — 칸 안의 절대 위치 요소(변화 칩의 낭독용 글 sr-only 등)의 위치 기준을 이 상자로 둡니다. 아니면 그 요소가 상자에 잘리지 않고 본문의
+        // 넘침이 되어, 넓은 화면(본문 overflow-x hidden)에서 그 글로 scrollIntoView(낭독기 훑기·찾기)하면 본문 전체가 옆으로 밀렸습니다(QA-631).
+        className={`${shown.length === 0 ? "@container " : ""}relative w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
         style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
         tabIndex={0}
         role="region"

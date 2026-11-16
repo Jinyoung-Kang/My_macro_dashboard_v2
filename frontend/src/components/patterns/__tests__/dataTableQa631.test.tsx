@@ -27,7 +27,7 @@ const COLUMNS: Column<Row>[] = [
 ];
 
 describe("QA-631 가로 스크롤 상자가 칸 안 절대 위치 글의 위치 기준이다", () => {
-  it.fails.each([
+  it.each([
     ["넘김 안내 없는 표", false],
     ["넘김 안내를 둔 넓은 표", "overflow"],
   ] as const)("%s의 스크롤 상자는 relative(위치 기준)다", (_, scrollHint) => {
