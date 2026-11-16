@@ -196,11 +196,18 @@ export function kindText(kind: string | null | undefined): string | null {
   return names[kind.toUpperCase()] ?? kind;
 }
 
+/** 금액 단위 글 — 달러·원은 한글 이름, 그 밖 통화는 코드(모르면 빈 글). */
+function moneyUnit(currency: string | null | undefined): string {
+  return currency === "USD" ? "달러" : currency === "KRW" ? "원" : (currency ?? "");
+}
+
 /** 통화 금액을 조·억 단위로 — 달러·원은 한글 이름, 그 밖 통화는 코드. */
 export function moneyText(value: number | null | undefined, currency: string | null | undefined): string {
-  const unit = currency === "USD" ? "달러" : currency === "KRW" ? "원" : (currency ?? "");
-  return formatKoreanScale(value, unit).trimEnd();
+  return formatKoreanScale(value, moneyUnit(currency)).trimEnd();
 }
+
+/** 조·억 스케일로 그리는 금액의 하한 — 이보다 작은 금액(주당 이익 같은 주당 금액)은 가격 자릿수로(QA-581). */
+const SCALED_MONEY_MIN = 1e4;
 
 /** 개수(거래량·주식 수)를 조·억·만 단위로 — 단위 글 없이. */
 export function countText(value: number | null | undefined): string {
@@ -214,6 +221,9 @@ export function statText(stat: DetailStat, currency: string | null | undefined):
   if (value === null || !Number.isFinite(value)) return EMPTY;
   switch (stat.unit) {
     case "money":
+      // 1만 미만 금액(EPS 등 주당 금액)은 조·억 스케일(1만 미만은 소수 0자리)로 그리면 3.57이 '4', 0.42가 '0'이 됩니다 — 같은 화면 평균 목표가와
+      // 같은 가격 자릿수(priceDigits)로 그리고 단위 글은 moneyText와 같게(QA-581). 1만 이상은 조·억 그대로.
+      if (Math.abs(value) < SCALED_MONEY_MIN) return `${formatNumber(value, priceDigits(value, currency))} ${moneyUnit(currency)}`.trimEnd();
       return moneyText(value, currency);
     case "count":
       return countText(value);
