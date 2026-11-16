@@ -12,11 +12,8 @@
  * 때는(왼쪽 메뉴 232px) 1280에서 제목 칸이 89px, 1024에서 121px였습니다.
  * 고른 줄의 미리 보기도 xl부터 오른쪽 칸, 그 아래는 화면 아래 시트이고(FeedPanel), 속성 칸의 안내 글(EntityParts AttributesPanel)도 이 기준으로
  * 가릅니다 — 기준 폭을 바꾸면 함께 고칩니다.
+ * 클래스 글은 공용 패턴(components/patterns/SplitPane — ENTITY_FRAME·ENTITY_FRAME_LEFT)으로 옮겼고 여기서는 같은 이름으로 다시 내보냅니다(작업대 P4, 글자 그대로 — entityGridPin.test).
  */
 
-/** 칸 틀 — lg 두 칸, xl 세 칸. 자식은 왼쪽(ENTITY_LEFT) · 가운데 · 오른쪽 차례입니다(바뀌는 것은 자리뿐 — 읽는 차례·Tab 차례는 그대로). */
-export const ENTITY_GRID =
-  "lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:grid-cols-[13rem_minmax(0,1fr)_18rem] xl:grid-rows-none";
-
-/** 왼쪽 칸 — lg는 가운데와 그 아래 오른쪽 칸의 두 줄을 차지합니다. */
-export const ENTITY_LEFT = "lg:row-span-2 xl:row-span-1";
+/** 칸 틀 — lg 두 칸, xl 세 칸(ENTITY_GRID), 왼쪽 칸 — lg는 두 줄(ENTITY_LEFT). 자식은 왼쪽 · 가운데 · 오른쪽 차례입니다. */
+export { ENTITY_FRAME as ENTITY_GRID, ENTITY_FRAME_LEFT as ENTITY_LEFT } from "@/components/patterns";

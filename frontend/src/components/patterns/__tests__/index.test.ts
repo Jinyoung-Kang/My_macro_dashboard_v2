@@ -21,6 +21,7 @@ import * as PropertyList from "../PropertyList";
 import * as RangeTabs from "../RangeTabs";
 import * as Skeleton from "../Skeleton";
 import * as Sparkline from "../Sparkline";
+import * as SplitPane from "../SplitPane";
 import * as StatTile from "../StatTile";
 
 const MODULES: Record<string, Record<string, unknown>> = {
@@ -37,6 +38,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   RangeTabs,
   Skeleton,
   Sparkline,
+  SplitPane,
   StatTile,
 };
 
@@ -70,6 +72,8 @@ describe("components/patterns 배럴", () => {
         "DataTable",
         "Empty",
         "EntityHeader",
+        "ENTITY_FRAME",
+        "ENTITY_FRAME_LEFT",
         "EstimateBadge",
         "Hero",
         "KpiStrip",
