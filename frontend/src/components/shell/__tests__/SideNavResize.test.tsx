@@ -8,8 +8,9 @@
  * - 두 번 누르기: 접기·펼치기. 끌고 바로 한 번 더 눌러 생긴 두 번 누르기는 받지 않음.
  * - 끌기(jsdom 포인터 이벤트 — setPointerCapture는 jsdom에 없어 대역): 3px 문턱, 한 프레임에 한 번(requestAnimationFrame 대역), 끄는 동안은 저장하지 않고
  *   놓을 때 한 번, 140px 아래로 끌면 레일(끌기 전 폭 기억), 레일을 끌어내면 끈 폭으로 펼침, 놓을 때 기다리던 프레임 반영, pointercancel·lostpointercapture도
- *   끝냄, 잡은 동안 html의 data-nav-resizing(커서·글 고르기 — globals.css)과 툴팁 막기.
- * - 전환: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 문턱)만 motion-safe:transition-[width](150ms) — 처음 그릴 때·끄는 동안·키 걸음에는 없음.
+ *   끝냄, 잡은 동안 html의 data-nav-resizing(커서·글 고르기 — globals.css)과 툴팁 막기, 끄는 도중 사라지면 표지를 떼고 그린 폭을 저장.
+ * - 전환: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 문턱)만 motion-safe:transition-[width](150ms) — 처음 그릴 때·끄는 동안·키 걸음에는 없음
+ *   (단추로 접고 편 직후 끌기를 시작해도 그때 끔).
  * - 저장소가 던져도 기본 폭으로 그려지고 끌기·키가 동작.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -262,6 +263,38 @@ describe("끌기", () => {
     expect(value().now).toBe("320");
     up(500);
     expect(window.localStorage.getItem("shell.navWidth")).toBe("320");
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
+  });
+
+  it("단추로 접고 편 뒤(전환 켜짐) 끌기를 시작하면 전환을 끈다 — 끄는 동안 폭은 포인터를 바로 따라감", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    fireEvent.click(toggleButton());
+    fireEvent.click(toggleButton());
+    expect(hasMotion()).toBe(true);
+    down(220);
+    move(260);
+    expect(hasMotion()).toBe(false);
+    runFrames();
+    expect(value().now).toBe("260");
+    expect(hasMotion()).toBe(false);
+    up(260);
+    expect(hasMotion()).toBe(false);
+  });
+
+  it("끄는 도중 메뉴가 사라지면(로그아웃 등) html의 끄는 표지를 떼고 그때까지 그린 폭을 저장한다", () => {
+    const { unmount } = render(<SideNav pathname="/macro" user={MEMBER} />);
+    down(220);
+    move(260);
+    runFrames();
+    move(280);
+    expect(frames).toHaveLength(1);
+    expect(document.documentElement.hasAttribute(NAV_RESIZING_ATTR)).toBe(true);
+    expect(window.localStorage.getItem("shell.navWidth")).toBeNull();
+    unmount();
+    expect(document.documentElement.hasAttribute(NAV_RESIZING_ATTR)).toBe(false);
+    expect(window.cancelAnimationFrame).toHaveBeenCalled();
+    // 기다리던 프레임(280)은 그리지 않았으므로 마지막으로 그린 260
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("260");
     expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
   });
 
