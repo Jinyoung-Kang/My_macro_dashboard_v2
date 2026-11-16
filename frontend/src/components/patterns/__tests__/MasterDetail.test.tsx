@@ -406,6 +406,29 @@ describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
     expect(onChange.mock.calls.map(([key]) => key)).toEqual(["060505104", "025816109"]);
   });
 
+  // QA-590 후속(검토): 넓어질 때 포커스 줄을 무조건 골라, 옆 칸에서 Esc로 일부러 고름을 푼 뒤(포커스는 그 줄에 남음) 목록을 건드리지 않고 폭만 좁혔다
+  // 넓혀도 그 줄이 다시 골라지고 onSelectedKeyChange도 다시 불렸습니다. 수정 전(이 커밋에서는 it.fails) aria-current [null, null, 'true'], 검사 칸
+  // '상위 보유 종목 — American Express', 호출 [060505104, 025816109, null, 025816109].
+  it.fails("옆 칸에서 Esc로 고름을 푼 뒤 목록을 건드리지 않고 좁혔다 넓히면 고른 줄 없음 그대로 — 다시 고르지 않고 onSelectedKeyChange도 부르지 않는다 (QA-590)", () => {
+    stubWide();
+    const frame = stubFrameWidth(600);
+    const onChange = vi.fn();
+    renderList({ onSelectedKeyChange: onChange });
+    const [first] = rows();
+    first.focus();
+    fireEvent.keyDown(first, { key: "j" });
+    fireEvent.keyDown(row("Bank of America"), { key: "j" });
+    fireEvent.keyDown(row("American Express"), { key: "Escape" });
+    expect(document.activeElement).toBe(row("American Express"));
+    frame.resize(434);
+    frame.resize(594);
+    expect(rows().map((button) => button.getAttribute("aria-current"))).toEqual([null, null, null]);
+    expect(screen.getByRole("region", { name: "상위 보유 종목 — 고른 줄 없음" })).toBeTruthy();
+    expect(onChange.mock.calls.map(([key]) => key)).toEqual(["060505104", "025816109", null]);
+    // 포커스 줄이 하나뿐인 Tab 정지점(고른 줄이 없으니 갈라지지 않음)
+    expect(rows().map((button) => button.tabIndex)).toEqual([-1, -1, 0]);
+  });
+
   it("포커스가 목록 밖이면 넓어져도 앞서 고른 줄(없으면 autoSelectFirst의 첫 줄)을 그대로 보인다 (QA-590)", () => {
     stubWide();
     const frame = stubFrameWidth(600);
