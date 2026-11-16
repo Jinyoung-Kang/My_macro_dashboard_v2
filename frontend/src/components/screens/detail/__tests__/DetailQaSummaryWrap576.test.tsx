@@ -41,7 +41,7 @@ afterEach(cleanup);
 
 describe("QA-576 AI 요약 본문 — 끊을 자리 없는 긴 글자열은 줄 안에서 꺾는다", () => {
   // 수정 전 실패: 본문 묶음 클래스에 wrap-anywhere가 없음(재현 커밋에서는 it.fails).
-  it.fails("본문 묶음은 wrap-anywhere(넘치는 글자열만 꺾음)이고 break-keep은 없다 — 한글 줄 끊는 자리는 그대로", async () => {
+  it("본문 묶음은 wrap-anywhere(넘치는 글자열만 꺾음)이고 break-keep은 없다 — 한글 줄 끊는 자리는 그대로", async () => {
     render(
       <SessionUserProvider user={PRO}>
         <AiSummaryCard request={{ q: "합성 기관", label: "합성 기관" }} />

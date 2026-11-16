@@ -511,7 +511,9 @@ export function AiSummaryCard({
       </div>
       {lines.length > 0 ? (
         // 긴 글 단계(running 15/24, 한 줄 최대 72자). 근거 번호는 위로 올리되 줄 높이를 밀지 않게(align-super 대신 상대 위치 — 번호가 있는 줄만 줄 간격이 벌어졌음).
-        <div className="flex max-w-[72ch] flex-col gap-1.5 text-running text-text">
+        // 끊을 자리가 없는 긴 글자열(가운뎃점으로 이은 이름·'/'로 이은 업종·영문)만 줄 안에서 꺾습니다(wrap-anywhere — QA-576, 카드 밖으로 넘쳐 잘렸음).
+        // break-keep은 두지 않습니다 — 한글 줄 끊는 자리가 바뀝니다.
+        <div className="flex max-w-[72ch] flex-col gap-1.5 text-running text-text wrap-anywhere">
           {lines.map((line, at) => {
             const refs = line.refs.map((n) => ({ n, source: sourceOf(n) }));
             const marks = refs.map(({ n, source }) =>
