@@ -60,6 +60,9 @@ function useSideBySide(ref: RefObject<HTMLDivElement | null>, enabled: boolean):
  * - 좁은 화면(과 위의 좁은 틀): 목록만. 키는 포커스만 옮기고, 누르기·Enter·Space가 공용 대화상자(위쪽 고정·넓은 폭)로 검사 내용을 엽니다(줄 단추 aria-haspopup="dialog").
  *   닫으면 그 줄로 포커스가 돌아갑니다(대화상자의 여는 단추 되돌리기). Esc는 대화상자(Radix)가 닫습니다. 화면을 열 때 대화상자가 저절로 열리지 않게
  *   `autoSelectFirst`는 넓은 화면에서만 씁니다.
+ * - 이 배치에서 옆 검사 칸 배치로 바뀌면(창을 넓힘·왼쪽 메뉴 접기) 사용자가 마지막으로 본 줄 — 열려 있던 대화상자의 줄, 없으면 포커스가 있는 줄 — 을
+ *   고릅니다(대화상자는 닫힘). 그래서 바뀐 뒤에도 고름·포커스·Tab 정지점이 한 줄입니다(QA-590). 포커스가 목록 밖이면 앞서 고른 줄(없으면 autoSelectFirst의
+ *   첫 줄) 그대로입니다.
  * - 목록 키는 목록에 포커스가 있을 때만 이 목록이 받습니다(셸 단축키 아님 — 판정은 lib/shortcuts listKeyAction, 도움말 창의 '목록' 묶음은 이 목록의
  *   data-shell-list 표지로 보임). 처리한 키만 기본 동작을 막습니다. Tab 정지점은 목록에 하나(roving tabindex — 고른 줄, 없으면 마지막 포커스 줄·첫 줄).
  * - 줄 내용(`renderItem`)은 단추 안이라 링크·단추를 넣지 않습니다 — 그런 것은 검사 칸(`renderDetail`)에 둡니다. 줄 안 조작이 필요하면 이 부품이 아니라 DataTable입니다.
@@ -128,8 +131,6 @@ export function MasterDetail<T>({
   const current = inline ? (known ?? autoKey) : null;
   const currentItem = current === null ? null : items[keys.indexOf(current)];
   const tabStop = current ?? (focusKey !== null && keys.includes(focusKey) ? focusKey : null) ?? keys[0] ?? null;
-  // 옆 검사 칸 배치로 바뀌면 열려 있던 대화상자를 닫은 것으로 칩니다 — 그대로 두면 다시 좁아질 때 대화상자가 저절로 다시 열립니다(그리는 중 상태 맞추기).
-  if (inline && dialogKey !== null) setDialogKey(null);
   const dialogIndex = !inline && dialogKey !== null ? keys.indexOf(dialogKey) : -1;
   const dialogItem = dialogIndex >= 0 ? items[dialogIndex] : null;
 
@@ -138,6 +139,30 @@ export function MasterDetail<T>({
     if (selectedKey === undefined) setOwnSelected(key);
     onSelectedKeyChange?.(key);
   };
+
+  // 직전 그리기의 배치(옆 검사 칸인가) — 첫 그리기는 null(바뀐 것으로 치지 않음). effect 안에서만 읽고 씁니다.
+  const wasInline = useRef<boolean | null>(null);
+  // 대화상자 배치 → 옆 검사 칸 배치로 바뀌는 그리기(QA-590): 사용자가 마지막으로 본 줄을 고릅니다 — 열려 있던 대화상자의 줄, 없으면 포커스가 있는
+  // 이 목록의 줄. 고르지 않으면 앞서 고른 줄이나 autoSelectFirst의 첫 줄이 고른 줄·Tab 정지점으로 남아 포커스 줄과 갈라졌습니다(포커스 링은 7번 줄,
+  // 고른 막대·검사 칸은 0번 줄, Shift+Tab이 같은 목록의 0번 줄로). 포커스가 목록 밖이면 그대로(앞서 고른 줄·첫 줄)입니다.
+  // 열려 있던 대화상자는 닫은 것으로 칩니다 — 그대로 두면 다시 좁아질 때 저절로 다시 열립니다. 이 그리기에서 대화상자는 이미 닫혀 그려지고(dialogItem은
+  // 대화상자 배치에서만), 고름이 부르는 쪽(onSelectedKeyChange)에 닿으므로 그리는 중이 아니라 화면에 칠하기 전(layout effect)에 맞춥니다.
+  // 줄이 있는지는 줄 단추 표(buttons — 이번 그리기의 줄)로 봅니다. 고르기는 select와 같은 일입니다(effect 의존을 값으로 두려고 풀어 씀).
+  useLayoutEffect(() => {
+    const before = wasInline.current;
+    wasInline.current = inline;
+    if (!inline) return;
+    if (dialogKey !== null) setDialogKey(null);
+    if (before !== false) return;
+    const active = document.activeElement;
+    const activeKey = active instanceof HTMLElement ? active.getAttribute("data-item-key") : null;
+    const focused = activeKey !== null && buttons.current.get(activeKey) === active ? activeKey : null;
+    const seen = (dialogKey !== null && buttons.current.has(dialogKey) ? dialogKey : null) ?? focused;
+    if (seen === null || seen === current) return;
+    setAutoOff(true);
+    if (selectedKey === undefined) setOwnSelected(seen);
+    onSelectedKeyChange?.(seen);
+  }, [inline, dialogKey, current, selectedKey, onSelectedKeyChange]);
 
   const onRowClick = (key: string, event: MouseEvent<HTMLButtonElement>) => {
     // 누르기가 포커스를 옮기지 않는 브라우저(사파리)에서도 대화상자를 닫은 뒤 이 줄로 돌아오게 먼저 포커스를 둡니다.

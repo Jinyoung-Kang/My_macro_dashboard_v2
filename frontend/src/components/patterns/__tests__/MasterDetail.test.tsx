@@ -153,7 +153,8 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
     }
   });
 
-  it("대화상자가 열린 채 넓은 화면으로 바뀌면 닫히고, 다시 좁아져도 저절로 다시 열리지 않는다", () => {
+  // QA-590 뒤: 닫히면서 대화상자로 본 줄을 고릅니다(그 전에는 '고른 줄 없음' 안내 글).
+  it("대화상자가 열린 채 넓은 화면으로 바뀌면 닫히고 그 줄을 고르며, 다시 좁아져도 저절로 다시 열리지 않는다", () => {
     let wide = false;
     const listeners = new Set<() => void>();
     vi.stubGlobal(
@@ -176,7 +177,8 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
     expect(screen.getByRole("dialog", { name: "Apple Inc." })).toBeTruthy();
     resize(true);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("region", { name: "상위 보유 종목 — 고른 줄 없음" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "상위 보유 종목 — Apple Inc." })).toBeTruthy();
+    expect(row("Apple").getAttribute("aria-current")).toBe("true");
     resize(false);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -339,7 +341,8 @@ describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
     expect(screen.getByRole("dialog", { name: "Bank of America" })).toBeTruthy();
   });
 
-  it("틀 폭이 바뀌면 동작이 따라간다 — 옆 → 좁은 틀이면 검사 칸이 빠지고, 다시 넓어지면 열린 대화상자를 닫고 고른 줄을 다시 보인다", () => {
+  // QA-590 뒤: 다시 넓어지면 대화상자로 본 줄(Apple)을 고르고 포커스도 그 줄입니다(그 전에는 앞서 고른 Bank of America를 다시 보였음 — 포커스와 갈라짐).
+  it("틀 폭이 바뀌면 동작이 따라간다 — 옆 → 좁은 틀이면 검사 칸이 빠지고, 다시 넓어지면 열린 대화상자를 닫고 대화상자로 본 줄을 고른다", async () => {
     stubWide();
     const frame = stubFrameWidth(600);
     renderList();
@@ -352,15 +355,18 @@ describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
     expect(screen.getByRole("dialog", { name: "Apple Inc." })).toBeTruthy();
     frame.resize(594);
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(row("Bank of America").getAttribute("aria-current")).toBe("true");
-    expect(screen.getByRole("heading", { level: 3, name: "Bank of America" })).toBeTruthy();
+    expect(row("Apple").getAttribute("aria-current")).toBe("true");
+    expect(row("Bank of America").hasAttribute("aria-current")).toBe(false);
+    expect(screen.getByRole("heading", { level: 3, name: "Apple Inc." })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(row("Apple")));
+    expect(rows().map((button) => button.tabIndex)).toEqual([0, -1, -1]);
   });
 
   // QA-590: 대화상자 배치(좁은 틀)에서 키로 포커스를 옮기거나 대화상자로 줄을 본 뒤 옆 칸 배치로 넓어지면, 고른 줄이 그 줄을 따라가지 않고 예전 고름이나
   // autoSelectFirst의 첫 줄로 돌아갔습니다 — 포커스 링(7번 줄)과 고른 막대·검사 칸(0번 줄)이 갈라지고, Tab 정지점이 포커스 줄이 아닌 고른 줄이라 Shift+Tab이
   // 같은 목록의 다른 줄로 갔습니다(QA 스택 /institutions/0001608046 보유 종목 — 1280에서 메뉴 접기, 1440 → 1280 → 1440).
-  // 수정 전(재현 커밋에서는 it.fails)에는 셋째 줄에 포커스가 있어도 첫 줄(Apple)이 aria-current·tabIndex 0이었습니다.
-  it.fails("좁은 틀에서 키로 옮긴 줄은 넓어지면 고른 줄이 된다 — 포커스·aria-current·Tab 정지점·검사 칸이 한 줄 (QA-590)", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 셋째 줄에 포커스가 있어도 첫 줄(Apple)이 aria-current·tabIndex 0이었습니다. 이제 바뀌는 그리기에서 그 줄을 고릅니다.
+  it("좁은 틀에서 키로 옮긴 줄은 넓어지면 고른 줄이 된다 — 포커스·aria-current·Tab 정지점·검사 칸이 한 줄 (QA-590)", () => {
     stubWide();
     const frame = stubFrameWidth(600);
     renderList({ autoSelectFirst: true });
@@ -380,7 +386,7 @@ describe("MasterDetail — 넓은 화면의 좁은 틀(32rem 미만)", () => {
 
   // QA-590: 앞서 옆 칸에서 고른 줄이 있으면 그 줄이 남아 Tab 정지점이 되고, 포커스가 있는 줄은 tabIndex -1이었습니다(정지점 하나가 깨짐).
   // 수정 전(재현 커밋에서는 it.fails)에는 Tab 정지점이 Bank of America(앞서 고른 줄), 포커스는 American Express였습니다.
-  it.fails("앞서 고른 줄이 있어도 좁은 틀에서 포커스를 옮긴 줄이 넓어진 뒤의 고른 줄이자 하나뿐인 Tab 정지점이다 (QA-590)", () => {
+  it("앞서 고른 줄이 있어도 좁은 틀에서 포커스를 옮긴 줄이 넓어진 뒤의 고른 줄이자 하나뿐인 Tab 정지점이다 (QA-590)", () => {
     stubWide();
     const frame = stubFrameWidth(600);
     const onChange = vi.fn();
