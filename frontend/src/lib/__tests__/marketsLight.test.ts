@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 import { formatSignedCount } from "@/lib/cotScreen";
 import { formatSignedMinus, formatTrillionDelta, withMinusSign } from "@/lib/format";
 import { liquidityKpis, trillionDeltaChip, type UsdKrwConvert } from "@/lib/liquidity";
+import { sectorKpis, sectorRowTitle, signedPercentText } from "@/lib/sectorScreen";
+import type { SectorRow } from "@/lib/types";
 
 describe("cotScreen formatSignedCount", () => {
   it("양수는 '+', 음수는 −(U+2212), 0은 부호 없이, 모르면 '—'", () => {
@@ -89,5 +91,36 @@ describe("liquidity liquidityKpis", () => {
     expect(items[0].value).toBe("—");
     expect(items[0].change).toBeUndefined();
     expect(items[2].value).toBe("—");
+  });
+});
+
+describe("sectorScreen sectorKpis", () => {
+  it("응답 기간 차례대로 벤치마크 수익률 — 값은 부호 −·'%', 모르는 기간은 null, 출처는 첫 타일만", () => {
+    const items = sectorKpis(
+      { benchmark: "SPY", periods: ["1W", "1M", "YTD"], benchmarkReturns: { "1W": -1.9891, "1M": 0, YTD: 11.4855 } },
+      "Yahoo",
+    );
+    expect(items.map((item) => [item.key, item.label, item.value])).toEqual([
+      ["1W", "S&P 500 (SPY) 1W", -1.9891],
+      ["1M", "S&P 500 (SPY) 1M", 0],
+      ["YTD", "S&P 500 (SPY) YTD", 11.4855],
+    ]);
+    expect(items.map((item) => (item.value === null ? null : item.format(item.value)))).toEqual(["−1.99%", "0.00%", "+11.49%"]);
+    expect(items.map((item) => item.source ?? null)).toEqual(["Yahoo", null, null]);
+  });
+
+  it("기간 목록이 없으면 기본 여섯, 값이 없으면 null(0으로 채우지 않음), 벤치마크 이름이 없으면 SPY", () => {
+    const items = sectorKpis({ benchmark: "", periods: [], benchmarkReturns: { "1W": null } }, "Yahoo");
+    expect(items.map((item) => item.key)).toEqual(["1W", "1M", "3M", "6M", "YTD", "1Y"]);
+    expect(items.every((item) => item.value === null)).toBe(true);
+    expect(items[0].label).toBe("S&P 500 (SPY) 1W");
+    expect(sectorKpis(null, "Yahoo")).toEqual([]);
+    expect(signedPercentText(-0.004)).toBe("0.00%");
+  });
+
+  it("검사 칸 제목은 '이름 (티커)', 표에 없는 티커는 null", () => {
+    const rows = [{ ticker: "XLK", name: "정보기술" }] as SectorRow[];
+    expect(sectorRowTitle(rows, "XLK")).toBe("정보기술 (XLK)");
+    expect(sectorRowTitle(rows, "XLE")).toBeNull();
   });
 });

@@ -5,7 +5,8 @@
  * - 열 때: 화면마다 읽는 경로와 횟수(각 한 번), 자동 갱신 간격(setInterval에 건 간격 — 순유동성 5분·환율 2분, 섹터 5분, COT 개요 10분).
  * - 조작 뒤: 섹터 '조회 기간'은 그 기간 한 번 더, '표시 기준'은 0번. COT '자산' 고르기는 그 자산의 추이·극단 성적 두 경로를 한 번씩(개요·자산 목록은 다시 읽지 않음),
  *   '극단 기준'은 극단 성적 한 경로만.
- * 행으로 고르기·검사 열기처럼 개편이 새로 두는 조작은 그 조작을 두는 커밋에서 이 파일에 사례를 더합니다(고르기와 같은 요청·검사 +0).
+ * 행으로 고르기·검사 열기처럼 개편이 새로 두는 조작은 그 조작을 두는 커밋에서 이 파일에 사례를 더합니다(고르기와 같은 요청·검사 +0) — 섹터 검사 대화상자는
+ * 'P5a' 사례.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -161,6 +162,22 @@ describe("섹터 요청", () => {
     fireEvent.change(screen.getByLabelText("조회 기간"), { target: { value: "3M" } });
     await waitFor(() => expect(counts()["/api/sector/rotation?period=3M"]).toBe(1));
     expect(counts()).toEqual({ "/api/sector/rotation?period=1M": 1, "/api/sector/rotation?period=3M": 1 });
+  });
+});
+
+describe("섹터 검사 요청(P5a)", () => {
+  it("이름을 눌러 검사 대화상자를 열고 닫아도 읽지 않는다(받은 값만 보임)", async () => {
+    render(<SectorPage />);
+    await screen.findAllByText("정보기술");
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0));
+
+    fireEvent.click(screen.getByRole("button", { name: "정보기술" }));
+    const dialog = await screen.findByRole("dialog", { name: "정보기술 (XLK)" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    expect(counts()).toEqual({ "/api/sector/rotation?period=1M": 1 });
+    expect(FakeEventSource.instances).toHaveLength(1);
   });
 });
 
