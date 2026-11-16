@@ -396,3 +396,14 @@ describe("정보 검색으로 넘기기(ADR 0041)", () => {
     expect(optionLabels().some((label) => label.includes("정보 검색"))).toBe(false);
   });
 });
+
+// QA-515: 입력칸(type=search)의 브라우저 기본 지우기 X가 어두운 color-scheme에서 굵은 흰색으로 그려져, 바로 옆 대화상자 닫기 X와 헷갈렸다
+// (D1 QA 스택 확인 — search-input-native-clear-x, 개편 전부터). 고치기 전 입력칸 클래스는 8개
+// ["h-12", "min-w-0", "flex-1", "bg-transparent", "text-[17px]", "text-text", "outline-none", "placeholder:text-text-3"]로 지우기 X를 숨기는 변형이 없었다.
+describe("입력칸(QA-515)", () => {
+  it.fails("브라우저 기본 지우기 X를 숨긴다 — 휴대폰 자판의 검색 키를 위해 type=search는 그대로", () => {
+    openSearch();
+    expect(input().getAttribute("type")).toBe("search");
+    expect(input().className.split(/\s+/)).toContain("[&::-webkit-search-cancel-button]:hidden");
+  });
+});
