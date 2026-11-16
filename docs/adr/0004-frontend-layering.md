@@ -88,7 +88,9 @@
 공용 부품을 더할 때마다 여기에 한 줄씩 적습니다(부품 · 층 · 처음 쓰는 곳 · 지키는 시험).
 
 - 메뉴 `components/ui/DropdownMenu.tsx` — 화면 층의 공용 키트(Radix DropdownMenu 2.2.1을 감쌈 — 덮개 3층·`data-overlay`·항목 좁은 화면 44px·넓은 화면 32px).
-  처음 쓰는 곳은 넓은 화면 상단바의 계정 메뉴(P3), 지키는 시험은 `components/ui/__tests__/DropdownMenu.test.tsx`.
+  메뉴(role=menu) 안에서 역할을 갖는 것은 항목·구분선뿐이고, 항목이 아닌 글은 `description`(항목 아래, 메뉴의 `aria-describedby`)에 둡니다. 이름표(`DropdownMenuLabel`)와
+  막힌 항목(`disabled`)은 P6 '동작' 메뉴(데모 열람의 막힌 동작)가 처음 씁니다. 처음 쓰는 곳은 넓은 화면 상단바의 계정 메뉴(P3),
+  지키는 시험은 `components/ui/__tests__/DropdownMenu.test.tsx`.
 - 툴팁 `components/ui/Tooltip.tsx` — 화면 층의 공용 키트(Radix Tooltip 1.4.1을 감쌈 — 덮개 3층, 이름을 대신하지 않는 보조 설명, 툴팁 글이 이름과 같으면 `labelOnly`로
   설명 연결을 뺌, 셸의 `TooltipProvider` 하나 — 밖에서는 스스로 감쌈). 처음 쓰는 곳은 넓은 화면 셸(P3 — 상단바 아이콘 단추·접힌 왼쪽 메뉴의 탭 이름·접기 단추),
   지키는 시험은 `components/ui/__tests__/Tooltip.test.tsx`.

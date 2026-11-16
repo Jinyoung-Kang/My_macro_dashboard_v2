@@ -4,8 +4,10 @@
  *  - 상자는 덮개 범위 표지(data-overlay)를 단다 — 안의 조작 바탕이 한 단계 위(surface-3)가 되게(명세 §3-4)
  *  - 링크 항목은 a[role=menuitem][href], 항목은 좁은 화면 44px·넓은 화면 32px, 항목 글에 text-3이 없다(surface-3 위 금지 쌍)
  *  - 닫힌 뒤 포커스 처리(onCloseAutoFocus)를 부르는 쪽에 넘긴다
+ *  - 항목이 아닌 글(description)은 항목 아래에 두고 메뉴의 설명(aria-describedby)으로 잇는다 — 화살표는 그 글에 서지 않는다
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuLinkItem, DropdownMenuSeparator } from "../DropdownMenu";
@@ -91,6 +93,51 @@ describe("열고 닫기", () => {
     const trigger = renderMenu({ onSelect: (event) => event.preventDefault() });
     fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "단축키 도움말" }));
     expect(screen.getByRole("menu", { name: "예시 메뉴" })).toBeTruthy();
+  });
+});
+
+describe("설명 칸(description — 항목이 아닌 글)", () => {
+  function renderWithDescription(description?: ReactNode) {
+    render(
+      <DropdownMenu
+        label="예시 메뉴"
+        description={description}
+        trigger={
+          <button type="button" aria-label="메뉴 열기">
+            열기
+          </button>
+        }
+      >
+        <DropdownMenuItem>첫 항목</DropdownMenuItem>
+        <DropdownMenuItem>둘째 항목</DropdownMenuItem>
+      </DropdownMenu>,
+    );
+    return open(screen.getByRole("button", { name: "메뉴 열기" }));
+  }
+
+  it("항목 아래(마지막 자식)에 그리고 메뉴의 aria-describedby로 잇는다 — 항목이 아니라 화살표가 건너뛴다", async () => {
+    const menu = renderWithDescription(<p>읽기 모드: auto</p>);
+    const id = menu.getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    const note = document.getElementById(id as string) as HTMLElement;
+    expect(note.textContent).toBe("읽기 모드: auto");
+    expect(menu.lastElementChild).toBe(note);
+    expect(note.hasAttribute("role")).toBe(false);
+    expect(note.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-t", "border-border"]));
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["첫 항목", "둘째 항목"]);
+
+    const [first, second] = within(menu).getAllByRole("menuitem");
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(second));
+    fireEvent.keyDown(second, { key: "ArrowDown" });
+    await waitFor(() => expect(document.activeElement).toBe(first));
+  });
+
+  it("설명이 없으면 aria-describedby도 칸도 없다", () => {
+    const menu = renderWithDescription();
+    expect(menu.hasAttribute("aria-describedby")).toBe(false);
+    expect(menu.lastElementChild?.getAttribute("role")).toBe("menuitem");
   });
 });
 
