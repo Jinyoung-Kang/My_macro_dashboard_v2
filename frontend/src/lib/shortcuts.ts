@@ -39,6 +39,14 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
 ];
 
+/** 도움말 창을 열 때 센 조건 — 넓은 화면인가, 지금 화면에 거르기 칸이 있는가. */
+export type ShortcutConditions = { wide: boolean; filter: boolean };
+
+/** 도움말 창에 보일 줄 — 조건(when)이 있는 줄은 그 조건이 참일 때만. */
+export function visibleShortcuts(conditions: ShortcutConditions): Shortcut[] {
+  return SHORTCUTS.filter((row) => !row.when || conditions[row.when]);
+}
+
 /** 화면이 자기 거르기 입력칸 하나에 붙이는 속성 — '/'가 그 칸으로 갑니다(화면당 하나, #main 안 첫 번째). */
 export const SHELL_FILTER_ATTR = "data-shell-filter";
 

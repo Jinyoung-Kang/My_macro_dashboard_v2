@@ -11,6 +11,7 @@ import {
   isPaletteChord,
   isTypingTarget,
   singleKeyShortcut,
+  visibleShortcuts,
   type KeyEventLike,
 } from "../shortcuts";
 
@@ -154,5 +155,13 @@ describe("단축키 표", () => {
     expect(SHORTCUTS.filter((row) => row.when).map((row) => [row.id, row.when])).toEqual([["filter", "filter"], ["toggleNav", "wide"]]);
     const palette = SHORTCUTS[0];
     expect(palette.keys).toEqual({ mac: ["⌘K"], other: ["Ctrl K"] });
+  });
+
+  it("도움말에 보일 줄 — 거르기(/)는 칸이 있을 때만, 메뉴 접기([)는 넓은 화면에서만", () => {
+    const ids = (wide: boolean, filter: boolean) => visibleShortcuts({ wide, filter }).map((row) => row.id);
+    expect(ids(false, false)).toEqual(["palette", "help", "close", "move"]);
+    expect(ids(true, false)).toEqual(["palette", "help", "toggleNav", "close", "move"]);
+    expect(ids(false, true)).toEqual(["palette", "help", "filter", "close", "move"]);
+    expect(ids(true, true)).toEqual(["palette", "help", "filter", "toggleNav", "close", "move"]);
   });
 });
