@@ -681,8 +681,20 @@ export type HomeKpi = {
   href?: string;
 };
 
-/** 경로 하나를 읽은 상태 — 값과 오류(useApi와 같은 칸 — lib는 hooks를 가져오지 않음). 값도 오류도 없으면 읽는 중입니다. */
-export type HomeReadState<T> = { data: T | null; error: string | null };
+/**
+ * 경로 하나를 읽은 상태 — 값과 오류, 마지막 실패 시각(useApi와 같은 칸 — lib는 hooks를 가져오지 않음). 값이 없고 실패도 없으면 읽는 중입니다
+ * (`homeReadFailed`).
+ */
+export type HomeReadState<T> = { data: T | null; error: string | null; failedAt?: Date | null };
+
+/**
+ * 값 없이 마지막 읽기가 실패한 상태인지 — 오류가 있거나, 실패 뒤 다시 읽는 중(오류는 비었고 실패 시각이 남음)이면 참. useApi는 다시 읽기를 시작할 때
+ * error를 비우고 failedAt은 남기므로(성공하면 비움), error만 보면 실패가 이어지는 동안 다시 읽을 때마다(자동 갱신·탭 복귀·수동 새로고침) 실패 →
+ * 읽는 중 → 실패로 오가 높이가 바뀌었습니다(QA-605 — 홈 알림 패널 머리와 KPI 띠가 같은 규칙, QA-608과 같은 까닭).
+ */
+export function homeReadFailed(read: HomeReadState<unknown>): boolean {
+  return read.data === null && (read.error !== null || (read.failedAt ?? null) !== null);
+}
 
 /** KPI 띠가 읽는 것 — 홈 화면 훅이 읽은 응답 그대로(모의매매 값은 두지 않음 — 계좌 손익 표 패널이 따로 읽음). */
 export type HomeKpiInput = {
@@ -732,7 +744,7 @@ function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>, pendingLines?
   if (read.data !== null) {
     return null;
   }
-  if (read.error !== null) {
+  if (homeReadFailed(read)) {
     return { ...base, value: null, emptyReason: KPI_READ_FAILED };
   }
   return { ...base, value: null, pending: true, ...(pendingLines ? { pendingLines } : {}) };

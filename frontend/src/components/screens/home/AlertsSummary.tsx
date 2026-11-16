@@ -5,7 +5,7 @@ import { useId, type ReactNode } from "react";
 import { Empty, Skeleton } from "@/components/patterns";
 import { Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { KPI_READ_FAILED, latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
+import { homeReadFailed, KPI_READ_FAILED, latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
 import type { InfoSourcesResponse } from "@/lib/info";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { StatusIssuesResponse } from "@/lib/types";
@@ -27,9 +27,9 @@ const SUBHEAD = "text-caption font-semibold text-text-2";
  * '알림 전체 보기'. 회원·데모는 알림만이라 제목도 '알림'입니다. 읽음 처리는 알림 화면에서 합니다.
  *
  * 읽지 않은 수는 셸 레이아웃이 읽는 경로(/api/alerts/unread-count)를 그대로 읽습니다 — 동시에 나가면 요청 하나로 합쳐집니다
- * (lib/sharedRequest). 0으로 적지 않고, 맨 위 KPI 띠의 '읽지 않은 알림' 타일과 같은 규칙으로 그립니다(lib/home kpiReadState — P4 '정한 것' 11, QA-605):
- * 읽는 중이면 글줄 안의 짧은 자리표시(role=status), 읽지 못했으면 '—' + '읽지 못함'(이 수만의 구역이 없어 오류 글·다시 시도는 두지 않음 — 자동 갱신이 다시
- * 읽음), 응답에 수가 없으면 '—'. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고 "지난 사건"으로 적습니다(/alerts와 같음).
+ * (lib/sharedRequest). 0으로 적지 않고, 맨 위 KPI 띠의 '읽지 않은 알림' 타일과 같은 갈래로 그립니다(lib/home homeReadFailed — P4 '정한 것' 11, QA-605):
+ * 읽는 중이면 글줄 안의 짧은 자리표시(role=status), 읽지 못했으면 '—'(읽어 주기 '값 없음 읽지 못함' — 이 수만의 구역이 없어 오류 글·다시 시도는 두지 않음,
+ * 자동 갱신이 다시 읽음), 응답에 수가 없으면 '—'. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고 "지난 사건"으로 적습니다(/alerts와 같음).
  *
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 제목이 그 대상의 타임라인으로 가는 링크입니다(/alerts와 같음 — 정보 검색 화면 안쪽 주소만).
  *
@@ -83,15 +83,26 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
 }
 
 /**
- * 머리의 읽지 않은 수 — 값이 있으면 'N건'(수가 없으면 '—'), 읽지 못했으면 '—' + '읽지 못함', 읽는 중이면 글줄 높이 안의 짧은 자리표시.
- * 읽는 중과 실패를 같은 '—'로 그리면 눈으로도 낭독('값 없음')으로도 갈리지 않았습니다(QA-605).
+ * 머리의 읽지 않은 수 — 값이 있으면 'N건'(수가 없으면 '—'), 읽지 못했으면 '—'(사유 '읽지 못함'은 읽어 주기로만), 읽는 중이면 글줄 높이 안의 짧은 자리표시.
+ * 읽는 중과 실패를 같은 '—'(읽어 주기 '값 없음')로 그리면 눈으로도 낭독으로도 갈리지 않았습니다(QA-605) — 이제 읽는 중은 막대, 실패는 '—'입니다.
+ *
+ * - 실패의 보이는 글은 '—'만입니다. 사유까지 보이면('— 읽지 못함') 머리 값이 66.7px → 122px로 넓어져, 남은 폭이 적은 360·375px와 1024px(메뉴 256 이상)에서
+ *   패널 머리가 두 줄로 꺾였습니다(65 → 97px · 45 → 69px). 보이는 사유는 같은 화면 KPI 띠의 같은 타일이 적습니다.
+ * - 실패는 error가 아니라 homeReadFailed(실패 시각 failedAt)로 정합니다 — useApi는 다시 읽기를 시작할 때 error를 비우므로, error로 정하면 수가 계속
+ *   실패하는 동안 다시 읽을 때마다(300초 자동 갱신·탭 복귀·수동 새로고침) 실패 → 자리표시 → 실패로 오갔습니다(QA-605 검토, QA-608과 같은 까닭).
  */
 function UnreadValue({ unread }: { unread: HomeAlertsRead["unread"] }) {
   if (unread.data !== null) {
     return <>{unreadText(unread.data) ?? <Empty />}</>;
   }
-  if (unread.error !== null) {
-    return <Empty reason={KPI_READ_FAILED} />;
+  if (homeReadFailed(unread)) {
+    // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖으로 빠져 문서 폭을 넓히지 않게(Empty와 같은 까닭).
+    return (
+      <span className="relative">
+        <Empty />
+        <span className="sr-only">{KPI_READ_FAILED}</span>
+      </span>
+    );
   }
   return <Skeleton inline label="읽지 않은 수 불러오는 중" />;
 }

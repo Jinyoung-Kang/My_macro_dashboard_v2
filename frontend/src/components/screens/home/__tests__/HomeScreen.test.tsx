@@ -406,7 +406,7 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
   });
 
-  it("알림 패널 머리의 읽지 않은 수 — 실패는 '— 읽지 못함'(KPI 띠와 같은 사유, 오류 글·다시 시도는 두지 않음) (QA-605)", async () => {
+  it("알림 패널 머리의 읽지 않은 수 — 실패는 '—'(읽어 주기 '값 없음 읽지 못함' — KPI 띠와 같은 사유, 오류 글·다시 시도는 두지 않음) (QA-605)", async () => {
     reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
     renderHome(OWNER);
     await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
@@ -419,7 +419,7 @@ describe("홈 — 값 있음(운영자)", () => {
   // 패널 머리가 두 줄로 꺾였습니다(65 → 97px, 45 → 69px — 99f161ae는 같은 실패에서 한 줄). 보이는 글은 '—'만 두고 사유는 읽어 주기로 둡니다
   // (보이는 사유는 같은 화면 KPI 띠의 '읽지 않은 알림' 타일이 적음 — 읽는 중은 자리표시 막대라 눈으로도 갈림).
   // 수정 전(재현 커밋에서는 it.fails) 보이는 글이 '읽지 않음 —읽지 못함'이고, '읽지 못함'은 sr-only가 아닌 보조 글(text-xs font-normal text-text-3)이었습니다.
-  it.fails("알림 패널 머리의 읽지 않은 수 — 실패 때 보이는 글은 '—'만(머리가 꺾이지 않게), '읽지 못함'은 읽어 주기(sr-only)로 (QA-605)", async () => {
+  it("알림 패널 머리의 읽지 않은 수 — 실패 때 보이는 글은 '—'만(머리가 꺾이지 않게), '읽지 못함'은 읽어 주기(sr-only)로 (QA-605)", async () => {
     reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
     renderHome(OWNER);
     await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
@@ -433,7 +433,7 @@ describe("홈 — 값 있음(운영자)", () => {
   // (300초 자동 갱신·탭 복귀·수동 새로고침) 머리가 실패 → 자리표시 → 실패로 오가며 패널 본문이 위아래로 움직였습니다(QA-608과 같은 까닭 — 360 CLS 0.283).
   // 같은 수를 그리는 KPI 띠 타일도 같은 규칙(lib/home kpiReadState)이라 함께 봅니다 — 둘 다 실패 시각(failedAt)으로 정합니다.
   // 수정 전(재현 커밋에서는 it.fails) 다시 읽는 동안 머리에 role=status '읽지 않은 수 불러오는 중'이 있었습니다(KPI 타일도 '읽지 않은 알림 불러오는 중').
-  it.fails("알림 패널 머리의 읽지 않은 수 — 실패 뒤 다시 읽는 동안에도 자리표시로 바뀌지 않고 실패를 지킨다, KPI 타일도 같다 — 처음 읽는 동안만 자리표시 (QA-605)", async () => {
+  it("알림 패널 머리의 읽지 않은 수 — 실패 뒤 다시 읽는 동안에도 자리표시로 바뀌지 않고 실패를 지킨다, KPI 타일도 같다 — 처음 읽는 동안만 자리표시 (QA-605)", async () => {
     reads = happyReads();
     let rejectFirst: (error: Error) => void = () => {};
     let resolveRetry: (body: unknown) => void = () => {};
