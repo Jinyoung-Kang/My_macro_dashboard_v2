@@ -209,8 +209,14 @@ describe("홈 — 값 있음(운영자)", () => {
     await inRegime().findByText("확장 (Expansion)");
     const signals = signalRows(region("오늘의 국면"));
     expect(signals[1].querySelector("dd")?.textContent).toContain("\u22120.496");
-    // 숫자 앞(줄 처음·공백·'(' 뒤) 하이픈 — '10Y-3M'·'2026-10-16'의 하이픈은 숫자 앞이 아닙니다.
-    expect(region("오늘의 국면").textContent).not.toMatch(/(^|[\s(])-(?=[\d.])/);
+    // 숫자 앞(글 마디의 처음·공백·'(' 뒤) 하이픈 — '10Y-3M'·'2026-10-16'의 하이픈은 숫자 앞이 아닙니다. 구역 글 전체(textContent)로 보면
+    // 신호 이름(dt) 바로 뒤에 값이 이어 붙어 '…지수-0.496'이 되어 걸리지 않으므로 글 마디마다 봅니다.
+    const walker = document.createTreeWalker(region("오늘의 국면"), NodeFilter.SHOW_TEXT);
+    const hyphenated: string[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (/(^|[\s(])-(?=[\d.])/.test(node.textContent ?? "")) hyphenated.push(node.textContent ?? "");
+    }
+    expect(hyphenated).toEqual([]);
   });
 
   it("계좌 손익 표 — 네 계좌(이름은 모의매매 화면 링크·종류·상태·계좌 색 견본)·순자산·출발 대비·기준·출처·출발 줄·정기 작업 꺼짐 안내, 쓰기 버튼은 없다", async () => {
