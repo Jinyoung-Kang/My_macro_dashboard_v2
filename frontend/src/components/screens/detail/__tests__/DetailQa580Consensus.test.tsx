@@ -71,7 +71,7 @@ describe("애널리스트 의견 패널 — 받은 값만 (QA-580)", () => {
 
   // 커버리지가 없는 미국 주식 — Yahoo는 recommendationKey 'none'(의견 없음 표지)만 주고 목표가·의견 수는 비웁니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 '평균 목표가 —, 투자의견 의견 없음, 의견 수 —' 패널이 그려졌습니다.
-  it.fails("의견 없음 표지('none')뿐인 미국 주식에는 패널을 그리지 않는다", async () => {
+  it("의견 없음 표지('none')뿐인 미국 주식에는 패널을 그리지 않는다", async () => {
     renderStock("us", "SYNQ", {
       ...BASE, code: "SYNQ", yahooSymbol: "SYNQ", name: "Synthetic Microcap Inc.", exchange: "NasdaqCM", kind: "EQUITY",
       consensus: { targetMean: null, recommendation: "none", analysts: null },

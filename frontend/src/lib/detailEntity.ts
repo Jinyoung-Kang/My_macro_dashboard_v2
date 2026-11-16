@@ -103,7 +103,8 @@ export function moneyPriceText(value: number, currency: string | null | undefine
 /**
  * 애널리스트 의견 속성 — 평균 목표가·투자의견·의견 수(미국 Yahoo, 국내 네이버 컨센서스). 모르면 null(일부만 모르면 그 줄이 "—").
  * 받은 값만 — 의견이 없거나 세 값을 모두 모르면(수집기는 지수·ETF·모르는 심볼에도 값이 모두 null인 객체를 줌) 빈 목록이라 화면이 패널을 그리지
- * 않고, 국내는 네이버가 의견 수를 주지 않아 늘 비는 '의견 수' 줄을 두지 않습니다(회사 개요와 같은 규칙 — QA-580).
+ * 않고, 국내는 네이버가 의견 수를 주지 않아 늘 비는 '의견 수' 줄을 두지 않습니다(회사 개요와 같은 규칙 — QA-580). Yahoo의 의견 없음 표지
+ * (recommendationKey 'none' — 커버리지가 없는 종목)는 받은 값으로 세지 않습니다. 다른 값이 있으면 그 줄은 '의견 없음' 그대로입니다.
  */
 export function consensusItems(market: DetailMarket, quote: Pick<DetailQuote, "consensus" | "currency">): DetailProperty[] {
   const consensus = quote.consensus;
@@ -115,7 +116,8 @@ export function consensusItems(market: DetailMarket, quote: Pick<DetailQuote, "c
   if (market !== "kr") {
     rows.push({ label: "의견 수", value: consensus.analysts !== null && Number.isFinite(consensus.analysts) ? `${formatNumber(consensus.analysts, 0)}곳` : null });
   }
-  return rows.some((row) => row.value !== null) ? rows : [];
+  const noOpinion = consensus.recommendation === "none";
+  return rows.some((row) => row.value !== null && !(noOpinion && row.label === "투자의견")) ? rows : [];
 }
 
 /**
