@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { regimeBandLabel, regimeInputCells, trackRecordRow } from "../regime";
 
 describe("국면 판정 기록의 근거 표기", () => {
-  it("단위를 다른 화면과 같게 적고, 기준일은 월-일로 줄인다", () => {
+  it("단위를 다른 화면과 같게 적고, 기준일은 월-일로 줄인다 — 음수는 −(U+2212, QA-636)", () => {
     const cells = regimeInputCells({
       curve10y3m: { value: 0.42, asOf: "2026-10-08" },
       nfci: { value: -0.48, asOf: "2026-10-02" },
@@ -11,9 +11,9 @@ describe("국면 판정 기록의 근거 표기", () => {
     });
     expect(cells.map((c) => [c.label, c.value, c.asOf])).toEqual([
       ["10Y-3M", "+0.42%p", "10-08"],
-      ["NFCI", "-0.48", "10-02"],
+      ["NFCI", "−0.48", "10-02"],
       ["하이일드", "2.85%p", "10-08"],
-      ["순유동성 4주", "-254.0억 달러", "10-08"],
+      ["순유동성 4주", "−254.0억 달러", "10-08"],
     ]);
   });
 
@@ -33,7 +33,7 @@ describe("판정 성과 표의 한 줄", () => {
       excessMean: -1.7 }, base);
     expect(row).toEqual({
       horizon: "13주 뒤", samples: "42건 · 독립 4", sufficient: true, mean: "+1.20%", median: "+1.00%",
-      winRate: "62%", excess: "-1.70%p", baseline: "+2.90% · 68% 상승",
+      winRate: "62%", excess: "−1.70%p", baseline: "+2.90% · 68% 상승",
     });
   });
 

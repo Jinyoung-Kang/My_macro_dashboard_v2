@@ -15,7 +15,8 @@ import {
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { EMPTY, withMinusSign } from "@/lib/format";
+import { regimeHeroModel } from "@/lib/home";
 import type { RegimeResponse, RegimeSignal } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -80,6 +81,12 @@ export default function RegimePage() {
   const verdict = data?.verdict;
   const current = QUADRANTS.find((entry) => entry.code === verdict?.code);
   const bandLabel = regimeBandLabel(data?.timeline, (data?.episodes ?? []).length);
+  // 판정 근거 값의 글 — 홈 국면 패널과 같은 자릿수·부호(음수 −, lib/home regimeHeroModel — QA-636). 모델이 모르는 신호(백엔드가 더 보낸 것)도 −로 맞춥니다.
+  const tiles = regimeHeroModel(data).tiles;
+  const signalText = (signal: RegimeSignal) => {
+    const text = tiles.find((tile) => tile.id === signal.id)?.valueText;
+    return text ? `${withMinusSign(text)}${signal.unit ?? ""}` : EMPTY;
+  };
 
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
@@ -165,7 +172,7 @@ export default function RegimePage() {
               <Metric
                 key={signal.id}
                 label={signal.label}
-                value={`${formatNumber(signal.value, 2)}${signal.unit ?? ""}`}
+                value={signalText(signal)}
                 tone={signal.healthy ? "text-ok" : "text-warn"}
                 // 정상·주의 판정을 값 색만으로 전하지 않습니다 — 캡션 글은 보조 색 그대로, 아이콘만 톤 색(주의는 읽어 주는 '주의:'도, QA-505).
                 // align-top: 글 줄 안의 inline-flex가 기준선에 앉아 캡션 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음).
