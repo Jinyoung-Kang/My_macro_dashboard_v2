@@ -31,8 +31,9 @@ describe("PropertyList — 값 있음", () => {
     expect(container.querySelectorAll("dl > div")).toHaveLength(3);
     const term = screen.getByText("시가총액", { selector: "dt" });
     expect(term.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-caption", "text-text-2"]));
-    // 이름 칸은 값이 길어도 눌리지 않는다(줄 폭의 절반까지, 낱말 사이 줄바꿈)
-    expect(term.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "max-w-[50%]", "break-keep", "wrap-anywhere"]));
+    // 이름 칸은 auto 트랙(줄은 auto 두 트랙 그리드 — 값이 짧으면 남은 폭을 쓰고 둘 다 길면 거의 반씩, QA-570), 낱말 사이 줄바꿈
+    expect(term.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-w-0", "break-keep", "wrap-anywhere"]));
+    expect((term.parentElement as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["grid", "grid-cols-[auto_auto]"]));
     const cap = valueOf("시가총액");
     expect(cap.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-right", "text-body", "text-text", "tabular-nums", "break-keep", "wrap-anywhere"]));
     expect(within(cap).getByText("3.2조 달러")).toBeTruthy();
@@ -88,7 +89,7 @@ describe("PropertyList — 값 있음", () => {
   // 고친 뒤: 줄은 auto 두 트랙 그리드(양 끝 정렬) — 둘 다 들어가면 자연 폭, 모자라면 남는 폭을 두 칸에 고르게 나눠 짧은 쪽이 다 들어가고 나머지를
   // 긴 쪽이 씁니다(둘 다 길면 거의 반씩 — 이름도 값도 절반 밑으로 눌리지 않음). 아주 긴 낱말만 칸 안에서 꺾습니다(min-w-0 wrap-anywhere).
   // 수정 전 실패: 줄이 flex이고 이름 칸이 max-w-[50%] shrink-0(재현 커밋에서는 it.fails).
-  it.fails("값이 짧으면 이름이 남은 폭을 쓴다 — 줄은 auto 두 트랙 그리드, 이름 칸에 절반 상한·shrink-0이 없다(긴 글 block 줄은 그대로 세로)", () => {
+  it("값이 짧으면 이름이 남은 폭을 쓴다 — 줄은 auto 두 트랙 그리드, 이름 칸에 절반 상한·shrink-0이 없다(긴 글 block 줄은 그대로 세로)", () => {
     render(
       <PropertyList
         items={[

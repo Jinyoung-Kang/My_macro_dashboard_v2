@@ -72,6 +72,9 @@ function PropertyValue({ item }: { item: PropertyItem }): JSX.Element {
  * - 추정·대리·이전 값 배지는 값 옆에 늘 보입니다(숨기는 옵션 없음). 줄마다 출처가 다르면 `source`(값 아래 출처 캡션), 목록 전체 출처는 `source` prop('출처 · …' 줄).
  * - 값은 말줄임하지 않고 낱말 사이에서 줄을 바꿉니다(break-keep wrap-anywhere — 긴 영문 업종·URL도 칸 안에서 꺾임). truncate·whitespace-nowrap을 쓰지 않습니다
  *   (13rem 왼쪽 칸에서 값이 잘리던 것 — QA-530 계열). 긴 글은 `block`(이름 위·값 아래, 왼쪽 정렬). 빈 글·출처 줄도 한글은 낱말 사이에서만(QA-568).
+ * - 이름-값 줄은 auto 두 트랙 그리드(양 끝 정렬)입니다. 둘 다 들어가면 자연 폭, 모자라면 남는 폭을 두 칸에 고르게 나눠 짧은 쪽이 다 들어가고 나머지를
+ *   긴 쪽이 씁니다 — 값이 짧으면 이름이 남은 폭을 쓰고, 둘 다 길면 거의 반씩이라 이름도 값도 절반 밑으로 눌리지 않습니다(QA-570 — 이름 칸을 절반에서
+ *   막으면 값이 짧아도 'PER(최근 / 4분기)'처럼 꺾였음).
  * - 넓은 화면(lg 이상) 줄은 32px(`dense`면 28px — 아래 구분선 1px 포함, DataTable과 같은 셈), 값이 두 줄이면 그만큼 늘어납니다. 좁은 화면은 위아래 8px —
  *   누르는 줄이 아니라 44px로 키우지 않습니다. 구분선은 옅은 경계(border-subtle).
  * - `title`을 주면 이름 있는 영역(section aria-labelledby)과 제목(h2 heading-sm, 기본 h3 — 검사 칸 안의 작은 제목). 보통은 Panel 안에서 제목 없이 씁니다.
@@ -112,12 +115,12 @@ export function PropertyList({
           return (
             <div
               key={item.key ?? item.label}
-              className={`flex min-w-0 border-b border-border-subtle last:border-0 ${rowY} ${
-                item.block ? "flex-col gap-0.5" : "items-baseline justify-between gap-3"
+              className={`min-w-0 border-b border-border-subtle last:border-0 ${rowY} ${
+                item.block ? "flex flex-col gap-0.5" : "grid grid-cols-[auto_auto] items-baseline justify-between gap-x-3"
               }`}
             >
-              {/* 이름 칸은 줄어들지 않고 줄 폭의 절반까지 — 값이 길어도 이름이 한두 글자 폭으로 눌려 옆 값 위로 넘치지 않게(낱말 사이 줄바꿈, 넘치는 낱말만 꺾음). */}
-              <dt className={`min-w-0 break-keep wrap-anywhere text-caption text-text-2 ${item.block ? "" : "max-w-[50%] shrink-0"}`.trim()}>{item.label}</dt>
+              {/* 이름 칸은 auto 트랙 — 값이 짧으면 남은 폭을 다 쓰고, 둘 다 길면 값과 거의 반씩 나눠 한두 글자 폭으로 눌리지 않습니다(낱말 사이 줄바꿈, 넘치는 낱말만 꺾음). */}
+              <dt className="min-w-0 break-keep wrap-anywhere text-caption text-text-2">{item.label}</dt>
               <dd
                 className={`min-w-0 break-keep wrap-anywhere text-body text-text tabular-nums ${
                   item.block ? "text-left leading-relaxed" : "text-right"
