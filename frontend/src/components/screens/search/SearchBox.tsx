@@ -11,6 +11,8 @@ import { BUTTON_PRIMARY, KindIcon } from "./parts";
 /**
  * 정보 검색의 검색창 — 치는 동안은 수집기가 이미 가진 색인으로 후보만(외부 호출 없음), Enter나 '찾기'는 그 검색어로 풀기(후보 보기).
  * 후보는 ↓↑로 골라야만 Enter가 그 후보를 엽니다 — 후보가 여럿일 때 자동으로 고르지 않습니다(계약 3-2). '/'로 이 칸에 옵니다.
+ * 입력칸은 셸의 거르기 칸 표지(data-shell-filter — lib/shortcuts)를 달아 셸 단축키 도움말이 이 화면에서 '/' 줄을 보입니다. '/' 처리는 아직 이 화면의
+ * useSlashShortcut과 셸(useShellShortcuts)이 함께 하고(둘 다 이 칸으로 — 결과가 같음), 이 화면의 것은 정보 검색 정리(P7)에서 셸 하나로 합칩니다.
  */
 export function SearchBox({
   initial,
@@ -99,6 +101,7 @@ export function SearchBox({
             aria-autocomplete="list"
             aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
             aria-keyshortcuts="/"
+            data-shell-filter=""
             autoComplete="off"
             spellCheck={false}
             maxLength={60}

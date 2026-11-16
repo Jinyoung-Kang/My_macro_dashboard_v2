@@ -21,6 +21,7 @@ vi.mock("next/navigation", () => import("./fakeNavigation"));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
+import { findScreenFilter } from "@/lib/shortcuts";
 import type { SearchFeedItem, SessionUser } from "@/lib/types";
 import { SearchScreen } from "../SearchScreen";
 import { setLocation } from "./fakeNavigation";
@@ -137,6 +138,20 @@ describe("첫 화면", () => {
 });
 
 describe("검색창과 후보", () => {
+  it("검색창은 셸의 거르기 칸(data-shell-filter) — 셸의 '/'와 단축키 도움말의 '/' 줄이 이 칸을 찾는다", () => {
+    setLocation("/search");
+    render(
+      <main id="main">
+        <SessionUserProvider user={MEMBER}>
+          <SearchScreen />
+        </SessionUserProvider>
+      </main>,
+    );
+    const input = screen.getByRole("combobox", { name: "대상 검색" });
+    expect(input.getAttribute("aria-keyshortcuts")).toBe("/");
+    expect(findScreenFilter(document.getElementById("main"))).toBe(input);
+  });
+
   it("치면 가진 색인의 후보를 보이고, 고르지 않고 Enter면 그 검색어로 찾는다(후보를 자동으로 고르지 않음)", async () => {
     vi.useFakeTimers();
     reads[endpoints.search.suggest("엔비")] = {
