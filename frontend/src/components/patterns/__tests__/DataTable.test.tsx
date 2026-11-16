@@ -7,6 +7,7 @@
  * 고른 행(selectedKey, 명세 §3-8): 첫 칸 왼쪽 3px 막대(SELECTED_BAR — 장식)·중립 바탕·aria-current, 기본은 없음.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SELECTED_BAR } from "@/components/ui/classes";
@@ -528,5 +529,45 @@ describe("DataTable — 고른 행(selectedKey)", () => {
     fireEvent.click(screen.getByRole("button", { name: /비중/ }));
     const after = bodyRows().find((row) => row.getAttribute("aria-current") === "true") as HTMLElement;
     expect(within(after).getAllByRole("cell")[1].textContent).toBe("MSFT");
+  });
+});
+
+// QA-624: 고른 행의 막대를 첫 칸 내용 앞에 끼울 때 칸 내용이 '요소 하나'에서 '조각(막대 + 요소)'으로 바뀌어, React가 첫 칸 안의 요소를 새로
+// 만들었습니다 — 첫 칸의 단추(검사 칸 틀의 줄 단추 InspectorTrigger 등)로 그 행을 고르면 누른 단추가 문서에서 떨어져 포커스가 body로 갔습니다
+// (매크로 지표 표 P5a에서 처음 씀). 고르기 전후로 같은 요소가 남아야 합니다.
+describe("QA-624 고른 행이 바뀌어도 첫 칸 안 조작은 다시 그려지지 않는다", () => {
+  function Picker() {
+    const [picked, setPicked] = useState<string | null>(null);
+    const columns: Column<Holding>[] = [
+      {
+        key: "ticker",
+        header: "종목",
+        rowHeader: true,
+        cell: (row) => (
+          <button type="button" onClick={() => setPicked(row.ticker)}>
+            {row.ticker}
+          </button>
+        ),
+      },
+      COLUMNS[1],
+    ];
+    return <DataTable columns={columns} rows={ROWS} rowKey={(row) => row.ticker} selectedKey={picked} />;
+  }
+
+  it.fails("첫 칸의 단추로 그 행을 고르면 같은 단추가 남고 포커스도 그대로 — 다른 행으로 옮겨도 두 단추 모두 그대로", () => {
+    render(<Picker />);
+    const aapl = screen.getByRole("button", { name: "AAPL" });
+    aapl.focus();
+    fireEvent.click(aapl);
+    expect(aapl.closest("tr")?.getAttribute("aria-current")).toBe("true");
+    expect(aapl.isConnected).toBe(true);
+    expect(document.activeElement).toBe(aapl);
+
+    const msft = screen.getByRole("button", { name: "MSFT" });
+    msft.focus();
+    fireEvent.click(msft);
+    expect(msft.isConnected).toBe(true);
+    expect(document.activeElement).toBe(msft);
+    expect(aapl.isConnected).toBe(true);
   });
 });
