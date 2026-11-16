@@ -7,6 +7,7 @@ import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { useShellShortcuts } from "@/hooks/useShellShortcuts";
 import { endpoints } from "@/lib/endpoints";
 import { navSearchItems } from "@/lib/nav";
 import {
@@ -62,22 +63,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const optionId = (index: number) => `${baseId}-option-${index}`;
   const isMac = useSyncExternalStore(noSubscribe, isMacPlatform, isMacServer);
 
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      // 한글 자판이면 K 자리가 "ㅏ"로 오기도 해 물리 키(code)도 봅니다. 자동 완성이 보내는 keydown은 key가 없을 수 있습니다.
-      const isK = event.key === "k" || event.key === "K" || event.code === "KeyK";
-      // 맥은 ⌘K만 받습니다 — 맥의 Ctrl+K는 입력칸의 기본 편집 명령(줄 끝까지 지우기)이라, 가로채면 메모·규칙 입력칸에서 그 명령이
-      // 사라집니다. 그 밖에서는 화면 안내(Ctrl K)대로 Ctrl+K만 받습니다.
-      const modifier = isMacPlatform() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-      if (modifier && !event.altKey && !event.shiftKey && isK) {
-        // 브라우저의 같은 단축키(주소창 검색)보다 먼저 받습니다.
-        event.preventDefault();
-        setOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  // 맥 ⌘K·그 밖 Ctrl+K(한글 자판 물리 키 포함 — 판정은 lib/shortcuts). 셸의 전역 keydown 처리기는 이 훅 하나입니다.
+  useShellShortcuts({ isMac, onPalette: () => setOpen(true) });
 
   // /api/macro/overview는 live 없이(저장본) — 검색 때문에 외부 시세를 새로 받지 않습니다.
   const overview = useApi<MacroOverview>(open ? endpoints.macro.overview(false) : null);
