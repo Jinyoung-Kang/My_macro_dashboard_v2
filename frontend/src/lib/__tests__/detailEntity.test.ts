@@ -116,6 +116,19 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(missing.at(-1)).toEqual({ label: "경고", value: "수집 실패" });
   });
 
+  // QA-589: 2년물 카드 값은 TradingView 수익률(%)이고 카드 티커 ZT=F는 Yahoo 선물 가격이라 뜻이 다릅니다(INDICATOR_NO_CHART — 차트·연결에서 뺌).
+  // 속성 '티커' 줄은 값을 그대로 두되(수집기 덮어쓰기 실패 경고가 이 이름을 가리킴) 이 카드 값의 출처가 아니라는 note를 붙입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 note가 없었습니다.
+  it.fails("지표 — 뜻이 다른 티커(us02y ZT=F)의 '티커' 줄은 값 그대로·고정폭에 note, 다른 지표는 note 없음 (QA-589)", () => {
+    const row = { valueText: "3.512", asOf: null, isEstimated: false, isStale: false, staleReason: null, warning: null };
+    const context = { category: "미국 국채 수익률", source: "TradingView Scanner", session: null };
+    const ticker = indicatorProperties({ key: "us02y", ticker: "ZT=F", prevStr: null }, row, context).find((item) => item.label === "티커");
+    expect(ticker).toMatchObject({ value: "ZT=F", mono: true });
+    expect(ticker?.note).toBe("Yahoo 선물 가격 — 이 카드 값(수익률)의 출처가 아님");
+    const plain = indicatorProperties({ key: "us10y", ticker: "^TNX", prevStr: null }, row, context).find((item) => item.label === "티커");
+    expect(plain).toEqual({ label: "티커", value: "^TNX", mono: true });
+  });
+
   it("기관 — 받기 전은 CIK 한 줄, 받은 뒤 보고 기준일·공시일·평가액·최신 분기 보유 종목 수·분기 수·수집 시각·기관 소개(긴 글)", () => {
     expect(institutionProperties(null, "0001067983")).toEqual([{ label: "CIK", value: "0001067983", mono: true }]);
     const data: PortfolioResponse = {
