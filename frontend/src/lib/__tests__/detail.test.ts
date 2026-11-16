@@ -122,6 +122,22 @@ describe("값 글", () => {
     expect(countText(undefined)).toBe("—");
   });
 
+  // QA-581: 주당 금액(EPS — 수집기 'money' 단위)이 조·억 스케일 서식(1만 미만은 소수 0자리)으로 그려져 3.57 달러가 '4 달러', 0.42가 '0 달러',
+  // 손실 −0.43이 부호 없이 '0 달러'가 됐습니다. 1만 미만 금액은 같은 화면 평균 목표가와 같은 가격 자릿수(priceDigits)로, 1만 이상은 그대로 조·억.
+  // 수정 전(재현 커밋에서는 it.fails)에는 '4 달러'·'6 달러'·'0 달러'·'0 달러'·'-2 달러'였습니다.
+  it.fails("핵심 지표 — 1만 미만 금액(EPS)은 가격 자릿수와 통화 단위로, 0이 아닌 값을 0으로 반올림하지 않는다 (QA-581)", () => {
+    const eps = (value: number, currency = "USD") => statText({ key: "trailingEps", label: "EPS(최근 4분기)", value, text: null, unit: "money" }, currency);
+    expect(eps(3.57)).toBe("3.57 달러");
+    expect(eps(6.44)).toBe("6.44 달러");
+    expect(eps(0.42)).toBe("0.4200 달러");
+    expect(eps(-0.43)).toBe("-0.4300 달러");
+    expect(eps(-1.6)).toBe("-1.60 달러");
+    expect(eps(1520, "KRW")).toBe("1,520 원");
+    expect(eps(2.5, "EUR")).toBe("2.50 EUR");
+    // 1만 이상은 그대로 조·억·만 단위
+    expect(eps(5_029_592_301_568)).toBe("5.030조 달러");
+  });
+
   it("가격 자릿수 — 원·엔 정수, 1 미만 넷째, 그 밖 둘째", () => {
     expect(priceDigits(71_000, "KRW")).toBe(0);
     expect(priceDigits(150.2, "JPY")).toBe(0);
