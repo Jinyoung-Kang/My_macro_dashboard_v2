@@ -36,7 +36,7 @@ describe("유료 등급 표시", () => {
         available: false, locked: true, message: "판정 성과는 유료 등급 기능입니다.", asset: "SPY", assets: [], horizons: [], limits: [],
       },
     });
-    render(<TrackRecordSection tone={{}} />);
+    render(<TrackRecordSection />);
 
     const message = await screen.findByText("판정 성과는 유료 등급 기능입니다.");
     const banner = message.closest("div")?.parentElement as HTMLElement;

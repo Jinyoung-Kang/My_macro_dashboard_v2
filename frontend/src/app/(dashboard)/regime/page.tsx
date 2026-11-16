@@ -195,7 +195,7 @@ export default function RegimePage() {
 
       {/* 스스로 데이터를 읽는 섹션은 이력 기간을 바꿔 판정을 다시 읽는 동안에도 그대로 둡니다 — `data &&` 안에
           두면 함께 내려가 판정 성과에서 고른 자산·관점이 처음으로 돌아갔습니다(QA-066). */}
-      <TrackRecordSection tone={TIMELINE_COLOR} />
+      <TrackRecordSection />
 
       <RegimeLogSection />
 

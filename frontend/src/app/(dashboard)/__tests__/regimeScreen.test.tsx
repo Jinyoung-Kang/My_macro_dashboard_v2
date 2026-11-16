@@ -228,3 +228,38 @@ describe("판정 기록 — 타임라인", () => {
     expect(screen.getByText("무료 등급은 최근 30건만 보입니다. 유료 등급은 기록 전체를 봅니다.")).toBeTruthy();
   });
 });
+
+describe("판정 성과 — 국면별 공용 표", () => {
+  it("국면마다 h3 국면 태그(아이콘 + 글)와 캡션 있는 공용 표, 상자 안쪽 12px(lg 16px)", async () => {
+    reads[TRACK_SPY] = trackRecord();
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 성과");
+    const heading = await within(panel).findByRole("heading", { level: 3, name: "확장 (Expansion)" });
+    expect(heading.querySelectorAll("svg")).toHaveLength(1);
+    const box = heading.parentElement as HTMLElement;
+    expect(box.className).toContain("p-3");
+    expect(box.className).toContain("lg:p-4");
+
+    const table = within(box).getByRole("table", { name: "확장 (Expansion) — 판정 뒤 수익률" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "기간", "표본", "평균", "중앙값", "상승 비율", "기준 대비(평균)", "비교: 아무 때나",
+    ]);
+    const cells = within(table).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells).toEqual(["13주 뒤", "42건 · 독립 4", "−1.20%", "−0.80%", "40%", "−1.70%p", "−0.40% · 55% 상승"]);
+  });
+
+  it("표본이 부족하면 숫자 대신 '표본 부족'(보조 글)과 —, 관점을 바꾸면 그 관점의 국면", async () => {
+    const body = trackRecord();
+    const thin = { ...body.start[0].cells[0], count: 4, independent: 2, sufficient: false, mean: null, median: null, winRate: null, excessMean: null };
+    reads[TRACK_SPY] = { ...body, start: [{ ...body.start[0], cells: [thin] }] };
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 성과");
+    const table = await within(panel).findByRole("table", { name: "확장 (Expansion) — 판정 뒤 수익률" });
+    const mean = within(table).getByText("표본 부족");
+    expect(mean.className).toContain("text-text-3");
+    expect(within(table).getAllByText("—").length).toBeGreaterThanOrEqual(3);
+
+    fireEvent.change(within(panel).getByLabelText("관점"), { target: { value: "all" } });
+    expect(within(panel).getByText("60주 · 6개 구간")).toBeTruthy();
+  });
+});
