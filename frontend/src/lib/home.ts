@@ -323,7 +323,7 @@ export function pickMarketGroup(groups: readonly MarketGroup[], picked: string |
 
 // ---------------------------------------------------------------- ② 모의매매(미국·한국)
 
-/** 정기 작업이 꺼진 사본에서 홈이 적는 안내(로컬 v2는 PAPER_ENABLED=false 고정 — 상태는 AWS 한 곳에만). */
+/** 정기 작업이 꺼진 사본에서 홈이 적는 안내(로컬 v2는 PAPER_ENABLED=false 고정 — 상태는 운영 서버(Vultr) 한 곳에만, ADR 0023). */
 export const PAPER_DISABLED_NOTE = "정기 작업 꺼짐(PAPER_ENABLED=false) — 이 화면은 읽기 전용 사본";
 
 /**
