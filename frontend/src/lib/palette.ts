@@ -5,10 +5,88 @@
  *   메뉴는 넣지 않습니다(메뉴는 왼쪽 메뉴·탭에 늘 있음). 저장값은 읽을 때 형식을 다시 검사합니다 — 종류 넷, 주소는 상세 화면 세 경로뿐이고
  *   lib/detail의 parse 함수로 다시 풀어 만든 주소만 씁니다. 저장소 값이 바뀌어도(다른 확장·사람이 고침) 다른 주소(javascript: 등)로 보내지 않습니다.
  *   공개 시세 대상의 이름·티커만 담깁니다(실제 계좌 자료 없음).
+ * - 명령: 닫힌 목록(PALETTE_COMMANDS) — 단축키 도움말, 왼쪽 메뉴 접기·펼치기(넓은 화면만). 효과는 셸 명령(lib/shellCommands) 하나뿐이라 서버를 부르는
+ *   효과가 타입에 없습니다. 데이터 새로고침·결정 실행·계좌 초기화·일시정지·실제 매매 켜기·끄기·설정 저장 같은 쓰기 동작은 팔레트에 넣지 않습니다
+ *   (ADR 0042 결정 5, 실행 명세 §5·§9-6 — components/shell/__tests__/paletteNoWrites.test.tsx가 지킴). 묶음 이름은 '명령'입니다('동작'은 화면 머리의
+ *   쓰기 동작 영역 이름). 검색어가 맞을 때만 보입니다(빈 검색어에는 없음).
  */
 import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
 import { assetMonogram } from "./patternRows";
-import type { SearchAvatar, SearchEntry } from "./search";
+import { searchKey, type SearchAvatar, type SearchEntry, type SearchGroup } from "./search";
+import type { ShellCommand } from "./shellCommands";
+
+// ------------------------------------------------------------------ 명령
+
+/** 명령 묶음 이름. */
+export const COMMAND_GROUP_LABEL = "명령";
+
+/** 명령의 효과 — 셸 명령 하나(이 창 안의 화면 상태만 바꿈). 다른 종류(서버 호출)는 타입에 없습니다. */
+export type PaletteCommandEffect = { type: "shell"; command: ShellCommand };
+
+export type PaletteCommand = {
+  id: "command:shortcut-help" | "command:toggle-nav";
+  label: string;
+  /** 같은 일을 하는 단축키(결과 줄 보조 글). */
+  keys: string;
+  /** 이름 말고도 맞추는 말 — 기호 하나('?'·'[')는 검색어가 그 기호 그대로일 때 맞습니다. */
+  keywords: readonly string[];
+  effect: PaletteCommandEffect;
+  /** 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만 보입니다. */
+  wideOnly?: true;
+};
+
+/** 명령 목록(닫힌 목록). */
+export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
+  {
+    id: "command:shortcut-help",
+    label: "단축키 도움말",
+    keys: "?",
+    keywords: ["단축키", "키보드", "도움말", "shortcut", "help", "?"],
+    effect: { type: "shell", command: "open-shortcut-help" },
+  },
+  {
+    id: "command:toggle-nav",
+    label: "왼쪽 메뉴 접기·펼치기",
+    keys: "[",
+    keywords: ["메뉴 접기", "메뉴 펼치기", "사이드바", "레일", "["],
+    effect: { type: "shell", command: "toggle-nav" },
+    wideOnly: true,
+  },
+];
+
+const CONSONANTS_ONLY = /^[ㄱ-ㅎ]+$/u;
+
+/**
+ * 검색어에 맞는 명령(목록 순서). 메뉴 검색과 같은 규칙 — lib/search `searchKey`로 이름·검색어를 자모로 풀어 맞추고(입력 중인 글자 포함),
+ * 자음만 치면 초성으로 맞춥니다. 기호뿐인 검색어('?'·'[')는 그 기호를 검색어로 가진 명령과 맞습니다. 검색어가 비면 빈 목록, 넓은 화면이 아니면
+ * wideOnly 명령을 뺍니다.
+ */
+export function commandMatches(query: string, { wide }: { wide: boolean }): PaletteCommand[] {
+  const raw = query.trim();
+  if (!raw) return [];
+  const key = searchKey(raw);
+  const consonantsOnly = CONSONANTS_ONLY.test(key.jamo);
+  return PALETTE_COMMANDS.filter((command) => {
+    if (command.wideOnly && !wide) return false;
+    if (command.keywords.includes(raw)) return true;
+    if (!key.jamo) return false;
+    return [command.label, ...command.keywords].some((word) => {
+      const target = searchKey(word);
+      return (target.jamo !== "" && target.jamo.includes(key.jamo)) || (consonantsOnly && target.cho.includes(key.jamo));
+    });
+  });
+}
+
+/**
+ * 화면 읽기용 결과 수 안내 — lib/search `resultSummary`와 같은 글에 명령 수를 더합니다(명령은 상한 없이 모두 보임).
+ * 범주 상한 때문에 다 보이지 않으면 맞은 수와 보이는 수를 함께, 아직 다 읽지 못한 범주가 있으면 그 안내를 뒤에 붙입니다.
+ */
+export function paletteSummary(groups: readonly SearchGroup[], commandCount: number, notices: readonly string[] = []): string {
+  const total = groups.reduce((sum, group) => sum + group.total, 0) + commandCount;
+  const shown = groups.reduce((sum, group) => sum + group.items.length, 0) + commandCount;
+  const count = shown < total ? `결과 ${total}건 중 ${shown}건 표시` : `결과 ${total}건`;
+  return notices.length > 0 ? `${count} — ${notices.join(" · ")}` : count;
+}
 
 // ------------------------------------------------------------------ 최근 연 대상
 

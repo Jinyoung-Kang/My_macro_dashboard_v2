@@ -24,6 +24,7 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { resetRecentEntitiesForTest } from "@/hooks/useRecentEntities";
 import { RECENT_STORAGE_KEY, serializeRecent } from "@/lib/palette";
+import { SHELL_COMMAND_EVENT, WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { SearchCommand } from "../SearchCommand";
 
 const MEMBER: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "PRO" };
@@ -548,5 +549,84 @@ describe("최근 연 대상(이 브라우저에만, 8개)", () => {
     ]));
     render(<SearchCommand user={MEMBER} />);
     expect(api.apiGetShared).not.toHaveBeenCalled();
+  });
+});
+
+describe("명령(셸 명령만 — 서버를 부르지 않음)", () => {
+  let commands: string[];
+  const record = (event: Event) => commands.push(String((event as CustomEvent).detail));
+  const commandGroup = () => screen.queryByRole("group", { name: "명령" });
+  const stubWide = () =>
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
+
+  beforeEach(() => {
+    commands = [];
+    window.addEventListener(SHELL_COMMAND_EVENT, record);
+  });
+  afterEach(() => {
+    window.removeEventListener(SHELL_COMMAND_EVENT, record);
+    vi.unstubAllGlobals();
+  });
+
+  it("빈 검색어에는 명령이 없다 — 안내 끝에 단축키 도움말 여는 법", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(commandGroup()).toBeNull();
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(screen.getByText(/\?를 치고 Enter를 누르면 단축키 도움말을 봅니다\.$/)).toBeTruthy();
+  });
+
+  it("'단축키'를 치면 '명령' 묶음의 '단축키 도움말' — Enter로 팔레트가 닫히고 도움말 창이 열리며, 닫으면 팔레트 여는 단추로 포커스가 돌아온다", async () => {
+    openSearch();
+    await act(async () => {});
+    type("단축키");
+    const group = commandGroup() as HTMLElement;
+    expect(group).toBeTruthy();
+    const option = within(group).getByRole("option");
+    expect(spokenText(option)).toBe("단축키 도움말단축키 ?");
+    expect(screen.getByRole("status").textContent).toBe("결과 1건");
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(screen.queryByRole("dialog", { name: "통합 검색" })).toBeNull();
+    const help = await screen.findByRole("dialog", { name: "단축키" });
+    await waitFor(() => expect(help.contains(document.activeElement)).toBe(true));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(commands).toEqual([]);
+
+    fireEvent.keyDown(help, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(trigger()));
+  });
+
+  it("기호 ?를 치면 '단축키 도움말' 명령이 나온다 — 메뉴·대상 뒤 마지막 묶음", async () => {
+    openSearch();
+    await act(async () => {});
+    type("?");
+    expect(within(commandGroup() as HTMLElement).getByRole("option", { name: /단축키 도움말/ })).toBeTruthy();
+
+    // 다른 범주와 함께 맞으면 명령 묶음이 맨 뒤 — 결과 수 안내에 명령 수가 들어간다.
+    type("도움");
+    const groups = screen.getAllByRole("group").map((element) => element.getAttribute("aria-labelledby"));
+    expect(document.getElementById(groups[groups.length - 1] ?? "")?.textContent).toContain("명령");
+    expect(screen.getByRole("status").textContent).toMatch(/^결과 \d+건/);
+  });
+
+  it("왼쪽 메뉴 접기·펼치기는 넓은 화면에서만 보이고, 고르면 팔레트를 닫은 뒤 셸 명령 toggle-nav를 보낸다", async () => {
+    openSearch();
+    await act(async () => {});
+    type("메뉴 접기");
+    expect(commandGroup()).toBeNull();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    stubWide();
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("메뉴 접기");
+    const option = within(commandGroup() as HTMLElement).getByRole("option", { name: /왼쪽 메뉴 접기·펼치기/ });
+    expect(spokenText(option)).toBe("왼쪽 메뉴 접기·펼치기단축키 [");
+    fireEvent.click(option);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(commands).toEqual(["toggle-nav"]));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "단축키" })).toBeNull();
   });
 });

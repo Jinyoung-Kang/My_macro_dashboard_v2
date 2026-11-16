@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
@@ -11,8 +11,16 @@ import { rememberRecentEntity, useRecentEntities } from "@/hooks/useRecentEntiti
 import { useShellShortcuts } from "@/hooks/useShellShortcuts";
 import { endpoints } from "@/lib/endpoints";
 import { navSearchItems } from "@/lib/nav";
-import { RECENT_GROUP_LABEL, recentEntries, recentFromEntry } from "@/lib/palette";
-import { onShellCommand } from "@/lib/shellCommands";
+import {
+  COMMAND_GROUP_LABEL,
+  RECENT_GROUP_LABEL,
+  commandMatches,
+  paletteSummary,
+  recentEntries,
+  recentFromEntry,
+  type PaletteCommand,
+} from "@/lib/palette";
+import { isWideShell, onShellCommand, sendShellCommand, type ShellCommand } from "@/lib/shellCommands";
 import type { ShortcutConditions } from "@/lib/shortcuts";
 import {
   buildSearchIndex,
@@ -21,7 +29,6 @@ import {
   institutionEntries,
   menuEntries,
   noResultText,
-  resultSummary,
   searchGroups,
   sourceNotice,
   symbolNotice,
@@ -43,13 +50,23 @@ const isMacServer = () => false;
 const SYMBOL_DEBOUNCE_MS = 350;
 const SYMBOL_MIN_CHARS = 2;
 
-/** 팔레트 결과 한 줄 — 대상·메뉴로 가는 결과. */
-type PaletteOption = { type: "entry"; entry: SearchEntry };
+/** 팔레트 결과 한 줄 — 대상·메뉴로 가는 결과, 또는 명령(셸 명령 하나 — 서버를 부르지 않음, lib/palette). */
+type PaletteOption = { type: "entry"; entry: SearchEntry } | { type: "command"; command: PaletteCommand };
 
 /** 결과 묶음 — 이름 아래 줄들. `more`는 상한 때문에 보이지 않는 수(제목에 "N개 더"). */
 type PaletteGroup = { key: string; label: string; more: number; options: PaletteOption[] };
 
 const entryOption = (entry: SearchEntry): PaletteOption => ({ type: "entry", entry });
+const commandOption = (command: PaletteCommand): PaletteOption => ({ type: "command", command });
+
+/** 결과 줄에 그릴 것 — 대상·메뉴는 그 결과 그대로, 명령은 이름과 같은 일을 하는 단축키(원판에 키 글자, 장식). */
+type OptionView = Pick<SearchEntry, "id" | "label" | "sub" | "dest" | "avatar" | "locked">;
+
+function optionView(option: PaletteOption): OptionView {
+  if (option.type === "entry") return option.entry;
+  const { command } = option;
+  return { id: command.id, label: command.label, sub: `단축키 ${command.keys}`, dest: null, avatar: { text: command.keys } };
+}
 
 /** 도움말 창을 열기 전의 조건(창이 닫혀 있는 동안의 기본값). */
 const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
@@ -121,15 +138,18 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   // 최근 연 대상(이 브라우저에만 — 닫혀 있어도 localStorage만 읽음, 검색 자료는 읽지 않음).
   const recent = useRecentEntities();
   const trimmed = query.trim();
-  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(있을 때만), 검색어가 있으면 지금 범주(메뉴·지표·기관·종목·종목 찾기).
+  // 명령 — 검색어가 맞을 때만(빈 검색어에는 없음 — 빈 Enter가 뜻밖의 동작이 되지 않게). 왼쪽 메뉴 접기는 넓은 화면에서만.
+  const commands = useMemo(() => (open && trimmed !== "" ? commandMatches(trimmed, { wide: isWideShell() }) : []), [open, trimmed]);
+  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(있을 때만), 검색어가 있으면 지금 범주(메뉴·지표·기관·종목·종목 찾기) 다음 명령(맞을 때만).
   const paletteGroups = useMemo<PaletteGroup[]>(() => {
     if (trimmed === "") {
       return recent.length > 0
         ? [{ key: "recent", label: RECENT_GROUP_LABEL, more: 0, options: recentEntries(recent).map(entryOption) }]
         : [];
     }
-    return groups.map((group) => ({ key: group.kind, label: group.label, more: group.more, options: group.items.map(entryOption) }));
-  }, [trimmed, recent, groups]);
+    const found = groups.map((group) => ({ key: group.kind, label: group.label, more: group.more, options: group.items.map(entryOption) }));
+    return commands.length > 0 ? [...found, { key: "command", label: COMMAND_GROUP_LABEL, more: 0, options: commands.map(commandOption) }] : found;
+  }, [trimmed, recent, groups, commands]);
   const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
@@ -151,8 +171,40 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     }
   };
 
-  // 대상(지표·기관·종목·종목 찾기)은 최근 연 대상에 넣고 갑니다. 메뉴는 넣지 않습니다.
+  // 명령 실행 — 셸 명령뿐입니다(도움말 창은 이 컴포넌트의 상태, 왼쪽 메뉴 접기는 셸 명령 신호). 서버를 부르는 명령은 없습니다.
+  const runShellCommand = useCallback(
+    (command: ShellCommand) => {
+      if (command === "open-shortcut-help") openHelp();
+      else sendShellCommand(command);
+    },
+    [openHelp],
+  );
+  // 고른 명령은 팔레트가 닫히고 포커스가 돌아간 뒤에 실행합니다. Radix는 닫힌 대화상자의 포커스를 연 자리로 돌려주는 일을 내용이 사라진 뒤
+  // setTimeout(0)으로 하므로, 그보다 먼저 도움말 창을 열면 포커스가 새 창 밖으로 끌려갔다 돌아오고 도움말을 닫을 때 돌아갈 곳을 잃습니다.
+  // 왼쪽 메뉴 접기도 포커스가 돌아간 자리(접히면 사라지는 하위 칸일 수 있음)를 왼쪽 메뉴가 보고 옮기게 그 뒤에 보냅니다. 이 효과와 Radix의
+  // 미룸 가운데 어느 것이 먼저 걸리는지(React가 닫힘을 한 번에 그리는지 두 번에 그리는지)에 기대지 않게 두 번 미룹니다(바로 열면 시험에서 포커스를 잃음).
+  const pendingCommand = useRef<ShellCommand | null>(null);
+  useEffect(() => {
+    const command = pendingCommand.current;
+    if (open || command === null) return;
+    pendingCommand.current = null;
+    let inner: number | undefined;
+    const outer = window.setTimeout(() => {
+      inner = window.setTimeout(() => runShellCommand(command), 0);
+    }, 0);
+    return () => {
+      window.clearTimeout(outer);
+      if (inner !== undefined) window.clearTimeout(inner);
+    };
+  }, [open, runShellCommand]);
+
+  // 대상(지표·기관·종목·종목 찾기)은 최근 연 대상에 넣고 갑니다. 메뉴는 넣지 않습니다. 명령은 팔레트를 닫은 뒤 실행합니다.
   const go = (option: PaletteOption) => {
+    if (option.type === "command") {
+      pendingCommand.current = option.command.effect.command;
+      changeOpen(false);
+      return;
+    }
     const entry = option.entry;
     const recentEntity = recentFromEntry(entry);
     if (recentEntity) rememberRecentEntity(recentEntity);
@@ -241,7 +293,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
 
         {/* 범주를 아직 다 읽지 못했으면(읽는 중·실패·저장본 없음) 그 사실도 함께 읽어 줍니다 — "결과 0건"만 말하면 없는 것으로 들립니다. */}
         <p role="status" className="sr-only">
-          {trimmed ? resultSummary(groups, notices) : ""}
+          {trimmed ? paletteSummary(groups, commands.length, notices) : ""}
         </p>
 
         {/* 결과가 없으면(입력칸이 접힘 — aria-expanded false) 빈 목록 상자를 접근성 트리에서 뺍니다. 결과 없음 안내는 위 status가 읽습니다. */}
@@ -267,7 +319,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                 {group.options.map((option, itemAt) => {
                   const index = starts[groupAt] + itemAt;
                   const selected = index === activeIndex;
-                  const entry = option.entry;
+                  const entry = optionView(option);
                   return (
                     <div
                       key={entry.id}
@@ -314,7 +366,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         {trimmed === "" && (
           <p className="px-3 text-sm text-text-2">
             메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커·국내 코드를 입력하세요. 지표·기관·종목은 시세·지표·뉴스를 모은 상세 화면으로
-            갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음).
+            갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음). ?를 치고 Enter를 누르면 단축키 도움말을 봅니다.
           </p>
         )}
         {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}

@@ -3,11 +3,16 @@
  * 결과 행으로 바꾸기(원판은 종류대로), 고른 결과에서 만들기(메뉴는 넣지 않음).
  */
 import { describe, expect, it } from "vitest";
-import type { SearchEntry } from "../search";
+import { resultSummary, type SearchEntry, type SearchGroup } from "../search";
+import { SHELL_COMMANDS } from "../shellCommands";
 import {
+  COMMAND_GROUP_LABEL,
+  PALETTE_COMMANDS,
   RECENT_GROUP_LABEL,
   RECENT_LIMIT,
   RECENT_STORAGE_KEY,
+  commandMatches,
+  paletteSummary,
   parseRecent,
   pushRecent,
   recentEntries,
@@ -125,5 +130,68 @@ describe("결과 행", () => {
     expect(recentFromEntry(entry)).toEqual(APPLE);
     const menu: SearchEntry = { kind: "menu", id: "menu:/macro", label: "매크로 지표", sub: "시장", href: "/macro", dest: null, keywords: [] };
     expect(recentFromEntry(menu)).toBeNull();
+  });
+});
+
+describe("명령 — 닫힌 목록, 셸 명령만", () => {
+  it("단축키 도움말과 왼쪽 메뉴 접기·펼치기(넓은 화면만) 둘 — 효과는 모두 셸 명령, 묶음 이름은 '명령'", () => {
+    expect(COMMAND_GROUP_LABEL).toBe("명령");
+    expect(PALETTE_COMMANDS.map((command) => [command.id, command.label, command.keys, command.effect, command.wideOnly ?? false])).toEqual([
+      ["command:shortcut-help", "단축키 도움말", "?", { type: "shell", command: "open-shortcut-help" }, false],
+      ["command:toggle-nav", "왼쪽 메뉴 접기·펼치기", "[", { type: "shell", command: "toggle-nav" }, true],
+    ]);
+    for (const command of PALETTE_COMMANDS) expect(SHELL_COMMANDS).toContain(command.effect.command);
+  });
+
+  const ids = (query: string, wide: boolean) => commandMatches(query, { wide }).map((command) => command.id);
+
+  it("검색어가 비면 없다", () => {
+    expect(ids("", true)).toEqual([]);
+    expect(ids("   ", true)).toEqual([]);
+  });
+
+  it("이름·검색어를 자모로 맞춘다 — 입력 중인 글자, 초성, 영문 검색어", () => {
+    expect(ids("단축키", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("도움", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("키보드", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("단축ㅋ", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("ㄷㅊㅋ", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("Help", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("메뉴 접기", true)).toEqual(["command:toggle-nav"]);
+    expect(ids("메뉴펼치", true)).toEqual(["command:toggle-nav"]);
+    expect(ids("사이드바", true)).toEqual(["command:toggle-nav"]);
+    expect(ids("ㅅㅇㄷㅂ", true)).toEqual(["command:toggle-nav"]);
+    expect(ids("zzzz", true)).toEqual([]);
+    expect(ids("aapl", true)).toEqual([]);
+  });
+
+  it("기호 하나('?'·'[')는 그 기호를 단축키로 가진 명령과 맞는다", () => {
+    expect(ids("?", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("[", true)).toEqual(["command:toggle-nav"]);
+    expect(ids("]", true)).toEqual([]);
+  });
+
+  it("넓은 화면이 아니면 왼쪽 메뉴 접기·펼치기를 뺀다", () => {
+    expect(ids("메뉴 접기", false)).toEqual([]);
+    expect(ids("[", false)).toEqual([]);
+  });
+});
+
+describe("paletteSummary — 결과 수 안내에 명령 수를 더함", () => {
+  const group = (total: number, shown: number): SearchGroup => ({
+    kind: "ticker", label: "종목", total, more: total - shown,
+    items: Array.from({ length: shown }, (_, at) => ({ kind: "ticker", id: `t${at}`, label: `T${at}`, sub: null, href: `/s/us/T${at}`, dest: null, keywords: [] })),
+  });
+
+  it("명령이 없으면 lib/search resultSummary와 같은 글", () => {
+    for (const [groups, notices] of [[[], []], [[group(3, 3)], []], [[group(10, 6)], ["종목: 불러오는 중…"]]] as [SearchGroup[], string[]][]) {
+      expect(paletteSummary(groups, 0, notices)).toBe(resultSummary(groups, notices));
+    }
+  });
+
+  it("명령은 상한 없이 모두 보이므로 맞은 수·보이는 수에 함께 더한다", () => {
+    expect(paletteSummary([], 1)).toBe("결과 1건");
+    expect(paletteSummary([group(3, 3)], 2)).toBe("결과 5건");
+    expect(paletteSummary([group(10, 6)], 1, ["기관: 불러오는 중…"])).toBe("결과 11건 중 7건 표시 — 기관: 불러오는 중…");
   });
 });
