@@ -81,7 +81,7 @@ export function AccountBox({ user }: { user?: SessionUser }) {
       <button
         type="button"
         onClick={() => void logout()}
-        className={`${buttonClasses("secondary", "sm")} w-full`}
+        className={`${buttonClasses("secondary", "md")} w-full`}
       >
         로그아웃
       </button>

@@ -367,11 +367,11 @@ describe("본문", () => {
   });
 });
 
-describe("운영자 수동 새로고침", () => {
+describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단추)", () => {
   it("누르면 수집을 요청하고, 수집 중에는 막고 안내 문구를 그대로 보인다", () => {
     renderShell(LOCAL_OWNER);
     // 안내 영역(role=status)은 문구가 없을 때도 있다 — 지웠다 내용과 함께 다시 넣으면 낭독기가 새 문구를 읽지 않기도 한다.
-    const empty = screen.getAllByRole("status").find((node) => node.closest("aside"));
+    const empty = screen.getAllByRole("status").find((node) => node.closest("header"));
     expect(empty?.textContent).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "데이터 수동 새로고침" }));
     expect(signal.requestRefresh).toHaveBeenCalledTimes(1);
@@ -383,6 +383,30 @@ describe("운영자 수동 새로고침", () => {
     const button = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
+  });
+
+  it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 말줄임하고 전체 글은 title", () => {
+    signal.message = "수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.";
+    renderShell(LOCAL_OWNER);
+    const button = screen.getByRole("button", { name: "데이터 수동 새로고침" });
+    expect(button.closest("header")).not.toBeNull();
+    expect(button.className.split(/\s+/)).toEqual(expect.arrayContaining(["size-[30px]", "rounded-control"]));
+    // 도구 줄의 단추라 주 단추(강조 파랑 바탕)가 아니다(명세 §3-4)
+    expect(button.className).not.toContain("bg-accent");
+    const row = button.closest("header > div") as HTMLElement;
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    const status = within(row).getByRole("status");
+    expect(status.getAttribute("title")).toBe("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.");
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["truncate", "max-w-40"]));
+  });
+
+  it("회원·데모 열람에게는 단추도 안내 영역도 없다", () => {
+    for (const user of [MEMBER_PRO, DEMO]) {
+      renderShell(user);
+      expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
+      expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+      cleanup();
+    }
   });
 });
 
