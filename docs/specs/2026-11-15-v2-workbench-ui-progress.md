@@ -1095,6 +1095,8 @@ Yahoo 막힘)도 차트 칸과 '차트' 줄이 '받지 못함'으로 맞습니�
 확인(이 PC, 갈래마다 작업 폴더에서): 커밋마다 `npx vitest run` 전체(끝 — 홈 287개 파일 3,622 · 상세 289개 3,641 · 셸 286개 3,611 통과, 기준 `50087320` 286개 3,609), 재현 시험은 고치기 전
 코드에서 실패하는 것을 확인, `npx tsc --noEmit -p .`, `npx eslint src`(오류 0 — 경고 1은 전부터 있던 `lib/infoSearch.ts`), `npm run check`, `next build --webpack`(서버는 내리고 `.next`는
 지움). 흔들림 없음. 문서 갈래는 `noEmoji` 시험과 README·CLAUDE.md를 읽는 수집기 시험.
+합친 뒤(`claude/workbench-ui-2026-11` `1ced6232` — 네 갈래를 `--no-ff`로, 겹친 파일 0): `npx vitest run` 290개 파일 3,656 통과(기준 3,609 + 홈 13 + 상세 32 + 셸 2와 같음),
+`npx tsc --noEmit -p .` 오류 0, `npx eslint src` 오류 0·경고 1(전부터), `npm run check` 통과, HEAD 새 복제본 gitleaks '누출 없음', 문서를 읽는 수집기 시험 22개 통과.
 
 ## D1 QA 스택 확인 (2026-11-16, `claude/workbench-ui-2026-11` `96031a2f` → 고침 묶음 다섯을 합친 `6740c10a` → 다시 확인 뒤 고침 `8f87edae`)
 
