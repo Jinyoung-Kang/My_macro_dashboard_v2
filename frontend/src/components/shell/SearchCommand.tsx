@@ -7,9 +7,11 @@ import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { rememberRecentEntity, useRecentEntities } from "@/hooks/useRecentEntities";
 import { useShellShortcuts } from "@/hooks/useShellShortcuts";
 import { endpoints } from "@/lib/endpoints";
 import { navSearchItems } from "@/lib/nav";
+import { RECENT_GROUP_LABEL, recentEntries, recentFromEntry } from "@/lib/palette";
 import { onShellCommand } from "@/lib/shellCommands";
 import type { ShortcutConditions } from "@/lib/shortcuts";
 import {
@@ -40,6 +42,14 @@ const isMacServer = () => false;
 /** 외부 종목 찾기(GET /api/detail/symbols)를 부르기 전 기다리는 시간과 최소 글자 수 — 글자를 칠 때마다 외부 검색을 부르지 않게. */
 const SYMBOL_DEBOUNCE_MS = 350;
 const SYMBOL_MIN_CHARS = 2;
+
+/** 팔레트 결과 한 줄 — 대상·메뉴로 가는 결과. */
+type PaletteOption = { type: "entry"; entry: SearchEntry };
+
+/** 결과 묶음 — 이름 아래 줄들. `more`는 상한 때문에 보이지 않는 수(제목에 "N개 더"). */
+type PaletteGroup = { key: string; label: string; more: number; options: PaletteOption[] };
+
+const entryOption = (entry: SearchEntry): PaletteOption => ({ type: "entry", entry });
 
 /** 도움말 창을 열기 전의 조건(창이 닫혀 있는 동안의 기본값). */
 const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
@@ -108,9 +118,21 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     const remote = symbolGroup(symbols.data, indexed);
     return remote ? [...indexed, remote] : indexed;
   }, [indexed, symbols.data]);
-  const flat = groups.flatMap((group) => group.items);
+  // 최근 연 대상(이 브라우저에만 — 닫혀 있어도 localStorage만 읽음, 검색 자료는 읽지 않음).
+  const recent = useRecentEntities();
+  const trimmed = query.trim();
+  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(있을 때만), 검색어가 있으면 지금 범주(메뉴·지표·기관·종목·종목 찾기).
+  const paletteGroups = useMemo<PaletteGroup[]>(() => {
+    if (trimmed === "") {
+      return recent.length > 0
+        ? [{ key: "recent", label: RECENT_GROUP_LABEL, more: 0, options: recentEntries(recent).map(entryOption) }]
+        : [];
+    }
+    return groups.map((group) => ({ key: group.kind, label: group.label, more: group.more, options: group.items.map(entryOption) }));
+  }, [trimmed, recent, groups]);
+  const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
-  const starts = groups.map((_, at) => groups.slice(0, at).reduce((sum, group) => sum + group.items.length, 0));
+  const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
   const activeIndex = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
 
   const notices = [
@@ -129,7 +151,11 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     }
   };
 
-  const go = (entry: SearchEntry) => {
+  // 대상(지표·기관·종목·종목 찾기)은 최근 연 대상에 넣고 갑니다. 메뉴는 넣지 않습니다.
+  const go = (option: PaletteOption) => {
+    const entry = option.entry;
+    const recentEntity = recentFromEntry(entry);
+    if (recentEntity) rememberRecentEntity(recentEntity);
     changeOpen(false);
     router.push(entry.href);
   };
@@ -155,7 +181,6 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     }
   };
 
-  const trimmed = query.trim();
   const infoSearch = infoSearchEntry(query, user);
 
   return (
@@ -227,28 +252,29 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           hidden={flat.length === 0}
           className="mt-3 flex max-h-[min(60dvh,28rem)] flex-col gap-3 overflow-y-auto"
         >
-          {groups.map((group, groupAt) => {
-            const headingId = `${baseId}-group-${group.kind}`;
+          {paletteGroups.map((group, groupAt) => {
+            const headingId = `${baseId}-group-${group.key}`;
             return (
-              <div key={group.kind} role="group" aria-labelledby={headingId}>
+              <div key={group.key} role="group" aria-labelledby={headingId}>
                 <div id={headingId} role="presentation" className="flex items-baseline justify-between gap-2 px-3 pb-1 text-xs font-semibold text-text-3">
                   <span>{group.label}</span>
                   {group.more > 0 && (
                     <span className="font-normal">
-                      {group.items.length}개 표시 · {group.more}개 더 — 검색어를 더 입력하세요
+                      {group.options.length}개 표시 · {group.more}개 더 — 검색어를 더 입력하세요
                     </span>
                   )}
                 </div>
-                {group.items.map((entry, itemAt) => {
+                {group.options.map((option, itemAt) => {
                   const index = starts[groupAt] + itemAt;
                   const selected = index === activeIndex;
+                  const entry = option.entry;
                   return (
                     <div
                       key={entry.id}
                       id={optionId(index)}
                       role="option"
                       aria-selected={selected}
-                      onClick={() => go(entry)}
+                      onClick={() => go(option)}
                       onMouseMove={() => {
                         if (!selected) setActive(index);
                       }}

@@ -22,6 +22,8 @@ const signal = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import { resetRecentEntitiesForTest } from "@/hooks/useRecentEntities";
+import { RECENT_STORAGE_KEY, serializeRecent } from "@/lib/palette";
 import { SearchCommand } from "../SearchCommand";
 
 const MEMBER: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "PRO" };
@@ -73,6 +75,12 @@ beforeEach(() => {
 });
 
 afterEach(() => cleanup());
+
+// 최근 연 대상(localStorage)은 사례마다 비웁니다 — 앞 사례가 고른 대상이 뒤 사례의 빈 검색어 결과로 남지 않게.
+beforeEach(() => {
+  window.localStorage.clear();
+  resetRecentEntitiesForTest();
+});
 
 describe("여닫기", () => {
   it("닫혀 있으면 대화상자도 없고 검색 자료도 읽지 않는다", () => {
@@ -455,5 +463,90 @@ describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, �
     expect(classes(row)).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
     expect(classes(within(row).getByText("Apple Inc."))).toEqual(expect.arrayContaining(["text-[15px]", "lg:text-sm"]));
     expect(classes(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
+  });
+});
+
+describe("최근 연 대상(이 브라우저에만, 8개)", () => {
+  const recentGroup = () => screen.queryByRole("group", { name: "최근 연 대상" });
+
+  it("대상을 고르면 다시 열 때 빈 검색어에 '최근 연 대상'(최신 순)이 보이고, Enter로 맨 위 대상에 간다", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(recentGroup()).toBeNull();
+    type("gspc");
+    fireEvent.click(screen.getByRole("option", { name: /S&P 500/ }));
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("aapl");
+    fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
+    expect(router.push).toHaveBeenLastCalledWith("/s/us/AAPL");
+
+    fireEvent.click(trigger());
+    const group = recentGroup() as HTMLElement;
+    expect(group).toBeTruthy();
+    const options = within(group).getAllByRole("option");
+    expect(options.map(spokenText)).toEqual(["Apple Inc.AAPL · Technology→ 종목 상세", "S&P 500주가지수 · ^GSPC→ 지표 상세"]);
+    expect(options[0].querySelector("span[aria-hidden='true'].rounded-full")?.textContent).toBe("AAP");
+    expect(options[0].getAttribute("aria-selected")).toBe("true");
+    expect(input().getAttribute("aria-expanded")).toBe("true");
+    // 검색어가 비면 결과 수 안내는 읽지 않는다(지금처럼).
+    expect(screen.getByRole("status").textContent).toBe("");
+    // 저장소에는 대상의 이름·주소만.
+    expect(JSON.parse(window.localStorage.getItem(RECENT_STORAGE_KEY) ?? "null").items.map((item: { href: string }) => item.href))
+      .toEqual(["/s/us/AAPL", "/markets/i/sp500"]);
+
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(router.push).toHaveBeenLastCalledWith("/markets/i/sp500");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("검색어를 치면 최근 묶음은 빠지고 지금 범주만 보인다", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+    ]));
+    openSearch();
+    await act(async () => {});
+    expect(recentGroup()).toBeTruthy();
+    type("aapl");
+    expect(recentGroup()).toBeNull();
+    expect(screen.getByRole("group", { name: "종목" })).toBeTruthy();
+  });
+
+  it("메뉴를 고르면 최근 연 대상에 넣지 않는다", async () => {
+    openSearch();
+    await act(async () => {});
+    type("순유");
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(router.push).toHaveBeenLastCalledWith("/liquidity");
+
+    fireEvent.click(trigger());
+    expect(recentGroup()).toBeNull();
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(window.localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("저장소가 비거나 못 읽으면(던짐) 지금처럼 결과 0건·안내만 — 고르기와 이동은 그대로", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    openSearch();
+    await act(async () => {});
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/)).toBeTruthy();
+    type("aapl");
+    fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
+    expect(router.push).toHaveBeenLastCalledWith("/s/us/AAPL");
+  });
+
+  it("최근 연 대상이 있어도 닫혀 있는 동안 검색 자료(API)는 읽지 않는다", () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "indicator", label: "S&P 500", sub: null, href: "/markets/i/sp500", dest: "지표 상세" },
+    ]));
+    render(<SearchCommand user={MEMBER} />);
+    expect(api.apiGetShared).not.toHaveBeenCalled();
   });
 });
