@@ -148,7 +148,8 @@ function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolea
             style={{ "--book-color": colors.get(row.id) } as CSSProperties}
           />
           <span className="flex min-w-0 flex-col">
-            <Link href={row.href} className={`${LINK_CLASSES} break-keep`}>
+            {/* self-start — flex 열의 항목이라 늘어나면 누르는 자리·포커스 고리가 보조 줄 폭까지 넓어집니다(QA-607, QA-582와 같은 방법). */}
+            <Link href={row.href} className={`${LINK_CLASSES} self-start break-keep`}>
               {row.name}
             </Link>
             {row.sub ? <span className="break-keep text-xs leading-4 text-text-3">{row.sub}</span> : null}

@@ -51,7 +51,7 @@ const classes = (element: Element) => (element.getAttribute("class") ?? "").spli
 
 describe("홈 계좌 손익 표의 계좌 이름 링크는 글 폭만 누르는 자리 (QA-607)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 다섯 링크 모두 self-start가 없어 보조 줄 폭까지 늘어났습니다.
-  it.fails("다섯 계좌의 이름 링크마다 self-start — 감싼 열(flex-col)과 보조 줄은 그대로", async () => {
+  it("다섯 계좌의 이름 링크마다 self-start — 감싼 열(flex-col)과 보조 줄은 그대로", async () => {
     render(
       <SessionUserProvider user={OWNER}>
         <PaperPnlPanel />
