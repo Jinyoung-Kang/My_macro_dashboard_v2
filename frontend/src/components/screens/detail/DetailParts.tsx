@@ -475,7 +475,8 @@ export function AiSummaryCard({
   return (
     <Card
       title="AI 요약"
-      subtitle="이 화면의 시세·지표·뉴스만 근거로 Claude가 요약합니다. 투자 권유가 아니며, 숫자는 위 표와 출처에서 확인하세요."
+      // 부제는 배치에 기대지 않는 글 — 지표 상세에는 표가 없고, 종목·기관 상세의 표도 왼쪽 칸·다른 탭에 있습니다(QA-575 — '위 표'가 가리키는 것이 없었음).
+      subtitle="이 화면의 시세·지표·뉴스만 근거로 Claude가 요약합니다. 투자 권유가 아니며, 숫자는 이 화면의 값과 출처에서 확인하세요."
       actions={
         allowed === false ? (
           <span className="inline-flex items-center gap-1 text-xs text-text-3">
@@ -501,10 +502,12 @@ export function AiSummaryCard({
           <ErrorState message={summary.error} />
         </div>
       ) : null}
-      {/* 늘 그려 두는 알림 영역 — 경고 안내와 진행·완료 글(비면 높이 0). 결과가 올 때 새로 넣으면 낭독기가 읽지 않기도 합니다. */}
-      <div role="status">
+      {/* 늘 그려 두는 알림 영역 — 진행 글(보임 — 쉴 때의 '단추를 누르면' 안내 자리를 대신함, QA-575)·경고 안내·완료 글(비면 높이 0).
+          결과가 올 때 새로 넣으면 낭독기가 읽지 않기도 합니다. 영역은 하나 — 둘이면 같은 일이 두 번 읽힙니다. */}
+      <div role="status" className={`flex flex-col gap-2 ${summary.busy && lines.length > 0 ? "mb-3" : ""}`.trim()}>
+        {summary.busy ? <p className="break-keep text-sm text-text-2">요약하는 중입니다 — AI를 부르면 몇 초 걸립니다</p> : null}
         {result && !result.status ? <Banner tone="warn">{result.error ?? "요약을 만들지 못했습니다."}</Banner> : null}
-        <span className="sr-only">{summary.busy ? "요약하는 중…" : result?.status ? "AI 요약을 만들었습니다." : ""}</span>
+        {!summary.busy && result?.status ? <span className="sr-only">AI 요약을 만들었습니다.</span> : null}
       </div>
       {lines.length > 0 ? (
         // 긴 글 단계(running 15/24, 한 줄 최대 72자). 근거 번호는 위로 올리되 줄 높이를 밀지 않게(align-super 대신 상대 위치 — 번호가 있는 줄만 줄 간격이 벌어졌음).
@@ -564,7 +567,7 @@ export function AiSummaryCard({
             .join(" · ")}
         </p>
       ) : null}
-      {!result && !summary.error ? (
+      {!result && !summary.error && !summary.busy ? (
         <p className="break-keep text-sm text-text-2">
           {allowed === false
             ? isDemo(user)

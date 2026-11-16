@@ -44,7 +44,7 @@ function renderCard() {
 
 describe("QA-575 AI 요약 카드 글 — 배치와 상관없는 부제, 요약하는 중에는 진행 글", () => {
   // 수정 전 실패: 부제에 '위 표'가 있음(재현 커밋에서는 it.fails).
-  it.fails("부제는 배치에 기대지 않는다('위 표' 없음) — 이 화면의 값과 출처", () => {
+  it("부제는 배치에 기대지 않는다('위 표' 없음) — 이 화면의 값과 출처", () => {
     const card = renderCard();
     const subtitle = within(card).getByText(/투자 권유가 아니며/);
     expect(subtitle.textContent).not.toMatch(/위 표/);
@@ -52,7 +52,7 @@ describe("QA-575 AI 요약 카드 글 — 배치와 상관없는 부제, 요약�
   });
 
   // 수정 전 실패: 누른 뒤에도 '단추를 누르면 요약합니다' 안내가 남고, 알림 영역에 보이는 진행 글이 없음(재현 커밋에서는 it.fails).
-  it.fails("요약하는 중에는 '단추를 누르면' 안내 대신 알림 영역(하나) 안에 보이는 진행 글 — 단추는 aria-disabled", async () => {
+  it("요약하는 중에는 '단추를 누르면' 안내 대신 알림 영역(하나) 안에 보이는 진행 글 — 단추는 aria-disabled", async () => {
     api.apiPost.mockReturnValue(new Promise(() => {}));
     const card = renderCard();
     const hint = within(card).getByText(HINT);
@@ -71,7 +71,7 @@ describe("QA-575 AI 요약 카드 글 — 배치와 상관없는 부제, 요약�
   });
 
   // 수정 전 실패: 오류 뒤 다시 누르면(run이 오류를 먼저 지움) 진행 중에 안내가 다시 보임(재현 커밋에서는 it.fails).
-  it.fails("오류 뒤 다시 누를 때도 진행 중에는 안내 대신 진행 글", async () => {
+  it("오류 뒤 다시 누를 때도 진행 중에는 안내 대신 진행 글", async () => {
     api.apiPost.mockRejectedValueOnce(new Error("백엔드 API에 연결하지 못했습니다(합성)"));
     const card = renderCard();
     await act(async () => {
