@@ -169,9 +169,22 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
       },
     };
     const { container } = renderAs(<StockDetailScreen market="us" code="SYNQ" />);
+    // 가운데 탭(개요·뉴스·리서치·보유 기관 — P4)마다 보이는 누름 자리를 따집니다(숨긴 탭은 감사가 건너뜀). 보유 기관 줄은 목록-검사의 줄 단추이고
+    // 기관 상세 링크는 줄을 누르면 여는 대화상자(body 끝에 그림) 안이라 그것도 봅니다.
+    await screen.findByRole("link", { name: /한국어 개요 출처/ });
+    const found = [...smallTargets(container)];
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     await screen.findByRole("link", { name: /Synthetic headline/ });
-    await screen.findByRole("link", { name: "합성 자산운용" });
-    expect(smallTargets(container)).toEqual([]);
+    found.push(...smallTargets(container));
+    fireEvent.click(screen.getByRole("tab", { name: "리서치" }));
+    await screen.findByRole("link", { name: /합성 리포트/ });
+    found.push(...smallTargets(container));
+    fireEvent.click(screen.getByRole("tab", { name: "보유 기관" }));
+    fireEvent.click(await screen.findByRole("button", { name: /합성 자산운용/ }));
+    const dialog = await screen.findByRole("dialog", { name: "합성 자산운용" });
+    expect(within(dialog).getByRole("link", { name: "기관 상세 열기" })).toBeTruthy();
+    found.push(...smallTargets(dialog));
+    expect(found).toEqual([]);
   });
 
   //  - 상세 화면 공용 AI 요약: '요약 근거' 목록의 출처 링크(따로 선 링크가 4px 간격으로 쌓인 목록 — 검토 지적). 문장 끝의 위첨자 [n]은

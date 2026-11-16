@@ -11,6 +11,7 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { macroOverview } from "@/lib/__tests__/homeFixtures";
 import type { DetailQuote, SessionUser } from "@/lib/types";
 
@@ -65,7 +66,17 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
+
+/** 넓은 화면(lg 이상 — 왼쪽 메뉴가 보이는 폭)으로 — MasterDetail이 대화상자 대신 오른쪽 검사 칸을 씁니다. */
+function stubWide() {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+  );
+}
 
 function renderAs(user: SessionUser | undefined, page: ReactElement) {
   return render(<SessionUserProvider user={user}>{page}</SessionUserProvider>);
@@ -133,18 +144,25 @@ function appleReads(): Record<string, unknown> {
 }
 
 describe("종목 상세 — 미국", () => {
-  it("시세 히어로·핵심 지표·개요·의견·뉴스·13F 보유 기관·외부 링크를 그린다", async () => {
+  it("대상 머리(현재가·장 상태)·가격 차트 패널·핵심 지표·개요·의견·뉴스·13F 보유 기관·외부 링크·출처를 그린다", async () => {
     reads = appleReads();
     renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Apple Inc." })).toBeTruthy();
+    const title = await screen.findByRole("heading", { level: 1, name: "Apple Inc." });
     expect(screen.getByText("AAPL · NasdaqGS · 주식 · USD")).toBeTruthy();
+    // 지금 값·장 상태는 대상 머리(작업대 대상 문법 — 히어로 자리), 차트·기간은 가운데 '개요' 탭의 가격 차트 패널(영역 이름 그대로)
+    const header = title.closest("header") as HTMLElement;
+    expect(within(header).getByText("344.63")).toBeTruthy();
+    expect(within(header).getByText("장 마감")).toBeTruthy();
+    expect(within(header).getByText("종목")).toBeTruthy();
     const hero = screen.getByRole("region", { name: "Apple Inc. 시세" });
-    expect(within(hero).getByText("344.63")).toBeTruthy();
-    expect(within(hero).getByText("장 마감")).toBeTruthy();
-    expect(within(hero).getByRole("link", { name: /출처 보기/ }).getAttribute("href")).toBe("https://finance.yahoo.com/quote/AAPL");
     expect(await within(hero).findByRole("img", { name: "Apple Inc. 시세 가격 차트" })).toBeTruthy();
     expect(within(hero).getByRole("tablist", { name: "Apple Inc. 시세 차트 기간" })).toBeTruthy();
+    // 시세 '출처 보기'는 오른쪽 '출처' 패널(새 창)
+    const sources = screen.getByRole("heading", { level: 2, name: "출처" }).closest("section") as HTMLElement;
+    const sourceLink = within(sources).getByRole("link", { name: /출처 보기/ });
+    expect(sourceLink.getAttribute("href")).toBe("https://finance.yahoo.com/quote/AAPL");
+    expect(sourceLink.getAttribute("target")).toBe("_blank");
 
     // 핵심 지표 — 단위대로, 모르는 값은 "—"
     const stats = screen.getByRole("heading", { name: "핵심 지표" }).closest("section") as HTMLElement;
@@ -157,7 +175,8 @@ describe("종목 상세 — 미국", () => {
     expect(screen.getByText("360.50 USD")).toBeTruthy();
     expect(screen.getByText("매수")).toBeTruthy();
 
-    // 뉴스 — 원문 새 창 링크, http(s)가 아닌 주소는 글만, 실패한 출처는 한 줄
+    // 뉴스(가운데 '뉴스' 탭) — 원문 새 창 링크, http(s)가 아닌 주소는 글만, 실패한 출처는 한 줄
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     const article = await screen.findByRole("link", { name: /Apple beats estimates/ });
     expect(article.getAttribute("href")).toBe("https://news.example/a");
     expect(article.getAttribute("target")).toBe("_blank");
@@ -168,10 +187,16 @@ describe("종목 상세 — 미국", () => {
     // 뉴스는 시세(회사 이름)를 읽은 뒤 한 번만 — 이름 없는 요청을 먼저 보내지 않는다
     expect(requested().filter((path) => path.startsWith("/api/detail/news"))).toEqual([NEWS]);
 
-    // 13F 보유 기관 — 공시 이름으로 찾은 줄, 기관 이름은 기관 상세 링크
-    const holder = await screen.findByRole("link", { name: "버크셔 해서웨이 (Berkshire Hathaway)" });
-    expect(holder.getAttribute("href")).toBe("/institutions/0001067983");
-    expect(screen.getByText("21.50%")).toBeTruthy();
+    // 13F 보유 기관(가운데 '보유 기관' 탭 — 목록-검사): 공시 이름으로 찾은 줄, 줄을 누르면 검사(좁은 화면 대화상자)에 '기관 상세 열기'
+    fireEvent.click(screen.getByRole("tab", { name: "보유 기관" }));
+    const list = await screen.findByRole("list", { name: "13F 보유 기관" });
+    const holder = within(list).getByRole("button", { name: /버크셔 해서웨이 \(Berkshire Hathaway\)/ });
+    expect(within(holder).getByText("21.50%")).toBeTruthy();
+    fireEvent.click(holder);
+    const dialog = await screen.findByRole("dialog", { name: "버크셔 해서웨이 (Berkshire Hathaway)" });
+    expect(within(dialog).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe("/institutions/0001067983");
+    expect(within(dialog).getByText("037833100").className).toContain("font-mono");
+    fireEvent.keyDown(dialog, { key: "Escape" });
 
     const links = screen.getByRole("heading", { name: "다른 곳에서 보기" }).closest("section") as HTMLElement;
     expect(within(links).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
@@ -180,6 +205,70 @@ describe("종목 상세 — 미국", () => {
       "https://www.investing.com/search/?q=Apple%20Inc.",
       "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=AAPL",
     ]);
+  });
+
+  it("넓은 화면의 보유 기관 — 줄을 고르면 대화상자 없이 검사 칸(줄 이름의 영역)에 속성과 '기관 상세 열기', j/k로 옮김", async () => {
+    stubWide();
+    reads = appleReads();
+    (reads[HOLDERS] as { rows: unknown[] }).rows.push({
+      institution: "합성 연기금", cik: "0000000012", name: "APPLE INC", cusip: "037833100", weight: 1.5, value: 4e9, reportDate: "2026-06-30",
+    });
+    renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "보유 기관" }));
+    const list = await screen.findByRole("list", { name: "13F 보유 기관" });
+    // 처음에는 고른 줄 없음(안내 글) — 보유 기관은 저절로 고르지 않음
+    expect(screen.getByText(/줄을 고르면 이 칸에 자세한 값이 나옵니다/)).toBeTruthy();
+    const [first, second] = within(list).getAllByRole("button");
+    fireEvent.click(first);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const inspector = screen.getByRole("region", { name: "버크셔 해서웨이 (Berkshire Hathaway)" });
+    expect(first.getAttribute("aria-current")).toBe("true");
+    expect(within(inspector).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe("/institutions/0001067983");
+    expect(within(inspector).getByText("2026-06-30")).toBeTruthy();
+    fireEvent.keyDown(first, { key: "j" });
+    expect(document.activeElement).toBe(second);
+    expect(screen.getByRole("region", { name: "합성 연기금" })).toBeTruthy();
+  });
+
+  it("가운데 탭 — 개요·뉴스·보유 기관(리서치는 리포트가 있을 때만), 숨긴 탭의 뉴스·13F도 처음에 읽는다", async () => {
+    reads = appleReads();
+    renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    await screen.findByRole("heading", { level: 1, name: "Apple Inc." });
+    const tablist = screen.getByRole("tablist", { name: "Apple Inc. 내용" });
+    expect(within(tablist).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["개요", "뉴스", "보유 기관"]);
+    await waitFor(() => expect(requested()).toContain(NEWS));
+    await waitFor(() => expect(requested()).toContain(HOLDERS));
+    expect(screen.queryByRole("list", { name: "13F 보유 기관" })).toBeNull();
+  });
+
+  it("같은 Yahoo 심볼의 지표(매크로 카드)가 있으면 '연결'에 그 지표 상세, 정보 검색 대상(지수는 대상이 아니라 없음)", async () => {
+    const GSPC = endpoints.detail.quote("us", "^GSPC");
+    reads = {
+      [GSPC]: { available: true, quote: appleQuote({ code: "^GSPC", yahooSymbol: "^GSPC", name: "S&P 500", kind: "INDEX", exchange: "SNP" }) },
+      [endpoints.macro.overview(false)]: macroOverview(),
+    };
+    renderAs(PRO, <StockDetailScreen market="us" code="^GSPC" />);
+    await screen.findByRole("heading", { level: 1, name: "S&P 500" });
+    const links = (await screen.findByRole("heading", { level: 2, name: "연결" })).closest("section") as HTMLElement;
+    expect(within(links).getByRole("link", { name: "S&P 500 지표 상세" }).getAttribute("href")).toBe("/markets/i/sp500");
+    expect(within(links).queryByRole("link", { name: /정보 검색/ })).toBeNull();
+    cleanup();
+
+    // 미국 주식 — 정보 검색 대상 화면(us:<티커>)은 머리 동작과 '연결' 두 곳, 같은 심볼의 지표는 없음
+    reads = { ...appleReads(), [endpoints.macro.overview(false)]: macroOverview() };
+    renderAs(FREE, <StockDetailScreen market="us" code="AAPL" />);
+    const title = await screen.findByRole("heading", { level: 1, name: "Apple Inc." });
+    const header = title.closest("header") as HTMLElement;
+    expect(within(header).getByRole("link", { name: "정보 검색에서 보기" }).getAttribute("href")).toBe("/search?e=us:AAPL&tab=timeline&range=30d");
+    const connect = screen.getByRole("heading", { level: 2, name: "연결" }).closest("section") as HTMLElement;
+    expect(within(connect).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/search?e=us:AAPL&tab=timeline&range=30d"]);
+
+    // 국내 종목은 매크로 개요를 읽지 않는다(매크로 카드 티커는 Yahoo 심볼)
+    cleanup();
+    api.apiGetShared.mockClear();
+    renderAs(PRO, <StockDetailScreen market="kr" code="005930" />);
+    await screen.findByRole("heading", { level: 1, name: "005930" });
+    expect(requested()).not.toContain(endpoints.macro.overview(false));
   });
 
   it("한국어 개요(네이버 해외주식)가 있으면 제목은 한글 이름·영문은 보조 줄, 개요·업종·섹터·나라는 한국어, 출처 링크", async () => {
@@ -196,14 +285,44 @@ describe("종목 상세 — 미국", () => {
     renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
     expect(await screen.findByRole("heading", { level: 1, name: "애플" })).toBeTruthy();
     expect(screen.getByText("Apple Inc. · AAPL · NasdaqGS · 주식 · USD")).toBeTruthy();
+    // 섹터·업종·나라는 왼쪽 '회사 개요' 속성, 사업 설명 글과 그 출처는 가운데 개요 탭의 '회사 소개'
     const card = screen.getByRole("heading", { name: "회사 개요" }).closest("section") as HTMLElement;
     expect(within(card).getByText("기술")).toBeTruthy();
     expect(within(card).getByText("전화 및 소형 장치")).toBeTruthy();
     expect(within(card).getByText("미국")).toBeTruthy();
-    expect(within(card).getByText(/애플은 기기를 설계한다/)).toBeTruthy();
-    expect(within(card).queryByText("Apple designs devices.")).toBeNull();
-    expect(within(card).getByRole("link", { name: /한국어 개요 출처/ }).getAttribute("href")).toBe(
+    const about = screen.getByRole("heading", { name: "회사 소개" }).closest("section") as HTMLElement;
+    expect(within(about).getByText(/애플은 기기를 설계한다/)).toBeTruthy();
+    expect(within(about).queryByText("Apple designs devices.")).toBeNull();
+    expect(within(about).getByRole("link", { name: /한국어 개요 출처/ }).getAttribute("href")).toBe(
       "https://m.stock.naver.com/worldstock/stock/AAPL.O/overview");
+    expect(screen.queryByText("한국어 개요가 없어 Yahoo 영문 원문을 보입니다.")).toBeNull();
+  });
+
+  it("회사 소개 — 영문 원문이면 그렇게 적고, 10줄을 넘게 그려지면 접고 '자세히'로 편다(넘지 않으면 단추 없음)", async () => {
+    reads = appleReads();
+    const { unmount } = renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    let about = (await screen.findByRole("heading", { name: "회사 소개" })).closest("section") as HTMLElement;
+    expect(within(about).getByText("Apple designs devices.")).toBeTruthy();
+    expect(within(about).getByText("한국어 개요가 없어 Yahoo 영문 원문을 보입니다.")).toBeTruthy();
+    // jsdom은 높이를 재지 않아(0) 넘치지 않음 — 단추 없이 다 보임
+    expect(within(about).queryByRole("button", { name: "자세히" })).toBeNull();
+    unmount();
+
+    // 그린 높이가 접은 높이보다 크면(넘침) '자세히' — 누르면 펴고 '접기'
+    const scroll = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(400);
+    const client = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(240);
+    renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    about = (await screen.findByRole("heading", { name: "회사 소개" })).closest("section") as HTMLElement;
+    const more = await within(about).findByRole("button", { name: "자세히" });
+    const text = within(about).getByText("Apple designs devices.");
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    expect(more.getAttribute("aria-controls")).toBe(text.id);
+    expect(text.className).toContain("line-clamp-[10]");
+    fireEvent.click(more);
+    expect(within(about).getByRole("button", { name: "접기" }).getAttribute("aria-expanded")).toBe("true");
+    expect(text.className).not.toContain("line-clamp-[10]");
+    scroll.mockRestore();
+    client.mockRestore();
   });
 
   it("뉴스는 한 쪽에 5건 — 이전·다음 단추와 쪽 표시", async () => {
@@ -219,6 +338,7 @@ describe("종목 상세 — 미국", () => {
       },
     };
     renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "뉴스" }));
     expect(await screen.findByRole("link", { name: /기사 1\b/ })).toBeTruthy();
     const pager = screen.getByRole("navigation", { name: "뉴스 쪽" });
     expect(within(pager).getByText("1 / 3쪽 · 12건")).toBeTruthy();
@@ -323,12 +443,17 @@ describe("종목 상세 — 국내", () => {
     reads = { [endpoints.detail.quote("kr", "005930")]: { available: true, quote } };
     renderAs(PRO, <StockDetailScreen market="kr" code="005930" />);
 
-    const hero = await screen.findByRole("region", { name: "삼성전자 시세" });
-    expect(within(hero).getByText("71,200")).toBeTruthy();
-    expect(within(hero).getByText("원")).toBeTruthy();
+    expect(await screen.findByRole("region", { name: "삼성전자 시세" })).toBeTruthy();
+    const header = screen.getByRole("heading", { level: 1, name: "삼성전자" }).closest("header") as HTMLElement;
+    expect(within(header).getByText("71,200")).toBeTruthy();
+    expect(within(header).getByText("원")).toBeTruthy();
     expect(screen.getByText("13.21배")).toBeTruthy();
     expect(screen.getByText("89,000 원")).toBeTruthy();
     expect(screen.getByText("평균 4.00 / 5")).toBeTruthy();
+    // 증권사 리포트는 가운데 '리서치' 탭(리포트가 있을 때만), 13F 보유 기관 탭은 없음
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(expect.arrayContaining(["개요", "뉴스", "리서치"]));
+    expect(screen.queryByRole("tab", { name: "보유 기관" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "리서치" }));
     expect(screen.getByRole("link", { name: /메모리 회복/ }).getAttribute("href")).toBe("https://finance.naver.com/research/company_read.naver?nid=1");
     await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("005930.KS", "1y")));
     expect(requested().some((path) => path.startsWith("/api/guru/holders"))).toBe(false);
@@ -572,6 +697,7 @@ describe("뉴스 카드의 정보 검색 링크(ADR 0041)", () => {
   it("종목 — 회사 이름으로 정보 검색(/search?q=)", async () => {
     reads = appleReads();
     renderAs(FREE, <StockDetailScreen market="us" code="AAPL" />);
+    await openTab("뉴스");
     const card = await newsCard();
     await waitFor(() =>
       expect(within(card).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("Apple Inc.")}`),
