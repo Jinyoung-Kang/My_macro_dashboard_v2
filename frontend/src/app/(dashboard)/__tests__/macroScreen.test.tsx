@@ -2,6 +2,7 @@
  * 매크로 화면(/macro) — 작업대 화면 언어 P5a 배치에서 고정하는 것.
  *  - 원본 데이터: 화면 머리의 동작 둘('원본 데이터 보기' 대화상자·'원본 데이터 복사'), 열 때만 읽음, 생성 시각·글자 수·다시 읽기·오류와 다시 시도
  *  - 장단기 금리차: 묶음 머리(h3) + KPI 띠 둘(값 부호·'%p' 단위·변화 칩), 해석 기준표는 처음에 접힘(펼치기 머리 + 공용 표)
+ *  - 신용·변동성: KPI 띠(단위·변화 칩·기준일·출처, 못 받은 값 '—'+'수집 실패', MOVE는 '대리 지표' 배지 + 주의 상태 글), 해석 기준표 접힘
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -155,5 +156,59 @@ describe("장단기 금리차", () => {
     expect(within(table).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual([
       "정상 (Normal)", "평탄화 (Flattening)", "주의: 역전 (Inversion)",
     ]);
+  });
+});
+
+describe("신용·변동성", () => {
+  const entry = (over: Record<string, unknown>) => ({ available: true, value: 18.2, delta: -0.4, asOf: "2026-11-14", ...over });
+  const risk = {
+    vix: entry({}),
+    move: entry({ value: 92.1, isProxy: true, sourceLabel: "^TNX 변동성 기반 추정 (실제 ICE BofA MOVE 아님)" }),
+    hyOas: entry({ value: 2.95, delta: 0.03 }),
+    cpSpread: entry({ available: false, value: null, delta: null, asOf: null }),
+    stlfsi: entry({ value: -0.52, delta: 0.1 }),
+  };
+
+  it("KPI 띠 다섯 — 단위는 값과 따로, 변화는 칩, 기준일·출처 줄, 못 받은 값은 '—'와 '수집 실패', MOVE는 대리 지표 배지와 주의 상태", async () => {
+    reads["/api/macro/risk"] = () => Promise.resolve(risk);
+    render(<MacroPage />);
+
+    const panel = (await screen.findByRole("heading", { level: 2, name: "신용 리스크, 은행권 및 시장 변동성" })).closest("section") as HTMLElement;
+    const strip = await within(panel).findByRole("region", { name: "신용·변동성 지표" });
+    expect(within(strip).getAllByRole("group")).toHaveLength(5);
+
+    const vix = within(strip).getByRole("group", { name: "CBOE VIX (주식 변동성)" });
+    expect(vix.textContent).toContain("18.20");
+    expect(vix.textContent).toContain("−0.40");
+    expect(within(vix).getByText("하락").className).toContain("sr-only");
+    expect(vix.textContent).toContain("기준일 2026-11-14");
+    expect(vix.textContent).toContain("Yahoo Finance (^VIX)");
+
+    const hy = within(strip).getByRole("group", { name: "하이일드 스프레드 (HY OAS)" });
+    expect(hy.textContent).toContain("2.95%p");
+    expect(hy.textContent).toContain("+0.03%p");
+
+    const cp = within(strip).getByRole("group", { name: "3M 금융 CP 스프레드" });
+    expect(within(cp).getByText("—")).toBeTruthy();
+    expect(within(cp).getByText("수집 실패")).toBeTruthy();
+    expect(cp.textContent).not.toContain("—%p");
+
+    const move = within(strip).getByRole("group", { name: "MOVE (채권 변동성)" });
+    expect(within(move).getByText("대리 지표")).toBeTruthy();
+    expect(within(move).getByText(/실제 지표가 아닙니다 — \^TNX 변동성 기반 추정/).parentElement?.className).toContain("text-warn");
+    expect(within(move).getByText("주의:").className).toContain("sr-only");
+
+    expect(within(strip).getByRole("group", { name: "세인트루이스 연준 금융스트레스" }).textContent).toContain("−0.52pt");
+  });
+
+  it("해석 기준표는 처음에 접혀 있다(펼치기 머리 = 표 이름)", async () => {
+    reads["/api/macro/risk"] = () => Promise.resolve(risk);
+    render(<MacroPage />);
+
+    const panel = (await screen.findByRole("heading", { level: 2, name: "신용 리스크, 은행권 및 시장 변동성" })).closest("section") as HTMLElement;
+    const summary = await within(panel).findByText("신용·은행권·변동성 핵심 해석 기준표", { selector: "summary" });
+    expect(summary.tagName).toBe("SUMMARY");
+    expect((summary.closest("details") as HTMLDetailsElement).open).toBe(false);
+    expect(within(summary.closest("details") as HTMLElement).getAllByRole("rowheader")).toHaveLength(5);
   });
 });
