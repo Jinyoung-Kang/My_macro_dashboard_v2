@@ -440,8 +440,8 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
     expect(within(sp500).getByText("전일 대비").className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "text-text-3"]));
     const provenance = within(sp500).getByText(/^Yahoo Finance \(\^GSPC\) · .*2026-10-24 04:59$/);
     expect(within(provenance).getByText("출처:").className).toContain("sr-only");
-    expect(within(kpi("원/달러")).getByText("1,322.28")).toBeTruthy();
-    expect(within(kpi("원/달러")).getByText("원")).toBeTruthy();
+    // 단위는 값의 마지막 글자와 한 묶음(QA-599)이라 글 마디가 나뉩니다 — 값 글 전체로 봅니다.
+    expect(within(kpi("원/달러")).getByText("원").closest(".tabular-nums")?.textContent).toBe("1,322.28원");
     // 저장본에 그 카드가 없으면 '—'(읽어 주기 '값 없음') + 사유 — 0으로 적지 않습니다.
     for (const label of ["코스피", "미국채 10년물"]) {
       expect(within(kpi(label)).getByText("값 없음")).toBeTruthy();

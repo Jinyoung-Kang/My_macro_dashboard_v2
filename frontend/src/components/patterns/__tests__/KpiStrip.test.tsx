@@ -15,6 +15,14 @@ import { KpiStrip, type KpiItem } from "../KpiStrip";
 afterEach(() => cleanup());
 
 const tile = (name: string) => screen.getByRole("group", { name });
+/**
+ * 타일 안 값 글 — 글이 '값 + 단위' 전체와 같은 가장 안쪽 요소. 단위가 있으면 마지막 글자와 단위가 값 끝 묶음으로 갈려 글 마디가 나뉘므로(QA-599)
+ * getByText(값)으로는 찾지 못합니다.
+ */
+const valueText = (tileNode: HTMLElement, text: string): HTMLElement =>
+  within(tileNode).getByText(
+    (_, element) => element !== null && element.textContent === text && !Array.from(element.children).some((child) => child.textContent === text),
+  );
 
 describe("KpiStrip — 값 있음", () => {
   it("띠는 이름 있는 영역, 타일은 라벨 이름의 묶음 — 값은 20px(lg 24px)·굵게·tabular-nums, 단위는 작게 옆에", () => {
@@ -96,9 +104,10 @@ describe("KpiStrip — 값 있음", () => {
   });
 
   // QA-599: 값 줄이 flex-wrap이라 운영자 일곱 타일의 xl 한 줄(1280 펼친 메뉴 — 타일 135.4px, 안쪽 109.4px)에서 '1,339.28'(약 93px) + '원'이
-  // 1.6px 모자라 단위만 다음 줄로 넘어갔습니다. 숫자는 쉼표에서도 꺾이지 않으므로 값과 단위를 한 줄에 둡니다. jsdom은 배치를 재지 않아 클래스로 봅니다.
-  // 수정 전(재현 커밋에서는 it.fails) 숫자 값 줄은 'mt-0.5 flex flex-wrap items-baseline gap-x-1'이었습니다.
-  it("숫자 값과 단위는 한 덩어리 — 숫자 값 줄은 flex-nowrap, 판정 라벨 줄은 flex-wrap 그대로 (QA-599)", () => {
+  // 1.6px 모자라 단위만 다음 줄로 넘어갔습니다. 첫 고침(189659ac)은 값 줄을 flex-nowrap으로 두었지만, 긴 값 정리(6bfa67cb)가 단위를 값 글 안으로 옮긴
+  // 뒤로 값 줄의 flex 항목은 하나뿐이라 효과가 없었습니다 — 단위를 붙드는 실제 기제는 아래 두 시험(값 끝 묶음·띠 폭으로 정하는 한 줄)이 봅니다.
+  // 여기서는 값 줄이 값 글 하나를 담는 flex 행이고 줄바꿈 규칙은 값 글이 정한다는 것만 봅니다. jsdom은 배치를 재지 않아 클래스로 봅니다.
+  it("값 줄은 값 글 하나를 담는 flex 행 — 숫자 값 글은 단위를 안에 담고, 판정 라벨은 낱말 사이에서 꺾는다 (QA-599)", () => {
     render(
       <KpiStrip
         label="요약"
@@ -108,22 +117,22 @@ describe("KpiStrip — 값 있음", () => {
         ]}
       />,
     );
-    // 단위는 값 글 안 끝에 붙습니다(긴 값 줄바꿈 정리 뒤 — 아래 '긴 값·출처의 줄바꿈') — 값 줄은 값 글의 부모입니다.
-    const value = within(tile("원/달러")).getByText("1,339.28");
+    const value = valueText(tile("원/달러"), "1,339.28원");
     expect(within(value).getByText("원")).toBeTruthy();
-    const numberRow = (value.parentElement as HTMLElement).className.split(/\s+/);
-    expect(numberRow).toContain("flex-nowrap");
-    expect(numberRow).not.toContain("flex-wrap");
-    const labelRow = (within(tile("국면")).getByText("후퇴 경계 (Late cycle)").parentElement as HTMLElement).className.split(/\s+/);
-    expect(labelRow).toContain("flex-wrap");
-    expect(within(tile("국면")).getByText("후퇴 경계 (Late cycle)").className).toContain("break-keep");
+    const numberRow = value.parentElement as HTMLElement;
+    expect(numberRow.children).toHaveLength(1);
+    expect(numberRow.className.split(/\s+/)).toEqual(["mt-0.5", "flex", "items-baseline"]);
+    const label = within(tile("국면")).getByText("후퇴 경계 (Late cycle)");
+    expect((label.parentElement as HTMLElement).children).toHaveLength(1);
+    expect(label.className).toContain("break-keep");
   });
 
   // QA-599(근본 원인): 긴 값 정리(6bfa67cb)가 단위를 값 글 안 끝으로 옮긴 뒤로 값 줄의 flex 항목은 하나뿐이라 위 시험이 보는 flex-nowrap은 효과가 없고,
   // 단위를 한 줄에 붙드는 것은 단위의 오른쪽 바깥 여백(−12px)뿐이었습니다. 숫자 끝과 단위 사이의 줄바꿈 기회(한글 단위 앞)가 그대로라 12px보다 많이
   // 모자라면 단위만 다음 줄로 갔습니다(루프백 빌드 1280 · 메뉴 320 — 타일 121.1px에서 '원' 아래 끝 170 / 값 줄 140, 메뉴 220에서도 '13,392.80'이면 같음).
-  // 수정 전(재현 커밋에서는 it.fails) '원'의 부모는 값 글 span(클래스에 whitespace-nowrap 없음 — 글 '1,339.28원')이었습니다.
-  it.fails("단위는 값의 마지막 글자와 한 nowrap 묶음 — 숫자 끝과 단위 사이에 줄바꿈 기회가 없다 (QA-599)", () => {
+  // 수정 전(재현 커밋에서는 it.fails) '원'의 부모는 값 글 span(클래스에 whitespace-nowrap 없음 — 글 '1,339.28원')이었습니다. 단위가 다음 줄로 가지
+  // 않으려면 띠가 그만큼 좁은 칸을 만들지 않아야 합니다(아래 시험 — 한 줄 최소 칸 폭 134px).
+  it("단위는 값의 마지막 글자와 한 nowrap 묶음 — 숫자 끝과 단위 사이에 줄바꿈 기회가 없다 (QA-599)", () => {
     render(
       <KpiStrip
         label="요약"
@@ -149,7 +158,7 @@ describe("KpiStrip — 값 있음", () => {
 
   // QA-599(근본 원인): 한 줄 여부를 뷰포트(xl)만으로 정해, 왼쪽 메뉴가 넓으면 1280에서 일곱 타일이 121px(메뉴 320)까지 좁아져 단위 여유(12px)를
   // 넘었습니다. 수정 전(재현 커밋에서는 it.fails) 띠 section은 컨테이너가 아니고(클래스 'min-w-0'), 목록은 'xl:grid-cols-[repeat(var(--kpi-n),minmax(0,1fr))]'였습니다.
-  it.fails("한 줄 여부는 띠 폭(컨테이너 질의) — xl이면서 띠가 '타일 수 × 134px + 사이 8px'보다 넓을 때만 타일 수만큼 한 줄 (QA-599)", () => {
+  it("한 줄 여부는 띠 폭(컨테이너 질의) — xl이면서 띠가 '타일 수 × 134px + 사이 8px'보다 넓을 때만 타일 수만큼 한 줄 (QA-599)", () => {
     const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
     const { container, rerender } = render(<KpiStrip label="요약" items={items(7)} />);
     const section = () => container.querySelector("section") as HTMLElement;
@@ -163,17 +172,13 @@ describe("KpiStrip — 값 있음", () => {
     }
   });
 
-  it("xl은 타일 수만큼 한 줄(--kpi-n), 8개를 넘으면 네 칸 그대로", () => {
+  it("기본 배치는 두 칸·sm 세 칸·lg 네 칸, 8개를 넘으면 xl에서도 네 칸 그대로", () => {
     const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
     const { container, rerender } = render(<KpiStrip label="요약" items={items(7)} />);
     const list = () => container.querySelector("ul") as HTMLElement;
-    expect(list().className.split(/\s+/)).toEqual(
-      expect.arrayContaining(["grid", "grid-cols-2", "gap-2", "sm:grid-cols-3", "lg:grid-cols-4", "xl:grid-cols-[repeat(var(--kpi-n),minmax(0,1fr))]"]),
-    );
-    expect(list().style.getPropertyValue("--kpi-n")).toBe("7");
+    expect(list().className.split(/\s+/)).toEqual(["grid", "grid-cols-2", "gap-2", "sm:grid-cols-3", "lg:grid-cols-4", "xl:@min-[986px]:grid-cols-7"]);
     rerender(<KpiStrip label="요약" items={items(9)} />);
-    expect(list().className).not.toContain("xl:grid-cols");
-    expect(list().style.getPropertyValue("--kpi-n")).toBe("");
+    expect(list().className.split(/\s+/)).toEqual(["grid", "grid-cols-2", "gap-2", "sm:grid-cols-3", "lg:grid-cols-4"]);
   });
 });
 
@@ -355,7 +360,7 @@ describe("KpiStrip — 긴 값·출처의 줄바꿈", () => {
     return false;
   };
 
-  it("값·출처 글에서 타일까지 wrap-anywhere — 링크 타일과 묶음 타일 모두, 숫자 값은 줄어들지 않고 값 줄 폭까지·단위는 값 끝에 붙어 꺾지 않음", () => {
+  it("값·출처 글에서 타일까지 wrap-anywhere — 링크 타일과 묶음 타일 모두, 숫자 값은 줄어들지 않고 값 줄 폭까지·단위는 마지막 글자에 붙어 꺾지 않음", () => {
     render(
       <KpiStrip
         label="요약"
@@ -368,18 +373,22 @@ describe("KpiStrip — 긴 값·출처의 줄바꿈", () => {
     const link = screen.getByRole("link", { name: /^미국채 10년물/ });
     const group = tile("긴 값");
     for (const tileNode of [link, group]) {
-      const value = within(tileNode).getByText(LONG_VALUE);
+      const value = valueText(tileNode, `${LONG_VALUE}${tileNode === link ? "%" : "pt"}`);
       const source = within(tileNode).getByText(/averyveryverylongpath/);
       expect(chainHas(value, tileNode, "wrap-anywhere"), "값").toBe(true);
       expect(chainHas(source, tileNode, "wrap-anywhere"), "출처").toBe(true);
       // 숫자 값은 flex-nowrap 값 줄에서 줄어들지 않고(짧은 숫자가 숫자 안에서 꺾이지 않게) 값 줄 폭까지만 — 그보다 긴 값만 그 안에서 꺾입니다.
       expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
     }
-    // 단위는 값 글 안 끝(값이 꺾이면 마지막 줄을 따라감)이고 그 안에서는 꺾지 않으며, 타일 안쪽 여백까지 걸칠 수 있습니다(오른쪽 바깥 여백 −12px).
+    // 단위는 값 글 안 끝의 값 끝 묶음(마지막 글자 + 단위, nowrap) 안이라 값이 꺾이면 마지막 줄을 따라가고, 타일 안쪽 여백까지 걸칠 수 있습니다
+    // (오른쪽 바깥 여백 −12px).
     for (const [tileNode, unit] of [[link, "%"], [group, "pt"]] as const) {
       const unitNode = within(tileNode).getByText(unit);
-      expect(unitNode.parentElement, unit).toBe(within(tileNode).getByText(LONG_VALUE));
-      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["whitespace-nowrap", "-mr-3", "ml-1", "font-normal"]));
+      const tail = unitNode.parentElement as HTMLElement;
+      expect(tail.textContent, unit).toBe(`4${unit}`);
+      expect(tail.className.split(/\s+/), unit).toContain("whitespace-nowrap");
+      expect(tail.parentElement, unit).toBe(valueText(tileNode, `${LONG_VALUE}${unit}`));
+      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["-mr-3", "ml-1", "font-normal"]));
     }
   });
 });

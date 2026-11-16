@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { CSSProperties, JSX, ReactNode } from "react";
+import type { JSX, ReactNode } from "react";
 
 import { FOCUS_RING } from "@/components/ui/classes";
 import { StatusText } from "@/components/ui/icons";
@@ -93,17 +93,22 @@ function PendingLines({ count }: { count: number | undefined }): JSX.Element | n
 
 const VALUE_NUMBER = "text-xl font-semibold tabular-nums lg:text-2xl";
 /**
- * 숫자 값 글(flex-nowrap 값 줄의 항목) — 줄어들지 않고(shrink-0) 값 줄 폭까지만(max-w-full). 타일의 wrap-anywhere는 flex 항목의 최소 폭을 한 글자로
+ * 숫자 값 글(값 줄의 flex 항목 하나) — 줄어들지 않고(shrink-0) 값 줄 폭까지만(max-w-full). 타일의 wrap-anywhere는 flex 항목의 최소 폭을 한 글자로
  * 내리므로, 줄어들 수 있으면 단위 자리가 2px 모자랄 때 '1,339.2|8'처럼 숫자 안에서 꺾였습니다. 이렇게 두면 짧은 숫자는 꺾이지 않고, 값 줄보다 긴 값만
  * 값 줄 안에서 꺾입니다.
  */
 const VALUE_NUMBER_ITEM = "shrink-0 max-w-full";
 /**
- * 단위 — 값 글 안 끝에 붙여 값이 꺾여도 마지막 줄을 따라가고(따로 된 flex 항목이면 꺾인 값 상자 뒤에 놓여 타일 밖으로 나갔음), 그 안에서는 꺾지 않습니다.
- * 오른쪽 바깥 여백 −12px: 타일 안쪽 여백(12px)까지는 걸쳐도 되게 해, 단위 자리가 조금 모자랄 때 단위만 다음 줄로 넘어가지 않습니다(1280 일곱 타일
- * '1,339.28' + '원'이 안쪽 폭을 2px 넘음 — QA-599). 간격 4px(ml-1)는 예전 값 줄 간격(gap-x-1)과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ * 값 끝 묶음 — 값의 마지막 글자와 단위를 줄바꿈 없는 묶음 하나로 둡니다. 숫자 끝과 단위 사이(한글 단위 앞, '%' 앞 — wrap-anywhere)에 줄바꿈 기회가
+ * 없어 단위만 다음 줄로 넘어가지 않고, 값 줄보다 긴 값은 숫자 안에서 꺾이되 단위는 마지막 글자에 붙어 갑니다(QA-599).
  */
-const VALUE_UNIT = "-mr-3 ml-1 whitespace-nowrap text-sm font-normal text-text-3";
+const VALUE_TAIL = "whitespace-nowrap";
+/**
+ * 단위 — 값 끝 묶음(VALUE_TAIL) 안, 마지막 글자 뒤. 오른쪽 바깥 여백 −12px: 타일 안쪽 여백(12px)까지는 걸쳐도 되게 해, 단위 자리가 조금 모자랄 때
+ * 숫자 안에서 꺾이지 않습니다(1280 메뉴 220 일곱 타일 '1,339.28' + '원'이 안쪽 폭을 1.6px 넘음). 이 여유보다 더 모자랄 만큼 좁은 칸은 띠가
+ * 만들지 않습니다(한 줄 최소 칸 폭 — ONE_ROW_GRID). 간격 4px(ml-1)는 예전 값 줄 간격과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ */
+const VALUE_UNIT = "-mr-3 ml-1 text-sm font-normal text-text-3";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
 function KpiValue({ item }: { item: KpiItem }): JSX.Element {
@@ -126,22 +131,38 @@ function KpiValue({ item }: { item: KpiItem }): JSX.Element {
   const ink = item.neutral ? "text-neutral" : "text-text";
   return (
     <span className={`${item.valueKind === "label" ? VALUE_LABEL : `${VALUE_NUMBER} ${VALUE_NUMBER_ITEM}`} ${ink}`}>
-      {text}
-      {item.unit ? <span className={VALUE_UNIT}>{item.unit}</span> : null}
+      <ValueText text={text} unit={item.unit} />
     </span>
   );
 }
 
+/** 값 글 — 단위가 있으면 마지막 글자와 단위를 값 끝 묶음(VALUE_TAIL) 하나로. 글자는 그대로라 값 글의 textContent는 '값 + 단위'입니다. */
+function ValueText({ text, unit }: { text: string; unit?: string | null }): JSX.Element {
+  if (!unit) {
+    return <>{text}</>;
+  }
+  const chars = Array.from(text);
+  const last = chars.pop() ?? "";
+  return (
+    <>
+      {chars.join("")}
+      <span className={VALUE_TAIL}>
+        {last}
+        <span className={VALUE_UNIT}>{unit}</span>
+      </span>
+    </>
+  );
+}
+
 /**
- * 값 줄 — 읽는 중이면 블록(QA-596). 숫자 값은 단위와 한 덩어리라 줄을 바꾸지 않습니다(flex-nowrap — 숫자는 쉼표에서도 꺾이지 않으므로 넘치는 몫은
- * 단위 폭 하나뿐: 1280 운영자 일곱 타일 한 줄에서 '1,339.28' + '원'이 안쪽 폭을 2px 넘지만 타일 안 — QA-599. 단위는 값 글 안 끝에 걸침 — VALUE_UNIT).
- * 판정 라벨은 낱말 사이에서 꺾습니다.
+ * 값 줄 — 읽는 중이면 블록(QA-596), 값이 오면 값 글 하나를 담는 flex 행(숫자 값 글은 shrink-0 max-w-full — VALUE_NUMBER_ITEM). 값과 단위를 한 줄에
+ * 붙드는 것은 값 줄이 아니라 값 글 안의 값 끝 묶음(VALUE_TAIL)과 단위의 −12px 여유(VALUE_UNIT)입니다. 판정 라벨은 낱말 사이에서 꺾습니다(break-keep).
  */
 function valueRowClass(item: KpiItem): string {
   if (item.pending) {
     return "mt-0.5";
   }
-  return `mt-0.5 flex ${item.valueKind === "label" ? "flex-wrap" : "flex-nowrap"} items-baseline gap-x-1`;
+  return "mt-0.5 flex items-baseline";
 }
 
 function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
@@ -194,8 +215,24 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
   );
 }
 
-/** 타일이 이 수보다 많으면 xl에서도 한 줄로 늘이지 않고 4칸으로 둡니다(한 칸이 너무 좁아짐). */
-const MAX_ONE_ROW = 8;
+/**
+ * 한 줄 배치(타일 수 1~8) — xl이어도 띠 폭이 '타일 수 × 한 줄 최소 칸 폭 134px + 사이 8px × (타일 수 − 1)'보다 좁으면 한 줄로 늘이지 않고 네 칸(lg)
+ * 입니다. 한 줄 여부를 뷰포트가 아니라 띠 폭(컨테이너 질의 — 띠 section이 @container)으로 정합니다: 왼쪽 메뉴 폭(접힘 48px·펼침 220px, 가변 폭 메뉴는
+ * 끌어서 200~320px)에 따라 같은 1280에서도 띠 폭이 바뀌어, 뷰포트로만 정하면 메뉴 320px에서 일곱 타일이 121px까지 좁아졌습니다(QA-599).
+ * 134px(안쪽 108px)는 넓은 숫자 값 — '1,339.28' + '원'(24px 굵게 약 111px)이 단위 여유(−12px — VALUE_UNIT) 안에서, 단위 없는 다섯 자리
+ * '10,123.45'(약 107px)가 여유 없이 — 가 한 줄에 들어가는 폭입니다. Tailwind가 클래스를 글로 찾으므로 적어 둡니다(경계 = n × 134 + (n − 1) × 8px —
+ * 시험이 대조).
+ */
+const ONE_ROW_GRID: Readonly<Record<number, string>> = {
+  1: "xl:@min-[134px]:grid-cols-1",
+  2: "xl:@min-[276px]:grid-cols-2",
+  3: "xl:@min-[418px]:grid-cols-3",
+  4: "xl:@min-[560px]:grid-cols-4",
+  5: "xl:@min-[702px]:grid-cols-5",
+  6: "xl:@min-[844px]:grid-cols-6",
+  7: "xl:@min-[986px]:grid-cols-7",
+  8: "xl:@min-[1128px]:grid-cols-8",
+};
 
 /**
  * KPI 띠(작업대 실행 명세 §6 KpiStrip·W7 — 홈·모의 개요의 44px 히어로 대신): 화면 맨 위 요약 값 타일을 한 줄로.
@@ -207,18 +244,17 @@ const MAX_ONE_ROW = 8;
  * - 변화는 공용 변화 칩(▲▼ 12px·부호 −·sr '상승/하락')과 12px 캡션, 상태는 공용 상태 글(아이콘 + 글 — 색만으로 뜻을 전하지 않음).
  * - `href`가 있으면 타일 전체가 그 대상 화면 링크입니다(중립 잉크·hover surface-2 + 이름 밑줄·포커스 링 — 데이터 영역이라 강조 파랑을 쓰지 않음, A1).
  *   링크가 아닌 타일은 이름 있는 묶음(role=group)이라 이름과 값이 함께 읽힙니다.
- * - 배치: 좁은 화면 두 칸, sm 세 칸, lg 네 칸, xl은 타일 수만큼 한 줄(8개 넘으면 네 칸). 타일 사이 8px.
- * - 끊을 곳 없는 긴 값·출처는 타일 안에서 꺾음(말줄임 없음 — PropertyList와 같은 규칙). 숫자 값은 단위와 한 줄이고, 값 줄보다 긴 값만 그 안에서 꺾입니다.
+ * - 배치: 좁은 화면 두 칸, sm 세 칸, lg 네 칸, xl은 타일 수만큼 한 줄 — 띠 폭이 타일마다 최소 칸 폭(ONE_ROW_GRID)을 줄 때만(컨테이너 질의,
+ *   좁으면 네 칸, 8개 넘으면 네 칸). 타일 사이 8px.
+ * - 끊을 곳 없는 긴 값·출처는 타일 안에서 꺾음(말줄임 없음 — PropertyList와 같은 규칙). 단위는 값의 마지막 글자와 한 묶음이라 홀로 다음 줄로
+ *   가지 않고, 값 줄보다 긴 값만 숫자 안에서 꺾입니다.
  */
 export function KpiStrip({ label, items }: { label: string; items: readonly KpiItem[] }): JSX.Element {
-  const oneRow = items.length > 0 && items.length <= MAX_ONE_ROW;
-  const style = oneRow ? ({ "--kpi-n": items.length } as CSSProperties) : undefined;
+  // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
+  const oneRow = ONE_ROW_GRID[items.length] ?? "";
   return (
-    <section aria-label={label} className="min-w-0">
-      <ul
-        className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 ${oneRow ? "xl:grid-cols-[repeat(var(--kpi-n),minmax(0,1fr))]" : ""}`.trim()}
-        style={style}
-      >
+    <section aria-label={label} className="@container min-w-0">
+      <ul className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 ${oneRow}`.trim()}>
         {items.map((item) => {
           let tile: ReactNode;
           if (item.href) {
