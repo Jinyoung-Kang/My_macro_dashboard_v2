@@ -39,8 +39,8 @@ afterEach(() => {
 const FOCUSABLE = '[tabindex]:not([tabindex^="-"]), a[href], button, input, select, textarea, [contenteditable="true"]';
 
 describe("QA-616 산점도의 숨은 Tab 정지점", () => {
-  // 고치기 전: 감싸개 안에 'svg tabindex=0 role=application' 하나(Recharts 접근성 층) — 재현 커밋에서는 it.fails.
-  it.fails("aria-hidden 감싸개 안에 포커스 받는 요소가 없고, 그림(svg)에 role=application이 없다", () => {
+  // 고치기 전: 감싸개 안에 'svg tabindex=0 role=application' 하나(Recharts 접근성 층) — 재현 커밋에서는 it.fails. 고침은 accessibilityLayer={false}.
+  it("aria-hidden 감싸개 안에 포커스 받는 요소가 없고, 그림(svg)에 role=application이 없다", () => {
     observeAs(600, 320);
     const { container } = render(
       <ScatterPlot data={[{ x: 1, y: 2, date: "2026-01-02" }, { x: -1, y: 0.5, date: "2026-01-09" }]} xLabel="금리 변화" yLabel="지수 변화" />,

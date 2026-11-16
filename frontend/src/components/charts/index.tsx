@@ -684,7 +684,11 @@ export function ScatterPlot({
     <div aria-hidden="true">
     <ChartSizeHold>
     <ResponsiveContainer width="100%" height={height}>
-      <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
+      {/*
+        접근성 층을 끕니다(accessibilityLayer — Recharts 기본 켬) — 켜 두면 그림(svg)에 role="application"·tabindex=0이 붙어, 보조기기에서 뺀 상자 안에
+        읽어 주지 않는 Tab 정지점이 생겼습니다(QA-616). 다른 차트는 이 층으로 화살표 키 탐색을 주고 이름(aria-label)을 달지만, 산점도는 읽기에서 뺀 그림입니다.
+      */}
+      <ScatterChart accessibilityLayer={false} margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
         {/* 두 축이 다 데이터라 격자를 남기되 옅게(옅은 경계 border-subtle — 큰 차트의 가로 격자와 같은 색). */}
         <CartesianGrid stroke={GRID_LINE} strokeWidth={1} />
         <XAxis
