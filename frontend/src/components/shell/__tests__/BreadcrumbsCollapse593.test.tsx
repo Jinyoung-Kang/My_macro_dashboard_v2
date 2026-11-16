@@ -6,7 +6,8 @@
  * 글은 '모의매매 › › 보…'로 구분 기호 둘이 붙었습니다. 주말 칩이면 로그인 없는 운영자의 새로고침 실패 하나로도 '한국'(/paper/kr)이 0px이었습니다.
  * nav 하한(112px — QA-547 후속)은 첫 칸 + 마지막 칸만 담고 가운데 칸(min-w-0)에는 하한이 없습니다. 가운데 칸에 하한을 두면 1024 주말 두 안내 상태에서
  * 상단바가 9px 넘쳐, 가운데 칸 글이 24px(첫 글자와 말줄임) 아래로 줄면 그 칸을 접습니다(그리지 않음 — 0폭 링크가 Tab 순서·낭독에서 빠지고 '›'도 하나).
- * 접힌 뒤에는 nav가 접힐 때의 너비 + 36px(가운데 칸 하나의 자리) 이상이 되어야 다시 펼칩니다(접고 펴기를 오가며 깜박이지 않게).
+ * 접힌 뒤에는 nav가 접힐 때의 너비 + 36px(하한 24px + 여유 12px) − 그때 가운데 칸 글이 가졌던 폭(하한까지) 이상이 되어야 다시 펼칩니다(펴면 가운데 칸 글이
+ * 적어도 36px — 접고 펴기를 오가며 깜박이지 않게).
  *
  * jsdom은 배치를 재지 않으므로 ResizeObserver 대역(관찰을 시작할 때와 resize()에서 콜백을 바로 부름)과 nav·가운데 칸 링크의 폭(getBoundingClientRect)을
  * 고정해 봅니다. 기본 대역(vitest.setup — 콜백 없음, 폭 0)에서는 접지 않습니다(Shell·BreadcrumbsEntity 시험 그대로).
@@ -65,7 +66,7 @@ const separators = () => (crumbs().textContent?.match(/›/g) ?? []).length;
 
 describe("빵부스러기 가운데 칸 — 하한(24px) 아래면 접는다 (QA-593)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 '미국' 링크가 0px인 채 남아(세 칸, '›' 둘) Tab 순서에 있었습니다.
-  it.fails("가운데 칸 링크가 0px(nav 120px)이면 그 칸을 그리지 않는다 — '미국' 링크가 없고 '›'가 하나, 마지막 칸은 지금 화면 그대로", () => {
+  it("가운데 칸 링크가 0px(nav 120px)이면 그 칸을 그리지 않는다 — '미국' 링크가 없고 '›'가 하나, 마지막 칸은 지금 화면 그대로", () => {
     stubLayout({ nav: 120, middle: 0 });
     render(<Breadcrumbs pathname={PATH} user={LOCAL_OWNER} />);
     expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
@@ -82,7 +83,7 @@ describe("빵부스러기 가운데 칸 — 하한(24px) 아래면 접는다 (QA
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 처음부터 접히지 않았습니다.
-  it.fails("접힌 뒤에는 nav가 접힐 때의 너비 + 36px 이상이 되어야 다시 펼친다 — 그보다 덜 넓어지면 접힌 채(깜박이지 않게)", () => {
+  it("접힌 뒤에는 nav가 접힐 때의 너비 + 36px(접힐 때 가운데 칸 0px) 이상이 되어야 다시 펼친다 — 그보다 덜 넓어지면 접힌 채(깜박이지 않게)", () => {
     const layout = stubLayout({ nav: 120, middle: 0 });
     render(<Breadcrumbs pathname={PATH} user={LOCAL_OWNER} />);
     expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
@@ -93,6 +94,16 @@ describe("빵부스러기 가운데 칸 — 하한(24px) 아래면 접는다 (QA
     expect(separators()).toBe(2);
     // 펼친 뒤 가운데 칸이 하한 이상이면 그대로 펼친 채
     layout.resize({ nav: 160, middle: 40 });
+    expect(items()).toEqual(["모의매매", "›미국", "›보유·체결"]);
+  });
+
+  it("가운데 칸이 하한 바로 아래(20px)에서 접혔으면 그만큼 덜 넓어져도 편다 — 접힐 때 너비 + 36 − 20, 펴진 뒤 하한 이상이면 그대로", () => {
+    const layout = stubLayout({ nav: 142, middle: 20 });
+    render(<Breadcrumbs pathname={PATH} user={LOCAL_OWNER} />);
+    expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
+    layout.resize({ nav: 157, middle: 35 });
+    expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
+    layout.resize({ nav: 158, middle: 36 });
     expect(items()).toEqual(["모의매매", "›미국", "›보유·체결"]);
   });
 
