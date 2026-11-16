@@ -5,11 +5,22 @@ import { useId, useLayoutEffect, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { EntityHeader, MasterDetail, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Banner, ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
-import { StatusText } from "@/components/ui/icons";
+import { CandlestickIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
-import { currencyUnit, detailQuery, externalLinks, holderQuery, holdersNoMatch, institutionHref, isEnglishProfile, marketStateText, stockHref } from "@/lib/detail";
+import {
+  currencyUnit,
+  detailQuery,
+  externalLinks,
+  holderQuery,
+  holdersNoMatch,
+  institutionHref,
+  isEnglishProfile,
+  marketStateText,
+  stockHref,
+  stockKindLabel,
+} from "@/lib/detail";
 import {
   consensusItems,
   holderDetailItems,
@@ -134,7 +145,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <EntityHeader
-        kind="stock"
+        // 종류 태그는 시세 종류대로 — 지수·환율·선물은 그 이름, 주식·ETF·국내는 '종목'(시세 전·실패는 ^·=X·=F 코드 꼴 — 2026-11-16 결정 7).
+        // 아이콘은 종목 상세 그대로(빵부스러기 '종목(미국)'·팔레트 '→ 종목 상세'와 같은 화면 이름 쪽).
+        kind={{ label: stockKindLabel(market, code, quote?.kind), icon: CandlestickIcon }}
         name={name}
         // 코드(티커·종목 코드)는 고정폭 식별자 태그(명세 §3-6) — 시세를 못 받아 이름이 코드 그대로면 같은 글을 두 번 적지 않습니다.
         identifiers={name !== code ? [code] : undefined}
