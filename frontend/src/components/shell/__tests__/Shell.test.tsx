@@ -375,6 +375,19 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
     expect(box.children[0].className.split(/\s+/)).not.toContain("flex");
   });
 
+  // 2026-11-16 결정 4(사용자 위임, 권장안): xl(1280px)에서 앱 이름 'Dashboard'·검색 단추 256px과 전체 글·장 시계 시각이 한꺼번에 넓어져 빵부스러기 자리가
+  // 1279의 535px에서 1280의 255px로 줄었습니다(기관 상세, 크롬 — 1280~약 1305는 1024보다 좁고 대상 이름이 약 1400까지 잘림). 'Dashboard'(88px)만 2xl(1536px)부터로
+  // 미룹니다 — 1280~1535는 'My Macro v2'. 정보가 담긴 장 시계 시각·검색 안내는 그대로 xl부터입니다(MarketClock·SearchCommand 시험).
+  // 바꾸기 전에는 숨김 span이 hidden xl:inline이었습니다. jsdom은 배치를 하지 않아 클래스로 봅니다(폭은 브라우저에서 잼).
+  it("앱 이름의 'Dashboard'는 2xl(1536px)부터 보이고 그 아래는 'My Macro v2' — DOM 글은 늘 전체 이름 (결정 4)", () => {
+    renderShell(MEMBER_PRO);
+    const name = within(screen.getByRole("banner")).getByText(/^My Macro/);
+    expect(name.textContent).toBe("My Macro Dashboard v2");
+    const word = [...name.children].find((child) => child.textContent === " Dashboard") as HTMLElement;
+    expect(word).toBeTruthy();
+    expect(classes(word)).toEqual(["hidden", "2xl:inline"]);
+  });
+
   it("알림 벨은 좁은 화면 44px·넓은 화면 30px(상단바 조작 높이 — 검색·새로고침·계정과 같음)", () => {
     renderShell(MEMBER_PRO, { unread: 1 });
     const bell = screen.getByRole("link", { name: "알림 — 읽지 않음 1건" });
