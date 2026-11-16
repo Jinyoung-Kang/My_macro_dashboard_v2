@@ -5,10 +5,10 @@
  * - 열 때: 화면마다 읽는 경로와 횟수(각 한 번), 자동 갱신 간격(setInterval에 건 간격 — 순유동성 5분·환율 2분, 섹터 5분, COT 개요 10분).
  * - 조작 뒤: 섹터 '조회 기간'은 그 기간 한 번 더, '표시 기준'은 0번. COT '자산' 고르기는 그 자산의 추이·극단 성적 두 경로를 한 번씩(개요·자산 목록은 다시 읽지 않음),
  *   '극단 기준'은 극단 성적 한 경로만.
- * 행으로 고르기·검사 열기처럼 개편이 새로 두는 조작은 그 조작을 두는 커밋에서 이 파일에 사례를 더합니다(고르기와 같은 요청·검사 +0) — 섹터 검사 대화상자는
- * 'P5a' 사례.
+ * 행으로 고르기·검사 열기처럼 개편이 새로 두는 조작은 그 조작을 두는 커밋에서 이 파일에 사례를 더합니다(고르기와 같은 요청·검사 +0) — 섹터 검사 대화상자와
+ * COT 자산 이름 단추는 'P5a' 사례.
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -207,6 +207,28 @@ describe("COT 요청", () => {
     await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(2));
 
     fireEvent.change(select, { target: { value: "금" } });
+
+    await waitFor(() => expect(counts()[extremesPath("금")]).toBe(1));
+    expect(counts()).toEqual({
+      "/api/cot/assets": 1,
+      "/api/cot/overview": 1,
+      [assetPath(S_AND_P)]: 1,
+      [extremesPath(S_AND_P)]: 1,
+      [assetPath("금")]: 1,
+      [extremesPath("금")]: 1,
+    });
+  });
+
+  it("요약 표의 자산 이름 단추로 고르면 '자산' 고르기와 같은 두 요청만 나가고, 고른 자산을 다시 눌러도 읽지 않는다(P5a)", async () => {
+    render(<CotPage />);
+    await waitFor(() => expect(calls()).toHaveLength(4));
+    const table = await screen.findByRole("table", { name: "자산별 요약" });
+
+    fireEvent.click(within(table).getByRole("button", { name: S_AND_P }));
+    await act(async () => {});
+    expect(calls()).toHaveLength(4);
+
+    fireEvent.click(within(table).getByRole("button", { name: "금" }));
 
     await waitFor(() => expect(counts()[extremesPath("금")]).toBe(1));
     expect(counts()).toEqual({

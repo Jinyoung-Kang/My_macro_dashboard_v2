@@ -2,11 +2,11 @@
  * 순유동성·섹터·COT 화면의 글·KPI 규칙(lib/liquidity·lib/sectorScreen·lib/cotScreen) — React 없이 시험합니다(ADR 0004 규칙 3).
  */
 import { describe, expect, it } from "vitest";
-import { formatSignedCount } from "@/lib/cotScreen";
+import { cotKpis, formatSignedCount } from "@/lib/cotScreen";
 import { formatSignedMinus, formatTrillionDelta, withMinusSign } from "@/lib/format";
 import { liquidityKpis, trillionDeltaChip, type UsdKrwConvert } from "@/lib/liquidity";
 import { sectorKpis, sectorRowTitle, signedPercentText } from "@/lib/sectorScreen";
-import type { SectorRow } from "@/lib/types";
+import type { CotSummary, SectorRow } from "@/lib/types";
 
 describe("cotScreen formatSignedCount", () => {
   it("양수는 '+', 음수는 −(U+2212), 0은 부호 없이, 모르면 '—'", () => {
@@ -17,6 +17,34 @@ describe("cotScreen formatSignedCount", () => {
     expect(formatSignedCount(null)).toBe("—");
     expect(formatSignedCount(undefined)).toBe("—");
     expect(formatSignedCount(Number.NaN)).toBe("—");
+  });
+});
+
+describe("cotScreen cotKpis", () => {
+  const summary: CotSummary = {
+    asset: "S&P 500 E-Mini", available: true, date: "2026-10-27", ncNet: -134368, commNet: 17301, nrNet: 117067,
+    change1w: 8303, change4w: 8131, percentile: 34.94, ageDays: 21,
+  };
+
+  it("넷 — 스마트머니(값 부호·1주 변화 칩·출처·기준일) · 상업 헤저 · 소액 · 3년 백분위(%·메모)", () => {
+    const items = cotKpis(summary, "CFTC");
+    expect(items.map((item) => [item.key, item.label, item.value])).toEqual([
+      ["ncNet", "스마트머니 순포지션", "−134,368"],
+      ["commNet", "상업 헤저 순포지션", "+17,301"],
+      ["nrNet", "소액/비보고", "+117,067"],
+      ["percentile", "3년 표본 백분위", 34.94],
+    ]);
+    expect(items[0]).toMatchObject({ change: { change: 8303, digits: 0, caption: "1주" }, source: "CFTC", asOf: "2026-10-27" });
+    expect(items.slice(1).every((item) => item.source === undefined)).toBe(true);
+    expect(items[3].format?.(34.94)).toBe("34.9%");
+    expect(items[3].note).toBe("100%에 가까울수록 역사적 최대 롱");
+  });
+
+  it("모르는 값은 '—'·null(0으로 채우지 않음), 1주 변화를 모르면 칩 없음, 요약이 없으면 빈 목록", () => {
+    const items = cotKpis({ ...summary, ncNet: null, change1w: null, percentile: null, date: undefined }, "CFTC");
+    expect(items[0]).toMatchObject({ value: "—", change: undefined, asOf: null });
+    expect(items[3].value).toBeNull();
+    expect(cotKpis(null, "CFTC")).toEqual([]);
   });
 });
 
