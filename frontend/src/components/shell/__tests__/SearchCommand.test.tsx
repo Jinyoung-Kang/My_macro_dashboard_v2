@@ -502,6 +502,8 @@ describe("좁은 화면(lg 미만) — 지금 통합 검색 그대로(명세 §0
     const guide = screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/);
     expect(guide.textContent).toMatch(/Yahoo·네이버에서 찾음\)\.$/);
     expect(guide.textContent).not.toContain("단축키 도움말");
+    // 최근 연 대상 안내(QA-560)도 넓은 화면에만 — 좁은 화면 입력칸에는 설명이 없다.
+    expect(input().getAttribute("aria-describedby")).toBeNull();
     fireEvent.keyDown(input(), { key: "Enter" });
     expect(router.push).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
@@ -548,6 +550,34 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     fireEvent.keyDown(input(), { key: "Enter" });
     expect(router.push).toHaveBeenLastCalledWith("/markets/i/sp500");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // QA-560: 빈 검색어에 최근 연 대상이 펼쳐지면(aria-expanded true, 빈 Enter는 맨 위 대상으로 감) 화면 읽기 사용자도 목록이 있다는 것을 듣는다.
+  // role=status는 결과 수 전용 그대로이고(빈 검색어는 ""), 입력칸 설명(aria-describedby — 포커스를 받을 때 함께 읽힘)으로 알린다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 status가 ""이고 입력칸에 aria-describedby가 없어(null) 아무 안내도 없었다.
+  it.fails("빈 검색어에 최근 연 대상이 있으면 입력칸 설명이 'N건 — ↑↓로 고르고 Enter' — 검색어를 치면 설명이 없다(QA-560)", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(input().getAttribute("aria-describedby")).toBeNull();
+    type("gspc");
+    fireEvent.click(screen.getByRole("option", { name: /S&P 500/ }));
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("aapl");
+    fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
+
+    fireEvent.click(trigger());
+    expect(within(recentGroup() as HTMLElement).getAllByRole("option")).toHaveLength(2);
+    const describedBy = input().getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    const hint = document.getElementById(describedBy ?? "");
+    expect(hint?.textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
+    expect(screen.getByRole("dialog", { name: "통합 검색" }).contains(hint)).toBe(true);
+    expect(hint?.className.split(/\s+/)).toContain("sr-only");
+    expect(screen.getByRole("status").textContent).toBe("");
+
+    type("10");
+    expect(input().getAttribute("aria-describedby")).toBeNull();
   });
 
   it("검색어를 치면 최근 묶음은 빠지고 지금 범주만 보인다", async () => {
