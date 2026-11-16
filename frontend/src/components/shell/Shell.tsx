@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { TooltipProvider } from "@/components/ui/Tooltip";
+import { useNavCollapsed } from "@/hooks/useNavCollapsed";
 import type { SessionUser } from "@/lib/types";
 import { ReadModeProvider } from "./ReadMode";
 import { SideNav } from "./SideNav";
@@ -10,7 +12,14 @@ import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
 
 /**
- * 앱 셸 — 왼쪽 내비(lg 이상) · 상단바(검색·장 상태 칩·알림 벨) · 하위 메뉴 줄 · 본문 · 하단 탭 바(lg 미만). 옛 Sidebar를 대신합니다.
+ * 앱 셸 — 상단바(앱 이름·빵부스러기·검색·장 상태 칩·알림 벨) · 왼쪽 내비(lg 이상) · 하위 메뉴 줄 · 본문 · 하단 탭 바(lg 미만). 옛 Sidebar를 대신합니다.
+ *
+ * 넓은 화면(lg 이상)은 화면 높이 한 판입니다(작업대 실행 명세 §5, ADR 0042 결정 5): 맨 위에 폭 전체의 48px 상단바, 그 아래 줄에 왼쪽 메뉴와 본문 열.
+ * 좁은 화면은 지금 구조 그대로입니다 — 상단바 → 하위 메뉴 줄 → 본문 → 아래 탭 바(왼쪽 메뉴는 숨김). DOM 순서는 두 폭이 같습니다
+ * (건너뛰기 링크 → 상단바 → 왼쪽 메뉴·하위 메뉴 줄·본문 → 탭 바). 감싼 줄(div)에는 lg 미만 overflow 클래스를 두지 않습니다(QA-450 — 아래, ShellQaSticky.test).
+ * 툴팁 묶음(TooltipProvider — 여는 지연 300ms)은 셸에 하나입니다.
+ * 셸 뿌리는 넓은 화면에서 왼쪽 메뉴의 폭을 CSS 변수 --shell-nav-w(220px, 아이콘 레일로 접으면 48px — data-nav)로 둡니다 — 화면에 고정 위치로 붙는
+ * 덮개(정보 검색의 아래 미리 보기 시트)가 왼쪽 메뉴 옆에서 시작하게(그 화면이 폭 숫자를 따로 들고 있지 않게).
  *
  * 세션은 다시 읽지 않습니다 — 사용자·읽기 모드·읽지 않은 알림 수는 대시보드 레이아웃이 한 번 읽어 넘깁니다(레이아웃 세션 테스트가
  * 세션 호출 횟수를 고정). 읽기 모드는 본문 화면(더보기)도 읽도록 context로 내려 줍니다.
@@ -43,33 +52,42 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [navCollapsed] = useNavCollapsed();
   return (
     <ReadModeProvider readMode={readMode}>
-      <div className="min-h-screen lg:flex">
-        {/* 안쪽 여백은 focus: 변형으로 둡니다 — focus:not-sr-only가 padding:0을 다시 넣고 특이도가 높아 변형 없는 px-4·py-2를 덮었습니다(QA-502). */}
-        <a
-          href="#main"
-          className="sr-only rounded-control bg-accent text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:px-4 focus:py-2 focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      <TooltipProvider>
+        <div
+          data-nav={navCollapsed ? "collapsed" : "expanded"}
+          className={`min-h-screen lg:flex lg:h-screen lg:flex-col ${navCollapsed ? "lg:[--shell-nav-w:48px]" : "lg:[--shell-nav-w:220px]"}`}
         >
-          본문으로 건너뛰기
-        </a>
-        <SideNav pathname={pathname} user={user} />
-        <div className="flex min-w-0 flex-1 flex-col lg:h-screen">
-          <TopBar pathname={pathname} user={user} unread={unread} />
-          <SubNav pathname={pathname} user={user} />
-          <main
-            id="main"
-            tabIndex={-1}
-            className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-6"
+          {/* 안쪽 여백은 focus: 변형으로 둡니다 — focus:not-sr-only가 padding:0을 다시 넣고 특이도가 높아 변형 없는 px-4·py-2를 덮었습니다(QA-502). */}
+          <a
+            href="#main"
+            className="sr-only rounded-control bg-accent text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:px-4 focus:py-2 focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
-            <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
-              <SourceAlertBanner user={user} />
-              {children}
+            본문으로 건너뛰기
+          </a>
+          <TopBar pathname={pathname} user={user} unread={unread} />
+          {/* 넓은 화면: 상단바 아래 남는 높이 전체(min-h-0 — 본문 열만 스크롤). 좁은 화면: 감싸기만 하는 블록. */}
+          <div className="lg:flex lg:min-h-0 lg:flex-1">
+            <SideNav pathname={pathname} user={user} />
+            <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
+              <SubNav pathname={pathname} user={user} />
+              <main
+                id="main"
+                tabIndex={-1}
+                className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-6"
+              >
+                <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
+                  <SourceAlertBanner user={user} />
+                  {children}
+                </div>
+              </main>
             </div>
-          </main>
+          </div>
+          <TabBar pathname={pathname} user={user} />
         </div>
-        <TabBar pathname={pathname} user={user} />
-      </div>
+      </TooltipProvider>
     </ReadModeProvider>
   );
 }

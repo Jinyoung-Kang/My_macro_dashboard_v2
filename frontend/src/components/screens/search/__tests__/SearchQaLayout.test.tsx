@@ -97,8 +97,8 @@ afterEach(() => cleanup());
 // ------------------------------------------------------------------ 폭 셈(셸의 값 — 바뀌면 여기도 고침)
 
 const REM = 16;
-/** 왼쪽 메뉴(SideNav w-[232px], lg 이상). */
-const SIDE_NAV = 232;
+/** 왼쪽 메뉴(SideNav w-[220px], lg 이상 — 펼친 나무 메뉴, 넓게 잡는 쪽. 접으면 48px라 칸 틀이 더 넓어짐). */
+const SIDE_NAV = 220;
 /** 본문(main — lg:overflow-y-auto)의 스크롤 막대. 겹쳐 그리는 스크롤 막대면 0이라 폭이 그만큼 넓어집니다 — 좁은 쪽으로 셈. */
 const SCROLLBAR = 15;
 /** 본문 열 최대 폭(Shell max-w-7xl)과 좌우 여백(lg:px-8). */
@@ -221,7 +221,7 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     expect(right.textContent).toContain("속성");
   });
 
-  it("xl 미만에서 고른 줄의 미리 보기는 아래 시트 — lg는 바닥에, 왼쪽 메뉴(232px) 옆. xl은 오른쪽 칸 그대로", async () => {
+  it("xl 미만에서 고른 줄의 미리 보기는 아래 시트 — lg는 바닥에, 왼쪽 메뉴(셸 변수 --shell-nav-w) 옆. xl은 오른쪽 칸 그대로", async () => {
     reads[endpoints.search.entity("us:NVDA")] = { available: true, entity: NVIDIA, errors: {} };
     reads[endpoints.search.feed("us:NVDA", "timeline")] = FEED;
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
@@ -232,7 +232,7 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     const tokens = pane.className.split(/\s+/);
     // 좁은 화면의 시트(하단 탭 바 위)는 그대로.
     expect(tokens).toEqual(expect.arrayContaining(["fixed", "inset-x-0", "bottom-[calc(64px+env(safe-area-inset-bottom))]", "z-30", "max-h-[50dvh]"]));
-    expect(tokens).toEqual(expect.arrayContaining(["lg:bottom-0", "lg:left-[232px]"]));
+    expect(tokens).toEqual(expect.arrayContaining(["lg:bottom-0", "lg:left-[var(--shell-nav-w)]"]));
     expect(tokens).toEqual(expect.arrayContaining(["xl:static", "xl:z-auto", "xl:max-h-none", "xl:overflow-visible", "xl:border-l", "xl:border-t-0", "xl:shadow-none"]));
     expect(tokens).not.toContain("lg:static");
     expect(preview.parentElement?.className).toBe("xl:sticky xl:top-0");
@@ -255,7 +255,8 @@ describe("QA-420 — 창 폭 1024~1279에서 대상 화면 가운데 칸이 좁�
     renderScreen("/search?e=us:NVDA&tab=timeline&range=30d");
     const grid = entityGridOf(await screen.findByRole("listbox", { name: "결과" }));
     expect(activeTracks(grid, 1440)).toEqual(["13rem", "minmax(0,1fr)", "18rem"]);
-    expect(middleWidth(grid, 1440)).toBe(589);
+    // 왼쪽 메뉴가 232px에서 220px 나무 메뉴로 줄어 가운데 칸이 12px 넓어졌습니다(작업대 P3 — 예전 589px).
+    expect(middleWidth(grid, 1440)).toBe(601);
   });
 });
 

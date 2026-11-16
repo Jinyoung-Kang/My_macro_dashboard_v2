@@ -5,7 +5,7 @@
  * 401이면 로그인 화면으로 보낸다. noLogin이 true면 로그인 화면으로 보내지 않는다. 운영자 계정이 없으면
  * 안내를 보이고 5초마다 다시 확인하며, localhost가 아니라 운영자로 풀리지 않은 요청만 로그인으로 보낸다.
  */
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useApi } from "@/hooks/useApi";
 import type { SessionResponse } from "@/lib/types";
@@ -61,6 +61,11 @@ function Page() {
   return <p>대시보드 본문</p>;
 }
 
+/** 넓은 화면 상단바의 계정 메뉴를 엽니다(키보드 Enter). 메뉴 안의 로그아웃은 단추가 아니라 메뉴 항목(menuitem)입니다(ADR 0042 결정 5·9). */
+function openAccountMenu(): void {
+  fireEvent.keyDown(screen.getByRole("button", { name: "계정 메뉴" }), { key: "Enter" });
+}
+
 function renderLayout() {
   return render(
     <DashboardLayout>
@@ -106,23 +111,26 @@ describe("로그인 모드(noLogin 없음·false) — 지금과 같다", () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
   });
 
-  it("로그인돼 있으면 화면을 그리고 셸 계정 영역에 로그아웃을 보인다", async () => {
+  it("로그인돼 있으면 화면을 그리고 셸 계정 메뉴에 로그아웃을 보인다", async () => {
     reads[SESSION] = LOGIN_OWNER;
     renderLayout();
 
     expect(await screen.findByText("대시보드 본문")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
+    openAccountMenu();
+    expect(screen.getByRole("menuitem", { name: "로그아웃" })).toBeTruthy();
     expect(router.replace).not.toHaveBeenCalled();
   });
 });
 
 describe("로그인 없는 로컬 실행(noLogin: true)", () => {
-  it("로컬 운영자로 풀렸으면 로그인 화면 없이 화면을 그리고, 셸 계정 영역에 로그아웃 대신 '로컬 · 로그인 없음'", async () => {
+  it("로컬 운영자로 풀렸으면 로그인 화면 없이 화면을 그리고, 셸 계정 메뉴에 로그아웃 대신 '로컬 · 로그인 없음'", async () => {
     reads[SESSION] = LOCAL_OWNER;
     renderLayout();
 
     expect(await screen.findByText("대시보드 본문")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
+    openAccountMenu();
+    expect(screen.queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
     expect(document.querySelector('a[href="/account"]')?.textContent).toContain("로컬 · 로그인 없음");
     expect(router.replace).not.toHaveBeenCalled();
   });

@@ -100,6 +100,17 @@ describe("더보기 화면", () => {
     expect(screen.getByRole("button", { name: "데이터 수동 새로고침" })).toBeTruthy();
   });
 
+  // D1 QA 넘김(more-refresh-primary-sm-24px): 홀로 선 주 동작(새로고침)과 로그아웃이 표 안용 작은 크기(sm — 넓은 화면 24px)였습니다.
+  // 기본 크기(md — 넓은 화면 30px, 좁은 화면 44px)로 둡니다(명세 §3-7). 결함 번호 없는 겉모양 고침.
+  it("새로고침·로그아웃은 홀로 선 단추라 기본 크기(넓은 화면 30px·좁은 화면 44px) — 표 안용 작은 크기(24px)가 아니다", () => {
+    renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: false });
+    for (const name of ["데이터 수동 새로고침", "로그아웃"]) {
+      const classes = screen.getByRole("button", { name }).className.split(/\s+/);
+      expect(classes).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-[30px]", "w-full"]));
+      expect(classes).not.toContain("lg:min-h-6");
+    }
+  });
+
   it("데모 열람: 내 계정 행·로그아웃이 없고 '데모 열람' 표시", () => {
     renderMore({ email: null, role: "MEMBER", tier: "PRO", demo: true });
 

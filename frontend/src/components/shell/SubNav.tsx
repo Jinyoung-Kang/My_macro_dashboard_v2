@@ -1,28 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import { underlineTabClasses } from "@/components/ui/classes";
 import { LockIcon } from "@/components/ui/icons";
+import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { lockedFor } from "@/lib/access";
 import { subNav } from "@/lib/nav";
 import type { SessionUser } from "@/lib/types";
 
 /**
- * 상단바 아래 하위 메뉴 줄 — 지금 탭에 화면이 둘 이상일 때만(lib/nav subNav). 좁으면 가로로 스크롤됩니다(줄을 바꾸지 않음).
+ * 상단바 아래 하위 메뉴 줄(좁은 화면 — lg 미만만) — 지금 탭에 화면이 둘 이상일 때만(lib/nav subNav). 좁으면 가로로 스크롤됩니다(줄을 바꾸지 않음).
+ * 넓은 화면(lg 이상)에는 이 줄이 없습니다 — 왼쪽 나무 메뉴가 지금 탭의 하위 화면을 펼칩니다(작업대 실행 명세 §5, ADR 0042 결정 5 — W2).
  * 준비 중인 화면(lib/nav upcoming — 지금은 없음, 예전 모의매매 한국)은 링크 없이 이름만 흐리게 보이고, 언제 여는지("2단계")를 작은 표시로 붙입니다 — title이 아니라
  * 보이는 글이라 키보드·터치 사용자도 봅니다. 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내).
  * 고른 링크의 aria-current는 그 주소 그대로면 "page", 그 화면의 아래 주소(/paper/us/holdings)면 "true"입니다(lib/nav currentAria).
+ * 줄이 화면보다 길면 지금 칸과 Tab으로 옮긴 칸을 줄 안에 보이게 스크롤합니다(QA-510 — 예전에는 뒤쪽 칸을 연 화면에서 지금 칸이 가려진 채 열림).
+ * 줄의 scrollLeft만 옮기고(창 세로 스크롤은 그대로), 그래서 목록이 위치 기준(relative)입니다(hooks/useScrollStripActive).
  *
- * 모양은 밑줄 탭(`underlineTabClasses` md — 좁은 화면 15px·높이 48px, 넓은 화면(lg 이상) 14px·40px). 모의매매 화면 안의 탭 줄은 한 단계
- * 작은 sm(14px — 좁은 화면 44px, 넓은 화면 30px)이라 두 줄이 같은 모양으로 겹쳐 위계가 흐려지지 않습니다(명세 §4). 바깥 줄은 폭 전체, 안의 목록은 본문 열(최대 1280px)과 같은 세로줄에 글을 맞춥니다
- * — 탭 안쪽 여백(12px)만큼 목록 여백을 줄였습니다.
+ * 모양은 밑줄 탭(`underlineTabClasses` md — 좁은 화면 15px·높이 48px). 준비 중 칸도 같은 높이(min-h-12)·글 크기라 줄 높이가 칸에 따라 바뀌지 않습니다.
+ * 모의매매 화면 안의 탭 줄은 한 단계 작은 sm(14px — 좁은 화면 44px)이라 두 줄이 같은 모양으로 겹쳐 위계가 흐려지지 않습니다(명세 §4). 바깥 줄은 폭 전체,
+ * 안의 목록은 본문 열과 같은 세로줄에 글을 맞춥니다 — 탭 안쪽 여백(12px)만큼 목록 여백을 줄였습니다.
  */
 export function SubNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   const model = subNav(pathname, user);
+  const listRef = useRef<HTMLUListElement>(null);
+  // 주소가 바뀔 때마다(줄이 새로 생길 때 포함) 지금 칸을 줄 안에 보이게 — 같은 주소에서 다시 그릴 때는 줄을 움직이지 않음.
+  useScrollStripActive(listRef, pathname);
   if (!model) return null;
   return (
-    <nav aria-label={`${model.label} 하위 메뉴`} className="shrink-0 border-b border-border bg-surface">
-      <ul className="mx-auto flex max-w-7xl overflow-x-auto px-1 sm:px-3 lg:px-5">
+    <nav aria-label={`${model.label} 하위 메뉴`} className="shrink-0 border-b border-border bg-surface lg:hidden">
+      <ul ref={listRef} className="relative mx-auto flex max-w-7xl overflow-x-auto px-1 sm:px-3 lg:px-5">
         {model.items.map((item) => {
           const current = item.href === model.current;
           return (
@@ -45,7 +53,7 @@ export function SubNav({ pathname, user }: { pathname: string; user?: SessionUse
         })}
         {model.upcoming.map((entry) => (
           <li key={entry.label} className="shrink-0">
-            <span aria-disabled="true" className="inline-flex h-12 items-center gap-1.5 whitespace-nowrap px-3 text-[15px] text-text-3">
+            <span aria-disabled="true" className="inline-flex min-h-12 items-center gap-1.5 whitespace-nowrap px-3 text-[15px] text-text-3">
               {entry.label} · {entry.note}
               {entry.opensIn ? (
                 <span className="rounded-control border border-border px-2 py-px text-xs leading-4">

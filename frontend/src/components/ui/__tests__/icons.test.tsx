@@ -32,6 +32,7 @@ const ICONS = [
   "LandmarkIcon",
   "LockIcon",
   "MinusIcon",
+  "PanelLeftIcon",
   "PersonIcon",
   "PlusIcon",
   "RefreshIcon",

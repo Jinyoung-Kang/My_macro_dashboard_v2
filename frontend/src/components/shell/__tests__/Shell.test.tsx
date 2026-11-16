@@ -1,12 +1,15 @@
 /**
  * 앱 셸 — 옛 Sidebar.test.tsx의 의도를 옮겨 왔고(계정 영역·운영자 전용 메뉴·빌드 정보), 새 셸의 틀을 더 봅니다.
  *
- * 계정 영역(왼쪽 내비 아래): 데모 열람(ADR 0013)이면 로그아웃·내 계정 링크 대신 "데모 열람". 로그인 없이 연 로컬 운영자(ADR 0016)면
- * 로그아웃 대신 "로컬 · 로그인 없음"을 내 계정 링크로. jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로
- * 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
+ * 계정 영역(넓은 화면 상단바의 계정 메뉴 — 작업대 실행 명세 §5): 데모 열람(ADR 0013)이면 로그아웃·내 계정 링크 대신 "데모 열람". 로그인 없이 연 로컬
+ * 운영자(ADR 0016)면 로그아웃 대신 "로컬 · 로그인 없음"을 내 계정 링크로. 계정 메뉴는 닫혀 있으면 내용이 DOM에 없어 Enter로 연 뒤 보고, 열린 메뉴는
+ * 모달이라(뒤 화면 aria-hidden) 메뉴 밖을 role로 찾는 단언은 열기 전에 둡니다. 메뉴 안의 로그아웃은 단추가 아니라 메뉴 항목(menuitem)입니다
+ * (뜻 단언 예외 — ADR 0042 결정 5·9가 계정 메뉴를 메뉴로 정함, P3 계획 §3-5). 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
+ * jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
 import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => {
@@ -42,8 +45,15 @@ function renderShell(user: SessionUser | undefined, { path = "/macro", readMode 
 }
 
 const mainNav = () => screen.getByRole("navigation", { name: "주 메뉴" });
+/** 넓은 화면 상단바의 계정 메뉴를 엽니다(키보드 Enter — Radix 메뉴). */
+function openAccountMenu(): HTMLElement {
+  fireEvent.keyDown(screen.getByRole("button", { name: "계정 메뉴" }), { key: "Enter" });
+  return screen.getByRole("menu", { name: "계정 메뉴" });
+}
 const bottomNav = () => screen.getByRole("navigation", { name: "하단 메뉴" });
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
+/** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(W2) 탭 칸만 고릅니다(P3 계획 §3-5-2). */
+const tabLinkLabels = (scope: HTMLElement) => [...scope.querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent ?? "");
 
 beforeEach(() => {
   api.apiGetShared.mockReset();
@@ -59,27 +69,32 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   window.localStorage.clear();
+  resetNavCollapsedForTest();
 });
 
-describe("계정 영역(옛 사이드바 계정 영역)", () => {
+describe("계정 영역(넓은 화면 상단바의 계정 메뉴 — 옛 사이드바 계정 영역)", () => {
   it("데모 열람이면 로그아웃·내 계정 링크가 없고 '데모 열람'과 조회 전용 안내를 보인다 — 운영 메뉴는 없고 유료 메뉴(AI)는 잠금 없이", () => {
     renderShell(DEMO, { path: "/alerts", readMode: "store_only" });
 
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
-    expect(document.querySelector('a[href="/account"]')).toBeNull();
-    expect(screen.getByText("데모 열람")).toBeTruthy();
-    expect(screen.getByText(/데모에서는 조회만 가능합니다/)).toBeTruthy();
     const more = screen.getByRole("navigation", { name: "더보기 하위 메뉴" });
     expect(within(more).queryByRole("link", { name: "데이터 저장소 상태" })).toBeNull();
     expect(within(more).getByRole("link", { name: "AI 종합 분석" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
+
+    const menu = openAccountMenu();
+    expect(within(menu).queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
+    expect(document.querySelector('a[href="/account"]')).toBeNull();
+    expect(screen.getByText("데모 열람")).toBeTruthy();
+    expect(screen.getByText(/데모에서는 조회만 가능합니다/)).toBeTruthy();
   });
 
   it("계정으로 로그인한 회원은 이메일·등급 링크(내 계정)와 로그아웃을 보인다", () => {
     renderShell(MEMBER_FREE);
 
-    expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
-    const account = document.querySelector('a[href="/account"]');
+    const menu = openAccountMenu();
+    expect(within(menu).getByRole("menuitem", { name: "로그아웃" })).toBeTruthy();
+    const account = menu.querySelector('a[href="/account"]');
     expect(account?.textContent).toContain("member@test.local");
     expect(account?.textContent).toContain("무료 회원");
     expect(screen.queryByText("데모 열람")).toBeNull();
@@ -89,29 +104,35 @@ describe("계정 영역(옛 사이드바 계정 영역)", () => {
     renderShell(LOCAL_OWNER, { path: "/alerts" });
 
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
-    const account = document.querySelector('a[href="/account"]');
-    expect(account?.textContent).toContain("로컬 · 로그인 없음");
-    expect(account?.textContent).toContain("운영자");
     const more = screen.getByRole("navigation", { name: "더보기 하위 메뉴" });
     expect(within(more).getByRole("link", { name: "데이터 저장소 상태" })).toBeTruthy();
     expect(within(more).getByRole("link", { name: "사용자 관리" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /수동 새로고침/ })).toBeTruthy();
+
+    const menu = openAccountMenu();
+    expect(within(menu).queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
+    const account = menu.querySelector('a[href="/account"]');
+    expect(account?.textContent).toContain("로컬 · 로그인 없음");
+    expect(account?.textContent).toContain("운영자");
   });
 
   it("쿠키 세션으로 로그인한 운영자(local 아님)는 로그아웃을 보인다", () => {
     renderShell(COOKIE_OWNER);
 
-    expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
-    expect(document.querySelector('a[href="/account"]')?.textContent).toContain("owner@test.local");
+    const menu = openAccountMenu();
+    expect(within(menu).getByRole("menuitem", { name: "로그아웃" })).toBeTruthy();
+    expect(menu.querySelector('a[href="/account"]')?.textContent).toContain("owner@test.local");
     expect(screen.queryByText(/로컬 · 로그인 없음/)).toBeNull();
   });
 
   it("데모 열람 표시가 앞선다 — local이 함께 와도 '데모 열람'만 보이고 로그아웃·내 계정 링크가 없다", () => {
     renderShell({ ...DEMO, local: true }, { readMode: "store_only" });
 
+    expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
+    const menu = openAccountMenu();
     expect(screen.getByText("데모 열람")).toBeTruthy();
     expect(screen.queryByText(/로컬 · 로그인 없음/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
     expect(document.querySelector('a[href="/account"]')).toBeNull();
   });
 });
@@ -120,7 +141,7 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
   it("운영자에게는 왼쪽 내비가 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기, 하단 탭은 정보 수집 없이 여섯 칸(더보기에서 엶)", () => {
     renderShell(LOCAL_OWNER);
 
-    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
+    expect(tabLinkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
     expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/info/overview");
     expect(within(mainNav()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe("/search");
     expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "더보기"]);
@@ -132,7 +153,7 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
 
   it("회원·데모 열람에게는 모의매매 탭이 없다(다섯 칸) — 정보 검색은 보인다(D-1)", () => {
     renderShell(MEMBER_PRO);
-    expect(linkLabels(mainNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
+    expect(tabLinkLabels(mainNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     expect(bottomNav().className).toContain("grid-cols-5");
     cleanup();
@@ -163,22 +184,28 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
     expect(within(mainNav()).getByRole("link", { name: "시장" }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("왼쪽 내비의 지금 탭은 왼쪽 3px 막대(고대비에서는 같은 폭의 왼쪽 테두리)·굵은 본문색 글 — 글자는 강조 파랑이 아니다(QA-459, 작업대 명세 §3-8)", () => {
+  it("왼쪽 내비의 가장 깊은 지금 칸(/macro에서는 '매크로 지표')은 왼쪽 3px 막대(고대비에서는 같은 폭의 왼쪽 테두리)·굵은 본문색 글, 펼친 지금 탭('시장')은 굵은 본문색 글만 — 글자는 강조 파랑이 아니다(QA-459, 작업대 명세 §3-8·§5)", () => {
     renderShell(MEMBER_PRO, { path: "/macro" });
-    const current = within(mainNav()).getByRole("link", { name: "시장" }).className.split(/\s+/);
+    const current = within(mainNav()).getByRole("link", { name: "매크로 지표" }).className.split(/\s+/);
     expect(current).toEqual(
       expect.arrayContaining(["font-semibold", "text-text", "before:w-[3px]", "before:bg-accent", "forced-colors:before:border-l-[3px]"]),
     );
     expect(current).not.toContain("text-accent");
+    const tab = within(mainNav()).getByRole("link", { name: "시장" }).className.split(/\s+/);
+    expect(tab).toEqual(expect.arrayContaining(["font-semibold", "text-text"]));
+    expect(tab.some((name) => name.startsWith("before:") || name.startsWith("forced-colors:"))).toBe(false);
     const other = within(mainNav()).getByRole("link", { name: "홈" }).className.split(/\s+/);
     expect(other.some((name) => name.startsWith("before:") || name.startsWith("forced-colors:"))).toBe(false);
+    expect(mainNav().querySelector(".text-accent")).toBeNull();
   });
 });
 
-describe("하위 메뉴 줄", () => {
+describe("하위 메뉴 줄(좁은 화면)", () => {
   it("시장 탭에서는 여섯 화면, 지금 화면이 aria-current=page", () => {
     renderShell(MEMBER_PRO, { path: "/liquidity" });
     const sub = screen.getByRole("navigation", { name: "시장 하위 메뉴" });
+    // 넓은 화면에는 줄이 없다 — 왼쪽 나무 메뉴가 하위 화면을 펼친다(명세 §5 — W2)
+    expect(sub.className.split(/\s+/)).toContain("lg:hidden");
     expect(linkLabels(sub)).toEqual(["매크로 지표", "순유동성", "섹터·자산군", "상관관계", "투기세력(COT)", "국면 판정"]);
     expect(within(sub).getByRole("link", { name: "순유동성" }).getAttribute("aria-current")).toBe("page");
     expect(within(sub).getByRole("link", { name: "매크로 지표" }).getAttribute("aria-current")).toBeNull();
@@ -232,6 +259,42 @@ describe("하위 메뉴 줄", () => {
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
     // 잠금 아이콘에는 <title>이 없어 링크 글자는 메뉴 이름 그대로(명세 D8 c)
     expect(linkLabels(sub)).toEqual(["알림", "AI 종합 분석", "내 계정"]);
+  });
+});
+
+describe("빵부스러기(넓은 화면 상단바)", () => {
+  const crumbs = () => screen.getByRole("navigation", { name: "현재 위치" });
+  const crumbItems = () => within(crumbs()).getAllByRole("listitem");
+
+  it("모의매매 탭 주소는 모의매매 › 미국 › 보유·체결 — 앞 두 칸은 링크, 마지막 칸은 링크 없이 aria-current=page", () => {
+    renderShell(LOCAL_OWNER, { path: "/paper/us/holdings" });
+    expect(crumbItems().map((item) => item.textContent)).toEqual(["모의매매", "›미국", "›보유·체결"]);
+    expect(within(crumbs()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["모의매매", "/paper/us"],
+      ["미국", "/paper/us"],
+    ]);
+    const current = within(crumbs()).getByText("보유·체결");
+    expect(current.getAttribute("aria-current")).toBe("page");
+    expect(current.closest("a")).toBeNull();
+    // 좁은 화면에는 없다(지금 구조 — 명세 §5)
+    expect(crumbs().className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    expect(crumbs().closest("header")).not.toBeNull();
+  });
+
+  it("종목 상세는 시장 › 종목(미국) › 코드 — 중간 칸은 주소가 없어 링크 없는 글", () => {
+    renderShell(MEMBER_PRO, { path: "/s/us/NVDA" });
+    expect(crumbItems().map((item) => item.textContent)).toEqual(["시장", "›종목(미국)", "›NVDA"]);
+    expect(within(crumbs()).getAllByRole("link").map((link) => link.textContent)).toEqual(["시장"]);
+    expect(within(crumbs()).getByText("NVDA").getAttribute("aria-current")).toBe("page");
+  });
+
+  it("홈은 한 칸(지금 화면), 앱 이름은 상단바에 한 번만 — 왼쪽 메뉴 맨 위 상표는 없다", () => {
+    renderShell(MEMBER_PRO, { path: "/" });
+    expect(crumbItems().map((item) => item.textContent)).toEqual(["홈"]);
+    expect(within(crumbs()).queryAllByRole("link")).toHaveLength(0);
+    // 빌드 정보의 '© 2026 My Macro Dashboard v2'는 앱 이름이 아니다(^로 시작하는 글만 셈).
+    expect(screen.getAllByText(/^My Macro/)).toHaveLength(1);
+    expect(within(screen.getByRole("banner")).getByText(/^My Macro/).textContent).toBe("My Macro Dashboard v2");
   });
 });
 
@@ -316,6 +379,27 @@ describe("본문", () => {
     expect(classes).toEqual(expect.arrayContaining(["focus:px-4", "focus:py-2"]));
   });
 
+  it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(220px)로 둔다 — 고정 위치 덮개(정보 검색 아래 시트)가 메뉴 옆에서 시작", () => {
+    renderShell(MEMBER_PRO);
+    const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
+    expect(root.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-col", "lg:[--shell-nav-w:220px]"]));
+    expect(root.getAttribute("data-nav")).toBe("expanded");
+    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-[220px]");
+  });
+
+  it("왼쪽 메뉴를 아이콘 레일로 접어 둔 사람(저장값 '1')은 접힌 채 시작하고 셸 변수가 48px — 메뉴를 펴면 220px로", () => {
+    window.localStorage.setItem("shell.navCollapsed", "1");
+    renderShell(MEMBER_PRO);
+    const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
+    expect(root.getAttribute("data-nav")).toBe("collapsed");
+    expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:48px]");
+    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-12");
+
+    fireEvent.click(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }));
+    expect(root.getAttribute("data-nav")).toBe("expanded");
+    expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:220px]");
+  });
+
   it("좁은 화면에서는 하단 탭 바(64px + 안전 영역)만큼 아래 여백, 데스크톱에서는 되돌린다", () => {
     renderShell(MEMBER_PRO);
     const main = screen.getByRole("main");
@@ -324,18 +408,19 @@ describe("본문", () => {
     expect(bottomNav().className).toContain("lg:hidden");
   });
 
-  it("읽기 모드를 보이고, store_only면 저장본만 쓴다는 안내", () => {
+  it("읽기 모드를 보이고(계정 메뉴 안), store_only면 저장본만 쓴다는 안내", () => {
     renderShell(MEMBER_PRO, { readMode: "store_only" });
+    openAccountMenu();
     expect(screen.getByText("store_only")).toBeTruthy();
     expect(screen.getByText(/저장본만 사용합니다/)).toBeTruthy();
   });
 });
 
-describe("운영자 수동 새로고침", () => {
+describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단추)", () => {
   it("누르면 수집을 요청하고, 수집 중에는 막고 안내 문구를 그대로 보인다", () => {
     renderShell(LOCAL_OWNER);
     // 안내 영역(role=status)은 문구가 없을 때도 있다 — 지웠다 내용과 함께 다시 넣으면 낭독기가 새 문구를 읽지 않기도 한다.
-    const empty = screen.getAllByRole("status").find((node) => node.closest("aside"));
+    const empty = screen.getAllByRole("status").find((node) => node.closest("header"));
     expect(empty?.textContent).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "데이터 수동 새로고침" }));
     expect(signal.requestRefresh).toHaveBeenCalledTimes(1);
@@ -348,14 +433,39 @@ describe("운영자 수동 새로고침", () => {
     expect(button.disabled).toBe(true);
     expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
   });
+
+  it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 말줄임하고 전체 글은 title", () => {
+    signal.message = "수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.";
+    renderShell(LOCAL_OWNER);
+    const button = screen.getByRole("button", { name: "데이터 수동 새로고침" });
+    expect(button.closest("header")).not.toBeNull();
+    expect(button.className.split(/\s+/)).toEqual(expect.arrayContaining(["size-[30px]", "rounded-control"]));
+    // 도구 줄의 단추라 주 단추(강조 파랑 바탕)가 아니다(명세 §3-4)
+    expect(button.className).not.toContain("bg-accent");
+    const row = button.closest("header > div") as HTMLElement;
+    expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    const status = within(row).getByRole("status");
+    expect(status.getAttribute("title")).toBe("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.");
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["truncate", "max-w-40"]));
+  });
+
+  it("회원·데모 열람에게는 단추도 안내 영역도 없다", () => {
+    for (const user of [MEMBER_PRO, DEMO]) {
+      renderShell(user);
+      expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
+      expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
+      cleanup();
+    }
+  });
 });
 
-describe("빌드 정보(옛 사이드바 아래)", () => {
+describe("빌드 정보(계정 메뉴 안 — 옛 사이드바 아래)", () => {
   it("빌드한 커밋 옆에 그 커밋의 날짜를 '최종 수정'으로 보인다", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "main@1ccad1c");
     vi.stubEnv("NEXT_PUBLIC_APP_UPDATED", "2026-10-20");
     renderShell(DEMO, { readMode: "store_only" });
 
+    openAccountMenu();
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
     expect(screen.getByText("최종 수정 2026-10-20")).toBeTruthy();
     // 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2). 왼쪽 내비 아래에도 라디오 묶음이 없다.
@@ -366,6 +476,8 @@ describe("빌드 정보(옛 사이드바 아래)", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_UPDATED", "unknown");
     renderShell(DEMO, { readMode: "store_only" });
 
+    openAccountMenu();
+    expect(screen.getByText(/© 2026 My Macro Dashboard v2/)).toBeTruthy();
     expect(screen.queryByText(/최종 수정/)).toBeNull();
   });
 });
