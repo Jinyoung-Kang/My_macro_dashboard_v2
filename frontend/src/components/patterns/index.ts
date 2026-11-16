@@ -11,6 +11,7 @@ export { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 export { ChangeChip } from "./ChangeChip";
 export { type Column, DataTable } from "./DataTable";
 export { Empty } from "./Empty";
+export { EntityHeader, type EntityKind } from "./EntityHeader";
 export { Hero } from "./Hero";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
 export { type PropertyItem, PropertyList } from "./PropertyList";

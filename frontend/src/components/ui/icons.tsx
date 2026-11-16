@@ -240,7 +240,7 @@ export function CandlestickIcon(props: IconProps) {
   );
 }
 
-/** 기관(기둥 있는 건물 — 13F 기관 등) — 정보 검색의 대상 종류. */
+/** 기관(기둥 있는 건물 — 13F 기관 등) — 정보 검색과 상세 화면 대상 머리(EntityHeader)의 대상 종류. */
 export function LandmarkIcon(props: IconProps) {
   return (
     <IconBase {...props}>

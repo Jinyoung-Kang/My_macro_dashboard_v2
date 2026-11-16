@@ -45,6 +45,8 @@ const DATA_FILES = [
   "components/patterns/PropertyList.tsx",
   // KPI 띠(타일 값·변화 칩·상태 글·배지·대상 링크 타일, P4).
   "components/patterns/KpiStrip.tsx",
+  // 대상 머리(주 값·종류·식별자 태그·배지 줄 — 동작은 부르는 쪽이 넘김, P4).
+  "components/patterns/EntityHeader.tsx",
   // 차트(래퍼·선 차트·차트 틀 — 축·기준선·격자·툴팁·계열 색).
   "components/charts/index.tsx",
   "components/charts/LineChart.tsx",

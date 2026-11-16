@@ -13,6 +13,7 @@ import * as badges from "../badges";
 import * as ChangeChip from "../ChangeChip";
 import * as DataTable from "../DataTable";
 import * as Empty from "../Empty";
+import * as EntityHeader from "../EntityHeader";
 import * as Hero from "../Hero";
 import * as patterns from "../index";
 import * as KpiStrip from "../KpiStrip";
@@ -29,6 +30,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   ChangeChip,
   DataTable,
   Empty,
+  EntityHeader,
   Hero,
   KpiStrip,
   PropertyList,
@@ -67,6 +69,7 @@ describe("components/patterns 배럴", () => {
         "ChangeChip",
         "DataTable",
         "Empty",
+        "EntityHeader",
         "EstimateBadge",
         "Hero",
         "KpiStrip",
