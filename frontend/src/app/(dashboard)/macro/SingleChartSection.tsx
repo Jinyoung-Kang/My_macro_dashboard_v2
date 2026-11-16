@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { LineSeries } from "@/components/charts";
 import {
-  Banner,
-  Card,
+  Callout,
   ErrorState,
   Loading,
+  Panel,
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -41,7 +41,7 @@ export function SingleChartSection() {
   }>(endpoints.macro.ticker(symbol, period));
 
   return (
-    <Card
+    <Panel
       title="지표별 기간별 단독 차트"
       source={symbol === "^MOVE" ? "Yahoo Finance ^TNX 변동성 기반 추정 (실제 ICE BofA MOVE 아님)" : `Yahoo Finance (${symbol})`}
     >
@@ -57,7 +57,7 @@ export function SingleChartSection() {
 
       {data?.isProxy && (
         <div className="mb-3">
-          <Banner tone="warn">{data.sourceLabel}</Banner>
+          <Callout tone="warn">{data.sourceLabel}</Callout>
         </div>
       )}
 
@@ -66,7 +66,7 @@ export function SingleChartSection() {
       {/* 받지 못한 이유를 그대로 보입니다. 빈 차트만 그리면 공개 데모(store_only)에서 원래 안 되는 지표인지 일시
           오류인지 알 수 없었습니다(QA-099). 이유가 없으면 차트의 빈 문구와 같은 말을 씁니다. */}
       {!loading && !error && data && !data.available && (
-        <Banner tone="warn">{data.message ?? "표시할 시계열이 없습니다."}</Banner>
+        <Callout tone="warn">{data.message ?? "표시할 시계열이 없습니다."}</Callout>
       )}
       {!loading && !error && data?.available !== false && (
         <LineSeries
@@ -74,8 +74,10 @@ export function SingleChartSection() {
             date: point.date.slice(0, 10),
             value: point.close ?? point.value ?? null,
           }))}
+          grid
+          ariaLabel={`${SINGLE_TICKERS.find((ticker) => ticker.value === symbol)?.label ?? symbol} (${period})`}
         />
       )}
-    </Card>
+    </Panel>
   );
 }

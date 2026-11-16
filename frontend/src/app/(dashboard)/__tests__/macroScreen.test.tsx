@@ -5,6 +5,7 @@
  *  - 신용·변동성: KPI 띠(단위·변화 칩·기준일·출처, 못 받은 값 '—'+'수집 실패', MOVE는 '대리 지표' 배지 + 주의 상태 글), 해석 기준표 접힘
  *  - 심화 지표: KPI 띠 — 해석 색은 상태 아이콘 + 글(빨강 위험은 '주의:' 머리말, 값 글자색으로 전하지 않음), 메모 '표본 백분위 · 표본 · 기준일'
  *  - 환율 비교: 고른 계열 KPI 띠(끝값·단위, 기간 변화율 칩 + '기간', 메모 '기준일 … · 최근 …'), 계열 칩 aria-pressed 그대로
+ *  - 비공식 시세·경제 캘린더: 공용 표(항목·지표가 행 머리, 개수 줄, 받지 못한 현재가 '—'+'수집 실패', 캘린더는 조밀 표)
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +18,10 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import { SessionUserProvider } from "@/hooks/useSessionUser";
+import { EconCalendarSection } from "../macro/EconCalendarSection";
 import MacroPage from "../macro/page";
+import { ScrapedSection } from "../macro/ScrapedSection";
 
 const SNAPSHOT_PATH = "/api/snapshot/text";
 
@@ -291,5 +295,39 @@ describe("환율 비교", () => {
 
     const panel = screen.getByRole("heading", { level: 2, name: "환율·달러인덱스 비교" }).closest("section") as HTMLElement;
     expect(within(panel).getByRole("button", { name: "원/달러" }).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("비공식 시세·경제 캘린더 — 공용 표", () => {
+  it("비공식 시세: 항목이 행 머리, 개수 줄, 받지 못한 현재가는 '—'와 '수집 실패', 이어받은 값은 비고에 '이전 값'", async () => {
+    reads["/api/macro/scraped"] = () => Promise.resolve({ available: true, updatedAt: "2026-11-17T06:30:00+09:00", items: [
+      { key: "wti", name: "WTI 원유", provider: "TradingView", unit: "USD", status: "ok", price: 60.5, previousClose: 61.25, changePct: -1.22,
+        error: null, delayMinutes: 10, isStale: true, staleReason: "HTTP 429" },
+      { key: "kospi200", name: "코스피200 야간", provider: "TradingView", unit: "pt", status: "fail", price: null, previousClose: null,
+        changePct: null, error: "응답 없음", delayMinutes: null },
+    ] });
+    render(<ScrapedSection />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["WTI 원유", "코스피200 야간"]);
+    expect(screen.getByText("2개")).toBeTruthy();
+    const failed = screen.getByText("코스피200 야간").closest("tr") as HTMLElement;
+    expect(within(failed).getByText("수집 실패")).toBeTruthy();
+    expect(within(failed).getByText("응답 없음")).toBeTruthy();
+    const stale = screen.getByText("WTI 원유").closest("tr") as HTMLElement;
+    expect(within(stale).getByText(/이전 값 — HTTP 429/).closest("span[class*='text-warn']")).toBeTruthy();
+  });
+
+  it("경제 캘린더: 조밀 표(일정 기록) — 지표가 행 머리, 개수 줄", async () => {
+    reads["/api/macro/econ-calendar"] = () => Promise.resolve({ available: true, collectedAtKst: "2026-11-05 12:00 KST", events: [
+      { id: "1", country: "US", title: "Initial Jobless Claims", at: "2026-11-05T13:30:00+00:00", atKst: "2026-11-05 22:30 KST",
+        importance: 0, actual: 218, forecast: 220, previous: 219, unit: null, scale: "K", period: null },
+    ] });
+    render(<SessionUserProvider user={{ email: "owner@test.local", role: "OWNER", tier: "PRO" }}><EconCalendarSection /></SessionUserProvider>);
+
+    const header = await screen.findByRole("rowheader", { name: "Initial Jobless Claims" });
+    // 조밀 표 — 넓은 화면 행 28px의 칸 여백(공용 표 dense).
+    expect(header.className).toContain("lg:py-1");
+    expect(screen.getByText("1건")).toBeTruthy();
   });
 });
