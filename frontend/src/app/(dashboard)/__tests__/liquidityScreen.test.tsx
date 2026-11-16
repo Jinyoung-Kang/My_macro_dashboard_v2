@@ -44,7 +44,7 @@ afterEach(() => cleanup());
 
 describe("QA-627 4주·12주 변화의 음수 부호", () => {
   // 수정 전에는 4주·12주 변화 값('-480.0억 달러')과 원화 환산('약 -64.285조 원'·'약 -125.9조 원')이 ASCII 하이픈이었다 — 같은 화면 순유동성 변화 줄은 −(U+2212).
-  it.fails("4주·12주 변화 값과 그 원화 환산의 음수가 −(U+2212)다", async () => {
+  it("4주·12주 변화 값과 그 원화 환산의 음수가 −(U+2212)다", async () => {
     render(<LiquidityPage />);
 
     expect(await screen.findByText("−480.0억 달러")).toBeTruthy();

@@ -19,6 +19,7 @@ import {
   formatBillionUsd,
   formatTrillionDelta,
   formatTrillionUsd,
+  withMinusSign,
 } from "@/lib/format";
 import type { LiquidityResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
@@ -134,7 +135,7 @@ export default function LiquidityPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric
               label="4주 변화"
-              value={formatTrillionDelta(data.momentum.change4w)}
+              value={withMinusSign(formatTrillionDelta(data.momentum.change4w))}
               delta={data.momentum.change4w}
               deltaText=""
               caption={krwDelta(usdKrw.trillionToKrw, data.momentum.change4w)}
@@ -142,7 +143,7 @@ export default function LiquidityPage() {
             />
             <Metric
               label="12주 변화"
-              value={formatTrillionDelta(data.momentum.change12w)}
+              value={withMinusSign(formatTrillionDelta(data.momentum.change12w))}
               delta={data.momentum.change12w}
               deltaText=""
               caption={krwDelta(usdKrw.trillionToKrw, data.momentum.change12w)}
@@ -206,7 +207,7 @@ export default function LiquidityPage() {
 }
 
 /**
- * 변화량의 원화 환산.
+ * 변화량의 원화 환산 — 음수 부호는 −(U+2212, 변화 값과 같은 부호 — QA-627).
  *
  * <p>환율을 모르면 undefined를 돌려 <b>줄 자체를 없앱니다</b>. 빈 문자열을
  * 돌려주면 자리는 차지하면서 아무 말도 하지 않는 줄이 남습니다.
@@ -215,7 +216,8 @@ function krwDelta(
   convert: (value: number | null | undefined) => string | null,
   value: number | null | undefined,
 ): string | undefined {
-  return convert(value) ?? undefined;
+  const text = convert(value);
+  return text === null ? undefined : withMinusSign(text);
 }
 
 /**
