@@ -31,6 +31,8 @@ describe("PropertyList — 값 있음", () => {
     expect(container.querySelectorAll("dl > div")).toHaveLength(3);
     const term = screen.getByText("시가총액", { selector: "dt" });
     expect(term.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-caption", "text-text-2"]));
+    // 이름 칸은 값이 길어도 눌리지 않는다(줄 폭의 절반까지, 낱말 사이 줄바꿈)
+    expect(term.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "max-w-[50%]", "break-keep", "wrap-anywhere"]));
     const cap = valueOf("시가총액");
     expect(cap.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-right", "text-body", "text-text", "tabular-nums", "break-keep", "wrap-anywhere"]));
     expect(within(cap).getByText("3.2조 달러")).toBeTruthy();

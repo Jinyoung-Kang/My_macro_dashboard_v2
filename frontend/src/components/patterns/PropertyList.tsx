@@ -116,7 +116,8 @@ export function PropertyList({
                 item.block ? "flex-col gap-0.5" : "items-baseline justify-between gap-3"
               }`}
             >
-              <dt className="min-w-0 break-keep text-caption text-text-2">{item.label}</dt>
+              {/* 이름 칸은 줄어들지 않고 줄 폭의 절반까지 — 값이 길어도 이름이 한두 글자 폭으로 눌려 옆 값 위로 넘치지 않게(낱말 사이 줄바꿈, 넘치는 낱말만 꺾음). */}
+              <dt className={`min-w-0 break-keep wrap-anywhere text-caption text-text-2 ${item.block ? "" : "max-w-[50%] shrink-0"}`.trim()}>{item.label}</dt>
               <dd
                 className={`min-w-0 break-keep wrap-anywhere text-body text-text tabular-nums ${
                   item.block ? "text-left leading-relaxed" : "text-right"
