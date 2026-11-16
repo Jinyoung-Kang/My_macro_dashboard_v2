@@ -10,8 +10,8 @@
  *   놓을 때 한 번, 140px 아래로 끌면 레일(끌기 전 폭 기억), 레일을 끌어내면 끈 폭으로 펼침, 같은 끌기에서 되돌아가는 문턱은 16px 여유(손떨림),
  *   놓을 때 기다리던 프레임 반영, pointercancel·lostpointercapture도 끝냄, 잡은 동안 html의 data-nav-resizing(커서·글 고르기 — globals.css)과
  *   툴팁 막기, 끄는 도중 사라지면 표지를 떼고 그린 폭을 저장.
- * - 전환: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 문턱)만 motion-safe:transition-[width](150ms) — 처음 그릴 때·끄는 동안·키 걸음에는 없음
- *   (단추로 접고 편 직후 끌기를 시작해도 그때 끔).
+ * - 전환: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 레일로 접힘)만 motion-safe:transition-[width](150ms) — 처음 그릴 때·끄는 동안·키 걸음·
+ *   끌어내 펼 때에는 없음(단추로 접고 편 직후 끌기를 시작해도 그때 끔).
  * - 저장소가 던져도 기본 폭으로 그려지고 끌기·키가 동작.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -337,7 +337,8 @@ describe("끌기", () => {
     runFrames();
     expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
     expect(value().now).toBe("180");
-    expect(hasMotion()).toBe(true);
+    // 끌어내 펼 때는 전환 없이 포인터를 바로 따라감
+    expect(hasMotion()).toBe(false);
     move(60);
     runFrames();
     up(60);
@@ -349,7 +350,7 @@ describe("끌기", () => {
     expect(value().now).toBe("260");
   });
 
-  it("레일(48px)을 140px 너머로 끌어내면 끈 폭으로 펼친다 — 140 아래에서는 레일 그대로", () => {
+  it("레일(48px)을 140px 너머로 끌어내면 끈 폭으로 바로 펼친다(전환 없이 포인터를 따라감) — 140 아래에서는 레일 그대로", () => {
     window.localStorage.setItem("shell.navCollapsed", "1");
     window.localStorage.setItem("shell.navWidth", "230");
     render(<SideNav pathname="/macro" user={MEMBER} />);
@@ -361,7 +362,14 @@ describe("끌기", () => {
     runFrames();
     expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
     expect(value().now).toBe("290");
-    expect(hasMotion()).toBe(true);
+    expect(hasMotion()).toBe(false);
+    // 끌어내 편 뒤 되돌아가 접는 문턱은 124 — 130에서는 펼친 채 180
+    move(130);
+    runFrames();
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
+    expect(value().now).toBe("180");
+    move(290);
+    runFrames();
     up(290);
     expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
     expect(window.localStorage.getItem("shell.navWidth")).toBe("290");

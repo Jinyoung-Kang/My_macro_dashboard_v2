@@ -48,7 +48,7 @@ export type NavSeparatorHandlers = {
 };
 
 export type NavResize = {
-  /** 폭 전환(150ms)을 켤 때 — 왼쪽 메뉴 상자가 이 값으로 전환 클래스를 붙입니다. 끄는 동안(접힘이 바뀐 직후 150ms를 빼고)과 처음 그릴 때는 꺼짐. */
+  /** 폭 전환(150ms)을 켤 때 — 왼쪽 메뉴 상자가 이 값으로 전환 클래스를 붙입니다. 끄는 동안(레일로 접힌 직후 150ms를 빼고)과 처음 그릴 때는 꺼짐. */
   motion: boolean;
   /** 손잡이를 잡고 있는가 — 손잡이 모양과 툴팁 막기에 씁니다. */
   dragging: boolean;
@@ -66,8 +66,9 @@ export type NavResize = {
  *   requestAnimationFrame으로 한 프레임에 한 번만 반영합니다. 3px을 넘기 전에는 폭을 바꾸지 않고, 끄는 동안의 값은 이 창에만 두었다가 놓을 때(pointerup·
  *   pointercancel·lostpointercapture) 한 번 저장합니다. 잡은 동안 문서 뿌리에 NAV_RESIZING_ATTR(커서 col-resize·글 고르기 끔 — globals.css).
  *   140px 문턱은 같은 끌기 안에서 잡을 때의 접힘으로 되돌아갈 때 16px 여유를 둡니다(문턱 근처의 손떨림이 프레임마다 접고 펴지 않게 — lib/navWidth).
- * - **전환**: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 140px 문턱을 넘음)만 폭 전환을 켭니다. 끄는 동안 폭이 포인터를 따라갈 때는 끕니다 —
- *   끌기 중 접힘이 바뀌면 150ms만 켜 두고 다시 끕니다. 화살표·Home·End의 폭 걸음도 전환 없이 바로 바뀝니다. 처음 그릴 때(저장값을 읽어 폭이 바뀜)는 꺼져
+ * - **전환**: 접힘이 바뀌는 때(단추·[·두 번 누르기·Enter·끌기 중 140px 아래로 접힘)만 폭 전환을 켭니다. 끄는 동안 폭이 포인터를 따라갈 때는 끕니다 —
+ *   끌기 중 레일로 접히면 150ms만 켜 두고 다시 끄고, 레일에서 끌어내 펼 때는 켜지 않습니다(목표 폭이 프레임마다 바뀌어 전환이 처지다 튐). 화살표·Home·End의
+ *   폭 걸음도 전환 없이 바로 바뀝니다. 처음 그릴 때(저장값을 읽어 폭이 바뀜)는 꺼져
  *   있어 화면을 열 때 메뉴가 움직이지 않습니다. 켜고 끄는 값과 폭은 같은 프레임에 반영돼야 하므로(전환은 바뀐 뒤 스타일의 transition을 봄) 켜고 끄기는
  *   flushSync로 먼저 그립니다 — 셸 명령(창의 사용자 이벤트)·프레임 처리기에서 부른 상태 바꾸기는 저장소 알림과 다른 우선순위로 그려질 수 있습니다.
  * - **두 번 누르기**: 접기·펼치기. 그 두 번의 누름 가운데 하나라도 끌었으면 받지 않습니다.
@@ -134,12 +135,17 @@ export function useNavResize(beforeToggle: () => void): NavResize {
     flip({ collapsed: !getNavCollapsed(), width: getNavWidth() });
   }, [flip]);
 
-  /** 끄는 동안 한 프레임 — 끈 폭으로 배치를 셉니다(저장하지 않음). 문턱은 잡을 때와 지금의 접힘을 보고 정합니다(되돌림 여유). 접힘이 바뀌면 그 바뀜에만 150ms 전환. */
+  /** 끄는 동안 한 프레임 — 끈 폭으로 배치를 셉니다(저장하지 않음). 문턱은 잡을 때와 지금의 접힘을 보고 정합니다(되돌림 여유). 레일로 접히는 바뀜에만 150ms 전환. */
   const frame = useCallback(
     (drag: Drag) => {
       const collapsed = getNavCollapsed();
       const next = navDragLayout(drag.startShown + drag.lastX - drag.startX, drag.restoreWidth, { startCollapsed: drag.startCollapsed, collapsed });
-      if (next.collapsed !== collapsed) animate(true, NAV_MOTION_MS);
+      if (next.collapsed !== collapsed) {
+        // 레일로 접힐 때만 150ms 전환 — 목표(48)가 그대로라 매끄럽습니다. 레일에서 끌어내 펼 때는 목표 폭이 프레임마다 바뀌어 전환이 포인터에 처지다가
+        // 꺼지는 순간 튀므로(빠르게 끌면 한 프레임에 수십~100px) 전환 없이 포인터를 바로 따라갑니다.
+        if (next.collapsed) animate(true, NAV_MOTION_MS);
+        else animate(false);
+      }
       apply(next, false);
     },
     [animate, apply],
