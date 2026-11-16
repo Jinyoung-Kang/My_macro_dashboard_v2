@@ -291,7 +291,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           // 모서리는 4px(입력칸·단추와 같음 — 작업대 실행 명세 §3-8, 2026-11-16 알약 정리).
           // 좁은 화면(lg 미만)은 상단바 위 줄의 남는 폭을 다 쓰는 44px. 넓은 화면은 48px 상단바의 조작 높이 30px(§3-7)에 폭을 고정합니다(176px,
           // xl 256px) — 남는 폭은 빵부스러기가 씁니다(§5). 176px(lg~xl)에서는 글 칸이 78px뿐이라 앞부분을 숨겨 '검색'만 보입니다(QA-558 —
-          // 앱 이름의 hidden xl:inline과 같은 꼴, 접근 이름은 aria-label 전체 글 그대로).
+          // 앱 이름 'Dashboard'와 같은 꼴의 숨김 span — 앱 이름은 2xl부터, 검색 글은 xl부터 펼침, 접근 이름은 aria-label 전체 글 그대로).
           <button
             type="button"
             aria-label="종목·기관·지표·메뉴 검색"
