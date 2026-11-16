@@ -133,7 +133,7 @@ describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭
 
   // 수정 전 실패(e~g, 재현 커밋에서는 it.fails): (e) 실패한 다시 불러오기 뒤 알림 영역이 'AI 요약을 만들었습니다.' (f) 진행 중 영역에 지난 경고가 남고
   // ('요약하는 중입니다 …주의: 하루 한도를 넘었습니다(합성)') 두 번째 결과의 경고 노드가 첫 번째와 같음 (g) 연결 실패 뒤에도 지난 경고가 영역에 남음.
-  it.fails("(e) 앞서 성공한 요약이 있는 채로 다시 불러오기가 연결 실패로 끝나면 완료 글을 다시 넣지 않고 alert 오류만 읽힌다", async () => {
+  it("(e) 앞서 성공한 요약이 있는 채로 다시 불러오기가 연결 실패로 끝나면 완료 글을 다시 넣지 않고 alert 오류만 읽힌다", async () => {
     api.apiPost.mockResolvedValueOnce(SUMMARY_OK);
     const card = renderCard();
     const region = within(card).getByRole("status");
@@ -156,7 +156,7 @@ describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭
     });
   });
 
-  it.fails("(f) 같은 사유의 status:false가 두 번 오면 진행 중에는 지난 경고를 빼고, 두 번째 경고를 새로 넣어 다시 읽힌다", async () => {
+  it("(f) 같은 사유의 status:false가 두 번 오면 진행 중에는 지난 경고를 빼고, 두 번째 경고를 새로 넣어 다시 읽힌다", async () => {
     api.apiPost.mockResolvedValueOnce(SUMMARY_FAIL);
     const card = renderCard();
     const region = within(card).getByRole("status");
@@ -177,7 +177,7 @@ describe("QA-574 AI 요약 — 진행 중 포커스 유지·결과와 오류 낭
     expect({ during, sameNode: secondWarn === firstWarn }).toEqual({ during: BUSY_TEXT, sameNode: false });
   });
 
-  it.fails("(g) 경고(status:false) 뒤 다시 누른 요청이 연결 실패로 끝나면 지난 경고를 남기지 않고 alert 오류만 둔다", async () => {
+  it("(g) 경고(status:false) 뒤 다시 누른 요청이 연결 실패로 끝나면 지난 경고를 남기지 않고 alert 오류만 둔다", async () => {
     api.apiPost.mockResolvedValueOnce(SUMMARY_FAIL);
     const card = renderCard();
     const region = within(card).getByRole("status");

@@ -450,7 +450,9 @@ function summaryAllowed(user: SessionUser | null | undefined): boolean | null {
  *
  * 진행 중 단추는 disabled가 아니라 aria-disabled·aria-busy이고 누르기를 무시합니다 — 진짜 disabled면 크롬이 포커스를 body로 옮겼습니다(QA-574,
  * 새로고침 단추 QA-553과 같은 꼴). 진짜 disabled는 대상·사용자를 모르는 정적 잠금에만 둡니다(QA-453). 경고 안내와 진행·완료 글은 늘 그려 두는
- * role=status 영역 하나에, 연결 실패 오류 상자는 role=alert 상자에 둡니다(공용 Callout·ErrorState에는 role을 주지 않음 — QA-268).
+ * role=status 영역 하나에, 연결 실패 오류 상자는 role=alert 상자에 둡니다(공용 Callout·ErrorState에는 role을 주지 않음 — QA-268). 경고·완료 글은
+ * 마지막 요청이 응답으로 끝났을 때만 넣습니다 — 진행 중·연결 실패 뒤에는 빼서, 같은 사유의 두 번째 경고도 새로 읽히고 실패한 요청에 지난 완료 글이
+ * 붙지 않습니다(QA-574 검토).
  */
 export function AiSummaryCard({
   request,
@@ -474,6 +476,9 @@ export function AiSummaryCard({
     });
   };
   const result = summary.result;
+  // 마지막 요청이 응답(결과)으로 끝났는가 — 진행 중이거나 연결 실패로 끝났으면 result는 그 앞 요청의 것입니다(useAsyncAction은 실패해도 앞 결과를 남김).
+  // 알림 영역의 경고·완료 글은 이때만 넣습니다: 진행 중에는 빼고 응답이 오면 새로 넣어야 같은 글도 다시 읽히고, 실패한 요청에 지난 완료·경고가 붙지 않습니다.
+  const answered = !summary.busy && !summary.error && result !== null;
   const lines = result?.status ? summaryLines(result.summary) : [];
   const sources = result?.sources ?? [];
   const sourceOf = (n: number) => sources.find((source) => source.n === n);
@@ -512,8 +517,8 @@ export function AiSummaryCard({
           결과가 올 때 새로 넣으면 낭독기가 읽지 않기도 합니다. 영역은 하나 — 둘이면 같은 일이 두 번 읽힙니다. */}
       <div role="status" className={`flex flex-col gap-2 ${summary.busy && lines.length > 0 ? "mb-3" : ""}`.trim()}>
         {summary.busy ? <p className="break-keep text-sm text-text-2">요약하는 중입니다 — AI를 부르면 몇 초 걸립니다</p> : null}
-        {result && !result.status ? <Banner tone="warn">{result.error ?? "요약을 만들지 못했습니다."}</Banner> : null}
-        {!summary.busy && result?.status ? <span className="sr-only">AI 요약을 만들었습니다.</span> : null}
+        {answered && !result.status ? <Banner tone="warn">{result.error ?? "요약을 만들지 못했습니다."}</Banner> : null}
+        {answered && result.status ? <span className="sr-only">AI 요약을 만들었습니다.</span> : null}
       </div>
       {lines.length > 0 ? (
         // 긴 글 단계(running 15/24, 한 줄 최대 72자). 근거 번호는 위로 올리되 줄 높이를 밀지 않게(align-super 대신 상대 위치 — 번호가 있는 줄만 줄 간격이 벌어졌음).
