@@ -187,7 +187,7 @@ describe("EntityHeader — 불러오는 중·오류(placeholder)", () => {
   // 그려졌습니다 — QA 스택 1440 us10y·NVDA 103px, /s/us/T 58px(머리에서 쓸 수 있는 폭 1112·968px), 390 103px(314px). jsdom은 배치를 재지 않아 클래스로 봅니다:
   // 글 칸은 flex-1, 왼쪽 줄(아이콘 칸의 부모)은 넓은 화면(lg — 가로 머리)에서만 flex-1(좁은 화면의 세로 머리에서 flex-basis 0%가 높이에 걸리지 않게).
   // 수정 전(재현 커밋에서는 it.fails)에는 글 칸 'flex min-w-0 flex-col gap-1', 왼쪽 줄 'flex min-w-0 items-start gap-3'이었습니다.
-  it.fails("자리표시는 머리에서 쓸 수 있는 폭 전체를 쓴다 — 글 칸 flex-1, 왼쪽 줄 lg:flex-1 (QA-591)", () => {
+  it("자리표시는 머리에서 쓸 수 있는 폭 전체를 쓴다 — 글 칸 flex-1, 왼쪽 줄 lg:flex-1 (QA-591)", () => {
     const { container } = render(
       <EntityHeader
         kind="indicator"
