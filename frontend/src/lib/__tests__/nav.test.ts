@@ -236,14 +236,13 @@ describe("브라우저 탭 제목", () => {
 
   // QA-594: 상세 화면 탭 제목에 대상 이름이 없어 상세 탭 여러 개를 구분할 수 없었습니다 — 대상 이름(빵부스러기 마지막 칸 글)을 앞에 붙입니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 두 번째 인자를 무시해 '13F 포트폴리오 · 매크로 대시보드'였습니다.
-  it.fails("대상 이름을 주면 제목 앞에 붙인다 — 없거나 비면 그대로 (QA-594)", () => {
-    const title = documentTitle as (pathname: string, entityLabel?: string | null) => string;
-    expect(title("/institutions/0001608046", "국민연금 (National Pension Service)")).toBe("국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드");
-    expect(title("/markets/i/sp500", "S&P 500")).toBe("S&P 500 · 시장 · 매크로 대시보드");
-    expect(title("/s/us/AAPL", "AAPL")).toBe("AAPL · 시장 · 매크로 대시보드");
-    expect(title("/institutions/0001608046", null)).toBe("13F 포트폴리오 · 매크로 대시보드");
-    expect(title("/institutions/0001608046", "  ")).toBe("13F 포트폴리오 · 매크로 대시보드");
-    expect(title("/institutions/0001608046")).toBe("13F 포트폴리오 · 매크로 대시보드");
+  it("대상 이름을 주면 제목 앞에 붙인다 — 없거나 비면 그대로 (QA-594)", () => {
+    expect(documentTitle("/institutions/0001608046", "국민연금 (National Pension Service)")).toBe("국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드");
+    expect(documentTitle("/markets/i/sp500", "S&P 500")).toBe("S&P 500 · 시장 · 매크로 대시보드");
+    expect(documentTitle("/s/us/AAPL", "AAPL")).toBe("AAPL · 시장 · 매크로 대시보드");
+    expect(documentTitle("/institutions/0001608046", null)).toBe("13F 포트폴리오 · 매크로 대시보드");
+    expect(documentTitle("/institutions/0001608046", "  ")).toBe("13F 포트폴리오 · 매크로 대시보드");
+    expect(documentTitle("/institutions/0001608046")).toBe("13F 포트폴리오 · 매크로 대시보드");
   });
 });
 

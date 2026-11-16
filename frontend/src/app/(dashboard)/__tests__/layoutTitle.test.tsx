@@ -130,7 +130,7 @@ function renderAt(pathname: string, child: ReactNode) {
 
 describe("QA-594 — 상세 화면 탭 제목에 대상 이름(빵부스러기 마지막 칸과 같은 글)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 이름을 받아도 '13F 포트폴리오 · 매크로 대시보드'(기관 목록과 같은 제목)였습니다.
-  it.fails("기관 상세가 이름을 넘기면 '국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드' — 루트 제목에 덮여도 그 제목으로 돌아온다", async () => {
+  it("기관 상세가 이름을 넘기면 '국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드' — 루트 제목에 덮여도 그 제목으로 돌아온다", async () => {
     reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: new Error("500") };
     renderAt(INSTITUTION, <InstitutionScreen />);
     await waitFor(() => expect(document.title).toBe(NPS_TITLE));
@@ -140,14 +140,14 @@ describe("QA-594 — 상세 화면 탭 제목에 대상 이름(빵부스러기 �
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 '(3) 13F 포트폴리오 · 매크로 대시보드'였습니다.
-  it.fails("읽지 않은 알림이 3건이면 '(3) 국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드'", async () => {
+  it("읽지 않은 알림이 3건이면 '(3) 국민연금 (National Pension Service) · 13F 포트폴리오 · 매크로 대시보드'", async () => {
     reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: { unread: 3 } };
     renderAt(INSTITUTION, <InstitutionScreen />);
     await waitFor(() => expect(document.title).toBe(`(3) ${NPS_TITLE}`));
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 'CIK …' 없이 '13F 포트폴리오 · 매크로 대시보드'였습니다.
-  it.fails("이름을 받기 전·다른 주소의 이름이면 빵부스러기처럼 주소의 식별자 — 'CIK 0001608046 · 13F 포트폴리오 · 매크로 대시보드'", async () => {
+  it("이름을 받기 전·다른 주소의 이름이면 빵부스러기처럼 주소의 식별자 — 'CIK 0001608046 · 13F 포트폴리오 · 매크로 대시보드'", async () => {
     reads = { [SESSION]: LOCAL_OWNER, [UNREAD]: new Error("500") };
     renderAt(INSTITUTION, <InstitutionScreen href="/institutions/0001767640" />);
     await waitFor(() => expect(document.title).toBe("CIK 0001608046 · 13F 포트폴리오 · 매크로 대시보드"));

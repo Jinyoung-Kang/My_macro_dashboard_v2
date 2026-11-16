@@ -6,20 +6,16 @@
  * breadcrumbs()의 마지막 칸과 같은 규칙이라 두 결과를 함께 봅니다. 시험의 CIK는 늘 10자리입니다(주소 정규화와 상관없게).
  */
 import { describe, expect, it } from "vitest";
-import * as breadcrumbsModule from "@/lib/breadcrumbs";
+import { breadcrumbs, entityCrumbLabel } from "@/lib/breadcrumbs";
 import type { SessionUser } from "@/lib/types";
 
-type EntityCrumbLabel = (pathname: string, entity?: { href: string; label: string } | null) => string | null;
-const entityCrumbLabel = (breadcrumbsModule as unknown as { entityCrumbLabel?: EntityCrumbLabel }).entityCrumbLabel;
 const OWNER: SessionUser = { email: "owner@test.local", role: "OWNER", tier: "PRO" };
 
-const lastCrumb = (pathname: string, entity?: { href: string; label: string } | null) => breadcrumbsModule.breadcrumbs(pathname, OWNER, entity).at(-1)?.label;
+const lastCrumb = (pathname: string, entity?: { href: string; label: string } | null) => breadcrumbs(pathname, OWNER, entity).at(-1)?.label;
 
 describe("entityCrumbLabel — 상세 화면 대상 칸 글 (QA-594)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 함수가 없었습니다.
-  it.fails("이름의 주소가 대상 칸의 정규 주소와 같으면 그 이름(앞뒤 공백 없이), 다르거나 비었으면 주소의 식별자 — 빵부스러기 마지막 칸과 같다", () => {
-    expect(typeof entityCrumbLabel).toBe("function");
-    const label = entityCrumbLabel as EntityCrumbLabel;
+  it("이름의 주소가 대상 칸의 정규 주소와 같으면 그 이름(앞뒤 공백 없이), 다르거나 비었으면 주소의 식별자 — 빵부스러기 마지막 칸과 같다", () => {
     const cases: [string, { href: string; label: string } | null | undefined, string][] = [
       ["/institutions/0001608046", { href: "/institutions/0001608046", label: "국민연금 (National Pension Service)" }, "국민연금 (National Pension Service)"],
       ["/institutions/0001608046", { href: "/institutions/0001767640", label: "사우디 국부펀드" }, "CIK 0001608046"],
@@ -31,17 +27,15 @@ describe("entityCrumbLabel — 상세 화면 대상 칸 글 (QA-594)", () => {
       ["/s/kr/005930", { href: "/s/kr/005930", label: " 삼성전자 " }, "삼성전자"],
     ];
     for (const [path, entity, want] of cases) {
-      expect(label(path, entity), path).toBe(want);
+      expect(entityCrumbLabel(path, entity), path).toBe(want);
       expect(lastCrumb(path, entity), `${path} — 빵부스러기`).toBe(want);
     }
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 함수가 없었습니다.
-  it.fails("대상 칸이 없는 주소는 null — 모의매매 탭·목록 화면·형식이 틀린 주소·메뉴 밖", () => {
-    expect(typeof entityCrumbLabel).toBe("function");
-    const label = entityCrumbLabel as EntityCrumbLabel;
+  it("대상 칸이 없는 주소는 null — 모의매매 탭·목록 화면·형식이 틀린 주소·메뉴 밖", () => {
     for (const path of ["/paper/us/holdings", "/paper/kr", "/macro", "/institutions", "/markets/i/", "/s/jp/7203", "/institutions/abc", "/login", "/"]) {
-      expect(label(path, { href: path, label: "이름" }), path).toBeNull();
+      expect(entityCrumbLabel(path, { href: path, label: "이름" }), path).toBeNull();
     }
   });
 });

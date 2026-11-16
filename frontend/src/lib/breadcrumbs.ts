@@ -105,9 +105,28 @@ function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => 
   return NO_DETAIL;
 }
 
+/** 넘겨받은 대상 이름 — 그 주소가 대상 칸의 정규 주소와 같고 이름이 비어 있지 않을 때만(앞뒤 공백 없이), 아니면 빈 글. 빵부스러기·탭 제목이 같이 씁니다. */
+function matchedEntityName(detail: DetailCrumbs, entity: { href: string; label: string } | null | undefined): string {
+  return entity && detail.entityHref !== null && entity.href === detail.entityHref ? entity.label.trim() : "";
+}
+
+/**
+ * 지금 주소의 대상 칸 글 — 빵부스러기 마지막 칸과 같은 글(브라우저 탭 제목 앞에 붙임, QA-594 — app/(dashboard)/layout useDocumentTitle).
+ * 상세 화면이 넘긴 이름의 주소가 대상 칸의 정규 주소와 같으면 그 이름, 아니면 대상 칸 글(지표 키·종목 코드·'CIK …'). 대상 칸이 없는 주소(모의매매 탭 —
+ * 그 칸은 탭 이름이라 상세 대상이 아님, 목록 화면, 형식이 틀린 주소, 메뉴 밖)는 null입니다.
+ * 예 — `/institutions/0001608046` + {href:'/institutions/0001608046', label:'국민연금 (National Pension Service)'} → 그 이름, 이름이 없으면 'CIK 0001608046'.
+ */
+export function entityCrumbLabel(pathname: string, entity?: { href: string; label: string } | null): string | null {
+  const tab = activeTab(pathname);
+  if (!tab) return null;
+  const detail = detailCrumbs(pathname, tab, (href) => href);
+  if (detail.entityHref === null) return null;
+  return matchedEntityName(detail, entity) || (detail.crumbs.at(-1)?.label ?? null);
+}
+
 /**
  * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
- * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/1067983` → 기관 › 13F 포트폴리오 › CIK 1067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
+ * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/0001067983` → 기관 › 13F 포트폴리오 › CIK 0001067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
  * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
  * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
  * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
@@ -127,7 +146,7 @@ export function breadcrumbs(pathname: string, user: SessionUser | null | undefin
     crumbs.push({ label: item.label, href: shown.has(item.href) ? item.href : null });
   }
   const detail = detailCrumbs(pathname, tab, visible);
-  const named = entity && detail.entityHref !== null && entity.href === detail.entityHref ? entity.label.trim() : "";
+  const named = matchedEntityName(detail, entity);
   const tail = named
     ? detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb))
     : detail.crumbs;
