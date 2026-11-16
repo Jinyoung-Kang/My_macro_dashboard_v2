@@ -72,7 +72,6 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(consensusItems("kr", quote({ currency: "KRW", consensus: { targetMean: 89000, recommendation: "4.00", analysts: null } }))).toEqual([
       { label: "평균 목표가", value: "89,000 원" },
       { label: "투자의견", value: "평균 4.00 / 5" },
-      { label: "의견 수", value: null },
     ]);
     expect(consensusItems("us", quote())).toEqual([]);
     expect(moneyPriceText(0.5, "USD")).toBe("0.5000 USD");
@@ -81,7 +80,7 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
   // QA-580: 수집기는 지수·ETF·모르는 심볼에도 consensus를 값이 모두 null인 객체로 주고, 네이버(국내)는 의견 수를 늘 주지 않습니다. 회사 개요처럼
   // 받은 값만 — 세 값을 모두 모르면 빈 목록(패널을 그리지 않음), 국내는 늘 비는 '의견 수' 줄을 두지 않습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 미국 전부 null이 '—' 세 줄, 국내가 '의견 수' null 줄까지 세 줄이었습니다.
-  it.fails("애널리스트 의견 — 세 값을 모두 모르면 빈 목록, 국내는 '의견 수' 줄 없음 (QA-580)", () => {
+  it("애널리스트 의견 — 세 값을 모두 모르면 빈 목록, 국내는 '의견 수' 줄 없음 (QA-580)", () => {
     expect(consensusItems("us", quote({ consensus: { targetMean: null, recommendation: null, analysts: null } }))).toEqual([]);
     expect(consensusItems("kr", quote({ currency: "KRW", consensus: { targetMean: null, recommendation: null, analysts: null } }))).toEqual([]);
     expect(consensusItems("kr", quote({ currency: "KRW", consensus: { targetMean: 89000, recommendation: "4.00", analysts: null } }))).toEqual([

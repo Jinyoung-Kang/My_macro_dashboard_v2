@@ -51,7 +51,7 @@ function renderStock(market: "us" | "kr", code: string, quote: DetailQuote) {
 
 describe("애널리스트 의견 패널 — 받은 값만 (QA-580)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 지수 꼴(세 값 모두 null)에도 패널이 '—' 세 줄로 그려졌습니다.
-  it.fails("의견 값을 하나도 받지 못한 시세(지수·ETF·모르는 심볼 꼴)에는 패널을 그리지 않는다", async () => {
+  it("의견 값을 하나도 받지 못한 시세(지수·ETF·모르는 심볼 꼴)에는 패널을 그리지 않는다", async () => {
     renderStock("us", "^SYNI", BASE);
     await screen.findByRole("heading", { level: 1, name: "Synthetic Index" });
     await screen.findByRole("heading", { level: 2, name: "핵심 지표" });
@@ -59,7 +59,7 @@ describe("애널리스트 의견 패널 — 받은 값만 (QA-580)", () => {
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 국내 종목 패널에 늘 비는 '의견 수 —' 줄이 있었습니다.
-  it.fails("국내 종목은 평균 목표가·투자의견 두 줄(네이버가 주지 않는 '의견 수' 줄 없음)", async () => {
+  it("국내 종목은 평균 목표가·투자의견 두 줄(네이버가 주지 않는 '의견 수' 줄 없음)", async () => {
     renderStock("kr", "999991", {
       ...BASE, market: "kr", code: "999991", yahooSymbol: "999991.KS", name: "합성전자", exchange: "코스피", currency: "KRW", kind: "stock",
       consensus: { targetMean: 89000, recommendation: "4.00", analysts: null },

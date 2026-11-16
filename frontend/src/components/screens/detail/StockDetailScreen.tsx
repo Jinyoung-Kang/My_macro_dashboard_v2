@@ -69,6 +69,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   // 뉴스·AI 요약의 검색어는 백엔드 상한(60자) 안으로 — 시세 이름은 Yahoo의 긴 이름이라 넘으면 400(QA-448). 뉴스 카드의 정보 검색 링크도 같은 말로.
   const newsQuery = detailQuery(quote?.name) ?? undefined;
   const unit = currencyUnit(quote?.currency);
+  const consensusRows = quote ? consensusItems(market, quote) : [];
   const indicator = indicatorForSymbol(macro.data, quote ? symbol : null);
   const entityLink = infoSearchEntityLink(stockEntityKey(market, code), "정보 검색에서 보기", user);
   // 시세가 준 종목 이름 — 수집기는 출처 실패·정보 없는 심볼에도 available:true + quote{name:null, error}를 돌려주므로 quote 객체가 있는지가 아니라
@@ -188,9 +189,10 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
               )}
             </Panel>
             {quote ? <ProfilePanel quote={quote} /> : null}
-            {quote?.consensus ? (
+            {/* 받은 의견 값이 하나라도 있을 때만(지수·ETF·모르는 심볼의 '—' 세 줄 패널을 두지 않음 — QA-580). */}
+            {quote && consensusRows.length > 0 ? (
               <Panel title="애널리스트 의견" subtitle="증권사 의견의 평균입니다 — 이 화면의 판단이 아닙니다." source={quote.source?.label ?? undefined}>
-                <PropertyList items={propertyItems(consensusItems(market, quote))} />
+                <PropertyList items={propertyItems(consensusRows)} />
               </Panel>
             ) : null}
           </>

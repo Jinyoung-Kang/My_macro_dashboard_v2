@@ -99,15 +99,22 @@ export function moneyPriceText(value: number, currency: string | null | undefine
   return `${formatNumber(value, priceDigits(value, currency))}${unit ? ` ${unit}` : ""}`;
 }
 
-/** 애널리스트 의견 속성 — 평균 목표가·투자의견·의견 수(미국 Yahoo, 국내 네이버 컨센서스). 모르면 null. 의견이 없으면 빈 목록. */
+/**
+ * 애널리스트 의견 속성 — 평균 목표가·투자의견·의견 수(미국 Yahoo, 국내 네이버 컨센서스). 모르면 null(일부만 모르면 그 줄이 "—").
+ * 받은 값만 — 의견이 없거나 세 값을 모두 모르면(수집기는 지수·ETF·모르는 심볼에도 값이 모두 null인 객체를 줌) 빈 목록이라 화면이 패널을 그리지
+ * 않고, 국내는 네이버가 의견 수를 주지 않아 늘 비는 '의견 수' 줄을 두지 않습니다(회사 개요와 같은 규칙 — QA-580).
+ */
 export function consensusItems(market: DetailMarket, quote: Pick<DetailQuote, "consensus" | "currency">): DetailProperty[] {
   const consensus = quote.consensus;
   if (!consensus) return [];
-  return [
+  const rows: DetailProperty[] = [
     { label: "평균 목표가", value: consensus.targetMean !== null && Number.isFinite(consensus.targetMean) ? moneyPriceText(consensus.targetMean, quote.currency) : null },
     { label: "투자의견", value: recommendationText(market, consensus.recommendation) },
-    { label: "의견 수", value: consensus.analysts !== null && Number.isFinite(consensus.analysts) ? `${formatNumber(consensus.analysts, 0)}곳` : null },
   ];
+  if (market !== "kr") {
+    rows.push({ label: "의견 수", value: consensus.analysts !== null && Number.isFinite(consensus.analysts) ? `${formatNumber(consensus.analysts, 0)}곳` : null });
+  }
+  return rows.some((row) => row.value !== null) ? rows : [];
 }
 
 /** 지표 속성에 쓰는 카드 행의 칸(lib/home macroCardRow 결과). */
