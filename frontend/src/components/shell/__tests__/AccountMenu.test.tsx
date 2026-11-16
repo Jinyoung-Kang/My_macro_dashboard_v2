@@ -163,7 +163,7 @@ describe("로그아웃", () => {
   // 1440에서 412 → 116px, 새로고침 안내와 함께 뜨면 1280에서 0px까지 줄었습니다(QA 스택 확인 — Shell.test의 같은 번호 시험이 빵부스러기 하한을 봄).
   // 실패 글이 떠 있는 동안 상자가 모자란 폭을 먼저 내주되(shrink-[100]) 여는 단추 30px + 사이 8px 아래로는 줄지 않게(min-w-[38px]), 글이 없으면 단추 폭 그대로(shrink-0).
   // 수정 전(재현 커밋에서는 it.fails)에는 글이 있든 없든 'min-w-0 shrink'였습니다.
-  it.fails("실패 글이 떠 있는 동안 감싼 상자는 모자란 폭을 먼저 내주되 단추 30px + 사이 8px 아래로는 줄지 않고, 글이 없으면 단추 폭 그대로 (QA-547)", async () => {
+  it("실패 글이 떠 있는 동안 감싼 상자는 모자란 폭을 먼저 내주되 단추 30px + 사이 8px 아래로는 줄지 않고, 글이 없으면 단추 폭 그대로 (QA-547)", async () => {
     api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
     const trigger = renderMenu(MEMBER);
     const quiet = (trigger.parentElement as HTMLElement).className.split(/\s+/);

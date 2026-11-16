@@ -50,9 +50,10 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
   const local = !demo && isLocalOwner(user);
 
   return (
-    <div className="hidden min-w-0 shrink items-center gap-2 lg:flex">
-      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px)이라
-          떠 있는 동안 빵부스러기 자리가 그만큼 줄어듭니다(1440에서 412 → 116px, 다음 로그아웃 때 지움). */}
+    <div className={`hidden items-center gap-2 lg:flex ${error ? "min-w-[38px] shrink-[100]" : "shrink-0"}`}>
+      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px)이고, 빵부스러기 자리는
+          하한 160px — 안내 글이 먼저 줄어듦(떠 있는 동안 감싼 상자가 모자란 폭을 먼저 내주되 여는 단추 30px + 사이 8px까지, QA-547). 글이 없으면 상자는
+          단추 폭 그대로(shrink-0). 다음 로그아웃 때 지움. */}
       {error && (
         <p role="alert" title={error} className="flex min-w-0 max-w-40 text-xs leading-5 text-warn xl:max-w-72">
           <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />} className="min-w-0">

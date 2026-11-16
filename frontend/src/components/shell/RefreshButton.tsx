@@ -28,6 +28,8 @@ const ICON_BUTTON =
  * - `block`(기본 — 더보기 '데이터 읽기' 묶음, 좁은 화면): 폭 전체 주 단추(기본 크기 — 홀로 선 주 동작) 아래에 안내 문구.
  * - `icon`(넓은 화면 상단바 — 작업대 실행 명세 §5): 이름 있는 아이콘 단추(aria-label = 지금 글, 툴팁 = 이름), 수집 중에는 막고 도는 아이콘.
  *   안내 문구는 단추 왼쪽 한 줄(말줄임 — 전체 글은 title). 운영자가 아니면 아무것도 그리지 않습니다.
+ *   안내가 떠 있는 동안 감싼 상자는 상단바에서 모자란 폭을 먼저 내줍니다(shrink-[100] — 빵부스러기 하한 160px을 지킴, 단추 30px + 사이 8px 아래로는
+ *   줄지 않음, QA-547). 안내가 없으면 상자는 단추 폭 그대로입니다(shrink-0 — 늘 38px 하한을 두면 단추가 8px 왼쪽으로 밀림).
  */
 export function RefreshButton({ user, variant = "block" }: { user?: SessionUser; variant?: "block" | "icon" }) {
   const { requestRefresh, collecting, message } = useRefreshSignal();
@@ -36,7 +38,7 @@ export function RefreshButton({ user, variant = "block" }: { user?: SessionUser;
   if (variant === "icon") {
     if (!isOwner(user)) return null;
     return (
-      <div className="hidden min-w-0 shrink items-center gap-2 lg:flex">
+      <div className={`hidden items-center gap-2 lg:flex ${message ? "min-w-[38px] shrink-[100]" : "shrink-0"}`}>
         {/* 안내 영역은 늘 그려 두고 글만 바꿉니다(block과 같은 까닭). 비어 있으면 보이지 않게(sr-only). */}
         <p
           role="status"
