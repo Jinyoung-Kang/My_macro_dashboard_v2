@@ -526,7 +526,8 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     signal.message = "수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.";
     renderShell(LOCAL_OWNER);
     const button = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    // 막는 것은 aria-disabled(진짜 disabled는 포커스를 body로 떨어뜨림 — QA-553, QA-444와 같은 방식)
+    expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
   });
 
@@ -535,7 +536,7 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
   // POST가 오가는 동안 role=status는 빈 글이었습니다(개편 전 block 단추도 같은 구조). QA-444(정보 검색 단추)와 키트 방침(ui/classes — 바꾸는 중에는
   // aria-disabled)대로, 수집 중에는 aria-disabled·aria-busy로 막고 누름은 무시하며, 안내 글이 없으면 안내 영역(sr-only)에 '수집 중…'을 둡니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 두 변형 모두 button.disabled true·aria-disabled 없음, 안내 영역 글이 ''였습니다.
-  it.fails("수집 중에는 aria-disabled로 막는다 — 단추가 포커스를 잃지 않고, 눌러도 다시 요청하지 않으며, 안내 영역이 '수집 중…'을 읽는다(아이콘·block 두 변형) (QA-553)", () => {
+  it("수집 중에는 aria-disabled로 막는다 — 단추가 포커스를 잃지 않고, 눌러도 다시 요청하지 않으며, 안내 영역이 '수집 중…'을 읽는다(아이콘·block 두 변형) (QA-553)", () => {
     const expectBusy = (button: HTMLButtonElement, status: HTMLElement) => {
       expect(button.disabled).toBe(false);
       expect(button.getAttribute("aria-disabled")).toBe("true");
