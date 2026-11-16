@@ -585,6 +585,33 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     expect(input().getAttribute("aria-describedby")).toBeNull();
   });
 
+  // QA-560 후속: 검색어를 쳤다가 지워 빈 검색어로 돌아오면 최근 연 대상이 다시 펼쳐진다(빈 Enter는 맨 위 대상으로 감). 포커스는 입력칸에 그대로라
+  // 입력칸 설명이 바뀌어도 다시 읽히지 않을 수 있어(화면 읽기 프로그램으로 재지 않은 추정), 빈 검색어의 status도 그 안내를 읽는다. 입력칸 설명
+  // 문단은 hidden(aria-describedby는 숨긴 요소도 가리킴)이라 대화상자 내용으로 같은 글이 한 번 더 읽히지 않는다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 'aapl'을 쳤다가 지우면 status가 '결과 1건'에서 ""로 비었다(운영 빌드 1440에서 '10'을 지울 때도 같음).
+  it.fails("검색어를 쳤다가 지우면 status가 최근 연 대상 안내를 읽고, 입력칸 설명 문단은 숨긴 문단이다(QA-560)", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+      { kind: "indicator", label: "S&P 500", sub: "주가지수 · ^GSPC", href: "/markets/i/sp500", dest: "지표 상세" },
+    ]));
+    const summary = "최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다";
+    openSearch();
+    await act(async () => {});
+    expect(screen.getByRole("combobox", { name: "검색어", description: summary })).toBe(input());
+
+    type("aapl");
+    expect(recentGroup()).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/^결과 1건/);
+
+    type("");
+    expect(within(recentGroup() as HTMLElement).getAllByRole("option")).toHaveLength(2);
+    expect(input().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe(summary);
+    const hint = document.getElementById(input().getAttribute("aria-describedby") ?? "");
+    expect(hint?.hidden).toBe(true);
+    expect(screen.getByRole("combobox", { name: "검색어", description: summary })).toBe(input());
+  });
+
   it("검색어를 치면 최근 묶음은 빠지고 지금 범주만 보인다", async () => {
     window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
       { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
