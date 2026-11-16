@@ -5,7 +5,7 @@
  *  - 결과: 받는 중(pending)이면 몇 초 뒤 다시 읽고, 다 받으면 멈춤 · '지금 새로 받기'는 누를 때 한 번만 refresh=1(단계 3)
  *  - 받는 중 다시 읽기(단계 5 — 계약 §8-6): 5초마다 최대 12번, 겹치지 않음, 보이던 줄을 두고 바꿔 끼움, 대상·탭이 바뀌거나 화면을 떠나면 멈춤,
  *    그 뒤에는 '다시 확인'(누를 때 한 번 읽고 아직이면 다시 12번)
- *  - '/'로 검색창 — 다른 입력칸에서 칠 때는 아님
+ *  - '/'로 검색창 — 다른 입력칸에서 칠 때·열린 메뉴 안·키 반복이면 아님(셸 단축키 판정과 같음 — QA-562)
  * 응답은 모두 합성 값입니다.
  */
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
@@ -628,6 +628,11 @@ describe("useSlashShortcut", () => {
       <>
         <input aria-label="검색" ref={ref} />
         <textarea aria-label="메모" />
+        <div role="menu" tabIndex={-1} aria-label="계정 메뉴">
+          <div role="menuitem" tabIndex={-1}>
+            단축키 도움말
+          </div>
+        </div>
       </>
     );
   }
@@ -643,5 +648,19 @@ describe("useSlashShortcut", () => {
     const prevented = !fireEvent.keyDown(document.body, { key: "/" });
     expect(prevented).toBe(true);
     expect(document.activeElement).toBe(screen.getByLabelText("검색"));
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 열린 메뉴(role menu) 안의 '/'도 기본 동작을 막고(fireEvent가 false) 포커스를 검색창으로 옮겼다 —
+  // 브라우저에서는 모달 메뉴가 포커스를 첫 항목으로 되돌렸다. 키 반복(repeat)도 검색창으로 갔다. 셸 처리기는 둘 다 무시한다(QA-562).
+  it.fails("열린 메뉴 안·키 반복의 '/'는 그대로 둔다 — 기본 동작을 막지 않고 포커스도 옮기지 않는다(QA-562)", () => {
+    render(<Harness />);
+    const menu = screen.getByRole("menu", { name: "계정 메뉴" });
+    menu.focus();
+    expect(fireEvent.keyDown(menu, { key: "/" })).toBe(true);
+    expect(document.activeElement).toBe(menu);
+
+    (document.activeElement as HTMLElement).blur();
+    expect(fireEvent.keyDown(document.body, { key: "/", repeat: true })).toBe(true);
+    expect(document.activeElement).toBe(document.body);
   });
 });
