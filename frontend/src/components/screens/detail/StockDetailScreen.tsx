@@ -9,7 +9,7 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
-import { currencyUnit, detailQuery, externalLinks, holderQuery, holdersNoMatch, institutionHref, marketStateText, stockHref } from "@/lib/detail";
+import { currencyUnit, detailQuery, externalLinks, holderQuery, holdersNoMatch, institutionHref, isEnglishProfile, marketStateText, stockHref } from "@/lib/detail";
 import {
   consensusItems,
   holderDetailItems,
@@ -253,14 +253,15 @@ function ProfilePanel({ quote }: { quote: DetailQuote }) {
 
 /**
  * 회사 소개(가운데 개요 탭) — 사업 설명 글. 한국어로(사용자 요청 2026-11-02): 미국은 네이버 증권 해외주식 기업 개요(출처 링크), 국내 주식은 WISEfn
- * 기업개요, 국내 ETF는 네이버 개요. 한국어가 없으면 Yahoo 영문 원문을 그렇다고 적고 보입니다. 글이 없으면 그리지 않습니다.
+ * 기업개요, 국내 ETF는 네이버 개요(summary 칸에 한국어 원문). 미국 종목에서 한국어가 없으면 Yahoo 영문 원문을 그렇다고 적고 보입니다(국내는 그 안내를
+ * 붙이지 않음 — QA-578, lib/detail isEnglishProfile). 글이 없으면 그리지 않습니다.
  * 긴 글 단계(running 15/24, 최대 72자)이고, 10줄을 넘으면 처음에는 10줄로 접고 '자세히'로 폅니다(넘는지는 그린 높이로 잼 — 넘지 않으면 단추 없이 다 보임).
  */
 function AboutPanel({ quote }: { quote: DetailQuote }) {
   const profile = quote.profile;
   const summary = profile ? (profile.summaryKo ?? profile.summary) : null;
   if (!profile || !summary) return null;
-  const english = !profile.summaryKo && Boolean(profile.summary);
+  const english = isEnglishProfile(quote);
   return (
     <Panel title="회사 소개" source={profile.koSource?.label ?? quote.source?.label ?? undefined}>
       <FoldText text={summary} />

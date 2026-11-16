@@ -46,7 +46,7 @@ afterEach(cleanup);
 
 describe("회사 소개 — 영문 원문 안내 (QA-578)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 국내 ETF 회사 소개에 '한국어 개요가 없어 Yahoo 영문 원문을 보입니다.'가 붙었습니다.
-  it.fails("국내 ETF의 한국어 개요(summary — 네이버)에는 Yahoo 영문 안내를 붙이지 않는다", async () => {
+  it("국내 ETF의 한국어 개요(summary — 네이버)에는 Yahoo 영문 안내를 붙이지 않는다", async () => {
     reads[endpoints.detail.quote("kr", "069500")] = { available: true, quote: ETF };
     render(
       <SessionUserProvider user={MEMBER}>

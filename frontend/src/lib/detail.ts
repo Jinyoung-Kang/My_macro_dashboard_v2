@@ -330,6 +330,15 @@ export function briefSummary(text: string | null | undefined, maxChars: number =
   return `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:·(]+$/, "")}…`;
 }
 
+/**
+ * 개요 글이 Yahoo 영문 원문인가 — 미국·해외 종목에서 한국어 개요(summaryKo)가 없고 summary만 있을 때. 국내는 summary 칸에 한국어 원문(네이버 ETF
+ * 개요)이 오므로 영문이 아닙니다(QA-578). 종목 상세 '회사 소개'와 종목 팝업(quickProfile)이 같은 규칙을 씁니다.
+ */
+export function isEnglishProfile(quote: Pick<DetailQuote, "market" | "profile"> | null | undefined): boolean {
+  const profile = quote?.profile;
+  return quote?.market === "us" && !profile?.summaryKo?.trim() && Boolean(profile?.summary?.trim());
+}
+
 /** 팝업 창의 기업 설명 한 벌 — 업종 줄·개요 앞부분·영문 원문인지·출처 이름. */
 export type QuickProfile = { industry: string | null; text: string; english: boolean; source: string | null };
 
@@ -348,8 +357,8 @@ export function quickProfile(quote: DetailQuote | null | undefined, maxChars: nu
   return {
     industry,
     text,
-    // 미국 종목의 영문 개요(Yahoo) — 국내는 한국어 원문이 summary 칸에 옵니다(네이버 ETF 개요).
-    english: !korean && quote?.market === "us",
+    // 미국 종목의 영문 개요(Yahoo) — 국내는 한국어 원문이 summary 칸에 옵니다(네이버 ETF 개요). 상세 화면 '회사 소개'와 같은 규칙.
+    english: !korean && isEnglishProfile(quote),
     source: korean ? profile.koSource?.label ?? quote?.source?.label ?? null : quote?.source?.label ?? null,
   };
 }
