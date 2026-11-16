@@ -192,8 +192,17 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     const list = await screen.findByRole("list", { name: "요약 근거" });
     expect(within(list).getAllByRole("link")).toHaveLength(2);
     const card = list.closest("section") as HTMLElement;
-    expect(within(card).getAllByRole("link", { name: /^\[\d\]/ })).toHaveLength(2);
+    const marks = within(card).getAllByRole("link", { name: /^\[\d\]/ });
+    expect(marks).toHaveLength(2);
     expect(smallTargets(card)).toEqual([]);
+    // 겉모양(P4): 본문은 긴 글 단계(running 15/24, 최대 72자), 근거 번호는 줄 높이를 밀지 않는 상대 위치(align-super 아님) — 번호는 문장 안 링크 그대로.
+    const body = within(card).getByText("한 줄 요약: 합성 회사는 올랐다").parentElement as HTMLElement;
+    expect(body.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-running", "max-w-[72ch]"]));
+    for (const mark of marks) {
+      const words = (mark.getAttribute("class") ?? "").split(/\s+/);
+      expect(words).toEqual(expect.arrayContaining(["relative", "-top-[0.4em]", "text-xs", "leading-none"]));
+      expect(words).not.toContain("align-super");
+    }
   });
 
   //  - 지표 상세: '정보 검색', 뉴스 제목, 'Yahoo 시세 상세' 링크, '다른 곳에서 보기'(min-h-9)
