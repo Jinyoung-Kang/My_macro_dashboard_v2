@@ -9,7 +9,11 @@
  * 접힌 뒤에는 nav가 접힐 때의 너비 + 36px(하한 24px + 여유 12px) − 그때 가운데 칸 글이 가졌던 폭(하한까지) 이상이 되어야 다시 펼칩니다(펴면 가운데 칸 글이
  * 적어도 36px — 접고 펴기를 오가며 깜박이지 않게).
  *
- * jsdom은 배치를 재지 않으므로 ResizeObserver 대역(관찰을 시작할 때와 resize()에서 콜백을 바로 부름)과 nav·가운데 칸 링크의 폭(getBoundingClientRect)을
+ * 검토(QA-593 후속): 실제 상단바에서는 접어서 생긴 폭을 곁의 새로고침 안내 상자가 먼저 가져가(축소 비중 100000) 접힌 nav가 창을 넓혀도 접힌 크기
+ * (1280 /paper/us/holdings 129.3px)에 머물렀습니다 — nav 너비만 보던 다시 펴기가 1536에서야 폈고, 펼친 배치면 가운데 칸 글이 이미 다 들어가는
+ * 1310~1512에서도 '미국'·'한국' 링크가 없었습니다. 그래서 상단바(nav의 부모) 너비도 함께 봅니다.
+ *
+ * jsdom은 배치를 재지 않으므로 ResizeObserver 대역(관찰을 시작할 때와 resize()에서 콜백을 바로 부름)과 nav·상단바·가운데 칸 글의 폭(getBoundingClientRect)을
  * 고정해 봅니다. 기본 대역(vitest.setup — 콜백 없음, 폭 0)에서는 접지 않습니다(Shell·BreadcrumbsEntity 시험 그대로).
  */
 import { act, cleanup, render, screen, within } from "@testing-library/react";
@@ -25,8 +29,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** nav와 가운데 칸 링크('미국' → /paper/us)의 폭을 흉내 냅니다 — 값을 바꾸고 resize()를 부르면 ResizeObserver 콜백이 돕니다. */
-function stubLayout(initial: { nav: number; middle: number }) {
+/** 가운데 칸(첫 칸·마지막 칸이 아닌 li)의 글 — Breadcrumbs가 재는 그 칸의 마지막 자식(링크·글 칸). */
+const MIDDLE_TEXT = 'nav[aria-label="현재 위치"] > ol > li:not(:first-child):not(:last-child) > :last-child';
+
+/**
+ * nav·가운데 칸 글('미국' → /paper/us)·상단바(header — 주면)의 폭을 흉내 냅니다 — 값을 바꾸고 resize()를 부르면 ResizeObserver 콜백이 돕니다.
+ * 상단바 폭을 주지 않으면 header도 jsdom 그대로(0)입니다.
+ */
+function stubLayout(initial: { nav: number; middle: number; bar?: number }) {
   const size = { ...initial };
   const callbacks = new Set<() => void>();
   vi.stubGlobal(
@@ -48,11 +58,17 @@ function stubLayout(initial: { nav: number; middle: number }) {
   );
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    const width = this.matches('nav[aria-label="현재 위치"]') ? size.nav : this.matches('a[href="/paper/us"]') ? size.middle : null;
+    const width = this.matches('nav[aria-label="현재 위치"]')
+      ? size.nav
+      : this.matches(MIDDLE_TEXT)
+        ? size.middle
+        : this.matches("header") && size.bar !== undefined
+          ? size.bar
+          : null;
     return width === null ? original.call(this) : ({ width, height: 24, top: 0, left: 0, right: width, bottom: 24, x: 0, y: 0 } as DOMRect);
   });
   return {
-    resize: (next: { nav?: number; middle?: number }) =>
+    resize: (next: { nav?: number; middle?: number; bar?: number }) =>
       act(() => {
         Object.assign(size, next);
         for (const callback of [...callbacks]) callback();
@@ -104,6 +120,25 @@ describe("빵부스러기 가운데 칸 — 하한(24px) 아래면 접는다 (QA
     layout.resize({ nav: 157, middle: 35 });
     expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
     layout.resize({ nav: 158, middle: 36 });
+    expect(items()).toEqual(["모의매매", "›미국", "›보유·체결"]);
+  });
+
+  // QA-593 후속(검토): 접어서 생긴 폭은 곁의 새로고침 안내 상자가 먼저 가져가므로 창을 넓혀도 접힌 nav는 접힌 크기 그대로입니다. 수정 전(이 커밋에서는
+  // it.fails)에는 nav 너비만 보아, 상단바가 접힐 때보다 14px(= 36 − 22) 넘게 넓어져도 '미국' 링크가 돌아오지 않았습니다(접힌 채 — 링크 null).
+  it.fails("접힌 뒤 nav 너비가 그대로여도 상단바가 접힐 때 너비 + 36 − 그때 가운데 칸 글 폭 이상 넓어지면 편다 — 덜 넓어지면 접힌 채", () => {
+    const layout = stubLayout({ nav: 143, middle: 22, bar: 1304 });
+    render(
+      <header>
+        <Breadcrumbs pathname={PATH} user={LOCAL_OWNER} />
+      </header>,
+    );
+    expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
+    // 접힌 nav는 접힌 내용 폭(129px)으로 줄고, 창을 넓혀도 그 폭에 머뭅니다(넓어진 폭은 안내 상자가 받음).
+    layout.resize({ nav: 129 });
+    layout.resize({ bar: 1317 });
+    expect(within(crumbs()).queryByRole("link", { name: "미국" })).toBeNull();
+    layout.resize({ bar: 1318, middle: 36 });
+    expect(within(crumbs()).getByRole("link", { name: "미국" }).getAttribute("href")).toBe("/paper/us");
     expect(items()).toEqual(["모의매매", "›미국", "›보유·체결"]);
   });
 
