@@ -108,8 +108,8 @@
   (`ChartLineIcon`·`CandlestickIcon`·`LandmarkIcon`)을 씁니다. 처음 쓰는 곳은 상세 3종의 맨 위(P4 — 지금 화면 머리 자리), 정보 검색 대상 화면은 겉모습이 달라 P7,
   지키는 시험은 `components/patterns/__tests__/EntityHeader.test.tsx`.
 - 칸 틀 `components/patterns/SplitPane.tsx` — 화면 패턴(틀 — 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처, lg 두 칸·xl 세 칸·lg 미만 한 칸, 읽는 차례는 늘 왼쪽 → 가운데 → 오른쪽,
-  새 랜드마크 없음). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 옮겼고 정보 검색 entityGrid가 같은 글을
-  다시 내보냅니다(entityGridPin.test — 정보 검색 겉모습 고정). 색 클래스가 없는 틀이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 상세 3종(P4),
+  새 랜드마크 없음). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 순수 모듈 `components/ui/classes.ts`로
+  옮겼고 칸 틀 패턴과 정보 검색 entityGrid가 함께 가져갑니다(entityGridPin.test — 정보 검색 겉모습 고정, 정보 검색이 패턴 배럴을 싣지 않게 배럴 밖에 둠). 색 클래스가 없는 틀이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 상세 3종(P4),
   지키는 시험은 `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`.
 - 목록-검사 `components/patterns/MasterDetail.tsx` — 화면 패턴(목록 `ul[data-shell-list]` + 넓은 화면 검사 칸(크기 질의 — 칸 폭 32rem 이상이면 옆 15rem) /
   좁은 화면 공용 `Dialog`(위쪽 고정) — Drawer는 만들지 않음, 고름이 포커스를 따라감(넓은 화면), 목록 키는 `lib/shortcuts` `listKeyAction`(목록에 포커스가 있을 때만 —

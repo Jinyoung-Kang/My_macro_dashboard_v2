@@ -12,8 +12,9 @@
  * 때는(왼쪽 메뉴 232px) 1280에서 제목 칸이 89px, 1024에서 121px였습니다.
  * 고른 줄의 미리 보기도 xl부터 오른쪽 칸, 그 아래는 화면 아래 시트이고(FeedPanel), 속성 칸의 안내 글(EntityParts AttributesPanel)도 이 기준으로
  * 가릅니다 — 기준 폭을 바꾸면 함께 고칩니다.
- * 클래스 글은 공용 패턴(components/patterns/SplitPane — ENTITY_FRAME·ENTITY_FRAME_LEFT)으로 옮겼고 여기서는 같은 이름으로 다시 내보냅니다(작업대 P4, 글자 그대로 — entityGridPin.test).
+ * 클래스 글은 공용 순수 모듈(components/ui/classes — ENTITY_FRAME·ENTITY_FRAME_LEFT, 칸 틀 패턴 SplitPane과 함께 씀)로 옮겼고 여기서는 같은 이름으로
+ * 다시 내보냅니다(작업대 P4, 글자 그대로 — entityGridPin.test). 패턴 배럴(@/components/patterns)에서 가져오면 정보 검색이 배럴의 패턴 모듈을 모두 실었습니다.
  */
 
 /** 칸 틀 — lg 두 칸, xl 세 칸(ENTITY_GRID), 왼쪽 칸 — lg는 두 줄(ENTITY_LEFT). 자식은 왼쪽 · 가운데 · 오른쪽 차례입니다. */
-export { ENTITY_FRAME as ENTITY_GRID, ENTITY_FRAME_LEFT as ENTITY_LEFT } from "@/components/patterns";
+export { ENTITY_FRAME as ENTITY_GRID, ENTITY_FRAME_LEFT as ENTITY_LEFT } from "@/components/ui/classes";

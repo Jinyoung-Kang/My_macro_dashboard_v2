@@ -74,8 +74,6 @@ describe("components/patterns 배럴", () => {
         "DataTable",
         "Empty",
         "EntityHeader",
-        "ENTITY_FRAME",
-        "ENTITY_FRAME_LEFT",
         "EstimateBadge",
         "Hero",
         "KpiStrip",

@@ -188,6 +188,19 @@ export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "m
 /** 면(패널) — 1px 경계, 모서리 4px(정보 검색 화면에서 옮김 — 공용 Panel과 같은 바탕·경계). */
 export const PANEL_CLASSES = "rounded-card border border-border bg-surface";
 
+/*
+ * 대상 화면의 칸 틀 — 정보 검색 대상 화면(search/entityGrid.ts)에서 옮긴 클래스 두 개. 칸 틀 패턴(components/patterns/SplitPane)과 정보 검색
+ * (entityGrid.ts가 같은 이름 ENTITY_GRID·ENTITY_LEFT로 다시 내보냄)이 함께 씁니다 — 정보 검색이 패턴 배럴 전체를 싣지 않게 이 순수 모듈에 둡니다
+ * (겉모습 고정 — components/screens/search/__tests__/entityGridPin.test.ts). 칸 폭과 기준 폭의 셈은 entityGrid.ts 머리 주석에 있습니다.
+ */
+
+/** 칸 틀 — lg 두 칸, xl 세 칸. 자식은 왼쪽(ENTITY_FRAME_LEFT) · 가운데 · 오른쪽 차례입니다(바뀌는 것은 자리뿐 — 읽는 차례·Tab 차례는 그대로). */
+export const ENTITY_FRAME =
+  "lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:grid-cols-[13rem_minmax(0,1fr)_18rem] xl:grid-rows-none";
+
+/** 왼쪽 칸 — lg는 가운데와 그 아래 오른쪽 칸의 두 줄을 차지합니다. */
+export const ENTITY_FRAME_LEFT = "lg:row-span-2 xl:row-span-1";
+
 /**
  * 고른 행의 왼쪽 막대(자산 행·검색 결과 — 감싼 행이 relative) — 3px 잉크(데이터 영역이라 강조 파랑 아님, 원칙 A1). 고른 행의 바탕(surface-2)과
  * 막대의 바탕색은 고대비(forced-colors) 모드에서 지워지므로, 그 모드에서는 같은 폭의 왼쪽 테두리로 그립니다 — 테두리는 시스템 글자색으로

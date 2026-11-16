@@ -6,7 +6,9 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ENTITY_FRAME, ENTITY_FRAME_LEFT, SplitPane } from "../SplitPane";
+import { ENTITY_FRAME, ENTITY_FRAME_LEFT } from "@/components/ui/classes";
+
+import { SplitPane } from "../SplitPane";
 import { Skeleton } from "../Skeleton";
 
 afterEach(() => cleanup());
@@ -62,7 +64,7 @@ describe("SplitPane", () => {
     expect(status.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("정보 검색 틀 글 그대로 — 패턴 쪽 글을 바꾸면 정보 검색 겉모습이 바뀐다(entityGridPin.test가 같이 막음)", () => {
+  it("정보 검색 틀 글 그대로 — 공용 모듈(ui/classes)의 글을 바꾸면 정보 검색 겉모습이 바뀐다(entityGridPin.test가 같이 막음)", () => {
     expect(ENTITY_FRAME).toBe(
       "lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:grid-cols-[13rem_minmax(0,1fr)_18rem] xl:grid-rows-none",
     );
