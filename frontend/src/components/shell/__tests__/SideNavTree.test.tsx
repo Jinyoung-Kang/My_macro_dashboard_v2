@@ -116,6 +116,19 @@ describe("모양", () => {
   });
 });
 
+describe("랜드마크", () => {
+  // QA-556: 왼쪽 메뉴를 감싼 aside가 이름 없는 보조 영역(complementary) 랜드마크였습니다 — 안의 nav '주 메뉴'가 이미 랜드마크라 이름 없는 랜드마크가
+  // 하나 더 겹쳤고, /search에서는 화면 안의 이름 없는 aside(정보 검색 왼쪽 칸)와 역할·이름 조합이 같아져 axe landmark-unique 위반이 났습니다(QA 스택
+  // 1024·1440, 개편 전부터). 접기 단추 이름('왼쪽 메뉴 접기')·명세 §5 '왼쪽 나무 메뉴'에 맞춰 이름 '왼쪽 메뉴'를 둡니다(aside를 div로 바꾸는 안도 위반이
+  // 없었지만, 메뉴 상자를 closest("aside")로 찾는 시험 넷을 그대로 두려고 이름을 고름). 정보 검색 화면 aside의 이름은 그 화면 정리(P7) 몫입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 aside에 aria-label·aria-labelledby가 없어 이름 '왼쪽 메뉴'인 complementary가 없었습니다.
+  it.fails("왼쪽 메뉴를 감싼 보조 영역(aside)의 이름은 '왼쪽 메뉴'이고 주 메뉴를 담는다 (QA-556)", () => {
+    render(<SideNav pathname="/search" user={MEMBER} />);
+    const region = screen.getByRole("complementary", { name: "왼쪽 메뉴" });
+    expect(region.contains(mainNav())).toBe(true);
+  });
+});
+
 describe("긴 메뉴의 스크롤", () => {
   // QA-555: 스크롤 상자(lg:overflow-y-auto)가 aside 전체에 걸려 있고 맨 아래 접기 단추 영역(mt-auto)이 그 스크롤 내용 안이라, 펼친 메뉴가 화면 높이보다
   // 길면 단추가 메뉴와 함께 화면 밖으로 밀렸습니다 — QA 스택 1024x600 /more·/krx에서 aside 552/601px, 단추 609~641(화면 600), 1440x500 /macro 단추
