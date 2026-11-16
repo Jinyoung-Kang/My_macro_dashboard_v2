@@ -115,7 +115,9 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
       <EntityHeader
         kind="indicator"
         name={item.name}
-        description={[categoryTitle, item.ticker].filter(Boolean).join(" · ")}
+        // 티커는 고정폭 식별자 태그(명세 §3-6), 보조 글은 범주만 — 티커가 없는 카드(스크래핑)는 태그가 없습니다.
+        identifiers={item.ticker ? [item.ticker] : undefined}
+        description={categoryTitle}
         value={row.valueText ?? null}
         change={{ change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2, caption: "전일 대비" }}
         badges={

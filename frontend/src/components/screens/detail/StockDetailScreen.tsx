@@ -62,7 +62,7 @@ type StockTab = "overview" | "news" | "research" | "holders";
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs — 요청이 탭 전과 같음). 결정·사건 기록 API가 없어 타임라인 탭은 없습니다.
  */
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
-  const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub } = useStockQuote(market, code);
+  const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub, detailSub } = useStockQuote(market, code);
   const user = useSessionUser();
   const macro = useApi<MacroOverview>(market === "us" ? endpoints.macro.overview(false) : null);
   const holders = market === "us" && (quote?.kind ?? "").toUpperCase() === "EQUITY" ? holderQuery(quote?.name) : null;
@@ -123,7 +123,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
       <EntityHeader
         kind="stock"
         name={name}
-        description={sub}
+        // 코드(티커·종목 코드)는 고정폭 식별자 태그(명세 §3-6) — 시세를 못 받아 이름이 코드 그대로면 같은 글을 두 번 적지 않습니다.
+        identifiers={name !== code ? [code] : undefined}
+        description={detailSub}
         valueLabel="현재가"
         value={price !== null ? formatNumber(price, digits) : null}
         unit={unit}

@@ -35,8 +35,10 @@ export function useStockQuote(market: DetailMarket, code: string, enabled = true
     name: quote?.nameKo ?? quote?.name ?? code,
     symbol: chartSymbol(market, code, quote),
     digits: priceDigits(quote?.price, quote?.currency),
-    // 한글 이름이 있으면(미국 주식 — 네이버 해외주식) 제목은 한글, 영문 이름은 보조 줄에.
+    // 한글 이름이 있으면(미국 주식 — 네이버 해외주식) 제목은 한글, 영문 이름은 보조 줄에. sub는 코드까지 한 줄(팝업 창·최근 연 대상),
+    // detailSub는 코드를 뺀 줄(상세 화면 대상 머리 — 코드는 고정폭 식별자 태그로 따로 보임).
     sub: [quote?.nameKo && quote?.name ? quote.name : null, code, quote?.exchange, kindText(quote?.kind), quote?.currency]
       .filter(Boolean).join(" · "),
+    detailSub: [quote?.nameKo && quote?.name ? quote.name : null, quote?.exchange, kindText(quote?.kind), quote?.currency].filter(Boolean).join(" · "),
   };
 }

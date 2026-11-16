@@ -149,9 +149,11 @@ describe("종목 상세 — 미국", () => {
     renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
 
     const title = await screen.findByRole("heading", { level: 1, name: "Apple Inc." });
-    expect(screen.getByText("AAPL · NasdaqGS · 주식 · USD")).toBeTruthy();
-    // 지금 값·장 상태는 대상 머리(작업대 대상 문법 — 히어로 자리), 차트·기간은 가운데 '개요' 탭의 가격 차트 패널(영역 이름 그대로)
+    // 대상 머리 — 코드는 고정폭 식별자 태그(명세 §3-6), 보조 글은 거래소·종류·통화
     const header = title.closest("header") as HTMLElement;
+    expect(within(header).getByText("NasdaqGS · 주식 · USD")).toBeTruthy();
+    expect(within(header).getByText("AAPL").className).toContain("font-mono");
+    // 지금 값·장 상태는 대상 머리(작업대 대상 문법 — 히어로 자리), 차트·기간은 가운데 '개요' 탭의 가격 차트 패널(영역 이름 그대로)
     expect(within(header).getByText("344.63")).toBeTruthy();
     expect(within(header).getByText("장 마감")).toBeTruthy();
     expect(within(header).getByText("종목")).toBeTruthy();
@@ -283,8 +285,9 @@ describe("종목 상세 — 미국", () => {
       }),
     };
     renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
-    expect(await screen.findByRole("heading", { level: 1, name: "애플" })).toBeTruthy();
-    expect(screen.getByText("Apple Inc. · AAPL · NasdaqGS · 주식 · USD")).toBeTruthy();
+    const koTitle = await screen.findByRole("heading", { level: 1, name: "애플" });
+    expect(within(koTitle.closest("header") as HTMLElement).getByText("Apple Inc. · NasdaqGS · 주식 · USD")).toBeTruthy();
+    expect(within(koTitle.closest("header") as HTMLElement).getByText("AAPL").className).toContain("font-mono");
     // 섹터·업종·나라는 왼쪽 '회사 개요' 속성, 사업 설명 글과 그 출처는 가운데 개요 탭의 '회사 소개'
     const card = screen.getByRole("heading", { name: "회사 개요" }).closest("section") as HTMLElement;
     expect(within(card).getByText("기술")).toBeTruthy();
@@ -515,6 +518,9 @@ describe("지표 상세", () => {
     const header = title.closest("header") as HTMLElement;
     expect(within(header).getByText("7,622.99")).toBeTruthy();
     expect(within(header).getByText("지표")).toBeTruthy();
+    // 티커는 고정폭 식별자 태그, 보조 글은 범주
+    expect(within(header).getByText("^GSPC").className).toContain("font-mono");
+    expect(within(header).getByText("미국 주가지수 및 선물")).toBeTruthy();
     const hero = screen.getByRole("region", { name: "S&P 500" });
     expect(within(hero).getByText("차트: Yahoo Finance ^GSPC 일별 종가")).toBeTruthy();
     await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("^GSPC", "1y")));
