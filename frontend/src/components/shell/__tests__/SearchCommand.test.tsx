@@ -22,6 +22,9 @@ const signal = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import { resetRecentEntitiesForTest } from "@/hooks/useRecentEntities";
+import { RECENT_STORAGE_KEY, serializeRecent } from "@/lib/palette";
+import { SHELL_COMMAND_EVENT, WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { SearchCommand } from "../SearchCommand";
 
 const MEMBER: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "PRO" };
@@ -74,6 +77,12 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+// 최근 연 대상(localStorage)은 사례마다 비웁니다 — 앞 사례가 고른 대상이 뒤 사례의 빈 검색어 결과로 남지 않게.
+beforeEach(() => {
+  window.localStorage.clear();
+  resetRecentEntitiesForTest();
+});
+
 describe("여닫기", () => {
   it("닫혀 있으면 대화상자도 없고 검색 자료도 읽지 않는다", () => {
     render(<SearchCommand user={MEMBER} />);
@@ -119,6 +128,33 @@ describe("여닫기", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
 
     fireEvent.keyDown(memo, { key: "k", metaKey: true });
+    expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
+  });
+
+  it("한글 조합 중(isComposing·keyCode 229)의 Ctrl/⌘K는 열지 않는다 — 조합을 끝낸 뒤 누르면 연다", () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
+    render(
+      <>
+        <input aria-label="메모" />
+        <SearchCommand user={MEMBER} />
+      </>,
+    );
+    const memo = screen.getByRole("textbox", { name: "메모" });
+    memo.focus();
+    expect(fireEvent.keyDown(memo, { key: "k", ctrlKey: true, isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(memo, { key: "Process", code: "KeyK", ctrlKey: true, keyCode: 229 })).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.keyDown(memo, { key: "k", ctrlKey: true });
+    expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
+    cleanup();
+
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    render(<SearchCommand user={MEMBER} />);
+    fireEvent.keyDown(window, { key: "k", metaKey: true, isComposing: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true, keyCode: 229 });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
   });
 
@@ -394,5 +430,203 @@ describe("정보 검색으로 넘기기(ADR 0041)", () => {
     type("aapl");
     expect(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }).closest("[role='listbox']")).toBeNull();
     expect(optionLabels().some((label) => label.includes("정보 검색"))).toBe(false);
+  });
+});
+
+// QA-515: 입력칸(type=search)의 브라우저 기본 지우기 X가 어두운 color-scheme에서 굵은 흰색으로 그려져, 바로 옆 대화상자 닫기 X와 헷갈렸다
+// (D1 QA 스택 확인 — search-input-native-clear-x, 개편 전부터). 고치기 전 입력칸 클래스는 8개
+// ["h-12", "min-w-0", "flex-1", "bg-transparent", "text-[17px]", "text-text", "outline-none", "placeholder:text-text-3"]로 지우기 X를 숨기는 변형이 없었다.
+describe("입력칸(QA-515)", () => {
+  it("브라우저 기본 지우기 X를 숨긴다 — 휴대폰 자판의 검색 키를 위해 type=search는 그대로", () => {
+    openSearch();
+    expect(input().getAttribute("type")).toBe("search");
+    expect(input().className.split(/\s+/)).toContain("[&::-webkit-search-cancel-button]:hidden");
+  });
+});
+
+describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, 넓은 화면 조작 30·40px)", () => {
+  const classes = (element: Element) => element.className.split(/\s+/);
+
+  it("여는 단추는 좁은 화면에서 상단바 남는 폭을 다 쓰는 44px, 넓은 화면은 30px에 폭 고정(176px·xl 256px)", () => {
+    render(<SearchCommand user={MEMBER} />);
+    expect(classes(trigger())).toEqual(expect.arrayContaining(["h-11", "flex-1", "min-w-0", "lg:h-[30px]", "lg:flex-none", "lg:w-44", "xl:w-64"]));
+    expect(classes(trigger()).some((name) => name.startsWith("lg:basis-") || name.startsWith("lg:max-w-"))).toBe(false);
+  });
+
+  it("입력칸은 넓은 화면에서 경계 포함 40px·16px 글, 결과 줄은 40px·14px 이름 — 좁은 화면은 48px 줄·15px 그대로", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(classes(input())).toEqual(expect.arrayContaining(["h-12", "text-[17px]", "lg:h-[38px]", "lg:text-base"]));
+    expect(classes(input().parentElement as HTMLElement)).toContain("border");
+
+    type("aapl");
+    const row = screen.getByRole("option", { name: /Apple Inc\./ });
+    expect(classes(row)).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
+    expect(classes(within(row).getByText("Apple Inc."))).toEqual(expect.arrayContaining(["text-[15px]", "lg:text-sm"]));
+    expect(classes(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
+  });
+});
+
+describe("최근 연 대상(이 브라우저에만, 8개)", () => {
+  const recentGroup = () => screen.queryByRole("group", { name: "최근 연 대상" });
+
+  it("대상을 고르면 다시 열 때 빈 검색어에 '최근 연 대상'(최신 순)이 보이고, Enter로 맨 위 대상에 간다", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(recentGroup()).toBeNull();
+    type("gspc");
+    fireEvent.click(screen.getByRole("option", { name: /S&P 500/ }));
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("aapl");
+    fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
+    expect(router.push).toHaveBeenLastCalledWith("/s/us/AAPL");
+
+    fireEvent.click(trigger());
+    const group = recentGroup() as HTMLElement;
+    expect(group).toBeTruthy();
+    const options = within(group).getAllByRole("option");
+    expect(options.map(spokenText)).toEqual(["Apple Inc.AAPL · Technology→ 종목 상세", "S&P 500주가지수 · ^GSPC→ 지표 상세"]);
+    expect(options[0].querySelector("span[aria-hidden='true'].rounded-full")?.textContent).toBe("AAP");
+    expect(options[0].getAttribute("aria-selected")).toBe("true");
+    expect(input().getAttribute("aria-expanded")).toBe("true");
+    // 검색어가 비면 결과 수 안내는 읽지 않는다(지금처럼).
+    expect(screen.getByRole("status").textContent).toBe("");
+    // 저장소에는 대상의 이름·주소만.
+    expect(JSON.parse(window.localStorage.getItem(RECENT_STORAGE_KEY) ?? "null").items.map((item: { href: string }) => item.href))
+      .toEqual(["/s/us/AAPL", "/markets/i/sp500"]);
+
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(router.push).toHaveBeenLastCalledWith("/markets/i/sp500");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("검색어를 치면 최근 묶음은 빠지고 지금 범주만 보인다", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+    ]));
+    openSearch();
+    await act(async () => {});
+    expect(recentGroup()).toBeTruthy();
+    type("aapl");
+    expect(recentGroup()).toBeNull();
+    expect(screen.getByRole("group", { name: "종목" })).toBeTruthy();
+  });
+
+  it("메뉴를 고르면 최근 연 대상에 넣지 않는다", async () => {
+    openSearch();
+    await act(async () => {});
+    type("순유");
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(router.push).toHaveBeenLastCalledWith("/liquidity");
+
+    fireEvent.click(trigger());
+    expect(recentGroup()).toBeNull();
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(window.localStorage.getItem(RECENT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("저장소가 비거나 못 읽으면(던짐) 지금처럼 결과 0건·안내만 — 고르기와 이동은 그대로", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("SecurityError");
+    });
+    openSearch();
+    await act(async () => {});
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/)).toBeTruthy();
+    type("aapl");
+    fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
+    expect(router.push).toHaveBeenLastCalledWith("/s/us/AAPL");
+  });
+
+  it("최근 연 대상이 있어도 닫혀 있는 동안 검색 자료(API)는 읽지 않는다", () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "indicator", label: "S&P 500", sub: null, href: "/markets/i/sp500", dest: "지표 상세" },
+    ]));
+    render(<SearchCommand user={MEMBER} />);
+    expect(api.apiGetShared).not.toHaveBeenCalled();
+  });
+});
+
+describe("명령(셸 명령만 — 서버를 부르지 않음)", () => {
+  let commands: string[];
+  const record = (event: Event) => commands.push(String((event as CustomEvent).detail));
+  const commandGroup = () => screen.queryByRole("group", { name: "명령" });
+  const stubWide = () =>
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
+
+  beforeEach(() => {
+    commands = [];
+    window.addEventListener(SHELL_COMMAND_EVENT, record);
+  });
+  afterEach(() => {
+    window.removeEventListener(SHELL_COMMAND_EVENT, record);
+    vi.unstubAllGlobals();
+  });
+
+  it("빈 검색어에는 명령이 없다 — 안내 끝에 단축키 도움말 여는 법", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(commandGroup()).toBeNull();
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(screen.getByText(/\?를 치고 Enter를 누르면 단축키 도움말을 봅니다\.$/)).toBeTruthy();
+  });
+
+  it("'단축키'를 치면 '명령' 묶음의 '단축키 도움말' — Enter로 팔레트가 닫히고 도움말 창이 열리며, 닫으면 팔레트 여는 단추로 포커스가 돌아온다", async () => {
+    openSearch();
+    await act(async () => {});
+    type("단축키");
+    const group = commandGroup() as HTMLElement;
+    expect(group).toBeTruthy();
+    const option = within(group).getByRole("option");
+    expect(spokenText(option)).toBe("단축키 도움말단축키 ?");
+    expect(screen.getByRole("status").textContent).toBe("결과 1건");
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(screen.queryByRole("dialog", { name: "통합 검색" })).toBeNull();
+    const help = await screen.findByRole("dialog", { name: "단축키" });
+    await waitFor(() => expect(help.contains(document.activeElement)).toBe(true));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(commands).toEqual([]);
+
+    fireEvent.keyDown(help, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(trigger()));
+  });
+
+  it("기호 ?를 치면 '단축키 도움말' 명령이 나온다 — 메뉴·대상 뒤 마지막 묶음", async () => {
+    openSearch();
+    await act(async () => {});
+    type("?");
+    expect(within(commandGroup() as HTMLElement).getByRole("option", { name: /단축키 도움말/ })).toBeTruthy();
+
+    // 다른 범주와 함께 맞으면 명령 묶음이 맨 뒤 — 결과 수 안내에 명령 수가 들어간다.
+    type("도움");
+    const groups = screen.getAllByRole("group").map((element) => element.getAttribute("aria-labelledby"));
+    expect(document.getElementById(groups[groups.length - 1] ?? "")?.textContent).toContain("명령");
+    expect(screen.getByRole("status").textContent).toMatch(/^결과 \d+건/);
+  });
+
+  it("왼쪽 메뉴 접기·펼치기는 넓은 화면에서만 보이고, 고르면 팔레트를 닫은 뒤 셸 명령 toggle-nav를 보낸다", async () => {
+    openSearch();
+    await act(async () => {});
+    type("메뉴 접기");
+    expect(commandGroup()).toBeNull();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    stubWide();
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("메뉴 접기");
+    const option = within(commandGroup() as HTMLElement).getByRole("option", { name: /왼쪽 메뉴 접기·펼치기/ });
+    expect(spokenText(option)).toBe("왼쪽 메뉴 접기·펼치기단축키 [");
+    fireEvent.click(option);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(commands).toEqual(["toggle-nav"]));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "단축키" })).toBeNull();
   });
 });
