@@ -50,7 +50,9 @@ const NAV_MOTION = "motion-safe:transition-[width] motion-safe:duration-150";
  * 보이는 선은 경계선 그대로이고, 가리키면 경계선 자리(띠의 왼쪽 2px — 경계선과 그 바깥 1px)에 2px 선(border-strong), 잡은 동안·키보드 포커스면 강조 파랑
  * 2px 선과 포커스 링(FOCUS_RING)이 보입니다. 커서는 col-resize, 손가락으로 끌어도 화면이 밀리지 않게 touch-none, 글은 없습니다.
  * 본문 왼쪽 7px에 걸치므로(본문 글 열은 안쪽 여백 32px라 그 아래 누를 것은 없음) 본문(relative)보다 위(z-20) — 덮개(시트 z-30·툴팁·대화상자)보다는 아래.
- * 고대비(forced-colors)에서는 바탕색(선)이 지워지므로 가리킨 동안·잡은 동안 안쪽 2px Highlight 윤곽선을 그립니다(포커스는 FOCUS_RING 윤곽선이 남음).
+ * 고대비(forced-colors)에서는 불투명 바탕이 Canvas로 강제되어(투명만 투명으로 남음) 경계선과 윤곽선을 덮으므로 ::before를 숨기고(forced-colors:before:hidden
+ * — before:bg-transparent는 hover:before:… 규칙보다 명시도가 낮아 짐) 가리킨 동안·잡은 동안 안쪽 2px Highlight 윤곽선만 그립니다(포커스는 FOCUS_RING
+ * 윤곽선, 경계선은 그대로 — QA-602).
  * 누름 자리가 8px로 좁은 것(WCAG 2.5.8·2.5.7)은 같은 일을 하는 24px 이상의 포인터 조작으로 메웁니다 — 접기·펼치기는 맨 아래 접기 단추, 폭 맞추기는
  * 상단바 계정 메뉴의 '왼쪽 메뉴 폭' 세 단계(shell/AccountMenu, 2026-11-16 결정). 판단은 진행 기록 'P3 추가 — 가변 폭 왼쪽 메뉴'에 적었습니다.
  */
@@ -59,6 +61,7 @@ const HANDLE = [
   "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-transparent",
   "motion-safe:before:transition-colors motion-safe:before:duration-150 hover:before:bg-border-strong",
   "focus-visible:before:bg-accent data-[dragging]:before:bg-accent",
+  "forced-colors:before:hidden",
   FOCUS_RING,
   "forced-colors:hover:outline-2 forced-colors:hover:-outline-offset-2 forced-colors:hover:outline-[Highlight]",
   "forced-colors:data-[dragging]:outline-2 forced-colors:data-[dragging]:-outline-offset-2 forced-colors:data-[dragging]:outline-[Highlight]",
@@ -106,7 +109,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
   const navId = `${idBase}-nav`;
   const [collapsed] = useNavCollapsed();
   const [width] = useNavWidth();
-  // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554).
+  // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554). 끄는 도중 좁아지면 끌기도 끝냅니다(QA-603).
   const wide = useWideShell();
   const boxRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
@@ -119,7 +122,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
     refocus.current = Boolean(boxRef.current && active && boxRef.current.contains(active));
   }, []);
   // 접기·펼치기(150ms 폭 전환)와 오른쪽 가장자리의 폭 손잡이(끌기·키·두 번 누르기) — hooks/useNavResize.
-  const resize = useNavResize(rememberFocus);
+  const resize = useNavResize(rememberFocus, wide);
   const handleToggle = resize.toggle;
   // 끄는 동안에는 툴팁을 열지 않습니다(포인터는 손잡이가 잡고 있지만 키보드 포커스로 열리는 것까지).
   const tooltipsOff = !wide || resize.dragging;

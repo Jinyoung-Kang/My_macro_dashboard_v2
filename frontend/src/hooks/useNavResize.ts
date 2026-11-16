@@ -5,6 +5,12 @@ import { flushSync } from "react-dom";
 import { getNavCollapsed, useNavCollapsed } from "@/hooks/useNavCollapsed";
 import { getNavWidth, useNavWidth } from "@/hooks/useNavWidth";
 import { NAV_DRAG_SLOP, NAV_MOTION_HOLD_MS, navDragLayout, navKeyLayout, navShownWidth, type NavLayout } from "@/lib/navWidth";
+import { setShellResizing } from "@/lib/shellResize";
+
+/** 움직임 줄이기를 켰는가 — 접기·펼치기의 폭 전환(motion-safe:)이 없는 때. matchMedia가 없으면 거짓. */
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 /** 끄는 동안 문서 뿌리(html)에 붙이는 표지 — globals.css가 이 동안 커서를 col-resize로, 글 고르기를 끕니다(손잡이 밖으로 나가도). */
 export const NAV_RESIZING_ATTR = "data-nav-resizing";
@@ -12,6 +18,8 @@ export const NAV_RESIZING_ATTR = "data-nav-resizing";
 /** 한 번의 끌기 — 잡은 포인터와 자리, 잡을 때 보이던 폭과 펼친 폭, 문턱을 넘었는지, 기다리는 프레임. */
 type Drag = {
   pointerId: number;
+  /** 포인터를 붙잡은 손잡이 — 넓은 화면이 좁아져 끌기를 끝낼 때 잡기를 풉니다(QA-603). */
+  handle: HTMLElement;
   startX: number;
   lastX: number;
   /** 잡을 때 보이던 폭(접혔으면 레일 48) — 옮긴 거리를 여기에 더해 끈 폭을 셉니다. */
@@ -74,14 +82,22 @@ export type NavResize = {
  *   않습니다(목표 폭이 프레임마다 바뀌어 전환이 처지다 튐). 화살표·Home·End의 폭 걸음도 전환 없이 바로 바뀝니다. 처음 그릴 때(저장값을 읽어 폭이 바뀜)는
  *   꺼져 있어 화면을 열 때 메뉴가 움직이지 않습니다. 켜고 끄는 값과 폭은 같은 프레임에 반영돼야 하므로(전환은 바뀐 뒤 스타일의 transition을 봄) 켜고 끄기는
  *   flushSync로 먼저 그립니다 — 셸 명령(창의 사용자 이벤트)·프레임 처리기에서 부른 상태 바꾸기는 저장소 알림과 다른 우선순위로 그려질 수 있습니다.
+ * - **차트 폭 잡아 두기(QA-601)**: 끄는 동안(문턱을 넘은 뒤 끝날 때까지)과 전환을 켠 동안 셸 신호(lib/shellResize — 원천 drag·motion의 OR)를 켭니다.
+ *   공용 차트가 그동안 폭을 잡아 두었다가 끝나면 한 번만 다시 그립니다(프레임마다 다시 그리면 /macro 끌기가 7fps). 전환을 켤 때는 flushSync 앞에
+ *   켜서 차트가 폭이 바뀌기 전에 잽니다. 키 걸음과 움직임 줄이기의 접기·펼치기는 폭이 한 번에 바뀌므로 켜지 않습니다.
+ * - **넓은 화면이 좁아지면**(lg 아래 — 창 줄이기·태블릿 회전) 끄던 것을 끝냅니다(QA-603): 잡기를 풀고 놓을 때와 같이 그때까지 그린 폭·접힘을 저장하고
+ *   표지를 뗍니다. 메뉴는 CSS로만 숨어(hidden lg:flex) 손잡이가 포인터 잡기를 유지하므로, 그대로 두면 좁은 화면 전체에 표지(col-resize·글 고르기 끔)가
+ *   남고 좁은 화면의 포인터 움직임이 숨은 메뉴의 폭·접힘을 바꿔 놓을 때 저장했습니다.
  * - **두 번 누르기**: 접기·펼치기. 그 두 번의 누름 가운데 하나라도 끌었으면 받지 않습니다.
  * - **키**(lib/navWidth navKeyLayout): ←·→ 16px(Shift 64px)·Home·End는 바로 저장, Enter는 접기·펼치기(접힌 동안 →·End도 폄 — 누르고 있는 키의
  *   반복은 접고 펴지 않음).
  *
  * @param beforeToggle 접힘이 바뀌기 바로 앞에 부릅니다 — 단추·[·두 번 누르기·Enter와 끌기 중 문턱을 넘는 프레임 모두(왼쪽 메뉴가 포커스가 메뉴 안에
  *   있었는지 적어 두고, 사라지는 칸이면 그린 뒤 접기 단추로 옮김).
+ * @param wide 넓은 화면(lg 이상 — 왼쪽 메뉴가 보이는 폭, useWideShell)인가. 넓음 → 좁음으로 바뀌는 순간만 봅니다(matchMedia가 늘 거짓인 시험 환경·첫
+ *   하이드레이션에서도 끌기가 되게 — 계정 메뉴 QA-554와 같은 까닭).
  */
-export function useNavResize(beforeToggle: () => void): NavResize {
+export function useNavResize(beforeToggle: () => void, wide: boolean): NavResize {
   const [, , setCollapsed] = useNavCollapsed();
   const [, setWidth] = useNavWidth();
   const [motion, setMotion] = useState(false);
@@ -99,6 +115,9 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       window.clearTimeout(state.timer);
       state.timer = null;
     }
+    // 차트 폭 잡아 두기 신호 — 아래 flushSync가 함께 그려 차트가 지금(바뀌기 전) 폭을 잽니다. 움직임 줄이기면 전환이 없어(motion-safe:) 폭이 한 번에
+    // 바뀌므로 켜지 않습니다(잡으면 차트만 200ms 늦게 맞춰지고, 그동안 좁아진 차트의 오른쪽이 잘림).
+    setShellResizing("motion", on && !prefersReducedMotion());
     if (state.motion !== on) {
       state.motion = on;
       flushSync(() => setMotion(on));
@@ -107,6 +126,7 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       state.timer = window.setTimeout(() => {
         state.timer = null;
         state.motion = false;
+        setShellResizing("motion", false);
         setMotion(false);
       }, forMs);
     }
@@ -173,6 +193,7 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       }
       if (drag.moved) apply({ collapsed: getNavCollapsed(), width: getNavWidth() }, true);
       document.documentElement.removeAttribute(NAV_RESIZING_ATTR);
+      setShellResizing("drag", false);
       setDragging(false);
     },
     [apply, frame],
@@ -189,6 +210,7 @@ export function useNavResize(beforeToggle: () => void): NavResize {
     const layout = { collapsed: getNavCollapsed(), width: getNavWidth() };
     state.drag = {
       pointerId: event.pointerId,
+      handle: event.currentTarget,
       startX: event.clientX,
       lastX: event.clientX,
       startShown: navShownWidth(layout),
@@ -213,6 +235,8 @@ export function useNavResize(beforeToggle: () => void): NavResize {
         if (Math.abs(drag.lastX - drag.startX) < NAV_DRAG_SLOP) return;
         drag.moved = true;
         state.movedCurrent = true;
+        // 이제부터 폭이 프레임마다 바뀜 — 차트 폭을 잡아 둡니다(첫 프레임 앞에 그려짐). 전환을 끄기 전에 켜서 신호가 잠깐도 꺼지지 않게.
+        setShellResizing("drag", true);
         // 폭이 포인터를 따라가는 동안은 전환 없음(앞의 접기 전환이 남아 있었으면 여기서 끝남).
         animate(false);
       }
@@ -252,17 +276,35 @@ export function useNavResize(beforeToggle: () => void): NavResize {
     [animate, apply, flip],
   );
 
-  // 그리는 중에 사라지면(로그아웃 등) 잡은 표지·타이머·프레임을 치우고, 끌던 값은 저장합니다.
+  // 넓은 화면이 좁아지면 끄던 것을 끝냅니다(QA-603) — 잡기를 풀고(그 뒤 오는 lostpointercapture는 끝난 끌기라 아무것도 하지 않음) 놓을 때처럼 끝냄
+  // (기다리던 프레임 반영·그린 폭 저장·표지 떼기·차트 폭 신호 끔). 그 뒤의 움직임·놓음은 끌기가 없어 무시됩니다.
+  const wasWide = useRef(wide);
+  useEffect(() => {
+    const before = wasWide.current;
+    wasWide.current = wide;
+    const drag = live.current.drag;
+    if (!before || wide || !drag) return;
+    try {
+      drag.handle.releasePointerCapture?.(drag.pointerId);
+    } catch {
+      // 이미 풀린 포인터 — 끝내기만 합니다.
+    }
+    finish(drag.pointerId);
+  }, [wide, finish]);
+
+  // 그리는 중에 사라지면(로그아웃 등) 잡은 표지·타이머·프레임을 치우고, 끌던 값은 저장합니다. 차트 폭 잡아 두기 신호도 끕니다(남은 차트가 풀림).
   useEffect(() => {
     const state = live.current;
     return () => {
       if (state.timer !== null) window.clearTimeout(state.timer);
       state.timer = null;
+      setShellResizing("motion", false);
       const drag = state.drag;
       if (!drag) return;
       state.drag = null;
       if (drag.frame !== null) window.cancelAnimationFrame(drag.frame);
       document.documentElement.removeAttribute(NAV_RESIZING_ATTR);
+      setShellResizing("drag", false);
       if (drag.moved) apply({ collapsed: getNavCollapsed(), width: getNavWidth() }, true);
     };
   }, [apply]);

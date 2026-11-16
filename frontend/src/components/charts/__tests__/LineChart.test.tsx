@@ -12,6 +12,8 @@
  *    문지르기 onScrub(순번 | null) — 마우스 이동·벗어남, 터치를 떼면 null. 범례에서 뺀 계열(legend: false)
  *  - 꼬리 계열(tailOf — 장중 값 단계의 오늘 추정 점선): 점선 "3 3"·범례 없음·본 계열 색, 툴팁 줄은 꼬리 점에만, 앞 값 없는 외딴 꼬리 점은 점
  *  - 격자 선택(grid — 작업대 실행 명세 W6): Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음, 히어로에서는 무시
+ *  - 셸 폭이 바뀌는 동안 폭 잡아 두기(QA-601 — charts/sizeHold): 쉬는 상태에서 감싼 두 상자는 폭 100%(인라인 폭 없음)이고 svg 폭은 크기 감시가 알린
+ *    그대로, 높이는 차트 높이가 백분율(히어로 기본)일 때만 100%로 이어 줌. 신호가 켜지면 잰 px로 고정하고 X 눈금 너비(onResize)는 그대로
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(DonutChart.test와 같음).
  * 호버는 감싼 상자의 getBoundingClientRect를 차트 크기로 맞춘 뒤 mousemove를 보냅니다.
@@ -21,6 +23,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LineChart, MultiLineSeries, SERIES_COLORS } from "@/components/charts";
 import { lineYAxis } from "@/lib/lineChart";
+import { resetShellResizingForTest, setShellResizing } from "@/lib/shellResize";
 
 function observeAs(width: number, height: number) {
   vi.stubGlobal(
@@ -505,5 +508,59 @@ describe("여러 계열(MultiLineSeries) — 점선 참고선", () => {
     const byColor = (color: string) => curves.find((path) => path.getAttribute("stroke") === color);
     expect(byColor("#a371f7")?.getAttribute("stroke-dasharray")).toBe("6 4");
     expect(byColor(SERIES_COLORS.blue)?.getAttribute("stroke-dasharray")).toBeNull();
+  });
+});
+
+describe("LineChart — 셸 폭이 바뀌는 동안 폭 잡아 두기(QA-601)", () => {
+  afterEach(() => resetShellResizingForTest());
+
+  const boxes = (container: HTMLElement) => {
+    const inner = (container.querySelector(".recharts-responsive-container") as HTMLElement).parentElement as HTMLElement;
+    return { inner, outer: inner.parentElement as HTMLElement };
+  };
+  const classList = (element: Element) => element.className.split(/\s+/);
+
+  it("쉬는 상태 — 감싼 두 상자는 w-full·min-w-0(인라인 폭 없음)이고 svg 폭은 600 그대로. 높이는 숫자 높이면 정하지 않고, 히어로 기본(100%)이면 h-full로 이어 줌", () => {
+    observeAs(600, 240);
+    const plain = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} valueFormat={pct} />);
+    for (const box of Object.values(boxes(plain.container))) {
+      expect(classList(box)).toEqual(["w-full", "min-w-0"]);
+      expect(box.getAttribute("style")).toBeNull();
+    }
+    expect(plain.container.querySelector("svg.recharts-surface")?.getAttribute("width")).toBe("600");
+    plain.unmount();
+
+    observeAs(600, 260);
+    const hero = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} variant="hero" valueFormat={pct} />);
+    const { inner, outer } = boxes(hero.container);
+    for (const box of [inner, outer]) expect(classList(box)).toEqual(["w-full", "min-w-0", "h-full"]);
+    // 높이를 정한 히어로 상자(200/lg 260) 바로 안 — 백분율 높이 사슬이 끊기지 않음
+    expect(classList(outer.parentElement as HTMLElement)).toEqual(expect.arrayContaining(["h-[200px]", "lg:h-[260px]"]));
+    expect((hero.container.querySelector(".recharts-responsive-container") as HTMLElement).style.height).toBe("100%");
+    expect(hero.container.querySelector("svg.recharts-surface")?.getAttribute("width")).toBe("600");
+    hero.unmount();
+
+    // 히어로라도 높이를 주면 숫자 높이 — 감싼 상자 높이는 정하지 않음
+    const fixed = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} variant="hero" height={240} valueFormat={pct} />);
+    expect(classList(boxes(fixed.container).outer)).toEqual(["w-full", "min-w-0"]);
+  });
+
+  it("신호가 켜진 동안 잰 폭(600px)으로 고정 — 그동안 X 눈금은 그대로이고, 꺼지면 100%로", () => {
+    observeAs(600, 240);
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (!this.querySelector(".recharts-responsive-container")) return original.call(this);
+      return { left: 0, top: 0, x: 0, y: 0, width: 600, height: 240, right: 600, bottom: 240, toJSON: () => ({}) } as DOMRect;
+    });
+    const { container } = render(<LineChart data={LIQUIDITY} series={ONE_SERIES} valueFormat={pct} />);
+    const ticks = xTickTexts(container);
+    act(() => setShellResizing("drag", true));
+    expect(boxes(container).inner.style.width).toBe("600px");
+    expect(classList(boxes(container).outer)).toContain("overflow-x-clip");
+    expect(xTickTexts(container)).toEqual(ticks);
+    act(() => setShellResizing("drag", false));
+    expect(boxes(container).inner.style.width).toBe("");
+    expect(classList(boxes(container).outer)).toEqual(["w-full", "min-w-0"]);
+    expect(xTickTexts(container)).toEqual(ticks);
   });
 });

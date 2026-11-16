@@ -48,6 +48,7 @@ import {
   TAIL_DASH,
   TOOLTIP_BOX,
 } from "./frame";
+import { ChartSizeHold } from "./sizeHold";
 
 /** 히어로 선 — 중립 잉크 하나(방향색을 입히지 않음, 명세 A4). 문지르는 세로 커서는 옅은 경계색. */
 const HERO_INK = "var(--text)";
@@ -379,6 +380,9 @@ export function LineChart({
     </ResponsiveContainer>
   );
 
+  // 셸 폭이 바뀌는 동안(왼쪽 메뉴 끌기·접기 전환) 폭을 잡아 둡니다(QA-601 — 높이가 백분율이면 감싼 상자도 100%로 이어 줌).
+  const held = <ChartSizeHold fillHeight={fixedHeight === null}>{chart}</ChartSizeHold>;
+
   return (
     <figure className="m-0">
       {badges}
@@ -386,10 +390,10 @@ export function LineChart({
       {hero || scrubEvents ? (
         // 히어로 높이 — 좁은 화면 200, lg 260(height를 주지 않았을 때). 세로 스크롤은 브라우저가, 가로 끌기는 문지르기가 받습니다.
         <div className={`${fixedHeight === null ? "h-[200px] lg:h-[260px]" : ""} ${hero ? "touch-pan-y" : ""}`.trim() || undefined} {...scrubEvents}>
-          {chart}
+          {held}
         </div>
       ) : (
-        chart
+        held
       )}
     </figure>
   );
