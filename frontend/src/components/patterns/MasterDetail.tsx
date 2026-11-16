@@ -89,6 +89,8 @@ export function MasterDetail<T>({
   const current = wide ? (known ?? autoKey) : null;
   const currentItem = current === null ? null : items[keys.indexOf(current)];
   const tabStop = current ?? (focusKey !== null && keys.includes(focusKey) ? focusKey : null) ?? keys[0] ?? null;
+  // 넓은 화면으로 바뀌면 열려 있던 대화상자를 닫은 것으로 칩니다 — 그대로 두면 다시 좁아질 때 대화상자가 저절로 다시 열립니다(그리는 중 상태 맞추기).
+  if (wide && dialogKey !== null) setDialogKey(null);
   const dialogIndex = !wide && dialogKey !== null ? keys.indexOf(dialogKey) : -1;
   const dialogItem = dialogIndex >= 0 ? items[dialogIndex] : null;
 

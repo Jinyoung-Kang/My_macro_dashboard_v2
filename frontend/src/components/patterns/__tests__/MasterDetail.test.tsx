@@ -152,6 +152,34 @@ describe("MasterDetail — 좁은 화면(대화상자)", () => {
     }
   });
 
+  it("대화상자가 열린 채 넓은 화면으로 바뀌면 닫히고, 다시 좁아져도 저절로 다시 열리지 않는다", () => {
+    let wide = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({
+          matches: wide && query === WIDE_SHELL_MEDIA,
+          media: query,
+          addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+          removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+        }) as unknown as MediaQueryList,
+    );
+    const resize = (next: boolean) =>
+      act(() => {
+        wide = next;
+        for (const listener of [...listeners]) listener();
+      });
+    renderList();
+    fireEvent.click(row("Apple"));
+    expect(screen.getByRole("dialog", { name: "Apple Inc." })).toBeTruthy();
+    resize(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("region", { name: "상위 보유 종목 — 고른 줄 없음" })).toBeTruthy();
+    resize(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("autoSelectFirst여도 좁은 화면에서는 아무것도 고르지 않는다 — 대화상자가 저절로 열리지 않음", () => {
     renderList({ autoSelectFirst: true });
     expect(screen.queryByRole("dialog")).toBeNull();
