@@ -139,7 +139,8 @@ describe("KpiStrip — 값 있음", () => {
     expect(within(value).getByText("원")).toBeTruthy();
     const numberRow = value.parentElement as HTMLElement;
     expect(numberRow.children).toHaveLength(1);
-    expect(numberRow.className.split(/\s+/)).toEqual(["mt-0.5", "flex", "items-baseline"]);
+    // 단위가 있는 숫자 값의 값 줄은 타일 안쪽 여백까지 걸치는 여유(−12px)를 갖습니다(QA-625 — 예전에는 단위 글의 음수 여백).
+    expect(numberRow.className.split(/\s+/)).toEqual(["mt-0.5", "-mr-3", "flex", "items-baseline"]);
     const label = within(tile("국면")).getByText("후퇴 경계 (Late cycle)");
     expect((label.parentElement as HTMLElement).children).toHaveLength(1);
     expect(label.className).toContain("break-keep");
@@ -522,14 +523,15 @@ describe("KpiStrip — 긴 값·출처의 줄바꿈", () => {
       expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
     }
     // 단위는 값 글 안 끝의 값 끝 묶음(마지막 글자 + 단위, nowrap) 안이라 값이 꺾이면 마지막 줄을 따라가고, 타일 안쪽 여백까지 걸칠 수 있습니다
-    // (오른쪽 바깥 여백 −12px).
+    // (값 줄의 오른쪽 바깥 여백 −12px — QA-625, 예전에는 단위 글의 여백).
     for (const [tileNode, unit] of [[link, "%"], [group, "pt"]] as const) {
       const unitNode = within(tileNode).getByText(unit);
       const tail = unitNode.parentElement as HTMLElement;
       expect(tail.textContent, unit).toBe(`4${unit}`);
       expect(tail.className.split(/\s+/), unit).toContain("whitespace-nowrap");
       expect(tail.parentElement, unit).toBe(valueText(tileNode, `${LONG_VALUE}${unit}`));
-      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["-mr-3", "ml-1", "font-normal"]));
+      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["ml-1", "font-normal"]));
+      expect(((tail.parentElement as HTMLElement).parentElement as HTMLElement).className.split(/\s+/), unit).toContain("-mr-3");
     }
   });
 });
@@ -560,7 +562,7 @@ describe("KpiStrip — 추정·대리·이전 값", () => {
 // 오른쪽 음수 여백으로 옮기면 값 글 폭이 바르게 재여 한 줄(66x28px)이고, 값 글의 최대 폭(max-w-full = 값 줄)은 그대로 12px 넓어져 걸침도 같습니다.
 // jsdom은 배치를 재지 않아 자리(클래스)로 봅니다.
 describe("QA-625 짧은 단위의 값이 숫자 안에서 꺾이지 않는다", () => {
-  it.fails("단위의 여유(−12px)는 값 줄이 갖고 단위 글에는 바깥 음수 여백이 없다 — 단위 없는 값의 값 줄은 그대로", () => {
+  it("단위의 여유(−12px)는 값 줄이 갖고 단위 글에는 바깥 음수 여백이 없다 — 단위 없는 값의 값 줄은 그대로", () => {
     render(
       <KpiStrip
         label="요약"
