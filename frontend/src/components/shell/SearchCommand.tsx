@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
@@ -18,6 +18,7 @@ import {
   paletteSummary,
   recentEntries,
   recentFromEntry,
+  recentSummary,
   type PaletteCommand,
 } from "@/lib/palette";
 import { isWideShell, onShellCommand, sendShellCommand, type ShellCommand } from "@/lib/shellCommands";
@@ -84,8 +85,10 @@ const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
  * - 결과는 범주마다 상한까지만 보이고 넘친 수를 범주 제목에 적습니다. 무료 회원에게 잠긴 유료 화면은 자물쇠 아이콘.
  * - 결과 행: 왼쪽 32px 원(메뉴는 그 탭 아이콘, 지표는 시장·기관은 기관 아이콘, 종목은 티커 모노그램 — lib/search `avatar`, 장식) ·
  *   이름과 보조 글 · 오른쪽 '→ 화면' 캡션. 지표·기관·종목은 그 상세 화면으로 갑니다(/markets/i/…·/institutions/…·/s/…).
- * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 마지막 묶음
- *   '종목 찾기'에 붙입니다. 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞 검색어의 결과가 남지 않게).
+ * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 색인 범주 뒤
+ *   '종목 찾기' 묶음에 붙입니다(묶음 순서는 색인 범주 → 종목 찾기 → 명령). 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞
+ *   검색어의 결과가 남지 않게). 이 묶음은 늦게 와서 명령 묶음 앞에 끼므로 고른 줄은 순번이 아니라 결과 id로 듭니다 — 고른 줄이 그대로 남고
+ *   순번(aria-activedescendant)만 따라가며, 밀려서 목록 상자 밖으로 나간 고른 줄은 보이게 스크롤합니다(QA-557).
  * - 결과 맨 아래(목록 밖)의 '‘검색어’ 정보 검색' 링크 — 같은 검색어로 정보 검색 화면(/search?q=, ADR 0041)으로 갑니다. 결과가 없어도 있고,
  *   결과 수·'맞는 결과가 없습니다'에는 세지 않습니다.
  * - 명령 팔레트로 넓힌 범주(최근 연 대상·명령)와 빈 검색어 안내 끝의 도움말 문장은 넓은 화면(lg 이상 — 팔레트를 열 때 셈)에만 있습니다(작업대 실행
@@ -95,9 +98,11 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  // 고른 결과의 id(optionView(option).id) — 순번으로 들면 늦게 온 묶음이 앞에 낄 때 고른 줄이 다른 결과로 바뀝니다(QA-557). null이면 맨 위.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const baseId = useId();
   const listboxId = `${baseId}-results`;
+  const recentHintId = `${baseId}-recent-hint`;
   const optionId = (index: number) => `${baseId}-option-${index}`;
   const isMac = useSyncExternalStore(noSubscribe, isMacPlatform, isMacServer);
 
@@ -144,8 +149,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   // 명령 — 넓은 화면에서 검색어가 맞을 때만(lib/palette — 명령은 모두 wideOnly). 빈 검색어에는 명령이 없어 빈 Enter가 명령(도움말 창 열기·
   // 메뉴 접기)을 실행하지 않습니다.
   const commands = useMemo(() => (open && trimmed !== "" ? commandMatches(trimmed, { wide }) : []), [open, trimmed, wide]);
-  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(넓은 화면에서 있을 때만 — 그때 빈 Enter는 맨 위 대상으로 갑니다), 검색어가 있으면 지금 범주
-  // (메뉴·지표·기관·종목·종목 찾기) 다음 명령(맞을 때만). 좁은 화면의 빈 검색어는 결과가 없어 Enter가 아무것도 하지 않습니다(지금 그대로).
+  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(넓은 화면에서 있을 때만 — 그때 빈 Enter는 맨 위 대상으로 갑니다), 검색어가 있으면 색인 범주
+  // (메뉴·지표·기관·종목) → 종목 찾기(늦게 옴) → 명령(맞을 때만). 고른 줄은 id로 들어 늦게 온 묶음이 끼어도 같은 결과에 남습니다(QA-557).
+  // 좁은 화면의 빈 검색어는 결과가 없어 Enter가 아무것도 하지 않습니다(지금 그대로).
   const paletteGroups = useMemo<PaletteGroup[]>(() => {
     if (trimmed === "") {
       return wide && recent.length > 0
@@ -158,7 +164,27 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
-  const activeIndex = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
+  // 빈 검색어에 펼쳐진 최근 연 대상의 안내(넓은 화면에서 있을 때만 — 빈 검색어의 결과는 최근 연 대상뿐). 입력칸 설명과 status가 함께 읽습니다(QA-560).
+  const recentHint = trimmed === "" && flat.length > 0 ? recentSummary(flat.length) : null;
+  // 고른 줄의 순번 — 고른 id가 지금 결과에 없으면(아직 고정 전 등) 맨 위.
+  const activeIndex = flat.length === 0 ? -1 : Math.max(0, flat.findIndex((option) => optionView(option).id === activeId));
+  // 결과가 생긴 첫 그림에서 맨 위 결과의 id로 고정합니다 — ↑↓를 누르지 않은 기본 상태도 늦게 온 묶음에 밀리지 않게. 닫혀 있는 동안은
+  // 고정하지 않습니다(다른 탭이 최근 연 대상을 바꿔도 다시 열면 맨 위부터).
+  const firstId = open && flat.length > 0 ? optionView(flat[0]).id : null;
+  useEffect(() => {
+    if (activeId === null && firstId !== null) setActiveId(firstId);
+  }, [activeId, firstId]);
+  // 고른 줄은 같은데 순번만 바뀌면(늦게 온 묶음이 앞에 낌) 그 줄이 목록 상자의 보이는 영역 밖으로 밀릴 수 있어 보이게 스크롤합니다 — 그대로
+  // 두면 보이지 않는 줄을 Enter가 실행했습니다(QA-557 후속). 고른 줄이 바뀐 경우는 건드리지 않습니다(↑↓는 moveTo가 스크롤하고, 마우스로
+  // 가리켜 고른 줄은 이미 보이는 줄이라 목록이 튀지 않게). 그린 뒤·칠하기 전에 옮겨 밀린 그림이 한 번도 보이지 않게 합니다.
+  const shownActive = useRef<{ id: string | null; index: number }>({ id: null, index: -1 });
+  useLayoutEffect(() => {
+    const before = shownActive.current;
+    shownActive.current = { id: activeId, index: activeIndex };
+    if (open && activeId !== null && activeIndex >= 0 && before.id === activeId && before.index !== activeIndex) {
+      document.getElementById(`${baseId}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, activeId, activeIndex, baseId]);
 
   const notices = [
     sourceNotice("지표", overview),
@@ -174,7 +200,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     } else {
       setQuery("");
       setSettled("");
-      setActive(0);
+      setActiveId(null);
     }
   };
 
@@ -229,7 +255,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   };
 
   const moveTo = (next: number) => {
-    setActive(next);
+    setActiveId(optionView(flat[next]).id);
     // 목록이 길면 고른 줄이 보이게 스크롤합니다(옵션은 이미 그려져 있어 지금 찾을 수 있음).
     document.getElementById(optionId(next))?.scrollIntoView({ block: "nearest" });
   };
@@ -264,7 +290,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           // 투명 1px 테두리 — 고대비(forced-colors) 모드에서 바탕색이 지워져도 입력칸 모양의 경계가 시스템 색 테두리로 남습니다(단추와 같음, 명세 D9).
           // 모서리는 4px(입력칸·단추와 같음 — 작업대 실행 명세 §3-8, 2026-11-16 알약 정리).
           // 좁은 화면(lg 미만)은 상단바 위 줄의 남는 폭을 다 쓰는 44px. 넓은 화면은 48px 상단바의 조작 높이 30px(§3-7)에 폭을 고정합니다(176px,
-          // xl 256px) — 남는 폭은 빵부스러기가 씁니다(§5).
+          // xl 256px) — 남는 폭은 빵부스러기가 씁니다(§5). 176px(lg~xl)에서는 글 칸이 78px뿐이라 앞부분을 숨겨 '검색'만 보입니다(QA-558 —
+          // 앱 이름의 hidden xl:inline과 같은 꼴, 접근 이름은 aria-label 전체 글 그대로).
           <button
             type="button"
             aria-label="종목·기관·지표·메뉴 검색"
@@ -272,7 +299,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-transparent bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-[30px] lg:w-44 lg:flex-none lg:gap-2 lg:px-2.5 xl:w-64"
           >
             <SearchIcon />
-            <span className="min-w-0 flex-1 truncate">종목·기관·지표·메뉴 검색</span>
+            <span className="min-w-0 flex-1 truncate">
+              <span className="lg:hidden xl:inline">종목·기관·지표·메뉴 </span>검색
+            </span>
             <kbd aria-hidden="true" className="hidden shrink-0 rounded-sm border border-border px-1.5 font-sans text-xs text-text-3 sm:inline">
               {isMac ? "⌘K" : "Ctrl K"}
             </kbd>
@@ -292,13 +321,14 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             aria-controls={listboxId}
             aria-autocomplete="list"
             aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
+            aria-describedby={recentHint ? recentHintId : undefined}
             autoComplete="off"
             spellCheck={false}
             placeholder="종목·기관·지표·메뉴 검색"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setActive(0);
+              setActiveId(null);
             }}
             onKeyDown={onInputKeyDown}
             // 브라우저 기본 지우기 X는 숨깁니다(QA-515) — 어두운 화면에서 굵은 흰색으로 그려져 바로 옆 대화상자 닫기 X와 헷갈렸습니다. type=search는
@@ -307,10 +337,20 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           />
         </div>
 
-        {/* 범주를 아직 다 읽지 못했으면(읽는 중·실패·저장본 없음) 그 사실도 함께 읽어 줍니다 — "결과 0건"만 말하면 없는 것으로 들립니다. */}
+        {/* 범주를 아직 다 읽지 못했으면(읽는 중·실패·저장본 없음) 그 사실도 함께 읽어 줍니다 — "결과 0건"만 말하면 없는 것으로 들립니다.
+            빈 검색어에 최근 연 대상이 펼쳐져 있으면 그 안내를 읽습니다 — 검색어를 쳤다가 지워 목록이 다시 펼쳐질 때 '결과 N건'에서 바뀌어 읽힙니다
+            (포커스가 그대로인 입력칸의 설명이 바뀌어도 다시 읽히지 않을 수 있음, QA-560 후속). */}
         <p role="status" className="sr-only">
-          {trimmed ? paletteSummary(groups, commands.length, notices) : ""}
+          {trimmed ? paletteSummary(groups, commands.length, notices) : (recentHint ?? "")}
         </p>
+        {/* 같은 안내를 입력칸 설명으로도 둡니다(QA-560) — 팔레트를 여는 순간 이미 그려진 status는 라이브 영역으로 읽히지 않을 수 있고, 입력칸
+            설명은 열 때 포커스를 받으며 함께 읽힙니다. 문단은 hidden(aria-describedby는 숨긴 요소도 가리킴)이라 대화상자 내용으로 status와
+            같은 글이 한 번 더 읽히지 않습니다. */}
+        {recentHint && (
+          <p id={recentHintId} hidden>
+            {recentHint}
+          </p>
+        )}
 
         {/* 결과가 없으면(입력칸이 접힘 — aria-expanded false) 빈 목록 상자를 접근성 트리에서 뺍니다. 결과 없음 안내는 위 status가 읽습니다. */}
         <div
@@ -344,9 +384,10 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                       aria-selected={selected}
                       onClick={() => go(option)}
                       onMouseMove={() => {
-                        if (!selected) setActive(index);
+                        if (!selected) setActiveId(entry.id);
                       }}
-                      className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 lg:min-h-10 lg:py-1 ${selected ? "bg-surface" : ""}`}
+                      // 넓은 화면 결과 줄 40px — 두 줄(이름 20 + 보조 16) + 위아래 2px = 40px, 한 줄은 lg:min-h-10이 40px로 맞춥니다(lg:py-1이면 두 줄이 44px).
+                      className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 lg:min-h-10 lg:py-0.5 ${selected ? "bg-surface" : ""}`}
                     >
                       {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, 고른 줄 바탕(surface — 덮개 surface-2보다 한 단계 어두움)만으로는
                           대비가 1.1:1이라 왼쪽 잉크 막대를 함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}
@@ -379,14 +420,16 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           })}
         </div>
 
+        {/* 두 문단은 목록 상자처럼 위에 12px(mt-3)을 둡니다(QA-559) — 대화상자 본문은 형제 사이 간격을 각 요소의 margin이 정해, 없으면 최근 연 대상
+            목록 바로 아래·입력칸 아래 경계에 0px로 붙었습니다. */}
         {trimmed === "" && (
-          <p className="px-3 text-sm text-text-2">
+          <p className="mt-3 px-3 text-sm text-text-2">
             메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커·국내 코드를 입력하세요. 지표·기관·종목은 시세·지표·뉴스를 모은 상세 화면으로
             갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음).
             {wide && " ?를 치고 Enter를 누르면 단축키 도움말을 봅니다."}
           </p>
         )}
-        {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
+        {trimmed !== "" && flat.length === 0 && <p className="mt-3 px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}
         {infoSearch && (
           <Link
             href={infoSearch.href}

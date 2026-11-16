@@ -217,7 +217,7 @@ describe("결과", () => {
     expect(screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/)).toBeTruthy();
 
     type("zzzz");
-    expect(screen.getByText("‘zzzz’와 맞는 결과가 없습니다.")).toBeTruthy();
+    expect(screen.getByText("‘zzzz’에 맞는 결과가 없습니다.")).toBeTruthy();
     // 결과가 없으면 빈 목록 상자도 없다(입력칸은 접힘) — 결과 없음은 status가 읽는다.
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(input().getAttribute("aria-expanded")).toBe("false");
@@ -238,7 +238,7 @@ describe("결과", () => {
         "결과 0건 — 기관: 불러오지 못했습니다 — 백엔드 API에 연결하지 못했습니다 · 종목: 불러오는 중…",
       ),
     );
-    expect(screen.getByText("‘aapl’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
+    expect(screen.getByText("‘aapl’에 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
   });
 
   it("범주별 묶음 — 지표·기관·종목은 그 상세 화면으로 간다고 적는다", async () => {
@@ -410,7 +410,7 @@ describe("이동", () => {
     type("삼성전자");
     const status = await screen.findByRole("list", { name: "검색 자료 상태" });
     expect(within(status).getByText("종목 찾기 · Yahoo·네이버: 출처를 받지 못했습니다(네이버 증권·Yahoo Finance)")).toBeTruthy();
-    expect(screen.getByText("‘삼성전자’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
+    expect(screen.getByText("‘삼성전자’에 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
 
     type("삼성");
     await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
@@ -457,6 +457,21 @@ describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, �
     expect(classes(trigger()).some((name) => name.startsWith("lg:basis-") || name.startsWith("lg:max-w-"))).toBe(false);
   });
 
+  // QA-558: lg~xl(1024~1279px)의 여는 단추는 176px이라 글 칸이 78px뿐이어서 전체 글 '종목·기관·지표·메뉴 검색'(158px)이 '종목·기관…'으로 잘렸다.
+  // 그 폭에서는 앞부분을 숨겨 '검색'만 보이고(lg 미만·xl 이상은 전체 글 — 앱 이름의 hidden xl:inline과 같은 꼴), 접근 이름(aria-label)은 그대로다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 글 span 하나에 전체 글만 있어 lg:hidden·xl:inline 안쪽 span이 없었다.
+  it("넓은 화면 lg~xl의 여는 단추는 '검색'만 보이고 xl부터 전체 글 — 접근 이름·폭은 그대로(QA-558)", () => {
+    render(<SearchCommand user={MEMBER} />);
+    const label = trigger().querySelector("span.truncate") as HTMLElement;
+    const lead = label.querySelector("span");
+    expect(lead).not.toBeNull();
+    expect(classes(lead as HTMLElement)).toEqual(expect.arrayContaining(["lg:hidden", "xl:inline"]));
+    expect(lead?.textContent).toBe("종목·기관·지표·메뉴 ");
+    expect(label.lastChild?.textContent).toBe("검색");
+    expect(label.textContent).toBe("종목·기관·지표·메뉴 검색");
+    expect(trigger().getAttribute("aria-label")).toBe("종목·기관·지표·메뉴 검색");
+  });
+
   it("입력칸은 넓은 화면에서 경계 포함 40px·16px 글, 결과 줄은 40px·14px 이름 — 좁은 화면은 48px 줄·15px 그대로", async () => {
     openSearch();
     await act(async () => {});
@@ -467,6 +482,11 @@ describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, �
     const row = screen.getByRole("option", { name: /Apple Inc\./ });
     expect(classes(row)).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
     expect(classes(within(row).getByText("Apple Inc."))).toEqual(expect.arrayContaining(["text-[15px]", "lg:text-sm"]));
+    // 보조 글이 있는 두 줄 행도 40px — 이름(lg:text-sm 20px) + 보조(text-xs 16px) = 36px에 위아래 2px(lg:py-0.5). lg:py-1(4px)이면 44px였다
+    // (QA 스택 1440·1024 실측). 좁은 화면은 py-2·min-h-12 그대로.
+    expect(classes(row)).toEqual(expect.arrayContaining(["py-2", "lg:py-0.5"]));
+    expect(classes(row)).not.toContain("lg:py-1");
+    expect(classes(within(row).getByText("AAPL · Technology"))).toContain("text-xs");
     expect(classes(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
   });
 });
@@ -487,6 +507,8 @@ describe("좁은 화면(lg 미만) — 지금 통합 검색 그대로(명세 §0
     const guide = screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/);
     expect(guide.textContent).toMatch(/Yahoo·네이버에서 찾음\)\.$/);
     expect(guide.textContent).not.toContain("단축키 도움말");
+    // 최근 연 대상 안내(QA-560)도 넓은 화면에만 — 좁은 화면 입력칸에는 설명이 없다.
+    expect(input().getAttribute("aria-describedby")).toBeNull();
     fireEvent.keyDown(input(), { key: "Enter" });
     expect(router.push).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
@@ -523,8 +545,8 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     expect(options[0].querySelector("span[aria-hidden='true'].rounded-full")?.textContent).toBe("AAP");
     expect(options[0].getAttribute("aria-selected")).toBe("true");
     expect(input().getAttribute("aria-expanded")).toBe("true");
-    // 검색어가 비면 결과 수 안내는 읽지 않는다(지금처럼).
-    expect(screen.getByRole("status").textContent).toBe("");
+    // 검색어가 비면 결과 수 대신 최근 연 대상 안내를 읽는다(QA-560).
+    expect(screen.getByRole("status").textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
     // 저장소에는 대상의 이름·주소만.
     expect(JSON.parse(window.localStorage.getItem(RECENT_STORAGE_KEY) ?? "null").items.map((item: { href: string }) => item.href))
       .toEqual(["/s/us/AAPL", "/markets/i/sp500"]);
@@ -533,6 +555,61 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     fireEvent.keyDown(input(), { key: "Enter" });
     expect(router.push).toHaveBeenLastCalledWith("/markets/i/sp500");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  // QA-560: 빈 검색어에 최근 연 대상이 펼쳐지면(aria-expanded true, 빈 Enter는 맨 위 대상으로 감) 화면 읽기 사용자도 목록이 있다는 것을 듣는다.
+  // 입력칸 설명(aria-describedby — 포커스를 받을 때 함께 읽힘)으로 알리고, 빈 검색어의 status도 같은 안내다(아래 QA-560 후속 — 설명 문단은 hidden).
+  // 수정 전(재현 커밋에서는 it.fails)에는 status가 ""이고 입력칸에 aria-describedby가 없어(null) 아무 안내도 없었다.
+  it("빈 검색어에 최근 연 대상이 있으면 입력칸 설명이 'N건 — ↑↓로 고르고 Enter' — 검색어를 치면 설명이 없다(QA-560)", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(input().getAttribute("aria-describedby")).toBeNull();
+    type("gspc");
+    fireEvent.click(screen.getByRole("option", { name: /S&P 500/ }));
+    fireEvent.click(trigger());
+    await act(async () => {});
+    type("aapl");
+    fireEvent.click(screen.getByRole("option", { name: /Apple Inc\./ }));
+
+    fireEvent.click(trigger());
+    expect(within(recentGroup() as HTMLElement).getAllByRole("option")).toHaveLength(2);
+    const describedBy = input().getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    const hint = document.getElementById(describedBy ?? "");
+    expect(hint?.textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
+    expect(screen.getByRole("dialog", { name: "통합 검색" }).contains(hint)).toBe(true);
+    expect(hint?.hidden).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
+
+    type("10");
+    expect(input().getAttribute("aria-describedby")).toBeNull();
+  });
+
+  // QA-560 후속: 검색어를 쳤다가 지워 빈 검색어로 돌아오면 최근 연 대상이 다시 펼쳐진다(빈 Enter는 맨 위 대상으로 감). 포커스는 입력칸에 그대로라
+  // 입력칸 설명이 바뀌어도 다시 읽히지 않을 수 있어(화면 읽기 프로그램으로 재지 않은 추정), 빈 검색어의 status도 그 안내를 읽는다. 입력칸 설명
+  // 문단은 hidden(aria-describedby는 숨긴 요소도 가리킴)이라 대화상자 내용으로 같은 글이 한 번 더 읽히지 않는다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 'aapl'을 쳤다가 지우면 status가 '결과 1건'에서 ""로 비었다(운영 빌드 1440에서 '10'을 지울 때도 같음).
+  it("검색어를 쳤다가 지우면 status가 최근 연 대상 안내를 읽고, 입력칸 설명 문단은 숨긴 문단이다(QA-560)", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+      { kind: "indicator", label: "S&P 500", sub: "주가지수 · ^GSPC", href: "/markets/i/sp500", dest: "지표 상세" },
+    ]));
+    const summary = "최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다";
+    openSearch();
+    await act(async () => {});
+    expect(screen.getByRole("combobox", { name: "검색어", description: summary })).toBe(input());
+
+    type("aapl");
+    expect(recentGroup()).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/^결과 1건/);
+
+    type("");
+    expect(within(recentGroup() as HTMLElement).getAllByRole("option")).toHaveLength(2);
+    expect(input().getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe(summary);
+    const hint = document.getElementById(input().getAttribute("aria-describedby") ?? "");
+    expect(hint?.hidden).toBe(true);
+    expect(screen.getByRole("combobox", { name: "검색어", description: summary })).toBe(input());
   });
 
   it("검색어를 치면 최근 묶음은 빠지고 지금 범주만 보인다", async () => {
@@ -545,6 +622,22 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     type("aapl");
     expect(recentGroup()).toBeNull();
     expect(screen.getByRole("group", { name: "종목" })).toBeTruthy();
+  });
+
+  // QA-559: 빈 검색어 안내 문단과 결과 없음 문단은 목록 상자(mt-3)처럼 위에 12px을 둔다 — 대화상자 본문은 형제 사이 간격을 각 요소의 margin이 정한다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 두 문단이 'px-3 text-sm text-text-2'뿐이라 최근 연 대상 목록 바로 아래 안내가 0px로 붙었다(QA 스택 1440·1024
+  // listbox bottom 333 = 문단 top 333, 마지막 보조 글과 안내 글 사이 7px). 결과 없음 문단도 입력칸 아래 경계에 0px로 붙었다.
+  it("빈 검색어 안내와 결과 없음 문단은 위에 12px(mt-3)을 둔다 — 최근 연 대상 목록 아래·입력칸 아래에 붙지 않게(QA-559)", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+    ]));
+    openSearch();
+    await act(async () => {});
+    expect(recentGroup()).toBeTruthy();
+    expect(screen.getByText(/메뉴 이름, 매크로 지표 이름/).className.split(/\s+/)).toContain("mt-3");
+
+    type("zzqqxx");
+    expect(screen.getByText(/^‘zzqqxx’.+맞는 결과가/).className.split(/\s+/)).toContain("mt-3");
   });
 
   it("메뉴를 고르면 최근 연 대상에 넣지 않는다", async () => {
@@ -640,6 +733,92 @@ describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", 
     const groups = screen.getAllByRole("group").map((element) => element.getAttribute("aria-labelledby"));
     expect(document.getElementById(groups[groups.length - 1] ?? "")?.textContent).toContain("명령");
     expect(screen.getByRole("status").textContent).toMatch(/^결과 \d+건/);
+  });
+
+  // QA-557: 외부 종목 찾기(350ms 미룸 뒤 응답)는 명령 묶음보다 늦게 와서 그 앞에 끼어든다. 고른 줄은 결과 id로 들어 묶음이 바뀌어도 같은 줄이다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 고른 줄을 순번으로만 셌다 — 'help'의 '단축키 도움말'(순번 0)을 고른 채 종목 찾기 응답이 오면 순번 0이
+  // 합성 종목(Synthetic Alpha)이 됐고 aria-activedescendant 값(option-0)은 그대로였으며, Enter가 router.push('/s/us/ZZQA')로 갔다.
+  const LATE_SYMBOLS = {
+    available: true,
+    symbols: {
+      items: [
+        { market: "us", code: "ZZQA", yahooSymbol: "ZZQA", name: "Synthetic Alpha", exchange: "NASDAQ", kind: "stock", source: "Yahoo Finance" },
+        { market: "us", code: "ZZQB", yahooSymbol: "ZZQB", name: "Synthetic Beta", exchange: "NASDAQ", kind: "stock", source: "Yahoo Finance" },
+      ],
+    },
+  };
+  const groupNames = () => screen.getAllByRole("group").map((group) => group.querySelector("[role='presentation'] > span")?.textContent);
+  const helpOption = () => screen.getByRole("option", { name: /단축키 도움말/ });
+
+  it("늦게 온 종목 찾기 묶음이 명령 앞에 끼어도 고른 줄은 '단축키 도움말' 그대로 — aria-activedescendant가 따라가고 Enter는 명령을 실행한다(QA-557)", async () => {
+    reads[endpoints.detail.symbols("help")] = LATE_SYMBOLS;
+    openSearch();
+    await act(async () => {});
+    type("help");
+    expect(groupNames()).toEqual(["명령"]);
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    // 묶음 순서는 그대로(색인 범주 → 종목 찾기 → 명령) — 고른 줄만 id로 남는다.
+    expect(groupNames()).toEqual(["종목 찾기 · Yahoo·네이버", "명령"]);
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(input().getAttribute("aria-activedescendant")).toBe(helpOption().id);
+    expect(screen.getByRole("option", { name: /Synthetic Alpha/ }).getAttribute("aria-selected")).toBe("false");
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(await screen.findByRole("dialog", { name: "단축키" })).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("색인 결과와 명령이 함께 맞을 때 ↑로 고른 명령은 늦게 온 종목 찾기 묶음 뒤에도 고른 줄이다(QA-557)", async () => {
+    reads[endpoints.detail.symbols("ㄷㅇ")] = LATE_SYMBOLS;
+    openSearch();
+    await act(async () => {});
+    type("ㄷㅇ");   // 메뉴 'AI 종합 분석'(초성 ㄷㅇ — 더보기)과 명령 '단축키 도움말'
+    expect(groupNames()).toEqual(["메뉴", "명령"]);
+    fireEvent.keyDown(input(), { key: "ArrowUp" });   // 맨 위에서 위로 → 맨 아래(명령)
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    expect(groupNames()).toEqual(["메뉴", "종목 찾기 · Yahoo·네이버", "명령"]);
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(input().getAttribute("aria-activedescendant")).toBe(helpOption().id);
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(await screen.findByRole("dialog", { name: "단축키" })).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  // QA-557 후속: 늦게 온 묶음이 고른 줄 앞에 끼면 고른 줄은 같아도 순번이 밀려 목록 상자(max-h 448px)의 보이는 영역 밖으로 나갈 수 있다 —
+  // 그때 그 줄을 block 'nearest'로 보이게 스크롤한다. 마우스로 가리켜 고른 줄(순번은 그대로, 고른 줄만 바뀜)은 스크롤하지 않는다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 스크롤을 ↑↓(moveTo)에서만 맞춰 응답 뒤에는 scrollIntoView를 부르지 않았고(scrolled = []), 운영 빌드
+  // 1440·1024에서 'he'+↑에 종목 찾기 2건이 오면 목록 181~629 밖의 고른 줄(657~697)이 보이지 않은 채 Enter가 그 줄을 실행했다.
+  it("늦게 온 묶음에 밀린 고른 줄은 보이게 스크롤하고, 마우스로 가리켜 고른 줄은 스크롤하지 않는다(QA-557)", async () => {
+    reads[endpoints.detail.symbols("ㄷㅇ")] = LATE_SYMBOLS;
+    const scrolled: Element[] = [];
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    openSearch();
+    await act(async () => {});
+    type("ㄷㅇ");
+    fireEvent.keyDown(input(), { key: "ArrowUp" });   // 맨 위에서 위로 → 맨 아래(명령) — ↑↓는 지금처럼 moveTo가 스크롤
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(scrolled.at(-1)).toBe(helpOption());
+    scroll.mockClear();
+    scrolled.length = 0;
+
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(scrolled).toEqual([helpOption()]);
+    expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+
+    scroll.mockClear();
+    scrolled.length = 0;
+    const alpha = screen.getByRole("option", { name: /Synthetic Alpha/ });
+    fireEvent.mouseMove(alpha);
+    expect(alpha.getAttribute("aria-selected")).toBe("true");
+    expect(scrolled).toEqual([]);
   });
 
   it("왼쪽 메뉴 접기·펼치기는 넓은 화면에서만 보이고, 고르면 팔레트를 닫은 뒤 셸 명령 toggle-nav를 보낸다", async () => {

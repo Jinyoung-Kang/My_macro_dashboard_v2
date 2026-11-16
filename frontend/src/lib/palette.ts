@@ -199,6 +199,14 @@ export function serializeRecent(list: readonly RecentEntity[]): string {
   return JSON.stringify({ v: RECENT_VERSION, items: list.slice(0, RECENT_LIMIT) });
 }
 
+/**
+ * 화면 읽기용 최근 연 대상 안내(입력칸 설명 aria-describedby와 빈 검색어의 role=status). 빈 검색어에 최근 연 대상이 펼쳐지면 빈 Enter가 맨 위
+ * 대상으로 가므로 목록이 있다는 것과 고르는 법을 알립니다(QA-560). 검색어가 있으면 status는 결과 수 안내(paletteSummary)입니다.
+ */
+export function recentSummary(count: number): string {
+  return `최근 연 대상 ${count}건 — ↑↓로 고르고 Enter로 갑니다`;
+}
+
 /** 결과 행 왼쪽 원판 — 지표는 시장, 기관은 기관 탭 아이콘, 종목은 티커 모노그램(통합 검색 결과와 같은 꼴). */
 function recentAvatar(entity: RecentEntity): SearchAvatar | undefined {
   if (entity.kind === "indicator") return { tab: "markets" };
