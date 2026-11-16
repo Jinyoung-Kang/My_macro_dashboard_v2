@@ -202,7 +202,7 @@ describe("useApi", () => {
   // 상태를 버렸습니다. errorStatus = ApiError.status(연결 실패 NetworkError는 0), 상태가 없는 실패는 null, 값을 받으면 null.
   // lib/api의 ApiError를 가져오지 않습니다(많은 시험이 lib/api를 ApiError 없이 흉내 냄) — status 칸으로 읽습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 errorStatus 칸이 없었습니다(undefined).
-  it.fails("QA-584: error와 함께 상태 코드(errorStatus)를 남긴다 — 400·연결 실패 0·상태 없는 실패 null, 값을 받으면 null", async () => {
+  it("QA-584: error와 함께 상태 코드(errorStatus)를 남긴다 — 400·연결 실패 0·상태 없는 실패 null, 값을 받으면 null", async () => {
     const statusOf = (current: unknown) => (current as { errorStatus?: number | null }).errorStatus;
     const withStatus = (message: string, status: number) => Object.assign(new Error(message), { status });
     api.apiGetShared

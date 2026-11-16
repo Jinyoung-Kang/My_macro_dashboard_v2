@@ -87,7 +87,8 @@ describe("빵부스러기 — 상세 화면이 읽은 대상 이름", () => {
     await act(async () =>
       portfolio?.resolve({ available: true, cik: CIK, institution: { name: "가상 연금 (Fictional Pension)", desc: "" }, quarters: [], holdings: [] }),
     );
-    expect(current().textContent).toBe("CIK 1234");
+    // 주소의 CIK는 10자리 정규 CIK로 적습니다(QA-584).
+    expect(current().textContent).toBe("CIK 0000001234");
   });
 
   it("종목은 시세를 읽은 뒤 종목 이름(한글 이름이 있으면 한글), 지표는 카드 이름", async () => {

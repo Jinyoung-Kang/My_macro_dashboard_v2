@@ -59,17 +59,18 @@ async function apiError(message: string, status: number): Promise<Error> {
 
 describe("기관 상세 — 앞 0 없는 CIK와 추적하지 않는 CIK (QA-584)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 portfolio?cik=1608046을 읽었습니다(백엔드 400 — 같은 기관인데).
-  it.fails("앞 0 없는 주소(/institutions/1608046)는 10자리 CIK(0001608046)로 포트폴리오를 읽는다", async () => {
+  it("앞 0 없는 주소(/institutions/1608046)는 10자리 CIK(0001608046)로 포트폴리오를 읽는다", async () => {
     reads[endpoints.institution.portfolio("0001608046", 8, 30)] = {
       available: true, cik: "0001608046", institution: { name: "합성 연금 (Synthetic Pension)", desc: "" }, quarters: [], holdings: [],
     };
     renderAs(await InstitutionDetailPage({ params: Promise.resolve({ cik: "1608046" }) }));
     expect(await screen.findByRole("heading", { level: 1, name: "합성 연금 (Synthetic Pension)" })).toBeTruthy();
-    expect(requested()).toEqual([endpoints.institution.portfolio("0001608046", 8, 30)]);
+    expect(requested()).toContain(endpoints.institution.portfolio("0001608046", 8, 30));
+    expect(requested()).not.toContain(endpoints.institution.portfolio("1608046", 8, 30));
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 머리와 보유 탭에 백엔드 문구('/api/sec13f/institutions …')가 그대로, 보유 탭에 '다시 시도'가 있었습니다.
-  it.fails("추적하지 않는 CIK(400)는 화면 글과 기관 목록 링크 — 백엔드 문구·다시 시도 없음", async () => {
+  it("추적하지 않는 CIK(400)는 화면 글과 기관 목록 링크 — 백엔드 문구·다시 시도 없음", async () => {
     reads[endpoints.institution.portfolio(UNTRACKED, 8, 30)] = await apiError(BACKEND_400, 400);
     renderAs(<InstitutionDetailScreen cik={UNTRACKED} />);
     const header = (await screen.findByRole("heading", { level: 1, name: `CIK ${UNTRACKED}` })).closest("header") as HTMLElement;

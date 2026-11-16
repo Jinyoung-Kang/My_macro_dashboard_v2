@@ -57,7 +57,10 @@ export function parseStockRoute(market: string, code: string): { market: DetailM
   return null;
 }
 
-/** 기관 상세 주소 조각 → CIK(숫자 1~10자리). 틀리면 null(화면은 404). 앞의 0은 그대로 둡니다(13F 기관 목록의 CIK 글과 같게). */
+/**
+ * 기관 상세 주소 조각 → 10자리 정규 CIK(숫자 1~10자리를 앞 0으로 채움 — 13F 기관 목록의 CIK 글·정보 검색 키 cik:<10자리>와 같은 글). 틀리면 null
+ * (화면은 404). 백엔드는 목록의 10자리 글과 정확히 같아야 받으므로 앞 0 없는 주소(SEC EDGAR에서 붙여 넣은 CIK)도 같은 기관으로 읽습니다(QA-584).
+ */
 export function parseCik(raw: string): string | null {
   let decoded: string;
   try {
@@ -65,7 +68,7 @@ export function parseCik(raw: string): string | null {
   } catch {
     return null;
   }
-  return /^\d{1,10}$/.test(decoded) ? decoded : null;
+  return /^\d{1,10}$/.test(decoded) ? decoded.padStart(10, "0") : null;
 }
 
 /** 지표 상세 주소 조각 → 매크로 카드 키(영문·숫자·_·- 40자 이내). 틀리면 null(화면은 404). */

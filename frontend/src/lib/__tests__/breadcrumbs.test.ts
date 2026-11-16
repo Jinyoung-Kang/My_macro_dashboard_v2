@@ -72,10 +72,11 @@ describe("대상(상세)", () => {
   });
 
   it("기관 /institutions/<CIK> → 기관(뒤 칸과 주소가 같아 글 칸 — QA-549) › 13F 포트폴리오(→ /institutions) › CIK n", () => {
+    // 앞 0 없는 CIK는 10자리 정규 CIK·주소로(QA-584 — 화면이 읽는 CIK와 같음)
     expect(breadcrumbs("/institutions/1067983", MEMBER)).toEqual([
       { label: "기관", href: null },
       { label: "13F 포트폴리오", href: "/institutions" },
-      { label: "CIK 1067983", href: "/institutions/1067983" },
+      { label: "CIK 0001067983", href: "/institutions/0001067983" },
     ]);
   });
 
@@ -103,15 +104,17 @@ describe("대상 이름(상세 화면이 읽은 이름 — P4)", () => {
       "S&P 500",
     ]);
     expect(labels(breadcrumbs("/markets/i/vix", MEMBER, { href: "/markets/i/vix", label: "VIX 변동성 지수" }))).toEqual(["시장", "매크로 지표", "VIX 변동성 지수"]);
-    expect(breadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/1067983", label: "버크셔 해서웨이" }).at(-1)).toEqual({
+    // 앞 0 없는 주소도 10자리 정규 주소(QA-584)로 대조 — 화면은 정규 주소로 이름을 넘깁니다.
+    expect(breadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/0001067983", label: "버크셔 해서웨이" }).at(-1)).toEqual({
       label: "버크셔 해서웨이",
-      href: "/institutions/1067983",
+      href: "/institutions/0001067983",
     });
   });
 
-  it("다른 주소의 이름은 무시한다 — 앞 화면의 이름이 남지 않음, 앞의 0이 다른 CIK도 다른 주소", () => {
+  it("다른 주소의 이름은 무시한다 — 앞 화면의 이름이 남지 않음, 다른 CIK의 이름은 쓰지 않음", () => {
     expect(labels(breadcrumbs("/s/kr/005930", MEMBER, { href: "/s/kr/000660", label: "SK하이닉스" }))).toEqual(["시장", "종목(한국)", "005930"]);
-    expect(labels(breadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/0001067983", label: "버크셔" })).at(-1)).toBe("CIK 1067983");
+    // 앞 0만 다른 주소는 같은 기관(10자리 정규 주소 — QA-584)이라, 다른 CIK로 대조합니다.
+    expect(labels(breadcrumbs("/institutions/1067983", MEMBER, { href: "/institutions/0001608046", label: "국민연금" })).at(-1)).toBe("CIK 0001067983");
     expect(labels(breadcrumbs("/markets/i/vix", MEMBER, null))).toEqual(["시장", "매크로 지표", "vix"]);
   });
 

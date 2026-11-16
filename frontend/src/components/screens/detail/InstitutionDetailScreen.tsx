@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LineChart } from "@/components/charts";
 import { EntityHeader, MasterDetail, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { LandmarkIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -59,9 +60,19 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   // 명령 팔레트의 최근 연 대상 — 기관 이름을 받은 뒤에만('CIK …' 자리표시는 넣지 않음, 보조 글은 통합 검색 결과와 같은 '13F · CIK …').
   useDetailVisit("institution", names?.display ? institutionHref(cik) : null, names?.display || null, `13F · CIK ${cik}`);
 
+  // 추적하지 않는 CIK — 백엔드가 400으로 알립니다. 그 문구는 API 호출자를 위한 글('/api/sec13f/institutions 목록의 cik를 쓰세요')이라 화면 글로
+  // 바꾸고, 다시 해도 같은 400이라 다시 시도를 두지 않습니다(QA-584). 서버·연결 실패는 그대로 오류 글(보유 탭은 다시 시도 — QA-190).
+  const untracked = !data && portfolio.errorStatus === 400;
+
   let placeholder;
   if (!data) {
-    placeholder = portfolio.error ? <Banner tone="danger">{portfolio.error}</Banner> : <Skeleton lines={2} label="13F 포트폴리오를 불러오는 중" />;
+    placeholder = untracked ? (
+      <UntrackedNotice cik={cik} link />
+    ) : portfolio.error ? (
+      <Banner tone="danger">{portfolio.error}</Banner>
+    ) : (
+      <Skeleton lines={2} label="13F 포트폴리오를 불러오는 중" />
+    );
   } else if (!data.available) {
     placeholder = <p className="text-sm text-text-2">{data.message ?? "13F 저장본이 없습니다."}</p>;
   }
@@ -169,7 +180,9 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
             {
               key: "holdings",
               label: "보유 종목",
-              content: <HoldingsPanel data={data} error={portfolio.error} onRetry={() => void portfolio.reload()} />,
+              content: (
+                <HoldingsPanel data={data} error={portfolio.error} untrackedCik={untracked ? cik : null} onRetry={() => void portfolio.reload()} />
+              ),
             },
             {
               key: "news",
@@ -189,6 +202,24 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   );
 }
 
+/**
+ * 추적하지 않는 CIK 안내(백엔드 400 — QA-584) — 화면 글과(`link`면) 추적하는 13F 기관 목록(/institutions) 링크(아이콘 + 글). 다시 해도 같은 400이라
+ * 다시 시도는 두지 않습니다.
+ */
+function UntrackedNotice({ cik, link = false }: { cik: string; link?: boolean }) {
+  return (
+    <Banner tone="info">
+      <p className="break-keep">이 대시보드가 추적하는 13F 기관이 아닙니다(CIK {cik}).</p>
+      {link ? (
+        <Link href="/institutions" className={`${LINK_CLASSES} gap-1.5 text-sm`}>
+          <LandmarkIcon size={14} />
+          추적하는 13F 기관 목록
+        </Link>
+      ) : null}
+    </Banner>
+  );
+}
+
 /** 보유 줄의 보조 글 — 클래스·동작·비중 변화(%p, −는 U+2212). 말줄임하지 않습니다(좁은 화면에서 비중 변화 값이 잘렸음 — D1 넘김 P5b). */
 function holdingSubline(holding: Holding): string {
   return [holding.class, withoutLeadingIcon(holding.action), holding.weightDiff !== null ? `비중 ${formatSignedMinus(holding.weightDiff, 2).text}%p` : null]
@@ -199,9 +230,20 @@ function holdingSubline(holding: Holding): string {
 /**
  * 상위 보유 종목(가운데 '보유 종목' 탭) — 목록-검사(MasterDetail): 줄 = 이름·보조 줄(클래스·동작·비중 변화)·비중·평가액, 줄을 고르면 넓은 화면은
  * 오른쪽 검사 칸(처음에 첫 줄), 좁은 화면은 대화상자에 그 줄의 속성과 '정보 검색에서 찾기'. 읽기가 실패하면 '불러오는 중'이 아니라 오류와 다시
- * 시도(QA-190 — 추적하지 않는 CIK는 백엔드 400).
+ * 시도(QA-190). 추적하지 않는 CIK(백엔드 400)는 다시 해도 같아 다시 시도 없이 그 안내(QA-584).
  */
-function HoldingsPanel({ data, error, onRetry }: { data: PortfolioResponse | null; error: string | null; onRetry: () => void }) {
+function HoldingsPanel({
+  data,
+  error,
+  untrackedCik,
+  onRetry,
+}: {
+  data: PortfolioResponse | null;
+  error: string | null;
+  /** 추적하지 않는 CIK(포트폴리오 400)면 그 CIK — 오류·다시 시도 대신 안내. */
+  untrackedCik: string | null;
+  onRetry: () => void;
+}) {
   const user = useSessionUser();
   const holdings = data?.holdings ?? [];
   return (
@@ -223,7 +265,15 @@ function HoldingsPanel({ data, error, onRetry }: { data: PortfolioResponse | nul
         itemLabel={(holding) => holding.name}
         autoSelectFirst
         count={holdings.length > HOLDINGS_SHOWN ? () => `${holdings.length}종목 가운데 비중 상위 ${HOLDINGS_SHOWN}종목` : undefined}
-        placeholder={!data ? error ? <ErrorState message={error} onRetry={onRetry} /> : <Skeleton lines={5} label="보유 종목을 불러오는 중" /> : undefined}
+        placeholder={
+          data ? undefined : untrackedCik ? (
+            <UntrackedNotice cik={untrackedCik} />
+          ) : error ? (
+            <ErrorState message={error} onRetry={onRetry} />
+          ) : (
+            <Skeleton lines={5} label="보유 종목을 불러오는 중" />
+          )
+        }
         emptyText={<p className="text-sm text-text-2">{data?.message ?? "보유 종목이 없습니다."}</p>}
         renderItem={(holding) => (
           <span className="flex items-baseline justify-between gap-3">
