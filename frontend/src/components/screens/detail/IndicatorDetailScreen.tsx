@@ -27,6 +27,13 @@ import { infoSearchEntry } from "@/lib/search";
 import type { MacroOverview } from "@/lib/types";
 import { AiSummaryCard, type DetailLink, ExternalLinksCard, LinkListPanel, NEWS_SOURCES, NewsCard, PriceChartPanel, propertyItems } from "./DetailParts";
 import { DetailTabs } from "./DetailTabs";
+import { useDetailVisit } from "./useDetailVisit";
+
+/** 최근 연 대상의 보조 글 — 통합 검색 지표 결과와 같은 '범주 · 티커'(범주 앞 그림 문자는 뗌). */
+function indicatorVisitSub(categoryTitle: string, ticker: string | null | undefined): string {
+  const category = withoutLeadingIcon(categoryTitle) || categoryTitle;
+  return ticker ? `${category} · ${ticker}` : category;
+}
 
 /** 뼈대 — 위아래 12px(lg 16px), 대상 머리 아래 칸 틀(작업대 대상 문법). */
 const ROOT = "flex min-w-0 flex-col gap-3 lg:gap-4";
@@ -48,7 +55,10 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
   const user = useSessionUser();
   const found = findIndicator(overview.data, indicatorKey);
   // 넓은 화면 빵부스러기의 마지막 칸을 키 대신 지표 이름으로(찾은 뒤에만 — 셸이 같은 주소일 때만 씀).
-  useEntityCrumb(found ? indicatorHref(found.item.key) : null, found?.item.name ?? null);
+  const foundHref = found ? indicatorHref(found.item.key) : null;
+  useEntityCrumb(foundHref, found?.item.name ?? null);
+  // 명령 팔레트의 최근 연 대상 — 찾은 지표만(보조 글은 통합 검색 결과와 같은 '범주 · 티커').
+  useDetailVisit("indicator", foundHref, found?.item.name ?? null, found ? indicatorVisitSub(found.category.title, found.item.ticker) : null);
 
   if (!overview.data) {
     return (

@@ -5,7 +5,7 @@
  *   때만 보입니다(좁은 화면은 지금 통합 검색 그대로 — 실행 명세 §0 W2).
  *   메뉴는 넣지 않습니다(메뉴는 왼쪽 메뉴·탭에 늘 있음). 저장값은 읽을 때 형식을 다시 검사합니다 — 종류 넷, 주소는 상세 화면 세 경로뿐이고
  *   lib/detail의 parse 함수로 다시 풀어 만든 주소만 씁니다. 저장소 값이 바뀌어도(다른 확장·사람이 고침) 다른 주소(javascript: 등)로 보내지 않습니다.
- *   공개 시세 대상의 이름·티커만 담깁니다(실제 계좌 자료 없음).
+ *   공개 시세 대상의 이름·티커만 담깁니다(실제 계좌 자료 없음). 상세 화면 셋도 이름을 읽은 뒤 방문을 넣습니다(`detailVisitEntity` — P4).
  * - 명령: 닫힌 목록(PALETTE_COMMANDS) — 단축키 도움말, 왼쪽 메뉴 접기·펼치기. 둘 다 넓은 화면에서만 보입니다(wideOnly — 명령 팔레트는 넓은 화면
  *   항목, 실행 명세 §0 W2). 효과는 셸 명령(lib/shellCommands) 하나뿐이라 서버를 부르는
  *   효과가 타입에 없습니다. 데이터 새로고침·결정 실행·계좌 초기화·일시정지·실제 매매 켜기·끄기·설정 저장 같은 쓰기 동작은 팔레트에 넣지 않습니다
@@ -14,7 +14,7 @@
  */
 import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
 import { assetMonogram } from "./patternRows";
-import { searchKey, type SearchAvatar, type SearchEntry, type SearchGroup } from "./search";
+import { DEST, searchKey, type SearchAvatar, type SearchEntry, type SearchGroup } from "./search";
 import type { ShellCommand } from "./shellCommands";
 
 // ------------------------------------------------------------------ 명령
@@ -220,6 +220,17 @@ export function recentEntries(list: readonly RecentEntity[]): SearchEntry[] {
     keywords: [],
     avatar: recentAvatar(entity),
   }));
+}
+
+/** 상세 화면 방문의 종류 — 지표·기관·종목(종목 찾기 결과도 종목 상세라 'ticker'). */
+export type DetailVisitKind = "indicator" | "institution" | "ticker";
+
+/**
+ * 상세 화면 방문 → 최근 대상(P4 — 상세 화면이 대상 이름을 읽은 뒤 넣음). '→ 화면' 글은 통합 검색 결과와 같은 글(lib/search DEST), 형식은 저장값과 같은
+ * 검사(normalizeRecent — 상세 세 경로의 정규 주소만, 이름 필수, 글 200자까지)를 거칩니다. 형식 밖이면 null(넣지 않음).
+ */
+export function detailVisitEntity(visit: { kind: DetailVisitKind; label: string; sub: string | null; href: string }): RecentEntity | null {
+  return normalizeRecent({ kind: visit.kind, label: visit.label, sub: visit.sub, href: visit.href, dest: DEST[visit.kind] });
 }
 
 /** 고른 결과 → 최근 대상(지표·기관·종목·종목 찾기만, 메뉴는 null). */

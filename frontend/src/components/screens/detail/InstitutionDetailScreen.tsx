@@ -26,6 +26,7 @@ import { infoSearchEntry } from "@/lib/search";
 import type { Holding, PortfolioResponse } from "@/lib/types";
 import { AiSummaryCard, type DetailLink, ExternalLinksCard, LinkListPanel, NEWS_SOURCES, NewsCard, propertyItems } from "./DetailParts";
 import { DetailTabs } from "./DetailTabs";
+import { useDetailVisit } from "./useDetailVisit";
 
 /** 13F 포트폴리오 화면과 같은 요청 값(같은 응답 캐시) — 8분기, 비중 추이 상위 30. */
 const QUARTERS = 8;
@@ -67,6 +68,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const chartHeadingId = useId();
   // 넓은 화면 빵부스러기의 마지막 칸을 'CIK …' 대신 기관 이름으로(이름을 받은 뒤에만 — 셸이 같은 주소일 때만 씀).
   useEntityCrumb(names?.display ? institutionHref(cik) : null, names?.display || null);
+  // 명령 팔레트의 최근 연 대상 — 기관 이름을 받은 뒤에만('CIK …' 자리표시는 넣지 않음, 보조 글은 통합 검색 결과와 같은 '13F · CIK …').
+  useDetailVisit("institution", names?.display ? institutionHref(cik) : null, names?.display || null, `13F · CIK ${cik}`);
 
   let placeholder;
   if (!data) {

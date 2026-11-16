@@ -42,6 +42,7 @@ import {
   propertyItems,
 } from "./DetailParts";
 import { type DetailTab, DetailTabs } from "./DetailTabs";
+import { useDetailVisit } from "./useDetailVisit";
 import { useStockQuote } from "./useStockQuote";
 
 /** 13F 보유 기관 목록에 보이는 줄 수. */
@@ -79,6 +80,8 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   const entityLink = infoSearchEntityLink(stockEntityKey(market, code), "정보 검색에서 보기", user);
   // 넓은 화면 빵부스러기의 마지막 칸을 코드 대신 종목 이름으로(시세를 읽은 뒤에만 — 셸이 같은 주소일 때만 씀).
   useEntityCrumb(quote ? stockHref(market, code) : null, quote ? name : null);
+  // 명령 팔레트의 최근 연 대상 — 시세를 읽은 뒤에만(조회하지 않음·실패는 넣지 않음).
+  useDetailVisit("ticker", quote ? stockHref(market, code) : null, quote ? name : null, quote ? sub : null);
 
   let placeholder;
   if (!quoteState.data) {
