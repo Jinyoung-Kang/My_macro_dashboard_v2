@@ -171,17 +171,17 @@ snapshot.get().putFreshness(out);   // collectedAtKst · ageSeconds · stale
 ([ADR 0004](adr/0004-frontend-layering.md)). 값이 없으면 `EMPTY`(`—`)로 그립니다 — 0으로 채우지
 않습니다. 빈값·추정·이전 값 배지·출처 줄은 `components/patterns`가 그리므로 새 화면은 패턴을 씁니다.
 
-**메뉴 추가**는 `lib/nav.ts`의 `TABS`에 한 줄입니다 — 왼쪽 내비·하단 탭·하위 메뉴 줄·브라우저 탭 제목·통합 검색이 이 표 하나를
+**메뉴 추가**는 `lib/nav.ts`의 `TABS`에 한 줄입니다 — 왼쪽 나무 메뉴·빵부스러기·하단 탭·하위 메뉴 줄·브라우저 탭 제목·통합 검색이 이 표 하나를
 씁니다. 운영자 전용·유료 화면이면 `lib/access.ts`의 `OWNER_ONLY_MENUS`·`PRO_MENUS`에도 넣습니다(경로 앞부분 일치라 그 아래
 주소까지 함께 걸림). `nav.test.ts`·`access.test.ts`가 탭 표와 보이는 범위를 고정합니다. 새 API 경로는 백엔드 `AccessPolicy` 표에도(ADR 0010).
 
 ```
 frontend/src/
 ├── app/(dashboard)/<경로>/page.tsx  라우트 — 새 화면은 screens 컴포넌트를 그리기만. 옛 화면(4단계에 옮김)은 섹션 파일까지 여기
-├── components/ui/                 기본 조각(index.tsx) + Radix 감싼 Dialog·ConfirmDialog·Toast(하위 경로로 가져옴, 배럴에 넣지 않음)
+├── components/ui/                 기본 조각(index.tsx) + Radix 감싼 Dialog·ConfirmDialog·Toast·DropdownMenu·Tooltip(하위 경로로 가져옴, 배럴에 넣지 않음)
 ├── components/patterns/           화면 패턴(AssetRow·Hero·StatTile·DataTable·배지·Empty…) — `@/components/patterns` 배럴로만
 ├── components/charts/             Recharts 래퍼 — 화면은 `@/components/charts`(index.tsx)에서만 가져옴
-├── components/shell/              셸(왼쪽 내비·상단바·하위 메뉴 줄·하단 탭·검색·계정·빌드 정보)
+├── components/shell/              셸(나무 메뉴·상단바·빵부스러기·명령 팔레트·단축키 도움말·계정 메뉴·하위 메뉴 줄·하단 탭·빌드 정보)
 ├── components/screens/<탭>/       새 화면 조립(home·paper)
 ├── hooks/                         useApi·useAsyncAction·새로고침 신호 …
 └── lib/                           순수 함수 — 서식·거래소 달력, 메뉴 표(nav)·검색 색인(search), 화면 모델(home·paperOverview·patterns…)

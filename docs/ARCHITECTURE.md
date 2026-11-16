@@ -273,10 +273,11 @@ config/          설정 값(AppProperties) · 정기 작업 켜기 — 여러 �
 
 ```
 app/(dashboard)/layout.tsx  세션·읽지 않은 알림 수를 한 번 읽어 셸에 넘김(셸은 다시 읽지 않음)
-components/shell/           왼쪽 내비(1024px 이상)·하단 탭(그 아래)·상단바(통합 검색 ⌘K·알림 벨)·하위 메뉴 줄 — 메뉴 표는 lib/nav.ts 하나
+components/shell/           1024px 이상: 왼쪽 나무 메뉴(접으면 아이콘 레일)·48px 상단바(빵부스러기·명령 팔레트 ⌘K·새로고침 아이콘(운영자)·알림 벨·계정 메뉴)
+                            그 아래: 상단바(통합 검색·알림 벨)·하위 메뉴 줄·하단 탭 — 메뉴 표는 lib/nav.ts 하나(빵부스러기 lib/breadcrumbs, ADR 0042 결정 5)
 components/screens/<탭>/    화면 조립(홈·모의매매 — 미국·한국은 같은 조립에 시장 인자, 검색 상세 — 종목·지표·기관) — 구역마다 따로 읽어 한 구역의 실패가 다른 구역을 비우지 않음
 components/patterns/        자산 행·히어로·통계 타일·표·배지 — 빈값 "—"·추정·이전 값·출처 표시를 여기서 강제
-components/charts/ · ui/    Recharts 래퍼(축 규칙) · 기본 조각(Radix 대화상자·토스트)
+components/charts/ · ui/    Recharts 래퍼(축 규칙) · 기본 조각(Radix 대화상자·토스트·메뉴·툴팁)
 lib/                        표시 규칙(서식·메뉴·검색·화면 모델) — React를 모르는 순수 함수
 ```
 
