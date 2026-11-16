@@ -155,8 +155,8 @@ describe("밑줄 탭 underlineTabClasses", () => {
   it("wrap — 탭마다 제 줄의 바닥선: 나머지 1px 경계선 + 1px 아래 여백(지금 탭 2px 밑줄과 같은 높이), 지금 탭은 강조 파랑 2px, 둘 다 탭 줄 바닥선과 -mb-px로 겹침", () => {
     const active = tokens(underlineTabClasses(true, "sm", true));
     const idle = tokens(underlineTabClasses(false, "sm", true));
-    expect(active).toEqual(expect.arrayContaining(["border-b-2", "border-accent", "font-semibold", "text-text", "-mb-px", "min-h-11", "lg:min-h-[30px]", "whitespace-nowrap"]));
-    expect(idle).toEqual(expect.arrayContaining(["border-b", "border-border", "pb-px", "-mb-px", "text-text-2", "min-h-11"]));
+    expect(active).toEqual(expect.arrayContaining(["border-b-2", "border-accent", "font-semibold", "text-text", "-mb-px", "whitespace-nowrap"]));
+    expect(idle).toEqual(expect.arrayContaining(["border-b", "border-border", "pb-px", "-mb-px", "text-text-2"]));
     expect(idle).not.toContain("border-transparent");
     expect(idle).not.toContain("font-semibold");
     // 고대비에서도 나머지 탭의 1px 선을 남깁니다(줄마다 바닥선 — 지우면 첫 줄 고른 탭의 밑줄이 다시 둘째 줄 위에 뜸).
@@ -164,6 +164,24 @@ describe("밑줄 탭 underlineTabClasses", () => {
     // 한 줄 탭(기본)은 그대로입니다.
     expect(tokens(underlineTabClasses(false, "sm"))).toEqual(tokens(underlineTabClasses(false, "sm", false)));
     expect(tokens(underlineTabClasses(false, "sm"))).not.toContain("-mb-px");
+  });
+
+  // 2026-11-16 결정 1 검토 지적: -mb-px로 둘째 줄이 첫 줄 탭의 맨 아래 1px을 덮어, 첫 줄 탭의 누르는 자리가 lg 미만 43px(넓은 화면 29px)이고 줄 높이도
+  // 한 줄 탭 줄보다 1px 낮았습니다(44·30px — 한 줄 탭 줄 45·31px). 바꾸기 전(min-h-11 lg:min-h-[30px])에는 실패합니다.
+  it("wrap 탭은 크기마다 1px 높아(sm 45·lg 31px, md 49·lg 41px) 겹친 1px을 빼도 한 줄 탭과 같은 누르는 자리·줄 높이", () => {
+    for (const active of [true, false]) {
+      const sm = tokens(underlineTabClasses(active, "sm", true));
+      expect(sm).toEqual(expect.arrayContaining(["min-h-[45px]", "lg:min-h-[31px]", "text-sm"]));
+      expect(sm).not.toContain("min-h-11");
+      expect(sm).not.toContain("lg:min-h-[30px]");
+      const md = tokens(underlineTabClasses(active, "md", true));
+      expect(md).toEqual(expect.arrayContaining(["min-h-[49px]", "lg:min-h-[41px]", "text-[15px]", "lg:text-sm"]));
+      expect(md).not.toContain("min-h-12");
+      expect(md).not.toContain("lg:min-h-10");
+    }
+    // 한 줄 탭은 그대로(44·30px, 48·40px).
+    expect(tokens(underlineTabClasses(true, "sm"))).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-[30px]"]));
+    expect(tokens(underlineTabClasses(true, "md"))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
   });
 });
 
