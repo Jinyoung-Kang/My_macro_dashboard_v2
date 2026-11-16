@@ -57,6 +57,11 @@ export interface SeriesRef {
   group: string;
   unit: string;
   source: string;
+  /**
+   * 상관 응답의 x·y에만 옵니다 — 이 계열을 추정치로 읽었는가(예: KODEX 200 기반 KOSPI200 선물). 참이면 `source`가 추정 출처로 바뀌어 오고,
+   * 그 계열로 낸 상관계수도 추정치입니다(QA-634). 계열 목록(`/api/analytics/series`)에는 없습니다 — 추정 여부는 읽을 때 정해집니다.
+   */
+  isEstimated?: boolean;
 }
 
 export interface CorrelationResponse {

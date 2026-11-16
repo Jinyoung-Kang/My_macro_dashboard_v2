@@ -55,7 +55,7 @@ async function coefficientTile(): Promise<HTMLElement> {
 describe("QA-634 추정 계열로 낸 상관에 '추정' 배지", () => {
   // 수정 전에는 응답의 x·y.isEstimated를 읽지 않아(SeriesRef에 칸이 없음) 추정 계열(KODEX 200 기반 KOSPI200 선물 등)로 낸 상관계수가
   // 확정치처럼 보였습니다 — 주의 글(notes) 한 줄만 있었습니다(PRINCIPLES '추정치는 isEstimated와 함께').
-  it.fails("X나 Y가 추정 계열이면 상관계수 칸에 '추정' 배지, 둘 다 공식 값이면 배지 없음", async () => {
+  it("X나 Y가 추정 계열이면 상관계수 칸에 '추정' 배지, 둘 다 공식 값이면 배지 없음", async () => {
     const estimated = correlation();
     reads[CORRELATION] = { ...estimated, y: { ...estimated.y, isEstimated: true } };
     const { unmount } = render(<CorrelationPage />);

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { LineSeries, ScatterPlot, SERIES_COLORS } from "@/components/charts";
+import { EstimateBadge } from "@/components/patterns";
 import {
   Banner,
   Card,
@@ -17,7 +18,7 @@ import {
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { EMPTY, formatNumber } from "@/lib/format";
-import { correlationStrength } from "@/lib/correlation";
+import { correlationEstimated, correlationStrength } from "@/lib/correlation";
 import type { CorrelationResponse, SeriesRef } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -99,7 +100,12 @@ export default function CorrelationPage() {
             <Metric
               label={`상관계수 (${mode === "change" ? "변화" : "수준"})`}
               value={data.overall === null ? EMPTY : formatNumber(data.overall, 3)}
-              caption={correlationStrength(data.overall)}
+              // 두 계열 가운데 하나라도 추정치면 상관계수도 추정치입니다 — 배지를 늘 보입니다(QA-634).
+              caption={
+                <>
+                  {correlationStrength(data.overall)} <EstimateBadge estimated={correlationEstimated(data)} />
+                </>
+              }
             />
             <Metric
               label="표본 수"
