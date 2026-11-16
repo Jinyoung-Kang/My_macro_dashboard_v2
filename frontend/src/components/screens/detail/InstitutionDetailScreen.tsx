@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { LineChart } from "@/components/charts";
 import { Hero, ProvenanceBadge, Skeleton } from "@/components/patterns";
-import { Banner, Card, ErrorState, Freshness, PageHeader } from "@/components/ui";
+import { Banner, Card, ErrorState, FOCUS_RING, Freshness, PageHeader, TEXT_TARGET } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { CHART_KEY, detailQuery, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
@@ -86,7 +86,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
             subtitle={data?.latest ? `${data.latest.reportDate} 보고 기준 · 비중 순 · 지난 분기 대비` : undefined}
             source="SEC EDGAR 13F"
             actions={
-              <Link href="/institutions" className="rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline">
+              // 따로 선 링크라 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)와 키보드 포커스 링 — 글 높이(16px)뿐이고 링이 없었습니다(QA-531).
+              <Link href="/institutions" className={`${TEXT_TARGET} rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline ${FOCUS_RING}`}>
                 13F 포트폴리오에서 자세히
               </Link>
             }

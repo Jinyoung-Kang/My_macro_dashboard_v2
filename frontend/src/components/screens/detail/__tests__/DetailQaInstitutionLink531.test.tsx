@@ -53,7 +53,8 @@ describe("기관 상세 — '13F 포트폴리오에서 자세히' 링크의 누�
   // QA-531: 링크 클래스가 'rounded-sm text-xs font-medium text-text underline-offset-2 hover:underline'뿐이라 lg 미만 높이 클래스가 없고
   // (글 높이 16px) 포커스 링도 없었습니다.
   // 수정 전 실패: belowLgTarget(링크 클래스)이 'lg 미만 44px 높이 클래스(min-h-11 등) 없음'(재현 커밋에서는 it.fails).
-  it.fails("좁은 화면 44px 높이 클래스와 focus-visible 바깥선이 있다 — 주소는 13F 포트폴리오 그대로", async () => {
+  // 고침: 링크에 TEXT_TARGET(lg 미만 min-h-11, lg 이상 글 높이)과 FOCUS_RING.
+  it("좁은 화면 44px 높이 클래스와 focus-visible 바깥선이 있다 — 주소는 13F 포트폴리오 그대로", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <InstitutionDetailScreen cik={CIK} />
