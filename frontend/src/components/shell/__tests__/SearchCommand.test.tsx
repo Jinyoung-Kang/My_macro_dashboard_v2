@@ -407,3 +407,26 @@ describe("입력칸(QA-515)", () => {
     expect(input().className.split(/\s+/)).toContain("[&::-webkit-search-cancel-button]:hidden");
   });
 });
+
+describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, 넓은 화면 조작 30·40px)", () => {
+  const classes = (element: Element) => element.className.split(/\s+/);
+
+  it("여는 단추는 좁은 화면에서 상단바 남는 폭을 다 쓰는 44px, 넓은 화면은 30px에 폭 고정(176px·xl 256px)", () => {
+    render(<SearchCommand user={MEMBER} />);
+    expect(classes(trigger())).toEqual(expect.arrayContaining(["h-11", "flex-1", "min-w-0", "lg:h-[30px]", "lg:flex-none", "lg:w-44", "xl:w-64"]));
+    expect(classes(trigger()).some((name) => name.startsWith("lg:basis-") || name.startsWith("lg:max-w-"))).toBe(false);
+  });
+
+  it("입력칸은 넓은 화면에서 경계 포함 40px·16px 글, 결과 줄은 40px·14px 이름 — 좁은 화면은 48px 줄·15px 그대로", async () => {
+    openSearch();
+    await act(async () => {});
+    expect(classes(input())).toEqual(expect.arrayContaining(["h-12", "text-[17px]", "lg:h-[38px]", "lg:text-base"]));
+    expect(classes(input().parentElement as HTMLElement)).toContain("border");
+
+    type("aapl");
+    const row = screen.getByRole("option", { name: /Apple Inc\./ });
+    expect(classes(row)).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
+    expect(classes(within(row).getByText("Apple Inc."))).toEqual(expect.arrayContaining(["text-[15px]", "lg:text-sm"]));
+    expect(classes(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
+  });
+});

@@ -169,11 +169,13 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
       trigger={
         // 투명 1px 테두리 — 고대비(forced-colors) 모드에서 바탕색이 지워져도 입력칸 모양의 경계가 시스템 색 테두리로 남습니다(단추와 같음, 명세 D9).
         // 모서리는 4px(입력칸·단추와 같음 — 작업대 실행 명세 §3-8, 2026-11-16 알약 정리).
+        // 좁은 화면(lg 미만)은 상단바 위 줄의 남는 폭을 다 쓰는 44px. 넓은 화면은 48px 상단바의 조작 높이 30px(§3-7)에 폭을 고정합니다(176px,
+        // xl 256px) — 남는 폭은 빵부스러기가 씁니다(§5).
         <button
           type="button"
           aria-label="종목·기관·지표·메뉴 검색"
           aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
-          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-transparent bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-10 lg:max-w-[520px] lg:basis-[520px]"
+          className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-transparent bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-[30px] lg:w-44 lg:flex-none lg:gap-2 lg:px-2.5 xl:w-64"
         >
           <SearchIcon />
           <span className="min-w-0 flex-1 truncate">종목·기관·지표·메뉴 검색</span>
@@ -184,7 +186,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
       }
     >
       {/* 입력칸은 대화상자 닫기 단추(오른쪽 위) 앞에서 끝납니다 — 안쪽 여백으로 비키면 입력칸 테두리·포커스 링 위에 닫기 단추가 겹쳤습니다.
-          덮개 바탕이 surface-2라(작업대 명세 §3-3) 입력칸은 공용 입력칸처럼 한 단계 어두운 surface와 border-strong 경계로 그립니다. */}
+          덮개 바탕이 surface-2라(작업대 명세 §3-3) 입력칸은 공용 입력칸처럼 한 단계 어두운 surface와 border-strong 경계로 그립니다.
+          넓은 화면은 큰 조작 높이 40px(§3-7 — 검색창, 경계 2px 포함)·글 16px, 좁은 화면은 50px·17px 그대로. */}
       <div className="mr-10 mt-1 flex items-center gap-3 rounded-control border border-border-strong bg-surface px-4 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus">
         <SearchIcon size={18} />
         <input
@@ -206,7 +209,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           onKeyDown={onInputKeyDown}
           // 브라우저 기본 지우기 X는 숨깁니다(QA-515) — 어두운 화면에서 굵은 흰색으로 그려져 바로 옆 대화상자 닫기 X와 헷갈렸습니다. type=search는
           // 휴대폰 자판의 검색 키 때문에 그대로 두고, 따로 지우기 단추는 두지 않습니다(Esc·닫기로 닫으면 다음에 빈 칸으로 열림).
-          className="h-12 min-w-0 flex-1 bg-transparent text-[17px] text-text outline-none placeholder:text-text-3 [&::-webkit-search-cancel-button]:hidden"
+          className="h-12 min-w-0 flex-1 bg-transparent text-[17px] text-text outline-none placeholder:text-text-3 lg:h-[38px] lg:text-base [&::-webkit-search-cancel-button]:hidden"
         />
       </div>
 
@@ -248,7 +251,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                     onMouseMove={() => {
                       if (!selected) setActive(index);
                     }}
-                    className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 ${selected ? "bg-surface" : ""}`}
+                    className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 lg:min-h-10 lg:py-1 ${selected ? "bg-surface" : ""}`}
                   >
                     {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, 고른 줄 바탕(surface — 덮개 surface-2보다 한 단계 어두움)만으로는
                         대비가 1.1:1이라 왼쪽 잉크 막대를 함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}
@@ -262,7 +265,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                       {entry.avatar && "tab" in entry.avatar ? <TabIcon tab={entry.avatar.tab} size={16} /> : entry.avatar?.text}
                     </span>
                     <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-[15px] text-text">
+                      <span className="truncate text-[15px] text-text lg:text-sm">
                         {entry.label}
                         {entry.locked && (
                           <span title="유료 등급 기능" className="ml-1.5 inline-flex align-[-2px]">
@@ -292,12 +295,12 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         <Link
           href={infoSearch.href}
           onClick={() => changeOpen(false)}
-          className={`mt-2 flex min-h-12 items-center gap-3 rounded-control px-3 py-2 hover:bg-surface ${FOCUS_RING}`}
+          className={`mt-2 flex min-h-12 items-center gap-3 rounded-control px-3 py-2 hover:bg-surface lg:min-h-10 lg:py-1 ${FOCUS_RING}`}
         >
           <span aria-hidden="true" className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface text-text-2">
             <TabIcon tab="search" size={16} />
           </span>
-          <span className="min-w-0 flex-1 truncate text-[15px] text-accent">{infoSearch.label}</span>
+          <span className="min-w-0 flex-1 truncate text-[15px] text-accent lg:text-sm">{infoSearch.label}</span>
           <span aria-hidden="true" className="shrink-0 text-xs text-text-3">
             → 기사·글 모아 보기
           </span>
