@@ -174,7 +174,7 @@ export function advancedStatus(entry: Pick<AdvancedEntry, "status" | "color">): 
 }
 
 /**
- * 심화 지표 KPI 띠 — 응답 차례(order) 그대로. 값은 지표 자릿수·단위, 변화는 직전 대비, 상태는 아이콘 + 글(톤이 없는 상태는 메모 앞에 '상태: …'),
+ * 심화 지표 KPI 띠 — 응답 차례(order) 그대로. 값은 지표 자릿수·단위, 변화는 직전 대비, 상태는 아이콘 + 글(톤이 없는 상태는 메모 맨 앞 '상태: ….'),
  * 메모는 해석 글 다음에 '표본 백분위 · 표본 · 기준일'(표본을 함께 적어야 '3년 안의 중간'이 '역사적 중간'으로 읽히지 않음), 출처는 지표마다.
  * 받지 못한 지표는 '—'와 '수집 실패'(상태·표본은 적지 않음).
  */
@@ -193,12 +193,15 @@ export function advancedKpis(data: AdvancedIndicators | null | undefined): Macro
       const sample = percentile === null ? null : formatSampleWindow(entry.percentileFrom, entry.percentileCount, entry.percentileYears);
       const asOf = presentText(entry.asOf);
       const stats = [
-        status === null && presentText(entry.status) ? `상태: ${presentText(entry.status)}` : null,
         percentile === null ? null : `표본 백분위 ${formatNumber(percentile, 1)}%`,
         sample ? `표본 ${sample}` : null,
         asOf ? `기준일 ${asOf}` : null,
       ].filter((part): part is string => part !== null);
-      const note = [presentText(entry.note), stats.length > 0 ? stats.join(" · ") : null].filter((part): part is string => part !== null).join(" ");
+      // 톤이 없는 상태(파랑 등)는 메모 맨 앞 '상태: …'(톤이 있는 상태는 위 상태 글이 먼저 읽힘) → 해석 글 → 표본·기준일.
+      const toneless = status === null ? presentText(entry.status) : null;
+      const note = [toneless ? `상태: ${toneless}.` : null, presentText(entry.note), stats.length > 0 ? stats.join(" · ") : null]
+        .filter((part): part is string => part !== null)
+        .join(" ");
       return {
         key: entry.id,
         label: entry.label,

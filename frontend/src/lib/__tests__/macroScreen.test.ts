@@ -246,11 +246,14 @@ describe("심화 지표 KPI", () => {
     });
   });
 
-  it("해석 색은 아이콘 + 글의 상태 톤 — 초록 정상·주황 주의·빨강 위험('주의:' 머리말), 파랑은 톤 없이 메모 앞 '상태: …'", () => {
+  it("해석 색은 아이콘 + 글의 상태 톤 — 초록 정상·주황 주의·빨강 위험('주의:' 머리말), 파랑은 톤 없이 메모 맨 앞 '상태: ….'", () => {
     const tiles = advancedKpis(data);
     expect(tiles[0].status).toEqual({ tone: "danger", text: "깊은 역전", srPrefix: "주의: " });
     expect(tiles[1].status).toBeUndefined();
-    expect(tiles[1].note).toBe("상태: 완화 · 기준일 2026-11-07");
+    expect(tiles[1].note).toBe("상태: 완화. 기준일 2026-11-07");
+    // 해석 글이 있으면 '상태' 다음, 표본·기준일 앞.
+    const blue = advancedKpis({ ...data, latest: { ...data.latest, NFCI: { ...data.latest.NFCI, note: "평균보다 완화적입니다." } } })[1];
+    expect(blue.note).toBe("상태: 완화. 평균보다 완화적입니다. 기준일 2026-11-07");
     expect(tiles[3].status).toEqual({ tone: "ok", text: "정상" });
     expect(advancedStatus({ status: "경계", color: "orange" })).toEqual({ tone: "warn", text: "경계" });
     expect(advancedStatus({ status: "경계", color: "yellow" })).toEqual({ tone: "warn", text: "경계" });
