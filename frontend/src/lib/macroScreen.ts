@@ -245,6 +245,8 @@ export type MacroIndicatorRow = HomeRow & {
   timeText: string | null;
   /** 예전 저장본(지연 칸 없음)의 알림 글(카드 note) — 지금 저장본은 null. */
   legacyNote: string | null;
+  /** 카드 경고(선물 대신 지수 값·추정치·보정 실패 — 수집기 warning)만. 수집 실패는 값 칸이 '—'와 사유로 말하므로 넣지 않습니다(`warning`은 둘을 합친 글). */
+  cardWarning: string | null;
   /** 실시간 값을 얹은 줄인가(ADR 0024 — 표시 전용). */
   live: boolean;
 };
@@ -296,6 +298,7 @@ export function macroIndicatorRow(item: MacroCardView, clock: MarketClock): Macr
     sessionText: joinPresent([session.label, delayLabel(session.delayMin)]),
     timeText: item.live ? `실시간 ${liveTime(item.live)}` : lastTs === null ? null : formatKst(lastTs),
     legacyNote: item.delayMinutes === undefined ? (presentText(item.note) ? withoutLeadingIcon(item.note as string) : null) : null,
+    cardWarning: presentText(item.warning),
     live,
   };
 }

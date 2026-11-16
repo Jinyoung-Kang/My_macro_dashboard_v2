@@ -59,26 +59,40 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** 지표 표에서 그 지표 줄의 '기준' 칸 글(출처 · 장 상태 · 지연 · 시각과 배지 — 낭독 머리말 '출처: ' 포함). */
+async function basisOf(name: string): Promise<string> {
+  const row = (await screen.findByRole("button", { name })).closest("tr") as HTMLElement;
+  return row.lastElementChild?.textContent ?? "";
+}
+
+// 작업대 화면 언어(P5a)에서 카드가 지표 표의 줄이 되며, 장 상태·지연은 '기준' 칸의 출처 배지 한 줄(홈 시장 표와 같은 꼴 —
+// '출처 · 장 상태 · 열린 장의 지연 · 시각')로 들어갔습니다. 뜻(장 상태와 지연이 한곳, '실시간'이 따로 뜨지 않음)은 그대로입니다.
 describe("매크로 카드 배지", () => {
-  it("장이 열려 있으면 '개장 · 지연'을 배지 하나로, 닫혀 있으면 '마감'만 — '실시간' 배지가 따로 뜨지 않는다", async () => {
+  it("장이 열려 있으면 '개장 · 지연'을 한 줄로, 닫혀 있으면 '마감'만 — '실시간' 배지가 따로 뜨지 않는다", async () => {
     render(<MacroPage />);
 
-    expect(await screen.findByText("개장 · 실시간")).toBeTruthy();          // 미국채(전자거래 시간)
-    expect(screen.getByText("개장 · 10분 지연")).toBeTruthy();              // ES 선물
-    expect(screen.getAllByText("마감").length).toBe(2);                       // S&P 500 지수, 닛케이(지수 값)
+    expect(await basisOf("미국채 10년물 수익률(%)")).toContain("개장 · 실시간");   // 미국채(전자거래 시간)
+    expect(await basisOf("S&P 500 선물 (ES)")).toContain("개장 · 10분 지연");      // ES 선물
+    for (const name of ["S&P 500", "닛케이225 지수 (선물 대체)"]) {               // S&P 500 지수, 닛케이(지수 값)
+      const basis = await basisOf(name);
+      expect(basis).toContain("· 마감");
+      expect(basis).not.toMatch(/실시간|지연/);
+    }
     expect(screen.queryByText("실시간")).toBeNull();
     expect(screen.queryByText("실시간 · TradingView 참고")).toBeNull();
   });
 
-  it("참고 시세는 출처 줄에, 지연이 아닌 알림은 노란 배지로 따로", async () => {
+  it("참고 시세는 출처 줄에, 지연이 아닌 알림은 경고 상태 글(아이콘 + 글)로 따로", async () => {
     render(<MacroPage />);
 
     expect((await screen.findAllByText(/TradingView Scanner · 참고 시세/)).length).toBeGreaterThan(0);
-    const notice = screen.getByText("선물 조회 실패 · 지수 값");
+    const notice = screen.getByText("선물 조회 실패 · 지수 값").parentElement as HTMLElement;
     expect(notice.className).toContain("text-warn");
+    expect(notice.querySelector("svg[aria-hidden='true']")).toBeTruthy();
+    expect(within(notice).getByText("주의:").className).toContain("sr-only");
   });
 
-  it("이어받은 카드는 '이전 값' 배지 — 경고 기호는 이모지 글자가 아니라 장식 아이콘 + 낭독기용 '주의: '", async () => {
+  it("이어받은 카드는 '이전 값' 배지 — 경고 기호는 이모지 글자가 아니라 장식 아이콘 + 낭독기용 '주의: ', 사유는 글로", async () => {
     const stale = { ...OVERVIEW, categories: [{ id: "ust", title: "미국 국채 수익률", items: [
       card({ key: "us10y", name: "미국채 10년물 수익률(%)", market: "ust", delayMinutes: 0, isStale: true, staleReason: "HTTP 429" }),
     ] }] };
@@ -86,11 +100,11 @@ describe("매크로 카드 배지", () => {
       path.startsWith("/api/macro/overview") ? Promise.resolve(stale) : new Promise(() => {}));
     render(<MacroPage />);
 
-    const badge = await screen.findByText("이전 값");
+    const badge = (await screen.findByText("이전 값")).parentElement as HTMLElement;
     expect(badge.className).toContain("text-warn");
-    expect(badge.getAttribute("title")).toContain("HTTP 429");
+    expect(badge.textContent).toContain("HTTP 429");
     expect(badge.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-    expect(badge.textContent).toBe("주의: 이전 값");
+    expect(badge.textContent).toBe("주의: 이전 값 · HTTP 429");
   });
 
   it("장단기 금리차 해석 기준의 '역전'은 경고 상태 글 — 기호 없이 '역전 (Inversion)'과 아이콘", async () => {

@@ -6,36 +6,26 @@ import {
   LIVE_THRESHOLD_SECONDS,
   useAutoRefreshSeconds,
 } from "@/components/AutoRefresh";
+import { type Column, DataTable } from "@/components/patterns";
 import { RawSnapshotActions } from "@/components/RawSnapshotCard";
-import { SessionBadge, useKrOfficialHolidays, useMinuteClock } from "@/components/SessionBadge";
-import {
-  Banner,
-  Card,
-  ErrorState,
-  Freshness,
-  Loading,
-  Metric,
-  PageHeader,
-  Panel,
-  SourceBadge,
-} from "@/components/ui";
-import { type Column, DataTable, EstimateBadge } from "@/components/patterns";
-import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
+import { Freshness, PageHeader, Panel } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
+import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
 import { useLivePrices } from "@/hooks/useLivePrices";
+import { useMinuteClock } from "@/hooks/useMinuteClock";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
-import { SOURCES, uniqueSources } from "@/lib/sources";
-import { EMPTY, formatKst, withoutLeadingIcon } from "@/lib/format";
-import { cardNotices, categoryDelay } from "@/lib/macroCards";
+import { SOURCES } from "@/lib/sources";
 import { macroCardView, macroLiveItems, macroLiveNotice } from "@/lib/macroLive";
+import { macroIndicatorGroups } from "@/lib/macroScreen";
 import type {
   AdvancedIndicators,
-  MacroItem,
   MacroOverview,
   RiskIndicators,
 } from "@/lib/types";
 import { FxCompareSection } from "./FxCompareSection";
+import { IndicatorsSection } from "./IndicatorsSection";
 import { SpreadSection } from "./SpreadSection";
 import { RiskSection } from "./RiskSection";
 import { AdvancedSection } from "./AdvancedSection";
@@ -126,9 +116,14 @@ export default function MacroPage() {
   );
   // 일부만 받았어도 출처별 사유를 적습니다(QA-184) — 연결·응답 문제(error)가 있으면 그것을 먼저.
   const liveNotice = macroLiveNotice(livePrices.error ?? livePrices.sourceError, categories);
+  // 지표 표의 줄 — 홈 시장 표와 같은 규칙에 미리보기 칸을 덧붙인 것(lib/macroScreen). 장 상태는 보는 시각(1분마다)·공휴일·저장본 수집 시각으로.
+  const groups = useMemo(
+    () => (categories ? macroIndicatorGroups(categories, { now, krOfficial, collectedAt: data?.collectedAtKst ?? null }) : null),
+    [categories, now, krOfficial, data?.collectedAtKst],
+  );
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex flex-col gap-4 lg:gap-6">
       <PageHeader
         title="거시경제 매크로 지표"
         description="환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 6종"
@@ -155,8 +150,8 @@ export default function MacroPage() {
             적지 않으면 "10초로 해 뒀는데 숫자가 그대로"로 읽힙니다. */}
         {refreshSeconds > 0 && (
           <p className="mt-1 text-xs text-text-3">
-            카드 시세는 고른 간격마다 서버가 바로 받아 밀어 줍니다(TradingView·네이버, 저장하지 않음). 출처가 지연 시세인
-            카드(선물·상하이)는 배지에 그 지연을 적습니다.
+            지표 시세는 고른 간격마다 서버가 바로 받아 밀어 줍니다(TradingView·네이버, 저장하지 않음). 출처가 지연 시세인
+            지표(선물·상하이)는 기준 칸에 그 지연을 적습니다.
           </p>
         )}
         {liveNotice && <p className="mt-1 text-xs text-text-3">{liveNotice}</p>}
@@ -164,79 +159,13 @@ export default function MacroPage() {
 
       {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
           페이지 전체가 로딩으로 바뀌고 방금 조작한 선택 상자가 사라졌습니다(QA-047). */}
-
-      {overview.loading && !data && <Loading label="매크로 지표를 불러오는 중…" />}
-      {overview.error && <ErrorState message={overview.error} onRetry={overview.reload} />}
-      {data && (
-        <>
-        {!data?.available && (
-          <Banner tone="warn">
-            {data?.message ?? "매크로 데이터가 없습니다. 수집기를 실행하세요."}
-          </Banner>
-        )}
-
-        {categories?.map((category) => (
-          <Card
-            key={category.id}
-            title={category.title}
-            subtitle={categoryDelay(category)}
-            source={uniqueSources(category.items.map((item) => itemSource(item))) || undefined}
-          >
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {category.items.map((item) => (
-                <Metric
-                  key={item.key}
-                  label={
-                    // 이름과 배지를 한 줄에 두면 이름이 긴 카드(엔/원 100엔당)만 배지가
-                    // 다음 줄로 밀려, 같은 줄 카드끼리 값의 높이가 어긋났습니다.
-                    // 모든 카드를 "이름 줄 + 배지 줄"로 같은 구조로 둡니다.
-                    <span className="flex flex-col gap-1">
-                      <span>{item.name}</span>
-                      <span className="flex min-h-5 flex-wrap items-center gap-1">
-                        {/* 개장 상태와 시세 지연은 배지 하나("개장 · 10분 지연")로, 지연이 아닌 알림만 따로 둡니다.
-                            예전 저장본(delayMinutes 없음)은 예전처럼 note 배지를 씁니다. */}
-                        {item.delayMinutes === undefined && item.note && <SourceBadge>{withoutLeadingIcon(item.note)}</SourceBadge>}
-                        <SessionBadge
-                          market={item.market}
-                          now={now}
-                          krOfficial={krOfficial}
-                          lastTs={item.lastTs}
-                          collectedAt={data?.collectedAtKst}
-                          delayMinutes={item.delayMinutes}
-                          stale={item.isStale}
-                        />
-                        {/* 추정치(수집기 isEstimated — TradingView 참고 시세 카드)는 '추정' 배지를 늘 보입니다(홈 시장 표와 같음, QA-620). */}
-                        <EstimateBadge estimated={item.isEstimated} />
-                        {item.delayMinutes !== undefined && cardNotices(item).map((notice) => (
-                          <NoticeBadge key={notice.text} title={notice.title} tone={notice.tone}>{notice.text}</NoticeBadge>
-                        ))}
-                      </span>
-                    </span>
-                  }
-                  value={item.status === "fail" ? "수집 실패" : item.priceStr ?? EMPTY}
-                  delta={item.delta}
-                  deltaText={item.deltaStr ?? EMPTY}
-                  tone={item.status === "fail" ? "text-text-3" : undefined}
-                  source={itemSource(item)}
-                  caption={
-                    <span className="flex flex-col gap-0.5">
-                      <span>전일: {item.prevStr ?? EMPTY}</span>
-                      {item.live ? (
-                        <span>
-                          실시간 {item.live.at} {item.live.received ? "수신" : "거래"}
-                          {item.live.session ? ` · ${item.live.session}` : ""}
-                        </span>
-                      ) : item.lastTs && <span>{formatKst(item.lastTs)}</span>}
-                      {item.prevSource && <span>전일값 출처: {item.prevSource}</span>}
-                    </span>
-                  }
-                />
-              ))}
-            </div>
-          </Card>
-        ))}
-        </>
-      )}
+      <IndicatorsSection
+        groups={groups}
+        loading={overview.loading}
+        error={overview.error}
+        onRetry={overview.reload}
+        unavailableMessage={data && !data.available ? (data.message ?? "매크로 데이터가 없습니다. 수집기를 실행하세요.") : null}
+      />
 
       {/* 스스로 데이터를 읽는 섹션은 개요(overview)를 다시 읽는 동안에도 그대로 둡니다 — `data &&` 안에 두면
           간격이 1분 경계를 넘을 때 함께 내려가 고른 계열·지표가 처음으로 돌아갔습니다(QA-066).
@@ -285,29 +214,5 @@ export default function MacroPage() {
       {/* 경제 캘린더는 운영자 전용 경로입니다(ADR 0026 — 차단 통과 수집으로 받은 자료). 회원·데모 방문자에게는 카드를 그리지 않습니다. */}
       {owner && <EconCalendarSection />}
     </div>
-  );
-}
-
-/**
- * 카드 한 장의 출처. 수집기가 붙인 값이 우선이고, 예전 저장본(출처 필드 없음)은 티커로 채웁니다.
- * 비공식 참고 시세(TradingView)는 출처 줄에 그 성격을 적습니다 — 예전에는 지연 배지에 섞여 있었습니다.
- */
-function itemSource(item: MacroItem): string | undefined {
-  const source = item.source ?? (item.ticker ? `Yahoo Finance (${item.ticker})` : undefined);
-  return source && item.isReference ? `${source} · 참고 시세` : source;
-}
-
-/** 지연이 아닌 알림 배지 — 이 화면의 빨강·파랑은 상승·하락 전용이라 경고는 노랑입니다. */
-function NoticeBadge({ children, title, tone }: { children: string; title?: string; tone?: "warn" }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-control border border-warn/40 bg-warn-tint px-2 py-0.5 text-xs text-warn" title={title}>
-      {tone === "warn" ? (
-        <>
-          <AlertTriangleIcon size={12} />
-          <span className="sr-only">주의: </span>
-        </>
-      ) : null}
-      {children}
-    </span>
   );
 }

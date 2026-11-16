@@ -6,6 +6,9 @@
  *  - 심화 지표: KPI 띠 — 해석 색은 상태 아이콘 + 글(빨강 위험은 '주의:' 머리말, 값 글자색으로 전하지 않음), 메모 '표본 백분위 · 표본 · 기준일'
  *  - 환율 비교: 고른 계열 KPI 띠(끝값·단위, 기간 변화율 칩 + '기간', 메모 '기준일 … · 최근 …'), 계열 칩 aria-pressed 그대로
  *  - 비공식 시세·경제 캘린더: 공용 표(항목·지표가 행 머리, 개수 줄, 받지 못한 현재가 '—'+'수집 실패', 캘린더는 조밀 표)
+ *  - 지표 표: 범주마다 h3·부제·출처 줄과 공용 표(지표 행 머리 = 미리보기 단추 + '티커 · 시장', 값·변화 칩·기준), 실패 '—'+'수집 실패',
+ *    추정·이전 값 배지·경고 상태 글. 미리보기: 넓은 화면은 옆 검사 칸(처음은 첫 지표, 고른 줄은 aria-current), 좁은 화면은 위쪽 대화상자 —
+ *    값·변화·전일·기준 시각·장 상태·출처·전일값 출처·티커와 '지표 상세 열기'(/markets/i/키)
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +22,7 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { EconCalendarSection } from "../macro/EconCalendarSection";
 import MacroPage from "../macro/page";
 import { ScrapedSection } from "../macro/ScrapedSection";
@@ -44,8 +48,18 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.localStorage.clear();
 });
+
+/** 넓은 화면(lg 이상 — 셸의 왼쪽 메뉴가 보이는 폭)으로 흉내 냅니다. 틀 폭은 jsdom에서 0이라 크기 질의 배치(옆 칸)에 맡깁니다. */
+function stubWide() {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+  );
+}
 
 describe("원본 데이터 — 화면 머리 동작", () => {
   it("'원본 데이터 보기'는 대화상자 단추이고 열기 전에는 읽지 않는다 — 열면 생성 시각·글자 수·본문, 닫으면 연 단추로 돌아온다", async () => {
@@ -329,5 +343,127 @@ describe("비공식 시세·경제 캘린더 — 공용 표", () => {
     // 조밀 표 — 넓은 화면 행 28px의 칸 여백(공용 표 dense).
     expect(header.className).toContain("lg:py-1");
     expect(screen.getByText("1건")).toBeTruthy();
+  });
+});
+
+describe("지표 표와 미리보기", () => {
+  const card = (over: Record<string, unknown>) => ({
+    status: "ok", priceStr: "1.00", deltaStr: "+0.00 (+0.00%)", prevStr: "1.00", delta: 0, pct: 0, delayMinutes: 0, ...over,
+  });
+  const OVERVIEW = {
+    available: true,
+    collectedAtKst: "2026-10-20 19:54 KST",
+    categories: [
+      { id: "ust", title: "🏛️ 미국 국채 수익률", items: [
+        card({ key: "us10y", name: "미국채 10년물 수익률(%)", ticker: "^TNX", market: "ust", priceStr: "4.123", delta: -0.012, pct: -0.29,
+          deltaStr: "-0.012 (-0.29%)", prevStr: "4.135", prevSource: "FRED DGS10 (공식)", isReference: true, isEstimated: true,
+          source: "TradingView Scanner", lastTs: "2026-10-20 19:54 KST (TradingView 수집 시각)" }),
+        card({ key: "us02y", name: "미국채 2년물 수익률(%)", ticker: "^IRX", market: "ust", status: "fail", priceStr: "N/A", deltaStr: "N/A",
+          delta: null, pct: null, prevStr: "N/A" }),
+      ] },
+      { id: "us_equity", title: "미국 주가지수", items: [
+        card({ key: "sp500", name: "S&P 500", ticker: "^GSPC", market: "nyse", priceStr: "6,812.50", delta: 22.4, pct: 0.33,
+          deltaStr: "+22.40 (+0.33%)", prevStr: "6,790.10", delayMinutes: 10, source: "Yahoo Finance (^GSPC)", lastTs: "2026-10-20 04:59 KST",
+          isStale: true, staleReason: "HTTP 429", warning: "선물 조회 실패 · 지수 값" }),
+      ] },
+    ],
+  };
+
+  beforeEach(() => {
+    // 2026-10-20 19:54 KST = 뉴욕 06:54 — 미국 국채 전자거래는 개장, 뉴욕 증시는 장 전(마감).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-20T10:54:00Z"));
+    reads["/api/macro/overview"] = () => Promise.resolve(OVERVIEW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("패널 '지표'(개수)·범주마다 h3·부제·출처 줄과 공용 표 — 지표가 행 머리(미리보기 단추 + '티커 · 시장'), 값·변화 칩·기준 칸", async () => {
+    render(<MacroPage />);
+
+    // 값이 오면 패널 머리에 개수가 생겨 제목(h2) 요소가 다시 그려지므로, 범주 제목을 먼저 기다린 뒤 패널을 찾습니다.
+    await screen.findByRole("heading", { level: 3, name: "미국 국채 수익률" });
+    const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
+    expect(within(panel).getByText("3개")).toBeTruthy();
+    expect(within(panel).getByRole("heading", { level: 3, name: "미국 주가지수" })).toBeTruthy();
+    expect(within(panel).getAllByText("시세: 실시간").length).toBeGreaterThan(0);
+
+    const tables = within(panel).getAllByRole("table");
+    expect(tables.map((table) => table.querySelector("caption")?.textContent)).toEqual(["미국 국채 수익률 지표", "미국 주가지수 지표"]);
+    expect(within(tables[0]).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["지표", "값", "변화", "기준"]);
+
+    const us10y = within(tables[0]).getByRole("rowheader", { name: /미국채 10년물 수익률/ });
+    const trigger = within(us10y).getByRole("button", { name: "미국채 10년물 수익률(%)" });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(us10y.textContent).toContain("^TNX · 미국 국채");
+    const row = us10y.closest("tr") as HTMLElement;
+    expect(within(row).getByText("4.123")).toBeTruthy();
+    expect(row.textContent).toContain("−0.012");
+    expect(within(row).getByText("하락").className).toContain("sr-only");
+    expect(row.textContent).toContain("TradingView Scanner · 참고 시세 · 개장 · 실시간");
+    expect(within(row).getByText("추정")).toBeTruthy();
+  });
+
+  it("수집 실패 줄은 값 '—'와 '수집 실패', 변화 '—' — 이어받은 줄은 '이전 값'과 사유, 카드 경고는 상태 글", async () => {
+    render(<MacroPage />);
+
+    const failed = (await screen.findByRole("button", { name: "미국채 2년물 수익률(%)" })).closest("tr") as HTMLElement;
+    const cells = within(failed).getAllByRole("cell");
+    expect(within(cells[0]).getByText("—")).toBeTruthy();
+    expect(within(cells[0]).getByText("수집 실패")).toBeTruthy();
+    expect(within(cells[1]).getByText("—")).toBeTruthy();
+    expect(failed.textContent).not.toContain("0.00");
+
+    const stale = screen.getByRole("button", { name: "S&P 500" }).closest("tr") as HTMLElement;
+    expect(within(stale).getByText("이전 값").parentElement?.textContent).toContain("HTTP 429");
+    expect(within(stale).getByText("선물 조회 실패 · 지수 값").parentElement?.className).toContain("text-warn");
+  });
+
+  it("좁은 화면: 이름 단추는 위쪽 대화상자로 미리보기를 연다 — 속성·지표 상세 링크, 닫으면 단추로 포커스", async () => {
+    render(<MacroPage />);
+
+    const trigger = await screen.findByRole("button", { name: "S&P 500" });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "S&P 500" });
+    const terms = within(dialog).getAllByRole("term").map((term) => term.textContent);
+    expect(terms).toEqual(["값", "변화", "전일", "기준 시각", "장 상태·지연", "출처", "티커", "경고"]);
+    const value = (name: string) => within(dialog).getByText(name).nextElementSibling?.textContent ?? "";
+    expect(value("값")).toContain("6,812.50");
+    expect(value("값")).toContain("이전 값");
+    expect(value("변화")).toContain("+22.40");
+    expect(value("전일")).toBe("6,790.10");
+    expect(value("기준 시각")).toBe("2026-10-20 04:59");
+    // 이어받은 값이라 지연은 적지 않습니다(지금 시세의 지연이 아님 — 장 상태만).
+    expect(value("장 상태·지연")).toBe("마감");
+    expect(value("출처")).toContain("Yahoo Finance (^GSPC)");
+    expect(within(dialog).getByText("^GSPC").className).toContain("font-mono");
+    expect(within(dialog).getByRole("link", { name: "지표 상세 열기" }).getAttribute("href")).toBe("/markets/i/sp500");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("넓은 화면: 옆 미리보기 칸 — 처음은 첫 지표, 이름을 누르면 그 지표(표의 고른 줄은 aria-current), 전일값 출처·추정 배지", async () => {
+    stubWide();
+    render(<MacroPage />);
+
+    const inspector = await screen.findByRole("region", { name: "지표 미리보기 — 미국채 10년물 수익률(%)" });
+    expect(within(inspector).getByRole("heading", { level: 3, name: "미국채 10년물 수익률(%)" })).toBeTruthy();
+    expect(within(inspector).getByText("전일값 출처").nextElementSibling?.textContent).toBe("FRED DGS10 (공식)");
+    expect(within(inspector).getByText("추정")).toBeTruthy();
+    expect(within(inspector).getByText("기준 시각").nextElementSibling?.textContent).toBe("2026-10-20 19:54 (TradingView 수집 시각)");
+    expect(screen.getByRole("button", { name: "미국채 10년물 수익률(%)" }).closest("tr")?.getAttribute("aria-current")).toBe("true");
+
+    const sp500 = screen.getByRole("button", { name: "S&P 500" });
+    expect(sp500.getAttribute("aria-controls")).toBe(inspector.id);
+    sp500.focus();
+    fireEvent.click(sp500);
+    // 고른 줄이 바뀌어도 누른 단추가 그대로 남아 포커스를 잃지 않습니다(QA-624).
+    expect(document.activeElement).toBe(sp500);
+    const next = screen.getByRole("region", { name: "지표 미리보기 — S&P 500" });
+    expect(within(next).getByRole("link", { name: "지표 상세 열기" }).getAttribute("href")).toBe("/markets/i/sp500");
+    expect(sp500.closest("tr")?.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: "미국채 10년물 수익률(%)" }).closest("tr")?.getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

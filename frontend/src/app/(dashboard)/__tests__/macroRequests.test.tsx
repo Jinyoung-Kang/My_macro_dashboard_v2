@@ -6,6 +6,7 @@
  *  - 화면을 열 때 읽는 경로와 횟수(경로마다 한 번) — 회원과 운영자(운영자만 경제 캘린더).
  *  - 실시간 시세는 자동 갱신 간격으로 구독하는 SSE 하나(GET 경로가 아님), 간격을 1분보다 길게 고르면 개요를 live 없이 다시 읽고 SSE도 그 간격으로.
  *  - 원본 데이터(GET /api/snapshot/text)는 열 때 읽지 않고, '원본 데이터 보기'를 누를 때 한 번 더 — 복사는 공유 읽기가 아니라 한 번 읽기(apiGet).
+ *  - 지표 미리보기(검사 칸·대화상자)는 이미 받은 개요만 씁니다 — 지표를 골라도 요청이 늘지 않습니다(스파크라인을 두지 않은 까닭).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +25,7 @@ vi.mock("@/lib/clipboard", () => clipboard);
 
 import MacroPage from "../macro/page";
 import { endpoints } from "@/lib/endpoints";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -150,5 +152,30 @@ describe("매크로 화면의 요청", () => {
     expect(await settled()).toEqual({ ...before, [endpoints.macro.overview(false)]: 1 });
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
     expect(FakeEventSource.instances[1].url).toBe(`http://backend${endpoints.live.stream(["TV:TVC:DXY"], 300)}`);
+  });
+
+  it.each([
+    ["좁은 화면(대화상자)", false],
+    ["넓은 화면(옆 검사 칸)", true],
+  ])("%s: 지표를 골라 미리보기를 열어도 요청이 늘지 않는다", async (_name, wide) => {
+    if (wide) {
+      vi.stubGlobal(
+        "matchMedia",
+        (query: string) =>
+          ({ matches: query === WIDE_SHELL_MEDIA, media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+      );
+    }
+    render(<SessionUserProvider user={MEMBER}><MacroPage /></SessionUserProvider>);
+    const before = await settled();
+
+    fireEvent.click(await screen.findByRole("button", { name: "달러 인덱스" }));
+    if (wide) {
+      expect(screen.getByRole("region", { name: "지표 미리보기 — 달러 인덱스" })).toBeTruthy();
+    } else {
+      expect(await screen.findByRole("dialog", { name: "달러 인덱스" })).toBeTruthy();
+    }
+
+    expect(await settled()).toEqual(before);
+    expect(api.apiGet).not.toHaveBeenCalled();
   });
 });

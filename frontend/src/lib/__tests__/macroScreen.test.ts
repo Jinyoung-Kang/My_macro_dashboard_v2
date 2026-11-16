@@ -119,7 +119,9 @@ describe("지표 표의 줄", () => {
     expect(closed.sessionText).toBe("마감");
     expect(closed.provenanceTitle).toContain("10분 지연");
     const failed = macroIndicatorRow(item({ status: "fail", priceStr: "N/A", deltaStr: "N/A", delta: null, pct: null }), CLOCK);
-    expect(failed).toMatchObject({ failed: true, value: null, valueText: null, change: null, changePct: null, prevText: null, warning: "수집 실패" });
+    expect(failed).toMatchObject({ failed: true, value: null, valueText: null, change: null, changePct: null, prevText: null, warning: "수집 실패", cardWarning: null });
+    // 카드 경고는 따로(수집 실패와 합치지 않은 글 — 표의 기준 칸·미리보기 '알림' 줄).
+    expect(macroIndicatorRow(item({ warning: "선물 조회 실패 · 지수 값" }), CLOCK).cardWarning).toBe("선물 조회 실패 · 지수 값");
   });
 
   it("실시간 값을 얹은 줄은 출처 배지의 시각과 기준 시각이 실시간 시각(받은 시각인지 거래 시각인지와 세션)", () => {
