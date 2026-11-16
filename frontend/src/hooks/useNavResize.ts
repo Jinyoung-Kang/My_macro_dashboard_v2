@@ -74,7 +74,8 @@ export type NavResize = {
  * - **두 번 누르기**: 접기·펼치기. 그 두 번의 누름 가운데 하나라도 끌었으면 받지 않습니다.
  * - **키**(lib/navWidth navKeyLayout): ←·→ 16px(Shift 64px)·Home·End는 바로 저장, Enter는 접기·펼치기(접힌 동안 →·End도 폄).
  *
- * @param beforeToggle 접힘이 바뀌기 바로 앞에 부릅니다(왼쪽 메뉴가 포커스가 메뉴 안에 있었는지 적어 두고, 사라지는 칸이면 그린 뒤 접기 단추로 옮김).
+ * @param beforeToggle 접힘이 바뀌기 바로 앞에 부릅니다 — 단추·[·두 번 누르기·Enter와 끌기 중 문턱을 넘는 프레임 모두(왼쪽 메뉴가 포커스가 메뉴 안에
+ *   있었는지 적어 두고, 사라지는 칸이면 그린 뒤 접기 단추로 옮김).
  */
 export function useNavResize(beforeToggle: () => void): NavResize {
   const [, , setCollapsed] = useNavCollapsed();
@@ -141,6 +142,9 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       const collapsed = getNavCollapsed();
       const next = navDragLayout(drag.startShown + drag.lastX - drag.startX, drag.restoreWidth, { startCollapsed: drag.startCollapsed, collapsed });
       if (next.collapsed !== collapsed) {
+        // 접힘이 바뀜 — 포커스가 사라지는 하위 칸에 있었으면 그린 뒤 접기 단추로 옮기게 적어 둡니다(단추·[와 같음). 마우스로 잡으면 누름이 손잡이에
+        // 포커스를 주지만 손가락으로 끌면 포커스가 그대로라, 하위 칸 링크에 있던 포커스가 접히며 문서(body)로 빠졌습니다.
+        before.current();
         // 레일로 접힐 때만 150ms 전환 — 목표(48)가 그대로라 매끄럽습니다. 레일에서 끌어내 펼 때는 목표 폭이 프레임마다 바뀌어 전환이 포인터에 처지다가
         // 꺼지는 순간 튀므로(빠르게 끌면 한 프레임에 수십~100px) 전환 없이 포인터를 바로 따라갑니다.
         if (next.collapsed) animate(true, NAV_MOTION_MS);

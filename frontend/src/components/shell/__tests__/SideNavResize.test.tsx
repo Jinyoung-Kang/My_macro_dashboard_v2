@@ -375,6 +375,20 @@ describe("끌기", () => {
     expect(window.localStorage.getItem("shell.navWidth")).toBe("290");
   });
 
+  it("손가락으로 끌어 접어도(손잡이가 포커스를 받지 않음) 사라지는 하위 칸에 있던 포커스는 접기 단추로 옮긴다 — 문서(body)로 빠지지 않음", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    const leaf = within(within(mainNav()).getByRole("list", { name: "시장 화면" })).getAllByRole("link")[0];
+    act(() => leaf.focus());
+    down(220);
+    move(100);
+    runFrames();
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    expect(leaf.isConnected).toBe(false);
+    expect(document.activeElement).toBe(toggleButton());
+    up(100);
+    expect(document.activeElement).toBe(toggleButton());
+  });
+
   it("문턱 근처의 손떨림(139·141을 번갈아)은 한 번만 접는다 — 접힘이 프레임마다 바뀌지 않음", () => {
     render(<SideNav pathname="/macro" user={MEMBER} />);
     const pressed: (string | null)[] = [];
