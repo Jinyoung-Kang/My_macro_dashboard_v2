@@ -4,6 +4,7 @@
  * 그려 실제로 이어지는지 봅니다.
  *
  * - 넓은 화면: [ → 왼쪽 메뉴가 48px 레일로 접힘(셸 변수·하위 칸 사라짐·저장 '1'), 다시 [ → 펼침. 좁은 화면에서는 [가 아무것도 하지 않음(글자 그대로).
+ * - 왼쪽 메뉴의 폭 손잡이를 끌면 셸 뿌리의 변수(인라인 style)가 끈 폭을 따라가고, [로 접었다 펴면 그 폭으로 돌아옴(손잡이 자체는 SideNavResize.test).
  * - 상단바의 팔레트 여는 단추(또는 Ctrl+K) → 명령 '왼쪽 메뉴 접기·펼치기' → 팔레트가 닫히고 포커스가 여는 단추로 돌아온 뒤 레일로 접힘. 레일에서도 단추·Ctrl+K가 그대로.
  * - 계정 메뉴 '단축키 도움말' → '단축키' 대화상자(넓은 화면이라 [ 줄이 있음), 닫으면 계정 메뉴 여는 단추로 포커스. ?도 같은 창을 엶.
  * - 덮개(팔레트·계정 메뉴·도움말 창) 안의 [는 메뉴를 접지 않음.
@@ -13,6 +14,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { resetNavWidthForTest } from "@/hooks/useNavWidth";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
@@ -73,7 +75,7 @@ const helpDialog = () => screen.queryByRole("dialog", { name: "단축키" });
 function expectCollapsed(collapsed: boolean) {
   expect(navToggle().getAttribute("aria-pressed")).toBe(String(collapsed));
   expect(shellRoot().getAttribute("data-nav")).toBe(collapsed ? "collapsed" : "expanded");
-  expect(shellRoot().className.split(/\s+/)).toContain(collapsed ? "lg:[--shell-nav-w:48px]" : "lg:[--shell-nav-w:220px]");
+  expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe(collapsed ? "48px" : "220px");
   // 메뉴 폭은 셸 뿌리의 변수 하나에서 읽는다(위 줄의 값).
   expect((mainNav().closest("[data-shell-sidenav]") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
   if (collapsed) {
@@ -103,6 +105,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
   resetNavCollapsedForTest();
+  resetNavWidthForTest();
   resetRecentEntitiesForTest();
 });
 
@@ -136,6 +139,28 @@ describe("[ 키 → 왼쪽 메뉴", () => {
     expectCollapsed(true);
     pressInBody("[");
     expectCollapsed(false);
+  });
+});
+
+describe("폭 손잡이 → 셸 뿌리의 메뉴 폭(작업대 P3 추가 '가변 폭 왼쪽 메뉴')", () => {
+  it("손잡이를 끌면 셸 변수 --shell-nav-w가 끈 폭을 따라가고(본문은 그 옆에서 다시 흐름), [로 접었다 펴면 끈 폭으로 돌아온다", () => {
+    stubWide(true);
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback: FrameRequestCallback) => frames.push(callback));
+    renderShell();
+    const separator = screen.getByRole("separator", { name: "왼쪽 메뉴 폭" });
+    fireEvent.pointerDown(separator, { pointerId: 1, clientX: 220, button: 0, isPrimary: true });
+    fireEvent.pointerMove(separator, { pointerId: 1, clientX: 300, isPrimary: true });
+    act(() => frames.splice(0).forEach((callback) => callback(0)));
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("300px");
+    fireEvent.pointerUp(separator, { pointerId: 1, clientX: 300, button: 0, isPrimary: true });
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("300");
+
+    pressInBody("[", { code: "BracketLeft" });
+    expect(shellRoot().getAttribute("data-nav")).toBe("collapsed");
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("48px");
+    pressInBody("[", { code: "BracketLeft" });
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("300px");
   });
 });
 

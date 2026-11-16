@@ -222,6 +222,15 @@
     outline-offset: 2px;
   }
 
+  /* 넓은 화면 왼쪽 메뉴의 폭 손잡이를 끄는 동안(hooks/useNavResize가 html에 data-nav-resizing을 붙였다 놓을 때 뗌) — 손잡이 밖(본문의 링크·단추
+     위)으로 나가도 커서는 col-resize이고 글이 골라지지 않습니다. base 층의 !important라 화면별 cursor·select 유틸리티보다 앞섭니다(끄는 동안만). */
+  html[data-nav-resizing],
+  html[data-nav-resizing] * {
+    cursor: col-resize !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
+
   /* 좁은 화면(lg 미만)에서는 하단 탭 바(64px + 안전 영역)가 화면 아래에 붙어 있고 문서(html)가 스크롤됩니다. Tab으로 옮긴 포커스가
      탭 바 밑에 숨지 않게 그만큼 스크롤 여백을 둡니다(WCAG 2.4.11). lg 이상은 탭 바가 없고 본문 main이 스크롤 상자입니다.
      화면 아래에 붙은 고정 시트(정보 검색의 미리 보기 — xl 미만)가 열려 있으면 그 높이(--bottom-sheet — 시트가 문서 루트에 적음,

@@ -1,6 +1,6 @@
 /**
  * 넓은 화면 왼쪽 나무 메뉴(shell/SideNav — 작업대 실행 명세 §5, ADR 0042 결정 5). 모델(펼침·묶음·aria-current·막대)은 lib/__tests__/navTree.test가 고정하고,
- * 여기서는 그린 모양을 봅니다: 지금 탭의 하위 칸을 같은 nav 안에 펼침, '한국 시장' 묶음 글 머리와 그 목록, 잠금 아이콘, aria-current,
+ * 여기서는 그린 모양을 봅니다: 지금 탭의 하위 칸을 같은 nav 안에 펼침, '한국 시장' 묶음 글 머리(한 줄)와 그 목록, 잠금 아이콘, aria-current,
  * 하위 목록 이름이 '…하위 메뉴'가 아님(좁은 화면 줄과 겹치지 않게), 32px 칸·16px 아이콘, 고대비 테두리는 막대 칸 하나.
  * 접힘(48px 아이콘 레일): 링크 이름은 그대로(sr-only 글), 하위 칸 없음, 포커스로 이름 툴팁(설명 연결 없음), 접기 단추(aria-pressed·aria-keyshortcuts '['),
  * 셸 명령 toggle-nav로 접고 폄, 저장값 '1'이면 접힌 채 시작, 사라지는 칸에 있던 포커스는 접기 단추로. 툴팁은 넓은 화면에서만 열린다(QA-554 — 툴팁을 보는
@@ -9,6 +9,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { resetNavWidthForTest } from "@/hooks/useNavWidth";
 import { WIDE_SHELL_MEDIA, sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
@@ -23,6 +24,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
   resetNavCollapsedForTest();
+  resetNavWidthForTest();
 });
 
 /** 넓은 화면(lg 이상) matchMedia 대역 — 왼쪽 메뉴의 툴팁은 넓은 화면에서만 열립니다(QA-554). */
@@ -53,8 +55,11 @@ describe("펼친 하위 화면", () => {
     const kr = within(screens).getByRole("list", { name: "한국 시장" });
     expect(labels(kr)).toEqual(["수급 레이더", "파생·투기세력(KRX)"]);
     expect(within(kr).getByRole("link", { name: "수급 레이더" }).getAttribute("aria-current")).toBe("page");
-    // 글 머리는 누르지 않는 글
-    expect(within(screens).getByText("한국 시장").closest("a")).toBeNull();
+    // 글 머리는 누르지 않는 글 — 한 줄(truncate)이라 높이가 메뉴 폭에 따라 바뀌지 않음(펼치는 150ms 전환의 48px 상자에서 글자마다 줄이 바뀌어
+    // 아래 칸이 밀렸다 올라오고, 그 폭에서 잰 지금 칸 위치로 메뉴를 굴렸음 — useScrollNavActive)
+    const heading = within(screens).getByText("한국 시장");
+    expect(heading.closest("a")).toBeNull();
+    expect(heading.className.split(/\s+/)).toContain("truncate");
     const ai = within(screens).getByRole("link", { name: /AI 종합 분석/ });
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
     expect(ai.querySelector('[title="유료 등급 기능"]')).not.toBeNull();

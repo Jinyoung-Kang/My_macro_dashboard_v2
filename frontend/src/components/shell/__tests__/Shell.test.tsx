@@ -11,6 +11,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { resetNavWidthForTest } from "@/hooks/useNavWidth";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
@@ -94,6 +95,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   window.localStorage.clear();
   resetNavCollapsedForTest();
+  resetNavWidthForTest();
 });
 
 describe("계정 영역(넓은 화면 상단바의 계정 메뉴 — 옛 사이드바 계정 영역)", () => {
@@ -492,15 +494,19 @@ describe("본문", () => {
     expect(classes).toEqual(expect.arrayContaining(["focus:px-4", "focus:py-2"]));
   });
 
-  it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(220px)로 둔다 — 왼쪽 메뉴와 고정 위치 덮개(정보 검색 아래 시트)가 같은 변수를 읽음", () => {
+  // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 180~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
+  // 왼쪽 메뉴', 2026-11-16 사용자 결정). 뜻(셸 뿌리 한 곳이 폭을 정하고 왼쪽 메뉴·덮개가 읽음)은 그대로입니다.
+  it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(기본 220px)로 둔다 — 왼쪽 메뉴와 고정 위치 덮개(정보 검색 아래 시트)가 같은 변수를 읽음", () => {
     renderShell(MEMBER_PRO);
     const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
-    expect(root.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-col", "lg:[--shell-nav-w:220px]"]));
+    expect(root.className.split(/\s+/)).toContain("lg:flex-col");
+    expect(root.style.getPropertyValue("--shell-nav-w")).toBe("220px");
     expect(root.getAttribute("data-nav")).toBe("expanded");
     const box = (mainNav().closest("[data-shell-sidenav]") as HTMLElement).className.split(/\s+/);
     expect(box).toContain("lg:w-[var(--shell-nav-w)]");
     // 폭 숫자를 왼쪽 메뉴가 따로 들고 있지 않다(한쪽만 고쳐 어긋나지 않게)
     expect(box.some((name) => /^(lg:)?w-(12|\[\d+px\])$/.test(name))).toBe(false);
+    expect((mainNav().closest("[data-shell-sidenav]") as HTMLElement).style.width).toBe("");
   });
 
   it("왼쪽 메뉴를 아이콘 레일로 접어 둔 사람(저장값 '1')은 접힌 채 시작하고 셸 변수가 48px — 메뉴를 펴면 220px로", () => {
@@ -508,12 +514,29 @@ describe("본문", () => {
     renderShell(MEMBER_PRO);
     const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
     expect(root.getAttribute("data-nav")).toBe("collapsed");
-    expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:48px]");
+    expect(root.style.getPropertyValue("--shell-nav-w")).toBe("48px");
     expect((mainNav().closest("[data-shell-sidenav]") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
 
     fireEvent.click(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }));
     expect(root.getAttribute("data-nav")).toBe("expanded");
-    expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:220px]");
+    expect(root.style.getPropertyValue("--shell-nav-w")).toBe("220px");
+  });
+
+  it("펼친 폭을 바꿔 둔 사람(저장값 shell.navWidth '280')은 그 폭으로 시작하고, 접었다 펴면 그 폭으로 돌아온다 — 손댄 저장값은 하한·상한으로 자름", () => {
+    window.localStorage.setItem("shell.navWidth", "280");
+    renderShell(MEMBER_PRO);
+    const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
+    expect(root.style.getPropertyValue("--shell-nav-w")).toBe("280px");
+    fireEvent.click(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }));
+    expect(root.style.getPropertyValue("--shell-nav-w")).toBe("48px");
+    fireEvent.click(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }));
+    expect(root.style.getPropertyValue("--shell-nav-w")).toBe("280px");
+    cleanup();
+    resetNavWidthForTest();
+
+    window.localStorage.setItem("shell.navWidth", "9000");
+    renderShell(MEMBER_PRO);
+    expect((screen.getByRole("main").closest("div.min-h-screen") as HTMLElement).style.getPropertyValue("--shell-nav-w")).toBe("320px");
   });
 
   it("좁은 화면에서는 하단 탭 바(64px + 안전 영역)만큼 아래 여백, 데스크톱에서는 되돌린다", () => {

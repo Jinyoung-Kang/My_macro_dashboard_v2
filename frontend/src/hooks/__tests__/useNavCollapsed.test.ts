@@ -43,6 +43,19 @@ describe("접힘 기억", () => {
     const { result } = renderHook(() => useNavCollapsed());
     expect(result.current[0]).toBe(false);
   });
+
+  it("셋째(접힘 정하기 — 폭 손잡이가 끌어서 접고 폄): persist: false면 이 창에만, 아니면 저장한다", () => {
+    window.localStorage.setItem("shell.navCollapsed", "0");
+    const { result } = renderHook(() => useNavCollapsed());
+    act(() => result.current[2](true, { persist: false }));
+    expect(result.current[0]).toBe(true);
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
+    act(() => result.current[2](true));
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("1");
+    act(() => result.current[2](false));
+    expect(result.current[0]).toBe(false);
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
+  });
 });
 
 describe("저장소를 못 쓸 때", () => {
