@@ -44,8 +44,10 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * - 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내 — 하위 메뉴 줄과 같음). 준비 중 화면은 링크 없는 흐린 글(aria-disabled).
  * - 탭 링크에는 data-nav-tab을 붙입니다(시험이 탭 링크만 고를 때 — 펼친 하위 칸과 가름).
  *
- * **접힘(48px 아이콘 레일)**: 맨 아래 접기 단추(이름 '왼쪽 메뉴 접기' — aria-pressed가 접힘, 단축키 [ — 명령 팔레트 쪽이 넓은 화면에서만 셸 명령 toggle-nav를
- * 보내고 여기서 받음)로 접고 폅니다. 접히면 탭 아이콘(20px)만 남고 이름은 sr-only 글(링크 접근 이름 그대로)과 오른쪽 툴팁(이름과 같은 글이라 labelOnly)으로,
+ * **접힘(48px 아이콘 레일)**: 맨 아래 접기 단추(이름 '왼쪽 메뉴 접기' — 켜고 끄는 단추라 이름은 그대로, aria-pressed가 접힘, 단축키 [ — 명령 팔레트
+ * 쪽이 넓은 화면에서만 셸 명령 toggle-nav를 보내고 여기서 받음)로 접고 폅니다. 툴팁은 상태와 상관없이 이름과 같은 글에 단축키를 붙인 '왼쪽 메뉴 접기 ([)'이고
+ * 설명으로 잇지 않습니다(labelOnly — 단축키는 aria-keyshortcuts). 예전에는 접히면 툴팁이 '메뉴 펼치기 ([)'라 보이는 글과 이름이 반대 뜻이었고(음성 제어로
+ * 보이는 대로 말하면 단추를 못 찾음), 설명으로 이어져 '왼쪽 메뉴 접기, 눌림, 메뉴 펼치기'로 읽혔습니다(검토 지적). 접히면 탭 아이콘(20px)만 남고 이름은 sr-only 글(링크 접근 이름 그대로)과 오른쪽 툴팁(이름과 같은 글이라 labelOnly)으로,
  * 하위 화면은 숨깁니다(펼치기·명령 팔레트·빵부스러기로 닿음). 막대는 보이는 칸 가운데 가장 깊은 지금 칸 — 레일에서는 지금 탭 칸입니다. 접힘은 보는 사람별로
  * 이 브라우저에 기억합니다(useNavCollapsed — 저장소를 못 써도 동작). 폭은 움직이지 않고 바로 바뀝니다(명세 §3-8 — 모션은 색 전환만).
  * 탭 링크는 접고 펼 때 같은 요소로 남아(툴팁 감쌈을 늘 두고 펼친 동안은 열지 않음) 포커스가 그대로이고, 포커스가 사라지는 하위 칸에 있었으면 접기 단추로 옮깁니다.
@@ -106,8 +108,9 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
         </ul>
       </nav>
       <div className="mt-auto border-t border-border p-2">
-        {/* 이름은 상태와 상관없이 '왼쪽 메뉴 접기'(보이는 글 '메뉴 접기'가 이름 안에 있음), 접혔는지는 aria-pressed. 툴팁은 단축키를 알리는 설명. */}
-        <Tooltip content={collapsed ? "메뉴 펼치기 ([)" : "메뉴 접기 ([)"} side="right">
+        {/* 이름은 상태와 상관없이 '왼쪽 메뉴 접기'(보이는 글 '메뉴 접기'가 이름 안에 있음), 접혔는지는 aria-pressed. 툴팁은 이름과 같은 글 + 단축키라
+            설명으로 잇지 않습니다(labelOnly — 단축키는 aria-keyshortcuts가 읽힘). */}
+        <Tooltip content="왼쪽 메뉴 접기 ([)" side="right" labelOnly>
           <button
             ref={toggleRef}
             type="button"

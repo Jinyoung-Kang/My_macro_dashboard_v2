@@ -153,6 +153,19 @@ describe("접힘(48px 아이콘 레일)", () => {
     expect(home.hasAttribute("aria-describedby")).toBe(false);
   });
 
+  it("접기 단추의 툴팁은 접힘과 상관없이 이름과 같은 글에 단축키 — '왼쪽 메뉴 접기 ([)', 설명(aria-describedby)으로 잇지 않는다", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    for (const pressed of ["false", "true"]) {
+      const button = toggleButton();
+      expect(button.getAttribute("aria-pressed")).toBe(pressed);
+      act(() => button.focus());
+      expect(screen.getByRole("tooltip").textContent).toBe("왼쪽 메뉴 접기 ([)");
+      expect(button.hasAttribute("aria-describedby")).toBe(false);
+      act(() => button.blur());
+      fireEvent.click(button);
+    }
+  });
+
   it("셸 명령 toggle-nav([ 키·명령 팔레트가 넓은 화면에서 보냄)로 접고 편다", () => {
     render(<SideNav pathname="/macro" user={MEMBER} />);
     act(() => sendShellCommand("toggle-nav"));
