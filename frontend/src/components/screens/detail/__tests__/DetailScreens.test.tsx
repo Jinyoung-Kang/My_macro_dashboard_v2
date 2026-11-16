@@ -381,18 +381,76 @@ describe("종목 팝업 창", () => {
 describe("지표 상세", () => {
   const KR_HOLIDAYS = "/api/calendar/kr-holidays";
 
-  it("카드 값 히어로·Yahoo 차트·같은 범주 지표(상세 링크)·뉴스 검색어·Yahoo 시세 상세 링크", async () => {
+  it("대상 머리(카드 값)·가격 차트 패널(Yahoo 차트)·같은 범주 지표(상세 링크)·뉴스 검색어·Yahoo 시세 상세 링크", async () => {
     reads = { [endpoints.macro.overview(false)]: macroOverview(), [KR_HOLIDAYS]: { available: true, years: {} } };
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="sp500" />);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "S&P 500" })).toBeTruthy();
+    const title = await screen.findByRole("heading", { level: 1, name: "S&P 500" });
+    // 지금 값은 대상 머리(작업대 대상 문법 — 히어로 자리), 차트·출처 캡션은 가운데 '개요' 탭의 가격 차트 패널(영역 이름은 지표 이름 그대로)
+    const header = title.closest("header") as HTMLElement;
+    expect(within(header).getByText("7,622.99")).toBeTruthy();
+    expect(within(header).getByText("지표")).toBeTruthy();
     const hero = screen.getByRole("region", { name: "S&P 500" });
-    expect(within(hero).getByText("7,622.99")).toBeTruthy();
     expect(within(hero).getByText("차트: Yahoo Finance ^GSPC 일별 종가")).toBeTruthy();
     await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("^GSPC", "1y")));
     await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "S&P 500" })));
     expect(screen.getByRole("link", { name: /S&P 500 선물 \(ES\)/ }).getAttribute("href")).toBe("/markets/i/sp500_fut");
     expect(screen.getByRole("link", { name: "^GSPC 시세·핵심 지표 보기" }).getAttribute("href")).toBe("/s/us/%5EGSPC");
+  });
+
+  it("왼쪽 속성(범주·티커·카드 키 고정폭·전일·출처, 모르면 '—')·오른쪽 연결(정보 검색)·출처 패널", async () => {
+    reads = { [endpoints.macro.overview(false)]: macroOverview(), [KR_HOLIDAYS]: { available: true, years: {} } };
+    renderAs(PRO, <IndicatorDetailScreen indicatorKey="kospi200_night_scraped" />);
+    await screen.findByRole("heading", { level: 1, name: "코스피200 야간선물" });
+
+    const props = screen.getByRole("heading", { level: 2, name: "속성" }).closest("section") as HTMLElement;
+    const row = (label: string) => within(props).getByText(label).closest("div") as HTMLElement;
+    expect(within(row("범주")).getByText("아시아 주요 주가지수")).toBeTruthy();
+    expect(within(row("카드 키")).getByText("kospi200_night_scraped").className).toContain("font-mono");
+    // 티커가 없는 카드 — '—'(0이나 빈칸이 아님)
+    expect(within(row("티커")).getByText("—")).toBeTruthy();
+    expect(within(row("값 출처")).getByText("TradingView Scanner · 참고 시세")).toBeTruthy();
+
+    // 차트가 없는 카드 — 차트 패널은 이유 한 줄, 출처 패널의 차트 줄은 '—'와 사유
+    const hero = screen.getByRole("region", { name: "코스피200 야간선물" });
+    expect(within(hero).getByText("이 카드는 Yahoo 티커가 없어 차트를 그리지 않습니다.")).toBeTruthy();
+    const sources = screen.getByRole("heading", { level: 2, name: "출처" }).closest("section") as HTMLElement;
+    expect(within(sources).getByText("차트를 그리지 않음")).toBeTruthy();
+
+    const links = screen.getByRole("heading", { level: 2, name: "연결" }).closest("section") as HTMLElement;
+    expect(within(links).getByRole("link", { name: "‘코스피200 야간선물’ 정보 검색" }).getAttribute("href")).toBe(
+      `/search?q=${encodeURIComponent("코스피200 야간선물")}`,
+    );
+  });
+
+  it("가운데 탭 — 개요·뉴스, 화살표는 포커스만 옮기고 누르면 연다. 숨긴 뉴스 탭도 처음에 읽는다", async () => {
+    reads = { [endpoints.macro.overview(false)]: macroOverview(), [KR_HOLIDAYS]: { available: true, years: {} } };
+    renderAs(PRO, <IndicatorDetailScreen indicatorKey="sp500" />);
+    await screen.findByRole("heading", { level: 1, name: "S&P 500" });
+    const tablist = screen.getByRole("tablist", { name: "S&P 500 내용" });
+    const [overview, news] = within(tablist).getAllByRole("tab");
+    expect(overview.getAttribute("aria-selected")).toBe("true");
+    expect(news.textContent).toBe("뉴스");
+    const panel = screen.getByRole("tabpanel", { name: "개요" });
+    expect(overview.getAttribute("aria-controls")).toBe(panel.id);
+    // 뉴스 탭을 열지 않아도 뉴스를 읽는다(요청 시점이 탭이 없던 때와 같음) — 숨긴 탭의 제목은 보이지 않음
+    await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "S&P 500" })));
+    expect(screen.queryByRole("heading", { name: "주요 뉴스" })).toBeNull();
+
+    overview.focus();
+    fireEvent.keyDown(overview, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(news);
+    expect(news.getAttribute("aria-selected")).toBe("false");
+    fireEvent.click(news);
+    expect(news.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel", { name: "뉴스" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "주요 뉴스" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "S&P 500" })).toBeNull();
+    // 오갈 때 다시 읽지 않는다(모두 마운트된 채로 숨김만 바뀜)
+    const newsCalls = requested().filter((path) => path.startsWith("/api/detail/news")).length;
+    fireEvent.click(overview);
+    expect(screen.getByRole("region", { name: "S&P 500" })).toBeTruthy();
+    expect(requested().filter((path) => path.startsWith("/api/detail/news"))).toHaveLength(newsCalls);
   });
 
   it("뜻이 다른 티커(2년물 ZT=F)는 차트를 부르지 않고 이유를 적는다, 없는 키는 그렇게 말한다", async () => {
@@ -508,6 +566,8 @@ describe("라우트", () => {
 
 describe("뉴스 카드의 정보 검색 링크(ADR 0041)", () => {
   const newsCard = async () => (await screen.findByRole("heading", { name: "주요 뉴스" })).closest("section") as HTMLElement;
+  // 뉴스는 가운데 '뉴스' 탭 안(작업대 대상 문법) — 사용자가 탭을 열면 보입니다.
+  const openTab = async (name: string) => fireEvent.click(await screen.findByRole("tab", { name }));
 
   it("종목 — 회사 이름으로 정보 검색(/search?q=)", async () => {
     reads = appleReads();
@@ -521,6 +581,7 @@ describe("뉴스 카드의 정보 검색 링크(ADR 0041)", () => {
   it("기관 — 영문 이름, 지표 — 뉴스 검색어와 같은 말로", async () => {
     reads = { [endpoints.macro.overview(false)]: macroOverview(), "/api/calendar/kr-holidays": { available: true, years: {} } };
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="sp500" />);
+    await openTab("뉴스");
     expect(within(await newsCard()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe(`/search?q=${encodeURIComponent("S&P 500")}`);
     cleanup();
 

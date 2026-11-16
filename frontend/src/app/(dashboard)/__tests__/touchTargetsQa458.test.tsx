@@ -213,8 +213,12 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
       "/api/detail/news": NEWS,
     };
     const { container } = renderAs(<IndicatorDetailScreen indicatorKey="sp500" />);
+    // 가운데 탭(개요·뉴스 — P4)마다 보이는 누름 자리를 따집니다(숨긴 탭은 감사가 건너뜀). 탭 줄의 탭 단추도 셈에 듭니다.
+    await screen.findByRole("link", { name: "^GSPC 시세·핵심 지표 보기" });
+    const overview = smallTargets(container);
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     await screen.findByRole("link", { name: /Synthetic headline/ });
-    expect(smallTargets(container)).toEqual([]);
+    expect([...overview, ...smallTargets(container)]).toEqual([]);
   });
 
   //  - 모의 설정: 참·거짓 키의 체크 상자(13px, 감싼 label 없음)

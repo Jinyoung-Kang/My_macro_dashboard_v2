@@ -327,6 +327,9 @@ export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) 
   return stats.map((stat) => ({ label: stat.label, value: text(stat) }));
 }
 
+/** 주요 뉴스의 출처 묶음(뉴스 카드 머리·상세 화면 '출처' 패널이 같은 글). */
+export const NEWS_SOURCES = "Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색)";
+
 /**
  * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)·연합인포맥스·구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 한 쪽에 5건씩(사용자 요청
  * 2026-11-02 — 이전·다음 단추와 'n / m쪽'), 경로가 바뀌면 첫 쪽으로. 제목은 원문 기사로 가는 새 창 링크, 아래 줄은 언론사·시각·받은 곳. 출처 하나가
@@ -387,7 +390,7 @@ export function NewsCard({
   return (
     <Card
       title={title}
-      source="Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사"
+      source={`${NEWS_SOURCES} — 제목을 누르면 원문 기사`}
       actions={
         infoSearch ? (
           <Link href={infoSearch.href} title={`${infoSearch.label} — 최근 2년의 기사·글`} className={`${TEXT_TARGET} rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}>
