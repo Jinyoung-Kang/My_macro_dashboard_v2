@@ -88,7 +88,7 @@ describe("regimeHeroModel — 오늘의 국면", () => {
     const [curve, nfci, hyOas, liquidity] = regimeHeroModel(regimeExpansion()).tiles;
     expect(curve).toMatchObject({ label: "장단기 금리차 10Y-3M", valueText: "+0.78", unit: "%p", emptyReason: null });
     expect(curve.note).toBe("정상 · 장기 금리가 단기보다 높습니다(정상 구조).");
-    expect(nfci).toMatchObject({ valueText: "-0.496", unit: null });
+    expect(nfci).toMatchObject({ valueText: "\u22120.496", unit: null });
     expect(hyOas).toMatchObject({ valueText: "3.40", unit: "%p" });
     // 0.031조 달러를 0.03으로 뭉개지 않습니다.
     expect(liquidity).toMatchObject({ valueText: "+0.031", unit: "조 달러", note: "확대 · 최근 4주 동안 시장으로 유동성이 들어왔습니다." });
@@ -97,7 +97,7 @@ describe("regimeHeroModel — 오늘의 국면", () => {
   // QA-600: 부호 있는 세 신호(금리차·NFCI·순유동성 4주 변화)가 formatSigned(ASCII 하이픈)로 찍혀, 같은 홈 화면의 변화 칩·KPI(−, U+2212)와
   // 음수 글자가 섞였습니다(QA 스택 '-0.487'·'-0.048' — 개편 전부터). 명세 D4: 등락은 ▲▼와 U+2212.
   // 수정 전(재현 커밋에서는 it.fails) 값은 '-0.12'·'-0.496'·'-0.048'(ASCII 하이픈)이었습니다.
-  it.fails("부호 있는 신호의 음수는 −(U+2212) — ASCII 하이픈이 아니다, 반올림 뒤 0은 부호 없음 (QA-600)", () => {
+  it("부호 있는 신호의 음수는 −(U+2212) — ASCII 하이픈이 아니다, 반올림 뒤 0은 부호 없음 (QA-600)", () => {
     const response = regimeExpansion();
     const signal = (id: string) => response.verdict!.signals.find((entry) => entry.id === id)!;
     signal("curve").value = -0.12;

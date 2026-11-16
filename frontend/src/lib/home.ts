@@ -6,7 +6,7 @@
  * 일간 변화처럼 응답에 없는 숫자를 빼기로 만들지 않습니다. 모르는 값은 null(화면 "—")이고 0으로 채우지 않습니다.
  */
 import { indicatorHref } from "./detail";
-import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
+import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSignedMinus, formatWithUnit, withoutLeadingIcon } from "./format";
 import type { InfoSourcesResponse } from "./info";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
@@ -120,13 +120,14 @@ export type RegimeTile = {
  * 판정 신호 네 자리(백엔드 Regime.classify의 순서). 백엔드는 입력이 없는 신호를 signals에서 아예 빼고 missing에 이름만 적으므로,
  * 자리를 여기 고정해 둬야 빠진 신호가 "—"로 남습니다(조용히 사라지지 않음). 라벨은 그때만 쓰는 대신 값이고, 신호가 오면 백엔드 라벨을 씁니다.
  * 자릿수는 승인된 홈 시안(금리차·하이일드 소수 둘째, NFCI·순유동성 4주 변화 소수 셋째 — 0.031조 달러를 0.03으로 뭉개지 않음)을 따르고,
- * 방향이 뜻을 가진 셋(역전·긴축·유입)은 부호를 붙입니다(/regime 판정 기록 표와 같은 규칙, lib/regime.ts).
+ * 방향이 뜻을 가진 셋(역전·긴축·유입)은 부호를 붙입니다 — 부호 규칙은 /regime 판정 기록 표(lib/regime.ts)와 같고, 음수 글자는 −(U+2212)입니다
+ * (같은 홈 화면의 변화 칩·KPI와 같은 글자 — 명세 D4, QA-600). /regime 표의 음수 글자는 P5a에서 맞춥니다.
  */
 const REGIME_SLOTS: readonly { id: string; label: string; format: (value: number) => string }[] = [
-  { id: "curve", label: "장단기 금리차 10Y-3M", format: (value) => formatSigned(value, 2) },
-  { id: "nfci", label: "시카고 연준 금융상황지수", format: (value) => formatSigned(value, 3) },
+  { id: "curve", label: "장단기 금리차 10Y-3M", format: (value) => formatSignedMinus(value, 2).text },
+  { id: "nfci", label: "시카고 연준 금융상황지수", format: (value) => formatSignedMinus(value, 3).text },
   { id: "hyOas", label: "하이일드 스프레드", format: (value) => formatNumber(value, 2) },
-  { id: "liquidity", label: "연준 순유동성 4주 변화", format: (value) => formatSigned(value, 3) },
+  { id: "liquidity", label: "연준 순유동성 4주 변화", format: (value) => formatSignedMinus(value, 3).text },
 ];
 
 function regimeTile(id: string, fallbackLabel: string, signal: RegimeSignal | undefined, format: (value: number) => string): RegimeTile {

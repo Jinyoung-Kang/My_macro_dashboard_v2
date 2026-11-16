@@ -203,7 +203,7 @@ describe("홈 — 값 있음(운영자)", () => {
 
   // QA-600: 국면 패널 신호 값의 음수가 ASCII 하이픈('-0.496')이라 같은 화면 변화 칩·KPI의 −(U+2212)와 섞였습니다.
   // 수정 전(재현 커밋에서는 it.fails) NFCI 줄은 '-0.496완화적 · …'이었습니다.
-  it.fails("오늘의 국면 — 신호 값의 음수는 −(U+2212), 숫자 앞 ASCII 하이픈이 없다 (QA-600)", async () => {
+  it("오늘의 국면 — 신호 값의 음수는 −(U+2212), 숫자 앞 ASCII 하이픈이 없다 (QA-600)", async () => {
     reads = happyReads();
     renderHome(OWNER);
     await inRegime().findByText("확장 (Expansion)");
