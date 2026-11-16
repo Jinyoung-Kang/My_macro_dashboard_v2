@@ -218,6 +218,28 @@ export function BuildingIcon(props: IconProps) {
   );
 }
 
+/** 지표(축과 꺾은선) — 상세 화면 대상 머리의 대상 종류(작업대 실행 명세 §3-9, P4). */
+export function ChartLineIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M3 3v18h18" />
+      <path d="m7 15 4-4 3 3 5-6" />
+    </IconBase>
+  );
+}
+
+/** 종목(봉 두 개 — 몸통과 꼬리) — 상세 화면 대상 머리의 대상 종류(작업대 실행 명세 §3-9, P4). */
+export function CandlestickIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M8 3v3M8 15v6" />
+      <rect x="5.5" y="6" width="5" height="9" rx="1" />
+      <path d="M16 4v5M16 17v3" />
+      <rect x="13.5" y="9" width="5" height="8" rx="1" />
+    </IconBase>
+  );
+}
+
 /** 기관(기둥 있는 건물 — 13F 기관 등) — 정보 검색의 대상 종류. */
 export function LandmarkIcon(props: IconProps) {
   return (

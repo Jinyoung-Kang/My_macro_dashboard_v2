@@ -20,6 +20,8 @@ const ICONS = [
   "BellIcon",
   "BellOffIcon",
   "BuildingIcon",
+  "CandlestickIcon",
+  "ChartLineIcon",
   "CheckCircleIcon",
   "CheckIcon",
   "ChevronDownIcon",
