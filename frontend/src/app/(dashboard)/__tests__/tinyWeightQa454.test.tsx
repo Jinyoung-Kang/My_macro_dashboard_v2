@@ -121,6 +121,8 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
         <StockDetailScreen market="us" code="SYTH" />
       </SessionUserProvider>,
     );
+    // 보유 기관은 가운데 '보유 기관' 탭(대상 문법 — P4).
+    fireEvent.click(await screen.findByRole("tab", { name: "보유 기관" }));
     const card = (await screen.findByRole("heading", { name: "13F 보유 기관" })).closest("section") as HTMLElement;
     await within(card).findByText("1.25%");
     expectTiny(card);
@@ -133,6 +135,8 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
         <InstitutionDetailScreen cik={CIK} />
       </SessionUserProvider>,
     );
+    // 상위 보유 종목은 가운데 '보유 종목' 탭(대상 문법 — P4).
+    fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
     const card = (await screen.findByRole("heading", { level: 2, name: "상위 보유 종목" })).closest("section") as HTMLElement;
     await within(card).findByText("SYNTHETIC SMALL CO");
     expectTiny(card);

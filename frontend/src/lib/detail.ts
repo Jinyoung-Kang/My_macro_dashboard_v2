@@ -3,6 +3,8 @@
  * 명세 docs/specs/2026-11-01-search-detail.md. 외부 정보는 GET /api/detail/*(수집기 실시간 조회), 차트는 GET /api/macro/ticker.
  *
  * 값이 없으면 "—"(0으로 채우지 않음). 외부 출처는 링크로 함께 적습니다(Yahoo Finance·Google Finance·Investing.com·네이버 증권·SEC EDGAR).
+ * 작업대 대상 문법(P4 — 대상 머리·왼쪽 속성·가운데 탭·오른쪽 연결)의 속성 줄과 연결 주소는 lib/detailEntity에 따로 둡니다 — 이 모듈은 셸(빵부스러기·
+ * 명령 팔레트)이 주소 함수 때문에 모든 화면에서 싣는 모듈이라, 상세 화면만 쓰는 것을 여기 두면 모든 화면의 첫 적재가 커집니다.
  */
 import { EMPTY, formatKoreanScale, formatKst, formatNumber, withoutLeadingIcon } from "./format";
 import type { LineRow } from "./lineChart";

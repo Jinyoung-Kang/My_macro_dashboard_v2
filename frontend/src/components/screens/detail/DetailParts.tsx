@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
-import { ChangeChip, Hero, RangeTabs, Skeleton } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, TEXT_TARGET } from "@/components/ui";
+import { ChangeChip, EstimateBadge, Hero, type PropertyItem, RangeTabs, Skeleton } from "@/components/patterns";
+import { Banner, Button, Card, ErrorState, LINK_CLASSES, PANEL_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -14,16 +14,29 @@ import { useSessionUser } from "@/hooks/useSessionUser";
 import { isDemo } from "@/lib/access";
 import { quotaLabel } from "@/lib/aiEngines";
 import { apiPost } from "@/lib/api";
-import { CHART_KEY, chartRows, DETAIL_RANGES, type DetailRange, type ExternalLink, indicatorChartRows, newsPage, newsTime, summaryLines } from "@/lib/detail";
+import {
+  CHART_KEY,
+  chartRows,
+  DETAIL_RANGES,
+  type DetailRange,
+  type ExternalLink,
+  indicatorChartRows,
+  newsPage,
+  newsTime,
+  summaryLines,
+} from "@/lib/detail";
+import type { DetailProperty } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
-import { formatNumber } from "@/lib/format";
+import { EMPTY, formatNumber } from "@/lib/format";
 import { infoSearchEntry } from "@/lib/search";
 import { hasLineValues, scrubModel } from "@/lib/lineChart";
 import type { DetailNewsResponse, DetailStat, DetailSummaryResponse, SessionUser } from "@/lib/types";
 
 /**
- * 검색 상세 화면(종목·지표·기관) 공용 부품 — 시세 히어로(차트·기간)·핵심 지표 표·주요 뉴스·AI 요약·외부 링크.
+ * 검색 상세 화면(종목·지표·기관) 공용 부품 — 가격 차트 패널(기간·문지르기 읽기 줄)·링크 목록·속성 줄 바꾸기·주요 뉴스·AI 요약·외부 링크.
  * 표시 규칙은 lib/detail(순수 함수), 여기서는 그리기만 합니다(ADR 0004). 외부 출처는 새 창 링크로 적습니다.
+ * 시세 히어로(PriceHero)·핵심 지표 표(KeyStats·statRows)는 종목 팝업 창(StockQuickView — 모의·실제 계좌·ISA 표가 씀) 몫으로 남깁니다 — 상세 세 화면은
+ * 작업대 대상 문법(P4 — 대상 머리·속성 목록·가격 차트 패널)으로 옮겼고, 팝업 창은 모의매매 단계(P6)에서 함께 바꿉니다.
  */
 
 const LINK = "rounded-sm text-text underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
@@ -48,6 +61,7 @@ export function ExternalAnchor({ href, children, className = TARGET_LINK }: { hr
 /**
  * 시세 히어로 — 큰 값·전일 대비 칩·배지(meta)와 Yahoo 시계열 차트(GET /api/macro/ticker, 기간 1개월·6개월·1년·5년, 기본 1년).
  * 심볼이 없으면(스크래핑 카드 등) 차트 대신 이유 한 줄. 차트를 문지르면 큰 값이 그 날 종가로 바뀝니다(기간 첫 값 대비 변화).
+ * 지금은 종목 팝업 창(StockQuickView)만 씁니다 — 상세 화면은 대상 머리(EntityHeader)와 PriceChartPanel(P4). 팝업 창을 바꾸는 P6까지 그대로 둡니다.
  */
 export function PriceHero({
   label,
@@ -125,8 +139,172 @@ export function PriceHero({
   );
 }
 
+/** 문지르지 않을 때 읽기 줄의 안내 — 한 줄 자리를 지켜 문지르기 시작해도 차트가 위아래로 움직이지 않게 합니다. */
+const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
+
 /**
- * 핵심 지표 표 — 라벨 왼쪽·값 오른쪽 두 줄 격자(Google Finance·Yahoo Finance의 통계 표). 값이 없으면 "—". 값(숫자)은 말줄임으로 자르지 않습니다 —
+ * 가격 차트 패널(작업대 대상 문법 — 상세 화면 가운데 '개요' 탭, P4): 제목(이름 있는 영역) · 기간 탭(1개월·6개월·1년·5년, 기본 1년) · 읽기 줄 · 차트 · 출처 캡션.
+ *
+ * - 차트는 Yahoo 시계열(GET /api/macro/ticker). 심볼이 없으면(스크래핑 카드·뜻이 다른 티커) 차트 대신 이유 한 줄(`noChartReason`), 기간 탭도 없습니다.
+ *   `cardKey`를 주면 점을 카드와 같은 단위로(엔/원 100엔당 — lib/detail indicatorChartRows, QA-185).
+ * - 문지르기는 이 패널에 있습니다(명세 W7 — 대상 머리는 늘 지금 값). 차트를 문지르는 동안 읽기 줄에 그 날 날짜·값·기간 시작 대비 칩(모르면 생략)·추정
+ *   배지를 보입니다. 읽기 줄은 눈으로 보는 줄(aria-hidden)이고, 읽어 주기는 따로 둔 조용한 알림 영역(aria-live polite)이 '날짜 값'으로 합니다(차트에
+ *   초점을 두고 ←·→로 옮기는 낭독기 사용자). 문지르지 않을 때는 같은 자리에 짧은 안내를 두어 줄 높이가 바뀌지 않습니다.
+ * - 겉모양은 공용 패널(PANEL_CLASSES — 머리줄과 본문을 1px 경계로 가름)과 같고, 머리에 기간 탭이 있어 제목에 영역 이름을 붙입니다(section aria-labelledby).
+ */
+export function PriceChartPanel({
+  title,
+  label = title,
+  symbol,
+  noChartReason,
+  valueDigits,
+  cardKey,
+  caption,
+  unit,
+}: {
+  /** 패널 제목·영역 이름(예 'Apple Inc. 시세'). */
+  title: string;
+  /** 차트 계열 이름 — 차트 이름 '{label} 가격 차트'·기간 탭 이름 '{label} 차트 기간'(기본 title). */
+  label?: string;
+  /** 차트 Yahoo 심볼 — 없으면 차트를 그리지 않습니다. */
+  symbol: string | null;
+  noChartReason?: string;
+  /** 차트 값(문지른 점) 자릿수. */
+  valueDigits: number;
+  /** 지표 상세의 카드 키 — 차트 점을 카드와 같은 단위로. 없으면 원값(종목 상세). */
+  cardKey?: string;
+  /** 차트 아래 출처 글(예 '차트: Yahoo Finance ^GSPC 일별 종가'). */
+  caption?: string | null;
+  /** 문지른 값 옆 단위(종목의 통화) — 값이 있을 때만. */
+  unit?: string | null;
+}) {
+  const headingId = useId();
+  const [range, setRange] = useState<DetailRange>("1y");
+  const series = useApi<{ available: boolean; message?: string; points: { date: string; close: number | null; value?: number | null }[] }>(
+    symbol ? endpoints.macro.ticker(symbol, range) : null,
+  );
+  const rows = cardKey ? indicatorChartRows(cardKey, series.data?.points) : chartRows(series.data?.points);
+  const lineSeries = [{ key: CHART_KEY, label }];
+  const { index, onScrub } = useChartScrub(rows.length);
+  const format = (value: number) => formatNumber(value, valueDigits);
+  const drawn = Boolean(symbol && series.data?.available);
+  const scrubbable = drawn && hasLineValues(rows, lineSeries);
+  const point = scrubbable ? scrubModel(rows, CHART_KEY, index, format) : null;
+  const pointMissing = point !== null && point.valueText === EMPTY;
+  const pointUnit = point !== null && !pointMissing && unit ? ` ${unit}` : "";
+
+  let chart: ReactNode;
+  if (!symbol) {
+    chart = <p className="text-sm text-text-2">{noChartReason ?? "이 항목은 시계열 차트를 받지 않습니다."}</p>;
+  } else if (!series.data) {
+    chart = series.error ? <ErrorState message={series.error} onRetry={() => void series.reload()} /> : <Skeleton height={220} label="차트를 불러오는 중" />;
+  } else if (!series.data.available) {
+    chart = <p className="text-sm text-text-2">{series.data.message ?? "표시할 시계열이 없습니다."}</p>;
+  } else {
+    chart = <LineChart data={rows} series={lineSeries} variant="hero" valueFormat={format} ariaLabel={`${label} 가격 차트`} onScrub={onScrub} />;
+  }
+
+  return (
+    <section aria-labelledby={headingId} className={`min-w-0 ${PANEL_CLASSES}`}>
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-2.5 lg:px-4">
+        <h2 id={headingId} className="min-w-0 break-keep text-heading-sm text-text wrap-anywhere">
+          {title}
+        </h2>
+        {symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} /> : null}
+      </header>
+      <div className="p-3 lg:p-4">
+        {scrubbable ? (
+          <div aria-hidden="true" className="mb-2 flex min-h-5 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption">
+            {point !== null ? (
+              <>
+                <span className="tabular-nums text-text-2">{point.dateText}</span>
+                <span className={`font-semibold tabular-nums ${pointMissing ? "text-text-3" : "text-text"}`}>{point.valueText}</span>
+                {pointUnit ? <span className="text-xs text-text-3">{unit}</span> : null}
+                {changeChipVisible(point.change, point.changePct) ? (
+                  <>
+                    <ChangeChip size="sm" change={point.change} changePct={point.changePct} digits={valueDigits} pctDigits={2} />
+                    <span className="text-xs text-text-3">기간 시작 대비</span>
+                  </>
+                ) : null}
+                {point.isEstimated ? <EstimateBadge estimated note={point.estimateNote} /> : null}
+              </>
+            ) : (
+              <span className="text-xs text-text-3">{SCRUB_HINT}</span>
+            )}
+          </div>
+        ) : null}
+        <div className="min-w-0">{chart}</div>
+        {caption ? <p className="mt-2 text-xs text-text-3">{caption}</p> : null}
+        {scrubbable ? (
+          // 조용한 알림 — 문지른 점의 '날짜 값'. 문지르지 않으면 비워 둡니다(미리 있어야 첫 점부터 읽힘).
+          <div className="sr-only" aria-live="polite" aria-atomic="true">
+            {point !== null ? `${point.dateText} ${point.valueText}${pointUnit}${point.isEstimated ? " 추정" : ""}` : ""}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+/** 변화 칩을 그릴 값이 있는가(둘 다 모르면 칩이 null을 그려 '기간 시작 대비'만 홀로 남지 않게). */
+function changeChipVisible(change: number | null | undefined, changePct: number | null | undefined): boolean {
+  return (change !== null && change !== undefined && Number.isFinite(change)) || (changePct !== null && changePct !== undefined && Number.isFinite(changePct));
+}
+
+/** 링크 목록 한 줄 — 바깥 주소면 새 창(ExternalAnchor — http(s)만), 아니면 이 앱 안 주소(next/link). */
+export type DetailLink = { label: string; href: string; external?: boolean };
+
+/**
+ * 링크 목록 패널(상세 화면 오른쪽 '연결') — 따로 선 글 링크를 위에서 아래로. 누를 수 있는 것이라 강조 파랑(LINK_CLASSES — 좁은 화면 누르는 자리 44px,
+ * 포커스 링). 링크가 없으면 패널을 그리지 않습니다.
+ */
+export function LinkListPanel({ title, links }: { title: string; links: readonly DetailLink[] }) {
+  if (links.length === 0) return null;
+  return (
+    <Panel title={title}>
+      <ul className="flex flex-col lg:gap-1.5">
+        {links.map((link) => (
+          <li key={`${link.href}:${link.label}`} className="min-w-0">
+            {link.external ? (
+              <ExternalAnchor href={link.href} className={`${LINK_CLASSES} break-keep text-sm wrap-anywhere`}>
+                {link.label}
+              </ExternalAnchor>
+            ) : (
+              <Link href={link.href} className={`${LINK_CLASSES} break-keep text-sm wrap-anywhere`}>
+                {link.label}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+/**
+ * lib/detail의 속성 줄 → 속성 목록 줄 — `link`가 있으면 값 글을 그 링크로 그립니다(바깥이면 새 창). 값 칸 안의 링크도 따로 선 링크라 좁은 화면 44px입니다.
+ */
+export function propertyItems(rows: readonly DetailProperty[]): PropertyItem[] {
+  return rows.map(({ link, ...row }) => {
+    if (!link || row.value === null) return row;
+    const className = `${LINK_CLASSES} break-keep wrap-anywhere`;
+    return {
+      ...row,
+      value: link.external ? (
+        <ExternalAnchor href={link.href} className={className}>
+          {row.value}
+        </ExternalAnchor>
+      ) : (
+        <Link href={link.href} className={className}>
+          {row.value}
+        </Link>
+      ),
+    };
+  });
+}
+
+/**
+ * 핵심 지표 표(종목 팝업 창 몫 — 상세 화면은 속성 목록 PropertyList, P4) — 라벨 왼쪽·값 오른쪽 두 줄 격자(Google Finance·Yahoo Finance의 통계 표). 값이 없으면 "—". 값(숫자)은 말줄임으로 자르지 않습니다 —
  * 칸이 좁으면 숫자와 단위 사이의 공백에서 먼저 줄을 바꾸고 칸보다 긴 낱말만 칸 안에서 끊습니다(QA-455 — 한 줄 말줄임이라 옆 칸에서 '23.77 USD'가
  * '23.77 …'로 잘렸음). `side`는 lg 이상에서 1/3 폭 옆 칸에 놓이는 표 — 그 폭에서 두 칸이면 값 칸이 라벨에 밀려 좁아져 lg 이상은 한 칸으로 둡니다.
  */
@@ -144,10 +322,13 @@ export function KeyStats({ rows, side = false }: { rows: readonly { label: strin
   );
 }
 
-/** DetailStat 목록 → 표 줄(통화 금액은 그 통화로). */
+/** DetailStat 목록 → 표 줄(통화 금액은 그 통화로) — 종목 팝업 창 몫(상세 화면은 lib/detail stockStatItems). */
 export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) => string): { label: string; value: string }[] {
   return stats.map((stat) => ({ label: stat.label, value: text(stat) }));
 }
+
+/** 주요 뉴스의 출처 묶음(뉴스 카드 머리·상세 화면 '출처' 패널이 같은 글). */
+export const NEWS_SOURCES = "Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색)";
 
 /**
  * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)·연합인포맥스·구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 한 쪽에 5건씩(사용자 요청
@@ -209,7 +390,7 @@ export function NewsCard({
   return (
     <Card
       title={title}
-      source="Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색) — 제목을 누르면 원문 기사"
+      source={`${NEWS_SOURCES} — 제목을 누르면 원문 기사`}
       actions={
         infoSearch ? (
           <Link href={infoSearch.href} title={`${infoSearch.label} — 최근 2년의 기사·글`} className={`${TEXT_TARGET} rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}>
@@ -292,16 +473,17 @@ export function AiSummaryCard({
       {summary.error ? <ErrorState message={summary.error} /> : null}
       {result && !result.status ? <Banner tone="warn">{result.error ?? "요약을 만들지 못했습니다."}</Banner> : null}
       {lines.length > 0 ? (
-        <div className="flex flex-col gap-1.5 text-body-md leading-relaxed text-text">
+        // 긴 글 단계(running 15/24, 한 줄 최대 72자). 근거 번호는 위로 올리되 줄 높이를 밀지 않게(align-super 대신 상대 위치 — 번호가 있는 줄만 줄 간격이 벌어졌음).
+        <div className="flex max-w-[72ch] flex-col gap-1.5 text-running text-text">
           {lines.map((line, at) => {
             const refs = line.refs.map((n) => ({ n, source: sourceOf(n) }));
             const marks = refs.map(({ n, source }) =>
               source?.url ? (
-                <ExternalAnchor key={n} href={source.url} className={`${LINK} ml-0.5 align-super text-xs text-text-2`}>
+                <ExternalAnchor key={n} href={source.url} className={`${LINK} relative -top-[0.4em] ml-0.5 text-xs leading-none text-text-2`}>
                   [{n}]
                 </ExternalAnchor>
               ) : (
-                <span key={n} className="ml-0.5 align-super text-xs text-text-3">
+                <span key={n} className="relative -top-[0.4em] ml-0.5 text-xs leading-none text-text-3">
                   [{n}]
                 </span>
               ),

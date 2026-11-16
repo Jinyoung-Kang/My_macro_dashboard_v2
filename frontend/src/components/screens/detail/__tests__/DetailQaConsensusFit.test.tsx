@@ -79,10 +79,11 @@ describe("종목 상세 — 애널리스트 의견·핵심 지표 값이 잘리�
     expect(twoColumns ? words.includes("lg:grid-cols-1") : true).toBe(true);
     expect(words.includes("lg:grid-cols-2")).toBe(false);
 
-    // 라벨은 줄지 않고(shrink-0) 값만 줄바꿈합니다 — 숫자와 단위 사이의 공백에서 먼저 끊기고, 칸보다 긴 낱말만 안에서 끊습니다.
+    // 라벨은 줄지 않고(shrink-0) 값만 줄바꿈합니다 — 숫자와 단위 사이의 공백에서 먼저 끊기고, 칸보다 긴 낱말만 안에서 끊습니다. 대상 문법(P4)의
+    // 속성 목록(PropertyList)은 줄바꿈 규칙을 값 칸(dd)에 두고 값 글이 물려받습니다(overflow-wrap은 상속) — 값 글에서 카드까지 줄에서 봅니다.
     const label = within(card).getByText("평균 목표가");
     expect(classes(label)).toContain("shrink-0");
-    expect(classes(value)).toContain("wrap-anywhere");
+    expect(chainTo(value, card).some((node) => classes(node).includes("wrap-anywhere"))).toBe(true);
 
     // 핵심 지표(넓은 가운데 칸)도 같은 표라 값 글을 자르지 않습니다.
     const stats = screen.getByRole("heading", { name: "핵심 지표" }).closest("section") as HTMLElement;

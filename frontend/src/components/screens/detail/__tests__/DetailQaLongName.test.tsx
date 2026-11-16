@@ -85,6 +85,8 @@ describe("종목 상세 — 60자를 넘는 시세 이름의 뉴스·AI 요약 �
         <StockDetailScreen market="us" code="FUFH" />
       </SessionUserProvider>,
     );
+    // 뉴스는 가운데 '뉴스' 탭(대상 문법 — P4) — 사용자가 탭을 열면 보입니다(요청은 탭과 상관없이 화면을 열 때).
+    fireEvent.click(await screen.findByRole("tab", { name: "뉴스" }));
     const heading = await screen.findByRole("heading", { name: "주요 뉴스" });
     const card = heading.closest("section") as HTMLElement;
     await within(card).findByRole("link", { name: /합성 기사/ });

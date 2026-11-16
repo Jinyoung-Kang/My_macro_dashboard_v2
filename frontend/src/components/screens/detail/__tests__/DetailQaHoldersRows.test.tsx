@@ -5,7 +5,7 @@
  * '공시 이름 · 보고일'을 한 줄 말줄임(block truncate)으로 묶고 title도 없어, 1440·390 모두 긴 공시 이름이면 보고일과 이름 끝이 잘렸습니다.
  * jsdom은 배치를 재지 못하므로 고침이 세우는 구조(클래스·요소의 자리)를 대조하고, 실제 폭은 QA 스택 브라우저로 확인합니다.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
@@ -87,14 +87,16 @@ describe("종목 상세 — 13F 보유 줄의 공시 이름·보고일(QA-445)",
         <StockDetailScreen market="us" code="SYNF" />
       </SessionUserProvider>,
     );
+    // 보유 기관은 가운데 '보유 기관' 탭의 목록-검사(대상 문법 — P4): 줄은 단추이고 기관 이름·공시 이름·보고일 칸과 숫자 칸 구조는 같습니다.
+    fireEvent.click(await screen.findByRole("tab", { name: "보유 기관" }));
     const heading = await screen.findByRole("heading", { name: "13F 보유 기관" });
     const card = heading.closest("section") as HTMLElement;
-    await within(card).findByRole("link", { name: INSTITUTIONS[0] });
+    const list = await within(card).findByRole("list", { name: "13F 보유 기관" });
 
     for (const [index, name] of NAMES.entries()) {
-      const link = within(card).getByRole("link", { name: INSTITUTIONS[index] });
-      const row = link.closest("li")!;
-      const cell = link.parentElement!;
+      const button = within(list).getByRole("button", { name: new RegExp(INSTITUTIONS[index].replace(/[()]/g, "\\$&")) });
+      const row = button.closest("li")!;
+      const cell = within(button).getByText(INSTITUTIONS[index]).parentElement!;
 
       // 결함을 직접 보는 단언 먼저(수정 전에는 여기서 실패) — 보고일과 공시 이름 어디에도 말줄임이 걸리지 않음.
       const date = deepest(row, REPORT_DATE);

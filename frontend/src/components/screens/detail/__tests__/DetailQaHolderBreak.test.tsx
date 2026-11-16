@@ -6,7 +6,7 @@
  * '운/용'·'법/인'·'연금자산/운용'처럼 낱말 가운데서 끊겼습니다. jsdom은 배치를 재지 못하므로 고침이 세우는 구조(이름 글에 걸리는 클래스)를
  * 대조하고, 실제 폭은 QA 스택 브라우저로 확인합니다.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { institutionHref } from "@/lib/detail";
@@ -71,21 +71,23 @@ describe("종목 상세 — 13F 보유 기관 이름의 줄바꿈(QA-449)", () =
   // 이름 글에 break-keep(낱말 사이에서만)과 wrap-anywhere(칸보다 긴 낱말만 칸 안에서 끊음)를 겁니다.
   // 수정 전 실패: 이름 글에서 줄(li)까지 어디에도 break-keep·wrap-anywhere가 없음(재현 커밋에서는 it.fails).
   // 고침: 기관 이름 링크에 break-keep·wrap-anywhere.
-  it("기관 이름은 낱말 사이에서만 줄을 바꾸고(break-keep) 칸보다 긴 낱말만 칸 안에서 끊는다(wrap-anywhere) — 말줄임 없음, 링크·숫자 칸 그대로", async () => {
+  // 대상 문법(P4)에서 보유 기관은 가운데 '보유 기관' 탭의 목록-검사(MasterDetail)입니다 — 줄은 단추(이름 글은 단추 안), 기관 상세 링크는 줄을 고르면
+  // 여는 검사(좁은 화면 대화상자)의 '기관 상세 열기'. 이름 글의 줄바꿈 규칙과 숫자 칸 구조는 같습니다.
+  it("기관 이름은 낱말 사이에서만 줄을 바꾸고(break-keep) 칸보다 긴 낱말만 칸 안에서 끊는다(wrap-anywhere) — 말줄임 없음, 기관 상세 링크·숫자 칸 그대로", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNE" />
       </SessionUserProvider>,
     );
+    fireEvent.click(await screen.findByRole("tab", { name: "보유 기관" }));
     const heading = await screen.findByRole("heading", { name: "13F 보유 기관" });
     const card = heading.closest("section") as HTMLElement;
-    await within(card).findByRole("link", { name: INSTITUTIONS[0] });
+    const list = await within(card).findByRole("list", { name: "13F 보유 기관" });
 
     for (const [index, institution] of INSTITUTIONS.entries()) {
-      const link = within(card).getByRole("link", { name: institution });
-      expect(link.getAttribute("href")).toBe(institutionHref(`000000000${index + 1}`));
-      const row = link.closest("li")!;
-      const name = within(link).getByText(institution);
+      const button = within(list).getByRole("button", { name: new RegExp(institution.replace(/[()]/g, "\\$&")) });
+      const row = button.closest("li")!;
+      const name = within(button).getByText(institution);
       const chain = chainTo(name, row);
 
       // 결함을 직접 보는 단언 먼저(수정 전에는 여기서 실패).
@@ -93,11 +95,18 @@ describe("종목 상세 — 13F 보유 기관 이름의 줄바꿈(QA-449)", () =
       expect(inChain(chain, "wrap-anywhere")).toBe(true);
       // 전체 이름이 보임(말줄임 없음), 이름 칸은 줄어드는 칸이고 숫자는 칸 밖에서 제 폭.
       expect(inChain(chain, "truncate")).toBe(false);
-      const cell = link.parentElement!;
+      const cell = name.parentElement!;
       expect(classes(cell)).toContain("min-w-0");
       const weight = within(row).getByText(`${3 - index}.00%`);
       expect(cell.contains(weight)).toBe(false);
       expect(classes(weight.parentElement!)).toContain("shrink-0");
+
+      // 기관 이름은 기관 상세로 이어짐 — 줄을 누르면 연 검사의 '기관 상세 열기'.
+      fireEvent.click(button);
+      const dialog = await screen.findByRole("dialog", { name: institution });
+      expect(within(dialog).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe(institutionHref(`000000000${index + 1}`));
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      await within(document.body).findByRole("list", { name: "13F 보유 기관" });
     }
   });
 });

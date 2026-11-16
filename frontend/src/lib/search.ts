@@ -55,7 +55,7 @@ export const SEARCH_KINDS: readonly { kind: SearchKind; label: string }[] = [
 export const SEARCH_PER_GROUP = 6;
 
 /** 결과가 가는 화면의 이름(오른쪽 '→ 화면' 캡션). 주소는 결과마다 그 상세 화면(lib/detail). */
-const DEST = {
+export const DEST = {
   indicator: "지표 상세",
   institution: "기관 상세",
   ticker: "종목 상세",

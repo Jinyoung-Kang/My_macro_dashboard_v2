@@ -38,6 +38,7 @@ import { AiSummaryCard } from "@/components/screens/detail/DetailParts";
 import { SourceCard } from "@/components/screens/info/CatalogSection";
 import { NewsSection } from "@/components/screens/info/NewsSection";
 import { IndicatorDetailScreen } from "@/components/screens/detail/IndicatorDetailScreen";
+import { InstitutionDetailScreen } from "@/components/screens/detail/InstitutionDetailScreen";
 import { StockDetailScreen } from "@/components/screens/detail/StockDetailScreen";
 import PaperPage from "@/components/screens/paper/PaperScreen";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
@@ -169,9 +170,22 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
       },
     };
     const { container } = renderAs(<StockDetailScreen market="us" code="SYNQ" />);
+    // 가운데 탭(개요·뉴스·리서치·보유 기관 — P4)마다 보이는 누름 자리를 따집니다(숨긴 탭은 감사가 건너뜀). 보유 기관 줄은 목록-검사의 줄 단추이고
+    // 기관 상세 링크는 줄을 누르면 여는 대화상자(body 끝에 그림) 안이라 그것도 봅니다.
+    await screen.findByRole("link", { name: /한국어 개요 출처/ });
+    const found = [...smallTargets(container)];
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     await screen.findByRole("link", { name: /Synthetic headline/ });
-    await screen.findByRole("link", { name: "합성 자산운용" });
-    expect(smallTargets(container)).toEqual([]);
+    found.push(...smallTargets(container));
+    fireEvent.click(screen.getByRole("tab", { name: "리서치" }));
+    await screen.findByRole("link", { name: /합성 리포트/ });
+    found.push(...smallTargets(container));
+    fireEvent.click(screen.getByRole("tab", { name: "보유 기관" }));
+    fireEvent.click(await screen.findByRole("button", { name: /합성 자산운용/ }));
+    const dialog = await screen.findByRole("dialog", { name: "합성 자산운용" });
+    expect(within(dialog).getByRole("link", { name: "기관 상세 열기" })).toBeTruthy();
+    found.push(...smallTargets(dialog));
+    expect(found).toEqual([]);
   });
 
   //  - 상세 화면 공용 AI 요약: '요약 근거' 목록의 출처 링크(따로 선 링크가 4px 간격으로 쌓인 목록 — 검토 지적). 문장 끝의 위첨자 [n]은
@@ -192,8 +206,17 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
     const list = await screen.findByRole("list", { name: "요약 근거" });
     expect(within(list).getAllByRole("link")).toHaveLength(2);
     const card = list.closest("section") as HTMLElement;
-    expect(within(card).getAllByRole("link", { name: /^\[\d\]/ })).toHaveLength(2);
+    const marks = within(card).getAllByRole("link", { name: /^\[\d\]/ });
+    expect(marks).toHaveLength(2);
     expect(smallTargets(card)).toEqual([]);
+    // 겉모양(P4): 본문은 긴 글 단계(running 15/24, 최대 72자), 근거 번호는 줄 높이를 밀지 않는 상대 위치(align-super 아님) — 번호는 문장 안 링크 그대로.
+    const body = within(card).getByText("한 줄 요약: 합성 회사는 올랐다").parentElement as HTMLElement;
+    expect(body.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-running", "max-w-[72ch]"]));
+    for (const mark of marks) {
+      const words = (mark.getAttribute("class") ?? "").split(/\s+/);
+      expect(words).toEqual(expect.arrayContaining(["relative", "-top-[0.4em]", "text-xs", "leading-none"]));
+      expect(words).not.toContain("align-super");
+    }
   });
 
   //  - 지표 상세: '정보 검색', 뉴스 제목, 'Yahoo 시세 상세' 링크, '다른 곳에서 보기'(min-h-9)
@@ -204,8 +227,42 @@ describe("좁은 화면 누르는 자리 44px — 조사가 짚은 화면(QA-458
       "/api/detail/news": NEWS,
     };
     const { container } = renderAs(<IndicatorDetailScreen indicatorKey="sp500" />);
+    // 가운데 탭(개요·뉴스 — P4)마다 보이는 누름 자리를 따집니다(숨긴 탭은 감사가 건너뜀). 탭 줄의 탭 단추도 셈에 듭니다.
+    await screen.findByRole("link", { name: "^GSPC 시세·핵심 지표 보기" });
+    const overview = smallTargets(container);
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
     await screen.findByRole("link", { name: /Synthetic headline/ });
-    expect(smallTargets(container)).toEqual([]);
+    expect([...overview, ...smallTargets(container)]).toEqual([]);
+  });
+
+  //  - 기관 상세(P4에서 더함 — D1 QA 넘김 touch-targets-lt-lg-missed-by-qa458의 기관 상세 몫, QA-531): 탭마다(개요·보유 종목·뉴스)와 보유 줄 대화상자
+  it("기관 상세 — 연결·정보 검색·13F 포트폴리오·보유 줄·뉴스·다른 곳에서 보기 링크", async () => {
+    reads = {
+      [endpoints.institution.portfolio("0009999996", 8, 30)]: {
+        available: true, cik: "0009999996", institution: { name: "🇺🇸 합성 자산운용 (Synthetic Asset)", desc: "합성 소개" },
+        collectedAtKst: "2026-11-15 09:00 KST", ageSeconds: 60,
+        quarters: [
+          { filingDate: "2026-05-15", reportDate: "2026-03-31", totalValue: 9e8, holdingCount: 1 },
+          { filingDate: "2026-08-14", reportDate: "2026-06-30", totalValue: 1e9, holdingCount: 1 },
+        ],
+        latest: { reportDate: "2026-06-30", filingDate: "2026-08-14", totalValue: 1e9 },
+        holdings: [{ name: "SYNTHETIC CO", cusip: "000000001", class: "COM", value: 1e9, shares: 1000, weight: 100, weightDiff: 0.5, sharesDiff: 10, action: "증가" }],
+      },
+      "/api/detail/news": NEWS,
+    };
+    const { container } = renderAs(<InstitutionDetailScreen cik="0009999996" />);
+    await screen.findByRole("link", { name: "13F 포트폴리오(분기·비중 추이)" });
+    const found = [...smallTargets(container)];
+    fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
+    await screen.findByRole("link", { name: "13F 포트폴리오에서 자세히" });
+    found.push(...smallTargets(container));
+    fireEvent.click(within(screen.getByRole("list", { name: "상위 보유 종목" })).getByRole("button"));
+    found.push(...smallTargets(await screen.findByRole("dialog", { name: "SYNTHETIC CO" })));
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
+    await screen.findByRole("link", { name: /Synthetic headline/ });
+    found.push(...smallTargets(container));
+    expect(found).toEqual([]);
   });
 
   //  - 모의 설정: 참·거짓 키의 체크 상자(13px, 감싼 label 없음)

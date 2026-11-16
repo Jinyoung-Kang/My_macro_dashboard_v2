@@ -12,6 +12,7 @@ import {
   RECENT_LIMIT,
   RECENT_STORAGE_KEY,
   commandMatches,
+  detailVisitEntity,
   paletteSummary,
   parseRecent,
   pushRecent,
@@ -195,5 +196,32 @@ describe("paletteSummary — 결과 수 안내에 명령 수를 더함", () => {
     expect(paletteSummary([], 1)).toBe("결과 1건");
     expect(paletteSummary([group(3, 3)], 2)).toBe("결과 5건");
     expect(paletteSummary([group(10, 6)], 1, ["기관: 불러오는 중…"])).toBe("결과 11건 중 7건 표시 — 기관: 불러오는 중…");
+  });
+});
+
+describe("detailVisitEntity — 상세 화면 방문(P4)", () => {
+  it("종류별 '→ 화면' 글은 통합 검색 결과와 같고, 주소는 상세 세 경로의 정규 주소만", () => {
+    expect(detailVisitEntity({ kind: "ticker", label: "Apple Inc.", sub: "AAPL · NasdaqGS · 주식 · USD", href: "/s/us/AAPL" })).toEqual({
+      kind: "ticker", label: "Apple Inc.", sub: "AAPL · NasdaqGS · 주식 · USD", href: "/s/us/AAPL", dest: "종목 상세",
+    });
+    expect(detailVisitEntity({ kind: "indicator", label: "S&P 500", sub: "미국 주가지수 · ^GSPC", href: "/markets/i/sp500" })?.dest).toBe("지표 상세");
+    expect(detailVisitEntity({ kind: "institution", label: "버크셔", sub: "13F · CIK 0001067983", href: "/institutions/0001067983" })?.dest).toBe("기관 상세");
+    // 인코딩된 지수 심볼도 그 정규 주소 그대로
+    expect(detailVisitEntity({ kind: "ticker", label: "S&P 500", sub: null, href: "/s/us/%5EGSPC" })?.href).toBe("/s/us/%5EGSPC");
+  });
+
+  it("형식 밖(빈 이름·다른 경로·종류와 맞지 않는 주소·긴 글)이면 null", () => {
+    expect(detailVisitEntity({ kind: "ticker", label: " ", sub: null, href: "/s/us/AAPL" })).toBeNull();
+    expect(detailVisitEntity({ kind: "indicator", label: "x", sub: null, href: "/macro" })).toBeNull();
+    expect(detailVisitEntity({ kind: "institution", label: "x", sub: null, href: "/s/us/AAPL" })).toBeNull();
+    expect(detailVisitEntity({ kind: "ticker", label: "x".repeat(201), sub: null, href: "/s/us/AAPL" })).toBeNull();
+  });
+
+  it("넣으면 맨 앞, 같은 주소는 하나(팔레트에서 고른 것과 합쳐짐)", () => {
+    const visit = detailVisitEntity({ kind: "ticker", label: "Apple Inc.", sub: null, href: "/s/us/AAPL" })!;
+    expect(pushRecent([SP500, APPLE], visit).map((entity) => [entity.href, entity.sub])).toEqual([
+      ["/s/us/AAPL", null],
+      ["/markets/i/sp500", "주가지수 · ^GSPC"],
+    ]);
   });
 });
