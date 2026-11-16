@@ -38,7 +38,9 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   filterChipClasses: () => BOTH.map((pressed): [string, string] => [String(pressed), filterChipClasses(pressed)]),
   TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
-    BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
+    BOTH.flatMap((active) =>
+      (["md", "sm"] as const).flatMap((size) =>
+        BOTH.map((wrap): [string, string] => [`${active}/${size}/${wrap ? "wrap" : "row"}`, underlineTabClasses(active, size, wrap)]))),
   toggleClasses: () =>
     BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
   LINK_CLASSES: () => [["", LINK_CLASSES]],
@@ -109,6 +111,14 @@ describe("공용 조작 조각의 좁은 화면 누르는 자리(QA-458)", () =>
     expect(belowLgTarget("lg:min-h-11")).toContain("없음");
     expect(belowLgTarget("min-h-11 sm:min-h-8")).toContain("sm:min-h-8");
     expect(belowLgTarget("min-h-11 md:h-9")).toContain("md:h-9");
+    // 음수 아래 여백은 다음 줄이 덮어 누르는 자리가 그만큼 줄어듭니다(줄을 바꾸는 탭 줄 — 2026-11-16 결정 1 검토 지적: 첫 줄 탭 실효 43px).
+    expect(belowLgTarget("min-h-11 -mb-px lg:min-h-[30px]")).toContain("-mb-px을 빼면 43px");
+    expect(belowLgTarget("min-h-[45px] -mb-px lg:min-h-[31px]")).toBeNull();
+    expect(belowLgTarget("min-h-12 -my-px")).toBeNull();
+    expect(belowLgTarget("min-h-[45px] -mb-0.5")).toContain("43px");
+    // 위 여백(뒤에 오는 이 요소가 앞 줄을 덮음)과 lg 이상 변형은 빼지 않습니다.
+    expect(belowLgTarget("min-h-11 -mt-px")).toBeNull();
+    expect(belowLgTarget("min-h-11 lg:-mb-px")).toBeNull();
   });
 
   it("DOM 검사기 자체 — 문장 안 링크·보이지 않는 요소는 빼고, 번호·머리말만 붙은 링크는 세고, 체크 상자는 감싼 label로 따진다", () => {

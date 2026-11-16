@@ -1,6 +1,7 @@
 "use client";
 
 import { Children, ReactNode, useId, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
+import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { deltaColor, deltaDirection, EMPTY, formatAge, formatKst, textDeltaDirection, withMinusSign, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
@@ -614,6 +615,12 @@ const TAB_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
  * ←·→(끝에서 돎)·Home·End는 포커스만 옮기고, 여는 것은 누르기·Enter·Space입니다 — 탭마다 자료를 읽거나 주소를 바꾸는 화면이 지나가며
  * 부르지 않게 합니다(정보 검색 결과 탭과 같은 규칙). 탭 패널(role="tabpanel", id=panelId, aria-labelledby=tabId(idPrefix, value))과
  * 탭을 바꿀 때의 일(주소 바꾸기 — 모의매매 탭의 history.replaceState 등)은 부르는 쪽이 onChange에서 합니다.
+ *
+ * 탭 줄이 폭보다 길면 가로로 스크롤하고(줄을 바꾸지 않음), 고른 탭과 키보드로 옮긴 탭(:focus-visible)을 줄 안으로 보이게 합니다 — 줄의 scrollLeft만
+ * 옮기고 창(문서)의 세로 스크롤은 그대로입니다(좁은 화면 하위 메뉴 줄과 같은 훅 — hooks/useScrollStripActive, QA-510 방식). 그래서 줄이 위치 기준(relative)입니다.
+ * 처음 그릴 때와 고른 탭이 바뀔 때만 움직이고, 손가락·마우스로 누른 칸은 고른 뒤에 보입니다(누르는 도중에 줄이 움직이지 않게).
+ * `wrap`을 주면 대신 줄을 바꿔 모든 탭이 보입니다(가로 스크롤 없음) — 탭마다 제 줄의 바닥선을 지녀 고른 탭의 밑줄이 다음 줄 위에 떠 보이지
+ * 않습니다(underlineTabClasses wrap). 반 폭 패널처럼 탭 다섯이 들어가지 않는 자리(홈 시장 패널 — 2026-11-16 결정 1)만 켭니다.
  */
 export function Tabs<K extends string>({
   label,
@@ -623,6 +630,7 @@ export function Tabs<K extends string>({
   idPrefix,
   panelId,
   size = "sm",
+  wrap = false,
   className = "",
 }: {
   label: string;
@@ -634,10 +642,15 @@ export function Tabs<K extends string>({
   panelId: string;
   /** sm(화면 안 탭 줄 — lg 이상 30px)이 기본, md는 하위 메뉴 줄 크기(lg 이상 40px). */
   size?: UnderlineTabSize;
+  /** true면 폭이 모자랄 때 줄을 바꿉니다(가로 스크롤 대신 — 위 설명). 기본은 한 줄 + 가로 스크롤. */
+  wrap?: boolean;
   /** 탭 줄의 배치 클래스(여백 등). */
   className?: string;
 }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const listRef = useRef<HTMLDivElement>(null);
+  // 고른 탭이 바뀌면(처음 그릴 때 포함) 그 탭을, 키보드로 옮긴 탭은 포커스가 들어올 때 줄 안에 보이게 — 줄을 바꾸는 줄(wrap)은 넘치지 않아 움직일 일이 없습니다.
+  useScrollStripActive(listRef, value, { current: '[role="tab"][aria-selected="true"]' });
   const selectedIndex = items.findIndex((item) => item.key === value);
   const entry = selectedIndex >= 0 ? selectedIndex : 0;
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -648,7 +661,12 @@ export function Tabs<K extends string>({
     refs.current[items[next].key]?.focus();
   };
   return (
-    <div role="tablist" aria-label={label} className={`flex overflow-x-auto border-b border-border ${className}`.trim()}>
+    <div
+      ref={listRef}
+      role="tablist"
+      aria-label={label}
+      className={`relative flex ${wrap ? "flex-wrap" : "overflow-x-auto"} border-b border-border ${className}`.trim()}
+    >
       {items.map((item, index) => (
         <button
           key={item.key}
@@ -663,7 +681,7 @@ export function Tabs<K extends string>({
           tabIndex={index === entry ? 0 : -1}
           onClick={() => onChange(item.key)}
           onKeyDown={(event) => onKeyDown(event, index)}
-          className={underlineTabClasses(item.key === value, size)}
+          className={underlineTabClasses(item.key === value, size, wrap)}
         >
           {item.label}
           {item.suffix}

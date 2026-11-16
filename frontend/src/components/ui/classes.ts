@@ -172,15 +172,38 @@ const UNDERLINE_SIZE: Record<UnderlineTabSize, string> = {
   sm: "min-h-11 text-sm lg:min-h-[30px]",
 };
 
+// 줄을 바꾸는 탭(wrap)은 1px 높습니다 — 탭이 -mb-px로 다음 줄과 1px 겹쳐 다음 줄 탭이 그 자리를 덮으므로(누르기가 그 탭에 감), 겹친 1px을 빼도
+// 누르는 자리가 한 줄 탭과 같고(sm 44px·lg 30px — 원칙 A8), 한 줄로 들어갈 때 탭 줄 높이(45·31px)도 한 줄 탭 줄과 같습니다(2026-11-16 결정 1 검토 지적 —
+// 예전 44·30px에서는 첫 줄 탭이 43·29px만 받고 줄도 1px 낮았음).
+const UNDERLINE_WRAP_SIZE: Record<UnderlineTabSize, string> = {
+  md: "min-h-[49px] text-[15px] lg:min-h-[41px] lg:text-sm",
+  sm: "min-h-[45px] text-sm lg:min-h-[31px]",
+};
+
 /**
  * 밑줄 탭(하위 메뉴 줄·모의매매 화면 탭·공용 Tabs) — 탭 모양은 이것 하나입니다(실행 명세 §6). 지금 탭은 강조 파랑 2px 밑줄과 굵은 글
  * (셸·탐색은 누를 수 있는 것이라 강조 파랑을 씀 — A1), 나머지는 보조 글. 줄을 바꾸지 않고 감싼 줄이 가로로 스크롤합니다. `sm`은 하위 메뉴 줄
  * 아래 두 번째 탭 줄(모의매매 탭)용으로 한 단계 작게 둬 두 줄의 위계를 가릅니다.
  * 나머지 탭의 투명 밑줄(글이 위아래로 흔들리지 않게 둔 자리)은 고대비(forced-colors) 모드에서 시스템 글자색으로 칠해져 모든 탭에 밑줄이
  * 생기므로, 그 모드에서는 지웁니다 — 지금 탭만 밑줄과 굵은 글이 남습니다(명세 D9, headless 크롬 forced-colors 흉내로 확인).
+ * `wrap`은 줄을 바꿔도 되는 탭 줄(공용 Tabs의 `wrap` — 홈 시장 패널 하나)의 탭입니다: 탭마다 제 줄의 바닥선을 지녀, 줄이 둘이어도 고른 탭의 밑줄이
+ * 제 줄 선 위에 놓입니다(아래 설명). 넓이·글 크기는 같고 높이는 1px 높습니다(UNDERLINE_WRAP_SIZE — 겹친 1px을 빼도 누르는 자리가 같게).
  */
-export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "md"): string {
-  return `inline-flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-3 ${UNDERLINE_SIZE[size]} ${SELECT_MOTION} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "md", wrap = false): string {
+  const shape = `inline-flex shrink-0 items-center gap-1 whitespace-nowrap px-3 ${(wrap ? UNDERLINE_WRAP_SIZE : UNDERLINE_SIZE)[size]} ${SELECT_MOTION} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus`;
+  if (wrap) {
+    // 두 줄 허용(공용 Tabs `wrap`): 탭마다 자기 줄의 바닥선을 지닙니다 — 나머지 탭은 1px 경계선(+ 1px 아래 여백으로 지금 탭의 2px 밑줄과 같은 높이 —
+    // 글이 위아래로 흔들리지 않음), 지금 탭은 그 자리에 강조 파랑 2px. 탭 줄 바닥선(감싼 tablist의 1px 아래 경계)과는 -mb-px로 겹쳐, 마지막 줄의 선이
+    // 두 겹(2px)이 되지 않고 다음 줄이 앞 줄 바닥선에 붙습니다. 그래서 첫 줄에서 고른 탭의 밑줄이 둘째 줄 위에 떠 보이지 않고 제 줄의 선 위에 놓입니다.
+    // 고대비(forced-colors)에서는 두 선이 모두 남아 줄마다 바닥선이 그대로 보이고, 지금 탭의 밑줄은 시스템 강조색(Highlight — 작성자가 지정한 시스템 색은
+    // 그 모드에서도 남음)으로 그려 나머지 탭의 1px 선(시스템 글자색)과 두께·굵은 글만이 아니라 색으로도 갈립니다(2026-11-16 결정 1 검토 지적).
+    return `${shape} -mb-px ${
+      active
+        ? "border-b-2 border-accent font-semibold text-text forced-colors:border-[Highlight]"
+        : "border-b border-border pb-px font-normal text-text-2 hover:text-text"
+    }`;
+  }
+  return `${shape} border-b-2 ${
     active ? "border-accent font-semibold text-text" : "border-transparent font-normal text-text-2 hover:text-text forced-colors:border-b-0"
   }`;
 }

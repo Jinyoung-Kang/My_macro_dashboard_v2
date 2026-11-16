@@ -69,6 +69,7 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
 
   // 수정 전(재현 커밋에서는 it.fails): scrollLeft 0 그대로 — 오른쪽이 6px 잘린 셋째 칸(244 ~ 364px)에 Tab으로 가도 줄이 움직이지 않음.
   it("Tab으로 옮긴 칸이 잘려 있으면 그 칸이 보이게 줄을 스크롤하고, 다 보이는 칸이면 그대로 둔다", () => {
+    stubFocusVisible("keyboard");
     render(<SubNav pathname="/info/overview" user={OWNER} />);
     const list = strip("정보 수집 하위 메뉴");
     expect(list.scrollLeft).toBe(0);
@@ -86,6 +87,7 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
   });
 
   it("줄이 없던 화면에서 줄이 있는 화면으로 오면 그 줄에서도 지금 칸·포커스한 칸을 보이게 한다 — 같은 주소로 다시 그릴 때는 밀어 둔 줄을 되돌리지 않는다", () => {
+    stubFocusVisible("keyboard");
     const { rerender } = render(<SubNav pathname="/" user={OWNER} />);
     expect(screen.queryByRole("navigation")).toBeNull();
     rerender(<SubNav pathname="/info/mechanism" user={OWNER} />);
@@ -99,6 +101,7 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
 
   it("창 세로 스크롤을 건드리는 scrollIntoView는 쓰지 않는다 — 줄은 위치 기준(relative)이라 칸의 offsetLeft가 줄 안 좌표", () => {
     const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+    stubFocusVisible("keyboard");
     render(<SubNav pathname="/info/mechanism" user={OWNER} />);
     act(() => screen.getByRole("link", { name: "출처 상태" }).focus());
     expect(scrollIntoView).not.toHaveBeenCalled();
@@ -179,10 +182,11 @@ describe("QA-567 — 손가락·마우스로 누른 칸에 남은 포커스는 �
     const tapped = screen.getByRole("link", { name: "외부 API 연결 테스트" });
     act(() => tapped.focus());
     expect(tapped.matches(":focus-visible")).toBe(false);
-    // 364 + 120 + 16 − 358 — 누른 칸이 잘려 있으면 보이게(QA-510 그대로)
-    expect(list.scrollLeft).toBe(142);
+    // 누르는 도중에는 줄을 움직이지 않습니다(아래 '누르는 도중' 시험) — 잘린 칸은 고른 뒤에 보입니다.
+    expect(list.scrollLeft).toBe(0);
 
     rerender(<SubNav pathname="/connections" user={OWNER} />);
+    // 364 + 120 + 16 − 358 — 고른 뒤(주소가 바뀐 뒤) 지금 칸이 된 누른 칸을 보이게
     expect(list.scrollLeft).toBe(142);
 
     rerender(<SubNav pathname="/alerts" user={OWNER} />);
@@ -201,7 +205,8 @@ describe("QA-567 — 손가락·마우스로 누른 칸에 남은 포커스는 �
     expect(list.scrollLeft).toBe(382);
     const tapped = screen.getByRole("link", { name: "매크로 지표" });
     act(() => tapped.focus());
-    expect(list.scrollLeft).toBe(0);
+    // 누르는 도중에는 그대로 — 고른 뒤 지금 칸 '매크로 지표'(4 ~ 124px)가 보이게 처음으로
+    expect(list.scrollLeft).toBe(382);
 
     rerender(<SubNav pathname="/macro" user={OWNER} />);
     expect(list.scrollLeft).toBe(0);
@@ -219,7 +224,8 @@ describe("QA-567 — 손가락·마우스로 누른 칸에 남은 포커스는 �
     expect(list.scrollLeft).toBe(0);
     const tapped = screen.getByRole("link", { name: "외부 API 연결 테스트" });
     act(() => tapped.focus());
-    expect(list.scrollLeft).toBe(142);
+    // 누르는 도중에는 그대로 — 고른 뒤 보이게
+    expect(list.scrollLeft).toBe(0);
 
     rerender(<SubNav pathname="/connections" user={OWNER} />);
     expect(list.scrollLeft).toBe(142);
@@ -228,5 +234,32 @@ describe("QA-567 — 손가락·마우스로 누른 칸에 남은 포커스는 �
     expect(document.activeElement).toBe(tapped);
     expect(list.querySelector("[aria-current]")).toBeNull();
     expect(list.scrollLeft).toBe(0);
+  });
+});
+
+/**
+ * 2026-11-16 결정 1 검토 지적: 하위 메뉴 줄의 반쯤 가려진 칸을 손가락·마우스로 누르면, 누를 때(mousedown·touchstart) 그 링크가 받은 포커스로 줄이 움직여
+ * 손을 뗀 자리가 그 칸 밖이 되고 이동이 일어나지 않았습니다(머리 없는 크롬 390 /info/overview — '기관·공시'(378 ~ 467px, 줄 오른쪽 끝 390)의 보이는 끝을
+ * 누르면 줄이 93px 움직이고 주소는 그대로, 마우스·터치 모두). QA-510 훅이 줄 안으로 들어온 포커스를 가리지 않고(focus any) 보이게 해서입니다(D1에는 없음).
+ * 공용 탭 줄(Tabs)처럼 키보드 포커스(:focus-visible)만 들어올 때 보이게 하고, 누른 칸은 고른 뒤(주소가 바뀐 뒤) 지금 칸으로 보입니다.
+ * 손가락·마우스로 누른 경우는 matches(':focus-visible')를 늘 거짓으로 두어 흉내 냅니다(stubFocusVisible).
+ */
+describe("하위 메뉴 줄 — 손가락·마우스로 누르는 도중에는 줄을 움직이지 않고, 고른 뒤(주소가 바뀐 뒤) 그 칸을 보이게 한다", () => {
+  beforeEach(() => stubFocusVisible("pointer"));
+
+  // 수정 전(재현 커밋에서는 it.fails): 누를 때 받은 포커스로 scrollLeft 0 → 22 — 오른쪽 끝을 누른 손이 떼어질 때 그 칸은 22px 왼쪽으로 가 있음.
+  it("반쯤 가려진 '국내 시장·수급'(244 ~ 364px — 줄 358px)을 누르면 누르는 동안 줄은 그대로(0), 그 화면으로 간 뒤 그 칸이 보이게(22)", () => {
+    const { rerender } = render(<SubNav pathname="/info/overview" user={OWNER} />);
+    const list = strip("정보 수집 하위 메뉴");
+    expect(list.scrollLeft).toBe(0);
+    const pressed = screen.getByRole("link", { name: "국내 시장·수급" });
+    act(() => pressed.focus());
+    expect(pressed.matches(":focus-visible")).toBe(false);
+    expect(list.scrollLeft).toBe(0);
+
+    rerender(<SubNav pathname={pressed.getAttribute("href") as string} user={OWNER} />);
+    expect(pressed.getAttribute("aria-current")).toBe("page");
+    // 244 + 120 + 16 − 358
+    expect(list.scrollLeft).toBe(22);
   });
 });

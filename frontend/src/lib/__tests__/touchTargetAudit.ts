@@ -4,7 +4,9 @@
  *
  * - `belowLgTarget(classes)`: 변형 없는(모든 폭에 걸리는) 높이 클래스 가운데 44px 이상이 있고(`min-h-11`·`h-11`·`size-11`·`min-h-12`·
  *   `min-h-16`·`min-h-[44px]` 등), lg 미만에도 걸리는 sm:·md: 변형이 그보다 낮추지 않으면 통과(null). lg:·xl:·2xl: 변형은 더 작아도
- *   됩니다(넓은 화면은 30·32px 조밀 조작). 아니면 까닭 글을 돌려줍니다.
+ *   됩니다(넓은 화면은 30·32px 조밀 조작). 변형 없는 음수 아래 바깥 여백(`-mb-px`·`-my-px` 등)은 그만큼 다음 줄과 겹쳐 다음 줄의 요소가 그 자리를
+ *   덮으므로(줄을 바꾸는 탭 줄 — underlineTabClasses wrap) 높이에서 뺍니다. 위 여백(`-mt-`)은 빼지 않습니다 — 뒤에 오는 이 요소가 앞 줄을 덮는 쪽입니다.
+ *   아니면 까닭 글을 돌려줍니다.
  * - `smallTargets(root)`: 그린 DOM에서 누를 수 있는 요소(링크·단추·입력·summary·역할이 단추·탭인 요소)마다 그 요소(체크 상자·라디오는 감싼
  *   label도)가 `belowLgTarget`을 통과하는지 봅니다. 문장 안의 링크·단추(같은 부모의 글 마디에 그 요소보다 글자가 많음 — WCAG 2.5.8의 글 안
  *   예외, `inSentence`)와 화면에 보이지 않는 요소(sr-only·hidden)는 셈에서 뺍니다. 걸린 요소를 "태그「글」 — 까닭"으로 돌려줍니다.
@@ -36,26 +38,43 @@ function heightPx(utility: string): number | null {
   return Number(match[2]) * (match[3] === "rem" ? 16 : 1);
 }
 
+/**
+ * 음수 아래 바깥 여백(-mb-·-my-)의 px — 그만큼 다음 줄과 겹쳐 다음 줄의 요소가 그 자리를 덮습니다. 아니면 null.
+ * 간격 단위는 4px, `px`는 1px, 임의 값은 px만.
+ */
+function bottomOverlapPx(utility: string): number | null {
+  const match = /^-m[by]-(?:(px)|(\d+(?:\.\d+)?)|\[(\d+(?:\.\d+)?)px\])$/.exec(utility);
+  if (!match) return null;
+  if (match[1] !== undefined) return 1;
+  if (match[2] !== undefined) return Number(match[2]) * 4;
+  return Number(match[3]);
+}
+
 const TARGET_PX = 44;
 /** lg 미만에도 걸리는 폭 변형 — 이것들이 높이를 44px 아래로 낮추면 안 됩니다. */
 const BELOW_LG = new Set(["sm", "md"]);
 
 /** 클래스 문자열이 lg 미만에서 높이 44px 이상을 보장하면 null, 아니면 까닭. */
 export function belowLgTarget(classes: string): string | null {
-  let base = false;
+  const tokens = classes.split(/\s+/).filter(Boolean).map((token) => ({ token, ...splitVariants(token) }));
+  // 다음 줄이 덮는 아래 겹침(변형 없는 음수 아래 여백) — 높이에서 뺍니다.
+  const overlaps = tokens.filter(({ variants, utility }) => variants.length === 0 && bottomOverlapPx(utility) !== null);
+  const overlap = overlaps.reduce((sum, { utility }) => sum + (bottomOverlapPx(utility) ?? 0), 0);
+  let base = 0;
   const shrinks: string[] = [];
-  for (const token of classes.split(/\s+/).filter(Boolean)) {
-    const { variants, utility } = splitVariants(token);
+  for (const { token, variants, utility } of tokens) {
     const px = heightPx(utility);
     if (px === null) continue;
     if (variants.length === 0) {
-      if (px >= TARGET_PX) base = true;
-    } else if (variants.every((variant) => BELOW_LG.has(variant)) && px < TARGET_PX) {
+      base = Math.max(base, px);
+    } else if (variants.every((variant) => BELOW_LG.has(variant)) && px - overlap < TARGET_PX) {
       shrinks.push(token);
     }
   }
   if (shrinks.length > 0) return `lg 미만에서 ${shrinks.join(" ")}로 낮춤`;
-  return base ? null : "lg 미만 44px 높이 클래스(min-h-11 등) 없음";
+  if (base - overlap >= TARGET_PX) return null;
+  if (base >= TARGET_PX) return `다음 줄과 겹치는 ${overlaps.map(({ token }) => token).join(" ")}을 빼면 ${base - overlap}px`;
+  return "lg 미만 44px 높이 클래스(min-h-11 등) 없음";
 }
 
 const INTERACTIVE = [
