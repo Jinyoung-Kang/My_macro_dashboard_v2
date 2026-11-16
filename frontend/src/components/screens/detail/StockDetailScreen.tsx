@@ -21,6 +21,8 @@ import {
   stockHref,
 } from "@/lib/detail";
 import {
+  type ChartDrawState,
+  chartSourceProperty,
   consensusItems,
   holderDetailItems,
   holderKey,
@@ -79,6 +81,8 @@ type StockTab = "overview" | "news" | "research" | "holders";
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
   const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub, detailSub } = useStockQuote(market, code);
   const user = useSessionUser();
+  // 가격 차트 패널이 알리는 그림 상태 — 선을 그렸을 때만 '출처' 패널의 '차트' 줄에 출처를 적습니다(QA-579 후속).
+  const [chartState, setChartState] = useState<ChartDrawState>("loading");
   const macro = useApi<MacroOverview>(market === "us" ? endpoints.macro.overview(false) : null);
   const holders = market === "us" && (quote?.kind ?? "").toUpperCase() === "EQUITY" ? holderQuery(quote?.name) : null;
   // 뉴스·AI 요약의 검색어는 백엔드 상한(60자) 안으로 — 시세 이름은 Yahoo의 긴 이름이라 넘으면 400(QA-448). 뉴스 카드의 정보 검색 링크도 같은 말로.
@@ -123,7 +127,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
             valueDigits={digits}
             unit={unit}
             // 차트는 시세가 없어도 코드로 정한 심볼(chartSymbol)로 그리므로 출처도 심볼로 적습니다(시세 실패·조회 안 함에도 — QA-579, 지표 상세와 같음).
+            // 캡션은 패널이 선을 그렸을 때만 보이고, 그림 상태는 '출처' 패널 '차트' 줄로 이어집니다(QA-579 후속).
             caption={`차트: Yahoo Finance ${symbol} 일별 종가`}
+            onDrawState={setChartState}
           />
           {quote ? <AboutPanel quote={quote} /> : null}
           <AiSummaryCard request={{ market, code, q: newsQuery, label: detailQuery(name) ?? undefined }} />
@@ -223,7 +229,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
             <LinkListPanel title="연결" links={links} />
             <ExternalLinksCard links={externalLinks(market, code, symbol, quote?.name)} />
             <Panel title="출처">
-              <PropertyList items={sourceItems(quote, symbol, Boolean(holders))} />
+              <PropertyList items={sourceItems(quote, symbol, Boolean(holders), chartState)} />
             </Panel>
           </>
         }
@@ -234,8 +240,8 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   );
 }
 
-/** '출처' 패널 줄 — 시세(출처 이름·기준 시각·'출처 보기' 새 창), 한국어 개요, 차트(심볼 — 늘), 뉴스, 리서치·13F(있을 때만). */
-function sourceItems(quote: DetailQuote | null, symbol: string, holders: boolean): PropertyItem[] {
+/** '출처' 패널 줄 — 시세(출처 이름·기준 시각·'출처 보기' 새 창), 한국어 개요, 차트(그렸을 때만 심볼 — 아니면 '—'와 까닭), 뉴스, 리서치·13F(있을 때만). */
+function sourceItems(quote: DetailQuote | null, symbol: string, holders: boolean, chart: ChartDrawState): PropertyItem[] {
   const ko = quote?.profile?.koSource ?? null;
   const items: PropertyItem[] = [
     {
@@ -255,8 +261,8 @@ function sourceItems(quote: DetailQuote | null, symbol: string, holders: boolean
     ...propertyItems(
       ko ? [{ label: "한국어 개요", value: ko.label, link: { href: ko.url, external: true } }] : [],
     ),
-    // 차트는 시세가 없어도 그 심볼로 그립니다 — 출처 줄도 심볼 기준(QA-579).
-    { label: "차트", value: `Yahoo Finance ${symbol} 일별 종가` },
+    // 차트는 시세가 없어도 그 심볼로 그립니다 — 출처 줄도 심볼 기준(QA-579). 다만 선을 그렸을 때만이고, 못 그렸으면 '—'와 까닭(QA-579 후속).
+    ...propertyItems([chartSourceProperty(chart, `Yahoo Finance ${symbol} 일별 종가`)]),
     { label: "뉴스", value: NEWS_SOURCES },
   ];
   if (quote && quote.research.length > 0) items.push({ label: "리서치", value: "네이버 증권 리서치" });

@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  chartSourceProperty,
   consensusItems,
   holderDetailItems,
   holderKey,
@@ -338,5 +339,16 @@ describe("대상 머리 — 종목 상세 종류 태그", () => {
     expect(stockKindLabel("kr", "005930", "stock")).toBe("종목");
     expect(stockKindLabel("kr", "069500", "etf")).toBe("종목");
     expect(stockKindLabel("kr", "005930", null)).toBe("종목");
+  });
+});
+
+describe("가격 차트 출처 — '출처' 패널 '차트' 줄(QA-579 후속)", () => {
+  it("선을 그렸을 때만 출처 글, 아니면 값 없음과 짧은 까닭", () => {
+    const source = "Yahoo Finance AAPL 일별 종가";
+    expect(chartSourceProperty("drawn", source)).toEqual({ label: "차트", value: source });
+    expect(chartSourceProperty("none", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 그리지 않음" });
+    expect(chartSourceProperty("loading", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 불러오는 중" });
+    expect(chartSourceProperty("failed", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 받지 못함" });
+    expect(chartSourceProperty("empty", source)).toEqual({ label: "차트", value: null, emptyReason: "시계열 없음" });
   });
 });

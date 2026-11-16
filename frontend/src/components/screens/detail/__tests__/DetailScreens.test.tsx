@@ -513,7 +513,11 @@ describe("지표 상세", () => {
   const KR_HOLIDAYS = "/api/calendar/kr-holidays";
 
   it("대상 머리(카드 값)·가격 차트 패널(Yahoo 차트)·같은 범주 지표(상세 링크)·뉴스 검색어·Yahoo 시세 상세 링크", async () => {
-    reads = { [endpoints.macro.overview(false)]: macroOverview(), [KR_HOLIDAYS]: { available: true, years: {} } };
+    reads = {
+      [endpoints.macro.overview(false)]: macroOverview(),
+      [KR_HOLIDAYS]: { available: true, years: {} },
+      [endpoints.macro.ticker("^GSPC", "1y")]: { available: true, points: [{ date: "2026-10-29", close: 7600 }, { date: "2026-10-30", close: 7622.99 }] },
+    };
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="sp500" />);
 
     const title = await screen.findByRole("heading", { level: 1, name: "S&P 500" });
@@ -525,6 +529,8 @@ describe("지표 상세", () => {
     expect(within(header).getByText("^GSPC").className).toContain("font-mono");
     expect(within(header).getByText("미국 주가지수 및 선물")).toBeTruthy();
     const hero = screen.getByRole("region", { name: "S&P 500" });
+    // 출처 캡션은 선을 그린 뒤에만(QA-579 후속)
+    expect(await within(hero).findByRole("img", { name: "S&P 500 가격 차트" })).toBeTruthy();
     expect(within(hero).getByText("차트: Yahoo Finance ^GSPC 일별 종가")).toBeTruthy();
     await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("^GSPC", "1y")));
     await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "S&P 500" })));

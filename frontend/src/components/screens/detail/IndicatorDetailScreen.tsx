@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { AssetList, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
 import { ErrorState, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -19,7 +20,7 @@ import {
   indicatorSearchName,
   stockHref,
 } from "@/lib/detail";
-import { indicatorProperties } from "@/lib/detailEntity";
+import { type ChartDrawState, chartSourceProperty, indicatorProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { withoutLeadingIcon } from "@/lib/format";
 import { HOME_REFRESH_MS, macroCardRow, macroCardSession, macroItemSource, MARKET_HREF } from "@/lib/home";
@@ -56,6 +57,8 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
   const now = useMinuteClock();
   const krOfficial = useKrOfficialHolidays(now);
   const user = useSessionUser();
+  // 가격 차트 패널이 알리는 그림 상태 — 선을 그렸을 때만 '출처' 패널의 '차트' 줄에 출처를 적습니다(QA-579 후속).
+  const [reportedChart, setReportedChart] = useState<ChartDrawState>("loading");
   const found = findIndicator(overview.data, indicatorKey);
   // 넓은 화면 빵부스러기의 마지막 칸을 키 대신 지표 이름으로(찾은 뒤에만 — 셸이 같은 주소일 때만 씀).
   const foundHref = found ? indicatorHref(found.item.key) : null;
@@ -122,9 +125,11 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
     ...(symbol ? [{ label: `${symbol} 시세·핵심 지표 보기`, href: stockHref("us", symbol) }] : []),
     ...(search ? [{ label: search.label, href: search.href }] : []),
   ];
+  // 심볼이 없으면 패널이 알리기 전에도 'none'(차트를 부르지 않음 — 첫 그리기부터 '차트를 그리지 않음').
+  const chartState: ChartDrawState = symbol ? reportedChart : "none";
   const sources = propertyItems([
     { label: "카드 값", value: macroItemSource(item) },
-    { label: "차트", value: symbol ? `Yahoo Finance ${symbol} 일별 종가` : null, emptyReason: symbol ? null : "차트를 그리지 않음" },
+    chartSourceProperty(chartState, symbol ? `Yahoo Finance ${symbol} 일별 종가` : ""),
     { label: "뉴스", value: NEWS_SOURCES },
   ]);
 
@@ -187,7 +192,9 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
                     cardKey={item.key}
                     valueDigits={row.changeDigits ?? 2}
                     noChartReason={INDICATOR_NO_CHART[item.key] ?? "이 카드는 Yahoo 티커가 없어 차트를 그리지 않습니다."}
+                    // 캡션은 패널이 선을 그렸을 때만 보입니다(QA-579 후속).
                     caption={symbol ? `차트: Yahoo Finance ${symbol} 일별 종가` : null}
+                    onDrawState={setReportedChart}
                   />
                   <AiSummaryCard request={symbol ? { market: "us", code: symbol, q: query, label } : { q: query, label }} />
                   {/* 같은 범주 지표는 가운데 칸 폭으로(2026-11-16 결정 6) — 오른쪽 18rem 칸에서는 값이 이름 아래로 내려가고 출처 줄이 2~4줄로 접혀 행마다

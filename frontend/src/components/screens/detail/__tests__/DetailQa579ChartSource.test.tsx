@@ -95,8 +95,8 @@ function sourceRow() {
 }
 
 describe("종목·지표 상세 — 그리지 못한 차트에는 출처를 적지 않는다 (QA-579 후속)", () => {
-  // 수정 전(재현 커밋에서는 it.fails)에는 네 경우 모두 'AAPL 시세' 영역에 '차트: Yahoo Finance AAPL 일별 종가' 캡션이 있고 '차트' 줄도 그 글이었습니다.
-  it.fails.each([
+  // 수정 전(재현 커밋에서는 it.fails)에는 모든 경우에 차트 영역에 '차트: Yahoo Finance … 일별 종가' 캡션이 있고 '차트' 줄도 그 글이었습니다.
+  it.each([
     ["시계열 없음(available:false)", { available: false, message: "Yahoo가 이 심볼의 시계열을 주지 않습니다.", points: [] }, "Yahoo가 이 심볼의 시계열을 주지 않습니다.", "시계열 없음"],
     // 값이 없는 시계열의 안내 글은 차트 부품(LineChart — 이 시험에서는 이름만 둔 가짜)이 그리므로 여기서는 불러오기가 끝난 것만 기다립니다.
     ["값이 하나도 없는 시계열", { available: true, points: [{ date: "2026-10-30", close: null }] }, null, "시계열 없음"],
@@ -112,7 +112,7 @@ describe("종목·지표 상세 — 그리지 못한 차트에는 출처를 적�
     expect(sourceRow().textContent?.startsWith("—")).toBe(true);
   });
 
-  it.fails("불러오는 중에는 캡션 없음, '차트' 줄은 '—' 불러오는 중", async () => {
+  it("불러오는 중에는 캡션 없음, '차트' 줄은 '—' 불러오는 중", async () => {
     renderStock("us", "AAPL", new Error("시세 서버가 응답하지 않습니다."), PENDING);
     const hero = await screen.findByRole("region", { name: "AAPL 시세" });
     expect(within(hero).getByRole("status", { name: "차트를 불러오는 중" })).toBeTruthy();
@@ -121,7 +121,7 @@ describe("종목·지표 상세 — 그리지 못한 차트에는 출처를 적�
     expect(sourceRow().textContent).not.toContain("Yahoo Finance");
   });
 
-  it.fails("시세가 실패한 국내 종목의 .KS 어림 심볼로 시계열이 없으면 캡션·출처 줄에 .KS 심볼을 적지 않는다", async () => {
+  it("시세가 실패한 국내 종목의 .KS 어림 심볼로 시계열이 없으면 캡션·출처 줄에 .KS 심볼을 적지 않는다", async () => {
     renderStock("kr", "123456", new Error("시세 서버가 응답하지 않습니다."), { available: false, message: "Yahoo가 이 심볼의 시계열을 주지 않습니다.", points: [] }, "123456.KS");
     const hero = await screen.findByRole("region", { name: "123456 시세" });
     await waitFor(() => expect(within(hero).getByText("Yahoo가 이 심볼의 시계열을 주지 않습니다.")).toBeTruthy());
@@ -130,7 +130,7 @@ describe("종목·지표 상세 — 그리지 못한 차트에는 출처를 적�
     expect(sourceRow().textContent).not.toContain("123456.KS");
   });
 
-  it.fails("지표 상세도 같다 — 시계열이 없으면 캡션 없음, '차트' 줄은 '—' 시계열 없음", async () => {
+  it("지표 상세도 같다 — 시계열이 없으면 캡션 없음, '차트' 줄은 '—' 시계열 없음", async () => {
     reads = {
       [endpoints.macro.overview(false)]: macroOverview(),
       "/api/calendar/kr-holidays": { available: true, years: {} },
