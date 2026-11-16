@@ -554,7 +554,7 @@ describe("QA-624 고른 행이 바뀌어도 첫 칸 안 조작은 다시 그려�
     return <DataTable columns={columns} rows={ROWS} rowKey={(row) => row.ticker} selectedKey={picked} />;
   }
 
-  it.fails("첫 칸의 단추로 그 행을 고르면 같은 단추가 남고 포커스도 그대로 — 다른 행으로 옮겨도 두 단추 모두 그대로", () => {
+  it("첫 칸의 단추로 그 행을 고르면 같은 단추가 남고 포커스도 그대로 — 다른 행으로 옮겨도 두 단추 모두 그대로", () => {
     render(<Picker />);
     const aapl = screen.getByRole("button", { name: "AAPL" });
     aapl.focus();
