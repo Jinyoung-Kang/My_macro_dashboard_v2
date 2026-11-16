@@ -83,3 +83,29 @@ describe("원본 데이터 — 화면 머리 동작", () => {
     expect(snapshotCalls()).toBe(3);
   });
 });
+
+// QA-623: 원본 글을 받은 뒤 '다시 읽기'가 실패하면 useApi는 앞 글을 남기고 실패를 refreshError로만 알리는데, 원본 데이터 화면은 error만 그려
+// 실패가 아무 표시 없이 묻혔습니다(개편 전 카드부터 — 단추가 '다시 읽는 중…'에서 '다시 읽기'로 돌아올 뿐). 다른 패널의 '새로 읽지 못함'(QA-067)과 같은 표시가 필요합니다.
+describe("QA-623 원본 데이터 '다시 읽기' 실패를 알린다", () => {
+  it.fails("받은 글이 있는 동안 다시 읽기에 실패하면 '새로 읽지 못함'과 함께 앞 글을 그대로 보인다", async () => {
+    let calls = 0;
+    reads[SNAPSHOT_PATH] = () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve({ text: "원본 글", chars: 4, generatedAtKst: "2026-11-17 06:31 KST" })
+        : Promise.reject(new Error("요청 실패 (HTTP 503)"));
+    };
+    render(<MacroPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "원본 데이터 보기" }));
+    const dialog = await screen.findByRole("dialog", { name: "전체 대시보드 원본 데이터" });
+    await within(dialog).findByText("원본 글");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다시 읽기" }));
+    await waitFor(() => expect(snapshotCalls()).toBe(2));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "다시 읽기" }).hasAttribute("disabled")).toBe(false));
+
+    expect(within(dialog).queryByText("새로 읽지 못함")).not.toBeNull();
+    expect(within(dialog).getByText("원본 글")).toBeTruthy();
+  });
+});
