@@ -553,3 +553,28 @@ describe("KpiStrip — 추정·대리·이전 값", () => {
     expect(within(tile("원/달러")).getByText("기준 2026-11-14 15:30").className).toContain("text-text-3");
   });
 });
+
+// QA-625: 단위의 여유(타일 안쪽 여백까지 걸침 — QA-599)를 단위 글의 오른쪽 바깥 음수 여백(−12px)으로 두면, 크롬은 값 글의 내용 폭을 그만큼 덜 재고
+// 그 폭 안에 줄을 다시 놓다가 숫자 안에서 꺾었습니다 — 좁은 단위('pt'·'x')에서만(넓은 단위 '%p'·'%'·'원'은 그대로). 매크로 신용·변동성의
+// '−0.58'+'pt'가 '−0.5' / '8 pt' 두 줄로 갈렸습니다(자기 빌드 390·412·1024 — 값 글 54x56px, 값 줄 136px에 자리가 남는데도). 여유를 값 줄(flex 행)의
+// 오른쪽 음수 여백으로 옮기면 값 글 폭이 바르게 재여 한 줄(66x28px)이고, 값 글의 최대 폭(max-w-full = 값 줄)은 그대로 12px 넓어져 걸침도 같습니다.
+// jsdom은 배치를 재지 않아 자리(클래스)로 봅니다.
+describe("QA-625 짧은 단위의 값이 숫자 안에서 꺾이지 않는다", () => {
+  it.fails("단위의 여유(−12px)는 값 줄이 갖고 단위 글에는 바깥 음수 여백이 없다 — 단위 없는 값의 값 줄은 그대로", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "stlfsi", label: "금융스트레스", value: "−0.58", unit: "pt" },
+          { key: "plain", label: "단위 없음", value: "12.5" },
+        ]}
+      />,
+    );
+    const unit = within(tile("금융스트레스")).getByText("pt");
+    expect(unit.className.split(/\s+/).some((name) => /^-m[rx]-/.test(name))).toBe(false);
+    const value = valueText(tile("금융스트레스"), "−0.58pt");
+    expect((value.parentElement as HTMLElement).className.split(/\s+/)).toContain("-mr-3");
+    const plainRow = valueText(tile("단위 없음"), "12.5").parentElement as HTMLElement;
+    expect(plainRow.className.split(/\s+/)).toEqual(["mt-0.5", "flex", "items-baseline"]);
+  });
+});
