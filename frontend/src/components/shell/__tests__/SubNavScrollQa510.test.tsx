@@ -93,3 +93,56 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
     expect(strip("정보 수집 하위 메뉴").className.split(/\s+/)).toContain("relative");
   });
 });
+
+/**
+ * QA-566: 하위 메뉴 줄(ul)은 셸 레이아웃에 있어 클라이언트 이동 때 같은 요소로 남고 scrollLeft도 남습니다. QA-510 훅이 주소가 바뀔 때 두 경우를 놓쳤습니다
+ * (QA 스택 390 확인 — QA-510 훅이 만든 상태, D1에는 없음).
+ * - 지금 칸이 없는 화면(/more·/markets/i/…·/s/… — aria-current 칸 없음)은 앞 화면에서 훅이 옮겨 둔 줄 위치를 그대로 물려받았습니다(새로 열면 0).
+ * - 뒤로·앞으로 가기에서 포커스가 줄 안의 앞 칸에 남아 있는데도 지금 칸을 보이게 옮겨, 포커스한 칸이 줄 밖으로 밀렸습니다(다음 Tab까지).
+ */
+describe("QA-566 — 주소가 바뀔 때 지금 칸이 없으면 줄을 처음으로, 줄 안에 포커스가 있으면 그 칸을 보이게", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 /more에서 scrollLeft 142 그대로 — 첫 칸 '알림'(4 ~ 124px)이 줄 밖.
+  it.fails("/connections(넷째 칸 — 142)에서 지금 칸이 없는 /more로 오면 줄을 처음(0)으로 둔다", () => {
+    const { rerender } = render(<SubNav pathname="/connections" user={OWNER} />);
+    const list = strip("더보기 하위 메뉴");
+    // 364 + 120 + 16 − 358
+    expect(list.scrollLeft).toBe(142);
+    rerender(<SubNav pathname="/more" user={OWNER} />);
+    expect(strip("더보기 하위 메뉴")).toBe(list);
+    expect(list.querySelector("[aria-current]")).toBeNull();
+    expect(list.scrollLeft).toBe(0);
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 /s/us/NVDA에서 scrollLeft 382 그대로 — 첫 칸 '매크로 지표'가 줄 밖.
+  it.fails("/regime(여섯째 칸 — 382)에서 지금 칸이 없는 상세 화면 /s/us/NVDA로 오면 줄을 처음(0)으로 둔다", () => {
+    const { rerender } = render(<SubNav pathname="/regime" user={OWNER} />);
+    const list = strip("시장 하위 메뉴");
+    // 604 + 120 + 16 − 358
+    expect(list.scrollLeft).toBe(382);
+    rerender(<SubNav pathname="/s/us/NVDA" user={OWNER} />);
+    expect(strip("시장 하위 메뉴")).toBe(list);
+    expect(list.querySelector("[aria-current]")).toBeNull();
+    expect(list.scrollLeft).toBe(0);
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 /connections로 돌아오면 scrollLeft 142 — 포커스가 남은 '알림'이 줄 기준 -138 ~ -18px로 가려짐.
+  it.fails("/connections에서 '알림'에 포커스해 /alerts로 갔다가 다시 /connections로 오면(뒤로 가기) 포커스한 '알림'을 줄 안에 둔다", () => {
+    const { rerender } = render(<SubNav pathname="/connections" user={OWNER} />);
+    const list = strip("더보기 하위 메뉴");
+    expect(list.scrollLeft).toBe(142);
+    const alerts = screen.getByRole("link", { name: "알림" });
+    act(() => alerts.focus());
+    expect(list.scrollLeft).toBe(0);
+
+    rerender(<SubNav pathname="/alerts" user={OWNER} />);
+    expect(list.scrollLeft).toBe(0);
+    expect(document.activeElement).toBe(alerts);
+
+    rerender(<SubNav pathname="/connections" user={OWNER} />);
+    expect(document.activeElement).toBe(alerts);
+    expect(list.scrollLeft).toBe(0);
+    // '알림'(4 ~ 124px)이 보이는 폭(scrollLeft ~ scrollLeft + 358) 안
+    expect(alerts.offsetLeft).toBeGreaterThanOrEqual(list.scrollLeft);
+    expect(alerts.offsetLeft + alerts.offsetWidth).toBeLessThanOrEqual(list.scrollLeft + STRIP_WIDTH);
+  });
+});
