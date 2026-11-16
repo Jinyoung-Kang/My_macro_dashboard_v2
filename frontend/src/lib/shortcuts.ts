@@ -5,13 +5,15 @@
  *   (isInMenu — 모달 메뉴 위에 팔레트를 겹쳐 열지 않음).
  * - 한 글자 단축키(? · / · [)는 글을 쓰는 중이면 글자로 들어가야 하므로 끕니다: 입력칸·편집 영역·role textbox/combobox/searchbox 안,
  *   덮개(대화상자·메뉴) 안, 한글 조합 중, Ctrl·⌘·Alt와 함께, 키를 누르고 있어 반복될 때.
- * - Esc는 열린 대화상자·메뉴(Radix)가 닫습니다 — 셸이 따로 듣지 않습니다. 목록 j/k는 P4 목록 부품의 몫입니다(그때 이 표에 '목록' 줄을 더함).
+ * - Esc는 열린 대화상자·메뉴(Radix)가 닫습니다 — 셸이 따로 듣지 않습니다.
+ * - 목록 키(j/k·↑↓·Home/End·Esc)는 셸이 아니라 목록 부품(patterns MasterDetail — P4)이 목록에 포커스가 있을 때만 그 목록의 keydown에서 받습니다.
+ *   판정은 `listKeyAction`이고, 표의 '목록' 묶음 줄은 화면에 보이는 목록([data-shell-list])이 있을 때만 도움말에 나옵니다.
  *
  * 키 대상은 DOM 요소 그대로가 아니라 쓰는 속성만 적은 구조 타입입니다(lib/infoSearch의 ShortcutTarget과 같은 방식).
  */
 
 /** 단축키 표의 줄 이름(닫힌 목록). */
-export type ShortcutId = "palette" | "help" | "filter" | "toggleNav" | "close" | "move";
+export type ShortcutId = "palette" | "help" | "filter" | "toggleNav" | "close" | "move" | "listMove" | "listEdge" | "listClose";
 
 export type Shortcut = {
   id: ShortcutId;
@@ -21,8 +23,13 @@ export type Shortcut = {
   spoken?: string;
   /** 하는 일. */
   action: string;
-  /** 보이는 조건 — wide: 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만, filter: 지금 화면에 거르기 칸이 있을 때만. */
-  when?: "wide" | "filter";
+  /**
+   * 보이는 조건 — wide: 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만, filter: 지금 화면에 거르기 칸이 있을 때만, list: 지금 화면에 보이는 목록
+   * ([data-shell-list])이 있을 때만.
+   */
+  when?: "wide" | "filter" | "list";
+  /** 도움말 창의 묶음 — 없으면 첫 묶음(셸 단축키), '목록'은 목록에 포커스가 있을 때 듣는 키(따로 표 하나). */
+  group?: "목록";
 };
 
 /** 단축키 표(닫힌 목록) — 도움말 창이 이 순서로 그립니다. */
@@ -38,14 +45,33 @@ export const SHORTCUTS: readonly Shortcut[] = [
     spoken: "위·아래 화살표와 Enter",
     action: "팔레트 결과 고르기·열기",
   },
+  { id: "listMove", group: "목록", keys: { mac: ["j", "k"], other: ["j", "k"] }, action: "목록의 다음·앞 항목(↓·↑도 같음)", when: "list" },
+  { id: "listEdge", group: "목록", keys: { mac: ["Home", "End"], other: ["Home", "End"] }, action: "목록의 처음·끝 항목", when: "list" },
+  { id: "listClose", group: "목록", keys: { mac: ["Esc"], other: ["Esc"] }, action: "고른 항목 닫기(넓은 화면의 검사 칸)", when: "list" },
 ];
 
-/** 도움말 창을 열 때 센 조건 — 넓은 화면인가, 지금 화면에 거르기 칸이 있는가. */
-export type ShortcutConditions = { wide: boolean; filter: boolean };
+/**
+ * 도움말 창을 열 때 센 조건 — 넓은 화면인가, 지금 화면에 거르기 칸이 있는가, 보이는 목록이 있는가.
+ * list는 선택입니다(없으면 거짓 — 팔레트가 처음 쥐는 빈 조건이 그대로 맞게).
+ */
+export type ShortcutConditions = { wide: boolean; filter: boolean; list?: boolean };
 
 /** 도움말 창에 보일 줄 — 조건(when)이 있는 줄은 그 조건이 참일 때만. */
 export function visibleShortcuts(conditions: ShortcutConditions): Shortcut[] {
-  return SHORTCUTS.filter((row) => !row.when || conditions[row.when]);
+  return SHORTCUTS.filter((row) => !row.when || conditions[row.when] === true);
+}
+
+/** 도움말 창의 묶음 하나 — group null이 첫 묶음(셸 단축키). */
+export type ShortcutGroup = { group: "목록" | null; rows: Shortcut[] };
+
+/** 도움말 창에 보일 묶음 — 첫 묶음(셸) · '목록' 차례, 보일 줄이 없는 묶음은 뺍니다. */
+export function visibleShortcutGroups(conditions: ShortcutConditions): ShortcutGroup[] {
+  const rows = visibleShortcuts(conditions);
+  const groups: ShortcutGroup[] = [
+    { group: null, rows: rows.filter((row) => !row.group) },
+    { group: "목록", rows: rows.filter((row) => row.group === "목록") },
+  ];
+  return groups.filter((entry) => entry.rows.length > 0);
 }
 
 /**
@@ -160,4 +186,49 @@ export function findScreenFilter(root: FilterRoot): FilterField | null {
     return field;
   }
   return null;
+}
+
+/**
+ * 화면의 목록 부품(patterns MasterDetail)이 목록 요소에 붙이는 속성 — 도움말 창이 '목록' 묶음을 보일지 정할 때 셉니다.
+ * 키는 셸이 아니라 그 목록의 keydown이 받습니다(목록에 포커스가 있을 때만).
+ */
+export const SHELL_LIST_ATTR = "data-shell-list";
+
+/** 화면에 보이는 목록이 있는가 — 뿌리 안의 [data-shell-list] 가운데 숨지 않은(자신·조상에 hidden·aria-hidden="true"·inert 없음) 것. findScreenFilter와 같은 숨김 규칙. */
+export function findScreenList(root: FilterRoot): boolean {
+  if (!root) return false;
+  const candidates = Array.from(root.querySelectorAll(`[${SHELL_LIST_ATTR}]`)) as { closest(selector: string): unknown }[];
+  return candidates.some((list) => !list.closest('[hidden],[aria-hidden="true"],[inert]'));
+}
+
+/** 목록 키가 하는 일 — 다음·앞·처음·끝 항목으로, 고른 항목 닫기. */
+export type ListKeyAction = "next" | "prev" | "first" | "last" | "close";
+
+/**
+ * 목록 키 판정 — 목록 부품이 자기 목록의 keydown에서 부릅니다(목록에 포커스가 있을 때만 듣는 키).
+ * j·↓ → next, k·↑ → prev, Home → first, End → last, Esc → close. 한글 조합 중(isComposing·keyCode 229)·Ctrl/⌘/Alt와 함께·글을 쓰는 자리·
+ * Shift와 함께 누른 j/k(대문자 J·K)는 null입니다. 키를 누르고 있어 반복되는 것은 받습니다(화살표를 누른 채 목록을 훑기).
+ */
+export function listKeyAction(event: KeyEventLike): ListKeyAction | null {
+  if (event.isComposing || event.keyCode === 229) return null;
+  if (event.ctrlKey || event.metaKey || event.altKey) return null;
+  if (isTypingTarget(event.target)) return null;
+  switch (event.key) {
+    case "j":
+      return event.shiftKey ? null : "next";
+    case "k":
+      return event.shiftKey ? null : "prev";
+    case "ArrowDown":
+      return "next";
+    case "ArrowUp":
+      return "prev";
+    case "Home":
+      return "first";
+    case "End":
+      return "last";
+    case "Escape":
+      return "close";
+    default:
+      return null;
+  }
 }

@@ -1,7 +1,8 @@
 /**
  * 셸 단축키(?·/·[)와 단축키 도움말 창 — 명령 팔레트(SearchCommand)가 거는 창 keydown 처리기 하나가 받습니다.
  * ?는 도움말 창, /는 본문의 거르기 칸(data-shell-filter — 없으면 브라우저 기본 그대로), [는 넓은 화면에서만 셸 명령 toggle-nav.
- * 입력칸·한글 조합 중·수식키·대화상자 안에서는 글자로 들어갑니다. 도움말 창의 줄은 조건(넓은 화면·거르기 칸)대로 보입니다.
+ * 입력칸·한글 조합 중·수식키·대화상자 안에서는 글자로 들어갑니다. 도움말 창의 줄은 조건(넓은 화면·거르기 칸·보이는 목록)대로 보이고,
+ * 목록 키는 따로 '목록' 표(P4)입니다.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -146,6 +147,61 @@ describe("도움말 표 — 줄은 조건대로", () => {
     expect(rows().map(([keys]) => keys)).toEqual(["⌘K", "?", "/", "[", "Esc", "↑↓Enter위·아래 화살표와 Enter"]);
     const kbd = within(screen.getByRole("table")).getAllByRole("row")[1].querySelector("kbd");
     expect(kbd?.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-border-strong", "font-mono", "text-xs", "text-text-2"]));
+  });
+});
+
+describe("도움말 표 — '목록' 묶음(P4)", () => {
+  /** 표 하나의 줄 — [키 글, 하는 일]. */
+  const rowsOf = (table: HTMLElement) =>
+    within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => {
+        const [keys, action] = within(row).getAllByRole("cell");
+        return [keys.textContent ?? "", action.textContent ?? ""];
+      });
+
+  it("본문에 보이는 목록(data-shell-list)이 있으면 둘째 표 '목록'(보이는 caption)에 j/k·Home/End·Esc 줄이 나온다", () => {
+    render(
+      <>
+        <main id="main">
+          <ul data-shell-list="" aria-label="상위 보유 종목">
+            <li>
+              <button type="button">Apple</button>
+            </li>
+          </ul>
+        </main>
+        <SearchCommand user={MEMBER} />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
+    const tables = within(helpDialog() as HTMLElement).getAllByRole("table");
+    expect(tables).toHaveLength(2);
+    expect(rowsOf(tables[0]).map(([keys]) => keys)).toEqual(["Ctrl K", "?", "Esc", "↑↓Enter위·아래 화살표와 Enter"]);
+    const list = screen.getByRole("table", { name: "목록 — 목록에 포커스가 있을 때" });
+    expect(list).toBe(tables[1]);
+    expect(list.querySelector("caption")?.className).not.toContain("sr-only");
+    expect(rowsOf(list)).toEqual([
+      ["jk", "목록의 다음·앞 항목(↓·↑도 같음)"],
+      ["HomeEnd", "목록의 처음·끝 항목"],
+      ["Esc", "고른 항목 닫기(넓은 화면의 검사 칸)"],
+    ]);
+  });
+
+  it("목록이 숨어 있으면(hidden 조상) '목록' 표가 없다 — 표 하나", () => {
+    render(
+      <>
+        <main id="main">
+          <div hidden>
+            <ul data-shell-list="" aria-label="숨은 목록" />
+          </div>
+        </main>
+        <SearchCommand user={MEMBER} />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
+    expect(within(helpDialog() as HTMLElement).getAllByRole("table")).toHaveLength(1);
+    expect(screen.queryByRole("table", { name: "목록 — 목록에 포커스가 있을 때" })).toBeNull();
   });
 });
 
