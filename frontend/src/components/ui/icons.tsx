@@ -359,7 +359,7 @@ const STATUS_SR_PREFIX: Record<StatusTone, string> = {
 
 /**
  * 상태 글 — 아이콘 + sr-only 머리말 + 글. 셋을 따로 두어 getByText가 글 span만 찾습니다(아이콘·머리말이 글에 섞이지 않음).
- * 예전 '[경고] 이전 값'·'[확인] 정상'처럼 이모지를 글 앞에 붙이던 자리에 씁니다.
+ * 예전 '[경고] 이전 값'·'[확인] 정상'처럼 이모지를 글 앞에 붙이던 자리에 씁니다. 한글은 낱말 사이에서만 줄을 바꿉니다(break-keep — QA-568).
  */
 export function StatusText({
   tone,
@@ -385,7 +385,7 @@ export function StatusText({
   const Icon = STATUS_ICON[tone];
   const prefix = srPrefix ?? STATUS_SR_PREFIX[tone];
   return (
-    <span className={`inline-flex items-start gap-1.5 ${colorText ? TONE_TEXT[tone] : ""} ${className}`.replace(/\s+/g, " ").trim()}>
+    <span className={`inline-flex items-start gap-1.5 break-keep ${colorText ? TONE_TEXT[tone] : ""} ${className}`.replace(/\s+/g, " ").trim()}>
       {icon === false ? null : <LineIcon className={colorText ? "" : TONE_TEXT[tone]}>{icon ?? <Icon size={iconSize} />}</LineIcon>}
       {prefix && <span className="sr-only">{prefix}</span>}
       <span className="min-w-0">{children}</span>

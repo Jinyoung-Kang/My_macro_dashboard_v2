@@ -24,7 +24,7 @@ vi.mock("@/components/charts", () => ({
   },
 }));
 
-import { LinkListPanel, PriceChartPanel, propertyItems } from "../DetailParts";
+import { LinkListPanel, PriceChartPanel, PriceHero, propertyItems } from "../DetailParts";
 
 let reads: Record<string, unknown> = {};
 
@@ -61,7 +61,8 @@ describe("가격 차트 패널", () => {
     const value = within(panel).getByText("11.00");
     const line = value.closest('[aria-hidden="true"]') as HTMLElement;
     expect(line).not.toBeNull();
-    expect(line.className).toContain("min-h-5");
+    // 줄 높이 고정 — 좁은 칸은 두 줄 자리, 칸이 26rem 이상이면 한 줄(QA-571, 아래 시험이 안내·문지른 상태를 함께 봄)
+    expect(line.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "@min-[26rem]:min-h-5"]));
     expect(within(line).getByText("2026-11-14")).toBeTruthy();
     expect(within(line).getByText("USD")).toBeTruthy();
     expect(within(line).getByText("기간 시작 대비")).toBeTruthy();
@@ -75,12 +76,93 @@ describe("가격 차트 패널", () => {
     expect(live.textContent).toBe("");
   });
 
+  // QA-571: 읽기 줄이 min-h-5(20px) 한 줄 자리만 잡아, 좁은 화면(390 — 줄 폭 332px)에서 문지른 내용(날짜·값·단위·칩·'기간 시작 대비' 약 350~390px)이
+  // 두 줄(38px)로 늘며 차트가 18px 아래로 밀렸습니다(손가락 아래에서 차트가 움직임 — 진행 기록 §P4 '정한 것' 2의 줄 높이 고정과 어긋남).
+  // 고친 뒤: 좁은 칸은 처음부터 두 줄 자리(2.375rem = 38px), 칸이 26rem 이상이면 한 줄(20px) — 처음 고칠 때는 sm(뷰포트) 기준이었고 아래 검토 시험이 칸 폭으로 바꿈.
+  // jsdom은 배치를 재지 못하므로 안내·문지른 상태가 같은 요소이고 두 클래스를 함께 가지는지 봅니다(높이는 브라우저 하네스로 잼).
+  // 수정 전 실패: 읽기 줄 클래스가 min-h-5뿐(min-h-[2.375rem] 없음)(재현 커밋에서는 it.fails).
+  it("읽기 줄은 좁은 칸에서 두 줄 자리를 늘 잡아 둔다 — 안내와 문지른 상태가 같은 요소이고 min-h-[2.375rem]·@min-[26rem]:min-h-5", async () => {
+    reads[TICKER] = { available: true, points: [{ date: "2026-11-12", close: 10 }, { date: "2026-11-13", close: 9.5 }, { date: "2026-11-14", close: 11 }] };
+    render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} unit="원" />);
+    const panel = screen.getByRole("region", { name: "합성 종목 시세" });
+    await within(panel).findByRole("img", { name: "합성 종목 시세 가격 차트" });
+    const tokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    const hintLine = within(panel).getByText("차트를 누르거나 가리키면 그 날 값").closest('[aria-hidden="true"]') as HTMLElement;
+    expect(tokens(hintLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "@min-[26rem]:min-h-5"]));
+    expect(tokens(hintLine)).not.toContain("min-h-5");
+    act(() => charts.last?.onScrub?.(2));
+    const heldLine = within(panel).getByText("11.00").closest('[aria-hidden="true"]') as HTMLElement;
+    expect(heldLine).toBe(hintLine);
+    expect(tokens(heldLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "@min-[26rem]:min-h-5"]));
+  });
+
+  // QA-571 검토: 줄이 접히는지는 화면 폭이 아니라 가운데 칸의 폭에 달렸습니다. 가변 폭 왼쪽 메뉴(200~320px, 계정 메뉴 '넓게' 280)가 넓으면 xl 가운데
+  // 칸이 434px보다 좁아져 sm 이상의 한 줄 자리(min-h-5)를 넘고(1280·메뉴 320 → 읽기 줄 334px, 메뉴 280 → 374px, 1024·메뉴 320 → 382px — 문지르면
+  // 20 → 38px, 차트 18px 이동), 반대로 480~639는 한 줄에 들어가는데도 두 줄 자리를 잡았습니다(QA 스택 fcbb4861에서 --shell-nav-w를 바꿔 잼).
+  // 고친 뒤: 읽기 줄을 감싼 상자가 크기 질의 기준(@container)이고, 칸이 26rem(416px — 가장 긴 내용 약 413px, BRK-A 'USD' 줄) 이상일 때만 한 줄 자리.
+  // 수정 전 실패: 읽기 줄의 부모에 @container가 없고 한 줄 자리가 뷰포트 기준(sm:min-h-5)(재현 커밋에서는 it.fails).
+  it("읽기 줄의 한 줄 자리는 화면 폭이 아니라 칸 폭으로 정한다 — 부모가 @container이고 @min-[26rem]:min-h-5, 뷰포트 기준 sm:min-h-5는 없다", async () => {
+    reads[TICKER] = { available: true, points: [{ date: "2026-11-12", close: 10 }, { date: "2026-11-13", close: 9.5 }, { date: "2026-11-14", close: 11 }] };
+    render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} unit="USD" />);
+    const panel = screen.getByRole("region", { name: "합성 종목 시세" });
+    await within(panel).findByRole("img", { name: "합성 종목 시세 가격 차트" });
+    const tokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+    const line = within(panel).getByText("차트를 누르거나 가리키면 그 날 값").closest('[aria-hidden="true"]') as HTMLElement;
+    expect({ line: tokens(line).filter((token) => token.includes("min-h")).sort(), parent: tokens(line.parentElement!).includes("@container") }).toEqual({
+      line: ["@min-[26rem]:min-h-5", "min-h-[2.375rem]"],
+      parent: true,
+    });
+  });
+
   it("기간을 누르면 그 기간 시계열을 읽는다(기본 1년)", async () => {
     reads[TICKER] = { available: true, points: [{ date: "2026-11-14", close: 11 }] };
     render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} />);
     await screen.findByRole("img", { name: "합성 종목 시세 가격 차트" });
     fireEvent.click(screen.getByRole("tab", { name: "5년" }));
     await waitFor(() => expect(api.apiGetShared.mock.calls.map(([path]) => path)).toContain(endpoints.macro.ticker("SYNQ", "5y")));
+  });
+
+  // 기간마다 서버(GET /api/macro/ticker → 백엔드 → 수집기 → Yahoo)를 부르므로 기간 탭은 수동 활성 — 화살표로 지나가는 기간은 부르지 않고 Enter로 고른 기간만
+  // 부릅니다(QA 스택에서 5년 → ← 세 번이 1y·6mo·1mo 세 요청을 냈음).
+  it("기간 탭을 화살표로 지나가도 시계열을 부르지 않고, Enter로 고른 기간만 부른다", async () => {
+    const tnx = (period: string) => endpoints.macro.ticker("^TNX", period);
+    reads[tnx("1y")] = { available: true, points: [{ date: "2026-11-14", close: 4.1 }] };
+    render(<PriceChartPanel title="미국채 10년물" symbol="^TNX" valueDigits={3} />);
+    await screen.findByRole("img", { name: "미국채 10년물 가격 차트" });
+    const tickerCalls = () => api.apiGetShared.mock.calls.map(([path]) => path as string).filter((path) => path.startsWith("/api/macro/ticker"));
+    expect(tickerCalls()).toEqual([tnx("1y")]);
+    const year = screen.getByRole("tab", { name: "1년" });
+    year.focus();
+    fireEvent.keyDown(year, { key: "ArrowLeft" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "1개월" }));
+    await act(async () => {});
+    expect(tickerCalls()).toEqual([tnx("1y")]);
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    await waitFor(() => expect(tickerCalls()).toEqual([tnx("1y"), tnx("1mo")]));
+    expect(screen.getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  // 종목 팝업 창(StockQuickView — 모의·실제 계좌·ISA 표의 종목 링크)의 시세 히어로도 같은 시계열을 기간마다 부르므로 같은 수동 활성입니다
+  // (QA 스택 /paper/us/holdings AMZN 팝업에서 1년 → ← 세 번이 6mo·1mo·5y 세 요청을 냈음 — 개편 전 PriceHero부터 있던 자동 활성).
+  it("종목 팝업 창의 시세 히어로도 기간 탭을 화살표로 지나가면 부르지 않고, Enter로 고른 기간만 부른다", async () => {
+    const amzn = (period: string) => endpoints.macro.ticker("AMZN", period);
+    reads[amzn("1y")] = { available: true, points: [{ date: "2026-11-14", close: 230.5 }] };
+    render(<PriceHero label="Amazon.com, Inc." valueText="230.50" unit="USD" change={null} changePct={null} symbol="AMZN" valueDigits={2} />);
+    await screen.findByRole("img", { name: "Amazon.com, Inc. 가격 차트" });
+    const tickerCalls = () => api.apiGetShared.mock.calls.map(([path]) => path as string).filter((path) => path.startsWith("/api/macro/ticker"));
+    expect(tickerCalls()).toEqual([amzn("1y")]);
+    const year = screen.getByRole("tab", { name: "1년" });
+    year.focus();
+    fireEvent.keyDown(year, { key: "ArrowLeft" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "1개월" }));
+    await act(async () => {});
+    expect(tickerCalls()).toEqual([amzn("1y")]);
+    expect(screen.getByRole("tab", { name: "1년" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    await waitFor(() => expect(tickerCalls()).toEqual([amzn("1y"), amzn("1mo")]));
+    expect(screen.getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("불러오는 중은 Skeleton(role=status), 오류는 다시 시도, 받지 않음은 그 글", async () => {

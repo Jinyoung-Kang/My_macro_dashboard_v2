@@ -92,7 +92,7 @@ export function Panel({
             ) : (
               heading
             )}
-            {subtitle && <p className="mt-0.5 text-[13px] leading-5 text-text-2">{subtitle}</p>}
+            {subtitle && <p className="mt-0.5 break-keep text-[13px] leading-5 text-text-2">{subtitle}</p>}
             {source && <SourceLine>{source}</SourceLine>}
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -209,10 +209,11 @@ export function Metric({
 /**
  * "출처 · …" 한 줄. 카드·지표가 같은 모양을 쓰게 합니다 — 테두리 상자 없는 캡션(새 패턴의 ProvenanceBadge와 같은 12px text-3).
  * '출처'와 가운뎃점은 따로 span이라 출처 글(children)이 이 줄의 글자로 그대로 남습니다(getByText가 출처 글로 찾음).
+ * 한글은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(break-keep wrap-break-word — 출처 배지와 같음, QA-568).
  */
 export function SourceLine({ children }: { children: ReactNode }) {
   return (
-    <p className="mt-1 text-xs leading-4 text-text-3">
+    <p className="mt-1 break-keep wrap-break-word text-xs leading-4 text-text-3">
       <span>출처</span>
       <span aria-hidden="true"> · </span>
       {children}

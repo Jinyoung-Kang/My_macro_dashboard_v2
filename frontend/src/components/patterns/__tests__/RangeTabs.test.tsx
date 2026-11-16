@@ -1,7 +1,8 @@
 /**
  * RangeTabs(새 패턴) — 기간 탭(설계서 §6 "허용 범위를 props로 받아 그 밖은 렌더링하지 않음").
  * 그리기(tablist·aria-selected·허용 안의 탭만), 고른 값이 허용 밖(아무것도 선택 안 함·첫 탭으로 Tab 진입),
- * 클릭(다른 탭만 onChange), 키보드(←·→ 돎·Home·End, 포커스 이동 + 바로 고름), 그릴 탭이 없으면 아무것도 없음(값 없음),
+ * 클릭(다른 탭만 onChange), 키보드(←·→ 돎·Home·End, 포커스 이동 + 바로 고름 — 서버를 부르는 기간은 수동 활성: 화살표는 포커스만, Enter·Space로 고름),
+ * 그릴 탭이 없으면 아무것도 없음(값 없음),
  * 추정·오래됨(히어로 meta 배지와 함께 놓여도 탭은 그대로 — 탭이 배지를 가리거나 대신하지 않음).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -114,6 +115,37 @@ describe("RangeTabs", () => {
     fireEvent.keyDown(document.activeElement!, { key: "End" });
     expect(selectedLabels()).toEqual(["10년"]);
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "10년" }));
+  });
+
+  // 서버를 부르는 기간(상세 가격 차트 — 기간마다 GET /api/macro/ticker → Yahoo)은 지나가며 부르지 않게 수동 활성입니다(공용 Tabs와 같은 규칙).
+  // 수정 전에는 activation prop이 없어 ←에서 바로 onChange('1y')를 불렀습니다.
+  it("수동 활성(activation='manual') — ←·→·Home·End는 포커스만 옮기고, Enter·Space로 고른다", () => {
+    const onChange = vi.fn();
+    render(<RangeTabs ranges={RANGES} value="5y" onChange={onChange} label="기간" activation="manual" />);
+    const five = screen.getByRole("tab", { name: "5년" });
+    five.focus();
+    fireEvent.keyDown(five, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "3년" }));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "1년" }));
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "1년" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(selectedLabels()).toEqual(["5년"]);
+    // 고른 탭(5년)이 그대로 Tab 진입 자리
+    expect(screen.getAllByRole("tab").map((tab) => tab.tabIndex)).toEqual([-1, -1, 0, -1]);
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith("1y");
+    onChange.mockClear();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "3년" }), { key: " " });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith("3y");
+    onChange.mockClear();
+    // 이미 고른 탭에서 Enter는 부르지 않는다(누르기와 같음)
+    fireEvent.keyDown(five, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("다른 키는 아무것도 하지 않는다", () => {
