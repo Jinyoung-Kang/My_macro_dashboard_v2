@@ -122,6 +122,33 @@ describe("여닫기", () => {
     expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
   });
 
+  it("한글 조합 중(isComposing·keyCode 229)의 Ctrl/⌘K는 열지 않는다 — 조합을 끝낸 뒤 누르면 연다", () => {
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Win32");
+    render(
+      <>
+        <input aria-label="메모" />
+        <SearchCommand user={MEMBER} />
+      </>,
+    );
+    const memo = screen.getByRole("textbox", { name: "메모" });
+    memo.focus();
+    expect(fireEvent.keyDown(memo, { key: "k", ctrlKey: true, isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(memo, { key: "Process", code: "KeyK", ctrlKey: true, keyCode: 229 })).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.keyDown(memo, { key: "k", ctrlKey: true });
+    expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
+    cleanup();
+
+    vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+    render(<SearchCommand user={MEMBER} />);
+    fireEvent.keyDown(window, { key: "k", metaKey: true, isComposing: true });
+    fireEvent.keyDown(window, { key: "k", metaKey: true, keyCode: 229 });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
+  });
+
   it("열면 포커스가 검색어 입력칸으로 간다 — 대화상자는 위쪽에 고정(결과 수가 바뀌어도 입력칸이 움직이지 않게 — 가운데 정렬 아님)", () => {
     const dialog = openSearch();
     expect(document.activeElement).toBe(input());

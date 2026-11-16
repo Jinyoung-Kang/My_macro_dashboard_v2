@@ -50,6 +50,13 @@ describe("팔레트 화음", () => {
     expect(isPaletteChord(key({ key: "ㅏ", code: "KeyK", ctrlKey: true }), false)).toBe(true);
     expect(isPaletteChord(key({ key: "ㅏ", code: "KeyL", ctrlKey: true }), false)).toBe(false);
   });
+
+  it("한글 조합 중(isComposing·keyCode 229)이면 받지 않는다 — 조합을 끝낸 뒤 연다", () => {
+    expect(isPaletteChord(key({ key: "k", ctrlKey: true, isComposing: true }), false)).toBe(false);
+    expect(isPaletteChord(key({ key: "Process", code: "KeyK", ctrlKey: true, keyCode: 229 }), false)).toBe(false);
+    expect(isPaletteChord(key({ key: "k", metaKey: true, isComposing: true }), true)).toBe(false);
+    expect(isPaletteChord(key({ key: "k", metaKey: true, keyCode: 229 }), true)).toBe(false);
+  });
 });
 
 describe("한 글자 단축키", () => {

@@ -87,9 +87,11 @@ export function isInOverlay(target: KeyTarget | EventTarget | null | undefined):
 /**
  * 명령 팔레트를 여는 화음인가. 맥은 ⌘K만(Ctrl 없이) — 맥의 Ctrl+K는 입력칸의 기본 편집 명령(줄 끝까지 지우기)이라 가로채지 않습니다.
  * 그 밖은 화면 안내(Ctrl K)대로 Ctrl+K만(⌘·Windows 키 없이). Alt·Shift가 섞이면 아닙니다. 한글 자판이면 K 자리가 "ㅏ"로 오기도 해 물리 키(code)도
- * 봅니다(자동 완성이 보내는 keydown은 key가 없을 수 있음).
+ * 봅니다(자동 완성이 보내는 keydown은 key가 없을 수 있음). 한글 조합 중(isComposing·keyCode 229)이면 아닙니다 — 조합 중인 글자를 확정하지 않은 채
+ * 팔레트로 포커스가 옮겨 가면 입력기 상태가 꼬입니다(조합을 끝낸 뒤 다시 누르면 엶).
  */
 export function isPaletteChord(event: KeyEventLike, isMac: boolean): boolean {
+  if (event.isComposing || event.keyCode === 229) return false;
   const isK = event.key === "k" || event.key === "K" || event.code === "KeyK";
   const modifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
   return modifier && !event.altKey && !event.shiftKey && isK;
