@@ -12,6 +12,7 @@
 import { holderQuery, institutionHref, stockHref } from "./detail";
 import { EMPTY, formatKst } from "./format";
 import type { ReaderEntry } from "./info";
+import { singleKeyShortcut } from "./shortcuts";
 import type {
   SearchCandidate,
   SearchEntity,
@@ -2087,23 +2088,26 @@ export function nextRowIndex(current: number, key: "ArrowUp" | "ArrowDown", leng
 type ShortcutTarget = { tagName?: string; isContentEditable?: boolean; closest?: (selector: string) => unknown } | null;
 
 /**
- * '/'로 검색창에 갈 키인가 — 수식키(Ctrl·⌘·Alt)가 없고, 한글 조합 중이 아니고, 다른 입력칸·편집 영역·대화상자 안이 아닐 때만.
- * 상단 통합 검색의 ⌘K/Ctrl+K는 그대로 둡니다.
+ * '/'로 검색창에 갈 키인가 — 판정은 셸 단축키와 같습니다(lib/shortcuts singleKeyShortcut이 'filter'일 때): 수식키(Ctrl·⌘·Alt)·키 반복·
+ * 한글 조합 중(isComposing·keyCode 229)이 아니고, 글을 쓰는 자리(입력칸·편집 영역·role textbox/combobox/searchbox)나 덮개(대화상자·경고 대화상자·
+ * 메뉴) 안이 아닐 때만. 셸 처리기와 이 화면의 처리기가 같은 칸으로 함께 움직이므로(SearchBox) 판정이 갈리면 안 됩니다(QA-562 — 열린 계정 메뉴
+ * 안의 '/'를 이 화면만 가로챘음). 상단 통합 검색의 ⌘K/Ctrl+K는 그대로 둡니다.
  */
 export function isSlashShortcut(event: {
   key: string;
+  code?: string;
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
+  shiftKey?: boolean;
+  repeat?: boolean;
   isComposing?: boolean;
+  keyCode?: number;
   target: ShortcutTarget | EventTarget;
 }): boolean {
-  if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
-  const target = event.target as ShortcutTarget;
-  if (!target) return true;
-  const tag = (target.tagName ?? "").toUpperCase();
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return false;
-  return !(typeof target.closest === "function" && target.closest('[role="dialog"]'));
+  // 키 이벤트는 속성이 원형(prototype)의 접근자라 펼치기(...)로는 옮겨지지 않습니다 — 하나씩 읽어 넘깁니다(shiftKey가 없으면 false).
+  const { key, code, ctrlKey, metaKey, altKey, shiftKey = false, repeat, isComposing, keyCode, target } = event;
+  return singleKeyShortcut({ key, code, ctrlKey, metaKey, altKey, shiftKey, repeat, isComposing, keyCode, target }) === "filter";
 }
 
 /** 원문 주소 — http(s)만(javascript: 등은 링크로 두지 않음). */

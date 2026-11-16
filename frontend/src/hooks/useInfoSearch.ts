@@ -327,8 +327,8 @@ export function useInfoSearchLinks(
 }
 
 /**
- * '/'로 검색창에 갑니다(이 화면이 떠 있는 동안만). 다른 입력칸·편집 영역·대화상자 안·한글 조합 중·수식키와 함께면 그대로 둡니다 —
- * 상단 통합 검색의 ⌘K/Ctrl+K와 겹치지 않습니다.
+ * '/'로 검색창에 갑니다(이 화면이 떠 있는 동안만). 다른 입력칸·편집 영역·대화상자나 메뉴 안·한글 조합 중·수식키와 함께·키 반복이면 그대로 둡니다 —
+ * 판정은 셸 단축키와 같습니다(lib/infoSearch isSlashShortcut → lib/shortcuts singleKeyShortcut, QA-562). 상단 통합 검색의 ⌘K/Ctrl+K와 겹치지 않습니다.
  */
 export function useSlashShortcut(target: RefObject<HTMLInputElement | null>) {
   useEffect(() => {

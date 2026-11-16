@@ -652,7 +652,7 @@ describe("useSlashShortcut", () => {
 
   // 수정 전(재현 커밋에서는 it.fails)에는 열린 메뉴(role menu) 안의 '/'도 기본 동작을 막고(fireEvent가 false) 포커스를 검색창으로 옮겼다 —
   // 브라우저에서는 모달 메뉴가 포커스를 첫 항목으로 되돌렸다. 키 반복(repeat)도 검색창으로 갔다. 셸 처리기는 둘 다 무시한다(QA-562).
-  it.fails("열린 메뉴 안·키 반복의 '/'는 그대로 둔다 — 기본 동작을 막지 않고 포커스도 옮기지 않는다(QA-562)", () => {
+  it("열린 메뉴 안·키 반복의 '/'는 그대로 둔다 — 기본 동작을 막지 않고 포커스도 옮기지 않는다(QA-562)", () => {
     render(<Harness />);
     const menu = screen.getByRole("menu", { name: "계정 메뉴" });
     menu.focus();
