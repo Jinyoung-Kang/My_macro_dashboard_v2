@@ -29,6 +29,7 @@ const signal = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import { RefreshButton } from "../RefreshButton";
 import { Shell } from "../Shell";
 
 const DEMO: SessionUser = { email: null, role: "MEMBER", tier: "PRO", demo: true };
@@ -527,6 +528,33 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     const button = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
+  });
+
+  // QA-553: 수집 중에 단추가 진짜 disabled라, 키보드(Enter·Space)나 마우스로 누른 단추가 disabled가 되는 순간 브라우저가 포커스를 문서(body)로
+  // 보냈습니다 — QA 스택 1024·1440에서 Enter 뒤 activeElement=BODY(끝난 뒤에도), 바뀐 이름 '수집 중… 끝나면 자동 갱신'은 포커스가 없어 읽히지 않았고,
+  // POST가 오가는 동안 role=status는 빈 글이었습니다(개편 전 block 단추도 같은 구조). QA-444(정보 검색 단추)와 키트 방침(ui/classes — 바꾸는 중에는
+  // aria-disabled)대로, 수집 중에는 aria-disabled·aria-busy로 막고 누름은 무시하며, 안내 글이 없으면 안내 영역(sr-only)에 '수집 중…'을 둡니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 두 변형 모두 button.disabled true·aria-disabled 없음, 안내 영역 글이 ''였습니다.
+  it.fails("수집 중에는 aria-disabled로 막는다 — 단추가 포커스를 잃지 않고, 눌러도 다시 요청하지 않으며, 안내 영역이 '수집 중…'을 읽는다(아이콘·block 두 변형) (QA-553)", () => {
+    const expectBusy = (button: HTMLButtonElement, status: HTMLElement) => {
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.getAttribute("aria-busy")).toBe("true");
+      fireEvent.click(button);
+      expect(signal.requestRefresh).not.toHaveBeenCalled();
+      expect(status.textContent).toBe("수집 중… 끝나면 자동 갱신");
+      // 보이는 글은 아니다(안내가 없을 때는 sr-only — 아이콘 단추의 도는 아이콘·block 단추의 글이 이미 보임)
+      expect(status.className).toBe("sr-only");
+    };
+    signal.collecting = true;
+    renderShell(LOCAL_OWNER);
+    const icon = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
+    expectBusy(icon, within(icon.closest("header > div") as HTMLElement).getByRole("status"));
+    cleanup();
+
+    // 더보기(좁은 화면)의 폭 전체 단추
+    render(<RefreshButton user={LOCAL_OWNER} />);
+    expectBusy(screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement, screen.getByRole("status"));
   });
 
   it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 말줄임하고 전체 글은 title", () => {
