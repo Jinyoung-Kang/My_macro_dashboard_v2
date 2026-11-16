@@ -101,8 +101,8 @@ describe("더보기 화면", () => {
   });
 
   // D1 QA 넘김(more-refresh-primary-sm-24px): 홀로 선 주 동작(새로고침)과 로그아웃이 표 안용 작은 크기(sm — 넓은 화면 24px)였습니다.
-  // 기본 크기(md — 넓은 화면 30px, 좁은 화면 44px)로 둡니다(명세 §3-7). 결함 번호 없는 겉모양 고침.
-  it("새로고침·로그아웃은 홀로 선 단추라 기본 크기(넓은 화면 30px·좁은 화면 44px) — 표 안용 작은 크기(24px)가 아니다", () => {
+  // 기본 크기(md — 좁은 화면 44px, 로그아웃은 넓은 화면 30px)로 둡니다(명세 §3-7). 결함 번호 없는 겉모양 고침. 새로고침은 lg 미만에서만 보입니다(QA-564).
+  it("새로고침·로그아웃은 홀로 선 단추라 기본 크기(좁은 화면 44px·로그아웃은 넓은 화면 30px) — 표 안용 작은 크기(24px)가 아니다", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: false });
     for (const name of ["데이터 수동 새로고침", "로그아웃"]) {
       const classes = screen.getByRole("button", { name }).className.split(/\s+/);
@@ -114,7 +114,7 @@ describe("더보기 화면", () => {
   // QA-564: 넓은 화면(lg 이상)에는 상단바의 새로고침 아이콘 단추와 그 안내(role=status)가 이미 있습니다. /more의 '데이터 읽기' 묶음까지 모든 폭에
   // 그리면 넓은 화면 /more에 단추 둘·같은 글의 live region 둘이 보였습니다(명세 §5 — lg 이상은 상단바, lg 미만은 더보기). 읽기 모드 글은 모든 폭.
   // 수정 전(재현 커밋에서는 it.fails)에는 단추·안내의 closest('.lg\:hidden')이 null — 넓은 화면에서도 보임.
-  it.fails("QA-564 — 새로고침 단추와 그 안내(role=status)는 좁은 화면(lg 미만)에서만 보이고, 읽기 모드 글은 모든 폭에 보인다", () => {
+  it("QA-564 — 새로고침 단추와 그 안내(role=status)는 좁은 화면(lg 미만)에서만 보이고, 읽기 모드 글은 모든 폭에 보인다", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
     const data = screen.getByRole("region", { name: "데이터 읽기" });
     const button = within(data).getByRole("button", { name: "데이터 수동 새로고침" });
