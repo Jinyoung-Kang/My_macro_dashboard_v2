@@ -10,6 +10,7 @@ import { visibleMenus } from "./access";
 import {
   countryKo,
   currencyUnit,
+  INDICATOR_NO_CHART,
   indicatorChartSymbol,
   indicatorHref,
   priceDigits,
@@ -117,11 +118,20 @@ export function consensusItems(market: DetailMarket, quote: Pick<DetailQuote, "c
   return rows.some((row) => row.value !== null) ? rows : [];
 }
 
+/**
+ * 뜻이 다른 티커(INDICATOR_NO_CHART — 차트·연결에서 뺌)의 속성 '티커' 줄 note — 이 카드 값의 출처가 아님(QA-589). 지금은 2년물 하나라 그 뜻(선물 가격·
+ * 수익률)을 적고, 표에 없는 키는 일반 글.
+ */
+const NO_CHART_TICKER_NOTE: Readonly<Record<string, string>> = {
+  us02y: "Yahoo 선물 가격 — 이 카드 값(수익률)의 출처가 아님",
+};
+
 /** 지표 속성에 쓰는 카드 행의 칸(lib/home macroCardRow 결과). */
 export type IndicatorRowFields = Pick<HomeRow, "valueText" | "asOf" | "isEstimated" | "isStale" | "staleReason" | "warning">;
 
 /**
- * 지표 속성(지표 상세 왼쪽 칸) — 범주·티커·카드 키(고정폭)·값(추정·이전 값 배지)·전일·값 출처·장 상태·기준 시각·경고(있을 때만). 값 출처와 장 상태는
+ * 지표 속성(지표 상세 왼쪽 칸) — 범주·티커·카드 키(고정폭)·값(추정·이전 값 배지)·전일·값 출처·장 상태·기준 시각·경고(있을 때만). 뜻이 다른 티커
+ * (us02y ZT=F)는 값을 그대로 두고(수집기 덮어쓰기 실패 경고가 이 이름을 가리킴) 이 카드 값의 출처가 아니라는 note를 붙입니다. 값 출처와 장 상태는
  * 부르는 쪽이 홈 시장 표와 같은 규칙(lib/home macroItemSource·macroCardSession)으로 넘깁니다 — 이 모듈은 lib/home을 가져오지 않습니다(형식만).
  */
 export function indicatorProperties(
@@ -131,7 +141,14 @@ export function indicatorProperties(
 ): DetailProperty[] {
   const out: DetailProperty[] = [
     { label: "범주", value: presentValue(context.category) },
-    { label: "티커", value: presentValue(item.ticker), mono: true },
+    {
+      label: "티커",
+      value: presentValue(item.ticker),
+      mono: true,
+      ...(INDICATOR_NO_CHART[item.key] !== undefined
+        ? { note: NO_CHART_TICKER_NOTE[item.key] ?? "뜻이 다른 Yahoo 티커 — 이 카드 값의 출처가 아님" }
+        : {}),
+    },
     { label: "카드 키", value: item.key, mono: true },
     {
       label: "값",

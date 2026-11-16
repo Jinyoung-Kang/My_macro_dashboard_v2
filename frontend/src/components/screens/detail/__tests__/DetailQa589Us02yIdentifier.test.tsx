@@ -57,7 +57,7 @@ const row = (label: string) => {
 
 describe("뜻이 다른 티커는 대상 식별자가 아님 (QA-589)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 us02y 머리 태그가 ['지표', 'ZT=F'](ZT=F는 고정폭)이고 속성 '티커' 줄에 note가 없었습니다.
-  it.fails("us02y — 머리에 ZT=F 태그 없음, 속성 '티커' 줄은 ZT=F(고정폭)와 출처가 아니라는 note", async () => {
+  it("us02y — 머리에 ZT=F 태그 없음, 속성 '티커' 줄은 ZT=F(고정폭)와 출처가 아니라는 note", async () => {
     renderIndicator("us02y");
     const header = (await screen.findByRole("heading", { level: 1, name: "미국채 2년물 수익률(%)" })).closest("header") as HTMLElement;
     expect(within(header).queryByText("ZT=F")).toBeNull();

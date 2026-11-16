@@ -122,8 +122,9 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
       <EntityHeader
         kind="indicator"
         name={item.name}
-        // 티커는 고정폭 식별자 태그(명세 §3-6), 보조 글은 범주만 — 티커가 없는 카드(스크래핑)는 태그가 없습니다.
-        identifiers={item.ticker ? [item.ticker] : undefined}
+        // 티커는 고정폭 식별자 태그(명세 §3-6), 보조 글은 범주만 — 티커가 없는 카드(스크래핑)는 태그가 없습니다. 카드 값과 뜻이 다른 티커(2년물
+        // ZT=F — 선물 가격, INDICATOR_NO_CHART)도 이 지표의 식별자가 아니라 태그로 두지 않습니다(차트·연결과 같은 규칙 — QA-589, 속성 '티커' 줄에 그 뜻).
+        identifiers={item.ticker && INDICATOR_NO_CHART[item.key] === undefined ? [item.ticker] : undefined}
         description={categoryTitle}
         value={row.valueText ?? null}
         change={{ change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2, caption: "전일 대비" }}
