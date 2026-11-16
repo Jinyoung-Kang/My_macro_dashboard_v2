@@ -6,7 +6,7 @@ import {
   LIVE_THRESHOLD_SECONDS,
   useAutoRefreshSeconds,
 } from "@/components/AutoRefresh";
-import { RawSnapshotCard } from "@/components/RawSnapshotCard";
+import { RawSnapshotActions } from "@/components/RawSnapshotCard";
 import { SessionBadge, useKrOfficialHolidays, useMinuteClock } from "@/components/SessionBadge";
 import {
   Banner,
@@ -132,6 +132,8 @@ export default function MacroPage() {
               stale={data?.stale}
               refreshError={overview.refreshError}
             />
+            {/* 머리 동작 — "지금 이 대시보드가 들고 있는 값 전부"를 스크롤 없이 먼저 꺼낼 수 있게 화면 머리에 둡니다(보기는 대화상자, 복사는 바로). */}
+            <RawSnapshotActions />
           </>
         }
       >
@@ -148,9 +150,6 @@ export default function MacroPage() {
 
       {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
           페이지 전체가 로딩으로 바뀌고 방금 조작한 선택 상자가 사라졌습니다(QA-047). */}
-      {/* 상단에 둡니다 — 화면을 스크롤하며 눈으로 옮겨 적지 않아도 되도록,
-          "지금 이 대시보드가 들고 있는 값 전부"를 먼저 꺼낼 수 있게 합니다. */}
-      <RawSnapshotCard />
 
       {overview.loading && !data && <Loading label="매크로 지표를 불러오는 중…" />}
       {overview.error && <ErrorState message={overview.error} onRetry={overview.reload} />}
