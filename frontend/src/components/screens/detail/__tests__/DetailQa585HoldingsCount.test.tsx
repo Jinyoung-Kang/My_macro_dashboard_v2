@@ -65,7 +65,7 @@ const THIRTY = Array.from({ length: 30 }, (_, at) => holding(at));
 
 describe("보유 종목 탭의 개수 줄 — 최신 분기 보유 종목 수 기준 (QA-585)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 응답 30줄(topN=30)이라 개수 줄이 없었습니다(30 > 30 거짓).
-  it.fails("(가)·(나) 실제 응답 모양(30줄 + holdingCount) — 최신 분기 수 '552종목 가운데 비중 상위 30종목', 천 단위 쉼표", async () => {
+  it("(가)·(나) 실제 응답 모양(30줄 + holdingCount) — 최신 분기 수 '552종목 가운데 비중 상위 30종목', 천 단위 쉼표", async () => {
     await openHoldings(
       portfolio(THIRTY, [
         { filingDate: "2026-05-15", reportDate: "2026-03-31", totalValue: 29e9, holdingCount: 540 },

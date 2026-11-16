@@ -9,9 +9,9 @@ import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { CHART_KEY, detailQuery, institutionHref, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
-import { holdingDetailItems, infoSearchEntityLink, institutionEntityKey, institutionProperties } from "@/lib/detailEntity";
+import { holdingDetailItems, infoSearchEntityLink, institutionEntityKey, institutionProperties, latestHoldingCount } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
-import { formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
+import { formatNumber, formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { infoSearchEntry } from "@/lib/search";
 import type { Holding, PortfolioResponse } from "@/lib/types";
 import { AiSummaryCard, type DetailLink, ExternalLinksCard, LinkListPanel, NEWS_SOURCES, NewsCard, propertyItems } from "./DetailParts";
@@ -245,7 +245,9 @@ function HoldingsPanel({
   onRetry: () => void;
 }) {
   const user = useSessionUser();
-  const holdings = data?.holdings ?? [];
+  const shown = (data?.holdings ?? []).slice(0, HOLDINGS_SHOWN);
+  // 개수 줄의 전체 수는 최신 분기 보유 종목 수 — 응답은 백엔드가 이미 상위 TOP_N줄로 잘라 보내 응답 길이로는 넘칠 수 없습니다(QA-585). 모르면 줄 없음.
+  const heldTotal = latestHoldingCount(data?.quarters);
   return (
     <Panel
       title="상위 보유 종목"
@@ -260,11 +262,11 @@ function HoldingsPanel({
     >
       <MasterDetail<Holding>
         label="상위 보유 종목"
-        items={holdings.slice(0, HOLDINGS_SHOWN)}
+        items={shown}
         itemKey={(holding) => `${holding.cusip}:${holding.class}`}
         itemLabel={(holding) => holding.name}
         autoSelectFirst
-        count={holdings.length > HOLDINGS_SHOWN ? () => `${holdings.length}종목 가운데 비중 상위 ${HOLDINGS_SHOWN}종목` : undefined}
+        count={heldTotal !== null && heldTotal > shown.length ? () => `${formatNumber(heldTotal, 0)}종목 가운데 비중 상위 ${shown.length}종목` : undefined}
         placeholder={
           data ? undefined : untrackedCik ? (
             <UntrackedNotice cik={untrackedCik} />

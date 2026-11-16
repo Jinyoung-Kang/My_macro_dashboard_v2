@@ -156,6 +156,15 @@ function latestQuarter(quarters: PortfolioResponse["quarters"] | null | undefine
 }
 
 /**
+ * 최신 분기의 보유 종목 수(기관 상세 보유 종목 탭의 개수 줄 — '552종목 가운데 비중 상위 30종목'). 응답 holdings는 백엔드가 비중 상위 topN줄로 잘라
+ * 보내므로 전체 수는 이것으로 셉니다(QA-585). 분기가 없거나 수를 모르면 null — 응답 길이로 짐작하지 않습니다.
+ */
+export function latestHoldingCount(quarters: PortfolioResponse["quarters"] | null | undefined): number | null {
+  const count = latestQuarter(quarters)?.holdingCount;
+  return typeof count === "number" && Number.isFinite(count) ? count : null;
+}
+
+/**
  * 기관 속성(기관 상세 왼쪽 칸) — CIK(고정폭)·보고 기준일·공시일·13F 보고 평가액·보유 종목 수(최신 분기)·분기 수·수집 시각, 기관 소개(긴 글 — 있을 때만).
  * 포트폴리오를 받기 전이면 CIK 한 줄만(나머지는 화면이 '불러오는 중'으로).
  */
