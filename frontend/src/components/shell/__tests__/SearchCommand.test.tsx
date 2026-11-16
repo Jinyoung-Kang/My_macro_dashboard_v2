@@ -642,6 +642,60 @@ describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", 
     expect(screen.getByRole("status").textContent).toMatch(/^결과 \d+건/);
   });
 
+  // QA-557: 외부 종목 찾기(350ms 미룸 뒤 응답)는 명령 묶음보다 늦게 와서 그 앞에 끼어든다. 고른 줄은 결과 id로 들어 묶음이 바뀌어도 같은 줄이다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 고른 줄을 순번으로만 셌다 — 'help'의 '단축키 도움말'(순번 0)을 고른 채 종목 찾기 응답이 오면 순번 0이
+  // 합성 종목(Synthetic Alpha)이 됐고 aria-activedescendant 값(option-0)은 그대로였으며, Enter가 router.push('/s/us/ZZQA')로 갔다.
+  const LATE_SYMBOLS = {
+    available: true,
+    symbols: {
+      items: [
+        { market: "us", code: "ZZQA", yahooSymbol: "ZZQA", name: "Synthetic Alpha", exchange: "NASDAQ", kind: "stock", source: "Yahoo Finance" },
+        { market: "us", code: "ZZQB", yahooSymbol: "ZZQB", name: "Synthetic Beta", exchange: "NASDAQ", kind: "stock", source: "Yahoo Finance" },
+      ],
+    },
+  };
+  const groupNames = () => screen.getAllByRole("group").map((group) => group.querySelector("[role='presentation'] > span")?.textContent);
+  const helpOption = () => screen.getByRole("option", { name: /단축키 도움말/ });
+
+  it.fails("늦게 온 종목 찾기 묶음이 명령 앞에 끼어도 고른 줄은 '단축키 도움말' 그대로 — aria-activedescendant가 따라가고 Enter는 명령을 실행한다(QA-557)", async () => {
+    reads[endpoints.detail.symbols("help")] = LATE_SYMBOLS;
+    openSearch();
+    await act(async () => {});
+    type("help");
+    expect(groupNames()).toEqual(["명령"]);
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    // 묶음 순서는 그대로(색인 범주 → 종목 찾기 → 명령) — 고른 줄만 id로 남는다.
+    expect(groupNames()).toEqual(["종목 찾기 · Yahoo·네이버", "명령"]);
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(input().getAttribute("aria-activedescendant")).toBe(helpOption().id);
+    expect(screen.getByRole("option", { name: /Synthetic Alpha/ }).getAttribute("aria-selected")).toBe("false");
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(await screen.findByRole("dialog", { name: "단축키" })).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it.fails("색인 결과와 명령이 함께 맞을 때 ↑로 고른 명령은 늦게 온 종목 찾기 묶음 뒤에도 고른 줄이다(QA-557)", async () => {
+    reads[endpoints.detail.symbols("ㄷㅇ")] = LATE_SYMBOLS;
+    openSearch();
+    await act(async () => {});
+    type("ㄷㅇ");   // 메뉴 'AI 종합 분석'(초성 ㄷㅇ — 더보기)과 명령 '단축키 도움말'
+    expect(groupNames()).toEqual(["메뉴", "명령"]);
+    fireEvent.keyDown(input(), { key: "ArrowUp" });   // 맨 위에서 위로 → 맨 아래(명령)
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    expect(groupNames()).toEqual(["메뉴", "종목 찾기 · Yahoo·네이버", "명령"]);
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(input().getAttribute("aria-activedescendant")).toBe(helpOption().id);
+
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(await screen.findByRole("dialog", { name: "단축키" })).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
   it("왼쪽 메뉴 접기·펼치기는 넓은 화면에서만 보이고, 고르면 팔레트를 닫은 뒤 셸 명령 toggle-nav를 보낸다", async () => {
     stubWide(false);
     openSearch();
