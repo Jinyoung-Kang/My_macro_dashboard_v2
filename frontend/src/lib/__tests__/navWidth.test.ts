@@ -236,6 +236,20 @@ describe("NAV_WIDTH_PRESETS·navWidthPreset — 계정 메뉴 '왼쪽 메뉴 폭
     expect(NAV_WIDTH_PRESETS[2].width).toBeLessThan(317);
   });
 
+  // QA-612: 창 폭 1024~1027에서 10px 스크롤 막대를 그리는 브라우저(Windows Chrome·Edge)는 '넓게 280'을 고르면 최소 폭 640px 표(홈 두 표·/macro·
+  // /institutions·/radar·/paper/us)가 4px 넘쳐 홈에 '← 표를 좌우로 넘겨 보세요'가 떴습니다. 잰 넘침은 메뉴 277px(10px 막대)·287px(겹쳐 그리는 막대)부터
+  // 시작하고 272·276은 다섯 화면 모두 0 — 메뉴가 고르게 하는 폭은 1024에서도 넘치지 않는 272로.
+  // 수정 전 실패: AssertionError: expected 280 to be 272.
+  it.fails("QA-612: 넓게는 272 — 1024에서 10px 스크롤 막대가 서도 640px 표가 넘치지 않는 폭(277 아래)", () => {
+    const wide = NAV_WIDTH_PRESETS.find((preset) => preset.label === "넓게");
+    expect(wide?.width).toBe(272);
+    expect(wide?.width).toBeLessThan(277);
+    expect(navWidthPreset(272)?.label).toBe("넓게");
+    // 끌어서 정한 280은 이제 어느 단계와도 같지 않음(상한 320·끌기·키는 그대로)
+    expect(navWidthPreset(280)).toBeNull();
+    expect(NAV_WIDTH_MAX).toBe(320);
+  });
+
   it("펼친 폭과 같은 단계, 없으면 null(끌어서 정한 폭) — 잘라서 견준다(하한 아래 190·200은 좁게, 1000은 320이라 없음)", () => {
     expect(navWidthPreset(220)?.label).toBe("기본");
     expect(navWidthPreset(280)?.label).toBe("넓게");
