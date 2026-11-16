@@ -413,12 +413,13 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
     // 국면 — 백엔드 라벨(판정이 났으면 중립색이 아님)과 기준일
     expect(within(kpi("국면")).getByText("확장 (Expansion)").className).not.toContain("text-neutral");
     expect(within(kpi("국면")).getByText("기준일 2026-10-16")).toBeTruthy();
-    // 시장 — 값은 수집기 priceStr, 변화 칩(▲▼·− 부호·읽어 주는 방향), 시각
+    // 시장 — 값은 수집기 priceStr, 변화 칩(▲▼·− 부호·읽어 주는 방향), 출처 줄(출처·장 상태·시각 — 시장 표의 '기준' 칸과 같은 규칙, 읽어 주는 머리말 '출처:')
     const sp500 = kpi("S&P 500");
     expect(within(sp500).getByText("7,622.99")).toBeTruthy();
     expect(within(sp500).getByText("하락")).toBeTruthy();
     expect(within(sp500).getByText("−40.46")).toBeTruthy();
-    expect(within(sp500).getByText("2026-10-24 04:59")).toBeTruthy();
+    const provenance = within(sp500).getByText(/^Yahoo Finance \(\^GSPC\) · .*2026-10-24 04:59$/);
+    expect(within(provenance).getByText("출처:").className).toContain("sr-only");
     expect(within(kpi("원/달러")).getByText("1,322.28")).toBeTruthy();
     expect(within(kpi("원/달러")).getByText("원")).toBeTruthy();
     // 저장본에 그 카드가 없으면 '—'(읽어 주기 '값 없음') + 사유 — 0으로 적지 않습니다.

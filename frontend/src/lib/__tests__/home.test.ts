@@ -733,16 +733,36 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
     expect(unknown).toMatchObject({ value: "판정 불가", neutral: true, note: null });
   });
 
-  it("시장 — 값은 수집기 priceStr, 변화는 delta·pct 그대로(수집기 자릿수), 단위, 시각 · 저장본에 없는 카드는 '—' + '저장본에 없음'", () => {
+  it("시장 — 값은 수집기 priceStr, 변화는 delta·pct 그대로(수집기 자릿수), 단위, 출처 줄(출처·장 상태·시각) · 저장본에 없는 카드는 '—' + '저장본에 없음'", () => {
     const items = homeKpiItems(ready(), { owner: true, clock: CLOCK_ONLY });
     const byKey = new Map(items.map((item) => [item.key, item]));
     expect(byKey.get("sp500")).toMatchObject({
       value: "7,622.99", unit: null, change: { change: -40.4599609375, changePct: -0.5279601211768575, digits: 2, pctDigits: 2 },
-      note: "2026-10-24 04:59", isEstimated: false, isStale: false,
+      source: "Yahoo Finance (^GSPC) · 마감", asOf: "2026-10-24 04:59 KST", delayMin: null, isEstimated: false, isStale: false,
     });
+    // 값의 시각은 출처 줄이 적습니다(따로 된 시각 줄 없음).
+    expect(byKey.get("sp500")?.note ?? null).toBeNull();
     expect(byKey.get("usdkrw")).toMatchObject({ value: "1,322.28", unit: "원" });
     expect(byKey.get("us10y")).toMatchObject({ value: "4.992", unit: "%", change: { change: -0.007, changePct: -0.14, digits: 3, pctDigits: 2 } });
     expect(byKey.get("kospi")).toMatchObject({ value: null, emptyReason: KPI_NOT_IN_SNAPSHOT });
+  });
+
+  it("시장 — 비공식 참고 시세(미국채 TradingView)는 출처 줄에 '참고 시세'와 열린 장의 지연, 닫힌 장의 지연은 툴팁 — 시장 묶음 표와 같은 값", () => {
+    const overview = macroOverviewWithKpiCards();
+    const us10y = overview.categories[0].items.findIndex((item) => item.key === "us10y");
+    overview.categories[0].items[us10y] = {
+      ...overview.categories[0].items[us10y], source: "TradingView Scanner", isReference: true, delayMinutes: 15, lastTs: "2026-10-26 16:50 KST",
+    };
+    const OPEN = { now: new Date("2026-10-26T14:00:00Z"), krOfficial: null }; // 뉴욕 10:00 — 미국채 장 열림
+    const open = homeKpiItems(ready({ macro: { data: overview, error: null } }), { owner: true, clock: OPEN }).find((item) => item.key === "us10y");
+    const row = marketGroups(overview, OPEN).flatMap((group) => group.rows).find((entry) => entry.id === "us10y");
+    expect(open).toMatchObject({ source: row?.source, asOf: row?.asOf, delayMin: row?.delayMin, provenanceTitle: row?.provenanceTitle ?? null });
+    expect(open?.source).toMatch(/^TradingView Scanner · 참고 시세/);
+    expect(open?.delayMin).toBe(15);
+    const SATURDAY = { now: new Date("2026-10-31T14:00:00Z"), krOfficial: null }; // 토요일 — 장 닫힘
+    const closed = homeKpiItems(ready({ macro: { data: overview, error: null } }), { owner: true, clock: SATURDAY }).find((item) => item.key === "us10y");
+    expect(closed?.delayMin).toBeNull();
+    expect(closed?.provenanceTitle).toMatch(/15분 지연/);
   });
 
   it("시장 — 이어받은 값은 이전 값 + 사유, 추정은 추정, 수집 실패는 '—' + '수집 실패'(0을 만들지 않음), 값이 있는 경고는 상태 글", () => {

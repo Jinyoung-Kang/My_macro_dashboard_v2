@@ -671,6 +671,11 @@ export type HomeKpi = {
   isProxy?: boolean;
   isStale?: boolean;
   staleReason?: string | null;
+  /** 출처 줄 — 출처(참고 시세·장 상태 포함)·시각·지연·툴팁(시장 타일 — 시장 묶음 표의 출처 배지와 같은 값). */
+  source?: string | null;
+  asOf?: string | null;
+  delayMin?: number | null;
+  provenanceTitle?: string | null;
   href?: string;
 };
 
@@ -741,7 +746,6 @@ function marketKpi(
   // 시장 묶음 표의 행과 같은 규칙(macroCardRow — 값은 수집기 priceStr, 변화는 delta·pct 그대로, 수집기 자릿수).
   const row = macroCardRow(item, { ...clock, collectedAt: overview.collectedAtKst ?? null }, href);
   const value = assetValueText(row.value, row.valueText);
-  const asOf = presentText(row.asOf);
   return {
     ...base,
     value,
@@ -750,7 +754,12 @@ function marketKpi(
     // 값이 없으면 경고('수집 실패' 등)가 그 사유, 값이 있으면 경고를 상태 글(아이콘 + 글)로.
     emptyReason: value === null ? row.warning : null,
     ...(value !== null && row.warning ? { status: { tone: "warn" as const, text: row.warning } } : {}),
-    note: asOf ? formatKst(asOf) : null,
+    // 출처 줄은 시장 묶음 표의 '기준' 칸과 같은 값 — 출처(비공식 참고 시세면 '· 참고 시세')·장 상태·열린 장의 지연·시각, 닫힌 장의 지연은 툴팁.
+    // 미국채 10년물은 수집기가 TradingView 참고 시세로 덮어써 시각이 수집 시각이므로(QA-137·138) 출처·지연 없이 시각만 적으면 그 시각의 공식 값으로 읽힙니다.
+    source: row.source ?? null,
+    asOf: presentText(row.asOf),
+    delayMin: row.delayMin ?? null,
+    provenanceTitle: row.provenanceTitle ?? null,
     isEstimated: row.isEstimated === true,
     isStale: row.isStale === true,
     staleReason: row.staleReason ?? null,
@@ -785,7 +794,7 @@ function issuesKpi(read: HomeReadState<StatusIssuesResponse>): HomeKpi {
  * 홈 맨 위 KPI 띠 — 국면 · S&P 500 · 코스피 · 원/달러 · 미국채 10년물 · 읽지 않은 알림 · 수집 오류(운영자만). 타일마다 그 대상 화면 링크입니다.
  *
  * - 모의매매 값은 두지 않습니다 — 모의 자료는 계좌 손익 표 패널 하나만 읽습니다.
- * - 숫자는 응답 그대로(시장 타일은 시장 묶음 표와 같은 macroCardRow 규칙 — 값 priceStr·변화 delta/pct·추정·이전 값 배지). 모르면 "—"이고 0으로 적지 않습니다.
+ * - 숫자는 응답 그대로(시장 타일은 시장 묶음 표와 같은 macroCardRow 규칙 — 값 priceStr·변화 delta/pct·추정·이전 값 배지·출처 줄). 모르면 "—"이고 0으로 적지 않습니다.
  * - 읽는 중이면 자리표시(pending), 읽지 못했으면 "—" + '읽지 못함'(오류 글과 다시 시도는 그 패널), 저장본에 카드가 없으면 "—" + '저장본에 없음'.
  */
 export function homeKpiItems(
