@@ -95,6 +95,28 @@ describe("KpiStrip — 값 있음", () => {
     expect(screen.queryByRole("group", { name: "S&P 500" })).toBeNull();
   });
 
+  // QA-599: 값 줄이 flex-wrap이라 운영자 일곱 타일의 xl 한 줄(1280 펼친 메뉴 — 타일 135.4px, 안쪽 109.4px)에서 '1,339.28'(약 93px) + '원'이
+  // 1.6px 모자라 단위만 다음 줄로 넘어갔습니다. 숫자는 쉼표에서도 꺾이지 않으므로 값과 단위를 한 줄에 둡니다. jsdom은 배치를 재지 않아 클래스로 봅니다.
+  // 수정 전(재현 커밋에서는 it.fails) 숫자 값 줄은 'mt-0.5 flex flex-wrap items-baseline gap-x-1'이었습니다.
+  it.fails("숫자 값과 단위는 한 덩어리 — 숫자 값 줄은 flex-nowrap, 판정 라벨 줄은 flex-wrap 그대로 (QA-599)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "usdkrw", label: "원/달러", value: 1339.28, format: (v) => v.toLocaleString("ko-KR", { minimumFractionDigits: 2 }), unit: "원" },
+          { key: "regime", label: "국면", value: "후퇴 경계 (Late cycle)", valueKind: "label" },
+        ]}
+      />,
+    );
+    const numberRow = (within(tile("원/달러")).getByText("원").parentElement as HTMLElement).className.split(/\s+/);
+    expect(within(tile("원/달러")).getByText("1,339.28")).toBeTruthy();
+    expect(numberRow).toContain("flex-nowrap");
+    expect(numberRow).not.toContain("flex-wrap");
+    const labelRow = (within(tile("국면")).getByText("후퇴 경계 (Late cycle)").parentElement as HTMLElement).className.split(/\s+/);
+    expect(labelRow).toContain("flex-wrap");
+    expect(within(tile("국면")).getByText("후퇴 경계 (Late cycle)").className).toContain("break-keep");
+  });
+
   it("xl은 타일 수만큼 한 줄(--kpi-n), 8개를 넘으면 네 칸 그대로", () => {
     const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
     const { container, rerender } = render(<KpiStrip label="요약" items={items(7)} />);
