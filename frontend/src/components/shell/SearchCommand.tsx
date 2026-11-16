@@ -18,6 +18,7 @@ import {
   paletteSummary,
   recentEntries,
   recentFromEntry,
+  recentSummary,
   type PaletteCommand,
 } from "@/lib/palette";
 import { isWideShell, onShellCommand, sendShellCommand, type ShellCommand } from "@/lib/shellCommands";
@@ -101,6 +102,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const baseId = useId();
   const listboxId = `${baseId}-results`;
+  const recentHintId = `${baseId}-recent-hint`;
   const optionId = (index: number) => `${baseId}-option-${index}`;
   const isMac = useSyncExternalStore(noSubscribe, isMacPlatform, isMacServer);
 
@@ -162,6 +164,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
+  // 빈 검색어에 펼쳐진 최근 연 대상의 안내(넓은 화면에서 있을 때만 — 빈 검색어의 결과는 최근 연 대상뿐). 입력칸 설명으로 읽힙니다(QA-560).
+  const recentHint = trimmed === "" && flat.length > 0 ? recentSummary(flat.length) : null;
   // 고른 줄의 순번 — 고른 id가 지금 결과에 없으면(아직 고정 전 등) 맨 위.
   const activeIndex = flat.length === 0 ? -1 : Math.max(0, flat.findIndex((option) => optionView(option).id === activeId));
   // 결과가 생긴 첫 그림에서 맨 위 결과의 id로 고정합니다 — ↑↓를 누르지 않은 기본 상태도 늦게 온 묶음에 밀리지 않게. 닫혀 있는 동안은
@@ -306,6 +310,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             aria-controls={listboxId}
             aria-autocomplete="list"
             aria-activedescendant={activeIndex >= 0 ? optionId(activeIndex) : undefined}
+            aria-describedby={recentHint ? recentHintId : undefined}
             autoComplete="off"
             spellCheck={false}
             placeholder="종목·기관·지표·메뉴 검색"
@@ -325,6 +330,13 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         <p role="status" className="sr-only">
           {trimmed ? paletteSummary(groups, commands.length, notices) : ""}
         </p>
+        {/* 빈 검색어의 최근 연 대상 안내 — status(결과 수 전용)가 아니라 입력칸 설명으로 둡니다(QA-560). 이 목록은 팔레트를 여는 순간 이미 그려져
+            라이브 영역으로는 읽히지 않을 수 있고, 입력칸 설명은 열 때 포커스를 받으며 함께 읽힙니다. */}
+        {recentHint && (
+          <p id={recentHintId} className="sr-only">
+            {recentHint}
+          </p>
+        )}
 
         {/* 결과가 없으면(입력칸이 접힘 — aria-expanded false) 빈 목록 상자를 접근성 트리에서 뺍니다. 결과 없음 안내는 위 status가 읽습니다. */}
         <div

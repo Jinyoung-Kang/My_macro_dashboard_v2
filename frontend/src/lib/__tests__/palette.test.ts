@@ -17,6 +17,7 @@ import {
   pushRecent,
   recentEntries,
   recentFromEntry,
+  recentSummary,
   serializeRecent,
   type RecentEntity,
 } from "../palette";
@@ -130,6 +131,13 @@ describe("결과 행", () => {
     expect(recentFromEntry(entry)).toEqual(APPLE);
     const menu: SearchEntry = { kind: "menu", id: "menu:/macro", label: "매크로 지표", sub: "시장", href: "/macro", dest: null, keywords: [] };
     expect(recentFromEntry(menu)).toBeNull();
+  });
+});
+
+describe("recentSummary — 빈 검색어의 최근 연 대상 안내(입력칸 설명, QA-560)", () => {
+  it("건수와 고르는 법", () => {
+    expect(recentSummary(1)).toBe("최근 연 대상 1건 — ↑↓로 고르고 Enter로 갑니다");
+    expect(recentSummary(RECENT_LIMIT)).toBe("최근 연 대상 8건 — ↑↓로 고르고 Enter로 갑니다");
   });
 });
 

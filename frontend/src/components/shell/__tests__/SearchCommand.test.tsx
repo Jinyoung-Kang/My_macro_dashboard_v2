@@ -555,7 +555,7 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
   // QA-560: 빈 검색어에 최근 연 대상이 펼쳐지면(aria-expanded true, 빈 Enter는 맨 위 대상으로 감) 화면 읽기 사용자도 목록이 있다는 것을 듣는다.
   // role=status는 결과 수 전용 그대로이고(빈 검색어는 ""), 입력칸 설명(aria-describedby — 포커스를 받을 때 함께 읽힘)으로 알린다.
   // 수정 전(재현 커밋에서는 it.fails)에는 status가 ""이고 입력칸에 aria-describedby가 없어(null) 아무 안내도 없었다.
-  it.fails("빈 검색어에 최근 연 대상이 있으면 입력칸 설명이 'N건 — ↑↓로 고르고 Enter' — 검색어를 치면 설명이 없다(QA-560)", async () => {
+  it("빈 검색어에 최근 연 대상이 있으면 입력칸 설명이 'N건 — ↑↓로 고르고 Enter' — 검색어를 치면 설명이 없다(QA-560)", async () => {
     openSearch();
     await act(async () => {});
     expect(input().getAttribute("aria-describedby")).toBeNull();
