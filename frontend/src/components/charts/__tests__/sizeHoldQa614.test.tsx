@@ -19,7 +19,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ChartSizeHold } from "@/components/charts/sizeHold";
+import { CHART_FIT_CLIP_MAX_MS, ChartSizeHold } from "@/components/charts/sizeHold";
 import { resetShellResizingForTest, setShellResizing } from "@/lib/shellResize";
 
 /** 바깥 상자의 폭(열) — 쉬는 안쪽 상자의 폭이기도 합니다. */
@@ -140,7 +140,7 @@ function holdThenRelease(inner: HTMLElement, outer: HTMLElement) {
 
 describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때까지 바깥 상자가 가로 넘침을 자름", () => {
   // 재현 커밋 실패 값: AssertionError: expected false to be true — 고정을 푼 커밋에서 자르기도 함께 사라짐.
-  it.fails("끌기를 놓으면 안쪽 상자는 바로 100%로 풀고, 바깥 상자는 차트가 새 폭으로 다시 그려질 때까지 자른 뒤 쉬는 상태로 돌아감", () => {
+  it("끌기를 놓으면 안쪽 상자는 바로 100%로 풀고, 바깥 상자는 차트가 새 폭으로 다시 그려질 때까지 자른 뒤 쉬는 상태로 돌아감", () => {
     const { inner, outer } = renderHold();
     holdThenRelease(inner, outer);
     expect(clipped(outer)).toBe(true);
@@ -157,21 +157,22 @@ describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때
   });
 
   // 장치 시험. 재현 커밋 실패 값: AssertionError: expected false to be true(풀 때 자르지 않음 — '1초 뒤 풂'에는 닿지 못함).
-  it.fails("차트가 끝내 맞지 않아도 첫 확인부터 1초 뒤에는 자르기를 풂 — 붙어 남지 않음", () => {
+  it("차트가 끝내 맞지 않아도 첫 확인부터 1초 뒤에는 자르기를 풂 — 붙어 남지 않음", () => {
     const { inner, outer } = renderHold();
     holdThenRelease(inner, outer);
     expect(clipped(outer)).toBe(true);
+    expect(CHART_FIT_CLIP_MAX_MS).toBe(1000);
     frame(5000);
-    frame(5999);
+    frame(5000 + CHART_FIT_CLIP_MAX_MS - 1);
     expect(clipped(outer)).toBe(true);
-    frame(6000);
+    frame(5000 + CHART_FIT_CLIP_MAX_MS);
     expect(clipped(outer)).toBe(false);
     expect(outer.getAttribute("style")).toBeNull();
     expect(frames.size).toBe(0);
   });
 
   // 장치 시험. 재현 커밋 실패 값: AssertionError: expected false to be true.
-  it.fails("푸는 도중 신호가 다시 켜지면 그때 폭(606px)을 다시 재어 고정하고 자르기는 고정 쪽으로 넘김 — 다시 놓으면 맞을 때까지 자름", () => {
+  it("푸는 도중 신호가 다시 켜지면 그때 폭(606px)을 다시 재어 고정하고 자르기는 고정 쪽으로 넘김 — 다시 놓으면 맞을 때까지 자름", () => {
     const { inner, outer } = renderHold();
     holdThenRelease(inner, outer);
     expect(clipped(outer)).toBe(true);
@@ -192,7 +193,7 @@ describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때
   });
 
   // 장치 시험. 재현 커밋 실패 값: AssertionError: expected false to be true.
-  it.fails("푸는 도중 언마운트하면 프레임 확인을 멈춤", () => {
+  it("푸는 도중 언마운트하면 프레임 확인을 멈춤", () => {
     const { inner, outer, unmount } = renderHold();
     holdThenRelease(inner, outer);
     expect(clipped(outer)).toBe(true);
@@ -202,7 +203,7 @@ describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때
   });
 
   // 재현 커밋 실패 값: AssertionError: expected false to be true — QA-601 전부터 있던 같은 일(신호 없이 폭이 한 번에 바뀜).
-  it.fails("신호 없이 폭이 한 번에 줄면(손잡이 End 키·움직임 줄이기의 접고 펴기·창 크기) 크기 알림에서 바로 자르고 맞으면 풂 — 넓어질 때는 자르지 않음", () => {
+  it("신호 없이 폭이 한 번에 줄면(손잡이 End 키·움직임 줄이기의 접고 펴기·창 크기) 크기 알림에서 바로 자르고 맞으면 풂 — 넓어질 때는 자르지 않음", () => {
     const { inner, outer } = renderHold();
     column = 606;
     resize(inner, 606);
@@ -216,6 +217,37 @@ describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때
     column = 806;
     resize(inner, 806);
     expect(clipped(outer)).toBe(false);
+    expect(frames.size).toBe(0);
+  });
+
+  it("크기 감시의 반올림으로 차트가 열보다 1px까지 넓으면 맞은 것으로 보고 풂 — 2px이면 자른 채", () => {
+    const { inner, outer } = renderHold();
+    holdThenRelease(inner, outer);
+    content = 608;
+    frame(0);
+    expect(clipped(outer)).toBe(true);
+    content = 607;
+    frame(16);
+    expect(clipped(outer)).toBe(false);
+    expect(outer.getAttribute("style")).toBeNull();
+  });
+
+  it("고정하지 않은 차트(잰 폭 0 — 숨긴 탭)는 풀 때 자르지 않고, 고정 중 같은 폭의 크기 알림(높이만 바뀜)에도 인라인 자르기를 걸지 않음", () => {
+    column = 0;
+    const hidden = renderHold();
+    act(() => setShellResizing("drag", true));
+    expect(hidden.inner.style.width).toBe("");
+    act(() => setShellResizing("drag", false));
+    expect(clipped(hidden.outer)).toBe(false);
+    expect(frames.size).toBe(0);
+    hidden.unmount();
+
+    column = 706;
+    const { inner, outer } = renderHold();
+    act(() => setShellResizing("drag", true));
+    resize(inner, 706);
+    expect(outer.className).toContain("overflow-x-clip");
+    expect(outer.getAttribute("style")).toBeNull();
     expect(frames.size).toBe(0);
   });
 });

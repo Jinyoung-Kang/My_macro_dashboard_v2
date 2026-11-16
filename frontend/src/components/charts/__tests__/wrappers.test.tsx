@@ -11,7 +11,8 @@
  *  - 격자 선택(grid — 작업대 실행 명세 W6): LineSeries·MultiLineSeries·SignedBars는 grid면 Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음
  *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(덮개 경계 border-overlay·그림자·4px 모서리)
  *  - 셸 폭이 바뀌는 동안 폭 잡아 두기(QA-601 — charts/sizeHold): ResponsiveContainer를 두 상자가 감싸고, 쉬는 상태는 폭 100%(인라인 폭·높이·넘침
- *    자르기 없음 — svg 폭은 크기 감시가 알린 그대로), 셸 신호(lib/shellResize)가 켜지면 잰 px로 고정하고 그동안만 가로 넘침을 자름
+ *    자르기 없음 — svg 폭은 크기 감시가 알린 그대로), 셸 신호(lib/shellResize)가 켜지면 잰 px로 고정하고 그동안 가로 넘침을 자름(풀린 직후
+ *    차트가 새 폭으로 다시 그려질 때까지 이어 자르는 것은 sizeHoldQa614.test — QA-614)
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(LineChart.test와 같음).
  */
@@ -589,6 +590,7 @@ describe("셸 폭이 바뀌는 동안 폭 잡아 두기(QA-601 — charts/sizeHo
     expect(boxes(container).inner.style.width).toBe("600px");
     act(() => setShellResizing("motion", false));
     expect(boxes(container).inner.style.width).toBe("");
+    // 고정의 클래스는 걷힘 — 차트가 맞을 때까지의 인라인 자르기(QA-614)는 sizeHoldQa614.test가 봄
     expect(classList(boxes(container).outer)).not.toContain("overflow-x-clip");
     expect(svgWidth(container)).toBe("600");
   });
