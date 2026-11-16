@@ -148,6 +148,20 @@ describe("값 글", () => {
     expect(eps(5_029_592_301_568)).toBe("5.030조 달러");
   });
 
+  // QA-581 검토: 위 고침이 1만 미만 금액을 가격 자릿수(priceDigits — |값| < 1이면 소수 4자리, 1센트 미만 가격용)로 그려 |EPS| < 1이면 출처에 없는
+  // 정밀도('0.4200 달러')가 되고, 같은 칸에서 1.5는 '1.50 달러'라 종목마다 자릿수가 달랐습니다. 주당 금액은 소수 2자리(원·엔은 정수)로 고정합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 '0.4200 달러'·'-0.4300 달러'·'0.0000 달러'·'0.4000 EUR'이었습니다.
+  it.fails("핵심 지표 — 1만 미만 금액(EPS)은 소수 2자리(원·엔은 정수)로 고정, 1 미만도 넷째 자리로 늘리지 않는다 (QA-581)", () => {
+    const eps = (value: number, currency = "USD") => statText({ key: "trailingEps", label: "EPS(최근 4분기)", value, text: null, unit: "money" }, currency);
+    expect(eps(0.42)).toBe("0.42 달러");
+    expect(eps(-0.43)).toBe("-0.43 달러");
+    expect(eps(0)).toBe("0.00 달러");
+    expect(eps(1.5)).toBe("1.50 달러");
+    expect(eps(0.4, "EUR")).toBe("0.40 EUR");
+    expect(eps(0.5, "KRW")).toBe("1 원");
+    expect(eps(125.4, "JPY")).toBe("125 JPY");
+  });
+
   it("가격 자릿수 — 원·엔 정수, 1 미만 넷째, 그 밖 둘째", () => {
     expect(priceDigits(71_000, "KRW")).toBe(0);
     expect(priceDigits(150.2, "JPY")).toBe(0);
