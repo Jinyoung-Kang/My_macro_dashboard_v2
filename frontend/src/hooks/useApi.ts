@@ -11,6 +11,11 @@ interface State<T> {
   loading: boolean;
   /** 보여 줄 값이 없을 때의 오류. 화면은 이것이 있으면 오류 화면을 그립니다. */
   error: string | null;
+  /**
+   * `error`의 HTTP 상태 — lib/api ApiError의 status(연결 실패 NetworkError는 0), 상태 칸이 없는 실패는 null. `error`가 없으면 null.
+   * 화면이 요청 쪽 실패(예: 추적하지 않는 대상 400 — 다시 해도 같음)를 서버·연결 실패와 가를 때 씁니다(QA-584).
+   */
+  errorStatus: number | null;
   /** 값은 있는데 다시 읽기가 실패했을 때의 오류. 값은 그대로 두고 이것만 채웁니다. */
   refreshError: string | null;
   unauthorized: boolean;
@@ -28,18 +33,25 @@ const EMPTY_STATE = {
   dataPath: null,
   loading: false,
   error: null,
+  errorStatus: null,
   refreshError: null,
   unauthorized: false,
   loadedAt: null,
   failedAt: null,
 } as const;
 
+/** 실패의 HTTP 상태 — ApiError의 status 칸(연결 실패는 0). 칸이 없으면 null. 클래스에 묶지 않고 status 칸으로 읽습니다. */
+function errorStatusOf(error: unknown): number | null {
+  const status = typeof error === "object" && error !== null ? (error as { status?: unknown }).status : undefined;
+  return typeof status === "number" && Number.isFinite(status) ? status : null;
+}
+
 /**
  * 백엔드 GET 요청 훅.
  *
  * @param path      API 경로(lib/endpoints). **null이면 요청하지 않습니다**(조건부 조회에 씁니다)
  * @param refreshMs 자동 갱신 주기(ms). 0이면 갱신하지 않습니다
- * @returns `{ data, loading, error, refreshError, unauthorized, loadedAt, failedAt, reload }`
+ * @returns `{ data, loading, error, errorStatus, refreshError, unauthorized, loadedAt, failedAt, reload }`
  *
  * 알아 둘 것
  * - 경로가 바뀌면 **이전 요청의 결과를 버립니다**. 느린 응답이 나중에 도착해 화면을
@@ -81,7 +93,7 @@ export function useApi<T>(
     const controller = new AbortController();
     controllerRef.current = controller;
 
-    setState((previous) => ({ ...previous, loading: true, error: null }));
+    setState((previous) => ({ ...previous, loading: true, error: null, errorStatus: null }));
 
     try {
       const data = await apiGetShared<T>(path, timeoutMs);
@@ -104,7 +116,7 @@ export function useApi<T>(
       setState((previous) =>
         previous.data !== null && previous.dataPath === path
           ? { ...previous, loading: false, error: null, refreshError: message, failedAt: new Date() }
-          : { ...EMPTY_STATE, error: message, failedAt: new Date() },
+          : { ...EMPTY_STATE, error: message, errorStatus: errorStatusOf(error), failedAt: new Date() },
       );
     }
     // refreshToken은 값 자체를 쓰지 않습니다. 바뀌면 load가 새로 만들어지고,

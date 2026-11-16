@@ -6,7 +6,10 @@ import { describe, expect, it } from "vitest";
 import {
   consensusItems,
   holderDetailItems,
+  holderKey,
+  holderRowTells,
   holdingDetailItems,
+  holdingItemLabels,
   indicatorForSymbol,
   indicatorProperties,
   infoSearchEntityLink,
@@ -72,10 +75,39 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(consensusItems("kr", quote({ currency: "KRW", consensus: { targetMean: 89000, recommendation: "4.00", analysts: null } }))).toEqual([
       { label: "평균 목표가", value: "89,000 원" },
       { label: "투자의견", value: "평균 4.00 / 5" },
-      { label: "의견 수", value: null },
     ]);
     expect(consensusItems("us", quote())).toEqual([]);
     expect(moneyPriceText(0.5, "USD")).toBe("0.5000 USD");
+  });
+
+  // QA-580: 수집기는 지수·ETF·모르는 심볼에도 consensus를 값이 모두 null인 객체로 주고, 네이버(국내)는 의견 수를 늘 주지 않습니다. 회사 개요처럼
+  // 받은 값만 — 세 값을 모두 모르면 빈 목록(패널을 그리지 않음), 국내는 늘 비는 '의견 수' 줄을 두지 않습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 미국 전부 null이 '—' 세 줄, 국내가 '의견 수' null 줄까지 세 줄이었습니다.
+  it("애널리스트 의견 — 세 값을 모두 모르면 빈 목록, 국내는 '의견 수' 줄 없음 (QA-580)", () => {
+    expect(consensusItems("us", quote({ consensus: { targetMean: null, recommendation: null, analysts: null } }))).toEqual([]);
+    expect(consensusItems("kr", quote({ currency: "KRW", consensus: { targetMean: null, recommendation: null, analysts: null } }))).toEqual([]);
+    expect(consensusItems("kr", quote({ currency: "KRW", consensus: { targetMean: 89000, recommendation: "4.00", analysts: null } }))).toEqual([
+      { label: "평균 목표가", value: "89,000 원" },
+      { label: "투자의견", value: "평균 4.00 / 5" },
+    ]);
+    // 미국의 일부 누락은 지금처럼 '—'(부분 누락 표시 규칙 그대로)
+    expect(consensusItems("us", quote({ consensus: { targetMean: 360.5, recommendation: null, analysts: null } })).map((row) => row.value)).toEqual([
+      "360.50 USD",
+      null,
+      null,
+    ]);
+  });
+
+  // QA-580 검토: Yahoo는 커버리지가 없는 종목에 recommendationKey 'none'(의견 없음 표지)을 주고 목표가·의견 수는 비웁니다. 이 표지를 받은 값으로
+  // 세어 '평균 목표가 —, 투자의견 의견 없음, 의견 수 —' 패널이 남았습니다 — 고치려던 '—' 세 줄 패널과 같은 꼴입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 'none'만 있는 의견이 세 줄(null·'의견 없음'·null)이었습니다.
+  it("애널리스트 의견 — 'none'(의견 없음 표지)뿐이면 빈 목록, 다른 값이 있으면 '의견 없음' 그대로 (QA-580)", () => {
+    expect(consensusItems("us", quote({ consensus: { targetMean: null, recommendation: "none", analysts: null } }))).toEqual([]);
+    expect(consensusItems("us", quote({ consensus: { targetMean: 12.5, recommendation: "none", analysts: null } })).map((row) => row.value)).toEqual([
+      "12.50 USD",
+      "의견 없음",
+      null,
+    ]);
   });
 
   it("지표 — 범주·티커·카드 키(고정폭)·값(추정·이전 값)·전일·출처·장 상태·기준 시각, 경고는 있을 때만", () => {
@@ -96,6 +128,19 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(missing.find((row) => row.label === "값")?.value).toBeNull();
     expect(missing.find((row) => row.label === "전일")?.value).toBe("N/A");
     expect(missing.at(-1)).toEqual({ label: "경고", value: "수집 실패" });
+  });
+
+  // QA-589: 2년물 카드 값은 TradingView 수익률(%)이고 카드 티커 ZT=F는 Yahoo 선물 가격이라 뜻이 다릅니다(INDICATOR_NO_CHART — 차트·연결에서 뺌).
+  // 속성 '티커' 줄은 값을 그대로 두되(수집기 덮어쓰기 실패 경고가 이 이름을 가리킴) 이 카드 값의 출처가 아니라는 note를 붙입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 note가 없었습니다.
+  it("지표 — 뜻이 다른 티커(us02y ZT=F)의 '티커' 줄은 값 그대로·고정폭에 note, 다른 지표는 note 없음 (QA-589)", () => {
+    const row = { valueText: "3.512", asOf: null, isEstimated: false, isStale: false, staleReason: null, warning: null };
+    const context = { category: "미국 국채 수익률", source: "TradingView Scanner", session: null };
+    const ticker = indicatorProperties({ key: "us02y", ticker: "ZT=F", prevStr: null }, row, context).find((item) => item.label === "티커");
+    expect(ticker).toMatchObject({ value: "ZT=F", mono: true });
+    expect(ticker?.note).toBe("Yahoo 선물 가격 — 이 카드 값(수익률)의 출처가 아님");
+    const plain = indicatorProperties({ key: "us10y", ticker: "^TNX", prevStr: null }, row, context).find((item) => item.label === "티커");
+    expect(plain).toEqual({ label: "티커", value: "^TNX", mono: true });
   });
 
   it("기관 — 받기 전은 CIK 한 줄, 받은 뒤 보고 기준일·공시일·평가액·최신 분기 보유 종목 수·분기 수·수집 시각·기관 소개(긴 글)", () => {
@@ -146,6 +191,40 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(holdingDetailItems({ ...holding, weightDiff: 0.5, sharesDiff: 0 }).slice(6, 8).map((row) => row.value)).toEqual(["0주", "+0.50%p"]);
   });
 
+  // QA-587: 13F 보유 줄은 공시 이름이 같은 다른 증권(A·C주, 'ISHARES TR' 아래 여러 ETF)이 흔한데 검사 칸·대화상자 제목이 이름뿐이라 똑같았습니다.
+  // 백엔드 Sec13FService.lineLabels·lib/consensus consensusBars와 같은 규칙 — 이름이 겹치는 줄에만 ' · 클래스', 클래스로 가를 수 없으면 ' · CUSIP …'.
+  // 수정 전(재현 커밋에서는 it.fails — 동적 import)에는 이 함수가 없었습니다(겹치는 줄의 이름표가 이름 그대로).
+  it("보유 줄 이름표 — 이름이 겹치는 줄에만 클래스(가를 수 없으면 CUSIP), 하나뿐인 이름은 그대로 (QA-587)", () => {
+    const row = (name: string, cusip: string, klass: string): Holding => ({
+      name, cusip, class: klass, value: 1e9, shares: 1, weight: 1, weightDiff: null, sharesDiff: null, action: "유지",
+    });
+    const holdings = [
+      row("ALPHABET INC", "02079K305", "CAP STK CL A"),
+      row("ALPHABET INC", "02079K107", "CAP STK CL C"),
+      row("ISHARES TR", "464287200", "CORE S&P500 ETF"),
+      row("ISHARES TR", "464288588", "MBS ETF"),
+      row("ISHARES TR", "464287242", "IBOXX INV CP ETF"),
+      row("NVIDIA CORPORATION", "67066G104", "COM"),
+      row("SYNTHETIC TWIN", "000000001", "COM"),
+      row("SYNTHETIC TWIN", "000000002", "COM"),
+      row("SYNTHETIC BLANK", "000000003", ""),
+      row("SYNTHETIC BLANK", "000000004", "PFD"),
+    ];
+    const labels = holdingItemLabels(holdings);
+    expect(holdings.map((holding) => labels.get(`${holding.cusip}:${holding.class}`))).toEqual([
+      "ALPHABET INC · CAP STK CL A",
+      "ALPHABET INC · CAP STK CL C",
+      "ISHARES TR · CORE S&P500 ETF",
+      "ISHARES TR · MBS ETF",
+      "ISHARES TR · IBOXX INV CP ETF",
+      "NVIDIA CORPORATION",
+      "SYNTHETIC TWIN · CUSIP 000000001",
+      "SYNTHETIC TWIN · CUSIP 000000002",
+      "SYNTHETIC BLANK · CUSIP 000000003",
+      "SYNTHETIC BLANK · CUSIP 000000004",
+    ]);
+  });
+
   it("보유 기관 줄 — 기관 이름은 앞 국기를 떼고, CUSIP 고정폭", () => {
     const row: GuruHoldersResponse["rows"][number] = {
       institution: "🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)", cik: "0001067983", name: "APPLE INC", cusip: "037833100", weight: 21.5, value: 60e9, reportDate: "2026-06-30",
@@ -160,6 +239,33 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
       ["보고일", "2026-06-30"],
     ]);
     expect(items.find((item) => item.label === "CUSIP")?.mono).toBe(true);
+  });
+
+  // QA-587(종목 상세 보유 기관): 한 기관이 같은 회사의 다른 증권(A·C주)을 함께 들면 두 줄의 기관·공시 이름('ALPHABET INC')·보고일이 같고 비중·평가액만
+  // 달랐습니다 — 검사 칸·대화상자 제목이 기관 이름뿐이라 똑같았습니다. 기관이 겹치는 줄에만 ' · CUSIP …'(이름표)와 보조 글의 CUSIP.
+  // 수정 전(재현 커밋에서는 it.fails — 동적 import)에는 이 함수가 없었습니다(이름표가 기관 이름 그대로).
+  it("보유 기관 줄 구분 — 기관이 겹치는 줄에만 이름표 ' · CUSIP …'와 보조 글 CUSIP, 하나뿐인 기관은 그대로 (QA-587)", () => {
+    type HolderRow = GuruHoldersResponse["rows"][number];
+    const row = (institution: string, cik: string, name: string, cusip: string): HolderRow => ({
+      institution, cik, name, cusip, weight: 1, value: 1e9, reportDate: "2026-06-30",
+    });
+    const rows = [
+      row("합성 자산운용 (Synthetic Asset)", "0000000001", "SYNTHETIC ALPHA INC", "000000105"),
+      row("가상 투자자문", "0000000002", "SYNTHETIC ALPHA INC CLASS A", "000000105"),
+      row("합성 자산운용 (Synthetic Asset)", "0000000001", "SYNTHETIC ALPHA INC", "000000204"),
+      row("예시 연기금", "0000000003", "SYNTHETIC ALPHA INC CL A", "000000105"),
+      row("예시 연기금", "0000000003", "SYNTHETIC ALPHA INC CL C", "000000204"),
+    ];
+    const { labels, cusipKeys } = holderRowTells(rows);
+    expect(rows.map((entry) => labels.get(holderKey(entry)))).toEqual([
+      "합성 자산운용 (Synthetic Asset) · CUSIP 000000105",
+      "가상 투자자문",
+      "합성 자산운용 (Synthetic Asset) · CUSIP 000000204",
+      "예시 연기금 · CUSIP 000000105",
+      "예시 연기금 · CUSIP 000000204",
+    ]);
+    expect(rows.map((entry) => cusipKeys.has(holderKey(entry)))).toEqual([true, false, true, true, true]);
+    expect(holderKey(rows[0])).toBe("0000000001:000000105");
   });
 
   it("값 글에 말줄임 표지('…')를 만들지 않는다 — 긴 업종·기관 소개도 받은 글 그대로", () => {

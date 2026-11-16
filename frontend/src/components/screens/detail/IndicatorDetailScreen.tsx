@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AssetList, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
-import { Banner, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
+import { ErrorState, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
@@ -23,6 +23,7 @@ import { indicatorProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { withoutLeadingIcon } from "@/lib/format";
 import { HOME_REFRESH_MS, macroCardRow, macroCardSession, macroItemSource, MARKET_HREF } from "@/lib/home";
+import { MARKETS } from "@/lib/marketSessions";
 import { infoSearchEntry } from "@/lib/search";
 import type { MacroOverview } from "@/lib/types";
 import { AiSummaryCard, type DetailLink, ExternalLinksCard, LinkListPanel, NEWS_SOURCES, NewsCard, PriceChartPanel, propertyItems } from "./DetailParts";
@@ -66,7 +67,14 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         <EntityHeader
           kind="indicator"
           name={indicatorKey}
-          placeholder={overview.error ? <Banner tone="danger">{overview.error}</Banner> : <Skeleton lines={4} label="지표를 불러오는 중" />}
+          // 읽는 것이 개요 하나라 실패하면 몸통이 없습니다 — 다시 읽을 자리를 머리의 공용 오류 상자에 둡니다(QA-588, QA-190·QA-532와 같은 규칙).
+          placeholder={
+            overview.error ? (
+              <ErrorState message={overview.error} onRetry={() => void overview.reload()} />
+            ) : (
+              <Skeleton lines={4} label="지표를 불러오는 중" />
+            )
+          }
         />
       </div>
     );
@@ -75,7 +83,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
     return (
       <div className={ROOT}>
         <PageHeader title="지표를 찾지 못했습니다" />
-        <p className="text-sm text-text-2">
+        <p className="break-keep text-sm text-text-2">
           매크로 카드 저장본에 ‘{indicatorKey}’ 지표가 없습니다.{" "}
           <Link href={MARKET_HREF} className="text-text underline underline-offset-2">
             매크로 지표 전체 보기
@@ -93,7 +101,15 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
   // 뉴스·AI 요약의 검색어·이름은 백엔드 상한(60자) 안으로(QA-448).
   const query = detailQuery(indicatorNewsQuery(item.name)) ?? undefined;
   const label = detailQuery(item.name) ?? undefined;
-  const related = category.items.filter((entry) => entry.key !== item.key).map((entry) => macroCardRow(entry, clock, indicatorHref(entry.key)));
+  // 같은 범주 줄의 보조 글은 홈 시장 표와 같은 '티커 · 시장'이지만, 카드 값과 뜻이 다른 티커(2년물 ZT=F — INDICATOR_NO_CHART)는 머리 태그처럼
+  // 적지 않고 시장 이름만 둡니다(같은 문법이면 다시 이 지표의 식별자로 보임 — QA-589).
+  const related = category.items
+    .filter((entry) => entry.key !== item.key)
+    .map((entry) => {
+      const relatedRow = macroCardRow(entry, clock, indicatorHref(entry.key));
+      if (INDICATOR_NO_CHART[entry.key] === undefined) return relatedRow;
+      return { ...relatedRow, sub: (entry.market ? MARKETS[entry.market]?.name : null) ?? null };
+    });
   const properties = indicatorProperties(item, row, {
     category: categoryTitle,
     source: macroItemSource(item),
@@ -115,8 +131,9 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
       <EntityHeader
         kind="indicator"
         name={item.name}
-        // 티커는 고정폭 식별자 태그(명세 §3-6), 보조 글은 범주만 — 티커가 없는 카드(스크래핑)는 태그가 없습니다.
-        identifiers={item.ticker ? [item.ticker] : undefined}
+        // 티커는 고정폭 식별자 태그(명세 §3-6), 보조 글은 범주만 — 티커가 없는 카드(스크래핑)는 태그가 없습니다. 카드 값과 뜻이 다른 티커(2년물
+        // ZT=F — 선물 가격, INDICATOR_NO_CHART)도 이 지표의 식별자가 아니라 태그로 두지 않습니다(차트·연결과 같은 규칙 — QA-589, 속성 '티커' 줄에 그 뜻).
+        identifiers={item.ticker && INDICATOR_NO_CHART[item.key] === undefined ? [item.ticker] : undefined}
         description={categoryTitle}
         value={row.valueText ?? null}
         change={{ change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2, caption: "전일 대비" }}

@@ -57,7 +57,10 @@ export function parseStockRoute(market: string, code: string): { market: DetailM
   return null;
 }
 
-/** 기관 상세 주소 조각 → CIK(숫자 1~10자리). 틀리면 null(화면은 404). 앞의 0은 그대로 둡니다(13F 기관 목록의 CIK 글과 같게). */
+/**
+ * 기관 상세 주소 조각 → 10자리 정규 CIK(숫자 1~10자리를 앞 0으로 채움 — 13F 기관 목록의 CIK 글·정보 검색 키 cik:<10자리>와 같은 글). 틀리면 null
+ * (화면은 404). 백엔드는 목록의 10자리 글과 정확히 같아야 받으므로 앞 0 없는 주소(SEC EDGAR에서 붙여 넣은 CIK)도 같은 기관으로 읽습니다(QA-584).
+ */
 export function parseCik(raw: string): string | null {
   let decoded: string;
   try {
@@ -65,7 +68,7 @@ export function parseCik(raw: string): string | null {
   } catch {
     return null;
   }
-  return /^\d{1,10}$/.test(decoded) ? decoded : null;
+  return /^\d{1,10}$/.test(decoded) ? decoded.padStart(10, "0") : null;
 }
 
 /** 지표 상세 주소 조각 → 매크로 카드 키(영문·숫자·_·- 40자 이내). 틀리면 null(화면은 404). */
@@ -196,10 +199,25 @@ export function kindText(kind: string | null | undefined): string | null {
   return names[kind.toUpperCase()] ?? kind;
 }
 
+/** 금액 단위 글 — 달러·원은 한글 이름, 그 밖 통화는 코드(모르면 빈 글). */
+function moneyUnit(currency: string | null | undefined): string {
+  return currency === "USD" ? "달러" : currency === "KRW" ? "원" : (currency ?? "");
+}
+
 /** 통화 금액을 조·억 단위로 — 달러·원은 한글 이름, 그 밖 통화는 코드. */
 export function moneyText(value: number | null | undefined, currency: string | null | undefined): string {
-  const unit = currency === "USD" ? "달러" : currency === "KRW" ? "원" : (currency ?? "");
-  return formatKoreanScale(value, unit).trimEnd();
+  return formatKoreanScale(value, moneyUnit(currency)).trimEnd();
+}
+
+/** 조·억 스케일로 그리는 금액의 하한 — 이보다 작은 금액(주당 이익 같은 주당 금액)은 주당 금액 자릿수로(QA-581). */
+const SCALED_MONEY_MIN = 1e4;
+
+/**
+ * 주당 금액(EPS 등) 자릿수 — 원화·엔화는 정수, 그 밖은 소수 2자리로 고정합니다. 가격 자릿수(priceDigits)와 달리 1 미만이어도 넷째 자리로 늘리지
+ * 않습니다(출처가 주는 정밀도는 센트 단위 — '0.4200 달러'처럼 없는 자리를 만들지 않고, 같은 칸의 자릿수가 종목마다 달라지지 않게 — QA-581).
+ */
+function perShareDigits(currency: string | null | undefined): number {
+  return currency === "KRW" || currency === "JPY" ? 0 : 2;
 }
 
 /** 개수(거래량·주식 수)를 조·억·만 단위로 — 단위 글 없이. */
@@ -214,6 +232,9 @@ export function statText(stat: DetailStat, currency: string | null | undefined):
   if (value === null || !Number.isFinite(value)) return EMPTY;
   switch (stat.unit) {
     case "money":
+      // 1만 미만 금액(EPS 등 주당 금액)은 조·억 스케일(1만 미만은 소수 0자리)로 그리면 3.57이 '4', 0.42가 '0'이 됩니다 — 주당 금액 자릿수(소수
+      // 2자리, 원·엔은 정수)로 그리고 단위 글은 moneyText와 같게(QA-581). 1만 이상은 조·억 그대로.
+      if (Math.abs(value) < SCALED_MONEY_MIN) return `${formatNumber(value, perShareDigits(currency))} ${moneyUnit(currency)}`.trimEnd();
       return moneyText(value, currency);
     case "count":
       return countText(value);
@@ -330,6 +351,15 @@ export function briefSummary(text: string | null | undefined, maxChars: number =
   return `${(space > maxChars / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:·(]+$/, "")}…`;
 }
 
+/**
+ * 개요 글이 Yahoo 영문 원문인가 — 미국·해외 종목에서 한국어 개요(summaryKo)가 없고 summary만 있을 때. 국내는 summary 칸에 한국어 원문(네이버 ETF
+ * 개요)이 오므로 영문이 아닙니다(QA-578). 종목 상세 '회사 소개'와 종목 팝업(quickProfile)이 같은 규칙을 씁니다.
+ */
+export function isEnglishProfile(quote: Pick<DetailQuote, "market" | "profile"> | null | undefined): boolean {
+  const profile = quote?.profile;
+  return quote?.market === "us" && !profile?.summaryKo?.trim() && Boolean(profile?.summary?.trim());
+}
+
 /** 팝업 창의 기업 설명 한 벌 — 업종 줄·개요 앞부분·영문 원문인지·출처 이름. */
 export type QuickProfile = { industry: string | null; text: string; english: boolean; source: string | null };
 
@@ -348,8 +378,8 @@ export function quickProfile(quote: DetailQuote | null | undefined, maxChars: nu
   return {
     industry,
     text,
-    // 미국 종목의 영문 개요(Yahoo) — 국내는 한국어 원문이 summary 칸에 옵니다(네이버 ETF 개요).
-    english: !korean && quote?.market === "us",
+    // 미국 종목의 영문 개요(Yahoo) — 국내는 한국어 원문이 summary 칸에 옵니다(네이버 ETF 개요). 상세 화면 '회사 소개'와 같은 규칙.
+    english: !korean && isEnglishProfile(quote),
     source: korean ? profile.koSource?.label ?? quote?.source?.label ?? null : quote?.source?.label ?? null,
   };
 }

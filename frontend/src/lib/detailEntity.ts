@@ -10,6 +10,7 @@ import { visibleMenus } from "./access";
 import {
   countryKo,
   currencyUnit,
+  INDICATOR_NO_CHART,
   indicatorChartSymbol,
   indicatorHref,
   priceDigits,
@@ -99,22 +100,40 @@ export function moneyPriceText(value: number, currency: string | null | undefine
   return `${formatNumber(value, priceDigits(value, currency))}${unit ? ` ${unit}` : ""}`;
 }
 
-/** 애널리스트 의견 속성 — 평균 목표가·투자의견·의견 수(미국 Yahoo, 국내 네이버 컨센서스). 모르면 null. 의견이 없으면 빈 목록. */
+/**
+ * 애널리스트 의견 속성 — 평균 목표가·투자의견·의견 수(미국 Yahoo, 국내 네이버 컨센서스). 모르면 null(일부만 모르면 그 줄이 "—").
+ * 받은 값만 — 의견이 없거나 세 값을 모두 모르면(수집기는 지수·ETF·모르는 심볼에도 값이 모두 null인 객체를 줌) 빈 목록이라 화면이 패널을 그리지
+ * 않고, 국내는 네이버가 의견 수를 주지 않아 늘 비는 '의견 수' 줄을 두지 않습니다(회사 개요와 같은 규칙 — QA-580). Yahoo의 의견 없음 표지
+ * (recommendationKey 'none' — 커버리지가 없는 종목)는 받은 값으로 세지 않습니다. 다른 값이 있으면 그 줄은 '의견 없음' 그대로입니다.
+ */
 export function consensusItems(market: DetailMarket, quote: Pick<DetailQuote, "consensus" | "currency">): DetailProperty[] {
   const consensus = quote.consensus;
   if (!consensus) return [];
-  return [
+  const rows: DetailProperty[] = [
     { label: "평균 목표가", value: consensus.targetMean !== null && Number.isFinite(consensus.targetMean) ? moneyPriceText(consensus.targetMean, quote.currency) : null },
     { label: "투자의견", value: recommendationText(market, consensus.recommendation) },
-    { label: "의견 수", value: consensus.analysts !== null && Number.isFinite(consensus.analysts) ? `${formatNumber(consensus.analysts, 0)}곳` : null },
   ];
+  if (market !== "kr") {
+    rows.push({ label: "의견 수", value: consensus.analysts !== null && Number.isFinite(consensus.analysts) ? `${formatNumber(consensus.analysts, 0)}곳` : null });
+  }
+  const noOpinion = consensus.recommendation === "none";
+  return rows.some((row) => row.value !== null && !(noOpinion && row.label === "투자의견")) ? rows : [];
 }
+
+/**
+ * 뜻이 다른 티커(INDICATOR_NO_CHART — 차트·연결에서 뺌)의 속성 '티커' 줄 note — 이 카드 값의 출처가 아님(QA-589). 지금은 2년물 하나라 그 뜻(선물 가격·
+ * 수익률)을 적고, 표에 없는 키는 일반 글.
+ */
+const NO_CHART_TICKER_NOTE: Readonly<Record<string, string>> = {
+  us02y: "Yahoo 선물 가격 — 이 카드 값(수익률)의 출처가 아님",
+};
 
 /** 지표 속성에 쓰는 카드 행의 칸(lib/home macroCardRow 결과). */
 export type IndicatorRowFields = Pick<HomeRow, "valueText" | "asOf" | "isEstimated" | "isStale" | "staleReason" | "warning">;
 
 /**
- * 지표 속성(지표 상세 왼쪽 칸) — 범주·티커·카드 키(고정폭)·값(추정·이전 값 배지)·전일·값 출처·장 상태·기준 시각·경고(있을 때만). 값 출처와 장 상태는
+ * 지표 속성(지표 상세 왼쪽 칸) — 범주·티커·카드 키(고정폭)·값(추정·이전 값 배지)·전일·값 출처·장 상태·기준 시각·경고(있을 때만). 뜻이 다른 티커
+ * (us02y ZT=F)는 값을 그대로 두고(수집기 덮어쓰기 실패 경고가 이 이름을 가리킴) 이 카드 값의 출처가 아니라는 note를 붙입니다. 값 출처와 장 상태는
  * 부르는 쪽이 홈 시장 표와 같은 규칙(lib/home macroItemSource·macroCardSession)으로 넘깁니다 — 이 모듈은 lib/home을 가져오지 않습니다(형식만).
  */
 export function indicatorProperties(
@@ -124,7 +143,14 @@ export function indicatorProperties(
 ): DetailProperty[] {
   const out: DetailProperty[] = [
     { label: "범주", value: presentValue(context.category) },
-    { label: "티커", value: presentValue(item.ticker), mono: true },
+    {
+      label: "티커",
+      value: presentValue(item.ticker),
+      mono: true,
+      ...(INDICATOR_NO_CHART[item.key] !== undefined
+        ? { note: NO_CHART_TICKER_NOTE[item.key] ?? "뜻이 다른 Yahoo 티커 — 이 카드 값의 출처가 아님" }
+        : {}),
+    },
     { label: "카드 키", value: item.key, mono: true },
     {
       label: "값",
@@ -146,6 +172,15 @@ export function indicatorProperties(
 /** 최신 분기(보고 기준일이 가장 늦은 분기) — 없으면 null. */
 function latestQuarter(quarters: PortfolioResponse["quarters"] | null | undefined): PortfolioResponse["quarters"][number] | null {
   return [...(quarters ?? [])].sort((a, b) => b.reportDate.localeCompare(a.reportDate))[0] ?? null;
+}
+
+/**
+ * 최신 분기의 보유 종목 수(기관 상세 보유 종목 탭의 개수 줄 — '552종목 가운데 비중 상위 30종목'). 응답 holdings는 백엔드가 비중 상위 topN줄로 잘라
+ * 보내므로 전체 수는 이것으로 셉니다(QA-585). 분기가 없거나 수를 모르면 null — 응답 길이로 짐작하지 않습니다.
+ */
+export function latestHoldingCount(quarters: PortfolioResponse["quarters"] | null | undefined): number | null {
+  const count = latestQuarter(quarters)?.holdingCount;
+  return typeof count === "number" && Number.isFinite(count) ? count : null;
 }
 
 /**
@@ -196,6 +231,40 @@ export function holdingDetailItems(holding: Holding): DetailProperty[] {
   ];
 }
 
+/** 보유 줄의 키 — 목록-검사 줄 키와 같은 'CUSIP:클래스'. */
+function holdingKey(holding: Pick<Holding, "cusip" | "class">): string {
+  return `${holding.cusip}:${holding.class}`;
+}
+
+/**
+ * 보유 줄 이름표(기관 상세 보유 종목 — 검사 칸 영역 이름·제목, 좁은 화면 대화상자 제목). 키는 'CUSIP:클래스'. 13F 보유 줄은 공시 이름이 같은 다른
+ * 증권(A·C주, 'ISHARES TR' 아래 여러 ETF, 우선주·보통주)이 흔해 이름이 겹치는 줄에만 구분자를 붙입니다 — 먼저 ' · 클래스'(겹친 줄의 클래스가
+ * 모두 있고 서로 다를 때), 그것으로 갈리지 않으면 ' · CUSIP …', 그래도 겹치면 키(QA-587 — 백엔드 Sec13FService.lineLabels·lib/consensus
+ * consensusBars와 같은 규칙). 겹치지 않는 이름은 그대로입니다.
+ */
+export function holdingItemLabels(holdings: readonly Pick<Holding, "name" | "cusip" | "class">[]): Map<string, string> {
+  const labels = holdings.map((holding) => holding.name);
+  const byName = new Map<string, number[]>();
+  holdings.forEach((holding, index) => byName.set(holding.name, [...(byName.get(holding.name) ?? []), index]));
+  for (const [name, same] of byName) {
+    if (same.length < 2) continue;
+    const byClass = same.map((index) => `${name} · ${holdings[index].class}`);
+    const classesTell = same.every((index) => (holdings[index].class ?? "").trim() !== "") && new Set(byClass).size === same.length;
+    same.forEach((index, at) => {
+      labels[index] = classesTell ? byClass[at] : `${name} · CUSIP ${holdings[index].cusip}`;
+    });
+  }
+  const used = new Set<string>();
+  const out = new Map<string, string>();
+  holdings.forEach((holding, index) => {
+    let label = labels[index];
+    if (used.has(label)) label = `${label} · ${holdingKey(holding)}`;
+    used.add(label);
+    out.set(holdingKey(holding), label);
+  });
+  return out;
+}
+
 /** 13F 보유 기관 줄 하나의 속성(종목 상세 보유 기관 검사 칸) — 기관·공시 이름·CUSIP(고정폭)·비중·평가액·보고일. */
 export function holderDetailItems(row: GuruHoldersResponse["rows"][number]): DetailProperty[] {
   return [
@@ -206,6 +275,36 @@ export function holderDetailItems(row: GuruHoldersResponse["rows"][number]): Det
     { label: "평가액", value: presentValue(formatUsd(row.value)) },
     { label: "보고일", value: presentValue(row.reportDate) },
   ];
+}
+
+/** 보유 기관 줄의 키 — 목록-검사 줄 키와 같은 'CIK:CUSIP'. */
+export function holderKey(row: Pick<GuruHoldersResponse["rows"][number], "cik" | "cusip">): string {
+  return `${row.cik}:${row.cusip}`;
+}
+
+/**
+ * 보유 기관 줄 구분(종목 상세 보유 기관 — 검사 칸 영역 이름·제목, 좁은 화면 대화상자 제목, 줄 보조 글). 키는 'CIK:CUSIP'. 한 기관이 같은 회사의
+ * 다른 증권(A·C주 — 공시 이름까지 같은 일이 흔함)을 함께 들면 두 줄의 기관·공시 이름·보고일이 같아 비중·평가액만 다릅니다. 응답에 클래스 칸이 없어
+ * 기관(CIK)이 겹치는 줄에만 CUSIP으로 가릅니다 — `labels`는 '기관 · CUSIP …'(그래도 겹치면 키), `cusipKeys`는 보조 글에 CUSIP을 적을 줄. 겹치지 않는
+ * 줄의 이름표는 기관 이름(앞 국기를 뗌) 그대로입니다(QA-587 — 기관 상세 보유 줄 holdingItemLabels와 같은 '겹치는 줄에만' 규칙).
+ */
+export function holderRowTells(rows: readonly GuruHoldersResponse["rows"][number][]): { labels: Map<string, string>; cusipKeys: Set<string> } {
+  const perInstitution = new Map<string, number>();
+  for (const row of rows) perInstitution.set(row.cik, (perInstitution.get(row.cik) ?? 0) + 1);
+  const labels = new Map<string, string>();
+  const cusipKeys = new Set<string>();
+  const used = new Set<string>();
+  for (const row of rows) {
+    const key = holderKey(row);
+    const name = withoutLeadingIcon(row.institution);
+    const repeated = (perInstitution.get(row.cik) ?? 0) > 1;
+    if (repeated) cusipKeys.add(key);
+    let label = repeated ? `${name} · CUSIP ${row.cusip}` : name;
+    if (used.has(label)) label = `${label} · ${key}`;
+    used.add(label);
+    labels.set(key, label);
+  }
+  return { labels, cusipKeys };
 }
 
 // ------------------------------------------------------------------ 연결(대상 화면 오른쪽 칸)

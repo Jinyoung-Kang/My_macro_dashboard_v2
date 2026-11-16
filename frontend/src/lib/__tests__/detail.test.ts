@@ -60,7 +60,17 @@ describe("주소", () => {
     expect(parseStockRoute("us", "x".repeat(25))).toBeNull();
   });
 
-  it("CIK·지표 키 조각 — CIK는 숫자 1~10자리(앞 0 유지), 키는 영문·숫자·_·-", () => {
+  // QA-584: 백엔드는 13F 기관 목록의 10자리 CIK 글과 정확히 같아야 받아, 앞 0 없는 주소(/institutions/1608046 — SEC EDGAR 주소에서 붙여 넣은
+  // CIK)가 같은 기관인데도 400이었습니다. 숫자 1~10자리를 10자리로 채워 정규 CIK로 돌립니다(정보 검색 키 institutionEntityKey와 같은 방식).
+  // 수정 전(재현 커밋에서는 it.fails)에는 parseCik('1608046')이 '1608046'이었습니다.
+  it("CIK 조각 — 앞 0 없는 숫자도 10자리 정규 CIK로 (QA-584)", () => {
+    expect(parseCik("1608046")).toBe("0001608046");
+    expect(parseCik("1")).toBe("0000000001");
+    expect(parseCik("%200001608046%20")).toBe("0001608046");
+    expect(parseCik("12345678901")).toBeNull();
+  });
+
+  it("CIK·지표 키 조각 — CIK는 숫자 1~10자리(10자리 정규 CIK — 앞 0 유지·채움), 키는 영문·숫자·_·-", () => {
     expect(parseCik("0001067983")).toBe("0001067983");
     expect(parseCik("12a")).toBeNull();
     expect(parseCik("12345678901")).toBeNull();
@@ -120,6 +130,36 @@ describe("값 글", () => {
     expect(moneyText(1.2e12, "KRW")).toBe("1.200조 원");
     expect(moneyText(2.5e8, "EUR")).toBe("2.5억 EUR");
     expect(countText(undefined)).toBe("—");
+  });
+
+  // QA-581: 주당 금액(EPS — 수집기 'money' 단위)이 조·억 스케일 서식(1만 미만은 소수 0자리)으로 그려져 3.57 달러가 '4 달러', 0.42가 '0 달러',
+  // 손실 −0.43이 부호 없이 '0 달러'가 됐습니다. 1만 미만 금액은 주당 금액 자릿수(소수 2자리, 원·엔은 정수 — 아래 검토 반영)로, 1만 이상은 그대로 조·억.
+  // 수정 전(재현 커밋에서는 it.fails)에는 '4 달러'·'6 달러'·'0 달러'·'0 달러'·'-2 달러'였습니다.
+  it("핵심 지표 — 1만 미만 금액(EPS)은 주당 금액 자릿수와 통화 단위로, 0이 아닌 값을 0으로 반올림하지 않는다 (QA-581)", () => {
+    const eps = (value: number, currency = "USD") => statText({ key: "trailingEps", label: "EPS(최근 4분기)", value, text: null, unit: "money" }, currency);
+    expect(eps(3.57)).toBe("3.57 달러");
+    expect(eps(6.44)).toBe("6.44 달러");
+    expect(eps(0.42)).toBe("0.42 달러");
+    expect(eps(-0.43)).toBe("-0.43 달러");
+    expect(eps(-1.6)).toBe("-1.60 달러");
+    expect(eps(1520, "KRW")).toBe("1,520 원");
+    expect(eps(2.5, "EUR")).toBe("2.50 EUR");
+    // 1만 이상은 그대로 조·억·만 단위
+    expect(eps(5_029_592_301_568)).toBe("5.030조 달러");
+  });
+
+  // QA-581 검토: 위 고침이 1만 미만 금액을 가격 자릿수(priceDigits — |값| < 1이면 소수 4자리, 1센트 미만 가격용)로 그려 |EPS| < 1이면 출처에 없는
+  // 정밀도('0.4200 달러')가 되고, 같은 칸에서 1.5는 '1.50 달러'라 종목마다 자릿수가 달랐습니다. 주당 금액은 소수 2자리(원·엔은 정수)로 고정합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 '0.4200 달러'·'-0.4300 달러'·'0.0000 달러'·'0.4000 EUR'이었습니다.
+  it("핵심 지표 — 1만 미만 금액(EPS)은 소수 2자리(원·엔은 정수)로 고정, 1 미만도 넷째 자리로 늘리지 않는다 (QA-581)", () => {
+    const eps = (value: number, currency = "USD") => statText({ key: "trailingEps", label: "EPS(최근 4분기)", value, text: null, unit: "money" }, currency);
+    expect(eps(0.42)).toBe("0.42 달러");
+    expect(eps(-0.43)).toBe("-0.43 달러");
+    expect(eps(0)).toBe("0.00 달러");
+    expect(eps(1.5)).toBe("1.50 달러");
+    expect(eps(0.4, "EUR")).toBe("0.40 EUR");
+    expect(eps(0.5, "KRW")).toBe("1 원");
+    expect(eps(125.4, "JPY")).toBe("125 JPY");
   });
 
   it("가격 자릿수 — 원·엔 정수, 1 미만 넷째, 그 밖 둘째", () => {

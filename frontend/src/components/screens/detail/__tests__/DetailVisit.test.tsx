@@ -5,10 +5,11 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetEntityCrumbForTest, useEntityCrumbLabel } from "@/hooks/useEntityCrumb";
 import { resetRecentEntitiesForTest } from "@/hooks/useRecentEntities";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import { endpoints } from "@/lib/endpoints";
-import { RECENT_STORAGE_KEY, parseRecent } from "@/lib/palette";
+import { RECENT_STORAGE_KEY, parseRecent, serializeRecent } from "@/lib/palette";
 import { macroOverview } from "@/lib/__tests__/homeFixtures";
 import type { DetailQuote, SessionUser } from "@/lib/types";
 
@@ -40,9 +41,18 @@ beforeEach(() => {
     return body instanceof Error ? Promise.reject(body) : Promise.resolve(body);
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  act(() => resetEntityCrumbForTest());
+});
 
 const recent = () => parseRecent(window.localStorage.getItem(RECENT_STORAGE_KEY));
+
+/** 빵부스러기 저장소(상세 화면이 넘긴 대상 이름) — 비었으면 빈 글. */
+function CrumbProbe() {
+  const crumb = useEntityCrumbLabel();
+  return <output data-testid="crumb">{crumb?.label ?? ""}</output>;
+}
 const renderAs = (page: ReactElement) => render(<SessionUserProvider user={MEMBER}>{page}</SessionUserProvider>);
 
 const QUOTE: DetailQuote = {
@@ -72,6 +82,30 @@ describe("상세 화면 방문 → 최근 연 대상", () => {
     renderAs(<StockDetailScreen market="us" code="SYNV" />);
     await waitFor(() => expect(screen.getAllByText("시세 서버가 응답하지 않습니다.").length).toBeGreaterThan(0));
     expect(recent()).toEqual([]);
+  });
+
+  // QA-577: 수집기는 출처 연결 실패·요청 제한·정보 없는 심볼에도 available:true + quote{name:null, error}를 돌려줍니다. 화면이 quote 객체가 있는지만
+  // 보고 방문을 넣어, 코드만 있는 항목(label·sub 모두 코드)이 같은 주소의 이름 있는 항목(팔레트가 넣은 것·앞선 정상 방문)을 덮었습니다
+  // (P4 '정한 것' 7 — 이름을 읽은 뒤에만). 빵부스러기 저장소에도 코드가 이름으로 들어갔습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 recent()가 [{label:'SYNV', sub:'SYNV · NYSE · 주식 · USD', …}]이고 빵부스러기 저장소가 'SYNV'였습니다.
+  it("종목 — 시세 객체는 왔지만 이름이 없으면(name:null + error) 넣지 않고, 같은 주소의 이름 있는 항목을 덮지 않는다 (QA-577)", async () => {
+    const named = { kind: "ticker" as const, label: "합성 방문", sub: "Synthetic Visit Inc. · SYNV · 정보기술", href: "/s/us/SYNV", dest: "종목 상세" };
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([named]));
+    act(() => resetRecentEntitiesForTest());
+    reads[endpoints.detail.quote("us", "SYNV")] = {
+      available: true,
+      quote: { ...QUOTE, name: null, nameKo: null, price: null, change: null, changePct: null, error: "YahooNoResponse: 합성" },
+    };
+    render(
+      <SessionUserProvider user={MEMBER}>
+        <CrumbProbe />
+        <StockDetailScreen market="us" code="SYNV" />
+      </SessionUserProvider>,
+    );
+    await screen.findByText(/일부 값을 받지 못했습니다/);
+    await act(async () => {});
+    expect(recent()).toEqual([named]);
+    expect(screen.getByTestId("crumb").textContent).toBe("");
   });
 
   it("지표 — 찾은 카드 이름·'범주 · 티커'로, 찾지 못한 키는 넣지 않는다", async () => {
