@@ -996,6 +996,43 @@ describe("홈 — 등락 표시(▲▼ 12px · 읽어 주는 방향)", () => {
   });
 });
 
+/** 칸 안의 변화 칩(바깥 상자) — 읽어 주는 방향 글에서 올라가 tabular-nums 상자를 찾습니다(칸 td는 span이 아니라 걸리지 않음). */
+const chipIn = (cell: HTMLElement, direction: "상승" | "하락") => within(cell).getByText(direction).closest("span.tabular-nums") as HTMLElement;
+
+// QA-595: 표 자동 배치가 칩 칸에 최소 내용 폭(숫자 하나)만 주면 flex-wrap 칩이 꺾여, 계좌 표의 '▼'가 숫자와 다른 줄에 홀로 남고
+// 시장 표의 변화량과 변화율이 두 줄로 갈렸습니다(QA 스택 390~1920 모든 폭, 표가 넘치지 않는 768에서도).
+// 수정 전(재현 커밋에서는 it.fails) 세 칩 모두 'inline-flex flex-wrap …'이었습니다.
+describe("홈 — 표 칸 안의 변화 칩 (QA-595)", () => {
+  it.fails("계좌 손익 표의 출발 대비·최근 변화와 시장 표의 변화 칩은 칸 안에서 꺾이지 않는다(flex-nowrap)", async () => {
+    const overview = paperOverview();
+    overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
+    overview.books![1] = {
+      ...overview.books![1],
+      current: {
+        nav: 100123.45, returnPct: 0.12, exposurePct: 97.5, dayChangePct: 0.3, previousTradingDate: "2026-10-23", previousNavFinal: false,
+        basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-26", atKst: "2026-10-26 23:58 KST", isEstimated: true, livePriced: 9,
+        positionCount: 9, pendingOrders: 0, neutral: false, note: null,
+      },
+    };
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: overview };
+    renderHome(OWNER);
+    await act(async () => {});
+
+    // 계좌 표 — 칸 순서: 계좌·순자산·출발 대비·최근 변화·기준
+    const cells = Array.from(bookRow(region(PAPER_REGION), "Claude 계좌").children) as HTMLElement[];
+    // 시장 표 — 칸 순서: 지표·값·변화·기준(원/달러 ▼ −1.38 (−0.10%))
+    const marketCells = Array.from(marketRow("원/달러 (USD/KRW)").children) as HTMLElement[];
+    for (const [name, chip] of [
+      ["출발 대비", chipIn(cells[2], "상승")],
+      ["최근 변화", chipIn(cells[3], "상승")],
+      ["시장 변화", chipIn(marketCells[2], "하락")],
+    ] as const) {
+      expect(chip.className.split(/\s+/), name).toContain("flex-nowrap");
+      expect(chip.className.split(/\s+/), name).not.toContain("flex-wrap");
+    }
+  });
+});
+
 describe("홈 — 운영자가 아닌 사용자", () => {
   for (const [name, user] of [["회원", MEMBER], ["데모 열람", DEMO], ["사용자 모름(레이아웃 밖)", undefined]] as const) {
     it(`${name}: 모의매매·저장소 상태·끊긴 출처를 요청하지 않고 그 구역이 없다 — 국면·시장·알림은 그린다`, async () => {
