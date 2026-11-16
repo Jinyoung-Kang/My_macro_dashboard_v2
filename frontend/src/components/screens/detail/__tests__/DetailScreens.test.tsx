@@ -331,6 +331,28 @@ describe("종목 상세 — 미국", () => {
     client.mockRestore();
   });
 
+  // QA-610: '자세히'·'접기'는 글자 셋·둘인 따로 선 글 단추라 TEXT_TARGET(높이 44px)만으로는 가로가 글 폭(42·28px)이었습니다 — lg 미만 누름 자리 44x44
+  // (명세 §3)에 못 미침. 가로 하한(min-w-11)을 lg 미만에만 줍니다(넓은 화면은 글 폭 그대로). jsdom은 배치를 재지 않아 클래스로 봅니다(실제 크기는
+  // 브라우저 측정). 수정 전(재현 커밋에서는 it.fails)에는 두 단추의 class 목록에 'min-w-11'·'lg:min-w-0'이 없었습니다.
+  it("회사 소개 '자세히'·'접기' 단추는 lg 미만에서 가로도 44px(min-w-11), 넓은 화면은 글 폭(lg:min-w-0)", async () => {
+    reads = appleReads();
+    const scroll = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(400);
+    const client = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(240);
+    try {
+      renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
+      const about = (await screen.findByRole("heading", { name: "회사 소개" })).closest("section") as HTMLElement;
+      const classTokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+      const more = await within(about).findByRole("button", { name: "자세히" });
+      expect(classTokens(more)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "min-w-11", "lg:min-w-0"]));
+      fireEvent.click(more);
+      const less = within(about).getByRole("button", { name: "접기" });
+      expect(classTokens(less)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "min-w-11", "lg:min-w-0"]));
+    } finally {
+      scroll.mockRestore();
+      client.mockRestore();
+    }
+  });
+
   it("뉴스는 한 쪽에 5건 — 이전·다음 단추와 쪽 표시", async () => {
     reads = appleReads();
     reads[NEWS] = {
@@ -781,8 +803,9 @@ describe("기관 상세", () => {
   });
 
   // QA-190: 13F 포트폴리오 읽기가 실패하면(추적하지 않는 CIK는 400, 백엔드 일시 실패) 히어로는 오류를 보였지만 상위 보유 종목 카드는 error를 보지 않아
-  // '불러오는 중'(role=status, aria-busy)으로 남았습니다. 카드도 오류와 다시 시도 단추를 그립니다.
-  it("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 오류와 다시 시도", async () => {
+  // '불러오는 중'(role=status, aria-busy)으로 남았습니다. 카드도 그 까닭을 적고, 다시 시도 단추는 늘 보이는 대상 머리에 하나입니다(보유 종목은 기본이
+  // 아닌 탭이라 처음에 숨어 있음 — QA-609, 종목 상세 시세 실패와 같은 자리). 카드에는 까닭 글만 남습니다.
+  it("QA-190 13F 포트폴리오를 읽지 못하면 상위 보유 종목 카드는 '불러오는 중'이 아니라 그 까닭(다시 시도는 머리에)", async () => {
     const path = endpoints.institution.portfolio("1234567", 8, 30);
     reads = { [path]: new Error("추적하지 않는 기관입니다.") };
     renderAs(PRO, <InstitutionDetailScreen cik="1234567" />);
@@ -791,8 +814,11 @@ describe("기관 상세", () => {
     fireEvent.click(screen.getByRole("tab", { name: "보유 종목" }));
     expect(screen.queryByRole("status", { name: "보유 종목을 불러오는 중" })).toBeNull();
     const card = screen.getByRole("heading", { level: 2, name: "상위 보유 종목" }).closest("section") as HTMLElement;
-    expect(within(card).getByText("추적하지 않는 기관입니다.")).toBeTruthy();
-    fireEvent.click(within(card).getByRole("button", { name: "다시 시도" }));
+    expect(within(card).getByText("13F 포트폴리오를 읽지 못해 보유 종목이 없습니다.")).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    const header = screen.getByRole("heading", { level: 1, name: "CIK 1234567" }).closest("header") as HTMLElement;
+    expect(within(header).getByText("추적하지 않는 기관입니다.")).toBeTruthy();
+    fireEvent.click(within(header).getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(requested().filter((entry) => entry === path)).toHaveLength(2));
   });
 });

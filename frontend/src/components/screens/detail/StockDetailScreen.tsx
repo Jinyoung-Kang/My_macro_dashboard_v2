@@ -321,6 +321,8 @@ const FOLD_LINES = "line-clamp-[10]";
 /**
  * 긴 글 접기 — 10줄로 그려 그린 높이가 넘치면(scrollHeight > clientHeight) '자세히' 단추를 둡니다. 넘치지 않으면 단추가 없고 글이 다 보입니다 —
  * 단추 없이 글을 자르지 않습니다. 폭이 바뀌면(ResizeObserver) 다시 잽니다. 단추는 aria-expanded와 aria-controls로 글을 가리킵니다.
+ * 단추 글이 셋·둘('자세히' 42px·'접기' 28px)이라 좁은 화면(lg 미만)은 가로도 44px 하한(min-w-11 — 글은 왼쪽 그대로, 누름 자리만 오른쪽으로)을
+ * 줍니다(QA-610). 넓은 화면은 글 폭.
  */
 function FoldText({ text }: { text: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -347,7 +349,7 @@ function FoldText({ text }: { text: string }) {
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen((value) => !value)}
-          className={`${TEXT_TARGET} mt-1 rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline ${FOCUS_RING}`}
+          className={`${TEXT_TARGET} min-w-11 lg:min-w-0 mt-1 rounded-sm text-sm font-medium text-accent underline-offset-2 hover:underline ${FOCUS_RING}`}
         >
           {open ? "접기" : "자세히"}
         </button>
