@@ -41,7 +41,10 @@ export type KpiItem = {
   delayMin?: number | null;
   provenanceTitle?: string | null;
   emptyReason?: string | null;
-  /** 읽는 중 — 값 자리에 Skeleton 한 줄(role=status '{label} 불러오는 중'). */
+  /**
+   * 읽는 중 — 값 자리에 Skeleton 한 줄(role=status '{label} 불러오는 중'). 이름 칸은 읽는 동안 읽어 주기에서 뺍니다(status 이름이 이름을 담음 —
+   * 링크 타일의 이름이 '이름 + 이름 불러오는 중'으로 겹치지 않게, QA-597).
+   */
   pending?: boolean;
   isEstimated?: boolean;
   isProxy?: boolean;
@@ -94,7 +97,12 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
     !item.pending && (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
   return (
     <>
-      <div className={`text-caption font-medium text-text-2 ${item.href ? "underline-offset-2 group-hover:underline" : ""}`.trim()}>{item.label}</div>
+      <div
+        aria-hidden={item.pending ? true : undefined}
+        className={`text-caption font-medium text-text-2 ${item.href ? "underline-offset-2 group-hover:underline" : ""}`.trim()}
+      >
+        {item.label}
+      </div>
       {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
       <div className={item.pending ? "mt-0.5" : "mt-0.5 flex flex-wrap items-baseline gap-x-1"}>
         <KpiValue item={item} />
