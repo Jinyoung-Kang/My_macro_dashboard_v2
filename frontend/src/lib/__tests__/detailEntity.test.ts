@@ -163,6 +163,43 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(holdingDetailItems({ ...holding, weightDiff: 0.5, sharesDiff: 0 }).slice(6, 8).map((row) => row.value)).toEqual(["0주", "+0.50%p"]);
   });
 
+  // QA-587: 13F 보유 줄은 공시 이름이 같은 다른 증권(A·C주, 'ISHARES TR' 아래 여러 ETF)이 흔한데 검사 칸·대화상자 제목이 이름뿐이라 똑같았습니다.
+  // 백엔드 Sec13FService.lineLabels·lib/consensus consensusBars와 같은 규칙 — 이름이 겹치는 줄에만 ' · 클래스', 클래스로 가를 수 없으면 ' · CUSIP …'.
+  // 수정 전(재현 커밋에서는 it.fails)에는 이 함수가 없었습니다(겹치는 줄의 이름표가 이름 그대로).
+  it.fails("보유 줄 이름표 — 이름이 겹치는 줄에만 클래스(가를 수 없으면 CUSIP), 하나뿐인 이름은 그대로 (QA-587)", async () => {
+    const { holdingItemLabels } = (await import("../detailEntity")) as unknown as {
+      holdingItemLabels: (holdings: readonly Holding[]) => Map<string, string>;
+    };
+    const row = (name: string, cusip: string, klass: string): Holding => ({
+      name, cusip, class: klass, value: 1e9, shares: 1, weight: 1, weightDiff: null, sharesDiff: null, action: "유지",
+    });
+    const holdings = [
+      row("ALPHABET INC", "02079K305", "CAP STK CL A"),
+      row("ALPHABET INC", "02079K107", "CAP STK CL C"),
+      row("ISHARES TR", "464287200", "CORE S&P500 ETF"),
+      row("ISHARES TR", "464288588", "MBS ETF"),
+      row("ISHARES TR", "464287242", "IBOXX INV CP ETF"),
+      row("NVIDIA CORPORATION", "67066G104", "COM"),
+      row("SYNTHETIC TWIN", "000000001", "COM"),
+      row("SYNTHETIC TWIN", "000000002", "COM"),
+      row("SYNTHETIC BLANK", "000000003", ""),
+      row("SYNTHETIC BLANK", "000000004", "PFD"),
+    ];
+    const labels = holdingItemLabels(holdings);
+    expect(holdings.map((holding) => labels.get(`${holding.cusip}:${holding.class}`))).toEqual([
+      "ALPHABET INC · CAP STK CL A",
+      "ALPHABET INC · CAP STK CL C",
+      "ISHARES TR · CORE S&P500 ETF",
+      "ISHARES TR · MBS ETF",
+      "ISHARES TR · IBOXX INV CP ETF",
+      "NVIDIA CORPORATION",
+      "SYNTHETIC TWIN · CUSIP 000000001",
+      "SYNTHETIC TWIN · CUSIP 000000002",
+      "SYNTHETIC BLANK · CUSIP 000000003",
+      "SYNTHETIC BLANK · CUSIP 000000004",
+    ]);
+  });
+
   it("보유 기관 줄 — 기관 이름은 앞 국기를 떼고, CUSIP 고정폭", () => {
     const row: GuruHoldersResponse["rows"][number] = {
       institution: "🇺🇸 버크셔 해서웨이 (Berkshire Hathaway)", cik: "0001067983", name: "APPLE INC", cusip: "037833100", weight: 21.5, value: 60e9, reportDate: "2026-06-30",
