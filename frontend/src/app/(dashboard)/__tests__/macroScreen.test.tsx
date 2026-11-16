@@ -4,6 +4,7 @@
  *  - 장단기 금리차: 묶음 머리(h3) + KPI 띠 둘(값 부호·'%p' 단위·변화 칩), 해석 기준표는 처음에 접힘(펼치기 머리 + 공용 표)
  *  - 신용·변동성: KPI 띠(단위·변화 칩·기준일·출처, 못 받은 값 '—'+'수집 실패', MOVE는 '대리 지표' 배지 + 주의 상태 글), 해석 기준표 접힘
  *  - 심화 지표: KPI 띠 — 해석 색은 상태 아이콘 + 글(빨강 위험은 '주의:' 머리말, 값 글자색으로 전하지 않음), 메모 '표본 백분위 · 표본 · 기준일'
+ *  - 환율 비교: 고른 계열 KPI 띠(끝값·단위, 기간 변화율 칩 + '기간', 메모 '기준일 … · 최근 …'), 계열 칩 aria-pressed 그대로
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -261,5 +262,34 @@ describe("심화 지표", () => {
     const real = within(strip).getByRole("group", { name: "10년 실질금리" });
     expect(within(real).getByText("수집 실패")).toBeTruthy();
     expect(real.textContent).not.toContain("—%");
+  });
+});
+
+describe("환율 비교", () => {
+  it("고른 계열은 KPI 띠 — 끝값·단위, 기간 변화율은 칩과 '기간', 메모 '기준일 … · 최근 …' — 계열 칩은 그대로", async () => {
+    reads["/api/macro/fx"] = () => Promise.resolve({
+      available: true, period: "1y", mode: "index",
+      catalog: [{ id: "usdkrw", label: "원/달러", unit: "원", ticker: "KRW=X" }, { id: "dxy", label: "달러 인덱스", unit: null, ticker: "DX-Y.NYB" }],
+      series: [
+        { id: "usdkrw", label: "원/달러", unit: "원", ticker: "KRW=X", available: true, latest: 1389.456, latestDate: "2026-11-14",
+          baseDate: "2025-11-14", baseValue: 1300, changePct: 6.88, points: [{ date: "2026-11-14", value: 106.88 }] },
+        { id: "dxy", label: "달러 인덱스", unit: null, ticker: "DX-Y.NYB", available: true, latest: 99.5, latestDate: "2026-11-14",
+          baseDate: "2025-11-14", baseValue: 104, changePct: -4.33, points: [{ date: "2026-11-14", value: 95.67 }] },
+      ],
+    });
+    render(<MacroPage />);
+
+    const strip = await screen.findByRole("region", { name: "고른 환율 계열" });
+    const krw = within(strip).getByRole("group", { name: "원/달러" });
+    expect(krw.textContent).toContain("1,389.46원");
+    expect(krw.textContent).toContain("+6.88%");
+    expect(within(krw).getByText("기간")).toBeTruthy();
+    expect(krw.textContent).toContain("기준일 2025-11-14 · 최근 2026-11-14");
+    const dxy = within(strip).getByRole("group", { name: "달러 인덱스" });
+    expect(dxy.textContent).toContain("−4.33%");
+    expect(within(dxy).getByText("하락").className).toContain("sr-only");
+
+    const panel = screen.getByRole("heading", { level: 2, name: "환율·달러인덱스 비교" }).closest("section") as HTMLElement;
+    expect(within(panel).getByRole("button", { name: "원/달러" }).getAttribute("aria-pressed")).toBe("true");
   });
 });
