@@ -82,7 +82,7 @@ async function places(): Promise<Record<string, [boolean, boolean]>> {
 
 describe("QA-568 검토 — 뉴스 카드 본문 글도 한글은 낱말 사이에서만 줄바꿈", () => {
   // 수정 전 실패: 네 자리 모두 [false, false](재현 커밋에서는 it.fails).
-  it.fails("부를 수 없는 까닭·조회하지 않는 까닭·모두 실패한 사유·일부 출처 실패 줄이 break-keep과 wrap-break-word를 가진다", async () => {
+  it("부를 수 없는 까닭·조회하지 않는 까닭·모두 실패한 사유·일부 출처 실패 줄이 break-keep과 wrap-break-word를 가진다", async () => {
     const found = await places();
     expect(found).toEqual({
       "부를 수 없는 까닭(idleText)": [true, true],

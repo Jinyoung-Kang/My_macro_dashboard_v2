@@ -338,6 +338,12 @@ export function statRows(stats: readonly DetailStat[], text: (stat: DetailStat) 
 export const NEWS_SOURCES = "Yahoo Finance · 네이버 증권 · 연합인포맥스 · Google News(최근 7일 검색)";
 
 /**
+ * 뉴스 카드 본문 글(부를 수 없는 까닭·조회하지 않는 까닭·모두 실패한 사유, '일부 출처' 실패 줄도 같음) — 한글은 낱말 사이에서만 줄을 바꾸고, 사유에 섞이는 공백 없는 긴 영문
+ * 토큰('ProxyError' 등)만 칸 안에서 꺾습니다(break-keep wrap-break-word — 출처 줄·배지와 같음, QA-568 검토).
+ */
+const NEWS_TEXT = "break-keep wrap-break-word text-sm text-text-2";
+
+/**
  * 주요 뉴스 — 종목 뉴스(Yahoo·네이버)·연합인포맥스·구글 뉴스 검색을 합친 목록(수집기가 같은 제목을 빼고 최신순으로). 한 쪽에 5건씩(사용자 요청
  * 2026-11-02 — 이전·다음 단추와 'n / m쪽'), 경로가 바뀌면 첫 쪽으로. 제목은 원문 기사로 가는 새 창 링크, 아래 줄은 언론사·시각·받은 곳. 출처 하나가
  * 실패하면 그 사실을 한 줄로 적습니다(나머지는 그대로). `searchQuery`를 주면 카드 머리에 같은 말로 정보 검색(/search?q=, 최근 2년 — ADR 0041)으로
@@ -373,14 +379,14 @@ export function NewsCard({
     body = news.error ? (
       <ErrorState message={news.error} onRetry={() => void news.reload()} />
     ) : !path && idleText ? (
-      <p className="text-sm text-text-2">{idleText}</p>
+      <p className={NEWS_TEXT}>{idleText}</p>
     ) : (
       <Skeleton lines={5} label="뉴스를 불러오는 중" />
     );
   } else if (!news.data.available) {
-    body = <p className="text-sm text-text-2">{news.data.message ?? "뉴스를 조회하지 않습니다."}</p>;
+    body = <p className={NEWS_TEXT}>{news.data.message ?? "뉴스를 조회하지 않습니다."}</p>;
   } else if (all.length === 0) {
-    body = <p className="text-sm text-text-2">{news.data.news?.error ?? "최근 뉴스를 찾지 못했습니다."}</p>;
+    body = <p className={NEWS_TEXT}>{news.data.news?.error ?? "최근 뉴스를 찾지 못했습니다."}</p>;
   } else {
     body = (
       <ul className="-my-1 divide-y divide-border">
@@ -425,7 +431,7 @@ export function NewsCard({
         </nav>
       ) : null}
       {failures.length > 0 && !bodyShowsError ? (
-        <p className="mt-3 text-xs text-text-3">
+        <p className="mt-3 break-keep wrap-break-word text-xs text-text-3">
           일부 출처를 받지 못했습니다 — {failures.map(([source, reason]) => `${source}: ${reason}`).join(" · ")}
         </p>
       ) : null}
