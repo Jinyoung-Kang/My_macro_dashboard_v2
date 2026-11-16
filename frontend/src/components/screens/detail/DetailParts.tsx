@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, EstimateBadge, Hero, type PropertyItem, RangeTabs, Skeleton } from "@/components/patterns";
 import { Banner, Button, buttonClasses, Card, ErrorState, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
@@ -25,7 +25,7 @@ import {
   newsTime,
   summaryLines,
 } from "@/lib/detail";
-import type { DetailProperty } from "@/lib/detailEntity";
+import type { ChartDrawState, DetailProperty } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { infoSearchEntry } from "@/lib/search";
@@ -148,6 +148,9 @@ const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
  *
  * - 차트는 Yahoo 시계열(GET /api/macro/ticker). 심볼이 없으면(스크래핑 카드·뜻이 다른 티커) 차트 대신 이유 한 줄(`noChartReason`), 기간 탭도 없습니다.
  *   `cardKey`를 주면 점을 카드와 같은 단위로(엔/원 100엔당 — lib/detail indicatorChartRows, QA-185).
+ * - 출처 캡션(`caption`)은 선을 실제로 그렸을 때만 적습니다 — 불러오는 중·읽기 실패·시계열 없음(값이 하나도 없음 포함)에는 없는 차트의 출처를 적지
+ *   않습니다(QA-579 후속). 그림 상태(lib/detailEntity ChartDrawState)는 `onDrawState`로 화면에 알려, 오른쪽 '출처' 패널의 '차트' 줄도 같은 기준으로
+ *   적게 합니다(chartSourceProperty) — 그리기 전에 알리므로(레이아웃 효과) 줄과 차트가 한 프레임도 어긋나지 않습니다.
  * - 문지르기는 이 패널에 있습니다(명세 W7 — 대상 머리는 늘 지금 값). 차트를 문지르는 동안 읽기 줄에 그 날 날짜·값·기간 시작 대비 칩(모르면 생략)·추정
  *   배지를 보입니다. 읽기 줄은 눈으로 보는 줄(aria-hidden)이고, 읽어 주기는 따로 둔 조용한 알림 영역(aria-live polite)이 '날짜 값'으로 합니다(차트에
  *   초점을 두고 ←·→로 옮기는 낭독기 사용자). 문지르지 않을 때는 같은 자리에 짧은 안내를 두어 줄 높이가 바뀌지 않습니다.
@@ -167,6 +170,7 @@ export function PriceChartPanel({
   cardKey,
   caption,
   unit,
+  onDrawState,
 }: {
   /** 패널 제목·영역 이름(예 'Apple Inc. 시세'). */
   title: string;
@@ -179,10 +183,12 @@ export function PriceChartPanel({
   valueDigits: number;
   /** 지표 상세의 카드 키 — 차트 점을 카드와 같은 단위로. 없으면 원값(종목 상세). */
   cardKey?: string;
-  /** 차트 아래 출처 글(예 '차트: Yahoo Finance ^GSPC 일별 종가'). */
+  /** 차트 아래 출처 글(예 '차트: Yahoo Finance ^GSPC 일별 종가') — 선을 그렸을 때만 보입니다. */
   caption?: string | null;
   /** 문지른 값 옆 단위(종목의 통화) — 값이 있을 때만. */
   unit?: string | null;
+  /** 그림 상태가 바뀔 때마다(처음 포함) 부릅니다 — 화면의 '출처' 패널 '차트' 줄(QA-579 후속). */
+  onDrawState?: (state: ChartDrawState) => void;
 }) {
   const [range, setRange] = useState<DetailRange>("1y");
   const series = useApi<{ available: boolean; message?: string; points: { date: string; close: number | null; value?: number | null }[] }>(
@@ -192,11 +198,21 @@ export function PriceChartPanel({
   const lineSeries = [{ key: CHART_KEY, label }];
   const { index, onScrub } = useChartScrub(rows.length);
   const format = (value: number) => formatNumber(value, valueDigits);
-  const drawn = Boolean(symbol && series.data?.available);
-  const scrubbable = drawn && hasLineValues(rows, lineSeries);
+  // 그림 상태 — 'drawn'만 선을 실제로 그린 것(값 없는 시계열은 차트 부품이 '표시할 시계열이 없습니다.'만 그림). available:false에 백엔드 사유 글이
+  // 있으면(수집기 응답 없음·외부 소스 실패 — 아래 차트 칸이 그 글) '받지 못함', 없으면 '시계열 없음' — '차트' 줄 까닭이 차트 칸 글과 맞게.
+  let drawState: ChartDrawState;
+  if (!symbol) drawState = "none";
+  else if (!series.data) drawState = series.error ? "failed" : "loading";
+  else if (!series.data.available) drawState = series.data.message ? "unavailable" : "empty";
+  else if (!hasLineValues(rows, lineSeries)) drawState = "empty";
+  else drawState = "drawn";
+  const scrubbable = drawState === "drawn";
   const point = scrubbable ? scrubModel(rows, CHART_KEY, index, format) : null;
   const pointMissing = point !== null && point.valueText === EMPTY;
   const pointUnit = point !== null && !pointMissing && unit ? ` ${unit}` : "";
+  useLayoutEffect(() => {
+    onDrawState?.(drawState);
+  }, [drawState, onDrawState]);
 
   let chart: ReactNode;
   if (!symbol) {
@@ -242,7 +258,7 @@ export function PriceChartPanel({
         </div>
       ) : null}
       <div className="min-w-0">{chart}</div>
-      {caption ? <p className="mt-2 text-xs text-text-3">{caption}</p> : null}
+      {caption && scrubbable ? <p className="mt-2 text-xs text-text-3">{caption}</p> : null}
       {scrubbable ? (
         // 조용한 알림 — 문지른 점의 '날짜 값'. 문지르지 않으면 비워 둡니다(미리 있어야 첫 점부터 읽힘).
         <div className="sr-only" aria-live="polite" aria-atomic="true">

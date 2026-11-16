@@ -202,6 +202,44 @@ describe("가격 차트 패널", () => {
     expect(within(panel).queryByText("USD")).toBeNull();
     expect(within(panel).queryByText("기간 시작 대비")).toBeNull();
   });
+
+  // QA-579 후속 — 출처 캡션은 선을 그렸을 때만, 그림 상태는 onDrawState로 화면('출처' 패널 '차트' 줄)에 알린다.
+  it("그림 상태 — 불러오는 중 loading → 그리면 drawn(캡션 보임), 사유 있는 available:false unavailable·사유 없음·값 없음 empty·읽기 실패 failed·심볼 없음 none(캡션 없음)", async () => {
+    const CAPTION = "차트: Yahoo Finance SYNQ 일별 종가";
+    const states: string[] = [];
+    const onDrawState = (state: string) => void states.push(state);
+    const draw = (symbol: string | null = "SYNQ") =>
+      render(<PriceChartPanel title="합성 시세" symbol={symbol} valueDigits={2} caption={CAPTION} onDrawState={onDrawState} />);
+
+    let resolve: (body: unknown) => void = () => {};
+    api.apiGetShared.mockImplementationOnce(() => new Promise((done) => (resolve = done)));
+    draw();
+    expect(states).toEqual(["loading"]);
+    expect(screen.queryByText(CAPTION)).toBeNull();
+    await act(async () => resolve({ available: true, points: [{ date: "2026-11-13", close: 10 }, { date: "2026-11-14", close: 11 }] }));
+    expect(states).toEqual(["loading", "drawn"]);
+    expect(screen.getByText(CAPTION)).toBeTruthy();
+    cleanup();
+
+    for (const [body, state] of [
+      [{ available: false, message: "외부 소스에서 시계열을 받지 못했습니다: 합성 실패", points: [] }, "unavailable"],
+      [{ available: false, points: [] }, "empty"],
+      [{ available: true, points: [{ date: "2026-11-14", close: null }] }, "empty"],
+      [new Error("차트 서버 오류"), "failed"],
+    ] as const) {
+      states.length = 0;
+      reads[TICKER] = body;
+      draw();
+      await waitFor(() => expect(states.at(-1)).toBe(state));
+      expect(screen.queryByText(CAPTION)).toBeNull();
+      cleanup();
+    }
+
+    states.length = 0;
+    draw(null);
+    expect(states).toEqual(["none"]);
+    expect(screen.queryByText(CAPTION)).toBeNull();
+  });
 });
 
 describe("링크 목록 패널", () => {

@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  chartSourceProperty,
   consensusItems,
   holderDetailItems,
   holderKey,
@@ -18,6 +19,7 @@ import {
   moneyPriceText,
   profileItems,
   stockEntityKey,
+  stockKindLabel,
   stockStatItems,
   websiteHref,
 } from "../detailEntity";
@@ -308,5 +310,47 @@ describe("연결(대상 화면 오른쪽 칸)", () => {
     expect(infoSearchEntityLink(stockEntityKey("us", "^GSPC"), "x", MEMBER)).toBeNull();
     expect(infoSearchEntityLink(stockEntityKey("us", "KRW=X"), "x", MEMBER)).toBeNull();
     expect(infoSearchEntityLink(null, "x", MEMBER)).toBeNull();
+  });
+});
+
+describe("대상 머리 — 종목 상세 종류 태그", () => {
+  // 2026-11-16 결정 7 — 종목 상세 대상 머리의 종류 태그: 지수·환율·선물 심볼(/s/us/^GSPC·KRW=X·ZT=F)이 '종목'으로 보였음.
+  it("종목 상세 종류 태그 — 시세 종류(Yahoo quoteType)대로 지수·환율·선물, 그 밖은 '종목'", () => {
+    expect(stockKindLabel("us", "^GSPC", "INDEX")).toBe("지수");
+    expect(stockKindLabel("us", "KRW=X", "CURRENCY")).toBe("환율");
+    expect(stockKindLabel("us", "ZT=F", "FUTURE")).toBe("선물");
+    expect(stockKindLabel("us", "^GSPC", "index")).toBe("지수");
+    expect(stockKindLabel("us", "AAPL", "EQUITY")).toBe("종목");
+    expect(stockKindLabel("us", "SPY", "ETF")).toBe("종목");
+    expect(stockKindLabel("us", "BTC-USD", "CRYPTOCURRENCY")).toBe("종목");
+    // 시세에 종류가 있으면 그것을 따름(코드 꼴보다 먼저)
+    expect(stockKindLabel("us", "^ODD", "EQUITY")).toBe("종목");
+  });
+
+  it("종목 상세 종류 태그 — 시세 전·실패(종류 없음)는 코드 꼴(^ 지수 · =X 환율 · =F 선물), 국내는 늘 '종목'", () => {
+    expect(stockKindLabel("us", "^GSPC", null)).toBe("지수");
+    expect(stockKindLabel("us", "^N225", undefined)).toBe("지수");
+    expect(stockKindLabel("us", "KRW=X", null)).toBe("환율");
+    expect(stockKindLabel("us", "eurusd=x", null)).toBe("환율");
+    expect(stockKindLabel("us", "ZT=F", null)).toBe("선물");
+    expect(stockKindLabel("us", "GC=F", "")).toBe("선물");
+    expect(stockKindLabel("us", "AAPL", null)).toBe("종목");
+    expect(stockKindLabel("us", "BRK-B", null)).toBe("종목");
+    expect(stockKindLabel("kr", "005930", "stock")).toBe("종목");
+    expect(stockKindLabel("kr", "069500", "etf")).toBe("종목");
+    expect(stockKindLabel("kr", "005930", null)).toBe("종목");
+  });
+});
+
+describe("가격 차트 출처 — '출처' 패널 '차트' 줄(QA-579 후속)", () => {
+  it("선을 그렸을 때만 출처 글, 아니면 값 없음과 짧은 까닭", () => {
+    const source = "Yahoo Finance AAPL 일별 종가";
+    expect(chartSourceProperty("drawn", source)).toEqual({ label: "차트", value: source });
+    expect(chartSourceProperty("none", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 그리지 않음" });
+    expect(chartSourceProperty("loading", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 불러오는 중" });
+    expect(chartSourceProperty("failed", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 받지 못함" });
+    // 백엔드가 사유와 함께 available:false(상류 실패) — 차트 칸 글 '…시계열을 받지 못했습니다'와 같은 뜻
+    expect(chartSourceProperty("unavailable", source)).toEqual({ label: "차트", value: null, emptyReason: "시계열을 받지 못함" });
+    expect(chartSourceProperty("empty", source)).toEqual({ label: "차트", value: null, emptyReason: "시계열 없음" });
   });
 });

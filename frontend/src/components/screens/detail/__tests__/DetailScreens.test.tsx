@@ -416,8 +416,9 @@ describe("종목 상세 — 미국", () => {
   });
 
   // QA-190과 같은 원인: 시세 읽기가 실패했거나 조회하지 않으면(store_only) 히어로는 그 이유를 적지만, '핵심 지표' 카드는 시세가 없으면 늘 '불러오는 중'
-  // (role=status, aria-busy)이었습니다. 카드도 그 이유를, 실패면 다시 시도 단추를 그립니다.
-  it("QA-190 시세를 읽지 못했거나 조회하지 않으면 핵심 지표 카드도 '불러오는 중'이 아니라 그 이유(실패면 다시 시도)", async () => {
+  // (role=status, aria-busy)이었습니다. 카드도 그 이유를 적고, 실패면 다시 시도 단추가 있습니다 — 그 단추는 대상 머리에 하나입니다(좁은 화면에서
+  // 왼쪽 칸이 처음에 접혀도 보이게 — 2026-11-16 결정 2 검토 지적, 지표 상세 QA-588과 같은 자리). 카드에는 까닭 글만 남습니다.
+  it("QA-190 시세를 읽지 못했거나 조회하지 않으면 핵심 지표 카드도 '불러오는 중'이 아니라 그 이유(실패면 머리에 다시 시도)", async () => {
     reads = { [QUOTE]: { available: false, message: "store_only 모드에서는 외부 시세를 조회하지 않습니다." } };
     const { unmount } = renderAs(PRO, <StockDetailScreen market="us" code="AAPL" />);
     await screen.findAllByText("store_only 모드에서는 외부 시세를 조회하지 않습니다.");
@@ -430,8 +431,11 @@ describe("종목 상세 — 미국", () => {
     await waitFor(() => expect(screen.getAllByText("시세 서버가 응답하지 않습니다.").length).toBeGreaterThan(0));
     expect(screen.queryByRole("status", { name: "핵심 지표를 불러오는 중" })).toBeNull();
     const card = screen.getByRole("heading", { level: 2, name: "핵심 지표" }).closest("section") as HTMLElement;
+    expect(within(card).getByText("시세를 읽지 못해 핵심 지표가 없습니다.")).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    const header = screen.getByRole("heading", { level: 1, name: "AAPL" }).closest("header") as HTMLElement;
     const before = requested().filter((entry) => entry === QUOTE).length;
-    fireEvent.click(within(card).getByRole("button", { name: "다시 시도" }));
+    fireEvent.click(within(header).getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(requested().filter((entry) => entry === QUOTE)).toHaveLength(before + 1));
   });
 });
@@ -513,7 +517,11 @@ describe("지표 상세", () => {
   const KR_HOLIDAYS = "/api/calendar/kr-holidays";
 
   it("대상 머리(카드 값)·가격 차트 패널(Yahoo 차트)·같은 범주 지표(상세 링크)·뉴스 검색어·Yahoo 시세 상세 링크", async () => {
-    reads = { [endpoints.macro.overview(false)]: macroOverview(), [KR_HOLIDAYS]: { available: true, years: {} } };
+    reads = {
+      [endpoints.macro.overview(false)]: macroOverview(),
+      [KR_HOLIDAYS]: { available: true, years: {} },
+      [endpoints.macro.ticker("^GSPC", "1y")]: { available: true, points: [{ date: "2026-10-29", close: 7600 }, { date: "2026-10-30", close: 7622.99 }] },
+    };
     renderAs(PRO, <IndicatorDetailScreen indicatorKey="sp500" />);
 
     const title = await screen.findByRole("heading", { level: 1, name: "S&P 500" });
@@ -525,6 +533,8 @@ describe("지표 상세", () => {
     expect(within(header).getByText("^GSPC").className).toContain("font-mono");
     expect(within(header).getByText("미국 주가지수 및 선물")).toBeTruthy();
     const hero = screen.getByRole("region", { name: "S&P 500" });
+    // 출처 캡션은 선을 그린 뒤에만(QA-579 후속)
+    expect(await within(hero).findByRole("img", { name: "S&P 500 가격 차트" })).toBeTruthy();
     expect(within(hero).getByText("차트: Yahoo Finance ^GSPC 일별 종가")).toBeTruthy();
     await waitFor(() => expect(requested()).toContain(endpoints.macro.ticker("^GSPC", "1y")));
     await waitFor(() => expect(requested()).toContain(endpoints.detail.news({ q: "S&P 500" })));

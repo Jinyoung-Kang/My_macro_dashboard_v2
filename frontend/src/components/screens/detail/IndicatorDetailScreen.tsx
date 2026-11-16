@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { AssetList, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
 import { ErrorState, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -19,7 +20,7 @@ import {
   indicatorSearchName,
   stockHref,
 } from "@/lib/detail";
-import { indicatorProperties } from "@/lib/detailEntity";
+import { type ChartDrawState, chartSourceProperty, indicatorProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { withoutLeadingIcon } from "@/lib/format";
 import { HOME_REFRESH_MS, macroCardRow, macroCardSession, macroItemSource, MARKET_HREF } from "@/lib/home";
@@ -41,19 +42,23 @@ const ROOT = "flex min-w-0 flex-col gap-3 lg:gap-4";
 
 /**
  * 지표 상세(/markets/i/<지표 id>) — 매크로 카드 하나(환율·국채·원자재·지수)를 작업대 대상 문법(P4 — 정보 검색 대상 화면과 같은 틀)으로:
- * 대상 머리(이름·범주·티커·지금 값·전일 대비·출처·추정·이전 값 배지·신선도) → 왼쪽 속성 · 가운데 탭(개요: 가격 차트 패널·AI 요약 / 뉴스) ·
- * 오른쪽 같은 범주 지표·연결(Yahoo 시세 상세·정보 검색)·다른 곳에서 보기·출처.
+ * 대상 머리(이름·범주·티커·지금 값·전일 대비·출처·추정·이전 값 배지·신선도) → 왼쪽 속성 · 가운데 탭(개요: 가격 차트 패널·AI 요약·같은 범주 지표 /
+ * 뉴스) · 오른쪽 연결(Yahoo 시세 상세·정보 검색)·다른 곳에서 보기·출처(종목·기관 상세와 같은 오른쪽 칸 — 2026-11-16 결정 6).
  *
  * - 값은 매크로 개요 저장본(live 없이, 홈 시장 표와 같은 5분 간격)의 카드 그대로 — 출처·장 상태·지연·이전 값·추정 배지를 홈 시장 표와 같은 규칙으로.
  * - 차트는 카드 티커의 Yahoo 시계열입니다. 카드 값이 TradingView 실시간 시세면 차트(Yahoo)와 마지막 값이 조금 다를 수 있어 차트 출처를 따로 적습니다.
  *   점은 카드와 같은 단위입니다(엔/원 100엔당 — QA-185). 문지르기는 차트 패널의 읽기 줄(대상 머리는 늘 지금 값 — 명세 W7).
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs). 결정·사건 기록을 주는 API가 없어 타임라인 탭은 두지 않습니다.
+ * - 좁은 화면(lg 미만)은 왼쪽 '속성' 칸을 처음에 접고 펼치기 단추 하나를 둡니다(SplitPane collapseLeft, 2026-11-16 결정 2 — 속성 여덟 줄은 머리의
+ *   값·출처·시각과 대부분 겹침). 넓은 화면은 늘 펼침.
  */
 export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }) {
   const overview = useApi<MacroOverview>(endpoints.macro.overview(false), HOME_REFRESH_MS.macro);
   const now = useMinuteClock();
   const krOfficial = useKrOfficialHolidays(now);
   const user = useSessionUser();
+  // 가격 차트 패널이 알리는 그림 상태 — 선을 그렸을 때만 '출처' 패널의 '차트' 줄에 출처를 적습니다(QA-579 후속).
+  const [reportedChart, setReportedChart] = useState<ChartDrawState>("loading");
   const found = findIndicator(overview.data, indicatorKey);
   // 넓은 화면 빵부스러기의 마지막 칸을 키 대신 지표 이름으로(찾은 뒤에만 — 셸이 같은 주소일 때만 씀).
   const foundHref = found ? indicatorHref(found.item.key) : null;
@@ -120,9 +125,11 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
     ...(symbol ? [{ label: `${symbol} 시세·핵심 지표 보기`, href: stockHref("us", symbol) }] : []),
     ...(search ? [{ label: search.label, href: search.href }] : []),
   ];
+  // 심볼이 없으면 패널이 알리기 전에도 'none'(차트를 부르지 않음 — 첫 그리기부터 '차트를 그리지 않음').
+  const chartState: ChartDrawState = symbol ? reportedChart : "none";
   const sources = propertyItems([
     { label: "카드 값", value: macroItemSource(item) },
-    { label: "차트", value: symbol ? `Yahoo Finance ${symbol} 일별 종가` : null, emptyReason: symbol ? null : "차트를 그리지 않음" },
+    chartSourceProperty(chartState, symbol ? `Yahoo Finance ${symbol} 일별 종가` : ""),
     { label: "뉴스", value: NEWS_SOURCES },
   ]);
 
@@ -155,6 +162,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         }
       />
       <SplitPane
+        collapseLeft="속성"
         left={
           <Panel title="속성">
             <PropertyList items={propertyItems(properties)} />
@@ -162,11 +170,6 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         }
         right={
           <>
-            {related.length > 0 ? (
-              <Panel title={`${categoryTitle} — 같은 범주`}>
-                <AssetList rows={related} showProvenance headingLevel={3} />
-              </Panel>
-            ) : null}
             <LinkListPanel title="연결" links={links} />
             {symbol ? <ExternalLinksCard links={externalLinks("us", symbol, symbol, indicatorSearchName(item.name))} /> : null}
             <Panel title="출처">
@@ -189,9 +192,18 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
                     cardKey={item.key}
                     valueDigits={row.changeDigits ?? 2}
                     noChartReason={INDICATOR_NO_CHART[item.key] ?? "이 카드는 Yahoo 티커가 없어 차트를 그리지 않습니다."}
+                    // 캡션은 패널이 선을 그렸을 때만 보입니다(QA-579 후속).
                     caption={symbol ? `차트: Yahoo Finance ${symbol} 일별 종가` : null}
+                    onDrawState={setReportedChart}
                   />
                   <AiSummaryCard request={symbol ? { market: "us", code: symbol, q: query, label } : { q: query, label }} />
+                  {/* 같은 범주 지표는 가운데 칸 폭으로(2026-11-16 결정 6) — 오른쪽 18rem 칸에서는 값이 이름 아래로 내려가고 출처 줄이 2~4줄로 접혀 행마다
+                      146~170px로 쌓였고, 연결·출처를 첫 화면 밖으로 밀었습니다(코스피 1440 오른쪽 칸 1,593px). */}
+                  {related.length > 0 ? (
+                    <Panel title={`${categoryTitle} — 같은 범주`}>
+                      <AssetList rows={related} showProvenance headingLevel={3} />
+                    </Panel>
+                  ) : null}
                 </>
               ),
             },

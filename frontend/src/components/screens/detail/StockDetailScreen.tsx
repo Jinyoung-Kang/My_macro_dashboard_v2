@@ -4,13 +4,25 @@ import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { EntityHeader, MasterDetail, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
-import { Banner, ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
-import { StatusText } from "@/components/ui/icons";
+import { ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { CandlestickIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
-import { currencyUnit, detailQuery, externalLinks, holderQuery, holdersNoMatch, institutionHref, isEnglishProfile, marketStateText, stockHref } from "@/lib/detail";
 import {
+  currencyUnit,
+  detailQuery,
+  externalLinks,
+  holderQuery,
+  holdersNoMatch,
+  institutionHref,
+  isEnglishProfile,
+  marketStateText,
+  stockHref,
+} from "@/lib/detail";
+import {
+  type ChartDrawState,
+  chartSourceProperty,
   consensusItems,
   holderDetailItems,
   holderKey,
@@ -19,6 +31,7 @@ import {
   infoSearchEntityLink,
   profileItems,
   stockEntityKey,
+  stockKindLabel,
   stockStatItems,
 } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
@@ -62,10 +75,14 @@ type StockTab = "overview" | "news" | "research" | "holders";
  * - 같은 Yahoo 심볼의 매크로 카드(/s/us/^GSPC → S&P 500)가 있으면 그 지표 상세로 잇습니다 — 매크로 개요 저장본(GET /api/macro/overview?live=false,
  *   지표 상세·홈과 같은 경로·응답 캐시)을 한 번 읽습니다. 매크로 카드 티커는 Yahoo 심볼이라 국내 6자리 종목에서는 읽지 않습니다.
  * - 탭은 화면 안 상태(주소 그대로)이고 숨긴 탭도 처음에 읽습니다(DetailTabs — 요청이 탭 전과 같음). 결정·사건 기록 API가 없어 타임라인 탭은 없습니다.
+ * - 좁은 화면(lg 미만)은 왼쪽 칸(핵심 지표·회사 개요·의견)을 처음에 접고 펼치기 단추 하나를 둡니다 — 머리 바로 아래에 탭·차트(SplitPane collapseLeft,
+ *   2026-11-16 결정 2). 넓은 화면은 늘 펼침.
  */
 export function StockDetailScreen({ market, code }: { market: DetailMarket; code: string }) {
   const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub, detailSub } = useStockQuote(market, code);
   const user = useSessionUser();
+  // 가격 차트 패널이 알리는 그림 상태 — 선을 그렸을 때만 '출처' 패널의 '차트' 줄에 출처를 적습니다(QA-579 후속).
+  const [chartState, setChartState] = useState<ChartDrawState>("loading");
   const macro = useApi<MacroOverview>(market === "us" ? endpoints.macro.overview(false) : null);
   const holders = market === "us" && (quote?.kind ?? "").toUpperCase() === "EQUITY" ? holderQuery(quote?.name) : null;
   // 뉴스·AI 요약의 검색어는 백엔드 상한(60자) 안으로 — 시세 이름은 Yahoo의 긴 이름이라 넘으면 400(QA-448). 뉴스 카드의 정보 검색 링크도 같은 말로.
@@ -85,10 +102,19 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
 
   let placeholder;
   if (!quoteState.data) {
-    placeholder = quoteState.error ? <Banner tone="danger">{quoteState.error}</Banner> : <Skeleton lines={2} label="시세를 불러오는 중" />;
+    // 시세 읽기 실패의 다시 시도는 늘 보이는 대상 머리에 하나(지표 상세 QA-588과 같은 자리) — 왼쪽 칸은 좁은 화면에서 처음에 접혀(결정 2) 그 안에
+    // 두면 펼치기 전에는 다시 읽을 방법이 보이지 않습니다. 칸의 '핵심 지표'는 까닭 글만(넓은 화면에 다시 시도가 둘이 되지 않게).
+    placeholder = quoteState.error ? (
+      <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
+    ) : (
+      <Skeleton lines={2} label="시세를 불러오는 중" />
+    );
   } else if (!quoteState.data.available) {
     placeholder = <p className="text-sm text-text-2">{quoteState.data.message ?? "시세를 조회하지 않습니다."}</p>;
   }
+
+  // 좁은 화면(lg 미만)에서 접는 왼쪽 칸의 이름 — 그 칸에 있는 패널 이름으로(회사 개요는 받은 값이 있을 때만 그려짐 — ProfilePanel).
+  const leftName = quote && quote.profile && profileItems(quote).length > 0 ? "핵심 지표·회사 개요" : "핵심 지표";
 
   const links: DetailLink[] = [
     ...(indicator ? [{ label: `${indicator.name} 지표 상세`, href: indicator.href }] : []),
@@ -107,7 +133,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
             valueDigits={digits}
             unit={unit}
             // 차트는 시세가 없어도 코드로 정한 심볼(chartSymbol)로 그리므로 출처도 심볼로 적습니다(시세 실패·조회 안 함에도 — QA-579, 지표 상세와 같음).
+            // 캡션은 패널이 선을 그렸을 때만 보이고, 그림 상태는 '출처' 패널 '차트' 줄로 이어집니다(QA-579 후속).
             caption={`차트: Yahoo Finance ${symbol} 일별 종가`}
+            onDrawState={setChartState}
           />
           {quote ? <AboutPanel quote={quote} /> : null}
           <AiSummaryCard request={{ market, code, q: newsQuery, label: detailQuery(name) ?? undefined }} />
@@ -129,7 +157,9 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <EntityHeader
-        kind="stock"
+        // 종류 태그는 시세 종류대로 — 지수·환율·선물은 그 이름, 주식·ETF·국내는 '종목'(시세 전·실패는 ^·=X·=F 코드 꼴 — 2026-11-16 결정 7).
+        // 아이콘은 종목 상세 그대로(빵부스러기 '종목(미국)'·팔레트 '→ 종목 상세'와 같은 화면 이름 쪽).
+        kind={{ label: stockKindLabel(market, code, quote?.kind), icon: CandlestickIcon }}
         name={name}
         // 코드(티커·종목 코드)는 고정폭 식별자 태그(명세 §3-6) — 시세를 못 받아 이름이 코드 그대로면 같은 글을 두 번 적지 않습니다.
         identifiers={name !== code ? [code] : undefined}
@@ -176,14 +206,16 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         }
       />
       <SplitPane
+        collapseLeft={leftName}
         left={
           <>
             <Panel title="핵심 지표" source={quote?.source?.label ?? undefined}>
-              {/* 시세를 읽지 못했거나 받지 않았으면(store_only 등 — 이유는 대상 머리가 적음) '불러오는 중'으로 두지 않습니다(QA-190). */}
+              {/* 시세를 읽지 못했거나 받지 않았으면(store_only 등 — 이유는 대상 머리가 적음) '불러오는 중'으로 두지 않습니다(QA-190). 읽기 실패의
+                  오류 글·다시 시도는 대상 머리에 있습니다(좁은 화면에서 이 칸은 처음에 접힘 — 결정 2). */}
               {quote ? (
                 <PropertyList items={propertyItems(stockStatItems(quote))} emptyText="핵심 지표를 받지 못했습니다." />
               ) : quoteState.error ? (
-                <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
+                <p className="break-keep text-sm text-text-2">시세를 읽지 못해 핵심 지표가 없습니다.</p>
               ) : quoteState.data ? (
                 <p className="break-keep text-sm text-text-2">시세를 받지 않아 핵심 지표가 없습니다.</p>
               ) : (
@@ -204,7 +236,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
             <LinkListPanel title="연결" links={links} />
             <ExternalLinksCard links={externalLinks(market, code, symbol, quote?.name)} />
             <Panel title="출처">
-              <PropertyList items={sourceItems(quote, symbol, Boolean(holders))} />
+              <PropertyList items={sourceItems(quote, symbol, Boolean(holders), chartState)} />
             </Panel>
           </>
         }
@@ -215,8 +247,8 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
   );
 }
 
-/** '출처' 패널 줄 — 시세(출처 이름·기준 시각·'출처 보기' 새 창), 한국어 개요, 차트(심볼 — 늘), 뉴스, 리서치·13F(있을 때만). */
-function sourceItems(quote: DetailQuote | null, symbol: string, holders: boolean): PropertyItem[] {
+/** '출처' 패널 줄 — 시세(출처 이름·기준 시각·'출처 보기' 새 창), 한국어 개요, 차트(그렸을 때만 심볼 — 아니면 '—'와 까닭), 뉴스, 리서치·13F(있을 때만). */
+function sourceItems(quote: DetailQuote | null, symbol: string, holders: boolean, chart: ChartDrawState): PropertyItem[] {
   const ko = quote?.profile?.koSource ?? null;
   const items: PropertyItem[] = [
     {
@@ -236,8 +268,8 @@ function sourceItems(quote: DetailQuote | null, symbol: string, holders: boolean
     ...propertyItems(
       ko ? [{ label: "한국어 개요", value: ko.label, link: { href: ko.url, external: true } }] : [],
     ),
-    // 차트는 시세가 없어도 그 심볼로 그립니다 — 출처 줄도 심볼 기준(QA-579).
-    { label: "차트", value: `Yahoo Finance ${symbol} 일별 종가` },
+    // 차트는 시세가 없어도 그 심볼로 그립니다 — 출처 줄도 심볼 기준(QA-579). 다만 선을 그렸을 때만이고, 못 그렸으면 '—'와 까닭(QA-579 후속).
+    ...propertyItems([chartSourceProperty(chart, `Yahoo Finance ${symbol} 일별 종가`)]),
     { label: "뉴스", value: NEWS_SOURCES },
   ];
   if (quote && quote.research.length > 0) items.push({ label: "리서치", value: "네이버 증권 리서치" });
