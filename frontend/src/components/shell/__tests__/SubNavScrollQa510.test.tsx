@@ -230,3 +230,30 @@ describe("QA-567 — 손가락·마우스로 누른 칸에 남은 포커스는 �
     expect(list.scrollLeft).toBe(0);
   });
 });
+
+/**
+ * 2026-11-16 결정 1 검토 지적: 하위 메뉴 줄의 반쯤 가려진 칸을 손가락·마우스로 누르면, 누를 때(mousedown·touchstart) 그 링크가 받은 포커스로 줄이 움직여
+ * 손을 뗀 자리가 그 칸 밖이 되고 이동이 일어나지 않았습니다(머리 없는 크롬 390 /info/overview — '기관·공시'(378 ~ 467px, 줄 오른쪽 끝 390)의 보이는 끝을
+ * 누르면 줄이 93px 움직이고 주소는 그대로, 마우스·터치 모두). QA-510 훅이 줄 안으로 들어온 포커스를 가리지 않고(focus any) 보이게 해서입니다(D1에는 없음).
+ * 공용 탭 줄(Tabs)처럼 키보드 포커스(:focus-visible)만 들어올 때 보이게 하고, 누른 칸은 고른 뒤(주소가 바뀐 뒤) 지금 칸으로 보입니다.
+ * 손가락·마우스로 누른 경우는 matches(':focus-visible')를 늘 거짓으로 두어 흉내 냅니다(stubFocusVisible).
+ */
+describe("하위 메뉴 줄 — 손가락·마우스로 누르는 도중에는 줄을 움직이지 않고, 고른 뒤(주소가 바뀐 뒤) 그 칸을 보이게 한다", () => {
+  beforeEach(() => stubFocusVisible("pointer"));
+
+  // 수정 전(재현 커밋에서는 it.fails): 누를 때 받은 포커스로 scrollLeft 0 → 22 — 오른쪽 끝을 누른 손이 떼어질 때 그 칸은 22px 왼쪽으로 가 있음.
+  it.fails("반쯤 가려진 '국내 시장·수급'(244 ~ 364px — 줄 358px)을 누르면 누르는 동안 줄은 그대로(0), 그 화면으로 간 뒤 그 칸이 보이게(22)", () => {
+    const { rerender } = render(<SubNav pathname="/info/overview" user={OWNER} />);
+    const list = strip("정보 수집 하위 메뉴");
+    expect(list.scrollLeft).toBe(0);
+    const pressed = screen.getByRole("link", { name: "국내 시장·수급" });
+    act(() => pressed.focus());
+    expect(pressed.matches(":focus-visible")).toBe(false);
+    expect(list.scrollLeft).toBe(0);
+
+    rerender(<SubNav pathname={pressed.getAttribute("href") as string} user={OWNER} />);
+    expect(pressed.getAttribute("aria-current")).toBe("page");
+    // 244 + 120 + 16 − 358
+    expect(list.scrollLeft).toBe(22);
+  });
+});
