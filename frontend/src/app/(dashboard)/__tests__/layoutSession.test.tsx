@@ -61,7 +61,10 @@ function Page() {
   return <p>대시보드 본문</p>;
 }
 
-/** 넓은 화면 상단바의 계정 메뉴를 엽니다(키보드 Enter). 메뉴 안의 로그아웃은 단추가 아니라 메뉴 항목(menuitem)입니다(ADR 0042 결정 5·9). */
+/**
+ * 넓은 화면 상단바의 계정 메뉴를 엽니다(키보드 Enter). 메뉴 안의 로그아웃은 단추가 아니라 메뉴 항목(menuitem)입니다(뜻 단언 예외 — 실행 명세 §5
+ * '계정 메뉴'·ADR 0042 결정 5·9, 진행 기록 §P3).
+ */
 function openAccountMenu(): void {
   fireEvent.keyDown(screen.getByRole("button", { name: "계정 메뉴" }), { key: "Enter" });
 }

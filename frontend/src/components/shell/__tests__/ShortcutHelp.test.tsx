@@ -165,7 +165,7 @@ describe("/ — 화면의 거르기 칸", () => {
     expect([field.selectionStart, field.selectionEnd]).toEqual([0, 2]);
   });
 
-  it("칸이 없으면 아무것도 하지 않는다 — 브라우저 기본 그대로(정보 검색 화면의 자체 '/'와 겹치지 않음)", () => {
+  it("칸이 없으면 아무것도 하지 않는다 — 브라우저 기본 그대로", () => {
     render(
       <>
         <main id="main">

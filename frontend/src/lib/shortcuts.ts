@@ -48,7 +48,10 @@ export function visibleShortcuts(conditions: ShortcutConditions): Shortcut[] {
   return SHORTCUTS.filter((row) => !row.when || conditions[row.when]);
 }
 
-/** 화면이 자기 거르기 입력칸 하나에 붙이는 속성 — '/'가 그 칸으로 갑니다(화면당 하나, #main 안 첫 번째). */
+/**
+ * 화면이 자기 거르기 입력칸 하나에 붙이는 속성 — '/'가 그 칸으로 갑니다(화면당 하나, #main 안 첫 번째). 지금 붙인 화면은 정보 검색의 검색창 하나이고
+ * (그 화면의 자체 '/' 처리는 P7에서 걷어 냄), 목록 화면의 거르기 칸은 그 화면을 다시 짜는 단계(P4~P7)에서 붙입니다.
+ */
 export const SHELL_FILTER_ATTR = "data-shell-filter";
 
 /** 키를 받은 요소에서 쓰는 속성만 적은 구조 타입. */

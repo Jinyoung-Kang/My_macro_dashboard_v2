@@ -4,7 +4,8 @@
  * 계정 영역(넓은 화면 상단바의 계정 메뉴 — 작업대 실행 명세 §5): 데모 열람(ADR 0013)이면 로그아웃·내 계정 링크 대신 "데모 열람". 로그인 없이 연 로컬
  * 운영자(ADR 0016)면 로그아웃 대신 "로컬 · 로그인 없음"을 내 계정 링크로. 계정 메뉴는 닫혀 있으면 내용이 DOM에 없어 Enter로 연 뒤 보고, 열린 메뉴는
  * 모달이라(뒤 화면 aria-hidden) 메뉴 밖을 role로 찾는 단언은 열기 전에 둡니다. 메뉴 안의 로그아웃은 단추가 아니라 메뉴 항목(menuitem)입니다
- * (뜻 단언 예외 — ADR 0042 결정 5·9가 계정 메뉴를 메뉴로 정함, P3 계획 §3-5). 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
+ * (뜻 단언 예외 — 실행 명세 §5 '계정 메뉴(읽기 모드와 빌드 정보를 그 안으로)'·ADR 0042 결정 5·9가 계정 메뉴를 메뉴로 정함, 진행 기록 §P3).
+ * 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
  * jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -53,7 +54,7 @@ function openAccountMenu(): HTMLElement {
 }
 const bottomNav = () => screen.getByRole("navigation", { name: "하단 메뉴" });
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
-/** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(W2) 탭 칸만 고릅니다(P3 계획 §3-5-2). */
+/** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(실행 명세 §0 W2·§5) 탭 칸만 고릅니다. */
 const tabLinkLabels = (scope: HTMLElement) => [...scope.querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent ?? "");
 
 beforeEach(() => {
