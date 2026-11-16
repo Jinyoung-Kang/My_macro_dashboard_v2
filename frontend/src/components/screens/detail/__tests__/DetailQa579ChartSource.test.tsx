@@ -57,13 +57,13 @@ async function chartSourceOf(quote: unknown) {
 
 describe("종목 상세 — 시세 없이 그린 차트의 출처 (QA-579)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 두 경우 모두 캡션이 없고(시세 영역 안 '차트:' 글 0) 출처 패널 '차트' 줄이 '—값 없음'이었습니다.
-  it.fails("시세 읽기가 실패해도(500) 차트를 그렸으면 캡션과 '차트' 출처 줄에 Yahoo 심볼을 적는다", async () => {
+  it("시세 읽기가 실패해도(500) 차트를 그렸으면 캡션과 '차트' 출처 줄에 Yahoo 심볼을 적는다", async () => {
     const { hero, value } = await chartSourceOf(new Error("시세 서버가 응답하지 않습니다."));
     expect(within(hero).getByText("차트: Yahoo Finance AAPL 일별 종가")).toBeTruthy();
     expect(value.textContent).toBe("Yahoo Finance AAPL 일별 종가");
   });
 
-  it.fails("시세를 조회하지 않아도(available:false) 차트를 그렸으면 캡션과 '차트' 출처 줄에 Yahoo 심볼을 적는다", async () => {
+  it("시세를 조회하지 않아도(available:false) 차트를 그렸으면 캡션과 '차트' 출처 줄에 Yahoo 심볼을 적는다", async () => {
     const { hero, value } = await chartSourceOf({ available: false, message: "수집기에서 응답을 받지 못했습니다." });
     expect(within(hero).getByText("차트: Yahoo Finance AAPL 일별 종가")).toBeTruthy();
     expect(value.textContent).toBe("Yahoo Finance AAPL 일별 종가");
