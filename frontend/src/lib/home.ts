@@ -780,17 +780,19 @@ function issuesKpi(read: HomeReadState<StatusIssuesResponse>): HomeKpi {
   const state = kpiReadState(base, read);
   if (state) return state;
   const model = storeStatusModel(read.data);
-  // 상태 글: 오류·경고·누락이 있으면 그 톤(위험·주의)으로 경고·누락 수를, 수집기에 닿지 못하면 그 사실을 — 모두 0이고 닿으면 상태 글 없음.
-  const counted = model.tone !== "neutral";
+  // 상태 글은 그 글이 말하는 것의 톤으로만 — 경고·누락이 있으면 그 수, 수집기에 닿지 못하면 그 사실(둘 다 주의). 오류 수는 타일 값이 나르므로
+  // 상태 글에 넣지 않고 위험 톤도 쓰지 않습니다(오류만 있을 때 '경고 0건 · 누락 0개'에 위험 아이콘·'오류:' 머리말이 붙던 것). 모두 0이고 닿으면 상태 글 없음.
+  const warnings = finite(read.data?.counts?.warnings);
+  const missing = model.notice ? null : finite(read.data?.counts?.missingDatasets);
+  const flagged = (warnings !== null && warnings > 0) || (missing !== null && missing > 0);
   const parts = [
-    counted ? `경고 ${model.parts[1].text ?? EMPTY} · 누락 ${model.parts[2].text ?? EMPTY}` : null,
+    flagged ? `경고 ${model.parts[1].text ?? EMPTY} · 누락 ${model.parts[2].text ?? EMPTY}` : null,
     model.notice ? "수집기 연결 안 됨" : null,
   ].filter((part): part is string => part !== null);
-  const tone = model.tone !== "neutral" ? model.tone : "warn";
   return {
     ...base,
     value: finite(read.data?.counts?.errors),
-    ...(parts.length > 0 ? { status: { tone, text: parts.join(" · ") } } : {}),
+    ...(parts.length > 0 ? { status: { tone: "warn" as const, text: parts.join(" · ") } } : {}),
   };
 }
 

@@ -803,11 +803,14 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
     expect(unread({})?.value).toBeNull();
   });
 
-  it("수집 오류 — 오류 수(건), 오류가 있으면 위험·경고나 누락만 있으면 주의 상태 글(경고·누락 수), 모두 0이면 상태 글 없음", () => {
+  it("수집 오류 — 오류 수(건)는 타일 값, 경고나 누락이 있으면 주의 상태 글(경고·누락 수 — 글과 톤이 같은 것을 말함), 그 밖이면 상태 글 없음", () => {
     const errors = (response: ReturnType<typeof issues> | null) =>
       homeKpiItems(ready({ issues: { data: response, error: null } }), { owner: true, clock: CLOCK_ONLY }).find((item) => item.key === "errors");
-    expect(errors(issues(3, 19))).toMatchObject({ value: 3, unit: "건", status: { tone: "danger", text: "경고 19건 · 누락 0개" } });
+    expect(errors(issues(3, 19))).toMatchObject({ value: 3, unit: "건", status: { tone: "warn", text: "경고 19건 · 누락 0개" } });
     expect(errors(issues(0, 19))).toMatchObject({ value: 0, status: { tone: "warn", text: "경고 19건 · 누락 0개" } });
+    // 오류만 있으면 상태 글 없음 — '경고 0건 · 누락 0개'에 위험 톤을 붙이지 않습니다(오류 수는 값이 나름).
+    expect(errors(issues(1, 0))).toMatchObject({ value: 1 });
+    expect(errors(issues(1, 0))?.status).toBeUndefined();
     expect(errors(issues(0, 0))?.status).toBeUndefined();
     expect(errors(issues(0, 0))?.value).toBe(0);
     const missing = issues(0, 0);
@@ -819,14 +822,15 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
     expect(errors(uncounted)?.status).toBeUndefined();
   });
 
-  it("수집 오류 — 수집기에 닿지 못하면 주의 상태 글 '수집기 연결 안 됨'(누락은 모름), 오류가 있으면 위험 톤에 덧붙임", () => {
-    const down = (errors: number) => {
-      const response = { ...issues(errors, 0), collectorReachable: false };
+  it("수집 오류 — 수집기에 닿지 못하면 주의 상태 글 '수집기 연결 안 됨'(누락은 모름 — 0으로 적지 않음), 경고가 있으면 그 수 뒤에 덧붙임", () => {
+    const down = (errors: number, warnings = 0) => {
+      const response = { ...issues(errors, warnings), collectorReachable: false };
       response.counts = { ...response.counts, missingDatasets: null };
       return homeKpiItems(ready({ issues: { data: response, error: null } }), { owner: true, clock: CLOCK_ONLY }).find((item) => item.key === "errors");
     };
     expect(down(0)?.status).toEqual({ tone: "warn", text: "수집기 연결 안 됨" });
-    expect(down(2)?.status).toEqual({ tone: "danger", text: "경고 0건 · 누락 — · 수집기 연결 안 됨" });
+    expect(down(2)).toMatchObject({ value: 2, status: { tone: "warn", text: "수집기 연결 안 됨" } });
+    expect(down(2, 4)?.status).toEqual({ tone: "warn", text: "경고 4건 · 누락 — · 수집기 연결 안 됨" });
   });
 });
 

@@ -437,8 +437,8 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
     expect(strip.textContent).not.toMatch(/Claude|계좌|99,967/);
   });
 
-  it("수집 오류 — 오류가 있으면 위험 아이콘 + 글(경고·누락 수), 경고만 있으면 주의 아이콘 + 글 · 색만으로 전하지 않음", async () => {
-    for (const [response, tone, text] of [[issues(3, 19), "text-danger", "경고 19건 · 누락 0개"], [issues(0, 19), "text-warn", "경고 19건 · 누락 0개"]] as const) {
+  it("수집 오류 — 경고·누락이 있으면 주의 아이콘 + 글(경고·누락 수) · 색만으로 전하지 않음, 오류만 있으면 값뿐(위험 표지를 0 건수에 붙이지 않음)", async () => {
+    for (const [response, tone, text] of [[issues(3, 19), "text-warn", "경고 19건 · 누락 0개"], [issues(0, 19), "text-warn", "경고 19건 · 누락 0개"]] as const) {
       reads = { ...happyReads(), [ISSUES]: response };
       const { unmount } = renderHome(OWNER);
       await storeLine();
@@ -446,10 +446,16 @@ describe("홈 — 맨 위 KPI 띠(오늘 요약)", () => {
       const status = within(tile).getByText(text).closest(`.${tone}`) as HTMLElement;
       expect(status, tone).not.toBeNull();
       expect(Array.from(status.querySelectorAll("svg")).map((icon) => icon.getAttribute("aria-hidden"))).toEqual(["true"]);
-      // 아이콘 옆 읽어 주는 머리말(위험·주의)도 있습니다.
-      expect(status.querySelector(".sr-only")?.textContent).toBeTruthy();
+      // 아이콘 옆 읽어 주는 머리말(주의)도 있습니다.
+      expect(status.querySelector(".sr-only")?.textContent?.trim()).toBe("주의:");
       unmount();
     }
+    reads = { ...happyReads(), [ISSUES]: issues(1, 0) };
+    renderHome(OWNER);
+    await storeLine();
+    expect(kpi("수집 오류").textContent).toBe("수집 오류1건");
+    expect(kpi("수집 오류").querySelector("svg")).toBeNull();
+    expect(kpi("수집 오류").querySelector(".text-danger")).toBeNull();
   });
 
   it("읽는 중이면 타일마다 자리표시, 읽지 못한 경로의 타일은 '—' + '읽지 못함'(오류 글·다시 시도는 그 구역에만)", async () => {
