@@ -180,6 +180,24 @@ describe("로그아웃", () => {
     expect(box).not.toContain("min-w-0");
   });
 
+  // QA-547 후속(검토): 상단바 폭 배분을 고치며(빵부스러기 nav가 글 폭을 주장 — Shell.test 같은 번호) 로그아웃 실패 글도 내용의 하한까지만 줄게 합니다.
+  // 결과 낱말 '로그아웃하지 못했습니다'(11자, 약 130px)를 하한으로 두면 새로고침 실패 글과 함께 뜰 때 1280에서 상단바가 넘치므로, 새로고침 실패와 같은
+  // 짧은 결과 낱말 '로그아웃 실패 — 사유'로 쓰고 결과 낱말은 말줄임 밖에 둡니다(사유만 말줄임). 감싼 상자는 정한 38px가 아니라 그 내용의 하한까지 줍니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 글이 '로그아웃하지 못했습니다 — 사유' 한 덩이 말줄임, 감싼 상자가 'min-w-[38px] shrink-[100]'이었습니다.
+  it.fails("실패 글은 짧은 결과 낱말 먼저('로그아웃 실패 — 사유') — 결과 낱말은 말줄임 밖이고, 감싼 상자는 내용의 하한까지만 준다 (QA-547)", async () => {
+    api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
+    const trigger = renderMenu(MEMBER);
+    fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.getAttribute("title")).toBe("로그아웃 실패 — 서버에 닿지 못했습니다");
+    const head = within(alert).getByText("로그아웃 실패");
+    expect(head.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(head.closest(".truncate, .text-ellipsis")).toBeNull();
+    const box = (alert.parentElement as HTMLElement).className.split(/\s+/);
+    expect(box).toContain("shrink-100000");
+    expect(box).not.toContain("min-w-[38px]");
+  });
+
   it("성공하면 로그인 화면으로", async () => {
     api.auth.logout.mockResolvedValue(undefined);
     const menu = open(renderMenu(MEMBER));

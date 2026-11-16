@@ -619,6 +619,52 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     expect(quiet).not.toContain("min-w-0");
   });
 
+  // QA-547 후속(검토): 안내 글이 뜨면 빵부스러기의 대상(마지막) 칸이 가장 먼저 사라졌습니다 — nav가 lg:flex-1(flex-basis 0)이라 자기 글 폭을 주장하지
+  // 못하고 남는 폭만(하한 160px) 받았고, 그 안에서는 QA-548대로 마지막 칸이 모자란 폭을 모두 받아 'CIK 0001608046'이 8.6px('C')까지 줄었습니다(tip 8b7524ab
+  // 정적 하네스 — 1024~1366의 모든 안내 상태와 1440의 실패·store_only). 안내를 감싼 상자의 하한도 정한 38px(단추 + 사이)뿐이라 실패 글은 결과 낱말까지
+  // 말줄임됐습니다('새로고…'). 폭 배분을 하한 둘로 정합니다 — nav는 글 폭을 주장하고(lg:flex-auto, 하한 112px), 안내를 감싼 상자가 모자란 폭을 먼저
+  // 내주되(shrink-100000) 내용의 하한(실패: 아이콘 + 결과 낱말, 성공: 4rem) 아래로는 줄지 않고, 대상 칸은 글 칸 2.5rem(세 글자 이하면 제 폭) 아래로 줄지
+  // 않습니다(그다음 가운데 칸 — 첫 칸(메뉴 이름)은 줄지 않음). 로그아웃 실패 글이 함께 뜨면 새로고침 안내는 아이콘만 남깁니다(둘 다 하한을 지키면 1280에서 넘침).
+  // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'hidden min-w-0 lg:flex lg:min-w-40 lg:flex-1', 칸이 첫·가운데 'flex min-w-0 items-center gap-1'·마지막
+  // 'flex min-w-0 shrink-100000 items-center gap-1', 안내를 감싼 상자가 'min-w-[38px] shrink-[100]', 실패 글은 한 덩이 말줄임이었습니다.
+  it.fails("안내 글이 떠 있어도 대상 칸이 먼저 사라지지 않는다 — nav는 글 폭을 주장하고, 안내와 대상 칸은 내용의 하한까지만 준다 (QA-547)", () => {
+    const crumbClasses = () =>
+      within(screen.getByRole("navigation", { name: "현재 위치" })).getAllByRole("listitem").map((item) => item.className.split(/\s+/));
+    const status = () => within(screen.getByRole("banner")).getByRole("status");
+    signal.message = "새로고침 실패 — 백엔드 API(http://127.0.0.1:18082)에 연결하지 못했습니다";
+    signal.failed = true;
+    renderShell(LOCAL_OWNER, { path: "/institutions/0001608046" });
+    const nav = screen.getByRole("navigation", { name: "현재 위치" }).className.split(/\s+/);
+    expect(nav).toEqual(expect.arrayContaining(["lg:flex-auto", "lg:min-w-28"]));
+    expect(nav).not.toContain("lg:flex-1");
+    const [first, , last] = crumbClasses();
+    expect(first).toContain("shrink-0");
+    // 대상 칸 — 글 칸 하한 2.5rem(grid minmax), min-w-0이 없어 그 하한이 칸의 하한
+    expect(last).toEqual(expect.arrayContaining(["grid", "grid-cols-[auto_minmax(2.5rem,1fr)]", "shrink-100000"]));
+    expect(last).not.toContain("min-w-0");
+    // 안내를 감싼 상자 — 먼저 내주되 정한 38px가 아니라 내용의 하한까지(로그아웃 실패 글이 함께 뜨면 아이콘 12px + 사이 8px + 단추 30px)
+    const box = (status().parentElement as HTMLElement).className.split(/\s+/);
+    expect(box).toEqual(expect.arrayContaining(["shrink-100000", "in-[header:has([role=alert])]:min-w-[50px]"]));
+    expect(box).not.toContain("min-w-[38px]");
+    // 실패 글의 결과 낱말은 줄바꿈·말줄임 밖(사유만 말줄임)
+    const head = within(status()).getByText("새로고침 실패");
+    expect(head.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(head.closest(".truncate, .text-ellipsis")).toBeNull();
+    expect(status().textContent).toBe("주의: 새로고침 실패 — 백엔드 API(http://127.0.0.1:18082)에 연결하지 못했습니다");
+    cleanup();
+
+    // 성공 글 — 4rem 하한(grid minmax), 글은 안쪽 말줄임
+    signal.message = "수집이 끝나 화면을 갱신했습니다.";
+    signal.failed = false;
+    renderShell(LOCAL_OWNER, { path: "/institutions/0001608046" });
+    expect(status().className.split(/\s+/)).toEqual(expect.arrayContaining(["grid", "grid-cols-[minmax(4rem,1fr)]", "overflow-hidden"]));
+    cleanup();
+
+    // 세 글자 이하의 대상 칸('vix')은 하한 없이 제 폭 — 2.5rem을 비워 두느라 가운데 칸을 더 줄이지 않음
+    renderShell(MEMBER_PRO, { path: "/markets/i/vix" });
+    expect(crumbClasses()[2]).toEqual(expect.arrayContaining(["flex", "shrink-0"]));
+  });
+
   it("회원·데모 열람에게는 단추도 안내 영역도 없다", () => {
     for (const user of [MEMBER_PRO, DEMO]) {
       renderShell(user);
