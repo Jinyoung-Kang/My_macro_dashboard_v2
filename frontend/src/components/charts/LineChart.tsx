@@ -308,7 +308,9 @@ export function LineChart({
         />
         <Tooltip
           cursor={{ stroke: hero ? HERO_CURSOR : GUIDE, strokeWidth: 1 }}
-          // 터치를 뗀 뒤에는 커서·활성 점을 감춥니다(히어로 숫자가 지금 값으로 돌아가는 것과 맞춤). 그 밖에는 Recharts가 정합니다.
+          // 터치를 뗀 뒤에는 커서·툴팁을 감춥니다(히어로 숫자가 지금 값으로 돌아가는 것과 맞춤). 그 밖에는 Recharts가 정합니다. 활성 점은 이것으로
+          // 꺼지지 않습니다 — Recharts 3은 touchend에 활성 순번을 지우지 않고, 선(Line)의 활성 점은 Tooltip active가 아니라 그 순번을 봅니다. 그래서
+          // 아래 Line의 activeDot도 같은 조건에서 끕니다(QA-592 — 손을 뗀 뒤 선 위에 점이 남았음).
           active={onScrub && released ? false : undefined}
           // 값이 없는 계열도 툴팁에 "—"로 남깁니다 — 기본(filterNull)은 그 줄을 지웁니다.
           filterNull={false}
@@ -368,7 +370,8 @@ export function LineChart({
                   <circle key={`${entry.key}-${dot.index}`} cx={dot.cx} cy={dot.cy} r={ISOLATED_DOT_R} fill={colors[index]} stroke="none" />
                 ) : null
               }
-              activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
+              // 터치를 뗀 뒤에는 활성 점도 감춥니다 — 위 Tooltip active 주석(QA-592). 다음 touchStart·마우스 이동·키에서 released가 풀려 다시 보입니다.
+              activeDot={onScrub && released ? false : { r: 4, strokeWidth: 2, stroke: "var(--surface)" }}
             />
           );
         })}
