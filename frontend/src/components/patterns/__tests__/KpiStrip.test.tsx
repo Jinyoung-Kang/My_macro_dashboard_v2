@@ -524,7 +524,7 @@ describe("KpiStrip — 긴 값·출처의 줄바꿈", () => {
 // 날짜만 셉니다'(QA 스택 1440·1024). 공용 글 부품의 한글 줄바꿈 규약(QA-568 — 낱말 사이에서만, break-keep)을 KPI 띠 보조 글에도 둡니다. 공백 없는 긴
 // 토큰은 그대로 타일 안에서 꺾입니다(타일의 wrap-anywhere).
 describe("QA-637 KPI 띠 보조 글의 한글 줄바꿈", () => {
-  it.fails("보조 글은 낱말 사이에서만 줄을 바꾼다(break-keep) — 타일의 wrap-anywhere는 그대로", () => {
+  it("보조 글은 낱말 사이에서만 줄을 바꾼다(break-keep) — 타일의 wrap-anywhere는 그대로", () => {
     render(<KpiStrip label="요약" items={[{ key: "n", label: "표본 수", value: 496, unit: "개", note: "두 지표가 모두 값을 가진 날짜만 셉니다." }]} />);
     const note = within(tile("표본 수")).getByText("두 지표가 모두 값을 가진 날짜만 셉니다.");
     expect(note.className.split(/\s+/)).toContain("break-keep");

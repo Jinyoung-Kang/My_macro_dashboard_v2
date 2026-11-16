@@ -236,7 +236,8 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
           <ProvenanceBadge source={item.source} asOf={item.asOf} delayMin={item.delayMin} title={item.provenanceTitle} />
         </p>
       ) : null}
-      {note ? <p className="mt-1 text-xs leading-4 text-text-3">{note}</p> : null}
+      {/* 보조 글도 한글은 낱말 사이에서만 줄을 바꿉니다(공용 글 부품 규약 QA-568 — 타일의 wrap-anywhere는 공백 없는 긴 토큰만 꺾음, QA-637). */}
+      {note ? <p className="mt-1 break-keep text-xs leading-4 text-text-3">{note}</p> : null}
     </>
   );
 }
