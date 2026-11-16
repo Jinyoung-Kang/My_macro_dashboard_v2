@@ -164,7 +164,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
-  // 빈 검색어에 펼쳐진 최근 연 대상의 안내(넓은 화면에서 있을 때만 — 빈 검색어의 결과는 최근 연 대상뿐). 입력칸 설명으로 읽힙니다(QA-560).
+  // 빈 검색어에 펼쳐진 최근 연 대상의 안내(넓은 화면에서 있을 때만 — 빈 검색어의 결과는 최근 연 대상뿐). 입력칸 설명과 status가 함께 읽습니다(QA-560).
   const recentHint = trimmed === "" && flat.length > 0 ? recentSummary(flat.length) : null;
   // 고른 줄의 순번 — 고른 id가 지금 결과에 없으면(아직 고정 전 등) 맨 위.
   const activeIndex = flat.length === 0 ? -1 : Math.max(0, flat.findIndex((option) => optionView(option).id === activeId));
@@ -337,14 +337,17 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           />
         </div>
 
-        {/* 범주를 아직 다 읽지 못했으면(읽는 중·실패·저장본 없음) 그 사실도 함께 읽어 줍니다 — "결과 0건"만 말하면 없는 것으로 들립니다. */}
+        {/* 범주를 아직 다 읽지 못했으면(읽는 중·실패·저장본 없음) 그 사실도 함께 읽어 줍니다 — "결과 0건"만 말하면 없는 것으로 들립니다.
+            빈 검색어에 최근 연 대상이 펼쳐져 있으면 그 안내를 읽습니다 — 검색어를 쳤다가 지워 목록이 다시 펼쳐질 때 '결과 N건'에서 바뀌어 읽힙니다
+            (포커스가 그대로인 입력칸의 설명이 바뀌어도 다시 읽히지 않을 수 있음, QA-560 후속). */}
         <p role="status" className="sr-only">
-          {trimmed ? paletteSummary(groups, commands.length, notices) : ""}
+          {trimmed ? paletteSummary(groups, commands.length, notices) : (recentHint ?? "")}
         </p>
-        {/* 빈 검색어의 최근 연 대상 안내 — status(결과 수 전용)가 아니라 입력칸 설명으로 둡니다(QA-560). 이 목록은 팔레트를 여는 순간 이미 그려져
-            라이브 영역으로는 읽히지 않을 수 있고, 입력칸 설명은 열 때 포커스를 받으며 함께 읽힙니다. */}
+        {/* 같은 안내를 입력칸 설명으로도 둡니다(QA-560) — 팔레트를 여는 순간 이미 그려진 status는 라이브 영역으로 읽히지 않을 수 있고, 입력칸
+            설명은 열 때 포커스를 받으며 함께 읽힙니다. 문단은 hidden(aria-describedby는 숨긴 요소도 가리킴)이라 대화상자 내용으로 status와
+            같은 글이 한 번 더 읽히지 않습니다. */}
         {recentHint && (
-          <p id={recentHintId} className="sr-only">
+          <p id={recentHintId} hidden>
             {recentHint}
           </p>
         )}

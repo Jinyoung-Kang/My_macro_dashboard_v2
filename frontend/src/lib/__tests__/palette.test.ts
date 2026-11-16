@@ -134,7 +134,7 @@ describe("결과 행", () => {
   });
 });
 
-describe("recentSummary — 빈 검색어의 최근 연 대상 안내(입력칸 설명, QA-560)", () => {
+describe("recentSummary — 빈 검색어의 최근 연 대상 안내(입력칸 설명·status, QA-560)", () => {
   it("건수와 고르는 법", () => {
     expect(recentSummary(1)).toBe("최근 연 대상 1건 — ↑↓로 고르고 Enter로 갑니다");
     expect(recentSummary(RECENT_LIMIT)).toBe("최근 연 대상 8건 — ↑↓로 고르고 Enter로 갑니다");

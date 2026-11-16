@@ -545,8 +545,8 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     expect(options[0].querySelector("span[aria-hidden='true'].rounded-full")?.textContent).toBe("AAP");
     expect(options[0].getAttribute("aria-selected")).toBe("true");
     expect(input().getAttribute("aria-expanded")).toBe("true");
-    // 검색어가 비면 결과 수 안내는 읽지 않는다(지금처럼).
-    expect(screen.getByRole("status").textContent).toBe("");
+    // 검색어가 비면 결과 수 대신 최근 연 대상 안내를 읽는다(QA-560).
+    expect(screen.getByRole("status").textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
     // 저장소에는 대상의 이름·주소만.
     expect(JSON.parse(window.localStorage.getItem(RECENT_STORAGE_KEY) ?? "null").items.map((item: { href: string }) => item.href))
       .toEqual(["/s/us/AAPL", "/markets/i/sp500"]);
@@ -558,7 +558,7 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
   });
 
   // QA-560: 빈 검색어에 최근 연 대상이 펼쳐지면(aria-expanded true, 빈 Enter는 맨 위 대상으로 감) 화면 읽기 사용자도 목록이 있다는 것을 듣는다.
-  // role=status는 결과 수 전용 그대로이고(빈 검색어는 ""), 입력칸 설명(aria-describedby — 포커스를 받을 때 함께 읽힘)으로 알린다.
+  // 입력칸 설명(aria-describedby — 포커스를 받을 때 함께 읽힘)으로 알리고, 빈 검색어의 status도 같은 안내다(아래 QA-560 후속 — 설명 문단은 hidden).
   // 수정 전(재현 커밋에서는 it.fails)에는 status가 ""이고 입력칸에 aria-describedby가 없어(null) 아무 안내도 없었다.
   it("빈 검색어에 최근 연 대상이 있으면 입력칸 설명이 'N건 — ↑↓로 고르고 Enter' — 검색어를 치면 설명이 없다(QA-560)", async () => {
     openSearch();
@@ -578,8 +578,8 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     const hint = document.getElementById(describedBy ?? "");
     expect(hint?.textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
     expect(screen.getByRole("dialog", { name: "통합 검색" }).contains(hint)).toBe(true);
-    expect(hint?.className.split(/\s+/)).toContain("sr-only");
-    expect(screen.getByRole("status").textContent).toBe("");
+    expect(hint?.hidden).toBe(true);
+    expect(screen.getByRole("status").textContent).toBe("최근 연 대상 2건 — ↑↓로 고르고 Enter로 갑니다");
 
     type("10");
     expect(input().getAttribute("aria-describedby")).toBeNull();
@@ -589,7 +589,7 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
   // 입력칸 설명이 바뀌어도 다시 읽히지 않을 수 있어(화면 읽기 프로그램으로 재지 않은 추정), 빈 검색어의 status도 그 안내를 읽는다. 입력칸 설명
   // 문단은 hidden(aria-describedby는 숨긴 요소도 가리킴)이라 대화상자 내용으로 같은 글이 한 번 더 읽히지 않는다.
   // 수정 전(재현 커밋에서는 it.fails)에는 'aapl'을 쳤다가 지우면 status가 '결과 1건'에서 ""로 비었다(운영 빌드 1440에서 '10'을 지울 때도 같음).
-  it.fails("검색어를 쳤다가 지우면 status가 최근 연 대상 안내를 읽고, 입력칸 설명 문단은 숨긴 문단이다(QA-560)", async () => {
+  it("검색어를 쳤다가 지우면 status가 최근 연 대상 안내를 읽고, 입력칸 설명 문단은 숨긴 문단이다(QA-560)", async () => {
     window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
       { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
       { kind: "indicator", label: "S&P 500", sub: "주가지수 · ^GSPC", href: "/markets/i/sp500", dest: "지표 상세" },

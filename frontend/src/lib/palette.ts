@@ -200,8 +200,8 @@ export function serializeRecent(list: readonly RecentEntity[]): string {
 }
 
 /**
- * 화면 읽기용 최근 연 대상 안내(입력칸 설명 — aria-describedby). 빈 검색어에 최근 연 대상이 펼쳐지면 빈 Enter가 맨 위 대상으로 가므로 목록이
- * 있다는 것과 고르는 법을 알립니다(QA-560). 결과 수 안내(role=status)는 검색어가 있을 때만이라 따로 둡니다.
+ * 화면 읽기용 최근 연 대상 안내(입력칸 설명 aria-describedby와 빈 검색어의 role=status). 빈 검색어에 최근 연 대상이 펼쳐지면 빈 Enter가 맨 위
+ * 대상으로 가므로 목록이 있다는 것과 고르는 법을 알립니다(QA-560). 검색어가 있으면 status는 결과 수 안내(paletteSummary)입니다.
  */
 export function recentSummary(count: number): string {
   return `최근 연 대상 ${count}건 — ↑↓로 고르고 Enter로 갑니다`;
