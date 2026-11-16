@@ -227,6 +227,37 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
     expect(items.find((item) => item.label === "CUSIP")?.mono).toBe(true);
   });
 
+  // QA-587(종목 상세 보유 기관): 한 기관이 같은 회사의 다른 증권(A·C주)을 함께 들면 두 줄의 기관·공시 이름('ALPHABET INC')·보고일이 같고 비중·평가액만
+  // 달랐습니다 — 검사 칸·대화상자 제목이 기관 이름뿐이라 똑같았습니다. 기관이 겹치는 줄에만 ' · CUSIP …'(이름표)와 보조 글의 CUSIP.
+  // 수정 전(재현 커밋에서는 it.fails — 동적 import)에는 이 함수가 없었습니다(이름표가 기관 이름 그대로).
+  it.fails("보유 기관 줄 구분 — 기관이 겹치는 줄에만 이름표 ' · CUSIP …'와 보조 글 CUSIP, 하나뿐인 기관은 그대로 (QA-587)", async () => {
+    type HolderRow = GuruHoldersResponse["rows"][number];
+    const { holderKey, holderRowTells } = (await import("../detailEntity")) as unknown as {
+      holderKey: (row: Pick<HolderRow, "cik" | "cusip">) => string;
+      holderRowTells: (rows: readonly HolderRow[]) => { labels: Map<string, string>; cusipKeys: Set<string> };
+    };
+    const row = (institution: string, cik: string, name: string, cusip: string): HolderRow => ({
+      institution, cik, name, cusip, weight: 1, value: 1e9, reportDate: "2026-06-30",
+    });
+    const rows = [
+      row("합성 자산운용 (Synthetic Asset)", "0000000001", "SYNTHETIC ALPHA INC", "000000105"),
+      row("가상 투자자문", "0000000002", "SYNTHETIC ALPHA INC CLASS A", "000000105"),
+      row("합성 자산운용 (Synthetic Asset)", "0000000001", "SYNTHETIC ALPHA INC", "000000204"),
+      row("예시 연기금", "0000000003", "SYNTHETIC ALPHA INC CL A", "000000105"),
+      row("예시 연기금", "0000000003", "SYNTHETIC ALPHA INC CL C", "000000204"),
+    ];
+    const { labels, cusipKeys } = holderRowTells(rows);
+    expect(rows.map((entry) => labels.get(holderKey(entry)))).toEqual([
+      "합성 자산운용 (Synthetic Asset) · CUSIP 000000105",
+      "가상 투자자문",
+      "합성 자산운용 (Synthetic Asset) · CUSIP 000000204",
+      "예시 연기금 · CUSIP 000000105",
+      "예시 연기금 · CUSIP 000000204",
+    ]);
+    expect(rows.map((entry) => cusipKeys.has(holderKey(entry)))).toEqual([true, false, true, true, true]);
+    expect(holderKey(rows[0])).toBe("0000000001:000000105");
+  });
+
   it("값 글에 말줄임 표지('…')를 만들지 않는다 — 긴 업종·기관 소개도 받은 글 그대로", () => {
     const long = "Semiconductor Equipment & Materials Distribution and Global Logistics Services";
     expect(profileItems(quote({ profile: { sector: null, industry: long, country: null, website: null, employees: null, summary: null } }))).toEqual([
