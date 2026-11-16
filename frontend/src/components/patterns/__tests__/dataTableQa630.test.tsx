@@ -41,7 +41,7 @@ function PickTable() {
 }
 
 describe("QA-630 고른 행이 바뀌어도 첫 칸 단추의 포커스가 남는다", () => {
-  it.fails("첫 칸 단추로 그 행을 고르면 그 단추에 포커스가 남고, 앞에 고른 행의 단추도 같은 요소다", () => {
+  it("첫 칸 단추로 그 행을 고르면 그 단추에 포커스가 남고, 앞에 고른 행의 단추도 같은 요소다", () => {
     render(<PickTable />);
     const first = screen.getByRole("button", { name: "가" });
     const second = screen.getByRole("button", { name: "나" });

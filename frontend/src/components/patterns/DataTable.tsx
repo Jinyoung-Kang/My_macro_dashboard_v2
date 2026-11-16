@@ -268,13 +268,13 @@ export function DataTable<T>({
                       ) : (
                         content
                       );
-                      const shownContent = bar ? (
+                      // 막대가 있든 없든 같은 구조(막대 자리 + 내용)로 그립니다 — 고름이 오갈 때 구조가 바뀌면 첫 칸 내용(행 머리의 고르기 단추·줄 단추)이
+                      // 새로 만들어져 그 단추의 포커스가 body로 빠졌습니다(QA-630). 막대가 없으면 그 자리는 null이라 DOM은 예전과 같습니다.
+                      const shownContent = (
                         <>
-                          <span aria-hidden="true" className={SELECTED_BAR} />
+                          {bar ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
                           {value}
                         </>
-                      ) : (
-                        value
                       );
                       // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
                       return column.rowHeader ? (
