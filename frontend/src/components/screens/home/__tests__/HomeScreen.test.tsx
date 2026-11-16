@@ -142,6 +142,9 @@ function marketRow(name: string): HTMLElement {
 /** 국면 구역 안의 글 — 맨 위 KPI 띠의 국면 타일에도 같은 판정 라벨이 있어 구역으로 좁힙니다. */
 const inRegime = () => within(region("오늘의 국면"));
 
+/** 국면 패널의 신호 줄(속성 목록의 이름·값 한 줄 — dt를 감싼 줄). */
+const signalRows = (panel: HTMLElement) => Array.from(panel.querySelectorAll("dl > div")) as HTMLElement[];
+
 describe("홈 — 값 있음(운영자)", () => {
   it("라우트 /는 홈 화면을 그린다(옛 /macro 리디렉션 대신)", async () => {
     reads = happyReads();
@@ -150,7 +153,7 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(screen.getByRole("heading", { level: 1, name: "홈" })).toBeTruthy();
   });
 
-  it("오늘의 국면 — 백엔드 라벨·판정 문장·기준일(뜻 포함)·신호 네 타일·자세히 링크, '3일 확정'은 없다", async () => {
+  it("오늘의 국면 — 백엔드 라벨·판정 문장·기준일(뜻 포함)·신호 넷(속성 목록)·자세히 링크, '3일 확정'은 없다", async () => {
     reads = happyReads();
     renderHome(OWNER);
     const label = await inRegime().findByText("확장 (Expansion)");
@@ -163,13 +166,14 @@ describe("홈 — 값 있음(운영자)", () => {
     // 모든 숫자에 출처(PRINCIPLES) — 국면 판정의 입력 출처와 백엔드 고지(임계치는 참고치).
     expect(within(hero).getByText(SOURCES.regime)).toBeTruthy();
     expect(within(hero).getByText("임계치는 역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다.")).toBeTruthy();
-    const tiles = within(hero).getAllByRole("group");
-    expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual([
+    // 신호 넷은 속성 목록(이름 — 값+단위, 상태·해석 글) — 백엔드 순서와 상관없이 금리차·NFCI·하이일드·순유동성 자리.
+    const signals = signalRows(hero);
+    expect(signals.map((row) => row.querySelector("dt")?.textContent)).toEqual([
       "장단기 금리차 10Y-3M", "시카고 연준 금융상황지수", "하이일드 스프레드", "연준 순유동성 4주 변화",
     ]);
-    expect(tiles[0].textContent).toContain("+0.78%p");
-    expect(tiles[0].textContent).toContain("정상 · 장기 금리가 단기보다 높습니다(정상 구조).");
-    expect(tiles[3].textContent).toContain("+0.031조 달러");
+    expect(signals[0].querySelector("dd")?.textContent).toContain("+0.78%p");
+    expect(signals[0].querySelector("dd")?.textContent).toContain("정상 · 장기 금리가 단기보다 높습니다(정상 구조).");
+    expect(signals[3].querySelector("dd")?.textContent).toContain("+0.031조 달러");
     expect(within(hero).getByRole("link", { name: "국면 판정 자세히" }).getAttribute("href")).toBe("/regime");
     expect(screen.queryByText(/3일 확정/)).toBeNull();
   });
@@ -436,8 +440,8 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(screen.queryByText("0건")).toBeNull();
   });
 
-  it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 히어로 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
-    // 예전에는 불러오는 중·오류를 홈 카드 틀(다른 안쪽 여백)로 그려, 값이 오는 순간 제목·본문이 lg에서 16px 튀었습니다(검토 지적).
+  it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
+    // 예전에는 불러오는 중·오류를 다른 틀(다른 안쪽 여백)로 그려, 값이 오는 순간 제목·본문이 lg에서 16px 튀었습니다(검토 지적).
     renderHome(OWNER);
     const loading = [region("오늘의 국면").className, region(PAPER_REGION).className];
     cleanup();
@@ -465,10 +469,12 @@ describe("홈 — 불러오는 중·값 없음", () => {
     const hero = unknown.closest("section") as HTMLElement;
     expect(within(hero).getByText(/입력 지표가 빠져 국면을 판정하지 않습니다/)).toBeTruthy();
     expect(within(hero).getByText(/받지 못한 입력: 하이일드 스프레드 \(HY OAS\)/)).toBeTruthy();
-    const hyOas = within(hero).getByRole("group", { name: "하이일드 스프레드" });
+    const hyOas = signalRows(hero).find((row) => row.querySelector("dt")?.textContent === "하이일드 스프레드") as HTMLElement;
     expect(within(hyOas).getByText("—")).toBeTruthy();
+    expect(within(hyOas).getByText("값 없음")).toBeTruthy();
     expect(within(hyOas).getByText("받지 못함")).toBeTruthy();
     expect(hyOas.textContent).not.toContain("%p");
+    expect(signalRows(hero)).toHaveLength(4);
     // 기준일 모름 — "—"(읽어 주기 "값 없음")
     expect(within(hero).getByText(/^기준일/).textContent).toBe("기준일 —값 없음 · 네 입력 계열의 마지막 날짜 중 가장 이른 날");
 

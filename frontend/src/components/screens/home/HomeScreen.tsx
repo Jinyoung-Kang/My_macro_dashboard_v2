@@ -4,12 +4,12 @@ import { AlertsSummary } from "./AlertsSummary";
 import { HomeKpis } from "./HomeKpis";
 import { MarketRows } from "./MarketRows";
 import { PaperHero } from "./PaperHero";
-import { RegimeHero } from "./RegimeHero";
+import { RegimePanel } from "./RegimePanel";
 import { StoreStatusLine } from "./StoreStatusLine";
 import { useHomeData } from "./useHomeData";
 
 /**
- * 홈(/) — 첫 화면(설계서 §7). 맨 위 KPI 띠(오늘 요약), 그 아래: 오늘의 국면(왼쪽) · 모의매매(오른쪽, 운영자만), 아래 전체 폭: 시장 행 → 알림 요약 →
+ * 홈(/) — 첫 화면(설계서 §7). 맨 위 KPI 띠(오늘 요약), 그 아래: 오늘의 국면 패널(왼쪽) · 모의매매(오른쪽, 운영자만), 아래 전체 폭: 시장 행 → 알림 요약 →
  * 데이터 저장소 상태 한 줄(운영자만). lg(1024px) 미만은 한 칸으로 쌓습니다.
  *
  * 읽기는 화면 훅(useHomeData)이 경로마다 한 번 하고 구역 부품은 그 결과를 받습니다(모의매매만 히어로가 시장을 고른 뒤 따로 읽음).
@@ -23,9 +23,9 @@ export default function HomeScreen() {
     <div className="flex min-w-0 flex-col gap-6 lg:gap-8">
       <h1 className="sr-only">홈</h1>
       <HomeKpis data={data} />
-      {/* 회원은 모의매매 히어로가 없으므로 국면 히어로가 한 줄을 다 씁니다(반 칸 빈자리를 남기지 않음). */}
+      {/* 회원은 모의매매 히어로가 없으므로 국면 패널이 한 줄을 다 씁니다(반 칸 빈자리를 남기지 않음). */}
       <div className={`grid min-w-0 gap-6 ${owner ? "lg:grid-cols-2" : ""}`}>
-        <RegimeHero read={data.regime} />
+        <RegimePanel read={data.regime} />
         {owner ? <PaperHero /> : null}
       </div>
       <MarketRows read={data.macro} clock={data.clock} />
