@@ -133,6 +133,21 @@ describe("섹터 작업대 배치(P5a)", () => {
     expect(within(tiles[1]).queryByText(/Yahoo Finance/)).toBeNull();
   });
 
+  it("처음 읽는 동안 KPI 띠 자리에 여섯 자리표시 타일이 있고(값이 온 뒤 아래가 밀리지 않게), 읽지 못하면 띠가 없다", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = render(<SectorPage />);
+
+    const strip = screen.getByRole("region", { name: "S&P 500 (SPY) 기간별 수익률" });
+    expect(within(strip).getAllByRole("status")).toHaveLength(6);
+    expect(within(strip).getByRole("status", { name: "S&P 500 (SPY) 1W 불러오는 중" })).toBeTruthy();
+    unmount();
+
+    api.apiGetShared.mockImplementation(() => Promise.reject(new Error("요청 실패 (HTTP 503)")));
+    render(<SectorPage />);
+    await screen.findByText(/요청 실패 \(HTTP 503\)/);
+    expect(screen.queryByRole("region", { name: /기간별 수익률/ })).toBeNull();
+  });
+
   it("막대 차트 이름이 '섹터 {기간} {수익률|초과성과}'이고 표시 기준을 바꾸면 따라 바뀐다", async () => {
     const { container } = render(<SectorPage />);
     await screen.findAllByText("정보기술");

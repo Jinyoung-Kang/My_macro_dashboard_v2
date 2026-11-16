@@ -33,7 +33,7 @@ import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { stockHref } from "@/lib/detail";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { liveKey, livePriceTitle, liveShown } from "@/lib/livePrices";
-import { SECTOR_PERIODS, sectorKpis, sectorRowTitle } from "@/lib/sectorScreen";
+import { SECTOR_PERIODS, sectorKpis, sectorKpisPending, sectorRowTitle } from "@/lib/sectorScreen";
 import type { LivePrice, SectorResponse, SectorRow } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -78,7 +78,8 @@ export default function SectorPage() {
   // 검사 대화상자 — 두 표의 종목을 함께 찾습니다(티커가 키). 자산군에는 α가 없습니다(S&P 500 대비 지표라 뜻이 없음).
   const allRows = [...sectors, ...assets];
   const sectorTickers = new Set(sectors.map((row) => row.ticker));
-  const kpis = sectorKpis(data, SOURCES.yahooEtf);
+  // KPI 띠 — 처음 읽는 동안은 자리표시 타일(값이 온 뒤 띠가 끼어들어 아래가 밀리지 않게), 저장본이 없거나 읽지 못하면 두지 않습니다.
+  const kpis = data ? (data.available ? sectorKpis(data, SOURCES.yahooEtf) : []) : loading && !error ? sectorKpisPending() : [];
 
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -109,10 +110,8 @@ export default function SectorPage() {
         </Callout>
       )}
 
-      {/* 벤치마크 기간별 수익률 — α(초과성과)를 읽는 기준. 응답이 오기 전에는 두지 않습니다(아래 막대 패널이 읽는 중을 보임). */}
-      {data?.available && kpis.length > 0 ? (
-        <KpiStrip label={`S&P 500 (${data.benchmark ?? "SPY"}) 기간별 수익률`} items={kpis} />
-      ) : null}
+      {/* 벤치마크 기간별 수익률 — α(초과성과)를 읽는 기준. */}
+      {kpis.length > 0 ? <KpiStrip label={`S&P 500 (${data?.benchmark ?? "SPY"}) 기간별 수익률`} items={kpis} /> : null}
 
       <Panel
         title="섹터 모멘텀" source={SOURCES.yahooEtf}
@@ -218,6 +217,7 @@ function ReturnsTable({
       key: "name",
       header: "이름",
       rowHeader: true,
+      className: "break-keep",
       // 이름은 검사 대화상자를 여는 줄 단추(중립 잉크 — 데이터 칸이라 강조 파랑이 아님, lg 미만 44px), 아래 줄은 티커와 이전 값 표시.
       cell: (row) => (
         <span className="flex min-w-0 flex-col items-start">

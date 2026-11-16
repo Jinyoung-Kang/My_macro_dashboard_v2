@@ -17,6 +17,9 @@ export type SectorKpi = {
   value: number | null;
   format: (value: number) => string;
   source?: string | null;
+  /** 읽는 중 — 값 자리에 자리표시(KpiStrip pending), `pendingLines`는 값이 온 뒤의 출처 줄 자리. */
+  pending?: boolean;
+  pendingLines?: number;
 };
 
 /** 부호 있는 수익률 글(소수 둘째 자리 + '%') — 양수 '+', 음수 −(U+2212), 0은 부호 없이. 단위를 따로 띄우지 않고 숫자에 붙입니다(변화 칩의 변화율과 같은 꼴). */
@@ -54,4 +57,19 @@ export function sectorKpis(
 export function sectorRowTitle(rows: readonly SectorRow[], ticker: string): string | null {
   const row = rows.find((entry) => entry.ticker === ticker);
   return row ? `${row.name} (${row.ticker})` : null;
+}
+
+/**
+ * 처음 읽는 동안의 KPI 띠 — 기본 여섯 기간의 자리표시 타일(이름은 벤치마크 기본값 SPY). 값이 온 뒤 띠가 새로 끼어들어 아래 막대·표 패널이 밀리지 않게
+ * 같은 자리를 미리 잡습니다. 첫 타일은 출처 줄(두 줄 안팎) 자리를 더 잡습니다.
+ */
+export function sectorKpisPending(): SectorKpi[] {
+  return SECTOR_PERIODS.map((period, index) => ({
+    key: period,
+    label: `S&P 500 (SPY) ${period}`,
+    value: null,
+    format: signedPercentText,
+    pending: true,
+    ...(index === 0 ? { pendingLines: 2 } : {}),
+  }));
 }
