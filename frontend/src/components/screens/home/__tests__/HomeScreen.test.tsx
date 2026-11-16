@@ -548,6 +548,16 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(market !== null && market >= 300 && market <= 360, `시장 ${market}`).toBe(true);
   });
 
+  // QA-598(시장 패널): 변화 칩을 칸 안에서 꺾지 않게 한 뒤(QA-595 — 넓어진 '변화' 칸 몫만큼 '기준' 칸이 좁아져 넉 줄 모두 출처 두 줄) 시장 패널의 읽은 뒤
+  // 높이는 446px(루프백 빌드 1280·1440·1920)인데, 자리표시 330px로는 패널이 417px라 값이 오면 29px 자랐습니다.
+  // 수정 전(재현 커밋에서는 it.fails) 시장 자리표시 높이는 330px였습니다.
+  it.fails("시장 패널 자리표시는 QA-595 뒤 읽은 뒤 높이(패널 446px)에 맞춘 높이 — 355~365px (QA-598)", () => {
+    renderHome(OWNER);
+    const block = within(region("시장")).getByRole("status").querySelector<HTMLElement>("[style]");
+    const height = block ? Number.parseFloat(block.style.height) : null;
+    expect(height !== null && height >= 355 && height <= 365, `시장 ${height}`).toBe(true);
+  });
+
   it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
     // 예전에는 불러오는 중·오류를 다른 틀(다른 안쪽 여백)로 그려, 값이 오는 순간 제목·본문이 lg에서 16px 튀었습니다(검토 지적).
     renderHome(OWNER);

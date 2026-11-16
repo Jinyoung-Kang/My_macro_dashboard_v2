@@ -836,6 +836,18 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
     expect([...failed, ...loaded].map(lines).every((count) => count === 0)).toBe(true);
   });
 
+  // QA-598(마지막 타일): 수집 오류 타일은 일곱 타일의 마지막이라 두 칸(390)·세 칸(sm)에서 마지막 줄에 혼자 남아 그 줄 높이를 정하는데, 읽는 중 64px에서
+  // 읽은 뒤 92px(값 + 상태 글 한 줄)로 자랐습니다(루프백 빌드 390 — 같은 줄에 더 높은 시장 타일이 없음).
+  // 수정 전(재현 커밋에서는 it.fails) 수집 오류 타일의 자리 줄은 0이었습니다.
+  it.fails("읽는 중 수집 오류 타일은 자리 줄 1(상태 글 한 줄 자리) — 국면·알림 타일은 0 그대로 (QA-598)", () => {
+    const pending = homeKpiItems(
+      ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
+      { owner: true, clock: CLOCK_ONLY },
+    );
+    const lines = (key: string) => pending.find((item) => item.key === key)?.pendingLines ?? 0;
+    expect([lines("errors"), lines("regime"), lines("unread")]).toEqual([1, 0, 0]);
+  });
+
   it("읽지 않은 알림 — 'N건', 모르면 '—'(0으로 적지 않음)", () => {
     const unread = (data: { unread?: number | null } | null) =>
       homeKpiItems(ready({ unread: { data, error: null } }), { owner: false, clock: CLOCK_ONLY }).find((item) => item.key === "unread");

@@ -277,6 +277,23 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(tile("읽지 않은 알림").querySelectorAll(".bg-control-fill")).toHaveLength(1);
   });
 
+  // QA-598(한 줄 배치): 읽는 중 시장 타일은 200px인데 한 줄 배치의 칸은 좁아 읽은 뒤 타일이 가장 낮아도 208px(1440·1920 홈, 1280은 259px)이라 값이
+  // 오면 아래 패널 격자가 8px 이상 밀렸습니다(루프백 빌드 /api/* 1.5초 지연 — 1440 layout-shift 합 0.057 가운데 0.055).
+  // 수정 전(재현 커밋에서는 it.fails) 자리 줄 블록 클래스는 배치와 상관없이 'mt-2.5 flex flex-col gap-3.5'였습니다.
+  it.fails("한 줄 배치(ONE_ROW_GRID와 같은 띠 폭 경계)에서는 읽는 중 자리 줄 위 간격이 18px, 그 밖은 10px (QA-598)", () => {
+    const items = (n: number): KpiItem[] =>
+      Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: null, pending: true, pendingLines: 5 }));
+    const { container, rerender } = render(<KpiStrip label="요약" items={items(7)} />);
+    const block = () => (container.querySelector('li div[aria-hidden="true"].flex-col') as HTMLElement).className.split(/\s+/);
+    for (const n of [6, 7, 8]) {
+      rerender(<KpiStrip label="요약" items={items(n)} />);
+      expect(block(), `${n}`).toEqual(["mt-2.5", "flex", "flex-col", "gap-3.5", `xl:@min-[${n * 134 + (n - 1) * 8}px]:mt-4.5`]);
+    }
+    // 8개를 넘으면 한 줄 배치가 없으므로 간격도 그대로입니다.
+    rerender(<KpiStrip label="요약" items={items(9)} />);
+    expect(block()).toEqual(["mt-2.5", "flex", "flex-col", "gap-3.5"]);
+  });
+
   it("상태 글(오류·주의)은 아이콘 + 읽어 주는 머리말 + 글 — 색만으로 뜻을 전하지 않는다", () => {
     render(
       <KpiStrip
