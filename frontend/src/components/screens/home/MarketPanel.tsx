@@ -32,9 +32,10 @@ const COLUMNS: readonly Column<HomeRow>[] = [
     header: "변화",
     align: "right",
     // 직전 값이 없는 카드(delta·pct 모두 null — deltaStr "N/A")는 칩 대신 "—" — 0.00%를 만들지 않습니다. 변화량 자릿수는 수집기 deltaStr을 따릅니다.
+    // 칩은 칸 안에서 꺾지 않습니다(nowrap — 변화량과 변화율이 두 줄로 갈리던 것, QA-595).
     cell: (row) =>
       row.change === null && row.changePct === null ? null : (
-        <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" />
+        <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" nowrap />
       ),
   },
   {

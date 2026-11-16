@@ -1003,7 +1003,7 @@ const chipIn = (cell: HTMLElement, direction: "상승" | "하락") => within(cel
 // 시장 표의 변화량과 변화율이 두 줄로 갈렸습니다(QA 스택 390~1920 모든 폭, 표가 넘치지 않는 768에서도).
 // 수정 전(재현 커밋에서는 it.fails) 세 칩 모두 'inline-flex flex-wrap …'이었습니다.
 describe("홈 — 표 칸 안의 변화 칩 (QA-595)", () => {
-  it.fails("계좌 손익 표의 출발 대비·최근 변화와 시장 표의 변화 칩은 칸 안에서 꺾이지 않는다(flex-nowrap)", async () => {
+  it("계좌 손익 표의 출발 대비·최근 변화와 시장 표의 변화 칩은 칸 안에서 꺾이지 않는다(flex-nowrap)", async () => {
     const overview = paperOverview();
     overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
     overview.books![1] = {

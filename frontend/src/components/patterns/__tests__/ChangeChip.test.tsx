@@ -5,7 +5,6 @@
  * 부호 기호는 −(U+2212)·+, 방향은 화살표(읽어 주기에서 뺌)와 말("상승"/"하락"/"변화 없음")로.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
-import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ChangeChip } from "../ChangeChip";
@@ -118,12 +117,10 @@ describe("ChangeChip", () => {
 // 시장 표의 변화량과 변화율이 두 줄로 갈렸습니다(390~1920 모든 폭). 칸의 whitespace-nowrap은 flex 항목 사이의 줄바꿈을 막지 못합니다.
 // 수정 전(재현 커밋에서는 it.fails) 칩 바깥 상자는 'inline-flex flex-wrap items-baseline gap-x-1 tabular-nums …'이고 화살표의 부모가 그 상자였습니다.
 describe("ChangeChip — 줄바꿈 (QA-595)", () => {
-  it.fails("nowrap — 표 칸 안의 칩은 flex-nowrap(변화량과 변화율도 한 줄), 주지 않으면 flex-wrap 그대로", () => {
-    // 재현 커밋에는 아직 없는 prop이라 타입 단언으로 넘깁니다.
-    const tableProps = { changePct: -0.48, size: "sm", nowrap: true } as ComponentProps<typeof ChangeChip>;
+  it("nowrap — 표 칸 안의 칩은 flex-nowrap(변화량과 변화율도 한 줄), 주지 않으면 flex-wrap 그대로", () => {
     const { container } = render(
       <>
-        <ChangeChip {...tableProps} />
+        <ChangeChip changePct={-0.48} size="sm" nowrap />
         <ChangeChip changePct={-0.48} size="sm" />
       </>,
     );
@@ -133,7 +130,7 @@ describe("ChangeChip — 줄바꿈 (QA-595)", () => {
     expect(plain.className.split(/\s+/)).toContain("flex-wrap");
   });
 
-  it.fails("화살표는 첫 값과 줄 바꿈 없는 묶음 — 변화량이 있으면 변화량, 없으면 변화율과 함께(화살표만 윗줄에 홀로 남지 않음)", () => {
+  it("화살표는 첫 값과 줄 바꿈 없는 묶음 — 변화량이 있으면 변화량, 없으면 변화율과 함께(화살표만 윗줄에 홀로 남지 않음)", () => {
     render(<ChangeChip change={-0.42} changePct={-0.42} size="sm" />);
     const group = screen.getByText("▼").parentElement as HTMLElement;
     expect(group.className.split(/\s+/)).toContain("whitespace-nowrap");

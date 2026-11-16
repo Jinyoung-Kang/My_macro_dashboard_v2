@@ -116,7 +116,10 @@ export function PaperPnlPanel() {
   );
 }
 
-/** 계좌 손익 표 — 열 다섯(계좌·순자산·출발 대비·최근 변화·기준). 모르는 칸은 null을 돌려 표가 "—"를 그립니다(0을 만들지 않음). */
+/**
+ * 계좌 손익 표 — 열 다섯(계좌·순자산·출발 대비·최근 변화·기준). 모르는 칸은 null을 돌려 표가 "—"를 그립니다(0을 만들지 않음).
+ * 칸 안의 변화 칩은 꺾지 않습니다(`nowrap` — 표 자동 배치가 칸에 숫자 하나 폭만 주면 '▼'가 숫자와 다른 줄에 홀로 남았음, QA-595).
+ */
 function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolean }) {
   // 계좌 색은 모의매매 개요의 순자산 곡선과 같은 표(코드 → 색, 모르는 계좌는 자리대로 남는 색).
   const colors = new Map(rows.map((row, index) => [row.id, bookColor(row.id, index)] as const));
@@ -158,7 +161,7 @@ function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolea
       key: "return",
       header: "출발 대비",
       align: "right",
-      cell: (row) => (row.returnPct === null ? null : <ChangeChip changePct={row.returnPct} size="sm" />),
+      cell: (row) => (row.returnPct === null ? null : <ChangeChip changePct={row.returnPct} size="sm" nowrap />),
     },
     {
       key: "day",
@@ -169,7 +172,7 @@ function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolea
           <>
             <span className="inline-flex items-baseline gap-x-1.5">
               <span className="text-xs text-text-2">{row.day.label}</span>
-              <ChangeChip changePct={row.day.pct} size="sm" />
+              <ChangeChip changePct={row.day.pct} size="sm" nowrap />
             </span>
             {row.day.base ? <span className="block text-xs leading-4 text-text-3">{row.day.base}</span> : null}
           </>
