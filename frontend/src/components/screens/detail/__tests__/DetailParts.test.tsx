@@ -24,7 +24,7 @@ vi.mock("@/components/charts", () => ({
   },
 }));
 
-import { LinkListPanel, PriceChartPanel, propertyItems } from "../DetailParts";
+import { LinkListPanel, PriceChartPanel, PriceHero, propertyItems } from "../DetailParts";
 
 let reads: Record<string, unknown> = {};
 
@@ -122,6 +122,28 @@ describe("가격 차트 패널", () => {
     expect(tickerCalls()).toEqual([tnx("1y")]);
     fireEvent.keyDown(document.activeElement!, { key: "Enter" });
     await waitFor(() => expect(tickerCalls()).toEqual([tnx("1y"), tnx("1mo")]));
+    expect(screen.getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  // 종목 팝업 창(StockQuickView — 모의·실제 계좌·ISA 표의 종목 링크)의 시세 히어로도 같은 시계열을 기간마다 부르므로 같은 수동 활성입니다
+  // (QA 스택 /paper/us/holdings AMZN 팝업에서 1년 → ← 세 번이 6mo·1mo·5y 세 요청을 냈음 — 개편 전 PriceHero부터 있던 자동 활성).
+  it("종목 팝업 창의 시세 히어로도 기간 탭을 화살표로 지나가면 부르지 않고, Enter로 고른 기간만 부른다", async () => {
+    const amzn = (period: string) => endpoints.macro.ticker("AMZN", period);
+    reads[amzn("1y")] = { available: true, points: [{ date: "2026-11-14", close: 230.5 }] };
+    render(<PriceHero label="Amazon.com, Inc." valueText="230.50" unit="USD" change={null} changePct={null} symbol="AMZN" valueDigits={2} />);
+    await screen.findByRole("img", { name: "Amazon.com, Inc. 가격 차트" });
+    const tickerCalls = () => api.apiGetShared.mock.calls.map(([path]) => path as string).filter((path) => path.startsWith("/api/macro/ticker"));
+    expect(tickerCalls()).toEqual([amzn("1y")]);
+    const year = screen.getByRole("tab", { name: "1년" });
+    year.focus();
+    fireEvent.keyDown(year, { key: "ArrowLeft" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "1개월" }));
+    await act(async () => {});
+    expect(tickerCalls()).toEqual([amzn("1y")]);
+    expect(screen.getByRole("tab", { name: "1년" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    await waitFor(() => expect(tickerCalls()).toEqual([amzn("1y"), amzn("1mo")]));
     expect(screen.getByRole("tab", { name: "1개월" }).getAttribute("aria-selected")).toBe("true");
   });
 

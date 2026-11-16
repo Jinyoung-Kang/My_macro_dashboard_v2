@@ -59,7 +59,7 @@ export function ExternalAnchor({ href, children, className = TARGET_LINK }: { hr
 }
 
 /**
- * 시세 히어로 — 큰 값·전일 대비 칩·배지(meta)와 Yahoo 시계열 차트(GET /api/macro/ticker, 기간 1개월·6개월·1년·5년, 기본 1년).
+ * 시세 히어로 — 큰 값·전일 대비 칩·배지(meta)와 Yahoo 시계열 차트(GET /api/macro/ticker, 기간 1개월·6개월·1년·5년, 기본 1년 — 기간 탭은 수동 활성).
  * 심볼이 없으면(스크래핑 카드 등) 차트 대신 이유 한 줄. 차트를 문지르면 큰 값이 그 날 종가로 바뀝니다(기간 첫 값 대비 변화).
  * 지금은 종목 팝업 창(StockQuickView)만 씁니다 — 상세 화면은 대상 머리(EntityHeader)와 PriceChartPanel(P4). 팝업 창을 바꾸는 P6까지 그대로 둡니다.
  */
@@ -130,7 +130,8 @@ export function PriceHero({
       }
       meta={meta}
       placeholder={placeholder}
-      tabs={symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} /> : undefined}
+      // 기간마다 시계열을 서버에서 읽으므로 수동 활성(PriceChartPanel과 같음) — 화살표로 지나가는 기간마다 Yahoo를 부르지 않게.
+      tabs={symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} activation="manual" /> : undefined}
       tabsPlacement="below"
       scrub={symbol && scrubbable ? (point ? { ...point, changeDigits: valueDigits } : null) : undefined}
     >

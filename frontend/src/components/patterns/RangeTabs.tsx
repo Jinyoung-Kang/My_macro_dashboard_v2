@@ -11,7 +11,7 @@ import { allowedRangeKey, rangeKeyAfter, visibleRanges } from "@/lib/patternRows
  * - `allowed`(저장 구간 안의 키)가 있으면 그 안의 탭만 그립니다. 밖의 탭은 렌더링하지 않습니다(설계서 §6).
  * - `value`가 그려지는 탭이 아니면 아무것도 선택하지 않습니다 — 부르는 쪽이 `allowedRangeKey`(lib/patternRows)로 상태를 맞춥니다.
  * - role="tablist" + 탭마다 aria-selected. 키보드: ←·→ 이웃 탭(끝에서 돎), Home·End. 기본(`activation="auto"`)은 포커스를 옮기며 바로 고릅니다
- *   (구간 자르기는 즉시 끝나 서버를 부르지 않으므로 자동 선택이 낫습니다 — 모의매매 개요의 곡선 자르기). 기간마다 서버를 부르는 곳(상세 가격 차트 —
+ *   (구간 자르기는 즉시 끝나 서버를 부르지 않으므로 자동 선택이 낫습니다 — 모의매매 개요의 곡선 자르기). 기간마다 서버를 부르는 곳(상세 가격 차트·종목 팝업 창 시세 히어로 —
  *   기간마다 GET /api/macro/ticker → Yahoo)은 `activation="manual"`: 화살표·Home·End는 포커스만 옮기고 누르기·Enter·Space로 고릅니다(공용 Tabs와
  *   같은 규칙 — 지나가는 기간마다 부르지 않게). Tab 키로는 고른 탭(없으면 첫 탭) 하나에만 들어옵니다.
  * - 그릴 탭이 하나도 없으면 아무것도 그리지 않습니다.
