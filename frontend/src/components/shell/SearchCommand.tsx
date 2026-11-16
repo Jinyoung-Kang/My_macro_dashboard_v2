@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { Dialog } from "@/components/ui/Dialog";
 import { LockIcon } from "@/components/ui/icons";
@@ -88,7 +88,7 @@ const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
  * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 색인 범주 뒤
  *   '종목 찾기' 묶음에 붙입니다(묶음 순서는 색인 범주 → 종목 찾기 → 명령). 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞
  *   검색어의 결과가 남지 않게). 이 묶음은 늦게 와서 명령 묶음 앞에 끼므로 고른 줄은 순번이 아니라 결과 id로 듭니다 — 고른 줄이 그대로 남고
- *   순번(aria-activedescendant)만 따라갑니다(QA-557).
+ *   순번(aria-activedescendant)만 따라가며, 밀려서 목록 상자 밖으로 나간 고른 줄은 보이게 스크롤합니다(QA-557).
  * - 결과 맨 아래(목록 밖)의 '‘검색어’ 정보 검색' 링크 — 같은 검색어로 정보 검색 화면(/search?q=, ADR 0041)으로 갑니다. 결과가 없어도 있고,
  *   결과 수·'맞는 결과가 없습니다'에는 세지 않습니다.
  * - 명령 팔레트로 넓힌 범주(최근 연 대상·명령)와 빈 검색어 안내 끝의 도움말 문장은 넓은 화면(lg 이상 — 팔레트를 열 때 셈)에만 있습니다(작업대 실행
@@ -174,6 +174,17 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   useEffect(() => {
     if (activeId === null && firstId !== null) setActiveId(firstId);
   }, [activeId, firstId]);
+  // 고른 줄은 같은데 순번만 바뀌면(늦게 온 묶음이 앞에 낌) 그 줄이 목록 상자의 보이는 영역 밖으로 밀릴 수 있어 보이게 스크롤합니다 — 그대로
+  // 두면 보이지 않는 줄을 Enter가 실행했습니다(QA-557 후속). 고른 줄이 바뀐 경우는 건드리지 않습니다(↑↓는 moveTo가 스크롤하고, 마우스로
+  // 가리켜 고른 줄은 이미 보이는 줄이라 목록이 튀지 않게). 그린 뒤·칠하기 전에 옮겨 밀린 그림이 한 번도 보이지 않게 합니다.
+  const shownActive = useRef<{ id: string | null; index: number }>({ id: null, index: -1 });
+  useLayoutEffect(() => {
+    const before = shownActive.current;
+    shownActive.current = { id: activeId, index: activeIndex };
+    if (open && activeId !== null && activeIndex >= 0 && before.id === activeId && before.index !== activeIndex) {
+      document.getElementById(`${baseId}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, activeId, activeIndex, baseId]);
 
   const notices = [
     sourceNotice("지표", overview),

@@ -766,7 +766,7 @@ describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", 
   // 그때 그 줄을 block 'nearest'로 보이게 스크롤한다. 마우스로 가리켜 고른 줄(순번은 그대로, 고른 줄만 바뀜)은 스크롤하지 않는다.
   // 수정 전(재현 커밋에서는 it.fails)에는 스크롤을 ↑↓(moveTo)에서만 맞춰 응답 뒤에는 scrollIntoView를 부르지 않았고(scrolled = []), 운영 빌드
   // 1440·1024에서 'he'+↑에 종목 찾기 2건이 오면 목록 181~629 밖의 고른 줄(657~697)이 보이지 않은 채 Enter가 그 줄을 실행했다.
-  it.fails("늦게 온 묶음에 밀린 고른 줄은 보이게 스크롤하고, 마우스로 가리켜 고른 줄은 스크롤하지 않는다(QA-557)", async () => {
+  it("늦게 온 묶음에 밀린 고른 줄은 보이게 스크롤하고, 마우스로 가리켜 고른 줄은 스크롤하지 않는다(QA-557)", async () => {
     reads[endpoints.detail.symbols("ㄷㅇ")] = LATE_SYMBOLS;
     const scrolled: Element[] = [];
     const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
