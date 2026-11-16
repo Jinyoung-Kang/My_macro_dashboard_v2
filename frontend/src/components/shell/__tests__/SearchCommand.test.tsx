@@ -460,7 +460,7 @@ describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, �
   // QA-558: lg~xl(1024~1279px)의 여는 단추는 176px이라 글 칸이 78px뿐이어서 전체 글 '종목·기관·지표·메뉴 검색'(158px)이 '종목·기관…'으로 잘렸다.
   // 그 폭에서는 앞부분을 숨겨 '검색'만 보이고(lg 미만·xl 이상은 전체 글 — 앱 이름의 hidden xl:inline과 같은 꼴), 접근 이름(aria-label)은 그대로다.
   // 수정 전(재현 커밋에서는 it.fails)에는 글 span 하나에 전체 글만 있어 lg:hidden·xl:inline 안쪽 span이 없었다.
-  it.fails("넓은 화면 lg~xl의 여는 단추는 '검색'만 보이고 xl부터 전체 글 — 접근 이름·폭은 그대로(QA-558)", () => {
+  it("넓은 화면 lg~xl의 여는 단추는 '검색'만 보이고 xl부터 전체 글 — 접근 이름·폭은 그대로(QA-558)", () => {
     render(<SearchCommand user={MEMBER} />);
     const label = trigger().querySelector("span.truncate") as HTMLElement;
     const lead = label.querySelector("span");

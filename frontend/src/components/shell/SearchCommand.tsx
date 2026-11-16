@@ -275,7 +275,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
           // 투명 1px 테두리 — 고대비(forced-colors) 모드에서 바탕색이 지워져도 입력칸 모양의 경계가 시스템 색 테두리로 남습니다(단추와 같음, 명세 D9).
           // 모서리는 4px(입력칸·단추와 같음 — 작업대 실행 명세 §3-8, 2026-11-16 알약 정리).
           // 좁은 화면(lg 미만)은 상단바 위 줄의 남는 폭을 다 쓰는 44px. 넓은 화면은 48px 상단바의 조작 높이 30px(§3-7)에 폭을 고정합니다(176px,
-          // xl 256px) — 남는 폭은 빵부스러기가 씁니다(§5).
+          // xl 256px) — 남는 폭은 빵부스러기가 씁니다(§5). 176px(lg~xl)에서는 글 칸이 78px뿐이라 앞부분을 숨겨 '검색'만 보입니다(QA-558 —
+          // 앱 이름의 hidden xl:inline과 같은 꼴, 접근 이름은 aria-label 전체 글 그대로).
           <button
             type="button"
             aria-label="종목·기관·지표·메뉴 검색"
@@ -283,7 +284,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-control border border-transparent bg-surface-2 px-4 text-left text-sm text-text-3 hover:text-text-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:h-[30px] lg:w-44 lg:flex-none lg:gap-2 lg:px-2.5 xl:w-64"
           >
             <SearchIcon />
-            <span className="min-w-0 flex-1 truncate">종목·기관·지표·메뉴 검색</span>
+            <span className="min-w-0 flex-1 truncate">
+              <span className="lg:hidden xl:inline">종목·기관·지표·메뉴 </span>검색
+            </span>
             <kbd aria-hidden="true" className="hidden shrink-0 rounded-sm border border-border px-1.5 font-sans text-xs text-text-3 sm:inline">
               {isMac ? "⌘K" : "Ctrl K"}
             </kbd>
