@@ -24,7 +24,7 @@ import {
   parseNavWidth,
 } from "../navWidth";
 
-const key = (name: string, extra: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {}) => ({
+const key = (name: string, extra: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; repeat?: boolean } = {}) => ({
   key: name,
   shiftKey: false,
   ...extra,
@@ -157,6 +157,17 @@ describe("navKeyLayout — 손잡이 키", () => {
     expect(navKeyLayout(key("End"), shut(260))).toEqual(open(320));
     expect(navKeyLayout(key("ArrowLeft"), shut(260))).toEqual(shut(260));
     expect(navKeyLayout(key("Home"), shut(260))).toEqual(shut(260));
+  });
+
+  it("누르고 있는 키의 반복은 접고 펴지 않는다(받기는 하되 배치 그대로) — 화살표·Home·End의 반복은 폭을 이어서 바꿈", () => {
+    expect(navKeyLayout(key("Enter", { repeat: true }), open(260))).toEqual(open(260));
+    expect(navKeyLayout(key("Enter", { repeat: true }), shut(260))).toEqual(shut(260));
+    expect(navKeyLayout(key("ArrowRight", { repeat: true }), shut(260))).toEqual(shut(260));
+    expect(navKeyLayout(key("End", { repeat: true }), shut(260))).toEqual(shut(260));
+    expect(navKeyLayout(key("ArrowRight", { repeat: true }), open(220))).toEqual(open(236));
+    expect(navKeyLayout(key("ArrowLeft", { repeat: true, shiftKey: true }), open(260))).toEqual(open(196));
+    expect(navKeyLayout(key("Home", { repeat: true }), open(260))).toEqual(open(180));
+    expect(navKeyLayout(key("ArrowUp", { repeat: true }), open(260))).toBeNull();
   });
 
   it("받지 않는 키는 null — 위·아래 화살표, 글자, Ctrl·⌘·Alt와 함께 누른 키", () => {

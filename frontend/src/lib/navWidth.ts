@@ -79,12 +79,21 @@ export function navDragLayout(pointerWidth: number, restoreWidth: number, state?
 /**
  * 손잡이 키 — 받는 키면 다음 배치(바뀌지 않을 수도 있음 — 이미 끝에서 같은 쪽으로 누름), 받지 않는 키면 null(그때는 기본 동작을 막지 않음).
  * Ctrl·⌘·Alt와 함께 누른 키는 받지 않습니다(브라우저·운영체제 단축키). Shift는 화살표의 큰 걸음입니다.
+ * 누르고 있는 키의 반복(`repeat`)은 접고 펴지 않습니다 — 받기는 하되 배치 그대로(처음 한 번만 — `[` 단축키와 같음). Enter를 누르고 있으면 반복마다 접고
+ * 펴기를 번갈아 셸 전체가 깜빡였습니다. 화살표의 반복은 폭을 이어서 바꿉니다(접힌 동안 →를 누르고 있으면 처음에 펴고 그다음부터 넓힘).
  */
 export function navKeyLayout(
-  event: { key: string; shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean },
+  event: { key: string; shiftKey: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; repeat?: boolean },
   layout: NavLayout,
 ): NavLayout | null {
   if (event.ctrlKey || event.metaKey || event.altKey) return null;
+  const next = keyLayout(event, layout);
+  if (next && event.repeat && next.collapsed !== layout.collapsed) return { collapsed: layout.collapsed, width: clampNavWidth(layout.width) };
+  return next;
+}
+
+/** navKeyLayout의 키별 배치(반복·보조 키를 거르기 전). */
+function keyLayout(event: { key: string; shiftKey: boolean }, layout: NavLayout): NavLayout | null {
   const width = clampNavWidth(layout.width);
   const step = event.shiftKey ? NAV_KEY_STEP_LARGE : NAV_KEY_STEP;
   if (layout.collapsed) {

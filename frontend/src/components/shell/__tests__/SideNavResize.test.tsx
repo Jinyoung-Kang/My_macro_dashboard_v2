@@ -4,7 +4,8 @@
  *
  * - 접근성: role=separator '왼쪽 메뉴 폭', 세로, 주 메뉴를 가리킴, 값 180~320·지금 폭·px 읽는 글(접혔으면 하한과 '접힘…'), Tab 순서는 접기 단추 다음, 포커스 링,
  *   글 없음(12px 하한과 무관), 고대비에서 가리킨·잡은 동안 Highlight 윤곽선.
- * - 키보드: ←·→ 16px(Shift 64)·Home·End는 바로 저장, Enter는 접기·펼치기(기억한 폭으로), 받은 키는 기본 동작을 막고 받지 않는 키는 그대로.
+ * - 키보드: ←·→ 16px(Shift 64)·Home·End는 바로 저장, Enter는 접기·펼치기(기억한 폭으로 — 누르고 있는 반복은 받지 않음), 받은 키는 기본 동작을 막고
+ *   받지 않는 키는 그대로.
  * - 두 번 누르기: 접기·펼치기. 끌고 바로 한 번 더 눌러 생긴 두 번 누르기는 받지 않음.
  * - 끌기(jsdom 포인터 이벤트 — setPointerCapture는 jsdom에 없어 대역): 3px 문턱, 한 프레임에 한 번(requestAnimationFrame 대역), 끄는 동안은 저장하지 않고
  *   놓을 때 한 번, 140px 아래로 끌면 레일(끌기 전 폭 기억), 레일을 끌어내면 끈 폭으로 펼침, 같은 끌기에서 되돌아가는 문턱은 16px 여유(손떨림),
@@ -136,6 +137,24 @@ describe("키보드", () => {
     expect(value().now).toBe("320");
     expect(window.localStorage.getItem("shell.navWidth")).toBe("320");
     expect(hasMotion()).toBe(false);
+  });
+
+  it("누르고 있는 Enter의 반복은 접고 펴지 않는다(기본 동작은 막음) — 누르고 있는 →는 폭을 이어서 넓힘", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    expect(fireEvent.keyDown(handle(), { key: "Enter" })).toBe(false);
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    for (let index = 0; index < 4; index += 1) {
+      expect(fireEvent.keyDown(handle(), { key: "Enter", repeat: true })).toBe(false);
+      expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    }
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("1");
+
+    // 접힌 동안 누르고 있는 →: 처음 한 번에 펴고 반복마다 16px
+    fireEvent.keyDown(handle(), { key: "ArrowRight" });
+    fireEvent.keyDown(handle(), { key: "ArrowRight", repeat: true });
+    fireEvent.keyDown(handle(), { key: "ArrowRight", repeat: true });
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
+    expect(value().now).toBe("252");
   });
 
   it("받지 않는 키(↑·↓·Ctrl+←)는 기본 동작을 막지 않고 폭도 그대로", () => {
