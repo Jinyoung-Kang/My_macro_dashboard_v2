@@ -7,7 +7,8 @@
  *  - 추정: isEstimated 카드에 '추정' 배지 / 오래됨: isStale 카드·가격 없는 보유 계좌·늦은 관측치에 '이전 값' + 사유
  *  - 회원(운영자 아님): /api/paper/*·/api/status*·/api/info/sources를 부르지 않고 그 구역·칸이 없다
  *  - 맨 위 KPI 띠(오늘 요약): 타일마다 대상 화면 링크, 값·'—' + 사유·자리표시·변화 칩·수집 오류 아이콘 + 글, 모의매매 값 없음
- *  - 배치: KPI 띠 + 2×2 패널(운영자 [국면][계좌] / [시장][알림·끊긴 출처], 회원 [국면][알림] / [시장 두 칸]), 패널 안 누름 자리 44px,
+ *  - 배치: KPI 띠 + 2×2 패널(운영자 [국면][계좌] / [시장][알림·끊긴 출처], 회원 [국면][알림] / [시장 두 칸]),
+ *    시장 묶음 탭 줄은 두 줄 허용(2026-11-16 결정 1), 패널 안 누름 자리 44px,
  *    ▲▼는 모두 12px·em 크기 없음·읽어 주는 방향 글
  *
  * 보는 시각은 2026-10-26(월) 16:51 KST로 고정합니다(장 상태가 시각에 따라 바뀜) — 외환·CME 개장, 뉴욕 증시 마감, KRX 선물 휴식.
@@ -995,6 +996,22 @@ describe("홈 — 배치(KPI 띠 + 2×2 패널)", () => {
     const grid = region("오늘의 국면").parentElement as HTMLElement;
     expect(grid.className.split(" ")).toEqual(expect.arrayContaining(["grid", "min-w-0", "gap-3", "lg:grid-cols-2", "lg:gap-4"]));
     expect(Array.from(grid.children).map((child) => child.className.includes("lg:col-span-2"))).toEqual([false, false, false, false]);
+  });
+
+  // 2026-11-16 결정 1(가): 묶음 탭 다섯(617px)이 좁은 화면(390 — 줄 332px)에서 들어가지 않아 넷째·다섯째가 가려졌습니다. 홈 시장 탭 줄만 두 줄을 허용합니다.
+  // 바꾸기 전에는 줄이 한 줄 + 가로 스크롤(overflow-x-auto)이라 실패합니다.
+  it("시장 묶음 탭 줄은 두 줄 허용(flex-wrap — 가로 스크롤 상자 아님) — 탭마다 제 줄 바닥선, 고른 탭은 2px 강조 파랑", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    const list = await within(region("시장")).findByRole("tablist", { name: "시장 묶음" });
+    expect(list.className.split(/\s+/)).toEqual(expect.arrayContaining(["flex", "flex-wrap"]));
+    expect(list.className.split(/\s+/)).not.toContain("overflow-x-auto");
+    const tabs = within(list).getAllByRole("tab");
+    const selected = tabs.find((node) => node.getAttribute("aria-selected") === "true") as HTMLElement;
+    expect(selected.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-b-2", "border-accent"]));
+    for (const node of tabs.filter((node) => node !== selected)) {
+      expect(node.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-b", "border-border"]));
+    }
   });
 
   it("회원 — [국면][알림] / [시장 — 두 칸을 다 씀], 운영자 전용 구역은 없다", async () => {

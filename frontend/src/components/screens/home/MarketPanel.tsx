@@ -98,6 +98,7 @@ export function MarketPanel({
   } else {
     body = (
       <>
+        {/* 묶음 탭 다섯(617px)이 좁은 칸(390 — 줄 332px, 반 폭 패널 328~566px)에서 들어가지 않아 줄을 바꿉니다(wrap — 가려진 탭 없음, 2026-11-16 사용자 결정 1). */}
         <Tabs
           label="시장 묶음"
           items={groups.map((group) => ({ key: group.id, label: group.title }))}
@@ -105,6 +106,7 @@ export function MarketPanel({
           onChange={setPicked}
           idPrefix={idPrefix}
           panelId={panelId}
+          wrap
         />
         <div role="tabpanel" id={panelId} aria-labelledby={tabId(idPrefix, current.id)} className="mt-3 min-w-0">
           <DataTable columns={COLUMNS} rows={current.rows} rowKey={(row) => row.id} caption={`${current.title} 지표`} scrollHint="overflow" />

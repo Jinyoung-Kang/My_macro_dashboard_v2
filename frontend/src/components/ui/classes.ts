@@ -178,9 +178,19 @@ const UNDERLINE_SIZE: Record<UnderlineTabSize, string> = {
  * 아래 두 번째 탭 줄(모의매매 탭)용으로 한 단계 작게 둬 두 줄의 위계를 가릅니다.
  * 나머지 탭의 투명 밑줄(글이 위아래로 흔들리지 않게 둔 자리)은 고대비(forced-colors) 모드에서 시스템 글자색으로 칠해져 모든 탭에 밑줄이
  * 생기므로, 그 모드에서는 지웁니다 — 지금 탭만 밑줄과 굵은 글이 남습니다(명세 D9, headless 크롬 forced-colors 흉내로 확인).
+ * `wrap`은 줄을 바꿔도 되는 탭 줄(공용 Tabs의 `wrap` — 홈 시장 패널 하나)의 탭입니다: 탭마다 제 줄의 바닥선을 지녀, 줄이 둘이어도 고른 탭의 밑줄이
+ * 제 줄 선 위에 놓입니다(아래 설명). 넓이·높이·글 크기는 같습니다.
  */
-export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "md"): string {
-  return `inline-flex shrink-0 items-center gap-1 whitespace-nowrap border-b-2 px-3 ${UNDERLINE_SIZE[size]} ${SELECT_MOTION} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+export function underlineTabClasses(active: boolean, size: UnderlineTabSize = "md", wrap = false): string {
+  const shape = `inline-flex shrink-0 items-center gap-1 whitespace-nowrap px-3 ${UNDERLINE_SIZE[size]} ${SELECT_MOTION} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus`;
+  if (wrap) {
+    // 두 줄 허용(공용 Tabs `wrap`): 탭마다 자기 줄의 바닥선을 지닙니다 — 나머지 탭은 1px 경계선(+ 1px 아래 여백으로 지금 탭의 2px 밑줄과 같은 높이 —
+    // 글이 위아래로 흔들리지 않음), 지금 탭은 그 자리에 강조 파랑 2px. 탭 줄 바닥선(감싼 tablist의 1px 아래 경계)과는 -mb-px로 겹쳐, 마지막 줄의 선이
+    // 두 겹(2px)이 되지 않고 다음 줄이 앞 줄 바닥선에 붙습니다. 그래서 첫 줄에서 고른 탭의 밑줄이 둘째 줄 위에 떠 보이지 않고 제 줄의 선 위에 놓입니다.
+    // 고대비(forced-colors)에서는 두 선이 모두 시스템 글자색으로 남아(나머지 1px · 지금 2px + 굵은 글) 줄마다 바닥선이 그대로 보입니다.
+    return `${shape} -mb-px ${active ? "border-b-2 border-accent font-semibold text-text" : "border-b border-border pb-px font-normal text-text-2 hover:text-text"}`;
+  }
+  return `${shape} border-b-2 ${
     active ? "border-accent font-semibold text-text" : "border-transparent font-normal text-text-2 hover:text-text forced-colors:border-b-0"
   }`;
 }

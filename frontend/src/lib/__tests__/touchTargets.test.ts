@@ -38,7 +38,9 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   filterChipClasses: () => BOTH.map((pressed): [string, string] => [String(pressed), filterChipClasses(pressed)]),
   TEXT_TARGET: () => [["", TEXT_TARGET]],
   underlineTabClasses: () =>
-    BOTH.flatMap((active) => (["md", "sm"] as const).map((size): [string, string] => [`${active}/${size}`, underlineTabClasses(active, size)])),
+    BOTH.flatMap((active) =>
+      (["md", "sm"] as const).flatMap((size) =>
+        BOTH.map((wrap): [string, string] => [`${active}/${size}/${wrap ? "wrap" : "row"}`, underlineTabClasses(active, size, wrap)]))),
   toggleClasses: () =>
     BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
   LINK_CLASSES: () => [["", LINK_CLASSES]],

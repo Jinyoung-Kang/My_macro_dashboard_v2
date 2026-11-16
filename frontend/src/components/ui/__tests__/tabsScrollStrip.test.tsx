@@ -60,11 +60,11 @@ function stubFocusVisible(by: "keyboard" | "pointer"): void {
   });
 }
 
-function Harness({ initial = "fx" }: { initial?: Key }) {
+function Harness({ initial = "fx", wrap = false }: { initial?: Key; wrap?: boolean }) {
   const [value, setValue] = useState<Key>(initial);
   return (
     <>
-      <Tabs label="시장 묶음" items={ITEMS} value={value} onChange={setValue} idPrefix="mk" panelId="mk-panel" />
+      <Tabs label="시장 묶음" items={ITEMS} value={value} onChange={setValue} idPrefix="mk" panelId="mk-panel" wrap={wrap} />
       <div role="tabpanel" id="mk-panel" aria-labelledby={tabId("mk", value)}>
         패널
       </div>
@@ -129,5 +129,29 @@ describe("공용 탭 줄 — 넘칠 때 고른 탭·키보드로 옮긴 탭을 �
     act(() => tab("통화 및 환율").focus());
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(strip().className.split(/\s+/)).toEqual(expect.arrayContaining(["relative", "flex", "overflow-x-auto"]));
+  });
+});
+
+describe("공용 탭 줄 — 두 줄 허용(wrap, 결정 1 가)", () => {
+  // 바꾸기 전에는 wrap이 없어 줄이 늘 한 줄 + 가로 스크롤이었습니다.
+  it("wrap이면 줄을 바꾸고(flex-wrap) 가로 스크롤 상자가 아니다 — 탭마다 제 줄의 바닥선(나머지 1px · 고른 탭 2px 강조 파랑)", () => {
+    render(<Harness wrap initial="rates" />);
+    const list = strip().className.split(/\s+/);
+    expect(list).toEqual(expect.arrayContaining(["relative", "flex", "flex-wrap", "border-b", "border-border"]));
+    expect(list).not.toContain("overflow-x-auto");
+    const selected = tab("미국 국채 수익률").className.split(/\s+/);
+    const idle = tab("통화 및 환율").className.split(/\s+/);
+    expect(selected).toEqual(expect.arrayContaining(["border-b-2", "border-accent", "font-semibold", "-mb-px"]));
+    expect(idle).toEqual(expect.arrayContaining(["border-b", "border-border", "pb-px", "-mb-px"]));
+    expect(idle).not.toContain("border-transparent");
+  });
+
+  it("wrap이 없으면 지금 그대로 — 한 줄 + 가로 스크롤, 나머지 탭은 투명 밑줄", () => {
+    render(<Harness />);
+    const list = strip().className.split(/\s+/);
+    expect(list).toContain("overflow-x-auto");
+    expect(list).not.toContain("flex-wrap");
+    expect(tab("미국 국채 수익률").className.split(/\s+/)).toEqual(expect.arrayContaining(["border-b-2", "border-transparent"]));
+    expect(tab("미국 국채 수익률").className.split(/\s+/)).not.toContain("-mb-px");
   });
 });

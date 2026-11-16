@@ -149,6 +149,22 @@ describe("밑줄 탭 underlineTabClasses", () => {
     expect(tokens(underlineTabClasses(false))).toContain("forced-colors:border-b-0");
     expect(tokens(underlineTabClasses(true))).not.toContain("forced-colors:border-b-0");
   });
+
+  // 2026-11-16 사용자 결정 1(가) — 두 줄 허용 탭 줄(홈 시장 묶음). 바꾸기 전에는 wrap 인자가 없어 줄을 바꾸면 첫 줄에서 고른 탭의 2px 밑줄이
+  // 둘째 줄 위에 떠 보였습니다(첫 줄 아래에 선이 없음 — P4 QA 스택 확인 390 측정).
+  it("wrap — 탭마다 제 줄의 바닥선: 나머지 1px 경계선 + 1px 아래 여백(지금 탭 2px 밑줄과 같은 높이), 지금 탭은 강조 파랑 2px, 둘 다 탭 줄 바닥선과 -mb-px로 겹침", () => {
+    const active = tokens(underlineTabClasses(true, "sm", true));
+    const idle = tokens(underlineTabClasses(false, "sm", true));
+    expect(active).toEqual(expect.arrayContaining(["border-b-2", "border-accent", "font-semibold", "text-text", "-mb-px", "min-h-11", "lg:min-h-[30px]", "whitespace-nowrap"]));
+    expect(idle).toEqual(expect.arrayContaining(["border-b", "border-border", "pb-px", "-mb-px", "text-text-2", "min-h-11"]));
+    expect(idle).not.toContain("border-transparent");
+    expect(idle).not.toContain("font-semibold");
+    // 고대비에서도 나머지 탭의 1px 선을 남깁니다(줄마다 바닥선 — 지우면 첫 줄 고른 탭의 밑줄이 다시 둘째 줄 위에 뜸).
+    expect(idle).not.toContain("forced-colors:border-b-0");
+    // 한 줄 탭(기본)은 그대로입니다.
+    expect(tokens(underlineTabClasses(false, "sm"))).toEqual(tokens(underlineTabClasses(false, "sm", false)));
+    expect(tokens(underlineTabClasses(false, "sm"))).not.toContain("-mb-px");
+  });
 });
 
 describe("고른 행 막대 SELECTED_BAR", () => {
