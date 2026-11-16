@@ -159,6 +159,25 @@ describe("로그아웃", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  // QA-547: 로그아웃 실패 글(상단바 새로고침 안내와 같은 폭 160·288px)을 감싼 상자가 'min-w-0 shrink'라 글 폭을 그대로 차지해, 떠 있는 동안 빵부스러기 자리가
+  // 1440에서 412 → 116px, 새로고침 안내와 함께 뜨면 1280에서 0px까지 줄었습니다(QA 스택 확인 — Shell.test의 같은 번호 시험이 빵부스러기 하한을 봄).
+  // 실패 글이 떠 있는 동안 상자가 모자란 폭을 먼저 내주되(shrink-[100]) 여는 단추 30px + 사이 8px 아래로는 줄지 않게(min-w-[38px]), 글이 없으면 단추 폭 그대로(shrink-0).
+  // 수정 전(재현 커밋에서는 it.fails)에는 글이 있든 없든 'min-w-0 shrink'였습니다.
+  it.fails("실패 글이 떠 있는 동안 감싼 상자는 모자란 폭을 먼저 내주되 단추 30px + 사이 8px 아래로는 줄지 않고, 글이 없으면 단추 폭 그대로 (QA-547)", async () => {
+    api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
+    const trigger = renderMenu(MEMBER);
+    const quiet = (trigger.parentElement as HTMLElement).className.split(/\s+/);
+    expect(quiet).toContain("shrink-0");
+    expect(quiet).not.toContain("min-w-[38px]");
+    expect(quiet).not.toContain("min-w-0");
+
+    fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
+    const alert = await screen.findByRole("alert");
+    const box = (alert.parentElement as HTMLElement).className.split(/\s+/);
+    expect(box).toEqual(expect.arrayContaining(["min-w-[38px]", "shrink-[100]"]));
+    expect(box).not.toContain("min-w-0");
+  });
+
   it("성공하면 로그인 화면으로", async () => {
     api.auth.logout.mockResolvedValue(undefined);
     const menu = open(renderMenu(MEMBER));

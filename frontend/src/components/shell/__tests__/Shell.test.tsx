@@ -496,6 +496,31 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["truncate", "max-w-40"]));
   });
 
+  // QA-547: 상단바 새로고침 안내(role=status — 다음 새로고침까지, 화면을 옮겨도 남음)가 빵부스러기와 폭을 다퉜습니다. 빵부스러기 nav가 lg:flex-1·min-w-0
+  // (flex-basis 0, 하한 0)이라 다른 항목이 자기 폭을 먼저 가져간 뒤 남는 폭만 받았고, 안내를 감싼 상자(min-w-0 shrink)는 글 폭(최대 160·288px)을 그대로 차지했습니다.
+  // QA 스택(1024·1280) — 성공 안내가 뜨면 nav 267.7 → 99.7px(1024, 칸마다 말줄임), 1280(xl — 앱 이름이 길어지고 안내 상한 288px)에서는 막힌 POST 실패 글·
+  // store_only 글로 nav 0px이 되어 칸 링크가 0폭인 채 Tab 순서에 남았습니다. 로그아웃 실패 글(계정 메뉴 왼쪽, 같은 폭)도 같은 꼴입니다.
+  // 빵부스러기에 하한(lg:min-w-40 — 160px)을 두고, 안내를 감싼 상자가 모자란 폭을 먼저 내주되(shrink-[100]) 아이콘 단추 30px + 사이 8px 아래로는 줄지 않게
+  // (min-w-[38px]) 합니다. 안내가 없으면 상자는 단추 폭 그대로입니다(shrink-0 — 늘 38px 하한을 두면 단추가 8px씩 왼쪽으로 밀림, QA 스택 1024·1440에서 잼).
+  // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'hidden min-w-0 lg:flex lg:flex-1'(하한 없음), 감싼 상자가 안내와 상관없이 'min-w-0 shrink'였습니다.
+  it.fails("안내 글이 떠 있어도 빵부스러기는 하한 160px — 모자란 폭은 안내를 감싼 상자가 먼저 내주고(단추 30px + 사이 8px까지), 안내가 없으면 상자는 단추 폭 그대로 (QA-547)", () => {
+    const refreshBox = () => (screen.getByRole("button", { name: "데이터 수동 새로고침" }).closest("header > div") as HTMLElement).className.split(/\s+/);
+    signal.message = "수집이 끝나 화면을 갱신했습니다.";
+    renderShell(LOCAL_OWNER, { path: "/krx" });
+    expect(screen.getByRole("navigation", { name: "현재 위치" }).className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-1", "lg:min-w-40"]));
+    const withNotice = refreshBox();
+    expect(withNotice).toEqual(expect.arrayContaining(["min-w-[38px]", "shrink-[100]"]));
+    expect(withNotice).not.toContain("min-w-0");
+    cleanup();
+
+    signal.message = null;
+    renderShell(LOCAL_OWNER, { path: "/krx" });
+    const quiet = refreshBox();
+    expect(quiet).toContain("shrink-0");
+    expect(quiet).not.toContain("min-w-[38px]");
+    expect(quiet).not.toContain("min-w-0");
+  });
+
   it("회원·데모 열람에게는 단추도 안내 영역도 없다", () => {
     for (const user of [MEMBER_PRO, DEMO]) {
       renderShell(user);
