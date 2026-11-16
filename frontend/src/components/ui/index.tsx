@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, ReactNode, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
+import { Children, ReactNode, useId, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { deltaColor, deltaDirection, EMPTY, formatAge, formatKst, textDeltaDirection, withMinusSign, withoutLeadingIcon } from "@/lib/format";
 import {
   buttonClasses,
@@ -46,6 +46,8 @@ export {
  * @param count 표·목록의 개수(명세 §3-7 '머리에는 늘 개수') — 제목 옆 보조 글로 그리고, 제목(h2)의 이름에는 넣지 않습니다.
  * @param source 이 패널 숫자의 출처. 모든 패널이 같은 모양("출처 · …")으로 적도록 여기서 그립니다.
  *               출처 문구는 `lib/sources.ts`에 모아 두었습니다 — 화면마다 따로 적으면 표기가 갈립니다.
+ * @param region true면 이름 있는 영역(section aria-labelledby → 제목 h2) — 낭독기의 영역(랜드마크) 목록으로 찾아가야 하는 패널만 켭니다(홈의 구역,
+ *               상세 화면의 차트 패널). 기본은 이름 없는 section이라 지금 쓰는 곳(약 180곳)은 영역이 되지 않습니다. 겉모양은 켜도 그대로이고, 제목이 없으면 영역 이름도 없습니다.
  */
 export function Panel({
   title,
@@ -55,6 +57,7 @@ export function Panel({
   actions,
   children,
   className = "",
+  region = false,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
@@ -63,14 +66,21 @@ export function Panel({
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  region?: boolean;
 }) {
+  const headingId = useId();
+  const labelled = region && Boolean(title);
   // 패널 제목에는 아이콘을 쓰지 않습니다 — 데이터에서 온 제목도 앞 아이콘을 뗍니다.
-  const heading = title ? <h2 className="text-heading-sm text-text">{typeof title === "string" ? withoutLeadingIcon(title) : title}</h2> : null;
+  const heading = title ? (
+    <h2 id={labelled ? headingId : undefined} className="text-heading-sm text-text">
+      {typeof title === "string" ? withoutLeadingIcon(title) : title}
+    </h2>
+  ) : null;
   const counted = count !== undefined && count !== null;
   // 본문이 비면(접힌 패널) 머리만 있는 상자 — false·null·undefined는 Children.toArray에서 빠집니다.
   const hasBody = Children.toArray(children).length > 0;
   return (
-    <section className={`rounded-card border border-border bg-surface ${className}`}>
+    <section aria-labelledby={labelled ? headingId : undefined} className={`rounded-card border border-border bg-surface ${className}`}>
       {(title || actions || source) && (
         <header className={`flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-3 py-2.5 lg:px-4${hasBody ? " border-b border-border" : ""}`}>
           <div className="min-w-0">

@@ -3,6 +3,7 @@
  *  - 패널은 section, 제목은 h2 하나(앞 아이콘을 뗌), 머리줄(제목·개수·동작)은 아래 경계로 본문과 가르고 본문 안쪽은 12px(lg 16px)
  *  - 개수는 제목 옆 보조 글 — 제목(h2)의 이름에는 들지 않음
  *  - 제목·동작·출처가 없으면 머리줄을 그리지 않음, Card는 Panel과 같은 부품
+ *  - region을 켜면 이름 있는 영역(section aria-labelledby → 제목 h2) — 겉모양(면·머리줄·개수·동작·본문 여백)은 켜지 않은 패널과 같음, 기본은 영역 아님
  *  - 지표 칸의 값은 KPI 크기(20px, lg 24px)와 tabular-nums
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
@@ -74,6 +75,57 @@ describe("Panel", () => {
       expect(header.className.split(/\s+/), String(empty)).not.toContain("border-b");
       cleanup();
     }
+  });
+
+  it("기본은 이름 없는 section — 낭독기 영역(region) 목록에 오르지 않는다", () => {
+    render(
+      <Panel title="보유 종목">
+        <p>본문</p>
+      </Panel>,
+    );
+    const section = screen.getByRole("heading", { level: 2, name: "보유 종목" }).closest("section") as HTMLElement;
+    expect(section.hasAttribute("aria-labelledby")).toBe(false);
+    expect(screen.queryByRole("region")).toBeNull();
+  });
+
+  it("region이면 이름 있는 영역 — 제목(h2)이 영역 이름, 개수는 이름에 들지 않는다", () => {
+    render(
+      <Panel region title="오늘의 국면" count="4개">
+        본문
+      </Panel>,
+    );
+    const region = screen.getByRole("region", { name: "오늘의 국면" });
+    expect(within(region).getByRole("heading", { level: 2 }).textContent).toBe("오늘의 국면");
+    expect(within(region).getByText("4개").className).toContain("tabular-nums");
+    expect(within(region).getByText("본문")).toBeTruthy();
+  });
+
+  it("region을 켜도 겉모양(면·머리줄·제목·개수·동작·본문 여백)은 켜지 않은 패널과 같다 — 홈 구역·차트 패널이 공용 틀에서 갈라지지 않게", () => {
+    const tokens = (element: Element) => element.className.split(/\s+/).filter(Boolean).sort();
+    const frame = (section: HTMLElement) => {
+      const header = section.querySelector(":scope > header") as HTMLElement;
+      return {
+        section: tokens(section),
+        header: tokens(header),
+        heading: (section.querySelector("h2") as HTMLElement).className,
+        count: (header.querySelector("h2 + span") as HTMLElement).className,
+        actions: (header.querySelector(":scope > div:last-child") as HTMLElement).className,
+        body: (section.querySelector(":scope > div") as HTMLElement).className,
+      };
+    };
+    const { container } = render(
+      <>
+        <Panel title="공용" count="3개" actions={<span>동작</span>}>
+          본문
+        </Panel>
+        <Panel region title="영역" count="3개" actions={<span>동작</span>}>
+          본문
+        </Panel>
+      </>,
+    );
+    const [plain, named] = Array.from(container.querySelectorAll("section")) as HTMLElement[];
+    expect(frame(named)).toEqual(frame(plain));
+    expect(named.getAttribute("aria-labelledby")).toBe((named.querySelector("h2") as HTMLElement).id);
   });
 
   it("Card는 Panel과 같은 부품(옛 이름)", () => {
