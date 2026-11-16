@@ -650,7 +650,7 @@ export function Tabs<K extends string>({
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
   // 고른 탭이 바뀌면(처음 그릴 때 포함) 그 탭을, 키보드로 옮긴 탭은 포커스가 들어올 때 줄 안에 보이게 — 줄을 바꾸는 줄(wrap)은 넘치지 않아 움직일 일이 없습니다.
-  useScrollStripActive(listRef, value, { current: '[role="tab"][aria-selected="true"]', focus: "keyboard" });
+  useScrollStripActive(listRef, value, { current: '[role="tab"][aria-selected="true"]' });
   const selectedIndex = items.findIndex((item) => item.key === value);
   const entry = selectedIndex >= 0 ? selectedIndex : 0;
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
