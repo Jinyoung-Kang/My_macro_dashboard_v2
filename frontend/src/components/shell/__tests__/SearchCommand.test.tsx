@@ -762,6 +762,38 @@ describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", 
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  // QA-557 후속: 늦게 온 묶음이 고른 줄 앞에 끼면 고른 줄은 같아도 순번이 밀려 목록 상자(max-h 448px)의 보이는 영역 밖으로 나갈 수 있다 —
+  // 그때 그 줄을 block 'nearest'로 보이게 스크롤한다. 마우스로 가리켜 고른 줄(순번은 그대로, 고른 줄만 바뀜)은 스크롤하지 않는다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 스크롤을 ↑↓(moveTo)에서만 맞춰 응답 뒤에는 scrollIntoView를 부르지 않았고(scrolled = []), 운영 빌드
+  // 1440·1024에서 'he'+↑에 종목 찾기 2건이 오면 목록 181~629 밖의 고른 줄(657~697)이 보이지 않은 채 Enter가 그 줄을 실행했다.
+  it.fails("늦게 온 묶음에 밀린 고른 줄은 보이게 스크롤하고, 마우스로 가리켜 고른 줄은 스크롤하지 않는다(QA-557)", async () => {
+    reads[endpoints.detail.symbols("ㄷㅇ")] = LATE_SYMBOLS;
+    const scrolled: Element[] = [];
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    openSearch();
+    await act(async () => {});
+    type("ㄷㅇ");
+    fireEvent.keyDown(input(), { key: "ArrowUp" });   // 맨 위에서 위로 → 맨 아래(명령) — ↑↓는 지금처럼 moveTo가 스크롤
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(scrolled.at(-1)).toBe(helpOption());
+    scroll.mockClear();
+    scrolled.length = 0;
+
+    await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });
+    expect(helpOption().getAttribute("aria-selected")).toBe("true");
+    expect(scrolled).toEqual([helpOption()]);
+    expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+
+    scroll.mockClear();
+    scrolled.length = 0;
+    const alpha = screen.getByRole("option", { name: /Synthetic Alpha/ });
+    fireEvent.mouseMove(alpha);
+    expect(alpha.getAttribute("aria-selected")).toBe("true");
+    expect(scrolled).toEqual([]);
+  });
+
   it("왼쪽 메뉴 접기·펼치기는 넓은 화면에서만 보이고, 고르면 팔레트를 닫은 뒤 셸 명령 toggle-nav를 보낸다", async () => {
     stubWide(false);
     openSearch();
