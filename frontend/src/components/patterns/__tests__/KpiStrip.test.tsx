@@ -294,6 +294,52 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(block()).toEqual(["mt-2.5", "flex", "flex-col", "gap-3.5"]);
   });
 
+  // QA-604: 홈 시장 타일의 자리 줄 5(변화·이전 값 배지·출처 3줄)는 타일이 좁은 배치(두 칸 390·네 칸 1024·한 줄 배치)에 맞춘 값이라, 타일이 넓은
+  // 세 칸(sm~lg, 192~312px)과 띠 816px(= 4 × 198 + 3 × 8) 이상의 네 칸(lg 1100~1279, 198~243px)에서는 출처 줄이 덜 꺾여 읽은 뒤 타일(QA 자료
+  // 154~187·175px, 새 자료 128~178·149~166px)보다 자리표시(200px)가 커 값이 오면 아래 전체가 올라왔습니다(QA 스택 /api/* 1.5초 지연 CLS — 새 자료
+  // 768 0.082·900 0.093·1000 0.095·820x1180 0.093~0.113, lg 1100~1279 0.041~0.075). jsdom은 배치를 재지 못해 클래스로 봅니다.
+  // 수정 전(재현 커밋에서는 it.fails) 다섯째 덧 막대의 클래스는 'h-3.5 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border w-3/5'
+  // (감추는 클래스 없음 — pendingLinesWide를 읽지 않음)였습니다.
+  it.fails("넓은 칸 배치 자리 줄(pendingLinesWide) — 그 수 이상 순번의 덧 막대만 세 칸(sm~lg)·띠 816px 이상의 네 칸에서 감추고, 앞 막대·읽어 주기·막대 수는 그대로 (QA-604)", () => {
+    const market = { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 5, pendingLinesWide: 4 };
+    const items = (n: number): KpiItem[] => [
+      market,
+      ...Array.from({ length: n - 1 }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: null, pending: true, pendingLines: 5 })),
+    ];
+    const { rerender } = render(<KpiStrip label="요약" items={items(7)} />);
+    const tokens = (element: Element) => element.className.split(/\s+/);
+    const extraBars = (name: string) => {
+      const block = tile(name).querySelector('div[aria-hidden="true"].flex-col') as HTMLElement;
+      return Array.from(block.children);
+    };
+    const WIDE_HIDE = ["sm:max-lg:hidden", "lg:max-xl:@min-[816px]:hidden"];
+    // 읽어 주는 상태는 하나, DOM 막대 수(값 자리표시 1 + 덧 막대 5)는 그대로 — 감추는 것은 넓은 칸 배치의 CSS뿐입니다.
+    expect(within(tile("S&P 500")).getAllByRole("status")).toHaveLength(1);
+    expect(tile("S&P 500").querySelectorAll(".bg-control-fill")).toHaveLength(1 + 5);
+    const bars = extraBars("S&P 500");
+    expect(bars).toHaveLength(5);
+    // 앞 네 막대는 어느 배치에서도 보입니다.
+    for (const [index, bar] of bars.slice(0, 4).entries()) {
+      expect(tokens(bar).filter((token) => token.endsWith(":hidden")), `${index}`).toEqual([]);
+    }
+    for (const token of [...WIDE_HIDE, "xl:@min-[816px]:@max-[986px]:hidden"]) {
+      expect(tokens(bars[4]), token).toContain(token);
+    }
+    // pendingLinesWide를 주지 않은 타일은 감추는 막대가 없습니다.
+    for (const bar of extraBars("값 0")) {
+      expect(tokens(bar).filter((token) => token.endsWith(":hidden"))).toEqual([]);
+    }
+    // xl이면서 한 줄이 아닌 폭(띠 816px 이상 · 한 줄 경계 미만 — ONE_ROW_GRID와 같은 경계)에서도 감춥니다. 한 줄 경계가 816px 이하(타일 5개 이하)면
+    // xl에서 띠 816px 이상은 늘 한 줄이라 xl 몫이 없고, 8개를 넘으면 한 줄 배치가 없어 띠 폭만 봅니다.
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+      rerender(<KpiStrip label="요약" items={items(n)} />);
+      const last = tokens(extraBars("S&P 500")[4]);
+      const boundary = n * 134 + (n - 1) * 8;
+      const xl = n > 8 ? ["xl:@min-[816px]:hidden"] : boundary > 816 ? [`xl:@min-[816px]:@max-[${boundary}px]:hidden`] : [];
+      expect(last.filter((token) => token.endsWith(":hidden")), `${n}`).toEqual([...WIDE_HIDE, ...xl]);
+    }
+  });
+
   it("상태 글(오류·주의)은 아이콘 + 읽어 주는 머리말 + 글 — 색만으로 뜻을 전하지 않는다", () => {
     render(
       <KpiStrip
