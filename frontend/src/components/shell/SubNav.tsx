@@ -30,7 +30,7 @@ export function SubNav({ pathname, user }: { pathname: string; user?: SessionUse
   if (!model) return null;
   return (
     <nav aria-label={`${model.label} 하위 메뉴`} className="shrink-0 border-b border-border bg-surface lg:hidden">
-      <ul ref={listRef} className="relative mx-auto flex max-w-7xl overflow-x-auto px-1 sm:px-3 lg:px-5">
+      <ul ref={listRef} className="relative mx-auto flex max-w-7xl overflow-x-auto px-1 sm:px-3">
         {model.items.map((item) => {
           const current = item.href === model.current;
           return (
