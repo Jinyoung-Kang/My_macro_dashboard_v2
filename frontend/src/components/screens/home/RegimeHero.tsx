@@ -4,12 +4,11 @@ import Link from "next/link";
 import { Empty, Hero, ProvenanceBadge, Skeleton, StatGrid, StatTile } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
-import { endpoints } from "@/lib/endpoints";
-import { HOME_REFRESH_MS, HOME_REGIME_YEARS, REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
+import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
 import { SOURCES } from "@/lib/sources";
 import type { RegimeResponse } from "@/lib/types";
 import { HOME_LINK, SectionError } from "./HomeCard";
+import type { ApiRead } from "./useHomeData";
 
 const TITLE = "오늘의 국면";
 
@@ -21,12 +20,11 @@ const TITLE = "오늘의 국면";
  *
  * "3일 확정" 배지는 두지 않습니다 — /api/analytics/regime 응답에 확정 필드가 없고, 연속 일수를 화면에서 세면 알림 규칙
  * (AlertRules.confirmedChanges·QA-054)을 다시 구현하게 됩니다(ADR 0004). 백엔드가 필드를 보내면 meta에 붙입니다.
+ *
+ * 국면 응답은 홈 화면 훅(useHomeData)이 읽어 넘깁니다.
  */
-export function RegimeHero() {
-  const { data, error, reload, refreshError } = useApi<RegimeResponse>(
-    endpoints.insight.regime(HOME_REGIME_YEARS),
-    HOME_REFRESH_MS.regime,
-  );
+export function RegimeHero({ read }: { read: ApiRead<RegimeResponse> }) {
+  const { data, error, reload, refreshError } = read;
 
   if (!data) {
     // 불러오는 중·오류도 히어로 틀(Hero의 placeholder) — 값이 오면 같은 틀에 값만 들어와, 틀 여백이 달라 제목·본문이 튀지 않습니다.

@@ -4,14 +4,11 @@ import Link from "next/link";
 import { useId, type ReactNode } from "react";
 import { AssetList, Skeleton } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
-import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
-import { useMinuteClock } from "@/hooks/useMinuteClock";
-import { endpoints } from "@/lib/endpoints";
-import { HOME_REFRESH_MS, MARKET_HREF, marketGroups } from "@/lib/home";
+import { MARKET_HREF, type MarketClock, marketGroups } from "@/lib/home";
 import { presentText } from "@/lib/patterns";
 import type { MacroOverview } from "@/lib/types";
 import { HOME_LINK, SectionError } from "./HomeCard";
+import type { ApiRead } from "./useHomeData";
 
 /**
  * ③ 시장 — 매크로 카드 전부를 범주별 자산 행으로(xl(1280px) 이상 두 칸, 그 아래 한 칸 — 1024px의 두 칸은 행의 이름과 값이 맞붙었음).
@@ -22,13 +19,13 @@ import { HOME_LINK, SectionError } from "./HomeCard";
  *
  * 장 상태(개장·마감·휴장)는 보는 시각으로 판정합니다(/macro SessionBadge와 같은 시계·공휴일 훅, 데이터를 다시 받지 않음) —
  * 지연은 장이 열려 있을 때만 적습니다(lib/home macroCardSession). 범주 제목은 "시장" 아래의 h3입니다.
+ *
+ * 개요와 시계(보는 시각·한국 공휴일)는 홈 화면 훅(useHomeData)이 읽어 넘깁니다.
  */
-export function MarketRows() {
+export function MarketRows({ read, clock }: { read: ApiRead<MacroOverview>; clock: Omit<MarketClock, "collectedAt"> }) {
   const headingId = useId();
-  const { data, error, reload, refreshError } = useApi<MacroOverview>(endpoints.macro.overview(false), HOME_REFRESH_MS.macro);
-  const now = useMinuteClock();
-  const krOfficial = useKrOfficialHolidays(now);
-  const groups = marketGroups(data, { now, krOfficial });
+  const { data, error, reload, refreshError } = read;
+  const groups = marketGroups(data, clock);
 
   let body: ReactNode;
   if (!data) {

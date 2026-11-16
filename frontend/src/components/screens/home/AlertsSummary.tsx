@@ -4,12 +4,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Empty, Skeleton } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
-import { endpoints } from "@/lib/endpoints";
-import { HOME_ALERT_LIMIT, HOME_REFRESH_MS, latestAlerts, unreadText } from "@/lib/home";
+import { latestAlerts, unreadText } from "@/lib/home";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
-import type { InboxResponse } from "@/lib/types";
 import { HOME_LINK, HomeCard, SectionError } from "./HomeCard";
+import { type HomeAlertsRead, useHomeAlerts } from "./useHomeData";
 
 /**
  * ④ 알림 요약 — 읽지 않은 수 + 최근 알림 세 건(제목·발생일·읽음 여부) + 알림함 링크. 읽음 처리는 알림 화면에서 합니다.
@@ -22,10 +20,12 @@ import { HOME_LINK, HomeCard, SectionError } from "./HomeCard";
  *
  * 알려진 한계: 알림 테이블이 아직 없으면 백엔드가 unread 0·빈 목록을 보내(AlertController — 응답 모양은 1단계에서 바꾸지 않음)
  * 그때는 모름이 "0건"·"새 알림이 없습니다"로 보입니다.
+ *
+ * 두 경로는 홈 화면 훅(useHomeData)이 읽어 `alerts`로 넘깁니다. 넘기지 않으면(홈 밖 — 알림 화면 시험) 이 구역이 스스로 읽습니다.
  */
-export function AlertsSummary() {
-  const unread = useApi<{ unread: number }>(endpoints.alerts.unreadCount, HOME_REFRESH_MS.alerts);
-  const inbox = useApi<InboxResponse>(endpoints.alerts.inbox(HOME_ALERT_LIMIT), HOME_REFRESH_MS.alerts);
+export function AlertsSummary({ alerts }: { alerts?: HomeAlertsRead }) {
+  const own = useHomeAlerts(alerts === undefined);
+  const { unread, inbox } = alerts ?? own;
   const rows = latestAlerts(inbox.data);
   // 줄 번호 → 가는 주소(SEARCH_WATCH만). latestAlerts는 종류·payload를 넘기지 않아 받은 줄에서 찾습니다.
   const hrefs = new Map((inbox.data?.items ?? []).map((item) => [item.id, searchWatchInboxHref(item)] as const));

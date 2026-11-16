@@ -5,14 +5,11 @@ import { Fragment } from "react";
 import { Empty, ProvenanceBadge, Skeleton } from "@/components/patterns";
 import { Freshness } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
-import { useSessionUser } from "@/hooks/useSessionUser";
-import { isOwner } from "@/lib/access";
-import { endpoints } from "@/lib/endpoints";
-import { HOME_REFRESH_MS, storeStatusModel } from "@/lib/home";
+import { storeStatusModel } from "@/lib/home";
 import { SOURCES } from "@/lib/sources";
 import type { StatusIssuesResponse } from "@/lib/types";
 import { SectionError } from "./HomeCard";
+import type { ApiRead } from "./useHomeData";
 
 const TITLE = "데이터 저장소 상태";
 
@@ -20,14 +17,10 @@ const TITLE = "데이터 저장소 상태";
  * ⑤ 데이터 저장소 상태 한 줄 — "수집 태스크 오류 N건 · 경고 M건 · 누락 데이터셋 K개"(누르면 상태 화면). 운영자 전용(/api/status* OWNER)이라
  * 운영자가 아니면 요청하지 않고 그리지 않습니다. 수를 모르면 "—"이고 0으로 적지 않습니다. 수집기에 닿지 못하면 그 안내를 붙입니다
  * (그때 수는 DB 기록만으로 센 것 — lib/home storeStatusModel).
+ *
+ * 수는 홈 화면 훅(useHomeData)이 운영자일 때만 읽어 넘기고, 화면은 운영자에게만 이 줄을 그립니다.
  */
-export function StoreStatusLine() {
-  const owner = isOwner(useSessionUser());
-  const issues = useApi<StatusIssuesResponse>(owner ? endpoints.status.issues : null, HOME_REFRESH_MS.storeStatus);
-
-  if (!owner) {
-    return null;
-  }
+export function StoreStatusLine({ read: issues }: { read: ApiRead<StatusIssuesResponse> }) {
   if (!issues.data) {
     return (
       <section aria-label={TITLE} className="min-w-0 rounded-card border border-border bg-surface p-3 lg:p-4">
