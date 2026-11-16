@@ -212,6 +212,40 @@ export function holdingDetailItems(holding: Holding): DetailProperty[] {
   ];
 }
 
+/** 보유 줄의 키 — 목록-검사 줄 키와 같은 'CUSIP:클래스'. */
+function holdingKey(holding: Pick<Holding, "cusip" | "class">): string {
+  return `${holding.cusip}:${holding.class}`;
+}
+
+/**
+ * 보유 줄 이름표(기관 상세 보유 종목 — 검사 칸 영역 이름·제목, 좁은 화면 대화상자 제목). 키는 'CUSIP:클래스'. 13F 보유 줄은 공시 이름이 같은 다른
+ * 증권(A·C주, 'ISHARES TR' 아래 여러 ETF, 우선주·보통주)이 흔해 이름이 겹치는 줄에만 구분자를 붙입니다 — 먼저 ' · 클래스'(겹친 줄의 클래스가
+ * 모두 있고 서로 다를 때), 그것으로 갈리지 않으면 ' · CUSIP …', 그래도 겹치면 키(QA-587 — 백엔드 Sec13FService.lineLabels·lib/consensus
+ * consensusBars와 같은 규칙). 겹치지 않는 이름은 그대로입니다.
+ */
+export function holdingItemLabels(holdings: readonly Pick<Holding, "name" | "cusip" | "class">[]): Map<string, string> {
+  const labels = holdings.map((holding) => holding.name);
+  const byName = new Map<string, number[]>();
+  holdings.forEach((holding, index) => byName.set(holding.name, [...(byName.get(holding.name) ?? []), index]));
+  for (const [name, same] of byName) {
+    if (same.length < 2) continue;
+    const byClass = same.map((index) => `${name} · ${holdings[index].class}`);
+    const classesTell = same.every((index) => (holdings[index].class ?? "").trim() !== "") && new Set(byClass).size === same.length;
+    same.forEach((index, at) => {
+      labels[index] = classesTell ? byClass[at] : `${name} · CUSIP ${holdings[index].cusip}`;
+    });
+  }
+  const used = new Set<string>();
+  const out = new Map<string, string>();
+  holdings.forEach((holding, index) => {
+    let label = labels[index];
+    if (used.has(label)) label = `${label} · ${holdingKey(holding)}`;
+    used.add(label);
+    out.set(holdingKey(holding), label);
+  });
+  return out;
+}
+
 /** 13F 보유 기관 줄 하나의 속성(종목 상세 보유 기관 검사 칸) — 기관·공시 이름·CUSIP(고정폭)·비중·평가액·보고일. */
 export function holderDetailItems(row: GuruHoldersResponse["rows"][number]): DetailProperty[] {
   return [

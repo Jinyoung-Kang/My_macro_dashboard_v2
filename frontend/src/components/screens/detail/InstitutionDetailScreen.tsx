@@ -10,7 +10,14 @@ import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { CHART_KEY, detailQuery, institutionHref, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
-import { holdingDetailItems, infoSearchEntityLink, institutionEntityKey, institutionProperties, latestHoldingCount } from "@/lib/detailEntity";
+import {
+  holdingDetailItems,
+  holdingItemLabels,
+  infoSearchEntityLink,
+  institutionEntityKey,
+  institutionProperties,
+  latestHoldingCount,
+} from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { formatNumber, formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { infoSearchEntry } from "@/lib/search";
@@ -278,6 +285,8 @@ function HoldingsPanel({
   const shown = (data?.holdings ?? []).slice(0, HOLDINGS_SHOWN);
   // 개수 줄의 전체 수는 최신 분기 보유 종목 수 — 응답은 백엔드가 이미 상위 TOP_N줄로 잘라 보내 응답 길이로는 넘칠 수 없습니다(QA-585). 모르면 줄 없음.
   const heldTotal = latestHoldingCount(data?.quarters);
+  // 검사 칸·대화상자 제목 — 이름이 겹치는 줄(A·C주 등)에만 클래스(가를 수 없으면 CUSIP)를 붙여 서로 다르게(QA-587). 보이는 줄 안에서 셉니다.
+  const labels = holdingItemLabels(shown);
   return (
     <Panel
       title="상위 보유 종목"
@@ -294,7 +303,7 @@ function HoldingsPanel({
         label="상위 보유 종목"
         items={shown}
         itemKey={(holding) => `${holding.cusip}:${holding.class}`}
-        itemLabel={(holding) => holding.name}
+        itemLabel={(holding) => labels.get(`${holding.cusip}:${holding.class}`) ?? holding.name}
         autoSelectFirst
         count={heldTotal !== null && heldTotal > shown.length ? () => `${formatNumber(heldTotal, 0)}종목 가운데 비중 상위 ${shown.length}종목` : undefined}
         placeholder={

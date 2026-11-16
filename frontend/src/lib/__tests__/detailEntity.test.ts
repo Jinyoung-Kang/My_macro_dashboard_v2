@@ -7,6 +7,7 @@ import {
   consensusItems,
   holderDetailItems,
   holdingDetailItems,
+  holdingItemLabels,
   indicatorForSymbol,
   indicatorProperties,
   infoSearchEntityLink,
@@ -165,11 +166,8 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
 
   // QA-587: 13F 보유 줄은 공시 이름이 같은 다른 증권(A·C주, 'ISHARES TR' 아래 여러 ETF)이 흔한데 검사 칸·대화상자 제목이 이름뿐이라 똑같았습니다.
   // 백엔드 Sec13FService.lineLabels·lib/consensus consensusBars와 같은 규칙 — 이름이 겹치는 줄에만 ' · 클래스', 클래스로 가를 수 없으면 ' · CUSIP …'.
-  // 수정 전(재현 커밋에서는 it.fails)에는 이 함수가 없었습니다(겹치는 줄의 이름표가 이름 그대로).
-  it.fails("보유 줄 이름표 — 이름이 겹치는 줄에만 클래스(가를 수 없으면 CUSIP), 하나뿐인 이름은 그대로 (QA-587)", async () => {
-    const { holdingItemLabels } = (await import("../detailEntity")) as unknown as {
-      holdingItemLabels: (holdings: readonly Holding[]) => Map<string, string>;
-    };
+  // 수정 전(재현 커밋에서는 it.fails — 동적 import)에는 이 함수가 없었습니다(겹치는 줄의 이름표가 이름 그대로).
+  it("보유 줄 이름표 — 이름이 겹치는 줄에만 클래스(가를 수 없으면 CUSIP), 하나뿐인 이름은 그대로 (QA-587)", () => {
     const row = (name: string, cusip: string, klass: string): Holding => ({
       name, cusip, class: klass, value: 1e9, shares: 1, weight: 1, weightDiff: null, sharesDiff: null, action: "유지",
     });

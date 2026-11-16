@@ -64,7 +64,7 @@ async function openHoldings() {
 
 describe("같은 이름의 다른 클래스 줄 — 검사 칸·대화상자 제목에 클래스 (QA-587)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 CL C 줄의 영역 이름이 '상위 보유 종목 — ALPHABET INC', 제목이 'ALPHABET INC'(CL A와 같음)였습니다.
-  it.fails("넓은 화면 — 고른 줄의 검사 칸 영역 이름과 제목이 'ALPHABET INC · CAP STK CL C', 겹치지 않는 이름은 그대로", async () => {
+  it("넓은 화면 — 고른 줄의 검사 칸 영역 이름과 제목이 'ALPHABET INC · CAP STK CL C', 겹치지 않는 이름은 그대로", async () => {
     vi.stubGlobal(
       "matchMedia",
       (query: string) =>
@@ -81,7 +81,7 @@ describe("같은 이름의 다른 클래스 줄 — 검사 칸·대화상자 제
     expect(screen.getByRole("region", { name: "상위 보유 종목 — ALPHABET INC · CAP STK CL A" })).toBeTruthy();
   });
 
-  it.fails("좁은 화면 — 대화상자 이름이 'ALPHABET INC · CAP STK CL C'", async () => {
+  it("좁은 화면 — 대화상자 이름이 'ALPHABET INC · CAP STK CL C'", async () => {
     const rows = await openHoldings();
     fireEvent.click(rows[2]);
     expect(await screen.findByRole("dialog", { name: "ALPHABET INC · CAP STK CL C" })).toBeTruthy();
