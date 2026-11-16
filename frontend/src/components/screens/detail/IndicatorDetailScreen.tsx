@@ -41,8 +41,8 @@ const ROOT = "flex min-w-0 flex-col gap-3 lg:gap-4";
 
 /**
  * 지표 상세(/markets/i/<지표 id>) — 매크로 카드 하나(환율·국채·원자재·지수)를 작업대 대상 문법(P4 — 정보 검색 대상 화면과 같은 틀)으로:
- * 대상 머리(이름·범주·티커·지금 값·전일 대비·출처·추정·이전 값 배지·신선도) → 왼쪽 속성 · 가운데 탭(개요: 가격 차트 패널·AI 요약 / 뉴스) ·
- * 오른쪽 같은 범주 지표·연결(Yahoo 시세 상세·정보 검색)·다른 곳에서 보기·출처.
+ * 대상 머리(이름·범주·티커·지금 값·전일 대비·출처·추정·이전 값 배지·신선도) → 왼쪽 속성 · 가운데 탭(개요: 가격 차트 패널·AI 요약·같은 범주 지표 /
+ * 뉴스) · 오른쪽 연결(Yahoo 시세 상세·정보 검색)·다른 곳에서 보기·출처(종목·기관 상세와 같은 오른쪽 칸 — 2026-11-16 결정 6).
  *
  * - 값은 매크로 개요 저장본(live 없이, 홈 시장 표와 같은 5분 간격)의 카드 그대로 — 출처·장 상태·지연·이전 값·추정 배지를 홈 시장 표와 같은 규칙으로.
  * - 차트는 카드 티커의 Yahoo 시계열입니다. 카드 값이 TradingView 실시간 시세면 차트(Yahoo)와 마지막 값이 조금 다를 수 있어 차트 출처를 따로 적습니다.
@@ -165,11 +165,6 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         }
         right={
           <>
-            {related.length > 0 ? (
-              <Panel title={`${categoryTitle} — 같은 범주`}>
-                <AssetList rows={related} showProvenance headingLevel={3} />
-              </Panel>
-            ) : null}
             <LinkListPanel title="연결" links={links} />
             {symbol ? <ExternalLinksCard links={externalLinks("us", symbol, symbol, indicatorSearchName(item.name))} /> : null}
             <Panel title="출처">
@@ -195,6 +190,13 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
                     caption={symbol ? `차트: Yahoo Finance ${symbol} 일별 종가` : null}
                   />
                   <AiSummaryCard request={symbol ? { market: "us", code: symbol, q: query, label } : { q: query, label }} />
+                  {/* 같은 범주 지표는 가운데 칸 폭으로(2026-11-16 결정 6) — 오른쪽 18rem 칸에서는 값이 이름 아래로 내려가고 출처 줄이 2~4줄로 접혀 행마다
+                      146~170px로 쌓였고, 연결·출처를 첫 화면 밖으로 밀었습니다(코스피 1440 오른쪽 칸 1,593px). */}
+                  {related.length > 0 ? (
+                    <Panel title={`${categoryTitle} — 같은 범주`}>
+                      <AssetList rows={related} showProvenance headingLevel={3} />
+                    </Panel>
+                  ) : null}
                 </>
               ),
             },
