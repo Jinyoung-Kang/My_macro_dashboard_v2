@@ -71,7 +71,7 @@ function PropertyValue({ item }: { item: PropertyItem }): JSX.Element {
  * - 값을 모르면 "—"와 사유, 단위는 값이 있을 때만(QA-049). 0은 값입니다. 숫자는 `tabular-nums`, 식별자(`mono`)는 시스템 고정폭.
  * - 추정·대리·이전 값 배지는 값 옆에 늘 보입니다(숨기는 옵션 없음). 줄마다 출처가 다르면 `source`(값 아래 출처 캡션), 목록 전체 출처는 `source` prop('출처 · …' 줄).
  * - 값은 말줄임하지 않고 낱말 사이에서 줄을 바꿉니다(break-keep wrap-anywhere — 긴 영문 업종·URL도 칸 안에서 꺾임). truncate·whitespace-nowrap을 쓰지 않습니다
- *   (13rem 왼쪽 칸에서 값이 잘리던 것 — QA-530 계열). 긴 글은 `block`(이름 위·값 아래, 왼쪽 정렬).
+ *   (13rem 왼쪽 칸에서 값이 잘리던 것 — QA-530 계열). 긴 글은 `block`(이름 위·값 아래, 왼쪽 정렬). 빈 글·출처 줄도 한글은 낱말 사이에서만(QA-568).
  * - 넓은 화면(lg 이상) 줄은 32px(`dense`면 28px — 아래 구분선 1px 포함, DataTable과 같은 셈), 값이 두 줄이면 그만큼 늘어납니다. 좁은 화면은 위아래 8px —
  *   누르는 줄이 아니라 44px로 키우지 않습니다. 구분선은 옅은 경계(border-subtle).
  * - `title`을 주면 이름 있는 영역(section aria-labelledby)과 제목(h2 heading-sm, 기본 h3 — 검사 칸 안의 작은 제목). 보통은 Panel 안에서 제목 없이 씁니다.
@@ -102,7 +102,7 @@ export function PropertyList({
   if (placeholder !== undefined && placeholder !== null && placeholder !== false) {
     body = placeholder;
   } else if (items.length === 0) {
-    body = <p className="py-1 text-sm text-text-2">{emptyText}</p>;
+    body = <p className="py-1 break-keep text-sm text-text-2">{emptyText}</p>;
   } else {
     body = (
       <dl className="flex min-w-0 flex-col">
@@ -150,7 +150,7 @@ export function PropertyList({
 
   const sourceLine =
     source !== undefined && source !== null && source !== false && source !== "" ? (
-      <p className="mt-1 text-xs leading-4 text-text-3">
+      <p className="mt-1 break-keep wrap-break-word text-xs leading-4 text-text-3">
         <span>출처</span>
         <span aria-hidden="true"> · </span>
         {source}

@@ -195,11 +195,11 @@ export function PriceChartPanel({
 
   let chart: ReactNode;
   if (!symbol) {
-    chart = <p className="text-sm text-text-2">{noChartReason ?? "이 항목은 시계열 차트를 받지 않습니다."}</p>;
+    chart = <p className="break-keep text-sm text-text-2">{noChartReason ?? "이 항목은 시계열 차트를 받지 않습니다."}</p>;
   } else if (!series.data) {
     chart = series.error ? <ErrorState message={series.error} onRetry={() => void series.reload()} /> : <Skeleton height={220} label="차트를 불러오는 중" />;
   } else if (!series.data.available) {
-    chart = <p className="text-sm text-text-2">{series.data.message ?? "표시할 시계열이 없습니다."}</p>;
+    chart = <p className="break-keep text-sm text-text-2">{series.data.message ?? "표시할 시계열이 없습니다."}</p>;
   } else {
     chart = <LineChart data={rows} series={lineSeries} variant="hero" valueFormat={format} ariaLabel={`${label} 가격 차트`} onScrub={onScrub} />;
   }
@@ -528,7 +528,7 @@ export function AiSummaryCard({
         </p>
       ) : null}
       {!result && !summary.error ? (
-        <p className="text-sm text-text-2">
+        <p className="break-keep text-sm text-text-2">
           {allowed === false
             ? isDemo(user)
               ? "데모 열람에서는 AI 요약을 쓰지 않습니다."

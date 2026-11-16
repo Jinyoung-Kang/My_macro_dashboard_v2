@@ -89,7 +89,7 @@ function renderAll() {
 
 describe("QA-568 공용 글 부품 — 한글은 낱말 사이에서만 줄바꿈", () => {
   // 수정 전 실패: 아홉 자리 모두 break-keep이 없음(재현 커밋에서는 it.fails).
-  it.fails("배지·패널 부제·출처 줄·속성 빈 글·상태 글의 한글 글에서 그 배지·문단까지 break-keep이 있다", () => {
+  it("배지·패널 부제·출처 줄·속성 빈 글·상태 글의 한글 글에서 그 배지·문단까지 break-keep이 있다", () => {
     renderAll();
     const missing = Object.entries(places())
       .filter(([, [text, stop]]) => !chainHas(text, stop, "break-keep"))
@@ -98,7 +98,7 @@ describe("QA-568 공용 글 부품 — 한글은 낱말 사이에서만 줄바�
   });
 
   // 배지·출처 줄의 비상 꺾기는 wrap-break-word(자동 배치 표 칸의 최소 폭을 줄이지 않음) — wrap-anywhere·break-all은 두지 않습니다.
-  it.fails("배지·출처 줄은 공백 없는 긴 토큰만 칸 안에서 꺾는다(wrap-break-word, wrap-anywhere·break-all 없음)", () => {
+  it("배지·출처 줄은 공백 없는 긴 토큰만 칸 안에서 꺾는다(wrap-break-word, wrap-anywhere·break-all 없음)", () => {
     renderAll();
     const all = places();
     const names = ["ProvenanceBadge", "StaleBadge 사유", "EstimateBadge 설명", "Panel 출처 줄", "SourceLine", "PropertyList 출처 줄"];

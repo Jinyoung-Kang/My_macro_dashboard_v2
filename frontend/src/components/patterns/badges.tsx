@@ -14,14 +14,17 @@ import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "
  * 사유가 길어 좁은 화면에서 두세 줄로 접히면 rounded-full은 타원이 되어 글이 모서리에 걸렸습니다(홈 모의매매 히어로·계좌 행, 390px).
  * 안은 flex가 아니라 글 흐름(inline-block)입니다 — flex 줄바꿈은 사유를 통째로 다음 줄로 넘겨 둘째 줄이 '· 관측치 …'처럼 가운뎃점으로
  * 시작했습니다(홈 1280px 계좌 행). 글 흐름이면 첫 줄을 채운 뒤 사유 중간에서 줄을 바꿉니다.
+ * 한글은 낱말 사이에서만 줄을 바꾸고(break-keep — 좁은 칸에서 '저장본이 늦|음'처럼 음절 사이가 갈렸음, QA-568), 공백 없는 긴 영문·날짜만 칸 안에서
+ * 꺾습니다(wrap-break-word). wrap-anywhere가 아닌 까닭: 배지가 자동 배치 표 칸에도 들어가 anywhere는 칸의 최소 폭을 한 글자로 줄입니다(QA-526과 같음).
  */
-const TAG = "inline-block max-w-full rounded-control border px-1.5 py-px align-top text-xs leading-4";
+const TAG = "inline-block max-w-full break-keep wrap-break-word rounded-control border px-1.5 py-px align-top text-xs leading-4";
 
 /**
  * 출처 캡션 — "출처 · 실시간|N분 지연 · 시각"을 작은 글(12px, text-3)로. 모르는 부분은 빼고, 전부 모르면 "출처 —".
  *
  * 테두리·태그 없이 글만 둡니다 — 긴 출처("TradingView (TVC:DXY) · 개장 · 실시간 · …")가 알약 안에서 두 줄로 접혀 어색했습니다.
- * 길면 그대로 줄을 바꿉니다. 보이는 글에는 "출처"라는 말이 없으므로 낭독기에는 앞에 "출처:"를 읽힙니다(전부 모를 때는 이미 있음).
+ * 길면 그대로 줄을 바꿉니다 — 한글은 낱말 사이에서만(break-keep), 공백 없는 긴 토큰만 칸 안에서(wrap-break-word — 이전 값 배지와 같은 까닭, QA-568).
+ * 보이는 글에는 "출처"라는 말이 없으므로 낭독기에는 앞에 "출처:"를 읽힙니다(전부 모를 때는 이미 있음).
  *
  * @param asOf 표시용 시각(KST). ISO가 와도 `formatKst`로 같은 형식에 맞춥니다.
  * @param live 참이면 지연 분과 상관없이 "실시간"
@@ -43,7 +46,7 @@ export function ProvenanceBadge({
 }): JSX.Element | null {
   const text = provenanceText({ source, asOf, delayMin, live });
   return (
-    <span title={presentText(title) ?? undefined} className="min-w-0 max-w-full text-xs leading-4 tabular-nums text-text-3">
+    <span title={presentText(title) ?? undefined} className="min-w-0 max-w-full break-keep wrap-break-word text-xs leading-4 tabular-nums text-text-3">
       {text === PROVENANCE_UNKNOWN ? null : <span className="sr-only">출처: </span>}
       {text}
     </span>
