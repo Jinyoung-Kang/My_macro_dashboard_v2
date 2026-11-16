@@ -811,7 +811,7 @@ describe("홈 — 일부 실패", () => {
     expect(within(paper).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();
   });
 
-  it("장부 개요가 실패하면 모의매매 구역은 제목과 오류만, 수집 상태·끊긴 출처가 실패하면 그 칸만 오류(알림은 그대로)", async () => {
+  it("장부 개요가 실패하면 모의매매 구역은 제목·시장 고르기와 오류, 수집 상태·끊긴 출처가 실패하면 그 칸만 오류(알림은 그대로)", async () => {
     reads = {
       ...happyReads(),
       [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"),
@@ -825,6 +825,10 @@ describe("홈 — 일부 실패", () => {
     expect(await within(alerts).findByText("요청 실패 (HTTP 502)")).toBeTruthy();
     expect(await within(alerts).findByText("요청 실패 (HTTP 504)")).toBeTruthy();
     expect(within(region(PAPER_REGION)).getByRole("alert")).toBeTruthy();
+    // 미국을 못 읽어도 한국으로 갈 수 있게 고르기는 남습니다(QA-608) — 표·계좌 링크·개수는 없습니다.
+    expect(within(region(PAPER_REGION)).getByRole("radiogroup", { name: "모의매매 시장" })).toBeTruthy();
+    expect(within(region(PAPER_REGION)).queryByRole("table")).toBeNull();
+    expect(within(region(PAPER_REGION)).queryByText(/\d개$/)).toBeNull();
     expect(within(alerts).getAllByRole("alert").map((node) => node.textContent)).toEqual([
       expect.stringContaining("요청 실패 (HTTP 504)"),
       expect.stringContaining("요청 실패 (HTTP 502)"),
@@ -1025,7 +1029,7 @@ describe("홈 — 모의매매 한국 탭", () => {
   // 없었습니다. 고치는 조건은 오류(error)가 아니라 실패 시각(failedAt) — useApi는 다시 읽기를 시작할 때 error를 비우므로 error로 정하면 다시 시도·
   // 60초 자동 갱신 때마다 고르기가 사라졌다 다시 마운트되어 키보드 초점을 잃습니다(failedAt은 다시 읽는 동안에도 남음).
   // 수정 전(재현 커밋에서는 it.fails) 미국 개요 실패 때 모의매매 구역에 radiogroup이 없었습니다(글: '모의매매 계좌 요청 실패 (HTTP 500) 다시 시도').
-  it.fails("미국 개요를 처음 읽다 실패해도 고르기가 남아 한국으로 갈 수 있고, 미국으로 돌아오면 오류와 고르기 (QA-608)", async () => {
+  it("미국 개요를 처음 읽다 실패해도 고르기가 남아 한국으로 갈 수 있고, 미국으로 돌아오면 오류와 고르기 (QA-608)", async () => {
     reads = { ...happyReads(), [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"), [PAPER_KR_OVERVIEW]: paperOverviewKr(), [PAPER_KR_STATUS]: paperStatusKr(false) };
     renderHome(OWNER);
     const panel = region(PAPER_REGION);
@@ -1045,7 +1049,7 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect((within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement).checked).toBe(true);
   });
 
-  it.fails("미국 개요 실패 뒤 다시 읽는 동안에도 고르기는 같은 노드로 남아 초점을 잃지 않는다 — 처음 읽는 동안만 고르기가 없다 (QA-608)", async () => {
+  it("미국 개요 실패 뒤 다시 읽는 동안에도 고르기는 같은 노드로 남아 초점을 잃지 않는다 — 처음 읽는 동안만 고르기가 없다 (QA-608)", async () => {
     reads = happyReads();
     let rejectFirst: (error: Error) => void = () => {};
     let resolveRetry: (body: unknown) => void = () => {};
