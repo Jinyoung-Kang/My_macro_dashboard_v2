@@ -294,7 +294,7 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
   // title)만 큰 축소 비중(shrink-1000)을 줘 모자란 폭을 먼저 받게 하고, 앞 칸은 1·min-w-0 그대로 둡니다(앞 칸을 shrink-0으로 두면 자리가 아주 좁을 때
   // 칸이 검색 단추를 덮음). 마지막 칸이 0이 된 뒤에야 앞 칸이 줄어듭니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 세 칸 모두 'flex min-w-0 items-center gap-1'(축소 비중 1)이었습니다.
-  it.fails("모자란 폭은 마지막 칸이 먼저 받는다 — 마지막 칸(li)만 축소 비중 1000(shrink-1000), 앞 칸은 1·min-w-0 그대로 (QA-548)", () => {
+  it("모자란 폭은 마지막 칸이 먼저 받는다 — 마지막 칸(li)만 축소 비중 1000(shrink-1000), 앞 칸은 1·min-w-0 그대로 (QA-548)", () => {
     renderShell(MEMBER_PRO, { path: "/institutions/0001608046" });
     const classes = crumbItems().map((item) => item.className.split(/\s+/));
     expect(classes).toHaveLength(3);
