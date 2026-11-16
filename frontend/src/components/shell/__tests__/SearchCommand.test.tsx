@@ -217,7 +217,7 @@ describe("결과", () => {
     expect(screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/)).toBeTruthy();
 
     type("zzzz");
-    expect(screen.getByText("‘zzzz’와 맞는 결과가 없습니다.")).toBeTruthy();
+    expect(screen.getByText("‘zzzz’에 맞는 결과가 없습니다.")).toBeTruthy();
     // 결과가 없으면 빈 목록 상자도 없다(입력칸은 접힘) — 결과 없음은 status가 읽는다.
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(input().getAttribute("aria-expanded")).toBe("false");
@@ -238,7 +238,7 @@ describe("결과", () => {
         "결과 0건 — 기관: 불러오지 못했습니다 — 백엔드 API에 연결하지 못했습니다 · 종목: 불러오는 중…",
       ),
     );
-    expect(screen.getByText("‘aapl’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
+    expect(screen.getByText("‘aapl’에 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
   });
 
   it("범주별 묶음 — 지표·기관·종목은 그 상세 화면으로 간다고 적는다", async () => {
@@ -410,7 +410,7 @@ describe("이동", () => {
     type("삼성전자");
     const status = await screen.findByRole("list", { name: "검색 자료 상태" });
     expect(within(status).getByText("종목 찾기 · Yahoo·네이버: 출처를 받지 못했습니다(네이버 증권·Yahoo Finance)")).toBeTruthy();
-    expect(screen.getByText("‘삼성전자’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
+    expect(screen.getByText("‘삼성전자’에 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).")).toBeTruthy();
 
     type("삼성");
     await screen.findByRole("group", { name: "종목 찾기 · Yahoo·네이버" });

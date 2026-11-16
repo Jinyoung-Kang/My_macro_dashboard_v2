@@ -314,12 +314,12 @@ export function resultSummary(groups: readonly SearchGroup[], notices: readonly 
 
 /**
  * 맞는 결과가 없을 때 보이는 글. 아직 다 읽지 못한 범주가 있으면(`notices`) "없다"고 단정하지 않습니다 — 그 범주의 이유는
- * 결과 아래 자료 상태 목록이 적습니다.
+ * 결과 아래 자료 상태 목록이 적습니다. 조사는 받침과 상관없는 '에'입니다(QA-561 — '와'로 고정하면 '‘삼성’와'처럼 틀림).
  */
 export function noResultText(query: string, notices: readonly string[] = []): string {
   return notices.length > 0
-    ? `‘${query}’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).`
-    : `‘${query}’와 맞는 결과가 없습니다.`;
+    ? `‘${query}’에 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).`
+    : `‘${query}’에 맞는 결과가 없습니다.`;
 }
 
 /** 범주 하나의 자료 상태(useApi의 loading·error·data). */

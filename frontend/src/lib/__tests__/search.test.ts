@@ -163,13 +163,13 @@ describe("묶음과 상한", () => {
     expect(resultSummary(searchGroups(index, "순유"), pending)).toBe("결과 1건 — 종목: 불러오는 중… · 기관: 불러오지 못했습니다 — 시간 초과");
     expect(resultSummary(searchGroups(index, "순유"), [])).toBe("결과 1건");
 
-    expect(noResultText("aapl", pending)).toBe("‘aapl’와 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).");
-    expect(noResultText("aapl")).toBe("‘aapl’와 맞는 결과가 없습니다.");
+    expect(noResultText("aapl", pending)).toBe("‘aapl’에 맞는 결과가 아직 없습니다 — 일부 범주를 다 읽지 못했습니다(아래 안내).");
+    expect(noResultText("aapl")).toBe("‘aapl’에 맞는 결과가 없습니다.");
   });
 
   // QA-561: 결과 없음 안내의 조사는 받침과 상관없는 '에'다 — '와'로 고정하면 받침 있는 검색어('삼성'·'005930'·'aapl7')에 '‘삼성’와'로 틀렸다.
   // 수정 전(재현 커밋에서는 it.fails)에는 noResultText("삼성")이 "‘삼성’와 맞는 결과가 없습니다."였다(2026-10-26 dddcc65e부터, P3 전부터).
-  it.fails("결과 없음 안내의 조사는 받침과 상관없이 '에'다 — '삼성'·'005930'·'aapl7'(QA-561)", () => {
+  it("결과 없음 안내의 조사는 받침과 상관없이 '에'다 — '삼성'·'005930'·'aapl7'(QA-561)", () => {
     const pending = ["종목 찾기 · Yahoo·네이버: 불러오는 중…"];
     for (const text of [noResultText("삼성"), noResultText("005930"), noResultText("aapl7", pending)]) {
       expect(text).toContain("’에 맞는 결과");
