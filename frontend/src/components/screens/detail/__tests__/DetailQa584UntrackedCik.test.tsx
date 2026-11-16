@@ -86,6 +86,20 @@ describe("기관 상세 — 앞 0 없는 CIK와 추적하지 않는 CIK (QA-584)
     expect(screen.getByRole("link", { name: /SEC EDGAR 13F 공시/ })).toBeTruthy();
   });
 
+  // 머리가 '추적하는 13F 기관이 아닙니다'라고 중립으로 알리는데 기본으로 열리는 개요 탭(차트 패널·AI 요약)과 뉴스 탭은 읽기 실패로 적었습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 '13F 포트폴리오를 읽지 못해 추이를 그리지 않습니다.'·'기관 이름을 받지 못해 요약하지 않습니다.'·
+  // '기관 이름을 받지 못해 뉴스를 찾지 않습니다.'였습니다.
+  it.fails("추적하지 않는 CIK(400)는 개요 탭 차트·AI 요약과 뉴스 탭도 '추적하지 않는 기관' 글 — 읽기 실패 글 없음", async () => {
+    reads[endpoints.institution.portfolio(UNTRACKED, 8, 30)] = await apiError(BACKEND_400, 400);
+    renderAs(<InstitutionDetailScreen cik={UNTRACKED} />);
+    const chart = (await screen.findByRole("region", { name: "분기별 13F 보고 평가액" })) as HTMLElement;
+    await waitFor(() => expect(within(chart).getByText("추적하지 않는 기관이라 13F 추이가 없습니다.")).toBeTruthy());
+    expect(screen.getByText("추적하지 않는 기관이라 요약하지 않습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "뉴스" }));
+    expect(screen.getByText("추적하지 않는 기관이라 뉴스를 찾지 않습니다.")).toBeTruthy();
+    expect(screen.queryByText(/읽지 못해|받지 못해/)).toBeNull();
+  });
+
   it("서버 실패(500)는 지금처럼 보유 탭에 오류와 다시 시도(QA-190)", async () => {
     const path = endpoints.institution.portfolio(UNTRACKED, 8, 30);
     reads[path] = await apiError("13F 저장본을 읽지 못했습니다.", 500);
