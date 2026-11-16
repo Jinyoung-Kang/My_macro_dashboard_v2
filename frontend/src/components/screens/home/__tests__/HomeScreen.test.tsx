@@ -7,8 +7,8 @@
  *  - 추정: isEstimated 카드에 '추정' 배지 / 오래됨: isStale 카드·가격 없는 보유 계좌·늦은 관측치에 '이전 값' + 사유
  *  - 회원(운영자 아님): /api/paper/*·/api/status*·/api/info/sources를 부르지 않고 그 구역·칸이 없다
  *  - 맨 위 KPI 띠(오늘 요약): 타일마다 대상 화면 링크, 값·'—' + 사유·자리표시·변화 칩·수집 오류 아이콘 + 글, 모의매매 값 없음
- *  - 배치: KPI 띠 + 2×2 패널(운영자 [국면][계좌] / [시장][알림·끊긴 출처], 회원 [국면][알림] / [시장 두 칸]),
- *    시장 묶음 탭 줄은 두 줄 허용(2026-11-16 결정 1), 패널 안 누름 자리 44px,
+ *  - 배치: KPI 띠 + 패널(운영자 [국면][알림·끊긴 출처] / [계좌 두 칸] / [시장 두 칸] — 2026-11-16 결정 5, 회원 [국면][알림] / [시장 두 칸]),
+ *    시장 묶음 탭 줄은 두 줄 허용(결정 1), 패널 안 누름 자리 44px,
  *    ▲▼는 모두 12px·em 크기 없음·읽어 주는 방향 글
  *
  * 보는 시각은 2026-10-26(월) 16:51 KST로 고정합니다(장 상태가 시각에 따라 바뀜) — 외환·CME 개장, 뉴욕 증시 마감, KRX 선물 휴식.
@@ -514,12 +514,13 @@ describe("홈 — 불러오는 중·값 없음", () => {
       "미국채 10년물 불러오는 중",
       "읽지 않은 알림 불러오는 중",
       "수집 오류 불러오는 중",
+      // 패널은 화면 차례(국면 → 알림·끊긴 출처 → 계좌 → 시장 — 결정 5)
       "오늘의 국면을 불러오는 중",
-      "모의매매 계좌를 불러오는 중",
-      "시장 시세를 불러오는 중",
       "알림을 불러오는 중",
       "끊긴 출처를 불러오는 중",
       "수집 상태를 불러오는 중",
+      "모의매매 계좌를 불러오는 중",
+      "시장 시세를 불러오는 중",
     ]);
     // 계좌 구역은 불러오는 중에도 읽은 뒤와 같은 이름입니다.
     expect(within(region(PAPER_REGION)).getByRole("status").getAttribute("aria-label")).toBe("모의매매 계좌를 불러오는 중");
@@ -541,23 +542,31 @@ describe("홈 — 불러오는 중·값 없음", () => {
       const block = within(region(name)).getByRole("status").querySelector<HTMLElement>("[style]");
       return block ? Number.parseFloat(block.style.height) : null;
     };
-    // 읽은 뒤 본문(QA 스택 1024·1440): 국면 414~544px(넓을수록 낮음), 계좌 529~548px, 시장은 QA-595 뒤 패널 446px에 맞춤(아래 시험).
+    // 자리표시 블록 + 87px(패널 머리·안쪽 여백) = 읽는 중 패널 높이. 블록 높이는 결정 5 배치(아래 시험)에서 다음 패널이 첫 화면에 드는 xl 이상의 읽은 뒤
+    // 높이에 맞춥니다 — 범위와 잰 값은 아래 '결정 5 배치의 읽은 뒤 높이' 시험.
     const regime = blockHeight("오늘의 국면");
     const paper = blockHeight(PAPER_REGION);
     const market = blockHeight("시장");
-    expect(regime !== null && regime >= 480 && regime <= 520, `국면 ${regime}`).toBe(true);
-    expect(paper !== null && paper >= 400 && paper <= 460, `계좌 ${paper}`).toBe(true);
-    expect(market !== null && market >= 300 && market <= 365, `시장 ${market}`).toBe(true);
+    expect(regime !== null && regime >= 370 && regime <= 420, `국면 ${regime}`).toBe(true);
+    expect(paper !== null && paper >= 290 && paper <= 345, `계좌 ${paper}`).toBe(true);
+    expect(market !== null && market >= 190 && market <= 215, `시장 ${market}`).toBe(true);
   });
 
-  // QA-598(시장 패널): 변화 칩을 칸 안에서 꺾지 않게 한 뒤(QA-595 — 넓어진 '변화' 칸 몫만큼 '기준' 칸이 좁아져 넉 줄 모두 출처 두 줄) 시장 패널의 읽은 뒤
-  // 높이는 446px(루프백 빌드 1280·1440·1920)인데, 자리표시 330px로는 패널이 417px라 값이 오면 29px 자랐습니다.
-  // 수정 전(재현 커밋에서는 it.fails) 시장 자리표시 높이는 330px였습니다.
-  it("시장 패널 자리표시는 QA-595 뒤 읽은 뒤 높이(패널 446px)에 맞춘 높이 — 355~365px (QA-598)", () => {
+  // 2026-11-16 결정 5(운영자 배치 [국면][알림·끊긴 출처] / [계좌 두 칸] / [시장 두 칸]) 뒤 읽은 뒤 패널 높이(루프백 빌드 — QA API 응답, 합성 응답은
+  // 알림 세 건 + 끊긴 출처 둘 · 미국 다섯 계좌): 첫 줄 1280 478 · 1440·1920 461px(QA) / 504px(합성 — 알림이 높은 쪽), 계좌 1280·1440 381(네 계좌) /
+  // 429px(다섯 계좌), 시장 1280 301 · 1440·1920 281px. 예전 자리표시(국면 490 · 계좌 430 · 시장 359 — 반 폭 2×2에 맞춘 값)로는 1440에서 첫 줄이
+  // 116px 높아 그 아래 계좌 패널이 첫 화면 끝(781 → 897px)에 밀려 있다가 값이 오면 올라왔습니다. 1024(첫 줄 584px)·390은 그 아래가 첫 화면 밖이라 xl 이상에 맞춥니다.
+  // 바꾸기 전(국면 490 · 계좌 430 · 시장 359)에는 실패합니다.
+  it("결정 5 배치의 읽은 뒤 높이에 맞춘 자리표시 — 첫 줄 패널 461~504px · 계좌 381~429px · 시장 281~301px 안 (블록 + 87px)", () => {
     renderHome(OWNER);
-    const block = within(region("시장")).getByRole("status").querySelector<HTMLElement>("[style]");
-    const height = block ? Number.parseFloat(block.style.height) : null;
-    expect(height !== null && height >= 355 && height <= 365, `시장 ${height}`).toBe(true);
+    const panelAt = (name: string) => {
+      const block = within(region(name)).getByRole("status").querySelector<HTMLElement>("[style]");
+      return block ? Number.parseFloat(block.style.height) + 87 : null;
+    };
+    const within2 = (value: number | null, low: number, high: number) => value !== null && value >= low && value <= high;
+    expect(within2(panelAt("오늘의 국면"), 461, 504), `국면 ${panelAt("오늘의 국면")}`).toBe(true);
+    expect(within2(panelAt(PAPER_REGION), 381, 429), `계좌 ${panelAt(PAPER_REGION)}`).toBe(true);
+    expect(within2(panelAt("시장"), 281, 301), `시장 ${panelAt("시장")}`).toBe(true);
   });
 
   it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
@@ -983,19 +992,34 @@ describe("홈 — 모의매매 한국 탭", () => {
   });
 });
 
-describe("홈 — 배치(KPI 띠 + 2×2 패널)", () => {
+describe("홈 — 배치(KPI 띠 + 패널 — 결정 5)", () => {
   /** 화면의 이름 있는 구역(KPI 띠·패널) — 표의 가로 스크롤 상자(… (좌우 스크롤))는 뺍니다. */
   const sections = () =>
     screen.getAllByRole("region").map((node) => node.getAttribute("aria-label") ?? node.querySelector("h2")?.textContent).filter((name) => !name?.endsWith("(좌우 스크롤)"));
 
-  it("운영자 — KPI 띠, [국면][계좌 손익 표] / [시장][알림·끊긴 출처], lg 두 칸·그 아래 한 칸", async () => {
+  // 2026-11-16 결정 5: 예전 운영자 배치(2×2 — [국면][계좌] / [시장][알림·끊긴 출처])는 두 표(최소 640px)가 반 폭(1024 328 · 1440 536 · 1920 566px)에서
+  // 74~312px 넘쳐 '기준' 칸 배지가 가려졌습니다. 표 둘을 두 칸 폭 줄로 내려 1024~1920 넘침 0(루프백 빌드 측정). DOM 차례 = 화면 차례(읽기·Tab).
+  // 바꾸기 전에는 차례가 [국면, 계좌, 시장, 알림]이고 두 칸 패널이 없어 실패합니다.
+  it("운영자 — KPI 띠, [국면][알림·끊긴 출처] / [계좌 손익 표 — 두 칸] / [시장 — 두 칸], lg 두 칸·그 아래 한 칸(같은 차례)", async () => {
     reads = happyReads();
     renderHome(OWNER);
     await paperPanel();
-    expect(sections()).toEqual(["오늘 요약", "오늘의 국면", "모의매매 계좌", "시장", "알림·끊긴 출처"]);
+    expect(sections()).toEqual(["오늘 요약", "오늘의 국면", "알림·끊긴 출처", "모의매매 계좌", "시장"]);
     const grid = region("오늘의 국면").parentElement as HTMLElement;
     expect(grid.className.split(" ")).toEqual(expect.arrayContaining(["grid", "min-w-0", "gap-3", "lg:grid-cols-2", "lg:gap-4"]));
-    expect(Array.from(grid.children).map((child) => child.className.includes("lg:col-span-2"))).toEqual([false, false, false, false]);
+    expect(Array.from(grid.children).map((child) => child.className.split(/\s+/).includes("lg:col-span-2"))).toEqual([false, false, true, true]);
+    // 제목 구조는 그대로 — 패널마다 h2(영역 이름).
+    expect(Array.from(grid.children).map((child) => child.querySelector("h2")?.textContent)).toEqual(["오늘의 국면", "알림·끊긴 출처", "모의매매 계좌", "시장"]);
+  });
+
+  it("운영자 — 읽는 중·오류에도 계좌 패널은 두 칸 폭(틀이 바뀌지 않음)", async () => {
+    renderHome(OWNER);
+    expect(region(PAPER_REGION).className.split(/\s+/)).toContain("lg:col-span-2");
+    cleanup();
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)") };
+    renderHome(OWNER);
+    await within(region(PAPER_REGION)).findByText("요청 실패 (HTTP 500)");
+    expect(region(PAPER_REGION).className.split(/\s+/)).toContain("lg:col-span-2");
   });
 
   // 2026-11-16 결정 1(가): 묶음 탭 다섯(617px)이 좁은 화면(390 — 줄 332px)에서 들어가지 않아 넷째·다섯째가 가려졌습니다. 홈 시장 탭 줄만 두 줄을 허용합니다.
@@ -1019,7 +1043,8 @@ describe("홈 — 배치(KPI 띠 + 2×2 패널)", () => {
     renderHome(MEMBER);
     await within(region("시장")).findByRole("link", { name: "원/달러 (USD/KRW)" });
     expect(sections()).toEqual(["오늘 요약", "오늘의 국면", "알림", "시장"]);
-    expect(region("시장").className).toContain("lg:col-span-2");
+    const grid = region("오늘의 국면").parentElement as HTMLElement;
+    expect(Array.from(grid.children).map((child) => child.className.split(/\s+/).includes("lg:col-span-2"))).toEqual([false, false, true]);
   });
 
   it("KPI 띠와 패널 안 누르는 자리는 좁은 화면에서 44px(타일 링크·링크·탭·고르기·다시 시도)", async () => {

@@ -18,8 +18,13 @@ import { SectionError } from "./HomeCard";
 // 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(패널 제목 — 영역 이름).
 const TITLE = "모의매매 계좌";
 
-/** 읽는 중 자리표시 높이(px) — 계좌 표 네~다섯 줄 + 출처·출발·비교 줄의 높이에 가깝게(QA 스택 읽은 뒤 본문 529~607px의 아래쪽, QA-598). */
-const PAPER_PENDING_HEIGHT = 430;
+/**
+ * 읽는 중 자리표시 높이(px) — 계좌 표 네~다섯 줄 + 출처·출발·비교 줄의 높이에 가깝게(QA-598). 홈 lg 이상에서 이 패널은 두 칸 폭이라(2026-11-16 결정 5)
+ * 표가 넘치지 않고 행이 48px입니다 — 루프백 빌드에서 잰 읽은 뒤 패널 높이: 1280·1440 네 계좌(QA 데이터) 381px · 다섯 계좌(운영과 같은 수 — 합성 응답) 429px,
+ * 1024 477~561px, 390 680~781px(표가 가로로 넘쳐 행 100px). 이 값(패널 422px)은 xl 이상의 다섯 계좌에 맞췄습니다 — 이 패널 아래(시장)는 어느 폭에서도
+ * 첫 화면 밖이라(1440 위 끝 1178px) 높이가 달라도 보이는 화면이 움직이지 않습니다.
+ */
+const PAPER_PENDING_HEIGHT = 335;
 
 /**
  * ② 계좌 손익 표 패널 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
@@ -33,7 +38,7 @@ const PAPER_PENDING_HEIGHT = 430;
  * 한 번 고른 뒤에는 미국으로 돌아가도 두 시장 값을 계속 읽어 두어, 어느 쪽으로 돌아와도 자리표시 없이 바로 보임). 고르기는 패널 머리의 같은 자리에
  * 늘 남아(읽는 중·실패에도 — 다시 마운트되지 않아 키보드 초점을 잃지 않음) 미국으로 돌아갈 수 있습니다. 미국을 처음 읽는 동안은 고를 것이 없어 두지 않습니다.
  */
-export function PaperPnlPanel() {
+export function PaperPnlPanel({ className }: { className?: string } = {}) {
   const owner = isOwner(useSessionUser());
   const [market, setMarket] = useState<PaperMarketCode>("US");
   // 한국을 한 번이라도 골랐나 — 그 뒤로는 한국 경로를 비우지 않습니다(비우면 useApi가 값을 지워 다시 고를 때마다 자리표시).
@@ -54,6 +59,8 @@ export function PaperPnlPanel() {
   if (!owner) {
     return null;
   }
+  // 패널 틀 — 읽는 중·오류·읽은 뒤 모두 같은 클래스(홈 배치가 주는 칸 폭 포함)라 값이 와도 틀이 바뀌지 않습니다.
+  const frame = `min-w-0 ${className ?? ""}`.trim();
 
   const switchShown = korea || overview.data !== null;
   // 머리 동작의 모양은 늘 같은 묶음(고르기 → 신선도)이라 읽는 중에서 값으로 바뀌어도 고르기가 다시 마운트되지 않습니다.
@@ -66,7 +73,7 @@ export function PaperPnlPanel() {
 
   if (!overview.data) {
     return (
-      <Panel region className="min-w-0" title={TITLE} actions={actions}>
+      <Panel region className={frame} title={TITLE} actions={actions}>
         {overview.error ? (
           <SectionError message={overview.error} onRetry={() => void overview.reload()} />
         ) : (
@@ -80,7 +87,7 @@ export function PaperPnlPanel() {
   return (
     <Panel
       region
-      className="min-w-0"
+      className={frame}
       title={TITLE}
       count={model.rows.length > 0 ? `${model.rows.length.toLocaleString("ko-KR")}개` : undefined}
       actions={actions}
