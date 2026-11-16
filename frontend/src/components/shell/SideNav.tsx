@@ -213,9 +213,11 @@ function TabScreens({ node, idBase }: { node: NavTreeNode; idBase: string }) {
           ];
         }
         const headingId = `${idBase}-group-${index}`;
+        // 글 머리는 한 줄(truncate) — 높이가 메뉴 폭에 따라 바뀌지 않게 합니다. 펼치는 150ms 전환의 첫 그림(48px 상자)에서 글자마다 줄이 바뀌어 아래 칸이
+        // 밀렸다가 올라오고, 그 그림에서 잰 지금 칸 위치로 메뉴를 굴렸습니다(useScrollNavActive).
         return [
           <li key={`group:${group.label}`}>
-            <span id={headingId} className={`block ${LEAF_PAD} pb-1 pt-2 text-xs text-text-3`}>
+            <span id={headingId} className={`block truncate ${LEAF_PAD} pb-1 pt-2 text-xs text-text-3`}>
               {group.label}
             </span>
             <ul aria-labelledby={headingId} className="flex flex-col gap-0.5">
