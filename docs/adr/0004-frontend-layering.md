@@ -12,7 +12,7 @@
     `lib/__tests__/noEmoji.test.ts`(화면 소스의 문자열·JSX 글자에 그림 문자 없음 — TypeScript AST), `components/ui/__tests__/formControls.test.tsx`(입력칸 모양·예전 포커스 표시 금지),
     `selectionClasses.test.ts`(고르기 조각 클래스), `pageHeader.test.tsx`(화면 머리 — 예전 h1 모양 금지), `lib/__tests__/lineChart.test.ts`·`hooks/__tests__/useChartScrub.test.ts`(문지르기),
     `components/charts/__tests__/frameBoundary.test.ts`(차트 틀 예외 — 차트 폴더 밖의 차트 하위 경로 가져오기는 계좌 색 표의 `frame` 하나, `frame.tsx`는 recharts 없음)
-  - 작업대 화면 언어(아래 세 번째 덧붙임 — 공용 부품마다 한 줄): `components/ui/__tests__/DropdownMenu.test.tsx`(메뉴)
+  - 작업대 화면 언어(아래 세 번째 덧붙임 — 공용 부품마다 한 줄): `components/ui/__tests__/DropdownMenu.test.tsx`(메뉴), `components/ui/__tests__/Tooltip.test.tsx`(툴팁)
 
 ## 배경
 
@@ -89,3 +89,6 @@
 
 - 메뉴 `components/ui/DropdownMenu.tsx` — 화면 층의 공용 키트(Radix DropdownMenu 2.2.1을 감쌈 — 덮개 3층·`data-overlay`·항목 좁은 화면 44px·넓은 화면 32px).
   처음 쓰는 곳은 넓은 화면 상단바의 계정 메뉴(P3), 지키는 시험은 `components/ui/__tests__/DropdownMenu.test.tsx`.
+- 툴팁 `components/ui/Tooltip.tsx` — 화면 층의 공용 키트(Radix Tooltip 1.4.1을 감쌈 — 덮개 3층, 이름을 대신하지 않는 보조 설명, 툴팁 글이 이름과 같으면 `labelOnly`로
+  설명 연결을 뺌, 셸의 `TooltipProvider` 하나 — 밖에서는 스스로 감쌈). 처음 쓰는 곳은 넓은 화면 셸(P3 — 상단바 아이콘 단추·접힌 왼쪽 메뉴의 탭 이름·접기 단추),
+  지키는 시험은 `components/ui/__tests__/Tooltip.test.tsx`.
