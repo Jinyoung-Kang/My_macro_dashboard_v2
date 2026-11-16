@@ -60,6 +60,16 @@ describe("주소", () => {
     expect(parseStockRoute("us", "x".repeat(25))).toBeNull();
   });
 
+  // QA-584: 백엔드는 13F 기관 목록의 10자리 CIK 글과 정확히 같아야 받아, 앞 0 없는 주소(/institutions/1608046 — SEC EDGAR 주소에서 붙여 넣은
+  // CIK)가 같은 기관인데도 400이었습니다. 숫자 1~10자리를 10자리로 채워 정규 CIK로 돌립니다(정보 검색 키 institutionEntityKey와 같은 방식).
+  // 수정 전(재현 커밋에서는 it.fails)에는 parseCik('1608046')이 '1608046'이었습니다.
+  it.fails("CIK 조각 — 앞 0 없는 숫자도 10자리 정규 CIK로 (QA-584)", () => {
+    expect(parseCik("1608046")).toBe("0001608046");
+    expect(parseCik("1")).toBe("0000000001");
+    expect(parseCik("%200001608046%20")).toBe("0001608046");
+    expect(parseCik("12345678901")).toBeNull();
+  });
+
   it("CIK·지표 키 조각 — CIK는 숫자 1~10자리(앞 0 유지), 키는 영문·숫자·_·-", () => {
     expect(parseCik("0001067983")).toBe("0001067983");
     expect(parseCik("12a")).toBeNull();

@@ -198,6 +198,35 @@ describe("useApi", () => {
     await waitFor(() => expect(result.current.data).toEqual({ v: 2 }));
   });
 
+  // QA-584: 화면이 '추적하지 않는 대상'(400) 같은 요청 쪽 실패를 서버·연결 실패와 가르려면 상태 코드가 있어야 합니다 — useApi는 문구만 남기고
+  // 상태를 버렸습니다. errorStatus = ApiError.status(연결 실패 NetworkError는 0), 상태가 없는 실패는 null, 값을 받으면 null.
+  // lib/api의 ApiError를 가져오지 않습니다(많은 시험이 lib/api를 ApiError 없이 흉내 냄) — status 칸으로 읽습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 errorStatus 칸이 없었습니다(undefined).
+  it.fails("QA-584: error와 함께 상태 코드(errorStatus)를 남긴다 — 400·연결 실패 0·상태 없는 실패 null, 값을 받으면 null", async () => {
+    const statusOf = (current: unknown) => (current as { errorStatus?: number | null }).errorStatus;
+    const withStatus = (message: string, status: number) => Object.assign(new Error(message), { status });
+    api.apiGetShared
+      .mockRejectedValueOnce(withStatus("추적하지 않는 기관 CIK입니다", 400))
+      .mockRejectedValueOnce(withStatus("연결하지 못했습니다", 0))
+      .mockRejectedValueOnce(new Error("알 수 없는 실패"))
+      .mockResolvedValueOnce({ v: 1 });
+    const { result } = renderHook(() => useApi<{ v: number }>("/api/a"));
+    await waitFor(() => expect(result.current.error).toBe("추적하지 않는 기관 CIK입니다"));
+    expect(statusOf(result.current)).toBe(400);
+
+    await act(() => result.current.reload());
+    expect(result.current.error).toBe("연결하지 못했습니다");
+    expect(statusOf(result.current)).toBe(0);
+
+    await act(() => result.current.reload());
+    expect(result.current.error).toBe("알 수 없는 실패");
+    expect(statusOf(result.current)).toBeNull();
+
+    await act(() => result.current.reload());
+    expect(result.current.data).toEqual({ v: 1 });
+    expect(statusOf(result.current)).toBeNull();
+  });
+
   it("401을 받으면 세션이 끊겼다고 알린다 — 레이아웃이 로그인으로 보낸다", async () => {
     api.apiGetShared.mockRejectedValue(new api.UnauthorizedError());
     const { result } = renderHook(() => useApi("/api/a"));
