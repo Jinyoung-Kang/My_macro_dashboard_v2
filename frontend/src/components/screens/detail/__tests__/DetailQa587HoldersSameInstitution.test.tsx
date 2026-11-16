@@ -72,7 +72,7 @@ async function openHolders() {
 
 describe("종목 상세 보유 기관 — 같은 기관의 두 줄을 CUSIP으로 가름 (QA-587)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 1·3번 줄의 영역 이름이 둘 다 '13F 보유 기관 — 합성 자산운용 (Synthetic Asset)', 제목도 같았습니다.
-  it.fails("넓은 화면 — 같은 기관 줄의 검사 칸 영역 이름과 제목에 ' · CUSIP …', 겹치지 않는 기관은 그대로", async () => {
+  it("넓은 화면 — 같은 기관 줄의 검사 칸 영역 이름과 제목에 ' · CUSIP …', 겹치지 않는 기관은 그대로", async () => {
     vi.stubGlobal(
       "matchMedia",
       (query: string) =>
@@ -90,14 +90,14 @@ describe("종목 상세 보유 기관 — 같은 기관의 두 줄을 CUSIP으�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 3번 줄 대화상자 이름이 '합성 자산운용 (Synthetic Asset)'(1번 줄과 같음)이었습니다.
-  it.fails("좁은 화면 — 같은 기관 줄의 대화상자 이름에 ' · CUSIP …'", async () => {
+  it("좁은 화면 — 같은 기관 줄의 대화상자 이름에 ' · CUSIP …'", async () => {
     const rows = await openHolders();
     fireEvent.click(rows[2]);
     expect(await screen.findByRole("dialog", { name: "합성 자산운용 (Synthetic Asset) · CUSIP 000000204" })).toBeTruthy();
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 1·3번 줄의 보조 글이 둘 다 'SYNTHETIC ALPHA INC · 2026-06-30'이었습니다.
-  it.fails("목록 — 같은 기관 줄의 보조 글에 CUSIP, 겹치지 않는 기관 줄에는 없음", async () => {
+  it("목록 — 같은 기관 줄의 보조 글에 CUSIP, 겹치지 않는 기관 줄에는 없음", async () => {
     const rows = await openHolders();
     expect(rows[0].textContent).toContain("SYNTHETIC ALPHA INC · CUSIP 000000105 · 2026-06-30");
     expect(rows[2].textContent).toContain("SYNTHETIC ALPHA INC · CUSIP 000000204 · 2026-06-30");

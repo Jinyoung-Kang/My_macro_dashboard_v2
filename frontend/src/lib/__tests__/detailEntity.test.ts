@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import {
   consensusItems,
   holderDetailItems,
+  holderKey,
+  holderRowTells,
   holdingDetailItems,
   holdingItemLabels,
   indicatorForSymbol,
@@ -230,12 +232,8 @@ describe("속성(대상 화면 왼쪽 칸·검사 칸)", () => {
   // QA-587(종목 상세 보유 기관): 한 기관이 같은 회사의 다른 증권(A·C주)을 함께 들면 두 줄의 기관·공시 이름('ALPHABET INC')·보고일이 같고 비중·평가액만
   // 달랐습니다 — 검사 칸·대화상자 제목이 기관 이름뿐이라 똑같았습니다. 기관이 겹치는 줄에만 ' · CUSIP …'(이름표)와 보조 글의 CUSIP.
   // 수정 전(재현 커밋에서는 it.fails — 동적 import)에는 이 함수가 없었습니다(이름표가 기관 이름 그대로).
-  it.fails("보유 기관 줄 구분 — 기관이 겹치는 줄에만 이름표 ' · CUSIP …'와 보조 글 CUSIP, 하나뿐인 기관은 그대로 (QA-587)", async () => {
+  it("보유 기관 줄 구분 — 기관이 겹치는 줄에만 이름표 ' · CUSIP …'와 보조 글 CUSIP, 하나뿐인 기관은 그대로 (QA-587)", () => {
     type HolderRow = GuruHoldersResponse["rows"][number];
-    const { holderKey, holderRowTells } = (await import("../detailEntity")) as unknown as {
-      holderKey: (row: Pick<HolderRow, "cik" | "cusip">) => string;
-      holderRowTells: (rows: readonly HolderRow[]) => { labels: Map<string, string>; cusipKeys: Set<string> };
-    };
     const row = (institution: string, cik: string, name: string, cusip: string): HolderRow => ({
       institution, cik, name, cusip, weight: 1, value: 1e9, reportDate: "2026-06-30",
     });

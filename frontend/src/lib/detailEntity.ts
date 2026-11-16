@@ -275,6 +275,36 @@ export function holderDetailItems(row: GuruHoldersResponse["rows"][number]): Det
   ];
 }
 
+/** 보유 기관 줄의 키 — 목록-검사 줄 키와 같은 'CIK:CUSIP'. */
+export function holderKey(row: Pick<GuruHoldersResponse["rows"][number], "cik" | "cusip">): string {
+  return `${row.cik}:${row.cusip}`;
+}
+
+/**
+ * 보유 기관 줄 구분(종목 상세 보유 기관 — 검사 칸 영역 이름·제목, 좁은 화면 대화상자 제목, 줄 보조 글). 키는 'CIK:CUSIP'. 한 기관이 같은 회사의
+ * 다른 증권(A·C주 — 공시 이름까지 같은 일이 흔함)을 함께 들면 두 줄의 기관·공시 이름·보고일이 같아 비중·평가액만 다릅니다. 응답에 클래스 칸이 없어
+ * 기관(CIK)이 겹치는 줄에만 CUSIP으로 가릅니다 — `labels`는 '기관 · CUSIP …'(그래도 겹치면 키), `cusipKeys`는 보조 글에 CUSIP을 적을 줄. 겹치지 않는
+ * 줄의 이름표는 기관 이름(앞 국기를 뗌) 그대로입니다(QA-587 — 기관 상세 보유 줄 holdingItemLabels와 같은 '겹치는 줄에만' 규칙).
+ */
+export function holderRowTells(rows: readonly GuruHoldersResponse["rows"][number][]): { labels: Map<string, string>; cusipKeys: Set<string> } {
+  const perInstitution = new Map<string, number>();
+  for (const row of rows) perInstitution.set(row.cik, (perInstitution.get(row.cik) ?? 0) + 1);
+  const labels = new Map<string, string>();
+  const cusipKeys = new Set<string>();
+  const used = new Set<string>();
+  for (const row of rows) {
+    const key = holderKey(row);
+    const name = withoutLeadingIcon(row.institution);
+    const repeated = (perInstitution.get(row.cik) ?? 0) > 1;
+    if (repeated) cusipKeys.add(key);
+    let label = repeated ? `${name} · CUSIP ${row.cusip}` : name;
+    if (used.has(label)) label = `${label} · ${key}`;
+    used.add(label);
+    labels.set(key, label);
+  }
+  return { labels, cusipKeys };
+}
+
 // ------------------------------------------------------------------ 연결(대상 화면 오른쪽 칸)
 
 /**

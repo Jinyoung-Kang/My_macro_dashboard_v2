@@ -13,6 +13,8 @@ import { currencyUnit, detailQuery, externalLinks, holderQuery, holdersNoMatch, 
 import {
   consensusItems,
   holderDetailItems,
+  holderKey,
+  holderRowTells,
   indicatorForSymbol,
   infoSearchEntityLink,
   profileItems,
@@ -344,19 +346,22 @@ type HolderRow = GuruHoldersResponse["rows"][number];
  * 13F 보유 기관(가운데 '보유 기관' 탭) — 이 대시보드가 받은 13F 기관 가운데 공시 이름이 회사 이름과 맞는 보유 줄(이름이 들어가거나 잘린 공시 이름의
  * 앞부분으로 회사 이름이 시작함, 비중 순). 이름으로 찾으므로 다른 회사가 섞일 수 있어 줄마다 공시 이름을 함께 적습니다. 목록-검사(MasterDetail):
  * 줄을 고르면 넓은 화면은 오른쪽 검사 칸, 좁은 화면은 대화상자에 그 줄의 속성(기관·공시 이름·CUSIP·비중·평가액·보고일)과 '기관 상세 열기'.
- * 한 줄도 없으면 찾은 이름과 그 한계를 적고 없다고 단정하지 않습니다(QA-436).
+ * 같은 기관이 둘 이상인 줄(A·C주)은 검사 칸·대화상자 제목과 줄 보조 글에 CUSIP을 붙입니다(QA-587). 한 줄도 없으면 찾은 이름과 그 한계를 적고 없다고 단정하지 않습니다(QA-436).
  */
 function HoldersPanel({ query }: { query: string }) {
   const holders = useApi<GuruHoldersResponse>(endpoints.institution.guruHolders(query));
   const rows = holders.data?.rows ?? [];
+  const shown = rows.slice(0, HOLDERS_SHOWN);
+  // 한 기관이 같은 회사의 다른 증권(A·C주)을 함께 든 줄 — 검사 칸·대화상자 제목에 CUSIP을 붙이고 줄 보조 글에도 적습니다(QA-587). 보이는 줄 안에서 셉니다.
+  const tells = holderRowTells(shown);
   const noMatch = holdersNoMatch(query);
   return (
     <Panel title="13F 보유 기관" subtitle={`‘${query}’ 이름으로 찾은 보유 줄(잘린 공시 이름 포함) — 비중 순`} source={HOLDERS_SOURCE}>
       <MasterDetail<HolderRow>
         label="13F 보유 기관"
-        items={rows.slice(0, HOLDERS_SHOWN)}
-        itemKey={(row) => `${row.cik}:${row.cusip}`}
-        itemLabel={(row) => withoutLeadingIcon(row.institution)}
+        items={shown}
+        itemKey={holderKey}
+        itemLabel={(row) => tells.labels.get(holderKey(row)) ?? withoutLeadingIcon(row.institution)}
         count={rows.length > HOLDERS_SHOWN ? () => `${rows.length}줄 가운데 비중 상위 ${HOLDERS_SHOWN}줄` : undefined}
         // 읽기 실패는 공용 오류 상자(아이콘 + 글 + 다시 시도) — 위험색 글만이고 다시 읽을 방법이 없었습니다(QA-532, QA-190과 같은 원칙).
         placeholder={
@@ -381,9 +386,16 @@ function HoldersPanel({ query }: { query: string }) {
                   끊습니다(wrap-anywhere) — 정보 검색 보유 탭과 같은 처리(QA-449). */}
               <span className="block break-keep font-medium text-text wrap-anywhere">{withoutLeadingIcon(row.institution)}</span>
               {/* 공시 이름은 말줄임 없이 이 칸 안에서 줄바꿈하고 보고일은 끊기지 않는 한 덩어리로 이름 뒤에 둡니다 — 한 줄 말줄임일 때 긴 공시 이름이면
-                  보고일과 이름 끝이 잘려 무엇이 걸렸는지 가를 수 없었습니다(QA-445, 정보 검색 보유 탭과 같은 처리). */}
+                  보고일과 이름 끝이 잘려 무엇이 걸렸는지 가를 수 없었습니다(QA-445, 정보 검색 보유 탭과 같은 처리). 같은 기관이 둘 이상인 줄은 그 사이에
+                  CUSIP(끊기지 않는 한 덩어리)을 적어 비중·평가액만 다른 두 줄을 목록에서 가릅니다(QA-587). */}
               <span className="block text-xs text-text-3 wrap-anywhere">
-                {row.name} <span className="whitespace-nowrap">· {row.reportDate}</span>
+                {row.name}{" "}
+                {tells.cusipKeys.has(holderKey(row)) ? (
+                  <>
+                    <span className="whitespace-nowrap">· CUSIP {row.cusip}</span>{" "}
+                  </>
+                ) : null}
+                <span className="whitespace-nowrap">· {row.reportDate}</span>
               </span>
             </span>
             <span className="shrink-0 text-right tabular-nums">
