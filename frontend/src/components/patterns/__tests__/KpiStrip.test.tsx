@@ -340,6 +340,51 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     }
   });
 
+  // QA-604 후속(검토): 두 칸 배치(뷰포트 640 미만)도 띠가 넓으면 타일이 넓어 출처 줄이 덜 꺾입니다 — QA 스택 홈 시장 타일의 읽은 뒤 줄 높이는 띠 400px
+  // (타일 196px)까지 QA 자료 170·187·187·새 자료 144·161·178px였다가 띠 401~402px(타일 196.5~197px)부터 154·171·171·128·145·162px로 낮아집니다
+  // (네 칸이 띠 808→810px, 타일 196→196.5px에서 낮아지는 것과 같은 타일 폭). 그런데 고침은 두 칸을 모두 다섯 줄(200px)로 두어 440~639의 새 자료 CLS가
+  // 0.115~0.163(440x956·540x720·600x1024 — 0.1 넘음)이었습니다. 또 넓은 칸 배치에서 다섯째(짧은) 막대를 감추면 보이는 마지막 막대(넷째)가 w-full이라
+  // '마지막 줄을 짧게'(공용 Skeleton 규칙)가 그 배치에서만 사라졌습니다(768 홈 — 막대 다섯이 모두 전체 폭).
+  // 수정 전(재현 커밋에서는 it.fails) 다섯째 덧 막대의 감추는 클래스는 ['sm:max-lg:hidden', 'lg:max-xl:@min-[816px]:hidden', 'xl:@min-[816px]:@max-[986px]:hidden']
+  // (두 칸 몫 없음), 넷째 덧 막대에는 ':w-3/5'로 끝나는 클래스가 없었습니다(늘 w-full).
+  it.fails("두 칸 넓은 띠(404px 이상 = 타일 198px, 네 칸 816px과 같은 타일 폭)에서도 다섯째 막대를 감추고, 넓은 칸 배치마다 보이는 마지막 막대를 짧게 (QA-604)", () => {
+    const market: KpiItem = { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 5, pendingLinesWide: 4 };
+    const items = (n: number, first: KpiItem = market): KpiItem[] => [
+      first,
+      ...Array.from({ length: n - 1 }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: null, pending: true, pendingLines: 5 })),
+    ];
+    const { rerender } = render(<KpiStrip label="요약" items={items(7)} />);
+    const tokens = (element: Element) => element.className.split(/\s+/);
+    const extraBars = (name: string) => Array.from((tile(name).querySelector('div[aria-hidden="true"].flex-col') as HTMLElement).children);
+    const variantShort = (element: Element) => tokens(element).filter((token) => token.endsWith(":w-3/5"));
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+      rerender(<KpiStrip label="요약" items={items(n)} />);
+      const bars = extraBars("S&P 500");
+      const hide = tokens(bars[4]).filter((token) => token.endsWith(":hidden"));
+      // 두 칸 몫은 표의 맨 앞 — 뷰포트 640 미만이면서 띠 404px 이상(2 × 198 + 8)입니다.
+      expect(hide[0], `${n}`).toBe("max-sm:@min-[404px]:hidden");
+      // 넷째 막대는 다섯째를 감추는 바로 그 배치들에서만 짧습니다(같은 표에서 만듦 — 변형 하나하나가 짝).
+      expect(variantShort(bars[3]), `${n}`).toEqual(hide.map((token) => token.replace(/:hidden$/, ":w-3/5")));
+      expect(tokens(bars[3]), `${n}`).toContain("w-full");
+      // 앞 세 막대는 어느 배치에서도 전체 폭, 다섯째는 지금처럼 늘 짧습니다(좁은 배치의 마지막 줄).
+      for (const bar of bars.slice(0, 3)) {
+        expect(variantShort(bar)).toEqual([]);
+      }
+      expect(tokens(bars[4])).toContain("w-3/5");
+    }
+    // pendingLinesWide를 주지 않은 타일은 감추는 막대도, 배치별로 짧아지는 막대도 없습니다.
+    for (const bar of extraBars("값 0")) {
+      expect(tokens(bar).filter((token) => token.endsWith(":hidden") || token.endsWith(":w-3/5"))).toEqual([]);
+    }
+    // 넓은 칸 배치에서 한 줄만 남으면 짧게 하지 않습니다(공용 Skeleton — 줄이 둘 이상일 때만 마지막을 짧게).
+    rerender(<KpiStrip label="요약" items={items(7, { ...market, pendingLinesWide: 1 })} />);
+    const one = extraBars("S&P 500");
+    expect(variantShort(one[0])).toEqual([]);
+    for (const bar of one.slice(1)) {
+      expect(tokens(bar)).toContain("max-sm:@min-[404px]:hidden");
+    }
+  });
+
   it("상태 글(오류·주의)은 아이콘 + 읽어 주는 머리말 + 글 — 색만으로 뜻을 전하지 않는다", () => {
     render(
       <KpiStrip
