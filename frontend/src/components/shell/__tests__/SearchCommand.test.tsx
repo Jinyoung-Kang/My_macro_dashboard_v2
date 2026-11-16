@@ -55,6 +55,10 @@ const spokenText = (element: HTMLElement) => {
   return copy.textContent ?? "";
 };
 
+/** 창 폭 — 넓은 화면(lg 이상)이면 명령 팔레트로 넓힌 범주(최근 연 대상·명령·도움말 안내)가 보입니다(팔레트를 열 때 셈). */
+const stubWide = (wide: boolean) =>
+  vi.stubGlobal("matchMedia", (query: string) => ({ matches: wide && query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
+
 function openSearch(user: SessionUser = MEMBER) {
   render(<SearchCommand user={user} />);
   fireEvent.click(trigger());
@@ -467,8 +471,37 @@ describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, �
   });
 });
 
-describe("최근 연 대상(이 브라우저에만, 8개)", () => {
+describe("좁은 화면(lg 미만) — 지금 통합 검색 그대로(명세 §0 W2)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("최근 연 대상·명령·도움말 안내 문장이 없다 — 빈 검색어의 Enter는 아무것도 하지 않는다", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+    ]));
+    stubWide(false);
+    openSearch();
+    await act(async () => {});
+    expect(screen.queryByRole("group", { name: "최근 연 대상" })).toBeNull();
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(input().getAttribute("aria-expanded")).toBe("false");
+    const guide = screen.getByText(/종목 이름·티커·국내 코드를 입력하세요/);
+    expect(guide.textContent).toMatch(/Yahoo·네이버에서 찾음\)\.$/);
+    expect(guide.textContent).not.toContain("단축키 도움말");
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "통합 검색" })).toBeTruthy();
+
+    for (const query of ["단축키", "?", "메뉴 접기", "["]) {
+      type(query);
+      expect(screen.queryByRole("group", { name: "명령" }), query).toBeNull();
+    }
+  });
+});
+
+describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", () => {
   const recentGroup = () => screen.queryByRole("group", { name: "최근 연 대상" });
+  beforeEach(() => stubWide(true));
+  afterEach(() => vi.unstubAllGlobals());
 
   it("대상을 고르면 다시 열 때 빈 검색어에 '최근 연 대상'(최신 순)이 보이고, Enter로 맨 위 대상에 간다", async () => {
     openSearch();
@@ -552,16 +585,15 @@ describe("최근 연 대상(이 브라우저에만, 8개)", () => {
   });
 });
 
-describe("명령(셸 명령만 — 서버를 부르지 않음)", () => {
+describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", () => {
   let commands: string[];
   const record = (event: Event) => commands.push(String((event as CustomEvent).detail));
   const commandGroup = () => screen.queryByRole("group", { name: "명령" });
-  const stubWide = () =>
-    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
 
   beforeEach(() => {
     commands = [];
     window.addEventListener(SHELL_COMMAND_EVENT, record);
+    stubWide(true);
   });
   afterEach(() => {
     window.removeEventListener(SHELL_COMMAND_EVENT, record);
@@ -611,13 +643,14 @@ describe("명령(셸 명령만 — 서버를 부르지 않음)", () => {
   });
 
   it("왼쪽 메뉴 접기·펼치기는 넓은 화면에서만 보이고, 고르면 팔레트를 닫은 뒤 셸 명령 toggle-nav를 보낸다", async () => {
+    stubWide(false);
     openSearch();
     await act(async () => {});
     type("메뉴 접기");
     expect(commandGroup()).toBeNull();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 
-    stubWide();
+    stubWide(true);
     fireEvent.click(trigger());
     await act(async () => {});
     type("메뉴 접기");

@@ -88,6 +88,8 @@ const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
  *   '종목 찾기'에 붙입니다. 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞 검색어의 결과가 남지 않게).
  * - 결과 맨 아래(목록 밖)의 '‘검색어’ 정보 검색' 링크 — 같은 검색어로 정보 검색 화면(/search?q=, ADR 0041)으로 갑니다. 결과가 없어도 있고,
  *   결과 수·'맞는 결과가 없습니다'에는 세지 않습니다.
+ * - 명령 팔레트로 넓힌 범주(최근 연 대상·명령)와 빈 검색어 안내 끝의 도움말 문장은 넓은 화면(lg 이상 — 팔레트를 열 때 셈)에만 있습니다(작업대 실행
+ *   명세 §0 W2 — 명령 팔레트는 넓은 화면 항목, 좁은 화면은 지금 통합 검색 그대로).
  */
 export function SearchCommand({ user }: { user?: SessionUser }) {
   const router = useRouter();
@@ -104,14 +106,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const openHelp = useCallback(() => setHelp({ open: true, conditions: shortcutConditionsNow() }), []);
   useEffect(() => onShellCommand("open-shortcut-help", openHelp), [openHelp]);
 
-  // 맥 ⌘K·그 밖 Ctrl+K(한글 자판 물리 키 포함)·?·/·[ — 판정은 lib/shortcuts. 셸의 전역 keydown 처리기는 이 훅 하나입니다.
-  // 도움말 창이 열린 채 ⌘K/Ctrl K를 누르면(도움말 첫 줄을 따라 해 보는 경우) 도움말을 닫고 팔레트를 엽니다 — 겹쳐 열면 팔레트에서 대상을 골라
-  // 화면을 옮긴 뒤에도 도움말 창이 남았습니다.
-  const openPalette = () => {
-    setHelp((current) => (current.open ? { ...current, open: false } : current));
-    setOpen(true);
-  };
-  useShellShortcuts({ isMac, onPalette: openPalette, onHelp: openHelp });
+  // 넓은 화면(lg 이상)인가 — 팔레트를 열 때 한 번 셉니다(열린 동안 창 폭이 바뀌어도 그대로). 거짓이면 지금 통합 검색 그대로(최근 연 대상·명령·도움말 안내 없음).
+  const [wide, setWide] = useState(false);
 
   // /api/macro/overview는 live 없이(저장본) — 검색 때문에 외부 시세를 새로 받지 않습니다.
   const overview = useApi<MacroOverview>(open ? endpoints.macro.overview(false) : null);
@@ -142,21 +138,23 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     const remote = symbolGroup(symbols.data, indexed);
     return remote ? [...indexed, remote] : indexed;
   }, [indexed, symbols.data]);
-  // 최근 연 대상(이 브라우저에만 — 닫혀 있어도 localStorage만 읽음, 검색 자료는 읽지 않음).
+  // 최근 연 대상(이 브라우저에만 — 닫혀 있어도 localStorage만 읽음, 검색 자료는 읽지 않음). 보이는 것은 넓은 화면에서만입니다.
   const recent = useRecentEntities();
   const trimmed = query.trim();
-  // 명령 — 검색어가 맞을 때만(빈 검색어에는 없음 — 빈 Enter가 뜻밖의 동작이 되지 않게). 왼쪽 메뉴 접기는 넓은 화면에서만.
-  const commands = useMemo(() => (open && trimmed !== "" ? commandMatches(trimmed, { wide: isWideShell() }) : []), [open, trimmed]);
-  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(있을 때만), 검색어가 있으면 지금 범주(메뉴·지표·기관·종목·종목 찾기) 다음 명령(맞을 때만).
+  // 명령 — 넓은 화면에서 검색어가 맞을 때만(lib/palette — 명령은 모두 wideOnly). 빈 검색어에는 명령이 없어 빈 Enter가 명령(도움말 창 열기·
+  // 메뉴 접기)을 실행하지 않습니다.
+  const commands = useMemo(() => (open && trimmed !== "" ? commandMatches(trimmed, { wide }) : []), [open, trimmed, wide]);
+  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(넓은 화면에서 있을 때만 — 그때 빈 Enter는 맨 위 대상으로 갑니다), 검색어가 있으면 지금 범주
+  // (메뉴·지표·기관·종목·종목 찾기) 다음 명령(맞을 때만). 좁은 화면의 빈 검색어는 결과가 없어 Enter가 아무것도 하지 않습니다(지금 그대로).
   const paletteGroups = useMemo<PaletteGroup[]>(() => {
     if (trimmed === "") {
-      return recent.length > 0
+      return wide && recent.length > 0
         ? [{ key: "recent", label: RECENT_GROUP_LABEL, more: 0, options: recentEntries(recent).map(entryOption) }]
         : [];
     }
     const found = groups.map((group) => ({ key: group.kind, label: group.label, more: group.more, options: group.items.map(entryOption) }));
     return commands.length > 0 ? [...found, { key: "command", label: COMMAND_GROUP_LABEL, more: 0, options: commands.map(commandOption) }] : found;
-  }, [trimmed, recent, groups, commands]);
+  }, [trimmed, wide, recent, groups, commands]);
   const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
@@ -171,12 +169,23 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
 
   const changeOpen = (next: boolean) => {
     setOpen(next);
-    if (!next) {
+    if (next) {
+      setWide(isWideShell());
+    } else {
       setQuery("");
       setSettled("");
       setActive(0);
     }
   };
+
+  // 맥 ⌘K·그 밖 Ctrl+K(한글 자판 물리 키 포함)·?·/·[ — 판정은 lib/shortcuts. 셸의 전역 keydown 처리기는 이 훅 하나입니다.
+  // 도움말 창이 열린 채 ⌘K/Ctrl K를 누르면(도움말 첫 줄을 따라 해 보는 경우) 도움말을 닫고 팔레트를 엽니다 — 겹쳐 열면 팔레트에서 대상을 골라
+  // 화면을 옮긴 뒤에도 도움말 창이 남았습니다.
+  const openPalette = () => {
+    setHelp((current) => (current.open ? { ...current, open: false } : current));
+    changeOpen(true);
+  };
+  useShellShortcuts({ isMac, onPalette: openPalette, onHelp: openHelp });
 
   // 명령 실행 — 셸 명령뿐입니다(도움말 창은 이 컴포넌트의 상태, 왼쪽 메뉴 접기는 셸 명령 신호). 서버를 부르는 명령은 없습니다.
   const runShellCommand = useCallback(
@@ -373,7 +382,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
         {trimmed === "" && (
           <p className="px-3 text-sm text-text-2">
             메뉴 이름, 매크로 지표 이름·티커, 13F 기관 이름, 종목 이름·티커·국내 코드를 입력하세요. 지표·기관·종목은 시세·지표·뉴스를 모은 상세 화면으로
-            갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음). ?를 치고 Enter를 누르면 단축키 도움말을 봅니다.
+            갑니다(목록에 없는 종목은 Yahoo·네이버에서 찾음).
+            {wide && " ?를 치고 Enter를 누르면 단축키 도움말을 봅니다."}
           </p>
         )}
         {trimmed !== "" && flat.length === 0 && <p className="px-3 text-sm text-text-2">{noResultText(trimmed, notices)}</p>}

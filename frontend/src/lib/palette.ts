@@ -1,11 +1,13 @@
 /**
  * 명령 팔레트(통합 검색 SearchCommand를 넓힌 것 — 작업대 실행 명세 §5, P3)의 범주 가운데 lib/search 밖의 것 — React를 모르는 순수 함수(ADR 0004).
  *
- * - 최근 연 대상: 팔레트에서 고른 지표·기관·종목(종목 찾기 포함)을 이 브라우저에만(localStorage) 최신 순 8개 기억합니다. 검색어가 빌 때만 보입니다.
+ * - 최근 연 대상: 팔레트에서 고른 지표·기관·종목(종목 찾기 포함)을 이 브라우저에만(localStorage) 최신 순 8개 기억합니다. 넓은 화면에서 검색어가 빌
+ *   때만 보입니다(좁은 화면은 지금 통합 검색 그대로 — 실행 명세 §0 W2).
  *   메뉴는 넣지 않습니다(메뉴는 왼쪽 메뉴·탭에 늘 있음). 저장값은 읽을 때 형식을 다시 검사합니다 — 종류 넷, 주소는 상세 화면 세 경로뿐이고
  *   lib/detail의 parse 함수로 다시 풀어 만든 주소만 씁니다. 저장소 값이 바뀌어도(다른 확장·사람이 고침) 다른 주소(javascript: 등)로 보내지 않습니다.
  *   공개 시세 대상의 이름·티커만 담깁니다(실제 계좌 자료 없음).
- * - 명령: 닫힌 목록(PALETTE_COMMANDS) — 단축키 도움말, 왼쪽 메뉴 접기·펼치기(넓은 화면만). 효과는 셸 명령(lib/shellCommands) 하나뿐이라 서버를 부르는
+ * - 명령: 닫힌 목록(PALETTE_COMMANDS) — 단축키 도움말, 왼쪽 메뉴 접기·펼치기. 둘 다 넓은 화면에서만 보입니다(wideOnly — 명령 팔레트는 넓은 화면
+ *   항목, 실행 명세 §0 W2). 효과는 셸 명령(lib/shellCommands) 하나뿐이라 서버를 부르는
  *   효과가 타입에 없습니다. 데이터 새로고침·결정 실행·계좌 초기화·일시정지·실제 매매 켜기·끄기·설정 저장 같은 쓰기 동작은 팔레트에 넣지 않습니다
  *   (ADR 0042 결정 5, 실행 명세 §5·§9-6 — components/shell/__tests__/paletteNoWrites.test.tsx가 지킴). 묶음 이름은 '명령'입니다('동작'은 화면 머리의
  *   쓰기 동작 영역 이름). 검색어가 맞을 때만 보입니다(빈 검색어에는 없음).
@@ -31,7 +33,7 @@ export type PaletteCommand = {
   /** 이름 말고도 맞추는 말 — 기호 하나('?'·'[')는 검색어가 그 기호 그대로일 때 맞습니다. */
   keywords: readonly string[];
   effect: PaletteCommandEffect;
-  /** 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만 보입니다. */
+  /** 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만 보입니다 — 지금은 모든 명령(좁은 화면 팔레트는 지금 통합 검색 그대로). */
   wideOnly?: true;
 };
 
@@ -43,6 +45,7 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
     keys: "?",
     keywords: ["단축키", "키보드", "도움말", "shortcut", "help", "?"],
     effect: { type: "shell", command: "open-shortcut-help" },
+    wideOnly: true,
   },
   {
     id: "command:toggle-nav",

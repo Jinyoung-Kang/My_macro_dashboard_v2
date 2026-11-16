@@ -134,10 +134,10 @@ describe("결과 행", () => {
 });
 
 describe("명령 — 닫힌 목록, 셸 명령만", () => {
-  it("단축키 도움말과 왼쪽 메뉴 접기·펼치기(넓은 화면만) 둘 — 효과는 모두 셸 명령, 묶음 이름은 '명령'", () => {
+  it("단축키 도움말과 왼쪽 메뉴 접기·펼치기 둘(모두 넓은 화면만 — 명세 §0 W2) — 효과는 모두 셸 명령, 묶음 이름은 '명령'", () => {
     expect(COMMAND_GROUP_LABEL).toBe("명령");
     expect(PALETTE_COMMANDS.map((command) => [command.id, command.label, command.keys, command.effect, command.wideOnly ?? false])).toEqual([
-      ["command:shortcut-help", "단축키 도움말", "?", { type: "shell", command: "open-shortcut-help" }, false],
+      ["command:shortcut-help", "단축키 도움말", "?", { type: "shell", command: "open-shortcut-help" }, true],
       ["command:toggle-nav", "왼쪽 메뉴 접기·펼치기", "[", { type: "shell", command: "toggle-nav" }, true],
     ]);
     for (const command of PALETTE_COMMANDS) expect(SHELL_COMMANDS).toContain(command.effect.command);
@@ -151,12 +151,12 @@ describe("명령 — 닫힌 목록, 셸 명령만", () => {
   });
 
   it("이름·검색어를 자모로 맞춘다 — 입력 중인 글자, 초성, 영문 검색어", () => {
-    expect(ids("단축키", false)).toEqual(["command:shortcut-help"]);
-    expect(ids("도움", false)).toEqual(["command:shortcut-help"]);
-    expect(ids("키보드", false)).toEqual(["command:shortcut-help"]);
-    expect(ids("단축ㅋ", false)).toEqual(["command:shortcut-help"]);
-    expect(ids("ㄷㅊㅋ", false)).toEqual(["command:shortcut-help"]);
-    expect(ids("Help", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("단축키", true)).toEqual(["command:shortcut-help"]);
+    expect(ids("도움", true)).toEqual(["command:shortcut-help"]);
+    expect(ids("키보드", true)).toEqual(["command:shortcut-help"]);
+    expect(ids("단축ㅋ", true)).toEqual(["command:shortcut-help"]);
+    expect(ids("ㄷㅊㅋ", true)).toEqual(["command:shortcut-help"]);
+    expect(ids("Help", true)).toEqual(["command:shortcut-help"]);
     expect(ids("메뉴 접기", true)).toEqual(["command:toggle-nav"]);
     expect(ids("메뉴펼치", true)).toEqual(["command:toggle-nav"]);
     expect(ids("사이드바", true)).toEqual(["command:toggle-nav"]);
@@ -166,14 +166,16 @@ describe("명령 — 닫힌 목록, 셸 명령만", () => {
   });
 
   it("기호 하나('?'·'[')는 그 기호를 단축키로 가진 명령과 맞는다", () => {
-    expect(ids("?", false)).toEqual(["command:shortcut-help"]);
+    expect(ids("?", true)).toEqual(["command:shortcut-help"]);
     expect(ids("[", true)).toEqual(["command:toggle-nav"]);
     expect(ids("]", true)).toEqual([]);
   });
 
-  it("넓은 화면이 아니면 왼쪽 메뉴 접기·펼치기를 뺀다", () => {
+  it("넓은 화면이 아니면 명령이 없다 — 좁은 화면 팔레트는 지금 통합 검색 그대로", () => {
     expect(ids("메뉴 접기", false)).toEqual([]);
     expect(ids("[", false)).toEqual([]);
+    expect(ids("단축키", false)).toEqual([]);
+    expect(ids("?", false)).toEqual([]);
   });
 });
 
