@@ -13,7 +13,7 @@ function buildInfo(): { version?: string; updated?: string } {
 }
 
 /**
- * 지금 화면이 "어느 코드"인지 항상 보이게 둡니다. git pull 뒤에도 화면이 그대로일 때, 코드를 못 받은 것인지 화면이 안 바뀐
+ * 지금 화면이 "어느 코드"인지 늘 찾을 수 있게 둡니다(넓은 화면은 상단바 계정 메뉴 안, 좁은 화면은 더보기 화면). git pull 뒤에도 화면이 그대로일 때, 코드를 못 받은 것인지 화면이 안 바뀐
  * 것인지 이 한 줄로 구분됩니다. 'make up'이 넣어 주며, 값이 없으면(직접 docker compose로 띄운 경우) 표시하지 않습니다.
  */
 export function BuildInfo() {
