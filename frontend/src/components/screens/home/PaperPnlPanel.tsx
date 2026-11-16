@@ -85,8 +85,9 @@ export function PaperPnlPanel() {
       count={model.rows.length > 0 ? `${model.rows.length.toLocaleString("ko-KR")}개` : undefined}
       actions={actions}
     >
+      {/* 안내·각주 문장은 낱말 사이에서만 줄을 바꿉니다(break-keep — '출발 대|비'처럼 낱말 안에서 꺾이지 않게, 공용 키트와 같은 규칙). */}
       {model.message ? (
-        <p className="text-sm text-text-2">{model.message}</p>
+        <p className="break-keep text-sm text-text-2 wrap-break-word">{model.message}</p>
       ) : (
         <PnlTable rows={model.rows} korea={korea} />
       )}
@@ -95,16 +96,16 @@ export function PaperPnlPanel() {
           <ProvenanceBadge source={model.source} />
         </p>
       ) : null}
-      {model.available ? <p className="mt-1 text-xs leading-relaxed text-text-3">{model.startLine}</p> : null}
+      {model.available ? <p className="mt-1 break-keep text-xs leading-relaxed text-text-3 wrap-break-word">{model.startLine}</p> : null}
       {model.dormantNote ? (
-        <p className="mt-1 text-xs leading-relaxed text-warn">
+        <p className="mt-1 break-keep text-xs leading-relaxed text-warn wrap-break-word">
           <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
             {model.dormantNote}
           </StatusText>
         </p>
       ) : null}
       {model.disabledNote ? (
-        <p className="mt-1 text-xs leading-relaxed text-warn">
+        <p className="mt-1 break-keep text-xs leading-relaxed text-warn wrap-break-word">
           <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />}>
             {model.disabledNote}
           </StatusText>
@@ -112,9 +113,9 @@ export function PaperPnlPanel() {
       ) : null}
       {/* 정기 작업이 켜졌는지 모르면(상태 응답 실패) 모른다고 적습니다 — 꺼짐 안내가 없다고 켜진 것은 아닙니다. */}
       {!status.data && status.error ? (
-        <p className="mt-1 text-xs text-text-3">정기 작업 상태를 확인하지 못했습니다 — {status.error}</p>
+        <p className="mt-1 break-keep text-xs text-text-3 wrap-break-word">정기 작업 상태를 확인하지 못했습니다 — {status.error}</p>
       ) : null}
-      <p className="mt-1 text-xs leading-relaxed text-text-3">{model.compareNote}</p>
+      <p className="mt-1 break-keep text-xs leading-relaxed text-text-3 wrap-break-word">{model.compareNote}</p>
     </Panel>
   );
 }

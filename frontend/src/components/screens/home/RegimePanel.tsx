@@ -52,15 +52,16 @@ export function RegimePanel({ read }: { read: ApiRead<RegimeResponse> }) {
       <>
         {/* 값은 숫자가 아니라 판정 라벨 — 패널 제목과 같은 글자 단계(heading-sm). 판정 불가는 판정 난 라벨과 같은 잉크로 그리지 않습니다(중립색). */}
         <p className={`text-heading-sm ${model.known ? "text-text" : "text-neutral"}`}>{model.label}</p>
-        {model.summary ? <p className="mt-1 text-sm leading-relaxed text-text-2">{model.summary}</p> : null}
-        <p className="mt-2 text-xs text-text-3">
+        {/* 문장 글은 낱말 사이에서만 줄을 바꿉니다(break-keep — 좁은 칸에서 '근거|가'처럼 낱말 안에서 꺾이지 않게, 공용 키트와 같은 규칙). */}
+        {model.summary ? <p className="mt-1 break-keep text-sm leading-relaxed text-text-2 wrap-break-word">{model.summary}</p> : null}
+        <p className="mt-2 break-keep text-xs text-text-3 wrap-break-word">
           기준일 <span className="tabular-nums text-text-2">{model.asOf ?? <Empty />}</span> · {REGIME_AS_OF_NOTE}
         </p>
         <p className="mt-1 leading-4">
           <ProvenanceBadge source={SOURCES.regime} />
         </p>
         {model.missing.length > 0 ? (
-          <p className="mt-3 text-sm text-warn">
+          <p className="mt-3 break-keep text-sm text-warn wrap-break-word">
             <StatusText tone="warn">받지 못한 입력: {model.missing.join(" · ")}</StatusText>
           </p>
         ) : null}
@@ -77,7 +78,7 @@ export function RegimePanel({ read }: { read: ApiRead<RegimeResponse> }) {
             }))}
           />
         </div>
-        {model.note ? <p className="mt-3 text-xs leading-relaxed text-text-3">{model.note}</p> : null}
+        {model.note ? <p className="mt-3 break-keep text-xs leading-relaxed text-text-3 wrap-break-word">{model.note}</p> : null}
       </>
     );
   }

@@ -1066,6 +1066,27 @@ describe("홈 — 표 칸 안의 변화 칩 (QA-595)", () => {
   });
 });
 
+// 국면 패널 본문·고지와 계좌 패널 각주 문장이 좁은 칸에서 '판단의 근거|가 아닙'·'출발 대|비'·'집행·통화|가 달라'처럼 낱말 안에서 꺾였습니다
+// (QA 스택 1024~1920 — 개편 전부터, 공용 키트 고침과 같은 규칙). jsdom은 줄을 재지 않아 클래스로 봅니다.
+describe("홈 — 문장 글의 낱말 단위 줄바꿈", () => {
+  it("국면 패널 문장·기준일·고지와 계좌 패널 출발 줄·비교하지 않음 문구는 break-keep(+ 긴 낱말은 wrap-break-word)", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    const panel = await paperPanel();
+    const hero = region("오늘의 국면");
+    const texts = [
+      within(hero).getByText(/위험자산에 우호적인 조합입니다/),
+      within(hero).getByText(/네 입력 계열의 마지막 날짜 중 가장 이른 날/),
+      within(hero).getByText("임계치는 역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다."),
+      within(panel).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비"),
+      within(panel).getByText(PAPER_COMPARE_NOTE),
+    ];
+    for (const node of texts) {
+      expect(node.className.split(/\s+/), node.textContent ?? "").toEqual(expect.arrayContaining(["break-keep", "wrap-break-word"]));
+    }
+  });
+});
+
 describe("홈 — 운영자가 아닌 사용자", () => {
   for (const [name, user] of [["회원", MEMBER], ["데모 열람", DEMO], ["사용자 모름(레이아웃 밖)", undefined]] as const) {
     it(`${name}: 모의매매·저장소 상태·끊긴 출처를 요청하지 않고 그 구역이 없다 — 국면·시장·알림은 그린다`, async () => {
