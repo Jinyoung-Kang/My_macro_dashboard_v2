@@ -1,9 +1,11 @@
 /**
  * 앱 셸 — 옛 Sidebar.test.tsx의 의도를 옮겨 왔고(계정 영역·운영자 전용 메뉴·빌드 정보), 새 셸의 틀을 더 봅니다.
  *
- * 계정 영역(왼쪽 내비 아래): 데모 열람(ADR 0013)이면 로그아웃·내 계정 링크 대신 "데모 열람". 로그인 없이 연 로컬 운영자(ADR 0016)면
- * 로그아웃 대신 "로컬 · 로그인 없음"을 내 계정 링크로. jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로
- * 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
+ * 계정 영역(넓은 화면 상단바의 계정 메뉴 — 작업대 실행 명세 §5): 데모 열람(ADR 0013)이면 로그아웃·내 계정 링크 대신 "데모 열람". 로그인 없이 연 로컬
+ * 운영자(ADR 0016)면 로그아웃 대신 "로컬 · 로그인 없음"을 내 계정 링크로. 계정 메뉴는 닫혀 있으면 내용이 DOM에 없어 Enter로 연 뒤 보고, 열린 메뉴는
+ * 모달이라(뒤 화면 aria-hidden) 메뉴 밖을 role로 찾는 단언은 열기 전에 둡니다. 메뉴 안의 로그아웃은 단추가 아니라 메뉴 항목(menuitem)입니다
+ * (뜻 단언 예외 — ADR 0042 결정 5·9가 계정 메뉴를 메뉴로 정함, P3 계획 §3-5). 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
+ * jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +44,11 @@ function renderShell(user: SessionUser | undefined, { path = "/macro", readMode 
 }
 
 const mainNav = () => screen.getByRole("navigation", { name: "주 메뉴" });
+/** 넓은 화면 상단바의 계정 메뉴를 엽니다(키보드 Enter — Radix 메뉴). */
+function openAccountMenu(): HTMLElement {
+  fireEvent.keyDown(screen.getByRole("button", { name: "계정 메뉴" }), { key: "Enter" });
+  return screen.getByRole("menu", { name: "계정 메뉴" });
+}
 const bottomNav = () => screen.getByRole("navigation", { name: "하단 메뉴" });
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
 
@@ -61,25 +68,29 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
-describe("계정 영역(옛 사이드바 계정 영역)", () => {
+describe("계정 영역(넓은 화면 상단바의 계정 메뉴 — 옛 사이드바 계정 영역)", () => {
   it("데모 열람이면 로그아웃·내 계정 링크가 없고 '데모 열람'과 조회 전용 안내를 보인다 — 운영 메뉴는 없고 유료 메뉴(AI)는 잠금 없이", () => {
     renderShell(DEMO, { path: "/alerts", readMode: "store_only" });
 
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
-    expect(document.querySelector('a[href="/account"]')).toBeNull();
-    expect(screen.getByText("데모 열람")).toBeTruthy();
-    expect(screen.getByText(/데모에서는 조회만 가능합니다/)).toBeTruthy();
     const more = screen.getByRole("navigation", { name: "더보기 하위 메뉴" });
     expect(within(more).queryByRole("link", { name: "데이터 저장소 상태" })).toBeNull();
     expect(within(more).getByRole("link", { name: "AI 종합 분석" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
+
+    const menu = openAccountMenu();
+    expect(within(menu).queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
+    expect(document.querySelector('a[href="/account"]')).toBeNull();
+    expect(screen.getByText("데모 열람")).toBeTruthy();
+    expect(screen.getByText(/데모에서는 조회만 가능합니다/)).toBeTruthy();
   });
 
   it("계정으로 로그인한 회원은 이메일·등급 링크(내 계정)와 로그아웃을 보인다", () => {
     renderShell(MEMBER_FREE);
 
-    expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
-    const account = document.querySelector('a[href="/account"]');
+    const menu = openAccountMenu();
+    expect(within(menu).getByRole("menuitem", { name: "로그아웃" })).toBeTruthy();
+    const account = menu.querySelector('a[href="/account"]');
     expect(account?.textContent).toContain("member@test.local");
     expect(account?.textContent).toContain("무료 회원");
     expect(screen.queryByText("데모 열람")).toBeNull();
@@ -89,29 +100,35 @@ describe("계정 영역(옛 사이드바 계정 영역)", () => {
     renderShell(LOCAL_OWNER, { path: "/alerts" });
 
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
-    const account = document.querySelector('a[href="/account"]');
-    expect(account?.textContent).toContain("로컬 · 로그인 없음");
-    expect(account?.textContent).toContain("운영자");
     const more = screen.getByRole("navigation", { name: "더보기 하위 메뉴" });
     expect(within(more).getByRole("link", { name: "데이터 저장소 상태" })).toBeTruthy();
     expect(within(more).getByRole("link", { name: "사용자 관리" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /수동 새로고침/ })).toBeTruthy();
+
+    const menu = openAccountMenu();
+    expect(within(menu).queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
+    const account = menu.querySelector('a[href="/account"]');
+    expect(account?.textContent).toContain("로컬 · 로그인 없음");
+    expect(account?.textContent).toContain("운영자");
   });
 
   it("쿠키 세션으로 로그인한 운영자(local 아님)는 로그아웃을 보인다", () => {
     renderShell(COOKIE_OWNER);
 
-    expect(screen.getByRole("button", { name: "로그아웃" })).toBeTruthy();
-    expect(document.querySelector('a[href="/account"]')?.textContent).toContain("owner@test.local");
+    const menu = openAccountMenu();
+    expect(within(menu).getByRole("menuitem", { name: "로그아웃" })).toBeTruthy();
+    expect(menu.querySelector('a[href="/account"]')?.textContent).toContain("owner@test.local");
     expect(screen.queryByText(/로컬 · 로그인 없음/)).toBeNull();
   });
 
   it("데모 열람 표시가 앞선다 — local이 함께 와도 '데모 열람'만 보이고 로그아웃·내 계정 링크가 없다", () => {
     renderShell({ ...DEMO, local: true }, { readMode: "store_only" });
 
+    expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
+    const menu = openAccountMenu();
     expect(screen.getByText("데모 열람")).toBeTruthy();
     expect(screen.queryByText(/로컬 · 로그인 없음/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "로그아웃" })).toBeNull();
     expect(document.querySelector('a[href="/account"]')).toBeNull();
   });
 });
@@ -360,8 +377,9 @@ describe("본문", () => {
     expect(bottomNav().className).toContain("lg:hidden");
   });
 
-  it("읽기 모드를 보이고, store_only면 저장본만 쓴다는 안내", () => {
+  it("읽기 모드를 보이고(계정 메뉴 안), store_only면 저장본만 쓴다는 안내", () => {
     renderShell(MEMBER_PRO, { readMode: "store_only" });
+    openAccountMenu();
     expect(screen.getByText("store_only")).toBeTruthy();
     expect(screen.getByText(/저장본만 사용합니다/)).toBeTruthy();
   });
@@ -410,12 +428,13 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
   });
 });
 
-describe("빌드 정보(옛 사이드바 아래)", () => {
+describe("빌드 정보(계정 메뉴 안 — 옛 사이드바 아래)", () => {
   it("빌드한 커밋 옆에 그 커밋의 날짜를 '최종 수정'으로 보인다", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_VERSION", "main@1ccad1c");
     vi.stubEnv("NEXT_PUBLIC_APP_UPDATED", "2026-10-20");
     renderShell(DEMO, { readMode: "store_only" });
 
+    openAccountMenu();
     expect(screen.getByText(/main@1ccad1c/)).toBeTruthy();
     expect(screen.getByText("최종 수정 2026-10-20")).toBeTruthy();
     // 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2). 왼쪽 내비 아래에도 라디오 묶음이 없다.
@@ -426,6 +445,8 @@ describe("빌드 정보(옛 사이드바 아래)", () => {
     vi.stubEnv("NEXT_PUBLIC_APP_UPDATED", "unknown");
     renderShell(DEMO, { readMode: "store_only" });
 
+    openAccountMenu();
+    expect(screen.getByText(/© 2026 My Macro Dashboard v2/)).toBeTruthy();
     expect(screen.queryByText(/최종 수정/)).toBeNull();
   });
 });

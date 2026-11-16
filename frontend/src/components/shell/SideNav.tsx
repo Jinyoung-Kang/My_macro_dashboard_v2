@@ -3,14 +3,11 @@
 import Link from "next/link";
 import { tabCurrent, visibleTabs } from "@/lib/nav";
 import type { SessionUser } from "@/lib/types";
-import { AccountBox } from "./AccountBox";
-import { BuildInfo } from "./BuildInfo";
-import { ReadModeNote } from "./ReadMode";
 import { TabIcon } from "./icons";
 
 /**
- * 데스크톱(lg 이상) 왼쪽 내비 — 탭(홈·시장·기관·모의매매·정보 검색·정보 수집·더보기 — 보이는 탭만), 아래쪽에 읽기 모드·계정·빌드 정보
- * (운영자의 데이터 새로고침은 상단바의 아이콘 단추).
+ * 데스크톱(lg 이상) 왼쪽 내비 — 탭(홈·시장·기관·모의매매·정보 검색·정보 수집·더보기 — 보이는 탭만). 예전 아래쪽의 읽기 모드·수동 새로고침·계정·빌드 정보는
+ * 상단바로 옮겼습니다(새로고침은 아이콘 단추, 나머지는 계정 메뉴 — 작업대 실행 명세 §5).
  * 앱 이름은 폭 전체의 상단바 맨 왼쪽에 있습니다(작업대 실행 명세 §5 — 메뉴 맨 위 상표는 없앰). 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2).
  * 좁은 화면에서는 숨기고(하단 탭 바 + 더보기 화면이 대신), 데스크톱에서는 상단바 아래 남는 높이에 붙어 본문만 스크롤됩니다(메뉴가 길면 메뉴만 따로 스크롤).
  *
@@ -43,13 +40,6 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
           );
         })}
       </nav>
-
-      <div className="mt-auto flex flex-col gap-3 border-t border-border px-4 py-4">
-        {/* 읽기 모드는 세션 응답에 함께 옵니다(예전에는 이 한 줄 때문에 화면마다 무거운 /api/status를 불렀습니다). */}
-        <ReadModeNote />
-        <AccountBox user={user} />
-        <BuildInfo />
-      </div>
     </aside>
   );
 }

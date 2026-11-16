@@ -4,6 +4,7 @@ import Link from "next/link";
 import { MarketClock } from "@/components/MarketClock";
 import { unreadBadge } from "@/lib/alerts";
 import type { SessionUser } from "@/lib/types";
+import { AccountMenu } from "./AccountMenu";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { RefreshButton } from "./RefreshButton";
 import { SearchCommand } from "./SearchCommand";
@@ -18,8 +19,8 @@ function bellLabel(unread: number | null | undefined): string {
 
 /**
  * 상단바 — 앱 이름, 빵부스러기(넓은 화면만), 통합 검색 단추(⌘K — 명령 팔레트), 데이터 새로고침 아이콘 단추(운영자·넓은 화면만), 장 상태 칩 둘(MarketClock),
- * 알림 벨(/alerts, 읽지 않은 수 배지).
- * 넓은 화면(lg 이상)은 화면 폭 전체의 높이 48px 한 줄(앱 이름 · 빵부스러기 · 검색 · 새로고침 · 장 상태 칩 · 벨)이고 그 아래 줄에 왼쪽 메뉴와 본문이 놓입니다
+ * 알림 벨(/alerts, 읽지 않은 수 배지), 계정 메뉴(넓은 화면만).
+ * 넓은 화면(lg 이상)은 화면 폭 전체의 높이 48px 한 줄(앱 이름 · 빵부스러기 · 검색 · 새로고침 · 장 상태 칩 · 벨 · 계정)이고 그 아래 줄에 왼쪽 메뉴와 본문이 놓입니다
  * (작업대 실행 명세 §5, ADR 0042 결정 5). 좁은 화면은 지금 구조 그대로 — 64px 줄(앱 이름·검색·벨) 아래 장 상태 칩 줄을 하나 더 둡니다.
  * 앱 이름은 좁은 화면과 lg~xl 사이에서 짧게('My Macro v2'), xl 이상에서 'My Macro Dashboard v2'입니다.
  * 장 시계는 인스턴스 하나이고 자리(order)만 바뀝니다 — 둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생깁니다.
@@ -61,6 +62,8 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
           </span>
         )}
       </Link>
+      {/* 계정 메뉴(계정·단축키 도움말·읽기 모드·빌드 정보·로그아웃) — 넓은 화면만, 좁은 화면은 더보기의 계정 영역. */}
+      <AccountMenu user={user} />
     </header>
   );
 }
