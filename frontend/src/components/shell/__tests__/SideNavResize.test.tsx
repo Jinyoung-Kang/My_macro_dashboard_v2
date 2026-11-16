@@ -118,6 +118,15 @@ describe("접근성", () => {
     );
   });
 
+  // QA-602: 고대비(forced-colors)에서 가리킨·잡은 동안·포커스 때 ::before의 불투명 바탕(border-strong·accent)이 Canvas로 강제되어 메뉴 경계선(219px —
+  // 메뉴 높이 전체)과 손잡이 윤곽선의 왼쪽 띠를 덮었습니다(QA 스택 1440 /macro — 가리킴 219~220 Canvas, Highlight는 225~226 한 줄). bg-transparent는
+  // 명시도에서 hover:before:… 규칙에 져서 효과가 없으므로 고대비에서는 ::before를 숨깁니다. 재현 커밋 실패 값:
+  // AssertionError: expected [ 'absolute', 'inset-y-0', …(26) ] to include 'forced-colors:before:hidden'.
+  it.fails("QA-602: 고대비에서는 ::before(가리킴·잡음·포커스 선)를 숨긴다 — 경계선과 Highlight 윤곽선을 덮지 않음", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    expect(classes(handle())).toContain("forced-colors:before:hidden");
+  });
+
   it("접혔으면 값은 하한 200(가장 왼쪽 자리)이고 읽는 글은 접힘과 펼 때의 폭", () => {
     window.localStorage.setItem("shell.navCollapsed", "1");
     window.localStorage.setItem("shell.navWidth", "260");
