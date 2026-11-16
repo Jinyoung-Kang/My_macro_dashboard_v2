@@ -71,6 +71,8 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   // 추적하지 않는 CIK — 백엔드가 400으로 알립니다. 그 문구는 API 호출자를 위한 글('/api/sec13f/institutions 목록의 cik를 쓰세요')이라 화면 글로
   // 바꾸고, 다시 해도 같은 400이라 다시 시도를 두지 않습니다(QA-584). 서버·연결 실패는 그대로 오류 글(보유 탭은 다시 시도 — QA-190).
   const untracked = !data && portfolio.errorStatus === 400;
+  // 뉴스·AI 요약을 부르지 않는 까닭 — 추적하지 않는 기관이면 머리 안내와 같은 말, 읽지 못했거나 이름이 없으면 이름을 받지 못했다고(QA-584).
+  const idleText = (what: string) => (untracked ? `추적하지 않는 기관이라 ${what}` : nameMissing ? `기관 이름을 받지 못해 ${what}` : undefined);
 
   let placeholder;
   if (!data) {
@@ -108,7 +110,10 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
       />
     );
   } else if (!data) {
-    chart = portfolio.error ? (
+    // 추적하지 않는 CIK(400)는 읽기 실패가 아니라 대상이 아님 — 머리 안내와 같은 말로 적습니다(QA-584).
+    chart = untracked ? (
+      <p className="break-keep text-sm text-text-2">추적하지 않는 기관이라 13F 추이가 없습니다.</p>
+    ) : portfolio.error ? (
       <p className="text-sm text-text-2">13F 포트폴리오를 읽지 못해 추이를 그리지 않습니다.</p>
     ) : (
       <Skeleton height={220} label="분기별 평가액을 불러오는 중" />
@@ -180,7 +185,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
                   </Panel>
                   <AiSummaryCard
                     request={query ? { q: query, label: detailQuery(title) ?? undefined } : null}
-                    idleText={nameMissing ? "기관 이름을 받지 못해 요약하지 않습니다." : undefined}
+                    idleText={idleText("요약하지 않습니다.")}
                   />
                 </>
               ),
@@ -199,7 +204,7 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
                 <NewsCard
                   path={query ? endpoints.detail.news({ q: query }) : null}
                   searchQuery={query}
-                  idleText={nameMissing ? "기관 이름을 받지 못해 뉴스를 찾지 않습니다." : undefined}
+                  idleText={idleText("뉴스를 찾지 않습니다.")}
                 />
               ),
             },

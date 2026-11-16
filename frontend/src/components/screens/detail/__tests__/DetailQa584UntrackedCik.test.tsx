@@ -31,6 +31,8 @@ import InstitutionDetailPage from "@/app/(dashboard)/institutions/[cik]/page";
 import { InstitutionDetailScreen } from "../InstitutionDetailScreen";
 
 const MEMBER: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "FREE" };
+/** AI 요약을 쓸 수 있는 회원 — 무료 회원은 요약 카드가 등급 안내라 부르지 않는 까닭(idleText)이 보이지 않습니다. */
+const PRO: SessionUser = { email: "p@test.local", role: "MEMBER", tier: "PRO" };
 const UNTRACKED = "0000000001";
 /** 백엔드 Institutions.requireKnownCik의 400 문구(API 호출자를 위한 글). */
 const BACKEND_400 = `추적하지 않는 기관 CIK입니다: ${UNTRACKED} (/api/sec13f/institutions 목록의 cik를 쓰세요)`;
@@ -89,9 +91,13 @@ describe("기관 상세 — 앞 0 없는 CIK와 추적하지 않는 CIK (QA-584)
   // 머리가 '추적하는 13F 기관이 아닙니다'라고 중립으로 알리는데 기본으로 열리는 개요 탭(차트 패널·AI 요약)과 뉴스 탭은 읽기 실패로 적었습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 '13F 포트폴리오를 읽지 못해 추이를 그리지 않습니다.'·'기관 이름을 받지 못해 요약하지 않습니다.'·
   // '기관 이름을 받지 못해 뉴스를 찾지 않습니다.'였습니다.
-  it.fails("추적하지 않는 CIK(400)는 개요 탭 차트·AI 요약과 뉴스 탭도 '추적하지 않는 기관' 글 — 읽기 실패 글 없음", async () => {
+  it("추적하지 않는 CIK(400)는 개요 탭 차트·AI 요약과 뉴스 탭도 '추적하지 않는 기관' 글 — 읽기 실패 글 없음", async () => {
     reads[endpoints.institution.portfolio(UNTRACKED, 8, 30)] = await apiError(BACKEND_400, 400);
-    renderAs(<InstitutionDetailScreen cik={UNTRACKED} />);
+    render(
+      <SessionUserProvider user={PRO}>
+        <InstitutionDetailScreen cik={UNTRACKED} />
+      </SessionUserProvider>,
+    );
     const chart = (await screen.findByRole("region", { name: "분기별 13F 보고 평가액" })) as HTMLElement;
     await waitFor(() => expect(within(chart).getByText("추적하지 않는 기관이라 13F 추이가 없습니다.")).toBeTruthy());
     expect(screen.getByText("추적하지 않는 기관이라 요약하지 않습니다.")).toBeTruthy();
