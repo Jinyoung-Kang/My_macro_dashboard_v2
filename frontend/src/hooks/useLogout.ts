@@ -18,7 +18,8 @@ export function useLogout(): { logout: () => Promise<void>; error: string | null
       await auth.logout();
       router.push("/login");
     } catch (err) {
-      setError(`로그아웃하지 못했습니다 — ${err instanceof Error ? err.message : "다시 시도하세요"}`);
+      // 짧은 결과 낱말 먼저(새로고침 실패 안내와 같은 꼴) — 넓은 화면 상단바 한 줄에서는 결과 낱말까지가 이 글의 하한입니다(FailureNotice, QA-547).
+      setError(`로그아웃 실패 — ${err instanceof Error ? err.message : "다시 시도하세요"}`);
     }
   }, [router]);
 

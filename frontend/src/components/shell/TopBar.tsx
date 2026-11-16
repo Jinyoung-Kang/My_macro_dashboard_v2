@@ -24,7 +24,8 @@ function bellLabel(unread: number | null | undefined): string {
  * 알림 벨(/alerts, 읽지 않은 수 배지), 계정 메뉴(넓은 화면만).
  * 넓은 화면(lg 이상)은 화면 폭 전체의 높이 48px 한 줄(앱 이름 · 빵부스러기 · 검색 · 새로고침 · 장 상태 칩 · 벨 · 계정)이고 그 아래 줄에 왼쪽 메뉴와 본문이 놓입니다
  * (작업대 실행 명세 §5, ADR 0042 결정 5). 좁은 화면은 지금 구조 그대로 — 64px 줄(앱 이름·검색·벨) 아래 장 상태 칩 줄을 하나 더 둡니다.
- * 앱 이름은 좁은 화면과 lg~xl 사이에서 짧게('My Macro v2'), xl 이상에서 'My Macro Dashboard v2'입니다.
+ * 앱 이름은 좁은 화면과 lg~xl 사이에서 짧게('My Macro v2'), xl 이상에서 'My Macro Dashboard v2'입니다. 글 전체는 flex 상자 안의 인라인 span 하나에
+ * 담습니다 — 글 조각이 따로 flex 항목이 되면 항목 맨 앞 공백이 접혀 xl에서 'My MacroDashboardv2'로 붙었습니다(QA-550).
  * 장 시계는 인스턴스 하나이고 자리(order)만 바뀝니다 — 둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생깁니다.
  * 데스크톱에서는 본문만 스크롤되므로 늘 보이고, 좁은 화면에서는 페이지와 함께 올라갑니다(고정하면 화면 안 #앵커 제목을 가림).
  */
@@ -36,9 +37,11 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-surface px-4 sm:px-6 lg:h-12 lg:flex-nowrap lg:gap-x-2 lg:px-4">
       <span className="flex h-16 shrink-0 items-center whitespace-nowrap text-[15px] font-bold text-text lg:mr-2 lg:h-auto lg:text-base lg:font-semibold">
-        My Macro<span className="hidden xl:inline"> Dashboard</span> v2
+        <span>
+          My Macro<span className="hidden xl:inline"> Dashboard</span> v2
+        </span>
       </span>
-      {/* 빵부스러기가 남는 폭을 차지합니다(lg:flex-1 — 예전 빈칸 자리). 좁은 화면에는 없습니다. */}
+      {/* 빵부스러기가 자기 글 폭을 주장하고 남는 폭을 차지합니다(lg:flex-auto — 예전 빈칸 자리, 폭 배분은 Breadcrumbs). 좁은 화면에는 없습니다. */}
       <Breadcrumbs pathname={pathname} user={user} />
       <SearchCommand user={user} />
       {/* 운영자의 데이터 새로고침 — 넓은 화면만, 결과 안내(role=status)가 단추 왼쪽에(좁은 화면은 더보기 '데이터 읽기'). */}
@@ -59,11 +62,13 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
           <BellIcon size={20} />
           {/* 수 배지는 알림을 여는 단추의 일부라 강조 파랑(명세 원칙 A1 — 알림 수). 이름(aria-label)이 수를 읽으므로 배지는 장식입니다.
               벨 단추와 수 배지는 4px 모서리입니다 — 수가 두 자리면 알약이 되던 rounded-full을 공용 단추·태그와 같은 모서리로(작업대 실행 명세 §3-8).
-              고대비에서는 바탕이 지워져 배지가 벨을 가린 빈 자리로 보이므로 1px 테두리로 상자를 남깁니다(forced-colors:border — 색은 고대비가 정함, QA-501). */}
+              고대비에서는 바탕이 지워져 배지가 벨을 가린 빈 자리로 보이므로 1px 테두리로 상자를 남깁니다(forced-colors:border — 색은 고대비가 정함, QA-501).
+              넓은 화면 30px 벨에서는 배지를 16px로 줄여 아이콘 바깥 오른쪽 위로 뺍니다(lg:h-4 lg:min-w-4 lg:-right-1 lg:-top-1.5 — 44px 벨에 맞춘 값 그대로면
+              배지가 아이콘의 42~65%를 덮었음, QA-551). 글자는 12px 그대로입니다. */}
           {badge && (
             <span
               aria-hidden="true"
-              className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-control bg-accent px-1 text-xs font-semibold leading-none tabular-nums text-accent-fg forced-colors:border"
+              className="absolute -right-0.5 -top-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-control bg-accent px-1 text-xs font-semibold leading-none tabular-nums text-accent-fg forced-colors:border lg:-right-1 lg:-top-1.5 lg:h-4 lg:min-w-4"
             >
               {badge}
             </span>

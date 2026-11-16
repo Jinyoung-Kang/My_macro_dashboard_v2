@@ -62,9 +62,10 @@ describe("빵부스러기 — 상세 화면이 읽은 대상 이름", () => {
     );
     expect(current().textContent).toBe("가상 연금 (Fictional Pension)");
     expect(current().getAttribute("title")).toBe("가상 연금 (Fictional Pension)");
-    // 앞 칸(기관 › 13F 포트폴리오)은 그대로
+    // 앞 칸(기관 › 13F 포트폴리오)은 그대로 — 링크는 '13F 포트폴리오' 하나
     const nav = screen.getByRole("navigation", { name: "현재 위치" });
-    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["기관", "13F 포트폴리오"]);
+    // '기관'(→ /institutions)은 뒤 칸 '13F 포트폴리오'와 주소가 같아 글 칸입니다(QA-549).
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["13F 포트폴리오"]);
 
     // 상세 화면이 사라지면(다른 화면) 이름도 사라짐
     view.rerender(

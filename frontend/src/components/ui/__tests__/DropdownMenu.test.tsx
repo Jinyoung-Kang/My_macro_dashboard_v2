@@ -6,6 +6,7 @@
  *  - 닫힌 뒤 포커스 처리(onCloseAutoFocus)를 부르는 쪽에 넘긴다
  *  - 항목이 아닌 글(description)은 항목 아래에 두고 메뉴의 설명(aria-describedby)으로 잇는다 — 화살표는 그 글에 서지 않는다
  *  - tooltip을 주면 여는 단추가 이름 툴팁(공용 Tooltip labelOnly)과 메뉴 트리거를 함께 가진다 — 열림은 aria-expanded로 본다(data-state는 툴팁 것)
+ *  - open·onOpenChange를 주면 열림을 부르는 쪽이 쥐고(제어), tooltipDisabled면 이름 툴팁을 열지 않는다(넓은 화면 전용 메뉴가 폭이 줄 때 — QA-554)
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -186,6 +187,68 @@ describe("이름 툴팁(tooltip — 아이콘 여는 단추)", () => {
   it("마우스로 누르면(pointerdown) 메뉴가 열린다", () => {
     const trigger = renderWithTooltip();
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    expect(screen.getByRole("menu", { name: "예시 메뉴" })).toBeTruthy();
+  });
+});
+
+describe("열림 제어(open·onOpenChange)·이름 툴팁 끄기(tooltipDisabled) — 넓은 화면 전용 메뉴가 폭이 줄 때 닫으려고(QA-554)", () => {
+  const trigger = () => screen.getByRole("button", { name: "메뉴 열기" });
+
+  it("open을 주면 부르는 쪽이 열림을 쥔다 — 여는 단추·Esc는 onOpenChange로 알리기만 하고, 부르는 쪽이 open을 바꿔야 열고 닫힌다", async () => {
+    const onOpenChange = vi.fn();
+    const view = (open: boolean) => (
+      <DropdownMenu
+        label="예시 메뉴"
+        open={open}
+        onOpenChange={onOpenChange}
+        trigger={
+          <button type="button" aria-label="메뉴 열기">
+            열기
+          </button>
+        }
+      >
+        <DropdownMenuItem>첫 항목</DropdownMenuItem>
+      </DropdownMenu>
+    );
+    const { rerender } = render(view(false));
+    // 열린 메뉴는 모달이라 뒤 화면(여는 단추)이 aria-hidden — 요소를 먼저 쥐어 둡니다.
+    const button = trigger();
+    fireEvent.keyDown(button, { key: "Enter" });
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    rerender(view(true));
+    const menu = screen.getByRole("menu", { name: "예시 메뉴" });
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(within(menu).getByRole("menuitem"), { key: "Escape" });
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole("menu", { name: "예시 메뉴" })).toBeTruthy();
+
+    // 부르는 쪽이 스스로 닫을 수도 있다(폭이 lg 아래로 바뀔 때 — 계정 메뉴)
+    rerender(view(false));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("tooltipDisabled면 이름 툴팁을 열지 않는다 — 메뉴 트리거 속성과 Enter로 열기는 그대로", () => {
+    render(
+      <DropdownMenu
+        label="예시 메뉴"
+        tooltip="메뉴 열기"
+        tooltipDisabled
+        trigger={
+          <button type="button" aria-label="메뉴 열기">
+            M
+          </button>
+        }
+      >
+        <DropdownMenuItem>첫 항목</DropdownMenuItem>
+      </DropdownMenu>,
+    );
+    act(() => trigger().focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(trigger().getAttribute("aria-haspopup")).toBe("menu");
+    fireEvent.keyDown(trigger(), { key: "Enter" });
     expect(screen.getByRole("menu", { name: "예시 메뉴" })).toBeTruthy();
   });
 });

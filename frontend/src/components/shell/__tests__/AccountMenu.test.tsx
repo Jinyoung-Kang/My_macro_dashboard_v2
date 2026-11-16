@@ -5,10 +5,11 @@
  *  - 로그아웃은 고르면 메뉴를 닫고 요청 — 실패하면 메뉴 밖(여는 단추 왼쪽) role=alert(QA-051), 성공하면 /login
  *  - '단축키 도움말'은 메뉴가 닫히고 포커스가 여는 단추로 돌아온 뒤 셸 명령 신호(open-shortcut-help)를 한 번 보낸다(lib/shellCommands)
  *  - 여는 단추는 30px·4px 경계 단추(원 아님 — 누르는 것), 메뉴 항목 글에 text-3이 없다(가리킨 항목 바탕 surface-3 위 금지 쌍)
+ *  - 이름 툴팁은 넓은 화면에서만(QA-554 — 툴팁을 보는 시험은 넓은 화면 matchMedia 대역을 둠). 폭이 lg 아래로 바뀌면 메뉴가 닫히는 것은 Shell.test가 봄
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SHELL_COMMAND_EVENT } from "@/lib/shellCommands";
+import { SHELL_COMMAND_EVENT, WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => ({ auth: { logout: vi.fn() } }));
@@ -76,6 +77,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("누가 보고 있는지에 따른 내용", () => {
@@ -143,13 +145,13 @@ describe("로그아웃", () => {
     fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
-    expect(alert.getAttribute("title")).toBe("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
+    expect(alert.textContent).toBe("주의: 로그아웃 실패 — 서버에 닿지 못했습니다");
+    expect(alert.getAttribute("title")).toBe("로그아웃 실패 — 서버에 닿지 못했습니다");
     expect(alert.closest('[role="menu"]')).toBeNull();
     expect(alert.parentElement).toBe(trigger.parentElement);
-    // 한 줄로 줄임 — 상단바 새로고침 안내와 같은 폭(빵부스러기 자리를 덜 먹게)
+    // 한 줄로 줄임 — 상단바 새로고침 안내와 같은 폭(빵부스러기 자리를 덜 먹게), 결과 낱말은 말줄임 밖이고 사유만 말줄임(QA-547 후속)
     expect(alert.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72"]));
-    expect(alert.querySelector(".truncate")?.textContent).toBe("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
+    expect(alert.querySelector(".text-ellipsis")?.textContent).toBe(" — 서버에 닿지 못했습니다");
     expect(router.push).not.toHaveBeenCalled();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
 
@@ -157,6 +159,44 @@ describe("로그아웃", () => {
     fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/login"));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  // QA-547: 로그아웃 실패 글(상단바 새로고침 안내와 같은 폭 160·288px)을 감싼 상자가 'min-w-0 shrink'라 글 폭을 그대로 차지해, 떠 있는 동안 빵부스러기 자리가
+  // 1440에서 412 → 116px, 새로고침 안내와 함께 뜨면 1280에서 0px까지 줄었습니다(QA 스택 확인 — Shell.test의 같은 번호 시험이 빵부스러기 쪽을 봄).
+  // 실패 글이 떠 있는 동안 상자가 모자란 폭을 먼저 내주고(shrink-100000), 글이 없으면 단추 폭 그대로(shrink-0 — 늘 하한을 두면 단추가 밀림).
+  // 처음 고칠 때 둔 정한 하한(min-w-[38px] — 단추 + 사이)은 검토 뒤 내용의 하한(아이콘 + 결과 낱말 + 사이 + 단추)으로 바꿨습니다(아래 시험).
+  // 수정 전(재현 커밋에서는 it.fails)에는 글이 있든 없든 'min-w-0 shrink'였습니다.
+  it("실패 글이 떠 있는 동안 감싼 상자는 모자란 폭을 먼저 내주고, 글이 없으면 단추 폭 그대로 (QA-547)", async () => {
+    api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
+    const trigger = renderMenu(MEMBER);
+    const quiet = (trigger.parentElement as HTMLElement).className.split(/\s+/);
+    expect(quiet).toContain("shrink-0");
+    expect(quiet).not.toContain("min-w-[38px]");
+    expect(quiet).not.toContain("min-w-0");
+
+    fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
+    const alert = await screen.findByRole("alert");
+    const box = (alert.parentElement as HTMLElement).className.split(/\s+/);
+    expect(box).toContain("shrink-100000");
+    expect(box).not.toContain("min-w-0");
+  });
+
+  // QA-547 후속(검토): 상단바 폭 배분을 고치며(빵부스러기 nav가 글 폭을 주장 — Shell.test 같은 번호) 로그아웃 실패 글도 내용의 하한까지만 줄게 합니다.
+  // 결과 낱말 '로그아웃하지 못했습니다'(11자, 약 130px)를 하한으로 두면 새로고침 실패 글과 함께 뜰 때 1280에서 상단바가 넘치므로, 새로고침 실패와 같은
+  // 짧은 결과 낱말 '로그아웃 실패 — 사유'로 쓰고 결과 낱말은 말줄임 밖에 둡니다(사유만 말줄임). 감싼 상자는 정한 38px가 아니라 그 내용의 하한까지 줍니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 글이 '로그아웃하지 못했습니다 — 사유' 한 덩이 말줄임, 감싼 상자가 'min-w-[38px] shrink-[100]'이었습니다.
+  it("실패 글은 짧은 결과 낱말 먼저('로그아웃 실패 — 사유') — 결과 낱말은 말줄임 밖이고, 감싼 상자는 내용의 하한까지만 준다 (QA-547)", async () => {
+    api.auth.logout.mockRejectedValue(new Error("서버에 닿지 못했습니다"));
+    const trigger = renderMenu(MEMBER);
+    fireEvent.click(within(open(trigger)).getByRole("menuitem", { name: "로그아웃" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.getAttribute("title")).toBe("로그아웃 실패 — 서버에 닿지 못했습니다");
+    const head = within(alert).getByText("로그아웃 실패");
+    expect(head.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(head.closest(".truncate, .text-ellipsis")).toBeNull();
+    const box = (alert.parentElement as HTMLElement).className.split(/\s+/);
+    expect(box).toContain("shrink-100000");
+    expect(box).not.toContain("min-w-[38px]");
   });
 
   it("성공하면 로그인 화면으로", async () => {
@@ -195,6 +235,8 @@ describe("단축키 도움말", () => {
 
 describe("모양", () => {
   it("여는 단추는 30px·4px·1px 경계 단추(원 아님), 안의 머리글자는 장식 — 넓은 화면에서만 보인다", () => {
+    // 이름 툴팁은 넓은 화면에서만 열린다(QA-554)
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
     const trigger = renderMenu(MEMBER);
     const classes = trigger.className.split(/\s+/);
     expect(classes).toEqual(expect.arrayContaining(["size-[30px]", "rounded-control", "border", "border-border"]));
@@ -210,6 +252,13 @@ describe("모양", () => {
     act(() => trigger.focus());
     expect(screen.getByRole("tooltip").textContent).toBe("계정 메뉴");
     expect(trigger.hasAttribute("aria-describedby")).toBe(false);
+    cleanup();
+    vi.unstubAllGlobals();
+
+    // 좁은 화면(여는 단추가 숨음)에서는 툴팁을 열지 않는다
+    const narrow = renderMenu(MEMBER);
+    act(() => narrow.focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
     cleanup();
 
     // 이메일이 없으면(데모) 사람 아이콘 — 빈 원이나 빈 글자가 없다

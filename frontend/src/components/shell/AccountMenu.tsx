@@ -1,14 +1,16 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { DropdownMenu, DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator } from "@/components/ui/DropdownMenu";
-import { AlertTriangleIcon, PersonIcon, StatusText } from "@/components/ui/icons";
+import { PersonIcon } from "@/components/ui/icons";
 import { useLogout } from "@/hooks/useLogout";
+import { useWideShell } from "@/hooks/useWideShell";
 import { accountInitial, isDemo, isLocalOwner, noLoginName, roleLabel } from "@/lib/access";
 import { sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 import { AccountAvatar, DemoNote } from "./AccountBox";
 import { BuildInfo } from "./BuildInfo";
+import { FailureNotice } from "./FailureNotice";
 import { ReadModeNote } from "./ReadMode";
 
 /*
@@ -39,9 +41,20 @@ const TRIGGER =
  * (lib/shellCommands — 두 부분이 서로의 모듈을 가져오지 않음). 창을 닫으면 포커스가 이 여는 단추로 돌아옵니다.
  * 메뉴 항목 글은 text·text-2만 둡니다(가리킨 항목 바탕 surface-3 위 text-3 금지 — 계정 줄의 역할 글도 text-2). 설명 칸의 글은 항목이 아니라
  * 덮개 바탕(surface-2) 위 text-3(5.01:1)을 그대로 씁니다.
+ * 넓은 화면 전용이라 열림을 여기서 쥐고, 폭이 넓은 화면에서 좁은 화면(lg 미만 — 태블릿 회전·창 줄이기)으로 바뀌면 닫습니다 — 여는 단추가 CSS로 숨어도
+ * Radix는 메뉴를 닫지 않아, 좁은 상단바 왼쪽 위에 모달로 남아 화면을 막았습니다(QA-554). 다시 넓혀도 저절로 열리지 않고, 이름 툴팁도 넓은 화면에서만 엽니다.
+ * 닫을 때는 넓음 → 좁음으로 바뀌는 그 순간만 봅니다('열림 && 넓음'으로 두면 matchMedia가 늘 거짓인 시험 환경·첫 하이드레이션에서 메뉴를 열 수 없음).
  */
 export function AccountMenu({ user }: { user?: SessionUser }) {
   const { logout, error } = useLogout();
+  const wide = useWideShell();
+  const [open, setOpen] = useState(false);
+  // 넓음 → 좁음으로 바뀐 그리기에서 메뉴를 닫습니다(그리는 중에 앞 값과 견줘 바로 고침 — 효과로 하면 한 번 열린 채 그려짐).
+  const [wasWide, setWasWide] = useState(wide);
+  if (wasWide !== wide) {
+    setWasWide(wide);
+    if (!wide) setOpen(false);
+  }
   const triggerRef = useRef<HTMLButtonElement>(null);
   // '단축키 도움말'을 골랐는가 — 메뉴가 닫힌 뒤(onCloseAutoFocus) 한 번 신호를 보내고 지웁니다.
   const helpRequested = useRef(false);
@@ -50,19 +63,22 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
   const local = !demo && isLocalOwner(user);
 
   return (
-    <div className="hidden min-w-0 shrink items-center gap-2 lg:flex">
-      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px)이라
-          떠 있는 동안 빵부스러기 자리가 그만큼 줄어듭니다(1440에서 412 → 116px, 다음 로그아웃 때 지움). */}
+    <div className={`hidden items-center gap-2 lg:flex ${error ? "shrink-100000" : "shrink-0"}`}>
+      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px). 떠 있는 동안
+          감싼 상자가 상단바에서 모자란 폭을 먼저 내주되(shrink-100000) 내용의 하한 — 경고 아이콘 + 결과 낱말 '로그아웃 실패'(FailureNotice) + 사이 + 여는
+          단추 — 까지만 내주고, 그다음 빵부스러기가 줄어듭니다(QA-547 — 새로고침 안내의 NOTICE_BOX와 같은 규칙). 글이 없으면 상자는 단추 폭 그대로(shrink-0).
+          다음 로그아웃 때 지움. */}
       {error && (
         <p role="alert" title={error} className="flex min-w-0 max-w-40 text-xs leading-5 text-warn xl:max-w-72">
-          <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />} className="min-w-0">
-            <span className="block truncate">{error}</span>
-          </StatusText>
+          <FailureNotice message={error} oneLine />
         </p>
       )}
       <DropdownMenu
         label="계정 메뉴"
         tooltip="계정 메뉴"
+        tooltipDisabled={!wide}
+        open={open}
+        onOpenChange={setOpen}
         description={
           <>
             {demo && <DemoNote user={user} boxed={false} />}

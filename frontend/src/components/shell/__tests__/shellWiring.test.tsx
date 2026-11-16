@@ -75,7 +75,7 @@ function expectCollapsed(collapsed: boolean) {
   expect(shellRoot().getAttribute("data-nav")).toBe(collapsed ? "collapsed" : "expanded");
   expect(shellRoot().className.split(/\s+/)).toContain(collapsed ? "lg:[--shell-nav-w:48px]" : "lg:[--shell-nav-w:220px]");
   // 메뉴 폭은 셸 뿌리의 변수 하나에서 읽는다(위 줄의 값).
-  expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
+  expect((mainNav().closest("[data-shell-sidenav]") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
   if (collapsed) {
     expect(within(mainNav()).queryByRole("list", { name: "시장 화면", hidden: true })).toBeNull();
     expect(within(mainNav()).queryByRole("link", { name: "매크로 지표", hidden: true })).toBeNull();

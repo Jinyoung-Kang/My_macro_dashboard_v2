@@ -8,7 +8,7 @@
  * 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
  * jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
@@ -25,10 +25,11 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname, useRouter: () => router }));
 
 const signal = vi.hoisted(() => ({
-  token: 0, reloadAll: () => {}, notifyUnauthorized: () => {}, requestRefresh: vi.fn(), collecting: false, message: null as string | null,
+  token: 0, reloadAll: () => {}, notifyUnauthorized: () => {}, requestRefresh: vi.fn(), collecting: false, message: null as string | null, failed: false,
 }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
+import { RefreshButton } from "../RefreshButton";
 import { Shell } from "../Shell";
 
 const DEMO: SessionUser = { email: null, role: "MEMBER", tier: "PRO", demo: true };
@@ -53,6 +54,26 @@ function openAccountMenu(): HTMLElement {
   return screen.getByRole("menu", { name: "계정 메뉴" });
 }
 const bottomNav = () => screen.getByRole("navigation", { name: "하단 메뉴" });
+
+/** 폭을 바꿀 수 있는 matchMedia 대역(hooks/__tests__/useWideShell.test의 stubMedia와 같음) — change 듣는 쪽을 모아 resize로 부릅니다. */
+function stubMedia(initial: boolean) {
+  let wide = initial;
+  const listeners = new Set<() => void>();
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    get matches() {
+      return wide && query === WIDE_SHELL_MEDIA;
+    },
+    media: query,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }));
+  return {
+    resize(next: boolean) {
+      wide = next;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
 /** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(실행 명세 §0 W2·§5) 탭 칸만 고릅니다. */
 const tabLinkLabels = (scope: HTMLElement) => [...scope.querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent ?? "");
@@ -65,6 +86,7 @@ beforeEach(() => {
   signal.requestRefresh.mockReset();
   signal.collecting = false;
   signal.message = null;
+  signal.failed = false;
 });
 
 afterEach(() => {
@@ -268,13 +290,13 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
   const crumbs = () => screen.getByRole("navigation", { name: "현재 위치" });
   const crumbItems = () => within(crumbs()).getAllByRole("listitem");
 
-  it("모의매매 탭 주소는 모의매매 › 미국 › 보유·체결 — 앞 두 칸은 링크, 마지막 칸은 링크 없이 aria-current=page", () => {
+  it("모의매매 탭 주소는 모의매매 › 미국 › 보유·체결 — '미국'은 링크, '모의매매'는 뒤 칸과 주소가 같아 링크 없는 글(QA-549), 마지막 칸은 링크 없이 aria-current=page", () => {
     renderShell(LOCAL_OWNER, { path: "/paper/us/holdings" });
     expect(crumbItems().map((item) => item.textContent)).toEqual(["모의매매", "›미국", "›보유·체결"]);
-    expect(within(crumbs()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["모의매매", "/paper/us"],
-      ["미국", "/paper/us"],
-    ]);
+    expect(within(crumbs()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([["미국", "/paper/us"]]);
+    const paper = within(crumbs()).getByText("모의매매");
+    expect(paper.closest("a")).toBeNull();
+    expect(paper.hasAttribute("aria-current")).toBe(false);
     const current = within(crumbs()).getByText("보유·체결");
     expect(current.getAttribute("aria-current")).toBe("page");
     expect(current.closest("a")).toBeNull();
@@ -286,6 +308,23 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
       expect(link.className.split(/\s+/)).toEqual(expect.arrayContaining(["py-0.5", "truncate"]));
     }
     expect(within(crumbs()).getByRole("list").className.split(/\s+/)).toContain("text-sm");
+  });
+
+  // QA-548: 칸(li)마다 flex-shrink 1이라 모자란 폭이 칸 폭 비율대로 모든 칸에 나뉘어, 1~5px만 모자라도 짧은 앞 칸까지 함께 말줄임됐습니다 —
+  // QA 스택 1280(xl에서 앱 이름·검색 단추·장 시계가 한꺼번에 넓어져 자리 251px, 1024의 267px보다 좁음) /institutions/0001608046이 5.2px 모자라
+  // '기... › 13F 포트폴... › CIK 0001608...'(27.4·95.8·102.8px), /krx가 '더... › 한국 ... › 파생·투기세력(K...'. 마지막 칸(대상·지금 화면 — 전체 글은
+  // title)만 큰 축소 비중(shrink-100000 — 처음 고칠 때 1000이었으나 모자란 폭이 크면 앞 칸에도 0.1px 남짓이 나뉘어 말줄임됨, 정적 하네스로 확인)을 줘
+  // 모자란 폭을 먼저 받게 하고, 가운데 칸은 1·min-w-0 그대로 둡니다. 검토 뒤(QA-547 후속) 마지막 칸은 글 칸 2.5rem 아래로 줄지 않고(그다음 가운데 칸이
+  // 줄어듦), 첫 칸(메뉴 이름 — 두~네 글자)은 줄지 않습니다(shrink-0 — nav 하한 112px이 첫 칸과 마지막 칸 하한을 담음).
+  // 수정 전(재현 커밋에서는 it.fails)에는 세 칸 모두 'flex min-w-0 items-center gap-1'(축소 비중 1)이었습니다.
+  it("모자란 폭은 마지막 칸이 먼저 받는다 — 마지막 칸(li)만 축소 비중 100000(shrink-100000), 가운데 칸은 1·min-w-0, 첫 칸은 줄지 않음 (QA-548)", () => {
+    renderShell(MEMBER_PRO, { path: "/institutions/0001608046" });
+    const classes = crumbItems().map((item) => item.className.split(/\s+/));
+    expect(classes).toHaveLength(3);
+    expect(classes[2]).toContain("shrink-100000");
+    expect(classes[0]).toContain("shrink-0");
+    expect(classes[1].some((name) => name.startsWith("shrink-"))).toBe(false);
+    expect(classes[1]).toContain("min-w-0");
   });
 
   it("종목 상세는 시장 › 종목(미국) › 코드 — 중간 칸은 주소가 없어 링크 없는 글", () => {
@@ -313,8 +352,25 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
     const header = screen.getByRole("banner");
     expect(classes(header)).toEqual(expect.arrayContaining(["lg:h-12", "lg:flex-nowrap", "flex-wrap"]));
     expect(classes(header).some((name) => /^(lg:)?h-16$/.test(name))).toBe(false);
-    const appName = within(header).getByText(/^My Macro/);
+    // 글은 안쪽 인라인 span(QA-550) — 높이는 그 바깥 flex 상자가 정함
+    const appName = within(header).getByText(/^My Macro/).parentElement as HTMLElement;
     expect(classes(appName)).toEqual(expect.arrayContaining(["h-16", "lg:h-auto"]));
+  });
+
+  // QA-550: 앱 이름 상자가 flex(좁은 화면 64px 줄의 세로 가운데 맞춤)라 그 안의 글 조각 'My Macro'·' v2'와 안쪽 <span> Dashboard</span>가 각각 flex
+  // 항목이 되어, 항목마다 맨 앞 공백이 접혔습니다 — xl(1280px 이상)에서 'My MacroDashboardv2'(그린 폭 175.2px, 같은 글꼴 한 줄 184.1px, innerText
+  // 'My Macro\nDashboard\nv2'). xl 미만은 안쪽 span이 숨어 두 조각이 한 항목이라 정상이었고, textContent 단언만 있어 jsdom 시험이 보지 못했습니다.
+  // 바깥 flex 상자는 그대로 두고 글 전체를 인라인 span 하나로 감쌉니다(flex 항목이 하나 — 공백이 그대로). jsdom은 배치를 하지 않아 구조로 봅니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 flex 상자의 직접 자식에 글 노드 'My Macro'·' v2'가 있었습니다.
+  it("앱 이름 글은 flex 상자 안의 인라인 span 하나에 담는다 — 글 조각이 따로 flex 항목이 되어 xl에서 단어 사이 공백이 사라지지 않게 (QA-550)", () => {
+    renderShell(MEMBER_PRO);
+    const header = screen.getByRole("banner");
+    const box = [...header.children].find((child) => child.tagName === "SPAN" && child.textContent === "My Macro Dashboard v2") as HTMLElement;
+    expect(box).toBeTruthy();
+    const looseText = [...box.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "");
+    expect(looseText.map((node) => node.textContent)).toEqual([]);
+    expect(box.children).toHaveLength(1);
+    expect(box.children[0].className.split(/\s+/)).not.toContain("flex");
   });
 
   it("알림 벨은 좁은 화면 44px·넓은 화면 30px(상단바 조작 높이 — 검색·새로고침·계정과 같음)", () => {
@@ -356,6 +412,19 @@ describe("상단바 알림 벨", () => {
     const badge = bell.querySelector('span[aria-hidden="true"]') as HTMLElement;
     expect(badge.textContent).toBe("42");
     expect([...badge.classList]).toContain("forced-colors:border");
+  });
+
+  // QA-551: P3가 넓은 화면 벨을 44px에서 30px(lg:size-[30px])로 줄이면서 아이콘(20px)·배지(-right-0.5 -top-0.5 h-5 min-w-5 — 44px 단추에 맞춘 값)는
+  // 그대로 둬, 단추 모서리에 붙은 배지가 아이콘 가운데로 들어왔습니다 — QA 스택 1440에서 '3' 배지가 아이콘 상자의 42%, '42' 47%, '99+' 65%를 덮어
+  // 종 아래 받침선만 보였습니다(44px 벨 — 좁은 화면·D1 넓은 화면 — 은 9%·11%·22%). 넓은 화면 배지만 16px 높이로 줄이고 아이콘 바깥 오른쪽 위로 뺍니다
+  // (lg:h-4 lg:min-w-4 lg:-right-1 lg:-top-1.5 — 글자 12px 하한은 그대로). 벨 30px·아이콘 20px·좁은 화면 값은 바꾸지 않습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 배지 클래스에 lg: 변형이 하나도 없었습니다.
+  it("넓은 화면 30px 벨의 수 배지는 16px로 아이콘 바깥 오른쪽 위에 — 좁은 화면 44px 벨의 배지 값은 그대로 (QA-551)", () => {
+    renderShell(MEMBER_PRO, { unread: 42 });
+    const badge = screen.getByRole("link", { name: "알림 — 읽지 않음 42건" }).querySelector('span[aria-hidden="true"]') as HTMLElement;
+    expect([...badge.classList]).toEqual(
+      expect.arrayContaining(["lg:h-4", "lg:min-w-4", "lg:-right-1", "lg:-top-1.5", "h-5", "min-w-5", "-right-0.5", "-top-0.5", "text-xs"]),
+    );
   });
 
   it("넓은 화면에서만 이름과 같은 글의 툴팁(설명으로 잇지 않음) — 좁은 화면은 툴팁 없이 지금 그대로", () => {
@@ -428,10 +497,10 @@ describe("본문", () => {
     const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
     expect(root.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-col", "lg:[--shell-nav-w:220px]"]));
     expect(root.getAttribute("data-nav")).toBe("expanded");
-    const aside = (mainNav().closest("aside") as HTMLElement).className.split(/\s+/);
-    expect(aside).toContain("lg:w-[var(--shell-nav-w)]");
+    const box = (mainNav().closest("[data-shell-sidenav]") as HTMLElement).className.split(/\s+/);
+    expect(box).toContain("lg:w-[var(--shell-nav-w)]");
     // 폭 숫자를 왼쪽 메뉴가 따로 들고 있지 않다(한쪽만 고쳐 어긋나지 않게)
-    expect(aside.some((name) => /^(lg:)?w-(12|\[\d+px\])$/.test(name))).toBe(false);
+    expect(box.some((name) => /^(lg:)?w-(12|\[\d+px\])$/.test(name))).toBe(false);
   });
 
   it("왼쪽 메뉴를 아이콘 레일로 접어 둔 사람(저장값 '1')은 접힌 채 시작하고 셸 변수가 48px — 메뉴를 펴면 220px로", () => {
@@ -440,7 +509,7 @@ describe("본문", () => {
     const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
     expect(root.getAttribute("data-nav")).toBe("collapsed");
     expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:48px]");
-    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
+    expect((mainNav().closest("[data-shell-sidenav]") as HTMLElement).className.split(/\s+/)).toContain("lg:w-[var(--shell-nav-w)]");
 
     fireEvent.click(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }));
     expect(root.getAttribute("data-nav")).toBe("expanded");
@@ -477,11 +546,39 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     signal.message = "수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.";
     renderShell(LOCAL_OWNER);
     const button = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").getAttribute("role")).toBe("status");
+    // 막는 것은 aria-disabled(진짜 disabled는 포커스를 body로 떨어뜨림 — QA-553, QA-444와 같은 방식)
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.").closest("[role=status]")).not.toBeNull();
   });
 
-  it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 말줄임하고 전체 글은 title", () => {
+  // QA-553: 수집 중에 단추가 진짜 disabled라, 키보드(Enter·Space)나 마우스로 누른 단추가 disabled가 되는 순간 브라우저가 포커스를 문서(body)로
+  // 보냈습니다 — QA 스택 1024·1440에서 Enter 뒤 activeElement=BODY(끝난 뒤에도), 바뀐 이름 '수집 중… 끝나면 자동 갱신'은 포커스가 없어 읽히지 않았고,
+  // POST가 오가는 동안 role=status는 빈 글이었습니다(개편 전 block 단추도 같은 구조). QA-444(정보 검색 단추)와 키트 방침(ui/classes — 바꾸는 중에는
+  // aria-disabled)대로, 수집 중에는 aria-disabled·aria-busy로 막고 누름은 무시하며, 안내 글이 없으면 안내 영역(sr-only)에 '수집 중…'을 둡니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 두 변형 모두 button.disabled true·aria-disabled 없음, 안내 영역 글이 ''였습니다.
+  it("수집 중에는 aria-disabled로 막는다 — 단추가 포커스를 잃지 않고, 눌러도 다시 요청하지 않으며, 안내 영역이 '수집 중…'을 읽는다(아이콘·block 두 변형) (QA-553)", () => {
+    const expectBusy = (button: HTMLButtonElement, status: HTMLElement) => {
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(button.getAttribute("aria-busy")).toBe("true");
+      fireEvent.click(button);
+      expect(signal.requestRefresh).not.toHaveBeenCalled();
+      expect(status.textContent).toBe("수집 중… 끝나면 자동 갱신");
+      // 보이는 글은 아니다(안내가 없을 때는 sr-only — 아이콘 단추의 도는 아이콘·block 단추의 글이 이미 보임)
+      expect(status.className).toBe("sr-only");
+    };
+    signal.collecting = true;
+    renderShell(LOCAL_OWNER);
+    const icon = screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement;
+    expectBusy(icon, within(icon.closest("header > div") as HTMLElement).getByRole("status"));
+    cleanup();
+
+    // 더보기(좁은 화면)의 폭 전체 단추
+    render(<RefreshButton user={LOCAL_OWNER} />);
+    expectBusy(screen.getByRole("button", { name: "수집 중… 끝나면 자동 갱신" }) as HTMLButtonElement, screen.getByRole("status"));
+  });
+
+  it("상단바 안의 30px 아이콘 단추(넓은 화면만) — 안내 문구는 안쪽 글에서 말줄임하고 전체 글은 title", () => {
     signal.message = "수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.";
     renderShell(LOCAL_OWNER);
     const button = screen.getByRole("button", { name: "데이터 수동 새로고침" });
@@ -493,7 +590,80 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
     expect(row.className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
     const status = within(row).getByRole("status");
     expect(status.getAttribute("title")).toBe("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.");
-    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["truncate", "max-w-40"]));
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72"]));
+    expect(status.querySelector(".truncate")?.textContent).toBe("수집을 요청했습니다 — 끝나면 화면이 갱신됩니다.");
+  });
+
+  // QA-547: 상단바 새로고침 안내(role=status — 다음 새로고침까지, 화면을 옮겨도 남음)가 빵부스러기와 폭을 다퉜습니다. 빵부스러기 nav가 lg:flex-1·min-w-0
+  // (flex-basis 0, 하한 0)이라 다른 항목이 자기 폭을 먼저 가져간 뒤 남는 폭만 받았고, 안내를 감싼 상자(min-w-0 shrink)는 글 폭(최대 160·288px)을 그대로 차지했습니다.
+  // QA 스택(1024·1280) — 성공 안내가 뜨면 nav 267.7 → 99.7px(1024, 칸마다 말줄임), 1280(xl — 앱 이름이 길어지고 안내 상한 288px)에서는 막힌 POST 실패 글·
+  // store_only 글로 nav 0px이 되어 칸 링크가 0폭인 채 Tab 순서에 남았습니다. 로그아웃 실패 글(계정 메뉴 왼쪽, 같은 폭)도 같은 꼴입니다.
+  // 빵부스러기에 하한을 두고, 안내를 감싼 상자가 모자란 폭을 먼저 내주게 합니다. 안내가 없으면 상자는 단추 폭 그대로입니다(shrink-0 — 늘 하한을 두면
+  // 단추가 8px씩 왼쪽으로 밀림, QA 스택 1024·1440에서 잼). 처음 고칠 때의 값(nav 하한 160px·basis 0, 상자 하한 38px·shrink-[100])은 검토 뒤 아래
+  // '대상 칸이 먼저 사라지지 않는다' 시험의 값(nav 글 폭 주장·하한 112px, 상자는 내용의 하한·shrink-100000)으로 바꿨습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'hidden min-w-0 lg:flex lg:flex-1'(하한 없음), 감싼 상자가 안내와 상관없이 'min-w-0 shrink'였습니다.
+  it("안내 글이 떠 있어도 빵부스러기는 하한이 있다 — 모자란 폭은 안내를 감싼 상자가 먼저 내주고, 안내가 없으면 상자는 단추 폭 그대로 (QA-547)", () => {
+    const refreshBox = () => (screen.getByRole("button", { name: "데이터 수동 새로고침" }).closest("header > div") as HTMLElement).className.split(/\s+/);
+    signal.message = "수집이 끝나 화면을 갱신했습니다.";
+    renderShell(LOCAL_OWNER, { path: "/krx" });
+    expect(screen.getByRole("navigation", { name: "현재 위치" }).className.split(/\s+/)).toContain("lg:min-w-28");
+    const withNotice = refreshBox();
+    expect(withNotice).toContain("shrink-100000");
+    expect(withNotice).not.toContain("min-w-0");
+    cleanup();
+
+    signal.message = null;
+    renderShell(LOCAL_OWNER, { path: "/krx" });
+    const quiet = refreshBox();
+    expect(quiet).toContain("shrink-0");
+    expect(quiet).not.toContain("min-w-[38px]");
+    expect(quiet).not.toContain("min-w-0");
+  });
+
+  // QA-547 후속(검토): 안내 글이 뜨면 빵부스러기의 대상(마지막) 칸이 가장 먼저 사라졌습니다 — nav가 lg:flex-1(flex-basis 0)이라 자기 글 폭을 주장하지
+  // 못하고 남는 폭만(하한 160px) 받았고, 그 안에서는 QA-548대로 마지막 칸이 모자란 폭을 모두 받아 'CIK 0001608046'이 8.6px('C')까지 줄었습니다(tip 8b7524ab
+  // 정적 하네스 — 1024~1366의 모든 안내 상태와 1440의 실패·store_only). 안내를 감싼 상자의 하한도 정한 38px(단추 + 사이)뿐이라 실패 글은 결과 낱말까지
+  // 말줄임됐습니다('새로고…'). 폭 배분을 하한 둘로 정합니다 — nav는 글 폭을 주장하고(lg:flex-auto, 하한 112px), 안내를 감싼 상자가 모자란 폭을 먼저
+  // 내주되(shrink-100000) 내용의 하한(실패: 아이콘 + 결과 낱말, 성공: 4rem) 아래로는 줄지 않고, 대상 칸은 글 칸 2.5rem(세 글자 이하면 제 폭) 아래로 줄지
+  // 않습니다(그다음 가운데 칸 — 첫 칸(메뉴 이름)은 줄지 않음). 로그아웃 실패 글이 함께 뜨면 새로고침 안내는 아이콘만 남깁니다(둘 다 하한을 지키면 1280에서 넘침).
+  // 수정 전(재현 커밋에서는 it.fails)에는 nav가 'hidden min-w-0 lg:flex lg:min-w-40 lg:flex-1', 칸이 첫·가운데 'flex min-w-0 items-center gap-1'·마지막
+  // 'flex min-w-0 shrink-100000 items-center gap-1', 안내를 감싼 상자가 'min-w-[38px] shrink-[100]', 실패 글은 한 덩이 말줄임이었습니다.
+  it("안내 글이 떠 있어도 대상 칸이 먼저 사라지지 않는다 — nav는 글 폭을 주장하고, 안내와 대상 칸은 내용의 하한까지만 준다 (QA-547)", () => {
+    const crumbClasses = () =>
+      within(screen.getByRole("navigation", { name: "현재 위치" })).getAllByRole("listitem").map((item) => item.className.split(/\s+/));
+    const status = () => within(screen.getByRole("banner")).getByRole("status");
+    signal.message = "새로고침 실패 — 백엔드 API(http://127.0.0.1:18082)에 연결하지 못했습니다";
+    signal.failed = true;
+    renderShell(LOCAL_OWNER, { path: "/institutions/0001608046" });
+    const nav = screen.getByRole("navigation", { name: "현재 위치" }).className.split(/\s+/);
+    expect(nav).toEqual(expect.arrayContaining(["lg:flex-auto", "lg:min-w-28"]));
+    expect(nav).not.toContain("lg:flex-1");
+    const [first, , last] = crumbClasses();
+    expect(first).toContain("shrink-0");
+    // 대상 칸 — 글 칸 하한 2.5rem(grid minmax), min-w-0이 없어 그 하한이 칸의 하한
+    expect(last).toEqual(expect.arrayContaining(["grid", "grid-cols-[auto_minmax(2.5rem,1fr)]", "shrink-100000"]));
+    expect(last).not.toContain("min-w-0");
+    // 안내를 감싼 상자 — 먼저 내주되 정한 38px가 아니라 내용의 하한까지(로그아웃 실패 글이 함께 뜨면 아이콘 12px + 사이 8px + 단추 30px)
+    const box = (status().parentElement as HTMLElement).className.split(/\s+/);
+    expect(box).toEqual(expect.arrayContaining(["shrink-100000", "in-[header:has([role=alert])]:min-w-[50px]"]));
+    expect(box).not.toContain("min-w-[38px]");
+    // 실패 글의 결과 낱말은 줄바꿈·말줄임 밖(사유만 말줄임)
+    const head = within(status()).getByText("새로고침 실패");
+    expect(head.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(head.closest(".truncate, .text-ellipsis")).toBeNull();
+    expect(status().textContent).toBe("주의: 새로고침 실패 — 백엔드 API(http://127.0.0.1:18082)에 연결하지 못했습니다");
+    cleanup();
+
+    // 성공 글 — 4rem 하한(grid minmax), 글은 안쪽 말줄임
+    signal.message = "수집이 끝나 화면을 갱신했습니다.";
+    signal.failed = false;
+    renderShell(LOCAL_OWNER, { path: "/institutions/0001608046" });
+    expect(status().className.split(/\s+/)).toEqual(expect.arrayContaining(["grid", "grid-cols-[minmax(4rem,1fr)]", "overflow-hidden"]));
+    cleanup();
+
+    // 세 글자 이하의 대상 칸('vix')은 하한 없이 제 폭 — 2.5rem을 비워 두느라 가운데 칸을 더 줄이지 않음
+    renderShell(MEMBER_PRO, { path: "/markets/i/vix" });
+    expect(crumbClasses()[2]).toEqual(expect.arrayContaining(["flex", "shrink-0"]));
   });
 
   it("회원·데모 열람에게는 단추도 안내 영역도 없다", () => {
@@ -502,6 +672,48 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
       expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
       expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
       cleanup();
+    }
+  });
+});
+
+describe("넓은 화면 전용 덮개(계정 메뉴·아이콘 단추의 이름 툴팁) — 폭이 lg 아래로 바뀌면 닫힌다", () => {
+  // QA-554: 계정 메뉴와 새로고침·접기 단추는 넓은 화면에서만 보이는데(CSS hidden lg:flex), 열림 상태는 폭과 따로 움직였습니다 — QA 스택에서 1024에 연
+  // 계정 메뉴가 768(태블릿 회전)·1023(창 줄이기)으로 바뀌어도 열린 채 좁은 상단바 왼쪽 위 (0,4)로 옮겨 앱 이름·검색 단추를 덮었고(모달이라 body
+  // pointer-events none, 뒤 화면 aria-hidden 그대로), 새로고침·접기 단추의 이름 툴팁도 (0,6)·(6,0)에 남았습니다. 같은 P3의 알림 벨 툴팁만 넓은 화면과
+  // 묶여(useWideShell) 바로 닫혔습니다. 넓은 화면에서 좁은 화면으로 바뀌면 계정 메뉴를 닫고(다시 넓혀도 저절로 열리지 않음), 넓은 화면 전용 단추의
+  // 이름 툴팁은 넓은 화면에서만 엽니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 resize(false) 뒤에도 role=menu가 남고 여는 단추가 aria-expanded=true였습니다.
+  it("넓게 연 계정 메뉴는 폭이 lg 아래로 바뀌면 닫히고(aria-expanded false) 다시 넓혀도 닫힌 채 — 새로고침·접기 단추의 이름 툴팁도 닫힌다 (QA-554)", async () => {
+    const media = stubMedia(true);
+    try {
+      renderShell(LOCAL_OWNER);
+      const trigger = screen.getByRole("button", { name: "계정 메뉴" });
+      fireEvent.keyDown(trigger, { key: "Enter" });
+      expect(screen.getByRole("menu", { name: "계정 메뉴" })).toBeTruthy();
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+      act(() => media.resize(false));
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      act(() => media.resize(true));
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+      for (const [name, tip] of [
+        ["데이터 수동 새로고침", "데이터 수동 새로고침"],
+        ["왼쪽 메뉴 접기", "왼쪽 메뉴 접기 ([)"],
+      ]) {
+        act(() => media.resize(true));
+        const button = screen.getByRole("button", { name });
+        act(() => button.focus());
+        expect(screen.getByRole("tooltip").textContent).toBe(tip);
+        act(() => media.resize(false));
+        expect(screen.queryByRole("tooltip"), name).toBeNull();
+        act(() => button.blur());
+      }
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
     }
   });
 });

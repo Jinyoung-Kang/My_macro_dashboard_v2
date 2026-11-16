@@ -57,7 +57,7 @@ describe("QA-051", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
 
-    expect((await screen.findByRole("alert")).textContent).toMatch(/로그아웃하지 못했습니다 — 백엔드 API에 연결하지 못했습니다/);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/로그아웃 실패 — 백엔드 API에 연결하지 못했습니다/);
     expect(router.push).not.toHaveBeenCalled();
   });
 

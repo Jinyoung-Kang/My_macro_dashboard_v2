@@ -18,8 +18,11 @@ const CONTENT = `z-50 min-w-56 max-w-xs rounded-card border border-border-overla
  * 화살표로 옮긴 항목)의 바탕은 조작 바탕(bg-control-fill — 덮개 안이라 surface-3)이고, 그 위 글자는 text·text-2만 둡니다(surface-3 위 text-3·accent·danger는
  * 4.5:1 미만 — 금지 쌍). 키보드로 옮긴 항목에는 포커스 링(2px, 안쪽)도 그립니다 — 고대비(forced-colors)에서는 바탕이 지워져도 링이 남습니다.
  * 항목에는 outline-none을 두지 않습니다 — Tailwind 4의 outline-none은 --tw-outline-style을 none으로 두어 focus-visible:outline-2의 선 모양까지 none이 됩니다.
- * 마우스로 가리킨 항목은 :focus-visible이 아니라 링이 생기지 않고 바탕만 바뀌는데, 고대비에서는 그 바탕이 Canvas로 지워지므로 가리킨 항목에 안쪽 2px
- * 시스템 강조색(Highlight) 테두리를 그 모드에서만 둡니다(검토 지적 — 마우스 사용자에게 지금 항목 표시가 없었음).
+ * 마우스로 가리켜도 Radix는 그 항목에 실제 포커스를 줍니다(item.focus() — 마우스로 열 때도 메뉴 상자에 스크립트 포커스). 크로미움은 스크립트 포커스의
+ * :focus-visible을 직전 포커스 상태로 정하므로, 화면을 연 뒤 마우스 클릭으로 포커스가 옮겨진 적이 없거나 직전 포커스가 키보드였으면 마우스로 가리킨 항목에도
+ * 링이 그려지고, 클릭으로 포커스가 옮겨진 뒤에는 바탕만 바뀝니다(QA 스택 Chrome 157에서 확인 — 브라우저 표준 판단이라 막지 않음, 링도 Enter가 고를 지금
+ * 항목을 맞게 가리킴). 바탕만 바뀌는 경우 고대비에서는 그 바탕이 Canvas로 지워지므로 가리킨 항목에 안쪽 2px 시스템 강조색(Highlight) 테두리를 그 모드에서만
+ * 둡니다(검토 지적 — 마우스 사용자에게 지금 항목 표시가 없었음). 링이 그려지는 경우에는 같은 2px 안쪽 선으로 겹쳐 해가 없습니다.
  * 클래스는 이 파일 안에만 둡니다(ui/classes.ts에 내보내지 않음 — 그 표의 누르는 조각 검사(touchTargets)와 따로).
  */
 const ITEM =
@@ -56,7 +59,10 @@ const DESCRIPTION = "-mx-1 mt-1 flex flex-col gap-1.5 border-t border-border px-
  * - `onCloseAutoFocus`는 닫힌 뒤 포커스를 옮기기 직전에 불립니다(Radix 그대로) — 부르는 쪽이 event.preventDefault()로 기본 동작(여는 단추로)을 바꿀 수 있습니다.
  * - `tooltip`은 아이콘 여는 단추의 이름을 마우스 사용자에게 보이는 툴팁입니다(공용 Tooltip labelOnly — 글은 단추의 접근 이름과 같게). 툴팁 트리거가 메뉴
  *   트리거를 감싸 두 Radix 트리거의 속성·처리기가 한 단추에 합쳐지는데, data-state는 툴팁 것이 남으므로 여는 단추의 열림 모양은 data-state가 아니라
- *   aria-expanded로 그립니다(`aria-expanded:` 변형).
+ *   aria-expanded로 그립니다(`aria-expanded:` 변형). `tooltipDisabled`면 그 툴팁을 열지 않습니다(구조는 그대로 — 공용 Tooltip disabled) — 넓은 화면
+ *   전용 여는 단추가 좁은 화면에서 숨는 동안(QA-554).
+ * - `open`·`onOpenChange`를 주면 열림을 부르는 쪽이 쥡니다(Radix Root 제어 — 주지 않으면 지금처럼 Radix가 쥠). 넓은 화면 전용 메뉴가 폭이 lg 아래로
+ *   바뀔 때 닫는 데 씁니다(계정 메뉴 — QA-554: 여는 단추가 CSS로 숨어도 Radix는 메뉴를 닫지 않아 좁은 상단바 왼쪽 위에 남았음).
  */
 export function DropdownMenu({
   trigger,
@@ -65,7 +71,10 @@ export function DropdownMenu({
   label,
   description,
   tooltip,
+  tooltipDisabled = false,
   onCloseAutoFocus,
+  open,
+  onOpenChange,
 }: {
   /** 여는 단추(요소 하나). */
   trigger: ReactElement;
@@ -78,8 +87,14 @@ export function DropdownMenu({
   description?: ReactNode;
   /** 아이콘 여는 단추의 이름 툴팁(글은 단추의 접근 이름과 같게 — 설명으로 잇지 않음). */
   tooltip?: string;
+  /** 이름 툴팁을 열지 않음(구조는 그대로). */
+  tooltipDisabled?: boolean;
   /** 닫힌 뒤 포커스를 옮기기 직전(Radix onCloseAutoFocus). */
   onCloseAutoFocus?: (event: Event) => void;
+  /** 열림(제어) — 주면 onOpenChange와 함께. 주지 않으면 Radix가 쥡니다. */
+  open?: boolean;
+  /** 열림이 바뀌려 할 때(Radix onOpenChange — 여는 단추·Esc·바깥 누르기·항목 고르기). */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const descriptionId = useId();
   // aria-labelledby(여는 단추)가 aria-label보다 앞서므로, 이름을 따로 줄 때는 그것을 지웁니다.
@@ -87,9 +102,9 @@ export function DropdownMenu({
   const hasDescription = description !== undefined && description !== null && description !== false;
   const menuTrigger = <DropdownMenuPrimitive.Trigger asChild>{trigger}</DropdownMenuPrimitive.Trigger>;
   return (
-    <DropdownMenuPrimitive.Root>
+    <DropdownMenuPrimitive.Root open={open} onOpenChange={onOpenChange}>
       {tooltip ? (
-        <Tooltip content={tooltip} labelOnly>
+        <Tooltip content={tooltip} labelOnly disabled={tooltipDisabled}>
           {menuTrigger}
         </Tooltip>
       ) : (

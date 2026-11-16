@@ -9,6 +9,9 @@
  * - 하위 화면에 묶음이 있으면(더보기의 '한국 시장') 그 앞에 묶음 이름 칸을 링크 없이 둡니다.
  * - 이 사용자에게 보이지 않는 탭·화면(lib/access visibleMenus — 회원이 주소로 연 /paper/us 등)은 링크 없이 글만 둡니다.
  * - 대상 칸은 형식이 맞을 때만(lib/detail parse 함수·모의매매 탭 주소 규칙) — 틀리면 그 앞 칸에서 끝납니다. 메뉴에 없는 경로(/login 등)는 빈 목록.
+ * - 뒤 칸 어느 것과 주소가 같은 칸은 링크 없이 글만 둡니다(QA-549) — 탭 칸의 주소는 탭 첫 화면이라, 첫 화면이 하위 화면이기도 한 탭(/macro·/institutions·
+ *   /paper/us·/info/overview)에서 지금 화면으로 가는 링크나 바로 뒤 칸과 같은 곳으로 가는 링크 둘이 생겼습니다. 더 구체적인 뒤 칸(미국·매크로 지표·
+ *   13F 포트폴리오)이 링크로 남으므로 갈 수 있는 곳은 줄지 않습니다(나무 메뉴는 같은 경우에 aria-current — nav.ts tabCurrent).
  *
  * 셸은 모든 화면이 싣습니다. 그래서 모의매매 탭 이름은 lib/paper(PAPER_TABS)·lib/paperRoutes를 가져오지 않고 아래 작은 표로 둡니다 — 가져오면 모의매매 모듈
  * 묶음(압축 전 약 175KB)이 모든 화면의 첫 적재에 실렸습니다(webpack 빌드로 잼, /more 첫 적재 gzip 256 → 337KB). 표와 주소 규칙이 PAPER_TABS·
@@ -18,7 +21,7 @@ import { activeItem, activeTab, visibleItems, visibleTabs, type NavTab } from ".
 import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
 import type { SessionUser } from "./types";
 
-/** 빵부스러기 한 칸 — href가 null이면 링크 없이 글만(묶음 이름·보이지 않는 메뉴·주소가 따로 없는 칸). */
+/** 빵부스러기 한 칸 — href가 null이면 링크 없이 글만(묶음 이름·보이지 않는 메뉴·주소가 따로 없는 칸·뒤 칸과 주소가 같은 칸). */
 export type Crumb = { label: string; href: string | null };
 
 /** 종목 상세의 중간 칸 이름 — 시장별(주소가 따로 없는 글 칸). */
@@ -107,6 +110,7 @@ function detailCrumbs(pathname: string, tab: NavTab, visible: (href: string) => 
  * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/1067983` → 기관 › 13F 포트폴리오 › CIK 1067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
  * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
  * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
+ * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
  */
 export function breadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
   const tab = activeTab(pathname);
@@ -127,5 +131,9 @@ export function breadcrumbs(pathname: string, user: SessionUser | null | undefin
   const tail = named
     ? detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb))
     : detail.crumbs;
-  return [...crumbs, ...tail];
+  const all = [...crumbs, ...tail];
+  // 뒤 칸 어느 것과 주소가 같은 칸은 글 칸으로 — 지금 화면으로 가는 링크·같은 곳으로 가는 링크 둘을 두지 않습니다(QA-549).
+  return all.map((crumb, index) =>
+    crumb.href !== null && all.slice(index + 1).some((later) => later.href === crumb.href) ? { ...crumb, href: null } : crumb,
+  );
 }

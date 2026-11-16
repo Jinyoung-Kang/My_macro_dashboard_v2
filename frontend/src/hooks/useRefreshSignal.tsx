@@ -31,6 +31,11 @@ interface RefreshState {
   /** 수집이 끝나기를 기다리는 중인가. */
   collecting: boolean;
   message: string | null;
+  /**
+   * 마지막 새로고침이 실패했는가(QA-552) — 요청 자체가 실패했거나, 200이라도 수집을 시작하지 못했을 때(store_only가 아닌데 triggered=false — 백엔드
+   * '수집기에 연결하지 못했습니다…'). 두 갈래 모두 글은 짧은 결과 낱말이 먼저인 '새로고침 실패 — 사유'이고, 셸이 안내를 경고 톤으로 그립니다.
+   */
+  failed: boolean;
   requestRefresh: () => Promise<void>;
   /** 수집 없이 지금 화면만 다시 읽기. */
   reloadAll: () => void;
@@ -45,6 +50,7 @@ const FALLBACK: RefreshState = {
   token: 0,
   collecting: false,
   message: null,
+  failed: false,
   requestRefresh: async () => {},
   reloadAll: () => {},
   sessionLost: false,
@@ -59,12 +65,16 @@ const POLL_TIMEOUT_MS = 90_000;
 /** 확인 간격 — 2초에서 시작해 1.5배씩, 최대 10초. 예전엔 2초 고정이라 무거운 /api/status를 최대 45번 불렀습니다. */
 const POLL_INTERVAL_MS = 2_000;
 const POLL_MAX_INTERVAL_MS = 10_000;
+/** 실패 안내의 결과 낱말(failureMessage). */
+const REFRESH_FAILED = "새로고침 실패";
 
 interface StatusShape {
   lastRun?: { id?: number | null; finishedAt?: string | null } | null;
 }
 
 interface RefreshResponse {
+  /** 백엔드 읽기 모드(DataStatusService.refresh — 'auto'·'store_only'). store_only면 수집을 일으키지 않는 것이 정상입니다. */
+  readMode?: string;
   message?: string;
   triggered?: boolean;
   baselineRunId?: number | null;
@@ -74,6 +84,7 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState(0);
   const [collecting, setCollecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [sessionLost, setSessionLost] = useState(false);
   const [unauthorizedCount, setUnauthorizedCount] = useState(0);
   const inFlight = useRef(false);
@@ -92,12 +103,20 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
     inFlight.current = true;
     setCollecting(true);
     setMessage(null);
+    setFailed(false);
 
     try {
       const result = await apiPost<RefreshResponse>(
         endpoints.status.refresh(true),
       );
-      setMessage(result.message ?? "새로고침을 요청했습니다.");
+      // 프런트는 늘 runFast=true로 부르므로, store_only가 아닌데 triggered=false면 수집기에 닿지 못한 것입니다 — 백엔드 글('수집기에 연결하지
+      // 못했습니다. …')은 결과 낱말이 문장 끝이라 요청 실패와 같은 머리말을 붙여 실패 꼴로 둡니다(QA-552).
+      if (result.readMode !== "store_only" && result.triggered === false) {
+        setMessage(failureMessage(result.message ?? "수집기에 연결하지 못했습니다."));
+        setFailed(true);
+      } else {
+        setMessage(result.message ?? "새로고침을 요청했습니다.");
+      }
 
       if (result.triggered) {
         const finished = await waitForCollection(result.baselineRunId ?? null);
@@ -108,9 +127,8 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
         );
       }
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "새로고침에 실패했습니다.",
-      );
+      setMessage(failureMessage(error instanceof Error ? error.message : "다시 시도하세요"));
+      setFailed(true);
     } finally {
       // 성공이든 실패든 화면은 다시 읽습니다. 실패했더라도 그 사이 스케줄러가
       // 받아 둔 값이 있을 수 있고, 사용자가 브라우저를 새로고침하게 두는 것보다
@@ -122,13 +140,21 @@ export function RefreshProvider({ children }: { children: React.ReactNode }) {
   }, [reloadAll]);
 
   const value = useMemo(
-    () => ({ token, collecting, message, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized }),
-    [token, collecting, message, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized],
+    () => ({ token, collecting, message, failed, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized }),
+    [token, collecting, message, failed, requestRefresh, reloadAll, sessionLost, unauthorizedCount, notifyUnauthorized],
   );
 
   return (
     <RefreshContext.Provider value={value}>{children}</RefreshContext.Provider>
   );
+}
+
+/**
+ * 실패 안내 — 짧은 결과 낱말을 앞에 둡니다('새로고침 실패 — 사유'). 상단바 안내는 한 줄(말줄임)이라, 사유('백엔드 API(<주소>)에 연결하지
+ * 못했습니다')부터 쓰거나 결과 낱말이 길면('새로고침하지 못했습니다' — 11자) 좁은 폭에서 실패를 뜻하는 낱말이 잘려 나갔습니다(QA-552).
+ */
+function failureMessage(reason: string): string {
+  return `${REFRESH_FAILED} — ${reason}`;
 }
 
 /**
