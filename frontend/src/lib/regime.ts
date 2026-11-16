@@ -6,7 +6,7 @@
  * 값을 모르는 입력은 "—"로 둡니다 — 0으로 채우지 않습니다.
  */
 import { EMPTY, formatNumber, formatPercent, formatSigned, formatTrillionDelta } from "./format";
-import type { RegimeLogEntry, RegimeLogInput, TrackRecordCell } from "./types";
+import type { RegimeLogEntry, RegimeLogInput, RegimeResponse, TrackRecordCell } from "./types";
 
 const ORDER = [
   { key: "curve10y3m", label: "10Y-3M", format: (v: number) => `${formatSigned(v, 2)}%p` },
@@ -70,4 +70,16 @@ function baselineText(base: TrackRecordCell | undefined): string {
   if (!base || base.mean === null) return EMPTY;
   const win = base.winRate === null ? EMPTY : `${formatNumber(base.winRate, 0)}% 상승`;
   return `${formatPercent(base.mean)} · ${win}`;
+}
+
+/**
+ * 국면 이력 띠의 이름(그림 하나 — role=img) — 기간·주간 판정 수·구간 수만 말하고 자세한 구간은 아래 표에 맡깁니다(QA-635). 띠의 칸 수백 개를
+ * 하나씩 읽히지 않습니다. 재현 점이 없으면 null(띠를 그리지 않음).
+ */
+export function regimeBandLabel(timeline: RegimeResponse["timeline"], episodeCount: number): string | null {
+  const points = timeline ?? [];
+  if (points.length === 0) return null;
+  const first = points[0].date;
+  const last = points[points.length - 1].date;
+  return `국면 이력 띠 — ${first} ~ ${last}, 주간 판정 ${points.length}번·구간 ${episodeCount}개(최근 구간은 아래 표)`;
 }

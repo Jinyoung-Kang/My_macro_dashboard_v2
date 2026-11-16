@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { regimeInputCells, trackRecordRow } from "../regime";
+import { regimeBandLabel, regimeInputCells, trackRecordRow } from "../regime";
 
 describe("국면 판정 기록의 근거 표기", () => {
   it("단위를 다른 화면과 같게 적고, 기준일은 월-일로 줄인다", () => {
@@ -43,5 +43,17 @@ describe("판정 성과 표의 한 줄", () => {
     expect(row.mean).toBe("표본 부족");
     expect(row.samples).toBe("4건 · 독립 2");
     expect(row.median).toBe("—");
+  });
+});
+
+describe("국면 이력 띠의 이름", () => {
+  it("기간·주간 판정 수·구간 수만 — 자세한 구간은 표에 맡긴다, 점이 없으면 띠가 없다", () => {
+    const timeline = [
+      { date: "2021-11-18", code: "UNKNOWN", label: "판정 불가" },
+      { date: "2021-11-25", code: "EXPANSION", label: "확장 (Expansion)" },
+    ];
+    expect(regimeBandLabel(timeline, 2)).toBe("국면 이력 띠 — 2021-11-18 ~ 2021-11-25, 주간 판정 2번·구간 2개(최근 구간은 아래 표)");
+    expect(regimeBandLabel([], 0)).toBeNull();
+    expect(regimeBandLabel(undefined, 0)).toBeNull();
   });
 });

@@ -19,6 +19,7 @@ import { EMPTY, formatNumber } from "@/lib/format";
 import type { RegimeResponse, RegimeSignal } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
+import { regimeBandLabel } from "@/lib/regime";
 import { RegimeLogSection } from "./RegimeLogSection";
 import { TrackRecordSection } from "./TrackRecordSection";
 
@@ -78,6 +79,7 @@ export default function RegimePage() {
 
   const verdict = data?.verdict;
   const current = QUADRANTS.find((entry) => entry.code === verdict?.code);
+  const bandLabel = regimeBandLabel(data?.timeline, (data?.episodes ?? []).length);
 
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
@@ -196,27 +198,36 @@ export default function RegimePage() {
           title="국면 이력" source={SOURCES.regime}
           subtitle="같은 규칙을 과거 날짜에 그대로 적용한 재현입니다(매주 목요일). 회색은 판정 불가 — 하이일드 스프레드 이력이 2023-09부터라 그 이전은 판정할 수 없습니다."
         >
-          <div className="flex h-8 w-full overflow-hidden rounded-sm border border-border">
-            {(data?.timeline ?? []).map((point) => (
-              <span
-                key={point.date}
-                className={`h-full flex-1 ${TIMELINE_COLOR[point.code] ?? "bg-border"}`}
-                title={`${point.date} · ${point.label}`}
-              />
-            ))}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs text-text-3">
+          {/* 띠는 이름 있는 그림 하나(기간·구간 수 — 자세한 구간은 아래 표)이고 칸은 읽기에서 뺍니다. 칸·견본은 바탕색으로만 그리므로 고대비(forced-colors)에서
+              바탕색이 지워지지 않게 색을 그대로 둡니다(forced-color-adjust-none — 범례 견본·차트 견본과 같은 규칙, QA-635·QA-497). */}
+          {bandLabel ? (
+            <div
+              role="img"
+              aria-label={bandLabel}
+              className="flex h-8 w-full overflow-hidden rounded-sm border border-border forced-color-adjust-none"
+            >
+              {(data?.timeline ?? []).map((point) => (
+                <span
+                  key={point.date}
+                  aria-hidden="true"
+                  className={`h-full flex-1 ${TIMELINE_COLOR[point.code] ?? "bg-border"}`}
+                  title={`${point.date} · ${point.label}`}
+                />
+              ))}
+            </div>
+          ) : null}
+          <ul aria-label="국면 이력 띠 범례" className="mt-2 flex flex-wrap gap-3 text-xs text-text-3">
             {QUADRANTS.map((quadrant) => (
-              <span key={quadrant.code} className="flex items-center gap-1">
-                <span className={`h-2 w-4 rounded-xs ${TIMELINE_COLOR[quadrant.code]}`} />
+              <li key={quadrant.code} className="flex items-center gap-1">
+                <span data-band-swatch aria-hidden="true" className={`h-2 w-4 rounded-xs forced-color-adjust-none ${TIMELINE_COLOR[quadrant.code]}`} />
                 {quadrant.label}
-              </span>
+              </li>
             ))}
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-4 rounded-xs bg-border" />
+            <li className="flex items-center gap-1">
+              <span data-band-swatch aria-hidden="true" className="h-2 w-4 rounded-xs bg-border forced-color-adjust-none" />
               판정 불가
-            </span>
-          </div>
+            </li>
+          </ul>
 
           <div className="mt-5">
             <h3 className="mb-2 text-sm font-semibold text-text">과거 구간 (최근 순)</h3>
