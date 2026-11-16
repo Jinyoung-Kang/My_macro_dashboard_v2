@@ -14,6 +14,7 @@ export { Empty } from "./Empty";
 export { EntityHeader, type EntityKind } from "./EntityHeader";
 export { Hero } from "./Hero";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
+export { MasterDetail } from "./MasterDetail";
 export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
 export { Skeleton } from "./Skeleton";
