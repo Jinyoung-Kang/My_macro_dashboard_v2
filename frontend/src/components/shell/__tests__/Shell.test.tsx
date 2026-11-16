@@ -268,13 +268,13 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
   const crumbs = () => screen.getByRole("navigation", { name: "현재 위치" });
   const crumbItems = () => within(crumbs()).getAllByRole("listitem");
 
-  it("모의매매 탭 주소는 모의매매 › 미국 › 보유·체결 — 앞 두 칸은 링크, 마지막 칸은 링크 없이 aria-current=page", () => {
+  it("모의매매 탭 주소는 모의매매 › 미국 › 보유·체결 — '미국'은 링크, '모의매매'는 뒤 칸과 주소가 같아 링크 없는 글(QA-549), 마지막 칸은 링크 없이 aria-current=page", () => {
     renderShell(LOCAL_OWNER, { path: "/paper/us/holdings" });
     expect(crumbItems().map((item) => item.textContent)).toEqual(["모의매매", "›미국", "›보유·체결"]);
-    expect(within(crumbs()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["모의매매", "/paper/us"],
-      ["미국", "/paper/us"],
-    ]);
+    expect(within(crumbs()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([["미국", "/paper/us"]]);
+    const paper = within(crumbs()).getByText("모의매매");
+    expect(paper.closest("a")).toBeNull();
+    expect(paper.hasAttribute("aria-current")).toBe(false);
     const current = within(crumbs()).getByText("보유·체결");
     expect(current.getAttribute("aria-current")).toBe("page");
     expect(current.closest("a")).toBeNull();

@@ -23,9 +23,9 @@ describe("메뉴 화면", () => {
     expect(breadcrumbs("/search", MEMBER)).toEqual([{ label: "정보 검색", href: "/search" }]);
   });
 
-  it("탭 첫 화면도 하위 화면이 여럿이면 하위 칸이 있다 — /macro는 시장 › 매크로 지표", () => {
+  it("탭 첫 화면도 하위 화면이 여럿이면 하위 칸이 있다 — /macro는 시장 › 매크로 지표(탭 칸은 지금 화면과 주소가 같아 글 칸 — QA-549)", () => {
     expect(breadcrumbs("/macro", MEMBER)).toEqual([
-      { label: "시장", href: "/macro" },
+      { label: "시장", href: null },
       { label: "매크로 지표", href: "/macro" },
     ]);
     expect(breadcrumbs("/liquidity", MEMBER)).toEqual([
@@ -53,9 +53,9 @@ describe("메뉴 화면", () => {
 });
 
 describe("대상(상세)", () => {
-  it("지표 /markets/i/<키> → 시장 › 매크로 지표(→ /macro) › 키", () => {
+  it("지표 /markets/i/<키> → 시장(뒤 칸과 주소가 같아 글 칸 — QA-549) › 매크로 지표(→ /macro) › 키", () => {
     expect(breadcrumbs("/markets/i/vix", MEMBER)).toEqual([
-      { label: "시장", href: "/macro" },
+      { label: "시장", href: null },
       { label: "매크로 지표", href: "/macro" },
       { label: "vix", href: "/markets/i/vix" },
     ]);
@@ -71,9 +71,9 @@ describe("대상(상세)", () => {
     expect(labels(breadcrumbs(`/s/us/${encodeURIComponent("^GSPC")}`, MEMBER))).toEqual(["시장", "종목(미국)", "^GSPC"]);
   });
 
-  it("기관 /institutions/<CIK> → 기관 › 13F 포트폴리오(→ /institutions) › CIK n", () => {
+  it("기관 /institutions/<CIK> → 기관(뒤 칸과 주소가 같아 글 칸 — QA-549) › 13F 포트폴리오(→ /institutions) › CIK n", () => {
     expect(breadcrumbs("/institutions/1067983", MEMBER)).toEqual([
-      { label: "기관", href: "/institutions" },
+      { label: "기관", href: null },
       { label: "13F 포트폴리오", href: "/institutions" },
       { label: "CIK 1067983", href: "/institutions/1067983" },
     ]);
@@ -89,18 +89,20 @@ describe("대상(상세)", () => {
 });
 
 describe("모의매매(운영자)", () => {
-  it("개요는 모의매매 › 미국, 탭 주소는 그 탭 이름(PAPER_TABS)까지", () => {
+  it("개요는 모의매매 › 미국, 탭 주소는 그 탭 이름(PAPER_TABS)까지 — '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸(QA-549)", () => {
     expect(breadcrumbs("/paper/us", OWNER)).toEqual([
-      { label: "모의매매", href: "/paper/us" },
+      { label: "모의매매", href: null },
       { label: "미국", href: "/paper/us" },
     ]);
     expect(breadcrumbs("/paper/us/holdings", OWNER)).toEqual([
-      { label: "모의매매", href: "/paper/us" },
+      { label: "모의매매", href: null },
       { label: "미국", href: "/paper/us" },
       { label: "보유·체결", href: "/paper/us/holdings" },
     ]);
     expect(labels(breadcrumbs("/paper/kr/settings", OWNER))).toEqual(["모의매매", "한국", "설정"]);
     expect(labels(breadcrumbs("/paper/kr/isa", OWNER))).toEqual(["모의매매", "한국", "ISA 계좌"]);
+    // 한국 화면은 탭 칸(→ /paper/us)이 뒤 칸과 겹치지 않아 링크 그대로
+    expect(breadcrumbs("/paper/kr/settings", OWNER)[0]).toEqual({ label: "모의매매", href: "/paper/us" });
   });
 
   it("그 시장에 없는 탭(미국 isa)·모르는 조각은 탭 칸을 빼고 시장에서 끝난다", () => {
@@ -133,7 +135,7 @@ describe("같은 곳으로 가는 링크 칸 없음", () => {
   // 더 구체적인 뒤 칸(미국·매크로 지표·13F 포트폴리오)이 링크로 남아 갈 수 있는 곳은 줄지 않습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 운영자·회원 모두 /macro·/institutions·/paper/us·/info/overview·/markets/i/vix·/institutions/1067983·
   // /paper/us/holdings 등에서 겹치는 링크 칸이 나왔습니다.
-  it.fails("링크 칸의 주소는 뒤 칸 어느 것과도 겹치지 않는다 — 운영자·회원 × 모든 탭 하위 화면 + 상세 표본 (QA-549)", () => {
+  it("링크 칸의 주소는 뒤 칸 어느 것과도 겹치지 않는다 — 운영자·회원 × 모든 탭 하위 화면 + 상세 표본 (QA-549)", () => {
     const paths = [
       ...new Set([
         ...TABS.flatMap((tab) => tab.items.map((item) => item.href)),
