@@ -5,6 +5,7 @@
  *  - 움직임 줄이기면 깜빡이지 않는다(motion-safe에서만 animate-pulse)
  *  - 막대는 놓인 면보다 한 단계 위 면(bg-control-fill — 덮개 안에서도 보임), 고대비(forced-colors)에서는 테두리로 남는다
  *  - 숫자를 그리지 않는다 — 값 있음·없음·추정·오래됨은 값이 도착한 뒤의 상태라 Skeleton은 그 어느 것도 흉내 내지 않는다
+ *  - inline — 글줄 안의 짧은 막대 하나(span만, 블록 상자 없음 — QA-605)
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -75,6 +76,30 @@ describe("Skeleton", () => {
       expect(classes).toContain("motion-safe:animate-pulse");
       expect(classes).not.toContain("animate-pulse");
     }
+  });
+
+  it("inline — 글줄 안의 짧은 막대 하나(span만 — 블록 상자·py-1 없음), role=status·이름, 막대 모양은 블록·줄과 같다 (QA-605)", () => {
+    const { container } = render(
+      <p>
+        읽지 않음 <Skeleton inline lines={4} height={80} label="읽지 않은 수 불러오는 중" />
+      </p>,
+    );
+    const status = screen.getByRole("status", { name: "읽지 않은 수 불러오는 중" });
+    expect(status.tagName).toBe("SPAN");
+    expect(status.getAttribute("aria-busy")).toBe("true");
+    expect(status.className.split(/\s+/)).toEqual(expect.arrayContaining(["inline-block", "align-middle", "relative"]));
+    // 글 요소(p) 안에 둘 수 있게 div가 없고, lines·height는 보지 않습니다(막대 하나).
+    expect(container.querySelector("div")).toBeNull();
+    const [bar, ...rest] = bars(status);
+    expect(rest).toHaveLength(0);
+    expect(bar.tagName).toBe("SPAN");
+    expect(bar.style.height).toBe("");
+    // 12px 높이(text-xs 글줄 16px 안) · 짧은 폭, 바탕·고대비 테두리·깜빡임은 블록·줄과 같은 규칙.
+    expect(bar.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["block", "h-3", "w-6", "rounded-control", "bg-control-fill", "motion-safe:animate-pulse", "forced-colors:border"]),
+    );
+    expect(status.textContent).toBe("읽지 않은 수 불러오는 중");
+    expect(screen.getByText("읽지 않은 수 불러오는 중").className).toContain("sr-only");
   });
 
   it("네 상태를 흉내 내지 않는다 — 숫자·'—'·추정·이전 값 무엇도 그리지 않는다", () => {

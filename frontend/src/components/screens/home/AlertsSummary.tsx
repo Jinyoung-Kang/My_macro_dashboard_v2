@@ -5,7 +5,7 @@ import { useId, type ReactNode } from "react";
 import { Empty, Skeleton } from "@/components/patterns";
 import { Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
+import { KPI_READ_FAILED, latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
 import type { InfoSourcesResponse } from "@/lib/info";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { StatusIssuesResponse } from "@/lib/types";
@@ -27,8 +27,9 @@ const SUBHEAD = "text-caption font-semibold text-text-2";
  * '알림 전체 보기'. 회원·데모는 알림만이라 제목도 '알림'입니다. 읽음 처리는 알림 화면에서 합니다.
  *
  * 읽지 않은 수는 셸 레이아웃이 읽는 경로(/api/alerts/unread-count)를 그대로 읽습니다 — 동시에 나가면 요청 하나로 합쳐집니다
- * (lib/sharedRequest). 모르면(읽는 중·실패) "—"이고 0으로 적지 않습니다. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고
- * "지난 사건"으로 적습니다(/alerts와 같음).
+ * (lib/sharedRequest). 0으로 적지 않고, 맨 위 KPI 띠의 '읽지 않은 알림' 타일과 같은 규칙으로 그립니다(lib/home kpiReadState — P4 '정한 것' 11, QA-605):
+ * 읽는 중이면 글줄 안의 짧은 자리표시(role=status), 읽지 못했으면 '—' + '읽지 못함'(이 수만의 구역이 없어 오류 글·다시 시도는 두지 않음 — 자동 갱신이 다시
+ * 읽음), 응답에 수가 없으면 '—'. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고 "지난 사건"으로 적습니다(/alerts와 같음).
  *
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 제목이 그 대상의 타임라인으로 가는 링크입니다(/alerts와 같음 — 정보 검색 화면 안쪽 주소만).
  *
@@ -54,7 +55,7 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
       actions={
         <>
           <span className="text-xs text-text-2">
-            읽지 않음 <span className="tabular-nums font-semibold text-text">{unreadText(unread.data) ?? <Empty />}</span>
+            읽지 않음 <span className="tabular-nums font-semibold text-text"><UnreadValue unread={unread} /></span>
           </span>
           <Freshness refreshError={inbox.refreshError ?? unread.refreshError} />
           <Link href="/alerts" className={HOME_LINK}>
@@ -79,6 +80,20 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
       ) : null}
     </Panel>
   );
+}
+
+/**
+ * 머리의 읽지 않은 수 — 값이 있으면 'N건'(수가 없으면 '—'), 읽지 못했으면 '—' + '읽지 못함', 읽는 중이면 글줄 높이 안의 짧은 자리표시.
+ * 읽는 중과 실패를 같은 '—'로 그리면 눈으로도 낭독('값 없음')으로도 갈리지 않았습니다(QA-605).
+ */
+function UnreadValue({ unread }: { unread: HomeAlertsRead["unread"] }) {
+  if (unread.data !== null) {
+    return <>{unreadText(unread.data) ?? <Empty />}</>;
+  }
+  if (unread.error !== null) {
+    return <Empty reason={KPI_READ_FAILED} />;
+  }
+  return <Skeleton inline label="읽지 않은 수 불러오는 중" />;
 }
 
 /** 최근 알림 세 건 — 줄마다 점·제목(관심 대상 새 글이면 링크)·발생일·읽음 글. */

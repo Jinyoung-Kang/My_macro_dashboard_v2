@@ -389,7 +389,7 @@ describe("홈 — 값 있음(운영자)", () => {
   // QA-605: 패널 머리의 읽지 않은 수는 읽는 중에도 실패에도 같은 '—'(읽어 주기 '값 없음')라 둘이 갈리지 않았습니다. 같은 수를 그리는 KPI 띠는
   // 읽는 중 자리표시(role=status) · 실패 '— 읽지 못함'(P4 '정한 것' 11)이라 한 화면에서 두 규칙이었습니다.
   // 수정 전(재현 커밋에서는 it.fails) 읽는 중 머리는 '읽지 않음 —값 없음'(role=status 없음), 실패도 '읽지 않음 —값 없음'이었습니다.
-  it.fails("알림 패널 머리의 읽지 않은 수 — 읽는 중은 '—'(값 없음)가 아니라 자리표시(role=status) (QA-605)", async () => {
+  it("알림 패널 머리의 읽지 않은 수 — 읽는 중은 '—'(값 없음)가 아니라 자리표시(role=status) (QA-605)", async () => {
     // unread-count 응답만 오지 않습니다(나머지 경로는 값).
     reads = happyReads();
     delete reads[UNREAD];
@@ -399,7 +399,7 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
   });
 
-  it.fails("알림 패널 머리의 읽지 않은 수 — 실패는 '— 읽지 못함'(KPI 띠와 같은 사유, 오류 글·다시 시도는 두지 않음) (QA-605)", async () => {
+  it("알림 패널 머리의 읽지 않은 수 — 실패는 '— 읽지 못함'(KPI 띠와 같은 사유, 오류 글·다시 시도는 두지 않음) (QA-605)", async () => {
     reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
     renderHome(OWNER);
     await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
@@ -538,6 +538,8 @@ describe("홈 — 불러오는 중·값 없음", () => {
       "수집 오류 불러오는 중",
       // 패널은 화면 차례(국면 → 알림·끊긴 출처 → 계좌 → 시장 — 결정 5)
       "오늘의 국면을 불러오는 중",
+      // 알림 패널 머리의 읽지 않은 수(QA-605 — KPI 타일과 같은 규칙)
+      "읽지 않은 수 불러오는 중",
       "알림을 불러오는 중",
       "끊긴 출처를 불러오는 중",
       "수집 상태를 불러오는 중",
@@ -546,8 +548,9 @@ describe("홈 — 불러오는 중·값 없음", () => {
     ]);
     // 계좌 구역은 불러오는 중에도 읽은 뒤와 같은 이름입니다.
     expect(within(region(PAPER_REGION)).getByRole("status").getAttribute("aria-label")).toBe("모의매매 계좌를 불러오는 중");
-    // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
-    expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();
+    // 읽지 않은 수를 읽는 중이면 자리표시 — '—'(값 없음, 실패와 같은 표시)도 0건도 적지 않습니다(QA-605).
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
+    expect(within(unreadCount()).queryByText("값 없음")).toBeNull();
     expect(screen.queryByText("0건")).toBeNull();
   });
 
@@ -639,7 +642,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
 
     expect(within(region("시장")).getByText("매크로 저장본이 아직 없습니다 — 수집 전")).toBeTruthy();
     expect(await within(region(ALERTS_REGION)).findByText("새 알림이 없습니다")).toBeTruthy();
-    expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();   // 읽지 않은 수 응답 전
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();   // 읽지 않은 수 응답 전(QA-605)
     const line = await storeLine();
     expect(line.textContent).toContain("수집 태스크 오류 —값 없음 · 경고 —값 없음 · 누락 데이터셋 —값 없음");
     expect(within(line).getAllByText("값 없음")).toHaveLength(3);
