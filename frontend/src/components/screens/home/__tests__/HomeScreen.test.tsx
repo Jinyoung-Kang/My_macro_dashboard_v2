@@ -509,6 +509,27 @@ describe("홈 — 불러오는 중·값 없음", () => {
     expect(screen.queryByText("0건")).toBeNull();
   });
 
+  // QA-598: 자리표시가 읽은 뒤보다 훨씬 낮아(KPI 타일 64→208px, 국면 패널 189→582px, 계좌 181→509~680px, 시장 309→414px) 값이 오는 동안
+  // 화면이 아래로 밀렸습니다(QA 스택 /api/* 1.5초 지연 CLS 390 0.63·1024 0.37·1440 0.24 — QA-283의 홈 몫 + P4 새 KPI 띠).
+  // 수정 전(재현 커밋에서는 it.fails) 타일 막대는 모두 1개, 세 패널 자리표시는 높이 없는 줄(lines 5·5·6)이었습니다.
+  it.fails("읽는 중 자리는 읽은 뒤 높이에 가깝다 — 시장 KPI 타일은 자리 줄 막대, 국면·계좌·시장 패널 자리표시는 높이를 가진 블록 (QA-598)", () => {
+    renderHome(OWNER);
+    const strip = region("오늘 요약");
+    const bars = (label: string) => within(strip).getByRole("status", { name: `${label} 불러오는 중` }).closest("li")?.querySelectorAll(".bg-control-fill").length;
+    expect(["국면", "S&P 500", "코스피", "원/달러", "미국채 10년물", "읽지 않은 알림", "수집 오류"].map(bars)).toEqual([1, 6, 6, 6, 6, 1, 1]);
+    const blockHeight = (name: string) => {
+      const block = within(region(name)).getByRole("status").querySelector<HTMLElement>("[style]");
+      return block ? Number.parseFloat(block.style.height) : null;
+    };
+    // 읽은 뒤 본문(QA 스택 1024·1440): 국면 414~544px(넓을수록 낮음), 계좌 529~548px, 시장 367px.
+    const regime = blockHeight("오늘의 국면");
+    const paper = blockHeight(PAPER_REGION);
+    const market = blockHeight("시장");
+    expect(regime !== null && regime >= 480 && regime <= 520, `국면 ${regime}`).toBe(true);
+    expect(paper !== null && paper >= 400 && paper <= 460, `계좌 ${paper}`).toBe(true);
+    expect(market !== null && market >= 300 && market <= 360, `시장 ${market}`).toBe(true);
+  });
+
   it("국면·모의매매 구역은 불러오는 중에도 읽은 뒤와 같은 틀 — 값이 와도 틀 여백이 바뀌지 않는다", async () => {
     // 예전에는 불러오는 중·오류를 다른 틀(다른 안쪽 여백)로 그려, 값이 오는 순간 제목·본문이 lg에서 16px 튀었습니다(검토 지적).
     renderHome(OWNER);

@@ -175,6 +175,32 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(within(tile("코스피")).getByRole("status", { name: "코스피 불러오는 중" })).toBeTruthy();
   });
 
+  // QA-598: 읽는 중 타일은 이름 + 자리표시 한 줄(64px)이라 값·변화·배지·출처 줄이 오면 1440 타일 64→208px, 390 띠 280→677px로 자라
+  // 아래 2×2 패널 전체가 밀렸습니다(QA 스택 /api/* 1.5초 지연 CLS 390 0.63·1024 0.37·1440 0.24).
+  // 수정 전(재현 커밋에서는 it.fails) 막대는 값 자리표시의 1개뿐이었습니다.
+  it.fails("읽는 중 자리 줄(pendingLines) — 값 자리표시 아래 같은 블록에 글 없는 막대를 그 수만큼 더 그리고, 읽어 주는 상태는 하나 (QA-598)", () => {
+    // 재현 커밋에는 아직 없는 칸이라 타입 단언으로 넘깁니다.
+    const items = [
+      { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 4 },
+      { key: "alerts", label: "읽지 않은 알림", value: null, pending: true },
+    ] as KpiItem[];
+    render(<KpiStrip label="요약" items={items} />);
+    const market = tile("S&P 500");
+    const status = within(market).getByRole("status", { name: "S&P 500 불러오는 중" });
+    expect(within(market).getAllByRole("status")).toHaveLength(1);
+    const bars = Array.from(market.querySelectorAll(".bg-control-fill"));
+    expect(bars).toHaveLength(1 + 4);
+    for (const bar of bars) {
+      expect(bar.closest('[aria-hidden="true"]'), "막대는 읽어 주기에서 뺌").not.toBeNull();
+      expect(bar.textContent).toBe("");
+    }
+    // 덧 막대는 값 자리표시와 같은 블록(값 줄) 안에 있습니다.
+    const block = status.parentElement as HTMLElement;
+    expect(bars.every((bar) => block.contains(bar))).toBe(true);
+    // 주지 않으면 지금처럼 값 자리표시 한 줄입니다.
+    expect(tile("읽지 않은 알림").querySelectorAll(".bg-control-fill")).toHaveLength(1);
+  });
+
   it("상태 글(오류·주의)은 아이콘 + 읽어 주는 머리말 + 글 — 색만으로 뜻을 전하지 않는다", () => {
     render(
       <KpiStrip
