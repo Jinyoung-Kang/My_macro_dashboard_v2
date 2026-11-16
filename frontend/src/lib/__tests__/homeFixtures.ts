@@ -3,6 +3,7 @@
  * 테스트 파일이 아니라 자료라 vitest가 따로 돌리지 않습니다(이름이 *.test.ts가 아님). 함수마다 새 객체를 돌려줘
  * 이야기마다 고쳐 써도 서로 섞이지 않습니다.
  */
+import type { InfoIncident, InfoSourcesResponse } from "../info";
 import type {
   InboxResponse,
   MacroItem,
@@ -234,4 +235,22 @@ export function issues(errors = 0, warnings = 0): StatusIssuesResponse {
     missing: [],
     text: "",
   };
+}
+
+/** 끊긴 출처 하나(/api/info/sources incidents — 셸 안내 띠와 같은 응답). */
+export function incident(overrides: Partial<InfoIncident> & Pick<InfoIncident, "key" | "label">): InfoIncident {
+  return {
+    task: "info_blogs",
+    kind: "blocked",
+    kindLabel: "차단됨 — 잠시 멈춤",
+    reason: "HTTP 403",
+    since: "2026-10-26 15:10 KST",
+    episode: "2026-10-26 09:00 KST",
+    ...overrides,
+  };
+}
+
+/** 출처 판정(운영 서버 — 판정 기록 있음). 끊긴 출처를 주지 않으면 빈 목록. */
+export function infoSources(incidents: InfoIncident[] = []): InfoSourcesResponse {
+  return { checkedAt: "2026-10-26 16:50 KST", available: true, recorded: true, incidents };
 }

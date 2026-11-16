@@ -1,19 +1,20 @@
 /**
  * 홈(/) 화면의 표시 규칙 — React를 모르는 순수 함수(ADR 0004).
  *
- * 숫자는 전부 백엔드·수집기가 보낸 값입니다(국면 판정·신호 값, 계좌 순자산·출발 대비 수익률, 매크로 카드 시세·변화, 알림 수,
- * 수집 오류·경고 수). 여기서는 고르고, 이름을 붙이고, 자산 행·타일 모양으로 옮기기만 합니다 — 판정 글을 지어내거나
+ * 숫자는 전부 백엔드·수집기가 보낸 값입니다(국면 판정·신호 값, 계좌 순자산·출발 대비 수익률·최근 변화, 매크로 카드 시세·변화, 알림 수,
+ * 수집 오류·경고 수, 끊긴 출처). 여기서는 고르고, 이름을 붙이고, KPI 타일·표 행·자산 행 모양으로 옮기기만 합니다 — 판정 글을 지어내거나
  * 일간 변화처럼 응답에 없는 숫자를 빼기로 만들지 않습니다. 모르는 값은 null(화면 "—")이고 0으로 채우지 않습니다.
  */
 import { indicatorHref } from "./detail";
 import { delayLabel, EMPTY, formatDate, formatKst, formatNumber, formatSigned, formatWithUnit, withoutLeadingIcon } from "./format";
+import type { InfoSourcesResponse } from "./info";
 import { MARKETS, sessionStatus, tradeDayFrom, tradeTimeFrom } from "./marketSessions";
 import { TABS } from "./nav";
-import { formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
+import { bookCard, formatDollars, isTimedBook, primaryClaudeBook, withParticle } from "./paper";
 import { formatMoney, marketMeta, type PaperMarketCode } from "./paperMarket";
 import { currentSource, currentView, type DayChange } from "./paperCurrent";
 import { bookAssetRow, type BookRow, bookStale } from "./paperOverview";
-import { assetMonogram } from "./patternRows";
+import { assetMonogram, assetValueText } from "./patternRows";
 import { paperMarketPath } from "./paperRoutes";
 import { presentText } from "./patterns";
 import type {
@@ -310,6 +311,14 @@ export function marketGroups(
   }));
 }
 
+/**
+ * 시장 묶음 표가 보일 묶음 — 고른 묶음이 목록에 있으면 그것, 아니면(처음·다시 읽은 저장본에서 그 범주가 사라짐) 첫 묶음. 묶음이 없으면 null.
+ * 고른 키를 화면 상태로만 두므로 범주가 사라져도 빈 표가 남지 않습니다.
+ */
+export function pickMarketGroup(groups: readonly MarketGroup[], picked: string | null | undefined): MarketGroup | null {
+  return groups.find((group) => group.id === picked) ?? groups[0] ?? null;
+}
+
 // ---------------------------------------------------------------- ② 모의매매(미국·한국)
 
 /** 정기 작업이 꺼진 사본에서 홈이 적는 안내(로컬 v2는 PAPER_ENABLED=false 고정 — 상태는 AWS 한 곳에만). */
@@ -360,6 +369,8 @@ export type PaperHomeModel = {
   heroDay: DayChange | null;
   /** 히어로 숫자의 출처 — 장부, 장중 추정이면 장중 시세로 다시 평가했다는 말을 덧붙임. */
   heroSource: string;
+  /** 계좌 행 숫자의 출처 — 장부, 장중 추정인 행이 하나라도 있으면 장중 시세로 다시 평가했다는 말을 덧붙임(lib/paperCurrent currentSource). */
+  source: string;
   heroStale: boolean;
   heroStaleReason: string | null;
   rows: PaperHomeRow[];
@@ -459,6 +470,7 @@ export function paperHomeModel(
     heroIsEstimated: live?.isEstimated === true,
     heroDay: live?.day?.text ? live.day : null,
     heroSource: currentSource(live?.isEstimated === true, market),
+    source: currentSource(rows.some((row) => row.isEstimated === true), market),
     // 이전 값 배지는 행과 같은 규칙에 히어로 자리(위 단계 표기·'마지막 관측'이 관측 시각을 이미 적음 — 사유에서 그 시각을 뺌, lib/paperOverview bookStale).
     heroStale: heroStale?.isStale === true,
     heroStaleReason: heroStale?.reason ?? null,
@@ -468,6 +480,82 @@ export function paperHomeModel(
     dormantNote: dormant && rows.length > 0 ? `한국 정기 작업이 쉬고 있습니다 — ${dormant}` : null,
     compareNote: PAPER_COMPARE_NOTE,
   };
+}
+
+// ---------------------------------------------------------------- ② 계좌 손익 표(운영자)
+
+/**
+ * 계좌 손익 표 한 줄 — 모의매매 개요의 계좌 행 규칙(lib/paperOverview `bookAssetRow`)과 지금 값 보기(lib/paperCurrent `currentView`)를 표 칸으로
+ * 나눈 것입니다. 숫자는 모두 서버 값이고 화면은 계산하지 않습니다(출발 대비 수익률·최근 변화 모두 서버 값).
+ */
+export type PaperPnlRow = {
+  /** 계좌 코드(행 키). */
+  id: string;
+  name: string;
+  /** 종류 · 상태('규칙 · 운용 중') — 계좌 소개 한 줄은 모의매매 화면에 둡니다. */
+  sub: string;
+  /** 모의매매 화면(미국 /paper/us·한국 /paper/kr) — 계좌마다의 주소는 없습니다. */
+  href: string;
+  /** 순자산 글(미국 달러 소수 둘째 · 한국 원 정수 — 자산 행과 같은 assetValueText). 모르면 null("—"). */
+  valueText: string | null;
+  unit: string;
+  /** 출발 대비 수익률(지금 값, 옛 응답이면 장부). 모르면 null(칩 없이 "—"). */
+  returnPct: number | null;
+  /** 최근 변화(서버 dayChangePct)와 그 이름('오늘'·'10-30 변화')·기준('10-29 잠정 대비'). 옛 응답·출발 전·모르면 null("—"). */
+  day: { pct: number; label: string; base: string | null } | null;
+  /** 값의 기준 — 단계 표기('장중 추정 23:58'·'10-30 확정', 옛 응답이면 '마지막 관측 …') · 덧붙임('장중가 1/2종목'). 출발 전·모르면 null. */
+  basis: string | null;
+  isEstimated: boolean;
+  isStale: boolean;
+  staleReason: string | null;
+  /** 사후 체결 대기(미국 벤치마크가 출발일 종가를 기다림) — bookAssetRow 그대로. */
+  warning: string | null;
+};
+
+/**
+ * 계좌 손익 표의 행 — 개요의 계좌 순서 그대로. 장부를 읽을 수 없으면 빈 목록(안내는 paperHomeModel `message`).
+ *
+ * - 순자산·출발 대비 수익률·추정 배지·사후 체결 대기 경고는 모의매매 개요의 계좌 행과 같은 규칙(bookAssetRow)입니다 — 규칙을 두 곳에 두지 않습니다(ADR 0004).
+ * - 최근 변화는 지금 값의 변화 한 줄(`currentView().day` — 서버 dayChangePct, 이름 '오늘'·'MM-DD 변화'와 기준 '… 대비')을 칸으로 나눈 것입니다.
+ * - 기준 칸은 단계 표기와 덧붙임입니다. 기준 칸이 관측 시각을 이미 적으므로 이전 값 사유는 그 시각을 뺀 꼴(lib/paperOverview `bookStale`의
+ *   "hero" 자리 — '관측 시각을 단계 표기로 이미 적는 자리')을 씁니다. 같은 시각을 한 줄에 두 번 적지 않습니다.
+ * - 출발 전 계좌는 변화·기준이 없습니다(보조 글의 상태가 '시작 전'을 말함).
+ */
+export function paperPnlRows(
+  overview: PaperOverviewResponse | null | undefined,
+  options: { market?: PaperMarketCode; href?: string } = {},
+): PaperPnlRow[] {
+  if (overview?.available !== true) {
+    return [];
+  }
+  const market = options.market ?? "US";
+  const korea = market === "KR";
+  const href = options.href ?? (korea ? PAPER_KR_HREF : PAPER_HREF);
+  const session = overview.liveSession ?? null;
+  const context = { pendingBackfill: overview.pendingBackfill ?? [], quotes: overview.quotes ?? null, ...(korea ? { market } : {}), session };
+  return (overview.books ?? []).map((book) => {
+    const asset = bookAssetRow(book, context);
+    const view = currentView(book, { market, session });
+    const card = bookCard(book, [], market);
+    const stale = bookStale(book, context, "hero");
+    const started = book.status !== "NOT_STARTED";
+    const dayPct = started ? finite(view.day?.pct) : null;
+    return {
+      id: book.code,
+      name: book.label,
+      sub: joinPresent([card.kind, card.status.label]) ?? "",
+      href,
+      valueText: assetValueText(asset.value, asset.valueText),
+      unit: asset.unit,
+      returnPct: finite(asset.changePct),
+      day: view.day && dayPct !== null ? { pct: dayPct, label: view.day.label, base: view.day.base } : null,
+      basis: started ? joinPresent([view.stageLabel, ...view.notes]) : null,
+      isEstimated: asset.isEstimated === true,
+      isStale: stale.isStale,
+      staleReason: stale.reason,
+      warning: asset.warning,
+    };
+  });
 }
 
 // ---------------------------------------------------------------- ④ 알림 요약
@@ -566,4 +654,206 @@ export function storeStatusModel(issues: StatusIssuesResponse | null | undefined
     tone,
     checkedAt: checked ? formatKst(checked) : null,
   };
+}
+
+// ---------------------------------------------------------------- ④ 끊긴 출처(운영자)
+
+/** 끊긴 출처 한 줄 — 출처 이름 · 끊긴 종류('차단됨 — 잠시 멈춤'·'형식 바뀜' 등, 서버 글) · 사유 · 끊긴 시각. */
+export type SourceIncidentRow = {
+  key: string;
+  label: string;
+  kindLabel: string;
+  reason: string | null;
+  /** 끊긴 시각(KST 표시). 모르면 null. */
+  since: string | null;
+};
+
+export type SourceIncidentsModel = {
+  rows: SourceIncidentRow[];
+  /** 줄이 없을 때의 글 — 끊긴 출처 없음, 또는 판정 기록·저장본이 없어 모름(끊긴 출처가 없다고 적지 않음). 줄이 있으면 null. */
+  message: string | null;
+};
+
+/** 끊긴 출처가 없을 때의 글. */
+export const NO_SOURCE_INCIDENTS = "끊긴 출처가 없습니다";
+
+/**
+ * 끊긴 출처(/api/info/sources incidents — 셸의 수집 끊김 안내 띠와 같은 응답) → 줄. 서버 순서 그대로이고, 띠를 닫았는지와 상관없이 지금 끊긴 출처를
+ * 모두 적습니다(닫기는 띠의 일). 판정 기록이 없으면(로컬 PC — 차단 통과 수집은 운영 서버에서만) '끊긴 출처가 없습니다'라고 적지 않고 모른다고 적습니다.
+ */
+export function sourceIncidentsModel(response: InfoSourcesResponse | null | undefined): SourceIncidentsModel {
+  if (!response) {
+    return { rows: [], message: null };
+  }
+  if (response.available === false) {
+    return { rows: [], message: "출처 판정 저장본을 아직 읽을 수 없습니다" };
+  }
+  const rows = (response.incidents ?? []).map((incident) => {
+    const since = presentText(incident.since);
+    return {
+      key: incident.key,
+      label: presentText(incident.label) ?? incident.task,
+      kindLabel: presentText(incident.kindLabel) ?? incident.kind,
+      reason: presentText(incident.reason),
+      since: since ? formatKst(since) : null,
+    };
+  });
+  if (rows.length > 0) {
+    return { rows, message: null };
+  }
+  if (response.recorded === false) {
+    return { rows, message: "출처 판정 기록이 없습니다 — 판정은 운영 서버에서만 합니다" };
+  }
+  return { rows, message: NO_SOURCE_INCIDENTS };
+}
+
+// ---------------------------------------------------------------- 맨 위 요약(KPI 띠)
+
+/**
+ * KPI 타일 하나 — components/patterns `KpiItem`과 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음). 값을 모르면 `value: null`(화면 "—").
+ */
+export type HomeKpi = {
+  key: string;
+  label: string;
+  value: string | number | null;
+  format?: (value: number) => string;
+  unit?: string | null;
+  valueKind?: "number" | "label";
+  neutral?: boolean;
+  change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null };
+  status?: { tone: "ok" | "warn" | "danger"; text: string };
+  note?: string | null;
+  emptyReason?: string | null;
+  pending?: boolean;
+  isEstimated?: boolean;
+  isProxy?: boolean;
+  isStale?: boolean;
+  staleReason?: string | null;
+  href?: string;
+};
+
+/** 경로 하나를 읽은 상태 — 값과 오류(useApi와 같은 칸 — lib는 hooks를 가져오지 않음). 값도 오류도 없으면 읽는 중입니다. */
+export type HomeReadState<T> = { data: T | null; error: string | null };
+
+/** KPI 띠가 읽는 것 — 홈 화면 훅이 읽은 응답 그대로(모의매매 값은 두지 않음 — 계좌 손익 표 패널이 따로 읽음). */
+export type HomeKpiInput = {
+  regime: HomeReadState<RegimeResponse>;
+  macro: HomeReadState<MacroOverview>;
+  unread: HomeReadState<{ unread?: number | null }>;
+  /** 운영자만 — 운영자가 아니면 타일을 두지 않으므로 읽지 않은 상태 그대로 넘겨도 됩니다. */
+  issues: HomeReadState<StatusIssuesResponse>;
+};
+
+/** KPI 띠의 시장 타일 넷 — 매크로 카드 키(수집기 indicators.py). 순서가 띠의 순서입니다. */
+export const HOME_KPI_MARKET_KEYS = ["sp500", "kospi", "usdkrw", "us10y"] as const;
+
+/**
+ * 시장 타일의 짧은 이름과 단위 — 카드 이름('미국채 10년물 수익률(%)'·'코스피 (KOSPI)')은 140px 타일에서 두 줄로 접혀 짧게 적습니다.
+ * 단위는 값 글(수집기 priceStr — 숫자만)에 없는 것을 이름 대신 붙입니다(원/달러 = 1달러의 원, 미국채 수익률 = %).
+ */
+const HOME_KPI_MARKET_LABELS: Record<(typeof HOME_KPI_MARKET_KEYS)[number], { label: string; unit: string | null }> = {
+  sp500: { label: "S&P 500", unit: null },
+  kospi: { label: "코스피", unit: null },
+  usdkrw: { label: "원/달러", unit: "원" },
+  us10y: { label: "미국채 10년물", unit: "%" },
+};
+
+/** 읽기에 실패한 타일의 사유 — 오류 글과 다시 시도는 그 패널이 보입니다. */
+export const KPI_READ_FAILED = "읽지 못함";
+
+/** 저장본에 그 카드가 없을 때의 사유(수집기 카드 목록이 바뀌었거나 아직 수집 전). */
+export const KPI_NOT_IN_SNAPSHOT = "저장본에 없음";
+
+/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). */
+function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>): HomeKpi | null {
+  if (read.data !== null) {
+    return null;
+  }
+  return read.error !== null ? { ...base, value: null, emptyReason: KPI_READ_FAILED } : { ...base, value: null, pending: true };
+}
+
+function regimeKpi(read: HomeReadState<RegimeResponse>): HomeKpi {
+  const base: HomeKpi = { key: "regime", label: "국면", value: null, valueKind: "label", href: "/regime" };
+  const state = kpiReadState(base, read);
+  if (state) return state;
+  const model = regimeHeroModel(read.data);
+  // 판정 불가는 판정 난 라벨과 같은 잉크로 그리지 않습니다(중립 — 국면 패널과 같음). 기준일을 모르면 줄을 두지 않습니다(패널이 '—'로 적음).
+  return { ...base, value: model.label, neutral: !model.known, note: model.asOf ? `기준일 ${model.asOf}` : null };
+}
+
+function marketKpi(
+  key: (typeof HOME_KPI_MARKET_KEYS)[number],
+  read: HomeReadState<MacroOverview>,
+  clock: Omit<MarketClock, "collectedAt">,
+): HomeKpi {
+  const { label, unit } = HOME_KPI_MARKET_LABELS[key];
+  const href = indicatorHref(key);
+  const base: HomeKpi = { key, label, value: null, href };
+  const state = kpiReadState(base, read);
+  if (state) return state;
+  const overview = read.data as MacroOverview;
+  const item = (overview.categories ?? []).flatMap((category) => category.items ?? []).find((card) => card.key === key);
+  if (!item) {
+    return { ...base, emptyReason: KPI_NOT_IN_SNAPSHOT };
+  }
+  // 시장 묶음 표의 행과 같은 규칙(macroCardRow — 값은 수집기 priceStr, 변화는 delta·pct 그대로, 수집기 자릿수).
+  const row = macroCardRow(item, { ...clock, collectedAt: overview.collectedAtKst ?? null }, href);
+  const value = assetValueText(row.value, row.valueText);
+  const asOf = presentText(row.asOf);
+  return {
+    ...base,
+    value,
+    unit,
+    change: { change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2 },
+    // 값이 없으면 경고('수집 실패' 등)가 그 사유, 값이 있으면 경고를 상태 글(아이콘 + 글)로.
+    emptyReason: value === null ? row.warning : null,
+    ...(value !== null && row.warning ? { status: { tone: "warn" as const, text: row.warning } } : {}),
+    note: asOf ? formatKst(asOf) : null,
+    isEstimated: row.isEstimated === true,
+    isStale: row.isStale === true,
+    staleReason: row.staleReason ?? null,
+  };
+}
+
+function unreadKpi(read: HomeReadState<{ unread?: number | null }>): HomeKpi {
+  const base: HomeKpi = { key: "unread", label: "읽지 않은 알림", value: null, unit: "건", format: (value) => formatNumber(value, 0), href: "/alerts" };
+  return kpiReadState(base, read) ?? { ...base, value: finite(read.data?.unread) };
+}
+
+function issuesKpi(read: HomeReadState<StatusIssuesResponse>): HomeKpi {
+  const base: HomeKpi = { key: "errors", label: "수집 오류", value: null, unit: "건", format: (value) => formatNumber(value, 0), href: "/status" };
+  const state = kpiReadState(base, read);
+  if (state) return state;
+  const model = storeStatusModel(read.data);
+  // 상태 글: 오류·경고·누락이 있으면 그 톤(위험·주의)으로 경고·누락 수를, 수집기에 닿지 못하면 그 사실을 — 모두 0이고 닿으면 상태 글 없음.
+  const counted = model.tone !== "neutral";
+  const parts = [
+    counted ? `경고 ${model.parts[1].text ?? EMPTY} · 누락 ${model.parts[2].text ?? EMPTY}` : null,
+    model.notice ? "수집기 연결 안 됨" : null,
+  ].filter((part): part is string => part !== null);
+  const tone = model.tone !== "neutral" ? model.tone : "warn";
+  return {
+    ...base,
+    value: finite(read.data?.counts?.errors),
+    ...(parts.length > 0 ? { status: { tone, text: parts.join(" · ") } } : {}),
+  };
+}
+
+/**
+ * 홈 맨 위 KPI 띠 — 국면 · S&P 500 · 코스피 · 원/달러 · 미국채 10년물 · 읽지 않은 알림 · 수집 오류(운영자만). 타일마다 그 대상 화면 링크입니다.
+ *
+ * - 모의매매 값은 두지 않습니다 — 모의 자료는 계좌 손익 표 패널 하나만 읽습니다.
+ * - 숫자는 응답 그대로(시장 타일은 시장 묶음 표와 같은 macroCardRow 규칙 — 값 priceStr·변화 delta/pct·추정·이전 값 배지). 모르면 "—"이고 0으로 적지 않습니다.
+ * - 읽는 중이면 자리표시(pending), 읽지 못했으면 "—" + '읽지 못함'(오류 글과 다시 시도는 그 패널), 저장본에 카드가 없으면 "—" + '저장본에 없음'.
+ */
+export function homeKpiItems(
+  input: HomeKpiInput,
+  options: { owner: boolean; clock: Omit<MarketClock, "collectedAt"> },
+): HomeKpi[] {
+  return [
+    regimeKpi(input.regime),
+    ...HOME_KPI_MARKET_KEYS.map((key) => marketKpi(key, input.macro, options.clock)),
+    unreadKpi(input.unread),
+    ...(options.owner ? [issuesKpi(input.issues)] : []),
+  ];
 }
