@@ -372,7 +372,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                       onMouseMove={() => {
                         if (!selected) setActiveId(entry.id);
                       }}
-                      className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 lg:min-h-10 lg:py-1 ${selected ? "bg-surface" : ""}`}
+                      // 넓은 화면 결과 줄 40px — 두 줄(이름 20 + 보조 16) + 위아래 2px = 40px, 한 줄은 lg:min-h-10이 40px로 맞춥니다(lg:py-1이면 두 줄이 44px).
+                      className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 lg:min-h-10 lg:py-0.5 ${selected ? "bg-surface" : ""}`}
                     >
                       {/* 고른 결과 표시 — 초점은 입력칸에 있어 포커스 링이 없고, 고른 줄 바탕(surface — 덮개 surface-2보다 한 단계 어두움)만으로는
                           대비가 1.1:1이라 왼쪽 잉크 막대를 함께 둡니다(계좌 행 AssetRow의 선택 막대와 같은 모양·색, 바탕 대비 3:1 이상 — 명세 D8 d). */}

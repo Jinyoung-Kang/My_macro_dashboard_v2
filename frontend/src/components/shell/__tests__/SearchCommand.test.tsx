@@ -482,6 +482,11 @@ describe("크기(작업대 실행 명세 §3-7 — 좁은 화면 44px 이상, �
     const row = screen.getByRole("option", { name: /Apple Inc\./ });
     expect(classes(row)).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
     expect(classes(within(row).getByText("Apple Inc."))).toEqual(expect.arrayContaining(["text-[15px]", "lg:text-sm"]));
+    // 보조 글이 있는 두 줄 행도 40px — 이름(lg:text-sm 20px) + 보조(text-xs 16px) = 36px에 위아래 2px(lg:py-0.5). lg:py-1(4px)이면 44px였다
+    // (QA 스택 1440·1024 실측). 좁은 화면은 py-2·min-h-12 그대로.
+    expect(classes(row)).toEqual(expect.arrayContaining(["py-2", "lg:py-0.5"]));
+    expect(classes(row)).not.toContain("lg:py-1");
+    expect(classes(within(row).getByText("AAPL · Technology"))).toContain("text-xs");
     expect(classes(screen.getByRole("link", { name: "‘aapl’ 정보 검색" }))).toEqual(expect.arrayContaining(["min-h-12", "lg:min-h-10"]));
   });
 });
