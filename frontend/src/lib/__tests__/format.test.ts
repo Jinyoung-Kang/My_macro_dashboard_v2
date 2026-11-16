@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  deltaColor, deltaDirection, withMinusSign, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
+  deltaColor, deltaDirection, textDeltaDirection, withMinusSign, withoutLeadingIcon, formatAge, formatBillionUsd, formatKrw, formatNumber, formatPercent, formatSampleWindow, formatShares,
   formatSigned, formatSignedKrw, formatTrillionDelta, formatTrillionUsd, formatUsd, formatUsdWithKrw,
   formatKstSeconds,
   formatLatency,
@@ -222,6 +222,30 @@ describe("QA-525 등락 방향(deltaDirection)과 글 속 음수 부호(withMinu
     expect(withMinusSign("—")).toBe("—");
     expect(withMinusSign("- 없음")).toBe("- 없음");
     expect(withMinusSign(`${MINUS}1.00`)).toBe(`${MINUS}1.00`);
+  });
+});
+
+describe("QA-527 글 속 첫 부호 숫자의 방향(textDeltaDirection) — 공용 지표 칸 Metric", () => {
+  it("첫 부호 숫자의 부호 — 0이 아닌 자리가 있으면 상승·하락, 모두 0이면 보합", () => {
+    expect(textDeltaDirection("+0.004 (+0.09%)")).toBe("up");
+    expect(textDeltaDirection("+40.0억 달러")).toBe("up");
+    expect(textDeltaDirection("-30.0억 달러")).toBe("down");
+    expect(textDeltaDirection(`${MINUS}1.50%`)).toBe("down");
+    expect(textDeltaDirection("1주 -1,234")).toBe("down");
+    expect(textDeltaDirection("기간 +0.12%")).toBe("up");
+    expect(textDeltaDirection("+0.000 (+0.00%)")).toBe("flat");
+    expect(textDeltaDirection("-0.00")).toBe("flat");
+    expect(textDeltaDirection("(-.5)")).toBe("down");
+  });
+
+  it("날짜·코드 하이픈은 부호가 아니고, 부호 숫자가 없으면 null(값으로 판정)", () => {
+    expect(textDeltaDirection("기준 2026-11-10 -3")).toBe("down");
+    expect(textDeltaDirection("기준 2026-11-10")).toBeNull();
+    expect(textDeltaDirection("0.00%")).toBeNull();
+    expect(textDeltaDirection("최근 30분 0")).toBeNull();
+    expect(textDeltaDirection("—")).toBeNull();
+    expect(textDeltaDirection("- 없음")).toBeNull();
+    expect(textDeltaDirection("")).toBeNull();
   });
 });
 

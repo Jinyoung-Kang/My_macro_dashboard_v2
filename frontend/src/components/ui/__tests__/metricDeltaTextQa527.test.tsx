@@ -27,15 +27,15 @@ function deltaRow(props: { delta?: number | null; deltaText?: string; deltaDigit
 }
 
 describe("QA-527 공용 지표 칸 — 변화 줄의 색·방향은 보이는 글의 부호를 따른다", () => {
-  it.fails("매크로 지표 카드(셋째 자리 글 '+0.004 (+0.09%)', 자릿수 없음)는 상승 — ▲·'상승'·상승색", () => {
+  it("매크로 지표 카드(셋째 자리 글 '+0.004 (+0.09%)', 자릿수 없음)는 상승 — ▲·'상승'·상승색", () => {
     expect(deltaRow({ delta: 0.004, deltaText: "+0.004 (+0.09%)" })).toEqual({ arrow: "▲", spoken: "상승", tone: "text-up" });
   });
 
-  it.fails("순유동성(값은 조 달러, 글은 억 달러 '+40.0억 달러')은 상승", () => {
+  it("순유동성(값은 조 달러, 글은 억 달러 '+40.0억 달러')은 상승", () => {
     expect(deltaRow({ delta: 0.004, deltaText: "+40.0억 달러" })).toEqual({ arrow: "▲", spoken: "상승", tone: "text-up" });
   });
 
-  it.fails("순유동성 감소('-30.0억 달러')는 하락 — ▼·'하락'·하락색", () => {
+  it("순유동성 감소('-30.0억 달러')는 하락 — ▼·'하락'·하락색", () => {
     expect(deltaRow({ delta: -0.003, deltaText: "-30.0억 달러" })).toEqual({ arrow: "▼", spoken: "하락", tone: "text-down" });
   });
 

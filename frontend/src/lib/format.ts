@@ -151,6 +151,24 @@ export function withMinusSign(text: string): string {
   return text.replace(/(^|[\s(])-(?=[\d.])/g, `$1${MINUS}`);
 }
 
+/**
+ * 이미 만든 변화 글의 방향 — 글 속 첫 부호 숫자(줄 처음·공백·'(' 뒤의 +·-·−가 숫자·소수점 앞, withMinusSign과 같은 경계)의 부호.
+ * 0이 아닌 자리가 있으면 "up"·"down", 모두 0이면 "flat"('+0.000'), 부호 숫자가 없으면 null(부르는 쪽이 값으로 판정).
+ *
+ * 공용 지표 칸(Metric)이 색·▲▼·읽어 주는 방향 글을 **보이는 글** 기준으로 정할 때 씁니다 — 부르는 쪽이 글을 다른 자릿수('+0.004')나 다른 단위
+ * ('+40.0억 달러' = 0.004조)로 찍으면 값과 자릿수로 판정한 방향이 글과 어긋났습니다(QA-527).
+ */
+export function textDeltaDirection(text: string): "up" | "down" | "flat" | null {
+  const signed = /(?:^|[\s(])([+\-−])([\d.][\d.,]*)/.exec(text);
+  if (!signed) {
+    return null;
+  }
+  if (!hasNonZeroDigit(signed[2])) {
+    return "flat";
+  }
+  return signed[1] === "+" ? "up" : "down";
+}
+
 export function formatCurrency(value: number | null | undefined): string {
   return formatUsd(value);
 }
