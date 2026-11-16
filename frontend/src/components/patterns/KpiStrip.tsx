@@ -44,8 +44,11 @@ export type KpiItem = {
 
 /** 타일 한 칸 — 4px·1px 경계·surface, 안쪽 12px(위아래 10px) — StatTile과 같은 조밀한 칸(명세 §3-7). */
 const TILE = "block h-full min-w-0 rounded-control border border-border bg-surface px-3 py-2.5";
-/** 링크 타일 — 중립 잉크(강조 파랑 아님, A1), 마우스를 올리면 바탕 surface-2 + 이름 밑줄, 포커스 링. */
-const LINK_TILE = `group text-text hover:bg-surface-2 motion-safe:transition-colors ${FOCUS_RING}`;
+/**
+ * 링크 타일 — 중립 잉크(강조 파랑 아님, A1), 마우스를 올리면 바탕 surface-2 + 이름 밑줄, 포커스 링. 높이는 내용(이름 18 + 값 28 + 위아래 20 = 66px 이상)이
+ * 정하지만, 누르는 자리 44px(lg 미만)를 클래스로도 적어 둡니다 — 클래스로 읽는 누름 자리 감사(lib/__tests__/touchTargetAudit)가 이 타일도 보게(겉모양 그대로).
+ */
+const LINK_TILE = `group min-h-11 text-text hover:bg-surface-2 motion-safe:transition-colors ${FOCUS_RING}`;
 
 const VALUE_NUMBER = "text-xl font-semibold tabular-nums lg:text-2xl";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";

@@ -7,6 +7,8 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { belowLgTarget } from "@/lib/__tests__/touchTargetAudit";
+
 import { KpiStrip, type KpiItem } from "../KpiStrip";
 
 afterEach(() => cleanup());
@@ -86,6 +88,8 @@ describe("KpiStrip — 값 있음", () => {
     const tokens = link.className.split(/\s+/);
     expect(tokens).toEqual(expect.arrayContaining(["text-text", "hover:bg-surface-2", "focus-visible:outline-focus"]));
     expect(tokens.filter((token) => token.includes("accent"))).toEqual([]);
+    // 좁은 화면 누르는 자리 44px를 클래스로도 — 클래스로 읽는 누름 자리 감사가 링크 타일을 봅니다(높이는 내용이 66px 이상으로 정함).
+    expect(belowLgTarget(link.className)).toBeNull();
     expect(within(link).getByText("S&P 500").className).toContain("group-hover:underline");
     expect(screen.queryByRole("group", { name: "S&P 500" })).toBeNull();
   });

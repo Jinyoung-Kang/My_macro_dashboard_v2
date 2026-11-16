@@ -946,14 +946,14 @@ describe("홈 — 배치(KPI 띠 + 2×2 패널)", () => {
     expect(region("시장").className).toContain("lg:col-span-2");
   });
 
-  it("패널 안 누르는 자리는 좁은 화면에서 44px(링크·탭·고르기·다시 시도)", async () => {
+  it("KPI 띠와 패널 안 누르는 자리는 좁은 화면에서 44px(타일 링크·링크·탭·고르기·다시 시도)", async () => {
     reads = { ...happyReads(), [INFO_SOURCES]: new Error("요청 실패 (HTTP 504)") };
     renderHome(OWNER);
     await paperPanel();
     await storeLine();
     await within(region(ALERTS_REGION)).findByText("요청 실패 (HTTP 504)");
-    // KPI 띠의 타일 링크는 높이를 클래스가 아니라 내용(이름 18 + 값 28 + 위아래 20 = 66px 이상)이 정해 이 검사(클래스로 읽음) 밖입니다.
-    for (const name of ["오늘의 국면", PAPER_REGION, "시장", ALERTS_REGION]) {
+    // KPI 띠의 타일 링크는 높이를 내용(이름 18 + 값 28 + 위아래 20 = 66px 이상)이 정하고, 클래스로도 44px 하한(min-h-11)을 둡니다.
+    for (const name of ["오늘 요약", "오늘의 국면", PAPER_REGION, "시장", ALERTS_REGION]) {
       expect(smallTargets(region(name)), name).toEqual([]);
     }
   });
