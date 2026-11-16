@@ -26,6 +26,8 @@ import { resetShellResizingForTest, setShellResizing } from "@/lib/shellResize";
 let column = 706;
 /** 차트가 지금 그려진 폭 — 크기 감시가 새 폭으로 다시 그려야 바뀝니다. */
 let content = 706;
+/** 차트 그림 밖으로 나가 안쪽 상자의 scrollWidth만 넓히는 폭 — 오른쪽 끝에 띄웠던 툴팁 상자가 visibility hidden으로 남은 것. */
+let overhang = 0;
 
 const frames = new Map<number, FrameRequestCallback>();
 let lastFrame = 0;
@@ -66,6 +68,7 @@ function rect(width: number): DOMRect {
 beforeEach(() => {
   column = 706;
   content = 706;
+  overhang = 0;
   frames.clear();
   lastFrame = 0;
   observers.length = 0;
@@ -80,13 +83,14 @@ beforeEach(() => {
   });
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    return isOuter(this) ? rect(column) : original.call(this);
+    if (isOuter(this)) return rect(column);
+    return this.classList.contains("recharts-wrapper") ? rect(content) : original.call(this);
   });
   vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(function (this: Element) {
     return isInner(this) ? innerWidth(this as HTMLElement) : 0;
   });
   vi.spyOn(Element.prototype, "scrollWidth", "get").mockImplementation(function (this: Element) {
-    return isInner(this) ? Math.max(content, innerWidth(this as HTMLElement)) : 0;
+    return isInner(this) ? Math.max(content + overhang, innerWidth(this as HTMLElement)) : 0;
   });
 });
 
@@ -116,10 +120,10 @@ function frame(time: number) {
   });
 }
 
-function renderHold() {
+function renderHold({ withWrapper = false }: { withWrapper?: boolean } = {}) {
   const view = render(
     <ChartSizeHold>
-      <div data-testid="chart" />
+      <div data-testid="chart">{withWrapper ? <div className="recharts-wrapper" /> : null}</div>
     </ChartSizeHold>,
   );
   const inner = screen.getByTestId("chart").parentElement as HTMLElement;
@@ -142,6 +146,7 @@ describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때
   // 재현 커밋 실패 값: AssertionError: expected false to be true — 고정을 푼 커밋에서 자르기도 함께 사라짐.
   it("끌기를 놓으면 안쪽 상자는 바로 100%로 풀고, 바깥 상자는 차트가 새 폭으로 다시 그려질 때까지 자른 뒤 쉬는 상태로 돌아감", () => {
     const { inner, outer } = renderHold();
+    expect(outer.getAttribute("style")).toBeNull(); // 바깥 상자에는 React style이 없음 — 풀 때 style 속성째 걷는 전제
     holdThenRelease(inner, outer);
     expect(clipped(outer)).toBe(true);
     resize(inner, 606); // 배치 뒤 크기 알림 — 차트는 아직 706
@@ -230,6 +235,19 @@ describe("QA-614: 폭이 바뀐 직후 차트가 아직 앞 폭이면 맞을 때
     frame(16);
     expect(clipped(outer)).toBe(false);
     expect(outer.getAttribute("style")).toBeNull();
+  });
+
+  it("차트 그림(.recharts-wrapper)이 있으면 그 오른쪽 끝으로 맞음을 봄 — 숨은 툴팁 상자가 안쪽 상자를 넓혀도 차트가 맞으면 바로 풂", () => {
+    const { inner, outer } = renderHold({ withWrapper: true });
+    overhang = 77;
+    holdThenRelease(inner, outer);
+    frame(0);
+    expect(clipped(outer)).toBe(true); // 차트 그림은 아직 706 — 열 606 밖
+    content = 606; // 다시 그려짐 — 안쪽 상자의 scrollWidth는 툴팁 상자로 683
+    frame(16);
+    expect(clipped(outer)).toBe(false);
+    expect(outer.getAttribute("style")).toBeNull();
+    expect(frames.size).toBe(0);
   });
 
   it("고정하지 않은 차트(잰 폭 0 — 숨긴 탭)는 풀 때 자르지 않고, 고정 중 같은 폭의 크기 알림(높이만 바뀜)에도 인라인 자르기를 걸지 않음", () => {
