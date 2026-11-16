@@ -1,6 +1,6 @@
 /**
  * 넓은 화면 왼쪽 메뉴의 펼친 폭(hooks/useNavWidth — 작업대 실행 명세 §5 '가변 폭 왼쪽 메뉴'). 보는 사람별 편의라 이 브라우저의 저장소(키 shell.navWidth,
- * 정수 글)에 두고, 읽은 값은 검사해 200~320으로 자르며(하한을 올리기 전에 저장한 180~199는 200, 손댄 값·다른 꼴은 기본 220), 저장소를 못 써도(읽기·쓰기가 던짐) 화면은 기본 폭으로 그려지고 이 창
+ * 정수 글)에 두고, 읽은 값은 검사해 206~320으로 자르며(하한을 올리기 전에 저장한 180~205는 206, 손댄 값·다른 꼴은 기본 220), 저장소를 못 써도(읽기·쓰기가 던짐) 화면은 기본 폭으로 그려지고 이 창
  * 안에서는 바뀐다. 끄는 동안의 값(persist: false)은 저장소에 쓰지 않는다. 다른 탭에서 바꾸면(storage 이벤트) 따라간다.
  */
 import { act, cleanup, renderHook } from "@testing-library/react";
@@ -31,14 +31,14 @@ describe("폭 기억", () => {
   it("하한·상한 밖은 잘라서 둔다", () => {
     const { result } = renderHook(() => useNavWidth());
     act(() => result.current[1](40));
-    expect(result.current[0]).toBe(200);
+    expect(result.current[0]).toBe(206);
     act(() => result.current[1](999));
     expect(result.current[0]).toBe(320);
     expect(window.localStorage.getItem("shell.navWidth")).toBe("320");
   });
 
-  it("저장값은 검사해서 읽는다 — '280'은 280, '1000'은 320, '50'은 200, 다른 꼴('wide'·'260px'·'-1')은 기본 220", () => {
-    const cases: [string, number][] = [["280", 280], ["1000", 320], ["50", 200], ["wide", 220], ["260px", 220], ["-1", 220]];
+  it("저장값은 검사해서 읽는다 — '280'은 280, '1000'은 320, '50'은 206, 다른 꼴('wide'·'260px'·'-1')은 기본 220", () => {
+    const cases: [string, number][] = [["280", 280], ["1000", 320], ["50", 206], ["wide", 220], ["260px", 220], ["-1", 220]];
     for (const [stored, expected] of cases) {
       window.localStorage.setItem("shell.navWidth", stored);
       resetNavWidthForTest();
@@ -48,14 +48,14 @@ describe("폭 기억", () => {
     }
   });
 
-  // 하한을 180에서 200으로 올렸습니다(2026-11-16 결정 — 180에서 긴 하위 칸 이름이 잘림). 그 전에 끌어서 180~199로 둔 사람의 저장값은 새 하한으로 읽고,
-  // 저장소의 글은 다음에 폭을 바꿀 때까지 그대로 둡니다(읽기만으로 쓰지 않음).
-  it("하한을 올리기 전에 저장한 180~199는 200으로 읽는다 — 저장된 글은 읽기만으로 바꾸지 않음", () => {
-    for (const stored of ["180", "190", "199"]) {
+  // 하한을 180에서 200으로(2026-11-16 결정 — 180에서 긴 하위 칸 이름이 잘림), 다시 206으로 올렸습니다(2026-11-17 — 메뉴에 스크롤 막대가 서면 200에서도
+  // 잘림, QA-611). 그 전에 끌어서 180~205로 둔 사람의 저장값은 새 하한으로 읽고, 저장소의 글은 다음에 폭을 바꿀 때까지 그대로 둡니다(읽기만으로 쓰지 않음).
+  it("하한을 올리기 전에 저장한 180~205는 206으로 읽는다 — 저장된 글은 읽기만으로 바꾸지 않음", () => {
+    for (const stored of ["180", "190", "199", "200", "205"]) {
       window.localStorage.setItem("shell.navWidth", stored);
       resetNavWidthForTest();
       const { result, unmount } = renderHook(() => useNavWidth());
-      expect(result.current[0]).toBe(200);
+      expect(result.current[0]).toBe(206);
       expect(window.localStorage.getItem("shell.navWidth")).toBe(stored);
       unmount();
     }
