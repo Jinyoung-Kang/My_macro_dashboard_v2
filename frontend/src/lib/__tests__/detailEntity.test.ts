@@ -349,6 +349,8 @@ describe("가격 차트 출처 — '출처' 패널 '차트' 줄(QA-579 후속)",
     expect(chartSourceProperty("none", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 그리지 않음" });
     expect(chartSourceProperty("loading", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 불러오는 중" });
     expect(chartSourceProperty("failed", source)).toEqual({ label: "차트", value: null, emptyReason: "차트를 받지 못함" });
+    // 백엔드가 사유와 함께 available:false(상류 실패) — 차트 칸 글 '…시계열을 받지 못했습니다'와 같은 뜻
+    expect(chartSourceProperty("unavailable", source)).toEqual({ label: "차트", value: null, emptyReason: "시계열을 받지 못함" });
     expect(chartSourceProperty("empty", source)).toEqual({ label: "차트", value: null, emptyReason: "시계열 없음" });
   });
 });

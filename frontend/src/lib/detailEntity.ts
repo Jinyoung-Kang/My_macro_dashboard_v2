@@ -332,17 +332,19 @@ export function holderRowTells(rows: readonly GuruHoldersResponse["rows"][number
 
 /**
  * 가격 차트 패널(components/screens/detail/DetailParts PriceChartPanel)의 그림 상태 — 'drawn'만 선을 실제로 그린 것이고, 그때만 차트 출처(차트 아래
- * 캡션·'출처' 패널의 '차트' 줄)를 적습니다. none: 심볼 없음(차트를 부르지 않음) · loading: 시계열을 읽는 중 · failed: 시계열 읽기 실패 · empty: 시계열
- * 없음(available:false)이거나 값이 하나도 없음. QA-579 후속 — 심볼 기준으로 늘 적어 그리지 못한 차트(시세가 실패한 코스닥 종목의 .KS 어림 심볼 등)에도
- * 출처가 붙었습니다.
+ * 캡션·'출처' 패널의 '차트' 줄)를 적습니다. none: 심볼 없음(차트를 부르지 않음) · loading: 시계열을 읽는 중 · failed: 시계열 읽기 실패(요청 오류) ·
+ * unavailable: 백엔드가 사유 글과 함께 available:false(수집기 응답 없음·외부 소스 실패 — 차트 칸은 그 글 '…시계열을 받지 못했습니다') · empty: 시계열
+ * 없음(사유 없는 available:false — 차트 칸 '표시할 시계열이 없습니다.')이거나 값이 하나도 없음. QA-579 후속 — 심볼 기준으로 늘 적어 그리지 못한
+ * 차트(시세가 실패한 코스닥 종목의 .KS 어림 심볼 등)에도 출처가 붙었습니다.
  */
-export type ChartDrawState = "none" | "loading" | "failed" | "empty" | "drawn";
+export type ChartDrawState = "none" | "loading" | "failed" | "unavailable" | "empty" | "drawn";
 
 /** 차트를 그리지 않은 까닭 — '출처' 패널 '차트' 줄의 '—' 옆 짧은 글. */
 const CHART_NOT_DRAWN: Record<Exclude<ChartDrawState, "drawn">, string> = {
   none: "차트를 그리지 않음",
   loading: "차트를 불러오는 중",
   failed: "차트를 받지 못함",
+  unavailable: "시계열을 받지 못함",
   empty: "시계열 없음",
 };
 

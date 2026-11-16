@@ -198,11 +198,13 @@ export function PriceChartPanel({
   const lineSeries = [{ key: CHART_KEY, label }];
   const { index, onScrub } = useChartScrub(rows.length);
   const format = (value: number) => formatNumber(value, valueDigits);
-  // 그림 상태 — 'drawn'만 선을 실제로 그린 것(값 없는 시계열은 차트 부품이 '표시할 시계열이 없습니다.'만 그림).
+  // 그림 상태 — 'drawn'만 선을 실제로 그린 것(값 없는 시계열은 차트 부품이 '표시할 시계열이 없습니다.'만 그림). available:false에 백엔드 사유 글이
+  // 있으면(수집기 응답 없음·외부 소스 실패 — 아래 차트 칸이 그 글) '받지 못함', 없으면 '시계열 없음' — '차트' 줄 까닭이 차트 칸 글과 맞게.
   let drawState: ChartDrawState;
   if (!symbol) drawState = "none";
   else if (!series.data) drawState = series.error ? "failed" : "loading";
-  else if (!series.data.available || !hasLineValues(rows, lineSeries)) drawState = "empty";
+  else if (!series.data.available) drawState = series.data.message ? "unavailable" : "empty";
+  else if (!hasLineValues(rows, lineSeries)) drawState = "empty";
   else drawState = "drawn";
   const scrubbable = drawState === "drawn";
   const point = scrubbable ? scrubModel(rows, CHART_KEY, index, format) : null;

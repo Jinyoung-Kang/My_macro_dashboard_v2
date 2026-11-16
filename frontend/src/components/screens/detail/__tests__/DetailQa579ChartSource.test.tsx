@@ -179,7 +179,7 @@ describe("종목·지표 상세 — 그리지 못한 차트에는 출처를 적�
 // 못했습니다'라고 적는데 '차트' 줄은 늘 '시계열 없음'이라 두 글이 어긋났습니다. 사유 글이 있으면 '시계열을 받지 못함', 없으면(빈 시계열) '시계열 없음'.
 describe("'차트' 줄 까닭 — 시계열을 받지 못함과 시계열 없음을 가른다 (QA-579 후속)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 두 화면 모두 '— 시계열 없음'이었습니다.
-  it.fails("종목 — 외부 소스 실패(available:false + 사유)는 '—' 시계열을 받지 못함", async () => {
+  it("종목 — 외부 소스 실패(available:false + 사유)는 '—' 시계열을 받지 못함", async () => {
     renderStock("us", "AAPL", new Error("시세 서버가 응답하지 않습니다."), { available: false, message: UPSTREAM_FAILED, points: [] });
     const hero = await screen.findByRole("region", { name: "AAPL 시세" });
     await waitFor(() => expect(within(hero).getByText(UPSTREAM_FAILED)).toBeTruthy());
@@ -188,7 +188,7 @@ describe("'차트' 줄 까닭 — 시계열을 받지 못함과 시계열 없음
     expect(sourceRow().textContent).not.toContain("Yahoo Finance");
   });
 
-  it.fails("지표 — 수집기 응답 없음(available:false + 사유)은 '—' 시계열을 받지 못함", async () => {
+  it("지표 — 수집기 응답 없음(available:false + 사유)은 '—' 시계열을 받지 못함", async () => {
     renderIndicator({ available: false, message: "수집기에서 시계열을 받지 못했습니다.", points: [] });
     const hero = await screen.findByRole("region", { name: "S&P 500" });
     await waitFor(() => expect(within(hero).getByText("수집기에서 시계열을 받지 못했습니다.")).toBeTruthy());

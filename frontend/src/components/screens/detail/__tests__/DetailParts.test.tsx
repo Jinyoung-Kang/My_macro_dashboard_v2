@@ -204,7 +204,7 @@ describe("가격 차트 패널", () => {
   });
 
   // QA-579 후속 — 출처 캡션은 선을 그렸을 때만, 그림 상태는 onDrawState로 화면('출처' 패널 '차트' 줄)에 알린다.
-  it("그림 상태 — 불러오는 중 loading → 그리면 drawn(캡션 보임), 시계열 없음·값 없음 empty·읽기 실패 failed·심볼 없음 none(캡션 없음)", async () => {
+  it("그림 상태 — 불러오는 중 loading → 그리면 drawn(캡션 보임), 사유 있는 available:false unavailable·사유 없음·값 없음 empty·읽기 실패 failed·심볼 없음 none(캡션 없음)", async () => {
     const CAPTION = "차트: Yahoo Finance SYNQ 일별 종가";
     const states: string[] = [];
     const onDrawState = (state: string) => void states.push(state);
@@ -222,7 +222,8 @@ describe("가격 차트 패널", () => {
     cleanup();
 
     for (const [body, state] of [
-      [{ available: false, message: "시계열을 주지 않습니다.", points: [] }, "empty"],
+      [{ available: false, message: "외부 소스에서 시계열을 받지 못했습니다: 합성 실패", points: [] }, "unavailable"],
+      [{ available: false, points: [] }, "empty"],
       [{ available: true, points: [{ date: "2026-11-14", close: null }] }, "empty"],
       [new Error("차트 서버 오류"), "failed"],
     ] as const) {
