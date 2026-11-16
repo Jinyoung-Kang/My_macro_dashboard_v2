@@ -7,6 +7,8 @@
  *  - 추정: isEstimated 카드에 '추정' 배지 / 오래됨: isStale 카드·가격 없는 보유 계좌·늦은 관측치에 '이전 값' + 사유
  *  - 회원(운영자 아님): /api/paper/*·/api/status*·/api/info/sources를 부르지 않고 그 구역·칸이 없다
  *  - 맨 위 KPI 띠(오늘 요약): 타일마다 대상 화면 링크, 값·'—' + 사유·자리표시·변화 칩·수집 오류 아이콘 + 글, 모의매매 값 없음
+ *  - 배치: KPI 띠 + 2×2 패널(운영자 [국면][계좌] / [시장][알림·끊긴 출처], 회원 [국면][알림] / [시장 두 칸]), 패널 안 누름 자리 44px,
+ *    ▲▼는 모두 12px·em 크기 없음·읽어 주는 방향 글
  *
  * 보는 시각은 2026-10-26(월) 16:51 KST로 고정합니다(장 상태가 시각에 따라 바뀜) — 외환·CME 개장, 뉴욕 증시 마감, KRX 선물 휴식.
  */
@@ -18,6 +20,7 @@ import { COLLECTOR_UNREACHABLE_NOTE, PAPER_COMPARE_NOTE, PAPER_HREF, PAPER_KR_HR
 import { PAPER_SOURCES } from "@/lib/paper";
 import { bookColor } from "../../paper/bookColors";
 import { SOURCES } from "@/lib/sources";
+import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
 import type { SessionUser } from "@/lib/types";
 import {
   inbox,
@@ -917,6 +920,70 @@ describe("홈 — 모의매매 한국 탭", () => {
     // 사후 체결 대기 경고는 한국에 없습니다(네 계좌가 S+1 시가에 함께 출발).
     expect(within(panel).queryByText(/출발일 종가 대기/)).toBeNull();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+});
+
+describe("홈 — 배치(KPI 띠 + 2×2 패널)", () => {
+  /** 화면의 이름 있는 구역(KPI 띠·패널) — 표의 가로 스크롤 상자(… (좌우 스크롤))는 뺍니다. */
+  const sections = () =>
+    screen.getAllByRole("region").map((node) => node.getAttribute("aria-label") ?? node.querySelector("h2")?.textContent).filter((name) => !name?.endsWith("(좌우 스크롤)"));
+
+  it("운영자 — KPI 띠, [국면][계좌 손익 표] / [시장][알림·끊긴 출처], lg 두 칸·그 아래 한 칸", async () => {
+    reads = happyReads();
+    renderHome(OWNER);
+    await paperPanel();
+    expect(sections()).toEqual(["오늘 요약", "오늘의 국면", "모의매매 계좌", "시장", "알림·끊긴 출처"]);
+    const grid = region("오늘의 국면").parentElement as HTMLElement;
+    expect(grid.className.split(" ")).toEqual(expect.arrayContaining(["grid", "min-w-0", "gap-3", "lg:grid-cols-2", "lg:gap-4"]));
+    expect(Array.from(grid.children).map((child) => child.className.includes("lg:col-span-2"))).toEqual([false, false, false, false]);
+  });
+
+  it("회원 — [국면][알림] / [시장 — 두 칸을 다 씀], 운영자 전용 구역은 없다", async () => {
+    reads = happyReads();
+    renderHome(MEMBER);
+    await within(region("시장")).findByRole("link", { name: "원/달러 (USD/KRW)" });
+    expect(sections()).toEqual(["오늘 요약", "오늘의 국면", "알림", "시장"]);
+    expect(region("시장").className).toContain("lg:col-span-2");
+  });
+
+  it("패널 안 누르는 자리는 좁은 화면에서 44px(링크·탭·고르기·다시 시도)", async () => {
+    reads = { ...happyReads(), [INFO_SOURCES]: new Error("요청 실패 (HTTP 504)") };
+    renderHome(OWNER);
+    await paperPanel();
+    await storeLine();
+    await within(region(ALERTS_REGION)).findByText("요청 실패 (HTTP 504)");
+    // KPI 띠의 타일 링크는 높이를 클래스가 아니라 내용(이름 18 + 값 28 + 위아래 20 = 66px 이상)이 정해 이 검사(클래스로 읽음) 밖입니다.
+    for (const name of ["오늘의 국면", PAPER_REGION, "시장", ALERTS_REGION]) {
+      expect(smallTargets(region(name)), name).toEqual([]);
+    }
+  });
+});
+
+describe("홈 — 등락 표시(▲▼ 12px · 읽어 주는 방향)", () => {
+  it("화면의 ▲·▼는 모두 12px(text-xs)이고 em 크기가 없으며, 등락 자리마다 읽어 주는 '상승'·'하락'이 있다", async () => {
+    const ledger = paperOverview();
+    ledger.books![1].returnPct = 0.12;
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: ledger };
+    const { container } = renderHome(OWNER);
+    await paperPanel();
+    await within(region("시장")).findByRole("link", { name: "원/달러 (USD/KRW)" });
+    // 상승도 보이게 미국 주가지수 묶음(선물 +14.25)을 엽니다.
+    showGroup("미국 주가지수 및 선물");
+    const arrows = Array.from(container.querySelectorAll("span")).filter((node) => node.textContent === "▲" || node.textContent === "▼");
+    expect(arrows.filter((node) => node.textContent === "▲").length).toBeGreaterThan(0);
+    expect(arrows.filter((node) => node.textContent === "▼").length).toBeGreaterThan(0);
+    for (const arrow of arrows) {
+      expect(arrow.getAttribute("aria-hidden"), "화살표는 읽어 주기에서 뺌").toBe("true");
+      expect(arrow.className.split(" "), "12px").toContain("text-xs");
+      expect(arrow.className, "부모 크기에 기대는 em 크기 없음").not.toMatch(/text-\[[\d.]+em\]/);
+      const spoken = arrow.parentElement?.querySelector(":scope > .sr-only")?.textContent;
+      expect(spoken, "읽어 주는 방향").toBe(arrow.textContent === "▲" ? "상승" : "하락");
+    }
+    // 음수 부호는 −(U+2212) — ASCII 하이픈으로 찍은 등락이 없습니다.
+    for (const arrow of arrows.filter((node) => node.textContent === "▼")) {
+      expect(arrow.parentElement?.textContent).not.toMatch(/-\d/);
+      expect(arrow.parentElement?.textContent).toMatch(/−\d/);
+    }
   });
 });
 

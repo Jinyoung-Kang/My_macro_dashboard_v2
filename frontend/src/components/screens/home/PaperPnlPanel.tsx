@@ -9,7 +9,7 @@ import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
 import { endpoints } from "@/lib/endpoints";
-import { HOME_REFRESH_MS, type PaperPnlRow, paperHomeModel, paperPnlRows } from "@/lib/home";
+import { HOME_REFRESH_MS, type PaperPnlRow, paperHomeModel } from "@/lib/home";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { bookColor } from "../paper/bookColors";
@@ -21,7 +21,7 @@ const TITLE = "모의매매 계좌";
 /**
  * ② 계좌 손익 표 패널 — 운영자 전용(/api/paper/* 전부 OWNER). 운영자가 아니면 요청하지 않고(null 경로) 그리지 않습니다.
  *
- * 표 한 줄이 계좌 하나입니다(lib/home `paperPnlRows` — 모의매매 개요의 계좌 행과 같은 규칙): 계좌(이름은 모의매매 화면 링크 · 종류·상태 · 개요 곡선과 같은
+ * 표 한 줄이 계좌 하나입니다(lib/home `paperHomeModel`의 rows = `paperPnlRows` — 모의매매 개요의 계좌 행과 같은 규칙): 계좌(이름은 모의매매 화면 링크 · 종류·상태 · 개요 곡선과 같은
  * 계좌 색 견본) · 순자산 · 출발 대비 · 최근 변화(서버 값 — '오늘'·'MM-DD 변화'와 그 기준) · 기준(단계 표기 · 추정·이전 값 배지 · 사후 체결 대기 경고).
  * 화면은 숫자를 계산하지 않고, 모르는 칸은 "—"입니다. 표 아래에 출처 · 출발 줄 · 정기 작업 쉼/꺼짐 · 상태를 못 읽음 · 두 책을 견주지 않는다는 문구를 둡니다.
  * 쓰기 버튼(초기화·리스크 실행 등)은 두지 않습니다 — 홈은 읽기만 하고, 조작은 모의매매 화면에서 합니다.
@@ -74,13 +74,12 @@ export function PaperPnlPanel() {
   }
 
   const model = paperHomeModel(overview.data, status.data, { market });
-  const rows = paperPnlRows(overview.data, { market });
   return (
-    <HomePanel title={TITLE} count={rows.length > 0 ? `${rows.length.toLocaleString("ko-KR")}개` : undefined} actions={actions}>
+    <HomePanel title={TITLE} count={model.rows.length > 0 ? `${model.rows.length.toLocaleString("ko-KR")}개` : undefined} actions={actions}>
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
       ) : (
-        <PnlTable rows={rows} korea={korea} />
+        <PnlTable rows={model.rows} korea={korea} />
       )}
       {model.available ? (
         <p className="mt-2 leading-4">
