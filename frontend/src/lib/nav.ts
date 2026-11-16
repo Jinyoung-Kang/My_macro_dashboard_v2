@@ -205,6 +205,68 @@ export function subNav(pathname: string, user: SessionUser | null | undefined): 
   };
 }
 
+/** 나무 메뉴의 하위 화면 칸 하나. */
+export type NavTreeLeaf = {
+  item: NavItem;
+  /** 무료 회원에게 잠긴 유료 화면(자물쇠 아이콘 — 눌러도 되며 화면이 안내). */
+  locked: boolean;
+  /** 링크의 aria-current — 지금 화면이면 그 주소 그대로 "page", 그 화면의 아래 주소면 "true"(하위 메뉴 줄 currentAria와 같은 규칙). */
+  current: "page" | "true" | undefined;
+  /** 가장 깊은 지금 칸(막대) — 나무 전체에서 많아야 하나. */
+  marked: boolean;
+};
+
+/** 펼친 탭 안의 묶음 하나 — label이 null이면 묶음 없는 화면들(먼저), 아니면 묶음 이름(글 머리, 누르지 않음) 아래 화면들. */
+export type NavTreeGroup = { label: string | null; leaves: NavTreeLeaf[]; upcoming: readonly UpcomingItem[] };
+
+/** 나무 메뉴의 탭 칸 하나. groups가 null이면 접힌 탭(지금 탭이 아니거나 화면이 하나뿐). */
+export type NavTreeNode = {
+  tab: NavTab;
+  /** 탭 링크의 aria-current — tabCurrent 그대로. */
+  current: "page" | "true" | undefined;
+  groups: NavTreeGroup[] | null;
+  /** 가장 깊은 지금 칸(막대)이 이 탭 칸인가 — 지금 탭인데 그 아래에 지금 하위 칸이 없을 때(/more·/markets/i/…·/s/…·화면 하나뿐인 탭). */
+  marked: boolean;
+};
+
+/**
+ * 넓은 화면(lg 이상)의 왼쪽 나무 메뉴(작업대 실행 명세 §5, ADR 0042 결정 5 — lg 이상의 하위 메뉴 줄을 대신함). 이 사용자에게 보이는 탭 전부를 순서대로 두고,
+ * **지금 탭만** 하위 화면을 펼칩니다 — 펼치는 조건은 하위 메뉴 줄(subNav)과 같습니다(보이는 하위 화면 + 준비 중 표시가 둘 이상). 하위 메뉴 줄과 달리 탭의
+ * 모든 묶음을 함께 펼칩니다 — 묶음 없는 화면이 먼저, 묶음(더보기의 '한국 시장')은 처음 나온 순서대로 그 이름 아래에.
+ * 막대(marked — 현재 위치 표시)는 가장 깊은 지금 칸 하나에만 둡니다: 지금 하위 칸이 있으면 그 칸, 없으면 지금 탭 칸. 사용자에게 보이지 않는 탭(회원이 주소로 연
+ * /paper/us)은 나무에 없어 아무 칸도 막대를 갖지 않습니다.
+ */
+export function navTree(pathname: string, user: SessionUser | null | undefined): NavTreeNode[] {
+  const active = activeTab(pathname);
+  const item = activeItem(pathname);
+  return visibleTabs(user).map((tab): NavTreeNode => {
+    const current = tabCurrent(tab, pathname);
+    if (tab !== active) return { tab, current, groups: null, marked: false };
+    const items = visibleItems(tab, user);
+    const upcoming = tab.upcoming ?? [];
+    if (items.length + upcoming.length < 2) return { tab, current, groups: null, marked: current !== undefined };
+    const currentItem = item && items.includes(item) ? item : null;
+    const labels: (string | null)[] = [];
+    if (upcoming.length > 0 || items.some((entry) => !entry.group)) labels.push(null);
+    for (const entry of items) if (entry.group && !labels.includes(entry.group)) labels.push(entry.group);
+    const groups = labels.map(
+      (label): NavTreeGroup => ({
+        label,
+        leaves: items
+          .filter((entry) => (entry.group ?? null) === label)
+          .map((entry) => ({
+            item: entry,
+            locked: lockedFor(user, entry.href),
+            current: entry === currentItem ? (pathname === entry.href ? "page" : "true") : undefined,
+            marked: entry === currentItem,
+          })),
+        upcoming: label === null ? upcoming : [],
+      }),
+    );
+    return { tab, current, groups, marked: currentItem === null && current !== undefined };
+  });
+}
+
 /** 브라우저 탭 제목에 쓸 화면 이름 — 하위 화면 이름(없으면 탭 이름). 메뉴에 없는 경로는 null. */
 export function menuTitle(pathname: string): string | null {
   const item = activeItem(pathname);
