@@ -6,9 +6,9 @@ import {
   LIVE_THRESHOLD_SECONDS,
   useAutoRefreshSeconds,
 } from "@/components/AutoRefresh";
-import { type Column, DataTable } from "@/components/patterns";
+import { type Column, DataTable, SectionAnchor, SectionIndex } from "@/components/patterns";
 import { RawSnapshotActions } from "@/components/RawSnapshotCard";
-import { Freshness, PageHeader, Panel } from "@/components/ui";
+import { EmptyState, Freshness, Loading, PageHeader, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
@@ -18,7 +18,8 @@ import { useSessionUser } from "@/hooks/useSessionUser";
 import { isOwner } from "@/lib/access";
 import { SOURCES } from "@/lib/sources";
 import { macroCardView, macroLiveItems, macroLiveNotice } from "@/lib/macroLive";
-import { macroIndicatorGroups } from "@/lib/macroScreen";
+import { macroIndexItems, macroIndicatorGroups } from "@/lib/macroScreen";
+import { MACRO_SECTIONS } from "@/lib/marketSections";
 import type {
   AdvancedIndicators,
   MacroOverview,
@@ -121,6 +122,8 @@ export default function MacroPage() {
     () => (categories ? macroIndicatorGroups(categories, { now, krOfficial, collectedAt: data?.collectedAtKst ?? null }) : null),
     [categories, now, krOfficial, data?.collectedAtKst],
   );
+  // 목차 — 회원 일곱·운영자 여덟(경제 캘린더), 지표 칸의 하위 칸은 범주(개수는 카드 수 — 개요를 받기 전에는 모름).
+  const indexItems = useMemo(() => macroIndexItems(groups, owner), [groups, owner]);
 
   return (
     <div className="flex flex-col gap-4 lg:gap-6">
@@ -157,62 +160,93 @@ export default function MacroPage() {
         {liveNotice && <p className="mt-1 text-xs text-text-3">{liveNotice}</p>}
       </PageHeader>
 
-      {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
-          페이지 전체가 로딩으로 바뀌고 방금 조작한 선택 상자가 사라졌습니다(QA-047). */}
-      <IndicatorsSection
-        groups={groups}
-        loading={overview.loading}
-        error={overview.error}
-        onRetry={overview.reload}
-        unavailableMessage={data && !data.available ? (data.message ?? "매크로 데이터가 없습니다. 수집기를 실행하세요.") : null}
-      />
-
-      {/* 스스로 데이터를 읽는 섹션은 개요(overview)를 다시 읽는 동안에도 그대로 둡니다 — `data &&` 안에 두면
-          간격이 1분 경계를 넘을 때 함께 내려가 고른 계열·지표가 처음으로 돌아갔습니다(QA-066).
-          환율 카드 바로 아래에 둡니다 — 위에서 "지금 얼마인지"를 보고, 여기서 "어디서 왔는지"를 봅니다. */}
-      <FxCompareSection />
-
-      {data?.spreads && (
-        <>
-          <SpreadSection
-            title="10Y−2Y 장단기 금리차"
-            block={data.spreads.official10y2y}
+      {/* 목차(xl 이상 왼쪽 13rem 세로 목록, 그 아래 본문 위 가로 줄 — 1024에서 목차 칸을 두면 가운데가 좁아 표·차트가 눌림)와 절 닻.
+          닻은 자료와 상관없이 늘 그립니다(해시 주소의 이동이 첫 그림에서 닿게). 절 id는 lib/marketSections(다른 화면이 매크로 절로 잇는 정본). */}
+      <SectionIndex label="매크로 지표 목차" items={indexItems} columnFrom="xl">
+        {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
+            페이지 전체가 로딩으로 바뀌고 방금 조작한 선택 상자가 사라졌습니다(QA-047). */}
+        <SectionAnchor id={MACRO_SECTIONS.indicators} columnFrom="xl">
+          <IndicatorsSection
+            groups={groups}
+            loading={overview.loading}
+            error={overview.error}
+            onRetry={overview.reload}
+            unavailableMessage={data && !data.available ? (data.message ?? "매크로 데이터가 없습니다. 수집기를 실행하세요.") : null}
           />
-          <SpreadSection
-            title="30Y−2Y 장단기 금리차"
-            block={data.spreads.official30y2y}
-          />
-          <Panel
-            title="장단기 금리차 해석 기준"
-            subtitle="역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다."
-            source={SOURCES.internalRules}
-          >
-            {/* 참고 표라 처음에는 접어 둡니다(긴 화면 — 실행 명세 §9-10). */}
-            <CriteriaDetails summary="해석 기준 보기">
-              <DataTable
-                columns={SPREAD_COLUMNS}
-                rows={SPREAD_TABLE}
-                rowKey={(row) => row.state}
-                caption="장단기 금리차 해석 기준"
-                scrollHint="overflow"
+        </SectionAnchor>
+
+        {/* 스스로 데이터를 읽는 섹션은 개요(overview)를 다시 읽는 동안에도 그대로 둡니다 — `data &&` 안에 두면
+            간격이 1분 경계를 넘을 때 함께 내려가 고른 계열·지표가 처음으로 돌아갔습니다(QA-066).
+            지표 표 바로 아래에 둡니다 — 위에서 "지금 얼마인지"를 보고, 여기서 "어디서 왔는지"를 봅니다. */}
+        <SectionAnchor id={MACRO_SECTIONS.fx} columnFrom="xl">
+          <FxCompareSection />
+        </SectionAnchor>
+
+        <SectionAnchor id={MACRO_SECTIONS.spreads} columnFrom="xl">
+          {data?.spreads ? (
+            <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
+              <SpreadSection
+                title="10Y−2Y 장단기 금리차"
+                block={data.spreads.official10y2y}
               />
-            </CriteriaDetails>
-          </Panel>
-        </>
-      )}
+              <SpreadSection
+                title="30Y−2Y 장단기 금리차"
+                block={data.spreads.official30y2y}
+              />
+              <Panel
+                title="장단기 금리차 해석 기준"
+                subtitle="역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다."
+                source={SOURCES.internalRules}
+              >
+                {/* 참고 표라 처음에는 접어 둡니다(긴 화면 — 실행 명세 §9-10). */}
+                <CriteriaDetails summary="해석 기준 보기">
+                  <DataTable
+                    columns={SPREAD_COLUMNS}
+                    rows={SPREAD_TABLE}
+                    rowKey={(row) => row.state}
+                    caption="장단기 금리차 해석 기준"
+                    scrollHint="overflow"
+                  />
+                </CriteriaDetails>
+              </Panel>
+            </div>
+          ) : (
+            // 금리차는 개요 응답에 실려 옵니다 — 받기 전에는 읽는 중, 받았는데 없으면 그 사실(목차가 가리키는 절이 비지 않게).
+            <Panel title="장단기 금리차">
+              {overview.loading && !data ? (
+                <Loading label="장단기 금리차를 불러오는 중…" />
+              ) : (
+                <EmptyState message={data ? "이번 개요 응답에 장단기 금리차가 없습니다." : "매크로 개요를 읽지 못했습니다 — 위 지표 패널에서 다시 시도하세요."} />
+              )}
+            </Panel>
+          )}
+        </SectionAnchor>
 
-      <RiskSection risk={risk.data} loading={risk.loading} refreshError={risk.refreshError} />
-      <AdvancedSection
-        data={advanced.data}
-        loading={advanced.loading}
-        error={advanced.error}
-        onRetry={advanced.reload}
-        refreshError={advanced.refreshError}
-      />
-      <SingleChartSection />
-      <ScrapedSection />
-      {/* 경제 캘린더는 운영자 전용 경로입니다(ADR 0026 — 차단 통과 수집으로 받은 자료). 회원·데모 방문자에게는 카드를 그리지 않습니다. */}
-      {owner && <EconCalendarSection />}
+        <SectionAnchor id={MACRO_SECTIONS.risk} columnFrom="xl">
+          <RiskSection risk={risk.data} loading={risk.loading} refreshError={risk.refreshError} />
+        </SectionAnchor>
+        <SectionAnchor id={MACRO_SECTIONS.advanced} columnFrom="xl">
+          <AdvancedSection
+            data={advanced.data}
+            loading={advanced.loading}
+            error={advanced.error}
+            onRetry={advanced.reload}
+            refreshError={advanced.refreshError}
+          />
+        </SectionAnchor>
+        <SectionAnchor id={MACRO_SECTIONS.single} columnFrom="xl">
+          <SingleChartSection />
+        </SectionAnchor>
+        <SectionAnchor id={MACRO_SECTIONS.scraped} columnFrom="xl">
+          <ScrapedSection />
+        </SectionAnchor>
+        {/* 경제 캘린더는 운영자 전용 경로입니다(ADR 0026 — 차단 통과 수집으로 받은 자료). 회원·데모 방문자에게는 절도 목차 칸도 그리지 않습니다. */}
+        {owner && (
+          <SectionAnchor id={MACRO_SECTIONS.calendar} columnFrom="xl">
+            <EconCalendarSection />
+          </SectionAnchor>
+        )}
+      </SectionIndex>
     </div>
   );
 }

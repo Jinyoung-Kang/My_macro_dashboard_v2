@@ -72,7 +72,9 @@ describe("경제 캘린더 카드는 운영자에게만", () => {
   it("운영자: 카드가 있고 경로를 부른다", () => {
     render(<SessionUserProvider user={OWNER}><MacroPage /></SessionUserProvider>);
 
-    expect(screen.getByText("경제 캘린더")).toBeTruthy();
+    // 패널 제목(h2) — 화면 목차에도 같은 이름의 칸(같은 화면 절 링크)이 있습니다.
+    expect(screen.getByRole("heading", { level: 2, name: "경제 캘린더" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "경제 캘린더" }).every((link) => link.getAttribute("href") === "#macro-calendar")).toBe(true);
     expect(api.apiGetShared.mock.calls.some(([path]) => path === PATH)).toBe(true);
   });
 });

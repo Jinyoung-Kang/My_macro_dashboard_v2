@@ -14,6 +14,7 @@ import {
   type PropertyItem,
   PropertyList,
   ProvenanceBadge,
+  SectionAnchor,
   StaleBadge,
 } from "@/components/patterns";
 import { Callout, ErrorState, LINK_CLASSES, Loading, Panel, SourceBadge, SourceLine } from "@/components/ui";
@@ -128,6 +129,7 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
  * - 검사 칸 틀은 `lg` 배치(틀 52rem부터 옆 18rem — 1440에서 표 약 592px + 미리보기, 그 아래·좁은 화면은 위쪽 대화상자). 넓은 화면 처음은 첫 지표를 보입니다.
  * - 표는 좁은 화면(lg 미만)에서만 최소 폭 640px + 넘김 안내(이름 칸이 44px 단추라 한 칸에 눌리지 않게). 넓은 화면은 옆 미리보기와 나란히 놓여 표 폭이
  *   532~640px이라 최소 폭을 두지 않습니다(기준 칸이 줄을 바꿈 — 넘김 없이).
+ * - 범주 블록은 절 닻(SectionAnchor — 목차의 범주 칸, id macro-cat-…)입니다.
  * - 값이 오기 전에는 읽는 중, 첫 읽기가 실패하면 오류와 다시 시도, 저장본이 없으면 그 안내.
  */
 export function IndicatorsSection({
@@ -176,7 +178,8 @@ export function IndicatorsSection({
             return (
               <div className="flex min-w-0 flex-col gap-5">
                 {rows.map((group) => (
-                  <div key={group.id} className="min-w-0">
+                  // 범주 절 닻 — 목차의 '지표' 아래 하위 칸이 가리킵니다(id macro-cat-…).
+                  <SectionAnchor key={group.id} id={group.anchorId} columnFrom="xl">
                     <div className="mb-2">
                       <h3 className="text-sm font-semibold text-text">{group.title}</h3>
                       {group.subtitle ? <p className="mt-0.5 break-keep text-caption text-text-2">{group.subtitle}</p> : null}
@@ -190,7 +193,7 @@ export function IndicatorsSection({
                       scrollHint={wide ? false : "overflow"}
                       selectedKey={inspector.shownKey}
                     />
-                  </div>
+                  </SectionAnchor>
                 ))}
               </div>
             );

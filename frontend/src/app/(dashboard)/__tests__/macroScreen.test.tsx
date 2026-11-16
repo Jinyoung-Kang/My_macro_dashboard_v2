@@ -9,6 +9,7 @@
  *  - 지표 표: 범주마다 h3·부제·출처 줄과 공용 표(지표 행 머리 = 미리보기 단추 + '티커 · 시장', 값·변화 칩·기준), 실패 '—'+'수집 실패',
  *    추정·이전 값 배지·경고 상태 글. 미리보기: 넓은 화면은 옆 검사 칸(처음은 첫 지표, 고른 줄은 aria-current), 좁은 화면은 위쪽 대화상자 —
  *    값·변화·전일·기준 시각·장 상태·출처·전일값 출처·티커와 '지표 상세 열기'(/markets/i/키)
+ *  - 목차: 회원 일곱·운영자 여덟(절 id = lib/marketSections), 지표 칸 아래 범주 칸(개수), xl부터 왼쪽 세로 목록, 절 닻은 읽는 중에도 있음
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +23,7 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { SessionUserProvider } from "@/hooks/useSessionUser";
+import { MACRO_SECTIONS } from "@/lib/marketSections";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import { EconCalendarSection } from "../macro/EconCalendarSection";
 import MacroPage from "../macro/page";
@@ -465,5 +467,65 @@ describe("지표 표와 미리보기", () => {
     expect(sp500.closest("tr")?.getAttribute("aria-current")).toBe("true");
     expect(screen.getByRole("button", { name: "미국채 10년물 수익률(%)" }).closest("tr")?.getAttribute("aria-current")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("목차와 절 닻", () => {
+  const MEMBER = { email: "member@test.local", role: "MEMBER", tier: "PRO" } as const;
+  const OWNER = { email: "owner@test.local", role: "OWNER", tier: "PRO" } as const;
+  /** 목차의 첫 단계 칸 이름(가로 줄 — 세로 목록에도 같은 칸이 있음). */
+  const topLinks = (nav: HTMLElement) => within(nav.querySelector("ul") as HTMLElement).getAllByRole("link");
+
+  it("회원: 일곱 칸(같은 화면 절 링크) — 절 닻은 자료를 받기 전에도 모두 있다(경제 캘린더 없음)", () => {
+    render(<SessionUserProvider user={MEMBER}><MacroPage /></SessionUserProvider>);
+
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    expect(topLinks(nav).map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["지표", `#${MACRO_SECTIONS.indicators}`],
+      ["환율 비교", `#${MACRO_SECTIONS.fx}`],
+      ["장단기 금리차", `#${MACRO_SECTIONS.spreads}`],
+      ["신용·변동성", `#${MACRO_SECTIONS.risk}`],
+      ["심화 지표", `#${MACRO_SECTIONS.advanced}`],
+      ["단독 차트", `#${MACRO_SECTIONS.single}`],
+      ["비공식 시세", `#${MACRO_SECTIONS.scraped}`],
+    ]);
+    for (const id of Object.values(MACRO_SECTIONS).filter((id) => id !== MACRO_SECTIONS.calendar)) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+    expect(document.getElementById(MACRO_SECTIONS.calendar)).toBeNull();
+    // 금리차 절은 개요를 받기 전에도 비지 않습니다(읽는 중).
+    expect(within(document.getElementById(MACRO_SECTIONS.spreads) as HTMLElement).getByText("장단기 금리차를 불러오는 중…")).toBeTruthy();
+  });
+
+  it("운영자: 여덟째 칸 '경제 캘린더'와 그 절 닻", () => {
+    render(<SessionUserProvider user={OWNER}><MacroPage /></SessionUserProvider>);
+
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    expect(topLinks(nav)).toHaveLength(8);
+    expect(topLinks(nav)[7].getAttribute("href")).toBe(`#${MACRO_SECTIONS.calendar}`);
+    expect(document.getElementById(MACRO_SECTIONS.calendar)).not.toBeNull();
+  });
+
+  it("개요를 받으면 '지표' 칸에 개수와 범주 하위 칸(세로 목록 — 범주 닻으로), xl부터 왼쪽 13rem 세로 목록", async () => {
+    reads["/api/macro/overview"] = () => Promise.resolve({ available: true, collectedAtKst: "2026-11-17 06:30 KST", categories: [
+      { id: "ust", title: "🏛️ 미국 국채 수익률", items: [
+        { key: "us10y", name: "미국채 10년물", status: "ok", priceStr: "4.123", deltaStr: "+0.010 (+0.24%)", delta: 0.01, pct: 0.24, delayMinutes: 0 },
+        { key: "us02y", name: "미국채 2년물", status: "ok", priceStr: "3.600", deltaStr: "+0.010 (+0.28%)", delta: 0.01, pct: 0.28, delayMinutes: 0 },
+      ] },
+      { id: "us_equity", title: "미국 주가지수", items: [
+        { key: "sp500", name: "S&P 500", status: "ok", priceStr: "6,812.50", deltaStr: "+22.40 (+0.33%)", delta: 22.4, pct: 0.33, delayMinutes: 0 },
+      ] },
+    ] });
+    render(<SessionUserProvider user={MEMBER}><MacroPage /></SessionUserProvider>);
+
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    expect((await within(nav).findAllByRole("link", { name: "지표 (3)" })).length).toBe(2);
+    const child = within(nav).getByRole("link", { name: "미국 국채 수익률 (2)" });
+    expect(child.getAttribute("href")).toBe("#macro-cat-ust");
+    expect(within(nav).getByRole("link", { name: "미국 주가지수 (1)" }).getAttribute("href")).toBe("#macro-cat-us-equity");
+    expect(document.getElementById("macro-cat-ust")?.querySelector("h3")?.textContent).toBe("미국 국채 수익률");
+    // xl부터 왼쪽 13rem 세로 목록 + 본문(1024에서는 본문 위 가로 줄 — 목차 칸을 두면 가운데가 좁아짐).
+    expect((nav.parentElement as HTMLElement).className).toContain("xl:grid-cols-[13rem_minmax(0,1fr)]");
+    expect((document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement).className).toContain("xl:scroll-mt-4");
   });
 });
