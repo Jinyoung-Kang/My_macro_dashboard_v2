@@ -19,6 +19,7 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { EstimateBadge } from "@/components/patterns";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
@@ -191,6 +192,8 @@ export default function MacroPage() {
                           delayMinutes={item.delayMinutes}
                           stale={item.isStale}
                         />
+                        {/* 추정치(수집기 isEstimated — TradingView 참고 시세 카드)는 '추정' 배지를 늘 보입니다(홈 시장 표와 같음, QA-620). */}
+                        <EstimateBadge estimated={item.isEstimated} />
                         {item.delayMinutes !== undefined && cardNotices(item).map((notice) => (
                           <NoticeBadge key={notice.text} title={notice.title} tone={notice.tone}>{notice.text}</NoticeBadge>
                         ))}
