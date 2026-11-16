@@ -70,6 +70,31 @@ function stubWide() {
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === WIDE_SHELL_MEDIA, media: query }) as MediaQueryList);
 }
 
+/**
+ * 넓은 화면 여부를 바꿀 수 있는 matchMedia 대역 — change 처리기(useWideShell)를 모아 두었다가, 돌려준 함수로 값을 바꾸고 act 안에서 알립니다
+ * (stubWide에는 addEventListener가 없어 바뀜을 알릴 수 없음).
+ */
+function stubWideSwitch(initial: boolean): (next: boolean) => void {
+  let wide = initial;
+  const listeners = new Set<() => void>();
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) =>
+      ({
+        get matches() {
+          return query === WIDE_SHELL_MEDIA && wide;
+        },
+        media: query,
+        addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+        removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+      }) as unknown as MediaQueryList,
+  );
+  return (next: boolean) => {
+    wide = next;
+    act(() => listeners.forEach((listener) => listener()));
+  };
+}
+
 const handle = () => screen.getByRole("separator", { name: "왼쪽 메뉴 폭" });
 const mainNav = () => screen.getByRole("navigation", { name: "주 메뉴" });
 const box = () => mainNav().closest("[data-shell-sidenav]") as HTMLElement;
@@ -478,6 +503,42 @@ describe("끌기", () => {
     // 같은 끌기의 pointerup이 뒤에 와도 아무 일 없음
     up(400, 3);
     expect(value().now).toBe("270");
+  });
+
+  // QA-603: QA 스택 1440 /macro에서 손잡이를 잡고 30px 끈 뒤 창을 900으로 줄이면 표지(data-nav-resizing — col-resize·글 고르기 끔)가 좁은 화면 전체에
+  // 남았고, 숨은 손잡이가 포인터 잡기를 유지해 좁은 화면의 움직임으로 폭이 바뀌어 저장됐습니다(x=60에서 놓으면 레일로 접혀 navCollapsed '1').
+  // 재현 커밋 실패 값: AssertionError: expected true to be false(좁아진 뒤에도 html의 표지가 남음).
+  it.fails("QA-603: 끄는 도중 넓은 화면이 좁아지면(lg 아래) 끌기를 끝낸다 — 표지를 떼고 그때까지의 폭을 저장, 그 뒤 움직임은 숨은 메뉴를 바꾸지 않음", () => {
+    const setWide = stubWideSwitch(true);
+    const release = vi.spyOn(Element.prototype, "releasePointerCapture");
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    down(224);
+    move(254);
+    runFrames();
+    expect(value().now).toBe("250");
+    expect(document.documentElement.hasAttribute(NAV_RESIZING_ATTR)).toBe(true);
+
+    setWide(false);
+    expect(document.documentElement.hasAttribute(NAV_RESIZING_ATTR)).toBe(false);
+    expect(handle().hasAttribute("data-dragging")).toBe(false);
+    expect(release).toHaveBeenCalledWith(1);
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("250");
+
+    move(60);
+    runFrames();
+    up(60);
+    expect(window.localStorage.getItem("shell.navCollapsed")).not.toBe("1");
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("250");
+    expect(value().now).toBe("250");
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
+
+    // 다시 넓어지면 끌기가 그대로 됨
+    setWide(true);
+    down(250);
+    move(270);
+    runFrames();
+    up(270);
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("270");
   });
 
   it("주 단추가 아닌 누름(오른쪽 단추)·주 포인터가 아닌 것은 잡지 않는다", () => {
