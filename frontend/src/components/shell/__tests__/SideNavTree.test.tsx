@@ -127,6 +127,18 @@ describe("랜드마크", () => {
     const region = screen.getByRole("complementary", { name: "왼쪽 메뉴" });
     expect(region.contains(mainNav())).toBe(true);
   });
+
+  // QA-556 후속(검토): 이름을 둔 고침 뒤에도 같은 영역이 랜드마크 목록에 두 번 나왔습니다 — 보조 영역(complementary) '왼쪽 메뉴' 안에 navigation
+  // '주 메뉴'. 주 메뉴를 보조 영역으로 감싸는 것도 역할의 뜻(본문을 돕는 곁 내용)과 맞지 않습니다. 감싼 상자를 랜드마크가 아닌 div(data-shell-sidenav
+  // 표지 — 시험이 메뉴 상자를 찾을 때)로 둬 이 영역의 랜드마크는 nav '주 메뉴' 하나입니다(접기 단추는 그 곁 — axe region·landmark 규칙 위반 0, 정적 하네스).
+  // 수정 전(재현 커밋에서는 it.fails)에는 complementary가 1개('왼쪽 메뉴' — aside)였습니다.
+  it.fails("왼쪽 메뉴 영역의 랜드마크는 nav '주 메뉴' 하나 — 감싼 상자는 보조 영역(complementary)이 아니다 (QA-556)", () => {
+    render(<SideNav pathname="/search" user={MEMBER} />);
+    expect(screen.queryAllByRole("complementary")).toHaveLength(0);
+    const box = mainNav().closest("[data-shell-sidenav]") as HTMLElement;
+    expect(box.tagName).toBe("DIV");
+    expect(box.contains(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }))).toBe(true);
+  });
 });
 
 describe("긴 메뉴의 스크롤", () => {
