@@ -48,6 +48,20 @@ describe("숫자", () => {
     expect(NAV_SNAP_WIDTH - NAV_SNAP_HYSTERESIS).toBeGreaterThan(NAV_RAIL_WIDTH);
     expect(NAV_SNAP_WIDTH + NAV_SNAP_HYSTERESIS).toBeLessThan(NAV_WIDTH_MIN);
   });
+
+  // QA-611: 펼친 폭 200·창 높이 약 648 이하에서는 긴 운영 하위 메뉴가 넘쳐 메뉴에 10px 스크롤 막대가 서고(::-webkit-scrollbar 10px), 하위 칸
+  // '외부 API 연결 테스트'가 '외부 API 연결 테스…'로 잘렸습니다(지금 화면 굵은 글씨 Segoe UI + 맑은 고딕에서 0.2px, 다른 글꼴에서 1.2~4.6px 모자람).
+  // 206이면 잰 세 글꼴(굵은 글씨 포함) 모두 들어갑니다 — 스크롤 막대가 설 때도 잘리지 않는 폭을 하한으로.
+  // 수정 전 실패: AssertionError: expected 200 to be 206(하한 200 — 저장값 '200'도 200, 좁게 200).
+  it.fails("QA-611: 하한은 206 — 스크롤 막대가 서도 긴 하위 칸 이름이 잘리지 않는 폭. 저장값 '200'은 206으로 읽고 좁게도 206", () => {
+    expect(NAV_WIDTH_MIN).toBe(206);
+    expect(parseNavWidth("200")).toBe(206);
+    expect(clampNavWidth(205)).toBe(206);
+    expect(NAV_WIDTH_PRESETS.find((preset) => preset.label === "좁게")?.width).toBe(206);
+    // 접는 문턱(140)·되돌림 여유(16)는 그대로 — 되돌아가는 문턱 156도 하한보다 좁음
+    expect([NAV_SNAP_WIDTH, NAV_SNAP_HYSTERESIS]).toEqual([140, 16]);
+    expect(NAV_SNAP_WIDTH + NAV_SNAP_HYSTERESIS).toBeLessThan(NAV_WIDTH_MIN);
+  });
 });
 
 describe("clampNavWidth", () => {
