@@ -147,6 +147,9 @@ describe("로그아웃", () => {
     expect(alert.getAttribute("title")).toBe("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
     expect(alert.closest('[role="menu"]')).toBeNull();
     expect(alert.parentElement).toBe(trigger.parentElement);
+    // 한 줄로 줄임 — 상단바 새로고침 안내와 같은 폭(빵부스러기 자리를 덜 먹게)
+    expect(alert.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-w-40", "xl:max-w-72"]));
+    expect(alert.querySelector(".truncate")?.textContent).toBe("로그아웃하지 못했습니다 — 서버에 닿지 못했습니다");
     expect(router.push).not.toHaveBeenCalled();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
 

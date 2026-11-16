@@ -51,9 +51,10 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
 
   return (
     <div className="hidden min-w-0 shrink items-center gap-2 lg:flex">
-      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title(새로고침 안내와 같은 꼴). */}
+      {/* 로그아웃 실패 — 메뉴 밖(메뉴가 닫힌 뒤 나타나 읽힘). 한 줄로 줄이고 전체 글은 title — 새로고침 안내와 같은 폭(160px, xl 288px)이라
+          떠 있는 동안 빵부스러기 자리가 그만큼 줄어듭니다(1440에서 412 → 116px, 다음 로그아웃 때 지움). */}
       {error && (
-        <p role="alert" title={error} className="flex min-w-0 max-w-56 text-xs leading-5 text-warn xl:max-w-80">
+        <p role="alert" title={error} className="flex min-w-0 max-w-40 text-xs leading-5 text-warn xl:max-w-72">
           <StatusText tone="warn" icon={<AlertTriangleIcon size={12} />} className="min-w-0">
             <span className="block truncate">{error}</span>
           </StatusText>
