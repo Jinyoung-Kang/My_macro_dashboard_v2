@@ -40,7 +40,7 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * 옮겼습니다(새로고침은 아이콘 단추, 나머지는 계정 메뉴). 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2).
  * 좁은 화면에서는 숨기고(하단 탭 바 + 하위 메뉴 줄 + 더보기 화면이 대신), 데스크톱에서는 상단바 아래 남는 높이에 붙어 본문만 스크롤됩니다(메뉴가 길면 메뉴만 따로 스크롤).
  * 스크롤 상자는 메뉴(nav — min-h-0 flex-1 overflow-y-auto)이고 맨 아래 접기 영역은 그 밖에서 줄지 않아(shrink-0) 창이 낮아도 늘 보입니다 — 예전에는
- * aside 전체가 스크롤 상자라 펼친 메뉴가 길면 접기 단추가 메뉴와 함께 화면 밖으로 밀렸습니다(QA-555: 1024x600 /more에서 단추 609~641px). 그래서 지금 칸이
+ * 감싼 상자 전체가 스크롤 상자라 펼친 메뉴가 길면 접기 단추가 메뉴와 함께 화면 밖으로 밀렸습니다(QA-555: 1024x600 /more에서 단추 609~641px). 그래서 지금 칸이
  * 메뉴 끝 쪽이면 주소가 바뀌거나 접고 펼 때, 좁은 폭에서 넓은 화면이 될 때, 창 높이가 줄어 가려질 때 메뉴만 스크롤해 보입니다(useScrollNavActive —
  * scrollIntoView 아님).
  *
@@ -49,8 +49,9 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * - 하위 화면 목록은 nav가 아니라 이름 있는 목록('{탭} 화면')입니다 — '…하위 메뉴' 이름의 내비는 좁은 화면 하위 메뉴 줄 하나로 남습니다.
  * - 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내 — 하위 메뉴 줄과 같음). 준비 중 화면은 링크 없는 흐린 글(aria-disabled).
  * - 탭 링크에는 data-nav-tab을 붙입니다(시험이 탭 링크만 고를 때 — 펼친 하위 칸과 가름).
- * - 감싼 aside는 이름 있는 보조 영역('왼쪽 메뉴')입니다 — 이름이 없으면 안의 nav '주 메뉴'와 겹치는 이름 없는 랜드마크가 되고, /search에서는 화면 안의
- *   이름 없는 aside와 갈리지 않았습니다(QA-556, axe landmark-unique).
+ * - 감싼 상자는 랜드마크가 아닌 div입니다(data-shell-sidenav — 시험이 메뉴 상자를 찾는 표지). 이 영역의 랜드마크는 nav '주 메뉴' 하나이고 접기 단추는
+ *   그 곁입니다. 예전 aside는 이름 없는 보조 영역(complementary)이라 /search에서 화면 안의 이름 없는 aside와 갈리지 않았고(axe landmark-unique), 이름
+ *   '왼쪽 메뉴'를 둔 뒤에도 같은 영역이 랜드마크 목록에 두 번(보조 영역 안의 주 메뉴) 나왔습니다(QA-556).
  *
  * **접힘(48px 아이콘 레일)**: 맨 아래 접기 단추(이름 '왼쪽 메뉴 접기' — 켜고 끄는 단추라 이름은 그대로, aria-pressed가 접힘, 단축키 [ — 명령 팔레트
  * 쪽이 넓은 화면에서만 셸 명령 toggle-nav를 보내고 여기서 받음)로 접고 폅니다. 툴팁은 상태와 상관없이 이름과 같은 글에 단축키를 붙인 '왼쪽 메뉴 접기 ([)'이고
@@ -68,7 +69,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
   const [collapsed, toggle] = useNavCollapsed();
   // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554).
   const wide = useWideShell();
-  const asideRef = useRef<HTMLElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   // 접고 펴기 직전에 포커스가 이 메뉴 안에 있었는가 — 그린 뒤 포커스가 사라졌으면(하위 칸) 접기 단추로 옮깁니다.
@@ -76,7 +77,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
 
   const handleToggle = useCallback(() => {
     const active = document.activeElement;
-    refocus.current = Boolean(asideRef.current && active && asideRef.current.contains(active));
+    refocus.current = Boolean(boxRef.current && active && boxRef.current.contains(active));
     toggle();
   }, [toggle]);
 
@@ -90,13 +91,13 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
     if (!refocus.current) return;
     refocus.current = false;
     const active = document.activeElement;
-    if (!(asideRef.current && active && asideRef.current.contains(active))) toggleRef.current?.focus();
+    if (!(boxRef.current && active && boxRef.current.contains(active))) toggleRef.current?.focus();
   }, [collapsed]);
 
   return (
-    <aside
-      ref={asideRef}
-      aria-label="왼쪽 메뉴"
+    <div
+      ref={boxRef}
+      data-shell-sidenav=""
       className="hidden shrink-0 flex-col border-r border-border bg-surface lg:flex lg:w-[var(--shell-nav-w)]"
     >
       <nav ref={navRef} id={navId} aria-label="주 메뉴" className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -142,7 +143,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
           </button>
         </Tooltip>
       </div>
-    </aside>
+    </div>
   );
 }
 
