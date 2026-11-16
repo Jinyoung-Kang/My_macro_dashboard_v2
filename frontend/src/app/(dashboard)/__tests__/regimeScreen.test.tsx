@@ -1,5 +1,6 @@
 /**
- * 국면(/regime) 화면 — 국면 이력 띠·판정 근거·판정 기록·판정 성과의 뜻.
+ * 국면(/regime) 화면 — 판정 대상(대상 머리·근거 넷·네 국면·탭 셋·연결·출처)과 국면 이력 띠·판정 기록·판정 성과의 뜻.
+ * 가운데 탭 셋은 모두 마운트하고 고르지 않은 것은 hidden이라, 숨은 탭의 내용은 그 탭을 연 뒤에 역할로 찾습니다.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +13,7 @@ vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
-import { regimeExpansion } from "@/lib/__tests__/homeFixtures";
+import { regimeExpansion, regimeUnknown } from "@/lib/__tests__/homeFixtures";
 import { endpoints } from "@/lib/endpoints";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { RegimeResponse } from "@/lib/types";
@@ -46,6 +47,11 @@ const TRACK_SPY = endpoints.insight.regimeTrackRecord("SPY");
 
 /** 하이픈(-)으로 쓴 음수 — 숫자 바로 앞의 '-'이고 앞 글자가 숫자·영문자가 아님(날짜 '2026-10-08'·이름 '10Y-3M'은 빼고). */
 const ASCII_NEGATIVE = /(^|[^\dA-Za-z])-\d/;
+
+/** 가운데 탭을 엽니다(누르기 — 화살표는 포커스만 옮김). */
+async function openTab(name: string) {
+  fireEvent.click(await screen.findByRole("tab", { name }));
+}
 
 async function panelTitled(name: string): Promise<HTMLElement> {
   return (await screen.findByRole("heading", { name })).closest("section") as HTMLElement;
@@ -106,6 +112,7 @@ describe("QA-635 국면 이력 띠·범례 견본이 고대비에서 남는다",
   it("띠는 이름 있는 그림(기간·구간 수)이고 칸은 읽기에서 빠지며, 띠와 범례 견본은 고대비에서도 색 그대로", async () => {
     reads[REGIME] = withHistory();
     render(<RegimePage />);
+    await openTab("국면 이력");
 
     const band = await screen.findByRole("img", { name: /국면 이력 띠/ });
     expect(band.getAttribute("aria-label")).toBe("국면 이력 띠 — 2026-10-22 ~ 2026-11-12, 주간 판정 4번·구간 3개(최근 구간은 아래 표)");
@@ -151,6 +158,7 @@ describe("QA-636 국면 화면의 음수는 −(U+2212)", () => {
   it("판정 성과: 평균·중앙값·기준 대비·아무 때나의 음수가 −로", async () => {
     reads[TRACK_SPY] = trackRecord();
     render(<RegimePage />);
+    await openTab("판정 성과");
     const panel = await panelTitled("판정 성과");
     await within(panel).findAllByText(/1\.20%/);
     expect(panel.textContent).not.toMatch(ASCII_NEGATIVE);
@@ -233,6 +241,7 @@ describe("판정 성과 — 국면별 공용 표", () => {
   it("국면마다 h3 국면 태그(아이콘 + 글)와 캡션 있는 공용 표, 상자 안쪽 12px(lg 16px)", async () => {
     reads[TRACK_SPY] = trackRecord();
     render(<RegimePage />);
+    await openTab("판정 성과");
     const panel = await panelTitled("판정 성과");
     const heading = await within(panel).findByRole("heading", { level: 3, name: "확장 (Expansion)" });
     expect(heading.querySelectorAll("svg")).toHaveLength(1);
@@ -253,6 +262,7 @@ describe("판정 성과 — 국면별 공용 표", () => {
     const thin = { ...body.start[0].cells[0], count: 4, independent: 2, sufficient: false, mean: null, median: null, winRate: null, excessMean: null };
     reads[TRACK_SPY] = { ...body, start: [{ ...body.start[0], cells: [thin] }] };
     render(<RegimePage />);
+    await openTab("판정 성과");
     const panel = await panelTitled("판정 성과");
     const table = await within(panel).findByRole("table", { name: "확장 (Expansion) — 판정 뒤 수익률" });
     const mean = within(table).getByText("표본 부족");
@@ -261,5 +271,137 @@ describe("판정 성과 — 국면별 공용 표", () => {
 
     fireEvent.change(within(panel).getByLabelText("관점"), { target: { value: "all" } });
     expect(within(panel).getByText("60주 · 6개 구간")).toBeTruthy();
+  });
+});
+
+describe("판정 대상 — 대상 머리", () => {
+  it("h1 '시장 국면'·종류 '국면 판정'(저울 아이콘 칸)·주 값 지금 판정·식별자 코드·판정 문장·출처와 기준일·축 태그·신선도와 이력 기간", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const header = (await screen.findByRole("heading", { level: 1, name: "시장 국면" })).closest("header") as HTMLElement;
+    await within(header).findByText("확장 (Expansion)");
+
+    expect(within(header).getByText("국면 판정")).toBeTruthy();
+    expect(within(header).getByText("지금 판정")).toBeTruthy();
+    expect(within(header).getByText("확장 (Expansion)").className).toContain("text-value-lg");
+    expect(within(header).getByText("EXPANSION").className).toContain("font-mono");
+    expect(within(header).getByText(/위험자산에 우호적인 조합입니다/)).toBeTruthy();
+    expect(within(header).getByText(/FRED \(공식\) — 10Y−3M 금리차.* · 2026-10-16/)).toBeTruthy();
+    expect(within(header).getByText("성장·신용 양호")).toBeTruthy();
+    expect(within(header).getByText("유동성 확대")).toBeTruthy();
+    expect((within(header).getByLabelText("이력 기간") as HTMLSelectElement).value).toBe("5");
+    // 판정이 났으면 판정 불가 안내 상자가 없습니다.
+    expect(within(header).queryByText("판정 불가")).toBeNull();
+    expect(screen.queryByText(/를 받지 못했습니다/)).toBeNull();
+  });
+
+  it("읽는 중에는 값 자리만 자리표시이고 이름·이력 기간 고르기는 그대로(QA-047), 실패하면 머리에 오류 상자와 다시 시도", async () => {
+    const { unmount } = render(<RegimePage />);
+    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    expect(within(header).getByRole("status", { name: "국면을 판정하는 중" })).toBeTruthy();
+    expect(within(header).getByLabelText("이력 기간")).toBeTruthy();
+    unmount();
+
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === REGIME ? Promise.reject(new Error("요청 실패 (HTTP 502)")) : new Promise(() => {}));
+    render(<RegimePage />);
+    const failed = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    expect(await within(failed).findByText(/HTTP 502/)).toBeTruthy();
+    expect(within(failed).getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it("판정 불가면 주의 안내 상자에 받지 못한 입력, 근거의 빠진 신호는 0이 아니라 —와 '받지 못함'", async () => {
+    reads[REGIME] = regimeUnknown();
+    render(<RegimePage />);
+    const callout = (await screen.findByText("하이일드 스프레드 (HY OAS)를 받지 못했습니다.")).closest("div.flex") as HTMLElement;
+    expect(within(callout).getByText("판정 불가")).toBeTruthy();
+    expect(within(callout).getByText("주의:")).toBeTruthy();
+
+    const panel = await panelTitled("판정 근거");
+    const term = within(panel).getByText("하이일드 스프레드", { selector: "dt" });
+    const value = term.nextElementSibling as HTMLElement;
+    expect(value.textContent).toContain("—");
+    expect(value.textContent).toContain("받지 못함");
+    expect(value.textContent).not.toMatch(/0\.00/);
+  });
+});
+
+describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => {
+  it("판정 근거 — 신호 넷의 값(음수 −·단위)·상태와 해석, 기준일 뜻과 고지", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 근거");
+    await within(panel).findByText("시카고 연준 금융상황지수");
+    const terms = within(panel).getAllByRole("term").map((term) => term.textContent);
+    expect(terms).toEqual(["장단기 금리차 10Y-3M", "시카고 연준 금융상황지수", "하이일드 스프레드", "연준 순유동성 4주 변화"]);
+    const value = (label: string) => (within(panel).getByText(label, { selector: "dt" }).nextElementSibling as HTMLElement).textContent;
+    expect(value("장단기 금리차 10Y-3M")).toContain("+0.78%p");
+    expect(value("시카고 연준 금융상황지수")).toContain("−0.496완화적");
+    expect(value("연준 순유동성 4주 변화")).toContain("+0.031조 달러");
+    expect(within(panel).getByText(/기준일/).textContent).toBe("기준일 2026-10-16 — 네 입력 계열의 마지막 날짜 중 가장 이른 날");
+    expect(within(panel).getByText("임계치는 역사적 분포에 근거한 참고치이며 투자 판단의 근거가 아닙니다.")).toBeTruthy();
+  });
+
+  it("네 국면 — 국면마다 태그(아이콘 + 글)와 축 설명, 지금 칸은 aria-current·'지금'·잉크 테두리", async () => {
+    reads[REGIME] = { ...regimeExpansion(), verdict: { ...regimeExpansion().verdict!, code: "CONTRACTION", label: "침체 경계 (Contraction)" } };
+    render(<RegimePage />);
+    const list = await screen.findByRole("list", { name: "네 국면" });
+    await within(list).findByText("지금");
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent?.replace("주의: ", ""))).toEqual([
+      "확장성장·신용 양호 + 유동성 확대",
+      "후퇴 경계성장·신용 양호 + 유동성 축소",
+      "회복성장·신용 악화 + 유동성 확대",
+      "침체 경계지금성장·신용 악화 + 유동성 축소",
+    ]);
+    for (const item of items) expect(item.querySelectorAll("svg")).toHaveLength(1);
+    // 주의·위험 국면은 낭독기에 '주의:'(후퇴 경계·침체 경계), 확장·회복은 없음.
+    expect(items.map((item) => within(item).queryByText("주의:") !== null)).toEqual([false, true, false, true]);
+    expect(items.map((item) => item.getAttribute("aria-current"))).toEqual([null, null, null, "true"]);
+    expect(items[3].className).toContain("border-text");
+    expect(items[0].className).not.toContain("border-text");
+  });
+
+  it("탭 셋(판정 기록·국면 이력·판정 성과)은 모두 마운트 — 고르지 않은 탭은 hidden, 처음은 판정 기록", async () => {
+    reads[REGIME] = withHistory();
+    render(<RegimePage />);
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
+      ["판정 기록", "true"], ["국면 이력", "false"], ["판정 성과", "false"],
+    ]);
+    const panel = screen.getByRole("tabpanel", { name: "판정 기록" });
+    const blocks = Array.from(panel.children) as HTMLElement[];
+    expect(blocks.map((block) => block.hidden)).toEqual([false, true, true]);
+    // 숨은 탭의 내용도 마운트돼 있습니다(이름 있는 글로 찾음).
+    expect(within(blocks[1]).getByText("과거 구간 (최근 순)", { selector: "h3" })).toBeTruthy();
+    expect(within(blocks[2]).getByLabelText("관점")).toBeTruthy();
+
+    await openTab("국면 이력");
+    expect(screen.getByRole("tabpanel", { name: "국면 이력" })).toBeTruthy();
+    expect(blocks.map((block) => block.hidden)).toEqual([true, false, true]);
+    const table = screen.getByRole("table", { name: "과거 구간 (최근 순)" });
+    expect(within(table).getAllByRole("row")).toHaveLength(4);
+    expect(within(table).getAllByRole("cell")[3].textContent).toBe("2주");
+  });
+
+  it("연결 — 쓰인 지표가 있는 매크로 절(심화·신용 변동성)과 순유동성 화면, 출처 셋", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const links = (await panelTitled("연결")).querySelectorAll("a");
+    expect(Array.from(links).map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", "/macro#macro-advanced"],
+      ["하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", "/macro#macro-risk"],
+      ["연준 순유동성 4주 변화 — 순유동성 화면", "/liquidity"],
+    ]);
+    const sources = await panelTitled("출처");
+    expect(within(sources).getAllByRole("term").map((term) => term.textContent)).toEqual(["판정·근거", "판정 기록", "판정 성과"]);
+  });
+
+  it("칸 차례 — 대상 머리 → 판정 근거 → 네 국면·탭 → 연결·출처", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    await screen.findByRole("list", { name: "네 국면" });
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+    expect(headings).toEqual(["판정 근거", "네 국면", "판정 기록", "연결", "출처"]);
   });
 });

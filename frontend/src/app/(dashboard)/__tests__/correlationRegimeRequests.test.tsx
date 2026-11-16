@@ -120,6 +120,18 @@ describe("국면 화면의 요청", () => {
     expect(counts()).toEqual({ [REGIME]: 1, [REGIME_LOG]: 1, [TRACK_SPY]: 1, [next]: 1 });
   });
 
+  it("탭을 바꿔도 요청은 늘지 않는다 — 탭 셋은 열 때 모두 마운트", async () => {
+    reads[REGIME] = { available: true, timeline: [] };
+    render(<RegimePage />);
+    await waitFor(() => expect(calledPaths()).toHaveLength(3));
+    for (const name of ["국면 이력", "판정 성과", "판정 기록"]) {
+      fireEvent.click(await screen.findByRole("tab", { name }));
+      expect(screen.getByRole("tab", { name }).getAttribute("aria-selected")).toBe("true");
+    }
+    await act(async () => {});
+    expect(counts()).toEqual({ [REGIME]: 1, [REGIME_LOG]: 1, [TRACK_SPY]: 1 });
+  });
+
   it("판정 기록에서 줄을 골라도(좁은 화면 대화상자) 요청은 늘지 않는다", async () => {
     reads[REGIME_LOG] = {
       available: true, count: 2, recordHourKst: 18,
@@ -145,6 +157,8 @@ describe("국면 화면의 요청", () => {
       assets: [{ ticker: "SPY", label: "S&P 500 (SPY)" }, { ticker: "QQQ", label: "나스닥 100 (QQQ)" }], horizons: [], limits: [],
     };
     render(<RegimePage />);
+    // 판정 성과는 셋째 탭 — 탭을 열고 고릅니다(탭 바꾸기는 요청을 더하지 않음 — 위 사례).
+    fireEvent.click(await screen.findByRole("tab", { name: "판정 성과" }));
     await screen.findByRole("option", { name: "나스닥 100 (QQQ)" });
 
     fireEvent.change(screen.getByLabelText("자산"), { target: { value: "QQQ" } });
