@@ -718,9 +718,14 @@ export const KPI_NOT_IN_SNAPSHOT = "저장본에 없음";
 
 /**
  * 읽는 중 시장 타일의 자리 줄 수 — 값이 온 뒤의 변화 칩 1 · 이전 값 배지 1 · 출처 줄 3줄(140~180px 타일에서 접힌 줄 수) 자리입니다.
- * 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 시장 타일에만 주면 띠 높이가 맞습니다(국면·알림·오류 타일은 자리표시 한 줄 — QA-598).
+ * 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 시장 타일에만 주면 띠 높이가 맞습니다(국면·알림 타일은 자리표시 한 줄 — QA-598).
  */
 const KPI_MARKET_PENDING_LINES = 5;
+/**
+ * 읽는 중 수집 오류 타일(운영자)의 자리 줄 수 — 값 뒤 상태 글 한 줄(경고·누락 수) 자리입니다. 일곱 타일의 마지막이라 두 칸(390)·세 칸(sm)에서는 마지막 줄에
+ * 혼자 남아 그 줄 높이를 이 타일이 정합니다(QA 데이터 390 읽은 뒤 92px — 자리 줄이 없으면 64px, 하나면 88px). 다른 배치에서는 같은 줄의 시장 타일이 더 높습니다.
+ */
+const KPI_ERRORS_PENDING_LINES = 1;
 
 /** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). `pendingLines`는 읽는 중일 때만 넘깁니다. */
 function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>, pendingLines?: number): HomeKpi | null {
@@ -788,7 +793,7 @@ function unreadKpi(read: HomeReadState<{ unread?: number | null }>): HomeKpi {
 
 function issuesKpi(read: HomeReadState<StatusIssuesResponse>): HomeKpi {
   const base: HomeKpi = { key: "errors", label: "수집 오류", value: null, unit: "건", format: (value) => formatNumber(value, 0), href: "/status" };
-  const state = kpiReadState(base, read);
+  const state = kpiReadState(base, read, KPI_ERRORS_PENDING_LINES);
   if (state) return state;
   const model = storeStatusModel(read.data);
   // 상태 글은 그 글이 말하는 것의 톤으로만 — 경고·누락이 있으면 그 수, 수집기에 닿지 못하면 그 사실(둘 다 주의). 오류 수는 타일 값이 나르므로

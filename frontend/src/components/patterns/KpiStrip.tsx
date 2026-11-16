@@ -71,18 +71,19 @@ const TILE = "block h-full min-w-0 rounded-control border border-border bg-surfa
 const LINK_TILE = `group min-h-11 text-text hover:bg-surface-2 motion-safe:transition-colors ${FOCUS_RING}`;
 
 /**
- * 읽는 중 자리 줄의 막대 — 공용 Skeleton 막대와 같은 모양(놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). 막대 14px + 사이 14px로
- * 다섯 줄이면 136px(+ 이름·값 자리표시·여백 64px = 200px) — 홈 시장 타일의 읽은 뒤 높이(QA 스택 1024·1440 191~208px, 390 170~204px)에 맞춘 값입니다.
+ * 읽는 중 자리 줄의 막대 — 공용 Skeleton 막대와 같은 모양(놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). 위 간격 10px + 막대 14px +
+ * 사이 14px로 다섯 줄이면 136px(+ 이름·값 자리표시·여백 64px = 200px) — 홈 시장 타일의 읽은 뒤 높이(QA 스택 1024 191~208px, 390 170~204px)에 맞춘 값이고,
+ * 한 줄 배치(xl·넓은 띠)에서는 위 간격이 18px라 208px입니다(ONE_ROW_PENDING_GAP — 1440·1920 208px).
  */
 const PENDING_BAR = "h-3.5 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
 
-function PendingLines({ count }: { count: number | undefined }): JSX.Element | null {
+function PendingLines({ count, gap }: { count: number | undefined; gap?: string }): JSX.Element | null {
   const lines = typeof count === "number" && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
   if (lines === 0) {
     return null;
   }
   return (
-    <div aria-hidden="true" className="mt-2.5 flex flex-col gap-3.5">
+    <div aria-hidden="true" className={`mt-2.5 flex flex-col gap-3.5 ${gap ?? ""}`.trim()}>
       {Array.from({ length: lines }, (_, index) => (
         // 마지막 줄을 짧게 — 글 문단처럼(공용 Skeleton과 같은 규칙).
         <div key={index} className={`${PENDING_BAR} ${lines > 1 && index === lines - 1 ? "w-3/5" : "w-full"}`} />
@@ -111,12 +112,12 @@ const VALUE_TAIL = "whitespace-nowrap";
 const VALUE_UNIT = "-mr-3 ml-1 text-sm font-normal text-text-3";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
-function KpiValue({ item }: { item: KpiItem }): JSX.Element {
+function KpiValue({ item, pendingGap }: { item: KpiItem; pendingGap?: string }): JSX.Element {
   if (item.pending) {
     return (
       <>
         <Skeleton lines={1} label={`${item.label} 불러오는 중`} />
-        <PendingLines count={item.pendingLines} />
+        <PendingLines count={item.pendingLines} gap={pendingGap} />
       </>
     );
   }
@@ -165,7 +166,7 @@ function valueRowClass(item: KpiItem): string {
   return "mt-0.5 flex items-baseline";
 }
 
-function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
+function KpiTileBody({ item, pendingGap }: { item: KpiItem; pendingGap?: string }): JSX.Element {
   const change = item.change && !item.pending ? item.change : null;
   // 변화량·변화율을 둘 다 모르면 칩이 그려지지 않으므로(ChangeChip) 캡션만 남지 않게 줄째 뺍니다.
   const changeShown = change !== null && !(isMissingValue(change.change) && isMissingValue(change.changePct));
@@ -184,7 +185,7 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
       </div>
       {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
       <div className={valueRowClass(item)}>
-        <KpiValue item={item} />
+        <KpiValue item={item} pendingGap={pendingGap} />
       </div>
       {change && changeShown ? (
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
@@ -235,6 +236,21 @@ const ONE_ROW_GRID: Readonly<Record<number, string>> = {
 };
 
 /**
+ * 한 줄 배치일 때 읽는 중 자리 줄 위 간격 18px(그 밖 10px — PendingLines). 조건은 ONE_ROW_GRID와 같은 경계입니다. 한 줄 배치의 칸은 좁아 읽은 뒤
+ * 타일이 가장 낮아도 208px(1440·1920 홈 시장 타일, 1280은 259px)이라, 자리표시(200px)가 그만큼 모자라 값이 오면 아래 패널이 8px 이상 밀렸습니다(QA-598).
+ */
+const ONE_ROW_PENDING_GAP: Readonly<Record<number, string>> = {
+  1: "xl:@min-[134px]:mt-4.5",
+  2: "xl:@min-[276px]:mt-4.5",
+  3: "xl:@min-[418px]:mt-4.5",
+  4: "xl:@min-[560px]:mt-4.5",
+  5: "xl:@min-[702px]:mt-4.5",
+  6: "xl:@min-[844px]:mt-4.5",
+  7: "xl:@min-[986px]:mt-4.5",
+  8: "xl:@min-[1128px]:mt-4.5",
+};
+
+/**
  * KPI 띠(작업대 실행 명세 §6 KpiStrip·W7 — 홈·모의 개요의 44px 히어로 대신): 화면 맨 위 요약 값 타일을 한 줄로.
  *
  * - 값은 20px(lg 24px)·굵게·`tabular-nums`. 판정 라벨(`valueKind: "label"` — 국면)은 숫자가 아니라 tabular 없이 16·20px.
@@ -252,6 +268,7 @@ const ONE_ROW_GRID: Readonly<Record<number, string>> = {
 export function KpiStrip({ label, items }: { label: string; items: readonly KpiItem[] }): JSX.Element {
   // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
   const oneRow = ONE_ROW_GRID[items.length] ?? "";
+  const pendingGap = ONE_ROW_PENDING_GAP[items.length];
   return (
     <section aria-label={label} className="@container min-w-0">
       <ul className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 ${oneRow}`.trim()}>
@@ -260,13 +277,13 @@ export function KpiStrip({ label, items }: { label: string; items: readonly KpiI
           if (item.href) {
             tile = (
               <Link href={item.href} className={`${TILE} ${LINK_TILE}`}>
-                <KpiTileBody item={item} />
+                <KpiTileBody item={item} pendingGap={pendingGap} />
               </Link>
             );
           } else {
             tile = (
               <div role="group" aria-label={item.label} className={TILE}>
-                <KpiTileBody item={item} />
+                <KpiTileBody item={item} pendingGap={pendingGap} />
               </div>
             );
           }

@@ -534,24 +534,25 @@ describe("홈 — 불러오는 중·값 없음", () => {
     renderHome(OWNER);
     const strip = region("오늘 요약");
     const bars = (label: string) => within(strip).getByRole("status", { name: `${label} 불러오는 중` }).closest("li")?.querySelectorAll(".bg-control-fill").length;
-    expect(["국면", "S&P 500", "코스피", "원/달러", "미국채 10년물", "읽지 않은 알림", "수집 오류"].map(bars)).toEqual([1, 6, 6, 6, 6, 1, 1]);
+    // 수집 오류 타일은 상태 글 한 줄 자리(두 칸·세 칸에서 마지막 줄에 혼자 남음 — lib/home KPI_ERRORS_PENDING_LINES).
+    expect(["국면", "S&P 500", "코스피", "원/달러", "미국채 10년물", "읽지 않은 알림", "수집 오류"].map(bars)).toEqual([1, 6, 6, 6, 6, 1, 2]);
     const blockHeight = (name: string) => {
       const block = within(region(name)).getByRole("status").querySelector<HTMLElement>("[style]");
       return block ? Number.parseFloat(block.style.height) : null;
     };
-    // 읽은 뒤 본문(QA 스택 1024·1440): 국면 414~544px(넓을수록 낮음), 계좌 529~548px, 시장 367px.
+    // 읽은 뒤 본문(QA 스택 1024·1440): 국면 414~544px(넓을수록 낮음), 계좌 529~548px, 시장은 QA-595 뒤 패널 446px에 맞춤(아래 시험).
     const regime = blockHeight("오늘의 국면");
     const paper = blockHeight(PAPER_REGION);
     const market = blockHeight("시장");
     expect(regime !== null && regime >= 480 && regime <= 520, `국면 ${regime}`).toBe(true);
     expect(paper !== null && paper >= 400 && paper <= 460, `계좌 ${paper}`).toBe(true);
-    expect(market !== null && market >= 300 && market <= 360, `시장 ${market}`).toBe(true);
+    expect(market !== null && market >= 300 && market <= 365, `시장 ${market}`).toBe(true);
   });
 
   // QA-598(시장 패널): 변화 칩을 칸 안에서 꺾지 않게 한 뒤(QA-595 — 넓어진 '변화' 칸 몫만큼 '기준' 칸이 좁아져 넉 줄 모두 출처 두 줄) 시장 패널의 읽은 뒤
   // 높이는 446px(루프백 빌드 1280·1440·1920)인데, 자리표시 330px로는 패널이 417px라 값이 오면 29px 자랐습니다.
   // 수정 전(재현 커밋에서는 it.fails) 시장 자리표시 높이는 330px였습니다.
-  it.fails("시장 패널 자리표시는 QA-595 뒤 읽은 뒤 높이(패널 446px)에 맞춘 높이 — 355~365px (QA-598)", () => {
+  it("시장 패널 자리표시는 QA-595 뒤 읽은 뒤 높이(패널 446px)에 맞춘 높이 — 355~365px (QA-598)", () => {
     renderHome(OWNER);
     const block = within(region("시장")).getByRole("status").querySelector<HTMLElement>("[style]");
     const height = block ? Number.parseFloat(block.style.height) : null;

@@ -815,7 +815,7 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
   });
 
   // 수정 전(재현 커밋에서는 it.fails) 일곱 타일 모두 자리 줄이 0이었습니다.
-  it("읽는 중이면 시장 타일 넷만 자리 줄(pendingLines 5 — 변화 1·배지 1·출처 3)을 받는다 — 값이 온 뒤의 높이에 가깝게 자리를 잡음 (QA-598)", () => {
+  it("읽는 중이면 시장 타일 넷은 자리 줄 5(변화 1·배지 1·출처 3), 수집 오류 타일은 1(상태 글)을 받는다 — 값이 온 뒤의 높이에 가깝게 자리를 잡음 (QA-598)", () => {
     const pending = homeKpiItems(
       ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
       { owner: true, clock: CLOCK_ONLY },
@@ -828,7 +828,7 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
       ["usdkrw", true, 5],
       ["us10y", true, 5],
       ["unread", true, 0],
-      ["errors", true, 0],
+      ["errors", true, 1],
     ]);
     // 읽지 못했거나 값이 오면 자리 줄은 없습니다.
     const failed = homeKpiItems(ready({ macro: { data: null, error: "요청 실패 (HTTP 500)" } }), { owner: true, clock: CLOCK_ONLY });
@@ -839,7 +839,7 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
   // QA-598(마지막 타일): 수집 오류 타일은 일곱 타일의 마지막이라 두 칸(390)·세 칸(sm)에서 마지막 줄에 혼자 남아 그 줄 높이를 정하는데, 읽는 중 64px에서
   // 읽은 뒤 92px(값 + 상태 글 한 줄)로 자랐습니다(루프백 빌드 390 — 같은 줄에 더 높은 시장 타일이 없음).
   // 수정 전(재현 커밋에서는 it.fails) 수집 오류 타일의 자리 줄은 0이었습니다.
-  it.fails("읽는 중 수집 오류 타일은 자리 줄 1(상태 글 한 줄 자리) — 국면·알림 타일은 0 그대로 (QA-598)", () => {
+  it("읽는 중 수집 오류 타일은 자리 줄 1(상태 글 한 줄 자리) — 국면·알림 타일은 0 그대로 (QA-598)", () => {
     const pending = homeKpiItems(
       ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
       { owner: true, clock: CLOCK_ONLY },
