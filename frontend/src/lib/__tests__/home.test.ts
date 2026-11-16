@@ -4,16 +4,24 @@
  *  - 시장: 카드 → 자산 행(priceStr·delta/pct 그대로, "N/A"·null은 값 없음/칩 생략, 수집 실패는 값·변화를 비우고 "수집 실패"),
  *    추정·이전 값·참고 시세·경고는 넘기고, 장 상태는 보는 시각 기준 — 지연은 열린 장에만("개장 · 실시간"), 닫힌 장은 "마감"만,
  *    이어받은 값·실패에는 지연을 붙이지 않음, 변화량 자릿수는 deltaStr을 따름
- *  - 모의매매: Claude 계좌 순자산 히어로·마지막 관측, 네 계좌 행(모의매매 개요와 같은 bookAssetRow — 출발 대비 수익률, 오래됨·사후 체결 대기),
- *    정기 작업 꺼짐 안내, 처음 현금. 개요 응답에 지금 값(current)이 있으면 히어로·행이 같은 지금 값과 같은 단계 표기(lib/paperCurrent)
+ *  - 모의매매 패널: 네 계좌 줄(모의매매 개요와 같은 bookAssetRow — 출발 대비 수익률, 오래됨·사후 체결 대기), 출처, 정기 작업 꺼짐 안내, 처음 현금.
+ *    개요 응답에 지금 값(current)이 있으면 줄이 같은 지금 값과 같은 단계 표기(lib/paperCurrent)
  *  - 알림: 모르는 수는 null(화면 "—"), 지난 사건은 강조하지 않음 / 저장소 상태: 모르는 수는 null, 수집기 연결 안 됨·누락 데이터셋
+ *  - 계좌 손익 표: 개요의 계좌 행 규칙(bookAssetRow) + 최근 변화(서버 dayChangePct)·기준 칸, 출발 전·옛 응답은 '—'
+ *  - 끊긴 출처: 서버 순서 그대로, 판정 기록이 없으면 '없음'이라 적지 않음 / KPI 띠: 국면·시장 넷·읽지 않은 알림·수집 오류(운영자), 모의 값 없음,
+ *    읽는 중 자리표시·읽지 못함 '—'
  */
 import { describe, expect, it } from "vitest";
 
 import {
   COLLECTOR_UNREACHABLE_NOTE,
   deltaDigits,
+  HOME_KPI_MARKET_KEYS,
   HOME_REFRESH_MS,
+  type HomeKpiInput,
+  homeKpiItems,
+  KPI_NOT_IN_SNAPSHOT,
+  KPI_READ_FAILED,
   latestAlerts,
   macroCardRow,
   macroCardSession,
@@ -21,22 +29,29 @@ import {
   type MarketClock,
   MARKET_HREF,
   marketGroups,
+  NO_SOURCE_INCIDENTS,
   PAPER_COMPARE_NOTE,
   PAPER_DISABLED_NOTE,
   PAPER_HREF,
   PAPER_KR_HREF,
   paperHomeModel,
+  paperPnlRows,
+  pickMarketGroup,
   regimeHeroModel,
+  sourceIncidentsModel,
   storeStatusModel,
   unreadText,
 } from "../home";
 import { TABS } from "../nav";
-import { bookAssetRow, bookMonogram, PENDING_BACKFILL_WARNING } from "../paperOverview";
+import { PAPER_SOURCES } from "../paper";
+import { bookAssetRow, PENDING_BACKFILL_WARNING } from "../paperOverview";
 import { assetRowModel } from "../patternRows";
 import { provenanceText } from "../patterns";
 import {
   book,
   inbox,
+  incident,
+  infoSources,
   issues,
   macroItem,
   macroOverview,
@@ -275,8 +290,8 @@ describe("marketGroups", () => {
   });
 });
 
-describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", () => {
-  it("미국 모델은 인자 없이 예전 그대로 — 두 책 비교하지 않음 문구만 더함, 한국 사유 칸은 늘 null", () => {
+describe("paperHomeModel — 계좌 손익 표 패널(한국, 2단계 명세 §4-16)", () => {
+  it("미국 모델은 인자 없이도 같다 — 두 책 비교하지 않음 문구, 한국 사유 칸은 늘 null", () => {
     const model = paperHomeModel(paperOverview(), paperStatus(true));
     expect(model.market).toBe("US");
     expect(model.compareNote).toBe(PAPER_COMPARE_NOTE);
@@ -285,14 +300,13 @@ describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", (
     expect(paperHomeModel(paperOverview(), paperStatus(true), { market: "US" })).toEqual(model);
   });
 
-  it("한국: 히어로는 한국 Claude 계좌 순자산(원 정수), 행은 원·링크 /paper/kr·사후 체결 경고 없음, 출발 줄은 원", () => {
+  it("한국: 줄은 원 정수·링크 /paper/kr·사후 체결 경고 없음, 출발 줄은 원, 출처는 한국 장부", () => {
     const overview = paperOverviewKr();
     overview.pendingBackfill = ["kr_bench_k200"];
     const model = paperHomeModel(overview, paperStatusKr(true), { market: "KR" });
     expect(model).toMatchObject({
-      market: "KR", available: true, message: null, heroCaption: "한국 Claude 계좌 순자산", heroValueText: "100,312,450", heroUnit: "원",
-      heroReturnPct: 0.31, heroAsOf: "2026-11-03 21:57", dormantNote: null, disabledNote: null, compareNote: PAPER_COMPARE_NOTE,
-      startLine: "출발 2026-10-29 · 처음 현금 100,000,000원 · 변화율은 출발 대비",
+      market: "KR", available: true, message: null, dormantNote: null, disabledNote: null, compareNote: PAPER_COMPARE_NOTE,
+      startLine: "출발 2026-10-29 · 처음 현금 100,000,000원 · 변화율은 출발 대비", source: PAPER_SOURCES.krLedger,
     });
     expect(model.rows.map((row) => [row.id, row.valueText, row.unit, row.href, row.warning])).toEqual([
       ["kr_rules", "99,874,120", "원", PAPER_KR_HREF, null],
@@ -302,7 +316,7 @@ describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", (
     ]);
   });
 
-  it("쉬는 한국: 계좌가 없으면 안내 자리에 사유, 계좌가 있으면 행 아래 한 줄 — 모르는 처음 현금은 '—'(1억을 짓지 않음)", () => {
+  it("쉬는 한국: 계좌가 없으면 안내 자리에 사유, 계좌가 있으면 표 아래 한 줄 — 모르는 처음 현금은 '—'(1억을 짓지 않음)", () => {
     const reason = "한국 계좌 출발일이 비어 있어 한국 초기화·출발을 하지 않습니다";
     const empty = paperHomeModel(paperOverviewKrDormant(reason), null, { market: "KR" });
     expect(empty.message).toBe(`한국 계좌가 쉬고 있습니다 — ${reason}`);
@@ -316,38 +330,32 @@ describe("paperHomeModel — 모의매매(한국 탭, 2단계 명세 §4-16)", (
   });
 });
 
-describe("paperHomeModel — 모의매매(미국)", () => {
-  it("히어로는 Claude 계좌 순자산·출발 대비 수익률·마지막 관측, 행은 네 계좌(이름·종류·상태·순자산·출발 대비)", () => {
+describe("paperHomeModel — 계좌 손익 표 패널(미국)", () => {
+  it("줄은 네 계좌(이름·종류·상태·순자산·출발 대비) — 계좌 손익 표의 줄(paperPnlRows) 그대로, 출발 줄", () => {
     const model = paperHomeModel(paperOverview(), paperStatus(true));
     expect(model.available).toBe(true);
     expect(model.message).toBeNull();
-    expect(model.heroCaption).toBe("Claude 계좌 순자산");
-    expect(model.heroValueText).toBe("99,967.28");
-    expect(model.heroUnit).toBe("달러");
-    expect(model.heroReturnPct).toBe(-0.03);
-    // 정기 작업이 켜져 있어도 평가 시각을 늘 적습니다.
-    expect(model.heroAsOf).toBe("2026-10-26 04:56");
-    expect(model.heroStale).toBe(false);
-    expect(model.rows.map((row) => [row.name, row.sub.split(" · ").slice(0, 2).join(" · "), row.value, row.changePct])).toEqual([
-      ["규칙 계좌", "규칙 · 운용 중", 99951, -0.05],
-      ["Claude 계좌", "Claude · 운용 중", 99967.28, -0.03],
-      ["SPY 계좌", "벤치마크 · 운용 중", 99950.22, -0.05],
-      ["60/40 계좌", "벤치마크 · 운용 중", 99950.39, -0.05],
+    expect(model.rows).toEqual(paperPnlRows(paperOverview()));
+    expect(model.rows.map((row) => [row.name, row.sub, row.valueText, row.returnPct])).toEqual([
+      ["규칙 계좌", "규칙 · 운용 중", "99,951.00", -0.05],
+      ["Claude 계좌", "Claude · 운용 중", "99,967.28", -0.03],
+      ["SPY 계좌", "벤치마크 · 운용 중", "99,950.22", -0.05],
+      ["60/40 계좌", "벤치마크 · 운용 중", "99,950.39", -0.05],
     ]);
-    // 일간 변화 필드는 응답에 없습니다 — 변화량을 만들지 않습니다.
-    expect(model.rows.every((row) => !("change" in row) && row.unit === "달러" && row.href === PAPER_HREF)).toBe(true);
+    // 일간 변화 필드는 옛 응답에 없습니다 — 변화를 만들지 않습니다(빼기로 짓지 않음).
+    expect(model.rows.every((row) => !("change" in row) && row.day === null && row.unit === "달러" && row.href === PAPER_HREF)).toBe(true);
     expect(model.startLine).toBe("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비");
     expect(model.disabledNote).toBeNull();
+    expect(model.source).toBe(PAPER_SOURCES.ledger);
   });
 
-  it("Claude 계좌2(체결 시점 실험)가 앞에 와도 히어로는 계좌1 — 계좌2는 행으로만(계좌2 명세 §13-3)", () => {
+  it("Claude 계좌2(체결 시점 실험)도 한 줄 — 개요의 계좌 순서 그대로(계좌2 명세 §13-3)", () => {
     const base = paperOverview();
     const claude1 = { ...base.books![1], label: "Claude 계좌1" };
     const claude2 = { ...claude1, code: "claude2", label: "Claude 계좌2", status: "NOT_STARTED" as const, nav: 100000, returnPct: null };
     const model = paperHomeModel({ ...base, books: [base.books![0], claude2, claude1, base.books![2], base.books![3]] }, paperStatus(true));
-    expect(model.heroCaption).toBe("Claude 계좌1 순자산");
-    expect(model.heroValueText).toBe("99,967.28");
     expect(model.rows.map((row) => row.name)).toEqual(["규칙 계좌", "Claude 계좌2", "Claude 계좌1", "SPY 계좌", "60/40 계좌"]);
+    expect(model.rows[1]).toMatchObject({ valueText: "100,000.00", returnPct: null, day: null, basis: null });
   });
 
   // 수정 전에는 끝 줄이 개요의 출발일(startDate)만 적어, 늦게 앞으로 체결로 출발한 Claude 계좌2(행의 수익률은 서버가 계좌2 자기 출발 대비로 셈)도
@@ -362,27 +370,15 @@ describe("paperHomeModel — 모의매매(미국)", () => {
       .toBe("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비");
   });
 
-  it("계좌 행은 모의매매 개요와 같은 규칙(bookAssetRow) + 링크 — 규칙을 두 곳에 두지 않는다", () => {
+  it("사후 체결을 기다리는 벤치마크 줄에는 그 경고(모의매매 개요와 같은 bookAssetRow 규칙)", () => {
     const overview = paperOverview();
     overview.pendingBackfill = ["bench_mix"];
-    overview.quotes!.stale = true;
     const model = paperHomeModel(overview, paperStatus(true));
-    expect(model.rows).toEqual(
-      overview.books!.map((book) => ({
-        ...bookAssetRow(book, { pendingBackfill: ["bench_mix"], quotes: overview.quotes }),
-        href: PAPER_HREF,
-        avatarText: bookMonogram(book.code),
-      })),
-    );
-    // 아바타 약칭은 계좌 코드마다(lib/paperOverview bookMonogram) — 장식이고 뜻은 계좌 이름이 나릅니다.
-    expect(model.rows.map((row) => row.avatarText)).toEqual(overview.books!.map((book) => bookMonogram(book.code)));
-    expect(model.rows.find((row) => row.id === "claude")?.avatarText).toBe("C1");
-    // 사후 체결을 기다리는 벤치마크에는 그 경고가 붙습니다.
     expect(model.rows.find((row) => row.id === "bench_mix")?.warning).toBe(PENDING_BACKFILL_WARNING);
     expect(model.rows.find((row) => row.id === "rules")?.warning).toBeNull();
   });
 
-  it("지금 값(current) — 히어로와 Claude 행이 같은 지금 값·단계 표기·추정 배지·변화 한 줄, 옛 응답 칸(마지막 관측)은 그대로", () => {
+  it("지금 값(current) — Claude 줄이 지금 값·단계 표기·추정 배지·최근 변화, 출처는 장중 추정이라 다시 평가했다는 말 · 옛 응답은 장부", () => {
     const overview = paperOverview();
     overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
     overview.books![1] = {
@@ -394,58 +390,39 @@ describe("paperHomeModel — 모의매매(미국)", () => {
       },
     };
     const model = paperHomeModel(overview, paperStatus(true));
-    expect(model).toMatchObject({
-      heroValueText: "100,123.45", heroReturnPct: 0.12, heroStageLabel: "장중 추정 23:58", heroNotes: ["장중가 8/9종목"],
-      heroIsEstimated: true, heroAsOf: "2026-10-26 04:56",
-      heroDay: { pct: 0.3, label: "오늘", base: "10-23 잠정 대비", text: "오늘 +0.30% · 10-23 잠정 대비" },
+    expect(model.rows.find((row) => row.id === "claude")).toMatchObject({
+      valueText: "100,123.45", returnPct: 0.12, isEstimated: true, basis: "장중 추정 23:58 · 장중가 8/9종목",
+      day: { pct: 0.3, label: "오늘", base: "10-23 잠정 대비" },
     });
-    expect(model.heroSource).toContain("보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정");
-    const claude = model.rows.find((row) => row.id === "claude");
-    expect(claude).toMatchObject({ value: 100123.45, changePct: 0.12, isEstimated: true });
-    expect(claude?.caption).toBe("장중 추정 23:58 · 장중가 8/9종목 · 오늘 +0.30% · 10-23 잠정 대비");
-    // current가 없는 다른 계좌 행은 장부 값 그대로
-    expect(model.rows.find((row) => row.id === "rules")).toMatchObject({ value: 99951, changePct: -0.05 });
-
-    // 옛 응답이면 단계 표기·덧붙임·변화 한 줄 없음, 출처는 장부
-    const ledger = paperHomeModel(paperOverview(), paperStatus(true));
-    expect(ledger).toMatchObject({ heroStageLabel: null, heroNotes: [], heroIsEstimated: false, heroDay: null, heroValueText: "99,967.28" });
-    expect(ledger.heroSource).not.toContain("장중");
+    expect(model.source).toContain("보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정");
+    // current가 없는 다른 계좌 줄은 장부 값 그대로
+    expect(model.rows.find((row) => row.id === "rules")).toMatchObject({ valueText: "99,951.00", returnPct: -0.05, day: null });
+    expect(paperHomeModel(paperOverview(), paperStatus(true)).source).not.toContain("장중");
   });
 
   it("행 링크는 셸의 모의매매 탭과 같은 곳", () => {
     expect(PAPER_HREF).toBe(TABS.find((tab) => tab.key === "paper")?.href);
   });
 
-  it("정기 작업이 꺼졌으면 읽기 전용 사본 안내, 마지막 관측은 켜짐·꺼짐과 상관없이 히어로(Claude 계좌)의 것", () => {
-    const overview = paperOverview();
-    overview.books![3].lastObservedAtKst = "2026-10-26 05:10 KST";
-    const model = paperHomeModel(overview, paperStatus(false));
-    expect(model.disabledNote).toBe(PAPER_DISABLED_NOTE);
-    expect(model.heroAsOf).toBe("2026-10-26 04:56");
-    // 상태를 모르면(응답 없음) 꺼졌다고도 켜졌다고도 적지 않습니다.
-    expect(paperHomeModel(overview, null).disabledNote).toBeNull();
-    expect(paperHomeModel(overview, null).heroAsOf).toBe("2026-10-26 04:56");
+  it("정기 작업이 꺼졌으면 읽기 전용 사본 안내 — 상태를 모르면 꺼졌다고도 켜졌다고도 적지 않는다", () => {
+    expect(paperHomeModel(paperOverview(), paperStatus(false)).disabledNote).toBe(PAPER_DISABLED_NOTE);
+    expect(paperHomeModel(paperOverview(), null).disabledNote).toBeNull();
   });
 
   it("가격을 새로 받지 못한 보유가 있는 계좌는 이전 값 + 사유(lib/paper staleWarning)", () => {
     const overview = paperOverview();
     overview.books![1].staleCount = 2;
     const model = paperHomeModel(overview, paperStatus(true));
-    const claude = model.rows.find((row) => row.id === "claude");
-    expect(claude).toMatchObject({ isStale: true, staleReason: "가격 없음 2종목 — 지난 값으로 평가" });
-    expect(model.heroStale).toBe(true);
-    expect(model.heroStaleReason).toBe("가격 없음 2종목 — 지난 값으로 평가");
+    expect(model.rows.find((row) => row.id === "claude")).toMatchObject({ isStale: true, staleReason: "가격 없음 2종목 — 지난 값으로 평가" });
     expect(model.rows.find((row) => row.id === "rules")?.isStale).toBe(false);
   });
 
-  it("장부 관측치 저장본이 늦었으면(백엔드 quotes.stale) 관측이 있는 계좌가 모두 이전 값(+ 마지막 관측), 히어로도", () => {
+  it("장부 관측치 저장본이 늦었으면(백엔드 quotes.stale) 관측이 있는 계좌가 모두 이전 값 — 시작 전 계좌(관측 없음)는 아님", () => {
     const overview = paperOverview();
     overview.quotes!.stale = true;
     const model = paperHomeModel(overview, paperStatus(true));
-    expect(model.rows.every((row) => row.isStale && row.staleReason === "관측치 저장본이 늦음 · 마지막 관측 2026-10-26 04:56")).toBe(true);
-    expect(model.heroStale).toBe(true);
-    // 히어로는 같은 시각을 '마지막 관측 …'으로 이미 적어 사유에서 뺌(한 줄에 같은 시각을 두 번 적지 않음)
-    expect(model.heroStaleReason).toBe("관측치 저장본이 늦음");
+    // 기준 칸이 '마지막 관측 …'을 적으므로 사유에서 그 시각을 뺍니다(한 줄에 같은 시각을 두 번 적지 않음).
+    expect(model.rows.every((row) => row.isStale && row.staleReason === "관측치 저장본이 늦음")).toBe(true);
     // 관측이 없는 시작 전 계좌(현금만)는 늦은 관측으로 평가한 값이 아니라 이전 값이 아닙니다(모의매매 개요와 같음).
     overview.books![0] = book({ code: "rules", kind: "RULES", label: "규칙 계좌", status: "NOT_STARTED", lastObservedAtKst: null });
     expect(paperHomeModel(overview, null).rows[0].isStale).toBe(false);
@@ -457,10 +434,7 @@ describe("paperHomeModel — 모의매매(미국)", () => {
       code: "claude", kind: "CLAUDE", label: "Claude 계좌", status: "NOT_STARTED", nav: null, returnPct: null, lastObservedAtKst: null,
     })];
     const model = paperHomeModel(overview, null);
-    expect(model.heroValueText).toBeNull();
-    expect(model.heroReturnPct).toBeNull();
-    expect(model.heroAsOf).toBeNull();
-    expect(model.rows[0]).toMatchObject({ value: null, changePct: null });
+    expect(model.rows[0]).toMatchObject({ valueText: null, returnPct: null, day: null, basis: null });
     expect(model.rows[0].sub.startsWith("Claude · 시작 전 · 현금만")).toBe(true);
   });
 
@@ -473,12 +447,11 @@ describe("paperHomeModel — 모의매매(미국)", () => {
 
   it("장부를 읽을 수 없으면(테이블 없음) 서버 안내, 계좌가 없으면 초기화 안내", () => {
     const unavailable = paperHomeModel({ available: false, message: "모의 매매 테이블이 아직 없습니다" }, null);
-    expect(unavailable).toMatchObject({ available: false, message: "모의 매매 테이블이 아직 없습니다", rows: [], heroValueText: null });
+    expect(unavailable).toMatchObject({ available: false, message: "모의 매매 테이블이 아직 없습니다", rows: [] });
     expect(paperHomeModel({ available: false }, null).message).toBe("모의매매 장부를 아직 읽을 수 없습니다.");
     const empty = paperHomeModel({ ...paperOverview(), books: [] }, null);
     expect(empty.message).toBe("아직 계좌가 없습니다 — 모의매매 화면에서 초기화합니다.");
-    expect(empty.heroCaption).toBe("Claude 계좌 순자산");
-    expect(empty.heroAsOf).toBeNull();
+    expect(empty.rows).toEqual([]);
   });
 });
 
@@ -583,6 +556,260 @@ describe("storeStatusModel — 데이터 저장소 상태 한 줄", () => {
   });
 });
 
-it("자동 갱신 간격 — 매크로는 live 없이 5분(Yahoo 429), 모의매매·상태 1분, 국면·알림 5분", () => {
-  expect(HOME_REFRESH_MS).toEqual({ regime: 300_000, macro: 300_000, paper: 60_000, alerts: 300_000, storeStatus: 60_000 });
+describe("pickMarketGroup — 시장 묶음 표의 탭", () => {
+  it("고른 묶음이 있으면 그것, 없으면(처음·사라진 범주) 첫 묶음, 묶음이 없으면 null", () => {
+    const groups = marketGroups(macroOverview(), { now: MON_1651, krOfficial: null });
+    expect(pickMarketGroup(groups, null)?.id).toBe("fx");
+    expect(pickMarketGroup(groups, "asia_equity")?.id).toBe("asia_equity");
+    expect(pickMarketGroup(groups, "gone")?.id).toBe("fx");
+    expect(pickMarketGroup([], "fx")).toBeNull();
+  });
+});
+
+describe("paperPnlRows — 계좌 손익 표(운영자)", () => {
+  it("옛 응답 — 이름·종류·상태·순자산(달러 둘째 자리)·출발 대비·기준(마지막 관측), 변화는 모름(null), 링크는 모의매매 화면", () => {
+    const rows = paperPnlRows(paperOverview());
+    expect(rows.map((row) => [row.id, row.name, row.sub, row.valueText, row.unit, row.returnPct, row.day, row.basis, row.href])).toEqual([
+      ["rules", "규칙 계좌", "규칙 · 운용 중", "99,951.00", "달러", -0.05, null, "마지막 관측 2026-10-26 04:56", PAPER_HREF],
+      ["claude", "Claude 계좌", "Claude · 운용 중", "99,967.28", "달러", -0.03, null, "마지막 관측 2026-10-26 04:56", PAPER_HREF],
+      ["bench_spy", "SPY 계좌", "벤치마크 · 운용 중", "99,950.22", "달러", -0.05, null, "마지막 관측 2026-10-26 04:56", PAPER_HREF],
+      ["bench_mix", "60/40 계좌", "벤치마크 · 운용 중", "99,950.39", "달러", -0.05, null, "마지막 관측 2026-10-26 04:56", PAPER_HREF],
+    ]);
+    expect(rows.every((row) => !row.isEstimated && !row.isStale && row.warning === null)).toBe(true);
+  });
+
+  it("순자산·출발 대비·추정·사후 체결 경고는 모의매매 개요의 계좌 행(bookAssetRow)과 같다 — 규칙을 두 곳에 두지 않는다", () => {
+    const overview = paperOverview();
+    overview.pendingBackfill = ["bench_mix"];
+    const rows = paperPnlRows(overview);
+    const context = { pendingBackfill: ["bench_mix"], quotes: overview.quotes };
+    for (const [index, item] of overview.books!.entries()) {
+      const asset = bookAssetRow(item, context);
+      expect(rows[index].returnPct).toBe(asset.changePct);
+      expect(rows[index].warning).toBe(asset.warning);
+      expect(rows[index].valueText).toBe(assetRowModel(asset).valueText);
+    }
+    expect(rows.find((row) => row.id === "bench_mix")?.warning).toBe(PENDING_BACKFILL_WARNING);
+  });
+
+  it("지금 값(current) — 최근 변화는 서버 dayChangePct와 그 이름·기준, 기준 칸은 단계 표기·덧붙임, 추정 배지", () => {
+    const overview = paperOverview();
+    overview.liveSession = { phase: "REGULAR", sessionDate: "2026-10-26" };
+    overview.books![1] = {
+      ...overview.books![1],
+      current: {
+        nav: 100123.45, returnPct: 0.12, exposurePct: 97.5, dayChangePct: 0.3, previousTradingDate: "2026-10-23", previousNavFinal: false,
+        basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-26", atKst: "2026-10-26 23:58 KST", isEstimated: true, livePriced: 8,
+        positionCount: 9, pendingOrders: 0, neutral: false, note: null,
+      },
+    };
+    const claude = paperPnlRows(overview).find((row) => row.id === "claude");
+    expect(claude).toMatchObject({
+      valueText: "100,123.45", returnPct: 0.12, isEstimated: true,
+      day: { pct: 0.3, label: "오늘", base: "10-23 잠정 대비" },
+      basis: "장중 추정 23:58 · 장중가 8/9종목",
+    });
+    // 변화를 모르면(dayChangePct null) 칸은 '—' — 0.00%를 짓지 않습니다.
+    overview.books![1].current!.dayChangePct = null;
+    expect(paperPnlRows(overview).find((row) => row.id === "claude")?.day).toBeNull();
+  });
+
+  it("이전 값 — 기준 칸이 관측 시각을 적으므로 사유에서 그 시각을 뺀다(같은 시각을 한 줄에 두 번 적지 않음)", () => {
+    const overview = paperOverview();
+    overview.quotes!.stale = true;
+    overview.books![1].staleCount = 2;
+    const rows = paperPnlRows(overview);
+    expect(rows.map((row) => row.staleReason)).toEqual([
+      "관측치 저장본이 늦음",
+      "가격 없음 2종목 — 지난 값으로 평가 · 관측치 저장본이 늦음",
+      "관측치 저장본이 늦음",
+      "관측치 저장본이 늦음",
+    ]);
+    expect(rows.every((row) => row.isStale && row.basis === "마지막 관측 2026-10-26 04:56")).toBe(true);
+  });
+
+  it("출발 전 계좌는 순자산·수익률을 모르면 null, 변화·기준 없음 — 0으로 채우지 않는다", () => {
+    const overview = paperOverview();
+    overview.books![0] = book({ code: "claude2", kind: "CLAUDE", label: "Claude 계좌2", status: "NOT_STARTED", startedOn: null, nav: null,
+      returnPct: null, lastObservedAtKst: null });
+    const [first] = paperPnlRows(overview);
+    expect(first).toMatchObject({ valueText: null, returnPct: null, day: null, basis: null, isStale: false });
+    expect(first.sub).toBe("Claude · 시작 전 · 현금만");
+  });
+
+  it("한국 — 원 단위 정수, 링크 /paper/kr, 사후 체결 경고 없음 · 장부를 읽을 수 없으면 빈 목록", () => {
+    const overview = paperOverviewKr();
+    overview.pendingBackfill = ["kr_bench_mix"];
+    const rows = paperPnlRows(overview, { market: "KR" });
+    expect(rows.map((row) => [row.name, row.valueText, row.unit, row.href, row.warning])).toEqual([
+      ["한국 규칙 계좌", "99,874,120", "원", PAPER_KR_HREF, null],
+      ["한국 Claude 계좌", "100,312,450", "원", PAPER_KR_HREF, null],
+      ["KODEX 200 계좌", "100,528,900", "원", PAPER_KR_HREF, null],
+      ["한국 60/40 계좌", "100,211,300", "원", PAPER_KR_HREF, null],
+    ]);
+    expect(paperPnlRows({ available: false, message: "모의 매매 테이블이 아직 없습니다" })).toEqual([]);
+    expect(paperPnlRows(null)).toEqual([]);
+  });
+
+  it("출처 — 장부, 장중 추정인 행이 있으면 장중 시세로 다시 평가했다는 말을 덧붙임(한국은 한국 장부)", () => {
+    expect(paperHomeModel(paperOverview(), paperStatus(true)).source).toBe(PAPER_SOURCES.ledger);
+    expect(paperHomeModel(paperOverviewKr(), paperStatusKr(true), { market: "KR" }).source).toBe(PAPER_SOURCES.krLedger);
+    const overview = paperOverview();
+    overview.books![2] = {
+      ...overview.books![2],
+      current: {
+        nav: 100100, returnPct: 0.1, exposurePct: 99, dayChangePct: 0.2, previousTradingDate: "2026-10-23", previousNavFinal: true,
+        basis: "LIVE", stage: "LIVE", tradingDate: "2026-10-26", atKst: "2026-10-26 23:58 KST", isEstimated: true, livePriced: 1,
+        positionCount: 1, pendingOrders: 0, neutral: false, note: null,
+      },
+    };
+    expect(paperHomeModel(overview, paperStatus(true)).source).toContain("보유를 장중 1분봉 시세로 다시 평가한 표시 전용 추정");
+  });
+});
+
+describe("sourceIncidentsModel — 끊긴 출처(운영자)", () => {
+  it("서버 순서 그대로 이름·종류·사유·끊긴 시각(KST), 없으면 '끊긴 출처가 없습니다'", () => {
+    const model = sourceIncidentsModel(infoSources([
+      incident({ key: "wolf|blocked", label: "Wolf Street" }),
+      incident({ key: "waedge|format", label: "waedge 시장", kind: "format", kindLabel: "형식 바뀜", reason: null, since: null }),
+    ]));
+    expect(model).toEqual({
+      rows: [
+        { key: "wolf|blocked", label: "Wolf Street", kindLabel: "차단됨 — 잠시 멈춤", reason: "HTTP 403", since: "2026-10-26 15:10" },
+        { key: "waedge|format", label: "waedge 시장", kindLabel: "형식 바뀜", reason: null, since: null },
+      ],
+      message: null,
+    });
+    expect(sourceIncidentsModel(infoSources())).toEqual({ rows: [], message: NO_SOURCE_INCIDENTS });
+  });
+
+  it("판정 기록이 없거나(로컬 PC) 저장본을 읽을 수 없으면 '끊긴 출처가 없습니다'라고 적지 않는다 · 응답 전에는 줄도 글도 없음", () => {
+    expect(sourceIncidentsModel({ ...infoSources(), recorded: false }).message).toBe("출처 판정 기록이 없습니다 — 판정은 운영 서버에서만 합니다");
+    expect(sourceIncidentsModel({ checkedAt: "2026-10-26 16:50 KST", available: false, incidents: [] }).message)
+      .toBe("출처 판정 저장본을 아직 읽을 수 없습니다");
+    expect(sourceIncidentsModel(null)).toEqual({ rows: [], message: null });
+  });
+});
+
+describe("homeKpiItems — 맨 위 KPI 띠", () => {
+  const CLOCK_ONLY = { now: MON_1651, krOfficial: null };
+  const ready = (overrides: Partial<HomeKpiInput> = {}): HomeKpiInput => ({
+    regime: { data: regimeExpansion(), error: null },
+    macro: { data: macroOverviewWithKpiCards(), error: null },
+    unread: { data: { unread: 2 }, error: null },
+    issues: { data: issues(0, 0), error: null },
+    ...overrides,
+  });
+  /** 개요에 KPI 시장 카드 넷 가운데 셋(코스피는 빼 둠 — '저장본에 없음')을 넣습니다. */
+  function macroOverviewWithKpiCards() {
+    const overview = macroOverview();
+    overview.categories[0].items.push(macroItem({
+      key: "us10y", name: "미국채 10년물 수익률(%)", market: "ust", ticker: "^TNX", price: 4.992, priceStr: "4.992",
+      delta: -0.007, pct: -0.14, deltaStr: "-0.007 (-0.14%)", lastTs: "2026-10-26 16:51 KST",
+    }));
+    return overview;
+  }
+
+  it("운영자 일곱 타일(국면·시장 넷·읽지 않은 알림·수집 오류), 회원은 수집 오류 없이 여섯 — 모의매매 값은 없다", () => {
+    expect(homeKpiItems(ready(), { owner: true, clock: CLOCK_ONLY }).map((item) => [item.key, item.label, item.href])).toEqual([
+      ["regime", "국면", "/regime"],
+      ["sp500", "S&P 500", "/markets/i/sp500"],
+      ["kospi", "코스피", "/markets/i/kospi"],
+      ["usdkrw", "원/달러", "/markets/i/usdkrw"],
+      ["us10y", "미국채 10년물", "/markets/i/us10y"],
+      ["unread", "읽지 않은 알림", "/alerts"],
+      ["errors", "수집 오류", "/status"],
+    ]);
+    expect(HOME_KPI_MARKET_KEYS).toEqual(["sp500", "kospi", "usdkrw", "us10y"]);
+    const member = homeKpiItems(ready(), { owner: false, clock: CLOCK_ONLY });
+    expect(member.map((item) => item.key)).toEqual(["regime", "sp500", "kospi", "usdkrw", "us10y", "unread"]);
+    expect(JSON.stringify(member)).not.toMatch(/paper|모의|계좌/);
+  });
+
+  it("국면 — 백엔드 라벨(라벨 값), 기준일 줄 · 판정 불가는 중립, 기준일을 모르면 줄 없음", () => {
+    const [regime] = homeKpiItems(ready(), { owner: true, clock: CLOCK_ONLY });
+    expect(regime).toMatchObject({ value: "확장 (Expansion)", valueKind: "label", neutral: false, note: "기준일 2026-10-16" });
+    const [unknown] = homeKpiItems(ready({ regime: { data: regimeUnknown(), error: null } }), { owner: true, clock: CLOCK_ONLY });
+    expect(unknown).toMatchObject({ value: "판정 불가", neutral: true, note: null });
+  });
+
+  it("시장 — 값은 수집기 priceStr, 변화는 delta·pct 그대로(수집기 자릿수), 단위, 시각 · 저장본에 없는 카드는 '—' + '저장본에 없음'", () => {
+    const items = homeKpiItems(ready(), { owner: true, clock: CLOCK_ONLY });
+    const byKey = new Map(items.map((item) => [item.key, item]));
+    expect(byKey.get("sp500")).toMatchObject({
+      value: "7,622.99", unit: null, change: { change: -40.4599609375, changePct: -0.5279601211768575, digits: 2, pctDigits: 2 },
+      note: "2026-10-24 04:59", isEstimated: false, isStale: false,
+    });
+    expect(byKey.get("usdkrw")).toMatchObject({ value: "1,322.28", unit: "원" });
+    expect(byKey.get("us10y")).toMatchObject({ value: "4.992", unit: "%", change: { change: -0.007, changePct: -0.14, digits: 3, pctDigits: 2 } });
+    expect(byKey.get("kospi")).toMatchObject({ value: null, emptyReason: KPI_NOT_IN_SNAPSHOT });
+  });
+
+  it("시장 — 이어받은 값은 이전 값 + 사유, 추정은 추정, 수집 실패는 '—' + '수집 실패'(0을 만들지 않음), 값이 있는 경고는 상태 글", () => {
+    const overview = macroOverviewWithKpiCards();
+    overview.categories[0].items[0] = { ...overview.categories[0].items[0], isStale: true, staleReason: "Yahoo 429 — 직전 저장본 값", isEstimated: true };
+    overview.categories[1].items[0] = { ...overview.categories[1].items[0], status: "fail" };
+    overview.categories[0].items[1] = { ...overview.categories[0].items[1], warning: "장 마감 뒤 값" };
+    const byKey = new Map(homeKpiItems(ready({ macro: { data: overview, error: null } }), { owner: true, clock: CLOCK_ONLY })
+      .map((item) => [item.key, item]));
+    expect(byKey.get("usdkrw")).toMatchObject({ value: "1,322.28", isStale: true, staleReason: "Yahoo 429 — 직전 저장본 값", isEstimated: true });
+    expect(byKey.get("sp500")).toMatchObject({ value: null, emptyReason: "수집 실패", change: { change: null, changePct: null } });
+    expect(byKey.get("sp500")?.status).toBeUndefined();
+    expect(byKey.get("us10y")).toMatchObject({ value: "4.992", status: { tone: "warn", text: "장 마감 뒤 값" } });
+  });
+
+  it("읽는 중이면 자리표시(pending), 읽지 못했으면 '—' + '읽지 못함' — 타일마다 따로(일부 실패)", () => {
+    const items = homeKpiItems(
+      ready({ regime: { data: null, error: null }, macro: { data: null, error: "요청 실패 (HTTP 500)" }, unread: { data: null, error: null } }),
+      { owner: true, clock: CLOCK_ONLY },
+    );
+    expect(items.map((item) => [item.key, item.pending === true, item.value, item.emptyReason ?? null])).toEqual([
+      ["regime", true, null, null],
+      ["sp500", false, null, KPI_READ_FAILED],
+      ["kospi", false, null, KPI_READ_FAILED],
+      ["usdkrw", false, null, KPI_READ_FAILED],
+      ["us10y", false, null, KPI_READ_FAILED],
+      ["unread", true, null, null],
+      ["errors", false, 0, null],
+    ]);
+  });
+
+  it("읽지 않은 알림 — 'N건', 모르면 '—'(0으로 적지 않음)", () => {
+    const unread = (data: { unread?: number | null } | null) =>
+      homeKpiItems(ready({ unread: { data, error: null } }), { owner: false, clock: CLOCK_ONLY }).find((item) => item.key === "unread");
+    expect(unread({ unread: 2 })).toMatchObject({ value: 2, unit: "건" });
+    expect(unread({ unread: 2 })?.format?.(1234)).toBe("1,234");
+    expect(unread({ unread: null })?.value).toBeNull();
+    expect(unread({})?.value).toBeNull();
+  });
+
+  it("수집 오류 — 오류 수(건), 오류가 있으면 위험·경고나 누락만 있으면 주의 상태 글(경고·누락 수), 모두 0이면 상태 글 없음", () => {
+    const errors = (response: ReturnType<typeof issues> | null) =>
+      homeKpiItems(ready({ issues: { data: response, error: null } }), { owner: true, clock: CLOCK_ONLY }).find((item) => item.key === "errors");
+    expect(errors(issues(3, 19))).toMatchObject({ value: 3, unit: "건", status: { tone: "danger", text: "경고 19건 · 누락 0개" } });
+    expect(errors(issues(0, 19))).toMatchObject({ value: 0, status: { tone: "warn", text: "경고 19건 · 누락 0개" } });
+    expect(errors(issues(0, 0))?.status).toBeUndefined();
+    expect(errors(issues(0, 0))?.value).toBe(0);
+    const missing = issues(0, 0);
+    missing.counts.missingDatasets = 2;
+    expect(errors(missing)?.status).toEqual({ tone: "warn", text: "경고 0건 · 누락 2개" });
+    // 수를 모르면 '—'(0으로 적지 않음), 상태 글도 없음 — counts가 빠진 응답(옛 백엔드)
+    const uncounted = { ...issues(), counts: undefined } as unknown as ReturnType<typeof issues>;
+    expect(errors(uncounted)).toMatchObject({ value: null });
+    expect(errors(uncounted)?.status).toBeUndefined();
+  });
+
+  it("수집 오류 — 수집기에 닿지 못하면 주의 상태 글 '수집기 연결 안 됨'(누락은 모름), 오류가 있으면 위험 톤에 덧붙임", () => {
+    const down = (errors: number) => {
+      const response = { ...issues(errors, 0), collectorReachable: false };
+      response.counts = { ...response.counts, missingDatasets: null };
+      return homeKpiItems(ready({ issues: { data: response, error: null } }), { owner: true, clock: CLOCK_ONLY }).find((item) => item.key === "errors");
+    };
+    expect(down(0)?.status).toEqual({ tone: "warn", text: "수집기 연결 안 됨" });
+    expect(down(2)?.status).toEqual({ tone: "danger", text: "경고 0건 · 누락 — · 수집기 연결 안 됨" });
+  });
+});
+
+it("자동 갱신 간격 — 매크로는 live 없이 5분(Yahoo 429), 모의매매·상태 1분, 국면·알림·끊긴 출처 5분", () => {
+  expect(HOME_REFRESH_MS).toEqual({ regime: 300_000, macro: 300_000, paper: 60_000, alerts: 300_000, storeStatus: 60_000, sources: 300_000 });
 });
