@@ -78,6 +78,12 @@ function stubMedia(initial: boolean) {
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
 /** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(실행 명세 §0 W2·§5) 탭 칸만 고릅니다. */
 const tabLinkLabels = (scope: HTMLElement) => [...scope.querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent ?? "");
+/** 상단바 앱 이름의 바깥 flex 상자(상단바의 직접 자식 span). */
+const appNameBox = () =>
+  [...screen.getByRole("banner").children].find((child) => child.tagName === "SPAN" && /^My Macro/.test(child.textContent ?? "")) as HTMLElement;
+/** 상단바 앱 이름의 보이는 글(sr-only 읽는 글이 아닌 쪽 — 결정 4 뒤 aria-hidden). */
+const appNameVisible = () =>
+  within(appNameBox()).getAllByText(/^My Macro/).find((el) => !el.classList.contains("sr-only")) as HTMLElement;
 
 beforeEach(() => {
   api.apiGetShared.mockReset();
@@ -340,9 +346,13 @@ describe("빵부스러기(넓은 화면 상단바)", () => {
     renderShell(MEMBER_PRO, { path: "/" });
     expect(crumbItems().map((item) => item.textContent)).toEqual(["홈"]);
     expect(within(crumbs()).queryAllByRole("link")).toHaveLength(0);
-    // 빌드 정보의 '© 2026 My Macro Dashboard v2'는 앱 이름이 아니다(^로 시작하는 글만 셈).
-    expect(screen.getAllByText(/^My Macro/)).toHaveLength(1);
-    expect(within(screen.getByRole("banner")).getByText(/^My Macro/).textContent).toBe("My Macro Dashboard v2");
+    // 빌드 정보의 '© 2026 My Macro Dashboard v2'는 앱 이름이 아니다(^로 시작하는 글만 셈). 앱 이름은 보이는 글 하나와 화면 읽기용 sr-only 글
+    // 하나(결정 4)로, 둘 다 상단바 안에 있다.
+    const names = screen.getAllByText(/^My Macro/);
+    expect(names.every((el) => screen.getByRole("banner").contains(el))).toBe(true);
+    expect(names.filter((el) => !el.classList.contains("sr-only"))).toHaveLength(1);
+    expect(names.filter((el) => el.classList.contains("sr-only"))).toHaveLength(1);
+    expect(appNameVisible().textContent).toBe("My Macro Dashboard v2");
   });
 });
 
@@ -355,8 +365,7 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
     expect(classes(header)).toEqual(expect.arrayContaining(["lg:h-12", "lg:flex-nowrap", "flex-wrap"]));
     expect(classes(header).some((name) => /^(lg:)?h-16$/.test(name))).toBe(false);
     // 글은 안쪽 인라인 span(QA-550) — 높이는 그 바깥 flex 상자가 정함
-    const appName = within(header).getByText(/^My Macro/).parentElement as HTMLElement;
-    expect(classes(appName)).toEqual(expect.arrayContaining(["h-16", "lg:h-auto"]));
+    expect(classes(appNameBox())).toEqual(expect.arrayContaining(["h-16", "lg:h-auto"]));
   });
 
   // QA-550: 앱 이름 상자가 flex(좁은 화면 64px 줄의 세로 가운데 맞춤)라 그 안의 글 조각 'My Macro'·' v2'와 안쪽 <span> Dashboard</span>가 각각 flex
@@ -366,8 +375,7 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
   // 수정 전(재현 커밋에서는 it.fails)에는 flex 상자의 직접 자식에 글 노드 'My Macro'·' v2'가 있었습니다.
   it("앱 이름 글은 flex 상자 안의 인라인 span 하나에 담는다 — 글 조각이 따로 flex 항목이 되어 xl에서 단어 사이 공백이 사라지지 않게 (QA-550)", () => {
     renderShell(MEMBER_PRO);
-    const header = screen.getByRole("banner");
-    const box = [...header.children].find((child) => child.tagName === "SPAN" && child.textContent === "My Macro Dashboard v2") as HTMLElement;
+    const box = appNameBox();
     expect(box).toBeTruthy();
     const looseText = [...box.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== "");
     expect(looseText.map((node) => node.textContent)).toEqual([]);
@@ -376,16 +384,45 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
   });
 
   // 2026-11-16 결정 4(사용자 위임, 권장안): xl(1280px)에서 앱 이름 'Dashboard'·검색 단추 256px과 전체 글·장 시계 시각이 한꺼번에 넓어져 빵부스러기 자리가
-  // 1279의 535px에서 1280의 255px로 줄었습니다(기관 상세, 크롬 — 1280~약 1305는 1024보다 좁고 대상 이름이 약 1400까지 잘림). 'Dashboard'(88px)만 2xl(1536px)부터로
-  // 미룹니다 — 1280~1535는 'My Macro v2'. 정보가 담긴 장 시계 시각·검색 안내는 그대로 xl부터입니다(MarketClock·SearchCommand 시험).
+  // 1279의 535px에서 1280의 255px로 줄었습니다(기관 상세, 크롬 — 장 시계 글 폭에 따라 ±13px 안팎. 1280~약 1305는 1024보다 좁고, 긴 대상 이름이 국민연금은
+  // 약 1400, 사우디 국부펀드는 약 1472까지 잘림). 'Dashboard'(88px)만 2xl(1536px)부터로 미룹니다 — 1280~1535는 'My Macro v2'. 정보가 담긴 장 시계
+  // 시각·검색 안내는 그대로 xl부터입니다(MarketClock·SearchCommand 시험).
   // 바꾸기 전에는 숨김 span이 hidden xl:inline이었습니다. jsdom은 배치를 하지 않아 클래스로 봅니다(폭은 브라우저에서 잼).
   it("앱 이름의 'Dashboard'는 2xl(1536px)부터 보이고 그 아래는 'My Macro v2' — DOM 글은 늘 전체 이름 (결정 4)", () => {
     renderShell(MEMBER_PRO);
-    const name = within(screen.getByRole("banner")).getByText(/^My Macro/);
+    const name = appNameVisible();
     expect(name.textContent).toBe("My Macro Dashboard v2");
     const word = [...name.children].find((child) => child.textContent === " Dashboard") as HTMLElement;
     expect(word).toBeTruthy();
     expect(classes(word)).toEqual(["hidden", "2xl:inline"]);
+  });
+
+  // 결정 4의 조건: 앱 이름의 접근 이름(화면 읽기 프로그램이 읽는 글)은 모든 폭에서 전체 이름입니다. 숨긴 낱말은 display:none이라 보이는 글만 두면
+  // 2xl 아래(1280~1535 포함)에서 'My Macro v2'로 읽혔습니다(크롬 접근성 트리 — StaticText 'My Macro'·' v2'). 그래서 보이는 글은 aria-hidden으로 빼고,
+  // 폭 변형 없는 sr-only 글 하나에 전체 이름을 둡니다. 'sr-only 2xl:not-sr-only'처럼 낱말만 숨기면 앞 공백 없는 'Dashboard'가 따로 읽혀 쓰지 않습니다.
+  // jsdom은 CSS가 없어 display:none을 모르므로, 읽히는 글 노드(aria-hidden 밖)의 조상에 폭에 따라 숨기거나 보이는 클래스가 없는지 봅니다.
+  // 수정 전에는 ' Dashboard' 글이 aria-hidden 밖의 'hidden 2xl:inline' span 안에 있어 이 시험이 실패했습니다.
+  it("앱 이름은 모든 폭에서 화면 읽기 프로그램에 전체 이름으로 읽힌다 — 보이는 글은 aria-hidden, 읽는 글은 폭 변형 없는 sr-only 하나 (결정 4)", () => {
+    renderShell(MEMBER_PRO);
+    const box = appNameBox();
+    const widthDependent = /^(hidden|(sm|md|lg|xl|2xl):(hidden|inline|block|flex|inline-flex|sr-only|not-sr-only))$/;
+    const spoken: string[] = [];
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement as HTMLElement;
+      if (parent.closest('[aria-hidden="true"]')) continue;
+      for (let el: HTMLElement | null = parent; el && el !== box.parentElement; el = el.parentElement) {
+        expect(classes(el).filter((name) => widthDependent.test(name))).toEqual([]);
+      }
+      spoken.push(node.textContent ?? "");
+    }
+    expect(spoken.join("")).toBe("My Macro Dashboard v2");
+    const srOnly = [...box.querySelectorAll(".sr-only")];
+    expect(srOnly.map((el) => el.textContent)).toEqual(["My Macro Dashboard v2"]);
+    expect(classes(srOnly[0])).toEqual(["sr-only"]);
+    // 폭에 따라 숨는 낱말은 읽히지 않는 보이는 글 안에 있다
+    const word = [...box.querySelectorAll("span")].find((el) => el.textContent === " Dashboard") as HTMLElement;
+    expect(word.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
   it("알림 벨은 좁은 화면 44px·넓은 화면 30px(상단바 조작 높이 — 검색·새로고침·계정과 같음)", () => {
