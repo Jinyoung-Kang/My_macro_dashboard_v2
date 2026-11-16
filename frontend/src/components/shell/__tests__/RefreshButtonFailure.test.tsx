@@ -106,4 +106,22 @@ describe("새로고침 실패 안내 — 결과 낱말 먼저, 경고 톤 + 아�
     expect(second.status.querySelector("svg")).toBeNull();
     expect(second.status.querySelector(".text-warn")).toBeNull();
   });
+
+  // QA-552 후속(검토): 결과 낱말 '새로고침하지 못했습니다'가 길어(12px 글 11자 — 약 130px), 같은 배치의 QA-547로 안내가 먼저 줄면 보이는 글이
+  // '새로고침하…'(1024 99.7px)·'새로고…'(1280 74.4px)뿐이었고(tip 8b7524ab 정적 하네스), 수집기에 닿지 못한 200 응답(triggered=false)은 머리말 없이
+  // 서버 글로 시작해('수집기에 연…'·'수집기…') 결과 낱말이 문장 끝에 있었습니다. 두 갈래 모두 짧은 결과 낱말 '새로고침 실패'를 앞에 둡니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 title이 '새로고침하지 못했습니다 — 백엔드 API(…)에 연결하지 못했습니다'와
+  // '수집기에 연결하지 못했습니다. 저장본을 그대로 표시합니다.'(머리말 없음)였습니다.
+  it.fails("두 실패 갈래 모두 짧은 결과 낱말이 먼저 — 요청 실패도, 수집기에 닿지 못한 200 응답도 '새로고침 실패 — 사유' (QA-552)", async () => {
+    api.apiPost.mockRejectedValue(new NetworkError(NETWORK_REASON));
+    const first = renderRefresh();
+    fireEvent.click(first.button);
+    await waitFor(() => expect(first.status.getAttribute("title")).toBe(`새로고침 실패 — ${NETWORK_REASON}`));
+    cleanup();
+
+    api.apiPost.mockResolvedValue({ readMode: "auto", triggered: false, message: COLLECTOR_DOWN });
+    const second = renderRefresh();
+    fireEvent.click(second.button);
+    await waitFor(() => expect(second.status.getAttribute("title")).toBe(`새로고침 실패 — ${COLLECTOR_DOWN}`));
+  });
 });
