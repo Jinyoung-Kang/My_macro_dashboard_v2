@@ -420,6 +420,20 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(within(tile("수집 오류")).getByText("오류:").className).toContain("sr-only");
     expect(within(tile("끊긴 출처")).getByText("주의:").className).toContain("sr-only");
   });
+
+  it("상태 글의 낭독 머리말(status.srPrefix)을 주면 톤 기본 머리말 대신 그 말 — 아이콘·톤 색은 그대로", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[{ key: "t10y3m", label: "10Y-3M", value: -0.62, status: { tone: "danger", text: "깊은 역전", srPrefix: "주의: " } }]}
+      />,
+    );
+    const text = within(tile("10Y-3M")).getByText("깊은 역전");
+    expect(text.parentElement?.className).toContain("text-danger");
+    expect(text.parentElement?.querySelector("svg[aria-hidden='true']")).toBeTruthy();
+    expect(within(tile("10Y-3M")).getByText("주의:").className).toContain("sr-only");
+    expect(within(tile("10Y-3M")).queryByText("오류:")).toBeNull();
+  });
 });
 
 describe("KpiStrip — 출처 줄", () => {

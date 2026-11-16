@@ -30,8 +30,11 @@ export type KpiItem = {
    * (공용 변화 칩의 unit — 금리차 '%p'·계약 등, 주지 않으면 단위 없음 — 홈 띠 그대로).
    */
   change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null; unit?: string | null };
-  /** 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). */
-  status?: { tone: "ok" | "warn" | "danger"; text: string };
+  /**
+   * 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). `srPrefix`는 톤 기본 낭독 머리말(위험 '오류: '·주의 '주의: ') 대신 읽을 머리말 — 위험 톤이
+   * 오류가 아니라 시장 상태(매크로 심화 지표 '깊은 역전' 등)일 때 '주의: '로(안내 상자 위험 톤과 같은 말). 주지 않으면 그대로.
+   */
+  status?: { tone: "ok" | "warn" | "danger"; text: string; srPrefix?: string };
   /** 12px 보조 글(기준일 등 — 값의 시각은 출처 줄의 `asOf`로). */
   note?: string | null;
   /**
@@ -220,7 +223,7 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
       ) : null}
       {item.status && !item.pending ? (
         <div className="mt-1 text-xs leading-4">
-          <StatusText tone={item.status.tone} iconSize={12}>
+          <StatusText tone={item.status.tone} iconSize={12} srPrefix={item.status.srPrefix}>
             {item.status.text}
           </StatusText>
         </div>
