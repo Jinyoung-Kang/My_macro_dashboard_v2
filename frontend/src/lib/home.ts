@@ -669,6 +669,7 @@ export type HomeKpi = {
   emptyReason?: string | null;
   pending?: boolean;
   pendingLines?: number;
+  pendingLinesWide?: number;
   isEstimated?: boolean;
   isProxy?: boolean;
   isStale?: boolean;
@@ -717,25 +718,32 @@ export const KPI_READ_FAILED = "읽지 못함";
 export const KPI_NOT_IN_SNAPSHOT = "저장본에 없음";
 
 /**
- * 읽는 중 시장 타일의 자리 줄 수 — 값이 온 뒤의 변화 칩 1 · 이전 값 배지 1 · 출처 줄 3줄(140~180px 타일에서 접힌 줄 수) 자리입니다.
- * 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 시장 타일에만 주면 띠 높이가 맞습니다(국면·알림 타일은 자리표시 한 줄 — QA-598).
+ * 읽는 중 시장 타일의 자리 줄 수 — 값이 온 뒤의 변화 칩 1 · 이전 값 배지 1 · 출처 줄 3줄(타일이 좁은 두 칸 390·네 칸 1024~1060에서 접힌 줄 수) 자리입니다.
+ * 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 시장 타일에만 주면 띠 높이가 맞습니다(국면·알림 타일은 자리표시 한 줄 — QA-598). 두 칸·좁은 네 칸·
+ * 한 줄 배치(xl)는 네 줄로 줄이면 이전 값 자료(배지 있음)에서 더 밀려 다섯 줄 그대로 둡니다(QA-604 — 평소 자료와 이전 값 자료 모두 CLS 0.1 아래).
  */
 const KPI_MARKET_PENDING_LINES = 5;
+/**
+ * 타일이 넓은 배치(세 칸 sm~lg 192~312px · 띠 816px 이상의 네 칸 198px~ — components/patterns KpiStrip `pendingLinesWide`)의 시장 타일 자리 줄 수 —
+ * 출처 줄이 덜 꺾여 읽은 뒤 타일이 QA 자료(이전 값 배지 있음) 154~187px, 새 자료(배지 없음) 128~178px라 다섯 줄 자리표시(200px)가 두 자료 모두에서
+ * 컸습니다(QA-604). 네 줄이면 172px입니다(막대 수는 그대로 — 다섯째 막대를 그 배치에서 CSS로 감춤).
+ */
+const KPI_MARKET_PENDING_LINES_WIDE = 4;
 /**
  * 읽는 중 수집 오류 타일(운영자)의 자리 줄 수 — 값 뒤 상태 글 한 줄(경고·누락 수) 자리입니다. 일곱 타일의 마지막이라 두 칸(390)·세 칸(sm)에서는 마지막 줄에
  * 혼자 남아 그 줄 높이를 이 타일이 정합니다(QA 데이터 390 읽은 뒤 92px — 자리 줄이 없으면 64px, 하나면 88px). 다른 배치에서는 같은 줄의 시장 타일이 더 높습니다.
  */
 const KPI_ERRORS_PENDING_LINES = 1;
 
-/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). `pendingLines`는 읽는 중일 때만 넘깁니다. */
-function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>, pendingLines?: number): HomeKpi | null {
+/** 읽는 중·실패면 그 상태의 타일, 값이 있으면 null(그 다음을 부르는 쪽이 그림). `pendingLines`·`pendingLinesWide`는 읽는 중일 때만 넘깁니다. */
+function kpiReadState(base: HomeKpi, read: HomeReadState<unknown>, pendingLines?: number, pendingLinesWide?: number): HomeKpi | null {
   if (read.data !== null) {
     return null;
   }
   if (read.error !== null) {
     return { ...base, value: null, emptyReason: KPI_READ_FAILED };
   }
-  return { ...base, value: null, pending: true, ...(pendingLines ? { pendingLines } : {}) };
+  return { ...base, value: null, pending: true, ...(pendingLines ? { pendingLines } : {}), ...(pendingLinesWide ? { pendingLinesWide } : {}) };
 }
 
 function regimeKpi(read: HomeReadState<RegimeResponse>): HomeKpi {
@@ -755,7 +763,7 @@ function marketKpi(
   const { label, unit } = HOME_KPI_MARKET_LABELS[key];
   const href = indicatorHref(key);
   const base: HomeKpi = { key, label, value: null, href };
-  const state = kpiReadState(base, read, KPI_MARKET_PENDING_LINES);
+  const state = kpiReadState(base, read, KPI_MARKET_PENDING_LINES, KPI_MARKET_PENDING_LINES_WIDE);
   if (state) return state;
   const overview = read.data as MacroOverview;
   const item = (overview.categories ?? []).flatMap((category) => category.items ?? []).find((card) => card.key === key);

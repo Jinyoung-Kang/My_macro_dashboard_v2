@@ -852,7 +852,7 @@ describe("homeKpiItems — 맨 위 KPI 띠", () => {
   // 에서는 읽은 뒤 타일보다 자리표시가 커 값이 오면 아래 전체가 올라왔습니다(QA 스택 새 자료 CLS 768 0.082·1000 0.095·lg 1200 0.075). 그 배치에서는
   // 넷째 줄까지만 둡니다(components/patterns KpiStrip이 다섯째 막대를 CSS로 감춤 — 막대 수는 그대로).
   // 수정 전(재현 커밋에서는 it.fails) 시장 타일에 pendingLinesWide 칸이 없었습니다(undefined).
-  it.fails("읽는 중 시장 타일 넷은 넓은 칸 배치 자리 줄 4(pendingLinesWide) — 국면·알림·수집 오류 타일과 실패·읽은 뒤 타일에는 없다 (QA-604)", () => {
+  it("읽는 중 시장 타일 넷은 넓은 칸 배치 자리 줄 4(pendingLinesWide) — 국면·알림·수집 오류 타일과 실패·읽은 뒤 타일에는 없다 (QA-604)", () => {
     const pending = homeKpiItems(
       ready({ regime: { data: null, error: null }, macro: { data: null, error: null }, unread: { data: null, error: null }, issues: { data: null, error: null } }),
       { owner: true, clock: CLOCK_ONLY },

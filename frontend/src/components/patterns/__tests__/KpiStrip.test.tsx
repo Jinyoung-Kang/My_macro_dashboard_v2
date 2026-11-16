@@ -300,8 +300,8 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
   // 768 0.082·900 0.093·1000 0.095·820x1180 0.093~0.113, lg 1100~1279 0.041~0.075). jsdom은 배치를 재지 못해 클래스로 봅니다.
   // 수정 전(재현 커밋에서는 it.fails) 다섯째 덧 막대의 클래스는 'h-3.5 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border w-3/5'
   // (감추는 클래스 없음 — pendingLinesWide를 읽지 않음)였습니다.
-  it.fails("넓은 칸 배치 자리 줄(pendingLinesWide) — 그 수 이상 순번의 덧 막대만 세 칸(sm~lg)·띠 816px 이상의 네 칸에서 감추고, 앞 막대·읽어 주기·막대 수는 그대로 (QA-604)", () => {
-    const market = { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 5, pendingLinesWide: 4 };
+  it("넓은 칸 배치 자리 줄(pendingLinesWide) — 그 수 이상 순번의 덧 막대만 세 칸(sm~lg)·띠 816px 이상의 네 칸에서 감추고, 앞 막대·읽어 주기·막대 수는 그대로 (QA-604)", () => {
+    const market: KpiItem = { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 5, pendingLinesWide: 4 };
     const items = (n: number): KpiItem[] => [
       market,
       ...Array.from({ length: n - 1 }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: null, pending: true, pendingLines: 5 })),
