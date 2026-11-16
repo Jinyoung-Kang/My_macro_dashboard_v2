@@ -8,7 +8,7 @@
  * 좁은 화면의 더보기 계정 영역(단추)은 MoreMenu.test가 봅니다.
  * jsdom에는 CSS가 없어 왼쪽 내비와 하단 탭 바가 함께 DOM에 있으므로 메뉴는 nav 이름(주 메뉴·하단 메뉴·…하위 메뉴)으로 좁혀 봅니다.
  */
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
@@ -54,6 +54,26 @@ function openAccountMenu(): HTMLElement {
   return screen.getByRole("menu", { name: "계정 메뉴" });
 }
 const bottomNav = () => screen.getByRole("navigation", { name: "하단 메뉴" });
+
+/** 폭을 바꿀 수 있는 matchMedia 대역(hooks/__tests__/useWideShell.test의 stubMedia와 같음) — change 듣는 쪽을 모아 resize로 부릅니다. */
+function stubMedia(initial: boolean) {
+  let wide = initial;
+  const listeners = new Set<() => void>();
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    get matches() {
+      return wide && query === WIDE_SHELL_MEDIA;
+    },
+    media: query,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }));
+  return {
+    resize(next: boolean) {
+      wide = next;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
 const linkLabels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent ?? "");
 /** 주 메뉴의 탭 링크만(data-nav-tab) — 나무 메뉴가 지금 탭의 하위 화면 링크를 같은 nav 안에 펼치므로(실행 명세 §0 W2·§5) 탭 칸만 고릅니다. */
 const tabLinkLabels = (scope: HTMLElement) => [...scope.querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent ?? "");
@@ -604,6 +624,48 @@ describe("운영자 수동 새로고침(넓은 화면 상단바의 아이콘 단
       expect(screen.queryByRole("button", { name: /수동 새로고침/ })).toBeNull();
       expect(within(screen.getByRole("banner")).queryByRole("status")).toBeNull();
       cleanup();
+    }
+  });
+});
+
+describe("넓은 화면 전용 덮개(계정 메뉴·아이콘 단추의 이름 툴팁) — 폭이 lg 아래로 바뀌면 닫힌다", () => {
+  // QA-554: 계정 메뉴와 새로고침·접기 단추는 넓은 화면에서만 보이는데(CSS hidden lg:flex), 열림 상태는 폭과 따로 움직였습니다 — QA 스택에서 1024에 연
+  // 계정 메뉴가 768(태블릿 회전)·1023(창 줄이기)으로 바뀌어도 열린 채 좁은 상단바 왼쪽 위 (0,4)로 옮겨 앱 이름·검색 단추를 덮었고(모달이라 body
+  // pointer-events none, 뒤 화면 aria-hidden 그대로), 새로고침·접기 단추의 이름 툴팁도 (0,6)·(6,0)에 남았습니다. 같은 P3의 알림 벨 툴팁만 넓은 화면과
+  // 묶여(useWideShell) 바로 닫혔습니다. 넓은 화면에서 좁은 화면으로 바뀌면 계정 메뉴를 닫고(다시 넓혀도 저절로 열리지 않음), 넓은 화면 전용 단추의
+  // 이름 툴팁은 넓은 화면에서만 엽니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 resize(false) 뒤에도 role=menu가 남고 여는 단추가 aria-expanded=true였습니다.
+  it.fails("넓게 연 계정 메뉴는 폭이 lg 아래로 바뀌면 닫히고(aria-expanded false) 다시 넓혀도 닫힌 채 — 새로고침·접기 단추의 이름 툴팁도 닫힌다 (QA-554)", async () => {
+    const media = stubMedia(true);
+    try {
+      renderShell(LOCAL_OWNER);
+      const trigger = screen.getByRole("button", { name: "계정 메뉴" });
+      fireEvent.keyDown(trigger, { key: "Enter" });
+      expect(screen.getByRole("menu", { name: "계정 메뉴" })).toBeTruthy();
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+
+      act(() => media.resize(false));
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      act(() => media.resize(true));
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+      for (const [name, tip] of [
+        ["데이터 수동 새로고침", "데이터 수동 새로고침"],
+        ["왼쪽 메뉴 접기", "왼쪽 메뉴 접기 ([)"],
+      ]) {
+        act(() => media.resize(true));
+        const button = screen.getByRole("button", { name });
+        act(() => button.focus());
+        expect(screen.getByRole("tooltip").textContent).toBe(tip);
+        act(() => media.resize(false));
+        expect(screen.queryByRole("tooltip"), name).toBeNull();
+        act(() => button.blur());
+      }
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
     }
   });
 });
