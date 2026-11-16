@@ -8,6 +8,7 @@
  *   (문턱 근처의 손떨림이 프레임마다 접고 펴지 않게).
  * - 키보드(손잡이 — role=separator): ←·→ 16px(Shift 64px), Home 최소·End 최대, Enter 접기·펼치기. 접힌 동안 →·Enter는 기억한 폭으로,
  *   End는 최대 폭으로 펼치고 ←·Home은 그대로입니다(이미 가장 왼쪽).
+ * - 끌지 않는 포인터 수단: 계정 메뉴의 '왼쪽 메뉴 폭' 세 단계(NAV_WIDTH_PRESETS — 좁게·기본·넓게)로 펼친 폭을 고릅니다.
  */
 
 /**
@@ -18,6 +19,24 @@
 export const NAV_WIDTH_MIN = 200;
 export const NAV_WIDTH_MAX = 320;
 export const NAV_WIDTH_DEFAULT = 220;
+/**
+ * 계정 메뉴 '왼쪽 메뉴 폭'의 세 단계(px) — 손잡이를 끌지 않고 24px 이상의 메뉴 항목으로 폭을 고르는 수단입니다(WCAG 2.2 2.5.7 끌기 동작·2.5.8 누름 자리,
+ * 2026-11-16 결정 — 사용자 위임, 권장안). 좁게는 하한, 기본은 기본 폭이고, 넓게(280)는 상한(320)보다 낮게 둡니다 — 창 폭 1280에서 메뉴를 317px 넘게
+ * 넓히면 정보 검색 대상 화면의 두 칸 줄 제목 칸이 목표(236px) 아래로 줄어(진행 기록 'P3 추가'의 '남긴 것'), 메뉴가 고르게 하는 폭은 그 아래에 둡니다.
+ * 끌어서 정한 그 밖의 폭(예: 250)은 어느 단계와도 같지 않습니다(메뉴에서 고른 항목 없음).
+ */
+export const NAV_WIDTH_PRESETS: readonly { label: string; width: number }[] = [
+  { label: "좁게", width: NAV_WIDTH_MIN },
+  { label: "기본", width: NAV_WIDTH_DEFAULT },
+  { label: "넓게", width: 280 },
+];
+
+/** 펼친 폭과 같은 단계 — 없으면(끌어서 정한 폭) null. 펼친 폭은 잘라서 견줍니다(저장값 검사와 같은 규칙). */
+export function navWidthPreset(width: number): { label: string; width: number } | null {
+  const value = clampNavWidth(width);
+  return NAV_WIDTH_PRESETS.find((preset) => preset.width === value) ?? null;
+}
+
 /** 접힌 아이콘 레일의 폭(px). */
 export const NAV_RAIL_WIDTH = 48;
 /** 끌어서 이 폭(px) 아래로 놓이면 레일로 접힙니다 — 하한(200)보다 더 끌어야 접혀 실수로 접히지 않습니다. */

@@ -16,12 +16,14 @@ import {
   NAV_WIDTH_DEFAULT,
   NAV_WIDTH_MAX,
   NAV_WIDTH_MIN,
+  NAV_WIDTH_PRESETS,
   clampNavWidth,
   navDragLayout,
   navKeyLayout,
   navSeparatorValue,
   navShownWidth,
   navSnapThreshold,
+  navWidthPreset,
   parseNavWidth,
 } from "../navWidth";
 
@@ -197,5 +199,28 @@ describe("navSeparatorValue — 손잡이의 aria-valuenow·aria-valuetext", () 
   it("펼쳤으면 그 폭과 'Npx', 접혔으면 하한(가장 왼쪽 자리)과 접힘·펼 때의 폭", () => {
     expect(navSeparatorValue({ collapsed: false, width: 260 })).toEqual({ now: 260, text: "260px" });
     expect(navSeparatorValue({ collapsed: true, width: 260 })).toEqual({ now: 200, text: "접힘(아이콘 레일), 펼치면 260px" });
+  });
+});
+
+describe("NAV_WIDTH_PRESETS·navWidthPreset — 계정 메뉴 '왼쪽 메뉴 폭'의 단계(끌지 않는 포인터 수단)", () => {
+  it("좁게 200(하한)·기본 220(기본 폭)·넓게 280 — 모두 하한·상한 안의 정수이고, 넓게는 상한(320)보다 낮다(정보 검색 칸 틀 — 1280에서 317 넘으면 모자람)", () => {
+    expect(NAV_WIDTH_PRESETS.map((preset) => [preset.label, preset.width])).toEqual([
+      ["좁게", 200],
+      ["기본", 220],
+      ["넓게", 280],
+    ]);
+    expect(NAV_WIDTH_PRESETS[0].width).toBe(NAV_WIDTH_MIN);
+    expect(NAV_WIDTH_PRESETS[1].width).toBe(NAV_WIDTH_DEFAULT);
+    for (const preset of NAV_WIDTH_PRESETS) expect(clampNavWidth(preset.width)).toBe(preset.width);
+    expect(NAV_WIDTH_PRESETS[2].width).toBeLessThan(317);
+  });
+
+  it("펼친 폭과 같은 단계, 없으면 null(끌어서 정한 폭) — 잘라서 견준다(하한 아래 190은 좁게, 1000은 320이라 없음)", () => {
+    expect(navWidthPreset(220)?.label).toBe("기본");
+    expect(navWidthPreset(280)?.label).toBe("넓게");
+    expect(navWidthPreset(200)?.label).toBe("좁게");
+    expect(navWidthPreset(190)?.label).toBe("좁게");
+    expect(navWidthPreset(250)).toBeNull();
+    expect(navWidthPreset(1000)).toBeNull();
   });
 });

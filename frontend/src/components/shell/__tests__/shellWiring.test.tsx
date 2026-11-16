@@ -5,6 +5,8 @@
  *
  * - 넓은 화면: [ → 왼쪽 메뉴가 48px 레일로 접힘(셸 변수·하위 칸 사라짐·저장 '1'), 다시 [ → 펼침. 좁은 화면에서는 [가 아무것도 하지 않음(글자 그대로).
  * - 왼쪽 메뉴의 폭 손잡이를 끌면 셸 뿌리의 변수(인라인 style)가 끈 폭을 따라가고, [로 접었다 펴면 그 폭으로 돌아옴(손잡이 자체는 SideNavResize.test).
+ * - 계정 메뉴의 '왼쪽 메뉴 폭'(좁게·기본·넓게 — 끌지 않는 포인터 수단): 펼친 동안 고르면 셸 변수가 그 폭(전환 없음), 접힌 동안 고르면 접기 단추와 같은 길로
+ *   펼침(150ms 전환 켬) — 이미 고른 단계를 골라도. 포커스는 계정 메뉴 여는 단추로.
  * - 상단바의 팔레트 여는 단추(또는 Ctrl+K) → 명령 '왼쪽 메뉴 접기·펼치기' → 팔레트가 닫히고 포커스가 여는 단추로 돌아온 뒤 레일로 접힘. 레일에서도 단추·Ctrl+K가 그대로.
  * - 계정 메뉴 '단축키 도움말' → '단축키' 대화상자(넓은 화면이라 [ 줄이 있음), 닫으면 계정 메뉴 여는 단추로 포커스. ?도 같은 창을 엶.
  * - 덮개(팔레트·계정 메뉴·도움말 창) 안의 [는 메뉴를 접지 않음.
@@ -161,6 +163,59 @@ describe("폭 손잡이 → 셸 뿌리의 메뉴 폭(작업대 P3 추가 '가변
     expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("48px");
     pressInBody("[", { code: "BracketLeft" });
     expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("300px");
+  });
+});
+
+describe("계정 메뉴 '왼쪽 메뉴 폭' → 왼쪽 메뉴(작업대 P3 추가 — 끌지 않는 포인터 수단)", () => {
+  const sideNavBox = () => mainNav().closest("[data-shell-sidenav]") as HTMLElement;
+  const hasMotion = () => sideNavBox().className.split(/\s+/).includes("motion-safe:transition-[width]");
+  const navWidthValue = () => screen.getByRole("separator", { name: "왼쪽 메뉴 폭", hidden: true }).getAttribute("aria-valuenow");
+  function choose(name: string) {
+    fireEvent.keyDown(accountTrigger(), { key: "Enter" });
+    const menu = screen.getByRole("menu", { name: "계정 메뉴" });
+    fireEvent.click(within(within(menu).getByRole("group", { name: "왼쪽 메뉴 폭" })).getByRole("menuitemradio", { name }));
+  }
+
+  it("펼친 동안 '넓게 280px'를 고르면 셸 변수와 손잡이 값이 280px — 전환 없이 바로(손잡이 Home·End와 같음), 저장하고 펼친 채", async () => {
+    stubWide(true);
+    renderShell();
+    choose("넓게 280px");
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("280px");
+    expect(navWidthValue()).toBe("280");
+    expect(hasMotion()).toBe(false);
+    expect(navToggle().getAttribute("aria-pressed")).toBe("false");
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("280");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(accountTrigger()));
+  });
+
+  it("접힌 동안 '좁게 200px'를 고르면 접기 단추와 같은 길로 그 폭으로 펼친다(150ms 전환 켬, 저장 '0') — 포커스는 계정 메뉴 여는 단추로", async () => {
+    stubWide(true);
+    window.localStorage.setItem("shell.navCollapsed", "1");
+    renderShell();
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("48px");
+    choose("좁게 200px");
+    expect(navToggle().getAttribute("aria-pressed")).toBe("false");
+    expect(shellRoot().getAttribute("data-nav")).toBe("expanded");
+    expect(shellRoot().style.getPropertyValue("--shell-nav-w")).toBe("200px");
+    expect(hasMotion()).toBe(true);
+    expect(window.localStorage.getItem("shell.navWidth")).toBe("200");
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("0");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(accountTrigger()));
+  });
+
+  it("접힌 동안 이미 고른 단계(기억한 폭 220 = 기본)를 골라도 펼친다", () => {
+    stubWide(true);
+    renderShell();
+    pressInBody("[", { code: "BracketLeft" });
+    expect(navToggle().getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(accountTrigger(), { key: "Enter" });
+    const menu = screen.getByRole("menu", { name: "계정 메뉴" });
+    const current = within(menu).getByRole("menuitemradio", { name: "기본 220px" });
+    expect(current.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(current);
+    expectCollapsed(false);
   });
 });
 
