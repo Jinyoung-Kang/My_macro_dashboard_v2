@@ -8,6 +8,7 @@ import {
   NAV_DRAG_SLOP,
   NAV_KEY_STEP,
   NAV_KEY_STEP_LARGE,
+  NAV_MOTION_HOLD_MS,
   NAV_MOTION_MS,
   NAV_RAIL_WIDTH,
   NAV_SNAP_HYSTERESIS,
@@ -37,6 +38,9 @@ describe("숫자", () => {
     expect(NAV_SNAP_WIDTH).toBeLessThan(NAV_WIDTH_MIN);
     expect(NAV_SNAP_WIDTH).toBeGreaterThan(NAV_RAIL_WIDTH);
     expect([NAV_KEY_STEP, NAV_KEY_STEP_LARGE, NAV_DRAG_SLOP, NAV_MOTION_MS]).toEqual([16, 64, 3, 150]);
+    // 전환 클래스는 전환보다 조금 더 붙여 둠(끝나기 전에 빠져 튀지 않게)
+    expect(NAV_MOTION_HOLD_MS).toBe(200);
+    expect(NAV_MOTION_HOLD_MS).toBeGreaterThan(NAV_MOTION_MS);
     // 되돌림 여유 16 — 되돌아가는 문턱(124·156)도 레일보다 넓고 하한보다 좁음
     expect(NAV_SNAP_HYSTERESIS).toBe(16);
     expect(NAV_SNAP_WIDTH - NAV_SNAP_HYSTERESIS).toBeGreaterThan(NAV_RAIL_WIDTH);

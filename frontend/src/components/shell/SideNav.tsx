@@ -38,8 +38,8 @@ const OPEN_TAB = "font-semibold text-text hover:bg-surface-2";
 const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
 
 /**
- * 접기·펼치기의 폭 전환 — 150ms(lib/navWidth NAV_MOTION_MS와 같은 값), 움직임 줄이기면 없음. 상자에는 접힘이 바뀌는 때만 붙습니다(useNavResize motion —
- * 끄는 동안과 처음 그릴 때는 없음). 작업대 실행 명세 §3-8의 '모션은 색 전환만'에 대한 2026-11-16 사용자 결정의 예외입니다.
+ * 접기·펼치기의 폭 전환 — 150ms(lib/navWidth NAV_MOTION_MS와 같은 값), 움직임 줄이기면 없음. 상자에는 접힘이 바뀐 뒤 200ms만 붙습니다(useNavResize motion —
+ * 끄는 동안·레일에서 끌어낼 때·처음 그릴 때는 없음). 작업대 실행 명세 §3-8의 '모션은 색 전환만'에 대한 2026-11-16 사용자 결정의 예외입니다.
  */
 const NAV_MOTION = "motion-safe:transition-[width] motion-safe:duration-150";
 

@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
 import { NAV_RESIZING_ATTR } from "@/hooks/useNavResize";
 import { resetNavWidthForTest } from "@/hooks/useNavWidth";
+import { NAV_MOTION_HOLD_MS, NAV_MOTION_MS } from "@/lib/navWidth";
 import { WIDE_SHELL_MEDIA, sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
@@ -217,6 +218,22 @@ describe("접기·펼치기의 전환(150ms)", () => {
     expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
     expect(hasMotion()).toBe(true);
   });
+
+  it("접힘이 바뀐 뒤 200ms(전환 + 여유)가 지나면 전환을 뗀다 — 그 뒤 다른 탭이 폭만 바꾼 storage 이벤트는 전환 없이 그림", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    fireEvent.click(toggleButton());
+    fireEvent.click(toggleButton());
+    expect(hasMotion()).toBe(true);
+    act(() => vi.advanceTimersByTime(NAV_MOTION_HOLD_MS));
+    expect(hasMotion()).toBe(false);
+    act(() => {
+      window.localStorage.setItem("shell.navWidth", "300");
+      window.dispatchEvent(new StorageEvent("storage", { key: "shell.navWidth", newValue: "300" }));
+    });
+    expect(value().now).toBe("300");
+    expect(hasMotion()).toBe(false);
+  });
 });
 
 describe("두 번 누르기", () => {
@@ -343,7 +360,10 @@ describe("끌기", () => {
     expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
     expect(value()).toEqual({ now: "180", text: "접힘(아이콘 레일), 펼치면 260px" });
     expect(hasMotion()).toBe(true);
-    act(() => vi.advanceTimersByTime(150));
+    // 전환(150ms)이 끝날 때까지는 붙여 두고 여유(50ms) 뒤에 뗌
+    act(() => vi.advanceTimersByTime(NAV_MOTION_MS));
+    expect(hasMotion()).toBe(true);
+    act(() => vi.advanceTimersByTime(NAV_MOTION_HOLD_MS - NAV_MOTION_MS));
     expect(hasMotion()).toBe(false);
     // 끄는 동안이라 아직 저장하지 않음
     expect(window.localStorage.getItem("shell.navCollapsed")).toBeNull();

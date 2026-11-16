@@ -28,8 +28,13 @@ export const NAV_KEY_STEP = 16;
 export const NAV_KEY_STEP_LARGE = 64;
 /** 이만큼(px) 움직이기 전에는 끌기로 보지 않습니다 — 두 번 누르기(접기·펼치기)의 손떨림이 폭을 바꾸지 않게. */
 export const NAV_DRAG_SLOP = 3;
-/** 접고 펼 때의 폭 전환 시간(ms) — 클래스 duration-150과 같은 값(끌기 중 접힘·펼침이 바뀔 때 전환을 켜 두는 시간). */
+/** 접고 펼 때의 폭 전환 시간(ms) — 클래스 duration-150과 같은 값. */
 export const NAV_MOTION_MS = 150;
+/**
+ * 접힘이 바뀐 뒤 전환 클래스를 붙여 두는 시간(ms) — 전환 시간에 50ms(서너 프레임)를 더해, 전환이 끝나기 전에 클래스가 빠져 마지막 몇 px이 튀지 않게
+ * 합니다. 그 뒤에는 떼어, 다른 탭이 폭만 바꾼 storage 이벤트 같은 접힘이 바뀌지 않는 폭 바뀜이 전환으로 그려지지 않게 합니다.
+ */
+export const NAV_MOTION_HOLD_MS = NAV_MOTION_MS + 50;
 
 /** 왼쪽 메뉴의 배치 — 접힘과 펼친 폭(접힌 동안에는 펼 때 되돌릴 폭). */
 export type NavLayout = { collapsed: boolean; width: number };
