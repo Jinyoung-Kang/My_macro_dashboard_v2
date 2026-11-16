@@ -5,7 +5,7 @@
  * (390 종목 상세 탭 줄 y≈1,490, 지표 y≈791, 기관 y≈847). 화면마다 그 칸을 펼치기 단추 하나 뒤로 접고(이름은 그 칸의 패널 이름), 넓은 화면(lg 이상)은
  * 클래스로 늘 펼칩니다(jsdom은 배치를 계산하지 않으므로 클래스·속성으로 봅니다 — 실제 y는 브라우저 측정).
  */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
@@ -33,7 +33,11 @@ let reads: Record<string, unknown> = {};
 beforeEach(() => {
   reads = {};
   api.apiGetShared.mockReset();
-  api.apiGetShared.mockImplementation((path: string) => (path in reads ? Promise.resolve(reads[path]) : new Promise(() => {})));
+  api.apiGetShared.mockImplementation((path: string) => {
+    if (!(path in reads)) return new Promise(() => {});
+    const body = reads[path];
+    return body instanceof Error ? Promise.reject(body) : Promise.resolve(body);
+  });
 });
 afterEach(cleanup);
 
@@ -86,6 +90,27 @@ describe("상세 세 화면 — lg 미만에서 왼쪽 속성 칸을 처음에 �
     renderAs(<StockDetailScreen market="us" code="SYNQ" />);
     await screen.findByRole("heading", { level: 1, name: "Synthetic Corp" });
     controlledColumn("핵심 지표 펼치기", "핵심 지표");
+  });
+
+  // 검토 지적(결정 반영 묶음): 시세 읽기 실패(500·시간 초과)의 '다시 시도'가 왼쪽 칸 '핵심 지표' 패널(QA-190)에만 있어, 칸을 접는 좁은 화면에서는
+  // 펼치기 전에 다시 읽을 방법이 보이지 않았습니다(대상 머리에는 위험 안내 글뿐). 다시 시도는 늘 보이는 대상 머리에 하나만 두고(지표 상세 QA-588과
+  // 같은 자리), 칸에는 까닭 글만 둡니다 — 넓은 화면에 다시 시도가 둘이 되지 않게.
+  it("종목 — 시세 읽기 실패의 '다시 시도'는 접는 칸 밖(대상 머리)에 하나, 누르면 시세를 다시 읽음", async () => {
+    const path = endpoints.detail.quote("us", "SYNQ");
+    reads = { [path]: new Error("시세 서버가 응답하지 않습니다.") };
+    renderAs(<StockDetailScreen market="us" code="SYNQ" />);
+    const header = (await screen.findByRole("heading", { level: 1, name: "SYNQ" })).closest("header") as HTMLElement;
+    const retry = await within(header).findByRole("button", { name: "다시 시도" });
+    expect(within(header).getByText("시세 서버가 응답하지 않습니다.")).toBeTruthy();
+    const { column } = controlledColumn("핵심 지표 펼치기", "핵심 지표");
+    expect(column.contains(retry)).toBe(false);
+    expect(within(column).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "다시 시도" })).toHaveLength(1);
+    expect(column.textContent).toContain("시세를 읽지 못해 핵심 지표가 없습니다.");
+    const calls = () => api.apiGetShared.mock.calls.filter(([requested]) => requested === path).length;
+    const before = calls();
+    fireEvent.click(retry);
+    await waitFor(() => expect(calls()).toBe(before + 1));
   });
 
   it("지표 — '속성 펼치기'", async () => {

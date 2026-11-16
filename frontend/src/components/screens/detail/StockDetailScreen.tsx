@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { EntityHeader, MasterDetail, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
-import { Banner, ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { CandlestickIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
@@ -102,7 +102,13 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
 
   let placeholder;
   if (!quoteState.data) {
-    placeholder = quoteState.error ? <Banner tone="danger">{quoteState.error}</Banner> : <Skeleton lines={2} label="시세를 불러오는 중" />;
+    // 시세 읽기 실패의 다시 시도는 늘 보이는 대상 머리에 하나(지표 상세 QA-588과 같은 자리) — 왼쪽 칸은 좁은 화면에서 처음에 접혀(결정 2) 그 안에
+    // 두면 펼치기 전에는 다시 읽을 방법이 보이지 않습니다. 칸의 '핵심 지표'는 까닭 글만(넓은 화면에 다시 시도가 둘이 되지 않게).
+    placeholder = quoteState.error ? (
+      <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
+    ) : (
+      <Skeleton lines={2} label="시세를 불러오는 중" />
+    );
   } else if (!quoteState.data.available) {
     placeholder = <p className="text-sm text-text-2">{quoteState.data.message ?? "시세를 조회하지 않습니다."}</p>;
   }
@@ -204,11 +210,12 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         left={
           <>
             <Panel title="핵심 지표" source={quote?.source?.label ?? undefined}>
-              {/* 시세를 읽지 못했거나 받지 않았으면(store_only 등 — 이유는 대상 머리가 적음) '불러오는 중'으로 두지 않습니다(QA-190). */}
+              {/* 시세를 읽지 못했거나 받지 않았으면(store_only 등 — 이유는 대상 머리가 적음) '불러오는 중'으로 두지 않습니다(QA-190). 읽기 실패의
+                  오류 글·다시 시도는 대상 머리에 있습니다(좁은 화면에서 이 칸은 처음에 접힘 — 결정 2). */}
               {quote ? (
                 <PropertyList items={propertyItems(stockStatItems(quote))} emptyText="핵심 지표를 받지 못했습니다." />
               ) : quoteState.error ? (
-                <ErrorState message={quoteState.error} onRetry={() => void quoteState.reload()} />
+                <p className="break-keep text-sm text-text-2">시세를 읽지 못해 핵심 지표가 없습니다.</p>
               ) : quoteState.data ? (
                 <p className="break-keep text-sm text-text-2">시세를 받지 않아 핵심 지표가 없습니다.</p>
               ) : (
