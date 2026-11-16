@@ -198,10 +198,12 @@ describe("탭 — 모의매매(미국)는 운영자만", () => {
   });
 });
 
-describe("하위 메뉴 줄", () => {
+describe("하위 메뉴 줄(좁은 화면)", () => {
   it("시장 탭에서는 여섯 화면, 지금 화면이 aria-current=page", () => {
     renderShell(MEMBER_PRO, { path: "/liquidity" });
     const sub = screen.getByRole("navigation", { name: "시장 하위 메뉴" });
+    // 넓은 화면에는 줄이 없다 — 왼쪽 나무 메뉴가 하위 화면을 펼친다(명세 §5 — W2)
+    expect(sub.className.split(/\s+/)).toContain("lg:hidden");
     expect(linkLabels(sub)).toEqual(["매크로 지표", "순유동성", "섹터·자산군", "상관관계", "투기세력(COT)", "국면 판정"]);
     expect(within(sub).getByRole("link", { name: "순유동성" }).getAttribute("aria-current")).toBe("page");
     expect(within(sub).getByRole("link", { name: "매크로 지표" }).getAttribute("aria-current")).toBeNull();
