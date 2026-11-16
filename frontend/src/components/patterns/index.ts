@@ -18,5 +18,5 @@ export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
 export { Skeleton } from "./Skeleton";
 export { Sparkline } from "./Sparkline";
-export { ENTITY_FRAME, ENTITY_FRAME_LEFT } from "./SplitPane";
+export { ENTITY_FRAME, ENTITY_FRAME_LEFT, SplitPane } from "./SplitPane";
 export { StatGrid, StatTile } from "./StatTile";

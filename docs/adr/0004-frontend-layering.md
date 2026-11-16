@@ -14,7 +14,7 @@
     `components/charts/__tests__/frameBoundary.test.ts`(차트 틀 예외 — 차트 폴더 밖의 차트 하위 경로 가져오기는 계좌 색 표의 `frame` 하나, `frame.tsx`는 recharts 없음)
   - 작업대 화면 언어(아래 세 번째 덧붙임 — 공용 부품마다 한 줄): `components/ui/__tests__/DropdownMenu.test.tsx`(메뉴), `components/ui/__tests__/Tooltip.test.tsx`(툴팁),
     `components/patterns/__tests__/PropertyList.test.tsx`(속성 목록), `components/patterns/__tests__/KpiStrip.test.tsx`(KPI 띠),
-    `components/patterns/__tests__/EntityHeader.test.tsx`(대상 머리)
+    `components/patterns/__tests__/EntityHeader.test.tsx`(대상 머리), `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`(칸 틀)
 
 ## 배경
 
@@ -106,3 +106,7 @@
   배지 줄(비면 접힘)·동작 영역, `placeholder`는 값·배지 자리만 바꿈 — 데이터 칸 강조색 금지 목록). 공용 `Tag`(`@/components/ui`)와 대상 종류 아이콘
   (`ChartLineIcon`·`CandlestickIcon`·`LandmarkIcon`)을 씁니다. 처음 쓰는 곳은 상세 3종의 맨 위(P4 — 지금 화면 머리 자리), 정보 검색 대상 화면은 겉모습이 달라 P7,
   지키는 시험은 `components/patterns/__tests__/EntityHeader.test.tsx`.
+- 칸 틀 `components/patterns/SplitPane.tsx` — 화면 패턴(틀 — 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처, lg 두 칸·xl 세 칸·lg 미만 한 칸, 읽는 차례는 늘 왼쪽 → 가운데 → 오른쪽,
+  새 랜드마크 없음). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 옮겼고 정보 검색 entityGrid가 같은 글을
+  다시 내보냅니다(entityGridPin.test — 정보 검색 겉모습 고정). 색 클래스가 없는 틀이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 상세 3종(P4),
+  지키는 시험은 `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`.

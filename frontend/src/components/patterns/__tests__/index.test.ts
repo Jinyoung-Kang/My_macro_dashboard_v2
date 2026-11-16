@@ -82,6 +82,7 @@ describe("components/patterns 배럴", () => {
         "RangeTabs",
         "Skeleton",
         "Sparkline",
+        "SplitPane",
         "StaleBadge",
         "StatGrid",
         "StatTile",
