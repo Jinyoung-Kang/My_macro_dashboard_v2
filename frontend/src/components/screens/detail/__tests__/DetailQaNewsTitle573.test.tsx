@@ -54,7 +54,7 @@ function detailSources(): string[] {
 
 describe("QA-573 상세 뉴스 기사 제목 — 없앤 15px 단계 대신 body 14/20", () => {
   // 수정 전 실패: 제목 링크 클래스에 text-[15px]·leading-snug가 있고 text-body가 없음(재현 커밋에서는 it.fails).
-  it.fails("기사 제목 링크는 text-body font-medium(15px·leading-snug 없음), 좁은 화면 누르는 자리 44px는 그대로", async () => {
+  it("기사 제목 링크는 text-body font-medium(15px·leading-snug 없음), 좁은 화면 누르는 자리 44px는 그대로", async () => {
     render(<NewsCard path={PATH} />);
     const links = await screen.findAllByRole("link", { name: /합성 기사/ });
     expect(links).toHaveLength(2);
@@ -67,7 +67,7 @@ describe("QA-573 상세 뉴스 기사 제목 — 없앤 15px 단계 대신 body 
   });
 
   // 수정 전 실패: DetailParts.tsx에 text-[15px]가 남음(재현 커밋에서는 it.fails).
-  it.fails("상세 화면 소스(시험 제외)에 없앤 15px 단계(text-[15px]·text-body-md)가 없다", () => {
+  it("상세 화면 소스(시험 제외)에 없앤 15px 단계(text-[15px]·text-body-md)가 없다", () => {
     const sources = detailSources();
     expect(sources.length).toBeGreaterThan(0);
     const offenders = sources.flatMap((file) =>

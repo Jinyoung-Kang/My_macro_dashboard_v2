@@ -380,7 +380,8 @@ export function NewsCard({
       <ul className="-my-1 divide-y divide-border">
         {items.map((item) => (
           <li key={item.url} className="py-3">
-            <ExternalAnchor href={item.url} className={`${TARGET_LINK} text-[15px] font-medium leading-snug`}>
+            {/* 기사 제목은 기본 UI 글 body 14/20(명세 §3-6 — 없앤 15px 단계 대신, QA-573). 좁은 화면 누르는 자리 44px는 TARGET_LINK. */}
+            <ExternalAnchor href={item.url} className={`${TARGET_LINK} text-body font-medium`}>
               {item.title}
             </ExternalAnchor>
             <p className="mt-1 text-xs text-text-3">
