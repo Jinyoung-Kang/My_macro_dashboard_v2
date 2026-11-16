@@ -43,7 +43,7 @@ const overviewCalls = () => api.apiGetShared.mock.calls.filter(([path]) => path 
 
 describe("지표 상세 — 개요 읽기 실패 (QA-588)", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 머리에 위험 안내(Banner — '주의: 합성 오류')만 있고 '다시 시도' 단추가 0개였습니다.
-  it.fails("공용 오류 상자와 '다시 시도' — 누르면 개요를 다시 읽어 지표를 그린다(제목은 그때까지 주소 키)", async () => {
+  it("공용 오류 상자와 '다시 시도' — 누르면 개요를 다시 읽어 지표를 그린다(제목은 그때까지 주소 키)", async () => {
     reads[OVERVIEW] = new Error("합성 오류");
     render(
       <SessionUserProvider user={MEMBER}>

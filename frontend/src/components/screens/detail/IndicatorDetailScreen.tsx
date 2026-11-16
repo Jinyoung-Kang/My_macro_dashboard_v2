@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AssetList, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
-import { Banner, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
+import { ErrorState, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
@@ -66,7 +66,14 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         <EntityHeader
           kind="indicator"
           name={indicatorKey}
-          placeholder={overview.error ? <Banner tone="danger">{overview.error}</Banner> : <Skeleton lines={4} label="지표를 불러오는 중" />}
+          // 읽는 것이 개요 하나라 실패하면 몸통이 없습니다 — 다시 읽을 자리를 머리의 공용 오류 상자에 둡니다(QA-588, QA-190·QA-532와 같은 규칙).
+          placeholder={
+            overview.error ? (
+              <ErrorState message={overview.error} onRetry={() => void overview.reload()} />
+            ) : (
+              <Skeleton lines={4} label="지표를 불러오는 중" />
+            )
+          }
         />
       </div>
     );
