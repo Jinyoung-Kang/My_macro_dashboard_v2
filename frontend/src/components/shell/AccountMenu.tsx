@@ -1,11 +1,21 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { DropdownMenu, DropdownMenuItem, DropdownMenuLinkItem, DropdownMenuSeparator } from "@/components/ui/DropdownMenu";
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuLinkItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/DropdownMenu";
 import { PersonIcon } from "@/components/ui/icons";
 import { useLogout } from "@/hooks/useLogout";
+import { getNavCollapsed } from "@/hooks/useNavCollapsed";
+import { useNavWidth } from "@/hooks/useNavWidth";
 import { useWideShell } from "@/hooks/useWideShell";
 import { accountInitial, isDemo, isLocalOwner, noLoginName, roleLabel } from "@/lib/access";
+import { NAV_WIDTH_PRESETS, navWidthPreset } from "@/lib/navWidth";
 import { sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 import { AccountAvatar, DemoNote } from "./AccountBox";
@@ -29,10 +39,20 @@ const TRIGGER =
  * 내용(누가 보고 있는지에 따라 — AccountBox와 같은 규칙). 항목 아래의 설명 칸(공용 메뉴 description — 메뉴의 aria-describedby)에는 항목이 아닌
  * 글(읽기 모드·빌드 정보, 데모 열람이면 '데모 열람 · 조회만' 줄)을 둡니다 — 메뉴 안 화살표는 항목 사이만 옮기므로 그 글을 항목 사이에 두면 화면 읽기
  * 프로그램이 닿기 어렵습니다.
- * - 계정으로 로그인(회원·쿠키 세션 운영자): 계정 줄(내 계정 링크 — 머리글자 원판·이메일·역할) · 단축키 도움말 · 로그아웃 | 설명: 읽기 모드 · 빌드 정보.
- * - 로그인 없이 연 로컬·Tailscale 운영자(ADR 0016·0023): 계정 줄('로컬 · 로그인 없음' 등) · 단축키 도움말 | 설명: 읽기 모드 · 빌드 정보 — 세션이 없어
- *   로그아웃이 없습니다.
- * - 데모 열람(ADR 0013): 단축키 도움말 | 설명: '데모 열람 · 조회만' 줄 · 읽기 모드 · 빌드 정보 — 계정·세션이 없어 내 계정·로그아웃이 없습니다.
+ * - 계정으로 로그인(회원·쿠키 세션 운영자): 계정 줄(내 계정 링크 — 머리글자 원판·이메일·역할) · 단축키 도움말 · 왼쪽 메뉴 폭 · 로그아웃 | 설명: 읽기 모드 · 빌드 정보.
+ * - 로그인 없이 연 로컬·Tailscale 운영자(ADR 0016·0023): 계정 줄('로컬 · 로그인 없음' 등) · 단축키 도움말 · 왼쪽 메뉴 폭 | 설명: 읽기 모드 · 빌드 정보 —
+ *   세션이 없어 로그아웃이 없습니다.
+ * - 데모 열람(ADR 0013): 단축키 도움말 · 왼쪽 메뉴 폭 | 설명: '데모 열람 · 조회만' 줄 · 읽기 모드 · 빌드 정보 — 계정·세션이 없어 내 계정·로그아웃이 없습니다.
+ *
+ * **왼쪽 메뉴 폭**(작업대 P3 추가, 2026-11-16 결정 — 사용자 위임, 권장안): 펼친 폭을 손잡이로 끌지 않고 고르는 세 단계 — 좁게 200px · 기본 220px · 넓게 280px
+ * (lib/navWidth NAV_WIDTH_PRESETS). 손잡이(8px)만으로는 임의 폭 맞추기가 WCAG 2.2 2.5.7(끌기 동작)·2.5.8(누름 자리 24px)을 충족하지 못해, 32px 메뉴 항목으로
+ * 같은 일을 하는 수단을 둡니다. 이름 있는 단일 선택 묶음(공용 DropdownMenuRadioGroup — role=group '왼쪽 메뉴 폭', 항목 menuitemradio·aria-checked, 고른 항목은
+ * 체크 아이콘)이고, 고른 항목은 기억한 펼친 폭(hooks/useNavWidth)과 같은 단계입니다 — 접혀 있어도 펼 때 돌아갈 폭을 보이고, 끌어서 정한 그 밖의 폭이면 고른 항목이
+ * 없습니다. 고르면 펼친 폭을 손잡이·키와 같은 길(useNavWidth — 검사·저장)로 바꾸고, 메뉴가 접혀 있으면 셸 명령 toggle-nav로 펼칩니다 — 접기 단추·[와 같은
+ * 길(왼쪽 메뉴의 접기·펼치기 — 150ms 전환, 포커스 규칙)이고 그때 읽는 펼친 폭이 방금 고른 폭입니다. 펼친 동안 폭만 바뀌면 전환이 없습니다(손잡이 Home·End와 같음).
+ * 이미 고른 단계를 다시 골라도 같습니다(접혀 있으면 펼침). 명령은 이 창의 화면 상태만 바꾸고 서버를 부르지 않습니다(lib/shellCommands).
+ * 자리는 단축키 도움말 다음·로그아웃 앞(구분선으로 나눔): 화면 보기 설정이라 계정 동작(로그아웃 — 세션을 끝냄)과 떼어 두고, 항목이 아닌 글(읽기 모드·빌드 정보)은
+ * 그대로 설명 칸에 남습니다. 메뉴 전체가 넓은 화면 전용이라(아래) 이 묶음도 넓은 화면(왼쪽 메뉴가 보이는 폭)에서만 보입니다 — 좁은 화면의 더보기 계정 영역에는 없습니다.
  *
  * 로그아웃은 고르면 메뉴를 닫고 요청합니다 — 실패하면 메뉴 밖, 여는 단추 왼쪽에 경고 글(role=alert, QA-051 — 삼키지 않음, 한 줄로 줄이고 전체 글은
  * title, 다음 로그아웃 때 지움), 성공하면 로그인 화면으로. 경고를 메뉴 안에 두지 않는 까닭: 메뉴의 자식은 항목·구분선뿐이고(ARIA), 메뉴가 열린 동안은
@@ -61,6 +81,15 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
   const initial = accountInitial(user);
   const demo = isDemo(user);
   const local = !demo && isLocalOwner(user);
+  // 왼쪽 메뉴 펼친 폭 — 고른 항목은 그 폭과 같은 단계(없으면 끌어서 정한 폭이라 고른 항목 없음).
+  const [navWidth, setNavWidth] = useNavWidth();
+  const chooseNavWidth = (value: string) => {
+    const preset = NAV_WIDTH_PRESETS.find((entry) => String(entry.width) === value);
+    if (!preset) return;
+    setNavWidth(preset.width);
+    // 접혀 있으면 펼침 — 접기 단추·[와 같은 길(셸 명령 toggle-nav, 왼쪽 메뉴가 받음). 그때 읽는 펼친 폭이 위에서 바꾼 폭입니다.
+    if (getNavCollapsed()) sendShellCommand("toggle-nav");
+  };
 
   return (
     <div className={`hidden items-center gap-2 lg:flex ${error ? "shrink-100000" : "shrink-0"}`}>
@@ -119,6 +148,14 @@ export function AccountMenu({ user }: { user?: SessionUser }) {
         >
           단축키 도움말
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuRadioGroup label="왼쪽 메뉴 폭" value={navWidthPreset(navWidth) ? String(navWidth) : undefined} onValueChange={chooseNavWidth}>
+          {NAV_WIDTH_PRESETS.map((preset) => (
+            <DropdownMenuRadioItem key={preset.width} value={String(preset.width)}>
+              {preset.label} <span className="tabular-nums text-text-2">{preset.width}px</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
         {!demo && !local && (
           <>
             <DropdownMenuSeparator />

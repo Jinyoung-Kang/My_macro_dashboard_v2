@@ -6,9 +6,14 @@
  *  - '단축키 도움말'은 메뉴가 닫히고 포커스가 여는 단추로 돌아온 뒤 셸 명령 신호(open-shortcut-help)를 한 번 보낸다(lib/shellCommands)
  *  - 여는 단추는 30px·4px 경계 단추(원 아님 — 누르는 것), 메뉴 항목 글에 text-3이 없다(가리킨 항목 바탕 surface-3 위 금지 쌍)
  *  - 이름 툴팁은 넓은 화면에서만(QA-554 — 툴팁을 보는 시험은 넓은 화면 matchMedia 대역을 둠). 폭이 lg 아래로 바뀌면 메뉴가 닫히는 것은 Shell.test가 봄
+ *  - '왼쪽 메뉴 폭'(작업대 P3 추가, 2026-11-16 결정 — 끌지 않는 포인터 수단): 단축키 도움말 다음·로그아웃 앞의 이름 있는 단일 선택 묶음(좁게 200 · 기본 220 ·
+ *    넓게 280), 고른 항목은 기억한 펼친 폭과 같은 단계, 고르면 폭을 저장하고 접혀 있으면 셸 명령 toggle-nav(왼쪽 메뉴가 펼침 — 셸 전체는 shellWiring.test),
+ *    좁은 화면의 더보기 계정 영역에는 없음
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { resetNavWidthForTest } from "@/hooks/useNavWidth";
 import { SHELL_COMMAND_EVENT, WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
@@ -19,6 +24,7 @@ const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/macro", useRouter: () => router }));
 
 import { ReadModeProvider } from "../ReadMode";
+import { AccountBox } from "../AccountBox";
 import { AccountMenu } from "../AccountMenu";
 
 const MEMBER: SessionUser = { email: "member@test.local", role: "MEMBER", tier: "FREE" };
@@ -78,6 +84,9 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  window.localStorage.clear();
+  resetNavCollapsedForTest();
+  resetNavWidthForTest();
 });
 
 describe("누가 보고 있는지에 따른 내용", () => {
@@ -267,14 +276,126 @@ describe("모양", () => {
     expect(demo.querySelector("svg")).not.toBeNull();
   });
 
-  it("메뉴 항목 글은 text·text-2만 — 계정 줄의 역할 글도 text-2(가리킨 항목 바탕 surface-3 위 text-3 금지)", () => {
+  it("메뉴 항목 글은 text·text-2만 — 계정 줄의 역할 글·폭 단계의 px 글도 text-2(가리킨 항목 바탕 surface-3 위 text-3 금지)", () => {
     const menu = open(renderMenu(MEMBER));
-    for (const item of within(menu).getAllByRole("menuitem")) {
+    for (const item of [...within(menu).getAllByRole("menuitem"), ...within(menu).getAllByRole("menuitemradio")]) {
       for (const node of [item, ...item.querySelectorAll("*")]) {
         const classes = (node.getAttribute("class") ?? "").split(/\s+/);
         expect(classes.some((name) => ["text-text-3", "text-accent", "text-danger", "text-neutral"].includes(name))).toBe(false);
       }
     }
     expect(within(menu).getByText("무료 회원").className.split(/\s+/)).toContain("text-text-2");
+  });
+});
+
+describe("왼쪽 메뉴 폭(작업대 P3 추가 — 손잡이를 끌지 않는 포인터 수단)", () => {
+  const group = (menu: HTMLElement) => within(menu).getByRole("group", { name: "왼쪽 메뉴 폭" });
+  const radios = (menu: HTMLElement) => within(menu).getAllByRole("menuitemradio");
+  const checked = (menu: HTMLElement) =>
+    radios(menu)
+      .filter((item) => item.getAttribute("aria-checked") === "true")
+      .map((item) => item.textContent);
+  /** 셸 명령을 받아 적습니다 — 받을 때의 저장된 폭과 함께(폭을 먼저 바꾼 뒤 보내는지). */
+  function recordCommands() {
+    const received: { detail: unknown; storedWidth: string | null }[] = [];
+    const listener = (event: Event) =>
+      received.push({ detail: (event as CustomEvent).detail, storedWidth: window.localStorage.getItem("shell.navWidth") });
+    window.addEventListener(SHELL_COMMAND_EVENT, listener);
+    return { received, stop: () => window.removeEventListener(SHELL_COMMAND_EVENT, listener) };
+  }
+
+  it("누가 보든 이름 있는 묶음 '왼쪽 메뉴 폭' — 좁게 200px · 기본 220px · 넓게 280px(menuitemradio), 저장값이 없으면 기본", () => {
+    for (const user of [MEMBER, LOCAL_OWNER, DEMO]) {
+      const menu = open(renderMenu(user));
+      expect(within(group(menu)).getAllByRole("menuitemradio").map((item) => item.textContent), user.email ?? "demo").toEqual([
+        "좁게 200px",
+        "기본 220px",
+        "넓게 280px",
+      ]);
+      expect(checked(menu)).toEqual(["기본 220px"]);
+      // 고른 항목은 색이 아닌 체크 아이콘으로도 가림
+      expect(radios(menu).map((item) => item.querySelectorAll("svg").length)).toEqual([0, 1, 0]);
+      cleanup();
+    }
+  });
+
+  it("자리는 단축키 도움말 다음·로그아웃 앞(구분선으로 나눔) — 항목이 아닌 글(읽기 모드·빌드 정보)은 그대로 설명 칸", () => {
+    const menu = open(renderMenu(MEMBER));
+    const help = within(menu).getByRole("menuitem", { name: "단축키 도움말" });
+    const logout = within(menu).getByRole("menuitem", { name: "로그아웃" });
+    const box = group(menu);
+    expect(help.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(box.compareDocumentPosition(logout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 단축키 도움말 · 구분선 · 이름표(묶음의 이름 — 항목 아님) · 묶음 · 구분선 · 로그아웃
+    const label = within(menu).getByText("왼쪽 메뉴 폭");
+    expect(box.getAttribute("aria-labelledby")).toBe(label.id);
+    expect(label.hasAttribute("role")).toBe(false);
+    expect(label.previousElementSibling?.getAttribute("role")).toBe("separator");
+    expect(label.previousElementSibling?.previousElementSibling).toBe(help);
+    expect(label.nextElementSibling).toBe(box);
+    expect(box.nextElementSibling?.getAttribute("role")).toBe("separator");
+    expect(box.nextElementSibling?.nextElementSibling).toBe(logout);
+    expect(descriptionText(menu)).toMatch(/^읽기 모드: auto/);
+  });
+
+  it("고른 항목은 기억한 펼친 폭과 같은 단계 — 접혀 있어도 펼 때의 폭, 끌어서 정한 폭(250)이면 없음, 하한을 올리기 전의 190은 200(좁게)", () => {
+    const cases: [Record<string, string>, string[]][] = [
+      [{ "shell.navWidth": "280" }, ["넓게 280px"]],
+      [{ "shell.navWidth": "250" }, []],
+      [{ "shell.navWidth": "190" }, ["좁게 200px"]],
+      [{ "shell.navWidth": "220", "shell.navCollapsed": "1" }, ["기본 220px"]],
+    ];
+    for (const [stored, expected] of cases) {
+      for (const [key, value] of Object.entries(stored)) window.localStorage.setItem(key, value);
+      resetNavWidthForTest();
+      resetNavCollapsedForTest();
+      expect(checked(open(renderMenu(MEMBER))), JSON.stringify(stored)).toEqual(expected);
+      cleanup();
+      window.localStorage.clear();
+    }
+  });
+
+  it("펼친 동안 고르면 그 폭을 저장하고 셸 명령은 보내지 않는다 — 메뉴는 닫히고 포커스는 여는 단추로, 다시 열면 그 단계가 골라져 있음", async () => {
+    const commands = recordCommands();
+    try {
+      const trigger = renderMenu(MEMBER);
+      fireEvent.click(within(open(trigger)).getByRole("menuitemradio", { name: "넓게 280px" }));
+      expect(window.localStorage.getItem("shell.navWidth")).toBe("280");
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+      expect(commands.received).toEqual([]);
+      expect(checked(open(trigger))).toEqual(["넓게 280px"]);
+    } finally {
+      commands.stop();
+    }
+  });
+
+  it("접힌 동안 고르면 폭을 먼저 저장한 뒤 셸 명령 toggle-nav를 한 번 보낸다(왼쪽 메뉴가 받아 펼침) — 이미 고른 단계를 골라도", async () => {
+    window.localStorage.setItem("shell.navCollapsed", "1");
+    const commands = recordCommands();
+    try {
+      const trigger = renderMenu(MEMBER);
+      fireEvent.click(within(open(trigger)).getByRole("menuitemradio", { name: "좁게 200px" }));
+      expect(commands.received).toEqual([{ detail: "toggle-nav", storedWidth: "200" }]);
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+      // 왼쪽 메뉴가 없어 접힘이 그대로인 이 시험에서는, 이미 고른 단계(좁게)를 다시 골라도 펼치러 신호를 보냄
+      fireEvent.click(within(open(trigger)).getByRole("menuitemradio", { name: "좁게 200px" }));
+      expect(commands.received).toEqual([
+        { detail: "toggle-nav", storedWidth: "200" },
+        { detail: "toggle-nav", storedWidth: "200" },
+      ]);
+    } finally {
+      commands.stop();
+    }
+  });
+
+  it("좁은 화면의 더보기 계정 영역(AccountBox)에는 없다 — 계정 메뉴 전체가 넓은 화면 전용(감싼 상자 hidden lg:flex)", () => {
+    render(<AccountBox user={MEMBER} />);
+    expect(screen.queryByText("왼쪽 메뉴 폭")).toBeNull();
+    expect(screen.queryByRole("menuitemradio")).toBeNull();
+    cleanup();
+    const trigger = renderMenu(MEMBER);
+    expect((trigger.parentElement as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
   });
 });

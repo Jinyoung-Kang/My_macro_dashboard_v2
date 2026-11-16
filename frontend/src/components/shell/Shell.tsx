@@ -21,7 +21,7 @@ import { TopBar } from "./TopBar";
  * 좁은 화면은 지금 구조 그대로입니다 — 상단바 → 하위 메뉴 줄 → 본문 → 아래 탭 바(왼쪽 메뉴는 숨김). DOM 순서는 두 폭이 같습니다
  * (건너뛰기 링크 → 상단바 → 왼쪽 메뉴·하위 메뉴 줄·본문 → 탭 바). 감싼 줄(div)에는 lg 미만 overflow 클래스를 두지 않습니다(QA-450 — 아래, ShellQaSticky.test).
  * 툴팁 묶음(TooltipProvider — 여는 지연 300ms)은 셸에 하나입니다.
- * 셸 뿌리는 왼쪽 메뉴의 폭을 CSS 변수 --shell-nav-w로 둡니다(인라인 style — 펼친 폭은 보는 사람이 끌어 180~320px로 바꾸고 기본 220px, 아이콘 레일로
+ * 셸 뿌리는 왼쪽 메뉴의 폭을 CSS 변수 --shell-nav-w로 둡니다(인라인 style — 펼친 폭은 보는 사람이 끌어 200~320px로 바꾸고 기본 220px, 아이콘 레일로
  * 접으면 48px — data-nav. 숫자는 lib/navWidth, 값은 hooks/useNavCollapsed·useNavWidth). 변수는 늘 있지만 읽는 쪽이 모두 lg: 변형이라 넓은 화면에서만
  * 쓰입니다 — 왼쪽 메뉴(SideNav lg:w-[var(--shell-nav-w)])와 화면에 고정 위치로 붙는 덮개(정보 검색의 아래 미리 보기 시트 — 왼쪽 메뉴 옆에서 시작)가
  * 이 변수를 읽습니다(한쪽만 고쳐 어긋나지 않게 — 검토 지적).

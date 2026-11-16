@@ -3,6 +3,7 @@
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import { useId, type ReactElement, type ReactNode } from "react";
+import { CheckIcon } from "@/components/ui/icons";
 import { Tooltip } from "./Tooltip";
 
 /*
@@ -30,6 +31,13 @@ const ITEM =
 
 /** 묶음 이름표 — 누르지 않는 글(보조 글 text-2). */
 const LABEL = "px-3 pb-1 pt-2 text-xs font-semibold text-text-2 lg:px-2.5";
+
+/*
+ * 단일 선택 항목의 고름 표시 자리 — 항목 오른쪽 끝의 16px 칸. 고른 항목에만 체크 아이콘(선 2px, 글자색 currentColor — 항목 글과 같은 text)이 들어가
+ * 색이 아니라 모양으로 가릅니다(WCAG 1.4.1). 고대비(forced-colors)에서도 아이콘 선은 시스템 글자색으로 남습니다. 칸은 늘 두어(고르지 않은 항목은 빈 칸)
+ * 항목 글의 오른쪽 끝이 고름에 따라 흔들리지 않게 합니다. 고름의 뜻은 항목의 aria-checked가 나르고 아이콘은 장식입니다(aria-hidden — IconBase 기본).
+ */
+const RADIO_MARK = "ml-auto inline-flex size-4 shrink-0 items-center justify-center";
 
 /** 구분선 — 덮개 안쪽 폭 전체(상자 안쪽 여백만큼 바깥으로). */
 const SEPARATOR = "-mx-1 my-1 border-t border-border";
@@ -165,6 +173,58 @@ export function DropdownMenuLinkItem({ href, children, className = "" }: { href:
         {children}
       </Link>
     </DropdownMenuPrimitive.Item>
+  );
+}
+
+/**
+ * 이름 있는 단일 선택 묶음(라디오) — 넓은 화면 계정 메뉴의 '왼쪽 메뉴 폭'(작업대 P3 추가, 2026-11-16 결정)이 처음 씁니다.
+ * 묶음 이름표(`label` — 누르지 않는 글, DropdownMenuLabel과 같은 모양)를 위에 그리고 묶음(Radix RadioGroup — role=group)의 이름으로 잇습니다
+ * (aria-labelledby — 메뉴 안 화살표는 항목 사이만 옮기므로 이름표 글 자체에는 서지 않고, 묶음에 들어설 때 이름으로 읽힘). 항목은 DropdownMenuRadioItem
+ * (role=menuitemradio·aria-checked)이고 다른 항목과 같은 화살표 순서에 섭니다.
+ * `value`가 어느 항목과도 같지 않으면(undefined 포함) 고른 항목이 없습니다(예: 보는 사람이 끌어서 정한 폭). 항목을 고르면(누르기·Enter·Space)
+ * `onValueChange`가 불리고 메뉴가 닫힙니다 — 이미 고른 항목을 다시 골라도 불립니다(Radix 그대로 — 부르는 쪽이 같은 값의 뜻을 정함).
+ */
+export function DropdownMenuRadioGroup({
+  label,
+  value,
+  onValueChange,
+  children,
+}: {
+  /** 묶음 이름(보이는 이름표 글이자 묶음의 접근 이름). */
+  label: string;
+  /** 고른 항목의 값 — 어느 항목과도 같지 않으면 고른 항목 없음. */
+  value: string | undefined;
+  /** 항목을 고를 때(이미 고른 항목이어도). */
+  onValueChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  const labelId = useId();
+  return (
+    <>
+      <DropdownMenuPrimitive.Label id={labelId} className={LABEL}>
+        {label}
+      </DropdownMenuPrimitive.Label>
+      <DropdownMenuPrimitive.RadioGroup aria-labelledby={labelId} value={value} onValueChange={onValueChange}>
+        {children}
+      </DropdownMenuPrimitive.RadioGroup>
+    </>
+  );
+}
+
+/**
+ * 단일 선택 항목 — DropdownMenuRadioGroup 안에만 둡니다. 모양은 다른 항목과 같은 칸(좁은 화면 44px·넓은 화면 32px, 가리킨 바탕·포커스 링·고대비 윤곽선)이고,
+ * 고른 항목은 오른쪽 끝의 체크 아이콘으로 가릅니다(RADIO_MARK — 색에 기대지 않음). `disabled`면 화살표가 건너뜁니다.
+ */
+export function DropdownMenuRadioItem({ value, disabled = false, children }: { value: string; disabled?: boolean; children: ReactNode }) {
+  return (
+    <DropdownMenuPrimitive.RadioItem value={value} disabled={disabled} className={ITEM}>
+      <span className="min-w-0 truncate">{children}</span>
+      <span className={RADIO_MARK}>
+        <DropdownMenuPrimitive.ItemIndicator className="inline-flex">
+          <CheckIcon size={16} />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+    </DropdownMenuPrimitive.RadioItem>
   );
 }
 

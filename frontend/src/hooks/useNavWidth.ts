@@ -53,7 +53,7 @@ export function getNavWidth(): number {
 export type SetNavWidth = (next: number, options?: { persist?: boolean }) => void;
 
 /**
- * 넓은 화면 왼쪽 메뉴의 펼친 폭(180~320px, 기본 220 — lib/navWidth, 작업대 실행 명세 §5 '가변 폭 왼쪽 메뉴'). 셸 뿌리(메뉴 폭 변수)와 왼쪽 메뉴의
+ * 넓은 화면 왼쪽 메뉴의 펼친 폭(200~320px, 기본 220 — lib/navWidth, 작업대 실행 명세 §5 '가변 폭 왼쪽 메뉴'). 셸 뿌리(메뉴 폭 변수)와 왼쪽 메뉴의
  * 폭 손잡이가 같은 값을 봅니다. 접힘(hooks/useNavCollapsed)과 따로 두어 접었다 펴면 이 폭으로 돌아갑니다.
  * 읽은 값은 검사해 하한·상한으로 자르고(parseNavWidth), 읽기·쓰기는 모두 try/catch — 저장소를 못 써도 화면은 기본 폭으로 그려지고 이 창 안에서는
  * 폭을 바꿀 수 있습니다.

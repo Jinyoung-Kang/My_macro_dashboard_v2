@@ -494,7 +494,7 @@ describe("본문", () => {
     expect(classes).toEqual(expect.arrayContaining(["focus:px-4", "focus:py-2"]));
   });
 
-  // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 180~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
+  // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 200~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
   // 왼쪽 메뉴', 2026-11-16 사용자 결정). 뜻(셸 뿌리 한 곳이 폭을 정하고 왼쪽 메뉴·덮개가 읽음)은 그대로입니다.
   it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(기본 220px)로 둔다 — 왼쪽 메뉴와 고정 위치 덮개(정보 검색 아래 시트)가 같은 변수를 읽음", () => {
     renderShell(MEMBER_PRO);
