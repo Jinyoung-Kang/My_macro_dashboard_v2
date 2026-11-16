@@ -1,7 +1,8 @@
 /**
  * 셸 단축키 — 단축키 표(도움말 창이 그리는 줄)와 키 판정을 React 없이 둡니다(ADR 0004, 작업대 실행 명세 §5 '단축키', P3).
  *
- * - 명령 팔레트 화음(맥 ⌘K, 그 밖 Ctrl+K)은 입력칸 안에서도 받습니다 — 어디서든 검색을 여는 키입니다(지금 시험이 고정).
+ * - 명령 팔레트 화음(맥 ⌘K, 그 밖 Ctrl+K)은 입력칸 안에서도 받습니다 — 어디서든 검색을 여는 키입니다(지금 시험이 고정). 열린 메뉴 안에서만 받지 않습니다
+ *   (isInMenu — 모달 메뉴 위에 팔레트를 겹쳐 열지 않음).
  * - 한 글자 단축키(? · / · [)는 글을 쓰는 중이면 글자로 들어가야 하므로 끕니다: 입력칸·편집 영역·role textbox/combobox/searchbox 안,
  *   덮개(대화상자·메뉴) 안, 한글 조합 중, Ctrl·⌘·Alt와 함께, 키를 누르고 있어 반복될 때.
  * - Esc는 열린 대화상자·메뉴(Radix)가 닫습니다 — 셸이 따로 듣지 않습니다. 목록 j/k는 P4 목록 부품의 몫입니다(그때 이 표에 '목록' 줄을 더함).
@@ -90,6 +91,15 @@ export function isInOverlay(target: KeyTarget | EventTarget | null | undefined):
   return Boolean(
     element && typeof element.closest === "function" && element.closest('[role="dialog"],[role="alertdialog"],[role="menu"]'),
   );
+}
+
+/**
+ * 열린 메뉴(role menu — 계정 메뉴 등 공용 DropdownMenu) 안인가. 메뉴는 모달이라 그 위에 명령 팔레트를 겹쳐 열면, 팔레트에서 대상을 골라 화면을 옮긴 뒤에도
+ * 메뉴가 열린 채(포커스·뒤 화면 막힘) 남습니다 — 그래서 메뉴 안의 팔레트 화음은 받지 않습니다(Esc로 메뉴를 닫은 뒤 다시 누름).
+ */
+export function isInMenu(target: KeyTarget | EventTarget | null | undefined): boolean {
+  const element = target as KeyTarget | undefined;
+  return Boolean(element && typeof element.closest === "function" && element.closest('[role="menu"]'));
 }
 
 /**

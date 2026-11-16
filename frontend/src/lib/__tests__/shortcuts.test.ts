@@ -1,5 +1,5 @@
 /**
- * 셸 단축키 판정(lib/shortcuts) — 팔레트 화음(맥 ⌘K·그 밖 Ctrl+K·물리 키 KeyK), 한 글자 키(? · / · [)를 끄는 자리(입력칸·편집 영역·
+ * 셸 단축키 판정(lib/shortcuts) — 팔레트 화음(맥 ⌘K·그 밖 Ctrl+K·물리 키 KeyK, 열린 메뉴 안 가리기), 한 글자 키(? · / · [)를 끄는 자리(입력칸·편집 영역·
  * combobox·대화상자/메뉴 안·수식키·키 반복·한글 조합 중), 거르기 칸 찾기(숨김·비활성 건너뜀), 닫힌 단축키 표.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import {
   SHELL_FILTER_ATTR,
   SHORTCUTS,
   findScreenFilter,
+  isInMenu,
   isInOverlay,
   isPaletteChord,
   isTypingTarget,
@@ -50,6 +51,19 @@ describe("팔레트 화음", () => {
   it("한글 자판에서 K 자리가 'ㅏ'로 와도 물리 키(KeyK)로 받고, 다른 물리 키는 받지 않는다", () => {
     expect(isPaletteChord(key({ key: "ㅏ", code: "KeyK", ctrlKey: true }), false)).toBe(true);
     expect(isPaletteChord(key({ key: "ㅏ", code: "KeyL", ctrlKey: true }), false)).toBe(false);
+  });
+
+  it("열린 메뉴(role menu) 안인지 가린다 — 메뉴 안의 화음은 셸이 팔레트를 겹쳐 열지 않는 자리(대화상자·입력칸은 아님)", () => {
+    const host = mount(`
+      <div role="menu"><div id="in-menu" role="menuitem" tabindex="-1">가</div></div>
+      <div role="dialog"><input id="in-dialog" /></div>
+      <input id="plain" />
+    `);
+    const at = (id: string) => host.querySelector(`#${id}`) as HTMLElement;
+    expect(isInMenu(at("in-menu"))).toBe(true);
+    expect(isInMenu(at("in-dialog"))).toBe(false);
+    expect(isInMenu(at("plain"))).toBe(false);
+    expect(isInMenu(null)).toBe(false);
   });
 
   it("한글 조합 중(isComposing·keyCode 229)이면 받지 않는다 — 조합을 끝낸 뒤 연다", () => {

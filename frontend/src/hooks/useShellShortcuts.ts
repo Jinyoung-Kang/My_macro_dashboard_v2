@@ -2,14 +2,15 @@
 
 import { useEffect, useRef } from "react";
 import { isWideShell, sendShellCommand } from "@/lib/shellCommands";
-import { findScreenFilter, isPaletteChord, singleKeyShortcut } from "@/lib/shortcuts";
+import { findScreenFilter, isInMenu, isPaletteChord, singleKeyShortcut } from "@/lib/shortcuts";
 
 /**
  * 셸 단축키 — 창(window) keydown 처리기 하나로 셸 단축키를 받습니다(작업대 실행 명세 §5 '단축키', P3). 명령 팔레트(SearchCommand)가 한 번만
  * 부릅니다 — 셸 전체에 전역 처리기가 하나뿐이게. 판정은 lib/shortcuts가 합니다.
  *
  * - 팔레트 화음(맥 ⌘K, 그 밖 Ctrl+K): 브라우저의 같은 단축키(주소창 검색)보다 먼저 받아 기본 동작을 막고 `onPalette`를 부릅니다. 입력칸 안에서도
- *   받습니다. 한글 조합 중이면 받지 않습니다(조합을 끝낸 뒤 다시 누르면 엶).
+ *   받습니다. 한글 조합 중이면 받지 않습니다(조합을 끝낸 뒤 다시 누르면 엶). 열린 메뉴(계정 메뉴) 안이면 기본 동작만 막고 열지 않습니다(메뉴 위에
+ *   겹쳐 열면 고른 뒤에도 메뉴가 남음 — Esc로 닫은 뒤 다시 누름).
  * - 한 글자 키(입력칸·편집 영역·덮개 안·한글 조합 중·수식키·키 반복이면 끔 — 글자로 들어감). 다른 처리기가 이미 쓴 키(defaultPrevented)는 건드리지
  *   않습니다.
  *   - `?`: `onHelp`(단축키 도움말 창).
@@ -29,6 +30,9 @@ export function useShellShortcuts({ isMac, onPalette, onHelp }: { isMac: boolean
     const onKeyDown = (event: KeyboardEvent) => {
       if (isPaletteChord(event, isMac)) {
         event.preventDefault();
+        // 열린 메뉴 안이면 팔레트를 겹쳐 열지 않습니다 — 고른 뒤 화면을 옮겨도 메뉴가 열린 채 남습니다(lib/shortcuts isInMenu). 브라우저의
+        // 같은 단축키(주소창 검색)도 막아 둡니다(메뉴가 포커스를 그대로 가짐).
+        if (isInMenu(event.target)) return;
         handlers.current.onPalette();
         return;
       }

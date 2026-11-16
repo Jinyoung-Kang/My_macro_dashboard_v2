@@ -74,7 +74,8 @@ const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
 /**
  * 통합 검색(⌘K) — 메뉴·지표·기관·종목을 한 입력칸에서 찾아 그 화면으로 갑니다.
  *
- * - 여는 법: 상단바의 검색 단추(입력칸 모양), 또는 어디서든 맥은 ⌘K, 그 밖은 Ctrl+K(한글 조합 중에는 받지 않음). 닫기는 Esc·바깥 누르기·닫기 단추.
+ * - 여는 법: 상단바의 검색 단추(입력칸 모양), 또는 어디서든 맥은 ⌘K, 그 밖은 Ctrl+K(한글 조합 중·열린 메뉴 안에서는 받지 않음 — 단축키 도움말 창이
+ *   열려 있으면 그 창을 닫고 엶). 닫기는 Esc·바깥 누르기·닫기 단추.
  * - 셸 단축키(hooks/useShellShortcuts — 셸의 전역 keydown 처리기는 여기 하나): ?는 단축키 도움말 창(ShortcutHelp — 이 컴포넌트가 함께 그림, 셸 명령
  *   open-shortcut-help로도 열림), /는 화면의 거르기 칸(data-shell-filter), [는 넓은 화면에서 왼쪽 메뉴 접기 신호(셸 명령 toggle-nav). 쓰기 동작은 없습니다.
  * - 자료는 열 때만 읽습니다(닫혀 있으면 useApi 경로가 null). 세 경로 모두 회원 경로이고(AccessPolicy), 운영자 전용 자료는 읽지
@@ -104,7 +105,13 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   useEffect(() => onShellCommand("open-shortcut-help", openHelp), [openHelp]);
 
   // 맥 ⌘K·그 밖 Ctrl+K(한글 자판 물리 키 포함)·?·/·[ — 판정은 lib/shortcuts. 셸의 전역 keydown 처리기는 이 훅 하나입니다.
-  useShellShortcuts({ isMac, onPalette: () => setOpen(true), onHelp: openHelp });
+  // 도움말 창이 열린 채 ⌘K/Ctrl K를 누르면(도움말 첫 줄을 따라 해 보는 경우) 도움말을 닫고 팔레트를 엽니다 — 겹쳐 열면 팔레트에서 대상을 골라
+  // 화면을 옮긴 뒤에도 도움말 창이 남았습니다.
+  const openPalette = () => {
+    setHelp((current) => (current.open ? { ...current, open: false } : current));
+    setOpen(true);
+  };
+  useShellShortcuts({ isMac, onPalette: openPalette, onHelp: openHelp });
 
   // /api/macro/overview는 live 없이(저장본) — 검색 때문에 외부 시세를 새로 받지 않습니다.
   const overview = useApi<MacroOverview>(open ? endpoints.macro.overview(false) : null);

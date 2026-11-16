@@ -217,6 +217,51 @@ describe("계정 메뉴·? → 단축키 도움말", () => {
   });
 });
 
+describe("덮개 위의 Ctrl+K — 팔레트를 겹쳐 열지 않는다", () => {
+  it("계정 메뉴가 열린 채 Ctrl+K: 팔레트를 열지 않고(브라우저 기본 동작만 막음) 메뉴가 포커스를 그대로 가진다 — Esc로 닫은 뒤에는 연다", async () => {
+    stubWide(true);
+    renderShell();
+    fireEvent.keyDown(accountTrigger(), { key: "Enter" });
+    const menu = screen.getByRole("menu", { name: "계정 메뉴" });
+    const focused = document.activeElement as HTMLElement;
+    expect(menu.contains(focused)).toBe(true);
+
+    expect(fireEvent.keyDown(focused, { key: "k", ctrlKey: true })).toBe(false);
+    expect(palette()).toBeNull();
+    expect(screen.getByRole("menu", { name: "계정 메뉴" })).toBe(menu);
+    expect(document.activeElement).toBe(focused);
+
+    fireEvent.keyDown(focused, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(accountTrigger()));
+    expect(fireEvent.keyDown(accountTrigger(), { key: "k", ctrlKey: true })).toBe(false);
+    expect(palette()).toBeTruthy();
+  });
+
+  it("단축키 도움말 창이 열린 채 Ctrl+K: 도움말을 닫고 팔레트를 연다 — 대상을 골라 옮긴 뒤 덮개가 남지 않고 뒤 화면이 막히지 않는다", async () => {
+    stubWide(true);
+    renderShell();
+    expect(pressInBody("?", { shiftKey: true })).toBe(false);
+    const help = helpDialog() as HTMLElement;
+    await waitFor(() => expect(help.contains(document.activeElement)).toBe(true));
+
+    expect(fireEvent.keyDown(document.activeElement as HTMLElement, { key: "k", ctrlKey: true })).toBe(false);
+    const dialog = palette() as HTMLElement;
+    expect(dialog).toBeTruthy();
+    expect(helpDialog()).toBeNull();
+    const input = within(dialog).getByRole("combobox", { name: "검색어" });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+
+    fireEvent.change(input, { target: { value: "순유동성" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(router.push).toHaveBeenCalledWith("/liquidity");
+    expect(palette()).toBeNull();
+    expect(helpDialog()).toBeNull();
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
+    await waitFor(() => expect(document.body.style.pointerEvents).toBe(""));
+  });
+});
+
 describe("쓰기 동작은 팔레트 밖", () => {
   it("운영자 셸: 상단바에 '데이터 수동 새로고침' 단추가 있어도 팔레트 안에는 없고, '새로고침'을 쳐도 명령 결과가 없다", async () => {
     stubWide(true);
