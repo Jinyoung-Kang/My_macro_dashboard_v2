@@ -24,9 +24,9 @@ import { endpoints } from "@/lib/endpoints";
 
 /**
  * 자산 이름 단추 — 표의 행 머리 칸에서 그 자산을 고르는 단추(검사 칸 틀의 줄 단추와 같은 모양: 중립 잉크 — 데이터 칸이라 강조 파랑이 아님, 마우스를
- * 올리면 밑줄, lg 미만 44px, 포커스 링). 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
+ * 올리면 밑줄, lg 미만 44px, 포커스 링). lg 미만은 폭도 44px 이상입니다 — 한 글자 이름('금')이 14px 폭이었음. 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
  */
-const ASSET_BUTTON = `${TEXT_TARGET} rounded-sm text-left text-text break-keep underline-offset-2 hover:underline ${FOCUS_RING}`;
+const ASSET_BUTTON = `${TEXT_TARGET} min-w-11 rounded-sm text-left text-text break-keep underline-offset-2 hover:underline lg:min-w-0 ${FOCUS_RING}`;
 
 /**
  * 글로벌 투기세력 (CFTC COT).
@@ -77,9 +77,10 @@ export default function CotPage() {
       key: "date",
       header: "기준일",
       className: "break-keep",
+      // 날짜와 'n일 전 공시'는 각자 한 줄 — 칸이 눌리면 '2026-10-' / '27'처럼 하이픈 뒤에서 꺾였습니다(1024·390 브라우저 확인). 실패 사유 글만 낱말 사이에서 꺾습니다.
       cell: (row) =>
         row.available ? (
-          <span className="flex flex-col">
+          <span className="flex flex-col whitespace-nowrap">
             <span>{row.date}</span>
             <span className="text-xs text-text-3">{formatWithUnit(row.ageDays, 0, "일 전 공시")}</span>
           </span>
