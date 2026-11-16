@@ -147,10 +147,12 @@ function ProfileCard({ quote }: { quote: DetailQuote }) {
     <Card title="회사 개요" source={profile.koSource ? `${profile.koSource.label} · ${quote.source?.label ?? "Yahoo Finance"}` : quote.source?.label ?? undefined}>
       {rows.length > 0 ? (
         <dl className="flex flex-col">
+          {/* 값은 말줄임하지 않고 낱말 사이에서 줄을 바꾸며 칸보다 긴 낱말만 칸 안에서 끊습니다 — 한 줄 말줄임이라 1024 옆 칸(약 172px)에서 긴 영문
+              업종이 잘렸습니다(QA-530, 핵심 지표·의견 표의 QA-455와 같은 처리). */}
           {rows.map((row) => (
-            <div key={row.label} className="flex items-baseline justify-between gap-3 border-b border-border py-2 text-sm">
-              <dt className="text-text-2">{row.label}</dt>
-              <dd className="min-w-0 truncate text-right text-text">{row.value}</dd>
+            <div key={row.label} className="flex min-w-0 items-baseline justify-between gap-3 border-b border-border py-2 text-sm">
+              <dt className="shrink-0 text-text-2">{row.label}</dt>
+              <dd className="min-w-0 break-keep text-right text-text wrap-anywhere">{row.value}</dd>
             </div>
           ))}
         </dl>

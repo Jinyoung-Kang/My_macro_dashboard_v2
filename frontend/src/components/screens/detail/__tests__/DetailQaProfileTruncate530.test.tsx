@@ -60,7 +60,8 @@ afterEach(cleanup);
 describe("종목 상세 — '회사 개요' 값이 말줄임으로 잘리지 않는다(QA-530)", () => {
   // QA-530: 회사 개요 표의 값 칸(dd)이 'min-w-0 truncate'라 좁은 옆 칸에서 긴 영문 업종이 '…'로 잘렸습니다.
   // 수정 전 실패: 업종 값 글에서 카드까지의 줄에 'truncate'가 있음(재현 커밋에서는 it.fails).
-  it.fails("업종·섹터·나라·직원 수 값에서 카드까지 말줄임·줄바꿈 금지가 없고, 낱말 사이에서 줄을 바꾼다", async () => {
+  // 고침: 값 칸을 break-keep·wrap-anywhere로(말줄임 없음), 이름 칸은 줄지 않음(shrink-0).
+  it("업종·섹터·나라·직원 수 값에서 카드까지 말줄임·줄바꿈 금지가 없고, 낱말 사이에서 줄을 바꾼다", async () => {
     render(
       <SessionUserProvider user={MEMBER}>
         <StockDetailScreen market="us" code="SYNP" />
