@@ -102,7 +102,7 @@ describe("QA-510 — 좁은 화면 하위 메뉴 줄이 지금 칸·포커스한
  */
 describe("QA-566 — 주소가 바뀔 때 지금 칸이 없으면 줄을 처음으로, 줄 안에 포커스가 있으면 그 칸을 보이게", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 /more에서 scrollLeft 142 그대로 — 첫 칸 '알림'(4 ~ 124px)이 줄 밖.
-  it.fails("/connections(넷째 칸 — 142)에서 지금 칸이 없는 /more로 오면 줄을 처음(0)으로 둔다", () => {
+  it("/connections(넷째 칸 — 142)에서 지금 칸이 없는 /more로 오면 줄을 처음(0)으로 둔다", () => {
     const { rerender } = render(<SubNav pathname="/connections" user={OWNER} />);
     const list = strip("더보기 하위 메뉴");
     // 364 + 120 + 16 − 358
@@ -114,7 +114,7 @@ describe("QA-566 — 주소가 바뀔 때 지금 칸이 없으면 줄을 처음�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 /s/us/NVDA에서 scrollLeft 382 그대로 — 첫 칸 '매크로 지표'가 줄 밖.
-  it.fails("/regime(여섯째 칸 — 382)에서 지금 칸이 없는 상세 화면 /s/us/NVDA로 오면 줄을 처음(0)으로 둔다", () => {
+  it("/regime(여섯째 칸 — 382)에서 지금 칸이 없는 상세 화면 /s/us/NVDA로 오면 줄을 처음(0)으로 둔다", () => {
     const { rerender } = render(<SubNav pathname="/regime" user={OWNER} />);
     const list = strip("시장 하위 메뉴");
     // 604 + 120 + 16 − 358
@@ -126,7 +126,7 @@ describe("QA-566 — 주소가 바뀔 때 지금 칸이 없으면 줄을 처음�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 /connections로 돌아오면 scrollLeft 142 — 포커스가 남은 '알림'이 줄 기준 -138 ~ -18px로 가려짐.
-  it.fails("/connections에서 '알림'에 포커스해 /alerts로 갔다가 다시 /connections로 오면(뒤로 가기) 포커스한 '알림'을 줄 안에 둔다", () => {
+  it("/connections에서 '알림'에 포커스해 /alerts로 갔다가 다시 /connections로 오면(뒤로 가기) 포커스한 '알림'을 줄 안에 둔다", () => {
     const { rerender } = render(<SubNav pathname="/connections" user={OWNER} />);
     const list = strip("더보기 하위 메뉴");
     expect(list.scrollLeft).toBe(142);

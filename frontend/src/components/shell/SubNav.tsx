@@ -17,6 +17,8 @@ import type { SessionUser } from "@/lib/types";
  * 고른 링크의 aria-current는 그 주소 그대로면 "page", 그 화면의 아래 주소(/paper/us/holdings)면 "true"입니다(lib/nav currentAria).
  * 줄이 화면보다 길면 지금 칸과 Tab으로 옮긴 칸을 줄 안에 보이게 스크롤합니다(QA-510 — 예전에는 뒤쪽 칸을 연 화면에서 지금 칸이 가려진 채 열림).
  * 줄의 scrollLeft만 옮기고(창 세로 스크롤은 그대로), 그래서 목록이 위치 기준(relative)입니다(hooks/useScrollStripActive).
+ * 주소가 바뀔 때 줄 안에 포커스가 있으면(뒤로·앞으로 가기) 지금 칸보다 그 칸을 보이게 합니다(QA-566).
+ * 지금 칸이 없는 화면(/more·/markets/i/…·/s/…)에서는 줄을 처음으로 둡니다 — 줄이 레이아웃에 남아 앞 화면 위치를 물려받지 않게(QA-566).
  *
  * 모양은 밑줄 탭(`underlineTabClasses` md — 좁은 화면 15px·높이 48px). 준비 중 칸도 같은 높이(min-h-12)·글 크기라 줄 높이가 칸에 따라 바뀌지 않습니다.
  * 모의매매 화면 안의 탭 줄은 한 단계 작은 sm(14px — 좁은 화면 44px)이라 두 줄이 같은 모양으로 겹쳐 위계가 흐려지지 않습니다(명세 §4). 바깥 줄은 폭 전체,
