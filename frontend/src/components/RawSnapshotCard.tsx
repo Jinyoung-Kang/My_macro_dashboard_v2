@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
-import { Button, buttonClasses, ErrorState, Loading } from "@/components/ui";
+import { Button, buttonClasses, ErrorState, Freshness, Loading } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
 import { useApi } from "@/hooks/useApi";
 import { apiGet } from "@/lib/api";
@@ -63,6 +63,8 @@ export function RawSnapshotActions() {
             {snapshot.loading ? "다시 읽는 중…" : "다시 읽기"}
           </Button>
           <CopyButton text={fetchText} label="원본 데이터 복사" />
+          {/* 받은 글이 있는 동안 다시 읽기가 실패하면 앞 글을 그대로 두고 그 사실을 알립니다(다른 패널의 '새로 읽지 못함'과 같음 — QA-623). */}
+          <Freshness refreshError={snapshot.refreshError} />
         </div>
         <div className="mt-3">
           {snapshot.loading && !snapshot.data && <Loading label="원본 데이터를 모으는 중…" />}
