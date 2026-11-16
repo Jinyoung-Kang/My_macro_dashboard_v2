@@ -364,11 +364,11 @@ P4 화면에는 거르기 칸이 없어 '/' 표지는 그대로 정보 검색 �
 | Tag | `search/parts` Tag·KindBadge·알약 칩 | 4px 태그(중립, 의도 4종), 지울 수 있는 태그. **높이 20px — 2026-11-16 결정(사용자 위임 — 권장안)**: 12/16 글 + 위아래 1px + 1px 경계, 글 흐름 안에서는 줄 위 맞춤(`align-top`) — 표 칸 글줄(14/20)과 같아 태그가 든 행도 32·28px. 공용 `Tag`·패턴 추정·이전 값 배지·신선도 주의 표지·정보 검색 종류 표지(`KindBadge`)·개장 배지(`SessionBadge`)가 같은 높이. 테두리 없는 글 배지 `SourceBadge`(12/16 글 + 위아래 2px — 공용 표 칸에서 씀)도 20px이고 같은 줄 위 맞춤(2026-11-16 검토 지적 — 빠져 있어 그 행이 1px 늘었음). 화면 안 자체 배지(모의매매 상태 배지 등 `px-2 py-0.5` 22px)는 그 화면이 공용 Tag로 옮기는 단계(P4~P6)에서 맞춤 | ui |
 | Callout | Banner(218회) | 의도 4종, 아이콘, 제목. Banner는 별칭으로 두고 단계마다 바꿈 | ui |
 | Toast | Radix Toast | 겉모양만(덮개 3층) | ui |
-| SplitPane / MasterDetail (새) | `search/entityGrid.ts` | lg 두 칸, xl 세 칸 틀을 공용으로. 좁은 화면은 한 칸, 검사는 시트. **모의매매 전용으로 만들지 않음**(§7-1 확장 지점). **P4에서 만듦(2026-11-16)** — `SplitPane`은 정보 검색 칸 틀 클래스를 글자 그대로 옮긴 틀(정보 검색이 다시 내보냄), `MasterDetail`은 넓은 화면 옆 검사 칸(크기 질의 — 칸 폭 32rem 이상)·좁은 화면은 시트 대신 공용 대화상자(위쪽 고정 — Drawer는 아직 없음)·목록 j/k. 상세 3종의 보유 탭 | patterns |
+| SplitPane / MasterDetail (새) | `search/entityGrid.ts` | lg 두 칸, xl 세 칸 틀을 공용으로. 좁은 화면은 한 칸, 검사는 덮개로 엶(처음 계획은 시트 — 아래 P4 결과와 사용자 결정 거리). **모의매매 전용으로 만들지 않음**(§7-1 확장 지점). **P4에서 만듦(2026-11-16)** — `SplitPane`은 정보 검색 칸 틀 클래스를 글자 그대로 옮긴 틀(클래스는 `ui/classes.ts` — 정보 검색과 함께 씀), `MasterDetail`은 넓은 화면 옆 검사 칸(크기 질의 — 칸 폭 32rem 이상, 스크롤 영역 위쪽에 붙음)·좁은 화면과 넓은 화면의 좁은 틀은 공용 대화상자(위쪽 고정 — Drawer는 아직 없음, 아래 시트로 바꿀지는 D2 전 사용자 결정 거리)·목록 j/k. 상세 3종의 보유 탭 | patterns |
 | Drawer (새) | ReaderDialog 등 | Radix Dialog를 오른쪽 서랍 모양으로(새 의존성 없음) | ui |
 | Timeline (새) | 없음(결정·알림·실행 기록이 표) | 시각 열, 종류 태그, 한 줄 요약. 누르면 검사 칸 | patterns |
 | SectionIndex (새) | 없음 | 긴 화면 목차(sticky). 프레임, 설정, 매크로, 저장소 상태 | patterns |
-| KpiStrip | StatTile·Metric·Hero | 값 20/24px 띠. Hero(44px)와 문지르기는 패널 차트로(W7). **P4에서 만듦(2026-11-16)** — 홈 맨 위 '오늘 요약'(링크 타일은 중립 잉크). `StatTile`은 실제 계좌·ISA·실제 매매만 써서 그대로(결정 8), `Metric`은 P5a·P5b·P7, 모의 개요 히어로는 P6 | patterns |
+| KpiStrip | StatTile·Metric·Hero | 값 20/24px 띠. Hero(44px)와 문지르기는 패널 차트로(W7). **P4에서 만듦(2026-11-16)** — 홈 맨 위 '오늘 요약'(링크 타일은 중립 잉크, 바깥 숫자는 타일 아래 출처 줄 — `Metric`의 `source`를 옮길 자리). `StatTile`은 실제 계좌·ISA·실제 매매만 써서 그대로(결정 8), `Metric`은 P5a·P5b·P7, 모의 개요 히어로는 P6 | patterns |
 | 그래프 | search `LinksGraph`(SVG) | 공용 patterns로 올림(연결 탭) | patterns |
 | 메뉴·툴팁 | 없음 | 계정 메뉴·'동작' 메뉴·접힌 메뉴 이름 툴팁 — Radix DropdownMenu·Tooltip(W12, P3) | ui |
 | 빈 상태·오류·로딩 | EmptyState, ErrorState, Skeleton | 겉모양만 | ui |
