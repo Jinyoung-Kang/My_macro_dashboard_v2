@@ -562,6 +562,22 @@ describe("최근 연 대상(이 브라우저에만, 8개 — 넓은 화면)", ()
     expect(screen.getByRole("group", { name: "종목" })).toBeTruthy();
   });
 
+  // QA-559: 빈 검색어 안내 문단과 결과 없음 문단은 목록 상자(mt-3)처럼 위에 12px을 둔다 — 대화상자 본문은 형제 사이 간격을 각 요소의 margin이 정한다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 두 문단이 'px-3 text-sm text-text-2'뿐이라 최근 연 대상 목록 바로 아래 안내가 0px로 붙었다(QA 스택 1440·1024
+  // listbox bottom 333 = 문단 top 333, 마지막 보조 글과 안내 글 사이 7px). 결과 없음 문단도 입력칸 아래 경계에 0px로 붙었다.
+  it.fails("빈 검색어 안내와 결과 없음 문단은 위에 12px(mt-3)을 둔다 — 최근 연 대상 목록 아래·입력칸 아래에 붙지 않게(QA-559)", async () => {
+    window.localStorage.setItem(RECENT_STORAGE_KEY, serializeRecent([
+      { kind: "ticker", label: "Apple Inc.", sub: "AAPL", href: "/s/us/AAPL", dest: "종목 상세" },
+    ]));
+    openSearch();
+    await act(async () => {});
+    expect(recentGroup()).toBeTruthy();
+    expect(screen.getByText(/메뉴 이름, 매크로 지표 이름/).className.split(/\s+/)).toContain("mt-3");
+
+    type("zzqqxx");
+    expect(screen.getByText(/^‘zzqqxx’.+맞는 결과가/).className.split(/\s+/)).toContain("mt-3");
+  });
+
   it("메뉴를 고르면 최근 연 대상에 넣지 않는다", async () => {
     openSearch();
     await act(async () => {});
