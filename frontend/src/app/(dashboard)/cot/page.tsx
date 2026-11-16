@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
+import { ChangeChip } from "@/components/patterns";
 import {
   Banner,
   Card,
@@ -15,7 +16,8 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatPercent, formatSigned, formatWithUnit } from "@/lib/format";
+import { formatSignedCount } from "@/lib/cotScreen";
+import { deltaColor, EMPTY, formatNumber, formatPercent, formatSigned, formatWithUnit, withMinusSign } from "@/lib/format";
 import type { CotAssetResponse, CotExtremesResponse, CotSummary } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -99,45 +101,26 @@ export default function CotPage() {
                 header: "스마트머니 순포지션",
                 align: "right",
                 render: (row) => (
-                  <span className={deltaColor(row.ncNet ?? null, 0)}>
-                    {row.ncNet === null || row.ncNet === undefined
-                      ? EMPTY
-                      : formatSigned(row.ncNet, 0)}
-                  </span>
+                  <span className={deltaColor(row.ncNet ?? null, 0)}>{formatSignedCount(row.ncNet)}</span>
                 ),
               },
               {
                 key: "commNet",
                 header: "상업 헤저",
                 align: "right",
-                render: (row) =>
-                  row.commNet === null || row.commNet === undefined
-                    ? EMPTY
-                    : formatSigned(row.commNet, 0),
+                render: (row) => formatSignedCount(row.commNet),
               },
               {
                 key: "change1w",
                 header: "1주 변화",
                 align: "right",
-                render: (row) => (
-                  <span className={deltaColor(row.change1w ?? null, 0)}>
-                    {row.change1w === null || row.change1w === undefined
-                      ? EMPTY
-                      : formatSigned(row.change1w, 0)}
-                  </span>
-                ),
+                render: (row) => <SignedChip value={row.change1w} digits={0} />,
               },
               {
                 key: "change4w",
                 header: "4주 변화",
                 align: "right",
-                render: (row) => (
-                  <span className={deltaColor(row.change4w ?? null, 0)}>
-                    {row.change4w === null || row.change4w === undefined
-                      ? EMPTY
-                      : formatSigned(row.change4w, 0)}
-                  </span>
-                ),
+                render: (row) => <SignedChip value={row.change4w} digits={0} />,
               },
               {
                 key: "percentile",
@@ -186,7 +169,7 @@ export default function CotPage() {
             <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Metric
                 label="스마트머니 순포지션"
-                value={formatSigned(detail.data.summary?.ncNet ?? null, 0)}
+                value={formatSignedCount(detail.data.summary?.ncNet)}
                 delta={detail.data.summary?.change1w ?? null}
                 deltaText={`1주 ${formatSigned(detail.data.summary?.change1w ?? null, 0)}`}
                 deltaDigits={0}
@@ -194,11 +177,11 @@ export default function CotPage() {
               />
               <Metric
                 label="상업 헤저 순포지션"
-                value={formatSigned(detail.data.summary?.commNet ?? null, 0)}
+                value={formatSignedCount(detail.data.summary?.commNet)}
               />
               <Metric
                 label="소액/비보고"
-                value={formatSigned(detail.data.summary?.nrNet ?? null, 0)}
+                value={formatSignedCount(detail.data.summary?.nrNet)}
               />
               <Metric
                 label="3년 표본 백분위"
@@ -325,17 +308,13 @@ function ExtremesPanel({ asset }: { asset: string }) {
                         key: "mean",
                         header: "평균 수익률",
                         align: "right",
-                        render: (row) => (
-                          <span className={deltaColor(row.signal.mean)}>
-                            {formatPercent(row.signal.mean)}
-                          </span>
-                        ),
+                        render: (row) => <SignedChip value={row.signal.mean} percent />,
                       },
                       {
                         key: "median",
                         header: "중앙값",
                         align: "right",
-                        render: (row) => formatPercent(row.signal.median),
+                        render: (row) => withMinusSign(formatPercent(row.signal.median)),
                       },
                       {
                         key: "winRate",
@@ -352,7 +331,7 @@ function ExtremesPanel({ asset }: { asset: string }) {
                         align: "right",
                         render: (row) => (
                           <span className="text-text-3">
-                            {formatPercent(row.base.mean)} ·{" "}
+                            {withMinusSign(formatPercent(row.base.mean))} ·{" "}
                             {row.base.winRate === null
                               ? EMPTY
                               : `${formatNumber(row.base.winRate, 0)}% 상승`}
@@ -385,23 +364,19 @@ function ExtremesPanel({ asset }: { asset: string }) {
                   key: "net",
                   header: "순포지션",
                   align: "right",
-                  render: (row) => formatSigned(row.net, 0),
+                  render: (row) => formatSignedCount(row.net),
                 },
                 {
                   key: "return4w",
                   header: "이후 4주",
                   align: "right",
-                  render: (row) => (
-                    <span className={deltaColor(row.return4w)}>{formatPercent(row.return4w)}</span>
-                  ),
+                  render: (row) => <SignedChip value={row.return4w} percent />,
                 },
                 {
                   key: "return13w",
                   header: "이후 13주",
                   align: "right",
-                  render: (row) => (
-                    <span className={deltaColor(row.return13w)}>{formatPercent(row.return13w)}</span>
-                  ),
+                  render: (row) => <SignedChip value={row.return13w} percent />,
                 },
               ]}
             />
@@ -413,5 +388,20 @@ function ExtremesPanel({ asset }: { asset: string }) {
         </>
       )}
     </Card>
+  );
+}
+
+/**
+ * 등락 칸 — 공용 변화 칩(▲▼·부호 −·읽어 주는 '상승/하락' — 색만으로 방향을 전하지 않음, QA-629). 계약 수 변화는 변화량(`digits` 자리), 수익률은
+ * 변화율('%' — `percent`). 모르는 값은 칩 대신 '—'(0을 만들지 않음 — 아직 지나지 않은 13주 등). 표 칸 안이라 작은 칩이고 꺾지 않습니다.
+ */
+function SignedChip({ value, digits = 2, percent = false }: { value: number | null | undefined; digits?: number; percent?: boolean }) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return <span className="text-text-3">{EMPTY}</span>;
+  }
+  return percent ? (
+    <ChangeChip size="sm" nowrap changePct={value} digits={digits} />
+  ) : (
+    <ChangeChip size="sm" nowrap change={value} digits={digits} />
   );
 }
