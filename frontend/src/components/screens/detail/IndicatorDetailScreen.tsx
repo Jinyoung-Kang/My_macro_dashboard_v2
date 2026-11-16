@@ -23,6 +23,7 @@ import { indicatorProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { withoutLeadingIcon } from "@/lib/format";
 import { HOME_REFRESH_MS, macroCardRow, macroCardSession, macroItemSource, MARKET_HREF } from "@/lib/home";
+import { MARKETS } from "@/lib/marketSessions";
 import { infoSearchEntry } from "@/lib/search";
 import type { MacroOverview } from "@/lib/types";
 import { AiSummaryCard, type DetailLink, ExternalLinksCard, LinkListPanel, NEWS_SOURCES, NewsCard, PriceChartPanel, propertyItems } from "./DetailParts";
@@ -100,7 +101,15 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
   // 뉴스·AI 요약의 검색어·이름은 백엔드 상한(60자) 안으로(QA-448).
   const query = detailQuery(indicatorNewsQuery(item.name)) ?? undefined;
   const label = detailQuery(item.name) ?? undefined;
-  const related = category.items.filter((entry) => entry.key !== item.key).map((entry) => macroCardRow(entry, clock, indicatorHref(entry.key)));
+  // 같은 범주 줄의 보조 글은 홈 시장 표와 같은 '티커 · 시장'이지만, 카드 값과 뜻이 다른 티커(2년물 ZT=F — INDICATOR_NO_CHART)는 머리 태그처럼
+  // 적지 않고 시장 이름만 둡니다(같은 문법이면 다시 이 지표의 식별자로 보임 — QA-589).
+  const related = category.items
+    .filter((entry) => entry.key !== item.key)
+    .map((entry) => {
+      const relatedRow = macroCardRow(entry, clock, indicatorHref(entry.key));
+      if (INDICATOR_NO_CHART[entry.key] === undefined) return relatedRow;
+      return { ...relatedRow, sub: (entry.market ? MARKETS[entry.market]?.name : null) ?? null };
+    });
   const properties = indicatorProperties(item, row, {
     category: categoryTitle,
     source: macroItemSource(item),

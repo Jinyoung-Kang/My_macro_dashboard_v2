@@ -78,7 +78,7 @@ describe("뜻이 다른 티커는 대상 식별자가 아님 (QA-589)", () => {
 
   // 같은 범주 목록(오른쪽 칸)도 같은 화면군의 표면 — 머리 태그에서 뺀 ZT=F를 '^TYX · 미국 국채'와 같은 문법의 보조 글로 적으면 다시 이 지표의 식별자로 보입니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 us10y 화면의 2년물 줄 보조 글이 'ZT=F · 미국 국채'였습니다.
-  it.fails("같은 범주 목록 — 2년물 줄 보조 글은 시장 이름만(ZT=F 없음), 다른 줄은 '티커 · 시장' 그대로", async () => {
+  it("같은 범주 목록 — 2년물 줄 보조 글은 시장 이름만(ZT=F 없음), 다른 줄은 '티커 · 시장' 그대로", async () => {
     renderIndicator("us10y");
     const panel = (await screen.findByRole("heading", { level: 2, name: "미국 국채 수익률 — 같은 범주" })).closest("section") as HTMLElement;
     const items = within(panel).getAllByRole("listitem");
