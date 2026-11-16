@@ -507,8 +507,9 @@ describe("끌기", () => {
 
   // QA-603: QA 스택 1440 /macro에서 손잡이를 잡고 30px 끈 뒤 창을 900으로 줄이면 표지(data-nav-resizing — col-resize·글 고르기 끔)가 좁은 화면 전체에
   // 남았고, 숨은 손잡이가 포인터 잡기를 유지해 좁은 화면의 움직임으로 폭이 바뀌어 저장됐습니다(x=60에서 놓으면 레일로 접혀 navCollapsed '1').
-  // 재현 커밋 실패 값: AssertionError: expected true to be false(좁아진 뒤에도 html의 표지가 남음).
-  it.fails("QA-603: 끄는 도중 넓은 화면이 좁아지면(lg 아래) 끌기를 끝낸다 — 표지를 떼고 그때까지의 폭을 저장, 그 뒤 움직임은 숨은 메뉴를 바꾸지 않음", () => {
+  // 재현 커밋에서는 it.fails였습니다(실패 값: AssertionError: expected true to be false — 좁아진 뒤에도 html의 표지가 남음. 놓은 뒤 navCollapsed '1'·
+  // navWidth '220'·aria-valuenow 200).
+  it("QA-603: 끄는 도중 넓은 화면이 좁아지면(lg 아래) 끌기를 끝낸다 — 표지를 떼고 그때까지의 폭을 저장, 그 뒤 움직임은 숨은 메뉴를 바꾸지 않음", () => {
     const setWide = stubWideSwitch(true);
     const release = vi.spyOn(Element.prototype, "releasePointerCapture");
     render(<SideNav pathname="/macro" user={MEMBER} />);
@@ -517,12 +518,15 @@ describe("끌기", () => {
     runFrames();
     expect(value().now).toBe("250");
     expect(document.documentElement.hasAttribute(NAV_RESIZING_ATTR)).toBe(true);
+    expect(isShellResizing()).toBe(true);
 
     setWide(false);
     expect(document.documentElement.hasAttribute(NAV_RESIZING_ATTR)).toBe(false);
     expect(handle().hasAttribute("data-dragging")).toBe(false);
     expect(release).toHaveBeenCalledWith(1);
     expect(window.localStorage.getItem("shell.navWidth")).toBe("250");
+    // 차트 폭 잡아 두기 신호(QA-601)도 끔 — 좁은 화면의 차트가 앞 폭에 묶이지 않음
+    expect(isShellResizing()).toBe(false);
 
     move(60);
     runFrames();

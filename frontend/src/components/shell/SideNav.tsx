@@ -109,7 +109,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
   const navId = `${idBase}-nav`;
   const [collapsed] = useNavCollapsed();
   const [width] = useNavWidth();
-  // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554).
+  // 툴팁은 넓은 화면에서만 — 메뉴가 CSS로 숨어도(lg 미만) 열린 툴팁이 좁은 화면 왼쪽 위에 남았습니다(QA-554). 끄는 도중 좁아지면 끌기도 끝냅니다(QA-603).
   const wide = useWideShell();
   const boxRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
@@ -122,7 +122,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
     refocus.current = Boolean(boxRef.current && active && boxRef.current.contains(active));
   }, []);
   // 접기·펼치기(150ms 폭 전환)와 오른쪽 가장자리의 폭 손잡이(끌기·키·두 번 누르기) — hooks/useNavResize.
-  const resize = useNavResize(rememberFocus);
+  const resize = useNavResize(rememberFocus, wide);
   const handleToggle = resize.toggle;
   // 끄는 동안에는 툴팁을 열지 않습니다(포인터는 손잡이가 잡고 있지만 키보드 포커스로 열리는 것까지).
   const tooltipsOff = !wide || resize.dragging;
