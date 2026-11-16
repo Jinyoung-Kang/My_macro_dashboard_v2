@@ -657,7 +657,7 @@ describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", 
   const groupNames = () => screen.getAllByRole("group").map((group) => group.querySelector("[role='presentation'] > span")?.textContent);
   const helpOption = () => screen.getByRole("option", { name: /단축키 도움말/ });
 
-  it.fails("늦게 온 종목 찾기 묶음이 명령 앞에 끼어도 고른 줄은 '단축키 도움말' 그대로 — aria-activedescendant가 따라가고 Enter는 명령을 실행한다(QA-557)", async () => {
+  it("늦게 온 종목 찾기 묶음이 명령 앞에 끼어도 고른 줄은 '단축키 도움말' 그대로 — aria-activedescendant가 따라가고 Enter는 명령을 실행한다(QA-557)", async () => {
     reads[endpoints.detail.symbols("help")] = LATE_SYMBOLS;
     openSearch();
     await act(async () => {});
@@ -677,7 +677,7 @@ describe("명령(셸 명령만 — 서버를 부르지 않음, 넓은 화면)", 
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  it.fails("색인 결과와 명령이 함께 맞을 때 ↑로 고른 명령은 늦게 온 종목 찾기 묶음 뒤에도 고른 줄이다(QA-557)", async () => {
+  it("색인 결과와 명령이 함께 맞을 때 ↑로 고른 명령은 늦게 온 종목 찾기 묶음 뒤에도 고른 줄이다(QA-557)", async () => {
     reads[endpoints.detail.symbols("ㄷㅇ")] = LATE_SYMBOLS;
     openSearch();
     await act(async () => {});

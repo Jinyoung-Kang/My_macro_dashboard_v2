@@ -84,8 +84,10 @@ const NO_CONDITIONS: ShortcutConditions = { wide: false, filter: false };
  * - 결과는 범주마다 상한까지만 보이고 넘친 수를 범주 제목에 적습니다. 무료 회원에게 잠긴 유료 화면은 자물쇠 아이콘.
  * - 결과 행: 왼쪽 32px 원(메뉴는 그 탭 아이콘, 지표는 시장·기관은 기관 아이콘, 종목은 티커 모노그램 — lib/search `avatar`, 장식) ·
  *   이름과 보조 글 · 오른쪽 '→ 화면' 캡션. 지표·기관·종목은 그 상세 화면으로 갑니다(/markets/i/…·/institutions/…·/s/…).
- * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 마지막 묶음
- *   '종목 찾기'에 붙입니다. 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞 검색어의 결과가 남지 않게).
+ * - 색인 밖 종목: 두 글자 이상을 치고 잠시 멈추면 외부 검색(Yahoo·네이버 자동완성, GET /api/detail/symbols — 회원 경로)을 불러 색인 범주 뒤
+ *   '종목 찾기' 묶음에 붙입니다(묶음 순서는 색인 범주 → 종목 찾기 → 명령). 색인에 이미 있는 종목은 빼고, 지금 검색어의 응답일 때만 보입니다(앞
+ *   검색어의 결과가 남지 않게). 이 묶음은 늦게 와서 명령 묶음 앞에 끼므로 고른 줄은 순번이 아니라 결과 id로 듭니다 — 고른 줄이 그대로 남고
+ *   순번(aria-activedescendant)만 따라갑니다(QA-557).
  * - 결과 맨 아래(목록 밖)의 '‘검색어’ 정보 검색' 링크 — 같은 검색어로 정보 검색 화면(/search?q=, ADR 0041)으로 갑니다. 결과가 없어도 있고,
  *   결과 수·'맞는 결과가 없습니다'에는 세지 않습니다.
  * - 명령 팔레트로 넓힌 범주(최근 연 대상·명령)와 빈 검색어 안내 끝의 도움말 문장은 넓은 화면(lg 이상 — 팔레트를 열 때 셈)에만 있습니다(작업대 실행
@@ -95,7 +97,8 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  // 고른 결과의 id(optionView(option).id) — 순번으로 들면 늦게 온 묶음이 앞에 낄 때 고른 줄이 다른 결과로 바뀝니다(QA-557). null이면 맨 위.
+  const [activeId, setActiveId] = useState<string | null>(null);
   const baseId = useId();
   const listboxId = `${baseId}-results`;
   const optionId = (index: number) => `${baseId}-option-${index}`;
@@ -144,8 +147,9 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   // 명령 — 넓은 화면에서 검색어가 맞을 때만(lib/palette — 명령은 모두 wideOnly). 빈 검색어에는 명령이 없어 빈 Enter가 명령(도움말 창 열기·
   // 메뉴 접기)을 실행하지 않습니다.
   const commands = useMemo(() => (open && trimmed !== "" ? commandMatches(trimmed, { wide }) : []), [open, trimmed, wide]);
-  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(넓은 화면에서 있을 때만 — 그때 빈 Enter는 맨 위 대상으로 갑니다), 검색어가 있으면 지금 범주
-  // (메뉴·지표·기관·종목·종목 찾기) 다음 명령(맞을 때만). 좁은 화면의 빈 검색어는 결과가 없어 Enter가 아무것도 하지 않습니다(지금 그대로).
+  // 팔레트 묶음 — 검색어가 비면 최근 연 대상(넓은 화면에서 있을 때만 — 그때 빈 Enter는 맨 위 대상으로 갑니다), 검색어가 있으면 색인 범주
+  // (메뉴·지표·기관·종목) → 종목 찾기(늦게 옴) → 명령(맞을 때만). 고른 줄은 id로 들어 늦게 온 묶음이 끼어도 같은 결과에 남습니다(QA-557).
+  // 좁은 화면의 빈 검색어는 결과가 없어 Enter가 아무것도 하지 않습니다(지금 그대로).
   const paletteGroups = useMemo<PaletteGroup[]>(() => {
     if (trimmed === "") {
       return wide && recent.length > 0
@@ -158,7 +162,14 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   const flat = paletteGroups.flatMap((group) => group.options);
   // 묶음마다 첫 결과의 전체 순번(↑↓·aria-activedescendant는 묶음을 넘어 한 줄로 셉니다).
   const starts = paletteGroups.map((_, at) => paletteGroups.slice(0, at).reduce((sum, group) => sum + group.options.length, 0));
-  const activeIndex = flat.length === 0 ? -1 : Math.min(active, flat.length - 1);
+  // 고른 줄의 순번 — 고른 id가 지금 결과에 없으면(아직 고정 전 등) 맨 위.
+  const activeIndex = flat.length === 0 ? -1 : Math.max(0, flat.findIndex((option) => optionView(option).id === activeId));
+  // 결과가 생긴 첫 그림에서 맨 위 결과의 id로 고정합니다 — ↑↓를 누르지 않은 기본 상태도 늦게 온 묶음에 밀리지 않게. 닫혀 있는 동안은
+  // 고정하지 않습니다(다른 탭이 최근 연 대상을 바꿔도 다시 열면 맨 위부터).
+  const firstId = open && flat.length > 0 ? optionView(flat[0]).id : null;
+  useEffect(() => {
+    if (activeId === null && firstId !== null) setActiveId(firstId);
+  }, [activeId, firstId]);
 
   const notices = [
     sourceNotice("지표", overview),
@@ -174,7 +185,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
     } else {
       setQuery("");
       setSettled("");
-      setActive(0);
+      setActiveId(null);
     }
   };
 
@@ -229,7 +240,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
   };
 
   const moveTo = (next: number) => {
-    setActive(next);
+    setActiveId(optionView(flat[next]).id);
     // 목록이 길면 고른 줄이 보이게 스크롤합니다(옵션은 이미 그려져 있어 지금 찾을 수 있음).
     document.getElementById(optionId(next))?.scrollIntoView({ block: "nearest" });
   };
@@ -298,7 +309,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setActive(0);
+              setActiveId(null);
             }}
             onKeyDown={onInputKeyDown}
             // 브라우저 기본 지우기 X는 숨깁니다(QA-515) — 어두운 화면에서 굵은 흰색으로 그려져 바로 옆 대화상자 닫기 X와 헷갈렸습니다. type=search는
@@ -344,7 +355,7 @@ export function SearchCommand({ user }: { user?: SessionUser }) {
                       aria-selected={selected}
                       onClick={() => go(option)}
                       onMouseMove={() => {
-                        if (!selected) setActive(index);
+                        if (!selected) setActiveId(entry.id);
                       }}
                       className={`relative flex min-h-12 cursor-pointer items-center gap-3 rounded-control px-3 py-2 lg:min-h-10 lg:py-1 ${selected ? "bg-surface" : ""}`}
                     >
