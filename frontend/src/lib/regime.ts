@@ -43,14 +43,15 @@ export function regimeInputCells(inputs: RegimeLogEntry["inputs"]) {
 }
 
 /**
- * 판정 기록 한 건의 한 줄 요약(타임라인 줄) — 근거 넷을 '이름 값'으로 잇고(모르는 값은 —), 판정하지 못한 날은 받지 못한 입력 수를 덧붙입니다.
- * 기준일·사유·규칙 판은 검사 칸에 둡니다.
+ * 판정 기록 한 건의 한 줄 요약(타임라인 줄)의 마디 — 근거 넷을 '이름 값'으로(모르는 값은 —), 판정하지 못한 날은 사유 수를 덧붙입니다. 화면은 마디를
+ * ' · '로 잇고 마디 안에서는 줄을 바꾸지 않습니다('하이일드 / 3.43%p'처럼 이름과 값이 갈리지 않게). 사유는 받지 못한 입력만이 아니라 오래된 입력
+ * ('입력 오래됨: …')도 있어 '판정 불가 사유'라 부릅니다(백엔드 regime_log의 missing). 기준일·사유 글·규칙 판은 검사 칸에 둡니다.
  */
-export function regimeLogSummary(entry: Pick<RegimeLogEntry, "inputs" | "missing">): string {
+export function regimeLogSummaryParts(entry: Pick<RegimeLogEntry, "inputs" | "missing">): string[] {
   const parts = regimeInputCells(entry.inputs).map((cell) => `${cell.label} ${cell.value}`);
-  const missing = (entry.missing ?? []).length;
-  if (missing > 0) parts.push(`받지 못한 입력 ${missing}`);
-  return parts.join(" · ");
+  const reasons = (entry.missing ?? []).length;
+  if (reasons > 0) parts.push(`판정 불가 사유 ${reasons}`);
+  return parts;
 }
 
 /**

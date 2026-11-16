@@ -182,7 +182,7 @@ function regimeLogTwo() {
 }
 
 describe("판정 기록 — 타임라인", () => {
-  it("줄마다 날짜·국면 태그(아이콘 + 글)·근거 한 줄, 판정 불가 날은 받지 못한 입력 수 — 넓은 화면은 처음에 가장 최근 줄의 검사 칸", async () => {
+  it("줄마다 날짜·국면 태그(아이콘 + 글)·근거 한 줄(마디 안 줄바꿈 없음), 판정 불가 날은 사유 수 — 넓은 화면은 처음에 가장 최근 줄의 검사 칸", async () => {
     stubWide();
     reads[REGIME_LOG] = regimeLogTwo();
     render(<RegimePage />);
@@ -193,7 +193,8 @@ describe("판정 기록 — 타임라인", () => {
     // 가장 최근(판정 불가) — 날짜 <time>, 중립 태그(점선 원), 요약 끝에 받지 못한 입력 수.
     expect(rows[0].querySelector("time")?.getAttribute("dateTime")).toBe("2026-10-09");
     expect(within(rows[0]).getByText("판정 불가")).toBeTruthy();
-    expect(rows[0].textContent).toContain("하이일드 — · 순유동성 4주 −254.0억 달러 · 받지 못한 입력 1");
+    expect(rows[0].textContent).toContain("하이일드 — · 순유동성 4주 −254.0억 달러 · 판정 불가 사유 1");
+    expect(within(rows[0]).getByText("순유동성 4주 −254.0억 달러").className).toContain("whitespace-nowrap");
     // 후퇴 경계 — 주의 태그(삼각 아이콘 + '주의:').
     expect(within(rows[1]).getByText("주의:")).toBeTruthy();
     expect(rows[1].textContent).toContain("10Y-3M −0.12%p · NFCI −0.48 · 하이일드 2.85%p");
@@ -202,7 +203,7 @@ describe("판정 기록 — 타임라인", () => {
     // 넓은 화면은 처음에 가장 최근 줄을 검사 칸에(고르기 콜백 없이).
     const inspector = screen.getByRole("region", { name: "판정 기록 — 2026-10-09 판정 — 판정 불가" });
     expect(within(inspector).getByRole("heading", { name: "2026-10-09 판정 — 판정 불가" })).toBeTruthy();
-    expect(within(inspector).getByText("하이일드 스프레드")).toBeTruthy();
+    expect(within(inspector).getByText("하이일드 스프레드").tagName).toBe("LI");
     expect(within(inspector).getByText("regime-v1").className).toContain("font-mono");
 
     // 다른 줄을 고르면 그 줄의 근거 넷 값·기준일.

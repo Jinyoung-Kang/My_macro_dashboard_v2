@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { regimeBandLabel, regimeInputCells, regimeLogSummary, regimeTone, trackRecordRow } from "../regime";
+import { regimeBandLabel, regimeInputCells, regimeLogSummaryParts, regimeTone, trackRecordRow } from "../regime";
 
 describe("국면 판정 기록의 근거 표기", () => {
   it("단위를 다른 화면과 같게 적고, 기준일은 월-일로 줄인다 — 음수는 −(U+2212, QA-636)", () => {
@@ -24,17 +24,15 @@ describe("국면 판정 기록의 근거 표기", () => {
     expect(cells[1].asOfDate).toBeNull();
   });
 
-  it("타임라인 한 줄 요약 — 근거 넷을 잇고, 판정하지 못한 날은 받지 못한 입력 수를 덧붙인다", () => {
+  it("타임라인 한 줄 요약의 마디 — 근거 넷, 판정하지 못한 날은 판정 불가 사유 수(받지 못함·오래됨)를 덧붙인다", () => {
     const inputs = {
       curve10y3m: { value: 0.42, asOf: "2026-10-08" },
       nfci: { value: -0.48, asOf: "2026-10-02" },
       hyOas: { value: null, asOf: null },
       liquidity4w: { value: -0.0254, asOf: "2026-10-08" },
     };
-    expect(regimeLogSummary({ inputs, missing: [] })).toBe("10Y-3M +0.42%p · NFCI −0.48 · 하이일드 — · 순유동성 4주 −254.0억 달러");
-    expect(regimeLogSummary({ inputs, missing: ["하이일드 스프레드"] })).toBe(
-      "10Y-3M +0.42%p · NFCI −0.48 · 하이일드 — · 순유동성 4주 −254.0억 달러 · 받지 못한 입력 1",
-    );
+    expect(regimeLogSummaryParts({ inputs, missing: [] })).toEqual(["10Y-3M +0.42%p", "NFCI −0.48", "하이일드 —", "순유동성 4주 −254.0억 달러"]);
+    expect(regimeLogSummaryParts({ inputs, missing: ["하이일드 스프레드", "입력 오래됨: NFCI (2026-10-02, 14일 전)"] }).at(-1)).toBe("판정 불가 사유 2");
     expect(regimeInputCells(inputs)[0].asOfDate).toBe("2026-10-08");
   });
 });

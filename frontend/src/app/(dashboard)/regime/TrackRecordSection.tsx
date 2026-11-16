@@ -25,11 +25,12 @@ type TrackRow = ReturnType<typeof trackRecordRow>;
 
 /**
  * 국면별 성과 표의 열(공용 표 — 행 32px·낱말 사이 줄바꿈). 표본이 부족한 줄의 '표본 부족'과 비교 기준(아무 때나)은 보조 글색입니다.
- * 글 열(기간·표본)은 낱말 사이에서만 꺾고(break-keep — 옛 표의 QA-526 규칙), 숫자 열은 오른쪽 정렬·줄바꿈 없음(공용 표 규칙).
+ * 일곱 칸이라 좁은 칸(가운데 칸 448~560px)에서는 표가 넘쳐 좌우로 넘깁니다(넘치면 안내). 짧은 글 열(기간 '13주 뒤'·표본 '42건 · 독립 4')도 숫자 열처럼
+ * 줄을 바꾸지 않습니다 — 최소 폭 표에서 이 두 열만 눌려 '13주 / 뒤'·'42건 · / 독립 4'로 꺾였습니다(자기 빌드 1440).
  */
 const COLUMNS: readonly Column<TrackRow>[] = [
-  { key: "horizon", header: "기간", cell: (row) => row.horizon, className: "break-keep" },
-  { key: "samples", header: "표본", cell: (row) => row.samples, className: "break-keep" },
+  { key: "horizon", header: "기간", cell: (row) => row.horizon, className: "whitespace-nowrap" },
+  { key: "samples", header: "표본", cell: (row) => row.samples, className: "whitespace-nowrap" },
   {
     key: "mean",
     header: "평균",
