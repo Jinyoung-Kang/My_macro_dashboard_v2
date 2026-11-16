@@ -30,6 +30,7 @@ import {
   fixedYAxis,
   inLegend,
   isolatedPointIndexes,
+  lineChartLabel,
   lineXAxis,
   lineYAxis,
   markerLabelSide,
@@ -211,6 +212,7 @@ export function LineSeries({
   zeroLine = false,
   precision = 2,
   grid = false,
+  ariaLabel,
 }: {
   data: Point[];
   color?: string;
@@ -235,6 +237,11 @@ export function LineSeries({
   precision?: number;
   /** 큰 분석 차트의 옅은 가로 격자(작업대 실행 명세 W6) — 선 차트 LineChart의 `grid`와 같습니다. */
   grid?: boolean;
+  /**
+   * 차트 이름(화면 낭독기 — Tab으로 닿는 그림에 붙음). 주지 않으면 선 차트 LineChart의 기본 이름 '선 차트: 값 · 첫 날짜 ~ 마지막 날짜'(계열 이름이
+   * '값' 하나라 무엇의 추이인지 말하지 않음 — 화면이 '순유동성 추이 (조 달러)'처럼 넘깁니다, QA-617).
+   */
+  ariaLabel?: string;
 }) {
   return (
     <SingleLineChart
@@ -242,6 +249,7 @@ export function LineSeries({
       series={[{ key: "value", label: "값", color }]}
       height={height}
       grid={grid}
+      ariaLabel={ariaLabel}
       includeZero={zeroLine}
       valueFormat={(value) => `${formatNumber(value, precision)}${unit}`}
       tooltipFormat={(value) => `${formatNumber(value, precision + 1)}${unit}`}
@@ -328,7 +336,8 @@ export function MultiLineSeries({
   markers?: { x: string; label: string }[];
   /**
    * 차트 이름. Recharts 접근성 층이 그림(svg)을 role="application" 탭 정지점으로 만들므로, 이름이 없으면 낭독기가 이름 없는
-   * 응용 프로그램으로 읽습니다(새 LineChart·도넛과 같은 이유).
+   * 응용 프로그램으로 읽습니다(새 LineChart·도넛과 같은 이유). 주지 않으면 선 차트 LineChart와 같은 꼴의 기본 이름 — '선 차트: 계열 이름들 · 첫 날짜 ~
+   * 마지막 날짜'(lib/lineChart lineChartLabel — 꼬리 계열은 본 계열의 이어진 점이라 범례처럼 이름에서 뺌, QA-617).
    */
   ariaLabel?: string;
   /**
@@ -379,7 +388,14 @@ export function MultiLineSeries({
       <ChartLegend entries={legend} />
       <ChartSizeHold>
       <ResponsiveContainer width="100%" height={height} onResize={(nextWidth) => setWidth(nextWidth)}>
-        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+          aria-label={
+            ariaLabel ??
+            lineChartLabel(rows, series.filter((entry) => entry.tailOf === undefined).map((entry) => ({ key: entry.key, label: entry.name })))
+          }
+        >
           {grid ? (
             <CartesianGrid yAxisId={leftAxis ? "left" : "right"} vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks />
           ) : null}
@@ -521,6 +537,7 @@ export function HorizontalBars({
   digits = 1,
   valueName = "값",
   neutral = false,
+  ariaLabel,
 }: {
   data: { name: string; value: number }[];
   height?: number;
@@ -534,6 +551,11 @@ export function HorizontalBars({
    * 이 화면들에서 빨강은 "순매수·상승"이라, 방향 없는 값을 빨강으로 칠하면 잘못 읽힙니다.
    */
   neutral?: boolean;
+  /**
+   * 차트 이름(화면 낭독기 — Recharts 접근성 층이 그림을 role="application" Tab 정지점으로 만듦). 주지 않으면 '막대 차트: {valueName}'(QA-617) —
+   * 화면이 '섹터 1M 수익률'처럼 무엇의 막대인지 넘깁니다. 값은 막대 끝 글자와 같은 화면의 표가 나릅니다.
+   */
+  ariaLabel?: string;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-text-3">표시할 데이터가 없습니다.</div>;
@@ -550,6 +572,7 @@ export function HorizontalBars({
       <BarChart
         data={data}
         layout="vertical"
+        aria-label={ariaLabel ?? `막대 차트: ${valueName}`}
         // 오른쪽 여백은 막대 끝 값 라벨이 잘리지 않을 만큼 둡니다.
         margin={{ top: 8, right: 68, bottom: 0, left: 8 }}
       >
@@ -603,6 +626,7 @@ export function SignedBars({
   unit = "",
   valueName = "순매수",
   grid = false,
+  ariaLabel,
 }: {
   /**
    * color를 주면 부호 색(빨강=+, 파랑=−) 대신 그 색으로 칠합니다. 거래량처럼 부호가
@@ -614,6 +638,8 @@ export function SignedBars({
   valueName?: string;
   /** 큰 분석 차트의 옅은 가로 격자(작업대 실행 명세 W6 — 1px border-subtle, Y 눈금 자리에만). */
   grid?: boolean;
+  /** 차트 이름(화면 낭독기 — HorizontalBars와 같음). 주지 않으면 '막대 차트: {valueName}'(QA-617). */
+  ariaLabel?: string;
 }) {
   if (data.length === 0) {
     return <div className="py-10 text-center text-sm text-text-3">표시할 데이터가 없습니다.</div>;
@@ -622,7 +648,7 @@ export function SignedBars({
   return (
     <ChartSizeHold>
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel ?? `막대 차트: ${valueName}`}>
         {grid ? <CartesianGrid vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
         <XAxis dataKey="name" stroke={AXIS_LINE} tick={AXIS} tickLine={false} interval={0} angle={-25} height={70} textAnchor="end" />
         {/* 축 폭은 눈금 글 폭에 맞춥니다(width="auto") — 고정 64px은 음수 부호·긴 단위('-16,000계약')의 앞자리를 잘랐습니다. */}
