@@ -330,7 +330,8 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
     const header = screen.getByRole("banner");
     expect(classes(header)).toEqual(expect.arrayContaining(["lg:h-12", "lg:flex-nowrap", "flex-wrap"]));
     expect(classes(header).some((name) => /^(lg:)?h-16$/.test(name))).toBe(false);
-    const appName = within(header).getByText(/^My Macro/);
+    // 글은 안쪽 인라인 span(QA-550) — 높이는 그 바깥 flex 상자가 정함
+    const appName = within(header).getByText(/^My Macro/).parentElement as HTMLElement;
     expect(classes(appName)).toEqual(expect.arrayContaining(["h-16", "lg:h-auto"]));
   });
 
@@ -339,7 +340,7 @@ describe("상단바 크기(작업대 실행 명세 §5 — 넓은 화면 48px �
   // 'My Macro\nDashboard\nv2'). xl 미만은 안쪽 span이 숨어 두 조각이 한 항목이라 정상이었고, textContent 단언만 있어 jsdom 시험이 보지 못했습니다.
   // 바깥 flex 상자는 그대로 두고 글 전체를 인라인 span 하나로 감쌉니다(flex 항목이 하나 — 공백이 그대로). jsdom은 배치를 하지 않아 구조로 봅니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 flex 상자의 직접 자식에 글 노드 'My Macro'·' v2'가 있었습니다.
-  it.fails("앱 이름 글은 flex 상자 안의 인라인 span 하나에 담는다 — 글 조각이 따로 flex 항목이 되어 xl에서 단어 사이 공백이 사라지지 않게 (QA-550)", () => {
+  it("앱 이름 글은 flex 상자 안의 인라인 span 하나에 담는다 — 글 조각이 따로 flex 항목이 되어 xl에서 단어 사이 공백이 사라지지 않게 (QA-550)", () => {
     renderShell(MEMBER_PRO);
     const header = screen.getByRole("banner");
     const box = [...header.children].find((child) => child.tagName === "SPAN" && child.textContent === "My Macro Dashboard v2") as HTMLElement;

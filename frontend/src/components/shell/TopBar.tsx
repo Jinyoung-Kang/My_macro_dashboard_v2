@@ -24,7 +24,8 @@ function bellLabel(unread: number | null | undefined): string {
  * 알림 벨(/alerts, 읽지 않은 수 배지), 계정 메뉴(넓은 화면만).
  * 넓은 화면(lg 이상)은 화면 폭 전체의 높이 48px 한 줄(앱 이름 · 빵부스러기 · 검색 · 새로고침 · 장 상태 칩 · 벨 · 계정)이고 그 아래 줄에 왼쪽 메뉴와 본문이 놓입니다
  * (작업대 실행 명세 §5, ADR 0042 결정 5). 좁은 화면은 지금 구조 그대로 — 64px 줄(앱 이름·검색·벨) 아래 장 상태 칩 줄을 하나 더 둡니다.
- * 앱 이름은 좁은 화면과 lg~xl 사이에서 짧게('My Macro v2'), xl 이상에서 'My Macro Dashboard v2'입니다.
+ * 앱 이름은 좁은 화면과 lg~xl 사이에서 짧게('My Macro v2'), xl 이상에서 'My Macro Dashboard v2'입니다. 글 전체는 flex 상자 안의 인라인 span 하나에
+ * 담습니다 — 글 조각이 따로 flex 항목이 되면 항목 맨 앞 공백이 접혀 xl에서 'My MacroDashboardv2'로 붙었습니다(QA-550).
  * 장 시계는 인스턴스 하나이고 자리(order)만 바뀝니다 — 둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생깁니다.
  * 데스크톱에서는 본문만 스크롤되므로 늘 보이고, 좁은 화면에서는 페이지와 함께 올라갑니다(고정하면 화면 안 #앵커 제목을 가림).
  */
@@ -36,7 +37,9 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-surface px-4 sm:px-6 lg:h-12 lg:flex-nowrap lg:gap-x-2 lg:px-4">
       <span className="flex h-16 shrink-0 items-center whitespace-nowrap text-[15px] font-bold text-text lg:mr-2 lg:h-auto lg:text-base lg:font-semibold">
-        My Macro<span className="hidden xl:inline"> Dashboard</span> v2
+        <span>
+          My Macro<span className="hidden xl:inline"> Dashboard</span> v2
+        </span>
       </span>
       {/* 빵부스러기가 남는 폭을 차지합니다(lg:flex-1 — 예전 빈칸 자리). 좁은 화면에는 없습니다. */}
       <Breadcrumbs pathname={pathname} user={user} />
