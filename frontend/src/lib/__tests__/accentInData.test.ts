@@ -11,8 +11,8 @@
  *  - CSS 변수 var(--accent…)·var(--color-accent…)(차트 SVG 속성에 넘기는 색).
  *  - 강조 토큰의 hex 값(globals.css :root의 --accent·--accent-hover — 토큰을 거치지 않고 값을 적은 것).
  *
- * 파일 목록(DATA_FILES)은 지금 있는 데이터 패턴·차트입니다. 명세 §9-5가 꼽은 것 가운데 PropertyList는 P4에서 더했고, KpiStrip·Timeline(과 그래프)은
- * 그 부품이 들어오는 단계(명세 §8-2 '새 부품을 만드는 단계' — P4·P5·P6·P7)에서 이 목록에 더합니다. 공용 표(DataTable)는 값 칸과 정렬 머리·누를 수 있는 행이 같은 파일에
+ * 파일 목록(DATA_FILES)은 지금 있는 데이터 패턴·차트입니다. 명세 §9-5가 꼽은 것 가운데 PropertyList·KpiStrip은 P4에서 더했고, Timeline(과 그래프)은
+ * 그 부품이 들어오는 단계(명세 §8-2 '새 부품을 만드는 단계' — P5·P6·P7)에서 이 목록에 더합니다. 공용 표(DataTable)는 값 칸과 정렬 머리·누를 수 있는 행이 같은 파일에
  * 있어 파일 전체를 봅니다 — 누를 수 있는 부분도 데이터 영역이라 중립 바탕·밑줄·focus 링으로 그립니다.
  * 공용 키트(components/ui/index.tsx)는 단추·링크(강조 파랑을 쓰는 것)와 한 파일이라 파일 전체가 아니라 데이터를 그리는 함수 몸통만 봅니다(DATA_FUNCTIONS) —
  * 명세 §6이 DenseTable의 '지금'으로 꼽은 Table과 KpiStrip의 '지금'인 Metric(과 그 변화 값 색을 정하는 lib/format의 deltaColor). 화면 대부분이 이 둘을 씁니다.
@@ -43,6 +43,8 @@ const DATA_FILES = [
   "components/patterns/badges.tsx",
   // 속성 목록(이름-값 줄 — 값·'—'·배지·고정폭 식별자·줄 출처, P4).
   "components/patterns/PropertyList.tsx",
+  // KPI 띠(타일 값·변화 칩·상태 글·배지·대상 링크 타일, P4).
+  "components/patterns/KpiStrip.tsx",
   // 차트(래퍼·선 차트·차트 틀 — 축·기준선·격자·툴팁·계열 색).
   "components/charts/index.tsx",
   "components/charts/LineChart.tsx",

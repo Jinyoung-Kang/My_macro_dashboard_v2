@@ -13,7 +13,7 @@
     `selectionClasses.test.ts`(고르기 조각 클래스), `pageHeader.test.tsx`(화면 머리 — 예전 h1 모양 금지), `lib/__tests__/lineChart.test.ts`·`hooks/__tests__/useChartScrub.test.ts`(문지르기),
     `components/charts/__tests__/frameBoundary.test.ts`(차트 틀 예외 — 차트 폴더 밖의 차트 하위 경로 가져오기는 계좌 색 표의 `frame` 하나, `frame.tsx`는 recharts 없음)
   - 작업대 화면 언어(아래 세 번째 덧붙임 — 공용 부품마다 한 줄): `components/ui/__tests__/DropdownMenu.test.tsx`(메뉴), `components/ui/__tests__/Tooltip.test.tsx`(툴팁),
-    `components/patterns/__tests__/PropertyList.test.tsx`(속성 목록)
+    `components/patterns/__tests__/PropertyList.test.tsx`(속성 목록), `components/patterns/__tests__/KpiStrip.test.tsx`(KPI 띠)
 
 ## 배경
 
@@ -98,3 +98,6 @@
 - 속성 목록 `components/patterns/PropertyList.tsx` — 화면 패턴(이름-값 두 칸 줄 — 값 없음 '—'와 사유·단위는 값이 있을 때만·추정/대리/이전 값 배지 늘 보임·
   고정폭 식별자·줄 출처, 값은 말줄임 없이 낱말 사이 줄바꿈, 넓은 화면 줄 32·28px — 데이터 칸 강조색 금지 목록 `lib/__tests__/accentInData.test.ts`).
   처음 쓰는 곳은 상세 3종의 왼쪽 칸·목록-검사 패턴의 검사 칸(P4), 지키는 시험은 `components/patterns/__tests__/PropertyList.test.tsx`.
+- KPI 띠 `components/patterns/KpiStrip.tsx` — 화면 패턴(홈·모의 개요 44px 히어로 대신 — W7: 값 20·24px tabular-nums, 판정 라벨은 tabular 없이, '—'와 사유·배지 늘 보임,
+  변화는 공용 변화 칩·상태는 공용 상태 글(아이콘 + 글), `href`면 타일 전체가 중립 잉크 링크 — 데이터 칸 강조색 금지 목록). 처음 쓰는 곳은 홈 맨 위 요약(P4),
+  지키는 시험은 `components/patterns/__tests__/KpiStrip.test.tsx`.

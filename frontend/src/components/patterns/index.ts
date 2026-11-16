@@ -12,6 +12,7 @@ export { ChangeChip } from "./ChangeChip";
 export { type Column, DataTable } from "./DataTable";
 export { Empty } from "./Empty";
 export { Hero } from "./Hero";
+export { type KpiItem, KpiStrip } from "./KpiStrip";
 export { type PropertyItem, PropertyList } from "./PropertyList";
 export { RangeTabs } from "./RangeTabs";
 export { Skeleton } from "./Skeleton";

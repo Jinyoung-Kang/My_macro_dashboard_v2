@@ -15,6 +15,7 @@ import * as DataTable from "../DataTable";
 import * as Empty from "../Empty";
 import * as Hero from "../Hero";
 import * as patterns from "../index";
+import * as KpiStrip from "../KpiStrip";
 import * as PropertyList from "../PropertyList";
 import * as RangeTabs from "../RangeTabs";
 import * as Skeleton from "../Skeleton";
@@ -29,6 +30,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   DataTable,
   Empty,
   Hero,
+  KpiStrip,
   PropertyList,
   RangeTabs,
   Skeleton,
@@ -67,6 +69,7 @@ describe("components/patterns 배럴", () => {
         "Empty",
         "EstimateBadge",
         "Hero",
+        "KpiStrip",
         "PropertyList",
         "ProvenanceBadge",
         "RangeTabs",
