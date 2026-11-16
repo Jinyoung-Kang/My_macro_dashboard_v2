@@ -228,6 +228,16 @@ export function LandmarkIcon(props: IconProps) {
   );
 }
 
+/** 왼쪽 메뉴 접기·펼치기 — 사각 틀과 왼쪽 세로줄(왼쪽 칸). 넓은 화면 셸의 접기 단추(16·20px). */
+export function PanelLeftIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </IconBase>
+  );
+}
+
 /** 사람 — 정보 검색의 대상 종류. */
 export function PersonIcon(props: IconProps) {
   return (
