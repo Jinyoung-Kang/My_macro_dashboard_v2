@@ -32,8 +32,10 @@ beforeEach(() => {
     id: "ust",
     title: "미국 국채 수익률",
     items: [
-      { key: "us02y", name: "미국채 2년물 수익률(%)", ticker: "ZT=F", status: "ok", priceStr: "3.512", market: "ust" },
+      // 카드 값 출처는 실제 저장본처럼 TradingView(수집기 us02y) — 출처가 없으면 출처 배지가 티커로 'Yahoo Finance (ZT=F)'를 지어 냅니다.
+      { key: "us02y", name: "미국채 2년물 수익률(%)", ticker: "ZT=F", source: "TradingView Scanner", status: "ok", priceStr: "3.512", market: "ust" },
       { key: "us10y", name: "미국채 10년물 수익률(%)", ticker: "^TNX", status: "ok", priceStr: "4.105", market: "ust" },
+      { key: "us30y", name: "미국채 30년물 수익률(%)", ticker: "^TYX", status: "ok", priceStr: "4.712", market: "ust" },
     ],
   });
   const reads: Record<string, unknown> = { [endpoints.macro.overview(false)]: overview, "/api/calendar/kr-holidays": { available: true, years: {} } };
@@ -72,5 +74,18 @@ describe("뜻이 다른 티커는 대상 식별자가 아님 (QA-589)", () => {
     const header = (await screen.findByRole("heading", { level: 1, name: "미국채 10년물 수익률(%)" })).closest("header") as HTMLElement;
     expect(within(header).getByText("^TNX").className).toContain("font-mono");
     expect(within(row("티커")).queryByText(NOTE)).toBeNull();
+  });
+
+  // 같은 범주 목록(오른쪽 칸)도 같은 화면군의 표면 — 머리 태그에서 뺀 ZT=F를 '^TYX · 미국 국채'와 같은 문법의 보조 글로 적으면 다시 이 지표의 식별자로 보입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 us10y 화면의 2년물 줄 보조 글이 'ZT=F · 미국 국채'였습니다.
+  it.fails("같은 범주 목록 — 2년물 줄 보조 글은 시장 이름만(ZT=F 없음), 다른 줄은 '티커 · 시장' 그대로", async () => {
+    renderIndicator("us10y");
+    const panel = (await screen.findByRole("heading", { level: 2, name: "미국 국채 수익률 — 같은 범주" })).closest("section") as HTMLElement;
+    const items = within(panel).getAllByRole("listitem");
+    const us02y = items.find((item) => item.textContent?.includes("미국채 2년물")) as HTMLElement;
+    const us30y = items.find((item) => item.textContent?.includes("미국채 30년물")) as HTMLElement;
+    expect(us02y.textContent).not.toContain("ZT=F");
+    expect(within(us02y).getByText("미국 국채")).toBeTruthy();
+    expect(within(us30y).getByText("^TYX · 미국 국채")).toBeTruthy();
   });
 });
