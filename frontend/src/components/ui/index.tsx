@@ -530,12 +530,14 @@ export function Table<T>({
       <div className={`overflow-x-auto ${FOCUS_RING}`} tabIndex={0} role="region" aria-label={`${label ?? "표"} (좌우 스크롤)`}>
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
-            {/* 머리는 13px 보조 글 — 대문자·자간은 한국어 머리에서 뜻이 없어 뺐습니다. */}
+            {/* 머리는 13px 보조 글 — 대문자·자간은 한국어 머리에서 뜻이 없어 뺐습니다. 머리·칸은 낱말 사이에서만 줄을 바꿉니다(break-keep —
+                기본 줄바꿈은 좁은 칸에서 한글 낱말을 '기준/일'처럼 글자 사이에서 끊었음, QA-526). 낱말 안 꺾기(wrap-anywhere)는 넣지 않습니다 —
+                칸의 최소 폭을 한 글자로 줄여 같은 꺾임을 다시 냄. 칸이 넓어지면 아래 가로 스크롤 상자 안에서 넘깁니다. */}
             <tr className="border-b border-border text-[13px] text-text-2">
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-3 py-1.5 font-medium ${
+                  className={`break-keep px-3 py-1.5 font-medium ${
                     column.align === "right" ? "text-right" : "text-left"
                   } ${column.className ?? ""}`}
                 >
@@ -553,7 +555,7 @@ export function Table<T>({
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-3 py-1.5 tabular-nums ${
+                    className={`break-keep px-3 py-1.5 tabular-nums ${
                       column.align === "right" ? "text-right" : "text-left"
                     } ${column.className ?? ""}`}
                   >

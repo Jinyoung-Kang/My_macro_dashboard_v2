@@ -21,7 +21,7 @@ const ROWS: Row[] = [
 ];
 
 describe("QA-526 옛 공용 표 — 낱말 사이에서만 줄바꿈", () => {
-  it.fails("머리(th)·칸(td) 모두 break-keep이고 낱말 안 꺾기(wrap-anywhere·break-all)는 없다", () => {
+  it("머리(th)·칸(td) 모두 break-keep이고 낱말 안 꺾기(wrap-anywhere·break-all)는 없다", () => {
     const { container } = render(
       <Table<Row>
         label="국면 판정 성과"
