@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AssetList, ChangeChip, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
+import { AssetList, EntityHeader, EstimateBadge, PropertyList, ProvenanceBadge, Skeleton, SplitPane, StaleBadge } from "@/components/patterns";
 import { Banner, Freshness, PageHeader, Panel, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
@@ -117,14 +117,7 @@ export function IndicatorDetailScreen({ indicatorKey }: { indicatorKey: string }
         name={item.name}
         description={[categoryTitle, item.ticker].filter(Boolean).join(" · ")}
         value={row.valueText ?? null}
-        change={
-          row.change !== null || row.changePct !== null ? (
-            <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-              <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} />
-              <span className="text-xs text-text-3">전일 대비</span>
-            </span>
-          ) : undefined
-        }
+        change={{ change: row.change, changePct: row.changePct, digits: row.changeDigits ?? 2, pctDigits: 2, caption: "전일 대비" }}
         badges={
           <>
             <ProvenanceBadge source={row.source} asOf={row.asOf} delayMin={row.delayMin} title={row.provenanceTitle} />

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
-import { ChangeChip, EntityHeader, MasterDetail, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
+import { EntityHeader, MasterDetail, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
 import { Banner, ErrorState, FOCUS_RING, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -127,14 +127,7 @@ export function StockDetailScreen({ market, code }: { market: DetailMarket; code
         valueLabel="현재가"
         value={price !== null ? formatNumber(price, digits) : null}
         unit={unit}
-        change={
-          change !== null || changePct !== null ? (
-            <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-              <ChangeChip change={change} changePct={changePct} digits={digits} pctDigits={2} />
-              <span className="text-xs text-text-3">전일 대비</span>
-            </span>
-          ) : undefined
-        }
+        change={{ change, changePct, digits, pctDigits: 2, caption: "전일 대비" }}
         placeholder={placeholder}
         badges={
           quote ? (
