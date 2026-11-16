@@ -59,8 +59,11 @@ export type KpiItem = {
   href?: string;
 };
 
-/** 타일 한 칸 — 4px·1px 경계·surface, 안쪽 12px(위아래 10px) — StatTile과 같은 조밀한 칸(명세 §3-7). */
-const TILE = "block h-full min-w-0 rounded-control border border-border bg-surface px-3 py-2.5";
+/**
+ * 타일 한 칸 — 4px·1px 경계·surface, 안쪽 12px(위아래 10px) — StatTile과 같은 조밀한 칸(명세 §3-7). 끊을 곳 없는 긴 값·출처(공백 없는 URL 꼬리 등)는
+ * 타일 안에서 꺾습니다(wrap-anywhere — 상속되어 값·상태·출처·보조 글 모두에 걸림, 말줄임 없음, PropertyList와 같은 규칙).
+ */
+const TILE = "block h-full min-w-0 rounded-control border border-border bg-surface px-3 py-2.5 wrap-anywhere";
 /**
  * 링크 타일 — 중립 잉크(강조 파랑 아님, A1), 마우스를 올리면 바탕 surface-2 + 이름 밑줄, 포커스 링. 높이는 내용(이름 18 + 값 28 + 위아래 20 = 66px 이상)이
  * 정하지만, 누르는 자리 44px(lg 미만)를 클래스로도 적어 둡니다 — 클래스로 읽는 누름 자리 감사(lib/__tests__/touchTargetAudit)가 이 타일도 보게(겉모양 그대로).
@@ -89,6 +92,18 @@ function PendingLines({ count }: { count: number | undefined }): JSX.Element | n
 }
 
 const VALUE_NUMBER = "text-xl font-semibold tabular-nums lg:text-2xl";
+/**
+ * 숫자 값 글(flex-nowrap 값 줄의 항목) — 줄어들지 않고(shrink-0) 값 줄 폭까지만(max-w-full). 타일의 wrap-anywhere는 flex 항목의 최소 폭을 한 글자로
+ * 내리므로, 줄어들 수 있으면 단위 자리가 2px 모자랄 때 '1,339.2|8'처럼 숫자 안에서 꺾였습니다. 이렇게 두면 짧은 숫자는 꺾이지 않고, 값 줄보다 긴 값만
+ * 값 줄 안에서 꺾입니다.
+ */
+const VALUE_NUMBER_ITEM = "shrink-0 max-w-full";
+/**
+ * 단위 — 값 글 안 끝에 붙여 값이 꺾여도 마지막 줄을 따라가고(따로 된 flex 항목이면 꺾인 값 상자 뒤에 놓여 타일 밖으로 나갔음), 그 안에서는 꺾지 않습니다.
+ * 오른쪽 바깥 여백 −12px: 타일 안쪽 여백(12px)까지는 걸쳐도 되게 해, 단위 자리가 조금 모자랄 때 단위만 다음 줄로 넘어가지 않습니다(1280 일곱 타일
+ * '1,339.28' + '원'이 안쪽 폭을 2px 넘음 — QA-599). 간격 4px(ml-1)는 예전 값 줄 간격(gap-x-1)과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ */
+const VALUE_UNIT = "-mr-3 ml-1 whitespace-nowrap text-sm font-normal text-text-3";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
 function KpiValue({ item }: { item: KpiItem }): JSX.Element {
@@ -110,16 +125,17 @@ function KpiValue({ item }: { item: KpiItem }): JSX.Element {
   }
   const ink = item.neutral ? "text-neutral" : "text-text";
   return (
-    <>
-      <span className={`${item.valueKind === "label" ? VALUE_LABEL : VALUE_NUMBER} ${ink}`}>{text}</span>
-      {item.unit ? <span className="text-sm text-text-3">{item.unit}</span> : null}
-    </>
+    <span className={`${item.valueKind === "label" ? VALUE_LABEL : `${VALUE_NUMBER} ${VALUE_NUMBER_ITEM}`} ${ink}`}>
+      {text}
+      {item.unit ? <span className={VALUE_UNIT}>{item.unit}</span> : null}
+    </span>
   );
 }
 
 /**
  * 값 줄 — 읽는 중이면 블록(QA-596). 숫자 값은 단위와 한 덩어리라 줄을 바꾸지 않습니다(flex-nowrap — 숫자는 쉼표에서도 꺾이지 않으므로 넘치는 몫은
- * 단위 폭 하나뿐: 1280 운영자 일곱 타일 한 줄에서 '1,339.28' + '원'이 안쪽 폭을 2px 넘지만 타일 안 — QA-599). 판정 라벨은 낱말 사이에서 꺾습니다.
+ * 단위 폭 하나뿐: 1280 운영자 일곱 타일 한 줄에서 '1,339.28' + '원'이 안쪽 폭을 2px 넘지만 타일 안 — QA-599. 단위는 값 글 안 끝에 걸침 — VALUE_UNIT).
+ * 판정 라벨은 낱말 사이에서 꺾습니다.
  */
 function valueRowClass(item: KpiItem): string {
   if (item.pending) {
@@ -192,6 +208,7 @@ const MAX_ONE_ROW = 8;
  * - `href`가 있으면 타일 전체가 그 대상 화면 링크입니다(중립 잉크·hover surface-2 + 이름 밑줄·포커스 링 — 데이터 영역이라 강조 파랑을 쓰지 않음, A1).
  *   링크가 아닌 타일은 이름 있는 묶음(role=group)이라 이름과 값이 함께 읽힙니다.
  * - 배치: 좁은 화면 두 칸, sm 세 칸, lg 네 칸, xl은 타일 수만큼 한 줄(8개 넘으면 네 칸). 타일 사이 8px.
+ * - 끊을 곳 없는 긴 값·출처는 타일 안에서 꺾음(말줄임 없음 — PropertyList와 같은 규칙). 숫자 값은 단위와 한 줄이고, 값 줄보다 긴 값만 그 안에서 꺾입니다.
  */
 export function KpiStrip({ label, items }: { label: string; items: readonly KpiItem[] }): JSX.Element {
   const oneRow = items.length > 0 && items.length <= MAX_ONE_ROW;

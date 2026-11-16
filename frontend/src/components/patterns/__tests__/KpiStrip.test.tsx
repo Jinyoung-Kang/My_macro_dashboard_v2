@@ -108,8 +108,10 @@ describe("KpiStrip — 값 있음", () => {
         ]}
       />,
     );
-    const numberRow = (within(tile("원/달러")).getByText("원").parentElement as HTMLElement).className.split(/\s+/);
-    expect(within(tile("원/달러")).getByText("1,339.28")).toBeTruthy();
+    // 단위는 값 글 안 끝에 붙습니다(긴 값 줄바꿈 정리 뒤 — 아래 '긴 값·출처의 줄바꿈') — 값 줄은 값 글의 부모입니다.
+    const value = within(tile("원/달러")).getByText("1,339.28");
+    expect(within(value).getByText("원")).toBeTruthy();
+    const numberRow = (value.parentElement as HTMLElement).className.split(/\s+/);
     expect(numberRow).toContain("flex-nowrap");
     expect(numberRow).not.toContain("flex-wrap");
     const labelRow = (within(tile("국면")).getByText("후퇴 경계 (Late cycle)").parentElement as HTMLElement).className.split(/\s+/);
@@ -292,6 +294,49 @@ describe("KpiStrip — 출처 줄", () => {
     );
     expect(within(tile("읽지 않은 알림")).queryByText(/출처/)).toBeNull();
     expect(within(tile("S&P 500")).queryByText(/Yahoo Finance/)).toBeNull();
+  });
+});
+
+// 공백 없는 긴 출처(URL 꼬리)와 끊을 곳 없는 긴 값이 타일 밖(옆 타일 밑)으로 넘쳤습니다(QA 스택 합성 응답 — 1280 출처 479px·값 91px 넘침).
+// jsdom은 배치를 재지 않아 '조상 클래스 사슬'로 봅니다(DetailQaHolderBreak·SearchQaHoldings 시험과 같은 방법).
+describe("KpiStrip — 긴 값·출처의 줄바꿈", () => {
+  const LONG_SOURCE = "TradingView Scanner · https://example.invalid/averyveryverylongpathwithoutanybreakingpoints/abcdefghijklmnopqrstuvwxyz0123456789";
+  const LONG_VALUE = "12,345,678,901.234";
+  /** 요소에서 타일(링크 또는 묶음)까지의 조상 클래스 사슬에 그 클래스가 있나. */
+  const chainHas = (node: HTMLElement, tileNode: HTMLElement, token: string) => {
+    for (let current: HTMLElement | null = node; current; current = current.parentElement) {
+      if (current.className.split(/\s+/).includes(token)) return true;
+      if (current === tileNode) return false;
+    }
+    return false;
+  };
+
+  it("값·출처 글에서 타일까지 wrap-anywhere — 링크 타일과 묶음 타일 모두, 숫자 값은 줄어들지 않고 값 줄 폭까지·단위는 값 끝에 붙어 꺾지 않음", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "us10y", label: "미국채 10년물", value: LONG_VALUE, unit: "%", source: LONG_SOURCE, asOf: "2026-11-14T15:31:00+09:00", href: "/markets/i/us10y" },
+          { key: "plain", label: "긴 값", value: LONG_VALUE, unit: "pt", source: LONG_SOURCE },
+        ]}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /^미국채 10년물/ });
+    const group = tile("긴 값");
+    for (const tileNode of [link, group]) {
+      const value = within(tileNode).getByText(LONG_VALUE);
+      const source = within(tileNode).getByText(/averyveryverylongpath/);
+      expect(chainHas(value, tileNode, "wrap-anywhere"), "값").toBe(true);
+      expect(chainHas(source, tileNode, "wrap-anywhere"), "출처").toBe(true);
+      // 숫자 값은 flex-nowrap 값 줄에서 줄어들지 않고(짧은 숫자가 숫자 안에서 꺾이지 않게) 값 줄 폭까지만 — 그보다 긴 값만 그 안에서 꺾입니다.
+      expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
+    }
+    // 단위는 값 글 안 끝(값이 꺾이면 마지막 줄을 따라감)이고 그 안에서는 꺾지 않으며, 타일 안쪽 여백까지 걸칠 수 있습니다(오른쪽 바깥 여백 −12px).
+    for (const [tileNode, unit] of [[link, "%"], [group, "pt"]] as const) {
+      const unitNode = within(tileNode).getByText(unit);
+      expect(unitNode.parentElement, unit).toBe(within(tileNode).getByText(LONG_VALUE));
+      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["whitespace-nowrap", "-mr-3", "ml-1", "font-normal"]));
+    }
   });
 });
 
