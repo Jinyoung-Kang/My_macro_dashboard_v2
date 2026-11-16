@@ -52,8 +52,9 @@ export type KpiItem = {
    */
   pendingLines?: number;
   /**
-   * 넓은 칸 배치의 자리 줄 수 — `pendingLines`보다 작으면 이 수 이상 순번의 덧 막대를 넓은 칸 배치(세 칸 sm~lg, 띠 816px 이상인 네 칸 — WIDE_PENDING_HIDE)
-   * 에서만 CSS로 감춥니다(DOM 막대 수는 그대로). 타일이 넓으면 출처 줄이 덜 꺾여 읽은 뒤 타일이 낮기 때문입니다(QA-604). 주지 않으면 모든 배치에서 `pendingLines`.
+   * 넓은 칸 배치의 자리 줄 수 — `pendingLines`보다 작으면 이 수 이상 순번의 덧 막대를 넓은 칸 배치(타일 198px 이상 — 띠 404px 이상인 두 칸, 세 칸 sm~lg,
+   * 띠 816px 이상인 네 칸 — WIDE_PENDING)에서만 CSS로 감추고, 그 배치에서 보이는 마지막 막대를 짧게 합니다(DOM 막대 수는 그대로). 타일이 넓으면 출처 줄이
+   * 덜 꺾여 읽은 뒤 타일이 낮기 때문입니다(QA-604). 주지 않으면 모든 배치에서 `pendingLines`.
    */
   pendingLinesWide?: number;
   isEstimated?: boolean;
@@ -79,25 +80,28 @@ const LINK_TILE = `group min-h-11 text-text hover:bg-surface-2 motion-safe:trans
  * 읽는 중 자리 줄의 막대 — 공용 Skeleton 막대와 같은 모양(놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). 위 간격 10px + 막대 14px +
  * 사이 14px로 다섯 줄이면 136px(+ 이름·값 자리표시·여백 64px = 200px) — 타일이 좁은 배치(두 칸 390·네 칸 1024)의 홈 시장 타일 읽은 뒤 높이(QA 스택
  * 1024 191~208px, 390 170~204px)에 맞춘 값이고, 한 줄 배치(xl·넓은 띠)에서는 위 간격이 18px라 208px입니다(ONE_ROW_PENDING_GAP — 1440·1920 208px).
- * 타일이 넓은 배치(세 칸 sm~lg·띠 816px 이상의 네 칸)는 `pendingLinesWide`만큼 — 홈 시장 타일은 네 줄 172px(WIDE_PENDING_HIDE, QA-604).
+ * 타일이 넓은 배치(띠 404px 이상의 두 칸·세 칸 sm~lg·띠 816px 이상의 네 칸)는 `pendingLinesWide`만큼 — 홈 시장 타일은 네 줄 172px(WIDE_PENDING, QA-604).
  */
 const PENDING_BAR = "h-3.5 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
 
-function PendingLines({ count, wide, gap, hide }: { count: number | undefined; wide?: number; gap?: string; hide?: string }): JSX.Element | null {
+function PendingLines({ count, wide, gap, layout }: { count: number | undefined; wide?: number; gap?: string; layout?: WidePending }): JSX.Element | null {
   const lines = typeof count === "number" && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
   if (lines === 0) {
     return null;
   }
-  // 넓은 칸 배치에서 남길 줄 수 — 주지 않았거나 줄 수 이상이면 감추는 막대가 없습니다.
+  // 넓은 칸 배치에서 남길 줄 수 — 주지 않았거나 줄 수 이상이면 넓은 칸 배치도 다른 배치와 같습니다.
   const wideLines = typeof wide === "number" && Number.isFinite(wide) ? Math.max(0, Math.floor(wide)) : lines;
+  const wideClass = (index: number): string => {
+    if (!layout || wideLines >= lines) return "";
+    if (index >= wideLines) return layout.hide;
+    // 넓은 칸 배치에서 보이는 마지막 막대 — 그 배치에서도 마지막 줄을 짧게(한 줄만 남으면 짧게 하지 않음 — 공용 Skeleton과 같은 규칙).
+    return wideLines > 1 && index === wideLines - 1 ? layout.short : "";
+  };
   return (
     <div aria-hidden="true" className={`mt-2.5 flex flex-col gap-3.5 ${gap ?? ""}`.trim()}>
       {Array.from({ length: lines }, (_, index) => (
-        // 마지막 줄을 짧게 — 글 문단처럼(공용 Skeleton과 같은 규칙). 넓은 칸 배치에서 감출 막대는 hide(WIDE_PENDING_HIDE)를 덧붙입니다.
-        <div
-          key={index}
-          className={`${PENDING_BAR} ${lines > 1 && index === lines - 1 ? "w-3/5" : "w-full"} ${index >= wideLines && hide ? hide : ""}`.trim()}
-        />
+        // 마지막 줄을 짧게 — 글 문단처럼(공용 Skeleton과 같은 규칙). 넓은 칸 배치의 감추기·짧게는 그 배치의 변형 클래스(WIDE_PENDING)로 덧붙입니다.
+        <div key={index} className={`${PENDING_BAR} ${lines > 1 && index === lines - 1 ? "w-3/5" : "w-full"} ${wideClass(index)}`.trim()} />
       ))}
     </div>
   );
@@ -123,12 +127,12 @@ const VALUE_TAIL = "whitespace-nowrap";
 const VALUE_UNIT = "-mr-3 ml-1 text-sm font-normal text-text-3";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
-function KpiValue({ item, pendingGap, pendingHide }: { item: KpiItem; pendingGap?: string; pendingHide?: string }): JSX.Element {
+function KpiValue({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
   if (item.pending) {
     return (
       <>
         <Skeleton lines={1} label={`${item.label} 불러오는 중`} />
-        <PendingLines count={item.pendingLines} wide={item.pendingLinesWide} gap={pendingGap} hide={pendingHide} />
+        <PendingLines count={item.pendingLines} wide={item.pendingLinesWide} gap={pendingGap} layout={pendingWide} />
       </>
     );
   }
@@ -177,7 +181,7 @@ function valueRowClass(item: KpiItem): string {
   return "mt-0.5 flex items-baseline";
 }
 
-function KpiTileBody({ item, pendingGap, pendingHide }: { item: KpiItem; pendingGap?: string; pendingHide?: string }): JSX.Element {
+function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
   const change = item.change && !item.pending ? item.change : null;
   // 변화량·변화율을 둘 다 모르면 칩이 그려지지 않으므로(ChangeChip) 캡션만 남지 않게 줄째 뺍니다.
   const changeShown = change !== null && !(isMissingValue(change.change) && isMissingValue(change.changePct));
@@ -196,7 +200,7 @@ function KpiTileBody({ item, pendingGap, pendingHide }: { item: KpiItem; pending
       </div>
       {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
       <div className={valueRowClass(item)}>
-        <KpiValue item={item} pendingGap={pendingGap} pendingHide={pendingHide} />
+        <KpiValue item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
       </div>
       {change && changeShown ? (
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
@@ -262,25 +266,35 @@ const ONE_ROW_PENDING_GAP: Readonly<Record<number, string>> = {
 };
 
 /**
- * 넓은 칸 배치에서 감출 자리 막대(`pendingLinesWide` 이상 순번)의 클래스 — 세 칸(sm~lg, 타일 192~312px)과 띠가 816px(= 4 × 198 + 3 × 8 — 타일 198px)
- * 이상인 네 칸(lg 1100~1279 메뉴 220, 그리고 xl이지만 한 줄이 아닌 폭)입니다. 이 배치에서는 출처 줄이 덜 꺾여 홈 시장 타일의 읽은 뒤 높이가 QA 자료(이전 값
- * 배지 있음) 154~187px, 새 자료(배지 없음) 128~178px라 다섯 줄 자리표시(200px)가 커 값이 오면 아래 전체가 올라왔습니다(QA-604 — 넷째 줄까지 172px).
- * 두 칸(390, 171px)·좁은 네 칸(lg 1024~1060, 179~188px)·한 줄 배치는 네 줄로 줄이면 이전 값 자료에서 더 밀려 감추지 않습니다. DOM 막대 수는 그대로입니다.
- * Tailwind가 클래스를 글로 찾으므로 xl 몫은 타일 수별로 적어 둡니다(경계 = ONE_ROW_GRID와 같은 n × 134 + (n − 1) × 8px — 시험이 대조, `@max-[N]`은
- * '띠 폭 < N'이라 한 줄 배치 `@min-[N]`과 겹치지도 비지도 않음). 한 줄 경계가 816px 이하(타일 5개 이하)면 xl에서 띠 816px 이상은 늘 한 줄이라 xl 몫이 없습니다.
+ * 넓은 칸 배치의 자리 막대 클래스 — 감출 막대(`pendingLinesWide` 이상 순번)는 `hide`, 그 배치에서 보이는 마지막 막대(`pendingLinesWide` − 1 순번)는
+ * `short`(공용 Skeleton의 '마지막 줄을 짧게'를 배치마다 지킴 — 두 글은 같은 변형의 짝이고 시험이 대조).
+ *
+ * 넓은 칸 배치 = 타일이 198px 이상인 배치: 띠가 404px(= 2 × 198 + 8) 이상인 두 칸(뷰포트 640 미만 — 436~639), 세 칸(sm~lg, 타일 192~312px), 띠가
+ * 816px(= 4 × 198 + 3 × 8) 이상인 네 칸(lg 1100~1279 메뉴 220, 그리고 xl이지만 한 줄이 아닌 폭). 이 배치에서는 홈 시장 타일의 출처 줄이 덜 꺾여 읽은 뒤
+ * 높이가 QA 자료(이전 값 배지 있음) 154~187px, 새 자료(배지 없음) 128~178px라, 다섯 줄 자리표시(200px)면 값이 올 때 아래 전체가 올라왔습니다(QA-604 —
+ * 넷째 줄까지 172px. 두 칸 440~639의 새 자료 CLS 0.115~0.163). 출처 줄이 한 줄 덜 꺾이는 폭은 두 칸·네 칸 모두 타일 196~196.5px(QA 스택 — 두 칸 띠
+ * 400→401px, 네 칸 808→810px)이라 기준 198px은 그보다 조금 넓게 잡은 값입니다. 타일이 그보다 좁은 두 칸(390 타일 175px)·네 칸(lg 1024 179px)과 한 줄
+ * 배치는 이전 값 자료가 187~208px(390·1024·1440)이라 네 줄로 줄이면 더 밀려 감추지 않습니다. DOM 막대 수는 그대로입니다.
+ * Tailwind가 클래스를 글로 찾으므로 두 글 모두 적어 두고, xl 몫은 타일 수별로 적어 둡니다(경계 = ONE_ROW_GRID와 같은 n × 134 + (n − 1) × 8px — 시험이 대조,
+ * `@max-[N]`은 '띠 폭 < N'이라 한 줄 배치 `@min-[N]`과 겹치지도 비지도 않음). 한 줄 경계가 816px 이하(타일 5개 이하)면 xl에서 띠 816px 이상은 늘 한 줄이라
+ * xl 몫이 없습니다.
  */
-const WIDE_PENDING_HIDE = "sm:max-lg:hidden lg:max-xl:@min-[816px]:hidden";
-const WIDE_PENDING_HIDE_XL: Readonly<Record<number, string>> = {
-  6: "xl:@min-[816px]:@max-[844px]:hidden",
-  7: "xl:@min-[816px]:@max-[986px]:hidden",
-  8: "xl:@min-[816px]:@max-[1128px]:hidden",
+type WidePending = { hide: string; short: string };
+const WIDE_PENDING: WidePending = {
+  hide: "max-sm:@min-[404px]:hidden sm:max-lg:hidden lg:max-xl:@min-[816px]:hidden",
+  short: "max-sm:@min-[404px]:w-3/5 sm:max-lg:w-3/5 lg:max-xl:@min-[816px]:w-3/5",
+};
+const WIDE_PENDING_XL: Readonly<Record<number, WidePending>> = {
+  6: { hide: "xl:@min-[816px]:@max-[844px]:hidden", short: "xl:@min-[816px]:@max-[844px]:w-3/5" },
+  7: { hide: "xl:@min-[816px]:@max-[986px]:hidden", short: "xl:@min-[816px]:@max-[986px]:w-3/5" },
+  8: { hide: "xl:@min-[816px]:@max-[1128px]:hidden", short: "xl:@min-[816px]:@max-[1128px]:w-3/5" },
 };
 /** 한 줄 배치가 없는 타일 수(8개 초과)는 xl에서도 네 칸이라 띠 폭만 봅니다. */
-const WIDE_PENDING_HIDE_XL_ROWS = "xl:@min-[816px]:hidden";
+const WIDE_PENDING_XL_ROWS: WidePending = { hide: "xl:@min-[816px]:hidden", short: "xl:@min-[816px]:w-3/5" };
 
-function widePendingHide(count: number): string {
-  const xl = ONE_ROW_GRID[count] === undefined ? WIDE_PENDING_HIDE_XL_ROWS : (WIDE_PENDING_HIDE_XL[count] ?? "");
-  return `${WIDE_PENDING_HIDE} ${xl}`.trim();
+function widePending(count: number): WidePending {
+  const xl = ONE_ROW_GRID[count] === undefined ? WIDE_PENDING_XL_ROWS : WIDE_PENDING_XL[count];
+  return xl ? { hide: `${WIDE_PENDING.hide} ${xl.hide}`, short: `${WIDE_PENDING.short} ${xl.short}` } : WIDE_PENDING;
 }
 
 /**
@@ -302,7 +316,7 @@ export function KpiStrip({ label, items }: { label: string; items: readonly KpiI
   // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
   const oneRow = ONE_ROW_GRID[items.length] ?? "";
   const pendingGap = ONE_ROW_PENDING_GAP[items.length];
-  const pendingHide = widePendingHide(items.length);
+  const pendingWide = widePending(items.length);
   return (
     <section aria-label={label} className="@container min-w-0">
       <ul className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 ${oneRow}`.trim()}>
@@ -311,13 +325,13 @@ export function KpiStrip({ label, items }: { label: string; items: readonly KpiI
           if (item.href) {
             tile = (
               <Link href={item.href} className={`${TILE} ${LINK_TILE}`}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingHide={pendingHide} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
               </Link>
             );
           } else {
             tile = (
               <div role="group" aria-label={item.label} className={TILE}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingHide={pendingHide} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
               </div>
             );
           }

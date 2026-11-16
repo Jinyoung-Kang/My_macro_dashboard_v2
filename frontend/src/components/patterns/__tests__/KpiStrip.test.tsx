@@ -300,7 +300,8 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
   // 768 0.082·900 0.093·1000 0.095·820x1180 0.093~0.113, lg 1100~1279 0.041~0.075). jsdom은 배치를 재지 못해 클래스로 봅니다.
   // 수정 전(재현 커밋에서는 it.fails) 다섯째 덧 막대의 클래스는 'h-3.5 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border w-3/5'
   // (감추는 클래스 없음 — pendingLinesWide를 읽지 않음)였습니다.
-  it("넓은 칸 배치 자리 줄(pendingLinesWide) — 그 수 이상 순번의 덧 막대만 세 칸(sm~lg)·띠 816px 이상의 네 칸에서 감추고, 앞 막대·읽어 주기·막대 수는 그대로 (QA-604)", () => {
+  // 두 칸도 띠가 404px(= 2 × 198 + 8) 이상이면 넓은 칸 배치입니다(아래 시험 — 검토 뒤 덧붙임).
+  it("넓은 칸 배치 자리 줄(pendingLinesWide) — 그 수 이상 순번의 덧 막대만 띠 404px 이상의 두 칸·세 칸(sm~lg)·띠 816px 이상의 네 칸에서 감추고, 앞 막대·읽어 주기·막대 수는 그대로 (QA-604)", () => {
     const market: KpiItem = { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 5, pendingLinesWide: 4 };
     const items = (n: number): KpiItem[] => [
       market,
@@ -312,7 +313,7 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
       const block = tile(name).querySelector('div[aria-hidden="true"].flex-col') as HTMLElement;
       return Array.from(block.children);
     };
-    const WIDE_HIDE = ["sm:max-lg:hidden", "lg:max-xl:@min-[816px]:hidden"];
+    const WIDE_HIDE = ["max-sm:@min-[404px]:hidden", "sm:max-lg:hidden", "lg:max-xl:@min-[816px]:hidden"];
     // 읽어 주는 상태는 하나, DOM 막대 수(값 자리표시 1 + 덧 막대 5)는 그대로 — 감추는 것은 넓은 칸 배치의 CSS뿐입니다.
     expect(within(tile("S&P 500")).getAllByRole("status")).toHaveLength(1);
     expect(tile("S&P 500").querySelectorAll(".bg-control-fill")).toHaveLength(1 + 5);
@@ -347,7 +348,7 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
   // '마지막 줄을 짧게'(공용 Skeleton 규칙)가 그 배치에서만 사라졌습니다(768 홈 — 막대 다섯이 모두 전체 폭).
   // 수정 전(재현 커밋에서는 it.fails) 다섯째 덧 막대의 감추는 클래스는 ['sm:max-lg:hidden', 'lg:max-xl:@min-[816px]:hidden', 'xl:@min-[816px]:@max-[986px]:hidden']
   // (두 칸 몫 없음), 넷째 덧 막대에는 ':w-3/5'로 끝나는 클래스가 없었습니다(늘 w-full).
-  it.fails("두 칸 넓은 띠(404px 이상 = 타일 198px, 네 칸 816px과 같은 타일 폭)에서도 다섯째 막대를 감추고, 넓은 칸 배치마다 보이는 마지막 막대를 짧게 (QA-604)", () => {
+  it("두 칸 넓은 띠(404px 이상 = 타일 198px, 네 칸 816px과 같은 타일 폭)에서도 다섯째 막대를 감추고, 넓은 칸 배치마다 보이는 마지막 막대를 짧게 (QA-604)", () => {
     const market: KpiItem = { key: "sp500", label: "S&P 500", value: null, pending: true, pendingLines: 5, pendingLinesWide: 4 };
     const items = (n: number, first: KpiItem = market): KpiItem[] => [
       first,
