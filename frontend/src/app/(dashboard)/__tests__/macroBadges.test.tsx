@@ -138,7 +138,7 @@ describe("QA-620 추정 카드는 '추정' 배지를 보인다", () => {
 // QA-621: 비공식 시세 표의 '등락률' 칸이 색(deltaColor)과 ASCII '-'만으로 방향을 전했습니다 — ▲▼·−(U+2212)·낭독 글이 없어 색을 못 보는 사람에게는
 // 부호 하나뿐이었습니다(실행 명세 §3-1 '상승·하락은 늘 ▲▼ 또는 −와 글').
 describe("QA-621 비공식 시세 등락률은 색만이 아니다", () => {
-  it.fails("등락률 칸은 ▲▼·−(U+2212)·낭독 글 '상승/하락'과 함께", async () => {
+  it("등락률 칸은 ▲▼·−(U+2212)·낭독 글 '상승/하락'과 함께", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path === "/api/macro/scraped"
         ? Promise.resolve({ available: true, items: [

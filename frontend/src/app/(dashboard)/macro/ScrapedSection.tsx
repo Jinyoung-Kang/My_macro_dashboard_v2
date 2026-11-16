@@ -8,15 +8,14 @@ import {
   SourceBadge,
   Table,
 } from "@/components/ui";
+import { ChangeChip } from "@/components/patterns";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import {
   delayLabel,
-  deltaColor,
   EMPTY,
   formatKst,
   formatNumber,
-  formatPercent,
 } from "@/lib/format";
 import { endpoints } from "@/lib/endpoints";
 
@@ -93,9 +92,13 @@ export function ScrapedSection() {
               key: "changePct",
               header: "등락률",
               align: "right",
-              render: (row) => (
-                <span className={deltaColor(row.changePct)}>{formatPercent(row.changePct)}</span>
-              ),
+              // 색만이 아니라 ▲▼·−(U+2212)·낭독 글 '상승/하락'과 함께(공용 변화 칩 — QA-621). 모르면 '—'(0.00%를 만들지 않음), 칸 안에서 꺾지 않습니다.
+              render: (row) =>
+                typeof row.changePct === "number" && Number.isFinite(row.changePct) ? (
+                  <ChangeChip changePct={row.changePct} size="sm" nowrap />
+                ) : (
+                  EMPTY
+                ),
             },
             {
               key: "error",
