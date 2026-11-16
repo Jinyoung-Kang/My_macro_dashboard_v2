@@ -74,5 +74,9 @@ a4e8018db27f1d6e9e3e4232742c04f75b177b73:backend/src/test/resources/paper/golden
 # .env 값과 일치 0건).
 3b7de1df73a1f444f78341e39804df752d8e2a57:backend/src/test/resources/paper/golden/packet-kr-ft-continuity-scheduled.json:generic-api-key:1
 
-# 2026-11-16 작업대 P4 지표 상세 시험(IndicatorDetailScreen indicatorKey="kospi200_night_scraped"): 위와 같은 데이터셋 키 문자열(.env 값과 일치 0건).
+# 2026-11-16 작업대 P4 지표 상세 시험(IndicatorDetailScreen에 넘기는 지표 키 속성): 위와 같은 데이터셋 키 문자열(.env 값과 일치 0건).
 21df680c07815798854d273c7c37ecf2b9a6355e:frontend/src/components/screens/detail/__tests__/DetailScreens.test.tsx:generic-api-key:403
+
+# 2026-11-16 바로 위 설명 줄의 첫 판(7ca800c9)이 시험 줄의 속성 꼴을 그대로 옮겨 적어 같은 규칙에 걸렸다 — 설명 줄은 키=값 꼴 없이 고쳐 썼고,
+# 이력에 남은 그 줄만 지문으로 둔다(값은 데이터셋 이름, .env 값과 일치 0건).
+7ca800c99a90f7d730e82d87dde2526d3c4e2a09:.gitleaksignore:generic-api-key:77
