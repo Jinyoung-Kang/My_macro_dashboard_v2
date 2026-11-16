@@ -250,6 +250,32 @@ describe("InspectorFrame — 대화상자", () => {
     expect(trigger("VIX").getAttribute("aria-haspopup")).toBe("dialog");
   });
 
+  it("대화상자로 연 키가 자료에서 사라지면 닫히고, 그 줄이 다시 와도 저절로 다시 열리지 않는다", () => {
+    const { rerender } = renderFrame();
+    fireEvent.click(trigger("VIX"));
+    expect(screen.getByRole("dialog", { name: "VIX" })).toBeTruthy();
+    const frame = (rows: Indicator[]) => (
+      <InspectorFrame label="지표 미리보기" titleOf={(key) => rows.find((row) => row.key === key)?.name ?? null} renderDetail={(key) => <p>{key} 자세히</p>}>
+        {(inspector) => (
+          <ul>
+            {rows.map((row) => (
+              <li key={row.key}>
+                <InspectorTrigger inspector={inspector} itemKey={row.key}>
+                  {row.name}
+                </InspectorTrigger>
+              </li>
+            ))}
+          </ul>
+        )}
+      </InspectorFrame>
+    );
+    rerender(frame(ROWS.filter((row) => row.key !== "vix")));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(frame(ROWS));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger("VIX").getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("inspect(key)로도 연다 — 옆 칸이면 고르고, 대화상자 배치면 대화상자", () => {
     let open: ((key: string) => void) | null = null;
     render(

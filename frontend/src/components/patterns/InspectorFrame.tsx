@@ -119,13 +119,20 @@ export function InspectorFrame({
     onSelectedKeyChange?.(key);
   };
 
+  // 대화상자로 연 키가 자료에서 사라지면(새로 읽은 자료에 그 줄이 없음) 대화상자는 닫혀 그려지고, 여기서 닫은 것으로 둡니다 — 남겨 두면 그 줄이 다시 오는
+  // 새로 읽기에서 대화상자가 저절로 다시 열렸습니다.
   // 대화상자 배치 → 옆 칸 배치로 바뀌는 그리기: 열려 있던 대화상자의 키를 고르고 대화상자를 닫습니다(그대로 두면 다시 좁아질 때 저절로 다시 열림).
   // 고름이 부르는 쪽(onSelectedKeyChange)에 닿으므로 그리는 중이 아니라 화면에 칠하기 전(layout effect)에 맞춥니다 — select와 같은 일을 풀어 씀(의존을 값으로).
   useLayoutEffect(() => {
-    if (!inline || dialogKey === null) return;
+    if (dialogKey === null) return;
+    if (titleOf(dialogKey) === null) {
+      setDialogKey(null);
+      return;
+    }
+    if (!inline) return;
     const key = dialogKey;
     setDialogKey(null);
-    if (titleOf(key) === null || key === chosen) return;
+    if (key === chosen) return;
     setAutoOff(true);
     if (selectedKey === undefined) setOwnSelected(key);
     onSelectedKeyChange?.(key);
