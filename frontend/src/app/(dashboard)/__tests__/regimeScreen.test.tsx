@@ -194,7 +194,9 @@ describe("판정 기록 — 타임라인", () => {
     expect(rows[0].querySelector("time")?.getAttribute("dateTime")).toBe("2026-10-09");
     expect(within(rows[0]).getByText("판정 불가")).toBeTruthy();
     expect(rows[0].textContent).toContain("하이일드 — · 순유동성 4주 −254.0억 달러 · 판정 불가 사유 1");
-    expect(within(rows[0]).getByText("순유동성 4주 −254.0억 달러").className).toContain("whitespace-nowrap");
+    // 마디(이름 값)는 줄을 바꾸지 않고, 가운뎃점은 앞 마디 끝에 붙습니다(다음 줄이 '·'로 시작하지 않음).
+    expect(within(rows[0]).getByText("하이일드 — ·").className).toContain("whitespace-nowrap");
+    expect(within(rows[0]).getByText("판정 불가 사유 1").className).toContain("whitespace-nowrap");
     // 후퇴 경계 — 주의 태그(삼각 아이콘 + '주의:').
     expect(within(rows[1]).getByText("주의:")).toBeTruthy();
     expect(rows[1].textContent).toContain("10Y-3M −0.12%p · NFCI −0.48 · 하이일드 2.85%p");

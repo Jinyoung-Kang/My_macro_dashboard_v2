@@ -41,14 +41,16 @@ function entryProperties(entry: RegimeLogEntry): PropertyItem[] {
   ];
 }
 
-/** 줄 요약 — 마디(이름 값)를 ' · '로 잇고 마디 안에서는 줄을 바꾸지 않습니다. */
+/**
+ * 줄 요약 — 마디(이름 값)를 ' · '로 잇고 마디 안에서는 줄을 바꾸지 않습니다. 가운뎃점은 앞 마디에 붙여(줄 끝에 남고) 다음 줄이 '·'로 시작하지 않게 합니다.
+ */
 function Summary({ parts }: { parts: readonly string[] }) {
   return (
     <>
       {parts.map((part, index) => (
         <Fragment key={part}>
-          {index > 0 ? " · " : null}
-          <span className="whitespace-nowrap">{part}</span>
+          {index > 0 ? " " : null}
+          <span className="whitespace-nowrap">{index < parts.length - 1 ? `${part} ·` : part}</span>
         </Fragment>
       ))}
     </>
