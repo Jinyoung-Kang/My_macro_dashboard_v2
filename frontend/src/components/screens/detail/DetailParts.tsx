@@ -140,7 +140,7 @@ export function PriceHero({
   );
 }
 
-/** 문지르지 않을 때 읽기 줄의 안내 — 읽기 줄 자리(좁은 화면 두 줄·sm 이상 한 줄)를 지켜 문지르기 시작해도 차트가 위아래로 움직이지 않게 합니다. */
+/** 문지르지 않을 때 읽기 줄의 안내 — 읽기 줄 자리(좁은 칸 두 줄·26rem 이상 한 줄)를 지켜 문지르기 시작해도 차트가 위아래로 움직이지 않게 합니다. */
 const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
 
 /**
@@ -151,7 +151,9 @@ const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
  * - 문지르기는 이 패널에 있습니다(명세 W7 — 대상 머리는 늘 지금 값). 차트를 문지르는 동안 읽기 줄에 그 날 날짜·값·기간 시작 대비 칩(모르면 생략)·추정
  *   배지를 보입니다. 읽기 줄은 눈으로 보는 줄(aria-hidden)이고, 읽어 주기는 따로 둔 조용한 알림 영역(aria-live polite)이 '날짜 값'으로 합니다(차트에
  *   초점을 두고 ←·→로 옮기는 낭독기 사용자). 문지르지 않을 때는 같은 자리에 짧은 안내를 두어 줄 높이가 바뀌지 않습니다.
- *   좁은 화면(sm 미만)은 문지른 내용이 두 줄로 접히므로 처음부터 두 줄 자리(38px)를 잡아 둡니다(QA-571 — 한 줄 자리만 잡아 문지르면 차트가 18px 밀렸음).
+ *   줄 자리는 화면 폭이 아니라 이 칸의 폭으로 정합니다(크기 질의 기준 @container): 칸이 26rem(416px — 가장 긴 내용 약 413px, BRK-A 'USD' 줄) 미만이면
+ *   문지른 내용이 두 줄로 접히므로 처음부터 두 줄 자리(38px), 그 이상이면 한 줄 자리(20px)입니다(QA-571 — 한 줄 자리만 잡아 문지르면 차트가 18px 밀렸음.
+ *   뷰포트로 정하면 가변 폭 왼쪽 메뉴가 넓을 때 xl 가운데 칸이 좁아져 다시 밀렸음).
  * - 틀은 공용 패널의 이름 있는 영역(Panel `region` — 머리줄과 본문을 1px 경계로 가르고 제목 h2가 영역 이름)이고, 기간 탭은 머리 동작 자리입니다.
  *   기간마다 시계열을 서버에서 읽으므로 기간 탭은 수동 활성입니다(화살표는 포커스만, 누르기·Enter·Space로 고름 — 지나가는 기간마다 Yahoo를 부르지 않게).
  *   제목(긴 종목·지표 이름)은 낱말 사이에서 줄을 바꾸고 칸보다 긴 낱말만 꺾습니다.
@@ -217,23 +219,26 @@ export function PriceChartPanel({
       }
     >
       {scrubbable ? (
-        <div aria-hidden="true" className="mb-2 flex min-h-[2.375rem] flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption sm:min-h-5">
-          {point !== null ? (
-            <>
-              <span className="tabular-nums text-text-2">{point.dateText}</span>
-              <span className={`font-semibold tabular-nums ${pointMissing ? "text-text-3" : "text-text"}`}>{point.valueText}</span>
-              {pointUnit ? <span className="text-xs text-text-3">{unit}</span> : null}
-              {changeChipVisible(point.change, point.changePct) ? (
-                <>
-                  <ChangeChip size="sm" change={point.change} changePct={point.changePct} digits={valueDigits} pctDigits={2} />
-                  <span className="text-xs text-text-3">기간 시작 대비</span>
-                </>
-              ) : null}
-              {point.isEstimated ? <EstimateBadge estimated note={point.estimateNote} /> : null}
-            </>
-          ) : (
-            <span className="text-xs text-text-3">{SCRUB_HINT}</span>
-          )}
+        // 줄 자리는 화면 폭이 아니라 이 칸의 폭으로 정합니다(크기 질의 기준 @container) — 가변 폭 왼쪽 메뉴가 넓으면 같은 화면 폭에서도 가운데 칸이 좁아집니다.
+        <div className="@container mb-2">
+          <div aria-hidden="true" className="flex min-h-[2.375rem] flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption @min-[26rem]:min-h-5">
+            {point !== null ? (
+              <>
+                <span className="tabular-nums text-text-2">{point.dateText}</span>
+                <span className={`font-semibold tabular-nums ${pointMissing ? "text-text-3" : "text-text"}`}>{point.valueText}</span>
+                {pointUnit ? <span className="text-xs text-text-3">{unit}</span> : null}
+                {changeChipVisible(point.change, point.changePct) ? (
+                  <>
+                    <ChangeChip size="sm" change={point.change} changePct={point.changePct} digits={valueDigits} pctDigits={2} />
+                    <span className="text-xs text-text-3">기간 시작 대비</span>
+                  </>
+                ) : null}
+                {point.isEstimated ? <EstimateBadge estimated note={point.estimateNote} /> : null}
+              </>
+            ) : (
+              <span className="text-xs text-text-3">{SCRUB_HINT}</span>
+            )}
+          </div>
         </div>
       ) : null}
       <div className="min-w-0">{chart}</div>

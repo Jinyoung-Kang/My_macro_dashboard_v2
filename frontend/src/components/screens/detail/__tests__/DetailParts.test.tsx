@@ -61,8 +61,8 @@ describe("가격 차트 패널", () => {
     const value = within(panel).getByText("11.00");
     const line = value.closest('[aria-hidden="true"]') as HTMLElement;
     expect(line).not.toBeNull();
-    // 줄 높이 고정 — 좁은 화면은 두 줄 자리, sm 이상은 한 줄(QA-571, 아래 시험이 안내·문지른 상태를 함께 봄)
-    expect(line.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "sm:min-h-5"]));
+    // 줄 높이 고정 — 좁은 칸은 두 줄 자리, 칸이 26rem 이상이면 한 줄(QA-571, 아래 시험이 안내·문지른 상태를 함께 봄)
+    expect(line.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "@min-[26rem]:min-h-5"]));
     expect(within(line).getByText("2026-11-14")).toBeTruthy();
     expect(within(line).getByText("USD")).toBeTruthy();
     expect(within(line).getByText("기간 시작 대비")).toBeTruthy();
@@ -78,22 +78,22 @@ describe("가격 차트 패널", () => {
 
   // QA-571: 읽기 줄이 min-h-5(20px) 한 줄 자리만 잡아, 좁은 화면(390 — 줄 폭 332px)에서 문지른 내용(날짜·값·단위·칩·'기간 시작 대비' 약 350~390px)이
   // 두 줄(38px)로 늘며 차트가 18px 아래로 밀렸습니다(손가락 아래에서 차트가 움직임 — 진행 기록 §P4 '정한 것' 2의 줄 높이 고정과 어긋남).
-  // 고친 뒤: sm 미만은 처음부터 두 줄 자리(2.375rem = 38px), sm 이상은 한 줄(20px — 가장 좁은 xl 가운데 칸 434px도 가장 긴 내용보다 넓음).
+  // 고친 뒤: 좁은 칸은 처음부터 두 줄 자리(2.375rem = 38px), 칸이 26rem 이상이면 한 줄(20px) — 처음 고칠 때는 sm(뷰포트) 기준이었고 아래 검토 시험이 칸 폭으로 바꿈.
   // jsdom은 배치를 재지 못하므로 안내·문지른 상태가 같은 요소이고 두 클래스를 함께 가지는지 봅니다(높이는 브라우저 하네스로 잼).
-  // 수정 전 실패: 읽기 줄 클래스가 min-h-5뿐(min-h-[2.375rem]·sm:min-h-5 없음)(재현 커밋에서는 it.fails).
-  it("읽기 줄은 좁은 화면에서 두 줄 자리를 늘 잡아 둔다 — 안내와 문지른 상태가 같은 요소이고 min-h-[2.375rem]·sm:min-h-5", async () => {
+  // 수정 전 실패: 읽기 줄 클래스가 min-h-5뿐(min-h-[2.375rem] 없음)(재현 커밋에서는 it.fails).
+  it("읽기 줄은 좁은 칸에서 두 줄 자리를 늘 잡아 둔다 — 안내와 문지른 상태가 같은 요소이고 min-h-[2.375rem]·@min-[26rem]:min-h-5", async () => {
     reads[TICKER] = { available: true, points: [{ date: "2026-11-12", close: 10 }, { date: "2026-11-13", close: 9.5 }, { date: "2026-11-14", close: 11 }] };
     render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} unit="원" />);
     const panel = screen.getByRole("region", { name: "합성 종목 시세" });
     await within(panel).findByRole("img", { name: "합성 종목 시세 가격 차트" });
     const tokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
     const hintLine = within(panel).getByText("차트를 누르거나 가리키면 그 날 값").closest('[aria-hidden="true"]') as HTMLElement;
-    expect(tokens(hintLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "sm:min-h-5"]));
+    expect(tokens(hintLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "@min-[26rem]:min-h-5"]));
     expect(tokens(hintLine)).not.toContain("min-h-5");
     act(() => charts.last?.onScrub?.(2));
     const heldLine = within(panel).getByText("11.00").closest('[aria-hidden="true"]') as HTMLElement;
     expect(heldLine).toBe(hintLine);
-    expect(tokens(heldLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "sm:min-h-5"]));
+    expect(tokens(heldLine)).toEqual(expect.arrayContaining(["min-h-[2.375rem]", "@min-[26rem]:min-h-5"]));
   });
 
   // QA-571 검토: 줄이 접히는지는 화면 폭이 아니라 가운데 칸의 폭에 달렸습니다. 가변 폭 왼쪽 메뉴(200~320px, 계정 메뉴 '넓게' 280)가 넓으면 xl 가운데
@@ -101,7 +101,7 @@ describe("가격 차트 패널", () => {
   // 20 → 38px, 차트 18px 이동), 반대로 480~639는 한 줄에 들어가는데도 두 줄 자리를 잡았습니다(QA 스택 fcbb4861에서 --shell-nav-w를 바꿔 잼).
   // 고친 뒤: 읽기 줄을 감싼 상자가 크기 질의 기준(@container)이고, 칸이 26rem(416px — 가장 긴 내용 약 413px, BRK-A 'USD' 줄) 이상일 때만 한 줄 자리.
   // 수정 전 실패: 읽기 줄의 부모에 @container가 없고 한 줄 자리가 뷰포트 기준(sm:min-h-5)(재현 커밋에서는 it.fails).
-  it.fails("읽기 줄의 한 줄 자리는 화면 폭이 아니라 칸 폭으로 정한다 — 부모가 @container이고 @min-[26rem]:min-h-5, 뷰포트 기준 sm:min-h-5는 없다", async () => {
+  it("읽기 줄의 한 줄 자리는 화면 폭이 아니라 칸 폭으로 정한다 — 부모가 @container이고 @min-[26rem]:min-h-5, 뷰포트 기준 sm:min-h-5는 없다", async () => {
     reads[TICKER] = { available: true, points: [{ date: "2026-11-12", close: 10 }, { date: "2026-11-13", close: 9.5 }, { date: "2026-11-14", close: 11 }] };
     render(<PriceChartPanel title="합성 종목 시세" symbol="SYNQ" valueDigits={2} unit="USD" />);
     const panel = screen.getByRole("region", { name: "합성 종목 시세" });
