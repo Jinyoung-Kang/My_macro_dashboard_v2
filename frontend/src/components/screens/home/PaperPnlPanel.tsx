@@ -37,6 +37,8 @@ const PAPER_PENDING_HEIGHT = 335;
  * 미국 | 한국(2단계 명세 §4-16): 미국이 기본이고, 한국을 처음 고를 때부터 `?market=KR` 개요·상태를 읽습니다(고르기 전에는 한국 요청 없음 —
  * 한 번 고른 뒤에는 미국으로 돌아가도 두 시장 값을 계속 읽어 두어, 어느 쪽으로 돌아와도 자리표시 없이 바로 보임). 고르기는 패널 머리의 같은 자리에
  * 늘 남아(읽는 중·실패에도 — 다시 마운트되지 않아 키보드 초점을 잃지 않음) 미국으로 돌아갈 수 있습니다. 미국을 처음 읽는 동안은 고를 것이 없어 두지 않습니다.
+ * 미국 첫 읽기가 실패해도 남습니다(한국으로 갈 수 있게 — QA-608). 실패는 error가 아니라 failedAt으로 봅니다 — useApi는 다시 읽기를 시작할 때 error를
+ * 비우지만 failedAt은 남겨 두어, 다시 시도·자동 갱신으로 다시 읽는 동안에도 고르기가 다시 마운트되지 않습니다.
  */
 export function PaperPnlPanel({ className }: { className?: string } = {}) {
   const owner = isOwner(useSessionUser());
@@ -62,7 +64,7 @@ export function PaperPnlPanel({ className }: { className?: string } = {}) {
   // 패널 틀 — 읽는 중·오류·읽은 뒤 모두 같은 클래스(홈 배치가 주는 칸 폭 포함)라 값이 와도 틀이 바뀌지 않습니다.
   const frame = `min-w-0 ${className ?? ""}`.trim();
 
-  const switchShown = korea || overview.data !== null;
+  const switchShown = korea || overview.data !== null || overview.failedAt !== null;
   // 머리 동작의 모양은 늘 같은 묶음(고르기 → 신선도)이라 읽는 중에서 값으로 바뀌어도 고르기가 다시 마운트되지 않습니다.
   const actions = switchShown ? (
     <>
@@ -148,7 +150,8 @@ function PnlTable({ rows, korea }: { rows: readonly PaperPnlRow[]; korea: boolea
             style={{ "--book-color": colors.get(row.id) } as CSSProperties}
           />
           <span className="flex min-w-0 flex-col">
-            <Link href={row.href} className={`${LINK_CLASSES} break-keep`}>
+            {/* self-start — flex 열의 항목이라 늘어나면 누르는 자리·포커스 고리가 보조 줄 폭까지 넓어집니다(QA-607, QA-582와 같은 방법). */}
+            <Link href={row.href} className={`${LINK_CLASSES} self-start break-keep`}>
               {row.name}
             </Link>
             {row.sub ? <span className="break-keep text-xs leading-4 text-text-3">{row.sub}</span> : null}

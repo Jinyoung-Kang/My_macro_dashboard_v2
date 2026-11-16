@@ -5,7 +5,7 @@ import { useId, type ReactNode } from "react";
 import { Empty, Skeleton } from "@/components/patterns";
 import { Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
+import { homeReadFailed, KPI_READ_FAILED, latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
 import type { InfoSourcesResponse } from "@/lib/info";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { StatusIssuesResponse } from "@/lib/types";
@@ -27,8 +27,9 @@ const SUBHEAD = "text-caption font-semibold text-text-2";
  * '알림 전체 보기'. 회원·데모는 알림만이라 제목도 '알림'입니다. 읽음 처리는 알림 화면에서 합니다.
  *
  * 읽지 않은 수는 셸 레이아웃이 읽는 경로(/api/alerts/unread-count)를 그대로 읽습니다 — 동시에 나가면 요청 하나로 합쳐집니다
- * (lib/sharedRequest). 모르면(읽는 중·실패) "—"이고 0으로 적지 않습니다. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고
- * "지난 사건"으로 적습니다(/alerts와 같음).
+ * (lib/sharedRequest). 0으로 적지 않고, 맨 위 KPI 띠의 '읽지 않은 알림' 타일과 같은 갈래로 그립니다(lib/home homeReadFailed — P4 '정한 것' 11, QA-605):
+ * 읽는 중이면 글줄 안의 짧은 자리표시(role=status), 읽지 못했으면 '—'(읽어 주기 '값 없음 읽지 못함' — 이 수만의 구역이 없어 오류 글·다시 시도는 두지 않음,
+ * 자동 갱신이 다시 읽음), 응답에 수가 없으면 '—'. 지난 사건(late)은 그 수에 들지 않으므로 강조하지 않고 "지난 사건"으로 적습니다(/alerts와 같음).
  *
  * 정보 검색 관심 대상의 새 글 알림(SEARCH_WATCH)은 제목이 그 대상의 타임라인으로 가는 링크입니다(/alerts와 같음 — 정보 검색 화면 안쪽 주소만).
  *
@@ -54,7 +55,7 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
       actions={
         <>
           <span className="text-xs text-text-2">
-            읽지 않음 <span className="tabular-nums font-semibold text-text">{unreadText(unread.data) ?? <Empty />}</span>
+            읽지 않음 <span className="tabular-nums font-semibold text-text"><UnreadValue unread={unread} /></span>
           </span>
           <Freshness refreshError={inbox.refreshError ?? unread.refreshError} />
           <Link href="/alerts" className={HOME_LINK}>
@@ -79,6 +80,31 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
       ) : null}
     </Panel>
   );
+}
+
+/**
+ * 머리의 읽지 않은 수 — 값이 있으면 'N건'(수가 없으면 '—'), 읽지 못했으면 '—'(사유 '읽지 못함'은 읽어 주기로만), 읽는 중이면 글줄 높이 안의 짧은 자리표시.
+ * 읽는 중과 실패를 같은 '—'(읽어 주기 '값 없음')로 그리면 눈으로도 낭독으로도 갈리지 않았습니다(QA-605) — 이제 읽는 중은 막대, 실패는 '—'입니다.
+ *
+ * - 실패의 보이는 글은 '—'만입니다. 사유까지 보이면('— 읽지 못함') 머리 값이 66.7px → 122px로 넓어져, 남은 폭이 적은 360·375px와 1024px(메뉴 256 이상)에서
+ *   패널 머리가 두 줄로 꺾였습니다(65 → 97px · 45 → 69px). 보이는 사유는 같은 화면 KPI 띠의 같은 타일이 적습니다.
+ * - 실패는 error가 아니라 homeReadFailed(실패 시각 failedAt)로 정합니다 — useApi는 다시 읽기를 시작할 때 error를 비우므로, error로 정하면 수가 계속
+ *   실패하는 동안 다시 읽을 때마다(300초 자동 갱신·탭 복귀·수동 새로고침) 실패 → 자리표시 → 실패로 오갔습니다(QA-605 검토, QA-608과 같은 까닭).
+ */
+function UnreadValue({ unread }: { unread: HomeAlertsRead["unread"] }) {
+  if (unread.data !== null) {
+    return <>{unreadText(unread.data) ?? <Empty />}</>;
+  }
+  if (homeReadFailed(unread)) {
+    // relative — 안의 sr-only(절대 위치)가 가로 스크롤 상자 밖으로 빠져 문서 폭을 넓히지 않게(Empty와 같은 까닭).
+    return (
+      <span className="relative">
+        <Empty />
+        <span className="sr-only">{KPI_READ_FAILED}</span>
+      </span>
+    );
+  }
+  return <Skeleton inline label="읽지 않은 수 불러오는 중" />;
 }
 
 /** 최근 알림 세 건 — 줄마다 점·제목(관심 대상 새 글이면 링크)·발생일·읽음 글. */
@@ -170,15 +196,24 @@ function SourceIncidents({ read }: { read: ApiRead<InfoSourcesResponse> }) {
 /**
  * 알림 한 줄의 제목 — 가는 주소가 있으면(관심 대상 새 글 알림) 링크로, 누르는 자리는 줄 전체(줄 높이 56px 이상 — 좁은 화면 44px 조건)로 넓힙니다.
  * 링크는 누를 수 있는 것이라 강조 파랑(명세 A1), 읽지 않음은 굵기로(색만이 아님 — 옆의 '안 읽음' 글).
+ *
+ * 제목은 두 줄까지 보이고(낱말 사이에서 줄바꿈 — 긴 영문 토큰만 칸 안에서 꺾음) 넘치면 말줄임, 전체 제목은 title로 둡니다(QA-418 관심 대상 이름과 같은 무늬).
+ * 한 줄 말줄임이던 때는 반 칸(390·1024·1280)에서 13F 알림의 기관 이름 뒷부분과 종목 수가 가려지고, 링크가 아닌 종류는 홈에서 전체 제목을 볼 길이
+ * 없었습니다(QA-606). 링크의 줄 전체 누르는 자리(::after)는 줄(li)이 기준이라 제목의 overflow에 잘리지 않습니다.
  */
 function RowTitle({ title, unread, href }: { title: string; unread: boolean; href: string | null }) {
   if (!href) {
-    return <span className={`truncate text-[15px] leading-5 ${unread ? "font-semibold text-text" : "text-text-2"}`}>{title}</span>;
+    return (
+      <span title={title} className={`line-clamp-2 break-keep text-[15px] leading-5 wrap-anywhere ${unread ? "font-semibold text-text" : "text-text-2"}`}>
+        {title}
+      </span>
+    );
   }
   return (
     <Link
       href={href}
-      className={`truncate rounded-sm text-[15px] leading-5 text-accent underline-offset-2 after:absolute after:inset-0 after:content-[''] hover:text-accent-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+      title={title}
+      className={`line-clamp-2 break-keep rounded-sm text-[15px] leading-5 text-accent underline-offset-2 wrap-anywhere after:absolute after:inset-0 after:content-[''] hover:text-accent-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
         unread ? "font-semibold" : ""
       }`}
     >

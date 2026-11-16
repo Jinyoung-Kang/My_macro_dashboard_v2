@@ -127,6 +127,13 @@ async function storeLine(): Promise<HTMLElement> {
 /** 알림 패널 머리의 '읽지 않음 N건'(이름과 수). */
 const unreadCount = (name = ALERTS_REGION) => within(region(name)).getByText(/^읽지 않음/);
 
+/** 눈에 보이는 글 — 읽어 주기 전용(sr-only) 글을 뺀 textContent(공백은 하나로). jsdom은 배치를 재지 않아 보이는 글의 길이로 폭을 가늠합니다. */
+function visibleText(node: HTMLElement): string {
+  const copy = node.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll(".sr-only").forEach((hidden) => hidden.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 /** 운영자 알림 패널의 최근 알림 줄(이름 있는 목록 '최근 알림'의 줄 — 끊긴 출처 줄과 섞이지 않게). */
 const alertItems = () => within(within(region(ALERTS_REGION)).getByRole("list", { name: "최근 알림" })).getAllByRole("listitem");
 
@@ -386,6 +393,115 @@ describe("홈 — 값 있음(운영자)", () => {
     expect(within(region(ALERTS_REGION)).queryByText("끊긴 출처가 없습니다")).toBeNull();
   });
 
+  // QA-605: 패널 머리의 읽지 않은 수는 읽는 중에도 실패에도 같은 '—'(읽어 주기 '값 없음')라 둘이 갈리지 않았습니다. 같은 수를 그리는 KPI 띠는
+  // 읽는 중 자리표시(role=status) · 실패 '— 읽지 못함'(P4 '정한 것' 11)이라 한 화면에서 두 규칙이었습니다.
+  // 수정 전(재현 커밋에서는 it.fails) 읽는 중 머리는 '읽지 않음 —값 없음'(role=status 없음), 실패도 '읽지 않음 —값 없음'이었습니다.
+  it("알림 패널 머리의 읽지 않은 수 — 읽는 중은 '—'(값 없음)가 아니라 자리표시(role=status) (QA-605)", async () => {
+    // unread-count 응답만 오지 않습니다(나머지 경로는 값).
+    reads = happyReads();
+    delete reads[UNREAD];
+    renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    expect(within(unreadCount()).queryByText("값 없음")).toBeNull();
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
+  });
+
+  it("알림 패널 머리의 읽지 않은 수 — 실패는 '—'(읽어 주기 '값 없음 읽지 못함' — KPI 띠와 같은 사유, 오류 글·다시 시도는 두지 않음) (QA-605)", async () => {
+    reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
+    renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    await waitFor(() => expect(unreadCount().textContent).toContain("읽지 못함"));
+    expect(within(unreadCount()).queryByRole("status")).toBeNull();
+    expect(within(region(ALERTS_REGION)).queryAllByRole("alert")).toHaveLength(0);
+  });
+
+  // QA-605 후속(검토): 첫 고침은 실패를 '— 읽지 못함'으로 보여 머리 값이 66.7px → 122px로 넓어졌고, 남은 폭이 적은 360·375px와 1024px(메뉴 256·280)에서
+  // 패널 머리가 두 줄로 꺾였습니다(65 → 97px, 45 → 69px — 99f161ae는 같은 실패에서 한 줄). 보이는 글은 '—'만 두고 사유는 읽어 주기로 둡니다
+  // (보이는 사유는 같은 화면 KPI 띠의 '읽지 않은 알림' 타일이 적음 — 읽는 중은 자리표시 막대라 눈으로도 갈림).
+  // 수정 전(재현 커밋에서는 it.fails) 보이는 글이 '읽지 않음 —읽지 못함'이고, '읽지 못함'은 sr-only가 아닌 보조 글(text-xs font-normal text-text-3)이었습니다.
+  it("알림 패널 머리의 읽지 않은 수 — 실패 때 보이는 글은 '—'만(머리가 꺾이지 않게), '읽지 못함'은 읽어 주기(sr-only)로 (QA-605)", async () => {
+    reads = { ...happyReads(), [UNREAD]: new Error("요청 실패 (HTTP 500)") };
+    renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    await waitFor(() => expect(unreadCount().textContent).toContain("읽지 못함"));
+    expect(visibleText(unreadCount())).toBe("읽지 않음 —");
+    expect(within(unreadCount()).getByText("읽지 못함").className.split(/\s+/)).toContain("sr-only");
+    expect(within(unreadCount()).getByText("값 없음").className.split(/\s+/)).toContain("sr-only");
+  });
+
+  // QA-605 후속(검토): 실패 갈래를 error로 정해, useApi가 다시 읽기를 시작하며 error를 비우면 수가 계속 실패하는 동안에도 다시 읽을 때마다
+  // (300초 자동 갱신·탭 복귀·수동 새로고침) 머리가 실패 → 자리표시 → 실패로 오가며 패널 본문이 위아래로 움직였습니다(QA-608과 같은 까닭 — 360 CLS 0.283).
+  // 같은 수를 그리는 KPI 띠 타일도 같은 규칙(lib/home kpiReadState)이라 함께 봅니다 — 둘 다 실패 시각(failedAt)으로 정합니다.
+  // 수정 전(재현 커밋에서는 it.fails) 다시 읽는 동안 머리에 role=status '읽지 않은 수 불러오는 중'이 있었습니다(KPI 타일도 '읽지 않은 알림 불러오는 중').
+  it("알림 패널 머리의 읽지 않은 수 — 실패 뒤 다시 읽는 동안에도 자리표시로 바뀌지 않고 실패를 지킨다, KPI 타일도 같다 — 처음 읽는 동안만 자리표시 (QA-605)", async () => {
+    reads = happyReads();
+    let rejectFirst: (error: Error) => void = () => {};
+    let resolveRetry: (body: unknown) => void = () => {};
+    const first = new Promise((_, reject) => { rejectFirst = reject; });
+    const retry = new Promise((resolve) => { resolveRetry = resolve; });
+    let unreadCalls = 0;
+    const base = api.apiGetShared.getMockImplementation();
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path !== UNREAD) return base?.(path);
+      unreadCalls += 1;
+      return unreadCalls === 1 ? first : retry;
+    });
+    const unreadTile = () => {
+      const tile = within(region("오늘 요약")).getAllByRole("link").find((link) => link.firstElementChild?.textContent === "읽지 않은 알림");
+      if (!tile) throw new Error("KPI 타일 없음: 읽지 않은 알림");
+      return tile;
+    };
+    const { rerender } = renderHome(OWNER);
+    await within(region(ALERTS_REGION)).findByText("[국면 전환] 후퇴 경계 → 확장");
+    // 처음 읽는 동안은 자리표시(그대로).
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
+
+    await act(async () => rejectFirst(new Error("요청 실패 (HTTP 500)")));
+    expect(within(unreadCount()).getByText("읽지 못함")).toBeTruthy();
+    expect(within(unreadTile()).getByText("읽지 못함")).toBeTruthy();
+
+    // 수동 새로고침(공용 신호) — 모든 경로를 다시 읽고, useApi는 시작할 때 error를 비웁니다. 읽지 않은 수의 두 번째 응답은 아직 오지 않습니다.
+    signal.token += 1;
+    await act(async () => rerender(<SessionUserProvider user={OWNER}><HomeScreen /></SessionUserProvider>));
+    await waitFor(() => expect(unreadCalls).toBe(2));
+    expect(within(unreadCount()).queryByRole("status")).toBeNull();
+    expect(within(unreadCount()).getByText("읽지 못함")).toBeTruthy();
+    expect(within(unreadTile()).queryByRole("status")).toBeNull();
+    expect(within(unreadTile()).getByText("읽지 못함")).toBeTruthy();
+
+    await act(async () => resolveRetry({ unread: 12 }));
+    expect(unreadCount().textContent).toBe("읽지 않음 12건");
+    expect(unreadTile().textContent).toBe("읽지 않은 알림12건");
+  });
+
+  // QA-606: 최근 알림 제목은 한 줄 말줄임(truncate)에 title이 없어, 반 칸(390 312px · 1024 308px · 1280)에서 13F 알림의 기관 이름 뒷부분과 종목 수가
+  // 가려지고 링크가 아닌 종류는 홈에서 전체 제목을 볼 길이 없었습니다(알림 전체 보기로 가야 함). QA-418(관심 대상 이름)과 같은 무늬로 고칩니다.
+  // 수정 전(재현 커밋에서는 it.fails) 두 제목 모두 title이 null, 클래스는 truncate(line-clamp-2 없음)였습니다.
+  it("최근 알림 제목은 두 줄까지(line-clamp-2·낱말 단위 줄바꿈)와 전체 제목 title — 링크가 아닌 13F 알림·관심 대상 링크 모두 (QA-606)", async () => {
+    // 13F 알림 제목은 백엔드 AlertText.institutionNew의 꼴('[13F 신규 편입] {기관 이름} — N종목')에 실제 기관 이름을 넣은 것입니다.
+    const institutionTitle = "[13F 신규 편입] 사우디 국부펀드 (Public Investment Fund - PIF) — 12종목";
+    const watchTitle = "관심 대상 '합성 반도체 지주회사 (Synthetic Semiconductor Holdings Corporation)' 새 글 12건";
+    const response = inbox();
+    response.items = [
+      { ...response.items[0], id: 21, kind: "INSTITUTION_NEW", title: institutionTitle },
+      { ...response.items[1], id: 20, kind: "SEARCH_WATCH", title: watchTitle, payload: { href: "/search?e=us:SYNT&tab=timeline" } },
+    ];
+    reads = { ...happyReads(), [INBOX]: response };
+    renderHome(OWNER);
+    const plain = await within(region(ALERTS_REGION)).findByText(institutionTitle);
+    const link = within(region(ALERTS_REGION)).getByRole("link", { name: watchTitle });
+    expect(plain.tagName).toBe("SPAN");
+    for (const [node, title] of [[plain, institutionTitle], [link, watchTitle]] as const) {
+      const classes = node.className.split(/\s+/);
+      expect(node.getAttribute("title"), title).toBe(title);
+      expect(classes, title).toEqual(expect.arrayContaining(["line-clamp-2", "break-keep", "wrap-anywhere"]));
+      expect(classes, title).not.toContain("truncate");
+    }
+    // 링크는 줄 전체가 누르는 자리(after:absolute inset-0 — 줄 li가 기준)이고 포커스 고리도 그대로입니다.
+    expect(link.className.split(/\s+/)).toEqual(expect.arrayContaining(["after:absolute", "after:inset-0", "focus-visible:outline-2"]));
+    expect(link.closest("li")?.className.split(/\s+/)).toContain("relative");
+  });
+
   it("알림 — 지난 사건(late)은 읽지 않은 수에 들지 않아 강조(점·굵은 글씨) 없이 '지난 사건'", async () => {
     const response = inbox();
     response.items[0] = { ...response.items[0], late: true, read: false };
@@ -516,6 +632,8 @@ describe("홈 — 불러오는 중·값 없음", () => {
       "수집 오류 불러오는 중",
       // 패널은 화면 차례(국면 → 알림·끊긴 출처 → 계좌 → 시장 — 결정 5)
       "오늘의 국면을 불러오는 중",
+      // 알림 패널 머리의 읽지 않은 수(QA-605 — KPI 타일과 같은 규칙)
+      "읽지 않은 수 불러오는 중",
       "알림을 불러오는 중",
       "끊긴 출처를 불러오는 중",
       "수집 상태를 불러오는 중",
@@ -524,8 +642,9 @@ describe("홈 — 불러오는 중·값 없음", () => {
     ]);
     // 계좌 구역은 불러오는 중에도 읽은 뒤와 같은 이름입니다.
     expect(within(region(PAPER_REGION)).getByRole("status").getAttribute("aria-label")).toBe("모의매매 계좌를 불러오는 중");
-    // 읽지 않은 수를 모르면 "—"(읽어 주기 "값 없음") — 0건으로 적지 않습니다.
-    expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();
+    // 읽지 않은 수를 읽는 중이면 자리표시 — '—'(값 없음, 실패와 같은 표시)도 0건도 적지 않습니다(QA-605).
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();
+    expect(within(unreadCount()).queryByText("값 없음")).toBeNull();
     expect(screen.queryByText("0건")).toBeNull();
   });
 
@@ -617,7 +736,7 @@ describe("홈 — 불러오는 중·값 없음", () => {
 
     expect(within(region("시장")).getByText("매크로 저장본이 아직 없습니다 — 수집 전")).toBeTruthy();
     expect(await within(region(ALERTS_REGION)).findByText("새 알림이 없습니다")).toBeTruthy();
-    expect(within(unreadCount()).getByText("값 없음")).toBeTruthy();   // 읽지 않은 수 응답 전
+    expect(within(unreadCount()).getByRole("status", { name: "읽지 않은 수 불러오는 중" })).toBeTruthy();   // 읽지 않은 수 응답 전(QA-605)
     const line = await storeLine();
     expect(line.textContent).toContain("수집 태스크 오류 —값 없음 · 경고 —값 없음 · 누락 데이터셋 —값 없음");
     expect(within(line).getAllByText("값 없음")).toHaveLength(3);
@@ -758,7 +877,7 @@ describe("홈 — 일부 실패", () => {
     expect(within(paper).getByText("출발 2026-10-23 · 처음 현금 100,000 달러 · 변화율은 출발 대비")).toBeTruthy();
   });
 
-  it("장부 개요가 실패하면 모의매매 구역은 제목과 오류만, 수집 상태·끊긴 출처가 실패하면 그 칸만 오류(알림은 그대로)", async () => {
+  it("장부 개요가 실패하면 모의매매 구역은 제목·시장 고르기와 오류, 수집 상태·끊긴 출처가 실패하면 그 칸만 오류(알림은 그대로)", async () => {
     reads = {
       ...happyReads(),
       [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"),
@@ -772,6 +891,10 @@ describe("홈 — 일부 실패", () => {
     expect(await within(alerts).findByText("요청 실패 (HTTP 502)")).toBeTruthy();
     expect(await within(alerts).findByText("요청 실패 (HTTP 504)")).toBeTruthy();
     expect(within(region(PAPER_REGION)).getByRole("alert")).toBeTruthy();
+    // 미국을 못 읽어도 한국으로 갈 수 있게 고르기는 남습니다(QA-608) — 표·계좌 링크·개수는 없습니다.
+    expect(within(region(PAPER_REGION)).getByRole("radiogroup", { name: "모의매매 시장" })).toBeTruthy();
+    expect(within(region(PAPER_REGION)).queryByRole("table")).toBeNull();
+    expect(within(region(PAPER_REGION)).queryByText(/\d개$/)).toBeNull();
     expect(within(alerts).getAllByRole("alert").map((node) => node.textContent)).toEqual([
       expect.stringContaining("요청 실패 (HTTP 504)"),
       expect.stringContaining("요청 실패 (HTTP 502)"),
@@ -966,6 +1089,66 @@ describe("홈 — 모의매매 한국 탭", () => {
     expect(within(alert).getByText("한국 개요 응답 500")).toBeTruthy();
     expect(within(alert).getByRole("button", { name: "다시 시도" })).toBeTruthy();
     expect(within(region(PAPER_REGION)).getByRole("radiogroup", { name: "모의매매 시장" })).toBeTruthy();
+  });
+
+  // QA-608: 미국 개요를 처음 읽다 실패하면 머리에 미국|한국 고르기가 없어(switchShown = korea || 미국 값 있음) 홈 패널에서 한국 계좌로 갈 수
+  // 없었습니다. 고치는 조건은 오류(error)가 아니라 실패 시각(failedAt) — useApi는 다시 읽기를 시작할 때 error를 비우므로 error로 정하면 다시 시도·
+  // 60초 자동 갱신 때마다 고르기가 사라졌다 다시 마운트되어 키보드 초점을 잃습니다(failedAt은 다시 읽는 동안에도 남음).
+  // 수정 전(재현 커밋에서는 it.fails) 미국 개요 실패 때 모의매매 구역에 radiogroup이 없었습니다(글: '모의매매 계좌 요청 실패 (HTTP 500) 다시 시도').
+  it("미국 개요를 처음 읽다 실패해도 고르기가 남아 한국으로 갈 수 있고, 미국으로 돌아오면 오류와 고르기 (QA-608)", async () => {
+    reads = { ...happyReads(), [PAPER_OVERVIEW]: new Error("요청 실패 (HTTP 500)"), [PAPER_KR_OVERVIEW]: paperOverviewKr(), [PAPER_KR_STATUS]: paperStatusKr(false) };
+    renderHome(OWNER);
+    const panel = region(PAPER_REGION);
+    expect(within(await within(panel).findByRole("alert")).getByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    const switcher = within(panel).getByRole("radiogroup", { name: "모의매매 시장" });
+    expect((within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement).checked).toBe(true);
+    expect(requested()).not.toContain(PAPER_KR_OVERVIEW);
+
+    fireEvent.click(within(switcher).getByRole("radio", { name: "한국" }));
+    expect(await paperPanel("한국 Claude 계좌")).toBe(panel);
+    expect(requested()).toEqual(expect.arrayContaining([PAPER_KR_OVERVIEW, PAPER_KR_STATUS]));
+    expect(within(panel).queryByRole("alert")).toBeNull();
+
+    fireEvent.click(within(panel).getByRole("radio", { name: "미국" }));
+    expect(within(within(panel).getByRole("alert")).getByText("요청 실패 (HTTP 500)")).toBeTruthy();
+    expect(within(panel).getByRole("radiogroup", { name: "모의매매 시장" })).toBe(switcher);
+    expect((within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("미국 개요 실패 뒤 다시 읽는 동안에도 고르기는 같은 노드로 남아 초점을 잃지 않는다 — 처음 읽는 동안만 고르기가 없다 (QA-608)", async () => {
+    reads = happyReads();
+    let rejectFirst: (error: Error) => void = () => {};
+    let resolveRetry: (body: unknown) => void = () => {};
+    const first = new Promise((_, reject) => { rejectFirst = reject; });
+    const retry = new Promise((resolve) => { resolveRetry = resolve; });
+    let overviewCalls = 0;
+    const base = api.apiGetShared.getMockImplementation();
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path !== PAPER_OVERVIEW) return base?.(path);
+      overviewCalls += 1;
+      return overviewCalls === 1 ? first : retry;
+    });
+    renderHome(OWNER);
+    const panel = region(PAPER_REGION);
+    // 처음 읽는 동안은 고를 것이 없어 고르기를 두지 않습니다(그대로).
+    expect(within(panel).getByRole("status", { name: "모의매매 계좌를 불러오는 중" })).toBeTruthy();
+    expect(within(panel).queryByRole("radiogroup")).toBeNull();
+
+    await act(async () => rejectFirst(new Error("요청 실패 (HTTP 500)")));
+    const switcher = within(panel).getByRole("radiogroup", { name: "모의매매 시장" });
+    const us = within(switcher).getByRole("radio", { name: "미국" }) as HTMLInputElement;
+    us.focus();
+    fireEvent.click(within(panel).getByRole("button", { name: "다시 시도" }));
+    // 다시 읽는 동안(error는 비었고 값은 아직 없음) — 자리표시와 고르기가 함께, 고르기는 다시 마운트되지 않습니다.
+    expect(await within(panel).findByRole("status", { name: "모의매매 계좌를 불러오는 중" })).toBeTruthy();
+    expect(overviewCalls).toBe(2);
+    expect(within(panel).getByRole("radiogroup", { name: "모의매매 시장" })).toBe(switcher);
+    expect(document.activeElement).toBe(us);
+
+    await act(async () => resolveRetry(paperOverview()));
+    expect(await paperPanel("Claude 계좌")).toBe(panel);
+    expect(within(panel).getByRole("radiogroup", { name: "모의매매 시장" })).toBe(switcher);
+    expect(document.activeElement).toBe(us);
   });
 
   it("자료: 한국 네 계좌(원 정수, 링크 /paper/kr)·출발 대비·출발 줄(원)·비교하지 않음 문구·한국 출처", async () => {
