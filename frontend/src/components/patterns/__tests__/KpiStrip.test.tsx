@@ -119,6 +119,50 @@ describe("KpiStrip — 값 있음", () => {
     expect(within(tile("국면")).getByText("후퇴 경계 (Late cycle)").className).toContain("break-keep");
   });
 
+  // QA-599(근본 원인): 긴 값 정리(6bfa67cb)가 단위를 값 글 안 끝으로 옮긴 뒤로 값 줄의 flex 항목은 하나뿐이라 위 시험이 보는 flex-nowrap은 효과가 없고,
+  // 단위를 한 줄에 붙드는 것은 단위의 오른쪽 바깥 여백(−12px)뿐이었습니다. 숫자 끝과 단위 사이의 줄바꿈 기회(한글 단위 앞)가 그대로라 12px보다 많이
+  // 모자라면 단위만 다음 줄로 갔습니다(루프백 빌드 1280 · 메뉴 320 — 타일 121.1px에서 '원' 아래 끝 170 / 값 줄 140, 메뉴 220에서도 '13,392.80'이면 같음).
+  // 수정 전(재현 커밋에서는 it.fails) '원'의 부모는 값 글 span(클래스에 whitespace-nowrap 없음 — 글 '1,339.28원')이었습니다.
+  it.fails("단위는 값의 마지막 글자와 한 nowrap 묶음 — 숫자 끝과 단위 사이에 줄바꿈 기회가 없다 (QA-599)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "usdkrw", label: "원/달러", value: 1339.28, format: (v) => v.toLocaleString("ko-KR", { minimumFractionDigits: 2 }), unit: "원" },
+          { key: "us10y", label: "미국채 10년물", value: "4.933", unit: "%" },
+        ]}
+      />,
+    );
+    for (const [name, unit, tail, whole] of [
+      ["원/달러", "원", "8원", "1,339.28원"],
+      ["미국채 10년물", "%", "3%", "4.933%"],
+    ] as const) {
+      const group = within(tile(name)).getByText(unit).parentElement as HTMLElement;
+      expect(group.className.split(/\s+/), name).toContain("whitespace-nowrap");
+      expect(group.textContent, name).toBe(tail);
+      // 묶음은 값 글(24px 굵게 tabular) 안 끝 — 값 글 전체는 '값 + 단위' 그대로입니다.
+      const value = group.parentElement as HTMLElement;
+      expect(value.className.split(/\s+/), name).toContain("tabular-nums");
+      expect(value.textContent, name).toBe(whole);
+    }
+  });
+
+  // QA-599(근본 원인): 한 줄 여부를 뷰포트(xl)만으로 정해, 왼쪽 메뉴가 넓으면 1280에서 일곱 타일이 121px(메뉴 320)까지 좁아져 단위 여유(12px)를
+  // 넘었습니다. 수정 전(재현 커밋에서는 it.fails) 띠 section은 컨테이너가 아니고(클래스 'min-w-0'), 목록은 'xl:grid-cols-[repeat(var(--kpi-n),minmax(0,1fr))]'였습니다.
+  it.fails("한 줄 여부는 띠 폭(컨테이너 질의) — xl이면서 띠가 '타일 수 × 134px + 사이 8px'보다 넓을 때만 타일 수만큼 한 줄 (QA-599)", () => {
+    const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
+    const { container, rerender } = render(<KpiStrip label="요약" items={items(7)} />);
+    const section = () => container.querySelector("section") as HTMLElement;
+    const list = () => (container.querySelector("ul") as HTMLElement).className.split(/\s+/);
+    expect(section().className.split(/\s+/)).toContain("@container");
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      rerender(<KpiStrip label="요약" items={items(n)} />);
+      expect(list(), `${n}`).toContain(`xl:@min-[${n * 134 + (n - 1) * 8}px]:grid-cols-${n}`);
+      // 뷰포트만으로 한 줄을 정하는 클래스는 없습니다.
+      expect(list().filter((token) => token.startsWith("xl:grid-cols")), `${n}`).toEqual([]);
+    }
+  });
+
   it("xl은 타일 수만큼 한 줄(--kpi-n), 8개를 넘으면 네 칸 그대로", () => {
     const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
     const { container, rerender } = render(<KpiStrip label="요약" items={items(7)} />);
