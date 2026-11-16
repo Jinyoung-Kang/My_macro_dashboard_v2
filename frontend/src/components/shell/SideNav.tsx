@@ -10,9 +10,9 @@ import { RefreshButton } from "./RefreshButton";
 import { TabIcon } from "./icons";
 
 /**
- * 데스크톱(lg 이상) 왼쪽 내비 — 상표, 탭(홈·시장·기관·모의매매·정보 검색·정보 수집·더보기 — 보이는 탭만), 아래쪽에 읽기 모드·수동 새로고침(운영자)·계정·빌드 정보.
- * 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2).
- * 좁은 화면에서는 숨기고(하단 탭 바 + 더보기 화면이 대신), 데스크톱에서는 화면 높이에 붙어 본문만 스크롤됩니다.
+ * 데스크톱(lg 이상) 왼쪽 내비 — 탭(홈·시장·기관·모의매매·정보 검색·정보 수집·더보기 — 보이는 탭만), 아래쪽에 읽기 모드·수동 새로고침(운영자)·계정·빌드 정보.
+ * 앱 이름은 폭 전체의 상단바 맨 왼쪽에 있습니다(작업대 실행 명세 §5 — 메뉴 맨 위 상표는 없앰). 테마 전환은 없습니다(어두운 한 벌 — ADR 0042 결정 2).
+ * 좁은 화면에서는 숨기고(하단 탭 바 + 더보기 화면이 대신), 데스크톱에서는 상단바 아래 남는 높이에 붙어 본문만 스크롤됩니다(메뉴가 길면 메뉴만 따로 스크롤).
  *
  * 메뉴 칸은 4px 모서리(높이 48px). 지금 탭은 왼쪽 3px 강조 파랑 막대·선택 바탕(surface-2)·본문색 굵은 글입니다(작업대 실행 명세 §3-8·§5 —
  * 막대 폭은 고른 행 막대 SELECTED_BAR와 같음). 셸의 현재 메뉴는 누를 수 있는 것이라 막대에 강조 파랑을 쓰되(원칙 A1), 글자는 강조 파랑이
@@ -22,10 +22,8 @@ import { TabIcon } from "./icons";
  */
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   return (
-    <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border bg-surface lg:flex lg:h-screen lg:overflow-y-auto">
-      {/* 상표는 한 줄(시안 15px 굵게). 232px 폭에서 "v2"가 다음 줄로 넘어갔습니다 — 대체 글꼴(약 204px)도 오른쪽 여백 안에서 끝납니다. */}
-      <p className="whitespace-nowrap px-6 pb-[18px] pt-[26px] text-[15px] font-bold text-text">My Macro Dashboard v2</p>
-      <nav aria-label="주 메뉴" className="flex flex-col gap-1 px-3">
+    <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border bg-surface lg:flex lg:overflow-y-auto">
+      <nav aria-label="주 메뉴" className="flex flex-col gap-1 px-3 pt-3">
         {visibleTabs(user).map((tab) => {
           const current = tabCurrent(tab, pathname);
           return (

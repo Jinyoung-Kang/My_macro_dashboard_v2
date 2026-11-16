@@ -4,6 +4,7 @@ import Link from "next/link";
 import { MarketClock } from "@/components/MarketClock";
 import { unreadBadge } from "@/lib/alerts";
 import type { SessionUser } from "@/lib/types";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { SearchCommand } from "./SearchCommand";
 import { BellIcon } from "./icons";
 
@@ -15,20 +16,24 @@ function bellLabel(unread: number | null | undefined): string {
 }
 
 /**
- * 상단바 — 좁은 화면의 짧은 상표, 통합 검색 단추(⌘K), 장 상태 칩 둘(MarketClock), 알림 벨(/alerts, 읽지 않은 수 배지).
- * 넓은 화면(lg 이상)은 높이 64px 한 줄(검색 · 빈칸 · 장 상태 칩 · 벨), 좁은 화면은 64px 줄(상표·검색·벨) 아래 장 상태 칩 줄을 하나 더 둡니다.
+ * 상단바 — 앱 이름, 빵부스러기(넓은 화면만), 통합 검색 단추(⌘K — 명령 팔레트), 장 상태 칩 둘(MarketClock), 알림 벨(/alerts, 읽지 않은 수 배지).
+ * 넓은 화면(lg 이상)은 화면 폭 전체의 높이 48px 한 줄(앱 이름 · 빵부스러기 · 검색 · 장 상태 칩 · 벨)이고 그 아래 줄에 왼쪽 메뉴와 본문이 놓입니다
+ * (작업대 실행 명세 §5, ADR 0042 결정 5). 좁은 화면은 지금 구조 그대로 — 64px 줄(앱 이름·검색·벨) 아래 장 상태 칩 줄을 하나 더 둡니다.
+ * 앱 이름은 좁은 화면과 lg~xl 사이에서 짧게('My Macro v2'), xl 이상에서 'My Macro Dashboard v2'입니다.
  * 장 시계는 인스턴스 하나이고 자리(order)만 바뀝니다 — 둘로 그리면 공휴일 요청·1초 시계·글이 두 번씩 생깁니다.
  * 데스크톱에서는 본문만 스크롤되므로 늘 보이고, 좁은 화면에서는 페이지와 함께 올라갑니다(고정하면 화면 안 #앵커 제목을 가림).
  */
 export function TopBar({ pathname, user, unread }: { pathname: string; user?: SessionUser; unread?: number | null }) {
   const badge = unreadBadge(unread);
   return (
-    <header className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-surface px-4 sm:px-6 lg:h-16 lg:flex-nowrap lg:px-8">
-      <span className="flex h-16 shrink-0 items-center whitespace-nowrap text-[15px] font-bold text-text lg:hidden">My Macro v2</span>
+    <header className="flex shrink-0 flex-wrap items-center gap-x-3 border-b border-border bg-surface px-4 sm:px-6 lg:h-12 lg:flex-nowrap lg:gap-x-2 lg:px-4">
+      <span className="flex h-16 shrink-0 items-center whitespace-nowrap text-[15px] font-bold text-text lg:mr-2 lg:h-auto lg:text-base lg:font-semibold">
+        My Macro<span className="hidden xl:inline"> Dashboard</span> v2
+      </span>
+      {/* 빵부스러기가 남는 폭을 차지합니다(lg:flex-1 — 예전 빈칸 자리). 좁은 화면에는 없습니다. */}
+      <Breadcrumbs pathname={pathname} user={user} />
       <SearchCommand user={user} />
-      {/* 빈칸은 검색 단추(기준 폭 520px)가 다 자란 뒤에 남는 자리만 차지합니다 — 장 상태 칩이 들어온 뒤로 둘이 남는 폭을 반씩 나눠 검색이 좁아졌습니다. */}
-      <div className="hidden flex-1 lg:block" />
-      {/* 좁은 화면: 맨 뒤 순서(order-last)·폭 전체라 둘째 줄로 내려갑니다. 넓은 화면: 원래 순서대로 빈칸과 벨 사이. 칩이 폭보다 넓으면
+      {/* 좁은 화면: 맨 뒤 순서(order-last)·폭 전체라 둘째 줄로 내려갑니다. 넓은 화면: 원래 순서대로 검색과 벨 사이. 칩이 폭보다 넓으면
           이 줄만 가로로 넘깁니다(페이지 가로 스크롤을 만들지 않음). */}
       <div className="order-last flex h-10 w-full min-w-0 items-start overflow-x-auto lg:order-none lg:h-auto lg:w-auto lg:shrink-0 lg:items-center lg:overflow-visible">
         <MarketClock />
@@ -37,7 +42,7 @@ export function TopBar({ pathname, user, unread }: { pathname: string; user?: Se
         href="/alerts"
         aria-label={bellLabel(unread)}
         aria-current={pathname === "/alerts" ? "page" : undefined}
-        className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text hover:bg-surface-2 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-control text-text hover:bg-surface-2 lg:size-[30px] motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         <BellIcon size={20} />
         {/* 수 배지는 알림을 여는 단추의 일부라 강조 파랑(명세 원칙 A1 — 알림 수). 이름(aria-label)이 수를 읽으므로 배지는 장식입니다.

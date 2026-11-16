@@ -235,6 +235,42 @@ describe("하위 메뉴 줄", () => {
   });
 });
 
+describe("빵부스러기(넓은 화면 상단바)", () => {
+  const crumbs = () => screen.getByRole("navigation", { name: "현재 위치" });
+  const crumbItems = () => within(crumbs()).getAllByRole("listitem");
+
+  it("모의매매 탭 주소는 모의매매 › 미국 › 보유·체결 — 앞 두 칸은 링크, 마지막 칸은 링크 없이 aria-current=page", () => {
+    renderShell(LOCAL_OWNER, { path: "/paper/us/holdings" });
+    expect(crumbItems().map((item) => item.textContent)).toEqual(["모의매매", "›미국", "›보유·체결"]);
+    expect(within(crumbs()).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["모의매매", "/paper/us"],
+      ["미국", "/paper/us"],
+    ]);
+    const current = within(crumbs()).getByText("보유·체결");
+    expect(current.getAttribute("aria-current")).toBe("page");
+    expect(current.closest("a")).toBeNull();
+    // 좁은 화면에는 없다(지금 구조 — 명세 §5)
+    expect(crumbs().className.split(/\s+/)).toEqual(expect.arrayContaining(["hidden", "lg:flex"]));
+    expect(crumbs().closest("header")).not.toBeNull();
+  });
+
+  it("종목 상세는 시장 › 종목(미국) › 코드 — 중간 칸은 주소가 없어 링크 없는 글", () => {
+    renderShell(MEMBER_PRO, { path: "/s/us/NVDA" });
+    expect(crumbItems().map((item) => item.textContent)).toEqual(["시장", "›종목(미국)", "›NVDA"]);
+    expect(within(crumbs()).getAllByRole("link").map((link) => link.textContent)).toEqual(["시장"]);
+    expect(within(crumbs()).getByText("NVDA").getAttribute("aria-current")).toBe("page");
+  });
+
+  it("홈은 한 칸(지금 화면), 앱 이름은 상단바에 한 번만 — 왼쪽 메뉴 맨 위 상표는 없다", () => {
+    renderShell(MEMBER_PRO, { path: "/" });
+    expect(crumbItems().map((item) => item.textContent)).toEqual(["홈"]);
+    expect(within(crumbs()).queryAllByRole("link")).toHaveLength(0);
+    // 빌드 정보의 '© 2026 My Macro Dashboard v2'는 앱 이름이 아니다(^로 시작하는 글만 셈).
+    expect(screen.getAllByText(/^My Macro/)).toHaveLength(1);
+    expect(within(screen.getByRole("banner")).getByText(/^My Macro/).textContent).toBe("My Macro Dashboard v2");
+  });
+});
+
 describe("상단바 알림 벨", () => {
   it("읽지 않은 수를 이름에 담고, 1건 이상이면 숫자 배지(99건 넘으면 99+)", () => {
     renderShell(MEMBER_PRO, { unread: 3 });
