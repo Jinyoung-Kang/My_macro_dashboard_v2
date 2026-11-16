@@ -76,7 +76,7 @@ afterEach(() => {
 
 describe("QA-628 섹터 표의 수익률·α·오늘 등락", () => {
   // 수정 전에는 하락 행의 기간 수익률 여섯 칸('-12.15%' 여섯)·α('-9.51%p')가 하락색과 ASCII '-'뿐이었다(▲▼·−·읽어 주는 '하락' 0개).
-  it.fails("기간 수익률 여섯 칸과 α가 ▲▼·−·읽어 주는 방향 글을 갖는다(색만이 아님)", async () => {
+  it("기간 수익률 여섯 칸과 α가 ▲▼·−·읽어 주는 방향 글을 갖는다(색만이 아님)", async () => {
     render(<SectorPage />);
     await screen.findAllByText("정보기술");
 
@@ -91,7 +91,7 @@ describe("QA-628 섹터 표의 수익률·α·오늘 등락", () => {
   });
 
   // 수정 전에는 실시간 오늘 등락('-0.90%')이 현재가 아래 하락색 글뿐이었다(읽어 주는 '하락' 0개).
-  it.fails("실시간 오늘 등락이 ▲▼·−·읽어 주는 방향 글을 갖는다", async () => {
+  it("실시간 오늘 등락이 ▲▼·−·읽어 주는 방향 글을 갖는다", async () => {
     render(<SectorPage />);
     await screen.findAllByText("정보기술");
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0));

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
+import { ChangeChip } from "@/components/patterns";
 import {
   Banner,
   Card,
@@ -18,7 +19,7 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
-import { deltaColor, EMPTY, formatNumber, formatPercent } from "@/lib/format";
+import { EMPTY, formatNumber } from "@/lib/format";
 import { liveKey, livePriceTitle, liveShown } from "@/lib/livePrices";
 import type { LivePrice, SectorResponse, SectorRow } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
@@ -199,15 +200,7 @@ function ReturnsTable({
           header: window === period ? `${window} ▪` : window,
           align: "right" as const,
           className: window === period ? "bg-surface-2/50" : undefined,
-          render: (row: SectorRow) => (
-            <span
-              className={`${deltaColor(row.returns?.[window] ?? null)} ${
-                window === period ? "font-semibold" : ""
-              }`}
-            >
-              {formatPercent(row.returns?.[window] ?? null)}
-            </span>
-          ),
+          render: (row: SectorRow) => <SignedChip value={row.returns?.[window]} />,
         })),
         ...(showAlpha
           ? [
@@ -215,16 +208,7 @@ function ReturnsTable({
                 key: "alpha",
                 header: `α (${period})`,
                 align: "right" as const,
-                render: (row: SectorRow) =>
-                  row.alpha ? (
-                    <span className={deltaColor(row.alpha[period] ?? null)}>
-                      {row.alpha[period] === null || row.alpha[period] === undefined
-                        ? EMPTY
-                        : `${formatNumber(row.alpha[period], 2)}%p`}
-                    </span>
-                  ) : (
-                    EMPTY
-                  ),
+                render: (row: SectorRow) => <SignedChip value={row.alpha?.[period]} unit="%p" />,
               },
             ]
           : []),
@@ -240,10 +224,21 @@ function PriceCell({ stored, realtime }: { stored: number | null; realtime?: Liv
   return (
     <span className="flex flex-col items-end" title={livePriceTitle(realtime, (value) => formatNumber(value, 2))}>
       <span>{formatNumber(shown.price, 2)}</span>
-      <span className={`text-xs ${deltaColor(shown.changePct)}`}>
-        {formatPercent(shown.changePct)}
-        {shown.session ? ` · ${shown.session}` : ""}
+      <span className="flex items-baseline gap-1 whitespace-nowrap text-xs text-text-3">
+        <SignedChip value={shown.changePct} />
+        {shown.session ? <span>· {shown.session}</span> : null}
       </span>
     </span>
   );
+}
+
+/**
+ * 등락 칸 — 공용 변화 칩(▲▼·부호 −·읽어 주는 '상승/하락' — 색만으로 방향을 전하지 않음, QA-628). 수익률은 변화율('%'), 단위를 주면(α '%p') 변화량과 그 단위.
+ * 모르는 값은 칩 대신 '—'(0.00%를 만들지 않음). 표 칸 안이라 작은 칩이고 변화량과 단위 사이에서 꺾지 않습니다.
+ */
+function SignedChip({ value, unit }: { value: number | null | undefined; unit?: string }) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return <span className="text-text-3">{EMPTY}</span>;
+  }
+  return unit ? <ChangeChip size="sm" nowrap change={value} unit={unit} /> : <ChangeChip size="sm" nowrap changePct={value} />;
 }
