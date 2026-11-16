@@ -9,6 +9,7 @@
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
 import type { SessionUser } from "@/lib/types";
 
 const api = vi.hoisted(() => {
@@ -68,6 +69,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   window.localStorage.clear();
+  resetNavCollapsedForTest();
 });
 
 describe("계정 영역(넓은 화면 상단바의 계정 메뉴 — 옛 사이드바 계정 영역)", () => {
@@ -381,7 +383,21 @@ describe("본문", () => {
     renderShell(MEMBER_PRO);
     const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
     expect(root.className.split(/\s+/)).toEqual(expect.arrayContaining(["lg:flex-col", "lg:[--shell-nav-w:220px]"]));
+    expect(root.getAttribute("data-nav")).toBe("expanded");
     expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-[220px]");
+  });
+
+  it("왼쪽 메뉴를 아이콘 레일로 접어 둔 사람(저장값 '1')은 접힌 채 시작하고 셸 변수가 48px — 메뉴를 펴면 220px로", () => {
+    window.localStorage.setItem("shell.navCollapsed", "1");
+    renderShell(MEMBER_PRO);
+    const root = screen.getByRole("main").closest("div.min-h-screen") as HTMLElement;
+    expect(root.getAttribute("data-nav")).toBe("collapsed");
+    expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:48px]");
+    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-12");
+
+    fireEvent.click(screen.getByRole("button", { name: "왼쪽 메뉴 접기" }));
+    expect(root.getAttribute("data-nav")).toBe("expanded");
+    expect(root.className.split(/\s+/)).toContain("lg:[--shell-nav-w:220px]");
   });
 
   it("좁은 화면에서는 하단 탭 바(64px + 안전 영역)만큼 아래 여백, 데스크톱에서는 되돌린다", () => {

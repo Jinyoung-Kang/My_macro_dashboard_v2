@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useId } from "react";
-import { LockIcon } from "@/components/ui/icons";
+import { useCallback, useEffect, useId, useRef } from "react";
+import { LockIcon, PanelLeftIcon } from "@/components/ui/icons";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { useNavCollapsed } from "@/hooks/useNavCollapsed";
 import { navTree, type NavTreeLeaf, type NavTreeNode, type UpcomingItem } from "@/lib/nav";
+import { onShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 import { TabIcon } from "./icons";
 
 /** 칸 공통 — 높이 32px(명세 §3-7 표 행 단계), 4px 모서리, 14px 글, 색 전환만(움직임 줄이기면 없음), 포커스 링은 안쪽 2px(메뉴 스크롤 상자가 자르지 않게). */
 const ROW =
   "relative flex h-8 items-center gap-2 rounded-control text-sm motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus";
-/** 탭 칸의 안쪽 여백과 하위 칸의 들여쓰기(탭 아이콘 16px + 사이 8px만큼 — 하위 칸 글이 탭 이름과 같은 세로줄). */
+/** 탭 칸의 안쪽 여백과 하위 칸의 들여쓰기(탭 아이콘 16px + 사이 8px만큼 — 하위 칸 글이 탭 이름과 같은 세로줄). 레일(접힘)에서는 아이콘만 가운데. */
 const TAB_PAD = "px-2.5";
+const RAIL_PAD = "justify-center";
 const LEAF_PAD = "pl-8 pr-2.5";
 
 /*
@@ -39,30 +43,86 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * - 하위 화면 목록은 nav가 아니라 이름 있는 목록('{탭} 화면')입니다 — '…하위 메뉴' 이름의 내비는 좁은 화면 하위 메뉴 줄 하나로 남습니다.
  * - 유료 화면은 무료 회원에게 자물쇠 아이콘(눌러도 되며 화면이 안내 — 하위 메뉴 줄과 같음). 준비 중 화면은 링크 없는 흐린 글(aria-disabled).
  * - 탭 링크에는 data-nav-tab을 붙입니다(시험이 탭 링크만 고를 때 — 펼친 하위 칸과 가름).
+ *
+ * **접힘(48px 아이콘 레일)**: 맨 아래 접기 단추(이름 '왼쪽 메뉴 접기' — aria-pressed가 접힘, 단축키 [ — 명령 팔레트 쪽이 넓은 화면에서만 셸 명령 toggle-nav를
+ * 보내고 여기서 받음)로 접고 폅니다. 접히면 탭 아이콘(20px)만 남고 이름은 sr-only 글(링크 접근 이름 그대로)과 오른쪽 툴팁(이름과 같은 글이라 labelOnly)으로,
+ * 하위 화면은 숨깁니다(펼치기·명령 팔레트·빵부스러기로 닿음). 막대는 보이는 칸 가운데 가장 깊은 지금 칸 — 레일에서는 지금 탭 칸입니다. 접힘은 보는 사람별로
+ * 이 브라우저에 기억합니다(useNavCollapsed — 저장소를 못 써도 동작). 폭은 움직이지 않고 바로 바뀝니다(명세 §3-8 — 모션은 색 전환만).
+ * 탭 링크는 접고 펼 때 같은 요소로 남아(툴팁 감쌈을 늘 두고 펼친 동안은 열지 않음) 포커스가 그대로이고, 포커스가 사라지는 하위 칸에 있었으면 접기 단추로 옮깁니다.
  */
 export function SideNav({ pathname, user }: { pathname: string; user?: SessionUser }) {
   const tree = navTree(pathname, user);
   const idBase = useId();
+  const navId = `${idBase}-nav`;
+  const [collapsed, toggle] = useNavCollapsed();
+  const asideRef = useRef<HTMLElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // 접고 펴기 직전에 포커스가 이 메뉴 안에 있었는가 — 그린 뒤 포커스가 사라졌으면(하위 칸) 접기 단추로 옮깁니다.
+  const refocus = useRef(false);
+
+  const handleToggle = useCallback(() => {
+    const active = document.activeElement;
+    refocus.current = Boolean(asideRef.current && active && asideRef.current.contains(active));
+    toggle();
+  }, [toggle]);
+
+  // 셸 명령 신호 — [ 키·명령 팔레트의 '왼쪽 메뉴 접기·펼치기'(넓은 화면에서만 보냄, lib/shellCommands).
+  useEffect(() => onShellCommand("toggle-nav", handleToggle), [handleToggle]);
+
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    const active = document.activeElement;
+    if (!(asideRef.current && active && asideRef.current.contains(active))) toggleRef.current?.focus();
+  }, [collapsed]);
+
   return (
-    <aside className="hidden w-[220px] shrink-0 flex-col border-r border-border bg-surface lg:flex lg:overflow-y-auto">
-      <nav aria-label="주 메뉴" className="p-2">
+    <aside
+      ref={asideRef}
+      className={`hidden shrink-0 flex-col border-r border-border bg-surface lg:flex lg:overflow-y-auto ${collapsed ? "w-12" : "w-[220px]"}`}
+    >
+      <nav id={navId} aria-label="주 메뉴" className="p-2">
         <ul className="flex flex-col gap-0.5">
-          {tree.map((node) => (
-            <li key={node.tab.key}>
-              <Link
-                data-nav-tab=""
-                href={node.tab.href}
-                aria-current={node.current}
-                className={`${ROW} ${TAB_PAD} ${node.marked ? MARKED : node.groups ? OPEN_TAB : REST}`}
-              >
-                <TabIcon tab={node.tab.key} size={16} />
-                <span className="min-w-0 truncate">{node.tab.label}</span>
-              </Link>
-              {node.groups && <TabScreens node={node} idBase={`${idBase}-${node.tab.key}`} />}
-            </li>
-          ))}
+          {tree.map((node) => {
+            // 막대 — 펼친 메뉴는 가장 깊은 지금 칸(navTree), 레일은 하위 칸이 숨으므로 지금 탭 칸.
+            const marked = collapsed ? node.current !== undefined : node.marked;
+            return (
+              <li key={node.tab.key}>
+                <Tooltip content={node.tab.label} side="right" labelOnly disabled={!collapsed}>
+                  <Link
+                    data-nav-tab=""
+                    href={node.tab.href}
+                    aria-current={node.current}
+                    className={`${ROW} ${collapsed ? RAIL_PAD : TAB_PAD} ${marked ? MARKED : node.groups && !collapsed ? OPEN_TAB : REST}`}
+                  >
+                    <TabIcon tab={node.tab.key} size={collapsed ? 20 : 16} />
+                    <span className={collapsed ? "sr-only" : "min-w-0 truncate"}>{node.tab.label}</span>
+                  </Link>
+                </Tooltip>
+                {node.groups && !collapsed && <TabScreens node={node} idBase={`${idBase}-${node.tab.key}`} />}
+              </li>
+            );
+          })}
         </ul>
       </nav>
+      <div className="mt-auto border-t border-border p-2">
+        {/* 이름은 상태와 상관없이 '왼쪽 메뉴 접기'(보이는 글 '메뉴 접기'가 이름 안에 있음), 접혔는지는 aria-pressed. 툴팁은 단축키를 알리는 설명. */}
+        <Tooltip content={collapsed ? "메뉴 펼치기 ([)" : "메뉴 접기 ([)"} side="right">
+          <button
+            ref={toggleRef}
+            type="button"
+            aria-label="왼쪽 메뉴 접기"
+            aria-pressed={collapsed}
+            aria-controls={navId}
+            aria-keyshortcuts="["
+            onClick={handleToggle}
+            className={`${ROW} w-full ${collapsed ? RAIL_PAD : TAB_PAD} ${REST}`}
+          >
+            <PanelLeftIcon size={collapsed ? 20 : 16} />
+            {!collapsed && <span className="min-w-0 truncate">메뉴 접기</span>}
+          </button>
+        </Tooltip>
+      </div>
     </aside>
   );
 }

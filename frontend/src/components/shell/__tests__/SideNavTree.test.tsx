@@ -2,9 +2,13 @@
  * 넓은 화면 왼쪽 나무 메뉴(shell/SideNav — 작업대 실행 명세 §5, ADR 0042 결정 5). 모델(펼침·묶음·aria-current·막대)은 lib/__tests__/navTree.test가 고정하고,
  * 여기서는 그린 모양을 봅니다: 지금 탭의 하위 칸을 같은 nav 안에 펼침, '한국 시장' 묶음 글 머리와 그 목록, 잠금 아이콘, aria-current,
  * 하위 목록 이름이 '…하위 메뉴'가 아님(좁은 화면 줄과 겹치지 않게), 32px 칸·16px 아이콘, 고대비 테두리는 막대 칸 하나.
+ * 접힘(48px 아이콘 레일): 링크 이름은 그대로(sr-only 글), 하위 칸 없음, 포커스로 이름 툴팁(설명 연결 없음), 접기 단추(aria-pressed·aria-keyshortcuts '['),
+ * 셸 명령 toggle-nav로 접고 폄, 저장값 '1'이면 접힌 채 시작, 사라지는 칸에 있던 포커스는 접기 단추로.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { resetNavCollapsedForTest } from "@/hooks/useNavCollapsed";
+import { sendShellCommand } from "@/lib/shellCommands";
 import type { SessionUser } from "@/lib/types";
 
 import { SideNav } from "../SideNav";
@@ -13,7 +17,11 @@ const OWNER: SessionUser = { email: "owner@test.local", role: "OWNER", tier: "PR
 const MEMBER_FREE: SessionUser = { email: "member@test.local", role: "MEMBER", tier: "FREE" };
 const MEMBER: SessionUser = { email: "member@test.local", role: "MEMBER", tier: "PRO" };
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+  resetNavCollapsedForTest();
+});
 
 const mainNav = () => screen.getByRole("navigation", { name: "주 메뉴" });
 const labels = (scope: HTMLElement) => within(scope).getAllByRole("link").map((link) => link.textContent);
@@ -97,5 +105,77 @@ describe("모양", () => {
     expect(more.className.split(/\s+/)).toEqual(expect.arrayContaining(["before:bg-accent", "bg-surface-2", "font-semibold"]));
     expect(more.getAttribute("aria-current")).toBe("page");
     expect(labels(within(mainNav()).getByRole("list", { name: "더보기 화면" }))).toEqual(["알림", "AI 종합 분석", "내 계정", "수급 레이더", "파생·투기세력(KRX)"]);
+  });
+});
+
+describe("접힘(48px 아이콘 레일)", () => {
+  const toggleButton = () => screen.getByRole("button", { name: "왼쪽 메뉴 접기" });
+
+  it("접기 단추 — 이름 '왼쪽 메뉴 접기'(보이는 글 '메뉴 접기'), aria-pressed가 접힘, 단축키 [, 주 메뉴를 가리킴(aria-controls)", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    const button = toggleButton();
+    expect(button.textContent).toBe("메뉴 접기");
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.getAttribute("aria-keyshortcuts")).toBe("[");
+    expect(button.getAttribute("aria-controls")).toBe(mainNav().id);
+
+    fireEvent.click(button);
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    expect(toggleButton().textContent).toBe("");
+    expect(window.localStorage.getItem("shell.navCollapsed")).toBe("1");
+    expect((mainNav().closest("aside") as HTMLElement).className.split(/\s+/)).toContain("w-12");
+  });
+
+  it("접히면 탭 아이콘(20px)만 — 링크 이름은 그대로(sr-only 글), 하위 칸은 없고, 막대는 지금 탭 칸", () => {
+    window.localStorage.setItem("shell.navCollapsed", "1");
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    expect([...mainNav().querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent)).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
+    const markets = within(mainNav()).getByRole("link", { name: "시장" });
+    expect(markets.querySelector("span")?.className).toBe("sr-only");
+    expect(markets.querySelector("svg")?.getAttribute("width")).toBe("20");
+    expect(markets.getAttribute("aria-current")).toBe("page");
+    expect(markets.className.split(/\s+/)).toEqual(expect.arrayContaining(["before:bg-accent", "forced-colors:before:border-l-[3px]"]));
+    expect(within(mainNav()).queryByRole("list", { name: "시장 화면" })).toBeNull();
+    expect(within(mainNav()).queryByRole("link", { name: "매크로 지표" })).toBeNull();
+  });
+
+  it("접힌 탭 링크에 포커스하면 오른쪽에 이름 툴팁 — 이름과 같은 글이라 설명(aria-describedby)으로 잇지 않는다. 펼친 동안은 툴팁이 없다", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    const home = within(mainNav()).getByRole("link", { name: "홈" });
+    act(() => home.focus());
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => home.blur());
+
+    fireEvent.click(toggleButton());
+    act(() => home.focus());
+    expect(screen.getByRole("tooltip").textContent).toBe("홈");
+    expect(home.hasAttribute("aria-describedby")).toBe(false);
+  });
+
+  it("셸 명령 toggle-nav([ 키·명령 팔레트가 넓은 화면에서 보냄)로 접고 편다", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    act(() => sendShellCommand("toggle-nav"));
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
+    act(() => sendShellCommand("toggle-nav"));
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
+    // 다른 명령은 받지 않는다
+    act(() => sendShellCommand("open-shortcut-help"));
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("접을 때 포커스가 사라지는 하위 칸에 있었으면 접기 단추로, 탭 칸에 있었으면 그 탭 링크에 그대로 남는다", () => {
+    render(<SideNav pathname="/macro" user={MEMBER} />);
+    const leaf = within(mainNav()).getByRole("link", { name: "순유동성" });
+    act(() => leaf.focus());
+    act(() => sendShellCommand("toggle-nav"));
+    expect(document.activeElement).toBe(toggleButton());
+
+    act(() => sendShellCommand("toggle-nav"));
+    const tab = within(mainNav()).getByRole("link", { name: "기관" });
+    act(() => tab.focus());
+    act(() => sendShellCommand("toggle-nav"));
+    expect(document.activeElement).toBe(tab);
+    expect(toggleButton().getAttribute("aria-pressed")).toBe("true");
   });
 });
