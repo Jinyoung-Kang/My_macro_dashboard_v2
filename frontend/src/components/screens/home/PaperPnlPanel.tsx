@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { ChangeChip, type Column, DataTable, EstimateBadge, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
-import { Freshness, LINK_CLASSES, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
+import { Freshness, LINK_CLASSES, Panel, SEGMENT_TRACK, segmentClasses } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -13,7 +13,7 @@ import { HOME_REFRESH_MS, type PaperPnlRow, paperHomeModel } from "@/lib/home";
 import type { PaperMarketCode } from "@/lib/paperMarket";
 import type { PaperOverviewResponse, PaperStatusResponse } from "@/lib/types";
 import { bookColor } from "../paper/bookColors";
-import { HomePanel, SectionError } from "./HomeCard";
+import { SectionError } from "./HomeCard";
 
 // 불러오는 중·오류·읽은 뒤 모두 같은 구역 이름입니다(패널 제목 — 영역 이름).
 const TITLE = "모의매매 계좌";
@@ -63,19 +63,25 @@ export function PaperPnlPanel() {
 
   if (!overview.data) {
     return (
-      <HomePanel title={TITLE} actions={actions}>
+      <Panel region className="min-w-0" title={TITLE} actions={actions}>
         {overview.error ? (
           <SectionError message={overview.error} onRetry={() => void overview.reload()} />
         ) : (
           <Skeleton lines={5} label={korea ? "한국 모의매매 계좌를 불러오는 중" : "모의매매 계좌를 불러오는 중"} />
         )}
-      </HomePanel>
+      </Panel>
     );
   }
 
   const model = paperHomeModel(overview.data, status.data, { market });
   return (
-    <HomePanel title={TITLE} count={model.rows.length > 0 ? `${model.rows.length.toLocaleString("ko-KR")}개` : undefined} actions={actions}>
+    <Panel
+      region
+      className="min-w-0"
+      title={TITLE}
+      count={model.rows.length > 0 ? `${model.rows.length.toLocaleString("ko-KR")}개` : undefined}
+      actions={actions}
+    >
       {model.message ? (
         <p className="text-sm text-text-2">{model.message}</p>
       ) : (
@@ -106,7 +112,7 @@ export function PaperPnlPanel() {
         <p className="mt-1 text-xs text-text-3">정기 작업 상태를 확인하지 못했습니다 — {status.error}</p>
       ) : null}
       <p className="mt-1 text-xs leading-relaxed text-text-3">{model.compareNote}</p>
-    </HomePanel>
+    </Panel>
   );
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { LineChart } from "@/components/charts";
 import { ChangeChip, EstimateBadge, Hero, type PropertyItem, RangeTabs, Skeleton } from "@/components/patterns";
-import { Banner, Button, Card, ErrorState, LINK_CLASSES, PANEL_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { Banner, Button, Card, ErrorState, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
@@ -150,7 +150,8 @@ const SCRUB_HINT = "차트를 누르거나 가리키면 그 날 값";
  * - 문지르기는 이 패널에 있습니다(명세 W7 — 대상 머리는 늘 지금 값). 차트를 문지르는 동안 읽기 줄에 그 날 날짜·값·기간 시작 대비 칩(모르면 생략)·추정
  *   배지를 보입니다. 읽기 줄은 눈으로 보는 줄(aria-hidden)이고, 읽어 주기는 따로 둔 조용한 알림 영역(aria-live polite)이 '날짜 값'으로 합니다(차트에
  *   초점을 두고 ←·→로 옮기는 낭독기 사용자). 문지르지 않을 때는 같은 자리에 짧은 안내를 두어 줄 높이가 바뀌지 않습니다.
- * - 겉모양은 공용 패널(PANEL_CLASSES — 머리줄과 본문을 1px 경계로 가름)과 같고, 머리에 기간 탭이 있어 제목에 영역 이름을 붙입니다(section aria-labelledby).
+ * - 틀은 공용 패널의 이름 있는 영역(Panel `region` — 머리줄과 본문을 1px 경계로 가르고 제목 h2가 영역 이름)이고, 기간 탭은 머리 동작 자리입니다.
+ *   제목(긴 종목·지표 이름)은 낱말 사이에서 줄을 바꾸고 칸보다 긴 낱말만 꺾습니다.
  */
 export function PriceChartPanel({
   title,
@@ -178,7 +179,6 @@ export function PriceChartPanel({
   /** 문지른 값 옆 단위(종목의 통화) — 값이 있을 때만. */
   unit?: string | null;
 }) {
-  const headingId = useId();
   const [range, setRange] = useState<DetailRange>("1y");
   const series = useApi<{ available: boolean; message?: string; points: { date: string; close: number | null; value?: number | null }[] }>(
     symbol ? endpoints.macro.ticker(symbol, range) : null,
@@ -205,44 +205,41 @@ export function PriceChartPanel({
   }
 
   return (
-    <section aria-labelledby={headingId} className={`min-w-0 ${PANEL_CLASSES}`}>
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-2.5 lg:px-4">
-        <h2 id={headingId} className="min-w-0 break-keep text-heading-sm text-text wrap-anywhere">
-          {title}
-        </h2>
-        {symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} /> : null}
-      </header>
-      <div className="p-3 lg:p-4">
-        {scrubbable ? (
-          <div aria-hidden="true" className="mb-2 flex min-h-5 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption">
-            {point !== null ? (
-              <>
-                <span className="tabular-nums text-text-2">{point.dateText}</span>
-                <span className={`font-semibold tabular-nums ${pointMissing ? "text-text-3" : "text-text"}`}>{point.valueText}</span>
-                {pointUnit ? <span className="text-xs text-text-3">{unit}</span> : null}
-                {changeChipVisible(point.change, point.changePct) ? (
-                  <>
-                    <ChangeChip size="sm" change={point.change} changePct={point.changePct} digits={valueDigits} pctDigits={2} />
-                    <span className="text-xs text-text-3">기간 시작 대비</span>
-                  </>
-                ) : null}
-                {point.isEstimated ? <EstimateBadge estimated note={point.estimateNote} /> : null}
-              </>
-            ) : (
-              <span className="text-xs text-text-3">{SCRUB_HINT}</span>
-            )}
-          </div>
-        ) : null}
-        <div className="min-w-0">{chart}</div>
-        {caption ? <p className="mt-2 text-xs text-text-3">{caption}</p> : null}
-        {scrubbable ? (
-          // 조용한 알림 — 문지른 점의 '날짜 값'. 문지르지 않으면 비워 둡니다(미리 있어야 첫 점부터 읽힘).
-          <div className="sr-only" aria-live="polite" aria-atomic="true">
-            {point !== null ? `${point.dateText} ${point.valueText}${pointUnit}${point.isEstimated ? " 추정" : ""}` : ""}
-          </div>
-        ) : null}
-      </div>
-    </section>
+    <Panel
+      region
+      className="min-w-0"
+      title={<span className="break-keep wrap-anywhere">{title}</span>}
+      actions={symbol ? <RangeTabs ranges={DETAIL_RANGES} value={range} onChange={setRange} label={`${label} 차트 기간`} /> : undefined}
+    >
+      {scrubbable ? (
+        <div aria-hidden="true" className="mb-2 flex min-h-5 flex-wrap items-baseline gap-x-1.5 gap-y-1 text-caption">
+          {point !== null ? (
+            <>
+              <span className="tabular-nums text-text-2">{point.dateText}</span>
+              <span className={`font-semibold tabular-nums ${pointMissing ? "text-text-3" : "text-text"}`}>{point.valueText}</span>
+              {pointUnit ? <span className="text-xs text-text-3">{unit}</span> : null}
+              {changeChipVisible(point.change, point.changePct) ? (
+                <>
+                  <ChangeChip size="sm" change={point.change} changePct={point.changePct} digits={valueDigits} pctDigits={2} />
+                  <span className="text-xs text-text-3">기간 시작 대비</span>
+                </>
+              ) : null}
+              {point.isEstimated ? <EstimateBadge estimated note={point.estimateNote} /> : null}
+            </>
+          ) : (
+            <span className="text-xs text-text-3">{SCRUB_HINT}</span>
+          )}
+        </div>
+      ) : null}
+      <div className="min-w-0">{chart}</div>
+      {caption ? <p className="mt-2 text-xs text-text-3">{caption}</p> : null}
+      {scrubbable ? (
+        // 조용한 알림 — 문지른 점의 '날짜 값'. 문지르지 않으면 비워 둡니다(미리 있어야 첫 점부터 읽힘).
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {point !== null ? `${point.dateText} ${point.valueText}${pointUnit}${point.isEstimated ? " 추정" : ""}` : ""}
+        </div>
+      ) : null}
+    </Panel>
   );
 }
 

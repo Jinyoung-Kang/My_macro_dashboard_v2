@@ -3,12 +3,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Empty, PropertyList, ProvenanceBadge, Skeleton } from "@/components/patterns";
-import { Freshness } from "@/components/ui";
+import { Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
 import { SOURCES } from "@/lib/sources";
 import type { RegimeResponse } from "@/lib/types";
-import { HOME_LINK, HomePanel, SectionError } from "./HomeCard";
+import { HOME_LINK, SectionError } from "./HomeCard";
 import type { ApiRead } from "./useHomeData";
 
 const TITLE = "오늘의 국면";
@@ -77,8 +77,8 @@ export function RegimePanel({ read }: { read: ApiRead<RegimeResponse> }) {
   }
 
   return (
-    <HomePanel title={TITLE} actions={actions}>
+    <Panel region className="min-w-0" title={TITLE} actions={actions}>
       {body}
-    </HomePanel>
+    </Panel>
   );
 }

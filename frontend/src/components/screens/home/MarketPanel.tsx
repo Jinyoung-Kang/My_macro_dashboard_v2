@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useId, useState, type ReactNode } from "react";
 import { ChangeChip, type Column, DataTable, EstimateBadge, ProvenanceBadge, Skeleton, StaleBadge } from "@/components/patterns";
-import { Freshness, LINK_CLASSES, Tabs, tabId } from "@/components/ui";
+import { Freshness, LINK_CLASSES, Panel, Tabs, tabId } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { type HomeRow, MARKET_HREF, type MarketClock, marketGroups, pickMarketGroup } from "@/lib/home";
 import { assetValueText } from "@/lib/patternRows";
 import { presentText } from "@/lib/patterns";
 import type { MacroOverview } from "@/lib/types";
-import { HOME_LINK, HomePanel, SectionError } from "./HomeCard";
+import { HOME_LINK, SectionError } from "./HomeCard";
 import type { ApiRead } from "./useHomeData";
 
 const TITLE = "시장";
@@ -106,10 +106,11 @@ export function MarketPanel({
   }
 
   return (
-    <HomePanel
+    <Panel
+      region
       title={TITLE}
       count={current ? `${current.rows.length.toLocaleString("ko-KR")}개` : undefined}
-      className={className}
+      className={`min-w-0 ${className ?? ""}`.trim()}
       actions={
         <>
           {/* 저장본 전체의 수집 시각·늦음(15분 기준, 백엔드 stale)과 다시 읽기 실패(QA-067). */}
@@ -123,6 +124,6 @@ export function MarketPanel({
       }
     >
       {body}
-    </HomePanel>
+    </Panel>
   );
 }

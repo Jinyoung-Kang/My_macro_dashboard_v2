@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useId } from "react";
 import { LineChart } from "@/components/charts";
 import { EntityHeader, MasterDetail, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
-import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, PANEL_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
+import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, Panel, TEXT_TARGET } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
@@ -55,7 +54,6 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
   const holdings = data?.holdings ?? [];
   const total = data?.latest?.totalValue ?? null;
   const entityLink = infoSearchEntityLink(institutionEntityKey(cik), "정보 검색에서 보기", user);
-  const chartHeadingId = useId();
   // 넓은 화면 빵부스러기의 마지막 칸을 'CIK …' 대신 기관 이름으로(이름을 받은 뒤에만 — 셸이 같은 주소일 때만 씀).
   useEntityCrumb(names?.display ? institutionHref(cik) : null, names?.display || null);
   // 명령 팔레트의 최근 연 대상 — 기관 이름을 받은 뒤에만('CIK …' 자리표시는 넣지 않음, 보조 글은 통합 검색 결과와 같은 '13F · CIK …').
@@ -156,14 +154,9 @@ export function InstitutionDetailScreen({ cik }: { cik: string }) {
               label: "개요",
               content: (
                 <>
-                  <section aria-labelledby={chartHeadingId} className={`min-w-0 ${PANEL_CLASSES}`}>
-                    <header className="border-b border-border px-3 py-2.5 lg:px-4">
-                      <h2 id={chartHeadingId} className="text-heading-sm text-text">
-                        분기별 13F 보고 평가액
-                      </h2>
-                    </header>
-                    <div className="p-3 lg:p-4">{chart}</div>
-                  </section>
+                  <Panel region className="min-w-0" title="분기별 13F 보고 평가액">
+                    {chart}
+                  </Panel>
                   <AiSummaryCard
                     request={query ? { q: query, label: detailQuery(title) ?? undefined } : null}
                     idleText={nameMissing ? "기관 이름을 받지 못해 요약하지 않습니다." : undefined}

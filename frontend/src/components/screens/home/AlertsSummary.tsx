@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useId, type ReactNode } from "react";
 import { Empty, Skeleton } from "@/components/patterns";
-import { Freshness } from "@/components/ui";
+import { Freshness, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { latestAlerts, sourceIncidentsModel, unreadText } from "@/lib/home";
 import type { InfoSourcesResponse } from "@/lib/info";
 import { searchWatchInboxHref } from "@/lib/infoSearch";
 import type { StatusIssuesResponse } from "@/lib/types";
-import { HOME_LINK, HomePanel, SectionError } from "./HomeCard";
+import { HOME_LINK, SectionError } from "./HomeCard";
 import { StoreStatusLine } from "./StoreStatusLine";
 import { type ApiRead, type HomeAlertsRead, useHomeAlerts } from "./useHomeData";
 
@@ -47,7 +47,9 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
   const alertsHeadingId = useId();
 
   return (
-    <HomePanel
+    <Panel
+      region
+      className="min-w-0"
       title={ops ? "알림·끊긴 출처" : "알림"}
       actions={
         <>
@@ -75,7 +77,7 @@ export function AlertsSummary({ alerts, ops }: { alerts?: HomeAlertsRead; ops?: 
           <StoreStatusLine read={ops.issues} />
         </>
       ) : null}
-    </HomePanel>
+    </Panel>
   );
 }
 
