@@ -161,6 +161,14 @@ describe("모양", () => {
       // 키보드 포커스 링이 보이게 — outline-none은 Tailwind 4에서 focus-visible:outline-2의 선 모양까지 none으로 만듭니다.
       expect(classes).toContain("focus-visible:outline-2");
       expect(classes).not.toContain("outline-none");
+      // 고대비에서는 가리킨 항목 바탕이 지워지므로 그 모드에서만 안쪽 2px 시스템 강조색 테두리(마우스로 가리켜도 지금 항목이 보이게)
+      expect(classes).toEqual(
+        expect.arrayContaining([
+          "forced-colors:data-[highlighted]:outline-2",
+          "forced-colors:data-[highlighted]:-outline-offset-2",
+          "forced-colors:data-[highlighted]:outline-[Highlight]",
+        ]),
+      );
     }
   });
 

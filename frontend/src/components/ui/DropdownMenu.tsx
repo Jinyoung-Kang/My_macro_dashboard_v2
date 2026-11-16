@@ -16,12 +16,13 @@ const CONTENT = `z-50 min-w-56 max-w-xs rounded-card border border-border-overla
  * 메뉴 항목 — 좁은 화면(lg 미만 — 손가락) 높이 44px, 넓은 화면 32px(명세 §3-7 표 행과 같은 단계). 가리킨 항목(Radix data-highlighted — 마우스를 올리거나
  * 화살표로 옮긴 항목)의 바탕은 조작 바탕(bg-control-fill — 덮개 안이라 surface-3)이고, 그 위 글자는 text·text-2만 둡니다(surface-3 위 text-3·accent·danger는
  * 4.5:1 미만 — 금지 쌍). 키보드로 옮긴 항목에는 포커스 링(2px, 안쪽)도 그립니다 — 고대비(forced-colors)에서는 바탕이 지워져도 링이 남습니다.
- * 항목에는 outline-none을 두지 않습니다 — Tailwind 4의 outline-none은 --tw-outline-style을 none으로 두어 focus-visible:outline-2의 선 모양까지 none이 됩니다
- * (마우스로 가리킨 항목은 :focus-visible이 아니라 링이 생기지 않음).
+ * 항목에는 outline-none을 두지 않습니다 — Tailwind 4의 outline-none은 --tw-outline-style을 none으로 두어 focus-visible:outline-2의 선 모양까지 none이 됩니다.
+ * 마우스로 가리킨 항목은 :focus-visible이 아니라 링이 생기지 않고 바탕만 바뀌는데, 고대비에서는 그 바탕이 Canvas로 지워지므로 가리킨 항목에 안쪽 2px
+ * 시스템 강조색(Highlight) 테두리를 그 모드에서만 둡니다(검토 지적 — 마우스 사용자에게 지금 항목 표시가 없었음).
  * 클래스는 이 파일 안에만 둡니다(ui/classes.ts에 내보내지 않음 — 그 표의 누르는 조각 검사(touchTargets)와 따로).
  */
 const ITEM =
-  "flex min-h-11 w-full items-center gap-2 rounded-control px-3 text-sm text-text lg:min-h-8 lg:px-2.5 data-[highlighted]:bg-control-fill data-[disabled]:opacity-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus";
+  "flex min-h-11 w-full items-center gap-2 rounded-control px-3 text-sm text-text lg:min-h-8 lg:px-2.5 data-[highlighted]:bg-control-fill data-[disabled]:opacity-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[Highlight]";
 
 /** 묶음 이름표 — 누르지 않는 글(보조 글 text-2). */
 const LABEL = "px-3 pb-1 pt-2 text-xs font-semibold text-text-2 lg:px-2.5";
@@ -42,6 +43,9 @@ const DESCRIPTION = "-mx-1 mt-1 flex flex-col gap-1.5 border-t border-border px-
  * - 여는 단추(`trigger`, 요소 하나)를 Radix Trigger로 감쌉니다 — aria-haspopup="menu"·aria-expanded가 붙고, Enter·Space·아래 화살표로 엽니다.
  * - 열린 동안은 모달입니다(Radix 기본): 포커스가 메뉴 안에 갇히고, 화살표로 항목을 옮기고(끝에서 처음으로 돌아감), Esc·바깥 누르기로 닫히며,
  *   닫히면 여는 단추로 포커스가 돌아옵니다. 뒤 화면은 보조 기술에서 가려집니다(aria-hidden).
+ * - 글자 찾기(typeahead — 글자를 치면 그 글자로 시작하는 항목으로)는 한국어 항목에 듣지 않습니다(한계). Radix는 키 한 번의 글자(event.key)와 항목 글의
+ *   첫 글자를 견주는데, 한글 자판의 키 한 번은 자모(ㄷ)나 로마자(e)라 완성 음절('단축키'의 '단')과 맞지 않습니다. 항목이 둘셋인 지금(계정 메뉴)은
+ *   화살표로 충분하고, 항목이 많은 메뉴(P6 '동작')를 만들 때 Radix Item의 textValue에 초성 같은 별칭을 넣을지 정합니다.
  * - 상자에 덮개 범위 표지(data-overlay)를 붙여, 안의 조작 바탕(bg-control-fill)이 한 단계 위(surface-3)가 되게 합니다(명세 §3-4 2026-11-16 결정).
  * - `label`을 주면 메뉴의 이름이 됩니다(없으면 여는 단추의 이름 — Radix가 aria-labelledby로 잇습니다).
  * - `description`은 항목이 아닌 글(상태·안내 — 계정 메뉴의 읽기 모드·빌드 정보 등)을 두는 자리입니다. 항목 아래 구분선 다음에 그리고 메뉴의 설명
