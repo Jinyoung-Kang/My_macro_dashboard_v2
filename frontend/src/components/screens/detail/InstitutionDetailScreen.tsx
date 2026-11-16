@@ -8,18 +8,8 @@ import { Banner, ErrorState, FOCUS_RING, Freshness, LINK_CLASSES, PANEL_CLASSES,
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
-import {
-  CHART_KEY,
-  detailQuery,
-  holdingDetailItems,
-  infoSearchEntityLink,
-  institutionEntityKey,
-  institutionHref,
-  institutionLinks,
-  institutionNames,
-  institutionProperties,
-  institutionValueRows,
-} from "@/lib/detail";
+import { CHART_KEY, detailQuery, institutionHref, institutionLinks, institutionNames, institutionValueRows } from "@/lib/detail";
+import { holdingDetailItems, infoSearchEntityLink, institutionEntityKey, institutionProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { infoSearchEntry } from "@/lib/search";

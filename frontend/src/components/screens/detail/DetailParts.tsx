@@ -18,7 +18,6 @@ import {
   CHART_KEY,
   chartRows,
   DETAIL_RANGES,
-  type DetailProperty,
   type DetailRange,
   type ExternalLink,
   indicatorChartRows,
@@ -26,6 +25,7 @@ import {
   newsTime,
   summaryLines,
 } from "@/lib/detail";
+import type { DetailProperty } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { infoSearchEntry } from "@/lib/search";

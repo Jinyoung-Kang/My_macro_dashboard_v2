@@ -9,23 +9,16 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useEntityCrumb } from "@/hooks/useEntityCrumb";
 import { useSessionUser } from "@/hooks/useSessionUser";
+import { currencyUnit, detailQuery, externalLinks, holderQuery, holdersNoMatch, institutionHref, marketStateText, stockHref } from "@/lib/detail";
 import {
   consensusItems,
-  currencyUnit,
-  detailQuery,
-  externalLinks,
   holderDetailItems,
-  holderQuery,
-  holdersNoMatch,
   indicatorForSymbol,
   infoSearchEntityLink,
-  institutionHref,
-  marketStateText,
   profileItems,
   stockEntityKey,
-  stockHref,
   stockStatItems,
-} from "@/lib/detail";
+} from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, formatKst, formatNumber, formatUsd, formatWeightPercent, withoutLeadingIcon } from "@/lib/format";
 import { liveStatusText, tradedAtText } from "@/lib/livePrices";

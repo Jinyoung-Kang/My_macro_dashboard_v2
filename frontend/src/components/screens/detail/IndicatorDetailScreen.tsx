@@ -16,10 +16,10 @@ import {
   indicatorChartSymbol,
   indicatorHref,
   indicatorNewsQuery,
-  indicatorProperties,
   indicatorSearchName,
   stockHref,
 } from "@/lib/detail";
+import { indicatorProperties } from "@/lib/detailEntity";
 import { endpoints } from "@/lib/endpoints";
 import { withoutLeadingIcon } from "@/lib/format";
 import { HOME_REFRESH_MS, macroCardRow, macroCardSession, macroItemSource, MARKET_HREF } from "@/lib/home";
