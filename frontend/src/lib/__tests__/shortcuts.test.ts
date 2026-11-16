@@ -169,7 +169,7 @@ describe("거르기 칸 찾기('/' 규약)", () => {
 });
 
 describe("단축키 표", () => {
-  it("닫힌 표 — 팔레트·도움말·거르기·메뉴 접기·닫기·결과 이동 다음에 '목록' 묶음 셋(목록 이동·처음/끝·닫기), 조건은 거르기(filter)·메뉴 접기(wide)·목록(list)에만", () => {
+  it("닫힌 표 — 팔레트·도움말·거르기·메뉴 접기·닫기·결과 이동 다음에 '목록' 묶음 셋(목록 이동·처음/끝·닫기), 조건은 거르기(filter)·메뉴 접기(wide)·목록(list)에만, 한 글자 키 표지는 ?·/·[에만", () => {
     expect(SHORTCUTS.map((row) => row.id)).toEqual(["palette", "help", "filter", "toggleNav", "close", "move", "listMove", "listEdge", "listClose"]);
     expect(SHORTCUTS.filter((row) => row.when).map((row) => [row.id, row.when])).toEqual([
       ["filter", "filter"],
@@ -183,6 +183,8 @@ describe("단축키 표", () => {
       ["listEdge", "목록"],
       ["listClose", "목록"],
     ]);
+    // 입력칸에서는 글자로 들어가는 한 글자 셸 키 — 도움말 끝 문장이 보이는 줄 가운데 이 표지가 있는 줄만 적는다(QA-563). 목록 키에는 없다.
+    expect(SHORTCUTS.filter((row) => row.typesInInput).map((row) => row.id)).toEqual(["help", "filter", "toggleNav"]);
     expect(SHORTCUTS.find((row) => row.id === "listMove")?.keys).toEqual({ mac: ["j", "k"], other: ["j", "k"] });
     expect(SHORTCUTS.find((row) => row.id === "listEdge")?.keys).toEqual({ mac: ["Home", "End"], other: ["Home", "End"] });
     const palette = SHORTCUTS[0];

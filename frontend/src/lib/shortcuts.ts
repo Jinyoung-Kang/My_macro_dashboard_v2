@@ -30,14 +30,19 @@ export type Shortcut = {
   when?: "wide" | "filter" | "list";
   /** 도움말 창의 묶음 — 없으면 첫 묶음(셸 단축키), '목록'은 목록에 포커스가 있을 때 듣는 키(따로 표 하나). */
   group?: "목록";
+  /**
+   * 입력칸에서는 글자로 들어가는 한 글자 셸 키 — 도움말 창 끝 문장이 보이는 줄 가운데 이 표지가 있는 줄의 키를 적습니다(QA-563).
+   * 목록 묶음(j/k 등)에는 달지 않습니다 — 셸이 아니라 목록에 포커스가 있을 때만 받는 키입니다.
+   */
+  typesInInput?: true;
 };
 
 /** 단축키 표(닫힌 목록) — 도움말 창이 이 순서로 그립니다. */
 export const SHORTCUTS: readonly Shortcut[] = [
   { id: "palette", keys: { mac: ["⌘K"], other: ["Ctrl K"] }, action: "명령 팔레트(통합 검색) 열기" },
-  { id: "help", keys: { mac: ["?"], other: ["?"] }, action: "단축키 도움말" },
-  { id: "filter", keys: { mac: ["/"], other: ["/"] }, action: "이 화면의 거르기 칸으로", when: "filter" },
-  { id: "toggleNav", keys: { mac: ["["], other: ["["] }, action: "왼쪽 메뉴 접기·펼치기", when: "wide" },
+  { id: "help", keys: { mac: ["?"], other: ["?"] }, action: "단축키 도움말", typesInInput: true },
+  { id: "filter", keys: { mac: ["/"], other: ["/"] }, action: "이 화면의 거르기 칸으로", when: "filter", typesInInput: true },
+  { id: "toggleNav", keys: { mac: ["["], other: ["["] }, action: "왼쪽 메뉴 접기·펼치기", when: "wide", typesInInput: true },
   { id: "close", keys: { mac: ["Esc"], other: ["Esc"] }, action: "열린 창·메뉴 닫기" },
   {
     id: "move",

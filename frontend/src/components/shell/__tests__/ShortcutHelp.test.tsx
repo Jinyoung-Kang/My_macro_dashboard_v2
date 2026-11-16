@@ -2,7 +2,7 @@
  * 셸 단축키(?·/·[)와 단축키 도움말 창 — 명령 팔레트(SearchCommand)가 거는 창 keydown 처리기 하나가 받습니다.
  * ?는 도움말 창, /는 본문의 거르기 칸(data-shell-filter — 없으면 브라우저 기본 그대로), [는 넓은 화면에서만 셸 명령 toggle-nav.
  * 입력칸·한글 조합 중·수식키·대화상자 안에서는 글자로 들어갑니다. 도움말 창의 줄은 조건(넓은 화면·거르기 칸·보이는 목록)대로 보이고,
- * 목록 키는 따로 '목록' 표(P4)입니다.
+ * 목록 키는 따로 '목록' 표(P4)입니다. 끝 문장도 보이는 줄의 한 글자 셸 키만 적습니다(QA-563).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +40,8 @@ const rows = () =>
       const [keys, action] = within(row).getAllByRole("cell");
       return [keys.textContent ?? "", action.textContent ?? ""];
     });
+/** 도움말 창 끝 문단(입력칸에서 글자로 들어가는 한 글자 키)의 글. */
+const footer = () => within(helpDialog() as HTMLElement).getByText(/글자로 들어갑니다/).textContent;
 
 beforeEach(() => {
   commands = [];
@@ -116,7 +118,8 @@ describe("? — 단축키 도움말", () => {
 });
 
 describe("도움말 표 — 줄은 조건대로", () => {
-  it("좁은 화면·거르기 칸 없음: 팔레트·도움말·닫기·결과 이동만 — 메뉴 접기([)와 거르기(/)는 빠진다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 문단이 고정 글('…?·/·[가 글자로 들어갑니다.')이라 표에서 뺀 '/'·'['도 적었다(QA-563).
+  it("좁은 화면·거르기 칸 없음: 팔레트·도움말·닫기·결과 이동만 — 메뉴 접기([)와 거르기(/)는 빠지고 끝 문장도 ?만 적는다", () => {
     render(<SearchCommand user={MEMBER} />);
     fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
     expect(rows()).toEqual([
@@ -129,10 +132,11 @@ describe("도움말 표 — 줄은 조건대로", () => {
     const move = within(screen.getByRole("table")).getAllByRole("row")[4];
     expect(move.querySelector("[aria-hidden='true']")?.textContent).toBe("↑↓Enter");
     expect(move.querySelector(".sr-only")?.textContent).toBe("위·아래 화살표와 Enter");
-    expect(screen.getByText("입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?·/·[가 글자로 들어갑니다.")).toBeTruthy();
+    expect(footer()).toBe("입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?가 글자로 들어갑니다.");
+    expect(footer()).not.toMatch(/[/[]/);
   });
 
-  it("넓은 화면·거르기 칸 있음: 여섯 줄 모두, 맥이면 ⌘K — 키는 kbd 조각", () => {
+  it("넓은 화면·거르기 칸 있음: 여섯 줄 모두, 맥이면 ⌘K — 키는 kbd 조각, 끝 문장은 ?·/·[", () => {
     vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
     stubWide(true);
     render(
@@ -147,6 +151,16 @@ describe("도움말 표 — 줄은 조건대로", () => {
     expect(rows().map(([keys]) => keys)).toEqual(["⌘K", "?", "/", "[", "Esc", "↑↓Enter위·아래 화살표와 Enter"]);
     const kbd = within(screen.getByRole("table")).getAllByRole("row")[1].querySelector("kbd");
     expect(kbd?.className.split(/\s+/)).toEqual(expect.arrayContaining(["border-border-strong", "font-mono", "text-xs", "text-text-2"]));
+    expect(footer()).toBe("입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?·/·[가 글자로 들어갑니다.");
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 문단이 고정 글이라 거르기 칸이 없는 넓은 화면(홈 등)에서도 표에 없는 '/'를 적었다(QA-563).
+  it("넓은 화면·거르기 칸 없음: 거르기(/)만 빠지고 끝 문장은 ?·[", () => {
+    stubWide(true);
+    render(<SearchCommand user={MEMBER} />);
+    fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
+    expect(rows().map(([keys]) => keys)).toEqual(["Ctrl K", "?", "[", "Esc", "↑↓Enter위·아래 화살표와 Enter"]);
+    expect(footer()).toBe("입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?·[가 글자로 들어갑니다.");
   });
 });
 
@@ -186,6 +200,8 @@ describe("도움말 표 — '목록' 묶음(P4)", () => {
       ["HomeEnd", "목록의 처음·끝 항목"],
       ["Esc", "고른 항목 닫기(넓은 화면의 검사 칸)"],
     ]);
+    // 끝 문장은 셸 묶음의 보이는 한 글자 키만 — 목록 키(j/k)와 표에서 뺀 '/'·'['는 적지 않는다(QA-563).
+    expect(footer()).toBe("입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?가 글자로 들어갑니다.");
   });
 
   it("목록이 숨어 있으면(hidden 조상) '목록' 표가 없다 — 표 하나", () => {

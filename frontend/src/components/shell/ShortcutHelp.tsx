@@ -66,7 +66,8 @@ function ShortcutTable({ rows, isMac, caption }: { rows: readonly Shortcut[]; is
 /**
  * 단축키 도움말 창(작업대 실행 명세 §5 '단축키', P3) — `?`, 계정 메뉴의 '단축키 도움말', 명령 팔레트의 '단축키 도움말' 명령이 엽니다.
  * 줄은 lib/shortcuts의 표에서 가져오고, 지금 쓸 수 없는 줄(좁은 화면의 메뉴 접기, 거르기 칸이 없는 화면의 '/', 목록이 없는 화면의 목록 키)은 빼고 보입니다.
- * 묶음마다 표 하나 — 셸 단축키 표, 그리고 화면에 목록이 있으면 '목록' 표(보이는 caption — P4).
+ * 묶음마다 표 하나 — 셸 단축키 표, 그리고 화면에 목록이 있으면 '목록' 표(보이는 caption — P4). 끝 문장(입력칸에서는 글자로 들어가는 키)은 보이는 줄
+ * 가운데 typesInInput 표지가 있는 줄의 키만 표 순서대로 적습니다(QA-563 — 표에서 뺀 키를 다시 꺼내지 않음, 목록 키에는 표지가 없음).
  * 이 창은 보기만 합니다 — 단축키를 바꾸는 설정은 없습니다.
  */
 export function ShortcutHelp({
@@ -81,12 +82,20 @@ export function ShortcutHelp({
   conditions: ShortcutConditions;
 }) {
   const groups = visibleShortcutGroups(conditions);
+  const typedKeys = groups
+    .flatMap((entry) => entry.rows)
+    .filter((row) => row.typesInInput)
+    .flatMap((row) => (isMac ? row.keys.mac : row.keys.other));
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="단축키" size="md">
       {groups.map((entry) => (
         <ShortcutTable key={entry.group ?? "셸"} rows={entry.rows} isMac={isMac} caption={entry.group === "목록" ? LIST_CAPTION : undefined} />
       ))}
-      <p className="mt-3 text-sm text-text-2">입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 ?·/·[가 글자로 들어갑니다.</p>
+      {typedKeys.length > 0 && (
+        <p className="mt-3 text-sm text-text-2">
+          입력칸에 글을 쓰는 중이거나 한글을 조합하는 중에는 {typedKeys.join("·")}가 글자로 들어갑니다.
+        </p>
+      )}
     </Dialog>
   );
 }
