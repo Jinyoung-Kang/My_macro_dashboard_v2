@@ -1,7 +1,8 @@
 /**
  * QA-555: 넓은 화면 왼쪽 나무 메뉴는 메뉴(nav)만 스크롤 상자이고 맨 아래 접기 영역은 그 밖이라, 낮은 창에서 메뉴 끝 쪽의 지금 칸이 메뉴 아래에 가려진 채
  * 열릴 수 있습니다(QA 스택 1024x600 /krx — 고친 배치를 페이지에 얹어 잼: 지금 칸 '파생·투기세력(KRX)' 560~592px, 메뉴 보이는 끝 551px).
- * hooks/useScrollNavActive가 그릴 때와 주소·접힘이 바뀔 때 메뉴의 scrollTop만 옮겨 그 칸을 보이게 하는지 봅니다(shell/SideNav를 그대로 그림).
+ * hooks/useScrollNavActive가 그릴 때와 주소·접힘·넓은 화면 여부가 바뀔 때, 메뉴 높이가 줄어 지금 칸이 가려질 때 메뉴의 scrollTop만 옮겨 그 칸을
+ * 보이게 하는지 봅니다(shell/SideNav를 그대로 그림).
  *
  * jsdom은 배치를 계산하지 않으므로 사각형을 정해 둡니다(SubNavScrollQa510.test와 같은 방식 — 여기서는 getBoundingClientRect·clientHeight):
  * 메뉴(nav)는 화면 위 48px에서 보이는 높이 503px, 칸은 글 이름별 위치(높이 32px). 메뉴의 scrollTop은 jsdom이 기억합니다.
@@ -100,7 +101,7 @@ describe("QA-555 — 왼쪽 나무 메뉴가 지금 칸을 메뉴 안으로 스�
   // 화면으로 바꾸거나 창 높이를 줄이면 다시 보지 않았습니다 — 메뉴 끝 쪽의 지금 칸이 메뉴 아래에 가려진 채 남았습니다(tip 8b7524ab 정적 하네스 —
   // 낮은 창 20건, 예: /info/mechanism 1024x420 칸 아래 끝 530 대 메뉴 보이는 끝 371, /admin/users 1440x500 462 대 451).
   // 수정 전(재현 커밋에서는 it.fails)에는 넓혀도·높이를 줄여도 메뉴 scrollTop이 0 그대로였습니다(기대 57·160).
-  it.fails("좁은 폭에서 연 뒤 넓은 화면(lg 이상)으로 바뀌면 그 그리기에서 지금 칸을 다시 본다 (QA-555)", () => {
+  it("좁은 폭에서 연 뒤 넓은 화면(lg 이상)으로 바뀌면 그 그리기에서 지금 칸을 다시 본다 (QA-555)", () => {
     let wide = false;
     const listeners = new Set<() => void>();
     vi.stubGlobal("matchMedia", (query: string) => ({
@@ -126,7 +127,7 @@ describe("QA-555 — 왼쪽 나무 메뉴가 지금 칸을 메뉴 안으로 스�
     expect(menu().scrollTop).toBe(57);
   });
 
-  it.fails("창 높이가 줄어 보이던 지금 칸이 가려지면 다시 보인다 — 사람이 굴려 가려 둔 칸은 그대로 (QA-555)", () => {
+  it("창 높이가 줄어 보이던 지금 칸이 가려지면 다시 보인다 — 사람이 굴려 가려 둔 칸은 그대로 (QA-555)", () => {
     const observers: Array<() => void> = [];
     vi.stubGlobal(
       "ResizeObserver",

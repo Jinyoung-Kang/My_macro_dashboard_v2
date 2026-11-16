@@ -41,7 +41,8 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
  * 좁은 화면에서는 숨기고(하단 탭 바 + 하위 메뉴 줄 + 더보기 화면이 대신), 데스크톱에서는 상단바 아래 남는 높이에 붙어 본문만 스크롤됩니다(메뉴가 길면 메뉴만 따로 스크롤).
  * 스크롤 상자는 메뉴(nav — min-h-0 flex-1 overflow-y-auto)이고 맨 아래 접기 영역은 그 밖에서 줄지 않아(shrink-0) 창이 낮아도 늘 보입니다 — 예전에는
  * aside 전체가 스크롤 상자라 펼친 메뉴가 길면 접기 단추가 메뉴와 함께 화면 밖으로 밀렸습니다(QA-555: 1024x600 /more에서 단추 609~641px). 그래서 지금 칸이
- * 메뉴 끝 쪽이면 주소가 바뀌거나 접고 펼 때 메뉴만 스크롤해 보입니다(useScrollNavActive — scrollIntoView 아님).
+ * 메뉴 끝 쪽이면 주소가 바뀌거나 접고 펼 때, 좁은 폭에서 넓은 화면이 될 때, 창 높이가 줄어 가려질 때 메뉴만 스크롤해 보입니다(useScrollNavActive —
+ * scrollIntoView 아님).
  *
  * - 칸은 32px, 탭 아이콘 16px. 하위 칸은 탭 이름과 같은 세로줄로 들여 씁니다. 묶음(더보기의 '한국 시장')은 누르지 않는 글 머리 아래 따로 목록.
  * - aria-current는 nav.ts 규칙 그대로 — 탭 링크는 tabCurrent(첫 화면 page·같은 탭의 다른 화면 true), 하위 칸은 지금 화면만(주소 그대로 page·아래 주소 true).
@@ -79,8 +80,8 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
     toggle();
   }, [toggle]);
 
-  // 지금 칸이 메뉴 아래(접기 영역 뒤)에 가려져 열리지 않게 — 메뉴(nav)만 스크롤합니다(QA-555).
-  useScrollNavActive(navRef, pathname, collapsed);
+  // 지금 칸이 메뉴 아래(접기 영역 뒤)에 가려져 열리지 않게 — 메뉴(nav)만 스크롤합니다(QA-555). 좁은 폭에서 연 화면을 넓히면 그때 다시 봅니다(wide).
+  useScrollNavActive(navRef, pathname, collapsed, wide);
 
   // 셸 명령 신호 — [ 키·명령 팔레트의 '왼쪽 메뉴 접기·펼치기'(넓은 화면에서만 보냄, lib/shellCommands).
   useEffect(() => onShellCommand("toggle-nav", handleToggle), [handleToggle]);
