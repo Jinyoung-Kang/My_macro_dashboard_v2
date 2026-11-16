@@ -44,15 +44,18 @@ const REST = "font-medium text-text-2 hover:bg-surface-2 hover:text-text";
 const NAV_MOTION = "motion-safe:transition-[width] motion-safe:duration-150";
 
 /*
- * 폭 손잡이(role=separator) — 메뉴 상자의 오른쪽 경계선(1px)에 가운데를 맞춘 8px 띠(안 4·밖 4), 메뉴 높이 전체. 보이는 선은 경계선 그대로이고, 가리키면
- * 경계선 자리에 2px 선(border-strong), 잡은 동안·키보드 포커스면 강조 파랑 2px 선과 포커스 링(FOCUS_RING)이 보입니다. 커서는 col-resize, 손가락으로
- * 끌어도 화면이 밀리지 않게 touch-none, 글은 없습니다. 본문 위 4px에 걸치므로 본문(relative)보다 위(z-20) — 덮개(시트 z-30·툴팁·대화상자)보다는 아래.
+ * 폭 손잡이(role=separator) — 메뉴 상자의 오른쪽 경계선(1px)에서 시작해 밖으로 8px인 띠(경계선 1 + 본문 쪽 7), 메뉴 높이 전체. 경계선 안쪽에는 걸치지
+ * 않습니다 — 메뉴(nav)가 넘칠 때의 세로 스크롤 막대가 경계선 바로 안쪽에 있어, 예전(경계선 가운데에 안 4·밖 4)에는 막대 손잡이의 오른쪽 4px을 누르면
+ * 메뉴를 굴리는 대신 폭이 바뀌었습니다(검토 지적 — 1440x500 /more). 위치 기준이 상자의 안쪽(테두리 안) 가장자리라 -right-2(8px)가 경계선부터입니다.
+ * 보이는 선은 경계선 그대로이고, 가리키면 경계선 자리(띠의 왼쪽 2px — 경계선과 그 바깥 1px)에 2px 선(border-strong), 잡은 동안·키보드 포커스면 강조 파랑
+ * 2px 선과 포커스 링(FOCUS_RING)이 보입니다. 커서는 col-resize, 손가락으로 끌어도 화면이 밀리지 않게 touch-none, 글은 없습니다.
+ * 본문 왼쪽 7px에 걸치므로(본문 글 열은 안쪽 여백 32px라 그 아래 누를 것은 없음) 본문(relative)보다 위(z-20) — 덮개(시트 z-30·툴팁·대화상자)보다는 아래.
  * 고대비(forced-colors)에서는 바탕색(선)이 지워지므로 가리킨 동안·잡은 동안 안쪽 2px Highlight 윤곽선을 그립니다(포커스는 FOCUS_RING 윤곽선이 남음).
- * 누름 자리가 8px로 좁은 까닭(WCAG 2.5.8)은 진행 기록 'P3 추가 — 가변 폭 왼쪽 메뉴'에 적었습니다(같은 일을 하는 접기 단추·키보드).
+ * 누름 자리가 8px로 좁은 것(WCAG 2.5.8·2.5.7)의 판단은 진행 기록 'P3 추가 — 가변 폭 왼쪽 메뉴'에 적었습니다.
  */
 const HANDLE = [
-  "absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none select-none",
-  "before:pointer-events-none before:absolute before:inset-y-0 before:left-1/2 before:w-0.5 before:-translate-x-1/2 before:bg-transparent",
+  "absolute inset-y-0 -right-2 z-20 w-2 cursor-col-resize touch-none select-none",
+  "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-transparent",
   "motion-safe:before:transition-colors motion-safe:before:duration-150 hover:before:bg-border-strong",
   "focus-visible:before:bg-accent data-[dragging]:before:bg-accent",
   FOCUS_RING,
@@ -182,7 +185,7 @@ export function SideNav({ pathname, user }: { pathname: string; user?: SessionUs
           </button>
         </Tooltip>
       </div>
-      {/* 폭 손잡이 — 오른쪽 경계선에 걸친 8px(창 나누개 패턴: role=separator, 포커스 가능, 값은 펼친 폭). Tab 순서는 접기 단추 다음, 본문 앞. */}
+      {/* 폭 손잡이 — 오른쪽 경계선부터 밖으로 8px(창 나누개 패턴: role=separator, 포커스 가능, 값은 펼친 폭). Tab 순서는 접기 단추 다음, 본문 앞. */}
       <div
         role="separator"
         tabIndex={0}

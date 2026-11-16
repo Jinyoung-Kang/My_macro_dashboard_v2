@@ -99,11 +99,14 @@ describe("접근성", () => {
     expect(classes(box())).toContain("relative");
   });
 
-  it("모양 — 경계선에 걸친 8px(-right-1 w-2), col-resize, touch-none, 포커스 링(FOCUS_RING), 고대비에서 가리킨·잡은 동안 Highlight 윤곽선", () => {
+  it("모양 — 경계선부터 밖으로 8px(-right-2 w-2 — 메뉴 스크롤 막대를 덮지 않음), 선은 띠 왼쪽(경계선 자리), col-resize, touch-none, 포커스 링(FOCUS_RING), 고대비에서 가리킨·잡은 동안 Highlight 윤곽선", () => {
     render(<SideNav pathname="/macro" user={MEMBER} />);
+    // 위치 기준은 상자의 테두리 안쪽 가장자리 — right:-8px·폭 8px이면 띠의 왼쪽 끝이 경계선(1px)의 왼쪽 끝이고, 그 안쪽(메뉴의 세로 스크롤 막대)에는 걸치지 않음
+    expect(classes(handle())).not.toContain("-right-1");
     expect(classes(handle())).toEqual(
       expect.arrayContaining([
-        "absolute", "inset-y-0", "-right-1", "w-2", "cursor-col-resize", "touch-none", "select-none",
+        "absolute", "inset-y-0", "-right-2", "w-2", "cursor-col-resize", "touch-none", "select-none",
+        "before:left-0", "before:w-0.5",
         "focus-visible:outline-2", "focus-visible:outline-offset-2", "focus-visible:outline-focus",
         "hover:before:bg-border-strong", "data-[dragging]:before:bg-accent",
         "forced-colors:hover:outline-[Highlight]", "forced-colors:data-[dragging]:outline-[Highlight]",
