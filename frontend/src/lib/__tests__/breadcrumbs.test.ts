@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PAPER_TAB_CRUMBS, breadcrumbs, type Crumb } from "../breadcrumbs";
+import { TABS } from "../nav";
 import { PAPER_TABS, paperTabInMarket } from "../paper";
 import { paperRouteFromPath, paperTabPath } from "../paperRoutes";
 import type { SessionUser } from "../types";
@@ -121,6 +122,39 @@ describe("모의매매(운영자)", () => {
       { label: "더보기", href: "/more" },
       { label: "내 계정", href: null },
     ]);
+  });
+});
+
+describe("같은 곳으로 가는 링크 칸 없음", () => {
+  // QA-549: 탭 칸의 주소가 늘 탭 첫 화면이라, 첫 화면이 하위 화면이기도 한 탭(시장 /macro·기관 /institutions·모의매매 /paper/us·정보 수집
+  // /info/overview)에서 탭 칸이 지금 화면이나 바로 뒤 칸과 같은 주소로 가는 링크였습니다 — /macro '시장'(→ /macro)을 눌러도 아무 일이 없고,
+  // /paper/us/holdings는 '모의매매'·'미국'이 둘 다 /paper/us, /markets/i/vix는 '시장'·'매크로 지표'가 둘 다 /macro(낭독기는 같은 목적지를 두 번 들음).
+  // 같은 셸의 나무 메뉴는 같은 경우에 aria-current를 답니다(nav.ts tabCurrent). 뒤 칸 어느 것과 주소가 같은 칸은 링크 없는 글 칸으로 둡니다 —
+  // 더 구체적인 뒤 칸(미국·매크로 지표·13F 포트폴리오)이 링크로 남아 갈 수 있는 곳은 줄지 않습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 운영자·회원 모두 /macro·/institutions·/paper/us·/info/overview·/markets/i/vix·/institutions/1067983·
+  // /paper/us/holdings 등에서 겹치는 링크 칸이 나왔습니다.
+  it.fails("링크 칸의 주소는 뒤 칸 어느 것과도 겹치지 않는다 — 운영자·회원 × 모든 탭 하위 화면 + 상세 표본 (QA-549)", () => {
+    const paths = [
+      ...new Set([
+        ...TABS.flatMap((tab) => tab.items.map((item) => item.href)),
+        "/markets/i/vix",
+        "/institutions/1067983",
+        "/paper/us/holdings",
+        "/paper/kr/isa",
+      ]),
+    ];
+    const overlaps: string[] = [];
+    for (const user of [OWNER, MEMBER]) {
+      for (const path of paths) {
+        const crumbs = breadcrumbs(path, user);
+        crumbs.forEach((crumb, index) => {
+          if (crumb.href !== null && crumbs.slice(index + 1).some((later) => later.href === crumb.href)) {
+            overlaps.push(`${user.role} ${path} '${crumb.label}' → ${crumb.href}`);
+          }
+        });
+      }
+    }
+    expect(overlaps).toEqual([]);
   });
 });
 
