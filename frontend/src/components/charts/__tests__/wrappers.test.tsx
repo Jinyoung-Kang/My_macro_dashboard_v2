@@ -10,15 +10,18 @@
  *  - 산점도는 늘 옅은 격자(border-subtle)
  *  - 격자 선택(grid — 작업대 실행 명세 W6): LineSeries·MultiLineSeries·SignedBars는 grid면 Y 눈금 자리에만 옅은 가로 격자(border-subtle 1px), 세로 격자 없음
  *  - SVG 글자는 모두 12px 이상(축·막대 끝 값·표시선 이름), 툴팁 상자는 덮개 모양(덮개 경계 border-overlay·그림자·4px 모서리)
+ *  - 셸 폭이 바뀌는 동안 폭 잡아 두기(QA-601 — charts/sizeHold): ResponsiveContainer를 두 상자가 감싸고, 쉬는 상태는 폭 100%(인라인 폭·높이·넘침
+ *    자르기 없음 — svg 폭은 크기 감시가 알린 그대로), 셸 신호(lib/shellResize)가 켜지면 잰 px로 고정하고 그동안만 가로 넘침을 자름
  *
  * jsdom에는 크기가 없어 ResponsiveContainer가 너비를 모릅니다 — 관찰을 시작하면 정한 크기를 바로 알려 주는 가짜를 씁니다(LineChart.test와 같음).
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { HorizontalBars, LineSeries, MultiLineSeries, ScatterPlot, SERIES_COLORS, SignedBars } from "@/components/charts";
+import { DonutChart, HorizontalBars, LineSeries, MultiLineSeries, ScatterPlot, SERIES_COLORS, SignedBars } from "@/components/charts";
 import { ChartLegend, REFERENCE_DASH } from "@/components/charts/frame";
 import { LineChartTooltip } from "@/components/charts/LineChart";
+import { resetShellResizingForTest, setShellResizing } from "@/lib/shellResize";
 
 function observeAs(width: number, height: number) {
   vi.stubGlobal(
@@ -522,5 +525,90 @@ describe("격자 선택(grid) — 큰 분석 차트의 옅은 가로 격자(작�
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.every((line) => line.getAttribute("stroke") === "var(--border-subtle)")).toBe(true);
     expect(container.querySelector(".recharts-cartesian-grid-vertical")).toBeNull();
+  });
+});
+
+describe("셸 폭이 바뀌는 동안 폭 잡아 두기(QA-601 — charts/sizeHold)", () => {
+  afterEach(() => resetShellResizingForTest());
+
+  const POINTS = [
+    { date: "2026-01-02", a: 1, b: 2 },
+    { date: "2026-10-24", a: 3, b: 1 },
+  ];
+  /** ResponsiveContainer를 바로 감싼 상자(고정할 때 px 폭)와 그 바깥 상자(잴 때·자를 때). */
+  const boxes = (container: HTMLElement) => {
+    const inner = (container.querySelector(".recharts-responsive-container") as HTMLElement).parentElement as HTMLElement;
+    return { inner, outer: inner.parentElement as HTMLElement };
+  };
+  const classList = (element: Element) => element.className.split(/\s+/);
+  const svgWidth = (container: HTMLElement) => container.querySelector("svg.recharts-surface")?.getAttribute("width");
+  /** 차트를 감싼 바깥 상자(ResponsiveContainer를 품은 요소)만 폭 600을 잼 — 나머지는 jsdom 그대로(0). */
+  function measureAs(width: number) {
+    const original = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (!this.querySelector(".recharts-responsive-container")) return original.call(this);
+      return { left: 0, top: 0, x: 0, y: 0, width, height: 260, right: width, bottom: 260, toJSON: () => ({}) } as DOMRect;
+    });
+  }
+
+  it("쉬는 상태 — 다섯 래퍼 모두 감싼 두 상자는 w-full·min-w-0이고 인라인 폭·높이 지정·넘침 자르기가 없다. svg 폭은 크기 감시가 알린 600 그대로", () => {
+    observeAs(600, 300);
+    const charts = [
+      <LineSeries key="line" data={LIQUIDITY} />,
+      <MultiLineSeries key="multi" data={POINTS} series={[{ key: "a", name: "가", color: SERIES_COLORS.blue }]} />,
+      <HorizontalBars key="h" data={[{ name: "가", value: 1 }]} />,
+      <SignedBars key="s" data={[{ name: "가", value: 1 }]} />,
+      <DonutChart key="d" ariaLabel="구성" segments={[{ key: "a", name: "가", value: 1, color: SERIES_COLORS.blue, valueText: "100%" }]} />,
+    ];
+    for (const chart of charts) {
+      const { container, unmount } = render(chart);
+      const { inner, outer } = boxes(container);
+      for (const box of [inner, outer]) {
+        expect(classList(box)).toEqual(["w-full", "min-w-0"]);
+        expect(box.getAttribute("style")).toBeNull();
+      }
+      expect(svgWidth(container)).toBe("600");
+      unmount();
+    }
+    // 산점도는 보조기기에 숨긴 상자 안 — 같은 감싸개
+    const scatter = render(<ScatterPlot data={[{ x: 1, y: 2, date: "2026-01-02" }]} xLabel="가" yLabel="나" />);
+    expect(classList(boxes(scatter.container).outer)).toEqual(["w-full", "min-w-0"]);
+    expect(boxes(scatter.container).outer.parentElement?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("신호가 켜지면 바깥 상자의 잰 폭(600px)으로 안쪽 상자를 고정하고 그동안만 가로 넘침을 자른다 — 꺼지면 100%(인라인 폭 없음)로", () => {
+    observeAs(600, 260);
+    measureAs(600);
+    const { container } = render(<MultiLineSeries data={POINTS} series={[{ key: "a", name: "가", color: SERIES_COLORS.blue }]} />);
+    act(() => setShellResizing("drag", true));
+    expect(boxes(container).inner.style.width).toBe("600px");
+    expect(classList(boxes(container).outer)).toContain("overflow-x-clip");
+    // 두 원천 가운데 하나만 꺼지면 그대로
+    act(() => setShellResizing("motion", true));
+    act(() => setShellResizing("drag", false));
+    expect(boxes(container).inner.style.width).toBe("600px");
+    act(() => setShellResizing("motion", false));
+    expect(boxes(container).inner.style.width).toBe("");
+    expect(classList(boxes(container).outer)).not.toContain("overflow-x-clip");
+    expect(svgWidth(container)).toBe("600");
+  });
+
+  it("잰 폭이 0이면(숨긴 탭·배치 전) 고정하지 않는다", () => {
+    observeAs(600, 260);
+    const { container } = render(<SignedBars data={[{ name: "가", value: 1 }]} />);
+    act(() => setShellResizing("drag", true));
+    expect(boxes(container).inner.style.width).toBe("");
+    expect(classList(boxes(container).outer)).not.toContain("overflow-x-clip");
+  });
+
+  it("신호가 켜진 채 새로 그려진 차트는 고정하지 않는다 — 다음에 켜질 때부터 고정", () => {
+    observeAs(600, 260);
+    measureAs(600);
+    act(() => setShellResizing("motion", true));
+    const { container } = render(<HorizontalBars data={[{ name: "가", value: 1 }]} />);
+    expect(boxes(container).inner.style.width).toBe("");
+    act(() => setShellResizing("motion", false));
+    act(() => setShellResizing("motion", true));
+    expect(boxes(container).inner.style.width).toBe("600px");
   });
 });

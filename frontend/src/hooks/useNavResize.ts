@@ -5,6 +5,12 @@ import { flushSync } from "react-dom";
 import { getNavCollapsed, useNavCollapsed } from "@/hooks/useNavCollapsed";
 import { getNavWidth, useNavWidth } from "@/hooks/useNavWidth";
 import { NAV_DRAG_SLOP, NAV_MOTION_HOLD_MS, navDragLayout, navKeyLayout, navShownWidth, type NavLayout } from "@/lib/navWidth";
+import { setShellResizing } from "@/lib/shellResize";
+
+/** 움직임 줄이기를 켰는가 — 접기·펼치기의 폭 전환(motion-safe:)이 없는 때. matchMedia가 없으면 거짓. */
+function prefersReducedMotion(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 /** 끄는 동안 문서 뿌리(html)에 붙이는 표지 — globals.css가 이 동안 커서를 col-resize로, 글 고르기를 끕니다(손잡이 밖으로 나가도). */
 export const NAV_RESIZING_ATTR = "data-nav-resizing";
@@ -74,6 +80,9 @@ export type NavResize = {
  *   않습니다(목표 폭이 프레임마다 바뀌어 전환이 처지다 튐). 화살표·Home·End의 폭 걸음도 전환 없이 바로 바뀝니다. 처음 그릴 때(저장값을 읽어 폭이 바뀜)는
  *   꺼져 있어 화면을 열 때 메뉴가 움직이지 않습니다. 켜고 끄는 값과 폭은 같은 프레임에 반영돼야 하므로(전환은 바뀐 뒤 스타일의 transition을 봄) 켜고 끄기는
  *   flushSync로 먼저 그립니다 — 셸 명령(창의 사용자 이벤트)·프레임 처리기에서 부른 상태 바꾸기는 저장소 알림과 다른 우선순위로 그려질 수 있습니다.
+ * - **차트 폭 잡아 두기(QA-601)**: 끄는 동안(문턱을 넘은 뒤 끝날 때까지)과 전환을 켠 동안 셸 신호(lib/shellResize — 원천 drag·motion의 OR)를 켭니다.
+ *   공용 차트가 그동안 폭을 잡아 두었다가 끝나면 한 번만 다시 그립니다(프레임마다 다시 그리면 /macro 끌기가 7fps). 전환을 켤 때는 flushSync 앞에
+ *   켜서 차트가 폭이 바뀌기 전에 잽니다. 키 걸음과 움직임 줄이기의 접기·펼치기는 폭이 한 번에 바뀌므로 켜지 않습니다.
  * - **두 번 누르기**: 접기·펼치기. 그 두 번의 누름 가운데 하나라도 끌었으면 받지 않습니다.
  * - **키**(lib/navWidth navKeyLayout): ←·→ 16px(Shift 64px)·Home·End는 바로 저장, Enter는 접기·펼치기(접힌 동안 →·End도 폄 — 누르고 있는 키의
  *   반복은 접고 펴지 않음).
@@ -99,6 +108,9 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       window.clearTimeout(state.timer);
       state.timer = null;
     }
+    // 차트 폭 잡아 두기 신호 — 아래 flushSync가 함께 그려 차트가 지금(바뀌기 전) 폭을 잽니다. 움직임 줄이기면 전환이 없어(motion-safe:) 폭이 한 번에
+    // 바뀌므로 켜지 않습니다(잡으면 차트만 200ms 늦게 맞춰지고, 그동안 좁아진 차트의 오른쪽이 잘림).
+    setShellResizing("motion", on && !prefersReducedMotion());
     if (state.motion !== on) {
       state.motion = on;
       flushSync(() => setMotion(on));
@@ -107,6 +119,7 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       state.timer = window.setTimeout(() => {
         state.timer = null;
         state.motion = false;
+        setShellResizing("motion", false);
         setMotion(false);
       }, forMs);
     }
@@ -173,6 +186,7 @@ export function useNavResize(beforeToggle: () => void): NavResize {
       }
       if (drag.moved) apply({ collapsed: getNavCollapsed(), width: getNavWidth() }, true);
       document.documentElement.removeAttribute(NAV_RESIZING_ATTR);
+      setShellResizing("drag", false);
       setDragging(false);
     },
     [apply, frame],
@@ -213,6 +227,8 @@ export function useNavResize(beforeToggle: () => void): NavResize {
         if (Math.abs(drag.lastX - drag.startX) < NAV_DRAG_SLOP) return;
         drag.moved = true;
         state.movedCurrent = true;
+        // 이제부터 폭이 프레임마다 바뀜 — 차트 폭을 잡아 둡니다(첫 프레임 앞에 그려짐). 전환을 끄기 전에 켜서 신호가 잠깐도 꺼지지 않게.
+        setShellResizing("drag", true);
         // 폭이 포인터를 따라가는 동안은 전환 없음(앞의 접기 전환이 남아 있었으면 여기서 끝남).
         animate(false);
       }
@@ -252,17 +268,19 @@ export function useNavResize(beforeToggle: () => void): NavResize {
     [animate, apply, flip],
   );
 
-  // 그리는 중에 사라지면(로그아웃 등) 잡은 표지·타이머·프레임을 치우고, 끌던 값은 저장합니다.
+  // 그리는 중에 사라지면(로그아웃 등) 잡은 표지·타이머·프레임을 치우고, 끌던 값은 저장합니다. 차트 폭 잡아 두기 신호도 끕니다(남은 차트가 풀림).
   useEffect(() => {
     const state = live.current;
     return () => {
       if (state.timer !== null) window.clearTimeout(state.timer);
       state.timer = null;
+      setShellResizing("motion", false);
       const drag = state.drag;
       if (!drag) return;
       state.drag = null;
       if (drag.frame !== null) window.cancelAnimationFrame(drag.frame);
       document.documentElement.removeAttribute(NAV_RESIZING_ATTR);
+      setShellResizing("drag", false);
       if (drag.moved) apply({ collapsed: getNavCollapsed(), width: getNavWidth() }, true);
     };
   }, [apply]);

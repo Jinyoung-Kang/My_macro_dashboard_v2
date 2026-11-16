@@ -109,7 +109,7 @@ function heldWidth(container: HTMLElement): string {
 
 describe("QA-601: 셸 폭이 바뀌는 동안 차트 폭 잡아 두기", () => {
   // 재현 커밋 실패 값: AssertionError: expected '' to be '600px' — 감싼 상자가 없어 ResponsiveContainer의 부모가 figure였습니다.
-  it.fails("끌기 — 문턱(3px)을 넘으면 차트를 감싼 상자를 잰 폭(600px)으로 고정하고, 놓으면 풂", () => {
+  it("끌기 — 문턱(3px)을 넘으면 차트를 감싼 상자를 잰 폭(600px)으로 고정하고, 놓으면 풂", () => {
     const { container } = render(<Page />);
     expect(heldWidth(container)).toBe("");
     down(220);
@@ -127,7 +127,7 @@ describe("QA-601: 셸 폭이 바뀌는 동안 차트 폭 잡아 두기", () => {
   });
 
   // 재현 커밋 실패 값: AssertionError: expected '' to be '600px'.
-  it.fails("접기 단추 — 누른 직후 고정하고 전환 유지 시간(NAV_MOTION_HOLD_MS)이 지나면 풂, 펼칠 때도 같음", () => {
+  it("접기 단추 — 누른 직후 고정하고 전환 유지 시간(NAV_MOTION_HOLD_MS)이 지나면 풂, 펼칠 때도 같음", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const { container } = render(<Page />);
     fireEvent.click(toggleButton());
@@ -146,7 +146,7 @@ describe("QA-601: 셸 폭이 바뀌는 동안 차트 폭 잡아 두기", () => {
   });
 
   // 재현 커밋 실패 값: AssertionError: expected '' to be '600px'.
-  it.fails("끄는 도중 왼쪽 메뉴만 사라지면(로그아웃 등) 남은 차트의 고정을 풂", () => {
+  it("끄는 도중 왼쪽 메뉴만 사라지면(로그아웃 등) 남은 차트의 고정을 풂", () => {
     const { container, rerender } = render(<Page />);
     down(220);
     move(260);

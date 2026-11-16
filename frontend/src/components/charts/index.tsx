@@ -53,6 +53,7 @@ import {
   TAIL_DASH,
   TOOLTIP_BOX,
 } from "./frame";
+import { ChartSizeHold } from "./sizeHold";
 import { LineChart as SingleLineChart } from "./LineChart";
 
 /*
@@ -376,6 +377,7 @@ export function MultiLineSeries({
   return (
     <figure className="m-0">
       <ChartLegend entries={legend} />
+      <ChartSizeHold>
       <ResponsiveContainer width="100%" height={height} onResize={(nextWidth) => setWidth(nextWidth)}>
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} aria-label={ariaLabel}>
           {grid ? (
@@ -498,6 +500,7 @@ export function MultiLineSeries({
           })}
         </LineChart>
       </ResponsiveContainer>
+      </ChartSizeHold>
     </figure>
   );
 }
@@ -542,6 +545,7 @@ export function HorizontalBars({
   const hasNegative = data.some((entry) => entry.value < 0);
 
   return (
+    <ChartSizeHold>
     <ResponsiveContainer width="100%" height={chartHeight}>
       <BarChart
         data={data}
@@ -588,6 +592,7 @@ export function HorizontalBars({
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    </ChartSizeHold>
   );
 }
 
@@ -615,6 +620,7 @@ export function SignedBars({
   }
 
   return (
+    <ChartSizeHold>
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         {grid ? <CartesianGrid vertical={false} stroke={GRID_LINE} strokeWidth={1} syncWithTicks /> : null}
@@ -640,6 +646,7 @@ export function SignedBars({
         </Bar>
       </BarChart>
     </ResponsiveContainer>
+    </ChartSizeHold>
   );
 }
 
@@ -675,6 +682,7 @@ export function ScatterPlot({
     // 점 하나하나가 role="img"로 노출돼 스크린리더에 수백 개의 이름 없는 그림이 됩니다. 산점도는 장식이고
     // 상관계수·표본 수는 옆에 글자로 있으므로 보조기기에는 통째로 숨깁니다.
     <div aria-hidden="true">
+    <ChartSizeHold>
     <ResponsiveContainer width="100%" height={height}>
       <ScatterChart margin={{ top: 8, right: 16, bottom: 28, left: 8 }}>
         {/* 두 축이 다 데이터라 격자를 남기되 옅게(옅은 경계 border-subtle — 큰 차트의 가로 격자와 같은 색). */}
@@ -717,6 +725,7 @@ export function ScatterPlot({
         <Scatter data={data} fill={color} fillOpacity={0.55} isAnimationActive={false} />
       </ScatterChart>
     </ResponsiveContainer>
+    </ChartSizeHold>
     </div>
   );
 }
@@ -895,6 +904,7 @@ export function DonutChart({
   const data = segments.map((segment) => ({ ...segment, fill: segment.color }));
   return (
     <figure className="m-0">
+      <ChartSizeHold>
       <ResponsiveContainer width="100%" height={height} onResize={(nextWidth) => setWidth(nextWidth)}>
         {/*
           이름은 Tab으로 닿는 SVG 자체에 붙입니다 — Recharts의 접근성 층이 SVG에 role="application"·tabindex=0을 달아 화살표로 조각을
@@ -926,6 +936,7 @@ export function DonutChart({
           />
         </PieChart>
       </ResponsiveContainer>
+      </ChartSizeHold>
     </figure>
   );
 }
