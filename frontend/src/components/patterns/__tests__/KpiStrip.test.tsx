@@ -1,7 +1,8 @@
 /**
  * KpiStrip — KPI 띠(작업대 실행 명세 §6·W7, P4 — 홈 맨 위).
  * 네 상태: 불러오는 중(pending — 값 자리 Skeleton role=status), 빈 값('—' + 사유, 단위 없음), 오류(상태 글 — 아이콘 + 글), 값 있음(20·24px tabular-nums,
- * 판정 라벨은 tabular 아님). 데이터 패턴의 넷: 값·'—'·추정/대리 배지·이전 값 + 사유. 변화는 변화 칩(▲▼ 12px·sr '상승/하락'), 대상 링크는 중립 잉크.
+ * 판정 라벨은 tabular 아님). 데이터 패턴의 넷: 값·'—'·추정/대리 배지·이전 값 + 사유, 그리고 출처 줄(출처·지연·시각 — 참고 시세 표기, 툴팁).
+ * 변화는 변화 칩(▲▼ 12px·sr '상승/하락'), 대상 링크는 중립 잉크.
  * a11y: 띠는 이름 있는 영역(section aria-label), 타일은 이름 있는 묶음(role=group) — 링크 타일은 링크 이름에 라벨이 들어감.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
@@ -157,6 +158,57 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(danger.parentElement?.querySelector("svg[aria-hidden='true']")).toBeTruthy();
     expect(within(tile("수집 오류")).getByText("오류:").className).toContain("sr-only");
     expect(within(tile("끊긴 출처")).getByText("주의:").className).toContain("sr-only");
+  });
+});
+
+describe("KpiStrip — 출처 줄", () => {
+  it("출처·지연·시각을 주면 타일 아래 출처 줄(12px 보조 글 · 읽어 주는 머리말 '출처:') — 링크 타일 이름에도 들어간다", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "sp500", label: "S&P 500", value: 6012, source: "Yahoo Finance (^GSPC) · 개장", delayMin: 15, asOf: "2026-11-14T15:30:00+09:00", href: "/markets/i/sp500" },
+          { key: "kospi", label: "코스피", value: 2612.5, source: "Yahoo Finance (^KS11) · 마감", asOf: "2026-11-14T15:30:00+09:00", provenanceTitle: "시세 20분 지연(출처 기준) — 장이 닫혀 있어 배지에는 적지 않습니다" },
+        ]}
+      />,
+    );
+    const link = screen.getByRole("link", { name: /S&P 500/ });
+    const line = within(link).getByText(/Yahoo Finance \(\^GSPC\) · 개장 · 15분 지연 · 2026-11-14 15:30/);
+    expect(line.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "text-text-3", "tabular-nums"]));
+    expect(within(line).getByText("출처:").className).toContain("sr-only");
+    expect(link.textContent).toContain("Yahoo Finance (^GSPC) · 개장 · 15분 지연");
+    // 닫힌 장이라 배지에 적지 않은 지연은 툴팁으로
+    const closed = within(tile("코스피")).getByText(/Yahoo Finance \(\^KS11\) · 마감 · 2026-11-14 15:30/);
+    expect(closed.getAttribute("title")).toBe("시세 20분 지연(출처 기준) — 장이 닫혀 있어 배지에는 적지 않습니다");
+  });
+
+  it("비공식 참고 시세는 출처 글 그대로 '참고 시세'가 보이고, 값을 모르는 타일('—')에도 출처 줄은 남는다", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "us10y", label: "미국채 10년물", value: "4.123", unit: "%", source: "TradingView Scanner · 참고 시세 · 개장", delayMin: 0, asOf: "2026-11-14T15:31:00+09:00" },
+          { key: "fail", label: "원/달러", value: null, emptyReason: "수집 실패", source: "Yahoo Finance (KRW=X) · 마감", asOf: "2026-11-13T23:59:00+09:00" },
+        ]}
+      />,
+    );
+    expect(within(tile("미국채 10년물")).getByText(/TradingView Scanner · 참고 시세 · 개장 · 실시간 · 2026-11-14 15:31/)).toBeTruthy();
+    expect(within(tile("원/달러")).getByText("수집 실패")).toBeTruthy();
+    expect(within(tile("원/달러")).getByText(/Yahoo Finance \(KRW=X\) · 마감/)).toBeTruthy();
+  });
+
+  it("출처를 주지 않은 타일(앱 안에서 센 수)·읽는 중인 타일에는 출처 줄이 없다 — '출처 —'를 만들지 않는다", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "alerts", label: "읽지 않은 알림", value: 2, format: (v) => `${v}건` },
+          { key: "sp500", label: "S&P 500", value: null, pending: true, source: "Yahoo Finance (^GSPC)", asOf: "2026-11-14T15:30:00+09:00" },
+        ]}
+      />,
+    );
+    expect(within(tile("읽지 않은 알림")).queryByText(/출처/)).toBeNull();
+    expect(within(tile("S&P 500")).queryByText(/Yahoo Finance/)).toBeNull();
   });
 });
 

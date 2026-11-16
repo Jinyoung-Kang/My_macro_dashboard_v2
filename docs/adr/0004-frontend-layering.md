@@ -101,7 +101,8 @@
   고정폭 식별자·줄 출처, 값은 말줄임 없이 낱말 사이 줄바꿈, 넓은 화면 줄 32·28px — 데이터 칸 강조색 금지 목록 `lib/__tests__/accentInData.test.ts`).
   처음 쓰는 곳은 상세 3종의 왼쪽 칸·목록-검사 패턴의 검사 칸·홈 국면 패널의 신호 넷(P4), 지키는 시험은 `components/patterns/__tests__/PropertyList.test.tsx`.
 - KPI 띠 `components/patterns/KpiStrip.tsx` — 화면 패턴(홈·모의 개요 44px 히어로 대신 — W7: 값 20·24px tabular-nums, 판정 라벨은 tabular 없이, '—'와 사유·배지 늘 보임,
-  변화는 공용 변화 칩·상태는 공용 상태 글(아이콘 + 글), `href`면 타일 전체가 중립 잉크 링크(좁은 화면 44px 하한 클래스) — 데이터 칸 강조색 금지 목록). 처음 쓰는 곳은 홈 맨 위 요약(P4),
+  변화는 공용 변화 칩·상태는 공용 상태 글(아이콘 + 글), 바깥에서 온 숫자는 타일 아래 출처 줄(공용 출처 배지 — 출처·지연·시각·툴팁, 참고 시세 표기),
+  `href`면 타일 전체가 중립 잉크 링크(좁은 화면 44px 하한 클래스) — 데이터 칸 강조색 금지 목록). 처음 쓰는 곳은 홈 맨 위 요약(P4),
   지키는 시험은 `components/patterns/__tests__/KpiStrip.test.tsx`.
 - 대상 머리 `components/patterns/EntityHeader.tsx` — 화면 패턴(종류 아이콘 칸(장식) + 종류 글 태그·이름 h1(말줄임 없음)·고정폭 식별자 태그·주 값 하나 28px·
   배지 줄(비면 접힘)·동작 영역, `placeholder`는 값·배지 자리만 바꿈 — 데이터 칸 강조색 금지 목록). 공용 `Tag`(`@/components/ui`)와 대상 종류 아이콘

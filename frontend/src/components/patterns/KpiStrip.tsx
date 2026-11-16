@@ -5,7 +5,7 @@ import { FOCUS_RING } from "@/components/ui/classes";
 import { StatusText } from "@/components/ui/icons";
 import { isMissingValue, presentText, statValueText } from "@/lib/patterns";
 
-import { EstimateBadge, StaleBadge } from "./badges";
+import { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 import { ChangeChip } from "./ChangeChip";
 import { Empty } from "./Empty";
 import { Skeleton } from "./Skeleton";
@@ -29,8 +29,17 @@ export type KpiItem = {
   change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null };
   /** 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). */
   status?: { tone: "ok" | "warn" | "danger"; text: string };
-  /** 12px 보조 글(기준일·기준 시각). */
+  /** 12px 보조 글(기준일 등 — 값의 시각은 출처 줄의 `asOf`로). */
   note?: string | null;
+  /**
+   * 출처 줄(공용 출처 배지 — '출처 · 지연 · 시각', 원칙 '모든 숫자에 출처'): 이 넷 가운데 하나라도 주면 타일 아래에 늘 보입니다(숨기는 옵션 없음).
+   * 비공식 참고 시세는 출처 글에 그 사실을 담아 넘깁니다(예 'TradingView Scanner · 참고 시세'). 지연은 장이 열려 있을 때의 시세 지연(분, 0이면 '실시간'),
+   * `provenanceTitle`은 배지 툴팁(닫힌 장이라 적지 않은 지연 등). 앱 안에서 센 수(알림·오류 건수)처럼 바깥 출처가 없는 타일은 주지 않습니다.
+   */
+  source?: string | null;
+  asOf?: string | null;
+  delayMin?: number | null;
+  provenanceTitle?: string | null;
   emptyReason?: string | null;
   /** 읽는 중 — 값 자리에 Skeleton 한 줄(role=status '{label} 불러오는 중'). */
   pending?: boolean;
@@ -81,6 +90,8 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
   const caption = change ? presentText(change.caption) : null;
   const flagged = Boolean(item.isEstimated || item.isProxy || item.isStale);
   const note = presentText(item.note);
+  const sourced =
+    !item.pending && (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
   return (
     <>
       <div className={`text-caption font-medium text-text-2 ${item.href ? "underline-offset-2 group-hover:underline" : ""}`.trim()}>{item.label}</div>
@@ -106,6 +117,11 @@ function KpiTileBody({ item }: { item: KpiItem }): JSX.Element {
           <StaleBadge stale={item.isStale} reason={item.staleReason} />
         </div>
       ) : null}
+      {sourced ? (
+        <p className="mt-1 leading-4">
+          <ProvenanceBadge source={item.source} asOf={item.asOf} delayMin={item.delayMin} title={item.provenanceTitle} />
+        </p>
+      ) : null}
       {note ? <p className="mt-1 text-xs leading-4 text-text-3">{note}</p> : null}
     </>
   );
@@ -119,6 +135,7 @@ const MAX_ONE_ROW = 8;
  *
  * - 값은 20px(lg 24px)·굵게·`tabular-nums`. 판정 라벨(`valueKind: "label"` — 국면)은 숫자가 아니라 tabular 없이 16·20px.
  * - 값을 모르면 "—"와 사유, 단위는 값이 있을 때만. 추정·대리·이전 값 배지는 늘 보입니다. 읽는 중이면 값 자리에 Skeleton(role=status).
+ * - 바깥에서 온 숫자는 출처 줄(공용 출처 배지 — 출처·장 상태·지연·시각, 참고 시세 표기)을 타일 아래에 늘 둡니다(원칙 '모든 숫자에 출처' — 밀도를 위해 숨기지 않음).
  * - 변화는 공용 변화 칩(▲▼ 12px·부호 −·sr '상승/하락')과 12px 캡션, 상태는 공용 상태 글(아이콘 + 글 — 색만으로 뜻을 전하지 않음).
  * - `href`가 있으면 타일 전체가 그 대상 화면 링크입니다(중립 잉크·hover surface-2 + 이름 밑줄·포커스 링 — 데이터 영역이라 강조 파랑을 쓰지 않음, A1).
  *   링크가 아닌 타일은 이름 있는 묶음(role=group)이라 이름과 값이 함께 읽힙니다.
