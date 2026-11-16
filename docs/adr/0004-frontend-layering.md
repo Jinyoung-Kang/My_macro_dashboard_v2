@@ -17,7 +17,7 @@
     `components/patterns/__tests__/EntityHeader.test.tsx`(대상 머리), `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`(칸 틀),
     `components/patterns/__tests__/MasterDetail.test.tsx`(목록-검사),
     `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`(긴 화면 목차),
-    `components/patterns/__tests__/InspectorFrame.test.tsx`(검사 칸 틀)
+    `components/patterns/__tests__/InspectorFrame.test.tsx`(검사 칸 틀), `components/patterns/__tests__/Timeline.test.tsx`(시각순 목록)
 
 ## 배경
 
@@ -132,3 +132,8 @@
   `hooks/useSideBySide`를 목록-검사(`MasterDetail`)와 함께 씁니다(기준 폭 인자). 줄 전체가 단추인 목록은 `MasterDetail`, 줄 안에 링크·단추가 있는 표는 이 틀입니다.
   데이터 칸 강조색 금지 목록에 넣습니다. 처음 쓰는 곳은 매크로 지표 표(lg)·섹터 표(dialog)(P5a), P5b 보유 표·P6 계좌 비교 표가 같은 틀을 씁니다.
   지키는 시험은 `components/patterns/__tests__/InspectorFrame.test.tsx`.
+- 시각순 목록 `components/patterns/Timeline.tsx` — 화면 패턴(목록-검사 `MasterDetail` 위 — 줄마다 시각 열 `<time>`(5.5rem·tabular-nums)·종류 태그(공용 `Tag` —
+  톤이면 아이콘 + 글, 주의·위험은 '주의:')·한 줄 요약(말줄임 없이 낱말 사이에서 꺾음, 좁은 틀은 둘째 줄)·추정/이전 값 배지, 고르면 검사 칸 제목 = 기록의 `title`,
+  펼칠 때 읽는 자세한 값은 `renderDetail` 안의 자식이 읽음 — 데이터 칸 강조색 금지 목록). 명세 §8-2는 P6이었지만 처음 쓰는 곳이 국면 판정 기록(P5a)이라
+  그 단계에서 만들었고, P6 결정 로그(W13 — 종류 태그 결정·장중 판단·복기)·P7 알림이 같은 API를 씁니다(날짜 묶음 머리·넓은 검사 칸은 P6이 선택 prop으로 더함).
+  지키는 시험은 `components/patterns/__tests__/Timeline.test.tsx`(키·검사 칸 동작은 `MasterDetail.test.tsx`).

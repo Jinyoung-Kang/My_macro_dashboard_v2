@@ -26,6 +26,7 @@ import * as Skeleton from "../Skeleton";
 import * as Sparkline from "../Sparkline";
 import * as SplitPane from "../SplitPane";
 import * as StatTile from "../StatTile";
+import * as Timeline from "../Timeline";
 
 const MODULES: Record<string, Record<string, unknown>> = {
   AssetRow,
@@ -46,6 +47,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   Sparkline,
   SplitPane,
   StatTile,
+  Timeline,
 };
 
 describe("components/patterns 배럴", () => {
@@ -95,6 +97,7 @@ describe("components/patterns 배럴", () => {
         "StaleBadge",
         "StatGrid",
         "StatTile",
+        "Timeline",
       ].sort(),
     );
     expect(names).not.toContain("LineChart");
