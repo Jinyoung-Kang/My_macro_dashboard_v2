@@ -28,6 +28,46 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 const REGIME = endpoints.insight.regime("5");
+const REGIME_LOG = endpoints.insight.regimeLog(60);
+const TRACK_SPY = endpoints.insight.regimeTrackRecord("SPY");
+
+/** 하이픈(-)으로 쓴 음수 — 숫자 바로 앞의 '-'이고 앞 글자가 숫자가 아님(날짜 '2026-10-08'은 빼고). */
+const ASCII_NEGATIVE = /(^|[^\d])-\d/;
+
+async function panelTitled(name: string): Promise<HTMLElement> {
+  return (await screen.findByRole("heading", { name })).closest("section") as HTMLElement;
+}
+
+/** 판정 기록 한 건 — 금리차·NFCI·순유동성 4주가 음수. */
+function regimeLog() {
+  return {
+    available: true, startedOn: "2026-10-08", count: 1, recordHourKst: 18,
+    entries: [{
+      date: "2026-10-08", code: "LATE", label: "후퇴 경계 (Late cycle)", missing: [], ruleVersion: "regime-v1",
+      inputs: {
+        curve10y3m: { value: -0.12, asOf: "2026-10-08" },
+        nfci: { value: -0.48, asOf: "2026-10-02" },
+        hyOas: { value: 2.85, asOf: "2026-10-08" },
+        liquidity4w: { value: -0.0254, asOf: "2026-10-08" },
+      },
+    }],
+  };
+}
+
+/** 판정 성과 — 확장 국면 13주 뒤 평균·중앙값·기준 대비가 음수. */
+function trackRecord() {
+  const cell = { horizonWeeks: 13, count: 42, independent: 4, sufficient: true, mean: -1.2, median: -0.8, winRate: 40,
+    best: 5, worst: -9, excessMean: -1.7 };
+  const base = { horizonWeeks: 13, count: 140, independent: 11, sufficient: true, mean: -0.4, median: 0.2, winRate: 55, best: 12, worst: -9 };
+  return {
+    available: true, asset: "SPY", assetLabel: "S&P 500 (SPY)", assets: [{ ticker: "SPY", label: "S&P 500 (SPY)" }],
+    horizons: [13], limits: ["과거 재현입니다."], evaluatedFrom: "2023-09-07", evaluatedTo: "2026-08-13", knownWeeks: 154,
+    priceFrom: "2021-01-04", priceTo: "2026-11-14", minSamples: 10, minIndependent: 3, rule: "매주 목요일 판정.",
+    start: [{ code: "EXPANSION", label: "확장 (Expansion)", weeks: 6, episodes: 6, cells: [cell] }],
+    all: [{ code: "EXPANSION", label: "확장 (Expansion)", weeks: 60, episodes: 6, cells: [cell] }],
+    baseline: [base],
+  };
+}
 
 /** 국면 응답 + 주간 재현 넷과 구간 셋(최근 순). */
 function withHistory(): RegimeResponse {
@@ -70,5 +110,37 @@ describe("QA-635 국면 이력 띠·범례 견본이 고대비에서 남는다",
       expect(swatch.className).toContain("forced-color-adjust-none");
     }
     expect(within(legend).getByText("판정 불가")).toBeTruthy();
+  });
+});
+
+describe("QA-636 국면 화면의 음수는 −(U+2212)", () => {
+  // 수정 전에는 판정 근거 값(formatNumber)·판정 기록 근거(regimeInputCells — formatSigned·formatTrillionDelta)·판정 성과 수익률(formatPercent)이
+  // 하이픈(-)으로 음수를 적어, 같은 국면 신호를 −로 적는 홈 국면 패널(QA-600)·변화 칩과 글자가 달랐습니다(명세 D4).
+  it.fails("판정 근거: NFCI 음수가 −로", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 근거");
+    await within(panel).findByText("시카고 연준 금융상황지수");
+    expect(panel.textContent).not.toMatch(ASCII_NEGATIVE);
+    expect(panel.textContent).toContain("−0.");
+  });
+
+  it.fails("판정 기록: 근거 넷의 음수가 −로", async () => {
+    reads[REGIME_LOG] = regimeLog();
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 기록");
+    await within(panel).findAllByText(/0\.48/);
+    expect(panel.textContent).not.toMatch(ASCII_NEGATIVE);
+    expect(panel.textContent).toContain("−0.48");
+    expect(panel.textContent).toContain("−254.0억 달러");
+  });
+
+  it.fails("판정 성과: 평균·중앙값·기준 대비·아무 때나의 음수가 −로", async () => {
+    reads[TRACK_SPY] = trackRecord();
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 성과");
+    await within(panel).findAllByText(/1\.20%/);
+    expect(panel.textContent).not.toMatch(ASCII_NEGATIVE);
+    for (const text of ["−1.20%", "−0.80%", "−1.70%p", "−0.40%"]) expect(panel.textContent).toContain(text);
   });
 });
