@@ -12,6 +12,7 @@
     `lib/__tests__/noEmoji.test.ts`(화면 소스의 문자열·JSX 글자에 그림 문자 없음 — TypeScript AST), `components/ui/__tests__/formControls.test.tsx`(입력칸 모양·예전 포커스 표시 금지),
     `selectionClasses.test.ts`(고르기 조각 클래스), `pageHeader.test.tsx`(화면 머리 — 예전 h1 모양 금지), `lib/__tests__/lineChart.test.ts`·`hooks/__tests__/useChartScrub.test.ts`(문지르기),
     `components/charts/__tests__/frameBoundary.test.ts`(차트 틀 예외 — 차트 폴더 밖의 차트 하위 경로 가져오기는 계좌 색 표의 `frame` 하나, `frame.tsx`는 recharts 없음)
+  - 작업대 화면 언어(아래 세 번째 덧붙임 — 공용 부품마다 한 줄): `components/ui/__tests__/DropdownMenu.test.tsx`(메뉴)
 
 ## 배경
 
@@ -80,3 +81,11 @@
   `Hero scrub`(차트는 여전히 `@/components/charts`에서만 — 예외 하나: 차트가 없는 화면이 계열 색 상수만 쓸 때는 recharts를 가져오지 않는 차트 틀
   `@/components/charts/frame`에서 `SERIES_COLORS`를 가져와도 됩니다. 모의매매 계좌 색 표 `components/screens/paper/bookColors.ts`가 그렇습니다 — 배럴에서
   가져오면 홈 '/'가 계좌 행 색 고리 때문에 recharts 조각을 실었습니다, 장중 명세 2026-10-31 §4-1). 서버·DB 글의 그림 문자 정리(`withoutLeadingIcon`)와 표시 모델(`holdingActionView`·`taskStatusView` 등)도 `lib/`입니다.
+
+## 덧붙임 — 작업대 화면 언어(ADR 0042, 2026-11-16~): 새 공용 부품
+
+위 결정과 앞의 두 덧붙임은 그대로이고, 작업대 화면 언어 개편([ADR 0042](0042-workbench-ui.md), [실행 명세](../specs/2026-11-15-v2-workbench-ui.md) §6·§8-2)이
+공용 부품을 더할 때마다 여기에 한 줄씩 적습니다(부품 · 층 · 처음 쓰는 곳 · 지키는 시험).
+
+- 메뉴 `components/ui/DropdownMenu.tsx` — 화면 층의 공용 키트(Radix DropdownMenu 2.2.1을 감쌈 — 덮개 3층·`data-overlay`·항목 좁은 화면 44px·넓은 화면 32px).
+  처음 쓰는 곳은 넓은 화면 상단바의 계정 메뉴(P3), 지키는 시험은 `components/ui/__tests__/DropdownMenu.test.tsx`.
