@@ -5,6 +5,7 @@ import { LineSeries, SERIES_COLORS } from "@/components/charts";
 import { KpiStrip } from "@/components/patterns";
 import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
 import { Callout, Panel } from "@/components/ui";
+import { StatusText } from "@/components/ui/icons";
 import { SOURCES } from "@/lib/sources";
 import { spreadKpis } from "@/lib/macroScreen";
 import { spreadSummary } from "@/lib/spread";
@@ -53,6 +54,15 @@ export function SpreadSection({
         </div>
         <div className="min-w-0">
           <GroupHeading title="스크래핑 참고 시세 · TradingView" note="(지금, 공식 확정치 아님)" />
+          {/* 이어받은 이전 금리(scraped.isStale)는 스프레드·장기·단기 셋 모두에 걸립니다 — 어느 쪽 금리인지는 응답이 말하지 않으므로 띠 밖 묶음 머리에
+              한 번 적습니다(스프레드 타일의 '이전 값' 배지는 그대로 — QA-644, 예전 화면의 묶음 머리 상태 글과 같은 뜻). */}
+          {kpis.scraped && block?.scraped?.isStale ? (
+            <p className="mb-2 text-xs leading-4">
+              <StatusText tone="warn" iconSize={12}>
+                이전 값 포함(수집 실패) — 장·단기 금리 가운데 이전 금리가 섞여 세 값 모두 지금 시세가 아닐 수 있습니다
+              </StatusText>
+            </p>
+          ) : null}
           {kpis.scraped ? (
             <KpiStrip label={`${pair} 스크래핑 참고 시세`} items={kpis.scraped} />
           ) : (
