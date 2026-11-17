@@ -86,15 +86,18 @@ describe("ScrollTopButton", () => {
 // lg 미만 44 + 8, lg 30 + 8)를 세우고 셸 본문의 아래 여백이 그만큼 더합니다(Shell.test). 수정 전(재현 커밋에서는 it.fails) 변수가 없었습니다.
 describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 둔다", () => {
   const rootStyle = () => document.documentElement.style;
+  // 단추 자리 식(기본 글자 크기 16px에서 52·38px — 아래 보강 시험).
+  const NARROW = "calc(2.75rem + 8px)";
+  const WIDE = "calc(max(30px, 1.5rem + 2px) + 8px)";
 
-  it("마운트하면(단추가 아직 없어도) 문서 루트에 단추 자리 — lg 미만 52px·lg 38px, 보였다 사라져도 그대로, 언마운트하면 지운다", () => {
+  it("마운트하면(단추가 아직 없어도) 문서 루트에 단추 자리 — lg 미만 52px·lg 38px(기본 글자 크기), 보였다 사라져도 그대로, 언마운트하면 지운다", () => {
     const { unmount } = render(<ScrollTopButton />);
     expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
-    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
-    expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("38px");
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe(NARROW);
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe(WIDE);
     scrollMain(500);
     scrollMain(0);
-    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe(NARROW);
     unmount();
     expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("");
     expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("");
@@ -104,7 +107,7 @@ describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 �
   // 가운데 큰 것) 브라우저 기본 글자 크기를 키우면 함께 자라는데(루트 글자 크기를 고정하지 않음), 단추 자리는 px 상수(52·38px)라 sm 미만에서 20px이면 3px,
   // 24px이면 14px 다시 가렸습니다(lg는 24px에서 틈 8px가 0). 단추 자리를 단추와 같은 단위의 식으로 적어 기본 16px에서는 전과 같은 52·38px이고
   // 글자 크기를 키우면 따라 자랍니다. 식이 기대는 단추 클래스도 함께 묶어 둡니다(한쪽만 바꾸면 이 시험이 막음). 수정 전(재현 커밋에서는 it.fails) '52px'였습니다.
-  it.fails("단추 자리는 단추 높이와 같은 단위 — lg 미만 calc(2.75rem + 8px)·lg calc(max(30px, 1.5rem + 2px) + 8px), 단추 클래스가 그 식의 바탕", () => {
+  it("단추 자리는 단추 높이와 같은 단위 — lg 미만 calc(2.75rem + 8px)·lg calc(max(30px, 1.5rem + 2px) + 8px), 단추 클래스가 그 식의 바탕", () => {
     render(<ScrollTopButton />);
     expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("calc(2.75rem + 8px)");
     expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("calc(max(30px, 1.5rem + 2px) + 8px)");
@@ -117,7 +120,7 @@ describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 �
     const first = render(<ScrollTopButton />);
     const second = render(<ScrollTopButton layer="z-20" />);
     first.unmount();
-    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe(NARROW);
     second.unmount();
     expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("");
   });

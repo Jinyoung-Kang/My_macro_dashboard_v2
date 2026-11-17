@@ -7,13 +7,18 @@ import { ChevronUpIcon } from "@/components/ui/icons";
 export const SCROLL_TOP_THRESHOLD = 400;
 
 /**
- * 문서 루트(html)에 적는 CSS 변수 — TOP 단추가 있는 화면에서 셸 본문(main#main)의 아래 여백에 더할 단추 자리(px). lg 미만은 앞의 것, lg 이상은 뒤의 것을
+ * 문서 루트(html)에 적는 CSS 변수 — TOP 단추가 있는 화면에서 셸 본문(main#main)의 아래 여백에 더할 단추 자리. lg 미만은 앞의 것, lg 이상은 뒤의 것을
  * 셸이 읽습니다(components/shell/Shell — Tailwind가 찾도록 거기에는 이름을 글자 그대로 적음). 단추가 없는 화면은 지워져 0px입니다.
  */
 export const SCROLL_TOP_RESERVE_VAR = "--scroll-top-reserve";
 export const SCROLL_TOP_RESERVE_LG_VAR = "--scroll-top-reserve-lg";
-/** 단추 자리 — 단추 높이 + 틈 8px. lg 미만 44px(min-h-11) + 8, lg 이상 30px(lg:min-h-[30px]) + 8. */
-export const SCROLL_TOP_RESERVE_PX = { narrow: 44 + 8, wide: 30 + 8 } as const;
+/**
+ * 단추 자리 — 단추 높이 + 틈 8px를 단추와 같은 단위로 적은 식(기본 글자 크기 16px에서 52·38px). 단추 높이는 rem이라 브라우저 기본 글자 크기를 키우면
+ * 함께 자라므로 px 상수로 적으면 다시 가립니다(QA-686 보강 — 20px이면 3px, 24px이면 14px). 아래 단추 클래스와 짝입니다(바꾸면 함께):
+ * lg 미만은 min-h-11(2.75rem)이 내용 높이(경계 2px + py-2 1rem + text-xs 줄 높이 1rem)보다 늘 커서 2.75rem, lg는 lg:min-h-[30px]와 내용 높이(경계 2px +
+ * lg:py-1 0.5rem + 줄 높이 1rem — 아이콘 14px는 줄 높이 안) 가운데 큰 것.
+ */
+export const SCROLL_TOP_RESERVE = { narrow: "calc(2.75rem + 8px)", wide: "calc(max(30px, 1.5rem + 2px) + 8px)" } as const;
 
 /** 단추 자리를 세워 둔 단추 수 — 화면이 바뀌는 사이 둘이 겹쳐 마운트돼도 마지막 하나가 떠날 때만 지웁니다. */
 let reserveHolders = 0;
@@ -58,8 +63,8 @@ export function ScrollTopButton({ layer = "z-40" }: { layer?: string } = {}) {
   useLayoutEffect(() => {
     const root = document.documentElement;
     reserveHolders += 1;
-    root.style.setProperty(SCROLL_TOP_RESERVE_VAR, `${SCROLL_TOP_RESERVE_PX.narrow}px`);
-    root.style.setProperty(SCROLL_TOP_RESERVE_LG_VAR, `${SCROLL_TOP_RESERVE_PX.wide}px`);
+    root.style.setProperty(SCROLL_TOP_RESERVE_VAR, SCROLL_TOP_RESERVE.narrow);
+    root.style.setProperty(SCROLL_TOP_RESERVE_LG_VAR, SCROLL_TOP_RESERVE.wide);
     return () => {
       reserveHolders -= 1;
       if (reserveHolders > 0) return;
