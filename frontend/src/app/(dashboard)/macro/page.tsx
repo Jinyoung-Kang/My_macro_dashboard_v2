@@ -156,7 +156,7 @@ export default function MacroPage() {
         {refreshSeconds > 0 && (
           <p className="mt-1 text-xs text-text-3">
             지표 시세는 고른 간격마다 서버가 바로 받아 밀어 줍니다(TradingView·네이버, 저장하지 않음). 출처가 지연 시세인
-            지표(선물·상하이)는 기준 칸에 그 지연을 적습니다.
+            지표(선물·상하이)는 기준 칸(좁은 화면은 지표 미리보기)에 그 지연을 적습니다.
           </p>
         )}
         {liveNotice && <p className="mt-1 text-xs text-text-3">{liveNotice}</p>}

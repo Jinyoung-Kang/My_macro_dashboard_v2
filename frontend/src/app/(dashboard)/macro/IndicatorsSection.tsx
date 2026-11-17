@@ -19,6 +19,7 @@ import {
 } from "@/components/patterns";
 import { Callout, ErrorState, LINK_CLASSES, Loading, Panel, SourceBadge, SourceLine } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useWideShell } from "@/hooks/useWideShell";
 import { type MacroIndicatorGroup, type MacroIndicatorRow, macroRowIndex } from "@/lib/macroScreen";
 import { assetValueText } from "@/lib/patternRows";
@@ -54,28 +55,58 @@ function CardWarning({ text }: { text: string }) {
   );
 }
 
+/** 좁은 화면(md 미만 — 390 등)인가 — 지표 표를 두 줄 행으로 그립니다(결정 9). 질의가 맞지 않거나 모르면(서버·matchMedia 없음) 네 칸 표. */
+const NARROW_TABLE_MEDIA = "(width < 48rem)";
+
+/**
+ * 좁은 화면 줄의 둘째 줄(이름 칸 안 — 결정 9): 변화 칩과 추정·이전 값 배지·카드 경고. 표가 이름·값 두 칸이라 가로로 넘기지 않아도 한 줄을 읽는 데
+ * 필요한 것이 모두 보입니다(추정·이전 값 배지는 늘 보임). 변화 칩 앞에는 낭독기 전용 '변화' — 변화 칸 머리가 없는 표라서.
+ * 출처·장 상태·지연·시각(넓은 화면의 기준 칸)은 이름 단추가 여는 미리보기 대화상자에 있습니다.
+ */
+function NarrowRowLine({ row }: { row: MacroIndicatorRow }) {
+  return (
+    <span data-macro-narrow-line="" className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="whitespace-nowrap">
+        <span className="sr-only">변화 </span>
+        {changeCell(row)}
+      </span>
+      <EstimateBadge estimated={row.isEstimated} />
+      <StaleBadge stale={row.isStale} reason={row.staleReason} />
+      {row.cardWarning ? <CardWarning text={row.cardWarning} /> : null}
+    </span>
+  );
+}
+
 /**
  * 지표 표의 칸 — 지표(행 머리 — 미리보기를 여는 이름 단추와 '티커 · 시장') · 값 · 변화(칩) · 기준(출처·장 상태·열린 장의 지연·시각, 예전 저장본의 알림,
  * 추정·이전 값 배지, 카드 경고). 홈 시장 표와 같은 칸이고, 이름은 지표 상세 링크 대신 미리보기 단추입니다(상세는 미리보기의 '지표 상세 열기').
+ * 좁은 화면(`narrow` — md 미만)은 지표·값 두 칸이고 이름 칸에 둘째 줄(변화 칩·추정·이전 값 배지·경고)을 둡니다 — 2026-11-17 결정 9(사용자 위임 — 권장안 가):
+ * 예전에는 332px 상자 안 640px 표라 변화 칸이 잘리고 기준 칸(배지 포함)은 가로로 넘겨야 보였습니다.
  */
-function indicatorColumns(inspector: InspectorContext): Column<MacroIndicatorRow>[] {
+function indicatorColumns(inspector: InspectorContext, narrow: boolean): Column<MacroIndicatorRow>[] {
+  const name: Column<MacroIndicatorRow> = {
+    key: "name",
+    header: "지표",
+    rowHeader: true,
+    // 이름 칸은 최소 7.5rem — 옆 미리보기와 나란한 넓은 화면(표 약 590px)에서 기준 칸이 폭을 다 가져가 'DX-Y.NYB · 외환시장'·짧은 이름까지
+    // 줄을 바꾸던 것(자기 빌드 1440 — 이름 칸 약 100px).
+    cell: (row) => (
+      <span className="flex min-w-[7.5rem] flex-col items-start">
+        <InspectorTrigger inspector={inspector} itemKey={row.id}>
+          {row.name}
+        </InspectorTrigger>
+        {row.sub ? <span className="break-keep text-xs text-text-3">{row.sub}</span> : null}
+        {narrow ? <NarrowRowLine row={row} /> : null}
+      </span>
+    ),
+  };
+  const value: Column<MacroIndicatorRow> = { key: "value", header: "값", align: "right", cell: valueCell };
+  if (narrow) {
+    return [name, value];
+  }
   return [
-    {
-      key: "name",
-      header: "지표",
-      rowHeader: true,
-      // 이름 칸은 최소 7.5rem — 옆 미리보기와 나란한 넓은 화면(표 약 590px)에서 기준 칸이 폭을 다 가져가 'DX-Y.NYB · 외환시장'·짧은 이름까지
-      // 줄을 바꾸던 것(자기 빌드 1440 — 이름 칸 약 100px).
-      cell: (row) => (
-        <span className="flex min-w-[7.5rem] flex-col items-start">
-          <InspectorTrigger inspector={inspector} itemKey={row.id}>
-            {row.name}
-          </InspectorTrigger>
-          {row.sub ? <span className="break-keep text-xs text-text-3">{row.sub}</span> : null}
-        </span>
-      ),
-    },
-    { key: "value", header: "값", align: "right", cell: valueCell },
+    name,
+    value,
     { key: "change", header: "변화", align: "right", cell: changeCell },
     {
       key: "basis",
@@ -135,8 +166,9 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
  *
  * - 검사 칸 틀은 `lg` 배치(틀 52rem부터 옆 18rem — 목차가 2xl부터 왼쪽 칸이라 메뉴 220에서 1280부터 옆 칸, 그 아래·좁은 화면은 위쪽 대화상자). 넓은 화면 처음은
  *   첫 지표를 보입니다.
- * - 표는 좁은 화면(lg 미만)에서만 최소 폭 640px + 넘김 안내(이름 칸이 44px 단추라 한 칸에 눌리지 않게). 넓은 화면은 옆 미리보기와 나란히 놓여 표 폭이
- *   532~640px이라 최소 폭을 두지 않습니다(기준 칸이 줄을 바꿈 — 넘김 없이).
+ * - 표는 md~lg(768~1023)에서만 최소 폭 640px + 넘김 안내(이름 칸이 44px 단추라 한 칸에 눌리지 않게). 넓은 화면은 옆 미리보기와 나란히 놓여 표 폭이
+ *   532~640px이라 최소 폭을 두지 않습니다(기준 칸이 줄을 바꿈 — 넘김 없이). md 미만은 지표·값 두 칸의 두 줄 행이라 최소 폭·넘김이 없습니다(결정 9 —
+ *   기준은 이름 단추가 여는 미리보기 대화상자).
  * - 범주 블록은 절 닻(SectionAnchor — 목차의 범주 칸, id macro-cat-…)입니다.
  * - 값이 오기 전에는 읽는 중, 첫 읽기가 실패하면 오류와 다시 시도, 저장본이 없으면 그 안내.
  */
@@ -156,6 +188,7 @@ export function IndicatorsSection({
   unavailableMessage: string | null;
 }) {
   const wide = useWideShell();
+  const narrow = useMediaQuery(NARROW_TABLE_MEDIA);
   const rows = groups ?? [];
   const index = macroRowIndex(rows);
   const total = rows.reduce((sum, group) => sum + group.rows.length, 0);
@@ -182,7 +215,7 @@ export function IndicatorsSection({
           defaultKey={first}
         >
           {(inspector) => {
-            const columns = indicatorColumns(inspector);
+            const columns = indicatorColumns(inspector, narrow);
             return (
               <div className="flex min-w-0 flex-col gap-5">
                 {rows.map((group) => (
@@ -198,7 +231,7 @@ export function IndicatorsSection({
                       rows={group.rows}
                       rowKey={(row) => row.id}
                       caption={`${group.title} 지표`}
-                      scrollHint={wide ? false : "overflow"}
+                      scrollHint={wide || narrow ? false : "overflow"}
                       selectedKey={inspector.shownKey}
                     />
                   </SectionAnchor>

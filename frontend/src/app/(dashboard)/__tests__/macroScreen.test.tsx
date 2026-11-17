@@ -436,6 +436,65 @@ describe("지표 표와 미리보기", () => {
     expect(within(stale).getByText("선물 조회 실패 · 지수 값").parentElement?.className).toContain("text-warn");
   });
 
+  // 2026-11-17 결정 9(사용자 위임 — 권장안 가): 좁은 화면(md 미만 — 390 등)은 지표·값 두 칸의 두 줄 행. 예전에는 332px 상자 안 640px 표라 변화 칸이
+  // 잘리고 기준 칸(추정·이전 값 배지 포함)은 가로로 넘겨야 보였습니다. md 이상은 그대로 네 칸(md~lg는 최소 640px + 넘김 안내).
+  it("좁은 화면(md 미만): 두 줄 행 — 지표·값 두 칸, 이름 칸 둘째 줄에 변화 칩·추정·이전 값 배지·경고, 최소 폭·넘김 안내 없음, 기준은 미리보기", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({ matches: query === "(width < 48rem)", media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+    );
+    render(<MacroPage />);
+
+    await screen.findByRole("heading", { level: 3, name: "미국 국채 수익률" });
+    const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
+    const tables = within(panel).getAllByRole("table");
+    for (const table of tables) {
+      expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["지표", "값"]);
+      expect(table.className.split(/\s+/)).not.toContain("min-w-[640px]");
+    }
+    expect(within(panel).queryByText("← 표를 좌우로 넘겨 보세요")).toBeNull();
+
+    // 추정·변화(하락 칩)는 이름 칸의 둘째 줄 — 같은 줄의 값 칸과 함께 가로로 넘기지 않고 보입니다.
+    const us10y = within(tables[0]).getByRole("rowheader", { name: /미국채 10년물 수익률/ });
+    const line = us10y.querySelector("[data-macro-narrow-line]") as HTMLElement;
+    expect(line.textContent).toContain("−0.012");
+    expect(within(line).getByText("하락").className).toContain("sr-only");
+    expect(within(line).getByText("변화").className).toContain("sr-only");
+    expect(within(line).getByText("추정")).toBeTruthy();
+    const row = us10y.closest("tr") as HTMLElement;
+    expect(within(row).getAllByRole("cell")).toHaveLength(1);
+    expect(within(row).getByRole("cell").textContent).toBe("4.123");
+    // 기준 칸의 출처·장 상태는 줄에 없고(넓은 화면의 기준 칸), 수집 실패 줄의 변화는 '—'(0.00%를 만들지 않음).
+    expect(row.textContent).not.toContain("TradingView Scanner");
+    const failed = within(tables[0]).getByRole("rowheader", { name: /미국채 2년물/ });
+    expect(within(failed.querySelector("[data-macro-narrow-line]") as HTMLElement).getByText("—")).toBeTruthy();
+    expect(failed.closest("tr")?.textContent).not.toContain("0.00");
+
+    // 이어받은 줄은 '이전 값'과 사유, 카드 경고는 상태 글 — 모두 둘째 줄.
+    const sp500 = within(tables[1]).getByRole("rowheader", { name: /S&P 500/ });
+    const staleLine = sp500.querySelector("[data-macro-narrow-line]") as HTMLElement;
+    expect(within(staleLine).getByText("이전 값").parentElement?.textContent).toContain("HTTP 429");
+    expect(within(staleLine).getByText("선물 조회 실패 · 지수 값").parentElement?.className).toContain("text-warn");
+
+    // 기준(출처·장 상태·지연·시각)은 이름 단추가 여는 미리보기 대화상자에 있습니다.
+    fireEvent.click(within(sp500).getByRole("button", { name: "S&P 500" }));
+    const dialog = await screen.findByRole("dialog", { name: "S&P 500" });
+    expect(within(dialog).getByText("출처").nextElementSibling?.textContent).toContain("Yahoo Finance (^GSPC)");
+    expect(within(dialog).getByText("장 상태·지연").nextElementSibling?.textContent).toBe("마감");
+  });
+
+  it("md~lg(좁은 화면도 넓은 화면도 아님)는 네 칸 표 그대로 — 최소 640px(넘기면 안내), 둘째 줄 없음", async () => {
+    render(<MacroPage />);
+
+    await screen.findByRole("heading", { level: 3, name: "미국 국채 수익률" });
+    const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
+    const tables = within(panel).getAllByRole("table");
+    expect(within(tables[0]).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["지표", "값", "변화", "기준"]);
+    expect(tables[0].className.split(/\s+/)).toContain("min-w-[640px]");
+    expect(panel.querySelector("[data-macro-narrow-line]")).toBeNull();
+  });
+
   it("좁은 화면: 이름 단추는 위쪽 대화상자로 미리보기를 연다 — 속성·지표 상세 링크, 닫으면 단추로 포커스", async () => {
     render(<MacroPage />);
 
