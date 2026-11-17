@@ -153,6 +153,28 @@ describe("COT 작업대 배치(P5a)", () => {
     expect(rowNamed(S_AND_P).getAttribute("aria-current")).toBe("true");
   });
 
+  // QA-671: 상태 글은 표 단추로 고른 자산(picked)만 따라가, 머리 '자산' 고르기로 바꾼 뒤에도 이전 자산 문장이 남았고(읽기 모드로 닿으면 틀린 자산을 읽음),
+  // 그 자산 단추를 다시 누르면 글이 같아 라이브 영역 알림이 나가지 않았습니다(QA 스택 1440·390). 고르기로 바꾸면 글을 비우고, 그 뒤 단추를 누르면 다시 알려야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 금 문장이 남았습니다("expected '아래 포지셔닝 추이 패널을 금 자산으로 바꿨습니다.' to be ''").
+  it.fails("머리 '자산' 고르기로 바꾸면 상태 글을 비우고, 그 뒤 표 단추를 누르면 다시 알린다", async () => {
+    render(<CotPage />);
+    const select = (await screen.findByLabelText("자산")) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(2));
+    await waitFor(() => expect(within(summaryTable()).getAllByRole("rowheader")).toHaveLength(2));
+    const status = screen.getAllByRole("status").find((element) => element.className.includes("sr-only"))!;
+    const GOLD = "아래 포지셔닝 추이 패널을 금 자산으로 바꿨습니다.";
+
+    fireEvent.click(within(summaryTable()).getByRole("button", { name: "금" }));
+    expect(status.textContent).toBe(GOLD);
+
+    fireEvent.change(select, { target: { value: S_AND_P } });
+    expect(screen.getByRole("heading", { name: `포지셔닝 추이 — ${S_AND_P}` })).toBeTruthy();
+    expect(status.textContent).toBe("");
+
+    fireEvent.click(within(summaryTable()).getByRole("button", { name: "금" }));
+    expect(status.textContent).toBe(GOLD);
+  });
+
   it("고른 자산 KPI 띠 넷 — 스마트머니 순포지션(−·1주 변화 칩·출처 줄과 기준일)·상업 헤저·소액/비보고·3년 백분위(%)", async () => {
     render(<CotPage />);
     const strip = await screen.findByRole("region", { name: `${S_AND_P} 포지셔닝 요약` });
