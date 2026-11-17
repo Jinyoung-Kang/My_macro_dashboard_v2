@@ -25,6 +25,13 @@ const ROWS: Indicator[] = [
   { key: "vix", name: "VIX", value: "15.30" },
 ];
 
+/** 배치 전환 시험용(QA-660) — 이름 = 키. */
+const ABC: Indicator[] = [
+  { key: "a", name: "a", value: "1.00" },
+  { key: "b", name: "b", value: "2.00" },
+  { key: "c", name: "c", value: "3.00" },
+];
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -335,6 +342,66 @@ describe("InspectorFrame — 배치가 바뀔 때", () => {
     renderFrame({ layout: "lg" });
     expect((inspectorRegion() as HTMLElement)).toBeTruthy();
     expect(trigger("VIX").getAttribute("aria-haspopup")).toBeNull();
+  });
+
+  // QA-660: 대화상자 배치에서 옆 칸 배치로 바뀔 때 열려 있는 대화상자의 키만 넘겼습니다 — Esc로 닫은 뒤(포커스는 그 줄 단추) 넓히면 앞서 고른 키나 defaultKey가
+  // 남아 포커스 링(대화상자로 본 줄)과 고른 행·검사 칸이 갈라졌습니다(P5a QA — /macro 1024 메뉴 220 '브렌트유' 대화상자 → Esc → 1440: 검사 칸은 첫 지표).
+  // 목록-검사(MasterDetail)의 QA-590 규칙과 같게, 열린 대화상자가 없으면 포커스가 있는 줄 단추의 키를 고릅니다. 수정 전(재현 커밋에서는 it.fails)에는
+  // 검사 칸 제목이 기본 키 'a'였고 콜백이 불리지 않았습니다.
+  it.fails("좁은 틀에서 대화상자로 본 줄을 Esc로 닫고(포커스는 그 단추) 넓히면 그 줄을 고른다 — 기본 키가 아니라 'c', 콜백 한 번 (QA-660)", async () => {
+    stubWide();
+    const frame = stubFrameWidth(434);
+    const onChange = vi.fn();
+    renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+    fireEvent.click(trigger("c"));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "c" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(trigger("c")));
+    frame.resize(906);
+    const region = screen.getByRole("region", { name: "지표 미리보기 — c" });
+    expect(within(region).getByRole("heading", { level: 3, name: "c" })).toBeTruthy();
+    expect(trigger("c").getAttribute("aria-current")).toBe("true");
+    expect(trigger("a").getAttribute("aria-current")).toBeNull();
+    expect(onChange.mock.calls).toEqual([["c"]]);
+  });
+
+  it("대화상자를 닫은 뒤 포커스를 틀 밖으로 옮기고 넓히면 기본 키 그대로 — 콜백 없음 (QA-660)", async () => {
+    stubWide();
+    const frame = stubFrameWidth(434);
+    const onChange = vi.fn();
+    const outside = document.createElement("button");
+    outside.textContent = "틀 밖";
+    document.body.appendChild(outside);
+    try {
+      renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+      fireEvent.click(trigger("c"));
+      fireEvent.keyDown(screen.getByRole("dialog", { name: "c" }), { key: "Escape" });
+      await waitFor(() => expect(document.activeElement).toBe(trigger("c")));
+      outside.focus();
+      frame.resize(906);
+      expect(screen.getByRole("region", { name: "지표 미리보기 — a" })).toBeTruthy();
+      expect(trigger("a").getAttribute("aria-current")).toBe("true");
+      expect(trigger("c").getAttribute("aria-current")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("옆 칸에서 고른 뒤 Esc로 풀고 줄을 건드리지 않은 채 좁혔다 넓히면 '고른 줄 없음' 그대로 — 다시 고르지 않는다 (QA-660)", () => {
+    stubWide();
+    const frame = stubFrameWidth(906);
+    const onChange = vi.fn();
+    renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+    fireEvent.click(trigger("c"));
+    fireEvent.keyDown(trigger("c"), { key: "Escape" });
+    expect(document.activeElement).toBe(trigger("c"));
+    expect(screen.getByRole("region", { name: "지표 미리보기 — 고른 줄 없음" })).toBeTruthy();
+    frame.resize(434);
+    frame.resize(906);
+    expect(screen.getByRole("region", { name: "지표 미리보기 — 고른 줄 없음" })).toBeTruthy();
+    expect(ABC.map((row) => trigger(row.name).getAttribute("aria-current"))).toEqual([null, null, null]);
+    expect(onChange.mock.calls).toEqual([["c"], [null]]);
   });
 });
 
