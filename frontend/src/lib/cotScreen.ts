@@ -2,6 +2,7 @@
  * COT 화면(/cot)의 글·KPI 규칙 — React 없이 시험합니다(ADR 0004 규칙 3).
  */
 import { EMPTY, formatNumber, formatSignedMinus } from "./format";
+import type { KpiItem } from "./kpi";
 import type { CotSummary } from "./types";
 
 /**
@@ -16,19 +17,10 @@ export function formatSignedCount(value: number | null | undefined): string {
 }
 
 /**
- * KPI 타일 하나 — components/patterns `KpiItem`과 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음 — lib/home `HomeKpi`와 같은 규칙).
+ * KPI 타일 하나 — 공용 KPI 띠의 타일 형(lib/kpi KpiItem — 정본)에 이 띠가 늘 채우는 변화 칸을 좁힌 것.
  * 값을 모르면 `value: null` 또는 "—"(화면 Empty) — 0으로 채우지 않습니다.
  */
-export type CotKpi = {
-  key: string;
-  label: string;
-  value: string | number | null;
-  format?: (value: number) => string;
-  change?: { change: number | null; digits: number; caption: string };
-  note?: string | null;
-  source?: string | null;
-  asOf?: string | null;
-};
+export type CotKpi = KpiItem & { change?: { change: number | null; digits: number; caption: string } };
 
 /**
  * 고른 자산의 포지셔닝 요약 KPI 띠 — 스마트머니(비상업) 순포지션(1주 변화 칩·기준일·출처 줄) · 상업 헤저 · 소액/비보고 · 3년 표본 백분위. 순포지션은

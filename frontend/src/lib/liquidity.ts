@@ -9,6 +9,7 @@
  * 눈금이 전부 "0.00T"였습니다. 모르는 값은 0이 아니라 null입니다.
  */
 import { formatBillionUsd, formatTrillionDelta, formatTrillionUsd, withMinusSign } from "./format";
+import type { KpiItem } from "./kpi";
 import type { LiquidityResponse, LiquidityRow } from "./types";
 
 export interface DatedValue {
@@ -32,19 +33,10 @@ export function liquidityChartSeries(rows: readonly LiquidityRow[]) {
 // ---------------------------------------------------------------- 맨 위 요약(KPI 띠)
 
 /**
- * KPI 타일 하나 — components/patterns `KpiItem`과 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음 — lib/home `HomeKpi`와 같은 규칙).
+ * KPI 타일 하나 — 공용 KPI 띠의 타일 형(lib/kpi KpiItem — 정본)에서 값을 글로, 변화 칸을 늘 채우는 꼴로 좁힌 것.
  * 값을 모르면 `value`가 "—"(화면 Empty) — 0으로 채우지 않습니다.
  */
-export type LiquidityKpi = {
-  key: string;
-  label: string;
-  value: string | null;
-  change?: { change: number | null; digits: number; unit: string; caption: string };
-  note?: string | null;
-  source?: string | null;
-  asOf?: string | null;
-  isEstimated?: boolean;
-};
+export type LiquidityKpi = KpiItem & { value: string | null; change?: { change: number | null; digits: number; unit: string; caption: string } };
 
 /** 변화 칩에 넘기는 변화량 — 그 단위(`unit`)로 옮긴 값과 소수 자릿수. */
 export type TrillionDeltaChip = { change: number; digits: number; unit: string };

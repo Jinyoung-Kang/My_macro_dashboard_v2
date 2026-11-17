@@ -8,6 +8,7 @@
 import { indicatorHref } from "./detail";
 import { EMPTY, formatDate, formatKst, formatNumber, formatWithUnit, withoutLeadingIcon } from "./format";
 import type { InfoSourcesResponse } from "./info";
+import type { KpiItem } from "./kpi";
 import { type HomeRow, macroCardRow, type MarketClock, regimeHeroModel } from "./marketRows";
 import { TABS } from "./nav";
 import { bookCard, formatDollars, isTimedBook, withParticle } from "./paper";
@@ -440,35 +441,8 @@ export function sourceIncidentsModel(response: InfoSourcesResponse | null | unde
 
 // ---------------------------------------------------------------- 맨 위 요약(KPI 띠)
 
-/**
- * KPI 타일 하나 — components/patterns `KpiItem`과 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음). 값을 모르면 `value: null`(화면 "—").
- */
-export type HomeKpi = {
-  key: string;
-  label: string;
-  value: string | number | null;
-  format?: (value: number) => string;
-  unit?: string | null;
-  valueKind?: "number" | "label";
-  neutral?: boolean;
-  change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null };
-  status?: { tone: "ok" | "warn" | "danger"; text: string };
-  note?: string | null;
-  emptyReason?: string | null;
-  pending?: boolean;
-  pendingLines?: number;
-  pendingLinesWide?: number;
-  isEstimated?: boolean;
-  isProxy?: boolean;
-  isStale?: boolean;
-  staleReason?: string | null;
-  /** 출처 줄 — 출처(참고 시세·장 상태 포함)·시각·지연·툴팁(시장 타일 — 시장 묶음 표의 출처 배지와 같은 값). */
-  source?: string | null;
-  asOf?: string | null;
-  delayMin?: number | null;
-  provenanceTitle?: string | null;
-  href?: string;
-};
+/** KPI 띠 타일 하나 — 공용 KPI 띠의 타일 형(lib/kpi KpiItem — 정본) 그대로. */
+export type HomeKpi = KpiItem;
 
 /**
  * 경로 하나를 읽은 상태 — 값과 오류, 마지막 실패 시각(useApi와 같은 칸 — lib는 hooks를 가져오지 않음). 값이 없고 실패도 없으면 읽는 중입니다

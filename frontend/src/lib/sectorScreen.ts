@@ -2,25 +2,17 @@
  * 섹터 화면(/sector)의 KPI 띠·검사 칸 규칙 — React 없이 시험합니다(ADR 0004 규칙 3).
  */
 import { formatSignedMinus } from "./format";
+import type { KpiItem } from "./kpi";
 import type { SectorResponse, SectorRow } from "./types";
 
 /** 기간 열 차례 — 응답 `periods`가 없을 때의 기본(백엔드 섹터 로테이션과 같은 여섯). */
 export const SECTOR_PERIODS = ["1W", "1M", "3M", "6M", "YTD", "1Y"] as const;
 
 /**
- * KPI 타일 하나 — components/patterns `KpiItem`과 같은 모양(lib는 components를 가져오지 않으므로 여기 따로 적음 — lib/home `HomeKpi`와 같은 규칙).
- * 값을 모르면 `value: null`(화면 "—") — 0으로 채우지 않습니다.
+ * KPI 타일 하나 — 공용 KPI 띠의 타일 형(lib/kpi KpiItem — 정본)에서 값을 숫자로, 서식을 늘 있게 좁힌 것.
+ * 값을 모르면 `value: null`(화면 "—") — 0으로 채우지 않습니다. 읽는 중이면 `pending`(값 자리에 자리표시), `pendingLines`는 값이 온 뒤의 출처 줄 자리.
  */
-export type SectorKpi = {
-  key: string;
-  label: string;
-  value: number | null;
-  format: (value: number) => string;
-  source?: string | null;
-  /** 읽는 중 — 값 자리에 자리표시(KpiStrip pending), `pendingLines`는 값이 온 뒤의 출처 줄 자리. */
-  pending?: boolean;
-  pendingLines?: number;
-};
+export type SectorKpi = KpiItem & { value: number | null; format: (value: number) => string };
 
 /** 부호 있는 수익률 글(소수 둘째 자리 + '%') — 양수 '+', 음수 −(U+2212), 0은 부호 없이. 단위를 따로 띄우지 않고 숫자에 붙입니다(변화 칩의 변화율과 같은 꼴). */
 export function signedPercentText(value: number): string {
