@@ -250,3 +250,22 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 요약 �
     expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });
+
+// QA-668: COT 저장본이 없을 때(available=false, assets 빈 목록) '자산별 요약' 머리에 '0개'를 적어, 모르는 개수를 0으로 읽게 했습니다(QA 스택, 합성 응답 —
+// 매크로 지표 패널과 같은 원인). 저장본이 있을 때만 개수를 둡니다.
+describe("QA-668 COT 저장본 없음이면 자산 개수를 0으로 적지 않는다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 '0개'가 있었습니다('expected [ <span …(1)></span> ] to deeply equal []').
+  it.fails("available=false — '자산별 요약' 머리에 'n개'가 없고, 저장본 없음 안내와 빈 표 글은 그대로", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/cot/overview")) return Promise.resolve({ available: false, assets: [] });
+      const key = Object.keys(BODIES).find((prefix) => path.startsWith(prefix));
+      return key ? Promise.resolve(BODIES[key]) : new Promise(() => {});
+    });
+    render(<CotPage />);
+
+    expect(await screen.findByText(/COT 저장본이 없습니다/)).toBeTruthy();
+    const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;
+    expect(await within(panel).findByText("표시할 자산이 없습니다.")).toBeTruthy();
+    expect(within(panel).queryAllByText(/\d개$/)).toEqual([]);
+  });
+});

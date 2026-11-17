@@ -238,3 +238,22 @@ describe("QA-649 순위 기준 열은 글로도 알린다", () => {
     expect(within(table).getByRole("columnheader", { name: "3M" })).toBeTruthy();
   });
 });
+
+// QA-668: 섹터 저장본이 없을 때(available=false, sectors·assetClasses 빈 목록) '섹터 상세 0개'·'자산군 상세 0개'라 모르는 개수를 0으로 적었습니다
+// (QA 스택, 합성 응답 — 매크로 지표 패널과 같은 원인). 저장본이 있을 때만 개수를 둡니다.
+describe("QA-668 섹터 저장본 없음이면 개수를 0으로 적지 않는다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 '0개'가 있었습니다('섹터 상세: expected [ <span …(1)></span> ] to deeply equal []').
+  it.fails("available=false — '섹터 상세'·'자산군 상세' 머리에 'n개'가 없고, 저장본 없음 안내는 그대로", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path.startsWith("/api/sector/rotation")
+        ? Promise.resolve({ ...rotation(), available: false, message: "섹터 저장본 없음", sectors: [], assetClasses: [] })
+        : new Promise(() => {}));
+    render(<SectorPage />);
+
+    expect(await screen.findByText("섹터 저장본 없음")).toBeTruthy();
+    for (const name of ["섹터 상세", "자산군 상세"]) {
+      const panel = screen.getByRole("heading", { name }).closest("section") as HTMLElement;
+      expect(within(panel).queryAllByText(/\d개$/), name).toEqual([]);
+    }
+  });
+});

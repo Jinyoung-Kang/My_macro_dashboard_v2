@@ -25,6 +25,7 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { endpoints } from "@/lib/endpoints";
+import { MACRO_SECTIONS } from "@/lib/marketSections";
 import { FxCompareSection } from "../macro/FxCompareSection";
 import MacroPage from "../macro/page";
 import { ScrapedSection } from "../macro/ScrapedSection";
@@ -237,4 +238,24 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
       expect(await within(area).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
     });
   }
+});
+
+// QA-668: 저장본이 없을 때(백엔드 MacroService.overview — available=false, categories는 빈 목록) 목차 첫 칸이 '지표 (0)'·지표 패널 머리가 '지표 0개'라,
+// 모르는 개수를 0으로 적었습니다(QA 스택 1440·390, 합성 개요 — '없는 숫자를 만들지 않는다'). 개요를 받기 전과 같이 개수 없이 두어야 하고, 저장본 없음
+// 안내는 그대로여야 합니다. 저장본이 있는데 범주가 비면(available=true) 지금처럼 '0개'입니다(위 QA-047·QA-066 시험의 응답).
+describe("QA-668 저장본 없음이면 지표 개수를 0으로 적지 않는다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 패널 머리 '0개'('expected [ <span …(1)></span> ] to deeply equal []')·목차 링크 이름 '지표 (0)'이었습니다.
+  it.fails("available=false — 목차 첫 칸 이름이 '지표'(개수 없음), 지표 패널에 'n개' 없음, 저장본 없음 안내는 그대로", async () => {
+    reads["/api/macro/overview"] = () => Promise.resolve({ available: false, readMode: "cache", categories: [], message: "저장본 없음" });
+    render(<MacroPage />);
+
+    const section = document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement;
+    expect(await within(section).findByText("저장본 없음")).toBeTruthy();
+    expect(within(section).queryAllByText(/\d개$/)).toEqual([]);
+
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    const first = within(nav).getAllByRole("link")[0];
+    expect(within(nav).getAllByRole("link", { name: "지표" })[0]).toBe(first);
+    expect(within(nav).queryAllByRole("link", { name: /^지표 \(/ })).toEqual([]);
+  });
 });
