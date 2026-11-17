@@ -634,7 +634,8 @@ describe("QA-652 목차 '지표' 칸은 개수를 읽는 동안 개수 자리를
 // 0.4322)·1280 0.4716·1440 0.456~0.462, 가장 큰 이동이 환율 비교 절(0.34~0.38). 읽는 동안 범주 다섯·줄 21개(수집기 매크로 범주 4·3·3·4·4 + 아시아 범주에
 // 붙는 비공식 시세 셋 — 자리일 뿐 보이는 수가 아님)의 표 꼴 자리(글·숫자 없는 막대)로 패널 높이를 잡아야 합니다.
 describe("QA-653 지표 패널은 개요를 처음 읽는 동안 표 꼴 자리로 높이를 잡는다", () => {
-  it.fails("읽는 중 지표 패널 — 범주 다섯·줄 21개의 글 없는 자리(읽기에서 빠짐)와 이름 있는 읽는 중 상태", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 자리 줄이 없었습니다('expected to have a length of 21 but got +0').
+  it("읽는 중 지표 패널 — 범주 다섯·줄 21개의 글 없는 자리(읽기에서 빠짐)와 이름 있는 읽는 중 상태", () => {
     render(<MacroPage />);
     const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
     const rows = panel.querySelectorAll("[data-macro-pending-row]");
@@ -643,5 +644,21 @@ describe("QA-653 지표 패널은 개요를 처음 읽는 동안 표 꼴 자리�
     expect(panel.querySelectorAll("[data-macro-pending-block]")).toHaveLength(5);
     expect(rows[0].closest("[aria-hidden='true']")).not.toBeNull();
     expect(panel.textContent).not.toMatch(/\d/);
+  });
+
+  it("자리 줄은 공용 표 줄과 같은 여백·구분선(마지막 줄은 선 없음)에 이름 칸(이름 단추 줄 좁은 화면 44px·넓은 화면 24px, '티커 · 시장' 16px, 좁은 화면 둘째 줄)·값 칸 막대", () => {
+    render(<MacroPage />);
+    const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
+    const blocks = Array.from(panel.querySelectorAll("[data-macro-pending-block]"));
+    expect(blocks.map((block) => block.querySelectorAll("[data-macro-pending-row]").length)).toEqual([4, 3, 3, 4, 7]);
+    const rows = Array.from(blocks[0].querySelectorAll("[data-macro-pending-row]"));
+    const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    expect(classes(rows[0])).toEqual(expect.arrayContaining(["px-3", "py-3", "lg:pt-1.5", "lg:pb-[5px]", "border-b", "border-border-subtle"]));
+    expect(classes(rows[3])).toEqual(expect.arrayContaining(["py-3", "lg:py-1.5"]));
+    expect(classes(rows[3])).not.toContain("border-b");
+    const [nameLine, subLine, narrowLine] = Array.from(rows[0].firstElementChild?.children ?? []);
+    expect(classes(nameLine)).toEqual(expect.arrayContaining(["h-11", "lg:h-6"]));
+    expect(classes(subLine)).toContain("h-4");
+    expect(classes(narrowLine)).toEqual(expect.arrayContaining(["mt-1", "h-5", "md:hidden"]));
   });
 });

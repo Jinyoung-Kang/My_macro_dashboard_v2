@@ -318,8 +318,15 @@ export function macroRowIndex(groups: readonly MacroIndicatorGroup[]): ReadonlyM
 
 // ---------------------------------------------------------------- 목차
 
-/** 개요를 읽는 동안 목차에 잡아 두는 범주 하위 칸 자리 수 — 수집기 매크로 범주(collector/app/indicators.py MACRO_CATEGORIES) 다섯과 같게(자리일 뿐 보이는 수가 아님). */
-export const MACRO_PENDING_CATEGORIES = 5;
+/**
+ * 개요를 처음 읽는 동안 지표 패널에 잡아 두는 범주별 표 줄 자리 수(QA-653) — 수집기 매크로 범주(collector/app/indicators.py MACRO_CATEGORIES — 환율 4·국채 3·
+ * 원자재 3·미국 주가 4·아시아 주가 4)에 아시아 범주로 붙는 비공식 시세 셋(SCRAPED_INJECT_CATEGORY)을 더한 것. 자리일 뿐 보이는 수가 아닙니다 — 수집기의 카드가
+ * 바뀌어도 화면은 그대로 맞고, 자리 높이만 그만큼 다릅니다.
+ */
+export const MACRO_PENDING_ROWS: readonly number[] = [4, 3, 3, 4, 7];
+
+/** 개요를 읽는 동안 목차에 잡아 두는 범주 하위 칸 자리 수 — 수집기 매크로 범주 다섯(위 MACRO_PENDING_ROWS의 범주 수, 자리일 뿐 보이는 수가 아님). */
+export const MACRO_PENDING_CATEGORIES = MACRO_PENDING_ROWS.length;
 
 /**
  * 매크로 화면 목차 — 지표(개수 = 카드 수, 하위 = 범주) · 환율 비교 · 장단기 금리차 · 신용·변동성 · 심화 지표 · 단독 차트 · 비공식 시세 · 경제 캘린더(운영자만).

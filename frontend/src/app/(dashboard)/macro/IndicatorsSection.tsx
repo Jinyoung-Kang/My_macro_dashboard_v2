@@ -17,11 +17,11 @@ import {
   SectionAnchor,
   StaleBadge,
 } from "@/components/patterns";
-import { Callout, ErrorState, LINK_CLASSES, Loading, Panel, SourceBadge, SourceLine } from "@/components/ui";
+import { Callout, ErrorState, LINK_CLASSES, Panel, SourceBadge, SourceLine } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useWideShell } from "@/hooks/useWideShell";
-import { type MacroIndicatorGroup, type MacroIndicatorRow, macroRowIndex } from "@/lib/macroScreen";
+import { MACRO_PENDING_ROWS, type MacroIndicatorGroup, type MacroIndicatorRow, macroRowIndex } from "@/lib/macroScreen";
 import { assetValueText } from "@/lib/patternRows";
 
 /** 값 칸 — 수집기 priceStr('N/A'면 '—'), 수집 실패는 '—'와 사유. */
@@ -161,6 +161,64 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
   );
 }
 
+/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
+const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+
+/**
+ * 개요를 처음 읽는 동안의 지표 패널 — 범주 블록(MACRO_PENDING_ROWS — 범주 다섯·줄 21개, 자리일 뿐 보이는 수가 아님)마다 범주 머리(제목·출처 줄)·표 머리 줄·
+ * 줄 자리를 값이 온 뒤의 표와 같은 꼴로 그립니다(QA-653). 줄 자리는 공용 표 줄과 같은 여백·구분선에 이름 칸(이름 단추 줄 — 좁은 화면 44px·넓은 화면 24px,
+ * '티커 · 시장' 줄, 좁은 화면 두 줄 행의 둘째 줄)과 값 칸 막대라, 줄 높이가 좁은 화면 109px·md 85px·lg 이상 52px로 값이 온 뒤 기준 칸이 한 줄인 줄과
+ * 같습니다(기준 칸이 꺾이거나 배지 줄이 있는 줄·옆 미리보기 배치에서는 값이 온 뒤가 더 깁니다). 예전에는 '불러오는 중' 한 줄(패널 147px)이라 값이 오면
+ * 아래 절(환율 비교 — 1024에서 화면 안)이 화면 밖으로 밀렸습니다(첫 적재 CLS 1024 약 0.5). 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
+ */
+function IndicatorsPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="매크로 지표를 불러오는 중" className="flex min-w-0 flex-col gap-5">
+      <span className="sr-only">매크로 지표를 불러오는 중</span>
+      {MACRO_PENDING_ROWS.map((rows, block) => (
+        <div key={block} aria-hidden="true" data-macro-pending-block="" className="min-w-0">
+          {/* 범주 머리 — 제목(14/20)·출처 줄(위 4px + 12/16) */}
+          <div className="mb-2">
+            <span className="flex h-5 items-center">
+              <span className={`h-3.5 w-36 ${BAR}`} />
+            </span>
+            <span className="mt-1 flex h-4 items-center">
+              <span className={`h-3 w-48 max-w-full ${BAR}`} />
+            </span>
+          </div>
+          {/* 표 머리 줄(32px — 아래 선) */}
+          <div className="flex h-8 items-center justify-between border-b border-border px-3">
+            <span className={`h-3 w-10 ${BAR}`} />
+            <span className={`h-3 w-8 ${BAR}`} />
+          </div>
+          {Array.from({ length: rows }, (_, row) => (
+            <div
+              key={row}
+              data-macro-pending-row=""
+              className={`flex items-start justify-between gap-3 px-3 ${row < rows - 1 ? "border-b border-border-subtle py-3 lg:pt-1.5 lg:pb-[5px]" : "py-3 lg:py-1.5"}`}
+            >
+              <span className="flex min-w-[7.5rem] flex-col">
+                <span className="flex h-11 items-center lg:h-6">
+                  <span className={`h-3.5 w-36 ${BAR}`} />
+                </span>
+                <span className="flex h-4 items-center">
+                  <span className={`h-3 w-24 ${BAR}`} />
+                </span>
+                <span className="mt-1 flex h-5 items-center md:hidden">
+                  <span className={`h-3.5 w-28 ${BAR}`} />
+                </span>
+              </span>
+              <span className="flex h-11 shrink-0 items-center lg:h-6">
+                <span className={`h-3.5 w-16 ${BAR}`} />
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * 지표 패널 — 범주마다 작은 제목(h3)·지연 요약 부제·출처 줄과 공용 표, 고른 지표의 미리보기 검사 칸(작업대 실행 명세 §7 3행 '목록-검사').
  *
@@ -170,7 +228,7 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
  *   532~640px이라 최소 폭을 두지 않습니다(기준 칸이 줄을 바꿈 — 넘김 없이). md 미만은 지표·값 두 칸의 두 줄 행이라 최소 폭·넘김이 없습니다(결정 9 —
  *   기준은 이름 단추가 여는 미리보기 대화상자).
  * - 범주 블록은 절 닻(SectionAnchor — 목차의 범주 칸, id macro-cat-…)입니다.
- * - 값이 오기 전에는 읽는 중, 첫 읽기가 실패하면 오류와 다시 시도, 저장본이 없으면 그 안내.
+ * - 값이 오기 전에는 표 꼴 자리(IndicatorsPending — QA-653), 첫 읽기가 실패하면 오류와 다시 시도, 저장본이 없으면 그 안내.
  */
 export function IndicatorsSection({
   groups,
@@ -196,7 +254,7 @@ export function IndicatorsSection({
 
   return (
     <Panel title="지표" count={groups === null ? undefined : `${total.toLocaleString("ko-KR")}개`}>
-      {loading && groups === null && <Loading label="매크로 지표를 불러오는 중…" />}
+      {loading && groups === null && <IndicatorsPending />}
       {error && <ErrorState message={error} onRetry={onRetry} />}
       {unavailableMessage !== null && (
         <div className="mb-3">
