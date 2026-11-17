@@ -420,3 +420,22 @@ describe("QA-642 검사 칸 안에서 Esc로 고름을 풀면 포커스가 고�
     expect(document.activeElement).toBe(trigger("달러 인덱스"));
   });
 });
+
+// QA-657: 옆 검사 칸은 스크롤 영역 위쪽 16px(top-4)에 붙었는데, 같은 스크롤 상자 맨 위에 긴 화면 목차의 가로 줄(SectionIndex — 31px, z-20, 불투명)이
+// 붙는 폭(/macro 1024 레일·1280~1535)에서는 검사 칸 위 15px(위 테두리·안쪽 여백)이 줄 밑에 가려졌습니다(P5a QA — 검사 칸 위 끝 64px, 줄 48~79px).
+// 이제 검사 칸은 목차가 문서 루트에 적는 잰 줄 높이(--section-strip-h, 없으면 0) 아래 16px에 붙습니다. 수정 전(재현 커밋에서는 it.fails)에는 top-4였습니다.
+// jsdom은 크기 질의·sticky를 계산하지 않아 클래스로 봅니다(브라우저 값은 진행 기록).
+describe("QA-657 옆 검사 칸은 목차 가로 줄 아래 16px에 붙는다", () => {
+  it.fails("md·lg 배치 모두 sticky top이 calc(var(--section-strip-h,0px)+1rem) — top-4가 아니다", () => {
+    stubWide();
+    const md = renderFrame();
+    const mdTokens = tokens(inspectorRegion() as HTMLElement);
+    expect(mdTokens).toEqual(expect.arrayContaining(["@lg:sticky", "@lg:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
+    expect(mdTokens).not.toContain("@lg:top-4");
+    md.unmount();
+    renderFrame({ layout: "lg" });
+    const lgTokens = tokens(inspectorRegion() as HTMLElement);
+    expect(lgTokens).toEqual(expect.arrayContaining(["@min-[52rem]:sticky", "@min-[52rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
+    expect(lgTokens).not.toContain("@min-[52rem]:top-4");
+  });
+});
