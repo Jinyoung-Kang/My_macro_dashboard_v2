@@ -122,9 +122,9 @@
   `components/patterns/__tests__/MasterDetail.test.tsx`·`lib/__tests__/shortcuts.test.ts`·`components/shell/__tests__/ShortcutHelp.test.tsx`.
 - 목차 `components/patterns/SectionIndex.tsx` — 화면 패턴(긴 화면 목차 `SectionIndex`와 절 닻 `SectionAnchor` — `columnFrom`(lg·xl) 이상은 왼쪽 13rem 세로 목록(하위 칸
   들여씀, 스크롤 영역 위쪽에 붙음), 그 아래는 본문 위에 붙는 가로 줄(첫 단계 칸만, 밑줄 탭 모양 — 좁은 화면 44px), 이름 있는 내비 하나·칸은 같은 화면 절 링크·
-  지금 칸 aria-current="location", 개수는 숫자일 때만). 지금 절은 화면 층 훅 `hooks/useSectionSpy`(IntersectionObserver — 뷰포트 위 34% 띠)와 순수 규칙
+  지금 칸 aria-current="location", 개수는 숫자일 때만). 지금 절은 화면 층 훅 `hooks/useSectionSpy`(IntersectionObserver — 뷰포트 위 96px 아래부터 위 34%까지의 띠, QA-626)와 순수 규칙
   `lib/sectionIndex`(하위 칸이 부모보다 앞인 고르는 차례)가 정합니다. 내비라 지금 칸 막대·밑줄에 강조 파랑을 써서 데이터 칸 강조색 금지 목록에는 넣지 않습니다.
-  처음 쓰는 곳은 매크로(P5a — 절 주소의 정본은 `lib/marketSections`), P6 프레임·설정, P7 저장소 상태. 지키는 시험은
+  처음 쓰는 곳은 매크로(P5a — 절 주소의 정본은 `lib/marketSections`, 다른 화면이 잇는 링크는 절 조각 없는 화면 경로 — QA-641), P6 프레임·설정, P7 저장소 상태. 지키는 시험은
   `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`.
 - 검사 칸 틀 `components/patterns/InspectorFrame.tsx` — 화면 패턴(줄 안에 조작이 있는 표·목록 + 고른 줄의 옆 검사 칸 또는 공용 `Dialog`(위쪽 고정) — 배치 md(틀 32rem부터 옆 15rem)·
   lg(52rem부터 옆 18rem)·dialog(늘 대화상자), 줄 단추 `InspectorTrigger`(중립 잉크·좁은 화면 44px), 표에는 `shownKey`를 고른 행으로 넘김, 기본 키(`defaultKey` — 콜백 없음)·
