@@ -7,6 +7,13 @@ import { useId, useState, type JSX, type ReactNode } from "react";
 import { ENTITY_FRAME, ENTITY_FRAME_LEFT, FOCUS_RING } from "@/components/ui/classes";
 import { ChevronDownIcon } from "@/components/ui/icons";
 
+/**
+ * 왼쪽 칸이 넓은 칸 틀(`leftWidth="wide"`) — ENTITY_FRAME과 같은 꼴에 왼쪽 칸만 15rem(기본 13rem). 왼쪽 칸에 고르기 상자를 쌓는 화면(상관관계 — 계열 이름
+ * 가장 긴 것 152px이 13rem 칸의 고르기 안쪽 130px에서 잘렸음)이 씁니다. 정보 검색 틀(ENTITY_FRAME)은 그대로입니다. Tailwind가 글로 찾으므로 통째로 적습니다.
+ */
+const WIDE_LEFT_FRAME =
+  "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:grid-cols-[15rem_minmax(0,1fr)_18rem] xl:grid-rows-none";
+
 /** 칸 하나 — 안의 패널을 위에서 아래로 12px(lg 16px) 사이로 쌓습니다(명세 §3-7 패널 사이 8~12px — 칸 틀의 칸 사이와 같은 값). */
 const COLUMN = "flex min-w-0 flex-col gap-3 lg:gap-4";
 
@@ -29,24 +36,28 @@ const TOGGLE = `flex min-h-11 w-full min-w-0 items-center justify-between gap-2 
  *   '{이름} 접기', aria-expanded·aria-controls)를 둡니다. 휴대폰 첫 화면에 속성 대신 가운데 탭·차트가 오게 하려는 것이고, 차례는 그대로입니다(단추 →
  *   왼쪽 칸 → 가운데 → 오른쪽 — DOM·Tab·읽기 차례가 보이는 차례와 같음). 접은 칸은 display:none일 뿐 마운트된 채라 요청 시점·횟수가 같습니다.
  *   lg 이상은 상태와 상관없이 늘 칸을 보이고 단추를 숨깁니다(넓은 화면 겉모습·정보 검색 틀 그대로). 주지 않으면 지금처럼 세 칸만.
+ * - `leftWidth`(선택, 기본 "default" — 13rem): "wide"면 왼쪽 칸 15rem(WIDE_LEFT_FRAME — 왼쪽에 고르기 상자를 쌓는 화면). 주지 않으면 그대로입니다.
  */
 export function SplitPane({
   left,
   children,
   right,
   collapseLeft,
+  leftWidth = "default",
 }: {
   left: ReactNode;
   children: ReactNode;
   right: ReactNode;
   /** lg 미만에서 왼쪽 칸을 접는 단추의 대상 이름(예 '핵심 지표·회사 개요') — 단추 글은 '{이름} 펼치기'·'{이름} 접기'. */
   collapseLeft?: string;
+  /** 왼쪽 칸 폭 — 기본 13rem, "wide"는 15rem. */
+  leftWidth?: "default" | "wide";
 }): JSX.Element {
   const leftId = useId();
   const [open, setOpen] = useState(false);
   const collapsed = Boolean(collapseLeft) && !open;
   return (
-    <div className={`${COLUMN} ${ENTITY_FRAME}`}>
+    <div className={`${COLUMN} ${leftWidth === "wide" ? WIDE_LEFT_FRAME : ENTITY_FRAME}`}>
       {collapseLeft ? (
         <button type="button" aria-expanded={open} aria-controls={leftId} onClick={() => setOpen((value) => !value)} className={TOGGLE}>
           <span className="min-w-0 break-keep wrap-anywhere">

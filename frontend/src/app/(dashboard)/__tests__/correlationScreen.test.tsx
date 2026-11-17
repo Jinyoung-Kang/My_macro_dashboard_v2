@@ -108,6 +108,18 @@ describe("상관 화면의 칸 틀", () => {
     }
   });
 
+  it("계열 고르기는 묶음을 optgroup으로 빼 고른 값의 글이 이름만 — 왼쪽 칸은 15rem(가장 긴 이름이 고르기 안에서 잘리지 않게)", async () => {
+    reads[SERIES] = CATALOG;
+    reads[CORRELATION] = correlation();
+    const { container } = render(<CorrelationPage />);
+    await screen.findByRole("region", { name: "상관 요약" });
+    const x = screen.getByRole("combobox", { name: "지표 X" }) as HTMLSelectElement;
+    expect(x.querySelectorAll("optgroup").length).toBeGreaterThan(0);
+    expect(x.options[x.selectedIndex].text).not.toContain(" · ");
+    expect(x.options[x.selectedIndex].parentElement?.tagName).toBe("OPTGROUP");
+    expect((container.querySelector(".lg\\:grid-cols-\\[15rem_minmax\\(0\\,1fr\\)\\]") as HTMLElement | null)).not.toBeNull();
+  });
+
   it("KPI 띠 둘 — 상관계수(소수 셋째, 음수 −, 세기 글)·표본 수(개, 보조 글 계산 기간)", async () => {
     reads[CORRELATION] = correlation();
     render(<CorrelationPage />);

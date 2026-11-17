@@ -65,9 +65,12 @@ export default function CorrelationPage() {
   );
 
   const series = catalog.data?.series ?? [];
+  // 계열 고르기의 선택지 — 묶음(금리·신용 등)은 optgroup으로 빼 고른 값의 글이 이름만 남습니다(예전 '연준 순유동성 · 유동성'은 왼쪽 칸 고르기에서
+  // 잘렸음 — P5a 검토). 묶음은 고른 쌍 속성의 '묶음' 줄에도 있습니다.
   const options = series.map((entry) => ({
     value: entry.id,
-    label: `${entry.label} · ${entry.group}`,
+    label: entry.label,
+    group: entry.group,
   }));
   // 고른 쌍 — 상관 응답의 계열 설명(추정 여부·추정 출처 포함)이 먼저이고, 응답이 없거나 계산하지 못했으면 계열 목록의 정의를 씁니다.
   const xRef = data?.x ?? series.find((entry) => entry.id === x) ?? null;
@@ -107,10 +110,12 @@ export default function CorrelationPage() {
       <PageHeader title="지표 상관관계" description="이미 수집한 지표끼리 엮어 봅니다 · 롤링 상관계수 + 산점도 · 상관은 인과가 아닙니다" />
 
       <SplitPane
+        // 왼쪽 칸 15rem — 계열 이름 가장 긴 것(152px)이 고르기 안쪽(13rem 칸 130px)에서 잘리지 않게(15rem 칸 162px).
+        leftWidth="wide"
         left={
           // 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음).
           <Panel title="비교할 지표" actions={<Freshness refreshError={refreshError} />}>
-            {/* 왼쪽 칸(lg 이상 13rem)에서는 한 줄에 하나, 좁은 칸 틀(sm~lg)에서는 두 줄씩. */}
+            {/* 왼쪽 칸(lg 이상 15rem)에서는 한 줄에 하나, 좁은 칸 틀(sm~lg)에서는 두 줄씩. */}
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
               <Select label="지표 X" value={x} onChange={setX} options={options} />
               <Select label="지표 Y" value={y} onChange={setY} options={options} />

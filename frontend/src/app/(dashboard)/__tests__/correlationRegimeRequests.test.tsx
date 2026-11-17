@@ -88,7 +88,8 @@ describe("상관 화면의 요청", () => {
       ],
     };
     render(<CorrelationPage />);
-    await screen.findAllByRole("option", { name: "NFCI · 금융 여건" });
+    // 계열 선택지는 이름만(묶음은 optgroup — 고른 값 글이 왼쪽 칸에서 잘리지 않게).
+    await screen.findAllByRole("option", { name: "NFCI" });
 
     fireEvent.change(screen.getByLabelText("지표 X"), { target: { value: "fred:NFCI" } });
 

@@ -446,8 +446,11 @@ export function Select({
    *
    * 아예 빼지 않는 이유 — 원래 있던 선택지가 소리 없이 사라지면 "내 화면이
    * 이상한가?"가 됩니다. 남겨 두고 왜 못 고르는지 라벨에 적는 편이 낫습니다.
+   *
+   * group(선택)을 준 항목은 그 이름의 묶음(optgroup)으로 모읍니다 — 묶음은 처음 나온 차례, 묶음 안은 받은 차례, 묶음 없는 항목은 맨 앞.
+   * 고른 값의 글이 묶음 이름 없이 짧아져 좁은 칸에서도 잘리지 않습니다(상관 화면의 계열 고르기). 아무 항목에도 주지 않으면 예전과 같습니다.
    */
-  options: { value: string; label: string; disabled?: boolean }[];
+  options: { value: string; label: string; disabled?: boolean; group?: string }[];
 }) {
   /*
     주의: 폭을 반드시 묶어 둡니다.
@@ -466,14 +469,41 @@ export function Select({
         onChange={(event) => onChange(event.target.value)}
         wrapperClassName="block w-full sm:max-w-[22rem]"
       >
-        {options.map((option) => (
-          <option key={option.value} value={option.value} disabled={option.disabled}>
-            {option.label}
-          </option>
-        ))}
+        {selectOptionGroups(options).map(({ group, items }) =>
+          group === null ? (
+            items.map((option) => (
+              <option key={option.value} value={option.value} disabled={option.disabled}>
+                {option.label}
+              </option>
+            ))
+          ) : (
+            <optgroup key={`group:${group}`} label={group}>
+              {items.map((option) => (
+                <option key={option.value} value={option.value} disabled={option.disabled}>
+                  {option.label}
+                </option>
+              ))}
+            </optgroup>
+          ),
+        )}
       </NativeSelect>
     </label>
   );
+}
+
+/** Select 선택지를 묶음(optgroup)으로 — 묶음 없는 항목(null)이 맨 앞, 묶음은 처음 나온 차례. 아무 항목에도 묶음이 없으면 묶음 없는 한 덩어리. */
+function selectOptionGroups<T extends { group?: string }>(options: readonly T[]): { group: string | null; items: T[] }[] {
+  const plain: T[] = [];
+  const grouped = new Map<string, T[]>();
+  for (const option of options) {
+    const group = option.group?.trim();
+    if (!group) {
+      plain.push(option);
+    } else {
+      grouped.set(group, [...(grouped.get(group) ?? []), option]);
+    }
+  }
+  return [...(plain.length > 0 ? [{ group: null, items: plain }] : []), ...[...grouped].map(([group, items]) => ({ group, items }))];
 }
 
 /**
