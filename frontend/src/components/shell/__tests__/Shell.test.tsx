@@ -170,11 +170,11 @@ describe("계정 영역(넓은 화면 상단바의 계정 메뉴 — 옛 사이�
 });
 
 describe("탭 — 모의매매(미국)는 운영자만", () => {
-  it("운영자에게는 왼쪽 내비가 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기, 하단 탭은 정보 수집 없이 여섯 칸(더보기에서 엶)", () => {
+  it("운영자에게는 왼쪽 내비와 하단 탭 모두 홈·시장·기관·모의매매·정보 검색·더보기 여섯 칸 — 정보 수집은 더보기 안 묶음(2026-11-18)", () => {
     renderShell(LOCAL_OWNER);
 
-    expect(tabLinkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
-    expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("href")).toBe("/info/overview");
+    expect(tabLinkLabels(mainNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "더보기"]);
+    expect(within(mainNav()).queryByRole("link", { name: "정보 수집" })).toBeNull();
     expect(within(mainNav()).getByRole("link", { name: "정보 검색" }).getAttribute("href")).toBe("/search");
     expect(linkLabels(bottomNav())).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "더보기"]);
     for (const scope of [mainNav(), bottomNav()]) {
@@ -259,12 +259,13 @@ describe("하위 메뉴 줄(좁은 화면)", () => {
     expect(within(sub).queryByText(/준비 중/)).toBeNull();
   });
 
-  it("정보 수집(운영자)의 하위 메뉴 줄은 여덟 분류 탭, 지금 탭이 aria-current=page", () => {
+  it("정보 수집(운영자)의 하위 메뉴 줄은 '정보 수집' 묶음 여덟 분류 탭, 지금 탭이 aria-current=page — 두 내비의 '더보기'가 aria-current=true", () => {
     renderShell(LOCAL_OWNER, { path: "/info/kr" });
     const sub = screen.getByRole("navigation", { name: "정보 수집 하위 메뉴" });
     expect(linkLabels(sub)).toEqual(["개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)"]);
     expect(within(sub).getByRole("link", { name: "국내 시장·수급" }).getAttribute("aria-current")).toBe("page");
-    expect(within(mainNav()).getByRole("link", { name: "정보 수집" }).getAttribute("aria-current")).toBe("true");
+    expect(within(mainNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
+    expect(within(bottomNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
   });
 
   it("한국 화면 탭 주소(/paper/kr/settings)에서는 '한국'이 고른 표시 — aria-current true", () => {

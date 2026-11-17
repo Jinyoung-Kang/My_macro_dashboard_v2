@@ -1,6 +1,7 @@
 /**
  * 더보기 화면(/more) — 좁은 화면에서 계정·읽기 모드·새로고침·빌드 정보를 쓰는 곳(테마 전환은 없음 — ADR 0042 결정 2). 하위 화면 행은 운영자 전용·유료 잠금·데모 규칙을 따른다.
- * 옛 한국 탭의 두 화면은 '한국 시장' 묶음으로 따로(ADR 0041 결정 1) — '메뉴' 묶음(정보 수집이 맨 위) 다음.
+ * 옛 한국 탭의 두 화면은 '한국 시장' 묶음으로 따로(ADR 0041 결정 1) — '메뉴' 묶음 다음. 정보 수집 여덟 화면은 그다음 '정보 수집' 묶음(운영자에게만 —
+ * 2026-11-18 사용자 요청으로 맨 위 단계 탭에서 옮김, 그 전에는 '메뉴' 맨 위 행 하나).
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +37,10 @@ const rows = (name = "메뉴") => {
 };
 
 const KR_ROWS = [["수급 레이더", "/radar"], ["파생·투기세력(KRX)", "/krx"]];
+const INFO_ROWS = [
+  ["개요", "/info/overview"], ["뉴스·글", "/info/news"], ["국내 시장·수급", "/info/kr"], ["해외 시장·거시", "/info/global"],
+  ["기관·공시", "/info/filings"], ["모의매매 입력", "/info/paper"], ["출처 상태", "/info/status"], ["정보(메커니즘)", "/info/mechanism"],
+];
 
 beforeEach(() => router.push.mockReset());
 afterEach(() => {
@@ -78,11 +83,34 @@ describe("더보기 화면", () => {
   it("행마다 왼쪽 원 안 아이콘은 장식(aria-hidden) — 링크 이름은 화면 이름 그대로", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
     const links = within(screen.getByRole("region", { name: "메뉴" })).getAllByRole("link");
-    expect(links).toHaveLength(7);
+    expect(links).toHaveLength(6);
     for (const link of links) {
       expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
     }
     expect(screen.getByRole("link", { name: "데이터 저장소 상태" }).getAttribute("href")).toBe("/status");
+  });
+
+  // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 더보기 안의 묶음으로 — 한국 시장 묶음과 같은 꼴(제목 아래 화면마다 행).
+  it("운영자: '한국 시장' 다음 '정보 수집' 묶음 — 여덟 분류 행(주소 /info/<분류> 그대로), 원 안 아이콘", () => {
+    renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
+    expect(rows("정보 수집")).toEqual(INFO_ROWS);
+    const sections = screen.getAllByRole("region").map((section) => section.getAttribute("aria-labelledby"));
+    expect(sections.slice(0, 3)).toEqual(["more-menus", "more-kr", "more-info"]);
+    for (const link of within(screen.getByRole("region", { name: "정보 수집" })).getAllByRole("link")) {
+      expect(link.querySelector("span[aria-hidden='true'].rounded-full svg")).toBeTruthy();
+    }
+  });
+
+  it("회원·데모에게는 '정보 수집' 묶음이 없고 /info 링크도 없다(운영자 전용)", () => {
+    for (const user of [
+      { email: "member@test.local", role: "MEMBER", tier: "PRO" },
+      { email: null, role: "MEMBER", tier: "PRO", demo: true },
+    ] as SessionUser[]) {
+      renderMore(user);
+      expect(screen.queryByRole("region", { name: "정보 수집" })).toBeNull();
+      expect(document.querySelector('a[href^="/info"]')).toBeNull();
+      cleanup();
+    }
   });
 
   it("무료 회원에게는 AI 종합 분석에 잠금 아이콘", () => {
@@ -91,10 +119,10 @@ describe("더보기 화면", () => {
     expect(within(ai).getByRole("img", { name: "유료 등급 기능" })).toBeTruthy();
   });
 
-  it("로컬 운영자: 맨 위 정보 수집(좁은 화면의 아래쪽 탭 바에 없음)과 운영자 화면까지 일곱 행, 로그아웃 대신 '로컬 · 로그인 없음', 수동 새로고침", () => {
+  it("로컬 운영자: '메뉴'는 운영자 화면까지 여섯 행(정보 수집 행 없음), 로그아웃 대신 '로컬 · 로그인 없음', 수동 새로고침", () => {
     renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
 
-    expect(rows().map(([, href]) => href)).toEqual(["/info/overview", "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account"]);
+    expect(rows().map(([, href]) => href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account"]);
     expect(screen.queryByRole("button", { name: "로그아웃" })).toBeNull();
     expect(within(screen.getByRole("region", { name: "계정" })).getByRole("link").textContent).toContain("로컬 · 로그인 없음");
     expect(screen.getByRole("button", { name: "데이터 수동 새로고침" })).toBeTruthy();

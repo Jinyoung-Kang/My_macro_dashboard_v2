@@ -87,9 +87,30 @@ describe("펼친 하위 화면", () => {
   it("탭 링크에만 data-nav-tab — 탭 이름 순서 그대로(펼친 하위 칸은 빠짐)", () => {
     render(<SideNav pathname="/info/kr" user={OWNER} />);
     expect([...mainNav().querySelectorAll("a[data-nav-tab]")].map((link) => link.textContent)).toEqual([
-      "홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기",
+      "홈", "시장", "기관", "모의매매", "정보 검색", "더보기",
     ]);
-    expect(labels(within(mainNav()).getByRole("list", { name: "정보 수집 화면" }))).toHaveLength(8);
+    expect(labels(within(mainNav()).getByRole("list", { name: "정보 수집" }))).toHaveLength(8);
+  });
+
+  // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 더보기 안의 묶음으로(한국 시장과 같은 방식).
+  it("정보 수집(/info/kr, 운영자): 맨 위 단계 탭이 아니고 더보기를 펼친 '정보 수집' 글 머리 아래 여덟 화면 — '한국 시장' 다음, 지금 칸 aria-current=page", () => {
+    render(<SideNav pathname="/info/kr" user={OWNER} />);
+    expect(within(mainNav()).queryByRole("link", { name: "정보 수집" })).toBeNull();
+    expect(within(mainNav()).getByRole("link", { name: "더보기" }).getAttribute("aria-current")).toBe("true");
+    const screens = within(mainNav()).getByRole("list", { name: "더보기 화면" });
+    const headings = [...screens.querySelectorAll("li > span[id]")].map((heading) => heading.textContent);
+    expect(headings).toEqual(["한국 시장", "정보 수집"]);
+    const info = within(screens).getByRole("list", { name: "정보 수집" });
+    expect(labels(info)).toEqual(["개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)"]);
+    expect(within(info).getByRole("link", { name: "국내 시장·수급" }).getAttribute("aria-current")).toBe("page");
+    expect(within(info).getByRole("link", { name: "개요" }).getAttribute("href")).toBe("/info/overview");
+  });
+
+  it("회원에게는 더보기를 펼쳐도 '정보 수집' 묶음이 없다(운영자 전용)", () => {
+    render(<SideNav pathname="/alerts" user={MEMBER} />);
+    const screens = within(mainNav()).getByRole("list", { name: "더보기 화면" });
+    expect(within(screens).queryByRole("list", { name: "정보 수집" })).toBeNull();
+    expect(within(mainNav()).queryAllByRole("link").some((link) => (link.getAttribute("href") ?? "").startsWith("/info"))).toBe(false);
   });
 });
 

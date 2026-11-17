@@ -33,7 +33,6 @@ describe("메뉴 화면", () => {
       { label: "순유동성", href: "/liquidity" },
     ]);
     expect(labels(breadcrumbs("/institutions", MEMBER))).toEqual(["기관", "13F 포트폴리오"]);
-    expect(labels(breadcrumbs("/info/kr", OWNER))).toEqual(["정보 수집", "국내 시장·수급"]);
   });
 
   it("더보기 — /more는 탭 한 칸, /alerts는 더보기 › 알림, /radar는 묶음 '한국 시장'이 링크 없는 글 칸", () => {
@@ -43,6 +42,29 @@ describe("메뉴 화면", () => {
       { label: "더보기", href: "/more" },
       { label: "한국 시장", href: null },
       { label: "수급 레이더", href: "/radar" },
+    ]);
+  });
+
+  // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 더보기 안의 묶음으로 — 한국 시장과 같은 꼴(묶음 이름은 링크 없는 글 칸).
+  it("정보 수집 — /info/kr은 더보기 › 정보 수집(링크 없는 묶음 칸) › 국내 시장·수급, 회원이 주소로 열면 하위 화면 칸은 링크 없이", () => {
+    expect(breadcrumbs("/info/kr", OWNER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "정보 수집", href: null },
+      { label: "국내 시장·수급", href: "/info/kr" },
+    ]);
+    expect(breadcrumbs("/info/overview", OWNER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "정보 수집", href: null },
+      { label: "개요", href: "/info/overview" },
+    ]);
+    expect(breadcrumbs("/info/kr", MEMBER)).toEqual([
+      { label: "더보기", href: "/more" },
+      { label: "정보 수집", href: null },
+      { label: "국내 시장·수급", href: null },
+    ]);
+    expect(foldedBreadcrumbs("/info/kr", OWNER)).toEqual([
+      { label: "더보기", href: "/more", title: "더보기 › 정보 수집" },
+      { label: "국내 시장·수급", href: "/info/kr" },
     ]);
   });
 
@@ -166,8 +188,8 @@ describe("모의매매(운영자)", () => {
 });
 
 describe("같은 곳으로 가는 링크 칸 없음", () => {
-  // QA-549: 탭 칸의 주소가 늘 탭 첫 화면이라, 첫 화면이 하위 화면이기도 한 탭(시장 /macro·기관 /institutions·모의매매 /paper/us·정보 수집
-  // /info/overview)에서 탭 칸이 지금 화면이나 바로 뒤 칸과 같은 주소로 가는 링크였습니다 — /macro '시장'(→ /macro)을 눌러도 아무 일이 없고,
+  // QA-549: 탭 칸의 주소가 늘 탭 첫 화면이라, 첫 화면이 하위 화면이기도 한 탭(시장 /macro·기관 /institutions·모의매매 /paper/us·그때의 정보 수집
+  // /info/overview — 2026-11-18부터 더보기 안 묶음)에서 탭 칸이 지금 화면이나 바로 뒤 칸과 같은 주소로 가는 링크였습니다 — /macro '시장'(→ /macro)을 눌러도 아무 일이 없고,
   // /paper/us/holdings는 '모의매매'·'미국'이 둘 다 /paper/us, /markets/i/vix는 '시장'·'매크로 지표'가 둘 다 /macro(낭독기는 같은 목적지를 두 번 들음).
   // 같은 셸의 나무 메뉴는 같은 경우에 aria-current를 답니다(nav.ts tabCurrent). 뒤 칸 어느 것과 주소가 같은 칸은 링크 없는 글 칸으로 둡니다 —
   // 더 구체적인 뒤 칸(미국·매크로 지표·13F 포트폴리오)이 링크로 남아 갈 수 있는 곳은 줄지 않습니다.

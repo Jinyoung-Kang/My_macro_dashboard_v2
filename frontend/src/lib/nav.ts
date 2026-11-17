@@ -1,6 +1,7 @@
 /**
- * 화면 메뉴(정보 구조) — 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기와 탭마다의 하위 화면(설계서 §4, 1단계 브리프 §1.3,
- * 2026-11-14 재배치 — ADR 0041 결정 1: 한국 탭을 없애고 그 두 화면을 더보기의 '한국 시장' 묶음으로). React를 모르는 순수 함수(ADR 0004).
+ * 화면 메뉴(정보 구조) — 홈·시장·기관·모의매매·정보 검색·더보기와 탭마다의 하위 화면(설계서 §4, 1단계 브리프 §1.3,
+ * 2026-11-14 재배치 — ADR 0041 결정 1: 한국 탭을 없애고 그 두 화면을 더보기의 '한국 시장' 묶음으로. 2026-11-18 사용자 요청: 정보 수집 탭도
+ * 더보기의 '정보 수집' 묶음으로 — 주소 /info/… 그대로). React를 모르는 순수 함수(ADR 0004).
  *
  * 1단계는 옛 화면 경로를 그대로 쓰고(4단계에서 /markets/… 로 옮김), 탭은 그 화면들을 묶기만 합니다.
  * 누구에게 무엇을 보이는지는 lib/access.ts가 정합니다(운영자 전용 숨김·유료 잠금 — 경로 앞부분 일치).
@@ -9,10 +10,16 @@
 import { lockedFor, visibleMenus } from "./access";
 import type { SessionUser } from "./types";
 
-export type TabKey = "home" | "markets" | "institutions" | "paper" | "search" | "info" | "more";
+export type TabKey = "home" | "markets" | "institutions" | "paper" | "search" | "more";
 
 /** 더보기 탭 안에서 따로 묶는 한국 시장 화면(수급 레이더·파생·투기세력) — 더보기 화면의 제목 묶음이자 하위 메뉴 줄의 범위(ADR 0041 결정 1). */
 export const KR_MARKET_GROUP = "한국 시장";
+
+/**
+ * 더보기 탭 안에서 따로 묶는 정보 수집 화면(여덟 분류 /info/…, 운영자 전용 — ADR 0035·0036). 2026-11-18 사용자 요청으로 맨 위 단계 탭에서 이 묶음으로
+ * 옮겼습니다. 하위 메뉴 줄은 같은 묶음의 여덟 화면이라 지금처럼 큰 분류 탭 노릇을 합니다.
+ */
+export const INFO_GROUP = "정보 수집";
 
 export type NavItem = {
   href: string;
@@ -23,8 +30,8 @@ export type NavItem = {
   /** 검색에서 함께 맞추는 말 — 화면 제목·옛 사이드바 메뉴 이름(예전 이름으로 찾아도 나오게). */
   keywords?: readonly string[];
   /**
-   * 탭 안의 묶음 이름(예: "한국 시장"). 묶음이 있는 화면은 더보기 화면에서 그 제목 아래 따로 그리고, 하위 메뉴 줄은 같은 묶음의 화면만 보입니다
-   * (/radar에서 알림·운영 화면이 섞이지 않게, /alerts에서 레이더가 섞이지 않게). 없으면 그 탭의 기본 묶음.
+   * 탭 안의 묶음 이름(예: "한국 시장"·"정보 수집"). 묶음이 있는 화면은 더보기 화면에서 그 제목 아래 따로 그리고, 하위 메뉴 줄은 같은 묶음의 화면만 보입니다
+   * (/radar에서 알림·운영 화면이 섞이지 않게, /alerts에서 레이더가 섞이지 않게, /info/news에서 정보 수집 여덟 화면만). 없으면 그 탭의 기본 묶음.
    */
   group?: string;
 };
@@ -97,28 +104,14 @@ export const TABS: readonly NavTab[] = [
     items: [{ href: "/search", label: "정보 검색", keywords: ["대상 검색", "기업·기관·사람 뉴스·공시", "관심 대상"] }],
   },
   {
-    // 정보 수집(ADR 0035·0036) — 수집기가 받는 모든 출처의 자료·상태와 작동 방식. 운영자 전용. 하위 메뉴 줄이 큰 분류(탭)입니다.
-    // 자리는 정보 검색과 더보기 사이(ADR 0041 결정 1 — 그 전에는 모의매매와 더보기 사이, ADR 0036 결정 1).
-    // 좁은 화면의 아래쪽 탭 바에는 넣지 않고(6칸 유지 — 사용자 결정 2026-11-11) 더보기에서 엽니다(TabBar·MoreMenu).
-    key: "info",
-    label: "정보 수집",
-    href: "/info/overview",
-    sections: ["/info"],
-    items: [
-      { href: "/info/overview", label: "개요", title: "정보 수집 개요", keywords: ["수집 출처", "데이터 출처"] },
-      { href: "/info/news", label: "뉴스·글", title: "정보 수집 · 뉴스·글", keywords: ["해외 블로그", "waedge", "거장", "사건 뉴스 RSS"] },
-      { href: "/info/kr", label: "국내 시장·수급", title: "정보 수집 · 국내 시장·수급", keywords: ["네이버 매매상위", "KRX 정보데이터시스템", "공매도", "외국인 보유"] },
-      { href: "/info/global", label: "해외 시장·거시", title: "정보 수집 · 해외 시장·거시", keywords: ["FRED", "경제 캘린더", "COT"] },
-      { href: "/info/filings", label: "기관·공시", title: "정보 수집 · 기관·공시·재무", keywords: ["SEC 13F", "DART", "어닝 서프라이즈"] },
-      { href: "/info/paper", label: "모의매매 입력", title: "정보 수집 · 모의매매 입력" },
-      { href: "/info/status", label: "출처 상태", title: "정보 수집 · 출처 상태", keywords: ["수집 끊김", "차단", "형식 바뀜"] },
-      { href: "/info/mechanism", label: "정보(메커니즘)", title: "정보 수집 · 작동 방식", keywords: ["작동 원리", "수집 설정", "하루 예산"] },
-    ],
-  },
-  {
     key: "more",
     label: "더보기",
     href: "/more",
+    // 옛 /info(정보 수집 탭 주소 — next.config가 /info/overview로 보냄)도 더보기 탭 영역입니다.
+    sections: ["/info"],
+    // 묶음 차례: 묶음 없는 화면 → 한국 시장 → 정보 수집(2026-11-18). 나무 메뉴·더보기 화면·통합 검색이 이 차례를 그대로 씁니다. 운영자 전용 묶음(정보 수집,
+    // 여덟 칸)을 맨 뒤에 두어 회원·데모가 보는 차례는 바뀌지 않고, 두 칸짜리 한국 시장이 긴 묶음에 밀려 나무 메뉴 아래로 내려가지 않습니다
+    // ('메뉴' 다음 '한국 시장' — ADR 0041 결정 1 그대로).
     items: [
       { href: "/alerts", label: "알림" },
       { href: "/ai/report", label: "AI 종합 분석", keywords: ["AI 종합 데이터 분석"] },
@@ -129,6 +122,16 @@ export const TABS: readonly NavTab[] = [
       // 옛 한국 탭(ADR 0041 결정 1) — 주소는 그대로. 탭 이름이 검색어였으므로 '한국'을 검색어로 직접 둡니다.
       { href: "/radar", label: "수급 레이더", group: KR_MARKET_GROUP, keywords: ["한국", "외국인/기관 수급 레이더 (KRX)"] },
       { href: "/krx", label: "파생·투기세력(KRX)", group: KR_MARKET_GROUP, keywords: ["한국", "국내 파생 & 투기세력 (KRX)"] },
+      // 정보 수집(ADR 0035·0036) — 수집기가 받는 모든 출처의 자료·상태와 작동 방식. 운영자 전용(lib/access OWNER_ONLY_MENUS의 /info — 앞부분 일치).
+      // 2026-11-14~11-18에는 정보 검색과 더보기 사이의 탭(ADR 0041 결정 1), 그 전에는 모의매매와 더보기 사이(ADR 0036 결정 1). 주소는 그대로입니다.
+      { href: "/info/overview", label: "개요", title: "정보 수집 개요", group: INFO_GROUP, keywords: ["수집 출처", "데이터 출처"] },
+      { href: "/info/news", label: "뉴스·글", title: "정보 수집 · 뉴스·글", group: INFO_GROUP, keywords: ["해외 블로그", "waedge", "거장", "사건 뉴스 RSS"] },
+      { href: "/info/kr", label: "국내 시장·수급", title: "정보 수집 · 국내 시장·수급", group: INFO_GROUP, keywords: ["네이버 매매상위", "KRX 정보데이터시스템", "공매도", "외국인 보유"] },
+      { href: "/info/global", label: "해외 시장·거시", title: "정보 수집 · 해외 시장·거시", group: INFO_GROUP, keywords: ["FRED", "경제 캘린더", "COT"] },
+      { href: "/info/filings", label: "기관·공시", title: "정보 수집 · 기관·공시·재무", group: INFO_GROUP, keywords: ["SEC 13F", "DART", "어닝 서프라이즈"] },
+      { href: "/info/paper", label: "모의매매 입력", title: "정보 수집 · 모의매매 입력", group: INFO_GROUP },
+      { href: "/info/status", label: "출처 상태", title: "정보 수집 · 출처 상태", group: INFO_GROUP, keywords: ["수집 끊김", "차단", "형식 바뀜"] },
+      { href: "/info/mechanism", label: "정보(메커니즘)", title: "정보 수집 · 작동 방식", group: INFO_GROUP, keywords: ["작동 원리", "수집 설정", "하루 예산"] },
     ],
   },
 ];
@@ -156,7 +159,7 @@ export function activeTab(pathname: string): NavTab | null {
   return TABS.find((tab) => covers(tab.href, pathname) || (tab.sections ?? []).some((section) => covers(section, pathname))) ?? null;
 }
 
-/** 이 사용자에게 보이는 탭(운영자가 아니면 모의매매·정보 수집 탭이 빠짐 — lib/access.ts 앞부분 일치). */
+/** 이 사용자에게 보이는 탭(운영자가 아니면 모의매매 탭이 빠짐 — lib/access.ts 앞부분 일치). */
 export function visibleTabs(user: SessionUser | null | undefined): NavTab[] {
   return visibleMenus(TABS, user);
 }
@@ -168,7 +171,7 @@ export function visibleItems(tab: NavTab, user: SessionUser | null | undefined):
 
 export type SubNavModel = {
   tab: NavTab;
-  /** 줄의 이름(내비 이름표 "<이름> 하위 메뉴") — 묶음 화면이면 묶음 이름(한국 시장), 아니면 탭 이름. */
+  /** 줄의 이름(내비 이름표 "<이름> 하위 메뉴") — 묶음 화면이면 묶음 이름(한국 시장·정보 수집), 아니면 탭 이름. */
   label: string;
   items: NavItem[];
   /** 지금 화면(고른 표시)의 href. 탭 영역 안이지만 하위 화면이 아니면(/more) null. */
@@ -232,7 +235,7 @@ export type NavTreeNode = {
 /**
  * 넓은 화면(lg 이상)의 왼쪽 나무 메뉴(작업대 실행 명세 §5, ADR 0042 결정 5 — lg 이상의 하위 메뉴 줄을 대신함). 이 사용자에게 보이는 탭 전부를 순서대로 두고,
  * **지금 탭만** 하위 화면을 펼칩니다 — 펼치는 조건은 하위 메뉴 줄(subNav)과 같습니다(보이는 하위 화면 + 준비 중 표시가 둘 이상). 하위 메뉴 줄과 달리 탭의
- * 모든 묶음을 함께 펼칩니다 — 묶음 없는 화면이 먼저, 묶음(더보기의 '한국 시장')은 처음 나온 순서대로 그 이름 아래에.
+ * 모든 묶음을 함께 펼칩니다 — 묶음 없는 화면이 먼저, 묶음(더보기의 '한국 시장'·'정보 수집')은 처음 나온 순서대로 그 이름 아래에.
  * 막대(marked — 현재 위치 표시)는 가장 깊은 지금 칸 하나에만 둡니다: 지금 하위 칸이 있으면 그 칸, 없으면 지금 탭 칸. 사용자에게 보이지 않는 탭(회원이 주소로 연
  * /paper/us)은 나무에 없어 아무 칸도 막대를 갖지 않습니다.
  */

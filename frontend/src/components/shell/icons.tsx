@@ -27,13 +27,6 @@ const TAB_PATHS: Record<TabKey, React.ReactNode> = {
       <path d="M20 20l-4.8-4.8" />
     </>
   ),
-  info: (
-    <>
-      <path d="M4 5h11M4 10h11M4 15h7" />
-      <circle cx="17.5" cy="16.5" r="3.5" />
-      <path d="M20 19l2 2" />
-    </>
-  ),
   more: (
     <>
       <circle cx="5" cy="12" r="1.5" />
@@ -47,7 +40,19 @@ export function TabIcon({ tab, size = 18 }: { tab: TabKey; size?: number }) {
   return <IconBase size={size}>{TAB_PATHS[tab]}</IconBase>;
 }
 
-/** 더보기 하위 화면의 아이콘(경로별 — 한국 시장 묶음 포함). 표에 없는 화면은 더보기 탭 아이콘. 뜻은 옆의 화면 이름이 나릅니다. */
+/** 정보 수집 묶음(/info/… 여덟 화면)이 함께 쓰는 아이콘 — 줄 글과 돋보기(받아 둔 자료를 살펴봄). 2026-11-18까지는 정보 수집 탭의 아이콘이었습니다. */
+const INFO_PATH = (
+  <>
+    <path d="M4 5h11M4 10h11M4 15h7" />
+    <circle cx="17.5" cy="16.5" r="3.5" />
+    <path d="M20 19l2 2" />
+  </>
+);
+
+/**
+ * 더보기 하위 화면의 아이콘(경로별 — 한국 시장 묶음 포함, 정보 수집 묶음은 여덟 화면이 한 아이콘). 표에 없는 화면은 더보기 탭 아이콘.
+ * 뜻은 옆의 화면 이름이 나릅니다.
+ */
 const MENU_PATHS: Record<string, React.ReactNode> = {
   "/alerts": (
     <>
@@ -99,5 +104,5 @@ const MENU_PATHS: Record<string, React.ReactNode> = {
 };
 
 export function MenuIcon({ href, size = 18 }: { href: string; size?: number }) {
-  return <IconBase size={size}>{MENU_PATHS[href] ?? (href.startsWith("/info") ? TAB_PATHS.info : TAB_PATHS.more)}</IconBase>;
+  return <IconBase size={size}>{MENU_PATHS[href] ?? (href.startsWith("/info/") ? INFO_PATH : TAB_PATHS.more)}</IconBase>;
 }
