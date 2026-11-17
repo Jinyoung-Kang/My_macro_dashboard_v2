@@ -121,4 +121,3 @@ describe("symbolQuery — 13F 종목 팝업의 종목 찾기 검색어(공시 �
     }
   });
 });
-
