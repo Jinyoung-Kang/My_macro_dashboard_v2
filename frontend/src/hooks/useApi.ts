@@ -40,6 +40,16 @@ const EMPTY_STATE = {
   failedAt: null,
 } as const;
 
+/**
+ * 값도 앞선 실패도 없이 읽는 중인지 — 처음 읽는 동안(과 경로를 바꿔 다시 읽는 동안)만 참입니다. 값이 온 뒤의 꼴을 흉내 낸 큰 자리표시(표 꼴 자리 등)는
+ * 이때만 그립니다. 읽기가 실패한 뒤 다시 읽는 동안(자동 갱신·다시 시도·탭 복귀)은 이 훅이 error를 비우고 failedAt을 남기므로 거짓이고, 그때는 오류 상자와
+ * 비슷한 높이의 '불러오는 중' 한 줄을 씁니다 — 큰 자리표시를 그리면 다시 읽을 때마다 오류 상자와 번갈아 패널 높이가 크게 오르내렸습니다(QA-655).
+ * 값이 있는 채로 다시 읽는 동안도 거짓입니다(값을 그대로 보임).
+ */
+export function firstLoadPending(read: { data: unknown; loading: boolean; failedAt: Date | null }): boolean {
+  return read.loading && read.data === null && read.failedAt === null;
+}
+
 /** 실패의 HTTP 상태 — ApiError의 status 칸(연결 실패는 0). 칸이 없으면 null. 클래스에 묶지 않고 status 칸으로 읽습니다. */
 function errorStatusOf(error: unknown): number | null {
   const status = typeof error === "object" && error !== null ? (error as { status?: unknown }).status : undefined;

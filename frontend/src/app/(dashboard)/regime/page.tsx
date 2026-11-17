@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useId, useState, type ReactNode } from "react";
 import { type Column, DataTable, EntityHeader, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
-import { Callout, ErrorState, Freshness, LINK_CLASSES, Panel, Select, SKELETON_BAR, Tag, tabId, Tabs } from "@/components/ui";
+import { Callout, ErrorState, Freshness, LINK_CLASSES, Loading, Panel, Select, SKELETON_BAR, Tag, tabId, Tabs } from "@/components/ui";
 import { ScaleIcon, StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, withMinusSign } from "@/lib/format";
 import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/marketRows";
@@ -136,14 +136,22 @@ function RegimeTabs({ tabs }: { tabs: readonly { key: RegimeTabKey; label: strin
 
 export default function RegimePage() {
   const [years, setYears] = useState("5");
-  const { data, error, reload, refreshError } = useApi<RegimeResponse>(endpoints.insight.regime(years), 300_000);
+  const regime = useApi<RegimeResponse>(endpoints.insight.regime(years), 300_000);
+  const { data, error, reload, refreshError } = regime;
 
   const verdict = data?.verdict;
   const model = regimeHeroModel(data);
   const bandLabel = regimeBandLabel(data?.timeline, (data?.episodes ?? []).length);
   // 응답 전에는 값 자리에 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도. 이름·이력 기간 고르기는 그대로 남습니다(QA-047).
-  // 자리표시는 값이 온 뒤의 머리(설명 글·주 값 줄·배지 줄)와 같은 꼴·높이입니다(HeaderPending — QA-650).
-  const pending = data ? null : error ? <ErrorState message={error} onRetry={reload} /> : <HeaderPending />;
+  // 처음 읽는 동안의 자리표시는 값이 온 뒤의 머리(설명 글·주 값 줄·배지 줄)와 같은 꼴·높이(HeaderPending — QA-650), 실패 뒤 다시 읽는 동안은 한 줄입니다
+  // (오류 상자와 머리 꼴 자리가 갱신마다 번갈아 그려지지 않게 — QA-655).
+  const pending = data ? null : error ? (
+    <ErrorState message={error} onRetry={reload} />
+  ) : firstLoadPending(regime) ? (
+    <HeaderPending />
+  ) : (
+    <Loading label="국면을 판정하는 중…" />
+  );
 
   // 판정 근거 넷 — 홈 국면 패널과 같은 모델(자리 고정 — 받지 못한 신호는 —와 '받지 못함', 자릿수·부호 −가 같음, QA-636). 값은 정상·주의 톤 글자색,
   // 아래 보조 글은 상태 글(정상·주의 아이콘 — 주의만 '주의:', QA-505) + 해석. 판정 근거는 좁은 칸이라 이름 위·값 아래(block).

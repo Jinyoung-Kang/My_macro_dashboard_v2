@@ -10,7 +10,7 @@ import { type Column, DataTable, SectionAnchor, SectionIndex } from "@/component
 import { RawSnapshotActions } from "@/components/RawSnapshotCard";
 import { EmptyState, Freshness, Loading, PageHeader, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useKrOfficialHolidays } from "@/hooks/useKrOfficialHolidays";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
@@ -123,8 +123,9 @@ export default function MacroPage() {
     [categories, now, krOfficial, data?.collectedAtKst],
   );
   // 목차 — 회원 일곱·운영자 여덟(경제 캘린더), 지표 칸의 하위 칸은 범주(개수는 카드 수 — 개요를 받기 전에는 모름, 처음 읽는 동안은 자리 줄).
-  const indexLoading = overview.loading && !data;
-  const indexItems = useMemo(() => macroIndexItems(groups, owner, indexLoading), [groups, owner, indexLoading]);
+  // 자리 줄·개수 자리와 지표 패널의 표 꼴 자리는 처음 읽는 동안만 — 실패 뒤 다시 읽는 동안 그리면 갱신마다 오류 상태와 번갈아 그려졌습니다(QA-655).
+  const firstLoad = firstLoadPending(overview);
+  const indexItems = useMemo(() => macroIndexItems(groups, owner, firstLoad), [groups, owner, firstLoad]);
 
   return (
     <div className="flex flex-col gap-4 lg:gap-6">
@@ -172,6 +173,7 @@ export default function MacroPage() {
           <IndicatorsSection
             groups={groups}
             loading={overview.loading}
+            firstLoad={firstLoad}
             error={overview.error}
             onRetry={overview.reload}
             unavailableMessage={data && !data.available ? (data.message ?? "매크로 데이터가 없습니다. 수집기를 실행하세요.") : null}

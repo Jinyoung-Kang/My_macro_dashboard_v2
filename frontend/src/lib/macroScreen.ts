@@ -331,7 +331,7 @@ export const MACRO_PENDING_CATEGORIES = MACRO_PENDING_ROWS.length;
 /**
  * 매크로 화면 목차 — 지표(개수 = 카드 수, 하위 = 범주) · 환율 비교 · 장단기 금리차 · 신용·변동성 · 심화 지표 · 단독 차트 · 비공식 시세 · 경제 캘린더(운영자만).
  * 회원 일곱·운영자 여덟. 절 id·이름은 lib/marketSections MACRO_SECTIONS·MACRO_SECTION_LABELS(국면 '연결' 링크 글과 같은 이름). `loading`이면(개요를 처음
- * 읽는 중) 범주 하위 칸 자리(pendingChildren)를 둡니다. 개요를 아직 받지 못했으면(`groups` null) 지표 개수를 모르고 하위 칸이 없습니다.
+ * 읽는 중 — 화면이 hooks/useApi firstLoadPending으로 정하며 실패 뒤 다시 읽는 중은 거짓, QA-655) 범주 하위 칸 자리(pendingChildren)를 둡니다. 개요를 아직 받지 못했으면(`groups` null) 지표 개수를 모르고 하위 칸이 없습니다.
  */
 export function macroIndexItems(groups: readonly MacroIndicatorGroup[] | null, owner: boolean, loading = false): SectionIndexItem[] {
   const total = groups === null ? null : groups.reduce((sum, group) => sum + group.rows.length, 0);
@@ -342,7 +342,7 @@ export function macroIndexItems(groups: readonly MacroIndicatorGroup[] | null, o
       count: total,
       children: (groups ?? []).map((group) => ({ id: group.anchorId, label: group.title, count: group.rows.length })),
       // 개요를 처음 읽는 동안은 범주 하위 칸 자리(값이 온 뒤 아래 목차 칸이 164px 밀렸음 — P5a 검토 CLS)와 개수 자리(가로 줄의 뒤 칸이 17px 밀렸음 — QA-652)를
-      // 미리 잡습니다. 읽지 못했으면 자리를 두지 않습니다.
+      // 미리 잡습니다. 읽지 못했으면(실패 뒤 다시 읽는 동안도 — QA-655) 자리를 두지 않습니다.
       ...(groups === null && loading ? { pendingChildren: MACRO_PENDING_CATEGORIES, pendingCount: true } : {}),
     },
     ...(["fx", "spreads", "risk", "advanced", "single", "scraped"] as const).map((section) => ({ id: MACRO_SECTIONS[section], label: MACRO_SECTION_LABELS[section] })),

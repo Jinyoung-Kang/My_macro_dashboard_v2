@@ -8,13 +8,14 @@ import {
   EmptyState,
   ErrorState,
   Freshness,
+  Loading,
   PageHeader,
   Panel,
   Select,
   SourceBadge,
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { EMPTY, formatNumber, withMinusSign } from "@/lib/format";
 import { correlationEstimated, correlationStrength } from "@/lib/correlation";
 import type { CorrelationResponse, SeriesRef } from "@/lib/types";
@@ -37,7 +38,7 @@ const ROLLING_HEIGHT = 260;
 const SCATTER_HEIGHT = 360;
 
 /**
- * 상관을 처음 읽는 동안(또는 고르기를 바꿔 다시 읽는 동안)의 가운데 칸 — 값이 온 뒤의 KPI 띠 둘·롤링·산점도 패널과 같은 자리(차트 높이와 같은 Skeleton).
+ * 상관을 처음 읽는 동안(또는 고르기를 바꿔 다시 읽는 동안 — 앞선 실패가 없을 때, QA-655)의 가운데 칸 — 값이 온 뒤의 KPI 띠 둘·롤링·산점도 패널과 같은 자리(차트 높이와 같은 Skeleton).
  * lg(1024~1279)에서는 '고른 쌍'이 가운데 칸 아래에 놓여, 읽는 중 글 한 줄뿐이면 그 패널이 위에 먼저 그려졌다가 값이 오며 화면 밖으로 밀렸습니다
  * (P5a 검토 — CLS 1024 0.25, 기준 0.02).
  */
@@ -94,7 +95,7 @@ export default function CorrelationPage() {
   const [years, setYears] = useState("3");
   const [mode, setMode] = useState("change");
 
-  const { data, loading, error, reload, refreshError } = useApi<CorrelationResponse>(
+  const { data, loading, error, reload, refreshError, failedAt } = useApi<CorrelationResponse>(
     endpoints.insight.correlation({ x, y, window, years, mode }),
     300_000,
   );
@@ -194,7 +195,8 @@ export default function CorrelationPage() {
           </Panel>
         }
       >
-        {loading && !data && <CorrelationPending mode={mode} window={window} />}
+        {/* 값 꼴 자리는 처음 읽는 동안(과 고르기를 바꿔 다시 읽는 동안)만 — 실패 뒤 다시 읽는 동안은 한 줄(오류 상자와 이 자리가 갱신마다 번갈아 그려지지 않게 — QA-655). */}
+        {loading && !data && (firstLoadPending({ data, loading, failedAt }) ? <CorrelationPending mode={mode} window={window} /> : <Loading label="상관을 계산하는 중…" />)}
         {error && <ErrorState message={error} onRetry={reload} />}
 
         {data && !data.available && <Callout tone="warn">{data.message ?? "계산할 수 없습니다."}</Callout>}

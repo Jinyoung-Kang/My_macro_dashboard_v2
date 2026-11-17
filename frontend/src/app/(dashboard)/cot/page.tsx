@@ -15,7 +15,7 @@ import {
   SKELETON_BAR,
   SourceBadge,
 } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { cotKpis, formatSignedCount } from "@/lib/cotScreen";
 import { deltaColor, EMPTY, formatNumber, formatPercent, formatWithUnit, withMinusSign } from "@/lib/format";
 import type { CotAssetResponse, CotExtremeSummary, CotExtremesResponse, CotSummary } from "@/lib/types";
@@ -186,8 +186,9 @@ export default function CotPage() {
         count={overview.data ? `${(overview.data.assets ?? []).length.toLocaleString("ko-KR")}개` : undefined}
         subtitle="스마트머니(비상업) 순포지션과 최근 변화 · 자산 이름을 누르면 아래 추이와 극단 성적이 그 자산으로 바뀝니다."
       >
-        {/* 읽는 동안은 표 꼴 자리(줄 여섯 — 값이 온 뒤 아래 추이 패널이 밀리지 않게, QA-654). */}
-        {overview.loading && !overview.data && <SummaryPending />}
+        {/* 처음 읽는 동안은 표 꼴 자리(줄 여섯 — 값이 온 뒤 아래 추이 패널이 밀리지 않게, QA-654), 실패 뒤 다시 읽는 동안은 한 줄(오류 상자와 이 자리가
+            갱신마다 번갈아 그려지지 않게 — QA-655). */}
+        {overview.loading && !overview.data && (firstLoadPending(overview) ? <SummaryPending /> : <Loading />)}
         {overview.error && <ErrorState message={overview.error} onRetry={overview.reload} />}
         {overview.data && (
           <DataTable

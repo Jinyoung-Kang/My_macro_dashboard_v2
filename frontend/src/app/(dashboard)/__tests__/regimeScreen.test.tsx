@@ -527,7 +527,8 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 
     return state;
   }
 
-  it.fails("대상 머리 — 실패 → 다시 읽는 중에 머리 꼴 자리표시 없이 '국면을 판정하는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 다시 읽는 동안 머리 꼴 자리표시(status '국면을 판정하는 중')가 다시 그려졌습니다('expected <div role="status" …> to be null').
+  it("대상 머리 — 실패 → 다시 읽는 중에 머리 꼴 자리표시 없이 '국면을 판정하는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
     const state = failFirst(REGIME);
     render(<RegimePage />);
     const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
@@ -541,7 +542,8 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 
     expect(await within(header).findByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 
-  it.fails("판정 기록 — 실패 → 다시 읽는 중에 목록 꼴 자리 줄 없이 '판정 기록을 읽는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 다시 읽는 동안 목록 꼴 자리 줄 열 개(status '판정 기록을 읽는 중')가 다시 그려졌습니다('expected <div role="status" …> to be null').
+  it("판정 기록 — 실패 → 다시 읽는 중에 목록 꼴 자리 줄 없이 '판정 기록을 읽는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
     reads[REGIME] = regimeExpansion();
     const state = failFirst(REGIME_LOG);
     render(<RegimePage />);

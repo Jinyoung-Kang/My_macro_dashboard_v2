@@ -2,9 +2,9 @@
 
 import { Fragment } from "react";
 import { type PropertyItem, PropertyList, Timeline, type TimelineEntry, TimelineSkeleton } from "@/components/patterns";
-import { Callout, ErrorState, Freshness, Panel } from "@/components/ui";
+import { Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { LineIcon, LockIcon } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
 import { regimeInputCells, regimeLogSummaryParts } from "@/lib/regime";
@@ -78,7 +78,8 @@ function Summary({ parts }: { parts: readonly string[] }) {
  * 목록은 열 때 한 번 읽은 응답만 씁니다 — 고르기는 요청을 더하지 않습니다.
  */
 export function RegimeLogSection() {
-  const { data, error, reload, refreshError } = useApi<RegimeLogResponse>(endpoints.insight.regimeLog(LOG_LIMIT), 600_000);
+  const log = useApi<RegimeLogResponse>(endpoints.insight.regimeLog(LOG_LIMIT), 600_000);
+  const { data, error, reload, refreshError } = log;
   const rows = data?.available ? (data.entries ?? []) : [];
   const byDate = new Map(rows.map((row) => [row.date, row]));
   const entries: TimelineEntry[] = rows.map((row) => ({
@@ -91,11 +92,14 @@ export function RegimeLogSection() {
   }));
   // 기록 시각(KST 시) — 응답에 없으면 시각 마디를 뺍니다(18시처럼 지어내지 않음 — QA-647).
   const hour = typeof data?.recordHourKst === "number" && Number.isFinite(data.recordHourKst) ? data.recordHourKst : null;
-  // 응답 전에는 목록 대신 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도, 아니면 목록 꼴 자리 줄(빈 목록 글이 잠깐 비치지 않게, 목록 높이를 잡음 — QA-651).
+  // 응답 전에는 목록 대신 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도, 처음 읽는 동안은 목록 꼴 자리 줄(빈 목록 글이 잠깐 비치지 않게, 목록 높이를
+  // 잡음 — QA-651), 실패 뒤 다시 읽는 동안은 한 줄(오류 상자와 자리 줄 열 개가 갱신마다 번갈아 그려지지 않게 — QA-655).
   const placeholder = data ? null : error ? (
     <ErrorState message={error} onRetry={reload} />
-  ) : (
+  ) : firstLoadPending(log) ? (
     <TimelineSkeleton rows={LOG_PENDING_ROWS} label="판정 기록을 읽는 중" />
+  ) : (
+    <Loading label="판정 기록을 읽는 중…" />
   );
 
   return (

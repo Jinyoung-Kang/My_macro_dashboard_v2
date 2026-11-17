@@ -17,7 +17,7 @@ import {
   SectionAnchor,
   StaleBadge,
 } from "@/components/patterns";
-import { Callout, ErrorState, LINK_CLASSES, Panel, SKELETON_BAR, SourceBadge, SourceLine } from "@/components/ui";
+import { Callout, ErrorState, LINK_CLASSES, Loading, Panel, SKELETON_BAR, SourceBadge, SourceLine } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useWideShell } from "@/hooks/useWideShell";
@@ -170,6 +170,7 @@ const BAR = `block ${SKELETON_BAR}`;
  * '티커 · 시장' 줄, 좁은 화면 두 줄 행의 둘째 줄)과 값 칸 막대라, 줄 높이가 좁은 화면 109px·md 85px·lg 이상 52px로 값이 온 뒤 기준 칸이 한 줄인 줄과
  * 같습니다(기준 칸이 꺾이거나 배지 줄이 있는 줄·옆 미리보기 배치에서는 값이 온 뒤가 더 깁니다). 예전에는 '불러오는 중' 한 줄(패널 147px)이라 값이 오면
  * 아래 절(환율 비교 — 1024에서 화면 안)이 화면 밖으로 밀렸습니다(첫 적재 CLS 1024 약 0.5). 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
+ * 처음 읽는 동안만 그립니다 — 읽기가 실패한 뒤 다시 읽는 동안은 '불러오는 중' 한 줄(오류 상자와 이 자리가 갱신마다 번갈아 그려졌음 — QA-655).
  */
 function IndicatorsPending() {
   return (
@@ -228,11 +229,13 @@ function IndicatorsPending() {
  *   532~640px이라 최소 폭을 두지 않습니다(기준 칸이 줄을 바꿈 — 넘김 없이). md 미만은 지표·값 두 칸의 두 줄 행이라 최소 폭·넘김이 없습니다(결정 9 —
  *   기준은 이름 단추가 여는 미리보기 대화상자).
  * - 범주 블록은 절 닻(SectionAnchor — 목차의 범주 칸, id macro-cat-…)입니다.
- * - 값이 오기 전에는 표 꼴 자리(IndicatorsPending — QA-653), 첫 읽기가 실패하면 오류와 다시 시도, 저장본이 없으면 그 안내.
+ * - 값이 오기 전에는 표 꼴 자리(IndicatorsPending — QA-653), 첫 읽기가 실패하면 오류와 다시 시도, 실패 뒤 다시 읽는 동안은 '불러오는 중' 한 줄(QA-655),
+ *   저장본이 없으면 그 안내.
  */
 export function IndicatorsSection({
   groups,
   loading,
+  firstLoad,
   error,
   onRetry,
   unavailableMessage,
@@ -240,6 +243,8 @@ export function IndicatorsSection({
   /** 개요를 받기 전이면 null. */
   groups: readonly MacroIndicatorGroup[] | null;
   loading: boolean;
+  /** 값도 앞선 실패도 없이 처음 읽는 중(hooks/useApi firstLoadPending) — 이때만 표 꼴 자리. */
+  firstLoad: boolean;
   error: string | null;
   onRetry: () => void;
   /** 개요가 저장본 없음(available=false)이면 그 안내 — 아니면 null. */
@@ -254,7 +259,7 @@ export function IndicatorsSection({
 
   return (
     <Panel title="지표" count={groups === null ? undefined : `${total.toLocaleString("ko-KR")}개`}>
-      {loading && groups === null && <IndicatorsPending />}
+      {loading && groups === null && (firstLoad ? <IndicatorsPending /> : <Loading label="매크로 지표를 불러오는 중…" />)}
       {error && <ErrorState message={error} onRetry={onRetry} />}
       {unavailableMessage !== null && (
         <div className="mb-3">

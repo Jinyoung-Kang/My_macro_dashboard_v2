@@ -7,6 +7,7 @@
  *  - BUG-01: followRefresh:false면 수동 새로고침 신호에 반응하지 않는다 (세션 확인)
  *  - 경로가 바뀐 뒤 늦게 온 이전 응답이 화면을 되돌리지 않는다
  *  - 401이면 unauthorized, path가 null이면 요청하지 않는다
+ *  - firstLoadPending: 값 꼴 자리표시는 처음 읽는 동안만(실패 뒤 다시 읽는 중은 거짓 — QA-655)
  */
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +23,7 @@ vi.mock("@/hooks/useRefreshSignal", () => ({
   useRefreshSignal: () => ({ token: signal.token, notifyUnauthorized: signal.notifyUnauthorized }),
 }));
 
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 
 /** 밖에서 끝낼 수 있는 응답. */
 function deferred<T>() {
@@ -232,5 +233,34 @@ describe("useApi", () => {
     const { result } = renderHook(() => useApi("/api/a"));
     await waitFor(() => expect(result.current.unauthorized).toBe(true));
     expect(signal.notifyUnauthorized).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("firstLoadPending — 값 꼴 자리표시는 처음 읽는 동안만 (QA-655)", () => {
+  it("처음 읽는 중은 참, 실패 뒤 다시 읽는 중·값이 있는 채로 다시 읽는 중·끝난 뒤는 거짓", async () => {
+    const first = deferred<string>();
+    const again = deferred<string>();
+    const third = deferred<string>();
+    api.apiGetShared.mockReturnValueOnce(first.promise).mockReturnValueOnce(again.promise).mockReturnValueOnce(third.promise);
+    const { result } = renderHook(() => useApi<string>("/api/a"));
+    expect(firstLoadPending(result.current)).toBe(true);
+
+    await act(async () => first.reject(new Error("백엔드 API 오류 (503)")));
+    expect(result.current.error).toBe("백엔드 API 오류 (503)");
+    expect(firstLoadPending(result.current)).toBe(false);
+
+    // 실패 뒤 다시 읽기 — 훅이 error를 비우지만 failedAt이 남아 거짓.
+    act(() => void result.current.reload());
+    expect(result.current.loading).toBe(true);
+    expect(result.current.error).toBeNull();
+    expect(firstLoadPending(result.current)).toBe(false);
+
+    await act(async () => again.resolve("값"));
+    expect(firstLoadPending(result.current)).toBe(false);
+    // 값이 있는 채로 다시 읽기도 거짓(값을 그대로 보임).
+    act(() => void result.current.reload());
+    expect(result.current.loading).toBe(true);
+    expect(firstLoadPending(result.current)).toBe(false);
+    await act(async () => third.resolve("값"));
   });
 });
