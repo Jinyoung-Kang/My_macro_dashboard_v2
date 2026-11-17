@@ -41,7 +41,9 @@ import { TopBar } from "./TopBar";
  * 본문은 위치 기준(relative)이기도 합니다 — 본문 안의 sr-only 글(position:absolute — 상태 아이콘·상태 글 머리말·출처 머리말)은 위치 지정
  * 조상이 없으면 문서를 기준으로 놓여 표의 가로 스크롤 상자와 본문의 overflow를 벗어났습니다. 390px /admin/users에서 페이지가 544px로
  * 넓어져 하단 탭 바가 화면 밖으로 밀렸고, 데스크톱에서는 문서 높이가 본문 끝까지 늘어 본문 끝에서 휠을 더 굴리면 셸 전체가 위로 밀려 비었습니다.
- * 좁은 화면에서는 하단 탭 바(64px + 안전 영역)에 끝 내용이 가리지 않게 그만큼 아래 여백을 둡니다.
+ * 좁은 화면에서는 하단 탭 바(64px + 안전 영역)에 끝 내용이 가리지 않게 그만큼 아래 여백을 둡니다. TOP 단추(ScrollTopButton)가 있는 화면은 단추가
+ * 마운트될 때 문서 루트에 세우는 단추 자리(--scroll-top-reserve, lg 이상은 --scroll-top-reserve-lg — 없으면 0px)를 세 단계 여백에 더합니다 — 단추가 아래
+ * 여백 자리에서 위로 솟아 맨 아래까지 내려도 본문 마지막 글을 가렸습니다(QA-686).
  * 본문 열은 최대 1280px(max-w-7xl)로 가운데에 두고, 좌우 여백(16·24·32px)은 하위 메뉴 줄의 글과 같은 세로줄입니다.
  * 본문 맨 위에는 운영자에게만 수집 출처 끊김 안내 띠가 뜹니다(ADR 0035 — 끊긴 출처가 있을 때만, 닫을 수 있음). 홈('/')에서는 그리지 않습니다 —
  * 홈의 '알림·끊긴 출처' 패널이 같은 사건을 적어 겹치고, 응답 뒤 끼어든 띠가 홈 전체를 밀어 내렸습니다(QA-613, SourceAlertBanner).
@@ -86,7 +88,7 @@ export function Shell({
               <main
                 id="main"
                 tabIndex={-1}
-                className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-6"
+                className="relative min-h-0 min-w-0 flex-1 overflow-x-clip pb-[calc(64px+1rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))] outline-none sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))] lg:overflow-x-hidden lg:overflow-y-auto lg:pb-[calc(1.5rem+var(--scroll-top-reserve-lg,0px))]"
               >
                 <div className="mx-auto w-full max-w-7xl px-4 pt-6 sm:px-6 lg:px-8 lg:pt-8">
                   {pathname !== "/" && <SourceAlertBanner user={user} />}

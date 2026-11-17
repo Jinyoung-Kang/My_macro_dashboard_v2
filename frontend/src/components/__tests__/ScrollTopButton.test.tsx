@@ -87,7 +87,7 @@ describe("ScrollTopButton", () => {
 describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 둔다", () => {
   const rootStyle = () => document.documentElement.style;
 
-  it.fails("마운트하면(단추가 아직 없어도) 문서 루트에 단추 자리 — lg 미만 52px·lg 38px, 보였다 사라져도 그대로, 언마운트하면 지운다", () => {
+  it("마운트하면(단추가 아직 없어도) 문서 루트에 단추 자리 — lg 미만 52px·lg 38px, 보였다 사라져도 그대로, 언마운트하면 지운다", () => {
     const { unmount } = render(<ScrollTopButton />);
     expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
     expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
@@ -100,7 +100,7 @@ describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 �
     expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("");
   });
 
-  it.fails("화면이 바뀌는 사이 둘이 겹쳐 마운트돼도 마지막 하나가 떠날 때만 지운다", () => {
+  it("화면이 바뀌는 사이 둘이 겹쳐 마운트돼도 마지막 하나가 떠날 때만 지운다", () => {
     const first = render(<ScrollTopButton />);
     const second = render(<ScrollTopButton layer="z-20" />);
     first.unmount();

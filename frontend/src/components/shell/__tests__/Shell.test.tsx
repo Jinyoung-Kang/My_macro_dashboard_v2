@@ -625,15 +625,16 @@ describe("본문", () => {
   it("좁은 화면에서는 하단 탭 바(64px + 안전 영역)만큼 아래 여백, 데스크톱에서는 되돌린다", () => {
     renderShell(MEMBER_PRO);
     const main = screen.getByRole("main");
-    expect(main.className).toContain("pb-[calc(64px+1rem+env(safe-area-inset-bottom))]");
-    expect(main.className).toContain("lg:pb-6");
+    // TOP 단추 자리(QA-686 — 아래 시험)는 단추가 없는 화면에서 0px이라 여백은 탭 막대 + 틈 그대로입니다.
+    expect(main.className).toContain("pb-[calc(64px+1rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))]");
+    expect(main.className).toContain("lg:pb-[calc(1.5rem+var(--scroll-top-reserve-lg,0px))]");
     expect(bottomNav().className).toContain("lg:hidden");
   });
 
   // QA-686(11-18 요청 QA 스택 확인): 본문 아래 여백이 아래 탭 막대와의 틈만 두어, 같은 자리에서 위로 솟은 TOP 단추가 맨 아래까지 내려도 본문 마지막 글을
   // 가렸습니다(390 /macro·/paper·/info). 세 단계 여백 모두에 단추 자리(문서 루트 변수 — TOP 단추가 마운트될 때만 섬, ScrollTopButton.test)를 더합니다.
   // 단추가 없는 화면은 변수가 없어 0px — 지금 여백 그대로. 수정 전(재현 커밋에서는 it.fails) 단추 자리를 더하지 않았습니다.
-  it.fails("QA-686 본문 아래 여백에 TOP 단추 자리(--scroll-top-reserve·lg는 --scroll-top-reserve-lg, 없으면 0px)를 더한다 — 세 단계 모두", () => {
+  it("QA-686 본문 아래 여백에 TOP 단추 자리(--scroll-top-reserve·lg는 --scroll-top-reserve-lg, 없으면 0px)를 더한다 — 세 단계 모두", () => {
     renderShell(MEMBER_PRO);
     expect(screen.getByRole("main").className.split(/\s+/)).toEqual(
       expect.arrayContaining([
