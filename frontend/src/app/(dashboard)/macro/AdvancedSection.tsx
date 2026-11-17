@@ -57,7 +57,7 @@ export function AdvancedSection({
     );
   }
   // 첫 조회가 실패하면 지표 칸 없는 빈 카드(선택지 없는 추이 선택 상자)가 아니라 이유와 다시 시도를 보입니다(QA-103).
-  // 위험 지표 카드(RiskSection)처럼 값이 없으면 일찍 돌려줍니다.
+  // 값이 없으면 일찍 돌려줍니다 — 위 신용·변동성 패널(RiskSection)도 같은 꼴입니다(QA-670).
   if (!data && error) {
     return (
       <Panel title="심화 매크로 지표">

@@ -239,7 +239,7 @@ export default function MacroPage() {
         </SectionAnchor>
 
         <SectionAnchor id={MACRO_SECTIONS.risk} columnFrom="2xl">
-          <RiskSection risk={risk.data} loading={risk.loading} refreshError={risk.refreshError} />
+          <RiskSection risk={risk.data} loading={risk.loading} error={risk.error} onRetry={risk.reload} refreshError={risk.refreshError} />
         </SectionAnchor>
         <SectionAnchor id={MACRO_SECTIONS.advanced} columnFrom="2xl">
           <AdvancedSection

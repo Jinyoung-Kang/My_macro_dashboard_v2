@@ -171,32 +171,23 @@ describe("QA-099 지표별 단독 차트 — 백엔드가 받지 못한 이유�
 describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다", () => {
   const FAILED = "요청 실패 (HTTP 503)";
   // 수정 전에는 error를 받지 않거나(스크래핑·AI 엔진 목록) 섹션에 넘기지 않아(심화 지표) 빈 카드·이유 없이 꺼진 버튼만 남았다.
+  // QA-670: 신용·변동성도 첫 조회가 실패하면 사유를 버리고 회색 빈 상태 글만 그려 다시 시도가 없었다(개편 전부터 — 자동 갱신 '끄기'면 다시 읽을 길이 없음).
+  // 수정 전(재현 커밋에서는 따로 it.fails)에는 패널에 '리스크 지표를 불러오지 못했습니다.'만 있어 사유를 찾지 못했다('Unable to find an element with the text: 요청 실패 (HTTP 503)').
+  // 다시 시도를 누르면 그 경로를 한 번 더 읽는다(요청은 누를 때만 — 정해진 요청 목록·간격은 그대로).
   it.each<[string, string, () => ReactElement]>([
     ["스크래핑 시세", "/api/macro/scraped", () => <ScrapedSection />],
     ["매크로 심화 지표", "/api/macro/advanced", () => <MacroPage />],
-  ])("%s: 첫 조회가 실패하면 오류와 다시 시도", async (_name, path, make) => {
+    ["매크로 신용·변동성", "/api/macro/risk", () => <MacroPage />],
+  ])("%s: 첫 조회가 실패하면 오류와 다시 시도 — 누르면 한 번 더 읽는다", async (_name, path, make) => {
     reads[path] = () => Promise.reject(new Error(FAILED));
 
     render(make());
 
     expect(await screen.findByText(FAILED)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
-  });
-
-  // QA-670: 신용·변동성 패널은 첫 조회가 실패해도 사유를 버리고 회색 빈 상태 글('리스크 지표를 불러오지 못했습니다.')만 그려, 다시 시도 단추가 없었습니다
-  // (개편 전부터 — QA-103이 심화 지표만 고침). 자동 갱신 '끄기'면 새로 고침 말고는 다시 읽을 길이 없었습니다(QA 스택, 모의 500). 심화 지표와 같이
-  // 이유와 다시 시도를 보이고, 누르면 한 번 더 읽어야 합니다.
-  // 수정 전(재현 커밋에서는 it.fails)에는 패널에 '리스크 지표를 불러오지 못했습니다.'만 있어 사유를 찾지 못했습니다('Unable to find an element with the text: 요청 실패 (HTTP 503)').
-  it.fails("매크로 신용·변동성: 첫 조회가 실패하면 오류와 다시 시도 — 누르면 /api/macro/risk를 한 번 더 읽는다", async () => {
-    reads["/api/macro/risk"] = () => Promise.reject(new Error(FAILED));
-    render(<MacroPage />);
-
-    const section = (await screen.findByRole("heading", { name: "신용 리스크, 은행권 및 시장 변동성" })).closest("section") as HTMLElement;
-    expect(await within(section).findByText(FAILED)).toBeTruthy();
-    const riskReads = () => api.apiGetShared.mock.calls.filter(([called]) => String(called).startsWith("/api/macro/risk")).length;
-    const before = riskReads();
-    fireEvent.click(within(section).getByRole("button", { name: "다시 시도" }));
-    await waitFor(() => expect(riskReads()).toBe(before + 1));
+    const pathReads = () => api.apiGetShared.mock.calls.filter(([called]) => String(called).startsWith(path)).length;
+    const before = pathReads();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(pathReads()).toBe(before + 1));
   });
 });
 
