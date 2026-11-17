@@ -387,6 +387,37 @@ describe("QA-658 개수가 붙은 칸의 이름은 '지표 (1,234)' — 낭독�
   });
 });
 
+// QA-659: 넓은 화면(lg 이상)은 본문(#main)이 스크롤 상자라, 목차로 옮긴 뒤 뒤로·앞으로 가기를 하면 크롬이 연속 기록 이동의 첫 번째 뒤로는 창(루트) 위치만
+// 되돌려 주소의 해시만 바뀌고 본문 스크롤·지금 칸은 그대로였습니다(P5a QA — /macro 1440 둘째 뒤로 가기에서 절 위 끝 −1,708px). 이제 목차가 hashchange를
+// 듣고 해시가 목차 칸이면 그 닻으로 옮깁니다. 수정 전(재현 커밋에서는 it.fails)에는 scrollIntoView를 부르지 않았습니다(0번).
+describe("QA-659 뒤로·앞으로 가기로 해시가 목차 칸이 되면 그 절로 옮긴다", () => {
+  it.fails("hashchange에서 해시가 목차 칸이면 그 닻의 scrollIntoView를 한 번 — 목차 밖 해시(#main)는 부르지 않는다", () => {
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      render(
+        <SectionIndex label="목차" items={[{ id: "a", label: "가" }, { id: "b", label: "나" }]} activeId={null}>
+          <SectionAnchor id="a">가 절</SectionAnchor>
+          <SectionAnchor id="b">나 절</SectionAnchor>
+        </SectionIndex>,
+      );
+      window.history.pushState(null, "", "#b");
+      act(() => {
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      });
+      expect(scroll).toHaveBeenCalledTimes(1);
+      expect(scroll.mock.contexts[0]).toBe(document.getElementById("b"));
+      window.history.pushState(null, "", "#main");
+      act(() => {
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      });
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      scroll.mockRestore();
+    }
+  });
+});
+
 // QA-645: 지금 절 띠(뷰포트 위 96px 아래 ~ 34%)로만 고르면 마지막 절은 지금 칸이 되지 못했습니다 — 목차에서 마지막 절을 누르거나 끝까지 내려도 페이지가
 // 더 내려가지 못해 그 절의 위 끝이 띠 아래(390 543px·1024 687px·1440 715px)에 남고, 띠에는 앞 절 꼬리만 걸려 aria-current가 앞 절에 남았습니다
 // (P5a 검토 — 자기 빌드 /macro, 운영자 '경제 캘린더'·회원 '비공식 시세'). 스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안에 있는 마지막 절이
