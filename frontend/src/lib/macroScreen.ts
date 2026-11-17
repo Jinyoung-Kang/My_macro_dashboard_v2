@@ -141,7 +141,8 @@ export function riskKpis(risk: Partial<RiskIndicators> | null | undefined): Macr
 
 /**
  * 심화 지표 해석 색 → 상태 글의 톤(아이콘 + 글 — 값 글자색으로만 상태를 전하지 않음). 초록 정상, 노랑·주황 주의, 빨강 위험. 파랑(평탄·완화 등 중립)과
- * 모르는 색은 null — 상태 글을 톤 없이 메모에 적습니다. 위험은 '오류'가 아니라 시장 상태라 낭독기 머리말을 '주의: '로 둡니다(안내 상자 위험 톤과 같음).
+ * 모르는 색은 null — 상태 글을 톤 없이 메모에 적습니다. 위험은 '오류'가 아니라 시장 상태라 낭독기 머리말을 '주의: ', 아이콘을 경고 삼각형으로 둡니다
+ * (안내 상자 위험 톤과 같음 — 눈과 귀가 같은 뜻).
  */
 export function advancedStatus(entry: Pick<AdvancedEntry, "status" | "color">): MacroKpi["status"] | null {
   const text = presentText(entry.status);
@@ -153,7 +154,7 @@ export function advancedStatus(entry: Pick<AdvancedEntry, "status" | "color">): 
     case "orange":
       return { tone: "warn", text };
     case "red":
-      return { tone: "danger", text, srPrefix: "주의: " };
+      return { tone: "danger", text, srPrefix: "주의: ", icon: "alert" };
     default:
       return null;
   }

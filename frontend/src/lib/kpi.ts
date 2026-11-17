@@ -25,9 +25,10 @@ export type KpiItem = {
   change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null; unit?: string | null };
   /**
    * 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). `srPrefix`는 톤 기본 낭독 머리말(위험 '오류: '·주의 '주의: ') 대신 읽을 머리말 — 위험 톤이
-   * 오류가 아니라 시장 상태(매크로 심화 지표 '깊은 역전' 등)일 때 '주의: '로(안내 상자 위험 톤과 같은 말). 주지 않으면 그대로.
+   * 오류가 아니라 시장 상태(매크로 심화 지표 '깊은 역전' 등)일 때 '주의: '로(안내 상자 위험 톤과 같은 말). `icon: "alert"`는 톤 기본 아이콘(위험 엑스 원) 대신
+   * 경고 삼각형 — 같은 시장 상태를 눈에도 오류가 아니라 경고로(안내 상자 위험 톤의 삼각형과 같음, 귀의 '주의: '와 짝). 둘 다 주지 않으면 그대로.
    */
-  status?: { tone: "ok" | "warn" | "danger"; text: string; srPrefix?: string };
+  status?: { tone: "ok" | "warn" | "danger"; text: string; srPrefix?: string; icon?: "alert" };
   /** 12px 보조 글(기준일 등 — 값의 시각은 출처 줄의 `asOf`로). */
   note?: string | null;
   /**

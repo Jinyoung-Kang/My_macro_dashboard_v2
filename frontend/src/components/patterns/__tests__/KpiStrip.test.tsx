@@ -435,6 +435,24 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(within(tile("10Y-3M")).getByText("주의:").className).toContain("sr-only");
     expect(within(tile("10Y-3M")).queryByText("오류:")).toBeNull();
   });
+
+  it("상태 아이콘(status.icon 'alert')을 주면 위험 톤의 엑스 원 대신 경고 삼각형 — 주지 않으면 톤 기본 아이콘(엑스 원) 그대로", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "t10y3m", label: "10Y-3M", value: -0.62, status: { tone: "danger", text: "깊은 역전", srPrefix: "주의: ", icon: "alert" } },
+          { key: "err", label: "수집 오류", value: 3, status: { tone: "danger", text: "오류 태스크 3개" } },
+        ]}
+      />,
+    );
+    const marketIcon = within(tile("10Y-3M")).getByText("깊은 역전").parentElement?.querySelector("svg[aria-hidden='true']");
+    expect(marketIcon?.querySelector('path[d="M12 3.5 2.5 20h19z"]')).toBeTruthy();
+    expect(marketIcon?.querySelector("circle")).toBeNull();
+    expect(within(tile("10Y-3M")).getByText("깊은 역전").parentElement?.className).toContain("text-danger");
+    const errorIcon = within(tile("수집 오류")).getByText("오류 태스크 3개").parentElement?.querySelector("svg[aria-hidden='true']");
+    expect(errorIcon?.querySelector("circle")).toBeTruthy();
+  });
 });
 
 describe("KpiStrip — 출처 줄", () => {

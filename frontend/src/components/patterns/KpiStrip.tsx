@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { JSX, ReactNode } from "react";
 
 import { FOCUS_RING } from "@/components/ui/classes";
-import { StatusText } from "@/components/ui/icons";
+import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import type { KpiItem } from "@/lib/kpi";
 import { isMissingValue, presentText, statValueText } from "@/lib/patterns";
 
@@ -173,7 +173,12 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
       ) : null}
       {item.status && !item.pending ? (
         <div className="mt-1 text-xs leading-4">
-          <StatusText tone={item.status.tone} iconSize={12} srPrefix={item.status.srPrefix}>
+          <StatusText
+            tone={item.status.tone}
+            iconSize={12}
+            srPrefix={item.status.srPrefix}
+            icon={item.status.icon === "alert" ? <AlertTriangleIcon size={12} /> : undefined}
+          >
             {item.status.text}
           </StatusText>
         </div>
