@@ -512,6 +512,27 @@ def test_구글_풀기_예산_실패는_사유_budget이고_오래_캐시하지_
     assert env.fetched == [], "풀지 못했으면 기사 쪽은 받지 않음"
 
 
+def test_닫힌_호스트에_걸린_실패는_닫힘이_남은_만큼만_캐시(env, monkeypatch):
+    """구글 경유를 풀어 닿은 호스트가 이 기능 안에서 닫혀 있으면 blocked — 6시간 고정이 아니라 닫힘의 남은 초만큼(곧 풀리면 곧 다시, 24시간이면 그만큼)."""
+    relay_url = "https://news.google.com/rss/articles/CBMiFEFVX3lxTHN5bnRoZXRpYzAwMDAw0gEA?oc=5"
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(sa, "_clock", lambda: clock["now"])
+    for left in (1_800.0, 24 * 3_600.0):
+        ref = _register(relay_url, source="google_en")
+        monkeypatch.setattr(search_relay, "resolve", lambda url: search_relay.Resolved("https://news.example.com/real", 1))
+
+        def closed(url, *, deadline, refused=None, left=left):
+            raise fetch_article.ArticleFetchError("blocked", "news.example.com가 요청을 거부해(HTTP 403) 약 1시간 동안 이 매체는 다시 묻지 않습니다",
+                                                  host="news.example.com", hold=left)
+
+        monkeypatch.setattr(sa.fetch_article, "fetch_page", closed)
+        entry = sa._work(sa._lookup(ref), deadline=clock["now"] + sa.JOB_DEADLINE)
+        assert (entry.reason, entry.retryable) == ("blocked", False)
+        assert entry.expires - clock["now"] == left
+    unknown = sa._fail("blocked", "x")
+    assert unknown.expires - clock["now"] == sa.BLOCKED_TTL, "남은 초를 모르면 6시간"
+
+
 def test_사용자가_더한_제외_매체도_풀린_주소에_적용(env, monkeypatch):
     relay_url = "https://news.google.com/rss/articles/CBMiFEFVX3lxTHN5bnRoZXRpYzAwMDAw0gEA?oc=5"
     monkeypatch.setattr(search_store, "user_excludes", lambda: rules.make_excludes([{"kind": "domain", "value": "blocked.example"}]))

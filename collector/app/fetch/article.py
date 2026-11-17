@@ -62,11 +62,11 @@ class ArticleFetchError(Exception):
     """
     받지 못함 — ``reason``은 사유 코드(계약 §10 표 — refused_host·unsafe_address·bad_redirect·blocked·budget·timeout·transport·too_large·not_html·
     http_error·server_only), ``message``는 화면 글(호스트·상태만), ``retryable``은 잠시 뒤 다시 누르면 될 수 있는지, ``status``는 HTTP 상태(있으면),
-    ``sent``는 요청이 하나라도 나갔는지.
+    ``sent``는 요청이 하나라도 나갔는지, ``hold``는 이 기능이 그 호스트를 닫아 둔 남은 초(blocked일 때만 — 부르는 쪽이 실패를 그만큼 캐시).
     """
 
     def __init__(self, reason: str, message: str, *, retryable: bool = False, host: str | None = None,
-                 status: int | None = None, sent: bool = False) -> None:
+                 status: int | None = None, sent: bool = False, hold: float | None = None) -> None:
         super().__init__(message)
         self.reason = reason
         self.message = message
@@ -74,6 +74,7 @@ class ArticleFetchError(Exception):
         self.host = host
         self.status = status
         self.sent = sent
+        self.hold = hold
 
 
 @dataclass(frozen=True)
@@ -233,7 +234,7 @@ def _check_hop(url: str, *, hop: int, refused) -> addresses.Target:
     if shut is not None:
         hours = max(1, int(shut[0] // 3600) + (1 if shut[0] % 3600 else 0))
         raise ArticleFetchError("blocked", f"{target.host}가 요청을 거부해({shut[1]}) 약 {hours}시간 동안 이 매체는 다시 묻지 않습니다",
-                                host=target.host)
+                                host=target.host, hold=shut[0])
     if http.latch_remaining(target.host) is not None:
         raise ArticleFetchError("blocked", f"{target.host}가 같은 서버의 다른 수집을 거부해 잠시 묻지 않습니다", retryable=True,
                                 host=target.host)
@@ -290,9 +291,10 @@ def fetch_page(url: str, *, deadline: float, refused=None) -> Page:
         sign = http.challenge_sign(reply.headers, reply.body)
         if status in REJECT_STATUSES or sign is not None:
             why = f"HTTP {status}" + (f" · {sign}" if sign else "")
-            _block(host, why, http.retry_after_seconds(reply.headers.get("retry-after")))
-            raise ArticleFetchError("blocked", f"{host}가 요청을 거부했습니다({why}) — 6시간 동안 이 매체는 다시 묻지 않습니다",
-                                    host=host, status=status, sent=True)
+            held = _block(host, why, http.retry_after_seconds(reply.headers.get("retry-after")))
+            hours = max(1, int(held // 3600))
+            raise ArticleFetchError("blocked", f"{host}가 요청을 거부했습니다({why}) — {hours}시간 동안 이 매체는 다시 묻지 않습니다",
+                                    host=host, status=status, sent=True, hold=held)
         if status in REDIRECT_STATUSES:
             location = (reply.headers.get("location") or "").strip()
             logger.info("기사 받기: %s HTTP %d(옮김)", host, status)

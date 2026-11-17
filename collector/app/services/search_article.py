@@ -61,7 +61,7 @@ MAX_TAGS = 50_000
 
 SUCCESS_TTL = 86_400.0                    # 성공 24시간(사용자 결정)
 SHAPE_TTL = 1_800.0                       # no_body·not_html·too_large·http_error(4xx) 30분
-BLOCKED_TTL = 6 * 3_600.0                 # 거부 6시간(호스트 닫힘과 같이)
+BLOCKED_TTL = 6 * 3_600.0                 # 거부 6시간(호스트 닫힘과 같이 — 닫힘의 남은 초를 알면 그만큼, _fail)
 RULE_TTL = 3_600.0                        # refused_host·unsafe_address·bad_redirect·relay_unresolved(모양) 1시간
 TRANSIENT_TTL = 60.0                      # timeout·transport·5xx·relay_unresolved(전송) 60초
 # 작업자가 낸 결과 가운데 캐시하지 않는 사유(호스트 하루 예산·프록시 환경)도 다시 묻는 화면에 한 번 전하려고 이만큼은 둡니다 — 두지 않으면 다음 다시
@@ -512,9 +512,15 @@ def _from_entry(ref: str, entry: _Entry) -> dict:
     return _answer(ref, "error", reason=entry.reason, message=entry.message, retryable=entry.retryable, retry_after=retry_after)
 
 
-def _fail(reason: str, message: str, *, retryable: bool = False) -> _Entry:
-    """작업자가 낸 실패 — 사유별 캐시 시간(:func:`_ttl`), 캐시하지 않는 사유는 :data:`DELIVERY_TTL`만(다시 묻는 화면에 전하려고)."""
+def _fail(reason: str, message: str, *, retryable: bool = False, hold: float | None = None) -> _Entry:
+    """
+    작업자가 낸 실패 — 사유별 캐시 시간(:func:`_ttl`), 캐시하지 않는 사유는 :data:`DELIVERY_TTL`만(다시 묻는 화면에 전하려고). 이 기능이 닫은 호스트에
+    걸린 실패(blocked + ``hold``)는 닫힘이 남은 만큼만 캐시합니다 — 6시간 고정이면 곧 풀릴 호스트도 6시간 막히고, 24시간 닫힌 호스트는 6시간 뒤 같은
+    글을 다시 줄에 넣어 예산을 썼습니다.
+    """
     life = _ttl(reason, retryable)
+    if reason == "blocked" and not retryable and hold is not None and hold > 0:
+        life = hold
     return _Entry(expires=_clock() + (life or DELIVERY_TTL), status="error", reason=reason, message=message, retryable=retryable,
                   transient=life == TRANSIENT_TTL)
 
@@ -542,7 +548,7 @@ def _work(origin: _Origin, deadline: float) -> _Entry:
     try:
         page = fetch_article.fetch_page(url, deadline=deadline, refused=lambda host: refusal(host, excludes=excludes))
     except fetch_article.ArticleFetchError as exc:
-        return _fail(exc.reason, exc.message, retryable=exc.retryable)
+        return _fail(exc.reason, exc.message, retryable=exc.retryable, hold=exc.hold)
     try:
         found = extract(page.body, content_type=page.content_type, fallback_title=origin.title, fallback_site=origin.publisher)
     except NoBody as exc:

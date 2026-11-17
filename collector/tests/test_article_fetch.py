@@ -236,10 +236,12 @@ def test_403_429_차단_표지는_그_호스트를_6시간_닫고_공용_래치�
     assert caught.value.reason == "blocked" and caught.value.sent is True
     left, _ = article.blocked_reason("news.example.com")
     assert 5.9 * 3600 < left <= 6 * 3600
+    assert caught.value.hold == pytest.approx(6 * 3600), "닫은 시간을 실어 보냄(부르는 쪽이 그만큼 캐시)"
     assert http.latch_remaining("news.example.com") is None, "공용 세션의 5분 래치는 부르지 않음"
     with pytest.raises(article.ArticleFetchError) as again:
         article.fetch_page("https://news.example.com/other", deadline=_deadline())
     assert again.value.reason == "blocked" and len(net.sent) == 1, "닫힌 동안은 보내지 않음"
+    assert 5.9 * 3600 < again.value.hold <= 6 * 3600, "닫힘에 걸린 실패도 남은 초를 실어 보냄"
 
 
 def test_Retry_After가_더_길면_그만큼_닫되_24시간까지(net):
