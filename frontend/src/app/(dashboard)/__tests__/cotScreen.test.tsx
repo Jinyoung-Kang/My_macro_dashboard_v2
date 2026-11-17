@@ -296,7 +296,7 @@ describe("QA-668 COT 저장본 없음이면 자산 개수를 0으로 적지 않�
 // (같은 행의 상업 헤저·1주·4주·백분위 칸은 '— 값 없음' — QA 스택 1440·390, 모의 응답의 null 칸·수집 실패 행). 개편 전부터(옛 표는 다섯 칸 모두 '—'만).
 describe("QA-672 스마트머니 순포지션을 모르면 공용 표의 모르는 칸", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 순포지션 칸이 '—'뿐이었습니다('Unable to find an element with the text: 값 없음').
-  it.fails("ncNet null 행과 수집 실패 행 — 순포지션 칸은 상업 헤저 칸과 같이 '—'(읽기에서 뺌)와 낭독 글 '값 없음'", async () => {
+  it("ncNet null 행과 수집 실패 행 — 순포지션 칸은 상업 헤저 칸과 같이 '—'(읽기에서 뺌)와 낭독 글 '값 없음'", async () => {
     const overview = BODIES["/api/cot/overview"] as { assets: unknown[] };
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/cot/overview")) {

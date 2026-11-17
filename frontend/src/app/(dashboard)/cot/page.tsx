@@ -147,8 +147,10 @@ export default function CotPage() {
       key: "ncNet",
       header: "스마트머니 순포지션",
       align: "right",
-      // 순포지션의 색(롱 빨강·숏 파랑)은 뜻이라 그대로 두고, 부호(+·−)가 함께 방향을 나릅니다(QA-629).
-      cell: (row) => <span className={deltaColor(row.ncNet ?? null, 0)}>{formatSignedCount(row.ncNet)}</span>,
+      // 순포지션의 색(롱 빨강·숏 파랑)은 뜻이라 그대로 두고, 부호(+·−)가 함께 방향을 나릅니다(QA-629). 모르면 null — 공용 표의 모르는 칸('—'와 낭독 글
+      // '값 없음')입니다. 색 span으로 감싼 '—'는 공용 표가 모르는 칸으로 보지 않아 이 칸만 '—'로 읽혔습니다(QA-672).
+      cell: (row) =>
+        row.ncNet === null || row.ncNet === undefined ? null : <span className={deltaColor(row.ncNet, 0)}>{formatSignedCount(row.ncNet)}</span>,
     },
     { key: "commNet", header: "상업 헤저", align: "right", cell: (row) => formatSignedCount(row.commNet) },
     { key: "change1w", header: "1주 변화", align: "right", cell: (row) => <ChangeCell change={row.change1w} digits={0} /> },
