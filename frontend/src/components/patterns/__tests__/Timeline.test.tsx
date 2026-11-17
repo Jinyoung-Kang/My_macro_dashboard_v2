@@ -1,6 +1,7 @@
 /**
  * Timeline — 시각순 목록(작업대 실행 명세 §6, P5a — 처음 쓰는 곳 국면 판정 기록, P6 결정 로그).
- * 네 상태: 값 있음(줄마다 시각 열 <time>·종류 태그·요약·배지, 고르면 검사 칸 제목 = title), 빈 목록(emptyText), 읽는 중(placeholder Skeleton role=status),
+ * 네 상태: 값 있음(줄마다 시각 열 <time>·종류 태그·요약·배지, 고르면 검사 칸 제목 = title), 빈 목록(emptyText), 읽는 중(placeholder Skeleton·목록 꼴
+ * TimelineSkeleton role=status),
  * 오류(placeholder ErrorState·다시 시도). 톤 태그는 아이콘 + 글('주의:'), 긴 요약은 낱말 사이에서 꺾음, 좁은 화면은 대화상자, 누름 자리 44px, 강조색 없음.
  * 넓은 화면은 matchMedia 대역(WIDE_SHELL_MEDIA). 키·검사 칸 동작 자체는 목록-검사(MasterDetail.test)가 지킵니다.
  */
@@ -14,7 +15,7 @@ import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 import { PropertyList } from "../PropertyList";
 import { Skeleton } from "../Skeleton";
-import { Timeline, type TimelineEntry } from "../Timeline";
+import { Timeline, type TimelineEntry, TimelineSkeleton } from "../Timeline";
 
 afterEach(() => {
   cleanup();
@@ -169,6 +170,28 @@ describe("Timeline — 빈 목록·읽는 중·오류", () => {
     expect(screen.getByRole("status", { name: "판정 기록 불러오는 중" })).toBeTruthy();
     expect(screen.queryByRole("list")).toBeNull();
     expect(screen.queryByText("3건")).toBeNull();
+  });
+
+  it("목록 꼴 자리표시(TimelineSkeleton) — 줄 수만큼 글 없는 자리 줄(목록 줄과 같은 여백·구분선·좁은 화면 44px, 시각 열 5.5rem), 읽기에서 빠지고 이름 있는 상태", () => {
+    renderTimeline({ count: true, placeholder: <TimelineSkeleton rows={3} label="판정 기록을 읽는 중" /> });
+    const status = screen.getByRole("status", { name: "판정 기록을 읽는 중" });
+    expect(status.getAttribute("aria-busy")).toBe("true");
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByText("3건")).toBeNull();
+    const list = status.querySelector("ul") as HTMLElement;
+    expect(list.getAttribute("aria-hidden")).toBe("true");
+    const rows = Array.from(list.querySelectorAll("li"));
+    expect(rows).toHaveLength(3);
+    // 목록-검사 줄과 같은 여백·구분선(마지막 줄은 선 없음), 좁은 화면 44px·넓은 화면 글 높이.
+    expect(tokens(rows[0])).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "px-3", "py-2", "border-b", "border-border-subtle", "lg:pt-1.5", "lg:pb-[5px]"]));
+    expect(tokens(rows[2])).toEqual(expect.arrayContaining(["lg:py-1.5"]));
+    expect(tokens(rows[2])).not.toContain("border-b");
+    expect(rows[0].querySelector(".w-\\[5\\.5rem\\]")).not.toBeNull();
+    expect(status.textContent).toBe("판정 기록을 읽는 중");
+    // 줄 수는 1 이상 정수(0·NaN이면 한 줄).
+    cleanup();
+    render(<TimelineSkeleton rows={Number.NaN} />);
+    expect(screen.getByRole("status", { name: "불러오는 중" }).querySelectorAll("li")).toHaveLength(1);
   });
 
   it("오류면 placeholder(ErrorState) — 다시 시도를 누를 수 있다", () => {

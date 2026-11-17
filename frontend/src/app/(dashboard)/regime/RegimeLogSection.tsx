@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import { type PropertyItem, PropertyList, Skeleton, Timeline, type TimelineEntry } from "@/components/patterns";
+import { type PropertyItem, PropertyList, Timeline, type TimelineEntry, TimelineSkeleton } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Panel } from "@/components/ui";
 import { LineIcon, LockIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
@@ -41,6 +41,16 @@ function entryProperties(entry: RegimeLogEntry): PropertyItem[] {
   ];
 }
 
+/** 판정 기록 요청 한도 — 열 때 한 번 읽는 최근 기록 수(무료 등급은 서버가 30건으로 줄임). */
+const LOG_LIMIT = 60;
+
+/**
+ * 판정 기록을 읽는 동안 잡아 두는 목록 자리 줄 수(QA-651) — 자리일 뿐 보이는 수가 아닙니다. 판정 기록은 하루 한 건씩 쌓여 요청 한도까지 차므로(열흘이
+ * 지나면 실제 목록이 이보다 김), 이만큼 잡으면 lg(1024~1279 — 오른쪽 칸이 가운데 아래)의 '연결'·'출처' 패널이 처음부터 화면 아래에 있어 값이 와도
+ * 화면 안에서 밀리지 않습니다(예전 막대 네 줄 88px — 1024 x 900에서 '연결' 위 끝 797 → 1,743px, 첫 적재 CLS 0.053). 기록이 이보다 적으면 목록이 줄어듭니다.
+ */
+const LOG_PENDING_ROWS = 10;
+
 /**
  * 줄 요약 — 마디(이름 값)를 ' · '로 잇고 마디 안에서는 줄을 바꾸지 않습니다. 가운뎃점은 앞 마디에 붙여(줄 끝에 남고) 다음 줄이 '·'로 시작하지 않게 합니다.
  */
@@ -68,7 +78,7 @@ function Summary({ parts }: { parts: readonly string[] }) {
  * 목록은 열 때 한 번 읽은 응답만 씁니다 — 고르기는 요청을 더하지 않습니다.
  */
 export function RegimeLogSection() {
-  const { data, error, reload, refreshError } = useApi<RegimeLogResponse>(endpoints.insight.regimeLog(60), 600_000);
+  const { data, error, reload, refreshError } = useApi<RegimeLogResponse>(endpoints.insight.regimeLog(LOG_LIMIT), 600_000);
   const rows = data?.available ? (data.entries ?? []) : [];
   const byDate = new Map(rows.map((row) => [row.date, row]));
   const entries: TimelineEntry[] = rows.map((row) => ({
@@ -81,8 +91,12 @@ export function RegimeLogSection() {
   }));
   // 기록 시각(KST 시) — 응답에 없으면 시각 마디를 뺍니다(18시처럼 지어내지 않음 — QA-647).
   const hour = typeof data?.recordHourKst === "number" && Number.isFinite(data.recordHourKst) ? data.recordHourKst : null;
-  // 응답 전에는 목록 대신 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도, 아니면 읽는 중 막대(빈 목록 글이 잠깐 비치지 않게).
-  const placeholder = data ? null : error ? <ErrorState message={error} onRetry={reload} /> : <Skeleton lines={4} label="판정 기록을 읽는 중" />;
+  // 응답 전에는 목록 대신 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도, 아니면 목록 꼴 자리 줄(빈 목록 글이 잠깐 비치지 않게, 목록 높이를 잡음 — QA-651).
+  const placeholder = data ? null : error ? (
+    <ErrorState message={error} onRetry={reload} />
+  ) : (
+    <TimelineSkeleton rows={LOG_PENDING_ROWS} label="판정 기록을 읽는 중" />
+  );
 
   return (
     <Panel

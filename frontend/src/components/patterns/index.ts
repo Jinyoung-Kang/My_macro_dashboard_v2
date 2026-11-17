@@ -23,4 +23,4 @@ export { Skeleton } from "./Skeleton";
 export { Sparkline } from "./Sparkline";
 export { SplitPane } from "./SplitPane";
 export { StatGrid, StatTile } from "./StatTile";
-export { Timeline, type TimelineEntry, type TimelineKind } from "./Timeline";
+export { Timeline, TimelineSkeleton, type TimelineEntry, type TimelineKind } from "./Timeline";

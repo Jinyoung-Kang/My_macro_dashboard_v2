@@ -99,6 +99,7 @@ describe("components/patterns 배럴", () => {
         "StatGrid",
         "StatTile",
         "Timeline",
+        "TimelineSkeleton",
       ].sort(),
     );
     expect(names).not.toContain("LineChart");
