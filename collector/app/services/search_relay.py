@@ -54,13 +54,17 @@ UNRESOLVED = "구글 경유 주소를 원문 주소로 풀지 못했습니다 �
 
 
 class RelayUnresolved(Exception):
-    """풀지 못함 — ``retryable``은 전송 실패(잠시 뒤 다시 누르면 될 수 있음), ``requests``는 보낸 요청 수."""
+    """
+    풀지 못함 — ``reason``은 본문 보기의 사유 코드(계약 §10-3 — 하루 예산을 다 썼거나 읽지 못하면 ``budget``, 그 밖은 ``relay_unresolved``),
+    ``retryable``은 전송 실패(잠시 뒤 다시 누르면 될 수 있음), ``requests``는 보낸 요청 수.
+    """
 
-    def __init__(self, message: str, *, retryable: bool = False, requests: int = 0) -> None:
+    def __init__(self, message: str, *, retryable: bool = False, requests: int = 0, reason: str = "relay_unresolved") -> None:
         super().__init__(message)
         self.message = message
         self.retryable = retryable
         self.requests = requests
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -237,9 +241,9 @@ def _spend(sent: int) -> None:
         allowed = _take_budget()
     except Exception as exc:  # noqa: BLE001 — 예산을 셀 수 없으면 보내지 않음(닫힌 실패)
         logger.info("구글 경유 풀기: 예산을 읽지 못함(%s)", type(exc).__name__)
-        raise RelayUnresolved("구글 경유 풀기 예산을 확인하지 못해 보내지 않았습니다", requests=sent) from None
+        raise RelayUnresolved("구글 경유 풀기 예산을 확인하지 못해 보내지 않았습니다", requests=sent, reason="budget") from None
     if not allowed:
-        raise RelayUnresolved(f"오늘 구글 경유 풀기 {DAILY_BUDGET}건을 다 썼습니다 — 내일(KST) 다시", requests=sent)
+        raise RelayUnresolved(f"오늘 구글 경유 풀기 {DAILY_BUDGET}건을 다 썼습니다 — 내일(KST) 다시", requests=sent, reason="budget")
 
 
 def _read_limited(response, limit: int) -> bytes:

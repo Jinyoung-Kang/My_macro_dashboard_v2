@@ -474,7 +474,8 @@ def _work(origin: _Origin, deadline: float) -> _Entry:
         try:
             resolved = search_relay.resolve(url)
         except search_relay.RelayUnresolved as exc:
-            return _fail("relay_unresolved", exc.message, retryable=exc.retryable)
+            # 구글 풀기 예산(다 씀·읽지 못함)은 사유 budget — 캐시하지 않는 사유라 전하는 몫(DELIVERY_TTL)만 둡니다(계약 §10-3).
+            return _fail(exc.reason, exc.message, retryable=exc.retryable)
         url, via_google = resolved.url, True
     try:
         page = fetch_article.fetch_page(url, deadline=deadline, refused=lambda host: refusal(host, excludes=excludes))

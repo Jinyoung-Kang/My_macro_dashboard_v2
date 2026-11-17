@@ -34,6 +34,10 @@ FIXTURES = Path(__file__).parent / "fixtures" / "article"
 APP = Path(__file__).resolve().parents[1] / "app"
 
 
+# 실제 구글 경유 풀기 — 모듈을 읽을 때 잡아 둡니다(env가 이 자리를 '부르면 실패'로 바꿔 끼움). 네트워크 자리(_get·_post)는 conftest가 막아 둠.
+REAL_RESOLVE = search_relay.resolve
+
+
 def _row(url, *, kind="news", source="bing", reader=None, title="Synthetic headline", publisher="Example Ledger") -> dict:
     return {"id": f"id-{abs(hash(url)) % 10_000}", "kind": kind, "title": title, "url": url, "publisher": publisher,
             "publisherDomain": rules.domain_of(url) if url else None, "publishedAt": "2026-11-16T00:00:00Z", "timeBasis": "published",
@@ -398,6 +402,28 @@ def test_풀린_구글_주소에도_받지_않는_매체와_중화권_제외를_
     sa.request(ref, start=True)
     answer = _done(ref)
     assert (answer["reason"], answer["retryable"]) == ("relay_unresolved", False)
+
+
+@pytest.mark.parametrize("budget_answer", [False, RuntimeError("db down")])
+def test_구글_풀기_예산_실패는_사유_budget이고_오래_캐시하지_않는다(env, monkeypatch, budget_answer):
+    """구글 경유 풀기의 하루 예산을 다 썼거나 읽지 못하면 사유 budget(계약 §10-3) — 1시간(RULE_TTL)이 아니라 전하는 몫(DELIVERY_TTL)만."""
+    relay_url = "https://news.google.com/rss/articles/CBMiFEFVX3lxTHN5bnRoZXRpYzAwMDAw0gEA?oc=5"
+    ref = _register(relay_url, source="google_en")
+    monkeypatch.setattr(search_relay, "resolve", REAL_RESOLVE)
+
+    def take():
+        if isinstance(budget_answer, Exception):
+            raise budget_answer
+        return budget_answer
+
+    monkeypatch.setattr(search_relay, "_take_budget", take)
+    monkeypatch.setattr(search_relay, "decode_offline", lambda article_id: None)
+    clock = {"now": 5000.0}
+    monkeypatch.setattr(sa, "_clock", lambda: clock["now"])
+    entry = sa._work(sa._lookup(ref), deadline=clock["now"] + sa.JOB_DEADLINE)
+    assert (entry.reason, entry.retryable) == ("budget", False)
+    assert entry.expires - clock["now"] == sa.DELIVERY_TTL
+    assert env.fetched == [], "풀지 못했으면 기사 쪽은 받지 않음"
 
 
 def test_사용자가_더한_제외_매체도_풀린_주소에_적용(env, monkeypatch):

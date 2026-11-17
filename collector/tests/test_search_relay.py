@@ -123,6 +123,7 @@ def test_구글_예산과_공용_래치(monkeypatch):
     with pytest.raises(relay.RelayUnresolved) as caught:
         relay.resolve(RELAY)
     assert seen == [("news.google.com", "article", 60)] and "60" in caught.value.message
+    assert caught.value.reason == "budget", "예산 소진은 사유 budget(계약 §10-3)"
 
     def broken(*args):
         raise RuntimeError("db down")
@@ -130,7 +131,7 @@ def test_구글_예산과_공용_래치(monkeypatch):
     monkeypatch.setattr(relay.store, "take_search_budget", broken)
     with pytest.raises(relay.RelayUnresolved) as caught:
         relay.resolve(RELAY)
-    assert "확인하지 못해" in caught.value.message
+    assert "확인하지 못해" in caught.value.message and caught.value.reason == "budget"
 
     monkeypatch.setattr(relay, "_take_budget", lambda: True)
 
@@ -140,7 +141,7 @@ def test_구글_예산과_공용_래치(monkeypatch):
     monkeypatch.setattr(relay, "_get", latched)
     with pytest.raises(relay.RelayUnresolved) as caught:
         relay.resolve(RELAY)
-    assert caught.value.retryable is True and "거부" in caught.value.message
+    assert caught.value.retryable is True and "거부" in caught.value.message and caught.value.reason == "relay_unresolved"
 
 
 def test_구글이_래치로_닫혀_있으면_예산을_쓰지_않고_멈춘다(monkeypatch, calls):
