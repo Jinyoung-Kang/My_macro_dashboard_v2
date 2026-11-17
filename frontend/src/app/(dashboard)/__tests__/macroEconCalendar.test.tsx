@@ -381,7 +381,9 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
 
   // 2026-11-18 검토 지적: 고른 날을 지키는 조건(새 자료에 그날이 있는가)을 지워도 앞 시험이 모두 통과했습니다 — 그러면 지난날을 고른 채 두었다가 창이 하루
   // 밀린 새 자료가 오면 띠와 표가 통째로 사라지고 '보통 이상인 일정이 없습니다'가 떴습니다(다시 고를 탭도 없음).
-  it("고른 날은 새 자료에서도 지키고, 새 자료에서 사라지면 같은 규칙(오늘·오늘 뒤 첫 날)으로 다시 고른다", async () => {
+  // QA-684(11-18 요청 QA 스택 확인): 사라진 날의 고름은 그리기 때 대신 고를 날만 셈하고 상태에 남아, 그날이 다음 읽기에 다시 오면 입력 없이 띠·표가 옛 날로
+  // 돌아갔습니다(셋째 단계). 수정 전(재현 커밋에서는 it.fails) 셋째 단계에서 11/5 탭이 다시 골라졌습니다.
+  it("고른 날은 새 자료에서도 지키고, 새 자료에서 사라지면 같은 규칙(오늘·오늘 뒤 첫 날)으로 다시 고르며, 사라졌던 날이 다시 와도 되살리지 않는다", async () => {
     at("2026-11-12T03:00:00Z"); // 11-12 KST — 일정이 있는 날
     mockCalendar(CALENDAR);
     const { rerender } = render(<EconCalendarSection />);
@@ -407,6 +409,16 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     expect(screen.getByRole("tablist", { name: "경제 캘린더 날짜" })).toBeTruthy();
     expect(within(screen.getByRole("tabpanel")).getByText("Inflation Rate YoY")).toBeTruthy();
     expect(screen.queryByText(/일정이 없습니다/)).toBeNull();
+
+    // 사라졌던 11/5가 다음 읽기에 다시 옴(창이 되돌아간 수집본 등) — 입력이 없었으니 오늘(11/12) 그대로, 옛 고름(11/5)을 되살리지 않음.
+    mockCalendar(CALENDAR);
+    signal.token = 3;
+    rerender(<EconCalendarSection />);
+    await waitFor(() => expect(screen.getByRole("tab", { name: "11/5 (목) 1건" })).toBeTruthy());
+    expect(screen.getByRole("tab", { name: "11/5 (목) 1건" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(screen.getByRole("tabpanel")).getByText("Inflation Rate YoY")).toBeTruthy();
+    expect(screen.queryByText("Initial Jobless Claims")).toBeNull();
   });
 
   // 2026-11-18 검토 지적: 이 카드는 매크로 화면의 마지막 절이라, 일정이 적은 날로 바꿔 문서가 짧아지면 맨 아래까지 내린 스크롤이 눌려 방금 누른 날짜 띠가
@@ -460,5 +472,50 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
       listeners.forEach((listener) => listener());
     });
     expect(panel.style.minHeight).toBe("");
+  });
+});
+
+// QA-683(11-18 요청 QA 스택 확인, qa@06f93335): '나라' 칸(한국·미국)에 줄 바꿈을 막는 클래스가 없어, 표가 조금만 눌려도 공용 표의 자동 배치가 이 열을
+// 52px 아래로 줄여 '미/국'·'한/국'으로 음절이 꺾였습니다(칸 글 14px 두 자 28px보다 머리 '나라'(13px·nowrap 26px)가 좁은 탓). 조밀 표(dense)의 행이
+// 1024에서 28 → 48px, 390에서 45 → 65px로 늘었습니다(머리 없는 크롬으로 잼). 공용 표는 오른쪽 정렬(숫자) 열만 nowrap이라 이 열은 부르는 쪽이 붙입니다.
+// 수정 전(재현 커밋에서는 it.fails) 칸에 whitespace-nowrap이 없었습니다.
+describe("QA-683 '나라' 칸은 음절에서 꺾이지 않는다", () => {
+  it("'나라' 열의 머리와 칸 모두 whitespace-nowrap", async () => {
+    mockCalendar(CALENDAR);
+    render(<EconCalendarSection />);
+    fireEvent.click(await screen.findByRole("tab", { name: /^11\/26 \(목\)/ }, { timeout: 500 }));
+    const table = screen.getByRole("table");
+    const heads = within(table).getAllByRole("columnheader");
+    const country = heads.findIndex((head) => head.textContent === "나라");
+    const cells = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.children[country] as HTMLElement);
+    expect(cells.map((cell) => cell.textContent)).toEqual(["한국"]);
+    for (const element of [heads[country], ...cells]) expect(element.className.split(/\s+/)).toContain("whitespace-nowrap");
+  });
+});
+
+// QA-685(11-18 요청 QA 스택 확인): 포커스가 있던 날짜 탭이 다시 읽기에서 사라지면(창이 하루 밀림) 그 단추가 DOM에서 떨어져 포커스가 body로 갔습니다 —
+// 포커스 링이 사라지고 낭독기는 자리를 잃었습니다(크롬의 다음 Tab은 그날 표, Shift+Tab은 고른 탭 — 사라진 자리 근처에서 이어짐). 공용 탭 줄이 다시 고른
+// 날의 탭으로 포커스를 넘깁니다(components/ui Tabs).
+// 수정 전(재현 커밋에서는 it.fails) 포커스가 body였습니다.
+describe("QA-685 포커스가 있던 날짜 탭이 사라지면", () => {
+  it("다시 고른 날(오늘)의 탭으로 포커스가 간다", async () => {
+    at("2026-11-12T03:00:00Z");
+    mockCalendar(CALENDAR);
+    const { rerender } = render(<EconCalendarSection />);
+    const past = await screen.findByRole("tab", { name: "11/5 (목) 1건" }, { timeout: 500 });
+    past.focus();
+    fireEvent.click(past);
+    expect(document.activeElement).toBe(past);
+
+    mockCalendar({ ...CALENDAR, events: CALENDAR.events.filter((entry) => !entry.atKst.startsWith("2026-11-05")) });
+    signal.token = 1;
+    rerender(<EconCalendarSection />);
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /^11\/5 / })).toBeNull());
+    const today = screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" });
+    expect(today.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(today);
   });
 });

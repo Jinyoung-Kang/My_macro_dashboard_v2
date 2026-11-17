@@ -130,3 +130,95 @@ describe("Tag", () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });
+
+// QA-685(11-18 요청 QA 스택 확인, qa@06f93335): 탭 단추는 key=item.key로 그려, 포커스가 있던 탭이 다시 읽기에서 빠지면(경제 캘린더 날짜 띠의 지난날 등) 그
+// 단추가 DOM에서 떨어지고 포커스가 body로 갔습니다 — 로빙 진입점(tabIndex 0)만 옮기고 포커스는 넘기지 않았습니다(포커스 링이 사라지고 낭독기는 자리를
+// 잃음. 크롬의 다음 Tab·Shift+Tab은 사라진 자리 근처에서 이어짐 — jsdom은 그 시작점을 흉내 내지 않아 시험은 activeElement를 봅니다).
+// 탭 줄 안 포커스가 그 탭과 함께 사라졌을 때만 지금 진입 탭(고른 탭)으로 옮기고, 포커스가 다른 곳이면 건드리지 않습니다(ExcludesPanel QA-444 되돌림과
+// 같은 규칙 — activeElement가 body·null일 때만). 수정 전(재현 커밋에서는 it.fails) 포커스가 body였습니다.
+describe("QA-685 포커스가 있던 탭이 사라지면 고른 탭으로", () => {
+  const ABC = [
+    { key: "a", label: "가" },
+    { key: "b", label: "나" },
+    { key: "c", label: "다" },
+  ];
+
+  function view(items: readonly { key: string; label: string }[], value: string) {
+    return (
+      <>
+        <button type="button">바깥</button>
+        <Tabs label="날짜" items={items} value={value} onChange={() => {}} idPrefix="day" panelId="day-panel" />
+        <div role="tabpanel" id="day-panel" aria-labelledby={tabId("day", value)} />
+      </>
+    );
+  }
+
+  it("고르지 않은 탭에 포커스가 있다가 그 탭이 빠지면 고른 탭으로(스크롤 없이)", () => {
+    const { rerender } = render(view(ABC, "b"));
+    const third = screen.getByRole("tab", { name: "다" });
+    third.focus();
+    const selected = screen.getByRole("tab", { name: "나" });
+    const focus = vi.spyOn(selected, "focus");
+    rerender(view(ABC.slice(0, 2), "b"));
+    expect(document.activeElement).toBe(selected);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  });
+
+  it("고른 탭에 포커스가 있다가 그 탭이 빠지면 새로 고른 탭(새 value)으로", () => {
+    const { rerender } = render(view(ABC, "c"));
+    screen.getByRole("tab", { name: "다" }).focus();
+    rerender(view(ABC.slice(0, 2), "a"));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "가" }));
+    expect(screen.getAllByRole("tab").map((tab) => tab.tabIndex)).toEqual([0, -1]);
+  });
+
+  it("포커스가 줄 밖이거나 남는 탭에 있으면 건드리지 않는다 — 탭이 빠져도, 빠지지 않고 다시 그려도", () => {
+    const { rerender } = render(view(ABC, "b"));
+    const outside = screen.getByRole("button", { name: "바깥" });
+    outside.focus();
+    rerender(view(ABC.slice(0, 2), "b"));
+    expect(document.activeElement).toBe(outside);
+
+    rerender(view(ABC, "b"));
+    const first = screen.getByRole("tab", { name: "가" });
+    first.focus(); // 화살표로 옮긴 것처럼 고르지 않은 탭에 포커스
+    rerender(view(ABC, "b"));
+    expect(document.activeElement).toBe(first);
+    rerender(view(ABC.filter((item) => item.key !== "c"), "b"));
+    expect(document.activeElement).toBe(first);
+  });
+
+  // 지킴(검토 지적): 다시 그릴 때마다 새 ref 함수라 남는 단추도 null로 풀렸다 붙습니다. 풀릴 때 '그 단추가 activeElement였는가'를 보지 않으면 렌더마다
+  // 표시가 서고, 아무 데도 포커스가 없는 화면(첫 읽기·빈 곳을 누른 뒤 — activeElement가 body)에서 경제 캘린더의 1분 시계·10분 다시 읽기마다 포커스가
+  // 탭 줄로 끌려옵니다. 위 시험은 포커스가 단추에 있는 경우라 layout effect의 body 검사가 따로 막아 그 조건이 빠져도 통과합니다.
+  it("포커스가 아무 데도 없으면(body) 다시 그려도·탭이 빠져도 탭 줄로 끌어오지 않는다", () => {
+    const { rerender } = render(view(ABC, "b"));
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    const spies = screen.getAllByRole("tab").map((tab) => vi.spyOn(tab, "focus"));
+    rerender(view(ABC, "b"));
+    expect(document.activeElement).toBe(document.body);
+    rerender(view(ABC.slice(0, 2), "b"));
+    expect(document.activeElement).toBe(document.body);
+    rerender(view(ABC.slice(0, 2), "a"));
+    expect(document.activeElement).toBe(document.body);
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  });
+
+  // 지킴(검토 지적): 탭이 빠지지 않고 차례만 바뀌면(key 재배열) React가 옮기는 단추는 DOM 안에서 떼었다 붙여지며 브라우저·jsdom 모두 그 순간 포커스를
+  // body로 떨어뜨리지만, React가 바꾸기를 마친 직후(layout effect 앞) 아직 문서에 있는 앞 포커스 요소로 되돌립니다(react-dom 19 commit의 선택 복원 —
+  // 인자 없는 focus()). 그래서 화살표로 가 있던 고르지 않은 탭이 그대로 포커스를 지니고 고른 탭으로 튀지 않습니다. [가,나,다] → [다,가,나]에서 React는
+  // '다'를 두고 '가'·'나'를 옮기므로 옮겨지는 '가'에 포커스를 둡니다.
+  it("차례만 바뀌면 포커스가 있던 탭이 그대로 지닌다 — 옮겨진 단추여도 고른 탭으로 튀지 않음", () => {
+    const { rerender } = render(view(ABC, "b"));
+    const first = screen.getByRole("tab", { name: "가" });
+    first.focus(); // 화살표로 옮긴 것처럼 고르지 않은 탭에 포커스
+    const restored = vi.spyOn(first, "focus");
+    const selectedFocus = vi.spyOn(screen.getByRole("tab", { name: "나" }), "focus");
+    rerender(view([ABC[2], ABC[0], ABC[1]], "b"));
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["다", "가", "나"]);
+    expect(restored).toHaveBeenCalled(); // 옮겨지며 포커스를 잃었다가 React가 되돌림 — 이 시험이 그 길을 지나는지
+    expect(document.activeElement).toBe(first);
+    expect(selectedFocus).not.toHaveBeenCalled();
+  });
+});

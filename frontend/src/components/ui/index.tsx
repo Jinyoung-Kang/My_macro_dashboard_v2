@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, ReactNode, useId, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
+import { Children, ReactNode, useId, useLayoutEffect, useRef, type KeyboardEvent, type SelectHTMLAttributes } from "react";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { deltaColor, deltaDirection, EMPTY, formatAge, formatKst, textDeltaDirection, withMinusSign, withoutLeadingIcon } from "@/lib/format";
 import {
@@ -657,6 +657,11 @@ const TAB_KEYS = new Set(["ArrowRight", "ArrowLeft", "Home", "End"]);
  * 처음 그릴 때와 고른 탭이 바뀔 때만 움직이고, 손가락·마우스로 누른 칸은 고른 뒤에 보입니다(누르는 도중에 줄이 움직이지 않게).
  * `wrap`을 주면 대신 줄을 바꿔 모든 탭이 보입니다(가로 스크롤 없음) — 탭마다 제 줄의 바닥선을 지녀 고른 탭의 밑줄이 다음 줄 위에 떠 보이지
  * 않습니다(underlineTabClasses wrap). 반 폭 패널처럼 탭 다섯이 들어가지 않는 자리(홈 시장 패널 — 2026-11-16 결정 1)만 켭니다.
+ *
+ * 포커스가 있던 탭이 다시 그리기에서 빠지면(경제 캘린더 날짜 띠의 지난날이 새 자료에서 사라짐 등) 그 단추가 DOM에서 떨어져 포커스가 body로 갔습니다
+ * (QA-685 — 포커스 링이 사라지고 낭독기는 자리를 잃음. 크롬의 다음 Tab·Shift+Tab은 사라진 자리 근처인 표·고른 탭에서 이어졌음). 그래서 탭 줄 안 포커스가
+ * 그 탭과 함께 사라졌을 때만 지금 진입 탭(고른 탭 — 새 value)으로 옮깁니다(스크롤 없이).
+ * 포커스가 다른 곳에 있으면 건드리지 않습니다(activeElement가 body·null일 때만 — 정보 검색 제외 목록 QA-444의 되돌림과 같은 규칙).
  */
 export function Tabs<K extends string>({
   label,
@@ -685,10 +690,21 @@ export function Tabs<K extends string>({
 }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const listRef = useRef<HTMLDivElement>(null);
+  // 포커스를 지닌 단추의 ref가 풀렸는가(QA-685 — 위 설명). ref가 null로 풀리는 때는 단추가 아직 문서에 있어 activeElement로 알 수 있습니다. 다시 그릴
+  // 때마다 새 ref 함수라 남는 단추도 풀렸다 다시 붙으므로, 옮길지는 그린 뒤 포커스가 정말 body로 갔는지로 가립니다.
+  const focusDetached = useRef(false);
   // 고른 탭이 바뀌면(처음 그릴 때 포함) 그 탭을, 키보드로 옮긴 탭은 포커스가 들어올 때 줄 안에 보이게 — 줄을 바꾸는 줄(wrap)은 넘치지 않아 움직일 일이 없습니다.
   useScrollStripActive(listRef, value, { current: '[role="tab"][aria-selected="true"]' });
   const selectedIndex = items.findIndex((item) => item.key === value);
   const entry = selectedIndex >= 0 ? selectedIndex : 0;
+  useLayoutEffect(() => {
+    if (!focusDetached.current) return;
+    focusDetached.current = false;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const target = items[entry];
+    if (target) refs.current[target.key]?.focus({ preventScroll: true });
+  });
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (!TAB_KEYS.has(event.key)) return;
     event.preventDefault();
@@ -707,6 +723,8 @@ export function Tabs<K extends string>({
         <button
           key={item.key}
           ref={(element) => {
+            const previous = refs.current[item.key];
+            if (element === null && previous && previous === document.activeElement) focusDetached.current = true;
             refs.current[item.key] = element;
           }}
           type="button"

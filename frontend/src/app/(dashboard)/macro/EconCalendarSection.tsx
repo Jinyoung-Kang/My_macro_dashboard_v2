@@ -36,10 +36,14 @@ import {
 /** 표의 줄 — 일정 하나와 줄 키(출처 id가 없으면 시각·나라·차례). */
 type EventRow = EconEvent & { rowKey: string };
 
-/** 표의 칸 — 시각(KST, 날짜는 날짜 띠·표 머리에 있어 HH:MM)·나라·지표(행 머리)·중요도·실제·예상·이전. 없는 값은 '—'(공용 표). */
+/**
+ * 표의 칸 — 시각(KST, 날짜는 날짜 띠·표 머리에 있어 HH:MM)·나라·지표(행 머리)·중요도·실제·예상·이전. 없는 값은 '—'(공용 표).
+ * '나라' 칸(두 자)은 줄을 바꾸지 않습니다 — 공용 표는 오른쪽 정렬(숫자) 열만 nowrap이라, 표가 조금만 눌려도 자동 배치가 이 열을 머리 '나라'(13px) 폭까지
+ * 줄여 '미/국'·'한/국'으로 꺾고 조밀 행을 28 → 48px로 늘였습니다(QA-683).
+ */
 const COLUMNS: readonly Column<EventRow>[] = [
   { key: "at", header: "시각(KST)", cell: (row) => econEventTime(row) ?? EMPTY },
-  { key: "country", header: "나라", cell: (row) => (row.country === "KR" ? "한국" : "미국") },
+  { key: "country", header: "나라", className: "whitespace-nowrap", cell: (row) => (row.country === "KR" ? "한국" : "미국") },
   {
     key: "title",
     header: "지표",
@@ -66,7 +70,8 @@ const COLUMNS: readonly Column<EventRow>[] = [
  * 날짜 띠 + 그날 표(2026-11-18 사용자 결정 — 창 안 일정을 세로 한 줄로 쭉 늘어놓지 않음): 중요도 보통·높음만 보이고(낮음·모름은 숨긴 건수를 한 줄로),
  * 보일 일정이 있는 KST 날짜마다 공용 탭 줄(밑줄 탭 — 넘치면 가로로 넘김, ←·→·Home·End로 옮기고 Enter·Space로 고름)의 탭 하나('11/18 (수)' + 건수,
  * 높음이 있으면 높음 건수를 글로), 그 아래 고른 날의 조밀 표(행 28px — 공용 표 dense) 하나. 처음 고른 날은 오늘(KST)·오늘 뒤 첫 날·오늘 앞 마지막 날
- * 차례(lib/econCalendar pickEconDay)이고, 새 자료에서 고른 날이 사라지면 같은 규칙으로 다시 고릅니다.
+ * 차례(lib/econCalendar pickEconDay)이고, 새 자료에서 고른 날이 사라지면 그 고름을 버리고 같은 규칙으로 다시 고릅니다 — 사라졌던 날이 다음 읽기에
+ * 다시 와도 되살리지 않습니다(QA-684).
  */
 export function EconCalendarSection() {
   const { data, loading, error, reload, refreshError } = useApi<EconCalendarResponse>(
@@ -81,7 +86,12 @@ export function EconCalendarSection() {
   const today = now ? econToday(now.getTime()) : null;
   const [chosen, setChosen] = useState<string | null>(null);
   const dates = view.days.map((day) => day.date);
-  const current = chosen !== null && dates.includes(chosen) ? chosen : pickEconDay(dates, today);
+  const chosenShown = chosen !== null && dates.includes(chosen);
+  // 고른 날이 새 자료에서 사라졌으면 그 고름을 버립니다(이전 값에 맞춘 상태 조정 — 이 그리기를 마치기 전에 다시 그림). 그리기 때 대신 고를 날만 셈하고
+  // 고름을 남기면, 그날이 다음 읽기에 다시 올 때 입력 없이 띠·표가 옛 날로 돌아갔습니다(QA-684). 다시 고른 날은 고름으로 남기지 않습니다 — 자정을
+  // 넘기면 새 오늘을 따라가야 해서.
+  if (chosen !== null && !chosenShown) setChosen(null);
+  const current = chosenShown ? chosen : pickEconDay(dates, today);
   const day = view.days.find((entry) => entry.date === current) ?? null;
   const baseId = useId();
   const idPrefix = `${baseId}-day`;
