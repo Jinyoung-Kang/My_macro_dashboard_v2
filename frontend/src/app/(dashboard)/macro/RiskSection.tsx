@@ -1,16 +1,10 @@
 "use client";
 
-import {
-  Card,
-  EmptyState,
-  Freshness,
-  Loading,
-  Metric,
-  Table,
-} from "@/components/ui";
-import { StatusText } from "@/components/ui/icons";
-import { EMPTY, formatNumber, formatSigned } from "@/lib/format";
-import type { RiskEntry, RiskIndicators } from "@/lib/types";
+import { type Column, DataTable, KpiStrip } from "@/components/patterns";
+import { EmptyState, Freshness, Loading, Panel } from "@/components/ui";
+import { riskKpis } from "@/lib/macroScreen";
+import type { RiskIndicators } from "@/lib/types";
+import { CriteriaDetails } from "./CriteriaDetails";
 
 const RISK_TABLE = [
   {
@@ -46,6 +40,16 @@ const RISK_TABLE = [
   },
 ];
 
+/** 해석 기준표의 칸 — 지표(행 머리)·정상 범위·위험 임계치·해석. */
+const RISK_COLUMNS: readonly Column<(typeof RISK_TABLE)[number]>[] = [
+  { key: "name", header: "지표 (지연 수준)", rowHeader: true, cell: (row) => row.name },
+  { key: "normal", header: "정상 / 안정 범위", cell: (row) => row.normal },
+  { key: "danger", header: "위험 / 발작 임계치", cell: (row) => row.danger },
+  { key: "note", header: "성격 및 핵심 해석", cell: (row) => row.note },
+];
+
+const TITLE = "신용 리스크, 은행권 및 시장 변동성";
+
 export function RiskSection({
   risk,
   loading,
@@ -58,90 +62,35 @@ export function RiskSection({
 }) {
   if (loading && !risk) {
     return (
-      <Card title="신용 리스크, 은행권 및 시장 변동성">
+      <Panel title={TITLE}>
         <Loading />
-      </Card>
+      </Panel>
     );
   }
   if (!risk) {
     return (
-      <Card title="신용 리스크, 은행권 및 시장 변동성">
+      <Panel title={TITLE}>
         <EmptyState message="리스크 지표를 불러오지 못했습니다." />
-      </Card>
+      </Panel>
     );
   }
 
-  const entries: { key: keyof RiskIndicators; label: string; unit: string; digits: number }[] = [
-    { key: "vix", label: "CBOE VIX (주식 변동성)", unit: "", digits: 2 },
-    { key: "move", label: "MOVE (채권 변동성)", unit: "", digits: 2 },
-    { key: "hyOas", label: "하이일드 스프레드 (HY OAS)", unit: "%p", digits: 2 },
-    { key: "cpSpread", label: "3M 금융 CP 스프레드", unit: "%p", digits: 2 },
-    { key: "stlfsi", label: "세인트루이스 연준 금융스트레스", unit: "pt", digits: 2 },
-  ];
-
   return (
-    <Card
-      title="신용 리스크, 은행권 및 시장 변동성"
+    <Panel
+      title={TITLE}
       subtitle="주식·채권 변동성, 기업 부도 위험, 단기 자금경색, 종합 금융스트레스"
       source="FRED (공식) — 하이일드·CP·STLFSI4 · Yahoo Finance — ^VIX · MOVE는 ^TNX 변동성 기반 추정"
       actions={<Freshness refreshError={refreshError} />}
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {entries.map((entry) => {
-          const item: RiskEntry = risk[entry.key];
-          return (
-            <Metric
-              key={entry.key}
-              label={entry.label}
-              value={
-                item?.available
-                  ? `${formatNumber(item.value ?? null, entry.digits)}${entry.unit}`
-                  : "수집 실패"
-              }
-              delta={item?.delta}
-              deltaText={
-                item?.delta === null || item?.delta === undefined
-                  ? EMPTY
-                  : `${formatSigned(item.delta, entry.digits)}${entry.unit}`
-              }
-              tone={item?.available ? undefined : "text-text-3"}
-              caption={item?.asOf ? `기준일 ${item.asOf}` : undefined}
-              source={RISK_SOURCES[entry.key]}
-              note={
-                item?.isProxy ? (
-                  <StatusText tone="warn" iconSize={12}>
-                    실제 지표가 아닙니다 — {item.sourceLabel}
-                  </StatusText>
-                ) : undefined
-              }
-            />
-          );
-        })}
-      </div>
+      {/* 값·단위·변화(직전 대비)·기준일·출처 — 받지 못한 지표는 '—'와 '수집 실패', MOVE(추정)는 '대리 지표' 배지와 주의 상태 글(lib/macroScreen riskKpis). */}
+      <KpiStrip label="신용·변동성 지표" items={riskKpis(risk)} keepDates />
 
-      <div className="mt-5">
-        <h3 className="mb-2 text-sm font-semibold text-text">
-          신용·은행권·변동성 핵심 해석 기준표
-        </h3>
-        <Table
-          rows={RISK_TABLE}
-          rowKey={(row) => row.name}
-          columns={[
-            { key: "name", header: "지표 (지연 수준)", render: (row) => row.name },
-            { key: "normal", header: "정상 / 안정 범위", render: (row) => row.normal },
-            { key: "danger", header: "위험 / 발작 임계치", render: (row) => row.danger },
-            { key: "note", header: "성격 및 핵심 해석", render: (row) => row.note },
-          ]}
-        />
+      <div className="mt-4">
+        {/* 참고 표라 처음에는 접어 둡니다(긴 화면 — 실행 명세 §9-10). */}
+        <CriteriaDetails summary="신용·은행권·변동성 핵심 해석 기준표">
+          <DataTable columns={RISK_COLUMNS} rows={RISK_TABLE} rowKey={(row) => row.name} caption="신용·은행권·변동성 핵심 해석 기준표" scrollHint="overflow" />
+        </CriteriaDetails>
       </div>
-    </Card>
+    </Panel>
   );
 }
-
-const RISK_SOURCES: Record<string, string> = {
-  vix: "Yahoo Finance (^VIX)",
-  move: "Yahoo Finance ^TNX 기반 추정",
-  hyOas: "FRED BAMLH0A0HYM2 (ICE BofA 하이일드 OAS)",
-  cpSpread: "FRED CPF3M − DGS3MO (계산)",
-  stlfsi: "FRED STLFSI4",
-};

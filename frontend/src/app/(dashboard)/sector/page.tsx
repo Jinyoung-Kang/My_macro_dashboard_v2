@@ -1,25 +1,39 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import {
-  Banner,
-  Card,
+  ChangeCell,
+  type Column,
+  DataTable,
+  type InspectorContext,
+  InspectorFrame,
+  InspectorTrigger,
+  KpiStrip,
+  type PropertyItem,
+  PropertyList,
+} from "@/components/patterns";
+import {
+  Callout,
   ErrorState,
   Freshness,
+  LINK_CLASSES,
   Loading,
   PageHeader,
+  Panel,
   Select,
   SourceBadge,
-  Table,
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
-import { deltaColor, EMPTY, formatNumber, formatPercent } from "@/lib/format";
+import { stockHref } from "@/lib/detail";
+import { formatNumber } from "@/lib/format";
 import { liveKey, livePriceTitle, liveShown } from "@/lib/livePrices";
+import { SECTOR_PERIODS, sectorKpis, sectorKpisPending, sectorRowTitle } from "@/lib/sectorScreen";
 import type { LivePrice, SectorResponse, SectorRow } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -31,6 +45,10 @@ import { sortDescUnknownLast } from "@/lib/transforms";
  *
  * 표본이 부족한 기간은 "—"로 표시합니다. 0.00%로 채우면 '보합'으로 읽혀
  * 신규 상장 ETF가 실제로 보합인 것처럼 보이고 순위까지 오염됩니다.
+ *
+ * 배치(작업대 화면 언어 — 명세 §7 3행 '가벼운 재배치'): 머리(실시간 주기·신선도) → KPI 띠(S&P 500 기간별 수익률 — 응답의 benchmarkReturns, 새 요청 없음)
+ * → '섹터 모멘텀' 막대 → '섹터 상세'·'자산군 상세' 공용 표. 표의 이름 단추가 그 종목의 검사 대화상자(속성·종목 상세 링크)를 엽니다 — 열이 열한 개라
+ * 옆 검사 칸을 두면 표가 눌려 늘 대화상자입니다(검사 칸 틀 layout="dialog"). 검사는 받은 값만 보이고 새로 읽지 않습니다.
  */
 export default function SectorPage() {
   const [period, setPeriod] = useState("1M");
@@ -55,9 +73,16 @@ export default function SectorPage() {
     (row) => row.name.split(" ")[0],
     (row) => (mode === "alpha" ? row.alpha?.[period] : row.returns?.[period]),
   ).bars.sort((a, b) => b.value - a.value);
+  const valueName = mode === "alpha" ? `${period} 초과성과` : `${period} 수익률`;
+
+  // 검사 대화상자 — 두 표의 종목을 함께 찾습니다(티커가 키). 자산군에는 α가 없습니다(S&P 500 대비 지표라 뜻이 없음).
+  const allRows = [...sectors, ...assets];
+  const sectorTickers = new Set(sectors.map((row) => row.ticker));
+  // KPI 띠 — 처음 읽는 동안은 자리표시 타일(값이 온 뒤 띠가 끼어들어 아래가 밀리지 않게), 저장본이 없거나 읽지 못하면 두지 않습니다.
+  const kpis = data ? (data.available ? sectorKpis(data, SOURCES.yahooEtf) : []) : loading && !error ? sectorKpisPending(SOURCES.yahooEtf) : [];
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="섹터 & 자산군 로테이션 맵"
         description={<>S&amp;P 11개 섹터 + 글로벌 자산군 모멘텀 · 벤치마크 {data?.benchmark ?? "SPY"}</>}
@@ -80,12 +105,16 @@ export default function SectorPage() {
           선택 상자가 사라지고 키보드 포커스를 잃었습니다(QA-047). */}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && (
-        <Banner tone="warn">
+        <Callout tone="warn">
           {data.message ?? "섹터 데이터가 없습니다. 수집기를 실행하세요."}
-        </Banner>
+        </Callout>
       )}
 
-      <Card
+      {/* 벤치마크 기간별 수익률 — α(초과성과)를 읽는 기준. */}
+      {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 아래 패널이 밀리지 않게. */}
+      {kpis.length > 0 ? <KpiStrip label={`S&P 500 (${data?.benchmark ?? "SPY"}) 기간별 수익률`} items={kpis} pendingMatchesValue /> : null}
+
+      <Panel
         title="섹터 모멘텀" source={SOURCES.yahooEtf}
         actions={
           <div className="flex flex-wrap items-end gap-3">
@@ -93,7 +122,7 @@ export default function SectorPage() {
               label="조회 기간"
               value={period}
               onChange={setPeriod}
-              options={(data?.periods ?? ["1W", "1M", "3M", "6M", "YTD", "1Y"]).map((value) => ({
+              options={(data?.periods ?? [...SECTOR_PERIODS]).map((value) => ({
                 value,
                 label: value,
               }))}
@@ -117,118 +146,139 @@ export default function SectorPage() {
             data={chartData}
             unit={mode === "alpha" ? "%p" : "%"}
             digits={2}
-            valueName={mode === "alpha" ? `${period} 초과성과` : `${period} 수익률`}
+            valueName={valueName}
+            ariaLabel={`섹터 ${valueName}`}
             height={Math.max(260, chartData.length * 28)}
           />
         )}
-      </Card>
+      </Panel>
 
       {data && (
-        <>
-          <Card
-            title="섹터 상세" source={SOURCES.yahooEtf}
-            subtitle={`표본이 부족한 기간은 —로 표시합니다. 순위는 위에서 고른 ${period} 기준입니다. 현재가는 실시간 시세(아래 줄은 오늘 등락), 수익률은 저장본입니다.`}
-          >
-            <ReturnsTable rows={sectors} period={period} kindLabel="유형" realtime={live.prices} />
-          </Card>
+        <InspectorFrame
+          label="종목 상세"
+          layout="dialog"
+          titleOf={(ticker) => sectorRowTitle(allRows, ticker)}
+          renderDetail={(ticker) => {
+            const row = allRows.find((entry) => entry.ticker === ticker);
+            return row ? (
+              <SectorInspector row={row} period={period} showAlpha={sectorTickers.has(row.ticker)} realtime={live.prices[liveKey("US", row.ticker)]} />
+            ) : null;
+          }}
+        >
+          {(inspector) => (
+            <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
+              <Panel
+                title="섹터 상세" source={SOURCES.yahooEtf} count={`${sectors.length.toLocaleString("ko-KR")}개`}
+                subtitle={`표본이 부족한 기간은 —로 표시합니다. 순위는 위에서 고른 ${period} 기준입니다. 현재가는 실시간 시세(아래 줄은 오늘 등락), 수익률은 저장본입니다. 이름을 누르면 그 종목의 값을 모아 봅니다.`}
+              >
+                <ReturnsTable caption="섹터 상세" rows={sectors} period={period} kindLabel="유형" realtime={live.prices} inspector={inspector} />
+              </Panel>
 
-          <Card title="자산군 상세" source={SOURCES.yahooEtf} subtitle="주식·채권·원자재·통화 전반의 상대 성과">
-            {/* 초과성과(α)는 S&P 500 대비 지표라 자산군에는 의미가 없습니다.
-                전부 "—"인 열을 남겨 두면 "계산이 실패했나?"로 읽힙니다. */}
-            <ReturnsTable rows={assets} period={period} kindLabel="자산군" showAlpha={false} realtime={live.prices} />
-          </Card>
-        </>
+              <Panel
+                title="자산군 상세" source={SOURCES.yahooEtf} count={`${assets.length.toLocaleString("ko-KR")}개`}
+                subtitle="주식·채권·원자재·통화 전반의 상대 성과"
+              >
+                {/* 초과성과(α)는 S&P 500 대비 지표라 자산군에는 의미가 없습니다.
+                    전부 "—"인 열을 남겨 두면 "계산이 실패했나?"로 읽힙니다. */}
+                <ReturnsTable
+                  caption="자산군 상세" rows={assets} period={period} kindLabel="자산군" showAlpha={false} realtime={live.prices} inspector={inspector}
+                />
+              </Panel>
+            </div>
+          )}
+        </InspectorFrame>
       )}
     </div>
   );
 }
 
 function ReturnsTable({
+  caption,
   rows,
   period,
   kindLabel,
   showAlpha = true,
   realtime = {},
+  inspector,
 }: {
+  caption: string;
   rows: SectorRow[];
   period: string;
   kindLabel: string;
   showAlpha?: boolean;
   /** 'US:XLK' → 실시간 가격(없으면 저장본 현재가) */
   realtime?: Readonly<Record<string, LivePrice>>;
+  inspector: InspectorContext;
 }) {
   const sorted = sortDescUnknownLast(rows, (row) => row.returns?.[period]);
 
+  const columns: Column<SectorRow>[] = [
+    { key: "rank", header: "순위", cell: (row) => row.ranks?.[period] ?? null },
+    {
+      key: "name",
+      header: "이름",
+      rowHeader: true,
+      className: "break-keep",
+      // 이름은 검사 대화상자를 여는 줄 단추(중립 잉크 — 데이터 칸이라 강조 파랑이 아님, lg 미만 44px), 아래 줄은 티커와 이전 값 표시.
+      cell: (row) => (
+        <span className="flex min-w-0 flex-col items-start">
+          <InspectorTrigger inspector={inspector} itemKey={row.ticker}>
+            {row.name}
+          </InspectorTrigger>
+          <span className="text-xs text-text-3">{row.ticker}</span>
+          {row.isStale && (
+            <span className="text-xs" title={row.staleReason ?? undefined}>
+              <StatusText tone="warn" iconSize={12}>이전 값(수집 실패)</StatusText>
+            </span>
+          )}
+        </span>
+      ),
+    },
+    { key: "kind", header: kindLabel, className: "break-keep", cell: (row) => <SourceBadge>{row.kind}</SourceBadge> },
+    {
+      key: "price",
+      header: "현재가",
+      align: "right",
+      cell: (row) => <PriceCell stored={row.price} realtime={realtime[liveKey("US", row.ticker)]} />,
+    },
+    // 순위를 매긴 기간 열을 밝게 둡니다. 어떤 기준으로 1위가 됐는지
+    // 표 안에서 바로 보이지 않으면 위쪽 선택값을 기억해야 합니다. 표지 '▪'는 장식이라 읽기에서 빼고 뜻을 글로 읽힙니다('1M (순위 기준)' — 고대비에서
+    // 바탕이 지워져도 기호와 글이 남음, QA-649).
+    ...SECTOR_PERIODS.map((window) => ({
+      key: window,
+      header:
+        window === period ? (
+          <>
+            {window} <span aria-hidden="true">▪</span>
+            <span className="sr-only">(순위 기준)</span>
+          </>
+        ) : (
+          window
+        ),
+      align: "right" as const,
+      className: window === period ? "bg-surface-2/50" : undefined,
+      cell: (row: SectorRow) => <ChangeCell changePct={row.returns?.[window]} />,
+    })),
+    ...(showAlpha
+      ? [
+          {
+            key: "alpha",
+            header: `α (${period})`,
+            align: "right" as const,
+            cell: (row: SectorRow) => <ChangeCell change={row.alpha?.[period]} unit="%p" />,
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <Table
+    <DataTable
+      caption={caption}
+      columns={columns}
       rows={sorted}
       rowKey={(row) => row.ticker}
-      emptyMessage="수집된 종목이 없습니다."
-      columns={[
-        {
-          key: "rank",
-          header: "순위",
-          render: (row) => row.ranks?.[period] ?? EMPTY,
-        },
-        {
-          key: "name",
-          header: "이름",
-          render: (row) => (
-            <span className="flex flex-col">
-              <span className="text-text-2">{row.name}</span>
-              <span className="text-xs text-text-3">{row.ticker}</span>
-              {row.isStale && (
-                <span className="text-xs" title={row.staleReason ?? undefined}>
-                  <StatusText tone="warn" iconSize={12}>이전 값(수집 실패)</StatusText>
-                </span>
-              )}
-            </span>
-          ),
-        },
-        { key: "kind", header: kindLabel, render: (row) => <SourceBadge>{row.kind}</SourceBadge> },
-        {
-          key: "price",
-          header: "현재가",
-          align: "right",
-          render: (row) => <PriceCell stored={row.price} realtime={realtime[liveKey("US", row.ticker)]} />,
-        },
-        // 순위를 매긴 기간 열을 밝게 둡니다. 어떤 기준으로 1위가 됐는지
-        // 표 안에서 바로 보이지 않으면 위쪽 선택값을 기억해야 합니다.
-        ...["1W", "1M", "3M", "6M", "YTD", "1Y"].map((window) => ({
-          key: window,
-          header: window === period ? `${window} ▪` : window,
-          align: "right" as const,
-          className: window === period ? "bg-surface-2/50" : undefined,
-          render: (row: SectorRow) => (
-            <span
-              className={`${deltaColor(row.returns?.[window] ?? null)} ${
-                window === period ? "font-semibold" : ""
-              }`}
-            >
-              {formatPercent(row.returns?.[window] ?? null)}
-            </span>
-          ),
-        })),
-        ...(showAlpha
-          ? [
-              {
-                key: "alpha",
-                header: `α (${period})`,
-                align: "right" as const,
-                render: (row: SectorRow) =>
-                  row.alpha ? (
-                    <span className={deltaColor(row.alpha[period] ?? null)}>
-                      {row.alpha[period] === null || row.alpha[period] === undefined
-                        ? EMPTY
-                        : `${formatNumber(row.alpha[period], 2)}%p`}
-                    </span>
-                  ) : (
-                    EMPTY
-                  ),
-              },
-            ]
-          : []),
-      ]}
+      emptyText="수집된 종목이 없습니다."
+      scrollHint="overflow"
     />
   );
 }
@@ -240,10 +290,56 @@ function PriceCell({ stored, realtime }: { stored: number | null; realtime?: Liv
   return (
     <span className="flex flex-col items-end" title={livePriceTitle(realtime, (value) => formatNumber(value, 2))}>
       <span>{formatNumber(shown.price, 2)}</span>
-      <span className={`text-xs ${deltaColor(shown.changePct)}`}>
-        {formatPercent(shown.changePct)}
-        {shown.session ? ` · ${shown.session}` : ""}
+      <span className="flex items-baseline gap-1 whitespace-nowrap text-xs text-text-3">
+        <ChangeCell changePct={shown.changePct} />
+        {shown.session ? <span>· {shown.session}</span> : null}
       </span>
     </span>
+  );
+}
+
+/**
+ * 검사 대화상자 내용 — 티커·유형·현재가(실시간이면 출처·기준 시각·오늘 등락, 아니면 저장본)·기간별 수익률·α(섹터만)·순위(고른 기간)와 이전 값 사유,
+ * 그 종목의 상세 화면 링크. 받은 값만 보입니다(새로 읽지 않음). 수익률이 이어받은 값(isStale)이면 수익률 줄마다 '이전 값' 배지와 사유.
+ */
+function SectorInspector({
+  row,
+  period,
+  showAlpha,
+  realtime,
+}: {
+  row: SectorRow;
+  period: string;
+  showAlpha: boolean;
+  realtime?: LivePrice;
+}) {
+  const shown = realtime ? liveShown(realtime) : null;
+  const chip = (value: number | null | undefined, unit?: string) =>
+    // 모르는 값은 null — 속성 목록이 '—'와 사유('표본 부족')를 그립니다. 아는 값은 표 칸과 같은 변화 칩(공용 ChangeCell — ▲▼·부호 −·읽는 방향 글, QA-628).
+    value === null || value === undefined || Number.isNaN(value) ? null : unit ? <ChangeCell change={value} unit={unit} /> : <ChangeCell changePct={value} />;
+  const items: PropertyItem[] = [
+    { label: "티커", value: row.ticker, mono: true },
+    { label: "유형", value: row.kind },
+    // 수집 실패로 직전 저장본에서 이어받은 행 — 수익률·순위가 그만큼 멈춰 있다는 것을 사유와 함께 한 줄로(표의 '이전 값(수집 실패)'과 같은 뜻).
+    ...(row.isStale ? [{ label: "수집", value: "직전 저장본에서 이어받은 값", isStale: true, staleReason: row.staleReason ?? null }] : []),
+    {
+      label: "현재가",
+      value: shown ? formatNumber(shown.price, 2) : formatNumber(row.price, 2),
+      note: realtime ? livePriceTitle(realtime, (value) => formatNumber(value, 2)) : "저장본 값(실시간 시세 없음)",
+    },
+    ...(shown ? [{ label: "오늘 등락", value: chip(shown.changePct), note: shown.session ?? undefined }] : []),
+    ...SECTOR_PERIODS.map((window) => ({ key: `return-${window}`, label: `${window} 수익률`, value: chip(row.returns?.[window]), emptyReason: "표본 부족" })),
+    ...(showAlpha ? [{ label: `α (${period}) — S&P 500 대비`, value: chip(row.alpha?.[period], "%p"), emptyReason: "표본 부족" }] : []),
+    { label: `순위 (${period})`, value: row.ranks?.[period] ?? null, format: (rank) => `${formatNumber(rank, 0)}위` },
+  ];
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <PropertyList items={items} source={SOURCES.yahooEtf} />
+      <p>
+        <Link href={stockHref("us", row.ticker)} className={LINK_CLASSES}>
+          종목 상세 열기
+        </Link>
+      </p>
+    </div>
   );
 }

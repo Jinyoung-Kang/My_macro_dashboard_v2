@@ -23,3 +23,4 @@ export function spreadSummary(block: SpreadBlock | null | undefined) {
       + " · 스크래핑: TradingView 참고 시세 (지금 시점)",
   };
 }
+

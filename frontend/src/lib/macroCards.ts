@@ -1,11 +1,11 @@
 /**
  * 매크로 카드의 지연·알림 표시 규칙(순수 함수, ADR 0004).
  *
- * 카드는 개장 상태와 시세 지연을 배지 하나로 합치고(`SessionBadge`), 지연이 아닌 알림만 따로 보입니다. 예전에는
+ * 지표 줄마다의 개장 상태와 시세 지연은 출처 배지 하나에 합칩니다(lib/marketRows macroCardSession — 지표 표의 기준 칸). 예전에는
  * '실시간' 배지와 '마감' 배지가 나란히 떠 서로 어긋나게 읽혔습니다.
  */
 import { delayLabel } from "./format";
-import type { MacroCategory, MacroItem } from "./types";
+import type { MacroCategory } from "./types";
 
 /**
  * 카테고리 부제 — 카드들의 시세 지연을 한 줄로. 모두 같으면 그 지연, 다르면 '종목마다 다름'.
@@ -18,20 +18,8 @@ export function categoryDelay(category: MacroCategory): string | undefined {
   }
   const labels = new Set(live.map((item) => delayLabel(item.delayMinutes) ?? "지연 모름"));
   if (labels.size === 0) return undefined;
-  return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 카드 배지 참고";
+  // md 미만(768px 미만)의 /macro 지표 표에는 기준 칸이 없고 그 내용이 이름 단추의 미리보기에 있습니다(2026-11-17 결정 9). 글에는 폭 이름을 쓰지 않습니다 —
+  // 같은 화면군의 '좁은 화면'은 lg 미만이라, 기준 칸이 있는 768~1023에서도 '좁은 화면은 미리보기'로 읽혔습니다(P5a 후속 검토).
+  return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 기준 칸(없으면 지표 미리보기) 참고";
 }
 
-/** 카드 알림 하나 — tone이 'warn'이면 그리는 쪽이 경고 아이콘과 낭독기용 '주의: '를 붙입니다(글에는 기호를 넣지 않음). */
-export type CardNotice = { text: string; title?: string; tone?: "warn" };
-
-/** 지연이 아닌 알림 — 이어받은 예전 값, 선물 대신 지수 값·추정치·보정 실패. */
-export function cardNotices(item: MacroItem): CardNotice[] {
-  const notices: CardNotice[] = [];
-  if (item.isStale) {
-    notices.push({ text: "이전 값", tone: "warn", title: `이번 수집 실패로 직전 값을 보입니다 — ${item.staleReason ?? "수집 실패"}` });
-  }
-  if (item.warning) {
-    notices.push({ text: item.warning });
-  }
-  return notices;
-}

@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
+import { useSideBySide } from "@/hooks/useSideBySide";
 import { useWideShell } from "@/hooks/useWideShell";
 import { listKeyAction, SHELL_LIST_ATTR } from "@/lib/shortcuts";
 
@@ -19,30 +20,6 @@ const ROW_LAST = "lg:py-1.5";
 
 /** 검사 칸이 목록 옆에 놓이는 칸 폭(rem) — 아래 크기 질의 `@lg`(32rem)와 같은 값입니다. 바꾸면 둘을 함께 고칩니다. */
 const SIDE_MIN_REM = 32;
-
-/**
- * 목록-검사 틀의 폭이 검사 칸을 옆에 둘 만한가(32rem 이상) — ResizeObserver로 잽니다. 폭이 0이면(숨긴 탭 안·배치를 하지 않는 시험 대역) 모른다(null)로 두고,
- * 보이게 되어 폭이 생기면 그때 정합니다. 크기 질의(CSS)가 자리를 정하고, 이 값은 아래로 쌓인 배치에서 동작(대화상자로 엶)을 바꾸는 데 씁니다.
- */
-function useSideBySide(ref: RefObject<HTMLDivElement | null>, enabled: boolean): boolean | null {
-  const [side, setSide] = useState<boolean | null>(null);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!enabled || !element) return undefined;
-    const measure = () => {
-      const width = element.getBoundingClientRect().width;
-      if (!(width > 0)) return;
-      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setSide(width >= SIDE_MIN_REM * rem);
-    };
-    measure();
-    if (typeof ResizeObserver !== "function") return undefined;
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref, enabled]);
-  return side;
-}
 
 /**
  * 목록-검사(작업대 실행 명세 §6 SplitPane/MasterDetail — 상세 화면의 보유 탭 등, P4): 왼쪽 목록에서 줄을 고르면 그 줄의 자세한 값을 검사 칸에.
@@ -112,7 +89,7 @@ export function MasterDetail<T>({
   const wide = useWideShell();
   const Heading = headingLevel === 2 ? "h2" : headingLevel === 4 ? "h4" : "h3";
   const frameRef = useRef<HTMLDivElement>(null);
-  const side = useSideBySide(frameRef, wide);
+  const side = useSideBySide(frameRef, wide, SIDE_MIN_REM);
   // 검사 칸을 목록 옆에 두는가 — 넓은 화면이고 틀 폭이 32rem 이상(재지 못했으면 크기 질의 배치에 맡김). 아니면 좁은 화면처럼 대화상자로 엽니다.
   const inline = wide && side !== false;
   const baseId = useId();

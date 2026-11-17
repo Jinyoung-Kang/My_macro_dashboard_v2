@@ -2,25 +2,20 @@
 
 import { useState } from "react";
 import { LineSeries, SERIES_COLORS } from "@/components/charts";
+import { KpiStrip } from "@/components/patterns";
 import { RangeTabs, sliceByRange, type RangeValue } from "@/components/RangeTabs";
 import {
-  Banner,
-  Card,
+  Callout,
   ErrorState,
   Freshness,
   Loading,
-  Metric,
+  Panel,
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
+import { advancedKpis } from "@/lib/macroScreen";
 import { SOURCES } from "@/lib/sources";
-import {
-  EMPTY,
-  formatNumber,
-  formatSampleWindow,
-  formatSigned,
-  statusColor, formatWithUnit } from "@/lib/format";
-import type { AdvancedEntry, AdvancedIndicators } from "@/lib/types";
+import type { AdvancedIndicators } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 
 export function AdvancedSection({
@@ -56,25 +51,25 @@ export function AdvancedSection({
 
   if (loading && !data) {
     return (
-      <Card title="심화 매크로 지표">
+      <Panel title="심화 매크로 지표">
         <Loading />
-      </Card>
+      </Panel>
     );
   }
   // 첫 조회가 실패하면 지표 칸 없는 빈 카드(선택지 없는 추이 선택 상자)가 아니라 이유와 다시 시도를 보입니다(QA-103).
   // 위험 지표 카드(RiskSection)처럼 값이 없으면 일찍 돌려줍니다.
   if (!data && error) {
     return (
-      <Card title="심화 매크로 지표">
+      <Panel title="심화 매크로 지표">
         <ErrorState message={error} onRetry={onRetry} />
-      </Card>
+      </Panel>
     );
   }
 
   const entries = data ? data.order.map((id) => data.latest[id]).filter(Boolean) : [];
 
   return (
-    <Card
+    <Panel
       title="심화 매크로 지표"
       source={SOURCES.fred}
       subtitle="명목금리·하이일드만으로는 보이지 않는 구조를 메우는 6종 (30Y-3M은 DGS30−DGS3MO로 계산, 나머지는 FRED 공식 시계열)"
@@ -85,43 +80,9 @@ export function AdvancedSection({
         </span>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {entries.map((entry) => (
-          <Metric
-            key={entry.id}
-            label={entry.label}
-            value={
-              entry.available
-                ? formatWithUnit(entry.value, entry.digits, entry.unit)
-                : "수집 실패"
-            }
-            delta={entry.delta}
-            deltaText={
-              entry.delta === null || entry.delta === undefined
-                ? EMPTY
-                : formatSigned(entry.delta, entry.digits)
-            }
-            deltaDigits={entry.digits}
-            tone={entry.available ? statusColor(entry.color) : "text-text-3"}
-            caption={
-              entry.available ? (
-                <span className="flex flex-col gap-0.5">
-                  {entry.status && <span>상태: {entry.status}</span>}
-                  {entry.percentile !== null && entry.percentile !== undefined && (
-                    <span>표본 백분위 {formatNumber(entry.percentile, 1)}%</span>
-                  )}
-                  {entry.percentile !== null && entry.percentile !== undefined && (
-                    <SampleWindow entry={entry} />
-                  )}
-                  {entry.asOf && <span>기준일 {entry.asOf}</span>}
-                </span>
-              ) : undefined
-            }
-            note={entry.note}
-            source={entry.source}
-          />
-        ))}
-      </div>
+      {/* 값·단위·변화(직전 대비), 상태는 아이콘 + 글(해석 색 → 톤 — 값 글자색으로만 전하지 않음), 메모는 해석 글과 '표본 백분위 · 표본 · 기준일',
+          지표마다 출처 줄. 받지 못한 지표는 '—'와 '수집 실패'(lib/macroScreen advancedKpis). */}
+      <KpiStrip label="심화 지표" items={advancedKpis(data)} keepDates />
 
       {data?.derived?.decomposition && (
         <p className="mt-4 rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">
@@ -132,7 +93,7 @@ export function AdvancedSection({
         </p>
       )}
 
-      <div className="mt-5">
+      <div className="mt-4">
         <div className="mb-3 flex flex-wrap items-end gap-3">
           <Select
             label="추이 차트 지표"
@@ -146,7 +107,7 @@ export function AdvancedSection({
         </div>
         {zeroLineNote && crossedZero(zeroLineNote, data?.latest[selected]?.value) && (
           <div className="mb-3">
-            <Banner tone={zeroLineNote.tone}>{zeroLineNote.message}</Banner>
+            <Callout tone={zeroLineNote.tone}>{zeroLineNote.message}</Callout>
           </div>
         )}
         <LineSeries
@@ -162,9 +123,11 @@ export function AdvancedSection({
           precision={data?.latest[selected]?.digits ?? 2}
           color={SERIES_COLORS.blue}
           height={280}
+          grid
+          ariaLabel={`${data?.latest[selected]?.label ?? selected} 추이`}
         />
       </div>
-    </Card>
+    </Panel>
   );
 }
 
@@ -200,15 +163,6 @@ const ZERO_LINE_NOTES: Record<
       "금융상황지수가 0을 넘었습니다. 0이 장기 평균이므로, 지금은 평균보다 긴축적인 상태입니다.",
   },
 };
-
-/**
- * 백분위의 표본 — 지표마다 길이가 다릅니다(IG 스프레드는 FRED가 최근 3년만 제공, 나머지는 약 10년).
- * 표본을 함께 적지 않으면 "3년 안의 중간"이 "역사적 중간"처럼 읽혀, "과열" 판정과 어긋나 보였습니다.
- */
-function SampleWindow({ entry }: { entry: AdvancedEntry }) {
-  const text = formatSampleWindow(entry.percentileFrom, entry.percentileCount, entry.percentileYears);
-  return text ? <span>표본 {text}</span> : null;
-}
 
 /** 최신값이 경고 방향으로 0선을 넘었는지. 값이 없으면 판정하지 않습니다. */
 function crossedZero(

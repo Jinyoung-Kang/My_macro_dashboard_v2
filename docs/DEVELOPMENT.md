@@ -179,12 +179,12 @@ snapshot.get().putFreshness(out);   // collectedAtKst · ageSeconds · stale
 frontend/src/
 ├── app/(dashboard)/<경로>/page.tsx  라우트 — 새 화면은 screens 컴포넌트를 그리기만. 옛 화면(4단계에 옮김)은 섹션 파일까지 여기
 ├── components/ui/                 기본 조각(index.tsx) + Radix 감싼 Dialog·ConfirmDialog·Toast·DropdownMenu·Tooltip(하위 경로로 가져옴, 배럴에 넣지 않음)
-├── components/patterns/           화면 패턴(AssetRow·Hero·StatTile·DataTable·배지·Empty·KpiStrip·PropertyList·EntityHeader·SplitPane·MasterDetail…) — `@/components/patterns` 배럴로만
+├── components/patterns/           화면 패턴(AssetRow·Hero·StatTile·DataTable·배지·Empty·KpiStrip·PropertyList·EntityHeader·SplitPane·MasterDetail·SectionIndex·InspectorFrame·Timeline…) — `@/components/patterns` 배럴로만
 ├── components/charts/             Recharts 래퍼 — 화면은 `@/components/charts`(index.tsx)에서만 가져옴
 ├── components/shell/              셸(나무 메뉴·상단바·빵부스러기·명령 팔레트·단축키 도움말·계정 메뉴·하위 메뉴 줄·하단 탭·빌드 정보)
 ├── components/screens/<탭>/       새 화면 조립(home·paper·detail·search·info …)
 ├── hooks/                         useApi·useAsyncAction·새로고침 신호 …
-└── lib/                           순수 함수 — 서식·거래소 달력, 메뉴 표(nav)·검색 색인(search), 화면 모델(home·paperOverview·patterns…)
+└── lib/                           순수 함수 — 서식·거래소 달력, 메뉴 표(nav)·검색 색인(search), 화면 모델(home·macroScreen·cotScreen·sectorScreen·paperOverview·patterns…)·화면 절 주소(marketSections)
 ```
 
 화면 테스트 규칙:

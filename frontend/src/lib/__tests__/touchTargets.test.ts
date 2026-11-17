@@ -18,6 +18,7 @@ const {
   inputClasses,
   LINK_CLASSES,
   pillTabClasses,
+  ROW_TRIGGER,
   segmentClasses,
   TEXT_TARGET,
   toggleClasses,
@@ -44,6 +45,7 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   toggleClasses: () =>
     BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
   LINK_CLASSES: () => [["", LINK_CLASSES]],
+  ROW_TRIGGER: () => [["", ROW_TRIGGER]],
 };
 
 /** 누르는 조각이 아닌 것 — 까닭. */
@@ -54,6 +56,7 @@ const UI_OTHERS: Record<string, string> = {
   FOCUS_RING: "포커스 링 조각 — 혼자 쓰지 않고 누르는 조각에 붙음",
   SEGMENT_TRACK: "세그먼트의 트랙(바탕) — 누르는 칸은 segmentClasses",
   SELECTED_BAR: "고른 행의 장식 막대 — 누르는 자리는 감싼 행",
+  SKELETON_BAR: "읽는 중 자리표시 막대(장식) — 누르지 않음",
 };
 
 const SEARCH_CONTROLS: Record<string, () => [string, string][]> = {

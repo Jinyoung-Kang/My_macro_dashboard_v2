@@ -2,68 +2,17 @@ import Link from "next/link";
 import type { JSX, ReactNode } from "react";
 
 import { FOCUS_RING } from "@/components/ui/classes";
-import { StatusText } from "@/components/ui/icons";
-import { isMissingValue, presentText, statValueText } from "@/lib/patterns";
+import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
+import type { KpiItem } from "@/lib/kpi";
+import { dateTokenParts, isMissingValue, presentText, statValueText } from "@/lib/patterns";
 
 import { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 import { ChangeChip } from "./ChangeChip";
 import { Empty } from "./Empty";
 import { Skeleton } from "./Skeleton";
 
-/** KPI 띠의 타일 하나. 값을 모르면 `value: null` — 0으로 채우지 않습니다. */
-export type KpiItem = {
-  key: string;
-  /** 타일 이름 — 13px 보조 글, 타일 묶음(role=group)의 이름. */
-  label: string;
-  /** null·빈 글·"N/A"·NaN이면 "—"(Empty + emptyReason), 0은 값입니다. */
-  value: string | number | null;
-  /** 숫자 값 서식(없으면 소수 둘째 자리 — lib/patterns statValueText). */
-  format?: (value: number) => string;
-  /** 단위 — 값이 있을 때만(QA-049). */
-  unit?: string | null;
-  /** label: 판정 라벨(국면 등 — 숫자가 아님): tabular 없이 16px(lg 20px), 줄바꿈 허용. 기본 number. */
-  valueKind?: "number" | "label";
-  /** 판정 불가 같은 중립 값 — 중립 잉크(text-neutral). 뜻은 글이 나릅니다. */
-  neutral?: boolean;
-  /** 변화 — 변화 칩(▲▼·부호·sr '상승/하락')과 12px 캡션('전일 대비'). 변화량·변화율을 둘 다 모르면 줄이 없습니다. */
-  change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null };
-  /** 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). */
-  status?: { tone: "ok" | "warn" | "danger"; text: string };
-  /** 12px 보조 글(기준일 등 — 값의 시각은 출처 줄의 `asOf`로). */
-  note?: string | null;
-  /**
-   * 출처 줄(공용 출처 배지 — '출처 · 지연 · 시각', 원칙 '모든 숫자에 출처'): 이 넷 가운데 하나라도 주면 타일 아래에 늘 보입니다(숨기는 옵션 없음).
-   * 비공식 참고 시세는 출처 글에 그 사실을 담아 넘깁니다(예 'TradingView Scanner · 참고 시세'). 지연은 장이 열려 있을 때의 시세 지연(분, 0이면 '실시간'),
-   * `provenanceTitle`은 배지 툴팁(닫힌 장이라 적지 않은 지연 등). 앱 안에서 센 수(알림·오류 건수)처럼 바깥 출처가 없는 타일은 주지 않습니다.
-   */
-  source?: string | null;
-  asOf?: string | null;
-  delayMin?: number | null;
-  provenanceTitle?: string | null;
-  emptyReason?: string | null;
-  /**
-   * 읽는 중 — 값 자리에 Skeleton 한 줄(role=status '{label} 불러오는 중'). 이름 칸은 읽는 동안 읽어 주기에서 뺍니다(status 이름이 이름을 담음 —
-   * 링크 타일의 이름이 '이름 + 이름 불러오는 중'으로 겹치지 않게, QA-597).
-   */
-  pending?: boolean;
-  /**
-   * 읽는 중 자리 줄 수(기본 0) — 값 자리표시 아래 같은 블록에 글 없는 막대(읽어 주기에서 뺌)를 이만큼 더 그려, 값이 온 뒤의 변화·배지·출처 줄 자리를
-   * 미리 잡습니다(값이 와도 띠 높이가 크게 뛰지 않게 — QA-598). 한 줄의 칸은 가장 높은 타일까지 늘어나므로 가장 긴 타일에만 주면 됩니다.
-   */
-  pendingLines?: number;
-  /**
-   * 넓은 칸 배치의 자리 줄 수 — `pendingLines`보다 작으면 이 수 이상 순번의 덧 막대를 넓은 칸 배치(타일 198px 이상 — 띠 404px 이상인 두 칸, 세 칸 sm~lg,
-   * 띠 816px 이상인 네 칸 — WIDE_PENDING)에서만 CSS로 감추고, 그 배치에서 보이는 마지막 막대를 짧게 합니다(DOM 막대 수는 그대로). 타일이 넓으면 출처 줄이
-   * 덜 꺾여 읽은 뒤 타일이 낮기 때문입니다(QA-604). 주지 않으면 모든 배치에서 `pendingLines`.
-   */
-  pendingLinesWide?: number;
-  isEstimated?: boolean;
-  isProxy?: boolean;
-  isStale?: boolean;
-  staleReason?: string | null;
-  /** 주면 타일 전체가 그 대상 화면 링크. */
-  href?: string;
-};
+/** KPI 띠의 타일 하나 — 형의 정본은 lib/kpi(화면 모델이 같은 형을 씀)이고 여기서 다시 내보냅니다. */
+export type { KpiItem };
 
 /**
  * 타일 한 칸 — 4px·1px 경계·surface, 안쪽 12px(위아래 10px) — StatTile과 같은 조밀한 칸(명세 §3-7). 끊을 곳 없는 긴 값·출처(공백 없는 URL 꼬리 등)는
@@ -120,11 +69,17 @@ const VALUE_NUMBER_ITEM = "shrink-0 max-w-full";
  */
 const VALUE_TAIL = "whitespace-nowrap";
 /**
- * 단위 — 값 끝 묶음(VALUE_TAIL) 안, 마지막 글자 뒤. 오른쪽 바깥 여백 −12px: 타일 안쪽 여백(12px)까지는 걸쳐도 되게 해, 단위 자리가 조금 모자랄 때
- * 숫자 안에서 꺾이지 않습니다(1280 메뉴 220 일곱 타일 '1,339.28' + '원'이 안쪽 폭을 1.6px 넘음). 이 여유보다 더 모자랄 만큼 좁은 칸은 띠가
- * 만들지 않습니다(한 줄 최소 칸 폭 — ONE_ROW_GRID). 간격 4px(ml-1)는 예전 값 줄 간격과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ * 단위 — 값 끝 묶음(VALUE_TAIL) 안, 마지막 글자 뒤. 간격 4px(ml-1)는 예전 값 줄 간격과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ * 타일 안쪽 여백(12px)까지 걸쳐도 되는 여유는 단위가 아니라 값 줄이 갖습니다(VALUE_ROW_UNIT — QA-625).
  */
-const VALUE_UNIT = "-mr-3 ml-1 text-sm font-normal text-text-3";
+const VALUE_UNIT = "ml-1 text-sm font-normal text-text-3";
+/**
+ * 단위가 있는 숫자 값의 값 줄 — 오른쪽 바깥 여백 −12px로 값 줄을 타일 안쪽 여백까지 넓혀, 값 글(max-w-full = 값 줄)이 단위 자리가 조금 모자랄 때
+ * 그 여백에 걸쳐 숫자 안에서 꺾이지 않습니다(1280 메뉴 220 일곱 타일 '1,339.28' + '원'이 안쪽 폭을 1.6px 넘음 — QA-599). 이 여유보다 더 모자랄 만큼
+ * 좁은 칸은 띠가 만들지 않습니다(한 줄 최소 칸 폭 — ONE_ROW_GRID). 예전에는 여유를 단위 글의 음수 여백으로 두었는데, 크롬이 값 글의 내용 폭을 그만큼
+ * 덜 재 그 폭 안에서 숫자를 꺾었습니다 — 좁은 단위('pt')의 '−0.58'이 '−0.5' / '8 pt' 두 줄(QA-625).
+ */
+const VALUE_ROW_UNIT = "mt-0.5 -mr-3 flex items-baseline";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
 function KpiValue({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
@@ -172,24 +127,58 @@ function ValueText({ text, unit }: { text: string; unit?: string | null }): JSX.
 
 /**
  * 값 줄 — 읽는 중이면 블록(QA-596), 값이 오면 값 글 하나를 담는 flex 행(숫자 값 글은 shrink-0 max-w-full — VALUE_NUMBER_ITEM). 값과 단위를 한 줄에
- * 붙드는 것은 값 줄이 아니라 값 글 안의 값 끝 묶음(VALUE_TAIL)과 단위의 −12px 여유(VALUE_UNIT)입니다. 판정 라벨은 낱말 사이에서 꺾습니다(break-keep).
+ * 붙드는 것은 값 글 안의 값 끝 묶음(VALUE_TAIL)과, 단위가 있는 숫자 값이면 값 줄의 −12px 여유(VALUE_ROW_UNIT)입니다. 판정 라벨은 낱말 사이에서 꺾습니다(break-keep).
  */
-function valueRowClass(item: KpiItem): string {
+function valueRowClass(item: KpiItem, pendingMatchesValue: boolean): string {
   if (item.pending) {
-    return "mt-0.5";
+    // 값 줄 높이(20·24px 글의 줄 28·32px)를 미리 잡을 때(띠의 선택 prop) — 읽는 중 막대(22px) 줄이 값 줄보다 낮아 값이 오면 띠가 6·10px 자랐음.
+    return pendingMatchesValue ? "mt-0.5 min-h-7 lg:min-h-8" : "mt-0.5";
   }
-  return "mt-0.5 flex items-baseline";
+  const unitTail = item.valueKind !== "label" && Boolean(item.unit) && statValueText(item.value, item.format) !== null;
+  return unitTail ? VALUE_ROW_UNIT : "mt-0.5 flex items-baseline";
 }
 
-function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
+/** 보조 글 — keepDates면 날짜·시각 마디를 줄바꿈 없는 묶음으로(출처 배지 keepDates와 같은 규칙 — lib/patterns dateTokenParts, 글자는 그대로). */
+function NoteText({ text, keepDates }: { text: string; keepDates: boolean }): JSX.Element {
+  if (!keepDates) return <>{text}</>;
+  return (
+    <>
+      {dateTokenParts(text).map((part, index) =>
+        part.date ? (
+          <span key={index} className="whitespace-nowrap">
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        ),
+      )}
+    </>
+  );
+}
+
+function KpiTileBody({
+  item,
+  pendingGap,
+  pendingWide,
+  pendingMatchesValue = false,
+  keepDates = false,
+}: {
+  item: KpiItem;
+  pendingGap?: string;
+  pendingWide?: WidePending;
+  pendingMatchesValue?: boolean;
+  keepDates?: boolean;
+}): JSX.Element {
   const change = item.change && !item.pending ? item.change : null;
   // 변화량·변화율을 둘 다 모르면 칩이 그려지지 않으므로(ChangeChip) 캡션만 남지 않게 줄째 뺍니다.
   const changeShown = change !== null && !(isMissingValue(change.change) && isMissingValue(change.changePct));
   const caption = change ? presentText(change.caption) : null;
   const flagged = Boolean(item.isEstimated || item.isProxy || item.isStale);
   const note = presentText(item.note);
+  // 출처 줄 — 값이 온 뒤에 그립니다. 띠가 값 꼴에 맞춘 자리표시를 바라면(pendingMatchesValue) 읽는 중에도 받은 출처 글(정적 — 값이 아님)을 그려 같은 높이를 잡습니다.
   const sourced =
-    !item.pending && (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
+    (!item.pending || pendingMatchesValue) &&
+    (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
   return (
     <>
       <div
@@ -199,18 +188,30 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
         {item.label}
       </div>
       {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
-      <div className={valueRowClass(item)}>
+      <div className={valueRowClass(item, pendingMatchesValue)}>
         <KpiValue item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
       </div>
       {change && changeShown ? (
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
-          <ChangeChip size="sm" change={change.change} changePct={change.changePct} digits={change.digits} pctDigits={change.pctDigits} />
+          <ChangeChip
+            size="sm"
+            change={change.change}
+            changePct={change.changePct}
+            digits={change.digits}
+            pctDigits={change.pctDigits}
+            unit={change.unit ?? undefined}
+          />
           {caption ? <span className="text-xs text-text-3">{caption}</span> : null}
         </div>
       ) : null}
       {item.status && !item.pending ? (
         <div className="mt-1 text-xs leading-4">
-          <StatusText tone={item.status.tone} iconSize={12}>
+          <StatusText
+            tone={item.status.tone}
+            iconSize={12}
+            srPrefix={item.status.srPrefix}
+            icon={item.status.icon === "alert" ? <AlertTriangleIcon size={12} /> : undefined}
+          >
             {item.status.text}
           </StatusText>
         </div>
@@ -223,10 +224,15 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
       ) : null}
       {sourced ? (
         <p className="mt-1 leading-4">
-          <ProvenanceBadge source={item.source} asOf={item.asOf} delayMin={item.delayMin} title={item.provenanceTitle} />
+          <ProvenanceBadge source={item.source} asOf={item.asOf} delayMin={item.delayMin} title={item.provenanceTitle} keepDates={keepDates} />
         </p>
       ) : null}
-      {note ? <p className="mt-1 text-xs leading-4 text-text-3">{note}</p> : null}
+      {/* 보조 글도 한글은 낱말 사이에서만 줄을 바꿉니다(공용 글 부품 규약 QA-568 — 타일의 wrap-anywhere는 공백 없는 긴 토큰만 꺾음, QA-637). */}
+      {note ? (
+        <p className="mt-1 break-keep text-xs leading-4 text-text-3">
+          <NoteText text={note} keepDates={keepDates} />
+        </p>
+      ) : null}
     </>
   );
 }
@@ -312,7 +318,25 @@ function widePending(count: number): WidePending {
  * - 끊을 곳 없는 긴 값·출처는 타일 안에서 꺾음(말줄임 없음 — PropertyList와 같은 규칙). 단위는 값의 마지막 글자와 한 묶음이라 홀로 다음 줄로
  *   가지 않고, 값 줄보다 긴 값만 숫자 안에서 꺾입니다.
  */
-export function KpiStrip({ label, items }: { label: string; items: readonly KpiItem[] }): JSX.Element {
+export function KpiStrip({
+  label,
+  items,
+  pendingMatchesValue = false,
+  keepDates = false,
+}: {
+  label: string;
+  items: readonly KpiItem[];
+  /**
+   * 읽는 중 타일을 값이 온 뒤의 꼴에 맞춥니다(선택, 기본 꺼짐 — 홈 띠는 자리 줄 수 `pendingLines`로 맞춤): 값 자리를 값 줄 높이(28·32px)로 잡고, 출처 줄은
+   * 읽는 중에도 받은 출처 글(정적)로 그립니다. 변화·상태·메모가 없는 띠(섹터 SPY 기간 수익률 — 첫 타일만 출처 줄)가 값이 와도 높이가 같게(P5a 검토 CLS).
+   */
+  pendingMatchesValue?: boolean;
+  /**
+   * 출처 줄·보조 글의 날짜·시각 마디를 줄바꿈 없는 묶음으로(선택, 기본 꺼짐 — 홈 띠 그대로): 좁은 타일에서 '표본 2016-' / '08-08'처럼 날짜 안에서 꺾이지
+   * 않고 마디 사이에서만 꺾입니다(출처 배지 keepDates와 같음 — 시장 화면의 띠가 씀, P5a 검토).
+   */
+  keepDates?: boolean;
+}): JSX.Element {
   // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
   const oneRow = ONE_ROW_GRID[items.length] ?? "";
   const pendingGap = ONE_ROW_PENDING_GAP[items.length];
@@ -325,13 +349,13 @@ export function KpiStrip({ label, items }: { label: string; items: readonly KpiI
           if (item.href) {
             tile = (
               <Link href={item.href} className={`${TILE} ${LINK_TILE}`}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} keepDates={keepDates} />
               </Link>
             );
           } else {
             tile = (
               <div role="group" aria-label={item.label} className={TILE}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} keepDates={keepDates} />
               </div>
             );
           }

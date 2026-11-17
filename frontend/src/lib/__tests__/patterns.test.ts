@@ -10,16 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MINUS } from "../format";
-import {
-  PROVENANCE_UNKNOWN,
-  changeChipModel,
-  estimateLabel,
-  isMissingValue,
-  presentText,
-  provenanceText,
-  skeletonLineCount,
-  statValueText,
-} from "../patterns";
+import { changeChipModel, dateTokenParts, estimateLabel, isMissingValue, presentText, PROVENANCE_UNKNOWN, provenanceText, skeletonLineCount, statValueText } from "../patterns";
 
 describe("isMissingValue", () => {
   it("null·undefined·false·NaN·±Infinity는 값 없음", () => {
@@ -172,5 +163,17 @@ describe("skeletonLineCount", () => {
     expect(skeletonLineCount(2.7, undefined)).toBe(2);
     expect(skeletonLineCount(-1, undefined)).toBe(0);
     expect(skeletonLineCount(NaN, undefined)).toBe(0);
+  });
+});
+
+describe("dateTokenParts — 글 속 날짜·시각 마디(출처 배지 keepDates)", () => {
+  it("날짜(뒤 시각 포함)·따로 선 시각을 마디로, 이어 붙이면 원래 글", () => {
+    const text = "TradingView (TVC:DXY) · 개장 · 실시간 · 2026-11-04 06:31";
+    const parts = dateTokenParts(text);
+    expect(parts.filter((part) => part.date).map((part) => part.text)).toEqual(["2026-11-04 06:31"]);
+    expect(parts.map((part) => part.text).join("")).toBe(text);
+    expect(dateTokenParts("실시간 06:31:05 수신 · 기준일 2026-10-23").filter((part) => part.date).map((part) => part.text)).toEqual(["06:31:05", "2026-10-23"]);
+    expect(dateTokenParts("FRED · 10Y-3M")).toEqual([{ text: "FRED · 10Y-3M", date: false }]);
+    expect(dateTokenParts("")).toEqual([]);
   });
 });

@@ -1,6 +1,8 @@
 /**
  * '모름'을 '정상'·'없음'으로 보여 주지 않는다 — 조회가 실패하거나 값을 확인하지 못했을 때의 화면 문구.
  * (PRINCIPLES: 실패는 실패로, 모르는 값은 "—")
+ *
+ * 시장 화면(매크로·COT — P5a)의 사례는 갈래별 파일로 옮겼습니다(내용 그대로): macroScreenStates·liquiditySectorCotStates(.test.tsx).
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -19,10 +21,6 @@ import AiReportPage from "../ai/report/page";
 import AlertsPage from "../alerts/page";
 import { AiEngineSection } from "../connections/AiEngineSection";
 import { TossSection } from "../connections/TossSection";
-import CotPage from "../cot/page";
-import MacroPage from "../macro/page";
-import { ScrapedSection } from "../macro/ScrapedSection";
-import { SingleChartSection } from "../macro/SingleChartSection";
 import RadarPage from "../radar/page";
 import StatusPage from "../status/page";
 
@@ -86,15 +84,6 @@ describe("QA-046 수급 레이더 — 이력 조회가 실패하면 '이력 없�
 });
 
 describe("QA-050 실패·로딩을 '없음'으로 보이지 않는다", () => {
-  // 수정 전에는 COT 개요 조회의 오류를 받지 않아 카드가 빈 채로 남았다.
-  it("COT 개요 조회가 실패하면 오류를 보인다", async () => {
-    reads["/api/cot/overview"] = () => Promise.reject(new Error("요청 실패 (HTTP 503)"));
-
-    render(<CotPage />);
-
-    expect(await screen.findByText(/요청 실패 \(HTTP 503\)/)).toBeTruthy();
-  });
-
   // 수정 전에는 알림함을 읽는 동안(그리고 오류에도) '아직 알림이 없습니다'와 '읽지 않은 알림 0건'이 보였다.
   it("알림함을 읽는 동안에는 '아직 알림이 없습니다'·'0건'이 아니다", async () => {
     reads["/api/alerts/rules"] = () => Promise.resolve({ available: true, rules: [] });   // 알림함만 읽는 중
@@ -117,28 +106,10 @@ describe("QA-050 자동 갱신이 실패하면 수집 시각 배지 옆에 알�
   });
 });
 
-describe("QA-099 지표별 단독 차트 — 백엔드가 받지 못한 이유를 보인다", () => {
-  // 수정 전에는 available·message를 보지 않아, 공개 데모(store_only)에서 10개 중 8개 지표가 이유 없이
-  // '표시할 시계열이 없습니다'만 보였다(수집기 실패 사유도 같은 식으로 버려졌다).
-  it.each([
-    "store_only 모드에서는 저장하지 않는 지표의 차트를 조회하지 않습니다.",
-    "수집기에서 시계열을 받지 못했습니다.",
-  ])("응답이 '%s'이면 그 문구를 보이고 빈 차트를 그리지 않는다", async (message) => {
-    reads["/api/macro/ticker"] = () => Promise.resolve({ available: false, symbol: "^VIX", points: [], message });
-
-    render(<SingleChartSection />);
-
-    expect(await screen.findByText(message, {}, { timeout: 500 })).toBeTruthy();
-    expect(screen.queryByText("표시할 시계열이 없습니다.")).toBeNull();
-  });
-});
-
 describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다", () => {
   const FAILED = "요청 실패 (HTTP 503)";
   // 수정 전에는 error를 받지 않거나(스크래핑·AI 엔진 목록) 섹션에 넘기지 않아(심화 지표) 빈 카드·이유 없이 꺼진 버튼만 남았다.
   it.each<[string, string, () => ReactElement]>([
-    ["스크래핑 시세", "/api/macro/scraped", () => <ScrapedSection />],
-    ["매크로 심화 지표", "/api/macro/advanced", () => <MacroPage />],
     ["AI 엔진 목록(연결 테스트)", "/api/ai/engines", () => <AiEngineSection />],
   ])("%s: 첫 조회가 실패하면 오류와 다시 시도", async (_name, path, make) => {
     reads[path] = () => Promise.reject(new Error(FAILED));

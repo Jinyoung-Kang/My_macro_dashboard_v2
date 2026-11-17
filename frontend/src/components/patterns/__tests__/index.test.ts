@@ -16,14 +16,17 @@ import * as Empty from "../Empty";
 import * as EntityHeader from "../EntityHeader";
 import * as Hero from "../Hero";
 import * as patterns from "../index";
+import * as InspectorFrame from "../InspectorFrame";
 import * as KpiStrip from "../KpiStrip";
 import * as MasterDetail from "../MasterDetail";
 import * as PropertyList from "../PropertyList";
 import * as RangeTabs from "../RangeTabs";
+import * as SectionIndex from "../SectionIndex";
 import * as Skeleton from "../Skeleton";
 import * as Sparkline from "../Sparkline";
 import * as SplitPane from "../SplitPane";
 import * as StatTile from "../StatTile";
+import * as Timeline from "../Timeline";
 
 const MODULES: Record<string, Record<string, unknown>> = {
   AssetRow,
@@ -34,14 +37,17 @@ const MODULES: Record<string, Record<string, unknown>> = {
   Empty,
   EntityHeader,
   Hero,
+  InspectorFrame,
   KpiStrip,
   MasterDetail,
   PropertyList,
   RangeTabs,
+  SectionIndex,
   Skeleton,
   Sparkline,
   SplitPane,
   StatTile,
+  Timeline,
 };
 
 describe("components/patterns 배럴", () => {
@@ -70,23 +76,30 @@ describe("components/patterns 배럴", () => {
         "AssetList",
         "AssetRow",
         "Avatar",
+        "ChangeCell",
         "ChangeChip",
         "DataTable",
         "Empty",
         "EntityHeader",
         "EstimateBadge",
         "Hero",
+        "InspectorFrame",
+        "InspectorTrigger",
         "KpiStrip",
         "MasterDetail",
         "PropertyList",
         "ProvenanceBadge",
         "RangeTabs",
+        "SectionAnchor",
+        "SectionIndex",
         "Skeleton",
         "Sparkline",
         "SplitPane",
         "StaleBadge",
         "StatGrid",
         "StatTile",
+        "Timeline",
+        "TimelineSkeleton",
       ].sort(),
     );
     expect(names).not.toContain("LineChart");

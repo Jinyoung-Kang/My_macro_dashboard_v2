@@ -42,6 +42,26 @@ describe("SplitPane", () => {
     expect(tokens(center)).toEqual(expect.arrayContaining(["min-w-0", "flex-col"]));
   });
 
+  it("leftWidth='wide'는 왼쪽 칸만 15rem(나머지 틀은 같음), 주지 않으면 정보 검색 틀 그대로", () => {
+    const { container, unmount } = render(
+      <SplitPane leftWidth="wide" left={<p>왼쪽</p>} right={<p>오른쪽</p>}>
+        <p>가운데</p>
+      </SplitPane>,
+    );
+    const root = container.firstElementChild as HTMLElement;
+    expect(tokens(root)).toEqual(
+      expect.arrayContaining(["lg:grid", "lg:grid-cols-[15rem_minmax(0,1fr)]", "lg:grid-rows-[auto_1fr]", "xl:grid-cols-[15rem_minmax(0,1fr)_18rem]", "xl:grid-rows-none"]),
+    );
+    expect(tokens(root)).not.toContain("lg:grid-cols-[13rem_minmax(0,1fr)]");
+    unmount();
+    const plain = render(
+      <SplitPane left={<p>왼쪽</p>} right={<p>오른쪽</p>}>
+        <p>가운데</p>
+      </SplitPane>,
+    );
+    expect(tokens(plain.container.firstElementChild as HTMLElement)).toEqual(expect.arrayContaining(ENTITY_FRAME.split(" ")));
+  });
+
   it("새 랜드마크를 만들지 않는다 — 칸은 div", () => {
     const { container } = render(
       <SplitPane left={null} right={null}>

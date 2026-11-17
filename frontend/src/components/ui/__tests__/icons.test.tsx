@@ -38,6 +38,7 @@ const ICONS = [
   "PersonIcon",
   "PlusIcon",
   "RefreshIcon",
+  "ScaleIcon",
   "SearchIcon",
   "SkipIcon",
   "SpinnerIcon",

@@ -13,6 +13,7 @@ import {
   formatLatency,
   formatSignedMinus,
   formatWithUnit,
+  koreanScale,
   MINUS,
   statusColor,
 } from "@/lib/format";
@@ -71,6 +72,15 @@ describe("조·억·만 단위", () => {
     expect(formatBillionUsd(877)).toBe("8,770억 달러");
     expect(formatTrillionDelta(-0.0005)).toBe("-5.0억 달러");
     expect(formatTrillionDelta(0)).toBe("0 달러");
+  });
+
+  it("단위 고르기(koreanScale)는 글 함수와 같은 단위·자릿수 — 반올림이 다음 단위에 닿으면 올린다", () => {
+    expect(koreanScale(4.47e10)).toEqual({ scaled: 447, digits: 1, label: "억" });
+    expect(koreanScale(8_607_639e9)).toEqual({ scaled: 8_607.639, digits: 0, label: "조" });
+    expect(koreanScale(9.9995e11)).toEqual({ scaled: 0.99995, digits: 3, label: "조" });
+    expect(koreanScale(-5e8)).toEqual({ scaled: -5, digits: 1, label: "억" });
+    expect(koreanScale(999)).toEqual({ scaled: 999, digits: 0, label: "" });
+    expect(koreanScale(0)).toEqual({ scaled: 0, digits: 0, label: "" });
   });
 
   it("환율을 모르면 달러만", () => {

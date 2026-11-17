@@ -10,6 +10,19 @@ import { EstimateBadge, ProvenanceBadge, StaleBadge } from "../badges";
 
 afterEach(() => cleanup());
 
+describe("ProvenanceBadge — keepDates(날짜 마디를 줄바꿈 없는 묶음으로)", () => {
+  it("주면 날짜·시각 마디만 whitespace-nowrap 묶음이고 글은 그대로, 주지 않으면 묶음 없음(홈·상세 그대로)", () => {
+    const { container, unmount } = render(<ProvenanceBadge source="FRED" asOf="2026-11-04 06:31" keepDates />);
+    const badge = container.firstElementChild as HTMLElement;
+    expect(badge.textContent).toBe("출처: FRED · 2026-11-04 06:31");
+    expect(Array.from(badge.querySelectorAll(".whitespace-nowrap")).map((span) => span.textContent)).toEqual(["2026-11-04 06:31"]);
+    unmount();
+    const plain = render(<ProvenanceBadge source="FRED" asOf="2026-11-04 06:31" />);
+    expect((plain.container.firstElementChild as HTMLElement).textContent).toBe("출처: FRED · 2026-11-04 06:31");
+    expect(plain.container.querySelector(".whitespace-nowrap")).toBeNull();
+  });
+});
+
 describe("ProvenanceBadge", () => {
   it("값 있음 — 출처 · 지연 · 시각을 작은 캡션 한 줄로(테두리·알약 없음), 낭독기에는 '출처:'가 앞에", () => {
     render(<ProvenanceBadge source="FRED" delayMin={15} asOf="2026-10-26 14:20" />);

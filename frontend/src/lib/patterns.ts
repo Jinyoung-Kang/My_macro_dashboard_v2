@@ -103,6 +103,26 @@ export function provenanceText({
   return parts.length > 0 ? parts.join(" · ") : PROVENANCE_UNKNOWN;
 }
 
+/** 글 속 날짜·시각 마디 — 'YYYY-MM-DD'(뒤에 ' HH:MM'·' HH:MM:SS'가 붙으면 함께)와 따로 선 'HH:MM(:SS)'. */
+const DATE_TOKEN = /\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}(?::\d{2})?)?|\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+
+/**
+ * 글을 날짜·시각 마디와 그 밖으로 나눕니다 — 그리는 쪽이 날짜 마디를 줄바꿈 없는 묶음으로 두어 '2026-11-' / '04'처럼 날짜 안(하이픈 뒤)에서 꺾이지 않고 마디
+ * 사이(가운뎃점·공백)에서만 꺾이게 합니다(P5a 검토 — 출처 배지의 날짜 꺾임). 글자는 그대로이고 이어 붙이면 원래 글입니다. 빈 글이면 빈 목록.
+ */
+export function dateTokenParts(text: string): { text: string; date: boolean }[] {
+  const parts: { text: string; date: boolean }[] = [];
+  let last = 0;
+  for (const match of text.matchAll(DATE_TOKEN)) {
+    const at = match.index ?? 0;
+    if (at > last) parts.push({ text: text.slice(last, at), date: false });
+    parts.push({ text: match[0], date: true });
+    last = at + match[0].length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), date: false });
+  return parts;
+}
+
 /**
  * 추정·대리 배지 라벨 — "추정" / "대리 지표" / 둘 다면 "추정 · 대리 지표". 둘 다 아니면 null(배지를 그리지 않음).
  */

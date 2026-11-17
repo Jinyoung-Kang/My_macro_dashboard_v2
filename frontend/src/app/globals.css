@@ -247,6 +247,26 @@
       scroll-padding-bottom: calc(var(--bottom-sheet, 0px) + min(var(--bottom-sheet, 0px), 64px));
     }
   }
+
+  /* 긴 화면 목차(components/patterns SectionIndex)의 가로 줄은 columnFrom 미만에서 본문 위에 불투명하게 붙어 따라옵니다 — 좁은 화면은 창(html)
+     맨 위 45px(칸 44px + 아래 선 1px), lg~columnFrom(xl·2xl)은 본문 스크롤 상자(#main) 맨 위 31px(30px + 1px). Tab으로 위로 옮긴 포커스가 그 줄 밑에
+     숨지 않게 그만큼 위쪽 스크롤 여백을 둡니다(WCAG 2.4.11 — QA-643). 목차가 그려진 화면에서만(내비의 표지 data-section-index-bar = columnFrom).
+     절 닻의 scroll-margin(SectionAnchor)은 이 여백 위에 더해지므로 줄 아래 간격(12px)만 둡니다. */
+  @media (width < 64rem) {
+    html:has([data-section-index-bar]) {
+      scroll-padding-top: 45px;
+    }
+  }
+  @media (64rem <= width < 80rem) {
+    #main:has([data-section-index-bar="xl"]) {
+      scroll-padding-top: 31px;
+    }
+  }
+  @media (64rem <= width < 96rem) {
+    #main:has([data-section-index-bar="2xl"]) {
+      scroll-padding-top: 31px;
+    }
+  }
 }
 
 /* 표·지표의 숫자는 자리를 고정해야 눈으로 비교하기 쉽습니다. */

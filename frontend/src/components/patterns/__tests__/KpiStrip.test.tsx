@@ -90,6 +90,24 @@ describe("KpiStrip — 값 있음", () => {
     expect(within(tile("모름")).queryByText("전일 대비")).toBeNull();
   });
 
+  it("변화 단위(change.unit)는 변화량 바로 옆에 작게(공용 변화 칩의 unit) — 주지 않으면 단위 없음(홈 띠 그대로)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "spread", label: "10Y-3M", value: -0.42, unit: "%p", change: { change: -0.032, digits: 3, unit: "%p", caption: "전일 대비" } },
+          { key: "kospi", label: "코스피", value: 2612.5, change: { change: 12.3, changePct: 0.47 } },
+        ]}
+      />,
+    );
+    const amount = within(tile("10Y-3M")).getByText("−0.032");
+    expect(amount.textContent).toBe("−0.032%p");
+    expect(within(amount).getByText("%p").className.split(/\s+/)).toEqual(expect.arrayContaining(["text-xs", "font-normal"]));
+    // 주지 않으면 변화량 옆에 단위 칸이 없다
+    const plain = within(tile("코스피")).getByText("+12.30");
+    expect(plain.children).toHaveLength(0);
+  });
+
   it("href가 있으면 타일 전체가 링크(이름에 라벨) — 중립 잉크·hover surface-2·포커스 링, 강조 파랑 클래스 없음", () => {
     render(<KpiStrip label="요약" items={[{ key: "sp500", label: "S&P 500", value: 6012, href: "/markets/i/sp500" }]} />);
     const link = screen.getByRole("link", { name: /S&P 500/ });
@@ -121,7 +139,8 @@ describe("KpiStrip — 값 있음", () => {
     expect(within(value).getByText("원")).toBeTruthy();
     const numberRow = value.parentElement as HTMLElement;
     expect(numberRow.children).toHaveLength(1);
-    expect(numberRow.className.split(/\s+/)).toEqual(["mt-0.5", "flex", "items-baseline"]);
+    // 단위가 있는 숫자 값의 값 줄은 타일 안쪽 여백까지 걸치는 여유(−12px)를 갖습니다(QA-625 — 예전에는 단위 글의 음수 여백).
+    expect(numberRow.className.split(/\s+/)).toEqual(["mt-0.5", "-mr-3", "flex", "items-baseline"]);
     const label = within(tile("국면")).getByText("후퇴 경계 (Late cycle)");
     expect((label.parentElement as HTMLElement).children).toHaveLength(1);
     expect(label.className).toContain("break-keep");
@@ -402,6 +421,65 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
     expect(within(tile("수집 오류")).getByText("오류:").className).toContain("sr-only");
     expect(within(tile("끊긴 출처")).getByText("주의:").className).toContain("sr-only");
   });
+
+  it("상태 글의 낭독 머리말(status.srPrefix)을 주면 톤 기본 머리말 대신 그 말 — 아이콘·톤 색은 그대로", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[{ key: "t10y3m", label: "10Y-3M", value: -0.62, status: { tone: "danger", text: "깊은 역전", srPrefix: "주의: " } }]}
+      />,
+    );
+    const text = within(tile("10Y-3M")).getByText("깊은 역전");
+    expect(text.parentElement?.className).toContain("text-danger");
+    expect(text.parentElement?.querySelector("svg[aria-hidden='true']")).toBeTruthy();
+    expect(within(tile("10Y-3M")).getByText("주의:").className).toContain("sr-only");
+    expect(within(tile("10Y-3M")).queryByText("오류:")).toBeNull();
+  });
+
+  it("상태 아이콘(status.icon 'alert')을 주면 위험 톤의 엑스 원 대신 경고 삼각형 — 주지 않으면 톤 기본 아이콘(엑스 원) 그대로", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "t10y3m", label: "10Y-3M", value: -0.62, status: { tone: "danger", text: "깊은 역전", srPrefix: "주의: ", icon: "alert" } },
+          { key: "err", label: "수집 오류", value: 3, status: { tone: "danger", text: "오류 태스크 3개" } },
+        ]}
+      />,
+    );
+    const marketIcon = within(tile("10Y-3M")).getByText("깊은 역전").parentElement?.querySelector("svg[aria-hidden='true']");
+    expect(marketIcon?.querySelector('path[d="M12 3.5 2.5 20h19z"]')).toBeTruthy();
+    expect(marketIcon?.querySelector("circle")).toBeNull();
+    expect(within(tile("10Y-3M")).getByText("깊은 역전").parentElement?.className).toContain("text-danger");
+    const errorIcon = within(tile("수집 오류")).getByText("오류 태스크 3개").parentElement?.querySelector("svg[aria-hidden='true']");
+    expect(errorIcon?.querySelector("circle")).toBeTruthy();
+  });
+});
+
+describe("KpiStrip — 값 꼴에 맞춘 읽는 중 타일(pendingMatchesValue)", () => {
+  it("주면 읽는 중 값 줄이 값 줄 높이(28·32px)이고 받은 출처 글을 그린다 — 주지 않으면 그대로(홈 띠: 자리 줄 수로 맞춤, 읽는 중 출처 줄 없음)", () => {
+    const items = [{ key: "1w", label: "S&P 500 (SPY) 1W", value: null, pending: true, source: "Yahoo Finance ETF 일별 종가" }];
+    const { container, unmount } = render(<KpiStrip label="띠" items={items} pendingMatchesValue />);
+    const status = screen.getByRole("status", { name: "S&P 500 (SPY) 1W 불러오는 중" });
+    expect((status.parentElement as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["mt-0.5", "min-h-7", "lg:min-h-8"]));
+    expect(container.textContent).toContain("Yahoo Finance ETF 일별 종가");
+    unmount();
+    const plain = render(<KpiStrip label="띠" items={items} />);
+    const plainStatus = screen.getByRole("status", { name: "S&P 500 (SPY) 1W 불러오는 중" });
+    expect((plainStatus.parentElement as HTMLElement).className).toBe("mt-0.5");
+    expect(plain.container.textContent).not.toContain("Yahoo Finance ETF 일별 종가");
+  });
+});
+
+describe("KpiStrip — 날짜 마디 묶음(keepDates)", () => {
+  it("주면 출처 줄·보조 글의 날짜·시각 마디만 줄바꿈 없는 묶음(글 그대로), 주지 않으면 묶음 없음(홈 띠 그대로)", () => {
+    const items = [{ key: "a", label: "심화", value: 1.2, note: "표본 2016-08-08 이후 2,560개 · 기준일 2026-11-03", source: "FRED", asOf: "2026-11-03" }];
+    const { container, unmount } = render(<KpiStrip label="띠" items={items} keepDates />);
+    expect(Array.from(container.querySelectorAll(".whitespace-nowrap")).map((span) => span.textContent)).toEqual(expect.arrayContaining(["2016-08-08", "2026-11-03"]));
+    expect(within(tile("심화")).getByText(/표본/).textContent).toBe("표본 2016-08-08 이후 2,560개 · 기준일 2026-11-03");
+    unmount();
+    const plain = render(<KpiStrip label="띠" items={items} />);
+    expect(Array.from(plain.container.querySelectorAll(".whitespace-nowrap")).some((span) => /\d{4}-\d{2}-\d{2}/.test(span.textContent ?? ""))).toBe(false);
+  });
 });
 
 describe("KpiStrip — 출처 줄", () => {
@@ -490,15 +568,28 @@ describe("KpiStrip — 긴 값·출처의 줄바꿈", () => {
       expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["shrink-0", "max-w-full"]));
     }
     // 단위는 값 글 안 끝의 값 끝 묶음(마지막 글자 + 단위, nowrap) 안이라 값이 꺾이면 마지막 줄을 따라가고, 타일 안쪽 여백까지 걸칠 수 있습니다
-    // (오른쪽 바깥 여백 −12px).
+    // (값 줄의 오른쪽 바깥 여백 −12px — QA-625, 예전에는 단위 글의 여백).
     for (const [tileNode, unit] of [[link, "%"], [group, "pt"]] as const) {
       const unitNode = within(tileNode).getByText(unit);
       const tail = unitNode.parentElement as HTMLElement;
       expect(tail.textContent, unit).toBe(`4${unit}`);
       expect(tail.className.split(/\s+/), unit).toContain("whitespace-nowrap");
       expect(tail.parentElement, unit).toBe(valueText(tileNode, `${LONG_VALUE}${unit}`));
-      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["-mr-3", "ml-1", "font-normal"]));
+      expect(unitNode.className.split(/\s+/), unit).toEqual(expect.arrayContaining(["ml-1", "font-normal"]));
+      expect(((tail.parentElement as HTMLElement).parentElement as HTMLElement).className.split(/\s+/), unit).toContain("-mr-3");
     }
+  });
+});
+
+// QA-637: 보조 글(note)은 타일의 wrap-anywhere만 물려받아 한글 낱말 가운데서 줄을 바꿨습니다 — 상관 화면 표본 수 타일 '두 지표가 모두 값을 가|진
+// 날짜만 셉니다'(QA 스택 1440·1024). 공용 글 부품의 한글 줄바꿈 규약(QA-568 — 낱말 사이에서만, break-keep)을 KPI 띠 보조 글에도 둡니다. 공백 없는 긴
+// 토큰은 그대로 타일 안에서 꺾입니다(타일의 wrap-anywhere).
+describe("QA-637 KPI 띠 보조 글의 한글 줄바꿈", () => {
+  it("보조 글은 낱말 사이에서만 줄을 바꾼다(break-keep) — 타일의 wrap-anywhere는 그대로", () => {
+    render(<KpiStrip label="요약" items={[{ key: "n", label: "표본 수", value: 496, unit: "개", note: "두 지표가 모두 값을 가진 날짜만 셉니다." }]} />);
+    const note = within(tile("표본 수")).getByText("두 지표가 모두 값을 가진 날짜만 셉니다.");
+    expect(note.className.split(/\s+/)).toContain("break-keep");
+    expect(tile("표본 수").className.split(/\s+/)).toContain("wrap-anywhere");
   });
 });
 
@@ -519,5 +610,30 @@ describe("KpiStrip — 추정·대리·이전 값", () => {
     expect(within(tile("원/달러")).getByText("이전 값")).toBeTruthy();
     expect(within(tile("원/달러")).getByText("· 수집 실패 — 11-14 값")).toBeTruthy();
     expect(within(tile("원/달러")).getByText("기준 2026-11-14 15:30").className).toContain("text-text-3");
+  });
+});
+
+// QA-625: 단위의 여유(타일 안쪽 여백까지 걸침 — QA-599)를 단위 글의 오른쪽 바깥 음수 여백(−12px)으로 두면, 크롬은 값 글의 내용 폭을 그만큼 덜 재고
+// 그 폭 안에 줄을 다시 놓다가 숫자 안에서 꺾었습니다 — 좁은 단위('pt'·'x')에서만(넓은 단위 '%p'·'%'·'원'은 그대로). 매크로 신용·변동성의
+// '−0.58'+'pt'가 '−0.5' / '8 pt' 두 줄로 갈렸습니다(자기 빌드 390·412·1024 — 값 글 54x56px, 값 줄 136px에 자리가 남는데도). 여유를 값 줄(flex 행)의
+// 오른쪽 음수 여백으로 옮기면 값 글 폭이 바르게 재여 한 줄(66x28px)이고, 값 글의 최대 폭(max-w-full = 값 줄)은 그대로 12px 넓어져 걸침도 같습니다.
+// jsdom은 배치를 재지 않아 자리(클래스)로 봅니다.
+describe("QA-625 짧은 단위의 값이 숫자 안에서 꺾이지 않는다", () => {
+  it("단위의 여유(−12px)는 값 줄이 갖고 단위 글에는 바깥 음수 여백이 없다 — 단위 없는 값의 값 줄은 그대로", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "stlfsi", label: "금융스트레스", value: "−0.58", unit: "pt" },
+          { key: "plain", label: "단위 없음", value: "12.5" },
+        ]}
+      />,
+    );
+    const unit = within(tile("금융스트레스")).getByText("pt");
+    expect(unit.className.split(/\s+/).some((name) => /^-m[rx]-/.test(name))).toBe(false);
+    const value = valueText(tile("금융스트레스"), "−0.58pt");
+    expect((value.parentElement as HTMLElement).className.split(/\s+/)).toContain("-mr-3");
+    const plainRow = valueText(tile("단위 없음"), "12.5").parentElement as HTMLElement;
+    expect(plainRow.className.split(/\s+/)).toEqual(["mt-0.5", "flex", "items-baseline"]);
   });
 });

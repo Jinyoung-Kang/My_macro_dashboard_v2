@@ -58,6 +58,36 @@ describe("Select", () => {
     expect(onChange).toHaveBeenCalledWith("b");
     const arrow = container.querySelector("svg") as SVGSVGElement;
     expect(arrow.getAttribute("aria-hidden")).toBe("true");
+    // 묶음을 주지 않으면 optgroup 없이 받은 차례 그대로.
+    expect(select.querySelector("optgroup")).toBeNull();
+    expect(Array.from(select.options).map((option) => option.text)).toEqual(["자동 탐색", "Claude"]);
+  });
+
+  it("선택지에 묶음(group)을 주면 optgroup — 묶음 없는 항목이 맨 앞, 묶음은 처음 나온 차례, 고른 값의 글은 이름만", () => {
+    render(
+      <Select
+        label="지표 X"
+        value="etf:EEM"
+        onChange={() => {}}
+        options={[
+          { value: "all", label: "전체" },
+          { value: "fred:DGS10", label: "미국채 10년물", group: "금리" },
+          { value: "etf:SPY", label: "S&P 500 (SPY)", group: "주식" },
+          { value: "etf:TLT", label: "미국 장기국채 (TLT)", group: "채권" },
+          { value: "etf:EEM", label: "신흥국 주식 (EEM)", group: "주식" },
+        ]}
+      />,
+    );
+    const select = screen.getByLabelText("지표 X") as HTMLSelectElement;
+    expect(Array.from(select.querySelectorAll("optgroup")).map((group) => [group.label, Array.from(group.querySelectorAll("option")).map((option) => option.value)])).toEqual([
+      ["금리", ["fred:DGS10"]],
+      ["주식", ["etf:SPY", "etf:EEM"]],
+      ["채권", ["etf:TLT"]],
+    ]);
+    expect(select.options[0].value).toBe("all");
+    expect(select.options[0].parentElement).toBe(select);
+    expect(select.value).toBe("etf:EEM");
+    expect(select.options[select.selectedIndex].text).toBe("신흥국 주식 (EEM)");
   });
 });
 

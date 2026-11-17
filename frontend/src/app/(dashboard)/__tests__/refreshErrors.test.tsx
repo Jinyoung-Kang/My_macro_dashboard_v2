@@ -4,6 +4,8 @@
  * 실패하면 화면은 앞서 받은 값을 그대로 보이므로, 표시가 없으면 몇 시간 전 값이 지금 값처럼 남습니다. QA-050은 수집
  * 시각 배지가 있는 9개 화면에만 붙였고, 자동 갱신하는 나머지 패널(상태 화면, 매크로 위험·고급·스크래핑, 수급 패널,
  * 현물·선물 카드, KRX 선물 수급)은 조용했습니다.
+ *
+ * 시장 화면(매크로·상관·국면 — P5a)의 사례는 갈래별 파일로 옮겼습니다(내용 그대로): macroScreenStates·correlationRegimeStates(.test.tsx).
  */
 import { act, cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -19,17 +21,10 @@ vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { endpoints } from "@/lib/endpoints";
 import AlertsPage from "../alerts/page";
-import CorrelationPage from "../correlation/page";
 import { SpotFuturesCard } from "../krx/SpotFuturesCard";
 import KrxPage from "../krx/page";
-import { FxCompareSection } from "../macro/FxCompareSection";
-import MacroPage from "../macro/page";
-import { ScrapedSection } from "../macro/ScrapedSection";
 import { MarketFlowsPanel, StockFlowsPanel } from "../radar/FlowPanels";
 import RadarPage from "../radar/page";
-import RegimePage from "../regime/page";
-import { RegimeLogSection } from "../regime/RegimeLogSection";
-import { TrackRecordSection } from "../regime/TrackRecordSection";
 import StatusPage from "../status/page";
 
 const FAILED = "새로 읽지 못함";
@@ -111,12 +106,6 @@ describe("QA-067 자동 갱신 실패를 패널에 표시한다", { timeout: 20_
       bodies: { "/api/krx/spot-futures": { available: true, rows: [] } } },
     { name: "시장 수급 패널", make: () => <MarketFlowsPanel market="KOSPI" />, card: "코스피 전체 투자자별 매매대금",
       bodies: { "/api/kr/investor-flows": { markets: {} } } },
-    { name: "스크래핑 시세", make: () => <ScrapedSection />, card: "비공식 스크래핑 시세 비교",
-      bodies: { "/api/macro/scraped": { available: true, items: [] } } },
-    { name: "매크로 위험 지표", make: () => <MacroPage />, card: "신용 리스크, 은행권 및 시장 변동성",
-      bodies: { "/api/macro/risk": {} } },
-    { name: "매크로 심화 지표", make: () => <MacroPage />, card: "심화 매크로 지표",
-      bodies: { "/api/macro/advanced": { order: [], latest: {}, derived: {} } } },
     { name: "KRX 투자주체별 선물 수급", make: () => <KrxPage />, card: "투자주체별 선물 수급",
       // 페이지는 선물 응답을 받기 전까지 전체를 로딩으로 그립니다. 확인할 경로(선물 수급)는 마지막에 둡니다.
       bodies: { "/api/krx/futures?days=60": { available: false }, "/api/krx/investor-trend": { available: false } } },
@@ -155,24 +144,12 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
   // QA-067이 고친 8곳 밖에서 refreshMs>0으로 자동 갱신하면서 refreshError를 받지도 그리지도 않던 9곳.
   // 원천(수집기·외부 API) 실패는 200 {available:false}로 와서 배너가 뜨므로, 여기서는 백엔드에 닿지 못한 경우로 재현합니다.
   const panels: { name: string; make: () => ReactElement; bodies: Record<string, unknown>; card: string; header?: boolean }[] = [
-    { name: "국면(머리말)", make: () => <RegimePage />, card: "시장 국면", header: true,
-      bodies: { [endpoints.insight.regime("5")]: { available: true, timeline: [] } } },
-    { name: "상관", make: () => <CorrelationPage />, card: "비교할 지표",
-      bodies: { [endpoints.insight.correlation({ x: "liquidity:net", y: "etf:QQQ", window: "60", years: "3", mode: "change" })]:
-        { available: false, message: "표본이 부족합니다." } } },
-    { name: "환율 비교", make: () => <FxCompareSection />, card: "환율·달러인덱스 비교",
-      bodies: { [endpoints.macro.fx(["usdkrw", "dxy"], "1y", "index")]: { available: true, series: [], catalog: [] } } },
     { name: "레이더 공통 순매수", make: () => <RadarPage />, card: "외국인·기관 공통 순매수",
       bodies: { [endpoints.positioning.radarConsensus({ market: "KOSPI", tradeType: "순매수", intervalType: "TODAY", topN: "30" })]:
         { available: false, rows: [], message: "공통 종목이 없습니다." } } },
     { name: "종목 수급 지속성", make: () => <StockFlowsPanel rows={[{ code: "005930", name: "삼성전자" }]} />,
       card: "수급 지속성 — 며칠째 사고 있나 (종목별 20거래일)",
       bodies: { [endpoints.positioning.stockFlows("005930")]: { stocks: [], message: "아직 수집되지 않았습니다." } } },
-    { name: "판정 성과", make: () => <TrackRecordSection tone={{}} />, card: "판정 성과",
-      bodies: { [endpoints.insight.regimeTrackRecord("SPY")]: { available: false, locked: false, message: "가격이 부족합니다.",
-        asset: "SPY", assetLabel: "S&P 500 (SPY)", assets: [{ ticker: "SPY", label: "S&P 500 (SPY)" }], horizons: [], limits: [] } } },
-    { name: "판정 기록", make: () => <RegimeLogSection tone={{}} />, card: "판정 기록",
-      bodies: { [endpoints.insight.regimeLog(60)]: { available: true, entries: [], count: 0 } } },
     { name: "알림함", make: () => <AlertsPage />, card: "알림함",
       // 규칙을 먼저 받아야 화면이 그려집니다. 확인할 경로(알림함)는 마지막에 둡니다.
       bodies: { [endpoints.alerts.rules]: { available: true, rules: [] },
