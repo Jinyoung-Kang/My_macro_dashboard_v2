@@ -322,3 +322,19 @@ describe("QA-672 스마트머니 순포지션을 모르면 공용 표의 모르�
     }
   });
 });
+
+// QA-673: 극단 성적 표(극단 롱·극단 숏 이후 성적)와 최근 극단 신호 표는 첫 열에 행 머리가 없어, 낭독기가 칸을 옮길 때 '4주 뒤'·신호 날짜가 행 이름으로
+// 읽히지 않았습니다(QA 스택 390·1024·1440 — 접근성 트리 rowheader 0, 같은 화면 자산별 요약은 6). 개편 전 옛 표는 행 머리를 그릴 수 없었습니다.
+describe("QA-673 극단 성적·최근 신호 표의 첫 열은 행 머리", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 행 머리가 없었습니다('Unable to find an accessible element with the role "rowheader"').
+  it.fails("'극단 롱 이후 성적'의 행 머리가 기간 둘, '최근 극단 신호'는 줄마다 행 머리(기준일)", async () => {
+    render(<CotPage />);
+    const recent = await screen.findByRole("table", { name: "최근 극단 신호" });
+
+    const side = screen.getByRole("table", { name: "극단 롱 이후 성적" });
+    expect(within(side).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["4주 뒤", "13주 뒤"]);
+    const bodyRows = within(recent).getAllByRole("row").length - 1;
+    expect(bodyRows).toBe(2);
+    expect(within(recent).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["2026-08-18", "2026-07-21"]);
+  });
+});

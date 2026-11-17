@@ -560,3 +560,24 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 
     expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });
+
+// QA-673: 국면 이력의 '과거 구간 (최근 순)' 표와 판정 성과의 국면별 표는 첫 열에 행 머리가 없어, 낭독기가 칸을 옮길 때 국면 이름·기간이 행 이름으로
+// 읽히지 않았습니다(QA 스택 390·1024·1440 — 접근성 트리 rowheader 0, 탭을 바꿔 잼). 개편 전 옛 표는 행 머리를 그릴 수 없었습니다.
+describe("QA-673 과거 구간·판정 성과 표의 첫 열은 행 머리", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 행 머리가 없었습니다('Unable to find an accessible element with the role "rowheader"').
+  it.fails("판정 성과 표의 행 머리는 기간('13주 뒤'), 과거 구간 표는 줄마다 행 머리(국면)", async () => {
+    reads[REGIME] = withHistory();
+    reads[TRACK_SPY] = trackRecord();
+    render(<RegimePage />);
+
+    await openTab("판정 성과");
+    const track = await screen.findByRole("table", { name: "확장 (Expansion) — 판정 뒤 수익률" });
+    expect(within(track).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["13주 뒤"]);
+
+    await openTab("국면 이력");
+    const episodes = screen.getByRole("table", { name: "과거 구간 (최근 순)" });
+    const bodyRows = within(episodes).getAllByRole("row").length - 1;
+    expect(bodyRows).toBe(3);
+    expect(within(episodes).getAllByRole("rowheader")).toHaveLength(bodyRows);
+  });
+});
