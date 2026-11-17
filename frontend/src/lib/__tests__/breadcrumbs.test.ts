@@ -1,12 +1,13 @@
 /**
  * 넓은 화면 상단바의 빵부스러기(lib/breadcrumbs — 작업대 실행 명세 §5, ADR 0042 결정 5). 주소만으로 계산하고(API 없음), 메뉴 표는 lib/nav 하나.
- * 칸 순서는 탭 → 하위 화면 → 대상이고 마지막 칸이 지금 화면. 탭의 유일한 첫 화면(홈·정보 검색)은 하위 칸을 생략, 묶음('한국 시장')은 글 칸,
+ * 칸 순서는 탭 → 하위 화면 → 대상이고 마지막 칸이 지금 화면. 탭의 유일한 첫 화면(홈·정보 검색)은 하위 칸을 생략, 묶음('한국 시장')은 글 칸이고
+ * 묶음 첫 화면이 있는 묶음('정보 수집' → 개요)은 그 화면 링크,
  * 형식이 틀린 대상 조각은 대상 칸을 뺌, 메뉴 밖 경로는 빈 목록, 보이지 않는 탭·화면은 링크 없음.
  */
 import { describe, expect, it } from "vitest";
 
 import { PAPER_TAB_CRUMBS, breadcrumbs, foldedBreadcrumbs, type Crumb } from "../breadcrumbs";
-import { TABS } from "../nav";
+import { GROUP_HOMES, KR_MARKET_GROUP, TABS } from "../nav";
 import { PAPER_TABS, paperTabInMarket } from "../paper";
 import { paperRouteFromPath, paperTabPath } from "../paperRoutes";
 import type { SessionUser } from "../types";
@@ -45,11 +46,13 @@ describe("메뉴 화면", () => {
     ]);
   });
 
-  // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 더보기 안의 묶음으로 — 한국 시장과 같은 꼴(묶음 이름은 링크 없는 글 칸).
-  it("정보 수집 — /info/kr은 더보기 › 정보 수집(링크 없는 묶음 칸) › 국내 시장·수급, 회원이 주소로 열면 하위 화면 칸은 링크 없이", () => {
+  // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 더보기 안의 묶음으로 — 한국 시장과 같은 꼴. 다만 정보 수집에는 묶음 이름이 곧 제목인 첫 화면
+  // (개요 /info/overview — 머리 제목 '정보 수집')이 있어 묶음 칸은 그 화면 링크입니다(lib/nav GROUP_HOMES). 탭이던 때 '정보 수집'(→ /info/overview) 칸으로
+  // 개요에 한 번에 올라가던 길을 잃지 않게(검토 지적). 개요에서는 지금 화면이라 글 칸, 회원이 주소로 열면 보이지 않는 화면이라 글 칸입니다.
+  it("정보 수집 — /info/kr은 더보기 › 정보 수집(→ 개요) › 국내 시장·수급, /info/overview에서는 묶음 칸이 글 칸, 회원이 주소로 열면 링크 없이", () => {
     expect(breadcrumbs("/info/kr", OWNER)).toEqual([
       { label: "더보기", href: "/more" },
-      { label: "정보 수집", href: null },
+      { label: "정보 수집", href: "/info/overview" },
       { label: "국내 시장·수급", href: "/info/kr" },
     ]);
     expect(breadcrumbs("/info/overview", OWNER)).toEqual([
@@ -62,10 +65,26 @@ describe("메뉴 화면", () => {
       { label: "정보 수집", href: null },
       { label: "국내 시장·수급", href: null },
     ]);
+    // 접으면 첫 칸은 가장 가까운 부모 — /info/kr은 개요, /info/overview는 지금 화면이 묶음 첫 화면이라 더보기(위로 가는 링크가 남음).
     expect(foldedBreadcrumbs("/info/kr", OWNER)).toEqual([
-      { label: "더보기", href: "/more", title: "더보기 › 정보 수집" },
+      { label: "더보기", href: "/info/overview", title: "더보기 › 정보 수집" },
       { label: "국내 시장·수급", href: "/info/kr" },
     ]);
+    expect(foldedBreadcrumbs("/info/overview", OWNER)).toEqual([
+      { label: "더보기", href: "/more", title: "더보기 › 정보 수집" },
+      { label: "개요", href: "/info/overview" },
+    ]);
+  });
+
+  it("묶음 첫 화면(GROUP_HOMES)은 그 묶음의 첫 화면이고, 첫 화면이 없는 '한국 시장'은 늘 글 칸", () => {
+    const more = TABS.find((tab) => tab.key === "more");
+    for (const [group, home] of Object.entries(GROUP_HOMES)) {
+      expect(more?.items.find((item) => item.group === group)?.href).toBe(home);
+    }
+    expect(Object.hasOwn(GROUP_HOMES, KR_MARKET_GROUP)).toBe(false);
+    for (const path of ["/radar", "/krx"]) {
+      expect(breadcrumbs(path, OWNER)[1]).toEqual({ label: KR_MARKET_GROUP, href: null });
+    }
   });
 
   it("메뉴에 없는 경로(/login 등)는 빈 목록", () => {

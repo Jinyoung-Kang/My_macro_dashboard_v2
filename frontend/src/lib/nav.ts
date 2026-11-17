@@ -21,6 +21,12 @@ export const KR_MARKET_GROUP = "한국 시장";
  */
 export const INFO_GROUP = "정보 수집";
 
+/**
+ * 묶음 이름 → 그 묶음의 첫 화면(제목이 묶음 이름인 화면 — 정보 수집 개요의 머리 제목이 '정보 수집'). 빵부스러기의 묶음 칸이 이 화면으로 가는 링크가 됩니다
+ * (lib/breadcrumbs — 지금 화면이 그 첫 화면이면 글 칸). 따로 된 첫 화면이 없는 묶음(한국 시장)은 두지 않습니다 — 묶음 칸은 글만.
+ */
+export const GROUP_HOMES: Readonly<Record<string, string>> = { [INFO_GROUP]: "/info/overview" };
+
 export type NavItem = {
   href: string;
   /** 하위 메뉴에 적는 짧은 이름. */
