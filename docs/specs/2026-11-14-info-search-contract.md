@@ -539,7 +539,8 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 ### 10-1. FeedItem에 더함(3-4 — 더하기만)
 - `bodyRef`: 본문 보기 꼬리표(32자 소문자 16진 = 원문 주소 글자의 sha-256 앞 32자) — 종류 `news`·`headline`이고 `readerId`가 없고 주소가 http(s)인 줄. 받지 않는 매체면 null.
   구글 경유 주소는 최종 호스트를 모르므로 늘 꼬리표(누를 때 풀린 호스트에 같은 규칙).
-- `bodyNote`: 본문 보기를 하지 않는 까닭 한 줄(받지 않는 매체 — 네이버·Yahoo·인베스팅닷컴·Finviz·정기 수집 출처·검색 엔진 경유·계좌·공시 출처·유료 구독 매체·제외 매체).
+- `bodyNote`: 본문 보기를 하지 않는 까닭 한 문장(받지 않는 매체 — 네이버·Yahoo·인베스팅닷컴·Finviz·같은 서버 IP로 부르는 출처의 등록 도메인·검색 엔진 경유·
+  계좌·공시 출처·유료 구독 매체·제외 매체 — 줄표·ADR 번호 없음).
 - 두 칸은 결과 경로(`feed`)의 줄에만 있고(첫 화면 최근 글은 없음), 백엔드는 회원 응답에서 null로 지웁니다. 수집 글·속보는 지금처럼 `readerId`(원문 팝업).
 
 ### 10-2. 기억표
@@ -554,7 +555,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 | `user_limit` | (백엔드) 한 시간에 새로 받기 10건을 다 씀 — 남은 분과 `retryAfterSeconds` | 예 |
 | `not_cached` | (수집기 — `start=false`) 받아 둔 것 없음. 백엔드가 `offline`·`user_limit`로 바꾸거나 번역이 씀 | — |
 | `unknown_ref` | 기억표에 없음(다시 켜짐·24시간 지남) — 결과를 다시 불러 주세요 | 아니오 |
-| `refused_host` | 받지 않는 매체(시작·풀린 구글 주소·리다이렉트 홉) | 아니오 |
+| `refused_host` | 받지 않는 매체(시작·풀린 구글 주소·리다이렉트 홉) — 글은 '까닭(호스트)' | 아니오 |
 | `relay_unresolved` | 구글 경유 주소를 풀지 못함 | 전송 실패만 예 |
 | `unsafe_address` | 내부·특수 주소(IP 글자·한 낱말 호스트·내부 이름·풀린 주소 가운데 공인이 아닌 것) | 아니오 |
 | `bad_redirect` | 규칙 밖으로 옮겨짐·목적지 없음·3번 넘음 | 아니오 |
@@ -562,7 +563,7 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 | `budget` | 하루 전체 80·호스트 20·구글 60을 다 씀, 또는 예산을 읽지 못함 | 아니오 |
 | `queue_full` | 줄(기다림 + 받는 중) 5가 참 | 예 |
 | `timeout`·`transport` | 늦음·연결 실패·이름을 찾지 못함 | 예 |
-| `too_large` | 압축을 푼 본문 3MB 넘음 | 아니오 |
+| `too_large` | 압축을 푼 본문 3MB 넘음, 또는 여는 태그 어림수 50,000 넘음(추출하지 않음) | 아니오 |
 | `not_html` | HTML이 아님(PDF 등) | 아니오 |
 | `http_error` | 404·410 '글을 찾지 못함', 그 밖 4xx, 5xx(예) | 5xx만 예 |
 | `no_body` | 추린 본문 80자 미만·추출 실패 | 아니오 |
@@ -574,23 +575,32 @@ SEC = 미국 동부 — `zoneinfo('America/New_York')`)을 UTC ISO로 바꾼 값
 - 응답 `{ref, status: ok|pending|error, reason, message(호스트만), retryable, retryAfterSeconds, queued, article, fetchedAt}`, `article` =
   `{title, siteName, author, publishedDate(YYYY-MM-DD), lang, paragraphs[], chars, totalChars, truncated, short, paywalled, sourceUrl, sourceHost, viaGoogle,
   fetchedAt, cached}`(처음 읽기는 `cached:false`, 그다음부터 true).
-- 캐시: 성공 24시간, `no_body`·`not_html`·`too_large`·`http_error`(4xx) 30분, `blocked` 6시간, `refused_host`·`unsafe_address`·`bad_redirect`·`relay_unresolved` 1시간,
-  일시 실패 60초. 작업이 낸 `budget`·`server_only`는 다시 묻는 화면에 전하려고 120초.
+- 캐시: 성공 24시간, `no_body`·`not_html`·`too_large`·`http_error`(4xx) 30분, `blocked` 6시간(이 기능이 닫은 호스트에 걸린 실패는 닫힘이 남은 만큼),
+  `refused_host`·`unsafe_address`·`bad_redirect`·`relay_unresolved` 1시간, 일시 실패 60초. 작업이 낸 `budget`(구글 풀기 예산 포함)·`server_only`는 다시 묻는
+  화면에 전하려고 120초.
 
 ### 10-5. 백엔드
 - `POST /api/search/article` `{ref}`(운영자): 꼬리표 400·회원·데모 403. 외부를 부르지 않는 모드는 `start=false`(없으면 `offline`). 사용자마다 지난 1시간에 수집기가
   `queued:true`로 답한 것이 10번이면 `start=false`(없으면 `user_limit`), 응답의 `queued`는 셈에만 쓰고 지움. 닿지 못하면 `{available:false, message}`.
 - `POST /api/search/article/translate` `{ref}`(운영자): 수집기 캐시만(`start=false`), 없으면 `ok:false`. 본문은 저장하지 않는 번역(백엔드 메모리 24시간·400조각,
-  하루 글자 상한은 번역·AI 요약과 함께 `InfoAiBudget.reserve`), 제목은 지금 번역 길. 응답은 `/api/info/translate`와 같은 모양. 같은 글 번역 중이면 429.
+  하루 글자 상한은 번역·AI 요약과 함께 `InfoAiBudget.reserve`), 제목(받은 쪽에서 추린 것)도 같은 저장하지 않는 길. 응답은 `/api/info/translate`와 같은 모양.
+  같은 글 번역 중이면 429. `STORE_ONLY`는 받아 둔 것만, 데모는 늘 403.
 
 ### 10-6. 화면
-- 미리 보기 단추 줄 `[원문 열기] [본문 보기]`(운영자·데모 아님): 수집 글은 원문 팝업, `bodyRef`는 본문 팝업, `bodyNote`는 단추 없이 '본문 보기 없음 — 까닭'.
-- 본문 팝업: 2초마다 다시 물어 35번(약 70초) 뒤 멈추고 '다시 확인'. 받으면 사실 줄·표지·키보드로 스크롤하는 본문(15/24·72ch·글 언어 `lang`)·맺음 글,
-  실패면 사유와 '원문 열기(새 창)'(일시 실패만 '다시 시도' — `retryAfterSeconds` 동안 잠금). 한국어가 아닌 글에만 번역 단추.
+- 미리 보기 단추 줄 `[원문 열기] [본문 보기]`(운영자·데모 아님, 두 단추 모두 `aria-haspopup="dialog"`): 수집 글은 원문 팝업, `bodyRef`는 본문 팝업,
+  `bodyNote`는 단추 없이 '본문 보기 없음: 까닭' 한 줄(아래 안내 줄은 두지 않음).
+- 본문 팝업: 2초마다 다시 물어 35번(약 70초) 뒤 멈추고 '다시 확인'. 받으면 사실 줄·표지·본문(15/24·한국어 72ch·그 밖 60ch·글 언어 `lang`, 스크롤은 대화상자
+  하나)·맺음 글, 실패면 사유와 '원문 열기(새 창)'(일시 실패만 '다시 시도' — `retryAfterSeconds` 동안 잠금, 1분 이상은 분으로 적음). 늘 붙은 상태 줄 하나가 단계와
+  번역의 진행·끝을 알림. 한국어가 아닌 글에만 번역 단추(처리 중 aria-disabled, 끝나면 '원문 보기'로 포커스).
 
 ### 10-7. 구현하며 정한 것
 - 구글 경유 쪽에서 원문 주소를 바로 찾을 때 `<a>`는 `noscript` 안의 것만 봅니다 — 경유 쪽에는 구글 밖의 정책·도움말 링크도 있어 아무 `<a>`나 고르면 다른 글을
   열 수 있습니다(설계는 '구글 밖을 가리키는 `<a>`').
 - trafilatura 2.3.1은 `max_tree_size` 인자를 받지 않아(오류) 설정 파일 값 `MAX_TREE_SIZE`로 겁니다. 문자셋은 우리가 풀어 글로 넘깁니다(trafilatura는 HTTP 머리글을 보지 않음).
 - 추출 첫 줄이 페이지 제목과 같으면 뺍니다(대화상자 제목과 겹침).
-- 받지 않는 매체에 증권사(토스) 웹 호스트는 넣지 않았습니다 — 그 호스트 글자는 토스 클라이언트 한 곳만 안다는 격리 시험을 지키려고(ADR 0043 결과 9).
+- 받지 않는 매체의 증권사(토스) 웹 호스트는 등록 도메인의 sha-256으로 맞춥니다 — 그 호스트 글자는 토스 클라이언트 한 곳만 안다는 격리 시험을 지키려고
+  (ADR 0043 결과 9, 처음 구현은 목록에서 뺐다가 2026-11-17 검토로 고침).
+- 같은 서버 IP로 부르는 출처는 등록 도메인째 받지 않습니다(`SCHEDULED_DOMAINS` + 정책 표). 정보 검색 자체 피드만 부르는 매체 여섯(`SEARCH_FEED_ONLY_DOMAINS`)은
+  받습니다. 수집기 코드의 모든 바깥 주소·HOST 상수가 둘 가운데 하나에 드는지 시험이 대조합니다(ADR 0043 결정 3 — 연합뉴스는 사용자 확인 남음).
+- 한 홉 보내기의 curl 옵션은 `RESOLVE`·`PROTOCOLS_STR`·`MAXFILESIZE_LARGE` 셋뿐입니다(처음 구현의 `ALTSVC_CTRL` 0은 libcurl이 거절해 모든 요청이 실패했음 —
+  홉마다 요청 하나인 새 세션이라 alt-svc 옵션이 필요 없음). 실제 curl 핸들을 루프백 시험 서버로 확인합니다.
