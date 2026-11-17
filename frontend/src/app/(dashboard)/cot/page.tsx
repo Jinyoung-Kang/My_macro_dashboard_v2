@@ -216,7 +216,12 @@ export default function CotPage() {
             <Select
               label="자산"
               value={asset}
-              onChange={setAsset}
+              // 고르기로 바꾸면 상태 글을 비웁니다 — 고르기는 자기 새 값을 스스로 읽어 주고, 남겨 두면 이전 자산 이름이 남아 읽히며 그 자산 단추를 다시 눌러도
+              // 글이 같아 알림이 나가지 않았습니다(QA-671). 비워 두면 그 뒤 어느 표 단추를 눌러도 글이 바뀌어 다시 알립니다.
+              onChange={(value) => {
+                setAsset(value);
+                setPicked(null);
+              }}
               options={(assets.data?.assets ?? []).map((entry) => ({
                 value: entry.name,
                 label: entry.name,
