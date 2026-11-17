@@ -291,3 +291,34 @@ describe("QA-668 COT 저장본 없음이면 자산 개수를 0으로 적지 않�
     expect(within(panel).queryAllByText(/\d개$/)).toEqual([]);
   });
 });
+
+// QA-672: 요약 표의 스마트머니 순포지션 칸만 값을 모를 때 색 span으로 감싼 '—'를 그려, 공용 표가 모르는 칸으로 보지 않아 낭독 글 '값 없음'이 없었습니다
+// (같은 행의 상업 헤저·1주·4주·백분위 칸은 '— 값 없음' — QA 스택 1440·390, 모의 응답의 null 칸·수집 실패 행). 개편 전부터(옛 표는 다섯 칸 모두 '—'만).
+describe("QA-672 스마트머니 순포지션을 모르면 공용 표의 모르는 칸", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 순포지션 칸이 '—'뿐이었습니다('Unable to find an element with the text: 값 없음').
+  it.fails("ncNet null 행과 수집 실패 행 — 순포지션 칸은 상업 헤저 칸과 같이 '—'(읽기에서 뺌)와 낭독 글 '값 없음'", async () => {
+    const overview = BODIES["/api/cot/overview"] as { assets: unknown[] };
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/cot/overview")) {
+        return Promise.resolve({ ...overview, assets: [
+          summary(S_AND_P, "주식", { ncNet: null, commNet: null, change1w: null, change4w: null, percentile: null }),
+          { asset: "금", category: "원자재", available: false, error: "CFTC 응답 시간 초과" },
+        ] });
+      }
+      const key = Object.keys(BODIES).find((prefix) => path.startsWith(prefix));
+      return key ? Promise.resolve(BODIES[key]) : new Promise(() => {});
+    });
+    render(<CotPage />);
+    await screen.findByText("CFTC 응답 시간 초과");
+
+    const table = screen.getByRole("table", { name: "자산별 요약" });
+    for (const name of [S_AND_P, "금"]) {
+      // 칸 차례: 자산(행 머리) · 기준일 · 스마트머니 순포지션 · 상업 헤저 · 1주 · 4주 · 3년 백분위.
+      const cells = within(within(table).getByRole("button", { name }).closest("tr") as HTMLElement).getAllByRole("cell");
+      for (const cell of [cells[1], cells[2]]) {
+        expect(within(cell).getByText("값 없음").className, name).toContain("sr-only");
+        expect(within(cell).getByText("—").getAttribute("aria-hidden"), name).toBe("true");
+      }
+    }
+  });
+});
