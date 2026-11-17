@@ -774,7 +774,7 @@ describe("QA-669 머리의 신선도 칸은 갱신 실패 알약이 붙어도 �
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 배지를 감싼 칸이 동작 줄 전체(flex min-w-0 flex-wrap items-center gap-2)였습니다('expected [ Array(5) ] to deeply equal ArrayContaining{…}').
-  it.fails("수집 배지와 '새로 읽지 못함'을 감싼 칸이 max-lg:flex-1·whitespace-nowrap(둘이 같은 칸)", async () => {
+  it("수집 배지와 '새로 읽지 못함'을 감싼 칸이 max-lg:flex-1·whitespace-nowrap(둘이 같은 칸)", async () => {
     let calls = 0;
     reads["/api/macro/overview"] = () => {
       calls += 1;
