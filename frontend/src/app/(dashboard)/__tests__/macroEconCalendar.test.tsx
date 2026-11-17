@@ -462,3 +462,24 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     expect(panel.style.minHeight).toBe("");
   });
 });
+
+// QA-683(11-18 요청 QA 스택 확인, qa@06f93335): '나라' 칸(한국·미국)에 줄 바꿈을 막는 클래스가 없어, 표가 조금만 눌려도 공용 표의 자동 배치가 이 열을
+// 52px 아래로 줄여 '미/국'·'한/국'으로 음절이 꺾였습니다(칸 글 14px 두 자 28px보다 머리 '나라'(13px·nowrap 26px)가 좁은 탓). 조밀 표(dense)의 행이
+// 1024에서 28 → 48px, 390에서 45 → 65px로 늘었습니다(머리 없는 크롬으로 잼). 공용 표는 오른쪽 정렬(숫자) 열만 nowrap이라 이 열은 부르는 쪽이 붙입니다.
+// 수정 전(재현 커밋에서는 it.fails) 칸에 whitespace-nowrap이 없었습니다.
+describe("QA-683 '나라' 칸은 음절에서 꺾이지 않는다", () => {
+  it.fails("'나라' 열의 머리와 칸 모두 whitespace-nowrap", async () => {
+    mockCalendar(CALENDAR);
+    render(<EconCalendarSection />);
+    fireEvent.click(await screen.findByRole("tab", { name: /^11\/26 \(목\)/ }, { timeout: 500 }));
+    const table = screen.getByRole("table");
+    const heads = within(table).getAllByRole("columnheader");
+    const country = heads.findIndex((head) => head.textContent === "나라");
+    const cells = within(table)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.children[country] as HTMLElement);
+    expect(cells.map((cell) => cell.textContent)).toEqual(["한국"]);
+    for (const element of [heads[country], ...cells]) expect(element.className.split(/\s+/)).toContain("whitespace-nowrap");
+  });
+});
