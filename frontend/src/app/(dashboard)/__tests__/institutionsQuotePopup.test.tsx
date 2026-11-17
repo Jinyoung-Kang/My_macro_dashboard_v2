@@ -630,3 +630,79 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
     expect(document.activeElement).toBe(input);
   });
 });
+
+// QA-690: 앞 결과가 남는 줄(출처 실패·종목 찾기를 쓸 수 없음)의 '다시 시도' 뒤 결과가 와 누른 단추가 사라지면, 포커스가 대화상자 틀(role=dialog)로 한 번
+// 갔다가 첫 후보·입력칸으로 갔습니다(QA 스택 qa@2d111589 390·1440, 키보드·마우스·터치 — 틀에 머문 시간 0.5~14.9ms, CPU 4배 느림 3.2~9.3ms). 낭독기는 그
+// 사이 창 이름을 다시 읽을 수 있습니다. 결과로 옮기는 effect가 수동(useEffect)이라 그림이 화면에 붙은 뒤 돌았고, 그 사이 누른 단추가 지워진 것을 본 Radix
+// FocusScope의 MutationObserver가 activeElement가 body인 것을 보고 틀에 포커스했습니다. 읽기 실패의 다시 시도(포커스를 먼저 결과 자리로 옮김)와 다시
+// 실패해 같은 단추가 남는 경우는 틀을 거치지 않았습니다(대조). act 안에서 응답을 보내면 effect가 act 끝에 함께 비워져 원본에서도 틀을 거치지 않으므로,
+// 응답은 act 밖에서(IS_REACT_ACT_ENVIRONMENT false — 브라우저처럼 React 스케줄러가 그림) 보내고 focusin 기록에 틀이 없는지 봅니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 focusin 기록에 틀(DIALOG)이 있었습니다.
+describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커스는 틀을 거치지 않고 결과로", () => {
+  const actEnv = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+  const CANDIDATES = {
+    available: true,
+    symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF"), symbol("ITOT", "iShares Core S&P Total U.S. Stock Market ETF")], errors: {}, error: null },
+  };
+  const SOURCE_FAILED = { available: true, symbols: { items: [], errors: { "Yahoo Finance": "HTTP 429" }, error: "HTTP 429" } };
+  const UNAVAILABLE = { available: false, message: "수집기 점검 중입니다." };
+  const NO_MATCH = { available: true, symbols: { items: [], errors: {}, error: null } };
+
+  /** 처음 결과(initial)의 '다시 시도'를 누르고 다음 결과(next)를 act 밖에서 보낸 뒤, 그 사이 포커스가 옮겨 간 자리를 돌려줍니다. */
+  async function retryOutsideAct(initial: unknown, next: unknown, arrived: (dialog: HTMLElement) => boolean) {
+    reads[endpoints.detail.symbols("ISHARES TR")] = initial;
+    render(<StockPickQuickView name="ISHARES TR" cusip="464287200" cls="CORE S&P500 ETF" trigger={<button type="button">후보 열기</button>} />);
+    fireEvent.click(screen.getByRole("button", { name: "후보 열기" }));
+    const dialog = await screen.findByRole("dialog");
+    const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
+    let resolve: (body: unknown) => void = () => {};
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise((done) => { resolve = done; });
+    retry.focus();
+    fireEvent.click(retry);
+    await within(dialog).findByText("다시 찾는 중…");
+    expect(document.activeElement).toBe(retry);
+    const moves: Element[] = [];
+    const onFocusIn = (event: FocusEvent) => moves.push(event.target as Element);
+    const before = actEnv.IS_REACT_ACT_ENVIRONMENT;
+    document.addEventListener("focusin", onFocusIn);
+    actEnv.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      resolve(next);
+      for (let i = 0; i < 100 && !arrived(dialog); i++) await sleep(10);
+      await sleep(50);
+    } finally {
+      actEnv.IS_REACT_ACT_ENVIRONMENT = before;
+      document.removeEventListener("focusin", onFocusIn);
+    }
+    return { dialog, moves };
+  }
+  const listed = (dialog: HTMLElement) => within(dialog).queryAllByRole("listitem").length > 0;
+  /** 포커스가 거쳐 간 대화상자 틀(role=dialog). */
+  const frames = (moves: Element[]) => moves.filter((element) => element.getAttribute("role") === "dialog");
+
+  it.fails("출처 실패 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
+    const { dialog, moves } = await retryOutsideAct(SOURCE_FAILED, CANDIDATES, listed);
+    const first = within(within(dialog).getByRole("list", { name: /종목 후보 2건/ })).getAllByRole("button")[0];
+    expect(document.activeElement).toBe(first);
+    // 결함을 직접 보는 단언(수정 전에는 첫 후보 앞에 틀이 있음).
+    expect(frames(moves)).toEqual([]);
+    expect(moves).toEqual([first]);
+  });
+
+  it.fails("종목 찾기를 쓸 수 없음 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
+    const { dialog, moves } = await retryOutsideAct(UNAVAILABLE, CANDIDATES, listed);
+    const first = within(within(dialog).getByRole("list", { name: /종목 후보 2건/ })).getAllByRole("button")[0];
+    expect(document.activeElement).toBe(first);
+    expect(frames(moves)).toEqual([]);
+    expect(moves).toEqual([first]);
+  });
+
+  it.fails("출처 실패 → 맞는 후보 없음: 틀을 거치지 않고 입력칸으로", async () => {
+    const { dialog, moves } = await retryOutsideAct(SOURCE_FAILED, NO_MATCH, (box) => /맞는 종목 후보가 없습니다/.test(box.textContent ?? ""));
+    const input = within(dialog).getByRole("textbox", { name: /검색어/ });
+    expect(document.activeElement).toBe(input);
+    expect(frames(moves)).toEqual([]);
+    expect(moves).toEqual([input]);
+  });
+});
