@@ -310,3 +310,38 @@ describe("QA-678 섹터 표는 유형 배지를 이름 칸에 두고, 시간 외
     expect(label.contains(within(line).getByText("+0.67%"))).toBe(false);
   });
 });
+
+// QA-679(섹터): 머리(PageHeader)는 제목 묶음과 동작 줄을 한 줄에 두다 넘치면 동작 줄을 다음 줄로 꺾는데, 넘침은 제목 묶음과 동작 줄의 글 폭으로 정해집니다.
+// 섹터는 늘 있는 설명 글이 없어 제목 묶음이 제목·설명 폭(342px)뿐이라 넓은 폭에서 동작 줄(현재가 실시간 주기)이 제목 옆에 놓였다가, 실시간 시세 안내가
+// 제목 묶음에 붙거나(제목 묶음이 줄 전체로 — 메뉴 220의 1024·1280) 신선도 배지가 붙어 동작 줄이 157 → 369px로 넓어지면(1024의 메뉴 272·320) 동작 줄이
+// 다음 줄로 꺾여 아래 전체가 32~68px 밀렸습니다(첫 읽기 CLS 1024 0.2251·1280 0.3246, 배지만으로 0.25~0.28 — 자체 빌드 7bc31123, QA API·합성 응답, 개편
+// 전부터). 매크로(QA-679)와 같이 머리 글 칸을 늘 그리고 머리 줄 전체 폭(w-screen max-w-full)으로 두면 자료·안내와 상관없이 동작 줄이 늘 제목 묶음 아래
+// 따로 놓입니다. jsdom은 배치를 재지 않으므로 그 칸과 클래스, 안내가 그 칸 안에 그대로 있는지로 봅니다.
+describe("QA-679 섹터 머리 동작 줄은 늘 제목 묶음 아래 따로 놓인다", () => {
+  const titleBlock = () => screen.getByRole("heading", { level: 1, name: "섹터 & 자산군 로테이션 맵" }).parentElement as HTMLElement;
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 제목 묶음에 그 칸이 없었습니다('expected null not to be null').
+  it.fails("처음 그릴 때(읽는 중, 안내 없음)부터 제목 묶음에 줄 전체 폭 글 칸(w-screen max-w-full)이 있다", () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<SectorPage />);
+
+    const lines = titleBlock().querySelector(":scope > [data-sector-header-lines]");
+    expect(lines).not.toBeNull();
+    expect((lines as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["w-screen", "max-w-full"]));
+    expect((lines as HTMLElement).textContent).toBe("");
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 안내가 제목 묶음에 바로 있었습니다('expected <div class="min-w-0">…(3)</div> to be null').
+  it.fails("실시간 시세 안내는 그 칸 안에 그대로 보인다(주기 10초의 받지 못한 응답)", async () => {
+    render(<SectorPage />);
+    await screen.findAllByText("정보기술");
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0));
+
+    await act(async () => {
+      FakeEventSource.instances.at(-1)!.emit("prices", { available: false, message: "수집기에서 응답을 받지 못했습니다." });
+    });
+
+    const notice = screen.getByText("실시간 시세: 수집기에서 응답을 받지 못했습니다. — 현재가는 저장본 값입니다.");
+    expect(notice.parentElement).toBe(titleBlock().querySelector(":scope > [data-sector-header-lines]"));
+  });
+});
