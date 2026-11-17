@@ -203,7 +203,7 @@ describe("KpiStrip — 값 있음", () => {
   // QA-663: lg 칸 수가 타일 수와 상관없이 네 칸이라, 타일 둘인 상관 요약 띠가 1024~1279에서 줄의 절반만 써 칸이 90~119px로 좁아졌습니다
   // (QA 스택 1024 메뉴 220 '상관계수 (변|화)', 1100·1180 메뉴 220 보조 글 '2026-11-|03'). lg 칸 수는 타일 수와 4 가운데 작은 쪽이어야 합니다.
   // 수정 전(재현 커밋에서는 it.fails) items(2)의 목록에는 'lg:grid-cols-4'가 있었고 'lg:grid-cols-2'가 없었습니다.
-  it.fails("lg 칸 수는 타일 수와 4 가운데 작은 쪽 — 하나·둘·셋이면 그만큼, 넷 이상이면 네 칸 (QA-663)", () => {
+  it("lg 칸 수는 타일 수와 4 가운데 작은 쪽 — 하나·둘·셋이면 그만큼, 넷 이상이면 네 칸 (QA-663)", () => {
     const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
     const { container, rerender } = render(<KpiStrip label="요약" items={items(2)} />);
     const list = () => (container.querySelector("ul") as HTMLElement).className.split(/\s+/);
@@ -225,7 +225,7 @@ describe("KpiStrip — 값 있음", () => {
 
   // QA-663: 타일 이름 칸에 break-keep이 없어 타일의 wrap-anywhere만 물려받아 한글을 음절 사이에서 꺾었습니다('상관계수 (변|화)' — QA 스택 1024 메뉴 220).
   // 공용 글 부품 규약(QA-568 — 낱말 사이에서만 꺾음, 보조 글은 QA-637)에서 빠진 자리입니다. 수정 전(재현 커밋에서는 it.fails) 이름 칸 클래스에 'break-keep'이 없었습니다.
-  it.fails("타일 이름은 낱말 사이에서만 꺾는다 — 묶음 타일·링크 타일 모두 break-keep (QA-663)", () => {
+  it("타일 이름은 낱말 사이에서만 꺾는다 — 묶음 타일·링크 타일 모두 break-keep (QA-663)", () => {
     render(
       <KpiStrip
         label="요약"

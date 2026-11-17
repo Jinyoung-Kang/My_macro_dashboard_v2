@@ -203,7 +203,8 @@ export default function CorrelationPage() {
 
         {data?.available && (
           <>
-            <KpiStrip label="상관 요약" items={kpis} />
+            {/* 보조 글의 계산 기간('2024-11-05 ~ 2026-11-03')은 날짜 마디 사이에서만 꺾습니다(keepDates — 시장 화면 띠와 같음, QA-663). */}
+            <KpiStrip label="상관 요약" items={kpis} keepDates />
 
             {(data.notes ?? []).map((note) => (
               <p key={note} className="rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">

@@ -181,9 +181,11 @@ function KpiTileBody({
     (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
   return (
     <>
+      {/* 이름도 한글은 낱말 사이에서만 줄을 바꿉니다(공용 글 부품 규약 QA-568·보조 글 QA-637과 같음 — 공백 없는 긴 이름은 타일의 wrap-anywhere로 꺾음,
+          QA-663: 좁은 타일에서 '상관계수 (변|화)'). */}
       <div
         aria-hidden={item.pending ? true : undefined}
-        className={`text-caption font-medium text-text-2 ${item.href ? "underline-offset-2 group-hover:underline" : ""}`.trim()}
+        className={`break-keep text-caption font-medium text-text-2 ${item.href ? "underline-offset-2 group-hover:underline" : ""}`.trim()}
       >
         {item.label}
       </div>
@@ -238,8 +240,20 @@ function KpiTileBody({
 }
 
 /**
- * 한 줄 배치(타일 수 1~8) — xl이어도 띠 폭이 '타일 수 × 한 줄 최소 칸 폭 134px + 사이 8px × (타일 수 − 1)'보다 좁으면 한 줄로 늘이지 않고 네 칸(lg)
- * 입니다. 한 줄 여부를 뷰포트가 아니라 띠 폭(컨테이너 질의 — 띠 section이 @container)으로 정합니다: 왼쪽 메뉴 폭(접힘 48px·펼침 220px, 가변 폭 메뉴는
+ * lg 칸 수 — 타일 수와 4 가운데 작은 쪽(타일이 넷 미만이면 타일 수만큼, 넷 이상이면 네 칸). 타일 둘을 네 칸에 놓으면 줄의 절반만 써 칸이 좁아져
+ * (상관 요약 띠 — 1024 가운데 칸 384~498px에서 칸 90~119px) 이름·값·보조 글의 날짜가 낱말·숫자 안에서 꺾였습니다(QA-663). xl의 한 줄 배치(ONE_ROW_GRID)가
+ * 타일 수로 칸을 정하는 규칙을 lg까지 넓힌 것입니다. sm 세 칸은 그대로. Tailwind가 클래스를 글로 찾으므로 적어 둡니다.
+ */
+const LG_GRID: Readonly<Record<number, string>> = {
+  1: "lg:grid-cols-1",
+  2: "lg:grid-cols-2",
+  3: "lg:grid-cols-3",
+};
+const LG_GRID_MAX = "lg:grid-cols-4";
+
+/**
+ * 한 줄 배치(타일 수 1~8) — xl이어도 띠 폭이 '타일 수 × 한 줄 최소 칸 폭 134px + 사이 8px × (타일 수 − 1)'보다 좁으면 한 줄로 늘이지 않고 lg와 같은
+ * 칸(LG_GRID — 넷 이상이면 네 칸)입니다. 한 줄 여부를 뷰포트가 아니라 띠 폭(컨테이너 질의 — 띠 section이 @container)으로 정합니다: 왼쪽 메뉴 폭(접힘 48px·펼침 220px, 가변 폭 메뉴는
  * 끌어서 206~320px)에 따라 같은 1280에서도 띠 폭이 바뀌어, 뷰포트로만 정하면 메뉴 320px에서 일곱 타일이 121px까지 좁아졌습니다(QA-599).
  * 134px(안쪽 108px)는 넓은 숫자 값 — '1,339.28' + '원'(24px 굵게 약 111px)이 단위 여유(−12px — VALUE_UNIT) 안에서, 단위 없는 다섯 자리
  * '10,123.45'(약 107px)가 여유 없이 — 가 한 줄에 들어가는 폭입니다. Tailwind가 클래스를 글로 찾으므로 적어 둡니다(경계 = n × 134 + (n − 1) × 8px —
@@ -284,6 +298,7 @@ const ONE_ROW_PENDING_GAP: Readonly<Record<number, string>> = {
  * Tailwind가 클래스를 글로 찾으므로 두 글 모두 적어 두고, xl 몫은 타일 수별로 적어 둡니다(경계 = ONE_ROW_GRID와 같은 n × 134 + (n − 1) × 8px — 시험이 대조,
  * `@max-[N]`은 '띠 폭 < N'이라 한 줄 배치 `@min-[N]`과 겹치지도 비지도 않음). 한 줄 경계가 816px 이하(타일 5개 이하)면 xl에서 띠 816px 이상은 늘 한 줄이라
  * xl 몫이 없습니다.
+ * 넓은 칸 자리표시의 lg 몫은 네 칸 기준입니다(타일 넷 미만이면 lg가 타일 수만큼의 칸 — LG_GRID) — `pendingLinesWide`를 쓰는 띠는 홈(7개)뿐입니다.
  */
 type WidePending = { hide: string; short: string };
 const WIDE_PENDING: WidePending = {
@@ -313,8 +328,8 @@ function widePending(count: number): WidePending {
  * - 변화는 공용 변화 칩(▲▼ 12px·부호 −·sr '상승/하락')과 12px 캡션, 상태는 공용 상태 글(아이콘 + 글 — 색만으로 뜻을 전하지 않음).
  * - `href`가 있으면 타일 전체가 그 대상 화면 링크입니다(중립 잉크·hover surface-2 + 이름 밑줄·포커스 링 — 데이터 영역이라 강조 파랑을 쓰지 않음, A1).
  *   링크가 아닌 타일은 이름 있는 묶음(role=group)이라 이름과 값이 함께 읽힙니다.
- * - 배치: 좁은 화면 두 칸, sm 세 칸, lg 네 칸, xl은 타일 수만큼 한 줄 — 띠 폭이 타일마다 최소 칸 폭(ONE_ROW_GRID)을 줄 때만(컨테이너 질의,
- *   좁으면 네 칸, 8개 넘으면 네 칸). 타일 사이 8px.
+ * - 배치: 좁은 화면 두 칸, sm 세 칸, lg 네 칸(타일이 넷 미만이면 타일 수만큼 — LG_GRID, QA-663), xl은 타일 수만큼 한 줄 — 띠 폭이 타일마다
+ *   최소 칸 폭(ONE_ROW_GRID)을 줄 때만(컨테이너 질의, 좁으면 lg와 같은 칸, 8개 넘으면 네 칸). 타일 사이 8px.
  * - 끊을 곳 없는 긴 값·출처는 타일 안에서 꺾음(말줄임 없음 — PropertyList와 같은 규칙). 단위는 값의 마지막 글자와 한 묶음이라 홀로 다음 줄로
  *   가지 않고, 값 줄보다 긴 값만 숫자 안에서 꺾입니다.
  */
@@ -337,13 +352,14 @@ export function KpiStrip({
    */
   keepDates?: boolean;
 }): JSX.Element {
-  // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
+  // lg는 타일 수와 4 가운데 작은 쪽(QA-663). 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
+  const lgColumns = LG_GRID[items.length] ?? LG_GRID_MAX;
   const oneRow = ONE_ROW_GRID[items.length] ?? "";
   const pendingGap = ONE_ROW_PENDING_GAP[items.length];
   const pendingWide = widePending(items.length);
   return (
     <section aria-label={label} className="@container min-w-0">
-      <ul className={`grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 ${oneRow}`.trim()}>
+      <ul className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${lgColumns} ${oneRow}`.trim()}>
         {items.map((item) => {
           let tile: ReactNode;
           if (item.href) {
