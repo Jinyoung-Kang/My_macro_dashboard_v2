@@ -14,6 +14,7 @@ import {
   type Verdict,
   VERDICT_LABEL,
 } from "@/lib/markdown";
+import { followHashLink } from "@/lib/hashLink";
 
 /**
  * AI 리포트 본문 — Markdown을 절 단위 카드로 그립니다.
@@ -22,7 +23,8 @@ import {
  * 해석은 lib/markdown(순수 함수)이 하고, 여기서는 React 요소만 만듭니다 — innerHTML을 쓰지 않으므로
  * 모델이 HTML을 출력해도 글자로 보일 뿐 실행되지 않습니다.
  *
- * - 맨 위: 절 목차(앵커)
+ * - 맨 위: 절 목차(앵커) — 누르면 기본 해시 이동 대신 기록 하나(history.pushState)와 절 이동·포커스(lib/hashLink — 기본 해시 이동의 상태 없는 기록은
+ *   다른 화면으로 갔다가 뒤로 가기로 돌아올 때 Next 라우터가 무시해 화면이 남았음, QA-680). 절은 tabIndex -1(바깥선 없음)이라 포커스를 받습니다.
  * - "핵심 요약" 절: 강조 패널
  * - "데이터 신뢰도" 절: 주의 패널
  * - 표: 앱의 다른 표와 같은 모양, 숫자 열은 오른쪽 정렬
@@ -41,6 +43,7 @@ export function ReportView({ markdown }: { markdown: string }) {
             <a
               key={section.id}
               href={`#${section.id}`}
+              onClick={(event) => followHashLink(event, section.id)}
               // 좁은 화면(lg 미만)은 손가락으로 누르므로 높이 44px(QA-472), 넓은 화면은 기본 조작 30px — 표 밖의 따로 선 링크라 작은 조작(24px, 표 안)이
               // 아닙니다(상세 화면 '다른 곳에서 보기'와 같은 값). 모서리 4px(작업대 실행 명세 §3-7·§3-8).
               className="inline-flex min-h-11 items-center rounded-control border border-border px-3 text-xs text-text-3 hover:border-accent/60 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-[30px] lg:px-2.5"
@@ -68,7 +71,7 @@ function ReportSection({ section }: { section: Section }) {
         : "border-border bg-surface";
 
   return (
-    <section id={section.id} className={`scroll-mt-4 rounded-control border p-3 lg:p-4 ${frame}`}>
+    <section id={section.id} tabIndex={-1} className={`scroll-mt-4 rounded-control border p-3 outline-none lg:p-4 ${frame}`}>
       {section.title && (
         <h3
           className={`mb-3 flex items-center gap-2 font-semibold ${

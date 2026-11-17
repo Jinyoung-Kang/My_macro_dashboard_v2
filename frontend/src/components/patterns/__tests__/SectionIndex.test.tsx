@@ -166,17 +166,18 @@ describe("SectionIndex — 배치(columnFrom)", () => {
     expect(tokens(column)).not.toContain("xl:flex");
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="2xl">위험</SectionAnchor>);
-    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "2xl:scroll-mt-4"]);
+    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "2xl:scroll-mt-4"]);
   });
 
-  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px)", () => {
+  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px), 포커스를 받는 자리(tabIndex -1·바깥선 없음 — QA-680)", () => {
     renderIndex({ activeId: null });
     const anchor = document.getElementById("macro-fx") as HTMLElement;
-    expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "lg:scroll-mt-4"]);
+    expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "lg:scroll-mt-4"]);
+    expect(anchor.getAttribute("tabindex")).toBe("-1");
     expect(tokens(anchor.parentElement as HTMLElement)).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-4", "lg:gap-6"]));
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="xl">위험</SectionAnchor>);
-    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "xl:scroll-mt-4"]);
+    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "xl:scroll-mt-4"]);
   });
 });
 
@@ -594,6 +595,7 @@ describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 �
 // Next의 popstate를 재현하지 못하므로 누름이 기본 해시 이동 대신 pushState·닻 이동이 되는지를 봅니다. 기본 동작이 막혔는지는 창까지 올라온 click에서
 // 그때의 defaultPrevented로 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막아 다음 시험에 주소가 남지 않게 합니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 기본 동작을 막지 않아(defaultPrevented false) pushState를 부르지 않았습니다.
+// 고침: 칸의 onClick이 lib/hashLink followHashLink — 닻(SectionAnchor)은 tabIndex -1(바깥선 없음)이라 포커스를 받습니다.
 describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 닻으로 옮긴다", () => {
   const BASE_PATH = () => window.location.pathname + window.location.search;
   /** 창까지 올라온 누름마다 기본 동작이 막혔는지 적고, 남은 기본 동작은 막습니다. */
@@ -607,7 +609,7 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
     return { prevented, stop: () => window.removeEventListener("click", listener) };
   }
 
-  it.fails("수식키 없는 왼쪽 누름은 기본 동작을 막고 pushState(null, '', '#id')로 기록 하나, 그 닻으로 scrollIntoView하고 닻에 포커스(preventScroll)", () => {
+  it("수식키 없는 왼쪽 누름은 기본 동작을 막고 pushState(null, '', '#id')로 기록 하나, 그 닻으로 scrollIntoView하고 닻에 포커스(preventScroll)", () => {
     const clicks = watchClicks();
     const push = vi.spyOn(window.history, "pushState");
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});

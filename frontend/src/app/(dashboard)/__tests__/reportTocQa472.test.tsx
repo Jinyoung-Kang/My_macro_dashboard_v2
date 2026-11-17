@@ -45,7 +45,7 @@ describe("AI 리포트 목차", () => {
 // 1440 — 한 번 더 뒤로 가야 리포트). 긴 화면 목차(SectionIndex)와 같은 원인·같은 고침입니다. 기본 동작이 막혔는지는 창까지 올라온 click에서 적고, 남은 기본
 // 동작(jsdom의 해시 이동)은 거기서 막습니다. 수정 전(재현 커밋에서는 it.fails)에는 막지 않아 pushState를 부르지 않았습니다.
 describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 절로 옮긴다", () => {
-  it.fails("수식키 없는 누름 — 기본 동작을 막고 pushState(null, '', '#절')로 기록 하나, 그 절로 scrollIntoView하고 절에 포커스 — 수식키 누름은 브라우저에 맡김", () => {
+  it("수식키 없는 누름 — 기본 동작을 막고 pushState(null, '', '#절')로 기록 하나, 그 절로 scrollIntoView하고 절에 포커스 — 수식키 누름은 브라우저에 맡김", () => {
     const prevented: boolean[] = [];
     const listener = (event: MouseEvent) => {
       prevented.push(event.defaultPrevented);

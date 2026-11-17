@@ -550,7 +550,7 @@ describe("본문", () => {
   // 있던 자리). 건너뛰기는 뒤로 가기에 남길 까닭이 없어 기록·주소를 건드리지 않고 본문으로 옮기기(scrollIntoView)와 포커스만 합니다(기본 해시 이동과 같은
   // 자리·같은 다음 Tab). 기본 동작이 막혔는지는 창까지 올라온 click에서 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 막지 않아 기본 해시 이동이었습니다.
-  it.fails("건너뛰기 링크는 기록을 쌓지 않고 본문(main#main)으로 옮겨 포커스한다 — 주소 그대로 (QA-680)", () => {
+  it("건너뛰기 링크는 기록을 쌓지 않고 본문(main#main)으로 옮겨 포커스한다 — 주소 그대로 (QA-680)", () => {
     const prevented: boolean[] = [];
     const listener = (event: MouseEvent) => {
       prevented.push(event.defaultPrevented);

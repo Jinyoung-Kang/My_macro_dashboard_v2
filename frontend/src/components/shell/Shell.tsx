@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { useNavCollapsed } from "@/hooks/useNavCollapsed";
 import { useNavWidth } from "@/hooks/useNavWidth";
+import { followHashLink } from "@/lib/hashLink";
 import { navShownWidth } from "@/lib/navWidth";
 import type { SessionUser } from "@/lib/types";
 import { ReadModeProvider } from "./ReadMode";
@@ -65,9 +66,12 @@ export function Shell({
     <ReadModeProvider readMode={readMode}>
       <TooltipProvider>
         <div data-nav={navCollapsed ? "collapsed" : "expanded"} style={navStyle} className="min-h-screen lg:flex lg:h-screen lg:flex-col">
-          {/* 안쪽 여백은 focus: 변형으로 둡니다 — focus:not-sr-only가 padding:0을 다시 넣고 특이도가 높아 변형 없는 px-4·py-2를 덮었습니다(QA-502). */}
+          {/* 안쪽 여백은 focus: 변형으로 둡니다 — focus:not-sr-only가 padding:0을 다시 넣고 특이도가 높아 변형 없는 px-4·py-2를 덮었습니다(QA-502).
+              누르면 기본 해시 이동 대신 기록·주소를 건드리지 않고 본문으로 옮겨 포커스합니다(lib/hashLink — 기본 해시 이동의 상태 없는 '#main' 기록은
+              다른 화면으로 갔다가 뒤로 가기로 돌아올 때 Next 라우터가 무시해 화면이 남았음, QA-680. 건너뛰기는 뒤로 가기에 남길 까닭이 없음). */}
           <a
             href="#main"
+            onClick={(event) => followHashLink(event, "main", { record: false })}
             className="sr-only rounded-control bg-accent text-sm font-semibold text-accent-fg focus:not-sr-only focus:fixed focus:px-4 focus:py-2 focus:left-4 focus:top-4 focus:z-[70] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
             본문으로 건너뛰기
