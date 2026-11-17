@@ -352,7 +352,7 @@ describe("비공식 시세·경제 캘린더 — 공용 표", () => {
 
   // QA-666: 비공식 시세 현재가 칸도 같은 오른쪽 맞춤 숫자 열 — 지금은 열이 넓어 한 줄이지만, 꺾이면 지표 표와 같이 왼쪽으로 밀리지 않게 끝 맞춤입니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
-  it.fails("비공식 시세: 받지 못한 현재가의 '—'·'수집 실패'는 끝 맞춤(justify-end)", async () => {
+  it("비공식 시세: 받지 못한 현재가의 '—'·'수집 실패'는 끝 맞춤(justify-end)", async () => {
     reads["/api/macro/scraped"] = () => Promise.resolve({ available: true, updatedAt: "2026-11-17T06:30:00+09:00", items: [
       { key: "jpykrw", name: "엔/원", provider: "TradingView", unit: "원", status: "fail", price: null, previousClose: null,
         changePct: null, error: null, delayMinutes: null },
@@ -456,7 +456,7 @@ describe("지표 표와 미리보기", () => {
   // QA-666: 값 칸(오른쪽 맞춤 숫자 열)의 '—'와 '수집 실패'는 칸 폭보다 넓어 두 줄로 꺾이는데, 공용 Empty가 시작 맞춤이라 같은 열의 숫자보다 41~53px 왼쪽에
   // 그려졌습니다(QA 스택 390~1920, 모의 응답의 수집 실패 줄). 꺾여도 각 줄이 칸 오른쪽 끝에 붙는 끝 맞춤이어야 합니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
-  it.fails("수집 실패 줄의 값 칸 '—'·'수집 실패'는 끝 맞춤(justify-end) — 숫자 열과 같은 오른쪽 끝", async () => {
+  it("수집 실패 줄의 값 칸 '—'·'수집 실패'는 끝 맞춤(justify-end) — 숫자 열과 같은 오른쪽 끝", async () => {
     render(<MacroPage />);
 
     const failed = (await screen.findByRole("button", { name: "미국채 2년물 수익률(%)" })).closest("tr") as HTMLElement;

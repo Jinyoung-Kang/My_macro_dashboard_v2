@@ -24,12 +24,12 @@ import { useWideShell } from "@/hooks/useWideShell";
 import { MACRO_PENDING_ROWS, type MacroIndicatorGroup, type MacroIndicatorRow, macroRowIndex } from "@/lib/macroScreen";
 import { assetValueText } from "@/lib/patternRows";
 
-/** 값 칸 — 수집기 priceStr('N/A'면 '—'), 수집 실패는 '—'와 사유. */
+/** 값 칸 — 수집기 priceStr('N/A'면 '—'), 수집 실패는 '—'와 사유(둘째 줄로 꺾여도 숫자 열과 같은 오른쪽 끝 — QA-666). */
 function valueCell(row: MacroIndicatorRow): ReactNode {
   if (row.failed) {
     return (
       <span className="text-text-3">
-        <Empty reason="수집 실패" />
+        <Empty reason="수집 실패" align="end" />
       </span>
     );
   }

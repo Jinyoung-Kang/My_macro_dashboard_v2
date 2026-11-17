@@ -78,8 +78,7 @@ describe("Empty", () => {
 // 41~53px 왼쪽. 끝 맞춤(align="end")이면 꺾여도 각 줄이 칸 오른쪽 끝에 붙어야 하고, 기본(시작 맞춤)은 그대로여야 합니다.
 describe("QA-666 오른쪽 맞춤 칸의 Empty는 끝 맞춤", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
-  it.fails("align='end'면 바깥 상자가 justify-end — 기본이면 없음(다른 자리는 그대로)", () => {
-    // @ts-expect-error QA-666 재현 — 고치기 전에는 align prop이 없습니다(고침 커밋에서 이 줄을 지움).
+  it("align='end'면 바깥 상자가 justify-end — 기본이면 없음(다른 자리는 그대로)", () => {
     const { container } = render(<Empty reason="수집 실패" align="end" />);
     expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).toContain("justify-end");
     cleanup();

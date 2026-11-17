@@ -54,13 +54,13 @@ const COLUMNS: readonly Column<ScrapedItem>[] = [
     key: "price",
     header: "현재가",
     align: "right",
-    // 받지 못한 시세는 '—'와 사유(0이나 빈 칸으로 두지 않음).
+    // 받지 못한 시세는 '—'와 사유(0이나 빈 칸으로 두지 않음) — 꺾여도 숫자 열과 같은 오른쪽 끝(QA-666).
     cell: (row) =>
       row.status === "ok" ? (
         `${formatNumber(row.price, 3)} ${row.unit}`
       ) : (
         <span className="text-text-3">
-          <Empty reason="수집 실패" />
+          <Empty reason="수집 실패" align="end" />
         </span>
       ),
   },
