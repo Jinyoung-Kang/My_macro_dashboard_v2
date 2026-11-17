@@ -728,6 +728,10 @@ export function ScatterPlot({
           label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
                    offset: -18, fill: AXIS_TEXT, fontSize: CHART_FONT }}
         />
+        {/*
+          Y축 이름 — X축 이름과 같은 글꼴(12px·text-3)로 축 칸 왼쪽에 세워 적습니다(QA-665 — 예전에는 X축 이름만 있어 Y 값이 무엇의 몇 단위인지 그림만으로는
+          몰랐음). 축 칸 70px에서 눈금 글의 왼쪽 끝은 그림 왼쪽에서 33px 이상이라, 세운 이름(그림 x 약 8~22px)은 칸 폭·여백을 늘리지 않고 들어갑니다.
+        */}
         <YAxis
           type="number"
           dataKey="y"
@@ -737,6 +741,8 @@ export function ScatterPlot({
           tickLine={false}
           width={70}
           tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          label={{ value: `${yLabel}${yUnit ? ` (${yUnit})` : ""}`, angle: -90, position: "insideLeft",
+                   fill: AXIS_TEXT, fontSize: CHART_FONT, textAnchor: "middle" }}
         />
         <ZAxis range={[24, 24]} />
         {/* 0선을 그어 사분면이 보이게 합니다 — 변화끼리 비교할 때 핵심입니다. */}

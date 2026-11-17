@@ -45,7 +45,7 @@ function axisLabels(container: HTMLElement): { text: string; size: number }[] {
 
 describe("QA-665 산점도의 Y축 이름·단위", () => {
   // 수정 전(재현 커밋에서는 it.fails) 축 이름은 X축 하나('금리 변화 (%p)')뿐이었습니다.
-  it.fails("Y축 이름이 단위와 함께 X축 이름과 같은 12px 이상으로 그려진다", () => {
+  it("Y축 이름이 단위와 함께 X축 이름과 같은 12px 이상으로 그려진다", () => {
     observeAs(600, 320);
     const { container } = render(<ScatterPlot data={POINTS} xLabel="금리 변화" yLabel="지수 변화" xUnit="%p" yUnit="$" />);
     const labels = axisLabels(container);
@@ -56,7 +56,7 @@ describe("QA-665 산점도의 Y축 이름·단위", () => {
   });
 
   // 수정 전(재현 커밋에서는 it.fails) Y축 이름이 없었습니다.
-  it.fails("Y 단위가 빈 글이면 괄호 없이 이름만", () => {
+  it("Y 단위가 빈 글이면 괄호 없이 이름만", () => {
     observeAs(600, 320);
     const { container } = render(<ScatterPlot data={POINTS} xLabel="금리 변화" yLabel="지수 변화" xUnit="%p" yUnit="" />);
     const texts = axisLabels(container).map((label) => label.text);
