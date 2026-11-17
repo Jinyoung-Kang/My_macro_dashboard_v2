@@ -622,3 +622,20 @@ describe("QA-674 판정 근거 패널은 국면 읽기가 실패하면 읽는 �
     expect(await within(panel).findByText("판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.")).toBeTruthy();
   });
 });
+
+// QA-675: '네 국면'의 지금 칸은 테두리 색(잉크)과 바탕 색으로만 갈려, 고대비(forced-colors)에서 바탕이 지워지고 두 테두리가 같은 시스템 색(1px)이 되면
+// 12px '지금' 글만 남았습니다(QA 스택 390·1024·1440 흉내 — 네 칸 모두 1px 검정). 명세 §3-8(D9)·QA-492 규칙대로 지금 칸에만 forced-colors:border-2가 있어야 합니다.
+describe("QA-675 네 국면의 지금 칸은 고대비에서 2px 테두리", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 지금 칸에도 없었습니다("expected [ 'min-w-0', 'rounded-control', …(5) ] to include 'forced-colors:border-2'").
+  it.fails("지금 칸(침체 경계)에만 forced-colors:border-2 — 나머지 셋에는 없음", async () => {
+    reads[REGIME] = { ...regimeExpansion(), verdict: { ...regimeExpansion().verdict!, code: "CONTRACTION", label: "침체 경계 (Contraction)" } };
+    render(<RegimePage />);
+    const list = await screen.findByRole("list", { name: "네 국면" });
+    await within(list).findByText("지금");
+    const items = within(list).getAllByRole("listitem");
+
+    expect(items[3].getAttribute("aria-current")).toBe("true");
+    expect(items[3].className.split(/\s+/)).toContain("forced-colors:border-2");
+    for (const item of items.slice(0, 3)) expect(item.className.split(/\s+/)).not.toContain("forced-colors:border-2");
+  });
+});
