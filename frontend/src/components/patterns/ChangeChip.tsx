@@ -1,6 +1,8 @@
 import type { JSX } from "react";
 
-import { changeChipModel, type ChangeDirection } from "@/lib/patterns";
+import { changeChipModel, type ChangeDirection, isMissingValue } from "@/lib/patterns";
+
+import { Empty } from "./Empty";
 
 // 상승 빨강·하락 파랑(한국 관행). 이 글자색은 surface·bg 위에서만 4.5:1을 넘으므로 칩에 바탕을 칠하지 않습니다.
 const TONE: Record<ChangeDirection, string> = {
@@ -80,4 +82,33 @@ export function ChangeChip({
       {amount ? pct : null}
     </span>
   );
+}
+
+/**
+ * 표 칸의 변화 — 공용 변화 칩의 표 칸 꼴(작은 크기 sm·칸 안에서 꺾지 않음 nowrap). 변화량·변화율을 둘 다 모르면 공용 표가 모르는 칸에 그리는 것과 같은
+ * '—'(Empty — 읽기는 '값 없음', 보조 글자색)을 그립니다 — 0.00%를 만들지 않습니다(작업대 P5a 검토 — 섹터·COT·매크로 표가 화면마다 따로 두던 감싸개를 하나로,
+ * P5b 기관 표 등락 칸이 같은 것을 씀). 표 칸 안의 묶음(현재가 아래 오늘 등락 등)에도 그대로 둡니다. 값이 null이면 '—'와 사유를 스스로 그리는 자리(PropertyList
+ * 값)에는 이것 대신 모를 때 null을 넘기고, 알 때만 `ChangeChip`을 둡니다.
+ */
+export function ChangeCell({
+  change,
+  changePct,
+  digits = 2,
+  pctDigits,
+  unit,
+}: {
+  change?: number | null;
+  changePct?: number | null;
+  digits?: number;
+  pctDigits?: number;
+  unit?: string;
+}): JSX.Element {
+  if (isMissingValue(change) && isMissingValue(changePct)) {
+    return (
+      <span className="text-text-3">
+        <Empty />
+      </span>
+    );
+  }
+  return <ChangeChip size="sm" nowrap change={change} changePct={changePct} digits={digits} pctDigits={pctDigits} unit={unit} />;
 }

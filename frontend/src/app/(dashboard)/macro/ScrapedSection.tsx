@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeChip, type Column, DataTable, Empty } from "@/components/patterns";
+import { ChangeCell, type Column, DataTable, Empty } from "@/components/patterns";
 import {
   ErrorState,
   Freshness,
@@ -70,8 +70,7 @@ const COLUMNS: readonly Column<ScrapedItem>[] = [
     header: "등락률",
     align: "right",
     // 색만이 아니라 ▲▼·−(U+2212)·낭독 글 '상승/하락'과 함께(공용 변화 칩 — QA-621). 모르면 '—'(0.00%를 만들지 않음), 칸 안에서 꺾지 않습니다.
-    cell: (row) =>
-      typeof row.changePct === "number" && Number.isFinite(row.changePct) ? <ChangeChip changePct={row.changePct} size="sm" nowrap /> : null,
+    cell: (row) => <ChangeCell changePct={row.changePct} />,
   },
   {
     key: "error",

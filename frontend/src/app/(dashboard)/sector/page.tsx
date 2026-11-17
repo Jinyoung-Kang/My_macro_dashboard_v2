@@ -5,7 +5,7 @@ import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import {
-  ChangeChip,
+  ChangeCell,
   type Column,
   DataTable,
   type InspectorContext,
@@ -31,7 +31,7 @@ import { useApi } from "@/hooks/useApi";
 import { useLivePrices } from "@/hooks/useLivePrices";
 import { useLiveSeconds } from "@/hooks/useLiveSeconds";
 import { stockHref } from "@/lib/detail";
-import { EMPTY, formatNumber } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 import { liveKey, livePriceTitle, liveShown } from "@/lib/livePrices";
 import { SECTOR_PERIODS, sectorKpis, sectorKpisPending, sectorRowTitle } from "@/lib/sectorScreen";
 import type { LivePrice, SectorResponse, SectorRow } from "@/lib/types";
@@ -256,7 +256,7 @@ function ReturnsTable({
         ),
       align: "right" as const,
       className: window === period ? "bg-surface-2/50" : undefined,
-      cell: (row: SectorRow) => <SignedChip value={row.returns?.[window]} />,
+      cell: (row: SectorRow) => <ChangeCell changePct={row.returns?.[window]} />,
     })),
     ...(showAlpha
       ? [
@@ -264,7 +264,7 @@ function ReturnsTable({
             key: "alpha",
             header: `α (${period})`,
             align: "right" as const,
-            cell: (row: SectorRow) => <SignedChip value={row.alpha?.[period]} unit="%p" />,
+            cell: (row: SectorRow) => <ChangeCell change={row.alpha?.[period]} unit="%p" />,
           },
         ]
       : []),
@@ -290,22 +290,11 @@ function PriceCell({ stored, realtime }: { stored: number | null; realtime?: Liv
     <span className="flex flex-col items-end" title={livePriceTitle(realtime, (value) => formatNumber(value, 2))}>
       <span>{formatNumber(shown.price, 2)}</span>
       <span className="flex items-baseline gap-1 whitespace-nowrap text-xs text-text-3">
-        <SignedChip value={shown.changePct} />
+        <ChangeCell changePct={shown.changePct} />
         {shown.session ? <span>· {shown.session}</span> : null}
       </span>
     </span>
   );
-}
-
-/**
- * 등락 칸 — 공용 변화 칩(▲▼·부호 −·읽어 주는 '상승/하락' — 색만으로 방향을 전하지 않음, QA-628). 수익률은 변화율('%'), 단위를 주면(α '%p') 변화량과 그 단위.
- * 모르는 값은 칩 대신 '—'(0.00%를 만들지 않음). 표 칸 안이라 작은 칩이고 변화량과 단위 사이에서 꺾지 않습니다.
- */
-function SignedChip({ value, unit }: { value: number | null | undefined; unit?: string }) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return <span className="text-text-3">{EMPTY}</span>;
-  }
-  return unit ? <ChangeChip size="sm" nowrap change={value} unit={unit} /> : <ChangeChip size="sm" nowrap changePct={value} />;
 }
 
 /**
@@ -325,7 +314,8 @@ function SectorInspector({
 }) {
   const shown = realtime ? liveShown(realtime) : null;
   const chip = (value: number | null | undefined, unit?: string) =>
-    value === null || value === undefined || Number.isNaN(value) ? null : <SignedChip value={value} unit={unit} />;
+    // 모르는 값은 null — 속성 목록이 '—'와 사유('표본 부족')를 그립니다. 아는 값은 표 칸과 같은 변화 칩(공용 ChangeCell — ▲▼·부호 −·읽는 방향 글, QA-628).
+    value === null || value === undefined || Number.isNaN(value) ? null : unit ? <ChangeCell change={value} unit={unit} /> : <ChangeCell changePct={value} />;
   const items: PropertyItem[] = [
     { label: "티커", value: row.ticker, mono: true },
     { label: "유형", value: row.kind },

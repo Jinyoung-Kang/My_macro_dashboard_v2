@@ -17,7 +17,8 @@
     `components/patterns/__tests__/EntityHeader.test.tsx`(대상 머리), `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`(칸 틀),
     `components/patterns/__tests__/MasterDetail.test.tsx`(목록-검사),
     `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`(긴 화면 목차),
-    `components/patterns/__tests__/InspectorFrame.test.tsx`(검사 칸 틀), `components/patterns/__tests__/Timeline.test.tsx`(시각순 목록)
+    `components/patterns/__tests__/InspectorFrame.test.tsx`(검사 칸 틀), `components/patterns/__tests__/Timeline.test.tsx`(시각순 목록),
+    `components/patterns/__tests__/ChangeChip.test.tsx`(표 칸 변화 ChangeCell)
 
 ## 배경
 
@@ -137,3 +138,6 @@
   펼칠 때 읽는 자세한 값은 `renderDetail` 안의 자식이 읽음 — 데이터 칸 강조색 금지 목록). 명세 §8-2는 P6이었지만 처음 쓰는 곳이 국면 판정 기록(P5a)이라
   그 단계에서 만들었고, P6 결정 로그(W13 — 종류 태그 결정·장중 판단·복기)·P7 알림이 같은 API를 씁니다(날짜 묶음 머리·넓은 검사 칸은 P6이 선택 prop으로 더함).
   지키는 시험은 `components/patterns/__tests__/Timeline.test.tsx`(키·검사 칸 동작은 `MasterDetail.test.tsx`).
+- 표 칸 변화 `ChangeCell`(`components/patterns/ChangeChip.tsx` — 변화 칩 파일에 둠) — 화면 패턴(공용 변화 칩의 표 칸 꼴: 작은 크기·칸 안에서 꺾지 않음, 변화량·변화율을 둘 다 모르면
+  공용 표가 모르는 칸에 그리는 것과 같은 '—'(Empty — 읽기 '값 없음') — 0.00%를 만들지 않음, 데이터 칸 강조색 금지 목록의 변화 칩 파일). 섹터·COT·매크로 표가 화면마다 따로 두던
+  감싸개를 P5a 검토에서 하나로 합쳤고, P5b 기관 표 등락 칸이 같은 것을 씁니다. 지키는 시험은 `components/patterns/__tests__/ChangeChip.test.tsx`.

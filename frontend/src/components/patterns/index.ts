@@ -8,7 +8,7 @@
 export { AssetList, AssetRow, type AssetRowData, type AssetRowDisclosure } from "./AssetRow";
 export { Avatar } from "./Avatar";
 export { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
-export { ChangeChip } from "./ChangeChip";
+export { ChangeCell, ChangeChip } from "./ChangeChip";
 export { type Column, DataTable } from "./DataTable";
 export { Empty } from "./Empty";
 export { type EntityChange, EntityHeader, type EntityKind, type EntityKindSpec } from "./EntityHeader";

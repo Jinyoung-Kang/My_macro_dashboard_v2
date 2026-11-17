@@ -76,6 +76,7 @@ describe("components/patterns 배럴", () => {
         "AssetList",
         "AssetRow",
         "Avatar",
+        "ChangeCell",
         "ChangeChip",
         "DataTable",
         "Empty",

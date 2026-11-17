@@ -7,7 +7,8 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ChangeChip } from "../ChangeChip";
+import { ChangeCell, ChangeChip } from "../ChangeChip";
+import { DataTable } from "../DataTable";
 import { EstimateBadge, StaleBadge } from "../badges";
 
 afterEach(() => cleanup());
@@ -144,5 +145,62 @@ describe("ChangeChip — 줄바꿈 (QA-595)", () => {
     const alone = screen.getByText("▼").parentElement as HTMLElement;
     expect(alone.className.split(/\s+/)).toContain("whitespace-nowrap");
     expect(within(alone).getByText(`${MINUS}0.48%`)).toBeTruthy();
+  });
+});
+
+describe("ChangeCell — 표 칸의 변화", () => {
+  it("값 있음 — 작은 칩(sm·칸 안에서 꺾지 않음): 화살표·부호 −·읽는 방향 글, 단위·자릿수는 칩 그대로", () => {
+    const { container } = render(
+      <>
+        <ChangeCell changePct={-12.15} />
+        <ChangeCell change={3.2} unit="%p" />
+        <ChangeCell change={-1250} digits={0} />
+      </>,
+    );
+    const chips = Array.from(container.children) as HTMLElement[];
+    expect(chips.map((chip) => chip.textContent)).toEqual(["▼하락−12.15%", "▲상승+3.20%p", "▼하락−1,250"]);
+    for (const chip of chips) {
+      expect(chip.className).toContain("flex-nowrap");
+      expect(chip.className).toContain("text-caption");
+    }
+    expect(chips[0].className).toContain("text-down");
+    expect(chips[1].className).toContain("text-up");
+  });
+
+  it("빈 값 — 변화량·변화율을 둘 다 모르면(null·undefined·NaN) 공용 표의 모르는 칸과 같은 '—'(읽기는 '값 없음', 보조 글자색) — 0.00%를 만들지 않음", () => {
+    const { container } = render(
+      <>
+        <ChangeCell changePct={null} />
+        <ChangeCell change={Number.NaN} changePct={undefined} />
+      </>,
+    );
+    const cells = Array.from(container.children) as HTMLElement[];
+    for (const cell of cells) {
+      expect(cell.className).toBe("text-text-3");
+      expect(cell.textContent).toBe("—값 없음");
+      expect(within(cell).getByText("값 없음").className).toContain("sr-only");
+    }
+    expect(container.textContent).not.toMatch(/0\.00/);
+  });
+
+  it("공용 표 안 — 모르는 칸은 칸이 null을 돌려줄 때(표가 그리는 '—')와 같은 모양, 아는 칸은 칩(읽는 중·오류는 표·패널이 그림)", () => {
+    type Row = { key: string; pct: number | null };
+    render(
+      <DataTable<Row>
+        caption="변화 표"
+        rows={[{ key: "a", pct: 1.5 }, { key: "b", pct: null }]}
+        rowKey={(row) => row.key}
+        columns={[
+          { key: "name", header: "이름", cell: (row) => row.key },
+          { key: "cell", header: "칸", align: "right", cell: (row) => <ChangeCell changePct={row.pct} /> },
+          { key: "plain", header: "표 기본", align: "right", cell: () => null },
+        ]}
+      />,
+    );
+    const rows = screen.getAllByRole("row").slice(1);
+    const [, known] = within(rows[0]).getAllByRole("cell");
+    expect(known.textContent).toBe("▲상승+1.50%");
+    const [, unknown, plain] = within(rows[1]).getAllByRole("cell");
+    expect(unknown.innerHTML).toBe(plain.innerHTML);
   });
 });

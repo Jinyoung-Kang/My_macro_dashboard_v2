@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
-import { ChangeChip, type Column, DataTable, KpiStrip } from "@/components/patterns";
+import { ChangeCell, type Column, DataTable, KpiStrip } from "@/components/patterns";
 import {
   Callout,
   ErrorState,
@@ -103,8 +103,8 @@ export default function CotPage() {
       cell: (row) => <span className={deltaColor(row.ncNet ?? null, 0)}>{formatSignedCount(row.ncNet)}</span>,
     },
     { key: "commNet", header: "상업 헤저", align: "right", cell: (row) => formatSignedCount(row.commNet) },
-    { key: "change1w", header: "1주 변화", align: "right", cell: (row) => <SignedChip value={row.change1w} digits={0} /> },
-    { key: "change4w", header: "4주 변화", align: "right", cell: (row) => <SignedChip value={row.change4w} digits={0} /> },
+    { key: "change1w", header: "1주 변화", align: "right", cell: (row) => <ChangeCell change={row.change1w} digits={0} /> },
+    { key: "change4w", header: "4주 변화", align: "right", cell: (row) => <ChangeCell change={row.change4w} digits={0} /> },
     {
       key: "percentile",
       header: "3년 백분위",
@@ -236,7 +236,7 @@ type HorizonRow = { horizon: string; signal: CotExtremeSummary; base: CotExtreme
 const HORIZON_COLUMNS: readonly Column<HorizonRow>[] = [
   { key: "horizon", header: "기간", className: "break-keep", cell: (row) => row.horizon },
   { key: "count", header: "표본", align: "right", cell: (row) => `${row.signal.count}건` },
-  { key: "mean", header: "평균 수익률", align: "right", cell: (row) => <SignedChip value={row.signal.mean} percent /> },
+  { key: "mean", header: "평균 수익률", align: "right", cell: (row) => <ChangeCell changePct={row.signal.mean} /> },
   { key: "median", header: "중앙값", align: "right", cell: (row) => withMinusSign(formatPercent(row.signal.median)) },
   {
     key: "winRate",
@@ -264,8 +264,8 @@ const RECENT_COLUMNS: readonly Column<RecentEvent>[] = [
   { key: "side", header: "구분", className: "break-keep", cell: (row) => row.side },
   { key: "percentile", header: "백분위", align: "right", cell: (row) => formatWithUnit(row.percentile, 1, "%") },
   { key: "net", header: "순포지션", align: "right", cell: (row) => formatSignedCount(row.net) },
-  { key: "return4w", header: "이후 4주", align: "right", cell: (row) => <SignedChip value={row.return4w} percent /> },
-  { key: "return13w", header: "이후 13주", align: "right", cell: (row) => <SignedChip value={row.return13w} percent /> },
+  { key: "return4w", header: "이후 4주", align: "right", cell: (row) => <ChangeCell changePct={row.return4w} /> },
+  { key: "return13w", header: "이후 13주", align: "right", cell: (row) => <ChangeCell changePct={row.return13w} /> },
 ];
 
 /**
@@ -368,17 +368,3 @@ function ExtremesPanel({ asset }: { asset: string }) {
   );
 }
 
-/**
- * 등락 칸 — 공용 변화 칩(▲▼·부호 −·읽어 주는 '상승/하락' — 색만으로 방향을 전하지 않음, QA-629). 계약 수 변화는 변화량(`digits` 자리), 수익률은
- * 변화율('%' — `percent`). 모르는 값은 칩 대신 '—'(0을 만들지 않음 — 아직 지나지 않은 13주 등). 표 칸 안이라 작은 칩이고 꺾지 않습니다.
- */
-function SignedChip({ value, digits = 2, percent = false }: { value: number | null | undefined; digits?: number; percent?: boolean }) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return <span className="text-text-3">{EMPTY}</span>;
-  }
-  return percent ? (
-    <ChangeChip size="sm" nowrap changePct={value} digits={digits} />
-  ) : (
-    <ChangeChip size="sm" nowrap change={value} digits={digits} />
-  );
-}

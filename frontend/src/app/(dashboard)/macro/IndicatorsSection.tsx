@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
-  ChangeChip,
+  ChangeCell,
   type Column,
   DataTable,
   Empty,
@@ -35,10 +35,14 @@ function valueCell(row: MacroIndicatorRow): ReactNode {
   return assetValueText(row.value, row.valueText);
 }
 
-/** 변화 칩 — 직전 값이 없는 카드(delta·pct 모두 null)는 '—'(0.00%를 만들지 않음). 변화량 자릿수는 수집기 deltaStr을 따르고 칸 안에서 꺾지 않습니다. */
-function changeChip(row: MacroIndicatorRow): ReactNode {
-  if (row.change === null && row.changePct === null) return null;
-  return <ChangeChip change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} size="sm" nowrap />;
+/** 변화 칸 — 공용 표 칸 변화(ChangeCell): 직전 값이 없는 카드(delta·pct 모두 null)는 '—'(0.00%를 만들지 않음). 변화량 자릿수는 수집기 deltaStr을 따르고 칸 안에서 꺾지 않습니다. */
+function changeCell(row: MacroIndicatorRow): ReactNode {
+  return <ChangeCell change={row.change} changePct={row.changePct} digits={row.changeDigits ?? 2} pctDigits={2} />;
+}
+
+/** 미리보기의 변화 — 모르면 null(속성 목록이 '—'를 그림), 알면 표 칸과 같은 칩. */
+function previewChange(row: MacroIndicatorRow): ReactNode {
+  return row.change === null && row.changePct === null ? null : changeCell(row);
 }
 
 /** 카드 경고(선물 대신 지수 값 등) — 경고 아이콘 + 글 + 낭독 머리말 '주의: '(색만으로 전하지 않음). */
@@ -72,7 +76,7 @@ function indicatorColumns(inspector: InspectorContext): Column<MacroIndicatorRow
       ),
     },
     { key: "value", header: "값", align: "right", cell: valueCell },
-    { key: "change", header: "변화", align: "right", cell: changeChip },
+    { key: "change", header: "변화", align: "right", cell: changeCell },
     {
       key: "basis",
       header: "기준",
@@ -104,7 +108,7 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
       isStale: row.isStale,
       staleReason: row.staleReason,
     },
-    { label: "변화", value: changeChip(row) },
+    { label: "변화", value: previewChange(row) },
     { label: "전일", value: row.prevText },
     { label: "기준 시각", value: row.timeText },
     // 닫힌 장이라 출처 배지에 적지 않은 시세 지연은 여기서는 글로(툴팁에만 두지 않음).
