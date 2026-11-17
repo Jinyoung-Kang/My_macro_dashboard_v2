@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type JSX, type ReactNode } from "react";
+import { useEffect, useRef, type JSX, type ReactNode } from "react";
 
 import { FOCUS_RING, SKELETON_BAR, underlineTabClasses } from "@/components/ui/classes";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
@@ -137,7 +137,10 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  *   밑줄 탭 모양 `underlineTabClasses(…, "sm")`: 좁은 화면 44px·넓은 화면 30px, 넘치면 가로 스크롤하고 지금 칸을 줄 안에 보임). 이름 있는 내비(nav
  *   aria-label) 하나 안에 두 목록이 있고 폭마다 하나만 보입니다(다른 하나는 display:none — 읽기·Tab에서 빠짐).
  * - 칸은 같은 화면 절 링크(`<a href="#id">` — 스크롤은 즉시, 부드러운 스크롤 없음)이고 지금 칸은 aria-current="location"입니다. 가로 줄에서는 지금 절의
- *   첫 단계 칸이 지금 칸입니다(하위 칸이 지금이어도). 개수(`count`)는 숫자일 때만 보입니다(모르면 자리 없음 — 0으로 채우지 않음). 개수를 읽는 중
+ *   첫 단계 칸이 지금 칸입니다(하위 칸이 지금이어도).
+ * - 뒤로·앞으로 가기로 주소의 해시가 목차 칸(하위 칸 포함)으로 바뀌면(hashchange) 그 절 닻으로 옮깁니다(scrollIntoView — 즉시, 닻의 scroll-margin과
+ *   스크롤 상자의 위쪽 여백을 따름). 넓은 화면은 본문(#main)이 스크롤 상자라 크롬의 같은 문서 기록 이동이 연속 이동의 첫 번째 뒤로는 창 위치만 되돌려
+ *   본문이 움직이지 않았습니다(QA-659). 목차 밖 해시(#main 등)는 보지 않습니다. 새로 고침·바로 열기의 해시 맞춤은 여기서 하지 않습니다(P6·P7). 개수(`count`)는 숫자일 때만 보입니다(모르면 자리 없음 — 0으로 채우지 않음). 개수를 읽는 중
  *   (`pendingCount`)이면 숫자 두 자리 폭의 글 없는 막대로 자리를 잡습니다(읽기에서 뺌 — QA-652).
  * - 지금 절: `activeId`를 주면 그 값(제어 — 시험·화면이 정함), 주지 않으면 `hooks/useSectionSpy`(뷰포트 위 96px 아래 ~ 34% 띠에 걸친 절 — 하위 칸이 부모보다 앞,
  *   스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절 — QA-645, 규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는
@@ -173,6 +176,24 @@ export function SectionIndex({
   useScrollStripActive(stripRef, activeTop);
   // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백·옆 검사 칸의 sticky 위치가 읽음 — QA-656·657).
   useSectionStripHeight(stripRef, items.map((item) => item.id).join("\n"));
+  // 뒤로·앞으로 가기(hashchange)로 해시가 목차 칸이 되면 그 닻으로(QA-659). 배열의 참조가 그릴 때마다 바뀌어도 같은 목록이면 다시 걸지 않게 글 하나로
+  // 묶습니다(useSectionSpy와 같음 — id에는 줄바꿈이 없음).
+  const orderKey = order.join("\n");
+  useEffect(() => {
+    if (orderKey === "") return undefined;
+    const ids = new Set(orderKey.split("\n"));
+    const onHashChange = () => {
+      let id: string;
+      try {
+        id = decodeURIComponent(window.location.hash.slice(1));
+      } catch {
+        return; // 잘못된 % 꼴 — 목차 칸이 아님
+      }
+      if (ids.has(id)) document.getElementById(id)?.scrollIntoView();
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [orderKey]);
 
   const body = <div className="flex min-w-0 flex-col gap-4 lg:gap-6">{children}</div>;
   if (items.length === 0) {

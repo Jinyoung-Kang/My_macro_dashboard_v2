@@ -391,7 +391,7 @@ describe("QA-658 개수가 붙은 칸의 이름은 '지표 (1,234)' — 낭독�
 // 되돌려 주소의 해시만 바뀌고 본문 스크롤·지금 칸은 그대로였습니다(P5a QA — /macro 1440 둘째 뒤로 가기에서 절 위 끝 −1,708px). 이제 목차가 hashchange를
 // 듣고 해시가 목차 칸이면 그 닻으로 옮깁니다. 수정 전(재현 커밋에서는 it.fails)에는 scrollIntoView를 부르지 않았습니다(0번).
 describe("QA-659 뒤로·앞으로 가기로 해시가 목차 칸이 되면 그 절로 옮긴다", () => {
-  it.fails("hashchange에서 해시가 목차 칸이면 그 닻의 scrollIntoView를 한 번 — 목차 밖 해시(#main)는 부르지 않는다", () => {
+  it("hashchange에서 해시가 목차 칸이면 그 닻의 scrollIntoView를 한 번 — 목차 밖 해시(#main)는 부르지 않는다", () => {
     const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     try {
       render(
