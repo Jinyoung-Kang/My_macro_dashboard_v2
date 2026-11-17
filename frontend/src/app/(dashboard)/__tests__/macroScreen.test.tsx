@@ -628,6 +628,31 @@ describe("지표 표와 미리보기", () => {
     expectWidths(await tablesOf(), [[], []]);
   });
 
+  // QA-677 후속(검토 반영): 같은 열 폭을 늘 걸면 옆 미리보기 배치의 가장 좁은 띠(틀 52rem부터 — 표 532~599px, 메뉴 220이면 창 1150~1217)에서 고정 폭 합
+  // 404px이 표를 다 가져가 기준 칸이 128px까지 줄고 지표 패널이 최대 약 700px 길어졌습니다(배지가 배지 안에서 두 줄로 접힘). 폭은 표 영역이 37.5rem
+  // 이상일 때만(크기 질의) 걸고 그 아래 띠는 자동 배치로 둡니다. 크기 질의 기준이 검사 칸 틀(InspectorFrame — 표 + 옆 검사 칸)이면 표 폭이 아니라 틀 폭을
+  // 재므로, 범주 표들을 담은 상자 자신이 기준(@container)이어야 합니다. jsdom은 배치를 재지 못해 클래스와 기준 상자만 봅니다(높이는 브라우저로 잼).
+  // 수정 전(재현 커밋에서는 it.fails)에는 폭이 조건 없이 걸렸습니다("expected [ 'w-40', 'w-[5.5rem]', …(13) ] to deeply equal []" — 폭 클래스만 고치고
+  // 기준 상자를 빼면 "expected true to be false").
+  it.fails("네 칸 표의 같은 폭은 표 영역이 37.5rem 이상일 때만 — 폭 클래스는 모두 크기 질의 조건, 기준 상자는 표들을 담은 상자(옆 검사 칸을 담은 틀이 아님)", async () => {
+    stubWide();
+    render(<MacroPage />);
+
+    const inspector = await screen.findByRole("region", { name: /^지표 미리보기 — / });
+    // 기본 개요는 범주 표 둘(국채·미국 지수) — 기준 상자가 표마다 같은지는 둘이면 봅니다.
+    const tables = within(document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement).getAllByRole("table");
+    expect(tables).toHaveLength(2);
+    const widthTokens = tables.flatMap((table) =>
+      Array.from(table.querySelectorAll("th, td")).flatMap((cell) => (cell.getAttribute("class") ?? "").split(/\s+/).filter((token) => /(^|:)w-/.test(token))),
+    );
+    expect(widthTokens.length).toBeGreaterThan(0);
+    expect(widthTokens.filter((token) => !token.startsWith("@min-[37.5rem]:"))).toEqual([]);
+    const boxes = tables.map((table) => table.closest('[class~="@container"]'));
+    expect(new Set(boxes).size).toBe(1);
+    expect(boxes[0]).not.toBeNull();
+    expect((boxes[0] as HTMLElement).contains(inspector)).toBe(false);
+  });
+
   it("좁은 화면: 이름 단추는 위쪽 대화상자로 미리보기를 연다 — 속성·지표 상세 링크, 닫으면 단추로 포커스", async () => {
     render(<MacroPage />);
 
