@@ -408,3 +408,18 @@ describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => 
     expect(headings).toEqual(["판정 근거", "네 국면", "판정 기록", "연결", "출처"]);
   });
 });
+
+// QA-641: 국면 '연결'의 매크로 링크 둘이 절 조각(/macro#macro-advanced·#macro-risk)으로 갔는데, 매크로 화면은 자료가 온 뒤 위 절들이 자라 해시 스크롤이
+// 그 절에 머물지 않았습니다(통합 빌드 + QA API — 화면 안 이동 뒤 절 위 끝: 1024 심화 463px·위험 1,854px, 390 심화 3,433px·위험 2,138px, 지금 칸은 앞 절.
+// 1440은 맞음). 주소를 바로 열거나 새로 고치면 셸이 그린 뒤에 닻이 생겨 어느 폭에서도 스크롤하지 않았습니다(위험 절 위 끝 4,940~6,333px).
+// 계획의 대안대로 매크로 화면 맨 위(/macro)로 잇고, 어느 절인지는 링크 글이 말합니다(그 화면의 목차로 이동).
+describe("QA-641 국면 연결의 매크로 링크는 해시 없이 매크로 화면으로", () => {
+  // 고치기 전 값: expected [ '/macro#macro-advanced', '/macro#macro-risk' ] to deeply equal [ '/macro', '/macro' ]
+  it.fails("매크로로 가는 연결 링크에 절 조각(#)이 없다 — 주소는 메뉴 표의 매크로 지표 경로", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const links = Array.from((await panelTitled("연결")).querySelectorAll("a"));
+    const macro = links.map((link) => link.getAttribute("href") ?? "").filter((href) => href.startsWith("/macro"));
+    expect(macro).toEqual(["/macro", "/macro"]);
+  });
+});
