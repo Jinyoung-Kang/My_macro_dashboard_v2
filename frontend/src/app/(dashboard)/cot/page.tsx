@@ -30,7 +30,7 @@ const BAR = `block ${SKELETON_BAR}`;
 const COT_PENDING_ROWS = 6;
 
 /**
- * 자산별 요약을 읽는 동안의 표 꼴 자리(QA-654) — 표 머리 줄(32px)과 자산 줄 자리(공용 표 줄과 같은 여백·구분선, 자산 이름 단추 줄 좁은 화면 44px·넓은 화면
+ * 자산별 요약을 읽는 동안의 표 꼴 자리(QA-654) — 표 머리 줄(52px — 두 줄 머리 '스마트머니 / 순포지션', QA-678)과 자산 줄 자리(공용 표 줄과 같은 여백·구분선, 자산 이름 단추 줄 좁은 화면 44px·넓은 화면
  * 24px + 묶음 줄 16px — 줄 높이 좁은 화면 85px·lg 이상 52px, 마지막 줄은 아래 선이 없어 1px 낮음). 값이 온 뒤 이름 칸 글이 한 줄인 줄과 같은 높이이고, 자산
  * 이름이나 묶음 이름이 꺾이는 줄은 16px 더 깁니다(자기 빌드 — 1024 68px 셋, 390 101px 둘). 예전에는 '불러오는 중' 한 줄(패널 189px)이라 값이 오면 표로 자라
  * 화면 안의 추이 패널을 밀었습니다(첫 적재 CLS 1440 0.24 — 기준 0.21). 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
@@ -40,7 +40,7 @@ function SummaryPending() {
     <div role="status" aria-busy="true" aria-label="자산별 요약을 불러오는 중" className="min-w-0">
       <span className="sr-only">자산별 요약을 불러오는 중</span>
       <div aria-hidden="true" className="min-w-0">
-        <div className="flex h-8 items-center justify-between gap-3 border-b border-border px-3">
+        <div className="flex h-[52px] items-center justify-between gap-3 border-b border-border px-3">
           <span className={`h-3 w-10 ${BAR}`} />
           <span className={`h-3 w-24 ${BAR}`} />
         </div>
@@ -145,7 +145,15 @@ export default function CotPage() {
     },
     {
       key: "ncNet",
-      header: "스마트머니 순포지션",
+      // 두 줄 머리 — 한 줄(꺾지 않는 머리 145px)이면 요약 표의 최소 폭이 662~668px라 1024·'넓게' 메뉴(272)의 표 상자 644~654px를 넘어 마지막 열이
+      // 잘렸습니다(QA-678). 줄바꿈 앞 공백은 화면에 그리지 않고(줄 끝 공백), 낭독기와 접근 이름이 '스마트머니 순포지션' 한 머리로 읽게 둡니다.
+      header: (
+        <>
+          스마트머니{" "}
+          <br />
+          순포지션
+        </>
+      ),
       align: "right",
       // 순포지션의 색(롱 빨강·숏 파랑)은 뜻이라 그대로 두고, 부호(+·−)가 함께 방향을 나릅니다(QA-629). 모르면 null — 공용 표의 모르는 칸('—'와 낭독 글
       // '값 없음')입니다. 색 span으로 감싼 '—'는 공용 표가 모르는 칸으로 보지 않아 이 칸만 '—'로 읽혔습니다(QA-672).
