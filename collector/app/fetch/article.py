@@ -11,7 +11,8 @@ app/fetch/article.py
   3) 호스트 하루 예산(fetch_budgets — 그 호스트, 용도 article, 하루 :data:`HOST_DAILY_BUDGET`) → 같은 호스트 간격(http.pace 2초)
   4) 한 번 보냄 — 브라우저와 같은 TLS·헤더(curl_cffi impersonate, 설치된 데스크톱 Chrome 프로필 가운데 가장 새것 하나로 고정), User-Agent를
      덮어쓰지 않고 Accept·Accept-Language만 얹음, Referer 없음, 리다이렉트를 따라가지 않음(아래에서 직접), http·https만(PROTOCOLS_STR),
-     alt-svc로 다른 호스트·포트로 옮겨 가지 않음(ALTSVC_CTRL 0), 압축을 푼 본문 :data:`MAX_BYTES`까지(받는 도중 세다가 넘으면 끊음)
+     압축을 푼 본문 :data:`MAX_BYTES`까지(받는 도중 세다가 넘으면 끊음). 홉마다 요청 하나뿐인 새 세션이라 받은 Alt-Svc 머리글이 다른 요청을
+     옮길 수 없습니다(alt-svc 캐시 파일 CURLOPT_ALTSVC를 걸지 않음 — ALTSVC_CTRL 0은 libcurl이 '잘못된 인자'로 거절해 모든 요청이 실패했음).
   5) 판정 — 3xx(301·302·303·307·308)는 목적지로 다시 1부터(최대 :data:`MAX_REDIRECTS`번), 403·429·봇 확인 표지는 거부(이 기능 안에서만 그
      호스트를 6시간 닫음 — 공용 세션의 래치는 부르지 않음, ADR 0026 결정 2와 같은 이유), 401·402·451도 거부(닫지 않음), 404·410·그 밖 4xx·5xx는
      HTTP 오류, 2xx는 HTML(text/html·application/xhtml+xml)일 때만.
@@ -30,7 +31,7 @@ from urllib.parse import urljoin
 
 from curl_cffi import requests as curl_requests
 from curl_cffi.const import CurlECode, CurlOpt
-from curl_cffi.curl import CURL_WRITEFUNC_ERROR
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR, CurlError
 from curl_cffi.requests import exceptions as curl_exceptions
 
 from .. import http, kst, store
@@ -156,7 +157,8 @@ def _send_hop(url: str, *, pin: str, cookies: dict[str, str], timeout: tuple[flo
     """
     한 홉을 보냅니다(네트워크 — 시험이 바꿔 끼우는 자리). 홉마다 새 세션(고정 주소는 세션 단위 값)이고 리다이렉트를 따라가지 않습니다.
 
-    :raises ArticleFetchError: 연결·시간 초과(transport·timeout), 본문이 상한을 넘음(too_large)
+    :raises ArticleFetchError: 연결·시간 초과(transport·timeout), 본문이 상한을 넘음(too_large), 세션 옵션을 걸지 못함(transport — 요청이
+        나가기 전이라 ``sent``가 거짓)
     """
     received = 0
     chunks: list[bytes] = []
@@ -177,7 +179,6 @@ def _send_hop(url: str, *, pin: str, cookies: dict[str, str], timeout: tuple[flo
         curl_options={
             CurlOpt.RESOLVE: [pin],
             CurlOpt.PROTOCOLS_STR: "http,https",
-            CurlOpt.ALTSVC_CTRL: 0,
             CurlOpt.MAXFILESIZE_LARGE: MAX_BYTES,
         },
     )
@@ -193,6 +194,11 @@ def _send_hop(url: str, *, pin: str, cookies: dict[str, str], timeout: tuple[flo
         if code == CurlECode.OPERATION_TIMEDOUT or isinstance(exc, curl_exceptions.Timeout):
             raise ArticleFetchError("timeout", f"{host}의 응답이 늦어 끊었습니다", retryable=True, host=host, sent=True) from None
         raise ArticleFetchError("transport", f"{host}에 연결하지 못했습니다", retryable=True, host=host, sent=True) from None
+    except CurlError as exc:
+        # 요청 오류(RequestException)가 아닌 curl 오류 — 세션 옵션을 거는 단계(setopt)에서 나서 요청이 나가지 않았습니다. 잡지 않으면 작업자의
+        # 일반 예외 처리까지 올라가 사유가 흐려졌습니다(코드만 남김 — 글에는 옵션 번호뿐이지만 같은 규칙).
+        logger.warning("기사 받기: curl 설정 실패(코드 %s)", getattr(exc, "code", "?"))
+        raise ArticleFetchError("transport", f"{host}에 보낼 준비를 하지 못했습니다", retryable=True, host=host, sent=False) from None
     finally:
         session.close()
     return Reply(status=response.status_code,
@@ -276,7 +282,7 @@ def fetch_page(url: str, *, deadline: float, refused=None) -> Page:
         try:
             reply = _send_hop(target.url, pin=pin, cookies=cookies if cookie_host == host else {}, timeout=timeout)
         except ArticleFetchError as exc:
-            exc.sent = True
+            exc.sent = exc.sent or sent        # 한 홉 보내기가 정한 값(설정 실패면 거짓) + 앞 홉
             logger.info("기사 받기: %s %s", host, exc.reason)
             raise
         sent = True

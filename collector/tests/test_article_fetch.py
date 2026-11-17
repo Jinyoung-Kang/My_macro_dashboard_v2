@@ -3,7 +3,8 @@ tests/test_article_fetch.py
 기사 한 건 받기(ADR 0043 — app/fetch/article). 실제 요청 0건 — 한 홉 보내기(_send_hop)·이름 풀기(addresses._resolve)·호스트 예산을 바꿔 끼웁니다.
 
 고정하는 규칙
-  1. 검사한 주소로 고정해 보냄(curl RESOLVE·http·https만·alt-svc 끔·크기 상한, 리다이렉트를 따라가지 않음), User-Agent를 덮어쓰지 않음.
+  1. 검사한 주소로 고정해 보냄(curl RESOLVE·http·https만·크기 상한, 리다이렉트를 따라가지 않음), User-Agent를 덮어쓰지 않음. 실제 curl 핸들로
+     루프백(127.0.0.1)의 시험 서버에 '.invalid' 이름을 고정해 보내 옵션이 libcurl에서 실제로 걸리는지도 봄(바깥 요청·DNS 0건).
   2. 리다이렉트는 홉마다 처음부터 다시 검사하고 3번까지(요청 4건), 내부 주소·규칙 밖·받지 않는 매체로 가는 리다이렉트는 보내지 않음.
   3. 3MB를 넘으면 읽지 않거나 받다가 끊음(too_large), HTML이 아니면 쓰지 않음(not_html).
   4. 403·429·봇 확인 표지는 그 호스트를 이 기능 안에서만 6시간 닫음(공용 세션의 5분 래치는 건드리지 않음), 공용 래치가 닫힌 호스트는 보내지 않음.
@@ -12,7 +13,11 @@ tests/test_article_fetch.py
 """
 from __future__ import annotations
 
+import http.server as http_server
 import logging
+import socket
+import socketserver
+import threading
 import time
 
 import pytest
@@ -75,7 +80,7 @@ def test_한_건을_받아_마지막_주소와_본문을_돌려준다(net):
 
 
 def test_검사한_주소로_고정해_보낸다(monkeypatch):
-    """실제 _send_hop이 만드는 세션 — 고정 주소(RESOLVE)·http·https만·alt-svc 끔·크기 상한, 리다이렉트를 따라가지 않고 User-Agent를 덮어쓰지 않음."""
+    """실제 _send_hop이 만드는 세션 — 고정 주소(RESOLVE)·http·https만·크기 상한, 리다이렉트를 따라가지 않고 User-Agent를 덮어쓰지 않음."""
     from curl_cffi.const import CurlOpt
 
     made: list[dict] = []
@@ -102,8 +107,9 @@ def test_검사한_주소로_고정해_보낸다(monkeypatch):
     init = made[0]["init"]
     assert init["curl_options"][CurlOpt.RESOLVE] == ["news.example.com:443:93.184.216.34"]
     assert init["curl_options"][CurlOpt.PROTOCOLS_STR] == "http,https"
-    assert init["curl_options"][CurlOpt.ALTSVC_CTRL] == 0
     assert init["curl_options"][CurlOpt.MAXFILESIZE_LARGE] == article.MAX_BYTES
+    assert set(init["curl_options"]) == {CurlOpt.RESOLVE, CurlOpt.PROTOCOLS_STR, CurlOpt.MAXFILESIZE_LARGE}, \
+        "libcurl이 거절하는 옵션(ALTSVC_CTRL 0 등)을 더하지 않음 — 아래 루프백 시험이 실제 핸들로 확인"
     assert init["impersonate"].startswith("chrome")
     method, url, kwargs = made[0]["request"]
     assert (method, url) == ("GET", "https://news.example.com/a")
@@ -169,7 +175,7 @@ def test_시작_주소가_내부_주소면_보내지_않는다(net, monkeypatch)
 
 
 def test_3MB를_넘으면_읽지_않거나_받다가_끊는다(net):
-    net.replies.append(article.ArticleFetchError("too_large", "페이지가 3MB를 넘어 받지 않았습니다", host="news.example.com"))
+    net.replies.append(article.ArticleFetchError("too_large", "페이지가 3MB를 넘어 받지 않았습니다", host="news.example.com", sent=True))
     with pytest.raises(article.ArticleFetchError) as caught:
         article.fetch_page("https://news.example.com/a", deadline=_deadline())
     assert caught.value.reason == "too_large" and caught.value.sent is True
@@ -320,3 +326,125 @@ def test_로그와_사유에_경로·인자가_없다(net, caplog):
     text = caplog.text + caught.value.message
     assert "SECRETPATH" not in text and "SECRETQUERY" not in text and "/private" not in text
     assert "news.example.com" in caught.value.message
+
+
+# ------------------------------------------------------------------ 실제 curl 핸들(루프백만)
+
+class _LoopbackHandler(http_server.BaseHTTPRequestHandler):
+    """시험 서버 — 받은 요청의 경로·Host·User-Agent를 적고 경로마다 정한 답을 줍니다."""
+
+    seen: list[dict] = []
+
+    def log_message(self, *args):  # 시험 출력에 접속 기록을 남기지 않음
+        pass
+
+    def do_GET(self):
+        type(self).seen.append({"path": self.path, "host": self.headers.get("Host"), "ua": self.headers.get("User-Agent") or ""})
+        if self.path == "/ok":
+            body = HTML
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Set-Cookie", "sid=abc; Path=/")
+            self.send_header("Alt-Svc", 'h2="127.0.0.1:1"; ma=86400')
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/moved":
+            self.send_response(302)
+            self.send_header("Location", "/ok")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        elif self.path == "/big-length":
+            body = b"x" * 5000
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/big-chunked":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            for _ in range(10):
+                chunk = b"y" * 1000
+                self.wfile.write(b"%x\r\n" % len(chunk) + chunk + b"\r\n")
+            self.wfile.write(b"0\r\n\r\n")
+        else:
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+
+@pytest.fixture()
+def loopback(monkeypatch):
+    """127.0.0.1의 빈 포트에 띄운 시험 서버 — 고정 이름 'pinned.invalid'(예약 이름이라 DNS로 풀리지 않음)를 이 주소로 고정해 부릅니다."""
+    for name in (*article.PROXY_ENV, "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    _LoopbackHandler.seen = []
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _LoopbackHandler)
+    server.daemon_threads = True
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    port = server.server_address[1]
+    try:
+        yield type("Loopback", (), {"port": port, "pin": f"pinned.invalid:{port}:127.0.0.1",
+                                    "url": lambda path: f"http://pinned.invalid:{port}{path}", "seen": _LoopbackHandler.seen})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_실제_curl_핸들이_고정_주소로_한_번_보낸다(loopback):
+    """옵션이 libcurl에서 실제로 걸림(설정 단계 실패 없음), 이름 풀기 없이 고정 주소로 감, 쿠키·머리글을 돌려줌, User-Agent는 브라우저 프로필 그대로."""
+    reply = REAL_SEND_HOP(loopback.url("/ok"), pin=loopback.pin, cookies={}, timeout=(5.0, 5.0))
+    assert reply.status == 200 and reply.body == HTML
+    assert reply.headers["content-type"].startswith("text/html") and reply.cookies == {"sid": "abc"}
+    assert loopback.seen == [{"path": "/ok", "host": f"pinned.invalid:{loopback.port}", "ua": loopback.seen[0]["ua"]}]
+    assert "Chrome" in loopback.seen[0]["ua"], "User-Agent를 덮어쓰지 않음(브라우저 프로필 그대로)"
+
+
+def test_실제_curl_핸들은_리다이렉트를_따라가지_않는다(loopback):
+    reply = REAL_SEND_HOP(loopback.url("/moved"), pin=loopback.pin, cookies={}, timeout=(5.0, 5.0))
+    assert reply.status == 302 and reply.headers["location"] == "/ok" and reply.body == b""
+    assert [hit["path"] for hit in loopback.seen] == ["/moved"], "요청은 하나 — 목적지는 fetch_page가 다시 검사한 뒤에만"
+
+
+@pytest.mark.parametrize("path", ["/big-length", "/big-chunked"])
+def test_실제_curl_핸들은_상한을_넘으면_끊는다(loopback, monkeypatch, path):
+    """Content-Length가 상한을 넘을 때(MAXFILESIZE)와 길이 없이 흘려 보낼 때(받는 도중 셈) 모두 too_large."""
+    monkeypatch.setattr(article, "MAX_BYTES", 2000)
+    with pytest.raises(article.ArticleFetchError) as caught:
+        REAL_SEND_HOP(loopback.url(path), pin=loopback.pin, cookies={}, timeout=(5.0, 5.0))
+    assert caught.value.reason == "too_large" and caught.value.sent is True
+
+
+def test_실제_curl_핸들이_닫힌_포트면_transport(loopback):
+    """고정한 주소의 포트에 아무도 없으면 연결 실패(transport) — 다른 주소로 다시 풀지 않음."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed = probe.getsockname()[1]
+    with pytest.raises(article.ArticleFetchError) as caught:
+        REAL_SEND_HOP(f"http://pinned.invalid:{closed}/ok", pin=f"pinned.invalid:{closed}:127.0.0.1", cookies={}, timeout=(2.0, 2.0))
+    assert caught.value.reason == "transport" and caught.value.retryable is True
+    assert loopback.seen == []
+
+
+def test_세션_옵션을_걸지_못하면_보내지_않은_transport(monkeypatch):
+    """요청 오류가 아닌 curl 오류(설정 단계 — 예: libcurl이 거절하는 옵션 값)도 transport로 — 작업자의 일반 예외까지 올라가지 않고, sent는 거짓."""
+    from curl_cffi.curl import CurlError
+
+    class BrokenSession:
+        def __init__(self, **kwargs):
+            self.cookies = {}
+
+        def request(self, method, url, **kwargs):
+            raise CurlError("Failed to setopt 286 0, curl: (43) setopt 0x11e got bad argument", 43)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(article.curl_requests, "Session", BrokenSession)
+    with pytest.raises(article.ArticleFetchError) as caught:
+        REAL_SEND_HOP("https://news.example.com/a", pin="news.example.com:443:93.184.216.34", cookies={}, timeout=(5.0, 15.0))
+    assert (caught.value.reason, caught.value.sent, caught.value.retryable) == ("transport", False, True)
