@@ -608,3 +608,22 @@ describe("목차와 절 닻", () => {
     expect((document.getElementById("macro-cat-ust") as HTMLElement).className.split(/\s+/)).toContain("2xl:scroll-mt-4");
   });
 });
+
+// QA-652: 목차 가로 줄(2xl 미만 — 결정 7 뒤 1024~1535와 좁은 화면)의 '지표' 칸은 개수를 모르는 동안 개수 자리가 없어, 개요가 와서 '21'이 생기면 뒤의
+// 칸이 모두 오른쪽으로 밀렸습니다(자기 빌드 + QA API: '장단기 금리차' 칸 x 1024 388 → 405px·390 152 → 169px — 17px = 사이 4px + 숫자 두 자리).
+// 읽는 동안의 자리(pendingChildren)는 세로 목록의 하위 칸 몫뿐이었습니다. 개요를 처음 읽는 동안에는 두 목록 모두 '지표' 칸에 개수 자리(글 없는 막대 —
+// 숫자 두 자리 폭, 읽기에서 뺌)를 두어야 합니다.
+describe("QA-652 목차 '지표' 칸은 개수를 읽는 동안 개수 자리를 잡는다", () => {
+  it.fails("개요를 처음 읽는 동안 가로 줄·세로 목록의 '지표' 칸에 개수 자리(숫자 두 자리 폭의 막대, 읽기에서 뺌) — 링크 이름은 '지표' 그대로", () => {
+    render(<MacroPage />);
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    const [strip, column] = Array.from(nav.children) as HTMLElement[];
+    for (const list of [strip, column]) {
+      const link = within(list).getAllByRole("link", { name: "지표" })[0];
+      const slot = link.querySelector("[data-section-index-count-pending]");
+      expect(slot).not.toBeNull();
+      expect(slot?.getAttribute("aria-hidden")).toBe("true");
+      expect((slot?.getAttribute("class") ?? "").split(/\s+/)).toEqual(expect.arrayContaining(["w-[2ch]", "text-xs"]));
+    }
+  });
+});
