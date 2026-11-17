@@ -9,7 +9,7 @@
  *  - 지표 표: 범주마다 h3·부제·출처 줄과 공용 표(지표 행 머리 = 미리보기 단추 + '티커 · 시장', 값·변화 칩·기준), 실패 '—'+'수집 실패',
  *    추정·이전 값 배지·경고 상태 글. 미리보기: 넓은 화면은 옆 검사 칸(처음은 첫 지표, 고른 줄은 aria-current), 좁은 화면은 위쪽 대화상자 —
  *    값·변화·전일·기준 시각·장 상태·출처·전일값 출처·티커와 '지표 상세 열기'(/markets/i/키)
- *  - 목차: 회원 일곱·운영자 여덟(절 id = lib/marketSections), 지표 칸 아래 범주 칸(개수), xl부터 왼쪽 세로 목록, 절 닻은 읽는 중에도 있음
+ *  - 목차: 회원 일곱·운영자 여덟(절 id = lib/marketSections), 지표 칸 아래 범주 칸(개수), 2xl부터 왼쪽 세로 목록(결정 7), 절 닻은 읽는 중에도 있음
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -522,7 +522,7 @@ describe("목차와 절 닻", () => {
     expect(document.getElementById(MACRO_SECTIONS.calendar)).not.toBeNull();
   });
 
-  it("개요를 받으면 '지표' 칸에 개수와 범주 하위 칸(세로 목록 — 범주 닻으로), xl부터 왼쪽 13rem 세로 목록", async () => {
+  it("개요를 받으면 '지표' 칸에 개수와 범주 하위 칸(세로 목록 — 범주 닻으로), 2xl부터 왼쪽 13rem 세로 목록", async () => {
     reads["/api/macro/overview"] = () => Promise.resolve({ available: true, collectedAtKst: "2026-11-17 06:30 KST", categories: [
       { id: "ust", title: "🏛️ 미국 국채 수익률", items: [
         { key: "us10y", name: "미국채 10년물", status: "ok", priceStr: "4.123", deltaStr: "+0.010 (+0.24%)", delta: 0.01, pct: 0.24, delayMinutes: 0 },
@@ -540,8 +540,12 @@ describe("목차와 절 닻", () => {
     expect(child.getAttribute("href")).toBe("#macro-cat-ust");
     expect(within(nav).getByRole("link", { name: "미국 주가지수 (1)" }).getAttribute("href")).toBe("#macro-cat-us-equity");
     expect(document.getElementById("macro-cat-ust")?.querySelector("h3")?.textContent).toBe("미국 국채 수익률");
-    // xl부터 왼쪽 13rem 세로 목록 + 본문(1024에서는 본문 위 가로 줄 — 목차 칸을 두면 가운데가 좁아짐).
-    expect((nav.parentElement as HTMLElement).className).toContain("xl:grid-cols-[13rem_minmax(0,1fr)]");
-    expect((document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement).className).toContain("xl:scroll-mt-4");
+    // 2xl부터 왼쪽 13rem 세로 목록 + 본문(1024~1535는 본문 위 가로 줄 — 목차 칸을 두면 지표 패널이 좁아 미리보기가 옆 칸이 되지 못함, 결정 7).
+    const frameTokens = (nav.parentElement as HTMLElement).className.split(/\s+/);
+    expect(frameTokens).toContain("2xl:grid-cols-[13rem_minmax(0,1fr)]");
+    expect(frameTokens).not.toContain("xl:grid-cols-[13rem_minmax(0,1fr)]");
+    expect(nav.getAttribute("data-section-index-bar")).toBe("2xl");
+    expect((document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement).className.split(/\s+/)).toContain("2xl:scroll-mt-4");
+    expect((document.getElementById("macro-cat-ust") as HTMLElement).className.split(/\s+/)).toContain("2xl:scroll-mt-4");
   });
 });

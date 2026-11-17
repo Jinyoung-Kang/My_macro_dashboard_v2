@@ -162,12 +162,13 @@ export default function MacroPage() {
         {liveNotice && <p className="mt-1 text-xs text-text-3">{liveNotice}</p>}
       </PageHeader>
 
-      {/* 목차(xl 이상 왼쪽 13rem 세로 목록, 그 아래 본문 위 가로 줄 — 1024에서 목차 칸을 두면 가운데가 좁아 표·차트가 눌림)와 절 닻.
+      {/* 목차(2xl 이상 왼쪽 13rem 세로 목록, 그 아래 본문 위 가로 줄)와 절 닻. 1280~1535에서도 목차 칸을 두면 지표 패널이 좁아 미리보기가 옆 칸이 되지
+          못했습니다(메뉴 220에서 1280·1366은 대화상자 — 2026-11-17 결정 7, 사용자 위임 — 권장안 가). 1024는 목차 칸을 두면 표·차트가 눌립니다.
           닻은 자료와 상관없이 늘 그립니다(해시 주소의 이동이 첫 그림에서 닿게). 절 id는 lib/marketSections(다른 화면이 매크로 절로 잇는 정본). */}
-      <SectionIndex label="매크로 지표 목차" items={indexItems} columnFrom="xl">
+      <SectionIndex label="매크로 지표 목차" items={indexItems} columnFrom="2xl">
         {/* 자동 갱신 간격(머리말)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 1분 경계를 넘으면 경로(live)가 바뀌어
             페이지 전체가 로딩으로 바뀌고 방금 조작한 선택 상자가 사라졌습니다(QA-047). */}
-        <SectionAnchor id={MACRO_SECTIONS.indicators} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.indicators} columnFrom="2xl">
           <IndicatorsSection
             groups={groups}
             loading={overview.loading}
@@ -180,11 +181,11 @@ export default function MacroPage() {
         {/* 스스로 데이터를 읽는 섹션은 개요(overview)를 다시 읽는 동안에도 그대로 둡니다 — `data &&` 안에 두면
             간격이 1분 경계를 넘을 때 함께 내려가 고른 계열·지표가 처음으로 돌아갔습니다(QA-066).
             지표 표 바로 아래에 둡니다 — 위에서 "지금 얼마인지"를 보고, 여기서 "어디서 왔는지"를 봅니다. */}
-        <SectionAnchor id={MACRO_SECTIONS.fx} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.fx} columnFrom="2xl">
           <FxCompareSection />
         </SectionAnchor>
 
-        <SectionAnchor id={MACRO_SECTIONS.spreads} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.spreads} columnFrom="2xl">
           {data?.spreads ? (
             <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
               <SpreadSection
@@ -224,10 +225,10 @@ export default function MacroPage() {
           )}
         </SectionAnchor>
 
-        <SectionAnchor id={MACRO_SECTIONS.risk} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.risk} columnFrom="2xl">
           <RiskSection risk={risk.data} loading={risk.loading} refreshError={risk.refreshError} />
         </SectionAnchor>
-        <SectionAnchor id={MACRO_SECTIONS.advanced} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.advanced} columnFrom="2xl">
           <AdvancedSection
             data={advanced.data}
             loading={advanced.loading}
@@ -236,15 +237,15 @@ export default function MacroPage() {
             refreshError={advanced.refreshError}
           />
         </SectionAnchor>
-        <SectionAnchor id={MACRO_SECTIONS.single} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.single} columnFrom="2xl">
           <SingleChartSection />
         </SectionAnchor>
-        <SectionAnchor id={MACRO_SECTIONS.scraped} columnFrom="xl">
+        <SectionAnchor id={MACRO_SECTIONS.scraped} columnFrom="2xl">
           <ScrapedSection />
         </SectionAnchor>
         {/* 경제 캘린더는 운영자 전용 경로입니다(ADR 0026 — 차단 통과 수집으로 받은 자료). 회원·데모 방문자에게는 절도 목차 칸도 그리지 않습니다. */}
         {owner && (
-          <SectionAnchor id={MACRO_SECTIONS.calendar} columnFrom="xl">
+          <SectionAnchor id={MACRO_SECTIONS.calendar} columnFrom="2xl">
             <EconCalendarSection />
           </SectionAnchor>
         )}

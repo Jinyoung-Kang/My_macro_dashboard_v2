@@ -133,7 +133,8 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
 /**
  * 지표 패널 — 범주마다 작은 제목(h3)·지연 요약 부제·출처 줄과 공용 표, 고른 지표의 미리보기 검사 칸(작업대 실행 명세 §7 3행 '목록-검사').
  *
- * - 검사 칸 틀은 `lg` 배치(틀 52rem부터 옆 18rem — 1440에서 표 약 592px + 미리보기, 그 아래·좁은 화면은 위쪽 대화상자). 넓은 화면 처음은 첫 지표를 보입니다.
+ * - 검사 칸 틀은 `lg` 배치(틀 52rem부터 옆 18rem — 목차가 2xl부터 왼쪽 칸이라 메뉴 220에서 1280부터 옆 칸, 그 아래·좁은 화면은 위쪽 대화상자). 넓은 화면 처음은
+ *   첫 지표를 보입니다.
  * - 표는 좁은 화면(lg 미만)에서만 최소 폭 640px + 넘김 안내(이름 칸이 44px 단추라 한 칸에 눌리지 않게). 넓은 화면은 옆 미리보기와 나란히 놓여 표 폭이
  *   532~640px이라 최소 폭을 두지 않습니다(기준 칸이 줄을 바꿈 — 넘김 없이).
  * - 범주 블록은 절 닻(SectionAnchor — 목차의 범주 칸, id macro-cat-…)입니다.
@@ -186,7 +187,7 @@ export function IndicatorsSection({
               <div className="flex min-w-0 flex-col gap-5">
                 {rows.map((group) => (
                   // 범주 절 닻 — 목차의 '지표' 아래 하위 칸이 가리킵니다(id macro-cat-…).
-                  <SectionAnchor key={group.id} id={group.anchorId} columnFrom="xl">
+                  <SectionAnchor key={group.id} id={group.anchorId} columnFrom="2xl">
                     <div className="mb-2">
                       <h3 className="text-sm font-semibold text-text">{group.title}</h3>
                       {group.subtitle ? <p className="mt-0.5 break-keep text-caption text-text-2">{group.subtitle}</p> : null}
