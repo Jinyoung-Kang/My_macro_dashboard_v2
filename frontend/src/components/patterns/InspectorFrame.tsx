@@ -71,8 +71,9 @@ const VANISHED = "고른 줄이 지금 자료에 없습니다. 다른 줄을 고
  *   이름 = 제목)로 열고 닫으면 연 단추로 포커스가 돌아옵니다. 줄 단추에는 aria-haspopup="dialog"·aria-expanded.
  * - 대화상자 배치에서 옆 칸 배치로 바뀌면(창을 넓힘·왼쪽 메뉴 접기) 사용자가 마지막으로 본 줄 — 열려 있던 대화상자의 키, 없으면 포커스가 있는 줄 단추
  *   (`data-inspect-key`, 검사 칸 밖)의 키 — 를 고르고 대화상자를 닫습니다(MasterDetail QA-590과 같은 규칙 — QA-660). 그래서 대화상자로 본 줄을 Esc로 닫고
- *   넓혀도 포커스 링·고른 행·검사 칸이 한 줄입니다. 포커스가 틀 밖이면 앞서 고른 키(없으면 `defaultKey`) 그대로입니다. 고른 줄이 없고(옆 칸에서 Esc로 풂)
- *   대화상자 배치 동안 줄 단추 포커스를 옮기지도 대화상자를 열지도 않았으면 포커스 줄을 고르지 않습니다 — 일부러 푼 고름이 폭만 바뀌어 되살아나지 않게.
+ *   넓혀도 포커스 링·고른 행·검사 칸이 한 줄입니다. 포커스가 틀 밖이면 앞서 고른 키(없으면 `defaultKey`) 그대로입니다. 대화상자 배치 동안 줄 단추
+ *   포커스를 옮기지도 대화상자를 열지도 않았으면 포커스 줄을 고르지 않습니다 — 옆 칸 배치에서는 Tab으로 줄 사이를 옮겨도 고르지 않으므로 포커스 줄과
+ *   보이는 줄이 다른 것이 정상이고, 폭만 왕복해서는 보이던 키도 일부러 푼 고름(옆 칸에서 Esc)도 바뀌지 않게(QA-660 후속).
  *   반대로 좁아질 때는 대화상자를 저절로 열지 않습니다(고른 키는 남아 다시 넓어지면 보임).
  * - `renderDetail`은 PropertyList·링크·자리표시(Skeleton·ErrorState)를 그립니다 — 펼칠 때 읽는 자세한 값은 그 안의 자식이 읽습니다(틀은 읽지 않음).
  * - 데이터 영역이라 강조 파랑을 쓰지 않습니다(줄 단추는 중립 잉크 — InspectorTrigger, 고른 행은 표의 잉크 막대 — 데이터 칸 강조색 금지 목록).
@@ -163,8 +164,10 @@ export function InspectorFrame({
 
   // 대화상자 배치 → 옆 칸 배치로 바뀌는 그리기에 열린 대화상자가 없으면(위 효과가 넘기지 않으면) 포커스가 있는 줄 단추의 키를 고릅니다(QA-660 — 그 전에는
   // 앞서 고른 키나 defaultKey가 남아 포커스 링(대화상자로 본 줄)과 고른 행·검사 칸이 갈라졌습니다). 포커스가 틀 밖이거나 검사 칸 안이면 그대로입니다.
-  // 고른 줄이 없고(옆 칸에서 Esc로 풂) 대화상자 배치 동안 포커스 줄이 그대로이며 대화상자도 열지 않았으면 고르지 않습니다 — 일부러 푼 고름이 되살아나지 않게.
-  // 고르기는 select와 같은 일입니다(effect 의존을 값으로 두려고 풀어 씀).
+  // 대화상자 배치 동안 포커스 줄이 그대로이고 대화상자도 열지 않았으면 고르지 않습니다 — 옆 칸 배치에서는 Tab이 줄 단추 사이를 옮겨도 고르지 않으므로
+  // (누르기·Enter로 고름) 포커스 줄과 보이는 줄이 다른 것이 정상이고, 폭만 왕복해서는(창 크기·'[' 메뉴 접기) 보이던 키(앞서 고른 키·defaultKey)도
+  // 일부러 푼 고름(옆 칸에서 Esc)도 바뀌지 않게 합니다(QA-660 후속 — 목록-검사 MasterDetail은 옆 칸에서 포커스가 곧 고름이라 '직전에 보이던 키가
+  // 있으면'으로도 따라가지만 이 틀은 그러지 않음). 고르기는 select와 같은 일입니다(effect 의존을 값으로 두려고 풀어 씀).
   useLayoutEffect(() => {
     const before = wasInline.current;
     wasInline.current = inline;
@@ -181,13 +184,13 @@ export function InspectorFrame({
     if (!(active instanceof HTMLElement) || !frameRef.current?.contains(active) || panelRef.current?.contains(active)) return;
     const key = active.getAttribute("data-inspect-key");
     if (key === null || titleOf(key) === null) return;
-    // 포커스 줄을 따라 고르는가 — 직전에 보이던 키가 있거나(갈라짐 막기), 대화상자 배치 동안 포커스 줄이 바뀌었거나 대화상자를 열었으면.
-    const followFocus = shownKey !== null || key !== narrowFocus.current || narrowOpened.current;
+    // 포커스 줄을 따라 고르는가 — 대화상자 배치 동안 포커스 줄이 바뀌었거나 대화상자를 열었으면.
+    const followFocus = key !== narrowFocus.current || narrowOpened.current;
     if (!followFocus || key === chosen) return;
     setAutoOff(true);
     if (selectedKey === undefined) setOwnSelected(key);
     onSelectedKeyChange?.(key);
-  }, [inline, dialogKey, shownKey, chosen, titleOf, selectedKey, onSelectedKeyChange]);
+  }, [inline, dialogKey, chosen, titleOf, selectedKey, onSelectedKeyChange]);
 
   // 검사 칸 밖의 줄 단추에 포커스가 오면 그 키를 적습니다(대화상자 내용은 포털이라 틀의 DOM 밖 — 보지 않음).
   const onFocus = (event: FocusEvent<HTMLDivElement>) => {
