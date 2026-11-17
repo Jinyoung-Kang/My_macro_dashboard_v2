@@ -5,7 +5,7 @@
  * 배치는 클래스로 봅니다(jsdom은 크기 질의·display를 계산하지 않음) — columnFrom 세 벌(lg·xl·2xl)의 정적 클래스, 가로 줄 sticky·밑줄 탭 모양, 세로 목록 들여쓰기.
  * 누름 자리(lg 미만 44px — smallTargets), 고대비의 막대 테두리. 지금 절을 고르는 것(useSectionSpy)은 IntersectionObserver 대역으로 한 번 봅니다.
  */
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
@@ -166,17 +166,18 @@ describe("SectionIndex — 배치(columnFrom)", () => {
     expect(tokens(column)).not.toContain("xl:flex");
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="2xl">위험</SectionAnchor>);
-    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "2xl:scroll-mt-4"]);
+    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "2xl:scroll-mt-4"]);
   });
 
-  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px)", () => {
+  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px), 포커스를 받는 자리(tabIndex -1·바깥선 없음 — QA-680)", () => {
     renderIndex({ activeId: null });
     const anchor = document.getElementById("macro-fx") as HTMLElement;
-    expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "lg:scroll-mt-4"]);
+    expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "lg:scroll-mt-4"]);
+    expect(anchor.getAttribute("tabindex")).toBe("-1");
     expect(tokens(anchor.parentElement as HTMLElement)).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-4", "lg:gap-6"]));
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="xl">위험</SectionAnchor>);
-    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "xl:scroll-mt-4"]);
+    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "xl:scroll-mt-4"]);
   });
 });
 
@@ -584,5 +585,157 @@ describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 �
     expect(current()).toBe("#macro-risk");
     rect.mockRestore();
     for (const spy of restore) spy.mockRestore();
+  });
+});
+
+// QA-680: 목차 칸은 보통 링크(<a href="#id">)라 누르면 브라우저의 기본 해시 이동이 상태(history.state)가 null인 기록을 쌓았습니다. Next 앱 라우터(16.4.5)는
+// 뒤로·앞으로 가기의 popstate에서 상태 없는 기록을 무시하므로(next/dist/client/components/app-router.js handlePopState), /macro 목차로 절을 옮긴 뒤 왼쪽
+// 메뉴로 /sector에 갔다가 뒤로 가면 주소만 /macro#절이 되고 화면은 /sector에 남았습니다(D3 전 QA 스택 qa@65caf1e8 — 한 번 더 뒤로 가야 /macro). 수식키 없는
+// 누름은 기본 동작을 막고 history.pushState(Next가 고쳐 지금 기록의 라우터 상태를 새 기록에 옮겨 실음)로 기록을 쌓은 뒤 그 닻으로 옮겨야 합니다. jsdom은
+// Next의 popstate를 재현하지 못하므로 누름이 기본 해시 이동 대신 pushState·닻 이동이 되는지를 봅니다. 기본 동작이 막혔는지는 창까지 올라온 click에서
+// 그때의 defaultPrevented로 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막아 다음 시험에 주소가 남지 않게 합니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 기본 동작을 막지 않아(defaultPrevented false) pushState를 부르지 않았습니다.
+// 고침: 칸의 onClick이 lib/hashLink followHashLink — 포커스는 닻 안 첫 제목에(아래 보강), 제목이 없으면 닻(SectionAnchor — tabIndex -1·바깥선 없음).
+// 아래 첫 시험의 닻은 제목 없는 글이라 닻에 포커스합니다.
+describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 닻으로 옮긴다", () => {
+  const BASE_PATH = () => window.location.pathname + window.location.search;
+  /** 창까지 올라온 누름마다 기본 동작이 막혔는지 적고, 남은 기본 동작은 막습니다. */
+  function watchClicks() {
+    const prevented: boolean[] = [];
+    const listener = (event: MouseEvent) => {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    window.addEventListener("click", listener);
+    return { prevented, stop: () => window.removeEventListener("click", listener) };
+  }
+
+  it("수식키 없는 왼쪽 누름은 기본 동작을 막고 pushState(null, '', '#id')로 기록 하나, 그 닻으로 scrollIntoView하고 닻에 포커스(preventScroll)", () => {
+    const clicks = watchClicks();
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    try {
+      renderIndex({ activeId: null });
+      const { strip, column } = lists();
+      fireEvent.click(within(column).getByRole("link", { name: "환율 비교" }));
+      // 결함을 직접 보는 단언 먼저(수정 전에는 여기서 실패).
+      expect(clicks.prevented).toEqual([true]);
+      expect(push.mock.calls).toEqual([[null, "", "#macro-fx"]]);
+      expect(window.location.hash).toBe("#macro-fx");
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      expect(into.mock.contexts).toEqual([fx]);
+      // 키보드의 다음 Tab이 그 절에서 이어지게(기본 해시 이동의 순차 탐색 시작점과 같게) 닻에 포커스 — 옮긴 자리를 흔들지 않게 preventScroll.
+      expect(document.activeElement).toBe(fx);
+      expect(focus.mock.contexts.at(-1)).toBe(fx);
+      expect(focus.mock.calls.at(-1)).toEqual([{ preventScroll: true }]);
+
+      // 같은 칸을 다시 누르면(가로 줄) 기록을 더 쌓지 않고 옮기기만 — 같은 주소로의 이동(브라우저도 바꿔 씀).
+      fireEvent.click(within(strip).getByRole("link", { name: "환율 비교" }));
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(into).toHaveBeenCalledTimes(2);
+      // 가로 줄의 다른 칸 — 그 닻으로 기록 하나 더.
+      fireEvent.click(within(strip).getByRole("link", { name: "신용·변동성" }));
+      expect(push.mock.calls.at(-1)).toEqual([null, "", "#macro-risk"]);
+      expect(document.activeElement).toBe(document.getElementById("macro-risk"));
+      expect(clicks.prevented).toEqual([true, true, true]);
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      push.mockRestore();
+      into.mockRestore();
+      focus.mockRestore();
+    }
+  });
+
+  // QA-680 보강: 고침이 포커스를 절 닻(이름·역할 없는 큰 div, tabIndex -1)에 두었는데, 크롬은 포커스 받는 generic의 접근 이름을 내용 전체로 계산합니다
+  // (머리 없는 크롬 CDP Accessibility.getPartialAXTree — `<div tabindex=-1><h2>환율 비교</h2><p>원달러 1400</p>…<button>자세히</button></div>`를 포커스하면
+  // role generic, name '환율 비교 원달러 1400 자세히', nameSources contents). 낭독기는 포커스가 옮겨 갈 때 그 요소의 이름을 읽으므로 목차를 누를 때마다
+  // 절 전체(매크로 지표 표 전부)를 읽게 됩니다 — 고침 전(기본 해시 이동, 닻은 포커스를 받지 않음)보다 나쁨. 같은 크롬에서 tabindex -1 제목(h2)을
+  // 포커스하면 role heading, name '금리'(제목 글)였습니다. 그래서 포커스는 닻 안 첫 제목(h1~h6)에 두고(옮기기는 그대로 닻 — scroll-margin), 제목이 없을
+  // 때만 닻에 둡니다. 제목에는 그때만 tabindex -1을 붙였다가 포커스가 떠나면 뗍니다(원래 tabindex가 있던 제목은 그대로).
+  // jsdom(dom-accessibility-api)은 generic의 내용 이름을 계산하지 않아 이름 길이로는 못 잡으므로 포커스된 요소가 그 절 제목(역할 heading·이름 = 제목 글)
+  // 인지를 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 포커스가 닻(div)이었습니다. 고침: followHashLink가 닻 안 첫 제목에 tabindex -1을 붙여 포커스하고
+  // 포커스가 떠나면 뗌(제목 링은 globals.css의 base 규칙이 지움 — themeTokens 시험).
+  it("포커스는 닻 안 첫 제목(접근 이름 = 절 제목)에 — 옮기기는 닻, 제목에 붙인 tabindex -1은 포커스가 떠나면 뗀다, 제목 없는 닻은 닻에", () => {
+    const clicks = watchClicks();
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      render(
+        <SectionIndex
+          label="매크로 지표 목차"
+          items={[
+            { id: "macro-fx", label: "환율 비교" },
+            { id: "macro-risk", label: "신용·변동성" },
+            { id: "macro-single", label: "단일 차트" },
+          ]}
+        >
+          <SectionAnchor id="macro-fx">
+            <section aria-labelledby="fx-title">
+              <h2 id="fx-title">환율 비교</h2>
+              <p>원달러 1,400</p>
+              <table>
+                <tbody>
+                  <tr>
+                    <th scope="row">USD</th>
+                    <td>1,400</td>
+                  </tr>
+                </tbody>
+              </table>
+              <button type="button">자세히</button>
+              <h3>세부</h3>
+            </section>
+          </SectionAnchor>
+          <SectionAnchor id="macro-risk">
+            <h2 tabIndex={-1}>신용·변동성</h2>
+            <p>VIX 15</p>
+          </SectionAnchor>
+          <SectionAnchor id="macro-single">제목 없는 절</SectionAnchor>
+        </SectionIndex>,
+      );
+      const column = lists().column;
+      fireEvent.click(within(column).getByRole("link", { name: "환율 비교" }));
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      const fxTitle = screen.getByRole("heading", { name: "환율 비교", level: 2 });
+      expect(into.mock.contexts).toEqual([fx]);
+      // 결함을 직접 보는 단언(수정 전에는 포커스가 닻 div — 크롬에서는 이름이 절 내용 전체).
+      expect(document.activeElement).toBe(fxTitle);
+      expect(fxTitle.getAttribute("tabindex")).toBe("-1");
+
+      // 다른 절로 — 앞 제목에 붙인 tabindex는 떼고, 원래 tabindex가 있던 제목은 그대로 둔다.
+      fireEvent.click(within(column).getByRole("link", { name: "신용·변동성" }));
+      const riskTitle = screen.getByRole("heading", { name: "신용·변동성" });
+      expect(document.activeElement).toBe(riskTitle);
+      expect(fxTitle.hasAttribute("tabindex")).toBe(false);
+      fireEvent.click(within(column).getByRole("link", { name: "단일 차트" }));
+      expect(riskTitle.getAttribute("tabindex")).toBe("-1");
+      // 제목 없는 절은 닻에(Tab이 그 절에서 이어지게).
+      expect(document.activeElement).toBe(document.getElementById("macro-single"));
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      into.mockRestore();
+    }
+  });
+
+  it("가운데 단추·Ctrl·Meta·Shift·Alt 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
+    const clicks = watchClicks();
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      renderIndex({ activeId: null });
+      const link = within(lists().column).getByRole("link", { name: "환율 비교" });
+      const inits = [{ button: 1 }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }];
+      for (const init of inits) fireEvent.click(link, init);
+      expect(clicks.prevented).toEqual(inits.map(() => false));
+      expect(push).not.toHaveBeenCalled();
+      expect(into).not.toHaveBeenCalled();
+      expect(document.activeElement).not.toBe(document.getElementById("macro-fx"));
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      push.mockRestore();
+      into.mockRestore();
+    }
   });
 });

@@ -545,6 +545,38 @@ describe("본문", () => {
     expect(classes).toEqual(expect.arrayContaining(["focus:px-4", "focus:py-2"]));
   });
 
+  // QA-680: 건너뛰기 링크는 보통 링크(<a href="#main">)라 누르면 브라우저 기본 해시 이동이 상태 없는 기록(history.state null)을 쌓았고, Next 앱 라우터는
+  // 뒤로 가기에서 그 기록을 무시해 다른 화면으로 갔다가 돌아오면 주소만 /macro#main이고 화면은 다른 화면에 남았습니다(D3 전 QA 스택 qa@65caf1e8 — 운영본에도
+  // 있던 자리). 건너뛰기는 뒤로 가기에 남길 까닭이 없어 기록·주소를 건드리지 않고 본문으로 옮기기(scrollIntoView)와 포커스만 합니다(기본 해시 이동과 같은
+  // 자리·같은 다음 Tab). 기본 동작이 막혔는지는 창까지 올라온 click에서 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 막지 않아 기본 해시 이동이었습니다.
+  it("건너뛰기 링크는 기록을 쌓지 않고 본문(main#main)으로 옮겨 포커스한다 — 주소 그대로 (QA-680)", () => {
+    const prevented: boolean[] = [];
+    const listener = (event: MouseEvent) => {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    window.addEventListener("click", listener);
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      renderShell(MEMBER_PRO);
+      const before = window.location.href;
+      into.mockClear();
+      fireEvent.click(screen.getByRole("link", { name: "본문으로 건너뛰기" }));
+      expect(prevented).toEqual([true]);
+      expect(push).not.toHaveBeenCalled();
+      expect(window.location.href).toBe(before);
+      const main = screen.getByRole("main");
+      expect(into.mock.contexts).toEqual([main]);
+      expect(document.activeElement).toBe(main);
+    } finally {
+      window.removeEventListener("click", listener);
+      push.mockRestore();
+      into.mockRestore();
+    }
+  });
+
   // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 206~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
   // 왼쪽 메뉴', 2026-11-16 사용자 결정). 뜻(셸 뿌리 한 곳이 폭을 정하고 왼쪽 메뉴·덮개가 읽음)은 그대로입니다.
   it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(기본 220px)로 둔다 — 왼쪽 메뉴와 고정 위치 덮개(정보 검색 아래 시트)가 같은 변수를 읽음", () => {
