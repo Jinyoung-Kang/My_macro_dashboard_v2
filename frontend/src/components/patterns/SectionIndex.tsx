@@ -73,7 +73,9 @@ const ROW_CHILD = "pl-6 text-caption";
 
 /**
  * 개수 — 숫자일 때만(12px tabular-nums 보조 글). 이름 글 바로 뒤라 읽어 주기에서 '지표37'로 붙지 않게 앞에 빈칸 글 마디(flex 줄 안이라 보이지 않음 —
- * 간격은 gap)를 두고 낭독기 전용 괄호로 감쌉니다('지표 (37)' — 보이는 글은 '37').
+ * 간격은 gap)를 두고, 이름에는 낭독기 전용 마디 하나 '(37)'을 넣고 보이는 숫자 '37'은 읽기에서 뺍니다('지표 (37)').
+ * 괄호를 숫자 앞뒤의 낭독기 전용 마디 둘로 나누면 안 됩니다 — Tailwind sr-only는 position:absolute라 크롬이 블록으로 보고 이름 계산에서 조각마다 앞뒤
+ * 빈칸을 넣어 '지표 ( 37 )'이 되었습니다(QA-658 — QA 스택 390~1600).
  * 개수를 읽는 중(`pending`)이면 그 자리에 숫자 두 자리 폭(12px 글의 2ch)의 글 없는 막대를 둡니다 — 개수가 생길 때 가로 줄의 뒤 칸이 밀리지 않게(QA-652 —
  * 매크로 '지표 21'에서 17px). 읽기에서 뺍니다(자리일 뿐 개수가 아님).
  */
@@ -93,9 +95,8 @@ function Count({ count, pending = false }: { count?: number | null; pending?: bo
     <>
       {" "}
       <span className="shrink-0 text-xs tabular-nums text-text-3">
-        <span className="sr-only">(</span>
-        {text}
-        <span className="sr-only">)</span>
+        <span className="sr-only">({text})</span>
+        <span aria-hidden="true">{text}</span>
       </span>
     </>
   );

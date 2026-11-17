@@ -73,13 +73,16 @@ describe("SectionIndex — 값 있음", () => {
     expect(nav().querySelector("[aria-current]")).toBeNull();
   });
 
-  it("개수는 숫자일 때만 — 12px tabular-nums 보조 글(천 단위 쉼표), 링크 이름에는 낭독기 전용 괄호로 '지표 (1,234)'", () => {
+  it("개수는 숫자일 때만 — 12px tabular-nums 보조 글(천 단위 쉼표), 링크 이름에는 낭독기 전용 마디 하나로 '지표 (1,234)'", () => {
     renderIndex({ items: [{ id: "a", label: "지표", count: 1234 }, { id: "b", label: "환율 비교" }], activeId: null });
     const { column } = lists();
     const link = within(column).getByRole("link", { name: "지표 (1,234)" });
-    const count = within(link).getByText("1,234");
+    // 보이는 숫자는 읽기에서 빠지고(aria-hidden), 이름은 낭독기 전용 마디 '(1,234)' 하나가 줍니다(QA-658 — 괄호를 둘로 나누지 않음).
+    const digits = within(link).getByText("1,234");
+    expect(digits.getAttribute("aria-hidden")).toBe("true");
+    const count = digits.parentElement as HTMLElement;
     expect(tokens(count)).toEqual(expect.arrayContaining(["text-xs", "tabular-nums", "text-text-3"]));
-    expect([...count.querySelectorAll(".sr-only")].map((node) => node.textContent)).toEqual(["(", ")"]);
+    expect([...count.querySelectorAll(".sr-only")].map((node) => node.textContent)).toEqual(["(1,234)"]);
     expect(within(column).getByRole("link", { name: "환율 비교" }).textContent).toBe("환율 비교");
   });
 
@@ -250,7 +253,9 @@ describe("SectionIndex — 빈 목록·개수 모름·긴 글", () => {
       activeId: null,
     });
     const { column } = lists();
-    expect(within(column).getAllByRole("link").map((link) => link.textContent)).toEqual(["가", "나", "다", "라 (0)"]);
+    // 이름으로 봅니다(보이는 숫자와 낭독기 전용 마디가 따로라 글 내용은 '라 (0)0' — QA-658). 개수 칸은 0 하나뿐.
+    for (const name of ["가", "나", "다", "라 (0)"]) expect(within(column).getByRole("link", { name })).toBeTruthy();
+    expect(column.querySelectorAll(".tabular-nums")).toHaveLength(1);
   });
 
   it("긴 글은 세로 목록에서 낱말 사이에서 꺾고(break-keep·wrap-anywhere) 말줄임이 없다", () => {
@@ -367,7 +372,7 @@ describe("QA-656 가로 줄의 잰 높이를 문서 루트 --section-strip-h로 
 // sr-only가 인라인으로 남아 기존 시험은 '지표 (21)'로 통과했습니다 — 여기서는 크롬의 계산된 display(block)를 <style>로 흉내 내 같은 빈칸 규칙을 씁니다
 // (dom-accessibility-api도 블록 마디 앞뒤에 빈칸을 넣음). 수정 전(재현 커밋에서는 it.fails)에는 이름이 '지표 ( 1,234 )'이었습니다.
 describe("QA-658 개수가 붙은 칸의 이름은 '지표 (1,234)' — 낭독기 전용 마디가 블록이어도 빈칸이 끼지 않는다", () => {
-  it.fails("sr-only가 블록(크롬의 position:absolute 계산 값)이어도 가로 줄·세로 목록 모두 이름이 '지표 (1,234)'", () => {
+  it("sr-only가 블록(크롬의 position:absolute 계산 값)이어도 가로 줄·세로 목록 모두 이름이 '지표 (1,234)'", () => {
     const style = document.createElement("style");
     style.textContent = ".sr-only{display:block}";
     document.head.appendChild(style);
