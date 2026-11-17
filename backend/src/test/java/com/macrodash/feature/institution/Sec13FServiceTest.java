@@ -275,10 +275,16 @@ class Sec13FServiceTest {
                   {"name":"SAME CO","cusip":"","class":"COM","value":400,"shares":4,"weight":20.0,"ticker":"S-FIRST"},
                   {"name":"SAME CO","cusip":"","class":"COM","value":300,"shares":3,"weight":15.0,"ticker":"S-SECOND"}]}
                 """);
+        // 직전 분기: CUSIP만 같은 두 항목(이름이 다름)과, 이름·CUSIP·클래스가 모두 같은 두 항목(CUSIP 있음·없음 하나씩) — 뒤의 둘은 줄과 노드를
+        // 이름·CUSIP·클래스로 짝지을 때 앞과 뒤가 갈립니다. 계산(HoldingsDiff)은 키마다 마지막 항목을 남기므로 노드도 마지막 항목이어야 합니다.
         JsonNode previous = quarter("""
                 {"reportDate":"2026-03-31","holdings":[
                   {"name":"GONE CORP","cusip":"222222222","class":"COM","value":200,"shares":2,"weight":10.0,"ticker":"G-FIRST"},
-                  {"name":"GONE CORPORATION","cusip":"222222222","class":"COM","value":100,"shares":1,"weight":5.0,"ticker":"G-LAST"}]}
+                  {"name":"GONE CORPORATION","cusip":"222222222","class":"COM","value":100,"shares":1,"weight":5.0,"ticker":"G-LAST"},
+                  {"name":"TWIN CO","cusip":"333333333","class":"COM","value":90,"shares":9,"weight":4.5,"ticker":"W-FIRST"},
+                  {"name":"TWIN CO","cusip":"333333333","class":"COM","value":80,"shares":8,"weight":4.0,"ticker":"W-LAST","tickerNote":"debt"},
+                  {"name":"BLANK CO","cusip":"","class":"COM","value":70,"shares":7,"weight":3.5,"ticker":"B-FIRST","tickerNote":"debt"},
+                  {"name":"BLANK CO","cusip":"","class":"COM","value":60,"shares":6,"weight":3.0,"ticker":"B-LAST"}]}
                 """);
 
         List<Map<String, Object>> rows = service.compareQuarters(current, previous, 10);
@@ -291,7 +297,11 @@ class Sec13FServiceTest {
                         org.assertj.core.groups.Tuple.tuple(400.0, "S-FIRST"),
                         org.assertj.core.groups.Tuple.tuple(300.0, "S-SECOND"));
         List<Map<String, Object>> closed = rows.stream().filter(row -> HoldingsDiff.CLOSED.equals(row.get("action"))).toList();
-        assertThat(closed).as("같은 CUSIP의 전량 매도는 한 줄 — 계산이 남긴 마지막 항목의 이름과 티커").hasSize(1);
-        assertThat(closed.get(0)).containsEntry("name", "GONE CORPORATION").containsEntry("ticker", "G-LAST");
+        assertThat(closed).as("같은 키의 전량 매도는 한 줄 — 계산이 남긴 마지막 항목의 이름과 티커·표시")
+                .extracting(row -> row.get("name"), row -> row.get("ticker"), row -> row.get("tickerNote"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("GONE CORPORATION", "G-LAST", null),
+                        org.assertj.core.groups.Tuple.tuple("TWIN CO", "W-LAST", "debt"),
+                        org.assertj.core.groups.Tuple.tuple("BLANK CO", "B-LAST", null));
     }
 }
