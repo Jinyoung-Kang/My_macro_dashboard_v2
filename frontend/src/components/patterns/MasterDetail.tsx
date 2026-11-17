@@ -197,7 +197,8 @@ export function MasterDetail<T>({
   if (hasPlaceholder) {
     list = <div className="min-w-0">{placeholder}</div>;
   } else if (items.length === 0) {
-    list = <div className="min-w-0 py-1 text-sm text-text-2">{emptyText}</div>;
+    // 안내 글은 낱말 사이에서 꺾습니다(공용 글 부품의 break-keep 규약 — 공백 없는 긴 글은 비상으로 꺾음, QA-661).
+    list = <div className="min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere">{emptyText}</div>;
   } else {
     list = (
       <ul aria-label={label} {...{ [SHELL_LIST_ATTR]: "" }} onKeyDown={onListKeyDown} className="flex min-w-0 flex-col">
@@ -235,14 +236,17 @@ export function MasterDetail<T>({
   return (
     <div ref={frameRef} className="@container min-w-0">
       {countText !== null && !hasPlaceholder ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
-      <div className={`grid min-w-0 gap-3 ${inline ? "@lg:grid-cols-[minmax(0,1fr)_15rem]" : ""}`.trim()}>
+      {/* 두 칸 격자는 검사 칸이 서거나(줄이 있음) 자리표시가 그 자리를 잡을 때만 — 줄이 없으면 검사 칸이 없어 안내 글이 왼쪽 칸에 갇히고 오른쪽 15rem이
+          비었습니다(QA-661). 읽는 중·오류 자리표시는 값이 온 뒤의 목록 폭과 같게 두 칸 그대로(QA-651). */}
+      <div className={`grid min-w-0 gap-3 ${inline && (hasPlaceholder || items.length > 0) ? "@lg:grid-cols-[minmax(0,1fr)_15rem]" : ""}`.trim()}>
         {list}
         {inline && !hasPlaceholder && items.length > 0 ? (
           // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 목록 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
+          // 긴 화면 목차의 가로 줄이 보이면 그 줄 아래 16px에 붙습니다(--section-strip-h — 목차가 적는 잰 줄 높이, 없으면 0 — QA-657, InspectorFrame과 같음).
           <section
             id={inspectorId}
             aria-label={`${label} — ${currentItem !== null && currentItem !== undefined ? itemLabel(currentItem) : "고른 줄 없음"}`}
-            className="min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-4"
+            className="min-w-0 self-start rounded-control border border-border p-3 @lg:sticky @lg:top-[calc(var(--section-strip-h,0px)+1rem)]"
           >
             {currentItem !== null && currentItem !== undefined ? (
               <>

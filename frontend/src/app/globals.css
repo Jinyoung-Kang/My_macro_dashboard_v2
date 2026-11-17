@@ -249,22 +249,25 @@
   }
 
   /* 긴 화면 목차(components/patterns SectionIndex)의 가로 줄은 columnFrom 미만에서 본문 위에 불투명하게 붙어 따라옵니다 — 좁은 화면은 창(html)
-     맨 위 45px(칸 44px + 아래 선 1px), lg~columnFrom(xl·2xl)은 본문 스크롤 상자(#main) 맨 위 31px(30px + 1px). Tab으로 위로 옮긴 포커스가 그 줄 밑에
-     숨지 않게 그만큼 위쪽 스크롤 여백을 둡니다(WCAG 2.4.11 — QA-643). 목차가 그려진 화면에서만(내비의 표지 data-section-index-bar = columnFrom).
+     맨 위, lg~columnFrom(xl·2xl)은 본문 스크롤 상자(#main) 맨 위. Tab으로 위로 옮긴 포커스가 그 줄 밑에 숨지 않게 그만큼 위쪽 스크롤 여백을 둡니다
+     (WCAG 2.4.11 — QA-643). 목차가 그려진 화면에서만(내비의 표지 data-section-index-bar = columnFrom).
+     높이는 잰 줄 높이(--section-strip-h — 목차가 문서 루트에 적음, hooks/useSectionStripHeight)이고, 재기 전에는 기본 45px(칸 44px + 아래 선 1px)·
+     31px(30px + 1px)입니다. 고전 스크롤 막대를 그리는 브라우저에서 칸이 넘치면 줄 안에 가로 막대(10px)가 서서 줄이 그만큼 높아지므로 상수로 두지
+     않습니다(QA-656). 옆 검사 칸의 sticky 위치(InspectorFrame·MasterDetail)도 이 높이를 씁니다(줄 아래 16px — QA-657).
      절 닻의 scroll-margin(SectionAnchor)은 이 여백 위에 더해지므로 줄 아래 간격(12px)만 둡니다. */
   @media (width < 64rem) {
     html:has([data-section-index-bar]) {
-      scroll-padding-top: 45px;
+      scroll-padding-top: var(--section-strip-h, 45px);
     }
   }
   @media (64rem <= width < 80rem) {
     #main:has([data-section-index-bar="xl"]) {
-      scroll-padding-top: 31px;
+      scroll-padding-top: var(--section-strip-h, 31px);
     }
   }
   @media (64rem <= width < 96rem) {
     #main:has([data-section-index-bar="2xl"]) {
-      scroll-padding-top: 31px;
+      scroll-padding-top: var(--section-strip-h, 31px);
     }
   }
 }

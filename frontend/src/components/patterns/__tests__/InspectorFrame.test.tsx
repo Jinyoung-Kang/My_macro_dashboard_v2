@@ -25,6 +25,13 @@ const ROWS: Indicator[] = [
   { key: "vix", name: "VIX", value: "15.30" },
 ];
 
+/** 배치 전환 시험용(QA-660) — 이름 = 키. */
+const ABC: Indicator[] = [
+  { key: "a", name: "a", value: "1.00" },
+  { key: "b", name: "b", value: "2.00" },
+  { key: "c", name: "c", value: "3.00" },
+];
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -147,12 +154,14 @@ describe("InspectorFrame — 옆 검사 칸(넓은 화면·넓은 틀)", () => {
     const grid = (container.firstElementChild as HTMLElement).firstElementChild as HTMLElement;
     expect(tokens(container.firstElementChild as HTMLElement)).toEqual(expect.arrayContaining(["@container", "min-w-0"]));
     expect(tokens(grid)).toContain("@lg:grid-cols-[minmax(0,1fr)_15rem]");
-    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(expect.arrayContaining(["self-start", "border", "border-border", "p-3", "@lg:sticky", "@lg:top-4"]));
+    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(
+      expect.arrayContaining(["self-start", "border", "border-border", "p-3", "@lg:sticky", "@lg:top-[calc(var(--section-strip-h,0px)+1rem)]"]),
+    );
     unmount();
     const wide = renderFrame({ layout: "lg" });
     const lgGrid = (wide.container.firstElementChild as HTMLElement).firstElementChild as HTMLElement;
     expect(tokens(lgGrid)).toContain("@min-[52rem]:grid-cols-[minmax(0,1fr)_18rem]");
-    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(expect.arrayContaining(["@min-[52rem]:sticky", "@min-[52rem]:top-4"]));
+    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(expect.arrayContaining(["@min-[52rem]:sticky", "@min-[52rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
   });
 
   it("defaultKey — 아무것도 고르지 않았으면 그 키를 보이고 콜백은 부르지 않는다, 사용자가 고르면 그 줄·콜백", () => {
@@ -334,6 +343,92 @@ describe("InspectorFrame — 배치가 바뀔 때", () => {
     expect((inspectorRegion() as HTMLElement)).toBeTruthy();
     expect(trigger("VIX").getAttribute("aria-haspopup")).toBeNull();
   });
+
+  // QA-660: 대화상자 배치에서 옆 칸 배치로 바뀔 때 열려 있는 대화상자의 키만 넘겼습니다 — Esc로 닫은 뒤(포커스는 그 줄 단추) 넓히면 앞서 고른 키나 defaultKey가
+  // 남아 포커스 링(대화상자로 본 줄)과 고른 행·검사 칸이 갈라졌습니다(P5a QA — /macro 1024 메뉴 220 '브렌트유' 대화상자 → Esc → 1440: 검사 칸은 첫 지표).
+  // 목록-검사(MasterDetail)의 QA-590 규칙과 같게, 열린 대화상자가 없으면 포커스가 있는 줄 단추의 키를 고릅니다. 수정 전(재현 커밋에서는 it.fails)에는
+  // 검사 칸 제목이 기본 키 'a'였고 콜백이 불리지 않았습니다.
+  it("좁은 틀에서 대화상자로 본 줄을 Esc로 닫고(포커스는 그 단추) 넓히면 그 줄을 고른다 — 기본 키가 아니라 'c', 콜백 한 번 (QA-660)", async () => {
+    stubWide();
+    const frame = stubFrameWidth(434);
+    const onChange = vi.fn();
+    renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+    fireEvent.click(trigger("c"));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "c" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(trigger("c")));
+    frame.resize(906);
+    const region = screen.getByRole("region", { name: "지표 미리보기 — c" });
+    expect(within(region).getByRole("heading", { level: 3, name: "c" })).toBeTruthy();
+    expect(trigger("c").getAttribute("aria-current")).toBe("true");
+    expect(trigger("a").getAttribute("aria-current")).toBeNull();
+    expect(onChange.mock.calls).toEqual([["c"]]);
+  });
+
+  it("대화상자를 닫은 뒤 포커스를 틀 밖으로 옮기고 넓히면 기본 키 그대로 — 콜백 없음 (QA-660)", async () => {
+    stubWide();
+    const frame = stubFrameWidth(434);
+    const onChange = vi.fn();
+    const outside = document.createElement("button");
+    outside.textContent = "틀 밖";
+    document.body.appendChild(outside);
+    try {
+      renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+      fireEvent.click(trigger("c"));
+      fireEvent.keyDown(screen.getByRole("dialog", { name: "c" }), { key: "Escape" });
+      await waitFor(() => expect(document.activeElement).toBe(trigger("c")));
+      outside.focus();
+      frame.resize(906);
+      expect(screen.getByRole("region", { name: "지표 미리보기 — a" })).toBeTruthy();
+      expect(trigger("a").getAttribute("aria-current")).toBe("true");
+      expect(trigger("c").getAttribute("aria-current")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("옆 칸에서 고른 뒤 Esc로 풀고 줄을 건드리지 않은 채 좁혔다 넓히면 '고른 줄 없음' 그대로 — 다시 고르지 않는다 (QA-660)", () => {
+    stubWide();
+    const frame = stubFrameWidth(906);
+    const onChange = vi.fn();
+    renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+    fireEvent.click(trigger("c"));
+    fireEvent.keyDown(trigger("c"), { key: "Escape" });
+    expect(document.activeElement).toBe(trigger("c"));
+    expect(screen.getByRole("region", { name: "지표 미리보기 — 고른 줄 없음" })).toBeTruthy();
+    frame.resize(434);
+    frame.resize(906);
+    expect(screen.getByRole("region", { name: "지표 미리보기 — 고른 줄 없음" })).toBeTruthy();
+    expect(ABC.map((row) => trigger(row.name).getAttribute("aria-current"))).toEqual([null, null, null]);
+    expect(onChange.mock.calls).toEqual([["c"], [null]]);
+  });
+
+  // QA-660 후속: 위 고침이 목록-검사의 조건('직전에 보이던 키가 있으면 포커스 줄을 따라감')을 그대로 옮겨, 옆 칸에서 Tab으로 줄 단추에 포커스만 둔 채(누르지
+  // 않음) 폭만 왕복해도(창 1440 → 1024 → 1440·'[' 두 번) 그 줄이 골라지고 콜백이 불렸습니다(고침 검토 — 자기 빌드 /macro 1024 레일, 미리보기 '달러 인덱스
+  // (DXY)'(기본 키)에서 '미국채 10년물 수익률(%)'에 포커스만 → '[' 두 번: 검사 칸이 미국채 10년물로, 08e3d838은 DXY 그대로). 이 틀의 옆 칸에서는 Tab이
+  // 고르지 않으므로 포커스 줄과 보이는 줄이 다른 것이 정상입니다. 수정 전(재현 커밋에서는 it.fails)에는 검사 칸이 'c'였고 콜백 [['c']]이 불렸습니다.
+  it("옆 칸에서 Tab으로 줄 단추에 포커스만 두고(누르지 않음) 좁혔다 넓히면 보이던 키(기본 키·앞서 고른 키) 그대로 — 콜백 없음 (QA-660 후속)", () => {
+    stubWide();
+    const frame = stubFrameWidth(906);
+    const onChange = vi.fn();
+    renderFrame({ rows: ABC, layout: "lg", defaultKey: "a", onSelectedKeyChange: onChange });
+    // 기본 키 'a'가 보이는 옆 칸 — 'c' 단추에 포커스만.
+    act(() => trigger("c").focus());
+    frame.resize(434);
+    frame.resize(906);
+    expect(screen.getByRole("region", { name: "지표 미리보기 — a" })).toBeTruthy();
+    expect(ABC.map((row) => trigger(row.name).getAttribute("aria-current"))).toEqual(["true", null, null]);
+    expect(onChange).not.toHaveBeenCalled();
+    // 'b'를 누른 뒤 'c'에 포커스만 두고 좁혔다 넓혀도 'b' 그대로.
+    fireEvent.click(trigger("b"));
+    act(() => trigger("c").focus());
+    frame.resize(434);
+    frame.resize(906);
+    expect(screen.getByRole("region", { name: "지표 미리보기 — b" })).toBeTruthy();
+    expect(ABC.map((row) => trigger(row.name).getAttribute("aria-current"))).toEqual([null, "true", null]);
+    expect(onChange.mock.calls).toEqual([["b"]]);
+  });
 });
 
 describe("InspectorFrame — 자리표시·누름 자리·강조색", () => {
@@ -418,5 +513,24 @@ describe("QA-642 검사 칸 안에서 Esc로 고름을 풀면 포커스가 고�
     expect(handled).toBe(false);
     expect(screen.getByRole("region", { name: "지표 미리보기 — 고른 줄 없음" })).toBeTruthy();
     expect(document.activeElement).toBe(trigger("달러 인덱스"));
+  });
+});
+
+// QA-657: 옆 검사 칸은 스크롤 영역 위쪽 16px(top-4)에 붙었는데, 같은 스크롤 상자 맨 위에 긴 화면 목차의 가로 줄(SectionIndex — 31px, z-20, 불투명)이
+// 붙는 폭(/macro 1024 레일·1280~1535)에서는 검사 칸 위 15px(위 테두리·안쪽 여백)이 줄 밑에 가려졌습니다(P5a QA — 검사 칸 위 끝 64px, 줄 48~79px).
+// 이제 검사 칸은 목차가 문서 루트에 적는 잰 줄 높이(--section-strip-h, 없으면 0) 아래 16px에 붙습니다. 수정 전(재현 커밋에서는 it.fails)에는 top-4였습니다.
+// jsdom은 크기 질의·sticky를 계산하지 않아 클래스로 봅니다(브라우저 값은 진행 기록).
+describe("QA-657 옆 검사 칸은 목차 가로 줄 아래 16px에 붙는다", () => {
+  it("md·lg 배치 모두 sticky top이 calc(var(--section-strip-h,0px)+1rem) — top-4가 아니다", () => {
+    stubWide();
+    const md = renderFrame();
+    const mdTokens = tokens(inspectorRegion() as HTMLElement);
+    expect(mdTokens).toEqual(expect.arrayContaining(["@lg:sticky", "@lg:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
+    expect(mdTokens).not.toContain("@lg:top-4");
+    md.unmount();
+    renderFrame({ layout: "lg" });
+    const lgTokens = tokens(inspectorRegion() as HTMLElement);
+    expect(lgTokens).toEqual(expect.arrayContaining(["@min-[52rem]:sticky", "@min-[52rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
+    expect(lgTokens).not.toContain("@min-[52rem]:top-4");
   });
 });

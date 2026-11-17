@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, type JSX, type ReactNode } from "react";
+import { useEffect, useRef, type JSX, type ReactNode } from "react";
 
 import { FOCUS_RING, SKELETON_BAR, underlineTabClasses } from "@/components/ui/classes";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { useSectionSpy } from "@/hooks/useSectionSpy";
+import { useSectionStripHeight } from "@/hooks/useSectionStripHeight";
 import { sectionCountText, sectionOrder, sectionParent, type SectionIndexItem, type SectionIndexLeaf } from "@/lib/sectionIndex";
 
 export type { SectionIndexItem, SectionIndexLeaf };
@@ -48,8 +49,8 @@ const COLUMN: Record<ColumnFrom, string> = {
 };
 
 /**
- * 절 닻 — 가로 줄이 보이는 폭(columnFrom 미만)은 스크롤 상자의 위쪽 여백(globals.css — 줄 높이 45·31px, QA-643) 위에 줄 아래 간격 12px만 더하고,
- * 세로 목록 폭에서는 16px. 그래서 목차로 옮긴 절 머리는 줄 바로 아래 12px에 옵니다(390 57px·1024 #main 위 43px).
+ * 절 닻 — 가로 줄이 보이는 폭(columnFrom 미만)은 스크롤 상자의 위쪽 여백(globals.css — 잰 줄 높이(기본 45·31px, 고전 가로 막대가 서면 +10px), QA-643·
+ * QA-656) 위에 줄 아래 간격 12px만 더하고, 세로 목록 폭에서는 16px. 그래서 목차로 옮긴 절 머리는 줄 바로 아래 12px에 옵니다(390 57px·1024 #main 위 43px).
  */
 const ANCHOR: Record<ColumnFrom, string> = {
   lg: "min-w-0 scroll-mt-3 lg:scroll-mt-4",
@@ -72,7 +73,9 @@ const ROW_CHILD = "pl-6 text-caption";
 
 /**
  * 개수 — 숫자일 때만(12px tabular-nums 보조 글). 이름 글 바로 뒤라 읽어 주기에서 '지표37'로 붙지 않게 앞에 빈칸 글 마디(flex 줄 안이라 보이지 않음 —
- * 간격은 gap)를 두고 낭독기 전용 괄호로 감쌉니다('지표 (37)' — 보이는 글은 '37').
+ * 간격은 gap)를 두고, 이름에는 낭독기 전용 마디 하나 '(37)'을 넣고 보이는 숫자 '37'은 읽기에서 뺍니다('지표 (37)').
+ * 괄호를 숫자 앞뒤의 낭독기 전용 마디 둘로 나누면 안 됩니다 — Tailwind sr-only는 position:absolute라 크롬이 블록으로 보고 이름 계산에서 조각마다 앞뒤
+ * 빈칸을 넣어 '지표 ( 37 )'이 되었습니다(QA-658 — QA 스택 390~1600).
  * 개수를 읽는 중(`pending`)이면 그 자리에 숫자 두 자리 폭(12px 글의 2ch)의 글 없는 막대를 둡니다 — 개수가 생길 때 가로 줄의 뒤 칸이 밀리지 않게(QA-652 —
  * 매크로 '지표 21'에서 17px). 읽기에서 뺍니다(자리일 뿐 개수가 아님).
  */
@@ -92,9 +95,8 @@ function Count({ count, pending = false }: { count?: number | null; pending?: bo
     <>
       {" "}
       <span className="shrink-0 text-xs tabular-nums text-text-3">
-        <span className="sr-only">(</span>
-        {text}
-        <span className="sr-only">)</span>
+        <span className="sr-only">({text})</span>
+        <span aria-hidden="true">{text}</span>
       </span>
     </>
   );
@@ -118,6 +120,36 @@ function PendingChildren({ count }: { count?: number }): JSX.Element | null {
   );
 }
 
+/** 주소 해시('#…' 또는 '')의 id — 잘못된 % 꼴이면 null(목차 칸이 아님). */
+function hashId(hash: string): string | null {
+  try {
+    return decodeURIComponent(hash.slice(1));
+  } catch {
+    return null;
+  }
+}
+
+/** 주소 글의 해시('#…' 또는 '') — 읽지 못하면 ''. */
+function urlHash(url: string): string {
+  try {
+    return new URL(url).hash;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 요소를 담은 가장 가까운 요소 스크롤 상자 — 세로 넘침이 auto·scroll이고 실제로 넘치는 조상(넓은 화면의 본문 #main). 창이 스크롤하면(좁은 화면 —
+ * #main은 넘침 visible) null.
+ */
+function scrollBoxOf(element: Element | null): Element | null {
+  for (let box = element?.parentElement ?? null; box !== null && box !== document.body && box !== document.documentElement; box = box.parentElement) {
+    const overflow = window.getComputedStyle(box).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && box.scrollHeight > box.clientHeight) return box;
+  }
+  return null;
+}
+
 function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "current" | "open" | "rest"; child: boolean }): JSX.Element {
   const tone = state === "current" ? ROW_CURRENT : state === "open" ? ROW_OPEN : ROW_REST;
   return (
@@ -137,6 +169,12 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  * - 칸은 같은 화면 절 링크(`<a href="#id">` — 스크롤은 즉시, 부드러운 스크롤 없음)이고 지금 칸은 aria-current="location"입니다. 가로 줄에서는 지금 절의
  *   첫 단계 칸이 지금 칸입니다(하위 칸이 지금이어도). 개수(`count`)는 숫자일 때만 보입니다(모르면 자리 없음 — 0으로 채우지 않음). 개수를 읽는 중
  *   (`pendingCount`)이면 숫자 두 자리 폭의 글 없는 막대로 자리를 잡습니다(읽기에서 뺌 — QA-652).
+ * - 뒤로·앞으로 가기로 주소의 해시가 목차 칸(하위 칸 포함)으로 바뀌면(hashchange) 그 절 닻으로 옮깁니다(scrollIntoView — 즉시, 닻의 scroll-margin과
+ *   스크롤 상자의 위쪽 여백을 따름). 넓은 화면은 본문(#main)이 스크롤 상자라 크롬의 같은 문서 기록 이동이 연속 이동의 첫 번째 뒤로는 창 위치만 되돌려
+ *   본문이 움직이지 않았습니다(QA-659). 목차 칸 해시에서 해시 없는 기록(처음 연 주소)으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이 있던 마지막
+ *   자리로(모르면 맨 위) 되돌립니다 — 크롬은 이때도 본문 스크롤 상자를 되돌리지 않아 넓은 화면은 주소만 바뀌고 본문이 옮긴 절에 남았습니다(QA-659 후속,
+ *   좁은 화면은 창이 스크롤 상자라 브라우저가 되돌림 — 그대로 둠). 목차 밖 해시(#main 등)는 보지 않습니다. 새로 고침·바로 열기의 해시 맞춤은 여기서
+ *   하지 않습니다(P6·P7).
  * - 지금 절: `activeId`를 주면 그 값(제어 — 시험·화면이 정함), 주지 않으면 `hooks/useSectionSpy`(뷰포트 위 96px 아래 ~ 34% 띠에 걸친 절 — 하위 칸이 부모보다 앞,
  *   스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절 — QA-645, 규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는
  *   지금 칸이 없습니다.
@@ -169,6 +207,51 @@ export function SectionIndex({
   const activeTop = openParent ?? (items.some((item) => item.id === active) ? active : null);
   const stripRef = useRef<HTMLUListElement>(null);
   useScrollStripActive(stripRef, activeTop);
+  // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백·옆 검사 칸의 sticky 위치가 읽음 — QA-656·657).
+  useSectionStripHeight(stripRef, items.map((item) => item.id).join("\n"));
+  // 뒤로·앞으로 가기(hashchange)로 해시가 목차 칸이 되면 그 닻으로, 목차 칸 해시에서 해시 없는 기록으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이
+  // 있던 마지막 자리로(QA-659). 배열의 참조가 그릴 때마다 바뀌어도 같은 목록이면 다시 걸지 않게 글 하나로 묶습니다(useSectionSpy와 같음 — id에는 줄바꿈이 없음).
+  const orderKey = order.join("\n");
+  useEffect(() => {
+    if (orderKey === "") return undefined;
+    const ids = orderKey.split("\n");
+    const known = new Set(ids);
+    // 해시 없는 기록에 있는 동안 닻을 담은 요소 스크롤 상자(넓은 화면의 #main)의 마지막 자리 — 창 스크롤은 브라우저가 되돌리므로 적지 않습니다. 목차로
+    // 옮기면 주소가 먼저 바뀌고 그 스크롤은 뒤에 오므로(scroll 이벤트는 다음 그리기 때) 옮긴 자리는 적히지 않습니다.
+    let topWithoutHash: { box: Element; top: number } | null = null;
+    const onScroll = (event: Event) => {
+      if (window.location.hash !== "") return;
+      const box = event.target;
+      if (!(box instanceof Element) || !box.contains(document.getElementById(ids[0]))) return;
+      topWithoutHash = { box, top: box.scrollTop };
+    };
+    const onHashChange = (event: HashChangeEvent) => {
+      const id = hashId(window.location.hash);
+      if (id !== null && known.has(id)) {
+        document.getElementById(id)?.scrollIntoView();
+        return;
+      }
+      // 해시 없는 기록으로 돌아옴. 크롬은 같은 문서 기록 이동에서 창 위치만 되돌리고 요소 스크롤 상자는 그대로 두어, 넓은 화면은 주소만 바뀌고 본문이
+      // 옮긴 절에 남았습니다. 창이 스크롤하는 폭(좁은 화면 — 요소 스크롤 상자 없음)은 브라우저가 되돌린 자리를 그대로 둡니다.
+      if (window.location.hash !== "") return;
+      const box = scrollBoxOf(document.getElementById(ids[0]));
+      if (box === null) return;
+      const left = hashId(urlHash(event.oldURL));
+      if (left !== null && known.has(left)) {
+        // 목차 칸 해시에서 — 해시 없이 있던 자리로, 모르면 맨 위(빈 해시가 가리키는 문서 맨 위).
+        box.scrollTop = topWithoutHash !== null && topWithoutHash.box === box ? topWithoutHash.top : 0;
+      } else {
+        // 목차 밖 해시(#main 등)에서 — 건드리지 않고, 지금 자리를 해시 없는 기록의 자리로 적습니다(그 해시에서 내린 자리는 위 scroll에서 적히지 않음).
+        topWithoutHash = { box, top: box.scrollTop };
+      }
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("hashchange", onHashChange);
+    return () => {
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, [orderKey]);
 
   const body = <div className="flex min-w-0 flex-col gap-4 lg:gap-6">{children}</div>;
   if (items.length === 0) {
@@ -176,7 +259,7 @@ export function SectionIndex({
   }
   return (
     <div className={FRAME[columnFrom]}>
-      {/* data-section-index-bar — 가로 줄이 보이는 폭의 스크롤 상자에 줄 높이만큼 위쪽 스크롤 여백을 두는 전역 규칙(globals.css, QA-643)의 표지. */}
+      {/* data-section-index-bar — 가로 줄이 보이는 폭의 스크롤 상자에 줄 높이(잰 값 --section-strip-h — QA-656)만큼 위쪽 스크롤 여백을 두는 전역 규칙(globals.css, QA-643)의 표지. */}
       <nav aria-label={label} data-section-index-bar={columnFrom} className={NAV[columnFrom]}>
         <ul ref={stripRef} className={STRIP[columnFrom]}>
           {items.map((item) => {
@@ -216,8 +299,8 @@ export function SectionIndex({
 }
 
 /**
- * 절 닻 — 목차가 가리키는 절 하나(id = 목차 칸 id). 가로 줄 밑에 절 머리가 숨지 않게 스크롤 상자의 위쪽 여백(줄 높이 — QA-643) 위에 12px scroll-margin을
- * 두고, 세로 목록 폭(columnFrom 이상)에서는 16px.
+ * 절 닻 — 목차가 가리키는 절 하나(id = 목차 칸 id). 가로 줄 밑에 절 머리가 숨지 않게 스크롤 상자의 위쪽 여백(잰 줄 높이(기본 45·31px, 고전 가로 막대가
+ * 서면 +10px) — QA-643·QA-656) 위에 12px scroll-margin을 두고, 세로 목록 폭(columnFrom 이상)에서는 16px.
  * 목차와 같은 `columnFrom`을 넘깁니다. 자료가 오기 전에도 늘 그립니다(해시 주소의 이동이 첫 그림에서 닿게).
  */
 export function SectionAnchor({ id, columnFrom = "lg", children }: { id: string; columnFrom?: ColumnFrom; children: ReactNode }): JSX.Element {

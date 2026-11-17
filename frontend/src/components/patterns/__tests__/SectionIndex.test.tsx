@@ -73,13 +73,16 @@ describe("SectionIndex — 값 있음", () => {
     expect(nav().querySelector("[aria-current]")).toBeNull();
   });
 
-  it("개수는 숫자일 때만 — 12px tabular-nums 보조 글(천 단위 쉼표), 링크 이름에는 낭독기 전용 괄호로 '지표 (1,234)'", () => {
+  it("개수는 숫자일 때만 — 12px tabular-nums 보조 글(천 단위 쉼표), 링크 이름에는 낭독기 전용 마디 하나로 '지표 (1,234)'", () => {
     renderIndex({ items: [{ id: "a", label: "지표", count: 1234 }, { id: "b", label: "환율 비교" }], activeId: null });
     const { column } = lists();
     const link = within(column).getByRole("link", { name: "지표 (1,234)" });
-    const count = within(link).getByText("1,234");
+    // 보이는 숫자는 읽기에서 빠지고(aria-hidden), 이름은 낭독기 전용 마디 '(1,234)' 하나가 줍니다(QA-658 — 괄호를 둘로 나누지 않음).
+    const digits = within(link).getByText("1,234");
+    expect(digits.getAttribute("aria-hidden")).toBe("true");
+    const count = digits.parentElement as HTMLElement;
     expect(tokens(count)).toEqual(expect.arrayContaining(["text-xs", "tabular-nums", "text-text-3"]));
-    expect([...count.querySelectorAll(".sr-only")].map((node) => node.textContent)).toEqual(["(", ")"]);
+    expect([...count.querySelectorAll(".sr-only")].map((node) => node.textContent)).toEqual(["(1,234)"]);
     expect(within(column).getByRole("link", { name: "환율 비교" }).textContent).toBe("환율 비교");
   });
 
@@ -250,7 +253,9 @@ describe("SectionIndex — 빈 목록·개수 모름·긴 글", () => {
       activeId: null,
     });
     const { column } = lists();
-    expect(within(column).getAllByRole("link").map((link) => link.textContent)).toEqual(["가", "나", "다", "라 (0)"]);
+    // 이름으로 봅니다(보이는 숫자와 낭독기 전용 마디가 따로라 글 내용은 '라 (0)0' — QA-658). 개수 칸은 0 하나뿐.
+    for (const name of ["가", "나", "다", "라 (0)"]) expect(within(column).getByRole("link", { name })).toBeTruthy();
+    expect(column.querySelectorAll(".tabular-nums")).toHaveLength(1);
   });
 
   it("긴 글은 세로 목록에서 낱말 사이에서 꺾고(break-keep·wrap-anywhere) 말줄임이 없다", () => {
@@ -326,10 +331,209 @@ describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크�
     renderIndex({ columnFrom: "xl" });
     expect(screen.getByRole("navigation", { name: "매크로 지표 목차" }).getAttribute("data-section-index-bar")).toBe("xl");
     const css = readFileSync(resolve(__dirname, "../../../app/globals.css"), "utf8");
-    expect(css).toMatch(/@media \(width < 64rem\) \{\s*html:has\(\[data-section-index-bar\]\) \{\s*scroll-padding-top: 45px;/);
-    expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: 31px;/);
+    // 높이는 잰 줄 높이(--section-strip-h — QA-656), 재기 전에는 기본 45·31px.
+    expect(css).toMatch(/@media \(width < 64rem\) \{\s*html:has\(\[data-section-index-bar\]\) \{\s*scroll-padding-top: var\(--section-strip-h, 45px\);/);
+    expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: var\(--section-strip-h, 31px\);/);
     // 2xl(결정 7 — 매크로): 가로 줄이 lg~2xl(1024~1535)에 보이므로 그 폭 전체에 같은 여백.
-    expect(css).toMatch(/@media \(64rem <= width < 96rem\) \{\s*#main:has\(\[data-section-index-bar="2xl"\]\) \{\s*scroll-padding-top: 31px;/);
+    expect(css).toMatch(/@media \(64rem <= width < 96rem\) \{\s*#main:has\(\[data-section-index-bar="2xl"\]\) \{\s*scroll-padding-top: var\(--section-strip-h, 31px\);/);
+  });
+});
+
+// QA-656: 스크롤 상자의 위쪽 여백(QA-643)을 줄 높이 상수(45·31px)로 두었는데, 고전 스크롤 막대를 그리는 브라우저에서 칸이 넘치면 가로 줄 안에 10px 막대가
+// 서서 줄이 31→41px(좁은 화면 45→55px)이 되었습니다 — Shift+Tab으로 위로 옮긴 포커스가 줄 밑에 최대 10px 가려짐(P5a QA — 1024x768 메뉴 272 /macro).
+// 이제 목차가 가로 줄의 잰 높이(offsetHeight — 아래 선·가로 막대 포함)를 문서 루트의 --section-strip-h로 적고, 전역 규칙이 그 값을 씁니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 변수를 적지 않아 ''이었습니다. jsdom은 배치를 하지 않아 줄 높이와 ResizeObserver를 대역으로 줍니다.
+describe("QA-656 가로 줄의 잰 높이를 문서 루트 --section-strip-h로 적는다", () => {
+  it("줄 높이가 41px(가로 막대가 섬)이 되어 ResizeObserver가 울리면 '41px', 화면을 떠나면 지운다", () => {
+    let callback: () => void = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          callback = cb;
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const root = document.documentElement;
+    const { unmount } = renderIndex({ activeId: null });
+    Object.defineProperty(lists().strip, "offsetHeight", { configurable: true, value: 41 });
+    act(() => callback());
+    expect(root.style.getPropertyValue("--section-strip-h")).toBe("41px");
+    unmount();
+    expect(root.style.getPropertyValue("--section-strip-h")).toBe("");
+  });
+});
+
+// QA-658: 개수의 괄호를 숫자 앞뒤의 낭독기 전용 마디 둘('(' · ')')로 나눠 두었는데, Tailwind sr-only는 position:absolute라 크롬은 그 마디를 블록으로 보고
+// 이름 계산에서 앞뒤에 빈칸을 넣어 링크 이름이 '지표 ( 21 )'이었습니다(P5a QA — QA 스택 390~1600 Accessibility 트리). jsdom은 Tailwind CSS를 읽지 않아
+// sr-only가 인라인으로 남아 기존 시험은 '지표 (21)'로 통과했습니다 — 여기서는 크롬의 계산된 display(block)를 <style>로 흉내 내 같은 빈칸 규칙을 씁니다
+// (dom-accessibility-api도 블록 마디 앞뒤에 빈칸을 넣음). 수정 전(재현 커밋에서는 it.fails)에는 이름이 '지표 ( 1,234 )'이었습니다.
+describe("QA-658 개수가 붙은 칸의 이름은 '지표 (1,234)' — 낭독기 전용 마디가 블록이어도 빈칸이 끼지 않는다", () => {
+  it("sr-only가 블록(크롬의 position:absolute 계산 값)이어도 가로 줄·세로 목록 모두 이름이 '지표 (1,234)'", () => {
+    const style = document.createElement("style");
+    style.textContent = ".sr-only{display:block}";
+    document.head.appendChild(style);
+    try {
+      renderIndex({ items: [{ id: "a", label: "지표", count: 1234 }], activeId: null });
+      const { strip, column } = lists();
+      expect(within(strip).getByRole("link", { name: "지표 (1,234)" })).toBeTruthy();
+      expect(within(column).getByRole("link", { name: "지표 (1,234)" })).toBeTruthy();
+    } finally {
+      style.remove();
+    }
+  });
+});
+
+// QA-659: 넓은 화면(lg 이상)은 본문(#main)이 스크롤 상자라, 목차로 옮긴 뒤 뒤로·앞으로 가기를 하면 크롬이 연속 기록 이동의 첫 번째 뒤로는 창(루트) 위치만
+// 되돌려 주소의 해시만 바뀌고 본문 스크롤·지금 칸은 그대로였습니다(P5a QA — /macro 1440 둘째 뒤로 가기에서 절 위 끝 −1,708px). 이제 목차가 hashchange를
+// 듣고 해시가 목차 칸이면 그 닻으로 옮깁니다. 수정 전(재현 커밋에서는 it.fails)에는 scrollIntoView를 부르지 않았습니다(0번).
+describe("QA-659 뒤로·앞으로 가기로 해시가 목차 칸이 되면 그 절로 옮긴다", () => {
+  it("hashchange에서 해시가 목차 칸이면 그 닻의 scrollIntoView를 한 번 — 목차 밖 해시(#main)는 부르지 않는다", () => {
+    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      render(
+        <SectionIndex label="목차" items={[{ id: "a", label: "가" }, { id: "b", label: "나" }]} activeId={null}>
+          <SectionAnchor id="a">가 절</SectionAnchor>
+          <SectionAnchor id="b">나 절</SectionAnchor>
+        </SectionIndex>,
+      );
+      window.history.pushState(null, "", "#b");
+      act(() => {
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      });
+      expect(scroll).toHaveBeenCalledTimes(1);
+      expect(scroll.mock.contexts[0]).toBe(document.getElementById("b"));
+      window.history.pushState(null, "", "#main");
+      act(() => {
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      });
+      expect(scroll).toHaveBeenCalledTimes(1);
+    } finally {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      scroll.mockRestore();
+    }
+  });
+});
+
+// QA-659 후속: 위 고침은 해시가 목차 칸일 때만 옮겨, 가장 흔한 길(목차로 한 번 옮김 → 뒤로 가기로 해시 없는 처음 기록)에서는 주소만 바뀌고 본문은 옮긴 절에
+// 남았습니다(P5a 고침 검토 — 자기 빌드 /macro 1440 '환율 비교'로 옮긴 뒤 뒤로 가기: #main.scrollTop 2067 → 2067, 1024 2111 → 2111. 390은 창이 스크롤
+// 상자라 브라우저가 되돌려 3829 → 0). 이제 목차 칸 해시에서 해시 없는 기록으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이 있던 마지막 자리로(모르면
+// 맨 위) 되돌립니다. jsdom은 배치·스크롤을 계산하지 않으므로 본문 상자의 넘침(overflow-y auto·scrollHeight > clientHeight)과 scrollTop을 손으로 주고,
+// 기록 이동은 pushState + hashchange(oldURL)로 흉내 냅니다. 수정 전(재현 커밋에서는 it.fails)에는 본문이 옮긴 자리(3,000·2,000)에 남았습니다.
+describe("QA-659 목차 칸 해시에서 해시 없는 기록으로 돌아오면 본문 스크롤 상자를 해시 없이 있던 자리로", () => {
+  const BASE_PATH = () => window.location.pathname + window.location.search;
+  /** 본문 상자(#main 흉내) 안에 목차를 그립니다 — scrolls면 넘치는 요소 스크롤 상자(넓은 화면), 아니면 넘침 visible(좁은 화면 — 창이 스크롤). */
+  function renderInBox(scrolls: boolean) {
+    const box = document.createElement("main");
+    box.id = "main";
+    if (scrolls) {
+      box.style.overflowY = "auto";
+      Object.defineProperty(box, "scrollHeight", { configurable: true, value: 6000 });
+      Object.defineProperty(box, "clientHeight", { configurable: true, value: 800 });
+    }
+    document.body.appendChild(box);
+    const host = box.appendChild(document.createElement("div"));
+    render(
+      <SectionIndex label="목차" items={[{ id: "a", label: "가" }, { id: "b", label: "나" }]} activeId={null}>
+        <SectionAnchor id="a">가 절</SectionAnchor>
+        <SectionAnchor id="b">나 절</SectionAnchor>
+      </SectionIndex>,
+      { container: host },
+    );
+    return box;
+  }
+  /** 상자를 top까지 내리고 scroll 이벤트를 보냅니다(브라우저는 스크롤 뒤 다음 그리기 때 보냄). */
+  const scrollBox = (box: HTMLElement, top: number) =>
+    act(() => {
+      box.scrollTop = top;
+      box.dispatchEvent(new Event("scroll"));
+    });
+  /** 주소를 hash로 바꾸고(기록 이동 흉내) hashchange(oldURL = 바꾸기 전 주소)를 보냅니다. */
+  const go = (hash: string) => {
+    const oldURL = window.location.href;
+    window.history.pushState(null, "", BASE_PATH() + hash);
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: window.location.href }));
+    });
+  };
+
+  it("해시 없이 1,200px에서 목차로 옮긴 뒤(3,000px) 해시 없는 기록으로 돌아오면 1,200px — 옮긴 자리의 scroll은 적지 않는다", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    let box: HTMLElement | null = null;
+    try {
+      box = renderInBox(true);
+      scrollBox(box, 1200);
+      // 목차 칸 누르기 — 주소가 먼저 바뀌고(해시 b) 옮긴 스크롤의 scroll 이벤트가 뒤따름.
+      window.history.pushState(null, "", BASE_PATH() + "#b");
+      scrollBox(box, 3000);
+      // 뒤로 가기 — 해시 없는 처음 기록.
+      go("");
+      expect(box.scrollTop).toBe(1200);
+      // 앞으로 가기 — 다시 b의 닻으로(QA-659), 그 뒤 뒤로 가기도 1,200px.
+      go("#b");
+      expect(into.mock.contexts.at(-1)).toBe(document.getElementById("b"));
+      scrollBox(box, 3000);
+      go("");
+      expect(box.scrollTop).toBe(1200);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      box?.remove();
+      into.mockRestore();
+    }
+  });
+
+  it("해시 없이 스크롤한 적 없이 목차로 옮긴 자리(2,000px)에서 해시 없는 기록으로 돌아오면 맨 위(빈 해시가 가리키는 문서 맨 위)", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    let box: HTMLElement | null = null;
+    try {
+      box = renderInBox(true);
+      go("#a");
+      scrollBox(box, 2000);
+      go("");
+      expect(box.scrollTop).toBe(0);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      box?.remove();
+      into.mockRestore();
+    }
+  });
+
+  it("창이 스크롤하는 폭(본문 넘침 visible)·목차 밖 해시(#main)에서 돌아오면 건드리지 않고, 그 자리(700px)를 해시 없는 기록의 자리로 적는다", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    let narrow: HTMLElement | null = null;
+    try {
+      // 좁은 화면 — 창이 스크롤 상자라 브라우저가 되돌린 자리를 그대로 둠(본문 상자의 scrollTop 500을 건드리지 않음).
+      narrow = renderInBox(false);
+      narrow.scrollTop = 500;
+      go("#a");
+      go("");
+      expect(narrow.scrollTop).toBe(500);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      narrow?.remove();
+    }
+    cleanup();
+    let wide: HTMLElement | null = null;
+    try {
+      // 넓은 화면 — 목차 밖 해시(#main — 본문으로 건너뛰기)에서 700px까지 내린 뒤 돌아오면 그대로.
+      wide = renderInBox(true);
+      go("#main");
+      scrollBox(wide, 700);
+      go("");
+      expect(wide.scrollTop).toBe(700);
+      // 그 자리가 해시 없는 기록의 자리 — 목차로 옮긴 자리(2,000px)에서 돌아오면 700px.
+      go("#a");
+      scrollBox(wide, 2000);
+      go("");
+      expect(wide.scrollTop).toBe(700);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      wide?.remove();
+      into.mockRestore();
+    }
   });
 });
 
