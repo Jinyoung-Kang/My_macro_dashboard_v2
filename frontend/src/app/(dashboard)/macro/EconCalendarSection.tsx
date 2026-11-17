@@ -36,10 +36,14 @@ import {
 /** 표의 줄 — 일정 하나와 줄 키(출처 id가 없으면 시각·나라·차례). */
 type EventRow = EconEvent & { rowKey: string };
 
-/** 표의 칸 — 시각(KST, 날짜는 날짜 띠·표 머리에 있어 HH:MM)·나라·지표(행 머리)·중요도·실제·예상·이전. 없는 값은 '—'(공용 표). */
+/**
+ * 표의 칸 — 시각(KST, 날짜는 날짜 띠·표 머리에 있어 HH:MM)·나라·지표(행 머리)·중요도·실제·예상·이전. 없는 값은 '—'(공용 표).
+ * '나라' 칸(두 자)은 줄을 바꾸지 않습니다 — 공용 표는 오른쪽 정렬(숫자) 열만 nowrap이라, 표가 조금만 눌려도 자동 배치가 이 열을 머리 '나라'(13px) 폭까지
+ * 줄여 '미/국'·'한/국'으로 꺾고 조밀 행을 28 → 48px로 늘였습니다(QA-683).
+ */
 const COLUMNS: readonly Column<EventRow>[] = [
   { key: "at", header: "시각(KST)", cell: (row) => econEventTime(row) ?? EMPTY },
-  { key: "country", header: "나라", cell: (row) => (row.country === "KR" ? "한국" : "미국") },
+  { key: "country", header: "나라", className: "whitespace-nowrap", cell: (row) => (row.country === "KR" ? "한국" : "미국") },
   {
     key: "title",
     header: "지표",

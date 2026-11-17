@@ -468,7 +468,7 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
 // 1024에서 28 → 48px, 390에서 45 → 65px로 늘었습니다(머리 없는 크롬으로 잼). 공용 표는 오른쪽 정렬(숫자) 열만 nowrap이라 이 열은 부르는 쪽이 붙입니다.
 // 수정 전(재현 커밋에서는 it.fails) 칸에 whitespace-nowrap이 없었습니다.
 describe("QA-683 '나라' 칸은 음절에서 꺾이지 않는다", () => {
-  it.fails("'나라' 열의 머리와 칸 모두 whitespace-nowrap", async () => {
+  it("'나라' 열의 머리와 칸 모두 whitespace-nowrap", async () => {
     mockCalendar(CALENDAR);
     render(<EconCalendarSection />);
     fireEvent.click(await screen.findByRole("tab", { name: /^11\/26 \(목\)/ }, { timeout: 500 }));
