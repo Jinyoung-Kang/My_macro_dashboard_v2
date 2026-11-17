@@ -333,11 +333,12 @@ export default function RegimePage() {
             {QUADRANTS.map((quadrant) => {
               const now = quadrant.code === verdict?.code;
               return (
-                // 지금 칸은 잉크 테두리 + '지금' 글 + aria-current — 색만으로 가리지 않습니다(고대비에서도 테두리·글이 남음).
+                // 지금 칸은 잉크 테두리 + '지금' 글 + aria-current — 색만으로 가리지 않습니다. 고대비(forced-colors)에서는 바탕이 지워지고 두 테두리가 같은
+                // 시스템 색이 되므로 지금 칸만 2px 테두리로 가릅니다(QA-675 — QA-492와 같은 방법, 그 줄만 2px 높아짐). 뜻은 '지금' 글과 aria-current가 나릅니다.
                 <li
                   key={quadrant.code}
                   aria-current={now ? "true" : undefined}
-                  className={`min-w-0 rounded-control border px-3 py-2 ${now ? "border-text bg-surface-2" : "border-border bg-bg"}`}
+                  className={`min-w-0 rounded-control border px-3 py-2 ${now ? "border-text bg-surface-2 forced-colors:border-2" : "border-border bg-bg"}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <RegimeTag code={quadrant.code} label={quadrant.label} />
