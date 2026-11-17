@@ -385,7 +385,7 @@ describe("대상 화면 — 결과", () => {
     expect(sharedCalls().some((path) => path.includes("tab=posts"))).toBe(false);
 
     fireEvent.click(screen.getByRole("option", { name: /수집 글 하나/ }));
-    expect(screen.queryByRole("button", { name: /받아 둔 글 보기/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /본문 보기/ })).toBeNull();
   });
 
   it("운영자 — 글·논평 탭이 있고, 수집 글은 원문 팝업(어두운 범위 표지)으로 연다", async () => {
@@ -399,7 +399,7 @@ describe("대상 화면 — 결과", () => {
     await waitFor(() => expect(sharedCalls()).toContain(endpoints.search.feed("us:NVDA", "posts")));
 
     fireEvent.click(await screen.findByRole("option", { name: /수집 글 하나/ }));
-    fireEvent.click(screen.getByRole("button", { name: /받아 둔 글 보기/ }));
+    fireEvent.click(screen.getByRole("button", { name: /본문 보기/ }));
     const dialog = await screen.findByRole("dialog", { name: "수집 글 하나" });
     expect(dialog.getAttribute("data-scope")).toBe("search");
     expect(await within(dialog).findByText("받아 둔 본문")).toBeTruthy();

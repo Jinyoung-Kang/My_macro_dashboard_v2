@@ -126,7 +126,7 @@ describe("QA-430 — 미리 보기 닫기 단추로 닫으면 포커스가 결�
 
 describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Escape로 닫는다(포커스는 결과 목록)", () => {
   // 개선 제안(QA 스택 재확인 3, 390·1024·1180): 미리 보기 시트의 Escape 닫기는 결과 목록에 포커스가 있을 때만(onListKeyDown)이라, 시트 안의
-  // '원문 열기'·'받아 둔 글 보기'·닫기 단추에 포커스가 있으면 Escape가 아무것도 하지 않았습니다. 목록에서와 같이 닫고 포커스를 결과 목록(닫기
+  // '원문 열기'·'본문 보기'(받아 둔 글)·닫기 단추에 포커스가 있으면 Escape가 아무것도 하지 않았습니다. 목록에서와 같이 닫고 포커스를 결과 목록(닫기
   // 단추와 같은 자리 — QA-430)으로 옮깁니다. 원문 팝업이 열려 있으면 그 Escape는 팝업만 닫습니다(한 번에 둘을 닫지 않음).
   // 수정 전 실패: 미리 보기 안의 Escape 뒤에도 미리 보기가 그대로.
   it("'원문 열기'·닫기 단추에서 Escape — 미리 보기를 닫고 포커스는 결과 목록", async () => {
@@ -163,7 +163,7 @@ describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Esca
     expect(document.activeElement).toBe(link);
   });
 
-  it("원문 팝업이 열려 있으면 Escape는 팝업만 닫고, 포커스가 '받아 둔 글 보기'로 돌아온 뒤의 Escape가 미리 보기를 닫는다", async () => {
+  it("원문 팝업이 열려 있으면 Escape는 팝업만 닫고, 포커스가 '본문 보기'로 돌아온 뒤의 Escape가 미리 보기를 닫는다", async () => {
     const READER = "0123456789abcdef01234567";
     reads[endpoints.search.feed("us:NVDA", "timeline")] = {
       ...FEED,
@@ -175,7 +175,7 @@ describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Esca
     const list = await screen.findByRole("listbox", { name: "결과" });
     fireEvent.click(within(list).getByRole("option", { name: /받아 둔 글 확인용/ }));
     const preview = screen.getByRole("region", { name: "미리 보기" });
-    const read = within(preview).getByRole("button", { name: "받아 둔 글 보기" });
+    const read = within(preview).getByRole("button", { name: "본문 보기" });
     read.focus();
     fireEvent.click(read);
     const dialog = await screen.findByRole("dialog", { name: "받아 둔 글 확인용" });
@@ -204,7 +204,7 @@ describe("개선 제안 — 미리 보기 안에 포커스가 있을 때도 Esca
     const list = await screen.findByRole("listbox", { name: "결과" });
     fireEvent.click(within(list).getByRole("option", { name: /받아 둔 글 확인용/ }));
     const preview = screen.getByRole("region", { name: "미리 보기" });
-    const read = within(preview).getByRole("button", { name: "받아 둔 글 보기" });
+    const read = within(preview).getByRole("button", { name: "본문 보기" });
     read.focus();
     fireEvent.click(read);
     await screen.findByRole("dialog", { name: "받아 둔 글 확인용" });

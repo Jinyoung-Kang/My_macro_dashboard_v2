@@ -5,6 +5,7 @@ import { ErrorState, Loading } from "@/components/ui";
 import { SELECTED_BAR } from "@/components/ui/classes";
 import { ChevronDownIcon, ClockIcon, ExternalLinkIcon, RefreshIcon, SpinnerIcon, StatusText, XIcon } from "@/components/ui/icons";
 import { ReaderDialog } from "@/components/screens/info/ReaderDialog";
+import { ArticleDialog, type ArticleEntry } from "./ArticleDialog";
 import { useBottomSheet, type BottomSheetSpace } from "@/hooks/useBottomSheet";
 import { useInfoSearchFeed } from "@/hooks/useInfoSearch";
 import { useInfoSearchSummary } from "@/hooks/useInfoSearchSummary";
@@ -16,6 +17,8 @@ import {
   NO_FILTERS,
   SEARCH_RANGES,
   applyFilters,
+  articleActionOf,
+  articlePreviewNote,
   clusterSizeText,
   clusterToggleText,
   cutByRange,
@@ -170,6 +173,8 @@ export function FeedPanel({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [drawer, setDrawer] = useState(false);
   const [reader, setReader] = useState<ReaderEntry | null>(null);
+  // 본문 팝업(ADR 0043 — 운영자): 결과 줄의 꼬리표로 운영 서버가 그 글 한 건을 받아 본문만 보임.
+  const [article, setArticle] = useState<ArticleEntry | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // 결과 목록을 마지막으로 누른 포인터의 종류(pointerdown) — 줄을 두 번 눌러 원문 열기는 마우스 단축 동작이라 터치·펜이면 하지 않습니다. 휴대폰에서
   // 줄을 빠르게 두 번 누르면 브라우저가 dblclick을 내 뜻하지 않게 원문 새 창이 열렸습니다(QA 스택 기록 R3-SG3-4). Enter는 입력 장치와 상관없이 엶.
@@ -311,15 +316,15 @@ export function FeedPanel({
     return closed !== null && closed.flat === flat ? flat.findIndex((entry) => entry.key === closed.key) : -1;
   };
 
-  // 미리 보기 안(아래 시트·xl 오른쪽 칸 — '원문 열기'·'받아 둔 글 보기'·닫기 단추)에 포커스가 있을 때의 Escape — 목록에서처럼 닫고 포커스를 결과
+  // 미리 보기 안(아래 시트·xl 오른쪽 칸 — '원문 열기'·'본문 보기'·닫기 단추)에 포커스가 있을 때의 Escape — 목록에서처럼 닫고 포커스를 결과
   // 목록으로(닫기 단추와 같은 자리). 원문 팝업(ReaderDialog — Radix 대화상자)의 키가 지금 이 영역의 onKeyDown에 오지 않는 것은 팝업이 React
   // 트리에서 이 영역 밖(FeedPanel 루트의 자식)에 그려지기 때문입니다 — DOM에서 body 끝에 그려져서가 아닙니다. React 합성 이벤트는 포털 안에서 나도
   // DOM이 아니라 React 트리를 따라 올라가므로, 팝업을 미리 보기 안으로 옮기면 그 안의 Escape가 이 영역까지 옵니다. 그때는 아래 두 가드가 막습니다
   // — Radix가 Escape를 문서 캡처 단계에서 먼저 받아 preventDefault한 뒤 팝업을 닫으므로 이미 처리된 Escape를 건너뛰고(defaultPrevented), 팝업이
-  // 열려 있는 동안도 건너뜁니다(reader). 한 번의 Escape가 팝업과 미리 보기를 함께 닫지 않게(팝업이 닫히면 포커스는 '받아 둔 글 보기'로 돌아오고
-  // 다음 Escape가 미리 보기를 닫음).
+  // 열려 있는 동안도 건너뜁니다(reader·article — 원문 팝업과 본문 팝업). 한 번의 Escape가 팝업과 미리 보기를 함께 닫지 않게(팝업이 닫히면 포커스는
+  // '본문 보기'로 돌아오고 다음 Escape가 미리 보기를 닫음).
   const onPreviewKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Escape" || event.defaultPrevented || reader !== null) return;
+    if (event.key !== "Escape" || event.defaultPrevented || reader !== null || article !== null) return;
     event.preventDefault();
     closePreview();
   };
@@ -616,10 +621,11 @@ export function FeedPanel({
     <FeedPreview
       item={selected}
       label={sourceLabel(selected.source, statuses)}
-      owner={owner}
+      owner={owner && !demo}
       onClose={closePreview}
       onKeyDown={onPreviewKeyDown}
       onRead={() => setReader(readerOfFeedItem(selected, sourceLabel(selected.source, statuses)))}
+      onFetch={(ref) => setArticle({ ref, item: selected, label: sourceLabel(selected.source, statuses) })}
     />
   ) : previewOpen && selectedEntry?.type === "cluster" ? (
     <ClusterPreview entry={selectedEntry} onClose={closePreview} onKeyDown={onPreviewKeyDown} />
@@ -780,6 +786,7 @@ export function FeedPanel({
       <SourceStatusLine sources={statuses} pendingStalled={feed.pendingPhase === "stalled"} />
       {data?.fetchedAt ? <p className="hidden px-3 pb-2 text-xs text-text-3 lg:block">받은 시각 {formatKst(data.fetchedAt)} KST · 결과는 15분 동안 다시 씁니다</p> : null}
       {owner ? <ReaderDialog entry={reader} onClose={() => setReader(null)} /> : null}
+      {owner && !demo ? <ArticleDialog entry={article} onClose={() => setArticle(null)} /> : null}
     </div>
   );
 }
@@ -918,7 +925,10 @@ function ClusterPreview({ entry, onClose, onKeyDown }: PreviewClose & { entry: F
   );
 }
 
-/** 고른 줄의 미리 보기 — 출처가 준 요약·매체·시각과 원문 열기. 본문은 받지 않습니다(D-3). 수집 글은 운영자에게 받아 둔 글 보기. */
+/**
+ * 고른 줄의 미리 보기 — 출처가 준 요약·매체·시각과 원문 열기, 운영자에게는 그 옆에 '본문 보기'(ADR 0043): 수집 글은 받아 둔 원문 팝업, 기사·글 줄은
+ * 운영 서버가 그 글 한 건을 받는 본문 팝업, 받지 않는 매체는 단추 없이 그 까닭. 회원·데모에게는 없습니다(articleActionOf).
+ */
 function FeedPreview({
   item,
   label,
@@ -926,13 +936,16 @@ function FeedPreview({
   onClose,
   onKeyDown,
   onRead,
+  onFetch,
 }: PreviewClose & {
   item: SearchFeedItem;
   label: string;
   owner: boolean;
   onRead: () => void;
+  onFetch: (ref: string) => void;
 }) {
   const url = httpUrl(item.url);
+  const action = articleActionOf(item, owner);
   const rows: [string, string][] = [...itemFactRows(item), ["종류", itemKindLabel(item.kind)], ["받은 곳", label]];
   return (
     <PreviewFrame onClose={onClose} onKeyDown={onKeyDown}>
@@ -953,13 +966,19 @@ function FeedPreview({
         ) : (
           <span className="text-xs text-text-3">원문 주소가 없습니다</span>
         )}
-        {owner && item.readerId ? (
+        {action.mode === "stored" ? (
           <button type="button" className={BUTTON} onClick={onRead}>
-            받아 둔 글 보기
+            본문 보기
           </button>
+        ) : action.mode === "fetch" ? (
+          <button type="button" className={BUTTON} onClick={() => onFetch(action.ref)} aria-haspopup="dialog">
+            본문 보기
+          </button>
+        ) : action.note ? (
+          <span className="text-xs text-text-3">{`본문 보기 없음 — ${action.note}`}</span>
         ) : null}
       </div>
-      <p className="text-xs text-text-3">기사 본문은 받지 않습니다 — 제목·매체·시각·요약만입니다.</p>
+      <p className="text-xs text-text-3">{articlePreviewNote(action)}</p>
     </PreviewFrame>
   );
 }

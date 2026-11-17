@@ -119,6 +119,79 @@ export type SearchFeedItem = {
   clusterId?: string | null;
   /** 대표 줄에만 — 묶음의 줄 수와 서로 다른 매체 수(받은 2년 묶음 전체 기준). 그 밖의 줄은 null이거나 칸이 없습니다. */
   cluster?: SearchFeedCluster | null;
+  /**
+   * 본문 보기 꼬리표(ADR 0043, 계약 §10) — 기사·글 줄(news·headline)이고 받아 둔 글(readerId)이 아닐 때 32자 소문자 16진. 누르면 운영 서버가 그 글
+   * 한 건을 받아 본문만 보입니다(운영자만 — 회원 응답에서는 늘 null). 화면은 주소가 아니라 이 꼬리표만 보냅니다.
+   */
+  bodyRef?: string | null;
+  /** 본문 보기를 하지 않는 까닭 한 줄(받지 않는 매체 — 네이버·Yahoo·유료 구독 매체 등). 없으면 null. */
+  bodyNote?: string | null;
+};
+
+/** 본문 보기 응답의 본문(계약 §10-4) — 운영 서버가 받은 페이지에서 추린 것. 모르는 값은 null(지어내지 않음). */
+export type SearchArticle = {
+  /** 페이지 제목(없으면 결과 줄의 제목). */
+  title: string | null;
+  siteName: string | null;
+  author: string | null;
+  /** 글에 적힌 날짜(YYYY-MM-DD) — 시각은 지어내지 않습니다. */
+  publishedDate: string | null;
+  /** 글자 비율로 본 언어 — ko·en·ja·html lang 앞부분, 모르면 null. 화면은 'ko가 아니면 번역 단추'로만 씁니다. */
+  lang: string | null;
+  paragraphs: string[];
+  chars: number;
+  totalChars: number;
+  /** 40,000자를 넘어 앞부분만. */
+  truncated: boolean;
+  /** 추린 글이 400자 미만(유료·로그인 글이거나 본문이 그림·영상일 수 있음). */
+  short: boolean;
+  /** 유료 글 표시(JSON-LD isAccessibleForFree false). */
+  paywalled: boolean;
+  /** 마지막 홉의 주소(조각 없음) — 출처 링크. */
+  sourceUrl: string | null;
+  sourceHost: string | null;
+  /** 구글 경유 주소를 풀어 찾은 주소인가. */
+  viaGoogle: boolean;
+  /** 받은 시각(UTC ISO — 캐시면 처음 받은 시각). */
+  fetchedAt: string | null;
+  /** 앞서 받아 둔 것(서버 메모리 24시간)을 다시 보인 것인가. */
+  cached: boolean;
+};
+
+/** 본문 보기 실패 사유(계약 §10-3) — 모르는 코드가 와도 받습니다(서버 글을 그대로 보임). */
+export type SearchArticleReason =
+  | "server_only"
+  | "offline"
+  | "user_limit"
+  | "unknown_ref"
+  | "refused_host"
+  | "relay_unresolved"
+  | "unsafe_address"
+  | "bad_redirect"
+  | "blocked"
+  | "budget"
+  | "queue_full"
+  | "timeout"
+  | "transport"
+  | "too_large"
+  | "not_html"
+  | "http_error"
+  | "no_body"
+  | "not_cached"
+  | string;
+
+/** POST /api/search/article의 응답 — 수집기에 닿지 못하면 available:false와 message만. */
+export type SearchArticleResponse = {
+  available: boolean;
+  message?: string | null;
+  ref?: string;
+  status?: "ok" | "pending" | "error";
+  reason?: SearchArticleReason | null;
+  retryable?: boolean;
+  /** 일시 실패를 다시 시도할 수 있을 때까지 남은 초(없으면 null). */
+  retryAfterSeconds?: number | null;
+  article?: SearchArticle | null;
+  fetchedAt?: string;
 };
 
 /** 같은 사건 묶음의 크기(계약 §9-2) — size = 줄 수, publishers = 서로 다른 매체 수('삼각측량'). */
