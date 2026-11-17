@@ -109,6 +109,19 @@ const rowOf = (name: string) => trigger(name).closest("tr") as HTMLElement;
 const tokens = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
 
 describe("InspectorFrame — 옆 검사 칸(넓은 화면·넓은 틀)", () => {
+  it("검사 칸에 보이는 줄의 단추 자신이 aria-current(포커스 때 읽힘 — 행에도 있음), 대화상자 배치에서는 어느 단추에도 없다", () => {
+    stubWide();
+    const { unmount } = renderFrame({ defaultKey: "us10y" });
+    expect(trigger("미국채 10년물").getAttribute("aria-current")).toBe("true");
+    expect(trigger("VIX").getAttribute("aria-current")).toBeNull();
+    fireEvent.click(trigger("VIX"));
+    expect(trigger("VIX").getAttribute("aria-current")).toBe("true");
+    expect(trigger("미국채 10년물").getAttribute("aria-current")).toBeNull();
+    unmount();
+    renderFrame({ defaultKey: "us10y", layout: "dialog" });
+    expect(screen.getAllByRole("button").some((button) => button.hasAttribute("aria-current"))).toBe(false);
+  });
+
   it("고른 줄이 없으면 안내 글 — 줄 단추를 누르면 검사 칸(영역 이름·제목 h3·내용)과 표의 고른 행(aria-current), 단추는 aria-controls", () => {
     stubWide();
     renderFrame();
@@ -358,10 +371,12 @@ describe("InspectorFrame — 자리표시·누름 자리·강조색", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("줄 단추는 좁은 화면 44px·중립 잉크(본문색·밑줄은 마우스를 올릴 때)·포커스 링, 낱말 사이에서 꺾음 — 누름 자리 감사 통과", () => {
+  it("줄 단추는 좁은 화면 높이·폭 44px(짧은 이름도)·중립 잉크(본문색·밑줄은 마우스를 올릴 때)·포커스 링, 낱말 사이에서 꺾음 — 누름 자리 감사 통과", () => {
     renderFrame();
     const classes = tokens(trigger("미국채 10년물"));
-    expect(classes).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-0", "text-left", "text-text", "break-keep", "hover:underline", "focus-visible:outline-focus"]));
+    expect(classes).toEqual(
+      expect.arrayContaining(["min-h-11", "lg:min-h-0", "min-w-11", "lg:min-w-0", "text-left", "text-text", "break-keep", "hover:underline", "focus-visible:outline-focus"]),
+    );
     expect(trigger("미국채 10년물").getAttribute("type")).toBe("button");
     expect(smallTargets(screen.getByRole("table"))).toEqual([]);
   });

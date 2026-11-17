@@ -3,7 +3,7 @@
 import { useId, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
-import { FOCUS_RING, TEXT_TARGET } from "@/components/ui/classes";
+import { ROW_TRIGGER } from "@/components/ui/classes";
 import { useSideBySide } from "@/hooks/useSideBySide";
 import { useWideShell } from "@/hooks/useWideShell";
 import { listKeyAction } from "@/lib/shortcuts";
@@ -14,11 +14,15 @@ import { listKeyAction } from "@/lib/shortcuts";
  */
 export type InspectorLayout = "md" | "lg" | "dialog";
 
-/** 줄 단추(InspectorTrigger 또는 부르는 쪽의 단추)에 펼치는 속성 — 옆 칸 배치는 aria-controls, 대화상자 배치는 aria-haspopup·aria-expanded. */
+/**
+ * 줄 단추(InspectorTrigger 또는 부르는 쪽의 단추)에 펼치는 속성 — 옆 칸 배치는 aria-controls와 검사 칸에 보이는 줄이면 aria-current(포커스를 받는 단추
+ * 자신에 — 표 행의 aria-current만으로는 포커스 때 읽히지 않을 수 있음, MasterDetail 줄 단추와 같음), 대화상자 배치는 aria-haspopup·aria-expanded.
+ */
 export type InspectorTriggerProps = {
   "data-inspect-key": string;
   onClick: (event: MouseEvent<HTMLElement>) => void;
   "aria-controls"?: string;
+  "aria-current"?: "true";
   "aria-haspopup"?: "dialog";
   "aria-expanded"?: boolean;
 };
@@ -155,7 +159,9 @@ export function InspectorFrame({
       event.currentTarget.focus();
       inspect(key);
     },
-    ...(inline ? { "aria-controls": inspectorId } : { "aria-haspopup": "dialog" as const, "aria-expanded": dialogKey === key }),
+    ...(inline
+      ? { "aria-controls": inspectorId, ...(key === shownKey ? { "aria-current": "true" as const } : {}) }
+      : { "aria-haspopup": "dialog" as const, "aria-expanded": dialogKey === key }),
   });
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -219,10 +225,10 @@ export function InspectorFrame({
 }
 
 /**
- * 줄 단추 — 표의 이름 칸에 두는 검사 여는 단추(`triggerProps`를 펼침). 데이터 칸이라 강조 파랑이 아니라 중립 잉크(본문색)이고 마우스를 올리면 밑줄,
- * 좁은 화면(lg 미만) 누르는 자리 44px(TEXT_TARGET)·넓은 화면 글 높이, 포커스 링. 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
+ * 줄 단추 — 표의 이름 칸에 두는 검사 여는 단추(`triggerProps`를 펼침). 모양은 공용 줄 단추 클래스(ui/classes ROW_TRIGGER — 중립 잉크·밑줄·포커스 링,
+ * 좁은 화면 누르는 자리 높이·폭 44px — 짧은 이름도, 넓은 화면 글 크기). 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
  */
-const TRIGGER = `${TEXT_TARGET} rounded-sm text-left text-text break-keep underline-offset-2 hover:underline ${FOCUS_RING}`;
+const TRIGGER = ROW_TRIGGER;
 
 export function InspectorTrigger({
   inspector,

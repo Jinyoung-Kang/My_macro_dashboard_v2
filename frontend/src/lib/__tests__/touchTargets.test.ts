@@ -18,6 +18,7 @@ const {
   inputClasses,
   LINK_CLASSES,
   pillTabClasses,
+  ROW_TRIGGER,
   segmentClasses,
   TEXT_TARGET,
   toggleClasses,
@@ -44,6 +45,7 @@ const UI_CONTROLS: Record<string, () => [string, string][]> = {
   toggleClasses: () =>
     BOTH.flatMap((pressed) => BOTH.map((compact): [string, string] => [`${pressed}/${compact}`, toggleClasses(pressed, compact)])),
   LINK_CLASSES: () => [["", LINK_CLASSES]],
+  ROW_TRIGGER: () => [["", ROW_TRIGGER]],
 };
 
 /** 누르는 조각이 아닌 것 — 까닭. */

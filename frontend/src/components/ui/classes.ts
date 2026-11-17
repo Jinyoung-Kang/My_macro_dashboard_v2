@@ -127,6 +127,13 @@ export function segmentClasses(checked: boolean): string {
  */
 export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
 
+/**
+ * 표·목록 줄의 이름 단추(검사 칸 틀의 줄 단추 InspectorTrigger, COT 자산 고르기 단추 등) — 데이터 칸이라 강조 파랑이 아니라 중립 잉크(본문색), 마우스를
+ * 올리면 밑줄, 포커스 링. 좁은 화면(lg 미만) 누르는 자리는 높이와 폭 모두 44px(한 글자 이름 '금'도 — TEXT_TARGET은 높이만), 넓은 화면은 글 크기.
+ * 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
+ */
+export const ROW_TRIGGER = `${TEXT_TARGET} min-w-11 rounded-sm text-left text-text break-keep underline-offset-2 hover:underline lg:min-w-0 ${FOCUS_RING}`;
+
 /** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(TEXT_TARGET과 같은 규칙), 넓은 화면은 글 높이. */
 export const LINK_CLASSES = `${TEXT_TARGET} rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline ${FOCUS_RING}`;
 

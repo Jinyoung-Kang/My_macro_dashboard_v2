@@ -132,12 +132,21 @@ describe("COT 작업대 배치(P5a)", () => {
     const select = (await screen.findByLabelText("자산")) as HTMLSelectElement;
     await waitFor(() => expect(select.options.length).toBe(2));
 
+    // 처음에는 바꿨다는 상태 글이 없다(고른 자산 단추 자신이 aria-current).
+    expect(within(summaryTable()).getByRole("button", { name: S_AND_P }).getAttribute("aria-current")).toBe("true");
+    const status = screen.getAllByRole("status").find((element) => element.className.includes("sr-only"))!;
+    expect(status.textContent).toBe("");
+
     fireEvent.click(within(summaryTable()).getByRole("button", { name: "금" }));
 
     expect(select.value).toBe("금");
     expect(screen.getByRole("heading", { name: "포지셔닝 추이 — 금" })).toBeTruthy();
     expect(rowNamed("금").getAttribute("aria-current")).toBe("true");
     expect(rowNamed(S_AND_P).getAttribute("aria-current")).toBeNull();
+    expect(within(summaryTable()).getByRole("button", { name: "금" }).getAttribute("aria-current")).toBe("true");
+    expect(within(summaryTable()).getByRole("button", { name: S_AND_P }).getAttribute("aria-current")).toBeNull();
+    // 좁은 화면은 아래 패널이 화면 밖이라, 바뀐 것을 상태 글로 알린다.
+    expect(status.textContent).toBe("아래 포지셔닝 추이 패널을 금 자산으로 바꿨습니다.");
 
     // 고르기로 바꾸면 표의 고른 행도 따라옴(같은 상태).
     fireEvent.change(select, { target: { value: S_AND_P } });

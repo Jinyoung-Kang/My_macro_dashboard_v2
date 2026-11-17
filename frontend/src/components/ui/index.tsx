@@ -25,6 +25,7 @@ export {
   LINK_CLASSES,
   PANEL_CLASSES,
   pillTabClasses,
+  ROW_TRIGGER,
   SEGMENT_TRACK,
   SELECTED_BAR,
   segmentClasses,

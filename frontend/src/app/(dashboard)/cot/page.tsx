@@ -6,14 +6,13 @@ import { ChangeChip, type Column, DataTable, KpiStrip } from "@/components/patte
 import {
   Callout,
   ErrorState,
-  FOCUS_RING,
   Freshness,
   Loading,
   PageHeader,
   Panel,
   Select,
+  ROW_TRIGGER,
   SourceBadge,
-  TEXT_TARGET,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { cotKpis, formatSignedCount } from "@/lib/cotScreen";
@@ -22,11 +21,6 @@ import type { CotAssetResponse, CotExtremeSummary, CotExtremesResponse, CotSumma
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
-/**
- * 자산 이름 단추 — 표의 행 머리 칸에서 그 자산을 고르는 단추(검사 칸 틀의 줄 단추와 같은 모양: 중립 잉크 — 데이터 칸이라 강조 파랑이 아님, 마우스를
- * 올리면 밑줄, lg 미만 44px, 포커스 링). lg 미만은 폭도 44px 이상입니다 — 한 글자 이름('금')이 14px 폭이었음. 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
- */
-const ASSET_BUTTON = `${TEXT_TARGET} min-w-11 rounded-sm text-left text-text break-keep underline-offset-2 hover:underline lg:min-w-0 ${FOCUS_RING}`;
 
 /**
  * 글로벌 투기세력 (CFTC COT).
@@ -57,16 +51,29 @@ export default function CotPage() {
     endpoints.positioning.cotAsset(asset),
   );
   const trendId = useId();
+  // 표의 자산 단추로 고른 자산 — 아래 추이 패널이 바뀌었다는 상태 글(낭독기)에만 씁니다. 처음 그릴 때는 알리지 않습니다.
+  const [picked, setPicked] = useState<string | null>(null);
 
   const summaryColumns: Column<CotSummary>[] = [
     {
       key: "asset",
       header: "자산",
       rowHeader: true,
-      // 자산 이름은 그 자산을 고르는 단추 — 머리 '자산' 고르기와 같은 상태라 같은 두 요청(추이·극단 성적)이 나갑니다. 고른 자산은 아래 추이 패널이 보입니다.
+      // 자산 이름은 그 자산을 고르는 단추(공용 줄 단추 모양 ROW_TRIGGER — 중립 잉크, 좁은 화면 높이·폭 44px) — 머리 '자산' 고르기와 같은 상태라 같은 두
+      // 요청(추이·극단 성적)이 나갑니다. 고른 자산은 아래 추이 패널이 보이고, 그 단추 자신이 aria-current입니다(포커스 때 읽힘 — 행에도 있음).
+      // 누르면 아래 패널이 바뀐 것을 상태 글로 알립니다(좁은 화면은 패널이 화면 밖).
       cell: (row) => (
         <span className="flex min-w-0 flex-col items-start">
-          <button type="button" className={ASSET_BUTTON} aria-controls={trendId} onClick={() => setAsset(row.asset)}>
+          <button
+            type="button"
+            className={ROW_TRIGGER}
+            aria-controls={trendId}
+            aria-current={row.asset === asset ? "true" : undefined}
+            onClick={() => {
+              setAsset(row.asset);
+              setPicked(row.asset);
+            }}
+          >
             {row.asset}
           </button>
           <span className="break-keep text-xs text-text-3">{row.category}</span>
@@ -147,6 +154,10 @@ export default function CotPage() {
         )}
       </Panel>
 
+      {/* 표의 자산 단추를 누르면 아래 패널이 그 자산으로 바뀐 것을 알립니다(좁은 화면은 패널이 화면 밖 — 단추를 눌러도 들리는 변화가 없었음). */}
+      <p role="status" className="sr-only">
+        {picked ? `아래 포지셔닝 추이 패널을 ${picked} 자산으로 바꿨습니다.` : ""}
+      </p>
       <div id={trendId} className="min-w-0">
         <Panel
           title={`포지셔닝 추이 — ${asset}`} source={SOURCES.cftc}
