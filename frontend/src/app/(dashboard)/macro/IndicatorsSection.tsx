@@ -23,6 +23,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useWideShell } from "@/hooks/useWideShell";
 import { MACRO_PENDING_ROWS, type MacroIndicatorGroup, type MacroIndicatorRow, macroRowIndex } from "@/lib/macroScreen";
 import { assetValueText } from "@/lib/patternRows";
+import { changeChipModel } from "@/lib/patterns";
 
 /** 값 칸 — 수집기 priceStr('N/A'면 '—'), 수집 실패는 '—'와 사유(둘째 줄로 꺾여도 숫자 열과 같은 오른쪽 끝 — QA-666). */
 function valueCell(row: MacroIndicatorRow): ReactNode {
@@ -60,14 +61,17 @@ const NARROW_TABLE_MEDIA = "(width < 48rem)";
 
 /**
  * 좁은 화면 줄의 둘째 줄(이름 칸 안 — 결정 9): 변화 칩과 추정·이전 값 배지·카드 경고. 표가 이름·값 두 칸이라 가로로 넘기지 않아도 한 줄을 읽는 데
- * 필요한 것이 모두 보입니다(추정·이전 값 배지는 늘 보임). 변화 칩 앞에는 낭독기 전용 '변화' — 변화 칸 머리가 없는 표라서.
+ * 필요한 것이 모두 보입니다(추정·이전 값 배지는 늘 보임). 변화 칩 앞에는 낭독기 전용 '변화' — 변화 칸 머리가 없는 표라서. 칩이 보합(보이는 값이
+ * 0 — 반올림해 0인 작은 변화 포함)이면 칩이 스스로 '변화 없음'을 읽으므로 머리말을 빼 '변화 변화 없음'으로 겹치지 않게 합니다(QA-667 — 방향은 변화
+ * 칸이 칩에 넘기는 인자 그대로 lib/patterns changeChipModel로 정함).
  * 출처·장 상태·지연·시각(넓은 화면의 기준 칸)은 이름 단추가 여는 미리보기 대화상자에 있습니다.
  */
 function NarrowRowLine({ row }: { row: MacroIndicatorRow }) {
+  const flat = changeChipModel(row.change, row.changePct, row.changeDigits ?? 2, 2)?.direction === "flat";
   return (
     <span data-macro-narrow-line="" className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="whitespace-nowrap">
-        <span className="sr-only">변화 </span>
+        {flat ? null : <span className="sr-only">변화 </span>}
         {changeCell(row)}
       </span>
       <EstimateBadge estimated={row.isEstimated} />
