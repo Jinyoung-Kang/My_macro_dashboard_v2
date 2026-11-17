@@ -222,3 +222,17 @@ describe("섹터 작업대 배치(P5a)", () => {
     expect(within(stale.closest("div")!).getByText("수집")).toBeTruthy();
   });
 });
+
+// QA-649: 순위 기준 열을 알리는 것이 머리 글 뒤의 장식 기호 '▪'와 옅은 바탕(bg-surface-2/50)뿐이었습니다(개편 전부터). 낭독기에는 머리가 '1M ▪'로 읽히거나
+// 기호가 빠져 이 열이 순위 기준이라는 뜻이 글로 전해지지 않고, 고대비(forced-colors)에서는 바탕이 지워집니다(P5a 검토). 부제의 '순위는 위에서 고른 1M 기준'은
+// 표 머리와 이어져 있지 않습니다.
+describe("QA-649 순위 기준 열은 글로도 알린다", () => {
+  it.fails("고른 기간 열 머리의 접근 이름이 '1M (순위 기준)' — 기호 '▪'는 읽기에서 빠지고 보이는 글은 그대로", async () => {
+    render(<SectorPage />);
+    await screen.findAllByText("정보기술");
+    const table = screen.getByRole("table", { name: "섹터 상세" });
+    const header = within(table).getByRole("columnheader", { name: "1M (순위 기준)" });
+    expect(within(header).getByText("▪", { exact: false }).getAttribute("aria-hidden")).toBe("true");
+    expect(within(table).getByRole("columnheader", { name: "3M" })).toBeTruthy();
+  });
+});
