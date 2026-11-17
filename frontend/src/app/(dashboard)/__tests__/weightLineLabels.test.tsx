@@ -17,8 +17,16 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 // jsdom에서는 차트 크기가 0이라 recharts가 범례를 그리지 않습니다 — 선 이름표(범례·툴팁에 쓰는 name)만 목록으로 그립니다.
 vi.mock("@/components/charts", () => ({
-  MultiLineSeries: ({ series }: { series: { key: string; name: string }[] }) => (
-    <ul aria-label="선 이름표">
+  MultiLineSeries: ({
+    series,
+    tooltipOrder,
+    tooltipSeriesColors,
+  }: {
+    series: { key: string; name: string }[];
+    tooltipOrder?: string;
+    tooltipSeriesColors?: boolean;
+  }) => (
+    <ul aria-label="선 이름표" data-tooltip-order={tooltipOrder ?? ""} data-tooltip-colors={String(Boolean(tooltipSeriesColors))}>
       {series.map((entry) => <li key={entry.key} data-key={entry.key}>{entry.name}</li>)}
     </ul>
   ),
@@ -94,5 +102,17 @@ describe("직전 분기 대비 변화 배지", () => {
     const row = reduced.closest("tr") as HTMLElement;
     expect(row.querySelector(".text-up, .text-down")).toBeNull();
     expect(row.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
+  });
+});
+
+describe("비중 추이 툴팁(2026-11-17 사용자 요구)", () => {
+  // Recharts 3 기본 툴팁은 이름 차례(알파벳)라, 그 분기의 순위와 상관없이 줄이 놓였다. 글자도 모두 본문색이라 어느 줄이 어느 선인지 범례 색과
+  // 맞춰 볼 수 없었다. 차트 래퍼의 차례·색 자체는 components/charts/__tests__/seriesTooltip.test.tsx가 본다.
+  it("값이 큰 차례(그 분기의 비중 순위)와 계열 색 글자를 켠다", async () => {
+    answer();
+    render(<InstitutionsPage />);
+    const list = await screen.findByRole("list", { name: "선 이름표" });
+    expect(list.dataset.tooltipOrder).toBe("value");
+    expect(list.dataset.tooltipColors).toBe("true");
   });
 });

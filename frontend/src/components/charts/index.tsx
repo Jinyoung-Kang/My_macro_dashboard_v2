@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  DefaultTooltipContent,
   LabelList,
   Line,
   LineChart,
@@ -24,6 +25,7 @@ import {
   ZAxis,
 } from "recharts";
 import { EMPTY, formatNumber, formatWeightPercent } from "@/lib/format";
+import { readableOn, valueDescKey } from "@/lib/chartTooltip";
 import { type DonutLabelGeometry, donutLabelsFit, truncateToWidth } from "@/lib/chartAxis";
 import {
   axisLabelWidth,
@@ -294,6 +296,21 @@ export type MultiSeries = {
  * 단위가 다른 계열은 오른쪽 축으로 나눌 수 있지만(KRX 두 곳) 새로 쓰지 않습니다 — 이중 축은 PRINCIPLES가 피하라는 모양이라 패널을 나누는 쪽이
  * 낫습니다(명세 §12 제안). 오른쪽 축 계열은 부르는 쪽이 이름에 어느 축인지 적습니다.
  */
+/** 계열 색 툴팁 줄 — 공용 `tooltipStyle`의 줄 모양에서 글자색만 뺌(색은 줄마다 `SeriesColorTooltipContent`가 넣음). */
+const SERIES_COLOR_ITEM = { padding: 0 } as const;
+
+/**
+ * 계열 색 툴팁 — Recharts 기본 툴팁 내용(`DefaultTooltipContent` — 상자·제목·줄 표지·접근성 속성 그대로)에 줄마다 읽히는 계열 색을 넣어 넘깁니다.
+ * 줄 색은 선 색(`stroke`)에서 오고, 덮개 바탕 대비 4.5:1이 모자라면 `readableOn`이 밝힙니다.
+ */
+export function SeriesColorTooltipContent(props: ComponentProps<typeof DefaultTooltipContent>) {
+  const payload = props.payload?.map((entry) => ({
+    ...entry,
+    color: typeof entry.color === "string" ? readableOn(entry.color) : entry.color,
+  }));
+  return <DefaultTooltipContent {...props} payload={payload} />;
+}
+
 export function MultiLineSeries({
   data,
   series,
@@ -308,6 +325,8 @@ export function MultiLineSeries({
   ariaLabel,
   axisWidth,
   grid = false,
+  tooltipOrder,
+  tooltipSeriesColors = false,
 }: {
   data: Record<string, unknown>[];
   series: MultiSeries[];
@@ -350,6 +369,16 @@ export function MultiLineSeries({
    * (두 축의 눈금을 섞어 긋지 않음).
    */
   grid?: boolean;
+  /**
+   * 툴팁 줄 차례. "value"면 그 시점 값이 큰 차례(같은 값은 계열 차례 — `lib/chartTooltip` `valueDescKey`), 주지 않으면 Recharts 기본(이름 차례 —
+   * 알파벳·가나다). 기관 13F 비중 추이가 씀 — 그 분기의 비중 순위(2026-11-17 사용자 요구).
+   */
+  tooltipOrder?: "value";
+  /**
+   * 툴팁 줄 글자(이름·값)를 계열 색으로. 덮개 바탕에서 글자 대비 4.5:1이 모자란 색은 툴팁 글자에서만 같은 색을 밝혀 씁니다(`readableOn` — 선 색은
+   * 그대로). 주지 않으면 지금처럼 본문색(공용 규칙 — 차트 틀 `TOOLTIP_BOX`). 기관 13F 비중 추이가 씀(2026-11-17 사용자 요구).
+   */
+  tooltipSeriesColors?: boolean;
 }) {
   const rows = data as unknown as readonly LineRow[];
   const specsOf = (side: "left" | "right") =>
@@ -440,6 +469,8 @@ export function MultiLineSeries({
           />
           <Tooltip
             {...tooltipStyle()}
+            {...(tooltipOrder === "value" ? { itemSorter: valueDescKey } : {})}
+            {...(tooltipSeriesColors ? { itemStyle: SERIES_COLOR_ITEM, content: SeriesColorTooltipContent } : {})}
             cursor={{ stroke: GUIDE, strokeWidth: 1 }}
             formatter={(value, name, item) => {
               // 꼬리 줄은 꼬리 자신의 점에만 — 마지막 줄에서는 본 계열과 같은 숫자입니다(null을 돌려주면 Recharts가 그 줄을 그리지 않음). 꼬리 점에서

@@ -185,7 +185,15 @@ export default function InstitutionsPage() {
             {chartSeries.length === 0 ? (
               <EmptyState message="비중 추이를 그릴 분기 데이터가 부족합니다." />
             ) : (
-              <MultiLineSeries data={chartData} series={chartSeries} unit="%" height={320} />
+              <MultiLineSeries
+                data={chartData}
+                series={chartSeries}
+                unit="%"
+                height={320}
+                // 툴팁은 그 분기의 비중 순위 차례로, 글자는 선 색으로(2026-11-17 사용자 요구 — 기본은 이름 차례·본문색).
+                tooltipOrder="value"
+                tooltipSeriesColors
+              />
             )}
           </Card>
 
