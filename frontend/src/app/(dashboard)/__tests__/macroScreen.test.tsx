@@ -564,10 +564,10 @@ describe("지표 표와 미리보기", () => {
 
   // QA-677(2026-11-17 결정(사용자 위임 — 권장안 가)): 범주 표 다섯(통화·국채·원자재·미국 지수·아시아)이 따로라 자동 배치가 표마다 내용으로 열 폭을 정해,
   // 값·변화 칸의 오른쪽 끝이 표가 바뀔 때마다 최대 55px 어긋났습니다(QA 스택 1440 — 768~1920 모두 22~55px). 네 칸 표는 지표·값·변화 칸에 같은 폭
-  // 클래스를 주고(공용 표가 머리 칸과 칸 모두에 붙임), 기준 칸은 남는 폭. 좁은 화면 두 칸 표(결정 9)는 폭이 없습니다. jsdom은 배치를 재지 못해
-  // 클래스만 봅니다(정렬은 브라우저로 잼).
+  // 클래스를 주고(공용 표가 머리 칸과 칸 모두에 붙임 — 표 영역이 37.5rem 이상일 때만, 아래 후속 시험), 기준 칸은 남는 폭. 좁은 화면 두 칸 표(결정 9)는
+  // 폭이 없습니다. jsdom은 배치를 재지 못해 클래스만 봅니다(정렬은 브라우저로 잼).
   // 수정 전(재현 커밋에서는 it.fails)에는 폭 클래스가 없었습니다("expected [ [], [], [], [] ] to deeply equal [ [ 'w-40' ], [ 'w-[5.5rem]' ], …(2) ]").
-  it("네 칸 표 다섯은 칸 순서마다 같은 폭 클래스(지표 w-40·값 w-[5.5rem]·변화 w-[9.75rem], 기준 없음) — md~lg·lg 이상 같고, 좁은 화면 두 칸 표는 없음", async () => {
+  it("네 칸 표 다섯은 칸 순서마다 같은 폭 클래스(표 영역 37.5rem 이상에서 지표 w-40·값 w-[5.5rem]·변화 w-[9.75rem], 기준 없음) — md~lg·lg 이상 같고, 좁은 화면 두 칸 표는 없음", async () => {
     const item = (key: string, name: string, ticker: string, market: string, priceStr: string, deltaStr: string, delta: number, pct: number) =>
       card({ key, name, ticker, market, priceStr, deltaStr, delta, pct });
     reads["/api/macro/overview"] = () => Promise.resolve({ ...OVERVIEW, categories: [
@@ -588,7 +588,7 @@ describe("지표 표와 미리보기", () => {
         item("nikkei", "닛케이 225 (Nikkei)", "^N225", "tse", "50,376.53", "-1,124.22 (-2.18%)", -1124.22, -2.18),
       ] },
     ] });
-    const widths = (cell: Element) => (cell.getAttribute("class") ?? "").split(/\s+/).filter((token) => token.startsWith("w-"));
+    const widths = (cell: Element) => (cell.getAttribute("class") ?? "").split(/\s+/).filter((token) => /(^|:)w-/.test(token));
     const tablesOf = async () => {
       await screen.findByRole("heading", { level: 3, name: "아시아 주요 주가지수" });
       const tables = within(document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement).getAllByRole("table");
@@ -605,7 +605,7 @@ describe("지표 표와 미리보기", () => {
         }
       }
     };
-    const four = [["w-40"], ["w-[5.5rem]"], ["w-[9.75rem]"], []];
+    const four = [["@min-[37.5rem]:w-40"], ["@min-[37.5rem]:w-[5.5rem]"], ["@min-[37.5rem]:w-[9.75rem]"], []];
 
     // md~lg(좁은 화면도 넓은 화면도 아님 — 최소 640px 표).
     render(<MacroPage />);
@@ -634,7 +634,7 @@ describe("지표 표와 미리보기", () => {
   // 재므로, 범주 표들을 담은 상자 자신이 기준(@container)이어야 합니다. jsdom은 배치를 재지 못해 클래스와 기준 상자만 봅니다(높이는 브라우저로 잼).
   // 수정 전(재현 커밋에서는 it.fails)에는 폭이 조건 없이 걸렸습니다("expected [ 'w-40', 'w-[5.5rem]', …(13) ] to deeply equal []" — 폭 클래스만 고치고
   // 기준 상자를 빼면 "expected true to be false").
-  it.fails("네 칸 표의 같은 폭은 표 영역이 37.5rem 이상일 때만 — 폭 클래스는 모두 크기 질의 조건, 기준 상자는 표들을 담은 상자(옆 검사 칸을 담은 틀이 아님)", async () => {
+  it("네 칸 표의 같은 폭은 표 영역이 37.5rem 이상일 때만 — 폭 클래스는 모두 크기 질의 조건, 기준 상자는 표들을 담은 상자(옆 검사 칸을 담은 틀이 아님)", async () => {
     stubWide();
     render(<MacroPage />);
 
