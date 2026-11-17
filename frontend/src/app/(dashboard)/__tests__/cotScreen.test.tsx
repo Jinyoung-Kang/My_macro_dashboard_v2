@@ -344,7 +344,7 @@ describe("QA-673 극단 성적·최근 신호 표의 첫 열은 행 머리", () 
 // 머리를 '스마트머니 / 순포지션' 두 줄로 — 접근 이름은 한 머리.
 describe("QA-678 COT 요약 표의 스마트머니 순포지션 머리는 두 줄", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 머리에 줄바꿈이 없었습니다('expected  to have a length of 1 but got +0').
-  it.fails("머리는 줄바꿈 하나로 두 줄이고, 접근 이름·글은 '스마트머니 순포지션' 한 머리", async () => {
+  it("머리는 줄바꿈 하나로 두 줄이고, 접근 이름·글은 '스마트머니 순포지션' 한 머리", async () => {
     render(<CotPage />);
     const table = await screen.findByRole("table", { name: "자산별 요약" });
 
@@ -355,7 +355,7 @@ describe("QA-678 COT 요약 표의 스마트머니 순포지션 머리는 두 �
 
   // 수정 전(재현 커밋에서는 it.fails)에는 읽는 동안 자리의 머리 줄이 한 줄 머리 높이(h-8 — 32px)였습니다
   // ("expected [ 'flex', 'h-8', 'items-center', …(5) ] to deeply equal …").
-  it.fails("요약을 읽는 동안 자리의 머리 줄도 두 줄 머리 높이(52px) — 값이 온 뒤 아래 패널이 밀리지 않게", () => {
+  it("요약을 읽는 동안 자리의 머리 줄도 두 줄 머리 높이(52px) — 값이 온 뒤 아래 패널이 밀리지 않게", () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     render(<CotPage />);
     const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;

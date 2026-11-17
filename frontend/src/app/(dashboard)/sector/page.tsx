@@ -47,7 +47,7 @@ import { sortDescUnknownLast } from "@/lib/transforms";
  * 신규 상장 ETF가 실제로 보합인 것처럼 보이고 순위까지 오염됩니다.
  *
  * 배치(작업대 화면 언어 — 명세 §7 3행 '가벼운 재배치'): 머리(실시간 주기·신선도) → KPI 띠(S&P 500 기간별 수익률 — 응답의 benchmarkReturns, 새 요청 없음)
- * → '섹터 모멘텀' 막대 → '섹터 상세'·'자산군 상세' 공용 표. 표의 이름 단추가 그 종목의 검사 대화상자(속성·종목 상세 링크)를 엽니다 — 열이 열한 개라
+ * → '섹터 모멘텀' 막대 → '섹터 상세'·'자산군 상세' 공용 표. 표의 이름 단추가 그 종목의 검사 대화상자(속성·종목 상세 링크)를 엽니다 — 열이 열 개라
  * 옆 검사 칸을 두면 표가 눌려 늘 대화상자입니다(검사 칸 틀 layout="dialog"). 검사는 받은 값만 보이고 새로 읽지 않습니다.
  */
 export default function SectorPage() {
@@ -220,13 +220,21 @@ function ReturnsTable({
       header: "이름",
       rowHeader: true,
       className: "break-keep",
-      // 이름은 검사 대화상자를 여는 줄 단추(중립 잉크 — 데이터 칸이라 강조 파랑이 아님, lg 미만 44px), 아래 줄은 티커와 이전 값 표시.
+      // 이름은 검사 대화상자를 여는 줄 단추(중립 잉크 — 데이터 칸이라 강조 파랑이 아님, lg 미만 44px), 아래 줄은 티커와 유형(자산군) 배지, 그 아래 이전 값 표시.
+      // 유형을 따로 열(88px)로 두면 열한 칸 표의 최소 폭이 1280 기본 메뉴의 상자보다 넓어 'α' 열이 잘렸습니다(QA-678) — 배지를 티커 옆으로 모으고(칸이 좁으면
+      // 티커 아래로 꺾임), 열 머리가 하던 '유형'·'자산군' 이름은 배지 안의 읽기 전용 글로 둡니다.
       cell: (row) => (
         <span className="flex min-w-0 flex-col items-start">
           <InspectorTrigger inspector={inspector} itemKey={row.ticker}>
             {row.name}
           </InspectorTrigger>
-          <span className="text-xs text-text-3">{row.ticker}</span>
+          <span className="flex flex-wrap items-center gap-1">
+            <span className="text-xs text-text-3">{row.ticker}</span>
+            <SourceBadge>
+              <span className="sr-only">{kindLabel} </span>
+              {row.kind}
+            </SourceBadge>
+          </span>
           {row.isStale && (
             <span className="text-xs" title={row.staleReason ?? undefined}>
               <StatusText tone="warn" iconSize={12}>이전 값(수집 실패)</StatusText>
@@ -235,7 +243,6 @@ function ReturnsTable({
         </span>
       ),
     },
-    { key: "kind", header: kindLabel, className: "break-keep", cell: (row) => <SourceBadge>{row.kind}</SourceBadge> },
     {
       key: "price",
       header: "현재가",
@@ -284,16 +291,20 @@ function ReturnsTable({
   );
 }
 
-/** 현재가 칸 — 실시간 값이 있으면 그 가격과 오늘 등락(시간 외면 그 이름), 설명에 출처·거래 시각. 없으면 저장본 현재가. */
+/**
+ * 현재가 칸 — 실시간 값이 있으면 그 가격과 오늘 등락(시간 외면 그 이름), 설명에 출처·거래 시각. 없으면 저장본 현재가.
+ * 오늘 등락 줄은 꺾일 수 있는 줄입니다 — 칸이 좁으면 시간 외 이름('· 애프터장' 한 덩어리)이 칩 다음 줄로 내려가고, 칩은 칸 안에서 꺾지 않습니다(공용 ChangeCell).
+ * 한 줄로 묶어 두면 실시간이 올 때 현재가 칸이 91~148px로 넓어져 섹터 표가 1280 기본 메뉴의 상자를 넘었습니다(QA-678 — 합성 응답으로 잰 추정).
+ */
 function PriceCell({ stored, realtime }: { stored: number | null; realtime?: LivePrice }) {
   if (!realtime) return <>{formatNumber(stored, 2)}</>;
   const shown = liveShown(realtime);
   return (
     <span className="flex flex-col items-end" title={livePriceTitle(realtime, (value) => formatNumber(value, 2))}>
       <span>{formatNumber(shown.price, 2)}</span>
-      <span className="flex items-baseline gap-1 whitespace-nowrap text-xs text-text-3">
+      <span className="flex flex-wrap items-baseline justify-end gap-x-1 text-xs text-text-3">
         <ChangeCell changePct={shown.changePct} />
-        {shown.session ? <span>· {shown.session}</span> : null}
+        {shown.session ? <span className="whitespace-nowrap">· {shown.session}</span> : null}
       </span>
     </span>
   );

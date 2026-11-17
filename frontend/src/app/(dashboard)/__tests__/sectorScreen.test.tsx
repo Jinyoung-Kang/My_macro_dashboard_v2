@@ -168,7 +168,8 @@ describe("섹터 작업대 배치(P5a)", () => {
     expect(screen.getByRole("table", { name: "자산군 상세" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "섹터 상세" }).parentElement?.textContent).toContain("2개");
     const headers = within(table).getAllByRole("columnheader").map((cell) => cell.textContent);
-    expect(headers).toEqual(["순위", "이름", "유형", "현재가", "1W", "1M ▪(순위 기준)", "3M", "6M", "YTD", "1Y", "α (1M)"]);
+    // 유형은 따로 열이 아니라 이름 칸의 배지(QA-678).
+    expect(headers).toEqual(["순위", "이름", "현재가", "1W", "1M ▪(순위 기준)", "3M", "6M", "YTD", "1Y", "α (1M)"]);
     // 수익률이 높은 차례(모르는 값은 맨 뒤) — 에너지(3.2%) → 정보기술(−12.15%).
     const rowHeaders = within(table).getAllByRole("rowheader");
     expect(rowHeaders.map((cell) => within(cell).getByRole("button").textContent)).toEqual(["에너지", "정보기술"]);
@@ -177,7 +178,7 @@ describe("섹터 작업대 배치(P5a)", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
     // 고른 기간(1M) 열 칸의 옅은 바탕.
     const cells = within(rowHeaders[1].closest("tr")!).getAllByRole("cell");
-    expect(cells[4].className).toContain("bg-surface-2/50");
+    expect(cells[3].className).toContain("bg-surface-2/50");
     // 자산군 표에는 α 열이 없다.
     expect(within(screen.getByRole("table", { name: "자산군 상세" })).queryByText("α (1M)")).toBeNull();
   });
@@ -264,7 +265,7 @@ describe("QA-668 섹터 저장본 없음이면 개수를 0으로 적지 않는�
 // '유형'·'자산군' 배지를 이름 칸 티커 옆으로, 시간 외 이름은 칩 다음 줄로 꺾일 수 있게.
 describe("QA-678 섹터 표는 유형 배지를 이름 칸에 두고, 시간 외 이름은 꺾일 수 있다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 '유형' 열 머리가 있었습니다('섹터 상세: expected <th scope="col" …(1)></th> to be null').
-  it.fails("'유형'·'자산군' 열 머리가 없고, 배지는 이름 칸(행 머리)의 티커 옆 — 낭독 글은 '유형 공격 / 성장'·'자산군 …'", async () => {
+  it("'유형'·'자산군' 열 머리가 없고, 배지는 이름 칸(행 머리)의 티커 옆 — 낭독 글은 '유형 공격 / 성장'·'자산군 …'", async () => {
     render(<SectorPage />);
     await screen.findAllByText("정보기술");
 
@@ -284,7 +285,7 @@ describe("QA-678 섹터 표는 유형 배지를 이름 칸에 두고, 시간 외
 
   // 수정 전(재현 커밋에서는 it.fails)에는 칩과 '· 애프터장'을 담은 줄이 whitespace-nowrap이고 꺾이지 않았습니다
   // ("expected [ 'flex', 'items-baseline', …(4) ] to include 'flex-wrap'").
-  it.fails("현재가 아래 줄의 시간 외 이름은 칩과 다른 덩어리이고, 그 줄은 꺾을 수 있다(nowrap 아님 — 칩만 꺾지 않음)", async () => {
+  it("현재가 아래 줄의 시간 외 이름은 칩과 다른 덩어리이고, 그 줄은 꺾을 수 있다(nowrap 아님 — 칩만 꺾지 않음)", async () => {
     render(<SectorPage />);
     await screen.findAllByText("정보기술");
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0));
