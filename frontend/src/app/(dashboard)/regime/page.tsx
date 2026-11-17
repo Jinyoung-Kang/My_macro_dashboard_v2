@@ -102,9 +102,9 @@ const LINKS = [
 
 type Episode = NonNullable<RegimeResponse["episodes"]>[number];
 
-/** 과거 구간 표의 열 — 국면은 태그(톤 + 아이콘 + 이름), 날짜는 그대로, 기간은 주. */
+/** 과거 구간 표의 열 — 국면은 태그(톤 + 아이콘 + 이름, 행 머리 — QA-673), 날짜는 그대로, 기간은 주. */
 const EPISODE_COLUMNS: readonly Column<Episode>[] = [
-  { key: "label", header: "국면", cell: (row) => <RegimeTag code={row.code} label={row.label} /> },
+  { key: "label", header: "국면", rowHeader: true, cell: (row) => <RegimeTag code={row.code} label={row.label} /> },
   { key: "start", header: "시작", cell: (row) => row.start },
   { key: "end", header: "끝", cell: (row) => row.end },
   { key: "weeks", header: "기간", align: "right", cell: (row) => `${row.weeks}주` },
@@ -169,10 +169,13 @@ export default function RegimePage() {
       block: true,
       note: signal ? (
         <>
-          {/* align-top: 글 줄 안의 inline-flex가 기준선에 앉아 보조 글 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음). */}
+          {/* align-top: 글 줄 안의 inline-flex가 기준선에 앉아 보조 글 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음).
+              상태 글 · 해석 — 홈 국면 패널과 같은 구분(lib/marketRows joinPresent ' · '). 빈칸 하나로 이으면 같은 회색이라 '정상 정상 범위입니다.'처럼
+              붙어 보이고 읽혔습니다(QA-676). */}
           <StatusText tone={healthy ? "ok" : "warn"} colorText={false} iconSize={12} className="align-top">
             {signal.state}
-          </StatusText>{" "}
+          </StatusText>
+          {" · "}
           {signal.reading}
         </>
       ) : null,
@@ -218,8 +221,21 @@ export default function RegimePage() {
     </>
   ) : error ? (
     <p className="break-keep text-sm text-text-2">국면을 읽지 못해 이력을 그리지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
-  ) : (
+  ) : firstLoadPending(regime) ? (
     <Skeleton lines={4} label="국면 이력을 읽는 중" />
+  ) : (
+    // 실패 뒤 다시 읽는 동안은 한 줄 — 실패 글과 막대 자리가 갱신마다 번갈아 그려지지 않게(머리·판정 기록과 같은 QA-655 규칙, QA-674).
+    <Loading label="국면 이력을 읽는 중…" />
+  );
+
+  // 판정 근거 패널의 값 자리 — 받기 전에는 자리표시, 읽지 못했으면 이력 탭과 같은 실패 글(머리에 오류 상자와 다시 시도가 있음). 예전에는 data만 보아 실패해도
+  // 읽는 중 자리표시(aria-busy '판정 근거 불러오는 중')가 남았습니다(QA-674). 막대 자리는 처음 읽는 동안만, 실패 뒤 다시 읽는 동안은 한 줄입니다(QA-655 규칙).
+  const evidencePending = data ? undefined : error ? (
+    <p className="break-keep text-sm text-text-2">판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
+  ) : firstLoadPending(regime) ? (
+    <Skeleton lines={4} label="판정 근거 불러오는 중" />
+  ) : (
+    <Loading label="판정 근거를 읽는 중…" />
   );
 
   return (
@@ -275,7 +291,7 @@ export default function RegimePage() {
       <SplitPane
         left={
           <Panel title="판정 근거" subtitle="결론에 동의하지 않아도 근거는 그대로 확인할 수 있어야 합니다.">
-            <PropertyList items={signalItems} placeholder={data ? undefined : <Skeleton lines={4} label="판정 근거 불러오는 중" />} />
+            <PropertyList items={signalItems} placeholder={evidencePending} />
             {data ? (
               <p className="mt-2 break-keep text-xs leading-4 text-text-3">
                 기준일 <span className="tabular-nums">{model.asOf ?? EMPTY}</span> — {REGIME_AS_OF_NOTE}
@@ -320,11 +336,12 @@ export default function RegimePage() {
             {QUADRANTS.map((quadrant) => {
               const now = quadrant.code === verdict?.code;
               return (
-                // 지금 칸은 잉크 테두리 + '지금' 글 + aria-current — 색만으로 가리지 않습니다(고대비에서도 테두리·글이 남음).
+                // 지금 칸은 잉크 테두리 + '지금' 글 + aria-current — 색만으로 가리지 않습니다. 고대비(forced-colors)에서는 바탕이 지워지고 두 테두리가 같은
+                // 시스템 색이 되므로 지금 칸만 2px 테두리로 가릅니다(QA-675 — QA-492와 같은 방법, 그 줄만 2px 높아짐). 뜻은 '지금' 글과 aria-current가 나릅니다.
                 <li
                   key={quadrant.code}
                   aria-current={now ? "true" : undefined}
-                  className={`min-w-0 rounded-control border px-3 py-2 ${now ? "border-text bg-surface-2" : "border-border bg-bg"}`}
+                  className={`min-w-0 rounded-control border px-3 py-2 ${now ? "border-text bg-surface-2 forced-colors:border-2" : "border-border bg-bg"}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <RegimeTag code={quadrant.code} label={quadrant.label} />

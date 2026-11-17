@@ -256,8 +256,10 @@ describe("판정 성과 — 국면별 공용 표", () => {
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "기간", "표본", "평균", "중앙값", "상승 비율", "기준 대비(평균)", "비교: 아무 때나",
     ]);
+    // 기간은 행 머리(QA-673), 나머지 여섯이 칸.
+    expect(within(table).getByRole("rowheader").textContent).toBe("13주 뒤");
     const cells = within(table).getAllByRole("cell").map((cell) => cell.textContent);
-    expect(cells).toEqual(["13주 뒤", "42건 · 독립 4", "−1.20%", "−0.80%", "40%", "−1.70%p", "−0.40% · 55% 상승"]);
+    expect(cells).toEqual(["42건 · 독립 4", "−1.20%", "−0.80%", "40%", "−1.70%p", "−0.40% · 55% 상승"]);
   });
 
   it("표본이 부족하면 숫자 대신 '표본 부족'(보조 글)과 —, 관점을 바꾸면 그 관점의 국면", async () => {
@@ -387,7 +389,8 @@ describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => 
     expect(blocks.map((block) => block.hidden)).toEqual([true, false, true]);
     const table = screen.getByRole("table", { name: "과거 구간 (최근 순)" });
     expect(within(table).getAllByRole("row")).toHaveLength(4);
-    expect(within(table).getAllByRole("cell")[3].textContent).toBe("2주");
+    // 국면은 행 머리(QA-673) — 칸은 시작·끝·기간.
+    expect(within(table).getAllByRole("cell")[2].textContent).toBe("2주");
   });
 
   it("연결 — 쓰인 지표가 있는 매크로 화면(링크 글이 절 — 심화·신용 변동성, QA-641)과 순유동성 화면, 출처 셋", async () => {
@@ -511,23 +514,23 @@ describe("QA-651 판정 기록을 읽는 동안 목록 자리를 잡는다", () 
   });
 });
 
+/** path의 첫 읽기는 실패, 다시 읽기는 failAgain()을 부를 때까지 끝나지 않다가 실패. 나머지 경로는 reads 그대로. */
+function failFirst(path: string) {
+  const state = { calls: 0, failAgain: () => {} };
+  api.apiGetShared.mockImplementation((requested: string) => {
+    if (requested !== path) return requested in reads ? Promise.resolve(reads[requested]) : new Promise(() => {});
+    state.calls += 1;
+    return state.calls === 1
+      ? Promise.reject(new Error("백엔드 API 오류 (503)"))
+      : new Promise((_, reject) => { state.failAgain = () => reject(new Error("백엔드 API 오류 (503)")); });
+  });
+  return state;
+}
+
 // QA-655: 대상 머리의 자리표시(QA-650)와 판정 기록의 목록 꼴 자리(QA-651)를 '값 없이 읽는 중'이면 늘 그려, 첫 읽기가 실패한 뒤 다시 읽을 때마다(자동 갱신
 // 5분·10분 · 다시 시도 · 탭 복귀) 오류 상자와 큰 자리표시가 번갈아 그려졌습니다(매크로 지표 패널과 같은 원인 — 검토 지적). 실패 뒤 다시 읽는 동안은 오류
 // 상자와 비슷한 높이의 '…읽는 중' 한 줄이어야 합니다(값 꼴 자리는 처음 읽는 동안만).
 describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 자리를 다시 그리지 않는다", () => {
-  /** path의 첫 읽기는 실패, 다시 읽기는 failAgain()을 부를 때까지 끝나지 않다가 실패. 나머지 경로는 reads 그대로. */
-  function failFirst(path: string) {
-    const state = { calls: 0, failAgain: () => {} };
-    api.apiGetShared.mockImplementation((requested: string) => {
-      if (requested !== path) return requested in reads ? Promise.resolve(reads[requested]) : new Promise(() => {});
-      state.calls += 1;
-      return state.calls === 1
-        ? Promise.reject(new Error("백엔드 API 오류 (503)"))
-        : new Promise((_, reject) => { state.failAgain = () => reject(new Error("백엔드 API 오류 (503)")); });
-    });
-    return state;
-  }
-
   // 수정 전(재현 커밋에서는 it.fails)에는 다시 읽는 동안 머리 꼴 자리표시(status '국면을 판정하는 중')가 다시 그려졌습니다('expected <div role="status" …> to be null').
   it("대상 머리 — 실패 → 다시 읽는 중에 머리 꼴 자리표시 없이 '국면을 판정하는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
     const state = failFirst(REGIME);
@@ -558,5 +561,102 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 
 
     await act(async () => state.failAgain());
     expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+});
+
+// QA-673: 국면 이력의 '과거 구간 (최근 순)' 표와 판정 성과의 국면별 표는 첫 열에 행 머리가 없어, 낭독기가 칸을 옮길 때 국면 이름·기간이 행 이름으로
+// 읽히지 않았습니다(QA 스택 390·1024·1440 — 접근성 트리 rowheader 0, 탭을 바꿔 잼). 개편 전 옛 표는 행 머리를 그릴 수 없었습니다.
+describe("QA-673 과거 구간·판정 성과 표의 첫 열은 행 머리", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 행 머리가 없었습니다('Unable to find an accessible element with the role "rowheader"').
+  it("판정 성과 표의 행 머리는 기간('13주 뒤'), 과거 구간 표는 줄마다 행 머리(국면)", async () => {
+    reads[REGIME] = withHistory();
+    reads[TRACK_SPY] = trackRecord();
+    render(<RegimePage />);
+
+    await openTab("판정 성과");
+    const track = await screen.findByRole("table", { name: "확장 (Expansion) — 판정 뒤 수익률" });
+    expect(within(track).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["13주 뒤"]);
+
+    await openTab("국면 이력");
+    const episodes = screen.getByRole("table", { name: "과거 구간 (최근 순)" });
+    const bodyRows = within(episodes).getAllByRole("row").length - 1;
+    expect(bodyRows).toBe(3);
+    expect(within(episodes).getAllByRole("rowheader")).toHaveLength(bodyRows);
+  });
+});
+
+// QA-674: 판정 근거 패널의 값 자리는 data만 보아, 국면 읽기가 실패해도 읽는 중 자리표시(role=status aria-busy '판정 근거 불러오는 중' — 깜빡이는 막대 넷)가
+// 계속 남았습니다(QA 스택 390·1024·1440, 모의 503 — 머리는 오류 상자, 국면 이력 탭은 실패 글인데). P5a가 근거 패널을 칸 틀로 늘 그리면서 생긴 상태입니다.
+// 실패하면 실패 글(머리의 다시 시도를 가리킴)이고, 실패 뒤 다시 읽는 동안은 한 줄(QA-655 규칙), 막대 자리는 처음 읽는 동안만이어야 합니다.
+describe("QA-674 판정 근거 패널은 국면 읽기가 실패하면 읽는 중 자리표시를 두지 않는다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 실패 뒤에도 읽는 중 상태가 남았습니다('expected <div role="status" …(3)>…(5)</div> to be null').
+  it("국면 읽기가 실패하면 판정 근거에 읽는 중 상태·aria-busy가 없고 실패 글", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === REGIME ? Promise.reject(new Error("요청 실패 (HTTP 503)")) : new Promise(() => {}));
+    render(<RegimePage />);
+    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    expect(await within(header).findByRole("button", { name: "다시 시도" })).toBeTruthy();
+
+    const panel = await panelTitled("판정 근거");
+    expect(within(panel).queryByRole("status", { name: "판정 근거 불러오는 중" })).toBeNull();
+    expect(panel.querySelectorAll('[aria-busy="true"]')).toHaveLength(0);
+    expect(within(panel).getByText("판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.")).toBeTruthy();
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 다시 읽는 동안 막대 자리가 다시 그려졌습니다('expected <div role="status" …(3)>…(5)</div> to be null').
+  it("실패 뒤 다시 읽는 동안은 막대 자리 없이 '판정 근거를 읽는 중…' 한 줄, 다시 실패하면 실패 글", async () => {
+    const state = failFirst(REGIME);
+    render(<RegimePage />);
+    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    fireEvent.click(await within(header).findByRole("button", { name: "다시 시도" }));
+
+    expect(state.calls).toBe(2);
+    const panel = await panelTitled("판정 근거");
+    expect(within(panel).queryByRole("status", { name: "판정 근거 불러오는 중" })).toBeNull();
+    expect(within(panel).getByText("판정 근거를 읽는 중…")).toBeTruthy();
+    // 국면 이력 탭(숨은 탭도 마운트)도 같은 규칙 — 막대 자리 대신 한 줄.
+    expect(screen.queryByRole("status", { name: "국면 이력을 읽는 중", hidden: true })).toBeNull();
+    expect(screen.getByText("국면 이력을 읽는 중…")).toBeTruthy();
+
+    await act(async () => state.failAgain());
+    expect(await within(panel).findByText("판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.")).toBeTruthy();
+  });
+});
+
+// QA-675: '네 국면'의 지금 칸은 테두리 색(잉크)과 바탕 색으로만 갈려, 고대비(forced-colors)에서 바탕이 지워지고 두 테두리가 같은 시스템 색(1px)이 되면
+// 12px '지금' 글만 남았습니다(QA 스택 390·1024·1440 흉내 — 네 칸 모두 1px 검정). 명세 §3-8(D9)·QA-492 규칙대로 지금 칸에만 forced-colors:border-2가 있어야 합니다.
+describe("QA-675 네 국면의 지금 칸은 고대비에서 2px 테두리", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 지금 칸에도 없었습니다("expected [ 'min-w-0', 'rounded-control', …(5) ] to include 'forced-colors:border-2'").
+  it("지금 칸(침체 경계)에만 forced-colors:border-2 — 나머지 셋에는 없음", async () => {
+    reads[REGIME] = { ...regimeExpansion(), verdict: { ...regimeExpansion().verdict!, code: "CONTRACTION", label: "침체 경계 (Contraction)" } };
+    render(<RegimePage />);
+    const list = await screen.findByRole("list", { name: "네 국면" });
+    await within(list).findByText("지금");
+    const items = within(list).getAllByRole("listitem");
+
+    expect(items[3].getAttribute("aria-current")).toBe("true");
+    expect(items[3].className.split(/\s+/)).toContain("forced-colors:border-2");
+    for (const item of items.slice(0, 3)) expect(item.className.split(/\s+/)).not.toContain("forced-colors:border-2");
+  });
+});
+
+// QA-676: 판정 근거 메모(값 아래 보조 글)가 상태 글과 해석을 빈칸 하나로 이어, 같은 회색이라 '정상 정상 범위입니다.'처럼 붙어 보이고 읽혔습니다(QA 스택
+// 390·1024·1440 — 접근성 트리 '정상 | 정상 범위입니다.'). 같은 모델을 쓰는 홈 국면 패널은 '정상 · 정상 범위입니다.'이고, D2는 두 줄이었습니다. 홈과 같은 ' · '여야 합니다.
+describe("QA-676 판정 근거 메모는 '상태 · 해석'", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 빈칸 하나로 이었습니다("expected '정상 장기 금리가 단기보다 높습니다(정상 구조).' to be '정상 · 장기 금리가 단기보다 높습니다(정상 구조).'").
+  it("정상 칸은 '정상 · 해석', 주의 칸은 '주의: 축소 · 해석'(낭독 머리말 포함 글)", async () => {
+    const response = regimeExpansion();
+    const signals = response.verdict?.signals ?? [];
+    signals[3] = { ...signals[3], value: -0.05, state: "축소", reading: "최근 4주 동안 시장에서 유동성이 빠져나갔습니다.", healthy: false };
+    reads[REGIME] = response;
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 근거");
+    await within(panel).findByText("시카고 연준 금융상황지수");
+
+    /** 속성 한 줄의 메모 — 이름(dt) 옆 값 칸(dd)의 둘째 줄(상태 글 + 해석). */
+    const memo = (label: string) => (within(panel).getByText(label, { selector: "dt" }).nextElementSibling as HTMLElement).children[1]?.textContent;
+    expect(memo("장단기 금리차 10Y-3M")).toBe("정상 · 장기 금리가 단기보다 높습니다(정상 구조).");
+    expect(memo("하이일드 스프레드")).toBe("정상 · 정상 범위입니다.");
+    expect(memo("연준 순유동성 4주 변화")).toBe("주의: 축소 · 최근 4주 동안 시장에서 유동성이 빠져나갔습니다.");
   });
 });

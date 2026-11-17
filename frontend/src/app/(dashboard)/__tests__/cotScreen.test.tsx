@@ -153,6 +153,28 @@ describe("COT 작업대 배치(P5a)", () => {
     expect(rowNamed(S_AND_P).getAttribute("aria-current")).toBe("true");
   });
 
+  // QA-671: 상태 글은 표 단추로 고른 자산(picked)만 따라가, 머리 '자산' 고르기로 바꾼 뒤에도 이전 자산 문장이 남았고(읽기 모드로 닿으면 틀린 자산을 읽음),
+  // 그 자산 단추를 다시 누르면 글이 같아 라이브 영역 알림이 나가지 않았습니다(QA 스택 1440·390). 고르기로 바꾸면 글을 비우고, 그 뒤 단추를 누르면 다시 알려야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 금 문장이 남았습니다("expected '아래 포지셔닝 추이 패널을 금 자산으로 바꿨습니다.' to be ''").
+  it("머리 '자산' 고르기로 바꾸면 상태 글을 비우고, 그 뒤 표 단추를 누르면 다시 알린다", async () => {
+    render(<CotPage />);
+    const select = (await screen.findByLabelText("자산")) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(2));
+    await waitFor(() => expect(within(summaryTable()).getAllByRole("rowheader")).toHaveLength(2));
+    const status = screen.getAllByRole("status").find((element) => element.className.includes("sr-only"))!;
+    const GOLD = "아래 포지셔닝 추이 패널을 금 자산으로 바꿨습니다.";
+
+    fireEvent.click(within(summaryTable()).getByRole("button", { name: "금" }));
+    expect(status.textContent).toBe(GOLD);
+
+    fireEvent.change(select, { target: { value: S_AND_P } });
+    expect(screen.getByRole("heading", { name: `포지셔닝 추이 — ${S_AND_P}` })).toBeTruthy();
+    expect(status.textContent).toBe("");
+
+    fireEvent.click(within(summaryTable()).getByRole("button", { name: "금" }));
+    expect(status.textContent).toBe(GOLD);
+  });
+
   it("고른 자산 KPI 띠 넷 — 스마트머니 순포지션(−·1주 변화 칩·출처 줄과 기준일)·상업 헤저·소액/비보고·3년 백분위(%)", async () => {
     render(<CotPage />);
     const strip = await screen.findByRole("region", { name: `${S_AND_P} 포지셔닝 요약` });
@@ -248,5 +270,71 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 요약 �
 
     await act(async () => failAgain());
     expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+});
+
+// QA-668: COT 저장본이 없을 때(available=false, assets 빈 목록) '자산별 요약' 머리에 '0개'를 적어, 모르는 개수를 0으로 읽게 했습니다(QA 스택, 합성 응답 —
+// 매크로 지표 패널과 같은 원인). 저장본이 있을 때만 개수를 둡니다.
+describe("QA-668 COT 저장본 없음이면 자산 개수를 0으로 적지 않는다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 '0개'가 있었습니다('expected [ <span …(1)></span> ] to deeply equal []').
+  it("available=false — '자산별 요약' 머리에 'n개'가 없고, 저장본 없음 안내와 빈 표 글은 그대로", async () => {
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/cot/overview")) return Promise.resolve({ available: false, assets: [] });
+      const key = Object.keys(BODIES).find((prefix) => path.startsWith(prefix));
+      return key ? Promise.resolve(BODIES[key]) : new Promise(() => {});
+    });
+    render(<CotPage />);
+
+    expect(await screen.findByText(/COT 저장본이 없습니다/)).toBeTruthy();
+    const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;
+    expect(await within(panel).findByText("표시할 자산이 없습니다.")).toBeTruthy();
+    expect(within(panel).queryAllByText(/\d개$/)).toEqual([]);
+  });
+});
+
+// QA-672: 요약 표의 스마트머니 순포지션 칸만 값을 모를 때 색 span으로 감싼 '—'를 그려, 공용 표가 모르는 칸으로 보지 않아 낭독 글 '값 없음'이 없었습니다
+// (같은 행의 상업 헤저·1주·4주·백분위 칸은 '— 값 없음' — QA 스택 1440·390, 모의 응답의 null 칸·수집 실패 행). 개편 전부터(옛 표는 다섯 칸 모두 '—'만).
+describe("QA-672 스마트머니 순포지션을 모르면 공용 표의 모르는 칸", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 순포지션 칸이 '—'뿐이었습니다('Unable to find an element with the text: 값 없음').
+  it("ncNet null 행과 수집 실패 행 — 순포지션 칸은 상업 헤저 칸과 같이 '—'(읽기에서 뺌)와 낭독 글 '값 없음'", async () => {
+    const overview = BODIES["/api/cot/overview"] as { assets: unknown[] };
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/cot/overview")) {
+        return Promise.resolve({ ...overview, assets: [
+          summary(S_AND_P, "주식", { ncNet: null, commNet: null, change1w: null, change4w: null, percentile: null }),
+          { asset: "금", category: "원자재", available: false, error: "CFTC 응답 시간 초과" },
+        ] });
+      }
+      const key = Object.keys(BODIES).find((prefix) => path.startsWith(prefix));
+      return key ? Promise.resolve(BODIES[key]) : new Promise(() => {});
+    });
+    render(<CotPage />);
+    await screen.findByText("CFTC 응답 시간 초과");
+
+    const table = screen.getByRole("table", { name: "자산별 요약" });
+    for (const name of [S_AND_P, "금"]) {
+      // 칸 차례: 자산(행 머리) · 기준일 · 스마트머니 순포지션 · 상업 헤저 · 1주 · 4주 · 3년 백분위.
+      const cells = within(within(table).getByRole("button", { name }).closest("tr") as HTMLElement).getAllByRole("cell");
+      for (const cell of [cells[1], cells[2]]) {
+        expect(within(cell).getByText("값 없음").className, name).toContain("sr-only");
+        expect(within(cell).getByText("—").getAttribute("aria-hidden"), name).toBe("true");
+      }
+    }
+  });
+});
+
+// QA-673: 극단 성적 표(극단 롱·극단 숏 이후 성적)와 최근 극단 신호 표는 첫 열에 행 머리가 없어, 낭독기가 칸을 옮길 때 '4주 뒤'·신호 날짜가 행 이름으로
+// 읽히지 않았습니다(QA 스택 390·1024·1440 — 접근성 트리 rowheader 0, 같은 화면 자산별 요약은 6). 개편 전 옛 표는 행 머리를 그릴 수 없었습니다.
+describe("QA-673 극단 성적·최근 신호 표의 첫 열은 행 머리", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 행 머리가 없었습니다('Unable to find an accessible element with the role "rowheader"').
+  it("'극단 롱 이후 성적'의 행 머리가 기간 둘, '최근 극단 신호'는 줄마다 행 머리(기준일)", async () => {
+    render(<CotPage />);
+    const recent = await screen.findByRole("table", { name: "최근 극단 신호" });
+
+    const side = screen.getByRole("table", { name: "극단 롱 이후 성적" });
+    expect(within(side).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["4주 뒤", "13주 뒤"]);
+    const bodyRows = within(recent).getAllByRole("row").length - 1;
+    expect(bodyRows).toBe(2);
+    expect(within(recent).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["2026-08-18", "2026-07-21"]);
   });
 });

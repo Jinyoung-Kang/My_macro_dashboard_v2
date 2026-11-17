@@ -25,6 +25,7 @@ const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthor
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
 
 import { endpoints } from "@/lib/endpoints";
+import { MACRO_SECTIONS } from "@/lib/marketSections";
 import { FxCompareSection } from "../macro/FxCompareSection";
 import MacroPage from "../macro/page";
 import { ScrapedSection } from "../macro/ScrapedSection";
@@ -170,16 +171,26 @@ describe("QA-099 지표별 단독 차트 — 백엔드가 받지 못한 이유�
 describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다", () => {
   const FAILED = "요청 실패 (HTTP 503)";
   // 수정 전에는 error를 받지 않거나(스크래핑·AI 엔진 목록) 섹션에 넘기지 않아(심화 지표) 빈 카드·이유 없이 꺼진 버튼만 남았다.
-  it.each<[string, string, () => ReactElement]>([
-    ["스크래핑 시세", "/api/macro/scraped", () => <ScrapedSection />],
-    ["매크로 심화 지표", "/api/macro/advanced", () => <MacroPage />],
-  ])("%s: 첫 조회가 실패하면 오류와 다시 시도", async (_name, path, make) => {
+  // QA-670: 신용·변동성도 첫 조회가 실패하면 사유를 버리고 회색 빈 상태 글만 그려 다시 시도가 없었다(개편 전부터 — 자동 갱신 '끄기'면 다시 읽을 길이 없음).
+  // 수정 전(재현 커밋에서는 따로 it.fails)에는 패널에 '리스크 지표를 불러오지 못했습니다.'만 있어 사유를 찾지 못했다('Unable to find an element with the text: 요청 실패 (HTTP 503)').
+  // 다시 시도를 누르면 그 경로를 한 번 더 읽는다(요청은 누를 때만 — 정해진 요청 목록·간격은 그대로).
+  // 사유와 다시 시도는 그 경로를 읽는 패널(제목으로 찾은 section) 안에서 찾습니다 — 페이지 전체에서 찾으면 다른 자리(머리·다른 패널)에 그려져도
+  // 통과했습니다(QA-670 고침 f9da95c7이 재현 커밋 dd451528의 좁힌 시험을 이 행으로 합치며 넓어짐).
+  it.each<[string, string, string, () => ReactElement]>([
+    ["스크래핑 시세", "/api/macro/scraped", "비공식 스크래핑 시세 비교", () => <ScrapedSection />],
+    ["매크로 심화 지표", "/api/macro/advanced", "심화 매크로 지표", () => <MacroPage />],
+    ["매크로 신용·변동성", "/api/macro/risk", "신용 리스크, 은행권 및 시장 변동성", () => <MacroPage />],
+  ])("%s: 첫 조회가 실패하면 그 패널에 오류와 다시 시도 — 누르면 한 번 더 읽는다", async (_name, path, card, make) => {
     reads[path] = () => Promise.reject(new Error(FAILED));
 
     render(make());
 
-    expect(await screen.findByText(FAILED)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+    const section = await cardTitled(card);
+    expect(await within(section).findByText(FAILED)).toBeTruthy();
+    const pathReads = () => api.apiGetShared.mock.calls.filter(([called]) => String(called).startsWith(path)).length;
+    const before = pathReads();
+    fireEvent.click(within(section).getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(pathReads()).toBe(before + 1));
   });
 });
 
@@ -237,4 +248,51 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
       expect(await within(area).findByText(FAILED, {}, { timeout: 500 })).toBeTruthy();
     });
   }
+});
+
+// QA-668: 저장본이 없을 때(백엔드 MacroService.overview — available=false, categories는 빈 목록) 목차 첫 칸이 '지표 (0)'·지표 패널 머리가 '지표 0개'라,
+// 모르는 개수를 0으로 적었습니다(QA 스택 1440·390, 합성 개요 — '없는 숫자를 만들지 않는다'). 개요를 받기 전과 같이 개수 없이 두어야 하고, 저장본 없음
+// 안내는 그대로여야 합니다. 저장본이 있는데 범주가 비면(available=true) 지금처럼 '0개'입니다(위 QA-047·QA-066 시험의 응답).
+describe("QA-668 저장본 없음이면 지표 개수를 0으로 적지 않는다", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 패널 머리 '0개'('expected [ <span …(1)></span> ] to deeply equal []')·목차 링크 이름 '지표 (0)'이었습니다.
+  it("available=false — 목차 첫 칸 이름이 '지표'(개수 없음), 지표 패널에 'n개' 없음, 저장본 없음 안내는 그대로", async () => {
+    reads["/api/macro/overview"] = () => Promise.resolve({ available: false, readMode: "cache", categories: [], message: "저장본 없음" });
+    render(<MacroPage />);
+
+    const section = document.getElementById(MACRO_SECTIONS.indicators) as HTMLElement;
+    expect(await within(section).findByText("저장본 없음")).toBeTruthy();
+    expect(within(section).queryAllByText(/\d개$/)).toEqual([]);
+
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    const first = within(nav).getAllByRole("link")[0];
+    expect(within(nav).getAllByRole("link", { name: "지표" })[0]).toBe(first);
+    expect(within(nav).queryAllByRole("link", { name: /^지표 \(/ })).toEqual([]);
+  });
+
+  // 같은 화면의 비공식 스크래핑 시세 표도 저장본이 없을 때(백엔드 MacroService.scrapedMarkets — available=false, items는 빈 목록) 표 위 개수 줄에 '0개'를
+  // 적었습니다(P5a 4e70ebb0이 개수 줄을 더함 — 첫 고침 26d54d57에서 빠짐, QA 스택·자체 빌드 390·1440 합성 응답). 빈 표 글은 그대로여야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 표 위에 '0개'가 있었습니다('expected [ <p …(1)></p> ] to deeply equal []').
+  it("비공식 스크래핑 시세 available=false — 표 위에 'n개'가 없고, 빈 표 글은 그대로", async () => {
+    reads["/api/macro/scraped"] = () => Promise.resolve({ available: false, items: [] });
+    render(<ScrapedSection />);
+
+    const section = await cardTitled("비공식 스크래핑 시세 비교");
+    expect(await within(section).findByText("표시할 데이터가 없습니다.")).toBeTruthy();
+    expect(within(section).queryAllByText(/\d개$/)).toEqual([]);
+  });
+
+  // 저장본이 있으면 개수는 지금처럼 표 위에 — 실제 0줄이면 '0개', 줄이 있으면 그 수(available을 보는 고침이 개수 줄을 늘 지우지 않는지).
+  it.each<[string, unknown[]]>([
+    ["0개", []],
+    ["2개", [
+      { key: "a", name: "가", provider: "TradingView", unit: "USD", status: "ok", price: 1, previousClose: 1, changePct: 0, error: null },
+      { key: "b", name: "나", provider: "Yahoo", unit: "USD", status: "error", price: null, previousClose: null, changePct: null, error: "시간 초과" },
+    ]],
+  ])("비공식 스크래핑 시세 available=true — 표 위에 '%s'", async (text, items) => {
+    reads["/api/macro/scraped"] = () => Promise.resolve({ available: true, items });
+    render(<ScrapedSection />);
+
+    const section = await cardTitled("비공식 스크래핑 시세 비교");
+    expect(await within(section).findByText(text)).toBeTruthy();
+  });
 });

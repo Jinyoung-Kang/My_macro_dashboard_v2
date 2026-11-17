@@ -350,6 +350,23 @@ describe("비공식 시세·경제 캘린더 — 공용 표", () => {
     expect(within(stale).getByText(/이전 값 — HTTP 429/).closest("span[class*='text-warn']")).toBeTruthy();
   });
 
+  // QA-666: 비공식 시세 현재가 칸도 같은 오른쪽 맞춤 숫자 열 — 지금은 열이 넓어 한 줄이지만, 꺾이면 지표 표와 같이 왼쪽으로 밀리지 않게 끝 맞춤입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
+  it("비공식 시세: 받지 못한 현재가의 '—'·'수집 실패'는 끝 맞춤(justify-end)", async () => {
+    reads["/api/macro/scraped"] = () => Promise.resolve({ available: true, updatedAt: "2026-11-17T06:30:00+09:00", items: [
+      { key: "jpykrw", name: "엔/원", provider: "TradingView", unit: "원", status: "fail", price: null, previousClose: null,
+        changePct: null, error: null, delayMinutes: null },
+    ] });
+    render(<ScrapedSection />);
+
+    const failed = (await screen.findByText("엔/원")).closest("tr") as HTMLElement;
+    // 칸 차례: 항목(행 머리) · 출처 · 현재가 — 현재가는 둘째 칸(td).
+    const price = within(failed).getAllByRole("cell")[1];
+    expect(within(price).getByText("수집 실패")).toBeTruthy();
+    const dash = within(price).getByText("—");
+    expect((dash.parentElement as HTMLElement).className.split(/\s+/)).toContain("justify-end");
+  });
+
   it("경제 캘린더: 조밀 표(일정 기록) — 지표가 행 머리, 개수 줄", async () => {
     reads["/api/macro/econ-calendar"] = () => Promise.resolve({ available: true, collectedAtKst: "2026-11-05 12:00 KST", events: [
       { id: "1", country: "US", title: "Initial Jobless Claims", at: "2026-11-05T13:30:00+00:00", atKst: "2026-11-05 22:30 KST",
@@ -436,6 +453,20 @@ describe("지표 표와 미리보기", () => {
     expect(within(stale).getByText("선물 조회 실패 · 지수 값").parentElement?.className).toContain("text-warn");
   });
 
+  // QA-666: 값 칸(오른쪽 맞춤 숫자 열)의 '—'와 '수집 실패'는 칸 폭보다 넓어 두 줄로 꺾이는데, 공용 Empty가 시작 맞춤이라 같은 열의 숫자보다 41~53px 왼쪽에
+  // 그려졌습니다(QA 스택 390~1920, 모의 응답의 수집 실패 줄). 꺾여도 각 줄이 칸 오른쪽 끝에 붙는 끝 맞춤이어야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
+  it("수집 실패 줄의 값 칸 '—'·'수집 실패'는 끝 맞춤(justify-end) — 숫자 열과 같은 오른쪽 끝", async () => {
+    render(<MacroPage />);
+
+    const failed = (await screen.findByRole("button", { name: "미국채 2년물 수익률(%)" })).closest("tr") as HTMLElement;
+    const value = within(failed).getAllByRole("cell")[0];
+    const dash = within(value).getByText("—");
+    expect(dash.getAttribute("aria-hidden")).toBe("true");
+    expect((dash.parentElement as HTMLElement).className.split(/\s+/)).toContain("justify-end");
+    expect(within(value).getByText("수집 실패").parentElement).toBe(dash.parentElement);
+  });
+
   // 2026-11-17 결정 9(사용자 위임 — 권장안 가): 좁은 화면(md 미만 — 390 등)은 지표·값 두 칸의 두 줄 행. 예전에는 332px 상자 안 640px 표라 변화 칸이
   // 잘리고 기준 칸(추정·이전 값 배지 포함)은 가로로 넘겨야 보였습니다. md 이상은 그대로 네 칸(md~lg는 최소 640px + 넘김 안내).
   it("좁은 화면(md 미만): 두 줄 행 — 지표·값 두 칸, 이름 칸 둘째 줄에 변화 칩·추정·이전 값 배지·경고, 최소 폭·넘김 안내 없음, 기준은 미리보기", async () => {
@@ -482,6 +513,42 @@ describe("지표 표와 미리보기", () => {
     const dialog = await screen.findByRole("dialog", { name: "S&P 500" });
     expect(within(dialog).getByText("출처").nextElementSibling?.textContent).toContain("Yahoo Finance (^GSPC)");
     expect(within(dialog).getByText("장 상태·지연").nextElementSibling?.textContent).toBe("마감");
+  });
+
+  // QA-667: 좁은 화면 두 줄 행은 변화 칩 앞에 낭독기 전용 머리말 '변화'를 늘 붙여, 칩이 보합이면(칩의 낭독 글 '변화 없음') 행 머리 접근 이름이
+  // '… 변화 변화 없음 0.000 (0.00%) …'으로 겹쳤습니다(QA 스택 390, 합성 개요 — 정확히 0인 줄과 반올림해 0인 줄 모두). 보합이면 머리말을 빼고
+  // '변화 없음 0.000'만 읽어야 합니다. 상승·하락('변화 하락 …')·모름('변화 값 없음')은 그대로입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 겹쳤습니다("expected '미국채 2년물 수익률(%)ZT=F · 미국 국채변화 변화 없음0.0…' not to match /변화\s*변화 없음/").
+  it("좁은 화면: 변화가 보합(0, 반올림해 0 포함)인 줄의 행 머리는 '변화 변화 없음'으로 겹치지 않는다 — '변화 없음 0.000'", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({ matches: query === "(width < 48rem)", media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+    );
+    reads["/api/macro/overview"] = () => Promise.resolve({ ...OVERVIEW, categories: [
+      { id: "ust", title: "미국 국채 수익률", items: [
+        card({ key: "us02y", name: "미국채 2년물 수익률(%)", ticker: "ZT=F", market: "ust", priceStr: "3.600", delta: 0, pct: 0,
+          deltaStr: "0.000 (0.00%)", prevStr: "3.600" }),
+        card({ key: "us10y", name: "미국채 10년물 수익률(%)", ticker: "^TNX", market: "ust", priceStr: "4.123", delta: 0.0004, pct: 0.004,
+          deltaStr: "+0.000 (+0.00%)", prevStr: "4.123" }),
+        card({ key: "us30y", name: "미국채 30년물 수익률(%)", ticker: "^TYX", market: "ust", priceStr: "4.700", delta: -0.012, pct: -0.25,
+          deltaStr: "-0.012 (-0.25%)", prevStr: "4.712" }),
+      ] },
+    ] });
+    render(<MacroPage />);
+
+    const table = await screen.findByRole("table", { name: "미국 국채 수익률 지표" });
+    for (const name of [/미국채 2년물/, /미국채 10년물/]) {
+      const header = within(table).getByRole("rowheader", { name });
+      const text = header.textContent ?? "";
+      expect(text).not.toMatch(/변화\s*변화 없음/);
+      expect(text).toContain("변화 없음");
+      expect(text).toContain("0.000");
+    }
+    // 하락 줄은 머리말 '변화'(낭독기 전용)와 칩의 '하락' 그대로.
+    const down = within(table).getByRole("rowheader", { name: /미국채 30년물/ }).querySelector("[data-macro-narrow-line]") as HTMLElement;
+    expect(within(down).getByText("변화").className).toContain("sr-only");
+    expect(within(down).getByText("하락").className).toContain("sr-only");
   });
 
   it("md~lg(좁은 화면도 넓은 화면도 아님)는 네 칸 표 그대로 — 최소 640px(넘기면 안내), 둘째 줄 없음", async () => {
@@ -694,5 +761,53 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 표 꼴 
     await act(async () => failAgain());
     expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
     expect(panel.querySelectorAll("[data-macro-pending-row]")).toHaveLength(0);
+  });
+});
+
+// QA-669: 머리 동작 줄은 줄을 나눌 때 항목마다 글 폭 그대로를 쓰는데, 신선도(Freshness)는 '새로 읽지 못함' 알약을 수집 배지와 한 덩어리로 붙여, 자동 갱신이
+// 실패하면 이 항목이 138 → 251px로 넓어져 통째로 다음 줄로 넘어갔습니다 — 390·768(원본 데이터 단추 둘이 앞에 있는 폭)에서 동작 줄이 28px 자라 아래 전체가
+// 밀리고(실패 CLS 390 0.0961·768 0.33), 갱신이 성공하면 되돌아오며 한 번 더 밀렸습니다(QA 스택, 처음 읽기는 QA API·그 뒤 모의 500). 신선도를 감싼 칸이 lg 미만에서
+// 남은 폭을 채우고(max-lg:flex-1) 칸 안 글은 줄을 바꾸지 않아(whitespace-nowrap) 칸이 줄에 놓일 폭이 수집 배지 폭이어야, 알약이 생겨도 그 칸 안에서 배지 위에 놓입니다.
+describe("QA-669 머리의 신선도 칸은 갱신 실패 알약이 붙어도 동작 줄을 꺾지 않는다", () => {
+  afterEach(() => {
+    signal.token = 0;
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 배지를 감싼 칸이 동작 줄 전체(flex min-w-0 flex-wrap items-center gap-2)였습니다('expected [ Array(5) ] to deeply equal ArrayContaining{…}').
+  it("수집 배지와 '새로 읽지 못함'을 감싼 칸이 max-lg:flex-1·whitespace-nowrap(둘이 같은 칸)", async () => {
+    let calls = 0;
+    reads["/api/macro/overview"] = () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve({ available: true, collectedAtKst: "2026-11-17 06:30 KST", ageSeconds: 60, categories: [] })
+        : Promise.reject(new Error("요청 실패 (HTTP 500)"));
+    };
+    const { rerender } = render(<MacroPage />);
+    const header = screen.getByRole("heading", { level: 1, name: "거시경제 매크로 지표" }).closest("header") as HTMLElement;
+
+    const badge = await within(header).findByText("수집");
+    const cell = badge.closest("div") as HTMLElement;
+    expect(cell.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-lg:flex-1", "whitespace-nowrap"]));
+
+    // 화면 전체 새로고침 신호 — 개요를 다시 읽고(실패) 앞서 받은 값을 보이며 '새로 읽지 못함'을 붙입니다.
+    signal.token += 1;
+    await act(async () => rerender(<MacroPage />));
+    const pill = await within(header).findByText("새로 읽지 못함");
+    expect(pill.closest("div")).toBe(within(header).getByText("수집").closest("div"));
+    expect((pill.closest("div") as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["max-lg:flex-1", "whitespace-nowrap"]));
+  });
+
+  // 위 고침(be26b42b) 뒤에도 칸이 둘째 줄에 혼자 놓이는 폭(360·495~655 — 칸의 최소 폭인 배지 폭이 조작 뒤에 들어가지 않음)에서는 알약과 배지가 칸 안에
+  // 나란히 놓여, 그 줄 높이가 배지(16px)에서 알약(20px)으로 바뀌어 머리 아래 본문 전체가 4px 밀렸습니다(알약이 생길 때와 사라질 때 — 자체 빌드 0f6ae9d7,
+  // 360~1023 5px 간격). 칸이 lg 미만에서 최소 높이 20px(max-lg:min-h-5)이고 안을 가운데 맞추면(items-center) 알약이 있든 없든 그 줄 높이가 같습니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 칸에 그 클래스가 없었습니다('expected [ 'flex', 'whitespace-nowrap', …(2) ] to deeply equal ArrayContaining{…}').
+  it("신선도 칸은 lg 미만에서 최소 높이 20px·가운데 맞춤(max-lg:min-h-5·items-center) — 둘째 줄에 혼자 놓여도 알약이 줄 높이를 바꾸지 않는다", async () => {
+    reads["/api/macro/overview"] = () =>
+      Promise.resolve({ available: true, collectedAtKst: "2026-11-17 06:30 KST", ageSeconds: 60, categories: [] });
+    render(<MacroPage />);
+    const header = screen.getByRole("heading", { level: 1, name: "거시경제 매크로 지표" }).closest("header") as HTMLElement;
+
+    const cell = (await within(header).findByText("수집")).closest("div") as HTMLElement;
+    expect(cell.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-lg:min-h-5", "items-center"]));
   });
 });

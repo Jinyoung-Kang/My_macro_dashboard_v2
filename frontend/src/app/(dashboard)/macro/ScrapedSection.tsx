@@ -54,13 +54,13 @@ const COLUMNS: readonly Column<ScrapedItem>[] = [
     key: "price",
     header: "현재가",
     align: "right",
-    // 받지 못한 시세는 '—'와 사유(0이나 빈 칸으로 두지 않음).
+    // 받지 못한 시세는 '—'와 사유(0이나 빈 칸으로 두지 않음) — 꺾여도 숫자 열과 같은 오른쪽 끝(QA-666).
     cell: (row) =>
       row.status === "ok" ? (
         `${formatNumber(row.price, 3)} ${row.unit}`
       ) : (
         <span className="text-text-3">
-          <Empty reason="수집 실패" />
+          <Empty reason="수집 실패" align="end" />
         </span>
       ),
   },
@@ -115,8 +115,9 @@ export function ScrapedSection() {
           rows={data.items ?? []}
           rowKey={(row) => row.key}
           caption="비공식 스크래핑 시세"
-          // 개수는 표 위 줄에(명세 §3-7 — 머리의 개수는 값이 올 때 머리 구조가 바뀌어 제목을 다시 그림).
-          count={(count) => `${count.toLocaleString("ko-KR")}개`}
+          // 개수는 표 위 줄에(명세 §3-7 — 머리의 개수는 값이 올 때 머리 구조가 바뀌어 제목을 다시 그림). 저장본이 있을 때만 — 없으면(available=false —
+          // items는 빈 목록) 모르는 수라 '0개'로 적지 않습니다(QA-668, 같은 화면 지표 패널·COT·섹터와 같은 규칙).
+          count={data.available ? (count) => `${count.toLocaleString("ko-KR")}개` : undefined}
           scrollHint="overflow"
         />
       )}

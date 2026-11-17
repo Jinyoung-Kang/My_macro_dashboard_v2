@@ -1,7 +1,7 @@
 "use client";
 
 import { type Column, DataTable, KpiStrip } from "@/components/patterns";
-import { EmptyState, Freshness, Loading, Panel } from "@/components/ui";
+import { EmptyState, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { riskKpis } from "@/lib/macroScreen";
 import type { RiskIndicators } from "@/lib/types";
 import { CriteriaDetails } from "./CriteriaDetails";
@@ -53,10 +53,15 @@ const TITLE = "신용 리스크, 은행권 및 시장 변동성";
 export function RiskSection({
   risk,
   loading,
+  error,
+  onRetry,
   refreshError,
 }: {
   risk: RiskIndicators | null;
   loading: boolean;
+  /** 첫 조회가 실패했으면 그 문구(useApi error) — 이유와 다시 시도를 보입니다(QA-670). */
+  error?: string | null;
+  onRetry?: () => void;
   /** 새로 읽기가 실패했으면 그 문구 — 앞서 받은 값을 보이는 중이라고 알립니다(QA-067). */
   refreshError?: string | null;
 }) {
@@ -64,6 +69,15 @@ export function RiskSection({
     return (
       <Panel title={TITLE}>
         <Loading />
+      </Panel>
+    );
+  }
+  // 첫 조회가 실패하면 빈 상태 글이 아니라 이유와 다시 시도(심화 지표 패널과 같은 꼴 — QA-103). 예전에는 사유를 버리고 회색 글만 그려, 자동 갱신 '끄기'면
+  // 새로 고침(또는 셸의 수동 수집) 말고는 이 패널을 다시 읽을 길이 없었습니다(QA-670).
+  if (!risk && error) {
+    return (
+      <Panel title={TITLE}>
+        <ErrorState message={error} onRetry={onRetry} />
       </Panel>
     );
   }

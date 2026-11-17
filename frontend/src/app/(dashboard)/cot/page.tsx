@@ -147,8 +147,10 @@ export default function CotPage() {
       key: "ncNet",
       header: "스마트머니 순포지션",
       align: "right",
-      // 순포지션의 색(롱 빨강·숏 파랑)은 뜻이라 그대로 두고, 부호(+·−)가 함께 방향을 나릅니다(QA-629).
-      cell: (row) => <span className={deltaColor(row.ncNet ?? null, 0)}>{formatSignedCount(row.ncNet)}</span>,
+      // 순포지션의 색(롱 빨강·숏 파랑)은 뜻이라 그대로 두고, 부호(+·−)가 함께 방향을 나릅니다(QA-629). 모르면 null — 공용 표의 모르는 칸('—'와 낭독 글
+      // '값 없음')입니다. 색 span으로 감싼 '—'는 공용 표가 모르는 칸으로 보지 않아 이 칸만 '—'로 읽혔습니다(QA-672).
+      cell: (row) =>
+        row.ncNet === null || row.ncNet === undefined ? null : <span className={deltaColor(row.ncNet, 0)}>{formatSignedCount(row.ncNet)}</span>,
     },
     { key: "commNet", header: "상업 헤저", align: "right", cell: (row) => formatSignedCount(row.commNet) },
     { key: "change1w", header: "1주 변화", align: "right", cell: (row) => <ChangeCell change={row.change1w} digits={0} /> },
@@ -184,7 +186,8 @@ export default function CotPage() {
 
       <Panel
         title="자산별 요약" source={SOURCES.cftc}
-        count={overview.data ? `${(overview.data.assets ?? []).length.toLocaleString("ko-KR")}개` : undefined}
+        // 개수는 저장본이 있을 때만 — 없으면(available=false — 자산은 빈 목록) 모르는 수라 '0개'로 적지 않습니다(QA-668).
+        count={overview.data?.available ? `${(overview.data.assets ?? []).length.toLocaleString("ko-KR")}개` : undefined}
         subtitle="스마트머니(비상업) 순포지션과 최근 변화 · 자산 이름을 누르면 아래 추이와 극단 성적이 그 자산으로 바뀝니다."
       >
         {/* 처음 읽는 동안은 표 꼴 자리(줄 여섯 — 값이 온 뒤 아래 추이 패널이 밀리지 않게, QA-654), 실패 뒤 다시 읽는 동안은 한 줄(오류 상자와 이 자리가
@@ -215,7 +218,12 @@ export default function CotPage() {
             <Select
               label="자산"
               value={asset}
-              onChange={setAsset}
+              // 고르기로 바꾸면 상태 글을 비웁니다 — 고르기는 자기 새 값을 스스로 읽어 주고, 남겨 두면 이전 자산 이름이 남아 읽히며 그 자산 단추를 다시 눌러도
+              // 글이 같아 알림이 나가지 않았습니다(QA-671). 비워 두면 그 뒤 어느 표 단추를 눌러도 글이 바뀌어 다시 알립니다.
+              onChange={(value) => {
+                setAsset(value);
+                setPicked(null);
+              }}
               options={(assets.data?.assets ?? []).map((entry) => ({
                 value: entry.name,
                 label: entry.name,
@@ -280,11 +288,11 @@ export default function CotPage() {
   );
 }
 
-/** 극단 성적 표 한 줄 — 기간(4주·13주 뒤)마다 신호 뒤 성적과 아무 때나 들어갔을 때의 성적. */
+/** 극단 성적 표 한 줄 — 기간(4주·13주 뒤)마다 신호 뒤 성적과 아무 때나 들어갔을 때의 성적. 기간이 행 머리입니다(낭독기가 칸을 옮길 때 '4주 뒤'를 읽음 — QA-673). */
 type HorizonRow = { horizon: string; signal: CotExtremeSummary; base: CotExtremeSummary };
 
 const HORIZON_COLUMNS: readonly Column<HorizonRow>[] = [
-  { key: "horizon", header: "기간", className: "break-keep", cell: (row) => row.horizon },
+  { key: "horizon", header: "기간", rowHeader: true, className: "break-keep", cell: (row) => row.horizon },
   { key: "count", header: "표본", align: "right", cell: (row) => `${row.signal.count}건` },
   { key: "mean", header: "평균 수익률", align: "right", cell: (row) => <ChangeCell changePct={row.signal.mean} /> },
   { key: "median", header: "중앙값", align: "right", cell: (row) => withMinusSign(formatPercent(row.signal.median)) },
@@ -309,8 +317,9 @@ const HORIZON_COLUMNS: readonly Column<HorizonRow>[] = [
 
 type RecentEvent = NonNullable<CotExtremesResponse["recentEvents"]>[number];
 
+/** 최근 극단 신호 표의 칸 — 신호 기준일이 행 머리(QA-673). */
 const RECENT_COLUMNS: readonly Column<RecentEvent>[] = [
-  { key: "date", header: "기준일", cell: (row) => row.date },
+  { key: "date", header: "기준일", rowHeader: true, cell: (row) => row.date },
   { key: "side", header: "구분", className: "break-keep", cell: (row) => row.side },
   { key: "percentile", header: "백분위", align: "right", cell: (row) => formatWithUnit(row.percentile, 1, "%") },
   { key: "net", header: "순포지션", align: "right", cell: (row) => formatSignedCount(row.net) },

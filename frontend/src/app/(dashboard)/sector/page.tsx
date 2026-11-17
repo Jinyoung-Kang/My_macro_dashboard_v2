@@ -168,14 +168,15 @@ export default function SectorPage() {
           {(inspector) => (
             <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
               <Panel
-                title="섹터 상세" source={SOURCES.yahooEtf} count={`${sectors.length.toLocaleString("ko-KR")}개`}
+                // 개수는 저장본이 있을 때만 — 없으면(available=false — 빈 목록) 모르는 수라 '0개'로 적지 않습니다(QA-668).
+                title="섹터 상세" source={SOURCES.yahooEtf} count={data.available ? `${sectors.length.toLocaleString("ko-KR")}개` : undefined}
                 subtitle={`표본이 부족한 기간은 —로 표시합니다. 순위는 위에서 고른 ${period} 기준입니다. 현재가는 실시간 시세(아래 줄은 오늘 등락), 수익률은 저장본입니다. 이름을 누르면 그 종목의 값을 모아 봅니다.`}
               >
                 <ReturnsTable caption="섹터 상세" rows={sectors} period={period} kindLabel="유형" realtime={live.prices} inspector={inspector} />
               </Panel>
 
               <Panel
-                title="자산군 상세" source={SOURCES.yahooEtf} count={`${assets.length.toLocaleString("ko-KR")}개`}
+                title="자산군 상세" source={SOURCES.yahooEtf} count={data.available ? `${assets.length.toLocaleString("ko-KR")}개` : undefined}
                 subtitle="주식·채권·원자재·통화 전반의 상대 성과"
               >
                 {/* 초과성과(α)는 S&P 500 대비 지표라 자산군에는 의미가 없습니다.
