@@ -79,7 +79,7 @@ export default function SectorPage() {
   const allRows = [...sectors, ...assets];
   const sectorTickers = new Set(sectors.map((row) => row.ticker));
   // KPI 띠 — 처음 읽는 동안은 자리표시 타일(값이 온 뒤 띠가 끼어들어 아래가 밀리지 않게), 저장본이 없거나 읽지 못하면 두지 않습니다.
-  const kpis = data ? (data.available ? sectorKpis(data, SOURCES.yahooEtf) : []) : loading && !error ? sectorKpisPending() : [];
+  const kpis = data ? (data.available ? sectorKpis(data, SOURCES.yahooEtf) : []) : loading && !error ? sectorKpisPending(SOURCES.yahooEtf) : [];
 
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -111,7 +111,8 @@ export default function SectorPage() {
       )}
 
       {/* 벤치마크 기간별 수익률 — α(초과성과)를 읽는 기준. */}
-      {kpis.length > 0 ? <KpiStrip label={`S&P 500 (${data?.benchmark ?? "SPY"}) 기간별 수익률`} items={kpis} /> : null}
+      {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 아래 패널이 밀리지 않게. */}
+      {kpis.length > 0 ? <KpiStrip label={`S&P 500 (${data?.benchmark ?? "SPY"}) 기간별 수익률`} items={kpis} pendingMatchesValue /> : null}
 
       <Panel
         title="섹터 모멘텀" source={SOURCES.yahooEtf}

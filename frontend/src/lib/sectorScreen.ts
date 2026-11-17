@@ -53,15 +53,16 @@ export function sectorRowTitle(rows: readonly SectorRow[], ticker: string): stri
 
 /**
  * 처음 읽는 동안의 KPI 띠 — 기본 여섯 기간의 자리표시 타일(이름은 벤치마크 기본값 SPY). 값이 온 뒤 띠가 새로 끼어들어 아래 막대·표 패널이 밀리지 않게
- * 같은 자리를 미리 잡습니다. 첫 타일은 출처 줄(두 줄 안팎) 자리를 더 잡습니다.
+ * 같은 자리를 미리 잡습니다. 첫 타일은 값이 온 뒤와 같은 출처 글을 받아(띠가 pendingMatchesValue로 그림) 같은 높이의 출처 줄을 둡니다 — 예전 자리 줄 둘은
+ * 1024에서 첫 줄이 4px 높고 둘째 줄 타일이 10px 낮아 값이 오면 아래가 밀렸습니다(P5a 검토 CLS).
  */
-export function sectorKpisPending(): SectorKpi[] {
+export function sectorKpisPending(source: string): SectorKpi[] {
   return SECTOR_PERIODS.map((period, index) => ({
     key: period,
     label: `S&P 500 (SPY) ${period}`,
     value: null,
     format: signedPercentText,
     pending: true,
-    ...(index === 0 ? { pendingLines: 2 } : {}),
+    ...(index === 0 ? { source } : {}),
   }));
 }

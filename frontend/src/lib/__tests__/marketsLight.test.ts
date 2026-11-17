@@ -146,11 +146,12 @@ describe("sectorScreen sectorKpis", () => {
     expect(signedPercentText(-0.004)).toBe("0.00%");
   });
 
-  it("읽는 중 자리표시는 기본 여섯 기간 — 값 없이 pending, 첫 타일만 출처 줄 자리 두 줄", () => {
-    const items = sectorKpisPending();
+  it("읽는 중 자리표시는 기본 여섯 기간 — 값 없이 pending, 첫 타일만 값이 온 뒤와 같은 출처 글(자리 줄 없음)", () => {
+    const items = sectorKpisPending("Yahoo");
     expect(items.map((item) => item.label)).toEqual(["1W", "1M", "3M", "6M", "YTD", "1Y"].map((period) => `S&P 500 (SPY) ${period}`));
     expect(items.every((item) => item.pending && item.value === null)).toBe(true);
-    expect(items.map((item) => item.pendingLines ?? 0)).toEqual([2, 0, 0, 0, 0, 0]);
+    expect(items.map((item) => item.pendingLines ?? 0)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(items.map((item) => item.source ?? null)).toEqual(["Yahoo", null, null, null, null, null]);
   });
 
   it("검사 칸 제목은 '이름 (티커)', 표에 없는 티커는 null", () => {

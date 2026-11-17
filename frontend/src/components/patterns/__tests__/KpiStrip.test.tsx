@@ -455,6 +455,21 @@ describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
   });
 });
 
+describe("KpiStrip — 값 꼴에 맞춘 읽는 중 타일(pendingMatchesValue)", () => {
+  it("주면 읽는 중 값 줄이 값 줄 높이(28·32px)이고 받은 출처 글을 그린다 — 주지 않으면 그대로(홈 띠: 자리 줄 수로 맞춤, 읽는 중 출처 줄 없음)", () => {
+    const items = [{ key: "1w", label: "S&P 500 (SPY) 1W", value: null, pending: true, source: "Yahoo Finance ETF 일별 종가" }];
+    const { container, unmount } = render(<KpiStrip label="띠" items={items} pendingMatchesValue />);
+    const status = screen.getByRole("status", { name: "S&P 500 (SPY) 1W 불러오는 중" });
+    expect((status.parentElement as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["mt-0.5", "min-h-7", "lg:min-h-8"]));
+    expect(container.textContent).toContain("Yahoo Finance ETF 일별 종가");
+    unmount();
+    const plain = render(<KpiStrip label="띠" items={items} />);
+    const plainStatus = screen.getByRole("status", { name: "S&P 500 (SPY) 1W 불러오는 중" });
+    expect((plainStatus.parentElement as HTMLElement).className).toBe("mt-0.5");
+    expect(plain.container.textContent).not.toContain("Yahoo Finance ETF 일별 종가");
+  });
+});
+
 describe("KpiStrip — 출처 줄", () => {
   it("출처·지연·시각을 주면 타일 아래 출처 줄(12px 보조 글 · 읽어 주는 머리말 '출처:') — 링크 타일 이름에도 들어간다", () => {
     render(

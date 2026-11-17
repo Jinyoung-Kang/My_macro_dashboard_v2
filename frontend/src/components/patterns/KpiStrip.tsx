@@ -129,23 +129,36 @@ function ValueText({ text, unit }: { text: string; unit?: string | null }): JSX.
  * 값 줄 — 읽는 중이면 블록(QA-596), 값이 오면 값 글 하나를 담는 flex 행(숫자 값 글은 shrink-0 max-w-full — VALUE_NUMBER_ITEM). 값과 단위를 한 줄에
  * 붙드는 것은 값 글 안의 값 끝 묶음(VALUE_TAIL)과, 단위가 있는 숫자 값이면 값 줄의 −12px 여유(VALUE_ROW_UNIT)입니다. 판정 라벨은 낱말 사이에서 꺾습니다(break-keep).
  */
-function valueRowClass(item: KpiItem): string {
+function valueRowClass(item: KpiItem, pendingMatchesValue: boolean): string {
   if (item.pending) {
-    return "mt-0.5";
+    // 값 줄 높이(20·24px 글의 줄 28·32px)를 미리 잡을 때(띠의 선택 prop) — 읽는 중 막대(22px) 줄이 값 줄보다 낮아 값이 오면 띠가 6·10px 자랐음.
+    return pendingMatchesValue ? "mt-0.5 min-h-7 lg:min-h-8" : "mt-0.5";
   }
   const unitTail = item.valueKind !== "label" && Boolean(item.unit) && statValueText(item.value, item.format) !== null;
   return unitTail ? VALUE_ROW_UNIT : "mt-0.5 flex items-baseline";
 }
 
-function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
+function KpiTileBody({
+  item,
+  pendingGap,
+  pendingWide,
+  pendingMatchesValue = false,
+}: {
+  item: KpiItem;
+  pendingGap?: string;
+  pendingWide?: WidePending;
+  pendingMatchesValue?: boolean;
+}): JSX.Element {
   const change = item.change && !item.pending ? item.change : null;
   // 변화량·변화율을 둘 다 모르면 칩이 그려지지 않으므로(ChangeChip) 캡션만 남지 않게 줄째 뺍니다.
   const changeShown = change !== null && !(isMissingValue(change.change) && isMissingValue(change.changePct));
   const caption = change ? presentText(change.caption) : null;
   const flagged = Boolean(item.isEstimated || item.isProxy || item.isStale);
   const note = presentText(item.note);
+  // 출처 줄 — 값이 온 뒤에 그립니다. 띠가 값 꼴에 맞춘 자리표시를 바라면(pendingMatchesValue) 읽는 중에도 받은 출처 글(정적 — 값이 아님)을 그려 같은 높이를 잡습니다.
   const sourced =
-    !item.pending && (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
+    (!item.pending || pendingMatchesValue) &&
+    (presentText(item.source) !== null || presentText(item.asOf) !== null || (typeof item.delayMin === "number" && Number.isFinite(item.delayMin)));
   return (
     <>
       <div
@@ -155,7 +168,7 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
         {item.label}
       </div>
       {/* 읽는 중이면 값 줄은 블록 — flex 행 안의 Skeleton 상자는 폭을 정하지 않아 0으로 줄었습니다(QA-596). */}
-      <div className={valueRowClass(item)}>
+      <div className={valueRowClass(item, pendingMatchesValue)}>
         <KpiValue item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
       </div>
       {change && changeShown ? (
@@ -281,7 +294,19 @@ function widePending(count: number): WidePending {
  * - 끊을 곳 없는 긴 값·출처는 타일 안에서 꺾음(말줄임 없음 — PropertyList와 같은 규칙). 단위는 값의 마지막 글자와 한 묶음이라 홀로 다음 줄로
  *   가지 않고, 값 줄보다 긴 값만 숫자 안에서 꺾입니다.
  */
-export function KpiStrip({ label, items }: { label: string; items: readonly KpiItem[] }): JSX.Element {
+export function KpiStrip({
+  label,
+  items,
+  pendingMatchesValue = false,
+}: {
+  label: string;
+  items: readonly KpiItem[];
+  /**
+   * 읽는 중 타일을 값이 온 뒤의 꼴에 맞춥니다(선택, 기본 꺼짐 — 홈 띠는 자리 줄 수 `pendingLines`로 맞춤): 값 자리를 값 줄 높이(28·32px)로 잡고, 출처 줄은
+   * 읽는 중에도 받은 출처 글(정적)로 그립니다. 변화·상태·메모가 없는 띠(섹터 SPY 기간 수익률 — 첫 타일만 출처 줄)가 값이 와도 높이가 같게(P5a 검토 CLS).
+   */
+  pendingMatchesValue?: boolean;
+}): JSX.Element {
   // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
   const oneRow = ONE_ROW_GRID[items.length] ?? "";
   const pendingGap = ONE_ROW_PENDING_GAP[items.length];
@@ -294,13 +319,13 @@ export function KpiStrip({ label, items }: { label: string; items: readonly KpiI
           if (item.href) {
             tile = (
               <Link href={item.href} className={`${TILE} ${LINK_TILE}`}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} />
               </Link>
             );
           } else {
             tile = (
               <div role="group" aria-label={item.label} className={TILE}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} />
               </div>
             );
           }
