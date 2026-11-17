@@ -502,6 +502,7 @@ describe("QA-681 후보 고르기 창의 한국어 글은 낱말 사이에서만
 // 처음(입력칸)부터였고 낭독기는 창 이름부터 다시 읽었습니다(D3 전 QA 스택 qa@65caf1e8 390·1440, 키보드·마우스 같음 — 같은 빌드의 본문 팝업 ArticleDialog는
 // 다시 시도 전에 고정 자리로 옮김). 다시 읽는 동안에는 창 안 결과 자리에, 결과가 오면 첫 후보(후보가 왔을 때)·새 '다시 시도'(다시 실패)·입력칸(맞는 후보
 // 없음)으로 옮겨야 합니다. 그 사이 사용자가 포커스를 옮겼으면 그대로 둡니다. 수정 전(재현 커밋에서는 it.fails)에는 포커스가 틀(또는 body)에 남았습니다.
+// 고침: 다시 시도가 포커스를 먼저 결과 자리(tabIndex -1)로 옮기고, 다시 읽기가 끝나면 effect가 결과 자리의 첫 단추(후보·다시 시도) 또는 입력칸으로 옮김.
 describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴다 — 대화상자 틀로 떨어지지 않음", () => {
   const trigger = <button type="button">후보 열기</button>;
   const open = async () => {
@@ -516,7 +517,7 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
     symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF"), symbol("ITOT", "iShares Core S&P Total U.S. Stock Market ETF")], errors: {}, error: null },
   };
 
-  it.fails("출처 실패의 다시 시도 — 다시 찾는 동안 창 안에 있고, 후보가 오면 첫 후보로", async () => {
+  it("출처 실패의 다시 시도 — 다시 찾는 동안 창 안에 있고, 후보가 오면 첫 후보로", async () => {
     reads[endpoints.detail.symbols("ISHARES TR")] = { available: true, symbols: { items: [], errors: { "Yahoo Finance": "HTTP 429" }, error: "HTTP 429" } };
     const dialog = await open();
     const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
@@ -533,7 +534,7 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
     await waitFor(() => expect(document.activeElement).toBe(within(list).getAllByRole("button")[0]));
   });
 
-  it.fails("읽기 실패의 다시 시도 — 다시 읽는 동안(누른 단추가 자리표시로 바뀜)에도 창 안, 다시 실패하면 새 '다시 시도'로, 맞는 후보가 없으면 입력칸으로", async () => {
+  it("읽기 실패의 다시 시도 — 다시 읽는 동안(누른 단추가 자리표시로 바뀜)에도 창 안, 다시 실패하면 새 '다시 시도'로, 맞는 후보가 없으면 입력칸으로", async () => {
     reads[endpoints.detail.symbols("ISHARES TR")] = new Error("요청 시간이 지났습니다");
     const dialog = await open();
     await within(dialog).findByText("후보를 불러오지 못했습니다 — 요청 시간이 지났습니다", { selector: "span" });

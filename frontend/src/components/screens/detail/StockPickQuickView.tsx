@@ -86,13 +86,16 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
-  // 본문이 바뀐 뒤 포커스를 둘 곳 — 누른 단추가 사라지므로(후보 → 시세, 시세 → 후보) 포커스가 문서 처음으로 떨어지지 않게 옮겨 둡니다.
-  const focusNext = useRef<{ to: "back" } | { to: "candidate"; key: string } | null>(null);
+  // 후보 결과 자리(tabIndex -1) — '다시 시도'를 누르면 포커스를 먼저 여기로 옮깁니다(아래 retry).
+  const resultsRef = useRef<HTMLDivElement>(null);
+  // 본문이 바뀐 뒤 포커스를 둘 곳 — 누른 단추가 사라지므로(후보 → 시세, 시세 → 후보, 다시 시도 → 결과) 포커스가 문서 처음·대화상자 틀로 떨어지지 않게
+  // 옮겨 둡니다.
+  const focusNext = useRef<{ to: "back" } | { to: "candidate"; key: string } | { to: "results" } | null>(null);
 
   useEffect(() => {
     const next = focusNext.current;
+    if (!next || next.to === "results") return;
     focusNext.current = null;
-    if (!next) return;
     if (next.to === "back") {
       backRef.current?.focus();
       return;
@@ -100,6 +103,19 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
     const buttons = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("button[data-symbol]") ?? []);
     (buttons.find((button) => button.dataset.symbol === next.key) ?? inputRef.current)?.focus();
   }, [picked]);
+
+  // 다시 시도의 결과가 오면(다시 읽기가 끝나면) 결과로 옮깁니다 — 후보가 왔으면 첫 후보, 다시 실패했으면 새 '다시 시도'(결과 자리의 단추는 후보 아니면
+  // 다시 시도뿐), 단추가 없으면(맞는 후보 없음) 입력칸. 그 사이 사용자가 포커스를 다른 곳(입력칸·닫기)으로 옮겼으면 그대로 둡니다 — 결과 자리에 있거나
+  // 대화상자 틀·문서 처음으로 떨어졌을 때만 옮깁니다.
+  useEffect(() => {
+    if (focusNext.current?.to !== "results" || symbols.loading) return;
+    focusNext.current = null;
+    const place = resultsRef.current;
+    if (place === null) return;
+    const here = document.activeElement;
+    if (here !== null && here !== place && here !== document.body && here !== place.closest('[role="dialog"]')) return;
+    (place.querySelector<HTMLButtonElement>("button") ?? inputRef.current)?.focus();
+  }, [symbols.loading, symbols.data, symbols.error, symbols.refreshError]);
 
   const pick = (symbol: DetailSymbol) => {
     focusNext.current = { to: "back" };
@@ -109,8 +125,17 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
     focusNext.current = picked ? { to: "candidate", key: symbolKey(picked) } : null;
     setPicked(null);
   };
+  // 다시 시도 — 누른 단추는 다시 읽는 동안(읽기 실패 → 자리표시)이나 결과가 온 뒤 사라지므로, 먼저 결과 자리(창 안 고정 자리 — 본문 팝업 ArticleDialog와
+  // 같은 꼴)로 옮기고 결과가 오면 결과로 옮깁니다(위 effect). 예전에는 단추가 사라지면 포커스가 대화상자 틀로 떨어져 다음 Tab이 창 처음부터였습니다(QA-682).
+  const retry = () => {
+    focusNext.current = { to: "results" };
+    resultsRef.current?.focus();
+    void symbols.reload();
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    // 찾기는 포커스를 입력칸·찾기 단추에 둡니다(검색 창 규칙) — 앞서 누른 다시 시도의 결과 옮기기도 거둡니다.
+    focusNext.current = null;
     const next = symbolQuery(draft);
     // 같은 검색어로 다시 누르면 다시 찾습니다(경로가 같아 훅이 스스로 읽지 않음).
     if (next !== null && next === query) void symbols.reload();
@@ -163,12 +188,16 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
               </button>
             </div>
           </form>
-          {/* 찾기·다시 시도 뒤 결과를 화면 읽기 프로그램에 알립니다 — 포커스는 입력칸·단추에 그대로라 바뀐 목록·문구가 읽히지 않습니다(명령 팔레트 QA-560과 같은 까닭).
-              늘 그려 두어 내용이 바뀔 때 읽힙니다. 처음 읽는 동안은 자리표시(Skeleton)의 status가 알립니다. */}
+          {/* 찾기·다시 시도 뒤 결과를 화면 읽기 프로그램에 알립니다 — 찾기 뒤에는 포커스가 입력칸·찾기 단추에 그대로라 바뀐 목록·문구가 읽히지 않고(명령 팔레트
+              QA-560과 같은 까닭), 다시 시도 뒤에는 포커스가 결과 자리를 거쳐 첫 후보·새 '다시 시도'·입력칸으로 옮겨 가지만(QA-682) 건수·실패 사유는 그 자리에서
+              읽히지 않습니다. 늘 그려 두어 내용이 바뀔 때 읽힙니다. 처음 읽는 동안은 자리표시(Skeleton)의 status가 알립니다. */}
           <p role="status" className="sr-only">
             {candidatesStatus(query, symbols)}
           </p>
-          <Candidates query={query} state={symbols} listRef={listRef} listLabelId={listLabelId} onPick={pick} />
+          {/* 결과 자리 — 다시 시도를 누르면 포커스가 결과가 올 때까지 머무는 곳(바깥선 없음 — 누를 수 있는 것이 아님, Tab 차례에 들지 않음). */}
+          <div ref={resultsRef} tabIndex={-1} className="min-w-0 outline-none">
+            <Candidates query={query} state={symbols} listRef={listRef} listLabelId={listLabelId} onPick={pick} onRetry={retry} />
+          </div>
         </>
       )}
     </div>
@@ -180,7 +209,6 @@ type SymbolsState = {
   loading: boolean;
   error: string | null;
   refreshError: string | null;
-  reload: () => void;
 };
 
 /** 후보 상태의 한 줄 요약 — 라이브 영역(화면 읽기 프로그램)용. 처음 읽는 중이거나 검색어가 없으면 빈 글. */
@@ -209,15 +237,18 @@ function Candidates({
   listRef,
   listLabelId,
   onPick,
+  onRetry,
 }: {
   query: string | null;
   state: SymbolsState;
   listRef: RefObject<HTMLUListElement | null>;
   listLabelId: string;
   onPick: (symbol: DetailSymbol) => void;
+  /** 다시 시도 — 다시 읽기와 포커스 옮기기(PickBody retry). */
+  onRetry: () => void;
 }) {
   if (!query) return <p className="text-sm text-text-2">검색어를 넣고 찾기를 누르세요.</p>;
-  if (state.error) return <ErrorState message={`후보를 불러오지 못했습니다 — ${state.error}`} onRetry={state.reload} />;
+  if (state.error) return <ErrorState message={`후보를 불러오지 못했습니다 — ${state.error}`} onRetry={onRetry} />;
   const data = state.data;
   if (!data) return <Skeleton lines={3} label="후보를 찾는 중" />;
   const again = state.loading ? (
@@ -228,7 +259,7 @@ function Candidates({
   return (
     <div className="flex min-w-0 flex-col gap-2" aria-busy={state.loading || undefined}>
       {again}
-      <CandidateResult query={query} data={data} reload={state.reload} listRef={listRef} listLabelId={listLabelId} onPick={onPick} />
+      <CandidateResult query={query} data={data} reload={onRetry} listRef={listRef} listLabelId={listLabelId} onPick={onPick} />
     </div>
   );
 }
