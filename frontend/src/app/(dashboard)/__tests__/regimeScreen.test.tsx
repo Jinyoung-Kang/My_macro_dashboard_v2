@@ -423,3 +423,28 @@ describe("QA-641 국면 연결의 매크로 링크는 해시 없이 매크로 �
     expect(macro).toEqual(["/macro", "/macro"]);
   });
 });
+
+// QA-647: 응답에 값이 없을 때 숫자를 지어냈습니다(개편 전부터 — P5a가 옮기며 그대로 둠). 판정 기록 건수를 모르면 '0건', 기록 시각을 모르면 'KST 18시',
+// 판정 성과의 판정 주 수를 모르면 '0주 판정'으로 적었습니다 — '없는 숫자를 만들지 않는다'(null → '—') 규칙과 어긋남(P5a 검토). 같은 줄의 시작일은 이미 '—'.
+describe("QA-647 판정 기록·성과 부제는 모르는 수를 지어내지 않는다", () => {
+  it.fails("건수·기록 시각·판정 주 수가 응답에 없으면 '0건'·'18시'·'0주'가 아니라 '—'(시각은 그 마디를 뺌)", async () => {
+    reads[REGIME] = regimeExpansion();
+    const { count: _count, recordHourKst: _hour, ...log } = regimeLog();
+    reads[REGIME_LOG] = { ...log, entries: [] };
+    const { knownWeeks: _weeks, ...track } = trackRecord();
+    reads[TRACK_SPY] = track;
+    render(<RegimePage />);
+
+    const logPanel = await panelTitled("판정 기록");
+    await within(logPanel).findByText(/부터/);
+    const logText = logPanel.textContent ?? "";
+    expect(logText).not.toMatch(/0건|18시/);
+    expect(logText).toContain("2026-10-08부터 —건");
+
+    await openTab("판정 성과");
+    const trackPanel = await panelTitled("판정 성과");
+    await within(trackPanel).findByText(/매주 목요일/);
+    expect(trackPanel.textContent ?? "").not.toMatch(/0주 판정/);
+    expect(trackPanel.textContent ?? "").toContain("매주 목요일 —주 판정");
+  });
+});
