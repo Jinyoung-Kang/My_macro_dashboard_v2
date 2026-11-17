@@ -12,6 +12,7 @@ import {
   Panel,
   Select,
   ROW_TRIGGER,
+  SKELETON_BAR,
   SourceBadge,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -22,8 +23,8 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
 
-/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
-const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+/** 자리표시 막대(공용 ui/classes SKELETON_BAR — 공용 Skeleton 막대와 같은 모양). */
+const BAR = `block ${SKELETON_BAR}`;
 
 /** 요약을 읽는 동안 잡아 두는 자산 줄 수 — 수집기 COT 자산(collector/app/indicators.py COT_ASSETS) 여섯. 자리일 뿐 보이는 수가 아닙니다. */
 const COT_PENDING_ROWS = 6;

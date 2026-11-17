@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useState, type ReactNode } from "react";
 import { type Column, DataTable, EntityHeader, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
-import { Callout, ErrorState, Freshness, LINK_CLASSES, Panel, Select, Tag, tabId, Tabs } from "@/components/ui";
+import { Callout, ErrorState, Freshness, LINK_CLASSES, Panel, Select, SKELETON_BAR, Tag, tabId, Tabs } from "@/components/ui";
 import { ScaleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
@@ -49,8 +49,8 @@ const TIMELINE_COLOR: Record<string, string> = {
 /** 판정 대상 종류 — 상세 화면 셋 밖의 대상이라 종류 글과 아이콘(저울)을 넘깁니다. */
 const KIND = { label: "국면 판정", icon: ScaleIcon };
 
-/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
-const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+/** 자리표시 막대(공용 ui/classes SKELETON_BAR — 공용 Skeleton 막대와 같은 모양). */
+const BAR = `block ${SKELETON_BAR}`;
 
 /**
  * 대상 머리의 읽는 중 자리표시 — 값이 온 뒤 이름 줄 아래에 생기는 설명 글·주 값 줄·배지 줄과 같은 꼴·높이(QA-650). 이름 줄·동작은 EntityHeader가 그대로 둡니다.

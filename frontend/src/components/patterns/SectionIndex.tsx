@@ -2,7 +2,7 @@
 
 import { useRef, type JSX, type ReactNode } from "react";
 
-import { FOCUS_RING, underlineTabClasses } from "@/components/ui/classes";
+import { FOCUS_RING, SKELETON_BAR, underlineTabClasses } from "@/components/ui/classes";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { useSectionSpy } from "@/hooks/useSectionSpy";
 import { sectionCountText, sectionOrder, sectionParent, type SectionIndexItem, type SectionIndexLeaf } from "@/lib/sectionIndex";
@@ -84,7 +84,7 @@ function Count({ count, pending = false }: { count?: number | null; pending?: bo
       <span
         aria-hidden="true"
         data-section-index-count-pending=""
-        className="inline-block h-3 w-[2ch] shrink-0 rounded-control bg-control-fill text-xs motion-safe:animate-pulse forced-colors:border"
+        className={`inline-block h-3 w-[2ch] shrink-0 text-xs ${SKELETON_BAR}`}
       />
     ) : null;
   }

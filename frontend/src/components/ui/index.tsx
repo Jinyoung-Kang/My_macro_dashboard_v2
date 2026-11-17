@@ -29,6 +29,7 @@ export {
   SEGMENT_TRACK,
   SELECTED_BAR,
   segmentClasses,
+  SKELETON_BAR,
   TEXT_TARGET,
   toggleClasses,
   underlineTabClasses,

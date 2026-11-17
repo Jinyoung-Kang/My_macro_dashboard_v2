@@ -3,6 +3,7 @@
 import type { JSX, ReactNode } from "react";
 
 import { Tag, type TagTone } from "@/components/ui";
+import { SKELETON_BAR } from "@/components/ui/classes";
 
 import { EstimateBadge, StaleBadge } from "./badges";
 import { MasterDetail } from "./MasterDetail";
@@ -58,8 +59,8 @@ function TimelineRow({ entry }: { entry: TimelineEntry }): JSX.Element {
   );
 }
 
-/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
-const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+/** 자리표시 막대(공용 ui/classes SKELETON_BAR — 공용 Skeleton 막대와 같은 모양). */
+const BAR = `block ${SKELETON_BAR}`;
 
 /**
  * 시각순 목록의 읽는 중 자리표시 — 목록 줄과 같은 꼴(목록-검사 줄의 여백·구분선, 시각 열 5.5rem·종류 태그·요약 두 줄)의 글 없는 줄 `rows`개.

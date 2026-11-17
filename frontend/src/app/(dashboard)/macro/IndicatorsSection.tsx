@@ -17,7 +17,7 @@ import {
   SectionAnchor,
   StaleBadge,
 } from "@/components/patterns";
-import { Callout, ErrorState, LINK_CLASSES, Panel, SourceBadge, SourceLine } from "@/components/ui";
+import { Callout, ErrorState, LINK_CLASSES, Panel, SKELETON_BAR, SourceBadge, SourceLine } from "@/components/ui";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useWideShell } from "@/hooks/useWideShell";
@@ -161,8 +161,8 @@ function IndicatorPreview({ row }: { row: MacroIndicatorRow }) {
   );
 }
 
-/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
-const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+/** 자리표시 막대(공용 ui/classes SKELETON_BAR — 공용 Skeleton 막대와 같은 모양). */
+const BAR = `block ${SKELETON_BAR}`;
 
 /**
  * 개요를 처음 읽는 동안의 지표 패널 — 범주 블록(MACRO_PENDING_ROWS — 범주 다섯·줄 21개, 자리일 뿐 보이는 수가 아님)마다 범주 머리(제목·출처 줄)·표 머리 줄·

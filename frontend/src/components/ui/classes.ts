@@ -136,6 +136,13 @@ export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
  */
 export const ROW_TRIGGER = `inline-flex min-h-11 min-w-11 items-center rounded-sm text-left text-text break-keep underline-offset-2 hover:underline lg:min-h-6 lg:min-w-6 ${FOCUS_RING}`;
 
+/**
+ * 읽는 중 자리표시 막대의 겉모습 — 공용 Skeleton 막대와 같은 모양(놓인 면보다 한 단계 위 면 bg-control-fill·4px 모서리·motion-safe 깜빡임·고대비 1px
+ * 테두리). 크기와 display는 부르는 쪽이 붙입니다. 화면이 값이 온 뒤의 꼴을 본뜬 자리표시(국면 대상 머리·판정 기록 목록·매크로 지표 패널·COT 요약 표 —
+ * P5a 후속)를 그릴 때 씁니다.
+ */
+export const SKELETON_BAR = "rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+
 /** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(TEXT_TARGET과 같은 규칙), 넓은 화면은 글 높이. */
 export const LINK_CLASSES = `${TEXT_TARGET} rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline ${FOCUS_RING}`;
 
