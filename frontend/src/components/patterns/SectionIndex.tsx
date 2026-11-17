@@ -84,6 +84,24 @@ function Count({ count }: { count?: number | null }): JSX.Element | null {
   );
 }
 
+/**
+ * 하위 칸 자리 줄(하위 칸을 아직 모를 때 — `pendingChildren`) — 하위 칸과 같은 높이(좁은 화면 44px·넓은 화면 32px)·들여쓰기의 글 없는 막대(공용 Skeleton 막대와 같은
+ * 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). 읽기에서 뺍니다(내비의 칸이 아님).
+ */
+function PendingChildren({ count }: { count?: number }): JSX.Element | null {
+  const rows = typeof count === "number" && Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  if (rows === 0) return null;
+  return (
+    <ul aria-hidden="true" data-section-index-pending="" className="flex flex-col gap-px">
+      {Array.from({ length: rows }, (_, index) => (
+        <li key={index} className="flex min-h-11 items-center pr-3 pl-6 lg:min-h-8">
+          <span className="block h-3 w-2/3 rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "current" | "open" | "rest"; child: boolean }): JSX.Element {
   const tone = state === "current" ? ROW_CURRENT : state === "open" ? ROW_OPEN : ROW_REST;
   return (
@@ -106,6 +124,7 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  *   스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절 — QA-645, 규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는
  *   지금 칸이 없습니다.
  * - 본문(`children`)은 절 닻(`SectionAnchor` — 같은 `columnFrom`)들이고 절 사이 16·24px입니다. 닻은 자료와 상관없이 늘 그립니다(해시 주소로 열 때 첫 그림에서 닿게).
+ * - 하위 칸을 아직 모르는 칸(`pendingChildren` — 자료를 읽는 중)은 세로 목록에 그만큼 글 없는 자리 줄을 둡니다(읽기에서 뺌 — 하위 칸이 온 뒤 아래 칸이 밀리지 않게).
  * - 목차 칸이 없으면 내비 없이 본문만 그립니다.
  * - 내비라 강조 파랑을 씁니다(지금 칸 막대·가로 줄 밑줄 — 누를 수 있는 것) — 데이터 칸 강조색 금지 목록(lib/__tests__/accentInData)에 넣지 않습니다.
  */
@@ -167,7 +186,9 @@ export function SectionIndex({
                     </li>
                   ))}
                 </ul>
-              ) : null}
+              ) : (
+                <PendingChildren count={item.pendingChildren} />
+              )}
             </li>
           ))}
         </ul>

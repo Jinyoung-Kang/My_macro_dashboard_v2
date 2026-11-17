@@ -10,8 +10,11 @@
 /** 목차 칸 하나 — id는 화면의 절 닻(SectionAnchor) id, count는 숫자일 때만 보입니다(모르면 null — 0으로 채우지 않음). */
 export type SectionIndexLeaf = { id: string; label: string; count?: number | null };
 
-/** 첫 단계 목차 칸 — 하위 칸(children)은 세로 목록에서만 들여 보입니다(가로 줄은 첫 단계만). */
-export type SectionIndexItem = SectionIndexLeaf & { children?: readonly SectionIndexLeaf[] };
+/**
+ * 첫 단계 목차 칸 — 하위 칸(children)은 세로 목록에서만 들여 보입니다(가로 줄은 첫 단계만). 하위 칸을 아직 모르면(자료를 읽는 중) `pendingChildren`만큼
+ * 세로 목록에 글 없는 자리 줄을 둡니다(읽기에서 뺌 — 하위 칸이 온 뒤 아래 칸들이 밀리지 않게, 자리일 뿐 개수를 보이지 않음). 하위 칸이 있으면 보지 않습니다.
+ */
+export type SectionIndexItem = SectionIndexLeaf & { children?: readonly SectionIndexLeaf[]; pendingChildren?: number };
 
 /**
  * 지금 절을 고르는 차례 — 첫 단계 칸마다 하위 칸(문서 차례)을 먼저, 그다음 그 칸. 예: [지표 > 범주 A·B, 환율] → [범주 A, 범주 B, 지표, 환율].

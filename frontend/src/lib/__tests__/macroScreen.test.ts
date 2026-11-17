@@ -15,6 +15,7 @@ import {
   COLLECT_FAILED,
   fxKpis,
   macroCategoryAnchor,
+  MACRO_PENDING_CATEGORIES,
   macroIndexItems,
   macroIndicatorGroups,
   macroIndicatorRow,
@@ -71,10 +72,15 @@ describe("목차 항목", () => {
     ]);
   });
 
-  it("개요를 아직 받지 못했으면 지표 개수를 모르고(null — 0 아님) 하위 칸이 없다", () => {
+  it("개요를 아직 받지 못했으면 지표 개수를 모르고(null — 0 아님) 하위 칸이 없다 — 처음 읽는 중이면 범주 자리 줄 다섯, 읽지 못했으면 자리 없음", () => {
     const [indicators] = macroIndexItems(null, false);
     expect(indicators.count).toBeNull();
     expect(indicators.children).toEqual([]);
+    expect(indicators.pendingChildren).toBeUndefined();
+    expect(macroIndexItems(null, false, true)[0].pendingChildren).toBe(MACRO_PENDING_CATEGORIES);
+    expect(MACRO_PENDING_CATEGORIES).toBe(5);
+    // 개요가 오면 자리 줄 없이 범주 하위 칸(읽는 중 표시가 남아 있어도).
+    expect(macroIndexItems(groups, false, true)[0].pendingChildren).toBeUndefined();
   });
 
   it("범주 닻 id는 소문자·숫자·하이픈만", () => {

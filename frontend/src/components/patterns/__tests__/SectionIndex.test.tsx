@@ -168,6 +168,31 @@ describe("SectionIndex — 빈 목록·개수 모름·긴 글", () => {
     expect(screen.getByText("본문").id).toBe("only");
   });
 
+  it("하위 칸을 아직 모르면(pendingChildren) 세로 목록에 그만큼 글 없는 자리 줄 — 읽기에서 빠지고 링크·개수가 아니며, 가로 줄에는 없다", () => {
+    render(
+      <SectionIndex label="매크로 지표 목차" items={[{ id: "macro-indicators", label: "지표", pendingChildren: 5 }, { id: "macro-fx", label: "환율 비교" }]} activeId={null}>
+        <SectionAnchor id="macro-indicators">지표</SectionAnchor>
+        <SectionAnchor id="macro-fx">환율</SectionAnchor>
+      </SectionIndex>,
+    );
+    const { strip, column } = lists();
+    const pending = column.querySelector("[data-section-index-pending]") as HTMLElement;
+    expect(pending.getAttribute("aria-hidden")).toBe("true");
+    expect(pending.querySelectorAll("li")).toHaveLength(5);
+    expect(tokens(pending.querySelector("li") as HTMLElement)).toEqual(expect.arrayContaining(["min-h-11", "lg:min-h-8", "pl-6"]));
+    expect(within(column).getAllByRole("link").map((link) => link.textContent)).toEqual(["지표", "환율 비교"]);
+    expect(strip.querySelector("[data-section-index-pending]")).toBeNull();
+    // 하위 칸이 오면 자리 줄 대신 하위 칸.
+    cleanup();
+    render(
+      <SectionIndex label="매크로 지표 목차" items={[{ id: "macro-indicators", label: "지표", pendingChildren: 5, children: [{ id: "macro-cat-fx", label: "환율" }] }]} activeId={null}>
+        <SectionAnchor id="macro-indicators">지표</SectionAnchor>
+      </SectionIndex>,
+    );
+    expect(document.querySelector("[data-section-index-pending]")).toBeNull();
+    expect(within(lists().column).getAllByRole("link").map((link) => link.textContent)).toEqual(["지표", "환율"]);
+  });
+
   it("개수를 모르면(null·없음·NaN) 자리를 그리지 않는다 — '0'을 만들지 않음, 0은 값", () => {
     renderIndex({
       items: [

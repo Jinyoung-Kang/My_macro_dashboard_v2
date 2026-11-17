@@ -122,8 +122,9 @@ export default function MacroPage() {
     () => (categories ? macroIndicatorGroups(categories, { now, krOfficial, collectedAt: data?.collectedAtKst ?? null }) : null),
     [categories, now, krOfficial, data?.collectedAtKst],
   );
-  // 목차 — 회원 일곱·운영자 여덟(경제 캘린더), 지표 칸의 하위 칸은 범주(개수는 카드 수 — 개요를 받기 전에는 모름).
-  const indexItems = useMemo(() => macroIndexItems(groups, owner), [groups, owner]);
+  // 목차 — 회원 일곱·운영자 여덟(경제 캘린더), 지표 칸의 하위 칸은 범주(개수는 카드 수 — 개요를 받기 전에는 모름, 처음 읽는 동안은 자리 줄).
+  const indexLoading = overview.loading && !data;
+  const indexItems = useMemo(() => macroIndexItems(groups, owner, indexLoading), [groups, owner, indexLoading]);
 
   return (
     <div className="flex flex-col gap-4 lg:gap-6">
@@ -132,6 +133,9 @@ export default function MacroPage() {
         description="환율·국채·원자재·지수, 장단기 금리차, 신용 리스크, 심화 지표 6종"
         actions={
           <>
+            {/* 머리 동작 — "지금 이 대시보드가 들고 있는 값 전부"를 스크롤 없이 먼저 꺼낼 수 있게 화면 머리에 둡니다(보기는 대화상자, 복사는 바로).
+                맨 앞에 둡니다 — 뒤의 갱신 시각·신선도 글은 자료가 온 뒤에 생기거나 폭이 바뀌어, 그 뒤에 두면 두 단추가 옆·아래로 밀렸습니다(P5a 검토 CLS). */}
+            <RawSnapshotActions />
             <AutoRefreshControl
               seconds={refreshSeconds}
               onChange={setRefreshSeconds}
@@ -144,8 +148,6 @@ export default function MacroPage() {
               stale={data?.stale}
               refreshError={overview.refreshError}
             />
-            {/* 머리 동작 — "지금 이 대시보드가 들고 있는 값 전부"를 스크롤 없이 먼저 꺼낼 수 있게 화면 머리에 둡니다(보기는 대화상자, 복사는 바로). */}
-            <RawSnapshotActions />
           </>
         }
       >
