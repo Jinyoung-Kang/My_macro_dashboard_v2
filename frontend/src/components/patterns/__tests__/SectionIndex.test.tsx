@@ -362,6 +362,26 @@ describe("QA-656 가로 줄의 잰 높이를 문서 루트 --section-strip-h로 
   });
 });
 
+// QA-658: 개수의 괄호를 숫자 앞뒤의 낭독기 전용 마디 둘('(' · ')')로 나눠 두었는데, Tailwind sr-only는 position:absolute라 크롬은 그 마디를 블록으로 보고
+// 이름 계산에서 앞뒤에 빈칸을 넣어 링크 이름이 '지표 ( 21 )'이었습니다(P5a QA — QA 스택 390~1600 Accessibility 트리). jsdom은 Tailwind CSS를 읽지 않아
+// sr-only가 인라인으로 남아 기존 시험은 '지표 (21)'로 통과했습니다 — 여기서는 크롬의 계산된 display(block)를 <style>로 흉내 내 같은 빈칸 규칙을 씁니다
+// (dom-accessibility-api도 블록 마디 앞뒤에 빈칸을 넣음). 수정 전(재현 커밋에서는 it.fails)에는 이름이 '지표 ( 1,234 )'이었습니다.
+describe("QA-658 개수가 붙은 칸의 이름은 '지표 (1,234)' — 낭독기 전용 마디가 블록이어도 빈칸이 끼지 않는다", () => {
+  it.fails("sr-only가 블록(크롬의 position:absolute 계산 값)이어도 가로 줄·세로 목록 모두 이름이 '지표 (1,234)'", () => {
+    const style = document.createElement("style");
+    style.textContent = ".sr-only{display:block}";
+    document.head.appendChild(style);
+    try {
+      renderIndex({ items: [{ id: "a", label: "지표", count: 1234 }], activeId: null });
+      const { strip, column } = lists();
+      expect(within(strip).getByRole("link", { name: "지표 (1,234)" })).toBeTruthy();
+      expect(within(column).getByRole("link", { name: "지표 (1,234)" })).toBeTruthy();
+    } finally {
+      style.remove();
+    }
+  });
+});
+
 // QA-645: 지금 절 띠(뷰포트 위 96px 아래 ~ 34%)로만 고르면 마지막 절은 지금 칸이 되지 못했습니다 — 목차에서 마지막 절을 누르거나 끝까지 내려도 페이지가
 // 더 내려가지 못해 그 절의 위 끝이 띠 아래(390 543px·1024 687px·1440 715px)에 남고, 띠에는 앞 절 꼬리만 걸려 aria-current가 앞 절에 남았습니다
 // (P5a 검토 — 자기 빌드 /macro, 운영자 '경제 캘린더'·회원 '비공식 시세'). 스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안에 있는 마지막 절이
