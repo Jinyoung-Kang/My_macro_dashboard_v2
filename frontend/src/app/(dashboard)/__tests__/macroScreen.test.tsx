@@ -108,6 +108,22 @@ describe("원본 데이터 — 화면 머리 동작", () => {
   });
 });
 
+// QA-646: 원본 글 스크롤 상자 <pre tabIndex=0 aria-label="원본 데이터 글">에 역할이 없었습니다 — pre는 generic 역할이라 ARIA 1.2에서 aria-label이
+// 금지되고 보조기기가 이름을 무시해, Tab 정지점이 이름 없이 읽혔습니다(P5a가 대화상자로 옮기며 이름을 붙임, P5a 검토). 같은 목적의 공용 표 스크롤 상자처럼
+// 이름 있는 영역(role=region)이어야 이름이 붙습니다.
+describe("QA-646 원본 글 스크롤 상자는 이름 있는 영역", () => {
+  it.fails("Tab으로 닿는 원본 글 상자가 role=region '원본 데이터 글'", async () => {
+    reads[SNAPSHOT_PATH] = () => Promise.resolve({ text: "원본 글", chars: 4, generatedAtKst: "2026-11-17 06:31 KST" });
+    render(<MacroPage />);
+    fireEvent.click(screen.getByRole("button", { name: "원본 데이터 보기" }));
+    const dialog = await screen.findByRole("dialog", { name: "전체 대시보드 원본 데이터" });
+    await within(dialog).findByText("원본 글");
+    const box = within(dialog).getByRole("region", { name: "원본 데이터 글" });
+    expect(box.tagName).toBe("PRE");
+    expect(box.getAttribute("tabindex")).toBe("0");
+  });
+});
+
 // QA-623: 원본 글을 받은 뒤 '다시 읽기'가 실패하면 useApi는 앞 글을 남기고 실패를 refreshError로만 알리는데, 원본 데이터 화면은 error만 그려
 // 실패가 아무 표시 없이 묻혔습니다(개편 전 카드부터 — 단추가 '다시 읽는 중…'에서 '다시 읽기'로 돌아올 뿐). 다른 패널의 '새로 읽지 못함'(QA-067)과 같은 표시가 필요합니다.
 describe("QA-623 원본 데이터 '다시 읽기' 실패를 알린다", () => {
