@@ -519,7 +519,7 @@ describe("MasterDetail — 빈 값·불러오는 중·오류", () => {
 // 이제 줄이 없으면 한 칸이고 안내 글은 낱말 사이에서 꺾습니다. 읽는 중·오류 자리표시는 두 칸 그대로(QA-651 — 값이 온 뒤 목록 폭과 같게).
 // 수정 전(재현 커밋에서는 it.fails)에는 격자에 '@lg:grid-cols-[minmax(0,1fr)_15rem]'가 있고 안내 상자에 break-keep이 없었습니다.
 describe("QA-661 줄이 없으면 한 칸 — 빈 안내 글이 좁은 왼쪽 칸에 갇히지 않고 낱말 사이에서 꺾인다", () => {
-  it.fails("넓은 화면·옆 칸 배치에서 items가 비면 격자에 두 칸 클래스가 없고, 안내 상자는 break-keep·wrap-anywhere", () => {
+  it("넓은 화면·옆 칸 배치에서 items가 비면 격자에 두 칸 클래스가 없고, 안내 상자는 break-keep·wrap-anywhere", () => {
     stubWide();
     renderList({ items: [], emptyText: <p>아직 기록이 없습니다. 첫 기록은 KST 18시 이후에 생깁니다.</p> });
     const box = screen.getByText("아직 기록이 없습니다. 첫 기록은 KST 18시 이후에 생깁니다.").parentElement as HTMLElement;
