@@ -5,7 +5,7 @@
  * 배치는 클래스로 봅니다(jsdom은 크기 질의·display를 계산하지 않음) — columnFrom 세 벌(lg·xl·2xl)의 정적 클래스, 가로 줄 sticky·밑줄 탭 모양, 세로 목록 들여쓰기.
  * 누름 자리(lg 미만 44px — smallTargets), 고대비의 막대 테두리. 지금 절을 고르는 것(useSectionSpy)은 IntersectionObserver 대역으로 한 번 봅니다.
  */
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
@@ -584,5 +584,85 @@ describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 �
     expect(current()).toBe("#macro-risk");
     rect.mockRestore();
     for (const spy of restore) spy.mockRestore();
+  });
+});
+
+// QA-680: 목차 칸은 보통 링크(<a href="#id">)라 누르면 브라우저의 기본 해시 이동이 상태(history.state)가 null인 기록을 쌓았습니다. Next 앱 라우터(16.4.5)는
+// 뒤로·앞으로 가기의 popstate에서 상태 없는 기록을 무시하므로(next/dist/client/components/app-router.js handlePopState), /macro 목차로 절을 옮긴 뒤 왼쪽
+// 메뉴로 /sector에 갔다가 뒤로 가면 주소만 /macro#절이 되고 화면은 /sector에 남았습니다(D3 전 QA 스택 qa@65caf1e8 — 한 번 더 뒤로 가야 /macro). 수식키 없는
+// 누름은 기본 동작을 막고 history.pushState(Next가 고쳐 지금 기록의 라우터 상태를 새 기록에 옮겨 실음)로 기록을 쌓은 뒤 그 닻으로 옮겨야 합니다. jsdom은
+// Next의 popstate를 재현하지 못하므로 누름이 기본 해시 이동 대신 pushState·닻 이동이 되는지를 봅니다. 기본 동작이 막혔는지는 창까지 올라온 click에서
+// 그때의 defaultPrevented로 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막아 다음 시험에 주소가 남지 않게 합니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 기본 동작을 막지 않아(defaultPrevented false) pushState를 부르지 않았습니다.
+describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 닻으로 옮긴다", () => {
+  const BASE_PATH = () => window.location.pathname + window.location.search;
+  /** 창까지 올라온 누름마다 기본 동작이 막혔는지 적고, 남은 기본 동작은 막습니다. */
+  function watchClicks() {
+    const prevented: boolean[] = [];
+    const listener = (event: MouseEvent) => {
+      prevented.push(event.defaultPrevented);
+      event.preventDefault();
+    };
+    window.addEventListener("click", listener);
+    return { prevented, stop: () => window.removeEventListener("click", listener) };
+  }
+
+  it.fails("수식키 없는 왼쪽 누름은 기본 동작을 막고 pushState(null, '', '#id')로 기록 하나, 그 닻으로 scrollIntoView하고 닻에 포커스(preventScroll)", () => {
+    const clicks = watchClicks();
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    try {
+      renderIndex({ activeId: null });
+      const { strip, column } = lists();
+      fireEvent.click(within(column).getByRole("link", { name: "환율 비교" }));
+      // 결함을 직접 보는 단언 먼저(수정 전에는 여기서 실패).
+      expect(clicks.prevented).toEqual([true]);
+      expect(push.mock.calls).toEqual([[null, "", "#macro-fx"]]);
+      expect(window.location.hash).toBe("#macro-fx");
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      expect(into.mock.contexts).toEqual([fx]);
+      // 키보드의 다음 Tab이 그 절에서 이어지게(기본 해시 이동의 순차 탐색 시작점과 같게) 닻에 포커스 — 옮긴 자리를 흔들지 않게 preventScroll.
+      expect(document.activeElement).toBe(fx);
+      expect(focus.mock.contexts.at(-1)).toBe(fx);
+      expect(focus.mock.calls.at(-1)).toEqual([{ preventScroll: true }]);
+
+      // 같은 칸을 다시 누르면(가로 줄) 기록을 더 쌓지 않고 옮기기만 — 같은 주소로의 이동(브라우저도 바꿔 씀).
+      fireEvent.click(within(strip).getByRole("link", { name: "환율 비교" }));
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(into).toHaveBeenCalledTimes(2);
+      // 가로 줄의 다른 칸 — 그 닻으로 기록 하나 더.
+      fireEvent.click(within(strip).getByRole("link", { name: "신용·변동성" }));
+      expect(push.mock.calls.at(-1)).toEqual([null, "", "#macro-risk"]);
+      expect(document.activeElement).toBe(document.getElementById("macro-risk"));
+      expect(clicks.prevented).toEqual([true, true, true]);
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      push.mockRestore();
+      into.mockRestore();
+      focus.mockRestore();
+    }
+  });
+
+  it("가운데 단추·Ctrl·Meta·Shift·Alt 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
+    const clicks = watchClicks();
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      renderIndex({ activeId: null });
+      const link = within(lists().column).getByRole("link", { name: "환율 비교" });
+      const inits = [{ button: 1 }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }];
+      for (const init of inits) fireEvent.click(link, init);
+      expect(clicks.prevented).toEqual(inits.map(() => false));
+      expect(push).not.toHaveBeenCalled();
+      expect(into).not.toHaveBeenCalled();
+      expect(document.activeElement).not.toBe(document.getElementById("macro-fx"));
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      push.mockRestore();
+      into.mockRestore();
+    }
   });
 });
