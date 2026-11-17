@@ -200,15 +200,24 @@ describe("COT 작업대 배치(P5a)", () => {
 // 이름 단추 24px — 줄 +4px)로 1440 첫 적재 CLS가 0.2125 → 0.2337 → 0.2417이 되었습니다(자기 빌드 + QA API, 다섯 번 모두 같은 값 — 흔들림 아님).
 // 읽는 동안 자산 여섯 줄(수집기 COT_ASSETS — 자리일 뿐 보이는 수가 아님)의 표 꼴 자리로 패널 높이를 잡아야 합니다.
 describe("QA-654 자산별 요약 패널은 읽는 동안 표 꼴 자리로 높이를 잡는다", () => {
-  it.fails("요약을 읽는 동안 자산 여섯 줄의 글 없는 자리(읽기에서 빠짐)와 이름 있는 읽는 중 상태 — 숫자 없음", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 자리 줄이 없었습니다('expected to have a length of 6 but got +0').
+  it("요약을 읽는 동안 자산 여섯 줄의 글 없는 자리(읽기에서 빠짐)와 이름 있는 읽는 중 상태 — 숫자 없음", () => {
     // 모든 요청이 끝나지 않음 — 화면을 처음 연 직후(읽는 중).
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     render(<CotPage />);
     const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;
     const rows = panel.querySelectorAll("[data-cot-pending-row]");
     expect(rows).toHaveLength(6);
-    expect(within(panel).getByRole("status", { name: "자산별 요약을 불러오는 중" })).toBeTruthy();
+    const status = within(panel).getByRole("status", { name: "자산별 요약을 불러오는 중" });
     expect(rows[0].closest("[aria-hidden='true']")).not.toBeNull();
-    expect(panel.textContent).not.toMatch(/\d/);
+    // 자리에는 글·숫자가 없습니다(낭독기 전용 상태 글만 — 패널 머리의 출처 글 '주 1회'는 정적 글).
+    expect(status.textContent).toBe("자산별 요약을 불러오는 중");
+    // 줄 자리는 공용 표 줄과 같은 여백·구분선(마지막 줄은 선 없음), 자산 이름 단추 줄 좁은 화면 44px·넓은 화면 24px + 묶음 줄 16px.
+    const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/);
+    expect(classes(rows[0])).toEqual(expect.arrayContaining(["px-3", "py-3", "lg:pt-1.5", "lg:pb-[5px]", "border-b", "border-border-subtle"]));
+    expect(classes(rows[5])).not.toContain("border-b");
+    const [nameLine, categoryLine] = Array.from(rows[0].firstElementChild?.children ?? []);
+    expect(classes(nameLine)).toEqual(expect.arrayContaining(["h-11", "lg:h-6"]));
+    expect(classes(categoryLine)).toContain("h-4");
   });
 });

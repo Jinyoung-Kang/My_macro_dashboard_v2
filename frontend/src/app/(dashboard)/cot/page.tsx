@@ -22,6 +22,52 @@ import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
 
 
+/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
+const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+
+/** 요약을 읽는 동안 잡아 두는 자산 줄 수 — 수집기 COT 자산(collector/app/indicators.py COT_ASSETS) 여섯. 자리일 뿐 보이는 수가 아닙니다. */
+const COT_PENDING_ROWS = 6;
+
+/**
+ * 자산별 요약을 읽는 동안의 표 꼴 자리(QA-654) — 표 머리 줄(32px)과 자산 줄 자리(공용 표 줄과 같은 여백·구분선, 자산 이름 단추 줄 좁은 화면 44px·넓은 화면
+ * 24px + 묶음 줄 16px — 줄 높이 좁은 화면 85px·lg 이상 53px로 값이 온 뒤와 같음). 예전에는 '불러오는 중' 한 줄(패널 189px)이라 값이 오면 표로 자라 화면 안의
+ * 추이 패널을 밀었습니다(첫 적재 CLS 1440 0.24 — 기준 0.21). 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
+ */
+function SummaryPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="자산별 요약을 불러오는 중" className="min-w-0">
+      <span className="sr-only">자산별 요약을 불러오는 중</span>
+      <div aria-hidden="true" className="min-w-0">
+        <div className="flex h-8 items-center justify-between gap-3 border-b border-border px-3">
+          <span className={`h-3 w-10 ${BAR}`} />
+          <span className={`h-3 w-24 ${BAR}`} />
+        </div>
+        {Array.from({ length: COT_PENDING_ROWS }, (_, row) => (
+          <div
+            key={row}
+            data-cot-pending-row=""
+            className={`flex items-start justify-between gap-3 px-3 ${row < COT_PENDING_ROWS - 1 ? "border-b border-border-subtle py-3 lg:pt-1.5 lg:pb-[5px]" : "py-3 lg:py-1.5"}`}
+          >
+            <span className="flex flex-col">
+              <span className="flex h-11 items-center lg:h-6">
+                <span className={`h-3.5 w-28 ${BAR}`} />
+              </span>
+              <span className="flex h-4 items-center">
+                <span className={`h-3 w-12 ${BAR}`} />
+              </span>
+            </span>
+            <span className="flex h-11 items-center gap-6 lg:h-6">
+              <span className={`h-3.5 w-16 ${BAR}`} />
+              <span className={`hidden h-3.5 w-16 sm:block ${BAR}`} />
+              <span className={`hidden h-3.5 w-16 md:block ${BAR}`} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * 글로벌 투기세력 (CFTC COT).
  *
@@ -139,7 +185,8 @@ export default function CotPage() {
         count={overview.data ? `${(overview.data.assets ?? []).length.toLocaleString("ko-KR")}개` : undefined}
         subtitle="스마트머니(비상업) 순포지션과 최근 변화 · 자산 이름을 누르면 아래 추이와 극단 성적이 그 자산으로 바뀝니다."
       >
-        {overview.loading && !overview.data && <Loading />}
+        {/* 읽는 동안은 표 꼴 자리(줄 여섯 — 값이 온 뒤 아래 추이 패널이 밀리지 않게, QA-654). */}
+        {overview.loading && !overview.data && <SummaryPending />}
         {overview.error && <ErrorState message={overview.error} onRetry={overview.reload} />}
         {overview.data && (
           <DataTable
