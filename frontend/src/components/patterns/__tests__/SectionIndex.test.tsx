@@ -259,3 +259,53 @@ describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크�
     expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: 31px;/);
   });
 });
+
+// QA-645: 지금 절 띠(뷰포트 위 96px 아래 ~ 34%)로만 고르면 마지막 절은 지금 칸이 되지 못했습니다 — 목차에서 마지막 절을 누르거나 끝까지 내려도 페이지가
+// 더 내려가지 못해 그 절의 위 끝이 띠 아래(390 543px·1024 687px·1440 715px)에 남고, 띠에는 앞 절 꼬리만 걸려 aria-current가 앞 절에 남았습니다
+// (P5a 검토 — 자기 빌드 /macro, 운영자 '경제 캘린더'·회원 '비공식 시세'). 스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안에 있는 마지막 절이
+// 지금 절이어야 합니다. jsdom은 배치를 계산하지 않으므로 스크롤 상자의 크기·위치와 닻의 위치를 대역으로 줍니다.
+describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 절", () => {
+  it.fails("띠에는 앞 절만 걸려도, 창이 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절(위험)이 지금 칸", () => {
+    let callback: IntersectionObserverCallback = () => {};
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: IntersectionObserverCallback) {
+          callback = cb;
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    renderIndex();
+    const current = () => lists().column.querySelector('[aria-current="location"]')?.getAttribute("href");
+    act(() =>
+      callback(
+        [{ target: document.getElementById("macro-fx"), isIntersecting: true }] as unknown as IntersectionObserverEntry[],
+        {} as IntersectionObserver,
+      ),
+    );
+    expect(current()).toBe("#macro-fx");
+
+    // 창(문서 스크롤 상자)이 끝까지 내려감 — 스크롤 9,832 / 최대 9,832(390 실측과 같은 꼴). 위험 절의 위 끝은 화면 안 543px, 환율 비교는 위로 지나감.
+    const root = document.documentElement;
+    const restore = [
+      vi.spyOn(root, "scrollTop", "get").mockReturnValue(9832),
+      vi.spyOn(root, "scrollHeight", "get").mockReturnValue(10676),
+      vi.spyOn(root, "clientHeight", "get").mockReturnValue(844),
+    ];
+    const tops: Record<string, number> = { "macro-indicators": -9000, "macro-cat-rates": -8900, "macro-cat-fx": -8500, "macro-fx": -300, "macro-risk": 543 };
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const top = tops[this.id] ?? 0;
+      return { top, bottom: top + 200, left: 0, right: 390, width: 390, height: 200, x: 0, y: top } as DOMRect;
+    });
+    vi.stubGlobal("innerHeight", 844);
+    act(() => {
+      document.dispatchEvent(new Event("scroll"));
+    });
+    expect(current()).toBe("#macro-risk");
+    rect.mockRestore();
+    for (const spy of restore) spy.mockRestore();
+  });
+});
