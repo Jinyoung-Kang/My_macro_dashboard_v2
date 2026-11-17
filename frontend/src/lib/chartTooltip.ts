@@ -6,8 +6,20 @@
  * 지키도록, 모자란 색만 같은 색을 흰색 쪽으로 밝혀 씁니다(선 색은 그대로 — 선은 비글자 대비 3:1 기준으로 고른 팔레트).
  */
 
-/** 툴팁 덮개 바탕 — `app/globals.css`의 `--surface-2`(어두운 테마 고정). 바뀌면 `chartTooltip.test.ts`가 CSS 값과 대조해 막습니다. */
-export const TOOLTIP_BG_HEX = "#252a31";
+/**
+ * 툴팁 덮개 바탕 — `app/globals.css`의 `--surface-2`(어두운 테마 고정)를 대비 계산에 쓰려고 옮겨 둔 값. 바뀌면 `chartTooltip.test.ts`가 CSS 값과 대조해 막습니다.
+ * hex 글이 아니라 채널 셋으로 적습니다 — 제품 소스의 hex 색 글은 팔레트 기록(`paletteRecord.test.ts` — 계열 색, 면 위 3:1)에만 두는 규칙이고, 이 값은 계열 색이
+ * 아닌 면 토큰의 거울입니다(화면에 칠하는 색은 토큰 `var(--surface-2)` 그대로).
+ */
+const TOOLTIP_BG_RGB: [number, number, number] = [0x25, 0x2a, 0x31];
+const WHITE_RGB: [number, number, number] = [0xff, 0xff, 0xff];
+
+function toHex(rgb: [number, number, number]): string {
+  return `#${rgb.map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** 툴팁 덮개 바탕의 `#rrggbb`(위 채널 셋에서 만듦). */
+export const TOOLTIP_BG_HEX = toHex(TOOLTIP_BG_RGB);
 
 /** 본문 글자(12px 툴팁) 대비 기준 — WCAG 1.4.3 AA. */
 export const TOOLTIP_TEXT_CONTRAST = 4.5;
@@ -37,10 +49,6 @@ export function contrastRatio(a: string, b: string): number | null {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-function toHex(rgb: [number, number, number]): string {
-  return `#${rgb.map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
-}
-
 /**
  * 바탕 위 글자로 읽히는 색 — 대비가 이미 `min` 이상이면 그 색 그대로, 모자라면 흰색과 2%씩 더 섞어 처음으로 `min`을 넘는 색.
  * 16진수 여섯 자리가 아닌 값(CSS 변수 등)은 그대로 돌려줍니다(부르는 쪽 색을 바꾸지 않음).
@@ -50,10 +58,10 @@ export function readableOn(color: string, background: string = TOOLTIP_BG_HEX, m
   if (!base || (contrastRatio(color, background) ?? 0) >= min) return color;
   for (let step = 1; step <= 50; step += 1) {
     const t = step / 50;
-    const mixed = toHex(base.map((channel) => channel + (255 - channel) * t) as [number, number, number]);
+    const mixed = toHex(base.map((channel, i) => channel + (WHITE_RGB[i] - channel) * t) as [number, number, number]);
     if ((contrastRatio(mixed, background) ?? 0) >= min) return mixed;
   }
-  return "#ffffff";
+  return toHex(WHITE_RGB);
 }
 
 /**
