@@ -194,3 +194,21 @@ describe("COT 작업대 배치(P5a)", () => {
     expect(within(rowOf("2026-08-18")).getByText("—")).toBeTruthy();
   });
 });
+
+// QA-654: 자산별 요약 패널은 읽는 동안 '불러오는 중' 한 줄(패널 189px)뿐이라, 값이 오면 표(1024 513px·1440 465px)로 자라 아래 추이 패널(화면 안 — 위 끝 351px)과
+// 극단 성적 패널을 밀었습니다. 기준 `a5cdae2f`와 같은 원인이지만 P5a 배치(머리가 낮아 내용이 32px 위 — 밀리는 패널이 화면 안에 더 많이 걸림)와 결정 8(표 안
+// 이름 단추 24px — 줄 +4px)로 1440 첫 적재 CLS가 0.2125 → 0.2337 → 0.2417이 되었습니다(자기 빌드 + QA API, 다섯 번 모두 같은 값 — 흔들림 아님).
+// 읽는 동안 자산 여섯 줄(수집기 COT_ASSETS — 자리일 뿐 보이는 수가 아님)의 표 꼴 자리로 패널 높이를 잡아야 합니다.
+describe("QA-654 자산별 요약 패널은 읽는 동안 표 꼴 자리로 높이를 잡는다", () => {
+  it.fails("요약을 읽는 동안 자산 여섯 줄의 글 없는 자리(읽기에서 빠짐)와 이름 있는 읽는 중 상태 — 숫자 없음", () => {
+    // 모든 요청이 끝나지 않음 — 화면을 처음 연 직후(읽는 중).
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<CotPage />);
+    const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;
+    const rows = panel.querySelectorAll("[data-cot-pending-row]");
+    expect(rows).toHaveLength(6);
+    expect(within(panel).getByRole("status", { name: "자산별 요약을 불러오는 중" })).toBeTruthy();
+    expect(rows[0].closest("[aria-hidden='true']")).not.toBeNull();
+    expect(panel.textContent).not.toMatch(/\d/);
+  });
+});
