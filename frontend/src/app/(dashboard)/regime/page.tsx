@@ -49,6 +49,43 @@ const TIMELINE_COLOR: Record<string, string> = {
 /** 판정 대상 종류 — 상세 화면 셋 밖의 대상이라 종류 글과 아이콘(저울)을 넘깁니다. */
 const KIND = { label: "국면 판정", icon: ScaleIcon };
 
+/** 자리표시 막대(공용 Skeleton 막대와 같은 모양 — 놓인 면보다 한 단계 위 면·motion-safe 깜빡임·고대비 1px 테두리). */
+const BAR = "block rounded-control bg-control-fill motion-safe:animate-pulse forced-colors:border";
+
+/**
+ * 대상 머리의 읽는 중 자리표시 — 값이 온 뒤 이름 줄 아래에 생기는 설명 글·주 값 줄·배지 줄과 같은 꼴·높이(QA-650). 이름 줄·동작은 EntityHeader가 그대로 둡니다.
+ * 높이는 자기 빌드(메뉴 220)에서 판정 다섯 글(백엔드 Regime.java의 고정 글)로 잰 값이 온 뒤의 부분 높이이고, 글마다 다르면 많은 쪽입니다 —
+ * 설명 글 390(기본) 3줄·640(sm) 2줄·768(md) 1줄·1024(lg) 2줄·1280 이상(xl) 1줄, 주 값 줄 36px, 배지 줄(출처 배지·축 태그 둘이 꺾임) 74·58·42·58·20px.
+ * 예전 자리표시(최소 높이 160·136·76px)는 이보다 낮아 값이 오면 아래 칸 틀이 밀렸고, 1024에서는 그 이동이 '연결' 패널 이동과 같은 프레임에 걸려
+ * 첫 적재 CLS가 0.47이었습니다. 좁은 화면에서 주 값 글이 긴 판정(후퇴 경계·침체 경계 — 390에서 값 줄이 꺾임)과 설명이 한 줄 더 긴 판정은 20px 차이가 남습니다.
+ */
+function HeaderPending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="국면을 판정하는 중" className="flex flex-col gap-1">
+      <span className="sr-only">국면을 판정하는 중</span>
+      {/* 설명 글 — 14/20 글줄, 폭마다 줄 수만큼. */}
+      <div aria-hidden="true" className="flex h-15 flex-col overflow-hidden sm:h-10 md:h-5 lg:h-10 xl:h-5">
+        {["w-full", "w-full", "w-3/5"].map((width, index) => (
+          <span key={index} className="flex h-5 shrink-0 items-center">
+            <span className={`h-3.5 ${width} ${BAR}`} />
+          </span>
+        ))}
+      </div>
+      {/* 주 값 줄 — 12px 캡션('지금 판정')과 28px 값(줄 높이 36px). */}
+      <div aria-hidden="true" className="flex h-9 items-end gap-2 pb-1.5">
+        <span className={`h-3 w-12 ${BAR}`} />
+        <span className={`h-6 w-40 ${BAR}`} />
+      </div>
+      {/* 배지 줄 — 출처 배지·축 태그 둘(20px), 좁은 칸에서는 꺾입니다. */}
+      <div aria-hidden="true" className="flex h-[74px] flex-wrap content-start gap-1.5 overflow-hidden sm:h-[58px] md:h-[42px] lg:h-[58px] xl:h-5">
+        <span className={`h-5 w-56 max-w-full ${BAR}`} />
+        <span className={`h-5 w-20 ${BAR}`} />
+        <span className={`h-5 w-20 ${BAR}`} />
+      </div>
+    </div>
+  );
+}
+
 /**
  * 연결 — 판정에 쓴 지표가 있는 화면·절. 신호마다의 지표 상세(/markets/i/…)는 매크로 카드 키로만 있어 신호 id(curve·nfci·hyOas·liquidity)와 맞지
  * 않으므로, 그 지표의 차트가 있는 매크로 화면(lib/marketSections 정본)과 순유동성 화면으로 잇습니다. 링크 글에 어느 화면·절인지 적습니다.
@@ -105,15 +142,8 @@ export default function RegimePage() {
   const model = regimeHeroModel(data);
   const bandLabel = regimeBandLabel(data?.timeline, (data?.episodes ?? []).length);
   // 응답 전에는 값 자리에 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도. 이름·이력 기간 고르기는 그대로 남습니다(QA-047).
-  // 자리표시는 값이 온 뒤의 머리(설명 글·주 값 줄·배지 줄) 높이만큼 잡습니다 — 두 줄 막대(44px)였을 때 값이 오면 아래 '판정 근거'가 1024에서 98px·
-  // 1440에서 40px 밀렸습니다(P5a 검토 CLS). 설명 글이 좁은 화면 2~3줄·lg~xl 2줄(배지 줄도 꺾임)·xl 이상 1줄이라 폭마다 최소 높이를 둡니다(자기 빌드 잼).
-  const pending = data ? null : error ? (
-    <ErrorState message={error} onRetry={reload} />
-  ) : (
-    <div className="min-h-40 lg:min-h-34 xl:min-h-19">
-      <Skeleton lines={3} label="국면을 판정하는 중" />
-    </div>
-  );
+  // 자리표시는 값이 온 뒤의 머리(설명 글·주 값 줄·배지 줄)와 같은 꼴·높이입니다(HeaderPending — QA-650).
+  const pending = data ? null : error ? <ErrorState message={error} onRetry={reload} /> : <HeaderPending />;
 
   // 판정 근거 넷 — 홈 국면 패널과 같은 모델(자리 고정 — 받지 못한 신호는 —와 '받지 못함', 자릿수·부호 −가 같음, QA-636). 값은 정상·주의 톤 글자색,
   // 아래 보조 글은 상태 글(정상·주의 아이콘 — 주의만 '주의:', QA-505) + 해석. 판정 근거는 좁은 칸이라 이름 위·값 아래(block).
