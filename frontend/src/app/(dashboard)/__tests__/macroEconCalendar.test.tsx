@@ -8,7 +8,7 @@
  * 날짜 띠 + 그날 표(2026-11-18 사용자 결정): 중요도 보통·높음만 보이고 낮음·모름은 숨긴 건수 한 줄, 보일 일정이 있는 KST 날짜마다 탭 하나,
  * 그 아래 고른 날의 표 하나. 처음 고른 날은 오늘(KST)·오늘 뒤 첫 날·오늘 앞 마지막 날 차례.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionUserProvider } from "@/hooks/useSessionUser";
 import type { SessionUser } from "@/lib/types";
@@ -81,6 +81,7 @@ function at(iso: string) {
 }
 
 beforeEach(() => {
+  signal.token = 0;
   api.apiGetShared.mockReset();
   api.apiGetShared.mockImplementation(() => new Promise(() => {}));
   // 기본 '지금' — 2026-11-05 12:00 KST(첫 일정의 날).
@@ -375,5 +376,35 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     expect(screen.queryByRole("table")).toBeNull();
     // 출처·우회 수집 배지는 그대로.
     expect(screen.getByText("우회 수집 · 브라우저 TLS")).toBeTruthy();
+  });
+
+  // 2026-11-18 검토 지적: 고른 날을 지키는 조건(새 자료에 그날이 있는가)을 지워도 앞 시험이 모두 통과했습니다 — 그러면 지난날을 고른 채 두었다가 창이 하루
+  // 밀린 새 자료가 오면 띠와 표가 통째로 사라지고 '보통 이상인 일정이 없습니다'가 떴습니다(다시 고를 탭도 없음).
+  it("고른 날은 새 자료에서도 지키고, 새 자료에서 사라지면 같은 규칙(오늘·오늘 뒤 첫 날)으로 다시 고른다", async () => {
+    at("2026-11-12T03:00:00Z"); // 11-12 KST — 일정이 있는 날
+    mockCalendar(CALENDAR);
+    const { rerender } = render(<EconCalendarSection />);
+    expect((await screen.findByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }, { timeout: 500 })).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "11/5 (목) 1건" }));
+    expect(screen.getByText("Initial Jobless Claims")).toBeTruthy();
+    const reads = () => api.apiGetShared.mock.calls.filter(([path]) => path === PATH).length;
+
+    // 같은 날이 남은 새 자료(셸의 수동 새로고침 신호로 다시 읽음) — 고른 지난날 그대로.
+    signal.token = 1;
+    rerender(<EconCalendarSection />);
+    await waitFor(() => expect(reads()).toBe(2));
+    await act(async () => {});
+    expect(screen.getByRole("tab", { name: "11/5 (목) 1건" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Initial Jobless Claims")).toBeTruthy();
+
+    // 창이 밀려 11/5가 빠진 새 자료 — 오늘(11/12)을 다시 고르고, 띠·표가 남고 빈 상태 문구가 없음.
+    mockCalendar({ ...CALENDAR, events: CALENDAR.events.filter((entry) => !entry.atKst.startsWith("2026-11-05")) });
+    signal.token = 2;
+    rerender(<EconCalendarSection />);
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /^11\/5 / })).toBeNull());
+    expect(screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tablist", { name: "경제 캘린더 날짜" })).toBeTruthy();
+    expect(within(screen.getByRole("tabpanel")).getByText("Inflation Rate YoY")).toBeTruthy();
+    expect(screen.queryByText(/일정이 없습니다/)).toBeNull();
   });
 });
