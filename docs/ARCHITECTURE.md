@@ -296,6 +296,9 @@ lib/                        표시 규칙(서식·메뉴·검색·화면 모델)
   범위 토큰(`[data-scope="search"]`)으로 그립니다([계약](specs/2026-11-14-info-search-contract.md)). 단계 3부터 관심 대상(`/api/search/watch` — 등록·새 글 수,
   백엔드 표 `search_watches`)을 등록하면 운영 서버의 수집기 polite 태스크 `search_watch`가 대상마다 3~8시간에 한 번 새 글을 모아 `search_watch_items`에 넣고,
   flex 태스크 `search_feeds`가 보도자료·경제지 RSS 12개를 `search_feed_headline`에 받습니다(정보 검색의 저장본 출처·첫 화면 최근 글 — 모의 매매 입력 아님).
+  본문 보기([ADR 0043](adr/0043-search-article-body.md) — 운영자): 결과 줄의 꼬리표(`bodyRef`)로 `POST /api/search/article`을 부르면 수집기가 자기 결과의 주소만
+  골라(기억표) 운영 서버에서 그 글 한 건을 받습니다 — 정책 표 밖의 유일한 길(`fetch/article.py` — 홉마다 주소 검사·고정 주소, `fetch/addresses.py`)과 구글 경유
+  풀기(`services/search_relay.py`), trafilatura 추출(`services/search_article.py`). 본문은 수집기 메모리(24시간)에만, 번역은 백엔드 메모리에만 둡니다.
 - **실시간 시세(SSE, [ADR 0024](adr/0024-live-prices-sse.md))**: 모의 매매 장중 카드·보유 표·종목 상세의 종목 가격은 화면이 `GET /api/live/prices/stream`
   (EventSource)에 붙어 있으면 백엔드 `feature.live`가 고른 주기(5초~3시간, 기본 10초 — 2026-11-12, 그 전 1시간)마다 수집기 `/live/prices`(Yahoo·네이버·다음·토스, 3초 캐시)를 불러
   밀어 줍니다. 저장하지 않고 장부·계좌 숫자는 기존 저장본을 그대로 씁니다. 탭을 숨기면 연결을 닫습니다.
