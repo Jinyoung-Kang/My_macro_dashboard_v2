@@ -57,8 +57,10 @@ function correlation(overrides: Partial<CorrelationResponse> = {}): CorrelationR
 }
 
 /** 상관계수 칸 — 이름 글의 부모(지표 칸·KPI 띠 타일 모두 이름 줄 바로 위가 칸). */
+/** 값이 온 뒤의 상관계수 타일 — 읽는 동안의 자리표시 띠('상관 요약 불러오는 중')에도 같은 이름이 있어 값 띠('상관 요약') 안에서 찾습니다. */
 async function coefficientTile(): Promise<HTMLElement> {
-  return (await screen.findByText("상관계수 (변화)")).parentElement as HTMLElement;
+  const strip = await screen.findByRole("region", { name: "상관 요약" });
+  return within(strip).getByText("상관계수 (변화)").parentElement as HTMLElement;
 }
 
 describe("QA-634 추정 계열로 낸 상관에 '추정' 배지", () => {
@@ -131,6 +133,16 @@ describe("상관 화면의 칸 틀", () => {
     expect(within(tiles[0]).getByText("약하게 반대 방향으로 움직였습니다.")).toBeTruthy();
     expect(tiles[1].textContent).toContain("496개");
     expect(within(tiles[1]).getByText("2023-11-17 ~ 2026-11-14")).toBeTruthy();
+  });
+
+  it("읽는 동안 가운데 칸은 값이 온 뒤와 같은 자리 — KPI 띠 둘(자리표시)·롤링 260px·산점도 360px 자리표시(패널 제목 그대로), 오면 값으로", async () => {
+    render(<CorrelationPage />);
+    const pending = await screen.findByRole("region", { name: "상관 요약 불러오는 중" });
+    expect(within(pending).getAllByRole("status").map((status) => status.getAttribute("aria-label"))).toEqual(["상관계수 (변화) 불러오는 중", "표본 수 불러오는 중"]);
+    const rolling = screen.getByRole("status", { name: "상관을 계산하는 중" });
+    expect((rolling.querySelector("[style]") as HTMLElement).style.height).toBe("260px");
+    expect((screen.getByRole("status", { name: "산점도를 그리는 중" }).querySelector("[style]") as HTMLElement).style.height).toBe("360px");
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(["비교할 지표", "롤링 상관계수 (60 관측)", "산점도", "고른 쌍"]);
   });
 
   it("상관계수를 계산하지 못했으면 0이 아니라 —와 '계산할 수 없습니다.'", async () => {

@@ -8,7 +8,6 @@ import {
   EmptyState,
   ErrorState,
   Freshness,
-  Loading,
   PageHeader,
   Panel,
   Select,
@@ -26,6 +25,42 @@ const MODES = [
   { value: "change", label: "변화끼리 (권장)" },
   { value: "level", label: "수준끼리 (허위 상관 주의)" },
 ];
+
+/** 롤링·산점도 패널의 부제 — 읽는 동안의 자리표시 패널과 값이 온 뒤의 패널이 같은 글(높이가 같게). */
+const ROLLING_SUBTITLE = "한 숫자로 요약한 상관은 시기에 따라 크게 달라집니다. 언제 함께 움직였는지를 봅니다.";
+function scatterSubtitle(mode: string): string {
+  return mode === "change"
+    ? "점 하나가 하루(또는 한 관측)의 변화입니다. 오른쪽 위·왼쪽 아래에 몰리면 같이 움직인 것입니다."
+    : "수준끼리 뿌린 점입니다. 시간에 따라 이동한 궤적이 대각선으로 보이면 추세 때문입니다.";
+}
+const ROLLING_HEIGHT = 260;
+const SCATTER_HEIGHT = 360;
+
+/**
+ * 상관을 처음 읽는 동안(또는 고르기를 바꿔 다시 읽는 동안)의 가운데 칸 — 값이 온 뒤의 KPI 띠 둘·롤링·산점도 패널과 같은 자리(차트 높이와 같은 Skeleton).
+ * lg(1024~1279)에서는 '고른 쌍'이 가운데 칸 아래에 놓여, 읽는 중 글 한 줄뿐이면 그 패널이 위에 먼저 그려졌다가 값이 오며 화면 밖으로 밀렸습니다
+ * (P5a 검토 — CLS 1024 0.25, 기준 0.02).
+ */
+function CorrelationPending({ mode, window }: { mode: string; window: string }) {
+  return (
+    <>
+      {/* 이름은 값이 온 뒤의 띠('상관 요약')와 다르게 — 읽는 중인 영역임을 이름이 말합니다. */}
+      <KpiStrip
+        label="상관 요약 불러오는 중"
+        items={[
+          { key: "overall", label: `상관계수 (${mode === "change" ? "변화" : "수준"})`, value: null, pending: true, pendingLines: 1 },
+          { key: "samples", label: "표본 수", value: null, pending: true, pendingLines: 1 },
+        ]}
+      />
+      <Panel title={`롤링 상관계수 (${window} 관측)`} subtitle={ROLLING_SUBTITLE}>
+        <Skeleton height={ROLLING_HEIGHT} label="상관을 계산하는 중" />
+      </Panel>
+      <Panel title="산점도" subtitle={scatterSubtitle(mode)}>
+        <Skeleton height={SCATTER_HEIGHT} label="산점도를 그리는 중" />
+      </Panel>
+    </>
+  );
+}
 
 /** 고른 쌍의 계열 속성 — 이름·묶음·단위·출처, 추정 계열이면 이름 옆에 '추정' 배지(QA-634). 단위가 빈 글이면 단위 없는 계열입니다. */
 function seriesItems(ref: SeriesRef | null): PropertyItem[] {
@@ -159,7 +194,7 @@ export default function CorrelationPage() {
           </Panel>
         }
       >
-        {loading && !data && <Loading label="상관을 계산하는 중…" />}
+        {loading && !data && <CorrelationPending mode={mode} window={window} />}
         {error && <ErrorState message={error} onRetry={reload} />}
 
         {data && !data.available && <Callout tone="warn">{data.message ?? "계산할 수 없습니다."}</Callout>}
@@ -177,7 +212,7 @@ export default function CorrelationPage() {
             <Panel
               title={`롤링 상관계수 (${window} 관측)`}
               source={pairSource}
-              subtitle="한 숫자로 요약한 상관은 시기에 따라 크게 달라집니다. 언제 함께 움직였는지를 봅니다."
+              subtitle={ROLLING_SUBTITLE}
               actions={
                 <SourceBadge>
                   {data.x?.label} ↔ {data.y?.label}
@@ -194,18 +229,14 @@ export default function CorrelationPage() {
                 ariaLabel={`${data.x?.label ?? "X"} ↔ ${data.y?.label ?? "Y"} 롤링 상관계수 (${window} 관측)`}
                 precision={2}
                 color={SERIES_COLORS.green}
-                height={260}
+                height={ROLLING_HEIGHT}
               />
             </Panel>
 
             <Panel
               title="산점도"
               source={pairSource}
-              subtitle={
-                mode === "change"
-                  ? "점 하나가 하루(또는 한 관측)의 변화입니다. 오른쪽 위·왼쪽 아래에 몰리면 같이 움직인 것입니다."
-                  : "수준끼리 뿌린 점입니다. 시간에 따라 이동한 궤적이 대각선으로 보이면 추세 때문입니다."
-              }
+              subtitle={scatterSubtitle(mode)}
             >
               <ScatterPlot
                 data={data.scatter ?? []}
@@ -213,7 +244,7 @@ export default function CorrelationPage() {
                 yLabel={data.y?.label ?? "Y"}
                 xUnit={data.x?.unit ?? ""}
                 yUnit={data.y?.unit ?? ""}
-                height={360}
+                height={SCATTER_HEIGHT}
               />
             </Panel>
           </>
