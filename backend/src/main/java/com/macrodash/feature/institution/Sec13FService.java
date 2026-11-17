@@ -23,6 +23,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -136,7 +137,9 @@ public class Sec13FService {
      *
      * <p>줄마다 수집기가 붙인 {@code ticker}(이름 매핑표로 찾은 Yahoo 심볼, 모르면 null)와 {@code tickerNote}(일부러 붙이지 않은 까닭 —
      * 채권 {@code debt}·보통주 아닌 증권 {@code non_common}, 없으면 null)를 그 줄을 만든 저장본 보유 노드에서 그대로 옮깁니다({@link SourceNodes}).
-     * 13F 화면이 종목 이름을 눌러 시세 팝업을 열 때 씁니다 — 백엔드는 이름으로 다시 찾지 않습니다.
+     * 13F 화면이 종목 이름을 눌러 시세 팝업을 열 때 씁니다 — 백엔드는 이름으로 다시 찾지 않습니다. 이름 매핑표의 티커는 <b>회사 단위</b>라
+     * (클래스를 합침), 그 티커가 특정 클래스의 증권인데 줄의 클래스 표기로 같은 클래스임이 확인되지 않으면 {@code tickerIsProxy}를 참으로 둡니다
+     * ({@link #tickerIsProxy}) — 화면은 그 줄의 시세를 바로 열지 않습니다.
      *
      * @return 평가액 내림차순, topN까지. 전량 매도 행은 평가액·주식 수·비중이 0입니다
      */
@@ -161,8 +164,10 @@ public class Sec13FService {
             row.put("weightDiff", change.weightDiff());
             row.put("sharesDiff", change.sharesDiff());
             row.put("action", change.action());
-            row.put("ticker", Json.asText(source, "ticker"));
+            String ticker = Json.asText(source, "ticker");
+            row.put("ticker", ticker);
             row.put("tickerNote", Json.asText(source, "tickerNote"));
+            row.put("tickerIsProxy", tickerIsProxy(ticker, holding.cls()));
             rows.add(row);
         }
 
@@ -171,6 +176,43 @@ public class Sec13FService {
         ).reversed());
 
         return topN > 0 && rows.size() > topN ? rows.subList(0, topN) : rows;
+    }
+
+    /** 줄의 클래스 표기에서 보통주 클래스 글자 — 'CL A'·'CAP STK CL C'·'CL B NEW'·'COM CL A'·'CLASS B'. */
+    private static final Pattern ROW_SHARE_CLASS = Pattern.compile("\\bCL(?:ASS)?[\\s.\\-]+([A-Z])\\b");
+
+    /** Yahoo 미국 주식의 클래스 접미사 — BRK-B·BF-B·HEI-A의 마지막 글자. */
+    private static final Pattern TICKER_CLASS_SUFFIX = Pattern.compile("^[A-Z0-9]+-([A-Z])$");
+
+    /**
+     * 접미사 없이 클래스마다 다른 티커를 쓰는 발행사 가운데 수집기 이름 매핑표가 클래스를 하나의 티커로 합친 것 — 티커 → 그 티커의 클래스.
+     * 매핑표(collector/app/equities.py EQUITY_MAP)는 'ALPHABET INC'의 CL A·CL C를 모두 GOOGL로 모읍니다(위험 분석용 — 그 파일의 주석).
+     * 매핑표에 이런 발행사(FOXA·NWSA 등)를 더하면 여기에도 더해야 그 클래스를 확인합니다 — 빠지면 예전처럼 그 티커로 바로 엽니다.
+     */
+    private static final Map<String, String> UNSUFFIXED_CLASS_TICKERS = Map.of("GOOGL", "A", "GOOG", "C");
+
+    /**
+     * 수집기 티커가 이 줄의 증권이 아니라 같은 회사의 다른 클래스일 수 있는지(대용 티커).
+     *
+     * <p>이름 매핑표의 티커는 회사 단위라, 클래스가 둘 이상 상장된 회사는 줄의 클래스와 상관없이 같은 티커가 붙습니다 — 노르웨이의
+     * 'BERKSHIRE HATHAWAY INC DEL | CL A'(주당 수십만 달러)에 BRK-B(주당 수백 달러), 'ALPHABET INC | CAP STK CL C'에 GOOGL이 붙었고, 화면이
+     * 그 티커의 시세를 그 줄의 시세처럼 보였습니다. 티커가 특정 클래스를 가리키면(Yahoo 접미사 BRK-B, 또는 {@link #UNSUFFIXED_CLASS_TICKERS})
+     * 줄의 클래스 표기가 <b>같은 클래스라고 적었을 때만</b> 대용이 아닙니다 — 'COM'·'Common Stock'·회사 이름처럼 클래스가 없는 표기는 같은 회사의
+     * 어느 클래스인지 모르므로(기관들이 BRK A주 CUSIP 084670108도 'COM'으로 적음) 대용으로 봅니다. 클래스를 가리키지 않는 티커(META·V — 상장
+     * 클래스가 하나)는 회사 티커가 곧 그 증권이라 대용이 아닙니다. 티커가 없으면 거짓입니다.
+     */
+    static boolean tickerIsProxy(String ticker, String cls) {
+        if (ticker == null || ticker.isBlank()) {
+            return false;
+        }
+        String symbol = ticker.trim().toUpperCase(Locale.ROOT);
+        Matcher suffix = TICKER_CLASS_SUFFIX.matcher(symbol);
+        String tickerClass = suffix.matches() ? suffix.group(1) : UNSUFFIXED_CLASS_TICKERS.get(symbol);
+        if (tickerClass == null) {
+            return false;
+        }
+        Matcher rowClass = ROW_SHARE_CLASS.matcher(cls == null ? "" : cls.toUpperCase(Locale.ROOT));
+        return !(rowClass.find() && rowClass.group(1).equals(tickerClass));
     }
 
     /**

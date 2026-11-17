@@ -265,6 +265,6 @@ class Sec13FPortfolioTest {
                         org.assertj.core.groups.Tuple.tuple("FORD MTR CO", null, "debt"));
 
         List<Map<String, Object>> consensus = (List<Map<String, Object>>) service.consensus(List.of(NPS), null, 1, 10).get("rows");
-        assertThat(consensus).isNotEmpty().allSatisfy(row -> assertThat(row).doesNotContainKeys("ticker", "tickerNote"));
+        assertThat(consensus).isNotEmpty().allSatisfy(row -> assertThat(row).doesNotContainKeys("ticker", "tickerNote", "tickerIsProxy"));
     }
 }
