@@ -18,6 +18,6 @@ export function categoryDelay(category: MacroCategory): string | undefined {
   }
   const labels = new Set(live.map((item) => delayLabel(item.delayMinutes) ?? "지연 모름"));
   if (labels.size === 0) return undefined;
-  return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 카드 배지 참고";
+  return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 기준 칸 참고";
 }
 

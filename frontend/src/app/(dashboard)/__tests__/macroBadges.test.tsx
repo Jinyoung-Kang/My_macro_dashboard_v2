@@ -128,7 +128,7 @@ describe("매크로 카드 배지", () => {
     render(<MacroPage />);
 
     expect((await screen.findAllByText("시세: 실시간")).length).toBe(2);      // 미국채·아시아(지수 값 하나)
-    expect(screen.getByText("시세: 종목마다 다름 — 카드 배지 참고")).toBeTruthy();
+    expect(screen.getByText("시세: 종목마다 다름 — 기준 칸 참고")).toBeTruthy();
   });
 });
 
