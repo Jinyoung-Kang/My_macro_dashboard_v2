@@ -1,13 +1,13 @@
 /**
  * 매크로 화면(/macro)의 화면 모델 — 목차 항목, 지표 표의 묶음 줄과 미리보기 칸, 절마다의 KPI 띠 타일(작업대 화면 언어 P5a, ADR 0004 — React를 모름).
  *
- * 지표 줄은 홈 시장 표와 같은 규칙(lib/home `macroCardRow` — 값은 수집기 priceStr, 변화는 delta·pct 그대로, 출처·장 상태·지연·시각과 추정·이전 값)에
+ * 지표 줄은 홈 시장 표와 같은 규칙(lib/marketRows `macroCardRow` — 값은 수집기 priceStr, 변화는 delta·pct 그대로, 출처·장 상태·지연·시각과 추정·이전 값)에
  * 실시간 시각·전일·전일값 출처·티커를 덧붙입니다. KPI 타일은 공용 KPI 띠(components/patterns KpiStrip)의 타일과 같은 모양의 값입니다(lib은 components를
  * 가져오지 않아 모양을 여기 따로 적음 — 구조가 같으면 그대로 넘어감). 모르는 값은 null('—')이고 0으로 채우지 않습니다. 음수 부호는 −(U+2212)입니다.
  */
 import { indicatorHref } from "./detail";
 import { delayLabel, EMPTY, formatKst, formatNumber, formatSampleWindow, formatSignedMinus, withMinusSign, withoutLeadingIcon } from "./format";
-import { macroCardRow, macroCardSession, macroItemSource, type HomeRow, type MarketClock } from "./home";
+import { macroCardRow, macroCardSession, macroItemSource, type HomeRow, type MarketClock } from "./marketRows";
 import { categoryDelay } from "./macroCards";
 import type { MacroCardView } from "./macroLive";
 import { MACRO_SECTIONS } from "./marketSections";

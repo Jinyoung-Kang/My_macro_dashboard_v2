@@ -78,7 +78,7 @@ function indicatorColumns(inspector: InspectorContext): Column<MacroIndicatorRow
       header: "기준",
       cell: (row) => (
         <span className="flex min-w-0 flex-wrap items-center gap-1">
-          {/* 출처 · 장 상태 · 지연(열린 장만) · 시각 — 닫힌 장이라 적지 않은 지연은 툴팁(lib/home macroCardRow). 실시간 줄의 시각은 받은·거래 시각. */}
+          {/* 출처 · 장 상태 · 지연(열린 장만) · 시각 — 닫힌 장이라 적지 않은 지연은 툴팁(lib/marketRows macroCardRow). 실시간 줄의 시각은 받은·거래 시각. */}
           <ProvenanceBadge source={row.source} asOf={row.asOf} delayMin={row.delayMin} title={row.provenanceTitle} />
           {row.legacyNote ? <SourceBadge>{row.legacyNote}</SourceBadge> : null}
           <EstimateBadge estimated={row.isEstimated} />

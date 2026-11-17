@@ -4,7 +4,7 @@
  * 판정 근거 네 개를 한 줄로 적습니다. 단위는 화면의 다른 곳과 같게: 금리차·하이일드는 %p,
  * NFCI는 단위 없는 지수, 순유동성 변화는 조·억 달러(PRINCIPLES "한국식 단위").
  * 값을 모르는 입력은 "—"로 둡니다 — 0으로 채우지 않습니다.
- * 음수 글자는 −(U+2212)입니다 — 홈 국면 패널(lib/home regimeHeroModel, QA-600)·변화 칩과 같은 글자(명세 D4, QA-636).
+ * 음수 글자는 −(U+2212)입니다 — 홈 국면 패널(lib/marketRows regimeHeroModel, QA-600)·변화 칩과 같은 글자(명세 D4, QA-636).
  */
 import { EMPTY, formatNumber, formatSignedMinus, formatTrillionDelta, withMinusSign } from "./format";
 import type { RegimeLogEntry, RegimeLogInput, RegimeResponse, TrackRecordCell } from "./types";

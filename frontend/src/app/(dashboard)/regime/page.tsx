@@ -8,7 +8,7 @@ import { ScaleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, withMinusSign } from "@/lib/format";
-import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
+import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/marketRows";
 import { macroPath } from "@/lib/marketSections";
 import { regimeBandLabel } from "@/lib/regime";
 import { SOURCES } from "@/lib/sources";

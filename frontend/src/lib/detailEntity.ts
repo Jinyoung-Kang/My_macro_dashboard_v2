@@ -19,7 +19,7 @@ import {
   statText,
 } from "./detail";
 import { EMPTY, formatNumber, formatSignedMinus, formatUsd, formatWeightPercent, withoutLeadingIcon } from "./format";
-import type { HomeRow } from "./home";
+import type { HomeRow } from "./marketRows";
 import { isEntityKey, searchHref } from "./infoSearch";
 import type { DetailMarket, DetailQuote } from "./types/detail";
 import type { GuruHoldersResponse, Holding, PortfolioResponse } from "./types/institution";
@@ -149,13 +149,13 @@ const NO_CHART_TICKER_NOTE: Readonly<Record<string, string>> = {
   us02y: "Yahoo 선물 가격 — 이 카드 값(수익률)의 출처가 아님",
 };
 
-/** 지표 속성에 쓰는 카드 행의 칸(lib/home macroCardRow 결과). */
+/** 지표 속성에 쓰는 카드 행의 칸(lib/marketRows macroCardRow 결과). */
 export type IndicatorRowFields = Pick<HomeRow, "valueText" | "asOf" | "isEstimated" | "isStale" | "staleReason" | "warning">;
 
 /**
  * 지표 속성(지표 상세 왼쪽 칸) — 범주·티커·카드 키(고정폭)·값(추정·이전 값 배지)·전일·값 출처·장 상태·기준 시각·경고(있을 때만). 뜻이 다른 티커
  * (us02y ZT=F)는 값을 그대로 두고(수집기 덮어쓰기 실패 경고가 이 이름을 가리킴) 이 카드 값의 출처가 아니라는 note를 붙입니다. 값 출처와 장 상태는
- * 부르는 쪽이 홈 시장 표와 같은 규칙(lib/home macroItemSource·macroCardSession)으로 넘깁니다 — 이 모듈은 lib/home을 가져오지 않습니다(형식만).
+ * 부르는 쪽이 홈 시장 표와 같은 규칙(lib/marketRows macroItemSource·macroCardSession)으로 넘깁니다 — 이 모듈은 lib/marketRows를 가져오지 않습니다(형식만).
  */
 export function indicatorProperties(
   item: Pick<MacroItem, "key" | "ticker" | "prevStr">,
