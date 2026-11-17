@@ -182,6 +182,22 @@ describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다",
     expect(await screen.findByText(FAILED)).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
+
+  // QA-670: 신용·변동성 패널은 첫 조회가 실패해도 사유를 버리고 회색 빈 상태 글('리스크 지표를 불러오지 못했습니다.')만 그려, 다시 시도 단추가 없었습니다
+  // (개편 전부터 — QA-103이 심화 지표만 고침). 자동 갱신 '끄기'면 새로 고침 말고는 다시 읽을 길이 없었습니다(QA 스택, 모의 500). 심화 지표와 같이
+  // 이유와 다시 시도를 보이고, 누르면 한 번 더 읽어야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 패널에 '리스크 지표를 불러오지 못했습니다.'만 있어 사유를 찾지 못했습니다('Unable to find an element with the text: 요청 실패 (HTTP 503)').
+  it.fails("매크로 신용·변동성: 첫 조회가 실패하면 오류와 다시 시도 — 누르면 /api/macro/risk를 한 번 더 읽는다", async () => {
+    reads["/api/macro/risk"] = () => Promise.reject(new Error(FAILED));
+    render(<MacroPage />);
+
+    const section = (await screen.findByRole("heading", { name: "신용 리스크, 은행권 및 시장 변동성" })).closest("section") as HTMLElement;
+    expect(await within(section).findByText(FAILED)).toBeTruthy();
+    const riskReads = () => api.apiGetShared.mock.calls.filter(([called]) => String(called).startsWith("/api/macro/risk")).length;
+    const before = riskReads();
+    fireEvent.click(within(section).getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(riskReads()).toBe(before + 1));
+  });
 });
 
 // 대기(findBy·waitFor) 한도 5초, 테스트 하나의 한도 20초(1800bae, 기본 1초·5초). 부하가 높을 때 상태 화면이 가끔 실패한 것은
