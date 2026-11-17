@@ -1,7 +1,7 @@
 /**
  * COT(/cot) 화면 — 요약 표·극단 성적의 부호·등락 표시(QA-629)와 작업대 배치(자산 고르기 표·KPI 띠·공용 표 — P5a).
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -219,5 +219,33 @@ describe("QA-654 자산별 요약 패널은 읽는 동안 표 꼴 자리로 높�
     const [nameLine, categoryLine] = Array.from(rows[0].firstElementChild?.children ?? []);
     expect(classes(nameLine)).toEqual(expect.arrayContaining(["h-11", "lg:h-6"]));
     expect(classes(categoryLine)).toContain("h-4");
+  });
+});
+
+// QA-655: 요약 표 꼴 자리(QA-654)를 '값 없이 읽는 중'이면 늘 그려, 첫 읽기가 실패한 뒤 다시 읽을 때마다(자동 갱신 10분·다시 시도·탭 복귀) 오류 상자와 자산
+// 여섯 줄의 자리가 번갈아 그려져 아래 추이·극단 성적 패널이 오르내렸습니다(매크로 지표 패널과 같은 원인 — 검토 지적). 실패 뒤 다시 읽는 동안은 오류 상자와
+// 비슷한 높이의 '불러오는 중' 한 줄이어야 합니다(표 꼴 자리는 처음 읽는 동안만).
+describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 요약 표 꼴 자리를 다시 그리지 않는다", () => {
+  it.fails("자산별 요약 — 실패 → 다시 읽는 중에 자리 줄 없이 '불러오는 중' 한 줄, 다시 실패하면 오류 상자", async () => {
+    let calls = 0;
+    let failAgain: () => void = () => {};
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path !== "/api/cot/overview") return new Promise(() => {});
+      calls += 1;
+      return calls === 1
+        ? Promise.reject(new Error("백엔드 API 오류 (503)"))
+        : new Promise((_, reject) => { failAgain = () => reject(new Error("백엔드 API 오류 (503)")); });
+    });
+    render(<CotPage />);
+    const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;
+    fireEvent.click(await within(panel).findByRole("button", { name: "다시 시도" }));
+
+    expect(calls).toBe(2);
+    expect(panel.querySelectorAll("[data-cot-pending-row]")).toHaveLength(0);
+    expect(within(panel).queryByRole("status", { name: "자산별 요약을 불러오는 중" })).toBeNull();
+    expect(within(panel).getByText("불러오는 중…")).toBeTruthy();
+
+    await act(async () => failAgain());
+    expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });

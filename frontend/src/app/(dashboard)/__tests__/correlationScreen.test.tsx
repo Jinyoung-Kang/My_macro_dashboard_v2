@@ -3,7 +3,7 @@
  *
  * 차트는 받은 이름·격자만 보려고 가짜로 바꿉니다(그림은 차트 시험 몫).
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -204,5 +204,33 @@ describe("상관 화면의 칸 틀", () => {
     expect(xSelect.value).toBe("liquidity:net");
     const pair = screen.getByRole("heading", { name: "고른 쌍" }).closest("section") as HTMLElement;
     expect(propertyValue(within(pair).getByRole("region", { name: "X 계열" }), "이름").textContent).toBe("연준 순유동성");
+  });
+});
+
+// QA-655: 가운데 칸의 값 꼴 자리(KPI 띠 둘·롤링 260px·산점도 360px — P5a 검토 반영 `dbd86998`)를 '값 없이 읽는 중'이면 늘 그려, 첫 읽기가 실패한 뒤 다시
+// 읽을 때마다(자동 갱신 5분·다시 시도·탭 복귀) 오류 상자와 그 자리가 번갈아 그려졌습니다(매크로 지표 패널과 같은 원인 — 검토 지적의 같은 꼴). 실패 뒤
+// 다시 읽는 동안은 오류 상자와 비슷한 높이의 '상관을 계산하는 중…' 한 줄이어야 합니다(값 꼴 자리는 처음 읽는 동안과 고르기를 바꿔 다시 읽는 동안만).
+describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 가운데 칸 값 꼴 자리를 다시 그리지 않는다", () => {
+  it.fails("실패 → 다시 읽는 중에 KPI 띠·차트 자리 없이 '상관을 계산하는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
+    let calls = 0;
+    let failAgain: () => void = () => {};
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path !== CORRELATION) return new Promise(() => {});
+      calls += 1;
+      return calls === 1
+        ? Promise.reject(new Error("백엔드 API 오류 (503)"))
+        : new Promise((_, reject) => { failAgain = () => reject(new Error("백엔드 API 오류 (503)")); });
+    });
+    render(<CorrelationPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
+
+    expect(calls).toBe(2);
+    expect(screen.queryByRole("region", { name: "상관 요약 불러오는 중" })).toBeNull();
+    expect(screen.queryByRole("status", { name: "상관을 계산하는 중" })).toBeNull();
+    expect(screen.queryByRole("status", { name: "산점도를 그리는 중" })).toBeNull();
+    expect(screen.getByText("상관을 계산하는 중…")).toBeTruthy();
+
+    await act(async () => failAgain());
+    expect(await screen.findByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });

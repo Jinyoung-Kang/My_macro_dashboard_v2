@@ -2,7 +2,7 @@
  * 국면(/regime) 화면 — 판정 대상(대상 머리·근거 넷·네 국면·탭 셋·연결·출처)과 국면 이력 띠·판정 기록·판정 성과의 뜻.
  * 가운데 탭 셋은 모두 마운트하고 고르지 않은 것은 hidden이라, 숨은 탭의 내용은 그 탭을 연 뒤에 역할로 찾습니다.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -507,5 +507,53 @@ describe("QA-651 판정 기록을 읽는 동안 목록 자리를 잡는다", () 
     const status = within(panel).getByRole("status", { name: "판정 기록을 읽는 중" });
     expect(status.querySelectorAll("li")).toHaveLength(10);
     expect(status.querySelector("ul")?.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
+// QA-655: 대상 머리의 자리표시(QA-650)와 판정 기록의 목록 꼴 자리(QA-651)를 '값 없이 읽는 중'이면 늘 그려, 첫 읽기가 실패한 뒤 다시 읽을 때마다(자동 갱신
+// 5분·10분 · 다시 시도 · 탭 복귀) 오류 상자와 큰 자리표시가 번갈아 그려졌습니다(매크로 지표 패널과 같은 원인 — 검토 지적). 실패 뒤 다시 읽는 동안은 오류
+// 상자와 비슷한 높이의 '…읽는 중' 한 줄이어야 합니다(값 꼴 자리는 처음 읽는 동안만).
+describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 자리를 다시 그리지 않는다", () => {
+  /** path의 첫 읽기는 실패, 다시 읽기는 failAgain()을 부를 때까지 끝나지 않다가 실패. 나머지 경로는 reads 그대로. */
+  function failFirst(path: string) {
+    const state = { calls: 0, failAgain: () => {} };
+    api.apiGetShared.mockImplementation((requested: string) => {
+      if (requested !== path) return requested in reads ? Promise.resolve(reads[requested]) : new Promise(() => {});
+      state.calls += 1;
+      return state.calls === 1
+        ? Promise.reject(new Error("백엔드 API 오류 (503)"))
+        : new Promise((_, reject) => { state.failAgain = () => reject(new Error("백엔드 API 오류 (503)")); });
+    });
+    return state;
+  }
+
+  it.fails("대상 머리 — 실패 → 다시 읽는 중에 머리 꼴 자리표시 없이 '국면을 판정하는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
+    const state = failFirst(REGIME);
+    render(<RegimePage />);
+    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    fireEvent.click(await within(header).findByRole("button", { name: "다시 시도" }));
+
+    expect(state.calls).toBe(2);
+    expect(within(header).queryByRole("status", { name: "국면을 판정하는 중" })).toBeNull();
+    expect(within(header).getByText("국면을 판정하는 중…")).toBeTruthy();
+
+    await act(async () => state.failAgain());
+    expect(await within(header).findByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it.fails("판정 기록 — 실패 → 다시 읽는 중에 목록 꼴 자리 줄 없이 '판정 기록을 읽는 중…' 한 줄, 다시 실패하면 오류 상자", async () => {
+    reads[REGIME] = regimeExpansion();
+    const state = failFirst(REGIME_LOG);
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 기록");
+    fireEvent.click(await within(panel).findByRole("button", { name: "다시 시도" }));
+
+    expect(state.calls).toBe(2);
+    expect(within(panel).queryByRole("status", { name: "판정 기록을 읽는 중" })).toBeNull();
+    expect(panel.querySelectorAll("li")).toHaveLength(0);
+    expect(within(panel).getByText("판정 기록을 읽는 중…")).toBeTruthy();
+
+    await act(async () => state.failAgain());
+    expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });

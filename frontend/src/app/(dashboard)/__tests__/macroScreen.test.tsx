@@ -11,7 +11,7 @@
  *    값·변화·전일·기준 시각·장 상태·출처·전일값 출처·티커와 '지표 상세 열기'(/markets/i/키)
  *  - 목차: 회원 일곱·운영자 여덟(절 id = lib/marketSections), 지표 칸 아래 범주 칸(개수), 2xl부터 왼쪽 세로 목록(결정 7), 절 닻은 읽는 중에도 있음
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -660,5 +660,38 @@ describe("QA-653 지표 패널은 개요를 처음 읽는 동안 표 꼴 자리�
     expect(classes(nameLine)).toEqual(expect.arrayContaining(["h-11", "lg:h-6"]));
     expect(classes(subLine)).toContain("h-4");
     expect(classes(narrowLine)).toEqual(expect.arrayContaining(["mt-1", "h-5", "md:hidden"]));
+  });
+});
+
+// QA-655: 표 꼴 자리(QA-653)와 목차의 하위 칸·개수 자리(QA-652)를 '값 없이 읽는 중'이면 늘 그려, 첫 읽기가 실패한 뒤 다시 읽을 때마다(자동 갱신 — 기본 60초,
+// 5·10초도 고름 · 다시 시도 · 탭 복귀) 오류 상자와 표 꼴 자리가 번갈아 그려졌습니다 — 검토 자기 빌드(개요 503 흉내, 5초 갱신)에서 지표 패널 157 ↔ 1,651px,
+// 환율 비교 위 끝 464 ↔ 1,958px(1024, 14초 CLS 2.23). useApi는 다시 읽기를 시작할 때 error를 비우고 failedAt(마지막 실패 시각)을 남기므로, 실패 뒤 다시 읽는
+// 동안은 표 꼴 자리 대신 오류 상자와 비슷한 높이의 '불러오는 중' 한 줄이어야 합니다(표 꼴 자리는 처음 읽는 동안만).
+describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 표 꼴 자리를 다시 그리지 않는다", () => {
+  it.fails("지표 패널·목차 — 실패 → 다시 읽는 중에 자리 줄·하위 칸 자리·개수 자리 없이 '불러오는 중' 한 줄, 다시 실패하면 오류 상자", async () => {
+    let calls = 0;
+    let failAgain: () => void = () => {};
+    // 첫 읽기는 실패, 다시 읽기는 failAgain()을 부를 때까지 끝나지 않다가 실패.
+    reads["/api/macro/overview"] = () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.reject(new Error("백엔드 API 오류 (503)"))
+        : new Promise((_, reject) => { failAgain = () => reject(new Error("백엔드 API 오류 (503)")); });
+    };
+    render(<MacroPage />);
+    const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
+    const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
+    fireEvent.click(await within(panel).findByRole("button", { name: "다시 시도" }));
+
+    expect(calls).toBe(2);
+    expect(panel.querySelectorAll("[data-macro-pending-row]")).toHaveLength(0);
+    expect(within(panel).queryByRole("status", { name: "매크로 지표를 불러오는 중" })).toBeNull();
+    expect(within(panel).getByText("매크로 지표를 불러오는 중…")).toBeTruthy();
+    expect(nav.querySelector("[data-section-index-pending]")).toBeNull();
+    expect(nav.querySelector("[data-section-index-count-pending]")).toBeNull();
+
+    await act(async () => failAgain());
+    expect(await within(panel).findByRole("button", { name: "다시 시도" })).toBeTruthy();
+    expect(panel.querySelectorAll("[data-macro-pending-row]")).toHaveLength(0);
   });
 });
