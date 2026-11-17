@@ -6,7 +6,7 @@
  * 둘 다 503이면 가운데의 상관 오류 상자만 있어, 그 다시 시도로 상관은 돌아와도 고르기는 빈 채였습니다(새로고침·다른 화면에 다녀오기만 남음).
  * 고친 뒤: '비교할 지표' 패널의 고르기 아래에 목록 오류 상자(다시 시도 = 목록만 다시 읽음). 고르기는 막지 않고, 상관 쪽 다시 시도와 묶지 않습니다.
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -141,5 +141,38 @@ describe("QA-664 계열 목록을 읽지 못하면 까닭과 목록 다시 시�
     expect(within(leftPanel()).queryByRole("button", { name: "다시 시도" })).toBeNull();
     // 상관 쪽 오류 상자는 자기 다시 시도로 — 왼쪽 단추가 상관까지 다시 읽지는 않습니다.
     expect(screen.getAllByRole("button", { name: "다시 시도" })).toHaveLength(1);
+  });
+});
+
+// QA-664 검토: 목록 다시 시도를 누르면 다시 읽는 동안 오류 상자가 통째로 사라졌다가(useApi가 다시 읽기를 시작할 때 error를 비움) 다시 실패하면 되살아났습니다 —
+// lg 미만에서는 '비교할 지표' 패널이 결과 위에 있어 아래 전체가 상자 높이만큼 올라갔다가 내려왔습니다(자기 빌드 390 상자 118px·'상관 요약' 띠 y 859 → 729 → 859,
+// 768 98px·660 → 550 → 660). 실패 뒤 다시 읽는 동안은 상자 자리에 한 줄이어야 합니다(QA-655가 다른 오류 상자에 정한 꼴).
+describe("QA-664 검토 — 목록을 실패 뒤 다시 읽는 동안 상자 자리에 한 줄", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 다시 읽는 동안 '비교할 지표' 패널에 오류 상자도 한 줄도 없었습니다(글을 찾지 못함).
+  it.fails("다시 시도 → 응답 전에는 '지표 목록을 다시 읽는 중…' 한 줄(오류 상자 없음), 다시 실패하면 오류 상자로 돌아오고 한 줄은 걷힌다", async () => {
+    answers[SERIES] = fail;
+    answers[CORRELATION] = ok(CORRELATION_BODY);
+    render(<CorrelationPage />);
+    const retry = await within(leftPanel()).findByRole("button", { name: "다시 시도" });
+    // 첫 실패 뒤에는 상자뿐입니다(한 줄 없음).
+    expect(within(leftPanel()).queryByText("지표 목록을 다시 읽는 중…")).toBeNull();
+
+    let failAgain: () => void = () => {};
+    answers[SERIES] = () => new Promise((_, reject) => { failAgain = () => reject(new Error("요청 실패 (HTTP 503)")); });
+    fireEvent.click(retry);
+
+    expect(seriesCalls()).toBe(2);
+    expect(within(leftPanel()).getByText("지표 목록을 다시 읽는 중…")).toBeTruthy();
+    expect(within(leftPanel()).queryByText(/지표 목록을 읽지 못했습니다/)).toBeNull();
+
+    await act(async () => failAgain());
+    expect(await within(leftPanel()).findByText("지표 목록을 읽지 못했습니다 — 요청 실패 (HTTP 503)")).toBeTruthy();
+    expect(within(leftPanel()).queryByText("지표 목록을 다시 읽는 중…")).toBeNull();
+  });
+
+  it("처음 읽는 동안(앞선 실패 없음)에는 한 줄을 두지 않는다", () => {
+    render(<CorrelationPage />);
+    expect(within(leftPanel()).queryByText("지표 목록을 다시 읽는 중…")).toBeNull();
+    expect(within(leftPanel()).queryByText(/지표 목록을 읽지 못했습니다/)).toBeNull();
   });
 });
