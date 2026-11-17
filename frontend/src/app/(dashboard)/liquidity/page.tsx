@@ -2,24 +2,19 @@
 
 import { useState } from "react";
 import { LineSeries, SERIES_COLORS } from "@/components/charts";
+import { KpiStrip } from "@/components/patterns";
 import {
-  Banner,
-  Card,
+  Callout,
   ErrorState,
   Freshness,
   Loading,
-  Metric,
   PageHeader,
+  Panel,
   Select,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { liquidityChartSeries } from "@/lib/liquidity";
+import { liquidityChartSeries, liquidityKpis } from "@/lib/liquidity";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
-import {
-  formatBillionUsd,
-  formatTrillionDelta,
-  formatTrillionUsd,
-} from "@/lib/format";
 import type { LiquidityResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -38,6 +33,10 @@ const PERIODS = [
  * 순유동성 = WALCL(연준 총자산) − TGA(재무부 일반계정) − ON RRP(역레포)
  * 시장에 실제로 남아 있는 달러 유동성의 근사치로, 위험자산 방향과 상관이
  * 높다고 알려진 지표입니다.
+ *
+ * 배치(작업대 화면 언어 — 명세 §7 3행 '가벼운 재배치'): 머리 → 안내 상자(없음·추정) → KPI 띠(순유동성·총자산·TGA·RRP·4주·12주 — 넓은 화면 한 줄,
+ * lg 네 칸 두 줄, 좁은 화면 두 칸 세 줄) → '순유동성 추이' 패널 차트 → '구성 항목 분해' 세 칸. 주간 표·행 검사는 두지 않습니다(응답 rows로 표를 새로
+ * 두는 것은 내용 추가 — 사용자 결정 거리).
  */
 export default function LiquidityPage() {
   const [years, setYears] = useState("3");
@@ -49,9 +48,9 @@ export default function LiquidityPage() {
   // 쓰므로, 두 화면을 나란히 놓아도 환산액이 어긋나지 않습니다.
   const usdKrw = useUsdKrw();
 
-
   const rows = data?.rows ?? [];
-  const latest = data?.latest;
+  // KPI 띠 — 값·변화 칩·원화 메모·출처 줄(규칙은 lib/liquidity liquidityKpis, 원화 환산의 음수도 − — QA-627).
+  const kpis = liquidityKpis(data, usdKrw, SOURCES.fredLiquidity);
 
   // 기간은 머리말의 '조회 기간' 하나가 두 차트를 함께 좁힙니다.
   // 카드마다 따로 두면 화면에 기간 컨트롤이 셋이 되고, 어느 것이 무엇에
@@ -60,7 +59,7 @@ export default function LiquidityPage() {
   const { netLiquidity, components: componentSeries } = liquidityChartSeries(rows);
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="연준 순유동성 트래커"
         description="WALCL − TGA − ON RRP · 출처: FRED 공식 시계열 (주간 갱신)"
@@ -88,69 +87,21 @@ export default function LiquidityPage() {
       {data && (
         <>
 
-        {!data?.available && (
-          <Banner tone="warn">
-            {data?.message ?? "순유동성 데이터가 없습니다. 수집기를 실행하세요."}
-          </Banner>
+        {!data.available && (
+          <Callout tone="warn">
+            {data.message ?? "순유동성 데이터가 없습니다. 수집기를 실행하세요."}
+          </Callout>
         )}
 
-        {data?.isEstimated && (
-          <Banner tone="danger">
+        {data.isEstimated && (
+          <Callout tone="danger">
             추정치 모드입니다. FRED 확정치가 아니므로 수치를 그대로 신뢰하지 마세요.
-          </Banner>
+          </Callout>
         )}
 
-        {latest && (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric
-              label="순유동성 (Net Liquidity)"
-              value={formatTrillionUsd(latest.netLiquidityT)}
-              delta={latest.deltaT}
-              deltaText={formatTrillionDelta(latest.deltaT)}
-              caption={usdKrw.trillionToKrw(latest.netLiquidityT) ?? undefined}
-              note={latest.date ? `기준일 ${latest.date} · ${usdKrw.note}` : usdKrw.note}
-            />
-            <Metric
-              label="연준 총자산 (WALCL)"
-              value={formatTrillionUsd(latest.walclT)}
-              caption={usdKrw.trillionToKrw(latest.walclT) ?? undefined}
-            />
-            <Metric
-              label="재무부 일반계정 (TGA)"
-              value={formatBillionUsd(latest.tgaB)}
-              caption={usdKrw.billionToKrw(latest.tgaB) ?? undefined}
-              note="TGA 증가 = 시장에서 자금 흡수"
-            />
-            <Metric
-              label="역레포 (ON RRP)"
-              value={formatBillionUsd(latest.rrpB)}
-              caption={usdKrw.billionToKrw(latest.rrpB) ?? undefined}
-              note="RRP 감소 = 시장으로 유동성 환류"
-            />
-          </div>
-        )}
+        {kpis.length > 0 && <KpiStrip label="순유동성 요약" items={kpis} />}
 
-        {data?.momentum && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Metric
-              label="4주 변화"
-              value={formatTrillionDelta(data.momentum.change4w)}
-              delta={data.momentum.change4w}
-              deltaText=""
-              caption={krwDelta(usdKrw.trillionToKrw, data.momentum.change4w)}
-              note="유동성은 방향과 속도가 함께 중요합니다."
-            />
-            <Metric
-              label="12주 변화"
-              value={formatTrillionDelta(data.momentum.change12w)}
-              delta={data.momentum.change12w}
-              deltaText=""
-              caption={krwDelta(usdKrw.trillionToKrw, data.momentum.change12w)}
-            />
-          </div>
-        )}
-
-        <Card
+        <Panel
           title="순유동성 추이" source={SOURCES.fredLiquidity}
           subtitle="단위: 조 달러 · 축은 데이터 범위에 맞춥니다 (0부터 그리면 변동이 보이지 않습니다)"
         >
@@ -159,8 +110,10 @@ export default function LiquidityPage() {
             unit="조"
             color={SERIES_COLORS.green}
             height={320}
+            grid
+            ariaLabel="순유동성 추이 (조 달러)"
           />
-        </Card>
+        </Panel>
 
         {/*
           구성 항목은 자릿수가 다릅니다 — 총자산 약 6.7조, 재무부 계정 약 0.88조,
@@ -169,17 +122,18 @@ export default function LiquidityPage() {
           임의라 없는 상관을 만들어 냅니다. 그래서 **패널을 나눕니다** —
           각자 제 범위를 갖고, 시간축은 공유합니다.
         */}
-        <Card
+        <Panel
           title="구성 항목 분해" source={SOURCES.fredLiquidity}
           subtitle="총자산이 늘어도 TGA·RRP가 더 늘면 시장 유동성은 줄어듭니다. 자릿수가 달라 패널과 단위를 나눕니다 (단위는 각 패널 제목 옆)."
         >
           <div className="grid gap-4 lg:grid-cols-3">
             {COMPONENTS.map((component) => (
-              <div key={component.key}>
+              <div key={component.key} className="min-w-0">
                 <div className="mb-1 flex items-baseline gap-2">
+                  {/* 제목 옆 색 견본 — 고대비(강제 색) 모드에서도 선과 같은 색으로 남깁니다(바탕색만으로 그린 모양은 시스템 색이 지움 — D1 확인). */}
                   <span
                     aria-hidden
-                    className="h-2 w-2 shrink-0 rounded-[2px]"
+                    className="h-2 w-2 shrink-0 rounded-[2px] forced-color-adjust-none"
                     style={{ backgroundColor: component.color }}
                   />
                   <h3 className="text-xs font-semibold text-text-2">{component.name}</h3>
@@ -188,34 +142,23 @@ export default function LiquidityPage() {
                 <p className="mb-2 text-xs leading-relaxed text-text-3">
                   {component.note}
                 </p>
+                {/* 작은 패널 차트(200px)라 격자는 두지 않습니다(명세 W6 — 큰 분석 차트만). 이름은 무엇의 추이인지(QA-617 기본 이름 '선 차트: 값' 대신). */}
                 <LineSeries
                   data={componentSeries[component.key]}
                   unit={component.suffix}
                   precision={component.precision}
                   color={component.color}
                   height={200}
+                  ariaLabel={`${component.name} 추이 (${component.unit})`}
                 />
               </div>
             ))}
           </div>
-        </Card>
+        </Panel>
         </>
       )}
     </div>
   );
-}
-
-/**
- * 변화량의 원화 환산.
- *
- * <p>환율을 모르면 undefined를 돌려 <b>줄 자체를 없앱니다</b>. 빈 문자열을
- * 돌려주면 자리는 차지하면서 아무 말도 하지 않는 줄이 남습니다.
- */
-function krwDelta(
-  convert: (value: number | null | undefined) => string | null,
-  value: number | null | undefined,
-): string | undefined {
-  return convert(value) ?? undefined;
 }
 
 /**

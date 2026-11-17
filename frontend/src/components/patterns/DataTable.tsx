@@ -181,7 +181,9 @@ export function DataTable<T>({
       ) : null}
       <div
         ref={boxRef}
-        className={`${shown.length === 0 ? "@container " : ""}w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
+        // relative — 칸 안의 절대 위치 요소(변화 칩의 낭독용 글 sr-only 등)의 위치 기준을 이 상자로 둡니다. 아니면 그 요소가 상자에 잘리지 않고 본문의
+        // 넘침이 되어, 넓은 화면(본문 overflow-x hidden)에서 그 글로 scrollIntoView(낭독기 훑기·찾기)하면 본문 전체가 옆으로 밀렸습니다(QA-631).
+        className={`${shown.length === 0 ? "@container " : ""}relative w-full min-w-0 max-w-full overflow-x-auto rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`}
         style={maxHeight !== undefined && maxHeight > 0 ? { maxHeight, overflowY: "auto" } : undefined}
         tabIndex={0}
         role="region"
@@ -269,7 +271,8 @@ export function DataTable<T>({
                         content
                       );
                       // 첫 칸은 고름과 상관없이 늘 '막대 자리 + 내용' 두 자식으로 그립니다 — 고를 때만 조각으로 바꾸면 React가 칸 안의 요소를 새로 만들어
-                      // 첫 칸의 단추(검사 칸 틀의 줄 단추 등)로 그 행을 고를 때 누른 단추가 떨어져 포커스를 잃었습니다(QA-624). 막대가 없으면 자리는 비어 DOM이 같습니다.
+                      // 첫 칸의 단추(검사 칸 틀의 줄 단추 등)로 그 행을 고를 때 누른 단추가 떨어져 포커스를 잃었습니다(QA-624 —
+                      // 섹터·COT 갈래가 /cot 자산 단추로 따로 찾은 QA-630과 같은 결함, 통합 때 이 고침 하나로 합침). 막대가 없으면 자리는 비어 DOM이 같습니다.
                       const shownContent =
                         index === 0 ? (
                           <>
