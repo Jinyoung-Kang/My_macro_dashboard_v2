@@ -4,7 +4,7 @@
  * 백엔드 `GET /api/macro/econ-calendar`가 수집기 저장본(`calendar.econ.tradingview`)을 그대로 내려 줍니다. 출처는 비공식이고
  * 차단 통과 수집 계층으로 받은 자료라, 없는 값은 만들지 않고 '—'로 둡니다(0과 다릅니다).
  */
-import { EMPTY } from "@/lib/format";
+import { EMPTY, MINUS, withMinusSign } from "@/lib/format";
 
 export type EconEvent = {
   id: string | null;
@@ -54,7 +54,7 @@ const CURRENCY_SYMBOLS = new Set(["$", "€", "£", "¥", "₩"]);
  * 값 한 칸 — 숫자와 배수·단위("3.1%", "218K", "$61.46B", "1.2T KRW"). 값이 없으면 '—'(0으로 그리지 않음).
  *
  * 소수 자릿수는 출처가 준 그대로 둡니다(정수는 0자리, 소수는 최대 2자리) — 자릿수를 늘려 없는 정밀도를 만들지 않습니다.
- * 단위 자리는 출처가 주는 조합에 맞춥니다(2026-11-06 실제 응답: 단위 %·$·KRW·cf, 배수 K·M·B·T): 통화 기호는 숫자 앞(음수는 부호 뒤),
+ * 단위 자리는 출처가 주는 조합에 맞춥니다(2026-11-06 실제 응답: 단위 %·$·KRW·cf, 배수 K·M·B·T): 통화 기호는 숫자 앞(음수는 부호 −(U+2212) 뒤),
  * %는 붙여서, 글자 단위는 띄어서.
  */
 export function valueText(
@@ -66,10 +66,11 @@ export function valueText(
   const digits = Number.isInteger(value) ? 0 : Math.min(2, decimals(value));
   const scale = event.scale ?? "";
   const unit = event.unit ?? "";
+  // 음수 부호는 −(U+2212) — 같은 화면군의 다른 음수와 같은 글자(명세 D4·§3-1, QA-648). 통화 기호 앞에 둡니다('−$7.5B').
   if (CURRENCY_SYMBOLS.has(unit)) {
-    return `${value < 0 ? "-" : ""}${unit}${format(Math.abs(value), digits)}${scale}`;
+    return `${value < 0 ? MINUS : ""}${unit}${format(Math.abs(value), digits)}${scale}`;
   }
-  const number = `${format(value, digits)}${scale}`;
+  const number = `${withMinusSign(format(value, digits))}${scale}`;
   if (unit === "" || unit === "%") return `${number}${unit}`;
   return `${number} ${unit}`;
 }

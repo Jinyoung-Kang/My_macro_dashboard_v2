@@ -137,13 +137,13 @@ describe("표시 규칙", () => {
   it("값은 출처의 자릿수를 넘기지 않고 단위를 붙인다", () => {
     expect(valueText(218, { unit: null, scale: "K" }, formatNumber)).toBe("218K");
     expect(valueText(3.1, { unit: "%", scale: null }, formatNumber)).toBe("3.1%");
-    expect(valueText(-0.25, { unit: "%", scale: null }, formatNumber)).toBe("-0.25%");
+    expect(valueText(-0.25, { unit: "%", scale: null }, formatNumber)).toBe("−0.25%");
     expect(valueText(1.23456, {}, formatNumber)).toBe("1.23");
     expect(valueText(null, { unit: "%" }, formatNumber)).toBe("—");
     expect(valueText(0, { unit: "%" }, formatNumber)).toBe("0%");
     // 실제 응답의 단위·배수 조합(2026-11-06) — 통화 기호는 숫자 앞(음수는 부호 뒤), 글자 단위는 띄어서.
     expect(valueText(61.46, { unit: "$", scale: "B" }, formatNumber)).toBe("$61.46B");
-    expect(valueText(-7.5, { unit: "$", scale: "B" }, formatNumber)).toBe("-$7.5B");
+    expect(valueText(-7.5, { unit: "$", scale: "B" }, formatNumber)).toBe("−$7.5B");
     expect(valueText(1.2, { unit: "KRW", scale: "T" }, formatNumber)).toBe("1.2T KRW");
     expect(valueText(33, { unit: "cf", scale: "B" }, formatNumber)).toBe("33B cf");
     expect(valueText(86, { unit: null, scale: "K" }, formatNumber)).toBe("86K");
@@ -151,7 +151,7 @@ describe("표시 규칙", () => {
 
   // QA-648: 실제·예상·이전 값의 음수가 ASCII '-'였습니다(개편 전부터) — 같은 화면군의 다른 음수(금리차 QA-622·순유동성 QA-627·COT QA-629·국면 QA-636·
   // 상관계수)는 모두 −(U+2212)인데 이 표만 남았습니다(명세 D4·§3-1 '음수 부호는 −', P5a 검토). MoM·수지 지표는 음수가 흔합니다.
-  it.fails("QA-648 음수 값은 −(U+2212) — 통화 기호 앞 부호도", () => {
+  it("QA-648 음수 값은 −(U+2212) — 통화 기호 앞 부호도", () => {
     expect(valueText(-0.25, { unit: "%", scale: null }, formatNumber)).toBe("−0.25%");
     expect(valueText(-7.5, { unit: "$", scale: "B" }, formatNumber)).toBe("−$7.5B");
     expect(valueText(-12, { unit: null, scale: "K" }, formatNumber)).toBe("−12K");
