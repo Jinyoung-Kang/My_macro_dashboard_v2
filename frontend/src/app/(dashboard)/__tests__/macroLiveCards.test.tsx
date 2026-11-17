@@ -86,7 +86,8 @@ describe("매크로 카드 실시간 값", () => {
     expect(screen.getByText("101.81")).toBeTruthy();
     expect(screen.queryByText("101.77")).toBeNull();
     expect(screen.getAllByText(/실시간 TradingView \(TVC:DXY\)/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/실시간 \d{2}:\d{2}:\d{2} 수신/)).toBeTruthy();
+    // 기준 칸의 시각은 실시간 값을 받은 시각(저장본 시각이 아님 — TradingView는 거래 시각을 주지 않음).
+    expect(screen.getByText(/· \d{2}:\d{2}:\d{2} 수신/)).toBeTruthy();
     expect(screen.getByText("18.20")).toBeTruthy();
   });
 

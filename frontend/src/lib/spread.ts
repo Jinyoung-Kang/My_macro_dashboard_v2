@@ -1,6 +1,7 @@
 /**
  * 금리차 카드의 머리말 — 변화량·만기 라벨·역전 여부·부제.
  */
+import { EMPTY, formatSignedMinus } from "./format";
 import type { MacroOverview } from "./types";
 
 export type SpreadBlock = NonNullable<MacroOverview["spreads"]>["official10y2y"];
@@ -22,4 +23,12 @@ export function spreadSummary(block: SpreadBlock | null | undefined) {
       `공식: FRED ${block?.longId} − ${block?.shortId} (일별 확정치)`
       + " · 스크래핑: TradingView 참고 시세 (지금 시점)",
   };
+}
+
+/**
+ * 금리차 값 글 — 셋째 자리, 양수 '+'·음수 '−'(U+2212 — 같은 칸의 변화 줄·변화 칩과 같은 부호, QA-622)와 '%p'. 모르면 '—'(단위 없음 — QA-049).
+ */
+export function spreadValueText(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return EMPTY;
+  return `${formatSignedMinus(value, 3).text}%p`;
 }

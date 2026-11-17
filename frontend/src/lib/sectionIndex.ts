@@ -1,7 +1,7 @@
 /**
  * 긴 화면 목차(components/patterns/SectionIndex)의 순수 규칙 — 목차 항목 모양, 지금 절을 고르는 차례와 판정, 하위 칸의 부모(ADR 0004 — React를 모름).
  *
- * 지금 절은 화면 위쪽 띠(뷰포트 위 34% — hooks/useSectionSpy의 IntersectionObserver rootMargin)에 걸친 절 가운데 고릅니다. 하위 칸(예: 매크로 지표 절 안의
+ * 지금 절은 화면 위쪽 띠(뷰포트 위 96px 아래 ~ 34% — hooks/useSectionSpy의 IntersectionObserver rootMargin)에 걸친 절 가운데 고릅니다. 하위 칸(예: 매크로 지표 절 안의
  * 범주)이 걸쳐 있으면 그 부모 절도 늘 걸쳐 있으므로, 고르는 차례(`sectionOrder`)는 하위 칸을 부모보다 앞에 둡니다 — 그래서 띠에 하위 칸이 있으면 하위 칸,
  * 부모 절의 머리(첫 하위 칸 앞)만 있으면 부모가 지금 절입니다. 형제·다른 절 사이는 문서 차례 그대로입니다.
  */

@@ -1,6 +1,6 @@
 /**
  * useSectionSpy — 긴 화면 목차의 지금 절(IntersectionObserver 대역).
- *  - 뷰포트(root null)의 위쪽 34% 띠(rootMargin '0px 0px -66% 0px')로 고르는 차례의 절 닻을 관찰한다
+ *  - 뷰포트(root null)의 위 96px 아래 ~ 위쪽 34% 띠(rootMargin '-96px 0px -66% 0px' — QA-626)로 고르는 차례의 절 닻을 관찰한다
  *  - 걸친 절 가운데 차례가 가장 앞(하위 칸이 부모보다 앞 — lib/sectionIndex), 걸친 것이 없으면 앞 값
  *  - enabled가 거짓이거나 IntersectionObserver가 없으면 null, 언마운트·목록이 바뀌면 관찰을 끊는다
  */
@@ -58,13 +58,13 @@ function fire(spy: Spy, entries: [string, boolean][]) {
 }
 
 describe("useSectionSpy", () => {
-  it("뷰포트 위쪽 34% 띠로 차례의 닻을 관찰하고, 걸친 것 가운데 차례가 가장 앞을 고른다 — 없으면 앞 값", () => {
+  it("뷰포트 위쪽 띠(위 96px 아래 ~ 34%)로 차례의 닻을 관찰하고, 걸친 것 가운데 차례가 가장 앞을 고른다 — 없으면 앞 값", () => {
     const made = stubObserver();
     anchors(["cat-a", "ind", "fx"]);
     const { result } = renderHook(() => useSectionSpy(["cat-a", "ind", "fx"]));
     expect(result.current).toBeNull();
     const [spy] = made;
-    expect(spy.options).toEqual({ root: null, rootMargin: "0px 0px -66% 0px" });
+    expect(spy.options).toEqual({ root: null, rootMargin: "-96px 0px -66% 0px" });
     expect(spy.observed.map((element) => element.id)).toEqual(["cat-a", "ind", "fx"]);
 
     fire(spy, [["ind", true], ["cat-a", true]]);
@@ -103,5 +103,20 @@ describe("useSectionSpy", () => {
     expect(typeof globalThis.IntersectionObserver).toBe("undefined");
     const none = renderHook(() => useSectionSpy(["a"]));
     expect(none.result.current).toBeNull();
+  });
+});
+
+// QA-626: 띠가 뷰포트 맨 위(0px)부터라, 목차 칸을 눌러 절로 옮기면(절 닻의 scroll-margin — 가로 줄 밑 56px) 앞 절의 꼬리가 위에 붙은 가로 목차
+// 줄(좁은 화면 44px·1024 30px — 1024는 상단바 48px 아래) 밑에 가려진 채 띠에 걸려, 차례가 앞인 앞 절이 지금 절로 골렸습니다. 매크로 자기 빌드에서
+// '신용·변동성'을 누르면 가로 줄의 지금 칸이 '장단기 금리차'(390 — 절 위 끝 56px·가로 줄 아래 끝 45px·앞 절 꼬리 ~40px, 1024 — 104·79·~80px),
+// '심화 지표'는 '신용·변동성', '비공식 시세'는 '단독 차트'였습니다(1440 세로 목록은 본문 스크롤 상자가 앞 절을 잘라 맞음). 띠는 위에 붙은 줄과
+// 상단바 아래(96px)부터 봐야 합니다.
+describe("QA-626 지금 절 띠는 위에 붙은 상단바·가로 목차 줄 아래에서 시작한다", () => {
+  it("띠의 위 끝이 뷰포트 위에서 96px 아래 — 가로 줄 밑에 가려진 앞 절 꼬리를 지금 절로 고르지 않는다", () => {
+    const made = stubObserver();
+    anchors(["a"]);
+    renderHook(() => useSectionSpy(["a"]));
+    const top = /^(-?\d+)px\b/.exec(made[0].options?.rootMargin ?? "")?.[1];
+    expect(Number(top)).toBeLessThanOrEqual(-96);
   });
 });

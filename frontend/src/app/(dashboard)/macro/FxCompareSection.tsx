@@ -2,21 +2,21 @@
 
 import { useState } from "react";
 import { MultiLineSeries } from "@/components/charts";
+import { KpiStrip } from "@/components/patterns";
 import {
-  Banner,
-  Card,
+  Callout,
   ErrorState,
   filterChipClasses,
   Freshness,
   Loading,
-  Metric,
+  Panel,
   Select,
 } from "@/components/ui";
 import { CheckIcon } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { SOURCES } from "@/lib/sources";
-import { EMPTY, formatNumber, formatPercent } from "@/lib/format";
+import { fxKpis } from "@/lib/macroScreen";
 import type { FxSeriesResponse } from "@/lib/types";
 import { endpoints } from "@/lib/endpoints";
 import { mergeByDate } from "@/lib/chartData";
@@ -77,7 +77,7 @@ export function FxCompareSection() {
   const axisUnit = mode === "raw" && units.length === 1 ? units[0] : "";
 
   return (
-    <Card
+    <Panel
       title="환율·달러인덱스 비교"
       // 카드의 Yahoo 티커로 그립니다. 달러 인덱스·엔/원 카드는 TradingView 실시간 값이 먼저라(QA-138) 끝값이 조금 다를 수 있습니다.
       source={`${SOURCES.yahoo} — 매크로 카드의 Yahoo 티커(달러 인덱스·엔/원 카드는 TradingView 실시간 우선)`}
@@ -133,41 +133,27 @@ export function FxCompareSection() {
 
       {/* 고른 대로 그리되, 무슨 일이 일어나는지는 숨기지 않습니다. */}
       {mode === "raw" && data?.mixedUnits && (
-        <Banner tone="warn">
-          단위가 섞였습니다(원·엔·pt). 한 축에 겹치면 값이 작은 계열은 바닥에
-          눌려 직선처럼 보입니다. 비교가 목적이라면 <b>기준일 = 100</b>을 쓰세요.
-        </Banner>
+        <div className="mt-3">
+          <Callout tone="warn">
+            단위가 섞였습니다(원·엔·pt). 한 축에 겹치면 값이 작은 계열은 바닥에
+            눌려 직선처럼 보입니다. 비교가 목적이라면 <b>기준일 = 100</b>을 쓰세요.
+          </Callout>
+        </div>
       )}
 
       {loading && !data && <Loading label="환율 시계열을 불러오는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && (
-        <Banner tone="warn">
-          {data.message ?? "표시할 환율 시계열이 없습니다."}
-        </Banner>
+        <div className="mt-3">
+          <Callout tone="warn">{data.message ?? "표시할 환율 시계열이 없습니다."}</Callout>
+        </div>
       )}
 
       {series.length > 0 && (
         <>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {series.map((entry) => (
-              <Metric
-                key={entry.id}
-                label={entry.label}
-                // 자릿수는 위 환율 카드와 맞춥니다. 같은 값이 카드에서는
-                // 100.11, 여기서는 100.110으로 보이면 둘 중 하나를 의심하게 됩니다.
-                value={`${formatNumber(entry.latest, 2)}${
-                  entry.unit ? ` ${entry.unit}` : ""
-                }`}
-                delta={entry.changePct}
-                deltaText={`기간 ${formatPercent(entry.changePct)}`}
-                caption={
-                  entry.baseDate
-                    ? `기준일 ${entry.baseDate} · 최근 ${entry.latestDate ?? EMPTY}`
-                    : undefined
-                }
-              />
-            ))}
+          {/* 고른 계열의 끝값·단위(위 지표 표와 같은 둘째 자리 — 같은 값이 100.11·100.110으로 갈리지 않게), 기간 변화율, 기준일·최근(lib/macroScreen fxKpis). */}
+          <div className="mt-3">
+            <KpiStrip label="고른 환율 계열" items={fxKpis(series)} />
           </div>
 
           <div className="mt-4">
@@ -177,19 +163,21 @@ export function FxCompareSection() {
               unit={axisUnit}
               precision={mode === "index" ? 1 : 2}
               height={320}
+              grid
+              ariaLabel={`환율·달러인덱스 비교 (${mode === "index" ? "기준일 = 100" : "원래 단위"}): ${chartSeries.map((entry) => entry.name).join(", ")}`}
             />
           </div>
 
           <p className="mt-2 text-xs leading-relaxed text-text-3">
             {mode === "index"
-              ? "축은 기준일 = 100입니다. 110이면 기준일보다 10% 높다는 뜻이고, 계열별 기준일은 위 카드에 적혀 있습니다 — 시장마다 휴일이 달라 하루씩 어긋날 수 있습니다."
+              ? "축은 기준일 = 100입니다. 110이면 기준일보다 10% 높다는 뜻이고, 계열별 기준일은 위 타일에 적혀 있습니다 — 시장마다 휴일이 달라 하루씩 어긋날 수 있습니다."
               : "축은 원래 단위입니다. 계열마다 단위가 다르면(원·엔·pt) 같은 눈금으로 읽으면 안 됩니다."}{" "}
             출처: Yahoo Finance 일별 종가 (매크로 카드와 같은 티커). 엔/원은
             100엔당으로 환산한 값입니다.
           </p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 

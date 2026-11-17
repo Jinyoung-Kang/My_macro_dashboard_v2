@@ -268,14 +268,17 @@ export function DataTable<T>({
                       ) : (
                         content
                       );
-                      const shownContent = bar ? (
-                        <>
-                          <span aria-hidden="true" className={SELECTED_BAR} />
-                          {value}
-                        </>
-                      ) : (
-                        value
-                      );
+                      // 첫 칸은 고름과 상관없이 늘 '막대 자리 + 내용' 두 자식으로 그립니다 — 고를 때만 조각으로 바꾸면 React가 칸 안의 요소를 새로 만들어
+                      // 첫 칸의 단추(검사 칸 틀의 줄 단추 등)로 그 행을 고를 때 누른 단추가 떨어져 포커스를 잃었습니다(QA-624). 막대가 없으면 자리는 비어 DOM이 같습니다.
+                      const shownContent =
+                        index === 0 ? (
+                          <>
+                            {bar ? <span aria-hidden="true" className={SELECTED_BAR} /> : null}
+                            {value}
+                          </>
+                        ) : (
+                          value
+                        );
                       // 행 머리 칸은 굵게 그리지 않습니다(th 기본) — 보이는 모양은 다른 칸과 같고, 낭독기만 항목 이름으로 씁니다.
                       return column.rowHeader ? (
                         <th key={column.key} scope="row" className={`font-normal ${className}`}>

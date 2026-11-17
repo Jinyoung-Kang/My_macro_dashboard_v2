@@ -30,8 +30,11 @@ export type KpiItem = {
    * (공용 변화 칩의 unit — 금리차 '%p'·계약 등, 주지 않으면 단위 없음 — 홈 띠 그대로).
    */
   change?: { change?: number | null; changePct?: number | null; digits?: number; pctDigits?: number; caption?: string | null; unit?: string | null };
-  /** 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). */
-  status?: { tone: "ok" | "warn" | "danger"; text: string };
+  /**
+   * 상태 글 — 아이콘 + 글(공용 StatusText, 색만이 아님). `srPrefix`는 톤 기본 낭독 머리말(위험 '오류: '·주의 '주의: ') 대신 읽을 머리말 — 위험 톤이
+   * 오류가 아니라 시장 상태(매크로 심화 지표 '깊은 역전' 등)일 때 '주의: '로(안내 상자 위험 톤과 같은 말). 주지 않으면 그대로.
+   */
+  status?: { tone: "ok" | "warn" | "danger"; text: string; srPrefix?: string };
   /** 12px 보조 글(기준일 등 — 값의 시각은 출처 줄의 `asOf`로). */
   note?: string | null;
   /**
@@ -123,11 +126,17 @@ const VALUE_NUMBER_ITEM = "shrink-0 max-w-full";
  */
 const VALUE_TAIL = "whitespace-nowrap";
 /**
- * 단위 — 값 끝 묶음(VALUE_TAIL) 안, 마지막 글자 뒤. 오른쪽 바깥 여백 −12px: 타일 안쪽 여백(12px)까지는 걸쳐도 되게 해, 단위 자리가 조금 모자랄 때
- * 숫자 안에서 꺾이지 않습니다(1280 메뉴 220 일곱 타일 '1,339.28' + '원'이 안쪽 폭을 1.6px 넘음). 이 여유보다 더 모자랄 만큼 좁은 칸은 띠가
- * 만들지 않습니다(한 줄 최소 칸 폭 — ONE_ROW_GRID). 간격 4px(ml-1)는 예전 값 줄 간격과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ * 단위 — 값 끝 묶음(VALUE_TAIL) 안, 마지막 글자 뒤. 간격 4px(ml-1)는 예전 값 줄 간격과 같고, 글자는 값의 굵기·크기를 물려받지 않습니다.
+ * 타일 안쪽 여백(12px)까지 걸쳐도 되는 여유는 단위가 아니라 값 줄이 갖습니다(VALUE_ROW_UNIT — QA-625).
  */
-const VALUE_UNIT = "-mr-3 ml-1 text-sm font-normal text-text-3";
+const VALUE_UNIT = "ml-1 text-sm font-normal text-text-3";
+/**
+ * 단위가 있는 숫자 값의 값 줄 — 오른쪽 바깥 여백 −12px로 값 줄을 타일 안쪽 여백까지 넓혀, 값 글(max-w-full = 값 줄)이 단위 자리가 조금 모자랄 때
+ * 그 여백에 걸쳐 숫자 안에서 꺾이지 않습니다(1280 메뉴 220 일곱 타일 '1,339.28' + '원'이 안쪽 폭을 1.6px 넘음 — QA-599). 이 여유보다 더 모자랄 만큼
+ * 좁은 칸은 띠가 만들지 않습니다(한 줄 최소 칸 폭 — ONE_ROW_GRID). 예전에는 여유를 단위 글의 음수 여백으로 두었는데, 크롬이 값 글의 내용 폭을 그만큼
+ * 덜 재 그 폭 안에서 숫자를 꺾었습니다 — 좁은 단위('pt')의 '−0.58'이 '−0.5' / '8 pt' 두 줄(QA-625).
+ */
+const VALUE_ROW_UNIT = "mt-0.5 -mr-3 flex items-baseline";
 const VALUE_LABEL = "break-keep text-heading-sm lg:text-heading";
 
 function KpiValue({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
@@ -175,13 +184,14 @@ function ValueText({ text, unit }: { text: string; unit?: string | null }): JSX.
 
 /**
  * 값 줄 — 읽는 중이면 블록(QA-596), 값이 오면 값 글 하나를 담는 flex 행(숫자 값 글은 shrink-0 max-w-full — VALUE_NUMBER_ITEM). 값과 단위를 한 줄에
- * 붙드는 것은 값 줄이 아니라 값 글 안의 값 끝 묶음(VALUE_TAIL)과 단위의 −12px 여유(VALUE_UNIT)입니다. 판정 라벨은 낱말 사이에서 꺾습니다(break-keep).
+ * 붙드는 것은 값 글 안의 값 끝 묶음(VALUE_TAIL)과, 단위가 있는 숫자 값이면 값 줄의 −12px 여유(VALUE_ROW_UNIT)입니다. 판정 라벨은 낱말 사이에서 꺾습니다(break-keep).
  */
 function valueRowClass(item: KpiItem): string {
   if (item.pending) {
     return "mt-0.5";
   }
-  return "mt-0.5 flex items-baseline";
+  const unitTail = item.valueKind !== "label" && Boolean(item.unit) && statValueText(item.value, item.format) !== null;
+  return unitTail ? VALUE_ROW_UNIT : "mt-0.5 flex items-baseline";
 }
 
 function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pendingGap?: string; pendingWide?: WidePending }): JSX.Element {
@@ -220,7 +230,7 @@ function KpiTileBody({ item, pendingGap, pendingWide }: { item: KpiItem; pending
       ) : null}
       {item.status && !item.pending ? (
         <div className="mt-1 text-xs leading-4">
-          <StatusText tone={item.status.tone} iconSize={12}>
+          <StatusText tone={item.status.tone} iconSize={12} srPrefix={item.status.srPrefix}>
             {item.status.text}
           </StatusText>
         </div>
