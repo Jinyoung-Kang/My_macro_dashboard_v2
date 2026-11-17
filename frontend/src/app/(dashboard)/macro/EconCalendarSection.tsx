@@ -70,7 +70,8 @@ const COLUMNS: readonly Column<EventRow>[] = [
  * 날짜 띠 + 그날 표(2026-11-18 사용자 결정 — 창 안 일정을 세로 한 줄로 쭉 늘어놓지 않음): 중요도 보통·높음만 보이고(낮음·모름은 숨긴 건수를 한 줄로),
  * 보일 일정이 있는 KST 날짜마다 공용 탭 줄(밑줄 탭 — 넘치면 가로로 넘김, ←·→·Home·End로 옮기고 Enter·Space로 고름)의 탭 하나('11/18 (수)' + 건수,
  * 높음이 있으면 높음 건수를 글로), 그 아래 고른 날의 조밀 표(행 28px — 공용 표 dense) 하나. 처음 고른 날은 오늘(KST)·오늘 뒤 첫 날·오늘 앞 마지막 날
- * 차례(lib/econCalendar pickEconDay)이고, 새 자료에서 고른 날이 사라지면 같은 규칙으로 다시 고릅니다.
+ * 차례(lib/econCalendar pickEconDay)이고, 새 자료에서 고른 날이 사라지면 그 고름을 버리고 같은 규칙으로 다시 고릅니다 — 사라졌던 날이 다음 읽기에
+ * 다시 와도 되살리지 않습니다(QA-684).
  */
 export function EconCalendarSection() {
   const { data, loading, error, reload, refreshError } = useApi<EconCalendarResponse>(
@@ -85,7 +86,12 @@ export function EconCalendarSection() {
   const today = now ? econToday(now.getTime()) : null;
   const [chosen, setChosen] = useState<string | null>(null);
   const dates = view.days.map((day) => day.date);
-  const current = chosen !== null && dates.includes(chosen) ? chosen : pickEconDay(dates, today);
+  const chosenShown = chosen !== null && dates.includes(chosen);
+  // 고른 날이 새 자료에서 사라졌으면 그 고름을 버립니다(이전 값에 맞춘 상태 조정 — 이 그리기를 마치기 전에 다시 그림). 그리기 때 대신 고를 날만 셈하고
+  // 고름을 남기면, 그날이 다음 읽기에 다시 올 때 입력 없이 띠·표가 옛 날로 돌아갔습니다(QA-684). 다시 고른 날은 고름으로 남기지 않습니다 — 자정을
+  // 넘기면 새 오늘을 따라가야 해서.
+  if (chosen !== null && !chosenShown) setChosen(null);
+  const current = chosenShown ? chosen : pickEconDay(dates, today);
   const day = view.days.find((entry) => entry.date === current) ?? null;
   const baseId = useId();
   const idPrefix = `${baseId}-day`;
