@@ -82,16 +82,26 @@ function NarrowRowLine({ row }: { row: MacroIndicatorRow }) {
 }
 
 /**
+ * 네 칸 표의 열 폭 — 지표 10rem · 값 5.5rem · 변화 9.75rem, 기준 칸은 남는 폭(QA-677 — 2026-11-17 결정(사용자 위임 — 권장안 가)). 범주마다 표가 따로라
+ * 자동 배치가 표마다 자기 내용으로 열 폭을 정해, 한 목록처럼 이어지는 값·변화 칸이 표가 바뀔 때마다 옆으로 최대 55px(1440) 어긋났습니다. 공용 표는 열
+ * className을 머리 칸과 칸 모두에 붙이고 배치는 자동 그대로라, 줄을 바꿀 수 없는 내용이 이 폭보다 넓으면 그 표의 그 열만 넓어집니다(잘리지 않음).
+ * 대가는 기준 칸(과 '티커 · 시장' 줄)이 더 꺾이는 것 — 가장 좁은 넓은 화면 표(메뉴 320·창 1280, 표 562px)에서도 기준 칸 158px로 가로 넘침은 없습니다.
+ * 좁은 화면 두 칸 표(결정 9)에는 두지 않습니다.
+ */
+const WIDE_COLUMN_WIDTH = { name: "w-40", value: "w-[5.5rem]", change: "w-[9.75rem]" } as const;
+
+/**
  * 지표 표의 칸 — 지표(행 머리 — 미리보기를 여는 이름 단추와 '티커 · 시장') · 값 · 변화(칩) · 기준(출처·장 상태·열린 장의 지연·시각, 예전 저장본의 알림,
  * 추정·이전 값 배지, 카드 경고). 홈 시장 표와 같은 칸이고, 이름은 지표 상세 링크 대신 미리보기 단추입니다(상세는 미리보기의 '지표 상세 열기').
  * 좁은 화면(`narrow` — md 미만)은 지표·값 두 칸이고 이름 칸에 둘째 줄(변화 칩·추정·이전 값 배지·경고)을 둡니다 — 2026-11-17 결정 9(사용자 위임 — 권장안 가):
- * 예전에는 332px 상자 안 640px 표라 변화 칸이 잘리고 기준 칸(배지 포함)은 가로로 넘겨야 보였습니다.
+ * 예전에는 332px 상자 안 640px 표라 변화 칸이 잘리고 기준 칸(배지 포함)은 가로로 넘겨야 보였습니다. 네 칸 표는 범주 표 다섯의 열이 맞게 같은 폭(WIDE_COLUMN_WIDTH).
  */
 function indicatorColumns(inspector: InspectorContext, narrow: boolean): Column<MacroIndicatorRow>[] {
   const name: Column<MacroIndicatorRow> = {
     key: "name",
     header: "지표",
     rowHeader: true,
+    className: narrow ? undefined : WIDE_COLUMN_WIDTH.name,
     // 이름 칸은 최소 7.5rem — 옆 미리보기와 나란한 넓은 화면(표 약 590px)에서 기준 칸이 폭을 다 가져가 'DX-Y.NYB · 외환시장'·짧은 이름까지
     // 줄을 바꾸던 것(자기 빌드 1440 — 이름 칸 약 100px).
     cell: (row) => (
@@ -104,14 +114,20 @@ function indicatorColumns(inspector: InspectorContext, narrow: boolean): Column<
       </span>
     ),
   };
-  const value: Column<MacroIndicatorRow> = { key: "value", header: "값", align: "right", cell: valueCell };
+  const value: Column<MacroIndicatorRow> = {
+    key: "value",
+    header: "값",
+    align: "right",
+    className: narrow ? undefined : WIDE_COLUMN_WIDTH.value,
+    cell: valueCell,
+  };
   if (narrow) {
     return [name, value];
   }
   return [
     name,
     value,
-    { key: "change", header: "변화", align: "right", cell: changeCell },
+    { key: "change", header: "변화", align: "right", className: WIDE_COLUMN_WIDTH.change, cell: changeCell },
     {
       key: "basis",
       header: "기준",
@@ -172,7 +188,8 @@ const BAR = `block ${SKELETON_BAR}`;
  * 개요를 처음 읽는 동안의 지표 패널 — 범주 블록(MACRO_PENDING_ROWS — 범주 다섯·줄 21개, 자리일 뿐 보이는 수가 아님)마다 범주 머리(제목·출처 줄)·표 머리 줄·
  * 줄 자리를 값이 온 뒤의 표와 같은 꼴로 그립니다(QA-653). 줄 자리는 공용 표 줄과 같은 여백·구분선에 이름 칸(이름 단추 줄 — 좁은 화면 44px·넓은 화면 24px,
  * '티커 · 시장' 줄, 좁은 화면 두 줄 행의 둘째 줄)과 값 칸 막대라, 줄 높이가 좁은 화면 109px·md 85px·lg 이상 52px로 값이 온 뒤 기준 칸이 한 줄인 줄과
- * 같습니다(기준 칸이 꺾이거나 배지 줄이 있는 줄·옆 미리보기 배치에서는 값이 온 뒤가 더 깁니다). 예전에는 '불러오는 중' 한 줄(패널 147px)이라 값이 오면
+ * 같습니다(기준 칸이나 '티커 · 시장' 줄이 꺾이거나 배지 줄이 있는 줄·옆 미리보기 배치에서는 값이 온 뒤가 더 깁니다 — 네 칸 표의 같은 열 폭(QA-677)으로
+ * 꺾이는 줄이 늘었지만 늘어난 높이는 화면 아래라 첫 적재 이동은 그대로). 예전에는 '불러오는 중' 한 줄(패널 147px)이라 값이 오면
  * 아래 절(환율 비교 — 1024에서 화면 안)이 화면 밖으로 밀렸습니다(첫 적재 CLS 1024 약 0.5). 글·숫자는 없고 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나).
  * 처음 읽는 동안만 그립니다 — 읽기가 실패한 뒤 다시 읽는 동안은 '불러오는 중' 한 줄(오류 상자와 이 자리가 갱신마다 번갈아 그려졌음 — QA-655).
  */

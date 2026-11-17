@@ -567,7 +567,7 @@ describe("지표 표와 미리보기", () => {
   // 클래스를 주고(공용 표가 머리 칸과 칸 모두에 붙임), 기준 칸은 남는 폭. 좁은 화면 두 칸 표(결정 9)는 폭이 없습니다. jsdom은 배치를 재지 못해
   // 클래스만 봅니다(정렬은 브라우저로 잼).
   // 수정 전(재현 커밋에서는 it.fails)에는 폭 클래스가 없었습니다("expected [ [], [], [], [] ] to deeply equal [ [ 'w-40' ], [ 'w-[5.5rem]' ], …(2) ]").
-  it.fails("네 칸 표 다섯은 칸 순서마다 같은 폭 클래스(지표 w-40·값 w-[5.5rem]·변화 w-[9.75rem], 기준 없음) — md~lg·lg 이상 같고, 좁은 화면 두 칸 표는 없음", async () => {
+  it("네 칸 표 다섯은 칸 순서마다 같은 폭 클래스(지표 w-40·값 w-[5.5rem]·변화 w-[9.75rem], 기준 없음) — md~lg·lg 이상 같고, 좁은 화면 두 칸 표는 없음", async () => {
     const item = (key: string, name: string, ticker: string, market: string, priceStr: string, deltaStr: string, delta: number, pct: number) =>
       card({ key, name, ticker, market, priceStr, deltaStr, delta, pct });
     reads["/api/macro/overview"] = () => Promise.resolve({ ...OVERVIEW, categories: [
