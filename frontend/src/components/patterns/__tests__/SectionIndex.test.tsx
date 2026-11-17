@@ -647,6 +647,75 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
     }
   });
 
+  // QA-680 보강: 고침이 포커스를 절 닻(이름·역할 없는 큰 div, tabIndex -1)에 두었는데, 크롬은 포커스 받는 generic의 접근 이름을 내용 전체로 계산합니다
+  // (머리 없는 크롬 CDP Accessibility.getPartialAXTree — `<div tabindex=-1><h2>환율 비교</h2><p>원달러 1400</p>…<button>자세히</button></div>`를 포커스하면
+  // role generic, name '환율 비교 원달러 1400 자세히', nameSources contents). 낭독기는 포커스가 옮겨 갈 때 그 요소의 이름을 읽으므로 목차를 누를 때마다
+  // 절 전체(매크로 지표 표 전부)를 읽게 됩니다 — 고침 전(기본 해시 이동, 닻은 포커스를 받지 않음)보다 나쁨. 같은 크롬에서 tabindex -1 제목(h2)을
+  // 포커스하면 role heading, name '금리'(제목 글)였습니다. 그래서 포커스는 닻 안 첫 제목(h1~h6)에 두고(옮기기는 그대로 닻 — scroll-margin), 제목이 없을
+  // 때만 닻에 둡니다. 제목에는 그때만 tabindex -1을 붙였다가 포커스가 떠나면 뗍니다(원래 tabindex가 있던 제목은 그대로).
+  // jsdom(dom-accessibility-api)은 generic의 내용 이름을 계산하지 않아 이름 길이로는 못 잡으므로 포커스된 요소가 그 절 제목(역할 heading·이름 = 제목 글)
+  // 인지를 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 포커스가 닻(div)이었습니다.
+  it.fails("포커스는 닻 안 첫 제목(접근 이름 = 절 제목)에 — 옮기기는 닻, 제목에 붙인 tabindex -1은 포커스가 떠나면 뗀다, 제목 없는 닻은 닻에", () => {
+    const clicks = watchClicks();
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      render(
+        <SectionIndex
+          label="매크로 지표 목차"
+          items={[
+            { id: "macro-fx", label: "환율 비교" },
+            { id: "macro-risk", label: "신용·변동성" },
+            { id: "macro-single", label: "단일 차트" },
+          ]}
+        >
+          <SectionAnchor id="macro-fx">
+            <section aria-labelledby="fx-title">
+              <h2 id="fx-title">환율 비교</h2>
+              <p>원달러 1,400</p>
+              <table>
+                <tbody>
+                  <tr>
+                    <th scope="row">USD</th>
+                    <td>1,400</td>
+                  </tr>
+                </tbody>
+              </table>
+              <button type="button">자세히</button>
+              <h3>세부</h3>
+            </section>
+          </SectionAnchor>
+          <SectionAnchor id="macro-risk">
+            <h2 tabIndex={-1}>신용·변동성</h2>
+            <p>VIX 15</p>
+          </SectionAnchor>
+          <SectionAnchor id="macro-single">제목 없는 절</SectionAnchor>
+        </SectionIndex>,
+      );
+      const column = lists().column;
+      fireEvent.click(within(column).getByRole("link", { name: "환율 비교" }));
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      const fxTitle = screen.getByRole("heading", { name: "환율 비교", level: 2 });
+      expect(into.mock.contexts).toEqual([fx]);
+      // 결함을 직접 보는 단언(수정 전에는 포커스가 닻 div — 크롬에서는 이름이 절 내용 전체).
+      expect(document.activeElement).toBe(fxTitle);
+      expect(fxTitle.getAttribute("tabindex")).toBe("-1");
+
+      // 다른 절로 — 앞 제목에 붙인 tabindex는 떼고, 원래 tabindex가 있던 제목은 그대로 둔다.
+      fireEvent.click(within(column).getByRole("link", { name: "신용·변동성" }));
+      const riskTitle = screen.getByRole("heading", { name: "신용·변동성" });
+      expect(document.activeElement).toBe(riskTitle);
+      expect(fxTitle.hasAttribute("tabindex")).toBe(false);
+      fireEvent.click(within(column).getByRole("link", { name: "단일 차트" }));
+      expect(riskTitle.getAttribute("tabindex")).toBe("-1");
+      // 제목 없는 절은 닻에(Tab이 그 절에서 이어지게).
+      expect(document.activeElement).toBe(document.getElementById("macro-single"));
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      into.mockRestore();
+    }
+  });
+
   it("가운데 단추·Ctrl·Meta·Shift·Alt 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
     const clicks = watchClicks();
     const push = vi.spyOn(window.history, "pushState");

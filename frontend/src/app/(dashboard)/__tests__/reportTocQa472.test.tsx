@@ -77,4 +77,28 @@ describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushStat
       into.mockRestore();
     }
   });
+
+  // QA-680 보강: 고침이 포커스를 절(section, 이름 없음 — generic)에 두어 크롬이 접근 이름을 절 내용 전체로 계산했습니다(머리 없는 크롬 CDP — '핵심 요약 요약
+  // 본문', nameSources contents). 낭독기가 목차를 누를 때마다 절 전체를 읽으므로 포커스는 절 제목(h3)에 둡니다(옮기기는 그대로 절). 수정 전(재현 커밋에서는
+  // it.fails)에는 포커스가 section이었습니다.
+  it.fails("포커스는 절 제목(h3 — 접근 이름 = 목차 칸 글)에, 옮기기는 절", () => {
+    const listener = (event: MouseEvent) => event.preventDefault();
+    window.addEventListener("click", listener);
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const base = window.location.pathname + window.location.search;
+    try {
+      render(<ReportView markdown={REPORT} />);
+      const link = screen.getByRole("navigation", { name: "리포트 목차" }).querySelectorAll("a")[1];
+      fireEvent.click(link);
+      const section = document.getElementById((link.getAttribute("href") as string).slice(1)) as HTMLElement;
+      expect(into.mock.contexts).toEqual([section]);
+      const title = screen.getByRole("heading", { name: link.textContent as string, level: 3 });
+      expect(section.contains(title)).toBe(true);
+      expect(document.activeElement).toBe(title);
+    } finally {
+      window.removeEventListener("click", listener);
+      window.history.replaceState(null, "", base);
+      into.mockRestore();
+    }
+  });
 });
