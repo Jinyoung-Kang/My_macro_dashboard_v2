@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li><b>운영자만</b>: 경로 등급은 {@code AccessPolicy}의 운영자이고 여기서 한 번 더 막습니다(403). 회원 결과에서는 꼬리표를 지웁니다
  *       ({@link SearchService} — 닫힌 실패). 저작권·비용 — 번역·AI 요약과 같은 결정.</li>
- *   <li><b>외부를 부르지 않는 모드</b>(데모·{@code STORE_ONLY}): 수집기에 {@code start=false}(받아 둔 것만) — 없으면 사유 {@code offline}.</li>
+ *   <li><b>외부를 부르지 않는 모드</b>({@code STORE_ONLY}): 수집기에 {@code start=false}(받아 둔 것만) — 없으면 사유 {@code offline}. 데모는 늘 403입니다.</li>
  *   <li><b>사용자 한 시간 한도</b>: 지난 1시간에 수집기가 새로 줄에 넣은 것({@code queued:true})이 {@value #PER_HOUR}번이면 {@code start=false}로 부르고,
  *       받아 둔 것이 없으면 사유 {@code user_limit}과 남은 분. 자리 잡기·정산은 Finviz 한도({@link SearchService})와 같은 모양(예외가 나도 자리를 돌려줌,
  *       백엔드 한 프로세스의 메모리라 재기동하면 비워짐 — 수집기의 하루 예산·대기열 상한은 그대로).</li>

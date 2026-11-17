@@ -131,7 +131,7 @@ class SearchArticleServiceTest {
     }
 
     @Test
-    @DisplayName("STORE_ONLY·데모는 start=false — 받아 둔 것이 없으면 offline")
+    @DisplayName("STORE_ONLY는 start=false — 받아 둔 것이 없으면 offline, 데모는 403")
     void storeOnlyIsOffline() {
         when(store.readMode()).thenReturn(AppProperties.ReadMode.STORE_ONLY);
         when(collector.liveSearchArticle(REF, false)).thenReturn(Optional.of(answer("error", "not_cached", false)));
