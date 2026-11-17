@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -214,13 +215,13 @@ class SearchArticleServiceTest {
     }
 
     @Test
-    @DisplayName("번역 — 본문은 저장하지 않는 길, 제목은 지금 번역 길, 응답은 /api/info/translate와 같은 모양")
+    @DisplayName("번역 — 본문·받은 쪽의 제목 모두 저장하지 않는 길(번역 표에 쓰지 않음), 응답은 /api/info/translate와 같은 모양")
     void translateUsesUnsavedBody() {
         when(collector.liveSearchArticle(REF, false))
                 .thenReturn(Optional.of(okAnswer("Synthetic Widgets revenue rises", List.of("First paragraph.", "Second paragraph."))));
-        when(translator.titles(anyList())).thenReturn(new InfoTranslator.Titles(Map.of("Synthetic Widgets revenue rises", "합성 위젯 매출 증가"),
-                null, null, true, "claude-haiku-5-5"));
-        when(translator.models("Synthetic Widgets revenue rises", null)).thenReturn(List.of("claude-haiku-5-5"));
+        when(translator.bodyUnsaved("Synthetic Widgets revenue rises"))
+                .thenReturn(new InfoTranslator.UnsavedBody(true, "합성 위젯 매출 증가", false, false, false, null, "claude-haiku-5-5",
+                        List.of("claude-haiku-5-5")));
         when(translator.bodyUnsaved("First paragraph.\n\nSecond paragraph."))
                 .thenReturn(new InfoTranslator.UnsavedBody(true, "첫 문단.\n\n둘째 문단.", false, false, false, null, "gemini-3.5-flash",
                         List.of("gemini-3.5-flash")));
@@ -232,6 +233,8 @@ class SearchArticleServiceTest {
                 .containsEntry("model", "gemini-3.5-flash").containsEntry("error", null);
         assertThat(out.get("models")).isEqualTo(List.of("claude-haiku-5-5", "gemini-3.5-flash"));
         verify(translator, never()).body(anyString());
+        verify(translator, never()).titles(anyList());
+        verify(translator, never()).models(anyString(), any());
     }
 
     @Test

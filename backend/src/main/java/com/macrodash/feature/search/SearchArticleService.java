@@ -39,8 +39,9 @@ import java.util.regex.Pattern;
  *   <li><b>사용자 한 시간 한도</b>: 지난 1시간에 수집기가 새로 줄에 넣은 것({@code queued:true})이 {@value #PER_HOUR}번이면 {@code start=false}로 부르고,
  *       받아 둔 것이 없으면 사유 {@code user_limit}과 남은 분. 자리 잡기·정산은 Finviz 한도({@link SearchService})와 같은 모양(예외가 나도 자리를 돌려줌,
  *       백엔드 한 프로세스의 메모리라 재기동하면 비워짐 — 수집기의 하루 예산·대기열 상한은 그대로).</li>
- *   <li><b>번역</b>({@link #translate}): 수집기 캐시만 읽고({@code start=false}) 본문은 {@link InfoTranslator#bodyUnsaved}(저장하지 않음 — 메모리 24시간,
- *       하루 글자 상한은 함께 셈), 제목은 지금 번역 길({@link InfoTranslator#titles} — 결과 줄 제목과 같은 메타데이터라 표에 저장). 같은 글을 번역하는 중이면 429.</li>
+ *   <li><b>번역</b>({@link #translate}): 수집기 캐시만 읽고({@code start=false}) 본문과 제목 모두 {@link InfoTranslator#bodyUnsaved}(저장하지 않음 —
+ *       메모리 24시간, 하루 글자 상한은 함께 셈). 제목은 결과 줄 제목이 아니라 받은 쪽에서 추린 제목(og:title·h1 등)이라 본문처럼 표에 두지 않습니다.
+ *       같은 글을 번역하는 중이면 429.</li>
  * </ul>
  *
  * <p>꼬리표·주소·제목·본문은 로그에 남기지 않습니다(사유 코드·건수만). 본문은 모의 매매의 입력이 아니고 AI 요약에도 들어가지 않습니다.
@@ -165,23 +166,24 @@ public class SearchArticleService {
             if (text.isBlank()) {
                 return failed(NO_ARTICLE);
             }
+            // 받은 쪽에서 추린 제목도 본문처럼 저장하지 않는 길로 — 지금 제목 번역 길(titles)은 번역 표에 오래 남깁니다.
             String title = text(article, "title");
             String error = null;
             String titleKo = null;
             String titleModel = null;
-            if (title != null && title.length() <= 500 && InfoTranslator.needsTranslation(title)) {
-                InfoTranslator.Titles titles = translator.titles(List.of(title));
-                titleKo = titles.translated().get(title);
-                error = titleKo == null ? titles.error() : null;
-                titleModel = titles.model();
+            List<String> models = new ArrayList<>();
+            if (title != null && !title.isBlank() && title.length() <= 500 && InfoTranslator.needsTranslation(title)) {
+                InfoTranslator.UnsavedBody titled = translator.bodyUnsaved(title);
+                titleKo = titled.ok() ? titled.textKo() : null;
+                error = titled.ok() ? null : titled.error();
+                titleModel = titled.model();
+                if (titleKo != null) {
+                    models.addAll(titled.models());
+                }
             }
             InfoTranslator.UnsavedBody body = translator.bodyUnsaved(text);
             if (!body.ok()) {
                 error = body.error();
-            }
-            List<String> models = new ArrayList<>();
-            if (titleKo != null) {
-                models.addAll(translator.models(title, null));
             }
             body.models().stream().filter(model -> !models.contains(model)).forEach(models::add);
             Map<String, Object> out = new LinkedHashMap<>();
