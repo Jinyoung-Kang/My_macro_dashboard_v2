@@ -124,8 +124,13 @@ export default function MacroPage() {
   );
   // 목차 — 회원 일곱·운영자 여덟(경제 캘린더), 지표 칸의 하위 칸은 범주(개수는 카드 수 — 개요를 받기 전에는 모름, 처음 읽는 동안은 자리 줄).
   // 자리 줄·개수 자리와 지표 패널의 표 꼴 자리는 처음 읽는 동안만 — 실패 뒤 다시 읽는 동안 그리면 갱신마다 오류 상태와 번갈아 그려졌습니다(QA-655).
+  // 저장본이 없으면(available=false — 범주는 빈 목록) 개수도 모르는 것이라 받기 전과 같이 개수 없이 둡니다('지표 (0)'으로 적지 않음 — QA-668).
   const firstLoad = firstLoadPending(overview);
-  const indexItems = useMemo(() => macroIndexItems(groups, owner, firstLoad), [groups, owner, firstLoad]);
+  const unavailable = data?.available === false;
+  const indexItems = useMemo(
+    () => macroIndexItems(unavailable ? null : groups, owner, firstLoad),
+    [unavailable, groups, owner, firstLoad],
+  );
 
   return (
     <div className="flex flex-col gap-4 lg:gap-6">

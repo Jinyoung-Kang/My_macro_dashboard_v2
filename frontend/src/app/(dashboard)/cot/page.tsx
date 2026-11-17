@@ -184,7 +184,8 @@ export default function CotPage() {
 
       <Panel
         title="자산별 요약" source={SOURCES.cftc}
-        count={overview.data ? `${(overview.data.assets ?? []).length.toLocaleString("ko-KR")}개` : undefined}
+        // 개수는 저장본이 있을 때만 — 없으면(available=false — 자산은 빈 목록) 모르는 수라 '0개'로 적지 않습니다(QA-668).
+        count={overview.data?.available ? `${(overview.data.assets ?? []).length.toLocaleString("ko-KR")}개` : undefined}
         subtitle="스마트머니(비상업) 순포지션과 최근 변화 · 자산 이름을 누르면 아래 추이와 극단 성적이 그 자산으로 바뀝니다."
       >
         {/* 처음 읽는 동안은 표 꼴 자리(줄 여섯 — 값이 온 뒤 아래 추이 패널이 밀리지 않게, QA-654), 실패 뒤 다시 읽는 동안은 한 줄(오류 상자와 이 자리가

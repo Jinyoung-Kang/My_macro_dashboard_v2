@@ -255,7 +255,7 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 요약 �
 // 매크로 지표 패널과 같은 원인). 저장본이 있을 때만 개수를 둡니다.
 describe("QA-668 COT 저장본 없음이면 자산 개수를 0으로 적지 않는다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 '0개'가 있었습니다('expected [ <span …(1)></span> ] to deeply equal []').
-  it.fails("available=false — '자산별 요약' 머리에 'n개'가 없고, 저장본 없음 안내와 빈 표 글은 그대로", async () => {
+  it("available=false — '자산별 요약' 머리에 'n개'가 없고, 저장본 없음 안내와 빈 표 글은 그대로", async () => {
     api.apiGetShared.mockImplementation((path: string) => {
       if (path.startsWith("/api/cot/overview")) return Promise.resolve({ available: false, assets: [] });
       const key = Object.keys(BODIES).find((prefix) => path.startsWith(prefix));

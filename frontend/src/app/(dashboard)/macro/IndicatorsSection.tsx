@@ -262,7 +262,9 @@ export function IndicatorsSection({
   const first = rows.find((group) => group.rows.length > 0)?.rows[0]?.id ?? null;
 
   return (
-    <Panel title="지표" count={groups === null ? undefined : `${total.toLocaleString("ko-KR")}개`}>
+    // 개수는 개요를 받았고 저장본이 있을 때만 — 저장본 없음(범주는 빈 목록)은 모르는 수라 '0개'로 적지 않습니다(QA-668). groups는 []로 두어 아래
+    // '처음 읽는 중' 분기(QA-655)는 그대로입니다.
+    <Panel title="지표" count={groups === null || unavailableMessage !== null ? undefined : `${total.toLocaleString("ko-KR")}개`}>
       {loading && groups === null && (firstLoad ? <IndicatorsPending /> : <Loading label="매크로 지표를 불러오는 중…" />)}
       {error && <ErrorState message={error} onRetry={onRetry} />}
       {unavailableMessage !== null && (

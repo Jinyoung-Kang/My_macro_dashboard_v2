@@ -245,7 +245,7 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
 // 안내는 그대로여야 합니다. 저장본이 있는데 범주가 비면(available=true) 지금처럼 '0개'입니다(위 QA-047·QA-066 시험의 응답).
 describe("QA-668 저장본 없음이면 지표 개수를 0으로 적지 않는다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 패널 머리 '0개'('expected [ <span …(1)></span> ] to deeply equal []')·목차 링크 이름 '지표 (0)'이었습니다.
-  it.fails("available=false — 목차 첫 칸 이름이 '지표'(개수 없음), 지표 패널에 'n개' 없음, 저장본 없음 안내는 그대로", async () => {
+  it("available=false — 목차 첫 칸 이름이 '지표'(개수 없음), 지표 패널에 'n개' 없음, 저장본 없음 안내는 그대로", async () => {
     reads["/api/macro/overview"] = () => Promise.resolve({ available: false, readMode: "cache", categories: [], message: "저장본 없음" });
     render(<MacroPage />);
 
