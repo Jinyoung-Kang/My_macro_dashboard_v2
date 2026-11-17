@@ -73,10 +73,21 @@ const ROW_CHILD = "pl-6 text-caption";
 /**
  * 개수 — 숫자일 때만(12px tabular-nums 보조 글). 이름 글 바로 뒤라 읽어 주기에서 '지표37'로 붙지 않게 앞에 빈칸 글 마디(flex 줄 안이라 보이지 않음 —
  * 간격은 gap)를 두고 낭독기 전용 괄호로 감쌉니다('지표 (37)' — 보이는 글은 '37').
+ * 개수를 읽는 중(`pending`)이면 그 자리에 숫자 두 자리 폭(12px 글의 2ch)의 글 없는 막대를 둡니다 — 개수가 생길 때 가로 줄의 뒤 칸이 밀리지 않게(QA-652 —
+ * 매크로 '지표 21'에서 17px). 읽기에서 뺍니다(자리일 뿐 개수가 아님).
  */
-function Count({ count }: { count?: number | null }): JSX.Element | null {
+function Count({ count, pending = false }: { count?: number | null; pending?: boolean }): JSX.Element | null {
   const text = sectionCountText(count);
-  if (text === null) return null;
+  if (text === null) {
+    // 빈칸 글 마디는 두지 않습니다 — 막대는 읽기에서 빠지고, flex 줄 안의 빈칸은 폭이 없어(간격은 gap) 개수가 온 뒤와 폭이 같습니다.
+    return pending ? (
+      <span
+        aria-hidden="true"
+        data-section-index-count-pending=""
+        className="inline-block h-3 w-[2ch] shrink-0 rounded-control bg-control-fill text-xs motion-safe:animate-pulse forced-colors:border"
+      />
+    ) : null;
+  }
   return (
     <>
       {" "}
@@ -112,7 +123,7 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
   return (
     <a href={`#${leaf.id}`} aria-current={state === "current" ? "location" : undefined} className={`${ROW} ${child ? ROW_CHILD : ROW_TOP} ${tone}`}>
       <span className="min-w-0 flex-1 break-keep wrap-anywhere">{leaf.label}</span>
-      <Count count={leaf.count} />
+      <Count count={leaf.count} pending={leaf.pendingCount} />
     </a>
   );
 }
@@ -124,7 +135,8 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  *   밑줄 탭 모양 `underlineTabClasses(…, "sm")`: 좁은 화면 44px·넓은 화면 30px, 넘치면 가로 스크롤하고 지금 칸을 줄 안에 보임). 이름 있는 내비(nav
  *   aria-label) 하나 안에 두 목록이 있고 폭마다 하나만 보입니다(다른 하나는 display:none — 읽기·Tab에서 빠짐).
  * - 칸은 같은 화면 절 링크(`<a href="#id">` — 스크롤은 즉시, 부드러운 스크롤 없음)이고 지금 칸은 aria-current="location"입니다. 가로 줄에서는 지금 절의
- *   첫 단계 칸이 지금 칸입니다(하위 칸이 지금이어도). 개수(`count`)는 숫자일 때만 보입니다(모르면 자리 없음 — 0으로 채우지 않음).
+ *   첫 단계 칸이 지금 칸입니다(하위 칸이 지금이어도). 개수(`count`)는 숫자일 때만 보입니다(모르면 자리 없음 — 0으로 채우지 않음). 개수를 읽는 중
+ *   (`pendingCount`)이면 숫자 두 자리 폭의 글 없는 막대로 자리를 잡습니다(읽기에서 뺌 — QA-652).
  * - 지금 절: `activeId`를 주면 그 값(제어 — 시험·화면이 정함), 주지 않으면 `hooks/useSectionSpy`(뷰포트 위 96px 아래 ~ 34% 띠에 걸친 절 — 하위 칸이 부모보다 앞,
  *   스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절 — QA-645, 규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는
  *   지금 칸이 없습니다.
@@ -173,7 +185,7 @@ export function SectionIndex({
               <li key={item.id} className="shrink-0">
                 <a href={`#${item.id}`} aria-current={current ? "location" : undefined} className={underlineTabClasses(current, "sm")}>
                   {item.label}
-                  <Count count={item.count} />
+                  <Count count={item.count} pending={item.pendingCount} />
                 </a>
               </li>
             );

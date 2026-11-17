@@ -614,7 +614,8 @@ describe("목차와 절 닻", () => {
 // 읽는 동안의 자리(pendingChildren)는 세로 목록의 하위 칸 몫뿐이었습니다. 개요를 처음 읽는 동안에는 두 목록 모두 '지표' 칸에 개수 자리(글 없는 막대 —
 // 숫자 두 자리 폭, 읽기에서 뺌)를 두어야 합니다.
 describe("QA-652 목차 '지표' 칸은 개수를 읽는 동안 개수 자리를 잡는다", () => {
-  it.fails("개요를 처음 읽는 동안 가로 줄·세로 목록의 '지표' 칸에 개수 자리(숫자 두 자리 폭의 막대, 읽기에서 뺌) — 링크 이름은 '지표' 그대로", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 개수 자리가 없었습니다('expected null not to be null').
+  it("개요를 처음 읽는 동안 가로 줄·세로 목록의 '지표' 칸에 개수 자리(숫자 두 자리 폭의 막대, 읽기에서 뺌) — 링크 이름은 '지표' 그대로", () => {
     render(<MacroPage />);
     const nav = screen.getByRole("navigation", { name: "매크로 지표 목차" });
     const [strip, column] = Array.from(nav.children) as HTMLElement[];

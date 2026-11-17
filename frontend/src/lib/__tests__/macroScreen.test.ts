@@ -77,10 +77,14 @@ describe("목차 항목", () => {
     expect(indicators.count).toBeNull();
     expect(indicators.children).toEqual([]);
     expect(indicators.pendingChildren).toBeUndefined();
+    expect(indicators.pendingCount).toBeUndefined();
     expect(macroIndexItems(null, false, true)[0].pendingChildren).toBe(MACRO_PENDING_CATEGORIES);
+    // 개수 자리도(QA-652 — 가로 줄의 뒤 칸이 개수가 올 때 밀리지 않게).
+    expect(macroIndexItems(null, false, true)[0].pendingCount).toBe(true);
     expect(MACRO_PENDING_CATEGORIES).toBe(5);
-    // 개요가 오면 자리 줄 없이 범주 하위 칸(읽는 중 표시가 남아 있어도).
+    // 개요가 오면 자리 줄·개수 자리 없이 범주 하위 칸과 개수(읽는 중 표시가 남아 있어도).
     expect(macroIndexItems(groups, false, true)[0].pendingChildren).toBeUndefined();
+    expect(macroIndexItems(groups, false, true)[0].pendingCount).toBeUndefined();
   });
 
   it("범주 닻 id는 소문자·숫자·하이픈만", () => {

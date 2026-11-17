@@ -213,6 +213,32 @@ describe("SectionIndex — 빈 목록·개수 모름·긴 글", () => {
     expect(within(lists().column).getAllByRole("link").map((link) => link.textContent)).toEqual(["지표", "환율"]);
   });
 
+  it("개수를 읽는 중(pendingCount)이면 두 목록 모두 개수 자리(숫자 두 자리 폭의 글 없는 막대 — 읽기에서 빠짐), 개수가 숫자면 자리 대신 개수", () => {
+    render(
+      <SectionIndex label="매크로 지표 목차" items={[{ id: "macro-indicators", label: "지표", count: null, pendingCount: true }, { id: "macro-fx", label: "환율 비교" }]} activeId={null}>
+        <SectionAnchor id="macro-indicators">지표</SectionAnchor>
+        <SectionAnchor id="macro-fx">환율</SectionAnchor>
+      </SectionIndex>,
+    );
+    const { strip, column } = lists();
+    for (const list of [strip, column]) {
+      const link = within(list).getByRole("link", { name: "지표" });
+      const slot = link.querySelector("[data-section-index-count-pending]") as HTMLElement;
+      expect(slot.getAttribute("aria-hidden")).toBe("true");
+      expect(tokens(slot)).toEqual(expect.arrayContaining(["inline-block", "h-3", "w-[2ch]", "text-xs", "shrink-0", "bg-control-fill", "forced-colors:border"]));
+      expect(link.textContent).toBe("지표");
+      expect(within(list).getByRole("link", { name: "환율 비교" }).querySelector("[data-section-index-count-pending]")).toBeNull();
+    }
+    cleanup();
+    render(
+      <SectionIndex label="매크로 지표 목차" items={[{ id: "macro-indicators", label: "지표", count: 21, pendingCount: true }]} activeId={null}>
+        <SectionAnchor id="macro-indicators">지표</SectionAnchor>
+      </SectionIndex>,
+    );
+    expect(document.querySelector("[data-section-index-count-pending]")).toBeNull();
+    expect(within(lists().strip).getByRole("link", { name: "지표 (21)" })).toBeTruthy();
+  });
+
   it("개수를 모르면(null·없음·NaN) 자리를 그리지 않는다 — '0'을 만들지 않음, 0은 값", () => {
     renderIndex({
       items: [

@@ -334,8 +334,9 @@ export function macroIndexItems(groups: readonly MacroIndicatorGroup[] | null, o
       label: MACRO_SECTION_LABELS.indicators,
       count: total,
       children: (groups ?? []).map((group) => ({ id: group.anchorId, label: group.title, count: group.rows.length })),
-      // 개요를 처음 읽는 동안은 범주 하위 칸 자리를 미리 잡습니다(값이 온 뒤 아래 목차 칸이 164px 밀렸음 — P5a 검토 CLS). 읽지 못했으면 자리를 두지 않습니다.
-      ...(groups === null && loading ? { pendingChildren: MACRO_PENDING_CATEGORIES } : {}),
+      // 개요를 처음 읽는 동안은 범주 하위 칸 자리(값이 온 뒤 아래 목차 칸이 164px 밀렸음 — P5a 검토 CLS)와 개수 자리(가로 줄의 뒤 칸이 17px 밀렸음 — QA-652)를
+      // 미리 잡습니다. 읽지 못했으면 자리를 두지 않습니다.
+      ...(groups === null && loading ? { pendingChildren: MACRO_PENDING_CATEGORIES, pendingCount: true } : {}),
     },
     ...(["fx", "spreads", "risk", "advanced", "single", "scraped"] as const).map((section) => ({ id: MACRO_SECTIONS[section], label: MACRO_SECTION_LABELS[section] })),
   ];

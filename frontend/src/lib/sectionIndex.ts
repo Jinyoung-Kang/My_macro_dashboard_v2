@@ -7,8 +7,12 @@
  * 스크롤 상자가 끝까지 내려가 있으면 띠 대신 위 끝이 화면 안인 마지막 절입니다(`pickEndSection` — 마지막 절은 띠에 닿지 못함, QA-645).
  */
 
-/** 목차 칸 하나 — id는 화면의 절 닻(SectionAnchor) id, count는 숫자일 때만 보입니다(모르면 null — 0으로 채우지 않음). */
-export type SectionIndexLeaf = { id: string; label: string; count?: number | null };
+/**
+ * 목차 칸 하나 — id는 화면의 절 닻(SectionAnchor) id, count는 숫자일 때만 보입니다(모르면 null — 0으로 채우지 않음). 개수를 아직 모르면(자료를 읽는 중)
+ * `pendingCount`로 개수 자리(숫자 두 자리 폭의 글 없는 막대 — 읽기에서 뺌)를 잡아 개수가 온 뒤 가로 줄의 뒤 칸이 밀리지 않게 합니다(QA-652). count가
+ * 숫자면 보지 않습니다.
+ */
+export type SectionIndexLeaf = { id: string; label: string; count?: number | null; pendingCount?: boolean };
 
 /**
  * 첫 단계 목차 칸 — 하위 칸(children)은 세로 목록에서만 들여 보입니다(가로 줄은 첫 단계만). 하위 칸을 아직 모르면(자료를 읽는 중) `pendingChildren`만큼
