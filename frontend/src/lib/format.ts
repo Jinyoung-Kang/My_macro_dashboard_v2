@@ -227,6 +227,20 @@ export function formatKoreanScale(value: number | null | undefined, suffix: stri
   if (missing(value)) {
     return EMPTY;
   }
+  const { scaled, digits, label } = koreanScale(value);
+  const number = formatNumber(scaled, digits);
+  return label ? `${number}${label} ${suffix}` : `${number} ${suffix}`;
+}
+
+/** 조·억·만 단위로 옮긴 값 — `scaled`는 그 단위로 나눈 값(반올림 전), `digits`는 단위별 소수 자릿수, `label`은 '조'·'억'·'만'(1 단위는 빈 글). */
+export type KoreanScale = { scaled: number; digits: number; label: string };
+
+/**
+ * 조(1e12)·억(1e8)·만(1e4) 단위 고르기 — formatKoreanScale이 글로 적는 단위·자릿수를 숫자로 돌려줍니다(변화 칩처럼 숫자와 단위를 따로 받는 자리 —
+ * lib/liquidity trillionDeltaChip). 크기에 맞는 단위로 내려 적고, 단위별 자릿수(scaleDigits)로 반올림한 값이 다음 단위에 닿으면 올립니다
+ * (9,999.95억 → 1.000조). 반올림 규칙은 글 함수와 같은 roundForDisplay입니다.
+ */
+export function koreanScale(value: number): KoreanScale {
   const magnitude = Math.abs(value);
   let index = SCALE_UNITS.findIndex(([unit]) => magnitude >= unit);
   if (index < 0) {
@@ -241,8 +255,7 @@ export function formatKoreanScale(value: number | null | undefined, suffix: stri
       index -= 1;
       continue;
     }
-    const number = formatNumber(rounded, digits);
-    return label ? `${number}${label} ${suffix}` : `${number} ${suffix}`;
+    return { scaled: value / unit, digits, label };
   }
 }
 
