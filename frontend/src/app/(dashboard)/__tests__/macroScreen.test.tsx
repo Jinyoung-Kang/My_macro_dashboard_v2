@@ -112,7 +112,7 @@ describe("원본 데이터 — 화면 머리 동작", () => {
 // 금지되고 보조기기가 이름을 무시해, Tab 정지점이 이름 없이 읽혔습니다(P5a가 대화상자로 옮기며 이름을 붙임, P5a 검토). 같은 목적의 공용 표 스크롤 상자처럼
 // 이름 있는 영역(role=region)이어야 이름이 붙습니다.
 describe("QA-646 원본 글 스크롤 상자는 이름 있는 영역", () => {
-  it.fails("Tab으로 닿는 원본 글 상자가 role=region '원본 데이터 글'", async () => {
+  it("Tab으로 닿는 원본 글 상자가 role=region '원본 데이터 글'", async () => {
     reads[SNAPSHOT_PATH] = () => Promise.resolve({ text: "원본 글", chars: 4, generatedAtKst: "2026-11-17 06:31 KST" });
     render(<MacroPage />);
     fireEvent.click(screen.getByRole("button", { name: "원본 데이터 보기" }));

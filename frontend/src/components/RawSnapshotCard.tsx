@@ -76,9 +76,11 @@ export function RawSnapshotActions() {
                 &apos;추정치&apos;로 표시된 값은 공식 확정치가 아닙니다.
               </p>
               {/* 원본 글은 읽는 본문이라 보조 글자색(text-2) — 캡션색(text-3)은 각주·축에만 씁니다(작업대 실행 명세 §3-2). 덮개(surface-2) 위라 바탕은
-                  페이지 바탕(bg)으로 한 단계 내려 글 상자를 가릅니다. Tab으로 닿아 화살표로 넘길 수 있습니다(스크롤 상자). */}
+                  페이지 바탕(bg)으로 한 단계 내려 글 상자를 가릅니다. Tab으로 닿아 화살표로 넘길 수 있습니다(스크롤 상자). pre는 역할이 없어(generic)
+                  aria-label이 무시되므로 이름 있는 영역으로 둡니다(공용 표 스크롤 상자와 같은 꼴 — QA-646). */}
               <pre
                 tabIndex={0}
+                role="region"
                 aria-label="원본 데이터 글"
                 className="max-h-[60dvh] overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-bg p-3 text-xs leading-relaxed text-text-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
               >
