@@ -253,7 +253,7 @@
      (WCAG 2.4.11 — QA-643). 목차가 그려진 화면에서만(내비의 표지 data-section-index-bar = columnFrom).
      높이는 잰 줄 높이(--section-strip-h — 목차가 문서 루트에 적음, hooks/useSectionStripHeight)이고, 재기 전에는 기본 45px(칸 44px + 아래 선 1px)·
      31px(30px + 1px)입니다. 고전 스크롤 막대를 그리는 브라우저에서 칸이 넘치면 줄 안에 가로 막대(10px)가 서서 줄이 그만큼 높아지므로 상수로 두지
-     않습니다(QA-656).
+     않습니다(QA-656). 옆 검사 칸의 sticky 위치(InspectorFrame·MasterDetail)도 이 높이를 씁니다(줄 아래 16px — QA-657).
      절 닻의 scroll-margin(SectionAnchor)은 이 여백 위에 더해지므로 줄 아래 간격(12px)만 둡니다. */
   @media (width < 64rem) {
     html:has([data-section-index-bar]) {

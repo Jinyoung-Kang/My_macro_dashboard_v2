@@ -5,7 +5,8 @@ import { useLayoutEffect, type RefObject } from "react";
 /**
  * 문서 루트(html)에 적는 CSS 변수 — 긴 화면 목차(components/patterns SectionIndex)의 가로 줄이 지금 차지한 높이(px, 아래 선 1px·가로 스크롤 막대 포함).
  * 줄이 보이지 않으면(세로 목록 폭 — display:none) 지웁니다(읽는 쪽은 기본값을 씀).
- * 읽는 곳: globals.css(스크롤 상자의 위쪽 스크롤 여백 — QA-643·QA-656).
+ * 읽는 곳: globals.css(스크롤 상자의 위쪽 스크롤 여백 — QA-643·QA-656), 옆 검사 칸의 sticky 위치(InspectorFrame·MasterDetail — 줄 밑에 가려지지
+ * 않게, QA-657).
  * Tailwind가 클래스를 찾도록 읽는 곳은 이 이름을 글자 그대로 적습니다.
  */
 export const SECTION_STRIP_VAR = "--section-strip-h";

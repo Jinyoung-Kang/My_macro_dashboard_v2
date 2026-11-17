@@ -40,10 +40,16 @@ export type InspectorContext = {
 /*
  * 옆 칸 배치의 기준 폭과 크기 질의 클래스 — 틀이 @container이고, 기준 폭(rem)은 크기 질의와 같은 값이어야 합니다(useSideBySide가 같은 폭으로 동작을 바꿈).
  * Tailwind가 클래스를 글로 찾으므로 통째로 적어 둡니다. @lg = 32rem.
+ * 검사 칸은 스크롤 영역 위쪽에서 16px 아래에 붙되, 긴 화면 목차의 가로 줄(SectionIndex — 스크롤 영역 위쪽에 불투명하게 붙음)이 보이면 그 줄 아래 16px에
+ * 붙습니다(--section-strip-h — 목차가 문서 루트에 적는 잰 줄 높이, 줄이 없거나 숨으면 0 — QA-657). 그러지 않으면 검사 칸 위 15px이 줄 밑에 가려졌습니다.
  */
 const SIDE: Record<Exclude<InspectorLayout, "dialog">, { minRem: number; grid: string; panel: string }> = {
-  md: { minRem: 32, grid: "@lg:grid-cols-[minmax(0,1fr)_15rem]", panel: "@lg:sticky @lg:top-4" },
-  lg: { minRem: 52, grid: "@min-[52rem]:grid-cols-[minmax(0,1fr)_18rem]", panel: "@min-[52rem]:sticky @min-[52rem]:top-4" },
+  md: { minRem: 32, grid: "@lg:grid-cols-[minmax(0,1fr)_15rem]", panel: "@lg:sticky @lg:top-[calc(var(--section-strip-h,0px)+1rem)]" },
+  lg: {
+    minRem: 52,
+    grid: "@min-[52rem]:grid-cols-[minmax(0,1fr)_18rem]",
+    panel: "@min-[52rem]:sticky @min-[52rem]:top-[calc(var(--section-strip-h,0px)+1rem)]",
+  },
 };
 
 const DEFAULT_HINT = "줄을 고르면 이 칸에 자세한 값이 나옵니다.";

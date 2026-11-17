@@ -170,7 +170,7 @@ export function SectionIndex({
   const activeTop = openParent ?? (items.some((item) => item.id === active) ? active : null);
   const stripRef = useRef<HTMLUListElement>(null);
   useScrollStripActive(stripRef, activeTop);
-  // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백이 읽음 — QA-656).
+  // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백·옆 검사 칸의 sticky 위치가 읽음 — QA-656·657).
   useSectionStripHeight(stripRef, items.map((item) => item.id).join("\n"));
 
   const body = <div className="flex min-w-0 flex-col gap-4 lg:gap-6">{children}</div>;

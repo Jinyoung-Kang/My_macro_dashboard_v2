@@ -147,12 +147,14 @@ describe("InspectorFrame — 옆 검사 칸(넓은 화면·넓은 틀)", () => {
     const grid = (container.firstElementChild as HTMLElement).firstElementChild as HTMLElement;
     expect(tokens(container.firstElementChild as HTMLElement)).toEqual(expect.arrayContaining(["@container", "min-w-0"]));
     expect(tokens(grid)).toContain("@lg:grid-cols-[minmax(0,1fr)_15rem]");
-    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(expect.arrayContaining(["self-start", "border", "border-border", "p-3", "@lg:sticky", "@lg:top-4"]));
+    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(
+      expect.arrayContaining(["self-start", "border", "border-border", "p-3", "@lg:sticky", "@lg:top-[calc(var(--section-strip-h,0px)+1rem)]"]),
+    );
     unmount();
     const wide = renderFrame({ layout: "lg" });
     const lgGrid = (wide.container.firstElementChild as HTMLElement).firstElementChild as HTMLElement;
     expect(tokens(lgGrid)).toContain("@min-[52rem]:grid-cols-[minmax(0,1fr)_18rem]");
-    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(expect.arrayContaining(["@min-[52rem]:sticky", "@min-[52rem]:top-4"]));
+    expect(tokens((inspectorRegion() as HTMLElement))).toEqual(expect.arrayContaining(["@min-[52rem]:sticky", "@min-[52rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
   });
 
   it("defaultKey — 아무것도 고르지 않았으면 그 키를 보이고 콜백은 부르지 않는다, 사용자가 고르면 그 줄·콜백", () => {
@@ -426,7 +428,7 @@ describe("QA-642 검사 칸 안에서 Esc로 고름을 풀면 포커스가 고�
 // 이제 검사 칸은 목차가 문서 루트에 적는 잰 줄 높이(--section-strip-h, 없으면 0) 아래 16px에 붙습니다. 수정 전(재현 커밋에서는 it.fails)에는 top-4였습니다.
 // jsdom은 크기 질의·sticky를 계산하지 않아 클래스로 봅니다(브라우저 값은 진행 기록).
 describe("QA-657 옆 검사 칸은 목차 가로 줄 아래 16px에 붙는다", () => {
-  it.fails("md·lg 배치 모두 sticky top이 calc(var(--section-strip-h,0px)+1rem) — top-4가 아니다", () => {
+  it("md·lg 배치 모두 sticky top이 calc(var(--section-strip-h,0px)+1rem) — top-4가 아니다", () => {
     stubWide();
     const md = renderFrame();
     const mdTokens = tokens(inspectorRegion() as HTMLElement);

@@ -286,7 +286,10 @@ describe("MasterDetail — 넓은 화면(검사 칸)", () => {
     expect(root.className.split(/\s+/)).toContain("@container");
     const grid = list().parentElement as HTMLElement;
     expect(grid.className.split(/\s+/)).toEqual(expect.arrayContaining(["grid", "gap-3", "@lg:grid-cols-[minmax(0,1fr)_15rem]"]));
-    expect(screen.getByRole("region").className.split(/\s+/)).toEqual(expect.arrayContaining(["self-start", "@lg:sticky", "@lg:top-4"]));
+    // 긴 화면 목차의 가로 줄이 보이면 그 줄 아래 16px(--section-strip-h — 없으면 0이라 16px, QA-657).
+    expect(screen.getByRole("region").className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["self-start", "@lg:sticky", "@lg:top-[calc(var(--section-strip-h,0px)+1rem)]"]),
+    );
   });
 });
 
