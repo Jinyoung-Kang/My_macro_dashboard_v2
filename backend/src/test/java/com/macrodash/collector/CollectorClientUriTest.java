@@ -246,6 +246,18 @@ class CollectorClientUriTest {
     }
 
     @Test
+    @DisplayName("정보 검색 본문 보기(ADR 0043) — 경로 /live/search/article?ref=&start= 모양으로 꼬리표와 start가 그대로 도착한다")
+    void searchArticleArrives() {
+        client.liveSearchArticle("0123456789abcdef0123456789abcdef", true);
+        client.liveSearchArticle("fedcba9876543210fedcba9876543210", false);
+
+        assertThat(receivedPaths).containsExactly("/live/search/article", "/live/search/article");
+        assertThat(decodedParam("ref")).isEqualTo("0123456789abcdef0123456789abcdef");
+        assertThat(decodedParam("start")).isEqualTo("true");
+        assertThat(receivedQueries.get(1)).isEqualTo("ref=fedcba9876543210fedcba9876543210&start=false");
+    }
+
+    @Test
     @DisplayName("정보 검색 연결 보강 — 대상 키(한글·공백·콜론·'.')와 external·owner가 그대로 도착한다")
     void searchLinksParametersArrive() {
         client.liveSearchLinks("topic:AI 반도체", false, true);

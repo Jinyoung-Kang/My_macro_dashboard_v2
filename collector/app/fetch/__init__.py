@@ -13,4 +13,8 @@ app/fetch
   - 사람 확인(CAPTCHA·체크박스)은 풀지 않고 길게 닫습니다.
 
 부르는 쪽(polite 속도군 태스크)은 :func:`app.fetch.ladder.fetch`만 씁니다. 정책 표에 없는 호스트는 받지 않습니다.
+
+예외 하나: 기사 한 건 받기(:mod:`app.fetch.article` — ADR 0043, 정보 검색 본문 보기)는 운영자가 누른 글 하나를 받는 **정책 표 밖의 유일한 길**이고
+``ladder.fetch``를 쓰지 않습니다. 같은 스위치(POLITE_FETCH_ENABLED)·같은 IP이고, 홉마다 주소 검사(:mod:`app.fetch.addresses`)·고정 주소·호스트
+하루 예산·간격을 거칩니다.
 """

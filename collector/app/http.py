@@ -605,6 +605,17 @@ def get_session() -> requests.Session:
                 min_interval=DEFAULT_HOST_INTERVAL)
 
 
+def get_relay_session() -> requests.Session:
+    """
+    구글 뉴스 경유 주소 풀기(정보 검색 본문 보기 — ADR 0043, services/search_relay) 전용 세션 — 다시 보내지 않습니다(재시도 0).
+
+    공용 세션과 같은 층(_GuardedAdapter)이라 보내기 전에 래치를 보고 호스트 간격을 지키며, 403·429·봇 차단 페이지를 받으면 그 호스트를
+    5분 닫습니다 — news.google.com은 정보 검색·상세 뉴스의 구글 RSS와 같은 호스트·같은 IP라, 구글이 막으면 함께 막히므로 닫아서 더 두드리지
+    않는 쪽을 고릅니다. 누를 때만 부르는 길이라 한 번 실패하면 그대로 '풀지 못함'입니다.
+    """
+    return _get("relay", headers=BROWSER_HEADERS, retries=0, backoff=0.0, pool=2, min_interval=DEFAULT_HOST_INTERVAL)
+
+
 def get_fred_session() -> requests.Session:
     """
     FRED 전용 세션.

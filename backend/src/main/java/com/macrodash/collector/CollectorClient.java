@@ -347,6 +347,18 @@ public class CollectorClient {
                 .build(Map.of("e", e)), "/live/search/links");
     }
 
+    /**
+     * 본문 보기(수집기 /live/search/article — ADR 0043, 계약 §10). {@code ref}는 수집기가 결과 줄에 단 꼬리표(32자 소문자 16진 — 부르는 쪽이 검사)이고,
+     * {@code start}가 거짓이면 수집기는 받아 둔 것·받는 중만 보고 외부를 부르지 않습니다. 수집기는 바로 답합니다(받기는 작업자가). 실패 로그에는 경로
+     * 이름표만 남깁니다(꼬리표 없이).
+     */
+    public Optional<JsonNode> liveSearchArticle(String ref, boolean start) {
+        return getQuietly(client, uri -> uri.path("/live/search/article")
+                .queryParam("ref", "{ref}")
+                .queryParam("start", start)
+                .build(Map.of("ref", ref)), "/live/search/article");
+    }
+
     /** 첫 화면 최근 글(수집기 /live/search/recent — 새 피드 묶음, owner면 속보도 — 저장본만, 외부 호출 없음). */
     public Optional<JsonNode> liveSearchRecent(boolean owner) {
         return getQuietly(client, uri -> uri.path("/live/search/recent")

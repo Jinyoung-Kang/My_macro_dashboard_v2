@@ -212,3 +212,35 @@ def test_V38_관심_대상_알림_칸은_있던_줄도_꺼짐이고_다시_실�
     assert conn.execute("SELECT notify FROM search_watches WHERE entity_key = 'topic:합성 둘'").fetchone()["notify"] is False
     with pytest.raises(psycopg.errors.NotNullViolation):
         conn.execute("UPDATE search_watches SET notify = NULL")
+
+
+def test_V39_두_번_적용해도_되고_용도_article을_받는다(conn):
+    """정보 검색 본문 보기(ADR 0043) — fetch_budgets의 용도에 article(하루 전체 '*'·기사 호스트·구글 경유 풀기). 있던 줄은 그대로, 모르는 용도는 막음."""
+    found = migrations.discover(REPO_MIGRATIONS)
+    v39 = next(m for m in found if m.version == 39)
+    assert migrations.apply_pending(conn, [m for m in found if m.version < 39])
+    conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day, budget_used) VALUES ('finviz.com', 'search', '2026-11-17', 3)")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day) VALUES ('*', 'article', '2026-11-17')")
+
+    assert migrations.apply_pending(conn, [m for m in found if m.version <= 39]) == [39]
+    conn.execute(v39.sql)                                 # psql로 다시 실행해도(make db-test) 깨지지 않음
+    conn.execute(v39.sql)
+
+    for host in ("*", "news.example.com", "news.google.com"):
+        conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day, budget_used) VALUES (%s, 'article', '2026-11-17', 1)", (host,))
+    assert conn.execute("SELECT budget_used FROM fetch_budgets WHERE host = 'finviz.com'").fetchone()["budget_used"] == 3
+    with pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO fetch_budgets (host, purpose, budget_day) VALUES ('x.example', 'body', '2026-11-17')")
+    names = [r["conname"] for r in conn.execute(
+        "SELECT conname FROM pg_constraint WHERE conrelid = 'fetch_budgets'::regclass AND contype = 'c' ORDER BY 1")]
+    assert names == ["fetch_budgets_budget_used_check", "fetch_budgets_purpose_check"], "같은 이름 하나만(다시 실행해도 늘지 않음)"
+
+
+def test_본문_보기_예산은_store의_한_함수로_센다(store):
+    from datetime import date
+
+    day = date(2026, 11, 17)
+    assert [store.take_search_budget("*", "article", day, 2) for _ in range(3)] == [True, True, False]
+    assert store.take_search_budget("news.example.com", "article", day, 20) is True
+    assert store.take_search_budget("*", "article", date(2026, 11, 18), 2) is True, "날짜가 바뀌면 1부터"

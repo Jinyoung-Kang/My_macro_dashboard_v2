@@ -46,6 +46,7 @@ from .services import (
     market as market_service,
     radar as radar_service,
     search as search_service,
+    search_article as search_article_service,
     toss as toss_service,
     toss_account as toss_account_service,
     toss_trade as toss_trade_service,
@@ -776,6 +777,23 @@ def live_search_feed(
     checked_aliases = _search_input(search_service.parse_aliases, aliases)
     return search_service.feed(f"{prefix}:{value}", checked_tab, owner=owner, external=external, refresh=refresh, finviz=finviz,
                                aliases=checked_aliases)
+
+
+@app.get("/live/search/article")
+def live_search_article(
+    ref: str | None = Query(None),
+    start: bool = Query(False),
+    x_service_token: str | None = Header(default=None),
+) -> dict:
+    """
+    정보 검색 본문 보기(ADR 0043, 계약 §10) — 결과로 내준 줄의 꼬리표(ref, 32자 소문자 16진 — 아니면 400)로 그 글 한 건의 본문. 화면은 주소를 보내지
+    않습니다(수집기가 자기 결과의 주소만 받음). start=false면 캐시와 받는 중만 보고 외부를 부르지 않음(없으면 not_cached). 운영 서버에서만 받고
+    (POLITE_FETCH_ENABLED — 아니면 server_only, 기억표·DB·네트워크 0건), 받기는 작업자 하나가 하므로 처음에는 pending(queued — 백엔드가 사용자
+    한 시간 한도에 셈). 꼬리표·주소·본문을 로그에 남기지 않습니다.
+    """
+    _check_token(x_service_token)
+    checked = _search_input(search_article_service.check_ref, ref)
+    return search_article_service.request(checked, start=start)
 
 
 @app.get("/live/search/links")

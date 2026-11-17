@@ -150,6 +150,13 @@ export const endpoints = {
      * (번역과 하루 글자 상한을 함께 셈, 같은 자료는 서버가 6시간 다시 씀).
      */
     summary: "/api/search/summary",
+    /**
+     * POST `{ref}`(운영자 — 회원·데모 403) — 결과 줄의 본문 보기 꼬리표(bodyRef)로 운영 서버가 그 글 한 건을 받아 본문만 추림(ADR 0043, 계약 §10).
+     * 처음엔 pending이고 화면이 2초마다 같은 경로를 다시 부릅니다. 화면은 주소를 보내지 않습니다.
+     */
+    article: "/api/search/article",
+    /** POST `{ref}`(운영자) — 받아 둔 본문을 한국어로(저장하지 않음 — 서버 메모리 24시간, 하루 글자 상한은 번역과 함께 셈). */
+    articleTranslate: "/api/search/article/translate",
   },
 
   // 화면 실시간 시세(ADR 0024) — 저장하지 않는 외부 조회. 종목은 'US:AAPL'·'KR:005930', SSE는 고른 주기(초)마다 서버가 밀어 줌

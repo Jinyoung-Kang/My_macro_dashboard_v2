@@ -1148,3 +1148,39 @@ def test_별칭은_로그와_출처_상태에_남지_않는다(monkeypatch, capl
         out = search.feed("topic:합성 반도체", "news", owner=False, external=True, aliases=(SECRET,))
     assert SECRET not in caplog.text and SECRET.replace(" ", "+") not in caplog.text
     assert all(SECRET not in (row["message"] or "") for row in out["sources"])
+
+
+# ------------------------------------------------------------------ 본문 보기(ADR 0043, 계약 §10)
+
+def test_feed_응답의_줄에_bodyRef와_bodyNote(monkeypatch):
+    """기사·글 줄에만 꼬리표(받아 둔 글·속보는 없음), 모든 줄에 두 칸이 있고 회원 응답도 수집기는 같음(지우기는 백엔드)."""
+    Stubs(monkeypatch)
+    out = search.feed("us:SCHP", "timeline", owner=True, external=True)
+    assert all({"bodyRef", "bodyNote"} <= set(item) for item in out["items"])
+    by_title = {item["title"]: item for item in out["items"]}
+    assert by_title["합성칩, 새 가속기 공개"]["bodyRef"], "구글 경유 줄은 꼬리표(누를 때 풂)"
+    assert by_title["SynthChip quarterly preview"]["bodyRef"] and by_title["SynthChip unveils new accelerator"]["bodyRef"]
+    assert by_title["SYNTHCHIP HALTED"]["bodyRef"] is None and by_title["On SynthChip margins"]["bodyRef"] is None, \
+        "받아 둔 글(readerId)은 지금 원문 팝업으로"
+    member = search.feed("us:SCHP", "news", owner=False, external=True)
+    assert all({"bodyRef", "bodyNote"} <= set(item) for item in member["items"])
+
+
+def test_본문_경로는_ref_형식이_틀리면_400이고_서비스를_부르지_않는다(client, monkeypatch):
+    from app.services import search_article
+
+    called = []
+    monkeypatch.setattr(search_article, "request", lambda ref, *, start: called.append((ref, start)) or {"ref": ref})
+    for bad in ("", "abc", "G" * 32, "0" * 31, "0" * 33, "../" + "0" * 29, "A" * 32):
+        assert client.get("/live/search/article", params={"ref": bad, "start": "true"}).status_code == 400, bad
+    assert client.get("/live/search/article").status_code == 400
+    assert called == []
+    assert client.get("/live/search/article", params={"ref": "0" * 32}).json() == {"ref": "0" * 32}
+    assert client.get("/live/search/article", params={"ref": "a" * 32, "start": "true"}).status_code == 200
+    assert called == [("0" * 32, False), ("a" * 32, True)], "start는 기본 거짓(외부를 부르지 않음)"
+
+
+def test_본문_경로는_서버가_아니면_server_only(client, monkeypatch):
+    monkeypatch.setenv(polite.ENV_ENABLED, "false")
+    body = client.get("/live/search/article", params={"ref": "b" * 32, "start": "true"}).json()
+    assert (body["status"], body["reason"], body["queued"], body["article"]) == ("error", "server_only", False, None)

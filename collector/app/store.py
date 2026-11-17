@@ -1904,7 +1904,7 @@ def delete_search_watch_items_by_publisher(pairs: Iterable[tuple[str | None, str
 
 def take_search_budget(host: str, purpose: str, day: date, limit: int) -> bool:
     """
-    그 호스트의 ``purpose``(watch·search) ``day``(KST 날짜) 요청 예산에서 한 건을 씁니다. 이미 ``limit``건을 썼으면 쓰지 않고 False.
+    그 호스트의 ``purpose``(watch·search·article — article은 정보 검색 본문 보기, ADR 0043·V39) ``day``(KST 날짜) 요청 예산에서 한 건을 씁니다. 이미 ``limit``건을 썼으면 쓰지 않고 False.
 
     :func:`take_fetch_budget`처럼 한 문장으로 세고 올립니다(정기 polite 예산 fetch_hosts와 따로 — 표 fetch_budgets). 날짜가 바뀌면 1부터.
     """

@@ -287,6 +287,11 @@ describe("정보 검색 관심 대상·매체 제외 경로(계약 §6-4)", () =
   it("AI 요약(계약 §9-6 — 운영자)은 인자 없는 POST 경로 하나 — 대상·탭·기간은 본문 {e, tab, range}", () => {
     expect(endpoints.search.summary).toBe("/api/search/summary");
   });
+
+  it("본문 보기(운영자 — ADR 0043)는 인자 없는 POST 경로 둘 — ref는 본문(주소는 보내지 않음)", () => {
+    expect(endpoints.search.article).toBe("/api/search/article");
+    expect(endpoints.search.articleTranslate).toBe("/api/search/article/translate");
+  });
 });
 
 describe("실제 계좌 경로(ADR 0025)", () => {

@@ -372,6 +372,30 @@ class SearchServiceTest {
             """;
 
     @Test
+    @DisplayName("본문 보기 꼬리표·까닭(bodyRef·bodyNote — ADR 0043)은 회원에게 null, 운영자에게는 그대로")
+    void hidesBodyRefFromMembers() {
+        String body = """
+                {"entityKey": "us:NVDA", "tab": "news", "items": [
+                  {"id": "n1", "kind": "news", "title": "합성 제목", "source": "bing", "publishedAt": "2026-11-13T01:00:00+00:00",
+                   "timeBasis": "published", "readerId": null, "bodyRef": "0123456789abcdef0123456789abcdef", "bodyNote": null},
+                  {"id": "n2", "kind": "news", "title": "합성 제목 둘", "source": "yahoo", "publishedAt": "2026-11-12T01:00:00+00:00",
+                   "timeBasis": "published", "readerId": null, "bodyRef": null, "bodyNote": "합성 까닭"}
+                ], "sources": [], "fetchedAt": "2026-11-14T03:00:00+00:00"}
+                """;
+        when(collector.liveSearchFeed("us:NVDA", "news", true, false, false, true)).thenReturn(Optional.of(json(body)));
+        when(collector.liveSearchFeed("us:NVDA", "news", true, true, false, true)).thenReturn(Optional.of(json(body)));
+
+        JsonNode member = (JsonNode) service.feed("us:NVDA", "news", MEMBER).get("items");
+        assertThat(member.values()).hasSize(2).allSatisfy(item -> {
+            assertThat(item.get("bodyRef").isNull()).isTrue();
+            assertThat(item.get("bodyNote").isNull()).isTrue();
+        });
+        JsonNode owner = (JsonNode) service.feed("us:NVDA", "news", OWNER).get("items");
+        assertThat(owner.get(0).path("bodyRef").asString()).isEqualTo("0123456789abcdef0123456789abcdef");
+        assertThat(owner.get(1).path("bodyNote").asString()).isEqualTo("합성 까닭");
+    }
+
+    @Test
     @DisplayName("회원에게는 운영자 전용 줄(info·guru·wire)을 지우고 그 상태 줄은 owner_only·0건, 받은 건수도 맞춘다")
     void hidesOwnerOnlyRowsFromMembers() {
         when(collector.liveSearchFeed("us:NVDA", "timeline", true, false, false, true)).thenReturn(Optional.of(json(FEED)));

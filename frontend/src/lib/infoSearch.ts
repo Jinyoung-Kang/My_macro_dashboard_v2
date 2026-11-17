@@ -14,6 +14,8 @@ import { EMPTY, formatKst } from "./format";
 import type { ReaderEntry } from "./info";
 import { singleKeyShortcut } from "./shortcuts";
 import type {
+  SearchArticle,
+  SearchArticleResponse,
   SearchCandidate,
   SearchEntity,
   SearchEntityKind,
@@ -2153,6 +2155,118 @@ export function readerOfFeedItem(item: SearchFeedItem, label: string): ReaderEnt
     text: null,
     note: "운영 서버가 받아 둔 글입니다 — 본문이 없으면 원문에서 보세요.",
   };
+}
+
+// ------------------------------------------------------------------ 본문 보기(ADR 0043, 계약 §10)
+
+/**
+ * 미리 보기의 '본문 보기'가 하는 일 — 수집 글(readerId)은 받아 둔 원문 팝업(stored), 꼬리표(bodyRef)가 있으면 운영 서버가 그 글 한 건을 받는 팝업
+ * (fetch), 받지 않는 매체면 단추 없이 그 까닭(none + note), 그 밖은 아무것도 없음. 운영자가 아니면(회원·데모) 늘 none — 그 경로들이 운영자 전용입니다.
+ */
+export type ArticleAction = { mode: "stored" } | { mode: "fetch"; ref: string } | { mode: "none"; note: string | null };
+
+const BODY_REF = /^[0-9a-f]{32}$/;
+
+export function articleActionOf(item: Pick<SearchFeedItem, "readerId" | "bodyRef" | "bodyNote">, owner: boolean): ArticleAction {
+  if (!owner) return { mode: "none", note: null };
+  if (item.readerId) return { mode: "stored" };
+  if (item.bodyRef && BODY_REF.test(item.bodyRef)) return { mode: "fetch", ref: item.bodyRef };
+  const note = item.bodyNote?.trim();
+  return { mode: "none", note: note ? note : null };
+}
+
+/**
+ * 미리 보기 아래 안내 한 줄 — 본문 보기가 무엇을 하는지(운영자), 회원·본문 보기가 없는 줄은 지금 글 그대로. 받지 않는 매체(note 있음)는 단추 자리의
+ * '본문 보기 없음: 까닭' 한 줄로 충분해 null(같은 뜻의 두 줄이 겹치지 않게).
+ */
+export function articlePreviewNote(action: ArticleAction): string | null {
+  if (action.mode === "fetch") return "본문 보기는 누를 때 운영 서버가 이 글 한 건을 받아 본문만 추려 보입니다 — 저장하지 않습니다.";
+  if (action.mode === "stored") return "본문 보기는 운영 서버가 받아 둔 글을 엽니다.";
+  if (action.note) return null;
+  return "기사 본문은 받지 않습니다 — 제목·매체·시각·요약만입니다.";
+}
+
+/**
+ * 본문 팝업의 상태 줄(화면 읽기 프로그램) — 단계마다 한 줄: 받는 중·멈춤·받음(문단 수)·실패(사유). 팝업은 이 줄을 단계와 상관없이 늘 붙여 두고
+ * 글만 갈아 넣습니다(새로 붙은 live region은 읽히지 않음).
+ */
+export function articleAnnouncement(phase: "loading" | "stalled" | "done" | "error", reason: string, paragraphs: number): string {
+  if (phase === "loading") return "운영 서버가 글을 받는 중입니다";
+  if (phase === "stalled") return "아직 받는 중입니다 — 잠시 뒤 다시 확인하세요";
+  if (phase === "done") return `본문을 받았습니다(문단 ${paragraphs}개)`;
+  return `받지 못했습니다: ${reason}`;
+}
+
+/** '다시 시도'를 잠근 시간 — 1분 이상이면 분(올림 — 배너의 '약 n분 뒤'와 같은 단위), 아니면 초. */
+export function articleWaitText(seconds: number): string {
+  return seconds >= 60 ? `약 ${Math.ceil(seconds / 60)}분` : `약 ${seconds}초`;
+}
+
+/**
+ * 본문 팝업의 사실 줄 — 매체(글의 사이트 이름, 없으면 결과 줄의 매체) · 글쓴이 · 글에 적힌 날짜 · 받은 시각(KST, 받아 둔 것이면 그렇게) · 구글 경유.
+ * 모르는 값은 줄째 뺍니다(지어내지 않음 — '—'도 두지 않음). 출처 링크는 따로 그립니다.
+ */
+export function articleFacts(article: SearchArticle, item: Pick<SearchFeedItem, "publisher" | "publisherDomain">): [string, string][] {
+  const rows: [string, string][] = [];
+  const site = article.siteName?.trim() || item.publisher?.trim() || item.publisherDomain?.trim() || null;
+  if (site) rows.push(["매체", site]);
+  if (article.author?.trim()) rows.push(["글쓴이", article.author.trim()]);
+  if (article.publishedDate && /^\d{4}-\d{2}-\d{2}$/.test(article.publishedDate)) rows.push(["글에 적힌 날짜", article.publishedDate]);
+  if (article.fetchedAt) {
+    const at = formatKst(article.fetchedAt);
+    if (at !== EMPTY) rows.push(["받은 시각", `${at} KST${article.cached ? " (받아 둔 것 — 서버 메모리 24시간)" : ""}`]);
+  }
+  if (article.viaGoogle) rows.push(["찾은 길", "구글 경유 주소를 풀어 찾은 원문 주소"]);
+  return rows;
+}
+
+/** 본문 팝업의 표지 글 — 잘림·짧음·유료 표시. 아이콘과 함께 그립니다(색만으로 전하지 않음). */
+export function articleFlags(article: Pick<SearchArticle, "truncated" | "short" | "paywalled" | "totalChars">): string[] {
+  const out: string[] = [];
+  if (article.truncated) out.push(`글이 길어 앞 40,000자만 보입니다(전체 ${article.totalChars.toLocaleString("ko-KR")}자).`);
+  if (article.short) out.push("추린 글이 짧습니다 — 유료·로그인 글이거나 본문이 그림·영상일 수 있습니다.");
+  if (article.paywalled) out.push("유료 글 표시가 있어 공개된 앞부분만일 수 있습니다.");
+  return out;
+}
+
+/** 사유 코드 → 화면 글. 서버 글(호스트가 든 한 줄)이 있으면 그것을 먼저, 없으면 코드의 기본 글, 모르는 코드는 일반 글. */
+const ARTICLE_REASONS: Record<string, string> = {
+  server_only: "본문 보기는 운영 서버에서만 됩니다 — 이 PC·QA에서는 원문 열기로 보세요.",
+  offline: "외부를 부르지 않는 읽기 방식이라 받아 둔 본문만 봅니다 — 원문 열기로 보세요.",
+  user_limit: "한 시간에 새로 받을 수 있는 10건을 다 썼습니다 — 잠시 뒤 다시 누르세요.",
+  unknown_ref: "이 결과를 찾지 못했습니다 — 결과를 다시 불러 주세요.",
+  refused_host: "이 매체의 글은 받지 않습니다.",
+  relay_unresolved: "구글 경유 주소를 원문 주소로 풀지 못했습니다 — 원문 열기는 브라우저가 옮겨 줍니다.",
+  unsafe_address: "내부·특수 주소로 풀리는 곳이라 받지 않습니다.",
+  bad_redirect: "허용하지 않는 곳으로 옮겨지거나 3번을 넘게 옮겨져 받지 않았습니다.",
+  blocked: "매체가 요청을 거부했습니다(봇 확인·로그인 등).",
+  budget: "오늘 본문 받기 예산을 다 썼습니다 — 내일(KST) 다시.",
+  queue_full: "다른 글을 받는 중이라 대기열이 가득 찼습니다 — 잠시 뒤 다시.",
+  timeout: "매체의 응답이 늦어 끊었습니다.",
+  transport: "매체에 연결하지 못했습니다.",
+  too_large: "페이지가 3MB를 넘어 받지 않았습니다.",
+  not_html: "HTML 글이 아닙니다(PDF 등) — 원문 열기로 보세요.",
+  http_error: "매체가 오류로 답했습니다.",
+  no_body: "본문을 찾지 못했습니다 — 유료·로그인 글이거나 스크립트로 그리는 화면일 수 있습니다.",
+  not_cached: "받아 둔 본문이 없습니다.",
+};
+
+export function articleReasonText(response: Pick<SearchArticleResponse, "reason" | "message"> & { available?: boolean }): string {
+  const message = response.message?.trim();
+  if (message) return message;
+  if (response.available === false) return "수집기에서 응답을 받지 못했습니다.";
+  const reason = response.reason ?? "";
+  return Object.hasOwn(ARTICLE_REASONS, reason) ? ARTICLE_REASONS[reason] : "본문을 받지 못했습니다.";
+}
+
+/** 본문 팝업의 글이 한국어가 아닌가 — 번역 단추를 둘지(언어를 모르면 글자로 다시 봄: 한글 30% 미만). */
+export function articleNeedsTranslation(article: Pick<SearchArticle, "lang" | "paragraphs">): boolean {
+  if (article.lang === "ko") return false;
+  const text = article.paragraphs.join(" ");
+  const letters = text.match(/\p{L}/gu)?.length ?? 0;
+  if (letters === 0) return false;
+  const hangul = text.match(/[가-힣]/g)?.length ?? 0;
+  return hangul * 10 < letters * 3;
 }
 
 // ------------------------------------------------------------------ 관심 대상(단계 3 — 계약 §6-4)
