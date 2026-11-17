@@ -902,3 +902,50 @@ describe("QA-669 머리의 신선도 칸은 갱신 실패 알약이 붙어도 �
     expect(cell.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-lg:min-h-5", "items-center"]));
   });
 });
+
+// QA-679: 머리(PageHeader)는 제목 묶음과 동작 줄을 한 줄에 두다 넘치면 동작 줄을 다음 줄로 꺾는데, 넘침은 제목 묶음의 글 폭으로 정해집니다. 매크로는 설명 글·
+// 실시간 시세 안내를 제목 묶음 안에 둡니다. 자동 갱신을 끄면(설명 글 없음) 제목 묶음이 제목·설명 폭(411px)뿐이라 넓은 폭에서 동작 줄이 제목 옆에 놓였다가,
+// 개요가 와 신선도 배지가 붙거나(메뉴 220의 1280 — 동작 줄 437 → 583px) 한 번 읽은 실시간 시세가 실패해 안내가 붙으면(1440·1920 — 제목 묶음이 줄 전체로)
+// 동작 줄이 다음 줄로 꺾여 아래 전체가 38~74px 밀렸습니다(첫 읽기 CLS 1280 0.3081·1440 0.2716·1920 0.1773 — 자체 빌드 9354c56c, QA API). 켜 둔 간격에서는
+// 설명 글이 이미 줄 전체 폭이라 동작 줄이 늘 따로 놓였습니다. 머리 글 칸을 늘 그리고 머리 줄 전체 폭(w-screen max-w-full)으로 두면 간격과 자료에 상관없이
+// 그 배치가 됩니다. jsdom은 배치를 재지 않으므로 그 칸과 클래스, 글이 그 칸 안에 그대로 있는지로 봅니다.
+describe("QA-679 자동 갱신을 꺼도 머리 동작 줄은 늘 제목 묶음 아래 따로 놓인다", () => {
+  const OVERVIEW = {
+    available: true,
+    collectedAtKst: "2026-11-17 06:30 KST",
+    ageSeconds: 60,
+    categories: [
+      { id: "fx", title: "환율", items: [
+        { key: "dxy", name: "달러 인덱스", status: "ok", priceStr: "101.77", deltaStr: "+0.00 (+0.00%)", prevStr: "101.77", delta: 0, pct: 0,
+          delayMinutes: 0, source: "TradingView (TVC:DXY)", lastTs: "2026-11-17 06:30 KST" },
+      ] },
+    ],
+  };
+
+  // 수정 전(재현 커밋 54ccc2e5에서는 it.fails)에는 제목 묶음에 그 칸이 없었습니다('expected null not to be null').
+  it("끄기(설명 글 없음)에도 제목 묶음에 줄 전체 폭 글 칸(w-screen max-w-full)이 처음부터 있고, 실시간 시세 안내는 그 칸 안에 그대로 보인다", async () => {
+    window.localStorage.setItem("macro.autoRefreshSeconds", "0");
+    reads["/api/macro/overview"] = () => Promise.resolve(OVERVIEW);
+    // 끄기는 화면을 열 때 실시간 시세를 한 번 읽습니다 — 받지 못한 응답이면 안내 한 줄.
+    api.apiGet.mockImplementation(() => Promise.resolve({ available: false, message: "수집기에서 응답을 받지 못했습니다." }));
+    render(<MacroPage />);
+    const titleBlock = screen.getByRole("heading", { level: 1, name: "거시경제 매크로 지표" }).parentElement as HTMLElement;
+
+    expect(screen.queryByText(/지표 시세는 고른 간격마다/)).toBeNull();
+    const lines = titleBlock.querySelector(":scope > [data-macro-header-lines]");
+    expect(lines).not.toBeNull();
+    expect((lines as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["w-screen", "max-w-full"]));
+
+    const notice = await screen.findByText(/실시간 시세: 수집기에서 응답을 받지 못했습니다\. — 카드는 저장본 값입니다\./);
+    expect(notice.parentElement).toBe(lines);
+  });
+
+  // 수정 전(재현 커밋 54ccc2e5에서는 it.fails)에는 설명 글이 제목 묶음에 바로 있었습니다('expected <div class="min-w-0">…(3)</div> to be null').
+  it("켜 둔 간격의 설명 글도 같은 칸 안 — 간격을 바꿔도 동작 줄의 자리가 같다", async () => {
+    reads["/api/macro/overview"] = () => Promise.resolve({ ...OVERVIEW, categories: [] });
+    render(<MacroPage />);
+    const titleBlock = screen.getByRole("heading", { level: 1, name: "거시경제 매크로 지표" }).parentElement as HTMLElement;
+
+    expect(screen.getByText(/지표 시세는 고른 간격마다/).parentElement).toBe(titleBlock.querySelector(":scope > [data-macro-header-lines]"));
+  });
+});
