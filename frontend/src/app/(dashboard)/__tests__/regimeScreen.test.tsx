@@ -387,13 +387,13 @@ describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => 
     expect(within(table).getAllByRole("cell")[3].textContent).toBe("2주");
   });
 
-  it("연결 — 쓰인 지표가 있는 매크로 절(심화·신용 변동성)과 순유동성 화면, 출처 셋", async () => {
+  it("연결 — 쓰인 지표가 있는 매크로 화면(링크 글이 절 — 심화·신용 변동성, QA-641)과 순유동성 화면, 출처 셋", async () => {
     reads[REGIME] = regimeExpansion();
     render(<RegimePage />);
     const links = (await panelTitled("연결")).querySelectorAll("a");
     expect(Array.from(links).map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", "/macro#macro-advanced"],
-      ["하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", "/macro#macro-risk"],
+      ["장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", "/macro"],
+      ["하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", "/macro"],
       ["연준 순유동성 4주 변화 — 순유동성 화면", "/liquidity"],
     ]);
     const sources = await panelTitled("출처");
@@ -414,8 +414,8 @@ describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => 
 // 1440은 맞음). 주소를 바로 열거나 새로 고치면 셸이 그린 뒤에 닻이 생겨 어느 폭에서도 스크롤하지 않았습니다(위험 절 위 끝 4,940~6,333px).
 // 계획의 대안대로 매크로 화면 맨 위(/macro)로 잇고, 어느 절인지는 링크 글이 말합니다(그 화면의 목차로 이동).
 describe("QA-641 국면 연결의 매크로 링크는 해시 없이 매크로 화면으로", () => {
-  // 고치기 전 값: expected [ '/macro#macro-advanced', '/macro#macro-risk' ] to deeply equal [ '/macro', '/macro' ]
-  it.fails("매크로로 가는 연결 링크에 절 조각(#)이 없다 — 주소는 메뉴 표의 매크로 지표 경로", async () => {
+  // 고치기 전 값(it.fails로 둔 커밋): expected [ '/macro#macro-advanced', '/macro#macro-risk' ] to deeply equal [ '/macro', '/macro' ]
+  it("매크로로 가는 연결 링크에 절 조각(#)이 없다 — 주소는 메뉴 표의 매크로 지표 경로", async () => {
     reads[REGIME] = regimeExpansion();
     render(<RegimePage />);
     const links = Array.from((await panelTitled("연결")).querySelectorAll("a"));

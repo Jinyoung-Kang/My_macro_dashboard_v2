@@ -2,10 +2,11 @@
  * 매크로 절 주소의 정본(lib/marketSections) — 다른 화면이 매크로 절로 잇는 링크의 기준.
  *  - id는 서로 다르고 소문자·하이픈만, 'macro-'로 시작한다(주소 조각 그대로 — 인코딩 없음)
  *  - 주소는 '{메뉴 표의 매크로 지표 경로}#{id}' — 경로는 lib/nav TABS에서 찾는다
+ *  - 다른 화면이 잇는 주소는 절 조각 없는 화면 경로(QA-641)
  */
 import { describe, expect, it } from "vitest";
 
-import { MACRO_SECTIONS, macroSectionHref, type MacroSection } from "../marketSections";
+import { MACRO_SECTIONS, macroPath, macroSectionHref, type MacroSection } from "../marketSections";
 import { TABS } from "../nav";
 
 describe("MACRO_SECTIONS", () => {
@@ -32,5 +33,12 @@ describe("macroSectionHref", () => {
     for (const section of Object.keys(MACRO_SECTIONS) as MacroSection[]) {
       expect(macroSectionHref(section)).toBe(`/macro#${MACRO_SECTIONS[section]}`);
     }
+  });
+});
+
+describe("macroPath", () => {
+  it("절 조각 없는 매크로 화면 경로 — 다른 화면이 매크로로 잇는 링크(QA-641)", () => {
+    expect(macroPath()).toBe("/macro");
+    expect(macroSectionHref("risk").startsWith(`${macroPath()}#`)).toBe(true);
   });
 });

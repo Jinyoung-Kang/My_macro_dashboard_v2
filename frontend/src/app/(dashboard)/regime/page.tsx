@@ -9,7 +9,7 @@ import { useApi } from "@/hooks/useApi";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY, withMinusSign } from "@/lib/format";
 import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
-import { macroSectionHref } from "@/lib/marketSections";
+import { macroPath } from "@/lib/marketSections";
 import { regimeBandLabel } from "@/lib/regime";
 import { SOURCES } from "@/lib/sources";
 import type { RegimeResponse } from "@/lib/types";
@@ -51,11 +51,12 @@ const KIND = { label: "국면 판정", icon: ScaleIcon };
 
 /**
  * 연결 — 판정에 쓴 지표가 있는 화면·절. 신호마다의 지표 상세(/markets/i/…)는 매크로 카드 키로만 있어 신호 id(curve·nfci·hyOas·liquidity)와 맞지
- * 않으므로, 그 지표의 차트가 있는 매크로 절(lib/marketSections 정본)과 순유동성 화면으로 잇습니다. 링크 글에 어느 화면·절인지 적습니다.
+ * 않으므로, 그 지표의 차트가 있는 매크로 화면(lib/marketSections 정본)과 순유동성 화면으로 잇습니다. 링크 글에 어느 화면·절인지 적습니다.
+ * 매크로 링크는 절 조각 없이 화면 맨 위로 갑니다 — 자료가 온 뒤 위 절들이 자라 해시 스크롤이 그 절에 머물지 않았습니다(QA-641). 절은 그 화면의 목차로 옮깁니다.
  */
 const LINKS = [
-  { label: "장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", href: macroSectionHref("advanced") },
-  { label: "하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", href: macroSectionHref("risk") },
+  { label: "장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", href: macroPath() },
+  { label: "하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", href: macroPath() },
   { label: "연준 순유동성 4주 변화 — 순유동성 화면", href: "/liquidity" },
 ];
 
@@ -245,7 +246,7 @@ export default function RegimePage() {
             <Panel title="연결">
               <ul className="flex flex-col lg:gap-1.5">
                 {LINKS.map((link) => (
-                  <li key={link.href} className="min-w-0">
+                  <li key={link.label} className="min-w-0">
                     <Link href={link.href} className={`${LINK_CLASSES} break-keep text-sm wrap-anywhere`}>
                       {link.label}
                     </Link>
