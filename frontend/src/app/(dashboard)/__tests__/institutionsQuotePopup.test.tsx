@@ -706,3 +706,58 @@ describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커�
     expect(moves).toEqual([input]);
   });
 });
+
+// QA-691: 공용 시세 창 본문(StockQuickBody — 13F 티커 줄·모의 매매 보유 표 등의 종목 팝업, 후보 창의 고른 뒤 본문)에 줄바꿈 규칙이 없어 word-break가
+// 기본(normal)이었습니다. 기업 설명·보조 줄·출처 줄의 한국어가 음절 사이에서 꺾였고(QA 스택 qa@2d111589 /institutions 티커 줄 — 합성 기업 설명 340~1000px
+// 31폭·1024~1920px 6폭 모두 '가상의 부품|과' 꼴, 보조 줄 430·출처 줄 340), 공백 없는 긴 이름(합성 75자)이면 창이 가로로 스크롤됐습니다(390 602px·768~1440
+// 288px). 후보 창의 고른 뒤 본문은 QA-681 고침이 바깥(PickBody)에 건 규칙을 상속해 꺾이지 않았습니다(대조). 운영본 D2(a5cdae2f)부터 있던 것을 13F 티커 줄
+// 입구(사용자 요청 2026-11-18)가 /institutions에도 드러냈습니다. 이름 줄은 창의 닫기 단추와 같은 줄이라, 줄바꿈만 고치면 긴 이름의 첫 줄이 닫기 단추와
+// 겹쳤습니다(390 17px·1440 12px — 대화상자 제목의 pr-10과 같은 자리가 필요). jsdom은 배치를 재지 못해 클래스 구조(QA-681과 같은 inChain 꼴)를 봅니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 글에서 대화상자까지 어디에도 break-keep이 없었고 이름 줄에 pr-10이 없었습니다.
+describe("QA-691 시세 창 본문의 한국어 글은 낱말 사이에서만 줄을 바꾸고, 이름 줄은 닫기 단추 자리를 비운다", () => {
+  const LONG_NAME = "SUPERCALIFRAGILISTICEXPIALIDOCIOUSSYNTHETICHOLDINGSCORPORATIONINTERNATIONAL";
+  const SUMMARY = "합성 지주 회사는 화면 확인용으로 지어낸 가상의 회사이며 실제 회사와 관계가 없습니다. 가상의 부품과 서비스를 만들어 여러 나라에 판다고 가정합니다.";
+  const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+  function chainTo(element: Element, stop: Element): Element[] {
+    const chain: Element[] = [];
+    for (let node: Element | null = element; node && stop.contains(node); node = node.parentElement) chain.push(node);
+    return chain;
+  }
+  const inChain = (chain: Element[], words: string[]) => chain.some((node) => classes(node).some((word) => words.includes(word)));
+  const looseTexts = (elements: Element[], dialog: Element) =>
+    elements
+      .filter((element) => {
+        const chain = chainTo(element, dialog);
+        return !(inChain(chain, ["break-keep"]) && inChain(chain, ["wrap-break-word", "wrap-anywhere"]));
+      })
+      .map((element) => element.textContent);
+
+  it.fails("13F 티커 줄의 시세 창 — 이름·보조 줄·업종·기업 설명·출처 줄·시세 머리가 break-keep과 wrap-break-word 안, 이름 줄은 pr-10", async () => {
+    reads[endpoints.detail.quote("us", "BRK-B")] = {
+      available: true,
+      quote: {
+        ...quote("BRK-B", LONG_NAME),
+        profile: {
+          sector: "Financial Services", industry: "Insurance—Diversified", country: "United States", website: null, employees: null,
+          summary: null, summaryKo: SUMMARY, industryKo: "다각화 보험", koSource: { label: "합성 개요 출처", url: "https://profile.example/x" },
+        },
+      },
+    };
+    render(<InstitutionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "BERKSHIRE HATHAWAY INC DEL 시세 창 열기" }));
+    const dialog = await screen.findByRole("dialog", { name: "BRK-B" });
+    const name = await within(dialog).findByText(LONG_NAME, { selector: "p" });
+    const texts = [
+      name,
+      within(dialog).getByText("BRK-B · NYSEArca · 주식 · USD"),
+      within(dialog).getByText(/다각화 보험$/),
+      within(dialog).getByText(SUMMARY),
+      within(dialog).getByText(/^출처 합성 개요 출처 · 전체 개요는 상세 화면$/),
+      within(dialog).getByRole("heading", { name: `${LONG_NAME} 시세` }),
+    ];
+    // 결함을 직접 보는 단언(수정 전에는 여기서 실패 — 여섯 글 모두 규칙 없음).
+    expect(looseTexts(texts, dialog)).toEqual([]);
+    // 이름 줄은 닫기 단추(오른쪽 위 — 대화상자 제목의 pr-10과 같은 자리)와 겹치지 않게 오른쪽을 비운다.
+    expect(classes(name)).toContain("pr-10");
+  });
+});
