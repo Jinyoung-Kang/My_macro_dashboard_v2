@@ -27,7 +27,7 @@ function chainHas(element: Element, stop: Element, cls: string): boolean {
 
 describe("QA-664 검토 — 공용 오류 상자의 메시지는 한글 낱말 사이에서만 줄바꿈", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 메시지에서 상자까지 break-keep·wrap-break-word가 없었습니다(['break-keep', 'wrap-break-word'] 모두 빠짐).
-  it.fails("메시지 글에서 상자까지 break-keep과 wrap-break-word가 있고, wrap-anywhere·break-all은 없다", () => {
+  it("메시지 글에서 상자까지 break-keep과 wrap-break-word가 있고, wrap-anywhere·break-all은 없다", () => {
     const { container } = render(<ErrorState message="지표 목록을 읽지 못했습니다 — 요청 실패 (HTTP 503)" onRetry={() => {}} />);
     const box = container.firstElementChild as HTMLElement;
     const text = screen.getByText("지표 목록을 읽지 못했습니다 — 요청 실패 (HTTP 503)");

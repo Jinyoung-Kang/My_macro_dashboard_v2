@@ -381,7 +381,11 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
     <div className="rounded-control border border-danger/30 bg-danger-tint p-3 text-sm text-danger">
       <p className="flex items-start gap-2">
         <XCircleIcon size={16} className="mt-0.5" />
-        <span className="min-w-0">{message}</span>
+        {/*
+          한글은 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(break-keep wrap-break-word — 공용 글 부품 규약 QA-568, 출처 줄·배지와 같음).
+          좁은 칸(상관 화면 15rem 왼쪽 칸의 목록 오류 상자 206px)에서 '읽지 못했습|니다'처럼 음절 사이가 갈렸습니다(QA-664 검토).
+        */}
+        <span className="min-w-0 break-keep wrap-break-word">{message}</span>
       </p>
       {onRetry && (
         <button type="button" onClick={onRetry} className={`mt-2 ${buttonClasses("default", "sm")}`}>
