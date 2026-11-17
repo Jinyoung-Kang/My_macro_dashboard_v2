@@ -381,7 +381,9 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
 
   // 2026-11-18 검토 지적: 고른 날을 지키는 조건(새 자료에 그날이 있는가)을 지워도 앞 시험이 모두 통과했습니다 — 그러면 지난날을 고른 채 두었다가 창이 하루
   // 밀린 새 자료가 오면 띠와 표가 통째로 사라지고 '보통 이상인 일정이 없습니다'가 떴습니다(다시 고를 탭도 없음).
-  it("고른 날은 새 자료에서도 지키고, 새 자료에서 사라지면 같은 규칙(오늘·오늘 뒤 첫 날)으로 다시 고른다", async () => {
+  // QA-684(11-18 요청 QA 스택 확인): 사라진 날의 고름은 그리기 때 대신 고를 날만 셈하고 상태에 남아, 그날이 다음 읽기에 다시 오면 입력 없이 띠·표가 옛 날로
+  // 돌아갔습니다(셋째 단계). 수정 전(재현 커밋에서는 it.fails) 셋째 단계에서 11/5 탭이 다시 골라졌습니다.
+  it.fails("고른 날은 새 자료에서도 지키고, 새 자료에서 사라지면 같은 규칙(오늘·오늘 뒤 첫 날)으로 다시 고르며, 사라졌던 날이 다시 와도 되살리지 않는다", async () => {
     at("2026-11-12T03:00:00Z"); // 11-12 KST — 일정이 있는 날
     mockCalendar(CALENDAR);
     const { rerender } = render(<EconCalendarSection />);
@@ -407,6 +409,16 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     expect(screen.getByRole("tablist", { name: "경제 캘린더 날짜" })).toBeTruthy();
     expect(within(screen.getByRole("tabpanel")).getByText("Inflation Rate YoY")).toBeTruthy();
     expect(screen.queryByText(/일정이 없습니다/)).toBeNull();
+
+    // 사라졌던 11/5가 다음 읽기에 다시 옴(창이 되돌아간 수집본 등) — 입력이 없었으니 오늘(11/12) 그대로, 옛 고름(11/5)을 되살리지 않음.
+    mockCalendar(CALENDAR);
+    signal.token = 3;
+    rerender(<EconCalendarSection />);
+    await waitFor(() => expect(screen.getByRole("tab", { name: "11/5 (목) 1건" })).toBeTruthy());
+    expect(screen.getByRole("tab", { name: "11/5 (목) 1건" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(screen.getByRole("tabpanel")).getByText("Inflation Rate YoY")).toBeTruthy();
+    expect(screen.queryByText("Initial Jobless Claims")).toBeNull();
   });
 
   // 2026-11-18 검토 지적: 이 카드는 매크로 화면의 마지막 절이라, 일정이 적은 날로 바꿔 문서가 짧아지면 맨 아래까지 내린 스크롤이 눌려 방금 누른 날짜 띠가
