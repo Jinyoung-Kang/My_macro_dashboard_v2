@@ -85,6 +85,28 @@ class InfoTranslatorUnsavedTest {
     }
 
     @Test
+    @DisplayName("모델 응답이 JSON 형식 밖이면 실패로 두고, 로그에는 예외 종류만 — 읽지 못한 글(번역 앞부분)을 남기지 않는다")
+    void parseFailureLogsNoText() {
+        String token = "Bodytextsecretparagraphwordsfromthearticlebody";
+        when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt()))
+                .thenReturn(new AiService.StructuredResult(true, token + " 와 한국어 번역 문장", "end_turn", null, null, true, 10L, 10L, null, null, 5L));
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(InfoTranslator.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender = new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            InfoTranslator.UnsavedBody out = translator(1_000_000).bodyUnsaved(ENGLISH);
+
+            assertThat(out.ok()).isFalse();
+            assertThat(appender.list).isNotEmpty();
+            assertThat(appender.list).allSatisfy(event -> assertThat(event.getFormattedMessage()).doesNotContain(token));
+            assertThat(appender.list).anySatisfy(event -> assertThat(event.getFormattedMessage()).contains("번역 응답을 읽지 못함"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
     @DisplayName("같은 조각은 24시간 다시 부르지 않고(cached), 지나면 다시 번역한다")
     void sameChunkIsReusedFor24Hours() {
         when(ai.structured(anyString(), anyString(), anyString(), any(), anyString(), anyInt())).thenReturn(ok("번역"));

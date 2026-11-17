@@ -310,7 +310,9 @@ public class InfoTranslator {
             }
             return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답에 쓸 번역이 없습니다"), model, null);
         } catch (RuntimeException e) {
-            log.warn("번역 응답을 읽지 못함({}): {}", model, e.toString());
+            // 예외 종류만 남깁니다 — JSON 파서의 예외 글에는 읽지 못한 첫 토큰(번역한 글의 앞부분, 최대 수백 자)이 그대로 들어 있어, 저장하지 않는
+            // 본문 번역(bodyUnsaved)의 글이 로그에 남을 수 있었습니다.
+            log.warn("번역 응답을 읽지 못함({}): {}", model, e.getClass().getSimpleName());
             return new Called<>(GeminiClient.Reply.failed(PARSE, "번역 응답을 읽지 못했습니다"), model, null);
         }
     }
@@ -483,7 +485,7 @@ public class InfoTranslator {
                     Thread.currentThread().interrupt();
                     error = "번역이 중단됐습니다";
                 } catch (java.util.concurrent.ExecutionException e) {
-                    log.warn("본문 번역 조각 실패: {}", String.valueOf(e.getCause()));
+                    log.warn("본문 번역 조각 실패: {}", e.getCause() == null ? "?" : e.getCause().getClass().getSimpleName());
                     error = error == null ? "번역 중 오류가 났습니다" : error;
                 }
             }
@@ -556,7 +558,8 @@ public class InfoTranslator {
                     Thread.currentThread().interrupt();
                     error = "번역이 중단됐습니다";
                 } catch (java.util.concurrent.ExecutionException e) {
-                    log.warn("본문 번역 조각 실패(저장하지 않는 길): {}", String.valueOf(e.getCause()));
+                    Throwable cause = e.getCause();
+                    log.warn("본문 번역 조각 실패(저장하지 않는 길): {}", cause == null ? "?" : cause.getClass().getSimpleName());
                     error = error == null ? "번역 중 오류가 났습니다" : error;
                 }
             }
