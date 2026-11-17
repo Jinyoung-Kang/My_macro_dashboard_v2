@@ -52,7 +52,6 @@ export function ArticleDialog({ entry, onClose }: { entry: ArticleEntry | null; 
 /** 한국어는 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰(주소 등)만 칸 안에서 꺾습니다(공용 글 부품 규약 QA-568·QA-664). */
 const KEEP = "break-keep wrap-break-word";
 
-
 function ArticleBody({ entry }: { entry: ArticleEntry }) {
   const { phase, response, failure, retryLocked, reload } = useArticleBody(entry.ref);
   // 번역 단계의 알림(번역 중·했음·못 함) — 있으면 단계 알림 대신 상태 줄에 둡니다. 다시 받으면 지웁니다.
