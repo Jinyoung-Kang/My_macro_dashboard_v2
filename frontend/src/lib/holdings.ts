@@ -54,3 +54,13 @@ export function tickerNoteWarning(note: string | null | undefined): string | nul
   if (code === "non_common") return "이 줄은 보통주가 아닌 증권(우선주·워런트 등)이라 아래 종목(보통주)의 주가와 값이 다릅니다.";
   return `수집기가 일부러 티커를 붙이지 않은 줄입니다(${code}) — 아래 종목의 주가와 값이 다를 수 있습니다.`;
 }
+
+/**
+ * 수집기 티커가 같은 회사의 다른 클래스일 수 있는 13F 보유(포트폴리오 응답의 tickerIsProxy)의 경고 글. 수집기 이름 매핑표의 티커는 회사 단위라
+ * (클래스를 합침) A주 줄에 B주 티커가 붙기도 하고 클래스가 다르면 주가도 크게 다를 수 있어, 그 시세를 바로 열지 않고 후보에서 고르게 한다는 것을 알립니다.
+ * 클래스 표기가 비면 '—'.
+ */
+export function tickerProxyWarning(ticker: string, cls: string | null | undefined): string {
+  const shown = (cls ?? "").trim() || EMPTY;
+  return `수집기 이름 매핑표가 붙인 티커(${ticker.trim()})는 회사 단위(클래스를 합침)라 이 줄의 클래스(${shown})와 같은 증권인지 확인되지 않아 바로 열지 않습니다 — 클래스가 다르면 주가도 다릅니다. 아래 후보에서 이 줄의 클래스를 고르세요.`;
+}

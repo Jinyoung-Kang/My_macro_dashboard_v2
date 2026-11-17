@@ -8,7 +8,7 @@ import { useApi } from "@/hooks/useApi";
 import { kindText, SYMBOL_QUERY_MAX, symbolQuery } from "@/lib/detail";
 import { endpoints } from "@/lib/endpoints";
 import { EMPTY } from "@/lib/format";
-import { tickerNoteWarning } from "@/lib/holdings";
+import { tickerNoteWarning, tickerProxyWarning } from "@/lib/holdings";
 import type { DetailSymbol, DetailSymbolsResponse } from "@/lib/types";
 import { StockQuickBody } from "./StockQuickView";
 
@@ -16,7 +16,8 @@ import { StockQuickBody } from "./StockQuickView";
  * 티커 없는 13F 보유 줄의 종목 팝업 창(사용자 요청·결정 2026-11-18 '후보 고르기'). 13F 공시에는 티커가 없고 수집기의 이름 매핑표에 없는 이름은
  * 티커가 비어 있어, 같은 창에서 공시 이름으로 종목 후보를 찾고(GET /api/detail/symbols — 통합 검색과 같은 Yahoo·네이버 자동완성) 사용자가 하나를
  * 고르면 그 종목의 시세 본문({@link StockQuickBody})을 보입니다. <b>첫 후보를 자동으로 고르지 않습니다</b> — 이름이 비슷한 다른 종목의 주가가 그 보유의
- * 값처럼 보이면 안 됩니다. 수집기가 일부러 티커를 뺀 줄(채권·보통주 아닌 증권 — tickerNote)은 고른 종목의 주가와 값이 다르다고 경고합니다.
+ * 값처럼 보이면 안 됩니다. 수집기가 일부러 티커를 뺀 줄(채권·보통주 아닌 증권 — tickerNote)은 고른 종목의 주가와 값이 다르다고, 수집기 티커가 같은
+ * 회사의 다른 클래스일 수 있는 줄(proxyTicker — 백엔드 tickerIsProxy)은 그 티커를 바로 열지 않는 까닭을 경고합니다.
  * 열려 있을 때만 후보를 찾고, 고른 종목의 시세·실시간 연결도 그 본문이 보이는 동안만입니다(닫거나 '후보 다시 고르기'면 닫힘).
  */
 export function StockPickQuickView({
@@ -24,6 +25,7 @@ export function StockPickQuickView({
   cusip,
   cls,
   tickerNote,
+  proxyTicker,
   trigger,
 }: {
   /** 13F 공시 이름(nameOfIssuer) — 창 제목이자 처음 검색어. */
@@ -32,10 +34,16 @@ export function StockPickQuickView({
   cls?: string | null;
   /** 수집기가 일부러 티커를 붙이지 않은 까닭(debt·non_common). 없으면 null. */
   tickerNote?: string | null;
+  /** 같은 회사의 다른 클래스일 수 있어 바로 열지 않은 수집기 티커(백엔드 tickerIsProxy). 없으면 null. */
+  proxyTicker?: string | null;
   trigger: ReactElement;
 }) {
   const [open, setOpen] = useState(false);
   const title = name.trim();
+  const warnings = [
+    proxyTicker?.trim() ? tickerProxyWarning(proxyTicker, cls) : null,
+    tickerNoteWarning(tickerNote),
+  ].filter((text): text is string => text !== null);
   return (
     <Dialog
       open={open}
@@ -47,7 +55,7 @@ export function StockPickQuickView({
       trigger={trigger}
       size="lg"
     >
-      {open && <PickBody name={title} tickerNote={tickerNote ?? null} />}
+      {open && <PickBody name={title} warnings={warnings} />}
     </Dialog>
   );
 }
@@ -55,13 +63,12 @@ export function StockPickQuickView({
 /** 후보 단추를 가리키는 표지 — '후보 다시 고르기' 뒤에 고른 후보로 포커스를 돌려줄 때 찾습니다. */
 const symbolKey = (symbol: Pick<DetailSymbol, "market" | "code">) => `${symbol.market}:${symbol.code}`;
 
-function PickBody({ name, tickerNote }: { name: string; tickerNote: string | null }) {
+function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
   const initial = symbolQuery(name);
   const [draft, setDraft] = useState(initial ?? "");
   const [query, setQuery] = useState<string | null>(initial);
   const [picked, setPicked] = useState<DetailSymbol | null>(null);
   const symbols = useApi<DetailSymbolsResponse>(query ? endpoints.detail.symbols(query) : null);
-  const warning = tickerNoteWarning(tickerNote);
   const inputId = useId();
   const listLabelId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -100,7 +107,11 @@ function PickBody({ name, tickerNote }: { name: string; tickerNote: string | nul
 
   return (
     <div className="mt-4 flex min-w-0 flex-col gap-4">
-      {warning ? <Callout tone="warn">{warning}</Callout> : null}
+      {warnings.map((text) => (
+        <Callout key={text} tone="warn">
+          {text}
+        </Callout>
+      ))}
       {picked ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">

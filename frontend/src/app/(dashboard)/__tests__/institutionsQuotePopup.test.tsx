@@ -3,6 +3,7 @@
  *  - 티커 있는 줄: 이름 단추가 기존 종목 팝업(StockQuickView)을 열고 시세는 us/티커로 읽는다(종목 찾기를 부르지 않음)
  *  - 티커 없는 줄: 같은 창에서 공시 이름으로 찾은 후보(GET /api/detail/symbols)를 보이고 자동으로 고르지 않는다 — 고르면 같은 창에 시세 본문,
  *    '후보 다시 고르기'로 되돌아감, 실시간 시세는 본문이 보이는 동안만
+ *  - 수집기 티커가 같은 회사의 다른 클래스일 수 있는 줄(tickerIsProxy — BRK CL A의 BRK-B)은 그 티커를 바로 열지 않고 후보 고르기, 까닭을 경고
  *  - 수집기가 일부러 티커를 뺀 줄(채권·보통주 아닌 증권)은 경고 줄
  *  - 후보 상태: 맞는 후보 없음·종목 찾기를 쓸 수 없음(available:false)·읽기 실패·출처 실패는 각각 그 사실, 다시 시도
  *  - 검색어는 공시 이름을 40자 안에서 낱말 경계로 자른 것이고 고칠 수 있다
@@ -78,7 +79,7 @@ function portfolio(holdings: Holding[]): PortfolioResponse {
 }
 
 const HOLDINGS: Holding[] = [
-  row({ name: "BERKSHIRE HATHAWAY INC DEL", cusip: "084670702", class: "CL B NEW", value: 500, ticker: "BRK-B", tickerNote: null }),
+  row({ name: "BERKSHIRE HATHAWAY INC DEL", cusip: "084670702", class: "CL B NEW", value: 500, ticker: "BRK-B", tickerNote: null, tickerIsProxy: false }),
   row({ name: "ISHARES TR", cusip: "464287200", class: "CORE S&P500 ETF", value: 300, ticker: null, tickerNote: null }),
   row({ name: "FICTIONAL MOTOR CO", cusip: "999999ZZ1", class: "NOTE 2.500% 3/1", value: 200, shares: null, ticker: null, tickerNote: "debt" }),
   row({ name: "FICTIONAL BANK CORP", cusip: "999998804", class: "PERP PFD CNV A", value: 100, ticker: null, tickerNote: "non_common" }),
@@ -188,6 +189,33 @@ describe("13F 보유 표의 종목 이름 → 종목 팝업", () => {
     await within(dialog).findByRole("list", { name: /종목 후보 1건/ });
     expect(quoteRequests()).toEqual([]);
     expect(within(dialog).queryByRole("button", { name: "후보 다시 고르기" })).toBeNull();
+  });
+
+  it("수집기 티커가 같은 회사의 다른 클래스일 수 있는 줄(tickerIsProxy)은 그 시세를 바로 열지 않고 후보 고르기 — 까닭을 경고한다", async () => {
+    reads[endpoints.institution.portfolio(CIK, "8", "30")] = portfolio([
+      row({ name: "BERKSHIRE HATHAWAY INC DEL", cusip: "084670108", class: "CL A", value: 7000, shares: 10, ticker: "BRK-B", tickerNote: null, tickerIsProxy: true }),
+      row({ name: "ALPHABET INC", cusip: "02079K107", class: "CAP STK CL C", value: 3000, ticker: "GOOGL", tickerNote: null, tickerIsProxy: true }),
+    ]);
+    reads[endpoints.detail.symbols("BERKSHIRE HATHAWAY INC DEL")] = {
+      available: true,
+      symbols: { items: [symbol("BRK-A", "Berkshire Hathaway Inc.", { kind: "EQUITY", exchange: "NYSE" }), symbol("BRK-B", "Berkshire Hathaway Inc. New", { kind: "EQUITY", exchange: "NYSE" })], errors: {}, error: null },
+    };
+    reads[endpoints.detail.quote("us", "BRK-A")] = { available: true, quote: quote("BRK-A", "Berkshire Hathaway Inc.") };
+    render(<InstitutionsPage />);
+
+    expect(await screen.findByRole("button", { name: "ALPHABET INC 종목 후보 창 열기" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "BERKSHIRE HATHAWAY INC DEL 종목 후보 창 열기" }));
+    const dialog = await screen.findByRole("dialog", { name: "BERKSHIRE HATHAWAY INC DEL" });
+    const warning =
+      "수집기 이름 매핑표가 붙인 티커(BRK-B)는 회사 단위(클래스를 합침)라 이 줄의 클래스(CL A)와 같은 증권인지 확인되지 않아 바로 열지 않습니다 — 클래스가 다르면 주가도 다릅니다. 아래 후보에서 이 줄의 클래스를 고르세요.";
+    expect(within(dialog).getByText(warning)).toBeTruthy();
+    const list = await within(dialog).findByRole("list", { name: /종목 후보 2건/ });
+    expect(quoteRequests()).toEqual([]);   // 수집기 티커(BRK-B)도, 첫 후보도 자동으로 열지 않음
+    expect(symbolRequests()).toEqual([endpoints.detail.symbols("BERKSHIRE HATHAWAY INC DEL")]);
+
+    fireEvent.click(within(list).getByRole("button", { name: /^Berkshire Hathaway Inc\. BRK-A/ }));
+    await waitFor(() => expect(quoteRequests()).toEqual([endpoints.detail.quote("us", "BRK-A")]));
+    expect(within(dialog).getByText(warning)).toBeTruthy();
   });
 
   it("채권 줄과 보통주 아닌 증권 줄은 고른 종목의 주가와 값이 다르다고 경고한다 — 후보 목록과 시세 본문 모두에서", async () => {

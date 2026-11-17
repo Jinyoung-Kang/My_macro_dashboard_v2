@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { filerName, filerShortName, holdingActionView, tickerNoteWarning } from "@/lib/holdings";
+import { filerName, filerShortName, holdingActionView, tickerNoteWarning, tickerProxyWarning } from "@/lib/holdings";
 
 describe("holdingActionView", () => {
   it("예전 문구(앞 그림 문자)와 새 문구(기호 없음)가 같은 글·종류", () => {
@@ -57,3 +57,15 @@ describe("tickerNoteWarning — 수집기가 일부러 티커를 뺀 13F 보유�
   });
 });
 
+describe("tickerProxyWarning — 수집기 티커가 같은 회사의 다른 클래스일 수 있는 13F 보유의 경고", () => {
+  it("티커와 줄의 클래스를 적고 바로 열지 않는 까닭을 말한다", () => {
+    expect(tickerProxyWarning("BRK-B", "CL A")).toBe(
+      "수집기 이름 매핑표가 붙인 티커(BRK-B)는 회사 단위(클래스를 합침)라 이 줄의 클래스(CL A)와 같은 증권인지 확인되지 않아 바로 열지 않습니다 — 클래스가 다르면 주가도 다릅니다. 아래 후보에서 이 줄의 클래스를 고르세요.",
+    );
+  });
+
+  it("클래스 표기가 비면 '—'", () => {
+    expect(tickerProxyWarning(" GOOGL ", "  ")).toContain("티커(GOOGL)는 회사 단위(클래스를 합침)라 이 줄의 클래스(—)와");
+    expect(tickerProxyWarning("GOOGL", null)).toContain("이 줄의 클래스(—)와");
+  });
+});
