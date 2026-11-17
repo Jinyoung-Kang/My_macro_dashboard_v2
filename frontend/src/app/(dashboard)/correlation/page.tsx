@@ -176,8 +176,11 @@ export default function CorrelationPage() {
               {/*
                 계열 목록을 읽지 못하면 지표 X·Y 고르기는 선택지 없는 빈 상자입니다 — 까닭과 목록만 다시 읽는 단추를 고르기 아래에 둡니다(QA-664).
                 고르기는 막지 않고(disabled 아님), 가운데 상관 오류 상자의 다시 시도와 묶지 않습니다(상자마다 자기 다시 시도).
+                실패 뒤 다시 읽는 동안(useApi가 error를 비우고 failedAt을 남김)은 상자 자리에 '불러오는 중' 한 줄 — 비워 두면 lg 미만에서 결과가 상자 높이만큼
+                올라갔다가 다시 실패하면 내려왔습니다(QA-655와 같은 꼴). 처음 읽는 동안은 두지 않습니다(고르기가 빈 채 잠깐뿐 — 그 전과 같음).
               */}
               {catalog.error && <ErrorState message={`지표 목록을 읽지 못했습니다 — ${catalog.error}`} onRetry={catalog.reload} />}
+              {catalog.loading && !catalog.data && catalog.failedAt !== null && <Loading label="지표 목록을 다시 읽는 중…" />}
             </div>
           </Panel>
         }
