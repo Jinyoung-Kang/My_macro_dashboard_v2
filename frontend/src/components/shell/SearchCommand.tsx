@@ -21,6 +21,7 @@ import {
   recentSummary,
   type PaletteCommand,
 } from "@/lib/palette";
+import { isMacPlatform } from "@/lib/platform";
 import { isWideShell, onShellCommand, sendShellCommand, type ShellCommand } from "@/lib/shellCommands";
 import type { ShortcutConditions } from "@/lib/shortcuts";
 import {
@@ -42,9 +43,9 @@ import type { DetailSymbolsResponse, MacroOverview, SessionUser, StockUniverseRe
 import { SearchIcon, TabIcon } from "./icons";
 import { ShortcutHelp, shortcutConditionsNow } from "./ShortcutHelp";
 
-// 맥이면 ⌘K, 아니면 Ctrl K. 서버 렌더·하이드레이션 첫 그림은 Ctrl로 같게 그립니다(값은 브라우저에만 있음).
+// 맥이면 ⌘K, 아니면 Ctrl K(판별은 lib/platform — 같은 화면 닻 링크의 Meta 누름과 같은 식). 서버 렌더·하이드레이션 첫 그림은 Ctrl로 같게 그립니다(값은
+// 브라우저에만 있음).
 const noSubscribe = () => () => {};
-const isMacPlatform = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 const isMacServer = () => false;
 
 /** 외부 종목 찾기(GET /api/detail/symbols)를 부르기 전 기다리는 시간과 최소 글자 수 — 글자를 칠 때마다 외부 검색을 부르지 않게. */

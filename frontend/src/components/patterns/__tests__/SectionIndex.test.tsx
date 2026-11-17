@@ -748,8 +748,8 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
   // 추정). followHashLink가 Meta를 플랫폼과 상관없이
   // 브라우저에 맡겨 이 수식키로 QA-680이 남았습니다. 결정(2026-11-18, 사용자 위임 — 권장안 방법 1): Meta는 애플 플랫폼(⌘+누름 = 새 탭)에서만 맡기고
   // 그 밖에서는 수식키 없는 누름처럼 맡습니다. 판별은 셸 검색 단축키(⌘K·Ctrl K)와 같은 식(lib/platform isMacPlatform). 수정 전(재현 커밋에서는 it.fails)에는
-  // 막지 않았습니다(defaultPrevented false, pushState 없음).
-  it.fails("맥이 아닌 곳(리눅스·윈도)의 Meta 누름은 수식키 없는 누름처럼 맡는다 — 기본 동작을 막고 pushState 한 번, 그 닻으로", () => {
+  // 막지 않았습니다(defaultPrevented false, pushState 없음). 고침: followHashLink가 Meta를 isMacPlatform()일 때만 브라우저에 맡김.
+  it("맥이 아닌 곳(리눅스·윈도)의 Meta 누름은 수식키 없는 누름처럼 맡는다 — 기본 동작을 막고 pushState 한 번, 그 닻으로", () => {
     const clicks = watchClicks();
     const push = vi.spyOn(window.history, "pushState");
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});

@@ -74,6 +74,8 @@ const ALLOWED_IMPORTS = new Set([
   "@/lib/endpoints",
   "@/lib/nav",
   "@/lib/palette",
+  // 맥 판별(navigator만 읽음 — QA-689에서 SearchCommand의 것을 옮김, 같은 화면 닻 링크와 함께 씀).
+  "@/lib/platform",
   "@/lib/search",
   "@/lib/shellCommands",
   "@/lib/shortcuts",
