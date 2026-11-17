@@ -326,10 +326,11 @@ describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크�
     renderIndex({ columnFrom: "xl" });
     expect(screen.getByRole("navigation", { name: "매크로 지표 목차" }).getAttribute("data-section-index-bar")).toBe("xl");
     const css = readFileSync(resolve(__dirname, "../../../app/globals.css"), "utf8");
-    expect(css).toMatch(/@media \(width < 64rem\) \{\s*html:has\(\[data-section-index-bar\]\) \{\s*scroll-padding-top: 45px;/);
-    expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: 31px;/);
+    // 높이는 잰 줄 높이(--section-strip-h — QA-656), 재기 전에는 기본 45·31px.
+    expect(css).toMatch(/@media \(width < 64rem\) \{\s*html:has\(\[data-section-index-bar\]\) \{\s*scroll-padding-top: var\(--section-strip-h, 45px\);/);
+    expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: var\(--section-strip-h, 31px\);/);
     // 2xl(결정 7 — 매크로): 가로 줄이 lg~2xl(1024~1535)에 보이므로 그 폭 전체에 같은 여백.
-    expect(css).toMatch(/@media \(64rem <= width < 96rem\) \{\s*#main:has\(\[data-section-index-bar="2xl"\]\) \{\s*scroll-padding-top: 31px;/);
+    expect(css).toMatch(/@media \(64rem <= width < 96rem\) \{\s*#main:has\(\[data-section-index-bar="2xl"\]\) \{\s*scroll-padding-top: var\(--section-strip-h, 31px\);/);
   });
 });
 
@@ -338,7 +339,7 @@ describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크�
 // 이제 목차가 가로 줄의 잰 높이(offsetHeight — 아래 선·가로 막대 포함)를 문서 루트의 --section-strip-h로 적고, 전역 규칙이 그 값을 씁니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 변수를 적지 않아 ''이었습니다. jsdom은 배치를 하지 않아 줄 높이와 ResizeObserver를 대역으로 줍니다.
 describe("QA-656 가로 줄의 잰 높이를 문서 루트 --section-strip-h로 적는다", () => {
-  it.fails("줄 높이가 41px(가로 막대가 섬)이 되어 ResizeObserver가 울리면 '41px', 화면을 떠나면 지운다", () => {
+  it("줄 높이가 41px(가로 막대가 섬)이 되어 ResizeObserver가 울리면 '41px', 화면을 떠나면 지운다", () => {
     let callback: () => void = () => {};
     vi.stubGlobal(
       "ResizeObserver",

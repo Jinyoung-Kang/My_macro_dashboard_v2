@@ -5,6 +5,7 @@ import { useRef, type JSX, type ReactNode } from "react";
 import { FOCUS_RING, SKELETON_BAR, underlineTabClasses } from "@/components/ui/classes";
 import { useScrollStripActive } from "@/hooks/useScrollStripActive";
 import { useSectionSpy } from "@/hooks/useSectionSpy";
+import { useSectionStripHeight } from "@/hooks/useSectionStripHeight";
 import { sectionCountText, sectionOrder, sectionParent, type SectionIndexItem, type SectionIndexLeaf } from "@/lib/sectionIndex";
 
 export type { SectionIndexItem, SectionIndexLeaf };
@@ -48,8 +49,8 @@ const COLUMN: Record<ColumnFrom, string> = {
 };
 
 /**
- * 절 닻 — 가로 줄이 보이는 폭(columnFrom 미만)은 스크롤 상자의 위쪽 여백(globals.css — 줄 높이 45·31px, QA-643) 위에 줄 아래 간격 12px만 더하고,
- * 세로 목록 폭에서는 16px. 그래서 목차로 옮긴 절 머리는 줄 바로 아래 12px에 옵니다(390 57px·1024 #main 위 43px).
+ * 절 닻 — 가로 줄이 보이는 폭(columnFrom 미만)은 스크롤 상자의 위쪽 여백(globals.css — 잰 줄 높이(기본 45·31px, 고전 가로 막대가 서면 +10px), QA-643·
+ * QA-656) 위에 줄 아래 간격 12px만 더하고, 세로 목록 폭에서는 16px. 그래서 목차로 옮긴 절 머리는 줄 바로 아래 12px에 옵니다(390 57px·1024 #main 위 43px).
  */
 const ANCHOR: Record<ColumnFrom, string> = {
   lg: "min-w-0 scroll-mt-3 lg:scroll-mt-4",
@@ -169,6 +170,8 @@ export function SectionIndex({
   const activeTop = openParent ?? (items.some((item) => item.id === active) ? active : null);
   const stripRef = useRef<HTMLUListElement>(null);
   useScrollStripActive(stripRef, activeTop);
+  // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백이 읽음 — QA-656).
+  useSectionStripHeight(stripRef, items.map((item) => item.id).join("\n"));
 
   const body = <div className="flex min-w-0 flex-col gap-4 lg:gap-6">{children}</div>;
   if (items.length === 0) {
@@ -176,7 +179,7 @@ export function SectionIndex({
   }
   return (
     <div className={FRAME[columnFrom]}>
-      {/* data-section-index-bar — 가로 줄이 보이는 폭의 스크롤 상자에 줄 높이만큼 위쪽 스크롤 여백을 두는 전역 규칙(globals.css, QA-643)의 표지. */}
+      {/* data-section-index-bar — 가로 줄이 보이는 폭의 스크롤 상자에 줄 높이(잰 값 --section-strip-h — QA-656)만큼 위쪽 스크롤 여백을 두는 전역 규칙(globals.css, QA-643)의 표지. */}
       <nav aria-label={label} data-section-index-bar={columnFrom} className={NAV[columnFrom]}>
         <ul ref={stripRef} className={STRIP[columnFrom]}>
           {items.map((item) => {
@@ -216,8 +219,8 @@ export function SectionIndex({
 }
 
 /**
- * 절 닻 — 목차가 가리키는 절 하나(id = 목차 칸 id). 가로 줄 밑에 절 머리가 숨지 않게 스크롤 상자의 위쪽 여백(줄 높이 — QA-643) 위에 12px scroll-margin을
- * 두고, 세로 목록 폭(columnFrom 이상)에서는 16px.
+ * 절 닻 — 목차가 가리키는 절 하나(id = 목차 칸 id). 가로 줄 밑에 절 머리가 숨지 않게 스크롤 상자의 위쪽 여백(잰 줄 높이(기본 45·31px, 고전 가로 막대가
+ * 서면 +10px) — QA-643·QA-656) 위에 12px scroll-margin을 두고, 세로 목록 폭(columnFrom 이상)에서는 16px.
  * 목차와 같은 `columnFrom`을 넘깁니다. 자료가 오기 전에도 늘 그립니다(해시 주소의 이동이 첫 그림에서 닿게).
  */
 export function SectionAnchor({ id, columnFrom = "lg", children }: { id: string; columnFrom?: ColumnFrom; children: ReactNode }): JSX.Element {
