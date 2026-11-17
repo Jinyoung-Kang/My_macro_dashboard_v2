@@ -375,3 +375,30 @@ describe("InspectorFrame — 자리표시·누름 자리·강조색", () => {
     expect(accent).toEqual([]);
   });
 });
+
+// QA-642: 옆 검사 칸 배치에서 검사 칸 안(예: 매크로 미리보기의 '지표 상세 열기' 링크)에 포커스를 둔 채 Esc를 누르면 고름이 풀리며 그 링크가
+// DOM에서 사라져 포커스가 body로 떨어졌습니다 — Esc를 받는 틀 상자가 표만이 아니라 검사 칸까지 감싸서(P5a 검토 — 자기 빌드 /macro 1440·1920 CDP).
+// 다음 Tab이 고른 줄이 아니라 표의 첫 줄에서 다시 시작해 자리를 잃었습니다. 대화상자를 닫을 때 연 단추로 돌아오는 것과 같게, 고름을 풀면 포커스는
+// 그 키의 줄 단추로 돌아와야 합니다.
+describe("QA-642 검사 칸 안에서 Esc로 고름을 풀면 포커스가 고른 줄 단추로 돌아온다", () => {
+  it.fails("검사 칸 링크에 포커스 → Esc → 고름이 풀리고 포커스는 그 줄 단추", () => {
+    stubWide();
+    renderFrame({
+      renderDetail: (key) => (
+        <>
+          <p>{key} 자세히</p>
+          <a href={`/markets/i/${key}`}>지표 상세 열기</a>
+        </>
+      ),
+    });
+    fireEvent.click(trigger("달러 인덱스"));
+    const link = within(screen.getByRole("region", { name: "지표 미리보기 — 달러 인덱스" })).getByRole("link", { name: "지표 상세 열기" });
+    link.focus();
+    expect(document.activeElement).toBe(link);
+
+    const handled = fireEvent.keyDown(link, { key: "Escape" });
+    expect(handled).toBe(false);
+    expect(screen.getByRole("region", { name: "지표 미리보기 — 고른 줄 없음" })).toBeTruthy();
+    expect(document.activeElement).toBe(trigger("달러 인덱스"));
+  });
+});
