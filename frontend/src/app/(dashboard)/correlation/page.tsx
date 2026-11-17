@@ -151,26 +151,33 @@ export default function CorrelationPage() {
         left={
           // 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음).
           <Panel title="비교할 지표" actions={<Freshness refreshError={refreshError} />}>
-            {/* 왼쪽 칸(lg 이상 15rem)에서는 한 줄에 하나, 좁은 칸 틀(sm~lg)에서는 두 줄씩. */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <Select label="지표 X" value={x} onChange={setX} options={options} />
-              <Select label="지표 Y" value={y} onChange={setY} options={options} />
-              <Select label="비교 방식" value={mode} onChange={setMode} options={MODES} />
-              <Select
-                label="롤링 창"
-                value={window}
-                onChange={setWindow}
-                options={["20", "60", "120", "250"].map((value) => ({
-                  value,
-                  label: `${value} 관측`,
-                }))}
-              />
-              <Select
-                label="조회 기간"
-                value={years}
-                onChange={setYears}
-                options={["1", "3", "5", "10"].map((value) => ({ value, label: `최근 ${value}년` }))}
-              />
+            <div className="flex flex-col gap-3">
+              {/* 왼쪽 칸(lg 이상 15rem)에서는 한 줄에 하나, 좁은 칸 틀(sm~lg)에서는 두 줄씩. */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <Select label="지표 X" value={x} onChange={setX} options={options} />
+                <Select label="지표 Y" value={y} onChange={setY} options={options} />
+                <Select label="비교 방식" value={mode} onChange={setMode} options={MODES} />
+                <Select
+                  label="롤링 창"
+                  value={window}
+                  onChange={setWindow}
+                  options={["20", "60", "120", "250"].map((value) => ({
+                    value,
+                    label: `${value} 관측`,
+                  }))}
+                />
+                <Select
+                  label="조회 기간"
+                  value={years}
+                  onChange={setYears}
+                  options={["1", "3", "5", "10"].map((value) => ({ value, label: `최근 ${value}년` }))}
+                />
+              </div>
+              {/*
+                계열 목록을 읽지 못하면 지표 X·Y 고르기는 선택지 없는 빈 상자입니다 — 까닭과 목록만 다시 읽는 단추를 고르기 아래에 둡니다(QA-664).
+                고르기는 막지 않고(disabled 아님), 가운데 상관 오류 상자의 다시 시도와 묶지 않습니다(상자마다 자기 다시 시도).
+              */}
+              {catalog.error && <ErrorState message={`지표 목록을 읽지 못했습니다 — ${catalog.error}`} onRetry={catalog.reload} />}
             </div>
           </Panel>
         }

@@ -89,7 +89,7 @@ const xSelect = () => screen.getByRole("combobox", { name: "지표 X" }) as HTML
 
 describe("QA-664 계열 목록을 읽지 못하면 까닭과 목록 다시 시도를 고르기 아래에 둔다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 '지표 목록을 읽지 못했습니다' 글이 없었습니다(목록 오류를 화면이 쓰지 않음 — 고르기는 선택지 0개).
-  it.fails("목록만 실패하면 '비교할 지표' 패널에 오류 글과 그 상자의 다시 시도, 고르기는 막지 않고 상관은 그대로 그린다", async () => {
+  it("목록만 실패하면 '비교할 지표' 패널에 오류 글과 그 상자의 다시 시도, 고르기는 막지 않고 상관은 그대로 그린다", async () => {
     answers[SERIES] = fail;
     answers[CORRELATION] = ok(CORRELATION_BODY);
     render(<CorrelationPage />);
@@ -104,7 +104,7 @@ describe("QA-664 계열 목록을 읽지 못하면 까닭과 목록 다시 시�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 목록을 다시 읽을 단추가 없었습니다.
-  it.fails("목록 다시 시도는 목록만 한 번 더 읽고, 성공하면 지표 X가 스무 선택지·'연준 순유동성'으로 돌아오며 오류 상자가 걷힌다", async () => {
+  it("목록 다시 시도는 목록만 한 번 더 읽고, 성공하면 지표 X가 스무 선택지·'연준 순유동성'으로 돌아오며 오류 상자가 걷힌다", async () => {
     answers[SERIES] = fail;
     answers[CORRELATION] = ok(CORRELATION_BODY);
     render(<CorrelationPage />);
@@ -126,7 +126,7 @@ describe("QA-664 계열 목록을 읽지 못하면 까닭과 목록 다시 시�
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 둘 다 실패하면 가운데 상관 오류 상자 하나뿐이라, 그 다시 시도로 상관이 돌아와도 고르기는 빈 채였습니다.
-  it.fails("목록과 상관이 둘 다 실패하면 오류 상자가 둘(각자 다시 시도) — 왼쪽 다시 시도로 고르기가 되살아난다", async () => {
+  it("목록과 상관이 둘 다 실패하면 오류 상자가 둘(각자 다시 시도) — 왼쪽 다시 시도로 고르기가 되살아난다", async () => {
     answers[SERIES] = fail;
     answers[CORRELATION] = fail;
     render(<CorrelationPage />);
