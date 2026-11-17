@@ -460,7 +460,7 @@ describe("QA-659 목차 칸 해시에서 해시 없는 기록으로 돌아오면
     });
   };
 
-  it.fails("해시 없이 1,200px에서 목차로 옮긴 뒤(3,000px) 해시 없는 기록으로 돌아오면 1,200px — 옮긴 자리의 scroll은 적지 않는다", () => {
+  it("해시 없이 1,200px에서 목차로 옮긴 뒤(3,000px) 해시 없는 기록으로 돌아오면 1,200px — 옮긴 자리의 scroll은 적지 않는다", () => {
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     let box: HTMLElement | null = null;
     try {
@@ -485,7 +485,7 @@ describe("QA-659 목차 칸 해시에서 해시 없는 기록으로 돌아오면
     }
   });
 
-  it.fails("해시 없이 스크롤한 적 없이 목차로 옮긴 자리(2,000px)에서 해시 없는 기록으로 돌아오면 맨 위(빈 해시가 가리키는 문서 맨 위)", () => {
+  it("해시 없이 스크롤한 적 없이 목차로 옮긴 자리(2,000px)에서 해시 없는 기록으로 돌아오면 맨 위(빈 해시가 가리키는 문서 맨 위)", () => {
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     let box: HTMLElement | null = null;
     try {
@@ -501,7 +501,7 @@ describe("QA-659 목차 칸 해시에서 해시 없는 기록으로 돌아오면
     }
   });
 
-  it.fails("창이 스크롤하는 폭(본문 넘침 visible)·목차 밖 해시(#main)에서 돌아오면 건드리지 않고, 그 자리(700px)를 해시 없는 기록의 자리로 적는다", () => {
+  it("창이 스크롤하는 폭(본문 넘침 visible)·목차 밖 해시(#main)에서 돌아오면 건드리지 않고, 그 자리(700px)를 해시 없는 기록의 자리로 적는다", () => {
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     let narrow: HTMLElement | null = null;
     try {

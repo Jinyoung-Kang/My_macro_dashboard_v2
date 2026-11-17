@@ -120,6 +120,36 @@ function PendingChildren({ count }: { count?: number }): JSX.Element | null {
   );
 }
 
+/** 주소 해시('#…' 또는 '')의 id — 잘못된 % 꼴이면 null(목차 칸이 아님). */
+function hashId(hash: string): string | null {
+  try {
+    return decodeURIComponent(hash.slice(1));
+  } catch {
+    return null;
+  }
+}
+
+/** 주소 글의 해시('#…' 또는 '') — 읽지 못하면 ''. */
+function urlHash(url: string): string {
+  try {
+    return new URL(url).hash;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 요소를 담은 가장 가까운 요소 스크롤 상자 — 세로 넘침이 auto·scroll이고 실제로 넘치는 조상(넓은 화면의 본문 #main). 창이 스크롤하면(좁은 화면 —
+ * #main은 넘침 visible) null.
+ */
+function scrollBoxOf(element: Element | null): Element | null {
+  for (let box = element?.parentElement ?? null; box !== null && box !== document.body && box !== document.documentElement; box = box.parentElement) {
+    const overflow = window.getComputedStyle(box).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && box.scrollHeight > box.clientHeight) return box;
+  }
+  return null;
+}
+
 function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "current" | "open" | "rest"; child: boolean }): JSX.Element {
   const tone = state === "current" ? ROW_CURRENT : state === "open" ? ROW_OPEN : ROW_REST;
   return (
@@ -141,7 +171,10 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  *   (`pendingCount`)이면 숫자 두 자리 폭의 글 없는 막대로 자리를 잡습니다(읽기에서 뺌 — QA-652).
  * - 뒤로·앞으로 가기로 주소의 해시가 목차 칸(하위 칸 포함)으로 바뀌면(hashchange) 그 절 닻으로 옮깁니다(scrollIntoView — 즉시, 닻의 scroll-margin과
  *   스크롤 상자의 위쪽 여백을 따름). 넓은 화면은 본문(#main)이 스크롤 상자라 크롬의 같은 문서 기록 이동이 연속 이동의 첫 번째 뒤로는 창 위치만 되돌려
- *   본문이 움직이지 않았습니다(QA-659). 목차 밖 해시(#main 등)는 보지 않습니다. 새로 고침·바로 열기의 해시 맞춤은 여기서 하지 않습니다(P6·P7).
+ *   본문이 움직이지 않았습니다(QA-659). 목차 칸 해시에서 해시 없는 기록(처음 연 주소)으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이 있던 마지막
+ *   자리로(모르면 맨 위) 되돌립니다 — 크롬은 이때도 본문 스크롤 상자를 되돌리지 않아 넓은 화면은 주소만 바뀌고 본문이 옮긴 절에 남았습니다(QA-659 후속,
+ *   좁은 화면은 창이 스크롤 상자라 브라우저가 되돌림 — 그대로 둠). 목차 밖 해시(#main 등)는 보지 않습니다. 새로 고침·바로 열기의 해시 맞춤은 여기서
+ *   하지 않습니다(P6·P7).
  * - 지금 절: `activeId`를 주면 그 값(제어 — 시험·화면이 정함), 주지 않으면 `hooks/useSectionSpy`(뷰포트 위 96px 아래 ~ 34% 띠에 걸친 절 — 하위 칸이 부모보다 앞,
  *   스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절 — QA-645, 규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는
  *   지금 칸이 없습니다.
@@ -176,23 +209,48 @@ export function SectionIndex({
   useScrollStripActive(stripRef, activeTop);
   // 가로 줄의 잰 높이 → 문서 루트 --section-strip-h(스크롤 상자의 위쪽 여백·옆 검사 칸의 sticky 위치가 읽음 — QA-656·657).
   useSectionStripHeight(stripRef, items.map((item) => item.id).join("\n"));
-  // 뒤로·앞으로 가기(hashchange)로 해시가 목차 칸이 되면 그 닻으로(QA-659). 배열의 참조가 그릴 때마다 바뀌어도 같은 목록이면 다시 걸지 않게 글 하나로
-  // 묶습니다(useSectionSpy와 같음 — id에는 줄바꿈이 없음).
+  // 뒤로·앞으로 가기(hashchange)로 해시가 목차 칸이 되면 그 닻으로, 목차 칸 해시에서 해시 없는 기록으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이
+  // 있던 마지막 자리로(QA-659). 배열의 참조가 그릴 때마다 바뀌어도 같은 목록이면 다시 걸지 않게 글 하나로 묶습니다(useSectionSpy와 같음 — id에는 줄바꿈이 없음).
   const orderKey = order.join("\n");
   useEffect(() => {
     if (orderKey === "") return undefined;
-    const ids = new Set(orderKey.split("\n"));
-    const onHashChange = () => {
-      let id: string;
-      try {
-        id = decodeURIComponent(window.location.hash.slice(1));
-      } catch {
-        return; // 잘못된 % 꼴 — 목차 칸이 아님
-      }
-      if (ids.has(id)) document.getElementById(id)?.scrollIntoView();
+    const ids = orderKey.split("\n");
+    const known = new Set(ids);
+    // 해시 없는 기록에 있는 동안 닻을 담은 요소 스크롤 상자(넓은 화면의 #main)의 마지막 자리 — 창 스크롤은 브라우저가 되돌리므로 적지 않습니다. 목차로
+    // 옮기면 주소가 먼저 바뀌고 그 스크롤은 뒤에 오므로(scroll 이벤트는 다음 그리기 때) 옮긴 자리는 적히지 않습니다.
+    let topWithoutHash: { box: Element; top: number } | null = null;
+    const onScroll = (event: Event) => {
+      if (window.location.hash !== "") return;
+      const box = event.target;
+      if (!(box instanceof Element) || !box.contains(document.getElementById(ids[0]))) return;
+      topWithoutHash = { box, top: box.scrollTop };
     };
+    const onHashChange = (event: HashChangeEvent) => {
+      const id = hashId(window.location.hash);
+      if (id !== null && known.has(id)) {
+        document.getElementById(id)?.scrollIntoView();
+        return;
+      }
+      // 해시 없는 기록으로 돌아옴. 크롬은 같은 문서 기록 이동에서 창 위치만 되돌리고 요소 스크롤 상자는 그대로 두어, 넓은 화면은 주소만 바뀌고 본문이
+      // 옮긴 절에 남았습니다. 창이 스크롤하는 폭(좁은 화면 — 요소 스크롤 상자 없음)은 브라우저가 되돌린 자리를 그대로 둡니다.
+      if (window.location.hash !== "") return;
+      const box = scrollBoxOf(document.getElementById(ids[0]));
+      if (box === null) return;
+      const left = hashId(urlHash(event.oldURL));
+      if (left !== null && known.has(left)) {
+        // 목차 칸 해시에서 — 해시 없이 있던 자리로, 모르면 맨 위(빈 해시가 가리키는 문서 맨 위).
+        box.scrollTop = topWithoutHash !== null && topWithoutHash.box === box ? topWithoutHash.top : 0;
+      } else {
+        // 목차 밖 해시(#main 등)에서 — 건드리지 않고, 지금 자리를 해시 없는 기록의 자리로 적습니다(그 해시에서 내린 자리는 위 scroll에서 적히지 않음).
+        topWithoutHash = { box, top: box.scrollTop };
+      }
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    return () => {
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("hashchange", onHashChange);
+    };
   }, [orderKey]);
 
   const body = <div className="flex min-w-0 flex-col gap-4 lg:gap-6">{children}</div>;
