@@ -801,7 +801,7 @@ describe("QA-669 머리의 신선도 칸은 갱신 실패 알약이 붙어도 �
   // 나란히 놓여, 그 줄 높이가 배지(16px)에서 알약(20px)으로 바뀌어 머리 아래 본문 전체가 4px 밀렸습니다(알약이 생길 때와 사라질 때 — 자체 빌드 0f6ae9d7,
   // 360~1023 5px 간격). 칸이 lg 미만에서 최소 높이 20px(max-lg:min-h-5)이고 안을 가운데 맞추면(items-center) 알약이 있든 없든 그 줄 높이가 같습니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 칸에 그 클래스가 없었습니다('expected [ 'flex', 'whitespace-nowrap', …(2) ] to deeply equal ArrayContaining{…}').
-  it.fails("신선도 칸은 lg 미만에서 최소 높이 20px·가운데 맞춤(max-lg:min-h-5·items-center) — 둘째 줄에 혼자 놓여도 알약이 줄 높이를 바꾸지 않는다", async () => {
+  it("신선도 칸은 lg 미만에서 최소 높이 20px·가운데 맞춤(max-lg:min-h-5·items-center) — 둘째 줄에 혼자 놓여도 알약이 줄 높이를 바꾸지 않는다", async () => {
     reads["/api/macro/overview"] = () =>
       Promise.resolve({ available: true, collectedAtKst: "2026-11-17 06:30 KST", ageSeconds: 60, categories: [] });
     render(<MacroPage />);

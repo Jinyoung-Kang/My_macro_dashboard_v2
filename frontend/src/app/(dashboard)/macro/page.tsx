@@ -151,8 +151,11 @@ export default function MacroPage() {
             {/* 신선도 칸 — lg 미만에서는 남은 폭을 채우고(flex-1) 칸 안 글은 줄을 바꾸지 않아(whitespace-nowrap), 칸이 줄에 놓일 폭이 수집 배지 폭이 됩니다.
                 자동 갱신이 실패해 '새로 읽지 못함' 알약이 붙어도 칸째 다음 줄로 넘어가지 않고 그 안에서 알약을 배지 위에 둡니다 — 예전에는 390·768에서
                 동작 줄이 28px 자라 아래 전체가 밀렸습니다(QA-669, 갱신이 성공하면 되돌아오며 한 번 더 밀림). min-w-0은 두지 않습니다(좁은 폭에서 배지가 눌려
-                줄 바뀜 자리가 달라짐). 신선도가 아직 없으면(첫 읽기 전) 칸을 접어 빈 칸의 사이 간격이 생기지 않게 합니다. */}
-            <div className="flex whitespace-nowrap empty:hidden max-lg:flex-1">
+                줄 바뀜 자리가 달라짐). 신선도가 아직 없으면(첫 읽기 전) 칸을 접어 빈 칸의 사이 간격이 생기지 않게 합니다.
+                알약이 배지 위에 놓여 44px 줄 안에 드는 것은 칸이 조작과 한 줄에 있을 때입니다. 칸이 둘째 줄에 혼자 놓이는 폭(잰 폭 360·495~655)에서는
+                알약과 배지가 나란히 놓여 그 줄 높이가 알약(20px)과 배지(16px)의 차이만큼 4px 바뀌었으므로, lg 미만에서 칸의 최소 높이를 20px로 두고
+                가운데 맞춥니다(max-lg:min-h-5 items-center). 배지가 알약 폭만큼 오른쪽으로 옮겨지는 것은 공용 Freshness의 차례라 그대로입니다. */}
+            <div className="flex items-center whitespace-nowrap empty:hidden max-lg:min-h-5 max-lg:flex-1">
               <Freshness
                 collectedAt={data?.collectedAtKst}
                 ageSeconds={data?.ageSeconds}
