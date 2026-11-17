@@ -146,14 +146,14 @@ describe("SectionIndex — 배치(columnFrom)", () => {
     expect(tokens(column)).not.toContain("lg:flex");
   });
 
-  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 밑 56px, 세로 목록 폭 16px)", () => {
+  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px)", () => {
     renderIndex({ activeId: null });
     const anchor = document.getElementById("macro-fx") as HTMLElement;
-    expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-14", "lg:scroll-mt-4"]);
+    expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "lg:scroll-mt-4"]);
     expect(tokens(anchor.parentElement as HTMLElement)).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-4", "lg:gap-6"]));
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="xl">위험</SectionAnchor>);
-    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-14", "xl:scroll-mt-4"]);
+    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "xl:scroll-mt-4"]);
   });
 });
 
@@ -249,7 +249,7 @@ describe("SectionIndex — 지금 절(useSectionSpy)", () => {
 // 요소가 줄 밑에 가려졌습니다(WCAG 2.2 2.4.11 — 아래 탭 바는 scroll-padding-bottom으로 이미 막아 둠, P5a 검토). 절 닻의 scroll-margin은 목차 링크로 옮길
 // 때만 쓰이고 Tab 포커스 스크롤에는 쓰이지 않습니다. jsdom은 스크롤을 계산하지 않으므로 내비의 표지와 전역 CSS 규칙(소스)으로 봅니다.
 describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크롤 여백", () => {
-  it.fails("내비가 가로 줄 표지(columnFrom)를 달고, 그 폭의 스크롤 상자에 줄 높이만큼 scroll-padding-top이 있다", async () => {
+  it("내비가 가로 줄 표지(columnFrom)를 달고, 그 폭의 스크롤 상자에 줄 높이만큼 scroll-padding-top이 있다", async () => {
     const { readFileSync } = await import("node:fs");
     const { resolve } = await import("node:path");
     renderIndex({ columnFrom: "xl" });
