@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
 import {
   EmptyState,
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useMinuteClock } from "@/hooks/useMinuteClock";
+import { useWideShell } from "@/hooks/useWideShell";
 import { EMPTY, formatNumber } from "@/lib/format";
 import { endpoints } from "@/lib/endpoints";
 import {
@@ -85,6 +86,18 @@ export function EconCalendarSection() {
   const baseId = useId();
   const idPrefix = `${baseId}-day`;
   const panelId = `${baseId}-panel`;
+  // 표 영역 높이의 하한 — 날짜를 고르는 그 순간의 표 영역 높이를 늘어나기만 하게 남깁니다. 이 카드는 매크로 화면의 마지막 절이라, 일정이 적은 날로
+  // 바꿔 문서가 짧아지면 맨 아래까지 내린 스크롤이 눌려 방금 누른 날짜 띠가 포인터 밑에서 수백 px 아래로 튀었습니다(2026-11-18 검토 지적). 행 높이가 바뀌는
+  // 경계(lg — 넓은 화면 28px·좁은 화면 44px)를 넘으면 잰 값을 버립니다(다른 폭의 높이를 남기지 않음). 첫 그리기·새 자료에는 하한을 새로 두지 않습니다.
+  const wide = useWideShell();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [panelFloor, setPanelFloor] = useState<{ wide: boolean; px: number } | null>(null);
+  const floorPx = panelFloor !== null && panelFloor.wide === wide && panelFloor.px > 0 ? panelFloor.px : null;
+  const chooseDay = (date: string) => {
+    const height = Math.ceil(panelRef.current?.getBoundingClientRect().height ?? 0);
+    setPanelFloor({ wide, px: Math.max(floorPx ?? 0, height) });
+    setChosen(date);
+  };
   const rows: EventRow[] = (day?.events ?? []).map((event, index) => ({
     ...event,
     rowKey: event.id ?? `${event.at}-${event.country}-${index}`,
@@ -133,12 +146,19 @@ export function EconCalendarSection() {
               ),
             }))}
             value={day.date}
-            onChange={setChosen}
+            onChange={chooseDay}
             idPrefix={idPrefix}
             panelId={panelId}
             size="sm"
           />
-          <div role="tabpanel" id={panelId} aria-labelledby={tabId(idPrefix, day.date)} className="mt-3 min-w-0">
+          <div
+            ref={panelRef}
+            role="tabpanel"
+            id={panelId}
+            aria-labelledby={tabId(idPrefix, day.date)}
+            className="mt-3 min-w-0"
+            style={floorPx !== null ? { minHeight: floorPx } : undefined}
+          >
             <DataTable
               columns={COLUMNS}
               rows={rows}

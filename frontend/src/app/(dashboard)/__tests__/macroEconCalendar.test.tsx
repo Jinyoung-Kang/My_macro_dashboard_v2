@@ -90,6 +90,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("경제 캘린더 카드는 운영자에게만", () => {
@@ -406,5 +407,58 @@ describe("날짜 띠 + 그날 표 — 화면", () => {
     expect(screen.getByRole("tablist", { name: "경제 캘린더 날짜" })).toBeTruthy();
     expect(within(screen.getByRole("tabpanel")).getByText("Inflation Rate YoY")).toBeTruthy();
     expect(screen.queryByText(/일정이 없습니다/)).toBeNull();
+  });
+
+  // 2026-11-18 검토 지적: 이 카드는 매크로 화면의 마지막 절이라, 일정이 적은 날로 바꿔 문서가 짧아지면 맨 아래까지 내린 스크롤이 눌려 방금 누른 날짜 띠가
+  // 포인터 밑에서 수백 px 아래로 튀었습니다. 날짜를 고르는 순간의 표 영역 높이를 하한으로 남깁니다(늘어나기만). jsdom은 높이를 재지 않아 그 값을 겁니다.
+  it("짧은 날로 바꿔도 표 영역 높이의 하한이 남는다 — 고르는 순간의 높이, 늘어나기만", async () => {
+    mockCalendar(CALENDAR);
+    render(<EconCalendarSection />);
+    const panel = await screen.findByRole("tabpanel", {}, { timeout: 500 });
+    expect(panel.style.minHeight).toBe(""); // 첫 그리기에는 하한이 없음(첫 읽기 높이 그대로)
+    const height = vi.spyOn(panel, "getBoundingClientRect");
+
+    height.mockReturnValue({ height: 419.5 } as DOMRect);
+    fireEvent.click(screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }));
+    expect(screen.getByRole("tabpanel")).toBe(panel);
+    expect(panel.style.minHeight).toBe("420px");
+
+    height.mockReturnValue({ height: 300 } as DOMRect);
+    fireEvent.click(screen.getByRole("tab", { name: "11/26 (목) 1건 · 높음 1" }));
+    expect(panel.style.minHeight).toBe("420px"); // 줄지 않음
+
+    height.mockReturnValue({ height: 600 } as DOMRect);
+    fireEvent.click(screen.getByRole("tab", { name: "11/5 (목) 1건" }));
+    expect(panel.style.minHeight).toBe("600px");
+    expect(within(panel).getByText("Initial Jobless Claims")).toBeTruthy();
+  });
+
+  it("행 높이가 바뀌는 폭 경계(lg)를 넘으면 잰 하한을 버린다", async () => {
+    let wide = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({
+          get matches() {
+            return query === "(min-width: 64rem)" && wide;
+          },
+          media: query,
+          addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+          removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+        }) as unknown as MediaQueryList,
+    );
+    mockCalendar(CALENDAR);
+    render(<EconCalendarSection />);
+    const panel = await screen.findByRole("tabpanel", {}, { timeout: 500 });
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ height: 900 } as DOMRect);
+    fireEvent.click(screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" }));
+    expect(panel.style.minHeight).toBe("900px");
+
+    act(() => {
+      wide = true;
+      listeners.forEach((listener) => listener());
+    });
+    expect(panel.style.minHeight).toBe("");
   });
 });
