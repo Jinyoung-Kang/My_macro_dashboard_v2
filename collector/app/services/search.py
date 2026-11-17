@@ -21,6 +21,8 @@ app/services/search.py
   ``error``(단계 4 QA — 확인하지 못한 것을 '없음'으로 보이지 않음).
   단계 6(계약 §9-2)에서 모든 탭의 합친 줄에 같은 사건 묶기(search_rules.cluster_items)를 더함 — 줄마다 ``clusterId``, 대표 줄에
   ``cluster: {size, publishers}``. 줄을 빼지 않으므로 기간 건수·출처 건수는 그대로입니다.
+  본문 보기(ADR 0043, 계약 §10)에서 합친 줄 가운데 기사·글 줄에 ``bodyRef``(누르면 운영 서버가 그 글 한 건을 받는 꼬리표 — search_article)나
+  ``bodyNote``(받지 않는 까닭)를 답니다. 꼬리표는 결과로 내준 주소만 받게 하는 기억표에 남습니다(메모리 24시간).
   단계 6(계약 §9-4)에서 ``aliases``(그 사용자가 관심 대상에 적은 별칭 — 백엔드가 넘김)를 풀린 대상의 별칭에 합쳐 검색식·저장본 대조를 만듦
   (이름은 그대로, 규칙 5 그대로 — 네 글자 미만은 자유 검색어에 넣지 않음). 모양이 틀리면 400, 1~60자·제어 글자 없음에 맞지 않는 별칭은 그것만
   뺌(등록 때 저장한 긴 별칭으로 결과가 깨지지 않게). 출처 캐시 키에 검색어가 들어 있어 별칭이 다르면 캐시도 따로입니다.
@@ -53,7 +55,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from .. import store
-from . import search_entities, search_filings, search_finviz, search_links, search_research, search_store
+from . import search_article, search_entities, search_filings, search_finviz, search_links, search_research, search_store
 from . import search_rules as rules
 from . import search_sources as sources
 from . import search_wikidata as wd
@@ -224,7 +226,7 @@ def _put(key: tuple, value: dict, life: float) -> None:
 
 
 def reset_cache() -> None:
-    """시험용 — 대상·후보 캐시, 출처별 캐시(연결 출처 포함), 로컬 색인·SEC 표, Finviz 캐시·줄을 모두 비웁니다."""
+    """시험용 — 대상·후보 캐시, 출처별 캐시(연결 출처 포함), 로컬 색인·SEC 표, Finviz 캐시·줄, 본문 보기 기억표·캐시·줄을 모두 비웁니다."""
     with _cache_lock:
         _cache.clear()
         _entity_jobs.clear()
@@ -234,6 +236,7 @@ def reset_cache() -> None:
     search_store.reset_excludes()
     search_entities.reset()
     search_finviz.reset()
+    search_article.reset()
 
 
 # ------------------------------------------------------------------ 후보
@@ -757,7 +760,8 @@ def feed(key: str, tab: str, *, owner: bool = False, external: bool = True, refr
         "entityKey": norm,
         "tab": tab,
         # 같은 사건 묶기(단계 6, 계약 §9-2) — 줄마다 clusterId, 대표 줄에 cluster. 줄을 빼지 않아 기간·출처 건수는 그대로.
-        "items": rules.cluster_items(merged, ignore=rules.match_terms(target) if target else ()),
+        # 본문 보기 꼬리표(ADR 0043, 계약 §10) — 기사·글 줄에 bodyRef(받지 않는 매체는 bodyNote). 회원 응답에서는 백엔드가 지움.
+        "items": search_article.annotate(rules.cluster_items(merged, ignore=rules.match_terms(target) if target else ())),
         "sources": rows,
         "window": {"from": window_from, "to": window_to},
         "rangeCounts": rules.range_counts(merged, today),

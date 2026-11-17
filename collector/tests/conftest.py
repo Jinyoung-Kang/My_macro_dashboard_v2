@@ -57,6 +57,28 @@ def _polite_enabled(monkeypatch):
     info_blogs.reset()
 
 
+@pytest.fixture(autouse=True)
+def _no_real_article_fetch(monkeypatch):
+    """
+    정보 검색 본문 보기(ADR 0043)의 네트워크 자리 — 기사 한 홉 보내기·이름 풀기·구글 경유 풀기의 두 요청 — 를 예외로 바꿔 둡니다. 시험은
+    POLITE_FETCH_ENABLED를 켠 채 돌므로(위 _polite_enabled) 바꿔 끼우지 않은 시험이 실제 매체·DNS·구글로 나가지 않게. 필요한 시험만 덮어씁니다.
+    본문 보기의 기억표·캐시·줄과 이 기능의 호스트 닫힘(프로세스 전역)도 시험마다 비웁니다.
+    """
+    from app.fetch import addresses, article
+    from app.services import search_article, search_relay
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("시험이 실제 기사·DNS·구글로 나가려 했습니다 — 그 자리를 바꿔 끼우세요")
+
+    monkeypatch.setattr(article, "_send_hop", refuse)
+    monkeypatch.setattr(addresses, "_resolve", refuse)
+    monkeypatch.setattr(search_relay, "_get", refuse)
+    monkeypatch.setattr(search_relay, "_post", refuse)
+    search_article.reset()
+    yield
+    search_article.reset()
+
+
 def _toss_trade_module():
     """실제 매매 주문 길(app/services/toss_trade.py)이 있으면 그 모듈, 없으면 None — 상태를 비울 때만 씁니다."""
     if importlib.util.find_spec("app.services.toss_trade") is None:

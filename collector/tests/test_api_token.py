@@ -33,6 +33,8 @@ PROTECTED = [
     ("get", "/live/search/recent"),
     ("get", "/live/search/recent?owner=true"),
     ("get", "/live/search/excludes"),
+    ("get", "/live/search/article?ref=" + "0" * 32),
+    ("get", "/live/search/article?ref=" + "0" * 32 + "&start=true"),
     ("get", "/verify/readings"),
     ("get", "/diagnostics/connections"),
     ("get", "/diagnostics/toss"),
