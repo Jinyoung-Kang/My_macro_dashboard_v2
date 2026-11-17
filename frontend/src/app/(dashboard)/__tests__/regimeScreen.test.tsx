@@ -256,8 +256,10 @@ describe("판정 성과 — 국면별 공용 표", () => {
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "기간", "표본", "평균", "중앙값", "상승 비율", "기준 대비(평균)", "비교: 아무 때나",
     ]);
+    // 기간은 행 머리(QA-673), 나머지 여섯이 칸.
+    expect(within(table).getByRole("rowheader").textContent).toBe("13주 뒤");
     const cells = within(table).getAllByRole("cell").map((cell) => cell.textContent);
-    expect(cells).toEqual(["13주 뒤", "42건 · 독립 4", "−1.20%", "−0.80%", "40%", "−1.70%p", "−0.40% · 55% 상승"]);
+    expect(cells).toEqual(["42건 · 독립 4", "−1.20%", "−0.80%", "40%", "−1.70%p", "−0.40% · 55% 상승"]);
   });
 
   it("표본이 부족하면 숫자 대신 '표본 부족'(보조 글)과 —, 관점을 바꾸면 그 관점의 국면", async () => {
@@ -387,7 +389,8 @@ describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => 
     expect(blocks.map((block) => block.hidden)).toEqual([true, false, true]);
     const table = screen.getByRole("table", { name: "과거 구간 (최근 순)" });
     expect(within(table).getAllByRole("row")).toHaveLength(4);
-    expect(within(table).getAllByRole("cell")[3].textContent).toBe("2주");
+    // 국면은 행 머리(QA-673) — 칸은 시작·끝·기간.
+    expect(within(table).getAllByRole("cell")[2].textContent).toBe("2주");
   });
 
   it("연결 — 쓰인 지표가 있는 매크로 화면(링크 글이 절 — 심화·신용 변동성, QA-641)과 순유동성 화면, 출처 셋", async () => {
@@ -565,7 +568,7 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 값 꼴 
 // 읽히지 않았습니다(QA 스택 390·1024·1440 — 접근성 트리 rowheader 0, 탭을 바꿔 잼). 개편 전 옛 표는 행 머리를 그릴 수 없었습니다.
 describe("QA-673 과거 구간·판정 성과 표의 첫 열은 행 머리", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 행 머리가 없었습니다('Unable to find an accessible element with the role "rowheader"').
-  it.fails("판정 성과 표의 행 머리는 기간('13주 뒤'), 과거 구간 표는 줄마다 행 머리(국면)", async () => {
+  it("판정 성과 표의 행 머리는 기간('13주 뒤'), 과거 구간 표는 줄마다 행 머리(국면)", async () => {
     reads[REGIME] = withHistory();
     reads[TRACK_SPY] = trackRecord();
     render(<RegimePage />);

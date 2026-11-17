@@ -102,9 +102,9 @@ const LINKS = [
 
 type Episode = NonNullable<RegimeResponse["episodes"]>[number];
 
-/** 과거 구간 표의 열 — 국면은 태그(톤 + 아이콘 + 이름), 날짜는 그대로, 기간은 주. */
+/** 과거 구간 표의 열 — 국면은 태그(톤 + 아이콘 + 이름, 행 머리 — QA-673), 날짜는 그대로, 기간은 주. */
 const EPISODE_COLUMNS: readonly Column<Episode>[] = [
-  { key: "label", header: "국면", cell: (row) => <RegimeTag code={row.code} label={row.label} /> },
+  { key: "label", header: "국면", rowHeader: true, cell: (row) => <RegimeTag code={row.code} label={row.label} /> },
   { key: "start", header: "시작", cell: (row) => row.start },
   { key: "end", header: "끝", cell: (row) => row.end },
   { key: "weeks", header: "기간", align: "right", cell: (row) => `${row.weeks}주` },

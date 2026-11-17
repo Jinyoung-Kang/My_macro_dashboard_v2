@@ -288,11 +288,11 @@ export default function CotPage() {
   );
 }
 
-/** 극단 성적 표 한 줄 — 기간(4주·13주 뒤)마다 신호 뒤 성적과 아무 때나 들어갔을 때의 성적. */
+/** 극단 성적 표 한 줄 — 기간(4주·13주 뒤)마다 신호 뒤 성적과 아무 때나 들어갔을 때의 성적. 기간이 행 머리입니다(낭독기가 칸을 옮길 때 '4주 뒤'를 읽음 — QA-673). */
 type HorizonRow = { horizon: string; signal: CotExtremeSummary; base: CotExtremeSummary };
 
 const HORIZON_COLUMNS: readonly Column<HorizonRow>[] = [
-  { key: "horizon", header: "기간", className: "break-keep", cell: (row) => row.horizon },
+  { key: "horizon", header: "기간", rowHeader: true, className: "break-keep", cell: (row) => row.horizon },
   { key: "count", header: "표본", align: "right", cell: (row) => `${row.signal.count}건` },
   { key: "mean", header: "평균 수익률", align: "right", cell: (row) => <ChangeCell changePct={row.signal.mean} /> },
   { key: "median", header: "중앙값", align: "right", cell: (row) => withMinusSign(formatPercent(row.signal.median)) },
@@ -317,8 +317,9 @@ const HORIZON_COLUMNS: readonly Column<HorizonRow>[] = [
 
 type RecentEvent = NonNullable<CotExtremesResponse["recentEvents"]>[number];
 
+/** 최근 극단 신호 표의 칸 — 신호 기준일이 행 머리(QA-673). */
 const RECENT_COLUMNS: readonly Column<RecentEvent>[] = [
-  { key: "date", header: "기준일", cell: (row) => row.date },
+  { key: "date", header: "기준일", rowHeader: true, cell: (row) => row.date },
   { key: "side", header: "구분", className: "break-keep", cell: (row) => row.side },
   { key: "percentile", header: "백분위", align: "right", cell: (row) => formatWithUnit(row.percentile, 1, "%") },
   { key: "net", header: "순포지션", align: "right", cell: (row) => formatSignedCount(row.net) },
