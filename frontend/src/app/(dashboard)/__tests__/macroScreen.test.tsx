@@ -763,3 +763,37 @@ describe("QA-655 첫 읽기가 실패한 뒤 다시 읽는 동안에는 표 꼴 
     expect(panel.querySelectorAll("[data-macro-pending-row]")).toHaveLength(0);
   });
 });
+
+// QA-669: 머리 동작 줄은 줄을 나눌 때 항목마다 글 폭 그대로를 쓰는데, 신선도(Freshness)는 '새로 읽지 못함' 알약을 수집 배지와 한 덩어리로 붙여, 자동 갱신이
+// 실패하면 이 항목이 138 → 251px로 넓어져 통째로 다음 줄로 넘어갔습니다 — 390·768(원본 데이터 단추 둘이 앞에 있는 폭)에서 동작 줄이 28px 자라 아래 전체가
+// 밀리고(실패 CLS 390 0.0961·768 0.33), 갱신이 성공하면 되돌아오며 한 번 더 밀렸습니다(QA 스택, 처음 읽기는 QA API·그 뒤 모의 500). 신선도를 감싼 칸이 lg 미만에서
+// 남은 폭을 채우고(max-lg:flex-1) 칸 안 글은 줄을 바꾸지 않아(whitespace-nowrap) 칸이 줄에 놓일 폭이 수집 배지 폭이어야, 알약이 생겨도 그 칸 안에서 배지 위에 놓입니다.
+describe("QA-669 머리의 신선도 칸은 갱신 실패 알약이 붙어도 동작 줄을 꺾지 않는다", () => {
+  afterEach(() => {
+    signal.token = 0;
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 배지를 감싼 칸이 동작 줄 전체(flex min-w-0 flex-wrap items-center gap-2)였습니다('expected [ Array(5) ] to deeply equal ArrayContaining{…}').
+  it.fails("수집 배지와 '새로 읽지 못함'을 감싼 칸이 max-lg:flex-1·whitespace-nowrap(둘이 같은 칸)", async () => {
+    let calls = 0;
+    reads["/api/macro/overview"] = () => {
+      calls += 1;
+      return calls === 1
+        ? Promise.resolve({ available: true, collectedAtKst: "2026-11-17 06:30 KST", ageSeconds: 60, categories: [] })
+        : Promise.reject(new Error("요청 실패 (HTTP 500)"));
+    };
+    const { rerender } = render(<MacroPage />);
+    const header = screen.getByRole("heading", { level: 1, name: "거시경제 매크로 지표" }).closest("header") as HTMLElement;
+
+    const badge = await within(header).findByText("수집");
+    const cell = badge.closest("div") as HTMLElement;
+    expect(cell.className.split(/\s+/)).toEqual(expect.arrayContaining(["max-lg:flex-1", "whitespace-nowrap"]));
+
+    // 화면 전체 새로고침 신호 — 개요를 다시 읽고(실패) 앞서 받은 값을 보이며 '새로 읽지 못함'을 붙입니다.
+    signal.token += 1;
+    await act(async () => rerender(<MacroPage />));
+    const pill = await within(header).findByText("새로 읽지 못함");
+    expect(pill.closest("div")).toBe(within(header).getByText("수집").closest("div"));
+    expect((pill.closest("div") as HTMLElement).className.split(/\s+/)).toEqual(expect.arrayContaining(["max-lg:flex-1", "whitespace-nowrap"]));
+  });
+});
