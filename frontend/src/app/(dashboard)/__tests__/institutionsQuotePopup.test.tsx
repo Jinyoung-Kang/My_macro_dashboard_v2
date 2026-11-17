@@ -431,6 +431,7 @@ describe("후보 고르기 창의 상태와 검색어", () => {
 // KEEP 상수로 지킴, 공용 글 부품 규약 QA-568·QA-664). word-break·overflow-wrap은 상속되므로 글에서 대화상자까지의 조상 줄 어디에 걸려도 됩니다
 // (DetailQaHolderBreak.test의 inChain 꼴). jsdom은 배치를 재지 못해 클래스 구조를 대조하고, 실제 폭은 QA 스택 브라우저로 확인합니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 경고·안내·이름표 등이 조상 어디에도 break-keep이 없었습니다(공용 ErrorState 글과 후보 이름만 지킴).
+// 고침: 후보 창 본문(PickBody) 바깥 div에 break-keep wrap-break-word — 상속으로 경고 Callout과 고른 뒤 시세 본문까지(공용 Callout·다른 화면 StockQuickView는 그대로).
 describe("QA-681 후보 고르기 창의 한국어 글은 낱말 사이에서만 줄을 바꾼다", () => {
   const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
   /** element에서 stop(포함)까지 올라가는 조상 줄. */
@@ -447,7 +448,7 @@ describe("QA-681 후보 고르기 창의 한국어 글은 낱말 사이에서만
   };
   const looseTexts = (elements: Element[], dialog: Element) => elements.filter((element) => !kept(element, dialog)).map((element) => element.textContent);
 
-  it.fails("안내·검색어 이름표·경고·후보 없음·출처 실패·목록 머리·일부 출처 실패·고른 뒤 안내와 시세 본문 — 글에서 대화상자까지 break-keep과 wrap-break-word", async () => {
+  it("안내·검색어 이름표·경고·후보 없음·출처 실패·목록 머리·일부 출처 실패·고른 뒤 안내와 시세 본문 — 글에서 대화상자까지 break-keep과 wrap-break-word", async () => {
     const query = "FICTIONAL MOTOR CO";
     reads[endpoints.detail.symbols(query)] = { available: true, symbols: { items: [], errors: {}, error: null } };
     reads[endpoints.detail.quote("us", "FMCX")] = { available: true, quote: quote("FMCX", "Fictional Motor Company") };

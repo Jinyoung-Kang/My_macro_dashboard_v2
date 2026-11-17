@@ -118,7 +118,10 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
   };
 
   return (
-    <div className="mt-4 flex min-w-0 flex-col gap-4">
+    // 한국어는 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(break-keep wrap-break-word — 공용 글 부품 규약 QA-568·QA-664, 본문 팝업의
+    // KEEP과 같음). 상속되므로 안내·검색어 이름표·경고(공용 Callout 안 글)·후보 상태 글과 고른 뒤 시세 본문까지 한 번에 걸립니다 — 예전에는 390에서
+    // '찾은 후보|입니다'·'값이 다|릅니다'처럼 음절 사이에서 꺾였습니다(QA-681). 후보 이름은 따로 wrap-anywhere(긴 영문 이름도 칸 안에서 꺾음).
+    <div className="mt-4 flex min-w-0 flex-col gap-4 break-keep wrap-break-word">
       {warnings.map((text, index) => (
         <Callout key={text} tone="warn">
           <span id={warningIds[index]}>{text}</span>
