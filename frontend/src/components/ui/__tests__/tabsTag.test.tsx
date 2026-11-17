@@ -130,3 +130,60 @@ describe("Tag", () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 });
+
+// QA-685(11-18 요청 QA 스택 확인, qa@06f93335): 탭 단추는 key=item.key로 그려, 포커스가 있던 탭이 다시 읽기에서 빠지면(경제 캘린더 날짜 띠의 지난날 등) 그
+// 단추가 DOM에서 떨어지고 포커스가 body로 갔습니다 — 로빙 진입점(tabIndex 0)만 옮기고 포커스는 넘기지 않았습니다. 다음 Tab은 문서 처음부터였습니다.
+// 탭 줄 안 포커스가 그 탭과 함께 사라졌을 때만 지금 진입 탭(고른 탭)으로 옮기고, 포커스가 다른 곳이면 건드리지 않습니다(ExcludesPanel QA-444 되돌림과
+// 같은 규칙 — activeElement가 body·null일 때만). 수정 전(재현 커밋에서는 it.fails) 포커스가 body였습니다.
+describe("QA-685 포커스가 있던 탭이 사라지면 고른 탭으로", () => {
+  const ABC = [
+    { key: "a", label: "가" },
+    { key: "b", label: "나" },
+    { key: "c", label: "다" },
+  ];
+
+  function view(items: readonly { key: string; label: string }[], value: string) {
+    return (
+      <>
+        <button type="button">바깥</button>
+        <Tabs label="날짜" items={items} value={value} onChange={() => {}} idPrefix="day" panelId="day-panel" />
+        <div role="tabpanel" id="day-panel" aria-labelledby={tabId("day", value)} />
+      </>
+    );
+  }
+
+  it.fails("고르지 않은 탭에 포커스가 있다가 그 탭이 빠지면 고른 탭으로(스크롤 없이)", () => {
+    const { rerender } = render(view(ABC, "b"));
+    const third = screen.getByRole("tab", { name: "다" });
+    third.focus();
+    const selected = screen.getByRole("tab", { name: "나" });
+    const focus = vi.spyOn(selected, "focus");
+    rerender(view(ABC.slice(0, 2), "b"));
+    expect(document.activeElement).toBe(selected);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  });
+
+  it.fails("고른 탭에 포커스가 있다가 그 탭이 빠지면 새로 고른 탭(새 value)으로", () => {
+    const { rerender } = render(view(ABC, "c"));
+    screen.getByRole("tab", { name: "다" }).focus();
+    rerender(view(ABC.slice(0, 2), "a"));
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "가" }));
+    expect(screen.getAllByRole("tab").map((tab) => tab.tabIndex)).toEqual([0, -1]);
+  });
+
+  it("포커스가 줄 밖이거나 남는 탭에 있으면 건드리지 않는다 — 탭이 빠져도, 빠지지 않고 다시 그려도", () => {
+    const { rerender } = render(view(ABC, "b"));
+    const outside = screen.getByRole("button", { name: "바깥" });
+    outside.focus();
+    rerender(view(ABC.slice(0, 2), "b"));
+    expect(document.activeElement).toBe(outside);
+
+    rerender(view(ABC, "b"));
+    const first = screen.getByRole("tab", { name: "가" });
+    first.focus(); // 화살표로 옮긴 것처럼 고르지 않은 탭에 포커스
+    rerender(view(ABC, "b"));
+    expect(document.activeElement).toBe(first);
+    rerender(view(ABC.filter((item) => item.key !== "c"), "b"));
+    expect(document.activeElement).toBe(first);
+  });
+});

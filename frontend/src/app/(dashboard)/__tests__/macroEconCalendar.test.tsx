@@ -495,3 +495,26 @@ describe("QA-683 '나라' 칸은 음절에서 꺾이지 않는다", () => {
     for (const element of [heads[country], ...cells]) expect(element.className.split(/\s+/)).toContain("whitespace-nowrap");
   });
 });
+
+// QA-685(11-18 요청 QA 스택 확인): 포커스가 있던 날짜 탭이 다시 읽기에서 사라지면(창이 하루 밀림) 그 단추가 DOM에서 떨어져 포커스가 body로 갔습니다 —
+// 다음 Tab이 문서 처음(본문으로 건너뛰기)부터였습니다. 공용 탭 줄이 다시 고른 날의 탭으로 포커스를 넘깁니다(components/ui Tabs).
+// 수정 전(재현 커밋에서는 it.fails) 포커스가 body였습니다.
+describe("QA-685 포커스가 있던 날짜 탭이 사라지면", () => {
+  it.fails("다시 고른 날(오늘)의 탭으로 포커스가 간다", async () => {
+    at("2026-11-12T03:00:00Z");
+    mockCalendar(CALENDAR);
+    const { rerender } = render(<EconCalendarSection />);
+    const past = await screen.findByRole("tab", { name: "11/5 (목) 1건" }, { timeout: 500 });
+    past.focus();
+    fireEvent.click(past);
+    expect(document.activeElement).toBe(past);
+
+    mockCalendar({ ...CALENDAR, events: CALENDAR.events.filter((entry) => !entry.atKst.startsWith("2026-11-05")) });
+    signal.token = 1;
+    rerender(<EconCalendarSection />);
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /^11\/5 / })).toBeNull());
+    const today = screen.getByRole("tab", { name: "11/12 (목) 1건 · 높음 1" });
+    expect(today.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(today);
+  });
+});
