@@ -53,6 +53,27 @@ describe("SpreadSection 스크래핑 패널 (QA-060)", () => {
   });
 });
 
+// QA-644: 스크래핑 금리차의 '이전 값'(scraped.isStale — 수집 실패로 이어받은 이전 금리가 섞임)은 스프레드·장기·단기 세 값 모두에 걸리는데, P5a에서
+// KPI 띠로 옮기며 표시가 스프레드 타일 배지 하나로 줄었습니다 — 이전 금리일 수 있는 장·단기 타일에는 아무 표시가 없어 지금 시세처럼 보였습니다(예전 화면은
+// 묶음 머리의 '이전 값 포함(수집 실패)' 상태 글로 셋 모두에 걸었음, P5a 검토). 위 QA-060 시험은 '이전 값' 글이 어딘가에 있는지만 봐서 잡지 못했습니다.
+describe("QA-644 스크래핑 묶음의 이전 값 표시는 세 값 모두에 걸린다", () => {
+  it.fails("isStale이면 스크래핑 묶음 머리(띠 밖)에 '이전 값 포함(수집 실패)' 상태 글 — 경고 아이콘 + 글", () => {
+    const scraped = { longValue: 4.1, shortValue: 3.6, spread: 0.5, previousSpread: 0.45, delta: 0.05, isStale: true };
+    render(<SpreadSection title="10Y−2Y" block={block({ latest: 0.5, scraped })} />);
+    const strip = screen.getByRole("region", { name: "10Y−2Y 스크래핑 참고 시세" });
+    const group = strip.parentElement as HTMLElement;
+    const status = within(group).getByText(/이전 값 포함\(수집 실패\)/);
+    expect(strip.contains(status)).toBe(false);
+    expect(status.closest("[class*='text-warn']")).not.toBeNull();
+  });
+
+  it("이전 값이 아니면 묶음 머리의 상태 글이 없다", () => {
+    const scraped = { longValue: 4.1, shortValue: 3.6, spread: 0.5, previousSpread: 0.45, delta: 0.05 };
+    render(<SpreadSection title="10Y−2Y" block={block({ latest: 0.5, scraped })} />);
+    expect(screen.queryByText(/이전 값 포함/)).toBeNull();
+  });
+});
+
 // QA-622: 금리차 값·직전 확정치·스크래핑 스프레드는 formatSigned(ASCII '-')로 찍혀, 같은 칸의 변화 줄(−, U+2212 — 공용 지표 칸 QA-525)과 부호가
 // 달랐습니다(실행 명세 §3-1 '음수 부호는 −').
 describe("QA-622 금리차 음수 부호는 −(U+2212)", () => {
