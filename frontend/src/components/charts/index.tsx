@@ -371,12 +371,13 @@ export function MultiLineSeries({
   grid?: boolean;
   /**
    * 툴팁 줄 차례. "value"면 그 시점 값이 큰 차례(같은 값은 계열 차례 — `lib/chartTooltip` `valueDescKey`), 주지 않으면 Recharts 기본(이름 차례 —
-   * 알파벳·가나다). 기관 13F 비중 추이가 씀 — 그 분기의 비중 순위(2026-11-17 사용자 요구).
+   * 알파벳·가나다). 기관 13F 비중 추이(그 분기의 비중 순위 — 2026-11-17 사용자 요구)와 모의매매 순자산 곡선·환율 비교·COT 포지셔닝 추이
+   * (2026-11-18 사용자 요구)가 씀.
    */
   tooltipOrder?: "value";
   /**
    * 툴팁 줄 글자(이름·값)를 계열 색으로. 덮개 바탕에서 글자 대비 4.5:1이 모자란 색은 툴팁 글자에서만 같은 색을 밝혀 씁니다(`readableOn` — 선 색은
-   * 그대로). 주지 않으면 지금처럼 본문색(공용 규칙 — 차트 틀 `TOOLTIP_BOX`). 기관 13F 비중 추이가 씀(2026-11-17 사용자 요구).
+   * 그대로). 주지 않으면 지금처럼 본문색(공용 규칙 — 차트 틀 `TOOLTIP_BOX`). `tooltipOrder="value"`를 쓰는 차트와 같은 넷이 씀.
    */
   tooltipSeriesColors?: boolean;
 }) {

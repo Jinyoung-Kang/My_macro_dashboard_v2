@@ -377,7 +377,8 @@ describe("비공식 시세·경제 캘린더 — 공용 표", () => {
     const header = await screen.findByRole("rowheader", { name: "Initial Jobless Claims" });
     // 조밀 표 — 넓은 화면 행 28px의 칸 여백(공용 표 dense).
     expect(header.className).toContain("lg:py-1");
-    expect(screen.getByText("1건")).toBeTruthy();
+    // 개수 줄은 고른 날과 함께(날짜 띠 + 그날 표 — 2026-11-18 사용자 결정).
+    expect(screen.getByText("11월 5일 (목) — 1건")).toBeTruthy();
   });
 });
 
