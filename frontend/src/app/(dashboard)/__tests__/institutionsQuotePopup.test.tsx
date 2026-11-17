@@ -563,7 +563,7 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
   // 직후 앞의 실패 사유를 결과처럼 읽었고, 다시 실패하면 포커스가 같은 '다시 시도' 단추로 돌아와 두 번 옮겼습니다. 단추가 남는 길은 포커스를 단추에 두고
   // 결과가 오면 옮기며, 단추가 사라지는 읽기 실패 길만 결과 자리로 먼저 옮기되 그 자리는 짧은 이름(group '종목 후보 결과')이어야 합니다.
   // 수정 전(재현 커밋에서는 it.fails)에는 누른 직후 포커스가 결과 자리(div)였고, 결과 자리에 역할·이름이 없었습니다.
-  it.fails("앞 결과가 남는 다시 시도(종목 찾기를 쓸 수 없음) — 다시 찾는 동안·다시 실패한 뒤 포커스는 누른 단추 그대로(옮기지 않음), 후보가 오면 첫 후보로", async () => {
+  it("앞 결과가 남는 다시 시도(종목 찾기를 쓸 수 없음) — 다시 찾는 동안·다시 실패한 뒤 포커스는 누른 단추 그대로(옮기지 않음), 후보가 오면 첫 후보로", async () => {
     reads[endpoints.detail.symbols("ISHARES TR")] = { available: false, message: "수집기 점검 중입니다." };
     const dialog = await open();
     const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
@@ -580,7 +580,8 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
       expect(document.activeElement).toBe(retry);
 
       await act(async () => fail(new Error("연결 실패")));
-      await within(dialog).findByText(/^다시 찾지 못했습니다 — 연결 실패/);
+      // 보이는 줄(라이브 영역 글은 '앞서 찾은 결과:'로 이어짐).
+      await within(dialog).findByText(/^다시 찾지 못했습니다 — 연결 실패\. 아래는 앞서 찾은 결과입니다\.$/);
       expect(within(dialog).getByRole("button", { name: "다시 시도" })).toBe(retry);
       expect(document.activeElement).toBe(retry);
       expect(moves).toEqual([]);
@@ -594,7 +595,7 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
     }
   });
 
-  it.fails("읽기 실패의 다시 시도 — 단추가 자리표시로 바뀌는 동안 머무는 결과 자리는 짧은 이름(group '종목 후보 결과')", async () => {
+  it("읽기 실패의 다시 시도 — 단추가 자리표시로 바뀌는 동안 머무는 결과 자리는 짧은 이름(group '종목 후보 결과')", async () => {
     reads[endpoints.detail.symbols("ISHARES TR")] = new Error("요청 시간이 지났습니다");
     const dialog = await open();
     await within(dialog).findByText("후보를 불러오지 못했습니다 — 요청 시간이 지났습니다", { selector: "span" });

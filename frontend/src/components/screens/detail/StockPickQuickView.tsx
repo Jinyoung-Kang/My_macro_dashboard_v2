@@ -86,7 +86,7 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const backRef = useRef<HTMLButtonElement>(null);
-  // 후보 결과 자리(tabIndex -1) — '다시 시도'를 누르면 포커스를 먼저 여기로 옮깁니다(아래 retry).
+  // 후보 결과 자리(tabIndex -1) — 읽기 실패의 '다시 시도'를 누르면 포커스를 먼저 여기로 옮깁니다(아래 retry).
   const resultsRef = useRef<HTMLDivElement>(null);
   // 본문이 바뀐 뒤 포커스를 둘 곳 — 누른 단추가 사라지므로(후보 → 시세, 시세 → 후보, 다시 시도 → 결과) 포커스가 문서 처음·대화상자 틀로 떨어지지 않게
   // 옮겨 둡니다.
@@ -104,16 +104,17 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
     (buttons.find((button) => button.dataset.symbol === next.key) ?? inputRef.current)?.focus();
   }, [picked]);
 
-  // 다시 시도의 결과가 오면(다시 읽기가 끝나면) 결과로 옮깁니다 — 후보가 왔으면 첫 후보, 다시 실패했으면 새 '다시 시도'(결과 자리의 단추는 후보 아니면
-  // 다시 시도뿐), 단추가 없으면(맞는 후보 없음) 입력칸. 그 사이 사용자가 포커스를 다른 곳(입력칸·닫기)으로 옮겼으면 그대로 둡니다 — 결과 자리에 있거나
-  // 대화상자 틀·문서 처음으로 떨어졌을 때만 옮깁니다.
+  // 다시 시도의 결과가 오면(다시 읽기가 끝나면) 결과로 옮깁니다 — 후보가 왔으면 첫 후보, 다시 실패했으면 '다시 시도'(결과 자리의 단추는 후보 아니면
+  // 다시 시도뿐 — 앞 결과가 남는 줄에서 다시 실패하면 누른 그 단추라 옮기지 않음), 단추가 없으면(맞는 후보 없음) 입력칸. 그 사이 사용자가 포커스를 다른
+  // 곳(입력칸·닫기)으로 옮겼으면 그대로 둡니다 — 결과 자리 안(자리 자체·누른 다시 시도 단추)에 있거나 대화상자 틀·문서 처음으로 떨어졌을 때(누른 단추가
+  // 결과로 바뀌어 사라짐)만 옮깁니다.
   useEffect(() => {
     if (focusNext.current?.to !== "results" || symbols.loading) return;
     focusNext.current = null;
     const place = resultsRef.current;
     if (place === null) return;
     const here = document.activeElement;
-    if (here !== null && here !== place && here !== document.body && here !== place.closest('[role="dialog"]')) return;
+    if (here !== null && !place.contains(here) && here !== document.body && here !== place.closest('[role="dialog"]')) return;
     (place.querySelector<HTMLButtonElement>("button") ?? inputRef.current)?.focus();
   }, [symbols.loading, symbols.data, symbols.error, symbols.refreshError]);
 
@@ -125,11 +126,13 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
     focusNext.current = picked ? { to: "candidate", key: symbolKey(picked) } : null;
     setPicked(null);
   };
-  // 다시 시도 — 누른 단추는 다시 읽는 동안(읽기 실패 → 자리표시)이나 결과가 온 뒤 사라지므로, 먼저 결과 자리(창 안 고정 자리 — 본문 팝업 ArticleDialog와
-  // 같은 꼴)로 옮기고 결과가 오면 결과로 옮깁니다(위 effect). 예전에는 단추가 사라지면 포커스가 대화상자 틀로 떨어져 다음 Tab이 창 처음부터였습니다(QA-682).
+  // 다시 시도 — 결과가 오면 결과로 옮깁니다(위 effect). 예전에는 누른 단추가 사라지면 포커스가 대화상자 틀로 떨어져 다음 Tab이 창 처음부터였습니다(QA-682).
+  // 읽기 실패의 다시 시도(공용 ErrorState)만 다시 읽는 동안 누른 단추가 자리표시로 바뀌어 사라지므로, 그때만 먼저 결과 자리(창 안 고정 자리 — 짧은 이름의
+  // group)로 옮깁니다. 앞 결과가 남는 줄(출처 실패·종목 찾기를 쓸 수 없음)은 다시 찾는 동안 단추가 그대로라 포커스를 그 단추에 둡니다 — 결과 자리로 옮기면
+  // 낭독기가 앞의 실패 사유를 결과처럼 읽고, 다시 실패하면 같은 단추로 돌아와 두 번 옮겼습니다(QA-682 보강). 바뀐 상태는 라이브 영역이 알립니다.
   const retry = () => {
     focusNext.current = { to: "results" };
-    resultsRef.current?.focus();
+    if (symbols.error) resultsRef.current?.focus();
     void symbols.reload();
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -189,13 +192,14 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
             </div>
           </form>
           {/* 찾기·다시 시도 뒤 결과를 화면 읽기 프로그램에 알립니다 — 찾기 뒤에는 포커스가 입력칸·찾기 단추에 그대로라 바뀐 목록·문구가 읽히지 않고(명령 팔레트
-              QA-560과 같은 까닭), 다시 시도 뒤에는 포커스가 결과 자리를 거쳐 첫 후보·새 '다시 시도'·입력칸으로 옮겨 가지만(QA-682) 건수·실패 사유는 그 자리에서
-              읽히지 않습니다. 늘 그려 두어 내용이 바뀔 때 읽힙니다. 처음 읽는 동안은 자리표시(Skeleton)의 status가 알립니다. */}
+              QA-560과 같은 까닭), 다시 시도 뒤에는 결과가 오면 포커스가 첫 후보·입력칸으로 옮겨 가거나 다시 실패하면 '다시 시도'에 있어(QA-682) 건수·실패 사유는
+              그 자리에서 읽히지 않습니다. 늘 그려 두어 내용이 바뀔 때 읽힙니다. 처음 읽는 동안은 자리표시(Skeleton)의 status가 알립니다. */}
           <p role="status" className="sr-only">
             {candidatesStatus(query, symbols)}
           </p>
-          {/* 결과 자리 — 다시 시도를 누르면 포커스가 결과가 올 때까지 머무는 곳(바깥선 없음 — 누를 수 있는 것이 아님, Tab 차례에 들지 않음). */}
-          <div ref={resultsRef} tabIndex={-1} className="min-w-0 outline-none">
+          {/* 결과 자리 — 읽기 실패의 다시 시도를 누르면 포커스가 결과가 올 때까지 머무는 곳(바깥선 없음 — 누를 수 있는 것이 아님, Tab 차례에 들지 않음).
+              짧은 이름의 group — 이름·역할 없는 div면 크롬이 포커스 받은 자리의 접근 이름을 내용 전체로 계산해 낭독기가 앞 결과를 다 읽습니다(QA-682 보강). */}
+          <div ref={resultsRef} tabIndex={-1} role="group" aria-label="종목 후보 결과" className="min-w-0 outline-none">
             <Candidates query={query} state={symbols} listRef={listRef} listLabelId={listLabelId} onPick={pick} onRetry={retry} />
           </div>
         </>
