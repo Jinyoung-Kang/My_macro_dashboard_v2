@@ -2,8 +2,8 @@
  * 매크로 화면(/macro)의 절 주소 — 정본 하나(P5a). 매크로 화면의 절 닻(SectionAnchor id)과 목차가 같은 id를 씁니다. React를 모르는 순수 모듈(ADR 0004).
  *
  * 다른 화면이 매크로로 잇는 링크(국면 화면의 '연결')는 절 조각 없이 화면 경로(`macroPath`)로 갑니다 — 매크로 화면은 자료가 온 뒤 위 절들이 자라 해시
- * 스크롤이 그 절에 머물지 않고, 주소를 바로 열면 셸이 그린 뒤에 닻이 생겨 스크롤하지 않습니다(QA-641). 절 조각 주소(`macroSectionHref`)는 화면 안 목차처럼
- * 자료가 온 뒤 옮길 때를 위해 남깁니다.
+ * 스크롤이 그 절에 머물지 않고, 주소를 바로 열면 셸이 그린 뒤에 닻이 생겨 스크롤하지 않습니다(QA-641). 화면 안 목차는 절 id로 같은 화면의
+ * 조각(`#id`)을 씁니다(components/patterns SectionIndex).
  *
  * id는 소문자·하이픈만(주소 조각 그대로 — 인코딩 없음)이고 'macro-'로 시작해 다른 화면의 id와 겹치지 않습니다. 절을 더하거나 이름을 바꾸면 여기와 매크로
  * 화면의 목차를 함께 고칩니다(옛 주소의 조각은 브라우저가 무시할 뿐 화면은 열림 — 맨 위).
@@ -29,7 +29,3 @@ export function macroPath(): string {
   return item?.href ?? "/macro";
 }
 
-/** 매크로 화면의 한 절로 가는 주소 — 예 '/macro#macro-risk'(다른 화면에서 잇는 링크에는 쓰지 않음 — 위 QA-641). */
-export function macroSectionHref(section: MacroSection): string {
-  return `${macroPath()}#${MACRO_SECTIONS[section]}`;
-}

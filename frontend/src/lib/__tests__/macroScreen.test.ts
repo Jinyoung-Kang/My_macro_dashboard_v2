@@ -23,7 +23,6 @@ import {
   spreadKpis,
 } from "../macroScreen";
 import { MACRO_SECTIONS } from "../marketSections";
-import { spreadValueText } from "../spread";
 import type { AdvancedIndicators, FxSeries, MacroItem, RiskIndicators, SpreadBlock } from "../types";
 
 /** 2026-10-20 19:54 KST = 뉴욕 06:54 — 미국 국채 전자거래는 개장, 뉴욕 증시는 장 전(마감). */
@@ -183,10 +182,10 @@ describe("금리차 KPI", () => {
     expect(scraped?.slice(1).map((tile) => [tile.label, tile.value, tile.unit])).toEqual([["미국채 10년물", "4.100", "%"], ["미국채 2년물", null, "%"]]);
   });
 
-  it("금리차 값 글(spreadValueText) — 부호 + 셋째 자리 + '%p', 모르면 '—'(단위 없음)", () => {
-    expect([spreadValueText(0.5), spreadValueText(-0.25), spreadValueText(0), spreadValueText(null), spreadValueText(Number.NaN)]).toEqual([
-      "+0.500%p", "−0.250%p", "0.000%p", EMPTY, EMPTY,
-    ]);
+  it("금리차 값 글 — 부호 + 셋째 자리(단위 '%p'는 타일 단위 칸), 모르면 null('—' — 단위 없음)", () => {
+    const values = [0.5, -0.25, 0, null, Number.NaN].map((latest) => spreadKpis(block({ latest }), "10Y−2Y", null).official[0]);
+    expect(values.map((tile) => tile.value)).toEqual(["+0.500", "−0.250", "0.000", null, null]);
+    expect(values.every((tile) => tile.unit === "%p")).toBe(true);
   });
 });
 

@@ -22,12 +22,7 @@ function signedText(value: number | null | undefined, suffix: string): string {
   return value === null || value === undefined || !Number.isFinite(value) ? EMPTY : `${formatSignedMinus(value, 2).text}${suffix}`;
 }
 
-/** "2026-10-08" → "10-08". 형식이 다르면 그대로. */
-function shortDate(value: string | null | undefined): string {
-  return value && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(5, 10) : (value ?? EMPTY);
-}
-
-/** 판정 근거를 표시 순서대로: [{label, value, asOf, asOfDate}] — asOf는 월-일로 줄인 글, asOfDate는 받은 기준일 그대로(모르면 null). */
+/** 판정 근거를 표시 순서대로: [{key, label, value, asOfDate}] — asOfDate는 받은 기준일 그대로(모르면 null). */
 export function regimeInputCells(inputs: RegimeLogEntry["inputs"]) {
   return ORDER.map(({ key, label, format }) => {
     const input: RegimeLogInput | undefined = inputs?.[key];
@@ -36,7 +31,6 @@ export function regimeInputCells(inputs: RegimeLogEntry["inputs"]) {
       key,
       label,
       value: value === null || value === undefined || !Number.isFinite(value) ? EMPTY : format(value),
-      asOf: input?.asOf ? shortDate(input.asOf) : EMPTY,
       asOfDate: input?.asOf ?? null,
     };
   });
