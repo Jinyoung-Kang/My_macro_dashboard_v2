@@ -280,6 +280,9 @@ export default function CotPage() {
                 precision={0}
                 height={320}
                 grid
+                // 툴팁은 그 주 순포지션이 큰 차례로, 글자는 선 색으로(2026-11-18 사용자 요구 — 기본은 이름 차례·본문색).
+                tooltipOrder="value"
+                tooltipSeriesColors
                 ariaLabel={`${asset} 순포지션 추이`}
               />
               <p className="mt-3 text-xs text-text-3">

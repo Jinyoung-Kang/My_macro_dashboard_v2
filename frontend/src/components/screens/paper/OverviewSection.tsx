@@ -474,6 +474,9 @@ export function OverviewSection({
           height={300}
           markers={markers}
           ariaLabel="순자산 곡선"
+          // 툴팁은 그 날 순자산이 큰 차례로, 글자는 선 색으로(2026-11-18 사용자 요구 — 기본은 이름 차례·본문색). 미국·한국이 같은 카드라 둘 다.
+          tooltipOrder="value"
+          tooltipSeriesColors
           // 원 단위 정수 눈금("100,000,000")은 기본 폭(64px)에서 잘립니다 — 한국만 넓힙니다.
           axisWidth={korea ? 84 : undefined}
         />

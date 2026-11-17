@@ -26,8 +26,25 @@ vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
   // 개요 히어로의 선 차트(히어로 곡선) — 이 시험은 그 그림을 보지 않습니다.
   LineChart: () => null,
-  MultiLineSeries: ({ data, series, ariaLabel }: { data: unknown[]; series: { key: string; name: string; color?: string }[]; ariaLabel?: string }) => (
-    <ul aria-label={`차트 ${ariaLabel ?? ""}`} data-rows={data.length}>
+  MultiLineSeries: ({
+    data,
+    series,
+    ariaLabel,
+    tooltipOrder,
+    tooltipSeriesColors,
+  }: {
+    data: unknown[];
+    series: { key: string; name: string; color?: string }[];
+    ariaLabel?: string;
+    tooltipOrder?: string;
+    tooltipSeriesColors?: boolean;
+  }) => (
+    <ul
+      aria-label={`차트 ${ariaLabel ?? ""}`}
+      data-rows={data.length}
+      data-tooltip-order={tooltipOrder ?? ""}
+      data-tooltip-colors={String(Boolean(tooltipSeriesColors))}
+    >
       {series.map((entry) => <li key={entry.key} data-color={entry.color}>{entry.name}</li>)}
     </ul>
   ),
@@ -634,6 +651,32 @@ describe("개요 — 체결 시점 실험·S = 100·한계", () => {
     expect(within(exposure).getAllByRole("listitem").map((li) => li.textContent))
       .toEqual(["목표 노출(Claude가 정함)", "실제 노출(장부)", "계좌2 실제 노출(장부)"]);
     expect(screen.queryByRole("button", { name: "계좌2 시작" })).toBeNull();
+  });
+
+  // 2026-11-18 사용자 요구: 순자산 곡선 툴팁은 그 날 순자산이 큰 차례, 줄 글자는 선 색(공용 선 차트의 선택 prop 둘 — 차례·색 자체는
+  // components/charts/__tests__/seriesTooltip.test.tsx가 봄). 같은 화면의 다른 차트(노출 추이·S = 100)는 기본(이름 차례·본문색) 그대로.
+  it("순자산 곡선만 툴팁을 값이 큰 차례·선 색 글자로 켠다", async () => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE, {
+      navSeries: {
+        dates: ["2026-10-30", "2026-11-02", "2026-11-03"],
+        books: { rules: [1, 2, 3], claude: [99000, 100000, 101000], claude2: [null, 100000, 100500], bench_spy: [1, 100, 101], bench_mix: [1, 2, 3] },
+      },
+      claudeExposureSeries: [{ tradingDate: "2026-11-02", targetExposurePct: 60, actualExposurePct: 58 }],
+    }));
+    reads["/api/paper/books/claude2/nav"] = () => Promise.resolve({
+      available: true, series: [{ tradingDate: "2026-11-03", nav: 100500, cash: 40000, equityValue: 60500, exposurePct: 60.2, pricesFinal: true }],
+    });
+    render(<PaperPage />);
+    await settled();
+
+    const nav = screen.getByRole("list", { name: "차트 순자산 곡선" });
+    expect(nav.dataset.tooltipOrder).toBe("value");
+    expect(nav.dataset.tooltipColors).toBe("true");
+    for (const name of ["차트 Claude 노출 추이(목표 대비 실제)", "차트 S = 100 같은 구간"]) {
+      const other = screen.getByRole("list", { name });
+      expect(other.dataset.tooltipOrder).toBe("");
+      expect(other.dataset.tooltipColors).toBe("false");
+    }
   });
 
   it("계좌2가 없는 개요(배포 전 백엔드)는 예전 그대로 — 출발 카드·S = 100·계좌2 한계 없음", async () => {

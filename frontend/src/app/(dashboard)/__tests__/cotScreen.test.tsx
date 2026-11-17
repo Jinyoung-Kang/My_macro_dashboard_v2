@@ -11,11 +11,30 @@ const api = vi.hoisted(() => {
 vi.mock("@/lib/api", () => api);
 const signal = vi.hoisted(() => ({ token: 0, reloadAll: () => {}, notifyUnauthorized: () => {} }));
 vi.mock("@/hooks/useRefreshSignal", () => ({ useRefreshSignal: () => signal }));
-// 차트는 받은 이름·격자·계열 색만 봅니다(jsdom은 크기가 없어 그림을 그리지 않음).
+// 차트는 받은 이름·격자·계열 색·툴팁 차례와 글자색 켜기만 봅니다(jsdom은 크기가 없어 그림을 그리지 않음).
 vi.mock("@/components/charts", () => ({
   SERIES_COLORS: { blue: "#3987e5", orange: "#d95926", green: "#199e70" },
-  MultiLineSeries: ({ ariaLabel, grid, series }: { ariaLabel?: string; grid?: boolean; series: { color: string }[] }) => (
-    <div data-chart="lines" data-name={ariaLabel ?? ""} data-grid={grid ? "yes" : "no"} data-colors={series.map((entry) => entry.color).join(",")} />
+  MultiLineSeries: ({
+    ariaLabel,
+    grid,
+    series,
+    tooltipOrder,
+    tooltipSeriesColors,
+  }: {
+    ariaLabel?: string;
+    grid?: boolean;
+    series: { color: string }[];
+    tooltipOrder?: string;
+    tooltipSeriesColors?: boolean;
+  }) => (
+    <div
+      data-chart="lines"
+      data-name={ariaLabel ?? ""}
+      data-grid={grid ? "yes" : "no"}
+      data-colors={series.map((entry) => entry.color).join(",")}
+      data-tooltip-order={tooltipOrder ?? ""}
+      data-tooltip-colors={String(Boolean(tooltipSeriesColors))}
+    />
   ),
 }));
 
@@ -200,6 +219,16 @@ describe("COT 작업대 배치(P5a)", () => {
     expect(chart.dataset.grid).toBe("yes");
     expect(chart.dataset.colors).toBe("#3987e5,#d95926,#8B949E");
     expect(screen.getByText("계약 코드 13874A")).toBeTruthy();
+  });
+
+  // 2026-11-18 사용자 요구: 툴팁 줄은 그 주 순포지션이 큰 차례(부호 포함 — 롱이 위), 글자는 선 색(차례·색 자체는 components/charts/__tests__/seriesTooltip.test.tsx).
+  it("포지셔닝 추이 툴팁은 값이 큰 차례·선 색 글자", async () => {
+    const { container } = render(<CotPage />);
+    await screen.findByRole("region", { name: `${S_AND_P} 포지셔닝 요약` });
+
+    const chart = container.querySelector<HTMLElement>("[data-chart='lines']")!;
+    expect(chart.dataset.tooltipOrder).toBe("value");
+    expect(chart.dataset.tooltipColors).toBe("true");
   });
 
   it("극단 성적 — 대용 가격 안내는 중립 상자, 쪽마다 12·16px 상자·h3·이름 있는 공용 표, 최근 신호는 조밀 표", async () => {
