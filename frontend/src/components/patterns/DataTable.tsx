@@ -17,7 +17,11 @@ import { Empty } from "./Empty";
  */
 export type Column<T> = {
   key: string;
-  header: string;
+  /**
+   * 머리 글 — 보통 글 하나. 보이는 표지와 읽는 글이 다른 머리(장식 기호는 aria-hidden, 뜻은 sr-only 글 — 섹터 표의 순위 기준 열, QA-649)는 요소로 줍니다.
+   * 글로 주면 예전과 같습니다.
+   */
+  header: ReactNode;
   align?: "left" | "right";
   cell: (row: T) => ReactNode;
   sortValue?: (row: T) => SortValue;

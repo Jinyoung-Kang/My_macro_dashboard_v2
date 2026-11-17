@@ -241,10 +241,19 @@ function ReturnsTable({
       cell: (row) => <PriceCell stored={row.price} realtime={realtime[liveKey("US", row.ticker)]} />,
     },
     // 순위를 매긴 기간 열을 밝게 둡니다. 어떤 기준으로 1위가 됐는지
-    // 표 안에서 바로 보이지 않으면 위쪽 선택값을 기억해야 합니다.
+    // 표 안에서 바로 보이지 않으면 위쪽 선택값을 기억해야 합니다. 표지 '▪'는 장식이라 읽기에서 빼고 뜻을 글로 읽힙니다('1M (순위 기준)' — 고대비에서
+    // 바탕이 지워져도 기호와 글이 남음, QA-649).
     ...SECTOR_PERIODS.map((window) => ({
       key: window,
-      header: window === period ? `${window} ▪` : window,
+      header:
+        window === period ? (
+          <>
+            {window} <span aria-hidden="true">▪</span>
+            <span className="sr-only">(순위 기준)</span>
+          </>
+        ) : (
+          window
+        ),
       align: "right" as const,
       className: window === period ? "bg-surface-2/50" : undefined,
       cell: (row: SectorRow) => <SignedChip value={row.returns?.[window]} />,

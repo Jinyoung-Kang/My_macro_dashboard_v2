@@ -166,7 +166,7 @@ describe("섹터 작업대 배치(P5a)", () => {
     expect(screen.getByRole("table", { name: "자산군 상세" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "섹터 상세" }).parentElement?.textContent).toContain("2개");
     const headers = within(table).getAllByRole("columnheader").map((cell) => cell.textContent);
-    expect(headers).toEqual(["순위", "이름", "유형", "현재가", "1W", "1M ▪", "3M", "6M", "YTD", "1Y", "α (1M)"]);
+    expect(headers).toEqual(["순위", "이름", "유형", "현재가", "1W", "1M ▪(순위 기준)", "3M", "6M", "YTD", "1Y", "α (1M)"]);
     // 수익률이 높은 차례(모르는 값은 맨 뒤) — 에너지(3.2%) → 정보기술(−12.15%).
     const rowHeaders = within(table).getAllByRole("rowheader");
     expect(rowHeaders.map((cell) => within(cell).getByRole("button").textContent)).toEqual(["에너지", "정보기술"]);
@@ -227,7 +227,7 @@ describe("섹터 작업대 배치(P5a)", () => {
 // 기호가 빠져 이 열이 순위 기준이라는 뜻이 글로 전해지지 않고, 고대비(forced-colors)에서는 바탕이 지워집니다(P5a 검토). 부제의 '순위는 위에서 고른 1M 기준'은
 // 표 머리와 이어져 있지 않습니다.
 describe("QA-649 순위 기준 열은 글로도 알린다", () => {
-  it.fails("고른 기간 열 머리의 접근 이름이 '1M (순위 기준)' — 기호 '▪'는 읽기에서 빠지고 보이는 글은 그대로", async () => {
+  it("고른 기간 열 머리의 접근 이름이 '1M (순위 기준)' — 기호 '▪'는 읽기에서 빠지고 보이는 글은 그대로", async () => {
     render(<SectorPage />);
     await screen.findAllByText("정보기술");
     const table = screen.getByRole("table", { name: "섹터 상세" });
