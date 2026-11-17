@@ -99,7 +99,7 @@ export default function LiquidityPage() {
           </Callout>
         )}
 
-        {kpis.length > 0 && <KpiStrip label="순유동성 요약" items={kpis} />}
+        {kpis.length > 0 && <KpiStrip label="순유동성 요약" items={kpis} keepDates />}
 
         <Panel
           title="순유동성 추이" source={SOURCES.fredLiquidity}

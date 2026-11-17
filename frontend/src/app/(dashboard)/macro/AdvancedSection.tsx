@@ -82,7 +82,7 @@ export function AdvancedSection({
     >
       {/* 값·단위·변화(직전 대비), 상태는 아이콘 + 글(해석 색 → 톤 — 값 글자색으로만 전하지 않음), 메모는 해석 글과 '표본 백분위 · 표본 · 기준일',
           지표마다 출처 줄. 받지 못한 지표는 '—'와 '수집 실패'(lib/macroScreen advancedKpis). */}
-      <KpiStrip label="심화 지표" items={advancedKpis(data)} />
+      <KpiStrip label="심화 지표" items={advancedKpis(data)} keepDates />
 
       {data?.derived?.decomposition && (
         <p className="mt-4 rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">

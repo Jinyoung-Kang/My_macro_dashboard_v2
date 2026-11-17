@@ -153,7 +153,7 @@ export function FxCompareSection() {
         <>
           {/* 고른 계열의 끝값·단위(위 지표 표와 같은 둘째 자리 — 같은 값이 100.11·100.110으로 갈리지 않게), 기간 변화율, 기준일·최근(lib/macroScreen fxKpis). */}
           <div className="mt-3">
-            <KpiStrip label="고른 환율 계열" items={fxKpis(series)} />
+            <KpiStrip label="고른 환율 계열" items={fxKpis(series)} keepDates />
           </div>
 
           <div className="mt-4">

@@ -4,7 +4,7 @@ import type { JSX, ReactNode } from "react";
 import { FOCUS_RING } from "@/components/ui/classes";
 import { AlertTriangleIcon, StatusText } from "@/components/ui/icons";
 import type { KpiItem } from "@/lib/kpi";
-import { isMissingValue, presentText, statValueText } from "@/lib/patterns";
+import { dateTokenParts, isMissingValue, presentText, statValueText } from "@/lib/patterns";
 
 import { EstimateBadge, ProvenanceBadge, StaleBadge } from "./badges";
 import { ChangeChip } from "./ChangeChip";
@@ -138,16 +138,36 @@ function valueRowClass(item: KpiItem, pendingMatchesValue: boolean): string {
   return unitTail ? VALUE_ROW_UNIT : "mt-0.5 flex items-baseline";
 }
 
+/** 보조 글 — keepDates면 날짜·시각 마디를 줄바꿈 없는 묶음으로(출처 배지 keepDates와 같은 규칙 — lib/patterns dateTokenParts, 글자는 그대로). */
+function NoteText({ text, keepDates }: { text: string; keepDates: boolean }): JSX.Element {
+  if (!keepDates) return <>{text}</>;
+  return (
+    <>
+      {dateTokenParts(text).map((part, index) =>
+        part.date ? (
+          <span key={index} className="whitespace-nowrap">
+            {part.text}
+          </span>
+        ) : (
+          part.text
+        ),
+      )}
+    </>
+  );
+}
+
 function KpiTileBody({
   item,
   pendingGap,
   pendingWide,
   pendingMatchesValue = false,
+  keepDates = false,
 }: {
   item: KpiItem;
   pendingGap?: string;
   pendingWide?: WidePending;
   pendingMatchesValue?: boolean;
+  keepDates?: boolean;
 }): JSX.Element {
   const change = item.change && !item.pending ? item.change : null;
   // 변화량·변화율을 둘 다 모르면 칩이 그려지지 않으므로(ChangeChip) 캡션만 남지 않게 줄째 뺍니다.
@@ -204,11 +224,15 @@ function KpiTileBody({
       ) : null}
       {sourced ? (
         <p className="mt-1 leading-4">
-          <ProvenanceBadge source={item.source} asOf={item.asOf} delayMin={item.delayMin} title={item.provenanceTitle} />
+          <ProvenanceBadge source={item.source} asOf={item.asOf} delayMin={item.delayMin} title={item.provenanceTitle} keepDates={keepDates} />
         </p>
       ) : null}
       {/* 보조 글도 한글은 낱말 사이에서만 줄을 바꿉니다(공용 글 부품 규약 QA-568 — 타일의 wrap-anywhere는 공백 없는 긴 토큰만 꺾음, QA-637). */}
-      {note ? <p className="mt-1 break-keep text-xs leading-4 text-text-3">{note}</p> : null}
+      {note ? (
+        <p className="mt-1 break-keep text-xs leading-4 text-text-3">
+          <NoteText text={note} keepDates={keepDates} />
+        </p>
+      ) : null}
     </>
   );
 }
@@ -298,6 +322,7 @@ export function KpiStrip({
   label,
   items,
   pendingMatchesValue = false,
+  keepDates = false,
 }: {
   label: string;
   items: readonly KpiItem[];
@@ -306,6 +331,11 @@ export function KpiStrip({
    * 읽는 중에도 받은 출처 글(정적)로 그립니다. 변화·상태·메모가 없는 띠(섹터 SPY 기간 수익률 — 첫 타일만 출처 줄)가 값이 와도 높이가 같게(P5a 검토 CLS).
    */
   pendingMatchesValue?: boolean;
+  /**
+   * 출처 줄·보조 글의 날짜·시각 마디를 줄바꿈 없는 묶음으로(선택, 기본 꺼짐 — 홈 띠 그대로): 좁은 타일에서 '표본 2016-' / '08-08'처럼 날짜 안에서 꺾이지
+   * 않고 마디 사이에서만 꺾입니다(출처 배지 keepDates와 같음 — 시장 화면의 띠가 씀, P5a 검토).
+   */
+  keepDates?: boolean;
 }): JSX.Element {
   // 8개를 넘으면 xl에서도 한 줄로 늘이지 않고 네 칸(한 칸이 너무 좁아짐 — 표에 없음).
   const oneRow = ONE_ROW_GRID[items.length] ?? "";
@@ -319,13 +349,13 @@ export function KpiStrip({
           if (item.href) {
             tile = (
               <Link href={item.href} className={`${TILE} ${LINK_TILE}`}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} keepDates={keepDates} />
               </Link>
             );
           } else {
             tile = (
               <div role="group" aria-label={item.label} className={TILE}>
-                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} />
+                <KpiTileBody item={item} pendingGap={pendingGap} pendingWide={pendingWide} pendingMatchesValue={pendingMatchesValue} keepDates={keepDates} />
               </div>
             );
           }

@@ -83,7 +83,7 @@ export function RiskSection({
       actions={<Freshness refreshError={refreshError} />}
     >
       {/* 값·단위·변화(직전 대비)·기준일·출처 — 받지 못한 지표는 '—'와 '수집 실패', MOVE(추정)는 '대리 지표' 배지와 주의 상태 글(lib/macroScreen riskKpis). */}
-      <KpiStrip label="신용·변동성 지표" items={riskKpis(risk)} />
+      <KpiStrip label="신용·변동성 지표" items={riskKpis(risk)} keepDates />
 
       <div className="mt-4">
         {/* 참고 표라 처음에는 접어 둡니다(긴 화면 — 실행 명세 §9-10). */}

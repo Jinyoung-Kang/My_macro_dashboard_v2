@@ -50,7 +50,7 @@ export function SpreadSection({
       <div className="grid gap-4 2xl:grid-cols-2">
         <div className="min-w-0">
           <GroupHeading title="공식 확정치 · FRED" note="(일별, 하루 이상 지연)" />
-          <KpiStrip label={`${pair} 공식 확정치`} items={kpis.official} />
+          <KpiStrip label={`${pair} 공식 확정치`} items={kpis.official} keepDates />
         </div>
         <div className="min-w-0">
           <GroupHeading title="스크래핑 참고 시세 · TradingView" note="(지금, 공식 확정치 아님)" />
@@ -64,7 +64,7 @@ export function SpreadSection({
             </p>
           ) : null}
           {kpis.scraped ? (
-            <KpiStrip label={`${pair} 스크래핑 참고 시세`} items={kpis.scraped} />
+            <KpiStrip label={`${pair} 스크래핑 참고 시세`} items={kpis.scraped} keepDates />
           ) : (
             <p className="py-2 text-sm text-text-2">스크래핑 시세를 받지 못했습니다. 공식 확정치만 표시합니다.</p>
           )}

@@ -470,6 +470,18 @@ describe("KpiStrip — 값 꼴에 맞춘 읽는 중 타일(pendingMatchesValue)"
   });
 });
 
+describe("KpiStrip — 날짜 마디 묶음(keepDates)", () => {
+  it("주면 출처 줄·보조 글의 날짜·시각 마디만 줄바꿈 없는 묶음(글 그대로), 주지 않으면 묶음 없음(홈 띠 그대로)", () => {
+    const items = [{ key: "a", label: "심화", value: 1.2, note: "표본 2016-08-08 이후 2,560개 · 기준일 2026-11-03", source: "FRED", asOf: "2026-11-03" }];
+    const { container, unmount } = render(<KpiStrip label="띠" items={items} keepDates />);
+    expect(Array.from(container.querySelectorAll(".whitespace-nowrap")).map((span) => span.textContent)).toEqual(expect.arrayContaining(["2016-08-08", "2026-11-03"]));
+    expect(within(tile("심화")).getByText(/표본/).textContent).toBe("표본 2016-08-08 이후 2,560개 · 기준일 2026-11-03");
+    unmount();
+    const plain = render(<KpiStrip label="띠" items={items} />);
+    expect(Array.from(plain.container.querySelectorAll(".whitespace-nowrap")).some((span) => /\d{4}-\d{2}-\d{2}/.test(span.textContent ?? ""))).toBe(false);
+  });
+});
+
 describe("KpiStrip — 출처 줄", () => {
   it("출처·지연·시각을 주면 타일 아래 출처 줄(12px 보조 글 · 읽어 주는 머리말 '출처:') — 링크 타일 이름에도 들어간다", () => {
     render(
