@@ -3,6 +3,7 @@
  *
  *  - 닫혀 있으면 내용이 DOM에 없고, 열리면 role="dialog"에 제목이 이름으로, 설명이 aria-describedby로 붙는다
  *  - 제목을 숨겨도(hideTitle) 이름은 남는다
+ *  - 제목의 언어(titleLang)를 주면 제목에 lang이 붙는다
  *  - Esc·닫기 단추는 onOpenChange(false) — dismissible=false면 둘 다 막힌다(처리 중)
  *  - Trigger 없이 연 창도 닫으면 연 단추로 포커스가 돌아간다
  *  - 움직임은 motion-safe: 안에만(움직임 줄이기면 없음)
@@ -41,6 +42,14 @@ describe("열림과 닫힘", () => {
   it("설명이 없으면 aria-describedby도 없다", () => {
     render(<Dialog open onOpenChange={() => {}} title="검색">내용</Dialog>);
     expect(screen.getByRole("dialog", { name: "검색" }).getAttribute("aria-describedby")).toBeNull();
+  });
+
+  it("제목의 언어(titleLang)를 주면 제목에 lang이 붙고, 주지 않으면 없다(문서 언어)", () => {
+    const { unmount } = render(<Dialog open onOpenChange={() => {}} title="Synthetic headline" titleLang="en">내용</Dialog>);
+    expect(screen.getByRole("heading", { name: "Synthetic headline" }).getAttribute("lang")).toBe("en");
+    unmount();
+    render(<Dialog open onOpenChange={() => {}} title="계좌 초기화">내용</Dialog>);
+    expect(screen.getByRole("heading", { name: "계좌 초기화" }).hasAttribute("lang")).toBe(false);
   });
 
   it("hideTitle이면 제목은 화면에서 숨지만 이름은 남는다", () => {

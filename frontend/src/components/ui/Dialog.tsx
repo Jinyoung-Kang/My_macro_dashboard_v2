@@ -46,6 +46,7 @@ export function Dialog({
   open,
   onOpenChange,
   title,
+  titleLang,
   hideTitle = false,
   description,
   trigger,
@@ -60,6 +61,8 @@ export function Dialog({
   onOpenChange: (open: boolean) => void;
   /** 대화상자 이름 — 화면 읽기 프로그램이 "대화상자, {title}"로 읽습니다. */
   title: string;
+  /** 제목의 언어(lang) — 화면 글(한국어)과 다른 언어의 이름(영어 기사 제목 등)이면 넘겨 그 언어의 음성으로 읽히게 합니다(WCAG 3.1.2). 없으면 문서 언어. */
+  titleLang?: string;
   /** 제목을 화면에서 숨기고 이름으로만 남깁니다(검색 창처럼 입력칸이 제목 노릇을 할 때). */
   hideTitle?: boolean;
   /** 제목 아래 설명(aria-describedby로 이어짐). 블록 요소를 넣어도 되게 div로 그립니다. */
@@ -88,7 +91,9 @@ export function Dialog({
   // 제목은 데이터 이름(13F 보유 종목·기관 이름)이 들어오기도 해 대상 머리 h1·검사 칸 제목과 같은 이름 규칙 — 말줄임 없이 낱말 사이에서 줄을 바꾸고
   // 칸보다 긴 낱말만 칸 안에서 끊습니다(QA-569 — 공백 없는 긴 이름이 닫기 단추 밑으로 넘쳐 대화상자가 가로로 스크롤됐음).
   const heading = (
-    <DialogPrimitive.Title className={`min-w-0 break-keep wrap-anywhere text-heading text-text ${showClose ? "pr-10" : ""}`.trim()}>{title}</DialogPrimitive.Title>
+    <DialogPrimitive.Title lang={titleLang} className={`min-w-0 break-keep wrap-anywhere text-heading text-text ${showClose ? "pr-10" : ""}`.trim()}>
+      {title}
+    </DialogPrimitive.Title>
   );
 
   return (
