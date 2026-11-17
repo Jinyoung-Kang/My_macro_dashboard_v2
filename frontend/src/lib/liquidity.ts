@@ -34,9 +34,14 @@ export function liquidityChartSeries(rows: readonly LiquidityRow[]) {
 
 /**
  * KPI 타일 하나 — 공용 KPI 띠의 타일 형(lib/kpi KpiItem — 정본)에서 값을 글로, 변화 칸을 늘 채우는 꼴로 좁힌 것.
- * 값을 모르면 `value`가 "—"(화면 Empty) — 0으로 채우지 않습니다.
+ * 값을 모르면 `value`가 "—"(화면 Empty)이고 단위가 없습니다 — 0으로 채우지 않습니다. 값이 있으면 `value`는 숫자 부분('5.745'·'−484.6'),
+ * `unit`은 그 단위('조 달러'·'억 달러')입니다(QA-662 — valueAndUnit).
  */
-export type LiquidityKpi = KpiItem & { value: string | null; change?: { change: number | null; digits: number; unit: string; caption: string } };
+export type LiquidityKpi = KpiItem & {
+  value: string | null;
+  unit?: string;
+  change?: { change: number | null; digits: number; unit: string; caption: string };
+};
 
 /** 변화 칩에 넘기는 변화량 — 그 단위(`unit`)로 옮긴 값과 소수 자릿수. */
 export type TrillionDeltaChip = { change: number; digits: number; unit: string };
@@ -62,6 +67,18 @@ export type UsdKrwConvert = {
   note: string;
 };
 
+/**
+ * 값 글('5.745조 달러'·'−484.6억 달러')을 숫자 부분과 단위로 — 마지막 숫자 뒤에서 자릅니다. 숫자 글의 정본은 lib/format(formatTrillionUsd·formatBillionUsd·
+ * formatTrillionDelta)이고 여기서는 자르기만 합니다(부호 +·−는 숫자 쪽). 단위를 따로 넘겨야 공용 KPI 띠가 단위를 14px로 마지막 글자와 한 묶음에
+ * 두어(값 끝 묶음·값 줄 −12px 여유) 좁은 한 줄 타일(1280 메뉴 220·320, 1366)에서 '5.745조 달|러'처럼 낱말 안에서 꺾이지 않습니다(QA-662).
+ * 숫자가 없는 글(모르는 값 '—')은 단위 없이 그대로.
+ */
+function valueAndUnit(text: string): { value: string; unit?: string } {
+  const match = /^(.*\d)\s*(\D+)$/.exec(text);
+  const unit = match ? match[2].trim() : "";
+  return match && unit !== "" ? { value: match[1], unit } : { value: text };
+}
+
 /** 메모 조각을 ' · '로 — 빈 조각은 뺍니다. 음수 부호는 −(QA-627). */
 function memo(...parts: (string | null | undefined)[]): string | null {
   const shown = parts.filter((part): part is string => typeof part === "string" && part.trim() !== "");
@@ -72,6 +89,7 @@ function memo(...parts: (string | null | undefined)[]): string | null {
  * 순유동성 화면 맨 위 KPI 띠 — 순유동성 · 연준 총자산 · TGA · RRP(최신 주) · 4주 변화 · 12주 변화(모멘텀). 응답에 그 묶음이 없으면 그 타일들을 두지 않습니다
  * (예전 화면이 묶음째 그리지 않던 것과 같음).
  *
+ * - 값은 숫자 부분(`value`)과 단위(`unit` — '조 달러'·'억 달러')로 나눠 넘깁니다(QA-662 — valueAndUnit). 모르는 값은 '—'(단위 없음).
  * - 순유동성: 값(조 달러), 변화 칩(전주 대비 — `trillionDeltaChip`), 메모(원화 환산 · 환율 기준), 출처 줄(FRED · 기준일).
  * - 총자산·TGA·RRP: 값과 원화 환산 메모(TGA·RRP는 해석 한 줄을 이어 붙임).
  * - 4주·12주 변화: 값(부호 −, QA-627)과 원화 환산 메모. 값 자체가 변화량이라 칩을 두지 않습니다(부호가 방향).
@@ -94,7 +112,7 @@ export function liquidityKpis(
       {
         key: "net",
         label: "순유동성 (Net Liquidity)",
-        value: formatTrillionUsd(latest.netLiquidityT),
+        ...valueAndUnit(formatTrillionUsd(latest.netLiquidityT)),
         change: chip ? { ...chip, caption: "전주 대비" } : undefined,
         note: memo(usdKrw.trillionToKrw(latest.netLiquidityT), usdKrw.note),
         source,
@@ -104,21 +122,21 @@ export function liquidityKpis(
       {
         key: "walcl",
         label: "연준 총자산 (WALCL)",
-        value: formatTrillionUsd(latest.walclT),
+        ...valueAndUnit(formatTrillionUsd(latest.walclT)),
         note: memo(usdKrw.trillionToKrw(latest.walclT)),
         isEstimated: estimated,
       },
       {
         key: "tga",
         label: "재무부 일반계정 (TGA)",
-        value: formatBillionUsd(latest.tgaB),
+        ...valueAndUnit(formatBillionUsd(latest.tgaB)),
         note: memo(usdKrw.billionToKrw(latest.tgaB), "TGA 증가 = 시장에서 자금 흡수"),
         isEstimated: estimated,
       },
       {
         key: "rrp",
         label: "역레포 (ON RRP)",
-        value: formatBillionUsd(latest.rrpB),
+        ...valueAndUnit(formatBillionUsd(latest.rrpB)),
         note: memo(usdKrw.billionToKrw(latest.rrpB), "RRP 감소 = 시장으로 유동성 환류"),
         isEstimated: estimated,
       },
@@ -129,14 +147,14 @@ export function liquidityKpis(
       {
         key: "change4w",
         label: "4주 변화",
-        value: withMinusSign(formatTrillionDelta(momentum.change4w)),
+        ...valueAndUnit(withMinusSign(formatTrillionDelta(momentum.change4w))),
         note: memo(usdKrw.trillionToKrw(momentum.change4w), "유동성은 방향과 속도가 함께 중요합니다."),
         isEstimated: estimated,
       },
       {
         key: "change12w",
         label: "12주 변화",
-        value: withMinusSign(formatTrillionDelta(momentum.change12w)),
+        ...valueAndUnit(withMinusSign(formatTrillionDelta(momentum.change12w))),
         note: memo(usdKrw.trillionToKrw(momentum.change12w)),
         isEstimated: estimated,
       },

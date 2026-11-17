@@ -728,6 +728,13 @@ export function ScatterPlot({
           label={{ value: `${xLabel}${xUnit ? ` (${xUnit})` : ""}`, position: "insideBottom",
                    offset: -18, fill: AXIS_TEXT, fontSize: CHART_FONT }}
         />
+        {/*
+          Y축 이름 — X축 이름과 같은 글꼴(12px·text-3)로 축 칸 왼쪽에 세워 적습니다(QA-665 — 예전에는 X축 이름만 있어 Y 값이 무엇의 몇 단위인지 그림만으로는
+          몰랐음). 이름은 그림 x 약 6~20px에 세로 가운데로 섭니다(가장 긴 '금융스트레스 (STLFSI4) (pt)'도 y 79~231 — 그림 영역 8~302 안). 눈금 글은 축 칸(70px)
+          오른쪽에 맞춰 글 길이에 따라 왼쪽 끝이 달라(여섯 자 '600.00' 33px, 여덟 자 '1,200.00' 23px), 겹치지 않는 까닭은 이름 옆 높이에 오는 눈금이 짧아서입니다 —
+          가장 넓은 눈금은 절댓값이 큰 맨 위·맨 아래이고, 지금 계열 목록에서 이름 옆 눈금은 여섯 자 이하라 13px 이상 떨어집니다. 이름 옆 눈금이 다섯 자리 수준
+          ('30,000.00' — 17px)인 계열이 들어오면 이름과 겹치므로 그때 축 칸 폭이나 왼쪽 여백을 늘립니다.
+        */}
         <YAxis
           type="number"
           dataKey="y"
@@ -737,6 +744,8 @@ export function ScatterPlot({
           tickLine={false}
           width={70}
           tickFormatter={(value: number) => `${formatNumber(value, 2)}`}
+          label={{ value: `${yLabel}${yUnit ? ` (${yUnit})` : ""}`, angle: -90, position: "insideLeft",
+                   fill: AXIS_TEXT, fontSize: CHART_FONT, textAnchor: "middle" }}
         />
         <ZAxis range={[24, 24]} />
         {/* 0선을 그어 사분면이 보이게 합니다 — 변화끼리 비교할 때 핵심입니다. */}

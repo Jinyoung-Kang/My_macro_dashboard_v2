@@ -132,7 +132,21 @@ describe("상관 화면의 칸 틀", () => {
     expect(tiles[0].textContent).not.toContain("+");
     expect(within(tiles[0]).getByText("약하게 반대 방향으로 움직였습니다.")).toBeTruthy();
     expect(tiles[1].textContent).toContain("496개");
-    expect(within(tiles[1]).getByText("2023-11-17 ~ 2026-11-14")).toBeTruthy();
+    // 보조 글은 날짜 마디가 줄바꿈 없는 묶음으로 갈려(keepDates — QA-663) 글 마디가 나뉘므로 글 전체로 봅니다.
+    expect((tiles[1].querySelector("p.break-keep") as HTMLElement).textContent).toBe("2023-11-17 ~ 2026-11-14");
+  });
+
+  // QA-663: 상관 요약 띠에 keepDates가 없어 표본 수 보조 글의 계산 기간이 좁은 타일(1024~1279 lg 네 칸 칸 90~119px)에서 '2024-11-05 ~ 2026-11-|03'처럼
+  // 날짜 안(하이픈 뒤)에서 꺾였습니다(QA 스택 1100·1180 메뉴 220). 두 날짜는 각각 줄바꿈 없는 묶음이어야 합니다(매크로·순유동성 띠와 같음).
+  // 수정 전(재현 커밋에서는 it.fails) 보조 글 안에 span.whitespace-nowrap이 없었습니다.
+  it("표본 수 보조 글의 두 날짜는 각각 줄바꿈 없는 묶음 — 날짜 마디 사이에서만 꺾는다 (QA-663)", async () => {
+    reads[CORRELATION] = correlation();
+    render(<CorrelationPage />);
+    const strip = await screen.findByRole("region", { name: "상관 요약" });
+    const samples = within(strip).getByRole("group", { name: "표본 수" });
+    const dates = [...samples.querySelectorAll<HTMLElement>("p span.whitespace-nowrap")].map((span) => span.textContent);
+    expect(dates).toEqual(["2023-11-17", "2026-11-14"]);
+    expect((samples.querySelector("p.break-keep") as HTMLElement).textContent).toBe("2023-11-17 ~ 2026-11-14");
   });
 
   it("읽는 동안 가운데 칸은 값이 온 뒤와 같은 자리 — KPI 띠 둘(자리표시)·롤링 260px·산점도 360px 자리표시(패널 제목 그대로), 오면 값으로", async () => {

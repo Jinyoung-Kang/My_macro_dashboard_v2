@@ -24,6 +24,13 @@ import LiquidityPage from "../liquidity/page";
 /** 줄 처음·공백·여는 괄호 뒤의 ASCII 하이픈 음수 부호(lib/format withMinusSign이 바꾸는 자리) — 날짜·코드의 하이픈은 걸리지 않습니다. */
 const ASCII_MINUS = /(^|[\s(])-(?=[\d.])/;
 
+/**
+ * 값 글 — 글이 '값 + 단위' 전체와 같은 가장 안쪽 요소. 단위가 있으면 마지막 글자와 단위가 값 끝 묶음으로 갈려 글 마디가 나뉘므로(QA-662)
+ * getByText('5.745조 달러')로는 찾지 못합니다(KpiStrip 시험의 valueText와 같음).
+ */
+const valueMatcher = (text: string) => (_: string, element: Element | null) =>
+  element !== null && element.textContent === text && !Array.from(element.children).some((child) => child.textContent === text);
+
 const liquidity = (overrides: Record<string, unknown> = {}) => ({
   available: true, isEstimated: false, collectedAtKst: "2026-11-04 19:34 KST", ageSeconds: 60, stale: false,
   rows: [
@@ -54,8 +61,8 @@ describe("QA-627 4주·12주 변화의 음수 부호", () => {
   it("4주·12주 변화 값과 그 원화 환산의 음수가 −(U+2212)다", async () => {
     render(<LiquidityPage />);
 
-    expect(await screen.findByText("−480.0억 달러")).toBeTruthy();
-    expect(screen.getByText("−940.0억 달러")).toBeTruthy();
+    expect(await screen.findByText(valueMatcher("−480.0억 달러"))).toBeTruthy();
+    expect(screen.getByText(valueMatcher("−940.0억 달러"))).toBeTruthy();
     expect(screen.getByText(/약 −64\.285조 원/)).toBeTruthy();
     expect(screen.queryAllByText(ASCII_MINUS).map((node) => node.textContent)).toEqual([]);
   });
@@ -73,7 +80,7 @@ describe("순유동성 KPI 띠(P5a)", () => {
       "순유동성 (Net Liquidity)", "연준 총자산 (WALCL)", "재무부 일반계정 (TGA)", "역레포 (ON RRP)", "4주 변화", "12주 변화",
     ]);
     const net = tiles()[0];
-    expect(within(net).getByText("5.745조 달러")).toBeTruthy();
+    expect(within(net).getByText(valueMatcher("5.745조 달러"))).toBeTruthy();
     // 전주 대비 +0.0047조 = +47.0억 달러 — 변화 칩(▲·읽어 주는 '상승')과 단위, 캡션.
     expect(within(net).getByText("상승")).toBeTruthy();
     expect(within(net).getByText("+47.0")).toBeTruthy();
@@ -83,8 +90,29 @@ describe("순유동성 KPI 띠(P5a)", () => {
     expect(within(net).getByText(/원\/달러 1,339\.28 기준/)).toBeTruthy();
     // 값 자체가 변화량인 4주·12주는 칩 없이 부호(−)로.
     expect(within(tiles()[4]).queryByText("하락")).toBeNull();
-    expect(within(tiles()[4]).getByText("−480.0억 달러")).toBeTruthy();
+    expect(within(tiles()[4]).getByText(valueMatcher("−480.0억 달러"))).toBeTruthy();
     expect(within(tiles()[2]).getByText(/TGA 증가 = 시장에서 자금 흡수/)).toBeTruthy();
+  });
+
+  // QA-662: 값을 단위까지 한 글('5.745조 달러')로 넘겨 단위 묶음이 쓰이지 않았습니다 — 1280·1366 한 줄 여섯 칸에서 '5.745조 달|러'처럼 낱말 안에서
+  // 꺾였습니다(QA 스택). 단위는 14px(text-3)로 값의 마지막 글자와 줄바꿈 없는 묶음 하나여야 합니다. 값 글 전체는 그대로 '값 + 단위'.
+  // 수정 전(재현 커밋에서는 it.fails) '조 달러'만 담은 요소가 없었습니다('Unable to find an element with the text: 조 달러').
+  it("값의 단위는 마지막 글자와 줄바꿈 없는 묶음 — 값 글 전체는 '5.745조 달러' 그대로 (QA-662)", async () => {
+    render(<LiquidityPage />);
+    await screen.findByRole("region", { name: "순유동성 요약" });
+
+    const unit = within(tiles()[0]).getByText("조 달러");
+    expect(unit.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-sm", "text-text-3"]));
+    const tail = unit.parentElement as HTMLElement;
+    expect(tail.className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect(tail.textContent).toBe("5조 달러");
+    const value = tail.parentElement as HTMLElement;
+    expect(value.className.split(/\s+/)).toContain("tabular-nums");
+    expect(value.textContent).toBe("5.745조 달러");
+    // 4주 변화 — 부호는 숫자 쪽, 단위는 같은 묶음.
+    const change = within(tiles()[4]).getByText("억 달러");
+    expect((change.parentElement as HTMLElement).className.split(/\s+/)).toContain("whitespace-nowrap");
+    expect((change.parentElement?.parentElement as HTMLElement).textContent).toBe("−480.0억 달러");
   });
 
   it("추정치 모드면 여섯 타일 모두 '추정' 배지이고 위험 안내 상자도 그대로다", async () => {

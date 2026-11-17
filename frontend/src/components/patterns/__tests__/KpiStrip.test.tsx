@@ -199,6 +199,46 @@ describe("KpiStrip — 값 있음", () => {
     rerender(<KpiStrip label="요약" items={items(9)} />);
     expect(list().className.split(/\s+/)).toEqual(["grid", "grid-cols-2", "gap-2", "sm:grid-cols-3", "lg:grid-cols-4"]);
   });
+
+  // QA-663: lg 칸 수가 타일 수와 상관없이 네 칸이라, 타일 둘인 상관 요약 띠가 1024~1279에서 줄의 절반만 써 칸이 90~119px로 좁아졌습니다
+  // (QA 스택 1024 메뉴 220 '상관계수 (변|화)', 1100·1180 메뉴 220 보조 글 '2026-11-|03'). lg 칸 수는 타일 수와 4 가운데 작은 쪽이어야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails) items(2)의 목록에는 'lg:grid-cols-4'가 있었고 'lg:grid-cols-2'가 없었습니다.
+  it("lg 칸 수는 타일 수와 4 가운데 작은 쪽 — 하나·둘·셋이면 그만큼, 넷 이상이면 네 칸 (QA-663)", () => {
+    const items = (n: number): KpiItem[] => Array.from({ length: n }, (_, index) => ({ key: `k${index}`, label: `값 ${index}`, value: index }));
+    const { container, rerender } = render(<KpiStrip label="요약" items={items(2)} />);
+    const list = () => (container.querySelector("ul") as HTMLElement).className.split(/\s+/);
+    expect(list()).toContain("lg:grid-cols-2");
+    expect(list()).not.toContain("lg:grid-cols-4");
+    rerender(<KpiStrip label="요약" items={items(3)} />);
+    expect(list()).toContain("lg:grid-cols-3");
+    expect(list()).not.toContain("lg:grid-cols-4");
+    rerender(<KpiStrip label="요약" items={items(1)} />);
+    expect(list()).toContain("lg:grid-cols-1");
+    for (const n of [4, 6, 7, 9]) {
+      rerender(<KpiStrip label="요약" items={items(n)} />);
+      expect(list().filter((token) => token.startsWith("lg:grid-cols")), `${n}`).toEqual(["lg:grid-cols-4"]);
+    }
+    // sm 세 칸은 그대로.
+    rerender(<KpiStrip label="요약" items={items(2)} />);
+    expect(list()).toContain("sm:grid-cols-3");
+  });
+
+  // QA-663: 타일 이름 칸에 break-keep이 없어 타일의 wrap-anywhere만 물려받아 한글을 음절 사이에서 꺾었습니다('상관계수 (변|화)' — QA 스택 1024 메뉴 220).
+  // 공용 글 부품 규약(QA-568 — 낱말 사이에서만 꺾음, 보조 글은 QA-637)에서 빠진 자리입니다. 수정 전(재현 커밋에서는 it.fails) 이름 칸 클래스에 'break-keep'이 없었습니다.
+  it("타일 이름은 낱말 사이에서만 꺾는다 — 묶음 타일·링크 타일 모두 break-keep (QA-663)", () => {
+    render(
+      <KpiStrip
+        label="요약"
+        items={[
+          { key: "corr", label: "상관계수 (변화)", value: -0.007 },
+          { key: "sp500", label: "S&P 500", value: 6012.3, href: "/markets/i/sp500" },
+        ]}
+      />,
+    );
+    expect(within(tile("상관계수 (변화)")).getByText("상관계수 (변화)").className.split(/\s+/)).toContain("break-keep");
+    const link = screen.getByRole("link", { name: /S&P 500/ });
+    expect(within(link).getByText("S&P 500").className.split(/\s+/)).toContain("break-keep");
+  });
 });
 
 describe("KpiStrip — 값 없음·불러오는 중·오류", () => {
