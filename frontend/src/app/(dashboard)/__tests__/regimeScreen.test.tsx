@@ -590,7 +590,7 @@ describe("QA-673 과거 구간·판정 성과 표의 첫 열은 행 머리", () 
 // 실패하면 실패 글(머리의 다시 시도를 가리킴)이고, 실패 뒤 다시 읽는 동안은 한 줄(QA-655 규칙), 막대 자리는 처음 읽는 동안만이어야 합니다.
 describe("QA-674 판정 근거 패널은 국면 읽기가 실패하면 읽는 중 자리표시를 두지 않는다", () => {
   // 수정 전(재현 커밋에서는 it.fails)에는 실패 뒤에도 읽는 중 상태가 남았습니다('expected <div role="status" …(3)>…(5)</div> to be null').
-  it.fails("국면 읽기가 실패하면 판정 근거에 읽는 중 상태·aria-busy가 없고 실패 글", async () => {
+  it("국면 읽기가 실패하면 판정 근거에 읽는 중 상태·aria-busy가 없고 실패 글", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path === REGIME ? Promise.reject(new Error("요청 실패 (HTTP 503)")) : new Promise(() => {}));
     render(<RegimePage />);
@@ -604,7 +604,7 @@ describe("QA-674 판정 근거 패널은 국면 읽기가 실패하면 읽는 �
   });
 
   // 수정 전(재현 커밋에서는 it.fails)에는 다시 읽는 동안 막대 자리가 다시 그려졌습니다('expected <div role="status" …(3)>…(5)</div> to be null').
-  it.fails("실패 뒤 다시 읽는 동안은 막대 자리 없이 '판정 근거를 읽는 중…' 한 줄, 다시 실패하면 실패 글", async () => {
+  it("실패 뒤 다시 읽는 동안은 막대 자리 없이 '판정 근거를 읽는 중…' 한 줄, 다시 실패하면 실패 글", async () => {
     const state = failFirst(REGIME);
     render(<RegimePage />);
     const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;

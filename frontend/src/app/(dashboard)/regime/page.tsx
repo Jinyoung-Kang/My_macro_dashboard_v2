@@ -218,8 +218,21 @@ export default function RegimePage() {
     </>
   ) : error ? (
     <p className="break-keep text-sm text-text-2">국면을 읽지 못해 이력을 그리지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
-  ) : (
+  ) : firstLoadPending(regime) ? (
     <Skeleton lines={4} label="국면 이력을 읽는 중" />
+  ) : (
+    // 실패 뒤 다시 읽는 동안은 한 줄 — 실패 글과 막대 자리가 갱신마다 번갈아 그려지지 않게(머리·판정 기록과 같은 QA-655 규칙, QA-674).
+    <Loading label="국면 이력을 읽는 중…" />
+  );
+
+  // 판정 근거 패널의 값 자리 — 받기 전에는 자리표시, 읽지 못했으면 이력 탭과 같은 실패 글(머리에 오류 상자와 다시 시도가 있음). 예전에는 data만 보아 실패해도
+  // 읽는 중 자리표시(aria-busy '판정 근거 불러오는 중')가 남았습니다(QA-674). 막대 자리는 처음 읽는 동안만, 실패 뒤 다시 읽는 동안은 한 줄입니다(QA-655 규칙).
+  const evidencePending = data ? undefined : error ? (
+    <p className="break-keep text-sm text-text-2">판정 근거를 읽지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
+  ) : firstLoadPending(regime) ? (
+    <Skeleton lines={4} label="판정 근거 불러오는 중" />
+  ) : (
+    <Loading label="판정 근거를 읽는 중…" />
   );
 
   return (
@@ -275,7 +288,7 @@ export default function RegimePage() {
       <SplitPane
         left={
           <Panel title="판정 근거" subtitle="결론에 동의하지 않아도 근거는 그대로 확인할 수 있어야 합니다.">
-            <PropertyList items={signalItems} placeholder={data ? undefined : <Skeleton lines={4} label="판정 근거 불러오는 중" />} />
+            <PropertyList items={signalItems} placeholder={evidencePending} />
             {data ? (
               <p className="mt-2 break-keep text-xs leading-4 text-text-3">
                 기준일 <span className="tabular-nums">{model.asOf ?? EMPTY}</span> — {REGIME_AS_OF_NOTE}
