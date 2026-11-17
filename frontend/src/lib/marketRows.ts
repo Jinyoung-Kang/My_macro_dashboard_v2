@@ -76,7 +76,7 @@ export type RegimeTile = {
  * 자리를 여기 고정해 둬야 빠진 신호가 "—"로 남습니다(조용히 사라지지 않음). 라벨은 그때만 쓰는 대신 값이고, 신호가 오면 백엔드 라벨을 씁니다.
  * 자릿수는 승인된 홈 시안(금리차·하이일드 소수 둘째, NFCI·순유동성 4주 변화 소수 셋째 — 0.031조 달러를 0.03으로 뭉개지 않음)을 따르고,
  * 방향이 뜻을 가진 셋(역전·긴축·유입)은 부호를 붙입니다 — 부호 규칙은 /regime 판정 기록 표(lib/regime.ts)와 같고, 음수 글자는 −(U+2212)입니다
- * (같은 홈 화면의 변화 칩·KPI와 같은 글자 — 명세 D4, QA-600). /regime 표의 음수 글자는 P5a에서 맞춥니다.
+ * (같은 홈 화면의 변화 칩·KPI와 같은 글자 — 명세 D4, QA-600). /regime 화면의 판정 근거도 이 모델이고, 판정 기록·판정 성과도 같은 −입니다(QA-636).
  */
 const REGIME_SLOTS: readonly { id: string; label: string; format: (value: number) => string }[] = [
   { id: "curve", label: "장단기 금리차 10Y-3M", format: (value) => formatSignedMinus(value, 2).text },
@@ -146,7 +146,7 @@ export function regimeHeroModel(response: RegimeResponse | null | undefined): Re
 
 /**
  * 카드 한 장의 출처 글 — 수집기가 붙인 출처가 우선이고, 예전 저장본(출처 없음)은 티커로 채웁니다. 비공식 참고 시세는 "· 참고 시세"를
- * 붙입니다(/macro 화면 itemSource와 같은 규칙 — 4단계에서 /macro를 옮길 때 하나로 합칩니다).
+ * 붙입니다(/macro 지표 표의 출처(lib/macroScreen macroIndicatorRow)·지표 상세도 이 함수를 씁니다).
  */
 export function macroItemSource(item: Pick<MacroItem, "source" | "ticker" | "isReference">): string | null {
   const ticker = presentText(item.ticker);
@@ -169,7 +169,7 @@ export type MarketClock = {
 export type CardSession = { label: string | null; delayMin: number | null };
 
 /**
- * 카드 한 장의 장 상태와 지연 — /macro의 SessionBadge와 같은 규칙(ADR 0017 결정 6, PRINCIPLES "지표 카드의 개장/마감 배지").
+ * 카드 한 장의 장 상태와 지연 — /macro 지표 표의 기준 칸·미리보기(lib/macroScreen macroIndicatorRow)도 이 함수를 씁니다(ADR 0017 결정 6, PRINCIPLES "지표 카드의 개장/마감 배지").
  *
  * - 지연은 장이 열려 있을 때만 뜻이 있습니다. 열려 있으면 "개장" + 지연("개장 · 실시간"), 닫혀 있으면 "마감"·"휴식"·"휴장"·
  *   "휴장 추정"만 적고 지연은 적지 않습니다(값이 언제 것인지는 시각이 말함). 닫힌 장의 이틀 지난 종가에 '실시간'을 찍지 않습니다.
@@ -215,7 +215,7 @@ export function deltaDigits(deltaStr: string | null | undefined): number | null 
  * - 변화는 delta·pct 숫자 그대로 — null이면 칩을 생략합니다("N/A" deltaStr을 0으로 읽지 않음). 변화량 자릿수는 deltaStr을 따릅니다.
  * - 출처 배지는 "출처 · 장 상태 · 지연 · 시각" 하나(카드마다 배지 하나 — ADR 0017 결정 6). 장 상태·지연 규칙은 `macroCardSession`.
  *   장이 닫혀 배지에 적지 않은 지연은 툴팁(provenanceTitle)에 둡니다 — /macro 장 상태 배지의 툴팁과 같은 규칙(이어받은 값·실패는 없음).
- * - 이어받은 값은 "이전 값" 배지 + 사유(수집기가 비우면 "수집 실패" — cardNotices와 같음).
+ * - 이어받은 값은 "이전 값" 배지 + 사유(수집기가 비우면 "수집 실패").
  * - 추정(isEstimated)·경고(warning)는 있으면 그대로 넘깁니다(배지는 반드시 보임).
  * - 아바타는 티커 앞 글자(`assetMonogram` — 영문 티커가 없으면 이름 첫 글자). 장식이라 뜻은 이름이 나릅니다.
  */

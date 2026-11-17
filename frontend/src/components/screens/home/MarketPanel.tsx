@@ -71,7 +71,7 @@ const COLUMNS: readonly Column<HomeRow>[] = [
  *
  * 개요는 live 없이 읽습니다(5분 간격) — live=true면 신선도 기준이 60초로 내려가 백엔드가 Yahoo 수집을 자주 깨웁니다(429 이력).
  * 출처·장 상태·지연·시각은 모든 줄에, 추정·이전 값·경고·참고 시세는 해당 줄에 반드시 보입니다. 장 상태(개장·마감·휴장)는 보는 시각으로
- * 판정합니다(/macro SessionBadge와 같은 시계·공휴일 — 화면 훅이 읽음). 지연은 장이 열려 있을 때만 적습니다(lib/home macroCardSession).
+ * 판정합니다(/macro 지표 표와 같은 시계·공휴일 — 화면 훅이 읽음). 지연은 장이 열려 있을 때만 적습니다(lib/marketRows macroCardSession).
  *
  * 개요와 시계는 홈 화면 훅(useHomeData)이 읽어 넘깁니다 — 맨 위 KPI 띠의 시장 타일과 같은 응답입니다.
  */

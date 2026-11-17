@@ -290,7 +290,7 @@ describe("홈 — 값 있음(운영자)", () => {
     const usdkrw = marketRow("원/달러 (USD/KRW)");
     expect(within(usdkrw).getByRole("link").getAttribute("href")).toBe("/markets/i/usdkrw");
     expect(within(usdkrw).getByText("1,322.28")).toBeTruthy();
-    // 열린 장만 지연을 적습니다("개장 · 실시간", "개장 · 10분 지연" — /macro SessionBadge와 같은 규칙).
+    // 열린 장만 지연을 적습니다("개장 · 실시간", "개장 · 10분 지연" — /macro 지표 표와 같은 규칙, lib/marketRows macroCardSession).
     expect(within(usdkrw).getByText("Yahoo Finance (KRW=X) · 개장 · 실시간 · 2026-10-26 16:51")).toBeTruthy();
 
     showGroup("미국 주가지수 및 선물");

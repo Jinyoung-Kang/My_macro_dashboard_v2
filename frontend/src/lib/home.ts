@@ -87,7 +87,7 @@ export type MarketGroup = { id: string; title: string; rows: HomeRow[] };
 
 /**
  * 매크로 개요의 범주 순서 그대로 범주별 행 묶음. 제목 앞 그림 문자는 뗍니다(카드 제목에 아이콘을 쓰지 않음). 응답이 없으면 빈 목록.
- * 장 상태의 멈춤 판정에 쓰는 수집 시각은 개요의 collectedAtKst입니다(/macro SessionBadge와 같음).
+ * 장 상태의 멈춤 판정에 쓰는 수집 시각은 개요의 collectedAtKst입니다(/macro 지표 표 — lib/macroScreen macroIndicatorGroups와 같음).
  * 행이 가는 곳은 {@code href}를 주면 모든 행이 그곳, 주지 않으면 행마다 그 지표의 상세(/markets/i/<키> — 사용자 요청 2026-11-02).
  */
 export function marketGroups(
