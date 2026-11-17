@@ -451,3 +451,44 @@ describe("QA-647 판정 기록·성과 부제는 모르는 수를 지어내지 �
     expect(trackPanel.textContent ?? "").toContain("매주 목요일 —주 판정");
   });
 });
+
+// QA-650: 대상 머리의 읽는 중 자리표시가 값이 온 뒤의 머리보다 낮아(P5a 검토 반영 `23de9e99`의 최소 높이 160·136·76px — 설명 글·주 값 줄·배지 줄 합보다 작음),
+// 값이 오면 아래 칸 틀 전체가 밀렸습니다. 자기 빌드(메뉴 220, QA API GET — 응답 2.5초 지연)에서 머리 높이 390 268 → 306px·1024 168 → 174px·1280 이상
+// 108 → 116px. 1024에서는 그 6px 이동이 '연결' 패널이 화면 밖으로 밀리는 것과 같은 프레임에 걸려 첫 적재 CLS가 0.4718(8번 중 6~7번 — 기준 `a5cdae2f`
+// 0.3525)이었습니다. 자리표시는 값이 온 뒤의 머리(설명 글·주 값 줄·배지 줄 — 이름 줄은 그대로)와 같은 높이를 폭마다 잡아야 합니다.
+// 기대 높이는 자기 빌드에서 판정 다섯 글(백엔드 Regime.java의 고정 글)로 잰 값이 온 뒤의 부분 높이(설명 + 4 + 주 값 줄 36 + 4 + 배지 줄)이고,
+// 글마다 다르면 많은 쪽입니다: 390(기본) 60+36+74 · 640(sm) 40+36+58 · 768(md) 20+36+42 · 1024(lg) 40+36+58 · 1280 이상(xl) 20+36+20.
+// jsdom은 배치를 계산하지 않으므로 자리표시의 높이 클래스(h-*·min-h-*, 폭 앞머리)로 폭마다 잡는 높이를 셉니다.
+describe("QA-650 대상 머리의 읽는 중 자리표시는 값이 온 뒤의 머리와 같은 높이", () => {
+  const STEPS = ["", "sm:", "md:", "lg:", "xl:"] as const;
+  /** 클래스의 높이 값(px) — 'h-15' 60, 'h-[74px]' 74, 'min-h-40' 160. 폭 앞머리가 그 폭 이하인 것 가운데 가장 큰 앞머리의 값. */
+  function heightAt(element: Element, step: number, kind: "h" | "min-h"): number | null {
+    const tokens = (element.getAttribute("class") ?? "").split(/\s+/);
+    let found: number | null = null;
+    STEPS.slice(0, step + 1).forEach((prefix) => {
+      for (const token of tokens) {
+        const match = token.startsWith(prefix) ? new RegExp(`^${kind}-(?:(\\d+(?:\\.\\d+)?)|\\[(\\d+)px\\])$`).exec(token.slice(prefix.length)) : null;
+        if (match) found = match[1] !== undefined ? Number(match[1]) * 4 : Number(match[2]);
+      }
+    });
+    return found;
+  }
+  /** 자리표시가 그 폭에서 잡는 높이 — 자기 최소 높이와, 높이가 정해진 자식들의 합(+ gap) 가운데 큰 쪽. */
+  function reserved(root: Element, step: number): number {
+    const gapToken = (root.getAttribute("class") ?? "").split(/\s+/).find((token) => /^gap-\d+$/.test(token));
+    const gap = gapToken ? Number(gapToken.slice(4)) * 4 : 0;
+    const parts = Array.from(root.children).map((child) => heightAt(child, step, "h")).filter((value): value is number => value !== null);
+    const sum = parts.length > 0 ? parts.reduce((total, value) => total + value, 0) + gap * (parts.length - 1) : 0;
+    return Math.max(heightAt(root, step, "min-h") ?? 0, sum);
+  }
+
+  it.fails("폭마다(기본·sm·md·lg·xl) 설명 글 + 주 값 줄 + 배지 줄 높이 178·142·106·142·84px를 잡는다", () => {
+    render(<RegimePage />);
+    const header = screen.getByRole("heading", { level: 1, name: "시장 국면" }).closest("header") as HTMLElement;
+    const status = within(header).getByRole("status", { name: "국면을 판정하는 중" });
+    // EntityHeader가 자리표시를 감싸는 칸(div.min-w-0)의 첫 자식이 자리표시입니다.
+    let slot: HTMLElement = status;
+    while (slot.parentElement && !(slot.parentElement.className === "min-w-0")) slot = slot.parentElement;
+    expect(STEPS.map((_, step) => reserved(slot, step))).toEqual([178, 142, 106, 142, 84]);
+  });
+});
