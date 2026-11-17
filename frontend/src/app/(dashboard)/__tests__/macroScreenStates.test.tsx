@@ -174,19 +174,22 @@ describe("QA-103 첫 조회·버튼 동작이 실패하면 이유를 보인다",
   // QA-670: 신용·변동성도 첫 조회가 실패하면 사유를 버리고 회색 빈 상태 글만 그려 다시 시도가 없었다(개편 전부터 — 자동 갱신 '끄기'면 다시 읽을 길이 없음).
   // 수정 전(재현 커밋에서는 따로 it.fails)에는 패널에 '리스크 지표를 불러오지 못했습니다.'만 있어 사유를 찾지 못했다('Unable to find an element with the text: 요청 실패 (HTTP 503)').
   // 다시 시도를 누르면 그 경로를 한 번 더 읽는다(요청은 누를 때만 — 정해진 요청 목록·간격은 그대로).
-  it.each<[string, string, () => ReactElement]>([
-    ["스크래핑 시세", "/api/macro/scraped", () => <ScrapedSection />],
-    ["매크로 심화 지표", "/api/macro/advanced", () => <MacroPage />],
-    ["매크로 신용·변동성", "/api/macro/risk", () => <MacroPage />],
-  ])("%s: 첫 조회가 실패하면 오류와 다시 시도 — 누르면 한 번 더 읽는다", async (_name, path, make) => {
+  // 사유와 다시 시도는 그 경로를 읽는 패널(제목으로 찾은 section) 안에서 찾습니다 — 페이지 전체에서 찾으면 다른 자리(머리·다른 패널)에 그려져도
+  // 통과했습니다(QA-670 고침 f9da95c7이 재현 커밋 dd451528의 좁힌 시험을 이 행으로 합치며 넓어짐).
+  it.each<[string, string, string, () => ReactElement]>([
+    ["스크래핑 시세", "/api/macro/scraped", "비공식 스크래핑 시세 비교", () => <ScrapedSection />],
+    ["매크로 심화 지표", "/api/macro/advanced", "심화 매크로 지표", () => <MacroPage />],
+    ["매크로 신용·변동성", "/api/macro/risk", "신용 리스크, 은행권 및 시장 변동성", () => <MacroPage />],
+  ])("%s: 첫 조회가 실패하면 그 패널에 오류와 다시 시도 — 누르면 한 번 더 읽는다", async (_name, path, card, make) => {
     reads[path] = () => Promise.reject(new Error(FAILED));
 
     render(make());
 
-    expect(await screen.findByText(FAILED)).toBeTruthy();
+    const section = await cardTitled(card);
+    expect(await within(section).findByText(FAILED)).toBeTruthy();
     const pathReads = () => api.apiGetShared.mock.calls.filter(([called]) => String(called).startsWith(path)).length;
     const before = pathReads();
-    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    fireEvent.click(within(section).getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(pathReads()).toBe(before + 1));
   });
 });
