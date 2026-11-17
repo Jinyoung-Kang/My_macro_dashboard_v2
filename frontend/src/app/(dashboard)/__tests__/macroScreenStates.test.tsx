@@ -265,4 +265,16 @@ describe("QA-668 저장본 없음이면 지표 개수를 0으로 적지 않는�
     expect(within(nav).getAllByRole("link", { name: "지표" })[0]).toBe(first);
     expect(within(nav).queryAllByRole("link", { name: /^지표 \(/ })).toEqual([]);
   });
+
+  // 같은 화면의 비공식 스크래핑 시세 표도 저장본이 없을 때(백엔드 MacroService.scrapedMarkets — available=false, items는 빈 목록) 표 위 개수 줄에 '0개'를
+  // 적었습니다(P5a 4e70ebb0이 개수 줄을 더함 — 첫 고침 26d54d57에서 빠짐, QA 스택·자체 빌드 390·1440 합성 응답). 빈 표 글은 그대로여야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 표 위에 '0개'가 있었습니다('expected [ <p …(1)></p> ] to deeply equal []').
+  it.fails("비공식 스크래핑 시세 available=false — 표 위에 'n개'가 없고, 빈 표 글은 그대로", async () => {
+    reads["/api/macro/scraped"] = () => Promise.resolve({ available: false, items: [] });
+    render(<ScrapedSection />);
+
+    const section = await cardTitled("비공식 스크래핑 시세 비교");
+    expect(await within(section).findByText("표시할 데이터가 없습니다.")).toBeTruthy();
+    expect(within(section).queryAllByText(/\d개$/)).toEqual([]);
+  });
 });
