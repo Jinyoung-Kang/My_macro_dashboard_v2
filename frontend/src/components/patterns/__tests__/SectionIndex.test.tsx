@@ -333,6 +333,34 @@ describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크�
   });
 });
 
+// QA-656: 스크롤 상자의 위쪽 여백(QA-643)을 줄 높이 상수(45·31px)로 두었는데, 고전 스크롤 막대를 그리는 브라우저에서 칸이 넘치면 가로 줄 안에 10px 막대가
+// 서서 줄이 31→41px(좁은 화면 45→55px)이 되었습니다 — Shift+Tab으로 위로 옮긴 포커스가 줄 밑에 최대 10px 가려짐(P5a QA — 1024x768 메뉴 272 /macro).
+// 이제 목차가 가로 줄의 잰 높이(offsetHeight — 아래 선·가로 막대 포함)를 문서 루트의 --section-strip-h로 적고, 전역 규칙이 그 값을 씁니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 변수를 적지 않아 ''이었습니다. jsdom은 배치를 하지 않아 줄 높이와 ResizeObserver를 대역으로 줍니다.
+describe("QA-656 가로 줄의 잰 높이를 문서 루트 --section-strip-h로 적는다", () => {
+  it.fails("줄 높이가 41px(가로 막대가 섬)이 되어 ResizeObserver가 울리면 '41px', 화면을 떠나면 지운다", () => {
+    let callback: () => void = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          callback = cb;
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const root = document.documentElement;
+    const { unmount } = renderIndex({ activeId: null });
+    Object.defineProperty(lists().strip, "offsetHeight", { configurable: true, value: 41 });
+    act(() => callback());
+    expect(root.style.getPropertyValue("--section-strip-h")).toBe("41px");
+    unmount();
+    expect(root.style.getPropertyValue("--section-strip-h")).toBe("");
+  });
+});
+
 // QA-645: 지금 절 띠(뷰포트 위 96px 아래 ~ 34%)로만 고르면 마지막 절은 지금 칸이 되지 못했습니다 — 목차에서 마지막 절을 누르거나 끝까지 내려도 페이지가
 // 더 내려가지 못해 그 절의 위 끝이 띠 아래(390 543px·1024 687px·1440 715px)에 남고, 띠에는 앞 절 꼬리만 걸려 aria-current가 앞 절에 남았습니다
 // (P5a 검토 — 자기 빌드 /macro, 운영자 '경제 캘린더'·회원 '비공식 시세'). 스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안에 있는 마지막 절이
