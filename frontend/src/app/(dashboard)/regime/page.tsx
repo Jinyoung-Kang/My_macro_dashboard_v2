@@ -105,7 +105,15 @@ export default function RegimePage() {
   const model = regimeHeroModel(data);
   const bandLabel = regimeBandLabel(data?.timeline, (data?.episodes ?? []).length);
   // 응답 전에는 값 자리에 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도. 이름·이력 기간 고르기는 그대로 남습니다(QA-047).
-  const pending = data ? null : error ? <ErrorState message={error} onRetry={reload} /> : <Skeleton lines={2} label="국면을 판정하는 중" />;
+  // 자리표시는 값이 온 뒤의 머리(설명 글·주 값 줄·배지 줄) 높이만큼 잡습니다 — 두 줄 막대(44px)였을 때 값이 오면 아래 '판정 근거'가 1024에서 98px·
+  // 1440에서 40px 밀렸습니다(P5a 검토 CLS). 설명 글이 좁은 화면 2~3줄·lg~xl 2줄(배지 줄도 꺾임)·xl 이상 1줄이라 폭마다 최소 높이를 둡니다(자기 빌드 잼).
+  const pending = data ? null : error ? (
+    <ErrorState message={error} onRetry={reload} />
+  ) : (
+    <div className="min-h-40 lg:min-h-34 xl:min-h-19">
+      <Skeleton lines={3} label="국면을 판정하는 중" />
+    </div>
+  );
 
   // 판정 근거 넷 — 홈 국면 패널과 같은 모델(자리 고정 — 받지 못한 신호는 —와 '받지 못함', 자릿수·부호 −가 같음, QA-636). 값은 정상·주의 톤 글자색,
   // 아래 보조 글은 상태 글(정상·주의 아이콘 — 주의만 '주의:', QA-505) + 해석. 판정 근거는 좁은 칸이라 이름 위·값 아래(block).
