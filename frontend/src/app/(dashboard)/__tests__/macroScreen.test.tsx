@@ -515,6 +515,42 @@ describe("지표 표와 미리보기", () => {
     expect(within(dialog).getByText("장 상태·지연").nextElementSibling?.textContent).toBe("마감");
   });
 
+  // QA-667: 좁은 화면 두 줄 행은 변화 칩 앞에 낭독기 전용 머리말 '변화'를 늘 붙여, 칩이 보합이면(칩의 낭독 글 '변화 없음') 행 머리 접근 이름이
+  // '… 변화 변화 없음 0.000 (0.00%) …'으로 겹쳤습니다(QA 스택 390, 합성 개요 — 정확히 0인 줄과 반올림해 0인 줄 모두). 보합이면 머리말을 빼고
+  // '변화 없음 0.000'만 읽어야 합니다. 상승·하락('변화 하락 …')·모름('변화 값 없음')은 그대로입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 겹쳤습니다("expected '미국채 2년물 수익률(%)ZT=F · 미국 국채변화 변화 없음0.0…' not to match /변화\s*변화 없음/").
+  it.fails("좁은 화면: 변화가 보합(0, 반올림해 0 포함)인 줄의 행 머리는 '변화 변화 없음'으로 겹치지 않는다 — '변화 없음 0.000'", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({ matches: query === "(width < 48rem)", media: query, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as MediaQueryList,
+    );
+    reads["/api/macro/overview"] = () => Promise.resolve({ ...OVERVIEW, categories: [
+      { id: "ust", title: "미국 국채 수익률", items: [
+        card({ key: "us02y", name: "미국채 2년물 수익률(%)", ticker: "ZT=F", market: "ust", priceStr: "3.600", delta: 0, pct: 0,
+          deltaStr: "0.000 (0.00%)", prevStr: "3.600" }),
+        card({ key: "us10y", name: "미국채 10년물 수익률(%)", ticker: "^TNX", market: "ust", priceStr: "4.123", delta: 0.0004, pct: 0.004,
+          deltaStr: "+0.000 (+0.00%)", prevStr: "4.123" }),
+        card({ key: "us30y", name: "미국채 30년물 수익률(%)", ticker: "^TYX", market: "ust", priceStr: "4.700", delta: -0.012, pct: -0.25,
+          deltaStr: "-0.012 (-0.25%)", prevStr: "4.712" }),
+      ] },
+    ] });
+    render(<MacroPage />);
+
+    const table = await screen.findByRole("table", { name: "미국 국채 수익률 지표" });
+    for (const name of [/미국채 2년물/, /미국채 10년물/]) {
+      const header = within(table).getByRole("rowheader", { name });
+      const text = header.textContent ?? "";
+      expect(text).not.toMatch(/변화\s*변화 없음/);
+      expect(text).toContain("변화 없음");
+      expect(text).toContain("0.000");
+    }
+    // 하락 줄은 머리말 '변화'(낭독기 전용)와 칩의 '하락' 그대로.
+    const down = within(table).getByRole("rowheader", { name: /미국채 30년물/ }).querySelector("[data-macro-narrow-line]") as HTMLElement;
+    expect(within(down).getByText("변화").className).toContain("sr-only");
+    expect(within(down).getByText("하락").className).toContain("sr-only");
+  });
+
   it("md~lg(좁은 화면도 넓은 화면도 아님)는 네 칸 표 그대로 — 최소 640px(넘기면 안내), 둘째 줄 없음", async () => {
     render(<MacroPage />);
 
