@@ -338,3 +338,29 @@ describe("QA-673 극단 성적·최근 신호 표의 첫 열은 행 머리", () 
     expect(within(recent).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["2026-08-18", "2026-07-21"]);
   });
 });
+
+// QA-678: 요약 표 머리 '스마트머니 순포지션'이 꺾이지 않는 한 줄(145px)이라 표의 최소 폭이 662~668px(> 640 하한)이 되어, 1024 창·'넓게' 메뉴(272)의
+// 표 상자 644~654px에서 18px 안팎 넘쳤습니다(P5a가 옛 표를 공용 표로 옮기며 머리·기준일이 꺾이지 않게 됨). 2026-11-17 결정(사용자 위임 — 권장안 (가)):
+// 머리를 '스마트머니 / 순포지션' 두 줄로 — 접근 이름은 한 머리.
+describe("QA-678 COT 요약 표의 스마트머니 순포지션 머리는 두 줄", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 머리에 줄바꿈이 없었습니다('expected  to have a length of 1 but got +0').
+  it.fails("머리는 줄바꿈 하나로 두 줄이고, 접근 이름·글은 '스마트머니 순포지션' 한 머리", async () => {
+    render(<CotPage />);
+    const table = await screen.findByRole("table", { name: "자산별 요약" });
+
+    const header = within(table).getByRole("columnheader", { name: "스마트머니 순포지션" });
+    expect(header.querySelectorAll("br")).toHaveLength(1);
+    expect(header.textContent).toBe("스마트머니 순포지션");
+  });
+
+  // 수정 전(재현 커밋에서는 it.fails)에는 읽는 동안 자리의 머리 줄이 한 줄 머리 높이(h-8 — 32px)였습니다
+  // ("expected [ 'flex', 'h-8', 'items-center', …(5) ] to deeply equal …").
+  it.fails("요약을 읽는 동안 자리의 머리 줄도 두 줄 머리 높이(52px) — 값이 온 뒤 아래 패널이 밀리지 않게", () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    render(<CotPage />);
+    const panel = screen.getByRole("heading", { name: "자산별 요약" }).closest("section") as HTMLElement;
+    // 자리의 첫 줄(자산 줄 여섯 앞)이 표 머리 줄 자리입니다.
+    const headRow = panel.querySelector("[data-cot-pending-row]")?.parentElement?.firstElementChild;
+    expect(headRow?.getAttribute("class")?.split(/\s+/)).toEqual(expect.arrayContaining(["h-[52px]", "border-b"]));
+  });
+});
