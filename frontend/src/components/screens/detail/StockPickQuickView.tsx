@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type ReactElement, type RefObject, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, type ReactElement, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/patterns";
 import { buttonClasses, Callout, ErrorState, FOCUS_RING, inputClasses } from "@/components/ui";
 import { Dialog } from "@/components/ui/Dialog";
@@ -108,7 +108,10 @@ function PickBody({ name, warnings }: { name: string; warnings: string[] }) {
   // 다시 시도뿐 — 앞 결과가 남는 줄에서 다시 실패하면 누른 그 단추라 옮기지 않음), 단추가 없으면(맞는 후보 없음) 입력칸. 그 사이 사용자가 포커스를 다른
   // 곳(입력칸·닫기)으로 옮겼으면 그대로 둡니다 — 결과 자리 안(자리 자체·누른 다시 시도 단추)에 있거나 대화상자 틀·문서 처음으로 떨어졌을 때(누른 단추가
   // 결과로 바뀌어 사라짐)만 옮깁니다.
-  useEffect(() => {
+  // 그리기와 같은 커밋 안(useLayoutEffect)에서 옮깁니다 — 수동 effect(useEffect)는 그림이 붙은 뒤 돌아, 그 사이 누른 단추가 지워진 것을 본 Radix
+  // FocusScope의 MutationObserver가 포커스가 body인 것을 보고 대화상자 틀에 한 번 포커스했습니다(앞 결과가 남는 줄의 다시 시도 뒤 — QA-690). 커밋 안에서
+  // 옮기면 그 관찰자가 돌 때 포커스는 이미 결과에 있습니다.
+  useLayoutEffect(() => {
     if (focusNext.current?.to !== "results" || symbols.loading) return;
     focusNext.current = null;
     const place = resultsRef.current;

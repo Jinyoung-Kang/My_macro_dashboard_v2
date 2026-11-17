@@ -637,7 +637,7 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
 // FocusScope의 MutationObserver가 activeElement가 body인 것을 보고 틀에 포커스했습니다. 읽기 실패의 다시 시도(포커스를 먼저 결과 자리로 옮김)와 다시
 // 실패해 같은 단추가 남는 경우는 틀을 거치지 않았습니다(대조). act 안에서 응답을 보내면 effect가 act 끝에 함께 비워져 원본에서도 틀을 거치지 않으므로,
 // 응답은 act 밖에서(IS_REACT_ACT_ENVIRONMENT false — 브라우저처럼 React 스케줄러가 그림) 보내고 focusin 기록에 틀이 없는지 봅니다.
-// 수정 전(재현 커밋에서는 it.fails)에는 focusin 기록에 틀(DIALOG)이 있었습니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 focusin 기록에 틀(DIALOG)이 있었습니다. 고침: 결과로 옮기는 effect를 useLayoutEffect로(조건·의존 그대로).
 describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커스는 틀을 거치지 않고 결과로", () => {
   const actEnv = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
   const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
@@ -681,7 +681,7 @@ describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커�
   /** 포커스가 거쳐 간 대화상자 틀(role=dialog). */
   const frames = (moves: Element[]) => moves.filter((element) => element.getAttribute("role") === "dialog");
 
-  it.fails("출처 실패 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
+  it("출처 실패 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
     const { dialog, moves } = await retryOutsideAct(SOURCE_FAILED, CANDIDATES, listed);
     const first = within(within(dialog).getByRole("list", { name: /종목 후보 2건/ })).getAllByRole("button")[0];
     expect(document.activeElement).toBe(first);
@@ -690,7 +690,7 @@ describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커�
     expect(moves).toEqual([first]);
   });
 
-  it.fails("종목 찾기를 쓸 수 없음 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
+  it("종목 찾기를 쓸 수 없음 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
     const { dialog, moves } = await retryOutsideAct(UNAVAILABLE, CANDIDATES, listed);
     const first = within(within(dialog).getByRole("list", { name: /종목 후보 2건/ })).getAllByRole("button")[0];
     expect(document.activeElement).toBe(first);
@@ -698,7 +698,7 @@ describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커�
     expect(moves).toEqual([first]);
   });
 
-  it.fails("출처 실패 → 맞는 후보 없음: 틀을 거치지 않고 입력칸으로", async () => {
+  it("출처 실패 → 맞는 후보 없음: 틀을 거치지 않고 입력칸으로", async () => {
     const { dialog, moves } = await retryOutsideAct(SOURCE_FAILED, NO_MATCH, (box) => /맞는 종목 후보가 없습니다/.test(box.textContent ?? ""));
     const input = within(dialog).getByRole("textbox", { name: /검색어/ });
     expect(document.activeElement).toBe(input);
