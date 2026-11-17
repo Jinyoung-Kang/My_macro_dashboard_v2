@@ -243,3 +243,19 @@ describe("SectionIndex — 지금 절(useSectionSpy)", () => {
     expect(current()).toBe("#macro-fx");
   });
 });
+
+// QA-643: 가로 줄(columnFrom 미만 — 좁은 화면 44px + 아래 선 1px, lg~xl 30px + 1px)은 본문 위에 불투명하게 붙어 따라오는데, 스크롤 상자(lg 미만 html,
+// lg 이상 #main)에 그만큼의 위쪽 스크롤 여백(scroll-padding-top)이 없었습니다. Shift+Tab 등으로 포커스가 위로 옮겨 가 상자 위 끝에 맞춰지면 포커스된
+// 요소가 줄 밑에 가려졌습니다(WCAG 2.2 2.4.11 — 아래 탭 바는 scroll-padding-bottom으로 이미 막아 둠, P5a 검토). 절 닻의 scroll-margin은 목차 링크로 옮길
+// 때만 쓰이고 Tab 포커스 스크롤에는 쓰이지 않습니다. jsdom은 스크롤을 계산하지 않으므로 내비의 표지와 전역 CSS 규칙(소스)으로 봅니다.
+describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크롤 여백", () => {
+  it.fails("내비가 가로 줄 표지(columnFrom)를 달고, 그 폭의 스크롤 상자에 줄 높이만큼 scroll-padding-top이 있다", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    renderIndex({ columnFrom: "xl" });
+    expect(screen.getByRole("navigation", { name: "매크로 지표 목차" }).getAttribute("data-section-index-bar")).toBe("xl");
+    const css = readFileSync(resolve(__dirname, "../../../app/globals.css"), "utf8");
+    expect(css).toMatch(/@media \(width < 64rem\) \{\s*html:has\(\[data-section-index-bar\]\) \{\s*scroll-padding-top: 45px;/);
+    expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: 31px;/);
+  });
+});
