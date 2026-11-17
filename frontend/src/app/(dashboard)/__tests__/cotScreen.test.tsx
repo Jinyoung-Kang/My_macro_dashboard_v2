@@ -122,8 +122,8 @@ describe("COT 작업대 배치(P5a)", () => {
     expect(target).toBeTruthy();
     expect(within(target!).getByRole("heading", { name: `포지셔닝 추이 — ${S_AND_P}` })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "자산별 요약" }).parentElement?.textContent).toContain("2개");
-    // 좁은 화면 누름 자리 — 한 글자 이름('금')도 폭 44px(lg 미만), 기준일·'n일 전 공시'는 각자 한 줄(하이픈 뒤에서 꺾지 않음).
-    expect(button.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-11", "min-w-11", "lg:min-w-0"]));
+    // 누름 자리 — 한 글자 이름('금')도 좁은 화면 폭 44px(lg 미만)·넓은 화면 높이·폭 24px(결정 8), 기준일·'n일 전 공시'는 각자 한 줄(하이픈 뒤에서 꺾지 않음).
+    expect(button.className.split(/\s+/)).toEqual(expect.arrayContaining(["min-h-11", "min-w-11", "lg:min-h-6", "lg:min-w-6"]));
     expect(within(rowNamed("금")).getByText("2026-10-27").parentElement?.className).toContain("whitespace-nowrap");
   });
 

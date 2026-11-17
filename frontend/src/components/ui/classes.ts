@@ -129,10 +129,12 @@ export const TEXT_TARGET = "inline-flex min-h-11 items-center lg:min-h-0";
 
 /**
  * 표·목록 줄의 이름 단추(검사 칸 틀의 줄 단추 InspectorTrigger, COT 자산 고르기 단추 등) — 데이터 칸이라 강조 파랑이 아니라 중립 잉크(본문색), 마우스를
- * 올리면 밑줄, 포커스 링. 좁은 화면(lg 미만) 누르는 자리는 높이와 폭 모두 44px(한 글자 이름 '금'도 — TEXT_TARGET은 높이만), 넓은 화면은 글 크기.
+ * 올리면 밑줄, 포커스 링. 좁은 화면(lg 미만) 누르는 자리는 높이와 폭 모두 44px(한 글자 이름 '금'도 — TEXT_TARGET은 높이만), 넓은 화면은 높이와 폭 모두
+ * 24px 이상(명세 §3-7 '작은 것 24px(표 안)' — WCAG 2.5.8 최소 크기. 글 높이 20px인 단추가 24px, 한 글자 '금'은 폭 14 → 24px — 2026-11-17 결정 8, 사용자
+ * 위임 — 권장안). TEXT_TARGET을 쓰지 않고 같은 조각을 여기 적습니다 — 그 lg:min-h-0과 lg:min-h-6을 함께 두면 어느 쪽이 이길지가 생성된 CSS 차례에 걸립니다.
  * 이름은 말줄임 없이 낱말 사이에서 꺾습니다.
  */
-export const ROW_TRIGGER = `${TEXT_TARGET} min-w-11 rounded-sm text-left text-text break-keep underline-offset-2 hover:underline lg:min-w-0 ${FOCUS_RING}`;
+export const ROW_TRIGGER = `inline-flex min-h-11 min-w-11 items-center rounded-sm text-left text-text break-keep underline-offset-2 hover:underline lg:min-h-6 lg:min-w-6 ${FOCUS_RING}`;
 
 /** 글 링크(누를 수 있는 것이라 강조 파랑) — 따로 선 링크라 좁은 화면에서도 누르는 자리 44px(TEXT_TARGET과 같은 규칙), 넓은 화면은 글 높이. */
 export const LINK_CLASSES = `${TEXT_TARGET} rounded-sm text-accent underline-offset-2 hover:text-accent-hover hover:underline ${FOCUS_RING}`;

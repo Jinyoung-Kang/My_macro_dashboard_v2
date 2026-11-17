@@ -371,12 +371,15 @@ describe("InspectorFrame — 자리표시·누름 자리·강조색", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("줄 단추는 좁은 화면 높이·폭 44px(짧은 이름도)·중립 잉크(본문색·밑줄은 마우스를 올릴 때)·포커스 링, 낱말 사이에서 꺾음 — 누름 자리 감사 통과", () => {
+  it("줄 단추는 좁은 화면 높이·폭 44px·넓은 화면 높이·폭 24px(짧은 이름도 — 결정 8)·중립 잉크(본문색·밑줄은 마우스를 올릴 때)·포커스 링, 낱말 사이에서 꺾음 — 누름 자리 감사 통과", () => {
     renderFrame();
     const classes = tokens(trigger("미국채 10년물"));
     expect(classes).toEqual(
-      expect.arrayContaining(["min-h-11", "lg:min-h-0", "min-w-11", "lg:min-w-0", "text-left", "text-text", "break-keep", "hover:underline", "focus-visible:outline-focus"]),
+      expect.arrayContaining(["min-h-11", "lg:min-h-6", "min-w-11", "lg:min-w-6", "text-left", "text-text", "break-keep", "hover:underline", "focus-visible:outline-focus"]),
     );
+    // 같은 변형의 높이·폭 하한이 둘이면(예: lg:min-h-0과 lg:min-h-6) 이기는 쪽이 CSS 차례에 걸립니다 — 하나씩만.
+    expect(classes.filter((token) => token.startsWith("lg:min-h-"))).toEqual(["lg:min-h-6"]);
+    expect(classes.filter((token) => token.startsWith("lg:min-w-"))).toEqual(["lg:min-w-6"]);
     expect(trigger("미국채 10년물").getAttribute("type")).toBe("button");
     expect(smallTargets(screen.getByRole("table"))).toEqual([]);
   });
