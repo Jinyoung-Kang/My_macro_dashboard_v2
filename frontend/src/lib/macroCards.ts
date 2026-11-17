@@ -18,7 +18,8 @@ export function categoryDelay(category: MacroCategory): string | undefined {
   }
   const labels = new Set(live.map((item) => delayLabel(item.delayMinutes) ?? "지연 모름"));
   if (labels.size === 0) return undefined;
-  // 좁은 화면(md 미만)의 /macro 지표 표에는 기준 칸이 없고 그 내용이 이름 단추의 미리보기에 있습니다(2026-11-17 결정 9).
-  return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 기준 칸(좁은 화면은 미리보기) 참고";
+  // md 미만(768px 미만)의 /macro 지표 표에는 기준 칸이 없고 그 내용이 이름 단추의 미리보기에 있습니다(2026-11-17 결정 9). 글에는 폭 이름을 쓰지 않습니다 —
+  // 같은 화면군의 '좁은 화면'은 lg 미만이라, 기준 칸이 있는 768~1023에서도 '좁은 화면은 미리보기'로 읽혔습니다(P5a 후속 검토).
+  return labels.size === 1 ? `시세: ${[...labels][0]}` : "시세: 종목마다 다름 — 기준 칸(없으면 지표 미리보기) 참고";
 }
 

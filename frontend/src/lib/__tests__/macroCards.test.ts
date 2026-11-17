@@ -10,7 +10,7 @@ describe("categoryDelay", () => {
   it("모두 같으면 그 지연, 다르면 종목마다 다름", () => {
     expect(categoryDelay(category([item({ delayMinutes: 10 }), item({ delayMinutes: 10 })]))).toBe("시세: 10분 지연");
     expect(categoryDelay(category([item({ delayMinutes: 0 }), item({ delayMinutes: 10 })])))
-      .toBe("시세: 종목마다 다름 — 기준 칸(좁은 화면은 미리보기) 참고");
+      .toBe("시세: 종목마다 다름 — 기준 칸(없으면 지표 미리보기) 참고");
   });
 
   it("수집 실패·이어받은 값은 요약에서 뺀다", () => {
