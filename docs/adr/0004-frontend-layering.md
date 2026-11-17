@@ -121,15 +121,15 @@
   단축키 도움말 '목록' 묶음), roving tabindex, 고른 줄은 잉크 막대 `SELECTED_BAR` — 데이터 칸 강조색 금지 목록). 화면 층의 `hooks/useWideShell`·`ui/Dialog`를 씁니다.
   처음 쓰는 곳은 상세 화면의 보유 탭(P4), 모의매매 목록 + 검사 칸(P6)도 이것을 씁니다(모의매매 전용으로 만들지 않음 — 명세 §6). 지키는 시험은
   `components/patterns/__tests__/MasterDetail.test.tsx`·`lib/__tests__/shortcuts.test.ts`·`components/shell/__tests__/ShortcutHelp.test.tsx`.
-- 목차 `components/patterns/SectionIndex.tsx` — 화면 패턴(긴 화면 목차 `SectionIndex`와 절 닻 `SectionAnchor` — `columnFrom`(lg·xl) 이상은 왼쪽 13rem 세로 목록(하위 칸
+- 목차 `components/patterns/SectionIndex.tsx` — 화면 패턴(긴 화면 목차 `SectionIndex`와 절 닻 `SectionAnchor` — `columnFrom`(lg·xl·2xl — 폭마다 정적 클래스 한 벌) 이상은 왼쪽 13rem 세로 목록(하위 칸
   들여씀, 스크롤 영역 위쪽에 붙음), 그 아래는 본문 위에 붙는 가로 줄(첫 단계 칸만, 밑줄 탭 모양 — 좁은 화면 44px), 이름 있는 내비 하나·칸은 같은 화면 절 링크·
-  지금 칸 aria-current="location", 개수는 숫자일 때만, 하위 칸을 아직 모르면 `pendingChildren`만큼 글 없는 자리 줄 — P5a 검토). 지금 절은 화면 층 훅 `hooks/useSectionSpy`(IntersectionObserver —
+  지금 칸 aria-current="location", 개수는 숫자일 때만, 하위 칸을 아직 모르면 `pendingChildren`만큼 글 없는 자리 줄 — P5a 검토, 개수를 아직 모르면 `pendingCount`로 숫자 두 자리 폭의 개수 자리 — QA-652). 지금 절은 화면 층 훅 `hooks/useSectionSpy`(IntersectionObserver —
   뷰포트 위 96px 아래부터 위 34%까지의 띠, QA-626, 스크롤 상자가 끝이면 화면 안의 마지막 절 — QA-645)와 순수 규칙 `lib/sectionIndex`(하위 칸이 부모보다 앞인 고르는 차례)가 정합니다. 가로 줄이 보이는 폭의
   스크롤 상자에는 줄 높이만큼 위쪽 스크롤 여백을 둡니다(내비 표지 `data-section-index-bar` + `app/globals.css` — QA-643). 내비라 지금 칸 막대·밑줄에 강조 파랑을 써서 데이터 칸 강조색 금지 목록에는 넣지 않습니다.
   처음 쓰는 곳은 매크로(P5a — 절 주소의 정본은 `lib/marketSections`, 다른 화면이 잇는 링크는 절 조각 없는 화면 경로 — QA-641), P6 프레임·설정, P7 저장소 상태. 지키는 시험은
   `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`.
 - 검사 칸 틀 `components/patterns/InspectorFrame.tsx` — 화면 패턴(줄 안에 조작이 있는 표·목록 + 고른 줄의 옆 검사 칸 또는 공용 `Dialog`(위쪽 고정) — 배치 md(틀 32rem부터 옆 15rem)·
-  lg(52rem부터 옆 18rem)·dialog(늘 대화상자), 줄 단추 `InspectorTrigger`(공용 줄 단추 클래스 `ui/classes ROW_TRIGGER` — 중립 잉크·좁은 화면 높이·폭 44px, 옆 칸에 보이는 줄의 단추는
+  lg(52rem부터 옆 18rem)·dialog(늘 대화상자), 줄 단추 `InspectorTrigger`(공용 줄 단추 클래스 `ui/classes ROW_TRIGGER` — 중립 잉크·좁은 화면 높이·폭 44px·넓은 화면 높이·폭 24px, 옆 칸에 보이는 줄의 단추는
   `aria-current`), 표에는 `shownKey`를 고른 행으로 넘김, 기본 키(`defaultKey` — 콜백 없음)·자료에서 사라진 키 안내·Esc(사용자가 고른 것만 풂 — 검사 칸 안의 Esc면 풀기 전에 그 키의 줄 단추로
   포커스, QA-642)·대화상자 배치에서 옆 칸 배치로 바뀌면 열린 키를 고름 — 목록-검사의 QA-590과 같은 규칙). 틀 폭 재기는 화면 층 훅
   `hooks/useSideBySide`를 목록-검사(`MasterDetail`)와 함께 씁니다(기준 폭 인자). 줄 전체가 단추인 목록은 `MasterDetail`, 줄 안에 링크·단추가 있는 표는 이 틀입니다.
@@ -139,6 +139,7 @@
   톤이면 아이콘 + 글, 주의·위험은 '주의:')·한 줄 요약(말줄임 없이 낱말 사이에서 꺾음, 좁은 틀은 둘째 줄)·추정/이전 값 배지, 고르면 검사 칸 제목 = 기록의 `title`,
   펼칠 때 읽는 자세한 값은 `renderDetail` 안의 자식이 읽음 — 데이터 칸 강조색 금지 목록). 명세 §8-2는 P6이었지만 처음 쓰는 곳이 국면 판정 기록(P5a)이라
   그 단계에서 만들었고, P6 결정 로그(W13 — 종류 태그 결정·장중 판단·복기)·P7 알림이 같은 API를 씁니다(날짜 묶음 머리·넓은 검사 칸은 P6이 선택 prop으로 더함).
+  읽는 중 자리표시는 목록 꼴의 `TimelineSkeleton`(줄 수는 부르는 쪽이 요청 한도 안에서 — `placeholder`로 넘김, QA-651).
   지키는 시험은 `components/patterns/__tests__/Timeline.test.tsx`(키·검사 칸 동작은 `MasterDetail.test.tsx`).
 - 표 칸 변화 `ChangeCell`(`components/patterns/ChangeChip.tsx` — 변화 칩 파일에 둠) — 화면 패턴(공용 변화 칩의 표 칸 꼴: 작은 크기·칸 안에서 꺾지 않음, 변화량·변화율을 둘 다 모르면
   공용 표가 모르는 칸에 그리는 것과 같은 '—'(Empty — 읽기 '값 없음') — 0.00%를 만들지 않음, 데이터 칸 강조색 금지 목록의 변화 칩 파일). 섹터·COT·매크로 표가 화면마다 따로 두던
