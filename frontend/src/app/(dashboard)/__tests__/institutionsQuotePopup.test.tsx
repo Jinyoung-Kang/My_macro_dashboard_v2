@@ -557,6 +557,56 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
     await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: /검색어/ })));
   });
 
+  // QA-682 보강: 고침(8311c3bd)의 retry는 상태와 상관없이 포커스를 결과 자리(div tabIndex -1, 이름·역할 없음)로 옮겼습니다. 그런데 출처 실패·종목 찾기를 쓸
+  // 수 없음 줄의 '다시 시도'는 다시 찾는 동안 앞 결과와 함께 단추가 그대로 남습니다(useApi가 같은 경로를 다시 읽는 동안 data를 둠). 크롬은 포커스 받는
+  // generic의 접근 이름을 내용 전체로 계산해(머리 없는 크롬 CDP — '다시 찾는 중… 종목 찾기를 쓸 수 없습니다 다시 시도', nameSources contents) 낭독기가 누른
+  // 직후 앞의 실패 사유를 결과처럼 읽었고, 다시 실패하면 포커스가 같은 '다시 시도' 단추로 돌아와 두 번 옮겼습니다. 단추가 남는 길은 포커스를 단추에 두고
+  // 결과가 오면 옮기며, 단추가 사라지는 읽기 실패 길만 결과 자리로 먼저 옮기되 그 자리는 짧은 이름(group '종목 후보 결과')이어야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 누른 직후 포커스가 결과 자리(div)였고, 결과 자리에 역할·이름이 없었습니다.
+  it.fails("앞 결과가 남는 다시 시도(종목 찾기를 쓸 수 없음) — 다시 찾는 동안·다시 실패한 뒤 포커스는 누른 단추 그대로(옮기지 않음), 후보가 오면 첫 후보로", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: false, message: "수집기 점검 중입니다." };
+    const dialog = await open();
+    const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
+    let fail: (error: Error) => void = () => {};
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise((_, reject) => { fail = reject; });
+    retry.focus();
+    const moves: Element[] = [];
+    const onFocusIn = (event: FocusEvent) => moves.push(event.target as Element);
+    document.addEventListener("focusin", onFocusIn);
+    try {
+      fireEvent.click(retry);
+      await within(dialog).findByText("다시 찾는 중…");
+      // 결함을 직접 보는 단언(수정 전에는 포커스가 결과 자리 div — 크롬에서는 이름이 앞 결과 전체).
+      expect(document.activeElement).toBe(retry);
+
+      await act(async () => fail(new Error("연결 실패")));
+      await within(dialog).findByText(/^다시 찾지 못했습니다 — 연결 실패/);
+      expect(within(dialog).getByRole("button", { name: "다시 시도" })).toBe(retry);
+      expect(document.activeElement).toBe(retry);
+      expect(moves).toEqual([]);
+
+      reads[endpoints.detail.symbols("ISHARES TR")] = CANDIDATES;
+      fireEvent.click(retry);
+      const list = await within(dialog).findByRole("list", { name: /종목 후보 2건/ });
+      await waitFor(() => expect(document.activeElement).toBe(within(list).getAllByRole("button")[0]));
+    } finally {
+      document.removeEventListener("focusin", onFocusIn);
+    }
+  });
+
+  it.fails("읽기 실패의 다시 시도 — 단추가 자리표시로 바뀌는 동안 머무는 결과 자리는 짧은 이름(group '종목 후보 결과')", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = new Error("요청 시간이 지났습니다");
+    const dialog = await open();
+    await within(dialog).findByText("후보를 불러오지 못했습니다 — 요청 시간이 지났습니다", { selector: "span" });
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise(() => {});
+    const button = within(dialog).getByRole("button", { name: "다시 시도" });
+    button.focus();
+    fireEvent.click(button);
+    expect(within(dialog).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    // 결함을 직접 보는 단언(수정 전에는 결과 자리에 역할·이름이 없음 — 크롬에서는 내용 전체가 이름).
+    expect(document.activeElement).toBe(within(dialog).getByRole("group", { name: "종목 후보 결과" }));
+  });
+
   it("다시 찾는 동안 사용자가 포커스를 옮겼으면(입력칸) 결과가 와도 그대로 — 찾기(같은 검색어 다시 찾기)도 포커스를 입력칸에 둔다", async () => {
     reads[endpoints.detail.symbols("ISHARES TR")] = { available: false, message: "수집기 점검 중입니다." };
     const dialog = await open();
