@@ -124,6 +124,8 @@ describe("섹터 작업대 배치(P5a)", () => {
   it("맨 위 KPI 띠가 S&P 500(SPY) 기간별 수익률 여섯이고 값의 부호가 −, 출처 줄은 첫 타일에만", async () => {
     render(<SectorPage />);
     const strip = await screen.findByRole("region", { name: "S&P 500 (SPY) 기간별 수익률" });
+    // 읽는 중 자리표시 띠도 같은 이름이라(값이 오면 같은 띠가 값으로 바뀜) 값이 올 때까지 기다립니다 — 기다리지 않으면 느린 실행에서 자리표시를 봤습니다.
+    await within(strip).findByText("−1.99%");
 
     const tiles = within(strip).getAllByRole("group");
     expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual(PERIODS.map((period) => `S&P 500 (SPY) ${period}`));
