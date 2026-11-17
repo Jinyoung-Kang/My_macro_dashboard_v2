@@ -80,21 +80,39 @@ NO_BODY = "본문을 찾지 못했습니다 — 유료·로그인 글이거나 �
 
 # 받지 않는 매체(점 경계로 맞춤 — 그 도메인이거나 그 하위 호스트). 같은 서버 IP로 도는 정기 수집을 지키고 앞선 결정을 깨지 않으려는 '처음 값'입니다
 # (서버에서 실제로 막히는 매체를 보며 고치고 ADR 0043에 덧붙임). 시작 주소(꼬리표 때 — bodyNote)와 풀린 구글 주소·리다이렉트 홉(받기 때 — refused_host)에 적용.
+# 까닭 글은 화면에 그대로 나가므로 짧은 한 문장으로 두고(줄표·ADR 번호 없음), 결정의 출처는 주석에 둡니다.
 PAYWALLED = ("bloomberg.com", "wsj.com", "ft.com", "economist.com", "barrons.com", "nikkei.com", "seekingalpha.com", "nytimes.com",
              "washingtonpost.com")
-REFUSED: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("naver.com",), "네이버 글은 받지 않습니다 — 정보 검색이 네이버를 부르는 길을 늘리지 않기로 함(ADR 0041 결정 5)"),
-    (("yahoo.com",), "Yahoo 글은 받지 않습니다 — 같은 서버 IP로 받는 시세가 막히지 않게"),
-    (("investing.com",), "인베스팅닷컴 글은 받지 않습니다 — 같은 IP의 사건 뉴스 RSS를 지키려고(ADR 0026 결정 11)"),
-    (("finviz.com",), "Finviz 안쪽 글의 본문은 받지 않습니다(ADR 0041 결정 10)"),
-    (("google.com", "bing.com"), "검색 엔진 경유 주소라 원문 주소를 찾지 못했습니다"),
-    # 증권사 호스트 글자는 토스 클라이언트 한 곳만 압니다(tests/test_toss_account — 실제 계좌 길의 격리 시험). 그래서 그 호스트는 여기 적지 않습니다 —
-    # 이 길은 공용 래치·자격 증명을 쓰지 않는 따로 선 길이라, 그 매체의 공개 글이 결과에 오면 다른 매체처럼 받습니다(ADR 0043 결과 9).
-    (("toss.im", "sec.gov", "krx.co.kr", "fss.or.kr"), "계좌·공시 출처라 이 길로 받지 않습니다"),
-    (PAYWALLED, "유료 구독 매체입니다 — 원문 열기로 보세요(로그인·유료 장벽을 넘지 않음)"),
+# 같은 서버 IP로 정기 수집하거나 부르는 호스트의 등록 도메인(태스크·서비스가 부르는 주소 — tests/test_search_article가 collector/app 안의 주소와 *HOST 상수를
+# 모두 이 목록·위 규칙·정책 표로 덮는지 대조). 기사 쪽을 브라우저 지문으로 받다가 그 도메인 앞단이 서버 IP를 의심하면 정기 수집(모의 매매 사건 뉴스·
+# 시세·정보 수집 글 — 패킷 11c_reading)이 막힐 수 있어 받지 않습니다(ADR 0043 결과 9). 공용 글 호스팅(substack·blogspot·beehiiv)은 앞단이 같아
+# 도메인째 받지 않습니다. 연합뉴스(yna.co.kr — 한국 사건 뉴스 RSS)도 여기에 듭니다(받을지·하루 예산을 작게 둘지는 사용자 결정 대기 — ADR 0043).
+SCHEDULED_DOMAINS = (
+    "tradingview.com", "daum.net", "yna.co.kr", "federalreserve.gov", "bls.gov", "bok.or.kr", "mofe.go.kr", "mods.go.kr", "data.go.kr",
+    "stlouisfed.org", "newyorkfed.org", "cftc.gov", "nasdaq.com", "wisereport.co.kr", "financialjuice.com", "waedge.ai", "wolfstreet.com",
+    "ritholtz.com", "marginalrevolution.com", "humbledollar.com", "econbrowser.com", "conversableeconomist.com", "awealthofcommonsense.com",
+    "alphaarchitect.com", "abnormalreturns.com", "theirrelevantinvestor.com", "substack.com", "blogspot.com", "beehiiv.com", "wikidata.org",
+    "gleif.org",
 )
+# 정보 검색 자체 피드(services/search_feeds — 정기 수집이지만 그 피드가 막혀도 정보 검색의 그 피드 하나만 영향)만 부르는 등록 도메인은 받습니다 —
+# 결과에 자주 나오는 매체라 막으면 본문 보기가 대부분 '없음'이 됩니다. 대조 시험이 이 목록 밖의 새 주소를 잡습니다.
+SEARCH_FEED_ONLY_DOMAINS = ("marketwatch.com", "cnbc.com", "benzinga.com", "bbci.co.uk", "europa.eu", "bankofengland.co.uk")
+ACCOUNT_NOTE = "계좌·공시 출처라 받지 않습니다"
+REFUSED: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("naver.com",), "네이버 글은 받지 않습니다"),                                      # ADR 0041 결정 5 — 네이버를 부르는 길을 늘리지 않음
+    (("yahoo.com",), "Yahoo 글은 받지 않습니다(같은 서버의 시세 수집을 지키려고)"),
+    (("investing.com",), "인베스팅닷컴 글은 받지 않습니다(같은 서버의 사건 뉴스 수집을 지키려고)"),   # ADR 0026 결정 11
+    (("finviz.com",), "Finviz 글은 받지 않습니다"),                                     # ADR 0041 결정 10
+    (("google.com", "bing.com"), "검색 엔진 경유 주소라 원문 주소를 모릅니다"),
+    (("toss.im", "sec.gov", "krx.co.kr", "fss.or.kr", "koreainvestment.com"), ACCOUNT_NOTE),
+    (PAYWALLED, "유료 구독 매체라 받지 않습니다"),                                        # 로그인·유료 장벽을 넘지 않음
+)
+# 증권사(실제 계좌 조회·실제 매매가 쓰는 API와 같은 등록 도메인) — 호스트 글자는 토스 클라이언트 한 곳만 압니다(tests/test_toss_account — 실제 계좌 길의
+# 격리 시험). 그래서 등록 도메인의 sha-256만 두고, 호스트의 접미사마다 같은 값을 셈해 맞춥니다(ADR 0043 결과 9).
+_HASHED_REFUSED = {"fb5faa050d97614c4c5ca0e7398c5fbd199d2a84b0364f0bd8eb528aa5a75e7e": ACCOUNT_NOTE}
 POLICY_NOTE = "정기 수집 출처라 따로 받지 않습니다"
-EXCLUDED_NOTE = "제외 매체입니다(정보 검색 규칙 3)"
+EXCLUDED_NOTE = "제외 매체입니다"                                                         # 정보 검색 규칙 3
+_SECOND_LEVEL = frozenset({"ac", "co", "com", "edu", "go", "gov", "ne", "net", "or", "org", "re"})
 
 
 # ------------------------------------------------------------------ 받지 않는 매체(순수)
@@ -103,19 +121,46 @@ def _matches(host: str, domain: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
+def registered_domain(host: str | None) -> str | None:
+    """호스트 → 등록 도메인 어림(마지막 두 이름표, 두 글자 국가 도메인 앞이 co·or·go 등이면 세 이름표). 대조 시험과 받지 않는 목록의 단위."""
+    labels = [label for label in (host or "").lower().rstrip(".").split(".") if label]
+    if len(labels) < 2:
+        return None
+    if len(labels) >= 3 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def _hashed_refusal(host: str) -> str | None:
+    labels = host.split(".")
+    for start in range(len(labels) - 1):
+        digest = hashlib.sha256(".".join(labels[start:]).encode("utf-8")).hexdigest()
+        if digest in _HASHED_REFUSED:
+            return _HASHED_REFUSED[digest]
+    return None
+
+
 def refusal(host: str | None, *, excludes: rules.Excludes | None = None) -> str | None:
-    """그 호스트의 글을 받지 않는 까닭(화면 글), 받아도 되면 None. 구글 경유 시작 주소(news.google.com/rss/articles)는 부르는 쪽이 따로 다룹니다."""
+    """그 호스트의 글을 받지 않는 까닭(화면 글 한 문장), 받아도 되면 None. 구글 경유 시작 주소(news.google.com/rss/articles)는 부르는 쪽이 따로 다룹니다."""
     host = (host or "").lower().rstrip(".")
     if not host:
         return None
     for domains, why in REFUSED:
         if any(_matches(host, domain) for domain in domains):
             return why
-    if any(_matches(host, known) for known in policy.POLICIES):
+    hashed = _hashed_refusal(host)
+    if hashed:
+        return hashed
+    if any(_matches(host, domain) for domain in SCHEDULED_DOMAINS) or any(_matches(host, known) for known in policy.POLICIES):
         return POLICY_NOTE
     if rules.is_excluded_media(host, None, excludes):
         return EXCLUDED_NOTE
     return None
+
+
+def refused_message(host: str, why: str) -> str:
+    """받지 않는 매체 실패(refused_host)의 화면 글 — 까닭 한 문장 + 호스트."""
+    return f"{why}({host})"
 
 
 def ref_of(url: str) -> str:
@@ -593,7 +638,7 @@ def request(ref: str, *, start: bool) -> dict:
         host = http.host_of(origin.url)
         why = refusal(host, excludes=_excludes())
         if why:
-            return _answer(ref, "error", reason="refused_host", message=f"{host}의 글은 받지 않습니다 — {why}")
+            return _answer(ref, "error", reason="refused_host", message=refused_message(host, why))
         shut = fetch_article.blocked_reason(host)
         if shut is not None:
             hours = max(1, math.ceil(shut[0] / 3600))

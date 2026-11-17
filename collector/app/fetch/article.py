@@ -228,7 +228,7 @@ def _check_hop(url: str, *, hop: int, refused) -> addresses.Target:
         raise ArticleFetchError("bad_redirect", f"허용하지 않는 곳으로 옮겨져 받지 않았습니다({exc.message})", host=exc.host) from None
     why = refused(target.host) if refused is not None else None
     if why:
-        raise ArticleFetchError("refused_host", f"{target.host}의 글은 받지 않습니다 — {why}", host=target.host)
+        raise ArticleFetchError("refused_host", f"{why}({target.host})", host=target.host)
     shut = blocked_reason(target.host)
     if shut is not None:
         hours = max(1, int(shut[0] // 3600) + (1 if shut[0] % 3600 else 0))

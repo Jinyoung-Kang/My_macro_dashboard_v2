@@ -18,6 +18,7 @@ tests/test_search_article.py
 from __future__ import annotations
 
 import ast
+import re
 import threading
 import time
 from pathlib import Path
@@ -121,10 +122,69 @@ def test_꼬리표는_기사·글_줄에만_붙고_받아_둔_글·공시·리�
     ("https://www.financialjuice.com/x", "정기 수집"),
     ("https://economic-calendar.tradingview.com/x", "정기 수집"),
     ("https://www.globaltimes.cn/x", "제외 매체"),
+    ("https://www.tradingview.com/news/x", "정기 수집"),
+    ("https://v.daum.net/v/x", "정기 수집"),
+    ("https://www.yna.co.kr/view/AKR0000", "정기 수집"),
+    ("https://www.federalreserve.gov/newsevents/pressreleases/x.htm", "정기 수집"),
+    ("https://www.bls.gov/news.release/x.htm", "정기 수집"),
+    ("https://www.bok.or.kr/portal/x", "정기 수집"),
+    ("https://synthetic.substack.com/p/x", "정기 수집"),
+    ("https://www.nasdaq.com/articles/x", "정기 수집"),
 ])
 def test_받지_않는_매체는_꼬리표_대신_까닭(url, word):
     row = sa.annotate([_row(url)])[0]
     assert row["bodyRef"] is None and word in row["bodyNote"]
+    assert "ADR" not in row["bodyNote"] and "—" not in row["bodyNote"], "화면 글은 짧은 한 문장(내부 번호·줄표 없음)"
+
+
+def _collector_hosts() -> dict[str, set[str]]:
+    """collector/app 안의 바깥 주소(http(s) 글자)와 이름이 HOST로 끝나는 호스트 상수 → 그것이 든 파일."""
+    found: dict[str, set[str]] = {}
+    for path in sorted(APP.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(APP).as_posix()
+        for match in re.finditer(r"https?://([A-Za-z0-9.-]+\.[A-Za-z]{2,})", text):
+            found.setdefault(match.group(1).lower(), set()).add(rel)
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                value = node.value.value
+                if "." in value and " " not in value and any(isinstance(t, ast.Name) and t.id.upper().endswith("HOST") for t in node.targets):
+                    found.setdefault(value.lower(), set()).add(rel)
+    return found
+
+
+def test_수집기가_부르는_호스트는_모두_받지_않는다():
+    """
+    같은 서버 IP로 정기 수집하거나 부르는 호스트(수집기 코드의 주소·HOST 상수)는 그 등록 도메인째 받지 않습니다 — 기사 쪽을 받다가 서버 IP가 의심받아
+    정기 수집이 막히지 않게. 예외는 정보 검색 자체 피드만 부르는 매체(SEARCH_FEED_ONLY_DOMAINS)뿐. 새 출처를 더하면 이 시험이 그 도메인을 정하라고 알립니다.
+    """
+    hosts = _collector_hosts()
+    assert len(hosts) > 40, "주소를 찾는 방식이 깨지지 않았는지"
+    missing = {host: sorted(files) for host, files in hosts.items()
+               if sa.refusal(host) is None and sa.registered_domain(host) not in sa.SEARCH_FEED_ONLY_DOMAINS}
+    assert missing == {}
+    for domain in sa.SEARCH_FEED_ONLY_DOMAINS:
+        assert sa.refusal("www." + domain) is None, "정보 검색 자체 피드만 부르는 매체는 받음"
+        assert any(sa.registered_domain(host) == domain for host in hosts), f"{domain}을 부르는 주소가 없으면 예외 목록에서 뺄 것"
+
+
+def test_증권사_도메인은_글자_없이_막는다():
+    """실제 계좌 조회·실제 매매가 쓰는 API와 같은 등록 도메인의 웹 호스트 — 글자는 토스 클라이언트 한 곳만 알아 해시로 맞춥니다."""
+    from app.services import toss
+
+    domain = sa.registered_domain(toss._HOST)
+    for host in (toss._HOST, domain, "www." + domain, "static." + domain):
+        assert sa.refusal(host) == sa.ACCOUNT_NOTE
+    assert sa.refusal(domain + ".example.net") is None, "점 경계 — 다른 도메인의 하위 이름은 아님"
+    assert sa.refusal("www.koreainvestment.com") == sa.ACCOUNT_NOTE
+
+
+@pytest.mark.parametrize("host,domain", [
+    ("www.yna.co.kr", "yna.co.kr"), ("feeds.bbci.co.uk", "bbci.co.uk"), ("ecb.europa.eu", "europa.eu"), ("apis.data.go.kr", "data.go.kr"),
+    ("klementoninvesting.substack.com", "substack.com"), ("www.example.com.", "example.com"), ("localhost", None), ("", None),
+])
+def test_등록_도메인_어림(host, domain):
+    assert sa.registered_domain(host) == domain
 
 
 def test_구글_경유_주소는_늘_꼬리표():
