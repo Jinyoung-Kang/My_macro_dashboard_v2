@@ -14,6 +14,19 @@ export interface Holding {
   weightDiff: number | null;
   sharesDiff: number | null;
   action: string;
+  /**
+   * 수집기가 이름 매핑표로 붙인 Yahoo 심볼(BRK-B 등 — GET /api/sec13f/portfolio만 내려 줌). 모르면 null — 13F 공시에는 티커가 없어
+   * 매핑표에 없는 이름·펀드·채권은 비어 있습니다. 회사 단위 티커라(클래스를 합침) 줄의 클래스와 다를 수 있습니다 — {@link tickerIsProxy}.
+   * 13F 보유 표가 종목 팝업을 열 때 씁니다.
+   */
+  ticker?: string | null;
+  /** 회사 이름은 알지만 일부러 티커를 붙이지 않은 까닭 — "debt"(채권)·"non_common"(보통주 아닌 증권). 없으면 null. */
+  tickerNote?: string | null;
+  /**
+   * 티커가 특정 클래스(BRK-B·GOOGL)를 가리키는데 줄의 클래스 표기로 같은 클래스임이 확인되지 않으면 true — 같은 회사의 다른 클래스(주가가 다를 수
+   * 있음)의 대용 티커라 화면은 그 시세를 바로 열지 않습니다. 티커가 없거나 확인되면 false. 예전 응답에는 없습니다.
+   */
+  tickerIsProxy?: boolean | null;
 }
 
 export interface PortfolioResponse {

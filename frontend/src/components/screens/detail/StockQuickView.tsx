@@ -25,12 +25,16 @@ export function StockQuickView({ market, code, trigger }: { market: DetailMarket
   const [open, setOpen] = useState(false);
   return (
     <Dialog open={open} onOpenChange={setOpen} title={code} hideTitle trigger={trigger} size="lg">
-      {open && <QuickBody market={market} code={code} />}
+      {open && <StockQuickBody market={market} code={code} />}
     </Dialog>
   );
 }
 
-function QuickBody({ market, code }: { market: DetailMarket; code: string }) {
+/**
+ * 종목 팝업 창의 본문(이름·기업 설명·시세·핵심 지표·'상세 화면 열기') — 이 창과, 13F 보유 표에서 공시 이름으로 찾은 후보를 고른 뒤의 창
+ * (StockPickQuickView)이 함께 씁니다. 그려져 있는 동안만 시세를 읽고 실시간 시세를 받습니다(빼면 연결도 닫힘).
+ */
+export function StockQuickBody({ market, code }: { market: DetailMarket; code: string }) {
   const { quoteState, quote, realtime, live, shown, price, change, changePct, name, symbol, digits, sub } = useStockQuote(market, code);
   const brief = quickProfile(quote);
   let placeholder;

@@ -209,4 +209,157 @@ class Sec13FServiceTest {
         assertThat(deduped.get(0).path("filingDate").asString()).isEqualTo("2026-08-20");
         assertThat(deduped.get(1).path("reportDate").asString()).isEqualTo("2026-03-31");
     }
+
+    // =========================================================================
+    // 티커·표시(ticker·tickerNote) — 13F 화면의 종목 팝업이 씁니다. 줄을 만든 저장본 보유 노드에서 그대로 옮깁니다.
+    // =========================================================================
+
+    private static Map<String, Object> rowNamed(List<Map<String, Object>> rows, String name) {
+        return rows.stream().filter(row -> name.equals(row.get("name"))).findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("줄마다 수집기가 붙인 ticker·tickerNote를 옮기고, 모르거나 없으면 null — 키는 늘 있다")
+    void tickerAndNoteAreCarriedFromTheHoldingNode() {
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"BERKSHIRE HATHAWAY INC DEL","cusip":"084670702","class":"CL B NEW","value":900,"shares":9,"weight":45.0,"ticker":"BRK-B"},
+                  {"name":"ISHARES TR","cusip":"464287200","class":"CORE S&P500 ETF","value":500,"shares":5,"weight":25.0,"ticker":null},
+                  {"name":"FORD MTR CO","cusip":"345370CZ1","class":"COM","value":300,"weight":15.0,"ticker":null,"tickerNote":"debt"},
+                  {"name":"WELLS FARGO CO NEW","cusip":"949746804","class":"PERP PFD CNV A","value":200,"shares":2,"weight":10.0,"ticker":null,"tickerNote":"non_common"},
+                  {"name":"OLD SNAPSHOT CO","cusip":"111111111","class":"COM","value":100,"shares":1,"weight":5.0}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, null, 10);
+
+        assertThat(rows).allSatisfy(row -> assertThat(row).containsKeys("ticker", "tickerNote", "tickerIsProxy"));
+        assertThat(rowNamed(rows, "BERKSHIRE HATHAWAY INC DEL")).containsEntry("ticker", "BRK-B").containsEntry("tickerNote", null)
+                .as("줄의 클래스(CL B)가 티커의 클래스와 같음").containsEntry("tickerIsProxy", false);
+        assertThat(rowNamed(rows, "ISHARES TR")).containsEntry("ticker", null).containsEntry("tickerNote", null)
+                .containsEntry("tickerIsProxy", false);
+        assertThat(rowNamed(rows, "FORD MTR CO")).containsEntry("ticker", null).containsEntry("tickerNote", "debt");
+        assertThat(rowNamed(rows, "WELLS FARGO CO NEW")).containsEntry("ticker", null).containsEntry("tickerNote", "non_common");
+        assertThat(rowNamed(rows, "OLD SNAPSHOT CO")).as("티커를 붙이기 전 옛 저장본 — 키가 없어도 null")
+                .containsEntry("ticker", null).containsEntry("tickerNote", null);
+    }
+
+    @Test
+    @DisplayName("전량 매도 줄의 ticker·tickerNote는 직전 분기 노드의 것 — 이번 분기에 같은 이름이 남아 있어도 섞이지 않는다")
+    void closedRowTakesTickerFromThePreviousQuarterNode() {
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"APPLE INC","cusip":"037833100","class":"COM","value":5000,"shares":100,"weight":50.0,"ticker":"AAPL"}]}
+                """);
+        JsonNode previous = quarter("""
+                {"reportDate":"2026-03-31","holdings":[
+                  {"name":"APPLE INC","cusip":"037833100","class":"COM","value":4000,"shares":90,"weight":40.0,"ticker":"AAPL-OLD"},
+                  {"name":"TESLA INC","cusip":"88160R101","class":"COM","value":3000,"shares":80,"weight":30.0,"ticker":"TSLA"},
+                  {"name":"FORD MTR CO","cusip":"345370CZ1","class":"COM","value":2000,"weight":20.0,"ticker":null,"tickerNote":"debt"}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 10);
+
+        assertThat(rowNamed(rows, "APPLE INC")).as("이번 분기 줄은 이번 분기 노드").containsEntry("ticker", "AAPL");
+        assertThat(rowNamed(rows, "TESLA INC")).containsEntry("action", HoldingsDiff.CLOSED).containsEntry("ticker", "TSLA");
+        assertThat(rowNamed(rows, "FORD MTR CO")).containsEntry("action", HoldingsDiff.CLOSED)
+                .containsEntry("ticker", null).containsEntry("tickerNote", "debt");
+    }
+
+    @Test
+    @DisplayName("같은 CUSIP·같은 이름·클래스의 항목이 겹쳐도 이번 분기 줄은 제 노드, 전량 매도 줄은 계산이 쓴 마지막 노드")
+    void duplicateKeysPairEachRowWithItsOwnNode() {
+        // 수집기 저장본에서는 (이름, CUSIP, 클래스)가 겹치지 않습니다(한 공시 안에서 합침). CUSIP만 같은 줄은 있을 수 있어
+        // (같은 증권을 이름 표기 둘로 적은 공시) 이번 분기에는 두 줄이 그대로 남고, 직전 분기는 계산이 CUSIP으로 모아 마지막 항목이 남습니다.
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"NVIDIA CORP","cusip":"67066G104","class":"COM","value":600,"shares":6,"weight":30.0,"ticker":"T-FIRST"},
+                  {"name":"NVIDIA CORPORATION","cusip":"67066G104","class":"COM","value":500,"shares":5,"weight":25.0,"ticker":"T-SECOND"},
+                  {"name":"SAME CO","cusip":"","class":"COM","value":400,"shares":4,"weight":20.0,"ticker":"S-FIRST"},
+                  {"name":"SAME CO","cusip":"","class":"COM","value":300,"shares":3,"weight":15.0,"ticker":"S-SECOND"}]}
+                """);
+        // 직전 분기: CUSIP만 같은 두 항목(이름이 다름)과, 이름·CUSIP·클래스가 모두 같은 두 항목(CUSIP 있음·없음 하나씩) — 뒤의 둘은 줄과 노드를
+        // 이름·CUSIP·클래스로 짝지을 때 앞과 뒤가 갈립니다. 계산(HoldingsDiff)은 키마다 마지막 항목을 남기므로 노드도 마지막 항목이어야 합니다.
+        JsonNode previous = quarter("""
+                {"reportDate":"2026-03-31","holdings":[
+                  {"name":"GONE CORP","cusip":"222222222","class":"COM","value":200,"shares":2,"weight":10.0,"ticker":"G-FIRST"},
+                  {"name":"GONE CORPORATION","cusip":"222222222","class":"COM","value":100,"shares":1,"weight":5.0,"ticker":"G-LAST"},
+                  {"name":"TWIN CO","cusip":"333333333","class":"COM","value":90,"shares":9,"weight":4.5,"ticker":"W-FIRST"},
+                  {"name":"TWIN CO","cusip":"333333333","class":"COM","value":80,"shares":8,"weight":4.0,"ticker":"W-LAST","tickerNote":"debt"},
+                  {"name":"BLANK CO","cusip":"","class":"COM","value":70,"shares":7,"weight":3.5,"ticker":"B-FIRST","tickerNote":"debt"},
+                  {"name":"BLANK CO","cusip":"","class":"COM","value":60,"shares":6,"weight":3.0,"ticker":"B-LAST"}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 10);
+
+        assertThat(rows).filteredOn(row -> !HoldingsDiff.CLOSED.equals(row.get("action")))
+                .extracting(row -> row.get("value"), row -> row.get("ticker"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(600.0, "T-FIRST"),
+                        org.assertj.core.groups.Tuple.tuple(500.0, "T-SECOND"),
+                        org.assertj.core.groups.Tuple.tuple(400.0, "S-FIRST"),
+                        org.assertj.core.groups.Tuple.tuple(300.0, "S-SECOND"));
+        List<Map<String, Object>> closed = rows.stream().filter(row -> HoldingsDiff.CLOSED.equals(row.get("action"))).toList();
+        assertThat(closed).as("같은 키의 전량 매도는 한 줄 — 계산이 남긴 마지막 항목의 이름과 티커·표시")
+                .extracting(row -> row.get("name"), row -> row.get("ticker"), row -> row.get("tickerNote"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("GONE CORPORATION", "G-LAST", null),
+                        org.assertj.core.groups.Tuple.tuple("TWIN CO", "W-LAST", "debt"),
+                        org.assertj.core.groups.Tuple.tuple("BLANK CO", "B-LAST", null));
+    }
+
+    @Test
+    @DisplayName("클래스를 가리키는 티커는 줄의 클래스 표기가 같은 클래스일 때만 대용이 아니다 — BRK CL A·GOOG CL C·클래스 없는 표기는 대용")
+    void classSpecificTickerIsProxyUnlessTheRowNamesTheSameClass() {
+        // Yahoo 접미사(BRK-B)로 클래스를 가리키는 티커
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", "CL B NEW")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", "CL A")).as("노르웨이 A주 줄 — 주가가 다른 증권").isTrue();
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", "COM")).as("A주 CUSIP도 COM으로 적음 — 어느 클래스인지 모름").isTrue();
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", "Common Stock")).isTrue();
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", "BERKSHIRE HATHAWAY INC DEL")).isTrue();
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", null)).isTrue();
+        assertThat(Sec13FService.tickerIsProxy("BRK-A", "CLASS A")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("brk-b", "cl b")).as("대소문자는 가리지 않음").isFalse();
+        assertThat(Sec13FService.tickerIsProxy("BRK-B", "CLOSED END")).as("CL로 시작하는 낱말은 클래스 표기가 아님").isTrue();
+        // 접미사 없이 클래스마다 다른 티커(매핑표가 ALPHABET A·C주를 GOOGL로 모음)
+        assertThat(Sec13FService.tickerIsProxy("GOOGL", "CAP STK CL A")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("GOOGL", "CAP STK CL C")).isTrue();
+        assertThat(Sec13FService.tickerIsProxy("GOOGL", "ALPHABET INC")).isTrue();
+        assertThat(Sec13FService.tickerIsProxy("GOOG", "CAP STK CL C")).isFalse();
+        // 클래스를 가리키지 않는 티커(상장 클래스가 하나) — 회사 티커가 곧 그 증권
+        assertThat(Sec13FService.tickerIsProxy("META", "CL A")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("V", "COM CL A")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("NKE", "CL B")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("AAPL", "COM")).isFalse();
+        // 티커가 없으면 대용도 아님
+        assertThat(Sec13FService.tickerIsProxy(null, "CL A")).isFalse();
+        assertThat(Sec13FService.tickerIsProxy("  ", "CL A")).isFalse();
+    }
+
+    @Test
+    @DisplayName("보유 줄의 tickerIsProxy — 지금 분기 줄은 그 줄의 클래스, 전량 매도 줄은 직전 분기 줄의 클래스로 매긴다")
+    void rowsCarryTickerIsProxyFromTheirOwnClass() {
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"BERKSHIRE HATHAWAY INC DEL","cusip":"084670108","class":"CL A","value":7000,"shares":10,"weight":40.0,"ticker":"BRK-B"},
+                  {"name":"BERKSHIRE HATHAWAY INC DEL","cusip":"084670702","class":"CL B NEW","value":5000,"shares":10000,"weight":30.0,"ticker":"BRK-B"},
+                  {"name":"ALPHABET INC","cusip":"02079K305","class":"CAP STK CL A","value":3000,"shares":100,"weight":20.0,"ticker":"GOOGL"},
+                  {"name":"META PLATFORMS INC","cusip":"30303M102","class":"CL A","value":1000,"shares":10,"weight":10.0,"ticker":"META"}]}
+                """);
+        JsonNode previous = quarter("""
+                {"reportDate":"2026-03-31","holdings":[
+                  {"name":"ALPHABET INC","cusip":"02079K107","class":"CAP STK CL C","value":2000,"shares":90,"weight":15.0,"ticker":"GOOGL"}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 10);
+
+        assertThat(rows).extracting(row -> row.get("cusip"), row -> row.get("ticker"), row -> row.get("tickerIsProxy"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("084670108", "BRK-B", true),
+                        org.assertj.core.groups.Tuple.tuple("084670702", "BRK-B", false),
+                        org.assertj.core.groups.Tuple.tuple("02079K305", "GOOGL", false),
+                        org.assertj.core.groups.Tuple.tuple("30303M102", "META", false),
+                        org.assertj.core.groups.Tuple.tuple("02079K107", "GOOGL", true));
+        assertThat(rows.stream().filter(row -> "02079K107".equals(row.get("cusip"))).findFirst().orElseThrow())
+                .containsEntry("action", HoldingsDiff.CLOSED);
+    }
 }
