@@ -36,7 +36,7 @@ describe("유료 등급 표시", () => {
         available: false, locked: true, message: "판정 성과는 유료 등급 기능입니다.", asset: "SPY", assets: [], horizons: [], limits: [],
       },
     });
-    render(<TrackRecordSection tone={{}} />);
+    render(<TrackRecordSection />);
 
     const message = await screen.findByText("판정 성과는 유료 등급 기능입니다.");
     const banner = message.closest("div")?.parentElement as HTMLElement;
@@ -50,7 +50,7 @@ describe("유료 등급 표시", () => {
     answer({
       [endpoints.insight.regimeLog(60)]: { available: true, count: 1, limitedTo: 30, entries: [] },
     });
-    render(<RegimeLogSection tone={{}} />);
+    render(<RegimeLogSection />);
 
     const note = await screen.findByText("무료 등급은 최근 30건만 보입니다. 유료 등급은 기록 전체를 봅니다.");
     const line = note.parentElement as HTMLElement;

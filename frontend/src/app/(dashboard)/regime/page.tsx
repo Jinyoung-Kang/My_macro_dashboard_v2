@@ -1,25 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Banner,
-  Card,
-  ErrorState,
-  Freshness,
-  Loading,
-  Metric,
-  PageHeader,
-  Select,
-  SourceBadge,
-  Table,
-} from "@/components/ui";
-import { StatusText } from "@/components/ui/icons";
+import Link from "next/link";
+import { useId, useState, type ReactNode } from "react";
+import { type Column, DataTable, EntityHeader, type PropertyItem, PropertyList, ProvenanceBadge, Skeleton, SplitPane } from "@/components/patterns";
+import { Callout, ErrorState, Freshness, LINK_CLASSES, Panel, Select, Tag, tabId, Tabs } from "@/components/ui";
+import { ScaleIcon, StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
-import { EMPTY, formatNumber } from "@/lib/format";
-import type { RegimeResponse, RegimeSignal } from "@/lib/types";
-import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
+import { EMPTY, withMinusSign } from "@/lib/format";
+import { REGIME_AS_OF_NOTE, regimeHeroModel } from "@/lib/home";
+import { macroSectionHref } from "@/lib/marketSections";
+import { regimeBandLabel } from "@/lib/regime";
+import { SOURCES } from "@/lib/sources";
+import type { RegimeResponse } from "@/lib/types";
 import { RegimeLogSection } from "./RegimeLogSection";
+import { RegimeTag } from "./RegimeTag";
 import { TrackRecordSection } from "./TrackRecordSection";
 
 /**
@@ -30,33 +25,16 @@ import { TrackRecordSection } from "./TrackRecordSection";
  *
  * <p>주의: 입력 지표가 하나라도 없으면 <b>판정하지 않습니다.</b> 빠진 값을 0으로
  * 메우면 "중립"이라는 틀린 판정이 됩니다 — 이 프로젝트가 지키는 규칙입니다.
+ *
+ * <p>판정 대상 화면(작업대 대상 문법 — 실행 명세 §7 '국면 판정'): 대상 머리(지금 판정이 주 값) → 칸 틀 — 왼쪽 판정 근거 넷(속성), 가운데 네 국면
+ * 사분면과 탭 셋(판정 기록 타임라인·국면 이력·판정 성과), 오른쪽 연결(쓰인 지표가 있는 화면)·출처. 좁은 화면은 한 칸이고 왼쪽 근거를 접지 않습니다
+ * (근거가 판정의 핵심).
  */
 const QUADRANTS = [
-  {
-    code: "EXPANSION",
-    label: "확장",
-    axis: "성장·신용 양호 + 유동성 확대",
-    tone: "border-ok/50 bg-ok-tint text-ok",
-  },
-  {
-    code: "LATE",
-    label: "후퇴 경계",
-    axis: "성장·신용 양호 + 유동성 축소",
-    tone: "border-warn/50 bg-warn-tint text-warn",
-  },
-  {
-    code: "RECOVERY",
-    label: "회복",
-    axis: "성장·신용 악화 + 유동성 확대",
-    // 회복은 강조 파랑이 아니라 중립(잉크 글·회색 바탕) — 강조 파랑은 누를 수 있는 것에만(명세 A1). 뜻은 라벨 글이 나릅니다.
-    tone: "border-text/40 bg-surface-2 text-text",
-  },
-  {
-    code: "CONTRACTION",
-    label: "침체 경계",
-    axis: "성장·신용 악화 + 유동성 축소",
-    tone: "border-danger/50 bg-danger-tint text-danger",
-  },
+  { code: "EXPANSION", label: "확장", axis: "성장·신용 양호 + 유동성 확대" },
+  { code: "LATE", label: "후퇴 경계", axis: "성장·신용 양호 + 유동성 축소" },
+  { code: "RECOVERY", label: "회복", axis: "성장·신용 악화 + 유동성 확대" },
+  { code: "CONTRACTION", label: "침체 경계", axis: "성장·신용 악화 + 유동성 축소" },
 ];
 
 const TIMELINE_COLOR: Record<string, string> = {
@@ -68,22 +46,153 @@ const TIMELINE_COLOR: Record<string, string> = {
   UNKNOWN: "bg-border",
 };
 
+/** 판정 대상 종류 — 상세 화면 셋 밖의 대상이라 종류 글과 아이콘(저울)을 넘깁니다. */
+const KIND = { label: "국면 판정", icon: ScaleIcon };
+
+/**
+ * 연결 — 판정에 쓴 지표가 있는 화면·절. 신호마다의 지표 상세(/markets/i/…)는 매크로 카드 키로만 있어 신호 id(curve·nfci·hyOas·liquidity)와 맞지
+ * 않으므로, 그 지표의 차트가 있는 매크로 절(lib/marketSections 정본)과 순유동성 화면으로 잇습니다. 링크 글에 어느 화면·절인지 적습니다.
+ */
+const LINKS = [
+  { label: "장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", href: macroSectionHref("advanced") },
+  { label: "하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", href: macroSectionHref("risk") },
+  { label: "연준 순유동성 4주 변화 — 순유동성 화면", href: "/liquidity" },
+];
+
+type Episode = NonNullable<RegimeResponse["episodes"]>[number];
+
+/** 과거 구간 표의 열 — 국면은 태그(톤 + 아이콘 + 이름), 날짜는 그대로, 기간은 주. */
+const EPISODE_COLUMNS: readonly Column<Episode>[] = [
+  { key: "label", header: "국면", cell: (row) => <RegimeTag code={row.code} label={row.label} /> },
+  { key: "start", header: "시작", cell: (row) => row.start },
+  { key: "end", header: "끝", cell: (row) => row.end },
+  { key: "weeks", header: "기간", align: "right", cell: (row) => `${row.weeks}주` },
+];
+
+type RegimeTabKey = "log" | "history" | "track";
+
+/**
+ * 가운데 탭 셋 — 공용 탭 줄(밑줄, ARIA tabs, 좁은 화면 44px)과 탭 패널 하나. 탭마다의 내용은 **모두 마운트**하고 고르지 않은 것은 hidden입니다 — 화면을
+ * 열 때 판정 기록·판정 성과를 한 번씩 읽는 요청 시점·횟수가 탭이 없던 때와 같고, 탭을 오가도 고른 기록·자산·관점이 남습니다(QA-066·101).
+ * 고른 탭은 화면 안 상태(주소 그대로), 처음은 판정 기록. 상세 화면의 탭 감싸개(DetailTabs)와 같은 꼴의 작은 중복입니다(공용화는 P8 후보 — ADR 0004 규칙 4).
+ */
+function RegimeTabs({ tabs }: { tabs: readonly { key: RegimeTabKey; label: string; content: ReactNode }[] }) {
+  const baseId = useId();
+  const idPrefix = `${baseId}-tab`;
+  const panelId = `${baseId}-panel`;
+  const [current, setCurrent] = useState<RegimeTabKey>("log");
+  return (
+    <div className="min-w-0">
+      <Tabs label="국면 판정 내용" items={tabs.map(({ key, label }) => ({ key, label }))} value={current} onChange={setCurrent} idPrefix={idPrefix} panelId={panelId} size="sm" />
+      <div role="tabpanel" id={panelId} aria-labelledby={tabId(idPrefix, current)} className="mt-3 min-w-0">
+        {tabs.map((tab) => (
+          <div key={tab.key} hidden={tab.key !== current} className="flex min-w-0 flex-col gap-3 lg:gap-4">
+            {tab.content}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function RegimePage() {
   const [years, setYears] = useState("5");
-  const { data, loading, error, reload, refreshError } = useApi<RegimeResponse>(
-    endpoints.insight.regime(years),
-    300_000,
-  );
-
+  const { data, error, reload, refreshError } = useApi<RegimeResponse>(endpoints.insight.regime(years), 300_000);
 
   const verdict = data?.verdict;
-  const current = QUADRANTS.find((entry) => entry.code === verdict?.code);
+  const model = regimeHeroModel(data);
+  const bandLabel = regimeBandLabel(data?.timeline, (data?.episodes ?? []).length);
+  // 응답 전에는 값 자리에 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도. 이름·이력 기간 고르기는 그대로 남습니다(QA-047).
+  const pending = data ? null : error ? <ErrorState message={error} onRetry={reload} /> : <Skeleton lines={2} label="국면을 판정하는 중" />;
+
+  // 판정 근거 넷 — 홈 국면 패널과 같은 모델(자리 고정 — 받지 못한 신호는 —와 '받지 못함', 자릿수·부호 −가 같음, QA-636). 값은 정상·주의 톤 글자색,
+  // 아래 보조 글은 상태 글(정상·주의 아이콘 — 주의만 '주의:', QA-505) + 해석. 판정 근거는 좁은 칸이라 이름 위·값 아래(block).
+  const signalItems: PropertyItem[] = model.tiles.map((tile) => {
+    const signal = verdict?.signals.find((entry) => entry.id === tile.id);
+    const healthy = signal?.healthy ?? false;
+    return {
+      key: tile.id,
+      label: tile.label,
+      value: tile.valueText ? <span className={healthy ? "text-ok" : "text-warn"}>{withMinusSign(tile.valueText)}</span> : null,
+      unit: tile.unit,
+      emptyReason: tile.emptyReason,
+      block: true,
+      note: signal ? (
+        <>
+          {/* align-top: 글 줄 안의 inline-flex가 기준선에 앉아 보조 글 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음). */}
+          <StatusText tone={healthy ? "ok" : "warn"} colorText={false} iconSize={12} className="align-top">
+            {signal.state}
+          </StatusText>{" "}
+          {signal.reading}
+        </>
+      ) : null,
+    };
+  });
+
+  const history = data ? (
+    <>
+      {/* 띠는 이름 있는 그림 하나(기간·구간 수 — 자세한 구간은 아래 표)이고 칸은 읽기에서 뺍니다. 칸·견본은 바탕색으로만 그리므로 고대비(forced-colors)에서
+          바탕색이 지워지지 않게 색을 그대로 둡니다(forced-color-adjust-none — 범례 견본·차트 견본과 같은 규칙, QA-635·QA-497). */}
+      {bandLabel ? (
+        <div role="img" aria-label={bandLabel} className="flex h-8 w-full overflow-hidden rounded-sm border border-border forced-color-adjust-none">
+          {(data.timeline ?? []).map((point) => (
+            <span
+              key={point.date}
+              aria-hidden="true"
+              className={`h-full flex-1 ${TIMELINE_COLOR[point.code] ?? "bg-border"}`}
+              title={`${point.date} · ${point.label}`}
+            />
+          ))}
+        </div>
+      ) : null}
+      {/* 범례 — 띠 색 견본 + 국면 태그(톤 + 아이콘 + 이름 — 색만으로 국면을 가르지 않음). */}
+      <ul aria-label="국면 이력 띠 범례" className="mt-2 flex flex-wrap gap-x-3 gap-y-2 text-xs text-text-3">
+        {[...QUADRANTS, { code: "UNKNOWN", label: "판정 불가" }].map((quadrant) => (
+          <li key={quadrant.code} className="flex items-center gap-1.5">
+            <span data-band-swatch aria-hidden="true" className={`h-2 w-4 rounded-xs forced-color-adjust-none ${TIMELINE_COLOR[quadrant.code]}`} />
+            <RegimeTag code={quadrant.code} label={quadrant.label} />
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-5">
+        <h3 className="mb-2 text-sm font-semibold text-text">과거 구간 (최근 순)</h3>
+        <DataTable
+          caption="과거 구간 (최근 순)"
+          rows={(data.episodes ?? []).slice(0, 15)}
+          rowKey={(row) => `${row.code}-${row.start}`}
+          emptyText="이력을 만들 수 없습니다. 지표 저장본을 먼저 수집하세요."
+          columns={EPISODE_COLUMNS}
+        />
+      </div>
+    </>
+  ) : error ? (
+    <p className="break-keep text-sm text-text-2">국면을 읽지 못해 이력을 그리지 못했습니다. 위 머리의 다시 시도를 누르세요.</p>
+  ) : (
+    <Skeleton lines={4} label="국면 이력을 읽는 중" />
+  );
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
-      <PageHeader
-        title="시장 국면"
-        description={<>성장·신용 축 × 유동성 축 · 기준일 {data?.asOf ?? EMPTY}</>}
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
+      <EntityHeader
+        kind={KIND}
+        name="시장 국면"
+        description={verdict?.summary}
+        identifiers={verdict ? [verdict.code] : undefined}
+        valueLabel="지금 판정"
+        value={verdict?.label ?? null}
+        emptyReason="판정을 받지 못함"
+        badges={
+          <>
+            <ProvenanceBadge source={SOURCES.regime} asOf={data?.asOf} />
+            {verdict ? (
+              <>
+                <Tag>성장·신용 {verdict.growthAxis}</Tag>
+                <Tag>유동성 {verdict.liquidityAxis}</Tag>
+              </>
+            ) : null}
+          </>
+        }
         actions={
           <>
             {/* 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음). */}
@@ -96,165 +205,109 @@ export default function RegimePage() {
             />
           </>
         }
+        placeholder={pending}
       />
 
-      {/* 컨트롤(머리말·첫 카드)은 늘 그리고 본문만 로딩·오류로 바꿉니다 — 페이지 전체를 바꾸면 방금 조작한
-          선택 상자가 사라지고 키보드 포커스를 잃었습니다(QA-047). */}
-      {loading && !data && <Loading label="국면을 판정하는 중…" />}
-      {error && <ErrorState message={error} onRetry={reload} />}
-      {data && (
-        <>
+      {verdict && !data?.available ? (
+        <Callout tone="warn" title="판정 불가">
+          {model.missing.length > 0 ? (
+            <ul className="mt-1 list-disc pl-5 text-xs">
+              {model.missing.map((item) => (
+                <li key={item}>{item}를 받지 못했습니다.</li>
+              ))}
+            </ul>
+          ) : (
+            verdict.summary
+          )}
+        </Callout>
+      ) : null}
 
-        {verdict && !data?.available && (
-          <Banner tone="warn">
-            <strong>판정 불가</strong> — {verdict.summary}
-            {(verdict.missing ?? []).length > 0 && (
-              <ul className="mt-2 list-disc pl-5 text-xs">
-                {verdict.missing.map((item) => (
-                  <li key={item}>{item}를 받지 못했습니다.</li>
+      <SplitPane
+        left={
+          <Panel title="판정 근거" subtitle="결론에 동의하지 않아도 근거는 그대로 확인할 수 있어야 합니다.">
+            <PropertyList items={signalItems} placeholder={data ? undefined : <Skeleton lines={4} label="판정 근거 불러오는 중" />} />
+            {data ? (
+              <p className="mt-2 break-keep text-xs leading-4 text-text-3">
+                기준일 <span className="tabular-nums">{model.asOf ?? EMPTY}</span> — {REGIME_AS_OF_NOTE}
+              </p>
+            ) : null}
+            {model.note ? (
+              <p className="mt-2 rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">
+                <StatusText tone="warn" colorText={false} iconSize={12}>
+                  {model.note}
+                </StatusText>
+              </p>
+            ) : null}
+          </Panel>
+        }
+        right={
+          <>
+            <Panel title="연결">
+              <ul className="flex flex-col lg:gap-1.5">
+                {LINKS.map((link) => (
+                  <li key={link.href} className="min-w-0">
+                    <Link href={link.href} className={`${LINK_CLASSES} break-keep text-sm wrap-anywhere`}>
+                      {link.label}
+                    </Link>
+                  </li>
                 ))}
               </ul>
-            )}
-          </Banner>
-        )}
-
-        {verdict && (
-          <Card
-            title="지금 국면" source={SOURCES.regime}
-            actions={current ? <SourceBadge>{verdict.code}</SourceBadge> : undefined}
-          >
-            <div
-              className={`rounded-control border px-4 py-4 ${
-                current?.tone ?? "border-border bg-surface-2 text-text-3"
-              }`}
-            >
-              <p className="text-2xl font-bold">{verdict.label}</p>
-              <p className="mt-2 text-sm leading-relaxed">{verdict.summary}</p>
-              <p className="mt-2 text-xs">
-                성장·신용 <strong>{verdict.growthAxis}</strong> · 유동성{" "}
-                <strong>{verdict.liquidityAxis}</strong>
-              </p>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {QUADRANTS.map((quadrant) => (
-                <div
+            </Panel>
+            <Panel title="출처">
+              <PropertyList
+                items={[
+                  { label: "판정·근거", value: SOURCES.regime, block: true },
+                  { label: "판정 기록", value: SOURCES.regimeLog, block: true },
+                  { label: "판정 성과", value: SOURCES.regimeTrackRecord, block: true },
+                ]}
+              />
+            </Panel>
+          </>
+        }
+      >
+        <Panel title="네 국면" subtitle="성장·신용 축 × 유동성 축 — 두 축의 방향으로 국면을 정합니다.">
+          <ul aria-label="네 국면" className="grid gap-2 sm:grid-cols-2">
+            {QUADRANTS.map((quadrant) => {
+              const now = quadrant.code === verdict?.code;
+              return (
+                // 지금 칸은 잉크 테두리 + '지금' 글 + aria-current — 색만으로 가리지 않습니다(고대비에서도 테두리·글이 남음).
+                <li
                   key={quadrant.code}
-                  className={`rounded-control border px-3 py-2 text-xs ${
-                    quadrant.code === verdict.code
-                      ? quadrant.tone
-                      : "border-border bg-bg text-text-3"
-                  }`}
+                  aria-current={now ? "true" : undefined}
+                  className={`min-w-0 rounded-control border px-3 py-2 ${now ? "border-text bg-surface-2" : "border-border bg-bg"}`}
                 >
-                  <p className="font-semibold">{quadrant.label}</p>
-                  <p className="mt-0.5">{quadrant.axis}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <RegimeTag code={quadrant.code} label={quadrant.label} />
+                    {now ? <span className="text-xs font-semibold text-text">지금</span> : null}
+                  </div>
+                  <p className="mt-1 break-keep text-xs text-text-2">{quadrant.axis}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
 
-        <Card
-          title="판정 근거" source={SOURCES.regime}
-          subtitle="결론에 동의하지 않아도 근거는 그대로 확인할 수 있어야 합니다."
-        >
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {(verdict?.signals ?? []).map((signal: RegimeSignal) => (
-              <Metric
-                key={signal.id}
-                label={signal.label}
-                value={`${formatNumber(signal.value, 2)}${signal.unit ?? ""}`}
-                tone={signal.healthy ? "text-ok" : "text-warn"}
-                // 정상·주의 판정을 값 색만으로 전하지 않습니다 — 캡션 글은 보조 색 그대로, 아이콘만 톤 색(주의는 읽어 주는 '주의:'도, QA-505).
-                // align-top: 글 줄 안의 inline-flex가 기준선에 앉아 캡션 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음).
-                caption={
-                  <StatusText tone={signal.healthy ? "ok" : "warn"} colorText={false} iconSize={12} className="align-top">
-                    {signal.state}
-                  </StatusText>
-                }
-                note={signal.reading}
-              />
-            ))}
-          </div>
-          {(verdict?.signals ?? []).length === 0 && (
-            <p className="text-sm text-text-3">판정에 쓸 신호를 하나도 받지 못했습니다.</p>
-          )}
-        </Card>
-
-        </>
-      )}
-
-      {/* 스스로 데이터를 읽는 섹션은 이력 기간을 바꿔 판정을 다시 읽는 동안에도 그대로 둡니다 — `data &&` 안에
-          두면 함께 내려가 판정 성과에서 고른 자산·관점이 처음으로 돌아갔습니다(QA-066). */}
-      <TrackRecordSection tone={TIMELINE_COLOR} />
-
-      <RegimeLogSection tone={TIMELINE_COLOR} />
-
-      {data && (
-        <>
-        <Card
-          title="국면 이력" source={SOURCES.regime}
-          subtitle="같은 규칙을 과거 날짜에 그대로 적용한 재현입니다(매주 목요일). 회색은 판정 불가 — 하이일드 스프레드 이력이 2023-09부터라 그 이전은 판정할 수 없습니다."
-        >
-          <div className="flex h-8 w-full overflow-hidden rounded-sm border border-border">
-            {(data?.timeline ?? []).map((point) => (
-              <span
-                key={point.date}
-                className={`h-full flex-1 ${TIMELINE_COLOR[point.code] ?? "bg-border"}`}
-                title={`${point.date} · ${point.label}`}
-              />
-            ))}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-xs text-text-3">
-            {QUADRANTS.map((quadrant) => (
-              <span key={quadrant.code} className="flex items-center gap-1">
-                <span className={`h-2 w-4 rounded-xs ${TIMELINE_COLOR[quadrant.code]}`} />
-                {quadrant.label}
-              </span>
-            ))}
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-4 rounded-xs bg-border" />
-              판정 불가
-            </span>
-          </div>
-
-          <div className="mt-5">
-            <h3 className="mb-2 text-sm font-semibold text-text">과거 구간 (최근 순)</h3>
-            <Table
-              rows={(data?.episodes ?? []).slice(0, 15)}
-              rowKey={(row) => `${row.code}-${row.start}`}
-              emptyMessage="이력을 만들 수 없습니다. 지표 저장본을 먼저 수집하세요."
-              columns={[
-                {
-                  key: "label",
-                  header: "국면",
-                  render: (row) => (
-                    <span className="flex items-center gap-2">
-                      <span className={`h-2 w-4 rounded-xs ${TIMELINE_COLOR[row.code] ?? "bg-border"}`} />
-                      {row.label}
-                    </span>
-                  ),
-                },
-                { key: "start", header: "시작", render: (row) => row.start },
-                { key: "end", header: "끝", render: (row) => row.end },
-                {
-                  key: "weeks",
-                  header: "기간",
-                  align: "right",
-                  render: (row) => `${row.weeks}주`,
-                },
-              ]}
-            />
-          </div>
-        </Card>
-
-        {data?.note && (
-          <p className="rounded-sm border border-border bg-bg px-3 py-2 text-xs text-text-3">
-            <StatusText tone="warn" colorText={false} iconSize={12}>{data.note}</StatusText>
-          </p>
-        )}
-        </>
-      )}
+        <RegimeTabs
+          tabs={[
+            { key: "log", label: "판정 기록", content: <RegimeLogSection /> },
+            {
+              key: "history",
+              label: "국면 이력",
+              content: (
+                <Panel
+                  title="국면 이력"
+                  source={SOURCES.regime}
+                  subtitle="같은 규칙을 과거 날짜에 그대로 적용한 재현입니다(매주 목요일). 회색은 판정 불가 — 하이일드 스프레드 이력이 2023-09부터라 그 이전은 판정할 수 없습니다."
+                >
+                  {history}
+                </Panel>
+              ),
+            },
+            // 판정 성과는 스스로 읽습니다 — 이력 기간을 바꿔 판정을 다시 읽는 동안에도 그대로 두어 고른 자산·관점이 처음으로 돌아가지 않습니다(QA-066).
+            { key: "track", label: "판정 성과", content: <TrackRecordSection /> },
+          ]}
+        />
+      </SplitPane>
     </div>
   );
 }

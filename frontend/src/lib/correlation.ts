@@ -16,3 +16,11 @@ export function correlationStrength(value: number | null | undefined): string {
   }
   return `뚜렷하게 ${direction}으로 움직였습니다.`;
 }
+
+/**
+ * 상관계수가 추정치인가 — 두 계열 가운데 하나라도 추정치로 읽었으면(응답 x·y의 isEstimated) 그 상관계수도 추정치입니다(QA-634).
+ * 화면은 상관계수 옆에 '추정' 배지를 늘 보입니다(PRINCIPLES '추정치는 isEstimated와 함께').
+ */
+export function correlationEstimated(pair: { x?: { isEstimated?: boolean } | null; y?: { isEstimated?: boolean } | null } | null | undefined): boolean {
+  return Boolean(pair?.x?.isEstimated || pair?.y?.isEstimated);
+}

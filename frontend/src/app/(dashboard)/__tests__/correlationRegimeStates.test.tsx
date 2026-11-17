@@ -132,7 +132,7 @@ describe("QA-101 판정 성과 — 자산을 바꿔도 선택지가 줄지 않�
                  assets: ASSETS, horizons: [], limits: [] };
 
   async function chooseIef() {
-    render(<TrackRecordSection tone={{}} />);
+    render(<TrackRecordSection />);
     await screen.findByRole("option", { name: "미국채 7-10년 (IEF)" });
     fireEvent.change(screen.getByLabelText("자산"), { target: { value: "IEF" } });
   }
@@ -169,10 +169,10 @@ describe("QA-104 자동 갱신하는 나머지 패널도 실패를 표시한다"
     { name: "상관", make: () => <CorrelationPage />, card: "비교할 지표",
       bodies: { [endpoints.insight.correlation({ x: "liquidity:net", y: "etf:QQQ", window: "60", years: "3", mode: "change" })]:
         { available: false, message: "표본이 부족합니다." } } },
-    { name: "판정 성과", make: () => <TrackRecordSection tone={{}} />, card: "판정 성과",
+    { name: "판정 성과", make: () => <TrackRecordSection />, card: "판정 성과",
       bodies: { [endpoints.insight.regimeTrackRecord("SPY")]: { available: false, locked: false, message: "가격이 부족합니다.",
         asset: "SPY", assetLabel: "S&P 500 (SPY)", assets: [{ ticker: "SPY", label: "S&P 500 (SPY)" }], horizons: [], limits: [] } } },
-    { name: "판정 기록", make: () => <RegimeLogSection tone={{}} />, card: "판정 기록",
+    { name: "판정 기록", make: () => <RegimeLogSection />, card: "판정 기록",
       bodies: { [endpoints.insight.regimeLog(60)]: { available: true, entries: [], count: 0 } } },
   ];
 
