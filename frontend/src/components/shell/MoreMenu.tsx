@@ -42,7 +42,8 @@ export function MoreMenu() {
   }
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
-      <PageHeader title="더보기" description="알림·한국 시장·계정·운영 화면과 빌드 정보" />
+      {/* 설명의 묶음 이름은 이 사용자에게 보이는 묶음 그대로(운영자에게만 '정보 수집'). */}
+      <PageHeader title="더보기" description={["알림", ...groups.map((group) => group.label), "계정·운영 화면과 빌드 정보"].join("·")} />
 
       <section aria-labelledby="more-menus" className="flex flex-col gap-2">
         <h2 id="more-menus" className="text-sm font-semibold text-text-2">메뉴</h2>

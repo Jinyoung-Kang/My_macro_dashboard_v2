@@ -101,6 +101,18 @@ describe("더보기 화면", () => {
     }
   });
 
+  // 검토 지적: 머리 설명이 '알림·한국 시장·계정·운영 화면과 빌드 정보' 그대로라 운영자에게 가장 큰 묶음이 된 '정보 수집'을 말하지 않았습니다.
+  // 설명의 묶음 이름은 보이는 묶음 그대로 — 운영자에게만 '정보 수집', 회원은 전과 같은 글.
+  it("머리 설명의 묶음 이름은 보이는 묶음 그대로 — 운영자는 정보 수집까지, 회원은 전과 같은 글", () => {
+    renderMore({ email: "owner@test.local", role: "OWNER", tier: "PRO", local: true });
+    expect(screen.getByText("알림·한국 시장·정보 수집·계정·운영 화면과 빌드 정보")).toBeTruthy();
+    cleanup();
+
+    renderMore({ email: "member@test.local", role: "MEMBER", tier: "PRO" });
+    expect(screen.getByText("알림·한국 시장·계정·운영 화면과 빌드 정보")).toBeTruthy();
+    expect(screen.queryByText(/정보 수집/)).toBeNull();
+  });
+
   it("회원·데모에게는 '정보 수집' 묶음이 없고 /info 링크도 없다(운영자 전용)", () => {
     for (const user of [
       { email: "member@test.local", role: "MEMBER", tier: "PRO" },
