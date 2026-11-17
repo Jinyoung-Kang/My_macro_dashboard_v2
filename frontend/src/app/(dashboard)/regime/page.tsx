@@ -169,10 +169,13 @@ export default function RegimePage() {
       block: true,
       note: signal ? (
         <>
-          {/* align-top: 글 줄 안의 inline-flex가 기준선에 앉아 보조 글 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음). */}
+          {/* align-top: 글 줄 안의 inline-flex가 기준선에 앉아 보조 글 줄이 2px 높아지지 않게(SpreadSection의 상태 글과 같음).
+              상태 글 · 해석 — 홈 국면 패널과 같은 구분(lib/marketRows joinPresent ' · '). 빈칸 하나로 이으면 같은 회색이라 '정상 정상 범위입니다.'처럼
+              붙어 보이고 읽혔습니다(QA-676). */}
           <StatusText tone={healthy ? "ok" : "warn"} colorText={false} iconSize={12} className="align-top">
             {signal.state}
-          </StatusText>{" "}
+          </StatusText>
+          {" · "}
           {signal.reading}
         </>
       ) : null,
