@@ -718,19 +718,57 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
     }
   });
 
-  it("가운데 단추·Ctrl·Meta·Shift·Alt 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
+  it("가운데 단추·Ctrl·Shift·Alt 누름과 맥의 ⌘(Meta) 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
     const clicks = watchClicks();
     const push = vi.spyOn(window.history, "pushState");
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Linux x86_64");
     try {
       renderIndex({ activeId: null });
       const link = within(lists().column).getByRole("link", { name: "환율 비교" });
-      const inits = [{ button: 1 }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }];
+      const inits = [{ button: 1 }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }];
       for (const init of inits) fireEvent.click(link, init);
-      expect(clicks.prevented).toEqual(inits.map(() => false));
+      // 맥은 ⌘+누름이 새 탭입니다.
+      platform.mockReturnValue("MacIntel");
+      fireEvent.click(link, { metaKey: true });
+      expect(clicks.prevented).toEqual([...inits.map(() => false), false]);
       expect(push).not.toHaveBeenCalled();
       expect(into).not.toHaveBeenCalled();
       expect(document.activeElement).not.toBe(document.getElementById("macro-fx"));
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      push.mockRestore();
+      into.mockRestore();
+    }
+  });
+
+  // QA-689: 리눅스 크롬에서 Meta+누름은 새 탭이 아니라 같은 탭의 기본 해시 이동이었습니다(QA 스택 qa@2d111589 /macro 1280·1440·1920, 마우스·Meta+Enter, 셸
+  // 건너뛰기 링크도 — 상태 없는 기록 /macro#macro-fx가 쌓이고 /sector로 갔다가 뒤로 가면 주소만 그 기록, 화면은 /sector — QA-680 원래 증상, 윈도도 같다고
+  // 추정). followHashLink가 Meta를 플랫폼과 상관없이
+  // 브라우저에 맡겨 이 수식키로 QA-680이 남았습니다. 결정(2026-11-18, 사용자 위임 — 권장안 방법 1): Meta는 애플 플랫폼(⌘+누름 = 새 탭)에서만 맡기고
+  // 그 밖에서는 수식키 없는 누름처럼 맡습니다. 판별은 셸 검색 단축키(⌘K·Ctrl K)와 같은 식(lib/platform isMacPlatform). 수정 전(재현 커밋에서는 it.fails)에는
+  // 막지 않았습니다(defaultPrevented false, pushState 없음).
+  it.fails("맥이 아닌 곳(리눅스·윈도)의 Meta 누름은 수식키 없는 누름처럼 맡는다 — 기본 동작을 막고 pushState 한 번, 그 닻으로", () => {
+    const clicks = watchClicks();
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    try {
+      renderIndex({ activeId: null });
+      const link = within(lists().column).getByRole("link", { name: "환율 비교" });
+      fireEvent.click(link, { metaKey: true });
+      // 결함을 직접 보는 단언(수정 전에는 막지 않아 같은 탭의 기본 해시 이동).
+      expect(clicks.prevented).toEqual([true]);
+      expect(push.mock.calls).toEqual([[null, "", "#macro-fx"]]);
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      expect(into.mock.contexts).toEqual([fx]);
+      // 윈도도 같다 — 이미 그 해시라 기록은 더 쌓지 않고 옮기기만.
+      platform.mockReturnValue("Win32");
+      fireEvent.click(link, { metaKey: true });
+      expect(clicks.prevented).toEqual([true, true]);
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(into).toHaveBeenCalledTimes(2);
     } finally {
       clicks.stop();
       window.history.replaceState(null, "", BASE_PATH());
