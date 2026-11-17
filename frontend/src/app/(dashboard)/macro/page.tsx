@@ -8,6 +8,7 @@ import {
 } from "@/components/AutoRefresh";
 import { type Column, DataTable, SectionAnchor, SectionIndex } from "@/components/patterns";
 import { RawSnapshotActions } from "@/components/RawSnapshotCard";
+import { ScrollTopButton } from "@/components/ScrollTopButton";
 import { EmptyState, Freshness, Loading, PageHeader, Panel } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
 import { firstLoadPending, useApi } from "@/hooks/useApi";
@@ -274,6 +275,10 @@ export default function MacroPage() {
           </SectionAnchor>
         )}
       </SectionIndex>
+      {/* 맨 위로(TOP) — 사용자 요구 2026-11-18(모의 매매·정보 검색·정보 수집과 같은 공용 단추). 400px 넘게 내려가면 오른쪽 아래에 나타납니다(고정 위치라
+          세로 묶음의 간격·흐름에 들지 않음). 층은 기본 z-40: 목차 가로 줄(위쪽에 붙음, z-20)과는 자리가 다르고, 미리보기·원자료 대화상자(z-50)는 덮개가
+          단추를 가리며, 휴대폰 아래 탭 막대(z-40) 위에 놓입니다. 이 화면에는 아래에 붙는 시트가 없어(--bottom-sheet 0) 자리를 옮기지 않습니다. */}
+      <ScrollTopButton />
     </div>
   );
 }
