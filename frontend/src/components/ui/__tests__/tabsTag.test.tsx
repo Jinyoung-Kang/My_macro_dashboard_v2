@@ -152,7 +152,7 @@ describe("QA-685 포커스가 있던 탭이 사라지면 고른 탭으로", () =
     );
   }
 
-  it.fails("고르지 않은 탭에 포커스가 있다가 그 탭이 빠지면 고른 탭으로(스크롤 없이)", () => {
+  it("고르지 않은 탭에 포커스가 있다가 그 탭이 빠지면 고른 탭으로(스크롤 없이)", () => {
     const { rerender } = render(view(ABC, "b"));
     const third = screen.getByRole("tab", { name: "다" });
     third.focus();
@@ -163,7 +163,7 @@ describe("QA-685 포커스가 있던 탭이 사라지면 고른 탭으로", () =
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 
-  it.fails("고른 탭에 포커스가 있다가 그 탭이 빠지면 새로 고른 탭(새 value)으로", () => {
+  it("고른 탭에 포커스가 있다가 그 탭이 빠지면 새로 고른 탭(새 value)으로", () => {
     const { rerender } = render(view(ABC, "c"));
     screen.getByRole("tab", { name: "다" }).focus();
     rerender(view(ABC.slice(0, 2), "a"));

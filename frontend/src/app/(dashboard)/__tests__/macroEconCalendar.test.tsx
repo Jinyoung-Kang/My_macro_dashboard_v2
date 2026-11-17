@@ -500,7 +500,7 @@ describe("QA-683 '나라' 칸은 음절에서 꺾이지 않는다", () => {
 // 다음 Tab이 문서 처음(본문으로 건너뛰기)부터였습니다. 공용 탭 줄이 다시 고른 날의 탭으로 포커스를 넘깁니다(components/ui Tabs).
 // 수정 전(재현 커밋에서는 it.fails) 포커스가 body였습니다.
 describe("QA-685 포커스가 있던 날짜 탭이 사라지면", () => {
-  it.fails("다시 고른 날(오늘)의 탭으로 포커스가 간다", async () => {
+  it("다시 고른 날(오늘)의 탭으로 포커스가 간다", async () => {
     at("2026-11-12T03:00:00Z");
     mockCalendar(CALENDAR);
     const { rerender } = render(<EconCalendarSection />);
