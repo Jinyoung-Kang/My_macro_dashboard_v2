@@ -120,6 +120,28 @@ describe("liquidity liquidityKpis", () => {
     expect(items[0].change).toBeUndefined();
     expect(items[2].value).toBe("—");
   });
+
+  // QA-662: 값을 '5.745조 달러'처럼 단위까지 한 글로 넘겨(unit 없음) 공용 KPI 띠의 단위 묶음(14px 단위·마지막 글자와 nowrap·값 줄 −12px 여유)이
+  // 쓰이지 않았습니다 — 1280 메뉴 220 한 줄 여섯 칸(타일 159px)에서 여섯 값 가운데 다섯이 '5.745조 달|러'처럼 낱말 안에서 꺾였습니다(QA 스택).
+  // 수정 전(재현 커밋에서는 it.fails) items[0]은 { value: '5.745조 달러' }이고 unit이 없었습니다.
+  it.fails("값은 숫자 부분과 단위로 나눠 넘긴다 — 부호는 숫자 쪽, 모르는 값은 단위 없이 '—' (QA-662)", () => {
+    const items = liquidityKpis(response, usdKrw, "FRED");
+    expect(items.map((item) => [item.value, item.unit])).toEqual([
+      ["5.745", "조 달러"],
+      ["6.745", "조 달러"],
+      ["9,997", "억 달러"],
+      ["4.3", "억 달러"],
+      ["−480.0", "억 달러"],
+      ["−940.0", "억 달러"],
+    ]);
+    expect(items[0]).toMatchObject({ value: "5.745", unit: "조 달러" });
+    expect(items[4]).toMatchObject({ value: "−480.0", unit: "억 달러" });
+    const missing = liquidityKpis({ latest: { ...response.latest, netLiquidityT: null, tgaB: null } }, usdKrw, "FRED");
+    expect(missing[0]).toMatchObject({ value: "—" });
+    expect(missing[0].unit).toBeUndefined();
+    expect(missing[2].unit).toBeUndefined();
+    expect(missing[1]).toMatchObject({ value: "6.745", unit: "조 달러" });
+  });
 });
 
 describe("sectorScreen sectorKpis", () => {
