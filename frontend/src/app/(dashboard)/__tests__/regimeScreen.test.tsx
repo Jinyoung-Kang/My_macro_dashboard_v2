@@ -639,3 +639,24 @@ describe("QA-675 네 국면의 지금 칸은 고대비에서 2px 테두리", () 
     for (const item of items.slice(0, 3)) expect(item.className.split(/\s+/)).not.toContain("forced-colors:border-2");
   });
 });
+
+// QA-676: 판정 근거 메모(값 아래 보조 글)가 상태 글과 해석을 빈칸 하나로 이어, 같은 회색이라 '정상 정상 범위입니다.'처럼 붙어 보이고 읽혔습니다(QA 스택
+// 390·1024·1440 — 접근성 트리 '정상 | 정상 범위입니다.'). 같은 모델을 쓰는 홈 국면 패널은 '정상 · 정상 범위입니다.'이고, D2는 두 줄이었습니다. 홈과 같은 ' · '여야 합니다.
+describe("QA-676 판정 근거 메모는 '상태 · 해석'", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 빈칸 하나로 이었습니다("expected '정상 장기 금리가 단기보다 높습니다(정상 구조).' to be '정상 · 장기 금리가 단기보다 높습니다(정상 구조).'").
+  it.fails("정상 칸은 '정상 · 해석', 주의 칸은 '주의: 축소 · 해석'(낭독 머리말 포함 글)", async () => {
+    const response = regimeExpansion();
+    const signals = response.verdict?.signals ?? [];
+    signals[3] = { ...signals[3], value: -0.05, state: "축소", reading: "최근 4주 동안 시장에서 유동성이 빠져나갔습니다.", healthy: false };
+    reads[REGIME] = response;
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 근거");
+    await within(panel).findByText("시카고 연준 금융상황지수");
+
+    /** 속성 한 줄의 메모 — 이름(dt) 옆 값 칸(dd)의 둘째 줄(상태 글 + 해석). */
+    const memo = (label: string) => (within(panel).getByText(label, { selector: "dt" }).nextElementSibling as HTMLElement).children[1]?.textContent;
+    expect(memo("장단기 금리차 10Y-3M")).toBe("정상 · 장기 금리가 단기보다 높습니다(정상 구조).");
+    expect(memo("하이일드 스프레드")).toBe("정상 · 정상 범위입니다.");
+    expect(memo("연준 순유동성 4주 변화")).toBe("주의: 축소 · 최근 4주 동안 시장에서 유동성이 빠져나갔습니다.");
+  });
+});
