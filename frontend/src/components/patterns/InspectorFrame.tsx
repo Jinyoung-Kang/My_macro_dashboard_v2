@@ -56,6 +56,7 @@ const VANISHED = "고른 줄이 지금 자료에 없습니다. 다른 줄을 고
  *   MasterDetail autoSelectFirst와 같은 뜻, 사용자가 고르거나 풀면 그 뒤로는 저절로 보이지 않음).
  *   고른 키의 제목(`titleOf`)이 null이면 자료에서 사라진 키 — 고름이 풀린 것처럼 행 표시가 없고 검사 칸에 그 사실을 적습니다.
  *   Esc(lib/shortcuts listKeyAction 'close' — 틀 안에 포커스가 있을 때)는 사용자가 고른 것이 있을 때만 풂니다(기본 키만 보일 때는 키를 그대로 둠).
+ *   검사 칸 안에서 누른 Esc면 풀기 전에 포커스를 그 키의 줄 단추(`data-inspect-key`)로 옮깁니다 — 내용이 사라져 포커스가 body로 떨어지지 않게(QA-642).
  * - 대화상자: 좁은 화면, 넓은 화면의 좁은 틀(기준 폭 미만 — ResizeObserver로 잼, `hooks/useSideBySide`), `layout="dialog"`. 공용 Dialog(넓은 폭·위쪽 고정,
  *   이름 = 제목)로 열고 닫으면 연 단추로 포커스가 돌아옵니다. 줄 단추에는 aria-haspopup="dialog"·aria-expanded.
  * - 대화상자 배치에서 옆 칸 배치로 바뀌면(창을 넓힘·왼쪽 메뉴 접기) 열려 있던 대화상자의 키를 고르고 대화상자를 닫습니다(MasterDetail QA-590과 같은 규칙).
@@ -95,6 +96,7 @@ export function InspectorFrame({
   const wide = useWideShell();
   const side = layout === "dialog" ? null : SIDE[layout];
   const frameRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const measured = useSideBySide(frameRef, wide && side !== null, side?.minRem ?? 32);
   // 옆 검사 칸인가 — 넓은 화면·옆 칸 배치이고 틀 폭이 기준 이상(재지 못했으면 크기 질의 배치에 맡김). 아니면 대화상자로 엽니다.
   const inline = wide && side !== null && measured !== false;
@@ -160,6 +162,14 @@ export function InspectorFrame({
     if (!inline || chosen === null || event.defaultPrevented) return;
     if (listKeyAction(event.nativeEvent) !== "close") return;
     event.preventDefault();
+    // 검사 칸 안(내용의 링크 등)에서 누른 Esc — 고름을 풀면 그 내용이 사라져 포커스가 body로 떨어지므로(QA-642), 풀기 전에 그 키의 줄 단추로 포커스를
+    // 옮깁니다(대화상자를 닫을 때 연 단추로 돌아오는 것과 같은 규칙). 줄 단추를 찾지 못하면(부르는 쪽이 triggerProps를 펼치지 않음) 포커스는 그대로입니다.
+    if (event.target instanceof Node && panelRef.current?.contains(event.target)) {
+      const row = [...(frameRef.current?.querySelectorAll<HTMLElement>("[data-inspect-key]") ?? [])].find(
+        (element) => element.getAttribute("data-inspect-key") === chosen && !panelRef.current?.contains(element),
+      );
+      row?.focus();
+    }
     select(null);
   };
 
@@ -183,6 +193,7 @@ export function InspectorFrame({
         {inline && side ? (
           // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 표 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
           <section
+            ref={panelRef}
             id={inspectorId}
             aria-label={`${label} — ${shownTitle ?? "고른 줄 없음"}`}
             className={`min-w-0 self-start rounded-control border border-border p-3 ${side.panel}`}
