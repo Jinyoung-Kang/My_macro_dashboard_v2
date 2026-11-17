@@ -64,6 +64,8 @@ public class SearchService {
     /** 운영자 전용 저장본에서 온 줄의 출처(수집 글 info_items · 거장 견해 · 속보) — 회원에게는 지웁니다(결정 2). */
     static final Set<String> OWNER_ONLY_SOURCES = Set.of("info", "guru", "wire");
     static final String OWNER_ONLY = "owner_only";
+    /** 회원 결과에서 null로 지우는 줄의 칸 — 원문 팝업 id(readerId)와 본문 보기 꼬리표·까닭(bodyRef·bodyNote — ADR 0043, 운영자만 쓰는 경로의 열쇠). */
+    static final List<String> OWNER_ONLY_FIELDS = List.of("readerId", "bodyRef", "bodyNote");
 
     /** 대상 키(계약 §2) — 티커는 영문 대문자·숫자·'.'·'-', 종목코드 6자리·CIK 10자리 숫자, Wikidata는 Q+숫자. */
     // 수집기(search.py _KEY_PATTERNS)와 같은 문법 — 어긋나면 수집기의 400이 '응답을 받지 못함'으로 바뀝니다.
@@ -491,7 +493,7 @@ public class SearchService {
 
     /**
      * 회원에게 가는 결과에서 운영자 전용 줄을 지웁니다 — 줄은 빼고, 그 출처의 상태 줄은 {@code owner_only}·0건(거른 건수·같은 글로 합친 수 0, 사유 없음),
-     * 남은 줄의 원문 팝업 id({@code readerId} — 운영자 화면 전용)는 null. 지운 줄이 있으면 받은 건수({@code rangeCounts})에서도 뺍니다.
+     * 남은 줄의 원문 팝업 id({@code readerId} — 운영자 화면 전용)와 본문 보기 꼬리표·까닭({@code bodyRef}·{@code bodyNote} — ADR 0043)은 null. 지운 줄이 있으면 받은 건수({@code rangeCounts})에서도 뺍니다.
      * 출처를 알 수 없는 줄(객체가 아니거나 {@code source}가 없거나 글이 아님)도 운영자 전용인지 가릴 수 없어 지웁니다(닫힌 실패).
      * 출처 칸이 없는 상태 줄은 본문이 없으므로 그대로 둡니다.
      */
@@ -505,8 +507,13 @@ public class SearchService {
                     removed.add(item);
                     continue;
                 }
-                if (item instanceof ObjectNode row && row.has("readerId")) {
-                    row.putNull("readerId");
+                if (item instanceof ObjectNode row) {
+                    // 운영자 화면 전용 칸 — 원문 팝업 id와 본문 보기 꼬리표·까닭(ADR 0043). 칸이 없는 줄(첫 화면 최근 글 등)은 그대로.
+                    for (String field : OWNER_ONLY_FIELDS) {
+                        if (row.has(field)) {
+                            row.putNull(field);
+                        }
+                    }
                 }
                 kept.add(item);
             }

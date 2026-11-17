@@ -118,17 +118,17 @@ class AccessPolicyTest {
     }
 
     @Test
-    @DisplayName("정보 검색 경로(/api/search, ADR 0041 결정 2·9, 계약 §7-8의 연결 보강 포함)는 회원 — 운영자 전용 줄과 글·논평 탭은 서비스가 거르고, 매체 제외 더하기·지우기와 AI 요약(계약 §9-6)만 운영자")
+    @DisplayName("정보 검색 경로(/api/search, ADR 0041 결정 2·9, 계약 §7-8의 연결 보강 포함)는 회원 — 운영자 전용 줄과 글·논평 탭은 서비스가 거르고, 매체 제외 더하기·지우기와 AI 요약(계약 §9-6)·본문 보기와 그 번역(ADR 0043)만 운영자")
     void searchRoutesAreMember() throws ClassNotFoundException {
         java.util.List<String> declared = RouteInventoryTest.declaredRoutes().stream()
                 .filter(route -> route.split(" ")[1].startsWith("/api/search/")).toList();
         java.util.List<String> owner = java.util.List.of("POST /api/search/excludes", "DELETE /api/search/excludes/{id}",
-                "POST /api/search/summary");
+                "POST /api/search/summary", "POST /api/search/article", "POST /api/search/article/translate");
         assertThat(declared).containsExactlyInAnyOrder("GET /api/search/suggest", "GET /api/search/resolve",
                 "GET /api/search/entity", "GET /api/search/feed", "GET /api/search/recent", "GET /api/search/watch",
                 "POST /api/search/watch", "DELETE /api/search/watch/{id}", "PATCH /api/search/watch/{id}", "POST /api/search/watch/{id}/seen",
                 "GET /api/search/excludes", "POST /api/search/excludes", "DELETE /api/search/excludes/{id}",
-                "GET /api/search/links", "POST /api/search/summary");
+                "GET /api/search/links", "POST /api/search/summary", "POST /api/search/article", "POST /api/search/article/translate");
         declared.forEach(route -> assertThat(AccessPolicy.routes().get(route)).as(route)
                 .isEqualTo(owner.contains(route) ? AccessPolicy.Access.OWNER : AccessPolicy.Access.MEMBER));
         for (String path : java.util.List.of("/api/search/suggest", "/api/search/resolve", "/api/search/entity", "/api/search/feed",

@@ -90,6 +90,9 @@ public final class AccessPolicy {
         owner("POST /api/search/excludes", "DELETE /api/search/excludes/{id}");
         // 정보 검색 AI 요약(계약 §9-6) — 운영자만(유료 모델·번역과 함께 세는 하루 글자 상한). 데모의 POST는 데모 쓰기 금지 규칙이 먼저 막음
         owner("POST /api/search/summary");
+        // 정보 검색 본문 보기(ADR 0043) — 운영자만(누를 때 외부 기사 한 건을 받음: 저작권·비용 — 번역·AI 요약과 같은 결정). 본문 번역도 저장하지 않음.
+        // 데모의 POST는 데모 쓰기 금지 규칙이 먼저 막음
+        owner("POST /api/search/article", "POST /api/search/article/translate");
 
         // 알림 — 규칙·알림함(등급별 규칙 수와 종류는 AlertService가 제한)
         member("GET /api/alerts/rules", "POST /api/alerts/rules", "POST /api/alerts/rules/{id}",

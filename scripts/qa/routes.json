@@ -588,6 +588,24 @@
       "fuzz": false
     },
     {
+      "m": "POST",
+      "p": "/api/search/article",
+      "body": {
+        "ref": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
+      "m": "POST",
+      "p": "/api/search/article/translate",
+      "body": {
+        "ref": "str"
+      },
+      "mutating": true,
+      "fuzz": false
+    },
+    {
       "m": "GET",
       "p": "/api/live/prices",
       "q": {

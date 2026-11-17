@@ -31,6 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CollectorClientSearchLogTest {
 
     private static final String CANARY = "CANARYSEARCH9";
+    /** 본문 보기 꼬리표(ADR 0043) — 로그에 남지 않아야 하는 자리(32자 소문자 16진). */
+    private static final String CANARY_REF = "c0ffee00c0ffee00c0ffee00c0ffee00";
 
     private HttpServer server;
     private int status = 500;
@@ -86,7 +88,8 @@ class CollectorClientSearchLogTest {
             c -> c.liveSearchFeed("us:NVDA", "news", true, false, false, true, List.of(CANARY + " 별칭", "합성, 별칭")),
             c -> c.liveSearchRecent(false),
             c -> c.liveSearchExcludes(),
-            c -> c.liveSearchLinks("topic:" + CANARY, true, false));
+            c -> c.liveSearchLinks("topic:" + CANARY, true, false),
+            c -> c.liveSearchArticle(CANARY_REF, true));
 
     @Test
     @DisplayName("수집기가 오류 상태와 본문을 내면 빈 값이고, 로그에는 경로 이름표와 상태 코드만")
@@ -101,7 +104,7 @@ class CollectorClientSearchLogTest {
             assertThat(logLines()).hasSize(CALLS.size());
             assertThat(logLines()).allSatisfy(line -> assertThat(line)
                     .contains("/live/search/", String.valueOf(code))
-                    .doesNotContain(CANARY, "검색어", "별칭", "topic", "q=", "e=", "aliases", "?"));
+                    .doesNotContain(CANARY, CANARY_REF, "검색어", "별칭", "topic", "q=", "e=", "aliases", "?"));
         }
     }
 
@@ -116,7 +119,7 @@ class CollectorClientSearchLogTest {
         assertThat(logLines()).hasSize(CALLS.size());
         assertThat(logLines()).allSatisfy(line -> assertThat(line)
                 .contains("/live/search/")
-                .doesNotContain(CANARY, "127.0.0.1", "http://", "q=", "e=", "aliases", "?"));
+                .doesNotContain(CANARY, CANARY_REF, "127.0.0.1", "http://", "q=", "e=", "aliases", "?"));
     }
 
     @Test

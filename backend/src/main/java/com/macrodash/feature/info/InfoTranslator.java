@@ -33,6 +33,8 @@ import java.util.regex.Pattern;
  *   <li><b>제목</b>: 화면에서 그 제목의 번역 단추를 누를 때 번역합니다({@link #titles} — 미리 번역하지 않음, 2026-11-12 사용자 지시).</li>
  *   <li><b>본문·요약</b>: 화면에서 번역 단추를 누를 때만 번역합니다({@link #body}). 긴 글은 문단 경계에서 조각으로 나눠 조각마다 저장하므로, 중간에
  *       실패해도 다시 누르면 남은 조각만 번역합니다.</li>
+ *   <li><b>저장하지 않는 본문</b>: 정보 검색 본문 보기(ADR 0043)가 누를 때 받은 기사 본문은 {@link #bodyUnsaved}로 — 같은 엔진·조각 나누기·지시문이고,
+ *       번역 표에 쓰지 않고 메모리({@link UnsavedTranslations} — 24시간)에만 둡니다.</li>
  *   <li><b>상한</b>: KST 하루에 번역하는 원문 글자 수({@code dashboard.info.translate.daily-chars})를 넘기면 그날은 더 부르지 않습니다. 정보 검색 AI
  *       요약(계약 §9-6)이 보낸 글자도 함께 셉니다({@link InfoAiBudget}).</li>
  *   <li>모의 매매의 Claude 호출 상한({@code PaperApiCalls})과는 따로입니다 — 그 수를 쓰지 않고, 그 기록에도 남지 않습니다.</li>
@@ -122,6 +124,21 @@ public class InfoTranslator {
     public record Body(boolean ok, String textKo, boolean alreadyKorean, boolean cached, boolean truncated, String error, String model) {
     }
 
+    /**
+     * 저장하지 않는 본문 번역의 결과(정보 검색 본문 보기 — ADR 0043, {@link #bodyUnsaved}). 모양은 {@link Body}와 같고, {@code models}는 이 번역(메모리에
+     * 남은 조각 포함)을 옮긴 모델 전부(조각 순서, 같은 이름은 한 번 — 번역 표에 없으므로 {@link #models}로 읽을 수 없음).
+     */
+    public record UnsavedBody(boolean ok, String textKo, boolean alreadyKorean, boolean cached, boolean truncated, String error, String model,
+                              List<String> models) {
+    }
+
+    /** 저장하지 않는 조각 하나의 결과 — 실패 사유(성공이면 null)·실패 종류·번역한 모델. */
+    private record UnsavedPart(String error, String errorKind, String model) {
+    }
+
+    /** 모델에 요청이 나가지 않은 실패 종류(키 없음·허용 목록 밖) — 하루 상한에 센 글자를 돌려줍니다(요약과 같은 기준). */
+    private static final java.util.Set<String> NOT_SENT_KINDS = java.util.Set.of("NO_KEY", "NOT_ALLOWED");
+
     /** 모델 호출의 결과와 실제로 답한 모델. {@code value}는 응답을 읽어 얻은 번역(실패면 null). */
     private record Called<T>(GeminiClient.Reply reply, String model, T value) {
     }
@@ -160,6 +177,8 @@ public class InfoTranslator {
     /** 하루 글자 상한 — 번역 표와 정보 검색 AI 요약이 함께 씁니다. */
     private final InfoAiBudget budget;
     private final int timeoutSeconds;
+    /** 저장하지 않는 본문 번역(정보 검색 본문 보기 — ADR 0043)의 메모리 캐시. */
+    private final UnsavedTranslations unsaved;
     /** 본문 조각을 함께 번역하는 일꾼(조각 셋까지 동시에). */
     private final ExecutorService pool = Executors.newFixedThreadPool(3, runnable -> {
         Thread thread = new Thread(runnable, "info-translate");
@@ -204,6 +223,7 @@ public class InfoTranslator {
         this.timeoutSeconds = timeoutSeconds;
         this.geminiTimeoutSeconds = geminiTimeoutSeconds;
         this.clock = clock;
+        this.unsaved = new UnsavedTranslations(clock);
         String wanted = engine == null ? "auto" : engine.strip().toLowerCase(java.util.Locale.ROOT);
         this.useGemini = switch (wanted) {
             case "gemini" -> true;
@@ -478,6 +498,106 @@ public class InfoTranslator {
             joined.append(joined.isEmpty() ? "" : "\n\n").append(ko == null ? parts.get(i) : ko);
         }
         return new Body(true, joined.toString(), false, cached, truncated, null, usedModel);
+    }
+
+    /**
+     * 본문을 한국어로 — 저장하지 않는 길(정보 검색 본문 보기, ADR 0043). 운영 서버가 누를 때 받은 기사 본문은 어느 표에도 두지 않기로 했으므로 그 번역도
+     * 번역 표({@code info_translations})에 쓰지 않고 메모리({@link UnsavedTranslations} — 24시간·400조각)에만 둡니다. 엔진·지시문·조각 나누기는
+     * {@link #body}와 같습니다.
+     *
+     * <ul>
+     *   <li>메모리에 없는 조각만 번역합니다(셋까지 동시에). 일부 조각만 실패하면 번역된 조각은 메모리에 남아 다시 누르면 남은 조각만 번역합니다.</li>
+     *   <li>하루 글자 상한은 {@link InfoAiBudget#reserve}로 셉니다(표에 남지 않는 몫 — 요약과 같음). 넘으면 부르지 않고 실패와 안내 글, 모델에 요청이
+     *       나가지 않은 조각(키 없음·허용 목록 밖)의 글자는 {@link InfoAiBudget#release}로 돌려줍니다.</li>
+     * </ul>
+     */
+    public UnsavedBody bodyUnsaved(String text) {
+        if (text == null || text.isBlank()) {
+            return new UnsavedBody(false, null, false, false, false, "번역할 글이 없습니다", null, List.of());
+        }
+        if (!needsTranslation(text)) {
+            return new UnsavedBody(true, null, true, true, false, null, null, List.of());
+        }
+        boolean truncated = text.length() > BODY_MAX_CHARS;
+        List<String> parts = chunks(truncated ? text.substring(0, BODY_MAX_CHARS) : text, BODY_CHUNK_CHARS);
+        List<String> keys = parts.stream().map(UnsavedTranslations::key).toList();
+        Map<String, UnsavedTranslations.Entry> done = new LinkedHashMap<>(unsaved.find(keys));
+        List<Integer> missing = new ArrayList<>();
+        for (int i = 0; i < parts.size(); i++) {
+            if (!done.containsKey(keys.get(i)) && needsTranslation(parts.get(i))) {
+                missing.add(i);
+            }
+        }
+        boolean cached = missing.isEmpty();
+        String usedModel = null;
+        if (!cached) {
+            int chars = missing.stream().mapToInt(i -> parts.get(i).length()).sum();
+            String refusal = budget.reserve(chars);
+            if (refusal != null) {
+                return new UnsavedBody(false, null, false, false, truncated, refusal, null, List.of());
+            }
+            Map<Integer, Future<UnsavedPart>> running = new LinkedHashMap<>();
+            for (int index : missing) {
+                String part = parts.get(index);
+                String key = keys.get(index);
+                running.put(index, pool.submit(() -> translateUnsaved(part, key)));
+            }
+            String error = null;
+            int notSent = 0;
+            for (Map.Entry<Integer, Future<UnsavedPart>> entry : running.entrySet()) {
+                try {
+                    UnsavedPart part = entry.getValue().get();
+                    error = error == null ? part.error() : error;
+                    usedModel = part.model() == null || part.error() != null ? usedModel : part.model();
+                    if (part.error() != null && NOT_SENT_KINDS.contains(part.errorKind())) {
+                        notSent += parts.get(entry.getKey()).length();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    error = "번역이 중단됐습니다";
+                } catch (java.util.concurrent.ExecutionException e) {
+                    log.warn("본문 번역 조각 실패(저장하지 않는 길): {}", String.valueOf(e.getCause()));
+                    error = error == null ? "번역 중 오류가 났습니다" : error;
+                }
+            }
+            if (notSent > 0) {
+                budget.release(notSent);
+            }
+            if (error != null) {
+                return new UnsavedBody(false, null, false, false, truncated,
+                        error + " — 번역된 부분은 서버 메모리에 두었으니 다시 누르면 남은 부분만 번역합니다", usedModel, List.of());
+            }
+            done.putAll(unsaved.find(keys));
+        }
+        StringBuilder joined = new StringBuilder();
+        List<String> models = new ArrayList<>();
+        for (int i = 0; i < parts.size(); i++) {
+            UnsavedTranslations.Entry entry = done.get(keys.get(i));
+            joined.append(joined.isEmpty() ? "" : "\n\n").append(entry == null ? parts.get(i) : entry.ko());
+            if (entry != null && entry.model() != null && !models.contains(entry.model())) {
+                models.add(entry.model());
+            }
+        }
+        return new UnsavedBody(true, joined.toString(), false, cached, truncated, null, usedModel, List.copyOf(models));
+    }
+
+    /** 저장하지 않는 조각 하나 — 번역해 메모리에만 둡니다. */
+    private UnsavedPart translateUnsaved(String part, String key) {
+        Called<String> called = call(BODY_SYSTEM, mapper.writeValueAsString(Map.of("text", part)), BODY_SCHEMA, text -> {
+            String ko = mapper.readTree(text).path("ko").asText("").strip();
+            return ko.isEmpty() ? null : ko;
+        });
+        GeminiClient.Reply result = called.reply();
+        if (!result.ok()) {
+            return new UnsavedPart(result.error(), result.errorKind(), called.model());
+        }
+        unsaved.put(key, called.value(), called.model());
+        return new UnsavedPart(null, null, called.model());
+    }
+
+    /** 시험용 — 메모리에 둔 저장하지 않는 번역 조각 수. */
+    int unsavedSize() {
+        return unsaved.size();
     }
 
     /**
