@@ -946,6 +946,7 @@ function FeedPreview({
 }) {
   const url = httpUrl(item.url);
   const action = articleActionOf(item, owner);
+  const previewNote = articlePreviewNote(action);
   const rows: [string, string][] = [...itemFactRows(item), ["종류", itemKindLabel(item.kind)], ["받은 곳", label]];
   return (
     <PreviewFrame onClose={onClose} onKeyDown={onKeyDown}>
@@ -967,7 +968,7 @@ function FeedPreview({
           <span className="text-xs text-text-3">원문 주소가 없습니다</span>
         )}
         {action.mode === "stored" ? (
-          <button type="button" className={BUTTON} onClick={onRead}>
+          <button type="button" className={BUTTON} onClick={onRead} aria-haspopup="dialog">
             본문 보기
           </button>
         ) : action.mode === "fetch" ? (
@@ -975,10 +976,10 @@ function FeedPreview({
             본문 보기
           </button>
         ) : action.note ? (
-          <span className="text-xs text-text-3">{`본문 보기 없음 — ${action.note}`}</span>
+          <span className="break-keep wrap-break-word text-xs text-text-3">{`본문 보기 없음: ${action.note}`}</span>
         ) : null}
       </div>
-      <p className="text-xs text-text-3">{articlePreviewNote(action)}</p>
+      {previewNote ? <p className="break-keep wrap-break-word text-xs text-text-3">{previewNote}</p> : null}
     </PreviewFrame>
   );
 }

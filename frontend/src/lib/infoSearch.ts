@@ -2175,11 +2175,31 @@ export function articleActionOf(item: Pick<SearchFeedItem, "readerId" | "bodyRef
   return { mode: "none", note: note ? note : null };
 }
 
-/** 미리 보기 아래 안내 한 줄 — 본문 보기가 무엇을 하는지(운영자), 회원·본문 보기가 없는 줄은 지금 글 그대로. */
-export function articlePreviewNote(action: ArticleAction): string {
+/**
+ * 미리 보기 아래 안내 한 줄 — 본문 보기가 무엇을 하는지(운영자), 회원·본문 보기가 없는 줄은 지금 글 그대로. 받지 않는 매체(note 있음)는 단추 자리의
+ * '본문 보기 없음: 까닭' 한 줄로 충분해 null(같은 뜻의 두 줄이 겹치지 않게).
+ */
+export function articlePreviewNote(action: ArticleAction): string | null {
   if (action.mode === "fetch") return "본문 보기는 누를 때 운영 서버가 이 글 한 건을 받아 본문만 추려 보입니다 — 저장하지 않습니다.";
   if (action.mode === "stored") return "본문 보기는 운영 서버가 받아 둔 글을 엽니다.";
+  if (action.note) return null;
   return "기사 본문은 받지 않습니다 — 제목·매체·시각·요약만입니다.";
+}
+
+/**
+ * 본문 팝업의 상태 줄(화면 읽기 프로그램) — 단계마다 한 줄: 받는 중·멈춤·받음(문단 수)·실패(사유). 팝업은 이 줄을 단계와 상관없이 늘 붙여 두고
+ * 글만 갈아 넣습니다(새로 붙은 live region은 읽히지 않음).
+ */
+export function articleAnnouncement(phase: "loading" | "stalled" | "done" | "error", reason: string, paragraphs: number): string {
+  if (phase === "loading") return "운영 서버가 글을 받는 중입니다";
+  if (phase === "stalled") return "아직 받는 중입니다 — 잠시 뒤 다시 확인하세요";
+  if (phase === "done") return `본문을 받았습니다(문단 ${paragraphs}개)`;
+  return `받지 못했습니다: ${reason}`;
+}
+
+/** '다시 시도'를 잠근 시간 — 1분 이상이면 분(올림 — 배너의 '약 n분 뒤'와 같은 단위), 아니면 초. */
+export function articleWaitText(seconds: number): string {
+  return seconds >= 60 ? `약 ${Math.ceil(seconds / 60)}분` : `약 ${seconds}초`;
 }
 
 /**

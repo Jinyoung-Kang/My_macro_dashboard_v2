@@ -8,8 +8,10 @@ import {
   articleFacts,
   articleFlags,
   articleNeedsTranslation,
+  articleAnnouncement,
   articlePreviewNote,
   articleReasonText,
+  articleWaitText,
 } from "@/lib/infoSearch";
 import type { SearchArticle } from "@/lib/types";
 
@@ -48,6 +50,23 @@ describe("articleActionOf — 어느 줄에 '본문 보기'가 붙나", () => {
     expect(articlePreviewNote({ mode: "fetch", ref: REF })).toContain("저장하지 않습니다");
     expect(articlePreviewNote({ mode: "stored" })).toContain("받아 둔 글");
     expect(articlePreviewNote({ mode: "none", note: null })).toBe("기사 본문은 받지 않습니다 — 제목·매체·시각·요약만입니다.");
+    expect(articlePreviewNote({ mode: "none", note: "네이버 글은 받지 않습니다" })).toBeNull();
+  });
+});
+
+describe("articleAnnouncement·articleWaitText — 상태 줄과 잠금 안내", () => {
+  it("단계마다 한 줄", () => {
+    expect(articleAnnouncement("loading", "", 0)).toBe("운영 서버가 글을 받는 중입니다");
+    expect(articleAnnouncement("stalled", "", 0)).toContain("아직 받는 중");
+    expect(articleAnnouncement("done", "", 4)).toBe("본문을 받았습니다(문단 4개)");
+    expect(articleAnnouncement("error", "본문을 찾지 못했습니다", 0)).toBe("받지 못했습니다: 본문을 찾지 못했습니다");
+  });
+
+  it("1분 이상은 분(올림), 아니면 초", () => {
+    expect(articleWaitText(720)).toBe("약 12분");
+    expect(articleWaitText(61)).toBe("약 2분");
+    expect(articleWaitText(60)).toBe("약 1분");
+    expect(articleWaitText(45)).toBe("약 45초");
   });
 });
 
