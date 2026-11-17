@@ -630,6 +630,20 @@ describe("본문", () => {
     expect(bottomNav().className).toContain("lg:hidden");
   });
 
+  // QA-686(11-18 요청 QA 스택 확인): 본문 아래 여백이 아래 탭 막대와의 틈만 두어, 같은 자리에서 위로 솟은 TOP 단추가 맨 아래까지 내려도 본문 마지막 글을
+  // 가렸습니다(390 /macro·/paper·/info). 세 단계 여백 모두에 단추 자리(문서 루트 변수 — TOP 단추가 마운트될 때만 섬, ScrollTopButton.test)를 더합니다.
+  // 단추가 없는 화면은 변수가 없어 0px — 지금 여백 그대로. 수정 전(재현 커밋에서는 it.fails) 단추 자리를 더하지 않았습니다.
+  it.fails("QA-686 본문 아래 여백에 TOP 단추 자리(--scroll-top-reserve·lg는 --scroll-top-reserve-lg, 없으면 0px)를 더한다 — 세 단계 모두", () => {
+    renderShell(MEMBER_PRO);
+    expect(screen.getByRole("main").className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        "pb-[calc(64px+1rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))]",
+        "sm:pb-[calc(64px+1.5rem+env(safe-area-inset-bottom)+var(--scroll-top-reserve,0px))]",
+        "lg:pb-[calc(1.5rem+var(--scroll-top-reserve-lg,0px))]",
+      ]),
+    );
+  });
+
   it("읽기 모드를 보이고(계정 메뉴 안), store_only면 저장본만 쓴다는 안내", () => {
     renderShell(MEMBER_PRO, { readMode: "store_only" });
     openAccountMenu();

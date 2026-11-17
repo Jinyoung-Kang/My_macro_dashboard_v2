@@ -79,3 +79,33 @@ describe("ScrollTopButton", () => {
     expect(main.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 });
+
+// QA-686(11-18 요청 QA 스택 확인, qa@06f93335): 셸 본문(main)의 아래 여백은 아래 탭 막대와의 틈만 두는데(lg 미만 64px + 16px, lg 24px) TOP 단추가 같은
+// 자리에서 위로 44px(lg 30px) 솟아, 맨 아래까지 내려도 본문 마지막 글(390 /macro 경제 캘린더 안내 두 줄 — /paper·/info도 같은 구조)의 오른쪽 끝을 가렸습니다.
+// 단추가 있는 화면은 단추를 그리기 전에도(마운트 때 — 보일 때 세우면 스크롤 중 본문 높이가 바뀜) 문서 루트에 단추 자리(단추 높이 + 틈 8px —
+// lg 미만 44 + 8, lg 30 + 8)를 세우고 셸 본문의 아래 여백이 그만큼 더합니다(Shell.test). 수정 전(재현 커밋에서는 it.fails) 변수가 없었습니다.
+describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 둔다", () => {
+  const rootStyle = () => document.documentElement.style;
+
+  it.fails("마운트하면(단추가 아직 없어도) 문서 루트에 단추 자리 — lg 미만 52px·lg 38px, 보였다 사라져도 그대로, 언마운트하면 지운다", () => {
+    const { unmount } = render(<ScrollTopButton />);
+    expect(screen.queryByRole("button", { name: "TOP 맨 위로" })).toBeNull();
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("38px");
+    scrollMain(500);
+    scrollMain(0);
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
+    unmount();
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("");
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("");
+  });
+
+  it.fails("화면이 바뀌는 사이 둘이 겹쳐 마운트돼도 마지막 하나가 떠날 때만 지운다", () => {
+    const first = render(<ScrollTopButton />);
+    const second = render(<ScrollTopButton layer="z-20" />);
+    first.unmount();
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("52px");
+    second.unmount();
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("");
+  });
+});
