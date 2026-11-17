@@ -425,3 +425,73 @@ describe("후보 고르기 창의 상태와 검색어", () => {
     await waitFor(() => expect(quoteRequests()).toEqual([endpoints.detail.quote("kr", "069500")]));
   });
 });
+
+// QA-681: 후보 고르기 창의 한국어 글(안내·검색어 이름표·경고·후보 없음·출처 실패·목록 머리·고른 뒤 안내)에 줄바꿈 규칙이 없어 word-break가 기본(normal)이었고,
+// 390(창 안 글 폭 324px)에서 '찾은 후보|입니다'·'값이 다|릅니다'처럼 음절 사이에서 꺾였습니다(D3 전 QA 스택 qa@65caf1e8 — 같은 빌드의 본문 팝업 ArticleDialog는
+// KEEP 상수로 지킴, 공용 글 부품 규약 QA-568·QA-664). word-break·overflow-wrap은 상속되므로 글에서 대화상자까지의 조상 줄 어디에 걸려도 됩니다
+// (DetailQaHolderBreak.test의 inChain 꼴). jsdom은 배치를 재지 못해 클래스 구조를 대조하고, 실제 폭은 QA 스택 브라우저로 확인합니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 경고·안내·이름표 등이 조상 어디에도 break-keep이 없었습니다(공용 ErrorState 글과 후보 이름만 지킴).
+describe("QA-681 후보 고르기 창의 한국어 글은 낱말 사이에서만 줄을 바꾼다", () => {
+  const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+  /** element에서 stop(포함)까지 올라가는 조상 줄. */
+  function chainTo(element: Element, stop: Element): Element[] {
+    const chain: Element[] = [];
+    for (let node: Element | null = element; node && stop.contains(node); node = node.parentElement) chain.push(node);
+    return chain;
+  }
+  const inChain = (chain: Element[], words: string[]) => chain.some((node) => classes(node).some((word) => words.includes(word)));
+  /** 낱말 사이에서만 꺾고(break-keep) 칸보다 긴 토큰만 칸 안에서 꺾는다(wrap-break-word — 후보 이름처럼 wrap-anywhere를 따로 건 글도 됨). */
+  const kept = (element: Element, dialog: Element) => {
+    const chain = chainTo(element, dialog);
+    return inChain(chain, ["break-keep"]) && inChain(chain, ["wrap-break-word", "wrap-anywhere"]);
+  };
+  const looseTexts = (elements: Element[], dialog: Element) => elements.filter((element) => !kept(element, dialog)).map((element) => element.textContent);
+
+  it.fails("안내·검색어 이름표·경고·후보 없음·출처 실패·목록 머리·일부 출처 실패·고른 뒤 안내와 시세 본문 — 글에서 대화상자까지 break-keep과 wrap-break-word", async () => {
+    const query = "FICTIONAL MOTOR CO";
+    reads[endpoints.detail.symbols(query)] = { available: true, symbols: { items: [], errors: {}, error: null } };
+    reads[endpoints.detail.quote("us", "FMCX")] = { available: true, quote: quote("FMCX", "Fictional Motor Company") };
+    render(<StockPickQuickView name={query} cusip="999999ZZ1" cls="NOTE 2.500% 3/1" tickerNote="debt" trigger={<button type="button">후보 열기</button>} />);
+    fireEvent.click(screen.getByRole("button", { name: "후보 열기" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // 후보 없음 — 안내·검색어 이름표·경고(Callout 안 글)·후보 없음
+    const empty = [
+      within(dialog).getByText(/^13F 공시에는 티커가 없어 공시 이름으로 찾은 후보입니다/),
+      dialog.querySelector("label") as HTMLLabelElement,
+      within(dialog).getByText("이 줄은 채권(사채·전환사채 등)이라 아래 종목의 주가와 값이 다릅니다."),
+      await within(dialog).findByText(`‘${query}’에 맞는 종목 후보가 없습니다 — 검색어를 줄이거나 고쳐 다시 찾아 보세요.`),
+    ];
+    // 결함을 직접 보는 단언(수정 전에는 여기서 실패).
+    expect(looseTexts(empty, dialog)).toEqual([]);
+
+    // 출처 실패(다시 시도 줄)
+    reads[endpoints.detail.symbols(query)] = { available: true, symbols: { items: [], errors: { "Yahoo Finance": "HTTP 429" }, error: "HTTP 429" } };
+    fireEvent.click(within(dialog).getByRole("button", { name: "찾기" }));
+    const failed = await within(dialog).findByText("출처를 받지 못해 후보를 보이지 못했습니다(Yahoo Finance) — 맞는 종목이 없다는 뜻은 아닙니다.");
+    expect(looseTexts([failed], dialog)).toEqual([]);
+
+    // 후보 목록 머리·일부 출처 실패·후보 이름
+    reads[endpoints.detail.symbols(query)] = {
+      available: true, symbols: { items: [symbol("FMCX", "Fictional Motor Company", { kind: "EQUITY", exchange: "NYSE" })], errors: { "네이버 증권": "HTTP 503" }, error: null },
+    };
+    fireEvent.click(within(dialog).getByRole("button", { name: "다시 시도" }));
+    const list = await within(dialog).findByRole("list", { name: /종목 후보 1건/ });
+    const listed = [
+      within(dialog).getByText(/^종목 후보 1건 — 누르면 이 창에서 그 종목의 시세를 봅니다/),
+      within(dialog).getByText("일부 출처를 받지 못했습니다(네이버 증권) — 후보가 더 있을 수 있습니다."),
+      within(list).getByText("Fictional Motor Company"),
+    ];
+    expect(looseTexts(listed, dialog)).toEqual([]);
+
+    // 고른 뒤 — 안내 줄과 시세 본문(같은 창 안)
+    fireEvent.click(within(list).getByRole("button", { name: /^Fictional Motor Company FMCX/ }));
+    await within(dialog).findByRole("button", { name: "후보 다시 고르기" });
+    const picked = [
+      within(dialog).getByText("찾은 후보에서 고른 종목입니다 — 이 13F 보유와 같은 증권인지 확인하세요."),
+      within(dialog).getByText("이 줄은 채권(사채·전환사채 등)이라 아래 종목의 주가와 값이 다릅니다."),
+      await within(dialog).findByRole("link", { name: "상세 화면 열기" }),
+    ];
+    expect(looseTexts(picked, dialog)).toEqual([]);
+  });
+});
