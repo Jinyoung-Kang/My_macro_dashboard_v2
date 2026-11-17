@@ -2,7 +2,7 @@
  * SectionIndex · SectionAnchor — 긴 화면 목차(작업대 실행 명세 §6, P5a — 처음 쓰는 곳 매크로).
  * 네 상태: 값 있음(이름 있는 내비 하나 + 가로 줄·세로 목록, 절 링크, 개수, 지금 칸 aria-current="location"·부모 굵게), 빈 목록(내비 없이 본문만),
  * 개수 모름(자리 없음 — 0으로 채우지 않음), 긴 글(낱말 사이 줄바꿈·말줄임 없음). 읽는 중·오류는 목차가 아니라 본문 절이 그립니다(닻은 늘 있음).
- * 배치는 클래스로 봅니다(jsdom은 크기 질의·display를 계산하지 않음) — columnFrom 두 벌의 정적 클래스, 가로 줄 sticky·밑줄 탭 모양, 세로 목록 들여쓰기.
+ * 배치는 클래스로 봅니다(jsdom은 크기 질의·display를 계산하지 않음) — columnFrom 세 벌(lg·xl·2xl)의 정적 클래스, 가로 줄 sticky·밑줄 탭 모양, 세로 목록 들여쓰기.
  * 누름 자리(lg 미만 44px — smallTargets), 고대비의 막대 테두리. 지금 절을 고르는 것(useSectionSpy)은 IntersectionObserver 대역으로 한 번 봅니다.
  */
 import { act, cleanup, render, screen, within } from "@testing-library/react";
@@ -146,6 +146,26 @@ describe("SectionIndex — 배치(columnFrom)", () => {
     expect(tokens(column)).not.toContain("lg:flex");
   });
 
+  // 2026-11-17 결정 7(사용자 위임 — 권장안 가): 매크로는 목차 세로 목록을 2xl(1536)부터 — 1280~1535는 가로 줄이라 지표 패널이 13rem + 24px 넓어져
+  // 미리보기 검사 칸(lg 배치 — 틀 52rem부터 옆 칸)이 1280·1366(메뉴 220)에서도 옆에 섭니다. lg·xl 값은 그대로입니다.
+  it("2xl — 2xl부터 왼쪽 칸 틀, 가로 줄은 2xl까지(lg~2xl은 30px 줄), 세로 목록은 2xl부터 — lg·xl 변형은 없다", () => {
+    const { container } = renderIndex({ activeId: null, columnFrom: "2xl" });
+    const frame = container.firstElementChild as HTMLElement;
+    expect(tokens(frame)).toEqual(expect.arrayContaining(["min-w-0", "2xl:grid", "2xl:grid-cols-[13rem_minmax(0,1fr)]", "2xl:gap-6"]));
+    expect(tokens(frame).some((token) => token.startsWith("lg:") || token.startsWith("xl:"))).toBe(false);
+    expect(tokens(nav())).toEqual(expect.arrayContaining(["sticky", "top-0", "z-20", "bg-bg", "lg:mb-6", "2xl:top-4", "2xl:z-auto", "2xl:mb-0", "2xl:self-start", "2xl:bg-transparent"]));
+    expect(tokens(nav()).some((token) => token.startsWith("xl:"))).toBe(false);
+    expect(nav().getAttribute("data-section-index-bar")).toBe("2xl");
+    const { strip, column } = lists();
+    expect(tokens(strip)).toContain("2xl:hidden");
+    expect(tokens(strip)).not.toContain("xl:hidden");
+    expect(tokens(column)).toEqual(expect.arrayContaining(["hidden", "2xl:flex"]));
+    expect(tokens(column)).not.toContain("xl:flex");
+    cleanup();
+    render(<SectionAnchor id="macro-risk" columnFrom="2xl">위험</SectionAnchor>);
+    expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "2xl:scroll-mt-4"]);
+  });
+
   it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px)", () => {
     renderIndex({ activeId: null });
     const anchor = document.getElementById("macro-fx") as HTMLElement;
@@ -282,6 +302,8 @@ describe("QA-643 가로 줄이 덮는 만큼 스크롤 상자에 위쪽 스크�
     const css = readFileSync(resolve(__dirname, "../../../app/globals.css"), "utf8");
     expect(css).toMatch(/@media \(width < 64rem\) \{\s*html:has\(\[data-section-index-bar\]\) \{\s*scroll-padding-top: 45px;/);
     expect(css).toMatch(/@media \(64rem <= width < 80rem\) \{\s*#main:has\(\[data-section-index-bar="xl"\]\) \{\s*scroll-padding-top: 31px;/);
+    // 2xl(결정 7 — 매크로): 가로 줄이 lg~2xl(1024~1535)에 보이므로 그 폭 전체에 같은 여백.
+    expect(css).toMatch(/@media \(64rem <= width < 96rem\) \{\s*#main:has\(\[data-section-index-bar="2xl"\]\) \{\s*scroll-padding-top: 31px;/);
   });
 });
 

@@ -10,15 +10,16 @@ import { sectionCountText, sectionOrder, sectionParent, type SectionIndexItem, t
 export type { SectionIndexItem, SectionIndexLeaf };
 
 /** 왼쪽 세로 목록이 되는 폭 — 그 아래는 본문 위 가로 줄. */
-type ColumnFrom = "lg" | "xl";
+type ColumnFrom = "lg" | "xl" | "2xl";
 
 /*
- * Tailwind가 클래스를 글로 찾으므로 두 폭의 클래스를 통째로 적어 둡니다(조립하지 않음).
+ * Tailwind가 클래스를 글로 찾으므로 폭마다의 클래스를 통째로 적어 둡니다(조립하지 않음).
  * 틀: columnFrom 이상은 왼쪽 13rem 목차 + 본문(minmax(0,1fr)), 사이 24px. 그 아래는 블록(목차 줄 → 본문).
  */
 const FRAME: Record<ColumnFrom, string> = {
   lg: "min-w-0 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-6",
   xl: "min-w-0 xl:grid xl:grid-cols-[13rem_minmax(0,1fr)] xl:gap-6",
+  "2xl": "min-w-0 2xl:grid 2xl:grid-cols-[13rem_minmax(0,1fr)] 2xl:gap-6",
 };
 
 /**
@@ -29,18 +30,21 @@ const FRAME: Record<ColumnFrom, string> = {
 const NAV: Record<ColumnFrom, string> = {
   lg: "sticky top-0 z-20 mb-4 min-w-0 bg-bg lg:top-4 lg:z-auto lg:mb-0 lg:self-start lg:bg-transparent",
   xl: "sticky top-0 z-20 mb-4 min-w-0 bg-bg lg:mb-6 xl:top-4 xl:z-auto xl:mb-0 xl:self-start xl:bg-transparent",
+  "2xl": "sticky top-0 z-20 mb-4 min-w-0 bg-bg lg:mb-6 2xl:top-4 2xl:z-auto 2xl:mb-0 2xl:self-start 2xl:bg-transparent",
 };
 
 /** 가로 줄(columnFrom 미만) — 첫 단계 칸만, 넘치면 가로 스크롤(지금 칸을 줄 안에 — useScrollStripActive가 offsetLeft를 쓰므로 relative). */
 const STRIP: Record<ColumnFrom, string> = {
   lg: "relative flex overflow-x-auto border-b border-border lg:hidden",
   xl: "relative flex overflow-x-auto border-b border-border xl:hidden",
+  "2xl": "relative flex overflow-x-auto border-b border-border 2xl:hidden",
 };
 
 /** 세로 목록(columnFrom 이상) — 하위 칸은 들여 씁니다. */
 const COLUMN: Record<ColumnFrom, string> = {
   lg: "hidden flex-col gap-px lg:flex",
   xl: "hidden flex-col gap-px xl:flex",
+  "2xl": "hidden flex-col gap-px 2xl:flex",
 };
 
 /**
@@ -50,6 +54,7 @@ const COLUMN: Record<ColumnFrom, string> = {
 const ANCHOR: Record<ColumnFrom, string> = {
   lg: "min-w-0 scroll-mt-3 lg:scroll-mt-4",
   xl: "min-w-0 scroll-mt-3 xl:scroll-mt-4",
+  "2xl": "min-w-0 scroll-mt-3 2xl:scroll-mt-4",
 };
 
 /**
@@ -115,7 +120,7 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
 /**
  * 긴 화면 목차(작업대 실행 명세 §6 SectionIndex — 처음 쓰는 곳 매크로 P5a, 프레임·설정 P6, 저장소 상태 P7): 절 목록을 sticky로 두고 지금 절을 표시합니다.
  *
- * - 배치: `columnFrom`(기본 lg) 이상은 왼쪽 13rem 세로 목록(하위 칸 들여씀, 스크롤 영역 위쪽에 붙음) + 본문, 그 아래는 본문 위에 붙는 가로 줄(첫 단계 칸만 —
+ * - 배치: `columnFrom`(lg·xl·2xl, 기본 lg) 이상은 왼쪽 13rem 세로 목록(하위 칸 들여씀, 스크롤 영역 위쪽에 붙음) + 본문, 그 아래는 본문 위에 붙는 가로 줄(첫 단계 칸만 —
  *   밑줄 탭 모양 `underlineTabClasses(…, "sm")`: 좁은 화면 44px·넓은 화면 30px, 넘치면 가로 스크롤하고 지금 칸을 줄 안에 보임). 이름 있는 내비(nav
  *   aria-label) 하나 안에 두 목록이 있고 폭마다 하나만 보입니다(다른 하나는 display:none — 읽기·Tab에서 빠짐).
  * - 칸은 같은 화면 절 링크(`<a href="#id">` — 스크롤은 즉시, 부드러운 스크롤 없음)이고 지금 칸은 aria-current="location"입니다. 가로 줄에서는 지금 절의
@@ -138,7 +143,7 @@ export function SectionIndex({
   /** 내비 이름 — 예 '매크로 지표 목차'. */
   label: string;
   items: readonly SectionIndexItem[];
-  /** 이 폭부터 왼쪽 세로 목록(기본 lg). 본문이 넓어야 하는 화면(표·차트가 큰 매크로)은 xl. */
+  /** 이 폭부터 왼쪽 세로 목록(기본 lg). 본문이 넓어야 하는 화면은 xl·2xl(매크로 — 지표 표 옆에 미리보기 칸이 서려면 1280~1535에서도 본문이 넓어야 함). */
   columnFrom?: ColumnFrom;
   /** 주면 지금 절을 부르는 쪽이 정합니다(null이면 지금 칸 없음). 주지 않으면 화면 위쪽 띠로 고릅니다. */
   activeId?: string | null;
