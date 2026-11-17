@@ -7,7 +7,8 @@
  * 칸 순서: 탭 → 하위 화면 → 대상(상세·모의매매 탭). 마지막 칸이 지금 화면입니다(셸이 링크 없이 aria-current="page"로 그림).
  * - 탭의 화면이 하나뿐이고 그것이 탭 첫 화면이면(홈·정보 검색) 하위 화면 칸을 생략합니다(같은 이름이 두 번 나오지 않게).
  * - 하위 화면에 묶음이 있으면(더보기의 '한국 시장'·'정보 수집') 그 앞에 묶음 이름 칸을 둡니다. 묶음 첫 화면이 있는 묶음(정보 수집 → 개요 /info/overview —
- *   lib/nav GROUP_HOMES)은 그 화면으로 가는 링크(그 화면이 보이고 지금 화면이 아닐 때만), 없는 묶음(한국 시장)은 링크 없는 글 칸입니다.
+ *   lib/nav GROUP_HOMES)은 그 화면으로 가는 링크(그 화면이 보이고 지금 화면이 아닐 때만), 없는 묶음(한국 시장)은 링크 없는 글 칸입니다. 접힌 빵부스러기는
+ *   묶음 칸을 첫 칸의 부모로 쓰지 않습니다(QA-687 — foldedBreadcrumbs).
  * - 이 사용자에게 보이지 않는 탭·화면(lib/access visibleMenus — 회원이 주소로 연 /paper/us 등)은 링크 없이 글만 둡니다.
  * - 대상 칸은 형식이 맞을 때만(lib/detail parse 함수·모의매매 탭 주소 규칙) — 틀리면 그 앞 칸에서 끝납니다. 메뉴에 없는 경로(/login 등)는 빈 목록.
  * - 뒤 칸 어느 것과 주소가 같은 칸은 링크 없이 글만 둡니다(QA-549) — 탭 칸의 주소는 탭 첫 화면이라, 첫 화면이 하위 화면이기도 한 탭(/macro·/institutions·
@@ -135,23 +136,27 @@ function withoutRepeatedLinks(crumbs: Crumb[]): Crumb[] {
   );
 }
 
+/** 칸 계산 결과 — 칸들과, 그 가운데 묶음 이름 칸(없으면 null — 접힌 빵부스러기가 부모 후보에서 뺌, QA-687). */
+type AllCrumbs = { crumbs: Crumb[]; group: Crumb | null };
+
 /** 칸 계산(QA-549 처리 전) — breadcrumbs·foldedBreadcrumbs가 같이 씁니다. */
-function allCrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
+function allCrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): AllCrumbs {
   const tab = activeTab(pathname);
-  if (!tab) return [];
+  if (!tab) return { crumbs: [], group: null };
   const tabVisible = visibleTabs(user).includes(tab);
   const shown = new Set(tabVisible ? visibleItems(tab, user).map((item) => item.href) : []);
   // 보이지 않는 탭 아래의 주소는 모두 글 칸으로(하위 화면 링크는 그 화면이 보일 때만).
   const visible = (href: string): string | null => (tabVisible ? href : null);
   const crumbs: Crumb[] = [{ label: tab.label, href: tabVisible ? tab.href : null }];
+  let group: Crumb | null = null;
 
   const item = activeItem(pathname);
   if (item && !(tab.items.length === 1 && item.href === tab.href)) {
     if (item.group) {
-      // 묶음 첫 화면 링크는 지금 화면이 그 첫 화면일 때 두지 않습니다 — 뒤 칸과 겹쳐(QA-549) 어차피 글 칸이고, 접힌 빵부스러기의 첫 칸이 지금 화면을
-      // 부모로 골라 위로 가는 링크를 잃지 않게(/info/overview를 접으면 더보기 → /more).
+      // 묶음 첫 화면 링크는 지금 화면이 그 첫 화면일 때 두지 않습니다 — 뒤 칸과 겹쳐(QA-549) 어차피 글 칸입니다.
       const home = Object.hasOwn(GROUP_HOMES, item.group) ? GROUP_HOMES[item.group] : null;
-      crumbs.push({ label: item.group, href: home !== null && home !== item.href && shown.has(home) ? home : null });
+      group = { label: item.group, href: home !== null && home !== item.href && shown.has(home) ? home : null };
+      crumbs.push(group);
     }
     crumbs.push({ label: item.label, href: shown.has(item.href) ? item.href : null });
   }
@@ -160,7 +165,7 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
   const tail = named
     ? detail.crumbs.map((crumb, index) => (index === detail.crumbs.length - 1 ? { ...crumb, label: named } : crumb))
     : detail.crumbs;
-  return [...crumbs, ...tail];
+  return { crumbs: [...crumbs, ...tail], group };
 }
 
 /**
@@ -172,24 +177,26 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
  * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
  */
 export function breadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
-  return withoutRepeatedLinks(allCrumbs(pathname, user, entity));
+  return withoutRepeatedLinks(allCrumbs(pathname, user, entity).crumbs);
 }
 
 /**
  * 가운데 칸을 접은 빵부스러기(셸이 가운데 칸 글이 하한 아래로 줄 때 그림 — components/shell/Breadcrumbs, QA-593) — 첫 칸과 마지막 칸만.
  * 첫 칸은 숨긴 가운데 칸 가운데 가장 가까운 부모(링크가 있는 마지막 가운데 칸)로 가는 링크이고(없으면 첫 칸 자신의 주소), 전체 글(`title`)은 숨긴 칸까지
- * 잇습니다. 그다음 뒤 칸과 주소가 같은 칸을 글 칸으로 하는 처리(QA-549)는 그려지는 두 칸에만 씁니다 — 숨긴 칸까지 넣어 계산하면 접힌 빵부스러기에 위로
+ * 잇습니다. 묶음 이름 칸('정보 수집' → 개요)은 부모 후보에서 뺍니다 — 첫 칸 글은 탭 이름('더보기')인데 /info/<분류>에서 누르면 개요로 가 글과 도착이
+ * 달랐습니다(QA-687, 2026-11-18 결정 — 사용자 위임·권장안: '더보기' → /more. 첫 칸 글을 묶음 이름으로 바꾸는 안은 접힌 칸 하한을 넘을 수 있어 택하지
+ * 않음). 묶음 첫 화면 링크는 펼친 빵부스러기에만 있습니다. 그다음 뒤 칸과 주소가 같은 칸을 글 칸으로 하는 처리(QA-549)는 그려지는 두 칸에만 씁니다 — 숨긴 칸까지 넣어 계산하면 접힌 빵부스러기에 위로
  * 가는 링크가 없었습니다(검토: '모의매매'·'기관'·'시장'이 숨긴 '미국'·'13F 포트폴리오'·'매크로 지표'와 주소가 같아 글 칸, /paper/kr/*에 남는 링크는 다른
  * 시장으로 가는 '모의매매' → /paper/us).
  * 예 — `/paper/kr/holdings` → 모의매매(→ /paper/kr, 전체 글 '모의매매 › 한국') › 보유·체결, `/institutions/0001608046` → 기관(→ /institutions) › CIK …,
  * `/s/kr/005930` → 시장(→ 탭 주소 — 가운데 '종목(한국)'은 링크 없음) › 005930. 가운데 칸이 없으면 breadcrumbs와 같습니다.
  */
 export function foldedBreadcrumbs(pathname: string, user: SessionUser | null | undefined, entity?: { href: string; label: string } | null): Crumb[] {
-  const all = allCrumbs(pathname, user, entity);
+  const { crumbs: all, group } = allCrumbs(pathname, user, entity);
   if (all.length < 3) return withoutRepeatedLinks(all);
   const [first] = all;
   const middle = all.slice(1, -1);
-  const parent = [...middle].reverse().find((crumb) => crumb.href !== null);
+  const parent = [...middle].reverse().find((crumb) => crumb.href !== null && crumb !== group);
   const folded: Crumb = {
     label: first.label,
     href: parent ? parent.href : first.href,

@@ -65,9 +65,9 @@ describe("메뉴 화면", () => {
       { label: "정보 수집", href: null },
       { label: "국내 시장·수급", href: null },
     ]);
-    // 접으면 첫 칸은 가장 가까운 부모 — /info/kr은 개요, /info/overview는 지금 화면이 묶음 첫 화면이라 더보기(위로 가는 링크가 남음).
+    // 접으면 첫 칸 '더보기'는 /more — 묶음 칸('정보 수집' → 개요)은 부모 후보가 아님(QA-687 — 글과 도착이 같게). 개요도 같음(위로 가는 링크가 남음).
     expect(foldedBreadcrumbs("/info/kr", OWNER)).toEqual([
-      { label: "더보기", href: "/info/overview", title: "더보기 › 정보 수집" },
+      { label: "더보기", href: "/more", title: "더보기 › 정보 수집" },
       { label: "국내 시장·수급", href: "/info/kr" },
     ]);
     expect(foldedBreadcrumbs("/info/overview", OWNER)).toEqual([
@@ -274,7 +274,7 @@ describe("가운데 칸을 접은 빵부스러기(foldedBreadcrumbs — 셸이 �
   // 묶음 칸 '정보 수집'이 개요 링크(GROUP_HOMES — 4facb214)를 얻은 뒤 /info/<분류>에서 '더보기'를 누르면 /info/overview로 갔습니다(글과 도착이 다름).
   // 결정(2026-11-18, 사용자 위임 — 권장안): 접을 때 묶음 칸을 부모 후보에서 빼 '더보기' → /more. 첫 칸 글을 '정보 수집'으로 바꾸는 안은 접힌 nav 하한
   // 112px를 넘을 수 있어 택하지 않음. 펼친 빵부스러기의 '정보 수집' 개요 링크는 그대로. 수정 전(재현 커밋에서는 it.fails) /info/overview였습니다.
-  it.fails("QA-687 접으면 묶음 칸은 부모 후보가 아니다 — 정보 수집 화면의 첫 칸 '더보기'는 /more(글과 도착이 같게), 펼친 '정보 수집' 개요 링크는 그대로", () => {
+  it("QA-687 접으면 묶음 칸은 부모 후보가 아니다 — 정보 수집 화면의 첫 칸 '더보기'는 /more(글과 도착이 같게), 펼친 '정보 수집' 개요 링크는 그대로", () => {
     expect(foldedBreadcrumbs("/info/kr", OWNER)).toEqual([
       { label: "더보기", href: "/more", title: "더보기 › 정보 수집" },
       { label: "국내 시장·수급", href: "/info/kr" },
