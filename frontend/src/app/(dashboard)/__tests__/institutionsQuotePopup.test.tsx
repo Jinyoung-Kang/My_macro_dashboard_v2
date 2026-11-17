@@ -761,4 +761,20 @@ describe("QA-691 시세 창 본문의 한국어 글은 낱말 사이에서만 �
     // 이름 줄은 닫기 단추(오른쪽 위 — 대화상자 제목의 pr-10과 같은 자리)와 겹치지 않게 오른쪽을 비운다.
     expect(classes(name)).toContain("pr-10");
   });
+
+  // 보강(검토 지적): 닫기 단추 자리(pr-10)는 제목을 숨겨(hideTitle) 이름 줄이 닫기 단추와 같은 줄에 오는 시세 창에만 필요합니다. 후보 창은 제목(Dialog의
+  // pr-10)·설명(CUSIP)·고른 뒤 안내 줄 아래에 본문이 와서 이름 줄이 닫기 단추 줄이 아닌데도, 고침 첫 판은 공용 본문에 조건 없이 걸어 이름 줄만 오른쪽
+  // 40px를 비웠습니다(위아래 안내 줄·기업 설명은 끝까지 차서 이름만 어긋남). 보강 전(재현 커밋에서는 it.fails)에는 고른 뒤 본문의 이름 줄에 pr-10이 있었습니다.
+  it.fails("후보 창의 고른 뒤 본문 — 이름 줄은 닫기 단추 줄이 아니라 오른쪽을 비우지 않는다(pr-10 없음), 줄바꿈 규칙은 그대로", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: true, symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF")], errors: {}, error: null } };
+    reads[endpoints.detail.quote("us", "IVV")] = { available: true, quote: quote("IVV", LONG_NAME, "ETF") };
+    render(<StockPickQuickView name="ISHARES TR" cusip="464287200" cls="CORE S&P500 ETF" trigger={<button type="button">후보 열기</button>} />);
+    fireEvent.click(screen.getByRole("button", { name: "후보 열기" }));
+    const dialog = await screen.findByRole("dialog", { name: "ISHARES TR" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: /^iShares Core S&P 500 ETF IVV/ }));
+    const name = await within(dialog).findByText(LONG_NAME, { selector: "p" });
+    expect(looseTexts([name], dialog)).toEqual([]);
+    // 결함을 직접 보는 단언(보강 전에는 여기서 실패 — 이름 줄에 pr-10).
+    expect(classes(name)).not.toContain("pr-10");
+  });
 });
