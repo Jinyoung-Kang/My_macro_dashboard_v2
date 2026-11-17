@@ -8,7 +8,7 @@
  * (a) 타일은 "5.2 십억 달러", 차트는 "0.01T"로 단위가 달랐고 (b) ON RRP 실제 수준(약 0.005조)에서는
  * 눈금이 전부 "0.00T"였습니다. 모르는 값은 0이 아니라 null입니다.
  */
-import { formatBillionUsd, formatTrillionDelta, formatTrillionUsd, withMinusSign } from "./format";
+import { formatBillionUsd, formatTrillionDelta, formatTrillionUsd, koreanScale, withMinusSign } from "./format";
 import type { KpiItem } from "./kpi";
 import type { LiquidityResponse, LiquidityRow } from "./types";
 
@@ -41,46 +41,17 @@ export type LiquidityKpi = KpiItem & { value: string | null; change?: { change: 
 /** 변화 칩에 넘기는 변화량 — 그 단위(`unit`)로 옮긴 값과 소수 자릿수. */
 export type TrillionDeltaChip = { change: number; digits: number; unit: string };
 
-/** 조·억·만 단위(lib/format formatKoreanScale과 같은 표 — 그 함수는 글만 돌려주어 여기 따로 둠). */
-const SCALE: readonly (readonly [number, string])[] = [
-  [1e12, "조 달러"],
-  [1e8, "억 달러"],
-  [1e4, "만 달러"],
-  [1, "달러"],
-];
-
-/** 단위별 소수 자릿수 — formatKoreanScale의 scaleDigits와 같은 규칙(조: 1,000조 이상 정수·100조 이상 하나·그 아래 셋, 억: 1,000억 이상 정수·그 아래 하나). */
-function scaleDigits(unit: number, magnitude: number): number {
-  if (unit === 1e12) return magnitude >= 1e15 ? 0 : magnitude >= 1e14 ? 1 : 3;
-  if (unit === 1e8) return magnitude >= 1e11 ? 0 : 1;
-  return 0;
-}
-
 /**
- * 조 달러 단위 변화량 → 변화 칩 값(단위·자릿수). 단위는 formatKoreanScale·formatTrillionDelta와 같게 고릅니다 — 크기에 맞는 단위로 내려 적고(조 단위로
- * 그대로 적으면 '+0.005조 달러'가 '변화 없음'처럼 보임), 반올림이 다음 단위에 닿으면 올립니다(9,999.95억 → 1.000조). 그래서 칩 글('+47.0' + '억 달러')이
- * 예전 변화 글('+47.0억 달러')과 같은 숫자입니다. 모르는 값은 null(칩 없음).
+ * 조 달러 단위 변화량 → 변화 칩 값(단위·자릿수). 단위·자릿수·단위 올림은 formatKoreanScale·formatTrillionDelta와 같은 고리(lib/format koreanScale)입니다 —
+ * 크기에 맞는 단위로 내려 적고(조 단위로 그대로 적으면 '+0.005조 달러'가 '변화 없음'처럼 보임), 반올림이 다음 단위에 닿으면 올립니다(9,999.95억 → 1.000조).
+ * 그래서 칩 글('+47.0' + '억 달러')이 예전 변화 글('+47.0억 달러')과 같은 숫자입니다. 모르는 값은 null(칩 없음).
  */
 export function trillionDeltaChip(deltaT: number | null | undefined): TrillionDeltaChip | null {
   if (deltaT === null || deltaT === undefined || !Number.isFinite(deltaT)) {
     return null;
   }
-  const value = deltaT * 1e12;
-  const magnitude = Math.abs(value);
-  let index = SCALE.findIndex(([unit]) => magnitude >= unit);
-  if (index < 0) {
-    index = SCALE.length - 1;
-  }
-  for (;;) {
-    const [unit, label] = SCALE[index];
-    const digits = scaleDigits(unit, magnitude);
-    const rounded = Number((value / unit).toFixed(digits));
-    if (index > 0 && Math.abs(rounded) >= SCALE[index - 1][0] / unit) {
-      index -= 1;
-      continue;
-    }
-    return { change: value / unit, digits, unit: label };
-  }
+  const { scaled, digits, label } = koreanScale(deltaT * 1e12);
+  return { change: scaled, digits, unit: label ? `${label} 달러` : "달러" };
 }
 
 /** 화면이 넘기는 환율 환산 — hooks/useUsdKrw의 같은 이름 함수(환율을 모르면 null — 그 줄을 뺌). */
