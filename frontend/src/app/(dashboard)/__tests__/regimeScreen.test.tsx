@@ -392,8 +392,8 @@ describe("판정 대상 — 근거 넷·네 국면·탭·연결·출처", () => 
     render(<RegimePage />);
     const links = (await panelTitled("연결")).querySelectorAll("a");
     expect(Array.from(links).map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 매크로 지표", "/macro"],
-      ["하이일드 스프레드 — 매크로 지표의 신용 리스크·변동성", "/macro"],
+      ["장단기 금리차 10Y-3M · NFCI — 매크로 지표의 심화 지표 절", "/macro"],
+      ["하이일드 스프레드 — 매크로 지표의 신용·변동성 절", "/macro"],
       ["연준 순유동성 4주 변화 — 순유동성 화면", "/liquidity"],
     ]);
     const sources = await panelTitled("출처");

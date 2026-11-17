@@ -23,6 +23,21 @@ export const MACRO_SECTIONS = {
 
 export type MacroSection = keyof typeof MACRO_SECTIONS;
 
+/**
+ * 절 이름 — 매크로 화면 목차 칸의 이름(lib/macroScreen macroIndexItems)이자, 다른 화면이 매크로로 잇는 링크 글이 어느 절인지 적을 때 쓰는 이름(국면 '연결').
+ * 두 곳이 같은 이름이어야 링크를 따라간 사용자가 목차에서 그 절을 찾습니다.
+ */
+export const MACRO_SECTION_LABELS: Readonly<Record<MacroSection, string>> = {
+  indicators: "지표",
+  fx: "환율 비교",
+  spreads: "장단기 금리차",
+  risk: "신용·변동성",
+  advanced: "심화 지표",
+  single: "단독 차트",
+  scraped: "비공식 시세",
+  calendar: "경제 캘린더",
+};
+
 /** 매크로 화면 경로 — 메뉴 표(lib/nav TABS)의 시장 탭 '매크로 지표' 항목. 메뉴 표가 경로의 정본이라 여기서 다시 적지 않습니다. */
 export function macroPath(): string {
   const item = TABS.find((tab) => tab.key === "markets")?.items.find((entry) => entry.label === "매크로 지표");

@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { MACRO_SECTIONS, macroPath } from "../marketSections";
+import { macroIndexItems } from "../macroScreen";
+import { MACRO_SECTION_LABELS, MACRO_SECTIONS, macroPath } from "../marketSections";
 import { TABS } from "../nav";
 
 describe("MACRO_SECTIONS", () => {
@@ -20,6 +21,16 @@ describe("MACRO_SECTIONS", () => {
 
   it("절은 여덟 — 지표·환율 비교·금리차·위험·심화·단독 차트·비공식 시세·경제 캘린더", () => {
     expect(Object.keys(MACRO_SECTIONS)).toEqual(["indicators", "fx", "spreads", "risk", "advanced", "single", "scraped", "calendar"]);
+  });
+});
+
+describe("MACRO_SECTION_LABELS", () => {
+  it("절마다 이름 하나 — 매크로 목차 칸 이름이 이 이름이다(다른 화면 링크 글이 같은 이름으로 절을 가리킴)", () => {
+    expect(Object.keys(MACRO_SECTION_LABELS)).toEqual(Object.keys(MACRO_SECTIONS));
+    const items = macroIndexItems(null, true);
+    expect(items.map((item) => [item.id, item.label])).toEqual(
+      (Object.keys(MACRO_SECTIONS) as (keyof typeof MACRO_SECTIONS)[]).map((section) => [MACRO_SECTIONS[section], MACRO_SECTION_LABELS[section]]),
+    );
   });
 });
 
