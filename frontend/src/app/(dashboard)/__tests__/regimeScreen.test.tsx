@@ -289,7 +289,10 @@ describe("판정 대상 — 대상 머리", () => {
     expect(within(header).getByText("확장 (Expansion)").className).toContain("text-value-lg");
     expect(within(header).getByText("EXPANSION").className).toContain("font-mono");
     expect(within(header).getByText(/위험자산에 우호적인 조합입니다/)).toBeTruthy();
-    expect(within(header).getByText(/FRED \(공식\) — 10Y−3M 금리차.* · 2026-10-16/)).toBeTruthy();
+    // 출처 배지 글(날짜 마디는 줄바꿈 없는 묶음 — keepDates라 글이 마디로 나뉨).
+    const provenance = Array.from(header.querySelectorAll("span")).find((span) => span.querySelector(".sr-only")?.textContent === "출처: ");
+    expect(provenance?.textContent).toMatch(/^출처: FRED \(공식\) — 10Y−3M 금리차.* · 2026-10-16$/);
+    expect(provenance?.querySelector(".whitespace-nowrap")?.textContent).toBe("2026-10-16");
     expect(within(header).getByText("성장·신용 양호")).toBeTruthy();
     expect(within(header).getByText("유동성 확대")).toBeTruthy();
     expect((within(header).getByLabelText("이력 기간") as HTMLSelectElement).value).toBe("5");

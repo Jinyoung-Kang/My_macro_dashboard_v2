@@ -194,7 +194,7 @@ export default function RegimePage() {
         emptyReason="판정을 받지 못함"
         badges={
           <>
-            <ProvenanceBadge source={SOURCES.regime} asOf={data?.asOf} />
+            <ProvenanceBadge source={SOURCES.regime} asOf={data?.asOf} keepDates />
             {verdict ? (
               <>
                 <Tag>성장·신용 {verdict.growthAxis}</Tag>

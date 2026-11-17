@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 
 import { AlertTriangleIcon } from "@/components/ui/icons";
-import { PROVENANCE_UNKNOWN, estimateLabel, presentText, provenanceText } from "@/lib/patterns";
+import { PROVENANCE_UNKNOWN, dateTokenParts, estimateLabel, presentText, provenanceText } from "@/lib/patterns";
 
 /*
  * 상태 표시 세 가지(설계서 §5) — 늘 글자 라벨이 있습니다(색만으로 뜻을 전하지 않음).
@@ -30,6 +30,8 @@ const TAG = "inline-block max-w-full break-keep wrap-break-word rounded-control 
  * @param live 참이면 지연 분과 상관없이 "실시간"
  * @param title 마우스를 올리면 보이는 보조 설명(설계서 §1.5 계약에 더한 선택 prop) — 닫힌 장의 시세 지연처럼 글에는 적지 않는 것
  *              (ADR 0017 결정 6, /macro의 장 상태 배지와 같음). 뜻을 나르는 내용은 여기에만 두지 않습니다.
+ * @param keepDates 참이면 날짜·시각 마디('2026-11-04 06:31')를 줄바꿈 없는 묶음으로 — 좁은 칸에서 '2026-11-' / '04'처럼 날짜 안에서 꺾이지 않고 마디
+ *              사이에서만 꺾입니다(선택 prop, 기본 꺼짐 — 홈·상세의 배지 그대로. 시장 화면의 표 칸·대상 머리가 씀, P5a 검토).
  */
 export function ProvenanceBadge({
   source,
@@ -37,18 +39,30 @@ export function ProvenanceBadge({
   delayMin,
   live,
   title,
+  keepDates = false,
 }: {
   source?: string | null;
   asOf?: string | null;
   delayMin?: number | null;
   live?: boolean;
   title?: string | null;
+  keepDates?: boolean;
 }): JSX.Element | null {
   const text = provenanceText({ source, asOf, delayMin, live });
   return (
     <span title={presentText(title) ?? undefined} className="min-w-0 max-w-full break-keep wrap-break-word text-xs leading-4 tabular-nums text-text-3">
       {text === PROVENANCE_UNKNOWN ? null : <span className="sr-only">출처: </span>}
-      {text}
+      {keepDates
+        ? dateTokenParts(text).map((part, index) =>
+            part.date ? (
+              <span key={index} className="whitespace-nowrap">
+                {part.text}
+              </span>
+            ) : (
+              part.text
+            ),
+          )
+        : text}
     </span>
   );
 }
