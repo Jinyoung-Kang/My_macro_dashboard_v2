@@ -922,8 +922,8 @@ describe("QA-679 자동 갱신을 꺼도 머리 동작 줄은 늘 제목 묶음 
     ],
   };
 
-  // 수정 전(재현 커밋에서는 it.fails)에는 제목 묶음에 그 칸이 없었습니다('expected null not to be null').
-  it.fails("끄기(설명 글 없음)에도 제목 묶음에 줄 전체 폭 글 칸(w-screen max-w-full)이 처음부터 있고, 실시간 시세 안내는 그 칸 안에 그대로 보인다", async () => {
+  // 수정 전(재현 커밋 54ccc2e5에서는 it.fails)에는 제목 묶음에 그 칸이 없었습니다('expected null not to be null').
+  it("끄기(설명 글 없음)에도 제목 묶음에 줄 전체 폭 글 칸(w-screen max-w-full)이 처음부터 있고, 실시간 시세 안내는 그 칸 안에 그대로 보인다", async () => {
     window.localStorage.setItem("macro.autoRefreshSeconds", "0");
     reads["/api/macro/overview"] = () => Promise.resolve(OVERVIEW);
     // 끄기는 화면을 열 때 실시간 시세를 한 번 읽습니다 — 받지 못한 응답이면 안내 한 줄.
@@ -940,8 +940,8 @@ describe("QA-679 자동 갱신을 꺼도 머리 동작 줄은 늘 제목 묶음 
     expect(notice.parentElement).toBe(lines);
   });
 
-  // 수정 전(재현 커밋에서는 it.fails)에는 설명 글이 제목 묶음에 바로 있었습니다('expected <div class="min-w-0">…(3)</div> to be null').
-  it.fails("켜 둔 간격의 설명 글도 같은 칸 안 — 간격을 바꿔도 동작 줄의 자리가 같다", async () => {
+  // 수정 전(재현 커밋 54ccc2e5에서는 it.fails)에는 설명 글이 제목 묶음에 바로 있었습니다('expected <div class="min-w-0">…(3)</div> to be null').
+  it("켜 둔 간격의 설명 글도 같은 칸 안 — 간격을 바꿔도 동작 줄의 자리가 같다", async () => {
     reads["/api/macro/overview"] = () => Promise.resolve({ ...OVERVIEW, categories: [] });
     render(<MacroPage />);
     const titleBlock = screen.getByRole("heading", { level: 1, name: "거시경제 매크로 지표" }).parentElement as HTMLElement;
