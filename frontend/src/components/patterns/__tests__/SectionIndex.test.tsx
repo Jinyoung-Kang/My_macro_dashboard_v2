@@ -739,3 +739,46 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
     }
   });
 });
+
+// QA-688: QA-680 고침(058ddf83)이 절 닻(SectionAnchor div)에 tabIndex -1을 늘 붙였습니다. 크롬은 뒤로·앞으로 가기(기록 이동)의 조각 처리에서 해시가
+// 가리키는 닻이 포커스를 받을 수 있으면 그 닻에 포커스를 두는데(같은 화면 안에서도, 다른 화면에서 목차가 쌓은 해시 기록으로 돌아올 때도 — QA 스택
+// qa@2d111589 1440·390), 닻은 이름·역할 없는 큰 div라 크롬이 접근 이름을 절 내용 전체(/macro 환율 비교 263자, nameSources contents)로 계산해 낭독기가
+// 절 전체를 읽었습니다(QA-680 보강이 목차 누름에서 막은 것이 기록 이동으로 돌아옴). 닻에 tabindex가 없으면 크롬은 포커스를 body에 두고 순차 탐색 시작점만
+// 그 닻으로 옮겨, 다음 Tab이 그 절의 첫 조작이었습니다(검증자의 페이지 안 주입 실험 — 목차 누름의 포커스는 그대로 제목).
+// jsdom은 기록 이동의 조각 처리를 재현하지 못하므로 닻이 늘 포커스를 받는 자리인지(tabindex 속성)를 보고, 제목 없는 닻 누름은 제목처럼 그때만 tabindex -1을
+// 붙였다가 포커스가 떠나면 떼는지 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 닻에 tabindex -1이 늘 있었습니다.
+describe("QA-688 절 닻은 늘 포커스를 받는 자리가 아니다 — 뒤로·앞으로 가기가 닻에 포커스를 두지 않게", () => {
+  it.fails("절 닻에는 tabindex가 없다", () => {
+    renderIndex({ activeId: null });
+    // 결함을 직접 보는 단언(수정 전에는 tabindex -1 — 크롬 기록 이동이 그 닻에 포커스).
+    for (const id of ["macro-indicators", "macro-fx", "macro-risk"]) expect(document.getElementById(id)?.hasAttribute("tabindex"), id).toBe(false);
+  });
+
+  it.fails("제목 없는 닻 누름은 그때만 닻에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
+    const listener = (event: MouseEvent) => event.preventDefault();
+    window.addEventListener("click", listener);
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const base = window.location.pathname + window.location.search;
+    try {
+      renderIndex({ activeId: null });
+      const { column } = lists();
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      const risk = document.getElementById("macro-risk") as HTMLElement;
+      fireEvent.click(within(column).getByRole("link", { name: "환율 비교" }));
+      expect(document.activeElement).toBe(fx);
+      expect(fx.getAttribute("tabindex")).toBe("-1");
+      // 다른 제목 없는 닻으로 — 새 닻에 붙이고, 떠난 닻에서는 뗀다(결함을 직접 보는 단언 — 수정 전에는 떠난 닻에도 남음).
+      fireEvent.click(within(column).getByRole("link", { name: "신용·변동성" }));
+      expect(document.activeElement).toBe(risk);
+      expect(risk.getAttribute("tabindex")).toBe("-1");
+      expect(fx.hasAttribute("tabindex")).toBe(false);
+      // 포커스가 닻 밖(목차 칸)으로 — 그 닻에서도 뗀다.
+      within(column).getByRole("link", { name: "환율 비교" }).focus();
+      expect(risk.hasAttribute("tabindex")).toBe(false);
+    } finally {
+      window.removeEventListener("click", listener);
+      window.history.replaceState(null, "", base);
+      into.mockRestore();
+    }
+  });
+});

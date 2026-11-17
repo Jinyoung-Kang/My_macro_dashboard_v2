@@ -577,6 +577,28 @@ describe("본문", () => {
     }
   });
 
+  // QA-688 지킴: 같은 화면 닻 링크(lib/hashLink)는 제목 없는 닻에 그때만 tabindex -1을 붙였다가 포커스가 떠나면 뗍니다. 원래 tabindex가 있던 본문(main#main —
+  // 셸이 늘 tabIndex -1)은 건너뛰기 뒤 포커스가 떠나도 그대로여야 합니다(떼면 다음 건너뛰기가 본문에 포커스를 두지 못함).
+  it("건너뛰기 뒤 포커스가 본문을 떠나도 본문(main#main)의 tabindex -1은 그대로 (QA-688 지킴)", () => {
+    const listener = (event: MouseEvent) => event.preventDefault();
+    window.addEventListener("click", listener);
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    try {
+      renderShell(MEMBER_PRO);
+      const skip = screen.getByRole("link", { name: "본문으로 건너뛰기" });
+      const main = screen.getByRole("main");
+      fireEvent.click(skip);
+      expect(document.activeElement).toBe(main);
+      skip.focus();
+      expect(main.getAttribute("tabindex")).toBe("-1");
+      fireEvent.click(skip);
+      expect(document.activeElement).toBe(main);
+    } finally {
+      window.removeEventListener("click", listener);
+      into.mockRestore();
+    }
+  });
+
   // 셸 변수는 클래스(lg:[--shell-nav-w:220px])에서 인라인 style로 옮겼습니다 — 펼친 폭을 끌어서 206~320px 아무 값으로 바꾸므로(작업대 P3 추가 '가변 폭
   // 왼쪽 메뉴', 2026-11-16 사용자 결정). 뜻(셸 뿌리 한 곳이 폭을 정하고 왼쪽 메뉴·덮개가 읽음)은 그대로입니다.
   it("넓은 화면 셸 뿌리는 왼쪽 메뉴 폭을 변수 --shell-nav-w(기본 220px)로 둔다 — 왼쪽 메뉴와 고정 위치 덮개(정보 검색 아래 시트)가 같은 변수를 읽음", () => {

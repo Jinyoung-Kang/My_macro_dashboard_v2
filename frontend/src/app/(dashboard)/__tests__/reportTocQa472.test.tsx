@@ -103,3 +103,49 @@ describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushStat
     }
   });
 });
+
+// QA-688: QA-680 고침(058ddf83)이 리포트 절(section)에 tabIndex -1을 늘 붙였습니다. 크롬은 뒤로·앞으로 가기(기록 이동)의 조각 처리에서 해시가 가리키는 절이
+// 포커스를 받을 수 있으면 그 절에 포커스를 두어(QA 스택 qa@2d111589 1440·390 /ai/report), 이름 없는 section(generic)의 접근 이름을 절 내용 전체(합성 리포트
+// 821~1,526자, nameSources contents)로 읽었습니다. 절에는 늘 tabindex를 두지 않고, 제목이 포커스를 받지 못할 때만(숨은 제목) 그때 붙였다가 떠나면 뗍니다.
+// jsdom은 기록 이동의 조각 처리를 재현하지 못해 tabindex 속성과 대체 길(제목 포커스 실패 — focus를 막아 흉내)을 봅니다. 수정 전(재현 커밋에서는 it.fails)에는
+// 절에 tabindex -1이 늘 있었습니다.
+describe("QA-688 리포트 절은 늘 포커스를 받는 자리가 아니다 — 뒤로·앞으로 가기가 절에 포커스를 두지 않게", () => {
+  it.fails("리포트 절에는 tabindex가 없다", () => {
+    render(<ReportView markdown={REPORT} />);
+    const sections = Array.from(document.querySelectorAll("section"));
+    expect(sections).toHaveLength(3);
+    // 결함을 직접 보는 단언(수정 전에는 tabindex -1 — 크롬 기록 이동이 그 절에 포커스).
+    expect(sections.map((section) => section.getAttribute("tabindex"))).toEqual([null, null, null]);
+  });
+
+  it.fails("절 제목이 포커스를 받지 못하면 그때만 절에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
+    const listener = (event: MouseEvent) => event.preventDefault();
+    window.addEventListener("click", listener);
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    // 숨은 제목처럼 h3는 포커스를 받지 못하게 합니다.
+    const focus = HTMLElement.prototype.focus;
+    vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+      if (this.tagName !== "H3") focus.call(this, options);
+    });
+    const base = window.location.pathname + window.location.search;
+    try {
+      render(<ReportView markdown={REPORT} />);
+      const links = screen.getByRole("navigation", { name: "리포트 목차" }).querySelectorAll("a");
+      const section = (link: Element) => document.getElementById((link.getAttribute("href") as string).slice(1)) as HTMLElement;
+      fireEvent.click(links[1]);
+      const second = section(links[1]);
+      expect(document.activeElement).toBe(second);
+      expect(second.getAttribute("tabindex")).toBe("-1");
+      // 제목에 붙였다가 포커스를 받지 못한 tabindex는 바로 뗀다.
+      expect(second.querySelector("h3")?.hasAttribute("tabindex")).toBe(false);
+      fireEvent.click(links[2]);
+      expect(document.activeElement).toBe(section(links[2]));
+      // 결함을 직접 보는 단언(수정 전에는 떠난 절에도 tabindex -1이 남음).
+      expect(second.hasAttribute("tabindex")).toBe(false);
+    } finally {
+      window.removeEventListener("click", listener);
+      window.history.replaceState(null, "", base);
+      into.mockRestore();
+    }
+  });
+});
