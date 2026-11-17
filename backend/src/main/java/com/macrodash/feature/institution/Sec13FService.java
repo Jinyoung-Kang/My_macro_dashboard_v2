@@ -11,8 +11,11 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -131,16 +134,22 @@ public class Sec13FService {
     /**
      * 최신 분기와 직전 분기를 대조해 종목별 액션을 분류합니다(계산은 {@link HoldingsDiff}).
      *
+     * <p>줄마다 수집기가 붙인 {@code ticker}(이름 매핑표로 찾은 Yahoo 심볼, 모르면 null)와 {@code tickerNote}(일부러 붙이지 않은 까닭 —
+     * 채권 {@code debt}·보통주 아닌 증권 {@code non_common}, 없으면 null)를 그 줄을 만든 저장본 보유 노드에서 그대로 옮깁니다({@link SourceNodes}).
+     * 13F 화면이 종목 이름을 눌러 시세 팝업을 열 때 씁니다 — 백엔드는 이름으로 다시 찾지 않습니다.
+     *
      * @return 평가액 내림차순, topN까지. 전량 매도 행은 평가액·주식 수·비중이 0입니다
      */
     List<Map<String, Object>> compareQuarters(JsonNode current, JsonNode previous, int topN) {
-        List<HoldingsDiff.Change> changes = HoldingsDiff.compare(
-                HoldingsJson.holdings(current),
-                previous == null ? null : HoldingsJson.holdings(previous));
+        List<Holding> currentHoldings = HoldingsJson.holdings(current);
+        List<Holding> previousHoldings = previous == null ? null : HoldingsJson.holdings(previous);
+        SourceNodes sources = new SourceNodes(current, currentHoldings, previous, previousHoldings);
+        List<HoldingsDiff.Change> changes = HoldingsDiff.compare(currentHoldings, previousHoldings);
 
         List<Map<String, Object>> rows = new ArrayList<>();
         for (HoldingsDiff.Change change : changes) {
             Holding holding = change.holding();
+            JsonNode source = sources.of(holding);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("name", holding.name());
             // CUSIP은 숫자로만 이루어질 수 있어 반드시 문자열로 다룹니다.
@@ -152,6 +161,8 @@ public class Sec13FService {
             row.put("weightDiff", change.weightDiff());
             row.put("sharesDiff", change.sharesDiff());
             row.put("action", change.action());
+            row.put("ticker", Json.asText(source, "ticker"));
+            row.put("tickerNote", Json.asText(source, "tickerNote"));
             rows.add(row);
         }
 
@@ -160,6 +171,45 @@ public class Sec13FService {
         ).reversed());
 
         return topN > 0 && rows.size() > topN ? rows.subList(0, topN) : rows;
+    }
+
+    /**
+     * 분기 대비 줄 하나를 만든 저장본 보유 노드 — 지금 분기에 있는 줄은 지금 분기 노드, 전량 매도 줄은 직전 분기 노드.
+     *
+     * <p>{@link HoldingsDiff#compare}는 지금 분기 항목마다 <b>받은 항목 그대로</b>를 줄로 내고, 전량 매도 줄만 직전 분기 항목의 이름·CUSIP·클래스를
+     * 옮긴 새 항목(평가액 0)으로 냅니다. 그래서 지금 분기 줄은 같은 객체(동일성)로 찾습니다 — 이름·CUSIP·클래스가 겹치는 항목이 있어도 줄마다
+     * 제 노드입니다. 전량 매도 줄은 직전 분기에서 이름·CUSIP·클래스가 같은 <b>마지막</b> 항목입니다 — 계산이 직전 분기를 키(CUSIP, 없으면 이름+클래스)로
+     * 모을 때 뒤의 항목이 앞을 덮어 그 키의 전량 매도 줄은 마지막 항목의 것이고, 같은 이름·CUSIP·클래스는 같은 키라 그 마지막 항목이 곧 이 줄의 항목입니다.
+     * 수집기는 한 공시 안에서 (이름, CUSIP, 클래스)가 같은 행을 한 항목으로 합치고(services/sec13f — 자회사 합산은 (CUSIP, 클래스)로) 저장하므로
+     * 저장본에서는 그런 겹침이 생기지 않습니다. 보유가 수천 줄인 기관(교집합이 전부 대조)이 있어 둘 다 표로 찾습니다.
+     */
+    private static final class SourceNodes {
+        private final Map<Holding, JsonNode> current = new IdentityHashMap<>();
+        private final Map<List<String>, JsonNode> closed = new HashMap<>();
+
+        SourceNodes(JsonNode currentQuarter, List<Holding> currentHoldings, JsonNode previousQuarter, List<Holding> previousHoldings) {
+            List<JsonNode> nodes = Json.array(currentQuarter, "holdings");
+            for (int i = 0; i < currentHoldings.size(); i++) {
+                current.put(currentHoldings.get(i), nodes.get(i));
+            }
+            if (previousHoldings != null) {
+                List<JsonNode> before = Json.array(previousQuarter, "holdings");
+                for (int i = 0; i < previousHoldings.size(); i++) {
+                    closed.put(identity(previousHoldings.get(i)), before.get(i));   // 뒤의 항목이 덮습니다 — 계산과 같게
+                }
+            }
+        }
+
+        /** 줄의 항목 → 그 노드. 못 찾으면 null(티커·표시도 null로 나감). */
+        JsonNode of(Holding holding) {
+            JsonNode node = current.get(holding);
+            return node != null ? node : closed.get(identity(holding));
+        }
+
+        /** 이름·CUSIP·클래스(모르면 null — Arrays.asList는 null을 받고 값으로 비교합니다). */
+        private static List<String> identity(Holding holding) {
+            return Arrays.asList(holding.name(), holding.cusip(), holding.cls());
+        }
     }
 
     /**

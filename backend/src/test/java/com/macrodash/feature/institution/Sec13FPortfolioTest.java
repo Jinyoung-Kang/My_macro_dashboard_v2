@@ -241,4 +241,30 @@ class Sec13FPortfolioTest {
         assertThat((List<Object>) portfolio.get("quarters")).as("분기 목록은 고른 1개").hasSize(1);
         assertThat((List<Object>) ((Map<String, Object>) portfolio.get("weightHistory")).get("dates")).hasSize(1);
     }
+
+    // ------------------------------------------------------------ 종목 팝업용 티커
+    @Test
+    @SuppressWarnings("unchecked")
+    @DisplayName("보유 표 줄에는 저장본의 ticker·tickerNote가 실리고(모르면 null), 교집합 줄 모양은 그대로다")
+    void portfolioRowsCarryTickerButConsensusRowsDoNot() {
+        Sec13FService service = service(NPS, """
+                [{"reportDate":"2026-06-30","holdings":[
+                    {"name":"APPLE INC","cusip":"037833100","class":"COM","value":1100,"shares":1100,"weight":60.0,"ticker":"AAPL"},
+                    {"name":"ISHARES TR","cusip":"464287200","class":"CORE S&P500 ETF","value":700,"shares":7,"weight":40.0,"ticker":null}]},
+                 {"reportDate":"2026-03-31","holdings":[
+                    {"name":"APPLE INC","cusip":"037833100","class":"COM","value":1000,"shares":1000,"weight":55.6,"ticker":"AAPL"},
+                    {"name":"FORD MTR CO","cusip":"345370CZ1","class":"COM","value":800,"weight":44.4,"ticker":null,"tickerNote":"debt"}]}]
+                """);
+
+        List<Map<String, Object>> holdings = (List<Map<String, Object>>) service.portfolio(NPS, 8, 10).get("holdings");
+
+        assertThat(holdings).extracting(row -> row.get("name"), row -> row.get("ticker"), row -> row.get("tickerNote"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("APPLE INC", "AAPL", null),
+                        org.assertj.core.groups.Tuple.tuple("ISHARES TR", null, null),
+                        org.assertj.core.groups.Tuple.tuple("FORD MTR CO", null, "debt"));
+
+        List<Map<String, Object>> consensus = (List<Map<String, Object>>) service.consensus(List.of(NPS), null, 1, 10).get("rows");
+        assertThat(consensus).isNotEmpty().allSatisfy(row -> assertThat(row).doesNotContainKeys("ticker", "tickerNote"));
+    }
 }

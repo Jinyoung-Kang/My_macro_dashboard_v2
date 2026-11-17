@@ -209,4 +209,89 @@ class Sec13FServiceTest {
         assertThat(deduped.get(0).path("filingDate").asString()).isEqualTo("2026-08-20");
         assertThat(deduped.get(1).path("reportDate").asString()).isEqualTo("2026-03-31");
     }
+
+    // =========================================================================
+    // 티커·표시(ticker·tickerNote) — 13F 화면의 종목 팝업이 씁니다. 줄을 만든 저장본 보유 노드에서 그대로 옮깁니다.
+    // =========================================================================
+
+    private static Map<String, Object> rowNamed(List<Map<String, Object>> rows, String name) {
+        return rows.stream().filter(row -> name.equals(row.get("name"))).findFirst().orElseThrow();
+    }
+
+    @Test
+    @DisplayName("줄마다 수집기가 붙인 ticker·tickerNote를 옮기고, 모르거나 없으면 null — 키는 늘 있다")
+    void tickerAndNoteAreCarriedFromTheHoldingNode() {
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"BERKSHIRE HATHAWAY INC DEL","cusip":"084670702","class":"CL B NEW","value":900,"shares":9,"weight":45.0,"ticker":"BRK-B"},
+                  {"name":"ISHARES TR","cusip":"464287200","class":"CORE S&P500 ETF","value":500,"shares":5,"weight":25.0,"ticker":null},
+                  {"name":"FORD MTR CO","cusip":"345370CZ1","class":"COM","value":300,"weight":15.0,"ticker":null,"tickerNote":"debt"},
+                  {"name":"WELLS FARGO CO NEW","cusip":"949746804","class":"PERP PFD CNV A","value":200,"shares":2,"weight":10.0,"ticker":null,"tickerNote":"non_common"},
+                  {"name":"OLD SNAPSHOT CO","cusip":"111111111","class":"COM","value":100,"shares":1,"weight":5.0}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, null, 10);
+
+        assertThat(rows).allSatisfy(row -> assertThat(row).containsKeys("ticker", "tickerNote"));
+        assertThat(rowNamed(rows, "BERKSHIRE HATHAWAY INC DEL")).containsEntry("ticker", "BRK-B").containsEntry("tickerNote", null);
+        assertThat(rowNamed(rows, "ISHARES TR")).containsEntry("ticker", null).containsEntry("tickerNote", null);
+        assertThat(rowNamed(rows, "FORD MTR CO")).containsEntry("ticker", null).containsEntry("tickerNote", "debt");
+        assertThat(rowNamed(rows, "WELLS FARGO CO NEW")).containsEntry("ticker", null).containsEntry("tickerNote", "non_common");
+        assertThat(rowNamed(rows, "OLD SNAPSHOT CO")).as("티커를 붙이기 전 옛 저장본 — 키가 없어도 null")
+                .containsEntry("ticker", null).containsEntry("tickerNote", null);
+    }
+
+    @Test
+    @DisplayName("전량 매도 줄의 ticker·tickerNote는 직전 분기 노드의 것 — 이번 분기에 같은 이름이 남아 있어도 섞이지 않는다")
+    void closedRowTakesTickerFromThePreviousQuarterNode() {
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"APPLE INC","cusip":"037833100","class":"COM","value":5000,"shares":100,"weight":50.0,"ticker":"AAPL"}]}
+                """);
+        JsonNode previous = quarter("""
+                {"reportDate":"2026-03-31","holdings":[
+                  {"name":"APPLE INC","cusip":"037833100","class":"COM","value":4000,"shares":90,"weight":40.0,"ticker":"AAPL-OLD"},
+                  {"name":"TESLA INC","cusip":"88160R101","class":"COM","value":3000,"shares":80,"weight":30.0,"ticker":"TSLA"},
+                  {"name":"FORD MTR CO","cusip":"345370CZ1","class":"COM","value":2000,"weight":20.0,"ticker":null,"tickerNote":"debt"}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 10);
+
+        assertThat(rowNamed(rows, "APPLE INC")).as("이번 분기 줄은 이번 분기 노드").containsEntry("ticker", "AAPL");
+        assertThat(rowNamed(rows, "TESLA INC")).containsEntry("action", HoldingsDiff.CLOSED).containsEntry("ticker", "TSLA");
+        assertThat(rowNamed(rows, "FORD MTR CO")).containsEntry("action", HoldingsDiff.CLOSED)
+                .containsEntry("ticker", null).containsEntry("tickerNote", "debt");
+    }
+
+    @Test
+    @DisplayName("같은 CUSIP·같은 이름·클래스의 항목이 겹쳐도 이번 분기 줄은 제 노드, 전량 매도 줄은 계산이 쓴 마지막 노드")
+    void duplicateKeysPairEachRowWithItsOwnNode() {
+        // 수집기 저장본에서는 (이름, CUSIP, 클래스)가 겹치지 않습니다(한 공시 안에서 합침). CUSIP만 같은 줄은 있을 수 있어
+        // (같은 증권을 이름 표기 둘로 적은 공시) 이번 분기에는 두 줄이 그대로 남고, 직전 분기는 계산이 CUSIP으로 모아 마지막 항목이 남습니다.
+        JsonNode current = quarter("""
+                {"reportDate":"2026-06-30","holdings":[
+                  {"name":"NVIDIA CORP","cusip":"67066G104","class":"COM","value":600,"shares":6,"weight":30.0,"ticker":"T-FIRST"},
+                  {"name":"NVIDIA CORPORATION","cusip":"67066G104","class":"COM","value":500,"shares":5,"weight":25.0,"ticker":"T-SECOND"},
+                  {"name":"SAME CO","cusip":"","class":"COM","value":400,"shares":4,"weight":20.0,"ticker":"S-FIRST"},
+                  {"name":"SAME CO","cusip":"","class":"COM","value":300,"shares":3,"weight":15.0,"ticker":"S-SECOND"}]}
+                """);
+        JsonNode previous = quarter("""
+                {"reportDate":"2026-03-31","holdings":[
+                  {"name":"GONE CORP","cusip":"222222222","class":"COM","value":200,"shares":2,"weight":10.0,"ticker":"G-FIRST"},
+                  {"name":"GONE CORPORATION","cusip":"222222222","class":"COM","value":100,"shares":1,"weight":5.0,"ticker":"G-LAST"}]}
+                """);
+
+        List<Map<String, Object>> rows = service.compareQuarters(current, previous, 10);
+
+        assertThat(rows).filteredOn(row -> !HoldingsDiff.CLOSED.equals(row.get("action")))
+                .extracting(row -> row.get("value"), row -> row.get("ticker"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(600.0, "T-FIRST"),
+                        org.assertj.core.groups.Tuple.tuple(500.0, "T-SECOND"),
+                        org.assertj.core.groups.Tuple.tuple(400.0, "S-FIRST"),
+                        org.assertj.core.groups.Tuple.tuple(300.0, "S-SECOND"));
+        List<Map<String, Object>> closed = rows.stream().filter(row -> HoldingsDiff.CLOSED.equals(row.get("action"))).toList();
+        assertThat(closed).as("같은 CUSIP의 전량 매도는 한 줄 — 계산이 남긴 마지막 항목의 이름과 티커").hasSize(1);
+        assertThat(closed.get(0)).containsEntry("name", "GONE CORPORATION").containsEntry("ticker", "G-LAST");
+    }
 }
