@@ -493,3 +493,18 @@ describe("QA-650 대상 머리의 읽는 중 자리표시는 값이 온 뒤의 �
     expect(STEPS.map((_, step) => reserved(slot, step))).toEqual([178, 142, 106, 142, 84]);
   });
 });
+
+// QA-651: 판정 기록을 읽는 동안 목록 자리가 막대 네 줄(88px)뿐이라, 값이 오면 목록(QA 자료 13건 — 판정 기록 패널 233 → 1,173px)이 자라 lg(1024~1279 —
+// 오른쪽 칸이 가운데 아래)의 '연결'·'출처' 패널을 밀었습니다. 자기 빌드(1024 x 900, 메뉴 220)에서 '연결' 위 끝 797 → 1,743px — 화면 안(아래 103px가
+// 보임)에서 화면 밖으로, 이 이동 하나가 첫 적재 CLS 0.053(머리 이동과 같은 프레임이면 QA-650과 합쳐 0.4718). 판정 기록은 하루 한 건씩 쌓여 요청 한도
+// (60건, 무료 30건)까지 차므로, 읽는 중에는 목록 꼴의 자리 줄 열 개(보이는 수가 아님)로 목록 높이를 잡아 '연결'이 처음부터 화면 아래에 있게 합니다.
+describe("QA-651 판정 기록을 읽는 동안 목록 자리를 잡는다", () => {
+  it.fails("응답 전 판정 기록 패널은 목록 꼴 자리 줄 열 개(읽기에서 빠짐)와 읽는 중 상태", async () => {
+    reads[REGIME] = regimeExpansion();
+    render(<RegimePage />);
+    const panel = await panelTitled("판정 기록");
+    const status = within(panel).getByRole("status", { name: "판정 기록을 읽는 중" });
+    expect(status.querySelectorAll("li")).toHaveLength(10);
+    expect(status.querySelector("ul")?.getAttribute("aria-hidden")).toBe("true");
+  });
+});
