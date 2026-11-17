@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { pickActiveSection } from "@/lib/sectionIndex";
+import { pickActiveSection, pickEndSection, scrolledToEnd } from "@/lib/sectionIndex";
 
 /**
  * 지금 절을 보는 띠 — 뷰포트 위 96px 아래부터 위쪽 34%까지(아래 66%를 뺌). 띠에 조금이라도 걸친 절이 후보입니다.
@@ -17,6 +17,8 @@ const SPY_ROOT_MARGIN = "-96px 0px -66% 0px";
  * 고르는 차례(`ids` — lib/sectionIndex `sectionOrder`, 하위 칸이 부모보다 앞)로 하나를 고릅니다(`pickActiveSection`). 걸친 절이 없으면 앞 값을 둡니다.
  *
  * - root는 뷰포트입니다 — 넓은 화면은 본문(main)이 스크롤 상자이고 좁은 화면은 창이 스크롤하지만, 뷰포트 기준 교차는 두 경우 모두 맞습니다.
+ * - 닻을 담은 스크롤 상자(창 또는 main — 문서의 scroll 이벤트를 capture로 받아 그 상자가 닻을 담는지 봄)가 끝까지 내려가 있으면 띠 대신 위 끝이 화면 안인
+ *   마지막 절을 고릅니다(`pickEndSection` — 마지막 절은 페이지가 더 내려가지 못해 띠에 닿지 못함, QA-645). 끝에서 벗어나면 다시 띠로 고릅니다.
  * - `enabled`가 거짓이거나 IntersectionObserver가 없으면(서버·jsdom) null — 목차는 지금 칸 없이 그립니다.
  * - 닻은 이 훅을 부르는 부품보다 먼저 그려져 있어야 합니다(목차의 자식 — 효과는 자식부터 돎). `ids`가 바뀌면(운영자만 보이는 절 등) 다시 봅니다.
  */
@@ -28,6 +30,8 @@ export function useSectionSpy(ids: readonly string[], enabled = true): string | 
     if (!enabled || typeof IntersectionObserver !== "function") return undefined;
     const order = key === "" ? [] : key.split("\n");
     const intersecting = new Set<string>();
+    // 스크롤 상자가 끝이면 그때 고른 절(아니면 null — 띠로 고름).
+    let endPick: string | null = null;
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -35,7 +39,7 @@ export function useSectionSpy(ids: readonly string[], enabled = true): string | 
           if (entry.isIntersecting) intersecting.add(id);
           else intersecting.delete(id);
         }
-        setActive((previous) => pickActiveSection(order, intersecting, previous));
+        setActive((previous) => endPick ?? pickActiveSection(order, intersecting, previous));
       },
       { root: null, rootMargin: SPY_ROOT_MARGIN },
     );
@@ -43,7 +47,26 @@ export function useSectionSpy(ids: readonly string[], enabled = true): string | 
       const element = document.getElementById(id);
       if (element) observer.observe(element);
     }
-    return () => observer.disconnect();
+    const onScroll = (event: Event) => {
+      // 창 스크롤은 문서(document)가, 본문 상자 스크롤은 그 요소가 대상입니다. 닻을 담지 않은 상자(표의 가로 스크롤 등)는 보지 않습니다.
+      const box = event.target instanceof Element ? event.target : (document.scrollingElement ?? document.documentElement);
+      const first = order.length > 0 ? document.getElementById(order[0]) : null;
+      if (first === null || !box.contains(first)) return;
+      const next = scrolledToEnd(box)
+        ? pickEndSection(
+            order.map((id) => ({ id, top: document.getElementById(id)?.getBoundingClientRect().top ?? Number.POSITIVE_INFINITY })),
+            window.innerHeight,
+          )
+        : null;
+      if (next === endPick) return;
+      endPick = next;
+      setActive((previous) => next ?? pickActiveSection(order, intersecting, previous));
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("scroll", onScroll, { capture: true });
+    };
   }, [key, enabled]);
   return enabled ? active : null;
 }

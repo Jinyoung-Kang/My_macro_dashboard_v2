@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { pickActiveSection, sectionCountText, sectionOrder, sectionParent, type SectionIndexItem } from "../sectionIndex";
+import { pickActiveSection, pickEndSection, scrolledToEnd, sectionCountText, sectionOrder, sectionParent, type SectionIndexItem } from "../sectionIndex";
 
 const ITEMS: SectionIndexItem[] = [
   { id: "top", label: "맨 위" },
@@ -60,5 +60,26 @@ describe("sectionCountText", () => {
     expect(sectionCountText(undefined)).toBeNull();
     expect(sectionCountText(Number.NaN)).toBeNull();
     expect(sectionCountText(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe("끝까지 내려갔을 때의 지금 절(QA-645)", () => {
+  it("scrolledToEnd — 넘침이 있고 남은 거리 1px 이하, 넘침이 없으면 거짓", () => {
+    expect(scrolledToEnd({ scrollTop: 9832, scrollHeight: 10676, clientHeight: 844 })).toBe(true);
+    expect(scrolledToEnd({ scrollTop: 9831.4, scrollHeight: 10676, clientHeight: 844 })).toBe(true);
+    expect(scrolledToEnd({ scrollTop: 9800, scrollHeight: 10676, clientHeight: 844 })).toBe(false);
+    expect(scrolledToEnd({ scrollTop: 0, scrollHeight: 600, clientHeight: 844 })).toBe(false);
+  });
+
+  it("pickEndSection — 위 끝이 뷰포트 아래 끝보다 위인 절 가운데 위 끝이 가장 아래인 것, 없으면 null", () => {
+    const tops = [
+      { id: "ind", top: -9000 },
+      { id: "cat-a", top: -8900 },
+      { id: "fx", top: -300 },
+      { id: "calendar", top: 543 },
+    ];
+    expect(pickEndSection(tops, 844)).toBe("calendar");
+    expect(pickEndSection(tops, 500)).toBe("fx");
+    expect(pickEndSection([{ id: "x", top: 900 }, { id: "y", top: Number.POSITIVE_INFINITY }], 844)).toBeNull();
   });
 });

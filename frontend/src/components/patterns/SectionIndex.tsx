@@ -103,7 +103,8 @@ function ColumnLink({ leaf, state, child }: { leaf: SectionIndexLeaf; state: "cu
  * - 칸은 같은 화면 절 링크(`<a href="#id">` — 스크롤은 즉시, 부드러운 스크롤 없음)이고 지금 칸은 aria-current="location"입니다. 가로 줄에서는 지금 절의
  *   첫 단계 칸이 지금 칸입니다(하위 칸이 지금이어도). 개수(`count`)는 숫자일 때만 보입니다(모르면 자리 없음 — 0으로 채우지 않음).
  * - 지금 절: `activeId`를 주면 그 값(제어 — 시험·화면이 정함), 주지 않으면 `hooks/useSectionSpy`(뷰포트 위 96px 아래 ~ 34% 띠에 걸친 절 — 하위 칸이 부모보다 앞,
- *   규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는 지금 칸이 없습니다.
+ *   스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안인 마지막 절 — QA-645, 규칙은 `lib/sectionIndex`). 처음 그릴 때와 IntersectionObserver가 없는 곳에서는
+ *   지금 칸이 없습니다.
  * - 본문(`children`)은 절 닻(`SectionAnchor` — 같은 `columnFrom`)들이고 절 사이 16·24px입니다. 닻은 자료와 상관없이 늘 그립니다(해시 주소로 열 때 첫 그림에서 닿게).
  * - 목차 칸이 없으면 내비 없이 본문만 그립니다.
  * - 내비라 강조 파랑을 씁니다(지금 칸 막대·가로 줄 밑줄 — 누를 수 있는 것) — 데이터 칸 강조색 금지 목록(lib/__tests__/accentInData)에 넣지 않습니다.
