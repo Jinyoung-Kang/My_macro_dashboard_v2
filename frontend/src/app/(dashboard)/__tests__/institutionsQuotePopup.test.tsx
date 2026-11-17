@@ -714,6 +714,7 @@ describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커�
 // 입구(사용자 요청 2026-11-18)가 /institutions에도 드러냈습니다. 이름 줄은 창의 닫기 단추와 같은 줄이라, 줄바꿈만 고치면 긴 이름의 첫 줄이 닫기 단추와
 // 겹쳤습니다(390 17px·1440 12px — 대화상자 제목의 pr-10과 같은 자리가 필요). jsdom은 배치를 재지 못해 클래스 구조(QA-681과 같은 inChain 꼴)를 봅니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 글에서 대화상자까지 어디에도 break-keep이 없었고 이름 줄에 pr-10이 없었습니다.
+// 고침: 본문 바깥 div에 break-keep wrap-break-word(상속), 이름 줄에 pr-10. 공용 부품이라 모의 매매·실제 계좌·ISA 표의 시세 창도 함께 바뀝니다.
 describe("QA-691 시세 창 본문의 한국어 글은 낱말 사이에서만 줄을 바꾸고, 이름 줄은 닫기 단추 자리를 비운다", () => {
   const LONG_NAME = "SUPERCALIFRAGILISTICEXPIALIDOCIOUSSYNTHETICHOLDINGSCORPORATIONINTERNATIONAL";
   const SUMMARY = "합성 지주 회사는 화면 확인용으로 지어낸 가상의 회사이며 실제 회사와 관계가 없습니다. 가상의 부품과 서비스를 만들어 여러 나라에 판다고 가정합니다.";
@@ -732,7 +733,7 @@ describe("QA-691 시세 창 본문의 한국어 글은 낱말 사이에서만 �
       })
       .map((element) => element.textContent);
 
-  it.fails("13F 티커 줄의 시세 창 — 이름·보조 줄·업종·기업 설명·출처 줄·시세 머리가 break-keep과 wrap-break-word 안, 이름 줄은 pr-10", async () => {
+  it("13F 티커 줄의 시세 창 — 이름·보조 줄·업종·기업 설명·출처 줄·시세 머리가 break-keep과 wrap-break-word 안, 이름 줄은 pr-10", async () => {
     reads[endpoints.detail.quote("us", "BRK-B")] = {
       available: true,
       quote: {

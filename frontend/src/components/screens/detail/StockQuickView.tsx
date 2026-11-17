@@ -44,9 +44,13 @@ export function StockQuickBody({ market, code }: { market: DetailMarket; code: s
     placeholder = <p className="text-sm text-text-2">{quoteState.data.message ?? "시세를 조회하지 않습니다."}</p>;
   }
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    // 한국어는 낱말 사이에서만 줄을 바꾸고 공백 없는 긴 토큰만 칸 안에서 꺾습니다(break-keep wrap-break-word — 공용 글 부품 규약 QA-568·QA-664, 후보 창
+    // 본문 QA-681과 같음). 상속되므로 이름·보조 줄·기업 설명·출처 줄·시세 머리까지 한 번에 걸립니다 — 예전에는 기업 설명 등이 음절 사이에서 꺾였고, 공백
+    // 없는 긴 이름이면 창이 가로로 스크롤됐습니다(QA-691). 이름 줄은 창의 닫기 단추(오른쪽 위)와 같은 줄이라 오른쪽을 비웁니다(pr-10 — 대화상자 제목과 같은
+    // 자리, 긴 이름의 첫 줄이 닫기 단추와 겹치지 않게).
+    <div className="flex min-w-0 flex-col gap-4 break-keep wrap-break-word">
       <div className="min-w-0">
-        <p className="text-heading text-text">{name}</p>
+        <p className="pr-10 text-heading text-text">{name}</p>
         {sub && <p className="text-xs text-text-2">{sub}</p>}
       </div>
       {brief ? <QuickProfileNote brief={brief} /> : null}
