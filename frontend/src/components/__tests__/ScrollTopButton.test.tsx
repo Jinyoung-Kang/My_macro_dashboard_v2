@@ -100,6 +100,19 @@ describe("QA-686 TOP 단추가 있는 화면은 본문 끝에 단추 자리를 �
     expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("");
   });
 
+  // 보강(검토 지적): 단추 높이는 rem이라(lg 미만 min-h-11 = 2.75rem, lg는 min-h-[30px]와 내용 높이 — text-xs 줄 높이 1rem + py-1 0.5rem + 경계 2px
+  // 가운데 큰 것) 브라우저 기본 글자 크기를 키우면 함께 자라는데(루트 글자 크기를 고정하지 않음), 단추 자리는 px 상수(52·38px)라 sm 미만에서 20px이면 3px,
+  // 24px이면 14px 다시 가렸습니다(lg는 24px에서 틈 8px가 0). 단추 자리를 단추와 같은 단위의 식으로 적어 기본 16px에서는 전과 같은 52·38px이고
+  // 글자 크기를 키우면 따라 자랍니다. 식이 기대는 단추 클래스도 함께 묶어 둡니다(한쪽만 바꾸면 이 시험이 막음). 수정 전(재현 커밋에서는 it.fails) '52px'였습니다.
+  it.fails("단추 자리는 단추 높이와 같은 단위 — lg 미만 calc(2.75rem + 8px)·lg calc(max(30px, 1.5rem + 2px) + 8px), 단추 클래스가 그 식의 바탕", () => {
+    render(<ScrollTopButton />);
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve")).toBe("calc(2.75rem + 8px)");
+    expect(rootStyle().getPropertyValue("--scroll-top-reserve-lg")).toBe("calc(max(30px, 1.5rem + 2px) + 8px)");
+    scrollMain(500);
+    const classes = screen.getByRole("button", { name: "TOP 맨 위로" }).className.split(/\s+/);
+    expect(classes).toEqual(expect.arrayContaining(["min-h-11", "py-2", "text-xs", "border", "lg:min-h-[30px]", "lg:py-1"]));
+  });
+
   it("화면이 바뀌는 사이 둘이 겹쳐 마운트돼도 마지막 하나가 떠날 때만 지운다", () => {
     const first = render(<ScrollTopButton />);
     const second = render(<ScrollTopButton layer="z-20" />);
