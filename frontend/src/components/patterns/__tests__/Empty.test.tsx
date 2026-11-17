@@ -72,3 +72,19 @@ describe("Empty", () => {
     expect(container.querySelector("div")).toBeNull();
   });
 });
+
+// QA-666: 오른쪽 맞춤 숫자 칸(매크로 지표 표 값 칸·비공식 시세 현재가 칸)에서 '—'와 사유가 칸 폭보다 넓으면 줄을 꺾는데, 바깥 상자가 inline-flex flex-wrap이라
+// 꺾인 상자가 칸 폭을 다 차지하고 항목이 시작(왼쪽)부터 놓였습니다 — QA 스택(모의 응답의 수집 실패 줄) 390~1920에서 '—'·'수집 실패'가 같은 열의 숫자보다
+// 41~53px 왼쪽. 끝 맞춤(align="end")이면 꺾여도 각 줄이 칸 오른쪽 끝에 붙어야 하고, 기본(시작 맞춤)은 그대로여야 합니다.
+describe("QA-666 오른쪽 맞춤 칸의 Empty는 끝 맞춤", () => {
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
+  it.fails("align='end'면 바깥 상자가 justify-end — 기본이면 없음(다른 자리는 그대로)", () => {
+    // @ts-expect-error QA-666 재현 — 고치기 전에는 align prop이 없습니다(고침 커밋에서 이 줄을 지움).
+    const { container } = render(<Empty reason="수집 실패" align="end" />);
+    expect((container.firstElementChild as HTMLElement).className.split(/\s+/)).toContain("justify-end");
+    cleanup();
+
+    const { container: plain } = render(<Empty reason="수집 실패" />);
+    expect((plain.firstElementChild as HTMLElement).className.split(/\s+/)).not.toContain("justify-end");
+  });
+});

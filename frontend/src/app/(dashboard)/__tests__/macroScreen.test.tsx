@@ -350,6 +350,23 @@ describe("비공식 시세·경제 캘린더 — 공용 표", () => {
     expect(within(stale).getByText(/이전 값 — HTTP 429/).closest("span[class*='text-warn']")).toBeTruthy();
   });
 
+  // QA-666: 비공식 시세 현재가 칸도 같은 오른쪽 맞춤 숫자 열 — 지금은 열이 넓어 한 줄이지만, 꺾이면 지표 표와 같이 왼쪽으로 밀리지 않게 끝 맞춤입니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
+  it.fails("비공식 시세: 받지 못한 현재가의 '—'·'수집 실패'는 끝 맞춤(justify-end)", async () => {
+    reads["/api/macro/scraped"] = () => Promise.resolve({ available: true, updatedAt: "2026-11-17T06:30:00+09:00", items: [
+      { key: "jpykrw", name: "엔/원", provider: "TradingView", unit: "원", status: "fail", price: null, previousClose: null,
+        changePct: null, error: null, delayMinutes: null },
+    ] });
+    render(<ScrapedSection />);
+
+    const failed = (await screen.findByText("엔/원")).closest("tr") as HTMLElement;
+    // 칸 차례: 항목(행 머리) · 출처 · 현재가 — 현재가는 둘째 칸(td).
+    const price = within(failed).getAllByRole("cell")[1];
+    expect(within(price).getByText("수집 실패")).toBeTruthy();
+    const dash = within(price).getByText("—");
+    expect((dash.parentElement as HTMLElement).className.split(/\s+/)).toContain("justify-end");
+  });
+
   it("경제 캘린더: 조밀 표(일정 기록) — 지표가 행 머리, 개수 줄", async () => {
     reads["/api/macro/econ-calendar"] = () => Promise.resolve({ available: true, collectedAtKst: "2026-11-05 12:00 KST", events: [
       { id: "1", country: "US", title: "Initial Jobless Claims", at: "2026-11-05T13:30:00+00:00", atKst: "2026-11-05 22:30 KST",
@@ -434,6 +451,20 @@ describe("지표 표와 미리보기", () => {
     const stale = screen.getByRole("button", { name: "S&P 500" }).closest("tr") as HTMLElement;
     expect(within(stale).getByText("이전 값").parentElement?.textContent).toContain("HTTP 429");
     expect(within(stale).getByText("선물 조회 실패 · 지수 값").parentElement?.className).toContain("text-warn");
+  });
+
+  // QA-666: 값 칸(오른쪽 맞춤 숫자 열)의 '—'와 '수집 실패'는 칸 폭보다 넓어 두 줄로 꺾이는데, 공용 Empty가 시작 맞춤이라 같은 열의 숫자보다 41~53px 왼쪽에
+  // 그려졌습니다(QA 스택 390~1920, 모의 응답의 수집 실패 줄). 꺾여도 각 줄이 칸 오른쪽 끝에 붙는 끝 맞춤이어야 합니다.
+  // 수정 전(재현 커밋에서는 it.fails)에는 끝 맞춤이 없었습니다('expected [ 'relative', 'inline-flex', …(3) ] to include 'justify-end'').
+  it.fails("수집 실패 줄의 값 칸 '—'·'수집 실패'는 끝 맞춤(justify-end) — 숫자 열과 같은 오른쪽 끝", async () => {
+    render(<MacroPage />);
+
+    const failed = (await screen.findByRole("button", { name: "미국채 2년물 수익률(%)" })).closest("tr") as HTMLElement;
+    const value = within(failed).getAllByRole("cell")[0];
+    const dash = within(value).getByText("—");
+    expect(dash.getAttribute("aria-hidden")).toBe("true");
+    expect((dash.parentElement as HTMLElement).className.split(/\s+/)).toContain("justify-end");
+    expect(within(value).getByText("수집 실패").parentElement).toBe(dash.parentElement);
   });
 
   // 2026-11-17 결정 9(사용자 위임 — 권장안 가): 좁은 화면(md 미만 — 390 등)은 지표·값 두 칸의 두 줄 행. 예전에는 332px 상자 안 640px 표라 변화 칸이
