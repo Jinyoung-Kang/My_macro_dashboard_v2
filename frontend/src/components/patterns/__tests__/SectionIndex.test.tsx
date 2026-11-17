@@ -418,6 +418,125 @@ describe("QA-659 뒤로·앞으로 가기로 해시가 목차 칸이 되면 그 
   });
 });
 
+// QA-659 후속: 위 고침은 해시가 목차 칸일 때만 옮겨, 가장 흔한 길(목차로 한 번 옮김 → 뒤로 가기로 해시 없는 처음 기록)에서는 주소만 바뀌고 본문은 옮긴 절에
+// 남았습니다(P5a 고침 검토 — 자기 빌드 /macro 1440 '환율 비교'로 옮긴 뒤 뒤로 가기: #main.scrollTop 2067 → 2067, 1024 2111 → 2111. 390은 창이 스크롤
+// 상자라 브라우저가 되돌려 3829 → 0). 이제 목차 칸 해시에서 해시 없는 기록으로 돌아오면 닻을 담은 요소 스크롤 상자를 해시 없이 있던 마지막 자리로(모르면
+// 맨 위) 되돌립니다. jsdom은 배치·스크롤을 계산하지 않으므로 본문 상자의 넘침(overflow-y auto·scrollHeight > clientHeight)과 scrollTop을 손으로 주고,
+// 기록 이동은 pushState + hashchange(oldURL)로 흉내 냅니다. 수정 전(재현 커밋에서는 it.fails)에는 본문이 옮긴 자리(3,000·2,000)에 남았습니다.
+describe("QA-659 목차 칸 해시에서 해시 없는 기록으로 돌아오면 본문 스크롤 상자를 해시 없이 있던 자리로", () => {
+  const BASE_PATH = () => window.location.pathname + window.location.search;
+  /** 본문 상자(#main 흉내) 안에 목차를 그립니다 — scrolls면 넘치는 요소 스크롤 상자(넓은 화면), 아니면 넘침 visible(좁은 화면 — 창이 스크롤). */
+  function renderInBox(scrolls: boolean) {
+    const box = document.createElement("main");
+    box.id = "main";
+    if (scrolls) {
+      box.style.overflowY = "auto";
+      Object.defineProperty(box, "scrollHeight", { configurable: true, value: 6000 });
+      Object.defineProperty(box, "clientHeight", { configurable: true, value: 800 });
+    }
+    document.body.appendChild(box);
+    const host = box.appendChild(document.createElement("div"));
+    render(
+      <SectionIndex label="목차" items={[{ id: "a", label: "가" }, { id: "b", label: "나" }]} activeId={null}>
+        <SectionAnchor id="a">가 절</SectionAnchor>
+        <SectionAnchor id="b">나 절</SectionAnchor>
+      </SectionIndex>,
+      { container: host },
+    );
+    return box;
+  }
+  /** 상자를 top까지 내리고 scroll 이벤트를 보냅니다(브라우저는 스크롤 뒤 다음 그리기 때 보냄). */
+  const scrollBox = (box: HTMLElement, top: number) =>
+    act(() => {
+      box.scrollTop = top;
+      box.dispatchEvent(new Event("scroll"));
+    });
+  /** 주소를 hash로 바꾸고(기록 이동 흉내) hashchange(oldURL = 바꾸기 전 주소)를 보냅니다. */
+  const go = (hash: string) => {
+    const oldURL = window.location.href;
+    window.history.pushState(null, "", BASE_PATH() + hash);
+    act(() => {
+      window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: window.location.href }));
+    });
+  };
+
+  it.fails("해시 없이 1,200px에서 목차로 옮긴 뒤(3,000px) 해시 없는 기록으로 돌아오면 1,200px — 옮긴 자리의 scroll은 적지 않는다", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    let box: HTMLElement | null = null;
+    try {
+      box = renderInBox(true);
+      scrollBox(box, 1200);
+      // 목차 칸 누르기 — 주소가 먼저 바뀌고(해시 b) 옮긴 스크롤의 scroll 이벤트가 뒤따름.
+      window.history.pushState(null, "", BASE_PATH() + "#b");
+      scrollBox(box, 3000);
+      // 뒤로 가기 — 해시 없는 처음 기록.
+      go("");
+      expect(box.scrollTop).toBe(1200);
+      // 앞으로 가기 — 다시 b의 닻으로(QA-659), 그 뒤 뒤로 가기도 1,200px.
+      go("#b");
+      expect(into.mock.contexts.at(-1)).toBe(document.getElementById("b"));
+      scrollBox(box, 3000);
+      go("");
+      expect(box.scrollTop).toBe(1200);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      box?.remove();
+      into.mockRestore();
+    }
+  });
+
+  it.fails("해시 없이 스크롤한 적 없이 목차로 옮긴 자리(2,000px)에서 해시 없는 기록으로 돌아오면 맨 위(빈 해시가 가리키는 문서 맨 위)", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    let box: HTMLElement | null = null;
+    try {
+      box = renderInBox(true);
+      go("#a");
+      scrollBox(box, 2000);
+      go("");
+      expect(box.scrollTop).toBe(0);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      box?.remove();
+      into.mockRestore();
+    }
+  });
+
+  it.fails("창이 스크롤하는 폭(본문 넘침 visible)·목차 밖 해시(#main)에서 돌아오면 건드리지 않고, 그 자리(700px)를 해시 없는 기록의 자리로 적는다", () => {
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    let narrow: HTMLElement | null = null;
+    try {
+      // 좁은 화면 — 창이 스크롤 상자라 브라우저가 되돌린 자리를 그대로 둠(본문 상자의 scrollTop 500을 건드리지 않음).
+      narrow = renderInBox(false);
+      narrow.scrollTop = 500;
+      go("#a");
+      go("");
+      expect(narrow.scrollTop).toBe(500);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      narrow?.remove();
+    }
+    cleanup();
+    let wide: HTMLElement | null = null;
+    try {
+      // 넓은 화면 — 목차 밖 해시(#main — 본문으로 건너뛰기)에서 700px까지 내린 뒤 돌아오면 그대로.
+      wide = renderInBox(true);
+      go("#main");
+      scrollBox(wide, 700);
+      go("");
+      expect(wide.scrollTop).toBe(700);
+      // 그 자리가 해시 없는 기록의 자리 — 목차로 옮긴 자리(2,000px)에서 돌아오면 700px.
+      go("#a");
+      scrollBox(wide, 2000);
+      go("");
+      expect(wide.scrollTop).toBe(700);
+    } finally {
+      window.history.replaceState(null, "", BASE_PATH());
+      wide?.remove();
+      into.mockRestore();
+    }
+  });
+});
+
 // QA-645: 지금 절 띠(뷰포트 위 96px 아래 ~ 34%)로만 고르면 마지막 절은 지금 칸이 되지 못했습니다 — 목차에서 마지막 절을 누르거나 끝까지 내려도 페이지가
 // 더 내려가지 못해 그 절의 위 끝이 띠 아래(390 543px·1024 687px·1440 715px)에 남고, 띠에는 앞 절 꼬리만 걸려 aria-current가 앞 절에 남았습니다
 // (P5a 검토 — 자기 빌드 /macro, 운영자 '경제 캘린더'·회원 '비공식 시세'). 스크롤 상자가 끝까지 내려가 있으면 위 끝이 화면 안에 있는 마지막 절이
