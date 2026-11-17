@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { filerName, filerShortName, holdingActionView } from "@/lib/holdings";
+import { filerName, filerShortName, holdingActionView, tickerNoteWarning } from "@/lib/holdings";
 
 describe("holdingActionView", () => {
   it("예전 문구(앞 그림 문자)와 새 문구(기호 없음)가 같은 글·종류", () => {
@@ -42,3 +42,18 @@ describe("기관 이름 — 서버가 붙인 국기는 화면에서 뗀다(서�
     expect(filerShortName("국민연금")).toBe("국민연금");
   });
 });
+
+describe("tickerNoteWarning — 수집기가 일부러 티커를 뺀 13F 보유의 경고", () => {
+  it("채권·보통주 아닌 증권은 고른 종목의 주가와 값이 다르다고 적는다", () => {
+    expect(tickerNoteWarning("debt")).toBe("이 줄은 채권(사채·전환사채 등)이라 아래 종목의 주가와 값이 다릅니다.");
+    expect(tickerNoteWarning("non_common")).toBe("이 줄은 보통주가 아닌 증권(우선주·워런트 등)이라 아래 종목(보통주)의 주가와 값이 다릅니다.");
+  });
+
+  it("까닭이 없으면 null, 모르는 까닭은 그 값을 적은 일반 경고", () => {
+    expect(tickerNoteWarning(null)).toBeNull();
+    expect(tickerNoteWarning(undefined)).toBeNull();
+    expect(tickerNoteWarning("  ")).toBeNull();
+    expect(tickerNoteWarning("fund_unit")).toBe("수집기가 일부러 티커를 붙이지 않은 줄입니다(fund_unit) — 아래 종목의 주가와 값이 다를 수 있습니다.");
+  });
+});
+

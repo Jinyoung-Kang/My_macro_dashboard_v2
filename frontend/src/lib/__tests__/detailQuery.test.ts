@@ -3,7 +3,7 @@
  * 결과는 늘 `.length <= 60`이고 글자(코드 포인트)를 가르지 않아야 합니다. 이름은 모두 합성 값입니다.
  */
 import { describe, expect, it } from "vitest";
-import { DETAIL_QUERY_MAX, detailQuery } from "@/lib/detail";
+import { DETAIL_QUERY_MAX, detailQuery, SYMBOL_QUERY_MAX, symbolQuery } from "@/lib/detail";
 
 /** 짝 없는 서로게이트(코드 포인트를 가른 흔적)가 있는가. */
 const loneSurrogate = (text: string) => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text);
@@ -97,3 +97,28 @@ describe("detailQuery — 상세 화면의 뉴스·AI 요약 검색어(QA-448)",
     expect(detailQuery(sixtyChars)).toBe("x".repeat(59));
   });
 });
+
+describe("symbolQuery — 13F 종목 팝업의 종목 찾기 검색어(공시 이름, 상한 40)", () => {
+  it("상한은 백엔드 MAX_SYMBOL_QUERY·수집기 /live/symbols와 같은 40", () => {
+    expect(SYMBOL_QUERY_MAX).toBe(40);
+  });
+
+  it("40자 안이면 공백만 정리한 그대로, 비면 null", () => {
+    expect(symbolQuery("ISHARES TR")).toBe("ISHARES TR");
+    expect(symbolQuery("  BERKSHIRE   HATHAWAY INC DEL ")).toBe("BERKSHIRE HATHAWAY INC DEL");
+    expect(symbolQuery("   ")).toBeNull();
+    expect(symbolQuery(null)).toBeNull();
+  });
+
+  it("40자를 넘으면 낱말 경계에서 자르고 끝 이음 기호를 뗀다 — 결과는 늘 40자 이하", () => {
+    const forty = `${"SYNTHETIC ".repeat(3)}EXAMPLE CO`;
+    expect(forty).toHaveLength(40);
+    expect(symbolQuery(forty)).toBe(forty);
+    expect(symbolQuery("FICTIONAL UNIVERSAL INTERNATIONAL HOLDINGS GROUP INC")).toBe("FICTIONAL UNIVERSAL INTERNATIONAL");
+    expect(symbolQuery("FICTIONAL UNIVERSAL INTERNATIONAL CO & HOLDINGS")).toBe("FICTIONAL UNIVERSAL INTERNATIONAL CO");
+    for (const name of ["SPDR S&P MIDCAP 400 ETF TRUST SERIES ONE UNIT", `${"X".repeat(45)} CO`, "A ".repeat(30)]) {
+      expect((symbolQuery(name) ?? "").length).toBeLessThanOrEqual(SYMBOL_QUERY_MAX);
+    }
+  });
+});
+

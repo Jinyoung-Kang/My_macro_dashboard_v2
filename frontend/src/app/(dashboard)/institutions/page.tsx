@@ -25,6 +25,7 @@ import {
   PlusIcon,
   XCircleIcon,
 } from "@/components/ui/icons";
+import { HoldingQuickLink } from "@/components/screens/detail/HoldingQuickLink";
 import { useApi } from "@/hooks/useApi";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import {
@@ -209,8 +210,9 @@ export default function InstitutionsPage() {
                   key: "name",
                   header: "종목",
                   render: (row) => (
-                    <span className="flex flex-col">
-                      <span className="text-text-2">{row.name}</span>
+                    <span className="flex flex-col items-start">
+                      {/* 이름을 누르면 그 종목의 주가·정보 팝업 창(사용자 요청 2026-11-18 — 티커 없는 줄은 공시 이름으로 찾은 후보를 고름) */}
+                      <HoldingQuickLink holding={row} />
                       <span className="text-xs text-text-3">
                         CUSIP {row.cusip} · {row.class}
                       </span>

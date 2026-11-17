@@ -14,6 +14,13 @@ export interface Holding {
   weightDiff: number | null;
   sharesDiff: number | null;
   action: string;
+  /**
+   * 수집기가 이름 매핑표로 붙인 Yahoo 심볼(BRK-B 등 — GET /api/sec13f/portfolio만 내려 줌). 모르면 null — 13F 공시에는 티커가 없어
+   * 매핑표에 없는 이름·펀드·채권은 비어 있습니다. 13F 보유 표가 종목 팝업을 열 때 씁니다.
+   */
+  ticker?: string | null;
+  /** 회사 이름은 알지만 일부러 티커를 붙이지 않은 까닭 — "debt"(채권)·"non_common"(보통주 아닌 증권). 없으면 null. */
+  tickerNote?: string | null;
 }
 
 export interface PortfolioResponse {

@@ -432,6 +432,20 @@ export function detailQuery(name: string | null | undefined, max: number = DETAI
   return words.replace(QUERY_TAIL, "") || null;
 }
 
+/**
+ * 종목 찾기(GET /api/detail/symbols) 검색어 상한 — 백엔드 DetailService.MAX_SYMBOL_QUERY·수집기 /live/symbols와 같은 40. 백엔드는 앞뒤 공백을 뺀
+ * Java 길이(UTF-16 단위)로 재서 넘으면 400입니다.
+ */
+export const SYMBOL_QUERY_MAX = 40;
+
+/**
+ * 이름 → 종목 찾기 검색어(13F 보유 표의 종목 팝업이 티커 없는 줄의 공시 이름으로 후보를 찾을 때, 사용자가 고친 검색어도). 줄이는 규칙은
+ * {@link detailQuery}(공백 정리·낱말 경계에서 자르기·끝 이음 기호 떼기)이고 상한만 {@link SYMBOL_QUERY_MAX}입니다. 비면 null.
+ */
+export function symbolQuery(name: string | null | undefined): string | null {
+  return detailQuery(name, SYMBOL_QUERY_MAX);
+}
+
 /** 지표 이름 → 뉴스 검색어 — 괄호 안(영문 약칭·단위)과 '($)' 같은 단위 꼬리를 뗍니다("미국채 10년물 수익률(%)" → "미국채 10년물 수익률"). */
 export function indicatorNewsQuery(name: string): string {
   const stripped = withoutLeadingIcon(name).replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
