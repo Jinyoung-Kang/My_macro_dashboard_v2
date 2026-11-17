@@ -149,6 +149,15 @@ describe("표시 규칙", () => {
     expect(valueText(86, { unit: null, scale: "K" }, formatNumber)).toBe("86K");
   });
 
+  // QA-648: 실제·예상·이전 값의 음수가 ASCII '-'였습니다(개편 전부터) — 같은 화면군의 다른 음수(금리차 QA-622·순유동성 QA-627·COT QA-629·국면 QA-636·
+  // 상관계수)는 모두 −(U+2212)인데 이 표만 남았습니다(명세 D4·§3-1 '음수 부호는 −', P5a 검토). MoM·수지 지표는 음수가 흔합니다.
+  it.fails("QA-648 음수 값은 −(U+2212) — 통화 기호 앞 부호도", () => {
+    expect(valueText(-0.25, { unit: "%", scale: null }, formatNumber)).toBe("−0.25%");
+    expect(valueText(-7.5, { unit: "$", scale: "B" }, formatNumber)).toBe("−$7.5B");
+    expect(valueText(-12, { unit: null, scale: "K" }, formatNumber)).toBe("−12K");
+    expect(valueText(-1.2, { unit: "KRW", scale: "T" }, formatNumber)).toBe("−1.2T KRW");
+  });
+
   it("우회 수집 표기는 통과한 계층을 알 때만", () => {
     expect(bypassBadge("impersonate")).toBe("우회 수집 · 브라우저 TLS");
     expect(bypassBadge("browser")).toBe("우회 수집 · 브라우저");
