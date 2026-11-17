@@ -628,3 +628,20 @@ describe("QA-652 목차 '지표' 칸은 개수를 읽는 동안 개수 자리를
     }
   });
 });
+
+// QA-653: 지표 패널은 개요를 처음 읽는 동안 '불러오는 중' 한 줄(패널 147px)뿐이라, 값이 오면 표 다섯(패널 1,839~2,571px)으로 자라 아래 절(환율 비교 —
+// 1024에서 위 끝 454px, 화면 안)이 화면 밖으로 밀렸습니다. 자기 빌드 + QA API(지연 없음, 4초)에서 첫 적재 CLS 1024 0.518~0.538(기준 `a5cdae2f` 중앙값
+// 0.4322)·1280 0.4716·1440 0.456~0.462, 가장 큰 이동이 환율 비교 절(0.34~0.38). 읽는 동안 범주 다섯·줄 21개(수집기 매크로 범주 4·3·3·4·4 + 아시아 범주에
+// 붙는 비공식 시세 셋 — 자리일 뿐 보이는 수가 아님)의 표 꼴 자리(글·숫자 없는 막대)로 패널 높이를 잡아야 합니다.
+describe("QA-653 지표 패널은 개요를 처음 읽는 동안 표 꼴 자리로 높이를 잡는다", () => {
+  it.fails("읽는 중 지표 패널 — 범주 다섯·줄 21개의 글 없는 자리(읽기에서 빠짐)와 이름 있는 읽는 중 상태", () => {
+    render(<MacroPage />);
+    const panel = screen.getByRole("heading", { level: 2, name: "지표" }).closest("section") as HTMLElement;
+    const rows = panel.querySelectorAll("[data-macro-pending-row]");
+    expect(rows).toHaveLength(21);
+    expect(within(panel).getByRole("status", { name: "매크로 지표를 불러오는 중" })).toBeTruthy();
+    expect(panel.querySelectorAll("[data-macro-pending-block]")).toHaveLength(5);
+    expect(rows[0].closest("[aria-hidden='true']")).not.toBeNull();
+    expect(panel.textContent).not.toMatch(/\d/);
+  });
+});
