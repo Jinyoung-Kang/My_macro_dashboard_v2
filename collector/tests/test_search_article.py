@@ -296,6 +296,32 @@ def test_짧은_글은_short_80자_미만은_no_body():
         sa.extract(b"\x00\x01\x02 not html at all")
 
 
+def test_태그가_너무_많은_쪽은_추출하지_않는다(monkeypatch):
+    """추출은 시간 상한 밖에서 이 과정의 메모리를 씁니다 — 여는 태그 어림수가 MAX_TAGS를 넘으면 trafilatura를 부르지 않고 too_large."""
+    import trafilatura
+
+    called = []
+    monkeypatch.setattr(trafilatura, "bare_extraction", lambda *args, **kwargs: called.append(1))
+    unit = "<div><span><a href='#'>x</a></span></div>"
+    crowded = ("<html><body><article><p>" + "Body sentence words here. " * 20 + "</p>" + unit * (sa.MAX_TAGS // 3 + 10)
+               + "</article></body></html>").encode()
+    assert sa.start_tags(crowded.decode()) > sa.MAX_TAGS
+    with pytest.raises(sa.NoBody) as caught:
+        sa.extract(crowded, content_type="text/html")
+    assert caught.value.reason == "too_large" and called == [] and "50,000" in str(caught.value)
+    assert sa.MAX_TAGS == 50_000
+    assert sa.start_tags("<p>a</p><br/><!-- c --><div>") == 4, "닫는 태그는 빼고 주석은 셈(넉넉히 많게)"
+
+
+def test_태그_관문을_넘은_실패는_too_large로_캐시(env):
+    unit = "<tr><td>1</td></tr>"
+    env.body["value"] = ("<html><body><table>" + unit * (sa.MAX_TAGS // 2 + 10) + "</table></body></html>").encode()
+    ref = _register("https://news.example.com/a")
+    sa.request(ref, start=True)
+    answer = _done(ref)
+    assert (answer["status"], answer["reason"], answer["retryable"]) == ("error", "too_large", False)
+
+
 def test_유료_표시():
     assert sa.extract((FIXTURES / "paywall.html").read_bytes(), content_type="text/html").paywalled is True
     assert sa.extract((FIXTURES / "en_utf8.html").read_bytes(), content_type="text/html").paywalled is False

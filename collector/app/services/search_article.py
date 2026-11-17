@@ -13,7 +13,7 @@ app/services/search_article.py
   (start가 거짓이면 not_cached) → 기억표 → 받지 않는 매체 → 호스트 닫힘 → 줄 상한(:data:`QUEUE_LIMIT`) → 하루 전체 예산(fetch_budgets ``*``/article,
   :data:`DAILY_BUDGET`) → 작업자 하나(한 번에 한 건, 작업 상한 :data:`JOB_DEADLINE`초)에 넘기고 ``pending``·``queued``.
 - 작업자: 구글 경유면 원문 주소로 풀기(services/search_relay — 요청 0~2건) → 한 건 받기(app/fetch/article — 홉마다 주소 검사·고정 주소·리다이렉트 3번·
-  3MB·HTML만) → 본문 추출(:func:`extract` — trafilatura 2.3.1, 처음 쓸 때 가져옴) → 메모리 캐시(성공 24시간, 실패는 사유별 — :func:`_ttl`).
+  3MB·HTML만) → 본문 추출(:func:`extract` — trafilatura 2.3.1, 처음 쓸 때 가져옴, 여는 태그 :data:`MAX_TAGS`개 넘으면 하지 않음) → 메모리 캐시(성공 24시간, 실패는 사유별 — :func:`_ttl`).
 - 사유 글·로그에는 호스트·상태·사유 코드만(경로·인자·제목·본문·꼬리표 없음).
 """
 from __future__ import annotations
@@ -53,6 +53,11 @@ SHORT_CHARS = 400                         # 이보다 짧으면 성공이되 sho
 MIN_CHARS = 80                            # 이보다 짧으면 no_body
 AUTHOR_MAX = 200
 TITLE_MAX = 500
+# 추출 앞 관문 — 여는 태그 어림수('<' 수 − '</' 수 — 주석·스크립트 안의 '<'도 셈, 넉넉히 많게 셈)가 이보다 많으면 추출하지 않습니다. 추출(trafilatura —
+# lxml 트리와 그 복사본)은 시간 상한(JOB_DEADLINE — 네트워크에만 걸림) 밖에서 이 과정의 메모리를 씁니다. 이 PC 실측(Python 3.11, trafilatura 2.3.1,
+# lxml 6.1.3): 여는 태그 6만 개(<div><span><a> 반복 0.8MB) 2.3초·최대 +73MB, 4만 개(표 칸 반복) 0.9초·+55MB, 12만 개 4.4초·+145MB — 3MB 전부가
+# 태그면 수 초·수백 MB라 수집기(mem_limit 1g — 실제 매매 주문 길·모의 매매 입력 수집과 같은 과정)를 지키려고 둡니다. 보통 기사 쪽은 수천 개입니다.
+MAX_TAGS = 50_000
 
 SUCCESS_TTL = 86_400.0                    # 성공 24시간(사용자 결정)
 SHAPE_TTL = 1_800.0                       # no_body·not_html·too_large·http_error(4xx) 30분
@@ -208,7 +213,11 @@ class Extracted:
 
 
 class NoBody(Exception):
-    """본문을 추리지 못함(80자 미만·추출 실패)."""
+    """본문을 추리지 못함(80자 미만·추출 실패 — 사유 no_body, 태그가 너무 많아 추출하지 않음 — 사유 too_large)."""
+
+    def __init__(self, message: str, *, reason: str = "no_body") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 _CHARSET = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([A-Za-z0-9_\-:.]+)""", re.IGNORECASE)
@@ -271,6 +280,11 @@ def language_of(text: str, html_lang: str | None) -> str | None:
     return html_lang.lower() if html_lang else None
 
 
+def start_tags(markup: str) -> int:
+    """여는 태그 어림수 — '<' 수에서 닫는 태그 '</' 수를 뺌(C 속도의 셈 두 번 — 정규식이나 목록을 만들지 않음)."""
+    return markup.count("<") - markup.count("</")
+
+
 def _trafilatura_config():
     global _config
     with _config_lock:
@@ -316,9 +330,12 @@ def extract(body: bytes, *, content_type: str | None = None, fallback_title: str
     """
     HTML → 본문 문단과 메타데이터. 메뉴·추천 글보다 덜 가져오는 쪽(favor_precision), 표는 넣음(실적·지표 표 — 칸은 ' | '로 이어짐), 댓글·그림·링크는 뺌.
 
-    :raises NoBody: 추린 글이 :data:`MIN_CHARS`자 미만이거나 추출이 실패함
+    :raises NoBody: 추린 글이 :data:`MIN_CHARS`자 미만이거나 추출이 실패함(no_body), 여는 태그가 :data:`MAX_TAGS`개를 넘어 추출하지 않음(too_large)
     """
     markup = decode(body, content_type)
+    if start_tags(markup) > MAX_TAGS:
+        logger.info("본문 추출 건너뜀(여는 태그 %d개 넘음)", MAX_TAGS)
+        raise NoBody(f"페이지 구조가 너무 커서(태그 {MAX_TAGS:,}개 넘음) 본문을 추리지 않았습니다 — 원문 열기로 보세요", reason="too_large")
     try:
         from trafilatura import bare_extraction
 
@@ -484,7 +501,7 @@ def _work(origin: _Origin, deadline: float) -> _Entry:
     try:
         found = extract(page.body, content_type=page.content_type, fallback_title=origin.title, fallback_site=origin.publisher)
     except NoBody as exc:
-        return _fail("no_body", str(exc))
+        return _fail(exc.reason, str(exc))
     stamp = _now_iso()
     article = {
         "title": found.title,
