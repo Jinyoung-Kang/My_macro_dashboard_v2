@@ -74,7 +74,7 @@ export function TrackRecordSection() {
       source={SOURCES.regimeTrackRecord}
       subtitle={
         data?.available
-          ? `${data.assetLabel} · 판정 ${data.evaluatedFrom ?? EMPTY} ~ ${data.evaluatedTo ?? EMPTY} (매주 목요일 ${data.knownWeeks ?? 0}주 판정)`
+          ? `${data.assetLabel} · 판정 ${data.evaluatedFrom ?? EMPTY} ~ ${data.evaluatedTo ?? EMPTY} (매주 목요일 ${typeof data.knownWeeks === "number" ? data.knownWeeks.toLocaleString("ko-KR") : EMPTY}주 판정)`
           : "판정을 과거에 그대로 적용했을 때 그 뒤 수익률"
       }
       actions={

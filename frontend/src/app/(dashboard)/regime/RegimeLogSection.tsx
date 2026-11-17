@@ -79,6 +79,8 @@ export function RegimeLogSection() {
     summary: <Summary parts={regimeLogSummaryParts(row)} />,
     title: `${row.date} 판정 — ${row.label}`,
   }));
+  // 기록 시각(KST 시) — 응답에 없으면 시각 마디를 뺍니다(18시처럼 지어내지 않음 — QA-647).
+  const hour = typeof data?.recordHourKst === "number" && Number.isFinite(data.recordHourKst) ? data.recordHourKst : null;
   // 응답 전에는 목록 대신 자리표시 — 읽기가 실패했으면 오류 상자와 다시 시도, 아니면 읽는 중 막대(빈 목록 글이 잠깐 비치지 않게).
   const placeholder = data ? null : error ? <ErrorState message={error} onRetry={reload} /> : <Skeleton lines={4} label="판정 기록을 읽는 중" />;
 
@@ -88,7 +90,7 @@ export function RegimeLogSection() {
       source={SOURCES.regimeLog}
       subtitle={
         data?.available
-          ? `${data.startedOn ?? EMPTY}부터 ${data.count ?? 0}건 · 매일 KST ${data.recordHourKst ?? 18}시 이후 한 건`
+          ? `${data.startedOn ?? EMPTY}부터 ${typeof data.count === "number" ? data.count.toLocaleString("ko-KR") : EMPTY}건 · 매일 ${hour === null ? "" : `KST ${hour}시 이후 `}한 건`
           : "그날 화면에 보인 판정을 하루 한 건씩 남깁니다"
       }
       // 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음).
@@ -102,7 +104,7 @@ export function RegimeLogSection() {
           entries={entries}
           autoSelectFirst
           placeholder={placeholder}
-          emptyText={`아직 기록이 없습니다. 첫 기록은 KST ${data?.recordHourKst ?? 18}시 이후에 생깁니다.`}
+          emptyText={hour === null ? "아직 기록이 없습니다. 기록은 하루 한 건씩 생깁니다." : `아직 기록이 없습니다. 첫 기록은 KST ${hour}시 이후에 생깁니다.`}
           inspectorHint="줄을 고르면 이 칸에 근거 넷의 값·기준일과 판정 불가 사유가 나옵니다(j/k·↑↓로 옮김)."
           renderDetail={(entry) => {
             const row = byDate.get(entry.key);
