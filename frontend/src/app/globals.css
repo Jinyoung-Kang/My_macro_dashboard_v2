@@ -222,6 +222,13 @@
     outline-offset: 2px;
   }
 
+  /* 코드가 포커스를 옮기는 제목(tabindex -1 — 같은 화면 닻 링크 lib/hashLink가 목차로 옮긴 절 제목에 잠시 붙임, QA-680 보강)에는 링을 그리지 않습니다.
+     누를 수 있는 것이 아니고, 키보드로 목차를 누르면 :focus-visible이 이어져 절 제목 줄 전체에 링이 섰습니다(계좌 상세 제목의 focus:outline-hidden,
+     절 닻·본문 main의 outline-none과 같은 뜻). 위 기본값보다 특이도가 높고 base 층이라 화면별 유틸리티는 그대로 이깁니다. */
+  :is(h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus-visible {
+    outline: none;
+  }
+
   /* 넓은 화면 왼쪽 메뉴의 폭 손잡이를 끄는 동안(hooks/useNavResize가 html에 data-nav-resizing을 붙였다 놓을 때 뗌) — 손잡이 밖(본문의 링크·단추
      위)으로 나가도 커서는 col-resize이고 글이 골라지지 않습니다. base 층의 !important라 화면별 cursor·select 유틸리티보다 앞섭니다(끄는 동안만). */
   html[data-nav-resizing],

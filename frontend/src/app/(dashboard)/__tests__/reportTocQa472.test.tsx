@@ -45,7 +45,7 @@ describe("AI 리포트 목차", () => {
 // 1440 — 한 번 더 뒤로 가야 리포트). 긴 화면 목차(SectionIndex)와 같은 원인·같은 고침입니다. 기본 동작이 막혔는지는 창까지 올라온 click에서 적고, 남은 기본
 // 동작(jsdom의 해시 이동)은 거기서 막습니다. 수정 전(재현 커밋에서는 it.fails)에는 막지 않아 pushState를 부르지 않았습니다.
 describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 절로 옮긴다", () => {
-  it("수식키 없는 누름 — 기본 동작을 막고 pushState(null, '', '#절')로 기록 하나, 그 절로 scrollIntoView하고 절에 포커스 — 수식키 누름은 브라우저에 맡김", () => {
+  it("수식키 없는 누름 — 기본 동작을 막고 pushState(null, '', '#절')로 기록 하나, 그 절로 scrollIntoView하고 절 제목에 포커스 — 수식키 누름은 브라우저에 맡김", () => {
     const prevented: boolean[] = [];
     const listener = (event: MouseEvent) => {
       prevented.push(event.defaultPrevented);
@@ -65,7 +65,8 @@ describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushStat
       const section = document.getElementById(href.slice(1)) as HTMLElement;
       expect(section.tagName).toBe("SECTION");
       expect(into.mock.contexts).toEqual([section]);
-      expect(document.activeElement).toBe(section);
+      // 포커스는 절이 아니라 절 제목(아래 QA-680 보강 시험).
+      expect(document.activeElement).toBe(section.querySelector("h3"));
       // 수식키 누름(새 탭 등)은 브라우저에 맡김
       fireEvent.click(link, { ctrlKey: true });
       expect(prevented).toEqual([true, false]);
@@ -80,8 +81,8 @@ describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushStat
 
   // QA-680 보강: 고침이 포커스를 절(section, 이름 없음 — generic)에 두어 크롬이 접근 이름을 절 내용 전체로 계산했습니다(머리 없는 크롬 CDP — '핵심 요약 요약
   // 본문', nameSources contents). 낭독기가 목차를 누를 때마다 절 전체를 읽으므로 포커스는 절 제목(h3)에 둡니다(옮기기는 그대로 절). 수정 전(재현 커밋에서는
-  // it.fails)에는 포커스가 section이었습니다.
-  it.fails("포커스는 절 제목(h3 — 접근 이름 = 목차 칸 글)에, 옮기기는 절", () => {
+  // it.fails)에는 포커스가 section이었습니다. 고침: lib/hashLink followHashLink가 닻 안 첫 제목에 포커스(제목이 없으면 닻).
+  it("포커스는 절 제목(h3 — 접근 이름 = 목차 칸 글)에, 옮기기는 절", () => {
     const listener = (event: MouseEvent) => event.preventDefault();
     window.addEventListener("click", listener);
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});

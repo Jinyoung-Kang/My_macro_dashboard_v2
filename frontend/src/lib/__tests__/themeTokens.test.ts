@@ -275,6 +275,18 @@ describe("포커스 링 기본값(명세 §3-8 — FOCUS_RING과 같은 모양)"
     // 맨 바깥(레이어 밖)에는 포커스 규칙을 두지 않습니다.
     expect(RULES.filter((rule) => rule.selector.includes(":focus-visible"))).toEqual([]);
   });
+
+  // QA-680 보강: 같은 화면 닻 링크(lib/hashLink)가 목차로 옮긴 절 제목에 잠시 tabindex -1을 붙여 포커스합니다. 키보드로 목차를 누르면 :focus-visible이
+  // 이어져(머리 없는 크롬 — Tab·Enter 뒤 제목이 :focus-visible, 위 기본값의 2px 링) 절 제목 줄 전체에 링이 섰습니다. 누를 수 있는 것이 아니라 링을 그리지
+  // 않습니다(계좌 상세 제목의 focus:outline-hidden·절 닻의 outline-none과 같은 뜻). base 층이라 화면별 유틸리티는 그대로 이깁니다.
+  it("QA-680 보강: 코드가 포커스를 옮기는 제목(tabindex -1)의 링은 base 층에서 없앤다", () => {
+    const bases = RULES.filter((rule) => rule.selector === "@layer base");
+    const rules = bases.flatMap((rule) =>
+      [...rule.body.matchAll(/:is\(h1, h2, h3, h4, h5, h6\)\[tabindex="-1"\]:focus-visible\s*\{([^}]*)\}/g)].map((match) => match[1]),
+    );
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatch(/(?:^|;)\s*outline:\s*none\s*;/);
+  });
 });
 
 describe("고대비(forced-colors) 차트 잉크", () => {

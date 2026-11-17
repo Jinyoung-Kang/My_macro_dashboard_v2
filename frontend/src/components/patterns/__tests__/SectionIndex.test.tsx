@@ -595,7 +595,8 @@ describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 �
 // Next의 popstate를 재현하지 못하므로 누름이 기본 해시 이동 대신 pushState·닻 이동이 되는지를 봅니다. 기본 동작이 막혔는지는 창까지 올라온 click에서
 // 그때의 defaultPrevented로 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막아 다음 시험에 주소가 남지 않게 합니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 기본 동작을 막지 않아(defaultPrevented false) pushState를 부르지 않았습니다.
-// 고침: 칸의 onClick이 lib/hashLink followHashLink — 닻(SectionAnchor)은 tabIndex -1(바깥선 없음)이라 포커스를 받습니다.
+// 고침: 칸의 onClick이 lib/hashLink followHashLink — 포커스는 닻 안 첫 제목에(아래 보강), 제목이 없으면 닻(SectionAnchor — tabIndex -1·바깥선 없음).
+// 아래 첫 시험의 닻은 제목 없는 글이라 닻에 포커스합니다.
 describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 닻으로 옮긴다", () => {
   const BASE_PATH = () => window.location.pathname + window.location.search;
   /** 창까지 올라온 누름마다 기본 동작이 막혔는지 적고, 남은 기본 동작은 막습니다. */
@@ -654,8 +655,9 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
   // 포커스하면 role heading, name '금리'(제목 글)였습니다. 그래서 포커스는 닻 안 첫 제목(h1~h6)에 두고(옮기기는 그대로 닻 — scroll-margin), 제목이 없을
   // 때만 닻에 둡니다. 제목에는 그때만 tabindex -1을 붙였다가 포커스가 떠나면 뗍니다(원래 tabindex가 있던 제목은 그대로).
   // jsdom(dom-accessibility-api)은 generic의 내용 이름을 계산하지 않아 이름 길이로는 못 잡으므로 포커스된 요소가 그 절 제목(역할 heading·이름 = 제목 글)
-  // 인지를 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 포커스가 닻(div)이었습니다.
-  it.fails("포커스는 닻 안 첫 제목(접근 이름 = 절 제목)에 — 옮기기는 닻, 제목에 붙인 tabindex -1은 포커스가 떠나면 뗀다, 제목 없는 닻은 닻에", () => {
+  // 인지를 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 포커스가 닻(div)이었습니다. 고침: followHashLink가 닻 안 첫 제목에 tabindex -1을 붙여 포커스하고
+  // 포커스가 떠나면 뗌(제목 링은 globals.css의 base 규칙이 지움 — themeTokens 시험).
+  it("포커스는 닻 안 첫 제목(접근 이름 = 절 제목)에 — 옮기기는 닻, 제목에 붙인 tabindex -1은 포커스가 떠나면 뗀다, 제목 없는 닻은 닻에", () => {
     const clicks = watchClicks();
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
     try {
