@@ -147,7 +147,7 @@ export type GurusResponse = {
   gurus?: Guru[] | null;
 };
 
-// ------------------------------------------------------------------ 화면 탭(하위 메뉴 줄 — lib/nav의 info 탭과 같은 순서)
+// ------------------------------------------------------------------ 화면 탭(하위 메뉴 줄 — lib/nav 더보기 탭의 '정보 수집' 묶음과 같은 순서)
 export type InfoTab = "overview" | "news" | "kr" | "global" | "filings" | "paper" | "status" | "mechanism";
 
 export const INFO_TAB_SLUGS: readonly InfoTab[] = ["overview", "news", "kr", "global", "filings", "paper", "status", "mechanism"];

@@ -1,8 +1,11 @@
 /**
- * 화면 메뉴(정보 구조) — 홈·시장·기관·모의매매·정보 검색·정보 수집·더보기(ADR 0041 결정 1), 하위 화면, 지금 탭, 탭 제목, 검색 메뉴 항목.
+ * 화면 메뉴(정보 구조) — 홈·시장·기관·모의매매·정보 검색·더보기(ADR 0041 결정 1, 2026-11-18 정보 수집은 더보기 안 묶음으로), 하위 화면, 지금 탭,
+ * 탭 제목, 검색 메뉴 항목.
  */
 import { describe, expect, it } from "vitest";
+import { INFO_TAB_SLUGS } from "../info";
 import {
+  INFO_GROUP,
   KR_MARKET_GROUP,
   TABS,
   activeItem,
@@ -28,14 +31,13 @@ const tab = (key: string) => {
 };
 
 describe("탭 표(브리프 §1.3 그대로)", () => {
-  it("홈·시장·기관·모의매매·정보 검색·정보 수집·더보기의 키·이름·이동 경로 — 한국 탭은 없다(ADR 0041 결정 1)", () => {
+  it("홈·시장·기관·모의매매·정보 검색·더보기의 키·이름·이동 경로 — 한국 탭(ADR 0041 결정 1)·정보 수집 탭(2026-11-18)은 없다", () => {
     expect(TABS.map((entry) => [entry.key, entry.label, entry.href])).toEqual([
       ["home", "홈", "/"],
       ["markets", "시장", "/macro"],
       ["institutions", "기관", "/institutions"],
       ["paper", "모의매매", "/paper/us"],
       ["search", "정보 검색", "/search"],
-      ["info", "정보 수집", "/info/overview"],
       ["more", "더보기", "/more"],
     ]);
   });
@@ -53,14 +55,12 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     // 한국 책 화면(2단계 명세 §4-16, F2) — 예전 '한국 · 준비 중' 표시는 없어지고 링크가 됨.
     expect(items("paper")).toEqual(["미국 /paper/us", "한국 /paper/kr"]);
     expect(tab("paper").upcoming).toBeUndefined();
-    // 정보 수집(ADR 0036 — ADR 0041부터 정보 검색과 더보기 사이) — 하위 메뉴 줄이 큰 분류 탭.
-    expect(items("info")).toEqual([
-      "개요 /info/overview", "뉴스·글 /info/news", "국내 시장·수급 /info/kr", "해외 시장·거시 /info/global", "기관·공시 /info/filings",
-      "모의매매 입력 /info/paper", "출처 상태 /info/status", "정보(메커니즘) /info/mechanism",
-    ]);
+    // 묶음 차례: 묶음 없는 화면 → 한국 시장 → 정보 수집(2026-11-18 — 운영자 전용 여덟 칸을 맨 뒤에).
     expect(items("more")).toEqual([
       "알림 /alerts", "AI 종합 분석 /ai/report", "데이터 저장소 상태 /status", "외부 API 연결 테스트 /connections",
       "사용자 관리 /admin/users", "내 계정 /account", "수급 레이더 /radar", "파생·투기세력(KRX) /krx",
+      "개요 /info/overview", "뉴스·글 /info/news", "국내 시장·수급 /info/kr", "해외 시장·거시 /info/global", "기관·공시 /info/filings",
+      "모의매매 입력 /info/paper", "출처 상태 /info/status", "정보(메커니즘) /info/mechanism",
     ]);
   });
 
@@ -71,6 +71,23 @@ describe("탭 표(브리프 §1.3 그대로)", () => {
     for (const other of TABS.filter((entry) => entry.key !== "more")) {
       expect(other.items.every((item) => item.group === undefined)).toBe(true);
     }
+    expect(tab("more").items.filter((item) => !item.group).map((item) => item.href)).toEqual([
+      "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account",
+    ]);
+  });
+
+  // 2026-11-18 사용자 요청: 정보 수집을 맨 위 단계 탭에서 빼 더보기 안의 묶음으로(한국 시장과 같은 방식). 주소·제목·검색어는 그대로입니다.
+  it("정보 수집은 맨 위 단계 탭이 아니라 더보기의 '정보 수집' 묶음 여덟 화면 — 주소는 /info/<분류> 그대로(lib/info 탭 조각과 같은 순서)", () => {
+    expect(INFO_GROUP).toBe("정보 수집");
+    expect(TABS.map((entry) => entry.label)).not.toContain("정보 수집");
+    expect(TABS.some((entry) => entry.href.startsWith("/info"))).toBe(false);
+    const info = tab("more").items.filter((item) => item.group === INFO_GROUP);
+    expect(info.map((item) => item.href)).toEqual(INFO_TAB_SLUGS.map((slug) => `/info/${slug}`));
+    // 하위 화면이 /info로 시작하는 것은 이 묶음뿐(다른 탭·묶음 없는 화면에 섞이지 않음).
+    expect(TABS.flatMap((entry) => entry.items).filter((item) => item.href.startsWith("/info"))).toEqual(info);
+    // 묶음 차례는 '한국 시장' 다음(맨 뒤).
+    const groups = [...new Set(tab("more").items.map((item) => item.group ?? null))];
+    expect(groups).toEqual([null, KR_MARKET_GROUP, INFO_GROUP]);
   });
 });
 
@@ -95,6 +112,11 @@ describe("지금 탭·화면", () => {
     expect(keyOf("/ai/report")).toBe("more");
     expect(keyOf("/admin/users")).toBe("more");
     expect(keyOf("/account")).toBe("more");
+    // 정보 수집 여덟 화면과 옛 /info(next.config가 /info/overview로 보냄)는 더보기 탭(2026-11-18).
+    expect(keyOf("/info")).toBe("more");
+    for (const slug of INFO_TAB_SLUGS) expect(keyOf(`/info/${slug}`)).toBe("more");
+    expect(activeItem("/info/news")?.group).toBe(INFO_GROUP);
+    expect(activeTab("/infox")).toBeNull();
   });
 
   it("메뉴에 없는 경로와 앞부분만 같은 경로는 어느 탭도 아니다(/macroeconomics·/paperclip — '/' 경계)", () => {
@@ -143,22 +165,27 @@ describe("지금 탭·화면", () => {
     expect(tabCurrent(tab("more"), "/radar")).toBe("true");
     expect(tabCurrent(tab("more"), "/krx")).toBe("true");
     expect(tabCurrent(tab("search"), "/search")).toBe("page");
+    // 정보 수집 화면에서도 더보기 탭이 '이 탭 안'(true) — 좁은 화면 아래 탭 바의 더보기가 지금 탭으로 보입니다.
+    expect(tabCurrent(tab("more"), "/info/overview")).toBe("true");
+    expect(tabCurrent(tab("more"), "/info/mechanism")).toBe("true");
   });
 });
 
 describe("보이는 탭·하위 화면(lib/access 앞부분 일치)", () => {
-  it("운영자는 일곱 탭(정보 수집 포함), 회원·데모·모르는 사용자는 모의매매·정보 수집 탭이 빠지고 정보 검색은 보인다(D-1)", () => {
-    expect(visibleTabs(OWNER).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "정보 수집", "더보기"]);
+  it("운영자는 여섯 탭, 회원·데모·모르는 사용자는 모의매매 탭이 빠지고 정보 검색은 보인다(D-1)", () => {
+    expect(visibleTabs(OWNER).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "모의매매", "정보 검색", "더보기"]);
     for (const user of [MEMBER, DEMO, undefined]) {
       expect(visibleTabs(user).map((entry) => entry.label)).toEqual(["홈", "시장", "기관", "정보 검색", "더보기"]);
     }
   });
 
-  it("더보기의 운영자 화면(저장소 상태·연결 테스트·사용자 관리)은 운영자에게만, 내 계정은 데모 열람에게 없다", () => {
+  it("더보기의 운영자 화면(저장소 상태·연결 테스트·사용자 관리·정보 수집 묶음)은 운영자에게만, 내 계정은 데모 열람에게 없다", () => {
     expect(visibleItems(tab("more"), MEMBER).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account", "/radar", "/krx"]);
     expect(visibleItems(tab("more"), DEMO).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/radar", "/krx"]);
+    expect(visibleItems(tab("more"), undefined).map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account", "/radar", "/krx"]);
     expect(visibleItems(tab("more"), OWNER).map((item) => item.href)).toEqual([
       "/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account", "/radar", "/krx",
+      ...INFO_TAB_SLUGS.map((slug) => `/info/${slug}`),
     ]);
   });
 });
@@ -199,6 +226,27 @@ describe("하위 메뉴 줄", () => {
     expect(subNav("/paper/kr", MEMBER)).toBeNull();
   });
 
+  it("정보 수집(운영자): /info/news의 하위 메뉴 줄은 '정보 수집' 묶음 여덟 칸 — 더보기의 다른 화면·한국 시장이 섞이지 않는다", () => {
+    const info = subNav("/info/news", OWNER);
+    expect(info?.tab.key).toBe("more");
+    expect(info?.label).toBe("정보 수집");
+    expect(info?.items.map((item) => item.label)).toEqual([
+      "개요", "뉴스·글", "국내 시장·수급", "해외 시장·거시", "기관·공시", "모의매매 입력", "출처 상태", "정보(메커니즘)",
+    ]);
+    expect(info?.current).toBe("/info/news");
+    expect(info?.currentAria).toBe("page");
+    // 반대로 더보기·한국 시장 화면의 줄에는 정보 수집 화면이 없다.
+    expect(subNav("/alerts", OWNER)?.items.map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/status", "/connections", "/admin/users", "/account"]);
+    expect(subNav("/radar", OWNER)?.items.map((item) => item.href)).toEqual(["/radar", "/krx"]);
+  });
+
+  it("정보 수집은 회원·데모·모르는 사용자에게 보이지 않는다 — 주소로 열어도 하위 메뉴 줄이 없다(운영자 전용 /info 앞부분 일치)", () => {
+    for (const user of [MEMBER, DEMO, undefined]) {
+      expect(subNav("/info/news", user)).toBeNull();
+      expect(visibleItems(tab("more"), user).some((item) => item.href.startsWith("/info"))).toBe(false);
+    }
+  });
+
   it("더보기: 회원에게는 운영자 화면이 빠지고, 더보기 화면 자체(/more)에서는 고른 것이 없다", () => {
     expect(subNav("/alerts", MEMBER)?.items.map((item) => item.href)).toEqual(["/alerts", "/ai/report", "/account"]);
     expect(subNav("/alerts", MEMBER)?.label).toBe("더보기");
@@ -219,6 +267,10 @@ describe("브라우저 탭 제목", () => {
     expect(documentTitle("/radar")).toBe("수급 레이더 · 매크로 대시보드");
     expect(documentTitle("/krx")).toBe("파생·투기세력(KRX) · 매크로 대시보드");
     expect(documentTitle("/search")).toBe("정보 검색 · 매크로 대시보드");
+    // 더보기로 옮긴 정보 수집 화면의 제목도 그대로(제목용 이름에 '정보 수집'이 들어 있음)
+    expect(documentTitle("/info/overview")).toBe("정보 수집 개요 · 매크로 대시보드");
+    expect(documentTitle("/info/news")).toBe("정보 수집 · 뉴스·글 · 매크로 대시보드");
+    expect(documentTitle("/info/mechanism")).toBe("정보 수집 · 작동 방식 · 매크로 대시보드");
   });
 
   it("짧은 이름만으로 뜻이 모자라면 제목용 이름을 쓴다 — 모의매매 미국 화면은 '미국'이 아니라 '모의매매(미국)'", () => {
@@ -258,6 +310,23 @@ describe("통합 검색의 메뉴 항목", () => {
     expect(liquidity).toEqual({
       href: "/liquidity", label: "순유동성", section: "시장", tab: "markets", keywords: ["시장", "연준 순유동성 트래커"], locked: false,
     });
+  });
+
+  it("정보 수집 여덟 화면은 운영자에게만 — 보조 글은 묶음 이름(정보 수집), 아이콘 원은 더보기 탭, '정보 수집'으로 찾힌다", () => {
+    const items = navSearchItems(OWNER);
+    const info = items.filter((item) => item.href.startsWith("/info"));
+    expect(info.map((item) => item.href)).toEqual(INFO_TAB_SLUGS.map((slug) => `/info/${slug}`));
+    for (const item of info) {
+      expect(item.section).toBe("정보 수집");
+      expect(item.tab).toBe("more");
+      expect(item.keywords).toEqual(expect.arrayContaining(["더보기", "정보 수집"]));
+    }
+    expect(info.find((item) => item.href === "/info/news")?.label).toBe("정보 수집 · 뉴스·글");
+    // 더보기 화면 항목은 한 번(맨 끝)
+    expect(items.filter((item) => item.href === "/more")).toHaveLength(1);
+    for (const user of [MEMBER, DEMO, undefined]) {
+      expect(navSearchItems(user).some((item) => item.href.startsWith("/info"))).toBe(false);
+    }
   });
 
   it("옛 한국 탭의 두 화면은 '한국'으로 계속 찾힌다 — 보조 글은 묶음 이름(한국 시장), 아이콘 원은 더보기 탭", () => {

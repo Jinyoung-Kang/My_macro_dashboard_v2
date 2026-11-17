@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSessionUser } from "@/hooks/useSessionUser";
 import { lockedFor } from "@/lib/access";
-import { KR_MARKET_GROUP, TABS, visibleItems, visibleTabs } from "@/lib/nav";
+import { INFO_GROUP, KR_MARKET_GROUP, TABS, visibleItems, type NavItem } from "@/lib/nav";
 import type { SessionUser } from "@/lib/types";
 import { AccountBox } from "./AccountBox";
 import { BuildInfo } from "./BuildInfo";
@@ -14,8 +14,9 @@ import { RefreshButton } from "./RefreshButton";
 import { ChevronRightIcon, MenuIcon } from "./icons";
 
 const MORE = TABS.find((tab) => tab.key === "more");
-/** 정보 수집 — 좁은 화면의 아래쪽 탭 바에 없어(6칸 유지) 더보기 메뉴의 첫 줄로 엽니다(운영자에게만, 사용자 결정 2026-11-11). */
-const INFO = TABS.find((tab) => tab.key === "info");
+
+/** 묶음 제목의 id(묶음 이름 → 영역 이름표). 표에 없는 묶음은 순서 번호로. */
+const GROUP_IDS: Record<string, string> = { [KR_MARKET_GROUP]: "more-kr", [INFO_GROUP]: "more-info" };
 
 /**
  * 더보기 화면(/more) — 더보기 하위 화면 목록(행) + 계정 영역 + 읽기 모드·수동 새로고침(운영자) + 빌드 정보.
@@ -25,29 +26,39 @@ const INFO = TABS.find((tab) => tab.key === "info");
  * (QA-564, 명세 §5). 새로고침·로그아웃은 홀로 선 단추라 기본 크기(좁은 화면 44px, 로그아웃은 넓은 화면 30px)입니다.
  * 테마 전환 행은 없습니다(어두운 한 벌 — ADR 0042 결정 2). 운영자 전용 화면은 운영자에게만, 유료 화면은 무료 회원에게 자물쇠 아이콘.
  * 하위 화면은 목록 행(높이 64px — 원 안 아이콘 · 화면 이름 · 오른쪽 화살표)이고, 행 전체가 링크입니다(hover 바탕).
- * 묶음은 둘 — '메뉴'(정보 수집 행이 맨 위 + 묶음 없는 더보기 화면)와 그다음 '한국 시장'(옛 한국 탭의 수급 레이더·파생·투기세력, ADR 0041 결정 1).
+ * 묶음은 '메뉴'(묶음 없는 더보기 화면)와 그다음 메뉴 표(lib/nav TABS)의 묶음 차례 — '한국 시장'(옛 한국 탭의 수급 레이더·파생·투기세력, ADR 0041 결정 1),
+ * '정보 수집'(여덟 분류, 운영자에게만 — 2026-11-18 사용자 요청으로 맨 위 단계 탭에서 이 묶음으로, 그 전에는 '메뉴' 맨 위 행 하나).
  */
 export function MoreMenu() {
   const user = useSessionUser();
-  const infoRow = INFO && visibleTabs(user).includes(INFO) ? [{ href: INFO.href, label: INFO.label }] : [];
   const visible = MORE ? visibleItems(MORE, user) : [];
-  const items = [...infoRow, ...visible.filter((item) => !item.group)];
-  const krItems = visible.filter((item) => item.group === KR_MARKET_GROUP);
+  const items = visible.filter((item) => !item.group);
+  const groups: { label: string; items: NavItem[] }[] = [];
+  for (const item of visible) {
+    if (!item.group) continue;
+    const group = groups.find((entry) => entry.label === item.group);
+    if (group) group.items.push(item);
+    else groups.push({ label: item.group, items: [item] });
+  }
   return (
     <div className="flex flex-col gap-6 lg:gap-8">
-      <PageHeader title="더보기" description="알림·한국 시장·계정·운영 화면과 빌드 정보" />
+      {/* 설명의 묶음 이름은 이 사용자에게 보이는 묶음 그대로(운영자에게만 '정보 수집'). */}
+      <PageHeader title="더보기" description={["알림", ...groups.map((group) => group.label), "계정·운영 화면과 빌드 정보"].join("·")} />
 
       <section aria-labelledby="more-menus" className="flex flex-col gap-2">
         <h2 id="more-menus" className="text-sm font-semibold text-text-2">메뉴</h2>
         <MenuRows items={items} user={user} />
       </section>
 
-      {krItems.length > 0 && (
-        <section aria-labelledby="more-kr" className="flex flex-col gap-2">
-          <h2 id="more-kr" className="text-sm font-semibold text-text-2">{KR_MARKET_GROUP}</h2>
-          <MenuRows items={krItems} user={user} />
-        </section>
-      )}
+      {groups.map((group, index) => {
+        const id = GROUP_IDS[group.label] ?? `more-group-${index}`;
+        return (
+          <section key={group.label} aria-labelledby={id} className="flex flex-col gap-2">
+            <h2 id={id} className="text-sm font-semibold text-text-2">{group.label}</h2>
+            <MenuRows items={group.items} user={user} />
+          </section>
+        );
+      })}
 
       <section aria-labelledby="more-account" className="flex flex-col gap-2">
         <h2 id="more-account" className="text-sm font-semibold text-text-2">계정</h2>

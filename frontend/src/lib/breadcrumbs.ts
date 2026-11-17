@@ -6,18 +6,19 @@
  *
  * 칸 순서: 탭 → 하위 화면 → 대상(상세·모의매매 탭). 마지막 칸이 지금 화면입니다(셸이 링크 없이 aria-current="page"로 그림).
  * - 탭의 화면이 하나뿐이고 그것이 탭 첫 화면이면(홈·정보 검색) 하위 화면 칸을 생략합니다(같은 이름이 두 번 나오지 않게).
- * - 하위 화면에 묶음이 있으면(더보기의 '한국 시장') 그 앞에 묶음 이름 칸을 링크 없이 둡니다.
+ * - 하위 화면에 묶음이 있으면(더보기의 '한국 시장'·'정보 수집') 그 앞에 묶음 이름 칸을 둡니다. 묶음 첫 화면이 있는 묶음(정보 수집 → 개요 /info/overview —
+ *   lib/nav GROUP_HOMES)은 그 화면으로 가는 링크(그 화면이 보이고 지금 화면이 아닐 때만), 없는 묶음(한국 시장)은 링크 없는 글 칸입니다.
  * - 이 사용자에게 보이지 않는 탭·화면(lib/access visibleMenus — 회원이 주소로 연 /paper/us 등)은 링크 없이 글만 둡니다.
  * - 대상 칸은 형식이 맞을 때만(lib/detail parse 함수·모의매매 탭 주소 규칙) — 틀리면 그 앞 칸에서 끝납니다. 메뉴에 없는 경로(/login 등)는 빈 목록.
  * - 뒤 칸 어느 것과 주소가 같은 칸은 링크 없이 글만 둡니다(QA-549) — 탭 칸의 주소는 탭 첫 화면이라, 첫 화면이 하위 화면이기도 한 탭(/macro·/institutions·
- *   /paper/us·/info/overview)에서 지금 화면으로 가는 링크나 바로 뒤 칸과 같은 곳으로 가는 링크 둘이 생겼습니다. 더 구체적인 뒤 칸(미국·매크로 지표·
- *   13F 포트폴리오)이 링크로 남으므로 갈 수 있는 곳은 줄지 않습니다(나무 메뉴는 같은 경우에 aria-current — nav.ts tabCurrent).
+ *   /paper/us — 2026-11-18 전에는 정보 수집 탭의 /info/overview도)에서 지금 화면으로 가는 링크나 바로 뒤 칸과 같은 곳으로 가는 링크 둘이 생겼습니다.
+ *   더 구체적인 뒤 칸(미국·매크로 지표·13F 포트폴리오)이 링크로 남으므로 갈 수 있는 곳은 줄지 않습니다(나무 메뉴는 같은 경우에 aria-current — nav.ts tabCurrent).
  *
  * 셸은 모든 화면이 싣습니다. 그래서 모의매매 탭 이름은 lib/paper(PAPER_TABS)·lib/paperRoutes를 가져오지 않고 아래 작은 표로 둡니다 — 가져오면 모의매매 모듈
  * 묶음(압축 전 약 175KB)이 모든 화면의 첫 적재에 실렸습니다(webpack 빌드로 잼, /more 첫 적재 gzip 256 → 337KB). 표와 주소 규칙이 PAPER_TABS·
  * paperRouteFromPath와 같은지는 breadcrumbs.test가 대조합니다.
  */
-import { activeItem, activeTab, visibleItems, visibleTabs, type NavTab } from "./nav";
+import { GROUP_HOMES, activeItem, activeTab, visibleItems, visibleTabs, type NavTab } from "./nav";
 import { indicatorHref, institutionHref, parseCik, parseIndicatorKey, parseStockRoute, stockHref } from "./detail";
 import type { SessionUser } from "./types";
 
@@ -146,7 +147,12 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
 
   const item = activeItem(pathname);
   if (item && !(tab.items.length === 1 && item.href === tab.href)) {
-    if (item.group) crumbs.push({ label: item.group, href: null });
+    if (item.group) {
+      // 묶음 첫 화면 링크는 지금 화면이 그 첫 화면일 때 두지 않습니다 — 뒤 칸과 겹쳐(QA-549) 어차피 글 칸이고, 접힌 빵부스러기의 첫 칸이 지금 화면을
+      // 부모로 골라 위로 가는 링크를 잃지 않게(/info/overview를 접으면 더보기 → /more).
+      const home = Object.hasOwn(GROUP_HOMES, item.group) ? GROUP_HOMES[item.group] : null;
+      crumbs.push({ label: item.group, href: home !== null && home !== item.href && shown.has(home) ? home : null });
+    }
     crumbs.push({ label: item.label, href: shown.has(item.href) ? item.href : null });
   }
   const detail = detailCrumbs(pathname, tab, visible);
@@ -159,7 +165,8 @@ function allCrumbs(pathname: string, user: SessionUser | null | undefined, entit
 
 /**
  * 지금 주소의 빵부스러기. 예 — `/paper/us/holdings` → 모의매매 › 미국 › 보유·체결, `/markets/i/vix` → 시장 › 매크로 지표 › vix,
- * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/0001067983` → 기관 › 13F 포트폴리오 › CIK 0001067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더.
+ * `/s/kr/005930` → 시장 › 종목(한국) › 005930, `/institutions/0001067983` → 기관 › 13F 포트폴리오 › CIK 0001067983, `/radar` → 더보기 › 한국 시장 › 수급 레이더,
+ * `/info/kr` → 더보기 › 정보 수집(→ /info/overview) › 국내 시장·수급.
  * `entity`(상세 화면이 넘긴 이름)의 주소가 대상 칸의 정규 주소와 같으면 그 칸 글만 이름으로 — `/s/kr/005930` + {href:'/s/kr/005930', label:'삼성전자'}
  * → 시장 › 종목(한국) › 삼성전자. 이름이 비었거나 주소가 다르면 무시합니다.
  * 첫 예의 '모의매매'(→ /paper/us)는 뒤 칸 '미국'과 주소가 같아 글 칸입니다.
