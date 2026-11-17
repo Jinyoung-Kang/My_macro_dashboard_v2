@@ -320,8 +320,8 @@ describe("QA-678 섹터 표는 유형 배지를 이름 칸에 두고, 시간 외
 describe("QA-679 섹터 머리 동작 줄은 늘 제목 묶음 아래 따로 놓인다", () => {
   const titleBlock = () => screen.getByRole("heading", { level: 1, name: "섹터 & 자산군 로테이션 맵" }).parentElement as HTMLElement;
 
-  // 수정 전(재현 커밋에서는 it.fails)에는 제목 묶음에 그 칸이 없었습니다('expected null not to be null').
-  it.fails("처음 그릴 때(읽는 중, 안내 없음)부터 제목 묶음에 줄 전체 폭 글 칸(w-screen max-w-full)이 있다", () => {
+  // 수정 전(재현 커밋 e23e1cdc에서는 it.fails)에는 제목 묶음에 그 칸이 없었습니다('expected null not to be null').
+  it("처음 그릴 때(읽는 중, 안내 없음)부터 제목 묶음에 줄 전체 폭 글 칸(w-screen max-w-full)이 있다", () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     render(<SectorPage />);
 
@@ -331,8 +331,8 @@ describe("QA-679 섹터 머리 동작 줄은 늘 제목 묶음 아래 따로 놓
     expect((lines as HTMLElement).textContent).toBe("");
   });
 
-  // 수정 전(재현 커밋에서는 it.fails)에는 안내가 제목 묶음에 바로 있었습니다('expected <div class="min-w-0">…(3)</div> to be null').
-  it.fails("실시간 시세 안내는 그 칸 안에 그대로 보인다(주기 10초의 받지 못한 응답)", async () => {
+  // 수정 전(재현 커밋 e23e1cdc에서는 it.fails)에는 안내가 제목 묶음에 바로 있었습니다('expected <div class="min-w-0">…(3)</div> to be null').
+  it("실시간 시세 안내는 그 칸 안에 그대로 보인다(주기 10초의 받지 못한 응답)", async () => {
     render(<SectorPage />);
     await screen.findAllByText("정보기술");
     await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0));
