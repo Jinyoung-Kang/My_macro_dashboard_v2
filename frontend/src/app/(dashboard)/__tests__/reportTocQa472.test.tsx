@@ -108,9 +108,9 @@ describe("QA-680 리포트 목차 누름은 기본 해시 이동 대신 pushStat
 // 포커스를 받을 수 있으면 그 절에 포커스를 두어(QA 스택 qa@2d111589 1440·390 /ai/report), 이름 없는 section(generic)의 접근 이름을 절 내용 전체(합성 리포트
 // 821~1,526자, nameSources contents)로 읽었습니다. 절에는 늘 tabindex를 두지 않고, 제목이 포커스를 받지 못할 때만(숨은 제목) 그때 붙였다가 떠나면 뗍니다.
 // jsdom은 기록 이동의 조각 처리를 재현하지 못해 tabindex 속성과 대체 길(제목 포커스 실패 — focus를 막아 흉내)을 봅니다. 수정 전(재현 커밋에서는 it.fails)에는
-// 절에 tabindex -1이 늘 있었습니다.
+// 절에 tabindex -1이 늘 있었습니다. 고침: 리포트 절의 tabIndex를 빼고, lib/hashLink의 대체 길이 그때만 붙였다가 떠나면 뗌.
 describe("QA-688 리포트 절은 늘 포커스를 받는 자리가 아니다 — 뒤로·앞으로 가기가 절에 포커스를 두지 않게", () => {
-  it.fails("리포트 절에는 tabindex가 없다", () => {
+  it("리포트 절에는 tabindex가 없다", () => {
     render(<ReportView markdown={REPORT} />);
     const sections = Array.from(document.querySelectorAll("section"));
     expect(sections).toHaveLength(3);
@@ -118,7 +118,7 @@ describe("QA-688 리포트 절은 늘 포커스를 받는 자리가 아니다 �
     expect(sections.map((section) => section.getAttribute("tabindex"))).toEqual([null, null, null]);
   });
 
-  it.fails("절 제목이 포커스를 받지 못하면 그때만 절에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
+  it("절 제목이 포커스를 받지 못하면 그때만 절에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
     const listener = (event: MouseEvent) => event.preventDefault();
     window.addEventListener("click", listener);
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});

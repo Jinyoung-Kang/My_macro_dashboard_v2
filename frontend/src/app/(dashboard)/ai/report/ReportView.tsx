@@ -25,7 +25,8 @@ import { followHashLink } from "@/lib/hashLink";
  *
  * - 맨 위: 절 목차(앵커) — 누르면 기본 해시 이동 대신 기록 하나(history.pushState)와 절 이동·포커스(lib/hashLink — 기본 해시 이동의 상태 없는 기록은
  *   다른 화면으로 갔다가 뒤로 가기로 돌아올 때 Next 라우터가 무시해 화면이 남았음, QA-680). 포커스는 절 제목(h3)에 갑니다 — 이름 없는 절(section)에
- *   두면 크롬이 절 내용 전체를 접근 이름으로 읽었음(QA-680 보강). 절의 tabIndex -1(바깥선 없음)은 제목이 포커스를 받지 못할 때의 자리입니다.
+ *   두면 크롬이 절 내용 전체를 접근 이름으로 읽었음(QA-680 보강). 절은 제목이 포커스를 받지 못할 때만 그때 tabindex -1을 받습니다(lib/hashLink — 바깥선은
+ *   outline-none). 늘 두면 크롬이 뒤로·앞으로 가기의 조각 처리에서 절에 포커스를 두어 절 전체를 읽었습니다(QA-688).
  * - "핵심 요약" 절: 강조 패널
  * - "데이터 신뢰도" 절: 주의 패널
  * - 표: 앱의 다른 표와 같은 모양, 숫자 열은 오른쪽 정렬
@@ -72,7 +73,7 @@ function ReportSection({ section }: { section: Section }) {
         : "border-border bg-surface";
 
   return (
-    <section id={section.id} tabIndex={-1} className={`scroll-mt-4 rounded-control border p-3 outline-none lg:p-4 ${frame}`}>
+    <section id={section.id} className={`scroll-mt-4 rounded-control border p-3 outline-none lg:p-4 ${frame}`}>
       {section.title && (
         <h3
           className={`mb-3 flex items-center gap-2 font-semibold ${

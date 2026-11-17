@@ -15,8 +15,10 @@
  * - 포커스는 닻 안 첫 제목(h1~h6 — 닻이 제목이면 닻)에 둡니다. 크롬은 포커스 받는 이름·역할 없는 요소(div·이름 없는 section)의 접근 이름을 내용 전체로
  *   계산해, 닻에 두면 낭독기가 목차를 누를 때마다 절 전체(매크로 지표 표 전부)를 이름으로 읽었습니다(QA-680 보강 — 제목이면 제목 글만). 제목에는 그때만
  *   tabindex -1을 붙였다가 포커스가 떠나면 뗍니다(원래 tabindex가 있던 제목은 그대로). 바깥선은 전역 규칙이 그리지 않습니다(globals.css — 누를 수 있는
- *   것이 아님). 제목이 없거나 포커스를 받지 못하면(숨은 제목) 닻에 둡니다 — 닻이 포커스를 받으려면 tabIndex -1(바깥선 없음)이어야 합니다(긴 화면 목차의
- *   절 닻 SectionAnchor·AI 리포트 절).
+ *   것이 아님). 제목이 없거나 포커스를 받지 못하면(숨은 제목) 닻에 둡니다 — 닻에도 같은 식으로 그때만 tabindex -1을 붙였다가 떠나면 뗍니다(원래
+ *   tabindex가 있던 닻 — 본문 main#main — 은 그대로, 닻의 바깥선은 닻이 지움 — 긴 화면 목차의 절 닻 SectionAnchor·AI 리포트 절의 outline-none).
+ *   닻에 tabindex를 늘 두면 크롬이 뒤로·앞으로 가기(기록 이동)의 조각 처리에서 그 닻에 포커스를 두어 낭독기가 절 전체를 이름으로 읽었습니다(QA-688 —
+ *   tabindex가 없으면 포커스는 body, 순차 탐색 시작점만 닻으로 옮겨 다음 Tab이 그 절에서 이어짐).
  * - `heading: false`면 제목을 찾지 않고 닻에 포커스합니다(본문으로 건너뛰기 — 본문 main은 역할 main이라 이름이 내용이 아님, 기본 해시 이동과 같은 자리).
  * - 주소의 해시가 이미 그 닻이면 기록을 더 쌓지 않고 옮기기만 합니다(같은 주소로의 이동 — 브라우저도 기록을 바꿔 씀).
  * - `record: false`면 기록·주소를 건드리지 않고 옮기기만 합니다(본문으로 건너뛰기 — 뒤로 가기에 남길 까닭이 없음).
@@ -43,26 +45,30 @@ function locationHashId(): string | null {
 
 const HEADINGS = "h1, h2, h3, h4, h5, h6";
 
-/** 닻 안 첫 제목에 포커스합니다 — 받았으면 true. tabindex가 없던 제목에는 -1을 붙였다가 포커스가 떠나면 뗍니다. */
-function focusHeading(target: HTMLElement): boolean {
-  const heading = target.matches(HEADINGS) ? target : target.querySelector<HTMLElement>(HEADINGS);
-  if (heading === null) return false;
-  const added = !heading.hasAttribute("tabindex");
-  if (added) heading.setAttribute("tabindex", "-1");
-  heading.focus({ preventScroll: true });
-  if (document.activeElement !== heading) {
-    if (added) heading.removeAttribute("tabindex");
+/** 요소에 포커스합니다 — 받았으면 true. tabindex가 없던 요소에는 -1을 붙였다가 포커스가 떠나면 뗍니다(원래 tabindex가 있던 요소는 그대로). */
+function focusBriefly(element: HTMLElement): boolean {
+  const added = !element.hasAttribute("tabindex");
+  if (added) element.setAttribute("tabindex", "-1");
+  element.focus({ preventScroll: true });
+  if (document.activeElement !== element) {
+    if (added) element.removeAttribute("tabindex");
     return false;
   }
   if (added) {
     // 포커스가 다른 곳으로 떠나면 뗍니다. 창이 포커스를 잃은 것(다른 창·탭 — activeElement는 그대로)이면 돌아왔을 때 그 자리에서 이어지게 남겨 둡니다.
     const release = () => {
-      if (document.activeElement === heading) heading.addEventListener("blur", release, { once: true });
-      else heading.removeAttribute("tabindex");
+      if (document.activeElement === element) element.addEventListener("blur", release, { once: true });
+      else element.removeAttribute("tabindex");
     };
-    heading.addEventListener("blur", release, { once: true });
+    element.addEventListener("blur", release, { once: true });
   }
   return true;
+}
+
+/** 닻 안 첫 제목에 포커스합니다 — 받았으면 true(제목이 없거나 받지 못하면 false). */
+function focusHeading(target: HTMLElement): boolean {
+  const heading = target.matches(HEADINGS) ? target : target.querySelector<HTMLElement>(HEADINGS);
+  return heading !== null && focusBriefly(heading);
 }
 
 /** 같은 화면 닻 링크의 누름을 맡습니다 — 맡았으면 true(기본 동작을 막음), 브라우저에 맡기면 false. 규칙은 모듈 설명. */
@@ -77,7 +83,7 @@ export function followHashLink(
   const target = document.getElementById(id);
   if (target !== null) {
     target.scrollIntoView();
-    if (!heading || !focusHeading(target)) target.focus({ preventScroll: true });
+    if (!heading || !focusHeading(target)) focusBriefly(target);
   }
   return true;
 }

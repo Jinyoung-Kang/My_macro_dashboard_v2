@@ -169,11 +169,11 @@ describe("SectionIndex — 배치(columnFrom)", () => {
     expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "2xl:scroll-mt-4"]);
   });
 
-  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px), 포커스를 받는 자리(tabIndex -1·바깥선 없음 — QA-680)", () => {
+  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px), 바깥선 없음(QA-680), 늘 포커스를 받는 자리는 아님(tabindex 없음 — QA-688)", () => {
     renderIndex({ activeId: null });
     const anchor = document.getElementById("macro-fx") as HTMLElement;
     expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "lg:scroll-mt-4"]);
-    expect(anchor.getAttribute("tabindex")).toBe("-1");
+    expect(anchor.getAttribute("tabindex")).toBeNull();
     expect(tokens(anchor.parentElement as HTMLElement)).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-4", "lg:gap-6"]));
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="xl">위험</SectionAnchor>);
@@ -595,7 +595,7 @@ describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 �
 // Next의 popstate를 재현하지 못하므로 누름이 기본 해시 이동 대신 pushState·닻 이동이 되는지를 봅니다. 기본 동작이 막혔는지는 창까지 올라온 click에서
 // 그때의 defaultPrevented로 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막아 다음 시험에 주소가 남지 않게 합니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 기본 동작을 막지 않아(defaultPrevented false) pushState를 부르지 않았습니다.
-// 고침: 칸의 onClick이 lib/hashLink followHashLink — 포커스는 닻 안 첫 제목에(아래 보강), 제목이 없으면 닻(SectionAnchor — tabIndex -1·바깥선 없음).
+// 고침: 칸의 onClick이 lib/hashLink followHashLink — 포커스는 닻 안 첫 제목에(아래 보강), 제목이 없으면 닻(SectionAnchor — 바깥선 없음, 그때만 tabindex -1 — QA-688).
 // 아래 첫 시험의 닻은 제목 없는 글이라 닻에 포커스합니다.
 describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 닻으로 옮긴다", () => {
   const BASE_PATH = () => window.location.pathname + window.location.search;
@@ -747,14 +747,15 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
 // 그 닻으로 옮겨, 다음 Tab이 그 절의 첫 조작이었습니다(검증자의 페이지 안 주입 실험 — 목차 누름의 포커스는 그대로 제목).
 // jsdom은 기록 이동의 조각 처리를 재현하지 못하므로 닻이 늘 포커스를 받는 자리인지(tabindex 속성)를 보고, 제목 없는 닻 누름은 제목처럼 그때만 tabindex -1을
 // 붙였다가 포커스가 떠나면 떼는지 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 닻에 tabindex -1이 늘 있었습니다.
+// 고침: SectionAnchor의 tabIndex를 빼고, lib/hashLink의 대체 길(제목 없음·포커스 실패)도 제목처럼 그때만 tabindex -1을 붙였다가 떠나면 뗌.
 describe("QA-688 절 닻은 늘 포커스를 받는 자리가 아니다 — 뒤로·앞으로 가기가 닻에 포커스를 두지 않게", () => {
-  it.fails("절 닻에는 tabindex가 없다", () => {
+  it("절 닻에는 tabindex가 없다", () => {
     renderIndex({ activeId: null });
     // 결함을 직접 보는 단언(수정 전에는 tabindex -1 — 크롬 기록 이동이 그 닻에 포커스).
     for (const id of ["macro-indicators", "macro-fx", "macro-risk"]) expect(document.getElementById(id)?.hasAttribute("tabindex"), id).toBe(false);
   });
 
-  it.fails("제목 없는 닻 누름은 그때만 닻에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
+  it("제목 없는 닻 누름은 그때만 닻에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
     const listener = (event: MouseEvent) => event.preventDefault();
     window.addEventListener("click", listener);
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
