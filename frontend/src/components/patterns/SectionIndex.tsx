@@ -52,8 +52,8 @@ const COLUMN: Record<ColumnFrom, string> = {
 /**
  * 절 닻 — 가로 줄이 보이는 폭(columnFrom 미만)은 스크롤 상자의 위쪽 여백(globals.css — 잰 줄 높이(기본 45·31px, 고전 가로 막대가 서면 +10px), QA-643·
  * QA-656) 위에 줄 아래 간격 12px만 더하고, 세로 목록 폭에서는 16px. 그래서 목차로 옮긴 절 머리는 줄 바로 아래 12px에 옵니다(390 57px·1024 #main 위 43px).
- * 바깥선 없음(outline-none) — 목차 누름은 닻 안 첫 제목에, 제목이 없을 때만 닻에 포커스를 두는데(QA-680, tabIndex -1) 누를 수 있는 것이 아니라 절
- * 전체에 포커스 테두리를 그리지 않습니다(본문 main#main과 같음).
+ * 바깥선 없음(outline-none) — 목차 누름은 닻 안 첫 제목에, 제목이 없을 때만 닻에 포커스를 두는데(QA-680 — 그때만 tabindex -1, QA-688) 누를 수 있는
+ * 것이 아니라 절 전체에 포커스 테두리를 그리지 않습니다(본문 main#main과 같음).
  */
 const ANCHOR: Record<ColumnFrom, string> = {
   lg: "min-w-0 scroll-mt-3 outline-none lg:scroll-mt-4",
@@ -318,12 +318,13 @@ export function SectionIndex({
  * 절 닻 — 목차가 가리키는 절 하나(id = 목차 칸 id). 가로 줄 밑에 절 머리가 숨지 않게 스크롤 상자의 위쪽 여백(잰 줄 높이(기본 45·31px, 고전 가로 막대가
  * 서면 +10px) — QA-643·QA-656) 위에 12px scroll-margin을 두고, 세로 목록 폭(columnFrom 이상)에서는 16px.
  * 목차와 같은 `columnFrom`을 넘깁니다. 자료가 오기 전에도 늘 그립니다(해시 주소의 이동이 첫 그림에서 닿게).
- * tabIndex -1(바깥선 없음) — 절에 제목이 없을 때 목차 누름이 닻에 포커스를 둘 수 있게(QA-680, 기본 해시 이동처럼 다음 Tab이 그 절에서 이어짐). 제목이
- * 있으면 포커스는 그 제목에 갑니다(lib/hashLink — 이름·역할 없는 닻은 크롬이 내용 전체를 접근 이름으로 읽음). Tab 차례에는 들지 않습니다.
+ * 닻은 늘 포커스를 받는 자리가 아닙니다(tabindex 없음). 목차 누름의 포커스는 닻 안 첫 제목에 가고, 제목이 없을 때만 lib/hashLink가 그때 닻에
+ * tabindex -1을 붙였다가 포커스가 떠나면 뗍니다(QA-680, 기본 해시 이동처럼 다음 Tab이 그 절에서 이어짐 — 이름·역할 없는 닻은 크롬이 내용 전체를 접근
+ * 이름으로 읽음). 늘 tabIndex -1을 두면 크롬이 뒤로·앞으로 가기의 조각 처리에서 닻에 포커스를 두어 낭독기가 절 전체를 읽었습니다(QA-688).
  */
 export function SectionAnchor({ id, columnFrom = "lg", children }: { id: string; columnFrom?: ColumnFrom; children: ReactNode }): JSX.Element {
   return (
-    <div id={id} tabIndex={-1} className={ANCHOR[columnFrom]}>
+    <div id={id} className={ANCHOR[columnFrom]}>
       {children}
     </div>
   );

@@ -169,11 +169,11 @@ describe("SectionIndex — 배치(columnFrom)", () => {
     expect(tokens(document.getElementById("macro-risk") as HTMLElement)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "2xl:scroll-mt-4"]);
   });
 
-  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px), 포커스를 받는 자리(tabIndex -1·바깥선 없음 — QA-680)", () => {
+  it("본문은 절 사이 16·24px 세로 묶음 — 절 닻은 id와 scroll-margin(가로 줄 폭은 줄 높이 여백(QA-643) 위 12px, 세로 목록 폭 16px), 바깥선 없음(QA-680), 늘 포커스를 받는 자리는 아님(tabindex 없음 — QA-688)", () => {
     renderIndex({ activeId: null });
     const anchor = document.getElementById("macro-fx") as HTMLElement;
     expect(tokens(anchor)).toEqual(["min-w-0", "scroll-mt-3", "outline-none", "lg:scroll-mt-4"]);
-    expect(anchor.getAttribute("tabindex")).toBe("-1");
+    expect(anchor.getAttribute("tabindex")).toBeNull();
     expect(tokens(anchor.parentElement as HTMLElement)).toEqual(expect.arrayContaining(["flex", "flex-col", "gap-4", "lg:gap-6"]));
     cleanup();
     render(<SectionAnchor id="macro-risk" columnFrom="xl">위험</SectionAnchor>);
@@ -595,7 +595,7 @@ describe("QA-645 끝까지 내려가면 화면 안의 마지막 절이 지금 �
 // Next의 popstate를 재현하지 못하므로 누름이 기본 해시 이동 대신 pushState·닻 이동이 되는지를 봅니다. 기본 동작이 막혔는지는 창까지 올라온 click에서
 // 그때의 defaultPrevented로 적고, 남은 기본 동작(jsdom의 해시 이동)은 거기서 막아 다음 시험에 주소가 남지 않게 합니다.
 // 수정 전(재현 커밋에서는 it.fails)에는 기본 동작을 막지 않아(defaultPrevented false) pushState를 부르지 않았습니다.
-// 고침: 칸의 onClick이 lib/hashLink followHashLink — 포커스는 닻 안 첫 제목에(아래 보강), 제목이 없으면 닻(SectionAnchor — tabIndex -1·바깥선 없음).
+// 고침: 칸의 onClick이 lib/hashLink followHashLink — 포커스는 닻 안 첫 제목에(아래 보강), 제목이 없으면 닻(SectionAnchor — 바깥선 없음, 그때만 tabindex -1 — QA-688).
 // 아래 첫 시험의 닻은 제목 없는 글이라 닻에 포커스합니다.
 describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 기록을 쌓고 그 닻으로 옮긴다", () => {
   const BASE_PATH = () => window.location.pathname + window.location.search;
@@ -718,16 +718,20 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
     }
   });
 
-  it("가운데 단추·Ctrl·Meta·Shift·Alt 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
+  it("가운데 단추·Ctrl·Shift·Alt 누름과 맥의 ⌘(Meta) 누름은 브라우저에 맡긴다(새 탭·새 창·내려받기) — 막지 않고 기록·스크롤·포커스를 건드리지 않는다", () => {
     const clicks = watchClicks();
     const push = vi.spyOn(window.history, "pushState");
     const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Linux x86_64");
     try {
       renderIndex({ activeId: null });
       const link = within(lists().column).getByRole("link", { name: "환율 비교" });
-      const inits = [{ button: 1 }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }];
+      const inits = [{ button: 1 }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }];
       for (const init of inits) fireEvent.click(link, init);
-      expect(clicks.prevented).toEqual(inits.map(() => false));
+      // 맥은 ⌘+누름이 새 탭입니다.
+      platform.mockReturnValue("MacIntel");
+      fireEvent.click(link, { metaKey: true });
+      expect(clicks.prevented).toEqual([...inits.map(() => false), false]);
       expect(push).not.toHaveBeenCalled();
       expect(into).not.toHaveBeenCalled();
       expect(document.activeElement).not.toBe(document.getElementById("macro-fx"));
@@ -735,6 +739,84 @@ describe("QA-680 목차 칸 누름은 기본 해시 이동 대신 pushState로 �
       clicks.stop();
       window.history.replaceState(null, "", BASE_PATH());
       push.mockRestore();
+      into.mockRestore();
+    }
+  });
+
+  // QA-689: 리눅스 크롬에서 Meta+누름은 새 탭이 아니라 같은 탭의 기본 해시 이동이었습니다(QA 스택 qa@2d111589 /macro 1280·1440·1920, 마우스·Meta+Enter, 셸
+  // 건너뛰기 링크도 — 상태 없는 기록 /macro#macro-fx가 쌓이고 /sector로 갔다가 뒤로 가면 주소만 그 기록, 화면은 /sector — QA-680 원래 증상, 윈도도 같다고
+  // 추정). followHashLink가 Meta를 플랫폼과 상관없이
+  // 브라우저에 맡겨 이 수식키로 QA-680이 남았습니다. 결정(2026-11-18, 사용자 위임 — 권장안 방법 1): Meta는 애플 플랫폼(⌘+누름 = 새 탭)에서만 맡기고
+  // 그 밖에서는 수식키 없는 누름처럼 맡습니다. 판별은 셸 검색 단축키(⌘K·Ctrl K)와 같은 식(lib/platform isMacPlatform). 수정 전(재현 커밋에서는 it.fails)에는
+  // 막지 않았습니다(defaultPrevented false, pushState 없음). 고침: followHashLink가 Meta를 isMacPlatform()일 때만 브라우저에 맡김.
+  it("맥이 아닌 곳(리눅스·윈도)의 Meta 누름은 수식키 없는 누름처럼 맡는다 — 기본 동작을 막고 pushState 한 번, 그 닻으로", () => {
+    const clicks = watchClicks();
+    const push = vi.spyOn(window.history, "pushState");
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const platform = vi.spyOn(window.navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    try {
+      renderIndex({ activeId: null });
+      const link = within(lists().column).getByRole("link", { name: "환율 비교" });
+      fireEvent.click(link, { metaKey: true });
+      // 결함을 직접 보는 단언(수정 전에는 막지 않아 같은 탭의 기본 해시 이동).
+      expect(clicks.prevented).toEqual([true]);
+      expect(push.mock.calls).toEqual([[null, "", "#macro-fx"]]);
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      expect(into.mock.contexts).toEqual([fx]);
+      // 윈도도 같다 — 이미 그 해시라 기록은 더 쌓지 않고 옮기기만.
+      platform.mockReturnValue("Win32");
+      fireEvent.click(link, { metaKey: true });
+      expect(clicks.prevented).toEqual([true, true]);
+      expect(push).toHaveBeenCalledTimes(1);
+      expect(into).toHaveBeenCalledTimes(2);
+    } finally {
+      clicks.stop();
+      window.history.replaceState(null, "", BASE_PATH());
+      push.mockRestore();
+      into.mockRestore();
+    }
+  });
+});
+
+// QA-688: QA-680 고침(058ddf83)이 절 닻(SectionAnchor div)에 tabIndex -1을 늘 붙였습니다. 크롬은 뒤로·앞으로 가기(기록 이동)의 조각 처리에서 해시가
+// 가리키는 닻이 포커스를 받을 수 있으면 그 닻에 포커스를 두는데(같은 화면 안에서도, 다른 화면에서 목차가 쌓은 해시 기록으로 돌아올 때도 — QA 스택
+// qa@2d111589 1440·390), 닻은 이름·역할 없는 큰 div라 크롬이 접근 이름을 절 내용 전체(/macro 환율 비교 263자, nameSources contents)로 계산해 낭독기가
+// 절 전체를 읽었습니다(QA-680 보강이 목차 누름에서 막은 것이 기록 이동으로 돌아옴). 닻에 tabindex가 없으면 크롬은 포커스를 body에 두고 순차 탐색 시작점만
+// 그 닻으로 옮겨, 다음 Tab이 그 절의 첫 조작이었습니다(검증자의 페이지 안 주입 실험 — 목차 누름의 포커스는 그대로 제목).
+// jsdom은 기록 이동의 조각 처리를 재현하지 못하므로 닻이 늘 포커스를 받는 자리인지(tabindex 속성)를 보고, 제목 없는 닻 누름은 제목처럼 그때만 tabindex -1을
+// 붙였다가 포커스가 떠나면 떼는지 봅니다. 수정 전(재현 커밋에서는 it.fails)에는 닻에 tabindex -1이 늘 있었습니다.
+// 고침: SectionAnchor의 tabIndex를 빼고, lib/hashLink의 대체 길(제목 없음·포커스 실패)도 제목처럼 그때만 tabindex -1을 붙였다가 떠나면 뗌.
+describe("QA-688 절 닻은 늘 포커스를 받는 자리가 아니다 — 뒤로·앞으로 가기가 닻에 포커스를 두지 않게", () => {
+  it("절 닻에는 tabindex가 없다", () => {
+    renderIndex({ activeId: null });
+    // 결함을 직접 보는 단언(수정 전에는 tabindex -1 — 크롬 기록 이동이 그 닻에 포커스).
+    for (const id of ["macro-indicators", "macro-fx", "macro-risk"]) expect(document.getElementById(id)?.hasAttribute("tabindex"), id).toBe(false);
+  });
+
+  it("제목 없는 닻 누름은 그때만 닻에 tabindex -1을 붙여 포커스하고, 포커스가 떠나면 뗀다", () => {
+    const listener = (event: MouseEvent) => event.preventDefault();
+    window.addEventListener("click", listener);
+    const into = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+    const base = window.location.pathname + window.location.search;
+    try {
+      renderIndex({ activeId: null });
+      const { column } = lists();
+      const fx = document.getElementById("macro-fx") as HTMLElement;
+      const risk = document.getElementById("macro-risk") as HTMLElement;
+      fireEvent.click(within(column).getByRole("link", { name: "환율 비교" }));
+      expect(document.activeElement).toBe(fx);
+      expect(fx.getAttribute("tabindex")).toBe("-1");
+      // 다른 제목 없는 닻으로 — 새 닻에 붙이고, 떠난 닻에서는 뗀다(결함을 직접 보는 단언 — 수정 전에는 떠난 닻에도 남음).
+      fireEvent.click(within(column).getByRole("link", { name: "신용·변동성" }));
+      expect(document.activeElement).toBe(risk);
+      expect(risk.getAttribute("tabindex")).toBe("-1");
+      expect(fx.hasAttribute("tabindex")).toBe(false);
+      // 포커스가 닻 밖(목차 칸)으로 — 그 닻에서도 뗀다.
+      within(column).getByRole("link", { name: "환율 비교" }).focus();
+      expect(risk.hasAttribute("tabindex")).toBe(false);
+    } finally {
+      window.removeEventListener("click", listener);
+      window.history.replaceState(null, "", base);
       into.mockRestore();
     }
   });

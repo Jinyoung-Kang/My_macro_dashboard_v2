@@ -630,3 +630,155 @@ describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴�
     expect(document.activeElement).toBe(input);
   });
 });
+
+// QA-690: 앞 결과가 남는 줄(출처 실패·종목 찾기를 쓸 수 없음)의 '다시 시도' 뒤 결과가 와 누른 단추가 사라지면, 포커스가 대화상자 틀(role=dialog)로 한 번
+// 갔다가 첫 후보·입력칸으로 갔습니다(QA 스택 qa@2d111589 390·1440, 키보드·마우스·터치 — 틀에 머문 시간 0.3~19.4ms: 1440 0.5~12.2·390 0.3~14.9·1440 CPU
+// 4배 느림 3.2~19.4ms, 찾은 쪽과 검증자 측정의 합). 낭독기는 그 사이 창 이름을 다시 읽을 수 있습니다. 결과로 옮기는 effect가 수동(useEffect)이라 그림이
+// 화면에 붙은 뒤 돌았고, 그 사이 누른 단추가 지워진 것을 본 Radix FocusScope의 MutationObserver가 activeElement가 body인 것을 보고 틀에 포커스했습니다.
+// 읽기 실패의 다시 시도(포커스를 먼저 결과 자리로 옮김)와 다시 실패해 같은 단추가 남는 경우는 틀을 거치지 않았습니다(대조). act 안에서 응답을 보내면
+// effect가 act 끝에 함께 비워져 원본에서도 틀을 거치지 않으므로, 응답은 act 밖에서(IS_REACT_ACT_ENVIRONMENT false — 브라우저처럼 React 스케줄러가 그림)
+// 보내고 focusin 기록에 틀이 없는지 봅니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 focusin 기록에 틀(DIALOG)이 있었습니다. 고침: 결과로 옮기는 effect를 useLayoutEffect로(조건·의존 그대로).
+describe("QA-690 앞 결과가 남는 다시 시도 뒤 결과가 오면 포커스는 틀을 거치지 않고 결과로", () => {
+  const actEnv = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+  const CANDIDATES = {
+    available: true,
+    symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF"), symbol("ITOT", "iShares Core S&P Total U.S. Stock Market ETF")], errors: {}, error: null },
+  };
+  const SOURCE_FAILED = { available: true, symbols: { items: [], errors: { "Yahoo Finance": "HTTP 429" }, error: "HTTP 429" } };
+  const UNAVAILABLE = { available: false, message: "수집기 점검 중입니다." };
+  const NO_MATCH = { available: true, symbols: { items: [], errors: {}, error: null } };
+
+  /** 처음 결과(initial)의 '다시 시도'를 누르고 다음 결과(next)를 act 밖에서 보낸 뒤, 그 사이 포커스가 옮겨 간 자리를 돌려줍니다. */
+  async function retryOutsideAct(initial: unknown, next: unknown, arrived: (dialog: HTMLElement) => boolean) {
+    reads[endpoints.detail.symbols("ISHARES TR")] = initial;
+    render(<StockPickQuickView name="ISHARES TR" cusip="464287200" cls="CORE S&P500 ETF" trigger={<button type="button">후보 열기</button>} />);
+    fireEvent.click(screen.getByRole("button", { name: "후보 열기" }));
+    const dialog = await screen.findByRole("dialog");
+    const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
+    let resolve: (body: unknown) => void = () => {};
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise((done) => { resolve = done; });
+    retry.focus();
+    fireEvent.click(retry);
+    await within(dialog).findByText("다시 찾는 중…");
+    expect(document.activeElement).toBe(retry);
+    const moves: Element[] = [];
+    const onFocusIn = (event: FocusEvent) => moves.push(event.target as Element);
+    const before = actEnv.IS_REACT_ACT_ENVIRONMENT;
+    document.addEventListener("focusin", onFocusIn);
+    actEnv.IS_REACT_ACT_ENVIRONMENT = false;
+    try {
+      resolve(next);
+      for (let i = 0; i < 100 && !arrived(dialog); i++) await sleep(10);
+      await sleep(50);
+    } finally {
+      actEnv.IS_REACT_ACT_ENVIRONMENT = before;
+      document.removeEventListener("focusin", onFocusIn);
+    }
+    return { dialog, moves };
+  }
+  const listed = (dialog: HTMLElement) => within(dialog).queryAllByRole("listitem").length > 0;
+  /** 포커스가 거쳐 간 대화상자 틀(role=dialog). */
+  const frames = (moves: Element[]) => moves.filter((element) => element.getAttribute("role") === "dialog");
+
+  it("출처 실패 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
+    const { dialog, moves } = await retryOutsideAct(SOURCE_FAILED, CANDIDATES, listed);
+    const first = within(within(dialog).getByRole("list", { name: /종목 후보 2건/ })).getAllByRole("button")[0];
+    expect(document.activeElement).toBe(first);
+    // 결함을 직접 보는 단언(수정 전에는 첫 후보 앞에 틀이 있음).
+    expect(frames(moves)).toEqual([]);
+    expect(moves).toEqual([first]);
+  });
+
+  it("종목 찾기를 쓸 수 없음 → 후보: 틀을 거치지 않고 첫 후보로", async () => {
+    const { dialog, moves } = await retryOutsideAct(UNAVAILABLE, CANDIDATES, listed);
+    const first = within(within(dialog).getByRole("list", { name: /종목 후보 2건/ })).getAllByRole("button")[0];
+    expect(document.activeElement).toBe(first);
+    expect(frames(moves)).toEqual([]);
+    expect(moves).toEqual([first]);
+  });
+
+  it("출처 실패 → 맞는 후보 없음: 틀을 거치지 않고 입력칸으로", async () => {
+    const { dialog, moves } = await retryOutsideAct(SOURCE_FAILED, NO_MATCH, (box) => /맞는 종목 후보가 없습니다/.test(box.textContent ?? ""));
+    const input = within(dialog).getByRole("textbox", { name: /검색어/ });
+    expect(document.activeElement).toBe(input);
+    expect(frames(moves)).toEqual([]);
+    expect(moves).toEqual([input]);
+  });
+});
+
+// QA-691: 공용 시세 창 본문(StockQuickBody — 13F 티커 줄·모의 매매 보유 표 등의 종목 팝업, 후보 창의 고른 뒤 본문)에 줄바꿈 규칙이 없어 word-break가
+// 기본(normal)이었습니다. 기업 설명·보조 줄·출처 줄의 한국어가 음절 사이에서 꺾였고(QA 스택 qa@2d111589 /institutions 티커 줄 — 합성 기업 설명은 340~1000px
+// 31폭·1024~1920px 6폭 모두 음절 사이 1~4곳: 768px 이상은 '가상의 부품|과' 꼴, 좁은 폭은 '가|상의'·'없습니|다' 등, 보조 줄 430·출처 줄 340), 공백 없는 긴
+// 이름(합성 75자)이면 창이 가로로 스크롤됐습니다(390 602px·768·1024·1440 288px). 후보 창의 고른 뒤 본문은 QA-681 고침이 바깥(PickBody)에 건 규칙을 상속해 꺾이지
+// 않았습니다(대조). 운영본 D2(a5cdae2f)부터 있던 것을 13F 티커 줄 입구(사용자 요청 2026-11-18)가 /institutions에도 드러냈습니다. 시세 창은 제목을 숨겨 이름
+// 줄이 닫기 단추와 같은 줄이라, 줄바꿈만 고치면 긴 이름의 첫 줄이 닫기 단추와 겹쳤습니다(X 그림 390 17px·1440 12px, 단추 상자 31·19px — 대화상자 제목의
+// pr-10과 같은 자리가 필요). jsdom은 배치를 재지 못해 클래스 구조(QA-681과 같은 inChain 꼴)를 봅니다.
+// 수정 전(재현 커밋에서는 it.fails)에는 글에서 대화상자까지 어디에도 break-keep이 없었고 이름 줄에 pr-10이 없었습니다.
+// 고침: 본문 바깥 div에 break-keep wrap-break-word(상속), 이름 줄에 pr-10(보강 뒤로는 시세 창만 — besideClose). 공용 부품이라 모의 매매·실제 계좌·ISA 표의
+// 시세 창도 함께 바뀝니다.
+describe("QA-691 시세 창 본문의 한국어 글은 낱말 사이에서만 줄을 바꾸고, 이름 줄은 닫기 단추 자리를 비운다", () => {
+  const LONG_NAME = "SUPERCALIFRAGILISTICEXPIALIDOCIOUSSYNTHETICHOLDINGSCORPORATIONINTERNATIONAL";
+  const SUMMARY = "합성 지주 회사는 화면 확인용으로 지어낸 가상의 회사이며 실제 회사와 관계가 없습니다. 가상의 부품과 서비스를 만들어 여러 나라에 판다고 가정합니다.";
+  const classes = (element: Element) => (element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean);
+  function chainTo(element: Element, stop: Element): Element[] {
+    const chain: Element[] = [];
+    for (let node: Element | null = element; node && stop.contains(node); node = node.parentElement) chain.push(node);
+    return chain;
+  }
+  const inChain = (chain: Element[], words: string[]) => chain.some((node) => classes(node).some((word) => words.includes(word)));
+  const looseTexts = (elements: Element[], dialog: Element) =>
+    elements
+      .filter((element) => {
+        const chain = chainTo(element, dialog);
+        return !(inChain(chain, ["break-keep"]) && inChain(chain, ["wrap-break-word", "wrap-anywhere"]));
+      })
+      .map((element) => element.textContent);
+
+  it("13F 티커 줄의 시세 창 — 이름·보조 줄·업종·기업 설명·출처 줄·시세 머리가 break-keep과 wrap-break-word 안, 이름 줄은 pr-10", async () => {
+    reads[endpoints.detail.quote("us", "BRK-B")] = {
+      available: true,
+      quote: {
+        ...quote("BRK-B", LONG_NAME),
+        profile: {
+          sector: "Financial Services", industry: "Insurance—Diversified", country: "United States", website: null, employees: null,
+          summary: null, summaryKo: SUMMARY, industryKo: "다각화 보험", koSource: { label: "합성 개요 출처", url: "https://profile.example/x" },
+        },
+      },
+    };
+    render(<InstitutionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "BERKSHIRE HATHAWAY INC DEL 시세 창 열기" }));
+    const dialog = await screen.findByRole("dialog", { name: "BRK-B" });
+    const name = await within(dialog).findByText(LONG_NAME, { selector: "p" });
+    const texts = [
+      name,
+      within(dialog).getByText("BRK-B · NYSEArca · 주식 · USD"),
+      within(dialog).getByText(/다각화 보험$/),
+      within(dialog).getByText(SUMMARY),
+      within(dialog).getByText(/^출처 합성 개요 출처 · 전체 개요는 상세 화면$/),
+      within(dialog).getByRole("heading", { name: `${LONG_NAME} 시세` }),
+    ];
+    // 결함을 직접 보는 단언(수정 전에는 여기서 실패 — 여섯 글 모두 규칙 없음).
+    expect(looseTexts(texts, dialog)).toEqual([]);
+    // 이름 줄은 닫기 단추(오른쪽 위 — 대화상자 제목의 pr-10과 같은 자리)와 겹치지 않게 오른쪽을 비운다.
+    expect(classes(name)).toContain("pr-10");
+  });
+
+  // 보강(검토 지적): 닫기 단추 자리(pr-10)는 제목을 숨겨(hideTitle) 이름 줄이 닫기 단추와 같은 줄에 오는 시세 창에만 필요합니다. 후보 창은 제목(Dialog의
+  // pr-10)·설명(CUSIP)·고른 뒤 안내 줄 아래에 본문이 와서 이름 줄이 닫기 단추 줄이 아닌데도, 고침 첫 판은 공용 본문에 조건 없이 걸어 이름 줄만 오른쪽
+  // 40px를 비웠습니다(위아래 안내 줄·기업 설명은 끝까지 차서 이름만 어긋남). 보강 전(재현 커밋에서는 it.fails)에는 고른 뒤 본문의 이름 줄에 pr-10이 있었습니다.
+  // 고침: 본문의 besideClose(기본 꺼짐)일 때만 pr-10 — 제목을 숨긴 시세 창(StockQuickView)만 켬.
+  it("후보 창의 고른 뒤 본문 — 이름 줄은 닫기 단추 줄이 아니라 오른쪽을 비우지 않는다(pr-10 없음), 줄바꿈 규칙은 그대로", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: true, symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF")], errors: {}, error: null } };
+    reads[endpoints.detail.quote("us", "IVV")] = { available: true, quote: quote("IVV", LONG_NAME, "ETF") };
+    render(<StockPickQuickView name="ISHARES TR" cusip="464287200" cls="CORE S&P500 ETF" trigger={<button type="button">후보 열기</button>} />);
+    fireEvent.click(screen.getByRole("button", { name: "후보 열기" }));
+    const dialog = await screen.findByRole("dialog", { name: "ISHARES TR" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: /^iShares Core S&P 500 ETF IVV/ }));
+    const name = await within(dialog).findByText(LONG_NAME, { selector: "p" });
+    expect(looseTexts([name], dialog)).toEqual([]);
+    // 결함을 직접 보는 단언(보강 전에는 여기서 실패 — 이름 줄에 pr-10).
+    expect(classes(name)).not.toContain("pr-10");
+  });
+});
