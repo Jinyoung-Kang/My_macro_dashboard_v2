@@ -496,3 +496,85 @@ describe("QA-681 후보 고르기 창의 한국어 글은 낱말 사이에서만
     expect(looseTexts(picked, dialog)).toEqual([]);
   });
 });
+
+// QA-682: 후보 창의 '다시 시도'(출처 실패·available:false 줄의 단추, 읽기 실패의 공용 ErrorState 단추)를 누르면, 결과가 와서(또는 읽기 실패의 다시 읽기가
+// 시작돼 자리표시로 바뀌어) 누른 단추가 사라질 때 포커스가 대화상자 틀(DIV role=dialog — Radix FocusScope가 body 대신 잡음)로 떨어졌습니다. 다음 Tab은 창의
+// 처음(입력칸)부터였고 낭독기는 창 이름부터 다시 읽었습니다(D3 전 QA 스택 qa@65caf1e8 390·1440, 키보드·마우스 같음 — 같은 빌드의 본문 팝업 ArticleDialog는
+// 다시 시도 전에 고정 자리로 옮김). 다시 읽는 동안에는 창 안 결과 자리에, 결과가 오면 첫 후보(후보가 왔을 때)·새 '다시 시도'(다시 실패)·입력칸(맞는 후보
+// 없음)으로 옮겨야 합니다. 그 사이 사용자가 포커스를 옮겼으면 그대로 둡니다. 수정 전(재현 커밋에서는 it.fails)에는 포커스가 틀(또는 body)에 남았습니다.
+describe("QA-682 후보 창의 다시 시도 뒤 포커스는 결과로 옮긴다 — 대화상자 틀로 떨어지지 않음", () => {
+  const trigger = <button type="button">후보 열기</button>;
+  const open = async () => {
+    render(<StockPickQuickView name="ISHARES TR" cusip="464287200" cls="CORE S&P500 ETF" trigger={trigger} />);
+    fireEvent.click(screen.getByRole("button", { name: "후보 열기" }));
+    return screen.findByRole("dialog");
+  };
+  /** 포커스가 창 안이고 창 틀 자체는 아님 — 다시 읽는 동안의 자리. */
+  const focusInsideDialog = (dialog: HTMLElement) => document.activeElement !== dialog && dialog.contains(document.activeElement);
+  const CANDIDATES = {
+    available: true,
+    symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF"), symbol("ITOT", "iShares Core S&P Total U.S. Stock Market ETF")], errors: {}, error: null },
+  };
+
+  it.fails("출처 실패의 다시 시도 — 다시 찾는 동안 창 안에 있고, 후보가 오면 첫 후보로", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: true, symbols: { items: [], errors: { "Yahoo Finance": "HTTP 429" }, error: "HTTP 429" } };
+    const dialog = await open();
+    const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
+    let resolve: (body: unknown) => void = () => {};
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise((done) => { resolve = done; });
+    retry.focus();
+    fireEvent.click(retry);
+    expect(await within(dialog).findByText("다시 찾는 중…")).toBeTruthy();
+    expect(focusInsideDialog(dialog)).toBe(true);
+
+    await act(async () => resolve(CANDIDATES));
+    const list = await within(dialog).findByRole("list", { name: /종목 후보 2건/ });
+    // 결함을 직접 보는 단언(수정 전에는 포커스가 틀에 남아 여기서 실패).
+    await waitFor(() => expect(document.activeElement).toBe(within(list).getAllByRole("button")[0]));
+  });
+
+  it.fails("읽기 실패의 다시 시도 — 다시 읽는 동안(누른 단추가 자리표시로 바뀜)에도 창 안, 다시 실패하면 새 '다시 시도'로, 맞는 후보가 없으면 입력칸으로", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = new Error("요청 시간이 지났습니다");
+    const dialog = await open();
+    await within(dialog).findByText("후보를 불러오지 못했습니다 — 요청 시간이 지났습니다", { selector: "span" });
+    let fail: (error: Error) => void = () => {};
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise((_, reject) => { fail = reject; });
+    const first = within(dialog).getByRole("button", { name: "다시 시도" });
+    first.focus();
+    fireEvent.click(first);
+    // 다시 읽는 동안 오류 상자(와 그 단추)는 자리표시로 바뀜 — 포커스가 틀·문서 처음으로 떨어지지 않음(수정 전에는 여기서 실패).
+    expect(within(dialog).queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(focusInsideDialog(dialog)).toBe(true);
+
+    await act(async () => fail(new Error("연결 실패")));
+    await within(dialog).findByText("후보를 불러오지 못했습니다 — 연결 실패", { selector: "span" });
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "다시 시도" })));
+
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: true, symbols: { items: [], errors: {}, error: null } };
+    fireEvent.click(within(dialog).getByRole("button", { name: "다시 시도" }));
+    await within(dialog).findByText("‘ISHARES TR’에 맞는 종목 후보가 없습니다 — 검색어를 줄이거나 고쳐 다시 찾아 보세요.");
+    await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("textbox", { name: /검색어/ })));
+  });
+
+  it("다시 찾는 동안 사용자가 포커스를 옮겼으면(입력칸) 결과가 와도 그대로 — 찾기(같은 검색어 다시 찾기)도 포커스를 입력칸에 둔다", async () => {
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: false, message: "수집기 점검 중입니다." };
+    const dialog = await open();
+    const retry = await within(dialog).findByRole("button", { name: "다시 시도" });
+    let resolve: (body: unknown) => void = () => {};
+    reads[endpoints.detail.symbols("ISHARES TR")] = () => new Promise((done) => { resolve = done; });
+    retry.focus();
+    fireEvent.click(retry);
+    await within(dialog).findByText("다시 찾는 중…");
+    const input = within(dialog).getByRole("textbox", { name: /검색어/ });
+    input.focus();
+    await act(async () => resolve(CANDIDATES));
+    await within(dialog).findByRole("list", { name: /종목 후보 2건/ });
+    expect(document.activeElement).toBe(input);
+
+    // 같은 검색어로 찾기(입력칸에서 Enter와 같음) — 결과가 와도 포커스는 입력칸
+    reads[endpoints.detail.symbols("ISHARES TR")] = { available: true, symbols: { items: [symbol("IVV", "iShares Core S&P 500 ETF")], errors: {}, error: null } };
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+    await within(dialog).findByRole("list", { name: /종목 후보 1건/ });
+    expect(document.activeElement).toBe(input);
+  });
+});
