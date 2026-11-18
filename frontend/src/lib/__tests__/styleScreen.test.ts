@@ -10,6 +10,7 @@ import {
   similarityMax,
   similarityPairs,
   similarityStepLabel,
+  similarityBelowText,
   similarityText,
   styleFullName,
   styleShortName,
@@ -157,7 +158,7 @@ describe("스타일 화면 — 위험 지표 KPI 띠", () => {
 describe("유사도 값 글 — 0으로 반올림되는 양수는 '<' 글(QA-718)", () => {
   // 수정 전 실패(plain it): ["0.0", "0.00", "0.0", "0.00", "0.1", "42.5", "0.04"] — 칠하는(단계 1) 아주 작은 양수가 칠하지 않는 참 0과 같은 '0.0'으로 적혀, 행렬에서
   // 칠한 '0.0'과 칠하지 않은 '0.0'이 섞였음(QA 자료 겹침 국민연금·사이언 0.00102 — 검토 자기 빌드 1440 겹침 '0.0' 칸 30개 중 18개를 칠함).
-  it.fails("겹침 0.05 미만·코사인 0.005 미만의 양수는 '<0.1'·'<0.01', 참 0은 '0.0'·'0.00', 나머지는 반올림 그대로", () => {
+  it("겹침 0.05 미만·코사인 0.005 미만의 양수는 '<0.1'·'<0.01', 참 0은 '0.0'·'0.00', 나머지는 반올림 그대로", () => {
     expect([
       similarityText("overlap", 0.0010198764723578502),
       similarityText("cosine", 0.004),
@@ -167,5 +168,7 @@ describe("유사도 값 글 — 0으로 반올림되는 양수는 '<' 글(QA-718
       similarityText("overlap", 42.5),
       similarityText("cosine", 0.04),
     ]).toEqual(["<0.1", "<0.01", "0.0", "0.00", "0.1", "42.5", "0.04"]);
+    // 범례 설명 글이 쓰는 같은 글
+    expect([similarityBelowText("overlap"), similarityBelowText("cosine")]).toEqual(["<0.1", "<0.01"]);
   });
 });

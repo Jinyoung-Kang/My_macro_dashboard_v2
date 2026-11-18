@@ -35,9 +35,25 @@ export function similarityMax(mode: SimilarityMode): number {
   return mode === "overlap" ? 100 : 1;
 }
 
-/** 유사도 값 글 — 겹침 소수 첫째, 코사인 둘째 자리. */
+/**
+ * 유사도 값 글 — 겹침 소수 첫째, 코사인 둘째 자리. 그 자릿수에서 0으로 반올림되는 양수는 '<0.1'·'<0.01'입니다 — 표 히트맵은 0보다 큰 값을 칠하고 참 0은
+ * 칠하지 않으므로, '0.0'으로 적으면 칠한 '0.0'과 칠하지 않은 '0.0'이 섞여 둘을 가를 수 없었습니다(QA-718 — 비중 히트맵의 '<0.1%'(QA-454)와 같은 규칙).
+ */
 export function similarityText(mode: SimilarityMode, value: number): string {
-  return formatNumber(value, mode === "overlap" ? 1 : 2);
+  const digits = similarityDigits(mode);
+  if (value > 0 && value < 10 ** -digits / 2) return similarityBelowText(mode);
+  return formatNumber(value, digits);
+}
+
+/** 유사도 값 자릿수 — 겹침 1, 코사인 2. */
+function similarityDigits(mode: SimilarityMode): number {
+  return mode === "overlap" ? 1 : 2;
+}
+
+/** 0으로 반올림되는 양수의 글 — 겹침 '<0.1', 코사인 '<0.01'(범례 설명 글도 씀). */
+export function similarityBelowText(mode: SimilarityMode): string {
+  const digits = similarityDigits(mode);
+  return `<${formatNumber(10 ** -digits, digits)}`;
 }
 
 /** 짝 표 한 줄 — 순위·두 기관(짧은 이름·전체 이름)·값. 키는 두 기관의 받은 이름(짝마다 하나). */

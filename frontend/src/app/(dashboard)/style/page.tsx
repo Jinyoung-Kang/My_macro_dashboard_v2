@@ -41,6 +41,7 @@ import {
   riskInstitutionName,
   riskKpis,
   signedUnitText,
+  similarityBelowText,
   similarityHeatmap,
   similarityMax,
   similarityPairs,
@@ -355,7 +356,8 @@ function SimilarityCard() {
             minWidth={720}
             legend={{
               stepLabel: (step) => similarityStepLabel(mode, step),
-              note: "대각선(자기 자신과 견준 칸)과 0(겹치는 종목 없음)은 칠하지 않습니다.",
+              // 0으로 반올림되는 양수는 '<' 글로 적고 칠합니다(QA-718) — 칠한 칸과 칠하지 않은 칸의 글이 같지 않게.
+              note: `대각선(자기 자신과 견준 칸)과 0(겹치는 종목 없음)은 칠하지 않습니다. '${similarityBelowText(mode)}'는 0보다 크지만 이 자릿수에서 0으로 반올림되는 값입니다.`,
             }}
           />
         </div>
