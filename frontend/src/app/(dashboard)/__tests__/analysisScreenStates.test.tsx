@@ -671,7 +671,7 @@ describe("스코어카드 — 주의 안내가 처음 읽는 동안과 값이 �
 
   // 수정 전 실패(plain it): { sameCaveat: false, pendingLines: 0, loadedLines: 3 } — 처음 읽는 동안의 본문 글(화면의 대체 글)이 응답 글보다 짧고('종합 점수가 아니며,'
   // 없음) 빠진 것 목록이 응답이 와야 생겨, 값이 오면 안내 상자가 자라 아래 조회 조건·결과를 밀었음(검토 자기 빌드 CLS 390 0.1905·1024 0.054).
-  it.fails("처음 읽는 동안 본문 글은 응답과 같은 글이고 빠진 것 목록 자리가 응답과 같은 줄 수", async () => {
+  it("처음 읽는 동안 본문 글은 응답과 같은 글이고 빠진 것 목록 자리가 응답과 같은 줄 수", async () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     const view = render(<ScorecardPage />);
     const pending = callout();

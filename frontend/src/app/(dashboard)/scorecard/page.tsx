@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
 import { DataTable, Empty, KpiStrip } from "@/components/patterns";
-import { Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
+import { Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Select, SKELETON_BAR, Tag } from "@/components/ui";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { formatNumber } from "@/lib/format";
 import {
   metricBars,
@@ -17,6 +17,15 @@ import {
 import type { ScorecardResponse, StockUniverseResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
+
+/**
+ * 주의 안내의 대체 본문 글(처음 읽는 동안·응답에 글이 없을 때) — 백엔드(ScorecardService)가 늘 보내는 caveat와 같은 글입니다. 예전 대체 글은 '종합 점수가 아니며,'가
+ * 없어 응답이 오면 안내 상자 글이 늘며 아래를 밀었습니다(QA-716). 백엔드 글을 바꾸면 여기도 같이 고칩니다.
+ */
+const CAVEAT_FALLBACK = "가격으로 잴 수 있는 것만 담은 카드입니다. 종합 점수가 아니며, 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다.";
+
+/** 처음 읽는 동안 빠진 것 목록 자리의 줄 수 — 백엔드가 늘 보내는 missing(재무 안정성·성장성·밸류에이션) 세 줄. 자리일 뿐 보이는 글이 아닙니다. */
+const MISSING_PENDING_LINES = 3;
 
 /**
  * 종목 스코어카드 — <b>가격으로 잴 수 있는 것만</b>.
@@ -35,9 +44,8 @@ export default function ScorecardPage() {
   const [benchmark, setBenchmark] = useState("SPY");
   const [years, setYears] = useState("1");
 
-  const { data, loading, error, reload, refreshError } = useApi<ScorecardResponse>(
-    endpoints.insight.scorecard(symbol, benchmark, years),
-  );
+  const scorecard = useApi<ScorecardResponse>(endpoints.insight.scorecard(symbol, benchmark, years));
+  const { data, loading, error, reload, refreshError } = scorecard;
 
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
@@ -59,17 +67,24 @@ export default function ScorecardPage() {
         안 봤습니다"를 읽으면, 이미 그 점수로 판단이 끝난 뒤입니다.
       */}
       <Callout tone="warn" title="이 카드는 종합 점수가 아닙니다.">
-        <div className="mt-1">
-          {data?.caveat ??
-            "가격으로 잴 수 있는 것만 담은 카드입니다. 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다."}
-        </div>
-        {(data?.missing?.length ?? 0) > 0 && (
+        <div className="mt-1">{data?.caveat ?? CAVEAT_FALLBACK}</div>
+        {(data?.missing?.length ?? 0) > 0 ? (
           <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
             {data!.missing.map((item) => (
               <li key={item}>{item} — 수집하지 않습니다</li>
             ))}
           </ul>
-        )}
+        ) : firstLoadPending(scorecard) ? (
+          // 처음 읽는 동안은 빠진 것 목록의 자리(같은 꼴의 줄 MISSING_PENDING_LINES — 글 없이 막대, 읽기에서 뺌). 없으면 응답이 온 뒤에 목록이 생기며 안내 상자가
+          // 자라 아래 조회 조건·결과를 밀었습니다(QA-716).
+          <ul aria-hidden="true" className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+            {Array.from({ length: MISSING_PENDING_LINES }, (_, index) => (
+              <li key={index} className="h-4">
+                <span className={`inline-block h-3 w-2/3 align-middle ${SKELETON_BAR}`} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </Callout>
 
       <Panel title="조회 조건">
