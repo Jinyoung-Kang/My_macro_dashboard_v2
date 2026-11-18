@@ -5,6 +5,7 @@ import { HorizontalBars } from "@/components/charts";
 import {
   DataTable,
   FilterList,
+  type FilterListPendingRow,
   type InspectorContext,
   InspectorFrame,
   InspectorTrigger,
@@ -27,7 +28,7 @@ import {
 import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { useRemembered } from "@/hooks/useRemembered";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
-import { consensusBars, securityNote } from "@/lib/consensus";
+import { CONSENSUS_BAR_LIMIT, consensusBars, securityNote } from "@/lib/consensus";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent } from "@/lib/format";
 import {
   consensusKpis,
@@ -117,12 +118,12 @@ export default function ConsensusPage() {
                 placeholder={
                   institutions.error ? (
                     <ErrorState message={institutions.error} onRetry={institutions.reload} />
-                  ) : firstLoadPending(institutions) ? (
-                    <Skeleton lines={4} label="기관 목록 불러오는 중" />
-                  ) : institutions.loading && institutions.data === null ? (
+                  ) : institutions.loading && institutions.data === null && !firstLoadPending(institutions) ? (
                     <Skeleton lines={2} label="기관 목록 불러오는 중" />
                   ) : null
                 }
+                // 처음 읽는 동안은 값이 온 뒤의 목록 꼴 자리(아래 PENDING_CONSENSUS) — 글 줄 자리표시였을 때는 목록이 오면 아래 '조건'이 밀렸습니다(QA-714).
+                pending={firstLoadPending(institutions) ? { label: "기관 목록 불러오는 중", rows: PENDING_CONSENSUS } : null}
                 emptyText="고를 기관이 없습니다."
               />
             </Panel>
@@ -165,16 +166,33 @@ export default function ConsensusPage() {
         {/* 읽는 중 타일은 값이 온 뒤의 꼴(값 줄 높이·첫 타일 출처 줄)로 — 값이 와도 띠 높이가 같게. */}
         {kpis.length > 0 ? <KpiStrip label="교집합 요약" items={kpis} pendingMatchesValue /> : null}
 
+        {/*
+          처음 읽는 동안은 막대·상세 표 패널도 같은 머리의 자리로 둡니다 — 없으면 값이 올 때 두 패널이 끼어들며 아래 '이번 분기 공통 신규 매수'를 화면 밖으로
+          밀었습니다(QA-714). 막대 자리는 막대 15개(consensusBars의 상한 — 요청 topN 40이 보통 채움)의 차트 높이, 표 자리는 짧은 줄 자리입니다(표 패널은 넓은 화면
+          첫 화면 아래 끝에 걸려, 그 아래는 화면 밖).
+        */}
+        {firstLoadPending(consensus) && (
+          <>
+            <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle={BARS_SUBTITLE}>
+              {/* Skeleton은 위아래 4px를 더하므로 그만큼 뺍니다 — 자리 전체가 차트 높이와 같게. */}
+              <Skeleton height={BARS_PENDING_HEIGHT - 8} label="공통 보유 상위 종목 불러오는 중" />
+            </Panel>
+            <Panel title="교집합 상세" source={SOURCES.sec13f}>
+              <Skeleton lines={6} label="교집합 상세 불러오는 중" />
+            </Panel>
+          </>
+        )}
+
         {data?.available && (
           <>
-            <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle="막대 길이 = 보유 기관 수">
+            <Panel title="공통 보유 상위 종목" source={SOURCES.sec13f} subtitle={BARS_SUBTITLE}>
               <HorizontalBars
                 data={chartData}
                 unit="곳"
                 digits={0}
                 neutral
                 ariaLabel="공통 보유 상위 종목 — 보유 기관 수"
-                height={Math.max(260, chartData.length * 26)}
+                height={Math.max(260, chartData.length * BAR_ROW)}
               />
             </Panel>
 
@@ -194,6 +212,38 @@ export default function ConsensusPage() {
     </div>
   );
 }
+
+/** 막대 패널 부제 — 값 패널과 읽는 중 자리가 같은 글(머리 높이가 같게). */
+const BARS_SUBTITLE = "막대 길이 = 보유 기관 수";
+
+/** 막대 한 줄 높이(px) — 이 화면이 막대 차트에 주는 높이(막대 수 × 26)와 차트 부품의 높이(막대 수 × 26 + 48)가 함께 씀. */
+const BAR_ROW = 26;
+
+/**
+ * 처음 읽는 동안 막대 자리의 높이 — 막대 15개(CONSENSUS_BAR_LIMIT)를 그린 차트 높이. 차트 부품(HorizontalBars)은 받은 높이와 '막대 수 × 26 + 48' 가운데 큰 쪽을
+ * 쓰므로 15개면 438px입니다(자기 빌드로 잰 막대 패널 559px — 머리·여백 121px).
+ */
+const BARS_PENDING_HEIGHT = Math.max(260, CONSENSUS_BAR_LIMIT * BAR_ROW, CONSENSUS_BAR_LIMIT * BAR_ROW + 48);
+
+/**
+ * 기관 목록을 처음 읽는 동안의 자리 줄(공용 거르기 목록의 `pending`) — 좁은 화면 태그 폭(px)·태그 줄 수(체크 상자를 포함한 태그 — 두 줄 태그 58px)와 넓은 화면
+ * (왼쪽 13rem 칸 — 체크 상자 칸이 있어 13F 목록보다 줄이 많음) 이름 줄 수. QA 스택 자료 12곳(목록 차례)을 자기 빌드(dc898d5d)로 잰 값입니다(390 태그 폭 177~332px·
+ * 합 672px, lg 줄 2~4줄 — 합 824px). 목록이 바뀌면 조금 어긋날 수 있습니다 — 자리일 뿐 보이는 수·이름이 아닙니다.
+ */
+const PENDING_CONSENSUS: readonly FilterListPendingRow[] = [
+  { tag: 287, lines: 2 },
+  { tag: 317, lines: 3 },
+  { tag: 250, lines: 3 },
+  { tag: 332, tagLines: 2, lines: 4 },
+  { tag: 332, tagLines: 2, lines: 3 },
+  { tag: 177, lines: 2 },
+  { tag: 215, lines: 2 },
+  { tag: 299, lines: 3 },
+  { tag: 332, tagLines: 2, lines: 3 },
+  { tag: 324, lines: 3 },
+  { tag: 302, lines: 3 },
+  { tag: 332, tagLines: 2, lines: 3 },
+];
 
 /** 원/달러 병기 — 공용 환율 훅(useUsdKrw)이 돌려주는 것. */
 type UsdKrw = ReturnType<typeof useUsdKrw>;

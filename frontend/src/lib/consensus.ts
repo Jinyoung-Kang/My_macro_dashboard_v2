@@ -28,6 +28,9 @@ export function securityNote(row: Pick<SecurityRow, "key" | "cusip">): string {
   return row.cusip ? `CUSIP ${row.cusip}` : "";
 }
 
+/** 교집합 막대 차트의 막대 수 상한(위에서부터) — 화면의 처음 읽는 동안 막대 자리 높이도 이 값으로 셈합니다. */
+export const CONSENSUS_BAR_LIMIT = 15;
+
 /**
  * '공통 보유 상위 종목' 막대(값 = 보유 기관 수). 이름은 예전처럼 16자에서 자르고, <b>이름이 겹치는 행에만</b>
  * 짧은 구분자(CUSIP, 합친 행은 발행사)를 붙입니다. 구분자가 이름표 칸에서 잘리면 다시 같은 이름표가 되므로,
@@ -35,7 +38,7 @@ export function securityNote(row: Pick<SecurityRow, "key" | "cusip">): string {
  */
 export function consensusBars(
   rows: readonly (SecurityRow & { holderCount: number })[],
-  limit = 15,
+  limit = CONSENSUS_BAR_LIMIT,
 ): { name: string; value: number }[] {
   const top = rows.slice(0, limit);
   const counts = new Map<string, number>();
