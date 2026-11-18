@@ -279,6 +279,13 @@ export function DecisionsSection({
         source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
         actions={<Freshness refreshError={list.refreshError} />}
       >
+        {/* 머리 '지금 결정 실행'의 결과·오류는 늘 그려 둔 알림 영역(role=status) 안 — 단추가 머리로 옮겨 결과 글과 떨어졌고 끝나면 포커스가 머리로 돌아가므로,
+            이 영역이 없으면 낭독기 사용자는 비용이 드는 쓰기의 성공·실패를 듣지 못합니다(보유·체결 탭과 같음 — QA-771). 패널 본문 맨 앞 — 긴 계좌 설명·결정 창
+            아래에 두면 좁은 화면에서 머리 단추를 누른 첫 화면 밖에 떴습니다(QA-813). 비어 있으면 높이·간격이 없습니다. */}
+        <div role="status" className="mb-3 flex flex-col gap-2 empty:mb-0">
+          {runError && <Callout tone="warn">{runError}</Callout>}
+          {runView && <Callout tone={runView.tone}>{runView.text}</Callout>}
+        </div>
         <p className="text-xs leading-relaxed text-text-3">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
         {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
         {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
@@ -326,12 +333,6 @@ export function DecisionsSection({
             </div>
           </div>
         )}
-        {/* 머리 '지금 결정 실행'의 결과·오류는 늘 그려 둔 알림 영역(role=status) 안 — 단추가 머리로 옮겨 결과 글과 떨어졌고 끝나면 포커스가 머리로 돌아가므로,
-            이 영역이 없으면 낭독기 사용자는 비용이 드는 쓰기의 성공·실패를 듣지 못합니다(보유·체결 탭과 같음 — QA-771). 비어 있으면 높이·간격이 없습니다. */}
-        <div role="status" className="mt-3 flex flex-col gap-2 empty:mt-0">
-          {runError && <Callout tone="warn">{runError}</Callout>}
-          {runView && <Callout tone={runView.tone}>{runView.text}</Callout>}
-        </div>
       </Panel>
 
       <Panel

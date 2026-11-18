@@ -37,7 +37,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-813 — '지금 결정 실행'의 결과 알림은 '결정' 패널 본문 맨 앞", () => {
-  it.fails("결과 글이 든 알림 영역이 계좌 설명 글보다 앞(문서 차례)", async () => {
+  it("결과 글이 든 알림 영역이 계좌 설명 글보다 앞(문서 차례)", async () => {
     api.apiPost.mockRejectedValue(new Error("합성 오류 — 결정을 실행하지 못했습니다"));
     render(<DecisionsSection books={[RULES]} onChanged={() => {}} />);
     await act(async () => {
