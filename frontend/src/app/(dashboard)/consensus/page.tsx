@@ -112,11 +112,15 @@ export default function ConsensusPage() {
                 onToggle={toggle}
                 selection="multiple"
                 narrow="wrap"
+                // 목록을 아직 못 받았으면 목록 대신 — 실패면 오류(다시 시도), 처음 읽는 중이면 자리표시, 실패 뒤 다시 읽는 중이면 짧은 자리표시(같은 이름).
+                // 마지막 경우에 null을 주면 거르기 목록이 빈 목록 글('고를 기관이 없습니다.')을 그려 모르는 상태를 '없다'로 적었습니다(QA-710).
                 placeholder={
                   institutions.error ? (
                     <ErrorState message={institutions.error} onRetry={institutions.reload} />
                   ) : firstLoadPending(institutions) ? (
                     <Skeleton lines={4} label="기관 목록 불러오는 중" />
+                  ) : institutions.loading && institutions.data === null ? (
+                    <Skeleton lines={2} label="기관 목록 불러오는 중" />
                   ) : null
                 }
                 emptyText="고를 기관이 없습니다."
@@ -148,6 +152,9 @@ export default function ConsensusPage() {
         }
       >
         {error && <ErrorState message={error} onRetry={reload} />}
+        {/* 실패 뒤 다시 읽는 동안(다시 시도·조건 바꿈 — useApi가 failedAt을 남김)은 공용 '불러오는 중' 한 줄(QA-655 규칙 — 13F 화면과 같음). 처음 읽는 동안은
+            아래 KPI 띠 자리표시입니다. 없으면 가운데 칸이 응답까지 비었습니다(QA-710 — 개편 전 `loading && !data`의 같은 글). */}
+        {consensus.loading && !data && !firstLoadPending(consensus) && <Loading label="교집합을 계산하는 중…" />}
 
         {data && !data.available && (
           <Callout tone="warn">
