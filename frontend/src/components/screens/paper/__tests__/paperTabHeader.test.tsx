@@ -139,6 +139,8 @@ describe("PaperBadge — 공용 태그(20px)", () => {
     expect(tag.className.split(/\s+/)).toContain("text-warn");
     expect(tag.textContent).toBe("주의: 일시정지");
     expect(tag.parentElement?.getAttribute("title")).toBe("새 체결·스탑을 멈춤");
+    // 좁은 표 칸에서도 글자 사이로 접히지 않게(예전 화면 배지와 같은 whitespace-nowrap).
+    expect(tag.parentElement?.className).toContain("whitespace-nowrap");
   });
 
   it("안내·흐림·모르는 색은 중립 태그(아이콘 없음, 강조 파랑 없음)", () => {
