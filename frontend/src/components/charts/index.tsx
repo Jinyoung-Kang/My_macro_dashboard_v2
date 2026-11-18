@@ -36,6 +36,7 @@ import {
   lineXAxis,
   lineYAxis,
   markerLabelSide,
+  markerLabelWidth,
   type LineRow,
   type LineYAxis,
   tailPointShown,
@@ -317,7 +318,8 @@ const MARKER_LABEL_PAD = 6;
 const MARKER_LABEL_GAP = 4;
 
 /**
- * 이름표를 그릴 세로 표시선(QA-736) — 그림 너비를 알면 선마다 이름표의 x 범위(선 오른쪽 또는 왼쪽 — markerLabelSide, 폭은 축 글 폭 어림 axisLabelWidth)를
+ * 이름표를 그릴 세로 표시선(QA-736) — 그림 너비를 알면 선마다 이름표의 x 범위(선 오른쪽 또는 왼쪽 — markerLabelSide, 폭은 이름표 글 폭 어림 markerLabelWidth —
+ * 축 글 폭 어림은 한글을 넉넉히 잡아 겹치지 않는 이름표까지 숨겼음, QA-777)를
  * 셈해, 앞(날짜가 이른) 이름표와 겹치거나 4px보다 가까운 뒤 이름표는 그리지 않습니다. 선은 모두 그립니다. 너비를 모르면(측정 전) 모두 그립니다(예전과 같음).
  * 날짜가 행에 없는 표시선은 Recharts가 그리지 않아 셈에서 뺍니다.
  */
@@ -336,7 +338,7 @@ function shownMarkerLabels(
   const taken: { left: number; right: number }[] = [];
   for (const { marker, index } of placed) {
     const at = (index / lastIndex) * width;
-    const labelWidth = axisLabelWidth(marker.label, CHART_FONT);
+    const labelWidth = markerLabelWidth(marker.label, CHART_FONT);
     const side = markerLabelSide(rows, marker.x, marker.label, { width, fontSize: CHART_FONT });
     const left = side === "left" ? at - MARKER_LABEL_PAD - labelWidth : at + MARKER_LABEL_PAD;
     const right = left + labelWidth;

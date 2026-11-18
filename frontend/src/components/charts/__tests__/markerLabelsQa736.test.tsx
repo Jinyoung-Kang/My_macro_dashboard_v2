@@ -10,7 +10,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MultiLineSeries, SERIES_COLORS } from "@/components/charts";
-import { axisLabelWidth } from "@/lib/lineChart";
+import { markerLabelWidth } from "@/lib/lineChart";
 
 function observeAs(width: number, height: number) {
   vi.stubGlobal(
@@ -47,12 +47,12 @@ const MARKERS = [
   { x: "2026-11-05", label: "프레임 v3" },
 ];
 
-/** 그린 이름표 글마다 [왼쪽, 오른쪽] x 범위(글 기준점 x와 정렬, 폭은 축 글 폭 어림 — lib/lineChart axisLabelWidth). */
+/** 그린 이름표 글마다 [왼쪽, 오른쪽] x 범위(글 기준점 x와 정렬, 폭은 이름표 글 폭 어림 — lib/lineChart markerLabelWidth, QA-777). */
 function labelExtents(container: HTMLElement): { text: string; left: number; right: number }[] {
   return [...container.querySelectorAll("text.recharts-label")].map((node) => {
     const text = node.textContent ?? "";
     const x = Number(node.getAttribute("x"));
-    const width = axisLabelWidth(text, 12);
+    const width = markerLabelWidth(text, 12);
     const anchor = node.getAttribute("text-anchor");
     const left = anchor === "end" ? x - width : anchor === "middle" ? x - width / 2 : x;
     return { text, left, right: left + width };
@@ -90,7 +90,7 @@ describe("QA-736 — 판 경계 이름표가 좁은 그림에서 겹치지 않�
  */
 describe("QA-777 — 겹치지 않는 판 경계 이름표는 숨기지 않는다", () => {
   const rows = ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-16", "2026-11-17"].map((date, index) => ({ date, a: 100000 + index * 100 }));
-  it.fails("행 사이 64px의 이웃 두 선(오른쪽 이름표) — '프레임 v2'·'프레임 v3' 둘 다 그린다", () => {
+  it("행 사이 64px의 이웃 두 선(오른쪽 이름표) — '프레임 v2'·'프레임 v3' 둘 다 그린다", () => {
     observeAs(60 + 256 + 8, 300);
     const { container } = render(
       <MultiLineSeries
