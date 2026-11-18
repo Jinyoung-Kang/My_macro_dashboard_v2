@@ -146,21 +146,14 @@ export default function ConsensusPage() {
                   key: "buy",
                   header: "동시 매수",
                   align: "right",
-                  render: (row) => (
-                    <span className={row.buyCount > 0 ? "text-up" : "text-text-3"}>
-                      {row.buyCount}
-                    </span>
-                  ),
+                  // 기관 몇 곳이라는 개수입니다 — 오르내린 값이 아니라 등락색(빨강·파랑)을 쓰지 않습니다(QA-703).
+                  render: (row) => row.buyCount,
                 },
                 {
                   key: "sell",
                   header: "동시 매도",
                   align: "right",
-                  render: (row) => (
-                    <span className={row.sellCount > 0 ? "text-down" : "text-text-3"}>
-                      {row.sellCount}
-                    </span>
-                  ),
+                  render: (row) => row.sellCount,
                 },
                 {
                   key: "avgWeight",
@@ -281,7 +274,8 @@ function NewBuysCard({ reportDate }: { reportDate: string }) {
                 key: "buyerCount",
                 header: "새로 담은 기관",
                 align: "right",
-                render: (row) => <span className="font-semibold text-up">{row.buyerCount}곳</span>,
+                // 개수라 등락색이 아니라 본문 잉크입니다(QA-703).
+                render: (row) => <span className="font-semibold">{row.buyerCount}곳</span>,
               },
               {
                 key: "avgWeight",
