@@ -96,7 +96,7 @@ describe("보유·체결 — 머리 칸", () => {
     expect(api.apiPost).not.toHaveBeenCalled();
   });
 
-  it("계좌 패널: 맨 위 알림 영역, 상태 배지·KPI 띠(음수는 '−'), 일시정지 설명은 늘 보임(머리 단추가 가리킴), 초기화 설명은 '읽는 법' 접기", async () => {
+  it("계좌 패널: 맨 위 알림 영역, 상태 배지·KPI 띠(음수는 '−' — 순자산 타일에 패널과 같은 출처를 다시 적지 않음), 일시정지 설명은 늘 보임(머리 단추가 가리킴), 초기화 설명은 '읽는 법' 접기", async () => {
     render(<PaperScreen initialTab="holdings" />);
     await settled();
     const strip = screen.getByRole("region", { name: "규칙 계좌 요약" });
@@ -104,6 +104,8 @@ describe("보유·체결 — 머리 칸", () => {
     expect(within(strip).getByRole("group", { name: "수익률(출발 이후)" }).textContent).toContain("−1.20%");
     expect(within(strip).getByRole("group", { name: "주식 노출" }).textContent).toContain("현금성(SHY) 포함");
     expect(within(strip).getByRole("group", { name: "출발" }).textContent).toContain("2026-10-23");
+    // 순자산 타일에는 출처 줄이 없음 — 같은 글이 패널 머리 '출처 ·' 줄에 있음(작업대 P6 검토).
+    expect(within(within(strip).getByRole("group", { name: "순자산" })).queryByText(/PostgreSQL paper_/)).toBeNull();
     const panel = strip.closest("section[aria-labelledby]")?.parentElement?.closest("section") ?? document.body;
     const status = within(panel as HTMLElement).getAllByRole("status")[0];
     expect(status.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

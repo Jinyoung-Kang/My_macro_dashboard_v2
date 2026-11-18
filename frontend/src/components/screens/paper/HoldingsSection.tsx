@@ -865,7 +865,8 @@ export function HoldingsSection({
             <KpiStrip
               label={`${book.label} 요약`}
               items={[
-                { key: "nav", label: "순자산", value: book.nav, format: (value) => formatNumber(value, meta.moneyDigits), unit: meta.unitLabel, source: ledgerSource },
+                // 출처는 바로 위 패널 머리의 '출처 ·' 줄과 같은 글이라 타일에 다시 적지 않습니다(작업대 P6 검토 — 좁은 화면에서 이 타일과 같은 줄 타일이 길어졌음).
+                { key: "nav", label: "순자산", value: book.nav, format: (value) => formatNumber(value, meta.moneyDigits), unit: meta.unitLabel },
                 { key: "return", label: "수익률(출발 이후)", value: book.returnPct, format: signedPercent },
                 { key: "cash", label: "현금", value: book.cash, format: (value) => formatNumber(value, meta.moneyDigits), unit: meta.unitLabel },
                 {
