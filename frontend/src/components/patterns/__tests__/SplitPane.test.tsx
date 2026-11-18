@@ -1,5 +1,5 @@
 /**
- * SplitPane — 칸 틀(작업대 실행 명세 §6, P4 — 상세 화면 셋의 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처).
+ * SplitPane — 칸 틀(작업대 실행 명세 §6, P4 — 상세 화면 셋의 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처, P5b — 오른쪽 칸을 주지 않은 두 칸 틀).
  * 틀 패턴이라 값 상태가 없습니다 — 네 상태는 칸 안 패턴(PropertyList·패널)이 맡고, 여기서는 칸이 비었을 때(빈 칸)·칸 안에 불러오는 중/오류 글이 와도
  * 자리와 차례가 그대로인지, 클래스가 정보 검색 틀(ENTITY_FRAME)과 같은지를 봅니다. jsdom은 배치를 계산하지 않으므로 클래스로만 봅니다(실제 폭은 D2 전 브라우저 확인).
  */
@@ -146,6 +146,76 @@ describe("SplitPane", () => {
       expect(root.children).toHaveLength(3);
       expect(tokens(root.children[0])).not.toContain("max-lg:hidden");
       expect(root.children[0].hasAttribute("id")).toBe(false);
+    });
+  });
+
+  // P5b — 왼쪽 목록·조건 + 가운데 고른 대상(13F 포트폴리오·교집합): 오른쪽 칸을 주지 않으면 두 칸 틀.
+  describe("right를 주지 않으면 두 칸 틀", () => {
+    const TWO = ["lg:grid", "lg:grid-cols-[13rem_minmax(0,1fr)]"];
+
+    it("뿌리는 lg 미만 한 칸·lg 이상 왼쪽 13rem · 가운데(xl에서도 두 칸 — 세 칸 클래스·줄 나눔 없음), 칸은 둘", () => {
+      const { container } = render(
+        <SplitPane left={<p>목록</p>}>
+          <p>가운데</p>
+        </SplitPane>,
+      );
+      const root = container.firstElementChild as HTMLElement;
+      expect(tokens(root)).toEqual(expect.arrayContaining(["flex", "min-w-0", "flex-col", "gap-3", "lg:gap-4", ...TWO]));
+      for (const token of tokens(root)) expect(token.startsWith("xl:") || token.startsWith("lg:grid-rows"), token).toBe(false);
+      expect(root.children).toHaveLength(2);
+    });
+
+    it("자식 차례는 왼쪽 → 가운데(읽는 차례·Tab 차례), 왼쪽 칸은 두 줄을 걸치지 않음", () => {
+      const { container } = render(
+        <SplitPane left={<a href="#a">목록 링크</a>}>
+          <a href="#b">가운데 링크</a>
+        </SplitPane>,
+      );
+      expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(["목록 링크", "가운데 링크"]);
+      const [left, center] = [...(container.firstElementChild as HTMLElement).children];
+      expect(tokens(left)).toEqual(expect.arrayContaining(["flex", "min-w-0", "flex-col", "gap-3", "lg:gap-4"]));
+      for (const token of ENTITY_FRAME_LEFT.split(" ")) expect(tokens(left)).not.toContain(token);
+      expect(tokens(center)).toEqual(expect.arrayContaining(["min-w-0", "flex-col"]));
+    });
+
+    it("leftWidth='wide'면 왼쪽 칸만 15rem", () => {
+      const { container } = render(
+        <SplitPane leftWidth="wide" left={<p>목록</p>}>
+          <p>가운데</p>
+        </SplitPane>,
+      );
+      const root = container.firstElementChild as HTMLElement;
+      expect(tokens(root)).toEqual(expect.arrayContaining(["lg:grid", "lg:grid-cols-[15rem_minmax(0,1fr)]"]));
+      expect(tokens(root)).not.toContain("lg:grid-cols-[13rem_minmax(0,1fr)]");
+      expect(root.children).toHaveLength(2);
+    });
+
+    it("collapseLeft와 함께: 단추 → 왼쪽 → 가운데(셋), 왼쪽 칸은 lg 미만에서만 숨김·줄 걸침 없음", () => {
+      const { container } = render(
+        <SplitPane collapseLeft="기관 목록" left={<a href="#a">목록 링크</a>}>
+          <a href="#b">가운데 링크</a>
+        </SplitPane>,
+      );
+      const root = container.firstElementChild as HTMLElement;
+      expect(root.children).toHaveLength(3);
+      const button = screen.getByRole("button", { name: "기관 목록 펼치기" });
+      expect(root.firstElementChild).toBe(button);
+      const left = root.children[1] as HTMLElement;
+      expect(button.getAttribute("aria-controls")).toBe(left.id);
+      expect(tokens(left)).toContain("max-lg:hidden");
+      expect(tokens(left)).not.toContain("lg:row-span-2");
+      expect([...root.querySelectorAll("a")].map((link) => link.textContent)).toEqual(["목록 링크", "가운데 링크"]);
+    });
+
+    it("right={null}은 '준 것' — 세 칸 틀 그대로(빈 오른쪽 칸 자리)", () => {
+      const { container } = render(
+        <SplitPane left={<p>목록</p>} right={null}>
+          <p>가운데</p>
+        </SplitPane>,
+      );
+      const root = container.firstElementChild as HTMLElement;
+      expect(tokens(root)).toEqual(expect.arrayContaining(ENTITY_FRAME.split(" ")));
+      expect(root.children).toHaveLength(3);
     });
   });
 });
