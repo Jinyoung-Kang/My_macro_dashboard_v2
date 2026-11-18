@@ -242,8 +242,9 @@
 - 끄기: 확인 창 없이 바로(누른 뒤 "새 주문 멈춤 — 미체결 취소 중" → 결과).
 - 칸 내용: 상태 칩(꺼짐·켜짐·멈춤(사유)·끄는 중·서버에서 꺼짐), 따라 하는 책, 운용 평가액·기준 대비 손익(부호와 색), 오늘 창과 쉬는 사유, 최근 실제 주문 표(용도·종목·방향·수량·상태·체결가),
   이벤트, 멈춤 해제·설정 바꾸기 단추(같은 확인). 미국 탭은 "미국 실제 매매는 준비 중입니다"(꺼진 단추).
-- 이벤트 줄(`eventDetailText`): 회전율 멈춤에 `rebalanceCheck`가 있으면 사유 뒤에 '재선정 예외 아님: 이름표(코드)', 그 뒤 % 칸(회전율·판정 회전율·목표 변화량·책 변화량·계좌 어긋남·
-  하루 한도로 못 내는 매수 — 숫자일 때만). `TURNOVER_EXEMPT`도 같은 % 칸. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만.
+- 이벤트 줄(`eventDetailText`): 회전율 멈춤에 `rebalanceCheck`가 있으면 사유 뒤에 '재선정 예외 아님: 이름표(코드)', 그 뒤 % 칸(회전율·판정 회전율·허용폭·목표 변화량·책 변화량·
+  계좌 어긋남·하루 한도로 못 내는 매수 — 숫자일 때만). 허용폭(`allowancePct` = min(스탑 감소만 뺀 책 변화량 + 20, 150))은 교차 확인(`over-allowance`)의 기준이고, '책 변화량'
+  (`bookDriftPct` — 현금성 상쇄까지 뺀 값)은 그 기준이 아니다(QA-800). `TURNOVER_EXEMPT`도 같은 % 칸. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만.
 - 화면 경계 시험 `realtradeBoundary.test.ts`: realtrade 모듈을 밖에서 가져오는 곳은 `PaperScreen` 하나, lib/paper*·lib/home*·배럴은 realtrade를 가져오지 않음, realtrade는 brokerage 모듈을 가져오지 않음,
   apiPost는 `endpoints.realtrade.*`에만. 기존 `brokerageBoundary.test.ts`는 그대로(brokerage 모듈은 쓰기 함수를 가져오지 않음). 배너 문구는 '조회는 읽기 전용 — 자동 매매는 위 실제 매매 칸'.
 

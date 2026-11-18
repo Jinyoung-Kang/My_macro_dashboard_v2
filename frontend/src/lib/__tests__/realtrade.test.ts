@@ -631,14 +631,14 @@ describe("재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11
       decisionDate: "2026-12-08", turnoverPct: 116.65, checkTurnoverPct: 116.65, bookDriftPct: 120, accountDriftPct: 0, dailyShortPct: 0,
       priceRatio: 1, nameJumpPct: 6.67, nameCutPct: 0, stockNames: 15, deriskPct: -46.67, investedPct: 100, allowancePct: 140,
     }, "TURNOVER_EXEMPT")).toBe(
-      "회전율 116.7% · 판정 회전율 116.7% · 책 변화량 120.0% · 계좌 어긋남 0.0% · 하루 한도로 못 내는 매수 0.0%",
+      "회전율 116.7% · 판정 회전율 116.7% · 허용폭 140.0% · 책 변화량 120.0% · 계좌 어긋남 0.0% · 하루 한도로 못 내는 매수 0.0%",
     );
   });
 
   // QA-800 — 교차 확인(over-allowance)은 판정 회전율을 '스탑 감소만 뺀 책 변화량(B°) + 20%p'와 견준다. 줄의 '책 변화량'(bookDriftPct)은 현금성 상쇄까지
   // 뺀 B라 이름표가 그 칸과 견주는 것처럼 읽혔고(E1b형 예외: 판정 회전율 120.5 · 책 변화량 100.0), 실제 기준인 허용폭(allowancePct = min(B° + 20, 150))은
-  // 그리지 않았다. 수정 전(재현 커밋에서는 it.fails): 이름표 '회전율이 책 변화량 + 20%p 초과(over-allowance)', 줄에 '허용폭' 없음.
-  it.fails("QA-800: 교차 확인 이름표는 허용폭(B° + 20) 기준을 말하고, 줄에 허용폭을 그린다", () => {
+  // 그리지 않았다. 수정 전(재현 커밋 8182413b에서는 it.fails): 이름표 '회전율이 책 변화량 + 20%p 초과(over-allowance)', 줄에 '허용폭' 없음.
+  it("QA-800: 교차 확인 이름표는 허용폭(B° + 20) 기준을 말하고, 줄에 허용폭을 그린다", () => {
     expect(rebalanceCheckLabel("over-allowance")).toBe("판정 회전율이 허용폭(스탑 감소만 뺀 책 변화량 + 20%p) 초과(over-allowance)");
     expect(eventDetailText({
       decisionDate: "2026-11-05", turnoverPct: 120.5, checkTurnoverPct: 120.5, bookDriftPct: 100, accountDriftPct: 0, dailyShortPct: 0,

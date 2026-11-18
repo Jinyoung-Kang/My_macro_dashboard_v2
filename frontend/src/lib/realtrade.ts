@@ -837,7 +837,8 @@ const REBALANCE_CHECK: Readonly<Record<string, string>> = {
   "derisk-over": "주식 노출이 30%p 넘게 줆",
   "targets-thin": "목표 합 90% 미만",
   "targets-over": "목표 합 101% 초과(책 현금 음수)",
-  "over-allowance": "회전율이 책 변화량 + 20%p 초과",
+  // 교차 확인은 판정 회전율을 스탑 감소만 뺀 책 변화량(B°) + 20%p(허용폭, 150 상한)와 견줌 — 줄의 '책 변화량'(현금성 상쇄까지 뺀 B)이 아님(QA-800)
+  "over-allowance": "판정 회전율이 허용폭(스탑 감소만 뺀 책 변화량 + 20%p) 초과",
   "over-cap": "회전율 150% 초과",
 };
 
@@ -851,12 +852,14 @@ export function rebalanceCheckLabel(code: string | null | undefined): string {
 }
 
 /**
- * 회전율 멈춤(HALT)·회전율 예외(TURNOVER_EXEMPT) 이벤트의 % 칸 — detail 키와 이름표. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만
- * 둡니다.
+ * 회전율 멈춤(HALT)·회전율 예외(TURNOVER_EXEMPT) 이벤트의 % 칸 — detail 키와 이름표. 허용폭(allowancePct = min(스탑 감소만 뺀 책 변화량 + 20, 150))은
+ * 교차 확인의 실제 기준이라 판정 회전율 바로 뒤에 둡니다(QA-800 — '책 변화량'은 현금성 상쇄까지 뺀 값이라 그 기준이 아님). 그 밖의 숫자 칸(가격 배율·종목 수·
+ * 목표 합 등)은 API detail에만 둡니다.
  */
 const EVENT_PCTS: readonly [string, string][] = [
   ["turnoverPct", "회전율"],
   ["checkTurnoverPct", "판정 회전율"],
+  ["allowancePct", "허용폭"],
   ["targetDriftPct", "목표 변화량"],
   ["bookDriftPct", "책 변화량"],
   ["accountDriftPct", "계좌 어긋남"],
