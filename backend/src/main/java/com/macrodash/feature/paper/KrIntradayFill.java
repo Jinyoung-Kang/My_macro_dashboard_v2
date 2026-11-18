@@ -373,6 +373,62 @@ final class KrIntradayFill {
         return out;
     }
 
+    // ------------------------------------------------------------------ 보유 사본·되감기(실제 계좌 공개 창의 거울 보기)
+    /**
+     * 장중 기록 직전 보유의 사본(근거 {@value #BEFORE}) — 보유 레코드 칸 그대로(날짜·시각은 ISO 글). 공개 창({@link PaperMirrorService})이 그 세션 밤 처리
+     * 전까지 이 사본으로 보유를 되살립니다({@link #position}).
+     */
+    static Map<String, Object> before(Position p) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("qty", p.qty());
+        out.put("avgCost", p.avgCost());
+        out.put("openedOn", p.openedOn() == null ? null : p.openedOn().toString());
+        out.put("openedAt", p.openedAt() == null ? null : p.openedAt().toString());
+        out.put("highWatermark", p.highWatermark());
+        out.put("watermarkAt", p.watermarkAt() == null ? null : p.watermarkAt().toString());
+        out.put("lastPrice", p.lastPrice());
+        out.put("lastPriceAt", p.lastPriceAt() == null ? null : p.lastPriceAt().toString());
+        out.put("priceStale", p.priceStale());
+        out.put("fillRefDate", p.fillRefDate() == null ? null : p.fillRefDate().toString());
+        out.put("fillRefClose", p.fillRefClose());
+        out.put("splitNote", p.splitNote());
+        return out;
+    }
+
+    /** 근거의 보유 사본({@link #before}) → 그 책·종목의 보유, 수량을 읽을 수 없으면(1 미만 포함) null. */
+    static Position position(String book, String ticker, JsonNode before) {
+        Double qty = Json.asDouble(before, "qty");
+        Double avgCost = Json.asDouble(before, "avgCost");
+        if (qty == null || qty < 1 || avgCost == null) {
+            return null;
+        }
+        Double high = Json.asDouble(before, "highWatermark");
+        Double refClose = Json.asDouble(before, "fillRefClose");
+        String openedOn = Json.asText(before, "openedOn");
+        String fillRefDate = Json.asText(before, "fillRefDate");
+        return new Position(book, ticker, qty.intValue(), avgCost, openedOn == null ? null : LocalDate.parse(openedOn),
+                instantOrNull(Json.asText(before, "openedAt")), high == null ? avgCost : high, instantOrNull(Json.asText(before, "watermarkAt")),
+                Json.asDouble(before, "lastPrice"), instantOrNull(Json.asText(before, "lastPriceAt")), Json.asBoolean(before, "priceStale"),
+                fillRefDate == null ? null : LocalDate.parse(fillRefDate), refClose == null ? 0 : refClose, Json.asText(before, "splitNote"));
+    }
+
+    /**
+     * 현금 되감기 한 단계(기록 트랜잭션 하나) — 지금 상태 현금이 기록 직후 값({@value #CASH_AFTER} — 쓴 값 그대로)과 같으면 기록 직전 값({@value #CASH_BEFORE})
+     * 그대로, 다르면(그사이 확정 조정 등이 현금을 옮김) 십진수로 '지금 − (직후 − 직전)'을 센 뒤 소수 넷째 자리(상태 현금 열과 같은 자리). 두 배정밀도 수의
+     * 뺄셈으로 직전 값을 다시 만들면 끝자리가 갈려 장중 기록이 없던 세계와 비중·순자산이 비트까지 같지 않습니다.
+     */
+    static double rewindCash(double now, double before, double after) {
+        if (Double.compare(now, after) == 0) {
+            return before;
+        }
+        return BigDecimal.valueOf(now).subtract(BigDecimal.valueOf(after).subtract(BigDecimal.valueOf(before)))
+                .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
+    }
+
+    private static Instant instantOrNull(String text) {
+        return text == null ? null : instant(text);
+    }
+
     // ------------------------------------------------------------------ 저장본 칸 읽기
     /** 감시 항목을 받은 시각({@code fetchedAt} — 그 종목 응답을 받은 뒤), 모르면 null. */
     static Instant fetchedAt(JsonNode entry) {

@@ -16,6 +16,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
@@ -433,11 +434,42 @@ public class PaperAdminService {
             }
             int cancelled = 0;
             if (PaperBooks.PAUSED.equals(target)) {
+                markPausedIntradayStops(book);
                 cancelled = store.cancelPendingOrders(code);
             }
             store.updateBookStatus(code, target);
             return new StatusChange(code, target, cancelled);
         }));
+    }
+
+    /**
+     * 일시정지 때 그 책의 되감는 중인 장중 기록 STOP(ADR 0045 — 근거 {@code intradayFill.mode = ON}이고 체결일이 마지막 처리 세션보다 뒤)에 {@code pausedAt}을
+     * 남깁니다. 밤 일괄에서는 이 일시정지가 그 STOP을 취소했을 것이므로, 실제 계좌·ISA 공개 창({@link PaperMirrorService})이 그 STOP을 대기로 되감지 않고 보유·
+     * 현금만 되감습니다(다시 운용으로 바꿔도 밤 일괄의 STOP은 취소된 그대로). 한국 책이 아니면 아무것도 하지 않습니다. 달력이 마지막 처리 세션을 모르면
+     * 그 책의 장중 기록 STOP 모두에 남깁니다(되감는 중이 아닌 행의 표시는 읽는 쪽이 보지 않음).
+     */
+    private void markPausedIntradayStops(Book book) {
+        if (!Book.MARKET_KR.equals(book.market())) {
+            return;
+        }
+        LocalDate processed = null;
+        BookState state = store.state(book.code()).orElse(null);
+        if (state != null && state.lastProcessedCollectedAt() != null) {
+            try {
+                processed = KrPaperMarket.targetSession(state.lastProcessedCollectedAt(), markets.open(KrPaperMarket.INSTANCE).calendar());
+            } catch (com.macrodash.analytics.CalendarUnavailableException e) {
+                processed = null;
+            }
+        }
+        for (PaperStore.OrderFill rec : store.intradayRecordedStops(book.code(), processed)) {
+            JsonNode fill = rec.order().reason().get(KrIntradayFill.FIELD);
+            if (fill == null || !fill.isObject() || fill.hasNonNull(KrIntradayFill.PAUSED_AT)) {
+                continue;
+            }
+            tools.jackson.databind.node.ObjectNode reason = (tools.jackson.databind.node.ObjectNode) rec.order().reason().deepCopy();
+            ((tools.jackson.databind.node.ObjectNode) reason.get(KrIntradayFill.FIELD)).put(KrIntradayFill.PAUSED_AT, clock.instant().toString());
+            store.updateOrderReason(rec.order().id(), reason);
+        }
     }
 
     /**

@@ -764,6 +764,209 @@ class PaperMirrorServiceTest {
         assertThat(service().orderLadderPrice("nope", stop)).isEmpty();
     }
 
+    // ------------------------------------------------------------------ 거울 보기(ADR 0045 — 장중 기록 STOP을 그 세션 밤 처리 전까지 대기로)
+    /** 공개 창이 실제 계좌·ISA에 내놓는 값 한 벌 — 두 세계(장중 기록 있음·없음)를 견줍니다. */
+    private record Seen(Optional<OpenTargets> open, Optional<OpenTargets> at, List<DueOrder> due, java.util.Set<String> stops,
+                        Optional<WeightAfter> stopWeight, Optional<WeightAfter> otherWeight, Optional<String> status, Optional<String> claimed,
+                        boolean caughtUp) {
+    }
+
+    private Seen seen(LocalDate session, Instant now, Instant cutoff, long stop, long other) {
+        PaperMirrorService s = service(now);
+        return new Seen(s.openTargets(BOOK, session), s.targetsAt(BOOK, session, cutoff), s.dueOrders(BOOK, session, now),
+                s.pendingStopSymbols(BOOK, session), s.weightAfter(BOOK, stop, now), s.weightAfter(BOOK, other, now), s.orderStatus(BOOK, stop),
+                s.claim(BOOK, stop, now, () -> "claimed"), s.ledgerCaughtUp(BOOK, session));
+    }
+
+    /** 새 저장소로 같은 책을 다시 엽니다(두 세계를 같은 번호로 만들려고). */
+    private void freshWorld() {
+        store = new FakePaperStore();
+        markets = new PaperMarkets(store, reader);
+        ledger = new PaperLedgerService(store, marketData, PaperFixtures.MAPPER);
+        store.books.put(BOOK, new Book(BOOK, PaperBooks.KIND_CLAUDE, PaperBooks.KR_CLAUDE2_LABEL, 100_000_000,
+                LocalDate.of(2026, 10, 30), PaperBooks.ACTIVE, Instant.parse("2026-10-29T13:00:00Z"), Book.MARKET_KR, Book.CURRENCY_KRW));
+    }
+
+    /** 장중 감시 STOP(장중 시장가) — 기준일 {@code asOf}, 만료일 = 목표 세션. */
+    private long watchStop(String ticker, LocalDate asOf, String created, LocalDate session) {
+        ObjectNode reason = PaperFixtures.MAPPER.createObjectNode().put("stopMode", PaperStopWatchJob.STOP_MODE).put("stopPct", 8)
+                .put("highWatermark", 11_000).put("stopPrice", 10_120);
+        return store.insertOrder(new Order(0, BOOK, null, ticker, PaperBooks.SELL, null, null, null, PaperBooks.MARKET, PaperBooks.SOURCE_STOP,
+                PaperBooks.ORDER_PENDING, null, reason, asOf, kst(created), session, null));
+    }
+
+    /** S 세션 장면 — 보유 A·B·C, 현금 1,000,000.3원, 감시 STOP A(T 10:31), Claude 11:00 지정 시각 매수 B·시가 매수(다음 세션) 하나. */
+    private long[] sameSessionWorld(boolean recorded) {
+        freshWorld();
+        state(1_000_000.3, kst("2026-11-05T20:40"));
+        position(A, 100, 10_000);
+        position(B, 50, 20_000);
+        position(C, 300, 5_000);
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000, C, 5_000);
+        long stop = watchStop(A, P, "2026-11-06T10:30:20", S);
+        long other = order(B, PaperBooks.BUY, 12.0, null, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P, NIGHT, LocalTime.of(11, 0), null);
+        order(C, PaperBooks.SELL, null, 1.0, PaperBooks.NEXT_OPEN, PacketBuilder.SOURCE_CLAUDE, S, kst("2026-11-06T22:40"), null, null);
+        if (recorded) {
+            IntradayRecords.record(store, BOOK, Map.of(stop, 9_870.0), kst("2026-11-06T10:35:20"), S, markets.open(KrPaperMarket.INSTANCE).calendar());
+        }
+        return new long[]{stop, other};
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기 — 장중 기록 STOP(근거 mode ON)이 있어도 그 세션 밤 처리 전에는 시가·시각 목표(비중·순자산·현금·흡수·STOP 번호), 장중 주문, "
+            + "대기 STOP 종목, 그 주문 뒤 비중(STOP·Claude), 주문 상태, 선점, 장부 반영이 장중 기록 없는 세계와 같음(대기 STOP 종목과 시각 목표를 한 주기에 함께 읽음)")
+    void mirrorRewindsIntradayRecordedStop() {
+        Instant now = kst("2026-11-06T10:40");
+        Instant cutoff = kst("2026-11-06T11:00");
+        long[] ids = sameSessionWorld(false);
+        Seen off = seen(S, now, cutoff, ids[0], ids[1]);
+        long[] again = sameSessionWorld(true);
+        assertThat(again).containsExactly(ids);
+        assertThat(store.orders.get(ids[0]).status()).as("장부에는 체결로 적힘").isEqualTo(PaperBooks.ORDER_FILLED);
+        assertThat(store.positions.get(BOOK)).doesNotContainKey(A);
+        assertThat(store.states.get(BOOK).cash()).isGreaterThan(1_900_000);
+        Seen on = seen(S, now, cutoff, ids[0], ids[1]);
+
+        assertThat(on).isEqualTo(off);
+        assertThat(off.stops()).containsExactly(A);
+        assertThat(off.due()).extracting(DueOrder::orderId).contains(ids[0]);
+        assertThat(off.at().orElseThrow().stopOrderIds()).containsExactly(ids[0]);
+        assertThat(off.status()).contains(PaperBooks.ORDER_PENDING);
+        assertThat(off.claimed()).contains("claimed");
+        assertThat(off.open().orElseThrow().cash()).as("현금은 쓴 값 그대로(비트까지)").isEqualTo(1_000_000.3);
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기 — 그 세션 밤 처리 뒤(마지막 처리 저장본의 세션 = 체결일)에는 되감지 않고 장부 그대로(대기 STOP 종목에서 빠지고 보유·현금은 기록 뒤 값)")
+    void mirrorStopsAfterTheNight() {
+        long[] ids = sameSessionWorld(true);
+        BookState now = store.states.get(BOOK);
+        store.states.put(BOOK, new BookState(BOOK, now.cash(), now.nav(), now.equityValue(), now.exposurePct(), kst("2026-11-06T20:40"),
+                kst("2026-11-06T20:40"), S, null));
+        PaperMirrorService service = service(kst("2026-11-06T21:00"));
+        assertThat(service.pendingStopSymbols(BOOK, S)).isEmpty();
+        assertThat(service.orderStatus(BOOK, ids[0])).contains(PaperBooks.ORDER_FILLED);
+        assertThat(service.openTargets(BOOK, S).orElseThrow().cash()).isEqualTo(now.cash());
+        assertThat(service.openTargets(BOOK, S).orElseThrow().weightPct()).doesNotContainKey(A);
+        assertThat(service.claim(BOOK, ids[0], kst("2026-11-06T21:00"), () -> "claimed")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기 — S 밤 처리가 밀려 S+1 세션이 되면 되감은 STOP은 대기 STOP처럼 만료 거름으로 빠지고(지난 STOP 아님 — 만료일 S) 보유·현금 되감기는 이어짐: 두 세계 같음")
+    void mirrorWhenTheNightIsLate() {
+        LocalDate next = LocalDate.of(2026, 11, 9);
+        Instant now = kst("2026-11-09T09:20");
+        long[] ids = sameSessionWorld(false);
+        Seen off = seen(next, now, kst("2026-11-09T09:30"), ids[0], ids[1]);
+        sameSessionWorld(true);
+        Seen on = seen(next, now, kst("2026-11-09T09:30"), ids[0], ids[1]);
+        assertThat(on).isEqualTo(off);
+        assertThat(off.stops()).as("만료일 S < S+1 — 지난 STOP으로 보지 않음").isEmpty();
+        assertThat(off.open().orElseThrow().weightPct()).as("보유는 남음").containsKey(A);
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기 — 기록 뒤 그 밤 전에 일시정지하면(밤 일괄이면 그 STOP이 취소됨) 근거에 pausedAt을 남기고, 공개 창은 보유·현금만 되감고 주문은 넣지 않음: 두 세계 같음")
+    void mirrorAfterPause() {
+        Instant now = kst("2026-11-06T10:40");
+        Instant cutoff = kst("2026-11-06T11:00");
+        long[] ids = sameSessionWorld(false);
+        admin().setStatus(BOOK, PaperBooks.PAUSED);
+        Seen off = seen(S, now, cutoff, ids[0], ids[1]);
+        sameSessionWorld(true);
+        admin().setStatus(BOOK, PaperBooks.PAUSED);
+        assertThat(store.orders.get(ids[0]).reason().path(KrIntradayFill.FIELD).path(KrIntradayFill.PAUSED_AT).asString()).isNotBlank();
+        Seen on = seen(S, now, cutoff, ids[0], ids[1]);
+        assertThat(on).isEqualTo(off);
+        assertThat(off.status()).contains(PaperBooks.ORDER_CANCELLED);
+        assertThat(off.stops()).isEmpty();
+        assertThat(off.open().orElseThrow().weightPct()).containsKey(A);
+        admin().setStatus(BOOK, PaperBooks.ACTIVE);
+        assertThat(seen(S, now, cutoff, ids[0], ids[1]).stops()).as("다시 운용해도 밤 일괄의 STOP은 취소된 그대로").isEmpty();
+    }
+
+    private PaperAdminService admin() {
+        return new PaperAdminService(store, marketData, reader, PaperFixtures.settings(store), ledger, PaperFixtures.config(),
+                PaperFixtures.MAPPER, Clock.fixed(kst("2026-11-06T10:38"), ZoneOffset.UTC));
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기 — S−1에 기록하고 S−1 밤 처리가 S 낮까지 밀린 날(QA-331): 부른 세션 S와 상관없이 체결일 > 마지막 처리 세션인 행을 되감아 두 세계 같음")
+    void mirrorRewindsByTheProcessedSession() {
+        LocalDate p2 = P2;
+        Instant now = kst("2026-11-06T10:40");
+        long[] off = previousSessionWorld(false, p2);
+        Seen before = seen(S, now, kst("2026-11-06T11:00"), off[0], off[1]);
+        long[] on = previousSessionWorld(true, p2);
+        assertThat(on).containsExactly(off);
+        assertThat(seen(S, now, kst("2026-11-06T11:00"), on[0], on[1])).isEqualTo(before);
+        assertThat(before.open().orElseThrow().weightPct()).containsKey(A);
+    }
+
+    private long[] previousSessionWorld(boolean recorded, LocalDate processedSession) {
+        freshWorld();
+        state(1_000_000.3, ZonedDateTime.of(processedSession, LocalTime.of(20, 40), KrxCalendar.SEOUL).toInstant());
+        position(A, 100, 10_000);
+        position(B, 50, 20_000);
+        quotes(kst("2026-11-04T20:30"), A, 10_000, B, 20_000);
+        long stop = watchStop(A, P2, "2026-11-05T13:10:42", P);
+        long other = order(B, PaperBooks.BUY, 12.0, null, PaperBooks.AT_MINUTE, PacketBuilder.SOURCE_CLAUDE, P, NIGHT, LocalTime.of(11, 0), null);
+        if (recorded) {
+            IntradayRecords.record(store, BOOK, Map.of(stop, 9_870.0), kst("2026-11-05T13:15:20"), P, markets.open(KrPaperMarket.INSTANCE).calendar());
+        }
+        return new long[]{stop, other};
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기의 현금 — 기록 뒤 확정 조정이 현금을 옮겨도(직후 값과 다름) 십진수로 '지금 − (직후 − 직전)'을 세어 장중 기록 없는 세계와 비트까지 같음, 한 트랜잭션의 STOP 둘")
+    void mirrorCashIsExactAfterAConfirmationShift() {
+        Instant now = kst("2026-11-06T10:40");
+        Instant cutoff = kst("2026-11-06T11:00");
+        long[] ids = twoStopWorld(false);
+        store.shiftStateCash(BOOK, new java.math.BigDecimal("-12.3457"));
+        Seen off = seen(S, now, cutoff, ids[0], ids[1]);
+        twoStopWorld(true);
+        store.shiftStateCash(BOOK, new java.math.BigDecimal("-12.3457"));
+        Seen on = seen(S, now, cutoff, ids[0], ids[1]);
+        assertThat(on).isEqualTo(off);
+        assertThat(off.stops()).containsExactlyInAnyOrder(A, C);
+        assertThat(KrIntradayFill.rewindCash(1_000.1, 900.3, 1_000.1)).isEqualTo(900.3);
+        assertThat(KrIntradayFill.rewindCash(988.2, 900.3, 1_000.1)).isEqualTo(888.4);
+    }
+
+    private long[] twoStopWorld(boolean recorded) {
+        freshWorld();
+        state(1_000_000.3, kst("2026-11-05T20:40"));
+        position(A, 100, 10_000);
+        position(B, 50, 20_000);
+        position(C, 333, 5_010);
+        quotes(kst("2026-11-05T20:30"), A, 10_000, B, 20_000, C, 5_010);
+        long stopA = watchStop(A, P, "2026-11-06T10:30:20", S);
+        long stopC = watchStop(C, P, "2026-11-06T10:30:21", S);
+        if (recorded) {
+            Map<Long, Double> prices = new java.util.LinkedHashMap<>();
+            prices.put(stopA, 9_870.0);
+            prices.put(stopC, 4_615.0);
+            IntradayRecords.record(store, BOOK, prices, kst("2026-11-06T10:35:20"), S, markets.open(KrPaperMarket.INSTANCE).calendar());
+        }
+        return new long[]{stopA, stopC};
+    }
+
+    @Test
+    @DisplayName("ADR 0045 거울 보기의 범위 표시 — 되감는 것은 장중 기록 STOP뿐: 기록 뒤 그 세션에 새로 생긴 주문(장중 판단이 판 돈으로 낸 매수 등 — Claude 계좌를 따를 때)은 "
+            + "그대로 보이므로 그런 날의 목표는 장중 기록 없는 세계와 다름(ADR 0045 '실제 동작 무관'은 따라 하는 책이 규칙 계좌일 때)")
+    void mirrorDoesNotUndoLaterOrders() {
+        Instant now = kst("2026-11-06T10:40");
+        Instant cutoff = kst("2026-11-06T11:00");
+        long[] ids = sameSessionWorld(false);
+        Seen off = seen(S, now, cutoff, ids[0], ids[1]);
+        sameSessionWorld(true);
+        order(C, PaperBooks.BUY, 30.0, null, PaperBooks.MARKET, PacketBuilder.SOURCE_CLAUDE, P, kst("2026-11-06T10:36:40"), null, null);
+        Seen on = seen(S, now, cutoff, ids[0], ids[1]);
+        assertThat(on.stops()).as("되감은 STOP은 같음").isEqualTo(off.stops());
+        assertThat(on.at()).as("판 돈으로 낸 뒤 주문은 되돌리지 않음 — 목표가 다름").isNotEqualTo(off.at());
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
