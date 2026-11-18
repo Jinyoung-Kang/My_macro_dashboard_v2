@@ -283,6 +283,21 @@ describe("스타일 화면의 요청", () => {
   });
 });
 
+describe("스타일 화면의 요청 — 검사 칸(P5b)", () => {
+  it("기관 이름으로 성격 검사 칸(좁은 화면 대화상자)을 열어도 요청은 늘지 않는다 — 받은 값만 보임", async () => {
+    styleReads();
+    render(<GuruPage />);
+    const trigger = await screen.findByRole("button", { name: "브리지워터" });
+    await waitFor(() => expect(calledPaths()).toHaveLength(5));
+
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("dialog", { name: "브리지워터" })).toBeTruthy();
+    await act(async () => {});
+
+    expect(counts()).toEqual({ [PROFILES]: 2, [SIMILARITY]: 1, [RISK]: 1, [USDKRW]: 1 });
+  });
+});
+
 // ---------------------------------------------------------------- 스코어카드
 const UNIVERSE = endpoints.insight.stockUniverse;
 const SCORECARD = endpoints.insight.scorecard("AAPL", "SPY", "1");

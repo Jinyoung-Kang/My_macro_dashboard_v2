@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { HeatmapTable, HorizontalBars } from "@/components/charts";
-import { DataTable } from "@/components/patterns";
+import { DataTable, Empty, InspectorFrame, InspectorTrigger, PropertyList } from "@/components/patterns";
 import {
   Button,
   buttonClasses,
@@ -10,6 +11,7 @@ import {
   ErrorState,
   Freshness,
   inputClasses,
+  LINK_CLASSES,
   Loading,
   Metric,
   PageHeader,
@@ -22,18 +24,29 @@ import { StatusText } from "@/components/ui/icons";
 import { useApi } from "@/hooks/useApi";
 import { ReadingGuide } from "./ReadingGuide";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
-import { holdersNoMatch } from "@/lib/detail";
+import { holdersNoMatch, institutionHref } from "@/lib/detail";
 import { EMPTY, formatCurrency, formatNumber, formatWeightPercent, formatWithUnit, withMinusSign } from "@/lib/format";
 import { filerName } from "@/lib/holdings";
 import type {
   GuruHoldersResponse,
+  GuruProfile,
   GuruProfilesResponse,
   GuruRiskResponse,
   GuruSimilarityResponse,
 } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
-import { similarityHeatmap, similarityMax, similarityPairs, similarityStepLabel, similarityText } from "@/lib/styleScreen";
+import {
+  profileItems,
+  profileName,
+  profileTitle,
+  similarityHeatmap,
+  similarityMax,
+  similarityPairs,
+  similarityStepLabel,
+  similarityText,
+  TURNOVER_EMPTY_REASON,
+} from "@/lib/styleScreen";
 
 /**
  * 기관 13F 스타일·위험 (옛 이름: 구루 포트폴리오 분석, 주소 /guru → /style).
@@ -86,90 +99,83 @@ export default function GuruPage() {
 function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruProfilesResponse>> }) {
   const { data, loading, error, reload } = profiles;
   const usdKrw = useUsdKrw();
+  const rows = data?.rows ?? [];
 
   return (
     <Panel
       title="기관별 성격" source={SOURCES.sec13f}
-      count={(data?.rows?.length ?? 0) > 0 ? `${data!.rows.length.toLocaleString("ko-KR")}곳` : undefined}
-      subtitle={data?.note}
+      count={rows.length > 0 ? `${rows.length.toLocaleString("ko-KR")}곳` : undefined}
+      subtitle={rows.length > 0 ? [data?.note, "기관 이름을 누르면 소개·HHI·수집 분기 수와 기관 상세 링크를 봅니다."].filter(Boolean).join(" ") : data?.note}
     >
       {loading && !data && <Loading label="13F 저장본을 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
 
-      {(data?.rows?.length ?? 0) > 0 && (
-        <Table
-          rows={data!.rows}
-          rowKey={(row) => row.cik}
-          columns={[
-            {
-              key: "name",
-              header: "기관",
-              render: (row) => (
-                <span className="flex flex-col">
-                  <span className="text-text-2">{filerName(row.name) ?? `CIK ${row.cik}`}</span>
-                  <span className="text-xs text-text-3">{row.desc}</span>
-                </span>
-              ),
-            },
-            {
-              key: "totalValue",
-              header: "포트폴리오 총액",
-              align: "right",
-              render: (row) => (
-                <span className="flex flex-col items-end">
-                  <span>{formatCurrency(row.totalValue)}</span>
-                  {usdKrw.toKrw(row.totalValue) && (
-                    <span className="text-xs text-text-3">{usdKrw.toKrw(row.totalValue)}</span>
-                  )}
-                </span>
-              ),
-            },
-            {
-              key: "holdingCount",
-              header: "종목 수",
-              align: "right",
-              render: (row) => formatNumber(row.holdingCount, 0),
-            },
-            {
-              key: "effectiveHoldings",
-              header: "유효 종목 수",
-              align: "right",
-              render: (row) => (
-                <span className="flex flex-col items-end">
-                  <span className="font-semibold">{formatNumber(row.effectiveHoldings, 1)}</span>
-                  <span className="text-xs text-text-3">1 ÷ HHI</span>
-                </span>
-              ),
-            },
-            {
-              key: "top10Weight",
-              header: "상위 10종목",
-              align: "right",
-              render: (row) => formatWithUnit(row.top10Weight, 1, "%"),
-            },
-            {
-              key: "turnover",
-              header: "분기 회전율",
-              align: "right",
-              render: (row) =>
-                row.turnover === null ? (
-                  <span className="text-text-3" title="직전 분기가 없어 계산할 수 없습니다">
-                    {EMPTY}
-                  </span>
-                ) : (
-                  formatWithUnit(row.turnover, 1, "%")
-                ),
-            },
-            {
-              key: "reportDate",
-              header: "기준 분기",
-              // 날짜는 접지 않습니다 — 좁은 표에서 '2026-06- / 30'처럼 하이픈에서 끊겼습니다.
-              className: "whitespace-nowrap",
-              render: (row) => <SourceBadge>{row.reportDate ?? EMPTY}</SourceBadge>,
-            },
-          ]}
-        />
+      {rows.length > 0 && (
+        <InspectorFrame
+          label="기관 성격"
+          layout="lg"
+          titleOf={(cik) => profileTitle(rows, cik)}
+          defaultKey={rows[0].cik}
+          renderDetail={(cik) => {
+            const row = rows.find((entry) => entry.cik === cik);
+            return row ? <ProfileDetail row={row} krw={usdKrw} /> : null;
+          }}
+        >
+          {(inspector) => (
+            <DataTable
+              caption="기관별 성격"
+              rows={rows}
+              rowKey={(row) => row.cik}
+              selectedKey={inspector.shownKey}
+              scrollHint="overflow"
+              columns={[
+                {
+                  key: "name",
+                  header: "기관",
+                  rowHeader: true,
+                  className: "break-keep",
+                  cell: (row) => (
+                    <InspectorTrigger inspector={inspector} itemKey={row.cik}>
+                      {profileName(row)}
+                    </InspectorTrigger>
+                  ),
+                },
+                { key: "totalValue", header: "포트폴리오 총액", align: "right", cell: (row) => moneyCell(row.totalValue, usdKrw) },
+                { key: "holdingCount", header: "종목 수", align: "right", cell: (row) => formatNumber(row.holdingCount, 0) },
+                {
+                  key: "effectiveHoldings",
+                  header: "유효 종목 수",
+                  align: "right",
+                  cell: (row) =>
+                    row.effectiveHoldings === null ? null : (
+                      <span className="flex flex-col items-end">
+                        <span className="font-semibold">{formatNumber(row.effectiveHoldings, 1)}</span>
+                        <span className="text-xs text-text-3">1 ÷ HHI</span>
+                      </span>
+                    ),
+                },
+                { key: "top10Weight", header: "상위 10종목", align: "right", cell: (row) => formatWithUnit(row.top10Weight, 1, "%") },
+                {
+                  key: "turnover",
+                  header: "분기 회전율",
+                  align: "right",
+                  cell: (row) =>
+                    row.turnover === null ? (
+                      <span className="text-text-3" title={TURNOVER_EMPTY_REASON}>
+                        <Empty align="end" />
+                      </span>
+                    ) : (
+                      formatWithUnit(row.turnover, 1, "%")
+                    ),
+                },
+                // 날짜 글 그대로(배지 없음 — 고른 행 바탕 surface-2 위에서 같은 바탕의 배지가 묻힘, 표 hover 결함과 같은 까닭). 날짜는 접지 않습니다 —
+                // 좁은 표에서 '2026-06- / 30'처럼 하이픈에서 끊겼습니다.
+                { key: "reportDate", header: "기준 분기", className: "whitespace-nowrap", cell: (row) => row.reportDate },
+              ]}
+            />
+          )}
+        </InspectorFrame>
       )}
 
       <ReadingGuide topic="유효 종목 수·회전율">
@@ -179,6 +185,40 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
         두면 &ldquo;한 주도 안 바꿨다&rdquo;로 읽힙니다.
       </ReadingGuide>
     </Panel>
+  );
+}
+
+/** 원/달러 병기 — 공용 환율 훅(useUsdKrw)이 돌려주는 것. */
+type UsdKrw = ReturnType<typeof useUsdKrw>;
+
+/** 포트폴리오 총액 칸 — 달러(조·억 단위)와 그 아래 원화(환율을 알 때만). 값을 모르면 null(표가 '—'). */
+function moneyCell(value: number | null, krw: UsdKrw) {
+  const usd = formatCurrency(value);
+  if (usd === EMPTY) return null;
+  const won = krw.toKrw(value);
+  return won ? (
+    <span className="flex flex-col items-end">
+      <span>{usd}</span>
+      <span className="text-xs text-text-3">{won}</span>
+    </span>
+  ) : (
+    usd
+  );
+}
+
+/**
+ * 기관 성격 검사 칸 — 속성 목록(lib/styleScreen profileItems — 표에서 뺀 기관 소개, 표에 없는 HHI·수집 분기 수 포함)과 그 기관의 상세 화면 링크
+ * (요청 없음 — 목록 → 검사 칸 → 대상 화면, 명세 W5). 받은 값만 보입니다(새로 읽지 않음).
+ */
+function ProfileDetail({ row, krw }: { row: GuruProfile; krw: UsdKrw }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <PropertyList items={profileItems(row, krw)} source={SOURCES.sec13f} />
+      {/* 링크는 자기 줄에서 글 폭만(self-start) — flex-col 상자의 늘림을 받으면 검사 칸 폭 전체가 누르는 자리였습니다(QA-582). */}
+      <Link href={institutionHref(row.cik)} className={`${LINK_CLASSES} self-start text-sm`}>
+        기관 상세 열기
+      </Link>
+    </div>
   );
 }
 

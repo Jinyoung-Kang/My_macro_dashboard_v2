@@ -454,3 +454,70 @@ describe("스타일 — 머리 '새로고침'·13F 한계 안내·'읽는 법' �
     expect(guides[0].textContent).toContain("1 ÷ 허핀달 지수");
   });
 });
+
+describe("스타일 — 기관별 성격 표와 검사 칸", () => {
+  const PROFILE_ROWS = [
+    { cik: "0000000031", key: "a", name: "🇺🇸 가상 자산운용 (Synthetic AM)", desc: "합성 소개 — 가치 투자", reportDate: "2026-06-30", totalValue: 2.5e11,
+      holdingCount: 40, effectiveHoldings: 8.24, hhi: 0.1214, top10Weight: 88.12, turnover: null, quarterCount: 8 },
+    { cik: "0000000032", key: "b", name: "가상 연기금", desc: "", reportDate: null, totalValue: null, holdingCount: 700, effectiveHoldings: null, hhi: 0,
+      top10Weight: 40.2, turnover: 12.5, quarterCount: 1 },
+  ];
+
+  it("표는 기관 이름(검사 단추)·총액·종목 수·유효 종목 수·상위 10종목·회전율·기준 분기 — 소개 글은 표에 없고, 모르는 값은 '—'(회전율은 까닭)", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === "/api/guru/profiles" ? Promise.resolve({ available: true, note: "13F 저장본 기준", rows: PROFILE_ROWS }) : new Promise(() => {}));
+    render(<GuruPage />);
+    const trigger = await screen.findByRole("button", { name: "가상 자산운용 (Synthetic AM)" });
+    const table = trigger.closest("table") as HTMLElement;
+    expect([...table.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual([
+      "기관", "포트폴리오 총액", "종목 수", "유효 종목 수", "상위 10종목", "분기 회전율", "기준 분기",
+    ]);
+    expect(within(table).queryByText("합성 소개 — 가치 투자")).toBeNull();
+    const [first, second] = [...table.querySelectorAll("tbody tr")].map((row) => [...row.children].map((cell) => cell.textContent));
+    expect(first).toEqual(["가상 자산운용 (Synthetic AM)", "2,500억 달러", "40", "8.21 ÷ HHI", "88.1%", "—값 없음", "2026-06-30"]);
+    expect(second).toEqual(["가상 연기금", "—값 없음", "700", "—값 없음", "40.2%", "12.5%", "—값 없음"]);
+    expect(within(table).getByTitle("직전 분기가 없어 계산할 수 없습니다")).toBeTruthy();
+    // 패널 머리 개수.
+    const panel = screen.getByRole("heading", { name: "기관별 성격" }).closest("section") as HTMLElement;
+    expect(within(panel).getByText("2곳")).toBeTruthy();
+  });
+
+  it("기관 이름을 누르면 검사 칸(좁은 화면 대화상자)에 소개·CIK·HHI·수집 분기 수와 '기관 상세 열기', 닫으면 그 이름 단추로 포커스", async () => {
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === "/api/guru/profiles" ? Promise.resolve({ available: true, rows: PROFILE_ROWS }) : new Promise(() => {}));
+    render(<GuruPage />);
+    const trigger = await screen.findByRole("button", { name: "가상 자산운용 (Synthetic AM)" });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "가상 자산운용 (Synthetic AM)" });
+    const value = (label: string) => within(dialog).getByText(label).nextElementSibling?.textContent;
+    expect(value("CIK")).toBe("0000000031");
+    expect(value("HHI")).toContain("0.1214");
+    expect(value("수집 분기 수")).toBe("8분기");
+    expect(value("분기 회전율")).toContain("직전 분기가 없어 계산할 수 없습니다");
+    expect(within(dialog).getByText("합성 소개 — 가치 투자")).toBeTruthy();
+    expect(within(dialog).getByRole("link", { name: "기관 상세 열기" }).getAttribute("href")).toBe("/institutions/0000000031");
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("읽는 중·읽지 못함(다시 시도)·저장본 없음", async () => {
+    api.apiGetShared.mockImplementation(() => new Promise(() => {}));
+    const view = render(<GuruPage />);
+    expect(screen.getByText("13F 저장본을 읽는 중…")).toBeTruthy();
+    view.unmount();
+
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === "/api/guru/profiles" ? Promise.reject(new Error("성격을 읽지 못했습니다.")) : new Promise(() => {}));
+    const failed = render(<GuruPage />);
+    expect((await screen.findAllByText("성격을 읽지 못했습니다.")).length).toBeGreaterThan(0);
+    failed.unmount();
+
+    api.apiGetShared.mockImplementation((path: string) =>
+      path === "/api/guru/profiles" ? Promise.resolve({ available: false, message: "13F 저장본이 없습니다.", rows: [] }) : new Promise(() => {}));
+    render(<GuruPage />);
+    expect(await screen.findByText("13F 저장본이 없습니다.")).toBeTruthy();
+    expect(screen.queryByRole("table", { name: "기관별 성격" })).toBeNull();
+  });
+});
