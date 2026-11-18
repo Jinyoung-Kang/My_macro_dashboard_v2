@@ -2,6 +2,8 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import {
+  type Column,
+  DataTable,
   MasterDetail,
   PropertyList,
   type PropertyItem,
@@ -11,7 +13,7 @@ import {
   Timeline,
   type TimelineEntry,
 } from "@/components/patterns";
-import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select, Table, Tag } from "@/components/ui";
+import { Button, Callout, ErrorState, inputClasses, Loading, Panel, Select, Tag } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -21,7 +23,6 @@ import { EMPTY, formatNumber } from "@/lib/format";
 import {
   APPROVE_COST_NOTE,
   approveResultView,
-  type Badge,
   charCount,
   type CompareLine,
   editFrameworkDraft,
@@ -80,6 +81,7 @@ import type {
 } from "@/lib/types";
 
 import { FrameworkOutline } from "./FrameworkOutline";
+import { PaperBadge } from "./PaperBadge";
 
 const INPUT = `w-full ${inputClasses()}`;
 /**
@@ -296,7 +298,7 @@ function CurrentCard({
     { label: "바꾼 내용", value: view.changelog, block: true },
   ];
   return (
-    <Panel title="지금 프레임" subtitle={view.title} source={PAPER_SOURCES.framework} actions={<BadgeChip badge={view.badge} />}>
+    <Panel title="지금 프레임" subtitle={view.title} source={PAPER_SOURCES.framework} actions={<PaperBadge badge={view.badge} />}>
       <div className="flex min-w-0 flex-col gap-3">
         {view.interimNote && <Callout tone="warn">{view.interimNote}</Callout>}
         <div className="max-w-[40rem]">
@@ -324,7 +326,7 @@ function ProposalRow({ proposal }: { proposal: PaperFrameworkProposal }) {
     <span className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
       <span className="shrink-0 font-semibold tabular-nums text-text">{`#${proposal.id}`}</span>{" "}
       <span className="shrink-0">
-        <BadgeChip badge={proposalStatusBadge(proposal.status)} />
+        <PaperBadge badge={proposalStatusBadge(proposal.status)} />
       </span>{" "}
       <span className="min-w-0 basis-full break-keep wrap-anywhere text-text-2 @sm:flex-1 @sm:basis-auto">{firstLine ?? EMPTY}</span>
     </span>
@@ -556,7 +558,7 @@ function ProposalItem({
     >
       <header className="flex flex-wrap items-center gap-2">
         {framed && <h3 className="text-sm font-semibold text-text">{view.title}</h3>}
-        <BadgeChip badge={view.status} />
+        <PaperBadge badge={view.status} />
         {highlighted && <span className="text-xs font-semibold text-text">주간 복기에서 연 제안</span>}
       </header>
       <dl className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
@@ -567,42 +569,25 @@ function ProposalItem({
 
       {view.assessment.length > 0 && (
         <Part title="평가 (OS 절차 B)" note="원문의 주장마다 지금 판과 대조한 결과입니다 — Claude 응답 그대로.">
-          <Table<ProposalAssessmentRow>
-            label="평가"
+          <DataTable<ProposalAssessmentRow>
+            caption="평가"
             rows={view.assessment}
             rowKey={(row) => row.key}
-            columns={[
-              { key: "point", header: "주장", render: (row) => <span className="text-xs text-text-2">{row.point}</span> },
-              { key: "verdict", header: "평가", render: (row) => <BadgeChip badge={row.verdict} /> },
-              { key: "reason", header: "이유", render: (row) => <span className="text-xs text-text-2">{row.reason}</span> },
-            ]}
+            columns={ASSESSMENT_COLUMNS}
+            scrollHint
           />
         </Part>
       )}
 
       {(view.operations.length > 0 || view.pending) && (
         <Part title="변경" note={view.operationsNote}>
-          <Table<ProposalOperationRow>
-            label="변경"
+          <DataTable<ProposalOperationRow>
+            caption="변경"
             rows={view.operations}
             rowKey={(row) => row.key}
-            emptyMessage={view.emptyMessage}
-            columns={[
-              { key: "op", header: "변경", render: (row) => <span className="whitespace-nowrap font-semibold text-text">{row.op}</span> },
-              { key: "target", header: "대상", render: (row) => <code className="text-xs text-text-2">{row.target}</code> },
-              { key: "before", header: view.beforeHeader, render: (row) => <span className="text-xs text-text-3">{row.before}</span> },
-              {
-                key: "after",
-                header: "바꿀 글",
-                render: (row) => (
-                  <span className="flex flex-col gap-1 text-xs text-text-2">
-                    <span>{row.after}</span>
-                    {row.warning && <span className="text-warn">{row.warning}</span>}
-                  </span>
-                ),
-              },
-              { key: "why", header: "이유", render: (row) => <span className="text-xs text-text-2">{row.why}</span> },
-            ]}
+            columns={operationColumns(view.beforeHeader)}
+            emptyText={view.emptyMessage}
+            scrollHint
           />
         </Part>
       )}
@@ -1051,10 +1036,32 @@ function Part({ title, note, children }: { title: string; note?: string; childre
   );
 }
 
-function BadgeChip({ badge }: { badge: Badge }) {
-  return (
-    <span title={badge.title} className={`whitespace-nowrap rounded-control border px-2 py-px text-xs ${badge.className}`}>
-      {badge.label}
-    </span>
-  );
+/** 표 칸 글 — 낱말 사이에서 꺾고 긴 낱말(영문 식별자)은 칸 안에서 꺾습니다. */
+const CELL_TEXT = "break-keep wrap-anywhere text-text-2";
+
+/** 평가 표(OS 절차 B) — 공용 DataTable(행 32px·좁은 화면 최소 640px + 넘김 안내 — 옛 표와 같은 넘김), 평가는 공용 태그(일치 정상·보완 중립·수정 필요·모순 주의). */
+const ASSESSMENT_COLUMNS: readonly Column<ProposalAssessmentRow>[] = [
+  { key: "point", header: "주장", cell: (row) => <span className={CELL_TEXT}>{row.point}</span> },
+  { key: "verdict", header: "평가", cell: (row) => <PaperBadge badge={row.verdict} />, className: "whitespace-nowrap" },
+  { key: "reason", header: "이유", cell: (row) => <span className={CELL_TEXT}>{row.reason}</span> },
+];
+
+/** 변경 표 — 대조한 판의 글 칸 머리는 제안 상태에 따라(대기 중 '지금 글', 결정된 제안 '기준 판 글(v0)'). 승인하면 서버가 거절할 줄은 주의 글. */
+function operationColumns(beforeHeader: string): Column<ProposalOperationRow>[] {
+  return [
+    { key: "op", header: "변경", cell: (row) => <span className="font-semibold text-text">{row.op}</span>, className: "whitespace-nowrap" },
+    { key: "target", header: "대상", cell: (row) => <code className="font-mono text-text-2">{row.target}</code>, className: "whitespace-nowrap" },
+    { key: "before", header: beforeHeader, cell: (row) => <span className="break-keep wrap-anywhere text-text-3">{row.before}</span> },
+    {
+      key: "after",
+      header: "바꿀 글",
+      cell: (row) => (
+        <span className={`flex flex-col gap-1 ${CELL_TEXT}`}>
+          <span>{row.after}</span>
+          {row.warning && <span className="text-warn">{row.warning}</span>}
+        </span>
+      ),
+    },
+    { key: "why", header: "이유", cell: (row) => <span className={CELL_TEXT}>{row.why}</span> },
+  ];
 }

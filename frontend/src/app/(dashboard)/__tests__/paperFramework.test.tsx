@@ -276,7 +276,8 @@ describe("프레임 탭 — OS 원문으로 새 판 만들기", () => {
     const inline = within(card).getByRole("article", { name: "제안 #3" });
     expect(rowsOf(within(inline).getByRole("region", { name: "평가 (OS 절차 B)" }))).toEqual([
       ["현금 비중은 매일 정한다", "일치", "P3와 같음"],
-      ["레버리지 ETF를 쓴다", "모순", "유니버스 밖"],
+      // 모순·수정 필요는 공용 주의 태그 — 낭독기에 '주의: ' 머리말(일치는 정상 태그, 머리말 없음).
+      ["레버리지 ETF를 쓴다", "주의: 모순", "유니버스 밖"],
     ]);
     expect(rowsOf(within(inline).getByRole("region", { name: "변경" }))).toEqual([
       ["규칙 추가", "E1", "E1. 매크로 축 — 현금 비중 — 새 규칙", "VIX 30 이상이면 노출을 줄인다.", "원문 3절"],
