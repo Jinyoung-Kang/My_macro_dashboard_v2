@@ -262,6 +262,22 @@ describe("한국 종목 선정 탭", () => {
     expect(screen.getByText("기준 세션 뒤 날짜 0 · 읽은 순간 뒤에 받음 2 · 받은 시각 모름 0")).toBeTruthy();
   });
 
+  it("구성원 표 거르기 — 전체·후보·매수 목표·제외(개수는 받은 구성원), 고르면 그 줄만·새 요청 없음(작업대 P6 검토)", async () => {
+    reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({ available: true, decisions: [summary(40)] });
+    reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);
+    renderSelection();
+    const filter = await screen.findByRole("radiogroup", { name: "구성원 거르기" });
+    expect(within(filter).getAllByRole("radio").map((radio) => radio.textContent)).toEqual(["전체4", "후보2", "매수 목표1", "제외2"]);
+    const reads40 = api.apiGetShared.mock.calls.length;
+    const table = screen.getByRole("table", { name: "유니버스 구성원" });
+    const codes = () => within(table).getAllByRole("row").slice(1).map((row) => row.children[1]?.textContent?.slice(0, 6));
+    fireEvent.click(within(filter).getByRole("radio", { name: /^제외/ }));
+    await waitFor(() => expect(codes()).toEqual(["323410", "035720"]));
+    fireEvent.click(within(filter).getByRole("radio", { name: /^매수 목표/ }));
+    await waitFor(() => expect(codes()).toEqual(["005930"]));
+    expect(api.apiGetShared.mock.calls.length).toBe(reads40);
+  });
+
   it("선정한 결정이 가장 최근 결정이면 상세를 한 번만 읽고 참고 줄이 없다", async () => {
     reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({ available: true, decisions: [summary(40)] });
     reads["/api/paper/decisions/40"] = () => Promise.resolve(SELECTION_DETAIL);

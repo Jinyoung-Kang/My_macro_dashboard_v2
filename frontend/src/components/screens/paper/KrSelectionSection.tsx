@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { type Column, DataTable } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
@@ -12,12 +12,16 @@ import {
   type KrMemberRow,
   KR_FINANCIAL_TABLE_CHECK,
   KR_SELECTION_LIMIT,
+  filterKrMembers,
+  type KrMemberFilter,
+  krMemberFilterOptions,
   krSelectionPicks,
   krSelectionReference,
   krSelectionView,
   type KrSelectionView,
 } from "@/lib/paperKr";
 import type { PaperDecisionDetailResponse, PaperDecisionsResponse } from "@/lib/types";
+import { RowFilter } from "./RowFilter";
 
 /** 첫 선정이 무엇인지 — 출발 전(결정 기록 없음)의 안내. */
 const NO_SELECTION_YET =
@@ -42,6 +46,8 @@ export function KrSelectionSection() {
   const latestId = picks.latest && picks.latest.id !== selectionId ? picks.latest.id : null;
   const selected = useApi<PaperDecisionDetailResponse>(selectionId === null ? null : endpoints.paper.decision(selectionId));
   const latest = useApi<PaperDecisionDetailResponse>(latestId === null ? null : endpoints.paper.decision(latestId));
+  // 구성원 표 거르기(받은 구성원만 — 새 요청 없음).
+  const [memberFilter, setMemberFilter] = useState<KrMemberFilter>("all");
 
   if (list.loading && !list.data) return <Loading label="한국 규칙 계좌 결정 기록을 읽는 중…" />;
   if (list.error) return <ErrorState message={list.error} onRetry={list.reload} />;
@@ -158,13 +164,20 @@ export function KrSelectionSection() {
           subtitle="U 순위 순 — 머리를 누르면 정렬합니다. 수급은 주(토스증권, 결정 때 읽은 20거래일 창), 재무는 DART 접수일이 기준 세션 이하인 것만."
           source={PAPER_SOURCES.krSelection}
         >
+          <RowFilter
+            label="구성원 거르기"
+            options={krMemberFilterOptions(view.members)}
+            value={memberFilter}
+            onChange={(key) => setMemberFilter(key as KrMemberFilter)}
+          />
           <DataTable<KrMemberRow>
             columns={MEMBER_COLUMNS}
-            rows={view.members}
+            rows={filterKrMembers(view.members, memberFilter)}
             rowKey={(row) => row.key}
             caption="유니버스 구성원"
             dense
-            emptyText="구성원이 없습니다."
+            count={(count) => `${count}종목`}
+            emptyText={memberFilter === "all" ? "구성원이 없습니다." : "고른 칸의 구성원이 없습니다."}
             maxHeight={560}
             scrollHint="overflow"
           />
