@@ -12,6 +12,7 @@
  *  - RT3-UI-1: 수집기 상태를 읽지 못함(collector null·사유 status-unreadable)은 '서버에서 꺼짐'이 아니라 '서버 상태를 읽지 못함 — 다시 읽는 중'
  *    (미체결 취소 불가 판단은 모름을 켜짐으로 보지 않음), 이상 멈춤 사유 collector-disabled 이름표
  *  - RT3-UI-3: 끄기 뒤 표시는 다시 켜짐으로 돌아오거나(끄는 중·꺼짐을 본 뒤) 끄기 응답보다 큰 버전의 켜짐·이상 멈춤을 받으면 지운다
+ *  - 규칙 계좌 재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11-19): 회전율 멈춤 줄의 '재선정 예외 아님: 이름표(코드)'와 % 칸, 회전율 예외 이벤트 줄
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -51,6 +52,7 @@ import {
   realTradeErrorCode,
   realTradeErrorText,
   realTradePnl,
+  rebalanceCheckLabel,
   SERVER_UNKNOWN_TEXT,
   serverEnabled,
   serverSwitchState,
@@ -599,5 +601,44 @@ describe("운용 평가액 설명 줄 — 휴장일·토스 점검 중에도 마
     expect(preflightNote({ fetchedAt: "2026-11-06T00:10:05Z", afterClose: null }, "2026-11-06T15:00:00Z")).toBe(
       "토스에서 읽은 시각 2026-11-06 09:10:05 · 이전 값",
     );
+  });
+});
+
+describe("재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11-19)", () => {
+  it("회전율 멈춤 줄 — 사유 뒤에 '재선정 예외 아님: 이름표(코드)', 그 뒤 % 칸(숫자일 때만), 종목·금액 칸은 적지 않음", () => {
+    expect(eventDetailText({
+      reason: "turnover", turnoverPct: 88, rebalanceCheck: "account-drift", checkTurnoverPct: "88.00", bookDriftPct: 80,
+      accountDriftPct: 88, dailyShortPct: 0, priceRatio: 1, stockNames: 9, uncounted: 0, symbol: "005930",
+    }, "HALT")).toBe(
+      "사유 회전율 60% 초과(turnover) · 재선정 예외 아님: 계좌 어긋남 20% 초과(account-drift) · 회전율 88.0% · 판정 회전율 88.0% · 책 변화량 80.0%"
+        + " · 계좌 어긋남 88.0% · 하루 한도로 못 내는 매수 0.0%",
+    );
+    expect(eventDetailText({ reason: "turnover", turnoverPct: 70, rebalanceCheck: "no-rebalance", decisionKind: "SCHEDULED" }, "HALT")).toBe(
+      "사유 회전율 60% 초과(turnover) · 재선정 예외 아님: 앞 거래일 결정이 재선정(OK)이 아님(no-rebalance) · 회전율 70.0%",
+    );
+    // 남은 몫 묶음의 멈춤(RT2-1) — 목표 변화량, 모르는 판정 코드는 코드 그대로
+    expect(eventDetailText({ reason: "turnover", turnoverPct: 70, targetDriftPct: 140, rebalanceCheck: "new-check" }, "HALT")).toBe(
+      "사유 회전율 60% 초과(turnover) · 재선정 예외 아님: new-check · 회전율 70.0% · 목표 변화량 140.0%",
+    );
+    // Claude 책의 멈춤(판정 코드 없음) — 회전율 칸만, 숫자가 아니면 적지 않음
+    expect(eventDetailText({ reason: "turnover", turnoverPct: 61.5 }, "HALT")).toBe("사유 회전율 60% 초과(turnover) · 회전율 61.5%");
+    expect(eventDetailText({ reason: "turnover", turnoverPct: "모름" }, "HALT")).toBe("사유 회전율 60% 초과(turnover)");
+  });
+
+  it("회전율 예외 이벤트 — 이름표와 % 칸", () => {
+    expect(eventKindLabel("TURNOVER_EXEMPT")).toBe("회전율 예외(규칙 계좌 재선정 다음 맞추기)");
+    expect(eventDetailText({
+      decisionDate: "2026-12-08", turnoverPct: 116.65, checkTurnoverPct: 116.65, bookDriftPct: 120, accountDriftPct: 0, dailyShortPct: 0,
+      priceRatio: 1, nameJumpPct: 6.67, nameCutPct: 0, stockNames: 15, deriskPct: -46.67, investedPct: 100, allowancePct: 140,
+    }, "TURNOVER_EXEMPT")).toBe(
+      "회전율 116.7% · 판정 회전율 116.7% · 책 변화량 120.0% · 계좌 어긋남 0.0% · 하루 한도로 못 내는 매수 0.0%",
+    );
+  });
+
+  it("판정 코드 이름표 — '이름표(코드)', 모르는 코드는 그대로, 없으면 '—'", () => {
+    expect(rebalanceCheckLabel("over-cap")).toBe("회전율 150% 초과(over-cap)");
+    expect(rebalanceCheckLabel("targets-over")).toBe("목표 합 101% 초과(책 현금 음수)(targets-over)");
+    expect(rebalanceCheckLabel("brand-new")).toBe("brand-new");
+    expect(rebalanceCheckLabel(null)).toBe("—");
   });
 });

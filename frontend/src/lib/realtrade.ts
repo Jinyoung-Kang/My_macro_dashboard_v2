@@ -784,8 +784,11 @@ const EVENT_KIND: Readonly<Record<string, string>> = {
   SKIPPED: "건너뜀",
   STOP_SELL: "스탑 매도",
   RESTRICTED: "매매 제한으로 대기(VI·서킷브레이커 등)",
-  // 개장 직전·장중에 토스 장 운영 정보·수집기 매매 상태를 받지 못함(QA-342 — 끊김이 3분 이어질 때·끊김마다 한 번, 사유 코드 calendar-unavailable·status-unavailable)
+  // 개장 직전·장중에 토스 장 운영 정보·수집기 매매 상태를 받지 못함(QA-342 — 끊김이 3분 이어질 때·끊김마다 한 번, 사유 코드 calendar-unavailable·status-unavailable),
+  // 재선정 다음 묶음의 회전율 예외를 판정하지 못함(rebalance-check-unavailable — 30초 이어질 때)
   UNAVAILABLE: "준비 안 됨(주문을 내지 못하는 중)",
+  // 규칙 계좌 재선정 다음 묶음이 열두 확인을 지나 회전율 60% 멈춤 없이 나감(ADR 0028 덧붙임 2026-11-19)
+  TURNOVER_EXEMPT: "회전율 예외(규칙 계좌 재선정 다음 맞추기)",
 };
 
 /** 이벤트 종류 이름표. 모르는 값은 원문. */
@@ -814,9 +817,57 @@ const EVENT_COUNTS: readonly [string, string][] = [
 ];
 
 /**
+ * 재선정 다음 묶음의 회전율 예외 판정 코드(ADR 0028 덧붙임 2026-11-19 — 백엔드 RealTradeRebalance의 CHECK_*) — 회전율 멈춤(HALT)의 detail
+ * `rebalanceCheck`가 '예외가 걸리지 않은 까닭'입니다. 열쇠는 백엔드 코드 그대로이고, 코드가 늘면 `__tests__/realtradeCodes.test.ts`가 이름표를 요구합니다.
+ */
+const REBALANCE_CHECK: Readonly<Record<string, string>> = {
+  "buys-paused": "매수 멈춤 중",
+  "buys-unpriced": "형식 밖 종목의 앱 매수가 대기 중",
+  "calendar-unknown": "달력 모름",
+  "no-rebalance": "앞 거래일 결정이 재선정(OK)이 아님",
+  "prior-batch": "앞 묶음이 그 결정일의 같은 책 묶음이 아님",
+  "value-unknown": "값을 셀 수 없음",
+  uncounted: "판정에서 빠진 종목이 있음(앱 미체결·미종료 주문·가격 모름)",
+  "daily-cap-short": "하루 한도로 못 내는 매수가 20% 초과",
+  "account-drift": "계좌 어긋남 20% 초과",
+  "price-mismatch": "책 가격과 실제 가격이 1.5배 넘게 다름",
+  "name-jump": "한 종목 목표가 12%p 넘게 늚",
+  "name-cut": "유지 종목 목표가 5%p 넘게 줆",
+  "no-names": "주식 목표 종목이 없음",
+  "derisk-over": "주식 노출이 30%p 넘게 줆",
+  "targets-thin": "목표 합 90% 미만",
+  "targets-over": "목표 합 101% 초과(책 현금 음수)",
+  "over-allowance": "회전율이 책 변화량 + 20%p 초과",
+  "over-cap": "회전율 150% 초과",
+};
+
+/** 재선정 예외 판정 코드의 이름표와 코드("계좌 어긋남 20% 초과(account-drift)"). 모르는 코드는 코드 그대로. */
+export function rebalanceCheckLabel(code: string | null | undefined): string {
+  if (typeof code !== "string" || code.trim() === "") {
+    return EMPTY;
+  }
+  const label = REBALANCE_CHECK[code];
+  return label ? `${label}(${code})` : code;
+}
+
+/**
+ * 회전율 멈춤(HALT)·회전율 예외(TURNOVER_EXEMPT) 이벤트의 % 칸 — detail 키와 이름표. 그 밖의 숫자 칸(가격 배율·종목 수·목표 합 등)은 API detail에만
+ * 둡니다.
+ */
+const EVENT_PCTS: readonly [string, string][] = [
+  ["turnoverPct", "회전율"],
+  ["checkTurnoverPct", "판정 회전율"],
+  ["targetDriftPct", "목표 변화량"],
+  ["bookDriftPct", "책 변화량"],
+  ["accountDriftPct", "계좌 어긋남"],
+  ["dailyShortPct", "하루 한도로 못 내는 매수"],
+];
+
+/**
  * 이벤트 detail → 한 줄("시가 맞추기 · 사유 unknown-order · 접수 5 · 체결 5"). 용도·사유 코드·건수·책만 적고 그 밖의 칸은 적지 않습니다.
  * 이상 멈춤(HALT) 이벤트의 사유는 멈춤 사유 이름표와 코드로 적습니다("사유 수집기 매매 스위치가 꺼져 멈춤 — 다시 켜려면 멈춤 해제(collector-disabled)").
- * 아무것도 없으면 null.
+ * 회전율 멈춤에 재선정 예외 판정 코드가 있으면 "재선정 예외 아님: 이름표(코드)"를 사유 뒤에, 그 뒤 % 칸({@link EVENT_PCTS} — 숫자일 때만, "회전율 80.0%")을
+ * 적습니다. 아무것도 없으면 null.
  */
 export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTradeEvent["kind"]): string | null {
   if (!detail || typeof detail !== "object") {
@@ -834,6 +885,12 @@ export function eventDetailText(detail: RealTradeEvent["detail"], kind?: RealTra
   if (book) parts.push(sourceBookLabel(book));
   const reason = text("reason") ?? text("code") ?? text("haltReason") ?? text("skipReason");
   if (reason) parts.push(`사유 ${kind === "HALT" ? haltReasonLabel(reason) : reason}`);
+  const check = text("rebalanceCheck");
+  if (check) parts.push(`재선정 예외 아님: ${rebalanceCheckLabel(check)}`);
+  for (const [key, label] of EVENT_PCTS) {
+    const pct = toNumber(detail[key]);
+    if (pct !== null) parts.push(`${label} ${formatNumber(pct, 1)}%`);
+  }
   for (const [key, label] of EVENT_COUNTS) {
     const count = toNumber(detail[key]);
     if (count !== null) parts.push(`${label} ${formatNumber(count, 0)}`);
@@ -863,13 +920,15 @@ const SKIP_REASON: Readonly<Record<string, string>> = {
   "symbol-unsupported": "지원하지 않는 종목 코드",
   "batch-stale": "방식이 바뀌어 오늘 묶음은 쓰지 않음",
   "paper-cancelled-after-claim": "따라 한 뒤 모의 주문이 취소됨(다음 맞추기가 되돌림)",
+  "rebalance-check-error": "재선정 예외 판정 실패 — 이번 주기 묶음 안 만듦(다음 주기에 다시)",
 };
 
 /** 예상 목록 경고 이름표 — 열쇠는 백엔드(RealTradeService.preview)가 보내는 경고 코드. */
 const PREVIEW_WARNING: Readonly<Record<string, string>> = {
   "targets-incomplete": "모의 계좌의 대기 주문 가운데 가격을 몰라 목표에 넣지 못한 것이 있음",
   "book-not-active": "고른 모의 계좌가 운용 중이 아님 — 켜면 정기 작업이 바로 멈춤",
-  "turnover-over-60": "회전율이 60%를 넘음 — 켜기·방식 바꾸기·이상 멈춤 해제 뒤 첫 맞추기가 아니면 이상 멈춤",
+  "turnover-over-60":
+    "회전율이 60%를 넘음 — 켜기·방식 바꾸기·이상 멈춤 해제 뒤 첫 맞추기가 아니면 이상 멈춤(규칙 계좌 재선정 다음 맞추기는 계좌 어긋남·가격·종목·노출·하루 한도 확인을 지나면 예외)",
   "equity-capped": "운용 평가액이 서버 안전 상한을 넘어 상한까지만 운용",
 };
 
