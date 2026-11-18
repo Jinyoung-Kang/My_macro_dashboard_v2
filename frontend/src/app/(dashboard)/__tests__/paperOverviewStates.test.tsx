@@ -786,3 +786,23 @@ describe("장중 시세 카드 — 새 장중 값을 받으면 개요를 한 번
     expect(calls("/api/paper/overview")).toBe(2);
   });
 });
+
+// QA-811 — 계좌 패널 부제 끝의 ' · 설정 v{n}'이 상태 응답이 온 뒤에야 붙어, 부제가 길어지면 패널 머리(공용 Panel — flex-wrap justify-between)가 '리스크 지금
+// 실행'을 다음 줄로 보내며 계좌 표를 38px 밀었음(D5 전 QA 스택 1280 CLS 0.215 — 폭 1256~1308). 부제의 꼴(글자 수·자리)은 상태가 오기 전과 뒤가 같아야 합니다.
+describe("QA-811 — 계좌 패널 부제는 상태 응답이 늦게 와도 꼴이 바뀌지 않는다", () => {
+  it.fails("상태를 읽는 동안 설정 판 자리를 잡아 두고, 온 뒤에는 같은 자리에 판 번호(숫자만 다름)", async () => {
+    const waiting: ((value: unknown) => void)[] = [];
+    reads["/api/paper/overview"] = () => Promise.resolve(OVERVIEW);
+    reads["/api/paper/status"] = () => new Promise((resolve) => { waiting.push(resolve); });
+    render(<PaperPage />);
+
+    const subtitle = (await screen.findByText(/^순자산·수익률\(출발 이후\)은 .* · 계좌 이름을 누르면/)).closest("p") as HTMLElement;
+    const shape = () => (subtitle.textContent ?? "").replace(/\d/g, "0");
+    const before = shape();
+    await act(async () => {
+      for (const resolve of waiting) resolve(STATUS);
+    });
+    expect(subtitle.textContent).toMatch(/ · 설정 v4/);
+    expect(shape()).toBe(before);
+  });
+});
