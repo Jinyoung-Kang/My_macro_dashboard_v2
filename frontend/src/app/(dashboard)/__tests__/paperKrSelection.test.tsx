@@ -336,7 +336,7 @@ describe("QA-817 — 한국 종목 선정 표의 이름·사유는 낱말 사이
 // 칸이 잘림 — KrSelectionSection 주석의 약속(열 넷, 390에서도 한 화면)이 깨짐. jsdom은 배치를 계산하지 않아 클래스만으로는 못 잡으므로, 코드와 이름 사이에
 // 줄바꿈 기회(공백 글 마디나 <wbr>)가 DOM에 있는지 봅니다(브라우저 잰 값은 커밋 본문).
 describe("QA-819 — 매수 목표 표의 코드와 이름 사이에는 줄바꿈 기회가 있다", () => {
-  it.fails("코드 span과 이름 span 사이에 공백 글 마디나 <wbr>", async () => {
+  it("코드 span과 이름 span 사이에 공백 글 마디나 <wbr>", async () => {
     reads["/api/paper/decisions?book=kr_rules&limit=50"] = () => Promise.resolve({
       available: true, decisions: [summary(45, { asOfTradingDate: "2026-11-04", kind: "SCHEDULED", selectionAsOf: null }), summary(40)],
     });

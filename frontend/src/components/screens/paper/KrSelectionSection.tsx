@@ -267,13 +267,20 @@ function signed(text: string, value: number | null) {
 
 /**
  * 코드(줄바꿈 없음) + 이름 — 좁은 화면에서는 이름이 한 덩어리로 다음 줄로 내려갑니다(break-keep — 낱말 사이에서만 꺾음, 예전에는 '한화에어로' / '스페이스'처럼
- * 음절 중간에서 꺾였음 — QA-817). 구성원 표는 열이 whitespace-nowrap이라 한 줄입니다.
+ * 음절 중간에서 꺾였음 — QA-817). 코드와 이름 사이는 공백 글(margin이 아니라) — keep-all은 숫자와 한글 사이의 줄바꿈 기회도 막아, 공백이 없으면
+ * '012450한화에어로스페이스'가 한 낱말이 되어 390에서 매수 목표 표가 상자를 넘었습니다(QA-819). 줄이 바뀌면 줄 끝 공백은 매달려 이름이 들여쓰이지 않습니다.
+ * 구성원 표는 열이 whitespace-nowrap이라 한 줄입니다.
  */
 function CodeName({ code, name }: { code: string; name: string }) {
   return (
     <span className="break-keep">
       <span className="whitespace-nowrap font-semibold text-text">{code}</span>
-      {name && name !== "—" && <span className="ml-1 text-xs text-text-2">{name}</span>}
+      {name && name !== "—" && (
+        <>
+          {" "}
+          <span className="text-xs text-text-2">{name}</span>
+        </>
+      )}
     </span>
   );
 }
