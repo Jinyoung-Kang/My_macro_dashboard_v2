@@ -201,7 +201,19 @@ final class KrTimedLadder {
      */
     static Result price(String timing, Instant createdAt, LocalTime targetLocal, Quote quote, LocalDate session,
                         Instant collectedAt, TradingCalendar calendar, Instant deadline) {
-        Timed timed = quote.timedOn(session);
+        return price(timing, createdAt, targetLocal, quote.timedOn(session), quote.nxtSupported(), session, collectedAt, calendar,
+                deadline);
+    }
+
+    /**
+     * 그 주문 시점의 E 체결가 — 밤 관측치({@link Quote})가 아니라 그 세션 1분봉 칸({@link Timed})과 NXT 여부를 바로 받는 판(본체). 밤 장부는 위 판으로
+     * 부르고(관측치에서 꺼냄), 장중 감시 저장본으로 만든 칸({@code KrIntradayFill})도 같은 사다리를 지나게 둡니다(ADR 0045 — 같은 함수, 두 길).
+     *
+     * @param timed        목표 세션의 1분봉 칸(없으면 null — 아직 받지 않음, 기다림)
+     * @param nxtSupported NXT 종목인가(종가 봉 라벨 — 그 밖의 시점은 보지 않음, 모르면 null)
+     */
+    static Result price(String timing, Instant createdAt, LocalTime targetLocal, Timed timed, Boolean nxtSupported, LocalDate session,
+                        Instant collectedAt, TradingCalendar calendar, Instant deadline) {
         String head = session + " " + timing;
         if (timed == null) {
             return new Result(null, head + " — 목표 세션 1분봉(paper.kr.timed)을 아직 받지 않음(수집기 kr_paper_timed — 세션 15:40 뒤) · 기다림");
@@ -216,13 +228,13 @@ final class KrTimedLadder {
         }
         LocalTime close = calendar.closeInstant(session).atZone(KrxCalendar.SEOUL).toLocalTime();
         if (PaperBooks.NEXT_CLOSE.equals(timing)) {
-            if (quote.nxtSupported() == null) {
+            if (nxtSupported == null) {
                 return new Result(null, head + " — NXT 여부를 몰라 마감 봉 라벨(15:30·15:31)을 고르지 못함 · 기다림");
             }
             if (timed.fetchedAt() != null && timed.fetchedAt().isBefore(calendar.closeInstant(session).plus(CLOSE_COVERED_AFTER))) {
                 return new Result(null, head + " — 1분봉 저장본이 그날 마감 + 10분 전에 받은 것이라 마감 봉을 덮지 못함 · 기다림");
             }
-            String label = label(Boolean.TRUE.equals(quote.nxtSupported()) ? close.plusMinutes(1) : close);
+            String label = label(Boolean.TRUE.equals(nxtSupported) ? close.plusMinutes(1) : close);
             Close1m bar = timed.closes().get(label);
             if (bar == null || bar.close() == null || bar.volume() == null || bar.volume() <= 0) {
                 return new Result(null, head + " — 마감 단일가 봉(라벨 " + label + ") " + (bar == null ? "없음" : "거래 없음")

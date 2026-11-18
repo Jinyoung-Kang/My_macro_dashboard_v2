@@ -186,6 +186,68 @@ class KrTimedLadderTest {
         assertThat(right.choice().source()).isEqualTo(KrTimedLadder.SOURCE_AT);
     }
 
+    @Test
+    @DisplayName("떼어 낸 판(동작 같은 옮김 — ADR 0045 준비): 1분봉 칸·NXT 여부를 바로 받는 사다리가 관측치 판과 같은 결과(장중 시장가·지정 시각·매시·종가), "
+            + "termsFor가 terms와 같은 체결 조건(가격·출처·비용·경고·보류 사유)")
+    void extractedFunctionsGiveTheSameAnswers() {
+        java.util.Random random = new java.util.Random(20261119L);
+        for (int round = 0; round < 300; round++) {
+            Instant created = kst("2026-11-03T09:10").plusSeconds(random.nextInt(60 * 365));
+            LocalTime t = ExecutionAudit.marketTarget(created).atZone(KrxCalendar.SEOUL).toLocalTime();
+            String key = KrTimedLadder.label(t);
+            List<Bar1m> window = new java.util.ArrayList<>();
+            for (int minute = 1; minute <= KrTimedLadder.WINDOW_BARS; minute++) {
+                if (random.nextInt(3) > 0) {
+                    window.add(bar(KrTimedLadder.label(t.plusMinutes(minute)), 70_000 + minute, random.nextInt(3) == 0 ? 0 : 50));
+                }
+            }
+            Map<String, Bar1m> after = new LinkedHashMap<>();
+            after.put(key, random.nextBoolean() ? null : bar(KrTimedLadder.label(t.plusMinutes(9)), 70_900, 7));
+            Map<String, Close1m> closes = new LinkedHashMap<>();
+            if (random.nextBoolean()) {
+                closes.put("15:30", new Close1m(BigDecimal.valueOf(71_530), 30L));
+            }
+            if (random.nextBoolean()) {
+                closes.put("15:31", new Close1m(BigDecimal.valueOf(71_531), random.nextInt(2) * 20L));
+            }
+            Boolean nxt = switch (random.nextInt(3)) {
+                case 0 -> null;
+                case 1 -> Boolean.TRUE;
+                default -> Boolean.FALSE;
+            };
+            Timed timed = random.nextInt(10) == 0 ? null : random.nextInt(10) == 0
+                    ? new Timed(KrQuotes.TIMED_FAILED, "timeout", kst("2026-11-03T23:21"), Map.of(), Map.of(), Map.of())
+                    : ok(Map.of(key, window), after, closes);
+            Quote quote = quote(nxt, timed);
+            for (String timing : List.of(PaperBooks.MARKET, PaperBooks.AT_MINUTE, PaperBooks.AT_1300, PaperBooks.NEXT_CLOSE)) {
+                LocalTime at = PaperBooks.AT_MINUTE.equals(timing) ? t : null;
+                KrTimedLadder.Result viaQuote = KrTimedLadder.price(timing, created, at, quote, E, NIGHT, CALENDAR, DEADLINE);
+                KrTimedLadder.Result viaTimed = KrTimedLadder.price(timing, created, at, quote.timedOn(E), quote.nxtSupported(), E, NIGHT,
+                        CALENDAR, DEADLINE);
+                assertThat(viaTimed).as(round + " " + timing).isEqualTo(viaQuote);
+            }
+        }
+
+        PaperSettings settings = PaperSettings.defaults(KrPaperMarket.INSTANCE);
+        KrQuotes.Choice choice = new KrQuotes.Choice(E, BigDecimal.valueOf(70_050), KrTimedLadder.SOURCE_NEXT, "창 안 첫 거래 봉");
+        for (String market : java.util.Arrays.asList("KOSPI", "KOSDAQ", "KONEX", null)) {
+            for (String side : List.of(PaperBooks.SELL, PaperBooks.BUY)) {
+                for (String code : List.of("005930", "153130", "069500")) {
+                    Day day = new Day(E, BigDecimal.valueOf(70_000), BigDecimal.valueOf(71_000), 1_000L, KrQuotes.SOURCE_INTEGRATED, null, null);
+                    Quote q = new Quote(code, NIGHT, "STOCK", true, false, List.of(day), market, choice);
+                    PaperMarketData.Bar bar = new PaperMarketData.Bar(code, E, 71_000, false, null, q);
+                    com.macrodash.store.PaperStore.Order order = new com.macrodash.store.PaperStore.Order(1, PaperBooks.KR_RULES, null, code, side,
+                            null, null, null, PaperBooks.NEXT_OPEN, PaperBooks.SOURCE_STOP, PaperBooks.ORDER_PENDING, null, null,
+                            E.minusDays(1), NIGHT.minusSeconds(86_400), E, null);
+                    FillTerms night = KrFills.terms(order, bar, settings, CALENDAR, day1 -> DEADLINE, KrPaperMarket.BENCHMARK_TICKERS);
+                    FillTerms extracted = KrFills.termsFor(PaperBooks.SELL.equals(side) ? com.macrodash.analytics.PaperLedger.Side.SELL
+                            : com.macrodash.analytics.PaperLedger.Side.BUY, code, choice, market, settings, KrPaperMarket.BENCHMARK_TICKERS);
+                    assertThat(extracted).as(market + " " + side + " " + code).isEqualTo(night);
+                }
+            }
+        }
+    }
+
     private static final java.nio.file.Path COLLECTOR_KR_TIMED_TEST = java.nio.file.Path.of("../collector/tests/test_kr_paper_timed.py");
 
     @Test
