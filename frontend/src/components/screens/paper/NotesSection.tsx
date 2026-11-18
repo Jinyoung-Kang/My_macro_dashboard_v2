@@ -26,6 +26,10 @@ import type { PaperNoteCreateResult, PaperNotesResponse, PaperOkResult, PaperSet
 import { PaperBadge } from "./PaperBadge";
 
 const INPUT = `w-full ${inputClasses()}`;
+/** 한 줄 입력(날짜·제목) — 공용 고르기 상자(ui Select)처럼 넓은 화면(sm 이상)에서 22rem까지(QA-750). 본문 칸은 패널 폭. */
+const LINE_INPUT = `${INPUT} sm:max-w-[22rem]`;
+/** 폼 라벨 — 공용 고르기 상자(ui Select)의 라벨과 같은 13px 보조 글(QA-750 — 예전 12px 흐린 글). */
+const FIELD_LABEL = "flex flex-col gap-1 text-[13px] text-text-2";
 
 /** lib noteRows가 방법론 메모(만료 없음)의 만료 칸에 적는 글. */
 const NO_EXPIRY = "만료 없음";
@@ -198,40 +202,40 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
           }}
         >
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="flex flex-col gap-1 text-xs text-text-3">
+            <label className={FIELD_LABEL}>
               종류
               <NativeSelect
                 value={draft.kind}
                 onChange={(event) => edit({ kind: event.target.value === "INSIGHT" ? "INSIGHT" : "MARKET" })}
-                wrapperClassName="block w-full"
+                wrapperClassName="block w-full sm:max-w-[22rem]"
               >
                 <option value="MARKET">{korea ? "시황 메모(MARKET) — 한국 결정 패킷에" : "시황 메모(MARKET) — 결정 패킷에"}</option>
                 <option value="INSIGHT">방법론 메모(INSIGHT) — 프레임 제안에</option>
               </NativeSelect>
             </label>
             <div className="flex flex-col gap-1">
-              <label className="flex flex-col gap-1 text-xs text-text-3">
+              <label className={FIELD_LABEL}>
                 기준일(선택)
                 <input
                   type="date"
                   value={draft.asOfDate}
                   aria-describedby="paper-note-asof-hint"
                   onChange={(event) => edit({ asOfDate: event.target.value })}
-                  className={INPUT}
+                  className={LINE_INPUT}
                 />
               </label>
               <span id="paper-note-asof-hint" className="text-xs text-text-3">{noteAsOfHint(referenceDate, market)}</span>
             </div>
             {draft.kind === "MARKET" ? (
               <div className="flex flex-col gap-1">
-                <label className="flex flex-col gap-1 text-xs text-text-3">
+                <label className={FIELD_LABEL}>
                   만료일(선택)
                   <input
                     type="date"
                     value={draft.expiresOn}
                     aria-describedby="paper-note-expiry-hint"
                     onChange={(event) => edit({ expiresOn: event.target.value })}
-                    className={INPUT}
+                    className={LINE_INPUT}
                   />
                 </label>
                 <span id="paper-note-expiry-hint" className="text-xs text-text-3">{expiryHint}</span>
@@ -240,12 +244,12 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
               <p className="self-end text-xs text-text-3">방법론 메모는 만료가 없습니다.</p>
             )}
           </div>
-          <label className="flex flex-col gap-1 text-xs text-text-3">
+          <label className={FIELD_LABEL}>
             제목
-            <input type="text" value={draft.title} onChange={(event) => edit({ title: event.target.value })} className={INPUT} />
+            <input type="text" value={draft.title} onChange={(event) => edit({ title: event.target.value })} className={LINE_INPUT} />
           </label>
           <div className="flex flex-col gap-1">
-            <label className="flex flex-col gap-1 text-xs text-text-3">
+            <label className={FIELD_LABEL}>
               본문
               <textarea
                 value={draft.body}

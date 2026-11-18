@@ -47,7 +47,7 @@ afterEach(() => cleanup());
 const tokens = (element: Element | null) => String(element?.getAttribute("class") ?? "").split(/\s+/);
 
 describe("QA-750 메모 쓰기 폼 — 라벨은 공용 고르기 상자와 같은 13px 보조 글, 한 줄 입력은 넓은 화면 22rem까지", () => {
-  it.fails("라벨 다섯은 text-[13px] text-text-2, 한 줄 입력 넷(종류·기준일·만료일·제목)은 sm:max-w-[22rem], 본문은 패널 폭", async () => {
+  it("라벨 다섯은 text-[13px] text-text-2, 한 줄 입력 넷(종류·기준일·만료일·제목)은 sm:max-w-[22rem], 본문은 패널 폭", async () => {
     render(<PaperPage initialTab="notes" market="US" />);
     const form = await screen.findByRole("form", { name: "메모 쓰기" });
 
