@@ -106,9 +106,9 @@ describe("FilterList — 누르기·이름", () => {
   it("하나: 다른 줄을 누르면 onToggle, 고른 줄을 다시 누르면 부르지 않음(고름을 비우지 않음)", () => {
     const onToggle = vi.fn();
     render(<FilterList label="분석할 기관" items={ITEMS} selected={["b"]} onToggle={onToggle} selection="single" count />);
-    fireEvent.click(screen.getByRole("button", { name: "가상 을 연기금" }));
+    fireEvent.click(screen.getByRole("radio", { name: "가상 을 연기금" }));
     expect(onToggle).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "가상 병 투자회사" }));
+    fireEvent.click(screen.getByRole("radio", { name: "가상 병 투자회사" }));
     expect(onToggle.mock.calls).toEqual([["c"]]);
     expect(screen.getByText("전체 3개")).toBeTruthy();
   });
@@ -188,11 +188,11 @@ describe("FilterList — 모양(클래스)", () => {
 
   it("하나: 고른 줄은 잉크 막대(SELECTED_BAR — wrap이면 넓은 화면만)·굵게·중립 바탕, 체크 상자 없음", () => {
     render(<FilterList label="기관" items={ITEMS} selected={["b"]} onToggle={() => {}} selection="single" />);
-    const on = screen.getByRole("button", { name: "가상 을 연기금" });
+    const on = screen.getByRole("radio", { name: "가상 을 연기금" });
     const bar = on.querySelector("span[aria-hidden='true']") as HTMLElement;
     expect(tokens(bar)).toEqual(expect.arrayContaining([...SELECTED_BAR.split(" "), "max-lg:hidden"]));
     expect(tokens(on)).toEqual(expect.arrayContaining(["relative", "bg-surface-2", "font-semibold"]));
-    const off = screen.getByRole("button", { name: "가상 갑 자산운용" });
+    const off = screen.getByRole("radio", { name: "가상 갑 자산운용" });
     expect(off.querySelectorAll("span[aria-hidden='true']")).toHaveLength(1); // note 칸만(막대·상자 없음)
     expect(tokens(off)).not.toContain("bg-surface-2");
   });
@@ -230,7 +230,7 @@ describe("FilterList — 하나 고름은 라디오 묶음(QA-711)", () => {
 
   // 수정 전 실패(plain it): { radiogroup: false, checked: [], tabStops: ["가상 갑 자산운용30종목", "가상 을 연기금", "가상 병 투자회사"], pressed: 3 } — 하나 고름도
   // 여럿 고름과 같은 aria-pressed 토글 단추라, 고른 줄은 '눌림'으로 읽히는데 다시 눌러도 풀리지 않고 줄마다 Tab 정지점(13F 기관 12줄 = 12개 — 개편 전 고르기 상자는 1개).
-  it.fails("radiogroup 안의 radio(aria-checked) — 고른 줄만 Tab 정지점, 위·아래·Home·End로 옮기며 고름, 고른 줄을 다시 눌러도 그대로", () => {
+  it("radiogroup 안의 radio(aria-checked) — 고른 줄만 Tab 정지점, 위·아래·Home·End로 옮기며 고름, 고른 줄을 다시 눌러도 그대로", () => {
     const onToggle = vi.fn();
     const { container } = render(<Single onToggle={onToggle} />);
     const group = screen.queryByRole("radiogroup", { name: "분석할 기관" });
@@ -263,5 +263,16 @@ describe("FilterList — 하나 고름은 라디오 묶음(QA-711)", () => {
     fireEvent.click(radios[2]);
     expect(onToggle).toHaveBeenCalledTimes(5);
     expect(radios[2].getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("줄이 없는 동안(읽는 중·빈 목록)은 라디오가 없으니 보통 묶음(group), 고른 줄이 목록에 없으면 첫 줄이 Tab 정지점", () => {
+    const { unmount } = render(
+      <FilterList label="분석할 기관" items={ITEMS} selected={[]} onToggle={() => {}} selection="single" placeholder={<Skeleton lines={2} label="기관 목록 불러오는 중" />} />,
+    );
+    expect(screen.getByRole("group", { name: "분석할 기관" })).toBeTruthy();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    unmount();
+    render(<FilterList label="분석할 기관" items={ITEMS} selected={["없는 키"]} onToggle={() => {}} selection="single" />);
+    expect(screen.getAllByRole("radio").map((radio) => radio.tabIndex)).toEqual([0, -1, -1]);
   });
 });

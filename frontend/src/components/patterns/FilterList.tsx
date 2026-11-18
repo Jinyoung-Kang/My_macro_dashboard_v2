@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type JSX, type ReactNode } from "react";
+import { useId, useRef, type JSX, type KeyboardEvent, type ReactNode } from "react";
 
 import { FOCUS_RING, SELECTED_BAR } from "@/components/ui/classes";
 import { CheckIcon } from "@/components/ui/icons";
@@ -39,12 +39,16 @@ const BOX_OFF = "inline-flex size-4 shrink-0 rounded-control border border-borde
 /**
  * 거르기 목록(작업대 실행 명세 §7 4행 — 교집합 기관 칩 12개를 거르기 목록으로, 13F 포트폴리오 기관 목록, P6·P7의 거르기도 같은 패턴).
  *
- * - 줄은 `<button type="button" aria-pressed>`이고 단추 이름은 `label` 글 그대로입니다 — 체크 표시는 장식(aria-hidden), `note`는 단추 설명(aria-describedby)이라
- *   이름에 개수·설명이 섞이지 않습니다. 묶음은 이름 있는 role="group"(`label`). Enter·Space는 브라우저 단추 기본 동작입니다.
- * - `selection="multiple"`(기본): 누르면 그 키를 켜고 끕니다(`onToggle`). 보이는 고름 `selected`는 부르는 쪽이 정합니다(빈 고름 = 전체 같은 규칙은 부르는 쪽 —
- *   lib/selection의 유효 고름). 넓은 화면은 16px 체크 상자(켜면 잉크 + 체크) + 굵은 글입니다.
- * - `selection="single"`: 고른 줄을 다시 눌러도 아무 일 없음(`onToggle`을 부르지 않음 — 고름을 비우지 않음). 넓은 화면은 고른 줄에 3px 잉크 막대(SELECTED_BAR) +
- *   굵은 글 + 중립 바탕(surface-2)입니다.
+ * - 줄은 `<button type="button">`이고 이름은 `label` 글 그대로입니다 — 체크 표시는 장식(aria-hidden), `note`는 설명(aria-describedby)이라
+ *   이름에 개수·설명이 섞이지 않습니다. Enter·Space는 브라우저 단추 기본 동작입니다.
+ * - `selection="multiple"`(기본): 줄은 토글 단추(`aria-pressed`), 묶음은 이름 있는 role="group"(`label`), 줄마다 Tab 정지점(옛 교집합 칩과 같음). 누르면 그 키를
+ *   켜고 끕니다(`onToggle`). 보이는 고름 `selected`는 부르는 쪽이 정합니다(빈 고름 = 전체 같은 규칙은 부르는 쪽 — lib/selection의 유효 고름). 넓은 화면은
+ *   16px 체크 상자(켜면 잉크 + 체크) + 굵은 글입니다.
+ * - `selection="single"`: 라디오 묶음입니다 — 묶음 role="radiogroup"(`label`), 줄 role="radio" + `aria-checked`(목록 ul·li는 role="none" — 라디오가 묶음에 바로
+ *   딸리게). Tab 정지점은 고른 줄 하나(roving tabindex — 고른 줄이 없으면 첫 줄)이고, 위·아래(왼쪽·오른쪽)·Home·End가 포커스를 옮기며 그 줄을 고릅니다(끝에서는
+ *   반대 끝으로). 고른 줄을 다시 눌러도 아무 일 없음(`onToggle`을 부르지 않음 — 라디오는 풀리지 않음). 예전에는 토글 단추(aria-pressed)라 고른 줄이 '눌림'으로
+ *   읽히는데 다시 눌러도 풀리지 않았고, 줄마다 Tab 정지점이라 13F 기관 12줄이 Tab 정지점 12개였습니다(개편 전 고르기 상자는 1개 — QA-711). 넓은 화면은 고른 줄에
+ *   3px 잉크 막대(SELECTED_BAR) + 굵은 글 + 중립 바탕(surface-2)입니다.
  * - 넓은 화면(lg 이상)은 늘 세로 목록(줄 32px, 마우스를 올리면 surface-2). 좁은 화면은 `narrow`: "wrap"(기본)은 44px 태그가 줄을 바꾸며 늘어섭니다(켠 태그 진한
  *   경계 + surface-2 + 굵은 글 — 여럿이면 체크 상자도, 끈 태그 옅은 경계 + 보조 글자색), "list"는 넓은 화면과 같은 세로 목록(줄 44px)입니다.
  * - `count`: 목록 위 개수 줄(true면 여럿은 'n개 고름 · 전체 m개', 하나는 '전체 m개' — 함수면 그 글). `placeholder`를 주면 목록 대신(읽는 중·오류), 줄이 없으면 `emptyText`.
@@ -62,7 +66,7 @@ export function FilterList({
   placeholder,
   emptyText = "고를 항목이 없습니다.",
 }: {
-  /** 묶음 이름(role="group" — 예 '분석 대상 기관'). */
+  /** 묶음 이름(여럿은 role="group", 하나는 role="radiogroup" — 줄이 없는 동안은 group, 예 '분석 대상 기관'). */
   label: string;
   items: readonly FilterListItem[];
   /** 보이는 고름(키 목록). */
@@ -78,6 +82,7 @@ export function FilterList({
   emptyText?: ReactNode;
 }): JSX.Element {
   const baseId = useId();
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const multiple = selection === "multiple";
   const wrap = narrow === "wrap";
   const chosen = new Set(selected);
@@ -91,6 +96,24 @@ export function FilterList({
       ? `${chosenCount.toLocaleString("ko-KR")}개 고름 · 전체 ${items.length.toLocaleString("ko-KR")}개`
       : `전체 ${items.length.toLocaleString("ko-KR")}개`;
 
+  // 하나 고름의 Tab 정지점 — 고른 줄(목록에 없으면 첫 줄).
+  const checkedIndex = items.findIndex((item) => chosen.has(item.key));
+  const focusIndex = checkedIndex >= 0 ? checkedIndex : 0;
+  /** 하나 고름의 키 이동 — 위·왼쪽은 앞 줄, 아래·오른쪽은 다음 줄(끝에서는 반대 끝), Home·End는 처음·끝. 옮긴 줄에 포커스를 두고 그 줄을 고릅니다. */
+  const onRadioKeyDown = (index: number) => (event: KeyboardEvent<HTMLButtonElement>) => {
+    const last = items.length - 1;
+    let next: number | null = null;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") next = index >= last ? 0 : index + 1;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = index <= 0 ? last : index - 1;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = last;
+    if (next === null) return;
+    event.preventDefault();
+    buttons.current[next]?.focus();
+    const key = items[next].key;
+    if (!chosen.has(key)) onToggle(key);
+  };
+
   let body: ReactNode;
   if (hasPlaceholder) {
     body = <div className="min-w-0">{placeholder}</div>;
@@ -98,7 +121,7 @@ export function FilterList({
     body = <div className="min-w-0 py-1 text-sm text-text-2 break-keep wrap-anywhere">{emptyText}</div>;
   } else {
     body = (
-      <ul className={wrap ? "flex min-w-0 flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-0" : "flex min-w-0 flex-col"}>
+      <ul role={multiple ? undefined : "none"} className={wrap ? "flex min-w-0 flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-0" : "flex min-w-0 flex-col"}>
         {items.map((item, index) => {
           const on = chosen.has(item.key);
           const last = index === items.length - 1;
@@ -108,10 +131,15 @@ export function FilterList({
             ? `${ON}${wrap ? ` ${WRAP_ON}` : ""}${multiple ? "" : " bg-surface-2"}`
             : `${OFF}${wrap ? ` ${WRAP_OFF}` : ""}`;
           return (
-            <li key={item.key} className={wrap ? "min-w-0 max-w-full lg:max-w-none" : "min-w-0"}>
+            <li key={item.key} role={multiple ? undefined : "none"} className={wrap ? "min-w-0 max-w-full lg:max-w-none" : "min-w-0"}>
               <button
+                ref={(element) => {
+                  buttons.current[index] = element;
+                }}
                 type="button"
-                aria-pressed={on}
+                {...(multiple
+                  ? { "aria-pressed": on }
+                  : { role: "radio", "aria-checked": on, tabIndex: index === focusIndex ? 0 : -1, onKeyDown: onRadioKeyDown(index) })}
                 aria-describedby={noteId}
                 title={item.title}
                 onClick={() => {
@@ -141,7 +169,8 @@ export function FilterList({
   }
 
   return (
-    <div role="group" aria-label={label} className="min-w-0">
+    // 하나 고름이라도 줄이 없는 동안(읽는 중·오류·빈 목록)은 라디오가 없는 묶음이라 보통 묶음(group)으로 둡니다.
+    <div role={multiple || hasPlaceholder || items.length === 0 ? "group" : "radiogroup"} aria-label={label} className="min-w-0">
       {countText !== null && !hasPlaceholder ? <p className="mb-1 text-xs tabular-nums text-text-2">{countText}</p> : null}
       {body}
     </div>

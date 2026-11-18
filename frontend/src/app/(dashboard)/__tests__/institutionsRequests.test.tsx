@@ -130,7 +130,7 @@ describe("13F 포트폴리오 화면의 요청", () => {
     render(<InstitutionsPage />);
     await screen.findByText("SYNTHETIC ALPHA CO");
 
-    fireEvent.click(screen.getByRole("button", { name: "가상 연기금" }));
+    fireEvent.click(screen.getByRole("radio", { name: "가상 연기금" }));
 
     const next = endpoints.institution.portfolio(NPS, "8", "30");
     await waitFor(() => expect(counts()[next]).toBe(1));

@@ -532,22 +532,22 @@ describe("왼쪽 칸 — 기관 목록(하나 고름)과 조회 조건", () => {
     serve();
   });
 
-  it("기관 목록은 이름 있는 묶음 '분석할 기관'의 aria-pressed 단추(이름 = 국기 뗀 기관 이름) — 기본은 버크셔, 고르면 그 기관의 패널·포트폴리오", async () => {
+  it("기관 목록은 이름 있는 라디오 묶음 '분석할 기관'의 radio(이름 = 국기 뗀 기관 이름, aria-checked — QA-711) — 기본은 버크셔, 고르면 그 기관의 패널·포트폴리오", async () => {
     served[INSTITUTIONS] = twoInstitutions();
     served[PORTFOLIO] = summaryPortfolio();
     served[endpoints.institution.portfolio(NPS, "8", "30")] = summaryPortfolio({ cik: NPS, institution: { name: "가상 연기금 (응답 이름)" } });
     render(<InstitutionsPage />);
 
-    const group = await screen.findByRole("group", { name: "분석할 기관" });
-    const berkshire = within(group).getByRole("button", { name: "가상 버크셔 (Fictional Berkshire)" });
-    const pension = within(group).getByRole("button", { name: "가상 연기금 (Fictional Pension)" });
-    expect(berkshire.getAttribute("aria-pressed")).toBe("true");
-    expect(pension.getAttribute("aria-pressed")).toBe("false");
+    const group = await screen.findByRole("radiogroup", { name: "분석할 기관" });
+    const berkshire = within(group).getByRole("radio", { name: "가상 버크셔 (Fictional Berkshire)" });
+    const pension = within(group).getByRole("radio", { name: "가상 연기금 (Fictional Pension)" });
+    expect(berkshire.getAttribute("aria-checked")).toBe("true");
+    expect(pension.getAttribute("aria-checked")).toBe("false");
     expect(screen.getByRole("heading", { level: 2, name: "기관" }).parentElement?.textContent).toContain("2곳");
 
     fireEvent.click(pension);
-    expect(pension.getAttribute("aria-pressed")).toBe("true");
-    expect(berkshire.getAttribute("aria-pressed")).toBe("false");
+    expect(pension.getAttribute("aria-checked")).toBe("true");
+    expect(berkshire.getAttribute("aria-checked")).toBe("false");
     const heading = await screen.findByRole("heading", { level: 2, name: "가상 연기금 (Fictional Pension)" });
     const panel = heading.closest("section") as HTMLElement;
     expect(within(panel).getByText("합성 기관 설명 — 연기금")).toBeTruthy();
@@ -558,7 +558,7 @@ describe("왼쪽 칸 — 기관 목록(하나 고름)과 조회 조건", () => {
     const before = api.apiGetShared.mock.calls.length;
     fireEvent.click(pension);
     await act(async () => {});
-    expect(pension.getAttribute("aria-pressed")).toBe("true");
+    expect(pension.getAttribute("aria-checked")).toBe("true");
     expect(api.apiGetShared.mock.calls.length).toBe(before);
   });
 
@@ -587,7 +587,7 @@ describe("왼쪽 칸 — 기관 목록(하나 고름)과 조회 조건", () => {
     expect(listCalls()).toBe(1);
     fail = false;
     fireEvent.click(within(group).getByRole("button", { name: "다시 시도" }));
-    expect(await within(group).findByRole("button", { name: "가상 버크셔 (Fictional Berkshire)" })).toBeTruthy();
+    expect(await within(group).findByRole("radio", { name: "가상 버크셔 (Fictional Berkshire)" })).toBeTruthy();
     expect(listCalls()).toBe(2);
   });
 });
