@@ -88,8 +88,16 @@ final class ExecutionAudit {
     static final int BARS_CONTRACT = 1;
     /** 창 하나 = T ~ T+4분에 시작한 봉(사다리 R1 T 봉·R2 다음 4분). */
     static final Duration WINDOW = Duration.ofMinutes(5);
-    /** ⑤ 주문 생성 뒤 이만큼 지난 시각부터의 봉만(봉 라벨이 시작·끝 어느 쪽이어도 생성 뒤에 시작한 봉 — §8). */
+    /**
+     * ⑤ 늦은 주문 가드 — 주문 생성 뒤 이만큼 지난 시각부터의 봉만(봉 라벨이 시작·끝 어느 쪽이어도 생성 뒤에 시작한 봉 — §8). 메뉴 시점·분 단위 지정 시각·
+     * 종가·규칙 계좌 시점·밤 대체 첫 분이 씁니다. 장중 시장가의 여유는 {@link #MARKET_AFTER_CREATED}입니다({@link #afterCreated}).
+     */
     static final Duration AFTER_CREATED = Duration.ofSeconds(60);
+    /**
+     * 장중 시장가(MARKET)의 기준 시각 여유 — T = (생성 + 이만큼)을 분으로 내린 뒤 + 1분({@link #marketTarget}). 수집기 {@code paper_bars.MARKET_AFTER_CREATED}·
+     * {@code kr_paper_timed.KR_MARKET_DELAY}와 같은 값입니다(시험이 대조).
+     */
+    static final Duration MARKET_AFTER_CREATED = Duration.ofSeconds(60);
     /** 지연 기준 종목(저장본 {@code reference}가 없을 때). */
     static final String REFERENCE = "SPY";
 
@@ -140,7 +148,30 @@ final class ExecutionAudit {
      * 씁니다. 수집기 {@code paper_bars.market_target}과 같은 식이고, 두 쪽 시험이 같은 예시 표로 대조합니다.
      */
     static Instant marketTarget(Instant createdAt) {
-        return createdAt.plus(AFTER_CREATED).truncatedTo(ChronoUnit.MINUTES).plus(Duration.ofMinutes(1));
+        return createdAt.plus(MARKET_AFTER_CREATED).truncatedTo(ChronoUnit.MINUTES).plus(Duration.ofMinutes(1));
+    }
+
+    /**
+     * 그 시점의 늦은 주문 가드 여유(⑤ — 기준 시각이 생성 + 이만큼보다 뒤여야 체결): 장중 시장가는 {@link #MARKET_AFTER_CREATED}, 그 밖(메뉴·분 단위 지정
+     * 시각·종가 등)은 {@link #AFTER_CREATED}.
+     */
+    static Duration afterCreated(String timing) {
+        return PaperBooks.MARKET.equals(timing) ? MARKET_AFTER_CREATED : AFTER_CREATED;
+    }
+
+    /** 늦은 주문 가드 ⑤의 기준 글 — 그 시점의 여유가 0이면 '주문 생성', 아니면 '주문 생성 + N초'(운영 알림·거절 사유). */
+    static String afterCreatedText(String timing) {
+        Duration margin = afterCreated(timing);
+        return margin.isZero() ? "주문 생성" : "주문 생성 + " + margin.toSeconds() + "초";
+    }
+
+    /**
+     * 지금 만들 주문이 분 단위 지정 시각({@value PaperBooks#AT_MINUTE})으로 고를 수 있는 가장 이른 분 — 지금 + {@link #AFTER_CREATED}보다 엄격히 뒤인
+     * 첫 분((지금 + 60초)를 분으로 내린 뒤 + 1분). 장중 판단 패킷의 {@code 1_basis.atMinute} 첫 분이고, 검증({@link FreeTiming#validation})의 늦은 주문
+     * 가드와 같은 경계입니다.
+     */
+    static Instant earliestTimed(Instant now) {
+        return now.plus(AFTER_CREATED).truncatedTo(ChronoUnit.MINUTES).plus(Duration.ofMinutes(1));
     }
 
     /**
@@ -194,8 +225,8 @@ final class ExecutionAudit {
         if (!target.isBefore(close)) {
             return null;                                   // 조기 폐장일의 마감 뒤 시각 — 그날 그 시각에는 장이 없음
         }
-        if (!target.isAfter(order.createdAt().plus(AFTER_CREATED))) {
-            return null;                                   // ⑤ 주문 생성 + 60초 이전의 시각
+        if (!target.isAfter(order.createdAt().plus(afterCreated(timing)))) {
+            return null;                                   // ⑤ 주문 생성 + 여유(그 시점 — afterCreated) 이전의 시각
         }
         JsonNode entry = Json.child(Json.child(payload, "tickers"), order.ticker());
         if (entry == null || Json.asBoolean(entry, "isStale")) {

@@ -431,8 +431,9 @@ final class UsTimedFills {
             return Look.invalid(session != null && PaperBooks.AT_MINUTE.equals(order.timing())
                     ? "지정 시각(target_local)이 없어 기준 시각을 정할 수 없습니다" : "기준 거래일이 없어 목표 세션을 정할 수 없습니다");
         }
-        if (order.createdAt() == null || !target.isAfter(order.createdAt().plus(ExecutionAudit.AFTER_CREATED))) {
-            return Look.invalid("LATE_FOR_TIMING — 기준 시각 " + et(target, calendar) + "이 주문 생성 + 60초 이전입니다(⑤)");
+        if (order.createdAt() == null || !target.isAfter(order.createdAt().plus(ExecutionAudit.afterCreated(order.timing())))) {
+            return Look.invalid("LATE_FOR_TIMING — 기준 시각 " + et(target, calendar) + "이 " + ExecutionAudit.afterCreatedText(order.timing())
+                    + " 이전입니다(⑤)");
         }
         Instant close = calendar.closeInstant(session);
         if (!target.isBefore(close)) {
@@ -589,11 +590,11 @@ final class UsTimedFills {
     /** 장부 재검사(§8 끝) — 고른 봉이 ⑤⑥을 지키나. 어긋나면 그 사유(체결하지 않고 오류로 남김), 지키면 null. */
     static String recheck(Due due, Instant start, double raw, Instant windowEnd, TradingCalendar calendar) {
         Order order = due.order();
-        Instant created = order.createdAt().plus(ExecutionAudit.AFTER_CREATED);
+        Instant created = order.createdAt().plus(ExecutionAudit.afterCreated(order.timing()));
         Instant floor = due.target().isAfter(created) ? due.target() : created;
         String where = "주문 " + order.id() + " " + order.ticker() + " " + order.timing() + "의 봉 " + start;
         if (start.isBefore(floor)) {
-            return where + "이 기준 시각·주문 생성 + 60초 앞에 시작합니다(⑤)";
+            return where + "이 기준 시각·" + ExecutionAudit.afterCreatedText(order.timing()) + " 앞에 시작합니다(⑤)";
         }
         if (windowEnd != null && !start.isBefore(windowEnd)) {
             return where + "이 기준 시각 창(T ~ T+4분) 밖입니다";

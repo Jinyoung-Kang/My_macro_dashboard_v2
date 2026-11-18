@@ -66,7 +66,7 @@ final class KrTimedLadder {
     /** 마감 단일가 시간 — 정규장 마감 이만큼 전부터(보통 날 15:20~15:30). 매시 시점이 여기 걸리면 받지 않습니다. */
     static final Duration CLOSING_AUCTION = SessionWindows.KR_CLOSING_AUCTION;
     /** 기준 시각이 지금 + 이만큼 안이면 늦은 주문(미국 계좌2와 같은 60초 — 주문은 검증 직후 같은 트랜잭션에서 만들어짐). */
-    static final Duration LATE_MARGIN = Duration.ofSeconds(60);
+    static final Duration LATE_MARGIN = ExecutionAudit.AFTER_CREATED;
 
     /**
      * 사다리 결과 — 체결 또는 기다림 사유.

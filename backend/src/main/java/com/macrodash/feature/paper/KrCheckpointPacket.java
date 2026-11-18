@@ -332,7 +332,7 @@ final class KrCheckpointPacket {
             return null;
         }
         FreeTiming.Window window = FreeTiming.window(session, calendar, true);
-        Instant first = ExecutionAudit.marketTarget(now);
+        Instant first = ExecutionAudit.earliestTimed(now);
         if (first.isBefore(window.first())) {
             first = window.first();
         }

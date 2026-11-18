@@ -1399,6 +1399,37 @@ class KrStartTest {
         assertThat(judged.response().path("checkpoint").path("origin").asString()).isEqualTo("EVENT");
     }
 
+    @Test
+    @DisplayName("고정본: 한국 자유 시점 판 장중 판단 패킷(kr.stopWatch.mode ON) 글자 — 켠 판 계좌1의 밤 결정(09:10 판단 예약·13:30 매수 대기) 뒤 09:14에 "
+            + "조립한 패킷을 바이트로 얼림(지시문의 MARKET 문장·1_basis.stopWatch.rule·1_basis.atMinute), 보낸 글자는 결정 행의 동결본과 같음")
+    void goldenKrFreeIntradayPacketWithStopWatch() {
+        KrClaudeFixtures.FakeAi fake = new KrClaudeFixtures.FakeAi();
+        startWithFreeTiming(fake);
+        ((tools.jackson.databind.node.ObjectNode) store.settings.body().get("kr").get("stopWatch")).put("mode", "ON");
+        fake.answer(withCheckpoints(KrClaudeFixtures.decision(15, null,
+                        KrClaudeFixtures.freeOrder("005380", "BUY", 6.0, null, PaperBooks.AT_MINUTE, "13:30")),
+                        "[{\"at\":\"09:10\",\"watch\":[\"005930\"],\"question\":\"시가 갭이 유지되나\"}]"))
+                .answer(KrClaudeFixtures.decision(8, "관망"));
+        sessionData(NEXT, S, everyCodeOn(NEXT));
+        assertThat(runAt("2026-12-01T22:30").outcome()).isEqualTo(PaperDecisionJob.DECIDED);
+        int calls = fake.requests.size();
+        watchKrPlans(kst("2026-12-02T09:10:40"), PaperBooks.KR_CLAUDE + " 09:10 1");
+        clock.set(kst("2026-12-02T09:14"));
+        store.dbNow = kst("2026-12-02T09:14");
+        fake.answer(intradayReply("KEEP", null));
+
+        intradayJob().run();
+
+        assertThat(fake.requests).hasSize(calls + 1);
+        String sent = fake.requests.get(calls).user();
+        com.macrodash.Golden.assertMatches("packet-kr-ft-intraday-stopwatch.json", sent);
+        Decision judged = store.decisionFor(PaperBooks.KR_CLAUDE, NEXT, RuleBookService.INTRADAY_1).orElseThrow();
+        assertThat(judged.packetText()).as("결정 행 동결본 = 보낸 패킷 글자").isEqualTo(sent);
+        JsonNode basis = judged.packet().path("1_basis");
+        assertThat(basis.path("variant").asString()).isEqualTo(PacketBuilder.VARIANT_FREE);
+        assertThat(basis.path("stopWatch").path("rule").asString()).isEqualTo(StopWatch.rule(true));
+    }
+
     /** 확인 세션 E(12-02)를 설정 임시휴장으로 — 12-01 밤 결정의 장중 확인 세션이 12-03이 됨. 그 세션(12-03)을 돌려줍니다. 밤 실행·dbNow를 옮기기 전에 부름. */
     private LocalDate closeE() {
         tools.jackson.databind.node.ObjectNode body = (tools.jackson.databind.node.ObjectNode) store.settings.body().deepCopy();

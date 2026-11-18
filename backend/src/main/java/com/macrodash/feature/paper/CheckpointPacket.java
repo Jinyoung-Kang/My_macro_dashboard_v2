@@ -487,8 +487,8 @@ final class CheckpointPacket {
             return null;
         }
         FreeTiming.Window window = FreeTiming.window(session, calendar, false);
-        // 지금 + 60초보다 '뒤'인 첫 분 — (지금 + 60초)를 분으로 내린 뒤 + 1분(장중 시장가의 기준 분과 같은 식).
-        Instant first = ExecutionAudit.marketTarget(now);
+        // 지금 + 60초보다 '뒤'인 첫 분 — (지금 + 60초)를 분으로 내린 뒤 + 1분(검증의 늦은 주문 가드 ⑤와 같은 경계).
+        Instant first = ExecutionAudit.earliestTimed(now);
         if (first.isBefore(window.first())) {
             first = window.first();
         }
