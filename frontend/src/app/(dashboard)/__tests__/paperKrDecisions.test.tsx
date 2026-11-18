@@ -369,9 +369,13 @@ describe("자료", () => {
     render(<PaperPage market="KR" initialTab="decisions" />);
     await line("2026-11-03 정기");
     expect(screen.queryByRole("button", { name: "지금 결정 실행" })).toBeNull();
+    // 한국 규칙 계좌는 머리 동작이 없습니다(빈 목록 — 묶음도 그리지 않음).
+    expect(screen.queryByRole("group", { name: "결정 동작" })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("계좌 고르기"), { target: { value: "kr_claude" } });
-    fireEvent.click(await screen.findByRole("button", { name: "지금 결정 실행" }));
+    const run = await screen.findByRole("button", { name: "지금 결정 실행" });
+    expect(run.closest('[data-paper-header-slot="actions"]')).not.toBeNull();
+    fireEvent.click(run);
     expect(await screen.findByText(/수동 문턱\(13회 — 하루 상한 − 정기 몫 예약\) 미만일 때만, 결정 창\(22:30 ~ 01:00\(다음 날\) KST\)/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "결정 실행 확인" }));
     await waitFor(() => expect(api.apiPost).toHaveBeenCalledWith("/api/paper/run/decision?market=KR", { book: "kr_claude" }));

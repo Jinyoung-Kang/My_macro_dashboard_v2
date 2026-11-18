@@ -509,6 +509,65 @@ describe("결정 로그 탭", () => {
   });
 });
 
+describe("결정 로그 — 머리의 계좌 고르기·동작(작업대 P6)", () => {
+  const CLAUDE_ACTIVE = { ...CLAUDE, status: "ACTIVE", startedOn: "2026-10-23" };
+
+  beforeEach(() => {
+    reads["/api/paper/overview"] = () => Promise.resolve(overview(RULES_ACTIVE, { books: [RULES_ACTIVE, CLAUDE_ACTIVE, book("bench_spy")] }));
+    reads["/api/paper/decisions?book=rules"] = () => Promise.resolve(LIST);
+    reads["/api/paper/decisions?book=claude"] = () => Promise.resolve({ available: true, decisions: [] });
+  });
+
+  it("계좌 고르기·'지금 결정 실행'은 화면 머리 칸에 — 결정 칸에는 안내·확인 상자·결과만", async () => {
+    await openDecisionsTab();
+    await decisionLine("2026-10-23", "초기 결정");
+
+    const picker = screen.getByLabelText("계좌 고르기");
+    expect(picker.closest('[data-paper-header-slot="account"]')).not.toBeNull();
+    const actions = screen.getByRole("group", { name: "결정 동작" });
+    expect(actions.closest('[data-paper-header-slot="actions"]')).not.toBeNull();
+    const run = within(actions).getByRole("button", { name: "지금 결정 실행" });
+    // 규칙 계좌는 확인 상자 없이 바로 실행 — 여닫는 표지가 없습니다.
+    expect(run.getAttribute("aria-expanded")).toBeNull();
+    expect(run.getAttribute("aria-controls")).toBeNull();
+    const panel = screen.getByRole("heading", { name: "결정" }).closest("section") as HTMLElement;
+    expect(within(panel).queryByRole("button", { name: "지금 결정 실행" })).toBeNull();
+    expect(within(panel).queryByRole("combobox")).toBeNull();
+  });
+
+  it("Claude 계좌: 머리 동작이 화면 안 확인 상자를 여닫는다 — 열면 '결정 실행 확인'으로, 취소하면 머리 동작으로 포커스", async () => {
+    await openDecisionsTab();
+    fireEvent.change(await screen.findByLabelText("계좌 고르기"), { target: { value: "claude" } });
+    const run = await screen.findByRole("button", { name: "지금 결정 실행" });
+    expect(run.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(run);
+    const box = document.getElementById(run.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(within(box).getByText(/Claude를 지금 부를까요\?/)).toBeTruthy();
+    expect(run.getAttribute("aria-expanded")).toBe("true");
+    expect((run as HTMLButtonElement).disabled).toBe(true);
+    await waitFor(() => expect(document.activeElement).toBe(within(box).getByRole("button", { name: "결정 실행 확인" })));
+    expect(api.apiPost).not.toHaveBeenCalled();
+
+    fireEvent.click(within(box).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(document.activeElement).toBe(run));
+    expect(run.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText(/Claude를 지금 부를까요/)).toBeNull();
+    expect(api.apiPost).not.toHaveBeenCalled();
+  });
+
+  it("주간 복기 보기에서는 머리에 계좌 고르기·결정 동작이 없다(복기는 계좌를 고르지 않음)", async () => {
+    reads["/api/paper/reviews"] = () => Promise.resolve({ available: true, latestWeekEnding: null, reviews: [] });
+    await openDecisionsTab();
+    await decisionLine("2026-10-23", "초기 결정");
+    fireEvent.click(screen.getByRole("button", { name: "주간 복기" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("계좌 고르기")).toBeNull());
+    expect(screen.queryByRole("group", { name: "결정 동작" })).toBeNull();
+  });
+});
+
 describe("개요 — 규칙 책 시작", () => {
   it("시작 전이면 카드와 버튼 — 확인 단계를 거쳐 POST /api/paper/run/initial-decision {book:'rules'} → 경과 초 → 결과, 개요 다시 읽기", async () => {
     let overviewReads = 0;

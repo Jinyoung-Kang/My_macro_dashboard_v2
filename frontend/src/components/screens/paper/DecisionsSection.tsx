@@ -1,8 +1,8 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { type PropertyItem, PropertyList, Timeline, type TimelineEntry } from "@/components/patterns";
-import { Button, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses, Select, Table } from "@/components/ui";
+import { Button, buttonClasses, Callout, ErrorState, FOCUS_RING, Freshness, Loading, Panel, SEGMENT_TRACK, segmentClasses, Table } from "@/components/ui";
 import { ClockIcon } from "@/components/ui/icons";
 import { IntradayPlansPanel } from "@/components/screens/paper/IntradayPlansPanel";
 import { useApi } from "@/hooks/useApi";
@@ -85,10 +85,14 @@ import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
 import { GateIndicatorBody } from "./GateIndicatorBody";
 import { KrGateTable, KrRuleDecisionBody } from "./KrRuleDecisionBody";
 import { PaperBadge } from "./PaperBadge";
+import { PaperTabAccount, PaperTabActions } from "./PaperTabHeader";
 import { ReviewsSection } from "./ReviewsSection";
 
 /** 결정 목록에 보일 최근 건수. */
 const RECENT_LIMIT = 50;
+
+/** 머리 동작 '지금 결정 실행'의 키(ActionBar data-action) — 확인 상자를 닫으면 이 단추로 포커스를 돌립니다. */
+const RUN_ACTION = "decision-run";
 
 /**
  * 결정 로그 탭 — 책(규칙·Claude)을 골라 거래일마다의 결정 기록을 시각순 목록(거래일 묶음)으로 봅니다. 줄을 고르면 그 결정의 상세(규칙 책: 선정·신호 풀·
@@ -153,6 +157,26 @@ export function DecisionsSection({
   const now = useMinuteClock();
   const settings = useApi<PaperSettingsResponse>(korea && confirmingFor !== null && confirmingFor === code
     ? endpoints.paper.settings : null);
+  // 화면 안 확인 상자(Claude 계좌) — 머리 동작이 aria-controls로 가리키는 id, 열면 첫 단추('결정 실행 확인')로, 닫으면 머리 동작으로 포커스.
+  const confirmId = `${useId()}-decision-confirm`;
+  const confirmRunRef = useRef<HTMLButtonElement>(null);
+  const focusAfter = useRef<"confirm" | "action" | null>(null);
+  useEffect(() => {
+    const target = focusAfter.current;
+    if (target === "confirm") {
+      if (!confirmRunRef.current) return;
+      focusAfter.current = null;
+      confirmRunRef.current.focus();
+      return;
+    }
+    if (target !== "action") return;
+    const action = document.querySelector<HTMLButtonElement>(`button[data-action="${RUN_ACTION}"]`);
+    if (!action || action.disabled) return;
+    focusAfter.current = null;
+    // 확인 상자가 사라져 포커스를 잃었을 때만 옮깁니다 — 결정을 기다리는 동안 다른 곳으로 간 포커스는 그대로 둡니다.
+    const active = document.activeElement;
+    if (active === null || active === document.body || !active.isConnected) action.focus();
+  });
 
   if (!code) {
     return (
@@ -207,6 +231,7 @@ export function DecisionsSection({
 
   const runNow = async () => {
     setRanFor(code);
+    if (confirming) focusAfter.current = "action";
     const ok = await run.run(code);
     setConfirmingFor(null);
     if (ok) {
@@ -214,35 +239,43 @@ export function DecisionsSection({
       onChanged();
     }
   };
+  const pickBook = (value: string) => {
+    setPicked(value);
+    setOpenKey(null);
+  };
+  const openConfirm = () => {
+    focusAfter.current = "confirm";
+    setConfirmingFor(code);
+  };
+  const cancelConfirm = () => {
+    focusAfter.current = "action";
+    setConfirmingFor(null);
+  };
 
   return (
     <>
+      {/* 머리 칸(작업대 P6 — PaperTabHeader): 계좌 고르기와 '지금 결정 실행'. 고르기·실행 상태와 확인 상자·결과 알림은 아래 '결정' 칸에 그대로 둡니다.
+          한국 규칙 계좌는 수동 결정이 없어 동작이 없습니다(빈 목록 — 머리에 그리지 않음). */}
+      <PaperTabAccount value={code} options={bookOptions(decisionBooks(books))} onChange={pickBook} />
+      <PaperTabActions
+        label="결정 동작"
+        actions={showRun ? [{
+          id: RUN_ACTION,
+          label: run.busy ? `결정 중… ${elapsed}초` : "지금 결정 실행",
+          // Claude 계좌는 화면 안 확인 상자를 엽니다(비용·하루 상한) — 규칙 계좌는 지금처럼 바로 실행.
+          onSelect: () => (claude ? openConfirm() : void runNow()),
+          disabled: run.busy || blocked !== null || confirming,
+          expanded: claude ? confirming : undefined,
+          controls: claude ? confirmId : undefined,
+        }] : []}
+      />
       {views}
       <Panel
         title="결정"
         source={korea ? PAPER_SOURCES.krDecisions : PAPER_SOURCES.decisions}
         actions={<Freshness refreshError={list.refreshError} />}
       >
-        <div className="flex flex-wrap items-end gap-4">
-          <Select
-            label="계좌 고르기"
-            value={code}
-            onChange={(value) => {
-              setPicked(value);
-              setOpenKey(null);
-            }}
-            options={bookOptions(decisionBooks(books))}
-          />
-          {showRun && (
-            <Button
-              onClick={() => (claude ? setConfirmingFor(code) : void runNow())}
-              disabled={run.busy || blocked !== null || confirming}
-            >
-              {run.busy ? `결정 중… ${elapsed}초` : "지금 결정 실행"}
-            </Button>
-          )}
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-text-3">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
+        <p className="text-xs leading-relaxed text-text-3">{korea ? krDecisionBookNote(book?.kind, book?.code) : decisionBookNote(book?.kind, book?.code)}</p>
         {windowLines && <Claude2WindowList lines={windowLines} className="mt-3" />}
         {windowLines && <Claude2CheckpointLine line={claude2CheckpointLine(status.data?.available ? status.data.claude2 : null)} />}
         {/* 한국 계좌2(단계 2b) — 그 계좌를 골랐을 때 '오늘 장중 확인' 한 줄(상태 응답 kr_claude2, 칸이 없는 백엔드면 줄 없음). */}
@@ -265,7 +298,7 @@ export function DecisionsSection({
         {timed && status.error && <p className="mt-2 text-xs text-warn">계좌2 결정 창을 읽지 못했습니다 — {status.error}</p>}
         {blocked && showRun && <p className="mt-2 text-xs text-warn">{blocked}</p>}
         {confirming && (
-          <div className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
+          <div id={confirmId} className="mt-3 flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
             <p className="text-sm leading-relaxed text-warn">Claude를 지금 부를까요? {CLAUDE_COST_NOTE}</p>
             {korea && (
               <p className="text-xs leading-relaxed text-warn">
@@ -273,10 +306,16 @@ export function DecisionsSection({
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="primary" onClick={() => void runNow()} disabled={run.busy}>
+              <button
+                ref={confirmRunRef}
+                type="button"
+                onClick={() => void runNow()}
+                disabled={run.busy}
+                className={buttonClasses("primary")}
+              >
                 {run.busy ? `결정 중… ${elapsed}초` : "결정 실행 확인"}
-              </Button>
-              <Button onClick={() => setConfirmingFor(null)} disabled={run.busy}>취소</Button>
+              </button>
+              <Button onClick={cancelConfirm} disabled={run.busy}>취소</Button>
             </div>
           </div>
         )}
