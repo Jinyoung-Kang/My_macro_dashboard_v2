@@ -114,7 +114,8 @@
   지키는 시험은 `components/patterns/__tests__/EntityHeader.test.tsx`.
 - 칸 틀 `components/patterns/SplitPane.tsx` — 화면 패턴(틀 — 왼쪽 속성 · 가운데 탭 · 오른쪽 연결·출처, lg 두 칸·xl 세 칸·lg 미만 한 칸, 읽는 차례는 늘 왼쪽 → 가운데 → 오른쪽,
   새 랜드마크 없음, 선택 `collapseLeft`는 lg 미만에서 왼쪽 칸을 처음에 접고 44px 펼치기 단추 하나 — 2026-11-16 결정 2, 지금은 상세 3종이 씀, 선택 `leftWidth="wide"`는 왼쪽 15rem — 상관,
-  오른쪽 칸 `right`를 주지 않으면 두 칸 틀 — lg 이상 왼쪽 13rem(넓게 15rem) · 가운데, xl에서도 두 칸, 오른쪽 칸 요소·왼쪽 줄 걸침 없음 — P5b 13F 포트폴리오·교집합의 왼쪽 목록·조건 + 가운데 고른 대상). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 순수 모듈 `components/ui/classes.ts`로
+  선택 `columns={2}`면 두 칸 틀 — lg 이상 왼쪽 13rem(넓게 15rem) · 가운데, xl에서도 두 칸, 오른쪽 칸 요소·왼쪽 줄 걸침 없음 — P5b 13F 포트폴리오·교집합의 왼쪽 목록·조건 + 가운데 고른 대상,
+  주지 않으면 `right`가 undefined·null이어도 세 칸 틀 — P5b 검토에서 `right`의 있고 없음으로 고르던 것을 이름 있는 prop으로 바꿈). 넓은 화면 칸 틀 클래스 `ENTITY_FRAME`·`ENTITY_FRAME_LEFT`는 정보 검색 `search/entityGrid.ts`에서 글자 그대로 순수 모듈 `components/ui/classes.ts`로
   옮겼고 칸 틀 패턴과 정보 검색 entityGrid가 함께 가져갑니다(entityGridPin.test — 정보 검색 겉모습 고정, 정보 검색이 패턴 배럴을 싣지 않게 배럴 밖에 둠). 색 클래스가 없는 틀이라 데이터 칸 강조색 금지 목록에는 넣지 않습니다. 처음 쓰는 곳은 상세 3종(P4),
   지키는 시험은 `components/patterns/__tests__/SplitPane.test.tsx`·`components/screens/search/__tests__/entityGridPin.test.ts`.
 - 목록-검사 `components/patterns/MasterDetail.tsx` — 화면 패턴(목록 `ul[data-shell-list]` + 넓은 화면 검사 칸(크기 질의 — 칸 폭 32rem 이상이면 옆 15rem, 스크롤 영역 위쪽에 붙음) /
@@ -146,18 +147,23 @@
 - 표 칸 변화 `ChangeCell`(`components/patterns/ChangeChip.tsx` — 변화 칩 파일에 둠) — 화면 패턴(공용 변화 칩의 표 칸 꼴: 작은 크기·칸 안에서 꺾지 않음, 변화량·변화율을 둘 다 모르면
   공용 표가 모르는 칸에 그리는 것과 같은 '—'(Empty — 읽기 '값 없음') — 0.00%를 만들지 않음, 데이터 칸 강조색 금지 목록의 변화 칩 파일). 섹터·COT·매크로 표가 화면마다 따로 두던
   감싸개를 P5a 검토에서 하나로 합쳤고, P5b 기관 표 등락 칸이 같은 것을 씁니다. 지키는 시험은 `components/patterns/__tests__/ChangeChip.test.tsx`.
-- 표 히트맵 `components/charts/HeatmapTable.tsx`(+ 순수 모듈 `lib/heatmap.ts`) — 차트 모듈 안의 표(Recharts 아님 — 크기 고정 `ChartSizeHold`와 무관, 화면은 `@/components/charts`에서
-  가져옴. 패턴 배럴이 아니라 차트 모듈에 둔 까닭은 화면 시험이 `vi.mock("@/components/charts")`로 히트맵을 빼고 있어서 — 옮기면 그 시험들에서 실제 표가 그려짐).
-  행 × 열 칸에 숫자를 적고 칸 바탕을 순차 팔레트 다섯 단계로 칠함(값 ÷ 최댓값 (0, 0.2]→1 … (0.8, 1]→5, `data-step`, 단계별 글자색 — 단계 1~3 본문색·4~5 바탕색, 모름(공용 '—' `Empty`)·0(`zeroText`)·0 이하는
-  칠하지 않음, 자기 칸(`selfIndex` — 유사도 대각선)은 중립 바탕, 칠한 칸과 범례 견본은 고대비에서도 색 그대로), 범례(견본 다섯 + 단계 글 + '밝은 단계일수록 큼' + 설명 글), 영역 이름 '{표 이름} (좌우 스크롤)',
-  표 구조(낭독용 표 이름 caption·열 머리 scope=col·행 머리 th scope=row — 가로 스크롤 때 왼쪽에 붙음), 머리 칸은 한글을 낱말 사이에서만 꺾음(`break-keep` — 유사도 행렬의 기관 이름 머리, P5b 분석 갈래).
+- 표 히트맵 `components/patterns/HeatmapTable.tsx`(+ 순수 모듈 `lib/heatmap.ts`) — 데이터를 그리는 화면 패턴(Recharts 아님 — 크기 고정 `ChartSizeHold`와 무관, 화면은 패턴 배럴에서
+  가져옴). P5b 통합 때는 차트 모듈에 두었다가(화면 시험의 `vi.mock("@/components/charts")`가 히트맵을 빼고 있어서) P5b 검토 반영에서 패턴으로 옮겼고, 그 모의가 지키던 13F 비중 히트맵은
+  차트 모듈의 감싸개 `components/charts/WeightHeatmap.tsx`(`@/components/charts`에서 가져옴 — 패턴 하위 경로에서 표를 가져옴)로 남았습니다.
+  행 × 열 칸에 숫자를 적고 칸 바탕을 순차 팔레트 다섯 단계로 칠함(값 ÷ 최댓값 (0, 0.2]→1 … (0.8, 1]→5, `data-step`, 단계별 글자색 — 단계 1~3 본문색·4~5 바탕색, 모름(공용 '—' `Empty`)·0(`zeroText` —
+  보이는 기호 + 낭독 글, QA-717)·0 이하는 칠하지 않음, 자기 칸(`selfIndex` — 유사도 대각선)은 중립 바탕, 칠한 칸과 범례 견본은 고대비에서도 색 그대로), 범례(견본 다섯 + 단계 글 + '밝은 단계일수록 큼' +
+  설명 글 — 상자 왼쪽에 붙음), 영역 이름 '{표 이름} (좌우 스크롤)', 넘김 안내(공용 표 `scrollHint="overflow"`와 같은 규칙 — QA-713)·선택 `initialScroll="end"`(가장 최근 열부터 — 비중 히트맵),
+  표 구조(낭독용 표 이름 caption·열 머리 scope=col·행 머리 th scope=row — 가로 스크롤 때 왼쪽에 붙음), 머리 칸은 한글을 낱말 사이에서만 꺾음(`break-keep` — 유사도 행렬의 기관 이름 머리, P5b 분석 갈래 —
+  열 선택 칸 `nowrap`이면 줄바꿈 없음, 비중 히트맵 날짜), 빈 행·열이면 `emptyText` 한 줄.
   단계·팔레트·글자색은 React 없는 `lib/heatmap`(`heatmapStep`·`heatmapStepRange`·`SEQUENTIAL_STEPS`·`SEQUENTIAL_TEXT` — 명세 §3-5 순차 팔레트)이 정하고 표는 그리기만 합니다.
-  데이터 칸 강조색 금지 목록·팔레트 기록(`lib/__tests__/paletteRecord.test.ts` — 순차 팔레트는 그래픽 3:1 대신 밝기 차례·밝은 끝 3:1)에 넣습니다. 처음 쓰는 곳은 13F 포트폴리오
-  비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)·P7 레이더가 같은 표를 씁니다. 지키는 시험은 `components/charts/__tests__/HeatmapTable.test.tsx`·
-  `components/charts/__tests__/weightHeatmapQa692.test.tsx`·`lib/__tests__/heatmap.test.ts`.
-- 거르기 목록 `components/patterns/FilterList.tsx` — 화면 패턴(이름 있는 묶음 role="group" 안의 `<button aria-pressed>` 줄 — 단추 이름은 항목 이름 그대로, 체크 표시는 장식, 보조 글은 단추 설명
-  (aria-describedby), 여럿 고름(켬·끔)·하나 고름(고른 줄을 다시 눌러도 그대로), 넓은 화면은 늘 세로 목록 32px 줄(여럿은 16px 잉크 체크 상자, 하나는 잉크 막대 `SELECTED_BAR`·중립 바탕),
-  좁은 화면은 44px 태그 줄바꿈(기본) 또는 세로 목록, 개수 줄·읽는 중/오류 자리·빈 목록 글, 고대비에서 켠 줄 2px 테두리, 말줄임 없이 낱말 사이 줄바꿈). 값을 그리는 패턴이 아니라
+  데이터 칸 강조색 금지 목록(표·감싸개 두 파일)·팔레트 기록(`lib/__tests__/paletteRecord.test.ts` — 순차 팔레트는 그래픽 3:1 대신 밝기 차례·밝은 끝 3:1)에 넣습니다. 처음 쓰는 곳은 13F 포트폴리오
+  비중 히트맵(`WeightHeatmap` — 이 표의 감싸개, P5b QA-692), 기관 간 유사도 행렬(P5b)·P7 레이더가 같은 표를 씁니다. 지키는 시험은 `components/patterns/__tests__/HeatmapTable.test.tsx`(네 상태)·
+  `components/charts/__tests__/HeatmapTable.test.tsx`·`components/charts/__tests__/weightHeatmapQa692.test.tsx`·`components/charts/__tests__/weightHeatmapQa713.test.tsx`·`lib/__tests__/heatmap.test.ts`.
+- 거르기 목록 `components/patterns/FilterList.tsx` — 화면 패턴(줄은 `<button>` — 이름은 항목 이름 그대로, 체크 표시는 장식, 보조 글은 설명(aria-describedby). 여럿 고름은 이름 있는 묶음
+  role="group" 안의 토글 단추(`aria-pressed` — 켬·끔, 줄마다 Tab 정지점), 하나 고름은 라디오 묶음(role="radiogroup"·role="radio"·`aria-checked`, roving tabindex — 고른 줄만 Tab 정지점,
+  위·아래·Home·End가 옮기며 고름, 고른 줄을 다시 눌러도 그대로 — P5b 검토 QA-711), 넓은 화면은 늘 세로 목록 32px 줄(여럿은 16px 잉크 체크 상자, 하나는 잉크 막대 `SELECTED_BAR`·중립 바탕 —
+  막대는 좁은 화면 태그에도, QA-712), 좁은 화면은 44px 태그 줄바꿈(기본) 또는 세로 목록, 개수 줄·읽는 중/오류 자리·처음 읽는 동안의 목록 꼴 자리(`pending` — 부르는 쪽이 잰 태그 폭·줄 수)·
+  고름 알림 영역(`status` — role="status")·빈 목록 글, 고대비에서 켠 줄 2px 테두리, 말줄임 없이 낱말 사이 줄바꿈). 값을 그리는 패턴이 아니라
   고르는 조작이라 데이터 칸 강조색 금지 목록에는 넣지 않지만(목차 `SectionIndex`와 같은 처리 — 까닭은 그 시험의 주석) 강조 파랑 없이 잉크·중립 바탕으로 고름을 보입니다(원칙 A1).
   처음 쓰는 곳은 교집합 화면의 분석 대상 기관(기관 칩 12개를 바꿈)·13F 포트폴리오 화면의 기관 목록(P5b), P6 체결·선정 거르기·P7 알림 거르기가 같은 패턴을 씁니다.
   지키는 시험은 `components/patterns/__tests__/FilterList.test.tsx`.
