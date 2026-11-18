@@ -46,6 +46,7 @@ export type HeatmapRow = {
  *   그대로입니다.
  * - 범례(표 아래): 단계 견본 다섯(장식) + 단계 글(`legend.stepLabel` — 예 '최댓값의 0~20%') + '밝은 단계일수록 큼', 그 아래 `legend.note`(설명 글).
  * - `minWidth`(px)를 주지 않으면 표 최소 폭 640px입니다.
+ * - 빈 상태: 행이나 열이 없으면 표·범례 없이 `emptyText` 한 줄(기본 '표시할 값이 없습니다.' — 0으로 채운 표를 만들지 않음). 비중 히트맵은 그 전에 제 빈 글을 그립니다.
  * - 넘김 안내(공용 DataTable `scrollHint="overflow"`와 같은 글·규칙): 상자 위 '← 표를 좌우로 넘겨 보세요'(aria-hidden — 낭독기에는 영역 이름이 같은 말을 함)를
  *   폰(sm 미만 — 최소 폭보다 좁음)에서는 늘, 그 밖에서는 상자 폭을 재서 표가 넓을 때만 보입니다. 처음 재기는 그리기 전(layout effect)이라 안내가 나중에 끼어들어
  *   표를 밀지 않고, 그 뒤 폭이 바뀌면 ResizeObserver로 다시 잽니다. 예전에는 안내가 없어 1024(메뉴 220 — 두 칸 틀 가운데 482px)에서 가려진 열이 있다는 단서가
@@ -64,6 +65,7 @@ export function HeatmapTable({
   legend,
   minWidth,
   initialScroll = "start",
+  emptyText = "표시할 값이 없습니다.",
 }: {
   caption: string;
   rowHeader: string;
@@ -77,6 +79,8 @@ export function HeatmapTable({
   minWidth?: number;
   /** 처음 스크롤 자리 — "end"면 오른쪽 끝(가장 최근 열). */
   initialScroll?: "start" | "end";
+  /** 행이나 열이 없을 때의 한 줄. */
+  emptyText?: string;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
@@ -99,6 +103,10 @@ export function HeatmapTable({
     if (!box || initialScroll !== "end") return;
     box.scrollLeft = Math.max(0, box.scrollWidth - box.clientWidth);
   }, [initialScroll, columnKeys]);
+
+  if (rows.length === 0 || columns.length === 0) {
+    return <div className="py-6 text-center text-sm text-text-3">{emptyText}</div>;
+  }
 
   return (
     <div className="min-w-0">
