@@ -748,7 +748,7 @@ describe("스타일 — 포트폴리오 위험 KPI 띠·기여 표·보유 기�
   // lg 이상 24px로 옆 '찾기'(md 30px)보다 6px 낮고 윗변이 어긋났음(P5b QA 스택 확인 1024~1920 194x24 / 50x30 — 전부터, P1 '크기 이름'이 정보 검색 두 곳만 고침).
   // jsdom이라 높이는 클래스로 봅니다(lg 높이 클래스 — lg:min-h-*).
   // 수정 전 실패(plain it): { input: ["lg:min-h-6"], button: ["lg:min-h-[30px]"] }.
-  it.fails("보유 기관 검색 입력은 같은 form의 '찾기' 단추와 같은 넓은 화면 높이(30px — lg:min-h-[30px], 24px lg:min-h-6 아님)(QA-728)", () => {
+  it("보유 기관 검색 입력은 같은 form의 '찾기' 단추와 같은 넓은 화면 높이(30px — lg:min-h-[30px], 24px lg:min-h-6 아님)(QA-728)", () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     render(<GuruPage />);
     const input = screen.getByPlaceholderText("NVIDIA");

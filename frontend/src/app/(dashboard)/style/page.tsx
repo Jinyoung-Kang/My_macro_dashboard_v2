@@ -606,13 +606,14 @@ function HoldersCard() {
       >
         <label className="flex flex-col gap-1">
           <span className="text-xs text-text-3">종목명(일부 또는 전체)</span>
-          {/* 셸의 거르기 칸 표지(data-shell-filter — '/'로 이 칸에 포커스, 단축키 도움말의 '/' 줄) — 이 화면에 하나입니다. */}
+          {/* 셸의 거르기 칸 표지(data-shell-filter — '/'로 이 칸에 포커스, 단축키 도움말의 '/' 줄) — 이 화면에 하나입니다. 크기는 패널 본문의 기본 조작(md — lg 30px)이라
+              옆 '찾기' 단추와 같은 높이입니다(sm이었을 때는 24px로 6px 낮았음 — QA-728). */}
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="NVIDIA"
             data-shell-filter=""
-            className={inputClasses("sm")}
+            className={inputClasses()}
           />
         </label>
         <Button type="submit">찾기</Button>
