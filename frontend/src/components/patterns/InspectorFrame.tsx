@@ -10,9 +10,10 @@ import { listKeyAction } from "@/lib/shortcuts";
 
 /**
  * 검사 칸 배치 — md: 틀 폭 32rem부터 옆 15rem(목록-검사 MasterDetail과 같음 — 두세 칸 표·목록), lg: 틀 폭 52rem부터 옆 18rem(네다섯 칸 표 — 매크로 지표 표),
- * dialog: 늘 대화상자(칸이 많아 옆 칸을 두면 표가 눌리는 표 — 섹터 11열 표).
+ * wide: 틀 폭 64rem부터 옆 28rem(검사 내용이 곡선·긴 속성인 표 — 작업대 P6 모의매매 계좌 표), dialog: 늘 대화상자(칸이 많아 옆 칸을 두면 표가 눌리는 표 —
+ * 섹터 11열 표).
  */
-export type InspectorLayout = "md" | "lg" | "dialog";
+export type InspectorLayout = "md" | "lg" | "wide" | "dialog";
 
 /**
  * 줄 단추(InspectorTrigger 또는 부르는 쪽의 단추)에 펼치는 속성 — 옆 칸 배치는 aria-controls와 검사 칸에 보이는 줄이면 aria-current(포커스를 받는 단추
@@ -35,6 +36,11 @@ export type InspectorContext = {
   inspect: (key: string) => void;
   /** 줄 단추에 펼칠 속성(누르면 inspect — 누른 단추로 먼저 포커스를 옮겨 대화상자를 닫으면 그 단추로 돌아옴). */
   triggerProps: (key: string) => InspectorTriggerProps;
+  /**
+   * 지금 옆 검사 칸 배치인가(작업대 P6 — 넓은 화면·옆 칸 배치·틀 폭이 기준 이상, 폭을 모르면 크기 질의 배치에 맡겨 참). 거짓이면 대화상자 배치입니다.
+   * 표가 옆 칸 배치에서 칸을 줄이는 등 배치에 따라 그릴 때 씁니다(틀의 판단을 그대로 — 화면이 다시 재지 않게).
+   */
+  inline: boolean;
 };
 
 /*
@@ -49,6 +55,11 @@ const SIDE: Record<Exclude<InspectorLayout, "dialog">, { minRem: number; grid: s
     minRem: 52,
     grid: "@min-[52rem]:grid-cols-[minmax(0,1fr)_18rem]",
     panel: "@min-[52rem]:sticky @min-[52rem]:top-[calc(var(--section-strip-h,0px)+1rem)]",
+  },
+  wide: {
+    minRem: 64,
+    grid: "@min-[64rem]:grid-cols-[minmax(0,1fr)_28rem]",
+    panel: "@min-[64rem]:sticky @min-[64rem]:top-[calc(var(--section-strip-h,0px)+1rem)]",
   },
 };
 
@@ -76,6 +87,8 @@ const VANISHED = "고른 줄이 지금 자료에 없습니다. 다른 줄을 고
  *   보이는 줄이 다른 것이 정상이고, 폭만 왕복해서는 보이던 키도 일부러 푼 고름(옆 칸에서 Esc)도 바뀌지 않게(QA-660 후속).
  *   반대로 좁아질 때는 대화상자를 저절로 열지 않습니다(고른 키는 남아 다시 넓어지면 보임).
  * - `renderDetail`은 PropertyList·링크·자리표시(Skeleton·ErrorState)를 그립니다 — 펼칠 때 읽는 자세한 값은 그 안의 자식이 읽습니다(틀은 읽지 않음).
+ * - 작업대 P6 선택(기본값이면 위 동작 그대로): 배치 `wide`(틀 64rem부터 옆 28rem, 그 아래 대화상자), 문맥의 `inline`(지금 옆 칸 배치인가 — 표가 배치에 따라
+ *   그릴 때), `dialogFocus="title"`(대화상자를 열 때 첫 포커스를 제목에 — ui/Dialog initialFocus).
  * - 데이터 영역이라 강조 파랑을 쓰지 않습니다(줄 단추는 중립 잉크 — InspectorTrigger, 고른 행은 표의 잉크 막대 — 데이터 칸 강조색 금지 목록).
  */
 export function InspectorFrame({
@@ -88,6 +101,7 @@ export function InspectorFrame({
   defaultKey = null,
   inspectorHint = DEFAULT_HINT,
   headingLevel = 3,
+  dialogFocus = "content",
   children,
 }: {
   /** 검사 칸 영역 이름의 앞부분 — 예 '지표 미리보기'. */
@@ -105,6 +119,8 @@ export function InspectorFrame({
   inspectorHint?: string;
   /** 검사 칸 제목의 단계 — 기본 3(패널 h2 안의 표). */
   headingLevel?: 2 | 3 | 4;
+  /** 대화상자를 열 때 첫 포커스 — 내용(기본) 또는 제목. */
+  dialogFocus?: "content" | "title";
   children: (inspector: InspectorContext) => ReactNode;
 }): JSX.Element {
   const wide = useWideShell();
@@ -252,7 +268,7 @@ export function InspectorFrame({
     // 포커스는 줄 단추의 키를 적는 데만 봅니다(배치가 바뀔 때 고를 줄 — QA-660).
     <div ref={frameRef} onKeyDown={onKeyDown} onFocus={onFocus} className="@container min-w-0">
       <div className={`grid min-w-0 gap-3 ${inline && side ? side.grid : ""}`.trim()}>
-        <div className="min-w-0">{children({ shownKey, inspect, triggerProps })}</div>
+        <div className="min-w-0">{children({ shownKey, inspect, triggerProps, inline })}</div>
         {inline && side ? (
           // 옆에 놓이면 스크롤 영역 위쪽에 붙어 따라옵니다(긴 표 아래쪽 줄을 골라도 검사 내용이 보임) — self-start가 있어야 격자 칸 안에서 붙습니다.
           <section
@@ -274,6 +290,7 @@ export function InspectorFrame({
         title={dialogTitle ?? label}
         size="lg"
         placement="top"
+        initialFocus={dialogFocus}
       >
         {dialogTitle !== null && dialogKey !== null ? <div className="mt-3 min-w-0">{renderDetail(dialogKey)}</div> : null}
       </Dialog>
