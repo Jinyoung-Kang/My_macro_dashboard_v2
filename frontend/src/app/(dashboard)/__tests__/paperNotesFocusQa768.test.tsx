@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe("QA-768 — 메모 보관 확인을 닫으면 포커스가 돌아온다", () => {
-  it.fails("취소하면 그 메모의 '보관 #n' 단추로", async () => {
+  it("취소하면 그 메모의 '보관 #n' 단추로", async () => {
     render(<NotesSection startDate="2026-10-23" />);
     const list = await screen.findByRole("list", { name: "메모" });
     fireEvent.click(within(list).getAllByRole("button")[0]);
@@ -52,7 +52,7 @@ describe("QA-768 — 메모 보관 확인을 닫으면 포커스가 돌아온다
     await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "보관 #21" })));
   });
 
-  it.fails("보관으로 메모가 목록에서 빠지면 목록의 Tab 정지점 줄로(넓은 배치 — 옆 검사 칸)", async () => {
+  it("보관으로 메모가 목록에서 빠지면 목록의 Tab 정지점 줄로(넓은 배치 — 옆 검사 칸)", async () => {
     vi.stubGlobal(
       "matchMedia",
       (query: string) =>

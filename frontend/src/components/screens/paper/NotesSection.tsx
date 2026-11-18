@@ -83,8 +83,13 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
   };
   const runArchive = async (id: number) => {
     const ok = await archive.run(id);
+    focusAfter.current = { id, archived: ok };
     setConfirmingArchive(null);
     if (ok) void notes.reload();
+  };
+  const cancelArchive = (id: number) => {
+    focusAfter.current = { id, archived: false };
+    setConfirmingArchive(null);
   };
 
   const rows = notes.data?.available ? noteRows(notes.data.notes) : [];
@@ -102,6 +107,24 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
     if (openedFor.current === confirmingArchive || !archiveCancelRef.current) return;
     openedFor.current = confirmingArchive;
     archiveCancelRef.current.focus();
+  });
+  // 확인 상자를 '취소'로 닫거나 보관이 끝나면 포커스를 되돌립니다(QA-768 — 상자와 함께 누른 단추가 사라져 포커스가 문서·대화상자 틀로 떨어졌음): 그 메모의
+  // '보관 #n'이 있으면 그 단추로(취소·실패), 보관으로 메모가 목록에서 빠졌으면(다시 읽은 뒤) 포커스를 잃었을 때만 목록의 Tab 정지점 줄로.
+  const focusAfter = useRef<{ id: number; archived: boolean } | null>(null);
+  useEffect(() => {
+    const target = focusAfter.current;
+    if (target === null || confirmingArchive !== null || archive.busy) return;
+    // 보관했는데 목록을 아직 다시 읽지 않았으면(그 메모가 보관 전 그대로) 기다립니다.
+    if (target.archived && rows.some((row) => row.id === target.id && !row.archived)) return;
+    focusAfter.current = null;
+    const button = document.querySelector<HTMLButtonElement>(`button[data-note-archive="${target.id}"]`);
+    if (button && !button.disabled) {
+      button.focus();
+      return;
+    }
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active.isConnected && active.getAttribute("role") !== "dialog") return;
+    document.querySelector<HTMLButtonElement>('ul[data-shell-list][aria-label="메모"] button[tabindex="0"]')?.focus();
   });
 
   return (
@@ -168,7 +191,7 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
                       <button
                         ref={archiveCancelRef}
                         type="button"
-                        onClick={() => setConfirmingArchive(null)}
+                        onClick={() => cancelArchive(confirmingRow.id)}
                         disabled={archive.busy}
                         aria-describedby={`${archiveTextId}-${confirmingRow.id}`}
                         className={buttonClasses()}
@@ -352,7 +375,15 @@ function NoteDetail({
         {row.archived ? (
           <span className="text-xs text-text-3">보관함</span>
         ) : (
-          <Button onClick={onArchive} disabled={archiving || confirming !== null}>{`보관 ${row.idText}`}</Button>
+          <button
+            type="button"
+            data-note-archive={row.id}
+            onClick={onArchive}
+            disabled={archiving || confirming !== null}
+            className={buttonClasses()}
+          >
+            {`보관 ${row.idText}`}
+          </button>
         )}
         {confirmBox}
       </div>
