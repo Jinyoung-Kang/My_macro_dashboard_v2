@@ -82,6 +82,11 @@ import type {
 import { FrameworkOutline } from "./FrameworkOutline";
 
 const INPUT = `w-full ${inputClasses()}`;
+/**
+ * 폼 라벨 — 공용 고르기(ui Select)의 라벨과 같은 13px 보조 글(QA-759 — 같은 카드의 고르기는 13px text-2, 글 칸 라벨은 12px text-3으로 섞였음).
+ * 한 줄 입력칸은 같은 카드의 고르기 상자와 같은 폭 한도(sm:max-w-[22rem])를 붙입니다(여러 줄 상자·긴 글 칸은 칸 전체 폭).
+ */
+const FORM_LABEL = "flex flex-col gap-1 text-[13px] text-text-2";
 
 /**
  * 프레임 탭(명세 F1~F5·F7·D15) — Claude 책의 판단 프레임(투자 OS) 판.
@@ -422,18 +427,18 @@ function OsSourceCard({
             options={[{ value: "", label: "고르지 않음 — 아래에 글을 붙여 새 메모로" }, ...noteOptions]}
           />
         )}
-        <label className="flex flex-col gap-1 text-xs text-text-3">
+        <label className={FORM_LABEL}>
           {`메모 제목(비우면 "${card.defaultTitle}")`}
           <input
             type="text"
             value={title}
             readOnly={locked}
             onChange={(event) => setTitle(event.target.value)}
-            className={INPUT}
+            className={`${INPUT} sm:max-w-[22rem]`}
           />
         </label>
         <div className="flex flex-col gap-1">
-          <label className="flex flex-col gap-1 text-xs text-text-3">
+          <label className={FORM_LABEL}>
             {card.bodyLabel}
             <textarea
               value={body}
@@ -876,7 +881,7 @@ function EditCard({
           if (canSave) setConfirming(true);
         }}
       >
-        <label className="flex flex-col gap-1 text-xs text-text-3">
+        <label className={FORM_LABEL}>
           제목
           <input type="text" value={draft.title} onChange={(event) => edit({ type: "title", value: event.target.value })} className={INPUT} />
         </label>
@@ -899,7 +904,7 @@ function EditCard({
         {draft.engines.map((engine, engineIndex) => (
           <fieldset key={`${engine.id}-${engineIndex}`} className="flex flex-col gap-2 rounded-control border border-border px-3 py-2">
             <legend className="px-1 text-sm font-semibold text-text">엔진 {engine.id}</legend>
-            <label className="flex flex-col gap-1 text-xs text-text-3">
+            <label className={FORM_LABEL}>
               이름
               <input
                 type="text"
@@ -928,7 +933,7 @@ function EditCard({
         ))}
 
         <div className="flex flex-col gap-1">
-          <label className="flex flex-col gap-1 text-xs text-text-3">
+          <label className={FORM_LABEL}>
             지침(엔진 밖 자유 지침)
             <textarea
               value={draft.guidance}
@@ -940,7 +945,7 @@ function EditCard({
           <span className={`text-xs ${guidance.over ? "text-warn" : "text-text-3"}`}>{guidance.text}</span>
         </div>
 
-        <label className="flex flex-col gap-1 text-xs text-text-3">
+        <label className={FORM_LABEL}>
           바꾼 내용(changelog — 판 목록에 남음)
           <input
             type="text"

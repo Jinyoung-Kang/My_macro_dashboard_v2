@@ -54,7 +54,7 @@ function labelLook(label: Element): string {
 }
 
 describe("QA-759 프레임 탭 폼 라벨 모양", () => {
-  it.fails("제안 요청 카드·직접 고치기 폼의 보이는 라벨이 공용 고르기와 같은 13px 보조 글, 한 줄 입력칸 폭은 고르기 상자와 같은 22rem까지", async () => {
+  it("제안 요청 카드·직접 고치기 폼의 보이는 라벨이 공용 고르기와 같은 13px 보조 글, 한 줄 입력칸 폭은 고르기 상자와 같은 22rem까지", async () => {
     render(<FrameworkSection />);
     const picker = await screen.findByLabelText("이미 있는 방법론 메모로 요청");
     const selectLook = labelLook(picker.closest("label") as HTMLLabelElement);
