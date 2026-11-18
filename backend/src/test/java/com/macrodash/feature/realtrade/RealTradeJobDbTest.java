@@ -3753,4 +3753,793 @@ class RealTradeJobDbTest {
         at("2026-11-06T15:42");
         verify(client, times(1)).preflight(any(), any());
     }
+
+    // ------------------------------------------------------------------ 재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11-19)
+    // 계획 3판 6-2. 금액은 모두 합성(E = 1,000만 원, 모든 종목 1,000원 — 1% = 100주, 상한가 1,300원). 사례 이름(N1·S1b 등)은 계획 4절 표.
+    /** 결정일 D — 세션 2026-11-06(금)의 앞 거래일(목). */
+    private static final LocalDate DECISION_DAY = SESSION.minusDays(1);
+    private static final double SLOT = 100.0 / 15;
+
+    /** 글자 → 합성 종목 코드(A → 900001 ...). 153130은 그대로. */
+    private static String r(String letter) {
+        return letter.equals(CASH_LIKE) ? CASH_LIKE : String.format("9%05d", letter.charAt(0) - 'A' + 1);
+    }
+
+    /** 글자(또는 153130)와 % 쌍의 맵. */
+    private static Map<String, Double> pcts(Object... pairs) {
+        Map<String, Double> out = new java.util.TreeMap<>();
+        for (int i = 0; i < pairs.length; i += 2) {
+            out.put(r((String) pairs[i]), ((Number) pairs[i + 1]).doubleValue());
+        }
+        return out;
+    }
+
+    private static Map<String, Double> each(String letters, double weight) {
+        Map<String, Double> out = new java.util.TreeMap<>();
+        for (char c : letters.toCharArray()) {
+            out.put(r(String.valueOf(c)), weight);
+        }
+        return out;
+    }
+
+    @SafeVarargs
+    private static Map<String, Double> merged(Map<String, Double>... maps) {
+        Map<String, Double> out = new java.util.TreeMap<>();
+        for (Map<String, Double> m : maps) {
+            out.putAll(m);
+        }
+        return out;
+    }
+
+    private static Map<String, Double> scaled(Map<String, Double> weights, double factor) {
+        Map<String, Double> out = new java.util.TreeMap<>();
+        weights.forEach((k, v) -> out.put(k, v * factor));
+        return out;
+    }
+
+    /** 글자들(또는 153130 하나)의 종목을 뺀 맵. */
+    private static Map<String, Double> minus(Map<String, Double> weights, String letters) {
+        Map<String, Double> out = new java.util.TreeMap<>(weights);
+        if (letters.equals(CASH_LIKE)) {
+            out.remove(CASH_LIKE);
+            return out;
+        }
+        for (char c : letters.toCharArray()) {
+            out.remove(r(String.valueOf(c)));
+        }
+        return out;
+    }
+
+    private static Set<String> letters(String letters) {
+        Set<String> out = new java.util.TreeSet<>();
+        for (char c : letters.toCharArray()) {
+            out.add(r(String.valueOf(c)));
+        }
+        return out;
+    }
+
+    // 계획 4-1 공통 자료(10~11% 슬롯)
+    private static final Map<String, Double> P1 = merged(pcts(CASH_LIKE, 44), each("ABCDE", 11));
+    private static final Map<String, Double> H1 = pcts(CASH_LIKE, 44.0, "A", 11.4, "B", 10.7, "C", 11.2, "D", 10.9, "E", 10.6);
+    private static final Map<String, Double> NOW1 = merged(pcts(CASH_LIKE, 4), each("ABCDE", 11), each("FGHI", 10));
+    private static final Map<String, Double> P2 = merged(pcts(CASH_LIKE, 1), each("ABCDEFGHIJ", 9.8));
+    private static final Map<String, Double> H2 = pcts(CASH_LIKE, 1.0, "A", 10.1, "B", 9.6, "C", 9.9, "D", 9.5, "E", 10.0, "F", 10.0,
+            "G", 9.4, "H", 10.1, "I", 9.6, "J", 9.6);
+    private static final Map<String, Double> NOW_N2 = merged(pcts(CASH_LIKE, 0.7), each("ABCDEF", 9.8), each("KLMN", 10));
+
+    /** 따라 하는 책을 규칙 계좌(같은 코드·세대)로, 결정일 D의 모의 달력은 거래일. */
+    private void rulesBook() {
+        when(paper.book(BOOK)).thenReturn(Optional.of(new BookInfo(BOOK, "규칙 계좌", "RULES", "KR", "ACTIVE", LocalDate.of(2026, 10, 30),
+                Instant.parse("2026-10-29T13:00:00Z"), GENERATION)));
+        when(paper.sessionHours(DECISION_DAY)).thenReturn(Optional.of(new SessionHours(DECISION_DAY, true, kst("2026-11-05T09:00"),
+                kst("2026-11-05T15:30"))));
+    }
+
+    /** 결정일 D의 정기 결정(종류·상태 — 둘 다 null이면 행 없음). */
+    private void decision(String kind, String status) {
+        when(paper.decisionState(BOOK, DECISION_DAY)).thenReturn(Optional.of(new PaperMirrorService.DecisionState(DECISION_DAY,
+                kind == null ? null : 77L, kind, status, kst("2026-11-06T01:00"))));
+    }
+
+    /** 실제 계좌 — 보유(E 대비 %, 1,000원 — 수량은 내림), 현금 = E − 보유 금액, 시세는 보유 + {@code quoted}(가격 모름 {@code unpriced}는 뺌). */
+    private void rulesAccount(Map<String, Double> heldPct, Set<String> quoted, Set<String> unpriced) {
+        Map<String, String[]> holdings = new LinkedHashMap<>();
+        long invested = 0;
+        for (Map.Entry<String, Double> e : heldPct.entrySet()) {
+            long qty = (long) Math.floor(e.getValue() * 100 + 1e-9);
+            holdings.put(e.getKey(), new String[]{String.valueOf(qty), "1000"});
+            invested += qty * 1000;
+        }
+        Map<String, String> extra = new LinkedHashMap<>();
+        quoted.stream().filter(s -> !holdings.containsKey(s) && !unpriced.contains(s)).forEach(s -> extra.put(s, "1000"));
+        preflight(String.valueOf(10_000_000L - invested), holdings, extra);
+    }
+
+    /** 시각 맞추기 날(09:10)의 목표 — 책 가격은 1,000원(덮어쓸 값은 {@code bookPrice}). */
+    private void rulesTargets(Map<String, Double> now, Map<String, Double> bookPrice) {
+        Map<String, Double> price = new java.util.HashMap<>();
+        now.keySet().forEach(s -> price.put(s, 1000.0));
+        price.putAll(bookPrice);
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.of(SYNC_AT));
+        when(paper.targetsAt(BOOK, SESSION, SYNC_AT)).thenReturn(Optional.of(new OpenTargets(BOOK, SESSION, now, price, 1e7, 0, List.of(),
+                List.of(), List.of())));
+    }
+
+    /**
+     * 재선정 다음 날(시각 맞추기 09:10) — 켜짐(sync_pending 꺼짐), 규칙 계좌, D의 결정 REBALANCE·OK, 앞 묶음(D, 같은 책), 보유, 지금 목표, 스탑. 한도·매매 제한·
+     * 미체결은 기본값으로 다시 정합니다(한 시험 안에서 사례를 이어 돌릴 때 앞 사례의 값이 남지 않게).
+     */
+    private void rebalanceDay(Map<String, Double> prev, Map<String, Double> held, Map<String, Double> now, Set<String> stops) {
+        RealTradeFixtures.live(store, false, d("10000000"));
+        rulesBook();
+        decision("REBALANCE", "OK");
+        priorBatch(DECISION_DAY, prev);
+        rulesTargets(now, Map.of());
+        Set<String> quoted = new java.util.TreeSet<>(now.keySet());
+        quoted.addAll(prev.keySet());
+        rulesAccount(held, quoted, Set.of());
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenReturn(stops);
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus());
+        when(client.restrictions(any())).thenReturn(Reply.of(new CollectorTradeClient.Restrictions(Set.of(), Map.of())));
+        when(client.openOrders()).thenReturn(Reply.of(List.of()));
+        when(client.todayOrders()).thenReturn(Reply.of(List.of()));
+    }
+
+    /** 한 시험 안에서 다음 사례 — 표를 비우고 작업·실행기를 새로(그날 상태·호출 기록 없이). */
+    private void nextCase() {
+        RealTradeFixtures.clean(jdbc);
+        org.mockito.Mockito.clearInvocations(client, paper, telegram);
+        executor = new RealTradeExecutor(store, client, paper, RealTradeFixtures.MAPPER, clock);
+        job = new RealTradeJob(store, executor, client, paper, telegram, RealTradeFixtures.MAPPER, clock, true, false, 10_000);
+    }
+
+    /** 기본 설정 15종목 동일비중(6.667%) 11-19형 — 앞 묶음·보유 8종목 + 153130 46.67%, 지금 목표는 유지 {@code 8 − swaps}개 + 새 종목, 남는 몫은 153130. */
+    private record Slot(Map<String, Double> prev, Map<String, Double> now, Set<String> stops) {
+    }
+
+    private static String held8(int i) {
+        return String.format("8000%02d", i);
+    }
+
+    private static String fresh15(int i) {
+        return String.format("8100%02d", i);
+    }
+
+    private static Slot slot(int swaps, int stopsAfter) {
+        Map<String, Double> prev = new java.util.TreeMap<>();
+        for (int i = 0; i < 8; i++) {
+            prev.put(held8(i), SLOT);
+        }
+        prev.put(CASH_LIKE, 100 - SLOT * 8);
+        Map<String, Double> now = new java.util.TreeMap<>();
+        Set<String> stops = new java.util.TreeSet<>();
+        for (int i = swaps; i < 8; i++) {
+            if (stops.size() < stopsAfter && i >= swaps + 1) {
+                stops.add(held8(i));   // 결정 뒤 반영된 STOP — 그 종목 목표 0
+            } else {
+                now.put(held8(i), SLOT);
+            }
+        }
+        for (int i = 0; i < swaps + 7; i++) {
+            now.put(fresh15(i), SLOT);
+        }
+        double park = 100 - now.values().stream().mapToDouble(Double::doubleValue).sum() - SLOT * stops.size();
+        if (park > 0.5) {
+            now.put(CASH_LIKE, park);
+        }
+        return new Slot(prev, now, stops);
+    }
+
+    private JsonNode haltDetail() {
+        List<Event> halts = events("HALT");
+        assertThat(halts).hasSize(1);
+        return halts.getFirst().detail();
+    }
+
+    /** 지금처럼 멈춤 — 사유 turnover, 판정 코드, 묶음·주문·예외 이벤트 없음. */
+    private void assertHalted(String label, String check) {
+        assertThat(cfg().state()).as(label).isEqualTo("HALTED");
+        assertThat(cfg().haltReason()).as(label).isEqualTo("turnover");
+        assertThat(haltDetail().path("rebalanceCheck").asString()).as(label).isEqualTo(check);
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as(label).isEmpty();
+        verify(client, never()).placeOrder(anyString());
+        assertThat(events("TURNOVER_EXEMPT")).as(label).isEmpty();
+    }
+
+    /** 예외로 보냄 — 켜짐, 멈춤 없음, 묶음 있음, 예외 이벤트 하나(알림, %·배율·개수 칸만 — 종목 코드·수량·금액 칸 없음). */
+    private JsonNode assertExempt(String label) {
+        assertThat(cfg().state()).as(label).isEqualTo("LIVE");
+        assertThat(events("HALT")).as(label).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).as(label).isPresent();
+        List<Event> exempt = events("TURNOVER_EXEMPT");
+        assertThat(exempt).as(label).hasSize(1);
+        assertThat(exempt.getFirst().notifies()).isTrue();
+        JsonNode detail = exempt.getFirst().detail();
+        List<String> fields = new ArrayList<>();
+        detail.propertyNames().forEach(fields::add);
+        assertThat(fields).as(label).containsExactlyInAnyOrder("decisionDate", "turnoverPct", "checkTurnoverPct", "bookDriftPct", "accountDriftPct",
+                "dailyShortPct", "priceRatio", "nameJumpPct", "nameCutPct", "stockNames", "deriskPct", "investedPct", "allowancePct");
+        assertThat(detail.path("decisionDate").asString()).isEqualTo("2026-11-05");
+        detail.properties().forEach(e -> {
+            if (!e.getKey().equals("decisionDate")) {
+                assertThat(e.getValue().isNumber()).as(label + " " + e.getKey()).isTrue();
+            }
+        });
+        return detail;
+    }
+
+    @Test
+    @DisplayName("재선정 예외 — 기본 15종목 슬롯 교체 2(4-4), 09:10 시각 맞추기: 회전율 약 120%여도 보냄(153130·유지 종목 매도 DAY), 예외 이벤트 하나, sync_pending 꺼진 채")
+    void rebalanceExemptsTurnoverOnTimedDay() {
+        Slot s = slot(2, 0);
+        rebalanceDay(s.prev(), s.prev(), s.now(), s.stops());
+
+        run("09:10:05");
+
+        JsonNode detail = assertExempt("교체 2");
+        assertThat(detail.path("turnoverPct").asDouble()).isCloseTo(119.92, org.assertj.core.data.Offset.offset(0.05));
+        assertThat(detail.path("checkTurnoverPct").asDouble()).isCloseTo(119.92, org.assertj.core.data.Offset.offset(0.05));
+        assertThat(detail.path("bookDriftPct").asDouble()).isCloseTo(120.0, org.assertj.core.data.Offset.offset(0.05));
+        assertThat(detail.path("accountDriftPct").asDouble()).isZero();
+        assertThat(detail.path("stockNames").asInt()).isEqualTo(15);
+        assertThat(sentSummaries()).startsWith("SELL " + CASH_LIKE + " DAY 4666", "SELL " + held8(0) + " DAY 666", "SELL " + held8(1) + " DAY 666");
+        assertThat(cfg().syncPending()).isFalse();
+        assertThat(store.recentOrders("KR", 20)).allMatch(o -> o.purpose().equals("SYNC_FOLLOWUP"));
+        verify(paper, times(1)).decisionState(BOOK, DECISION_DAY);
+
+        run("09:10:40");
+        verify(paper, times(1)).decisionState(BOOK, DECISION_DAY);   // 한 번만 — 그날 묶음이 있으면 다시 판정하지 않음
+        assertThat(events("TURNOVER_EXEMPT")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("재선정 예외 — N1(153130 → 종목 넷), 시가 맞추기(OPG) 날에도 같음")
+    void rebalanceExemptsTurnoverOnOpenDay() {
+        rebalanceDay(P1, H1, NOW1, Set.of());
+        Map<String, Double> price = new java.util.HashMap<>();
+        NOW1.keySet().forEach(sym -> price.put(sym, 1000.0));
+        when(paper.dailySyncAt(BOOK, SESSION)).thenReturn(Optional.empty());
+        when(paper.openTargets(BOOK, SESSION)).thenReturn(Optional.of(new OpenTargets(BOOK, SESSION, NOW1, price, 1e7, 0, List.of(), List.of())));
+
+        run("08:51");
+
+        JsonNode detail = assertExempt("N1");
+        assertThat(detail.path("checkTurnoverPct").asDouble()).isEqualTo(80.0);
+        assertThat(sentSummaries()).contains("SELL " + CASH_LIKE + " OPG 4000");
+        assertThat(store.recentOrders("KR", 20)).allMatch(o -> o.purpose().equals("SYNC"));
+    }
+
+    @Test
+    @DisplayName("재선정 예외 — N2(후보 넷 교체)·기본 슬롯 교체 4는 보냄, 교체 5는 over-cap(153130 46.7% 기준 판정 회전율 > 150)")
+    void rebalanceSwapCounts() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        run("09:10:05");
+        assertThat(assertExempt("N2").path("checkTurnoverPct").asDouble()).isEqualTo(78.7);
+
+        nextCase();
+        Slot four = slot(4, 0);
+        rebalanceDay(four.prev(), four.prev(), four.now(), four.stops());
+        run("09:10:05");
+        assertThat(assertExempt("교체 4").path("checkTurnoverPct").asDouble()).isCloseTo(146.56, org.assertj.core.data.Offset.offset(0.05));
+
+        nextCase();
+        Slot five = slot(5, 0);
+        rebalanceDay(five.prev(), five.prev(), five.now(), five.stops());
+        run("09:10:05");
+        assertHalted("교체 5", "over-cap");
+        assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isCloseTo(159.88, org.assertj.core.data.Offset.offset(0.05));
+        assertThat(haltDetail().path("allowancePct").asDouble()).isEqualTo(150.0);
+    }
+
+    @Test
+    @DisplayName("S1b — 8종목 교체 + 새 종목 K가 09:10 VI: 지금 멈춤 판정은 146.7%(K 빠짐)지만 판정 회전율은 156.5%(K 셈) → over-cap, 묶음·주문 없음")
+    void rebalanceRestrictedNewNameStillCapped() {
+        rebalanceDay(P2, H2, merged(pcts(CASH_LIKE, 1, "A", 9.8, "B", 9.8), each("KLMNOPQR", 9.8)), Set.of());
+        restrictions(Set.of(r("K")), null);
+
+        run("09:10:05");
+
+        assertHalted("S1b", "over-cap");
+        assertThat(haltDetail().path("turnoverPct").asDouble()).isEqualTo(146.7);
+        assertThat(haltDetail().path("checkTurnoverPct").asDouble()).isEqualTo(156.5);
+    }
+
+    @Test
+    @DisplayName("기본 슬롯 교체 2 + 새 종목 하나 VI — 판정은 그 종목도 세어 예외로 묶음, VI가 풀리면 같은 창 마무리가 그 종목을 삼(회전율 검사 없음)")
+    void rebalanceRestrictedNameExemptThenFollowupBuys() {
+        Slot s = slot(2, 0);
+        rebalanceDay(s.prev(), s.prev(), s.now(), s.stops());
+        restrictions(Set.of(fresh15(0)), null);
+
+        run("09:10:05");
+        assertExempt("교체 2 + VI");
+        assertThat(sentSummaries()).noneMatch(o -> o.contains(fresh15(0)));
+
+        restrictions(Set.of(), null);
+        Map<String, String[]> left = new LinkedHashMap<>();
+        for (int i = 2; i < 8; i++) {
+            left.put(held8(i), new String[]{"666", "1000"});
+        }
+        Map<String, String> quotes = new LinkedHashMap<>();
+        s.now().keySet().forEach(sym -> quotes.put(sym, "1000"));
+        preflight("6004000", left, quotes);   // 153130·유지 종목 둘을 판 대금
+        run("09:10:40");
+
+        assertThat(sentSummaries()).contains("BUY " + fresh15(0) + " DAY 666");
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("S1d — 앱으로 유지 종목 A·B를 팔고 책 밖 X·Y를 산 날, 넷 다 VI: 계좌 어긋남 39.3%(제한 종목도 셈) → account-drift")
+    void rebalanceRestrictedAppTradeHalts() {
+        rebalanceDay(P2, merged(minus(H2, "AB"), pcts("X", 10.1, "Y", 9.6)), merged(pcts(CASH_LIKE, 1), each("ABCDEF", 9.8), each("KLMN", 9.8)),
+                Set.of());
+        restrictions(letters("ABXY"), null);
+
+        run("09:10:05");
+
+        assertHalted("S1d", "account-drift");
+        assertThat(haltDetail().path("accountDriftPct").asDouble()).isEqualTo(39.3);
+    }
+
+    @Test
+    @DisplayName("S7 — 앱이 유지 종목 A·B 전량 매도 주문을 걸어 둠(반대 방향 미체결): 판정에서 빠진 종목 2 → uncounted")
+    void rebalanceOppositeAppOrderHalts() {
+        rebalanceDay(P2, H2, merged(pcts(CASH_LIKE, 1), each("ABCDEF", 9.8), each("KLMN", 9.8)), Set.of());
+        tossOrders(appSell("APP-A", r("A"), "1010"), appSell("APP-B", r("B"), "960"));
+
+        run("09:10:05");
+
+        assertHalted("S7", "uncounted");
+        assertThat(haltDetail().path("uncounted").asInt()).isEqualTo(2);
+    }
+
+    private static CollectorTradeClient.BrokerOrder appSell(String id, String symbol, String quantity) {
+        return new CollectorTradeClient.BrokerOrder(id, symbol, "SELL", "LIMIT", "DAY", "PENDING", d(quantity), d("0"), null, null, null,
+                null, kst("2026-11-06T08:40"), null, null, "KRW");
+    }
+
+    @Test
+    @DisplayName("A5 — 새 종목 F의 실제 시세를 모름(price-missing): 판정에서 빠진 종목 → uncounted")
+    void rebalanceNewNamePriceMissingHalts() {
+        double nav = 112.0;
+        Map<String, Double> now = merged(scaled(NOW1, 100 / nav), pcts("F", 22 * 100 / nav));
+        rebalanceDay(P1, H1, now, Set.of());
+        Set<String> quoted = new java.util.TreeSet<>(now.keySet());
+        rulesAccount(H1, quoted, Set.of(r("F")));
+
+        run("09:10:05");
+
+        assertHalted("A5", "uncounted");
+    }
+
+    @Test
+    @DisplayName("S2·S2d — 하루 한도로 오늘 못 내는 매수가 E의 20%를 넘음(남은 하루 매수 금액 0 / 남은 건수 5) → daily-cap-short, 주문 없음")
+    void rebalanceDailyCapShortHalts() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 200, 0L, 999_999_999L)));
+        run("09:10:05");
+        assertHalted("S2", "daily-cap-short");
+        assertThat(haltDetail().path("dailyShortPct").asDouble()).isEqualTo(52.0);
+
+        nextCase();
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 5, 999_999_999L, 999_999_999L)));
+        run("09:10:05");
+        assertHalted("S2d", "daily-cap-short");
+        assertThat(haltDetail().path("dailyShortPct").asDouble()).isEqualTo(39.0);
+    }
+
+    @Test
+    @DisplayName("S2c — 남은 하루 매수 금액이 E의 40%: 못 내는 매수 약 12% ≤ 20 → 보냄(그 몫은 다음 거래일 평소 묶음)")
+    void rebalanceDailyCapSlackExempt() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 200, 4_000_000L, 999_999_999L)));
+
+        run("09:10:05");
+
+        assertThat(assertExempt("S2c").path("dailyShortPct").asDouble()).isCloseTo(12.0, org.assertj.core.data.Offset.offset(0.05));
+    }
+
+    @Test
+    @DisplayName("N3b — 결정 전 STOP B(목표 0, 대금은 153130에): 스탑 몫을 빼고 셈 → 보냄")
+    void rebalanceStopBeforeDecisionExempt() {
+        rebalanceDay(P1, H1, merged(pcts(CASH_LIKE, 15), each("ACDE", 11), each("FGHI", 10)), letters("B"));
+
+        run("09:10:05");
+
+        assertThat(assertExempt("N3b").path("checkTurnoverPct").asDouble()).isEqualTo(69.0);
+    }
+
+    @Test
+    @DisplayName("N4 — 스탑 경로가 묶음보다 먼저 J를 팖(오늘 스탑 행): 판정 회전율·책 변화량 모두 스탑 대금을 뺀 같은 기준 → 보냄")
+    void rebalanceStopSoldBeforeBatchSameBasis() {
+        rebalanceDay(P2, minus(H2, "J"), merged(pcts(CASH_LIKE, 10.8), each("ABCDE", 9.8), each("KLMN", 10)), letters("J"));
+        executor.send(new RealTradeExecutor.Send(SESSION, RealTradeStore.PURPOSE_MIRROR, null, 701L, 701L, r("J"), "SELL", 960, "DAY",
+                d("1020.8333"), 1), cfg());   // 스탑 매도 접수(진행 중) — 대금 약 980,000원 = E의 9.8%
+
+        run("09:10:05");
+
+        JsonNode detail = assertExempt("N4");
+        assertThat(detail.path("checkTurnoverPct").asDouble()).isCloseTo(79.1, org.assertj.core.data.Offset.offset(0.05));
+        assertThat(detail.path("bookDriftPct").asDouble()).isCloseTo(79.2, org.assertj.core.data.Offset.offset(0.05));
+    }
+
+    @Test
+    @DisplayName("E1b — 지난 세션 STOP A·B(어제 팔림, 장부는 대기) + 다섯 교체: 교차 확인은 스탑 감소만 뺀 B°(120) 기준 → 보냄")
+    void rebalanceStaleStopSoldYesterdayExempt() {
+        rebalanceDay(merged(pcts(CASH_LIKE, 29), each("ABCDEFG", 10)), merged(pcts(CASH_LIKE, 28.5), each("CDEFG", 10)),
+                merged(pcts(CASH_LIKE, 49), each("HIJKL", 10)), letters("AB"));
+
+        run("09:10:05");
+
+        JsonNode detail = assertExempt("E1b");
+        assertThat(detail.path("checkTurnoverPct").asDouble()).isEqualTo(120.5);
+        assertThat(detail.path("bookDriftPct").asDouble()).isEqualTo(100.0);
+        assertThat(detail.path("allowancePct").asDouble()).isEqualTo(140.0);
+    }
+
+    @Test
+    @DisplayName("기본 슬롯 교체 2 + 결정 뒤 반영된 STOP 하나 — 목표 합 93.3% ≥ 90 → 보냄")
+    void rebalanceReflectedStopAfterDecision() {
+        Slot s = slot(2, 1);
+        rebalanceDay(s.prev(), s.prev(), s.now(), s.stops());
+
+        run("09:10:05");
+
+        assertThat(assertExempt("STOP 하나").path("investedPct").asDouble()).isCloseTo(93.33, org.assertj.core.data.Offset.offset(0.01));
+    }
+
+    @Test
+    @DisplayName("기본 슬롯 교체 2 + 결정 뒤 반영된 STOP 둘 — 목표 합 86.7%(크레딧 없음) → targets-thin")
+    void rebalanceReflectedStopsAfterDecisionHalt() {
+        Slot s = slot(2, 2);
+        rebalanceDay(s.prev(), s.prev(), s.now(), s.stops());
+
+        run("09:10:05");
+
+        assertHalted("STOP 둘", "targets-thin");
+        assertThat(haltDetail().path("investedPct").asDouble()).isCloseTo(86.67, org.assertj.core.data.Offset.offset(0.01));
+    }
+
+    @Test
+    @DisplayName("S4b — 09:10 목표에 반영 안 된 감시 STOP 다섯 + 153130 미매수: 목표 합 88.4% → targets-thin")
+    void rebalanceUnreflectedWatchStopsIdleCashHalts() {
+        Map<String, Double> held = merged(pcts(CASH_LIKE, 44.0), each("ABCDE", 11 * 0.88));
+        double sum = held.values().stream().mapToDouble(Double::doubleValue).sum();
+        rebalanceDay(P1, scaled(held, 100 / sum), merged(each("ABCDE", 11 * 0.88), each("FGHI", 10)), letters("ABCDE"));
+
+        run("09:10:05");
+
+        assertHalted("S4b", "targets-thin");
+        assertThat(haltDetail().path("investedPct").asDouble()).isEqualTo(88.4);
+    }
+
+    @Test
+    @DisplayName("N1 예외 묶음의 매수가 현금 부족으로 미뤄짐 — 153130 매도 대금이 들어온 뒤 같은 창 마무리가 매수를 보냄(회전율 검사 없음)")
+    void rebalanceExemptFollowupSendsDeferredBuys() {
+        rebalanceDay(P1, H1, NOW1, Set.of());
+
+        run("09:10:05");
+        assertExempt("N1");
+        assertThat(sentSummaries()).contains("SELL " + CASH_LIKE + " DAY 4000").noneMatch(o -> o.startsWith("BUY " + r("G")));
+
+        Map<String, String[]> after = new LinkedHashMap<>();
+        H1.forEach((sym, pct) -> after.put(sym, new String[]{sym.equals(CASH_LIKE) ? "400" : String.valueOf((long) Math.floor(pct * 100 + 1e-9)),
+                "1000"}));
+        Map<String, String> quotes = new LinkedHashMap<>();
+        NOW1.keySet().forEach(sym -> quotes.put(sym, "1000"));
+        preflight("4120000", after, quotes);   // 153130 4,000주를 판 대금(F 92주 매수는 아직 진행 중)
+        run("09:10:40");
+
+        assertThat(sentSummaries()).contains("BUY " + r("G") + " DAY 1000", "BUY " + r("H") + " DAY 1000", "BUY " + r("I") + " DAY 1000");
+        assertThat(events("HALT")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("U1·U2a·U2b — 앱 매매(153130 → X)·출금·입금 50: 계좌 어긋남 88 / 86.9 / 33.1 → account-drift, 주문·묶음 없음")
+    void rebalanceAccountDriftHalts() {
+        rebalanceDay(P1, merged(pcts("X", 44), minus(H1, CASH_LIKE)), NOW1, Set.of());
+        run("09:10:05");
+        assertHalted("U1", "account-drift");
+        assertThat(haltDetail().path("accountDriftPct").asDouble()).isEqualTo(88.0);
+
+        nextCase();
+        rebalanceDay(P1, scaled(minus(H1, CASH_LIKE), 100.0 / 56), NOW1, Set.of());
+        run("09:10:05");
+        assertHalted("U2a 출금", "account-drift");
+        assertThat(haltDetail().path("accountDriftPct").asDouble()).isCloseTo(86.86, org.assertj.core.data.Offset.offset(0.05));
+
+        nextCase();
+        rebalanceDay(P1, scaled(H1, 100.0 / 150), NOW1, Set.of());
+        run("09:10:05");
+        assertHalted("U2b 입금", "account-drift");
+        assertThat(haltDetail().path("accountDriftPct").asDouble()).isCloseTo(33.13, org.assertj.core.data.Offset.offset(0.05));
+    }
+
+    @Test
+    @DisplayName("U3a·E2·S5b — 후보 0(153130 99)·모두 팔기 + 현금 잔차·0.3% 잔여 종목 → no-names")
+    void rebalanceNoNamesHalts() {
+        rebalanceDay(P1, H1, pcts(CASH_LIKE, 99), Set.of());
+        run("09:10:05");
+        assertHalted("U3a", "no-names");
+
+        nextCase();
+        rebalanceDay(pcts(CASH_LIKE, 70, "A", 29), pcts(CASH_LIKE, 67, "A", 29), pcts(CASH_LIKE, 99), Set.of());
+        run("09:10:05");
+        assertHalted("E2", "no-names");
+
+        nextCase();
+        rebalanceDay(merged(pcts(CASH_LIKE, 69), each("ABC", 10)), merged(pcts(CASH_LIKE, 66.0), each("ABC", 10), pcts("Z", 0.3)),
+                pcts(CASH_LIKE, 99.4, "Z", 0.3), Set.of());
+        run("09:10:05");
+        assertHalted("S5b", "no-names");
+        assertThat(haltDetail().path("stockNames").asInt()).isZero();
+    }
+
+    @Test
+    @DisplayName("U3d·A2 — 153130을 놀리는 현금으로(목표 합 75) / 결정 전 STOP B·C + 놀리는 현금(73) → targets-thin")
+    void rebalanceIdleCashTargetsHalts() {
+        rebalanceDay(P1, H1, merged(each("ABCDE", 11), each("FG", 10)), Set.of());
+        run("09:10:05");
+        assertHalted("U3d", "targets-thin");
+        assertThat(haltDetail().path("investedPct").asDouble()).isEqualTo(75.0);
+
+        nextCase();
+        rebalanceDay(P1, H1, merged(each("ADE", 11), each("FGHI", 10)), letters("BC"));
+        run("09:10:05");
+        assertHalted("A2", "targets-thin");
+        assertThat(haltDetail().path("investedPct").asDouble()).isEqualTo(73.0);
+    }
+
+    @Test
+    @DisplayName("S3b — 새 종목 1.2배씩·책 현금 음수(목표 합 107) → targets-over")
+    void rebalanceBookCashNegativeHalts() {
+        rebalanceDay(P1, H1, merged(pcts(CASH_LIKE, 4), each("ABCDE", 11), each("FGHI", 12)), Set.of());
+
+        run("09:10:05");
+
+        assertHalted("S3b", "targets-over");
+        assertThat(haltDetail().path("investedPct").asDouble()).isEqualTo(107.0);
+    }
+
+    @Test
+    @DisplayName("U4a·A1 책 가격 10배 / 작은 비중의 1/100 → price-mismatch, U4b·A4·기본 슬롯 이중 체결 → name-jump, A1b 책 수량 1/10 → name-cut")
+    void rebalanceBookErrorsHalt() {
+        double navq = 100 - 11 + 110 + 1;
+        Map<String, Double> u4a = merged(scaled(NOW1, 100 / navq), pcts("C", 110 * 100 / navq));
+        rebalanceDay(P1, H1, u4a, Set.of());
+        rulesTargets(u4a, Map.of(r("C"), 10_000.0));
+        run("09:10:05");
+        assertHalted("U4a", "price-mismatch");
+        assertThat(haltDetail().path("priceRatio").asDouble()).isEqualTo(10.0);
+
+        nextCase();
+        double navA = 100 - 11 + 0.11;
+        Map<String, Double> a1 = merged(scaled(NOW1, 100 / navA), pcts("C", 0.11 * 100 / navA));
+        rebalanceDay(P1, H1, a1, Set.of());
+        rulesTargets(a1, Map.of(r("C"), 10.0));
+        run("09:10:05");
+        assertHalted("A1", "price-mismatch");
+
+        nextCase();
+        double navb = 100 - 11 + 55;
+        rebalanceDay(P1, H1, merged(scaled(NOW1, 100 / navb), pcts("C", 55 * 100 / navb)), Set.of());
+        run("09:10:05");
+        assertHalted("U4b", "name-jump");
+
+        nextCase();
+        rebalanceDay(P1, H1, merged(NOW1, pcts("F", 20)), Set.of());
+        run("09:10:05");
+        assertHalted("A4", "name-jump");
+
+        nextCase();
+        Slot ten = slot(2, 0);
+        Map<String, Double> doubled = new java.util.TreeMap<>(ten.now());
+        for (int i = 4; i < 9; i++) {
+            doubled.remove(fresh15(i));   // 후보 10개(유지 6 + 새 종목 4) — 153130이 남음
+        }
+        doubled.put(fresh15(0), SLOT * 2);   // 새 종목 하나 이중 체결 — 153130이 그만큼 줆
+        doubled.put(CASH_LIKE, 100 - doubled.values().stream().mapToDouble(Double::doubleValue).sum());
+        rebalanceDay(ten.prev(), ten.prev(), doubled, Set.of());
+        run("09:10:05");
+        assertHalted("기본 슬롯 이중 체결", "name-jump");
+        assertThat(haltDetail().path("nameJumpPct").asDouble()).isCloseTo(13.33, org.assertj.core.data.Offset.offset(0.01));
+
+        nextCase();
+        double nav = 100 - 11 + 1.1;
+        rebalanceDay(P1, H1, merged(scaled(NOW1, 100 / nav), pcts("C", 1.1 * 100 / nav)), Set.of());
+        run("09:10:05");
+        assertHalted("A1b", "name-cut");
+    }
+
+    @Test
+    @DisplayName("U5' 매수 멈춤 중 매도만 60% 초과 → buys-paused, A3 형식 밖 종목의 앱 매수 대기 → buys-unpriced — 둘 다 결정을 읽지 않음")
+    void rebalanceBuyGatesHalt() {
+        rebalanceDay(P1, H1, merged(pcts(CASH_LIKE, 4), each("ABC", 11), each("FGHI", 10)), Set.of());
+        store.lockConfig("KR", current -> store.updateConfig(current.withBuysPaused(true), null));
+        run("09:10:05");
+        assertHalted("U5'", "buys-paused");
+        assertThat(haltDetail().path("checkTurnoverPct").isMissingNode()).isTrue();
+        verify(paper, never()).decisionState(anyString(), any());
+
+        nextCase();
+        rebalanceDay(P1, H1, merged(pcts(CASH_LIKE, 26), each("ABC", 11), each("FGHI", 10)), Set.of());
+        tossOrders(appBuy("APP-ODD", ODD, "LIMIT", "10", "0"));
+        run("09:10:05");
+        assertHalted("A3", "buys-unpriced");
+        verify(paper, never()).decisionState(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("앞 거래일 결정이 SCHEDULED·OK면 no-rebalance(결정 종류 코드와 함께)")
+    void scheduledDecisionStillHalts() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        decision("SCHEDULED", "OK");
+
+        run("09:10:05");
+
+        assertHalted("SCHEDULED", "no-rebalance");
+        assertThat(haltDetail().path("decisionKind").asString()).isEqualTo("SCHEDULED");
+        assertThat(haltDetail().path("decisionStatus").asString()).isEqualTo("OK");
+    }
+
+    @Test
+    @DisplayName("REBALANCE인데 NO_TRADE·SKIPPED, 결정 행 없음, 결정 상태를 못 읽음(empty), INITIAL·OK → 모두 no-rebalance")
+    void rebalanceNotOkStillHalts() {
+        String[][] cases = {{"REBALANCE", "NO_TRADE"}, {"REBALANCE", "SKIPPED"}, {null, null}, {"INITIAL", "OK"}};
+        for (String[] c : cases) {
+            nextCase();
+            rebalanceDay(P2, H2, NOW_N2, Set.of());
+            decision(c[0], c[1]);
+            run("09:10:05");
+            assertHalted(c[0] + "·" + c[1], "no-rebalance");
+        }
+        nextCase();
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(paper.decisionState(BOOK, DECISION_DAY)).thenReturn(Optional.empty());
+        run("09:10:05");
+        assertHalted("empty", "no-rebalance");
+    }
+
+    @Test
+    @DisplayName("앞 묶음이 D 세션이 아님(D−1)·다른 책·없음 → prior-batch")
+    void rebalancePriorBatchMismatchHalts() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        RealTradeFixtures.clean(jdbc);
+        RealTradeFixtures.live(store, false, d("10000000"));
+        priorBatch(DECISION_DAY.minusDays(1), P2);
+        run("09:10:05");
+        assertHalted("D−1", "prior-batch");
+
+        nextCase();
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        RealTradeFixtures.clean(jdbc);
+        RealTradeFixtures.live(store, false, d("10000000"));
+        store.upsertBatch("KR", DECISION_DAY, RealTradeStore.BATCH_SYNC, "kr_claude", RealTradeFixtures.MAPPER.valueToTree(P2), List.of(),
+                d("10000000"));
+        run("09:10:05");
+        assertHalted("다른 책", "prior-batch");
+
+        nextCase();
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        RealTradeFixtures.clean(jdbc);
+        RealTradeFixtures.live(store, false, d("10000000"));
+        run("09:10:05");
+        assertHalted("없음", "prior-batch");
+    }
+
+    @Test
+    @DisplayName("모의 달력이 결정일 앞을 모름 → calendar-unknown(결정을 읽지 않음)")
+    void rebalanceUnknownCalendarHalts() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(paper.sessionHours(DECISION_DAY)).thenReturn(Optional.empty());
+
+        run("09:10:05");
+
+        assertHalted("달력 모름", "calendar-unknown");
+        verify(paper, never()).decisionState(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Claude 책은 그대로 — REBALANCE·OK가 있어도 결정을 읽지 않고, HALT detail은 지금처럼 reason·turnoverPct뿐")
+    void rebalanceForClaudeBookUnchanged() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(paper.book(BOOK)).thenReturn(Optional.of(book(GENERATION)));   // kind CLAUDE
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("HALTED");
+        List<String> fields = new ArrayList<>();
+        haltDetail().propertyNames().forEach(fields::add);
+        assertThat(fields).containsExactlyInAnyOrder("reason", "turnoverPct");
+        verify(paper, never()).decisionState(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("판정 오류 — 결정 읽기가 던지면 그 주기는 묶음·멈춤 없이 건너뜀(같은 주기 스탑 매도는 나감), 30초 뒤에도 던지면 '준비 안 됨' 알림 하나, 풀리면 예외 묶음")
+    void rebalanceCheckErrorSkipsCycleAndNotifies() {
+        Slot s = slot(2, 0);
+        Map<String, Double> held = new java.util.TreeMap<>(s.prev());
+        held.put(r("S"), 5.0);   // 대기 STOP 종목(목표 밖) — 장중 스탑 매도 경로가 팖
+        rebalanceDay(s.prev(), held, s.now(), letters("S"));
+        when(paper.dueOrders(anyString(), any(), any())).thenReturn(List.of(stopDue(901, r("S"), "AT_MINUTE", SYNC_AT)));
+        when(paper.decisionState(BOOK, DECISION_DAY)).thenThrow(new IllegalStateException("합성 오류"));
+
+        run("09:10:05");
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        assertThat(sentSummaries()).containsExactly("SELL " + r("S") + " DAY 500");
+        assertThat(events("UNAVAILABLE")).as("첫 실패는 시각만").isEmpty();
+
+        run("09:10:35");
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isEmpty();
+        assertThat(events("UNAVAILABLE")).singleElement().satisfies(e -> {
+            assertThat(e.detail().path("reason").asString()).isEqualTo("rebalance-check-unavailable");
+            assertThat(e.notifies()).isTrue();
+        });
+
+        org.mockito.Mockito.doReturn(Optional.of(new PaperMirrorService.DecisionState(DECISION_DAY, 77L, "REBALANCE", "OK",
+                kst("2026-11-06T01:00")))).when(paper).decisionState(BOOK, DECISION_DAY);
+        run("09:11:05");
+        assertExempt("오류 뒤");
+        assertThat(events("UNAVAILABLE")).hasSize(1);
+
+        run("09:14");   // 창 뒤 요약 — 건너뜀 사유에 판정 오류
+        assertThat(events("WINDOW_SUMMARY")).singleElement().satisfies(e ->
+                assertThat(e.detail().path("reasons").path("rebalance-check-error").asInt()).isEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("한 번만 — 예외 묶음 다음 세션(앞 거래일 결정 SCHEDULED)에 남은 몫이 60%를 넘으면 지금처럼 멈춤(no-rebalance)")
+    void rebalanceExemptionIsOneShot() {
+        // 어제(D) 예외 묶음이 남긴 목표 그대로, 오늘(D+1 = 세션)은 정기 결정 SCHEDULED — 남은 몫(종목 매수 70%)이 아직 안 나감
+        Map<String, Double> target = merged(pcts(CASH_LIKE, 30), each("KLMNOPQ", 10));
+        rebalanceDay(target, pcts(CASH_LIKE, 100.0), target, Set.of());
+        decision("SCHEDULED", "OK");
+
+        run("09:10:05");
+
+        assertHalted("다음 세션", "no-rebalance");
+        assertThat(haltDetail().path("turnoverPct").asDouble()).isEqualTo(140.0);
+    }
+
+    @Test
+    @DisplayName("sync_pending 남은 몫 묶음이 목표 변화량 > 60(RT2-1)으로 멈출 사례가 재선정 다음 묶음이면 — 예외로 보냄, sync_pending 규칙 그대로")
+    void rebalanceAfterLeftoverDriftHalt() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        RealTradeFixtures.clean(jdbc);
+        enableEvent();
+        priorBatch(DECISION_DAY, P2);
+        RealTradeFixtures.live(store, true, d("10000000"));
+
+        run("09:10:05");
+
+        assertExempt("남은 몫 뒤 재선정");
+        // 규칙 그대로 — 이 묶음에도 남은 몫(현금 부족으로 미룬 매수)이 있고 켠 뒤 두 번째 묶음이라 세 번째 묶음까지 유지
+        assertThat(cfg().syncPending()).isTrue();
+    }
+
+    @Test
+    @DisplayName("관찰 로그 — 회전율 60% 안의 평소 규칙 계좌 묶음은 측정이 실패해도(대기 STOP 읽기가 던짐) 묶음·주문이 그대로 나감")
+    void observationLogDoesNotChangeBatch() {
+        Slot s = slot(0, 0);
+        Map<String, Double> calm = new java.util.TreeMap<>(s.prev());
+        calm.put(held8(0), SLOT + 2);   // 평소 날 — 한 종목만 2%p 늘림(153130에서)
+        calm.put(CASH_LIKE, s.prev().get(CASH_LIKE) - 2);
+        rebalanceDay(s.prev(), s.prev(), calm, Set.of());
+        when(paper.pendingStopSymbols(BOOK, SESSION)).thenThrow(new IllegalStateException("합성 오류")).thenReturn(Set.of());
+
+        run("09:10:05");
+
+        assertThat(cfg().state()).isEqualTo("LIVE");
+        assertThat(events("HALT")).isEmpty();
+        assertThat(events("TURNOVER_EXEMPT")).isEmpty();
+        assertThat(store.batch("KR", SESSION, RealTradeStore.BATCH_SYNC)).isPresent();
+        // 매도와, 남은 현금(6,000원)만큼의 매수 4주 — 매수 직전 대기 STOP 읽기(두 번째 부름)는 정상이라 그대로 나감
+        assertThat(sentSummaries()).containsExactly("SELL " + CASH_LIKE + " DAY 200", "BUY " + held8(0) + " DAY 4");
+        verify(paper, never()).decisionState(anyString(), any());
+    }
 }

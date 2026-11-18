@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { eventDetailText, eventKindLabel, haltReasonLabel, skippedText, warningText } from "@/lib/realtrade";
+import { eventDetailText, eventKindLabel, haltReasonLabel, rebalanceCheckLabel, skippedText, warningText } from "@/lib/realtrade";
 
 const JAVA = resolve(__dirname, "../../../../backend/src/main/java/com/macrodash");
 const java = (path: string) => readFileSync(resolve(JAVA, path), "utf8");
@@ -25,6 +25,7 @@ const executor = java("feature/realtrade/RealTradeExecutor.java");
 const notices = java("feature/realtrade/RealTradeNotices.java");
 const service = java("feature/realtrade/RealTradeService.java");
 const store = java("store/RealTradeStore.java");
+const rebalance = java("feature/realtrade/RealTradeRebalance.java");
 
 /** 그날을 쉬는 사유(명세 §3) — 종목 건너뜀이 아니라 '오늘 쉼' 줄에 코드로 보입니다. 종목 건너뜀 이름표의 대조에서는 뺍니다. */
 const DAY_SKIPS = [
@@ -77,6 +78,17 @@ describe("QA-346: 실제 매매 화면 이름표와 백엔드 코드 상수", ()
       expect(warningText(code)).toMatch(new RegExp(`.+\\(${code}\\)$`));
     }
     expect(warningText("첫 시가 맞추기는 회전율 한도 예외")).toBe("첫 시가 맞추기는 회전율 한도 예외");
+  });
+
+  // 재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11-19) — 회전율 멈춤 detail의 rebalanceCheck 코드(RealTradeRebalance의 CHECK_*)마다 이름표.
+  it("재선정 예외 판정 코드마다 화면 이름표가 있다 — '이름표(코드)'로 그린다", () => {
+    const checks = constants(rebalance, "CHECK_");
+    expect(checks).toEqual(expect.arrayContaining(["buys-paused", "uncounted", "daily-cap-short", "account-drift", "targets-over", "over-cap"]));
+    expect(checks.length).toBeGreaterThanOrEqual(18);
+    expect(checks.filter((code) => rebalanceCheckLabel(code) === code || !rebalanceCheckLabel(code).endsWith(`(${code})`))).toEqual([]);
+    for (const code of checks) {
+      expect(eventDetailText({ reason: "turnover", rebalanceCheck: code }, "HALT")).toContain(`재선정 예외 아님: ${rebalanceCheckLabel(code)}`);
+    }
   });
 
   // 수정 전: 창 요약의 결과 모름(unknown) 건수를 적지 않았고, 멈춤 해제 이벤트의 사유 없음이 글자 "null"로 보였다.

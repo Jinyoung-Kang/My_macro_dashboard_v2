@@ -88,6 +88,9 @@ import java.util.function.BiFunction;
  *   <li>창마다 새 사전 조회(매도 가능 수량은 팔 종목만 — 시가 맞추기류는 두 단계) + 오늘 주문 목록(수집기 하루 한도의 남은 몫) → 손실 한도(넘으면 매수만
  *       멈춤) → 계획({@link RealTradePlanner}) → 선점·SENDING·전송·결과({@link RealTradeExecutor}). 보내기 직전마다 지금 시각으로 그 창이 아직 열려 있는지
  *       다시 보고, 닫혔으면 보내지 않고 놓침으로 둡니다(RT3-MON-4). 창이 끝나면 창 요약 이벤트(접수·체결·놓침·건너뜀·막힘·미룸).</li>
+ *   <li>그날 묶음의 회전율이 60%를 넘으면 이상 멈춤({@link #turnoverHalt}) — 그 뒤 규칙 계좌 재선정 다음 묶음은 입구와 열두 확인을 모두 지날 때만 예외로
+ *       보냅니다({@link #rebalanceCheck}, {@link RealTradeRebalance} — ADR 0028 덧붙임 2026-11-19). 규칙 계좌의 평소 묶음은 그 측정값을 로그에만 남깁니다
+ *       ({@link #observe}).</li>
  *   <li>마지막 운용 평가액(2026-11-08 — {@link #refreshValuation}): 창 안 사전 조회가 남긴 값을 V29 표에 저장하고(재기동 뒤 다시 읽음), 마지막 거래일
  *       마감 뒤 값이 없으면 창 밖에서 읽기 전용 사전 조회로 한 번 읽습니다(상태와 무관 — 휴장일·토스 점검 동안에도 화면이 마지막 값을 보이게). 주문·손실
  *       판정은 이 값을 쓰지 않습니다.</li>
@@ -164,6 +167,15 @@ class RealTradeJob {
      */
     static final String UNAVAILABLE_CALENDAR = "calendar-unavailable";
     static final String UNAVAILABLE_STATUS = "status-unavailable";
+    /**
+     * 재선정 다음 묶음의 회전율 예외 판정({@link #rebalanceCheck})이 예외로 끝남 — 그 주기는 묶음을 만들지도 멈추지도 않고({@link #SKIP_REBALANCE_ERROR}),
+     * 다음 시도({@link #RETRY_SPACING} 뒤)에도 실패하면 알립니다({@link #REBALANCE_ERROR_AFTER}). 판정이 끝나면(결과 무관) 지웁니다.
+     */
+    static final String UNAVAILABLE_REBALANCE = "rebalance-check-unavailable";
+    /** 재선정 예외 판정 오류의 '준비 안 됨' 알림까지 이어져야 하는 시간 — 묶음 시도 간격 하나(첫 실패에 시각만 적고 다음 시도도 실패하면 알림). */
+    static final Duration REBALANCE_ERROR_AFTER = RETRY_SPACING;
+    /** 재선정 예외 판정이 예외로 끝나 이번 주기 묶음을 만들지 않음(창 요약의 건너뜀 — 다음 주기에 다시 판정). */
+    static final String SKIP_REBALANCE_ERROR = "rebalance-check-error";
     /**
      * '준비 안 됨'을 알리기까지 그 사유가 이어져야 하는 시간(QA-342 보완) — 장중 배포로 수집기가 10~30초 다시 뜨는 것, 재시도 한 번으로 받는 장 운영 정보는
      * 알리지 않습니다.
@@ -452,7 +464,7 @@ class RealTradeJob {
                 if (RealTradePlanner.SKIP_LEDGER.equals(d.skipReason) && d.windows != null) {
                     // 장부 밀림으로 쉬는 날에도 스탑 매도만(ADR 0033 결정 2) — 매도는 실제 보유까지만이라 위험을 줄이는 쪽이고, 1분봉 수집 실패가
                     // 손절을 하루 미루지 않게. 묶음·장중 따라 하기는 하지 않습니다. 휴장·장 시간 불일치·시계 어긋남·달력 날짜 불일치는 아무것도 하지 않음.
-                    Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers());
+                    Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers(), book.get().kind());
                     List<DueOrder> stops = paper.dueOrders(cfg.sourceBook(), today, now.plus(WARMUP_LEAD)).stream().filter(DueOrder::stop)
                             .toList();
                     warmup(c, stops);
@@ -465,7 +477,7 @@ class RealTradeJob {
             if (d.decidedFor == null || d.windows == null) {
                 return;   // 아직 그날 처음 주문이 나갈 수 있는 시각(첫 창·정규장 시작 + 10분 가운데 이른 쪽)의 3분 전이 아님
             }
-            Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers());
+            Cycle c = new Cycle(now, d, cfg, status.value().limits(), paper.cashLikeTickers(), book.get().kind());
             List<DueOrder> upcoming = paper.dueOrders(cfg.sourceBook(), today, now.plus(WARMUP_LEAD));
             warmup(c, upcoming);
             if (d.windows.sync() != null && d.windows.sync().contains(now)) {
@@ -500,7 +512,10 @@ class RealTradeJob {
         return live(now) && now.version() == c.cfg.version();
     }
 
-    /** 한 주기의 문맥 — 계획 때의 설정({@code cfg}, 이 작업이 스스로 바꾸면 새 값으로), 한도, 현금성 종목. */
+    /**
+     * 한 주기의 문맥 — 계획 때의 설정({@code cfg}, 이 작업이 스스로 바꾸면 새 값으로), 한도, 현금성 종목, 주기 시작에 읽은 따라 하는 책의 종류
+     * ({@code bookKind} — 재선정 예외 입구 G1, 새 읽기 없음).
+     */
     private static final class Cycle {
         final Instant now;
         final LocalDate today;
@@ -508,16 +523,18 @@ class RealTradeJob {
         Config cfg;
         final Limits limits;
         final Set<String> cashLike;
+        final String bookKind;
         /** 가장 최근 사전 조회 때 걸려 있던 형식 밖 종목의 진행 중 매수({@link DailyRoom#unpriced} — 평소 빈 집합). 그 뒤의 전송이 봅니다({@link #send}). */
         Set<String> unpriced = Set.of();
 
-        Cycle(Instant now, DayState day, Config cfg, Limits limits, Collection<String> cashLike) {
+        Cycle(Instant now, DayState day, Config cfg, Limits limits, Collection<String> cashLike, String bookKind) {
             this.now = now;
             this.today = day.date;
             this.day = day;
             this.cfg = cfg;
             this.limits = limits;
             this.cashLike = Set.copyOf(cashLike);
+            this.bookKind = bookKind;
         }
     }
 
@@ -778,8 +795,16 @@ class RealTradeJob {
      * </ul>
      */
     private void noteUnavailable(DayState d, Instant now, String reason) {
+        noteUnavailable(d, now, reason, UNAVAILABLE_AFTER);
+    }
+
+    /**
+     * {@link #noteUnavailable(DayState, Instant, String)}와 같되 알리기까지 이어져야 하는 시간이 {@code after} — 재선정 예외 판정 오류
+     * ({@value #UNAVAILABLE_REBALANCE})는 묶음 시도 하나 간격({@link #REBALANCE_ERROR_AFTER})이면 알립니다(그동안 그날 묶음이 없음).
+     */
+    private void noteUnavailable(DayState d, Instant now, String reason, Duration after) {
         DayState.Outage outage = d.outages.computeIfAbsent(reason, k -> new DayState.Outage(now));
-        if (outage.noticed || now.isBefore(outage.since.plus(UNAVAILABLE_AFTER))) {
+        if (outage.noticed || now.isBefore(outage.since.plus(after))) {
             return;
         }
         SessionHours hours = paperHours(d);
@@ -794,7 +819,7 @@ class RealTradeJob {
         d.unavailableNoticedAt.put(reason, now);
         store.addEvent(MARKET, RealTradeNotices.EVENT_UNAVAILABLE, null,
                 Map.of("reason", reason, "date", d.date.toString(), UNAVAILABLE_NOTICED_AT, now.toString()), true);
-        log.warn("실제 매매 준비 안 됨 — {}이(가) {}분 넘게 이어짐(받는 대로 이어 감)", reason, UNAVAILABLE_AFTER.toMinutes());
+        log.warn("실제 매매 준비 안 됨 — {}이(가) {}초 넘게 이어짐(받는 대로 이어 감)", reason, after.toSeconds());
     }
 
     /** 그 사유 없이 한 주기를 지남(QA-342 보완) — 이어지던 끊김을 지웁니다(다시 끊기면 새 끊김으로 다시 3분). */
@@ -865,7 +890,9 @@ class RealTradeJob {
      * 그날 시가 맞추기 묶음을 만들고(목표 비중·흡수한 모의 주문·E 고정) 보냅니다. 목표가 없거나 불완전하면 보내지 않습니다(빈 목표로 '모두 팔기'를 하지 않게).
      * 회전율이 60%를 넘으면 보내지 않고 이상 멈춤 — 회전율은 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)를 빼고 셉니다
      * ({@link RealTradePlanner#withoutStops}, QA-302 — 보내는 주문에는 그대로 있음), 예외는 {@link #turnoverHalt}(켜기·방식 바꾸기·멈춤 해제 뒤 첫
-     * 묶음, 그리고 남은 몫으로 이어 준 묶음 중 목표가 앞 묶음과 거의 같은 것). 묶음을 만들면서(같은 트랜잭션) {@code sync_pending}을 끕니다 — 단 1건
+     * 묶음, 그리고 남은 몫으로 이어 준 묶음 중 목표가 앞 묶음과 거의 같은 것), 그 뒤 규칙 계좌 재선정 다음 묶음({@link #rebalanceCheck} — 입구와 열두
+     * 확인을 모두 지나면 보내고 {@code TURNOVER_EXEMPT} 이벤트, 어긋나면 HALT detail에 판정 코드, 판정 오류면 그 주기 건너뜀). 묶음을 만들면서(같은
+     * 트랜잭션) {@code sync_pending}을 끕니다 — 단 1건
      * 상한·현금·하루 한도로 그날 다 못 맞춘 남은 몫({@link #LEFTOVER_SKIPS})이 있으면, sync_pending을 켠 일 뒤 {@value #SYNC_PENDING_MAX_BATCHES}번째 묶음까지는 켜 둡니다(켜기 창에서 확인한
      * 같은 재조정의 남은 몫이 다음 날 회전율 멈춤이 되지 않게 — 그 뒤로는 끔).
      *
@@ -896,33 +923,63 @@ class RealTradeJob {
         Optional<Instant> start = c.cfg.syncPending() ? followStart() : Optional.empty();
         // 회전율에는 매매 제한으로 기다리는 전량 매도 대상의 몫도 셈(QA-376 — 풀리면 그날 나감). 그런 종목이 없으면 plan 그대로.
         Plan turnover = withWaitingLiquidations(c, planned0, weightPct);
+        Set<String> stops = null;
+        BigDecimal proceeds = null;
+        Map<String, Object> exemptDetail = null;
+        String observed = "";
         if (turnover.turnoverExceeded()) {
             // 대기 STOP 종목의 매도와 그 대금으로 사는 현금성 매수(스탑 대금까지)는 회전율 멈춤에 세지 않음(ADR 0033 결정 3, QA-302) — 스탑이
             // 멈춤을 걸면 같은 주기의 스탑 매도 경로까지 서서 손절이 사라짐. 보낼 주문은 그대로(묶음도 스탑 종목을 목표 0으로 팖 — 겹쳐도 더 팔 수 없음).
-            Set<String> stops = paper.pendingStopSymbols(c.cfg.sourceBook(), c.today);
-            Plan counted = RealTradePlanner.withoutStops(turnover, weightPct, f.account(), f.blocked(), rules(c, f), true, stops,
-                    stopProceeds(c, stops));
+            stops = paper.pendingStopSymbols(c.cfg.sourceBook(), c.today);
+            proceeds = stopProceeds(c, stops);
+            Plan counted = RealTradePlanner.withoutStops(turnover, weightPct, f.account(), f.blocked(), rules(c, f), true, stops, proceeds);
             if (counted.turnoverExceeded()) {
                 Map<String, Object> halt = turnoverHalt(c.cfg, start, counted, weightPct, stops, c.cashLike);
                 if (halt != null) {
-                    executor.halt(HALT_TURNOVER, halt);
-                    return;
+                    // 그 뒤 규칙 계좌 재선정 다음 묶음의 예외(ADR 0028 덧붙임 2026-11-19 — 입구 G1~G5 + 열두 확인, 하나라도 어긋나거나 모르면 지금처럼 멈춤)
+                    Rebalance rebalance = rebalanceCheck(c, planned0, targets, weightPct, stops, proceeds, window);
+                    if (rebalance == Rebalance.ERROR) {
+                        return;   // 판정 오류 — 이 주기는 묶음을 만들지도 멈추지도 않음(다음 주기에 다시)
+                    }
+                    if (rebalance == null) {
+                        executor.halt(HALT_TURNOVER, halt);   // 규칙 계좌가 아님(G1) — 지금 그대로(detail도)
+                        return;
+                    }
+                    if (!rebalance.verdict().exempt()) {
+                        halt.putAll(rebalance.verdict().detail());
+                        executor.halt(HALT_TURNOVER, halt);
+                        return;
+                    }
+                    exemptDetail = new LinkedHashMap<>();
+                    exemptDetail.put(RealTradeRebalance.DETAIL_DECISION_DATE, rebalance.decisionDate().toString());
+                    exemptDetail.put("turnoverPct", counted.turnoverPct());
+                    exemptDetail.putAll(rebalance.verdict().detail());
+                    observed = " · 회전율 예외(재선정 다음 묶음) " + RealTradeRebalance.summary(rebalance.verdict().inputs());
                 }
             }
+        }
+        if (exemptDetail == null) {
+            observed = observe(c, planned0, targets, weightPct, stops, proceeds);   // 관찰 로그(계획 3-8 — 잠금 전, 동작 변화 없음)
         }
         boolean leftover = plan.skipped().stream().anyMatch(s -> LEFTOVER_SKIPS.contains(s.reason()));
         Optional<Instant> since = leftover ? start : Optional.empty();
         Config planned = c.cfg;
+        Map<String, Object> exempt = exemptDetail;
         Locked locked = store.lockConfig(MARKET, current -> {
             if (!sameState(current, planned)) {
                 return null;
             }
-            Batch batch = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC).orElseGet(() -> store.upsertBatch(MARKET, c.today,
+            Optional<Batch> existing = store.batch(MARKET, c.today, RealTradeStore.BATCH_SYNC);
+            Batch batch = existing.orElseGet(() -> store.upsertBatch(MARKET, c.today,
                     RealTradeStore.BATCH_SYNC, planned.sourceBook(), mapper.valueToTree(batchTargets(weightPct, f.account())),
                     targets.absorbedOrderIds(), f.equity()));
             boolean keep = current.syncPending() && since.isPresent() && batchesSince(batch, since.get()) < SYNC_PENDING_MAX_BATCHES;
             if (current.syncPending() && !keep && !store.updateConfig(current.withSyncPending(false), null)) {
                 return null;
+            }
+            if (exempt != null && existing.isEmpty()) {
+                // 예외로 새 묶음을 만든 경우에만(같은 트랜잭션 — 선례 lossCheck). %·배율·개수만, 종목·수량·금액 없음
+                store.addEvent(MARKET, RealTradeNotices.EVENT_TURNOVER_EXEMPT, null, exempt, true);
             }
             return new Locked(batch, store.config(MARKET).orElse(current));
         });
@@ -930,8 +987,8 @@ class RealTradeJob {
             return;
         }
         c.cfg = locked.config();
-        log.info("시가 맞추기 묶음 — 주문 {}건·건너뜀 {}건·회전율 {}%{}", plan.orders().size(), plan.skipped().size(), plan.turnoverPct(),
-                c.cfg.syncPending() ? "(남은 몫 — 회전율 예외 유지)" : "");
+        log.info("시가 맞추기 묶음 — 주문 {}건·건너뜀 {}건·회전율 {}%{}{}", plan.orders().size(), plan.skipped().size(), plan.turnoverPct(),
+                c.cfg.syncPending() ? "(남은 몫 — 회전율 예외 유지)" : "", observed);
         recordSkips(c, window, plan.skipped(), null);
         if (!send) {
             plan.orders().forEach(o -> c.day.miss(window, o.symbol()));
@@ -994,6 +1051,7 @@ class RealTradeJob {
      *   <li>남은 몫 때문에 sync_pending이 이어진 2·3번째 묶음은 목표 변화량(바로 앞 묶음 목표와의 Σ|w_now − w_prev|, 합집합 종목 — 없는 종목은 0%)이
      *       회전율 한도 이하일 때만 보냄 — 같은 목표의 남은 몫(변화량 ≈ 0)은 통과하고, 새 재조정이나 엉망인 목표는 {@code targetDriftPct}와 함께 멈춤.</li>
      * </ul>
+     * 여기서 멈춤을 낸 묶음은 그 뒤 규칙 계좌 재선정 다음 묶음의 예외({@link #rebalanceCheck})를 봅니다 — 이 판정 자체는 바꾸지 않습니다.
      */
     private Map<String, Object> turnoverHalt(Config cfg, Optional<Instant> start, Plan plan, Map<String, Double> weightPct, Set<String> stops,
                                              Set<String> cashLike) {
@@ -1017,6 +1075,115 @@ class RealTradeJob {
         }
         detail.put("targetDriftPct", drift.orElse(null));
         return detail;
+    }
+
+    /**
+     * 재선정 예외 판정 결과({@link #rebalanceCheck}) — {@code verdict}와 앞 거래일 결정일. {@link #ERROR}는 판정 중 예외(그 주기 건너뜀 — 묶음도 멈춤도
+     * 없음).
+     */
+    private record Rebalance(RealTradeRebalance.Verdict verdict, LocalDate decisionDate) {
+
+        static final Rebalance ERROR = new Rebalance(null, null);
+    }
+
+    /**
+     * 회전율 멈춤({@link #turnoverHalt})이 멈춤을 낸 묶음의 재선정 예외 판정(ADR 0028 덧붙임 2026-11-19 — {@link RealTradeRebalance}). 입구를 이 순서로 봅니다.
+     * <ol>
+     *   <li>G1 주기 시작에 읽은 책 종류가 규칙 계좌({@value RealTradeRebalance#BOOK_KIND_RULES})가 아니면 null — 부르는 쪽이 지금 그대로 멈춤(detail도 같음,
+     *       I/O 없음).</li>
+     *   <li>G2a 매수 멈춤 중(손실 판정 뒤 값) → {@value RealTradeRebalance#CHECK_BUYS_PAUSED}, G2b 형식 밖 종목의 앱 매수가 걸린 주기 →
+     *       {@value RealTradeRebalance#CHECK_BUYS_UNPRICED}(I/O 없음).</li>
+     *   <li>G3 앞 거래일 D(모의 달력 — 모르면 {@value RealTradeRebalance#CHECK_CALENDAR_UNKNOWN}), G4 D의 정기 결정이 REBALANCE·OK(아니면
+     *       {@value RealTradeRebalance#CHECK_NO_REBALANCE} — 결정 종류·상태 코드와 함께), G5 가장 최근 묶음이 D 세션의 같은 책 묶음(아니면
+     *       {@value RealTradeRebalance#CHECK_PRIOR_BATCH}).</li>
+     *   <li>열두 확인({@link RealTradeRebalance#measure} → {@link RealTradeRebalance#judge}) — 판정 회전율·계좌 어긋남은 매매 제한 종목도 셈
+     *       ({@code Planned.ownBlocked} — 막는 종목은 이 기능의 미종료 주문만), 하루 한도는 그 주기의 남은 몫.</li>
+     * </ol>
+     * G3~G5의 읽기와 측정 중 예외가 나면 {@link Rebalance#ERROR}: 경고 로그(클래스 이름만), 창 건너뜀 {@value #SKIP_REBALANCE_ERROR}, 다음 시도에도 실패하면
+     * '준비 안 됨' 알림({@value #UNAVAILABLE_REBALANCE}). 판정이 끝나면(결과 무관) 그 끊김을 지웁니다.
+     */
+    private Rebalance rebalanceCheck(Cycle c, Planned planned0, OpenTargets targets, Map<String, Double> weightPct, Set<String> stops,
+                                     BigDecimal proceeds, String window) {
+        if (!RealTradeRebalance.BOOK_KIND_RULES.equals(c.bookKind)) {
+            return null;
+        }
+        if (c.cfg.buysPaused()) {
+            noteAvailable(c.day, UNAVAILABLE_REBALANCE);
+            return new Rebalance(RealTradeRebalance.Verdict.gate(RealTradeRebalance.CHECK_BUYS_PAUSED), null);
+        }
+        if (!c.unpriced.isEmpty()) {
+            noteAvailable(c.day, UNAVAILABLE_REBALANCE);
+            return new Rebalance(RealTradeRebalance.Verdict.gate(RealTradeRebalance.CHECK_BUYS_UNPRICED), null);
+        }
+        Rebalance result;
+        try {
+            result = rebalanceJudge(c, planned0, targets, weightPct, stops, proceeds);
+        } catch (RuntimeException e) {
+            log.warn("재선정 다음 묶음의 회전율 예외를 판정하지 못함 — 이번 주기는 묶음을 만들지 않고 다음 주기에 다시({})", e.getClass().getSimpleName());
+            c.day.skip(window, SKIP_REBALANCE_ERROR, "*");
+            noteUnavailable(c.day, c.now, UNAVAILABLE_REBALANCE, REBALANCE_ERROR_AFTER);
+            return Rebalance.ERROR;
+        }
+        noteAvailable(c.day, UNAVAILABLE_REBALANCE);
+        return result;
+    }
+
+    /** {@link #rebalanceCheck}의 G3~G5와 열두 확인(예외는 부르는 쪽이 잡음). */
+    private Rebalance rebalanceJudge(Cycle c, Planned planned0, OpenTargets targets, Map<String, Double> weightPct, Set<String> stops,
+                                     BigDecimal proceeds) {
+        LocalDate decisionDay = ManualAccountCalendar.previousTradingDay(paper, c.today);
+        if (decisionDay == null) {
+            return new Rebalance(RealTradeRebalance.Verdict.gate(RealTradeRebalance.CHECK_CALENDAR_UNKNOWN), null);
+        }
+        Optional<PaperMirrorService.DecisionState> decision = paper.decisionState(c.cfg.sourceBook(), decisionDay);
+        if (decision.isEmpty() || !RealTradeRebalance.rebalanceOk(decision.get().kind(), decision.get().status())) {
+            return new Rebalance(new RealTradeRebalance.Verdict(RealTradeRebalance.CHECK_NO_REBALANCE, null,
+                    decision.map(s -> RealTradeRebalance.decisionCodes(s.kind(), s.status())).orElse(Map.of())), decisionDay);
+        }
+        Optional<Batch> previous = store.latestBatch(MARKET, RealTradeStore.BATCH_SYNC);
+        if (previous.isEmpty() || !decisionDay.equals(previous.get().session())
+                || !Objects.equals(previous.get().sourceBook(), c.cfg.sourceBook())) {
+            return new Rebalance(RealTradeRebalance.Verdict.gate(RealTradeRebalance.CHECK_PRIOR_BATCH), decisionDay);
+        }
+        RealTradeRebalance.Inputs inputs = measure(c, planned0, targets, weightPct, weights(previous.get()), stops, proceeds);
+        return new Rebalance(RealTradeRebalance.judge(inputs), decisionDay);
+    }
+
+    /** 열두 확인의 입력({@link RealTradeRebalance#measure}) — 멈춤 판정과 같은 사전 조회·규칙·스탑 집합, 막는 종목은 이 기능의 미종료 주문만. */
+    private RealTradeRebalance.Inputs measure(Cycle c, Planned planned0, OpenTargets targets, Map<String, Double> weightPct,
+                                              Map<String, Double> previous, Set<String> stops, BigDecimal proceeds) {
+        Fresh f = planned0.fresh();
+        return RealTradeRebalance.measure(previous, weightPct, targets.price(), stops, c.cashLike, f.account(), f.equity(),
+                planned0.ownBlocked(), f.reserved(), rules(c, f), proceeds, f.daily().orders(), f.daily().buyKrw());
+    }
+
+    /**
+     * 관찰 로그(계획 3-8 — 동작 변화 없음): 따라 하는 책이 규칙 계좌이고 앞 묶음이 있으면 매일 묶음을 만들 때 열두 확인의 측정값과 서버 하루 한도의 E 대비
+     * 크기를 묶음 로그 한 줄에 붙입니다(%·배율·개수만 — 종목·수량·금액 없음). 결정 읽기(G3·G4)는 하지 않고, 더해지는 읽기는 잠금 전 앞 묶음과 대기 STOP
+     * 종목(멈춤 판정이 이미 읽었으면 그 값)입니다. 무엇이 실패해도 '관찰 실패'만 적고 묶음에는 영향이 없습니다. 판정에는 쓰지 않습니다.
+     */
+    private String observe(Cycle c, Planned planned0, OpenTargets targets, Map<String, Double> weightPct, Set<String> stopsRead,
+                           BigDecimal proceedsRead) {
+        if (!RealTradeRebalance.BOOK_KIND_RULES.equals(c.bookKind)) {
+            return "";
+        }
+        try {
+            Optional<Batch> previous = store.latestBatch(MARKET, RealTradeStore.BATCH_SYNC);
+            if (previous.isEmpty()) {
+                return "";
+            }
+            Set<String> stops = stopsRead != null ? stopsRead : paper.pendingStopSymbols(c.cfg.sourceBook(), c.today);
+            BigDecimal proceeds = proceedsRead != null ? proceedsRead : stopProceeds(c, stops);
+            RealTradeRebalance.Inputs inputs = measure(c, planned0, targets, weightPct, weights(previous.get()), stops, proceeds);
+            BigDecimal equity = planned0.fresh().equity();
+            String buyCap = equity == null || equity.signum() <= 0 ? "?"
+                    : BigDecimal.valueOf(c.limits.maxBuyKrwPerDay()).multiply(BigDecimal.valueOf(100)).divide(equity, 2, RoundingMode.HALF_UP)
+                    .toPlainString();
+            return " · 재선정 관찰 " + RealTradeRebalance.summary(inputs) + " · 하루 매수 한도 " + buyCap + "% · 하루 건수 한도 "
+                    + c.limits.maxOrdersPerDay();
+        } catch (RuntimeException e) {
+            return " · 재선정 관찰 실패(" + e.getClass().getSimpleName() + ")";
+        }
     }
 
     /** 목표 변화량(%p) — Σ|지금 − 앞| (합집합 종목, 없는 종목은 0%). 유한하지 않은 비중이 있으면 empty(멈춤으로 셈). */

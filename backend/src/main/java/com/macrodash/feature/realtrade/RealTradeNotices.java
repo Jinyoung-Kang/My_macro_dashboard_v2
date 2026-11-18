@@ -25,6 +25,11 @@ final class RealTradeNotices {
     static final String EVENT_CANCEL_GAVE_UP = "CANCEL_GAVE_UP";
     /** 장중 스탑 매도(ADR 0033 결정 2) — 한 주기의 보냄·막힘·놓침 건수만(종목·수량 없음). */
     static final String EVENT_STOP_SELL = "STOP_SELL";
+    /**
+     * 규칙 계좌 재선정 다음 묶음이 회전율 60% 멈춤 대신 예외로 나감(ADR 0028 덧붙임 2026-11-19 — {@code RealTradeJob#rebalanceCheck}). 글은 고정 문구뿐이고
+     * detail의 %·배율·개수 칸은 읽지 않습니다.
+     */
+    static final String EVENT_TURNOVER_EXEMPT = "TURNOVER_EXEMPT";
 
     /** 시각 맞추기가 VI·서킷브레이커 등으로 미뤄짐 — 사유 코드만. */
     static final String EVENT_RESTRICTED = "RESTRICTED";
@@ -65,8 +70,9 @@ final class RealTradeNotices {
             case EVENT_STOP_SELL -> notice("스탑 매도", "보냄 " + count(detail, "sent") + " · 막힘 " + count(detail, "blocked") + " · 놓침 "
                     + count(detail, "missed"));
             case EVENT_RESTRICTED -> notice("매매 제한으로 대기", "사유: " + code(detail, "reason") + "\n풀리면 시장가로 맞춥니다. 창 안에 못 맞추면 다음 맞추기가 메웁니다");
-            case EVENT_UNAVAILABLE -> notice("준비 안 됨", "사유: " + code(detail, "reason")
-                    + "\n개장이 가까운데 주문을 낼 준비가 안 됐습니다. 받는 대로 이어서 따라 합니다");
+            case EVENT_UNAVAILABLE -> notice("준비 안 됨", "사유: " + code(detail, "reason") + unavailableLine(detail));
+            case EVENT_TURNOVER_EXEMPT -> notice("회전율 예외",
+                    "규칙 계좌 재선정 다음 맞추기 — 계좌 어긋남·가격·종목·노출·하루 한도 확인을 통과해 보냈습니다");
             case EVENT_CANCEL_GAVE_UP -> notice("취소 못 함", count(detail, "count") + "건 — 토스증권 앱에서 직접 취소하세요");
             case RealTradeStore.EVENT_UPDATE -> title("설정 바뀜");
             case RealTradeStore.EVENT_RESUME -> title("멈춤 해제");
@@ -76,6 +82,17 @@ final class RealTradeNotices {
             case EVENT_SKIPPED -> notice("건너뜀", "사유: " + code(detail, "reason") + " · " + count(detail, "count") + "건");
             default -> KIND.matcher(kind).matches() ? title(kind) : null;
         };
+    }
+
+    /**
+     * '준비 안 됨'의 둘째 줄 — 재선정 예외 판정 오류({@code RealTradeJob#UNAVAILABLE_REBALANCE})는 그 묶음을 미루는 중이라는 글, 그 밖은 예전 글(사유 코드를
+     * 고정 글자와 비교만 함).
+     */
+    private static String unavailableLine(JsonNode detail) {
+        if (RealTradeJob.UNAVAILABLE_REBALANCE.equals(code(detail, "reason"))) {
+            return "\n재선정 다음 맞추기의 회전율 예외를 판정하지 못해 이번 맞추기 묶음을 미루고 있습니다. 스탑 매도는 계속합니다";
+        }
+        return "\n개장이 가까운데 주문을 낼 준비가 안 됐습니다. 받는 대로 이어서 따라 합니다";
     }
 
     private static String title(String label) {

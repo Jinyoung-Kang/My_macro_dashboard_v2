@@ -75,9 +75,37 @@ class RealTradeNoticesTest {
                 .as("QA-342 — 토스만 휴장이라 답한 날").isEqualTo("[실제 매매] 오늘 쉼\n\n사유: market-closed\n모의 달력은 거래일입니다. 토스 장 운영 정보를 확인하세요");
         assertThat(text(event("WINDOW_SUMMARY", Map.of("window", "SYNC_AT", "accepted", 3))))
                 .isEqualTo("[실제 매매] 개장 10분 뒤 맞추기\n\n접수 3 · 체결 0 · 놓침 0\n건너뜀 0 · 막힘 0 · 미룸 0");
+        // 재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11-19) — 고정 글뿐, detail의 %·배율·개수 칸을 싣지 않음
+        Map<String, Object> exempt = new LinkedHashMap<>();
+        exempt.put("decisionDate", "2026-12-08");
+        exempt.put("turnoverPct", 116.65);
+        exempt.put("checkTurnoverPct", 116.65);
+        exempt.put("bookDriftPct", 120.0);
+        exempt.put("accountDriftPct", 3.21);
+        exempt.put("dailyShortPct", 0.0);
+        exempt.put("priceRatio", 1.042);
+        exempt.put("nameJumpPct", 6.67);
+        exempt.put("nameCutPct", 0.0);
+        exempt.put("stockNames", 15);
+        exempt.put("deriskPct", -46.67);
+        exempt.put("investedPct", 100.0);
+        exempt.put("allowancePct", 140.0);
+        String exemptText = text(event("TURNOVER_EXEMPT", exempt));
+        assertThat(exemptText).isEqualTo(
+                "[실제 매매] 회전율 예외\n\n규칙 계좌 재선정 다음 맞추기 — 계좌 어긋남·가격·종목·노출·하루 한도 확인을 통과해 보냈습니다");
+        assertThat(exemptText).doesNotContainPattern("[0-9]");
+        assertThat(text(event("UNAVAILABLE", Map.of("reason", "rebalance-check-unavailable", "date", "2026-12-09"))))
+                .as("재선정 예외 판정 오류 — 묶음을 미루는 중, 스탑 매도는 계속")
+                .isEqualTo("[실제 매매] 준비 안 됨\n\n사유: rebalance-check-unavailable\n"
+                        + "재선정 다음 맞추기의 회전율 예외를 판정하지 못해 이번 맞추기 묶음을 미루고 있습니다. 스탑 매도는 계속합니다");
+        Map<String, Object> halted = new LinkedHashMap<>(exempt);
+        halted.put("reason", "turnover");
+        halted.put("rebalanceCheck", "account-drift");
+        halted.put("uncounted", 2);
+        assertThat(text(event("HALT", halted))).as("회전율 멈춤 글은 지금처럼 사유 코드뿐").isEqualTo("[실제 매매] 멈춤\n\n사유: turnover");
 
         for (String kind : List.of("HALT", "WINDOW_SUMMARY", "SKIPPED", "PASSWORD_FAILED", "STOPPED", "CANCEL_GAVE_UP", "SKIP_DAY", "ENABLE",
-                "STOP_SELL", "RESTRICTED", "UNAVAILABLE", "SOMETHING_NEW")) {
+                "STOP_SELL", "RESTRICTED", "UNAVAILABLE", "TURNOVER_EXEMPT", "SOMETHING_NEW")) {
             String text = text(event(kind, Map.of("reason", "x")));
             assertThat(text).as(kind).isNotNull().doesNotContain("005930", "37주", "1234567", "1,234,567", "TOSS-ORDER-1", "99887766", "70000");
             assertThat(text.codePoints().noneMatch(cp -> Character.getType(cp) == Character.OTHER_SYMBOL)).as(kind + " 이모지 없음").isTrue();
