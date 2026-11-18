@@ -584,7 +584,7 @@ function scorecardBody(over: Record<string, unknown> = {}) {
 describe("스코어카드 — 실제 값은 등락이 아니다(QA-705)", () => {
   // 수정 전 실패: '실제 값' 칸이 deltaColor라 양수인 변동성·최대낙폭까지 상승 빨강(text-up)·음수 모멘텀은 하락 파랑이고, 음수 부호가 ASCII '-'
   // (표 '-5.2%', 원자료 1개월 수익률 '-0.30%').
-  it.fails("지표 표의 실제 값 칸에 상승·하락 글자색이 없고, 표·원자료의 음수는 −(U+2212)", async () => {
+  it("지표 표의 실제 값 칸에 상승·하락 글자색이 없고, 표·원자료의 음수는 −(U+2212)", async () => {
     api.apiGetShared.mockImplementation((path: string) =>
       path.startsWith("/api/stock/scorecard") ? Promise.resolve(scorecardBody()) : new Promise(() => {}));
     render(<ScorecardPage />);

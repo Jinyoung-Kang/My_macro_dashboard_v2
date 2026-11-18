@@ -15,7 +15,7 @@ import {
   Table,
 } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatWithUnit } from "@/lib/format";
+import { EMPTY, formatNumber, formatWithUnit, withMinusSign } from "@/lib/format";
 import type { ScorecardResponse, StockUniverseResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
@@ -125,7 +125,7 @@ export default function ScorecardPage() {
             />
             <Metric
               label={`베타 (vs ${data.benchmark})`}
-              value={formatNumber(data.raw?.beta, 2)}
+              value={withMinusSign(formatNumber(data.raw?.beta, 2))}
               caption="1.0이면 기준과 같은 폭으로 움직였다는 뜻"
             />
             <Metric
@@ -171,11 +171,9 @@ export default function ScorecardPage() {
                       key: "value",
                       header: "실제 값",
                       align: "right",
-                      render: (row) => (
-                        <span className={deltaColor(row.value, 1)}>
-                          {row.value === null ? EMPTY : `${formatNumber(row.value, 1)}${row.unit}`}
-                        </span>
-                      ),
+                      // 변동성·최대낙폭·추세 위치는 크기·위치라 오르내린 값이 아닙니다 — 모든 행을 본문 잉크로, 음수는 −(U+2212)(QA-705).
+                      // 좋고 나쁨은 '방향' 칸과 백분위가 나릅니다.
+                      render: (row) => (row.value === null ? EMPTY : withMinusSign(`${formatNumber(row.value, 1)}${row.unit}`)),
                     },
                     {
                       key: "score",
@@ -211,8 +209,8 @@ export default function ScorecardPage() {
 
           <Card title="원자료" source={SOURCES.equityPrices} subtitle="점수로 바꾸기 전의 값입니다.">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Metric label="1개월 수익률" value={formatWithUnit(data.raw?.momentum1m, 2, "%")} />
-              <Metric label="6개월 수익률" value={formatWithUnit(data.raw?.momentum6m, 2, "%")} />
+              <Metric label="1개월 수익률" value={withMinusSign(formatWithUnit(data.raw?.momentum1m, 2, "%"))} />
+              <Metric label="6개월 수익률" value={withMinusSign(formatWithUnit(data.raw?.momentum6m, 2, "%"))} />
               <Metric label="표본" value={formatWithUnit(data.raw?.samples, 0, "일")} caption="거래일 수" />
               <Metric label="측정 구간" value={`최근 ${data.years}년`} />
             </div>
