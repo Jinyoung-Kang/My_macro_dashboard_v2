@@ -21,6 +21,8 @@
   - 미리 보기 금지(체결가는 생성 뒤 거래로만): `UsTimedFillsTest.marketNeverFillsBeforeTargetOrCreation`·`marketTargetIsTheFirstMinuteAfterCreation`(정각 생성의 생성 분 봉은 쓰지 않음),
     `KrTimedLadderTest.marketNeverFillsWithABarStartingBeforeCreation`(무작위 + 라벨 T·T+6 봉을 넣은 틀린 저장본은 재검사로 체결하지 않음), `PaperLedgerDbTest.timedFillsOnRealTables`(실제 표, 생성 분 봉이 있는 픽스처).
   - 가드 분리: `UsTimedFillsTest.marketWithinSixtySecondsIsNotLate`(T − 생성 60초·1µs인 MARKET은 체결, 같은 생성 시각의 AT_MINUTE은 LATE_FOR_TIMING)·`lateForTimingAtExactlySixtySeconds`(메뉴 가드 그대로).
+  - 생성 시각 정밀도(결정 5): `PaperStopWatchJobTest.stopCreatedAtIsTruncatedToMicros`·`StopWatchFallbackTest$Kr.lateMarketFallbackCreatedAtIsTruncatedToMicros`(분 경계 직전 ns 시계 —
+    생성 시각이 µs로 잘리고, pgjdbc 반올림을 흉내 낸 `PaperFixtures.dbRounded` 값으로 다시 센 T가 근거의 시각과 같음).
   - 갈래·받는 창·순위: `StopWatchTest$Targets`(`us`·`kr`·`atMinuteBranchAlwaysPassesTheLateGuard`), `FreeTimingTest.intradayMarketHasTheOpenOffsetFloor`·`intradayTableStartsAtTheMarketMinute`·
     `marketRanksBeforeTheFirstMinute`, `UsTimedFillsTest.earlyCloseMarketAfter1255Rejected`, `CheckpointPacketTest.remainingTimingsDropPassedAndEarlyClose`·`freeRemainingOptions`·
     `freeMinutesFirstIsAcceptedByTheValidator`, `KrIntradayPacketTest.remainingTimings`·`freeMinutesFirstIsAcceptedByTheValidator`.
@@ -53,21 +55,24 @@
    두어 검증기의 가드와 어긋나지 않는다. `KrTimedLadder.LATE_MARGIN`은 `AFTER_CREATED` 참조로 모은다(같은 60초).
 3. **시장별 봉과 미리 보기 금지**: 미국(Yahoo, 봉 시작 라벨)은 시작 = T인 봉, 한국(토스, 봉 끝 라벨)은 라벨 T + 1분 봉이라 두 시장 모두 고르는 봉의 구간이 [T, T + 1분)이고 T > c다.
    13:10:42 생성은 T 13:11, 한국 장부가 읽는 봉은 라벨 13:12(13:11~13:12)다. 미국 장부 재검사(`UsTimedFills.recheck`)는 floor = max(T, 생성 + 여유)로 그대로 보고,
-   **한국 1분봉 사다리에 아래쪽 라벨 재검사를 더한다**(D6 — `KrTimedLadder.recheck`: 창 봉은 라벨 T+1 ~ T+5, 창 뒤 첫 거래 봉은 라벨 ≥ T+1이어야 체결, 어기면 체결하지 않고 기다림).
+   **한국 1분봉 사다리에 아래쪽 라벨 재검사를 더한다**(D6 — `KrTimedLadder.recheck`: 창 봉은 라벨 T+1 ~ T+5, 창 뒤 첫 거래 봉은 라벨 ≥ T+1이어야 체결, 어기면 체결하지 않고 기다림 — 미국과 다른 처리는 아래 '결과와 남은 위험').
    여유가 (0, 60초]로 줄어 라벨 해석 하나가 불변식을 직접 떠받치기 때문이다. 수집기 `summarize_windows`의 'T → 라벨 T+1~T+5' 매핑은 그대로다.
 4. **감시 STOP 갈래는 유지**: T가 그 세션 첫 분(개장 + 10분) 앞이면 첫 분 `AT_MINUTE`, 장 끝 여유 안(미국 15:55·한국 15:20부터)이면 그날 `NEXT_CLOSE`, 그 밖은 `MARKET`. 조건을 T로 적으므로
    경계만 옮겨 간다(감지 < 첫 분 − 1분이면 첫 분, 감지 ≥ 장 끝 − 1분이면 종가). 첫 분 갈래의 첫 분은 늘 감지 + 60초보다 뒤라 가드 ⑤를 통과한다.
-5. **생성 시각 정밀도**: 감시 STOP(`PaperStopWatchJob`)과 밤 대체 STOP(`PaperLedgerService.detectStops`)의 생성·감지 시각을 µs로 잘라 T 계산과 `created_at`에 같이 쓴다(DB가 µs까지만 담아
-   분 경계에서 근거의 `targetAt`과 장부가 다시 센 T가 1분 갈리지 않게).
+5. **생성 시각 정밀도**: 감시 STOP(`PaperStopWatchJob`)과 밤 대체 STOP(`PaperLedgerService.detectStops`)의 생성·감지 시각을 µs로 잘라 T 계산과 `created_at`에 같이 쓴다. DB는 µs까지만 담고
+   pgjdbc 42.7.14(`TimestampUtils.toString(Calendar, Timestamp, boolean)` — 바이트코드로 확인)는 µs 아래를 반올림하므로(500ns 이상 올림, 999,999,500ns 이상이면 다음 초), 자르지 않으면 분 경계 직전
+   (:59.9999995초 이후) 생성이 다음 분으로 저장되어 근거의 `targetAt`과 장부가 다시 센 T가 1분 갈린다.
 6. **스위치 없음**(D7): T는 체결 때 생성 시각에서 다시 세므로 스위치도 배포와 같은 시각 조건이 필요하고, STOP에는 설정 판이 남지 않는다. 배포 시각이 실험 조건 경계다(ADR 0018 절).
    그래서 `main` 병합을 배포 창에 묶는다 — `deploy.sh`는 `origin/main` 전체를 받으므로 `main`에 들어간 것은 누가 하든 다음 배포에 실린다.
 7. **AI 입력 글**: 켠 판 시스템 프롬프트(미국·한국 장중 판단 절)·장중 판단 패킷의 MARKET 문장과 감시 ON 스탑 문장(`StopWatch.rule` — 결정 패킷 `12_hardRules`·`1_basis.stopWatch.rule`,
    장중 판단 패킷 `1_basis.stopWatch.rule`)을 새 정의로 고친다. 판 이름 `ft-2`·`kr-ft-2`는 올리지 않는다(D3 — ADR 0030·0031·0038 선례, 판은 메뉴를 바꿀 때만 올림, 경계는 ADR 0018 절이 끊음).
    **자유 시점 끈 판의 MARKET 글**(미국 계좌2 c2 장중 확인·한국 계좌2 장중 확인 — `ClaudePrompts`의 두 장중 확인 절, `CheckpointPacket` 끈 판 하드 규칙)은 바이트 그대로 두고 체결 시점만 새 식을
-   따른다(D2 (가) — 알려진 차이, 그 자리에 주석). 지금 네 Claude 계좌가 모두 자유 시점 켠 판이라 끈 판 글은 쓰이지 않는다(배포 직전 설정 확인 Q0).
+   따른다(D2 (가) — 알려진 차이, 그 자리에 주석). 끈 판 하드 규칙 줄의 받는 조건 문장('기준 시각이 지금 + 60초보다 뒤인 것(1_basis.remainingTimings)만 받는다')도 MARKET에는 맞지 않게 된다 —
+   새 T는 지금 + 60초 이하인데 MARKET은 `remainingTimings`에 실리고 검증을 통과한다. 지금 네 Claude 계좌가 모두 자유 시점 켠 판이라 끈 판 글은 쓰이지 않는다(배포 직전 설정 확인 Q0).
 8. **실제 토스 계좌·ISA**(D4): 실제 계좌 스탑 매도 창 [max(T, 장중 시작, 개장 + 10분), min(시작 + 3분, 장중 끝)]의 T가 모의 T라(`PaperMirrorService.mirrorAt` → `KrTimedLadder.targetOn`) 함께
-   1분 앞당겨진다. 창 길이·쓰기 경로(수집기 `toss_trade.py`의 주문 경로)·한도는 그대로이고 realtrade 코드는 바꾸지 않는다. ISA 스탑 지시는 T를 쓰지 않으므로(30초 주기 `dueOrders(now + 5분)`) 동작은 같고,
-   `manual_stop_instructions.target_at`에 남는 값과 그 값을 보이는 화면 칸 둘만 1분 이르다.
+   1분 앞당겨진다. 창 길이·쓰기 경로(수집기 `toss_trade.py`의 주문 경로)·한도는 그대로이고 realtrade 코드는 바꾸지 않는다. ISA 스탑 지시 로직은 T를 쓰지 않으므로(30초 주기 `dueOrders(now + 5분)`)
+   그대로이고, `manual_stop_instructions.target_at`에 남는 값과 그 값을 보이는 화면 칸이 1분 이르다. 15:18:xx 감지는 모의 STOP 시점이 종가(`NEXT_CLOSE`)에서 15:19 장중 시장가(`MARKET`)로 바뀌므로
+   ISA 지시 글도 '종가 단일가(15:20~15:30)에 시장가로 매도'에서 '지금 시장가로 매도'로 바뀐다(`ManualAccountNotices.stop`이 시점으로 글을 고름 — 실제 계좌 쪽 15:18 문장과 짝, 아래 '결과').
 9. **화면**(D15 (나′)): lib 네 곳(미국·한국 스탑 설명, MARKET 시점 주석 둘)만 고치고 `HoldingsSection.tsx`의 한 줄은 작업대 P6이 그 둘레를 재배치하는 중이라 P6이 `main`에 합쳐진 뒤 한 줄 후속으로 고친다.
    그동안 옛 정의 글이 그 한 줄에 남는 것은 알려진 차이다. `marketTimingText.test.ts`가 그 한 파일 1회만 허용해 옛 글이 다른 곳에서 되살아나지 않게 지킨다.
 10. **배포**(D14): 작업 3(한국 스탑 체결의 장중 기록)과 나눠, 두 시장이 모두 닫혀 있고 대기 `MARKET`이 0인 주말 창에 낸다. `deploy.sh`의 실제 매매 가드(평일 08:45~15:35 KST)를 지키고
@@ -89,8 +94,10 @@
 - **판 이름을 올림**: 고정본 5개·`packet-us-ft-meta.txt`·`BEFORE_COSTS_SHA256` ft 줄이 더 바뀌고, `ft3`(이어받기 스키마 파일 이름)과 헷갈린다.
 
 ## 결과와 남은 위험
-- **받는 창 경계가 60초 늦어진다**(검증 시각 now 기준): 미국 켠 판 MARKET [09:39, 15:54) ET(옛 [09:38, 15:53)), 조기 폐장일 상한 12:54(첫 해당일 2026-11-27), 한국 켠 판 MARKET [09:09, 15:19) KST
-  (옛 [09:08, 15:18) — 하한이 1분 늦어 09:08대 장중 판단 MARKET은 거절). 장 시간 변경일(수능 10:00 개장)은 같은 폭으로 옮겨 간다. `AT_MINUTE`으로 고를 수 있는 첫 분은 바뀌지 않는다.
+- **받는 창 경계가 60초 늦어진다**(검증 시각 now 기준 — 검증 규칙의 경계): 미국 켠 판 MARKET [09:39, 15:54) ET(옛 [09:38, 15:53)), 조기 폐장일 상한 12:54(첫 해당일 2026-11-27), 한국 켠 판 MARKET
+  [09:09, 15:19) KST(옛 [09:08, 15:18)). 장중 판단은 개장 + 10분 ~ 마감 − 30분(한국은 종가 단일가 시작 − 30분, `IntradayRequest.window`)에 계획되고 계획 시각 + 2~20분에 부르므로
+  (`PaperCheckpointJob.WINDOW_START`·`WINDOW_END`) 하한에는 닿지 않는다. 상한에는 마지막 계획(미국 15:30·조기 폐장일 12:30 ET, 한국 14:50 KST)의 호출이 호출 창 끝(+ 20분)에서 시작해 검증까지
+  미국 약 4분·한국 약 9분 넘게 걸릴 때만 닿는다(옛 식은 3분·8분). 장 시간 변경일(수능 10:00 개장)은 같은 폭으로 옮겨 간다. `AT_MINUTE`으로 고를 수 있는 첫 분은 바뀌지 않는다.
 - **검증 순위**: 같은 응답에서 MARKET(순위 0)이 첫 `AT_MINUTE`(순위 1)보다 앞선다. 그래서 첫 분 `AT_MINUTE` 매도가 MARKET 매수의 현금을 대지 못한다(옛 식에서는 같은 순위라 댈 수 있었다).
   켠 판 하드 규칙 'MARKET < AT_MINUTE(이른 순)'과는 더 잘 맞는다. 끈 판에서는 메뉴 `AT_hh00`과 MARKET이 같은 순위였다가 갈릴 수 있다(끈 판을 쓰지 않는 동안 영향 없음).
 - **`REPLACE`가 취소할 수 있는 대기 MARKET**은 새 T가 지나기 전까지로 1분 줄어든다(생성 뒤 T까지가 1분 이하라 실제 영향은 거의 없음 — 추정).
@@ -101,16 +108,23 @@
   시각 맞추기 묶음이 큰 날의 09:10 격자 스탑을 배포 뒤 확인 항목으로 둔다. 실제 매매가 `runMirror` 직전에 다시 읽게 고치는 것은 realtrade 코드 변경이라 이번 범위 밖이다(ADR 0033 덧붙임·사용자 승인 필요).
   15:18:xx 감지는 이제 종가 대신 15:19 장중 시장가가 되고, 실제 창은 [15:19:00, 15:19:30]으로 30초뿐이다(감시 격자로는 15:15 격자 처리가 약 3분 늦은 경우에만 생김). ISA에서는 같은 경우가
   '종가 단일가 안내' 대신 '지금 시장가로 매도'가 된다. 실제 계좌가 Claude 계좌를 따르도록 바뀌면 Claude 장중 시장가 따라 하기 창과 시각 맞추기 흡수 경계도 1분 옮겨 간다(지금 따라 하는 책은 규칙 계좌).
+  그때는 시각 맞추기 시각(syncAt) 직전 1분 안에 생성되어 묶음 목표 읽기(`paper.targetsAt(syncAt)` — 커밋된 대기 주문만) 뒤에 커밋된 비STOP 장중 시장가가 그날 흡수도 따라 하기도 되지 않는다
+  (`RealTradeJob`은 T ≤ syncAt인 비STOP 주문을 흡수 여부와 상관없이 따라 하지 않음 — 다음 날 맞추기가 메움). 옛 식은 커밋이 60초 넘게 늦어야 생겼고, 새 식은 syncAt 직전 생성분의 커밋이 묶음 읽기와
+  겹치기만 해도 생긴다. 지금 일정으로는 그런 생성이 없다(Claude 계좌의 syncAt은 그 세션 첫 분이고 장중 판단 호출은 계획 시각(개장 + 10분 이후) + 2분 뒤부터) — 코드는 고치지 않는다.
 - **서버 시계**: 서버 시계가 거래소보다 δ만큼 늦으면 T − c < δ인 주문(비율 약 δ/60초)의 T 봉에 생성 앞 최대 δ초의 거래가 섞인다. 저장소에는 NTP 측정이 없어 배포 직전 `timedatectl`로 본다.
 - **라벨 해석 의존**: 미국 재검사와 한국 재검사는 같은 라벨 가정(미국 봉 시작, 한국 봉 끝) 위에서 센다. 근거는 미국 X1 측정(`docs/DATA_SOURCES.md` '봉 라벨')과 한국 토스 응답 확인이다.
   배포 뒤 첫 세션에 한국 개장 봉(라벨 09:01)의 시가가 그날 시가와 같은지 저장본으로 한 번 본다.
+- **재검사가 어긋날 때 두 시장의 처리가 다르다**(알려진 차이): 미국(`UsTimedFills.recheck`)은 체결하지 않고 운영 알림('장부 재검사 오류 — 체결하지 않음')을 남긴 뒤 마무리에서 `RECHECK_FAILED`로
+  만료시킨다. 한국(`KrTimedLadder.recheck`)은 체결하지 않고 기다림으로 남아 작업 기록에 사유만 쓰고(운영 알림 없음), '그날 체결할 수 없음' 표시(`unfillable`)를 하지 않으므로 결정 게이트 ①이
+  그 계좌의 밤 결정을 그 주문이 만료로 닫힐 때까지 막는다(1분봉 `FAILED`로 기다리는 주문과 같은 처리). 한국 재검사는 수집기 저장본의 라벨이 틀릴 때만 걸리는 방어 경로라 지금 빈도는 0에
+  가깝다(추정). 한국도 운영 알림·만료로 바꾸는 것은 장부·게이트 동작 변경이라 따로 정한다.
 - **검증 시각과 생성 시각의 ms 차이**: Claude 주문의 `created_at`(트랜잭션 시작)과 검증 now 사이 몇 ms가 분 경계를 넘으면 검증기가 본 T와 장부가 다시 센 T가 1분 다르다. 옛 식에도 같은 꼴로
   있던 경계이고, 장중 판단은 개장 + 10분 ~ 마감 − 30분 창에서만 돌아 하한 쪽은 지금 사실상 생기지 않는다(코드는 고치지 않음).
 - **배포 뒤 수집기 따라잡기**: 배포로 수집기가 다시 뜨면 미국 1분봉 첫 회차가 `5d`로 따라잡아 최근 8일 MARKET 주문의 창 키를 새 T로 다시 만들고, 한국 실행 감사 몫이 새 키로 칸을 다시 받는다
   (토스 호출이 칸마다 최대 3쪽 늚 — 토스가 8일 전 세션을 주지 않으면 그 주문이 8일 창을 벗어날 때까지 slow 회차마다 되풀이할 수 있음, 모름). 이미 쓴 실행 감사 `target_at`·`late_resolved`는
   `COALESCE`로 처음 값이 남고 비어 있던 칸만 새 식으로 채워진다(그 수 Q5를 ADR 0018 절에 적음). 장부·현금·체결가에는 영향이 없다.
 - **프롬프트 캐시**: 켠 판 시스템 프롬프트 문단이 바뀌어 배포 뒤 계좌마다 첫 호출에서 프롬프트 캐시가 한 번 다시 쓰인다(추정 — 비용이 한 번 더 듦).
-- **알려진 차이**: 끈 판 MARKET 글(결정 7)과 보유 화면 한 줄(결정 9)이 옛 정의로 남는다. 자유 시점 끈 판 + 감시 ON 조합의 결정 패킷 고정본은 없다(지금 쓰이지 않음).
+- **알려진 차이**: 끈 판 MARKET 글(결정 7 — 체결 문장과 하드 규칙의 받는 조건 문장)과 보유 화면 한 줄(결정 9)이 옛 정의로 남는다. 자유 시점 끈 판 + 감시 ON 조합의 결정 패킷 고정본은 없다(지금 쓰이지 않음).
 - **되돌리기**: 스키마 변경이 없어 코드 되돌림(`git revert` → `main` → `deploy.sh`)만으로 된다. 되돌리는 배포도 같은 시각 조건(주말 창·대기 MARKET 0)에서 한다 — 아니면 새 식으로 만든 대기 주문이
   옛 T로 다시 계산된다. 체결 행은 더하기만이고 실행 감사 `target_at`은 처음 값을 지켜 데이터 정리가 필요 없다. 되돌린 뒤에도 수집기 따라잡기와 한국 감사 몫 다시 받기가 옛 T 키로 일어나며,
   되돌림도 ADR 0018에 경계로 적는다. 배포 전 덤프 복원은 그 뒤 장부까지 되돌리므로 데이터를 망가뜨린 경우에만 쓴다.
