@@ -2,8 +2,9 @@
  * 모의 매매 — 프레임·메모 탭(단계 3b, 명세 F1~F7·D14·D15). 서버 값을 그대로 보이고, 렌더링·토큰 어림·예산 초과·유효 메모는 화면이
  * 다시 판정하지 않는다.
  *
- *  - 프레임: 지금 판(임시면 "임시 v0" 배지·안내, 토큰 어림 / 예산, 예산 초과 경고, 렌더링은 접어 둠), 판 목록과 두 판 나란히 비교
- *    (GET /api/paper/framework/versions/{v})
+ *  - 프레임: 지금 판(임시면 "임시 v0" 배지·안내, 토큰 어림 / 예산, 예산 초과 경고, 렌더링은 머리 절로 펼친 본문 — 작업대 P6), 판 이력(시각순
+ *    목록 — 고르면 검사 칸), 두 판 나란히 비교(GET /api/paper/framework/versions/{v}). 제안 목록은 기본 접힘 — 줄을 고르면 그 제안(jsdom은 좁은 배치라
+ *    위쪽 대화상자)
  *  - OS 원문으로 새 판 만들기: 원문 → POST /api/paper/notes {kind:INSIGHT} → 확인(비용 "Sonnet 5.5 호출 1회") → POST
  *    /api/paper/framework/proposals {noteId} → 그 자리에 제안 → 승인 확인(비용 없음) → POST …/{id}/approve → 판·제안 다시 읽기
  *  - 제안 목록: 기준 판이 지금 판과 다르면 승인을 막고, 거절은 확인 뒤 POST …/{id}/reject, 서버 400 문구는 경고로
@@ -125,8 +126,20 @@ async function openTab(name: "프레임" | "메모") {
   fireEvent.click(await screen.findByRole("tab", { name }));
 }
 
+/** 제안 목록에서 그 제안을 고릅니다(기본 접힘 — 작업대 P6) — jsdom은 좁은 배치라 위쪽 대화상자의 제안 한 건(article)을 돌려줍니다. */
+async function openProposal(id: number): Promise<HTMLElement> {
+  const list = await screen.findByRole("list", { name: "제안 목록" });
+  fireEvent.click(within(list).getByRole("button", { name: new RegExp(`^#${id} `) }));
+  const dialog = await screen.findByRole("dialog", { name: `제안 #${id}` });
+  return within(dialog).getByRole("article", { name: `제안 #${id}` });
+}
+
+/** 속성 목록에서 이름이 `label`인 줄의 값 글. */
+const propertyText = (root: HTMLElement, label: string) =>
+  within(root).getByText(label, { selector: "dt" }).parentElement?.querySelector("dd")?.textContent;
+
 describe("프레임 탭 — 지금 판·판 목록·비교", () => {
-  it("임시 v0 — 배지·안내, 토큰 어림 / 예산(설정), 렌더링은 접어 둠, 판이 하나면 비교 대신 안내", async () => {
+  it("임시 v0 — 배지·안내, 토큰 어림 / 예산(설정), 렌더링은 머리 절로 펼친 본문, 판이 하나면 비교 대신 안내", async () => {
     serve("/api/paper/framework/proposals", () => ({ available: true, proposals: [] }));
     serve("/api/paper/framework", () => ({ available: true, current: V0, versions: [SUMMARY_V0] }));
     await openTab("프레임");
@@ -138,17 +151,26 @@ describe("프레임 탭 — 지금 판·판 목록·비교", () => {
     expect(await screen.findByText("추정 4,123토큰 / 예산 8,000토큰")).toBeTruthy();
     expect(screen.getByText("원칙 2 · 엔진 8 · 규칙 9")).toBeTruthy();
     const currentCard = screen.getByText("지금 프레임").closest("section") as HTMLElement;
-    expect(within(currentCard).getByText(V0.changelog).textContent).toBe(`바꾼 내용 ${V0.changelog}`);
+    expect(propertyText(currentCard, "바꾼 내용")).toBe(V0.changelog);
     expect(screen.queryByText(/렌더링이 예산을 넘습니다/)).toBeNull();
-    const preview = screen.getByText("렌더링 미리보기(시스템 프롬프트)").closest("details") as HTMLDetailsElement;
-    expect(preview.open).toBe(false);
-    expect(preview.textContent).toContain("# 투자 OS — v0");
+    // 렌더링은 접지 않고 펼친 본문 — 머리 줄은 제목(# 표지 없이), 그 아래 글은 서버 글 그대로.
+    expect(currentCard.querySelector("details")).toBeNull();
+    const rendered = within(currentCard).getByRole("region", { name: "임시 v0 렌더링(시스템 프롬프트)" });
+    expect(within(rendered).getByRole("heading", { level: 3 }).textContent).toBe("투자 OS — v0 (임시 v0 — OS 원문 반영 전)");
+    expect(within(rendered).getByRole("heading", { level: 4 }).textContent).toBe("원칙");
+    expect(within(rendered).getByText(/^1\. 패킷의 숫자에서 출발한다\./).textContent).toBe("1. 패킷의 숫자에서 출발한다.\n2. 과매매하지 않는다.");
+    // 목차의 '지금 판' 하위 칸은 렌더링 머리 절(두 번 나오는 단계가 없으면 가장 높은 단계 — 이 판은 제목 하나).
+    const nav = screen.getByRole("navigation", { name: "프레임 목차" });
+    const column = nav.querySelectorAll<HTMLElement>(":scope > ul")[1];
+    expect(within(column).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "지금 판", "투자 OS — v0 (임시 v0 — OS 원문 반영 전)", "제안 요청", "제안 (0)0", "판 이력 (1)1", "두 판 비교", "직접 고치기",
+    ]);
 
     expect(screen.getByText(/판이 하나뿐입니다/)).toBeTruthy();
     expect(screen.getByText(/아직 제안이 없습니다/)).toBeTruthy();
   });
 
-  it("사용자 판 — 예산 초과 경고(서버 판정), 판 목록(출처·지금 표시), 두 판 렌더링을 나란히(다른 줄 강조)", async () => {
+  it("사용자 판 — 예산 초과 경고(서버 판정), 판 이력(출처·지금 표시 — 고르면 검사 칸), 두 판 렌더링을 나란히(다른 줄 강조)", async () => {
     serve("/api/paper/framework/proposals", () => ({ available: true, proposals: [] }));
     serve("/api/paper/framework/versions/0", () => ({ available: true, version: V0 }));
     serve("/api/paper/framework/versions/1", () => ({ available: true, version: V1 }));
@@ -160,12 +182,21 @@ describe("프레임 탭 — 지금 판·판 목록·비교", () => {
     expect(screen.getAllByText("v1 · 사용자 판").length).toBeGreaterThan(0);
     expect(screen.queryByText(/지금 판은 임시/)).toBeNull();
 
-    const versions = screen.getByText("판 목록·비교").closest("section") as HTMLElement;
-    const table = within(versions).getAllByRole("table")[0];
-    expect(within(table).getAllByRole("row").slice(1).map((tr) => within(tr).getAllByRole("cell").map((td) => td.textContent))).toEqual([
-      ["v1지금", "투자 OS 2026-10", "OS 원문 옮김", "수동 편집", "2026-10-25 12:00"],
-      ["v0", "임시 v0 — OS 원문 반영 전", V0.changelog, "처음 시드(임시)", "2026-10-25 10:00"],
+    // 판 이력 — 만든 날·종류·판(지금 판 표지)·제목, 서버 순서(최근 순) 그대로.
+    const history = screen.getByRole("list", { name: "판 이력" });
+    const rows = within(history).getAllByRole("button");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "2026-10-25수동 편집v1지금 판 투자 OS 2026-10",
+      "2026-10-25처음v0 임시 v0 — OS 원문 반영 전",
     ]);
+    fireEvent.click(rows[0]);
+    const detail = await screen.findByRole("dialog", { name: "v1 — 투자 OS 2026-10" });
+    expect(propertyText(detail, "출처")).toBe("수동 편집");
+    expect(propertyText(detail, "바꾼 내용")).toBe("OS 원문 옮김");
+    expect(propertyText(detail, "만든 시각")).toBe("2026-10-25 12:00");
+    expect(propertyText(detail, "렌더링 크기")).toContain("서버가 보내지 않음");
+    fireEvent.keyDown(detail, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     const compare = screen.getByRole("region", { name: "두 판 비교" });
     await waitFor(() => expect(api.apiGetShared).toHaveBeenCalledWith("/api/paper/framework/versions/0", 0));
@@ -245,16 +276,18 @@ describe("프레임 탭 — OS 원문으로 새 판 만들기", () => {
     const inline = within(card).getByRole("article", { name: "제안 #3" });
     expect(rowsOf(within(inline).getByRole("region", { name: "평가 (OS 절차 B)" }))).toEqual([
       ["현금 비중은 매일 정한다", "일치", "P3와 같음"],
-      ["레버리지 ETF를 쓴다", "모순", "유니버스 밖"],
+      // 모순·수정 필요는 공용 주의 태그 — 낭독기에 '주의: ' 머리말(일치는 정상 태그, 머리말 없음).
+      ["레버리지 ETF를 쓴다", "주의: 모순", "유니버스 밖"],
     ]);
     expect(rowsOf(within(inline).getByRole("region", { name: "변경" }))).toEqual([
       ["규칙 추가", "E1", "E1. 매크로 축 — 현금 비중 — 새 규칙", "VIX 30 이상이면 노출을 줄인다.", "원문 3절"],
       ["원칙 삭제", "P2", "과매매하지 않는다.", "(삭제)", "원문과 모순"],
     ]);
     expect(within(inline).getByText("전: 노출 규칙 2개 → 후: 3개")).toBeTruthy();
-    // 같은 제안이 아래 목록에도 있습니다.
+    // 같은 제안이 아래 목록에도 있습니다(기본 접힘 — 줄만).
     const list = screen.getByText("제안", { selector: "h2" }).closest("section") as HTMLElement;
-    expect(within(list).getByRole("article", { name: "제안 #3" })).toBeTruthy();
+    expect(within(list).getByRole("button", { name: /^#3 승인 대기 원문의 노출 규칙을 E1에 더합니다\.$/ })).toBeTruthy();
+    expect(within(list).queryByRole("article")).toBeNull();
 
     fireEvent.click(within(inline).getByRole("button", { name: "제안 #3 승인" }));
     const confirm = within(inline).getByText(/이 제안\(#3\)을 승인할까요\?/);
@@ -298,12 +331,14 @@ describe("프레임 탭 — 제안 목록", () => {
     api.apiPost.mockRejectedValueOnce(new Error("대기 중인 제안이 아닙니다"));
     await openTab("프레임");
 
-    const stale = await screen.findByRole("article", { name: "제안 #3" });
+    const stale = await openProposal(3);
     expect(within(stale).getByText(/이 제안의 기준 판\(v0\)이 지금 판\(v1\)과 다릅니다/)).toBeTruthy();
     expect((within(stale).getByRole("button", { name: "제안 #3 승인" }) as HTMLButtonElement).disabled).toBe(true);
     expect(within(stale).getByText(/승인·거절은 Claude를 부르지 않습니다\(비용 없음\)/)).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    const fresh = screen.getByRole("article", { name: "제안 #4" });
+    const fresh = await openProposal(4);
     expect((within(fresh).getByRole("button", { name: "제안 #4 승인" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(within(fresh).getByRole("button", { name: "제안 #4 거절" }));
     expect(api.apiPost).not.toHaveBeenCalled();
@@ -445,7 +480,7 @@ describe("프레임 탭 — 3b 리뷰 결함", () => {
     serve("/api/paper/framework", () => ({ available: true, current: V1, versions: [SUMMARY_V1, SUMMARY_V0] }));
     await openTab("프레임");
 
-    const item = await screen.findByRole("article", { name: "제안 #6" });
+    const item = await openProposal(6);
     expect(within(item).getByText("평가만 있는 제안입니다 — 바꿀 것이 없어 승인할 수 없습니다(서버가 새 판을 만들지 않음). 거절로 닫으세요."))
       .toBeTruthy();
     expect(within(item).queryByText(/같은 내용의 새 판이 생깁니다/)).toBeNull();
@@ -464,7 +499,7 @@ describe("프레임 탭 — 3b 리뷰 결함", () => {
     serve("/api/paper/framework/versions/0", () => ({ available: true, version: V0 }));
     await openTab("프레임");
 
-    const item = await screen.findByRole("article", { name: "제안 #3" });
+    const item = await openProposal(3);
     const changes = within(item).getByRole("region", { name: "변경" });
     expect(within(changes).getByText(/승인한 제안입니다 — 이 변경을 기준 판\(v0\)에 적용해 v1을 만들었습니다/)).toBeTruthy();
     await waitFor(() => expect(rowsOf(changes)).toEqual([

@@ -136,7 +136,9 @@
   스크롤 상자에는 잰 줄 높이만큼 위쪽 스크롤 여백을 둡니다(내비 표지 `data-section-index-bar` + `app/globals.css` — QA-643, 높이는 `hooks/useSectionStripHeight`가 문서 루트 `--section-strip-h`로 적음 — QA-656). 내비라 지금 칸 막대·밑줄에 강조 파랑을 써서 데이터 칸 강조색 금지 목록에는 넣지 않습니다.
   처음 쓰는 곳은 매크로(P5a — 절 주소의 정본은 `lib/marketSections`, 다른 화면이 잇는 링크는 절 조각 없는 화면 경로 — QA-641), P6 프레임·설정, P7 저장소 상태.
   P6(패턴 단계)에서 선택 `alignHashOnLoad`(기본 꺼짐 — 매크로 그대로)를 더했습니다 — 새로 고침·바로 연 주소의 #절로 닻이 생길 때 옮기고 위쪽 절이 자라면 다시 맞추며
-  사용자 입력이나 10초 뒤 그칩니다(화면 층 훅 `hooks/useHashAlign` — MutationObserver·ResizeObserver). 지키는 시험은
+  사용자 입력이나 10초 뒤 그칩니다(화면 층 훅 `hooks/useHashAlign` — MutationObserver·ResizeObserver). P6(설정 갈래)에서 선택 `columnScroll`(기본 꺼짐 — 매크로 그대로)을
+  더했습니다 — 세로 목록에 높이 한도(창 − 5rem)를 두고 그 안에서 스크롤하며 지금 칸이 보이는 자리 밖이면 목록의 scrollTop만 옮깁니다(모의 설정 — 묶음 칸이 많아
+  1440×900에서 목록이 본문 스크롤 상자보다 길었음). 지키는 시험은
   `components/patterns/__tests__/SectionIndex.test.tsx`·`lib/__tests__/sectionIndex.test.ts`·`hooks/__tests__/useSectionSpy.test.tsx`·`hooks/__tests__/useHashAlign.test.tsx`.
 - 검사 칸 틀 `components/patterns/InspectorFrame.tsx` — 화면 패턴(줄 안에 조작이 있는 표·목록 + 고른 줄의 옆 검사 칸 또는 공용 `Dialog`(위쪽 고정) — 배치 md(틀 32rem부터 옆 15rem)·
   lg(52rem부터 옆 18rem)·dialog(늘 대화상자), 줄 단추 `InspectorTrigger`(공용 줄 단추 클래스 `ui/classes ROW_TRIGGER` — 중립 잉크·좁은 화면 높이·폭 44px·넓은 화면 높이·폭 24px, 옆 칸에 보이는 줄의 단추는

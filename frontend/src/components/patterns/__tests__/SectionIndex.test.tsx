@@ -181,6 +181,54 @@ describe("SectionIndex — 배치(columnFrom)", () => {
   });
 });
 
+describe("SectionIndex — 세로 목록 스크롤(선택 columnScroll, 작업대 P6)", () => {
+  it("기본값이면 세로 목록 클래스 그대로(높이 한도·스크롤 없음) — 켜면 창 − 5rem 높이 한도·세로 스크롤·포커스 링 여백(p-1과 같은 크기 음수 바깥 여백)", () => {
+    renderIndex({ activeId: null, columnFrom: "xl" });
+    expect(tokens(lists().column)).toEqual(["hidden", "flex-col", "gap-px", "xl:flex"]);
+    cleanup();
+    renderIndex({ activeId: null, columnFrom: "xl", columnScroll: true });
+    expect(tokens(lists().column)).toEqual([
+      "hidden", "flex-col", "gap-px", "xl:flex", "-m-1", "max-h-[calc(100dvh-5rem)]", "overflow-y-auto", "overscroll-contain", "p-1",
+    ]);
+  });
+
+  it("지금 칸이 목록의 보이는 자리 밖이면 목록의 scrollTop만 옮긴다 — 아래로 넘치면 그만큼 + 4px, 위로 넘치면 그만큼 − 4px, 안이면 그대로", () => {
+    const { rerender } = renderIndex({ activeId: null, columnScroll: true });
+    const { column } = lists();
+    Object.defineProperty(column, "clientHeight", { configurable: true, value: 300 });
+    column.getBoundingClientRect = () => ({ top: 100, bottom: 400, left: 0, right: 200, width: 200, height: 300, x: 0, y: 100, toJSON: () => ({}) });
+    const place = (top: number) => {
+      for (const link of column.querySelectorAll<HTMLElement>("a")) {
+        link.getBoundingClientRect = () => ({ top, bottom: top + 32, left: 0, right: 200, width: 200, height: 32, x: 0, y: top, toJSON: () => ({}) });
+      }
+    };
+    column.scrollTop = 50;
+    place(420);
+    rerender(
+      <SectionIndex label="매크로 지표 목차" items={ITEMS} activeId="macro-risk" columnScroll>
+        <SectionAnchor id="macro-risk">위험 패널</SectionAnchor>
+      </SectionIndex>,
+    );
+    // 아래 끝 452 − 목록 아래 끝 400 + 4 = 56px 아래로.
+    expect(column.scrollTop).toBe(106);
+    place(60);
+    rerender(
+      <SectionIndex label="매크로 지표 목차" items={ITEMS} activeId="macro-fx" columnScroll>
+        <SectionAnchor id="macro-fx">환율 비교 패널</SectionAnchor>
+      </SectionIndex>,
+    );
+    // 목록 위 끝 100 − 칸 위 끝 60 + 4 = 44px 위로.
+    expect(column.scrollTop).toBe(62);
+    place(200);
+    rerender(
+      <SectionIndex label="매크로 지표 목차" items={ITEMS} activeId="macro-indicators" columnScroll>
+        <SectionAnchor id="macro-indicators">지표 패널</SectionAnchor>
+      </SectionIndex>,
+    );
+    expect(column.scrollTop).toBe(62);
+  });
+});
+
 describe("SectionIndex — 빈 목록·개수 모름·긴 글", () => {
   it("목차 칸이 없으면 내비 없이 본문(절 닻)만", () => {
     render(

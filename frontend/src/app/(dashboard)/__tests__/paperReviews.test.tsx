@@ -242,7 +242,7 @@ describe("결정 로그 — 주간 복기", () => {
       expect(article.id).toBe("paper-proposal-12");
       expect(article.getAttribute("aria-current")).toBe("true");
       expect(within(article).getByText("주간 복기 2026-10-30")).toBeTruthy();
-      expect(document.getElementById("paper-proposal-13")?.getAttribute("aria-current")).toBeNull();
+      expect(document.getElementById("paper-proposal-13")?.getAttribute("aria-current") ?? null).toBeNull();
       await waitFor(() => expect(scroll).toHaveBeenCalled());
       expect(scroll).toHaveBeenLastCalledWith({ block: "start", behavior: "smooth" });
       expect(api.apiPost).not.toHaveBeenCalled();

@@ -2,13 +2,13 @@
  * 모의매매(/paper/us·/paper/kr) 화면의 요청 지킴 — 작업대 개편 P6(부분 재배치)이 머리·탭·목록-검사를 다시 짜도 탭마다 읽는 경로·횟수·간격과
  * 열 때 쓰기 0이 그대로인지 봅니다(계획 §4-1 P1). 개편 전 코드에서 통과시켜 두고, 개편 커밋들이 이 파일을 고치지 않고 통과해야 합니다.
  * 예외는 하나 — 프레임 제안의 기준 판 읽기가 '목록을 그릴 때'에서 '그 제안을 고를 때'로 바뀌는 것(명세 §7-1 '제안 기본 접힘'의 결과, 계획 §2-17)이고,
- * 그 사례만 그 커밋에서 사유와 함께 고칩니다.
+ * 그 사례만 그 커밋(작업대 P6 설정 갈래 — 프레임 재배치)에서 사유와 함께 고쳤습니다.
  *
  * - 열 때: 화면은 늘 개요(60초)를 읽고 한국은 종목 이름 표(600초)도 읽습니다. 탭은 처음 탭(initialTab — 주소로 바로 연 탭)으로 엽니다.
  * - 탭마다: 개요(상태 60초·장중 저장본·실행 감사 300초·계좌2 순자산 줄 60초), 보유·체결(보유·주문·체결 60초, 한국 순자산 줄·상태, 계좌2 실행 감사),
  *   결정 로그(목록 60초, 상태 — 미국 Claude 계좌1·계좌2와 한국, 한국 수동 결정 확인을 열 때 설정, 상세는 누를 때 한 번), 주간 복기(목록 60초,
  *   한국 상태, 고른 주 상세 한 번), 기관 선정(트랙레코드 300초)·종목 선정(한국 규칙 계좌 결정 300초 + 선정한 결정 상세), 프레임(판·제안·설정·
- *   메모 두 시장·두 판 비교·대기가 아닌 제안의 기준 판), 메모(메모·설정), 설정(설정·바꾼 기록).
+ *   메모 두 시장·두 판 비교, 대기가 아닌 제안의 기준 판은 그 제안을 고를 때), 메모(메모·설정), 설정(설정·바꾼 기록).
  * - 실시간 시세는 SSE(가짜 EventSource) — 주기 기본 10초(lib/livePrices DEFAULT_LIVE_SECONDS)로 장중 카드·보유 표의 종목을 엽니다.
  * - 간격: 걸린 채 남은 setInterval을 하나씩 불러 다시 읽은 경로를 모읍니다(1분 미만 타이머는 자동 갱신이 아니라 보지 않음 — 분 시계는 경로가 없음).
  * - 실제 계좌·ISA 탭은 이 파일 밖입니다(그 모듈의 시험·경계 시험이 지킴).
@@ -460,8 +460,9 @@ describe("모의매매(미국) — 탭마다 열 때 읽는 경로·횟수·간�
     expect(await refreshTimers()).toEqual({ 60_000: [OVERVIEW] });
   });
 
-  it("프레임: 대기가 아닌 제안의 기준 판이 지금 판과 다르면 그 판을 제안마다 한 번 — 대기 제안·지금 판 기준은 읽지 않음", async () => {
-    // 이 사례는 명세 §7-1 '제안 기본 접힘'으로 '그 제안을 고를 때 한 번'으로 바뀔 수 있는 유일한 자리입니다(계획 §2-17 — 그 커밋에서 사유와 함께 고침).
+  it("프레임: 대기가 아닌 제안의 기준 판이 지금 판과 다르면 그 제안을 고를 때 한 번 — 목록을 그릴 때·대기 제안·지금 판 기준은 읽지 않음", async () => {
+    // 이 파일에서 개편으로 바뀐 유일한 사례입니다 — 명세 §7-1 '제안 기본 접힘'(작업대 P6 설정 갈래, 계획 §2-17): 예전에는 목록을 그릴 때 제안마다 기준 판을
+    // 읽어 이 자료로 열 때 기준 판 GET이 2회(#4 → v1, #2 → v0) 나갔고, 이제는 고르기 전에는 제안 상세를 그리지 않아 그 제안을 고를 때 한 번씩입니다.
     reads[endpoints.paper.framework] = { available: true, current: version(3), versions: [summary(3)] };
     reads[endpoints.paper.proposals] = {
       available: true,
@@ -469,12 +470,26 @@ describe("모의매매(미국) — 탭마다 열 때 읽는 경로·횟수·간�
     };
     reads[endpoints.paper.settings] = SETTINGS;
     render(<PaperScreen initialTab="framework" market="US" />);
-    await waitFor(() => expect(counts()[endpoints.paper.frameworkVersion(0)]).toBe(1));
+    await waitFor(() => expect(document.querySelector('button[data-item-key="4"]')).not.toBeNull());
     await settled();
+    const versionReads = () => calledPaths().filter((path) => path.startsWith("/api/paper/framework/versions/")).sort();
+    // 열 때는 두 판 비교의 오른쪽(지금 판 — 판이 하나여도 읽음)뿐.
+    expect(versionReads()).toEqual([endpoints.paper.frameworkVersion(3)]);
 
-    // 기준 판 0·1(거절·승인 제안)은 한 번씩, 3은 두 판 비교의 오른쪽(지금 판 — 판이 하나여도 읽음), 대기 제안(#5)·지금 판 기준(#1)은 기준 판을 읽지 않음.
-    const versionReads = calledPaths().filter((path) => path.startsWith("/api/paper/framework/versions/")).sort();
-    expect(versionReads).toEqual([endpoints.paper.frameworkVersion(0), endpoints.paper.frameworkVersion(1), endpoints.paper.frameworkVersion(3)]);
+    // 고를 때 — 결정된 제안의 기준 판(지금 판이 아님)을 한 번. 대기 제안(#5)·지금 판 기준(#1)은 고르더라도 읽지 않음.
+    const pick = async (id: number) => {
+      fireEvent.click(document.querySelector<HTMLButtonElement>(`button[data-item-key="${id}"]`)!);
+      await screen.findByRole("dialog", { name: `제안 #${id}` });
+      await settled();
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    };
+    await pick(4);
+    expect(versionReads()).toEqual([endpoints.paper.frameworkVersion(1), endpoints.paper.frameworkVersion(3)]);
+    await pick(2);
+    await pick(5);
+    await pick(1);
+    expect(versionReads()).toEqual([endpoints.paper.frameworkVersion(0), endpoints.paper.frameworkVersion(1), endpoints.paper.frameworkVersion(3)]);
     expectNoWrites();
   });
 
