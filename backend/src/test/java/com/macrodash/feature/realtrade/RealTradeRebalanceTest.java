@@ -10,6 +10,7 @@ import com.macrodash.feature.realtrade.RealTradePlanner.Rules;
 import com.macrodash.feature.realtrade.RealTradeRebalance.DailyShort;
 import com.macrodash.feature.realtrade.RealTradeRebalance.Inputs;
 import com.macrodash.feature.realtrade.RealTradeRebalance.Verdict;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -523,6 +524,25 @@ class RealTradeRebalanceTest {
         pct(RealTradeRebalance.dailyShort(NOW_N2, E, broke.account(), Set.of(), CASH_LIKE, 30, E).shortPct(), 0.0);
         // 하루 한도를 모르면 모름
         assertThat(RealTradeRebalance.dailyShort(NOW_N2, E, account, Set.of(), CASH_LIKE, 30, null)).isNull();
+    }
+
+    // QA-801 — daily-cap-short는 '못 내는 매수 > 20 또는 밀리는 매도 있음'인데 밀리는 매도 수가 기록 칸·로그 요약에 없어, 남은 하루 건수가 매도 다리보다 적어
+    // 걸린 멈춤(못 내는 매수는 20 안)의 까닭이 어디에도 남지 않았다. 수정 전: detail에 sellsDropped 없음, 요약에 '밀리는 매도' 없음.
+    @Test
+    @Disabled("QA-801 재현 — 수정 전에는 밀리는 매도 수가 기록 칸·로그 요약에 없음")
+    @DisplayName("QA-801: 밀리는 매도로 daily-cap-short면 그 수를 기록 칸(sellsDropped)·로그 요약에 남김 — 못 내는 매수가 20% 안이어도")
+    void dailyCapShortRecordsDroppedSells() {
+        Inputs dropped = with(with(base(), "D", 13.0), "drop", 4);
+        Verdict halt = RealTradeRebalance.judge(dropped);
+        assertThat(halt.check()).isEqualTo("daily-cap-short");
+        assertThat(halt.detail()).containsEntry("sellsDropped", 4).containsEntry("dailyShortPct", new BigDecimal("13.0"));
+        assertThat(RealTradeRebalance.summary(dropped)).contains("하루 한도로 못 내는 매수 13.0%").contains("밀리는 매도 4");
+        // 계좌로 센 사례 — N2의 매도 넷(G·H·I·J 책 밖 전량)인데 남은 하루 건수 3
+        assertThat(case2().now(NOW_N2).room(100.0, 3).verdict().detail()).containsEntry("rebalanceCheck", "daily-cap-short")
+                .containsEntry("sellsDropped", 1);
+        // 예외(보냄)에는 넣지 않음(늘 0 — 빠진 종목 수와 같은 규칙), 모르면 '?'
+        assertThat(RealTradeRebalance.judge(base()).detail()).doesNotContainKey("sellsDropped");
+        assertThat(RealTradeRebalance.summary(Inputs.UNKNOWN)).contains("밀리는 매도 ?");
     }
 
     @Test

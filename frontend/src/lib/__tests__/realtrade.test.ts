@@ -654,6 +654,21 @@ describe("재선정 다음 묶음의 회전율 예외(ADR 0028 덧붙임 2026-11
     );
   });
 
+  // QA-801 — 하루 한도 판정(daily-cap-short)은 '하루 한도로 못 내는 매수 > 20 또는 밀리는 매도 있음'인데 이름표는 앞쪽만 말하고 밀리는 매도 수는 detail에도
+  // 없어, 남은 하루 건수가 매도 다리보다 적은 날(예: 못 내는 매수 13.0%, 밀리는 매도 4)의 줄이 이름표와 숫자가 어긋났다.
+  // 수정 전(재현 커밋에서는 it.fails): 이름표 '하루 한도로 못 내는 매수가 20% 초과(daily-cap-short)', 줄에 밀리는 매도 없음.
+  it.fails("QA-801: 하루 한도 판정 이름표는 밀리는 매도도 말하고, 줄에 밀리는 매도 수를 그린다(0이면 적지 않음)", () => {
+    expect(rebalanceCheckLabel("daily-cap-short")).toBe("하루 한도로 못 내는 매수가 20% 초과 또는 밀리는 매도 있음(daily-cap-short)");
+    expect(eventDetailText({
+      reason: "turnover", turnoverPct: 75, rebalanceCheck: "daily-cap-short", checkTurnoverPct: 75, dailyShortPct: 13, sellsDropped: 4, uncounted: 0,
+    }, "HALT")).toBe(
+      "사유 회전율 60% 초과(turnover) · 재선정 예외 아님: 하루 한도로 못 내는 매수가 20% 초과 또는 밀리는 매도 있음(daily-cap-short)"
+        + " · 회전율 75.0% · 판정 회전율 75.0% · 하루 한도로 못 내는 매수 13.0% · 밀리는 매도 4",
+    );
+    expect(eventDetailText({ reason: "turnover", turnoverPct: 80, rebalanceCheck: "daily-cap-short", dailyShortPct: 52, sellsDropped: 0 }, "HALT"))
+      .not.toContain("밀리는 매도 0");
+  });
+
   it("판정 코드 이름표 — '이름표(코드)', 모르는 코드는 그대로, 없으면 '—'", () => {
     expect(rebalanceCheckLabel("over-cap")).toBe("회전율 150% 초과(over-cap)");
     expect(rebalanceCheckLabel("targets-over")).toBe("목표 합 101% 초과(책 현금 음수)(targets-over)");

@@ -4132,6 +4132,20 @@ class RealTradeJobDbTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("QA-801 재현 — 수정 전에는 HALT detail에 밀리는 매도 수가 없음")
+    @DisplayName("QA-801: 남은 하루 건수가 매도 다리보다 적음(N2 매도 넷, 남은 건수 3) → daily-cap-short, HALT detail에 밀리는 매도 1")
+    void rebalanceDailyCapDroppedSellsRecorded() {
+        rebalanceDay(P2, H2, NOW_N2, Set.of());
+        when(client.status()).thenReturn(RealTradeFixtures.enabledStatus(RealTradeFixtures.limits(99_999_999L, 3, 999_999_999L, 999_999_999L)));
+
+        run("09:10:05");
+
+        assertHalted("남은 건수 3", "daily-cap-short");
+        assertThat(haltDetail().path("sellsDropped").isNumber()).isTrue();
+        assertThat(haltDetail().path("sellsDropped").asInt()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("S2c — 남은 하루 매수 금액이 E의 40%: 못 내는 매수 약 12% ≤ 20 → 보냄(그 몫은 다음 거래일 평소 묶음)")
     void rebalanceDailyCapSlackExempt() {
         rebalanceDay(P2, H2, NOW_N2, Set.of());
