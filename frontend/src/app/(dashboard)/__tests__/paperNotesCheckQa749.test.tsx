@@ -49,12 +49,14 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-749 메모 탭 '만료한 메모도 보기'는 좁은 화면에서 44px 누름 자리", () => {
-  it.fails.each([["US"], ["KR"]] as const)("%s", async (market) => {
+  it.each([["US"], ["KR"]] as const)("%s", async (market) => {
     if (market === "KR") window.history.replaceState(null, "", "/paper/kr/notes");
     render(<PaperPage initialTab="notes" market={market} />);
     const check = await screen.findByLabelText("만료한 메모도 보기");
     const label = check.closest("label") as HTMLElement;
     expect(label).not.toBeNull();
     expect(smallTargets(label.parentElement as HTMLElement)).toEqual([]);
+    // 넓은 화면은 작은 조작 24px(명세 §3-7).
+    expect(label.className).toContain("lg:min-h-6");
   });
 });

@@ -107,7 +107,8 @@ export function NotesSection({ startDate, market = "US" }: { startDate: string |
           : "Claude 계좌의 자료 — 시황 메모는 결정 패킷에, 방법론 메모는 프레임 제안에"}
         source={PAPER_SOURCES.notes}
         actions={
-          <label className="flex items-center gap-2 text-xs text-text-3">
+          // 감싼 label이 누름 자리 — 좁은 화면(lg 미만) 44px, 넓은 화면 24px(명세 §3-7 작은 조작, QA-749).
+          <label className="flex min-h-11 min-w-11 cursor-pointer items-center gap-2 text-xs text-text-3 lg:min-h-6">
             <input type="checkbox" checked={includeExpired} onChange={(event) => setIncludeExpired(event.target.checked)} />
             만료한 메모도 보기
           </label>
