@@ -770,6 +770,67 @@ describe("스코어카드 — 처음 읽는 동안 빠진 것 목록이 응답�
   });
 });
 
+describe("스코어카드 — 첫 읽기가 실패해도 빠진 것 목록이 그대로다(QA-726)", () => {
+  /** 백엔드 ScorecardService가 늘 보내는 빠진 것 목록(응답과 같은 값 — available이 거짓인 응답도 같음). */
+  const MISSING = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"];
+  const LINES = MISSING.map((item) => `${item} — 수집하지 않습니다`);
+  const FAILURE = "스코어카드 연결 실패(합성)";
+  function missingTexts() {
+    const box = screen.getByText("이 카드는 종합 점수가 아닙니다.").closest("div.rounded-control") as HTMLElement;
+    return [...(box.querySelector("ul")?.children ?? [])].map((item) => item.textContent ?? "");
+  }
+  /** 스코어카드 읽기의 답을 바꿀 수 있게 둡니다 — 종목 목록은 둘(AAPL·MSFT), 나머지는 끝나지 않음. */
+  function serveScorecard(first: () => Promise<unknown>) {
+    const control = { answer: first };
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path.startsWith("/api/stock/scorecard")) return control.answer();
+      if (path === "/api/stock/universe") {
+        return Promise.resolve({ available: true, rows: [{ ticker: "AAPL", name: "Apple", sector: null }, { ticker: "MSFT", name: "Microsoft", sector: null }] });
+      }
+      return new Promise(() => {});
+    });
+    return control;
+  }
+
+  // 목록을 '처음 읽는 중'(firstLoadPending — 앞선 실패가 없어야 참)에 묶어, 실패하는 순간 목록이 사라지고 다시 시도·종목 바꾸기로 성공하면 다시 생겨 안내 상자
+  // 높이가 오르내렸음(P5b QA 스택 확인 — 1440 135.5 ↔ 75.5px, 390 213 ↔ 121px). 본문 글은 읽는 상태와 상관없이 대체 글을 씁니다.
+  // 수정 전 실패(plain it): { failed: [], retrying: [], loaded: 세 줄 } — 실패한 뒤와 다시 읽는 동안 목록 0줄.
+  it.fails("실패(오류 상자)한 뒤에도 세 줄, '다시 시도'로 읽는 동안·성공한 뒤도 같은 세 줄", async () => {
+    const control = serveScorecard(() => Promise.reject(new Error(FAILURE)));
+    render(<ScorecardPage />);
+    await screen.findByText(FAILURE);
+    const failed = missingTexts();
+    let resolve: (value: unknown) => void = () => {};
+    control.answer = () => new Promise((done) => (resolve = done));
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await screen.findByText("스코어카드를 계산하는 중…");
+    const retrying = missingTexts();
+    resolve(scorecardBody({ missing: MISSING }));
+    await screen.findByRole("region", { name: "스코어 요약" });
+    expect({ failed, retrying, loaded: missingTexts() }).toEqual({ failed: LINES, retrying: LINES, loaded: LINES });
+  });
+
+  // 수정 전 실패(plain it): { failed: [], switching: [] } — 실패한 뒤 종목을 바꿔 읽는 동안도 목록 0줄.
+  it.fails("실패한 뒤 종목을 바꿔 읽는 동안에도 세 줄", async () => {
+    const control = serveScorecard(() => Promise.reject(new Error(FAILURE)));
+    render(<ScorecardPage />);
+    await screen.findByText(FAILURE);
+    const failed = missingTexts();
+    control.answer = () => new Promise(() => {});
+    await screen.findByRole("option", { name: "MSFT · Microsoft" });
+    fireEvent.change(screen.getByLabelText("종목"), { target: { value: "MSFT" } });
+    await screen.findByText("스코어카드를 계산하는 중…");
+    expect({ failed, switching: missingTexts() }).toEqual({ failed: LINES, switching: LINES });
+  });
+
+  it("응답이 온 뒤에는 응답의 목록 그대로 — 빈 목록이면 목록 없음(대체 글로 채우지 않음)", async () => {
+    serveScorecard(() => Promise.resolve(scorecardBody({ missing: [] })));
+    render(<ScorecardPage />);
+    await screen.findByRole("region", { name: "스코어 요약" });
+    expect(missingTexts()).toEqual([]);
+  });
+});
+
 describe("스코어카드 — 실제 값은 등락이 아니다(QA-705)", () => {
   // 수정 전 실패: '실제 값' 칸이 deltaColor라 양수인 변동성·최대낙폭까지 상승 빨강(text-up)·음수 모멘텀은 하락 파랑이고, 음수 부호가 ASCII '-'
   // (표 '-5.2%', 원자료 1개월 수익률 '-0.30%').
