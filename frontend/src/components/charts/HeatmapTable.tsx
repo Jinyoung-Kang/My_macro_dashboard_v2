@@ -35,6 +35,9 @@ export type HeatmapRow = {
  * - 값을 모르는 칸(null·undefined·유한하지 않은 수)은 공용 '—'(Empty — 낭독 '값 없음'), 0인 칸은 `zeroText`(주면 — 예: 비중의 '·' 미보유), 둘 다 칠하지 않습니다.
  *   0 이하·`max`가 0 이하도 칠하지 않습니다. 자기 칸(`selfIndex`)은 단계 대신 중립 바탕(surface-2)·보조 글자색입니다.
  * - 표 구조: 낭독용 표 이름(sr-only caption = `caption`), 열 머리(th scope=col — 전체 이름은 title), 첫 열은 행 머리(th scope=row — 가로 스크롤 때 왼쪽에 붙어 남음).
+ *   머리 칸 글(열 머리·행 머리)은 한글을 낱말 사이에서만 꺾습니다(break-keep — 공용 글 부품 규약 QA-568). 없으면 최소 폭(minWidth)에 눌린 열에서 기관 이름이
+ *   '노르웨|이 국부|펀드'처럼 글자 사이에서 꺾였습니다(스타일 화면 유사도 행렬 — 옮기기 전 행렬은 줄바꿈 금지였음). 영문·숫자 머리(비중 히트맵의 공시 이름·날짜)는
+ *   그대로입니다.
  * - 범례(표 아래): 단계 견본 다섯(장식) + 단계 글(`legend.stepLabel` — 예 '최댓값의 0~20%') + '밝은 단계일수록 큼', 그 아래 `legend.note`(설명 글).
  * - `minWidth`(px)를 주지 않으면 표 최소 폭 640px입니다.
  */
@@ -68,11 +71,11 @@ export function HeatmapTable({
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr className="text-xs text-text-3">
-            <th scope="col" className="sticky left-0 bg-surface px-3 py-2 text-left font-medium">
+            <th scope="col" className="sticky left-0 break-keep bg-surface px-3 py-2 text-left font-medium">
               {rowHeader}
             </th>
             {columns.map((column) => (
-              <th key={column.key} scope="col" title={column.title} className="px-2 py-2 text-right font-medium tabular-nums">
+              <th key={column.key} scope="col" title={column.title} className="break-keep px-2 py-2 text-right font-medium tabular-nums">
                 {column.label}
               </th>
             ))}
@@ -81,7 +84,7 @@ export function HeatmapTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.key}>
-              <th scope="row" title={row.title} className="sticky left-0 bg-surface px-3 py-1.5 text-left font-normal text-text-2">
+              <th scope="row" title={row.title} className="sticky left-0 break-keep bg-surface px-3 py-1.5 text-left font-normal text-text-2">
                 {row.label}
               </th>
               {columns.map((column, index) => {
