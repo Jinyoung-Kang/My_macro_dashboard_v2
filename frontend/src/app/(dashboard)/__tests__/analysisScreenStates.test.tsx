@@ -557,6 +557,56 @@ describe("스타일 — 머리 '새로고침'·13F 한계 안내·'읽는 법' �
   });
 });
 
+describe("스타일 — 기관별 성격을 처음 읽지 못한 뒤 다시 읽으면 위험 패널 '기관' 고르기도 돌아온다(QA-727)", () => {
+  const ROWS = [
+    { cik: "0001067983", key: "a", name: "가상 버크셔", desc: "", reportDate: "2026-06-30", totalValue: 2.5e11, holdingCount: 40, effectiveHoldings: 8.2, hhi: 0.12,
+      top10Weight: 88.1, turnover: 3.2, quarterCount: 8 },
+    { cik: "0000000032", key: "b", name: "가상 연기금", desc: "", reportDate: "2026-06-30", totalValue: 2.0e10, holdingCount: 700, effectiveHoldings: 60.5,
+      hhi: 0.0165, top10Weight: 40.2, turnover: null, quarterCount: 1 },
+  ];
+  /** 기관별 성격은 처음에 실패(합성)하고 `fail`을 끄면 두 기관을 돌려줍니다. 위험은 늘 값, 나머지는 끝나지 않음. */
+  function serve() {
+    const control = { fail: true };
+    api.apiGetShared.mockImplementation((path: string) => {
+      if (path === "/api/guru/profiles") {
+        return control.fail ? Promise.reject(new Error("성격을 읽지 못했습니다.")) : Promise.resolve({ available: true, note: "13F 저장본 기준", rows: ROWS });
+      }
+      if (path.startsWith("/api/guru/risk")) return Promise.resolve(riskBody());
+      return new Promise(() => {});
+    });
+    return control;
+  }
+  const riskInstitutions = () => [...(screen.getByLabelText("기관") as HTMLSelectElement).options].map((option) => option.textContent);
+  const profilesPanel = () => screen.getByRole("heading", { level: 2, name: "기관별 성격" }).closest("section") as HTMLElement;
+
+  // 위험 패널이 같은 경로를 자기 훅으로 따로 읽어, 첫 읽기가 실패한 뒤 '성격 새로고침'·성격 패널 '다시 시도'(화면 위쪽 훅만 다시 부름)로 표는 돌아와도
+  // 위험 패널 '기관' 고르기는 선택지 0개로 남아 바꿀 수 없었음(P5b QA 스택 확인 — 전부터). 실패한 동안은 두 패널이 같은 상태(선택지 없음)입니다.
+  // 수정 전 실패(plain it): { failed: [], recovered: [] } — 다시 읽은 뒤에도 선택지 0개.
+  it.fails("'성격 새로고침'으로 다시 읽으면 성격 표와 함께 위험 패널 '기관' 고르기의 선택지도 돌아온다", async () => {
+    const control = serve();
+    render(<GuruPage />);
+    await within(profilesPanel()).findByText("성격을 읽지 못했습니다.");
+    await screen.findByRole("region", { name: "위험 지표" });
+    const failed = riskInstitutions();
+    control.fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "기관별 성격 새로고침" }));
+    await within(profilesPanel()).findByRole("button", { name: "가상 연기금" });
+    expect({ failed, recovered: riskInstitutions() }).toEqual({ failed: [], recovered: ["가상 버크셔", "가상 연기금"] });
+  });
+
+  // 수정 전 실패(plain it): { failed: [], recovered: [] }.
+  it.fails("성격 패널의 '다시 시도'로 다시 읽어도 위험 패널 '기관' 고르기의 선택지가 돌아온다", async () => {
+    const control = serve();
+    render(<GuruPage />);
+    await within(profilesPanel()).findByText("성격을 읽지 못했습니다.");
+    const failed = riskInstitutions();
+    control.fail = false;
+    fireEvent.click(within(profilesPanel()).getByRole("button", { name: "다시 시도" }));
+    await within(profilesPanel()).findByRole("button", { name: "가상 연기금" });
+    expect({ failed, recovered: riskInstitutions() }).toEqual({ failed: [], recovered: ["가상 버크셔", "가상 연기금"] });
+  });
+});
+
 describe("스타일 — 기관별 성격 표와 검사 칸", () => {
   const PROFILE_ROWS = [
     { cik: "0000000031", key: "a", name: "🇺🇸 가상 자산운용 (Synthetic AM)", desc: "합성 소개 — 가치 투자", reportDate: "2026-06-30", totalValue: 2.5e11,
