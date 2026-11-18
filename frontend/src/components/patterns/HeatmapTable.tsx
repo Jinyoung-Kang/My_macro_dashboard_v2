@@ -84,6 +84,8 @@ export function HeatmapTable({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
+  // 표를 그리는지 — 빈 상태에는 스크롤 상자가 없어, 빈 상태로 먼저 그려진 뒤 행이 오면 아래 두 효과가 다시 돌아야 합니다(QA-720).
+  const hasTable = rows.length > 0 && columns.length > 0;
   // 표가 상자보다 넓은지 — 그리기 전에 한 번 재고(안내가 뒤늦게 끼어들어 표를 밀지 않게), 그 뒤 폭이 바뀌면 다시 잽니다.
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -95,16 +97,16 @@ export function HeatmapTable({
     observer.observe(box);
     if (box.firstElementChild) observer.observe(box.firstElementChild);
     return () => observer.disconnect();
-  }, []);
-  // 처음 스크롤 자리 — 열이 바뀌면(다른 기관의 분기) 다시 맞춥니다.
+  }, [hasTable]);
+  // 처음 스크롤 자리 — 열이 바뀌거나(다른 기관의 분기) 빈 상태에서 표가 생기면 다시 맞춥니다.
   const columnKeys = columns.map((column) => column.key).join("\u0000");
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (!box || initialScroll !== "end") return;
     box.scrollLeft = Math.max(0, box.scrollWidth - box.clientWidth);
-  }, [initialScroll, columnKeys]);
+  }, [initialScroll, columnKeys, hasTable]);
 
-  if (rows.length === 0 || columns.length === 0) {
+  if (!hasTable) {
     return <div className="py-6 text-center text-sm text-text-3">{emptyText}</div>;
   }
 

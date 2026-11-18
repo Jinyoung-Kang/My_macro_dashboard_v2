@@ -90,7 +90,7 @@ describe("표 히트맵이 빈 상태로 먼저 그려진 뒤 행이 와도 넘�
   });
 
   // 수정 전 실패(plain it): { hint: "phone-only", scrollLeft: 0 } — 재기·처음 자리 효과가 상자 없는 빈 상태 때 한 번 돌고 끝남.
-  it.fails("빈 상태(행 없음)로 그린 뒤 같은 자리에서 행이 오면 처음부터 행이 있을 때와 같다", () => {
+  it("빈 상태(행 없음)로 그린 뒤 같은 자리에서 행이 오면 처음부터 행이 있을 때와 같다", () => {
     stubBox(640, 482);
     const view = render(table([]));
     expect(screen.getByText("표시할 값이 없습니다.")).toBeTruthy();
