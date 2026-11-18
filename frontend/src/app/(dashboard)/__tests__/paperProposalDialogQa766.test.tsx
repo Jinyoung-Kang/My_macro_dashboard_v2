@@ -53,7 +53,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-766 — 보내는 동안 검사 대화상자를 닫아도 결과가 남는다", () => {
-  it.fails("승인 확인 뒤 Esc를 눌러도 서버 거절 문구가 화면에 보인다", async () => {
+  it("승인 확인 뒤 Esc를 눌러도 서버 거절 문구가 화면에 보인다", async () => {
     let fail: (error: Error) => void = () => {};
     api.apiPost.mockImplementation(() => new Promise((_, reject) => {
       fail = reject;

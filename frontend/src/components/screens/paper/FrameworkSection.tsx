@@ -149,6 +149,12 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
   useEffect(() => {
     if (focusProposalId !== null) setPickedProposal(String(focusProposalId));
   }, [focusProposalId]);
+  // 제안 목록의 승인·거절 상태는 목록 쪽에 둡니다(QA-766) — 좁은 배치의 검사 대화상자가 닫혀 제안 한 건이 빠져도 보내는 중·결과·오류가 남고, 다시 열면
+  // 그 제안 칸에 보입니다. 보내는 동안은 대화상자를 닫지 못하게 합니다(아래 dialogDismissible — 공용 확인 창의 '확인은 결과가 나온 뒤 닫는다'와 같음).
+  const listDecision = useProposalDecision(() => {
+    void framework.reload();
+    void proposals.reload();
+  });
   // 목록이 그려진 뒤에 제안 절로 옮깁니다(판 응답이 늦으면 목록이 아직 없음). jsdom에는 scrollIntoView가 없어 있을 때만 부릅니다.
   // 움직임 줄이기(prefers-reduced-motion)를 켠 사람에게는 부드러운 스크롤 대신 바로 옮깁니다(개요 탭의 계좌 상세와 같음).
   useEffect(() => {
@@ -229,7 +235,7 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
                   key={proposal.id}
                   proposal={proposal}
                   current={current}
-                  onChanged={reloadAll}
+                  decision={listDecision}
                   anchor
                   framed={false}
                   highlighted={proposal.id === focusProposalId}
@@ -240,6 +246,7 @@ function FrameworkBody({ focusProposalId, market }: { focusProposalId: number | 
               inspectorWidth="wide"
               dialogFocus="title"
               revealSelectedInDialog
+              dialogDismissible={!listDecision.busy}
               count
               inspectorHint="제안을 고르면 이 칸에 평가·변경·전후 비교와 승인·거절이 나옵니다(j/k·↑↓로 옮김)."
             />
@@ -367,6 +374,8 @@ function OsSourceCard({
   const [body, setBody] = useState("");
   const [picked, setPicked] = useState<number | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // 받은 제안(그 자리에 그림)의 승인·거절 — 제안 목록과 따로(개편 전에도 두 자리가 따로였음).
+  const createdDecision = useProposalDecision(onChanged);
   const saveNote = useAsyncAction(
     (payload: ReturnType<typeof insightNotePayload>) => apiPost<PaperNoteCreateResult>(endpoints.paper.createNote, payload),
     "메모를 저장하지 못했습니다.",
@@ -493,32 +502,86 @@ function OsSourceCard({
         {/* 서버 문구(호출 상한·키 없음·다른 요청 진행 중·보관한 메모 등)를 그대로 — 무엇을 해야 하는지 서버가 적어 보냅니다. */}
         {propose.error && <Callout tone="warn">{propose.error}</Callout>}
         {proposeView && <Callout tone={proposeView.tone}>{proposeView.text}</Callout>}
-        {created && <ProposalItem proposal={created} current={current} onChanged={onChanged} />}
+        {created && <ProposalItem proposal={created} current={current} decision={createdDecision} />}
       </div>
     </Panel>
   );
 }
 
 /** 확인을 연 동작. */
-type Deciding = "approve" | "reject" | null;
+type DecisionKind = "approve" | "reject";
+
+/**
+ * 제안 승인·거절의 상태(작업대 P6 검토 — QA-766): 확인 단계를 연 제안(번호·종류), 보내는 중, 마지막으로 보낸 승인·거절의 제안 번호와 결과·오류. 제안 한 건
+ * (ProposalItem) 밖 — 제안 목록(FrameworkBody)과 요청 카드(OsSourceCard)가 하나씩 — 에 두어, 좁은 배치의 검사 대화상자가 닫혀 제안 칸이 빠져도 늦게 온 결과·
+ * 오류를 버리지 않습니다(화면을 떠난 부품은 상태를 바꾸지 않음 — useAsyncAction). 결과·오류는 그 제안 칸에만 그립니다(번호로 가림).
+ * 경로·본문·확인 글은 예전 그대로입니다(POST …/{id}/approve·reject, 본문 없음).
+ */
+type ProposalDecision = {
+  deciding: { id: number; kind: DecisionKind } | null;
+  busy: boolean;
+  ask: (id: number, kind: DecisionKind) => void;
+  cancel: () => void;
+  confirm: () => Promise<void>;
+  approveFor: number | null;
+  rejectFor: number | null;
+  approve: { result: PaperProposalApproveResult | null; error: string | null };
+  reject: { result: PaperOkResult | null; error: string | null };
+};
+
+function useProposalDecision(onChanged: () => void): ProposalDecision {
+  const [deciding, setDeciding] = useState<{ id: number; kind: DecisionKind } | null>(null);
+  const [approveFor, setApproveFor] = useState<number | null>(null);
+  const [rejectFor, setRejectFor] = useState<number | null>(null);
+  const approve = useAsyncAction(
+    (id: number) => apiPost<PaperProposalApproveResult>(endpoints.paper.approveProposal(id)),
+    "승인하지 못했습니다.",
+  );
+  const reject = useAsyncAction(
+    (id: number) => apiPost<PaperOkResult>(endpoints.paper.rejectProposal(id)),
+    "거절하지 못했습니다.",
+  );
+  const confirm = async () => {
+    if (deciding === null) return;
+    const action = deciding.kind === "approve" ? approve : reject;
+    if (deciding.kind === "approve") setApproveFor(deciding.id);
+    else setRejectFor(deciding.id);
+    const ok = await action.run(deciding.id);
+    setDeciding(null);
+    if (ok) onChanged();
+  };
+  return {
+    deciding,
+    busy: approve.busy || reject.busy,
+    ask: (id, kind) => setDeciding({ id, kind }),
+    cancel: () => setDeciding(null),
+    confirm,
+    approveFor,
+    rejectFor,
+    approve: { result: approve.result, error: approve.error },
+    reject: { result: reject.result, error: reject.error },
+  };
+}
 
 /**
  * 제안 한 건 — 머리(상태·요청 시각·모델·근거 메모·기준 판), 요약, 평가 표, 변경 표(대기 중이면 지금 글, 결정된 제안이면 기준 판 글 → 바꿀
  * 글), 전후 비교, 오류. 대기 중이면 승인·거절(둘 다 확인 단계 — 승인은 새 판을 만들어 다음 결정부터 바뀜). 기준 판이 지금 판과 다르거나 변경이
  * 0건이면 승인 버튼을 막습니다(서버도 400). 결정된 제안의 기준 판이 지금 판이 아니면 그 판을 따로 읽어 대조합니다(proposalBaseToFetch) — 이 부품이
- * 그려질 때 한 번이라, 제안 목록에서는 그 제안을 고를 때(검사 칸·대화상자 — 작업대 P6 기본 접힘), 요청 카드에서는 받은 제안(대기 — 읽지 않음)입니다.
+ * 그려질 때 한 번이라, 제안 목록에서는 그 제안을 고를 때마다 한 번(검사 칸에서 다른 제안으로 옮겼다 돌아오거나 대화상자를 다시 열면 다시 — 작업대 P6 기본
+ * 접힘, 화면을 열 때는 0), 요청 카드에서는 받은 제안(대기 — 읽지 않음)입니다. 승인·거절의 상태는 부르는 쪽이 쥡니다(`decision` — QA-766).
  */
 function ProposalItem({
   proposal,
   current,
-  onChanged,
+  decision,
   anchor = false,
   highlighted = false,
   framed = true,
 }: {
   proposal: PaperFrameworkProposal;
   current: PaperFrameworkVersion | null;
-  onChanged: () => void;
+  /** 승인·거절 상태(제안 목록·요청 카드가 하나씩 — useProposalDecision). */
+  decision: ProposalDecision;
   /** 제안 목록의 항목이면 id를 붙입니다(주간 복기에서 찾아옴) — 요청 카드에 같은 제안이 한 번 더 보여도 id가 겹치지 않게. */
   anchor?: boolean;
   /** 주간 복기에서 이 제안을 눌러 왔음 — '주간 복기에서 연 제안' 글과 aria-current(테두리 강조는 검사 칸 틀이 맡음 — 작업대 P6). */
@@ -532,25 +595,13 @@ function ProposalItem({
   const baseToFetch = proposalBaseToFetch(proposal, current);
   const baseFrame = useApi<PaperFrameworkVersionResponse>(baseToFetch === null ? null : endpoints.paper.frameworkVersion(baseToFetch));
   const view = proposalView(proposal, current, baseFrame.data?.available ? baseFrame.data.version ?? null : null);
-  const [deciding, setDeciding] = useState<Deciding>(null);
-  const approve = useAsyncAction(
-    (id: number) => apiPost<PaperProposalApproveResult>(endpoints.paper.approveProposal(id)),
-    "승인하지 못했습니다.",
-  );
-  const reject = useAsyncAction(
-    (id: number) => apiPost<PaperOkResult>(endpoints.paper.rejectProposal(id)),
-    "거절하지 못했습니다.",
-  );
-  const busy = approve.busy || reject.busy;
-  const approved = approve.result ? approveResultView(approve.result) : null;
-  const rejected = reject.result ? rejectResultView(reject.result) : null;
-
-  const decide = async () => {
-    const action = deciding === "approve" ? approve : reject;
-    const ok = await action.run(view.id);
-    setDeciding(null);
-    if (ok) onChanged();
-  };
+  // 이 제안의 확인 단계·결과만 — 다른 제안에서 연 확인 단계나 다른 제안의 결과는 이 칸에 그리지 않습니다.
+  const deciding = decision.deciding?.id === proposal.id ? decision.deciding.kind : null;
+  const busy = decision.busy;
+  const approveError = decision.approveFor === proposal.id ? decision.approve.error : null;
+  const rejectError = decision.rejectFor === proposal.id ? decision.reject.error : null;
+  const approved = decision.approveFor === proposal.id && decision.approve.result ? approveResultView(decision.approve.result) : null;
+  const rejected = decision.rejectFor === proposal.id && decision.reject.result ? rejectResultView(decision.reject.result) : null;
 
   return (
     <article
@@ -607,27 +658,27 @@ function ProposalItem({
         <div className="flex flex-col gap-3 rounded-control border border-warn/30 bg-warn-tint px-4 py-3">
           <p className="text-sm leading-relaxed text-warn">{deciding === "approve" ? view.confirmApprove : view.confirmReject}</p>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" onClick={() => void decide()} disabled={busy}>
+            <Button variant="primary" onClick={() => void decision.confirm()} disabled={busy}>
               {busy ? "보내는 중…" : deciding === "approve" ? "승인 확인" : "거절 확인"}
             </Button>
-            <Button onClick={() => setDeciding(null)} disabled={busy}>취소</Button>
+            <Button onClick={decision.cancel} disabled={busy}>취소</Button>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" onClick={() => setDeciding("approve")} disabled={busy || !view.approvable}>
+            <Button variant="primary" onClick={() => decision.ask(proposal.id, "approve")} disabled={busy || !view.approvable}>
               {`${view.title} 승인`}
             </Button>
-            <Button onClick={() => setDeciding("reject")} disabled={busy}>{`${view.title} 거절`}</Button>
+            <Button onClick={() => decision.ask(proposal.id, "reject")} disabled={busy}>{`${view.title} 거절`}</Button>
           </div>
           <p className="text-xs text-text-3">{APPROVE_COST_NOTE}</p>
         </div>
       ))}
 
       {/* 서버의 400 문구(다른 판이 먼저 승인됨·대상 없음 등)를 그대로. */}
-      {approve.error && <Callout tone="warn">{approve.error}</Callout>}
-      {reject.error && <Callout tone="warn">{reject.error}</Callout>}
+      {approveError && <Callout tone="warn">{approveError}</Callout>}
+      {rejectError && <Callout tone="warn">{rejectError}</Callout>}
       {approved && <Callout tone={approved.tone}>{approved.text}</Callout>}
       {approved?.warning && <Callout tone="warn">{approved.warning}</Callout>}
       {rejected && <Callout tone={rejected.tone}>{rejected.text}</Callout>}
