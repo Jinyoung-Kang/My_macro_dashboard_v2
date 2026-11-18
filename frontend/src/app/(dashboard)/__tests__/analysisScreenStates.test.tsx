@@ -552,7 +552,8 @@ describe("스타일 — 기관별 성격 표와 검사 칸", () => {
   it("읽는 중·읽지 못함(다시 시도)·저장본 없음", async () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     const view = render(<GuruPage />);
-    expect(screen.getByText("13F 저장본을 읽는 중…")).toBeTruthy();
+    // 처음 읽는 동안은 표 꼴 자리(QA-715 — 예전 '13F 저장본을 읽는 중…' 한 줄).
+    expect(screen.getByRole("status", { name: "기관별 성격 불러오는 중" })).toBeTruthy();
     view.unmount();
 
     api.apiGetShared.mockImplementation((path: string) =>
@@ -572,7 +573,7 @@ describe("스타일 — 기관별 성격 표와 검사 칸", () => {
 describe("스타일 — 기관별 성격을 처음 읽는 동안 값이 온 뒤의 꼴로 자리를 잡는다(QA-715)", () => {
   // 수정 전 실패(plain it): { rows: 0, subtitle: false } — 처음 읽는 동안 패널 본문은 '13F 저장본을 읽는 중…' 한 줄(68px)이고 부제가 없어, 값이 오면 부제(응답 글 +
   // 안내 — 1024 이상 두 줄)와 표(1440 640px·390 1,195px)가 생기며 아래 '기관 간 유사도'·'포트폴리오 위험'을 밀었음(검토 자기 빌드 CLS 1440 0.5199).
-  it.fails("표 꼴 자리(머리 + 줄 12)와 값이 온 뒤와 같은 부제 — 응답 글(note)은 부제가 아니라 표 아래", async () => {
+  it("표 꼴 자리(머리 + 줄 12)와 값이 온 뒤와 같은 부제 — 응답 글(note)은 부제가 아니라 표 아래", async () => {
     api.apiGetShared.mockImplementation(() => new Promise(() => {}));
     const view = render(<GuruPage />);
     const panel = screen.getByRole("heading", { level: 2, name: "기관별 성격" }).closest("section") as HTMLElement;

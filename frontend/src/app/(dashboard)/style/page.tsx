@@ -16,9 +16,10 @@ import {
   PageHeader,
   Panel,
   Select,
+  SKELETON_BAR,
 } from "@/components/ui";
 import { StatusText } from "@/components/ui/icons";
-import { useApi } from "@/hooks/useApi";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
 import { ReadingGuide } from "./ReadingGuide";
 import { useUsdKrw } from "@/hooks/useUsdKrw";
 import { holdersNoMatch, institutionHref } from "@/lib/detail";
@@ -100,14 +101,17 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
   const { data, loading, error, reload } = profiles;
   const usdKrw = useUsdKrw();
   const rows = data?.rows ?? [];
+  const firstLoad = firstLoadPending(profiles);
 
   return (
     <Panel
       title="기관별 성격" source={SOURCES.sec13f}
       count={rows.length > 0 ? `${rows.length.toLocaleString("ko-KR")}곳` : undefined}
-      subtitle={rows.length > 0 ? [data?.note, "기관 이름을 누르면 소개·HHI·수집 분기 수와 기관 상세 링크를 봅니다."].filter(Boolean).join(" ") : data?.note}
+      // 부제는 표 안내 한 줄 — 처음 읽는 동안에도 같은 글이라 값이 와도 머리 높이가 같습니다. 응답 글(note)은 표 아래에 둡니다(예전에는 부제 앞에 붙어 값이 온 뒤에야
+      // 머리가 두 줄 이상으로 자라 아래를 밀었음 — QA-715). 표가 없으면(저장본 없음) 응답 글이 부제입니다.
+      subtitle={rows.length > 0 || firstLoad ? PROFILES_HINT : data?.note}
     >
-      {loading && !data && <Loading label="13F 저장본을 읽는 중…" />}
+      {firstLoad ? <ProfilesTablePending /> : loading && !data && <Loading label="13F 저장본을 읽는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
 
@@ -177,6 +181,7 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
           )}
         </InspectorFrame>
       )}
+      {rows.length > 0 && data?.note ? <p className="mt-2 text-xs text-text-3">{data.note}</p> : null}
 
       <ReadingGuide topic="유효 종목 수·회전율">
         <b>유효 종목 수</b> = 1 ÷ 허핀달 지수. 한 종목에 몰아넣었으면 1에 가깝고, 고르게
@@ -185,6 +190,40 @@ function ProfilesCard({ profiles }: { profiles: ReturnType<typeof useApi<GuruPro
         두면 &ldquo;한 주도 안 바꿨다&rdquo;로 읽힙니다.
       </ReadingGuide>
     </Panel>
+  );
+}
+
+/** '기관별 성격' 부제 — 표 안내(읽는 중과 값이 온 뒤가 같은 글). */
+const PROFILES_HINT = "기관 이름을 누르면 소개·HHI·수집 분기 수와 기관 상세 링크를 봅니다.";
+
+/**
+ * '기관별 성격'을 처음 읽는 동안의 표 꼴 자리 — 넘김 안내 줄(폰) + 머리 줄 32px + 줄 12(추적 기관 수). 줄 높이는 QA 스택 자료 12곳의 표를 자기 빌드(dc898d5d)로
+ * 잰 평균입니다(390 1,195px → 97px, 1024 856px → 69px, 1440 640px → 51px, 1920 620px → 49px — 머리 32px 뺌). 1280(옆 검사 칸이 좁아 이름이 더 꺾임 — 1,036px)은
+ * xl 값보다 크지만, 그 폭에서도 자리 끝이 첫 화면(900px) 아래라 아래 패널이 첫 화면 안에서 밀리지 않습니다. 자리일 뿐 보이는 수가 아닙니다 — 글·숫자 없이 막대만,
+ * 막대는 읽기에서 뺍니다(이름 있는 읽는 중 상태 하나). 예전에는 '13F 저장본을 읽는 중…' 한 줄(68px)이라 값이 오면 표가 아래 패널을 밀었습니다(QA-715).
+ */
+function ProfilesTablePending() {
+  return (
+    <div role="status" aria-busy="true" aria-label="기관별 성격 불러오는 중" className="min-w-0">
+      <span className="sr-only">기관별 성격 불러오는 중</span>
+      <div aria-hidden="true">
+        {/* 공용 표의 넘김 안내 줄 자리(폰에서만 보임 — 12/16 글 + 아래 4px). */}
+        <div className="mb-1 h-4 sm:hidden" />
+        <div className="flex h-8 items-center border-b border-border px-3">
+          <span className={`block h-3 w-1/3 ${SKELETON_BAR}`} />
+        </div>
+        <ul>
+          {Array.from({ length: 12 }, (_, index) => (
+            <li
+              key={index}
+              className={`flex h-[97px] items-center px-3 lg:h-[69px] xl:h-[51px] 2xl:h-[49px] ${index < 11 ? "border-b border-border-subtle" : ""}`}
+            >
+              <span className={`block h-3.5 w-full ${SKELETON_BAR}`} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
   );
 }
 
