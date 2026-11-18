@@ -4136,10 +4136,10 @@ class RealTradeJobDbTest {
                 sellable)));
     }
 
-    // QA-802 — 상한가를 모르는 매수가 하루 건수 한도에 가려 빠진 종목 수(U)와 하루 한도로 못 내는 매수(D) 모두에서 빠졌다. 수정 전: 예외로 보냄 —
+    // QA-802 — 상한가를 모르는 매수가 하루 건수 한도에 가려 빠진 종목 수(U)와 하루 한도로 못 내는 매수(D) 모두에서 빠졌다. 수정 전(재현 커밋
+    // 25951a84에서는 @Disabled): 예외로 보냄 —
     // 'expected HALTED but was LIVE', 보낸 주문은 'SELL 153130 DAY 4666' 하나(새 종목 매수 일곱은 하루 건수로 미룸, 다음 날은 지금처럼 멈춤).
     @Test
-    @org.junit.jupiter.api.Disabled("QA-802 재현 — 수정 전에는 상한가 모름 매수가 하루 건수 한도에 가려 예외로 153130 매도만 나감")
     @DisplayName("QA-802: 기본 슬롯 153130 46.7% → 15종목, 새 종목 일곱 상한가 모름, 남은 하루 건수 1(= 매도 다리 수) → uncounted, 묶음·주문 없음")
     void rebalanceUpperUnknownMaskedByDailyOrdersHalts() {
         Slot s = slot(0, 0);

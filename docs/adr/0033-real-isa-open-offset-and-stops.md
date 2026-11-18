@@ -130,8 +130,8 @@
     `lateSyncStartFollowupSellsHoldingNotInBook`·`waitingLiquidationCountsTowardTurnover`·`waitingLiquidationWithinTurnoverProceeds`·
     `batchTargetsMarkWholeHoldingsNotInBook`·`followupLeavesHoldingsThatAppearedAfterTheBatch`.
     **덧붙임(2026-11-19 — [ADR 0028](0028-real-trade-mirror.md) 덧붙임)**: 규칙 계좌 재선정 다음 묶음의 회전율 예외 판정은 매매 제한 종목도 센다(판정 회전율·계좌 어긋남 —
-    막는 종목은 이 기능의 미종료 주문만), 그 밖에 판정에서 빠진 종목(반대 방향 미체결·이 기능 미종료 주문·잔량 모름·가격 모름·매도 가능 0, 스탑 종목 제외)이 있으면
-    예외를 주지 않는다. 이 멈춤 판정 자체(책 종목의 제한 몫을 세지 않음)는 그대로다.
+    막는 종목은 이 기능의 미종료 주문만), 그 밖에 판정에서 빠진 종목(반대 방향 미체결·이 기능 미종료 주문·잔량 모름·가격 모름·매도 가능 0, 스탑 종목 제외 — 하루 건수
+    한도에 가려진 상한가 모름 매수도, QA-802)이 있으면 예외를 주지 않는다. 이 멈춤 판정 자체(책 종목의 제한 몫을 세지 않음)는 그대로다.
 - 실제 돈의 주문 시각이 바뀐다. `kr.rules.timing=AT_MINUTE`을 저장한 뒤 첫 시각 맞추기는 그 세션 시가에 체결될 STOP이 아닌 대기 주문이 없는 첫 세션이다. 11-09가 어느 쪽인지는
   배포 전(금요일 11-06 밤) 규칙 계좌 결정에 달렸다(QA-304).
   - 그 결정이 STOP이 아닌 시가(`NEXT_OPEN`) 주문을 남겼으면 11-09는 전환일(옛 08:50 `OPG`)이고, 11-09 밤 결정의 주문부터 09:10이라 첫 시각 맞추기는 2026-11-10 09:10이다.

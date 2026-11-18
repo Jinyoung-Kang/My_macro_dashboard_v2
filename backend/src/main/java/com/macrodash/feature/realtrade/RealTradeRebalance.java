@@ -28,8 +28,9 @@ import java.util.regex.Pattern;
  *       이 기능의 미종료 주문 종목({@code own})만 — 매매 제한(VI·거절 대기) 종목도 셉니다(풀리면 같은 창 마무리가 검사 없이 맞추므로).</li>
  *   <li><b>V</b> 계좌 어긋남 — 앞 묶음 목표(양쪽에서 이미 없는 종목만 뺀 {@link #prevKept})로 지금 맞춘다면 낼 회전율(정수 주·1% 문턱·책 밖 보유 전량을
  *       T와 똑같이, 스탑 종목은 범위 밖).</li>
- *   <li><b>U</b> 판정에서 빠진 종목 수 — T·V 계획에서 스탑이 아닌 종목이 {@link #UNCOUNTED_SKIPS}로 빠진 것(그 몫은 금액을 셀 수 없고 같은 창 마무리가
- *       검사 없이 맞춤).</li>
+ *   <li><b>U</b> 판정에서 빠진 종목 수 — T·V 계획과 D의 하루 한도 없는 계획({@link #dailyNeed})에서 스탑이 아닌 종목이 {@link #UNCOUNTED_SKIPS}로 빠진
+ *       것(그 몫은 금액을 셀 수 없고 같은 창 마무리가 검사 없이 맞춤). 하루 한도 없는 계획까지 보는 까닭은 판정 계획의 {@code limit()}이 하루 건수를 상한가보다
+ *       먼저 보아, 남은 건수를 매도가 다 쓰면 상한가 모름 매수가 {@code deferred-daily-cap}(U 밖)으로 가려지기 때문입니다(QA-802).</li>
  *   <li><b>D</b> 하루 한도로 오늘 못 내는 매수(상한가 기준) — 현금을 넉넉히 둔 계좌로 1건 상한 없이 다리를 내고 남은 하루 건수·매수 금액만
  *       {@code limit()} 순서로 적용해 본 차이. 밀리는 매도도 셉니다.</li>
  *   <li><b>Q</b> 가격 배율 — 지금 목표의 모든 종목에서 max(책 가격 ÷ 실제 가격, 역수). 실제 가격을 모르는 종목은 빼고(U가 멈춤) 책 가격을 모르면 모름.</li>
@@ -268,10 +269,11 @@ final class RealTradeRebalance {
         Map<String, Double> kept = prevKept(prev, now, stops, account);
         Plan judged = judgePlan(now, equity, account, own, reserved, rules, stops, stopProceeds);
         Plan drift = accountDrift(kept, equity, account, own, rules, stops);
-        DailyShort daily = dailyShort(now, equity, account, own, cashLike, roomOrders, roomBuyKrw);
+        Plan need = dailyNeed(now, equity, account, own, cashLike);
+        DailyShort daily = dailyShort(need, now, equity, account, own, cashLike, roomOrders, roomBuyKrw);
         BigDecimal cross = RealTradeJob.targetDrift(kept, now, stops, Set.of()).orElse(null);
         BigDecimal book = RealTradeJob.targetDrift(kept, now, stops, cashLike).orElse(null);
-        return new Inputs(judged.turnoverPct(), cross, book, drift.turnoverPct(), uncounted(judged, drift, stops),
+        return new Inputs(judged.turnoverPct(), cross, book, drift.turnoverPct(), uncounted(stops, judged, drift, need),
                 daily == null ? null : daily.shortPct(), daily == null ? null : daily.sellsDropped(), priceRatio(now, bookPrice, account),
                 nameJump(now, kept, cashLike), nameCut(now, kept, stops, cashLike), stockNames(now, stops, cashLike),
                 derisk(now, stops, cashLike, account, equity), invested(now));
@@ -313,8 +315,16 @@ final class RealTradeRebalance {
 
     /** 판정에서 빠진 종목 수 — 두 계획의 건너뜀 가운데 {@link #UNCOUNTED_SKIPS} 사유이고 스탑 종목이 아닌 종목(종목마다 한 번). */
     static int uncounted(Plan judged, Plan drift, Set<String> stops) {
+        return uncounted(stops, judged, drift);
+    }
+
+    /**
+     * 판정에서 빠진 종목 수 — 계획들(판정·계좌 어긋남·하루 한도 없는 계획)의 건너뜀 가운데 {@link #UNCOUNTED_SKIPS} 사유이고 스탑 종목이 아닌 종목(종목마다
+     * 한 번).
+     */
+    static int uncounted(Set<String> stops, Plan... plans) {
         Set<String> out = new TreeSet<>();
-        for (Plan plan : new Plan[]{judged, drift}) {
+        for (Plan plan : plans) {
             for (Skip skip : plan.skipped()) {
                 if (UNCOUNTED_SKIPS.contains(skip.reason()) && (skip.symbol() == null || !stops.contains(skip.symbol()))) {
                     out.add(skip.symbol() == null ? "" : skip.symbol());
@@ -327,21 +337,42 @@ final class RealTradeRebalance {
     /**
      * 하루 한도로 오늘 못 내는 매수 — 현금만 E × {@link #RICH_CASH_MULTIPLE}로 바꾼 계좌로 1건 상한·매수 멈춤·매도 가능 요구 없이 두 번 계획해(하루 한도 없이 /
      * 남은 하루 건수·매수 금액으로 — 같은 {@code limit()} 순서: 매도 먼저, 현금성 매수 마지막) 매수가 잡는 상한가 금액의 차이(E 대비 %)와 밀리는 매도 수.
-     * 남은 하루 매수 금액을 모르면 null(모름).
+     * 남은 하루 매수 금액을 모르면 null(모름). 상한가를 모르는 매수는 두 계획 모두 금액을 잡지 않아 여기에 들지 않고 U가 셉니다({@link #dailyNeed} — QA-802).
      */
     static DailyShort dailyShort(Map<String, Double> now, BigDecimal equity, Account account, Set<String> own, Set<String> cashLike,
                                  Integer roomOrders, BigDecimal roomBuyKrw) {
+        return dailyShort(dailyNeed(now, equity, account, own, cashLike), now, equity, account, own, cashLike, roomOrders, roomBuyKrw);
+    }
+
+    /**
+     * 하루 한도 셈의 하루 한도 없는 계획 — 현금만 E × {@link #RICH_CASH_MULTIPLE}로 바꾼 계좌로 1건 상한·매수 멈춤·매도 가능 요구·하루 한도 없이 낸 다리.
+     * 모든 매수가 {@code limit()}의 상한가 검사에 닿으므로 그 건너뜀(상한가 모름 {@code price-missing})을 U가 셉니다(QA-802 — 판정 계획에서는 하루 건수에
+     * 가려질 수 있음).
+     */
+    static Plan dailyNeed(Map<String, Double> now, BigDecimal equity, Account account, Set<String> own, Set<String> cashLike) {
+        return RealTradePlanner.sync(now, equity, rich(account, equity), own, BigDecimal.ZERO, openRules(cashLike), true);
+    }
+
+    private static DailyShort dailyShort(Plan need, Map<String, Double> now, BigDecimal equity, Account account, Set<String> own,
+                                         Set<String> cashLike, Integer roomOrders, BigDecimal roomBuyKrw) {
         if (roomOrders == null || roomBuyKrw == null) {
             return null;
         }
-        Account rich = new Account(equity.multiply(RICH_CASH_MULTIPLE), account.positions(), account.quotes(), account.sellable(),
-                account.pending());
-        Rules open = new Rules(null, cashLike, false, false, null, null);
-        Plan need = RealTradePlanner.sync(now, equity, rich, own, BigDecimal.ZERO, open, true);
-        Plan fit = RealTradePlanner.sync(now, equity, rich, own, BigDecimal.ZERO, open.withDaily(roomOrders, roomBuyKrw), true);
+        Plan fit = RealTradePlanner.sync(now, equity, rich(account, equity), own, BigDecimal.ZERO,
+                openRules(cashLike).withDaily(roomOrders, roomBuyKrw), true);
         BigDecimal shortKrw = buyReserve(need).subtract(buyReserve(fit)).max(BigDecimal.ZERO);
         int dropped = Math.max(0, sells(need) - sells(fit));
         return new DailyShort(pct(shortKrw, equity), dropped);
+    }
+
+    /** 현금 제약 없는 계좌 — 현금만 E × {@link #RICH_CASH_MULTIPLE}(153130 매도 대금이 들어온 뒤의 마무리까지 합친 하루). */
+    private static Account rich(Account account, BigDecimal equity) {
+        return new Account(equity.multiply(RICH_CASH_MULTIPLE), account.positions(), account.quotes(), account.sellable(), account.pending());
+    }
+
+    /** 하루 한도 셈의 규칙 — 1건 상한·매수 멈춤·매도 가능 요구·하루 한도 없음(현금성 순서만). */
+    private static Rules openRules(Set<String> cashLike) {
+        return new Rules(null, cashLike, false, false, null, null);
     }
 
     private static BigDecimal buyReserve(Plan plan) {

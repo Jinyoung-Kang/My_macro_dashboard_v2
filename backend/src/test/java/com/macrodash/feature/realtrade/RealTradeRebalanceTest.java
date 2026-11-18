@@ -548,9 +548,8 @@ class RealTradeRebalanceTest {
     // QA-802 — 상한가를 모르는 매수가 하루 건수 한도에 가려 U와 D 모두에서 빠졌다. 판정 계획의 limit()은 하루 건수(ordersLeft <= 0)를 상한가보다 먼저 보아
     // 매도가 남은 건수 1을 쓰면 새 종목 매수 일곱이 deferred-daily-cap(U가 세지 않는 사유)이 되고, 하루 한도 셈의 하루 한도 없는 계획(need)은 그 일곱을
     // price-missing으로 건너뛰어 상한가 금액을 잡지 않아 D 0.00 — 열두 확인을 모두 지나 예외로 153130 매도만 나간다(계획 3-2 'limit()의 상한가 모름 매수도
-    // price-missing으로 함께 멈춘다'와 어긋남). 수정 전: check null(예외), uncounted 0, dailyShortPct 0.00.
+    // price-missing으로 함께 멈춘다'와 어긋남). 수정 전(재현 커밋 25951a84에서는 @Disabled): check null(예외), uncounted 0, dailyShortPct 0.00.
     @Test
-    @org.junit.jupiter.api.Disabled("QA-802 재현 — 수정 전에는 상한가 모름 매수가 하루 건수 한도에 가려 예외로 보냄")
     @DisplayName("QA-802: 상한가 모름 매수가 하루 건수 한도에 가려도 빠진 종목으로 셈 — 기본 슬롯 153130 46.7% → 15종목, 새 종목 일곱 상한가 모름, 남은 건수 1 → uncounted")
     void upperUnknownBuysMaskedByDailyOrdersStillUncounted() {
         Map<String, Double> prev = merge(w(CASH, 46.672), each("ABCDEFGH", 6.666));
