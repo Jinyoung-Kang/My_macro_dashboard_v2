@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { LiveIntervalSelect } from "@/components/LiveIntervalSelect";
 import { type Column, DataTable, Empty, type InspectorContext, InspectorFrame, InspectorTrigger, KpiStrip, ReadingGuide } from "@/components/patterns";
 import { Callout, ErrorState, Freshness, Loading, Panel, Tag } from "@/components/ui";
@@ -189,6 +189,9 @@ const LOCKOUT_COLUMNS: readonly Column<PaperLockout>[] = [
 ];
 
 // 짧은 한국어 칸(방향 '매수'·출처 '사후 체결')은 줄을 바꾸지 않습니다 — CSS 기본은 한글 음절 사이 어디서나 접어 좁은 칸에서 '매/수'가 됐습니다(QA-737).
+/** 머리 '일시정지'·'재개' 동작 id(ActionBar의 data-action) — 끝나면 포커스를 되돌릴 자리(QA-814). */
+const STATUS_ACTION = "status";
+
 const ORDER_COLUMNS: readonly Column<PaperOrder>[] = [
   { key: "createdAt", header: "낸 시각", cell: (row) => formatKst(row.createdAtKst) },
   { key: "ticker", header: "종목", cell: (row) => row.ticker },
@@ -755,6 +758,18 @@ export function HoldingsSection({
   );
   // 계좌 초기화 확인 창. 입력 글자는 창 안에 있어 창을 닫으면 비워집니다(다시 열면 처음부터 — 계좌 코드를 다시 쳐야 함).
   const [confirmingReset, setConfirmingReset] = useState(false);
+  // 머리 '일시정지'·'재개'가 끝나면 그 동작(data-action=status — 바뀐 '재개'·'일시정지')으로 포커스를 되돌립니다. 보내는 동안 단추가 막혀(크롬은 막힌 단추의
+  // 포커스를 문서로 놓음) 잃은 포커스를 끝난 뒤에도 되돌리지 않아 다음 Tab이 문서 처음부터였습니다 — 결정 로그 머리 동작과 같은 규칙(QA-771), 포커스를
+  // 잃었을 때만 옮깁니다(QA-814).
+  const statusFocus = useRef(false);
+  useEffect(() => {
+    if (!statusFocus.current || toggle.busy) return;
+    const button = document.querySelector<HTMLButtonElement>(`button[data-action="${STATUS_ACTION}"]`);
+    if (!button || button.disabled) return;
+    statusFocus.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body || !active.isConnected) button.focus();
+  });
 
   const reloadAll = () => {
     void positions.reload();
@@ -796,7 +811,9 @@ export function HoldingsSection({
   const resetResult = reset.result?.book?.code === code ? resetResultView(reset.result) : null;
 
   const changeStatus = async () => {
-    if (action && (await toggle.run(code, action.next))) reloadAll();
+    if (!action) return;
+    statusFocus.current = true;
+    if (await toggle.run(code, action.next)) reloadAll();
   };
   const runReset = async (typed: string) => {
     // confirm은 사람이 친 글자 그대로입니다(확인 창은 계좌 코드와 같을 때만 부름) — 서버가 계좌 코드와 같은지 다시 봅니다(아니면 400).
@@ -814,7 +831,7 @@ export function HoldingsSection({
   const headerActions: ActionBarItem[] = [
     ...(action
       ? [{
-        id: "status",
+        id: STATUS_ACTION,
         label: toggle.busy ? "바꾸는 중…" : action.label,
         onSelect: () => void changeStatus(),
         disabled: toggle.busy,

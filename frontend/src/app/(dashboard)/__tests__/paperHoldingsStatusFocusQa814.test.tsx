@@ -52,7 +52,7 @@ function dropFocus() {
 }
 
 describe("QA-814 — 머리 '일시정지'·'재개'가 끝나면 그 동작으로 포커스", () => {
-  it.fails.each([
+  it.each([
     ["성공", () => Promise.resolve({ ok: true, book: { ...BOOK, status: "PAUSED" }, cancelledOrders: 0 })],
     ["실패", () => Promise.reject(new Error("합성 오류 — 계좌 상태를 바꾸지 못했습니다"))],
   ])("%s: 막혀 잃은 포커스가 끝난 뒤 머리 상태 동작으로 돌아온다", async (_, answer) => {
