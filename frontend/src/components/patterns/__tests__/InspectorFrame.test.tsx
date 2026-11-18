@@ -13,7 +13,7 @@ import { smallTargets } from "@/lib/__tests__/touchTargetAudit";
 import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 import { DataTable } from "../DataTable";
-import { InspectorFrame, InspectorTrigger, type InspectorLayout } from "../InspectorFrame";
+import { InspectorFrame, InspectorSubheading, InspectorTrigger, type InspectorLayout, type SubheadingTag } from "../InspectorFrame";
 import { PropertyList } from "../PropertyList";
 import { Skeleton } from "../Skeleton";
 
@@ -534,3 +534,96 @@ describe("QA-657 옆 검사 칸은 목차 가로 줄 아래 16px에 붙는다", 
     expect(lgTokens).not.toContain("@min-[52rem]:top-4");
   });
 });
+
+// 작업대 P6 선택 — 배치 wide(틀 64rem부터 옆 28rem)·문맥 inline(지금 옆 칸 배치인가)·dialogFocus(대화상자 첫 포커스). 기본값이면 위 사례 그대로입니다.
+describe("InspectorFrame — 넓은 배치(wide)·배치 문맥(inline)·제목 첫 포커스(P6)", () => {
+  it("wide는 틀 폭 64rem부터 옆 28rem(크기 질의 클래스·sticky는 목차 줄 아래 16px) — 그 아래(1000px)는 대화상자", () => {
+    stubWide();
+    const frame = stubFrameWidth(1100);
+    renderFrame({ layout: "wide" });
+    const region = inspectorRegion() as HTMLElement;
+    expect(tokens(region.parentElement as HTMLElement)).toContain("@min-[64rem]:grid-cols-[minmax(0,1fr)_28rem]");
+    expect(tokens(region)).toEqual(expect.arrayContaining(["@min-[64rem]:sticky", "@min-[64rem]:top-[calc(var(--section-strip-h,0px)+1rem)]"]));
+    frame.resize(1000);
+    expect(inspectorRegion()).toBeNull();
+    expect(trigger("VIX").getAttribute("aria-haspopup")).toBe("dialog");
+    fireEvent.click(trigger("VIX"));
+    expect(screen.getByRole("dialog", { name: "VIX" })).toBeTruthy();
+  });
+
+  it("문맥의 inline은 지금 옆 칸 배치인가 — 넓은 틀 참, 좁은 틀·좁은 화면·dialog 배치 거짓", () => {
+    const seen: boolean[] = [];
+    const renderSeen = (layout: InspectorLayout) =>
+      render(
+        <InspectorFrame label="지표 미리보기" layout={layout} titleOf={() => "제목"} renderDetail={() => null}>
+          {(inspector) => {
+            seen.push(inspector.inline);
+            return <span>표</span>;
+          }}
+        </InspectorFrame>,
+      );
+    // 좁은 화면
+    renderSeen("lg");
+    expect(seen.at(-1)).toBe(false);
+    cleanup();
+    stubWide();
+    const frame = stubFrameWidth(900);
+    renderSeen("lg");
+    expect(seen.at(-1)).toBe(true);
+    frame.resize(800);
+    expect(seen.at(-1)).toBe(false);
+    cleanup();
+    renderSeen("dialog");
+    expect(seen.at(-1)).toBe(false);
+  });
+
+  it("dialogFocus='title'이면 대화상자를 열 때 제목에 포커스 — 기본은 내용의 첫 조작(닫기 단추 포함 Radix 그대로)", async () => {
+    renderFrame({ dialogFocus: "title" });
+    fireEvent.click(trigger("VIX"));
+    const heading = await screen.findByRole("heading", { name: "VIX" });
+    await waitFor(() => expect(document.activeElement).toBe(heading));
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    cleanup();
+    renderFrame();
+    fireEvent.click(trigger("VIX"));
+    const dialog = await screen.findByRole("dialog", { name: "VIX" });
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.tagName).not.toBe("H2");
+  });
+});
+
+/** 검사 칸 안 절 머리 — InspectorSubheading이 고른 태그로 그립니다. */
+function Section({ fallback = "h4" as SubheadingTag, depth = 1 as 1 | 2 }) {
+  return (
+    <InspectorSubheading fallback={fallback} depth={depth}>
+      {`절 ${depth}`}
+    </InspectorSubheading>
+  );
+}
+
+describe("InspectorFrame — 검사 칸 안 절 머리 단계(InspectorSubheading, P6 검토)", () => {
+  it("옆 칸은 제목(h3) 다음 h4·h5, headingLevel 4면 h5, 대화상자는 제목(h2) 다음 h3, 검사 칸 밖은 fallback", async () => {
+    stubWide();
+    const levels = () => [...document.querySelectorAll("h3, h4, h5, h6")].filter((node) => node.textContent?.startsWith("절 ")).map((node) => node.tagName);
+    const detail = () => (
+      <>
+        <Section />
+        <Section depth={2} />
+      </>
+    );
+    const { unmount } = renderFrame({ defaultKey: "us10y", layout: "lg", renderDetail: detail });
+    expect(levels()).toEqual(["H4", "H5"]);
+    unmount();
+    const deeper = renderFrame({ defaultKey: "us10y", layout: "lg", headingLevel: 4, renderDetail: detail });
+    expect(levels()).toEqual(["H5", "H6"]);
+    deeper.unmount();
+    renderFrame({ layout: "dialog", renderDetail: detail });
+    fireEvent.click(trigger("미국채 10년물"));
+    await screen.findByRole("dialog");
+    expect(levels()).toEqual(["H3", "H4"]);
+    cleanup();
+    render(<Section fallback="h3" />);
+    expect(levels()).toEqual(["H3"]);
+  });
+});
+

@@ -1,8 +1,9 @@
 /**
- * 개요의 계좌 상세 — 계좌 행(AssetRow)을 누르면 계좌 목록 아래에 그 계좌의 상세가 열린다(한 번에 하나).
+ * 개요의 계좌 상세 — 계좌 표(작업대 P6)의 줄 단추('{계좌} 상세 보기')를 누르면 그 계좌의 검사 칸(넓은 화면 옆 칸·좁은 틀 위쪽 대화상자)에 곡선·속성과
+ * 상세가 열린다(한 번에 하나 — 상세는 그때만 읽음).
  *
- *  - 행 전체가 진짜 <button>(aria-expanded·aria-controls, 이름 "… 상세 보기")이라 행 어디를 눌러도 열리고, 다시 누르거나 '닫기'·Esc로 닫힌다
- *  - 열면 초점이 패널 제목으로 간다(바로 Esc로 닫을 수 있게), 움직임 줄이기를 켰으면 부드러운 스크롤 대신 바로 옮긴다
+ *  - 좁은 틀: 대화상자 제목으로 포커스, Esc는 닫고 줄 단추로. '상세 닫기'는 상세만 닫고 '상세 열기'로 포커스
+ *  - 넓은 화면: 처음부터 규칙 계좌 요약(읽지 않음), 줄 단추로 상세를 열면 초점이 상세 제목, Esc는 상세만 닫고 줄 단추로, 움직임 줄이기면 바로 옮긴다
  *  - 정의(운용 방식 …)와 지금 설정(설정 응답 — 못 읽으면 숫자 없이 정의만), 핵심 숫자 — 개요에 지금 값(current)이 있으면 순자산·수익률·
  *    주식 노출·마지막 평가 타일만 지금 값(장중 추정이면 그 타일과 머리에 '추정'), 나머지와 구성·체결은 장부 + '장부 마지막 관측' 한 줄
  *  - 묶음이 셋 이상이면 도넛 + 범례, 둘 이하면 한 줄 막대 + 범례, 어느 쪽이든 표(차트의 표 보기)
@@ -11,6 +12,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPOSITION_TOP_N } from "@/lib/paper";
+import { WIDE_SHELL_MEDIA } from "@/lib/shellCommands";
 
 const api = vi.hoisted(() => {
   class UnauthorizedError extends Error {}
@@ -139,105 +141,128 @@ afterEach(() => {
 
 const toggle = (name: RegExp) => screen.getByRole("button", { name });
 
-describe("계좌 행을 누르면 상세가 열린다", () => {
-  it("계좌 행 단추는 진짜 button이고 aria-expanded·aria-controls로 열림을 알린다 — 누르면 열리고 다시 누르면 닫힌다", async () => {
+/** 넓은 화면(lg 이상 — 셸 넓은 질의만 참)으로 — 틀 폭을 재지 못하는 jsdom에서는 검사 칸 틀이 옆 칸 배치(크기 질의에 맡김)입니다. */
+function stubWide(reduceMotion = false) {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === WIDE_SHELL_MEDIA || (reduceMotion && query === "(prefers-reduced-motion: reduce)"),
+    media: query, onchange: null,
+    addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+    dispatchEvent: () => false,
+  }));
+}
+
+describe("계좌 표의 줄 단추를 누르면 그 계좌의 검사 칸과 상세가 열린다(작업대 P6 — 예전 계좌 행)", () => {
+  it("좁은 틀(jsdom 기본): 줄 단추는 진짜 button(보이는 글 = 계좌 이름, 이름 '… 상세 보기'), 누르면 위쪽 대화상자에 곡선·속성과 상세 — 대화상자 제목으로 포커스", async () => {
     render(<PaperPage />);
-    const button = await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ });
+    const button = await screen.findByRole("button", { name: "규칙 계좌 상세 보기" });
     expect(button.tagName).toBe("BUTTON");
     expect(button.getAttribute("type")).toBe("button");
+    expect(button.getAttribute("aria-haspopup")).toBe("dialog");
     expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(button.closest("table")?.querySelector("caption")?.textContent).toBe("계좌 목록");
     expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
 
+    button.focus();
     fireEvent.click(button);
-
-    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
-    expect(toggle(/규칙 계좌 상세 닫기/).getAttribute("aria-expanded")).toBe("true");
-    expect(toggle(/규칙 계좌 상세 닫기/).getAttribute("aria-controls")).toBe(panel.id);
-
-    fireEvent.click(toggle(/규칙 계좌 상세 닫기/));
-    expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
-    expect(toggle(/규칙 계좌 상세 보기/).getAttribute("aria-expanded")).toBe("false");
+    const dialog = await screen.findByRole("dialog", { name: "규칙 계좌" });
+    expect(within(dialog).getByRole("region", { name: "규칙 계좌 상세" })).toBeTruthy();
+    expect(within(dialog).getByRole("region", { name: "규칙 계좌 순자산 곡선" })).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByRole("heading", { name: "규칙 계좌", level: 2 }));
+    await settled();
+    // Esc로 닫으면 연 줄 단추로
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(toggle(/^규칙 계좌 상세 보기/)));
   });
 
-  it("행 어디를 눌러도 열리고, 다른 행을 누르면 그 계좌로 바뀐다(한 번에 하나)", async () => {
+  it("다른 줄을 누르면 그 계좌로 바뀐다(한 번에 하나) — 상세도 그 계좌", async () => {
     render(<PaperPage />);
-    // 행 전체가 단추 — 이름이 아니라 순자산 숫자를 눌러도 열립니다(예전 카드의 "카드 어디를 눌러도"와 같은 뜻).
-    const spyRow = await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ });
-    fireEvent.click(within(spyRow).getByText("100,000.00"));
+    fireEvent.click(await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ }));
     expect(await screen.findByRole("region", { name: "SPY 계좌 상세" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 
     fireEvent.click(toggle(/규칙 계좌 상세 보기/));
     expect(await screen.findByRole("region", { name: "규칙 계좌 상세" })).toBeTruthy();
     expect(screen.queryByRole("region", { name: "SPY 계좌 상세" })).toBeNull();
-    expect(toggle(/SPY 계좌 상세 보기/).getAttribute("aria-expanded")).toBe("false");
-    // 선택된 행은 왼쪽 막대로도 보입니다(색만이 아니라 단추 글자 '상세 닫기'도 바뀜) — 다른 행에는 막대가 없습니다.
-    expect(toggle(/규칙 계좌 상세 닫기/).querySelector('[aria-hidden="true"].bg-text')).not.toBeNull();
-    expect(toggle(/SPY 계좌 상세 보기/).querySelector('[aria-hidden="true"].bg-text')).toBeNull();
+    // 순자산 값과 수익률 칩은 같은 줄의 칸(행 전체가 단추가 아니라 줄 머리의 이름 단추)
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    const spy = toggle(/SPY 계좌 상세 보기/).closest("tr") as HTMLElement;
+    expect(within(spy).getByText("100,000.00")).toBeTruthy();
   });
 
-  it("'닫기'와 Esc로 닫히고, 초점은 그 계좌 행의 단추로 돌아간다", async () => {
+  it("'상세 닫기'는 상세만 닫고 곡선·속성은 남는다 — 포커스는 그 자리의 '상세 열기', 다시 누르면 상세", async () => {
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
-    let panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
-
-    fireEvent.click(within(panel).getByRole("button", { name: "닫기" }));
+    const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
+    fireEvent.click(within(panel).getByRole("button", { name: "상세 닫기" }));
     expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
-    expect(document.activeElement).toBe(toggle(/규칙 계좌 상세 보기/));
-
-    fireEvent.click(toggle(/규칙 계좌 상세 보기/));
-    panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
-    fireEvent.keyDown(within(panel).getByRole("button", { name: "닫기" }), { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
-    expect(document.activeElement).toBe(toggle(/규칙 계좌 상세 보기/));
+    const dialog = screen.getByRole("dialog", { name: "규칙 계좌" });
+    expect(within(dialog).getByRole("region", { name: "규칙 계좌 순자산 곡선" })).toBeTruthy();
+    const reopen = within(dialog).getByRole("button", { name: "규칙 계좌 상세 열기" });
+    expect(document.activeElement).toBe(reopen);
+    fireEvent.click(reopen);
+    expect(await within(dialog).findByRole("region", { name: "규칙 계좌 상세" })).toBeTruthy();
   });
 
-  it("A11Y-1: 열면 초점이 패널 제목으로 간다 — 다음 Tab이 다른 행 단추를 돌지 않고, 바로 누른 Esc도 패널을 닫는다", async () => {
+  it("A11Y-1 넓은 화면: 옆 검사 칸이 처음부터 규칙 계좌 요약(상세 없음 — 읽지 않음), 줄 단추로 상세를 열면 초점이 상세 제목, Esc는 상세만 닫고 줄 단추로", async () => {
+    stubWide();
     render(<PaperPage />);
-    const button = await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ });
+    await settled();
+    const inspector = screen.getByRole("region", { name: "계좌 자세히 — 규칙 계좌" });
+    expect(within(inspector).getByRole("region", { name: "규칙 계좌 순자산 곡선" })).toBeTruthy();
+    expect(within(inspector).queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
+    expect(paths.some((path) => path.includes("/books/rules/"))).toBe(false);
+    // 옆 칸에 보이는 줄의 단추는 aria-current, 대화상자 속성은 없음
+    const button = toggle(/^규칙 계좌 상세 보기/);
+    expect(button.getAttribute("aria-current")).toBe("true");
+    expect(button.getAttribute("aria-haspopup")).toBeNull();
+
     button.focus();
     fireEvent.click(button);
     const panel = await screen.findByRole("region", { name: "규칙 계좌 상세" });
     const heading = within(panel).getByRole("heading", { name: "규칙 계좌 상세" });
     expect(document.activeElement).toBe(heading);
-    // Tab 순서에는 넣지 않습니다(초점을 받는 자리일 뿐).
     expect(heading.getAttribute("tabindex")).toBe("-1");
 
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
     expect(screen.queryByRole("region", { name: "규칙 계좌 상세" })).toBeNull();
-    expect(document.activeElement).toBe(toggle(/규칙 계좌 상세 보기/));
+    expect(document.activeElement).toBe(toggle(/^규칙 계좌 상세 보기/));
+    // 보는 계좌(요약)는 그대로
+    expect(screen.getByRole("region", { name: "계좌 자세히 — 규칙 계좌" })).toBeTruthy();
 
-    // 다른 행으로 바꿔 열어도 새 패널의 제목으로
+    // 다른 줄로 바꿔 열면 새 상세 제목으로, 검사 칸도 그 계좌
     fireEvent.click(toggle(/SPY 계좌 상세 보기/));
     const spy = await screen.findByRole("region", { name: "SPY 계좌 상세" });
     expect(document.activeElement).toBe(within(spy).getByRole("heading", { name: "SPY 계좌 상세" }));
+    expect(screen.getByRole("region", { name: "계좌 자세히 — SPY 계좌" })).toBeTruthy();
   });
 
-  it("A11Y-3: 움직임 줄이기(prefers-reduced-motion)를 켰으면 패널로 바로 옮기고, 아니면 부드럽게", async () => {
+  it("A11Y-3 넓은 화면: 움직임 줄이기(prefers-reduced-motion)를 켰으면 상세로 바로 옮기고, 아니면 부드럽게", async () => {
     const scroll = vi.fn();
     (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView = scroll;
-    let reduce = true;
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(prefers-reduced-motion: reduce)" && reduce,
-      media: query, onchange: null,
-      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
-      dispatchEvent: () => false,
-    }));
+    stubWide(true);
     render(<PaperPage />);
     fireEvent.click(await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ }));
     await screen.findByRole("region", { name: "규칙 계좌 상세" });
     expect(scroll).toHaveBeenLastCalledWith({ block: "nearest", behavior: "auto" });
 
-    reduce = false;
+    vi.unstubAllGlobals();
+    stubWide(false);
     fireEvent.click(toggle(/SPY 계좌 상세 보기/));
     await screen.findByRole("region", { name: "SPY 계좌 상세" });
     expect(scroll).toHaveBeenLastCalledWith({ block: "nearest", behavior: "smooth" });
   });
 
-  it("계좌 행에는 계좌마다 한 줄 소개가 있다(종류·상태 뒤)", async () => {
+  it("계좌마다 한 줄 소개는 검사 칸 속성(표 줄에는 종류와 상태 배지)", async () => {
     render(<PaperPage />);
-    const rules = await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ });
-    expect(within(rules).getByText(/13F 신호만 규칙대로 따르는 대조군/)).toBeTruthy();
-    expect(within(toggle(/60\/40 계좌 상세 보기/)).getByText(/SPY 60%·SHY 40%를 사서 그대로/)).toBeTruthy();
+    const rules = (await screen.findByRole("button", { name: /규칙 계좌 상세 보기/ })).closest("tr") as HTMLElement;
+    expect(within(rules).getByText("규칙")).toBeTruthy();
+    expect(within(rules).getByText("운용 중")).toBeTruthy();
+    expect(within(rules).queryByText(/13F 신호만 규칙대로 따르는 대조군/)).toBeNull();
+    fireEvent.click(toggle(/60\/40 계좌 상세 보기/));
+    const dialog = await screen.findByRole("dialog", { name: "60/40 계좌" });
+    const intro = within(dialog).getByText("한 줄 소개", { selector: "dt" });
+    expect(intro.parentElement?.querySelector("dd")?.textContent).toMatch(/SPY 60%·SHY 40%를 사서 그대로/);
   });
 });
 
@@ -372,7 +397,8 @@ describe("상세 패널의 내용", () => {
       within(within(table).getByText(label).closest("tr") as HTMLElement).getAllByRole("cell").map((td) => td.textContent);
     expect(firstCells("NVDA")).toEqual(["NVDA", "20.0%", "20,240.00 달러", "+1.50%", "10"]);
     expect(firstCells("SHY")).toEqual(["SHY현금성", "30.0%", "30,366.00 달러", "+1.50%", "10"]);
-    expect(firstCells("현금")).toEqual(["현금", "0.5%", "500.00 달러", "—", "—"]);
+    // 모르는 칸은 공용 표의 Empty('—' + 낭독 '값 없음' — 작업대 P6에서 옛 ui Table을 옮김)
+    expect(firstCells("현금")).toEqual(["현금", "0.5%", "500.00 달러", "—값 없음", "—값 없음"]);
     expect(within(composition).queryByRole("img")).toBeNull();
   });
 
@@ -385,7 +411,8 @@ describe("상세 패널의 내용", () => {
     const composition = within(panel).getByRole("region", { name: "구성" });
     const legend = await within(composition).findByRole("list", { name: "구성 범례" });
     const legendSwatches = within(legend).getAllByRole("listitem").map((li) => li.querySelector('[aria-hidden="true"]') as HTMLElement);
-    const tableSwatches = [...within(composition).getByRole("table").querySelectorAll('td [aria-hidden="true"]')] as HTMLElement[];
+    // 표의 색 견본(장식 — 바탕색이 든 aria-hidden 네모). 공용 표의 Empty '—'도 aria-hidden이라 견본만 고릅니다.
+    const tableSwatches = [...within(composition).getByRole("table").querySelectorAll('td [aria-hidden="true"][style]')] as HTMLElement[];
     expect(legendSwatches).toHaveLength(5);
     expect(tableSwatches.length).toBeGreaterThan(0);
     for (const swatch of [...legendSwatches, ...tableSwatches]) {

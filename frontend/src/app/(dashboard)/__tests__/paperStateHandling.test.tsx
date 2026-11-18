@@ -145,9 +145,12 @@ describe("초기화 전", () => {
 
     render(<PaperPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /펼치기/ }));
-    expect(await screen.findByText(LIMITS[0])).toBeTruthy();
-    expect(screen.getByText(LIMITS[1])).toBeTruthy();
+    // 한계 문구는 머리 단추로 여는 서랍(작업대 P6) — 열어 읽고 닫습니다(연 동안 뒤 화면은 보조 기술에서 가려짐).
+    fireEvent.click(await screen.findByRole("button", { name: /^이 장부의 한계 \(2줄\)$/ }));
+    const limits = screen.getByRole("dialog", { name: "이 장부의 한계" });
+    expect(within(limits).getByText(LIMITS[0])).toBeTruthy();
+    expect(within(limits).getByText(LIMITS[1])).toBeTruthy();
+    fireEvent.keyDown(limits, { key: "Escape" });
     // 책이 없으니 리스크 실행 버튼은 아직 없습니다.
     expect(screen.queryByRole("button", { name: "리스크 지금 실행" })).toBeNull();
 
@@ -191,10 +194,10 @@ describe("초기화 전", () => {
     // 다시 읽은 개요(책 네 개)가 그려진 뒤에도 카드가 남는다
     expect(await screen.findByText("벤치마크 사후 체결 대기")).toBeTruthy();
     await waitFor(() => expect(overviewReads).toBeGreaterThanOrEqual(2));
-    const spyRow = await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ });
+    const spyRow = (await screen.findByRole("button", { name: /SPY 계좌 상세 보기/ })).closest("tr") as HTMLElement;
     // 사후 체결을 기다리는 벤치마크 행에는 그 사실이 경고로 보입니다(추정처럼 '아직 확정 아님'을 숨기지 않음).
     expect(within(spyRow).getByText("출발일 종가 대기 — 사후 체결 전(현금만)")).toBeTruthy();
-    expect(within(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ })).queryByText(/출발일 종가 대기/)).toBeNull();
+    expect(within(screen.getByRole("button", { name: /규칙 계좌 상세 보기/ }).closest("tr") as HTMLElement).queryByText(/출발일 종가 대기/)).toBeNull();
     expect(screen.getByText(/SPY 계좌, 60\/40 계좌: 출발일\(2026-10-23\) 종가를 아직 받지 못해/)).toBeTruthy();
     // 서버 사유(skipped.reason)가 보이고, 다시 누를 버튼이 있다
     expect(screen.getByText(/bench_spy 시작하지 않음 — 2026-10-23 SPY 종가가 아직 없습니다/)).toBeTruthy();
@@ -243,9 +246,9 @@ describe("값을 모를 때", () => {
 
     render(<PaperPage />);
 
-    // 계좌 행 — 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩을 생략(0.00% 없음), 상태는 글로
-    const claude = await screen.findByRole("button", { name: /Claude 계좌 상세 보기/ });
-    expect(within(claude).getByText("값 없음")).toBeTruthy();
+    // 계좌 표 줄 — 순자산을 모르면 "—"(단위 없음), 수익률을 모르면 칩 대신 "—"(0.00% 없음), 상태는 배지 글로
+    const claude = (await screen.findByRole("button", { name: /Claude 계좌 상세 보기/ })).closest("tr") as HTMLElement;
+    expect(within(claude).getAllByText("값 없음").length).toBeGreaterThan(0);
     expect(within(claude).queryByText("달러")).toBeNull();
     expect(within(claude).queryByText(/0\.00/)).toBeNull();
     expect(within(claude).getByText(/시작 전 · 현금만/)).toBeTruthy();
@@ -263,7 +266,7 @@ describe("값을 모를 때", () => {
 
     // 값이 있는 책은 서버 값 그대로
     expect(comparisonCell("순자산", "SPY 계좌")).toBe("100,050.12 달러");
-    expect(within(screen.getByRole("button", { name: /SPY 계좌 상세 보기/ })).getByText("100,050.12")).toBeTruthy();
+    expect(within(screen.getByRole("button", { name: /SPY 계좌 상세 보기/ }).closest("tr") as HTMLElement).getByText("100,050.12")).toBeTruthy();
 
     // 순자산 곡선 계열은 책 순서대로, 관측치 줄은 봉 날짜·티커 수
     expect(within(screen.getByRole("list", { name: "순자산 계열" })).getAllByRole("listitem").map((li) => li.textContent))
@@ -311,12 +314,14 @@ describe("값을 모를 때", () => {
     // 처음 시작한 책(bench_spy)을 먼저 보여 줍니다 — 규칙·Claude 책은 아직 비어 있습니다.
     expect((screen.getByLabelText("계좌 고르기") as HTMLSelectElement).value).toBe("bench_spy");
     const spyRow = (await screen.findByText("가격 없음 · 평단 평가")).closest("tr") as HTMLElement;
+    // 맨 앞 칸은 검사 칸 줄 단추(작업대 P6 — 아이콘, 글은 낭독기 '… 보유 자세히')라 값 칸은 하나씩 뒤입니다.
     const cells = within(spyRow).getAllByRole("cell").map((td) => td.textContent);
-    expect(cells[2]).toBe("662.0800");   // 평단 — 주당 가격은 4자리
-    expect(cells[3]).toBe(NONE);   // 가격
-    expect(cells[4]).toBe(NONE);   // 실시간(ADR 0024 — 받은 시세가 없으면 —)
-    expect(cells[7]).toBe(NONE);   // 평가 손익
-    expect(cells[9]).toBe(NONE);   // 스탑 가격
+    expect(cells[0]).toBe("SPY 보유 자세히");
+    expect(cells[3]).toBe("662.0800");   // 평단 — 주당 가격은 4자리
+    expect(cells[4]).toBe(NONE);   // 가격
+    expect(cells[5]).toBe(NONE);   // 실시간(ADR 0024 — 받은 시세가 없으면 —)
+    expect(cells[8]).toBe(NONE);   // 평가 손익
+    expect(cells[10]).toBe(NONE);   // 스탑 가격
     expect(await screen.findByText("사후 체결")).toBeTruthy();
     expect(screen.getByText("재진입 금지 종목이 없습니다.")).toBeTruthy();
     expect(screen.getByText("주문이 없습니다.")).toBeTruthy();
@@ -351,12 +356,13 @@ describe("주당 가격", () => {
 
     // XYZ는 보유·체결 두 표에 다 있어, 보유 표에만 있는 보유 기간 칸으로 줄을 찾습니다.
     const holdingRow = (await screen.findByText("2026-10-23부터 · 1거래일")).closest("tr") as HTMLElement;
+    // 맨 앞 칸은 검사 칸 줄 단추(작업대 P6)라 값 칸은 하나씩 뒤입니다.
     const holding = within(holdingRow).getAllByRole("cell").map((td) => td.textContent);
-    expect(holding[2]).toBe("9.0045");   // 평단
-    expect(holding[3]).toBe("9.1000");   // 가격
-    expect(holding[5]).toBe("910.00");   // 평가액은 총액 — 2자리(4는 실시간 칸)
-    expect(holding[8]).toBe("9.2000");   // 최고가
-    expect(holding[9]).toBe("8.4640 · 거리 7.5%");   // 스탑 가격
+    expect(holding[3]).toBe("9.0045");   // 평단
+    expect(holding[4]).toBe("9.1000");   // 가격
+    expect(holding[6]).toBe("910.00");   // 평가액은 총액 — 2자리(5는 실시간 칸)
+    expect(holding[9]).toBe("9.2000");   // 최고가
+    expect(holding[10]).toBe("8.4640 · 거리 7.5%");   // 스탑 가격
 
     const fillRow = (await screen.findByText("paper.quotes")).closest("tr") as HTMLElement;
     const fill = within(fillRow).getAllByRole("cell").map((td) => td.textContent);
@@ -450,8 +456,9 @@ describe("보유·재진입 금지 표", () => {
       fireEvent.click(await screen.findByRole("tab", { name: "보유·체결" }));
 
       const box = await screen.findByRole("region", { name: "보유 (좌우 스크롤)" });
-      const hint = box.previousElementSibling as HTMLElement;
-      expect(hint.textContent).toBe("← 표를 좌우로 넘겨 보세요");
+      // 개수 줄(작업대 P6 — 표 머리 개수)이 있으면 안내는 그 줄 오른쪽 — 상자 바로 앞 줄 안에서 찾습니다.
+      const hint = within(box.previousElementSibling as HTMLElement).getByText("← 표를 좌우로 넘겨 보세요");
+      expect(hint.previousElementSibling?.textContent).toBe("1종목");
       await waitFor(() => expect(hint.className).not.toContain("sm:hidden"), { timeout: 500 });
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;

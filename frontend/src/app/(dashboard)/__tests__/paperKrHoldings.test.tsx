@@ -278,7 +278,7 @@ describe("자료", () => {
     expect(headers).toContain("평단(원)");
     expect(headers).toContain("평가액(원)↕");
     const held = rowOf(table, "000660");
-    expect(within(held).getByText("기업행위 확인 필요").getAttribute("title")).toContain("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
+    expect(within(held).getByText("기업행위 확인 필요").closest("[title]")?.getAttribute("title")).toContain("2026-11-03 상장주식수 변동(분할·병합 추정) — 확인 필요");
     expect(within(held).getByText("200,000")).toBeTruthy();
     expect(within(held).getByText("1,005,000")).toBeTruthy();
     expect(within(rowOf(table, "035420")).getByText("가격 없음 · 지난 값")).toBeTruthy();
@@ -367,8 +367,8 @@ describe("자료", () => {
     try {
       render(<PaperPage market="KR" initialTab="holdings" />);
       const box = await screen.findByRole("region", { name: "주문 (좌우 스크롤)" });
-      const hint = box.previousElementSibling as HTMLElement;
-      expect(hint.textContent).toBe("← 표를 좌우로 넘겨 보세요");
+      // 개수 줄(작업대 P6 — 표 머리 개수)이 있으면 안내는 그 줄 오른쪽 — 상자 바로 앞 줄 안에서 찾습니다.
+      const hint = within(box.previousElementSibling as HTMLElement).getByText("← 표를 좌우로 넘겨 보세요");
       await waitFor(() => expect(hint.className).not.toContain("sm:hidden"));
     } finally {
       delete (HTMLElement.prototype as unknown as Record<string, unknown>).scrollWidth;

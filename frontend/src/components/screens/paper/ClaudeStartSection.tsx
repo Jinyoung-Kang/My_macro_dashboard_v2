@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Banner, Button, Card } from "@/components/ui";
+import { Button, Callout, Panel } from "@/components/ui";
 import { useApi } from "@/hooks/useApi";
 import { useAsyncAction } from "@/hooks/useAsyncAction";
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/paper";
 import type { PaperClaudePreviewResult, PaperFrameworkResponse, PaperInitialDecisionResult, PaperOverviewResponse } from "@/lib/types";
 import { ClaudeDecisionBody } from "./ClaudeDecisionBody";
+import { DetailFold } from "./DetailFold";
 
 /** 확인 단계 — 어느 버튼의 확인을 열었는지. */
 type Confirming = "preview" | "start" | null;
@@ -57,7 +58,7 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
     ?? primaryClaudeBook(overview.books ?? [])?.label
     ?? "Claude 계좌";
   const startView = start.result ? initialDecisionResultView(start.result, label) : null;
-  const startResult = startView && <Banner tone={startView.tone}>{startView.text}</Banner>;
+  const startResult = startView && <Callout tone={startView.tone}>{startView.text}</Callout>;
 
   if (!prompt) return startResult || null;
 
@@ -86,10 +87,10 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
   const previewPacket = preview.result ? prettyJson(preview.result.packet) : null;
 
   return (
-    <Card title={prompt.title} subtitle="초기 결정 — 출발일 기준 입력 패킷 · 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
+    <Panel title={prompt.title} subtitle="초기 결정 — 출발일 기준 입력 패킷 · 출발일 종가 사후 체결" source={PAPER_SOURCES.decisions}>
       <p className="text-sm leading-relaxed text-text-2">{prompt.body}</p>
       <div className="mt-3">
-        <Banner tone={prompt.framework.tone}>{prompt.framework.text}</Banner>
+        <Callout tone={prompt.framework.tone}>{prompt.framework.text}</Callout>
       </div>
       <p className="mt-2 text-xs text-text-3">비용: {prompt.cost}</p>
 
@@ -117,22 +118,22 @@ export function ClaudeStartSection({ overview, onChanged }: { overview: PaperOve
       )}
 
       {/* 서버 문구(이미 시작함·호출 상한·키 없음 등)를 그대로 — 무엇을 해야 하는지 서버가 적어 보냅니다. */}
-      {preview.error && <div className="mt-3"><Banner tone="warn">{preview.error}</Banner></div>}
-      {start.error && <div className="mt-3"><Banner tone="warn">{start.error}</Banner></div>}
+      {preview.error && <div className="mt-3"><Callout tone="warn">{preview.error}</Callout></div>}
+      {start.error && <div className="mt-3"><Callout tone="warn">{start.error}</Callout></div>}
       {startResult && <div className="mt-3">{startResult}</div>}
 
       {previewView && (
         <section aria-label="미리보기 결과" className="mt-4 flex flex-col gap-3 border-t border-border pt-3">
-          <Banner tone={previewView.tone}>{previewView.text}</Banner>
+          <Callout tone={previewView.tone}>{previewView.text}</Callout>
           {previewBody && <ClaudeDecisionBody view={previewBody} />}
           {previewPacket && (
-            <details className="rounded-control border border-border px-3 py-2 text-xs">
-              <summary className="cursor-pointer text-text-3">입력 패킷(JSON)</summary>
+            // 결정 상세와 같은 접기(머리 좁은 화면 44px — QA-773, QA-748과 같은 꼴).
+            <DetailFold summary="입력 패킷(JSON)">
               <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs text-text-2">{previewPacket}</pre>
-            </details>
+            </DetailFold>
           )}
         </section>
       )}
-    </Card>
+    </Panel>
   );
 }

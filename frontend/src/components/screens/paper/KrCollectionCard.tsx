@@ -1,20 +1,20 @@
 "use client";
 
 import { type Column, DataTable } from "@/components/patterns";
-import { Card, ErrorState, Freshness, Loading } from "@/components/ui";
+import { ErrorState, Freshness, Loading, Panel, Tag, type TagTone } from "@/components/ui";
 import { krClaude2CheckpointLine, PAPER_SOURCES, quotesLine } from "@/lib/paper";
 import { type KrCollectionRow, type KrCollectionState, krCollectionRows } from "@/lib/paperKr";
 
 import { Claude2CheckpointLine } from "./Claude2StartSection";
 import type { PaperQuotesSummary, PaperStatusResponse } from "@/lib/types";
 
-/** 판정 배지 색 — 글(정상·늦음·뒤처짐·없음·모름)이 뜻을 나르고 색은 보조입니다(lib/paper 배지와 같은 팔레트). */
-const STATE_TONE: Record<KrCollectionState, string> = {
-  정상: "border-ok/40 bg-ok-tint text-ok",
-  늦음: "border-warn/40 bg-warn-tint text-warn",
-  뒤처짐: "border-warn/40 bg-warn-tint text-warn",
-  없음: "border-warn/40 bg-warn-tint text-warn",
-  모름: "border-border bg-surface-2 text-text-3",
+/** 판정 태그 톤 — 글(정상·늦음·뒤처짐·없음·모름)이 뜻을 나르고 톤(아이콘 + 색, 주의는 낭독 '주의: ')은 보조입니다(공용 Tag 20px — 작업대 P6). */
+const STATE_TONE: Record<KrCollectionState, TagTone> = {
+  정상: "ok",
+  늦음: "warn",
+  뒤처짐: "warn",
+  없음: "warn",
+  모름: "neutral",
 };
 
 
@@ -42,7 +42,9 @@ const COLUMNS: Column<KrCollectionRow>[] = [
     className: "min-w-[12rem] align-top",
     cell: (row) => (
       <span className="flex flex-col gap-0.5">
-        <span className={`w-fit whitespace-nowrap rounded-control border px-2 py-px text-xs ${STATE_TONE[row.state]}`}>{row.state}</span>
+        <span className="w-fit whitespace-nowrap">
+          <Tag tone={STATE_TONE[row.state]}>{row.state}</Tag>
+        </span>
         {row.reason && <span className="text-xs text-text-2">{row.reason}</span>}
       </span>
     ),
@@ -64,7 +66,7 @@ export function KrCollectionCard({
   const collection = status.data?.available ? status.data.collection ?? null : null;
   const rows = krCollectionRows(collection, quotes);
   return (
-    <Card
+    <Panel
       title="한국 수집 상태"
       subtitle="한국 계좌가 읽는 수집기 저장본 — 관측치·수급은 KR 거래일 20:30 KST 뒤 하루 한 번(장중 관측치 없음). 늦음: 관측치·수급은 다음 수집 예정 + 2시간 5분, DART·일정 7일, 뉴스 24시간 · 유니버스·금융위는 기준일 비교(뒤처짐)"
       source={PAPER_SOURCES.krCollection}
@@ -84,6 +86,6 @@ export function KrCollectionCard({
       {!status.error && (
         <Claude2CheckpointLine line={krClaude2CheckpointLine(status.data?.available ? status.data.kr_claude2 : null)} className="mt-3" />
       )}
-    </Card>
+    </Panel>
   );
 }

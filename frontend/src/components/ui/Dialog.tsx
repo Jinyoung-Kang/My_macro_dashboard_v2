@@ -10,6 +10,12 @@ const WIDTH = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-2xl" } as const;
 
 export type DialogSize = keyof typeof WIDTH;
 
+/** 오른쪽 세로 패널(`placement="end"`)의 폭 — 좁은 화면(sm 미만)은 화면 전체 폭, 그 위는 같은 크기 이름의 폭까지. */
+const END_WIDTH = { sm: "sm:max-w-sm", md: "sm:max-w-md", lg: "sm:max-w-2xl" } as const;
+
+/** 대화상자 자리 — 가운데(기본)·위쪽 고정·오른쪽 끝에 붙은 세로 패널(서랍 — ui/Drawer). */
+export type DialogPlacement = "center" | "top" | "end";
+
 /**
  * 범위 표지(data-scope)를 이어받는 자리 — 대화상자는 body 끝으로 옮겨 그려(portal) 화면의 범위 토큰(globals.css의 [data-scope="…"])이
  * 닿지 않습니다. 정보 검색 화면처럼 늘 어두운 화면은 이것으로 감싸 그 안에서 연 대화상자(원문 팝업 등 대화상자를 감싼 부품 포함)에 같은 표지를
@@ -39,6 +45,12 @@ const FADE_IN = "motion-safe:transition-opacity motion-safe:duration-150 motion-
  * - `dismissible={false}`: 처리 중에는 Esc·바깥 누르기·닫기 단추로 닫히지 않습니다(결과가 나온 뒤 부르는 쪽이 닫음).
  * - `placement="top"`: 화면 위쪽(높이의 12% — 좁은 화면은 1rem)에 붙여 그립니다. 가운데 두면 내용 높이가 바뀔 때마다(검색 결과 수) 위 끝이
  *   오르내려 입력칸이 움직였습니다(사용자 요청 2026-11-02). 기본은 가운데입니다.
+ * - `placement="end"`(작업대 P6 — 서랍 ui/Drawer가 씀): 오른쪽 끝에 붙은 화면 높이의 세로 패널입니다. 좁은 화면(sm 미만)은 화면 전체 폭, 그 위는 `size`의
+ *   폭(sm·md·2xl)까지. 덮개 3층(surface-2 바탕·안쪽 밝은 경계 — 화면 안쪽 왼쪽 가장자리 1px·바깥 그림자)·덮개 범위 표지·닫기 단추·포커스 규칙은 같고,
+ *   화면 가장자리에 붙어 모서리를 둥글리지 않습니다.
+ * - `initialFocus="title"`(작업대 P6 — 목록-검사의 검사 대화상자가 씀): 열 때 첫 포커스를 내용의 첫 조작 대신 제목(h2 — tabIndex -1, 링 없음)에 둡니다.
+ *   낭독기가 제목부터 읽고 다음 Tab이 내용의 첫 조작으로 갑니다. 닫으면 연 단추로 돌아가는 규칙은 같습니다. 기본(content)은 Radix 그대로 — 내용의
+ *   첫 조작(없으면 닫기 단추)입니다.
  *
  * 열림 상태는 부르는 쪽이 쥡니다(`open`·`onOpenChange`). 닫혀 있으면 내용이 DOM에 없고, 열리면 body 끝으로 옮겨 그립니다(portal).
  */
@@ -54,6 +66,7 @@ export function Dialog({
   dismissible = true,
   showClose = true,
   placement = "center",
+  initialFocus = "content",
   scope,
   children,
 }: {
@@ -74,8 +87,10 @@ export function Dialog({
   dismissible?: boolean;
   /** 오른쪽 위 닫기(✕) 단추. 확인 창처럼 취소 단추가 따로 있으면 끕니다. */
   showClose?: boolean;
-  /** 세로 자리 — 가운데(기본) 또는 위쪽 고정(내용 높이가 바뀌어도 위 끝이 그대로). */
-  placement?: "center" | "top";
+  /** 자리 — 가운데(기본), 위쪽 고정(내용 높이가 바뀌어도 위 끝이 그대로), 오른쪽 끝 세로 패널(end — 서랍). */
+  placement?: DialogPlacement;
+  /** 열 때 첫 포커스 — 내용의 첫 조작(기본 content) 또는 제목(title). */
+  initialFocus?: "content" | "title";
   /** 범위 표지 — 주면 대화상자 상자에 data-scope를 붙여 그 범위의 토큰으로 그립니다. 없으면 둘러싼 DialogScope, 그것도 없으면 앱 테마. */
   scope?: string;
   children?: ReactNode;
@@ -84,6 +99,9 @@ export function Dialog({
   const scopeValue = scope ?? inherited;
   // 열기 직전에 포커스가 있던 요소. 이벤트 처리기에서만 읽고 씁니다.
   const opener = useRef<HTMLElement | null>(null);
+  // 제목 — 첫 포커스를 제목에 둘 때(initialFocus="title")만 씁니다.
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const titleFocus = initialFocus === "title";
   const blockWhenBusy = (event: Event) => {
     if (!dismissible) event.preventDefault();
   };
@@ -91,7 +109,12 @@ export function Dialog({
   // 제목은 데이터 이름(13F 보유 종목·기관 이름)이 들어오기도 해 대상 머리 h1·검사 칸 제목과 같은 이름 규칙 — 말줄임 없이 낱말 사이에서 줄을 바꾸고
   // 칸보다 긴 낱말만 칸 안에서 끊습니다(QA-569 — 공백 없는 긴 이름이 닫기 단추 밑으로 넘쳐 대화상자가 가로로 스크롤됐음).
   const heading = (
-    <DialogPrimitive.Title lang={titleLang} className={`min-w-0 break-keep wrap-anywhere text-heading text-text ${showClose ? "pr-10" : ""}`.trim()}>
+    <DialogPrimitive.Title
+      ref={titleRef}
+      lang={titleLang}
+      tabIndex={titleFocus ? -1 : undefined}
+      className={`min-w-0 break-keep wrap-anywhere text-heading text-text ${showClose ? "pr-10" : ""}${titleFocus ? " outline-none" : ""}`.trim()}
+    >
       {title}
     </DialogPrimitive.Title>
   );
@@ -105,10 +128,15 @@ export function Dialog({
         <DialogPrimitive.Content
           data-scope={scopeValue}
           data-overlay=""
-          onOpenAutoFocus={() => {
+          onOpenAutoFocus={(event) => {
             // 이 시점에는 아직 포커스가 옮겨지기 전입니다(Radix FocusScope가 옮기기 직전에 부름).
             const active = document.activeElement;
             opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+            // 제목 첫 포커스 — Radix의 첫 조작 포커스를 막고 제목에 둡니다(제목은 포커스 가둠 안 — 대화상자 내용의 첫 요소).
+            if (titleFocus) {
+              event.preventDefault();
+              titleRef.current?.focus();
+            }
           }}
           onCloseAutoFocus={(event) => {
             // dev Strict Mode의 가짜 언마운트에서도 불립니다 — 내용이 아직 DOM에 있으면 열려 있는 것이므로 포커스를 옮기지 않습니다.
@@ -125,11 +153,15 @@ export function Dialog({
           }}
           onEscapeKeyDown={blockWhenBusy}
           onInteractOutside={blockWhenBusy}
-          className={`fixed left-1/2 z-50 w-[calc(100%-2rem)] ${WIDTH[size]} -translate-x-1/2 ${
-            placement === "top"
-              ? "top-4 max-h-[calc(100dvh-2rem)] sm:top-[12dvh] sm:max-h-[calc(88dvh-1rem)]"
-              : "top-1/2 max-h-[calc(100dvh-2rem)] -translate-y-1/2"
-          } overflow-y-auto rounded-card border border-border-overlay bg-surface-2 p-4 text-text shadow-overlay outline-none ${FADE_IN}`}
+          className={
+            placement === "end"
+              ? `fixed inset-y-0 right-0 z-50 w-full ${END_WIDTH[size]} overflow-y-auto border-l border-border-overlay bg-surface-2 p-4 text-text shadow-overlay outline-none ${FADE_IN}`
+              : `fixed left-1/2 z-50 w-[calc(100%-2rem)] ${WIDTH[size]} -translate-x-1/2 ${
+                  placement === "top"
+                    ? "top-4 max-h-[calc(100dvh-2rem)] sm:top-[12dvh] sm:max-h-[calc(88dvh-1rem)]"
+                    : "top-1/2 max-h-[calc(100dvh-2rem)] -translate-y-1/2"
+                } overflow-y-auto rounded-card border border-border-overlay bg-surface-2 p-4 text-text shadow-overlay outline-none ${FADE_IN}`
+          }
         >
           {hideTitle ? <VisuallyHidden.Root asChild>{heading}</VisuallyHidden.Root> : heading}
           {description && (
