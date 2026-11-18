@@ -149,6 +149,27 @@ class PaperStopWatchJobTest {
     }
 
     @Test
+    @DisplayName("ADR 0044 결정 5 — 분 경계 직전의 ns 시계(10:20:59.999999700)로 낸 STOP의 생성 시각은 µs로 잘림(10:20:59.999999): 자르지 않으면 "
+            + "DB가 10:21:00으로 반올림해 장부가 다시 센 T(10:22)가 근거의 targetAt(10:21)과 갈림")
+    void stopCreatedAtIsTruncatedToMicros() {
+        settings("ON", "OFF");
+        usBook(PaperBooks.RULES, PaperBooks.KIND_RULES, PaperBooks.ACTIVE);
+        hold(PaperBooks.RULES, "AAA", 100, PREV, 99);
+        usSnapshot(et(10, 20, 20), et(10, 20, 21), Map.of("AAA", new double[]{99, 91}), et(10, 19, 0));
+        clock.now = et(10, 20, 59).plusNanos(999_999_700);
+
+        job.run();
+
+        assertThat(stops()).singleElement().satisfies(o -> {
+            assertThat(o.timing()).isEqualTo(PaperBooks.MARKET);
+            assertThat(o.createdAt()).isEqualTo(et(10, 20, 59).plusNanos(999_999_000));
+            assertThat(o.reason().path("targetAt").asString()).isEqualTo(et(10, 21, 0).toString());
+            assertThat(ExecutionAudit.marketTarget(PaperFixtures.dbRounded(o.createdAt())))
+                    .as("DB에 쓴 생성 시각으로 장부가 다시 센 T = 근거의 targetAt").isEqualTo(et(10, 21, 0));
+        });
+    }
+
+    @Test
     @DisplayName("SHADOW — 주문 없이 '걸렸을 것'만 그 세션에 한 번 기록, OFF는 저장본도 읽지 않음")
     void shadowAndOff() {
         settings("SHADOW", "OFF");
