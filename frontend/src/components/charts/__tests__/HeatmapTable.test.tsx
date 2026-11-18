@@ -2,8 +2,9 @@
  * 표 히트맵(components/charts/HeatmapTable.tsx — 일반 표 HeatmapTable과 그 감싸개인 13F 포트폴리오 화면의 비중 히트맵 WeightHeatmap). 값은 합성입니다
  * (가상 종목·기관 이름).
  *
- * - 일반 표: 칠한 칸은 순차 팔레트 단계 바탕·단계 글자색·data-step·고대비에서도 색 그대로, 모름 '—'·0(zeroText)은 칠하지 않음, max 0 이하면 칠하지 않음,
- *   범례(견본 다섯·단계 글·'밝은 단계일수록 큼'·설명 글), 영역 이름(가로 스크롤 상자).
+ * - 일반 표 네 상태: 값(칠한 칸은 순차 팔레트 단계 바탕·단계 글자색·data-step·고대비에서도 색 그대로), 모름(공용 '—' — 낭독 '값 없음'), 0(zeroText),
+ *   자기 칸(selfIndex — 중립 바탕). 그 밖에 max 0 이하면 칠하지 않음, 범례(견본 다섯·단계 글·'밝은 단계일수록 큼'·설명 글), 영역 이름(가로 스크롤 상자),
+ *   표 구조(sr-only caption·열 머리 scope=col·행 머리 th scope=row sticky).
  * - DOM 고정: 합성 자료 하나로 그린 비중 히트맵의 요소마다 태그·클래스·인라인 모양·속성·글을 줄로 적어 둡니다. 히트맵 몸통을 옮기거나 일반 표 히트맵으로
  *   바꾸는 커밋이 같은 DOM을 내는지 이 목록으로 봅니다(겉모양을 바꾸는 커밋은 같은 커밋에서 이 목록을 고칩니다).
  */
@@ -71,10 +72,17 @@ function renderTable(rows: HeatmapRow[], extra: { max?: number; zeroText?: strin
   );
 }
 
-/** 이름이 label인 행의 값 칸(첫 열 머리 칸을 뺀 td). */
+/** 이름이 label인 행의 값 칸(td — 행 머리는 th). */
 function cellsOf(label: string): HTMLTableCellElement[] {
   const row = screen.getByText(label).closest("tr") as HTMLTableRowElement;
-  return Array.from(row.querySelectorAll("td")).filter((cell) => cell.textContent !== label);
+  return Array.from(row.querySelectorAll("td"));
+}
+
+/** 칸의 보이는 글 — 낭독 전용 글(sr-only)은 뺍니다. */
+function visibleText(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  copy.querySelectorAll(".sr-only").forEach((node) => node.remove());
+  return copy.textContent ?? "";
 }
 
 describe("표 히트맵(HeatmapTable) — 칸·범례", () => {
@@ -95,7 +103,10 @@ describe("표 히트맵(HeatmapTable) — 칸·범례", () => {
   it("모름은 '—', 0은 zeroText — 둘 다 칠하지 않는다(단계·바탕·고대비 예외 없음)", () => {
     renderTable([{ key: "r", label: "가상 행", values: [null, undefined, 0, 40, 0] }], { zeroText: "·" });
     const cells = cellsOf("가상 행");
-    expect(cells.map((cell) => cell.textContent)).toEqual(["—", "—", "·", "40.0", "·"]);
+    expect(cells.map(visibleText)).toEqual(["—", "—", "·", "40.0", "·"]);
+    // 모름은 공용 '—'(기호는 낭독에서 빼고 '값 없음'을 읽음) — 0을 만들지 않음
+    expect(cells[0].textContent).toBe("—값 없음");
+    expect(cells[0].querySelector('[aria-hidden="true"]')?.textContent).toBe("—");
     for (const index of [0, 1, 2, 4]) {
       const cell = cells[index];
       expect(cell.hasAttribute("data-step"), `${index}`).toBe(false);
@@ -108,8 +119,52 @@ describe("표 히트맵(HeatmapTable) — 칸·범례", () => {
   it("zeroText가 없으면 0도 format 글이고 칠하지 않는다, 음수도 칠하지 않는다", () => {
     renderTable([{ key: "r", label: "가상 행", values: [0, -5, 100, null, 1] }]);
     const cells = cellsOf("가상 행");
-    expect(cells.map((cell) => cell.textContent)).toEqual(["0.0", "-5.0", "100.0", "—", "1.0"]);
+    expect(cells.map(visibleText)).toEqual(["0.0", "-5.0", "100.0", "—", "1.0"]);
     expect(cells.map((cell) => cell.getAttribute("data-step"))).toEqual([null, null, "5", null, "1"]);
+  });
+
+  it("유한하지 않은 수와 열보다 짧은 값 줄의 모자란 칸은 모름('—') — 칠하지 않는다", () => {
+    renderTable([{ key: "r", label: "가상 행", values: [Number.NaN, Number.POSITIVE_INFINITY, 50] }]);
+    const cells = cellsOf("가상 행");
+    expect(cells).toHaveLength(COLUMNS.length);
+    expect(cells.map(visibleText)).toEqual(["—", "—", "50.0", "—", "—"]);
+    expect(cells.map((cell) => cell.getAttribute("data-step"))).toEqual([null, null, "3", null, null]);
+  });
+
+  it("자기 칸(selfIndex)은 단계 대신 중립 바탕(surface-2)·보조 글자색 — 값은 그대로 적고 다른 칸은 그대로 칠한다", () => {
+    renderTable([
+      { key: "a", label: "갑 행", values: [100, 50, 20, null, 0], selfIndex: 0 },
+      { key: "b", label: "을 행", values: [50, 100, 90, 10, 0], selfIndex: 1 },
+    ]);
+    const first = cellsOf("갑 행");
+    expect(visibleText(first[0])).toBe("100.0");
+    expect(first[0].hasAttribute("data-step")).toBe(false);
+    expect(first[0].style.backgroundColor).toBe("");
+    expect(tokens(first[0])).toEqual(expect.arrayContaining(["bg-surface-2", "text-text-2", "tabular-nums"]));
+    expect(first[1].getAttribute("data-step")).toBe("3");
+    const second = cellsOf("을 행");
+    expect(tokens(second[1])).toContain("bg-surface-2");
+    expect(second[1].hasAttribute("data-step")).toBe(false);
+    expect(second[0].getAttribute("data-step")).toBe("3");
+    expect(second[2].getAttribute("data-step")).toBe("5");
+  });
+
+  it("표 구조: 낭독용 표 이름(sr-only caption)·열 머리 scope=col(전체 이름 title)·행 머리 th scope=row(가로 스크롤 때 왼쪽에 붙음)", () => {
+    renderTable([{ key: "r", label: "가상 행", title: "가상 행 전체 이름", values: [1, 2, 3, 4, 5] }]);
+    const table = screen.getByRole("table", { name: "합성 행렬" });
+    const caption = table.querySelector("caption") as HTMLElement;
+    expect(caption.textContent).toBe("합성 행렬");
+    expect(tokens(caption)).toContain("sr-only");
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers.map((header) => header.textContent)).toEqual(["기관", "가", "나", "다", "라", "마"]);
+    expect(headers.every((header) => header.getAttribute("scope") === "col")).toBe(true);
+    expect(headers.map((header) => header.getAttribute("title"))).toEqual([null, "가상 갑 기관", "가상 을 기관", null, null, null]);
+    const rowHeader = screen.getByRole("rowheader", { name: "가상 행" });
+    expect(rowHeader.tagName).toBe("TH");
+    expect(rowHeader.getAttribute("scope")).toBe("row");
+    expect(rowHeader.getAttribute("title")).toBe("가상 행 전체 이름");
+    expect(tokens(rowHeader)).toEqual(expect.arrayContaining(["sticky", "left-0", "bg-surface", "font-normal", "text-left"]));
+    expect(tokens(headers[0])).toEqual(expect.arrayContaining(["sticky", "left-0", "bg-surface"]));
   });
 
   it("견줄 최댓값이 0 이하면 아무 칸도 칠하지 않는다", () => {
@@ -177,26 +232,30 @@ describe("비중 히트맵 DOM 고정(합성 자료)", () => {
     expect(pinLines(container.firstElementChild as Element)).toEqual([
       "div aria-label=\"비중 히트맵 (좌우 스크롤)\" class=\"overflow-x-auto\" role=\"region\" tabindex=\"0\"",
       "  table class=\"w-full min-w-[640px] border-collapse text-xs\"",
+      "    caption class=\"sr-only\" \"비중 히트맵\"",
       "    thead",
       "      tr class=\"text-xs text-text-3\"",
-      "        th class=\"sticky left-0 bg-surface px-3 py-2 text-left font-medium\" \"종목\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" \"25-12-31\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" \"26-03-31\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" \"26-06-30\"",
-      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" \"26-09-30\"",
+      "        th class=\"sticky left-0 bg-surface px-3 py-2 text-left font-medium\" scope=\"col\" \"종목\"",
+      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2025-12-31\" \"25-12-31\"",
+      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-03-31\" \"26-03-31\"",
+      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-06-30\" \"26-06-30\"",
+      "        th class=\"px-2 py-2 text-right font-medium tabular-nums\" scope=\"col\" title=\"2026-09-30\" \"26-09-30\"",
       "    tbody",
       "      tr",
-      "        td class=\"sticky left-0 bg-surface px-3 py-1.5 text-left text-text-2\" \"SYNTHETIC ALPHA CO\"",
+      "        th class=\"sticky left-0 bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC ALPHA CO\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"5\" style=\"background-color: rgb(214, 159, 214); color: var(--bg);\" title=\"SYNTHETIC ALPHA CO · 2025-12-31\" \"10.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"4\" style=\"background-color: rgb(189, 107, 189); color: var(--bg);\" title=\"SYNTHETIC ALPHA CO · 2026-03-31\" \"8.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"3\" style=\"background-color: rgb(157, 63, 157); color: var(--text);\" title=\"SYNTHETIC ALPHA CO · 2026-06-30\" \"6.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"2\" style=\"background-color: rgb(124, 50, 124); color: var(--text);\" title=\"SYNTHETIC ALPHA CO · 2026-09-30\" \"4.0%\"",
       "      tr",
-      "        td class=\"sticky left-0 bg-surface px-3 py-1.5 text-left text-text-2\" \"SYNTHETIC BETA CO\"",
+      "        th class=\"sticky left-0 bg-surface px-3 py-1.5 text-left font-normal text-text-2\" scope=\"row\" \"SYNTHETIC BETA CO\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"1\" style=\"background-color: rgb(92, 37, 92); color: var(--text);\" title=\"SYNTHETIC BETA CO · 2025-12-31\" \"<0.1%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums forced-color-adjust-none\" data-step=\"1\" style=\"background-color: rgb(92, 37, 92); color: var(--text);\" title=\"SYNTHETIC BETA CO · 2026-03-31\" \"2.0%\"",
       "        td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-06-30\" \"·\"",
-      "        td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-09-30\" \"—\"",
+      "        td class=\"px-2 py-1.5 text-right tabular-nums\" title=\"SYNTHETIC BETA CO · 2026-09-30\"",
+      "          span class=\"relative inline-flex flex-wrap items-baseline gap-x-1 justify-end\"",
+      "            span aria-hidden=\"true\" \"—\"",
+      "            span class=\"sr-only\" \"값 없음\"",
       "  ul aria-label=\"칸 색 단계\" class=\"mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-3\"",
       "    li class=\"inline-flex items-center gap-1 tabular-nums\" \"최댓값의 0~20%\"",
       "      span aria-hidden=\"true\" class=\"size-3 shrink-0 rounded-sm border border-border forced-color-adjust-none\" style=\"background-color: rgb(92, 37, 92);\"",

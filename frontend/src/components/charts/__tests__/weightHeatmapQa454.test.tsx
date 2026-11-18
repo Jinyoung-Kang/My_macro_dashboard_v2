@@ -11,6 +11,13 @@ import { WeightHeatmap } from "@/components/charts";
 
 afterEach(cleanup);
 
+/** 칸의 보이는 글 — 낭독 전용 글(sr-only)은 뺍니다. */
+function visibleText(element: Element): string {
+  const copy = element.cloneNode(true) as Element;
+  copy.querySelectorAll(".sr-only").forEach((node) => node.remove());
+  return copy.textContent ?? "";
+}
+
 describe("비중 히트맵 — 0보다 크고 0.05% 미만이면 '<0.1%'(QA-454)", () => {
   it("보유 중인 아주 작은 비중·보통 비중·미보유·모름을 서로 다르게 적는다", () => {
     render(
@@ -20,7 +27,8 @@ describe("비중 히트맵 — 0보다 크고 0.05% 미만이면 '<0.1%'(QA-454)
       />,
     );
     const row = screen.getByText("SYNTHETIC SMALL CO").closest("tr") as HTMLTableRowElement;
-    const cells = Array.from(row.querySelectorAll("td")).slice(1).map((cell) => cell.textContent);
+    // 종목 이름 칸은 행 머리(th), 값 칸은 td — 보이는 글(낭독 전용 '값 없음' 뺌)을 견줍니다.
+    const cells = Array.from(row.querySelectorAll("td")).map(visibleText);
     expect(cells).toEqual(["<0.1%", "5.0%", "·", "—"]);
   });
 });
