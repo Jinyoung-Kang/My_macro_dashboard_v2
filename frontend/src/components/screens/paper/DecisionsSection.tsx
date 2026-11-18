@@ -234,7 +234,9 @@ export function DecisionsSection({
 
   const runNow = async () => {
     setRanFor(code);
-    if (confirming) focusAfter.current = "action";
+    // 끝나면 머리 동작으로 포커스를 되돌립니다 — 확인 상자(Claude 계좌)가 사라지거나, 실행 중 단추가 막혀(규칙 계좌 — 크롬은 막힌 단추의 포커스를 문서로
+    // 놓음) 포커스를 잃었을 때만(QA-771).
+    focusAfter.current = "action";
     const ok = await run.run(code);
     setConfirmingFor(null);
     if (ok) {
@@ -325,8 +327,12 @@ export function DecisionsSection({
             </div>
           </div>
         )}
-        {runError && <div className="mt-3"><Callout tone="warn">{runError}</Callout></div>}
-        {runView && <div className="mt-3"><Callout tone={runView.tone}>{runView.text}</Callout></div>}
+        {/* 머리 '지금 결정 실행'의 결과·오류는 늘 그려 둔 알림 영역(role=status) 안 — 단추가 머리로 옮겨 결과 글과 떨어졌고 끝나면 포커스가 머리로 돌아가므로,
+            이 영역이 없으면 낭독기 사용자는 비용이 드는 쓰기의 성공·실패를 듣지 못합니다(보유·체결 탭과 같음 — QA-771). 비어 있으면 높이·간격이 없습니다. */}
+        <div role="status" className="mt-3 flex flex-col gap-2 empty:mt-0">
+          {runError && <Callout tone="warn">{runError}</Callout>}
+          {runView && <Callout tone={runView.tone}>{runView.text}</Callout>}
+        </div>
       </Panel>
 
       <Panel

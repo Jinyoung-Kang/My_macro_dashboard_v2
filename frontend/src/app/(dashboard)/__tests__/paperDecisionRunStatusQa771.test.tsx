@@ -35,7 +35,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("QA-771 — 머리 '지금 결정 실행'의 결과는 알림 영역 안, 끝나면 그 단추로 포커스", () => {
-  it.fails("규칙 계좌 — 결과 글이 role=status 영역 안이고, 끝난 뒤 포커스가 '지금 결정 실행'으로 돌아온다", async () => {
+  it("규칙 계좌 — 결과 글이 role=status 영역 안이고, 끝난 뒤 포커스가 '지금 결정 실행'으로 돌아온다", async () => {
     let finish: (value: unknown) => void = () => {};
     api.apiPost.mockImplementation(() => new Promise((resolve) => {
       finish = resolve;
@@ -66,7 +66,7 @@ describe("QA-771 — 머리 '지금 결정 실행'의 결과는 알림 영역 �
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "지금 결정 실행" })));
   });
 
-  it.fails("실패하면 서버 문구가 role=status 영역 안", async () => {
+  it("실패하면 서버 문구가 role=status 영역 안", async () => {
     api.apiPost.mockRejectedValue(new Error("선정이 없습니다 — 규칙 계좌를 먼저 시작하세요."));
     render(<DecisionsSection books={[RULES]} onChanged={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "지금 결정 실행" }));
