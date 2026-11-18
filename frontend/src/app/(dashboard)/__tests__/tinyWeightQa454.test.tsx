@@ -4,8 +4,11 @@
  * 큰 기관 포트폴리오에서 3억 달러 남짓한 보유는 비중이 0.003% 안팎이라 소수 둘째 자리로 반올림하면 '0.00%'가 되어 없는 값처럼 읽혔습니다
  * (정보 검색 보유 탭, 운영 화면 확인). 같은 13F 비중을 보이는 곳 — 정보 검색 보유 탭(회사 보유 기관·기관 상위 보유 종목), 종목 상세 13F 보유 기관 카드,
  * 기관 상세 상위 보유 종목, 13F 포트폴리오 표, 공통 보유(교집합·공통 신규 매수)의 평균·최대 비중, 스타일 화면 보유 기관 검색 — 모두 같은 표기여야 합니다.
+ *
+ * 13F 포트폴리오 표 사례는 institutionsScreenStates.test.tsx로, 공통 보유·스타일 화면 사례는 analysisScreenStates.test.tsx로 옮겼습니다(P5b 패턴 단계,
+ * 내용 그대로 — P5b 두 화면 갈래가 한 파일을 함께 고치지 않게).
  */
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -30,9 +33,6 @@ import type { DetailQuote, GuruHoldersResponse, PortfolioResponse, SearchEntity,
 import { InstitutionDetailScreen } from "@/components/screens/detail/InstitutionDetailScreen";
 import { StockDetailScreen } from "@/components/screens/detail/StockDetailScreen";
 import { HoldingsPanel } from "@/components/screens/search/HoldingsPanel";
-import ConsensusPage from "../consensus/page";
-import InstitutionsPage from "../institutions/page";
-import GuruPage from "../style/page";
 
 const MEMBER: SessionUser = { email: "m@test.local", role: "MEMBER", tier: "FREE" };
 const TINY = "<0.01%";
@@ -139,55 +139,6 @@ describe("13F 비중이 0보다 크고 0.005% 미만이면 '<0.01%'(QA-454)", ()
     fireEvent.click(await screen.findByRole("tab", { name: "보유 종목" }));
     const card = (await screen.findByRole("heading", { level: 2, name: "상위 보유 종목" })).closest("section") as HTMLElement;
     await within(card).findByText("SYNTHETIC SMALL CO");
-    expectTiny(card);
-  });
-
-  it("13F 포트폴리오 화면 — 보유 종목 표", async () => {
-    api.apiGetShared.mockImplementation((path: string) => {
-      if (path.startsWith("/api/sec13f/institutions")) return Promise.resolve({ institutions: [{ key: "mega", name: "가상 대형운용", cik: CIK, desc: "" }] });
-      if (path.startsWith("/api/sec13f/portfolio")) return Promise.resolve(portfolio());
-      return new Promise(() => {});
-    });
-    render(<InstitutionsPage />);
-    const cell = await screen.findByText("SYNTHETIC SMALL CO");
-    const table = cell.closest("table") as HTMLElement;
-    expectTiny(table);
-  });
-
-  it("공통 보유 — 교집합·공통 신규 매수의 평균·최대 비중", async () => {
-    api.apiGetShared.mockImplementation((path: string) => {
-      if (path.startsWith("/api/sec13f/consensus")) {
-        return Promise.resolve({
-          available: true, participants: ["가상 연기금"], participantCount: 1, availableDates: [reportDate], reportDate: null, minHolders: 2,
-          rows: [{ key: "cusip:000000201", name: "SYNTHETIC TINY HOLDINGS", cusip: "000000201", holders: ["가상 연기금"], actions: [], holderCount: 2,
-            totalValue: 320_000_000, avgWeight: 0.003, maxWeight: 0.004, buyCount: 0, sellCount: 0 }],
-        });
-      }
-      if (path.startsWith("/api/sec13f/new-buys")) {
-        return Promise.resolve({
-          available: true, participants: ["가상 연기금"], participantCount: 1, availableDates: [], minHolders: 3, note: "13F는 분기 공시입니다.",
-          rows: [{ key: "cusip:000000202", name: "SYNTHETIC NEW CO", cusip: "000000202", buyers: ["가상 연기금"], buyerCount: 3,
-            totalValue: 100, avgWeight: 0.002, reportDate }],
-        });
-      }
-      return new Promise(() => {});
-    });
-    render(<ConsensusPage />);
-    const both = (await screen.findByText("SYNTHETIC TINY HOLDINGS")).closest("table") as HTMLElement;
-    expect(within(both).getAllByText(TINY)).toHaveLength(2);
-    expect(within(both).queryByText(ZERO)).toBeNull();
-    const fresh = (await screen.findByText("SYNTHETIC NEW CO")).closest("table") as HTMLElement;
-    expectTiny(fresh);
-  });
-
-  it("스타일 화면 — 이 종목을 누가 들고 있나", async () => {
-    api.apiGetShared.mockImplementation((path: string) =>
-      path.startsWith("/api/guru/holders") ? Promise.resolve(holders()) : new Promise(() => {}));
-    render(<GuruPage />);
-    fireEvent.change(screen.getByPlaceholderText("NVIDIA"), { target: { value: QUERY } });
-    fireEvent.click(screen.getByRole("button", { name: "찾기" }));
-    const card = screen.getByRole("heading", { name: "이 종목을 누가 들고 있나" }).closest("section") as HTMLElement;
-    await waitFor(() => expect(within(card).getByText("1.25%")).toBeTruthy());
     expectTiny(card);
   });
 });

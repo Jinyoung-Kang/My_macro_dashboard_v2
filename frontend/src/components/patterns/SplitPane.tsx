@@ -14,6 +14,13 @@ import { ChevronDownIcon } from "@/components/ui/icons";
 const WIDE_LEFT_FRAME =
   "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[auto_1fr] xl:grid-cols-[15rem_minmax(0,1fr)_18rem] xl:grid-rows-none";
 
+/**
+ * 두 칸 틀(`columns={2}` — P5b 13F 포트폴리오·교집합): lg 이상 왼쪽 13rem(`leftWidth="wide"`면 15rem) · 가운데, xl에서도 두 칸이라 가운데가 남은 폭을
+ * 다 씁니다. 오른쪽 칸이 없으니 줄 나눔(grid-rows)도 왼쪽 칸 줄 걸침도 없습니다. Tailwind가 글로 찾으므로 통째로 적습니다.
+ */
+const TWO_FRAME = "lg:grid lg:grid-cols-[13rem_minmax(0,1fr)]";
+const TWO_WIDE_LEFT_FRAME = "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]";
+
 /** 칸 하나 — 안의 패널을 위에서 아래로 12px(lg 16px) 사이로 쌓습니다(명세 §3-7 패널 사이 8~12px — 칸 틀의 칸 사이와 같은 값). */
 const COLUMN = "flex min-w-0 flex-col gap-3 lg:gap-4";
 
@@ -37,6 +44,10 @@ const TOGGLE = `flex min-h-11 w-full min-w-0 items-center justify-between gap-2 
  *   왼쪽 칸 → 가운데 → 오른쪽 — DOM·Tab·읽기 차례가 보이는 차례와 같음). 접은 칸은 display:none일 뿐 마운트된 채라 요청 시점·횟수가 같습니다.
  *   lg 이상은 상태와 상관없이 늘 칸을 보이고 단추를 숨깁니다(넓은 화면 겉모습·정보 검색 틀 그대로). 주지 않으면 지금처럼 세 칸만.
  * - `leftWidth`(선택, 기본 "default" — 13rem): "wide"면 왼쪽 칸 15rem(WIDE_LEFT_FRAME — 왼쪽에 고르기 상자를 쌓는 화면). 주지 않으면 그대로입니다.
+ * - `columns`(선택, 기본 3): 2면 두 칸 틀입니다 — lg 이상 왼쪽(13rem·"wide" 15rem) · 가운데(xl에서도 두 칸), 오른쪽 칸 요소를 그리지 않고(`right`는 무시) 왼쪽
+ *   칸도 두 줄을 걸치지 않습니다(TWO_FRAME). 왼쪽에 목록·조건을, 가운데에 고른 대상의 패널을 두는 화면(P5b 13F 포트폴리오·교집합)이 씁니다. lg 미만은 같은 한 칸
+ *   (왼쪽 → 가운데), `collapseLeft`도 그대로 걸립니다. 3(기본)이면 `right`가 undefined·null이어도 같은 세 칸 틀(빈 오른쪽 칸)입니다 — 예전에는 `right`를 주지
+ *   않은 것(undefined)과 null을 갈라 틀을 골라, `right={조건 ? <X/> : undefined}`가 말없이 두 칸 틀이 되는 함정이었습니다(P5b 검토 지적).
  */
 export function SplitPane({
   left,
@@ -44,20 +55,26 @@ export function SplitPane({
   right,
   collapseLeft,
   leftWidth = "default",
+  columns = 3,
 }: {
   left: ReactNode;
   children: ReactNode;
-  right: ReactNode;
+  /** 오른쪽 칸(세 칸 틀) — undefined·null이면 빈 오른쪽 칸. `columns={2}`면 무시. */
+  right?: ReactNode;
   /** lg 미만에서 왼쪽 칸을 접는 단추의 대상 이름(예 '핵심 지표·회사 개요') — 단추 글은 '{이름} 펼치기'·'{이름} 접기'. */
   collapseLeft?: string;
   /** 왼쪽 칸 폭 — 기본 13rem, "wide"는 15rem. */
   leftWidth?: "default" | "wide";
+  /** 틀의 칸 수 — 3(기본, 왼쪽·가운데·오른쪽) 또는 2(왼쪽·가운데). */
+  columns?: 2 | 3;
 }): JSX.Element {
   const leftId = useId();
   const [open, setOpen] = useState(false);
   const collapsed = Boolean(collapseLeft) && !open;
+  const twoColumns = columns === 2;
+  const frame = twoColumns ? (leftWidth === "wide" ? TWO_WIDE_LEFT_FRAME : TWO_FRAME) : leftWidth === "wide" ? WIDE_LEFT_FRAME : ENTITY_FRAME;
   return (
-    <div className={`${COLUMN} ${leftWidth === "wide" ? WIDE_LEFT_FRAME : ENTITY_FRAME}`}>
+    <div className={`${COLUMN} ${frame}`}>
       {collapseLeft ? (
         <button type="button" aria-expanded={open} aria-controls={leftId} onClick={() => setOpen((value) => !value)} className={TOGGLE}>
           <span className="min-w-0 break-keep wrap-anywhere">
@@ -66,11 +83,11 @@ export function SplitPane({
           <ChevronDownIcon size={16} className={`text-text-2 ${open ? "rotate-180" : ""}`} />
         </button>
       ) : null}
-      <div id={collapseLeft ? leftId : undefined} className={`${COLUMN} ${ENTITY_FRAME_LEFT}${collapsed ? " max-lg:hidden" : ""}`}>
+      <div id={collapseLeft ? leftId : undefined} className={`${COLUMN}${twoColumns ? "" : ` ${ENTITY_FRAME_LEFT}`}${collapsed ? " max-lg:hidden" : ""}`}>
         {left}
       </div>
       <div className={COLUMN}>{children}</div>
-      <div className={COLUMN}>{right}</div>
+      {twoColumns ? null : <div className={COLUMN}>{right}</div>}
     </div>
   );
 }

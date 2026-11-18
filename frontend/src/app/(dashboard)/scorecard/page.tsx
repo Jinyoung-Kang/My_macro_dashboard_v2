@@ -2,23 +2,34 @@
 
 import { useState } from "react";
 import { HorizontalBars } from "@/components/charts";
+import { DataTable, Empty, KpiStrip } from "@/components/patterns";
+import { Callout, ErrorState, Freshness, Loading, PageHeader, Panel, Select, Tag } from "@/components/ui";
+import { firstLoadPending, useApi } from "@/hooks/useApi";
+import { formatNumber } from "@/lib/format";
 import {
-  Banner,
-  Card,
-  ErrorState,
-  Freshness,
-  Loading,
-  Metric,
-  PageHeader,
-  Select,
-  SourceBadge,
-  Table,
-} from "@/components/ui";
-import { useApi } from "@/hooks/useApi";
-import { deltaColor, EMPTY, formatNumber, formatWithUnit } from "@/lib/format";
+  metricBars,
+  metricScoreEmptyReason,
+  metricScoreEmptyShort,
+  metricValueText,
+  scorecardKpis,
+  scorecardRawKpis,
+  universeOptions,
+} from "@/lib/scorecardScreen";
 import type { ScorecardResponse, StockUniverseResponse } from "@/lib/types";
 import { SOURCES } from "@/lib/sources";
 import { endpoints } from "@/lib/endpoints";
+
+/**
+ * 주의 안내의 대체 본문 글(처음 읽는 동안·응답에 글이 없을 때) — 백엔드(ScorecardService)가 늘 보내는 caveat와 같은 글입니다. 예전 대체 글은 '종합 점수가 아니며,'가
+ * 없어 응답이 오면 안내 상자 글이 늘며 아래를 밀었습니다(QA-716). 백엔드 글을 바꾸면 여기도 같이 고칩니다.
+ */
+const CAVEAT_FALLBACK = "가격으로 잴 수 있는 것만 담은 카드입니다. 종합 점수가 아니며, 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다.";
+
+/**
+ * 처음 읽는 동안의 빠진 것 목록 — 백엔드(ScorecardService)가 늘 보내는 missing과 같은 글입니다. 글 없는 막대 자리(QA-716 고침)는 줄 수만 같아, 좁은 화면에서
+ * 실제 줄이 두 줄로 꺾이면 안내 상자가 자라 아래를 밀었습니다(QA-721). 백엔드 목록을 바꾸면 여기도 같이 고칩니다.
+ */
+const MISSING_FALLBACK = ["재무 안정성 (부채비율·이자보상배율)", "성장성 (매출·이익 증가율)", "밸류에이션 (PER·PBR·배당수익률)"] as const;
 
 /**
  * 종목 스코어카드 — <b>가격으로 잴 수 있는 것만</b>.
@@ -26,6 +37,10 @@ import { endpoints } from "@/lib/endpoints";
  * <p>이 화면은 빠진 것을 먼저 말합니다. 재무 안정성과 성장성은 여기 없습니다 —
  * 이 프로젝트가 재무 데이터를 수집하지 않기 때문입니다. 그래서 이것은 종합
  * 점수가 아니며, 부실기업도 주가만 오르면 높은 점수를 받습니다.
+ *
+ * 배치(작업대 화면 언어 — 명세 §7 4행): 머리(신선도) → 주의 안내 상자 '이 카드는 종합 점수가 아닙니다.'(결과보다 먼저, 늘 보임) → '조회 조건'
+ * (고르기 셋) → '스코어 요약' KPI 띠(종목 타일은 종목 상세 링크) → '지표별 점수'(백분위 막대 + 공용 표) → '원자료' KPI 띠. 한 칸입니다 — 고르기 셋뿐이라
+ * 왼쪽 칸을 두어 가운데를 줄일 까닭이 없습니다.
  */
 export default function ScorecardPage() {
   const universe = useApi<StockUniverseResponse>(endpoints.insight.stockUniverse);
@@ -33,12 +48,11 @@ export default function ScorecardPage() {
   const [benchmark, setBenchmark] = useState("SPY");
   const [years, setYears] = useState("1");
 
-  const { data, loading, error, reload, refreshError } = useApi<ScorecardResponse>(
-    endpoints.insight.scorecard(symbol, benchmark, years),
-  );
+  const scorecard = useApi<ScorecardResponse>(endpoints.insight.scorecard(symbol, benchmark, years));
+  const { data, loading, error, reload, refreshError } = scorecard;
 
   return (
-    <div className="flex flex-col gap-6 lg:gap-8">
+    <div className="flex min-w-0 flex-col gap-3 lg:gap-4">
       <PageHeader
         title="종목 스코어카드"
         description={<>모멘텀 · 변동성 · 낙폭 · 추세를 {data?.universeLabel ?? "대형주"} 대비 백분위로</>}
@@ -56,32 +70,28 @@ export default function ScorecardPage() {
         빠진 것을 결과보다 **먼저** 보여 줍니다. 점수를 본 뒤에 "사실 재무는
         안 봤습니다"를 읽으면, 이미 그 점수로 판단이 끝난 뒤입니다.
       */}
-      <Banner tone="warn">
-        <div className="font-semibold">이 카드는 종합 점수가 아닙니다.</div>
-        <div className="mt-1">
-          {data?.caveat ??
-            "가격으로 잴 수 있는 것만 담은 카드입니다. 재무가 부실한 회사도 주가가 오르면 높은 점수를 받습니다."}
-        </div>
-        {(data?.missing?.length ?? 0) > 0 && (
+      <Callout tone="warn" title="이 카드는 종합 점수가 아닙니다.">
+        <div className="mt-1">{data?.caveat ?? CAVEAT_FALLBACK}</div>
+        {(data?.missing?.length ?? 0) > 0 ? (
           <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
             {data!.missing.map((item) => (
               <li key={item}>{item} — 수집하지 않습니다</li>
             ))}
           </ul>
-        )}
-      </Banner>
+        ) : firstLoadPending(scorecard) ? (
+          // 처음 읽는 동안은 응답과 같은 빠진 것 목록(MISSING_FALLBACK — 같은 글이라 같은 폭에서 같은 줄로 꺾임). 없으면 응답이 온 뒤에 목록이 생기며 안내 상자가
+          // 자라 아래 조회 조건·결과를 밀었습니다(QA-716·QA-721).
+          <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">
+            {MISSING_FALLBACK.map((item) => (
+              <li key={item}>{item} — 수집하지 않습니다</li>
+            ))}
+          </ul>
+        ) : null}
+      </Callout>
 
-      <Card>
+      <Panel title="조회 조건">
         <div className="flex flex-wrap items-end gap-3">
-          <Select
-            label="종목"
-            value={symbol}
-            onChange={setSymbol}
-            options={(universe.data?.rows ?? []).map((row) => ({
-              value: row.ticker,
-              label: `${row.ticker} · ${row.name}`,
-            }))}
-          />
+          <Select label="종목" value={symbol} onChange={setSymbol} options={universeOptions(universe.data?.rows)} />
           <Select
             label="베타 기준"
             value={benchmark}
@@ -100,123 +110,85 @@ export default function ScorecardPage() {
           />
         </div>
         {universe.data && !universe.data.available && (
-          <Banner tone="warn">{universe.data.message}</Banner>
+          <div className="mt-3">
+            <Callout tone="warn">{universe.data.message}</Callout>
+          </div>
         )}
-      </Card>
+      </Panel>
 
       {loading && !data && <Loading label="스코어카드를 계산하는 중…" />}
       {error && <ErrorState message={error} onRetry={reload} />}
-      {data && !data.available && <Banner tone="warn">{data.message}</Banner>}
+      {data && !data.available && <Callout tone="warn">{data.message}</Callout>}
 
       {data?.available && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric
-              label="종목"
-              value={data.symbol}
-              caption={data.name ?? undefined}
-              note={data.sector ?? undefined}
-            />
-            <Metric
-              label="가격 지표 평균"
-              value={data.priceScore === null ? EMPTY : `${formatNumber(data.priceScore, 0)}점`}
-              caption={`${data.scoredCount ?? 0}개 지표의 백분위 평균`}
-              note="종합 점수가 아닙니다 — 재무·성장·밸류에이션은 빠져 있습니다."
-            />
-            <Metric
-              label={`베타 (vs ${data.benchmark})`}
-              value={formatNumber(data.raw?.beta, 2)}
-              caption="1.0이면 기준과 같은 폭으로 움직였다는 뜻"
-            />
-            <Metric
-              label="비교 대상"
-              value={`${data.universeSize ?? 0}종목`}
-              caption={data.universeLabel}
-              note="백분위는 이 집단 안에서의 위치입니다."
-            />
-          </div>
+          {/* 종목 타일은 그 종목의 상세 화면 링크(요청 없음 — 목록 → 대상 화면, 명세 W5). 값은 등락색 없이 본문 잉크, 모르는 값은 '—'. */}
+          <KpiStrip label="스코어 요약" items={scorecardKpis(data, SOURCES.equityPrices)} />
 
           {(data.metrics?.length ?? 0) > 0 && (
-            <Card
-              title="지표별 점수" source={SOURCES.equityPrices}
+            <Panel
+              title="지표별 점수" source={SOURCES.equityPrices} count={`${data.metrics!.length.toLocaleString("ko-KR")}개`}
               subtitle="막대 = 백분위(0~100). 원자료를 함께 적어 점수를 검증할 수 있게 합니다."
             >
               <HorizontalBars
-                data={data.metrics!
-                  .filter((metric) => metric.score !== null)
-                  .map((metric) => ({ name: metric.label, value: metric.score as number }))}
+                data={metricBars(data.metrics)}
                 unit="점"
                 digits={0}
                 valueName="백분위"
                 neutral
+                ariaLabel={`${data.symbol} 지표별 백분위`}
                 height={Math.max(220, (data.metrics?.length ?? 1) * 32)}
               />
 
               <div className="mt-4">
-                <Table
+                <DataTable
+                  caption="지표별 점수"
                   rows={data.metrics!}
                   rowKey={(row) => row.label}
                   columns={[
                     {
                       key: "label",
                       header: "지표",
-                      render: (row) => (
+                      rowHeader: true,
+                      className: "break-keep",
+                      cell: (row) => (
                         <span className="flex flex-col">
                           <span className="text-text-2">{row.label}</span>
                           <span className="text-xs text-text-3">{row.how}</span>
                         </span>
                       ),
                     },
-                    {
-                      key: "value",
-                      header: "실제 값",
-                      align: "right",
-                      render: (row) => (
-                        <span className={deltaColor(row.value, 1)}>
-                          {row.value === null ? EMPTY : `${formatNumber(row.value, 1)}${row.unit}`}
-                        </span>
-                      ),
-                    },
+                    // 변동성·최대낙폭·추세 위치는 크기·위치라 오르내린 값이 아닙니다 — 모든 행을 본문 잉크로, 음수는 −(U+2212)(QA-705).
+                    // 좋고 나쁨은 '방향' 칸과 백분위가 나릅니다. 모르면 '—'.
+                    { key: "value", header: "실제 값", align: "right", cell: (row) => metricValueText(row) },
                     {
                       key: "score",
                       header: "백분위",
                       align: "right",
-                      render: (row) =>
+                      cell: (row) =>
                         row.score === null ? (
-                          <span
-                            className="text-text-3"
-                            // 값 자체가 없으면(표본 부족) 원인은 비교 대상 수가 아닙니다 — 두 경우를 나눠 적습니다(QA-088).
-                            title={
-                              row.value === null
-                                ? "표본이 부족해 값을 잴 수 없어 백분위도 없습니다"
-                                : "비교 대상이 10개 미만이라 백분위를 내지 않습니다"
-                            }
-                          >
-                            {EMPTY}
+                          // 값 자체가 없으면(표본 부족) 원인은 비교 대상 수가 아닙니다 — 두 경우를 나눠 적습니다(QA-088).
+                          // 짧은 까닭은 '—' 아래 줄에 늘 보이게, 긴 글은 마우스 설명(QA-719 — 예전에는 마우스 설명에만 있었음). 까닭 글은 낱말 사이에서 꺾여
+                          // 줄바꿈 없는 숫자 열을 넓히지 않습니다(스타일 화면 회전율 칸과 같은 꼴).
+                          <span className="flex flex-col items-end text-text-3" title={metricScoreEmptyReason(row) ?? undefined}>
+                            <Empty align="end" />
+                            <span className="whitespace-normal break-keep text-xs">{metricScoreEmptyShort(row)}</span>
                           </span>
                         ) : (
                           <span className="font-semibold">{formatNumber(row.score, 0)}점</span>
                         ),
                     },
-                    {
-                      key: "direction",
-                      header: "방향",
-                      render: (row) => <SourceBadge>{row.direction}</SourceBadge>,
-                    },
+                    // 방향은 지표의 읽는 법(높을수록·낮을수록 좋음) — 등락이 아니라 중립 태그입니다.
+                    { key: "direction", header: "방향", className: "whitespace-nowrap", cell: (row) => <Tag>{row.direction}</Tag> },
                   ]}
                 />
               </div>
-            </Card>
+            </Panel>
           )}
 
-          <Card title="원자료" source={SOURCES.equityPrices} subtitle="점수로 바꾸기 전의 값입니다.">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Metric label="1개월 수익률" value={formatWithUnit(data.raw?.momentum1m, 2, "%")} />
-              <Metric label="6개월 수익률" value={formatWithUnit(data.raw?.momentum6m, 2, "%")} />
-              <Metric label="표본" value={formatWithUnit(data.raw?.samples, 0, "일")} caption="거래일 수" />
-              <Metric label="측정 구간" value={`최근 ${data.years}년`} />
-            </div>
-          </Card>
+          <Panel title="원자료" source={SOURCES.equityPrices} subtitle="점수로 바꾸기 전의 값입니다.">
+            <KpiStrip label="원자료" items={scorecardRawKpis(data)} />
+          </Panel>
         </>
       )}
     </div>

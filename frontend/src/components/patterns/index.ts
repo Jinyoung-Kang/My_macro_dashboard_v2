@@ -12,6 +12,8 @@ export { ChangeCell, ChangeChip } from "./ChangeChip";
 export { type Column, DataTable } from "./DataTable";
 export { Empty } from "./Empty";
 export { type EntityChange, EntityHeader, type EntityKind, type EntityKindSpec } from "./EntityHeader";
+export { FilterList, type FilterListItem, type FilterListPendingRow } from "./FilterList";
+export { type HeatmapColumn, type HeatmapRow, HeatmapTable } from "./HeatmapTable";
 export { Hero } from "./Hero";
 export { type InspectorContext, InspectorFrame, type InspectorLayout, InspectorTrigger, type InspectorTriggerProps } from "./InspectorFrame";
 export { type KpiItem, KpiStrip } from "./KpiStrip";
