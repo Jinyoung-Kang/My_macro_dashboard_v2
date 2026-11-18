@@ -1545,7 +1545,7 @@ export interface PaperClaudeOrder {
   targetWeightPct?: number | null;
   sellFraction?: number | null;
   /** 계좌1 NEXT_OBSERVATION·NEXT_CLOSE, 계좌2(claude2-decision.schema.json) 메뉴 여덟(NEXT_OPEN·AT_1000~AT_1500·NEXT_CLOSE). */
-  /** MARKET은 계좌2 장중 확인 결정만 내는 장중 시장가(기준 시각 = 생성 + 60초 뒤 첫 분). */
+  /** MARKET은 장중 확인·판단 결정과 장중 감시 STOP이 내는 장중 시장가(기준 시각 = 생성 뒤 처음 시작하는 분 — ADR 0044). */
   timing: "NEXT_OBSERVATION" | "NEXT_CLOSE" | "NEXT_OPEN" | PaperTimedTiming | "MARKET" | string;
   thesis: string;
   labels: (PaperClaudeLabel | string)[];

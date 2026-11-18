@@ -1057,7 +1057,7 @@ describe("장중 확인(단계 2) — 오늘 장중 확인 줄·결정 로그·�
     expect(within(judged).getByText(/장중 확인은 자세·목표 노출 없이/)).toBeTruthy();
   });
 
-  it("주문 표의 MARKET 행 — 체결 시점은 '장중 시장가', 목표 시각은 실행 감사의 기준 시각(생성 + 60초 뒤 첫 분), 두 줄 칸 한 줄씩", async () => {
+  it("주문 표의 MARKET 행 — 체결 시점은 '장중 시장가', 목표 시각은 실행 감사의 기준 시각(생성 뒤 처음 시작하는 분), 두 줄 칸 한 줄씩", async () => {
     reads["/api/paper/overview"] = () => Promise.resolve(overview(CLAUDE2_ACTIVE));
     reads["/api/paper/books/claude2/positions"] = () => Promise.resolve({ available: true, book: CLAUDE2_ACTIVE, cash: 92000, lockouts: [], positions: [] });
     reads["/api/paper/books/claude2/orders"] = () => Promise.resolve({ available: true, orders: [{
