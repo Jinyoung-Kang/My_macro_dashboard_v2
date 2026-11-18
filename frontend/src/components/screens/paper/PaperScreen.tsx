@@ -23,6 +23,7 @@ import { HoldingsSection } from "./HoldingsSection";
 import { KrSelectionSection } from "./KrSelectionSection";
 import { NotesSection } from "./NotesSection";
 import { OverviewSection } from "./OverviewSection";
+import { PaperHeaderSlotsProvider } from "./PaperTabHeader";
 import { SelectionSection } from "./SelectionSection";
 import { SettingsSection } from "./SettingsSection";
 
@@ -89,6 +90,9 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
   const [focusProposal, setFocusProposal] = useState<number | null>(null);
   // '이 장부의 한계'는 접어 둔 채 시작합니다(사용자 요청 2026-11-02 — 단추로 펼침). 글은 늘 그 카드 안에 있고 펼칠 때만 보입니다.
   const [limitsOpen, setLimitsOpen] = useState(false);
+  // 머리 칸 둘(작업대 P6 — PaperTabHeader 계약): 탭의 섹션이 계좌 고르기·동작을 이 칸으로 보냅니다(포털). 칸 요소는 콜백 ref로 받아 공급자에 넘깁니다.
+  const [accountSlot, setAccountSlot] = useState<HTMLElement | null>(null);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   const { data, loading, error, reload, refreshError } = useApi<PaperOverviewResponse>(endpoints.paper.market(market).overview, 60_000);
   // 한국 화면은 이름이 다른 탭(종목 선정)만 한국 이름으로 — 여덟 탭 모두 열림(미국 화면은 PAPER_TABS 그대로). 시장 제한 칸('ISA 계좌')은 한국에만.
   const tabs = paperTabsFor(market).map((entry) => ({ ...entry, label: (korea ? KR_TAB_LABELS[entry.key] : undefined) ?? entry.label }));
@@ -138,6 +142,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
   };
 
   return (
+    <PaperHeaderSlotsProvider account={accountSlot} actions={actionsSlot}>
     <div className="flex flex-col gap-6 lg:gap-8">
       <PageHeader
         title={`모의 알고리즘 매매(${korea ? "한국" : "미국"})`}
@@ -157,7 +162,14 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
           )
         }
         // 자동 갱신이 실패하면 앞서 받은 값을 그대로 보이므로 '새로 읽지 못함'을 붙입니다(QA-104, QA-067과 같음).
-        actions={<Freshness refreshError={refreshError} />}
+        // 앞뒤의 빈 칸 둘(display:contents — 상자를 만들지 않음)은 탭이 보낼 계좌 고르기·동작 자리입니다(비어 있으면 겉모습 그대로).
+        actions={
+          <>
+            <div ref={setAccountSlot} className="contents" data-paper-header-slot="account" />
+            <Freshness refreshError={refreshError} />
+            <div ref={setActionsSlot} className="contents" data-paper-header-slot="actions" />
+          </>
+        }
       />
 
       {/* 시장 고르기(미국 | 한국 두 링크)는 셸의 하위 메뉴 줄이 맡습니다(lib/nav) — 화면 안에 또 두면 두 줄로 겹쳐 보였습니다. */}
@@ -296,6 +308,7 @@ function PaperScreenBody({ initialTab, market }: { initialTab: PaperTabKey; mark
       {/* 맨 위로(TOP) — 사용자 요청 2026-11-03. 조금 내려가면 오른쪽 아래에 나타납니다. */}
       <ScrollTopButton />
     </div>
+    </PaperHeaderSlotsProvider>
   );
 }
 
